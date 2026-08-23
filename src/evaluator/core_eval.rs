@@ -210,8 +210,8 @@ pub fn expand_arith_shorthand(
 }
 
 /// Check if a function has a specific Hold attribute (built-in or user-defined).
-fn has_hold_attribute(name: &str, attr: &str) -> bool {
-  get_builtin_attributes(name).contains(&attr)
+fn has_hold_attribute(name: &str, attr: u32) -> bool {
+  get_builtin_attributes_mask(name).contains(attr)
     || crate::func_attrs_contains(name, attr)
 }
 
@@ -222,9 +222,9 @@ pub(crate) fn head_holds_arguments(expr: &Expr) -> bool {
   let Expr::FunctionCall { name, .. } = expr else {
     return false;
   };
-  ["HoldAll", "HoldAllComplete", "HoldFirst", "HoldRest"]
-    .iter()
-    .any(|attr| has_hold_attribute(name, attr))
+  use Attributes as A;
+  let attr = A::HoldAll | A::HoldAllComplete | A::HoldFirst | A::HoldRest;
+  has_hold_attribute(name, attr)
 }
 
 /// Whether `name` holds the argument at the 0-based position `index`.
@@ -232,15 +232,16 @@ pub(crate) fn head_holds_arguments(expr: &Expr) -> bool {
 /// its `Association` exception, for callers that walk arguments themselves
 /// (the tracing functions).
 pub(crate) fn holds_argument_at(name: &str, index: usize) -> bool {
-  if has_hold_attribute(name, "HoldAll")
-    || (name != "Association" && has_hold_attribute(name, "HoldAllComplete"))
+  use Attributes as A;
+  if has_hold_attribute(name, A::HoldAll)
+    || (name != "Association" && has_hold_attribute(name, A::HoldAllComplete))
   {
     return true;
   }
   if index == 0 {
-    has_hold_attribute(name, "HoldFirst")
+    has_hold_attribute(name, A::HoldFirst)
   } else {
-    has_hold_attribute(name, "HoldRest")
+    has_hold_attribute(name, A::HoldRest)
   }
 }
 
@@ -257,11 +258,12 @@ fn evaluate_args_with_hold(
   // builds the association from evaluated parts (`<|a -> <|b -> 1|>|>` nests a
   // real association) — the attribute does not suppress evaluation there, so
   // neither does it here.
+  use Attributes as A;
   let hold_all_complete =
-    name != "Association" && has_hold_attribute(name, "HoldAllComplete");
-  let hold_all = has_hold_attribute(name, "HoldAll") || hold_all_complete;
-  let hold_first = has_hold_attribute(name, "HoldFirst");
-  let hold_rest = has_hold_attribute(name, "HoldRest");
+    name != "Association" && has_hold_attribute(name, A::HoldAllComplete);
+  let hold_all = has_hold_attribute(name, A::HoldAll) || hold_all_complete;
+  let hold_first = has_hold_attribute(name, A::HoldFirst);
+  let hold_rest = has_hold_attribute(name, A::HoldRest);
 
   let process_held = |arg: &Expr| -> Result<Expr, InterpreterError> {
     if hold_all_complete {
@@ -3745,8 +3747,8 @@ pub fn evaluate_expr_to_expr_inner(
       let func_holds_all = matches!(
         func.as_ref(),
         Expr::Identifier(name)
-          if has_hold_attribute(name, "HoldAll")
-            || has_hold_attribute(name, "HoldAllComplete")
+          if has_hold_attribute(name, Attributes::HoldAll)
+            || has_hold_attribute(name, Attributes::HoldAllComplete)
       );
       if func_holds_all && let Expr::Identifier(name) = func.as_ref() {
         // Convert any nested `Postfix(e, f)` to `FunctionCall { name: f,

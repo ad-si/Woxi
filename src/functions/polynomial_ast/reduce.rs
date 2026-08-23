@@ -530,7 +530,8 @@ fn extract_reduce_vars(expr: &Expr) -> Vec<String> {
   match expr {
     Expr::Identifier(name) => {
       // Check it's not a constant
-      let is_constant = crate::func_attrs_contains(name, "Constant");
+      use crate::evaluator::Attributes as A;
+      let is_constant = crate::func_attrs_contains(name, A::Constant);
       if is_constant
         || matches!(
           name.as_str(),

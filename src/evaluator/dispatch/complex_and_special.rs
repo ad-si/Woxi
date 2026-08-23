@@ -524,15 +524,14 @@ pub fn dispatch_complex_and_special(
       if let Expr::Identifier(sym) = first_arg {
         // Check if this is a built-in function (in functions.csv)
         let builtin_info = crate::evaluator::get_builtin_function_info(sym);
-        let builtin_attrs =
-          crate::evaluator::attributes::get_builtin_attributes(sym);
+        let builtin_attrs = get_builtin_attributes_mask(sym);
 
         if builtin_info.is_some() || !builtin_attrs.is_empty() {
           // Built-in symbol
           return Some(Ok(format_builtin_information(
             sym,
             builtin_info,
-            &builtin_attrs,
+            builtin_attrs,
             is_full,
           )));
         }
@@ -1060,7 +1059,7 @@ pub fn dispatch_complex_and_special(
         {
           let has_flat =
             crate::evaluator::listable::is_builtin_flat(&expr_head)
-              || crate::func_attrs_contains(&expr_head, "Flat");
+              || crate::func_attrs_contains(&expr_head, Attributes::Flat);
           if has_flat {
             let all_bindings =
               crate::evaluator::pattern_matching::enumerate_flat_partition_matches(
@@ -2221,23 +2220,15 @@ fn parse_blank_fc(expr: &Expr) -> Option<(u8, Option<&str>)> {
 fn format_builtin_information(
   sym: &str,
   info: Option<&crate::evaluator::BuiltinFunctionInfo>,
-  builtin_attrs: &[&str],
+  builtin_attrs: Attributes,
   is_full: bool,
 ) -> Expr {
   // Collect user-set attributes (merged with built-in)
   let user_attrs = crate::FUNC_ATTRS.with(|m| m.borrow().get(sym).cloned());
-  let mut all_attrs: Vec<String> = builtin_attrs
-    .iter()
-    .map(std::string::ToString::to_string)
-    .collect();
+  let mut all_attrs = builtin_attrs;
   if let Some(ua) = user_attrs {
-    for a in ua {
-      if !all_attrs.contains(&a) {
-        all_attrs.push(a);
-      }
-    }
+    all_attrs.add(ua.to_u32());
   }
-  all_attrs.sort();
 
   let description = info.map_or("", |i| i.description);
 
@@ -2259,7 +2250,8 @@ fn format_builtin_information(
   let attrs_repr = if all_attrs.is_empty() {
     "{}".to_string()
   } else {
-    format!("{{{}}}", all_attrs.join(", "))
+    let vals = all_attrs.to_vec().join(", ");
+    format!("{{{vals}}}")
   };
   fields.push(format!("Attributes -> {attrs_repr}"));
   display_fields.push(InfoField::text("Attributes", &attrs_repr));
@@ -2397,7 +2389,7 @@ fn format_user_information(
       Expr,
     )>,
   >,
-  user_attrs: Option<Vec<String>>,
+  user_attrs: Option<Attributes>,
   is_full: bool,
 ) -> Expr {
   // Build OwnValues field
@@ -2468,7 +2460,8 @@ fn format_user_information(
     if attrs.is_empty() {
       "{}".to_string()
     } else {
-      format!("{{{}}}", attrs.join(", "))
+      let vals = attrs.to_vec().join(", ");
+      format!("{{{vals}}}")
     }
   } else {
     "{}".to_string()
@@ -15037,19 +15030,13 @@ pub fn definition_text(sym: &str) -> Option<String> {
   // `Attributes[In] = {Listable, NHoldFirst, Protected}` even with no
   // user-installed attrs, matching wolframscript.
   let user_attrs = crate::FUNC_ATTRS.with(|m| m.borrow().get(sym).cloned());
-  let attrs_to_show: Vec<String> = match &user_attrs {
+  let attrs_to_show: Attributes = match &user_attrs {
     Some(a) if !a.is_empty() => a.clone(),
-    _ => crate::evaluator::attributes::get_builtin_attributes(sym)
-      .into_iter()
-      .map(std::string::ToString::to_string)
-      .collect(),
+    _ => get_builtin_attributes_mask(sym),
   };
   if !attrs_to_show.is_empty() {
-    lines.push(format!(
-      "Attributes[{}] = {{{}}}",
-      printed,
-      attrs_to_show.join(", ")
-    ));
+    let vals = attrs_to_show.to_vec().join(", ");
+    lines.push(format!("Attributes[{printed}] = {{{vals}}}"));
   }
 
   // 2. Show OwnValues (variable assignments)
@@ -15080,7 +15067,7 @@ pub fn definition_text(sym: &str) -> Option<String> {
   // (DownValues, UpValues, Format/MakeBoxes, NValues, SubValues),
   // surfacing only Attributes / Default / Options. Skip those
   // sections when the symbol is read-protected.
-  let read_protected = attrs_to_show.iter().any(|a| a == "ReadProtected");
+  let read_protected = attrs_to_show.contains(Attributes::ReadProtected);
   // 3. Show UpValues first (rules attached via Real /: F[x_Real] := x
   // etc.), matching wolframscript's ordering. UpValues precede
   // DownValues in Definition output.
@@ -15245,14 +15232,10 @@ pub fn definition_text(sym: &str) -> Option<String> {
 
   // For built-in symbols: show attributes
   if lines.is_empty() {
-    let builtin_attrs =
-      crate::evaluator::attributes::get_builtin_attributes(sym);
+    let builtin_attrs = get_builtin_attributes_mask(sym);
     if !builtin_attrs.is_empty() {
-      lines.push(format!(
-        "Attributes[{}] = {{{}}}",
-        printed,
-        builtin_attrs.join(", ")
-      ));
+      let vals = builtin_attrs.to_vec().join(", ");
+      lines.push(format!("Attributes[{printed}] = {{{vals}}}"));
     }
   }
 
@@ -15449,7 +15432,8 @@ pub fn full_definition_text(sym: &str) -> Option<String> {
     if let Some(attrs) = &user_attrs
       && !attrs.is_empty()
     {
-      lines.push(format!("Attributes[{}] = {{{}}}", sym, attrs.join(", ")));
+      let vals = attrs.to_vec().join(", ");
+      lines.push(format!("Attributes[{sym}] = {{{vals}}}"));
     }
 
     let own_value = crate::ENV.with(|e| {
@@ -15534,14 +15518,10 @@ pub fn full_definition_text(sym: &str) -> Option<String> {
     }
 
     if lines.is_empty() {
-      let builtin_attrs =
-        crate::evaluator::attributes::get_builtin_attributes(sym);
+      let builtin_attrs = get_builtin_attributes_mask(sym);
       if !builtin_attrs.is_empty() {
-        lines.push(format!(
-          "Attributes[{}] = {{{}}}",
-          sym,
-          builtin_attrs.join(", ")
-        ));
+        let vals = builtin_attrs.to_vec().join(", ");
+        lines.push(format!("Attributes[{sym}] = {{{vals}}}"));
       }
     }
 
@@ -15659,7 +15639,8 @@ fn information_property(sym: &str, property: &str) -> Expr {
     return match property {
       "Usage" => Expr::String(info.description.to_string()),
       "Attributes" => Expr::List(
-        crate::evaluator::attributes::get_builtin_attributes(sym)
+        get_builtin_attributes_mask(sym)
+          .to_vec()
           .into_iter()
           .map(|a| Expr::Identifier(a.to_string()))
           .collect(),

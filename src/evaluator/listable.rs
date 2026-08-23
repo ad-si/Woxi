@@ -1554,8 +1554,8 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
 pub(crate) fn has_sequence_hold(name: &str) -> bool {
   let builtin = attributes::get_builtin_attributes_mask(name);
   builtin.contains(Attributes::SequenceHold)
-    || crate::func_attrs_contains(name, "SequenceHold")
-    || crate::func_attrs_contains(name, "HoldAllComplete")
+    || crate::func_attrs_contains(name, Attributes::SequenceHold)
+    || crate::func_attrs_contains(name, Attributes::HoldAllComplete)
     || builtin.contains(Attributes::HoldAllComplete)
 }
 

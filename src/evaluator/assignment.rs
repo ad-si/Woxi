@@ -954,20 +954,20 @@ fn reorder_orderless_pattern_args(pattern: Expr) -> Expr {
 }
 
 #[allow(clippy::if_not_else)]
-pub fn get_attributes(expr: &Expr) -> Option<Vec<String>> {
+pub fn get_attributes(expr: &Expr) -> Option<u32> {
   // Extract attribute names from the value
   let attr_exprs = match expr {
     Expr::List(items) => items.clone(),
     _ => vec![expr.clone()].into(),
   };
 
-  let mut valid_attrs = Vec::new();
+  let mut valid_attrs = 0u32;
   let mut has_error = false;
   for attr_expr in &attr_exprs {
     if let Expr::Identifier(attr_name) = attr_expr {
       let mask_val = Attributes::mask(attr_name);
       if mask_val != Attributes::None {
-        valid_attrs.push(attr_name.clone());
+        valid_attrs |= mask_val;
       } else {
         // Unknown attribute — emit warning
         crate::emit_message(&format!(
@@ -998,7 +998,7 @@ fn set_attributes_from_value(
   rhs_value: &Expr,
 ) -> crate::syntax::Expr {
   // Check if symbol is locked
-  let is_locked = crate::func_attrs_contains(sym_name, "Locked");
+  let is_locked = crate::func_attrs_contains(sym_name, Attributes::Locked);
   if is_locked {
     crate::emit_message(&format!(
       "Attributes::locked: Symbol {sym_name} is locked."
@@ -1011,8 +1011,9 @@ fn set_attributes_from_value(
   };
 
   // Replace all user-defined attributes for this symbol
+  let attr = Attributes::new(valid_attrs);
   crate::FUNC_ATTRS.with(|m| {
-    m.borrow_mut().insert(sym_name.to_string(), valid_attrs);
+    m.borrow_mut().insert(sym_name.to_string(), attr);
   });
 
   rhs_value.clone()
@@ -1457,12 +1458,13 @@ fn is_downvalue_head_protected(name: &str) -> bool {
   if is_value_redirect_head(name) {
     return false;
   }
-  let was_unprotected = crate::func_attrs_removed_contains(name, "Protected");
+  let was_unprotected =
+    crate::func_attrs_removed_contains(name, Attributes::Protected);
   if was_unprotected {
     return false;
   }
   attributes::get_builtin_attributes_mask(name).contains(Attributes::Protected)
-    || crate::func_attrs_contains(name, "Protected")
+    || crate::func_attrs_contains(name, Attributes::Protected)
 }
 
 /// Flatten a left-associative chain of `BinaryOp { op: Times, .. }` into

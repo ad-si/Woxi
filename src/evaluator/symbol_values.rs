@@ -61,8 +61,8 @@ pub(crate) struct SymbolValues {
   own: Option<crate::StoredValue>,
   down: Option<Vec<FuncDef>>,
   memo: Option<std::collections::HashMap<String, (Vec<Expr>, Expr)>>,
-  attrs: Option<Vec<String>>,
-  attrs_removed: Option<Vec<String>>,
+  attrs: Option<Attributes>,
+  attrs_removed: Option<Attributes>,
   options: Option<Vec<Expr>>,
   options_delayed: bool,
   opts_inline: Option<Vec<Option<Vec<Expr>>>>,
@@ -158,16 +158,15 @@ pub(crate) fn take_symbol_values(sym: &str) -> SymbolValues {
   // defaults have to be masked explicitly for `Attributes[sym]` to be `{}`.
   saved.attrs_removed =
     crate::FUNC_ATTRS_REMOVED.with(|m| m.borrow_mut().remove(sym));
-  let builtin = get_builtin_attributes(sym);
+  let builtin = get_builtin_attributes_mask(sym);
   if !builtin.is_empty() {
     crate::FUNC_ATTRS_REMOVED.with(|m| {
-      m.borrow_mut().insert(
-        sym.to_string(),
-        builtin
-          .iter()
-          .map(std::string::ToString::to_string)
-          .collect(),
-      )
+      let mut removed = m.borrow_mut();
+      let mask = builtin.to_u32();
+      removed
+        .entry(sym.to_string())
+        .and_modify(|a| (*a).add(mask))
+        .or_insert(Attributes::new(mask));
     });
   }
 

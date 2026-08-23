@@ -46,12 +46,12 @@ thread_local! {
     // entries can be reconstructed as rules for DownValues introspection.
     pub static MEMO_VALUES: RefCell<HashMap<String, HashMap<String, (Vec<syntax::Expr>, syntax::Expr)>>> = RefCell::new(HashMap::new());
     // Function attributes (e.g., Listable, Flat, etc.)
-    static FUNC_ATTRS: RefCell<HashMap<String, Vec<String>>> = RefCell::new(HashMap::new());
+    static FUNC_ATTRS: RefCell<HashMap<String, evaluator::Attributes>> = RefCell::new(HashMap::new());
     // Builtin attributes that have been explicitly removed (via Unprotect,
     // ClearAttributes, or ClearAll). Subtracted from `Attributes[sym]` so
     // that e.g. `Unprotect[Pi]; Attributes[Pi]` no longer contains
     // `Protected`. Re-adding via SetAttributes/Protect prunes the entry.
-    pub static FUNC_ATTRS_REMOVED: RefCell<HashMap<String, Vec<String>>> = RefCell::new(HashMap::new());
+    pub static FUNC_ATTRS_REMOVED: RefCell<HashMap<String, evaluator::Attributes>> = RefCell::new(HashMap::new());
     // Function options (e.g., Options[f] = {a -> 1})
     pub static FUNC_OPTIONS: RefCell<HashMap<String, Vec<syntax::Expr>>> = RefCell::new(HashMap::new());
     // Track whether Options[f] was set with `:=` (SetDelayed) so Definition can
@@ -5380,25 +5380,26 @@ pub fn interpret_expr_with_stdout(
   })
 }
 
-pub fn func_attrs_contains(func_name: &str, attr_name: &str) -> bool {
+pub fn func_attrs_contains(func_name: &str, attr: u32) -> bool {
   FUNC_ATTRS.with(|m| {
     m.borrow()
       .get(func_name)
-      .is_some_and(|attrs| attrs.contains(&attr_name.to_string()))
+      .is_some_and(|attrs| attrs.contains(attr))
   })
 }
 
-pub fn func_attrs_removed_contains(func_name: &str, attr_name: &str) -> bool {
+pub fn func_attrs_removed_contains(func_name: &str, attr: u32) -> bool {
   FUNC_ATTRS_REMOVED.with(|m| {
     m.borrow()
       .get(func_name)
-      .is_some_and(|attrs| attrs.contains(&attr_name.to_string()))
+      .is_some_and(|attrs| attrs.contains(attr))
   })
 }
 
 fn store_function_definition(
   pair: Pair<Rule>,
 ) -> Result<Option<String>, InterpreterError> {
+  use evaluator::Attributes as A;
   // FunctionDefinition  :=  Identifier "[" (Pattern ("," Pattern)*)? "]" ":=" Expression
   // pest pairs are not Clone, so capture the source slices around ":=".
   let (raw_lhs, raw_rhs) = {
@@ -5444,12 +5445,12 @@ fn store_function_definition(
     "N" | "MessageName" | "Format" | "Default" | "Options"
   );
   let is_n_value_assignment = allows_redirected_rule;
-  let was_unprotected = func_attrs_removed_contains(&func_name, "Protected");
+  let was_unprotected = func_attrs_removed_contains(&func_name, A::Protected);
   let is_builtin_protected = !is_n_value_assignment
     && !was_unprotected
     && evaluator::get_builtin_attributes_mask(&func_name)
-      .contains(evaluator::Attributes::Protected);
-  let is_user_protected = func_attrs_contains(&func_name, "Protected");
+      .contains(A::Protected);
+  let is_user_protected = func_attrs_contains(&func_name, A::Protected);
   if is_builtin_protected || is_user_protected {
     let (tag, ret) = if is_builtin_protected && !is_user_protected {
       ("SetDelayed::write", Some("$Failed".to_string()))

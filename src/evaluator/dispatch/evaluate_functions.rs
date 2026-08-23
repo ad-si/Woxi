@@ -49,7 +49,7 @@ fn orderless_parts(expr: &Expr) -> Option<(String, Vec<Expr>)> {
     return None;
   }
   if !crate::evaluator::listable::is_builtin_orderless(&head)
-    && !crate::func_attrs_contains(&head, "Orderless")
+    && !crate::func_attrs_contains(&head, Attributes::Orderless)
   {
     return None;
   }
@@ -750,8 +750,8 @@ fn evaluate_function_call_ast_inner(
   }
 
   // Thread Listable functions over list arguments
-  let is_listable =
-    is_builtin_listable(name) || crate::func_attrs_contains(name, "Listable");
+  let is_listable = is_builtin_listable(name)
+    || crate::func_attrs_contains(name, Attributes::Listable);
   if is_listable && let Some(result) = thread_listable(name, args)? {
     return Ok(result);
   }
@@ -776,7 +776,7 @@ fn evaluate_function_call_ast_inner(
 
   // Apply Flat attribute: flatten nested calls of the same function
   let has_flat =
-    is_builtin_flat(name) || crate::func_attrs_contains(name, "Flat");
+    is_builtin_flat(name) || crate::func_attrs_contains(name, Attributes::Flat);
   let args_after_flat;
   let args = if has_flat {
     let mut flat_args: Vec<Expr> = Vec::new();
@@ -827,7 +827,7 @@ fn evaluate_function_call_ast_inner(
   let has_orderless = name != "Plus"
     && name != "Times"
     && (is_builtin_orderless(name)
-      || crate::func_attrs_contains(name, "Orderless"));
+      || crate::func_attrs_contains(name, Attributes::Orderless));
   let args_after_sort;
   let args = if has_orderless {
     let mut sorted_args = args.to_vec();
@@ -957,8 +957,9 @@ fn evaluate_function_call_ast_inner(
   // when the head carries HoldAllComplete we drop those entries before
   // dispatch — DownValues for the same head are still tried as usual.
   let head_has_hold_all_complete =
-    crate::func_attrs_contains(name, "HoldAllComplete")
-      || get_builtin_attributes(name).contains(&"HoldAllComplete");
+    crate::func_attrs_contains(name, Attributes::HoldAllComplete)
+      || get_builtin_attributes_mask(name)
+        .contains(Attributes::HoldAllComplete);
   let overloads = crate::FUNC_DEFS.with(|m| {
     let defs = m.borrow();
     let raw = defs.get(name).cloned();

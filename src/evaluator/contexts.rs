@@ -231,7 +231,7 @@ fn is_user_symbol(name: &str) -> bool {
   }
   let bare = short_name(name);
   !crate::evaluator::is_builtin_symbol(bare)
-    && crate::evaluator::get_builtin_attributes(bare).is_empty()
+    && crate::evaluator::get_builtin_attributes_mask(bare).is_empty()
 }
 
 /// Whether a symbol with this full name exists — either created in a
