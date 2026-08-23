@@ -15397,7 +15397,20 @@ pub fn nintegrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       crate::functions::math_ast::try_eval_to_f64(&evaluated)
         .filter(|v| v.is_finite())
     };
-    if let Some(v) = raw(x) {
+    // Evaluate the literal point quietly: a removable singularity there (e.g.
+    // Sin[x]/x at x = 0, or this same quotient once an adaptive-quadrature
+    // fallback lands one of its subdivision endpoints exactly on it) yields
+    // Indeterminate/ComplexInfinity, which would otherwise emit a spurious
+    // `Power::infy`-style message for a sample that is about to be discarded
+    // and replaced by the perturbed value below. Snapshot/restore the message
+    // buffers around the probe (push_quiet only silences printing, not
+    // capture).
+    let snapshot = crate::snapshot_warnings();
+    crate::push_quiet();
+    let direct = raw(x);
+    crate::pop_quiet();
+    crate::restore_warnings(snapshot);
+    if let Some(v) = direct {
       return Some(v);
     }
     let d = x.abs().max(1.0) * 1e-10;
