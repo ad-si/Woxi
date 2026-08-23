@@ -5702,14 +5702,31 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // FindRoot holds its arguments, so a spec built programmatically and
+  // passed by name — `initguess = Flatten[Table[{u[i], 0.5}, ...]];
+  // FindRoot[sys, initguess]`, the idiom collocation methods use to name
+  // one unknown per grid point — reaches here as a bare identifier rather
+  // than a literal list. Resolve it once to reveal that list structure. A
+  // `{var, x0}` written directly at the call site is left untouched (not
+  // re-evaluated) so a variable that happens to carry an unrelated global
+  // value isn't substituted into the "variable" slot.
+  let arg1_owned;
+  let arg1: &Expr = if matches!(&args[1], Expr::List(_)) {
+    &args[1]
+  } else {
+    arg1_owned = crate::evaluator::evaluate_expr_to_expr(&args[1])
+      .unwrap_or_else(|_| args[1].clone());
+    &arg1_owned
+  };
+
   // Multivariate form: FindRoot[{eqns}, {{x, x0}, {y, y0}, ...}] — every
   // variable spec is itself a {var, start} list. Solved with multidimensional
   // Newton iteration.
-  if let Expr::List(specs) = &args[1]
+  if let Expr::List(specs) = arg1
     && !specs.is_empty()
     && specs.iter().all(|s| {
       matches!(s, Expr::List(p)
-      if p.len() == 2 && matches!(&p[0], Expr::Identifier(_)))
+      if p.len() == 2 && is_findroot_var_expr(&p[0]))
     })
   {
     return find_root_multivariate(&args[0], specs);
@@ -5727,7 +5744,7 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .iter()
       .take_while(|s| {
         matches!(s, Expr::List(p)
-        if p.len() == 2 && matches!(&p[0], Expr::Identifier(_)))
+        if p.len() == 2 && is_findroot_var_expr(&p[0]))
       })
       .cloned()
       .collect();
@@ -5781,7 +5798,7 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // First peek at the variable name and start point; if the start point
   // evaluates to a complex number we route to a complex Newton iteration
   // before the real-only path below.
-  let (var_name, x_start_expr) = match &args[1] {
+  let (var_name, x_start_expr) = match arg1 {
     Expr::List(items) if items.len() == 2 || items.len() == 3 => {
       let name = match &items[0] {
         Expr::Identifier(n) => n.clone(),
@@ -5818,7 +5835,7 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       im0,
     );
   }
-  let (var, x0, x1_opt) = match &args[1] {
+  let (var, x0, x1_opt) = match arg1 {
     Expr::List(items) if items.len() == 2 => {
       let var_name = match &items[0] {
         Expr::Identifier(name) => name.clone(),
@@ -6405,17 +6422,185 @@ fn find_root_eval_number(expr: &Expr) -> Result<f64, InterpreterError> {
   }
 }
 
+/// True when `e` is a valid FindRoot search variable: a plain symbol, or an
+/// indexed variable such as `u[1]` or `a[2, 3]` — a symbol applied to
+/// literal numeric or string indices. Collocation methods for boundary-value
+/// problems name one unknown per grid point this way (`FindRoot[{eqns},
+/// {{u[1], 0.5}, {u[2], 0.5}, ...}]`), and real Wolfram accepts both forms.
+fn is_findroot_var_expr(e: &Expr) -> bool {
+  match e {
+    Expr::Identifier(_) => true,
+    Expr::FunctionCall { args, .. } => {
+      !args.is_empty()
+        && args.iter().all(|a| {
+          matches!(a, Expr::Integer(_) | Expr::Real(_) | Expr::String(_))
+        })
+    }
+    _ => false,
+  }
+}
+
+/// A hashable key for a FindRoot indexed-variable's literal arguments
+/// (`u[1]` → `[Int(1)]`, `a[2, "x"]` → `[Int(2), Str("x")]`).
+#[derive(PartialEq, Eq, Hash, Clone)]
+enum FindRootIndexKey {
+  Int(i128),
+  RealBits(u64),
+  Str(String),
+}
+
+fn find_root_index_key(e: &Expr) -> Option<FindRootIndexKey> {
+  match e {
+    Expr::Integer(n) => Some(FindRootIndexKey::Int(*n)),
+    Expr::Real(r) => Some(FindRootIndexKey::RealBits(r.to_bits())),
+    Expr::String(s) => Some(FindRootIndexKey::Str(s.clone())),
+    _ => None,
+  }
+}
+
+/// Replace every var in `vars` (matched by exact structural equality —
+/// including indexed variables like `u[1]`) with the corresponding
+/// expression in `replacements`, in a single pass over `expr`.
+///
+/// `find_root_multivariate` uses this once, up front, to rename every
+/// search variable — plain or indexed — to a fresh plain symbol, so the
+/// rest of the solve (symbolic differentiation, localization, per-iteration
+/// substitution) can reuse the existing name-based machinery unchanged
+/// instead of paying a structural-match cost at every Newton step. Doing
+/// the rename with a per-node hashmap lookup, in one pass, also keeps this
+/// one-off step itself linear in the equations' size rather than linear in
+/// the number of variables times their size.
+///
+/// Covers the constructs a FindRoot equation can contain: arithmetic,
+/// comparisons and their containers. Any other construct is left as
+/// written — the caller detects an unrenamed variable when the result
+/// fails to reduce to a number, rather than this silently skipping it.
+fn find_root_rename_vars(
+  expr: &Expr,
+  vars: &[Expr],
+  replacements: &[Expr],
+) -> Expr {
+  let mut id_map: std::collections::HashMap<&str, &Expr> =
+    std::collections::HashMap::with_capacity(vars.len());
+  let mut idx_map: std::collections::HashMap<
+    (&str, Vec<FindRootIndexKey>),
+    &Expr,
+  > = std::collections::HashMap::new();
+  for (v, r) in vars.iter().zip(replacements) {
+    match v {
+      Expr::Identifier(name) => {
+        id_map.insert(name.as_str(), r);
+      }
+      Expr::FunctionCall { name, args } => {
+        if let Some(keys) = args
+          .iter()
+          .map(find_root_index_key)
+          .collect::<Option<Vec<_>>>()
+        {
+          idx_map.insert((name.as_str(), keys), r);
+        }
+      }
+      _ => {}
+    }
+  }
+  find_root_rename_walk(expr, &id_map, &idx_map)
+}
+
+fn find_root_rename_walk(
+  expr: &Expr,
+  id_map: &std::collections::HashMap<&str, &Expr>,
+  idx_map: &std::collections::HashMap<(&str, Vec<FindRootIndexKey>), &Expr>,
+) -> Expr {
+  match expr {
+    Expr::Identifier(name) => match id_map.get(name.as_str()) {
+      Some(r) => (*r).clone(),
+      None => expr.clone(),
+    },
+    Expr::FunctionCall { name, args } => {
+      if let Some(keys) = args
+        .iter()
+        .map(find_root_index_key)
+        .collect::<Option<Vec<_>>>()
+        && let Some(r) = idx_map.get(&(name.as_str(), keys))
+      {
+        return (*r).clone();
+      }
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: args
+          .iter()
+          .map(|a| find_root_rename_walk(a, id_map, idx_map))
+          .collect(),
+      }
+    }
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(|a| find_root_rename_walk(a, id_map, idx_map))
+        .collect(),
+    ),
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(find_root_rename_walk(left, id_map, idx_map)),
+      right: Box::new(find_root_rename_walk(right, id_map, idx_map)),
+    },
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(find_root_rename_walk(operand, id_map, idx_map)),
+    },
+    Expr::Comparison {
+      operands,
+      operators,
+    } => Expr::Comparison {
+      operands: operands
+        .iter()
+        .map(|a| find_root_rename_walk(a, id_map, idx_map))
+        .collect(),
+      operators: operators.clone(),
+    },
+    Expr::CompoundExpr(exprs) => Expr::CompoundExpr(
+      exprs
+        .iter()
+        .map(|a| find_root_rename_walk(a, id_map, idx_map))
+        .collect(),
+    ),
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => Expr::Rule {
+      pattern: Box::new(find_root_rename_walk(pattern, id_map, idx_map)),
+      replacement: Box::new(find_root_rename_walk(
+        replacement,
+        id_map,
+        idx_map,
+      )),
+    },
+    Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => Expr::RuleDelayed {
+      pattern: Box::new(find_root_rename_walk(pattern, id_map, idx_map)),
+      replacement: Box::new(find_root_rename_walk(
+        replacement,
+        id_map,
+        idx_map,
+      )),
+    },
+    other => other.clone(),
+  }
+}
+
 /// Evaluate `expr` to an f64 with every variable in `vars` bound to the
-/// corresponding value in `vals`.
+/// corresponding value in `vals`, in a single substitution pass.
 fn find_root_eval_multivar(
   expr: &Expr,
   vars: &[String],
   vals: &[f64],
 ) -> Result<f64, InterpreterError> {
-  let mut e = expr.clone();
-  for (v, &x) in vars.iter().zip(vals) {
-    e = crate::syntax::substitute_variable(&e, v, &Expr::Real(x));
-  }
+  let reals: Vec<Expr> = vals.iter().map(|&x| Expr::Real(x)).collect();
+  let bindings: Vec<(&str, &Expr)> =
+    vars.iter().map(String::as_str).zip(reals.iter()).collect();
+  let e = crate::syntax::substitute_variables(expr, &bindings);
   let evaled = crate::evaluator::evaluate_expr_to_expr(&e)?;
   match &evaled {
     Expr::Integer(k) => Ok(*k as f64),
@@ -6480,35 +6665,65 @@ fn find_root_multivariate(
   eqns_arg: &Expr,
   specs: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  // Variables and starting points.
-  let mut vars: Vec<String> = Vec::new();
+  // Variables and starting points. A spec's variable is either a plain
+  // symbol or an indexed variable like `u[1]` — see `is_findroot_var_expr`.
+  let mut raw_vars: Vec<Expr> = Vec::new();
   let mut x: Vec<f64> = Vec::new();
   for spec in specs {
     if let Expr::List(p) = spec {
-      let v = match &p[0] {
-        Expr::Identifier(n) => n.clone(),
-        _ => {
-          return Err(InterpreterError::EvaluationError(
-            "FindRoot: variable must be a symbol".into(),
-          ));
-        }
-      };
-      vars.push(v);
+      if !is_findroot_var_expr(&p[0]) {
+        return Err(InterpreterError::EvaluationError(
+          "FindRoot: variable must be a symbol".into(),
+        ));
+      }
+      raw_vars.push(p[0].clone());
       x.push(find_root_eval_number(&p[1])?);
     }
   }
-  let n = vars.len();
+  let n = raw_vars.len();
 
-  // Equations as f_i = lhs - rhs (or bare expression). Each side is
-  // evaluated symbolically first — with every search variable localized, see
-  // `evaluate_with_vars_localized` — so user-defined functions expand
-  // through their downvalues (`r[s, t, 0, 1]` becomes its explicit formula)
-  // and a variable that happens to carry a stale global value elsewhere
-  // still searches fresh. FindRoot holds its arguments, so this is the
-  // first chance to do so. An expression that fails to evaluate stays as
-  // written and is handled numerically per iteration point instead.
+  // Only plain-symbol variables can carry a stale global binding under a
+  // literal name — an indexed variable like `u[1]` has no such binding to
+  // remove.
+  let raw_var_refs: Vec<&str> = raw_vars
+    .iter()
+    .filter_map(|v| match v {
+      Expr::Identifier(name) => Some(name.as_str()),
+      _ => None,
+    })
+    .collect();
+  // The equations are often built and named separately (`sys =
+  // Join[{bc1, ...}, Table[Eq[...], ...]] // Flatten; FindRoot[sys, ...]`)
+  // rather than written literally, so `eqns_arg` may reach here as a bare
+  // identifier rather than a literal list. Resolve it (search variables
+  // localized, see `evaluate_with_vars_localized`) to reveal the list of
+  // equations, so a variable that happens to carry a stale global value
+  // elsewhere doesn't leak into this evaluation. FindRoot holds its
+  // arguments, so this is the first chance to do so.
+  let eqns_owned;
+  let eqns_arg: &Expr = if matches!(eqns_arg, Expr::List(_)) {
+    eqns_arg
+  } else {
+    eqns_owned = evaluate_with_vars_localized(eqns_arg, &raw_var_refs);
+    &eqns_owned
+  };
+
+  // Every search variable — plain or indexed — is renamed to a fresh plain
+  // symbol before anything else. Collocation methods can name hundreds of
+  // `u[i]` variables for a dense system; treating them as plain symbols
+  // from here on lets the rest of the solve reuse the existing name-based
+  // substitution (`substitute_variables`, one pass over the equation) and
+  // symbolic differentiation (`differentiate_expr`) instead of a much
+  // slower structural-match or finite-difference fallback per indexed
+  // variable. The rename is reversed only in the final `var -> value`
+  // rules.
+  let vars: Vec<String> = (0..n).map(|i| format!("$FindRootVar{i}$")).collect();
+  let syn_idents: Vec<Expr> =
+    vars.iter().map(|s| Expr::Identifier(s.clone())).collect();
+  let renamed_eqns_arg =
+    find_root_rename_vars(eqns_arg, &raw_vars, &syn_idents);
   let var_refs: Vec<&str> = vars.iter().map(String::as_str).collect();
-  let eqns: Vec<Expr> = match eqns_arg {
+  let eqns: Vec<Expr> = match &renamed_eqns_arg {
     Expr::List(es) => es
       .iter()
       .map(|e| build_find_root_func(e, &var_refs))
@@ -6521,10 +6736,12 @@ fn find_root_multivariate(
     ));
   }
 
-  // Jacobian J[i][j] = d f_i / d x_j (symbolic where possible). An entry
-  // that cannot be differentiated symbolically (e.g. the equation still
-  // contains an opaque function call) is left `None` and approximated by a
-  // central finite difference at each iteration point.
+  // Jacobian J[i][j] = d f_i / d x_j (symbolic where possible — every
+  // variable is now a plain symbol, so this applies uniformly to indexed
+  // variables too). An entry that cannot be differentiated symbolically
+  // (e.g. the equation still contains an opaque function call) is left
+  // `None` and approximated by a central finite difference at each
+  // iteration point.
   let mut jac: Vec<Vec<Option<Expr>>> = Vec::with_capacity(n);
   for f in &eqns {
     let mut row = Vec::with_capacity(n);
@@ -6585,12 +6802,11 @@ fn find_root_multivariate(
       break;
     }
   }
-
-  let rules: Vec<Expr> = vars
+  let rules: Vec<Expr> = raw_vars
     .iter()
     .zip(&x)
     .map(|(v, &xv)| Expr::Rule {
-      pattern: Box::new(Expr::Identifier(v.clone())),
+      pattern: Box::new(v.clone()),
       replacement: Box::new(Expr::Real(xv)),
     })
     .collect();
