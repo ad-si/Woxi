@@ -41,4 +41,12 @@ mod tests {
         == woxi::evaluator::is_builtin_listable(name)
     });
   }
+
+  #[test]
+  fn is_builtin_numeric() {
+    test_attributes(|name: &str, mask: Attributes| -> bool {
+      mask.contains(Attributes::NumericFunction)
+        == woxi::functions::predicate_ast::is_builtin_numeric(name)
+    });
+  }
 }
