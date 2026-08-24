@@ -3725,6 +3725,40 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
         vec![expr_to_box_form(&args[0]), expr_to_box_form(&args[1])],
       )
     }
+    // `Overscript[a, b]` / `Underscript[a, b]` place `b` as an annotation
+    // above/below `a` — the box form is a direct `OverscriptBox`/
+    // `UnderscriptBox`, matching how the FrontEnd stores an
+    // `OverscriptBox["x", "_"]`/`UnderscriptBox` cell as `Overscript`/
+    // `Underscript` once turned back into an expression (see
+    // `notebook::box_source_to_expression`). `OverBar`/`UnderBar` are the
+    // named-accent shorthands: `OverBar[x]` boxes exactly like
+    // `Overscript[x, "_"]`.
+    Expr::FunctionCall { name, args }
+      if (name == "Overscript" || name == "Underscript") && args.len() == 2 =>
+    {
+      let box_name = if name == "Overscript" {
+        "OverscriptBox"
+      } else {
+        "UnderscriptBox"
+      };
+      call(
+        box_name,
+        vec![expr_to_box_form(&args[0]), expr_to_box_form(&args[1])],
+      )
+    }
+    Expr::FunctionCall { name, args }
+      if (name == "OverBar" || name == "UnderBar") && args.len() == 1 =>
+    {
+      let box_name = if name == "OverBar" {
+        "OverscriptBox"
+      } else {
+        "UnderscriptBox"
+      };
+      call(
+        box_name,
+        vec![expr_to_box_form(&args[0]), Expr::String("_".to_string())],
+      )
+    }
     expr if is_sqrt(expr).is_some() => {
       let sqrt_arg = is_sqrt(expr).unwrap();
       call1("SqrtBox", expr_to_box_form(sqrt_arg))
@@ -5203,6 +5237,25 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
     }
     "Superscript" if args.len() == 2 => {
       tf_box("SuperscriptBox", vec![tf(&args[0]), tf(&args[1])])
+    }
+    // `Overscript[a, b]` / `Underscript[a, b]` and their `OverBar`/`UnderBar`
+    // accent shorthands — same `…Box` mapping as the StandardForm converter
+    // (`expr_to_box_form`), just recursing through `tf` for the pieces.
+    "Overscript" | "Underscript" if args.len() == 2 => {
+      let box_name = if name == "Overscript" {
+        "OverscriptBox"
+      } else {
+        "UnderscriptBox"
+      };
+      tf_box(box_name, vec![tf(&args[0]), tf(&args[1])])
+    }
+    "OverBar" | "UnderBar" if args.len() == 1 => {
+      let box_name = if name == "OverBar" {
+        "OverscriptBox"
+      } else {
+        "UnderscriptBox"
+      };
+      tf_box(box_name, vec![tf(&args[0]), tf_string("_")])
     }
     // A single-order derivative arrives flattened: `f''[x]` is held as
     // `Derivative[2, f, x]`, so the order leads, the differentiated function

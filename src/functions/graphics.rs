@@ -9470,6 +9470,49 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
           )
         }
 
+        // `OverBar[x]` / `UnderBar[x]` — the named accent shorthands for a
+        // horizontal line above/below the content (a Demonstration's sample
+        // mean/estimate notation, x̄). `text-decoration` draws the line at
+        // zero extra width, the same trick `SqrtBox`'s vinculum uses above.
+        "OverBar" | "UnderBar" if args.len() == 1 => {
+          let deco = if name == "OverBar" { "overline" } else { "underline" };
+          format!(
+            "<tspan text-decoration=\"{deco}\">{}</tspan>",
+            expr_to_svg_markup(&args[0])
+          )
+        }
+
+        // `Overscript[base, accent]` / `Underscript[base, accent]` place an
+        // arbitrary annotation above/below `base` — e.g. a hat for an
+        // estimator (σ̂) or, as the FrontEnd stores an `OverscriptBox["x",
+        // "_"]` cell once turned back into an expression, an underscore
+        // standing in for a bar (x̄, see `notebook::box_source_to_expression`).
+        // A literal underscore/hyphen accent draws as a real overline, an
+        // exact match; anything else (a hat, a tilde, …) is raised above the
+        // base and pulled back over it — inline `tspan`s share one baseline,
+        // so true 2-D stacking isn't expressible, but for the single-letter
+        // bases these accents dress (σ, x, y, ρ) the overlap reads right.
+        "Overscript" | "Underscript" if args.len() == 2 => {
+          let base_markup = expr_to_svg_markup(&args[0]);
+          let accent_markup = expr_to_svg_markup(&args[1]);
+          let is_bar_accent = matches!(&args[1],
+            Expr::String(s) if s == "_" || s == "-" || s == "\u{2013}");
+          if is_bar_accent {
+            let deco =
+              if name == "Overscript" { "overline" } else { "underline" };
+            format!("<tspan text-decoration=\"{deco}\">{base_markup}</tspan>")
+          } else {
+            let (raise, fall) = if name == "Overscript" {
+              ("-0.55em", "0.55em")
+            } else {
+              ("0.55em", "-0.55em")
+            };
+            format!(
+              "<tspan dy=\"{raise}\" font-size=\"65%\">{accent_markup}</tspan><tspan dx=\"-0.6em\" dy=\"{fall}\">{base_markup}</tspan>"
+            )
+          }
+        }
+
         // `Spacer[n]` is a gap n printer's points wide, wherever it
         // appears — among a `Row`'s items as readily as as its separator.
         // The width is absolute, not relative to the font: `Spacer[25]`
@@ -9793,6 +9836,16 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
       }
       // HoldForm[expr] → width of content
       "HoldForm" if args.len() == 1 => estimate_display_width(&args[0]),
+      // OverBar/UnderBar draw their accent as a zero-width line over the
+      // content; Overscript/Underscript's accent overlaps the base the same
+      // way `expr_to_svg_markup` draws it (see that function's comment).
+      "OverBar" | "UnderBar" if args.len() == 1 => {
+        estimate_display_width(&args[0])
+      }
+      "Overscript" | "Underscript" if args.len() == 2 => {
+        estimate_display_width(&args[0])
+          .max(estimate_display_width(&args[1]) * 0.65)
+      }
       // The presentation wrappers `expr_to_svg_markup` types out as their
       // content only — measuring the `Head[…]` source instead would leave a
       // Row cell several times too wide for the glyphs drawn in it.
