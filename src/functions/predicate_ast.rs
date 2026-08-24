@@ -853,6 +853,7 @@ pub fn is_builtin_numeric(name: &str) -> bool {
 
 fn is_numeric_function(name: &str) -> bool {
   is_builtin_numeric(name)
+    || name == "Rational" // special case for now
     || crate::func_attrs_contains(name, Attributes::NumericFunction)
 }
 
