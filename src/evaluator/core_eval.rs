@@ -1160,7 +1160,12 @@ pub fn evaluate_expr_to_expr_inner(
         }
         // Special handling for Set - first arg must be identifier or Part, second gets evaluated
         if name == "Set" && args.len() == 2 {
-          return set_ast(&args[0], &args[1]);
+          // Set has HoldFirst, but Evaluate[...] still forces evaluation of
+          // the LHS even through the hold — the standard idiom for
+          // assigning to a programmatically-built symbol, e.g.
+          // `Evaluate[Symbol["p" <> ToString[i]]] = value`.
+          let lhs = unwrap_top_level_evaluate(&args[0])?;
+          return set_ast(&lhs, &args[1]);
         }
         // Special handling for SetDelayed - stores function definitions
         if name == "SetDelayed" && args.len() == 2 {

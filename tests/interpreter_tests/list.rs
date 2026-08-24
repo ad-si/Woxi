@@ -13889,6 +13889,38 @@ mod through {
   fn through_single_function() {
     assert_eq!(interpret("Through[{f}[x, y]]").unwrap(), "{f[x, y]}");
   }
+
+  #[test]
+  fn through_variable_bound_list() {
+    // `Through[h[args]]` must resolve `h` through the environment when it
+    // is a plain identifier bound to a list, not just when the list is
+    // written literally as the head.
+    assert_eq!(
+      interpret("lst = {Sin, Cos, Tan}; Through[lst[Pi/4]]").unwrap(),
+      "{1/Sqrt[2], 1/Sqrt[2], 1}"
+    );
+    assert_eq!(
+      interpret("lst = {f, g, h}; Through[lst[x]]").unwrap(),
+      "{f[x], g[x], h[x]}"
+    );
+  }
+
+  #[test]
+  fn through_compound_function_values() {
+    // Each element of the threaded list can itself be a compound
+    // expression (not a bare symbol) that must be genuinely applied to
+    // the argument, not stringified into a bogus function name — as
+    // happens e.g. threading a list of `TransformationFunction`s built
+    // from `RotationTransform`/`TranslationTransform` (the "Search for
+    // Soma Cube Solutions" Demonstration's rotation-group idiom).
+    assert_eq!(
+      interpret(
+        "rots = {RotationTransform[Pi/2, {1, 0, 0}], TranslationTransform[{0, 0, 0}]}; Through[rots[{1, 2, 3}]]"
+      )
+      .unwrap(),
+      "{{1, -3, 2}, {1, 2, 3}}"
+    );
+  }
 }
 
 mod replace_level_spec {

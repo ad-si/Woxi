@@ -1081,7 +1081,13 @@ script_test!(
   script_sorting_algorithms_radix_sort,
   "sorting_algorithms_radix_sort.wls"
 );
-script_test!(
+// Uses `Through[And[f, g]@l]` to check both sort helpers against randomly
+// sized lists (up to 1000 elements, up to 150 trials) — now that Through
+// correctly applies its predicates (see the `Through` variable-bound-head
+// fix), this genuinely runs SelectSort's O(n^2) list-slice reassignment
+// at real scale and takes tens of seconds in debug builds, like the other
+// heavy scripts below.
+slow_script_test!(
   script_sorting_algorithms_selection_sort,
   "sorting_algorithms_selection_sort.wls"
 );
