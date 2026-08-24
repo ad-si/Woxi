@@ -6463,10 +6463,15 @@ fn find_root_index_key(e: &Expr) -> Option<FindRootIndexKey> {
 
 /// Flatten an indexed FindRoot variable — a plain `u[1]` or a curried chain
 /// of those like `T[0][t]` — into its base name and the sequence of index
-/// keys across every level. `None` when any level isn't a recognized
-/// indexed-variable shape (e.g. an empty-arg call, or a level whose
-/// argument isn't a literal or symbol).
-fn flatten_findroot_var(e: &Expr) -> Option<(&str, Vec<FindRootIndexKey>)> {
+/// keys across every level, one inner `Vec` per application level so that
+/// a single multi-arg call (`T[0, 1]`) and a curried chain of single-arg
+/// calls (`T[0][1]`) — structurally distinct expressions in Wolfram — key
+/// differently instead of colliding on the same flattened index sequence.
+/// `None` when any level isn't a recognized indexed-variable shape (e.g. an
+/// empty-arg call, or a level whose argument isn't a literal or symbol).
+fn flatten_findroot_var(
+  e: &Expr,
+) -> Option<(&str, Vec<Vec<FindRootIndexKey>>)> {
   match e {
     Expr::FunctionCall { name, args } => {
       if args.is_empty() {
@@ -6476,17 +6481,19 @@ fn flatten_findroot_var(e: &Expr) -> Option<(&str, Vec<FindRootIndexKey>)> {
         .iter()
         .map(find_root_index_key)
         .collect::<Option<Vec<_>>>()?;
-      Some((name.as_str(), keys))
+      Some((name.as_str(), vec![keys]))
     }
     Expr::CurriedCall { func, args } => {
       if args.is_empty() {
         return None;
       }
-      let (name, mut keys) = flatten_findroot_var(func)?;
-      for a in args {
-        keys.push(find_root_index_key(a)?);
-      }
-      Some((name, keys))
+      let (name, mut levels) = flatten_findroot_var(func)?;
+      let keys = args
+        .iter()
+        .map(find_root_index_key)
+        .collect::<Option<Vec<_>>>()?;
+      levels.push(keys);
+      Some((name, levels))
     }
     _ => None,
   }
@@ -6517,7 +6524,7 @@ fn find_root_rename_vars(
   let mut id_map: std::collections::HashMap<&str, &Expr> =
     std::collections::HashMap::with_capacity(vars.len());
   let mut idx_map: std::collections::HashMap<
-    (&str, Vec<FindRootIndexKey>),
+    (&str, Vec<Vec<FindRootIndexKey>>),
     &Expr,
   > = std::collections::HashMap::new();
   for (v, r) in vars.iter().zip(replacements) {
@@ -6539,7 +6546,10 @@ fn find_root_rename_vars(
 fn find_root_rename_walk(
   expr: &Expr,
   id_map: &std::collections::HashMap<&str, &Expr>,
-  idx_map: &std::collections::HashMap<(&str, Vec<FindRootIndexKey>), &Expr>,
+  idx_map: &std::collections::HashMap<
+    (&str, Vec<Vec<FindRootIndexKey>>),
+    &Expr,
+  >,
 ) -> Expr {
   match expr {
     Expr::Identifier(name) => match id_map.get(name.as_str()) {
