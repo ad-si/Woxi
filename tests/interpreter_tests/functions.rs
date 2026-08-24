@@ -2656,6 +2656,9 @@ mod ring_operators {
       interpret(r#"a \[CenterDot] b \[CircleTimes] c"#).unwrap(),
       "a \u{00B7} b \u{2297} c"
     );
+    // Inside a string it is content, not an operator, so it still has to
+    // resolve to the middle dot rather than staying an escape.
+    assert_eq!(interpret(r#""a \[CenterDot] b""#).unwrap(), "a \u{00B7} b");
   }
 
   // \[CircleMinus] is a binary (non-flat), left-associative operator at the

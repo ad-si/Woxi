@@ -3710,6 +3710,16 @@ Cell["Chapter 2", "Chapter"]
     assert_eq!(extract_cell_content(s), "a>=b");
   }
 
+  /// `\[CenterDot]` is the dot product a Demonstration's prose writes its
+  /// matrix formulas with (`T' = a · T · a^T`). It was the one named
+  /// character the operator lexer knew but the character table did not, so a
+  /// Text cell printed the escape `\[CenterDot]` verbatim mid-sentence.
+  #[test]
+  fn test_center_dot_named_character_renders_as_middle_dot() {
+    let s = r#"TextData["T'=a \[CenterDot] T \[CenterDot] a"]"#;
+    assert_eq!(extract_cell_content(s), "T'=a \u{00B7} T \u{00B7} a");
+  }
+
   #[test]
   fn test_extract_cell_content_template_box_quantity() {
     // `TemplateBox[{value, displayed, name, unit_id}, "QuantityPrefix"]` is
