@@ -452,7 +452,7 @@ Control,Represents a standalone interactive control such as a slider or popup me
 WorkingPrecision,Option for numerical precision,✅,pure,1.0,412
 Hypergeometric2F1,Gauss hypergeometric function 2F1,✅,pure,1.0,413
 Complement,Returns elements in first list or association not in the others,✅,pure,1.0,414
-Dashing,Sets line dashing in graphics,✅,pure,1.0,416
+Dashing,"Sets line dashing in graphics; Dashing[None] and Dashing[{}] go back to solid strokes",✅,pure,1.0,416
 StreamPlot,Creates a streamline plot of a vector field,✅,pure,7.0,416
 Animate,Animated version of an expression (stays symbolic in script mode),✅,unevaluated,6.0,417
 Contours,Option specifying contour levels in contour plots,✅,none,2.0,418
