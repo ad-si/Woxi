@@ -1883,6 +1883,17 @@ pub fn thread_ast_positions(
   }
 }
 
+/// If `head` is (or evaluates to) a List or a compound FunctionCall head
+/// like `Plus[f, g]`, return its Wolfram head name and its elements/args —
+/// the `(h, {f1, f2, ...})` pair `Through` distributes over.
+fn resolve_through_head(head: &Expr) -> Option<(String, Vec<Expr>)> {
+  match head {
+    Expr::FunctionCall { name, args } => Some((name.clone(), args.to_vec())),
+    Expr::List(items) => Some(("List".to_string(), items.to_vec())),
+    _ => None,
+  }
+}
+
 /// AST-based Through: apply multiple functions.
 /// Through[{f, g}[x]] -> {f[x], g[x]}
 /// Through[f[g][x]] -> f[g[x]]
@@ -1891,59 +1902,86 @@ pub fn through_ast(
   expr: &Expr,
   head_filter: Option<&str>,
 ) -> Result<Expr, InterpreterError> {
-  // Through operates on CurriedCall: h[f1, f2, ...][args...]
-  // It threads the args through each fi, wrapping the result in h.
-  match expr {
-    Expr::CurriedCall { func, args } => {
-      // func is the head expression, e.g. f[g], {f, g}, Plus[f, g]
-      // args are the outer arguments to thread through
-      let (head_name, functions) = match func.as_ref() {
-        Expr::FunctionCall { name, args: fns } => {
-          (name.as_str(), fns.as_slice())
+  // Through operates on `h[f1, f2, ...][args...]`. Depending on how the
+  // `h[f1, f2, ...]` part was written, it parses as one of two shapes:
+  //   - CurriedCall, when the head token was itself a compound expression
+  //     (`{f, g}[x]`, `Plus[f, g][x]`), or a variable bound to one written
+  //     the same way it would need parens to re-apply (`t = {f, g}; t[x]`
+  //     still parses as a *plain* call — see below — so this path mainly
+  //     covers literal heads and `f[g][x]`-style chains).
+  //   - a plain FunctionCall, when the head token was a bare identifier
+  //     (`rots[pt]`) — Wolfram's `f[x]` syntax doesn't distinguish "call
+  //     built-in f" from "apply whatever f is bound to" at parse time, so
+  //     `rots[pt]` with `rots = {r1, r2, …}` parses exactly like a normal
+  //     function call and only resolves to a list-application once `rots`
+  //     is looked up.
+  let (outer_args, resolved): (&[Expr], Option<(String, Vec<Expr>)>) =
+    match expr {
+      Expr::CurriedCall { func, args } => {
+        let evaluated_func;
+        let func_ref: &Expr = match func.as_ref() {
+          Expr::List(_) | Expr::FunctionCall { .. } => func.as_ref(),
+          _ => {
+            evaluated_func = crate::evaluator::evaluate_expr_to_expr(func)?;
+            &evaluated_func
+          }
+        };
+        (args.as_slice(), resolve_through_head(func_ref))
+      }
+      Expr::FunctionCall { name, args } => {
+        let bound = crate::ENV.with(|e| {
+          e.borrow().get(name).and_then(|v| match v {
+            crate::StoredValue::ExprVal(bound_expr) => Some(bound_expr.clone()),
+            _ => None,
+          })
+        });
+        (
+          args.as_slice(),
+          bound.as_ref().and_then(resolve_through_head),
+        )
+      }
+      _ => (&[], None),
+    };
+
+  let Some((head_name, functions)) = resolved else {
+    return if head_filter.is_some() {
+      // With head filter and no resolvable head: return expression as-is
+      Ok(expr.clone())
+    } else {
+      // Not a curried call - return unevaluated
+      Ok(call1("Through", expr.clone()))
+    };
+  };
+
+  // Check head filter if provided
+  if let Some(filter) = head_filter
+    && head_name != filter
+  {
+    // Head doesn't match filter - return the inner expression unchanged
+    return Ok(expr.clone());
+  }
+
+  // Thread: apply each function to the outer args. Uses the general
+  // curried-call applier so compound function values (e.g.
+  // `TransformationFunction[matrix]`) are actually invoked rather than
+  // stringified into a bogus function name.
+  let threaded: Vec<Expr> = functions
+    .iter()
+    .map(|f| {
+      crate::evaluator::apply_curried_call(f, outer_args).unwrap_or_else(|_| {
+        Expr::CurriedCall {
+          func: Box::new(f.clone()),
+          args: outer_args.to_vec(),
         }
-        Expr::List(items) => ("List", items.as_slice()),
-        _ => {
-          // Not a compound head - return unevaluated
-          return Ok(call1("Through", expr.clone()));
-        }
-      };
+      })
+    })
+    .collect();
 
-      // Check head filter if provided
-      if let Some(filter) = head_filter
-        && head_name != filter
-      {
-        // Head doesn't match filter - return the inner expression unchanged
-        return Ok(expr.clone());
-      }
-
-      // Thread: apply each function to the outer args, then evaluate
-      let threaded: Vec<Expr> = functions
-        .iter()
-        .map(|f| {
-          let call = Expr::FunctionCall {
-            name: crate::syntax::expr_to_string(f),
-            args: args.clone().into(),
-          };
-          crate::evaluator::evaluate_expr_to_expr(&call).unwrap_or(call)
-        })
-        .collect();
-
-      // Wrap in the head
-      if head_name == "List" {
-        Ok(Expr::List(threaded.into()))
-      } else {
-        Ok(call(head_name, threaded))
-      }
-    }
-    _ => {
-      if head_filter.is_some() {
-        // With head filter and non-CurriedCall: return expression as-is
-        Ok(expr.clone())
-      } else {
-        // Not a curried call - return unevaluated
-        Ok(call1("Through", expr.clone()))
-      }
-    }
+  // Wrap in the head
+  if head_name == "List" {
+    Ok(Expr::List(threaded.into()))
+  } else {
+    Ok(call(&head_name, threaded))
   }
 }
 

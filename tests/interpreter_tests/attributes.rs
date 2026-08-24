@@ -1561,6 +1561,21 @@ mod cases {
     );
   }
   #[test]
+  fn set_evaluate_lhs() {
+    // Set has HoldFirst, but `Evaluate[...]` still forces evaluation of the
+    // LHS even through the hold — the standard idiom for assigning to a
+    // programmatically-built symbol name.
+    assert_case(r#"Evaluate[Symbol["qq1"]] = 42; qq1"#, r#"42"#);
+    // The idiom as it appears inside a Table, building a family of symbols
+    // named from their loop index (e.g. the Soma Cube Demonstration).
+    assert_case(
+      r#"Table[Evaluate[Symbol["qq" <> ToString[i]]] = i^2, {i, 3}]; {qq1, qq2, qq3}"#,
+      r#"{1, 4, 9}"#,
+    );
+    // A plain (non-Evaluate) LHS is unaffected.
+    assert_case(r#"qq2 = 7; qq2"#, r#"7"#);
+  }
+  #[test]
   fn f_16() {
     assert_case(
       r#"Sqrt[Unevaluated[x]]; Length[Unevaluated[1+2+3+4]]; Attributes[Unevaluated]; f[Unevaluated[x]]"#,
