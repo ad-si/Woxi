@@ -983,6 +983,45 @@ fn date_object_tag_property(
   components.get(index).cloned()
 }
 
+/// Try to match `func[args...]` against a SubValue rule registered via
+/// `f[a][b] := …` (also deeper curried nestings like `f[a][b][c] := …`).
+/// Reconstructs the full curried call and matches it against each rule
+/// stored under the outermost head; on a match, substitutes the bindings
+/// into the body. `None` when there's no head to key on or no rule matches
+/// (the caller then falls back to preserving the call symbolically).
+fn try_sub_value_curried_match(
+  func: &Expr,
+  args: &[Expr],
+) -> Option<Result<Expr, InterpreterError>> {
+  let outer_head = {
+    let mut inner: &Expr = func;
+    loop {
+      match inner {
+        Expr::CurriedCall { func: f2, .. } => inner = f2.as_ref(),
+        Expr::FunctionCall { name, .. } => break Some(name.clone()),
+        _ => break None,
+      }
+    }
+  };
+  let head = outer_head?;
+  let rules = crate::evaluator::assignment::SUB_VALUES
+    .with(|m| m.borrow().get(&head).cloned())?;
+  let actual = Expr::CurriedCall {
+    func: Box::new(func.clone()),
+    args: args.to_vec(),
+  };
+  for (lhs, body) in &rules {
+    if let Some(bindings) =
+      crate::evaluator::pattern_matching::match_pattern(&actual, lhs)
+    {
+      return Some(crate::evaluator::pattern_matching::apply_bindings(
+        body, &bindings,
+      ));
+    }
+  }
+  None
+}
+
 pub fn apply_curried_call(
   func: &Expr,
   args: &[Expr],
@@ -2172,39 +2211,9 @@ pub fn apply_curried_call(
             crate::syntax::substitute_variables(body, &bindings);
           evaluate_expr_to_expr(&substituted)
         }
+      } else if let Some(result) = try_sub_value_curried_match(func, args) {
+        result
       } else {
-        // Try SubValue rules registered via `f[a][b] := …`. Reconstruct the
-        // full curried call and match it against each stored rule keyed by the
-        // outermost head; on a match, substitute the bindings into the body.
-        let outer_head = {
-          let mut inner: &Expr = func;
-          loop {
-            match inner {
-              Expr::CurriedCall { func: f2, .. } => inner = f2.as_ref(),
-              Expr::FunctionCall { name, .. } => break Some(name.clone()),
-              _ => break None,
-            }
-          }
-        };
-        if let Some(head) = outer_head {
-          let rules = crate::evaluator::assignment::SUB_VALUES
-            .with(|m| m.borrow().get(&head).cloned());
-          if let Some(rules) = rules {
-            let actual = Expr::CurriedCall {
-              func: Box::new(func.clone()),
-              args: args.to_vec(),
-            };
-            for (lhs, body) in &rules {
-              if let Some(bindings) =
-                crate::evaluator::pattern_matching::match_pattern(&actual, lhs)
-              {
-                return crate::evaluator::pattern_matching::apply_bindings(
-                  body, &bindings,
-                );
-              }
-            }
-          }
-        }
         // Unknown/symbolic curried call: preserve the CurriedCall form
         // e.g. f[g][x] stays as f[g][x], not f[g, x]
         Ok(Expr::CurriedCall {
@@ -2238,10 +2247,19 @@ pub fn apply_curried_call(
     }
     Expr::CurriedCall { .. } => {
       // Nested curried call: `s[a][b][c]` arrives here as
-      // `apply_curried_call(CurriedCall{s[a], [b]}, [c])`. Preserve the
-      // structure rather than collapsing the head to a string-named
-      // FunctionCall (which loses the AST shape that pattern-matchers
-      // rely on, e.g. `s[a][b][c] /. s[x_][y_][z_] -> …`).
+      // `apply_curried_call(CurriedCall{s[a], [b]}, [c])`. A SubValue rule
+      // spanning this many curry levels (`y[3][i_][t_] := …`, where the
+      // first level's argument is a literal rather than itself a pattern)
+      // only becomes matchable once every level has been applied, so check
+      // for one here before falling back to preserving the bare structure —
+      // otherwise `func` (itself already a CurriedCall from the previous,
+      // unmatched level) never reaches a SubValue lookup at all.
+      if let Some(result) = try_sub_value_curried_match(func, args) {
+        return result;
+      }
+      // Preserve the structure rather than collapsing the head to a
+      // string-named FunctionCall (which loses the AST shape that
+      // pattern-matchers rely on, e.g. `s[a][b][c] /. s[x_][y_][z_] -> …`).
       Ok(Expr::CurriedCall {
         func: Box::new(func.clone()),
         args: args.to_vec(),

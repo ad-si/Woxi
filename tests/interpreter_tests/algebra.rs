@@ -8361,6 +8361,46 @@ mod find_root {
     );
   }
 
+  // Regression: time-dependent families in Demonstrations name one unknown
+  // per grid point *and* time as a curried indexed variable (`T[0][t]`,
+  // `T[1][t]`, ...) rather than a single-level `u[1]`. `is_findroot_var_expr`
+  // only recognized a symbol applied once to literal indices, so a curried
+  // chain like `T[0][t]` (`Expr::CurriedCall`) fell through to "variable
+  // must be a symbol" (the Multicomponent Distillation Column Demonstration
+  // hits this).
+  #[test]
+  fn multivariate_curried_indexed_variables() {
+    assert_eq!(
+      interpret(
+        "FindRoot[{T[0][t] + T[1][t] == 3, T[0][t] - T[1][t] == 1}, \
+         {T[0][t], 0}, {T[1][t], 0}]"
+      )
+      .unwrap(),
+      "{T[0][t] -> 2., T[1][t] -> 1.}"
+    );
+  }
+
+  // Regression: `T[0, 1]` (one call, two arguments) and `T[0][1]` (a curried
+  // chain of single-argument calls) are structurally distinct expressions in
+  // Wolfram, so a search variable written in one notation must not rename
+  // occurrences of the other. Flattening a curried chain into one index
+  // sequence made both key as `("T", [0, 1])`, and this call silently solved
+  // for variables that never appear in the equations. The index key is
+  // level-aware, so the mismatch is now what it should be: the residual never
+  // reduces to a number, and FindRoot reports `nlnum` and stays unevaluated.
+  #[test]
+  fn curried_and_multiarg_variables_do_not_collide() {
+    assert_eq!(
+      interpret(
+        "FindRoot[{T[0][1] + T[1][1] == 3, T[0][1] - T[1][1] == 1}, \
+         {T[0, 1], 0}, {T[1, 1], 0}]"
+      )
+      .unwrap(),
+      "FindRoot[{T[0][1] + T[1][1] == 3, T[0][1] - T[1][1] == 1}, \
+       {T[0, 1], 0}, {T[1, 1], 0}]"
+    );
+  }
+
   // Regression: FindRoot is HoldAll, so equations and a spec list built
   // separately and passed by name (`sys = {...}; initguess = {{x, x0},
   // ...}; FindRoot[sys, initguess]` — the idiom collocation methods use to
