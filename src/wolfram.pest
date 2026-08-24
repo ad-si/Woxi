@@ -870,9 +870,13 @@ RuleAnonSuffix = { "&" ~ !"&" }
 // After a trailing `&` turns the rule into a pure function, that function
 // can itself take a further operator — `pat -> repl & /@ list` (Map over
 // the rule-producing function) is the common idiom for building PopupMenu
-// choices from a lookup table. Without RuleAnonSuffix nothing changes:
-// `RuleReplaceSuffix*` alone still lets `/.`/`//.` apply to the bare rule.
-ListItemRule = { ReplacementRule ~ (RuleAnonSuffix ~ ((ReplaceRepeatedSuffix | ReplaceAllSuffix) | (Operator | TildeInfix) ~ RuleOperatorTerm)* | RuleReplaceSuffix*) ~ ("//" ~ PostfixFunction)* }
+// choices from a lookup table. `RuleReplaceSuffix*` before the optional `&`
+// lets `/.`/`//.` apply to the bare rule *first* and be absorbed into the
+// function body — `pat -> repl /. rules &` (as opposed to `pat -> repl & /.
+// rules`, applied to the function value, handled by the suffixes after
+// RuleAnonSuffix below) — mirroring how a plain Expression orders its own
+// ReplaceAll suffixes before its AnonymousFunctionSuffix.
+ListItemRule = { ReplacementRule ~ RuleReplaceSuffix* ~ ("//" ~ PostfixFunction)* ~ (RuleAnonSuffix ~ ((ReplaceRepeatedSuffix | ReplaceAllSuffix) | (Operator | TildeInfix) ~ RuleOperatorTerm)* ~ ("//" ~ PostfixFunction)*)? }
 // `/.` and `//.` bind looser than `->`, so a rule written as an argument may
 // itself be replaced in: `f[a -> 5 /. 5 -> 6]` is `f[(a -> 5) /. (5 -> 6)]`.
 RuleReplaceSuffix = { ("//." | "/.") ~ (&HasRuleOperator ~ ReplacementRule | List | ConditionExpr) }
@@ -961,8 +965,10 @@ AssociationExtended = {
 // A rule may be handed to a postfix function: `f[a -> 5 // Head]` is
 // `f[Head[a -> 5]]`, since `//` binds looser than `->`.
 // See ListItemRule's comment: RuleAnonSuffix gates the extra Operator
-// continuation so `pat -> repl & /@ list` parses as an argument too.
-FunctionArgRule = { ReplacementRule ~ (RuleAnonSuffix ~ ((ReplaceRepeatedSuffix | ReplaceAllSuffix) | (Operator | TildeInfix) ~ RuleOperatorTerm)* | RuleReplaceSuffix*) ~ ("//" ~ PostfixFunction)* }
+// continuation so `pat -> repl & /@ list` parses as an argument too, and
+// RuleReplaceSuffix* before it lets `pat -> repl /. rules &` absorb the
+// `/.` into the function body instead.
+FunctionArgRule = { ReplacementRule ~ RuleReplaceSuffix* ~ ("//" ~ PostfixFunction)* ~ (RuleAnonSuffix ~ ((ReplaceRepeatedSuffix | ReplaceAllSuffix) | (Operator | TildeInfix) ~ RuleOperatorTerm)* ~ ("//" ~ PostfixFunction)*)? }
 FunctionArg = _{ &HasRuleOperator ~ FunctionArgRule | &HasSemicolon ~ CompoundExpression | Expression }
 // BracketArgs groups arguments within a single bracket pair, allowing proper chained call parsing
 FunctionArgOrOmitted = _{ FunctionArg | OmittedArg }

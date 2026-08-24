@@ -3422,47 +3422,53 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
       let anon_idx = inner_pairs
         .iter()
         .position(|p| matches!(p.as_rule(), Rule::RuleAnonSuffix));
-      if let Some(idx) = anon_idx {
+      let boundary = anon_idx.unwrap_or(inner_pairs.len());
+      let rest: Vec<_> = inner_pairs.split_off(boundary);
+
+      // `/.`/`//.` (RuleReplaceSuffix) and a trailing `//` that appear
+      // *before* the optional `&` bind to the bare rule and get absorbed
+      // into the pure function's body — `pat -> repl /. rules &` — same as
+      // when there is no `&` at all.
+      let mut result = rule_expr;
+      for p in inner_pairs {
+        match p.as_rule() {
+          Rule::RuleReplaceSuffix => {
+            let repeated = p.as_str().trim_start().starts_with("//.");
+            let rules = pair_to_expr(p.into_inner().next().unwrap());
+            result = if repeated {
+              Expr::ReplaceRepeated {
+                expr: Box::new(result),
+                rules: Box::new(rules),
+              }
+            } else {
+              Expr::ReplaceAll {
+                expr: Box::new(result),
+                rules: Box::new(rules),
+              }
+            };
+          }
+          Rule::PostfixFunction => {
+            result = Expr::Postfix {
+              expr: Box::new(result),
+              func: Box::new(parse_postfix_function(p)),
+            };
+          }
+          _ => {}
+        }
+      }
+
+      if anon_idx.is_some() {
         // Everything after the `&` is a continuation on the pure function
         // it just produced — operator/tilde-infix chains (`pat -> repl &
         // /@ list`, the idiom for building a PopupMenu's choices from a
         // lookup table), `/.`/`//.`, and trailing `//` — shared with a
         // plain Expression's own post-& handling.
-        let post_pairs: Vec<_> = inner_pairs.split_off(idx + 1);
+        let post_pairs: Vec<_> = rest.into_iter().skip(1).collect();
         let func = Expr::Function {
-          body: Box::new(rule_expr),
+          body: Box::new(result),
         };
         apply_anon_continuation(func, post_pairs)
       } else {
-        // No `&`: only `/.`/`//.` (RuleReplaceSuffix) and trailing `//`
-        // can follow the bare rule.
-        let mut result = rule_expr;
-        for p in inner_pairs {
-          match p.as_rule() {
-            Rule::RuleReplaceSuffix => {
-              let repeated = p.as_str().trim_start().starts_with("//.");
-              let rules = pair_to_expr(p.into_inner().next().unwrap());
-              result = if repeated {
-                Expr::ReplaceRepeated {
-                  expr: Box::new(result),
-                  rules: Box::new(rules),
-                }
-              } else {
-                Expr::ReplaceAll {
-                  expr: Box::new(result),
-                  rules: Box::new(rules),
-                }
-              };
-            }
-            Rule::PostfixFunction => {
-              result = Expr::Postfix {
-                expr: Box::new(result),
-                func: Box::new(parse_postfix_function(p)),
-              };
-            }
-            _ => {}
-          }
-        }
         result
       }
     }

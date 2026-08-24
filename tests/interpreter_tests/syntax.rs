@@ -10717,6 +10717,37 @@ mod rule_argument_suffixes {
       );
     }
   }
+
+  #[test]
+  fn a_replacement_before_the_trailing_amp_is_absorbed_into_the_function() {
+    // A Wolfram Demonstration's `MapIndexed[... -> ... /. rule &, list]`
+    // idiom: the `/.` sits *before* the trailing `&`, so it must become
+    // part of the pure function's body (`pat -> repl /. rule` as a whole),
+    // rather than applying to the already-built `Function[pat -> repl]`
+    // (which is what `pat -> repl & /. rule` means instead).
+    clear_state();
+    for (code, expected) in [
+      (
+        "ToString[f[a -> 5 /. 5 -> 6 &], InputForm]",
+        "f[a -> 5 /. 5 -> 6 & ]",
+      ),
+      (
+        "ToString[{a -> 5 /. 5 -> 6 &}, InputForm]",
+        "{a -> 5 /. 5 -> 6 & }",
+      ),
+      (
+        "ToString[f[a -> 5 //. 5 -> 6 &], InputForm]",
+        "f[a -> 5 //. 5 -> 6 & ]",
+      ),
+      ("(a -> 5 /. 5 -> 6 &)[x]", "a -> 6"),
+      (
+        "MapIndexed[#1 -> #2[[1]] /. 1 -> 99 &, {10, 20, 30}]",
+        "{10 -> 99, 20 -> 2, 30 -> 3}",
+      ),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
 }
 
 /// A rule answers to a head replacement the way any other expression does.
