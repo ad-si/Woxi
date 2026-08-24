@@ -382,6 +382,7 @@ pub fn named_char_to_unicode(name: &str) -> Option<&'static str> {
     "MinusPlus" => "\u{2213}",
     "Times" => "\u{00D7}",
     "Divide" => "\u{00F7}",
+    "CenterDot" => "\u{00B7}",
     // `\[Equal]` is the typeset `==`; it has its own private-use code point
     // rather than reusing the ASCII `=` (which is `Set`).
     "Equal" => "\u{F431}",
