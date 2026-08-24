@@ -335,9 +335,13 @@ fn get_scopes_input_file_name_to_the_included_file() {
   let (stdout, stderr, ok) = run_file(&main);
   let _ = std::fs::remove_dir_all(&dir);
   assert!(ok, "woxi run failed: stderr={stderr}");
+  // `$InputFileName` is spelled with forward slashes on every platform (see
+  // `woxi::utils::wolfram_path_string`), so the Windows path of the script
+  // has to be spelled the same way to be compared against.
+  let main_arg = main.to_string_lossy().replace('\\', "/");
   assert_eq!(
     stdout,
-    format!(">> {included_arg}\n>> {}\n", main.display()),
+    format!(">> {included_arg}\n>> {main_arg}\n"),
     "the included file must report its own path, the script its own"
   );
 }
@@ -844,12 +848,16 @@ fn install_kernel_works_outside_a_source_checkout() {
   );
 
   // `argv[0]` must be an absolute path to the running binary so the kernel
-  // also starts when the Jupyter server's PATH has no `woxi` in it.
-  let argv0 = spec
-    .lines()
-    .find(|line| line.contains("woxi"))
-    .and_then(|line| line.split('"').nth(1).map(ToString::to_string))
-    .expect("argv[0] in kernel.json");
+  // also starts when the Jupyter server's PATH has no `woxi` in it. Read it
+  // as JSON rather than by splitting on quotes: a Windows path is stored
+  // with escaped separators (`C:\\dir\\woxi.exe`) and only survives the
+  // round trip when it is unescaped.
+  let parsed: serde_json::Value =
+    serde_json::from_str(&spec).expect("kernel.json is valid JSON");
+  let argv0 = parsed["argv"][0]
+    .as_str()
+    .expect("argv[0] in kernel.json")
+    .to_string();
   assert!(
     Path::new(&argv0).is_absolute() && Path::new(&argv0).is_file(),
     "argv[0] is not an existing absolute path: {argv0}"

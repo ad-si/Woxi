@@ -94,8 +94,10 @@ fn kernel_json() -> String {
 fn current_exe() -> Option<String> {
   let exe = env::current_exe().ok()?;
   // Resolves `./woxi` and symlinks; the un-canonicalised path is still
-  // absolute and usable, so a failure here is not fatal.
-  let exe = fs::canonicalize(&exe).unwrap_or(exe);
+  // absolute and usable, so a failure here is not fatal. Canonicalising via
+  // `woxi::utils` keeps the Windows extended-length prefix (`\\?\C:\…`) out
+  // of the spec — `kernel.json` is read by tools that do not expect it.
+  let exe = woxi::utils::canonicalize(&exe).unwrap_or(exe);
   exe.to_str().map(ToString::to_string)
 }
 
