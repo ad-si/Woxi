@@ -1141,6 +1141,56 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_overscript_and_underscript_accents_typeset() {
+    // Regression: `Overscript[expr, accent]` / `Underscript[expr, accent]`
+    // and their `OverBar`/`UnderBar` shorthands (a Demonstration's estimator
+    // notation — a hat or bar accent over a symbol, e.g. a sample mean) had
+    // no box-form conversion, so the typeset SVG fell back to literal
+    // `Overscript[x, "_"]`/`OverBar[x]` text instead of drawing an accent.
+    clear_state();
+    for code in [
+      "ExportString[Overscript[x, \"^\"], \"SVG\"]",
+      "ExportString[OverBar[x], \"SVG\"]",
+      "ExportString[Underscript[x, \"^\"], \"SVG\"]",
+      "ExportString[UnderBar[x], \"SVG\"]",
+      "ExportString[TraditionalForm[Overscript[x, \"^\"]], \"SVG\"]",
+      "ExportString[TraditionalForm[OverBar[x]], \"SVG\"]",
+    ] {
+      clear_state();
+      let svg = interpret(code).unwrap();
+      assert!(
+        !svg.contains("Overscript")
+          && !svg.contains("Underscript")
+          && !svg.contains("OverBar")
+          && !svg.contains("UnderBar"),
+        "accent SVG for {code} must not leak the head as literal text:\n{svg}"
+      );
+    }
+  }
+
+  #[test]
+  fn test_overscript_accent_inside_grid_cell_typesets() {
+    // Regression: a Grid cell holding `Overscript[…]`/`OverBar[…]` (the
+    // shape of a Demonstration's summary-statistics table, e.g. a sample
+    // mean or an estimator symbol) rendered as literal `Overscript[x, "_"]`
+    // text — the grid-cell markup renderer had cases for Subscript/
+    // Superscript but none for the accent heads.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Grid[{{OverBar[x], Overscript[y, \"^\"]}}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      !svg.contains("OverBar") && !svg.contains("Overscript"),
+      "grid-cell accent SVG must not leak the head as literal text:\n{svg}"
+    );
+    assert!(
+      svg.contains("text-decoration=\"overline\""),
+      "OverBar[x] in a grid cell must draw as a real overline:\n{svg}"
+    );
+  }
+
+  #[test]
   fn test_large_number_output_svg_groups_digits() {
     // The Wolfram notebook groups the integer part of large numbers into
     // 3-digit blocks (`10^10` → `10 000 000 000`). In the Playground/Studio SVG

@@ -21744,4 +21744,28 @@ SaveDefinitions -> True]";
        {nonlinear} vertices"
     );
   }
+
+  /// A published Demonstration's summary-statistics panel typically reports
+  /// an estimator with a hat or bar accent (a sample mean, an estimated
+  /// standard deviation, …) inside a `Grid` the `Manipulate` body builds.
+  /// `Overscript`/`OverBar` had no box-form conversion and no grid-cell
+  /// markup case, so the accent leaked through as literal `Overscript[x,
+  /// "_"]`/`OverBar[…]` text instead of a typeset hat/bar over the symbol.
+  #[test]
+  fn stored_manipulate_typesets_accent_notation() {
+    let state = instantiate_stored_manipulate(
+      "Manipulate[Grid[{{OverBar[x], Overscript[s, \"^\"]}}], {x, 0, 10}]",
+      "",
+    )
+    .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "a Grid of accented symbols must draw as a picture, not fall back to text"
+    );
+  }
 }
