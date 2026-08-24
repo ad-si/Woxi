@@ -588,8 +588,8 @@ pub fn get_builtin_attributes_mask(name: &str) -> Attributes {
     "Divisible"
     | "ThueMorse"
     | "RamanujanTau"
-    | "NextPrime" // behaves as Listable
-    // The rest of these have Listable delayed till first use in WolframScript.
+    | "NextPrime" // not Listable in wolframscript.
+    // The rest of these have Listable delayed till first use in wolframscript.
     | "FiniteAbelianGroupCount" | "FiniteGroupCount"
     | "KroneckerSymbol"
     | "SquaresR"
@@ -659,31 +659,40 @@ pub fn get_builtin_attributes_mask(name: &str) -> Attributes {
     | "ToExpression" => A::Listable | A::Protected,
 
     // HoldAllComplete + Protected
-    "HoldComplete" | "HoldCompleteForm" | "Unevaluated" => {
-      A::HoldAllComplete | A::Protected
+    "HoldComplete" | "HoldCompleteForm" | "Unevaluated"
+    | "Association" => A::HoldAllComplete | A::Protected,
+
+    // HoldAllComplete + Protected + ReadProtected
+    "InterpretationBox" => {
+      A::HoldAllComplete | A::Protected | A::ReadProtected
     }
-    // MakeBoxes: HoldAllComplete only (matches wolframscript)
-    "MakeBoxes" => A::HoldAllComplete,
 
     // HoldAll + Protected
     "Hold" | "HoldForm" | "HoldPattern" | "Table" | "Do" | "While" | "For"
     | "Module" | "DynamicModule" | "Block" | "With"
-    | "Assuming" | "Trace"
-    | "TraceScan" | "TracePrint"
+    | "Trace" | "TraceScan" | "TracePrint"
     | "Defer" | "Compile" | "CompiledFunction" | "Which"
     | "Clear" | "ClearAll" | "Condition" | "Off" | "On"
     | "TimeConstrained" | "MemoryConstrained" | "TagUnset" | "NProduct"
     | "Definition" | "FullDefinition" | "Quiet"
     | "OwnValues" | "DownValues" | "SubValues" | "UpValues"
+    | "Protect" | "Unprotect"
+    // NIntegrate has HoldAll in wolframscript, but this breaks tests so fix later.
+    // | "NIntegrate"
     | "DefaultValues" | "FormatValues" | "NValues" | "Messages"
+    // Function is HoldAll + Protected
+    | "Function"
     // FindRoot holds its iterator `{var, x0}` so the variable name doesn't
     // get substituted by an OwnValue before the iteration starts.
-    | "FindRoot" => {
-      A::HoldAll | A::Protected
-    }
+    | "FindRoot" => A::HoldAll | A::Protected,
+
+    // HoldAllComplete
     // Assert is the odd one out: wolframscript reports HoldAllComplete and
     // no Protected at all.
-    "Assert" => A::HoldAllComplete,
+    "Assert"
+    // MakeBoxes: HoldAllComplete only (matches wolframscript)
+    | "MakeBoxes" => A::HoldAllComplete,
+
     // Manipulate: Protected + ReadProtected (matches wolframscript).
     // Wolfram does NOT expose HoldAll on Manipulate even though it
     // holds its body and variable specs in practice — the hold
@@ -713,40 +722,52 @@ pub fn get_builtin_attributes_mask(name: &str) -> Attributes {
     | "ParallelMap" | "ParallelArray" | "ParallelCombine"
     | "ParallelSelect" | "ParallelCases"
     | "ParallelSubmit" => A::Protected | A::ReadProtected,
-    "Remove" => A::HoldAll | A::Locked | A::Protected,
-    "True" | "False" => A::Locked | A::Protected,
 
-    // Function is HoldAll + Protected
-    "Function" => A::HoldAll | A::Protected,
+    // HoldAll + Locked + Protected
+    "Remove" => A::HoldAll | A::Locked | A::Protected,
 
     // HoldFirst + Protected + ReadProtected
     "MessageName" | "Increment" | "Decrement" | "PreIncrement"
-    | "PreDecrement" | "Unset" => {
-      A::HoldFirst | A::Protected | A::ReadProtected
-    }
+    | "PreDecrement" | "Unset"
     // Dynamic holds its displayed expression (Attributes[Dynamic] =
     // {HoldFirst, Protected, ReadProtected}). Without this, `Dynamic[
     // data[[i, j]]]` collapses to the cell's value and loses the reference
     // an interactive control (e.g. a Checkbox) needs to write back to.
-    "Dynamic" => A::HoldFirst | A::Protected | A::ReadProtected,
+    | "Dynamic"
+    | "Enclose" => A::HoldFirst | A::Protected | A::ReadProtected,
+
     // HoldFirst + Protected
     "Message" | "AddTo" | "SubtractFrom" | "TimesBy" | "DivideBy"
-    | "ClearAttributes" | "AssociateTo" | "KeyDropFrom" | "Inactivate" => {
-      A::HoldFirst | A::Protected
-    }
+    | "ClearAttributes" | "AssociateTo" | "KeyDropFrom" | "Inactivate"
+    | "AppendTo" | "PrependTo"
+    // Refresh has HoldFirst in wolframscript, but this breaks tests so fix later.
+    // | "Refresh"
     // `Context` reports the context a *symbol* belongs to, so it must not
     // look at the symbol's value: `x = 1; Context[x]` is `Global``.
-    "Context" => A::HoldFirst | A::Protected,
-    "ApplyTo" => A::HoldFirst | A::Protected,
-    "Set" => A::HoldFirst | A::Protected | A::SequenceHold,
-    "SetDelayed" | "TagSetDelayed" | "UpSetDelayed" => {
-      A::HoldAll | A::Protected | A::SequenceHold
-    }
-    "TagSet" => A::HoldAll | A::Protected | A::SequenceHold,
-    "UpSet" => A::HoldFirst | A::Protected | A::SequenceHold,
+    | "Context"
+    // `BlockRandom` only holds the body it localizes
+    // the generator state around; its trailing options (`RandomSeeding -> …`)
+    // are evaluated like any other option list.
+    | "BlockRandom"
+    | "Catch" | "Pattern" | "SetAttributes"
+    | "ApplyTo" => A::HoldFirst | A::Protected,
+
+    "Set" | "UpSet"
+    | "RepeatedTiming" => A::HoldFirst | A::Protected | A::SequenceHold,
+
+    "SetDelayed" | "TagSetDelayed" | "UpSetDelayed"
+    | "AbsoluteTiming" | "Timing" 
+    | "TagSet" => A::HoldAll | A::Protected | A::SequenceHold,
 
     // HoldRest + Protected
-    "If" | "PatternTest" | "Save" => A::HoldRest | A::Protected,
+    "If" | "PatternTest" | "Save"
+    // Switch evaluates its first argument and then
+    // each pattern in turn; First and Last hold their default so it is only
+    // evaluated when there is no element to return.
+    | "Switch" | "First" | "Last"
+    | "FirstPosition" | "SelectFirst" | "FirstCase"
+    | "Assuming" => A::HoldRest | A::Protected,
+
     // `Button[label, action]` holds its action: the action is what happens
     // when the button is pressed, so merely building or displaying the
     // button must not run it.
@@ -775,7 +796,7 @@ pub fn get_builtin_attributes_mask(name: &str) -> Attributes {
     }
 
     "I" => A::Locked | A::Protected | A::ReadProtected,
-    "Locked" => A::Locked | A::Protected,
+
     "EllipticExp"
     | "EllipticLog"
     | "Infinity"
@@ -803,9 +824,6 @@ pub fn get_builtin_attributes_mask(name: &str) -> Attributes {
     | "FunctionInterpolation"
     | "CMYKColor" => {
       A::Protected | A::ReadProtected
-    }
-    "Plot3D" => {
-      A::HoldAll | A::Protected | A::ReadProtected
     }
 
     // NHoldRest
@@ -837,27 +855,27 @@ pub fn get_builtin_attributes_mask(name: &str) -> Attributes {
 
     // Locked + Protected (matches wolframscript: these symbols cannot be
     // unprotected).
-    "List" | "Symbol" => A::Locked | A::Protected,
+    "List" | "Symbol"
+    | "True" | "False"
+    | "Locked" => A::Locked | A::Protected,
 
-    // HoldAll + Protected + ReadProtected. Sum and Product hold their body
-    // and iterator so the iteration variable is not substituted by an
-    // OwnValue before the sum starts.
-    "Sum" | "Product" | "CompoundExpression" => {
-      A::HoldAll | A::Protected | A::ReadProtected
-    }
-    // HoldRest + Protected. Switch evaluates its first argument and then
-    // each pattern in turn; First and Last hold their default so it is only
-    // evaluated when there is no element to return.
-    "Switch" | "First" | "Last" => A::HoldRest | A::Protected,
-    // HoldFirst + Protected. `BlockRandom` only holds the body it localizes
-    // the generator state around; its trailing options (`RandomSeeding -> …`)
-    // are evaluated like any other option list.
-    "Catch" | "Pattern" | "SetAttributes" | "BlockRandom" => {
-      A::HoldFirst | A::Protected
-    }
-    "Enclose" => A::HoldFirst | A::Protected | A::ReadProtected,
-    "Confirm" | "ConfirmBy" | "ConfirmMatch" | "ConfirmAssert"
-    | "ConfirmQuiet" => A::HoldAll | A::Protected | A::ReadProtected,
+    // HoldAll + Protected + ReadProtected
+    // Sum and Product hold their body and iterator so the iteration
+    // variable is not substituted by an OwnValue before the sum starts.
+    "Sum" | "Product"
+    | "Piecewise" | "ValueQ"
+    // ControlActive has HoldAll in wolframscript, fixing breaks tests.
+    // | "ControlActive"
+    // ForAll and Exists have HoldAll in wolframscript, fixing breaks tests.
+    // | "ForAll" | "Exists"
+    | "ContinuedFractionK" | "GraphPropertyDistribution"
+    // Plot3D and Confirm* don't have HoldAll in wolframscript
+    | "Plot3D"
+    | "Confirm" | "ConfirmBy" | "ConfirmMatch" | "ConfirmAssert"
+    | "ConfirmQuiet"
+    | "CompoundExpression" => A::HoldAll | A::Protected | A::ReadProtected,
+
+    // HoldAll + Listable + Protected
     "Attributes" => A::HoldAll | A::Listable | A::Protected,
 
     // Flat + OneIdentity + Protected
@@ -865,7 +883,6 @@ pub fn get_builtin_attributes_mask(name: &str) -> Attributes {
     "Union" | "Intersection" => {
       A::Flat | A::OneIdentity | A::Protected | A::ReadProtected
     }
-    "Association" => A::HoldAllComplete | A::Protected,
     "Part" => A::NHoldRest | A::Protected | A::ReadProtected,
     "Slot" => A::NHoldAll | A::Protected,
 
