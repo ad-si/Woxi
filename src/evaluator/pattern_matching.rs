@@ -323,7 +323,7 @@ fn rule_with_new_head(
 /// call this; this covers blank patterns such as `x_Symbol :> f[x]`.
 fn multi_replace_head(
   name: &str,
-  rules: &[(&Expr, &Expr)],
+  rules: &RuleSet<'_>,
   held: bool,
 ) -> Result<Option<Expr>, InterpreterError> {
   let head = Expr::Identifier(name.to_string());
@@ -4850,7 +4850,118 @@ fn apply_replace_all_multi_ast(
   expr: &Expr,
   rules: &[(&Expr, &Expr)],
 ) -> Result<Expr, InterpreterError> {
-  apply_replace_all_multi_ast_impl(expr, rules, false)
+  apply_replace_all_multi_ast_impl(expr, &RuleSet::new(rules), false)
+}
+
+/// A rule list together with the set of heads its patterns demand, when they
+/// all demand one. Every node of the expression being rewritten is offered
+/// the whole list, so a Demonstration that builds one rewrite rule per
+/// lattice site — thousands of `f[x_Integer, y_Integer] :> …` rules — pays a
+/// full scan per node without this. `heads` lets a node whose head no rule
+/// names skip the scan outright.
+struct RuleSet<'a> {
+  rules: &'a [(&'a Expr, &'a Expr)],
+  heads: Option<std::collections::HashSet<&'a str>>,
+}
+
+impl<'a> RuleSet<'a> {
+  fn new(rules: &'a [(&'a Expr, &'a Expr)]) -> Self {
+    Self {
+      heads: required_rule_heads(rules),
+      rules,
+    }
+  }
+
+  /// Whether no rule can possibly match `expr` itself, so the whole list may
+  /// be skipped for this node. Only says so for the two shapes it can rule
+  /// out with certainty: an atom, which carries no head for an `f[…]`
+  /// pattern to match, and a call whose head no rule names. Every other
+  /// shape (`{…}`, `a + b`, `a -> b`, …) can stand in for a call with some
+  /// head, so it is never skipped.
+  fn cannot_match(&self, expr: &Expr) -> bool {
+    let Some(heads) = &self.heads else {
+      return false;
+    };
+    match expr {
+      Expr::Integer(_)
+      | Expr::BigInteger(_)
+      | Expr::Real(_)
+      | Expr::BigFloat(..)
+      | Expr::String(_)
+      | Expr::Identifier(_)
+      | Expr::Constant(_) => true,
+      Expr::FunctionCall { name, .. } => !heads.contains(name.as_str()),
+      _ => false,
+    }
+  }
+}
+
+/// The heads the rules' patterns demand, when every one is a plain `f[…]`
+/// call that can only match a call with that same head. `None` as soon as one
+/// rule could match anything else — a bare symbol, a blank, a `Raw` pattern —
+/// since then nothing can be ruled out from a node's head alone.
+fn required_rule_heads<'a>(
+  rules: &[(&'a Expr, &'a Expr)],
+) -> Option<std::collections::HashSet<&'a str>> {
+  let mut heads = std::collections::HashSet::new();
+  for (pattern, _) in rules {
+    // A `Condition[pat, test]` LHS demands whatever `pat` demands; the test
+    // only narrows it further.
+    let pattern = match pattern {
+      Expr::FunctionCall { name, args }
+        if name == "Condition" && args.len() == 2 =>
+      {
+        &args[0]
+      }
+      other => *other,
+    };
+    let Expr::FunctionCall { name, args } = pattern else {
+      return None;
+    };
+    if is_pattern_construct_head(name) {
+      return None;
+    }
+    // An optional argument lets a pattern match an expression that is not a
+    // call at all (`Plus[x_, y_.]` matches a bare `a`, as `Plus[a, 0]`), so
+    // its head demands nothing.
+    if args.iter().any(pattern_arg_is_optional) {
+      return None;
+    }
+    heads.insert(name.as_str());
+  }
+  (!heads.is_empty()).then_some(heads)
+}
+
+/// Whether `name` heads a pattern construct rather than naming the head an
+/// expression must have.
+fn is_pattern_construct_head(name: &str) -> bool {
+  matches!(
+    name,
+    "Blank"
+      | "BlankSequence"
+      | "BlankNullSequence"
+      | "Pattern"
+      | "PatternTest"
+      | "Optional"
+      | "OptionsPattern"
+      | "Alternatives"
+      | "Except"
+      | "Condition"
+      | "HoldPattern"
+      | "Verbatim"
+      | "Longest"
+      | "Shortest"
+      | "Repeated"
+      | "RepeatedNull"
+      | "KeyValuePattern"
+  )
+}
+
+/// Whether a pattern argument may be left out by the expression it matches.
+fn pattern_arg_is_optional(arg: &Expr) -> bool {
+  matches!(arg, Expr::PatternOptional { .. })
+    || matches!(arg, Expr::FunctionCall { name, .. }
+      if name == "Optional" || name == "OptionsPattern")
 }
 
 fn is_hold_head(name: &str) -> bool {
@@ -4866,11 +4977,15 @@ fn is_hold_head(name: &str) -> bool {
 /// yields `Hold[y]` rather than `Hold[5]`.
 fn apply_replace_all_multi_ast_impl(
   expr: &Expr,
-  rules: &[(&Expr, &Expr)],
+  rules: &RuleSet<'_>,
   held: bool,
 ) -> Result<Expr, InterpreterError> {
   // Try each rule against the whole expression
-  for (pattern, replacement) in rules {
+  for (pattern, replacement) in if rules.cannot_match(expr) {
+    &[][..]
+  } else {
+    rules.rules
+  } {
     // Handle Expr::Raw patterns (conditional patterns like n_ /; EvenQ[n])
     if let Expr::Raw(pat_str) = pattern
       && let Some(wolfram_pattern) = parse_wolfram_pattern(pat_str)
@@ -4961,7 +5076,7 @@ fn apply_replace_all_multi_ast_impl(
         .collect();
       let new_items = new_items?;
       // Check if any rule replaces the "List" head
-      for (pattern, replacement) in rules {
+      for (pattern, replacement) in rules.rules {
         if let Expr::Identifier(sym) = pattern
           && sym == "List"
         {
@@ -4989,7 +5104,7 @@ fn apply_replace_all_multi_ast_impl(
         .collect();
       let new_args = new_args?;
       // Check if any rule replaces the function head
-      for (pattern, replacement) in rules {
+      for (pattern, replacement) in rules.rules {
         if let Expr::Identifier(sym) = pattern
           && sym == name
         {
