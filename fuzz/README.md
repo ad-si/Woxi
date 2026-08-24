@@ -39,7 +39,7 @@ Details:
   programs instead of random bytes.
 - The `interpret` corpus is then pruned by `scripts/prune_fuzz_corpus.sh`,
   which drops the seeds that target would skip anyway (oversized or
-  side-effecting) and *times* the rest, dropping any that needs more than
+  denylisted) and *times* the rest, dropping any that needs more than
   `FUZZ_SEED_BUDGET` seconds (default 1) in a release build. Many test
   scripts legitimately compute for seconds — and a few never terminate by
   design — which the `-timeout` hang detector would misreport as crashes;
@@ -49,8 +49,16 @@ Details:
 - The `interpret` target skips inputs containing filesystem/network heads
   (`Export`, `Import`, `Run`, …) so fuzzing has no side effects; see
   `SIDE_EFFECT_DENYLIST` in `fuzz_targets/interpret.rs`.
-- Hangs count as findings: libFuzzer's `-timeout` flag (set in the make
-  targets) turns evaluation loops into reported crashes.
+- It also skips inputs containing a head whose termination the program
+  itself decides (`While`, `For`, `FixedPoint`, …; see
+  `NONTERMINATING_DENYLIST`). Mutating away a loop's `Break[]` or its
+  counter update produces a program that runs forever by definition — in
+  the Wolfram Language just as much as in Woxi — so the hang libFuzzer
+  reports is not a finding.
+- Hangs elsewhere do count as findings: libFuzzer's `-timeout` flag (set
+  in the make targets) turns a rewrite that never reaches a fixed point,
+  or any other runaway evaluation outside an explicit loop, into a
+  reported crash.
 - The nightly CI workflow (`.github/workflows/nightly.yml`) runs each
   target for 5 minutes per night and uploads crashing inputs as
   artifacts.

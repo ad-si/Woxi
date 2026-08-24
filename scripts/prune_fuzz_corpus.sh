@@ -7,9 +7,10 @@
 #
 #   - Oversized ones. The target returns immediately for inputs longer than
 #     its length cap, so they only cost the fuzzer corpus slots.
-#   - Side-effecting ones. The target refuses inputs mentioning filesystem
-#     or network heads, so those seeds never run either — and the timing
-#     pass below must not run them, as that *would* touch the disk.
+#   - Denylisted ones. The target refuses inputs mentioning filesystem or
+#     network heads, or the loop heads whose termination the program itself
+#     decides, so those seeds never run either — and the timing pass below
+#     must not run the side-effecting ones, as that *would* touch the disk.
 #   - Slow ones. `tests/scripts/` holds programs that legitimately compute
 #     for seconds; under ASan they take ~25× as long, and libFuzzer's
 #     `-timeout` hang detector reports them as crashes. Interpreting a seed
@@ -36,17 +37,17 @@ fi
 # `if data.len() > 2048 { return; }` in the fuzz target.
 max_len=$(grep -o 'data\.len() > [0-9]\+' "$target" | grep -o '[0-9]\+')
 
-# The `SIDE_EFFECT_DENYLIST` entries, one head per line, as a grep pattern
-# file — the target matches them as plain substrings, and so does `grep -F`.
+# Every denylist's entries, one head per line, as a grep pattern file — the
+# target matches them as plain substrings, and so does `grep -F`.
 denylist=$(mktemp)
 trap 'rm -f "$denylist"' EXIT
-awk '/SIDE_EFFECT_DENYLIST/, /^\];/' "$target" \
+awk '/_DENYLIST: &\[&str\]/, /\];/' "$target" \
   | grep -o '"[A-Za-z]\+"' \
   | tr -d '"' \
   > "$denylist"
 
 dropped_size=0
-dropped_side_effect=0
+dropped_denylisted=0
 for seed in "$corpus"/*
 do
   if [ "$(wc -c < "$seed")" -gt "$max_len" ]
@@ -56,7 +57,7 @@ do
   elif grep -q -F -f "$denylist" "$seed"
   then
     rm -f "$seed"
-    dropped_side_effect=$((dropped_side_effect + 1))
+    dropped_denylisted=$((dropped_denylisted + 1))
   fi
 done
 
@@ -85,6 +86,6 @@ else
 fi
 
 echo "prune_fuzz_corpus: dropped $dropped_size oversized," \
-  "$dropped_side_effect side-effecting and" \
+  "$dropped_denylisted denylisted and" \
   "$dropped_slow_count seeds slower than ${budget}s;" \
   "$(find "$corpus" -type f | wc -l) left"
