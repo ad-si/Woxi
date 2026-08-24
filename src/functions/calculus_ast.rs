@@ -2002,6 +2002,123 @@ fn strip_piecewise_condition_boundary(cond: &Expr) -> Expr {
   }
 }
 
+/// The derivative index for an argument that is itself a list is a
+/// (structurally matching) list of zeros, mirroring Wolfram:
+/// D[f[x, {1, 2, 3}], x] = Derivative[1, {0, 0, 0}][f][x, {1, 2, 3}].
+fn structured_zero(arg: &Expr) -> Expr {
+  match arg {
+    Expr::List(items) => {
+      Expr::List(items.iter().map(structured_zero).collect::<Vec<_>>().into())
+    }
+    _ => Expr::Integer(0),
+  }
+}
+
+/// An argument that does not depend on `var` has an all-zero derivative (a
+/// scalar 0 or a list of zeros) and contributes nothing to the chain rule.
+fn is_all_zero(e: &Expr) -> bool {
+  match e {
+    Expr::Integer(0) => true,
+    Expr::Real(f) => *f == 0.0,
+    Expr::List(items) => items.iter().all(is_all_zero),
+    _ => false,
+  }
+}
+
+/// The general chain rule for an opaque (unknown) function applied to N
+/// arguments — shared by a plain-symbol head like `f[g1,...,gn]`
+/// (`Expr::FunctionCall`) and a compound head like `Subscript[c, A][g1,...]`
+/// (`Expr::CurriedCall`):
+/// `D[h[g1(x),...,gn(x)], x] = Sum_i Derivative[0,...,1,...,0][h][g1,...,gn] * D[gi, x]`.
+fn chain_rule_unknown_function(
+  head: &Expr,
+  args: &[Expr],
+  var: &str,
+) -> Result<Expr, InterpreterError> {
+  let n = args.len();
+  let mut dargs: Vec<Expr> = Vec::with_capacity(n);
+  for arg in args {
+    dargs.push(differentiate(arg, var)?);
+  }
+
+  // If `head` is itself the stringified head of an outer Derivative (e.g.
+  // `"Derivative[1, 0][F]"` — produced when curried-derivative application
+  // falls through to `expr_to_string` in `apply_curried_call`), parse those
+  // indices and combine them with the new indices so we end up with a flat
+  // `Derivative[a+1, b][F][...]` rather than a nested
+  // `Derivative[0, 1][Derivative[a, b][F]][...]`. Only a plain identifier
+  // head can carry that stringified shape.
+  let outer = match head {
+    Expr::Identifier(name) => parse_stringified_derivative_head(name)
+      .filter(|(indices, _)| indices.len() == n),
+    _ => None,
+  };
+
+  let mut terms: Vec<Expr> = Vec::new();
+  for i in 0..n {
+    if is_all_zero(&dargs[i]) {
+      continue;
+    }
+
+    // Build Derivative[0,...,1,...,0][h][g1,...,gn]
+    let deriv_indices: Vec<Expr> = (0..n)
+      .map(|j| {
+        if j == i {
+          Expr::Integer(1)
+        } else {
+          structured_zero(&args[j])
+        }
+      })
+      .collect();
+
+    let deriv_expr = if let Some((outer_indices, inner_fn_name)) = &outer {
+      let combined: Vec<Expr> = outer_indices
+        .iter()
+        .zip(deriv_indices.iter())
+        .map(|(a, b)| match (a, b) {
+          (Expr::Integer(x), Expr::Integer(y)) => Expr::Integer(x + y),
+          // A structured-zero (list) index adds nothing: keep `a`.
+          _ if is_all_zero(b) => a.clone(),
+          _ => plus2(a.clone(), b.clone()),
+        })
+        .collect();
+      Expr::CurriedCall {
+        func: Box::new(Expr::CurriedCall {
+          func: Box::new(call("Derivative", combined)),
+          args: vec![Expr::Identifier(inner_fn_name.clone())],
+        }),
+        args: args.to_vec(),
+      }
+    } else {
+      Expr::CurriedCall {
+        func: Box::new(Expr::CurriedCall {
+          func: Box::new(call("Derivative", deriv_indices)),
+          args: vec![head.clone()],
+        }),
+        args: args.to_vec(),
+      }
+    };
+
+    if matches!(&dargs[i], Expr::Integer(1)) {
+      terms.push(deriv_expr);
+    } else {
+      terms.push(times2(dargs[i].clone(), deriv_expr));
+    }
+  }
+
+  if terms.is_empty() {
+    Ok(Expr::Integer(0))
+  } else if terms.len() == 1 {
+    Ok(simplify(terms.remove(0)))
+  } else {
+    let mut result = terms[0].clone();
+    for term in &terms[1..] {
+      result = plus2(result, term.clone());
+    }
+    Ok(simplify(result))
+  }
+}
+
 fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
   match expr {
     // Constants
@@ -3937,110 +4054,11 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           if is_constant_wrt(expr, var) {
             return Ok(Expr::Integer(0));
           }
-
-          // Compute derivatives of each argument
-          let n = args.len();
-          let mut dargs: Vec<Expr> = Vec::with_capacity(n);
-          for arg in args {
-            dargs.push(differentiate(arg, var)?);
-          }
-
-          // The derivative index for an argument that is itself a list is a
-          // (structurally matching) list of zeros, mirroring Wolfram:
-          // D[f[x, {1, 2, 3}], x] = Derivative[1, {0, 0, 0}][f][x, {1, 2, 3}].
-          fn structured_zero(arg: &Expr) -> Expr {
-            match arg {
-              Expr::List(items) => Expr::List(
-                items.iter().map(structured_zero).collect::<Vec<_>>().into(),
-              ),
-              _ => Expr::Integer(0),
-            }
-          }
-          // An argument that does not depend on `var` has an all-zero
-          // derivative (a scalar 0 or a list of zeros) and contributes nothing.
-          fn is_all_zero(e: &Expr) -> bool {
-            match e {
-              Expr::Integer(0) => true,
-              Expr::Real(f) => *f == 0.0,
-              Expr::List(items) => items.iter().all(is_all_zero),
-              _ => false,
-            }
-          }
-
-          // Build chain rule sum
-          let mut terms: Vec<Expr> = Vec::new();
-          for i in 0..n {
-            if is_all_zero(&dargs[i]) {
-              continue;
-            }
-
-            // Build Derivative[0,...,1,...,0][f][g1,...,gn]
-            let deriv_indices: Vec<Expr> = (0..n)
-              .map(|j| {
-                if j == i {
-                  Expr::Integer(1)
-                } else {
-                  structured_zero(&args[j])
-                }
-              })
-              .collect();
-
-            // If `name` is itself the stringified head of an outer Derivative
-            // (e.g. `"Derivative[1, 0][F]"` — produced when curried-derivative
-            // application falls through to `expr_to_string` in
-            // `apply_curried_call`), parse those indices and combine them with
-            // the new `deriv_indices` so we end up with a flat
-            // `Derivative[a+1, b][F][...]` rather than a nested
-            // `Derivative[0, 1][Derivative[a, b][F]][...]`.
-            let deriv_expr = if let Some((outer_indices, inner_fn_name)) =
-              parse_stringified_derivative_head(name)
-              && outer_indices.len() == n
-            {
-              let combined: Vec<Expr> = outer_indices
-                .iter()
-                .zip(deriv_indices.iter())
-                .map(|(a, b)| match (a, b) {
-                  (Expr::Integer(x), Expr::Integer(y)) => Expr::Integer(x + y),
-                  // A structured-zero (list) index adds nothing: keep `a`.
-                  _ if is_all_zero(b) => a.clone(),
-                  _ => plus2(a.clone(), b.clone()),
-                })
-                .collect();
-              Expr::CurriedCall {
-                func: Box::new(Expr::CurriedCall {
-                  func: Box::new(call("Derivative", combined)),
-                  args: vec![Expr::Identifier(inner_fn_name)],
-                }),
-                args: args.to_vec(),
-              }
-            } else {
-              Expr::CurriedCall {
-                func: Box::new(Expr::CurriedCall {
-                  func: Box::new(call("Derivative", deriv_indices)),
-                  args: vec![Expr::Identifier(name.clone())],
-                }),
-                args: args.to_vec(),
-              }
-            };
-
-            if matches!(&dargs[i], Expr::Integer(1)) {
-              terms.push(deriv_expr);
-            } else {
-              terms.push(times2(dargs[i].clone(), deriv_expr));
-            }
-          }
-
-          if terms.is_empty() {
-            Ok(Expr::Integer(0))
-          } else if terms.len() == 1 {
-            Ok(simplify(terms.remove(0)))
-          } else {
-            let mut result = terms[0].clone();
-            for term in &terms[1..] {
-              result = plus2(result, term.clone());
-            }
-            Ok(simplify(result))
-          }
+          chain_rule_unknown_function(
+            &Expr::Identifier(name.clone()),
+            args,
+            var,
+          )
         }
       }
     }
@@ -4152,26 +4170,13 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
       if is_constant_wrt(expr, var) {
         return Ok(Expr::Integer(0));
       }
-      // A compound head applied to one argument follows the same chain rule
-      // as a plain symbol head: D[h[g], x] = h'[g] g'. This is what makes
-      // D[InterpolatingFunction[…][x], x] and D[g[1][x], x] differentiate.
-      if args.len() == 1 && is_constant_wrt(func.as_ref(), var) {
-        let dg = differentiate(&args[0], var)?;
-        if matches!(dg, Expr::Integer(0)) {
-          return Ok(Expr::Integer(0));
-        }
-        let deriv_expr = Expr::CurriedCall {
-          func: Box::new(Expr::CurriedCall {
-            func: Box::new(call("Derivative", vec![Expr::Integer(1)])),
-            args: vec![(**func).clone()],
-          }),
-          args: args.clone(),
-        };
-        return Ok(if matches!(dg, Expr::Integer(1)) {
-          deriv_expr
-        } else {
-          simplify(times2(dg, deriv_expr))
-        });
+      // A compound head applied to N arguments follows the same chain rule
+      // as a plain symbol head: D[h[g1,...,gn], x] =
+      // Sum_i Derivative[0,...,1,...,0][h][g1,...,gn] * D[gi, x]. This is
+      // what makes D[InterpolatingFunction[…][x], x], D[g[1][x], x], and
+      // D[Subscript[c, A][x, y], x] differentiate.
+      if !args.is_empty() && is_constant_wrt(func.as_ref(), var) {
+        return chain_rule_unknown_function(func.as_ref(), args, var);
       }
       Ok(call(
         "D",

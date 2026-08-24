@@ -5720,6 +5720,41 @@ mod erf {
     );
   }
 
+  // The same chain rule for an unknown function applied to N arguments must
+  // also work when the function's head is itself a compound expression
+  // (`Subscript[c, A]`, an `InterpolatingFunction[…]`) rather than a plain
+  // symbol — a shape a PDE's dependent-variable list commonly takes
+  // (`NDSolve[…, {Subscript[c, A], Subscript[c, B]}, …]`). Previously only
+  // a compound head applied to exactly one argument differentiated; two or
+  // more left the whole `D[…]` call unevaluated, which then produced
+  // corrupted results downstream when a `ReplaceAll` following it
+  // substituted through the still-unevaluated call's own arguments (both
+  // the differentiation variable's slot and the function's own argument).
+  #[test]
+  fn d_unknown_compound_head_function_with_multiple_arguments() {
+    assert_eq!(
+      interpret("D[Subscript[c, A][x, y], x]").unwrap(),
+      "Derivative[1, 0][Subscript[c, A]][x, y]"
+    );
+    assert_eq!(
+      interpret("D[Subscript[c, A][x, y], y]").unwrap(),
+      "Derivative[0, 1][Subscript[c, A]][x, y]"
+    );
+    // A single argument still works (the previously-supported case).
+    assert_eq!(
+      interpret("D[Subscript[c, A][x], x]").unwrap(),
+      "Derivative[1][Subscript[c, A]][x]"
+    );
+    // Differentiating then substituting must differentiate first: the
+    // regression this fixes had `x` in `D[…, x] /. x -> 1` get replaced
+    // inside the still-unevaluated `D[…]` before it could differentiate,
+    // corrupting both the function's argument and the derivative order.
+    assert_eq!(
+      interpret("D[Subscript[c, A][x, y], x] /. x -> 1").unwrap(),
+      "Derivative[1, 0][Subscript[c, A]][1, y]"
+    );
+  }
+
   // Inverse error functions: D[InverseErf[z]] = (Sqrt[Pi]/2) E^(InverseErf[z]^2).
   #[test]
   fn d_inverse_erf() {
@@ -8163,6 +8198,103 @@ mod ndsolve {
     )
     .unwrap();
     assert!(result.contains("<svg"), "Got: {result}");
+  }
+
+  /// The Neumann analogue of `pde_heat_equation_preserves_a_harmonic_steady_state`:
+  /// a linear ramp `u = x` is a steady state of `u_t == u_xx` (its second
+  /// derivative is zero) whose own slope is `1` everywhere, so it's also
+  /// consistent with a zero-flux Dirichlet start (`u(t, 0) == 0`) and a
+  /// unit-flux Neumann end (`∂u/∂x(t, 1) == 1`, the parsed form of
+  /// `D[u[t, x], x] /. x -> 1`). The solution must stay exactly on that
+  /// line for every `t`.
+  #[test]
+  fn pde_neumann_boundary_preserves_a_harmonic_steady_state() {
+    let result = interpret(
+      "sol = NDSolve[{D[u[t, x], t] == D[u[t, x], {x, 2}], u[0, x] == x, \
+       u[t, 0] == 0, (D[u[t, x], x] /. x -> 1) == 1}, u, {t, 0, 1}, \
+       {x, 0, 1}]; (u[t, x] /. sol[[1]]) /. {t -> 0.7, x -> 0.4}",
+    )
+    .unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    assert!((val - 0.4).abs() < 1e-6, "Expected 0.4, got {val}");
+  }
+
+  /// A coefficient (here a Nusselt-style parabolic velocity profile,
+  /// `Vmax (1 - (x/L)^2)`) multiplying the evolution equation's time
+  /// derivative — the shape a convection-diffusion-reaction transport
+  /// equation across a falling liquid film takes — must be recognised and
+  /// divided out. The velocity profile vanishes exactly at the channel
+  /// wall (`x == L`), which is also where the zero-flux Neumann condition
+  /// sits, so this doubles as a regression test for that degenerate
+  /// coefficient: dividing by it must not blow up into `Indeterminate`.
+  /// With no closed form to check against, the assertion instead pins down
+  /// the two invariants any positive diffusion process with these boundary
+  /// values must satisfy: the concentration stays within the range set by
+  /// its Dirichlet source (`(0, 1]`), and it's monotonically decreasing
+  /// away from that source.
+  #[test]
+  fn pde_evolution_coefficient_vanishing_at_a_neumann_wall_stays_bounded() {
+    let result = interpret(
+      "sol = NDSolve[{5 (1 - (x/0.99)^2) D[c[z, x], z] == \
+       D[c[z, x], x, x], c[0, x] == 0, c[z, 0] == 1, \
+       (D[c[z, x], x] /. x -> 0.99) == 0}, c, {z, 0, 5}, {x, 0, 0.99}]; \
+       {c[z, x] /. sol[[1]] /. {z -> 3, x -> 0.2}, \
+       c[z, x] /. sol[[1]] /. {z -> 3, x -> 0.9}}",
+    )
+    .unwrap();
+    let vals: Vec<f64> = result
+      .trim_start_matches('{')
+      .trim_end_matches('}')
+      .split(',')
+      .map(|s| s.trim().parse().expect("should be a number"))
+      .collect();
+    let [near, far] = vals[..] else {
+      panic!("expected two values, got: {result}");
+    };
+    assert!(
+      (0.0..=1.0).contains(&near) && (0.0..=1.0).contains(&far),
+      "Both points should stay within the Dirichlet source's range, got near={near} far={far}"
+    );
+    assert!(
+      near > far,
+      "Concentration should decrease with distance from the source: near={near} far={far}"
+    );
+  }
+
+  /// A coupled reaction pair — `A` decaying into `B` — where the second
+  /// unknown's evolution equation references the first unknown's plain
+  /// value (not a derivative) for the reaction term. Since `A`'s own
+  /// equation doesn't depend on `B`, solving it standalone through the
+  /// single-unknown PDE branch and reading it back out of the two-unknown
+  /// coupled solve must agree exactly: coupling other unknowns in must
+  /// never perturb an unknown whose own equation doesn't reference them.
+  #[test]
+  fn pde_coupled_system_matches_a_standalone_solve_of_the_uncoupled_unknown() {
+    let coupled = interpret(
+      "sol = NDSolve[{D[Subscript[c, 1][x, z], z] == \
+       D[Subscript[c, 1][x, z], x, x] - 0.5 Subscript[c, 1][x, z], \
+       Subscript[c, 1][x, 0] == 0, Subscript[c, 1][0, z] == 1, \
+       Subscript[c, 1][1, z] == 0, D[Subscript[c, 2][x, z], z] == \
+       D[Subscript[c, 2][x, z], x, x] + 0.5 Subscript[c, 1][x, z], \
+       Subscript[c, 2][x, 0] == 0, Subscript[c, 2][0, z] == 0, \
+       Subscript[c, 2][1, z] == 0}, {Subscript[c, 1], Subscript[c, 2]}, \
+       {x, 0, 1}, {z, 0, 1}]; \
+       N[Subscript[c, 1][x, z] /. sol[[1]] /. {x -> 0.5, z -> 0.5}]",
+    )
+    .unwrap();
+    let alone = interpret(
+      "sol = NDSolve[{D[u[x, z], z] == D[u[x, z], x, x] - 0.5 u[x, z], \
+       u[x, 0] == 0, u[0, z] == 1, u[1, z] == 0}, u, {x, 0, 1}, {z, 0, 1}]; \
+       N[u[x, z] /. sol[[1]] /. {x -> 0.5, z -> 0.5}]",
+    )
+    .unwrap();
+    let coupled_val: f64 = coupled.parse().expect("should be a number");
+    let alone_val: f64 = alone.parse().expect("should be a number");
+    assert!(
+      (coupled_val - alone_val).abs() < 1e-9,
+      "Coupling in Subscript[c, 2] shouldn't change Subscript[c, 1]'s own \
+       solution: coupled={coupled_val}, standalone={alone_val}"
+    );
   }
 }
 
