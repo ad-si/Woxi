@@ -8361,6 +8361,25 @@ mod find_root {
     );
   }
 
+  // Regression: time-dependent families in Demonstrations name one unknown
+  // per grid point *and* time as a curried indexed variable (`T[0][t]`,
+  // `T[1][t]`, ...) rather than a single-level `u[1]`. `is_findroot_var_expr`
+  // only recognized a symbol applied once to literal indices, so a curried
+  // chain like `T[0][t]` (`Expr::CurriedCall`) fell through to "variable
+  // must be a symbol" (the Multicomponent Distillation Column Demonstration
+  // hits this).
+  #[test]
+  fn multivariate_curried_indexed_variables() {
+    assert_eq!(
+      interpret(
+        "FindRoot[{T[0][t] + T[1][t] == 3, T[0][t] - T[1][t] == 1}, \
+         {T[0][t], 0}, {T[1][t], 0}]"
+      )
+      .unwrap(),
+      "{T[0][t] -> 2., T[1][t] -> 1.}"
+    );
+  }
+
   // Regression: FindRoot is HoldAll, so equations and a spec list built
   // separately and passed by name (`sys = {...}; initguess = {{x, x0},
   // ...}; FindRoot[sys, initguess]` — the idiom collocation methods use to

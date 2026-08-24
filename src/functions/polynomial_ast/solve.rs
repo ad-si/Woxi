@@ -6422,31 +6422,33 @@ fn find_root_eval_number(expr: &Expr) -> Result<f64, InterpreterError> {
   }
 }
 
-/// True when `e` is a valid FindRoot search variable: a plain symbol, or an
+/// True when `e` is a valid FindRoot search variable: a plain symbol, an
 /// indexed variable such as `u[1]` or `a[2, 3]` — a symbol applied to
-/// literal numeric or string indices. Collocation methods for boundary-value
-/// problems name one unknown per grid point this way (`FindRoot[{eqns},
-/// {{u[1], 0.5}, {u[2], 0.5}, ...}]`), and real Wolfram accepts both forms.
+/// literal numeric or string indices — or a curried chain of those such as
+/// `T[0][t]`. Collocation methods for boundary-value problems name one
+/// unknown per grid point this way (`FindRoot[{eqns}, {{u[1], 0.5}, {u[2],
+/// 0.5}, ...}]`), and time-dependent families use the curried form
+/// (`FindRoot[eqns, {T[0][t], 354.3}, {T[1][t], 357.7}, ...]`); real
+/// Wolfram accepts all of these.
 fn is_findroot_var_expr(e: &Expr) -> bool {
   match e {
     Expr::Identifier(_) => true,
-    Expr::FunctionCall { args, .. } => {
-      !args.is_empty()
-        && args.iter().all(|a| {
-          matches!(a, Expr::Integer(_) | Expr::Real(_) | Expr::String(_))
-        })
+    Expr::FunctionCall { .. } | Expr::CurriedCall { .. } => {
+      flatten_findroot_var(e).is_some()
     }
     _ => false,
   }
 }
 
-/// A hashable key for a FindRoot indexed-variable's literal arguments
-/// (`u[1]` → `[Int(1)]`, `a[2, "x"]` → `[Int(2), Str("x")]`).
+/// A hashable key for a FindRoot indexed-variable's literal or symbolic
+/// arguments (`u[1]` → `[Int(1)]`, `a[2, "x"]` → `[Int(2), Str("x")]`,
+/// `T[0][t]` → `[Int(0), Sym("t")]`).
 #[derive(PartialEq, Eq, Hash, Clone)]
 enum FindRootIndexKey {
   Int(i128),
   RealBits(u64),
   Str(String),
+  Sym(String),
 }
 
 fn find_root_index_key(e: &Expr) -> Option<FindRootIndexKey> {
@@ -6454,6 +6456,38 @@ fn find_root_index_key(e: &Expr) -> Option<FindRootIndexKey> {
     Expr::Integer(n) => Some(FindRootIndexKey::Int(*n)),
     Expr::Real(r) => Some(FindRootIndexKey::RealBits(r.to_bits())),
     Expr::String(s) => Some(FindRootIndexKey::Str(s.clone())),
+    Expr::Identifier(s) => Some(FindRootIndexKey::Sym(s.clone())),
+    _ => None,
+  }
+}
+
+/// Flatten an indexed FindRoot variable — a plain `u[1]` or a curried chain
+/// of those like `T[0][t]` — into its base name and the sequence of index
+/// keys across every level. `None` when any level isn't a recognized
+/// indexed-variable shape (e.g. an empty-arg call, or a level whose
+/// argument isn't a literal or symbol).
+fn flatten_findroot_var(e: &Expr) -> Option<(&str, Vec<FindRootIndexKey>)> {
+  match e {
+    Expr::FunctionCall { name, args } => {
+      if args.is_empty() {
+        return None;
+      }
+      let keys = args
+        .iter()
+        .map(find_root_index_key)
+        .collect::<Option<Vec<_>>>()?;
+      Some((name.as_str(), keys))
+    }
+    Expr::CurriedCall { func, args } => {
+      if args.is_empty() {
+        return None;
+      }
+      let (name, mut keys) = flatten_findroot_var(func)?;
+      for a in args {
+        keys.push(find_root_index_key(a)?);
+      }
+      Some((name, keys))
+    }
     _ => None,
   }
 }
@@ -6491,13 +6525,9 @@ fn find_root_rename_vars(
       Expr::Identifier(name) => {
         id_map.insert(name.as_str(), r);
       }
-      Expr::FunctionCall { name, args } => {
-        if let Some(keys) = args
-          .iter()
-          .map(find_root_index_key)
-          .collect::<Option<Vec<_>>>()
-        {
-          idx_map.insert((name.as_str(), keys), r);
+      Expr::FunctionCall { .. } | Expr::CurriedCall { .. } => {
+        if let Some((name, keys)) = flatten_findroot_var(v) {
+          idx_map.insert((name, keys), r);
         }
       }
       _ => {}
@@ -6517,16 +6547,27 @@ fn find_root_rename_walk(
       None => expr.clone(),
     },
     Expr::FunctionCall { name, args } => {
-      if let Some(keys) = args
-        .iter()
-        .map(find_root_index_key)
-        .collect::<Option<Vec<_>>>()
-        && let Some(r) = idx_map.get(&(name.as_str(), keys))
+      if let Some((flat_name, keys)) = flatten_findroot_var(expr)
+        && let Some(r) = idx_map.get(&(flat_name, keys))
       {
         return (*r).clone();
       }
       Expr::FunctionCall {
         name: name.clone(),
+        args: args
+          .iter()
+          .map(|a| find_root_rename_walk(a, id_map, idx_map))
+          .collect(),
+      }
+    }
+    Expr::CurriedCall { func, args } => {
+      if let Some((flat_name, keys)) = flatten_findroot_var(expr)
+        && let Some(r) = idx_map.get(&(flat_name, keys))
+      {
+        return (*r).clone();
+      }
+      Expr::CurriedCall {
+        func: Box::new(find_root_rename_walk(func, id_map, idx_map)),
         args: args
           .iter()
           .map(|a| find_root_rename_walk(a, id_map, idx_map))

@@ -4184,6 +4184,33 @@ mod curried_and_head_patterns {
     );
   }
 
+  // Regression: a SubValue spanning *three* curry levels — `Y[n][i_][t_] :=
+  // …`, where the first argument is a literal index (evaluated before
+  // storing, per `curried_subvalue_index_is_evaluated_before_storing`
+  // above) and the next two are patterns. `apply_curried_call` resolves a
+  // curried call one level at a time: applying `[i_]` to `Y[5]` reached the
+  // SubValue lookup and found no 2-level rule for it (the stored rule is
+  // 3 levels deep), so it fell back to preserving `Y[5][3]` symbolically —
+  // and the *outer* application of `[t_]` on top of that never even
+  // attempted a SubValue lookup, since `func` was by then already a
+  // CurriedCall rather than a plain FunctionCall. Real Wolfram fires this
+  // rule (families of time-dependent per-stage quantities in Demonstrations
+  // — `T[i][t] := …`, `y[3][i][t] := 1 - y[1][i][t] - y[2][i][t]` — use
+  // exactly this shape, and the Multicomponent Distillation Column
+  // Demonstration hits it).
+  #[test]
+  fn triple_curried_subvalue_with_literal_index() {
+    assert_eq!(
+      interpret("n = 5; Y[n][i_][t_] := i + t; Y[5][3][s]").unwrap(),
+      "3 + s"
+    );
+    assert_eq!(
+      interpret("n = 5; Y[n][i_][t_] := i + t; Y[4][3][s]").unwrap(),
+      "Y[4][3][s]",
+      "an unrelated index stays unevaluated"
+    );
+  }
+
   #[test]
   fn head_pattern_definition_symbol_head() {
     // `f[a_[b__]] := …` binds the head pattern and the argument sequence.
