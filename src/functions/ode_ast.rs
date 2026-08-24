@@ -857,7 +857,6 @@ fn try_solve_pde_system(
       {
         bc_hi = Some(bc);
         claimed[idx] = true;
-        continue;
       }
     }
     let (Some((coeff, rhs)), Some(ic), Some(bc_lo), Some(bc_hi)) =
