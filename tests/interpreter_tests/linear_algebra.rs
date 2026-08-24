@@ -2260,6 +2260,15 @@ mod fit {
       "0. + 0.*x + 1.*x^2"
     );
   }
+
+  #[test]
+  fn non_numeric_y_names_fit_in_error() {
+    let err = interpret(r#"Fit[{{1, "a"}, {2, "b"}}, {1, x}, x]"#).unwrap_err();
+    assert!(
+      err.to_string().contains("Fit:"),
+      "error should be tagged with the calling function's name, got: {err}"
+    );
+  }
 }
 
 mod linear_solve {
@@ -3223,6 +3232,16 @@ mod find_fit {
     assert!(result.contains("a -> "), "Expected a rule, got: {result}");
     assert!(result.contains("b -> "), "Expected b rule, got: {result}");
   }
+
+  #[test]
+  fn non_numeric_data_names_find_fit_in_error() {
+    let err =
+      interpret(r#"FindFit[{{1, "a"}, {2, "b"}}, a*x, {a}, x]"#).unwrap_err();
+    assert!(
+      err.to_string().contains("FindFit:"),
+      "error should be tagged with the calling function's name, got: {err}"
+    );
+  }
 }
 
 mod lu_decomposition {
@@ -3827,6 +3846,19 @@ mod linear_model_fit {
     let val: f64 = result.parse().unwrap();
     assert!((val - 3.0).abs() < 1e-10);
   }
+
+  #[test]
+  fn non_numeric_y_names_linear_model_fit_in_error() {
+    // A y-coordinate that isn't a number should be reported against the
+    // function the user actually called, not against the internal `Fit`
+    // helper the two share.
+    let err =
+      interpret(r#"LinearModelFit[{{1, "a"}, {2, "b"}}, x, x]"#).unwrap_err();
+    assert!(
+      err.to_string().contains("LinearModelFit:"),
+      "error should be tagged with the calling function's name, got: {err}"
+    );
+  }
 }
 
 // NonlinearModelFit fits parameters with FindFit and returns a FittedModel
@@ -3941,6 +3973,19 @@ mod nonlinear_model_fit {
     );
     // The fitted function is the model, with no constraint left in it.
     assert_eq!(interpret(&format!("Head[Normal[{fit}]]")).unwrap(), "Plus");
+  }
+
+  #[test]
+  fn non_numeric_data_names_nonlinear_model_fit_in_error() {
+    // NonlinearModelFit shares its solver with FindFit; a bad data point
+    // should be reported against the function actually called.
+    let err =
+      interpret(r#"NonlinearModelFit[{{1, "a"}, {2, "b"}}, a*x, {a}, x]"#)
+        .unwrap_err();
+    assert!(
+      err.to_string().contains("NonlinearModelFit:"),
+      "error should be tagged with the calling function's name, got: {err}"
+    );
   }
 }
 
@@ -4686,6 +4731,16 @@ mod logit_model_fit {
     assert!(
       params.starts_with('{'),
       "expected list of params, got {params}"
+    );
+  }
+
+  #[test]
+  fn non_numeric_y_names_logit_model_fit_in_error() {
+    let err = interpret(r#"LogitModelFit[{{1, "a"}, {2, "b"}}, {1, x}, x]"#)
+      .unwrap_err();
+    assert!(
+      err.to_string().contains("LogitModelFit:"),
+      "error should be tagged with the calling function's name, got: {err}"
     );
   }
 }

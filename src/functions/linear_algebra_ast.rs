@@ -2385,7 +2385,7 @@ pub fn fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  let (x_vals, y_vals) = extract_fit_data(data_list)?;
+  let (x_vals, y_vals) = extract_fit_data(data_list, "Fit")?;
   let n = x_vals.len(); // number of data points
   let m = basis.len(); // number of basis functions
 
@@ -2444,9 +2444,10 @@ pub fn fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 fn extract_fit_data_multi(
   data: &[Expr],
   n_vars: usize,
+  caller: &str,
 ) -> Result<(Vec<Vec<f64>>, Vec<f64>), InterpreterError> {
   if n_vars == 1 {
-    let (xs, ys) = extract_fit_data(data)?;
+    let (xs, ys) = extract_fit_data(data, caller)?;
     let multi = xs.into_iter().map(|x| vec![x]).collect();
     return Ok((multi, ys));
   }
@@ -2454,13 +2455,13 @@ fn extract_fit_data_multi(
   let mut ys = Vec::with_capacity(data.len());
   for item in data {
     let Expr::List(row) = item else {
-      return Err(InterpreterError::EvaluationError(
-        "Fit: each data row must be a list of length n_vars + 1".into(),
-      ));
+      return Err(InterpreterError::EvaluationError(format!(
+        "{caller}: each data row must be a list of length n_vars + 1"
+      )));
     };
     if row.len() != n_vars + 1 {
       return Err(InterpreterError::EvaluationError(format!(
-        "Fit: each data row must have {} entries (got {})",
+        "{caller}: each data row must have {} entries (got {})",
         n_vars + 1,
         row.len()
       )));
@@ -2468,16 +2469,16 @@ fn extract_fit_data_multi(
     let mut xs = Vec::with_capacity(n_vars);
     for x in &row[..n_vars] {
       let v = try_eval_to_f64(x).ok_or_else(|| {
-        InterpreterError::EvaluationError(
-          "Fit: could not convert x coordinate to a number".into(),
-        )
+        InterpreterError::EvaluationError(format!(
+          "{caller}: could not convert x coordinate to a number"
+        ))
       })?;
       xs.push(v);
     }
     let y = try_eval_to_f64(&row[n_vars]).ok_or_else(|| {
-      InterpreterError::EvaluationError(
-        "Fit: could not convert y coordinate to a number".into(),
-      )
+      InterpreterError::EvaluationError(format!(
+        "{caller}: could not convert y coordinate to a number"
+      ))
     })?;
     x_rows.push(xs);
     ys.push(y);
@@ -2487,6 +2488,7 @@ fn extract_fit_data_multi(
 
 fn extract_fit_data(
   data: &[Expr],
+  caller: &str,
 ) -> Result<(Vec<f64>, Vec<f64>), InterpreterError> {
   // Check if first element is a list (=> {x, y} pair form)
   if let Expr::List(first_pair) = &data[0]
@@ -2498,26 +2500,26 @@ fn extract_fit_data(
     for item in data {
       if let Expr::List(pair) = item {
         if pair.len() != 2 {
-          return Err(InterpreterError::EvaluationError(
-            "Fit: data points must be {x, y} pairs of length 2".into(),
-          ));
+          return Err(InterpreterError::EvaluationError(format!(
+            "{caller}: data points must be {{x, y}} pairs of length 2"
+          )));
         }
         let x = try_eval_to_f64(&pair[0]).ok_or_else(|| {
-          InterpreterError::EvaluationError(
-            "Fit: could not convert x coordinate to a number".into(),
-          )
+          InterpreterError::EvaluationError(format!(
+            "{caller}: could not convert x coordinate to a number"
+          ))
         })?;
         let y = try_eval_to_f64(&pair[1]).ok_or_else(|| {
-          InterpreterError::EvaluationError(
-            "Fit: could not convert y coordinate to a number".into(),
-          )
+          InterpreterError::EvaluationError(format!(
+            "{caller}: could not convert y coordinate to a number"
+          ))
         })?;
         xs.push(x);
         ys.push(y);
       } else {
-        return Err(InterpreterError::EvaluationError(
-          "Fit: all data entries must be {x, y} pairs".into(),
-        ));
+        return Err(InterpreterError::EvaluationError(format!(
+          "{caller}: all data entries must be {{x, y}} pairs"
+        )));
       }
     }
     return Ok((xs, ys));
@@ -2527,9 +2529,9 @@ fn extract_fit_data(
   let mut ys = Vec::with_capacity(data.len());
   for item in data {
     let y = try_eval_to_f64(item).ok_or_else(|| {
-      InterpreterError::EvaluationError(
-        "Fit: could not convert data value to a number".into(),
-      )
+      InterpreterError::EvaluationError(format!(
+        "{caller}: could not convert data value to a number"
+      ))
     })?;
     ys.push(y);
   }
@@ -6175,7 +6177,15 @@ pub fn find_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   let (model, constraints) = split_fit_model_spec(&args[1]);
-  find_fit_weighted(&args[0], &model, &constraints, &args[2], &args[3], None)
+  find_fit_weighted(
+    &args[0],
+    &model,
+    &constraints,
+    &args[2],
+    &args[3],
+    None,
+    "FindFit",
+  )
 }
 
 /// The fitting core: least squares by Gauss-Newton, optionally weighted
@@ -6188,6 +6198,7 @@ fn find_fit_weighted(
   params_expr: &Expr,
   var_expr: &Expr,
   weights: Option<&[f64]>,
+  caller: &str,
 ) -> Result<Expr, InterpreterError> {
   let args = [
     data_expr.clone(),
@@ -6205,9 +6216,9 @@ fn find_fit_weighted(
   let var_name = match var_expr {
     Expr::Identifier(name) => name.clone(),
     _ => {
-      return Err(InterpreterError::EvaluationError(
-        "FindFit: fourth argument must be a variable".into(),
-      ));
+      return Err(InterpreterError::EvaluationError(format!(
+        "{caller}: fourth argument must be a variable"
+      )));
     }
   };
 
@@ -6225,10 +6236,9 @@ fn find_fit_weighted(
             }
           }
           _ => {
-            return Err(InterpreterError::EvaluationError(
-              "FindFit: parameters must be identifiers or {name, init} pairs"
-                .into(),
-            ));
+            return Err(InterpreterError::EvaluationError(format!(
+              "{caller}: parameters must be identifiers or {{name, init}} pairs"
+            )));
           }
         }
       }
@@ -6236,9 +6246,9 @@ fn find_fit_weighted(
     }
     Expr::Identifier(name) => vec![name.clone()],
     _ => {
-      return Err(InterpreterError::EvaluationError(
-        "FindFit: third argument must be a list of parameters".into(),
-      ));
+      return Err(InterpreterError::EvaluationError(format!(
+        "{caller}: third argument must be a list of parameters"
+      )));
     }
   };
 
@@ -6258,12 +6268,12 @@ fn find_fit_weighted(
   // Extract data points
   let data_evaluated = evaluate_expr_to_expr(data_expr)?;
   let Expr::List(data_list) = &data_evaluated else {
-    return Err(InterpreterError::EvaluationError(
-      "FindFit: first argument must be a list".into(),
-    ));
+    return Err(InterpreterError::EvaluationError(format!(
+      "{caller}: first argument must be a list"
+    )));
   };
 
-  let (x_vals, y_vals) = extract_fit_data(data_list)?;
+  let (x_vals, y_vals) = extract_fit_data(data_list, caller)?;
   let n_data = x_vals.len();
   let n_params = param_names.len();
 
@@ -6733,7 +6743,7 @@ pub fn linear_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   let (x_vals_multi, y_vals) =
-    extract_fit_data_multi(data_list, var_names.len())?;
+    extract_fit_data_multi(data_list, var_names.len(), "LinearModelFit")?;
   let n = y_vals.len();
   let m = basis.len();
   // For univariate compatibility paths below, keep a flat x list.
@@ -6966,6 +6976,7 @@ pub fn nonlinear_model_fit_ast(
     params,
     var,
     weights.as_deref(),
+    "NonlinearModelFit",
   )?;
   let Expr::List(rules) = &param_rules else {
     return uneval();
@@ -7252,7 +7263,7 @@ pub fn logit_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  let (x_vals, y_vals) = extract_fit_data(data_list)?;
+  let (x_vals, y_vals) = extract_fit_data(data_list, "LogitModelFit")?;
   let n = x_vals.len();
   let m = basis.len();
 
