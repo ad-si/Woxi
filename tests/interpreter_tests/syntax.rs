@@ -7239,6 +7239,92 @@ mod plus_rendering {
   fn multiple_negative_terms() {
     assert_eq!(interpret("a - 3*b - 5*c").unwrap(), "a - 3*b - 5*c");
   }
+
+  // Regression: `/.` (ReplaceAll) binds looser than `+`/`-` (Wolfram
+  // precedence 110 vs. 310), so a `ReplaceAll` term printed as an operand
+  // of `Plus`/`Minus` must keep its parentheses, or the printed form
+  // re-parses to a different expression — `x /. sol - 0.05` regroups as
+  // `x /. (sol - 0.05)`, not `(x /. sol) - 0.05`. This once broke Woxi
+  // Studio's Manipulate handling for a Wolfram Demonstrations notebook:
+  // the body is re-serialized through `expr_to_input_form` to re-evaluate
+  // it per slider change, and the missing parens silently dropped a Plot
+  // curve from the render.
+  #[test]
+  fn replace_all_keeps_parens_as_leading_plus_term() {
+    assert_eq!(
+      interpret("Hold[(x /. {x -> 5}) - 0.05]").unwrap(),
+      "Hold[(x /. {x -> 5}) - 0.05]"
+    );
+  }
+
+  #[test]
+  fn replace_all_keeps_parens_as_trailing_plus_term() {
+    assert_eq!(
+      interpret("Hold[1 + (x /. {x -> 5})]").unwrap(),
+      "Hold[1 + (x /. {x -> 5})]"
+    );
+    assert_eq!(
+      interpret("Hold[(x /. {x -> 5}) + 1]").unwrap(),
+      "Hold[(x /. {x -> 5}) + 1]"
+    );
+  }
+
+  #[test]
+  fn replace_all_keeps_parens_in_input_form() {
+    // The InputForm formatter (`ToString[_, InputForm]`, used to rebuild a
+    // Manipulate body's source) must preserve the same parens as the
+    // direct-eval formatter.
+    assert_eq!(
+      interpret("ToString[Hold[(x /. {x -> 5}) - 0.05], InputForm]").unwrap(),
+      "Hold[(x /. {x -> 5}) - 0.05]"
+    );
+  }
+
+  #[test]
+  fn replace_all_then_subtract_evaluates_correctly() {
+    // With the parens honored, this evaluates numerically instead of
+    // triggering ReplaceAll::reps on `sol - 0.05`.
+    assert_eq!(interpret("(x /. {x -> 5}) - 0.05").unwrap(), "4.95");
+  }
+
+  // ReplaceRepeated (`//.`) binds exactly as loose as ReplaceAll and shares
+  // the same fix path, but had no direct test coverage.
+  #[test]
+  fn replace_repeated_keeps_parens_as_leading_plus_term() {
+    assert_eq!(
+      interpret("Hold[(x //. {x -> 5}) - 0.05]").unwrap(),
+      "Hold[(x //. {x -> 5}) - 0.05]"
+    );
+  }
+
+  // A non-leading `Plus`/`Minus`-shaped term (precedence exactly 30, the
+  // same as `Plus`/`Minus` themselves) must also be parenthesized — unlike
+  // a leading term, which round-trips bare because text re-parses `+`/`-`
+  // left-associatively. Printing the negated group bare would silently flip
+  // the sign of every term after the first: `a - b + c` re-parses as
+  // `Plus[a, -b, c]`, not the original `Plus[a, -b, -c]`.
+  #[test]
+  fn negated_plus_group_keeps_parens() {
+    assert_eq!(
+      interpret("ToString[Hold[Plus[a, -(b + c)]], InputForm]").unwrap(),
+      "Hold[a - (b + c)]"
+    );
+  }
+
+  // The same non-leading-term parenthesization must apply on the
+  // negative-`Times`-coefficient path (`input_form_subtracted_term`), which
+  // is reachable from ordinary (non-`Hold`) evaluation: `Times[-1, ...]`
+  // folds into a subtraction here, not just via a literal `Plus[..., -(...)]`
+  // call. Regression: `0.05 - (x /. sol)` with `sol` unbound evaluates to
+  // `Plus[0.05, Times[-1, ReplaceAll[x, sol]]]`, which must print with the
+  // `ReplaceAll` parenthesized or it re-parses as `(0.05 - x) /. sol`.
+  #[test]
+  fn subtracted_replace_all_keeps_parens_via_times_coefficient_path() {
+    assert_eq!(
+      interpret("ToString[0.05 - (x /. sol), InputForm]").unwrap(),
+      "0.05 - (x /. sol)"
+    );
+  }
 }
 
 mod tilde_infix {
