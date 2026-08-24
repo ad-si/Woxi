@@ -5063,6 +5063,19 @@ fn instantiate_stored_manipulate(
   if let Some(init) =
     woxi::notebook::extract_saved_initialization(stored_output)
   {
+    // These names lived in the DynamicModule's private `$CellContext`` in
+    // Wolfram, isolated from anything of the same name elsewhere —
+    // including a built-in a later Wolfram Language version introduces
+    // (e.g. a Demonstration's own pre-12.0 `Midpoint` helper, now shadowed
+    // by the real `Midpoint` function). `extract_saved_initialization`
+    // strips that prefix so the body's bare references resolve, which
+    // reopens exactly that collision: unprotect them first so the
+    // notebook's own definition can still win, as it does in Wolfram.
+    let names =
+      woxi::notebook::saved_initialization_context_symbols(stored_output);
+    if !names.is_empty() {
+      let _ = woxi::interpret(&format!("Unprotect[{}]", names.join(", ")));
+    }
     let _ = woxi::interpret(&init);
   }
   let expr = woxi::interpret_to_expr(&statements[0]).ok()?;
@@ -8048,6 +8061,42 @@ Cell[BoxData["standalone output"], "Output"]
     )
     .unwrap();
     assert_eq!(state.text_output.as_deref(), Some("41"));
+  }
+
+  #[test]
+  fn stored_manipulate_saved_initialization_may_shadow_a_builtin() {
+    // A Demonstration written before Wolfram shipped a built-in `Midpoint`
+    // may define its own two-argument `Midpoint` helper. `SaveDefinitions
+    // -> True` stores it under the DynamicModule's private
+    // `$CellContext``, so in Wolfram it never collides with a same-named
+    // built-in a later language version adds — that's exactly what the
+    // private context is for. Regression: stripping the prefix for
+    // evaluation reopened the collision, since `Midpoint` is Protected —
+    // the stored `SetDelayed` silently failed and the body's calls fell
+    // through to the built-in's unrelated one-argument form.
+    let dump = "DynamicModuleBox[{$CellContext`x$$ = 3}, \
+      DynamicBox[…],\n\
+      Deinitialization:>None,\n\
+      Initialization:>($CellContext`Midpoint[\
+      Pattern[$CellContext`a, Blank[]], Pattern[$CellContext`b, Blank[]]] := \
+      ($CellContext`a + $CellContext`b)/2; \
+      Typeset`initDone$$ = True),\n\
+      SynchronousInitialization->True]";
+    let state = instantiate_stored_manipulate(
+      "Manipulate[Midpoint[x, 7], {{x, 3}, 0, 10}]",
+      dump,
+    )
+    .unwrap();
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert_eq!(
+      state.text_output.as_deref(),
+      Some("5"),
+      "the notebook's own Midpoint must win over the built-in"
+    );
   }
 
   /// A published Demonstration lays its panel out itself — the controls

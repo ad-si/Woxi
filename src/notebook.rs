@@ -1954,6 +1954,48 @@ pub fn extract_saved_initialization(box_dump: &str) -> Option<String> {
   None
 }
 
+/// The distinct symbol names Wolfram qualified with `` $CellContext` `` in a
+/// saved `Initialization :> ( … )` block — i.e. the names
+/// [`extract_saved_initialization`] strips down to bare identifiers.
+///
+/// `` $CellContext` `` is the DynamicModule's own private context: a
+/// Demonstration's `SaveDefinitions -> True` helper (say a `Midpoint` the
+/// author wrote before Wolfram ever shipped a built-in of that name) lives
+/// there specifically so it can never collide with a same-named symbol
+/// anywhere else — including one a *later* Wolfram Language version adds to
+/// `System\``. Once the prefix is stripped for evaluation, that protection
+/// is gone: the bare name is looked up exactly where the real built-in
+/// lives, and redefining a Protected symbol fails. Unprotecting these names
+/// first (the caller's job) restores the isolation the prefix used to give.
+pub fn saved_initialization_context_symbols(box_dump: &str) -> Vec<String> {
+  const PREFIX: &str = "$CellContext`";
+  let mut names: Vec<String> = Vec::new();
+  let mut search_from = 0;
+  while let Some(rel) = box_dump[search_from..].find("Initialization") {
+    let after_kw = search_from + rel + "Initialization".len();
+    let rest = box_dump[after_kw..].trim_start();
+    if let Some(rest) = rest.strip_prefix(":>")
+      && let Some(body) = rest.trim_start().strip_prefix('(')
+      && let Some(inner) = matching_paren_prefix(body)
+    {
+      let mut scan_from = 0;
+      while let Some(rel2) = inner[scan_from..].find(PREFIX) {
+        let start = scan_from + rel2 + PREFIX.len();
+        let end = inner[start..]
+          .find(|c: char| !(c.is_alphanumeric() || c == '$'))
+          .map_or(inner.len(), |i| start + i);
+        let name = &inner[start..end];
+        if !name.is_empty() && !names.iter().any(|n| n == name) {
+          names.push(name.to_string());
+        }
+        scan_from = end.max(start + 1);
+      }
+    }
+    search_from = after_kw;
+  }
+  names
+}
+
 /// The prefix of `s` up to (excluding) the `)` matching an already-consumed
 /// `(`. Skips over string literals, where parentheses are just text.
 fn matching_paren_prefix(s: &str) -> Option<&str> {
@@ -4514,6 +4556,32 @@ yf4GL4DwC5VA4w
       SynchronousInitialization->True]";
     let init = extract_saved_initialization(dump).unwrap();
     assert_eq!(init, "{a = 1, b = {2, 3}}; Typeset`initDone$$ = True");
+  }
+
+  #[test]
+  fn test_saved_initialization_context_symbols() {
+    let dump = "DynamicModuleBox[{$CellContext`k$$ = 0}, \
+      DynamicBox[…],\n\
+      Initialization:>($CellContext`Midpoint[\
+      Pattern[$CellContext`a, Blank[]], Pattern[$CellContext`b, Blank[]]] := \
+      ($CellContext`a + $CellContext`b)/2; \
+      Typeset`initDone$$ = True)]";
+    let mut names = saved_initialization_context_symbols(dump);
+    names.sort();
+    // `a` and `b` are pattern variable names, `Midpoint` is the helper
+    // being defined; each appears once even though `Midpoint` and `a`/`b`
+    // each occur more than once in the dump.
+    assert_eq!(names, vec!["Midpoint", "a", "b"]);
+  }
+
+  #[test]
+  fn test_saved_initialization_context_symbols_none() {
+    assert_eq!(
+      saved_initialization_context_symbols(
+        "DynamicModuleBox[{}, DynamicBox[…]]"
+      ),
+      Vec::<String>::new()
+    );
   }
 
   #[test]
