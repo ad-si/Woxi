@@ -864,6 +864,40 @@ mod graphics {
       assert_eq!(dashes(&line("Dashing[{0.05, 0.05}]", 800)), ["40.0,40.0"]);
     }
 
+    /// `Dashing[None]` (and the equivalent `Dashing[{}]`) turns dashing
+    /// back off, so everything drawn after it is stroked solid again.
+    /// Neither form names a length, so both used to fall through the
+    /// numeric branch without touching the style — leaving an earlier
+    /// `Dashed` in force and dashing every later stroke. A Demonstration
+    /// that dashes one orbit circle and then draws solid arrows relies on
+    /// the reset.
+    #[test]
+    fn dashing_none_returns_to_solid_strokes() {
+      let dasharrays = |code: &str| -> Vec<String> {
+        export_svg(code)
+          .split("stroke-dasharray=\"")
+          .skip(1)
+          .filter_map(|s| s.split('"').next().map(str::to_string))
+          .collect()
+      };
+      let two_lines = |reset: &str| {
+        format!(
+          "Graphics[{{Dashed, Line[{{{{0, 0}}, {{10, 0}}}}], {reset}, \
+           Line[{{{{0, 1}}, {{10, 1}}}}]}}, \
+           PlotRange -> {{{{0, 10}}, {{-1, 2}}}}, ImageSize -> 400]"
+        )
+      };
+      // Without a reset both strokes are dashed.
+      assert_eq!(
+        dasharrays(&two_lines("Dashing[{Small, Small}]")),
+        ["4.0,4.0", "4.0,4.0"]
+      );
+      // With one, only the first stroke carries a dash array.
+      for reset in ["Dashing[None]", "Dashing[{}]"] {
+        assert_eq!(dasharrays(&two_lines(reset)), ["4.0,4.0"], "for {reset}");
+      }
+    }
+
     #[test]
     fn dashed_shorthand() {
       insta::assert_snapshot!(export_svg(

@@ -1305,6 +1305,11 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
         // Dashing[{d1, d2, ...}] or Dashing[d]
         // Supports named sizes: Tiny, Small, Medium, Large
         match &args[0] {
+          // `Dashing[None]` and `Dashing[{}]` go back to solid strokes,
+          // the way a Demonstration turns `Dashed` off again partway
+          // through a Graphics list.
+          Expr::Identifier(s) if s == "None" => style.dashing = None,
+          Expr::List(items) if items.is_empty() => style.dashing = None,
           Expr::List(items) => {
             let dashes: Vec<f64> = items
               .iter()
