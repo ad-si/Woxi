@@ -2215,6 +2215,72 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_replace_all_head_prefilter_keeps_every_match() {
+    // ReplaceAll skips a rule list outright at nodes whose head no rule
+    // names. The shapes it must still reach:
+    clear_state();
+    // A call whose head one rule out of many does name.
+    assert_eq!(
+      interpret("g[1, 2] /. {f[a_, b_] :> \"f\", g[a_, b_] :> \"g\"}").unwrap(),
+      "g",
+    );
+    // Nested deep inside arguments no rule can match at their own level.
+    assert_eq!(
+      interpret("h[{1, {2, g[3, 4]}}, 5] /. {g[a_, b_] :> a + b}").unwrap(),
+      "h[{1, {2, 7}}, 5]",
+    );
+    // A head the rules never name is left alone, arguments included.
+    assert_eq!(
+      interpret("zz[1, 2] /. {f[a_, b_] :> \"f\", g[a_, b_] :> \"g\"}")
+        .unwrap(),
+      "zz[1, 2]",
+    );
+    // `{…}`, `a -> b` and `a + b` stand in for `List[…]`, `Rule[…]` and
+    // `Plus[…]` calls, so a rule naming those heads still reaches them.
+    assert_eq!(interpret("{1, 2} /. List[a_, b_] :> a + b").unwrap(), "3");
+    assert_eq!(interpret("(a -> b) /. Rule[p_, q_] :> q").unwrap(), "b");
+    assert_eq!(
+      interpret("1 + c /. Plus[a_, b_] :> \"hit\"").unwrap(),
+      "hit"
+    );
+    // An optional argument lets a pattern match an expression that is no
+    // call at all — `a` matches `Plus[x_, y_.]` as `Plus[a, 0]` — so such a
+    // pattern's head rules nothing out.
+    assert_eq!(interpret("a /. Plus[x_, y_.] :> \"hit\"").unwrap(), "hit");
+    assert_eq!(interpret("5 /. Plus[x_, y_.] :> \"hit\"").unwrap(), "hit");
+    // Rules that are not head-anchored at all keep matching everywhere.
+    assert_eq!(
+      interpret("h[1, {2}] /. x_Integer :> x + 10").unwrap(),
+      "h[11, {12}]",
+    );
+    assert_eq!(
+      interpret("h[a, b] /. {x_Symbol :> f[x]}").unwrap(),
+      "f[h][f[a], f[b]]",
+    );
+  }
+
+  #[test]
+  fn test_replace_all_scales_to_a_demonstrations_sized_rule_list() {
+    // Wolfram Demonstrations build one rewrite rule per lattice site and
+    // hand the whole list to `/.` — thousands of `f[x_Integer, y_Integer]
+    // :> …` rules, applied to an expression with hundreds of nodes. Every
+    // node used to be offered every rule, which put a single frame of such
+    // a notebook minutes away; a node whose head no rule names now skips
+    // the list. The rewrite itself must stay exact.
+    clear_state();
+    interpret("rules = Table[tile[i, 0] :> i^2, {i, 8000}];").unwrap();
+    interpret("data = Join[Range[3000], {tile[7, 0]}];").unwrap();
+    let start = std::time::Instant::now();
+    assert_eq!(interpret("Last[data /. rules]").unwrap(), "49");
+    let elapsed = start.elapsed();
+    assert!(
+      elapsed < std::time::Duration::from_secs(4),
+      "8000 rules over 3001 nodes took {elapsed:?} — the rule list is being \
+       re-scanned at nodes no rule can match"
+    );
+  }
+
+  #[test]
   fn test_replace_all_on_unmatched_rendered_graphic_no_op() {
     // Regression: PieChart (and the other chart functions) render straight
     // to SVG with no symbolic primitive list, so `PieChart[…][[1]]` stays
