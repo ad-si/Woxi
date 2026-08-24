@@ -73,6 +73,15 @@ fuzz_target!(|data: &[u8]| {
   {
     return;
   }
+  // Definitions, memoized values and system variables live in thread-local
+  // state that outlives one `interpret` call, so without this an input's
+  // behaviour depends on every input libFuzzer happened to run before it:
+  // findings stop reproducing from the artifact alone, and a leftover
+  // definition can make a cheap program pathological — a memoized
+  // `f[n_] := f[n] = …` that still meets an older, unmemoized definition of
+  // the same symbol recurses exponentially. libFuzzer requires the target
+  // to be a pure function of its input; this is what makes it one.
+  woxi::clear_state();
   // Suppress Print/echo output — libFuzzer treats stdout noise as slowdown
   // and the output is meaningless for crash detection.
   woxi::set_quiet_print(true);

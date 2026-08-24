@@ -55,6 +55,11 @@ Details:
   counter update produces a program that runs forever by definition — in
   the Wolfram Language just as much as in Woxi — so the hang libFuzzer
   reports is not a finding.
+- Every `interpret` iteration starts from a cleared session
+  (`woxi::clear_state()`). Definitions and memoized values are
+  thread-local state that outlives a single `interpret` call, and libFuzzer
+  assumes the target is a pure function of its input — without the reset a
+  finding need not reproduce from its artifact.
 - Hangs elsewhere do count as findings: libFuzzer's `-timeout` flag (set
   in the make targets) turns a rewrite that never reaches a fixed point,
   or any other runaway evaluation outside an explicit loop, into a
