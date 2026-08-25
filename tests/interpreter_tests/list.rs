@@ -2269,6 +2269,63 @@ mod nothing {
   }
 }
 
+/// `Table`/`Array` build their result via a `List[…]` that auto-simplifies
+/// like any other function call: a per-iteration `Sequence[…]` value
+/// splices its arguments in rather than appearing as a literal element, and
+/// `Nothing` still vanishes as it does everywhere else. `##&[]` (a pure
+/// function with no slot arguments) is the common idiom for the empty
+/// splice — `Table[If[cond, x, ##&[]], {i, …}]` conditionally omits an
+/// entry the same way `Nothing` does.
+mod sequence_splice {
+  use super::*;
+
+  #[test]
+  fn empty_sequence_omits_table_entry() {
+    assert_eq!(
+      interpret("Table[If[i != 2, i, Sequence[]], {i, 1, 5}]").unwrap(),
+      "{1, 3, 4, 5}"
+    );
+  }
+
+  #[test]
+  fn empty_slot_function_omits_table_entry() {
+    assert_eq!(
+      interpret("Table[If[i != 2, i, ##&[]], {i, 1, 5}]").unwrap(),
+      "{1, 3, 4, 5}"
+    );
+  }
+
+  #[test]
+  fn multi_element_sequence_splices_into_table() {
+    assert_eq!(
+      interpret("Table[If[i == 0, Sequence[i, i], i], {i, -1, 1}]").unwrap(),
+      "{-1, 0, 0, 1}"
+    );
+  }
+
+  #[test]
+  fn all_empty_sequences_give_empty_table() {
+    assert_eq!(interpret("Table[##&[], {3}]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn empty_slot_function_omits_array_entry() {
+    assert_eq!(
+      interpret("Array[If[# != 2, #, ##&[]] &, 5]").unwrap(),
+      "{1, 3, 4, 5}"
+    );
+  }
+
+  #[test]
+  fn empty_sequence_omits_multidimensional_table_entry() {
+    assert_eq!(
+      interpret("Table[If[j != 2, i + j, ##&[]], {i, 0, 3, 3}, {j, 1, 3}]")
+        .unwrap(),
+      "{{1, 3}, {4, 6}}"
+    );
+  }
+}
+
 mod list_function {
   use super::*;
 

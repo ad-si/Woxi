@@ -281,6 +281,27 @@ pub fn is_nothing(e: &Expr) -> bool {
   matches!(e, Expr::Identifier(s) if s == "Nothing")
 }
 
+/// Append one `Table`/`Do`-style iteration result to `results`, the way
+/// Wolfram's `List[…]` construction automatically simplifies its elements:
+/// a `Nothing` value is dropped, and a `Sequence[…]` value splices its
+/// arguments in (each still checked for `Nothing`) rather than appearing as
+/// a single `Sequence[…]` element. This is what makes the common
+/// `Table[If[cond, x, ##&[]], {i, …}]`/`Table[If[cond, x, Sequence[]], …]`
+/// idiom for conditionally omitting an entry work — `##&[]` on zero
+/// slot-arguments evaluates to `Sequence[]`, the empty splice.
+pub fn push_table_value(results: &mut Vec<Expr>, val: Expr) {
+  if is_nothing(&val) {
+    return;
+  }
+  if let Expr::FunctionCall { name, args } = &val
+    && name == "Sequence"
+  {
+    results.extend(args.iter().filter(|a| !is_nothing(a)).cloned());
+    return;
+  }
+  results.push(val);
+}
+
 /// Check if an expression is an atomic (non-compound) expression
 pub fn is_atom_expr(e: &Expr) -> bool {
   matches!(e, Expr::Identifier(_) | Expr::Constant(_) | Expr::String(_))

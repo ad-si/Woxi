@@ -214,9 +214,7 @@ pub fn table_ast(
       let mut results = Vec::new();
       for _ in 0..n {
         let val = crate::evaluator::evaluate_value(body)?;
-        if !is_nothing(&val) {
-          results.push(val);
-        }
+        push_table_value(&mut results, val);
       }
       Ok(Expr::List(results.into()))
     }
@@ -238,9 +236,7 @@ pub fn table_ast(
         let mut results = Vec::new();
         for _ in 0..n {
           let val = crate::evaluator::evaluate_value(body)?;
-          if !is_nothing(&val) {
-            results.push(val);
-          }
+          push_table_value(&mut results, val);
         }
         return Ok(Expr::List(results.into()));
       }
@@ -270,9 +266,7 @@ pub fn table_ast(
             let substituted =
               crate::syntax::substitute_variable(body, &var_name, item);
             let val = crate::evaluator::evaluate_value(&substituted)?;
-            if !is_nothing(&val) {
-              results.push(val);
-            }
+            push_table_value(&mut results, val);
           }
           return Ok(Expr::List(results.into()));
         }
@@ -288,9 +282,7 @@ pub fn table_ast(
             &Expr::Integer(i),
           );
           let val = crate::evaluator::evaluate_value(&substituted)?;
-          if !is_nothing(&val) {
-            results.push(val);
-          }
+          push_table_value(&mut results, val);
         }
         return Ok(Expr::List(results.into()));
       } else if items.len() >= 3 {
@@ -327,9 +319,7 @@ pub fn table_ast(
                 &Expr::Integer(i),
               );
               let val = crate::evaluator::evaluate_value(&substituted)?;
-              if !is_nothing(&val) {
-                results.push(val);
-              }
+              push_table_value(&mut results, val);
               i += step_val;
             }
           } else {
@@ -341,9 +331,7 @@ pub fn table_ast(
                 &Expr::Integer(i),
               );
               let val = crate::evaluator::evaluate_value(&substituted)?;
-              if !is_nothing(&val) {
-                results.push(val);
-              }
+              push_table_value(&mut results, val);
               i += step_val;
             }
           }
@@ -385,9 +373,7 @@ pub fn table_ast(
             let substituted =
               crate::syntax::substitute_variable(body, &var_name, &current);
             let val = crate::evaluator::evaluate_value(&substituted)?;
-            if !is_nothing(&val) {
-              results.push(val);
-            }
+            push_table_value(&mut results, val);
           }
           return Ok(Expr::List(results.into()));
         }
@@ -438,9 +424,7 @@ pub fn table_ast(
               &current_expr,
             );
             let val = crate::evaluator::evaluate_value(&substituted)?;
-            if !is_nothing(&val) {
-              results.push(val);
-            }
+            push_table_value(&mut results, val);
             current_expr = crate::evaluator::evaluate_expr_to_expr(&call(
               "Plus",
               vec![current_expr, step_expr.clone()],
@@ -472,9 +456,7 @@ pub fn table_ast(
               &current_expr,
             );
             let val = crate::evaluator::evaluate_value(&substituted)?;
-            if !is_nothing(&val) {
-              results.push(val);
-            }
+            push_table_value(&mut results, val);
             current_expr = crate::evaluator::evaluate_expr_to_expr(&call(
               "Plus",
               vec![current_expr, step_expr.clone()],
@@ -1626,9 +1608,7 @@ pub fn array_ast(func: &Expr, n: i128) -> Result<Expr, InterpreterError> {
   for i in 1..=n {
     let arg = Expr::Integer(i);
     let val = apply_func_ast(func, &arg)?;
-    if !is_nothing(&val) {
-      result.push(val);
-    }
+    push_table_value(&mut result, val);
   }
   Ok(Expr::List(result.into()))
 }
