@@ -4839,7 +4839,7 @@ TitsGroupT,,,,8.0,5013
 TraceBackward,,,,2.0,5013
 TransferFunctionFactor,,🚫,,8.0,5013
 UndoOptions,,🚫,,10.0,5013
-UpEquilibrium,,,,3.0,5013
+UpEquilibrium,Same-spin-pair upward harpoon notation symbol,✅,none,3.0,5013
 ValidationLength,,🚫,,7.0,5013
 ValuePreprocessingFunction,,,,11.2,5013
 VerticalBar,,,,3.0,5013
@@ -5149,7 +5149,7 @@ QuantityVariableIdentifier,,,,10.0,5390
 RemoteBatchSubmit,,🚫,,12.2,5390
 RemoveUsers,,🚫,,10.0,5390
 ReverseEquilibrium,,,,3.0,5390
-ReverseUpEquilibrium,,,,3.0,5390
+ReverseUpEquilibrium,Reversed same-spin-pair upward harpoon notation symbol,✅,none,3.0,5390
 RightArrowLeftArrow,,,,3.0,5390
 RightDownTeeVector,,,,3.0,5390
 RightDownVector,,,,3.0,5390
