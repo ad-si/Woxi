@@ -974,13 +974,24 @@ impl ManipulateState {
     resolved: &[(String, Option<f64>, Option<f64>)],
   ) {
     for (name, new_min, new_max) in resolved {
-      let Some(ControlState::Continuous {
-        min, max, current, ..
-      }) = self.controls.iter_mut().find(
-        |c| matches!(c, ControlState::Continuous { name: n, .. } if n == name),
-      )
-      else {
-        continue;
+      // A dynamic bound may belong to either a Continuous slider or a
+      // Trigger (a projectile's flight Trigger capped by another control's
+      // computed range, e.g. `Dynamic[range[angle, speed]]`, follows that
+      // control the same way a Continuous slider's dynamic bound does).
+      let (min, max, current) = match self.controls.iter_mut().find(|c| {
+        matches!(
+          c,
+          ControlState::Continuous { name: n, .. }
+          | ControlState::Trigger { name: n, .. } if n == name
+        )
+      }) {
+        Some(ControlState::Continuous {
+          min, max, current, ..
+        })
+        | Some(ControlState::Trigger {
+          min, max, current, ..
+        }) => (min, max, current),
+        _ => continue,
       };
       if let Some(v) = new_min {
         *min = *v;
