@@ -582,8 +582,13 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             .map(|z| (z.clamp(z_lo, z_hi) - z_lo) / z_range)
             .sum::<f64>()
               / 4.0;
-            let (cr, cg, cb) =
+            let height_color =
               surface_height_color(avg_z_norm, surface_idx, num_surfaces);
+            let (cr, cg, cb) =
+              match plot_style_for_surface(&plot_styles, surface_idx) {
+                Some(style) => style.color.unwrap_or(height_color),
+                None => height_color,
+              };
             // Colour and polygon travel in a sublist so the directive does
             // not leak onto the quads drawn after it.
             content.push(Expr::List(
