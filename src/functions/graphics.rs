@@ -20959,18 +20959,29 @@ fn parse_manipulate_control(
   // check and only this control's `animate` field takes effect, so building
   // the dedicated widget here is safe either way.
   if control_type.as_deref() == Some("Trigger") {
-    let min = bounds
+    let (min, min_dynamic) = bounds
       .first()
-      .and_then(|e| {
-        crate::functions::math_ast::try_eval_to_f64_with_infinity(e)
-      })
-      .unwrap_or(0.0);
-    let max = bounds
+      .and_then(|e| eval_manipulate_bound(e))
+      .unwrap_or((0.0, false));
+    let (max, max_dynamic) = bounds
       .get(1)
-      .and_then(|e| {
-        crate::functions::math_ast::try_eval_to_f64_with_infinity(e)
+      .and_then(|e| eval_manipulate_bound(e))
+      .unwrap_or((f64::INFINITY, false));
+    // A bound that only resolved through the environment names another
+    // control's variable — e.g. a projectile's flight Trigger capped by
+    // `Dynamic[range[angle, speed]]` — so keep its code, the same as a
+    // Continuous control's dynamic bound, and let the frontend re-resolve
+    // it against the live bindings whenever `angle`/`speed` move.
+    let min_code = min_dynamic
+      .then(|| {
+        crate::syntax::expr_to_input_form(manipulate_bound_expr(bounds[0]).0)
       })
-      .unwrap_or(f64::INFINITY);
+      .filter(|_| min.is_finite());
+    let max_code = max_dynamic
+      .then(|| {
+        crate::syntax::expr_to_input_form(manipulate_bound_expr(bounds[1]).0)
+      })
+      .filter(|_| max.is_finite());
     let step = bounds
       .get(2)
       .and_then(|e| crate::functions::math_ast::try_eval_to_f64(e))
@@ -21002,8 +21013,8 @@ fn parse_manipulate_control(
         label_runs,
       },
       enabled,
-      min_code: None,
-      max_code: None,
+      min_code,
+      max_code,
       values_code: None,
       animate: Some(running),
       tracking: tracking.clone(),

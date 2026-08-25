@@ -7746,6 +7746,62 @@ mod tests {
   }
 
   #[test]
+  fn trigger_dynamic_max_bound_resolves_and_follows_another_control() {
+    // A projectile/shooting-range style Demonstration (independently
+    // written, not copied from any specific one): a Trigger sweeps a
+    // position variable up to a range that is itself computed from another
+    // control's value via `Dynamic[…]`, exactly like a Continuous slider's
+    // dynamic bound (see `manipulate_emblem_dynamic_bound_clamps_and_places_
+    // controls_left`) — but on the dedicated Trigger row instead.
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[Graphics[{Disk[{pos, 0}, 1]}], \
+       {{speed, 40, \"speed\"}, 10, 100, 1}, \
+       {{pos, 0, \"shoot\"}, 0, Dynamic[speed/2], 1, Trigger}]",
+    )
+    .unwrap();
+    let mut state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    let bounds = |s: &manipulate::ManipulateState| match &s.controls[1] {
+      manipulate::ControlState::Trigger { min, max, .. } => (*min, *max),
+      other => panic!("expected a Trigger control, got {other:?}"),
+    };
+    assert_eq!(
+      bounds(&state),
+      (0.0, 20.0),
+      "the Trigger's Dynamic max must resolve against the live bindings, \
+       not default to infinity"
+    );
+
+    // Raise `speed`: the Trigger's max must follow it, the same way a
+    // Continuous slider's Dynamic bound does.
+    if let manipulate::ControlState::Continuous { current, .. } =
+      &mut state.controls[0]
+    {
+      *current = 100.0;
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert_eq!(
+      bounds(&state),
+      (0.0, 50.0),
+      "the Trigger's max must track `speed` after it changes"
+    );
+
+    // With a finite, correctly-resolved max the animation still wraps
+    // instead of growing without bound.
+    for _ in 0..51 {
+      state.advance_animation();
+    }
+    let current = match &state.controls[1] {
+      manipulate::ControlState::Trigger { current, .. } => *current,
+      other => panic!("expected a Trigger control, got {other:?}"),
+    };
+    assert!(
+      (0.0..=50.0).contains(&current),
+      "the Trigger must stay within its dynamic bound, got {current}"
+    );
+  }
+
+  #[test]
   fn locator_manipulate_builds_a_draggable_widget() {
     // The "Center of Mass of a Polygon" Demonstration pattern: a Locator
     // bound to a point list drives the polygon, with icon-labelled
