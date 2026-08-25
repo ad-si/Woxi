@@ -2973,7 +2973,11 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           &[i_pi, log_n],
         );
       }
-      // Log[-expr] for negated expressions: check for Times[-1, ...]
+      // Log[-expr] → I Pi + Log[expr], but only where the principal branch
+      // says so: `expr` has to be a positive real number, so `Log[-Sqrt[2]]`
+      // splits while symbolic arguments stay put — `Log[-x]` and `Log[-x^2]`
+      // are `Log[-x]` and `Log[-x^2]` in wolframscript, since nothing says
+      // `x` is positive.
       {
         let inner = match &args[0] {
           Expr::BinaryOp {
@@ -2992,6 +2996,13 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
           _ => None,
         };
+        let inner = inner.filter(|e| {
+          crate::functions::predicate_ast::is_numeric_q(e)
+            && matches!(
+              crate::evaluator::evaluate_function_call_ast("N", std::slice::from_ref(e)),
+              Ok(Expr::Real(v)) if v > 0.0
+            )
+        });
         if let Some(inner_expr) = inner {
           let i_pi = times2(
             Expr::Identifier("I".to_string()),

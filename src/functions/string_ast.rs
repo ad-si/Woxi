@@ -4818,6 +4818,13 @@ fn strip_hold_form(e: &Expr) -> Expr {
 }
 
 pub fn to_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // A few heads print differently under ToString than in the bare
+  // script-mode echo (`MessageName` is the one that matters); the renderers
+  // tell the two apart by this flag.
+  crate::syntax::rendering_for_to_string(|| to_string_ast_inner(args))
+}
+
+fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
       "ToString expects 1 or 2 arguments".into(),

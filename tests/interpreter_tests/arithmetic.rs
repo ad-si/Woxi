@@ -4511,6 +4511,21 @@ mod expand_threading {
   #[test]
   fn log_negative_expr() {
     assert_eq!(interpret("Log[-E]").unwrap(), "1 + I*Pi");
+    assert_eq!(interpret("Log[-Pi]").unwrap(), "I*Pi + Log[Pi]");
+    assert_eq!(interpret("Log[-Sqrt[2]]").unwrap(), "I*Pi + Log[2]/2");
+  }
+
+  // Splitting `Log[-x]` into `I Pi + Log[x]` needs `x` to be a positive real:
+  // nothing says a symbol is, so a negated symbolic argument stays put, the
+  // same as in wolframscript. A product with a numeric factor never split
+  // (its `Times` has three factors), but `Log[-x]` and `Log[-x^2]` used to.
+  #[test]
+  fn log_of_a_negated_symbol_stays_put() {
+    assert_eq!(interpret("Log[-x]").unwrap(), "Log[-x]");
+    assert_eq!(interpret("Log[-x^2]").unwrap(), "Log[-x^2]");
+    assert_eq!(interpret("Log[-x*y]").unwrap(), "Log[-(x*y)]");
+    assert_eq!(interpret("Log[-Sqrt[x]]").unwrap(), "Log[-Sqrt[x]]");
+    assert_eq!(interpret("Log[-2*x]").unwrap(), "Log[-2*x]");
   }
 
   #[test]

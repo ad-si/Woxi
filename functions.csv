@@ -188,7 +188,7 @@ AspectRatio,Option specifying the height-to-width ratio for a plot,✅,pure,1.0,
 BlankSequence,Pattern object matching one or more expressions (__),✅,pure,1.0,126
 StringJoin,Concatenates strings,✅,pure,1.0,127
 Factorial,Returns the factorial n! = Gamma[n+1] for integers and non-integers,✅,pure,1.0,128
-Gamma,Returns the gamma function value,✅,pure,1.0,130
+Gamma,Returns the gamma function value; FunctionExpand writes the incomplete Gamma[a z] out for integer and half-integer a,✅,pure,1.0,130
 Integer,Head type for integer numbers,✅,pure,1.0,131
 Rational,Head type for rational numbers,✅,pure,1.0,206
 Real,Head type for real (floating-point) numbers,✅,pure,1.0,263
@@ -1402,7 +1402,7 @@ ParabolicCylinderD,Parabolic cylinder function D_nu(z),✅,pure,6.0,1392
 ConvolutionLayer,Neural network convolution layer,🚫,io,11.0,1393
 EmitSound,Emit a sound,🚫,io,6.0,1394
 SurvivalFunction,Survival function for distributions,✅,pure,8.0,1395
-ExpIntegralE,Generalized exponential integral E_n(z),✅,pure,1.0,1397
+ExpIntegralE,Generalized exponential integral E_n(z); FunctionExpand gives z^(n-1) Gamma[1-n z] and expands that Gamma for an integer or half-integer order,✅,pure,1.0,1397
 RootReduce,Reduce an algebraic number to a simplified radical or a minimal-polynomial Root object,✅,pure,3.0,1397
 DotDashed,Dot-dashed line style directive,✅,none,6.0,1399
 ListLogLinearPlot,Plots data with logarithmic x-axis,✅,pure,6.0,1399
@@ -1951,7 +1951,7 @@ URLBuild,Builds a URL from a path list or from an association of URLParse compon
 CellGroup,Notebook structure element for grouping cells,🚫,,6.0,1954
 MultinomialDistribution,Multivariate discrete distribution for modeling outcomes of n independent trials with m categories,✅,none,8.0,1954
 NonConstants,Option for Simplify specifying which symbols are not constants,✅,pure,1.0,1954
-BooleanFunction,Integer-indexed Boolean function; BooleanFunction[n k][b1...bk] returns bit v of n where v is the args as binary (BDD normalization of the bare form not supported),✅,pure,7.0,1956
+BooleanFunction,Integer-indexed Boolean function; BooleanFunction[k n] is the opaque BooleanFunction["BDD" -> ...] object and BooleanFunction[k n vars] writes it out in those variables,✅,pure,7.0,1956
 ViewVector,3D graphics option for specifying the view direction,🚫,,6.0,1956
 MathieuS,Odd Mathieu function (Floquet ODE integration; Woxi's q-to-zero normalisation differs from wolframscript's for q != 0),✅,pure,3.0,1960
 NumberFormat,Option for NumberForm specifying how mantissa/base/exponent are assembled,🚫,,2.0,1960
@@ -3167,7 +3167,7 @@ ReverseSortBy,Sorts in reverse order by a criterion function with an optional or
 RunThrough,Symbol for running external commands,✅,effectful,1.0,3215
 UsingFrontEnd,,🚫,,7.0,3215
 ZeroTest,Option for testing zero equivalence,✅,pure,1.0,3215
-BooleanMinterms,Disjunction of minterms from True/False rows or indices (descending index order),✅,pure,7.0,3224
+BooleanMinterms,Disjunction of minterms from True/False rows or indices (descending index order); an integer variable count gives the BooleanFunction["BDD" -> ...] object,✅,pure,7.0,3224
 CrossingDetect,Marks zero crossings in an array or image as a binary result,✅,pure,8.0,3224
 DateFunction,,,,6.0,3224
 DateObjectQ,True if the expression is a well-formed DateObject,✅,pure,10.0,3224
@@ -4125,7 +4125,7 @@ StringRotateRight,Rotates characters in a string to the right,✅,pure,9.0,4225
 TrainingProgressFunction,,🚫,,11.1,4225
 TransferFunctionCancel,,🚫,,8.0,4225
 AsymptoticRSolveValue,,,,12.0,4262
-BooleanMaxterms,Conjunction of maxterms from True/False rows or indices (ascending index order; dual of BooleanMinterms),✅,pure,7.0,4262
+BooleanMaxterms,Conjunction of maxterms from True/False rows or indices (ascending index order; dual of BooleanMinterms); an integer variable count gives the BooleanFunction["BDD" -> ...] object,✅,pure,7.0,4262
 CalendarData,,🚫,,9.0,4262
 CauchyWindow,Cauchy window 1/(1+(2 alpha x)^2) on [-1/2 1/2] (default alpha 3; exact rationals),✅,pure,9.0,4262
 ClearCookies,,🚫,,11.0,4262

@@ -234,7 +234,7 @@ mod block_scoping {
     clear_state();
     assert_eq!(
       interpret("k::usage = \"kdoc\"; Block[{k}, ToString[k::usage]]").unwrap(),
-      "MessageName[k, usage]"
+      "k::usage"
     );
     clear_state();
     assert_eq!(

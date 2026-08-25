@@ -5196,46 +5196,151 @@ mod boolean_function {
     );
   }
 
-  // A wrong argument count or the bare object stay unevaluated (no spurious
-  // "not implemented" warning for the bare form).
+  // BooleanFunction[k, n] is an opaque object carrying the reduced ordered
+  // binary decision diagram of the function, exactly as wolframscript
+  // serialises it: the leading ±n is the variable count signed by the root's
+  // complement bit, and each following triple is a node {var, then, else}
+  // in the order a then-branch-first walk from the root reaches them. A
+  // branch refers to the |v|-th such node, negated when negative, with ±1
+  // meaning the True/False terminal.
   #[test]
-  fn unevaluated_forms() {
-    assert_eq!(
-      interpret("BooleanFunction[7, 2][True]").unwrap(),
-      "BooleanFunction[7, 2][True]"
-    );
+  fn bare_object_is_the_bdd_encoding() {
+    // Nand, Xor and Nor of two variables.
     assert_eq!(
       interpret("BooleanFunction[7, 2]").unwrap(),
-      "BooleanFunction[7, 2]"
+      "BooleanFunction[BDD -> {-2, 0, 2, -1, 1, 1, -1}]"
+    );
+    assert_eq!(
+      interpret("BooleanFunction[6, 2]").unwrap(),
+      "BooleanFunction[BDD -> {-2, 0, 2, -2, 1, 1, -1}]"
+    );
+    assert_eq!(
+      interpret("BooleanFunction[1, 2]").unwrap(),
+      "BooleanFunction[BDD -> {-2, 0, 1, 2, 1, 1, -1}]"
+    );
+    // A constant function is the signed variable count on its own, and the
+    // index is read two's-complement, so index -1 is the constant True.
+    assert_eq!(
+      interpret("BooleanFunction[0, 2]").unwrap(),
+      "BooleanFunction[BDD -> {-2}]"
+    );
+    assert_eq!(
+      interpret("BooleanFunction[15, 2]").unwrap(),
+      "BooleanFunction[BDD -> {2}]"
+    );
+    assert_eq!(
+      interpret("BooleanFunction[-1, 2]").unwrap(),
+      "BooleanFunction[BDD -> {2}]"
+    );
+    // Sharing: `a ? b : c` of three variables branches to two distinct
+    // single-variable nodes, and index 200 reuses the `c` node under `b`.
+    assert_eq!(
+      interpret("BooleanFunction[202, 3]").unwrap(),
+      "BooleanFunction[BDD -> {3, 0, 2, 3, 1, 1, -1, 2, 1, -1}]"
+    );
+    assert_eq!(
+      interpret("BooleanFunction[200, 3]").unwrap(),
+      "BooleanFunction[BDD -> {3, 0, 2, 3, 1, 1, -1, 1, 4, -1, 2, 1, -1}]"
+    );
+    // An index past 2^(2^n) wraps through its bits: 300 mod 16 is 12, the
+    // projection onto the first variable.
+    assert_eq!(
+      interpret("BooleanFunction[300, 2]").unwrap(),
+      "BooleanFunction[BDD -> {2, 0, 1, -1}]"
+    );
+    // A function of no variables is a constant, which wolframscript hands
+    // back as a pure function rather than a diagram.
+    assert_eq!(interpret("BooleanFunction[7, 0]").unwrap(), "True & ");
+    assert_eq!(interpret("BooleanFunction[6, 0]").unwrap(), "False & ");
+  }
+
+  // The object is an atom: it has no parts to reach into.
+  #[test]
+  fn the_object_is_an_atom() {
+    assert_eq!(interpret("AtomQ[BooleanFunction[7, 2]]").unwrap(), "True");
+    assert_eq!(interpret("Length[BooleanFunction[7, 2]]").unwrap(), "0");
+    assert_eq!(
+      interpret("Head[BooleanFunction[7, 2]]").unwrap(),
+      "BooleanFunction"
     );
   }
 
-  // Applying the function to symbolic arguments writes it out explicitly, in
-  // the minimal sum-of-products form: index 7 of two variables is Nand,
-  // index 6 is Xor, index 1 is Nor.
+  // Applying the object to symbolic arguments leaves it alone — writing the
+  // function out is what BooleanFunction[k, n, vars] and BooleanConvert are
+  // for.
   #[test]
-  fn symbolic_application_writes_the_expression() {
+  fn symbolic_application_stays_unevaluated() {
     assert_eq!(
       interpret("BooleanFunction[7, 2][a, b]").unwrap(),
-      " !a ||  !b"
+      "BooleanFunction[BDD -> {-2, 0, 2, -1, 1, 1, -1}][a, b]"
     );
     assert_eq!(
       interpret("BooleanFunction[6, 2][a, b]").unwrap(),
+      "BooleanFunction[BDD -> {-2, 0, 2, -2, 1, 1, -1}][a, b]"
+    );
+    assert_eq!(
+      interpret("BooleanConvert[BooleanFunction[6, 2][a, b]]").unwrap(),
       "(a &&  !b) || ( !a && b)"
     );
     assert_eq!(
-      interpret("BooleanFunction[1, 2][a, b]").unwrap(),
-      " !a &&  !b"
+      interpret("BooleanMinimize[BooleanFunction[7, 2][a, b]]").unwrap(),
+      " !a ||  !b"
+    );
+    assert_eq!(
+      interpret("SatisfiableQ[BooleanFunction[1, 2][a, b]]").unwrap(),
+      "True"
     );
   }
 
-  // BooleanFunction[k, n, vars] is that same expression, in the given
-  // variables. A constant function collapses to True/False.
+  // Literal arguments mixed with symbolic ones restrict the function: what
+  // is left is the Boolean function of the remaining arguments, itself a
+  // BooleanFunction object. Nand[a, True] is Not[a].
+  #[test]
+  fn partial_application_restricts_the_function() {
+    assert_eq!(
+      interpret("BooleanFunction[7, 2][a, True]").unwrap(),
+      "BooleanFunction[BDD -> {-1, 0, 1, -1}][a]"
+    );
+    assert_eq!(
+      interpret("BooleanConvert[BooleanFunction[7, 2][a, True]]").unwrap(),
+      " !a"
+    );
+    assert_eq!(
+      interpret("BooleanFunction[7, 2][False, b]").unwrap(),
+      "True"
+    );
+  }
+
+  // Extra arguments past the n the function takes are dropped; too few emit
+  // ::argr and leave the call as it stands.
+  #[test]
+  fn wrong_argument_counts() {
+    assert_eq!(
+      interpret("BooleanFunction[7, 2][a, b, c]").unwrap(),
+      "BooleanFunction[BDD -> {-2, 0, 2, -1, 1, 1, -1}][a, b]"
+    );
+    assert_eq!(
+      interpret("BooleanFunction[7, 2][True]").unwrap(),
+      "BooleanFunction[BDD -> {-2, 0, 2, -1, 1, 1, -1}][True]"
+    );
+  }
+
+  // BooleanFunction[k, n, vars] writes the function out explicitly, in the
+  // minimal sum-of-products form: index 7 of two variables is Nand, index 6
+  // is Xor, index 1 is Nor. A constant function collapses to True/False.
   #[test]
   fn three_argument_form() {
     assert_eq!(
       interpret("BooleanFunction[7, 2, {a, b}]").unwrap(),
       " !a ||  !b"
+    );
+    assert_eq!(
+      interpret("BooleanFunction[6, 2, {a, b}]").unwrap(),
+      "(a &&  !b) || ( !a && b)"
+    );
+    assert_eq!(
+      interpret("BooleanFunction[1, 2, {a, b}]").unwrap(),
+      " !a &&  !b"
     );
     assert_eq!(
       interpret("BooleanFunction[2, 3, {a, b, c}]").unwrap(),
@@ -5246,8 +5351,8 @@ mod boolean_function {
     assert_eq!(interpret("BooleanFunction[-1, 2, {a, b}]").unwrap(), "True");
   }
 
-  // The variable list is evaluated, and a count that disagrees with `n`
-  // leaves the call alone.
+  // The variable list is evaluated, and only its first `n` entries are used
+  // — a longer list is not an error.
   #[test]
   fn three_argument_form_evaluates_its_variables() {
     assert_eq!(
@@ -5256,7 +5361,83 @@ mod boolean_function {
     );
     assert_eq!(
       interpret("BooleanFunction[7, 2, {a, b, c}]").unwrap(),
-      "BooleanFunction[7, 2, {a, b, c}]"
+      " !a ||  !b"
+    );
+    // Too few variables to name the function's arguments leaves it alone.
+    assert_eq!(
+      interpret("BooleanFunction[7, 2, {a}]").unwrap(),
+      "BooleanFunction[7, 2, {a}]"
+    );
+  }
+}
+
+// BooleanMinterms/BooleanMaxterms given a variable count instead of a
+// variable list name an unnamed function, so wolframscript returns the same
+// opaque BDD object BooleanFunction[k, n] does. Minterm i is True on exactly
+// the assignment i (first variable most significant); maxterm i is the
+// clause False on the complementary assignment.
+mod boolean_terms_with_a_variable_count {
+  use super::*;
+
+  #[test]
+  fn minterms_and_maxterms_give_the_bdd_object() {
+    // Minterms 1 and 2 of two variables are Xor; the maxterms are Xnor.
+    assert_eq!(
+      interpret("BooleanMinterms[{1, 2}, 2]").unwrap(),
+      "BooleanFunction[BDD -> {-2, 0, 2, -2, 1, 1, -1}]"
+    );
+    assert_eq!(
+      interpret("BooleanMaxterms[{1, 2}, 2]").unwrap(),
+      "BooleanFunction[BDD -> {2, 0, 2, -2, 1, 1, -1}]"
+    );
+    // Minterm 7 of three variables is And; maxterm 7 is Or.
+    assert_eq!(
+      interpret("BooleanMinterms[{7}, 3]").unwrap(),
+      "BooleanFunction[BDD -> {3, 0, 2, -1, 1, 3, -1, 2, 1, -1}]"
+    );
+    assert_eq!(
+      interpret("BooleanMaxterms[{7}, 3]").unwrap(),
+      "BooleanFunction[BDD -> {3, 0, 1, 2, 1, 1, 3, 2, 1, -1}]"
+    );
+    // Every minterm is the constant True, and no minterm at all is the
+    // constant pure function.
+    assert_eq!(
+      interpret("BooleanMinterms[{0, 1, 2, 3}, 2]").unwrap(),
+      "BooleanFunction[BDD -> {2}]"
+    );
+    assert_eq!(
+      interpret("BooleanMaxterms[{0, 1, 2, 3}, 2]").unwrap(),
+      "BooleanFunction[BDD -> {-2}]"
+    );
+    assert_eq!(interpret("BooleanMinterms[{}, 2]").unwrap(), "False & ");
+    assert_eq!(interpret("BooleanMaxterms[{}, 2]").unwrap(), "True & ");
+  }
+
+  // The object agrees with the variable-list form once written out.
+  #[test]
+  fn agrees_with_the_variable_list_form() {
+    assert_eq!(
+      interpret("BooleanConvert[BooleanMinterms[{1, 2}, 2][a, b]]").unwrap(),
+      interpret("BooleanMinterms[{1, 2}, {a, b}]").unwrap()
+    );
+    assert_eq!(
+      interpret("BooleanConvert[BooleanMaxterms[{1, 2}, 2][a, b], \"CNF\"]")
+        .unwrap(),
+      interpret("BooleanMaxterms[{1, 2}, {a, b}]").unwrap()
+    );
+  }
+
+  // Positioning a True/False row needs the variable list, and a count of
+  // zero names no function at all: both are ::bspec.
+  #[test]
+  fn rejects_row_specs_and_a_zero_count() {
+    assert_eq!(
+      interpret("BooleanMinterms[{{True, False}}, 2]").unwrap(),
+      "BooleanMinterms[{{True, False}}, 2]"
+    );
+    assert_eq!(
+      interpret("BooleanMinterms[{1, 2}, 0]").unwrap(),
+      "BooleanMinterms[{1, 2}, 0]"
     );
   }
 }

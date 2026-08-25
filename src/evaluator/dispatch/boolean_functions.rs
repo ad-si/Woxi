@@ -5,6 +5,30 @@ pub fn dispatch_boolean_functions(
   name: &str,
   args: &[Expr],
 ) -> Option<Result<Expr, InterpreterError>> {
+  // A `BooleanFunction[bdd][v1, …, vn]` application is opaque to the
+  // evaluator, so the Boolean-algebra functions first rewrite it to the
+  // explicit expression in those variables and work on that.
+  let expanded: Vec<Expr>;
+  let args = if matches!(
+    name,
+    "BooleanConvert"
+      | "BooleanMinimize"
+      | "BooleanVariables"
+      | "SatisfiableQ"
+      | "SatisfiabilityCount"
+      | "SatisfiabilityInstances"
+      | "TautologyQ"
+      | "UnateQ"
+      | "LogicalExpand"
+  ) {
+    expanded = args
+      .iter()
+      .map(crate::functions::boolean_ast::expand_boolean_function_objects)
+      .collect();
+    &expanded[..]
+  } else {
+    args
+  };
   match name {
     "And" => {
       return Some(crate::functions::boolean_ast::and_ast(args));
@@ -126,7 +150,7 @@ pub fn dispatch_boolean_functions(
     "BooleanTable" => {
       return Some(crate::functions::boolean_ast::boolean_table_ast(args));
     }
-    "BooleanFunction" if args.len() == 3 => {
+    "BooleanFunction" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::boolean_ast::boolean_function_ast(args));
     }
     "BooleanMinimize" if args.len() == 1 => {

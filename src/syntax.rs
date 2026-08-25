@@ -8450,6 +8450,19 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       if name == "StringSkeleton" && args.len() == 1 {
         return format!("<<{}>>", fmt(&args[0]));
       }
+      // MessageName[sym, "tag"] shows as sym::tag under ToString, the same
+      // infix form InputForm uses — `ToString[k::usage]` is "k::usage" in
+      // wolframscript. The bare script-mode echo keeps the long head form
+      // (see `IN_TO_STRING`).
+      if is_output && in_to_string() && name == "MessageName" && args.len() == 2
+      {
+        let tag = match &args[1] {
+          Expr::String(s) => s.clone(),
+          Expr::Identifier(s) => s.clone(),
+          other => fmt(other),
+        };
+        return format!("{}::{}", fmt(&args[0]), tag);
+      }
       // Special case: Repeated[x] displays as x.. (or (x).. when x is a
       // Pattern or numeric atom, matching wolframscript's
       // parenthesisation of `_`-bearing patterns and numeric literals
@@ -11858,6 +11871,16 @@ thread_local! {
   /// genuine InputForm (`expr_to_input_form`, bare `expr_to_string`) still quotes.
   static IN_OUTPUT_FORM: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 
+  /// True while `ToString` is rendering. wolframscript's OutputForm of
+  /// `MessageName[f, "usage"]` is the short `f::usage` under `ToString`, but
+  /// the bare script-mode echo (and `Print`) shows the long head form:
+  /// `Solve[Abs[x] == 2, x, Complexes]; $MessageList` prints
+  /// `{HoldForm[MessageName[Solve, ifun]]}` while
+  /// `ToString[$MessageList, InputForm]` is `{HoldForm[Solve::ifun]}`. Both
+  /// go through the same OutputForm renderer here, so this flag tells them
+  /// apart.
+  static IN_TO_STRING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+
   /// True while rendering the inner expression of a `FullForm[…]` wrapper.
   /// FullForm reuses `expr_to_input_form` to render its argument, but Span must
   /// stay in head form there (`FullForm[1 ;; 4]` prints `FullForm[Span[1, 4]]`)
@@ -11874,6 +11897,26 @@ fn in_true_input_form() -> bool {
 /// Whether the current render originated from OutputForm (see `IN_OUTPUT_FORM`).
 fn in_output_form() -> bool {
   IN_OUTPUT_FORM.with(std::cell::Cell::get)
+}
+
+/// Whether `ToString` is the caller of the current render (see `IN_TO_STRING`).
+pub(crate) fn in_to_string() -> bool {
+  IN_TO_STRING.with(std::cell::Cell::get)
+}
+
+/// Run `render` with [`in_to_string`] reporting true, restoring the previous
+/// value afterwards so a `ToString` reached from a bare echo (say through a
+/// `Format` rule) does not leak the flag back out.
+pub fn rendering_for_to_string<T>(render: impl FnOnce() -> T) -> T {
+  struct Restore(bool);
+  impl Drop for Restore {
+    fn drop(&mut self) {
+      IN_TO_STRING.with(|f| f.set(self.0));
+    }
+  }
+  let _guard = Restore(IN_TO_STRING.with(std::cell::Cell::get));
+  IN_TO_STRING.with(|f| f.set(true));
+  render()
 }
 
 /// Whether the current render is the inner of a FullForm wrapper (see

@@ -20,6 +20,8 @@ Boolean combinators and the `If` conditional.
 ## Additional Functions
 
 - [`BooleanConvert`](logic/BooleanConvert.md)
+- [`BooleanCountingFunction`](logic/BooleanCountingFunction.md)
+- [`BooleanFunction`](logic/BooleanFunction.md)
 - [`BooleanMinimize`](logic/BooleanMinimize.md)
 - [`BooleanTable`](logic/BooleanTable.md)
 - [`LogicalExpand`](logic/LogicalExpand.md)

@@ -2488,53 +2488,335 @@ pub fn tautology_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// so `BooleanFunction[7, 2]` is Nand. `k` is taken two's-complement, which
 /// is what makes `BooleanFunction[-1, n]` the constant True.
 pub fn boolean_function_expr(k: i128, vars: &[Expr]) -> Expr {
-  let n = vars.len();
-  if n == 0 {
-    return bool_expr(k & 1 == 1);
+  truth_table_to_expr(&truth_table_from_index(k, vars.len()), vars)
+}
+
+/// The truth table of `BooleanFunction[k, n]`, indexed by the assignment
+/// read as a binary number with the first variable most significant and
+/// True as 1. `k` is taken two's-complement, which is what makes
+/// `BooleanFunction[-1, n]` the constant True.
+pub fn truth_table_from_index(k: i128, n: usize) -> Vec<bool> {
+  (0..(1usize << n)).map(|i| (k >> i) & 1 == 1).collect()
+}
+
+/// One node of a reduced ordered binary decision diagram: the variable it
+/// branches on and its two outgoing edges. An edge is a `(node, negated)`
+/// pair where node `0` is the True terminal, so `(0, true)` is False.
+type BddEdge = (usize, bool);
+struct BddNode {
+  var: usize,
+  then_edge: BddEdge,
+  else_edge: BddEdge,
+}
+
+/// Wolfram's internal serialisation of the ROBDD for a Boolean function of
+/// `n` variables — the list carried by the `"BDD" -> {…}` rule inside the
+/// `BooleanFunction` object `BooleanFunction[k, n]` evaluates to.
+///
+/// The first element is `±n`, negative when the root edge is complemented;
+/// for a constant function that element is the whole list. Every further
+/// group of three is a node `{var, then, else}`, listed in the order a
+/// then-branch-first depth-first walk from the root first reaches them. A
+/// branch value `v` refers to the `|v|`-th node in that order, negated when
+/// `v` is negative, except that `±1` is the True/False terminal — the root
+/// sits at position 1 and, having no incoming edge, is never referred to.
+/// Complement edges are normalised the usual way: a then-branch is never
+/// negated, so `Not` shows up only as a sign on the root or an else-branch.
+pub fn bdd_encoding(table: &[bool], n: usize) -> Vec<i64> {
+  let mut nodes: Vec<BddNode> = Vec::new();
+  let mut unique: BTreeMap<(usize, BddEdge, BddEdge), usize> = BTreeMap::new();
+
+  // Assignments sharing a prefix of the variables are contiguous in the
+  // table, with the branch variable splitting the block in half: the upper
+  // half is where it is True.
+  fn build(
+    table: &[bool],
+    var: usize,
+    lo: usize,
+    len: usize,
+    nodes: &mut Vec<BddNode>,
+    unique: &mut BTreeMap<(usize, BddEdge, BddEdge), usize>,
+  ) -> BddEdge {
+    if len == 1 {
+      return (0, !table[lo]);
+    }
+    let half = len / 2;
+    let then_edge = build(table, var + 1, lo + half, half, nodes, unique);
+    let else_edge = build(table, var + 1, lo, half, nodes, unique);
+    // The variable does not matter on this sub-cube, so no node for it.
+    if then_edge == else_edge {
+      return then_edge;
+    }
+    // Keep the then-branch positive, pushing its sign up to the parent.
+    let negated = then_edge.1;
+    let flip = |e: BddEdge| if negated { (e.0, !e.1) } else { e };
+    let (then_edge, else_edge) = (flip(then_edge), flip(else_edge));
+    let id = *unique
+      .entry((var, then_edge, else_edge))
+      .or_insert_with(|| {
+        nodes.push(BddNode {
+          var,
+          then_edge,
+          else_edge,
+        });
+        nodes.len()
+      });
+    (id, negated)
   }
 
+  let root = build(table, 0, 0, table.len(), &mut nodes, &mut unique);
+  let mut out = vec![if root.1 { -(n as i64) } else { n as i64 }];
+  if root.0 == 0 {
+    return out;
+  }
+
+  // Number the nodes in first-visit order of a then-first depth-first walk,
+  // then write them out in that same order.
+  let mut position: BTreeMap<usize, usize> = BTreeMap::new();
+  let mut order: Vec<usize> = Vec::new();
+  fn visit(
+    id: usize,
+    nodes: &[BddNode],
+    position: &mut BTreeMap<usize, usize>,
+    order: &mut Vec<usize>,
+  ) {
+    if id == 0 || position.contains_key(&id) {
+      return;
+    }
+    position.insert(id, order.len() + 1);
+    order.push(id);
+    let node = &nodes[id - 1];
+    visit(node.then_edge.0, nodes, position, order);
+    visit(node.else_edge.0, nodes, position, order);
+  }
+  visit(root.0, &nodes, &mut position, &mut order);
+
+  for id in &order {
+    let node = &nodes[id - 1];
+    let reference = |e: BddEdge| -> i64 {
+      let p = if e.0 == 0 { 1 } else { position[&e.0] } as i64;
+      if e.1 { -p } else { p }
+    };
+    out.push(node.var as i64);
+    out.push(reference(node.then_edge));
+    out.push(reference(node.else_edge));
+  }
+  out
+}
+
+/// The `BooleanFunction["BDD" -> {…}]` object for a truth table, which is
+/// what `BooleanFunction[k, n]`, `BooleanMinterms[spec, n]` and
+/// `BooleanMaxterms[spec, n]` all evaluate to in wolframscript.
+pub fn bdd_object(table: &[bool], n: usize) -> Expr {
+  call(
+    "BooleanFunction",
+    vec![Expr::Rule {
+      pattern: Box::new(Expr::String("BDD".to_string())),
+      replacement: Box::new(Expr::List(
+        bdd_encoding(table, n)
+          .into_iter()
+          .map(|v| Expr::Integer(v as i128))
+          .collect(),
+      )),
+    }],
+  )
+}
+
+/// The variable count and truth table a `BooleanFunction["BDD" -> {…}]`
+/// object encodes — the inverse of [`bdd_object`]. Anything that is not
+/// such an object, or whose encoding is malformed, gives None.
+pub fn bdd_from_object(expr: &Expr) -> Option<(usize, Vec<bool>)> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "BooleanFunction" || args.len() != 1 {
+    return None;
+  }
+  let Expr::Rule {
+    pattern,
+    replacement,
+  } = &args[0]
+  else {
+    return None;
+  };
+  match pattern.as_ref() {
+    Expr::String(s) if s == "BDD" => {}
+    _ => return None,
+  }
+  let Expr::List(items) = replacement.as_ref() else {
+    return None;
+  };
+  let code: Vec<i64> = items
+    .iter()
+    .map(|i| match i {
+      Expr::Integer(v) => i64::try_from(*v).ok(),
+      _ => None,
+    })
+    .collect::<Option<_>>()?;
+  let (head, rest) = code.split_first()?;
+  if rest.len() % 3 != 0 {
+    return None;
+  }
+  let n = head.unsigned_abs() as usize;
+  if n > 24 {
+    return None;
+  }
+  let root_negated = *head < 0;
+  let triples: Vec<&[i64]> = rest.chunks(3).collect();
+  if triples.iter().any(|t| t[0] < 0 || t[0] as usize >= n) {
+    return None;
+  }
+
+  // `±1` is the terminal; any other reference is the node at that position,
+  // one-based in the order the triples are listed.
+  let follow = |reference: i64| -> Option<(usize, bool)> {
+    let position = reference.unsigned_abs() as usize;
+    if position == 0 || position > triples.len() {
+      return None;
+    }
+    Some((position, reference < 0))
+  };
+  let mut table = Vec::with_capacity(1 << n);
+  for index in 0..(1usize << n) {
+    let bits: Vec<bool> =
+      (0..n).map(|v| (index >> (n - 1 - v)) & 1 == 1).collect();
+    let mut value = !root_negated;
+    let mut position = 1usize;
+    if triples.is_empty() {
+      table.push(value);
+      continue;
+    }
+    loop {
+      let triple = triples[position - 1];
+      let branch = if bits[triple[0] as usize] {
+        triple[1]
+      } else {
+        triple[2]
+      };
+      if branch.unsigned_abs() == 1 {
+        // The True terminal, reached through however many complements.
+        if branch < 0 {
+          value = !value;
+        }
+        break;
+      }
+      let (next, negated) = follow(branch)?;
+      if negated {
+        value = !value;
+      }
+      position = next;
+    }
+    table.push(value);
+  }
+  Some((n, table))
+}
+
+/// The explicit Boolean expression a truth table stands for, in the minimal
+/// sum-of-products form Wolfram writes it in.
+pub fn truth_table_to_expr(table: &[bool], vars: &[Expr]) -> Expr {
+  let n = vars.len();
+  if n == 0 {
+    return bool_expr(table.first().copied().unwrap_or(false));
+  }
   // `implicants_to_expr` reads variable `i` off bit `1 << i`, while the
-  // index into `k` puts the first variable in the highest bit, so the two
-  // bit orders are mirror images of each other.
+  // table index puts the first variable in the highest bit, so the two bit
+  // orders are mirror images of each other.
   let minterms: Vec<u64> = (0..(1u64 << n))
     .filter(|bits| {
-      let index: u32 = (0..n)
-        .map(|i| ((bits >> i) as u32 & 1) << (n - 1 - i))
+      let index: usize = (0..n)
+        .map(|i| ((bits >> i) as usize & 1) << (n - 1 - i))
         .sum();
-      (k >> index) & 1 == 1
+      table[index]
     })
     .collect();
-
   if minterms.is_empty() {
     return bool_expr(false);
   }
   if minterms.len() == (1usize << n) {
     return bool_expr(true);
   }
-
   let primes = quine_mccluskey(&minterms, n);
   let cover = greedy_cover(&primes, &minterms);
   implicants_to_expr(&cover, vars)
 }
 
-/// BooleanFunction[k, n, {v1, …, vn}] — the k-th Boolean function of n
-/// variables, written out in the given variables.
+/// Rewrites every `BooleanFunction[bdd][v1, …, vn]` inside an expression to
+/// the explicit Boolean expression in those variables. The object is opaque
+/// to the evaluator, so the Boolean-algebra functions (`BooleanConvert`,
+/// `BooleanMinimize`, `SatisfiableQ`, …) run this first to get back to
+/// ordinary connectives — matching wolframscript, where
+/// `BooleanConvert[BooleanFunction[7, 2][a, b]]` is `!a || !b`.
+pub fn expand_boolean_function_objects(expr: &Expr) -> Expr {
+  if let Expr::CurriedCall { func, args } = expr
+    && let Some((n, table)) = bdd_from_object(func)
+    && args.len() == n
+  {
+    let vars: Vec<Expr> =
+      args.iter().map(expand_boolean_function_objects).collect();
+    return truth_table_to_expr(&table, &vars);
+  }
+  match expr {
+    Expr::List(items) => {
+      Expr::List(items.iter().map(expand_boolean_function_objects).collect())
+    }
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args.iter().map(expand_boolean_function_objects).collect(),
+    },
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(expand_boolean_function_objects(left)),
+      right: Box::new(expand_boolean_function_objects(right)),
+    },
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(expand_boolean_function_objects(operand)),
+    },
+    Expr::CurriedCall { func, args } => Expr::CurriedCall {
+      func: Box::new(expand_boolean_function_objects(func)),
+      args: args.iter().map(expand_boolean_function_objects).collect(),
+    },
+    other => other.clone(),
+  }
+}
+
+/// BooleanFunction[k, n] — the k-th Boolean function of n variables, as the
+/// opaque BDD object wolframscript returns; and BooleanFunction[k, n, vars],
+/// which writes that function out in the given variables. A variable list
+/// longer than `n` keeps only its first `n` entries, matching wolframscript.
 pub fn boolean_function_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let [k, n, vars] = args else {
-    return Ok(unevaluated("BooleanFunction", args));
+  let unevaluated = || Ok(unevaluated("BooleanFunction", args));
+  if args.len() != 2 && args.len() != 3 {
+    return unevaluated();
+  }
+  let (Expr::Integer(k), Expr::Integer(n)) = (
+    &evaluate_expr_to_expr(&args[0])?,
+    &evaluate_expr_to_expr(&args[1])?,
+  ) else {
+    return unevaluated();
   };
-  let (Expr::Integer(k), Expr::Integer(n)) =
-    (&evaluate_expr_to_expr(k)?, &evaluate_expr_to_expr(n)?)
-  else {
-    return Ok(unevaluated("BooleanFunction", args));
+  if *n < 0 || *n > 24 {
+    return unevaluated();
+  }
+  let n = *n as usize;
+  let table = truth_table_from_index(*k, n);
+  let Some(vars) = args.get(2) else {
+    // A function of no variables is a constant, which wolframscript hands
+    // back as the pure function `True &` rather than a BDD object.
+    if n == 0 {
+      return Ok(Expr::Function {
+        body: Box::new(bool_expr(table[0])),
+      });
+    }
+    return Ok(bdd_object(&table, n));
   };
   let Expr::List(vars) = &evaluate_expr_to_expr(vars)? else {
-    return Ok(unevaluated("BooleanFunction", args));
+    return unevaluated();
   };
-  if *n < 0 || vars.len() != *n as usize {
-    return Ok(unevaluated("BooleanFunction", args));
+  if vars.len() < n {
+    return unevaluated();
   }
-  Ok(boolean_function_expr(*k, vars))
+  Ok(truth_table_to_expr(&table, &vars[..n]))
 }
 
 /// BooleanMinimize[expr] - Find the minimal sum-of-products form.
@@ -3493,6 +3775,65 @@ pub fn majority_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(call("Majority", sorted))
 }
 
+/// `BooleanMinterms[spec, n]` / `BooleanMaxterms[spec, n]` — the same
+/// function as the variable-list form, but of an unnamed `n` variables, so
+/// wolframscript hands back the opaque `BooleanFunction["BDD" -> …]`
+/// object. Only integer term indices are accepted here (a True/False row
+/// spec needs the variable list to position it), and an empty spec gives
+/// the constant pure function `False &` for minterms, `True &` for
+/// maxterms. Everything else emits ::bspec.
+fn boolean_terms_object(
+  head: &str,
+  args: &[Expr],
+  minterms: bool,
+) -> Option<Result<Expr, InterpreterError>> {
+  let Expr::Integer(n) = &args[1] else {
+    return None;
+  };
+  let bspec = || {
+    crate::emit_message(&format!(
+      "{head}::bspec: {} is not a valid {head} specification.",
+      crate::syntax::format_expr(
+        &unevaluated(head, args),
+        crate::syntax::ExprForm::Output
+      )
+    ));
+    Ok(unevaluated(head, args))
+  };
+  if *n < 1 || *n > 24 {
+    return Some(bspec());
+  }
+  let n = *n as usize;
+  let Expr::List(spec_items) = &args[0] else {
+    return Some(bspec());
+  };
+  if spec_items.is_empty() {
+    return Some(Ok(Expr::Function {
+      body: Box::new(bool_expr(!minterms)),
+    }));
+  }
+  if !spec_items
+    .iter()
+    .all(|i| matches!(i, Expr::Integer(v) if *v >= 0))
+  {
+    return Some(bspec());
+  }
+  // A minterm index is the assignment read with the first variable most
+  // significant; it is the one row where the term is True. A maxterm index
+  // names the clause instead, which is False on the complementary row.
+  let mut table = vec![!minterms; 1usize << n];
+  for i in spec_items {
+    let Expr::Integer(v) = i else { unreachable!() };
+    let index = (*v as usize) % (1usize << n);
+    table[if minterms {
+      index
+    } else {
+      !index & ((1 << n) - 1)
+    }] = minterms;
+  }
+  Some(Ok(bdd_object(&table, n)))
+}
+
 /// BooleanMinterms[spec, {v1, ...}] — the disjunction of minterms given
 /// either as True/False rows (positionally over the variables; short rows
 /// cover a prefix) or as minterm indices (taken mod 2^n). Terms are
@@ -3500,6 +3841,9 @@ pub fn majority_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// specification gives False. Boolean expressions and other malformed
 /// specifications emit ::bspec.
 pub fn boolean_minterms_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if let Some(object) = boolean_terms_object("BooleanMinterms", args, true) {
+    return object;
+  }
   let unevaluated = || unevaluated("BooleanMinterms", args);
   let bspec = || {
     crate::emit_message(&format!(
@@ -3710,6 +4054,9 @@ pub fn boolean_maxterms_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || unevaluated("BooleanMaxterms", args);
   if args.len() != 2 {
     return Ok(unevaluated());
+  }
+  if let Some(object) = boolean_terms_object("BooleanMaxterms", args, false) {
+    return object;
   }
   let bspec = || {
     crate::emit_message(&format!(

@@ -1523,12 +1523,12 @@ function main() {
     // object (Head -> Root); Woxi keeps the call symbolic (Head ->
     // InverseSurvivalFunction).
     "Head[InverseSurvivalFunction[BetaDistribution[2, 3], 1/4]]",
-    // BooleanFunction index form: Wolfram renders the applied/bare object via
-    // its internal "BDD" -> {...} encoding; Woxi keeps the BooleanFunction[i, n]
-    // head verbatim.
-    "BooleanFunction[7, 2][a, b]",
+    // BooleanFunction called with fewer arguments than it takes: both emit
+    // ::argr, but Wolfram then leaks its internal `BooleanConvert[...]`
+    // wrapper into the result instead of leaving the call as it stands.
+    // The BDD encoding itself matches — see the boolean_function tests.
     "BooleanFunction[7, 2][True]",
-    "BooleanFunction[7, 2]",
+    "BooleanFunction[7, 2, {a}]",
     // MinMax[Interval[{a, b}]] with symbolic bounds: Wolfram returns the nested
     // {{Interval[...]}, {Interval[...]}} form; Woxi keeps it unevaluated.
     "MinMax[Interval[{a, b}]]",
@@ -1543,6 +1543,28 @@ function main() {
     "Sum[k 2^k, {k, 1, Infinity}]",
 
     // Canonical Plus/Times ordering differences (mathematically identical):
+    // FunctionExpand[Gamma[0, z]] and its ExpIntegralE[1, z] spelling: same
+    // three terms, but Wolfram orders a `c (p + q)` term by the sum's LAST
+    // element, so `-ExpIntegralEi[-z]` leads; Woxi's Plus comparator puts the
+    // halved logarithm difference first. Wolfram's own generic ordering agrees
+    // with Woxi's here (`ExpIntegralEi[-z] + (b + c)/2` prints the sum first),
+    // so there is no single rule to follow. See conformance_gaps.md.
+    "FunctionExpand[Gamma[0, z]]",
+    "FunctionExpand[Gamma[0, -z]]",
+    "FunctionExpand[ExpIntegralE[1, z]]",
+    // The negative orders carry that same order-zero group, and Wolfram
+    // additionally regroups around it: it collects the elementary part over
+    // the single denominator `E^z z^(m+1)` and distributes `ExpIntegralE`'s
+    // leading `z^(n-1)` inward (`E^(-z) - z (…)` against Woxi's `z (E^-z/z +
+    // …)`). Value identical, verified by the recurrence and numerically in
+    // the incomplete_gamma_of_negative_order / generalized_exponential_
+    // integral tests. See conformance_gaps.md.
+    "FunctionExpand[Gamma[-1, z]]",
+    "FunctionExpand[Gamma[-2, z]]",
+    "FunctionExpand[ExpIntegralE[2, z]]",
+    // Same regrouping for the half-integer orders away from the two Wolfram
+    // writes bare (`Gamma[1/2, z]` and `Gamma[3/2, z]` match exactly).
+    "FunctionExpand[Gamma[-1/2, z]]",
     "ZTransform[a^n, n, z]", // -(z/(a - z)) vs z/(-a + z)
     "ZTransform[n^2 a^n, n, z]",
     "Log[E^(a + 3 I)]", // a + 3*I vs 3*I + a (numeric-imaginary term first)
@@ -1587,6 +1609,21 @@ function main() {
     "Interpreter[\"Country\"][\"Bosnia & Herzegovina\"]",
     "Head[Interpreter[\"Country\"][\"Scotland\"]]",
     "CountryData[\"Qatar\", \"Population\"]",
+
+    // TopologicalSort tie-break among simultaneously-ready vertices: Wolfram's
+    // order tracks its internal vertex hashing, not the graph — the same
+    // one-edge graph gives {3, 6, 7, 1, 2, 5, 4} for integer vertices and
+    // {c, d, e, f, g, b, a} for the matching string ones, and reversing
+    // VertexList changes it again. Woxi returns the lexicographically smallest
+    // valid order. Both are valid topological orders. See conformance_gaps.md.
+    "TopologicalSort[Graph[{1 -> 2, 1 -> 3, 2 -> 4, 3 -> 4}]]",
+    "TopologicalSort[Graph[{1, 2, 3}, {1 -> 3}]]",
+
+    // PieChart renders straight to SVG, so `PieChart[…][[1]]` has no symbolic
+    // primitive list to index into and stays an unevaluated Part; Wolfram's
+    // Graphics expression gives Head -> List. Same rendered-object gap the
+    // harness's Graphics/Image placeholder skip covers.
+    "Head[PieChart[{0.3, 0.7}][[1]] /. Disk[c_, r_, a_] :> Disk[c, r*2, a]]",
 
     // Graph-valued results: Wolfram stores graphs as an internal SparseArray
     // adjacency encoding (and attaches GraphLayout/VertexCoordinates options);

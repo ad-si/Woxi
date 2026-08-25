@@ -109,6 +109,7 @@
       - [`NotEqual`](boolean/comparison/NotEqual.md)
       - [`Unequal`](boolean/comparison/Unequal.md)
     - [Logic & Conditionals](boolean/logic.md)
+      - [`BooleanFunction`](boolean/logic/BooleanFunction.md)
       - [`And`](boolean/logic/And.md)
       - [`Boole`](boolean/logic/Boole.md)
       - [`BooleanConvert`](boolean/logic/BooleanConvert.md)

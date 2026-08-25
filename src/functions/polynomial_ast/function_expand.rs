@@ -72,6 +72,54 @@ fn mk_id(name: &str) -> Expr {
   Expr::Identifier(name.to_string())
 }
 
+/// The numerator of `e` when it is a half-integer — `Rational[p, 2]` with an
+/// odd `p` — and None otherwise.
+fn half_integer_numerator(e: &Expr) -> Option<i128> {
+  match e {
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      match (&args[0], &args[1]) {
+        (Expr::Integer(p), Expr::Integer(2)) => Some(*p),
+        _ => None,
+      }
+    }
+    _ => None,
+  }
+}
+
+/// `Gamma[0, z]` written out: the exponential integral `E1[z]`, as
+/// `-Ei[-z] - Log[z] + (Log[-z] - Log[-1/z])/2`. The halved logarithm
+/// difference is the branch-cut correction that makes the identity hold off
+/// the positive real axis; on it the logarithms cancel, leaving
+/// `FunctionExpand[Gamma[0, 2]]` as the bare `-ExpIntegralEi[-2]`.
+fn incomplete_gamma_zero(z: &Expr) -> Expr {
+  let minus_z = mk_times(mk_int(-1), z.clone());
+  call(
+    "Plus",
+    vec![
+      mk_times(mk_int(-1), call1("ExpIntegralEi", minus_z.clone())),
+      mk_div(
+        call(
+          "Plus",
+          vec![
+            mk_times(
+              mk_int(-1),
+              call1(
+                "Log",
+                mk_times(mk_int(-1), mk_power(z.clone(), mk_int(-1))),
+              ),
+            ),
+            call1("Log", minus_z),
+          ],
+        ),
+        mk_int(2),
+      ),
+      mk_times(mk_int(-1), call1("Log", z.clone())),
+    ],
+  )
+}
+
 fn mk_plus(a: Expr, b: Expr) -> Expr {
   call("Plus", vec![a, b])
 }
@@ -558,6 +606,39 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
       }
     }
 
+    // ExpIntegralE[n, z] is `z^(n-1) Gamma[1 - n, z]`. An integer order goes
+    // on to expand that incomplete Gamma — `E_0` is the elementary `E^-z/z`,
+    // `E_1` the order-zero exponential integral, and the higher orders its
+    // negative-order recurrence. A symbolic order stops at the Gamma.
+    "ExpIntegralE" if args.len() == 2 => {
+      let (n, z) = (&args[0], &args[1]);
+      let (gamma_order, power_exp) = match n {
+        Expr::Integer(k) => (mk_int(1 - *k), mk_int(*k - 1)),
+        _ => match half_integer_numerator(n) {
+          Some(p) => (mk_ratio(2 - p, 2), mk_ratio(p - 2, 2)),
+          None => (
+            mk_plus(mk_int(1), mk_times(mk_int(-1), n.clone())),
+            mk_plus(mk_int(-1), n.clone()),
+          ),
+        },
+      };
+      let gamma =
+        match try_expand_function("Gamma", &[gamma_order.clone(), z.clone()]) {
+          Some(expanded) => expanded,
+          // An integer order the incomplete Gamma cannot expand leaves the
+          // whole call alone rather than rewriting it into a Gamma; a
+          // symbolic one has nowhere further to go, and `z^(n-1) Gamma[1 -
+          // n, z]` is what wolframscript gives.
+          None if matches!(n, Expr::Integer(_)) => return None,
+          None => call("Gamma", vec![gamma_order, z.clone()]),
+        };
+      Some(if matches!(n, Expr::Integer(1)) {
+        gamma
+      } else {
+        mk_times(mk_power(z.clone(), power_exp), gamma)
+      })
+    }
+
     // Gamma[n, z] with a positive integer n is elementary:
     // `(n-1)! E^-z Sum[z^k/k!, {k, 0, n-1}]`. Wolfram writes that with the
     // sum over its common denominator — `Gamma[3, z]` is
@@ -567,12 +648,82 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
     // Gamma[2, -x]]]`, which is `E^x (x - 1)` only once the Gamma is gone.
     "Gamma" if args.len() == 2 => {
       let Expr::Integer(n) = &args[0] else {
-        return None;
+        // A half-integer order is the complementary error function rather
+        // than the exponential integral: `Gamma[1/2, z]` is
+        // `Sqrt[Pi] Erfc[Sqrt[z]]`, which Wolfram writes out as
+        // `Sqrt[Pi] (1 - Erf[Sqrt[z]])`. The same recurrence walks from
+        // there to every other half-integer, one `z^a E^-z` term per step.
+        let p = half_integer_numerator(&args[0])?;
+        if p.abs() > 64 {
+          return None;
+        }
+        let z = &args[1];
+        let exp_neg_z = mk_power(mk_id("E"), mk_times(mk_int(-1), z.clone()));
+        let elementary = |a: i128| {
+          mk_times(mk_power(z.clone(), mk_ratio(a, 2)), exp_neg_z.clone())
+        };
+        let mut acc = mk_times(
+          call1("Sqrt", mk_id("Pi")),
+          mk_plus(
+            mk_int(1),
+            mk_times(mk_int(-1), call1("Erf", call1("Sqrt", z.clone()))),
+          ),
+        );
+        // Upwards: Gamma[a + 1, z] = a Gamma[a, z] + z^a E^-z.
+        let mut a = 1i128;
+        while a < p {
+          acc =
+            call("Plus", vec![mk_times(mk_ratio(a, 2), acc), elementary(a)]);
+          a += 2;
+        }
+        // Downwards: Gamma[a, z] = (Gamma[a + 1, z] - z^a E^-z)/a.
+        let mut a = -1i128;
+        while a >= p {
+          acc = mk_div(
+            call("Plus", vec![acc, mk_times(mk_int(-1), elementary(a))]),
+            mk_ratio(a, 2),
+          );
+          a -= 2;
+        }
+        return Some(acc);
       };
-      // Zero and the negative integers bring in ExpIntegralEi and a
-      // logarithm branch cut; a non-integer order brings in Erf. Neither is
-      // covered here.
-      if *n < 1 || *n > 256 {
+      // Order zero is the exponential integral rather than a polynomial:
+      // `Gamma[0, z]` is `E1[z] = -Ei[-z] - Log[z] + (Log[-z] - Log[-1/z])/2`,
+      // where the halved logarithm difference is the branch-cut correction
+      // that makes the identity hold off the positive real axis (it cancels
+      // to 0 on it, leaving `Gamma[0, 2]` as plain `-ExpIntegralEi[-2]`).
+      // Each negative order follows from it through the recurrence
+      // `Gamma[a, z] = (Gamma[a + 1, z] - z^a E^-z)/a`, so `Gamma[-1, z]` is
+      // `E^-z/z - Gamma[0, z]` and each further step divides by the next
+      // order down.
+      if *n <= 0 {
+        if *n < -64 {
+          return None;
+        }
+        let z = &args[1];
+        let mut acc = incomplete_gamma_zero(z);
+        for a in (*n..0).rev() {
+          acc = mk_div(
+            call(
+              "Plus",
+              vec![
+                acc,
+                mk_times(
+                  mk_int(-1),
+                  mk_times(
+                    mk_power(z.clone(), mk_int(a)),
+                    mk_power(mk_id("E"), mk_times(mk_int(-1), z.clone())),
+                  ),
+                ),
+              ],
+            ),
+            mk_int(a),
+          );
+        }
+        return Some(acc);
+      }
+      // A non-integer order brings in Erf, which is not covered here.
+      if *n > 256 {
         return None;
       }
       let z = &args[1];

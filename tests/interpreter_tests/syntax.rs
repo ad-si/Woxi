@@ -2598,6 +2598,25 @@ mod message_name_function {
     assert_eq!(interpret("a::b").unwrap(), "MessageName[a, b]");
   }
 
+  // `ToString` prints the short `f::usage`, but the bare script-mode echo
+  // keeps the long head form — wolframscript makes the same split:
+  // `Solve[Abs[x] == 2, x, Complexes]; $MessageList` echoes
+  // `{HoldForm[MessageName[Solve, ifun]]}` while
+  // `ToString[$MessageList, InputForm]` is `{HoldForm[Solve::ifun]}`.
+  #[test]
+  fn message_name_prints_short_under_to_string() {
+    assert_eq!(interpret("ToString[a::b]").unwrap(), "a::b");
+    assert_eq!(interpret("ToString[a::b, InputForm]").unwrap(), "a::b");
+    assert_eq!(interpret("ToString[{a::b, 1}]").unwrap(), "{a::b, 1}");
+    assert_eq!(interpret("ToString[Hold[a::b]]").unwrap(), "Hold[a::b]");
+    assert_eq!(interpret("StringLength[ToString[a::b]]").unwrap(), "4");
+    // The echo either side of a ToString is unaffected.
+    assert_eq!(
+      interpret("ToString[a::b]; a::b").unwrap(),
+      "MessageName[a, b]"
+    );
+  }
+
   #[test]
   fn message_name_set_returns_rhs() {
     clear_state();

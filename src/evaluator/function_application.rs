@@ -1443,47 +1443,79 @@ pub fn apply_curried_call(
     } if name == "AssessmentResultObject" && args.len() == 1 => {
       crate::functions::assessment_ast::apply_result_object(func_args, &args[0])
     }
-    // BooleanFunction[n, k][b1, …, bk] — the integer-indexed boolean function.
-    // The result is bit `v` of `n`, where `v` is the k arguments read as a
-    // binary number (first argument most significant, True/1 → 1, False/0 → 0).
-    // e.g. BooleanFunction[7, 2][True, False]: v = 10b = 2, (7 >> 2) & 1 = 1 →
-    // True. Negative `n` is two's-complement (BooleanFunction[-1, k] is all
-    // True). Non-boolean args or a wrong count leave the call unevaluated.
-    Expr::FunctionCall {
-      name,
-      args: func_args,
-    } if name == "BooleanFunction"
-      && func_args.len() == 2
-      && matches!(&func_args[0], Expr::Integer(_))
-      && matches!(&func_args[1], Expr::Integer(k) if *k >= 0 && *k as usize == args.len()) =>
+    // BooleanFunction[bdd][b1, …, bn] — the Boolean-function object applied
+    // to n arguments. Literal True/False (or 1/0) arguments are substituted
+    // in: all n of them give True or False outright, and a proper subset
+    // leaves the restricted function of the remaining arguments, which is
+    // itself a BooleanFunction object. Extra arguments past the n the
+    // function takes are dropped; too few emit ::argr and leave the call as
+    // it stands, all matching wolframscript.
+    Expr::FunctionCall { name, .. }
+      if name == "BooleanFunction"
+        && crate::functions::boolean_ast::bdd_from_object(func).is_some() =>
     {
-      let Expr::Integer(n) = &func_args[0] else {
-        unreachable!()
+      let (n, table) =
+        crate::functions::boolean_ast::bdd_from_object(func).unwrap();
+      if args.len() < n {
+        crate::emit_message(&format!(
+          "BooleanFunction::argr: BooleanFunction[<{}>] called with {} \
+           argument{}; {n} arguments are expected.",
+          n,
+          args.len(),
+          if args.len() == 1 { "" } else { "s" },
+        ));
+        return Ok(Expr::CurriedCall {
+          func: Box::new(func.clone()),
+          args: args.to_vec(),
+        });
+      }
+      let args = &args[..n];
+      let literal = |a: &Expr| match a {
+        Expr::Identifier(s) if s == "True" => Some(true),
+        Expr::Identifier(s) if s == "False" => Some(false),
+        Expr::Integer(1) => Some(true),
+        Expr::Integer(0) => Some(false),
+        _ => None,
       };
-      let mut v: i128 = 0;
-      let mut ok = true;
-      for a in args {
-        let bit = match a {
-          Expr::Identifier(s) if s == "True" => 1,
-          Expr::Identifier(s) if s == "False" => 0,
-          Expr::Integer(1) => 1,
-          Expr::Integer(0) => 0,
-          _ => {
-            ok = false;
-            break;
+      let fixed: Vec<Option<bool>> = args.iter().map(literal).collect();
+      let free: Vec<usize> = (0..n).filter(|i| fixed[*i].is_none()).collect();
+      if free.len() == n && !table.iter().all(|v| *v == table[0]) {
+        return Ok(Expr::CurriedCall {
+          func: Box::new(func.clone()),
+          args: args.to_vec(),
+        });
+      }
+      // The table is indexed by the assignment read with the first variable
+      // most significant, so a variable's bit sits at position n - 1 - i.
+      let restricted: Vec<bool> = (0..(1usize << free.len()))
+        .map(|assignment| {
+          let mut index = 0usize;
+          for (i, value) in fixed.iter().enumerate() {
+            let bit = if let Some(b) = value {
+              *b
+            } else {
+              let slot = free.iter().position(|f| *f == i).unwrap();
+              (assignment >> (free.len() - 1 - slot)) & 1 == 1
+            };
+            if bit {
+              index |= 1 << (n - 1 - i);
+            }
           }
-        };
-        v = (v << 1) | bit;
+          table[index]
+        })
+        .collect();
+      // A function that no longer depends on anything is just its value,
+      // whether or not any argument was literal.
+      if restricted.iter().all(|v| *v == restricted[0]) {
+        return Ok(bool_expr(restricted[0]));
       }
-      if ok {
-        return Ok(bool_expr((n >> v) & 1 == 1));
-      }
-      // A symbolic argument makes this the explicit expression of the
-      // function in those arguments, the same value BooleanFunction's
-      // three-argument form gives.
-      Ok(crate::functions::boolean_ast::boolean_function_expr(
-        *n, args,
-      ))
+      Ok(Expr::CurriedCall {
+        func: Box::new(crate::functions::boolean_ast::bdd_object(
+          &restricted,
+          free.len(),
+        )),
+        args: free.iter().map(|i| args[*i].clone()).collect(),
+      })
     }
     // BooleanCountingFunction[spec, n][b1, …] — True when the number of True
     // arguments is one of the counts the spec names. Only literal arguments

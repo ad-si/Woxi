@@ -493,14 +493,16 @@ pub fn string_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// AtomQ[expr] - Tests if the expression is atomic (not compound)
 /// The compound-headed objects wolframscript treats as atoms: the packed
-/// array types and a `Tree`. They report `AtomQ -> True`, count as a single
-/// leaf and are not traversed into by FreeQ, Position or Level.
+/// array types, a `Tree` and the `BooleanFunction["BDD" -> …]` object. They
+/// report `AtomQ -> True`, count as a single leaf and are not traversed
+/// into by FreeQ, Position or Level.
 pub fn is_atomic_object(expr: &Expr) -> bool {
   matches!(expr, Expr::FunctionCall { name, .. }
     if name == "ByteArray"
       || name == "NumericArray"
       || name == "SparseArray"
       || name == "Tree")
+    || crate::functions::boolean_ast::bdd_from_object(expr).is_some()
 }
 
 /// A Dataset is an atom for traversal (`AtomQ`, `LeafCount`, `Level`, `Depth`)
@@ -2312,8 +2314,11 @@ pub fn length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Unevaluated[expr] is consumed by Length: count elements of expr directly.
   let stripped = crate::evaluator::strip_unevaluated(&args[0]);
-  // A Tree is an atom: it has no parts to count.
-  if matches!(&stripped, Expr::FunctionCall { name, .. } if name == "Tree") {
+  // A Tree and a BooleanFunction["BDD" -> …] object are atoms: they have no
+  // parts to count.
+  if matches!(&stripped, Expr::FunctionCall { name, .. } if name == "Tree")
+    || crate::functions::boolean_ast::bdd_from_object(&stripped).is_some()
+  {
     return Ok(Expr::Integer(0));
   }
   // SparseArray[Automatic, dims, default, rules]: Length is its first

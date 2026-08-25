@@ -213,11 +213,6 @@ renderer typesets the raw markers — the real fix needs a "terminal text" vs
 `\!\(…\)` **without** `\*` is full 2D linear syntax; WL parses it into a
 `RowBox`, Woxi leaves it literal.
 
-### `MessageName` prints its long form in InputForm
-
-`OutputForm` prints `MessageName[f, usage]` in both engines, but `InputForm`
-prints the short `f::usage` in wolframscript and the long form in Woxi.
-
 ### Machine reals in grid cells render at six significant figures
 
 `TableForm`/`Grid`/`MatrixForm` cells and typeset labels round machine reals to
@@ -263,6 +258,33 @@ WL prints `(a + b) x + x^2`. The products-compare-from-the-last-factor rule is
 implemented for `Sort` and `Order` but not for the `Plus` comparator, which is
 the delicate one (it is not strictly transitive and its sort is wrapped in a
 panic guard with a string-key fallback).
+
+### A scaled sum is ordered by its last term, not its first
+
+`FunctionExpand[Gamma[0, z]]` is `-ExpIntegralEi[-z] + (-Log[-z^(-1)] +
+Log[-z])/2 - Log[z]` in WL and `(-Log[-z^(-1)] + Log[-z])/2 -
+ExpIntegralEi[-z] - Log[z]` in Woxi — same three terms, different order. WL
+compares a `c (p + q)` term against its neighbours using the sum's **last**
+(greatest) element: `Aa[z] + (Log[w] + Log[y])/2` keeps `Aa[z]` first because
+`Log[y] > Aa[z]`, while `ExpIntegralEi[-z] + (b + c)/2` puts the sum first
+because `c < ExpIntegralEi[-z]`. Woxi's `Plus` comparator always puts the
+scaled sum first, so it happens to agree with WL on the second shape and not
+the first. Adopting the last-element key means reworking
+`compare_plus_terms`'s hybrid `has_transcendental_subexpr` branch, which
+currently keys on the *earliest* variable — the same delicate comparator the
+`x^2 + (a + b) x` entry above describes. Value identical, display only.
+
+The negative-order incomplete gammas carry that same group, and WL regroups
+around it as well: `FunctionExpand[Gamma[-2, z]]` collects the elementary part
+over the single denominator `E^z z^3` (`-((-z/2 + z^2/2)/(E^z z^3)) + …`) where
+Woxi leaves the two reciprocal powers apart, and
+`FunctionExpand[ExpIntegralE[2, z]]` distributes the leading `z^(n-1)` inward
+(`E^(-z) - z (…)`) where Woxi keeps the product. The half-integer orders regroup
+the same way once past the two WL writes bare — `Gamma[1/2, z]` and
+`Gamma[3/2, z]` match exactly, `Gamma[-1/2, z]` differs only in whether the
+leading `-2` is distributed. All are value-identical — the unit tests check the
+`Gamma[a, z] = (Gamma[a + 1, z] - z^a E^-z)/a` recurrence and compare
+numerically against `ExpIntegralE`.
 
 ### Nested sum-versus-sum factor order
 
@@ -1044,10 +1066,15 @@ but four differences remain:
 `BooleanConvert[Nand[a,b,c], "ANF"]` prints `Nand[a, b, c]` in WL (it does not
 rewrite the head) against Woxi's `!(a && b && c)`, and
 `BooleanConvert[Equivalent[Xor[a,b],c], "IF"]` branches on `c` first, so WL's
-BDD variable order is not always alphabetical. `BooleanFunction[n, k]` and
-`BooleanMinterms`/`BooleanMaxterms` with an integer variable count normalise to
-`BooleanFunction["BDD" -> …]` in WL; Woxi leaves them alone, and
-`BooleanMinterms[{1,2}, 2]` wrongly emits `::bspec`.
+BDD variable order is not always alphabetical.
+
+`BooleanFunction[k, n]` and `BooleanMinterms`/`BooleanMaxterms` with an integer
+variable count normalise to the opaque `BooleanFunction["BDD" -> …]` object —
+**implemented**, encoding verified against WL for every function of 1, 3 and 4
+variables and a sample of 5. The only remaining divergence is the too-few-
+arguments case: `BooleanFunction[7, 2][True]` and `BooleanFunction[7, 2, {a}]`
+both emit `::argr`, but WL then leaks its internal `BooleanConvert[…]` wrapper
+into the returned expression where Woxi leaves the call as it stands.
 
 ### `SatisfiabilityInstances` ordering
 
@@ -2254,6 +2281,15 @@ plain `Line`/`Arrow` lists; `SphericalPlot3D` samples a different grid;
 `Graph[…, opts]` echoes its options unwrapped where wolframscript wraps them in
 a list.
 
+### Chart functions have no symbolic primitive list at all
+
+`PieChart`, `BarChart` and friends render straight to SVG, so unlike `Plot`
+they expose no `Graphics[{…}]` to index into: `Head[PieChart[{0.3, 0.7}][[1]]]`
+is `Part` in Woxi (the `Part` stays unapplied on the opaque graphic) against
+`List` in wolframscript, and a `/.` rule that matches nothing leaves the whole
+expression alone rather than rewriting inside it. Making the charts symbolic
+means routing them through the `Graphics` layer the plots use.
+
 ### `PointSize` in `PlotStyle` and `ListPlot`'s `PlotLabel`
 
 `PointSize` inside `PlotStyle` is dropped — the three scatter renderers
@@ -2561,9 +2597,21 @@ order, DFS pre/post, BFS from the target, degree-based start) is contradicted.
 WL's vertex ordering is not reproducible by DFS reverse-postorder or by Kahn
 with a min/max heap: `{1->3, 2->3}` → `{1,2,3}` needs Kahn-min, but
 `{1->2, 1->3, 2->4, 3->4}` → `{1,3,2,4}` needs DFS, and the two contradict.
-Also `{1->2, 3->4}` → `{3,4,1,2}`. Woxi always returns the lexicographically
-smallest topological order (Kahn's algorithm, ties broken by `VertexList`
-index) — a valid ordering, just not always WL's. **Not reproducible.**
+Also `{1->2, 3->4}` → `{3,4,1,2}` and `Graph[{1,2,3}, {1->3}]` → `{1,3,2}`.
+A sweep of 115 random DAGs against 42 candidate algorithms (Kahn with a
+min/max heap, FIFO and LIFO keyed on either `VertexList` index or vertex
+value; DFS reverse-postorder over four start orders × four successor orders;
+each of those on the transposed graph) tops out at 67/115 — no candidate fits.
+
+The order in fact does not depend on the graph alone. `Graph[{4,1,2,7,3,6,5},
+{6->7}]` and `Graph[{1,2,3,4,5,6,7}, {6->7}]` both give `{3,6,7,1,2,5,4}`, so
+`VertexList` order is mostly ignored; but `Graph[{7,6,5,4,3,2,1}, {6->7}]`
+gives `{3,6,7,1,5,2,4}`, and relabelling the same graph to the matching
+strings gives `{c,d,e,f,g,b,a}`. That is WL's internal vertex hashing showing
+through, and it is deterministic per run but not derivable. Woxi always
+returns the lexicographically smallest topological order (Kahn's algorithm,
+ties broken by `VertexList` index) — a valid ordering, just not always WL's.
+**Not reproducible.**
 
 ### `FindHamiltonianPath` choice
 

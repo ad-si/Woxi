@@ -12793,16 +12793,145 @@ mod function_expand {
       "-((E^x*(-x + x^2))/x)"
     );
     assert_eq!(interpret("FunctionExpand[Gamma[2, 3]]").unwrap(), "4/E^3");
-    // Orders the elementary form does not cover stay put: zero and the
-    // negative integers need ExpIntegralEi, a half-integer needs Erf.
-    assert_eq!(
-      interpret("FunctionExpand[Gamma[0, z]]").unwrap(),
-      "Gamma[0, z]"
-    );
+    // A symbolic order has no closed form at all, so it stays put.
     assert_eq!(
       interpret("FunctionExpand[Gamma[n, z]]").unwrap(),
       "Gamma[n, z]"
     );
+    assert_eq!(
+      interpret("FunctionExpand[Gamma[1/3, z]]").unwrap(),
+      "Gamma[1/3, z]"
+    );
+  }
+
+  // Order zero is the exponential integral instead: `Gamma[0, z]` is
+  // `-Ei[-z] - Log[z] + (Log[-z] - Log[-1/z])/2`, where the halved logarithm
+  // difference is the branch-cut correction that makes the identity hold off
+  // the positive real axis — on it the logarithms cancel, leaving the bare
+  // `-ExpIntegralEi`.
+  #[test]
+  fn incomplete_gamma_of_order_zero() {
+    assert_eq!(
+      interpret("FunctionExpand[Gamma[0, z]]").unwrap(),
+      "(-Log[-z^(-1)] + Log[-z])/2 - ExpIntegralEi[-z] - Log[z]"
+    );
+    assert_eq!(
+      interpret("FunctionExpand[Gamma[0, -z]]").unwrap(),
+      "(-Log[z^(-1)] + Log[z])/2 - ExpIntegralEi[z] - Log[-z]"
+    );
+    assert_eq!(
+      interpret("FunctionExpand[Gamma[0, 2]]").unwrap(),
+      "-ExpIntegralEi[-2]"
+    );
+  }
+
+  // Every negative order follows from order zero through the recurrence
+  // `Gamma[a, z] = (Gamma[a + 1, z] - z^a E^-z)/a`, adding one elementary
+  // term per step: `Gamma[-1, z]` is `E^-z/z - Gamma[0, z]`.
+  #[test]
+  fn incomplete_gamma_of_negative_order() {
+    assert_eq!(
+      interpret("FunctionExpand[Gamma[-1, z]]").unwrap(),
+      "1/(E^z*z) + (Log[-z^(-1)] - Log[-z])/2 + ExpIntegralEi[-z] + Log[z]"
+    );
+    assert_eq!(
+      interpret("FunctionExpand[Gamma[-2, z]]").unwrap(),
+      "(1/(E^z*z^2) - 1/(E^z*z) + (-Log[-z^(-1)] + Log[-z])/2 \
+       - ExpIntegralEi[-z] - Log[z])/2"
+    );
+    // Each step is the recurrence applied to the one above it.
+    for order in 1..=4 {
+      assert_eq!(
+        interpret(&format!(
+          "Simplify[FunctionExpand[Gamma[{}, z]] \
+           - (FunctionExpand[Gamma[{}, z]] - z^{} E^-z)/{}]",
+          -order,
+          1 - order,
+          -order,
+          -order
+        ))
+        .unwrap(),
+        "0",
+        "the Gamma[{}, z] expansion should satisfy the recurrence",
+        -order
+      );
+    }
+  }
+
+  // A half-integer order is the complementary error function rather than the
+  // exponential integral — `Gamma[1/2, z]` is `Sqrt[Pi] Erfc[Sqrt[z]]`, which
+  // Wolfram writes out as `Sqrt[Pi] (1 - Erf[Sqrt[z]])` — and the same
+  // recurrence walks from there to every other half-integer.
+  #[test]
+  fn incomplete_gamma_of_half_integer_order() {
+    assert_eq!(
+      interpret("FunctionExpand[Gamma[1/2, z]]").unwrap(),
+      "Sqrt[Pi]*(1 - Erf[Sqrt[z]])"
+    );
+    assert_eq!(
+      interpret("FunctionExpand[Gamma[3/2, z]]").unwrap(),
+      "Sqrt[z]/E^z + (Sqrt[Pi]*(1 - Erf[Sqrt[z]]))/2"
+    );
+    assert_eq!(
+      interpret("FunctionExpand[Gamma[-1/2, z]]").unwrap(),
+      "-2*(-(1/(E^z*Sqrt[z])) + Sqrt[Pi]*(1 - Erf[Sqrt[z]]))"
+    );
+    // Every step satisfies the recurrence it was built from.
+    for numerator in [-5, -3, -1, 3, 5, 7] {
+      assert_eq!(
+        interpret(&format!(
+          "Simplify[FunctionExpand[Gamma[{numerator}/2, z]] \
+           - (FunctionExpand[Gamma[{}/2, z]] - z^({numerator}/2) E^-z) \
+           / ({numerator}/2)]",
+          numerator + 2
+        ))
+        .unwrap(),
+        "0",
+        "the Gamma[{numerator}/2, z] expansion should satisfy the recurrence"
+      );
+    }
+  }
+
+  // ExpIntegralE[n, z] is z^(n-1) Gamma[1 - n, z]: an integer or half-integer
+  // order goes on to expand that incomplete Gamma, a symbolic one stops there.
+  #[test]
+  fn generalized_exponential_integral() {
+    assert_eq!(
+      interpret("FunctionExpand[ExpIntegralE[1, z]]").unwrap(),
+      interpret("FunctionExpand[Gamma[0, z]]").unwrap()
+    );
+    assert_eq!(
+      interpret("FunctionExpand[ExpIntegralE[1, 2]]").unwrap(),
+      "-ExpIntegralEi[-2]"
+    );
+    assert_eq!(
+      interpret("FunctionExpand[ExpIntegralE[0, z]]").unwrap(),
+      "1/(E^z*z)"
+    );
+    assert_eq!(
+      interpret("FunctionExpand[ExpIntegralE[2, z]]").unwrap(),
+      "z*(1/(E^z*z) + (Log[-z^(-1)] - Log[-z])/2 + ExpIntegralEi[-z] + Log[z])"
+    );
+    assert_eq!(
+      interpret("FunctionExpand[ExpIntegralE[1/2, z]]").unwrap(),
+      "(Sqrt[Pi]*(1 - Erf[Sqrt[z]]))/Sqrt[z]"
+    );
+    assert_eq!(
+      interpret("FunctionExpand[ExpIntegralE[n, z]]").unwrap(),
+      "z^(-1 + n)*Gamma[1 - n, z]"
+    );
+    // The expansions agree numerically with the function they came from.
+    for order in 1..=4 {
+      assert_eq!(
+        interpret(&format!(
+          "Round[10^12 N[(FunctionExpand[ExpIntegralE[{order}, z]] \
+           /. z -> 13/10) - ExpIntegralE[{order}, 1.3]]]"
+        ))
+        .unwrap(),
+        "0",
+        "the E_{order} expansion should agree with ExpIntegralE"
+      );
+    }
   }
 
   #[test]
