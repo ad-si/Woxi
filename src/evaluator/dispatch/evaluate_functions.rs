@@ -651,6 +651,7 @@ fn evaluate_function_call_ast_inner(
   // dispatch rather than reimplementing the legacy function separately.
   let name = match name {
     "VectorFieldPlots`ListVectorFieldPlot" => "ListVectorPlot",
+    "BarCharts`BarChart" => "BarChart",
     other => other,
   };
 

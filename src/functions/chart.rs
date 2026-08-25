@@ -1369,7 +1369,11 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
             opts.full_width = fw;
           }
         }
-        "ChartLabels" => {
+        // `BarLabels` is the legacy `BarCharts` package's name for this
+        // option; `BarCharts`BarChart` is normalized to `BarChart` before
+        // dispatch (see `evaluate_function_call_ast_inner`), so the same
+        // options parser has to accept its option names too.
+        "ChartLabels" | "BarLabels" => {
           // ChartLabels can be `Placed[labels, position]`,
           // `Placed[labels, position, styleFn]`, or a list containing such a
           // `Placed[...]` (e.g. `{values, Placed[days, Center, fn]}`). Check
@@ -1481,7 +1485,8 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
           // Stored unevaluated (it's a pure function applied per value).
           opts.labeling_function = Some(replacement.clone());
         }
-        "ChartStyle" => {
+        // `BarStyle` is the legacy `BarCharts` package's name for this option.
+        "ChartStyle" | "BarStyle" => {
           let val = evaluate_expr_to_expr(replacement)
             .unwrap_or_else(|_| replacement.clone());
           match &val {

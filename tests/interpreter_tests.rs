@@ -786,6 +786,41 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_legacy_barcharts_barchart_context_qualified() {
+    // Regression: a Wolfram Demonstration authored before `BarChart` was a
+    // built-in (e.g. "Grover's Quantum Search Algorithm") loads the old
+    // `BarCharts` package and calls its bar chart fully context-qualified,
+    // `BarCharts`BarChart[...]`, with the package's own `BarLabels`/
+    // `BarStyle` option names rather than the modern `ChartLabels`/
+    // `ChartStyle`. Woxi has no package system, so the qualified call must
+    // normalize to the built-in `BarChart` (like `VectorFieldPlots`
+    // ListVectorFieldPlot` already does) and accept the legacy option names.
+    clear_state();
+    let svg = interpret_with_stdout(
+      "Needs[\"BarCharts`\"]; \
+       BarCharts`BarChart[{0.3, 0.7}, \
+       BarLabels -> {\"classical\", \"quantum\"}, \
+       BarStyle -> {Pink, LightBlue}, \
+       PlotLabel -> \"probability\"]",
+    )
+    .unwrap()
+    .graphics
+    .expect("BarCharts`BarChart should produce a graphics SVG");
+    for label in ["classical", "quantum", "probability"] {
+      assert!(
+        svg.contains(&format!(">{label}</text>")),
+        "BarCharts`BarChart SVG missing label `{label}`:\n{svg}"
+      );
+    }
+    for hex in ["#FF8080", "#DEF0FF"] {
+      assert!(
+        svg.contains(hex),
+        "BarCharts`BarChart SVG missing BarStyle color {hex}:\n{svg}"
+      );
+    }
+  }
+
+  #[test]
   fn test_piechart_chartstyle_and_chartlabels() {
     // Regression: PieChart must honor `ChartStyle` (per-slice fill colors,
     // keyed by data index) and `ChartLabels` (text drawn on each wedge).
