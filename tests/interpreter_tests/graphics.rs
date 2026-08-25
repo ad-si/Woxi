@@ -18159,6 +18159,30 @@ mod manipulate {
     assert_eq!(result, "10");
   }
 
+  /// Regression: a variable spec's bound (`Length[func]`) that references a
+  /// symbol only `Initialization :> …` defines must still resolve, even
+  /// though the spec appears earlier in the argument list than the
+  /// `Initialization` option. Wolfram runs `Initialization` when the
+  /// DynamicModule is set up — before any control bound is resolved —
+  /// regardless of where the option is written among the arguments.
+  /// Previously the speculative bound evaluation ran left to right and hit
+  /// `Length[func]` before `func` had been defined, evaluating it against
+  /// an undefined symbol (`Length[func] -> 0`) instead of leaving it
+  /// symbolic for a later retry.
+  #[test]
+  fn bound_referencing_initialization_symbol_resolves_regardless_of_order() {
+    let result = interpret(
+      "Manipulate[func[[n]], {{n, 1, \"which\"}, 1, Length[func], 1}, \
+       Initialization :> (func = {a, b, c, d})]",
+    )
+    .unwrap();
+    assert_eq!(
+      result,
+      "Manipulate[func[[n]], {{n, 1, which}, 1, 4, 1}, \
+       Initialization :> (func = {a, b, c, d})]"
+    );
+  }
+
   #[test]
   fn tracked_symbols_option_is_not_vsform() {
     // Rule (`->`) options like TrackedSymbols also pass through cleanly.
