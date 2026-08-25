@@ -358,6 +358,29 @@ function splitTopLevelSemicolons(s: string): string[] {
 }
 
 /**
+ * Glue setup statements and the asserted expression into the single input
+ * line both engines run.
+ *
+ * A setup statement lifted out of a unit test usually already ends in a
+ * semicolon (`interpret("rules = Table[…];")`). Joining that to the next
+ * statement with another `; ` produces `;;`, which is not two separators but
+ * the Span operator — so `a = 1;; b = 2` parses as `Span[a = 1, b = 2]` and
+ * the line stops meaning what the unit test meant. wolframscript then answers
+ * with `TerminatedEvaluation[RecursionLimit]` instead of a result, which the
+ * batch runner sees as a missing DONE sentinel.
+ */
+function joinStatements(parts: string[]): string {
+  return parts
+    .map((p, i) =>
+      // The final part keeps its trailing `;` — that is what makes the whole
+      // line evaluate to Null, exactly as the unit test does.
+      i === parts.length - 1 ? p : p.replace(/(?<!;);\s*$/, "").trim()
+    )
+    .filter((p) => p.length > 0)
+    .join("; ");
+}
+
+/**
  * Run an expression through woxi eval, wrapping it in
  * ToString[expr, InputForm] to get the canonical comparison format.
  *
@@ -2143,12 +2166,12 @@ function main() {
     // hangs or diverges on them, and a skip-listed setup expression would hang
     // the batch even though the case's own expr is fine (they set no state).
     const fullExpr = setup
-      ? [
+      ? joinStatements([
           ...setup.filter(
             (s) => !s.includes("\n") && !EXACT_EXPR_SKIP.has(s)
           ),
           expr,
-        ].join("; ")
+        ])
       : expr;
     const result = runWoxi(fullExpr);
     woxiResults.push({ expr: fullExpr, woxiResult: result, idx: i });
