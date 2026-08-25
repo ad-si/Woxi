@@ -385,6 +385,28 @@ Cell[BoxData[RowBox[{"Print[\"hi\"]", "\n", "x = 5"}]], "Code"]
 }
 
 #[test]
+fn run_notebook_manipulate_epilog_label_has_no_precision_marker() {
+  // Regression for a Wolfram Demonstrations Project notebook pattern: a
+  // Manipulate body computes a value with `NIntegrate`, then builds a
+  // `Plot` `Epilog` label via `ToString[SetPrecision[expr, n]]`. The label
+  // text must be the plain rounded decimal (matching wolframscript), not
+  // the raw InputForm digits with a `` `n `` precision marker still
+  // attached.
+  let nb = concat!(
+    "Notebook[{\n",
+    "Cell[BoxData[\"Print[ToString[SetPrecision[Tanh[1], 3]]]\"], \"Input\"]\n",
+    "}]\n"
+  );
+  let dir = std::env::temp_dir();
+  let path = dir.join("woxi_cli_test_manipulate_epilog_label.nb");
+  std::fs::write(&path, nb).expect("write temp notebook");
+  let (stdout, stderr, ok) = run_file(&path);
+  let _ = std::fs::remove_file(&path);
+  assert!(ok, "woxi run notebook failed: stderr={stderr}");
+  assert_eq!(stdout.trim(), "Tanh[1.00]");
+}
+
+#[test]
 fn run_notebook_notebook_directory_resolves_to_file_dir() {
   // Regression: `NotebookDirectory[]` must resolve to the `.nb` file's
   // own directory when run via `woxi run` (so Export paths etc. work),
