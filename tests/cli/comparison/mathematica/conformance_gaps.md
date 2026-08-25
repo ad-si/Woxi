@@ -1556,6 +1556,65 @@ argument-consuming built-in (`ToString`, `Length`, `Head`) fed a produced
 wrapper diverges; telling the two apart needs the literal-ness of each
 argument threaded through to the built-in dispatch.
 
+A loop body is an argument-consuming position of the same kind, so a wrapper
+written there survives where WL strips it and evaluates what was inside:
+
+```sh
+wolframscript -code 'Table[Unevaluated[1 + 1], {i, 2}]'   # {2, 2}
+woxi eval 'Table[Unevaluated[1 + 1], {i, 2}]'             # {Unevaluated[1 + 1], Unevaluated[1 + 1]}
+
+wolframscript -code 'Do[Print[Unevaluated[1 + 1]], {i, 1}]'   # 2
+woxi eval 'Do[Print[Unevaluated[1 + 1]], {i, 1}]'             # Unevaluated[1 + 1]
+```
+
+### A definition's bare symbol argument becomes a blank pattern
+
+`SetDelayed` turns a plain symbol in the left-hand side's argument list into a
+named pattern, so `f[x] := …` defines what `f[x_] := …` defines. WL takes the
+symbol literally: the definition is stored for the single argument `x` and
+matches nothing else.
+
+```sh
+wolframscript -code 'f[x] := x^2; f[5]'               # f[5]
+woxi eval 'f[x] := x^2; f[5]'                         # 25
+
+wolframscript -code 'f[x] := x^2; DownValues[f]'      # {HoldPattern[f[x]] :> x^2}
+woxi eval 'f[x] := x^2; DownValues[f]'                # {HoldPattern[f[x_]] :> x^2}
+```
+
+WL also evaluates the arguments of the left-hand side before storing the
+definition, which Woxi's pattern reading hides:
+
+```sh
+wolframscript -code 'i = 3; g[i] := i; DownValues[g]'  # {HoldPattern[g[3]] :> i}
+woxi eval 'i = 3; g[i] := i; DownValues[g]'            # {HoldPattern[g[i_]] :> i}
+```
+
+`Set` (`=`) stores the literal argument as WL does. A symbol nested inside a
+structured argument takes a third path and leaks an internal name into the
+stored right-hand side:
+
+```sh
+wolframscript -code 'f[{x}] := x; DownValues[f]'      # {HoldPattern[f[{x}]] :> x}
+woxi eval 'f[{x}] := x; DownValues[f]'                # {HoldPattern[f[{x}]] :> _lp0[[1]]}
+```
+
+### Sum and Product substitute their iterator instead of localizing it
+
+`Table` and `Do` localize the iterator the way `Block` does — the symbol is
+given a value for one iteration rather than replaced throughout the body — so
+held positions keep it symbolic. `Sum` and `Product` still substitute, which
+both burns the counter into held subexpressions and stops WL's own
+recognition of a summand that does not depend on the index:
+
+```sh
+wolframscript -code 'Sum[Hold[i], {i, 2}]'      # 2*Hold[i]
+woxi eval 'Sum[Hold[i], {i, 2}]'                # Hold[1] + Hold[2]
+
+wolframscript -code 'Product[Hold[i], {i, 2}]'  # Hold[i]^2
+woxi eval 'Product[Hold[i], {i, 2}]'            # Hold[1]*Hold[2]
+```
+
 ### A non-terminating NestWhile returns a wrong answer instead of not terminating
 
 ```sh
