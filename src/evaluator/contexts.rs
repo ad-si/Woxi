@@ -26,10 +26,9 @@
 //! Symbols that ship with the language stay unqualified: they are `System``
 //! symbols, and Woxi implements them in one namespace.
 
+use super::*;
 use std::cell::RefCell;
 use std::collections::HashSet;
-
-use crate::syntax::Expr;
 
 thread_local! {
   /// Every symbol created so far, by full name (`Global`` symbols by their
@@ -221,7 +220,7 @@ fn is_user_symbol(name: &str) -> bool {
   {
     return false;
   }
-  if crate::evaluator::listable::is_system_variable_name(short_name(name)) {
+  if is_system_variable_name(short_name(name)) {
     return false;
   }
   // A pattern variable arrives with its blank suffix stripped, but a stray
@@ -230,8 +229,7 @@ fn is_user_symbol(name: &str) -> bool {
     return false;
   }
   let bare = short_name(name);
-  !crate::evaluator::is_builtin_symbol(bare)
-    && crate::evaluator::get_builtin_attributes_mask(bare).is_empty()
+  !is_builtin_symbol(bare) && get_builtin_attributes(bare).is_empty()
 }
 
 /// Whether a symbol with this full name exists — either created in a
@@ -392,7 +390,7 @@ pub fn display_name(full_name: &str) -> String {
 /// in their name; everything else in the stores is a `Global`` symbol.
 pub fn known_symbols() -> Vec<(String, String)> {
   let mut symbols: Vec<(String, String)> = Vec::new();
-  for builtin in crate::evaluator::all_builtin_symbol_names() {
+  for builtin in all_builtin_symbol_names() {
     symbols.push(("System`".to_string(), builtin.to_string()));
   }
   for name in created_symbols()
