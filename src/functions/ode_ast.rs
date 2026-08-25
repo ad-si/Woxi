@@ -1580,10 +1580,38 @@ fn expr_mentions_function(expr: &Expr, fname: &str) -> bool {
     .any(|c| expr_mentions_function(c, fname))
 }
 
+/// Whether `expr` is, at the top level, exactly a call to `fname`
+/// (`fname[…]`) — not merely an expression that mentions one somewhere
+/// inside it.
+fn is_bare_call(expr: &Expr, fname: &str) -> bool {
+  matches!(expr, Expr::FunctionCall { name, .. } if name == fname)
+}
+
 /// Solve an algebraic equation for `fname[x]`, returning the right-hand side
 /// of the single solution. `None` when it does not solve uniquely.
 fn solve_for_function(eq: &Expr, fname: &str) -> Option<Expr> {
   let unknown = find_function_call(eq, fname)?;
+
+  // Fast path: the equation already reads `fname[x] == rhs` (or the
+  // mirror image) — an explicit definition, not one that needs solving.
+  // Elimination keeps substituting the *other* side of equations like this
+  // as more unknowns fall out of the system, so their `rhs` can grow large
+  // well before this one's own turn comes up; handing that growing
+  // expression to the general `Solve[]` below on every candidate equation,
+  // every elimination round, is what makes a system of this DAE's size
+  // (dozens of unknowns) stop scaling. Recognizing the already-solved
+  // shape directly is exact — not an approximation of what `Solve[]` would
+  // return — since `rhs` not mentioning `fname` means it already is the
+  // unique solution.
+  if let Some((lhs, rhs)) = as_equal_pair(eq) {
+    if is_bare_call(lhs, fname) && !expr_mentions_function(rhs, fname) {
+      return Some(rhs.clone());
+    }
+    if is_bare_call(rhs, fname) && !expr_mentions_function(lhs, fname) {
+      return Some(lhs.clone());
+    }
+  }
+
   let solved = crate::evaluator::evaluate_expr_to_expr(&call(
     "Solve",
     vec![eq.clone(), unknown],
@@ -1875,6 +1903,20 @@ fn ndsolve_system(
   let n_steps = 1000usize;
   let h = (x_max - x_min) / n_steps as f64;
 
+  // When the mass matrix (the highest-derivative coefficients) turns out
+  // not to depend on `x` or the state — common for a holdup/mass-balance
+  // system, whose coefficients are plain numerals — building it once here
+  // instead of at every one of the run's stage evaluations is a large
+  // constant-factor speedup with no change to the result: the linear
+  // solve at each stage is unaffected, only where its matrix comes from.
+  let cached_mass_matrix = probe_constant_mass_matrix(
+    &residuals,
+    funcs.len(),
+    x0,
+    &init_state,
+    x_min,
+    x_max,
+  );
   // Integrate forward from x0 to x_max, then (if x0 is interior)
   // backward from x0 to x_min; events are only located on the forward
   // leg, matching the direction NDSolve integrates first.
@@ -1889,6 +1931,7 @@ fn ndsolve_system(
     event_fn.as_ref(),
     event.and_then(|e| e.action.as_ref()),
     x_name,
+    cached_mass_matrix.as_deref(),
   )?;
   let Some(forward) = forward else {
     return Ok(None);
@@ -1905,6 +1948,7 @@ fn ndsolve_system(
       None,
       None,
       x_name,
+      cached_mass_matrix.as_deref(),
     )?;
     let Some(leg) = leg else {
       return Ok(None);
@@ -2100,6 +2144,7 @@ fn integrate_leg(
   event_fn: Option<&NumFn>,
   event_action: Option<&Expr>,
   x_name: &str,
+  cached_m: Option<&[Vec<f64>]>,
 ) -> Result<Option<Vec<(f64, Vec<f64>)>>, InterpreterError> {
   let n_steps = ((x_to - x_from) / h).round() as usize;
   // Each grid point is computed from the leg's ends rather than by adding
@@ -2141,6 +2186,7 @@ fn integrate_leg(
       h,
       0,
       &mut refined,
+      cached_m,
     )?
     else {
       return Ok(None);
@@ -2167,6 +2213,7 @@ fn integrate_leg(
             &state,
             x,
             h_star,
+            cached_m,
           )? {
             Some(s) => (x + h_star, s),
             None => (new_x, new_state.clone()),
@@ -2241,9 +2288,10 @@ fn rk4_step_refined(
   h: f64,
   depth: u32,
   out: &mut Vec<(f64, Vec<f64>)>,
+  cached_m: Option<&[Vec<f64>]>,
 ) -> Result<Option<Vec<f64>>, InterpreterError> {
   let Some(full) =
-    rk4_system_step(residuals, funcs, state_offset, state, x, h)?
+    rk4_system_step(residuals, funcs, state_offset, state, x, h, cached_m)?
   else {
     return Ok(None);
   };
@@ -2263,12 +2311,19 @@ fn rk4_step_refined(
     return accept(full, out);
   }
   let Some(mid) =
-    rk4_system_step(residuals, funcs, state_offset, state, x, half)?
+    rk4_system_step(residuals, funcs, state_offset, state, x, half, cached_m)?
   else {
     return accept(full, out);
   };
-  let Some(two) =
-    rk4_system_step(residuals, funcs, state_offset, &mid, x + half, half)?
+  let Some(two) = rk4_system_step(
+    residuals,
+    funcs,
+    state_offset,
+    &mid,
+    x + half,
+    half,
+    cached_m,
+  )?
   else {
     return accept(full, out);
   };
@@ -2293,6 +2348,7 @@ fn rk4_step_refined(
     half,
     depth + 1,
     out,
+    cached_m,
   )?
   else {
     return Ok(None);
@@ -2306,12 +2362,15 @@ fn rk4_step_refined(
     half,
     depth + 1,
     out,
+    cached_m,
   )
 }
 
 /// One RK4 step of the first-order system equivalent. Returns `None`
 /// when a residual can't be evaluated numerically or the linear system
-/// for the highest derivatives is singular.
+/// for the highest derivatives is singular. `cached_m` is the mass matrix
+/// `probe_constant_mass_matrix` proved constant for this system, if any —
+/// passing it in skips the `O(n^2)` rebuild at every stage.
 fn rk4_system_step(
   residuals: &[NumFn],
   funcs: &[SysFunc],
@@ -2319,23 +2378,26 @@ fn rk4_system_step(
   state: &[f64],
   x: f64,
   h: f64,
+  cached_m: Option<&[Vec<f64>]>,
 ) -> Result<Option<Vec<f64>>, InterpreterError> {
-  let deriv =
-    |s: &[f64], xv: f64| -> Result<Option<Vec<f64>>, InterpreterError> {
-      let Some(high) = solve_highest_derivatives(residuals, funcs.len(), xv, s)
-      else {
-        return Ok(None);
-      };
-      let mut d = vec![0.0; s.len()];
-      for (fi, f) in funcs.iter().enumerate() {
-        let off = state_offset[fi];
-        for k in 0..f.order - 1 {
-          d[off + k] = s[off + k + 1];
-        }
-        d[off + f.order - 1] = high[fi];
-      }
-      Ok(Some(d))
+  let deriv = |s: &[f64],
+               xv: f64|
+   -> Result<Option<Vec<f64>>, InterpreterError> {
+    let Some(high) =
+      solve_highest_derivatives_cached(residuals, funcs.len(), xv, s, cached_m)
+    else {
+      return Ok(None);
     };
+    let mut d = vec![0.0; s.len()];
+    for (fi, f) in funcs.iter().enumerate() {
+      let off = state_offset[fi];
+      for k in 0..f.order - 1 {
+        d[off + k] = s[off + k + 1];
+      }
+      d[off + f.order - 1] = high[fi];
+    }
+    Ok(Some(d))
+  };
 
   let add_scaled = |s: &[f64], d: &[f64], c: f64| -> Vec<f64> {
     s.iter().zip(d).map(|(a, b)| a + b * c).collect()
@@ -2367,13 +2429,15 @@ fn rk4_system_step(
 /// affine in the highest-derivative vector `hvec`: `r(hvec) = M·hvec + c`,
 /// so `c = r(0)` and the columns of `M` follow from unit vectors; the
 /// result solves `M·hvec = -c`.
-fn solve_highest_derivatives(
+/// The `c` half of `r(hvec) = M·hvec + c`: `r` evaluated with every
+/// highest-derivative placeholder at zero. Cheap (one pass over the
+/// residuals) — the expensive part is `mass_matrix`, below.
+fn residual_constant_term(
   residuals: &[NumFn],
-  n_funcs: usize,
+  n: usize,
   x: f64,
   state: &[f64],
-) -> std::option::Option<std::vec::Vec<f64>> {
-  let n = n_funcs;
+) -> Option<Vec<f64>> {
   let mut vars = Vec::with_capacity(1 + state.len() + n);
   vars.push(x);
   vars.extend_from_slice(state);
@@ -2381,31 +2445,48 @@ fn solve_highest_derivatives(
 
   let mut c = vec![0.0; n];
   for (i, r) in residuals.iter().enumerate() {
-    let Ok(v) = r.eval(&vars) else {
-      return None;
-    };
+    let v = r.eval(&vars).ok()?;
     if !v.is_finite() {
       return None;
     }
     c[i] = v;
   }
-  // Each column is recovered from r(delta·e_j) − r(0) = M·(delta·e_j), a
-  // finite difference that is *exact* since the residuals are affine in
-  // the highest-derivative vector. A unit-sized `delta` is lost entirely to
-  // rounding when the other terms in the residual dwarf it — e.g. a
-  // coefficient of 1e16 (from squaring a large angular frequency) makes
-  // `c[i] + 1.0` round straight back down to `c[i]` in `f64`, which reads
-  // as an exactly-zero, falsely singular column. Scaling `delta` up to the
-  // residuals' own magnitude keeps the perturbation's contribution above
-  // the rounding floor at that scale, so it survives the subtraction.
+  Some(c)
+}
+
+/// The `M` half of `r(hvec) = M·hvec + c`, recovered a column at a time via
+/// `r(delta·e_j) − r(0) = M·(delta·e_j)` — exact since the residuals are
+/// affine in the highest-derivative vector `hvec`. This is the expensive
+/// part of solving for the highest derivatives: `n` extra residual
+/// evaluations per column, `n` columns. When `M` is independent of `x` and
+/// `state` (e.g. the highest-derivative coefficients are plain numerals,
+/// as in a constant-holdup mass/energy balance), the caller can compute it
+/// once and reuse it — see `probe_constant_mass_matrix`.
+fn mass_matrix(
+  residuals: &[NumFn],
+  n: usize,
+  x: f64,
+  state: &[f64],
+  c: &[f64],
+) -> Option<Vec<Vec<f64>>> {
+  let mut vars = Vec::with_capacity(1 + state.len() + n);
+  vars.push(x);
+  vars.extend_from_slice(state);
+  vars.extend(std::iter::repeat_n(0.0, n));
+
+  // A unit-sized `delta` is lost entirely to rounding when the other terms
+  // in the residual dwarf it — e.g. a coefficient of 1e16 (from squaring a
+  // large angular frequency) makes `c[i] + 1.0` round straight back down
+  // to `c[i]` in `f64`, which reads as an exactly-zero, falsely singular
+  // column. Scaling `delta` up to the residuals' own magnitude keeps the
+  // perturbation's contribution above the rounding floor at that scale, so
+  // it survives the subtraction.
   let delta = c.iter().fold(1.0_f64, |acc, v| acc.max(v.abs()));
   let mut m = vec![vec![0.0; n]; n];
   for j in 0..n {
     vars[1 + state.len() + j] = delta;
     for (i, r) in residuals.iter().enumerate() {
-      let Ok(v) = r.eval(&vars) else {
-        return None;
-      };
+      let v = r.eval(&vars).ok()?;
       if !v.is_finite() {
         return None;
       }
@@ -2413,8 +2494,17 @@ fn solve_highest_derivatives(
     }
     vars[1 + state.len() + j] = 0.0;
   }
+  Some(m)
+}
 
-  // Gaussian elimination with partial pivoting on M·hvec = -c.
+/// Solve `M·hvec = -c` by Gaussian elimination with partial pivoting.
+/// `m` is consumed (the elimination overwrites it) since every caller
+/// either owns a fresh matrix or is working from a clone of a cached one.
+fn solve_mass_matrix_system(
+  mut m: Vec<Vec<f64>>,
+  c: &[f64],
+) -> Option<Vec<f64>> {
+  let n = c.len();
   let mut rhs: Vec<f64> = c.iter().map(|v| -v).collect();
   for col in 0..n {
     let (pivot_row, pivot_abs) = (col..n)
@@ -2443,6 +2533,105 @@ fn solve_highest_derivatives(
     sol[row] = acc / m[row][row];
   }
   Some(sol)
+}
+
+/// Solve for the highest derivatives at one point, reusing `cached_m` in
+/// place of rebuilding the mass matrix when the caller has established
+/// (via `probe_constant_mass_matrix`) that it doesn't vary with `x` or
+/// `state`. Recomputing `c` (an `O(n)` pass) still happens every call,
+/// since that half genuinely does depend on the current point.
+fn solve_highest_derivatives_cached(
+  residuals: &[NumFn],
+  n_funcs: usize,
+  x: f64,
+  state: &[f64],
+  cached_m: Option<&[Vec<f64>]>,
+) -> Option<Vec<f64>> {
+  let n = n_funcs;
+  let c = residual_constant_term(residuals, n, x, state)?;
+  if let Some(m) = cached_m {
+    solve_mass_matrix_system(m.to_vec(), &c)
+  } else {
+    let m = mass_matrix(residuals, n, x, state, &c)?;
+    solve_mass_matrix_system(m, &c)
+  }
+}
+
+/// Local-error tolerances for judging two mass-matrix samples "the same
+/// point" — loose enough to absorb the finite-difference rounding a
+/// different `delta` scale (from a different `c` at each probe point)
+/// introduces, tight enough that a genuinely state-dependent mass matrix
+/// still fails the check.
+const MASS_MATRIX_RTOL: f64 = 1e-8;
+const MASS_MATRIX_ATOL: f64 = 1e-10;
+
+fn mass_matrices_close(a: &[Vec<f64>], b: &[Vec<f64>]) -> bool {
+  a.iter().zip(b).all(|(ra, rb)| {
+    ra.iter().zip(rb).all(|(x, y)| {
+      let diff = (x - y).abs();
+      diff.is_finite()
+        && diff <= MASS_MATRIX_ATOL + MASS_MATRIX_RTOL * x.abs().max(y.abs())
+    })
+  })
+}
+
+/// Whether the DAE's mass matrix — the highest-derivative coefficients in
+/// `r(hvec) = M·hvec + c` — is the same everywhere, so integrating can
+/// build it once instead of at every one of the thousands of stage
+/// evaluations a run takes. Many physical models are exactly this way: a
+/// holdup/mass balance's highest-derivative coefficients are plain
+/// numerals (a tank's volume, a stage's molar holdup), not expressions of
+/// the state.
+///
+/// Checked numerically rather than by inspecting the symbolic equations:
+/// `M` is recomputed at two points away from `(x0, state0)` and compared.
+/// Since the finite-difference recovery of `M` is exact for any point at
+/// which the residuals evaluate (affine-in-`hvec` is already required for
+/// this solver to apply at all), a truly constant `M` reproduces to near
+/// machine precision regardless of where it's sampled — so this can't
+/// mistake a slowly-varying `M` for a constant one, only a genuinely
+/// constant one for itself. Any evaluation failure (e.g. a probe point
+/// landing outside a `Log`/`Sqrt` argument's domain) is treated as "not
+/// safely cacheable" and falls back to the exact per-call rebuild.
+fn probe_constant_mass_matrix(
+  residuals: &[NumFn],
+  n: usize,
+  x0: f64,
+  state0: &[f64],
+  x_min: f64,
+  x_max: f64,
+) -> Option<Vec<Vec<f64>>> {
+  let c0 = residual_constant_term(residuals, n, x0, state0)?;
+  let m0 = mass_matrix(residuals, n, x0, state0, &c0)?;
+
+  // Probe 1: a different point in the integration domain.
+  let span = x_max - x_min;
+  let x_probe = if span.is_finite() && span > 0.0 {
+    x_min + span * 0.618
+  } else {
+    x0 + 1.0
+  };
+  if x_probe != x0 {
+    let c1 = residual_constant_term(residuals, n, x_probe, state0)?;
+    let m1 = mass_matrix(residuals, n, x_probe, state0, &c1)?;
+    if !mass_matrices_close(&m0, &m1) {
+      return None;
+    }
+  }
+
+  // Probe 2: a perturbed state vector (relative offset, plus a small
+  // absolute one so an exactly-zero component still moves).
+  let state_probe: Vec<f64> = state0
+    .iter()
+    .map(|v| v * 1.0009 + v.signum() * 1e-6 + 1e-9)
+    .collect();
+  let c2 = residual_constant_term(residuals, n, x0, &state_probe)?;
+  let m2 = mass_matrix(residuals, n, x0, &state_probe, &c2)?;
+  if !mass_matrices_close(&m0, &m2) {
+    return None;
+  }
+
+  Some(m0)
 }
 
 /// The synthesized variable name standing for the k-th derivative of `f`

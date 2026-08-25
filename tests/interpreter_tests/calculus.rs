@@ -7450,6 +7450,61 @@ mod ndsolve {
     );
   }
 
+  /// A constraint already written as `f[x] == rhs` (or the mirror image) is
+  /// its own solution — no need to hand it to the general `Solve[]`. A
+  /// second constraint in a form `Solve[]` genuinely has to work for
+  /// (`z[t] + y[t] == 1`, not a bare call on either side) checks that the
+  /// fallback still runs correctly alongside the fast path, in the same
+  /// elimination chain. Independently written, not from any Demonstration.
+  #[test]
+  fn explicit_algebraic_constraints_take_the_fast_path() {
+    // y = x/3 substituted into x' = -x + y gives x' = -2x/3, so
+    // x(t) = 3 Exp[-2t/3]; y = x/3; z = 1 - y.
+    let code = "sol = NDSolve[{x'[t] == -x[t] + y[t], y[t] == x[t]/3, \
+       z[t] + y[t] == 1, x[0] == 3}, {x, y, z}, {t, 0, 2}][[1]]; \
+       {x[1], y[1], z[1]} /. sol /. t -> 1.0";
+    let result = interpret(code).unwrap();
+    let nums: Vec<f64> = result
+      .trim_matches(['{', '}'])
+      .split(", ")
+      .map(|s| s.parse().unwrap())
+      .collect();
+    let x1 = 3.0 * (-2.0 / 3.0f64).exp();
+    let expected = [x1, x1 / 3.0, 1.0 - x1 / 3.0];
+    for (got, want) in nums.iter().zip(expected) {
+      assert!((got - want).abs() < 1e-3, "{result}: {got} vs {want}");
+    }
+  }
+
+  /// The mass/energy-balance systems a chemical-engineering or circuit
+  /// Demonstration writes have highest-derivative coefficients that are
+  /// plain holdup/capacitance numerals, not expressions of the state —
+  /// `2 x1'[t] == …`, not `x1[t] x1'[t] == …`. `NDSolve` can then build the
+  /// mass matrix once instead of at every stage of every step; this checks
+  /// the *result* stays exact when it does, against the closed form for two
+  /// tanks (unequal constant holdups) relaxing to a shared level.
+  /// Independently written, not from any Demonstration.
+  #[test]
+  fn constant_mass_matrix_system_matches_closed_form() {
+    // 2 x1' = -(x1 - x2), 3 x2' = (x1 - x2); y = x1 - x2 decays as
+    // Exp[-5t/6] (from 1/2 + 1/3), and 2 x1 + 3 x2 is conserved at 2.
+    let code = "sol = NDSolve[{2 x1'[t] == -(x1[t] - x2[t]), \
+       3 x2'[t] == x1[t] - x2[t], x1[0] == 1, x2[0] == 0}, \
+       {x1, x2}, {t, 0, 3}][[1]]; \
+       {x1[1], x2[1]} /. sol /. t -> 1.0";
+    let result = interpret(code).unwrap();
+    let nums: Vec<f64> = result
+      .trim_matches(['{', '}'])
+      .split(", ")
+      .map(|s| s.parse().unwrap())
+      .collect();
+    let y1 = (-5.0 / 6.0f64).exp();
+    let expected = [(2.0 + 3.0 * y1) / 5.0, (2.0 - 2.0 * y1) / 5.0];
+    for (got, want) in nums.iter().zip(expected) {
+      assert!((got - want).abs() < 1e-3, "{result}: {got} vs {want}");
+    }
+  }
+
   /// Unknowns need not be bare symbols: a transport equation discretized in
   /// space is written with `Subscript[c, i]` for each cell, so the whole
   /// system is `NDSolve[…, Table[Subscript[c, i], {i, 1, n}], …]`. Each
