@@ -2,6 +2,21 @@
 
 # Unreleased
 
+- `Table` and `Array` splice a per-iteration `Sequence[…]` result into the
+    surrounding list instead of keeping it as one element, matching how
+    `List[…]` construction always simplifies. This is what makes
+    `Table[If[cond, x, ##&[]], {i, …}]` — the idiom for conditionally
+    dropping an entry, since `##&[]` on no slot-arguments evaluates to the
+    empty splice `Sequence[]` — actually drop it, rather than leaving a
+    stray blank element next to `Nothing`'s existing removal. `Array`'s
+    list-of-dimensions forms (`Array[f, {n}]`, `Array[f, {n, m}]`, …) get
+    the same treatment as the bare-integer `Array[f, n]` form. A `Nothing`
+    reached through a spliced `Sequence`/`Splice` is removed exactly like a
+    directly-listed one, since splicing happens before Wolfram's `Nothing`
+    removal. `List[…]` evaluation and `Table`/`Array`'s result collection
+    now delegate to one shared implementation of this simplification, so
+    the two can no longer drift apart.
+
 - A numeric factor whose numerator is `-1` carries its sign into the sum it
     multiplies, as it does in Wolfram: `-(1/5)*(1 - 2 x)` is
     `Times[Rational[1, 5], Plus[-1, 2 x]]`, not `Times[Rational[-1, 5],

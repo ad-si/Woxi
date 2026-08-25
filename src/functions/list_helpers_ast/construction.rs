@@ -214,9 +214,7 @@ pub fn table_ast(
       let mut results = Vec::new();
       for _ in 0..n {
         let val = crate::evaluator::evaluate_value(body)?;
-        if !is_nothing(&val) {
-          results.push(val);
-        }
+        crate::evaluator::listable::push_list_element(&mut results, val);
       }
       Ok(Expr::List(results.into()))
     }
@@ -238,9 +236,7 @@ pub fn table_ast(
         let mut results = Vec::new();
         for _ in 0..n {
           let val = crate::evaluator::evaluate_value(body)?;
-          if !is_nothing(&val) {
-            results.push(val);
-          }
+          crate::evaluator::listable::push_list_element(&mut results, val);
         }
         return Ok(Expr::List(results.into()));
       }
@@ -270,9 +266,7 @@ pub fn table_ast(
             let substituted =
               crate::syntax::substitute_variable(body, &var_name, item);
             let val = crate::evaluator::evaluate_value(&substituted)?;
-            if !is_nothing(&val) {
-              results.push(val);
-            }
+            crate::evaluator::listable::push_list_element(&mut results, val);
           }
           return Ok(Expr::List(results.into()));
         }
@@ -288,9 +282,7 @@ pub fn table_ast(
             &Expr::Integer(i),
           );
           let val = crate::evaluator::evaluate_value(&substituted)?;
-          if !is_nothing(&val) {
-            results.push(val);
-          }
+          crate::evaluator::listable::push_list_element(&mut results, val);
         }
         return Ok(Expr::List(results.into()));
       } else if items.len() >= 3 {
@@ -327,9 +319,7 @@ pub fn table_ast(
                 &Expr::Integer(i),
               );
               let val = crate::evaluator::evaluate_value(&substituted)?;
-              if !is_nothing(&val) {
-                results.push(val);
-              }
+              crate::evaluator::listable::push_list_element(&mut results, val);
               i += step_val;
             }
           } else {
@@ -341,9 +331,7 @@ pub fn table_ast(
                 &Expr::Integer(i),
               );
               let val = crate::evaluator::evaluate_value(&substituted)?;
-              if !is_nothing(&val) {
-                results.push(val);
-              }
+              crate::evaluator::listable::push_list_element(&mut results, val);
               i += step_val;
             }
           }
@@ -385,9 +373,7 @@ pub fn table_ast(
             let substituted =
               crate::syntax::substitute_variable(body, &var_name, &current);
             let val = crate::evaluator::evaluate_value(&substituted)?;
-            if !is_nothing(&val) {
-              results.push(val);
-            }
+            crate::evaluator::listable::push_list_element(&mut results, val);
           }
           return Ok(Expr::List(results.into()));
         }
@@ -438,9 +424,7 @@ pub fn table_ast(
               &current_expr,
             );
             let val = crate::evaluator::evaluate_value(&substituted)?;
-            if !is_nothing(&val) {
-              results.push(val);
-            }
+            crate::evaluator::listable::push_list_element(&mut results, val);
             current_expr = crate::evaluator::evaluate_expr_to_expr(&call(
               "Plus",
               vec![current_expr, step_expr.clone()],
@@ -472,9 +456,7 @@ pub fn table_ast(
               &current_expr,
             );
             let val = crate::evaluator::evaluate_value(&substituted)?;
-            if !is_nothing(&val) {
-              results.push(val);
-            }
+            crate::evaluator::listable::push_list_element(&mut results, val);
             current_expr = crate::evaluator::evaluate_expr_to_expr(&call(
               "Plus",
               vec![current_expr, step_expr.clone()],
@@ -1626,9 +1608,7 @@ pub fn array_ast(func: &Expr, n: i128) -> Result<Expr, InterpreterError> {
   for i in 1..=n {
     let arg = Expr::Integer(i);
     let val = apply_func_ast(func, &arg)?;
-    if !is_nothing(&val) {
-      result.push(val);
-    }
+    crate::evaluator::listable::push_list_element(&mut result, val);
   }
   Ok(Expr::List(result.into()))
 }
@@ -1814,7 +1794,15 @@ pub fn array_multi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let mut items = Vec::new();
       for index_expr in &dim_indices[depth] {
         indices.push(index_expr.clone());
-        items.push(build_array(func, dim_indices, depth + 1, indices)?);
+        let val = build_array(func, dim_indices, depth + 1, indices)?;
+        // At the innermost dimension `val` is `f`'s leaf application result,
+        // which may be `Nothing`/`Sequence[…]` (e.g. `Array[If[# != 2, #,
+        // ##&[]] &, {5}]`); at any outer dimension it's always a full
+        // `Expr::List` sub-array, which `push_list_element` just pushes
+        // through unchanged. Routing every depth through it uniformly keeps
+        // `Array`'s multi-dimensional forms in sync with the bare-integer
+        // `Array[f, n]` form (`array_ast`, above), which does the same.
+        crate::evaluator::listable::push_list_element(&mut items, val);
         indices.pop();
       }
       Ok(Expr::List(items.into()))
