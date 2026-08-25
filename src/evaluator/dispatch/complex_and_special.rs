@@ -524,7 +524,7 @@ pub fn dispatch_complex_and_special(
       if let Expr::Identifier(sym) = first_arg {
         // Check if this is a built-in function (in functions.csv)
         let builtin_info = crate::evaluator::get_builtin_function_info(sym);
-        let builtin_attrs = get_builtin_attributes_mask(sym);
+        let builtin_attrs = get_builtin_attributes(sym);
 
         if builtin_info.is_some() || !builtin_attrs.is_empty() {
           // Built-in symbol
@@ -15085,7 +15085,7 @@ pub fn definition_text(sym: &str) -> Option<String> {
   let user_attrs = crate::FUNC_ATTRS.with(|m| m.borrow().get(sym).cloned());
   let attrs_to_show: Attributes = match &user_attrs {
     Some(a) if !a.is_empty() => a.clone(),
-    _ => get_builtin_attributes_mask(sym),
+    _ => get_builtin_attributes(sym),
   };
   if !attrs_to_show.is_empty() {
     let vals = attrs_to_show.to_vec().join(", ");
@@ -15285,7 +15285,7 @@ pub fn definition_text(sym: &str) -> Option<String> {
 
   // For built-in symbols: show attributes
   if lines.is_empty() {
-    let builtin_attrs = get_builtin_attributes_mask(sym);
+    let builtin_attrs = get_builtin_attributes(sym);
     if !builtin_attrs.is_empty() {
       let vals = builtin_attrs.to_vec().join(", ");
       lines.push(format!("Attributes[{printed}] = {{{vals}}}"));
@@ -15362,9 +15362,7 @@ pub fn definition_text(sym: &str) -> Option<String> {
       crate::FUNC_OPTIONS_DELAYED.with(|m| m.borrow().contains(sym));
     let op = if is_user_stored {
       if user_delayed { ":=" } else { "=" }
-    } else if get_builtin_attributes_mask(sym)
-      .contains(Attributes::ReadProtected)
-    {
+    } else if get_builtin_attributes(sym).contains(Attributes::ReadProtected) {
       ":="
     } else {
       "="
@@ -15571,7 +15569,7 @@ pub fn full_definition_text(sym: &str) -> Option<String> {
     }
 
     if lines.is_empty() {
-      let builtin_attrs = get_builtin_attributes_mask(sym);
+      let builtin_attrs = get_builtin_attributes(sym);
       if !builtin_attrs.is_empty() {
         let vals = builtin_attrs.to_vec().join(", ");
         lines.push(format!("Attributes[{sym}] = {{{vals}}}"));
@@ -15692,7 +15690,7 @@ fn information_property(sym: &str, property: &str) -> Expr {
     return match property {
       "Usage" => Expr::String(info.description.to_string()),
       "Attributes" => Expr::List(
-        get_builtin_attributes_mask(sym)
+        get_builtin_attributes(sym)
           .to_vec()
           .into_iter()
           .map(|a| Expr::Identifier(a.to_string()))

@@ -1328,7 +1328,7 @@ pub fn dispatch_predicate_functions(
       // Check user-defined attributes first, then combine with built-in
       let user_attrs =
         crate::FUNC_ATTRS.with(|m| m.borrow().get(sym_name).cloned());
-      let builtin = get_builtin_attributes_mask(sym_name);
+      let builtin = get_builtin_attributes(sym_name);
       let removed = crate::FUNC_ATTRS_REMOVED
         .with(|m| m.borrow().get(sym_name).cloned())
         .unwrap_or_default();
@@ -1372,7 +1372,7 @@ pub fn dispatch_predicate_functions(
         return Some(Ok(Expr::String(sym_name[..=last].to_string())));
       }
       // Built-in symbols are in System` context
-      let builtin = get_builtin_attributes_mask(&sym_name);
+      let builtin = get_builtin_attributes(&sym_name);
       if !builtin.is_empty() {
         return Some(Ok(Expr::String("System`".to_string())));
       }
@@ -1706,7 +1706,7 @@ pub fn dispatch_predicate_functions(
         // Check if the symbol has been defined (OwnValues, DownValues, or is built-in)
         let has_own = crate::ENV.with(|e| e.borrow().contains_key(name));
         let has_down = crate::FUNC_DEFS.with(|m| m.borrow().contains_key(name));
-        let has_builtin_attrs = !get_builtin_attributes_mask(name).is_empty();
+        let has_builtin_attrs = !get_builtin_attributes(name).is_empty();
         if has_own || has_down || has_builtin_attrs {
           return Some(Ok(bool_expr(true)));
         }

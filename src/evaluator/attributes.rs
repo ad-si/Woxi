@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 use std::collections::HashSet;
 use std::sync::LazyLock;
@@ -438,7 +437,7 @@ fn is_unprotected_builtin(name: &str) -> bool {
 
 /// Returns the built-in attributes for a given symbol name.
 /// Attributes are returned in alphabetical order, matching wolframscript output.
-pub fn get_builtin_attributes_mask(name: &str) -> Attributes {
+pub fn get_builtin_attributes(name: &str) -> Attributes {
   use Attributes as A;
   let mask = match name {
     // Arithmetic operators
@@ -1046,7 +1045,7 @@ pub fn dispatch_attributes(
           let mut removed = m.borrow_mut();
           let mask = Attributes::masks(&to_remove);
           for func_name in &func_names {
-            let builtin = get_builtin_attributes_mask(func_name);
+            let builtin = get_builtin_attributes(func_name);
             let mask = mask & builtin.to_u32(); // ignore attributes not on builtin.
             if mask != 0 {
               removed
@@ -1067,7 +1066,7 @@ pub fn dispatch_attributes(
           // If Protected is a builtin attribute that was previously removed,
           // restore it by pruning FUNC_ATTRS_REMOVED. Otherwise add as a
           // user-set attribute.
-          let builtin = get_builtin_attributes_mask(sym);
+          let builtin = get_builtin_attributes(sym);
           let was_builtin = builtin.contains(Attributes::Protected);
           if was_builtin {
             crate::FUNC_ATTRS_REMOVED.with(|m| {
@@ -1097,7 +1096,7 @@ pub fn dispatch_attributes(
         if let Some(sym) = symbol_name(arg) {
           let sym = &sym;
           let is_locked = {
-            let builtin = get_builtin_attributes_mask(sym);
+            let builtin = get_builtin_attributes(sym);
             if builtin.contains(Attributes::Locked) {
               true
             } else {
@@ -1127,7 +1126,7 @@ pub fn dispatch_attributes(
               false
             }
           });
-          let builtin = get_builtin_attributes_mask(sym);
+          let builtin = get_builtin_attributes(sym);
           let was_builtin_protected = builtin.contains(Attributes::Protected);
           if was_builtin_protected {
             crate::FUNC_ATTRS_REMOVED.with(|m| {

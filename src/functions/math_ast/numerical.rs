@@ -199,7 +199,7 @@ pub fn n_eval(expr: &Expr) -> Result<Expr, InterpreterError> {
       // user-set). When a slot is held, leave the argument literal and
       // skip the recursive N application.
       let attrs = {
-        let builtin = crate::evaluator::get_builtin_attributes_mask(name);
+        let builtin = crate::evaluator::get_builtin_attributes(name);
         let user = crate::FUNC_ATTRS
           .with(|m| m.borrow().get(name).cloned().unwrap_or_default());
         let mut combined = builtin;
@@ -1232,7 +1232,7 @@ fn n_eval_arbitrary_partial(
       // doesn't recurse into Out's slot and rewrite the index as a
       // BigFloat. (Out has NHoldFirst; the `0` slot must stay literal.)
       let attrs = {
-        let builtin = crate::evaluator::get_builtin_attributes_mask(name);
+        let builtin = crate::evaluator::get_builtin_attributes(name);
         let user = crate::FUNC_ATTRS
           .with(|m| m.borrow().get(name).cloned().unwrap_or_default());
         let mut combined = builtin;

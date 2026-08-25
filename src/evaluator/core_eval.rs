@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 
 /// Report that an in-place modification has nothing to modify:
@@ -211,7 +210,7 @@ pub fn expand_arith_shorthand(
 
 /// Check if a function has a specific Hold attribute (built-in or user-defined).
 fn has_hold_attribute(name: &str, attr: u32) -> bool {
-  get_builtin_attributes_mask(name).contains(attr)
+  get_builtin_attributes(name).contains(attr)
     || crate::func_attrs_contains(name, attr)
 }
 

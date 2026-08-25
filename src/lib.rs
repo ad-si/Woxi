@@ -5448,8 +5448,7 @@ fn store_function_definition(
   let was_unprotected = func_attrs_removed_contains(&func_name, A::Protected);
   let is_builtin_protected = !is_n_value_assignment
     && !was_unprotected
-    && evaluator::get_builtin_attributes_mask(&func_name)
-      .contains(A::Protected);
+    && evaluator::get_builtin_attributes(&func_name).contains(A::Protected);
   let is_user_protected = func_attrs_contains(&func_name, A::Protected);
   if is_builtin_protected || is_user_protected {
     let (tag, ret) = if is_builtin_protected && !is_user_protected {

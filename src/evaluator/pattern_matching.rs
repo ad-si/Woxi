@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 use std::cell::RefCell;
 
@@ -659,7 +658,7 @@ fn try_ast_pattern_replace_impl(
 /// Check if a function has the OneIdentity attribute (builtin or user-defined).
 /// Check if a symbol has the Protected attribute (builtin or user-defined).
 pub fn is_symbol_protected(name: &str) -> bool {
-  let builtin = get_builtin_attributes_mask(name);
+  let builtin = get_builtin_attributes(name);
   let builtin_protected = builtin.contains(Attributes::Protected);
   // `Unprotect` records the removal in FUNC_ATTRS_REMOVED so the builtin's
   // baseline can be temporarily overridden without losing it.
@@ -671,7 +670,7 @@ pub fn is_symbol_protected(name: &str) -> bool {
 }
 
 fn has_one_identity(name: &str) -> bool {
-  let builtin = get_builtin_attributes_mask(name);
+  let builtin = get_builtin_attributes(name);
   if builtin.contains(Attributes::OneIdentity) {
     return true;
   }
