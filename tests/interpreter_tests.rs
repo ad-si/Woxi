@@ -1020,6 +1020,34 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_show_merged_plot3d_keeps_per_surface_plotstyle() {
+    // Regression: a Manipulate body that stacks several flat `Plot3D`
+    // surfaces with an explicit per-surface `PlotStyle` list inside a
+    // `Show[{…}]` (the shape a "sheets stacked along an axis" Demonstration
+    // uses, e.g. one built from the Riemann surface of the logarithm) lost
+    // the requested colours: merging `Plot3D`'s symbolic structure into
+    // `Show` recoloured every surface with the automatic height-based
+    // rainbow instead of honoring `PlotStyle`.
+    clear_state();
+    let svg = interpret_with_stdout(
+      "Show[{Plot3D[{-1, 0, 1}, {x, -2, 2}, {y, -2, 2}, \
+       PlotStyle -> {{LightBlue}, {Yellow}, {LightBlue}}], \
+       Graphics3D[{Thick, White, Line[{{0, 0, -1}, {2, 0, -1}}]}]}]",
+    )
+    .unwrap()
+    .graphics
+    .expect("Show should produce a graphics SVG");
+    assert!(
+      svg.contains("rgb(188,203,216)"),
+      "the two LightBlue surfaces must keep their PlotStyle colour:\n{svg}"
+    );
+    assert!(
+      svg.contains("rgb(216,216,0)"),
+      "the Yellow surface must keep its PlotStyle colour:\n{svg}"
+    );
+  }
+
+  #[test]
   fn test_column_with_nested_tableform_renders_as_graphics() {
     // In visual mode (playground / woxi-studio), a Column containing a
     // TableForm must pre-render the table as a sub-SVG instead of falling
