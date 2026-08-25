@@ -958,8 +958,7 @@ fn evaluate_function_call_ast_inner(
   // dispatch — DownValues for the same head are still tried as usual.
   let head_has_hold_all_complete =
     crate::func_attrs_contains(name, Attributes::HoldAllComplete)
-      || get_builtin_attributes_mask(name)
-        .contains(Attributes::HoldAllComplete);
+      || get_builtin_attributes(name).contains(Attributes::HoldAllComplete);
   let overloads = crate::FUNC_DEFS.with(|m| {
     let defs = m.borrow();
     let raw = defs.get(name).cloned();

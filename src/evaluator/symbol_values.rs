@@ -158,7 +158,7 @@ pub(crate) fn take_symbol_values(sym: &str) -> SymbolValues {
   // defaults have to be masked explicitly for `Attributes[sym]` to be `{}`.
   saved.attrs_removed =
     crate::FUNC_ATTRS_REMOVED.with(|m| m.borrow_mut().remove(sym));
-  let builtin = get_builtin_attributes_mask(sym);
+  let builtin = get_builtin_attributes(sym);
   if !builtin.is_empty() {
     crate::FUNC_ATTRS_REMOVED.with(|m| {
       let mut removed = m.borrow_mut();

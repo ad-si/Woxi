@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 use std::cell::Cell;
 
@@ -1481,7 +1480,7 @@ fn is_downvalue_head_protected(name: &str) -> bool {
   if was_unprotected {
     return false;
   }
-  attributes::get_builtin_attributes_mask(name).contains(Attributes::Protected)
+  get_builtin_attributes(name).contains(Attributes::Protected)
     || crate::func_attrs_contains(name, Attributes::Protected)
 }
 
@@ -2282,7 +2281,7 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
     // break NumericQ value declarations, usage messages, etc. The memoization
     // idiom (`f[x_] := f[x] = …`) only ever applies to user functions.
     let is_builtin_head =
-      !attributes::get_builtin_attributes_mask(func_name.as_str()).is_empty();
+      !get_builtin_attributes(func_name.as_str()).is_empty();
     let all_literal_sameq = !is_builtin_head
       && !conditions.is_empty()
       && conditions.iter().all(|c| {
@@ -2532,8 +2531,7 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
       _ => None,
     };
     if let Some(t) = tag
-      && crate::evaluator::get_builtin_attributes_mask(t)
-        .contains(Attributes::Protected)
+      && get_builtin_attributes(t).contains(Attributes::Protected)
     {
       let rhs_value = evaluate_expr_to_expr(rhs)?;
       crate::emit_message(&format!(
@@ -2663,8 +2661,7 @@ pub fn set_delayed_ast(
       _ => None,
     };
     if let Some(t) = tag
-      && crate::evaluator::get_builtin_attributes_mask(t)
-        .contains(Attributes::Protected)
+      && get_builtin_attributes(t).contains(Attributes::Protected)
     {
       crate::emit_message(&format!(
         "SetDelayed::write: Tag {} in {} is Protected.",

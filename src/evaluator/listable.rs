@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 
 /// Version of the Wolfram Language that Woxi aims to be compatible with,
@@ -1552,7 +1551,7 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
 /// SequenceHold semantics (Wolfram Language: HoldAllComplete = HoldAll
 /// + SequenceHold + ... ).
 pub(crate) fn has_sequence_hold(name: &str) -> bool {
-  let builtin = attributes::get_builtin_attributes_mask(name);
+  let builtin = get_builtin_attributes(name);
   builtin.contains(Attributes::SequenceHold)
     || crate::func_attrs_contains(name, Attributes::SequenceHold)
     || crate::func_attrs_contains(name, Attributes::HoldAllComplete)

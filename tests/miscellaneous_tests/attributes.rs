@@ -6,7 +6,7 @@ mod tests {
     let names = woxi::evaluator::all_builtin_symbol_names();
     let mut failures: Vec<&str> = vec![];
     for name in names {
-      let mask = woxi::evaluator::get_builtin_attributes_mask(name);
+      let mask = woxi::evaluator::get_builtin_attributes(name);
       if !test(name, mask) {
         failures.push(name);
       }
