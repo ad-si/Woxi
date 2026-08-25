@@ -6867,12 +6867,27 @@ fn find_root_multivariate(
 /// Check if an expression contains an unevaluated D[...] or Dt[...] call.
 fn contains_unevaluated_d(expr: &Expr) -> bool {
   match expr {
-    Expr::FunctionCall { name, .. } if name == "D" || name == "Dt" => true,
+    // "D"/"Dt" catches an unevaluated D[...] left as-is; "Derivative" catches
+    // the `Derivative[n1, n2, ...][f][args]` form a partial derivative of a
+    // function with no symbolic derivative rule (e.g. CDF of a distribution
+    // Woxi only evaluates numerically) is left in.
+    Expr::FunctionCall { name, .. }
+      if name == "D" || name == "Dt" || name == "Derivative" =>
+    {
+      true
+    }
     Expr::FunctionCall { args, .. } => args.iter().any(contains_unevaluated_d),
+    Expr::CurriedCall { func, args } => {
+      contains_unevaluated_d(func) || args.iter().any(contains_unevaluated_d)
+    }
     Expr::BinaryOp { left, right, .. } => {
       contains_unevaluated_d(left) || contains_unevaluated_d(right)
     }
     Expr::UnaryOp { operand, .. } => contains_unevaluated_d(operand),
+    // A malformed derivative can surface wrapped in a List (e.g. the
+    // mis-threaded per-component result of differentiating a function whose
+    // argument is itself a list), so recurse into list elements too.
+    Expr::List(items) => items.iter().any(contains_unevaluated_d),
     _ => false,
   }
 }
@@ -10077,12 +10092,14 @@ pub fn find_minimum_ast(
     && let Some(vars) = optimization_variable_names(&args[1])
     && !vars.is_empty()
   {
-    return nminimize_ast(
+    let step_monitor = find_option(&args[2..], "StepMonitor");
+    return nminimize_ast_impl(
       &[
         args[0].clone(),
         Expr::List(vars.into_iter().map(Expr::Identifier).collect()),
       ],
       maximize,
+      step_monitor,
     );
   }
 
@@ -10845,9 +10862,49 @@ fn expr_to_f64(expr: &Expr) -> Result<f64, InterpreterError> {
 /// NMinimize[{f, constraints...}, vars] / NMaximize[{f, constraints...}, vars]
 /// Numerical global optimization using sampling + local refinement.
 /// Returns {opt_value, {var -> val, ...}}.
+/// The value of option `key` among a call's trailing `opt -> value` /
+/// `opt :> value` arguments.
+fn find_option<'a>(opts: &'a [Expr], key: &str) -> Option<&'a Expr> {
+  opts.iter().find_map(|o| match o {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(k) if k == key) => {
+      Some(replacement.as_ref())
+    }
+    _ => None,
+  })
+}
+
+/// Evaluate a `StepMonitor :> expr` option at one solver step: substitute
+/// each variable with its current numeric value and evaluate purely for
+/// side effect (e.g. `Sow[{x, y}]`), discarding the result.
+fn fire_step_monitor(monitor: Option<&Expr>, vars: &[String], x: &[f64]) {
+  let Some(monitor) = monitor else {
+    return;
+  };
+  let mut e = monitor.clone();
+  for (i, var) in vars.iter().enumerate() {
+    e = crate::syntax::substitute_variable(&e, var, &Expr::Real(x[i]));
+  }
+  let _ = crate::evaluator::evaluate_expr_to_expr(&e);
+}
+
 pub fn nminimize_ast(
   args: &[Expr],
   maximize: bool,
+) -> Result<Expr, InterpreterError> {
+  nminimize_ast_impl(args, maximize, None)
+}
+
+fn nminimize_ast_impl(
+  args: &[Expr],
+  maximize: bool,
+  step_monitor: Option<&Expr>,
 ) -> Result<Expr, InterpreterError> {
   let func_name = if maximize { "NMaximize" } else { "NMinimize" };
   if args.len() != 2 {
@@ -11179,6 +11236,7 @@ pub fn nminimize_ast(
           // would recompute the same failure.
           break;
         }
+        fire_step_monitor(step_monitor, &vars, &x);
       }
       let fval = eval_at(&objective, &x).unwrap_or(f64::INFINITY);
       (x, fval)
@@ -11217,6 +11275,7 @@ pub fn nminimize_ast(
   } else {
     // Gradient-free refinement: coordinate-wise golden section
     let golden_ratio = 0.6180339887498949;
+    let mut prev_f = eval_at(&objective, &x).ok();
     for _ in 0..max_iter {
       let mut improved = false;
       for i in 0..n {
@@ -11262,6 +11321,19 @@ pub fn nminimize_ast(
       }
       if !improved {
         break;
+      }
+      fire_step_monitor(step_monitor, &vars, &x);
+      // A coordinate can keep drifting by noise-level amounts (e.g. from an
+      // objective built on an adaptively-integrated CDF) long after the
+      // objective value itself has stopped meaningfully improving. Stop the
+      // sweep once a full pass over all coordinates no longer moves the
+      // objective by more than a relative 1e-10, rather than waiting out
+      // `max_iter` sweeps of pure jitter.
+      if let (Some(prev), Ok(cur)) = (prev_f, eval_at(&objective, &x)) {
+        if (cur - prev).abs() < 1e-10 * (1.0 + prev.abs()) {
+          break;
+        }
+        prev_f = Some(cur);
       }
     }
   }
@@ -11482,6 +11554,13 @@ enum NumNode {
   Pow(Box<Self>, Box<Self>),
   Unary(fn(f64) -> f64, Box<Self>),
   Binary(fn(f64, f64) -> f64, Box<Self>, Box<Self>),
+  // A subexpression compile_numeric doesn't otherwise recognise (e.g. a
+  // distribution's CDF/PDF), evaluated via the full AST evaluator with the
+  // current point substituted in. Isolating just this piece — rather than
+  // failing the whole compile and re-cloning/substituting/evaluating the
+  // entire objective through the slow path on every call — keeps the rest
+  // of a large expression on the fast numeric path.
+  Fallback(std::rc::Rc<Expr>, std::rc::Rc<[String]>),
 }
 
 impl NumNode {
@@ -11506,6 +11585,17 @@ impl NumNode {
       }
       Self::Unary(f, a) => f(a.eval(point)),
       Self::Binary(f, a, b) => f(a.eval(point), b.eval(point)),
+      Self::Fallback(expr, vars) => {
+        let mut e = (**expr).clone();
+        for (i, var) in vars.iter().enumerate() {
+          e =
+            crate::syntax::substitute_variable(&e, var, &Expr::Real(point[i]));
+        }
+        crate::evaluator::evaluate_expr_to_expr(&e)
+          .ok()
+          .and_then(|v| expr_to_f64(&v).ok())
+          .unwrap_or(f64::NAN)
+      }
     }
   }
 }
@@ -11615,10 +11705,21 @@ fn compile_numeric(expr: &Expr, vars: &[String]) -> Option<NumNode> {
           .collect::<Option<Vec<_>>>()
           .filter(|nodes| !nodes.is_empty())
           .map(|nodes| fold_binary(nodes, f64::max)),
-        _ => None,
+        // An unrecognised function (e.g. CDF of a distribution) still
+        // compiles: it's isolated in a `Fallback` node rather than failing
+        // the whole expression's compilation.
+        _ => Some(NumNode::Fallback(
+          std::rc::Rc::new(expr.clone()),
+          std::rc::Rc::from(vars.to_vec()),
+        )),
       }
     }
-    _ => None,
+    // Anything else unrecognised (comparisons, curried calls, …) also falls
+    // back in isolation rather than failing the whole compile.
+    _ => Some(NumNode::Fallback(
+      std::rc::Rc::new(expr.clone()),
+      std::rc::Rc::from(vars.to_vec()),
+    )),
   }
 }
 

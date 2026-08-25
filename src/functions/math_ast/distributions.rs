@@ -2336,7 +2336,146 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "WaringYuleDistribution" => cdf_waring_yule(dargs, x),
     "ZipfDistribution" => cdf_zipf(dargs, x),
     "JohnsonDistribution" => cdf_johnson(dargs, x),
+    "MultinormalDistribution" => cdf_multinormal(dargs, x),
     _ => Ok(unevaluated("CDF", args)),
+  }
+}
+
+/// CDF[MultinormalDistribution[mu, sigma], {x1, x2}] for the bivariate case,
+/// via numeric integration of the classical reduction to a single integral:
+/// Φ2(h, k; ρ) = ∫_{-∞}^{h} φ(t) Φ((k - ρt)/√(1-ρ²)) dt
+/// where h, k are the standardized coordinates and ρ is the correlation.
+/// Only the fully numeric bivariate case is handled; anything else (symbolic
+/// parameters, or a dimension other than 2) is left unevaluated.
+fn cdf_multinormal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+  let unevaluated_call = || {
+    unevaluated(
+      "CDF",
+      &[unevaluated("MultinormalDistribution", dargs), x.clone()],
+    )
+  };
+  let [Expr::List(mu), Expr::List(sigma)] = dargs else {
+    return Ok(unevaluated_call());
+  };
+  let Expr::List(point) = &x else {
+    return Ok(unevaluated_call());
+  };
+  if mu.len() != 2 || sigma.len() != 2 || point.len() != 2 {
+    return Ok(unevaluated_call());
+  }
+  let (Some(mu1), Some(mu2)) = (expr_to_num(&mu[0]), expr_to_num(&mu[1]))
+  else {
+    return Ok(unevaluated_call());
+  };
+  let (Expr::List(row1), Expr::List(row2)) = (&sigma[0], &sigma[1]) else {
+    return Ok(unevaluated_call());
+  };
+  if row1.len() != 2 || row2.len() != 2 {
+    return Ok(unevaluated_call());
+  }
+  let (Some(s11), Some(s12), Some(s22)) = (
+    expr_to_num(&row1[0]),
+    expr_to_num(&row1[1]),
+    expr_to_num(&row2[1]),
+  ) else {
+    return Ok(unevaluated_call());
+  };
+  let (Some(x1), Some(x2)) = (expr_to_num(&point[0]), expr_to_num(&point[1]))
+  else {
+    return Ok(unevaluated_call());
+  };
+  if s11 <= 0.0 || s22 <= 0.0 {
+    return Ok(unevaluated_call());
+  }
+  let rho = s12 / (s11.sqrt() * s22.sqrt());
+  if !(-1.0..=1.0).contains(&rho) {
+    return Ok(unevaluated_call());
+  }
+  let h = (x1 - mu1) / s11.sqrt();
+  let k = (x2 - mu2) / s22.sqrt();
+  Ok(Expr::Real(bivariate_normal_cdf(h, k, rho)))
+}
+
+fn std_normal_pdf(t: f64) -> f64 {
+  (-t * t / 2.0).exp() / (2.0 * std::f64::consts::PI).sqrt()
+}
+
+fn std_normal_cdf(t: f64) -> f64 {
+  0.5 * (1.0 + erf_f64(t / std::f64::consts::SQRT_2))
+}
+
+/// CDF of the standard bivariate normal distribution, P(X <= h, Y <= k) for
+/// unit-variance X, Y with correlation `rho`.
+fn bivariate_normal_cdf(h: f64, k: f64, rho: f64) -> f64 {
+  if rho >= 1.0 - 1e-12 {
+    return std_normal_cdf(h.min(k));
+  }
+  if rho <= -1.0 + 1e-12 {
+    return (std_normal_cdf(h) + std_normal_cdf(k) - 1.0).max(0.0);
+  }
+  if rho == 0.0 {
+    return std_normal_cdf(h) * std_normal_cdf(k);
+  }
+  let denom = (1.0 - rho * rho).sqrt();
+  let integrand =
+    |t: f64| std_normal_pdf(t) * std_normal_cdf((k - rho * t) / denom);
+  // φ(t) is negligible (< 1e-17) beyond ~9 standard deviations from either 0
+  // or h, so a window covering both bounds the integral to full precision.
+  // This function is evaluated in the inner loop of numeric optimizers (e.g.
+  // FindMaximum on an objective built from it), so adaptive refinement — a
+  // few dozen evaluations for a smooth bell-shaped integrand — matters far
+  // more than a fixed high node count would.
+  let lower = h.min(0.0) - 9.0;
+  if lower >= h {
+    return 0.0;
+  }
+  adaptive_simpson(&integrand, lower, h, 1e-12, 30)
+}
+
+/// Adaptive Simpson's rule: recursively bisects until the local error
+/// estimate is within `tol`, or `max_depth` is reached.
+fn adaptive_simpson(
+  f: &dyn Fn(f64) -> f64,
+  a: f64,
+  b: f64,
+  tol: f64,
+  max_depth: u32,
+) -> f64 {
+  let fa = f(a);
+  let fb = f(b);
+  let m = f64::midpoint(a, b);
+  let fm = f(m);
+  let whole = (b - a) / 6.0 * (fa + 4.0 * fm + fb);
+  adaptive_simpson_rec(f, a, b, tol, whole, fa, fm, fb, max_depth)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn adaptive_simpson_rec(
+  f: &dyn Fn(f64) -> f64,
+  a: f64,
+  b: f64,
+  tol: f64,
+  whole: f64,
+  fa: f64,
+  fm: f64,
+  fb: f64,
+  depth: u32,
+) -> f64 {
+  let m = f64::midpoint(a, b);
+  let m1 = f64::midpoint(a, m);
+  let m2 = f64::midpoint(m, b);
+  let fm1 = f(m1);
+  let fm2 = f(m2);
+  let h = b - a;
+  let left = h / 12.0 * (fa + 4.0 * fm1 + fm);
+  let right = h / 12.0 * (fm + 4.0 * fm2 + fb);
+  let refined = left + right;
+  let error = (refined - whole) / 15.0;
+  if depth == 0 || error.abs() < tol {
+    refined + error
+  } else {
+    adaptive_simpson_rec(f, a, m, tol / 2.0, left, fa, fm1, fm, depth - 1)
+      + adaptive_simpson_rec(f, m, b, tol / 2.0, right, fm, fm2, fb, depth - 1)
   }
 }
 

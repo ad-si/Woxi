@@ -2919,6 +2919,70 @@ mod multinormal_distribution {
       "PDF[MultinormalDistribution[{0, 0}, {{2, 1}, {1, 3}}], {x, y}]"
     );
   }
+
+  // CDF of the bivariate case: numeric integration of the standard
+  // reduction to a single integral over the standardized coordinates.
+  #[test]
+  fn cdf_independent_matches_product_of_marginals() {
+    // Zero correlation: Φ2(h, k; 0) = Φ(h) * Φ(k) exactly.
+    assert_eq!(
+      interpret(
+        "CDF[MultinormalDistribution[{0, 0}, {{1, 0}, {0, 1}}], {1, 1}]"
+      )
+      .unwrap(),
+      "0.7078609817371407"
+    );
+  }
+
+  #[test]
+  fn cdf_shifted_mean_and_scaled_covariance() {
+    assert_eq!(
+      interpret(
+        "CDF[MultinormalDistribution[{1, 2}, {{4, -2}, {-2, 9}}], {3, 5}]"
+      )
+      .unwrap(),
+      "0.6917121699457104"
+    );
+  }
+
+  #[test]
+  fn cdf_perfect_correlation_edge_cases() {
+    // rho = 1: P(X <= h, Y <= k) = P(X <= min(h, k)) = Phi(min(h, k)).
+    assert_eq!(
+      interpret(
+        "CDF[MultinormalDistribution[{0, 0}, {{1, 1}, {1, 1}}], {0.5, 1.0}]"
+      )
+      .unwrap(),
+      "0.6914624612740131"
+    );
+    // rho = -1: P(X <= h, Y <= k) = max(Phi(h) + Phi(k) - 1, 0).
+    assert_eq!(
+      interpret(
+        "CDF[MultinormalDistribution[{0, 0}, {{1, -1}, {-1, 1}}], {0.5, 1.0}]"
+      )
+      .unwrap(),
+      "0.532807207342556"
+    );
+  }
+
+  #[test]
+  fn cdf_symbolic_or_trivariate_stays_unevaluated() {
+    // Only the fully numeric bivariate case is handled.
+    assert_eq!(
+      interpret(
+        "CDF[MultinormalDistribution[{0, 0}, {{1, 0}, {0, 1}}], {x, y}]"
+      )
+      .unwrap(),
+      "CDF[MultinormalDistribution[{0, 0}, {{1, 0}, {0, 1}}], {x, y}]"
+    );
+    assert_eq!(
+      interpret(
+        "CDF[MultinormalDistribution[{0, 0, 0}, {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}], {x, y, z}]"
+      )
+      .unwrap(),
+      "CDF[MultinormalDistribution[{0, 0, 0}, {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}], {x, y, z}]"
+    );
+  }
 }
 
 mod empirical_distribution {

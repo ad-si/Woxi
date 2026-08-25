@@ -6292,6 +6292,52 @@ mod find_minimum {
       interpret("FindMaximum[-10*^-30 *(x-3)^2+2., {x, 1}]").unwrap();
     assert_eq!(result, "{2., {x -> 3.}}");
   }
+
+  #[test]
+  fn constrained_maximum_step_monitor_collects_points() {
+    // A `StepMonitor :> Sow[...]` option on a constrained FindMaximum
+    // (the `{f, cons}` form, which delegates to the NMaximize solver) must
+    // actually fire at each solver step, so Reap collects the sown points
+    // instead of returning an empty tag list.
+    clear_state();
+    let result = interpret(
+      "p = Reap[FindMaximum[{-((x - 2)^2 + (y - 3)^2), \
+       0 < x < 10 && 0 < y < 10}, {{x, 5}, {y, 5}}, \
+       StepMonitor :> Sow[{x, y}]]]; \
+       {p[[1]], Length[p[[2]]], Length[p[[2, 1]]] > 0}",
+    )
+    .unwrap();
+    assert_eq!(result, "{{0., {x -> 2., y -> 3.}}, 1, True}");
+  }
+
+  #[test]
+  fn constrained_maximum_without_step_monitor_unaffected() {
+    // The StepMonitor plumbing must not change the plain constrained
+    // FindMaximum result when the option isn't supplied.
+    clear_state();
+    let result = interpret(
+      "FindMaximum[{-((x - 2)^2 + (y - 3)^2), 0 < x < 10 && 0 < y < 10}, \
+       {{x, 5}, {y, 5}}]",
+    )
+    .unwrap();
+    assert_eq!(result, "{0., {x -> 2., y -> 3.}}");
+  }
+
+  #[test]
+  fn constrained_maximum_over_black_box_function() {
+    // Regression: an objective built on a function Woxi can only evaluate
+    // numerically (no symbolic derivative rule, here a distribution's CDF)
+    // must not be mistaken for one with a valid symbolic gradient — that
+    // silently broke optimization, converging on a fixed grid-search sample
+    // instead of refining it. The maximum of CDF[NormalDistribution[],x-c]
+    // over a bounded x range is at the upper bound.
+    clear_state();
+    let result = interpret(
+      "FindMaximum[{CDF[NormalDistribution[], x - 3], 0 < x < 5}, {x, 1}]",
+    )
+    .unwrap();
+    assert_eq!(result, "{0.9772498680518208, {x -> 5.}}");
+  }
 }
 
 mod dt {
