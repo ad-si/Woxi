@@ -4506,7 +4506,21 @@ fn numeric_eigenvectors(matrix: &[Vec<Expr>], n: usize) -> crate::syntax::Expr {
           *c -= dot * p;
         }
       }
-      vec = v;
+      // A defective matrix's repeated eigenvalue has a null space smaller
+      // than its multiplicity, so inverse iteration — deterministic given
+      // the same shifted matrix and starting vector — converges to the
+      // same direction already recorded in `group_prev` for every
+      // occurrence. Once that's subtracted out here, what's left is only
+      // the tiny residual from `inverse_iteration_eigenvector`'s shift
+      // regularization, not a genuine second eigenvector; require the same
+      // significance the null-space search above does, so a defective
+      // occurrence falls through to the zero-vector convention below
+      // (matching wolframscript, e.g. `Eigenvectors[{{1, 1}, {0, 1}}]` ==
+      // `{{1, 0}, {0, 0}}`) instead of fabricating an unrelated vector.
+      let v_norm: f64 = v.iter().map(|x| x * x).sum::<f64>().sqrt();
+      if v_norm > 1e-9 {
+        vec = v;
+      }
     }
 
     // Normalize to unit length

@@ -5515,6 +5515,20 @@ mod cases {
       r#"{0., 1., 1.}"#,
     );
   }
+  // A *defective* (non-diagonalizable) float matrix's repeated eigenvalue
+  // has a null space smaller than its multiplicity: the Gram-Schmidt fix
+  // above must not fabricate a second eigenvector out of the inverse-
+  // iteration fallback's shift residual once the real eigenvector is
+  // subtracted out — it should fall back to the zero vector, matching the
+  // exact-integer path's existing convention (see `defective_matrix`
+  // above: `Eigenvectors[{{1, 1}, {0, 1}}]` == `{{1, 0}, {0, 0}}`).
+  #[test]
+  fn eigenvectors_float_defective_repeated_eigenvalue() {
+    assert_case(
+      r#"Eigenvectors[{{2., 1.}, {0., 2.}}]"#,
+      r#"{{-1., 0.}, {0., 0.}}"#,
+    );
+  }
   #[test]
   fn inverse_1() {
     assert_case(
