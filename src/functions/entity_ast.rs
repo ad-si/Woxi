@@ -551,12 +551,20 @@ fn resolve_entity_lookup(
   entity_name: &str,
   property: &str,
 ) -> Result<Expr, InterpreterError> {
-  // Built-in Country knowledge base, used unless the user has registered a
-  // custom "Country" EntityStore (which then takes precedence).
+  // Built-in Country/Element knowledge bases, used unless the user has
+  // registered a custom EntityStore for that type (which then takes
+  // precedence).
   if type_name == "Country"
     && !is_type_registered("Country")
     && let Some(val) =
       crate::functions::country_data::country_property(entity_name, property)
+  {
+    return Ok(val);
+  }
+  if type_name == "Element"
+    && !is_type_registered("Element")
+    && let Some(val) =
+      crate::functions::element_data::element_property(entity_name, property)
   {
     return Ok(val);
   }
@@ -627,6 +635,16 @@ pub fn entity_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 fn entity_list_for_type(type_name: &str) -> crate::syntax::Expr {
   if !is_type_registered(type_name) {
+    if type_name == "Country" {
+      return Expr::List(
+        crate::functions::country_data::country_entities().into(),
+      );
+    }
+    if type_name == "Element" {
+      return Expr::List(
+        crate::functions::element_data::element_entities().into(),
+      );
+    }
     return Expr::FunctionCall {
       name: "Missing".to_string(),
       args: vec![
@@ -708,6 +726,16 @@ fn entity_list_for_class(
 
 fn entity_count_for_type(type_name: &str) -> crate::syntax::Expr {
   if !is_type_registered(type_name) {
+    if type_name == "Country" {
+      return Expr::Integer(
+        crate::functions::country_data::country_entities().len() as i128,
+      );
+    }
+    if type_name == "Element" {
+      return Expr::Integer(
+        crate::functions::element_data::element_entities().len() as i128,
+      );
+    }
     return Expr::FunctionCall {
       name: "Missing".to_string(),
       args: vec![

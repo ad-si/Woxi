@@ -257,6 +257,22 @@ pub fn canonical_name(name: &str) -> Option<&'static str> {
   lookup(name).map(|c| c.canonical)
 }
 
+/// All countries as `Entity["Country", canonical]` — the built-in "Country"
+/// `EntityList`/`EntityValue["Entities"]` knowledge base.
+pub fn country_entities() -> Vec<Expr> {
+  COUNTRIES
+    .iter()
+    .map(|c| Expr::FunctionCall {
+      name: "Entity".to_string(),
+      args: vec![
+        Expr::String("Country".to_string()),
+        Expr::String(c.canonical.to_string()),
+      ]
+      .into(),
+    })
+    .collect()
+}
+
 /// Resolve a free-form country name to its dataset entry.
 fn lookup(name: &str) -> Option<&'static Country> {
   let key = normalize(name);
