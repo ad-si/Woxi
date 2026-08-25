@@ -1559,6 +1559,46 @@ pub(crate) fn has_sequence_hold(name: &str) -> bool {
     || builtin.contains(Attributes::HoldAllComplete)
 }
 
+/// Push one element of a `List[...]`-style construction — literal list
+/// evaluation, and `Table`/`Array`'s per-iteration result — applying the
+/// automatic simplification Wolfram gives all of them: a `Nothing` value
+/// vanishes, a `Sequence[…]` value splices its arguments in, and a
+/// `Splice[list]` / `Splice[list, List]` value splices `list`'s elements
+/// in, each recursively subject to the same rule (so `Nothing` reached
+/// through a splice is removed exactly like a bare one, and a nested
+/// `Sequence`/`Splice` produced by the splice keeps unwinding). This is the
+/// single canonical implementation both `Expr::List` evaluation (below) and
+/// `Table`/`Array` (`push_table_value` in `functions::list_helpers_ast`)
+/// delegate to, so the two constructs can't drift out of sync the way they
+/// once did — e.g. `{Sequence[1, Nothing, 2]}` and
+/// `Table[Sequence[1, Nothing, 2], {1}]` disagreeing on whether the nested
+/// `Nothing` survives.
+pub fn push_list_element(results: &mut Vec<Expr>, val: Expr) {
+  if matches!(&val, Expr::Identifier(s) if s == "Nothing") {
+    return;
+  }
+  if let Expr::FunctionCall { name, args } = &val {
+    if name == "Sequence" {
+      for a in args {
+        push_list_element(results, a.clone());
+      }
+      return;
+    }
+    if name == "Splice"
+      && (args.len() == 1
+        || (args.len() == 2
+          && matches!(&args[1], Expr::Identifier(h) if h == "List")))
+      && let Expr::List(items) = &args[0]
+    {
+      for a in items {
+        push_list_element(results, a.clone());
+      }
+      return;
+    }
+  }
+  results.push(val);
+}
+
 /// Flatten Sequence[...] arguments into the parent function's argument list.
 /// In Wolfram Language, Sequence[a, b] appearing as an argument to f produces f[..., a, b, ...].
 /// Functions with the SequenceHold attribute suppress this.

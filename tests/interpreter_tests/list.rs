@@ -2324,6 +2324,50 @@ mod sequence_splice {
       "{{1, 3}, {4, 6}}"
     );
   }
+
+  #[test]
+  fn empty_slot_function_omits_array_entry_for_list_dims_form() {
+    // `Array[f, {n}]` (dims given as a list) routes through the
+    // multi-dimensional builder rather than the bare-integer `Array[f, n]`
+    // one; both must drop an empty splice the same way.
+    assert_eq!(
+      interpret("Array[If[# != 2, #, ##&[]] &, {5}]").unwrap(),
+      "{1, 3, 4, 5}"
+    );
+  }
+
+  #[test]
+  fn empty_slot_function_omits_entry_in_two_dimensional_array() {
+    assert_eq!(
+      interpret("Array[If[#2 != 2, #1 + #2, ##&[]] &, {2, 3}]").unwrap(),
+      "{{2, 4}, {3, 5}}"
+    );
+  }
+
+  #[test]
+  fn nothing_inside_spliced_sequence_is_removed_in_list() {
+    // `Nothing` reached through a `Sequence` splice is removed exactly like
+    // a bare `Nothing`, since splicing happens before Wolfram's `Nothing`
+    // removal — not just a `Nothing` that is itself a direct list element.
+    assert_eq!(interpret("{Sequence[1, Nothing, 2]}").unwrap(), "{1, 2}");
+  }
+
+  #[test]
+  fn nothing_inside_spliced_sequence_is_removed_in_table() {
+    assert_eq!(
+      interpret("Table[If[i == 1, Sequence[1, Nothing, 2]], {i, 1, 1}]")
+        .unwrap(),
+      "{1, 2}"
+    );
+  }
+
+  #[test]
+  fn nothing_inside_spliced_splice_is_removed() {
+    assert_eq!(
+      interpret("{1, Splice[{2, Nothing, 3}], 4}").unwrap(),
+      "{1, 2, 3, 4}"
+    );
+  }
 }
 
 mod list_function {

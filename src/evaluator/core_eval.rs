@@ -1074,29 +1074,7 @@ pub fn evaluate_expr_to_expr_inner(
       let len_before = crate::FUNC_DEFS.with(|m| m.borrow().len());
       for item in items {
         let val = evaluate_argument(item)?;
-        if matches!(&val, Expr::Identifier(s) if s == "Nothing") {
-          continue;
-        }
-        // Flatten Sequence in lists
-        if let Expr::FunctionCall { name, args } = &val
-          && name == "Sequence"
-        {
-          evaluated.extend(args.iter().cloned());
-          continue;
-        }
-        // Flatten Splice in lists: Splice[{...}] (1-arg, default List head)
-        // or Splice[{...}, List] (explicit List head)
-        if let Expr::FunctionCall { name, args } = &val
-          && name == "Splice"
-          && (args.len() == 1
-            || (args.len() == 2
-              && matches!(&args[1], Expr::Identifier(h) if h == "List")))
-          && let Expr::List(splice_items) = &args[0]
-        {
-          evaluated.extend(splice_items.iter().cloned());
-          continue;
-        }
-        evaluated.push(val);
+        crate::evaluator::listable::push_list_element(&mut evaluated, val);
       }
       // If any new DownValues were introduced during element evaluation,
       // re-evaluate the elements once so that earlier items pick up
