@@ -16666,6 +16666,25 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     out_args.push(body.clone());
   }
 
+  // `Initialization :> {...}` may define helper symbols (e.g. `func = {...}`)
+  // that a variable spec's bound references (e.g. `{{n, 4, "function"}, 1,
+  // Length[func], 1}`). Wolfram runs Initialization when the DynamicModule
+  // is set up, before any control bound is resolved, regardless of where
+  // the option appears among the argument list. Run it first here too, so
+  // the speculative bound evaluation below sees `func` already defined
+  // instead of evaluating `Length[func]` against an undefined symbol.
+  let already_initialized = args.iter().skip(1).any(|spec| {
+    if let Expr::Rule { pattern, replacement } | Expr::RuleDelayed { pattern, replacement } =
+      spec
+      && matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Initialization")
+    {
+      let _ = evaluate_expr_to_expr(replacement);
+      true
+    } else {
+      false
+    }
+  });
+
   for spec in args.iter().skip(1) {
     match spec {
       Expr::List(items) if !items.is_empty() => {
@@ -16691,8 +16710,11 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // Mathematica's behavior of running Initialization at notebook
         // evaluation time. Evaluate its body in the current (global)
         // scope so SetDelayed definitions register before the Manipulate
-        // expression itself is returned.
-        if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Initialization")
+        // expression itself is returned. Already run above (before any
+        // variable spec bound was resolved) when `already_initialized` is
+        // set, so it isn't re-run here.
+        if !already_initialized
+          && matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Initialization")
         {
           let _ = evaluate_expr_to_expr(replacement);
         }
