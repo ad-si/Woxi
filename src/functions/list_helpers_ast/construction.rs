@@ -256,230 +256,248 @@ pub fn table_ast(
         }
       };
 
-      if items.len() == 2 {
-        // Check if second element is a list (iterate over list)
-        let mut second = crate::evaluator::evaluate_expr_to_expr(&items[1])?;
-        if let Expr::List(list_items) = &mut second {
-          // {i, {a, b, c}} form - iterate over list elements
-          let mut results = Vec::new();
-          for item in list_items.iter() {
-            let substituted =
-              crate::syntax::substitute_variable(body, &var_name, item);
-            let val = crate::evaluator::evaluate_value(&substituted)?;
-            crate::evaluator::listable::push_list_element(&mut results, val);
-          }
-          return Ok(Expr::List(results.into()));
-        }
-        // {i, max} form - iterate from 1 to max (real max truncated).
-        let Some(max_val) = bound_to_count(&second) else {
-          return Ok(table_unevaluated(body, iter_spec));
-        };
-        let mut results = Vec::new();
-        for i in 1..=max_val {
-          let substituted = crate::syntax::substitute_variable(
-            body,
-            &var_name,
-            &Expr::Integer(i),
-          );
-          let val = crate::evaluator::evaluate_value(&substituted)?;
-          crate::evaluator::listable::push_list_element(&mut results, val);
-        }
-        return Ok(Expr::List(results.into()));
-      } else if items.len() >= 3 {
-        // {i, min, max} or {i, min, max, step} form
-        let min_expr = crate::evaluator::evaluate_expr_to_expr(&items[1])?;
-        let max_expr = crate::evaluator::evaluate_expr_to_expr(&items[2])?;
-
-        // Get step (default is 1)
-        let step_expr = if items.len() >= 4 {
-          crate::evaluator::evaluate_expr_to_expr(&items[3])?
-        } else {
-          Expr::Integer(1)
-        };
-
-        // Keep exact integer iteration behavior when possible.
-        if let (Some(min_val), Some(max_val), Some(step_val)) = (
-          expr_to_i128(&min_expr),
-          expr_to_i128(&max_expr),
-          expr_to_i128(&step_expr),
-        ) {
-          if step_val == 0 {
-            return Err(InterpreterError::EvaluationError(
-              "Table: step cannot be zero".into(),
-            ));
-          }
-
-          let mut results = Vec::new();
-          let mut i = min_val;
-          if step_val > 0 {
-            while i <= max_val {
-              let substituted = crate::syntax::substitute_variable(
-                body,
-                &var_name,
-                &Expr::Integer(i),
-              );
-              let val = crate::evaluator::evaluate_value(&substituted)?;
-              crate::evaluator::listable::push_list_element(&mut results, val);
-              i += step_val;
-            }
-          } else {
-            // Negative step
-            while i >= max_val {
-              let substituted = crate::syntax::substitute_variable(
-                body,
-                &var_name,
-                &Expr::Integer(i),
-              );
-              let val = crate::evaluator::evaluate_value(&substituted)?;
-              crate::evaluator::listable::push_list_element(&mut results, val);
-              i += step_val;
-            }
-          }
-          return Ok(Expr::List(results.into()));
-        }
-
-        // Symbolic path: if (max - min) / step simplifies to a non-negative
-        // EXACT integer count, iterate symbolically as min, min+step, …,
-        // min+n*step. Handles cases like Table[x, {x, a, a+5n, n}] where the
-        // bounds are symbolic but the iteration count is well-defined.
-        // Accept only Expr::Integer so Real arithmetic (e.g. 10/0.2 → 50.)
-        // keeps using the existing f64 accumulation path, preserving
-        // snapshot-sensitive rounding behavior.
-        let diff = crate::evaluator::evaluate_function_call_ast(
-          "Subtract",
-          &[max_expr.clone(), min_expr.clone()],
-        )?;
-        let ratio = crate::evaluator::evaluate_function_call_ast(
-          "Divide",
-          &[diff, step_expr.clone()],
-        )?;
-        if let Expr::Integer(n) = ratio
-          && (0..=1_000_000).contains(&n)
-        {
-          let mut results = Vec::with_capacity((n + 1) as usize);
-          for k in 0..=n {
-            let current = if k == 0 {
-              min_expr.clone()
-            } else {
-              let k_step = crate::evaluator::evaluate_function_call_ast(
-                "Times",
-                &[Expr::Integer(k), step_expr.clone()],
-              )?;
-              crate::evaluator::evaluate_function_call_ast(
-                "Plus",
-                &[min_expr.clone(), k_step],
-              )?
-            };
-            let substituted =
-              crate::syntax::substitute_variable(body, &var_name, &current);
-            let val = crate::evaluator::evaluate_value(&substituted)?;
-            crate::evaluator::listable::push_list_element(&mut results, val);
-          }
-          return Ok(Expr::List(results.into()));
-        }
-
-        // Fallback: numeric iteration for symbolic numeric bounds/step (e.g.
-        // Pi/4). Non-numeric bounds/step leave the call unevaluated (the
-        // dispatch-level check normally intercepts this first).
-        if crate::functions::math_ast::try_eval_to_f64(&min_expr).is_none() {
-          return Ok(table_unevaluated(body, iter_spec));
-        }
-        let Some(max_num) =
-          crate::functions::math_ast::try_eval_to_f64(&max_expr)
-        else {
-          return Ok(table_unevaluated(body, iter_spec));
-        };
-        let Some(step_num) =
-          crate::functions::math_ast::try_eval_to_f64_with_infinity(&step_expr)
-        else {
-          return Ok(table_unevaluated(body, iter_spec));
-        };
-
-        if step_num.abs() <= f64::EPSILON {
-          return Err(InterpreterError::EvaluationError(
-            "Table: step cannot be zero".into(),
-          ));
-        }
-
-        let mut results = Vec::new();
-        let mut current_expr = min_expr.clone();
-        let mut safety_counter: usize = 0;
-        if step_num > 0.0 {
-          loop {
-            let current_num =
-              crate::functions::math_ast::try_eval_to_f64_with_infinity(
-                &current_expr,
-              )
-              .ok_or_else(|| {
-                InterpreterError::EvaluationError(
-                  "Table: iterator value became non-numeric".into(),
-                )
-              })?;
-            if current_num > max_num + f64::EPSILON {
-              break;
-            }
-            let substituted = crate::syntax::substitute_variable(
-              body,
-              &var_name,
-              &current_expr,
-            );
-            let val = crate::evaluator::evaluate_value(&substituted)?;
-            crate::evaluator::listable::push_list_element(&mut results, val);
-            current_expr = crate::evaluator::evaluate_expr_to_expr(&call(
-              "Plus",
-              vec![current_expr, step_expr.clone()],
-            ))?;
-            safety_counter += 1;
-            if safety_counter > 1_000_000 {
-              return Err(InterpreterError::EvaluationError(
-                "Table: iterator exceeded maximum iterations".into(),
-              ));
-            }
-          }
-        } else {
-          loop {
-            let current_num =
-              crate::functions::math_ast::try_eval_to_f64_with_infinity(
-                &current_expr,
-              )
-              .ok_or_else(|| {
-                InterpreterError::EvaluationError(
-                  "Table: iterator value became non-numeric".into(),
-                )
-              })?;
-            if current_num < max_num - f64::EPSILON {
-              break;
-            }
-            let substituted = crate::syntax::substitute_variable(
-              body,
-              &var_name,
-              &current_expr,
-            );
-            let val = crate::evaluator::evaluate_value(&substituted)?;
-            crate::evaluator::listable::push_list_element(&mut results, val);
-            current_expr = crate::evaluator::evaluate_expr_to_expr(&call(
-              "Plus",
-              vec![current_expr, step_expr.clone()],
-            ))?;
-            safety_counter += 1;
-            if safety_counter > 1_000_000 {
-              return Err(InterpreterError::EvaluationError(
-                "Table: iterator exceeded maximum iterations".into(),
-              ));
-            }
-          }
-        }
-        return Ok(Expr::List(results.into()));
+      // Wolfram's Table localizes the iterator the way Block does: the symbol
+      // is given a value for the duration of one iteration instead of being
+      // textually replaced throughout the body. The two only agree where the
+      // body is fully evaluated — every held position tells them apart.
+      // `Table[tile[i, 0] :> i^2, {i, 3}]` keeps `i^2` on the right of each
+      // rule (RuleDelayed holds it) and `Table[Hold[i], {i, 2}]` is
+      // `{Hold[i], Hold[i]}`; substitution would burn the loop counter in.
+      // The substitute path stays for a body that uses the iterator as a
+      // function head, which an ENV binding cannot express.
+      let substitute = body_uses_var_as_function_head(body, &var_name);
+      let prev = if substitute {
+        None
+      } else {
+        crate::ENV.with(|e| e.borrow_mut().remove(&var_name))
+      };
+      let result =
+        table_over_iterator(body, &var_name, items, iter_spec, substitute);
+      if !substitute {
+        restore_loop_var(&var_name, prev);
       }
-
-      Err(InterpreterError::EvaluationError(
-        "Table: invalid iterator specification".into(),
-      ))
+      result
     }
     _ => Err(InterpreterError::EvaluationError(
       "Table: invalid iterator specification".into(),
     )),
   }
+}
+
+/// One `Table` iterator `{i, …}`: run `var_name` over the spec in `items` and
+/// collect the body's value at each step.
+///
+/// `substitute` picks the textual-substitution path instead of the dynamic
+/// binding the caller has already installed — see the note there for when
+/// that is still needed.
+fn table_over_iterator(
+  body: &Expr,
+  var_name: &str,
+  items: &[Expr],
+  iter_spec: &Expr,
+  substitute: bool,
+) -> Result<Expr, InterpreterError> {
+  // The body's value with the iterator standing at `current`.
+  let eval_at = |current: &Expr| -> Result<Expr, InterpreterError> {
+    if substitute {
+      let substituted =
+        crate::syntax::substitute_variable(body, var_name, current);
+      crate::evaluator::evaluate_value(&substituted)
+    } else {
+      bind_loop_var(var_name, current.clone());
+      crate::evaluator::evaluate_value(body)
+    }
+  };
+
+  if items.len() == 2 {
+    // Check if second element is a list (iterate over list)
+    let mut second = crate::evaluator::evaluate_expr_to_expr(&items[1])?;
+    if let Expr::List(list_items) = &mut second {
+      // {i, {a, b, c}} form - iterate over list elements
+      let mut results = Vec::new();
+      for item in list_items.iter() {
+        let val = eval_at(item)?;
+        crate::evaluator::listable::push_list_element(&mut results, val);
+      }
+      return Ok(Expr::List(results.into()));
+    }
+    // {i, max} form - iterate from 1 to max (real max truncated).
+    let Some(max_val) = bound_to_count(&second) else {
+      return Ok(table_unevaluated(body, iter_spec));
+    };
+    let mut results = Vec::new();
+    for i in 1..=max_val {
+      let val = eval_at(&Expr::Integer(i))?;
+      crate::evaluator::listable::push_list_element(&mut results, val);
+    }
+    return Ok(Expr::List(results.into()));
+  } else if items.len() >= 3 {
+    // {i, min, max} or {i, min, max, step} form
+    let min_expr = crate::evaluator::evaluate_expr_to_expr(&items[1])?;
+    let max_expr = crate::evaluator::evaluate_expr_to_expr(&items[2])?;
+
+    // Get step (default is 1)
+    let step_expr = if items.len() >= 4 {
+      crate::evaluator::evaluate_expr_to_expr(&items[3])?
+    } else {
+      Expr::Integer(1)
+    };
+
+    // Keep exact integer iteration behavior when possible.
+    if let (Some(min_val), Some(max_val), Some(step_val)) = (
+      expr_to_i128(&min_expr),
+      expr_to_i128(&max_expr),
+      expr_to_i128(&step_expr),
+    ) {
+      if step_val == 0 {
+        return Err(InterpreterError::EvaluationError(
+          "Table: step cannot be zero".into(),
+        ));
+      }
+
+      let mut results = Vec::new();
+      let mut i = min_val;
+      if step_val > 0 {
+        while i <= max_val {
+          let val = eval_at(&Expr::Integer(i))?;
+          crate::evaluator::listable::push_list_element(&mut results, val);
+          i += step_val;
+        }
+      } else {
+        // Negative step
+        while i >= max_val {
+          let val = eval_at(&Expr::Integer(i))?;
+          crate::evaluator::listable::push_list_element(&mut results, val);
+          i += step_val;
+        }
+      }
+      return Ok(Expr::List(results.into()));
+    }
+
+    // Symbolic path: if (max - min) / step simplifies to a non-negative
+    // EXACT integer count, iterate symbolically as min, min+step, …,
+    // min+n*step. Handles cases like Table[x, {x, a, a+5n, n}] where the
+    // bounds are symbolic but the iteration count is well-defined.
+    // Accept only Expr::Integer so Real arithmetic (e.g. 10/0.2 → 50.)
+    // keeps using the existing f64 accumulation path, preserving
+    // snapshot-sensitive rounding behavior.
+    let diff = crate::evaluator::evaluate_function_call_ast(
+      "Subtract",
+      &[max_expr.clone(), min_expr.clone()],
+    )?;
+    let ratio = crate::evaluator::evaluate_function_call_ast(
+      "Divide",
+      &[diff, step_expr.clone()],
+    )?;
+    if let Expr::Integer(n) = ratio
+      && (0..=1_000_000).contains(&n)
+    {
+      let mut results = Vec::with_capacity((n + 1) as usize);
+      for k in 0..=n {
+        let current = if k == 0 {
+          min_expr.clone()
+        } else {
+          let k_step = crate::evaluator::evaluate_function_call_ast(
+            "Times",
+            &[Expr::Integer(k), step_expr.clone()],
+          )?;
+          crate::evaluator::evaluate_function_call_ast(
+            "Plus",
+            &[min_expr.clone(), k_step],
+          )?
+        };
+        let val = eval_at(&current)?;
+        crate::evaluator::listable::push_list_element(&mut results, val);
+      }
+      return Ok(Expr::List(results.into()));
+    }
+
+    // Fallback: numeric iteration for symbolic numeric bounds/step (e.g.
+    // Pi/4). Non-numeric bounds/step leave the call unevaluated (the
+    // dispatch-level check normally intercepts this first).
+    if crate::functions::math_ast::try_eval_to_f64(&min_expr).is_none() {
+      return Ok(table_unevaluated(body, iter_spec));
+    }
+    let Some(max_num) = crate::functions::math_ast::try_eval_to_f64(&max_expr)
+    else {
+      return Ok(table_unevaluated(body, iter_spec));
+    };
+    let Some(step_num) =
+      crate::functions::math_ast::try_eval_to_f64_with_infinity(&step_expr)
+    else {
+      return Ok(table_unevaluated(body, iter_spec));
+    };
+
+    if step_num.abs() <= f64::EPSILON {
+      return Err(InterpreterError::EvaluationError(
+        "Table: step cannot be zero".into(),
+      ));
+    }
+
+    let mut results = Vec::new();
+    let mut current_expr = min_expr.clone();
+    let mut safety_counter: usize = 0;
+    if step_num > 0.0 {
+      loop {
+        let current_num =
+          crate::functions::math_ast::try_eval_to_f64_with_infinity(
+            &current_expr,
+          )
+          .ok_or_else(|| {
+            InterpreterError::EvaluationError(
+              "Table: iterator value became non-numeric".into(),
+            )
+          })?;
+        if current_num > max_num + f64::EPSILON {
+          break;
+        }
+        let val = eval_at(&current_expr)?;
+        crate::evaluator::listable::push_list_element(&mut results, val);
+        current_expr = crate::evaluator::evaluate_expr_to_expr(&call(
+          "Plus",
+          vec![current_expr, step_expr.clone()],
+        ))?;
+        safety_counter += 1;
+        if safety_counter > 1_000_000 {
+          return Err(InterpreterError::EvaluationError(
+            "Table: iterator exceeded maximum iterations".into(),
+          ));
+        }
+      }
+    } else {
+      loop {
+        let current_num =
+          crate::functions::math_ast::try_eval_to_f64_with_infinity(
+            &current_expr,
+          )
+          .ok_or_else(|| {
+            InterpreterError::EvaluationError(
+              "Table: iterator value became non-numeric".into(),
+            )
+          })?;
+        if current_num < max_num - f64::EPSILON {
+          break;
+        }
+        let val = eval_at(&current_expr)?;
+        crate::evaluator::listable::push_list_element(&mut results, val);
+        current_expr = crate::evaluator::evaluate_expr_to_expr(&call(
+          "Plus",
+          vec![current_expr, step_expr.clone()],
+        ))?;
+        safety_counter += 1;
+        if safety_counter > 1_000_000 {
+          return Err(InterpreterError::EvaluationError(
+            "Table: iterator exceeded maximum iterations".into(),
+          ));
+        }
+      }
+    }
+    return Ok(Expr::List(results.into()));
+  }
+
+  Err(InterpreterError::EvaluationError(
+    "Table: invalid iterator specification".into(),
+  ))
 }
 
 use crate::functions::math_ast::expr_to_rational;

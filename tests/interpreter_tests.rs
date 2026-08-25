@@ -2288,6 +2288,72 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_table_localizes_its_iterator_like_block() {
+    // Table gives its iterator a value for the duration of one iteration
+    // (Block-style dynamic scoping); it does not textually replace the symbol
+    // throughout the body. The two agree wherever the body is evaluated to
+    // the end, and part ways in every held position — which is where a
+    // `Table[lhs :> rhs, …]` rule list keeps the loop counter symbolic.
+    clear_state();
+    assert_eq!(
+      interpret("Table[Hold[i^2], {i, 2}]").unwrap(),
+      "{Hold[i^2], Hold[i^2]}"
+    );
+    assert_eq!(
+      interpret("Table[tile[i, 0] :> i^2, {i, 2}]").unwrap(),
+      "{tile[1, 0] :> i^2, tile[2, 0] :> i^2}"
+    );
+    // The immediate rule is the one that captures the value.
+    assert_eq!(
+      interpret("Table[tile[i, 0] -> i^2, {i, 2}]").unwrap(),
+      "{tile[1, 0] -> 1, tile[2, 0] -> 4}"
+    );
+    assert_eq!(
+      interpret("Table[Function[x, i + x], {i, 2}]").unwrap(),
+      "{Function[x, i + x], Function[x, i + x]}"
+    );
+    assert_eq!(
+      interpret("Table[HoldForm[i], {i, 2}]").unwrap(),
+      "{HoldForm[i], HoldForm[i]}"
+    );
+    // A held position stays symbolic whatever the iterator ranges over:
+    // a list of values, a min/max/step range, or a nested iterator.
+    assert_eq!(
+      interpret("Table[Hold[i], {i, {a, b}}]").unwrap(),
+      "{Hold[i], Hold[i]}"
+    );
+    assert_eq!(
+      interpret("Table[Hold[i], {i, 1, 5, 2}]").unwrap(),
+      "{Hold[i], Hold[i], Hold[i]}"
+    );
+    assert_eq!(
+      interpret("Table[Table[Hold[i + j], {j, 2}], {i, 2}]").unwrap(),
+      "{{Hold[i + j], Hold[i + j]}, {Hold[i + j], Hold[i + j]}}"
+    );
+    // An inner binder still wins: With substitutes its own local, so the
+    // iterator's value reaches the held expression through `k`.
+    assert_eq!(
+      interpret("Table[With[{k = i}, Hold[k]], {i, 2}]").unwrap(),
+      "{Hold[1], Hold[2]}"
+    );
+    // Evaluated positions are unaffected — the ordinary use of Table.
+    assert_eq!(interpret("Table[i^2, {i, 4}]").unwrap(), "{1, 4, 9, 16}");
+    assert_eq!(
+      interpret("Table[i + j, {i, 2}, {j, 2}]").unwrap(),
+      "{{2, 3}, {3, 4}}"
+    );
+    // The iterator is local: an outer value survives the loop, and an
+    // unbound symbol stays unbound.
+    clear_state();
+    interpret("i = 42;").unwrap();
+    assert_eq!(interpret("Table[i, {i, 2}]").unwrap(), "{1, 2}");
+    assert_eq!(interpret("i").unwrap(), "42");
+    clear_state();
+    assert_eq!(interpret("Table[i, {i, 2}]").unwrap(), "{1, 2}");
+    assert_eq!(interpret("i").unwrap(), "i");
+  }
+
+  #[test]
   fn test_replace_all_scales_to_a_demonstrations_sized_rule_list() {
     // Wolfram Demonstrations build one rewrite rule per lattice site and
     // hand the whole list to `/.` — thousands of `f[x_Integer, y_Integer]
@@ -2296,7 +2362,10 @@ mod interpreter_tests {
     // a notebook minutes away; a node whose head no rule names now skips
     // the list. The rewrite itself must stay exact.
     clear_state();
-    interpret("rules = Table[tile[i, 0] :> i^2, {i, 8000}];").unwrap();
+    // `->` and not `:>`: Table localizes `i` the way Block does, so a delayed
+    // rule would keep the literal `i^2` on its right-hand side (see
+    // `test_table_localizes_its_iterator_like_block`).
+    interpret("rules = Table[tile[i, 0] -> i^2, {i, 8000}];").unwrap();
     interpret("data = Join[Range[3000], {tile[7, 0]}];").unwrap();
     let start = std::time::Instant::now();
     assert_eq!(interpret("Last[data /. rules]").unwrap(), "49");
