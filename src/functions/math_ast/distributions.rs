@@ -2336,7 +2336,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "WaringYuleDistribution" => cdf_waring_yule(dargs, x),
     "ZipfDistribution" => cdf_zipf(dargs, x),
     "JohnsonDistribution" => cdf_johnson(dargs, x),
-    "MultinormalDistribution" => cdf_multinormal(dargs, x),
+    "MultinormalDistribution" => Ok(cdf_multinormal(dargs, &x)),
     _ => Ok(unevaluated("CDF", args)),
   }
 }
@@ -2347,7 +2347,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// where h, k are the standardized coordinates and ρ is the correlation.
 /// Only the fully numeric bivariate case is handled; anything else (symbolic
 /// parameters, or a dimension other than 2) is left unevaluated.
-fn cdf_multinormal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
+fn cdf_multinormal(dargs: &[Expr], x: &Expr) -> Expr {
   let unevaluated_call = || {
     unevaluated(
       "CDF",
@@ -2355,45 +2355,45 @@ fn cdf_multinormal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
     )
   };
   let [Expr::List(mu), Expr::List(sigma)] = dargs else {
-    return Ok(unevaluated_call());
+    return unevaluated_call();
   };
-  let Expr::List(point) = &x else {
-    return Ok(unevaluated_call());
+  let Expr::List(point) = x else {
+    return unevaluated_call();
   };
   if mu.len() != 2 || sigma.len() != 2 || point.len() != 2 {
-    return Ok(unevaluated_call());
+    return unevaluated_call();
   }
   let (Some(mu1), Some(mu2)) = (expr_to_num(&mu[0]), expr_to_num(&mu[1]))
   else {
-    return Ok(unevaluated_call());
+    return unevaluated_call();
   };
   let (Expr::List(row1), Expr::List(row2)) = (&sigma[0], &sigma[1]) else {
-    return Ok(unevaluated_call());
+    return unevaluated_call();
   };
   if row1.len() != 2 || row2.len() != 2 {
-    return Ok(unevaluated_call());
+    return unevaluated_call();
   }
   let (Some(s11), Some(s12), Some(s22)) = (
     expr_to_num(&row1[0]),
     expr_to_num(&row1[1]),
     expr_to_num(&row2[1]),
   ) else {
-    return Ok(unevaluated_call());
+    return unevaluated_call();
   };
   let (Some(x1), Some(x2)) = (expr_to_num(&point[0]), expr_to_num(&point[1]))
   else {
-    return Ok(unevaluated_call());
+    return unevaluated_call();
   };
   if s11 <= 0.0 || s22 <= 0.0 {
-    return Ok(unevaluated_call());
+    return unevaluated_call();
   }
   let rho = s12 / (s11.sqrt() * s22.sqrt());
   if !(-1.0..=1.0).contains(&rho) {
-    return Ok(unevaluated_call());
+    return unevaluated_call();
   }
   let h = (x1 - mu1) / s11.sqrt();
   let k = (x2 - mu2) / s22.sqrt();
-  Ok(Expr::Real(bivariate_normal_cdf(h, k, rho)))
+  Expr::Real(bivariate_normal_cdf(h, k, rho))
 }
 
 fn std_normal_pdf(t: f64) -> f64 {
@@ -2401,7 +2401,7 @@ fn std_normal_pdf(t: f64) -> f64 {
 }
 
 fn std_normal_cdf(t: f64) -> f64 {
-  0.5 * (1.0 + erf_f64(t / std::f64::consts::SQRT_2))
+  f64::midpoint(1.0, erf_f64(t / std::f64::consts::SQRT_2))
 }
 
 /// CDF of the standard bivariate normal distribution, P(X <= h, Y <= k) for
