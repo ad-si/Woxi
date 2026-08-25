@@ -4445,18 +4445,49 @@ fn numeric_eigenvectors(matrix: &[Vec<Expr>], n: usize) -> crate::syntax::Expr {
   let eigenvalues = numeric_eigenvalues(&f_matrix, n);
 
   let mut eigenvectors = Vec::new();
+  // Normalized eigenvectors already emitted for the run of eigenvalues equal
+  // to the one currently being processed (eigenvalues are sorted, so a
+  // repeated eigenvalue's occurrences are adjacent). `(A - λI)` is identical
+  // across the whole run, so its null space is too — without tracking what
+  // has already been handed out, every occurrence would independently pick
+  // the same first free-column vector out of that shared null space instead
+  // of a genuinely different one spanning the rest of the eigenspace.
+  let mut group_lambda: Option<f64> = None;
+  let mut group_prev: Vec<Vec<f64>> = Vec::new();
   for &lambda in &eigenvalues {
+    if group_lambda.is_none_or(|g| (g - lambda).abs() > 1e-9) {
+      group_lambda = Some(lambda);
+      group_prev.clear();
+    }
+
     // Build (A - λI)
     let mut m = f_matrix.clone();
     for i in 0..n {
       m[i][i] -= lambda;
     }
 
-    // Find null space via Gaussian elimination
-    let mut vec = numeric_null_vector(&m, n);
+    // Find a null space vector independent from any already used for this
+    // same eigenvalue: Gram-Schmidt each free-column basis vector against
+    // the ones already emitted in this group and take the first that still
+    // has a non-negligible component left afterward.
+    let mut vec = numeric_null_space_basis(&m, n)
+      .into_iter()
+      .map(|mut candidate| {
+        for prev in &group_prev {
+          let dot: f64 = candidate.iter().zip(prev).map(|(a, b)| a * b).sum();
+          for (c, p) in candidate.iter_mut().zip(prev) {
+            *c -= dot * p;
+          }
+        }
+        candidate
+      })
+      .find(|candidate| {
+        candidate.iter().map(|x| x * x).sum::<f64>().sqrt() > 1e-9
+      })
+      .unwrap_or_else(|| vec![0.0; n]);
 
-    // The fixed pivot tolerance inside `numeric_null_vector` is tuned for
-    // well-conditioned small matrices; for a larger matrix (or one with
+    // The fixed pivot tolerance inside `numeric_null_space_basis` is tuned
+    // for well-conditioned small matrices; for a larger matrix (or one with
     // several eigenvalues close enough together to leave only a small gap
     // between them) the residual along the true null direction can sit
     // above that tolerance, so no column gets recognized as free and the
@@ -4467,8 +4498,14 @@ fn numeric_eigenvectors(matrix: &[Vec<Expr>], n: usize) -> crate::syntax::Expr {
     // of iterations are enough since the shift already sits at the
     // converged eigenvalue.
     if vec.iter().all(|x| x.abs() < 1e-15)
-      && let Some(v) = inverse_iteration_eigenvector(&f_matrix, lambda, n)
+      && let Some(mut v) = inverse_iteration_eigenvector(&f_matrix, lambda, n)
     {
+      for prev in &group_prev {
+        let dot: f64 = v.iter().zip(prev).map(|(a, b)| a * b).sum();
+        for (c, p) in v.iter_mut().zip(prev) {
+          *c -= dot * p;
+        }
+      }
       vec = v;
     }
 
@@ -4488,6 +4525,7 @@ fn numeric_eigenvectors(matrix: &[Vec<Expr>], n: usize) -> crate::syntax::Expr {
           *v = -*v;
         }
       }
+      group_prev.push(normalized.clone());
       let normalized_exprs: Vec<Expr> =
         normalized.into_iter().map(Expr::Real).collect();
       eigenvectors.push(Expr::List(normalized_exprs.into()));
@@ -4707,7 +4745,7 @@ fn qr_eigenvalues(h: &mut [Vec<f64>], n: usize) -> Vec<f64> {
 /// would make its own pivoting degenerate) while staying far smaller than
 /// the gap to any other eigenvalue, so it still converges to `λ`'s own
 /// eigenvector in a couple of iterations — including when `λ` sits close to
-/// another eigenvalue, which is exactly the case `numeric_null_vector`'s
+/// another eigenvalue, which is exactly the case `numeric_null_space_basis`'s
 /// fixed pivot tolerance can miss for larger or near-degenerate matrices.
 fn inverse_iteration_eigenvector(
   a: &[Vec<f64>],
@@ -4736,8 +4774,14 @@ fn inverse_iteration_eigenvector(
   result
 }
 
-/// Find a null space vector for a numeric matrix via Gaussian elimination.
-fn numeric_null_vector(m: &[Vec<f64>], n: usize) -> Vec<f64> {
+/// Every basis vector of a numeric matrix's null space, one per free
+/// column, via Gaussian elimination with partial pivoting. A repeated
+/// eigenvalue's shifted matrix `(A - λI)` has a null space of dimension
+/// equal to the eigenvalue's multiplicity; returning every free-column
+/// vector (instead of only the first) lets the caller hand each occurrence
+/// of the repeated eigenvalue a genuinely independent eigenvector instead
+/// of the same one every time.
+fn numeric_null_space_basis(m: &[Vec<f64>], n: usize) -> Vec<Vec<f64>> {
   let mut aug: Vec<Vec<f64>> = m.to_vec();
   let mut pivot_cols = Vec::new();
   let mut pivot_row = 0;
@@ -4781,21 +4825,20 @@ fn numeric_null_vector(m: &[Vec<f64>], n: usize) -> Vec<f64> {
 
   // Find free columns
   let pivot_col_set: Vec<usize> = pivot_cols.iter().map(|&(_, c)| c).collect();
-  let mut free_cols: Vec<usize> =
+  let free_cols: Vec<usize> =
     (0..n).filter(|c| !pivot_col_set.contains(c)).collect();
 
-  if free_cols.is_empty() {
-    return vec![0.0; n];
-  }
-
-  // Build null vector from first free column
-  let free_col = free_cols.remove(0);
-  let mut vec = vec![0.0; n];
-  vec[free_col] = 1.0;
-  for &(row, col) in &pivot_cols {
-    vec[col] = -aug[row][free_col];
-  }
-  vec
+  free_cols
+    .into_iter()
+    .map(|free_col| {
+      let mut vec = vec![0.0; n];
+      vec[free_col] = 1.0;
+      for &(row, col) in &pivot_cols {
+        vec[col] = -aug[row][free_col];
+      }
+      vec
+    })
+    .collect()
 }
 
 /// RowReduce[matrix] - Gaussian elimination to reduced row echelon form

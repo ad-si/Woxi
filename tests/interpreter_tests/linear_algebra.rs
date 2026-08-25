@@ -5477,6 +5477,44 @@ mod cases {
       r#"{1., 1., 1., 1., 1., 1., 1.}"#,
     );
   }
+  // A repeated numeric eigenvalue's shifted matrix (A - λI) has a null
+  // space spanning the whole eigenspace, so every occurrence of that
+  // eigenvalue independently landed on the same first free-column vector
+  // out of that shared null space instead of a second, independent one —
+  // e.g. Eigensystem[N[IdentityMatrix[2]]] returned the same vector twice
+  // rather than an orthonormal basis. This surfaced in a Wolfram
+  // Demonstrations Project notebook whose Manipulate computes the ellipse
+  // where a plane cuts a cylinder via Eigensystem of a symmetric 2x2
+  // matrix: whenever the plane's normal and the cylinder's axis lined up,
+  // that matrix became a scaled identity and the "ellipse" collapsed onto
+  // a single line instead of a circle.
+  #[test]
+  fn eigensystem_float_identity_2x2_distinct_eigenvectors() {
+    assert_case(
+      r#"Eigensystem[N[IdentityMatrix[2]]]"#,
+      r#"{{1., 1.}, {{-1., 0.}, {0., -1.}}}"#,
+    );
+  }
+  #[test]
+  fn eigenvectors_float_identity_3x3_distinct_eigenvectors() {
+    assert_case(
+      r#"Eigenvectors[N[IdentityMatrix[3]]]"#,
+      r#"{{1., 0., 0.}, {0., 1., 0.}, {0., 0., 1.}}"#,
+    );
+  }
+  // Same bug, but on a non-identity symmetric matrix (eigenvalues 4, 1, 1):
+  // the two eigenvectors sharing the repeated eigenvalue 1 must come out
+  // independent (nonzero norm, mutually orthogonal), not the same vector.
+  #[test]
+  fn eigenvectors_float_repeated_eigenvalue_orthogonal() {
+    assert_case(
+      r#"Round[
+        With[{vs = Eigenvectors[{{2., 1., 1.}, {1., 2., 1.}, {1., 1., 2.}}]},
+          {vs[[2]] . vs[[3]], Norm[vs[[2]]], Norm[vs[[3]]]}],
+        0.0001]"#,
+      r#"{0., 1., 1.}"#,
+    );
+  }
   #[test]
   fn inverse_1() {
     assert_case(
