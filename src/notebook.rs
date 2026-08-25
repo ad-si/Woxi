@@ -3771,7 +3771,8 @@ Cell["Chapter 2", "Chapter"]
   fn test_up_equilibrium_named_character_renders_as_unicode() {
     let s = r#"BoxData[RowBox[{"f", "[", "\"\<\[UpEquilibrium]\>\"", "]"}]]"#;
     assert_eq!(extract_cell_content(s), "f[\"\u{296E}\"]");
-    let s = r#"BoxData[RowBox[{"f", "[", "\"\<\[ReverseUpEquilibrium]\>\"", "]"}]]"#;
+    let s =
+      r#"BoxData[RowBox[{"f", "[", "\"\<\[ReverseUpEquilibrium]\>\"", "]"}]]"#;
     assert_eq!(extract_cell_content(s), "f[\"\u{296F}\"]");
   }
 
