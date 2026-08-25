@@ -2261,7 +2261,8 @@ pub fn abbreviation_for_atomic_number(z: i128) -> Option<&'static str> {
   }
 }
 
-/// Look up an element by name (case-insensitive), abbreviation, or atomic number
+/// Look up an element by name (case-insensitive), abbreviation, atomic
+/// number, or `Entity["Element", name]`.
 fn find_element(identifier: &Expr) -> Option<&'static Element> {
   match identifier {
     Expr::Integer(n) => {
@@ -2274,8 +2275,38 @@ fn find_element(identifier: &Expr) -> Option<&'static Element> {
     }
     Expr::String(s) => find_element_by_string(s),
     Expr::Identifier(s) => find_element_by_string(s),
+    Expr::FunctionCall { name, args }
+      if name == "Entity" && args.len() == 2 =>
+    {
+      find_element(&args[1])
+    }
     _ => None,
   }
+}
+
+/// `EntityValue[Entity["Element", name], property]` bridge — looks up a
+/// property by the element's (case-insensitive) name or abbreviation.
+/// Returns `None` when the element itself is not found (distinct from a
+/// found element lacking that property, which reports `Missing`).
+pub fn element_property(name: &str, property: &str) -> Option<Expr> {
+  let elem = find_element_by_string(name)?;
+  Some(get_property(elem, property))
+}
+
+/// All 118 elements as `Entity["Element", name]`, in atomic-number order —
+/// the built-in "Element" `EntityList`/`EntityValue["Entities"]` knowledge base.
+pub fn element_entities() -> Vec<Expr> {
+  ELEMENTS
+    .iter()
+    .map(|elem| Expr::FunctionCall {
+      name: "Entity".to_string(),
+      args: vec![
+        Expr::String("Element".to_string()),
+        Expr::String(elem.standard_name.to_string()),
+      ]
+      .into(),
+    })
+    .collect()
 }
 
 fn find_element_by_string(s: &str) -> Option<&'static Element> {

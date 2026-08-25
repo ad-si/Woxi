@@ -21768,4 +21768,63 @@ SaveDefinitions -> True]";
       "a Grid of accented symbols must draw as a picture, not fall back to text"
     );
   }
+
+  /// A synthetic "classify two picked chemical elements" Manipulate in the
+  /// general shape used by several periodic-table Demonstrations: two
+  /// `PopupMenu` controls whose domain is a list of `Entity["Element", …]`
+  /// values (each paired with a lowercase display label via `->`), a body
+  /// that feeds the picked entities through `ElementData` to get a numeric
+  /// property, plots the pair against a `RegionPlot`/`RegionMember` region
+  /// test, and appends a `PointLegend`. Independently written, not copied
+  /// from any specific Wolfram Demonstration; it targets the general
+  /// "Entity-valued PopupMenu feeding ElementData into a classified region
+  /// plot" pattern.
+  #[test]
+  fn manipulate_entity_popup_menus_feed_element_data_region_plot() {
+    let code = r#"Manipulate[
+      Module[{v1 = ElementData[pick1, "AtomicWeight"], v2 = ElementData[pick2, "AtomicWeight"]},
+        Show[
+          Graphics[{
+            If[NumberQ[v1] && NumberQ[v2], {Red, PointSize[Large], Point[{v1, v2}]}, {}]
+          }, PlotRange -> {{0, 250}, {0, 250}}, Axes -> True, Frame -> True],
+          RegionPlot[
+            RegionMember[Polygon[{{0, 0}, {250, 0}, {250, 250}}], {u, w}],
+            {u, 0, 250}, {w, 0, 250},
+            PlotStyle -> Directive[Opacity[0.3], Green]
+          ]
+        ]
+      ],
+      {{pick1, Entity["Element", "Hydrogen"], "first element"},
+        EntityList["Element"], PopupMenu},
+      {{pick2, Entity["Element", "Oxygen"], "second element"},
+        EntityList["Element"], PopupMenu},
+      SaveDefinitions -> True
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr).expect(
+      "two Entity-valued PopupMenu controls feeding ElementData should build a ManipulateState",
+    );
+
+    assert_eq!(state.controls.len(), 2, "pick1, pick2");
+    assert!(
+      matches!(
+        &state.controls[0],
+        manipulate::ControlState::Discrete { name, values, .. }
+          if name == "pick1" && values.len() == 118
+      ),
+      "EntityList[\"Element\"] should supply all 118 elements as the PopupMenu domain: {:?}",
+      state.controls[0]
+    );
+    assert!(
+      state.error.is_none(),
+      "ElementData on the Entity-valued picks and the RegionPlot/RegionMember \
+       classification must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "Show[Graphics[...], RegionPlot[...]] should render as a picture"
+    );
+  }
 }
