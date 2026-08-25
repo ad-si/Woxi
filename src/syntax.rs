@@ -914,6 +914,59 @@ fn is_symbol_letter(c: char) -> bool {
   c.is_alphabetic()
     || ('\u{F6B2}'..='\u{F6CB}').contains(&c)
     || ('\u{F770}'..='\u{F789}').contains(&c)
+    || is_letterlike_symbol_char(c)
+}
+
+/// Geometric shapes, pictographs, musical accidentals and astronomical
+/// symbols that Wolfram treats as ordinary letterlike symbol names — e.g.
+/// `Head[\[FilledSquare]]` is `Symbol`, not a syntax error — even though
+/// Unicode files them under `So`/`Sm` rather than `L`. Mirrors
+/// `LetterlikeSymbolChar` in wolfram.pest, which accepts the same
+/// characters when they appear as the bare glyph rather than the `\[Name]`
+/// escape.
+fn is_letterlike_symbol_char(c: char) -> bool {
+  matches!(
+    c,
+    '\u{2220}'
+      | '\u{25A0}'
+      | '\u{25A1}'
+      | '\u{25FC}'
+      | '\u{25FB}'
+      | '\u{25AA}'
+      | '\u{25AB}'
+      | '\u{25CF}'
+      | '\u{25CB}'
+      | '\u{F750}'
+      | '\u{25E6}'
+      | '\u{25C6}'
+      | '\u{25C7}'
+      | '\u{25B2}'
+      | '\u{25B3}'
+      | '\u{25BC}'
+      | '\u{25BD}'
+      | '\u{25C0}'
+      | '\u{25B6}'
+      | '\u{F528}'
+      | '\u{F527}'
+      | '\u{F725}'
+      | '\u{2713}'
+      | '\u{231A}'
+      | '\u{2605}'
+      | '\u{2736}'
+      | '\u{266F}'
+      | '\u{266D}'
+      | '\u{266E}'
+      | '\u{2609}'
+      | '\u{263F}'
+      | '\u{2640}'
+      | '\u{F3DF}'
+      | '\u{2642}'
+      | '\u{2643}'
+      | '\u{2644}'
+      | '\u{26E2}'
+      | '\u{2646}'
+      | '\u{2647}'
+  )
 }
 
 /// Extract all child `Expr` nodes from a variant, leaving it childless.

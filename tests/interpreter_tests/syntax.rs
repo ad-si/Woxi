@@ -9029,6 +9029,53 @@ mod unicode_operators {
   }
 }
 
+// Wolfram treats geometric-shape, pictograph, astronomical and musical
+// glyphs as ordinary (letterlike) symbol names, even though Unicode files
+// them under `So`/`Sm` rather than `L` — `Head[■]` is `Symbol`, not a
+// syntax error. A Demonstration's box form stores these as the bare
+// character rather than the `\[Name]` escape (e.g. a grid-cell marker),
+// so the raw glyph must parse as an identifier on its own.
+mod letterlike_symbol_characters {
+  use super::*;
+
+  #[test]
+  fn geometric_shape_is_a_symbol() {
+    assert_eq!(interpret("Head[■]").unwrap(), "Symbol");
+    assert_eq!(interpret("Head[□]").unwrap(), "Symbol");
+    assert_eq!(interpret("Head[●]").unwrap(), "Symbol");
+    assert_eq!(interpret("Head[○]").unwrap(), "Symbol");
+    assert_eq!(interpret("Head[◆]").unwrap(), "Symbol");
+    assert_eq!(interpret("Head[▲]").unwrap(), "Symbol");
+  }
+
+  #[test]
+  fn geometric_shape_used_as_array_fill_value() {
+    assert_eq!(interpret("ConstantArray[■, 3]").unwrap(), "{■, ■, ■}");
+  }
+
+  #[test]
+  fn geometric_shape_raw_char_matches_named_escape() {
+    assert_eq!(interpret("■ === \\[FilledSquare]").unwrap(), "True");
+  }
+
+  #[test]
+  fn astronomical_and_musical_symbols_are_symbols() {
+    assert_eq!(interpret("Head[♄]").unwrap(), "Symbol"); // Saturn
+    assert_eq!(interpret("Head[♯]").unwrap(), "Symbol"); // Sharp
+    assert_eq!(interpret("Head[☉]").unwrap(), "Symbol"); // Sun
+  }
+
+  #[test]
+  fn geometric_shape_inside_nested_function_call() {
+    // The bare glyph must survive being nested inside further function
+    // calls and control flow, not just as a lone top-level expression.
+    assert_eq!(
+      interpret("If[True, ConstantArray[■, 2], ConstantArray[□, 2]]").unwrap(),
+      "{■, ■}"
+    );
+  }
+}
+
 // Regression tests for `&` (Function) precedence. `&` has very low precedence
 // in Wolfram — it binds looser than any infix operator. Inner-term rules must
 // not consume the `&` greedily when there are preceding operators, otherwise
