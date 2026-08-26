@@ -2336,68 +2336,186 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "WaringYuleDistribution" => cdf_waring_yule(dargs, x),
     "ZipfDistribution" => cdf_zipf(dargs, x),
     "JohnsonDistribution" => cdf_johnson(dargs, x),
-    "MultinormalDistribution" => Ok(cdf_multinormal(dargs, &x)),
+    "MultinormalDistribution" => cdf_multinormal(dargs, &x),
     _ => Ok(unevaluated("CDF", args)),
   }
 }
 
-/// CDF[MultinormalDistribution[mu, sigma], {x1, x2}] for the bivariate case,
-/// via numeric integration of the classical reduction to a single integral:
-/// Φ2(h, k; ρ) = ∫_{-∞}^{h} φ(t) Φ((k - ρt)/√(1-ρ²)) dt
-/// where h, k are the standardized coordinates and ρ is the correlation.
-/// Only the fully numeric bivariate case is handled; anything else (symbolic
-/// parameters, or a dimension other than 2) is left unevaluated.
-fn cdf_multinormal(dargs: &[Expr], x: &Expr) -> Expr {
+/// CDF[MultinormalDistribution[mu, sigma], {x1, …, xn}], following
+/// wolframscript's three-way split:
+///
+/// * A covariance matrix that is numeric but not symmetric positive
+///   definite is rejected outright with `posdefprm` — the distribution
+///   does not exist, so no consumer of it evaluates.
+/// * A *diagonal* covariance makes the components independent, so the
+///   joint CDF is the product of the marginals and has the closed form
+///   `Product[Erfc[(mu_i - x_i)/(Sqrt[2] Sqrt[sigma_ii])]/2]`. That is
+///   what wolframscript returns for exact and symbolic arguments alike
+///   (`Erfc[-(1/Sqrt[2])]^2/4`, `(Erfc[-(x/Sqrt[2])] Erfc[-(y/Sqrt[2])])/4`);
+///   with machine-precision arguments the same expression collapses to a
+///   number on evaluation.
+/// * Correlated components have no elementary closed form. wolframscript
+///   only produces a value when some argument is inexact — i.e. when the
+///   answer is explicitly numeric — and leaves an exact call unevaluated.
+///   Woxi computes that value for the bivariate case via numeric
+///   integration of the classical reduction to a single integral,
+///   Φ2(h, k; ρ) = ∫_{-∞}^{h} φ(t) Φ((k - ρt)/√(1-ρ²)) dt, where h, k are
+///   the standardized coordinates and ρ is the correlation.
+fn cdf_multinormal(dargs: &[Expr], x: &Expr) -> Result<Expr, InterpreterError> {
   let unevaluated_call = || {
     unevaluated(
       "CDF",
       &[unevaluated("MultinormalDistribution", dargs), x.clone()],
     )
   };
-  let [Expr::List(mu), Expr::List(sigma)] = dargs else {
-    return unevaluated_call();
+  let [Expr::List(mu), sigma_expr @ Expr::List(sigma)] = dargs else {
+    return Ok(unevaluated_call());
   };
   let Expr::List(point) = x else {
-    return unevaluated_call();
+    return Ok(unevaluated_call());
   };
-  if mu.len() != 2 || sigma.len() != 2 || point.len() != 2 {
-    return unevaluated_call();
+  let n = mu.len();
+  if n == 0 || sigma.len() != n || point.len() != n {
+    return Ok(unevaluated_call());
+  }
+  let mut rows: Vec<&crate::ExprList> = Vec::with_capacity(n);
+  for row in sigma {
+    match row {
+      Expr::List(cells) if cells.len() == n => rows.push(cells),
+      _ => return Ok(unevaluated_call()),
+    }
+  }
+  // A numeric covariance matrix that isn't symmetric positive definite
+  // describes no distribution at all.
+  if matrix_symmetric_positive_definite(sigma) == Some(false) {
+    crate::emit_message(&format!(
+      "MultinormalDistribution::posdefprm: The value {} at position 2 in {} is expected to be a symmetric positive definite matrix.",
+      crate::syntax::expr_to_string(sigma_expr),
+      crate::syntax::expr_to_string(&unevaluated(
+        "MultinormalDistribution",
+        dargs
+      ))
+    ));
+    return Ok(unevaluated_call());
+  }
+
+  let is_zero = |e: &Expr| {
+    matches!(e, Expr::Integer(0)) || matches!(e, Expr::Real(v) if *v == 0.0)
+  };
+  let diagonal = (0..n).all(|i| (0..n).all(|j| i == j || is_zero(&rows[i][j])));
+
+  if diagonal {
+    // Independent components: ∏ Φ((x_i - mu_i)/sigma_i), written with
+    // Erfc the way wolframscript prints it.
+    let factors: Vec<Expr> = (0..n)
+      .map(|i| {
+        let centered = plus2(mu[i].clone(), times2(int(-1), point[i].clone()));
+        let scale =
+          times2(call1("Sqrt", int(2)), call1("Sqrt", rows[i][i].clone()));
+        div2(call1("Erfc", div2(centered, scale)), int(2))
+      })
+      .collect();
+    return eval(&call("Times", factors));
+  }
+
+  // Correlated components: only the explicitly numeric bivariate case.
+  let inexact = dargs.iter().chain(std::iter::once(x)).any(contains_real);
+  if !inexact || n != 2 {
+    return Ok(unevaluated_call());
   }
   let (Some(mu1), Some(mu2)) = (expr_to_num(&mu[0]), expr_to_num(&mu[1]))
   else {
-    return unevaluated_call();
+    return Ok(unevaluated_call());
   };
-  let (Expr::List(row1), Expr::List(row2)) = (&sigma[0], &sigma[1]) else {
-    return unevaluated_call();
-  };
-  if row1.len() != 2 || row2.len() != 2 {
-    return unevaluated_call();
-  }
   let (Some(s11), Some(s12), Some(s22)) = (
-    expr_to_num(&row1[0]),
-    expr_to_num(&row1[1]),
-    expr_to_num(&row2[1]),
+    expr_to_num(&rows[0][0]),
+    expr_to_num(&rows[0][1]),
+    expr_to_num(&rows[1][1]),
   ) else {
-    return unevaluated_call();
+    return Ok(unevaluated_call());
   };
   let (Some(x1), Some(x2)) = (expr_to_num(&point[0]), expr_to_num(&point[1]))
   else {
-    return unevaluated_call();
+    return Ok(unevaluated_call());
   };
-  if s11 <= 0.0 || s22 <= 0.0 {
-    return unevaluated_call();
-  }
   let rho = s12 / (s11.sqrt() * s22.sqrt());
-  if !(-1.0..=1.0).contains(&rho) {
-    return unevaluated_call();
-  }
   let h = (x1 - mu1) / s11.sqrt();
   let k = (x2 - mu2) / s22.sqrt();
-  Expr::Real(bivariate_normal_cdf(h, k, rho))
+  Ok(Expr::Real(bivariate_normal_cdf(h, k, rho)))
 }
 
-fn std_normal_pdf(t: f64) -> f64 {
-  (-t * t / 2.0).exp() / (2.0 * std::f64::consts::PI).sqrt()
+/// Whether `expr` contains a machine-precision real anywhere inside it —
+/// the marker that makes wolframscript produce a number rather than an
+/// exact result.
+fn contains_real(expr: &Expr) -> bool {
+  match expr {
+    Expr::Real(_) => true,
+    Expr::List(items) => items.iter().any(contains_real),
+    Expr::FunctionCall { args, .. } => args.iter().any(contains_real),
+    _ => false,
+  }
+}
+
+/// Whether `sigma` is a square, symmetric, positive definite numeric
+/// matrix. `None` when some entry isn't numeric, so the caller can decide
+/// whether an unverifiable (symbolic) matrix is acceptable.
+fn matrix_symmetric_positive_definite(sigma: &crate::ExprList) -> Option<bool> {
+  let p = sigma.len();
+  let mut m = vec![vec![0.0f64; p]; p];
+  for (i, row) in sigma.iter().enumerate() {
+    let Expr::List(cells) = row else {
+      return Some(false);
+    };
+    if cells.len() != p {
+      return Some(false);
+    }
+    for (j, cell) in cells.iter().enumerate() {
+      m[i][j] = try_eval_to_f64(cell)?;
+    }
+  }
+  let scale = m.iter().flatten().fold(1.0f64, |acc, v| acc.max(v.abs()));
+  let tol = 1e-9 * scale;
+  for i in 0..p {
+    for j in 0..i {
+      if (m[i][j] - m[j][i]).abs() > tol {
+        return Some(false);
+      }
+    }
+  }
+  // Positive definiteness via the leading principal minors (Sylvester).
+  for k in 1..=p {
+    let mut minor: Vec<Vec<f64>> = (0..k).map(|i| m[i][..k].to_vec()).collect();
+    let mut det = 1.0f64;
+    for col in 0..k {
+      let pivot = (col..k)
+        .max_by(|&a, &b| {
+          minor[a][col]
+            .abs()
+            .partial_cmp(&minor[b][col].abs())
+            .unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .unwrap_or(col);
+      if minor[pivot][col].abs() < 1e-12 * scale.max(1.0) {
+        det = 0.0;
+        break;
+      }
+      if pivot != col {
+        minor.swap(pivot, col);
+        det = -det;
+      }
+      det *= minor[col][col];
+      for r in col + 1..k {
+        let f = minor[r][col] / minor[col][col];
+        for c in col..k {
+          minor[r][c] -= f * minor[col][c];
+        }
+      }
+    }
+    if det <= 0.0 {
+      return Some(false);
+    }
+  }
+  Some(true)
 }
 
 fn std_normal_cdf(t: f64) -> f64 {
@@ -2407,75 +2525,150 @@ fn std_normal_cdf(t: f64) -> f64 {
 /// CDF of the standard bivariate normal distribution, P(X <= h, Y <= k) for
 /// unit-variance X, Y with correlation `rho`.
 fn bivariate_normal_cdf(h: f64, k: f64, rho: f64) -> f64 {
-  if rho >= 1.0 - 1e-12 {
-    return std_normal_cdf(h.min(k));
-  }
-  if rho <= -1.0 + 1e-12 {
-    return (std_normal_cdf(h) + std_normal_cdf(k) - 1.0).max(0.0);
-  }
-  if rho == 0.0 {
-    return std_normal_cdf(h) * std_normal_cdf(k);
-  }
-  let denom = (1.0 - rho * rho).sqrt();
-  let integrand =
-    |t: f64| std_normal_pdf(t) * std_normal_cdf((k - rho * t) / denom);
-  // φ(t) is negligible (< 1e-17) beyond ~9 standard deviations from either 0
-  // or h, so a window covering both bounds the integral to full precision.
-  // This function is evaluated in the inner loop of numeric optimizers (e.g.
-  // FindMaximum on an objective built from it), so adaptive refinement — a
-  // few dozen evaluations for a smooth bell-shaped integrand — matters far
-  // more than a fixed high node count would.
-  let lower = h.min(0.0) - 9.0;
-  if lower >= h {
-    return 0.0;
-  }
-  adaptive_simpson(&integrand, lower, h, 1e-12, 30)
+  bivariate_normal_upper(-h, -k, rho).clamp(0.0, 1.0)
 }
 
-/// Adaptive Simpson's rule: recursively bisects until the local error
-/// estimate is within `tol`, or `max_depth` is reached.
-fn adaptive_simpson(
-  f: &dyn Fn(f64) -> f64,
-  a: f64,
-  b: f64,
-  tol: f64,
-  max_depth: u32,
-) -> f64 {
-  let fa = f(a);
-  let fb = f(b);
-  let m = f64::midpoint(a, b);
-  let fm = f(m);
-  let whole = (b - a) / 6.0 * (fa + 4.0 * fm + fb);
-  adaptive_simpson_rec(f, a, b, tol, whole, fa, fm, fb, max_depth)
-}
-
-#[allow(clippy::too_many_arguments)]
-fn adaptive_simpson_rec(
-  f: &dyn Fn(f64) -> f64,
-  a: f64,
-  b: f64,
-  tol: f64,
-  whole: f64,
-  fa: f64,
-  fm: f64,
-  fb: f64,
-  depth: u32,
-) -> f64 {
-  let m = f64::midpoint(a, b);
-  let m1 = f64::midpoint(a, m);
-  let m2 = f64::midpoint(m, b);
-  let fm1 = f(m1);
-  let fm2 = f(m2);
-  let h = b - a;
-  let left = h / 12.0 * (fa + 4.0 * fm1 + fm);
-  let right = h / 12.0 * (fm + 4.0 * fm2 + fb);
-  let refined = left + right;
-  let error = (refined - whole) / 15.0;
-  if depth == 0 || error.abs() < tol {
-    refined + error
+/// P(X >= dh, Y >= dk) for standard bivariate normal deviates with
+/// correlation `r`, by Genz's algorithm ("Numerical Computation of
+/// Rectangular Bivariate and Trivariate Normal and t Probabilities",
+/// Statistics and Computing 14 (2004) 251–260).
+///
+/// The integral ∂/∂r Φ2 = φ2 is integrated in the angular variable
+/// θ = arcsin(r), whose integrand is entire and bell-shaped, with
+/// Gauss-Legendre nodes chosen by |r| — 3, 6 or 10 of them. Near
+/// |r| = 1 the integrand develops a boundary singularity, so that branch
+/// integrates the difference against its leading asymptotic expansion
+/// instead. Both reach close to full double precision, where a plain
+/// quadrature of the marginal-conditioning form only manages ~1e-14 —
+/// enough to show up in the last two printed digits.
+fn bivariate_normal_upper(dh: f64, dk: f64, r: f64) -> f64 {
+  // Gauss-Legendre nodes/weights on the half-interval (the rule is
+  // applied symmetrically about the midpoint, hence the ±x pairs below).
+  const W3: [f64; 3] =
+    [0.1713244923791705, 0.3607615730481384, 0.4679139345726904];
+  const X3: [f64; 3] = [
+    0.9324695142031522,
+    0.6612093864662647,
+    0.238_619_186_083_197,
+  ];
+  const W6: [f64; 6] = [
+    0.04717533638651177,
+    0.1069393259953183,
+    0.1600783285433464,
+    0.2031674267230659,
+    0.2334925365383547,
+    0.2491470458134029,
+  ];
+  const X6: [f64; 6] = [
+    0.9815606342467191,
+    0.904_117_256_370_475,
+    0.769_902_674_194_305,
+    0.5873179542866171,
+    0.3678314989981802,
+    0.1252334085114692,
+  ];
+  const W10: [f64; 10] = [
+    0.01761400713915212,
+    0.04060142980038694,
+    0.06267204833410906,
+    0.08327674157670475,
+    0.1019301198172404,
+    0.1181945319615184,
+    0.1316886384491766,
+    0.1420961093183821,
+    0.1491729864726037,
+    0.1527533871307259,
+  ];
+  const X10: [f64; 10] = [
+    0.9931285991850949,
+    0.9639719272779138,
+    0.912_234_428_251_326,
+    0.8391169718222188,
+    0.7463319064601508,
+    0.636_053_680_726_515,
+    0.5108670019508271,
+    0.3737060887154196,
+    0.2277858511416451,
+    0.07652652113349733,
+  ];
+  let (w, x): (&[f64], &[f64]) = if r.abs() < 0.3 {
+    (&W3, &X3)
+  } else if r.abs() < 0.75 {
+    (&W6, &X6)
   } else {
-    adaptive_simpson_rec(f, a, m, tol / 2.0, left, fa, fm1, fm, depth - 1)
-      + adaptive_simpson_rec(f, m, b, tol / 2.0, right, fm, fm2, fb, depth - 1)
+    (&W10, &X10)
+  };
+  let two_pi = 2.0 * std::f64::consts::PI;
+
+  let (h, mut k) = (dh, dk);
+  let mut hk = h * k;
+  let mut bvn = 0.0;
+
+  if r.abs() < 0.925 {
+    if r != 0.0 {
+      let hs = f64::midpoint(h * h, k * k);
+      let asr = r.asin();
+      for (wi, xi) in w.iter().zip(x.iter()) {
+        for sign in [-1.0, 1.0] {
+          let sn = (asr * (sign * xi + 1.0) / 2.0).sin();
+          bvn += wi * ((sn * hk - hs) / (1.0 - sn * sn)).exp();
+        }
+      }
+      bvn = bvn * asr / (2.0 * two_pi);
+    }
+    return bvn + std_normal_cdf(-h) * std_normal_cdf(-k);
+  }
+
+  if r < 0.0 {
+    k = -k;
+    hk = -hk;
+  }
+  if r.abs() < 1.0 {
+    let as_ = (1.0 - r) * (1.0 + r);
+    let mut a = as_.sqrt();
+    let bs = (h - k) * (h - k);
+    let c = (4.0 - hk) / 8.0;
+    let d = (12.0 - hk) / 16.0;
+    let asr = -(bs / as_ + hk) / 2.0;
+    if asr > -100.0 {
+      bvn = a
+        * asr.exp()
+        * (1.0 - c * (bs - as_) * (1.0 - d * bs / 5.0) / 3.0
+          + c * d * as_ * as_ / 5.0);
+    }
+    if -hk < 100.0 {
+      let b = bs.sqrt();
+      bvn -= (-hk / 2.0).exp()
+        * two_pi.sqrt()
+        * std_normal_cdf(-b / a)
+        * b
+        * (1.0 - c * bs * (1.0 - d * bs / 5.0) / 3.0);
+    }
+    a /= 2.0;
+    for (wi, xi) in w.iter().zip(x.iter()) {
+      for sign in [-1.0, 1.0] {
+        let xs = (a * (sign * xi + 1.0)).powi(2);
+        let rs = (1.0 - xs).sqrt();
+        let asr = -(bs / xs + hk) / 2.0;
+        if asr > -100.0 {
+          bvn += a
+            * wi
+            * asr.exp()
+            * ((-hk * (1.0 - rs) / (2.0 * (1.0 + rs))).exp() / rs
+              - (1.0 + c * xs * (1.0 + d * xs)));
+        }
+      }
+    }
+    bvn = -bvn / two_pi;
+  }
+  if r > 0.0 {
+    bvn + std_normal_cdf(-h.max(k))
+  } else {
+    bvn = -bvn;
+    if k > h {
+      bvn += std_normal_cdf(k) - std_normal_cdf(h);
+    }
+    bvn
   }
 }
 
@@ -10640,67 +10833,17 @@ pub fn wishart_mean_variance(
     return fail(posdefprm(sigma));
   };
   let p = rows.len();
-  let mut sig = vec![vec![0.0f64; p]; p];
+  // Unlike MultinormalDistribution, Wishart validates at moment time and
+  // treats a Σ it cannot verify numerically as invalid too.
+  if matrix_symmetric_positive_definite(rows) != Some(true) {
+    return fail(posdefprm(sigma));
+  }
   let mut sig_exprs: Vec<Vec<Expr>> = Vec::with_capacity(p);
-  for (i, row) in rows.iter().enumerate() {
+  for row in rows {
     let Expr::List(cells) = row else {
       return fail(posdefprm(sigma));
     };
-    if cells.len() != p {
-      return fail(posdefprm(sigma));
-    }
-    let mut row_exprs = Vec::with_capacity(p);
-    for (j, cell) in cells.iter().enumerate() {
-      let Some(v) = try_eval_to_f64(cell) else {
-        return fail(posdefprm(sigma));
-      };
-      sig[i][j] = v;
-      row_exprs.push(cell.clone());
-    }
-    sig_exprs.push(row_exprs);
-  }
-  let scale = sig.iter().flatten().fold(1.0f64, |acc, x| acc.max(x.abs()));
-  let tol = 1e-9 * scale;
-  for i in 0..p {
-    for j in 0..i {
-      if (sig[i][j] - sig[j][i]).abs() > tol {
-        return fail(posdefprm(sigma));
-      }
-    }
-  }
-  // Positive definiteness via leading principal minors (Sylvester).
-  for k in 1..=p {
-    let mut m: Vec<Vec<f64>> = (0..k).map(|i| sig[i][..k].to_vec()).collect();
-    // Gaussian elimination determinant.
-    let mut det = 1.0f64;
-    for col in 0..k {
-      let pivot = (col..k)
-        .max_by(|&a, &b| {
-          m[a][col]
-            .abs()
-            .partial_cmp(&m[b][col].abs())
-            .unwrap_or(std::cmp::Ordering::Equal)
-        })
-        .unwrap();
-      if m[pivot][col].abs() < 1e-12 * scale.max(1.0) {
-        det = 0.0;
-        break;
-      }
-      if pivot != col {
-        m.swap(pivot, col);
-        det = -det;
-      }
-      det *= m[col][col];
-      for r in col + 1..k {
-        let f = m[r][col] / m[col][col];
-        for c in col..k {
-          m[r][c] -= f * m[col][c];
-        }
-      }
-    }
-    if det <= 0.0 {
-      return fail(posdefprm(sigma));
-    }
+    sig_exprs.push(cells.iter().cloned().collect());
   }
 
   // ν: numeric with ν > p - 1.

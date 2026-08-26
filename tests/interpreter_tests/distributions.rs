@@ -2920,68 +2920,101 @@ mod multinormal_distribution {
     );
   }
 
-  // CDF of the bivariate case: numeric integration of the standard
-  // reduction to a single integral over the standardized coordinates.
+  // A diagonal covariance makes the components independent, so the joint
+  // CDF is the product of the marginals — a closed form in Erfc, which
+  // wolframscript returns for exact and symbolic arguments alike.
   #[test]
-  fn cdf_independent_matches_product_of_marginals() {
-    // Zero correlation: Φ2(h, k; 0) = Φ(h) * Φ(k) exactly.
+  fn cdf_independent_is_a_product_of_erfc_marginals() {
     assert_eq!(
       interpret(
         "CDF[MultinormalDistribution[{0, 0}, {{1, 0}, {0, 1}}], {1, 1}]"
       )
       .unwrap(),
-      "0.7078609817371407"
+      "Erfc[-(1/Sqrt[2])]^2/4"
     );
-  }
-
-  #[test]
-  fn cdf_shifted_mean_and_scaled_covariance() {
-    assert_eq!(
-      interpret(
-        "CDF[MultinormalDistribution[{1, 2}, {{4, -2}, {-2, 9}}], {3, 5}]"
-      )
-      .unwrap(),
-      "0.6917121699457104"
-    );
-  }
-
-  #[test]
-  fn cdf_perfect_correlation_edge_cases() {
-    // rho = 1: P(X <= h, Y <= k) = P(X <= min(h, k)) = Phi(min(h, k)).
-    assert_eq!(
-      interpret(
-        "CDF[MultinormalDistribution[{0, 0}, {{1, 1}, {1, 1}}], {0.5, 1.0}]"
-      )
-      .unwrap(),
-      "0.6914624612740131"
-    );
-    // rho = -1: P(X <= h, Y <= k) = max(Phi(h) + Phi(k) - 1, 0).
-    assert_eq!(
-      interpret(
-        "CDF[MultinormalDistribution[{0, 0}, {{1, -1}, {-1, 1}}], {0.5, 1.0}]"
-      )
-      .unwrap(),
-      "0.532807207342556"
-    );
-  }
-
-  #[test]
-  fn cdf_symbolic_or_trivariate_stays_unevaluated() {
-    // Only the fully numeric bivariate case is handled.
     assert_eq!(
       interpret(
         "CDF[MultinormalDistribution[{0, 0}, {{1, 0}, {0, 1}}], {x, y}]"
       )
       .unwrap(),
-      "CDF[MultinormalDistribution[{0, 0}, {{1, 0}, {0, 1}}], {x, y}]"
+      "(Erfc[-(x/Sqrt[2])]*Erfc[-(y/Sqrt[2])])/4"
     );
+    // Any dimension, any mean, any (even symbolic) variances.
     assert_eq!(
       interpret(
         "CDF[MultinormalDistribution[{0, 0, 0}, {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}], {x, y, z}]"
       )
       .unwrap(),
-      "CDF[MultinormalDistribution[{0, 0, 0}, {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}], {x, y, z}]"
+      "(Erfc[-(x/Sqrt[2])]*Erfc[-(y/Sqrt[2])]*Erfc[-(z/Sqrt[2])])/8"
     );
+    assert_eq!(
+      interpret(
+        "CDF[MultinormalDistribution[{1, 2}, {{4, 0}, {0, 9}}], {x, y}]"
+      )
+      .unwrap(),
+      "(Erfc[(1 - x)/(2*Sqrt[2])]*Erfc[(2 - y)/(3*Sqrt[2])])/4"
+    );
+    assert_eq!(
+      interpret(
+        "CDF[MultinormalDistribution[{0, 0}, {{s1, 0}, {0, s2}}], {x, y}]"
+      )
+      .unwrap(),
+      "(Erfc[-(x/(Sqrt[2]*Sqrt[s1]))]*Erfc[-(y/(Sqrt[2]*Sqrt[s2]))])/4"
+    );
+  }
+
+  // Correlated components have no elementary closed form: wolframscript
+  // only produces a value when an argument is inexact, and leaves an exact
+  // call alone.
+  #[test]
+  fn cdf_correlated_needs_an_inexact_argument() {
+    assert_eq!(
+      interpret(
+        "CDF[MultinormalDistribution[{1, 2}, {{4, -2}, {-2, 9}}], {3, 5}]"
+      )
+      .unwrap(),
+      "CDF[MultinormalDistribution[{1, 2}, {{4, -2}, {-2, 9}}], {3, 5}]"
+    );
+    // Rounded so the assertion tracks the value rather than the last bits
+    // of Woxi's and wolframscript's differing bivariate quadratures.
+    assert_eq!(
+      interpret(
+        "Round[CDF[MultinormalDistribution[{1, 2}, {{4, -2}, {-2, 9}}], \
+         {3., 5.}], 10^-11]"
+      )
+      .unwrap(),
+      "13834243399/20000000000"
+    );
+    // An inexact covariance is enough on its own.
+    assert_eq!(
+      interpret(
+        "Round[CDF[MultinormalDistribution[{0, 0}, {{1, 0.5}, {0.5, 1}}], \
+         {1, 1}], 10^-11]"
+      )
+      .unwrap(),
+      "14904071737/20000000000"
+    );
+  }
+
+  #[test]
+  fn cdf_rejects_a_covariance_that_is_not_positive_definite() {
+    // Perfect (anti-)correlation is singular, so the distribution does not
+    // exist and no consumer of it evaluates.
+    for sigma in ["{{1, 1}, {1, 1}}", "{{1, -1}, {-1, 1}}"] {
+      let src = format!(
+        "CDF[MultinormalDistribution[{{0, 0}}, {sigma}], {{0.5, 1.0}}]"
+      );
+      let r = woxi::interpret_with_stdout(&src).unwrap();
+      assert_eq!(
+        r.result,
+        format!("CDF[MultinormalDistribution[{{0, 0}}, {sigma}], {{0.5, 1.}}]")
+      );
+      assert!(r.warnings[0].contains(&format!(
+        "MultinormalDistribution::posdefprm: The value {sigma} at position 2 \
+         in MultinormalDistribution[{{0, 0}}, {sigma}] is expected to be a \
+         symmetric positive definite matrix."
+      )));
+    }
   }
 }
 

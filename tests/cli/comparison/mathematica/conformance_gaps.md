@@ -581,6 +581,17 @@ Wolfram's interior-point method answers `FindMinimum[{x^2, x >= 1}, x]` with
 three-variable equality constraint lands within 1.5e-8 in Woxi rather than
 exactly. Neither engine is wrong; bit-equality is not achievable.
 
+### `Erf`'s last ULP, and the far tail of a correlated normal CDF
+
+`Erf[0.7071067811865475]` is `0.6826894921370859` in WL (correctly rounded)
+and `0.6826894921370857` here, so anything built on it — `Erfc`, a normal
+CDF, `CDF[MultinormalDistribution[…]]` — can differ in the last printed
+digit. Woxi's bivariate normal CDF (Genz's algorithm) otherwise agrees to
+about 15 digits, but its *relative* error grows in the far tail, where WL
+carries extra internal precision:
+`CDF[MultinormalDistribution[{0, 0}, {{1., 0.2}, {0.2, 1.}}], {-3., 1.}]`
+is `0.001288249693033831` in WL against `0.001288249693033744` here.
+
 ### `FindRoot` options and damping schedule
 
 `WorkingPrecision`, `AccuracyGoal` and `PrecisionGoal` are ignored. WL's answer
