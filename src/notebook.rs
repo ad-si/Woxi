@@ -1884,7 +1884,7 @@ fn unescape_string_inner(s: &str, code: bool) -> String {
           {
             result.push_str(&crate::syntax::substitute_private_use_glyphs(
               &ch.to_string(),
-            ))
+            ));
           } else {
             result.push('\\');
             result.push(':');
