@@ -700,6 +700,7 @@ fn private_use_glyph(c: char) -> Option<&'static str> {
     | '\u{F765}'                          // InvisibleComma
     | '\u{F76D}'                          // InvisibleApplication
     | '\u{F3A0}'                          // Null
+    | '\u{F3A2}'                          // invisible GridBox matrix bracket
     | '\u{F3B3}' | '\u{F3B4}'             // Invisible…ScriptBase
     | '\u{F3BA}' | '\u{F3BB}' | '\u{F3BC}' => "", // SpanFrom…
     _ => return None,

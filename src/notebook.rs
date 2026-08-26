@@ -1866,6 +1866,31 @@ fn unescape_string_inner(s: &str, code: bool) -> String {
         Some('>') => {
           // \> is a Wolfram string delimiter in box expressions – skip
         }
+        Some(':') => {
+          // `\:XXXX` is Wolfram's ASCII-safe hex escape for an arbitrary
+          // character. Box source uses it for characters that have no
+          // `\[Name]`, e.g. the pair of invisible bracket markers a
+          // FrontEnd wraps a `GridBox` matrix literal in
+          // (`RowBox[{"(", "\:f3a2", GridBox[…], "\:f3a2", ")"}]`).
+          // Substitute the same safe textual stand-in a `\[Name]` escape
+          // would draw as: the raw private-use code point isn't valid
+          // Wolfram Language source (unlike the handful of private-use
+          // operators, e.g. Rule's U+F522, that the parser does accept
+          // literally), so an unmapped invisible marker must become
+          // nothing rather than get inserted into the cell's code.
+          let hex: String = chars.by_ref().take(4).collect();
+          if let Some(ch) =
+            u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32)
+          {
+            result.push_str(&crate::syntax::substitute_private_use_glyphs(
+              &ch.to_string(),
+            ))
+          } else {
+            result.push('\\');
+            result.push(':');
+            result.push_str(&hex);
+          }
+        }
         Some('[') => {
           // Wolfram named character like \[Alpha] / \[CloseCurlyQuote].
           // Translate to Unicode when known; otherwise keep \[Name].
@@ -4995,5 +5020,36 @@ Cell[BoxData[\n\
     assert_eq!(strip_line_continuations("ab\\\\\ncd"), "ab\\\\\ncd");
     assert_eq!(strip_line_continuations("ab\\\r\ncd"), "abcd");
     assert_eq!(strip_line_continuations("plain\ntext"), "plain\ntext");
+  }
+
+  #[test]
+  fn test_input_cell_matrix_wrapped_in_invisible_gridbox_brackets() {
+    // The FrontEnd wraps a matrix literal that's an argument to a
+    // function call in a pair of invisible `\:f3a2` bracket markers
+    // alongside the visible `(` `)` — this is how a Wolfram Demonstrations
+    // Project notebook's Initialization code typesets e.g.
+    // `arrowHead = {Line[({{1, 2}, {3, 4}})]}` (independently written, not
+    // copied from any specific Demonstration). The markers carry no
+    // lexical meaning and must not leak into the reconstructed source.
+    let nb = r#"Notebook[{
+Cell[BoxData[RowBox[{"arrowHead", "=", RowBox[{"{", RowBox[{"Line", "[", RowBox[{"(", "\:f3a2", GridBox[{{"1", "2"}, {"3", "4"}}], "\:f3a2", ")"}], "]"}], "}"}]}]], "Input"]
+}]"#;
+    let parsed = parse_notebook(nb).unwrap();
+    match &parsed.cells[0] {
+      CellEntry::Single(cell) => {
+        assert_eq!(cell.style, CellStyle::Input);
+        assert_eq!(cell.content, "arrowHead={Line[({{1, 2}, {3, 4}})]}");
+        assert!(
+          !cell.content.contains('\u{f3a2}'),
+          "the invisible bracket marker must not appear in the reconstructed \
+           source: {:?}",
+          cell.content
+        );
+        crate::interpret(&cell.content).expect(
+          "the reconstructed source must be valid, evaluable Wolfram Language",
+        );
+      }
+      CellEntry::Group(_) => panic!("Expected single cell"),
+    }
   }
 }
