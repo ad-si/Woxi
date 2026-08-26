@@ -4659,6 +4659,85 @@ fn evaluate_function_call_ast_inner(
     return Ok(call("Graphics", graphics_args));
   }
 
+  // ClockGauge[] / ClockGauge[{h,m,s}] / ClockGauge[{h,m}] /
+  // ClockGauge[{y,mo,d,h,m,s}] / ClockGauge[hours] → Graphics of an analog
+  // clock face with hour and minute hands, plus a second hand whenever
+  // seconds are known. Hand angles come from the total elapsed seconds so
+  // components outside the usual 0-59 range (e.g. a running seconds value)
+  // still wrap around like a real clock instead of drawing a broken hand.
+  if name == "ClockGauge" {
+    fn f64_of(e: &Expr) -> f64 {
+      crate::functions::math_ast::try_eval_to_f64(e).unwrap_or(0.0)
+    }
+    let hms: Option<(f64, f64, f64, bool)> = if args.is_empty() {
+      Some(match crate::functions::datetime_ast::date_list_ast(&[])? {
+        Expr::List(items) if items.len() == 6 => {
+          (f64_of(&items[3]), f64_of(&items[4]), f64_of(&items[5]), true)
+        }
+        _ => (0.0, 0.0, 0.0, true),
+      })
+    } else {
+      match &args[0] {
+        Expr::List(items) if items.len() >= 6 => Some((
+          f64_of(&items[3]),
+          f64_of(&items[4]),
+          f64_of(&items[5]),
+          true,
+        )),
+        Expr::List(items) if items.len() == 3 => {
+          Some((f64_of(&items[0]), f64_of(&items[1]), f64_of(&items[2]), true))
+        }
+        Expr::List(items) if items.len() == 2 => {
+          Some((f64_of(&items[0]), f64_of(&items[1]), 0.0, false))
+        }
+        other => crate::functions::math_ast::try_eval_to_f64(other)
+          .map(|hours| (hours, 0.0, 0.0, false)),
+      }
+    };
+
+    if let Some((h, m, s, has_seconds)) = hms {
+      let total_seconds = h * 3600.0 + m * 60.0 + s;
+      let hand_point = |angle_deg: f64, r: f64| -> (f64, f64) {
+        // Same top-is-zero, clockwise convention as AngularGauge above.
+        let theta = (90.0 - angle_deg).to_radians();
+        (r * theta.cos(), r * theta.sin())
+      };
+      let origin = || Expr::List(vec![Expr::Integer(0), Expr::Integer(0)].into());
+      let hand_line = |angle_deg: f64, r: f64| -> Expr {
+        let (x, y) = hand_point(angle_deg, r);
+        call(
+          "Line",
+          vec![
+            Expr::List(vec![origin(), Expr::List(vec![Expr::Real(x), Expr::Real(y)].into())].into()),
+          ],
+        )
+      };
+
+      let hour_angle =
+        total_seconds.rem_euclid(12.0 * 3600.0) / (12.0 * 3600.0) * 360.0;
+      let minute_angle = total_seconds.rem_euclid(3600.0) / 3600.0 * 360.0;
+
+      let mut primitives: Vec<Expr> = vec![
+        call("Circle", vec![origin(), Expr::Integer(1)]),
+        hand_line(hour_angle, 0.5),
+        hand_line(minute_angle, 0.75),
+      ];
+      if has_seconds {
+        let second_angle = total_seconds.rem_euclid(60.0) / 60.0 * 360.0;
+        primitives.push(hand_line(second_angle, 0.9));
+      }
+
+      let mut graphics_args = vec![Expr::List(primitives.into())];
+      let opts: &[Expr] = if args.is_empty() { &[] } else { &args[1..] };
+      for opt in opts {
+        if matches!(opt, Expr::Rule { .. }) {
+          graphics_args.push(opt.clone());
+        }
+      }
+      return Ok(call("Graphics", graphics_args));
+    }
+  }
+
   // VoronoiMesh[{{x1,y1},{x2,y2},...}] → Voronoi tessellation as MeshRegion
   if name == "DelaunayMesh" && args.len() == 1 {
     return crate::functions::delaunay::delaunay_mesh_ast(args);

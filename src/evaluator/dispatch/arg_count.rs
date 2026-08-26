@@ -196,6 +196,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "CircumscribedBall" => Some((1, 1)),
     "ClearAttributes" => Some((2, 2)),
     "Clip" => Some((1, 3)),
+    "ClockGauge" => Some((0, usize::MAX)),
     "Close" => Some((1, 1)),
     "Coefficient" => Some((2, 3)),
     "CoefficientList" => Some((2, 2)),

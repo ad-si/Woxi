@@ -3006,6 +3006,62 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
   #[test]
+  fn clock_gauge_unresolved_symbol_stays_unevaluated() {
+    assert_eq!(interpret("ClockGauge[x]").unwrap(), "ClockGauge[x]");
+  }
+  #[test]
+  fn clock_gauge_hms_renders_graphics() {
+    assert_eq!(
+      interpret("ClockGauge[{14, 42, 56}]").unwrap(),
+      "-Graphics-"
+    );
+    assert_eq!(
+      interpret("Head[ClockGauge[{14, 42, 56}]]").unwrap(),
+      "Graphics"
+    );
+  }
+  #[test]
+  fn clock_gauge_hour_minute_only_renders_graphics() {
+    assert_eq!(interpret("ClockGauge[{3, 45}]").unwrap(), "-Graphics-");
+  }
+  #[test]
+  fn clock_gauge_single_hour_value_renders_graphics() {
+    assert_eq!(interpret("ClockGauge[12.5]").unwrap(), "-Graphics-");
+  }
+  #[test]
+  fn clock_gauge_no_args_uses_current_time() {
+    assert_eq!(interpret("Head[ClockGauge[]]").unwrap(), "Graphics");
+  }
+  #[test]
+  fn clock_gauge_hour_hand_points_at_three_oclock() {
+    // At 3:00:00 the hour hand has swept a quarter turn from the top,
+    // i.e. it points along the positive x-axis.
+    assert_eq!(
+      interpret("Round[ClockGauge[{3, 0, 0}][[1, 2, 1, 2]], 0.01]").unwrap(),
+      "{0.5, 0.}"
+    );
+  }
+  #[test]
+  fn clock_gauge_seconds_wrap_like_a_real_clock() {
+    // 90 minutes past the hour is equivalent to 30 minutes past the next
+    // hour: the minute hand should end up at the same angle either way.
+    assert_eq!(
+      interpret(
+        "Round[ClockGauge[{0, 90, 0}][[1, 3, 1, 2]], 0.01] == \
+         Round[ClockGauge[{0, 30, 0}][[1, 3, 1, 2]], 0.01]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+  #[test]
+  fn clock_gauge_accepts_options() {
+    assert_eq!(
+      interpret("ClockGauge[{1, 2, 3}, GaugeStyle -> Red]").unwrap(),
+      "-Graphics-"
+    );
+  }
+  #[test]
   fn color_replace() {
     assert_eq!(interpret("ColorReplace[x]").unwrap(), "ColorReplace[x]");
   }

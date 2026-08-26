@@ -488,8 +488,8 @@ Woxi does **not** support.
 - Symbolic tensors (`TensorReduce`; `TensorExpand` is supported)
 - Image recognition: `FindFaces`, `ImageFeatureTrack`
 - Control systems design
-- Gauges: `ClockGauge`, `HorizontalGauge`, `VerticalGauge`,
-    `ThermometerGauge`, `BulletGauge`
+- Gauges: `HorizontalGauge`, `VerticalGauge`, `ThermometerGauge`,
+    `BulletGauge`
 - Signal filters and analysis: `PIDTune`, `ButterworthFilterModel`,
     `EllipticFilterModel`, `KalmanFilter`, `PowerSpectralDensity`,
     `PeriodogramArray`
