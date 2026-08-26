@@ -3098,6 +3098,130 @@ fn index_permutations(n: usize) -> Vec<Vec<usize>> {
   }
 }
 
+/// Head, `PatternTest` and `Repeated`-element checks for one candidate split of
+/// a sequence pattern, plus the binding for the pattern's own name. `None` when
+/// this window of arguments cannot be what the pattern matches.
+fn match_sequence_window(
+  seq: &SeqInfo,
+  window: &[Expr],
+) -> Option<Vec<(String, Expr)>> {
+  if let Some(ref h) = seq.head
+    && !window.iter().all(|a| get_expr_head(a) == *h)
+  {
+    return None;
+  }
+  if let Some(ref test) = seq.test
+    && !window.iter().all(|a| apply_pattern_test(test, a))
+  {
+    return None;
+  }
+  let mut bindings: Vec<(String, Expr)> = vec![];
+  if let Some(ref elem_pat) = seq.element_pattern {
+    for arg in window {
+      let b = match_pattern(arg, elem_pat)?;
+      if !merge_bindings(&mut bindings, b) {
+        return None;
+      }
+    }
+  }
+  if !seq.name.is_empty() {
+    let bound = match window.len() {
+      0 => call0("Sequence"),
+      1 => window[0].clone(),
+      _ => unevaluated("Sequence", window),
+    };
+    bindings.insert(0, (seq.name.clone(), bound));
+  }
+  Some(bindings)
+}
+
+/// Index of the first `Longest[…]` / `Shortest[…]` sequence pattern that an
+/// earlier sequence pattern would otherwise outrank.
+///
+/// Wolfram reads the wrapper as a preference on the *whole* match, not just on
+/// the split tried first at that one position: `{a___, Longest[x__Integer],
+/// b___}` picks the longest run of integers anywhere in the list, rather than
+/// the longest run that happens to start where a left-to-right `a___` stopped.
+/// So when such a pattern sits behind another sequence pattern it has to drive
+/// the search instead of being driven by its neighbours.
+fn ordering_sequence_index(pat_args: &[Expr]) -> Option<usize> {
+  let idx = pat_args.iter().position(|p| {
+    matches!(p, Expr::FunctionCall { name, args }
+      if (name == "Longest" || name == "Shortest") && args.len() == 1)
+      && get_sequence_info(p).is_some()
+  })?;
+  // With only fixed-width patterns in front of it the ordinary left-to-right
+  // walk already arrives with a single possible split, so nothing outranks it.
+  pat_args[..idx]
+    .iter()
+    .any(|p| get_sequence_info(p).is_some())
+    .then_some(idx)
+}
+
+/// Match `pat_args` with the sequence pattern at `idx` choosing first: its
+/// length is the primary key (longest or shortest, per its wrapper) and its
+/// starting offset the secondary one, with the patterns on either side matched
+/// against whatever each candidate window leaves them.
+fn match_args_driven_by_sequence(
+  expr_args: &[Expr],
+  pat_args: &[Expr],
+  idx: usize,
+) -> Option<Vec<(String, Expr)>> {
+  let seq = get_sequence_info(&pat_args[idx])?;
+  let (pre, post) = (&pat_args[..idx], &pat_args[idx + 1..]);
+  let pre_min = min_args_for_patterns(pre);
+  let post_min = min_args_for_patterns(post);
+  let budget = expr_args.len().checked_sub(pre_min + post_min)?;
+  let max_count = seq.max_count.unwrap_or(budget).min(budget);
+  if max_count < seq.min_count {
+    return None;
+  }
+
+  let counts: Box<dyn Iterator<Item = usize>> = if seq.greedy {
+    Box::new((seq.min_count..=max_count).rev())
+  } else {
+    Box::new(seq.min_count..=max_count)
+  };
+  for count in counts {
+    for start in pre_min..=(expr_args.len() - count - post_min) {
+      let Some(mut bindings) =
+        match_sequence_window(&seq, &expr_args[start..start + count])
+      else {
+        continue;
+      };
+      let Some(pre_bindings) =
+        match_args_with_sequences(&expr_args[..start], pre)
+      else {
+        continue;
+      };
+      if !merge_bindings(&mut bindings, pre_bindings) {
+        continue;
+      }
+      let Some(post_bindings) =
+        match_args_with_sequences(&expr_args[start + count..], post)
+      else {
+        continue;
+      };
+      if !merge_bindings(&mut bindings, post_bindings) {
+        continue;
+      }
+      if let Some(ref cond) = seq.condition {
+        let test_expr =
+          apply_bindings(cond, &bindings).unwrap_or(*cond.clone());
+        match evaluate_expr_to_expr(&test_expr) {
+          Ok(Expr::Identifier(ref s)) if s == "True" => {}
+          _ => continue,
+        }
+      }
+      if lhs_condition_definitely_fails(&bindings) {
+        continue;
+      }
+      return Some(bindings);
+    }
+  }
+  None
+}
+
 fn match_args_with_sequences(
   expr_args: &[Expr],
   pat_args: &[Expr],
@@ -3109,6 +3233,10 @@ fn match_args_with_sequences(
     } else {
       None
     };
+  }
+
+  if let Some(idx) = ordering_sequence_index(pat_args) {
+    return match_args_driven_by_sequence(expr_args, pat_args, idx);
   }
 
   let pat = &pat_args[0];
@@ -3310,105 +3438,36 @@ fn match_args_with_sequences(
       (seq.min_count..=max_count).collect()
     };
     for count in counts {
-      let seq_args = &expr_args[..count];
-
-      // Check head constraints for all elements
-      if let Some(ref h) = seq.head
-        && !seq_args.iter().all(|a| get_expr_head(a) == *h)
-      {
+      let Some(mut bindings) = match_sequence_window(&seq, &expr_args[..count])
+      else {
         continue;
-      }
-
-      // Check PatternTest for all elements
-      if let Some(ref test) = seq.test
-        && !seq_args.iter().all(|a| apply_pattern_test(test, a))
-      {
-        continue;
-      }
-
-      // Check element pattern for Repeated/RepeatedNull
-      if let Some(ref elem_pat) = seq.element_pattern {
-        let mut all_match = true;
-        let mut elem_bindings: Vec<(String, Expr)> = vec![];
-        for arg in seq_args {
-          if let Some(b) = match_pattern(arg, elem_pat) {
-            if !merge_bindings(&mut elem_bindings, b) {
-              all_match = false;
-              break;
-            }
-          } else {
-            all_match = false;
-            break;
-          }
-        }
-        if !all_match {
-          continue;
-        }
-        // Recursively match the rest
-        if let Some(rest_bindings) =
-          match_args_with_sequences(&expr_args[count..], rest_pats)
-          && merge_bindings(&mut elem_bindings, rest_bindings)
-        {
-          // Add binding for this sequence name (if any)
-          if !seq.name.is_empty() {
-            let bound_value = if count == 0 {
-              call0("Sequence")
-            } else if count == 1 {
-              seq_args[0].clone()
-            } else {
-              unevaluated("Sequence", seq_args)
-            };
-            elem_bindings.insert(0, (seq.name.clone(), bound_value));
-          }
-          // Check Condition if present
-          if let Some(ref cond) = seq.condition {
-            let test_expr =
-              apply_bindings(cond, &elem_bindings).unwrap_or(*cond.clone());
-            match evaluate_expr_to_expr(&test_expr) {
-              Ok(Expr::Identifier(ref s)) if s == "True" => {}
-              _ => continue,
-            }
-          }
-          // Outer LHS Condition (`pat /; cond` or `Condition[pat, test]`):
-          // backtrack to the next sequence split when the candidate
-          // bindings make the condition definitively False.
-          if lhs_condition_definitely_fails(&elem_bindings) {
-            continue;
-          }
-          return Some(elem_bindings);
-        }
-        continue;
-      }
+      };
 
       // Recursively match the rest
-      if let Some(mut rest_bindings) =
+      let Some(rest_bindings) =
         match_args_with_sequences(&expr_args[count..], rest_pats)
-      {
-        // Add binding for this sequence
-        if !seq.name.is_empty() {
-          let bound_value = if count == 0 {
-            call0("Sequence")
-          } else if count == 1 {
-            seq_args[0].clone()
-          } else {
-            unevaluated("Sequence", seq_args)
-          };
-          rest_bindings.insert(0, (seq.name.clone(), bound_value));
-        }
-        // Check Condition if present
-        if let Some(ref cond) = seq.condition {
-          let test_expr =
-            apply_bindings(cond, &rest_bindings).unwrap_or(*cond.clone());
-          match evaluate_expr_to_expr(&test_expr) {
-            Ok(Expr::Identifier(ref s)) if s == "True" => {}
-            _ => continue,
-          }
-        }
-        if lhs_condition_definitely_fails(&rest_bindings) {
-          continue;
-        }
-        return Some(rest_bindings);
+      else {
+        continue;
+      };
+      if !merge_bindings(&mut bindings, rest_bindings) {
+        continue;
       }
+      // Check Condition if present
+      if let Some(ref cond) = seq.condition {
+        let test_expr =
+          apply_bindings(cond, &bindings).unwrap_or(*cond.clone());
+        match evaluate_expr_to_expr(&test_expr) {
+          Ok(Expr::Identifier(ref s)) if s == "True" => {}
+          _ => continue,
+        }
+      }
+      // Outer LHS Condition (`pat /; cond` or `Condition[pat, test]`):
+      // backtrack to the next sequence split when the candidate bindings
+      // make the condition definitively False.
+      if lhs_condition_definitely_fails(&bindings) {
+        continue;
+      }
+      return Some(bindings);
     }
     None
   } else {

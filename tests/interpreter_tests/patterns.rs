@@ -4506,6 +4506,51 @@ mod longest_shortest_and_orderless_sequences {
     );
   }
 
+  // `{a___, Longest[x__Integer], b___} -> {x}` is the standard idiom for
+  // pulling the longest run of a kind of element out of a list (e.g. the
+  // longest run of heads in a coin-toss sequence, once heads have been
+  // replaced by 1 and tails are anything else). `Longest` wrapping a
+  // sequence pattern that sits *behind* another sequence pattern (`a___`)
+  // has to pick the split that makes its own match longest overall, not
+  // just the longest run starting wherever `a___`'s default (shortest)
+  // split happens to land — otherwise it finds only the first run instead
+  // of the true longest one.
+  #[test]
+  fn longest_behind_a_sequence_pattern_finds_the_longest_run_anywhere() {
+    assert_eq!(
+      interpret(
+        r#"{1, 1, "gap", 1, "gap", "gap", 1, 1, 1} /. {a___, Longest[x__Integer], b___} -> {x}"#
+      )
+      .unwrap(),
+      "{1, 1, 1}"
+    );
+    // Shortest still returns the first (leftmost) run when driven the same
+    // way.
+    assert_eq!(
+      interpret(
+        r#"{"gap", "gap", 1, "gap", 1, 1, 1, "gap"} /. {a___, Shortest[x__Integer], b___} -> {x}"#
+      )
+      .unwrap(),
+      "{1}"
+    );
+    // A tie between two runs of the same maximal length picks the leftmost.
+    assert_eq!(
+      interpret(
+        r#"{1, 1, "gap", 1, 1, "gap", "gap"} /. {a___, Longest[x__Integer], b___} -> {x}"#
+      )
+      .unwrap(),
+      "{1, 1}"
+    );
+    // No run at all leaves the list unchanged (the rule doesn't match).
+    assert_eq!(
+      interpret(
+        r#"{"gap", "gap", "gap"} /. {a___, Longest[x__Integer], b___} -> {x}"#
+      )
+      .unwrap(),
+      "{gap, gap, gap}"
+    );
+  }
+
   // OrderlessPatternSequence matches the block of arguments at its position
   // in any order — so the elements it takes stay contiguous.
   #[test]
