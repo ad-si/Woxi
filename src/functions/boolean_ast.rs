@@ -349,14 +349,13 @@ fn within_one_ulp(a: f64, b: f64) -> bool {
     return false;
   }
   // Map raw bits to a monotonically increasing key spanning negatives and
-  // positives, then compare the integer distance.
-  let key = |f: f64| -> i64 {
-    let bits = f.to_bits() as i64;
-    if bits < 0 {
-      i64::MIN.wrapping_sub(bits)
-    } else {
-      bits
-    }
+  // positives, then compare the integer distance. The key is widened to
+  // i128 because two keys near opposite ends of the i64 range (e.g. the
+  // most negative and most positive finite doubles) differ by more than
+  // `i64::MAX`, which would overflow a plain i64 subtraction.
+  let key = |f: f64| -> i128 {
+    let bits = f.to_bits() as i64 as i128;
+    if bits < 0 { i64::MIN as i128 - bits } else { bits }
   };
   (key(a) - key(b)).unsigned_abs() <= 1
 }

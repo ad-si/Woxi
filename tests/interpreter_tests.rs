@@ -1731,6 +1731,29 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_same_q_extreme_magnitude_reals_does_not_overflow() {
+    // `SameQ`'s one-ULP tolerance on machine reals maps each double's bits
+    // to a monotonic i64 key and compares the key distance. Two reals near
+    // opposite ends of the double range (e.g. the largest positive and
+    // largest negative finite doubles) produce keys near opposite ends of
+    // the i64 range, whose difference overflows a plain i64 subtraction.
+    // A Demonstration's `Manipulate` comparing a fit result against a
+    // sentinel value hit this and crashed Woxi Studio outright.
+    clear_state();
+    assert_eq!(
+      interpret("SameQ[1.7976931348623157*^308, -1.7976931348623157*^308]")
+        .unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("1.7976931348623157*^308 === -1.7976931348623157*^308")
+        .unwrap(),
+      "False"
+    );
+    assert_eq!(interpret("SameQ[-0.0, 0.0]").unwrap(), "True");
+  }
+
+  #[test]
   fn test_distinct_images_are_not_same_q_or_equal() {
     // `expr_to_string` reports every `Image[…]` as the same `-Image-`
     // display placeholder. `SameQ`/`Equal` and the structural-equality
