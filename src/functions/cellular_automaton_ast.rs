@@ -713,7 +713,7 @@ fn evolve(
             col_indices
               .iter()
               .map(|&c| {
-                if let Some(_) = background {
+                if background.is_some() {
                   if r < 0 || r >= height as i64 || c < 0 || c >= width as i64 {
                     *bg
                   } else {
