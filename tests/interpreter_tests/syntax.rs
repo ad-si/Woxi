@@ -9029,6 +9029,53 @@ mod unicode_operators {
   }
 }
 
+// Wolfram treats geometric-shape, pictograph, astronomical and musical
+// glyphs as ordinary (letterlike) symbol names, even though Unicode files
+// them under `So`/`Sm` rather than `L` — `Head[■]` is `Symbol`, not a
+// syntax error. A Demonstration's box form stores these as the bare
+// character rather than the `\[Name]` escape (e.g. a grid-cell marker),
+// so the raw glyph must parse as an identifier on its own.
+mod letterlike_symbol_characters {
+  use super::*;
+
+  #[test]
+  fn geometric_shape_is_a_symbol() {
+    assert_eq!(interpret("Head[■]").unwrap(), "Symbol");
+    assert_eq!(interpret("Head[□]").unwrap(), "Symbol");
+    assert_eq!(interpret("Head[●]").unwrap(), "Symbol");
+    assert_eq!(interpret("Head[○]").unwrap(), "Symbol");
+    assert_eq!(interpret("Head[◆]").unwrap(), "Symbol");
+    assert_eq!(interpret("Head[▲]").unwrap(), "Symbol");
+  }
+
+  #[test]
+  fn geometric_shape_used_as_array_fill_value() {
+    assert_eq!(interpret("ConstantArray[■, 3]").unwrap(), "{■, ■, ■}");
+  }
+
+  #[test]
+  fn geometric_shape_raw_char_matches_named_escape() {
+    assert_eq!(interpret("■ === \\[FilledSquare]").unwrap(), "True");
+  }
+
+  #[test]
+  fn astronomical_and_musical_symbols_are_symbols() {
+    assert_eq!(interpret("Head[♄]").unwrap(), "Symbol"); // Saturn
+    assert_eq!(interpret("Head[♯]").unwrap(), "Symbol"); // Sharp
+    assert_eq!(interpret("Head[☉]").unwrap(), "Symbol"); // Sun
+  }
+
+  #[test]
+  fn geometric_shape_inside_nested_function_call() {
+    // The bare glyph must survive being nested inside further function
+    // calls and control flow, not just as a lone top-level expression.
+    assert_eq!(
+      interpret("If[True, ConstantArray[■, 2], ConstantArray[□, 2]]").unwrap(),
+      "{■, ■}"
+    );
+  }
+}
+
 // Regression tests for `&` (Function) precedence. `&` has very low precedence
 // in Wolfram — it binds looser than any infix operator. Inner-term rules must
 // not consume the `&` greedily when there are preceding operators, otherwise
@@ -11702,6 +11749,41 @@ mod alternating_part_and_call_suffixes {
     assert_eq!(
       interpret("m = {{1, 2}, {3, 4}}; m[[All, 1]]").unwrap(),
       "{1, 3}"
+    );
+  }
+
+  /// Regression: a `Part` extraction on a function call (`f[x][[i]]`),
+  /// immediately followed by implicit multiplication against a factor that
+  /// itself ends in a `Part` extraction (`g[[j]]`), lost the second
+  /// factor's index. The grammar puts both factors under
+  /// `FunctionCallExtended`'s `FunctionCallImplicitSuffix`, and the AST
+  /// builder for that suffix fed each `PartIndexGroup` pair (the `[[j]]`
+  /// span, delimiters included) straight to the generic expression
+  /// converter instead of extracting its index — falling through to the
+  /// "unknown rule" fallback, which stored the raw bracket text as the
+  /// index and left it to be re-parsed as if it were a whole program on
+  /// its own. That re-parse always fails (`[[j]]` is not a valid
+  /// standalone expression), surfacing as a parse error on code that had
+  /// already parsed successfully.
+  #[test]
+  fn a_call_s_part_may_multiply_another_part() {
+    assert_eq!(
+      interpret("f[x_] := {x, x + 1}; g = {10, 20}; f[1][[1]] g[[2]]").unwrap(),
+      "20"
+    );
+    // The second factor's index need not be a bare integer literal either.
+    assert_eq!(
+      interpret(
+        "f[x_] := {x, x + 1}; g = {10, 20, 30}; n = 3; f[1][[2]] g[[n]]"
+      )
+      .unwrap(),
+      "60"
+    );
+    // A plain (non-function-call) first factor already worked; keep it
+    // covered alongside the call-based case above.
+    assert_eq!(
+      interpret("g = {10, 20}; h = {1, 2}; h[[1]] g[[2]]").unwrap(),
+      "20"
     );
   }
 }

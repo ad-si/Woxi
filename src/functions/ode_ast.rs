@@ -2832,6 +2832,18 @@ enum NExpr {
     template: Expr,
     refs: Vec<(String, usize)>,
   },
+  /// A call `InterpolatingFunction[domain, data, order…][arg]` — e.g. a
+  /// lookup table built with `Interpolation[…]` and referenced from an
+  /// ODE's right-hand side. Goes straight to
+  /// `evaluate_interpolating_function` instead of through `External`'s
+  /// full symbolic round trip (re-resolving the call generically on every
+  /// one of the tens of thousands of RK4 stages a solve takes), while
+  /// still calling that same function so the interpolation math itself is
+  /// not duplicated.
+  Interp1D {
+    func_args: Vec<Expr>,
+    arg: Box<Self>,
+  },
 }
 
 impl NExpr {
@@ -2864,6 +2876,13 @@ impl NExpr {
           );
         }
         crate::evaluator::evaluate_expr_to_expr(&substituted)
+          .ok()
+          .and_then(|r| expr_to_f64(&r).ok())
+          .unwrap_or(f64::NAN)
+      }
+      Self::Interp1D { func_args, arg } => {
+        let x = arg.eval(vars);
+        evaluate_interpolating_function(func_args, &[Expr::Real(x)])
           .ok()
           .and_then(|r| expr_to_f64(&r).ok())
           .unwrap_or(f64::NAN)
@@ -2902,6 +2921,46 @@ fn compile_external_leaf(expr: &Expr, var_names: &[String]) -> NExpr {
     template: expr.clone(),
     refs,
   }
+}
+
+/// If `expr` is a call `InterpolatingFunction[domain, data, …][arg]` — a
+/// lookup table built by `Interpolation[…]`/`ListInterpolation[…]` or an
+/// NDSolve result, already resolved to its value by the time equations
+/// reach this compiler — compile it as an `NExpr::Interp1D` leaf so a
+/// residual that looks the table up stays out of `External`'s full
+/// symbolic dispatch on every RK4 stage. Returns `None` for anything else:
+/// a 2-D grid interpolation (its call takes a `{x, y}` pair, not this
+/// leaf's single scalar) or a call whose head isn't `InterpolatingFunction`.
+fn compile_interp1d_call(
+  func: &Expr,
+  args: &[Expr],
+  var_names: &[String],
+) -> Option<NExpr> {
+  if args.len() != 1 {
+    return None;
+  }
+  let Expr::FunctionCall {
+    name: interp_name,
+    args: func_args,
+  } = func
+  else {
+    return None;
+  };
+  if interp_name != "InterpolatingFunction"
+    || !(2..=4).contains(&func_args.len())
+  {
+    return None;
+  }
+  // The 2-D grid form carries `{orderRow, orderCol}` as its third
+  // argument; a plain 1-D table has a single integer order (or none).
+  if matches!(func_args.get(2), Some(Expr::List(_))) {
+    return None;
+  }
+  let arg = compile_numeric(&args[0], var_names)?;
+  Some(NExpr::Interp1D {
+    func_args: func_args.to_vec(),
+    arg: Box::new(arg),
+  })
 }
 
 /// Compile an expression over the given variable names to an `NExpr`.
@@ -3031,6 +3090,16 @@ fn compile_numeric(expr: &Expr, var_names: &[String]) -> Option<NExpr> {
         // bailing the whole residual out to the symbolic path.
         _ => Some(compile_external_leaf(expr, var_names)),
       }
+    }
+    // `xy = Interpolation[…]; …xy[y[t]]…` — by the time an ODE's
+    // right-hand side reaches this compiler, the symbol `xy` has already
+    // been resolved to its value, leaving `InterpolatingFunction[…][arg]`
+    // as a `CurriedCall` rather than a plain named call. Recognizing it
+    // here keeps a table lookup out of `External`'s full generic dispatch
+    // on every one of the tens of thousands of RK4 stages a solve takes.
+    Expr::CurriedCall { func, args } => {
+      compile_interp1d_call(func, args, var_names)
+        .or_else(|| Some(compile_external_leaf(expr, var_names)))
     }
     other => Some(compile_external_leaf(other, var_names)),
   }
