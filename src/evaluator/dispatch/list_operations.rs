@@ -2543,6 +2543,12 @@ pub fn dispatch_list_operations(
     }
 
     // Additional AST-native list functions
+    // `Table[expr]` — no iterator at all — is the degenerate case of the
+    // multi-dimensional form and simply evaluates the body once, the way
+    // wolframscript does (`Table[1 + 1]` is `2`, with no message).
+    "Table" | "ParallelTable" if args.len() == 1 => {
+      return Some(crate::evaluator::evaluate_expr_to_expr(&args[0]));
+    }
     "Table" | "ParallelTable" if args.len() >= 2 => {
       // An iterator with non-numeric bounds leaves the whole call unevaluated
       // (matching wolframscript's ::iterb / ::nliter) rather than erroring.
@@ -5040,6 +5046,14 @@ pub fn dispatch_list_operations(
     // ParallelDo has no real parallel kernels in Woxi, so it evaluates
     // sequentially exactly like Do (matching the rest of the Parallel*
     // family, which are implemented as their sequential counterparts).
+    // `Do[expr]` with no iterator evaluates its body once for the side
+    // effects and returns Null, matching wolframscript.
+    "Do" | "ParallelDo" if args.len() == 1 => {
+      return Some(
+        crate::evaluator::evaluate_expr_to_expr(&args[0])
+          .map(|_| Expr::Identifier("Null".to_string())),
+      );
+    }
     "Do" | "ParallelDo" if args.len() >= 2 => {
       // A non-numeric iterator bound leaves the whole call unevaluated
       // (matching wolframscript's ::iterb / ::nliter) rather than erroring.

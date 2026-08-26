@@ -400,7 +400,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "DivisorSigma" => Some((2, 3)),
     "DivisorSum" => Some((2, 3)),
     "DMSList" => Some((1, 1)),
-    "Do" => Some((2, usize::MAX)),
+    "Do" => Some((1, usize::MAX)),
     // wolframscript reports (1, 4): valid forms are
     //   DominantColors[img], DominantColors[img, n],
     //   DominantColors[img, n, prop], DominantColors[img, n, prop, distFn].
@@ -1489,7 +1489,9 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "AugmentedSymmetricPolynomial" => Some((2, 2)),
     "Symmetrize" => Some((1, 2)),
     "SyntaxQ" => Some((1, 1)),
-    "Table" => Some((2, usize::MAX)),
+    // `Table[expr]`/`Do[expr]` — a body with no iterator — is accepted:
+    // wolframscript reports "1 or more arguments are expected".
+    "Table" => Some((1, usize::MAX)),
     // Take[expr] / Drop[expr] take and drop nothing: they return expr.
     "Take" => Some((1, usize::MAX)),
     "TakeDrop" => Some((2, 2)),

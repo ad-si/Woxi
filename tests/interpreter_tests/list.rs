@@ -238,6 +238,43 @@ mod table_do_bare_count {
       .unwrap();
     assert_eq!(r.stdout, "1\n1\n1\n");
   }
+
+  // No iterator at all is the degenerate case of the multi-iterator form:
+  // the body is evaluated once (Table returns it, Do discards it) with no
+  // message, exactly as in wolframscript.
+  #[test]
+  fn table_without_iterator_evaluates_its_body() {
+    clear_state();
+    let r = woxi::interpret_with_stdout("Table[1 + 1]").unwrap();
+    assert_eq!(r.result, "2");
+    assert!(r.warnings.is_empty());
+  }
+
+  #[test]
+  fn do_without_iterator_runs_its_body_once() {
+    clear_state();
+    let r = woxi::interpret_with_stdout("Do[Print[7]]").unwrap();
+    assert_eq!(r.stdout, "7\n");
+    assert!(r.warnings.is_empty());
+  }
+
+  #[test]
+  fn table_and_do_with_no_arguments_report_one_or_more() {
+    clear_state();
+    let r = woxi::interpret_with_stdout("Table[]").unwrap();
+    assert_eq!(r.result, "Table[]");
+    assert!(r.warnings[0].contains(
+      "Table::argm: Table called with 0 arguments; \
+       1 or more arguments are expected."
+    ));
+    clear_state();
+    let r = woxi::interpret_with_stdout("Do[]").unwrap();
+    assert_eq!(r.result, "Do[]");
+    assert!(r.warnings[0].contains(
+      "Do::argm: Do called with 0 arguments; \
+       1 or more arguments are expected."
+    ));
+  }
 }
 
 mod table_symbolic_bounds {
