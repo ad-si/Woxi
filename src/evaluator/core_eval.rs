@@ -1101,6 +1101,30 @@ pub fn evaluate_expr_to_expr_inner(
     Expr::FunctionCall { name, args } => {
       // Track function calls on the evaluation stack for stack traces.
       crate::push_eval_stack(name);
+      // A literal `Sequence[…]` argument splices into the enclosing call
+      // before anything else happens — flattening is part of building the
+      // expression, not of evaluating the argument, so it applies through
+      // holds too (`Hold[Sequence[1, 2]]` is `Hold[1, 2]`). Heads carrying
+      // `SequenceHold` (`Set`, `Rule`, …) opt out. Doing it here, ahead of
+      // the held-head special cases below, is what makes
+      // `If[i != 2, i, Sequence[]]` reduce to `If[i != 2, i]` — and hence
+      // to `Null` when the test fails — instead of returning the empty
+      // sequence for the surrounding list to swallow.
+      // The `Sequence`/`Splice` head scan comes first so that the common
+      // call — no splice among the arguments — costs one `matches!` per
+      // argument and never looks the head's attributes up.
+      let flattened_args: Option<crate::ExprList> = if args.iter().any(|a| {
+        matches!(a, Expr::FunctionCall { name: n, .. }
+          if n == "Sequence" || n == "Splice")
+      }) {
+        match crate::evaluator::listable::flatten_sequences(name, args) {
+          std::borrow::Cow::Borrowed(_) => None,
+          std::borrow::Cow::Owned(spliced) => Some(spliced.into()),
+        }
+      } else {
+        None
+      };
+      let args: &crate::ExprList = flattened_args.as_ref().unwrap_or(args);
       let result: Result<Expr, InterpreterError> = (|| {
         // Special handling for If - lazy evaluation of branches
         if name == "If" && (args.len() == 2 || args.len() == 3) {

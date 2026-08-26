@@ -2307,25 +2307,34 @@ mod nothing {
 }
 
 /// `Table`/`Array` build their result via a `List[…]` that auto-simplifies
-/// like any other function call: a per-iteration `Sequence[…]` value
+/// like any other function call: a per-iteration `Sequence[…]` *value*
 /// splices its arguments in rather than appearing as a literal element, and
 /// `Nothing` still vanishes as it does everywhere else. `##&[]` (a pure
 /// function with no slot arguments) is the common idiom for the empty
 /// splice — `Table[If[cond, x, ##&[]], {i, …}]` conditionally omits an
 /// entry the same way `Nothing` does.
+///
+/// A *literal* `Sequence[…]` written in the source is a different story:
+/// it splices into the arguments of whatever call encloses it long before
+/// the body ever produces a value — see `literal_sequence_splices_first`.
 mod sequence_splice {
   use super::*;
 
   #[test]
-  fn empty_sequence_omits_table_entry() {
+  fn empty_literal_sequence_drops_ifs_else_branch() {
+    // The literal `Sequence[]` splices into `If`'s own argument list, so
+    // the body is `If[i != 2, i]` — a two-argument `If`, which yields
+    // `Null` (not an omitted entry) when the test fails.
     assert_eq!(
       interpret("Table[If[i != 2, i, Sequence[]], {i, 1, 5}]").unwrap(),
-      "{1, 3, 4, 5}"
+      "{1, Null, 3, 4, 5}"
     );
   }
 
   #[test]
   fn empty_slot_function_omits_table_entry() {
+    // `##&[]` only *evaluates* to an empty sequence, so `If` still sees
+    // three arguments and the empty splice reaches the result list.
     assert_eq!(
       interpret("Table[If[i != 2, i, ##&[]], {i, 1, 5}]").unwrap(),
       "{1, 3, 4, 5}"
@@ -2333,9 +2342,20 @@ mod sequence_splice {
   }
 
   #[test]
-  fn multi_element_sequence_splices_into_table() {
+  fn multi_element_literal_sequence_becomes_extra_if_arguments() {
+    // `If[i == 0, Sequence[i, i], i]` is `If[i == 0, i, i, i]`: the true
+    // branch is `i`, the false branch is `i`, and the fourth argument
+    // (used when the test is neither True nor False) is `i` as well.
     assert_eq!(
       interpret("Table[If[i == 0, Sequence[i, i], i], {i, -1, 1}]").unwrap(),
+      "{-1, 0, 1}"
+    );
+  }
+
+  #[test]
+  fn multi_element_sequence_value_splices_into_table() {
+    assert_eq!(
+      interpret("Table[If[i == 0, ##&[i, i], i], {i, -1, 1}]").unwrap(),
       "{-1, 0, 0, 1}"
     );
   }
@@ -2390,10 +2410,9 @@ mod sequence_splice {
   }
 
   #[test]
-  fn nothing_inside_spliced_sequence_is_removed_in_table() {
+  fn nothing_inside_spliced_sequence_value_is_removed_in_table() {
     assert_eq!(
-      interpret("Table[If[i == 1, Sequence[1, Nothing, 2]], {i, 1, 1}]")
-        .unwrap(),
+      interpret("Table[If[i == 1, ##&[1, Nothing, 2]], {i, 1, 1}]").unwrap(),
       "{1, 2}"
     );
   }
@@ -2403,6 +2422,70 @@ mod sequence_splice {
     assert_eq!(
       interpret("{1, Splice[{2, Nothing, 3}], 4}").unwrap(),
       "{1, 2, 3, 4}"
+    );
+  }
+}
+
+/// A literal `Sequence[…]` splices into the argument list of the call that
+/// encloses it as the expression is built, before any argument is
+/// evaluated. That happens through holds too — `Hold[Sequence[1, 2]]` is
+/// `Hold[1, 2]` — because it is part of forming the expression rather than
+/// of evaluating it. Only heads carrying `SequenceHold` (or the stronger
+/// `HoldAllComplete`) opt out.
+mod literal_sequence_splices_first {
+  use super::*;
+
+  #[test]
+  fn splices_through_hold() {
+    assert_eq!(
+      interpret("Hold[a, Sequence[b, c], d]").unwrap(),
+      "Hold[a, b, c, d]"
+    );
+  }
+
+  #[test]
+  fn splices_into_held_if_branches() {
+    // `If[True, Sequence[1, 2], 3]` is `If[True, 1, 2, 3]`, whose true
+    // branch is `1`; the false branch of the same call is `2`.
+    assert_eq!(interpret("If[True, Sequence[1, 2], 3]").unwrap(), "1");
+    assert_eq!(interpret("If[False, Sequence[1, 2], 3]").unwrap(), "2");
+  }
+
+  #[test]
+  fn splices_into_tables_own_arguments() {
+    // `Table[Sequence[7, 8, 9], {2}]` is `Table[7, 8, 9, {2}]` — a 7
+    // repeated over three iterators of lengths 8, 9 and 2.
+    assert_eq!(
+      interpret("Dimensions[Table[Sequence[7, 8, 9], {2}]]").unwrap(),
+      "{8, 9, 2}"
+    );
+    // …and an empty one leaves `Table[{2}]`, a body with no iterator.
+    assert_eq!(interpret("Table[Sequence[], {2}]").unwrap(), "{2}");
+  }
+
+  #[test]
+  fn sequence_hold_heads_keep_the_sequence() {
+    // Rule and RuleDelayed (like Set and SetDelayed) carry SequenceHold;
+    // HoldComplete and Unevaluated carry HoldAllComplete, which implies it.
+    assert_eq!(
+      interpret("{Rule[a, Sequence[1, 2]]}").unwrap(),
+      "{a -> Sequence[1, 2]}"
+    );
+    assert_eq!(
+      interpret("HoldComplete[Sequence[1, 2]]").unwrap(),
+      "HoldComplete[Sequence[1, 2]]"
+    );
+    assert_eq!(
+      interpret("Unevaluated[Sequence[1, 2]]").unwrap(),
+      "Unevaluated[Sequence[1, 2]]"
+    );
+  }
+
+  #[test]
+  fn splices_into_an_iterator_specification() {
+    assert_eq!(
+      interpret("Table[i, Sequence[{i, 3}]]").unwrap(),
+      "{1, 2, 3}"
     );
   }
 }
