@@ -1793,6 +1793,24 @@ global scope, so a later cell sees it. wolframscript keeps it inside the
 no such module, and its controls re-resolve the body on every frame, so the
 definitions have to outlive the call.
 
+Running `Initialization` at evaluation time also resolves control bounds that
+reference what it defines. A text front end never displays the
+`DynamicModule`, so wolframscript never runs `Initialization` at all and
+evaluates such a bound against an undefined symbol:
+
+```sh
+wolframscript -code 'Manipulate[func[[n]], {{n, 1, "which"}, 1, Length[func], 1}, Initialization :> (func = {a, b, c, d})]'
+# Manipulate[func[[n]], {{n, 1, which}, 1, 0, 1}, Initialization :> (func = {a, b, c, d})]
+woxi eval 'Manipulate[func[[n]], {{n, 1, "which"}, 1, Length[func], 1}, Initialization :> (func = {a, b, c, d})]'
+# Manipulate[func[[n]], {{n, 1, which}, 1, 4, 1}, Initialization :> (func = {a, b, c, d})]
+```
+
+Woxi matches the *notebook* here rather than the CLI: `4` is the slider
+maximum a front end shows (this is the shape of the "Function Explorer 3D"
+Demonstration), and Woxi Studio reads its controls out of exactly this
+expression. A `0` conformant with wolframscript would leave that
+Demonstration with an empty slider.
+
 ### `Get` returns raw text
 
 `Get` returns an `Expr::Raw`, so `List @@ Get["PacletInfo.m"]` fails, and

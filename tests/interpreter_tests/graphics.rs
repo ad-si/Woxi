@@ -18162,13 +18162,19 @@ mod manipulate {
   /// Regression: a variable spec's bound (`Length[func]`) that references a
   /// symbol only `Initialization :> …` defines must still resolve, even
   /// though the spec appears earlier in the argument list than the
-  /// `Initialization` option. Wolfram runs `Initialization` when the
-  /// DynamicModule is set up — before any control bound is resolved —
-  /// regardless of where the option is written among the arguments.
-  /// Previously the speculative bound evaluation ran left to right and hit
-  /// `Length[func]` before `func` had been defined, evaluating it against
-  /// an undefined symbol (`Length[func] -> 0`) instead of leaving it
-  /// symbolic for a later retry.
+  /// `Initialization` option. A notebook front end sets the DynamicModule up
+  /// — running `Initialization` — before it resolves any control bound,
+  /// regardless of where the option is written among the arguments, and 4 is
+  /// the slider maximum it shows. Previously the speculative bound evaluation
+  /// ran left to right and hit `Length[func]` before `func` had been defined,
+  /// evaluating it against an undefined symbol (`Length[func] -> 0`).
+  ///
+  /// Deliberately divergent from wolframscript, which prints the `0`: a text
+  /// front end never displays the DynamicModule, so it never runs
+  /// `Initialization` at all. Woxi Studio reads its controls out of this
+  /// expression, so matching the CLI would leave the "Function Explorer 3D"
+  /// Demonstration with an empty slider. See "`Manipulate`'s
+  /// `Initialization` is not scoped" in `conformance_gaps.md`.
   #[test]
   fn bound_referencing_initialization_symbol_resolves_regardless_of_order() {
     let result = interpret(

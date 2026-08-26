@@ -1407,6 +1407,15 @@ function main() {
     // sets a DownValue and returns Null. The Woxi unit test asserts the
     // fresh-kernel $Failed behavior.
     "Sin[x_] := y",
+    // A Manipulate control bound that reads a symbol its own
+    // `Initialization` defines. Woxi runs Initialization at evaluation time
+    // (it has no DynamicModule to defer it to, and Woxi Studio reads its
+    // controls out of this very expression), so the bound resolves to 4 —
+    // the slider maximum a notebook front end shows. A text front end never
+    // displays the DynamicModule, so wolframscript never runs Initialization
+    // and evaluates `Length[func]` against an undefined symbol, printing 0.
+    // See "Manipulate's Initialization is not scoped" in conformance_gaps.md.
+    'Manipulate[func[[n]], {{n, 1, "which"}, 1, Length[func], 1}, Initialization :> (func = {a, b, c, d})]',
     // Attributes[Manipulate]: in a fresh wolframscript kernel Manipulate has
     // only {Protected, ReadProtected}; once Manipulate is mentioned, HoldAll
     // is added automatically. Same root cause as Attributes[Plot3D] above.
