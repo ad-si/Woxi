@@ -42,6 +42,7 @@ pub mod geo_math;
 pub mod geographics;
 pub mod geometric_test_ast;
 pub mod graph;
+pub mod graph_data;
 pub mod graphics;
 pub mod graphicsbox;
 pub mod groebner_ast;
