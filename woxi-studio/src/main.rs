@@ -10041,6 +10041,46 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
   }
 
   #[test]
+  fn setter_choice_label_typesets_a_bare_subscript_glyph() {
+    // Regression: a Setter whose per-choice label is a `Column` mixing plain
+    // lines with a `Row` that ends in an inline `\!\(\*SubscriptBox[…]\)`
+    // (a one-sided-limit annotation, "lag = 0⁺" — the shape a Demonstrations
+    // control used, independently written here rather than copied from any
+    // specific one) came back showing the raw box source `SubscriptBox[0,
+    // +]` instead of the "0⁺" it typesets, because reconstructing the boxed
+    // expression as `Subscript[0, +]` does not parse (`+` alone is not a
+    // complete expression).
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[x, \
+       {{x, 1, \"kind\"}, \
+        {1 -> Column[{\"first\", \
+           Row[{\"at \", \"lag = \\!\\(\\*SubscriptBox[\\(0\\), \\(+\\)]\\)\"}]}], \
+         2 -> Column[{\"second\", \"plain\"}]}, \
+        ControlType -> Setter}]",
+    )
+    .unwrap();
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("the subscript-labelled Setter must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    match &state.controls[0] {
+      manipulate::ControlState::Discrete { value_labels, .. } => {
+        assert_eq!(
+          value_labels,
+          &[
+            "first\nat lag = 0₊".to_string(),
+            "second\nplain".to_string()
+          ]
+        );
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+  }
+
+  #[test]
   fn popup_menu_traditional_form_labels_render_as_typeset_svg() {
     // Regression: a PopupMenu choice label wrapped in `TraditionalForm[…]`
     // (the "pick a formula" idiom several Demonstrations use, independently
@@ -21881,6 +21921,94 @@ SaveDefinitions -> True]";
     assert!(
       state.graphics_handle.is_some(),
       "Show[Graphics[...], RegionPlot[...]] should render as a picture"
+    );
+  }
+
+  /// End-to-end regression for the shape of Demonstration that reports
+  /// run-length statistics on a random binary sequence: five standalone
+  /// (ungrouped) Input cells define a `BlockRandom`/`SeedRandom`-seeded
+  /// `RandomChoice` draw whose two outcomes are a `Style`-wrapped string and
+  /// a plain string, then count-based and longest-run helpers built on top
+  /// of it, and a `Manipulate` with two `Appearance -> "Labeled"` sliders
+  /// displays the results. The longest-run helpers use the standard
+  /// `list /. mark -> 1 /. {a___, Longest[x__Integer], b___} -> {x}` idiom,
+  /// which only returns the true longest run when `Longest` is allowed to
+  /// pick where `a___`/`b___` split rather than being stuck with whatever
+  /// split a left-to-right walk lands on first. Independently written, not
+  /// copied from any specific Wolfram Demonstration.
+  #[test]
+  fn run_length_statistics_notebook_opens_with_its_widget() {
+    let nb_src = r#"Notebook[{
+Cell[BoxData["draws[n_, s_] := BlockRandom[SeedRandom[s]; RandomChoice[{Style[\"W  \", RGBColor[0, 0.6, 0]], \"L  \"}, n]]"], "Input"],
+Cell[BoxData["wins[n_, s_] := Count[draws[n, s], Style[\"W  \", RGBColor[0, 0.6, 0]]]"], "Input"],
+Cell[BoxData["losses[n_, s_] := Count[draws[n, s], \"L  \"]"], "Input"],
+Cell[BoxData["winStreak[n_, s_] := Sign[wins[n, s]] Length[draws[n, s] /. Style[\"W  \", RGBColor[0, 0.6, 0]] -> 1 /. {a___, Longest[x__Integer], b___} -> {x}]"], "Input"],
+Cell[BoxData["loseStreak[n_, s_] := Sign[losses[n, s]] Length[draws[n, s] /. \"L  \" -> 1 /. {a___, Longest[y__Integer], b___} -> {y}]"], "Input"],
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[Graphics[{Text[Style[wins[n, s], 18, Bold, RGBColor[0, 0.6, 0]], {-300, 200}], Text[Style[\" wins\", 18, Bold], {-230, 200}], Text[Style[\"longest win streak: \", 18, Bold], {80, 200}], Text[Style[winStreak[n, s], 18, Bold, RGBColor[0, 0.6, 0]], {260, 200}], Text[Style[losses[n, s], 18, Bold], {-300, 150}], Text[Style[\" losses\", 18, Bold], {-230, 150}], Text[Style[\"longest loss streak: \", 18, Bold], {80, 150}], Text[Style[loseStreak[n, s], 18, Bold], {260, 150}]}, ImageSize -> {500, 350}], {{n, 30, \"number of trials\"}, 5, 400, 1, Appearance -> \"Labeled\"}, {{s, 5, \"random seed\"}, 1, 400, 1, Appearance -> \"Labeled\"}, SaveDefinitions -> True, AutorunSequencing -> {1}]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 30, $CellContext`s$$ = 5}, \"…\"]"], "Output"]
+}, Open]]
+}]"#;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .into_iter()
+      .find_map(|e| e.manipulate_state)
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+
+    // `SaveDefinitions -> True` and `AutorunSequencing -> {1}` are
+    // Manipulate options, not controls.
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name: n_name,
+          current: n_current,
+          ..
+        },
+        manipulate::ControlState::Continuous {
+          name: s_name,
+          current: s_current,
+          ..
+        },
+      ] => {
+        assert_eq!(n_name, "n");
+        assert_eq!(s_name, "s");
+        assert_eq!((*n_current, *s_current), (30.0, 5.0));
+      }
+      other => panic!("expected two labelled sliders, got {other:?}"),
+    }
+
+    // The earlier standalone Input cells (the helper definitions) already
+    // ran into global state while the notebook loaded, exactly as
+    // `wins`/`losses`/`winStreak`/`loseStreak` would after Mathematica
+    // evaluates a Demonstration's initialization cells — so they're callable
+    // directly here, scoped only by the widget's current control values.
+    //
+    // For 30 draws seeded with 5, the sequence has 15 wins, 15 losses, a
+    // longest win streak of 5 and a longest loss streak of 3 — checked
+    // independently against `woxi eval` on the same from-scratch helpers.
+    // Before `Longest` was made to pick its own split point instead of
+    // deferring to `a___`'s default leftmost/shortest one, `winStreak`
+    // returned 2 (the first win run) instead of 5 (the true longest one).
+    let bindings: Vec<(String, String)> = widget
+      .controls
+      .iter()
+      .map(|c| (c.name().to_string(), c.current_code()))
+      .collect();
+    let stats = woxi::with_scoped_globals(&bindings, || {
+      woxi::interpret_with_stdout(
+        "{wins[n, s], losses[n, s], winStreak[n, s], loseStreak[n, s]}",
+      )
+    })
+    .expect("the run-length helpers must evaluate");
+    assert_eq!(
+      stats.result, "{15, 15, 5, 3}",
+      "wins, losses, longest win streak, longest loss streak"
     );
   }
 }

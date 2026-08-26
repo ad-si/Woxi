@@ -5556,24 +5556,7 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // significant figures, matching wolframscript: `ToString[N[Pi, 5]]` is
   // "3.1416" (not "3.1415") and `ToString[N[999/1000, 2]]` is "1.0".
   if let Expr::BigFloat(digits, prec) = &args[0] {
-    let trimmed = digits.trim();
-    let (sign, body) = if let Some(rest) = trimmed.strip_prefix('-') {
-      ("-", rest)
-    } else {
-      ("", trimmed)
-    };
-    let prec_digits = prec.round() as i64;
-    let s = if prec_digits > 0 {
-      format!(
-        "{}{}",
-        sign,
-        crate::round_significant(body, prec_digits as usize)
-      )
-    } else {
-      // Non-positive precision (e.g. an accuracy form): keep the digits.
-      format!("{sign}{body}")
-    };
-    return Ok(Expr::String(s));
+    return Ok(Expr::String(format_bigfloat_for_to_string(digits, *prec)));
   }
 
   // Default (no form or unrecognized form): OutputForm.
@@ -5614,13 +5597,45 @@ fn round_real_to_6_sig_digits(f: f64) -> f64 {
   format!("{f:.5e}").parse().unwrap_or(f)
 }
 
+/// Render an arbitrary-precision number the way `ToString` does: drop the
+/// `` `p `` precision marker and round (not truncate) the decimal expansion
+/// to `p` significant figures — matching wolframscript: `ToString[N[Pi, 5]]`
+/// is "3.1416" (not "3.1415") and `ToString[N[999/1000, 2]]` is "1.0".
+fn format_bigfloat_for_to_string(digits: &str, prec: f64) -> String {
+  let trimmed = digits.trim();
+  let (sign, body) = if let Some(rest) = trimmed.strip_prefix('-') {
+    ("-", rest)
+  } else {
+    ("", trimmed)
+  };
+  let prec_digits = prec.round() as i64;
+  if prec_digits > 0 {
+    format!(
+      "{}{}",
+      sign,
+      crate::round_significant(body, prec_digits as usize)
+    )
+  } else {
+    // Non-positive precision (e.g. an accuracy form): keep the digits.
+    format!("{sign}{body}")
+  }
+}
+
 /// Recursively replace each `Expr::Real(f)` in `expr` with its
 /// 6-sig-digit-rounded counterpart, so the default ToString path
-/// emits e.g. `15.8406` for the f64 value `15.840646417884168`.
-/// Leaves BigFloat, Integer, and symbolic Expr nodes intact.
+/// emits e.g. `15.8406` for the f64 value `15.840646417884168`. Each
+/// `Expr::BigFloat` is rendered the same way a top-level BigFloat argument
+/// to `ToString` is (backtick marker dropped, rounded to its precision) —
+/// otherwise a BigFloat nested inside a List or FunctionCall would print
+/// its raw InputForm digits with the marker still attached, e.g.
+/// `ToString[{N[Pi, 5]}]` would wrongly be "{3.1415926535897932385`5.}"
+/// instead of "{3.1416}".
 fn truncate_machine_reals_for_to_string(expr: &Expr) -> Expr {
   match expr {
     Expr::Real(f) => Expr::Real(round_real_to_6_sig_digits(*f)),
+    Expr::BigFloat(digits, prec) => {
+      Expr::Raw(format_bigfloat_for_to_string(digits, *prec))
+    }
     Expr::List(items) => Expr::List(
       items
         .iter()

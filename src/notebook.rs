@@ -790,14 +790,29 @@ fn extract_typeset_box(s: &str) -> Option<String> {
       "SubscriptBox" if args.len() == 2 => {
         let sub = conv(&args[1]);
         let base = conv(&args[0]);
-        match part_spec_inside_double_brackets(&sub) {
-          Some(spec) => format_part_access(&base, spec),
-          // Prefix subscript, as above — keep an explicit empty string so
-          // the result still parses.
-          None if draws_nothing(&base) => {
+        if let Some(spec) = part_spec_inside_double_brackets(&sub) {
+          format_part_access(&base, spec)
+        } else {
+          // The subscript is usually a real index (`Subscript[p, 0]`
+          // stays evaluable, keeping `p` and `0` bare), but a
+          // typeset annotation like `\!\(\*SubscriptBox[\(0\),
+          // \(+\)]\)` (the "0⁺" of a one-sided limit) has no meaning
+          // as code on its own — `Subscript[0, +]` would not parse.
+          // Quote such a subscript as a string literal instead, the
+          // same fallback `OverscriptBox`/`UnderscriptBox` use for
+          // their bare mark below.
+          let sub = if crate::parse_to_expr(&sub).is_ok() {
+            sub
+          } else {
+            format!("\"{}\"", escape_string(&sub))
+          };
+          // Prefix subscript, as above — keep an explicit empty string
+          // so the result still parses.
+          if draws_nothing(&base) {
             format!("Subscript[\"\", {sub}]")
+          } else {
+            format!("Subscript[{base}, {sub}]")
           }
-          None => format!("Subscript[{base}, {sub}]"),
         }
       }
       // `SubsuperscriptBox[a, b, c]` → `Subscript[a, b]^c`.
@@ -1865,6 +1880,31 @@ fn unescape_string_inner(s: &str, code: bool) -> String {
         }
         Some('>') => {
           // \> is a Wolfram string delimiter in box expressions – skip
+        }
+        Some(':') => {
+          // `\:XXXX` is Wolfram's ASCII-safe hex escape for an arbitrary
+          // character. Box source uses it for characters that have no
+          // `\[Name]`, e.g. the pair of invisible bracket markers a
+          // FrontEnd wraps a `GridBox` matrix literal in
+          // (`RowBox[{"(", "\:f3a2", GridBox[…], "\:f3a2", ")"}]`).
+          // Substitute the same safe textual stand-in a `\[Name]` escape
+          // would draw as: the raw private-use code point isn't valid
+          // Wolfram Language source (unlike the handful of private-use
+          // operators, e.g. Rule's U+F522, that the parser does accept
+          // literally), so an unmapped invisible marker must become
+          // nothing rather than get inserted into the cell's code.
+          let hex: String = chars.by_ref().take(4).collect();
+          if let Some(ch) =
+            u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32)
+          {
+            result.push_str(&crate::syntax::substitute_private_use_glyphs(
+              &ch.to_string(),
+            ));
+          } else {
+            result.push('\\');
+            result.push(':');
+            result.push_str(&hex);
+          }
         }
         Some('[') => {
           // Wolfram named character like \[Alpha] / \[CloseCurlyQuote].
@@ -3698,6 +3738,24 @@ Cell["Chapter 2", "Chapter"]
     assert_eq!(extract_cell_content(s), "Subscript[c, 1]");
   }
 
+  /// A subscript can also be a bare display glyph rather than a real index
+  /// — a Demonstrations control label typeset "0" with a subscript "+" (the
+  /// one-sided-limit notation "0⁺") as `SubscriptBox["0", "+"]`. Regression:
+  /// it came back as `Subscript[0, +]`, which does not parse (`+` alone is
+  /// not a complete expression), so the reconstructed source fell back to
+  /// showing the raw box syntax instead of typesetting anything.
+  #[test]
+  fn test_subscript_with_bare_operator_glyph_is_quoted() {
+    let s = r#"BoxData[SubscriptBox["0", "+"]]"#;
+    assert_eq!(extract_cell_content(s), "Subscript[0, \"+\"]");
+    // A real indexed variable keeps its identifier/number subscript bare.
+    let s = r#"BoxData[SubscriptBox["p", "0"]]"#;
+    assert_eq!(extract_cell_content(s), "Subscript[p, 0]");
+    // A compound index expression still parses as one, so it stays bare.
+    let s = r#"BoxData[SubscriptBox["x", RowBox[{"i", "+", "1"}]]]"#;
+    assert_eq!(extract_cell_content(s), "Subscript[x, i+1]");
+  }
+
   /// `OverscriptBox`/`UnderscriptBox` become the evaluable `Overscript`/
   /// `Underscript` forms — Wolfram's own typesetting heads, which (like
   /// `Subscript`) stay symbolic rather than evaluating away. Regression: an
@@ -3760,6 +3818,20 @@ Cell["Chapter 2", "Chapter"]
   fn test_center_dot_named_character_renders_as_middle_dot() {
     let s = r#"TextData["T'=a \[CenterDot] T \[CenterDot] a"]"#;
     assert_eq!(extract_cell_content(s), "T'=a \u{00B7} T \u{00B7} a");
+  }
+
+  /// `\[UpEquilibrium]` (⥮) and `\[ReverseUpEquilibrium]` (⥯) are the
+  /// same-spin-pair glyphs a Demonstrations electron-configuration diagram
+  /// draws its spin arrows with. They were missing from the named-character
+  /// table, so a labelled cell fell back to printing the literal escape
+  /// `\[UpEquilibrium]` instead of the glyph.
+  #[test]
+  fn test_up_equilibrium_named_character_renders_as_unicode() {
+    let s = r#"BoxData[RowBox[{"f", "[", "\"\<\[UpEquilibrium]\>\"", "]"}]]"#;
+    assert_eq!(extract_cell_content(s), "f[\"\u{296E}\"]");
+    let s =
+      r#"BoxData[RowBox[{"f", "[", "\"\<\[ReverseUpEquilibrium]\>\"", "]"}]]"#;
+    assert_eq!(extract_cell_content(s), "f[\"\u{296F}\"]");
   }
 
   #[test]
@@ -4995,5 +5067,36 @@ Cell[BoxData[\n\
     assert_eq!(strip_line_continuations("ab\\\\\ncd"), "ab\\\\\ncd");
     assert_eq!(strip_line_continuations("ab\\\r\ncd"), "abcd");
     assert_eq!(strip_line_continuations("plain\ntext"), "plain\ntext");
+  }
+
+  #[test]
+  fn test_input_cell_matrix_wrapped_in_invisible_gridbox_brackets() {
+    // The FrontEnd wraps a matrix literal that's an argument to a
+    // function call in a pair of invisible `\:f3a2` bracket markers
+    // alongside the visible `(` `)` — this is how a Wolfram Demonstrations
+    // Project notebook's Initialization code typesets e.g.
+    // `arrowHead = {Line[({{1, 2}, {3, 4}})]}` (independently written, not
+    // copied from any specific Demonstration). The markers carry no
+    // lexical meaning and must not leak into the reconstructed source.
+    let nb = r#"Notebook[{
+Cell[BoxData[RowBox[{"arrowHead", "=", RowBox[{"{", RowBox[{"Line", "[", RowBox[{"(", "\:f3a2", GridBox[{{"1", "2"}, {"3", "4"}}], "\:f3a2", ")"}], "]"}], "}"}]}]], "Input"]
+}]"#;
+    let parsed = parse_notebook(nb).unwrap();
+    match &parsed.cells[0] {
+      CellEntry::Single(cell) => {
+        assert_eq!(cell.style, CellStyle::Input);
+        assert_eq!(cell.content, "arrowHead={Line[({{1, 2}, {3, 4}})]}");
+        assert!(
+          !cell.content.contains('\u{f3a2}'),
+          "the invisible bracket marker must not appear in the reconstructed \
+           source: {:?}",
+          cell.content
+        );
+        crate::interpret(&cell.content).expect(
+          "the reconstructed source must be valid, evaluable Wolfram Language",
+        );
+      }
+      CellEntry::Group(_) => panic!("Expected single cell"),
+    }
   }
 }
