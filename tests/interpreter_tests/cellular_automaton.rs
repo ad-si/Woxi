@@ -197,6 +197,125 @@ mod cellular_automaton {
   }
 
   #[test]
+  fn two_dimensional_windowed_single_step_is_bare() {
+    // `{{t}, xspec, yspec}` (2D) restricts to a single time step; unlike
+    // the bare `{{t}}` form it returns that state directly, not wrapped in
+    // a length-1 list — the shape `ArrayPlot` needs to plot it straight
+    // from `CellularAutomaton[rule, init, {{t}, All, All}]`.
+    assert_eq!(
+      interpret(
+        "CellularAutomaton[{942, {2, {{0, 2, 0}, {2, 1, 2}, {0, 2, 0}}}, \
+         {1, 1}}, {{{1}}, 0}, {{{1}}, All, All}]"
+      )
+      .unwrap(),
+      "{{0, 1, 0}, {1, 1, 1}, {0, 1, 0}}"
+    );
+  }
+
+  #[test]
+  fn two_dimensional_windowed_multi_step_stays_a_list() {
+    // The same `{{1}, xspec, yspec}` (2D) window, but naming more than one
+    // time step (`{1}` = steps 0 through 1) — a proper list of states, one
+    // matrix per step, exactly like the un-windowed `1` form.
+    assert_eq!(
+      interpret(
+        "CellularAutomaton[{942, {2, {{0, 2, 0}, {2, 1, 2}, {0, 2, 0}}}, \
+         {1, 1}}, {{{1}}, 0}, {{1}, All, All}]"
+      )
+      .unwrap(),
+      "{{{0, 0, 0}, {0, 1, 0}, {0, 0, 0}}, {{0, 1, 0}, {1, 1, 1}, {0, 1, 0}}}"
+    );
+  }
+
+  #[test]
+  fn two_dimensional_row_window_restricts_rows() {
+    // An explicit row window keeps only the named rows, all columns.
+    assert_eq!(
+      interpret(
+        "CellularAutomaton[{942, {2, {{0, 2, 0}, {2, 1, 2}, {0, 2, 0}}}, \
+         {1, 1}}, {{{1}}, 0}, {{{1}}, {0, 0}, All}]"
+      )
+      .unwrap(),
+      "{{1, 1, 1}}"
+    );
+  }
+
+  #[test]
+  fn two_dimensional_row_window_may_reach_past_the_affected_region() {
+    // A row window wider than the rule's natural growth reads the
+    // (all-zero) background above and below the affected rows.
+    assert_eq!(
+      interpret(
+        "CellularAutomaton[{942, {2, {{0, 2, 0}, {2, 1, 2}, {0, 2, 0}}}, \
+         {1, 1}}, {{{1}}, 0}, {{{1}}, {-2, 2}, All}]"
+      )
+      .unwrap(),
+      "{{0, 0, 0}, {0, 1, 0}, {1, 1, 1}, {0, 1, 0}, {0, 0, 0}}"
+    );
+  }
+
+  #[test]
+  fn two_dimensional_column_window_restricts_columns() {
+    // The `yspec` axis restricts columns the same way `xspec` restricts
+    // rows; here the middle column alone still shows the vertical arm.
+    assert_eq!(
+      interpret(
+        "CellularAutomaton[{942, {2, {{0, 2, 0}, {2, 1, 2}, {0, 2, 0}}}, \
+         {1, 1}}, {{{1}}, 0}, {{{1}}, All, {0, 0}}]"
+      )
+      .unwrap(),
+      "{{1}, {1}, {1}}"
+    );
+  }
+
+  #[test]
+  fn a_one_axis_window_is_invalid_on_a_two_dimensional_rule() {
+    // `{tspec, xspec}` (one window axis) only makes sense for a 1D rule,
+    // even when xspec is `All` (which alone can't distinguish "no window"
+    // from "the wrong number of window axes").
+    assert_eq!(
+      interpret(
+        "CellularAutomaton[{942, {2, {{0, 2, 0}, {2, 1, 2}, {0, 2, 0}}}, \
+         {1, 1}}, {{{1}}, 0}, {{{1}}, All}]"
+      )
+      .unwrap(),
+      "CellularAutomaton[{942, {2, {{0, 2, 0}, {2, 1, 2}, {0, 2, 0}}}, \
+       {1, 1}}, {{{1}}, 0}, {{{1}}, All}]"
+    );
+  }
+
+  #[test]
+  fn a_two_axis_window_is_invalid_on_a_one_dimensional_rule() {
+    // `{tspec, xspec, yspec}` (two window axes) only makes sense for a 2D
+    // rule.
+    assert_eq!(
+      interpret("CellularAutomaton[90, {{1}, 0}, {{{1}}, All, All}]").unwrap(),
+      "CellularAutomaton[90, {{1}, 0}, {{{1}}, All, All}]"
+    );
+  }
+
+  #[test]
+  fn a_two_element_tspec_is_not_a_nested_window() {
+    // A bare `{t1, t2}` is not a valid tspec on its own (that form needs
+    // an extra layer of braces, `{{t1, t2}}`); it must not be silently
+    // reparsed as a nested `{tspec, xspec}` window, which would smuggle a
+    // 1D cell window into a 2D row/column window.
+    assert_eq!(
+      interpret(
+        "CellularAutomaton[{942, {2, {{0, 2, 0}, {2, 1, 2}, {0, 2, 0}}}, \
+         {1, 1}}, {{{1}}, 0}, {{0, 1}, All, All}]"
+      )
+      .unwrap(),
+      "CellularAutomaton[{942, {2, {{0, 2, 0}, {2, 1, 2}, {0, 2, 0}}}, \
+       {1, 1}}, {{{1}}, 0}, {{0, 1}, All, All}]"
+    );
+    assert_eq!(
+      interpret("CellularAutomaton[90, {{1}, 0}, {{0, 1}, All}]").unwrap(),
+      "CellularAutomaton[90, {{1}, 0}, {{0, 1}, All}]"
+    );
+  }
+
+  #[test]
   fn game_of_life_blinker() {
     // Conway's Game of Life as the weighted 9-neighbor rule 224: a
     // horizontal blinker flips to a vertical one.
