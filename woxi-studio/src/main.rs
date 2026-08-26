@@ -21924,6 +21924,75 @@ SaveDefinitions -> True]";
     );
   }
 
+  /// A synthetic "2D totalistic cellular automaton" Manipulate in the
+  /// general shape used by 2D-`CellularAutomaton` Demonstrations: a
+  /// `SetterBar`-driven color count and a rule-number slider drive an
+  /// `ArrayPlot` of `CellularAutomaton[…, {{steps}, All, All}]` — the
+  /// windowed 2D step spec naming a single time step, which must come
+  /// back as a bare matrix (not a length-1 list of one) for `ArrayPlot`
+  /// to plot it. Independently written, not copied from any specific
+  /// Demonstration.
+  #[test]
+  fn two_dimensional_cellular_automaton_notebook_renders_its_grid() {
+    let code = "Manipulate[\
+      ArrayPlot[\
+        CellularAutomaton[{rule, {colors, 1}, {1, 1}}, {{{1}}, 0}, \
+          {{{steps}}, All, All}],\
+        ColorRules -> {0 -> White, 1 -> Orange, 2 -> Blue}, \
+        ColorFunctionScaling -> True, ImageSize -> 300],\
+      {{colors, 3}, 2, 3, 1, ControlType -> SetterBar},\
+      {{rule, 500, \"rule number\"}, 0, 999, 1},\
+      {{steps, 8}, 1, 60, 1}]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("2D CA Manipulate must build a widget");
+    assert!(state.error.is_none(), "body error: {:?}", state.error);
+    assert!(state.graphics_handle.is_some(), "the ArrayPlot must render");
+
+    match &state.controls[..] {
+      [
+        manipulate::ControlState::Discrete {
+          name: colors,
+          values,
+          setter_bar,
+          ..
+        },
+        manipulate::ControlState::Continuous { name: rule, .. },
+        manipulate::ControlState::Continuous { name: steps, .. },
+      ] => {
+        assert_eq!(colors, "colors");
+        assert_eq!(values, &["2".to_string(), "3".to_string()]);
+        assert!(*setter_bar, "ControlType -> SetterBar must stick");
+        assert_eq!(rule, "rule");
+        assert_eq!(steps, "steps");
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+
+    // Stepping the automaton forward, and switching the color count, must
+    // keep rendering a bare 2D matrix at each new setting — not a wrapped
+    // list that would break ArrayPlot.
+    if let manipulate::ControlState::Continuous { current, .. } =
+      &mut state.controls[2]
+    {
+      *current = 20.0;
+    }
+    if let manipulate::ControlState::Discrete { current_index, .. } =
+      &mut state.controls[0]
+    {
+      *current_index = 0; // colors = 2
+    }
+    state.reevaluate();
+    assert!(
+      state.error.is_none(),
+      "body error after stepping: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the ArrayPlot must still render after stepping"
+    );
+  }
+
   /// End-to-end regression for the shape of Demonstration that reports
   /// run-length statistics on a random binary sequence: five standalone
   /// (ungrouped) Input cells define a `BlockRandom`/`SeedRandom`-seeded

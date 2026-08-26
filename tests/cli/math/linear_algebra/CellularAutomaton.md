@@ -24,6 +24,16 @@ $ wo 'ArrayPlot /@ CellularAutomaton[{942, {2, {{0, 2, 0}, {2, 1, 2}, {0, 2, 0}}
 {-Graphics-, -Graphics-, -Graphics-}
 ```
 
+`{tspec, xspec, yspec}` restricts a two-dimensional rule's rows and
+columns the same way `{tspec, xspec}` restricts a one-dimensional rule's
+cells. Naming a single step this way returns that state bare, not wrapped
+in a list — the shape `ArrayPlot` needs to plot it directly:
+
+```scrut
+$ wo 'CellularAutomaton[{942, {2, {{0, 2, 0}, {2, 1, 2}, {0, 2, 0}}}, {1, 1}}, {{{1}}, 0}, {{{1}}, All, All}]'
+{{0, 1, 0}, {1, 1, 1}, {0, 1, 0}}
+```
+
 A second element in the step specification restricts the cells returned.
 `All` keeps every affected cell, while `{x1, x2}` names offsets relative to
 the first cell of the initial condition:

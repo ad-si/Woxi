@@ -18,7 +18,10 @@ use super::*;
 /// background) for 1D rules; a matrix or {matrix, bg} for 2D rules.
 ///
 /// Step specifications: t and {t} (both steps 0..t), {{t}}, {{t1, t2}} and
-/// {{t1, t2, dt}} (a list of the selected states).
+/// {{t1, t2, dt}} (a list of the selected states). {tspec, xspec} restricts
+/// a 1D rule's returned cells to xspec; {tspec, xspec, yspec} restricts a
+/// 2D rule's returned rows/columns to xspec/yspec. Each of xspec/yspec is
+/// `All`, an offset `n` (from 0 or -n to n), or `{from, to[, dx]}`.
 pub fn cellular_automaton_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || Ok(unevaluated("CellularAutomaton", args));
 
@@ -74,17 +77,28 @@ pub fn cellular_automaton_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return unevaluated();
   };
 
-  // A cell window only makes sense on the 1D cell axis.
-  if steps.cells.is_some() && rule.two_d {
-    return unevaluated();
+  // A `{tspec, xspec}` window (one axis) only makes sense on a 1D rule; a
+  // `{tspec, xspec, yspec}` window (two axes) only makes sense on a 2D
+  // rule. `window_axes` tracks how many axes were named (0, 1 or 2)
+  // regardless of whether they resolved to `All` (`None`) or an explicit
+  // range, since even an `All` xspec/yspec is the wrong shape for the
+  // other dimensionality.
+  match (steps.window_axes, rule.two_d) {
+    (0, _) | (1, false) | (2, true) => {}
+    _ => return unevaluated(),
   }
-  let Some(states) =
-    evolve(&rule, &init, background, &steps.times, steps.cells)
-  else {
+  let Some(states) = evolve(
+    &rule,
+    &init,
+    background,
+    &steps.times,
+    steps.cells.or(steps.cols),
+    steps.rows,
+  ) else {
     return unevaluated();
   };
 
-  let exprs: Vec<Expr> = states
+  let mut exprs: Vec<Expr> = states
     .into_iter()
     .map(|state| {
       if rule.two_d {
@@ -105,6 +119,15 @@ pub fn cellular_automaton_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     })
     .collect();
 
+  // A step spec with an explicit cell/row/column window (`{tspec, xspec}` or
+  // `{tspec, xspec, yspec}`) that names exactly one time step returns that
+  // state bare, not wrapped in a length-1 list — e.g. `ArrayPlot[
+  // CellularAutomaton[rule, init, {{t}, All, All}]]` needs the matrix
+  // itself, not a singleton list holding it.
+  if steps.window_axes > 0 && exprs.len() == 1 {
+    return Ok(exprs.remove(0));
+  }
+
   Ok(Expr::List(exprs.into()))
 }
 
@@ -120,9 +143,21 @@ struct RuleSpec {
 struct StepSpec {
   /// The (ascending) time steps whose states are returned.
   times: Vec<usize>,
-  /// Cell offsets to keep, as `(from, to, step)` relative to the first cell
-  /// of the initial condition. `None` keeps the whole affected region.
+  /// 1D cell offsets to keep, as `(from, to, step)` relative to the first
+  /// cell of the initial condition. `None` keeps the whole affected region.
   cells: Option<(i64, i64, usize)>,
+  /// 2D row offsets to keep (the `xspec` of a `{tspec, xspec, yspec}`
+  /// step spec), relative to the first row of the initial condition.
+  /// `None` keeps the whole affected region.
+  rows: Option<(i64, i64, usize)>,
+  /// 2D column offsets to keep (the `yspec`), relative to the first column
+  /// of the initial condition. `None` keeps the whole affected region.
+  cols: Option<(i64, i64, usize)>,
+  /// How many window axes were named: 0 for a bare `tspec`, 1 for
+  /// `{tspec, xspec}` (1D rules), 2 for `{tspec, xspec, yspec}` (2D
+  /// rules). A windowed spec (> 0) naming exactly one time step returns
+  /// that state bare rather than wrapped in a list.
+  window_axes: u8,
 }
 
 fn as_nonneg_int(expr: &Expr) -> Option<u128> {
@@ -302,22 +337,18 @@ fn parse_weights(
 /// use, but keeps a typo like 10^12 steps from exhausting memory.
 const MAX_STATES: usize = 100_000;
 
-fn parse_step_spec(expr: &Expr) -> Option<StepSpec> {
+/// Parse a bare `tspec` — never a `{tspec, xspec[, yspec]}` window, which
+/// only the top level of `parse_step_spec` accepts.
+fn parse_tspec(expr: &Expr) -> Option<Vec<usize>> {
   match expr {
     // t — all steps 0 through t.
     Expr::Integer(t) if *t >= 0 && (*t as u128) < MAX_STATES as u128 => {
-      Some(StepSpec {
-        times: (0..=(*t as usize)).collect(),
-        cells: None,
-      })
+      Some((0..=(*t as usize)).collect())
     }
     Expr::List(items) if items.len() == 1 => match &items[0] {
       // {t} — all steps 0 through t, identical to the bare `t` form.
       Expr::Integer(t) if *t >= 0 && (*t as u128) < MAX_STATES as u128 => {
-        Some(StepSpec {
-          times: (0..=(*t as usize)).collect(),
-          cells: None,
-        })
+        Some((0..=(*t as usize)).collect())
       }
       // {{t}}, {{t1, t2}}, {{t1, t2, dt}} — a list of the selected states.
       Expr::List(ts) if !ts.is_empty() && ts.len() <= 3 => {
@@ -329,21 +360,43 @@ fn parse_step_spec(expr: &Expr) -> Option<StepSpec> {
         if t2 < t1 || dt == 0 || (t2 - t1) / dt >= MAX_STATES {
           return None;
         }
-        Some(StepSpec {
-          times: (t1..=t2).step_by(dt).collect(),
-          cells: None,
-        })
+        Some((t1..=t2).step_by(dt).collect())
       }
       _ => None,
     },
-    // {tspec, xspec} — the time steps of `tspec`, restricted to the cells
-    // `xspec` names. `All` keeps every cell that could be affected.
-    Expr::List(items) if items.len() == 2 => {
-      let mut spec = parse_step_spec(&items[0])?;
-      spec.cells = parse_cell_spec(&items[1])?;
-      Some(spec)
-    }
     _ => None,
+  }
+}
+
+fn parse_step_spec(expr: &Expr) -> Option<StepSpec> {
+  match expr {
+    // {tspec, xspec} — the time steps of `tspec`, restricted to the cells
+    // `xspec` names (1D rules only). `All` keeps every cell that could be
+    // affected.
+    Expr::List(items) if items.len() == 2 => Some(StepSpec {
+      times: parse_tspec(&items[0])?,
+      cells: parse_cell_spec(&items[1])?,
+      rows: None,
+      cols: None,
+      window_axes: 1,
+    }),
+    // {tspec, xspec, yspec} — the time steps of `tspec`, restricted to the
+    // rows `xspec` and columns `yspec` name (2D rules only).
+    Expr::List(items) if items.len() == 3 => Some(StepSpec {
+      times: parse_tspec(&items[0])?,
+      cells: None,
+      rows: parse_cell_spec(&items[1])?,
+      cols: parse_cell_spec(&items[2])?,
+      window_axes: 2,
+    }),
+    // A bare tspec, with no xspec/yspec window.
+    _ => Some(StepSpec {
+      times: parse_tspec(expr)?,
+      cells: None,
+      rows: None,
+      cols: None,
+      window_axes: 0,
+    }),
   }
 }
 
@@ -457,45 +510,73 @@ fn rule_digit(n: u128, k: u128, s: u128) -> u128 {
   }
 }
 
+/// Extra background cells an axis needs beyond the rule's automatic growth
+/// so that an explicit window reaching past the affected region still
+/// evolves correctly. `base_origin` is where offset 0 of that axis sits on
+/// the automatically-grown grid; `init_len` is the init's size along it.
+fn axis_margin(
+  background: Option<u128>,
+  window: Option<(i64, i64, usize)>,
+  base_origin: i64,
+  init_len: usize,
+) -> usize {
+  match (background, window) {
+    (Some(_), Some((from, to, _))) => {
+      let far_edge = base_origin + init_len as i64 - 1 + base_origin;
+      let need_near = (base_origin - from).max(0) - base_origin;
+      let need_far = to - far_edge;
+      need_near.max(need_far).max(0) as usize
+    }
+    _ => 0,
+  }
+}
+
 /// Evolve `init` under `rule`, returning the states at the requested `times`
 /// (which must be ascending). Background inits grow by the rule's range per
 /// step and are jointly trimmed afterwards; cyclic inits keep their size.
+/// `window` names the 1D cells (or, for a 2D rule, the columns) to keep;
+/// `row_window` names the rows to keep for a 2D rule. `None` means every
+/// cell that could be affected (automatic trimming for a background init,
+/// the whole grid for a cyclic one).
 fn evolve(
   rule: &RuleSpec,
   init: &[Vec<u128>],
   background: Option<u128>,
   times: &[usize],
   window: Option<(i64, i64, usize)>,
+  row_window: Option<(i64, i64, usize)>,
 ) -> Option<Vec<Vec<Vec<u128>>>> {
   let r1 = (rule.weights.len() - 1) / 2;
   let r2 = (rule.weights[0].len() - 1) / 2;
   let t_max = *times.last()?;
 
-  // Offset 0 sits at column `r2 * t_max` of a background grid (the init is
-  // centered there) or at column 0 of a cyclic one. A window reaching past the
-  // affected region needs extra background columns so those cells evolve too.
-  let base_origin = match background {
+  // Offset 0 sits at row/column `r * t_max` of a background grid (the init
+  // is centered there) or at row/column 0 of a cyclic one.
+  let base_row_origin = match background {
+    Some(_) => (r1.checked_mul(t_max)?) as i64,
+    None => 0,
+  };
+  let base_col_origin = match background {
     Some(_) => (r2.checked_mul(t_max)?) as i64,
     None => 0,
   };
-  let margin = match (background, window) {
-    (Some(_), Some((from, to, _))) => {
-      let right_edge = base_origin + init[0].len() as i64 - 1 + base_origin;
-      let need_left = (base_origin - from).max(0) - base_origin;
-      let need_right = to - right_edge;
-      need_left.max(need_right).max(0) as usize
-    }
-    _ => 0,
-  };
-  let origin = base_origin + margin as i64;
+  let row_margin =
+    axis_margin(background, row_window, base_row_origin, init.len());
+  let col_margin =
+    axis_margin(background, window, base_col_origin, init[0].len());
+  let row_origin = base_row_origin + row_margin as i64;
+  let col_origin = base_col_origin + col_margin as i64;
 
   let (height, width) = match background {
     Some(_) => (
-      init.len().checked_add((2 * r1).checked_mul(t_max)?)?,
+      init
+        .len()
+        .checked_add((2 * r1).checked_mul(t_max)?)?
+        .checked_add(2usize.checked_mul(row_margin)?)?,
       init[0]
         .len()
         .checked_add((2 * r2).checked_mul(t_max)?)?
-        .checked_add(2usize.checked_mul(margin)?)?,
+        .checked_add(2usize.checked_mul(col_margin)?)?,
     ),
     None => (init.len(), init[0].len()),
   };
@@ -517,7 +598,7 @@ fn evolve(
       let mut grid = vec![vec![bg; width]; height];
       for (i, row) in init.iter().enumerate() {
         for (j, &cell) in row.iter().enumerate() {
-          grid[r1 * t_max + i][origin as usize + j] = cell;
+          grid[row_origin as usize + i][col_origin as usize + j] = cell;
         }
       }
       grid
@@ -574,51 +655,11 @@ fn evolve(
     bg = rule_digit(rule.n, rule.k, bg.saturating_mul(weight_total));
   }
 
-  // An explicit cell window replaces the automatic trimming: the named
-  // offsets are returned verbatim, wrapping around for a cyclic init and
-  // reading the evolving background outside a background grid.
-  if let Some((from, to, step)) = window {
-    return Some(
-      snapshots
-        .iter()
-        .map(|(g, bg)| {
-          let row: Vec<u128> = (from..=to)
-            .step_by(step)
-            .map(|x| {
-              let idx = origin + x;
-              match background {
-                Some(_) => {
-                  if idx < 0 || idx >= width as i64 {
-                    *bg
-                  } else {
-                    g[0][idx as usize]
-                  }
-                }
-                None => g[0][idx.rem_euclid(width as i64) as usize],
-              }
-            })
-            .collect();
-          vec![row]
-        })
-        .collect(),
-    );
-  }
-
-  if background.is_some() {
-    Some(trim_background(&snapshots))
-  } else {
-    Some(snapshots.into_iter().map(|(g, _)| g).collect())
-  }
-}
-
-/// Trim rows and columns that hold only background cells in every returned
-/// state, keeping all states the same (jointly trimmed) size.
-fn trim_background(
-  snapshots: &[(Vec<Vec<u128>>, u128)],
-) -> Vec<Vec<Vec<u128>>> {
-  let height = snapshots[0].0.len();
-  let width = snapshots[0].0[0].len();
-
+  // Each axis independently keeps either its explicit window (wrapping
+  // around for a cyclic init, reading the evolving background outside a
+  // background grid) or, with no window named, every row/column that
+  // could hold a non-background cell (a cyclic init keeps its full size,
+  // since it has no background to trim against).
   let row_active = |r: usize| {
     snapshots
       .iter()
@@ -629,19 +670,65 @@ fn trim_background(
       .iter()
       .any(|(g, bg)| g.iter().any(|row| row[c] != *bg))
   };
+  let auto_axis = |len: usize, active: &dyn Fn(usize) -> bool| -> Vec<i64> {
+    match background {
+      Some(_) => {
+        let top = (0..len).find(|&i| active(i)).unwrap_or(0);
+        let bottom = (0..len).rfind(|&i| active(i)).unwrap_or(0);
+        (top..=bottom).map(|i| i as i64).collect()
+      }
+      None => (0..len).map(|i| i as i64).collect(),
+    }
+  };
 
-  let top = (0..height).find(|&r| row_active(r)).unwrap_or(0);
-  let bottom = (0..height).rfind(|&r| row_active(r)).unwrap_or(0);
-  let left = (0..width).find(|&c| col_active(c)).unwrap_or(0);
-  let right = (0..width).rfind(|&c| col_active(c)).unwrap_or(0);
+  let row_indices: Vec<i64> = match row_window {
+    Some((from, to, step)) => (from..=to)
+      .step_by(step)
+      .map(|off| row_origin + off)
+      .collect(),
+    None => auto_axis(height, &row_active),
+  };
+  let col_indices: Vec<i64> = match window {
+    Some((from, to, step)) => (from..=to)
+      .step_by(step)
+      .map(|off| col_origin + off)
+      .collect(),
+    None => auto_axis(width, &col_active),
+  };
+  let windowed_cells = row_indices
+    .len()
+    .checked_mul(col_indices.len())?
+    .checked_mul(times.len())?;
+  if windowed_cells > 64_000_000 {
+    return None;
+  }
 
-  snapshots
-    .iter()
-    .map(|(g, _)| {
-      g[top..=bottom]
-        .iter()
-        .map(|row| row[left..=right].to_vec())
-        .collect()
-    })
-    .collect()
+  Some(
+    snapshots
+      .iter()
+      .map(|(g, bg)| {
+        row_indices
+          .iter()
+          .map(|&r| {
+            col_indices
+              .iter()
+              .map(|&c| {
+                if background.is_some() {
+                  if r < 0 || r >= height as i64 || c < 0 || c >= width as i64 {
+                    *bg
+                  } else {
+                    g[r as usize][c as usize]
+                  }
+                } else {
+                  let r = r.rem_euclid(height as i64) as usize;
+                  let c = c.rem_euclid(width as i64) as usize;
+                  g[r][c]
+                }
+              })
+              .collect()
+          })
+          .collect()
+      })
+      .collect(),
+  )
 }
