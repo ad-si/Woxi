@@ -5021,26 +5021,11 @@ fn play_audio(
 /// Whether a stored Output cell holds a FrontEnd dynamic-widget dump — the
 /// `DynamicModuleBox[…]` box form Mathematica saves for a live Manipulate.
 /// Such text is meaningless outside the Wolfram FrontEnd.
-///
-/// A deployed Manipulate (`Deployed -> True`, as Wolfram Demonstrations
-/// Project notebooks save it) wraps the dump in extra `TagBox[…]`/
-/// `StyleBox[…]` layers, e.g. `TagBox[StyleBox[DynamicModuleBox[…], \
-/// "Manipulate", …], …]`, so the check strips any number of those wrapper
-/// heads before looking for the dump itself.
 fn is_dynamic_box_dump(output: &str) -> bool {
-  let mut t = output.trim_start();
-  loop {
-    if t.starts_with("DynamicModuleBox[") || t.starts_with("DynamicBox[") {
-      return true;
-    }
-    match ["TagBox[", "StyleBox["]
-      .iter()
-      .find_map(|prefix| t.strip_prefix(prefix))
-    {
-      Some(rest) => t = rest.trim_start(),
-      None => return false,
-    }
-  }
+  let t = output.trim_start();
+  t.starts_with("DynamicModuleBox[")
+    || t.starts_with("TagBox[DynamicModuleBox[")
+    || t.starts_with("DynamicBox[")
 }
 
 /// Evaluate (and drain) the Input-cell code accumulated ahead of a stored
@@ -6798,39 +6783,6 @@ fn strip_svg_wrapper(svg: &str) -> &str {
 #[cfg(test)]
 mod tests {
   use super::*;
-
-  /// A deployed Manipulate (`Deployed -> True`, the styling Wolfram
-  /// Demonstrations Project notebooks save) wraps its stored dump as
-  /// `TagBox[StyleBox[DynamicModuleBox[…], "Manipulate", …], …]` — an
-  /// extra `StyleBox` layer beyond the plain `TagBox[DynamicModuleBox[…]]`
-  /// form. That deeper wrapper must still be recognized as a widget dump
-  /// so the live Manipulate is reinstantiated from the source cell instead
-  /// of the dump being shown as a broken, empty cell of its own.
-  #[test]
-  fn deployed_manipulate_dump_with_style_box_wrapper_instantiates() {
-    let nb_src = r#"Notebook[{
-Cell[CellGroupData[{
-Cell[BoxData["Manipulate[Graphics[{Circle[{0, 0}, r]}, PlotRange -> {{-5, 5}, {-5, 5}}], {r, 1, 4}]"], "Input"],
-Cell[BoxData["TagBox[StyleBox[DynamicModuleBox[{$CellContext`r$$ = 2}, \"…\"], \"Manipulate\", Deployed -> True, StripOnInput -> False], Manipulate`InterpretManipulate[1]]"], "Output"]
-}, Open]]
-}]"#;
-    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
-    let editors = WoxiStudio::editors_from_notebook(&nb);
-    assert_eq!(editors.len(), 1);
-    let widget = editors[0]
-      .manipulate_state
-      .as_ref()
-      .expect("the stored Manipulate must instantiate on load");
-    assert!(
-      widget.error.is_none(),
-      "body must evaluate cleanly: {:?}",
-      widget.error
-    );
-    assert!(
-      widget.graphics_handle.is_some(),
-      "the Circle graphic must render on the first instantiation"
-    );
-  }
 
   /// A dissection Manipulate assembling colored polygon pieces with
   /// `Translate`/`Rotate`, a boolean checkbox control (`{False, True}`
