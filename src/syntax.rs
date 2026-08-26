@@ -430,6 +430,8 @@ pub fn named_char_to_unicode(name: &str) -> Option<&'static str> {
     "DoubleLongLeftRightArrow" => "\u{27FA}",
     "Equilibrium" => "\u{21CC}",
     "ReverseEquilibrium" => "\u{21CB}",
+    "UpEquilibrium" => "\u{296E}",
+    "ReverseUpEquilibrium" => "\u{296F}",
     "LeftTeeArrow" => "\u{21A4}",
     "RightTeeArrow" => "\u{21A6}",
     "UpTeeArrow" => "\u{21A5}",

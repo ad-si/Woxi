@@ -3762,6 +3762,20 @@ Cell["Chapter 2", "Chapter"]
     assert_eq!(extract_cell_content(s), "T'=a \u{00B7} T \u{00B7} a");
   }
 
+  /// `\[UpEquilibrium]` (⥮) and `\[ReverseUpEquilibrium]` (⥯) are the
+  /// same-spin-pair glyphs a Demonstrations electron-configuration diagram
+  /// draws its spin arrows with. They were missing from the named-character
+  /// table, so a labelled cell fell back to printing the literal escape
+  /// `\[UpEquilibrium]` instead of the glyph.
+  #[test]
+  fn test_up_equilibrium_named_character_renders_as_unicode() {
+    let s = r#"BoxData[RowBox[{"f", "[", "\"\<\[UpEquilibrium]\>\"", "]"}]]"#;
+    assert_eq!(extract_cell_content(s), "f[\"\u{296E}\"]");
+    let s =
+      r#"BoxData[RowBox[{"f", "[", "\"\<\[ReverseUpEquilibrium]\>\"", "]"}]]"#;
+    assert_eq!(extract_cell_content(s), "f[\"\u{296F}\"]");
+  }
+
   #[test]
   fn test_extract_cell_content_template_box_quantity() {
     // `TemplateBox[{value, displayed, name, unit_id}, "QuantityPrefix"]` is
