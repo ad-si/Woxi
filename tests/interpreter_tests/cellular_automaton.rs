@@ -486,6 +486,53 @@ mod step_and_cell_specs {
     );
   }
 
+  #[test]
+  fn one_dimensional_windowed_single_step_is_bare() {
+    clear_state();
+    // `{{{t}}, xspec}` (1D) names the explicit single state t; like the 2D
+    // `{{{t}}, All, All}` case it returns that state bare, not wrapped in
+    // a length-1 list.
+    assert_eq!(
+      interpret("CellularAutomaton[90, {{1}, 0}, {{{3}}, {-2, 2}}]").unwrap(),
+      "{0, 1, 0, 1, 0}"
+    );
+  }
+
+  #[test]
+  fn a_windowed_spec_that_merely_resolves_to_one_state_still_wraps() {
+    clear_state();
+    // `{0, All}` names steps "0 through 0" via the bare-`t` form (t = 0),
+    // not the explicit single-state `{{t}}` form — even though it
+    // resolves to exactly one state, it must keep returning a length-1
+    // list, matching bare `t` always returning a list (`zero_steps` in the
+    // `cellular_automaton` module) and the documented `{t, All} == t`
+    // equivalence.
+    assert_eq!(
+      interpret("CellularAutomaton[90, {{1}, 0}, {0, {-2, 2}}]").unwrap(),
+      "{{0, 0, 1, 0, 0}}"
+    );
+    // Likewise a `{{t1, t2}}` range that happens to collapse to one step.
+    assert_eq!(
+      interpret("CellularAutomaton[90, {{1}, 0}, {{{5, 5}}, {-2, 2}}]")
+        .unwrap(),
+      "{{0, 0, 0, 0, 0}}"
+    );
+  }
+
+  #[test]
+  fn a_huge_explicit_window_is_rejected_before_allocating() {
+    clear_state();
+    // A cyclic init never grows past its own size, so nothing earlier
+    // bounds an explicit window's length against it; the window's size
+    // must be checked arithmetically before any per-cell allocation, or
+    // this would try to collect roughly a billion indices.
+    assert_eq!(
+      interpret("CellularAutomaton[90, {1, 0, 1}, {{{1}}, {0, 1000000000}}]")
+        .unwrap(),
+      "CellularAutomaton[90, {1, 0, 1}, {{{1}}, {0, 1000000000}}]"
+    );
+  }
+
   // Without a step count only one step runs, and the result is the new state
   // alone — as a `{cells, {background}}` pair for a background init.
   #[test]

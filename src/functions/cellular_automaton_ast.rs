@@ -21,7 +21,11 @@ use super::*;
 /// {{t1, t2, dt}} (a list of the selected states). {tspec, xspec} restricts
 /// a 1D rule's returned cells to xspec; {tspec, xspec, yspec} restricts a
 /// 2D rule's returned rows/columns to xspec/yspec. Each of xspec/yspec is
-/// `All`, an offset `n` (from 0 or -n to n), or `{from, to[, dx]}`.
+/// `All`, an offset `n` (from 0 or -n to n), or `{from, to[, dx]}`. A
+/// windowed spec whose tspec is the explicit single-state `{{t}}` form
+/// returns that state bare rather than in a length-1 list; every other
+/// tspec form keeps returning a list even when it resolves to one state
+/// (e.g. bare `0`, or a `{{t1, t2}}` range that collapses to one step).
 pub fn cellular_automaton_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || Ok(unevaluated("CellularAutomaton", args));
 
@@ -120,11 +124,16 @@ pub fn cellular_automaton_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .collect();
 
   // A step spec with an explicit cell/row/column window (`{tspec, xspec}` or
-  // `{tspec, xspec, yspec}`) that names exactly one time step returns that
-  // state bare, not wrapped in a length-1 list — e.g. `ArrayPlot[
-  // CellularAutomaton[rule, init, {{t}, All, All}]]` needs the matrix
-  // itself, not a singleton list holding it.
-  if steps.window_axes > 0 && exprs.len() == 1 {
+  // `{tspec, xspec, yspec}`) whose tspec is the explicit single-state
+  // `{{t}}` form returns that state bare, not wrapped in a length-1 list —
+  // e.g. `ArrayPlot[CellularAutomaton[rule, init, {{{t}}, All, All}]]`
+  // needs the matrix itself, not a singleton list holding it. Every other
+  // tspec form (bare `t`/`{t}`, or a `{{t1, t2[, dt]}}` range) keeps
+  // returning a list even when it happens to resolve to one state, since
+  // those forms are documented as always producing "a list of the
+  // selected states".
+  if steps.window_axes > 0 && steps.single_state {
+    debug_assert_eq!(exprs.len(), 1);
     return Ok(exprs.remove(0));
   }
 
@@ -155,9 +164,15 @@ struct StepSpec {
   cols: Option<(i64, i64, usize)>,
   /// How many window axes were named: 0 for a bare `tspec`, 1 for
   /// `{tspec, xspec}` (1D rules), 2 for `{tspec, xspec, yspec}` (2D
-  /// rules). A windowed spec (> 0) naming exactly one time step returns
-  /// that state bare rather than wrapped in a list.
+  /// rules). A windowed spec (> 0) whose tspec was the explicit
+  /// single-state `{{t}}` form (see `single_state`) returns that state
+  /// bare rather than wrapped in a list.
   window_axes: u8,
+  /// Whether `tspec` was written as the explicit single-state `{{t}}`
+  /// form, as opposed to a form documented as always yielding "a list of
+  /// the selected states" (bare `t`/`{t}`, or a `{{t1, t2[, dt]}}` range)
+  /// that merely happens to resolve to one step.
+  single_state: bool,
 }
 
 fn as_nonneg_int(expr: &Expr) -> Option<u128> {
@@ -338,20 +353,27 @@ fn parse_weights(
 const MAX_STATES: usize = 100_000;
 
 /// Parse a bare `tspec` — never a `{tspec, xspec[, yspec]}` window, which
-/// only the top level of `parse_step_spec` accepts.
-fn parse_tspec(expr: &Expr) -> Option<Vec<usize>> {
+/// only the top level of `parse_step_spec` accepts. Returns the resolved
+/// times and whether `tspec` was written as the explicit single-state
+/// `{{t}}` form (see `StepSpec::single_state`).
+fn parse_tspec(expr: &Expr) -> Option<(Vec<usize>, bool)> {
   match expr {
     // t — all steps 0 through t.
     Expr::Integer(t) if *t >= 0 && (*t as u128) < MAX_STATES as u128 => {
-      Some((0..=(*t as usize)).collect())
+      Some(((0..=(*t as usize)).collect(), false))
     }
     Expr::List(items) if items.len() == 1 => match &items[0] {
       // {t} — all steps 0 through t, identical to the bare `t` form.
       Expr::Integer(t) if *t >= 0 && (*t as u128) < MAX_STATES as u128 => {
-        Some((0..=(*t as usize)).collect())
+        Some(((0..=(*t as usize)).collect(), false))
       }
-      // {{t}}, {{t1, t2}}, {{t1, t2, dt}} — a list of the selected states.
-      Expr::List(ts) if !ts.is_empty() && ts.len() <= 3 => {
+      // {{t}} — the explicit single state t.
+      Expr::List(ts) if ts.len() == 1 => {
+        let t = usize::try_from(as_nonneg_int(&ts[0])?).ok()?;
+        (t < MAX_STATES).then_some((vec![t], true))
+      }
+      // {{t1, t2}}, {{t1, t2, dt}} — a list of the selected states.
+      Expr::List(ts) if ts.len() == 2 || ts.len() == 3 => {
         let vals: Option<Vec<u128>> = ts.iter().map(as_nonneg_int).collect();
         let vals = vals?;
         let t1 = usize::try_from(vals[0]).ok()?;
@@ -360,7 +382,7 @@ fn parse_tspec(expr: &Expr) -> Option<Vec<usize>> {
         if t2 < t1 || dt == 0 || (t2 - t1) / dt >= MAX_STATES {
           return None;
         }
-        Some((t1..=t2).step_by(dt).collect())
+        Some(((t1..=t2).step_by(dt).collect(), false))
       }
       _ => None,
     },
@@ -373,30 +395,42 @@ fn parse_step_spec(expr: &Expr) -> Option<StepSpec> {
     // {tspec, xspec} — the time steps of `tspec`, restricted to the cells
     // `xspec` names (1D rules only). `All` keeps every cell that could be
     // affected.
-    Expr::List(items) if items.len() == 2 => Some(StepSpec {
-      times: parse_tspec(&items[0])?,
-      cells: parse_cell_spec(&items[1])?,
-      rows: None,
-      cols: None,
-      window_axes: 1,
-    }),
+    Expr::List(items) if items.len() == 2 => {
+      let (times, single_state) = parse_tspec(&items[0])?;
+      Some(StepSpec {
+        times,
+        cells: parse_cell_spec(&items[1])?,
+        rows: None,
+        cols: None,
+        window_axes: 1,
+        single_state,
+      })
+    }
     // {tspec, xspec, yspec} — the time steps of `tspec`, restricted to the
     // rows `xspec` and columns `yspec` name (2D rules only).
-    Expr::List(items) if items.len() == 3 => Some(StepSpec {
-      times: parse_tspec(&items[0])?,
-      cells: None,
-      rows: parse_cell_spec(&items[1])?,
-      cols: parse_cell_spec(&items[2])?,
-      window_axes: 2,
-    }),
+    Expr::List(items) if items.len() == 3 => {
+      let (times, single_state) = parse_tspec(&items[0])?;
+      Some(StepSpec {
+        times,
+        cells: None,
+        rows: parse_cell_spec(&items[1])?,
+        cols: parse_cell_spec(&items[2])?,
+        window_axes: 2,
+        single_state,
+      })
+    }
     // A bare tspec, with no xspec/yspec window.
-    _ => Some(StepSpec {
-      times: parse_tspec(expr)?,
-      cells: None,
-      rows: None,
-      cols: None,
-      window_axes: 0,
-    }),
+    _ => {
+      let (times, single_state) = parse_tspec(expr)?;
+      Some(StepSpec {
+        times,
+        cells: None,
+        rows: None,
+        cols: None,
+        window_axes: 0,
+        single_state,
+      })
+    }
   }
 }
 
@@ -681,6 +715,28 @@ fn evolve(
     }
   };
 
+  // Bound the output size arithmetically before collecting either index
+  // list: an explicit window's length isn't capped by `height`/`width`
+  // (those stay at the small cyclic-init size regardless of window size),
+  // so collecting first could allocate gigabytes before this check ever
+  // ran.
+  let axis_len =
+    |window: Option<(i64, i64, usize)>, auto_len: usize| -> Option<usize> {
+      match window {
+        Some((from, to, step)) => {
+          let span = usize::try_from(to.checked_sub(from)?).ok()?;
+          span.checked_div(step)?.checked_add(1)
+        }
+        None => Some(auto_len),
+      }
+    };
+  let windowed_cells = axis_len(row_window, height)?
+    .checked_mul(axis_len(window, width)?)?
+    .checked_mul(times.len())?;
+  if windowed_cells > 64_000_000 {
+    return None;
+  }
+
   let row_indices: Vec<i64> = match row_window {
     Some((from, to, step)) => (from..=to)
       .step_by(step)
@@ -695,13 +751,6 @@ fn evolve(
       .collect(),
     None => auto_axis(width, &col_active),
   };
-  let windowed_cells = row_indices
-    .len()
-    .checked_mul(col_indices.len())?
-    .checked_mul(times.len())?;
-  if windowed_cells > 64_000_000 {
-    return None;
-  }
 
   Some(
     snapshots
