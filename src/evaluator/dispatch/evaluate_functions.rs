@@ -4670,7 +4670,8 @@ fn evaluate_function_call_ast_inner(
       crate::functions::math_ast::try_eval_to_f64(e).unwrap_or(0.0)
     }
     let hms: Option<(f64, f64, f64, bool)> = if args.is_empty() {
-      Some(match crate::functions::datetime_ast::date_list_ast(&[])? {
+      let now = crate::functions::datetime_ast::date_list_ast(&[])?;
+      Some(match &now {
         Expr::List(items) if items.len() == 6 => {
           (f64_of(&items[3]), f64_of(&items[4]), f64_of(&items[5]), true)
         }
