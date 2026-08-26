@@ -4174,15 +4174,14 @@ fn parse_function_call_extended(pair: &Pair<Rule>) -> Expr {
       while i < inners.len() {
         if inners[i].as_rule() == Rule::PartIndexSuffix {
           if let Some(base) = factors.pop() {
-            let mut result = base;
-            for idx_pair in inners[i].clone().into_inner() {
-              let index = pair_to_expr(idx_pair);
-              result = Expr::Part {
-                expr: Box::new(result),
-                index: Box::new(index),
-              };
-            }
-            factors.push(result);
+            // Delegate to the shared Part-suffix handler rather than
+            // walking `PartIndexGroup` pairs by hand: `PartIndexGroup`'s
+            // span is the whole bracketed group (`[[1]]`), not the index
+            // expression, so feeding it straight to `pair_to_expr` fell
+            // through to the "unknown rule" fallback and stored the raw
+            // bracket text as the index instead of the parsed `1` — see
+            // `apply_part_index_suffix`.
+            factors.push(apply_part_index_suffix(base, inners[i].clone()));
           }
         } else if inners[i].as_rule() == Rule::ImplicitPowerSuffix {
           if let Some(base) = factors.pop() {
