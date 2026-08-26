@@ -9539,6 +9539,32 @@ mod to_string_bigfloat {
     assert_eq!(interpret("ToString[N[999/1000, 2]]").unwrap(), "1.0");
     assert_eq!(interpret("ToString[N[19999/2000, 3]]").unwrap(), "10.0");
   }
+
+  // A BigFloat nested inside a List, FunctionCall, or arithmetic op gets the
+  // same marker-dropping/rounding treatment as a bare top-level BigFloat
+  // argument — previously only the top-level case was handled, so a nested
+  // BigFloat printed its raw InputForm digits with the `` `p `` marker still
+  // attached (e.g. `Tanh[1.`3.]` instead of `Tanh[1.00]`, surfaced by a
+  // Wolfram Demonstration's Manipulate body: `ToString[SetPrecision[Tanh[mL]/
+  // mL, 3]]` inside a Plot Epilog label).
+  #[test]
+  fn to_string_bigfloat_nested_in_list_strips_marker() {
+    assert_eq!(interpret("ToString[{N[Pi, 5]}]").unwrap(), "{3.1416}");
+  }
+
+  #[test]
+  fn to_string_bigfloat_nested_in_function_call_strips_marker() {
+    assert_eq!(interpret("ToString[f[N[Pi, 5]]]").unwrap(), "f[3.1416]");
+    assert_eq!(
+      interpret("ToString[SetPrecision[Tanh[1], 3]]").unwrap(),
+      "Tanh[1.00]"
+    );
+  }
+
+  #[test]
+  fn to_string_bigfloat_nested_in_binary_op_strips_marker() {
+    assert_eq!(interpret("ToString[N[Pi, 5] + x]").unwrap(), "3.1416 + x");
+  }
 }
 
 mod cases {
