@@ -1754,6 +1754,30 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_bare_sum_and_product_glyphs_parse_as_symbols() {
+    // `∑` (U+2211) and `∏` (U+220F) are Unicode "Math Symbol" characters,
+    // not letters, so the identifier grammar didn't accept them as bare
+    // symbol names — only their escaped forms (`\[Sum]`, `\[Product]`)
+    // matched. A Demonstration that uses the literal glyph purely for
+    // display (e.g. `Subscript[∑, i = 1]` inside a `HoldForm`, never
+    // calling the real `Sum` function) hit this: one unrecognized
+    // character deep inside several nested heads made the PEG parser
+    // backtrack exponentially instead of failing fast, hitting the
+    // call-limit guard meant for pathological unclosed brackets and
+    // crashing Woxi Studio's attempt to instantiate the widget.
+    clear_state();
+    assert_eq!(interpret("Head[Hold[∑]]").unwrap(), "Hold");
+    assert_eq!(interpret("Head[Hold[∏]]").unwrap(), "Hold");
+    assert_eq!(
+      interpret("Hold[Subscript[∑, i = 1]]").unwrap(),
+      "Hold[Subscript[∑, i = 1]]"
+    );
+    // The real `Sum`/`Product` functions (ASCII names) are unaffected.
+    assert_eq!(interpret("Sum[i, {i, 1, 4}]").unwrap(), "10");
+    assert_eq!(interpret("Product[i, {i, 1, 4}]").unwrap(), "24");
+  }
+
+  #[test]
   fn test_distinct_images_are_not_same_q_or_equal() {
     // `expr_to_string` reports every `Image[…]` as the same `-Image-`
     // display placeholder. `SameQ`/`Equal` and the structural-equality
