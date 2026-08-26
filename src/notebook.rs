@@ -790,14 +790,29 @@ fn extract_typeset_box(s: &str) -> Option<String> {
       "SubscriptBox" if args.len() == 2 => {
         let sub = conv(&args[1]);
         let base = conv(&args[0]);
-        match part_spec_inside_double_brackets(&sub) {
-          Some(spec) => format_part_access(&base, spec),
-          // Prefix subscript, as above — keep an explicit empty string so
-          // the result still parses.
-          None if draws_nothing(&base) => {
+        if let Some(spec) = part_spec_inside_double_brackets(&sub) {
+          format_part_access(&base, spec)
+        } else {
+          // The subscript is usually a real index (`Subscript[p, 0]`
+          // stays evaluable, keeping `p` and `0` bare), but a
+          // typeset annotation like `\!\(\*SubscriptBox[\(0\),
+          // \(+\)]\)` (the "0⁺" of a one-sided limit) has no meaning
+          // as code on its own — `Subscript[0, +]` would not parse.
+          // Quote such a subscript as a string literal instead, the
+          // same fallback `OverscriptBox`/`UnderscriptBox` use for
+          // their bare mark below.
+          let sub = if crate::parse_to_expr(&sub).is_ok() {
+            sub
+          } else {
+            format!("\"{}\"", escape_string(&sub))
+          };
+          // Prefix subscript, as above — keep an explicit empty string
+          // so the result still parses.
+          if draws_nothing(&base) {
             format!("Subscript[\"\", {sub}]")
+          } else {
+            format!("Subscript[{base}, {sub}]")
           }
-          None => format!("Subscript[{base}, {sub}]"),
         }
       }
       // `SubsuperscriptBox[a, b, c]` → `Subscript[a, b]^c`.
@@ -3696,6 +3711,24 @@ Cell["Chapter 2", "Chapter"]
     // An ordinary subscript is still `Subscript`.
     let s = r#"BoxData[SubscriptBox["c", "1"]]"#;
     assert_eq!(extract_cell_content(s), "Subscript[c, 1]");
+  }
+
+  /// A subscript can also be a bare display glyph rather than a real index
+  /// — a Demonstrations control label typeset "0" with a subscript "+" (the
+  /// one-sided-limit notation "0⁺") as `SubscriptBox["0", "+"]`. Regression:
+  /// it came back as `Subscript[0, +]`, which does not parse (`+` alone is
+  /// not a complete expression), so the reconstructed source fell back to
+  /// showing the raw box syntax instead of typesetting anything.
+  #[test]
+  fn test_subscript_with_bare_operator_glyph_is_quoted() {
+    let s = r#"BoxData[SubscriptBox["0", "+"]]"#;
+    assert_eq!(extract_cell_content(s), "Subscript[0, \"+\"]");
+    // A real indexed variable keeps its identifier/number subscript bare.
+    let s = r#"BoxData[SubscriptBox["p", "0"]]"#;
+    assert_eq!(extract_cell_content(s), "Subscript[p, 0]");
+    // A compound index expression still parses as one, so it stays bare.
+    let s = r#"BoxData[SubscriptBox["x", RowBox[{"i", "+", "1"}]]]"#;
+    assert_eq!(extract_cell_content(s), "Subscript[x, i+1]");
   }
 
   /// `OverscriptBox`/`UnderscriptBox` become the evaluable `Overscript`/
