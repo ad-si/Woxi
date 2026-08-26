@@ -10041,6 +10041,46 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
   }
 
   #[test]
+  fn setter_choice_label_typesets_a_bare_subscript_glyph() {
+    // Regression: a Setter whose per-choice label is a `Column` mixing plain
+    // lines with a `Row` that ends in an inline `\!\(\*SubscriptBox[…]\)`
+    // (a one-sided-limit annotation, "lag = 0⁺" — the shape a Demonstrations
+    // control used, independently written here rather than copied from any
+    // specific one) came back showing the raw box source `SubscriptBox[0,
+    // +]` instead of the "0⁺" it typesets, because reconstructing the boxed
+    // expression as `Subscript[0, +]` does not parse (`+` alone is not a
+    // complete expression).
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[x, \
+       {{x, 1, \"kind\"}, \
+        {1 -> Column[{\"first\", \
+           Row[{\"at \", \"lag = \\!\\(\\*SubscriptBox[\\(0\\), \\(+\\)]\\)\"}]}], \
+         2 -> Column[{\"second\", \"plain\"}]}, \
+        ControlType -> Setter}]",
+    )
+    .unwrap();
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("the subscript-labelled Setter must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    match &state.controls[0] {
+      manipulate::ControlState::Discrete { value_labels, .. } => {
+        assert_eq!(
+          value_labels,
+          &[
+            "first\nat lag = 0₊".to_string(),
+            "second\nplain".to_string()
+          ]
+        );
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+  }
+
+  #[test]
   fn popup_menu_traditional_form_labels_render_as_typeset_svg() {
     // Regression: a PopupMenu choice label wrapped in `TraditionalForm[…]`
     // (the "pick a formula" idiom several Demonstrations use, independently
