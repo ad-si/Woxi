@@ -7948,6 +7948,38 @@ mod ndsolve {
   }
 
   #[test]
+  fn ndsolve_rhs_calling_an_interpolating_function_stays_fast() {
+    // Regression: a right-hand side that looks a value up in a table built
+    // with `Interpolation[…]` (`xy = Interpolation[…]; y'[t] == -xy[y[t]]`,
+    // a common way to drive an ODE off precomputed data, e.g. a physical
+    // property curve) used to fall out of the residual compiler's
+    // closed-form arithmetic subset entirely: every RK4 stage re-resolved
+    // the call through the full generic evaluator instead of the compiled
+    // numeric tree, turning a solve that should take well under a second
+    // into one that took minutes. With the table set to the identity
+    // function, `y' = -y` from `y(0) = 1` has the closed form `y = e^-t`.
+    let start = std::time::Instant::now();
+    let result = interpret(
+      "xy = Interpolation[Table[{i, N[i]}, {i, -50, 50}], \
+       InterpolationOrder -> 1]; \
+       sol = NDSolve[{y'[t] == -xy[y[t]], y[0] == 1}, y, {t, 0, 5}]; \
+       y[3.0] /. sol[[1]]",
+    )
+    .unwrap();
+    assert!(
+      start.elapsed().as_secs() < 5,
+      "an Interpolation-driven residual must use the compiled numeric \
+       path, not fall back to the full evaluator on every RK4 stage"
+    );
+    let val: f64 = result.parse().expect("should be a number");
+    let expected = (-3.0_f64).exp();
+    assert!(
+      (val - expected).abs() < 1e-4,
+      "Expected {expected}, got {val}"
+    );
+  }
+
+  #[test]
   fn interior_initial_point_integrates_both_directions() {
     // The initial condition sits inside the domain: y' = y, y(1) = 1 on
     // {t, 0, 2} → y(t) = E^(t-1) on both sides of t = 1.
