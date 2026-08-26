@@ -355,7 +355,11 @@ fn within_one_ulp(a: f64, b: f64) -> bool {
   // `i64::MAX`, which would overflow a plain i64 subtraction.
   let key = |f: f64| -> i128 {
     let bits = f.to_bits() as i64 as i128;
-    if bits < 0 { i64::MIN as i128 - bits } else { bits }
+    if bits < 0 {
+      i64::MIN as i128 - bits
+    } else {
+      bits
+    }
   };
   (key(a) - key(b)).unsigned_abs() <= 1
 }
