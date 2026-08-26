@@ -7242,3 +7242,135 @@ mod topological_sort {
     assert!(result.starts_with("TopologicalSort["));
   }
 }
+
+// GraphData backs itself with a self-contained, curated set of named and
+// parametrized graphs (see src/functions/graph_data.rs) rather than the
+// full Wolfram Knowledgebase graph atlas.
+mod graph_data {
+  use super::*;
+
+  #[test]
+  fn no_args_lists_known_names() {
+    assert_eq!(
+      interpret("MemberQ[GraphData[], \"PetersenGraph\"]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("MemberQ[GraphData[], \"CompleteGraphK4\"]").unwrap(),
+      "True"
+    );
+    let count = interpret("Length[GraphData[]]").unwrap();
+    assert!(
+      count.parse::<i64>().unwrap() > 50,
+      "expected a sizeable curated set, got {count}"
+    );
+  }
+
+  #[test]
+  fn no_args_has_no_duplicate_names() {
+    assert_eq!(
+      interpret("Length[GraphData[]] == Length[Union[GraphData[]]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn named_graph_returns_graph_object() {
+    assert_eq!(
+      interpret("Head[GraphData[\"PetersenGraph\"]]").unwrap(),
+      "Graph"
+    );
+  }
+
+  #[test]
+  fn vertex_and_edge_count_properties() {
+    assert_eq!(
+      interpret("GraphData[\"PetersenGraph\", \"VertexCount\"]").unwrap(),
+      "10"
+    );
+    assert_eq!(
+      interpret("GraphData[\"PetersenGraph\", \"EdgeCount\"]").unwrap(),
+      "15"
+    );
+    assert_eq!(
+      interpret("GraphData[\"CompleteGraphK4\", \"VertexCount\"]").unwrap(),
+      "4"
+    );
+    assert_eq!(
+      interpret("GraphData[\"CompleteGraphK4\", \"EdgeCount\"]").unwrap(),
+      "6"
+    );
+    assert_eq!(
+      interpret("GraphData[\"CycleGraphC6\", \"VertexCount\"]").unwrap(),
+      "6"
+    );
+    assert_eq!(
+      interpret("GraphData[\"CycleGraphC6\", \"EdgeCount\"]").unwrap(),
+      "6"
+    );
+  }
+
+  #[test]
+  fn edge_count_matches_vertex_count_and_edge_rules_for_every_graph() {
+    // Every curated graph's VertexCount/EdgeCount/EdgeRules stay consistent
+    // with the underlying Graph[...] object.
+    let result = interpret(
+      "AllTrue[GraphData[], (GraphData[#, \"EdgeCount\"] == \
+       Length[GraphData[#, \"EdgeRules\"]] && \
+       VertexCount[GraphData[#]] == GraphData[#, \"VertexCount\"] && \
+       EdgeCount[GraphData[#]] == GraphData[#, \"EdgeCount\"]) &]",
+    )
+    .unwrap();
+    assert_eq!(result, "True");
+  }
+
+  #[test]
+  fn edge_rules_are_rules_between_vertices() {
+    assert_eq!(
+      interpret("GraphData[\"CompleteGraphK4\", \"EdgeRules\"]").unwrap(),
+      "{1 -> 2, 1 -> 3, 1 -> 4, 2 -> 3, 2 -> 4, 3 -> 4}"
+    );
+  }
+
+  #[test]
+  fn unknown_name_gives_missing() {
+    assert_eq!(
+      interpret("GraphData[\"NotARealGraphName\"]").unwrap(),
+      "Missing[NotAvailable]"
+    );
+    assert_eq!(
+      interpret("GraphData[\"NotARealGraphName\", \"VertexCount\"]").unwrap(),
+      "Missing[NotAvailable]"
+    );
+  }
+
+  #[test]
+  fn unknown_property_gives_missing() {
+    assert_eq!(
+      interpret("GraphData[\"PetersenGraph\", \"NotAProperty\"]").unwrap(),
+      "Missing[NotAvailable]"
+    );
+  }
+
+  #[test]
+  fn bare_symbol_property_is_accepted_like_a_string() {
+    // Some older Demonstrations pass the property as a bare symbol
+    // (e.g. `GraphData[name, Image]`) instead of a string.
+    assert_eq!(
+      interpret("Head[GraphData[\"PetersenGraph\", Image]]").unwrap(),
+      "Graph"
+    );
+  }
+
+  #[test]
+  fn select_by_edge_count_matches_direct_filtering() {
+    // Mirrors the `Select[GraphData[], Inequality[4, LessEqual, ..., Less,
+    // 20] &]` pattern used to pick small graphs for a substitution system.
+    let result = interpret(
+      "Length[Select[GraphData[], \
+       4 <= GraphData[#, \"EdgeCount\"] < 20 &]] > 0",
+    )
+    .unwrap();
+    assert_eq!(result, "True");
+  }
+}

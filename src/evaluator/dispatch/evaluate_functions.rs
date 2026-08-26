@@ -1985,6 +1985,9 @@ fn evaluate_function_call_ast_inner(
     "CountryData" => {
       return crate::functions::country_data::country_data_ast(args);
     }
+    "GraphData" => {
+      return crate::functions::graph_data::graph_data_ast(args);
+    }
     "ExternalIdentifier" => {
       return crate::functions::wikidata_ast::external_identifier_ast(args);
     }
