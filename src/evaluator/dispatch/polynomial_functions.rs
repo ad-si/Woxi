@@ -463,12 +463,12 @@ pub fn dispatch_polynomial_functions(
         _ => {}
       }
     }
-    "NMinimize" if args.len() == 2 => {
+    "NMinimize" if args.len() >= 2 => {
       return Some(crate::functions::polynomial_ast::nminimize_ast(
         args, false,
       ));
     }
-    "NMaximize" if args.len() == 2 => {
+    "NMaximize" if args.len() >= 2 => {
       return Some(crate::functions::polynomial_ast::nminimize_ast(args, true));
     }
     // NMaxValue/NMinValue/NArgMax/NArgMin/FindArgMax/FindArgMin with a

@@ -10092,7 +10092,7 @@ pub fn find_minimum_ast(
     && let Some(vars) = optimization_variable_names(&args[1])
     && !vars.is_empty()
   {
-    let step_monitor = find_option(&args[2..], "StepMonitor");
+    let step_monitor = monitor_after_noopmon(func_name, &args[2..]);
     return nminimize_ast_impl(
       &[
         args[0].clone(),
@@ -10880,6 +10880,28 @@ fn find_option<'a>(opts: &'a [Expr], key: &str) -> Option<&'a Expr> {
   })
 }
 
+/// The `StepMonitor` a constrained optimization should actually fire.
+///
+/// The constrained solver is a global sampler with a local refinement, not
+/// an iterative method whose steps mean anything to the caller, so Wolfram
+/// reports `noopmon` and fires no monitor at all — `Reap` comes back empty.
+/// Only an explicitly requested iterative `Method` monitors its steps.
+fn monitor_after_noopmon<'a>(
+  func_name: &str,
+  opts: &'a [Expr],
+) -> Option<&'a Expr> {
+  let monitor = find_option(opts, "StepMonitor");
+  if (monitor.is_some() || find_option(opts, "EvaluationMonitor").is_some())
+    && find_option(opts, "Method").is_none()
+  {
+    crate::emit_message(&format!(
+      "{func_name}::noopmon: The optimization was solved by an algorithm that does not provide monitoring information. Choose a specific iterative method if this information is necessary."
+    ));
+    return None;
+  }
+  monitor
+}
+
 /// Evaluate a `StepMonitor :> expr` option at one solver step: substitute
 /// each variable with its current numeric value and evaluate purely for
 /// side effect (e.g. `Sow[{x, y}]`), discarding the result.
@@ -10898,7 +10920,12 @@ pub fn nminimize_ast(
   args: &[Expr],
   maximize: bool,
 ) -> Result<Expr, InterpreterError> {
-  nminimize_ast_impl(args, maximize, None)
+  let func_name = if maximize { "NMaximize" } else { "NMinimize" };
+  // Trailing `opt -> value` arguments are accepted (and, apart from a
+  // monitor's `noopmon` report, ignored) rather than rejected on arity.
+  let (positional, opts) = args.split_at(args.len().min(2));
+  let step_monitor = monitor_after_noopmon(func_name, opts);
+  nminimize_ast_impl(positional, maximize, step_monitor)
 }
 
 fn nminimize_ast_impl(

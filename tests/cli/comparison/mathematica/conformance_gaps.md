@@ -581,6 +581,32 @@ Wolfram's interior-point method answers `FindMinimum[{x^2, x >= 1}, x]` with
 three-variable equality constraint lands within 1.5e-8 in Woxi rather than
 exactly. Neither engine is wrong; bit-equality is not achievable.
 
+```sh
+wolframscript -code 'ToString[FindMaximum[{-((x - 2)^2 + (y - 3)^2), 0 < x < 10 && 0 < y < 10}, {{x, 5}, {y, 5}}], InputForm]'
+# {1.7763568394002505*^-15, {x -> 2.0000000012019776, y -> 3.0000000006105285}}
+woxi eval 'FindMaximum[{-((x - 2)^2 + (y - 3)^2), 0 < x < 10 && 0 < y < 10}, {{x, 5}, {y, 5}}]'
+# {0., {x -> 2., y -> 3.}}
+```
+
+An objective the optimizer can only sample (a distribution's CDF, say)
+diverges the same way: `FindMaximum[{CDF[NormalDistribution[], x - 3],
+0 < x < 5}, {x, 1}]` stops at `x -> 4.999998363890543` in WL against Woxi's
+`x -> 5.`. Assertions over either have to round.
+
+### `StepMonitor` never fires for an unconstrained `FindMinimum`
+
+Both engines report `noopmon` and monitor nothing for the *constrained*
+`{f, cons}` form, but WL does fire the monitor once per step of the
+unconstrained one, where Woxi's Newton iteration ignores it entirely:
+
+```sh
+wolframscript -code 'Length[Reap[FindMinimum[(x - 2)^2, {x, 5}, StepMonitor :> Sow[x]]][[2]]]'  # 1
+woxi eval 'Length[Reap[FindMinimum[(x - 2)^2, {x, 5}, StepMonitor :> Sow[x]]][[2]]]'            # 0
+```
+
+Matching it needs Woxi's iteration count to match WL's as well, not just the
+plumbing.
+
 ### `Erf`'s last ULP, and the far tail of a correlated normal CDF
 
 `Erf[0.7071067811865475]` is `0.6826894921370859` in WL (correctly rounded)

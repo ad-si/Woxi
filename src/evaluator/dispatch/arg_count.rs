@@ -987,9 +987,12 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "NestWhileList" => Some((3, usize::MAX)),
     "NextPrime" => Some((1, 2)),
     "NIntegrate" => Some((2, usize::MAX)),
-    "NMaximize" => Some((2, 2)),
+    // NMinimize/NMaximize take trailing option rules (`Method -> …`,
+    // `MaxIterations -> …`, `StepMonitor :> …`) after their two positional
+    // arguments.
+    "NMaximize" => Some((2, usize::MAX)),
     "NMaxValue" => Some((2, 2)),
-    "NMinimize" => Some((2, 2)),
+    "NMinimize" => Some((2, usize::MAX)),
     "NMinValue" => Some((2, 2)),
     "NoneTrue" => Some((1, 3)),
     "NonNegative" => Some((1, 1)),

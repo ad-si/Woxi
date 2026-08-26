@@ -6294,33 +6294,41 @@ mod find_minimum {
   }
 
   #[test]
-  fn constrained_maximum_step_monitor_collects_points() {
-    // A `StepMonitor :> Sow[...]` option on a constrained FindMaximum
-    // (the `{f, cons}` form, which delegates to the NMaximize solver) must
-    // actually fire at each solver step, so Reap collects the sown points
-    // instead of returning an empty tag list.
+  fn constrained_maximum_reports_that_it_cannot_monitor_steps() {
+    // A constrained FindMaximum (the `{f, cons}` form) is solved by a
+    // global sampler with a local refinement, not by an iterative method
+    // whose steps mean anything to the caller. Wolfram reports `noopmon`
+    // for a `StepMonitor :> Sow[...]` on such a call and fires no monitor
+    // at all, so Reap comes back with no tag groups.
     clear_state();
-    let result = interpret(
+    let r = woxi::interpret_with_stdout(
       "p = Reap[FindMaximum[{-((x - 2)^2 + (y - 3)^2), \
        0 < x < 10 && 0 < y < 10}, {{x, 5}, {y, 5}}, \
-       StepMonitor :> Sow[{x, y}]]]; \
-       {p[[1]], Length[p[[2]]], Length[p[[2, 1]]] > 0}",
+       StepMonitor :> Sow[{x, y}]]]; Length[p[[2]]]",
     )
     .unwrap();
-    assert_eq!(result, "{{0., {x -> 2., y -> 3.}}, 1, True}");
+    assert_eq!(r.result, "0");
+    assert!(r.warnings[0].contains(
+      "FindMaximum::noopmon: The optimization was solved by an algorithm \
+       that does not provide monitoring information."
+    ));
   }
 
   #[test]
   fn constrained_maximum_without_step_monitor_unaffected() {
     // The StepMonitor plumbing must not change the plain constrained
-    // FindMaximum result when the option isn't supplied.
+    // FindMaximum result when the option isn't supplied. Rounded because
+    // Woxi lands exactly on the optimum where wolframscript's interior
+    // point method stops a few nanometres short of it.
     clear_state();
     let result = interpret(
-      "FindMaximum[{-((x - 2)^2 + (y - 3)^2), 0 < x < 10 && 0 < y < 10}, \
-       {{x, 5}, {y, 5}}]",
+      "sol = FindMaximum[{-((x - 2)^2 + (y - 3)^2), \
+       0 < x < 10 && 0 < y < 10}, {{x, 5}, {y, 5}}]; \
+       {Round[sol[[1]], 10^-6], Round[x /. sol[[2]], 10^-6], \
+       Round[y /. sol[[2]], 10^-6]}",
     )
     .unwrap();
-    assert_eq!(result, "{0., {x -> 2., y -> 3.}}");
+    assert_eq!(result, "{0, 2, 3}");
   }
 
   #[test]
@@ -6333,10 +6341,11 @@ mod find_minimum {
     // over a bounded x range is at the upper bound.
     clear_state();
     let result = interpret(
-      "FindMaximum[{CDF[NormalDistribution[], x - 3], 0 < x < 5}, {x, 1}]",
+      "s = FindMaximum[{CDF[NormalDistribution[], x - 3], 0 < x < 5}, \
+       {x, 1}]; {Round[s[[1]], 10^-4], Round[x /. s[[2]], 10^-4]}",
     )
     .unwrap();
-    assert_eq!(result, "{0.9772498680518208, {x -> 5.}}");
+    assert_eq!(result, "{2443/2500, 5}");
   }
 }
 
@@ -9120,6 +9129,36 @@ mod nmaximize {
   fn nminimize_unconstrained_quadratic() {
     let result = interpret("NMinimize[x^2, x]").unwrap();
     assert!(result.starts_with("{0."), "Min should be ~0, got: {result}");
+  }
+
+  #[test]
+  fn nminimize_takes_trailing_options() {
+    // Options follow the two positional arguments; an unhandled one is
+    // accepted silently rather than rejected on arity. Rounded because the
+    // two solvers stop at slightly different points.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "r = NMinimize[{(x - 2)^2, 0 < x < 10}, {x}, MaxIterations -> 50]; \
+         {Round[r[[1]], 10^-6], Round[x /. r[[2]], 10^-6]}"
+      )
+      .unwrap(),
+      "{0, 2}"
+    );
+    // A monitor, though, is reported as unsupported: the constrained solver
+    // is not an iterative method whose steps are meaningful, so nothing is
+    // sown (see `constrained_maximum_reports_that_it_cannot_monitor_steps`).
+    clear_state();
+    let r = woxi::interpret_with_stdout(
+      "Length[Reap[NMinimize[{(x - 2)^2, 0 < x < 10}, {x}, \
+       StepMonitor :> Sow[x]]][[2]]]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "0");
+    assert!(r.warnings[0].contains(
+      "NMinimize::noopmon: The optimization was solved by an algorithm \
+       that does not provide monitoring information."
+    ));
   }
 
   #[test]
