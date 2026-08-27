@@ -872,10 +872,11 @@ pub fn dispatch_image_functions(
     // ColorData[n, "ColorList"]: the ordered list of colors in indexed
     // scheme n (e.g. `ColorData[97, "ColorList"]` — the default plot palette).
     "ColorData" if args.len() == 2 => {
-      // ColorData["HTML", name]: the CSS colour of that name.
+      // ColorData["HTML", name] and ColorData["Legacy", name]: the named
+      // colour, both drawn from the same X11-derived named-colour table.
       if let (Expr::String(scheme), Expr::String(color_name)) =
         (&args[0], &args[1])
-        && scheme == "HTML"
+        && (scheme == "HTML" || scheme == "Legacy")
         && let Some((r, g, b)) = html_named_color(color_name)
       {
         // wolframscript keeps an exactly-zero channel exact: `Aqua` is

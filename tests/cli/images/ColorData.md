@@ -64,3 +64,10 @@ RGBColor[0.4156862745098039, 0.3529411764705882, 0.803921568627451]
 $ wo 'ColorData["HTML", "Aqua"]'
 RGBColor[0, 1., 1.]
 ```
+
+The `"Legacy"` scheme shares the same named-colour table:
+
+```scrut
+$ wo 'ColorData["Legacy", "Wheat"]'
+RGBColor[0.9607843137254902, 0.8705882352941177, 0.7019607843137254]
+```
