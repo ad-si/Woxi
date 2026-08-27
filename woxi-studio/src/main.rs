@@ -17490,6 +17490,99 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`ctrl$$ = 1, $CellContext`P$$ = 760}
     );
   }
 
+  /// Checked a randomly-sampled Wolfram Demonstrations Project notebook (an
+  /// electrochemistry Manipulate simulating two diffusing, interconverting
+  /// species reacting at one wall) against Woxi Studio's Manipulate
+  /// pipeline. Its shape: an `NDSolve` system of two coupled 1D parabolic
+  /// PDEs (`Method -> "MethodOfLines"`) whose initial condition and
+  /// same-valued Dirichlet boundary condition are stated together as one
+  /// chained equality (`u[x, 0] == u[xmax, t] == c`); a Robin-type Neumann
+  /// flux condition on the first species that references both species'
+  /// own plain boundary values (not just the time variable); and, on the
+  /// second species, a boundary condition that isn't either species' own —
+  /// a shared flux-conservation law spanning both (`(D[a, x] + k D[b, x])
+  /// /. x -> 0 == 0`, no net accumulation at the reacting interface).
+  /// `ParametricPlot`, `FindMinimum`/`FindMaximum`, and a labeled `Slider`
+  /// drive the rendered curve.
+  ///
+  /// None of these three PDE shapes were previously recognised at all —
+  /// the chained equality left the equation count short of what a
+  /// single-unknown role needs, the Robin flux's own-value references had
+  /// no compiled variable to bind to, and the shared boundary condition
+  /// matched no single unknown's boundary role — so the whole `NDSolve`
+  /// call fell through unevaluated. This is a self-authored,
+  /// construct-equivalent example (a made-up "two-species interface
+  /// exchange" scenario) — not the notebook's own code, data, or wording,
+  /// which is copyrighted.
+  #[test]
+  fn interface_exchange_manipulate_solves_a_coupled_pde_with_a_shared_flux_condition()
+   {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[ \
+         sol = NDSolve[{ \
+           D[p[t, x], t] == D[p[t, x], {x, 2}], \
+           p[0, x] == p[t, 1] == 1, \
+           (D[p[t, x], x] /. x -> 0) == k (p[t, 0] - q[t, 0]), \
+           D[q[t, x], t] == D[q[t, x], {x, 2}], \
+           q[0, x] == q[t, 1] == 0, \
+           ((D[p[t, x], x] + D[q[t, x], x]) /. x -> 0) == 0 \
+          }, {p, q}, {t, 0, 0.3}, {x, 0, 1}]; \
+         ParametricPlot[ \
+           {{x, p[t, x] /. sol[[1]] /. t -> 0.3}, \
+            {x, q[t, x] /. sol[[1]] /. t -> 0.3}}, \
+           {x, 0, 1}, PlotRange -> {0, 1}, Frame -> True], \
+         {{k, 0.5, \"exchange rate\"}, 0.1, 2, 0.1, Appearance -> \"Labeled\"}]",
+    )
+    .expect("the Manipulate source must parse and evaluate");
+    let mut state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("the Manipulate must build a widget");
+
+    assert!(
+      state.error.is_none(),
+      "the coupled PDE solve must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the ParametricPlot of both species must draw"
+    );
+
+    let render = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&w.body)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the pieces must render")
+    };
+    let slow_exchange_view = render(&state);
+
+    // Raising the exchange rate must re-solve the coupled system and
+    // change the rendered curves.
+    match &mut state.controls[..] {
+      [manipulate::ControlState::Continuous { current, .. }] => {
+        *current = 1.8;
+      }
+      other => {
+        panic!("expected k as a single Continuous control, got {other:?}")
+      }
+    }
+    state.reevaluate();
+    assert!(state.error.is_none());
+    assert!(state.graphics_handle.is_some());
+    assert_ne!(
+      slow_exchange_view,
+      render(&state),
+      "raising the exchange rate must change the re-solved curves"
+    );
+  }
+
   /// End-to-end regression for the shape of the "Leverage Ratios"
   /// Wolfram Demonstration: a `Setter` whose choice rules are
   /// `key -> Tooltip[displayValue, hoverText]` (so the button shows the
@@ -18363,11 +18456,30 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 1}, DynamicBox[\[Ellipsis]]]"
       other => panic!("expected a single Setter control, got {other:?}"),
     }
 
-    let initial_text = widget.text_output.clone();
     assert!(
-      initial_text.is_some() || widget.graphics_handle.is_some(),
+      widget.text_output.is_some() || widget.graphics_handle.is_some(),
       "the totals table must render as text or a picture"
     );
+
+    // The totals table renders as a picture (`Text@Style[Grid[...], 16]`
+    // wrapped in a `Pane`), so `text_output` never carries it — re-render
+    // the body directly to inspect the actual SVG, the same technique the
+    // other demonstration regressions use.
+    let render = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&w.body)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the totals table must render as a picture")
+    };
+    let initial_view = render(&widget);
 
     // Stepping the Setter to a larger table size must change the
     // rendered totals.
@@ -18383,7 +18495,8 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 1}, DynamicBox[\[Ellipsis]]]"
       widget.error
     );
     assert_ne!(
-      widget.text_output, initial_text,
+      render(&widget),
+      initial_view,
       "switching the table size must change the rendered totals"
     );
   }
