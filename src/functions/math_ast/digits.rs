@@ -999,6 +999,49 @@ fn finalize_exact_continued_fraction(
   Expr::List(terms.into())
 }
 
+/// The first `n` continued-fraction terms of an exact quadratic irrational —
+/// `Sqrt[d]`, `GoldenRatio`, or `(p + q Sqrt[d]) / r` — taken from its
+/// eventually periodic expansion, or `None` when `expr` is not one.
+fn exact_quadratic_cf_terms(expr: &Expr, n: usize) -> Option<Vec<i128>> {
+  let (pre, period) = if let Some(d) = extract_sqrt_integer(expr) {
+    if d <= 0 {
+      return None;
+    }
+    let (a0, period) = continued_fraction_of_sqrt(d)?;
+    (vec![a0], period)
+  } else if matches!(expr, Expr::Identifier(s) | Expr::Constant(s) if s == "GoldenRatio")
+  {
+    continued_fraction_of_quadratic(1, 1, 5, 2)?
+  } else {
+    let (p, q, d, r) = extract_quadratic_irrational(expr)?;
+    if d <= 0 || q == 0 || r == 0 || is_perfect_square(d) {
+      return None;
+    }
+    continued_fraction_of_quadratic(p, q, d, r)?
+  };
+
+  let mut terms = Vec::with_capacity(n);
+  for value in pre {
+    if terms.len() == n {
+      return Some(terms);
+    }
+    terms.push(value);
+  }
+  if period.is_empty() {
+    // A rational value: the expansion simply ends.
+    return Some(terms);
+  }
+  while terms.len() < n {
+    for value in &period {
+      if terms.len() == n {
+        break;
+      }
+      terms.push(*value);
+    }
+  }
+  Some(terms)
+}
+
 pub fn continued_fraction_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
@@ -1144,6 +1187,15 @@ pub fn continued_fraction_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return Ok(unevaluated("ContinuedFraction", args));
       }
     };
+
+    // A quadratic irrational has an eventually periodic expansion, so the
+    // first n terms come out of the exact integer recurrence rather than a
+    // float. `ContinuedFraction[Sqrt[2], 200]` is 200 exact 2s; the f64
+    // fallback below drifts off the true expansion after ~20 terms because a
+    // double only carries ~16 digits (Project Euler 57 walks 1000 of them).
+    if let Some(terms) = exact_quadratic_cf_terms(&args[0], n) {
+      return Ok(Expr::List(terms.into_iter().map(Expr::Integer).collect()));
+    }
 
     // Try high-precision computation for known constants
     if let Some(big_rat) = try_constant_as_big_rational(&args[0], n) {
@@ -1381,12 +1433,14 @@ pub fn from_continued_fraction_ast(
     return Ok(unevaluated("FromContinuedFraction", args));
   }
 
-  // Collect all integers
-  let mut ints: Vec<i128> = Vec::new();
+  // Collect all integers. Convergents of even moderately long continued
+  // fractions (e.g. `ContinuedFraction[E, 100]`) overflow i128 long before
+  // the last term, so accumulate in `BigInt`.
+  let mut ints: Vec<BigInt> = Vec::new();
   for elem in elements {
-    match elem {
-      Expr::Integer(n) => ints.push(*n),
-      _ => {
+    match expr_to_bigint(elem) {
+      Some(n) => ints.push(n),
+      None => {
         return Ok(unevaluated("FromContinuedFraction", args));
       }
     }
@@ -1394,27 +1448,17 @@ pub fn from_continued_fraction_ast(
 
   // Build fraction from right to left: start with last element, then a_i + 1/acc
   // Use numerator/denominator representation to stay exact
-  let mut num = *ints.last().unwrap();
-  let mut den: i128 = 1;
+  let mut num = ints.last().unwrap().clone();
+  let mut den = BigInt::from(1);
 
   for i in (0..ints.len() - 1).rev() {
     // acc = num/den, we want ints[i] + 1/acc = ints[i] + den/num = (ints[i]*num + den)/num
-    let new_num = ints[i] * num + den;
-    let new_den = num;
+    let new_num = &ints[i] * &num + &den;
+    den = num;
     num = new_num;
-    den = new_den;
   }
 
-  // Simplify by GCD
-  (num, den) = rat_reduce(num, den);
-  if den == 1 {
-    Ok(Expr::Integer(num))
-  } else {
-    Ok(call(
-      "Rational",
-      vec![Expr::Integer(num), Expr::Integer(den)],
-    ))
-  }
+  Ok(crate::functions::math_ast::number_theory::make_rational_expr(&num, &den))
 }
 
 /// IntegerDigits[n], IntegerDigits[n, b], IntegerDigits[n, b, len]

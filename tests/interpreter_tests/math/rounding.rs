@@ -1014,3 +1014,51 @@ qué tal?"; a/b//MakeBoxes; Sqrt[a]//MakeBoxes; a + b * c//MakeBoxes; a + b / c/
     );
   }
 }
+
+/// `Floor` / `Ceiling` of an exact algebraic number that sits a hair away from
+/// an integer must be decided at arbitrary precision, not from its `f64`
+/// image: `(10^15 - 1)^(1/15)` rounds to exactly `10.0` in double precision
+/// even though it is strictly below 10 (Project Euler 63 sums these).
+mod exact_near_integer {
+  use super::*;
+
+  #[test]
+  fn floor_of_root_just_below_integer() {
+    assert_eq!(
+      interpret("Table[Floor[(10^k - 1)^(1/k)], {k, 1, 21}]").unwrap(),
+      "{9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9}"
+    );
+  }
+
+  #[test]
+  fn ceiling_of_root_just_above_integer() {
+    assert_eq!(
+      interpret("Table[Ceiling[(10^(k - 1))^(1/k)], {k, 1, 12}]").unwrap(),
+      "{1, 4, 5, 6, 7, 7, 8, 8, 8, 8, 9, 9}"
+    );
+  }
+
+  #[test]
+  fn exact_powers_stay_on_the_integer() {
+    assert_eq!(
+      interpret("{Floor[(10^15)^(1/15)], Ceiling[(10^15)^(1/15)]}").unwrap(),
+      "{10, 10}"
+    );
+  }
+
+  #[test]
+  fn machine_reals_are_not_second_guessed() {
+    assert_eq!(interpret("{Floor[10.], Ceiling[10.]}").unwrap(), "{10, 10}");
+  }
+
+  #[test]
+  fn project_euler_63_digit_count_sum() {
+    assert_eq!(
+      interpret(
+        "Sum[Floor[(10^k - 1)^(1/k)] - Ceiling[(10^(k - 1))^(1/k)] + 1, {k, 21}]"
+      )
+      .unwrap(),
+      "49"
+    );
+  }
+}

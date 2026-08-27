@@ -1178,6 +1178,30 @@ pub fn get_captured_sound() -> Option<AudioOutput> {
 }
 
 /// Set a system variable (like $ScriptCommandLine) in the environment
+/// The active `$RecursionLimit` as a depth: the user-assigned value when one
+/// is in scope (`Infinity` — or any value too large for `usize` — meaning
+/// unlimited), otherwise Wolfram's default of 1024.
+///
+/// `Block[{$RecursionLimit = Infinity}, …]` writes and restores the variable
+/// through the ordinary environment, so this reads it live rather than caching
+/// it; the evaluator only calls it once a recursion is already deep.
+pub(crate) fn recursion_limit() -> usize {
+  const DEFAULT_RECURSION_LIMIT: usize = 1024;
+  let stored = ENV.with(|e| e.borrow().get("$RecursionLimit").cloned());
+  let text = match stored {
+    Some(StoredValue::Raw(s)) => s,
+    Some(StoredValue::ExprVal(expr)) => {
+      syntax::format_expr(&expr, syntax::ExprForm::Input)
+    }
+    _ => return DEFAULT_RECURSION_LIMIT,
+  };
+  let text = text.trim();
+  if text == "Infinity" {
+    return usize::MAX;
+  }
+  text.parse::<usize>().unwrap_or(DEFAULT_RECURSION_LIMIT)
+}
+
 pub fn set_system_variable(name: &str, value: &str) {
   ENV.with(|e| {
     e.borrow_mut()

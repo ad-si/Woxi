@@ -21670,3 +21670,93 @@ mod to_packed_array {
     );
   }
 }
+
+/// `Sum` and `Product` are `HoldAll`, so Wolfram substitutes the *outermost*
+/// iterator's value into the still-held inner sum before evaluating it.
+/// Evaluating the innermost iterator first, with the outer variable left
+/// symbolic, lets a catch-all definition (`f[0, _, _] = 0`) win over the
+/// specific one (`f[0, 0, 0] = 1`) and silently returns a wrong total —
+/// Project Euler 191 computes 1819130064 instead of 1918080160 that way.
+mod multi_iterator_outermost_first {
+  use super::super::case_helpers::assert_case;
+
+  #[test]
+  fn outer_variable_is_substituted_before_the_inner_sum_runs() {
+    assert_case(
+      r#"u[x_, y_] := x*10 + y; Sum[u[l, a], {l, 0, 0}, {a, 0, 2}]"#,
+      r#"3"#,
+    );
+  }
+
+  #[test]
+  fn specific_definition_wins_over_catch_all() {
+    assert_case(
+      concat!(
+        "f[0, 0, 0] = 1; f[0, _, _] = 0; ",
+        "f[d_, l_, 0] := Sum[f[d - 1, l, a], {a, 0, 2}]; ",
+        "f[d_, l_, a_] := f[d - 1, l, a - 1]; ",
+        "Sum[f[1, l, a], {l, 0, 0}, {a, 0, 2}]"
+      ),
+      r#"2"#,
+    );
+  }
+
+  #[test]
+  fn project_euler_191_prize_strings() {
+    assert_case(
+      concat!(
+        "maxAbsent = 2; maxLate = 1; ",
+        "NumPrizeStrings[0, 0, 0] = 1; NumPrizeStrings[0, _, _] = 0; ",
+        "NumPrizeStrings[d_, l_, 0] := NumPrizeStrings[d, l, 0] = ",
+        "  Sum[NumPrizeStrings[d - 1, l, a], {a, 0, maxAbsent}] + ",
+        "  If[l > 0, Sum[NumPrizeStrings[d - 1, l - 1, a], {a, 0, maxAbsent}], 0]; ",
+        "NumPrizeStrings[d_, l_, a_] := NumPrizeStrings[d, l, a] = ",
+        "  NumPrizeStrings[d - 1, l, a - 1]; ",
+        "Table[Sum[NumPrizeStrings[n, l, a], {l, 0, maxLate}, {a, 0, maxAbsent}], {n, 1, 8}]"
+      ),
+      r#"{3, 8, 19, 43, 94, 200, 418, 861}"#,
+    );
+    assert_case(
+      concat!(
+        "maxAbsent = 2; maxLate = 1; ",
+        "NumPrizeStrings[0, 0, 0] = 1; NumPrizeStrings[0, _, _] = 0; ",
+        "NumPrizeStrings[d_, l_, 0] := NumPrizeStrings[d, l, 0] = ",
+        "  Sum[NumPrizeStrings[d - 1, l, a], {a, 0, maxAbsent}] + ",
+        "  If[l > 0, Sum[NumPrizeStrings[d - 1, l - 1, a], {a, 0, maxAbsent}], 0]; ",
+        "NumPrizeStrings[d_, l_, a_] := NumPrizeStrings[d, l, a] = ",
+        "  NumPrizeStrings[d - 1, l, a - 1]; ",
+        "Sum[NumPrizeStrings[30, l, a], {l, 0, maxLate}, {a, 0, maxAbsent}]"
+      ),
+      r#"1918080160"#,
+    );
+  }
+
+  #[test]
+  fn product_substitutes_the_outer_iterator_too() {
+    assert_case(
+      r#"g[1, 1] = 5; g[_, _] = 2; Product[g[i, j], {i, 1, 2}, {j, 1, 2}]"#,
+      r#"40"#,
+    );
+  }
+
+  #[test]
+  fn symbolic_and_dependent_bounds_still_work() {
+    assert_case(r#"Sum[i*j, {i, 1, 3}, {j, 1, i}]"#, r#"25"#);
+    assert_case(r#"Sum[i*j, {i, 1, 2}, {j, 1, 3}]"#, r#"18"#);
+    assert_case(r#"Sum[i*j, {i, 1, n}, {j, 1, 2}]"#, r#"(3*n*(1 + n))/2"#);
+  }
+}
+
+/// Wolfram bounds `Range` only by available memory, so a list of a few million
+/// integers is ordinary ("Total[Select[Range[1999999], PrimeQ]]" is Project
+/// Euler 10). Woxi used to refuse anything past a million with
+/// `Range: result too large`.
+mod large_range {
+  use super::*;
+
+  #[test]
+  fn builds_lists_past_a_million() {
+    assert_eq!(interpret("Length[Range[1999999]]").unwrap(), "1999999");
+    assert_eq!(interpret("Last[Range[2, 1500000, 2]]").unwrap(), "1500000");
+  }
+}

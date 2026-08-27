@@ -871,6 +871,82 @@ fn body_is_one_plus_one_over_var_squared(body: &Expr, var_name: &str) -> bool {
   false
 }
 
+/// Upper bound on how many terms a multiple `Sum` / `Product` is willing to
+/// enumerate one by one.  Beyond it the symbolic inside-out route is the only
+/// tractable one (`Sum[i j, {i, 1, 10^6}, {j, 1, 10^6}]` has 10^12 terms but
+/// closes in seconds symbolically).
+const MAX_ENUMERATED_ITERATION_TERMS: u64 = 100_000;
+
+/// The concrete values an iterator spec runs over, together with its variable
+/// name — `None` when the spec is symbolic, unbounded, or not a plain integer
+/// range.
+///
+/// `Sum` and `Product` are `HoldAll`, so Wolfram substitutes the *outermost*
+/// iterator's value into the still-held inner sum before evaluating it.
+/// Evaluating the innermost sum first, with the outer variable left symbolic,
+/// can pick a different definition of a user-defined summand — `f[0, l, 0]`
+/// matches a catch-all `f[0, _, _] = 0` rule instead of the specific
+/// `f[0, 0, 0] = 1` — and silently return a wrong total.  Enumerating the
+/// outer iterator first avoids that.
+fn concrete_iterator_values(spec: &Expr) -> Option<(String, Vec<Expr>)> {
+  let Expr::List(items) = spec else {
+    return None;
+  };
+  let Some(Expr::Identifier(var)) = items.first() else {
+    return None;
+  };
+  let var = var.clone();
+
+  // `{i, {v1, v2, …}}` iterates the list elements verbatim.
+  if items.len() == 2 {
+    let evaluated = crate::evaluator::evaluate_expr_to_expr(&items[1]).ok()?;
+    if let Expr::List(values) = &evaluated {
+      return Some((var, values.to_vec()));
+    }
+  }
+
+  let bound = |e: &Expr| -> Option<i128> {
+    expr_to_i128(&crate::evaluator::evaluate_expr_to_expr(e).ok()?)
+  };
+  let (min, max, step) = match items.len() {
+    // `{i, max}` is sugar for `{i, 1, max}`.
+    2 => (1, bound(&items[1])?, 1),
+    3 => (bound(&items[1])?, bound(&items[2])?, 1),
+    4 => (bound(&items[1])?, bound(&items[2])?, bound(&items[3])?),
+    _ => return None,
+  };
+  if step == 0 {
+    return None;
+  }
+  let mut values = Vec::new();
+  let mut cur = min;
+  while (step > 0 && cur <= max) || (step < 0 && cur >= max) {
+    values.push(Expr::Integer(cur));
+    if values.len() as u64 > MAX_ENUMERATED_ITERATION_TERMS {
+      return None;
+    }
+    cur = cur.checked_add(step)?;
+  }
+  Some((var, values))
+}
+
+/// The per-iterator concrete value lists of a multiple `Sum` / `Product`, or
+/// `None` when any iterator is symbolic or the total term count exceeds
+/// [`MAX_ENUMERATED_ITERATION_TERMS`].
+fn concrete_iteration_grid(specs: &[Expr]) -> Option<Vec<(String, Vec<Expr>)>> {
+  let mut grid = Vec::with_capacity(specs.len());
+  let mut total: u64 = 1;
+  for spec in specs {
+    let entry = concrete_iterator_values(spec)?;
+    total = total.checked_mul(entry.1.len() as u64)?;
+    if total > MAX_ENUMERATED_ITERATION_TERMS {
+      return None;
+    }
+    grid.push(entry);
+  }
+  Some(grid)
+}
+
 pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Trailing options are not iterators; none of Product's change the answer
   // here, so they are accepted and dropped.
@@ -904,6 +980,22 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Product[Product[expr, {j,...}], {i,...}] (the rightmost iterator is
   // innermost), mirroring multi-index Sum.
   if args.len() > 2 {
+    // See `concrete_iteration_grid`: enumerate outermost-first when possible.
+    if let Some((var, values)) = concrete_iteration_grid(&args[1..])
+      .map(|grid| grid.into_iter().next().expect("at least one iterator"))
+    {
+      let mut acc = Expr::Integer(1);
+      for value in values {
+        let mut inner = Vec::with_capacity(args.len() - 1);
+        inner.push(crate::syntax::substitute_variable(&args[0], &var, &value));
+        for spec in &args[2..] {
+          inner.push(crate::syntax::substitute_variable(spec, &var, &value));
+        }
+        let val = product_ast(&inner)?;
+        acc = crate::functions::math_ast::times_ast(&[acc, val])?;
+      }
+      return Ok(acc);
+    }
     let body = &args[0];
     let inner_iter = &args[args.len() - 1];
     let inner_product = product_ast(&[body.clone(), inner_iter.clone()])?;
@@ -1984,6 +2076,23 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Multi-dimensional Sum: Sum[expr, {i,...}, {j,...}, ...] => Sum[Sum[expr, {j,...}], {i,...}]
   if args.len() > 2 {
+    // Enumerate the iterators outermost-first when they are all concrete and
+    // the grid is small, matching Wolfram's `HoldAll` substitution order.
+    if let Some((var, values)) = concrete_iteration_grid(&args[1..])
+      .map(|grid| grid.into_iter().next().expect("at least one iterator"))
+    {
+      let mut acc = Expr::Integer(0);
+      for value in values {
+        let mut inner = Vec::with_capacity(args.len() - 1);
+        inner.push(crate::syntax::substitute_variable(&args[0], &var, &value));
+        for spec in &args[2..] {
+          inner.push(crate::syntax::substitute_variable(spec, &var, &value));
+        }
+        let val = sum_ast(&inner)?;
+        acc = crate::functions::math_ast::plus_ast(&[acc, val])?;
+      }
+      return Ok(acc);
+    }
     // Evaluate innermost sum first (last iterator), then wrap outward
     let body = &args[0];
     let inner_iter = &args[args.len() - 1];
