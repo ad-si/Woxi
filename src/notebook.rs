@@ -1250,8 +1250,9 @@ fn extract_rowbox_content(s: &str) -> String {
 
   let parts = split_top_level_commas(s);
   let mut result = String::new();
-  for (i, part) in parts.iter().enumerate() {
-    let part = part.trim();
+  let mut i = 0;
+  while i < parts.len() {
+    let part = parts[i].trim();
     // A big-operator box (`∑`, `∏`) is written before its body, and the
     // FrontEnd groups the operator with exactly its operand in a row of
     // their own — so everything after it here is the body.
@@ -1290,6 +1291,38 @@ fn extract_rowbox_content(s: &str) -> String {
       result.push_str(&format!("(D[{body}, {vars}])"));
       break;
     }
+    // `\[LeftBracketingBar] body \[RightBracketingBar]` is the typeset form
+    // of `Abs[body]` — the only thing that pair of glyphs ever brackets.
+    if i + 2 < parts.len()
+      && is_bare_named_char(part, "LeftBracketingBar")
+      && is_bare_named_char(parts[i + 2].trim(), "RightBracketingBar")
+    {
+      result
+        .push_str(&format!("Abs[{}]", box_part_source(parts[i + 1].trim())));
+      i += 3;
+      continue;
+    }
+    // A symbol immediately followed by a parenthesised, comma-separated
+    // argument list — `RowBox[{"\[Psi]", "(", RowBox[{"x", ",", "0"}],
+    // ")"}]` — is the FrontEnd's TraditionalForm-input rendering of function
+    // application (textbook notation `f(x, y)` for `f[x, y]`), which the
+    // Demonstrations Project uses for a function's typeset label. A bare
+    // comma is never valid inside ordinary parentheses (that's a grouping,
+    // not an argument list), so this shape is unambiguous — unlike a
+    // single-argument `f(x)`, which is already valid, equivalent
+    // multiplication syntax and is left alone.
+    if i + 3 < parts.len()
+      && is_bare_char(parts[i + 1].trim(), '(')
+      && is_bare_char(parts[i + 3].trim(), ')')
+      && let Some(args) = paren_call_arglist(parts[i + 2].trim())
+    {
+      result.push_str(&box_part_source(part));
+      result.push('[');
+      result.push_str(&args.join(", "));
+      result.push(']');
+      i += 4;
+      continue;
+    }
     let piece = box_part_source(part);
     // A bare `#`/`##` and a following letter-initial piece are *separate*
     // sibling boxes here (implicit multiplication, e.g. `# Sin[Pi/u]`
@@ -1306,8 +1339,50 @@ fn extract_rowbox_content(s: &str) -> String {
       result.push(' ');
     }
     result.push_str(&piece);
+    i += 1;
   }
   result
+}
+
+/// Is `part` the quoted single character `"ch"` (a bare display token, not
+/// part of a wider string of text)?
+fn is_bare_char(part: &str, ch: char) -> bool {
+  let mut chars = part.chars();
+  matches!(
+    (chars.next(), chars.next(), chars.next(), chars.next()),
+    (Some('"'), Some(c), Some('"'), None) if c == ch
+  )
+}
+
+/// Is `part` the quoted named character `"\[name]"` on its own?
+fn is_bare_named_char(part: &str, name: &str) -> bool {
+  part == format!("\"\\[{name}]\"")
+}
+
+/// The comma-separated arguments of a parenthesised call's box, if `s` (the
+/// box between a function-application `"("` and `")"`) is a `RowBox` whose
+/// own top-level elements are joined by at least one bare `","` — i.e. it
+/// really is an argument list, not a single parenthesised expression.
+fn paren_call_arglist(s: &str) -> Option<Vec<String>> {
+  let inner = s.strip_prefix("RowBox[")?;
+  let inner = &inner[..inner.len().saturating_sub(1)];
+  let inner = inner.trim().strip_prefix('{')?.strip_suffix('}')?;
+  let subparts = split_top_level_commas(inner);
+  if !subparts.iter().any(|p| is_bare_char(p.trim(), ',')) {
+    return None;
+  }
+  let mut args = Vec::new();
+  let mut current = String::new();
+  for p in &subparts {
+    let p = p.trim();
+    if is_bare_char(p, ',') {
+      args.push(std::mem::take(&mut current));
+    } else {
+      current.push_str(&box_part_source(p));
+    }
+  }
+  args.push(current);
+  Some(args)
 }
 
 /// The cell source one element of a box row (or of a box template's slot
@@ -3793,6 +3868,46 @@ Cell["Chapter 2", "Chapter"]
     // An ordinary subscript is untouched.
     let s = r#"BoxData[RowBox[{SubscriptBox["a", "x"], "b"}]]"#;
     assert_eq!(extract_cell_content(s), "Subscript[a, x]b");
+  }
+
+  /// `\[LeftBracketingBar] body \[RightBracketingBar]` is the typeset form
+  /// of `Abs[body]` — the FrontEnd's only use for that glyph pair.
+  #[test]
+  fn test_bracketing_bars_become_abs() {
+    let s = r#"BoxData[RowBox[{"\[LeftBracketingBar]", "x", "\[RightBracketingBar]"}]]"#;
+    assert_eq!(extract_cell_content(s), "Abs[x]");
+    // The body can be a compound expression.
+    let s = r#"BoxData[RowBox[{"\[LeftBracketingBar]", RowBox[{"x", "+", "y"}], "\[RightBracketingBar]"}]]"#;
+    assert_eq!(extract_cell_content(s), "Abs[x+y]");
+    // Juxtaposed with the rest of a row, like any other factor.
+    let s = r#"BoxData[RowBox[{"2", RowBox[{"\[LeftBracketingBar]", "x", "\[RightBracketingBar]"}]}]]"#;
+    assert_eq!(extract_cell_content(s), "2Abs[x]");
+  }
+
+  /// A symbol immediately followed by a parenthesised, comma-separated
+  /// argument list (`RowBox[{"\[Psi]", "(", RowBox[{"x", ",", "0"}],
+  /// ")"}]`) is the FrontEnd's TraditionalForm-input rendering of function
+  /// application — textbook notation `f(x, y)` for `f[x, y]` — since a bare
+  /// comma is never valid grouping inside ordinary parentheses. Regression:
+  /// a Wolfram Demonstration's plot label (`Style[TraditionalForm[Abs[ψ[x,
+  /// 0]]^2], 16]`, typeset with `ψ(x, 0)` in place of `ψ[x, 0]`) came back
+  /// as `ψ(x,0)`, which is not valid syntax and failed to parse at all.
+  #[test]
+  fn test_traditional_form_paren_call_becomes_function_application() {
+    let s = r#"BoxData[RowBox[{"\[Psi]", "(", RowBox[{"x", ",", "0"}], ")"}]]"#;
+    assert_eq!(extract_cell_content(s), "ψ[x, 0]");
+    // Three or more arguments.
+    let s =
+      r#"BoxData[RowBox[{"f", "(", RowBox[{"x", ",", "y", ",", "z"}], ")"}]]"#;
+    assert_eq!(extract_cell_content(s), "f[x, y, z]");
+    // An argument can itself be a compound expression.
+    let s = r#"BoxData[RowBox[{"\[Psi]", "(", RowBox[{"x", ",", RowBox[{"y", "+", "1"}]}], ")"}]]"#;
+    assert_eq!(extract_cell_content(s), "ψ[x, y+1]");
+    // A single argument has no comma to disambiguate it from ordinary
+    // parenthesised multiplication, so it is left as valid, equivalent
+    // `f(x)` syntax rather than reinterpreted as a call.
+    let s = r#"BoxData[RowBox[{"f", "(", "x", ")"}]]"#;
+    assert_eq!(extract_cell_content(s), "f(x)");
   }
 
   /// A named character inside a *string literal* is content, so it stays
