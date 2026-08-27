@@ -10855,6 +10855,51 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    // Demonstrations predating the modern `PieChart` load the legacy
+    // `PieCharts`` package and call its qualified `PieChart`, whose
+    // `PieStyle`/`PieLabels` options were renamed to `ChartStyle`/
+    // `ChartLabels` — so both the head and its options must be normalized
+    // for the picture to come out the same.
+    #[test]
+    fn legacy_pie_chart_matches_pie_chart() {
+      assert_eq!(
+        export_svg("PieCharts`PieChart[{1, 1, 1}]"),
+        export_svg("PieChart[{1, 1, 1}]")
+      );
+    }
+
+    #[test]
+    fn legacy_pie_chart_style_option_matches_chart_style() {
+      assert_eq!(
+        export_svg(
+          "PieCharts`PieChart[{1, 1, 1}, PieCharts`PieStyle -> {Red, Green, Blue}]"
+        ),
+        export_svg("PieChart[{1, 1, 1}, ChartStyle -> {Red, Green, Blue}]")
+      );
+    }
+
+    #[test]
+    fn legacy_pie_chart_labels_option_matches_chart_labels() {
+      assert_eq!(
+        export_svg(
+          "PieCharts`PieChart[{1, 1, 1}, PieCharts`PieLabels -> {\"a\", \"b\", \"c\"}]"
+        ),
+        export_svg("PieChart[{1, 1, 1}, ChartLabels -> {\"a\", \"b\", \"c\"}]")
+      );
+    }
+
+    #[test]
+    fn legacy_pie_chart_style_and_labels_together() {
+      assert_eq!(
+        export_svg(
+          "PieCharts`PieChart[{1, 1, 1}, PieCharts`PieStyle -> {Red, Green, Blue}, PieCharts`PieLabels -> {\"a\", \"b\", \"c\"}]"
+        ),
+        export_svg(
+          "PieChart[{1, 1, 1}, ChartStyle -> {Red, Green, Blue}, ChartLabels -> {\"a\", \"b\", \"c\"}]"
+        )
+      );
+    }
+
     #[test]
     fn stream_plot_basic() {
       insta::assert_snapshot!(export_svg(

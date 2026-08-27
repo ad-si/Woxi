@@ -638,6 +638,37 @@ fn load_needed_context(ctx: &str) -> Result<(), InterpreterError> {
   Ok(())
 }
 
+/// Rewrite a legacy `PieCharts\`` option to the option `PieChart` accepts
+/// today, so `PieCharts\`PieChart` can be normalized to a plain `PieChart`
+/// call (see the qualified-name normalization below) without its options
+/// being left unevaluated under their old, unrecognized names.
+fn normalize_piecharts_option(arg: &Expr) -> Expr {
+  match arg {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => {
+      let renamed = match pattern.as_ref() {
+        Expr::Identifier(id) if id == "PieCharts`PieStyle" => {
+          Some("ChartStyle")
+        }
+        Expr::Identifier(id) if id == "PieCharts`PieLabels" => {
+          Some("ChartLabels")
+        }
+        _ => None,
+      };
+      match renamed {
+        Some(new_name) => Expr::Rule {
+          pattern: Box::new(Expr::Identifier(new_name.to_string())),
+          replacement: replacement.clone(),
+        },
+        None => arg.clone(),
+      }
+    }
+    other => other.clone(),
+  }
+}
+
 fn evaluate_function_call_ast_inner(
   name: &str,
   args: &[Expr],
@@ -649,9 +680,25 @@ fn evaluate_function_call_ast_inner(
   // one flat namespace (see `is_standard_distribution_context`), so a
   // qualified call to one of these is normalized to its modern name before
   // dispatch rather than reimplementing the legacy function separately.
+  let original_name = name;
   let name = match name {
     "VectorFieldPlots`ListVectorFieldPlot" => "ListVectorPlot",
+    "PieCharts`PieChart" => "PieChart",
     other => other,
+  };
+
+  // `PieCharts`PieChart` renamed its options relative to the modern
+  // `PieChart` (`PieStyle` -> `ChartStyle`, `PieLabels` -> `ChartLabels`);
+  // translate them alongside the head so old demonstrations still render.
+  let normalized_pie_args;
+  let args: &[Expr] = if original_name == "PieCharts`PieChart" {
+    normalized_pie_args = args
+      .iter()
+      .map(normalize_piecharts_option)
+      .collect::<Vec<_>>();
+    &normalized_pie_args
+  } else {
+    args
   };
 
   // Every graph query/analysis function below documents its first argument
