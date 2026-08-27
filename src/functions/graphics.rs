@@ -15311,7 +15311,9 @@ pub(crate) fn style_pushed_into_layout(
   let Expr::FunctionCall { name, args } = inner else {
     return None;
   };
-  if !matches!(name.as_str(), "Row" | "Column" | "Grid") || args.is_empty() {
+  if !matches!(name.as_str(), "Row" | "Column" | "Grid" | "TextGrid")
+    || args.is_empty()
+  {
     return None;
   }
   let Expr::List(items) = &args[0] else {
@@ -15338,7 +15340,7 @@ pub(crate) fn style_pushed_into_layout(
   let styled: Vec<Expr> = items
     .iter()
     .map(|item| match item {
-      Expr::List(cells) if name == "Grid" => {
+      Expr::List(cells) if name == "Grid" || name == "TextGrid" => {
         Expr::List(cells.iter().map(&restyle).collect())
       }
       other => restyle(other),

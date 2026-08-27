@@ -3332,8 +3332,12 @@ fn render_column_if_needed(expr: syntax::Expr) -> syntax::Expr {
 /// everything inside it, so `Style[Column[{…}], 65, Hue[c]]` is a large
 /// coloured column, not a column at the default size. Distributing the
 /// directives over the items is what lets the layout renderers, which read
-/// each item's own `Style`, apply them. (`Grid` has its own styled path in
-/// `render_grid_if_needed`, which also colours frames and dividers.)
+/// each item's own `Style`, apply them. (`Grid`/`TextGrid` take a different
+/// route below: they have their own styled path in `render_grid_if_needed`,
+/// which colours frames and dividers too, not only cells — distributing
+/// directives over the cells first would hide that, and would wrap span
+/// placeholders like `SpanFromLeft` in a `Style` they aren't recognized
+/// through.)
 fn render_styled_layout_if_needed(expr: syntax::Expr) -> syntax::Expr {
   let syntax::Expr::FunctionCall { name, args } = &expr else {
     return expr;
@@ -3342,10 +3346,10 @@ fn render_styled_layout_if_needed(expr: syntax::Expr) -> syntax::Expr {
     return expr;
   }
   // Look through pass-through display wrappers (`Text[…]`, `Pane[…]`, …) to
-  // find the Column/Row underneath — a Demonstration's Manipulate body
+  // find the Column/Row/Grid underneath — a Demonstration's Manipulate body
   // commonly styles the whole display as `Style[Text[Column[{…}]], size]`,
   // not a bare `Style[Column[{…}], size]`. Without this the Style wrapper
-  // never matched, so neither this pass nor the plain Column/Row passes
+  // never matched, so neither this pass nor the plain Column/Row/Grid passes
   // below recognized the expression, and the entire body fell back to its
   // unevaluated text echo instead of rendering at all.
   let inner = unwrap_display_pass_through(&args[0]);
@@ -3355,18 +3359,36 @@ fn render_styled_layout_if_needed(expr: syntax::Expr) -> syntax::Expr {
     } => inner_name.as_str(),
     _ => return expr,
   };
-  if !matches!(inner_name, "Column" | "Row") {
+  if !matches!(inner_name, "Column" | "Row" | "Grid" | "TextGrid") {
     return expr;
   }
-  let Some(styled) =
-    functions::graphics::style_pushed_into_layout(&inner, &args[1..])
-  else {
-    return expr;
-  };
-  let rendered = if inner_name == "Column" {
-    render_column_if_needed(styled)
-  } else {
-    render_row_if_needed(styled)
+  let rendered = match inner_name {
+    "Column" | "Row" => {
+      let Some(styled) =
+        functions::graphics::style_pushed_into_layout(&inner, &args[1..])
+      else {
+        return expr;
+      };
+      if inner_name == "Column" {
+        render_column_if_needed(styled)
+      } else {
+        render_row_if_needed(styled)
+      }
+    }
+    // Rebuild `Style[inner, directives…]` (with the outer wrappers now
+    // stripped) rather than pushing the directives into each cell, so this
+    // hits the same `Style[Grid[…], …]` arm of `render_grid_if_needed` a
+    // bare (unwrapped) styled Grid already takes.
+    _ => {
+      let restyled = syntax::Expr::FunctionCall {
+        name: "Style".to_string(),
+        args: std::iter::once(inner)
+          .chain(args[1..].iter().cloned())
+          .collect::<Vec<_>>()
+          .into(),
+      };
+      render_grid_if_needed(restyled)
+    }
   };
   if matches!(rendered, syntax::Expr::Graphics { .. }) {
     rendered
