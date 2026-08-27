@@ -3327,16 +3327,17 @@ fn render_column_if_needed(expr: syntax::Expr) -> syntax::Expr {
   }
 }
 
-/// `Style[Column[{…}], directives…]` / `Style[Row[{…}], …]` / `Style[Grid[{…}],
-/// …]` displays the layout it wraps with the directives in force — a `Style`
-/// is inherited by everything inside it, so `Style[Column[{…}], 65, Hue[c]]`
-/// is a large coloured column, not a column at the default size.
-/// Distributing the directives over the items is what lets the layout
-/// renderers, which read each item's own `Style`, apply them. A *bare*
-/// `Style[Grid[…], …]` also has a styled path in `render_grid_if_needed`
-/// (which additionally colours frames and dividers), but that pass runs
-/// before the pass-through unwrap below, so a Grid reached only after
-/// unwrapping (see next comment) still needs this one.
+/// `Style[Column[{…}], directives…]` / `Style[Row[{…}], …]` displays the
+/// layout it wraps with the directives in force — a `Style` is inherited by
+/// everything inside it, so `Style[Column[{…}], 65, Hue[c]]` is a large
+/// coloured column, not a column at the default size. Distributing the
+/// directives over the items is what lets the layout renderers, which read
+/// each item's own `Style`, apply them. (`Grid`/`TextGrid` take a different
+/// route below: they have their own styled path in `render_grid_if_needed`,
+/// which colours frames and dividers too, not only cells — distributing
+/// directives over the cells first would hide that, and would wrap span
+/// placeholders like `SpanFromLeft` in a `Style` they aren't recognized
+/// through.)
 fn render_styled_layout_if_needed(expr: syntax::Expr) -> syntax::Expr {
   let syntax::Expr::FunctionCall { name, args } = &expr else {
     return expr;
@@ -3361,15 +3362,33 @@ fn render_styled_layout_if_needed(expr: syntax::Expr) -> syntax::Expr {
   if !matches!(inner_name, "Column" | "Row" | "Grid" | "TextGrid") {
     return expr;
   }
-  let Some(styled) =
-    functions::graphics::style_pushed_into_layout(&inner, &args[1..])
-  else {
-    return expr;
-  };
   let rendered = match inner_name {
-    "Column" => render_column_if_needed(styled),
-    "Row" => render_row_if_needed(styled),
-    _ => render_grid_if_needed(styled),
+    "Column" | "Row" => {
+      let Some(styled) =
+        functions::graphics::style_pushed_into_layout(&inner, &args[1..])
+      else {
+        return expr;
+      };
+      if inner_name == "Column" {
+        render_column_if_needed(styled)
+      } else {
+        render_row_if_needed(styled)
+      }
+    }
+    // Rebuild `Style[inner, directives…]` (with the outer wrappers now
+    // stripped) rather than pushing the directives into each cell, so this
+    // hits the same `Style[Grid[…], …]` arm of `render_grid_if_needed` a
+    // bare (unwrapped) styled Grid already takes.
+    _ => {
+      let restyled = syntax::Expr::FunctionCall {
+        name: "Style".to_string(),
+        args: std::iter::once(inner)
+          .chain(args[1..].iter().cloned())
+          .collect::<Vec<_>>()
+          .into(),
+      };
+      render_grid_if_needed(restyled)
+    }
   };
   if matches!(rendered, syntax::Expr::Graphics { .. }) {
     rendered

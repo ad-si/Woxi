@@ -14178,6 +14178,51 @@ mod graphics_grid {
     assert_eq!(svg.matches("font-size=\"18\"").count(), 4, "{svg}");
   }
 
+  /// A `Style[Grid[…], …]` reached through `Text`/`Pane` unwrapping must
+  /// still take the *whole-directives* styled path `render_grid_if_needed`
+  /// already gives a bare `Style[Grid[…], …]` — which colours the frame and
+  /// dividers, not only the cells. Distributing the directives over the
+  /// cells first (as `Column`/`Row` need) would leave the frame at its
+  /// default colour instead.
+  #[test]
+  fn styled_text_wrapped_grid_frame_color_matches_bare_style() {
+    clear_state();
+    let wrapped = interpret_with_stdout(
+      "Text@Style[Grid[{{1, 2}, {3, 4}}, Frame -> All], Red]",
+    )
+    .unwrap()
+    .graphics
+    .unwrap();
+    let bare =
+      interpret_with_stdout("Style[Grid[{{1, 2}, {3, 4}}, Frame -> All], Red]")
+        .unwrap()
+        .graphics
+        .unwrap();
+    assert_eq!(wrapped, bare, "wrapped: {wrapped}\nbare: {bare}");
+    assert!(wrapped.contains("stroke=\"rgb(255,0,0)\""), "{wrapped}");
+  }
+
+  /// The same `Style`-through-`Text`/`Pane` path for a `TextGrid`, exercising
+  /// both the new `TextGrid` arm and a `SpanFromLeft` placeholder: pushing
+  /// the outer directives into each cell (rather than reusing the styled
+  /// whole-grid path) would wrap the placeholder in a `Style` the span
+  /// detection only recognizes as a bare identifier, breaking the merge.
+  #[test]
+  fn styled_text_wrapped_textgrid_with_span_renders() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Text@Style[TextGrid[{{\"heading\", SpanFromLeft}, {\"a\", \"b\"}}, \
+                            Frame -> All], 18]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    assert!(!svg.contains("SpanFromLeft"), "{svg}");
+    assert!(svg.contains(">heading<"), "{svg}");
+    assert!(svg.contains(">a<"), "{svg}");
+    assert!(svg.contains(">b<"), "{svg}");
+  }
+
   #[test]
   fn grid_with_styled_image() {
     clear_state();
