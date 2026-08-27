@@ -1140,7 +1140,7 @@ mod elliptic_e {
   #[test]
   fn numeric_negative_large() {
     let result: f64 = interpret("EllipticE[-2.5]").unwrap().parse().unwrap();
-    assert!((result - 2.3069156143590688).abs() < 1e-10);
+    assert!((result - 2.306_915_614_359_069).abs() < 1e-10);
   }
 }
 
