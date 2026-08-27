@@ -705,6 +705,54 @@ fn rewrite_pde_rhs(
   if failed.get() { None } else { Some(mapped) }
 }
 
+/// Rewrite every unknown's bare occurrence at the boundary point `x0`
+/// (`u_names[j][t_name, x0]`, in whichever argument order `swap` selects)
+/// into the placeholder identifier `NDSolve$U{j}` — how a Neumann boundary
+/// condition's right-hand side couples to the unknowns' own current
+/// boundary values, e.g. a Robin-type flux condition
+/// `Λ Exp[-α (a[0, t] - b[0, t])]` that depends on both species'
+/// concentrations at the electrode surface. The method-of-lines
+/// integrator (`try_solve_pde_system`'s `derivative` closure) evaluates
+/// the compiled result each step from the already-known grid values at
+/// that boundary. Returns `None` when some unknown appears at a point
+/// other than `x0`, or through a derivative — shapes this boundary solver
+/// doesn't attempt.
+fn rewrite_pde_bc_rhs(
+  expr: &Expr,
+  u_names: &[String],
+  t_name: &str,
+  x0: f64,
+  swap: bool,
+) -> Option<Expr> {
+  for (j, name) in u_names.iter().enumerate() {
+    if let Some((dt, dx, t_arg, x_arg)) = match_pde_term_roles(expr, name, swap)
+    {
+      if dt != 0
+        || dx != 0
+        || !matches!(&t_arg, Expr::Identifier(n) if n == t_name)
+        || !nval_to_f64(&x_arg)
+          .is_some_and(|v| (v - x0).abs() <= 1e-9 * x0.abs().max(1.0))
+      {
+        return None;
+      }
+      return Some(Expr::Identifier(format!("NDSolve$U{j}")));
+    }
+  }
+  let failed = std::cell::Cell::new(false);
+  let mapped = map_children(expr, &|c| {
+    if failed.get() {
+      return c.clone();
+    }
+    if let Some(r) = rewrite_pde_bc_rhs(c, u_names, t_name, x0, swap) {
+      r
+    } else {
+      failed.set(true);
+      c.clone()
+    }
+  });
+  if failed.get() { None } else { Some(mapped) }
+}
+
 /// `NDSolve[eqns, u, {v1, v1min, v1max}, {v2, v2min, v2max}]` — one or
 /// several coupled parabolic PDEs in one space dimension (a
 /// diffusion/reaction/convection shape), solved by the method of lines:
@@ -753,6 +801,7 @@ fn ndsolve_pde(args: &[Expr]) -> Result<Option<Expr>, InterpreterError> {
     Expr::List(items) => items.to_vec(),
     other => vec![other.clone()],
   };
+  let eq_items = flatten_chained_pde_equalities(&eq_items);
   if eq_items.len() != 4 * u_names.len() {
     return Ok(None);
   }
@@ -767,6 +816,40 @@ fn ndsolve_pde(args: &[Expr]) -> Result<Option<Expr>, InterpreterError> {
     }
   }
   Ok(None)
+}
+
+/// Expand a chained equality `e0 == e1 == ... == e_{k-1}` (`k > 2`
+/// operands, every operator `==`) into the `k - 1` pairwise equations
+/// `e_i == e_{k-1}` for `i` from `0` to `k - 2`. `NDSolve` demonstrations
+/// commonly use this shorthand to state an initial condition and a
+/// same-valued boundary condition in a single equation, e.g.
+/// `u[x, t0] == u[xmax, t] == c` for both `u[x, t0] == c` (the initial
+/// condition) and `u[xmax, t] == c` (a Dirichlet boundary condition).
+/// Transitivity makes every such pair a valid consequence of the chain, so
+/// this expansion is lossless. Equations that aren't a longer chain pass
+/// through unchanged.
+fn flatten_chained_pde_equalities(items: &[Expr]) -> Vec<Expr> {
+  let mut out = Vec::with_capacity(items.len());
+  for item in items {
+    if let Expr::Comparison {
+      operands,
+      operators,
+    } = item
+      && operands.len() > 2
+      && operators.iter().all(|op| *op == ComparisonOp::Equal)
+    {
+      let last = operands.len() - 1;
+      for operand in &operands[..last] {
+        out.push(Expr::Comparison {
+          operands: vec![operand.clone(), operands[last].clone()],
+          operators: vec![ComparisonOp::Equal],
+        });
+      }
+    } else {
+      out.push(item.clone());
+    }
+  }
+  out
 }
 
 /// One unknown's compiled evolution/initial/boundary functions.
@@ -816,6 +899,209 @@ fn try_solve_pde_system(
     bc_lo: PdeBc,
     bc_hi: PdeBc,
   }
+
+  /// Try to match `eq` as a linear flux-conservation boundary condition
+  /// shared between several unknowns at the same end of the space domain
+  /// — e.g. `D[a[x, t], x] + dBA D[b[x, t], x] == 0` at `x == 0`, the
+  /// no-accumulation condition tying two coupled species' fluxes at a
+  /// reacting interface — rather than a single unknown's own condition.
+  /// Requires one side of the equation to be identically zero, and every
+  /// unknown referenced besides `target` (at index `target_idx`, not yet
+  /// in `raw_specs`) to already have its own Neumann condition resolved at
+  /// this same end (`raw_specs[j].bc_lo`/`bc_hi`, one entry per unknown
+  /// processed so far). Solving the linear relation for `target`'s flux —
+  /// substituting each other referenced unknown's already-known flux
+  /// expression — yields `target`'s own (derived) Neumann condition.
+  /// Returns `None` when the equation isn't in this shape, or references
+  /// an unknown whose own condition at this end isn't resolved yet.
+  fn try_coupled_flux_bc(
+    eq: &Expr,
+    target_idx: usize,
+    u_names: &[String],
+    raw_specs: &[RawSpec],
+    t_name: &str,
+    x0: f64,
+    at_lo: bool,
+    swap: bool,
+  ) -> Option<PdeBc> {
+    fn is_zero_literal(e: &Expr) -> bool {
+      match e {
+        Expr::Integer(0) => true,
+        Expr::Real(v) => v.abs() < 1e-12,
+        _ => false,
+      }
+    }
+    fn is_one_literal(e: &Expr) -> bool {
+      matches!(e, Expr::Integer(1))
+    }
+    fn neg_expr(e: Expr) -> Expr {
+      if is_zero_literal(&e) {
+        return e;
+      }
+      Expr::UnaryOp {
+        op: UnaryOperator::Minus,
+        operand: Box::new(e),
+      }
+    }
+    fn add_expr(a: Expr, b: Expr) -> Expr {
+      Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left: Box::new(a),
+        right: Box::new(b),
+      }
+    }
+    fn mul_expr(coeff: Expr, e: Expr) -> Expr {
+      if is_one_literal(&coeff) {
+        return e;
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left: Box::new(coeff),
+        right: Box::new(e),
+      }
+    }
+    fn flatten_additive_signed(
+      expr: &Expr,
+      sign: f64,
+      out: &mut Vec<(f64, Expr)>,
+    ) {
+      match expr {
+        Expr::BinaryOp {
+          op: BinaryOperator::Plus,
+          left,
+          right,
+        } => {
+          flatten_additive_signed(left, sign, out);
+          flatten_additive_signed(right, sign, out);
+        }
+        Expr::BinaryOp {
+          op: BinaryOperator::Minus,
+          left,
+          right,
+        } => {
+          flatten_additive_signed(left, sign, out);
+          flatten_additive_signed(right, -sign, out);
+        }
+        Expr::UnaryOp {
+          op: UnaryOperator::Minus,
+          operand,
+        } => {
+          flatten_additive_signed(operand, -sign, out);
+        }
+        Expr::FunctionCall { name, args } if name == "Plus" => {
+          for a in args {
+            flatten_additive_signed(a, sign, out);
+          }
+        }
+        other => out.push((sign, other.clone())),
+      }
+    }
+    /// Match a single additive term as `coeff * D[u_name, x]` (any
+    /// factor order, coefficient 1 when the term is a bare derivative),
+    /// returning `(coeff, t_arg, x_arg)`.
+    fn match_flux_term(
+      term: &Expr,
+      u_name: &str,
+      swap: bool,
+    ) -> Option<(Expr, Expr, Expr)> {
+      let factors = flatten_times(term);
+      let mut deriv: Option<(Expr, Expr)> = None;
+      let mut coeff_factors = Vec::new();
+      for f in &factors {
+        if deriv.is_none()
+          && let Some((dt, dx, t_arg, x_arg)) =
+            match_pde_term_roles(f, u_name, swap)
+          && dt == 0
+          && dx == 1
+        {
+          deriv = Some((t_arg, x_arg));
+        } else {
+          coeff_factors.push(f.clone());
+        }
+      }
+      let (t_arg, x_arg) = deriv?;
+      let coeff = match coeff_factors.len() {
+        0 => Expr::Integer(1),
+        1 => coeff_factors.into_iter().next().unwrap(),
+        _ => Expr::FunctionCall {
+          name: "Times".to_string(),
+          args: coeff_factors.into(),
+        },
+      };
+      Some((coeff, t_arg, x_arg))
+    }
+
+    let (lhs, rhs) = as_equal_pair(eq)?;
+    let sum_side = if is_zero_literal(lhs) {
+      rhs
+    } else if is_zero_literal(rhs) {
+      lhs
+    } else {
+      return None;
+    };
+    let mut terms = Vec::new();
+    flatten_additive_signed(sum_side, 1.0, &mut terms);
+
+    let mut self_coeff: Option<Expr> = None;
+    let mut other_terms: Vec<Expr> = Vec::new();
+    for (sign, term) in &terms {
+      let mut matched = false;
+      for (j, name) in u_names.iter().enumerate() {
+        let Some((coeff, t_arg, x_arg)) = match_flux_term(term, name, swap)
+        else {
+          continue;
+        };
+        if !matches!(&t_arg, Expr::Identifier(n) if n == t_name)
+          || !nval_to_f64(&x_arg)
+            .is_some_and(|v| (v - x0).abs() <= 1e-9 * x0.abs().max(1.0))
+        {
+          return None;
+        }
+        let signed_coeff = if *sign > 0.0 { coeff } else { neg_expr(coeff) };
+        if j == target_idx {
+          if self_coeff.is_some() {
+            return None; // the target's own flux appears more than once.
+          }
+          self_coeff = Some(signed_coeff);
+        } else {
+          if j >= raw_specs.len() {
+            return None; // that unknown's own condition isn't resolved yet.
+          }
+          let other_bc = if at_lo {
+            &raw_specs[j].bc_lo
+          } else {
+            &raw_specs[j].bc_hi
+          };
+          let PdeBc::Neumann(other_flux_expr) = other_bc else {
+            return None; // a Dirichlet boundary has no flux to substitute.
+          };
+          other_terms.push(mul_expr(signed_coeff, other_flux_expr.clone()));
+        }
+        matched = true;
+        break;
+      }
+      if !matched {
+        return None; // an unrecognised remainder term — outside this shape.
+      }
+    }
+    let self_coeff = self_coeff?;
+    let numerator = other_terms
+      .into_iter()
+      .reduce(add_expr)
+      .unwrap_or(Expr::Integer(0));
+    let negated = neg_expr(numerator);
+    let derived = if is_one_literal(&self_coeff) {
+      negated
+    } else {
+      Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: Box::new(negated),
+        right: Box::new(self_coeff),
+      }
+    };
+    Some(PdeBc::Neumann(derived))
+  }
+
   let mut raw_specs: Vec<RawSpec> = Vec::with_capacity(n);
   for name in u_names {
     let mut coeff_rhs: Option<(Expr, Expr)> = None;
@@ -857,6 +1143,38 @@ fn try_solve_pde_system(
       {
         bc_hi = Some(bc);
         claimed[idx] = true;
+        continue;
+      }
+      if bc_lo.is_none()
+        && let Some(bc) = try_coupled_flux_bc(
+          eq,
+          raw_specs.len(),
+          u_names,
+          &raw_specs,
+          &t_dom.name,
+          x_dom.min,
+          true,
+          swap,
+        )
+      {
+        bc_lo = Some(bc);
+        claimed[idx] = true;
+        continue;
+      }
+      if bc_hi.is_none()
+        && let Some(bc) = try_coupled_flux_bc(
+          eq,
+          raw_specs.len(),
+          u_names,
+          &raw_specs,
+          &t_dom.name,
+          x_dom.max,
+          false,
+          swap,
+        )
+      {
+        bc_hi = Some(bc);
+        claimed[idx] = true;
       }
     }
     let (Some((coeff, rhs)), Some(ic), Some(bc_lo), Some(bc_hi)) =
@@ -881,6 +1199,9 @@ fn try_solve_pde_system(
     .chain(["NDSolve$UX".to_string(), "NDSolve$UXX".to_string()])
     .chain([t_dom.name.clone(), x_dom.name.clone()])
     .collect();
+  let bc_rhs_vars: Vec<String> = std::iter::once(t_dom.name.clone())
+    .chain((0..n).map(|j| format!("NDSolve$U{j}")))
+    .collect();
 
   let mut unknowns: Vec<PdeUnknown> = Vec::with_capacity(n);
   for (i, spec) in raw_specs.into_iter().enumerate() {
@@ -898,20 +1219,28 @@ fn try_solve_pde_system(
         rhs,
         std::slice::from_ref(&t_dom.name),
       )),
-      PdeBc::Neumann(rhs) => PdeBoundaryFn::Neumann(NumFn::new(
-        rhs,
-        std::slice::from_ref(&t_dom.name),
-      )),
+      PdeBc::Neumann(rhs) => {
+        let Some(rewritten) =
+          rewrite_pde_bc_rhs(&rhs, u_names, &t_dom.name, x_dom.min, swap)
+        else {
+          return Ok(None);
+        };
+        PdeBoundaryFn::Neumann(NumFn::new(rewritten, &bc_rhs_vars))
+      }
     };
     let bc_hi = match spec.bc_hi {
       PdeBc::Dirichlet(rhs) => PdeBoundaryFn::Dirichlet(NumFn::new(
         rhs,
         std::slice::from_ref(&t_dom.name),
       )),
-      PdeBc::Neumann(rhs) => PdeBoundaryFn::Neumann(NumFn::new(
-        rhs,
-        std::slice::from_ref(&t_dom.name),
-      )),
+      PdeBc::Neumann(rhs) => {
+        let Some(rewritten) =
+          rewrite_pde_bc_rhs(&rhs, u_names, &t_dom.name, x_dom.max, swap)
+        else {
+          return Ok(None);
+        };
+        PdeBoundaryFn::Neumann(NumFn::new(rewritten, &bc_rhs_vars))
+      }
     };
     unknowns.push(PdeUnknown {
       coeff_fn,
@@ -1028,7 +1357,10 @@ fn try_solve_pde_system(
             let PdeBoundaryFn::Neumann(f) = &unknowns[i].bc_lo else {
               unreachable!("a Dirichlet lo boundary is never a free index")
             };
-            let flux = f.eval(&[t])?;
+            let bc_args: Vec<f64> = std::iter::once(t)
+              .chain((0..n).map(|k2| fulls[k2][gi]))
+              .collect();
+            let flux = f.eval(&bc_args)?;
             let ghost = fulls[i][1] - 2.0 * dx * flux;
             (
               (fulls[i][1] - ghost) / (2.0 * dx),
@@ -1038,7 +1370,10 @@ fn try_solve_pde_system(
             let PdeBoundaryFn::Neumann(f) = &unknowns[i].bc_hi else {
               unreachable!("a Dirichlet hi boundary is never a free index")
             };
-            let flux = f.eval(&[t])?;
+            let bc_args: Vec<f64> = std::iter::once(t)
+              .chain((0..n).map(|k2| fulls[k2][gi]))
+              .collect();
+            let flux = f.eval(&bc_args)?;
             let ghost = fulls[i][N_X - 2] + 2.0 * dx * flux;
             (
               (ghost - fulls[i][N_X - 2]) / (2.0 * dx),

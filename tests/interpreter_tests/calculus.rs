@@ -8438,6 +8438,141 @@ mod ndsolve {
        solution: coupled={coupled_val}, standalone={alone_val}"
     );
   }
+
+  /// A chained equality `u[0, x] == u[t, 1] == c` — the shorthand a
+  /// `NDSolve` demonstration commonly uses to state an initial condition
+  /// and a same-valued Dirichlet boundary condition in one equation —
+  /// must expand into both conditions rather than leaving the whole
+  /// system unrecognised (three equation items don't fit any single
+  /// unknown's required four). With a zero-flux wall at the other end,
+  /// a uniform initial profile matching the shared boundary value is a
+  /// fixed point of the heat equation, so it must stay exactly at that
+  /// value everywhere.
+  #[test]
+  fn pde_chained_equality_states_initial_and_dirichlet_boundary_together() {
+    let result = interpret(
+      "sol = NDSolve[{D[u[t, x], t] == D[u[t, x], {x, 2}], \
+       u[0, x] == u[t, 1] == 1, \
+       (D[u[t, x], x] /. x -> 0) == 0}, u, {t, 0, 1}, {x, 0, 1}]; \
+       (u[t, x] /. sol[[1]]) /. {t -> 0.5, x -> 0}",
+    )
+    .unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    assert!((val - 1.0).abs() < 1e-6, "Expected 1., got {val}");
+  }
+
+  /// A Neumann boundary condition whose flux is a Robin-type formula
+  /// referencing the unknown's own plain value at that same boundary
+  /// (`u[t, 0]`, not just `t`) — the shape a convective or reaction-rate
+  /// boundary condition takes (`flux ∝ u - u_target`). A uniform initial
+  /// profile at the Dirichlet value doubles as the Robin condition's own
+  /// target, so the flux term vanishes identically and the whole system
+  /// is already a steady state: it must stay exactly there.
+  #[test]
+  fn pde_neumann_flux_references_the_unknowns_own_boundary_value() {
+    let result = interpret(
+      "sol = NDSolve[{D[u[t, x], t] == D[u[t, x], {x, 2}], \
+       u[0, x] == u[t, 1] == 2, \
+       (D[u[t, x], x] /. x -> 0) == 3 (u[t, 0] - 2)}, \
+       u, {t, 0, 1}, {x, 0, 1}]; \
+       (u[t, x] /. sol[[1]]) /. {t -> 0.6, x -> 0.3}",
+    )
+    .unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    assert!((val - 2.0).abs() < 1e-6, "Expected 2., got {val}");
+  }
+
+  /// The same Robin-type flux away from its fixed point: with the
+  /// boundary relaxing toward a target above its uniform start, the
+  /// unknown's value at that wall must climb monotonically toward the
+  /// target over time, while staying inside the physical range the
+  /// target and the far Dirichlet value bound it to, and a point deep in
+  /// the domain — not yet reached by diffusion from the wall — must
+  /// still read far closer to its own (lower) initial value.
+  #[test]
+  fn pde_neumann_flux_drives_the_boundary_toward_its_target_over_time() {
+    let result = interpret(
+      "sol = NDSolve[{D[u[t, x], t] == D[u[t, x], {x, 2}], \
+       u[0, x] == u[t, 1] == 0, \
+       (D[u[t, x], x] /. x -> 0) == 2 (u[t, 0] - 1)}, \
+       u, {t, 0, 0.3}, {x, 0, 1}]; \
+       N[{u[t, x] /. sol[[1]] /. {t -> 0.1, x -> 0}, \
+          u[t, x] /. sol[[1]] /. {t -> 0.3, x -> 0}, \
+          u[t, x] /. sol[[1]] /. {t -> 0.3, x -> 0.9}}]",
+    )
+    .unwrap();
+    let vals: Vec<f64> = result
+      .trim_start_matches('{')
+      .trim_end_matches('}')
+      .split(',')
+      .map(|s| s.trim().parse().expect("should be a number"))
+      .collect();
+    let [early_wall, late_wall, late_far] = vals[..] else {
+      panic!("expected three values, got: {result}");
+    };
+    assert!(
+      (0.0..=1.0).contains(&early_wall) && (0.0..=1.0).contains(&late_wall),
+      "the wall's value must stay within the range set by its target and \
+       its own start: early={early_wall}, late={late_wall}"
+    );
+    assert!(
+      late_wall > early_wall,
+      "the wall should keep climbing toward its Robin target over time: \
+       early={early_wall}, late={late_wall}"
+    );
+    assert!(
+      late_far < early_wall,
+      "a point far from the wall shouldn't yet have caught up to where \
+       the wall itself was earlier: late_far={late_far}, early_wall={early_wall}"
+    );
+  }
+
+  /// Two coupled unknowns whose boundary condition at one end isn't
+  /// either one's own — it's a shared flux-conservation law spanning
+  /// both, `(D[p, x] + D[q, x]) /. x -> 0 == 0` (no net accumulation at
+  /// a reacting interface), alongside `p`'s own Robin condition that
+  /// consumes `q`'s boundary value. With equal diffusivities and
+  /// boundary/initial values for `p` and `q` that sum to the same
+  /// constant at every one of the *other* three conditions (the shared
+  /// interface's own flux being conserved, not fixed, contributes
+  /// nothing extra), `p + q` itself satisfies the heat equation with a
+  /// uniform initial profile, a zero-flux wall, and a Dirichlet value
+  /// all equal to that constant — so it must stay exactly there
+  /// everywhere, for both ends of the domain.
+  #[test]
+  fn pde_coupled_flux_conservation_boundary_splits_a_conserved_total() {
+    let result = interpret(
+      "sol = NDSolve[{D[p[t, x], t] == D[p[t, x], {x, 2}], \
+       p[0, x] == p[t, 1] == 1, \
+       (D[p[t, x], x] /. x -> 0) == 0.5 (p[t, 0] - q[t, 0]), \
+       D[q[t, x], t] == D[q[t, x], {x, 2}], \
+       q[0, x] == q[t, 1] == 0, \
+       ((D[p[t, x], x] + D[q[t, x], x]) /. x -> 0) == 0}, \
+       {p, q}, {t, 0, 0.3}, {x, 0, 1}]; \
+       N[{p[t, x] /. sol[[1]] /. {t -> 0.3, x -> 0}, \
+          q[t, x] /. sol[[1]] /. {t -> 0.3, x -> 0}, \
+          p[t, x] /. sol[[1]] /. {t -> 0.3, x -> 0.6}, \
+          q[t, x] /. sol[[1]] /. {t -> 0.3, x -> 0.6}}]",
+    )
+    .unwrap();
+    let vals: Vec<f64> = result
+      .trim_start_matches('{')
+      .trim_end_matches('}')
+      .split(',')
+      .map(|s| s.trim().parse().expect("should be a number"))
+      .collect();
+    let [p_wall, q_wall, p_mid, q_mid] = vals[..] else {
+      panic!("expected four values, got: {result}");
+    };
+    assert!(
+      (p_wall + q_wall - 1.0).abs() < 1e-6,
+      "p + q must stay conserved at the shared wall: p={p_wall}, q={q_wall}"
+    );
+    assert!(
+      (p_mid + q_mid - 1.0).abs() < 1e-6,
+      "p + q must stay conserved away from the wall too: p={p_mid}, q={q_mid}"
+    );
+  }
 }
 
 mod sinh_cosh {
