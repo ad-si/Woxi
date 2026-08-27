@@ -10900,6 +10900,20 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    // `Manipulate` bodies set chart options from control variables with
+    // `:>` (RuleDelayed) rather than `->`, so the legacy-option rename must
+    // handle both rule forms the same way `option_name_value` already does
+    // for modern `PieChart` options.
+    #[test]
+    fn legacy_pie_chart_style_option_with_rule_delayed() {
+      assert_eq!(
+        export_svg(
+          "PieCharts`PieChart[{1, 1, 1}, PieCharts`PieStyle :> {Red, Green, Blue}]"
+        ),
+        export_svg("PieChart[{1, 1, 1}, ChartStyle -> {Red, Green, Blue}]")
+      );
+    }
+
     #[test]
     fn stream_plot_basic() {
       insta::assert_snapshot!(export_svg(

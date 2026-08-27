@@ -643,28 +643,36 @@ fn load_needed_context(ctx: &str) -> Result<(), InterpreterError> {
 /// call (see the qualified-name normalization below) without its options
 /// being left unevaluated under their old, unrecognized names.
 fn normalize_piecharts_option(arg: &Expr) -> Expr {
+  fn renamed_option(pattern: &Expr) -> Option<&'static str> {
+    match pattern {
+      Expr::Identifier(id) if id == "PieCharts`PieStyle" => Some("ChartStyle"),
+      Expr::Identifier(id) if id == "PieCharts`PieLabels" => {
+        Some("ChartLabels")
+      }
+      _ => None,
+    }
+  }
   match arg {
     Expr::Rule {
       pattern,
       replacement,
-    } => {
-      let renamed = match pattern.as_ref() {
-        Expr::Identifier(id) if id == "PieCharts`PieStyle" => {
-          Some("ChartStyle")
-        }
-        Expr::Identifier(id) if id == "PieCharts`PieLabels" => {
-          Some("ChartLabels")
-        }
-        _ => None,
-      };
-      match renamed {
-        Some(new_name) => Expr::Rule {
-          pattern: Box::new(Expr::Identifier(new_name.to_string())),
-          replacement: replacement.clone(),
-        },
-        None => arg.clone(),
-      }
-    }
+    } => match renamed_option(pattern) {
+      Some(new_name) => Expr::Rule {
+        pattern: Box::new(Expr::Identifier(new_name.to_string())),
+        replacement: replacement.clone(),
+      },
+      None => arg.clone(),
+    },
+    Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => match renamed_option(pattern) {
+      Some(new_name) => Expr::RuleDelayed {
+        pattern: Box::new(Expr::Identifier(new_name.to_string())),
+        replacement: replacement.clone(),
+      },
+      None => arg.clone(),
+    },
     other => other.clone(),
   }
 }
