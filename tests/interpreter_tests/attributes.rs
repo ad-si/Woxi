@@ -22,6 +22,23 @@ mod set_attributes {
     );
   }
 
+  // Regression: `Temporary` and `Stub` are real Wolfram attributes (used
+  // e.g. for the auto-generated unique symbols Mathematica's front end
+  // stores for `Manipulate`'s internal state) but were missing from the
+  // recognized attribute list, so setting them wrongly warned attnf.
+  #[test]
+  fn temporary_and_stub_are_known() {
+    clear_state();
+    let result =
+      interpret_with_stdout("Attributes[f] = {Temporary, Stub}").unwrap();
+    assert!(
+      result.warnings.is_empty(),
+      "unexpected warnings: {:?}",
+      result.warnings
+    );
+    assert_eq!(interpret("Attributes[f]").unwrap(), "{Stub, Temporary}");
+  }
+
   #[test]
   fn listable_threads_over_list() {
     clear_state();

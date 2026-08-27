@@ -1117,6 +1117,31 @@ mod elliptic_e {
   fn symbolic_unevaluated() {
     assert_eq!(interpret("EllipticE[x]").unwrap(), "EllipticE[x]");
   }
+
+  // Regression: the power series in powers of m only converges for
+  // |m| < 1, so negative m below -1 used to blow up to values like 1e48
+  // instead of the correct (moderate) result. Reference values from
+  // mpmath's ellipe.
+  #[test]
+  fn numeric_negative_one() {
+    let result: f64 = interpret("EllipticE[-1.0]").unwrap().parse().unwrap();
+    assert!((result - 1.910098894513856).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_negative_below_minus_one() {
+    let result: f64 = interpret("EllipticE[-1.2857142857142856]")
+      .unwrap()
+      .parse()
+      .unwrap();
+    assert!((result - 1.9933424619022074).abs() < 1e-10);
+  }
+
+  #[test]
+  fn numeric_negative_large() {
+    let result: f64 = interpret("EllipticE[-2.5]").unwrap().parse().unwrap();
+    assert!((result - 2.3069156143590688).abs() < 1e-10);
+  }
 }
 
 mod elliptic_f {
