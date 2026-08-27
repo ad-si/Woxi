@@ -713,9 +713,17 @@ fn extract_typeset_box(s: &str) -> Option<String> {
   if s.starts_with("GraphicsBox[")
     && let Some(args) = split_args("GraphicsBox", s)
     && let Some(first) = args.first()
-    && let Some(image) = extract_image_from_boxes(first)
   {
-    return Some(image);
+    if let Some(image) = extract_image_from_boxes(first) {
+      return Some(image);
+    }
+    // Not a raster snapshot — an inline `Graphics[…]` literal built from
+    // vector primitives (`PointBox`, `FilledCurveBox`, …), e.g. a
+    // precomputed point set a Demonstration's initialization code bakes in
+    // rather than recomputing on every evaluation. Rebuild the evaluable
+    // `Graphics[…]` expression the same way, so the cell stays runnable
+    // instead of embedding raw, un-evaluable box syntax.
+    return Some(box_source_to_graphics_expr(s));
   }
   for head in [
     "FractionBox",
@@ -3054,6 +3062,250 @@ pub fn stored_output_checkbox_text(content: &str) -> Option<String> {
   }
 }
 
+/// Decode Mathematica's serialized packed array of machine reals found
+/// inside a `CompressedData["1:…"]` literal — the format the FrontEnd uses
+/// for the point/curve coordinates of a Demonstrations snapshot graphic
+/// (as opposed to `RawArray["UnsignedInteger8", …]`, the pixel format
+/// `parse_raw_array_u8` decodes). `payload` is the text between the
+/// quotes. Returns the array's dimensions together with its values in
+/// row-major order.
+fn decode_compressed_real_array(
+  payload: &str,
+) -> Option<(Vec<usize>, Vec<f64>)> {
+  let b64: String = payload.chars().filter(|c| !c.is_whitespace()).collect();
+  let b64 = b64.strip_prefix("1:")?;
+
+  use base64::Engine;
+  let compressed =
+    base64::engine::general_purpose::STANDARD.decode(b64).ok()?;
+  let mut raw = Vec::new();
+  std::io::Read::read_to_end(
+    &mut flate2::read::ZlibDecoder::new(&compressed[..]),
+    &mut raw,
+  )
+  .ok()?;
+
+  let mut pos = 0usize;
+  let take = |pos: &mut usize, n: usize| -> Option<&[u8]> {
+    let s = raw.get(*pos..*pos + n)?;
+    *pos += n;
+    Some(s)
+  };
+  let read_u32 = |pos: &mut usize| -> Option<u32> {
+    take(pos, 4).map(|b| u32::from_le_bytes(b.try_into().unwrap()))
+  };
+
+  if take(&mut pos, 4)? != b"!boR" {
+    return None;
+  }
+  // A packed array of machine reals is a single tag byte (`e`), the rank,
+  // that many dimensions, then the raw `f64` data — no type-name string,
+  // unlike the `RawArray["UnsignedInteger8", …]` pixel format above.
+  if take(&mut pos, 1)? != b"e" {
+    return None;
+  }
+  let rank = read_u32(&mut pos)? as usize;
+  if rank == 0 || rank > 4 {
+    return None;
+  }
+  let mut dims = Vec::with_capacity(rank);
+  let mut total = 1usize;
+  for _ in 0..rank {
+    let d = read_u32(&mut pos)? as usize;
+    total = total.checked_mul(d)?;
+    dims.push(d);
+  }
+  let bytes = take(&mut pos, total * 8)?;
+  let values = bytes
+    .chunks_exact(8)
+    .map(|c| f64::from_le_bytes(c.try_into().unwrap()))
+    .collect();
+  Some((dims, values))
+}
+
+/// Format a decoded packed real array (see `decode_compressed_real_array`)
+/// as the nested Wolfram Language list literal it represents, e.g. `[25,
+/// 2]` values format as `{{x1, y1}, {x2, y2}, …}`.
+fn packed_real_array_to_wl_list(dims: &[usize], values: &[f64]) -> String {
+  fn build(dims: &[usize], values: &[f64], offset: &mut usize) -> String {
+    let Some((&first, rest)) = dims.split_first() else {
+      let v = values[*offset];
+      *offset += 1;
+      return format!("{v}");
+    };
+    let items: Vec<String> =
+      (0..first).map(|_| build(rest, values, offset)).collect();
+    format!("{{{}}}", items.join(", "))
+  }
+  let mut offset = 0;
+  build(dims, values, &mut offset)
+}
+
+/// Rewrite a `.nb` box dump's vector-drawing heads (`PointBox`, `LineBox`,
+/// `DiskBox`, `RectangleBox`, `FilledCurveBox`, `GraphicsBox`, …) back to
+/// the `Graphics` primitives they typeset (`Point`, `Line`, `Disk`,
+/// `Rectangle`, `Polygon`, `Graphics`), and inlines any `CompressedData[…]`
+/// coordinate blob as a literal list, so the result parses and evaluates
+/// as an ordinary Wolfram Language expression. Display-only wrappers
+/// (`TagBox`, a `StyleBox`'s box-metadata options like `StripOnInput`) are
+/// dropped; the directives a `StyleBox` carries (`RGBColor`, `Thickness`,
+/// …) are kept in front of the primitives they apply to, the way
+/// `Graphics` itself represents a styled sublist. Anything not recognized
+/// (already-valid syntax like `RGBColor[…]`, bare numbers, option rules)
+/// is recursed into unchanged, in case it nests a `CompressedData` blob.
+fn box_source_to_graphics_expr(s: &str) -> String {
+  let s = s.trim();
+
+  if let Some(rest) = s.strip_prefix("CompressedData[\"") {
+    return rest
+      .find('"')
+      .and_then(|end| decode_compressed_real_array(&rest[..end]))
+      .map_or_else(
+        || "Null".to_string(),
+        |(dims, values)| packed_real_array_to_wl_list(&dims, &values),
+      );
+  }
+
+  if let Some(inner) = s.strip_prefix('{').and_then(|r| r.strip_suffix('}')) {
+    let items: Vec<String> = split_top_level_commas(inner)
+      .into_iter()
+      .map(|item| box_source_to_graphics_expr(item.trim()))
+      .collect();
+    return format!("{{{}}}", items.join(", "));
+  }
+
+  let box_call = |head: &str| -> Option<Vec<String>> {
+    let rest = s.strip_prefix(head)?.strip_prefix('[')?;
+    let (inner, _) = find_matching_bracket(rest).ok()?;
+    Some(
+      split_top_level_commas(inner)
+        .into_iter()
+        .map(|a| a.trim().to_string())
+        .collect(),
+    )
+  };
+
+  if let Some(args) = box_call("StyleBox")
+    && !args.is_empty()
+  {
+    let body = box_source_to_graphics_expr(&args[0]);
+    let dirs: Vec<String> = args[1..]
+      .iter()
+      .filter(|a| !is_option_arg(a))
+      .map(|a| box_source_to_graphics_expr(a))
+      .collect();
+    return if dirs.is_empty() {
+      body
+    } else {
+      format!("{{{}, {}}}", dirs.join(", "), body)
+    };
+  }
+
+  if let Some(args) = box_call("TagBox")
+    && let Some(first) = args.first()
+  {
+    return box_source_to_graphics_expr(first);
+  }
+
+  if let Some(args) = box_call("GraphicsBox")
+    && let Some(first) = args.first()
+  {
+    let body = box_source_to_graphics_expr(first);
+    let rest_args: Vec<String> = args[1..]
+      .iter()
+      .map(|a| box_source_to_graphics_expr(a))
+      .collect();
+    return if rest_args.is_empty() {
+      format!("Graphics[{body}]")
+    } else {
+      format!("Graphics[{body}, {}]", rest_args.join(", "))
+    };
+  }
+
+  if let Some(args) = box_call("FilledCurveBox")
+    && args.len() >= 2
+  {
+    // The first argument's tags describe how the point run is split into
+    // line/Bezier segments; approximating every segment as a straight
+    // line keeps this a general decoder rather than one tuned to a
+    // specific curve, at the cost of corner-cutting through Bezier
+    // control points instead of curving smoothly between them. The
+    // points themselves — the second argument — already trace the
+    // boundary in order, so a straight-edged `Polygon` through them is a
+    // reasonable approximation of the filled curve.
+    let points = box_source_to_graphics_expr(&args[1]);
+    return format!("Polygon[{points}]");
+  }
+
+  for (box_head, prim_head) in [
+    ("PointBox", "Point"),
+    ("LineBox", "Line"),
+    ("DiskBox", "Disk"),
+    ("RectangleBox", "Rectangle"),
+  ] {
+    if let Some(args) = box_call(box_head) {
+      let converted: Vec<String> = args
+        .iter()
+        .map(|a| box_source_to_graphics_expr(a))
+        .collect();
+      return format!("{prim_head}[{}]", converted.join(", "));
+    }
+  }
+
+  // Anything else (`RGBColor[…]`, `Hue[…]`, `Thickness[…]`, option rules,
+  // bare numbers/strings, …) is already valid Wolfram Language syntax;
+  // recurse into its arguments only in case a `CompressedData` happens to
+  // be nested inside one, rather than special-casing every directive head.
+  if let Some(open) = s.find('[')
+    && s[..open].chars().all(|c| c.is_alphanumeric() || c == '`')
+    && let Ok((inner, tail)) = find_matching_bracket(&s[open + 1..])
+    && tail.trim().is_empty()
+  {
+    let head = &s[..open];
+    let converted: Vec<String> = split_top_level_commas(inner)
+      .into_iter()
+      .map(|a| box_source_to_graphics_expr(a.trim()))
+      .collect();
+    return format!("{head}[{}]", converted.join(", "));
+  }
+
+  s.to_string()
+}
+
+/// Render a stored `GraphicsBox[…]` output that draws directly with vector
+/// primitives — `PointBox`, `LineBox`, `FilledCurveBox`, `DiskBox`,
+/// `RectangleBox` — rather than a `RasterBox` snapshot; this is the box
+/// form Wolfram's FrontEnd saves for a Demonstration's geometric
+/// constructions (Voronoi/Delaunay diagrams, tilings, lattice-point
+/// figures, …), which `stored_output_image_svg` does not cover. Rebuilds
+/// an evaluable `Graphics[…]` expression from the box dump (see
+/// `box_source_to_graphics_expr`) and renders it by evaluating that
+/// expression — the same path `ExportString[…, "SVG"]` uses — so the
+/// result matches the app's usual graphics styling. Returns `None` when
+/// `content` holds no vector `GraphicsBox`, or the reconstructed source
+/// fails to parse or evaluate (rather than showing a mangled picture).
+pub fn stored_output_vector_graphics_svg(content: &str) -> Option<String> {
+  if content.contains("RasterBox[") {
+    return None;
+  }
+  let start = content.find("GraphicsBox[")?;
+  let source = box_source_to_graphics_expr(&content[start..]);
+  if !source.starts_with("Graphics[") {
+    return None;
+  }
+  let expr = crate::parse_to_expr(&source).ok()?;
+  let crate::syntax::Expr::FunctionCall { name, args } = &expr else {
+    return None;
+  };
+  if name != "Graphics" {
+    return None;
+  }
+  match crate::functions::graphics::graphics_ast(args).ok()? {
+    crate::syntax::Expr::Graphics { ref svg, .. } => Some(svg.clone()),
+    _ => None,
+  }
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -4051,9 +4303,11 @@ Cell["Chapter 2", "Chapter"]
   #[test]
   fn test_extract_plain_graphicsbox_not_treated_as_image() {
     // A GraphicsBox without the RasterBox/ImageTag pair is not an image
-    // literal and must not be rewritten.
+    // literal — it typesets a vector graphic instead, and is rewritten to
+    // the `Graphics[…]` expression it draws so the cell stays runnable
+    // (rather than left as un-evaluable box syntax).
     let s = "GraphicsBox[DiskBox[{0, 0}]]";
-    assert_eq!(extract_cell_content(s), "GraphicsBox[DiskBox[{0, 0}]]");
+    assert_eq!(extract_cell_content(s), "Graphics[Disk[{0, 0}]]");
   }
 
   #[test]
@@ -4146,6 +4400,161 @@ Cell["Chapter 2", "Chapter"]
     assert!(svg.contains("data:image/png;base64,"), "{svg}");
     // Non-raster outputs decode to nothing.
     assert!(stored_output_image_svg("{1, 2, 3}").is_none());
+  }
+
+  /// Build the exact serialization Mathematica writes for a packed array
+  /// of machine reals — `!boR` + tag `e` + rank + dims + raw `f64` data,
+  /// zlib-compressed and base64-encoded behind a `1:` prefix — the same
+  /// format `test_stored_output_raster_snapshot_decodes_to_svg` builds for
+  /// the sibling `RawArray["UnsignedInteger8", …]` pixel format.
+  fn make_compressed_real_array(dims: &[u32], values: &[f64]) -> String {
+    let mut raw: Vec<u8> = Vec::new();
+    raw.extend_from_slice(b"!boR");
+    raw.push(b'e');
+    raw.extend_from_slice(&(dims.len() as u32).to_le_bytes());
+    for d in dims {
+      raw.extend_from_slice(&d.to_le_bytes());
+    }
+    for v in values {
+      raw.extend_from_slice(&v.to_le_bytes());
+    }
+
+    use base64::Engine;
+    use std::io::Write;
+    let mut enc = flate2::write::ZlibEncoder::new(
+      Vec::new(),
+      flate2::Compression::default(),
+    );
+    enc.write_all(&raw).unwrap();
+    let b64 =
+      base64::engine::general_purpose::STANDARD.encode(enc.finish().unwrap());
+    format!("1:{b64}")
+  }
+
+  #[test]
+  fn test_decode_compressed_real_array_round_trips() {
+    let payload =
+      make_compressed_real_array(&[3, 2], &[0.0, 0.0, 1.5, 2.25, -3.0, 4.0]);
+    let (dims, values) =
+      decode_compressed_real_array(&payload).expect("decodes");
+    assert_eq!(dims, vec![3, 2]);
+    assert_eq!(values, vec![0.0, 0.0, 1.5, 2.25, -3.0, 4.0]);
+    assert_eq!(
+      packed_real_array_to_wl_list(&dims, &values),
+      "{{0, 0}, {1.5, 2.25}, {-3, 4}}"
+    );
+  }
+
+  #[test]
+  fn test_box_source_to_graphics_expr_renames_primitive_boxes() {
+    assert_eq!(
+      box_source_to_graphics_expr("PointBox[{{0, 0}, {1, 1}}]"),
+      "Point[{{0, 0}, {1, 1}}]"
+    );
+    assert_eq!(
+      box_source_to_graphics_expr("LineBox[{{0, 0}, {1, 1}}]"),
+      "Line[{{0, 0}, {1, 1}}]"
+    );
+    assert_eq!(
+      box_source_to_graphics_expr("DiskBox[{0, 0}, 1]"),
+      "Disk[{0, 0}, 1]"
+    );
+    assert_eq!(
+      box_source_to_graphics_expr("RectangleBox[{0, 0}, {1, 1}]"),
+      "Rectangle[{0, 0}, {1, 1}]"
+    );
+  }
+
+  #[test]
+  fn test_box_source_to_graphics_expr_flattens_style_box() {
+    assert_eq!(
+      box_source_to_graphics_expr(
+        "StyleBox[{PointBox[{0, 0}]}, RGBColor[1, 0, 0], StripOnInput -> False]"
+      ),
+      "{RGBColor[1, 0, 0], {Point[{0, 0}]}}"
+    );
+  }
+
+  #[test]
+  fn test_box_source_to_graphics_expr_unwraps_tag_box() {
+    assert_eq!(
+      box_source_to_graphics_expr("TagBox[PointBox[{0, 0}], Whatever]"),
+      "Point[{0, 0}]"
+    );
+  }
+
+  #[test]
+  fn test_box_source_to_graphics_expr_filled_curve_to_polygon() {
+    // The tag structure (first argument) only distinguishes line/Bezier
+    // segments; it is dropped, and the point run (second argument) becomes
+    // a straight-edged `Polygon`.
+    assert_eq!(
+      box_source_to_graphics_expr(
+        "FilledCurveBox[{{{1, 2, 3}}}, {{{0, 0}, {1, 0}, {1, 1}}}, \
+         CurveClosed -> {1}]"
+      ),
+      "Polygon[{{{0, 0}, {1, 0}, {1, 1}}}]"
+    );
+  }
+
+  #[test]
+  fn test_box_source_to_graphics_expr_inlines_compressed_data() {
+    let payload = make_compressed_real_array(&[2, 2], &[0.0, 0.0, 1.0, 1.0]);
+    let source = format!(
+      "FilledCurveBox[{{{{1, 2, 2}}}}, {{CompressedData[\"{payload}\"]}}]"
+    );
+    assert_eq!(
+      box_source_to_graphics_expr(&source),
+      "Polygon[{{{0, 0}, {1, 1}}}]"
+    );
+  }
+
+  #[test]
+  fn test_stored_output_vector_graphics_svg_renders_points() {
+    let content = "Cell[BoxData[GraphicsBox[{RGBColor[1, 0, 0], \
+                    PointBox[{0, 0}]}]], \"Output\"]";
+    let svg = stored_output_vector_graphics_svg(content).expect("renders");
+    assert!(svg.contains("<svg"), "{svg}");
+    assert!(svg.contains("<circle"), "{svg}");
+  }
+
+  #[test]
+  fn test_stored_output_vector_graphics_svg_skips_raster_and_plain_content() {
+    // A raster snapshot is `stored_output_image_svg`'s job, not this one's.
+    let raster = "GraphicsBox[TagBox[RasterBox[CompressedData[\"1:x\"], \
+                  {{0, 1}, {1, 0}}, {0, 255}], BoxForm`ImageTag[\"Byte\"]]]";
+    assert!(stored_output_vector_graphics_svg(raster).is_none());
+    assert!(stored_output_vector_graphics_svg("{1, 2, 3}").is_none());
+  }
+
+  #[test]
+  fn test_extract_cell_content_inline_vector_graphics_literal_stays_runnable() {
+    // A Demonstration's initialization code sometimes bakes in a
+    // precomputed picture (e.g. a lattice of points) as an inline
+    // `Graphics[…]` literal rather than recomputing it on every
+    // evaluation; the FrontEnd typesets that literal as a `GraphicsBox[…]`
+    // of vector primitives, exactly like the one this regression guards
+    // (a real Demonstration used `pts = GraphicsBox[…]` this way, with
+    // `FilledCurveBox`/`PointBox` primitives holding `CompressedData`
+    // coordinates — reproduced here with synthetic data, not the original
+    // notebook's). Left unconverted, the reconstructed Input cell would
+    // embed that raw box syntax as code, which fails to evaluate; this
+    // must come back as ordinary, runnable `Graphics[…]` instead.
+    let payload =
+      make_compressed_real_array(&[3, 2], &[0.0, 0.0, 1.0, 0.0, 1.0, 1.0]);
+    let s = format!(
+      "RowBox[{{\"pts\", \"=\", GraphicsBox[{{StyleBox[{{FilledCurveBox[{{{{1, \
+       2, 3}}}}, {{CompressedData[\"{payload}\"]}}]}}, RGBColor[1, 0, 0]], \
+       PointBox[{{0, 0}}]}}]}}]"
+    );
+    let result = extract_cell_content(&s);
+    assert!(!result.contains("FilledCurveBox"), "{result}");
+    assert!(!result.contains("CompressedData"), "{result}");
+    assert!(result.contains("Graphics["), "{result}");
+    assert!(result.contains("Polygon["), "{result}");
+    assert!(result.contains("Point["), "{result}");
+    // The reconstructed source must actually parse as Wolfram Language.
+    assert!(crate::parse_to_expr(&result).is_ok(), "{result}");
   }
 
   #[test]
