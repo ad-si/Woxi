@@ -3327,13 +3327,16 @@ fn render_column_if_needed(expr: syntax::Expr) -> syntax::Expr {
   }
 }
 
-/// `Style[Column[{…}], directives…]` / `Style[Row[{…}], …]` displays the
-/// layout it wraps with the directives in force — a `Style` is inherited by
-/// everything inside it, so `Style[Column[{…}], 65, Hue[c]]` is a large
-/// coloured column, not a column at the default size. Distributing the
-/// directives over the items is what lets the layout renderers, which read
-/// each item's own `Style`, apply them. (`Grid` has its own styled path in
-/// `render_grid_if_needed`, which also colours frames and dividers.)
+/// `Style[Column[{…}], directives…]` / `Style[Row[{…}], …]` / `Style[Grid[{…}],
+/// …]` displays the layout it wraps with the directives in force — a `Style`
+/// is inherited by everything inside it, so `Style[Column[{…}], 65, Hue[c]]`
+/// is a large coloured column, not a column at the default size.
+/// Distributing the directives over the items is what lets the layout
+/// renderers, which read each item's own `Style`, apply them. A *bare*
+/// `Style[Grid[…], …]` also has a styled path in `render_grid_if_needed`
+/// (which additionally colours frames and dividers), but that pass runs
+/// before the pass-through unwrap below, so a Grid reached only after
+/// unwrapping (see next comment) still needs this one.
 fn render_styled_layout_if_needed(expr: syntax::Expr) -> syntax::Expr {
   let syntax::Expr::FunctionCall { name, args } = &expr else {
     return expr;
@@ -3342,10 +3345,10 @@ fn render_styled_layout_if_needed(expr: syntax::Expr) -> syntax::Expr {
     return expr;
   }
   // Look through pass-through display wrappers (`Text[…]`, `Pane[…]`, …) to
-  // find the Column/Row underneath — a Demonstration's Manipulate body
+  // find the Column/Row/Grid underneath — a Demonstration's Manipulate body
   // commonly styles the whole display as `Style[Text[Column[{…}]], size]`,
   // not a bare `Style[Column[{…}], size]`. Without this the Style wrapper
-  // never matched, so neither this pass nor the plain Column/Row passes
+  // never matched, so neither this pass nor the plain Column/Row/Grid passes
   // below recognized the expression, and the entire body fell back to its
   // unevaluated text echo instead of rendering at all.
   let inner = unwrap_display_pass_through(&args[0]);
@@ -3355,7 +3358,7 @@ fn render_styled_layout_if_needed(expr: syntax::Expr) -> syntax::Expr {
     } => inner_name.as_str(),
     _ => return expr,
   };
-  if !matches!(inner_name, "Column" | "Row") {
+  if !matches!(inner_name, "Column" | "Row" | "Grid" | "TextGrid") {
     return expr;
   }
   let Some(styled) =
@@ -3363,10 +3366,10 @@ fn render_styled_layout_if_needed(expr: syntax::Expr) -> syntax::Expr {
   else {
     return expr;
   };
-  let rendered = if inner_name == "Column" {
-    render_column_if_needed(styled)
-  } else {
-    render_row_if_needed(styled)
+  let rendered = match inner_name {
+    "Column" => render_column_if_needed(styled),
+    "Row" => render_row_if_needed(styled),
+    _ => render_grid_if_needed(styled),
   };
   if matches!(rendered, syntax::Expr::Graphics { .. }) {
     rendered

@@ -14151,6 +14151,33 @@ mod graphics_grid {
     assert!(svg.contains(">label</text>"), "{svg}");
   }
 
+  /// A Demonstration's `Manipulate` body commonly styles its whole display
+  /// as `Pane[Text@Style[Grid[{…}], size], {w, h}]` — a `Style` sitting
+  /// above `Text`/`Pane` wrappers, not directly on the `Grid`. The styled-
+  /// layout pass only pushed a `Style` into an underlying `Column`/`Row`,
+  /// so a `Grid` reached this way was left symbolic and the plain `Grid`
+  /// pass (which runs earlier, before the wrappers are stripped) never saw
+  /// it either — the whole body fell back to its unevaluated text echo.
+  #[test]
+  fn styled_text_wrapped_grid_inside_a_pane_renders() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Pane[Text@Style[Grid[{{Graphics[{Red, Disk[]}, ImageSize -> 40], \
+                              \"=\", \
+                              Graphics[{Red, Disk[]}, ImageSize -> 40]}, \
+                             {2 * 5, \"=\", 5 * 2}}], 18], {200, 200}]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    assert!(!svg.contains("Grid["), "no expression text: {svg}");
+    // Both pictures are embedded rather than dropped.
+    assert_eq!(svg.matches("<svg x=").count(), 2, "{svg}");
+    assert!(svg.contains(">10</text>"), "{svg}");
+    // Every text cell (both "=" signs and both "10"s) picks up the Style.
+    assert_eq!(svg.matches("font-size=\"18\"").count(), 4, "{svg}");
+  }
+
   #[test]
   fn grid_with_styled_image() {
     clear_state();
