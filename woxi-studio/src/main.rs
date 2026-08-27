@@ -8078,6 +8078,24 @@ mod tests {
   }
 
   #[test]
+  fn stored_manipulate_with_opener_view_instantiates() {
+    // A trailing `OpenerView[{label, content}]` argument (a Demonstrations
+    // idiom for a collapsible aside below the sliders, e.g. a circuit
+    // diagram) must not stop the widget from instantiating.
+    let state = instantiate_stored_manipulate(
+      "Manipulate[x^2, {x, 0, 10}, OpenerView[{\"more\", Graphics[{}]}]]",
+      "",
+    )
+    .expect("the stored Manipulate must instantiate on load");
+    assert_eq!(state.controls.len(), 1);
+    assert!(
+      state.displays.iter().any(|d| d.contains("OpenerView")),
+      "expected an OpenerView display element, got {:?}",
+      state.displays
+    );
+  }
+
+  #[test]
   fn standalone_output_cells_get_editors() {
     // Output cells that do not follow an Input (e.g. the saved snapshot
     // images of a Demonstration notebook) must become editors; skipping

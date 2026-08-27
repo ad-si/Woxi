@@ -18745,6 +18745,25 @@ mod manipulate {
     assert!(result.result.starts_with("Manipulate["));
   }
 
+  #[test]
+  fn opener_view_arg_is_not_vsform() {
+    // A trailing `OpenerView[{label, content}]` argument is a common
+    // Demonstrations pattern for tucking an aside (e.g. a circuit diagram)
+    // below the sliders. It is a control-panel content item, not a
+    // malformed variable specification, so wolframscript shows it with no
+    // Manipulate::vsform message.
+    let result = woxi::interpret_with_stdout(
+      "Manipulate[x, {x, 0, 1}, OpenerView[{\"more\", Graphics[{}]}]]",
+    )
+    .unwrap();
+    assert!(
+      !result.warnings.iter().any(|w| w.contains("vsform")),
+      "no vsform expected, got {:?}",
+      result.warnings
+    );
+    assert!(result.result.starts_with("Manipulate["));
+  }
+
   /// Controls wrapped in a `Row[…]` layout (with loose labels, `Spacer`
   /// padding, and `Dynamic[Control[…]]` wrappers — the Doyle-spirals
   /// Demonstration idiom) extract in display order: the loose string

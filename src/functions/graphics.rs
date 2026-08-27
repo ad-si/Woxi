@@ -16748,7 +16748,9 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // swaps whole control panels as `sel` changes. `Item[Column[…], opts]`
       // is the same layout pattern wrapped in a grid-alignment `Item[…]`
       // (a Demonstration lining up its whole control panel inside an outer
-      // `Grid`), not a control itself.
+      // `Grid`), not a control itself. `OpenerView[{label, content}]` is the
+      // same pattern for a collapsible disclosure widget (e.g. a "circuit
+      // diagram" aside tucked below the sliders).
       Expr::FunctionCall { name, .. }
         if matches!(
           name.as_str(),
@@ -16762,6 +16764,7 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             | "PaneSelector"
             | "TabView"
             | "Item"
+            | "OpenerView"
         ) =>
       {
         out_args.push(spec.clone());
