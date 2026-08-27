@@ -4965,6 +4965,72 @@ mod call_patterns_nested_in_a_list_pattern {
   }
 }
 
+/// A leaf variable destructured out of a list-pattern argument
+/// (`f[{x_, y_}] := …`) binds to the actual matched value, the same as any
+/// other pattern variable. Woxi represents that binding internally as a
+/// `Part[…]` access into the whole matched list, resolved once the list
+/// argument is known — but a rule's bound values are never that accessor
+/// in real Wolfram, so the internal encoding must not leak into a body
+/// position that holds its arguments (an iterator spec, `Hold`, …): it has
+/// to resolve to the plain matched value there too.
+mod list_pattern_bindings_survive_hold_contexts {
+  use super::*;
+
+  #[test]
+  fn a_destructured_variable_plots_as_a_plain_iterator_symbol() {
+    // Before the fix, `x` stayed `Part[_lp0, 1]` inside `Plot`'s held
+    // iterator-spec argument, so `Plot` rejected it with
+    // "iterator variable must be a symbol" instead of drawing the curve.
+    assert_eq!(
+      interpret(
+        "lpp1[{x_, x1_, x2_}] := Head[Plot[Sin[x], {x, x1, x2}]]; \
+         lpp1[{z, 0, 1}]"
+      )
+      .unwrap(),
+      "Graphics"
+    );
+  }
+
+  #[test]
+  fn a_destructured_variable_stays_a_plain_symbol_under_hold() {
+    assert_eq!(
+      interpret("lpp2[{x_, x1_, x2_}] := Hold[{x, x1, x2}]; lpp2[{z, 0, 1}]")
+        .unwrap(),
+      "Hold[{z, 0, 1}]"
+    );
+    // `x` resolves to the plain symbol `z` before `Hold` ever sees it, so
+    // `Head[x]`/`Head[Unevaluated[x]]` stay unevaluated calls on `z` — not
+    // on some `Part[…]` accessor.
+    assert_eq!(
+      interpret(
+        "lpp3[{x_, x1_, x2_}] := Hold[Head[x], Head[Unevaluated[x]]]; \
+         lpp3[{z, 0, 1}]"
+      )
+      .unwrap(),
+      "Hold[Head[z], Head[Unevaluated[z]]]"
+    );
+  }
+
+  #[test]
+  fn nested_list_pattern_variables_also_resolve_under_hold() {
+    assert_eq!(
+      interpret("lpp4[{{a_, b_}, c_}] := Hold[a, b, c]; lpp4[{{1, 2}, 3}]")
+        .unwrap(),
+      "Hold[1, 2, 3]"
+    );
+  }
+
+  #[test]
+  fn a_literal_part_of_a_literal_list_still_stays_held() {
+    // A genuine `Part[…]` the user wrote (not synthesized by list-pattern
+    // destructuring) must keep its ordinary Hold behaviour.
+    assert_eq!(
+      interpret("Hold[{1, 2, 3}[[2]]]").unwrap(),
+      "Hold[{1, 2, 3}[[2]]]"
+    );
+  }
+}
+
 mod literal_left_hand_side {
   use super::*;
 

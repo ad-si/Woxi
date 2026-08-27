@@ -14795,6 +14795,56 @@ fn substitute_into_scoping_construct(
   }
 }
 
+/// Statically resolve a `Part[…]` chain built by list-pattern lowering
+/// (`build_list_pattern_match`/`collect_element_bindings` in
+/// `evaluator::assignment`) down to the literal element it names, using
+/// `bindings` to look up the synthetic `_lp{i}` base parameter those
+/// functions introduce for an anonymous list-pattern argument (`f[{x_,
+/// y_}] := …`).
+///
+/// A rule's pattern variables bind to the actual matched sub-expressions in
+/// Wolfram — `x_` in that example becomes whatever `x` matched, a plain
+/// value, never a `Part[…]` access. Woxi represents that binding
+/// internally as `Part[_lp0, 1]` so the leaf pattern can be recovered once
+/// the whole list argument is known, but that internal encoding must not
+/// leak into the substituted body: left as `Part[…]`, a held argument
+/// position (`Plot`'s iterator spec, `Hold`, …) would see the accessor
+/// instead of the symbol/value it stands for. Resolving it here — before
+/// the body is even substituted — closes that seam.
+///
+/// Returns `None` for anything that isn't one of these synthetic chains;
+/// in particular a `Part[…]` the user actually wrote is left alone so it
+/// keeps evaluating (or staying held) exactly like today.
+fn resolve_synthetic_list_part(
+  expr: &Expr,
+  bindings: &[(&str, &Expr)],
+) -> Option<Expr> {
+  match expr {
+    Expr::Identifier(name) if name.starts_with("_lp") => bindings
+      .iter()
+      .find(|&&(var_name, _)| var_name == name)
+      .map(|&(_, value)| value.clone()),
+    Expr::FunctionCall { name, args } if name == "Part" && args.len() == 2 => {
+      let base = resolve_synthetic_list_part(&args[0], bindings)?;
+      let Expr::List(items) = &base else {
+        return None;
+      };
+      let Expr::Integer(n) = &args[1] else {
+        return None;
+      };
+      let idx = if *n >= 1 {
+        (*n - 1) as usize
+      } else if *n < 0 {
+        usize::try_from(items.len() as i128 + *n).ok()?
+      } else {
+        return None;
+      };
+      items.get(idx).cloned()
+    }
+    _ => None,
+  }
+}
+
 fn substitute_variables_impl(
   expr: &Expr,
   bindings: &[(&str, &Expr)],
@@ -14818,6 +14868,18 @@ fn substitute_variables_impl(
         .map(|e| substitute_variables_impl(e, bindings, template))
         .collect(),
     ),
+    Expr::FunctionCall { name, args } if name == "Part" && args.len() == 2 => {
+      match resolve_synthetic_list_part(expr, bindings) {
+        Some(resolved) => resolved,
+        None => Expr::FunctionCall {
+          name: name.clone(),
+          args: args
+            .iter()
+            .map(|e| substitute_variables_impl(e, bindings, template))
+            .collect(),
+        },
+      }
+    }
     Expr::FunctionCall { name, args } => {
       // Capture-avoiding substitution into an unevaluated
       // `Function[{params}, body]` FunctionCall. Function has HoldAll, so
