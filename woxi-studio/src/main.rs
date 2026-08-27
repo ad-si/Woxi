@@ -18364,13 +18364,16 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 1}, DynamicBox[\[Ellipsis]]]"
     }
 
     let initial_text = widget.text_output.clone();
+    let initial_graphics = widget.graphics_handle.clone();
     assert!(
-      initial_text.is_some() || widget.graphics_handle.is_some(),
+      initial_text.is_some() || initial_graphics.is_some(),
       "the totals table must render as text or a picture"
     );
 
     // Stepping the Setter to a larger table size must change the
-    // rendered totals.
+    // rendered totals. `Text@Style[Grid[…], 16]` renders as a picture (an
+    // SVG typeset of the styled text), not `text_output` — so the picture,
+    // not the (always-`None`-here) text field, is what must differ.
     if let manipulate::ControlState::Discrete { current_index, .. } =
       &mut widget.controls[0]
     {
@@ -18383,7 +18386,8 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 1}, DynamicBox[\[Ellipsis]]]"
       widget.error
     );
     assert_ne!(
-      widget.text_output, initial_text,
+      (widget.text_output.clone(), widget.graphics_handle.clone()),
+      (initial_text, initial_graphics),
       "switching the table size must change the rendered totals"
     );
   }
@@ -22078,6 +22082,57 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 30, $CellContext`s$$ = 5}, \"
     assert_eq!(
       stats.result, "{15, 15, 5, 3}",
       "wins, losses, longest win streak, longest loss streak"
+    );
+  }
+
+  /// A `SaveDefinitions -> True` dump can embed a helper as Mathematica's
+  /// full serialized `CompiledFunction[…]` — an id tuple, argument
+  /// patterns, type/constant tables, raw bytecode, the uncompiled pure
+  /// `Function[…]`, and a trailing evaluation flag — rather than the
+  /// `Compile[…]` call woxi's own Initialization cells would produce. woxi
+  /// has no bytecode VM, so calling such a value must fall back to the
+  /// embedded pure function instead of returning unevaluated. Before that
+  /// fallback existed, the unevaluated `CompiledFunction[…][args]` call
+  /// propagated into every Module that referenced the helper, and a
+  /// Manipulate composing it across a few dozen list elements (as several
+  /// roulette/epicycloid-style Demonstrations do) blew the resulting
+  /// expression up to gigabytes and never finished loading. Independently
+  /// written, not copied from any specific Wolfram Demonstration.
+  #[test]
+  fn saved_compiled_function_bytecode_falls_back_to_pure_function() {
+    let r = woxi::interpret(
+      r#"radius = CompiledFunction[{9, 9.0, 1234}, {_Integer, _Real}, {{2, 0, 0}}, {{}}, {0, 1, 2, 0, 0}, {{1}},
+        Function[{steps, angle}, N[steps + angle]], Evaluate];
+      radius[3, 0.5]"#,
+    );
+    assert_eq!(
+      r.unwrap_or_else(|e| format!("<error: {e:?}>")),
+      "3.5",
+      "a serialized CompiledFunction with no runnable bytecode VM must fall \
+       back to evaluating its embedded pure Function, not stay unevaluated"
+    );
+
+    // The same fallback must apply when the compiled helper is composed
+    // repeatedly inside a Manipulate's DynamicModule body — the shape that
+    // actually triggered the expression blow-up.
+    let nb_src = r#"Notebook[{
+Cell[BoxData["radius = CompiledFunction[{9, 9.0, 1234}, {_Integer, _Real}, {{2, 0, 0}}, {{}}, {0, 1, 2, 0, 0}, {{1}}, Function[{steps, angle}, N[steps + angle]], Evaluate]"], "Input"],
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[Table[radius[k, offset], {k, 1, count}], {{count, 3, \"count\"}, 1, 6, 1}, {{offset, 0.5, \"offset\"}, 0, 1, 0.1}]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`count$$ = 3, $CellContext`offset$$ = 0.5}, \"…\"]"], "Output"]
+}, Open]]
+}]"#;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .into_iter()
+      .find_map(|e| e.manipulate_state)
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "Table[radius[k, offset], …] must evaluate cleanly once radius[k, offset] \
+       reduces to a number instead of staying an ever-growing unevaluated call: {:?}",
+      widget.error
     );
   }
 }
