@@ -7289,6 +7289,33 @@ mod color_data_gradients {
     );
   }
 
+  // `ColorData["Legacy", name]` shares the HTML scheme's named-colour table
+  // — the palette a Demonstration's pre-v6 `ColorData["Legacy", ...]`
+  // graphics directives reach for. Regression: it stayed unevaluated and
+  // reported the head as unimplemented (found via a random Demonstrations
+  // Project notebook).
+  #[test]
+  fn color_data_legacy_named_colors() {
+    clear_state();
+    assert_eq!(
+      interpret("ColorData[\"Legacy\", \"Wheat\"]").unwrap(),
+      "RGBColor[0.9607843137254902, 0.8705882352941177, 0.7019607843137254]"
+    );
+    assert_eq!(
+      interpret("ColorData[\"Legacy\", \"Lavender\"]").unwrap(),
+      "RGBColor[0.9019607843137255, 0.9019607843137255, 0.9803921568627451]"
+    );
+    assert_eq!(
+      interpret("ColorData[\"Legacy\", \"Tomato\"]").unwrap(),
+      "RGBColor[1., 0.38823529411764707, 0.2784313725490196]"
+    );
+    // The lookup ignores case, matching the HTML scheme's behavior.
+    assert_eq!(
+      interpret("ColorData[\"Legacy\", \"wheat\"]").unwrap(),
+      "RGBColor[0.9607843137254902, 0.8705882352941177, 0.7019607843137254]"
+    );
+  }
+
   #[test]
   fn blend_named_scheme_interpolates_control_points() {
     clear_state();
