@@ -6865,7 +6865,7 @@ fn find_root_multivariate(
     let resid = fv.iter().fold(0.0f64, |a, &b| a.max(b.abs()));
     if resid < best_resid {
       best_resid = resid;
-      best_x = x.clone();
+      best_x.clone_from(&x);
     }
     if resid < tol {
       break;
