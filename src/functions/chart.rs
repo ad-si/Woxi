@@ -457,6 +457,11 @@ pub(crate) struct ChartOptions {
   /// `LabelingFunction -> f` — applied to each bar value to produce a label
   /// drawn at the bar's end. Stored unevaluated and applied per value.
   pub labeling_function: Option<Expr>,
+  /// `Ticks -> {xspec, yspec}` with explicit positions: each entry is a
+  /// position and the text drawn at it. `None` = the automatic ticks a
+  /// renderer computes itself. Currently consumed by `Histogram`.
+  pub ticks_x: Option<Vec<(f64, String)>>,
+  pub ticks_y: Option<Vec<(f64, String)>>,
 }
 
 /// A chart label with optional rotation angle (in radians).
@@ -1353,6 +1358,8 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
     plot_range_y: None,
     bar_origin_left: false,
     labeling_function: None,
+    ticks_x: None,
+    ticks_y: None,
   };
   for opt in &args[1..] {
     if let Some((name, replacement)) =
@@ -1470,6 +1477,21 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
           let (rx, ry) = crate::functions::plot::parse_plot_range(replacement);
           opts.plot_range_x = rx;
           opts.plot_range_y = ry;
+        }
+        // `Ticks -> {xspec, yspec}` with explicit positions (each an
+        // optional `{pos, label}` pair). `None`/`Automatic`/`All` leave the
+        // renderer's own automatic ticks in place — only an explicit list
+        // overrides them, matching Plot's `Ticks` handling.
+        "Ticks" => {
+          if let Expr::List(items) = replacement
+            && (1..=2).contains(&items.len())
+          {
+            opts.ticks_x =
+              crate::functions::plot::parse_explicit_ticks(&items[0]);
+            if let Some(y) = items.get(1) {
+              opts.ticks_y = crate::functions::plot::parse_explicit_ticks(y);
+            }
+          }
         }
         "BarOrigin" => {
           // Left/Right give horizontal bars; Bottom/Top stay vertical.

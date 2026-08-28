@@ -9283,6 +9283,51 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn histogram_explicit_ticks() {
+      // `Ticks -> {xspec, yspec}` draws exactly the given x positions/labels
+      // (bin-center labels here) instead of the automatic "nice step" ones,
+      // and leaves the y axis on `Automatic` untouched.
+      let svg = export_svg(
+        "Histogram[{1, 2, 2, 3, 3, 3, 4, 4, 5}, {1}, Ticks -> \
+         {{{1.5, \"a\"}, {2.5, \"b\"}, {3.5, \"c\"}}, Automatic}]",
+      );
+      assert!(
+        svg.contains(">a</text>"),
+        "explicit x tick label 'a' missing"
+      );
+      assert!(
+        svg.contains(">b</text>"),
+        "explicit x tick label 'b' missing"
+      );
+      assert!(
+        svg.contains(">c</text>"),
+        "explicit x tick label 'c' missing"
+      );
+      // The automatic x labels (bin edges 1, 2, 3, 4, 5) must not leak
+      // through once explicit ticks replace them.
+      assert!(
+        !svg.contains(">1</text>"),
+        "automatic x tick label must be suppressed: {svg}"
+      );
+    }
+
+    #[test]
+    fn histogram_explicit_ticks_x_only() {
+      // `Ticks -> {xspec}` (no yspec) leaves the y axis on its own default.
+      let default_svg = export_svg("Histogram[{1, 2, 2, 3, 3, 3}, {1}]");
+      let svg = export_svg(
+        "Histogram[{1, 2, 2, 3, 3, 3}, {1}, Ticks -> {{{1.5, \"lo\"}}}]",
+      );
+      assert!(svg.contains(">lo</text>"), "explicit x tick label missing");
+      // Automatic y labels (e.g. the tallest bar's count) still show up,
+      // same as without any `Ticks` option at all.
+      assert!(
+        svg.contains(">3</text>") == default_svg.contains(">3</text>"),
+        "y axis must keep its automatic labels when only x ticks are given"
+      );
+    }
+
+    #[test]
     fn histogram_image_size() {
       let svg =
         export_svg("Histogram[{1, 2, 2, 3, 3, 3}, ImageSize -> {500, 400}]");
