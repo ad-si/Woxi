@@ -359,6 +359,73 @@ mod set_delayed {
       clear_state();
       assert_eq!(interpret("f[a_ + b_] := a * b; f[3]").unwrap(), "f[3]");
     }
+
+    // Regression: a downvalue pattern that peers into a `Set` inside a
+    // `HoldFirst` argument (`f[a_ = b_] := ...`, the shape a `let`-style
+    // local-binding idiom uses) used to run the held assignment for real
+    // while *canonicalizing* the stored pattern for dispatch — replacing
+    // pattern variables with placeholder symbols and evaluating the result
+    // to look for an arithmetic normal form (as `1/x_` does for `x_^-1`).
+    // Evaluating `Set[placeholder_a, placeholder_b]` actually performs the
+    // assignment and collapses to just its right-hand side, permanently
+    // losing the left variable from the stored pattern. The lost slot then
+    // fell back to matching the *whole* argument, so the real call's raw,
+    // still-unevaluated `Set` ended up spliced into the (unheld) function
+    // body, where it fired for real once the body was evaluated.
+    #[test]
+    fn set_pattern_argument_does_not_run_the_held_assignment() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "Clear[g, uu]; SetAttributes[g, HoldFirst]; \
+           g[a_ = b_] := {a, b}; g[uu = 42]"
+        )
+        .unwrap(),
+        "{uu, 42}"
+      );
+      assert_eq!(interpret("uu").unwrap(), "uu");
+    }
+
+    // Same regression as above, but for the list-wrapped shape
+    // (`f[{a_ = b_}, ...] := ...`) an actual `let`-style `HoldFirst` binding
+    // uses. This argument goes through a separate list-pattern Part-accessor
+    // path that reconstructs `Part[{x = expr}, 1]` and evaluates it like
+    // ordinary code, running the assignment the same way.
+    #[test]
+    fn list_wrapped_set_pattern_does_not_run_the_held_assignment() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "Clear[myLet, uu]; Attributes[myLet] = {HoldFirst}; \
+           myLet[{a_ = b_}, a_] := b; myLet[{uu = 42}, uu]"
+        )
+        .unwrap(),
+        "42"
+      );
+      assert_eq!(interpret("uu").unwrap(), "uu");
+    }
+
+    // End-to-end version of the two regressions above: a Church-encoding
+    // style Demonstration builds a `let` binding out of a `HoldFirst`
+    // function and a curried infix combinator (`(lambda[x_] . body_)[arg_]
+    // := let[{x = arg}, body]`). Applying the identity combinator to a value
+    // used to leave the combinator's own bound variable permanently
+    // assigned to that value as a side effect of the two bugs above.
+    #[test]
+    fn curried_let_combinator_does_not_leak_its_bound_variable() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          r#"Clear[myLet, lam, vv]; Attributes[myLet] = {HoldFirst};
+myLet[{a_ = b_}, a_] := b;
+(lam[a_] \[CenterDot] body_)[arg_] := myLet[{a = arg}, body];
+(lam[vv] \[CenterDot] vv)[42]"#
+        )
+        .unwrap(),
+        "42"
+      );
+      assert_eq!(interpret("vv").unwrap(), "vv");
+    }
   }
 }
 
@@ -816,6 +883,50 @@ mod compile {
       r.warnings
     );
     assert_eq!(interpret("Head[cf]").unwrap(), "CompiledFunction");
+  }
+
+  // Regression: a `.nb` notebook's `SaveDefinitions -> True` dump can embed a
+  // helper as Mathematica's fully serialized `CompiledFunction[…]` — an id
+  // tuple, argument patterns, type/constant tables, raw bytecode, the
+  // uncompiled pure `Function[…]`, and a trailing evaluation flag — rather
+  // than the 2-argument `[specs, body]` form woxi's own `Compile` produces.
+  // woxi has no bytecode VM to run the middle arguments, so calling such a
+  // value used to fall through to the generic case and stay unevaluated —
+  // `CompiledFunction[…][args]` — which then propagated into anything built
+  // on top of it. Real Mathematica always embeds the uncompiled pure
+  // function alongside the bytecode as a correctness fallback, so applying
+  // that instead gives the right answer without a bytecode interpreter.
+  #[test]
+  fn compiled_function_serialized_form_falls_back_to_pure_function() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"cf = CompiledFunction[{7, 7.0, 42}, {_Integer, _Real}, {{2, 0, 0}}, {{}}, {0, 1, 2, 0, 0}, {{1}},
+          Function[{a, b}, N[a] + b], Evaluate];
+        cf[3, 0.25]"#
+      )
+      .unwrap(),
+      "3.25"
+    );
+  }
+
+  // The same fallback must apply when the compiled helper is called deep
+  // inside a larger computation (a Module composing it several times), which
+  // is the shape that actually matters: the un-reduced call otherwise grows
+  // an ever-larger unevaluated expression at every level it passes through.
+  #[test]
+  fn compiled_function_serialized_form_reduces_inside_nested_calls() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"step = CompiledFunction[{7, 7.0, 42}, {_Integer}, {{2, 0, 0}}, {{}}, {0, 1, 2, 0, 0}, {{1}},
+          Function[{k}, N[2 k]], Evaluate];
+        total[n_] := Module[{acc}, acc = 0; Do[acc = acc + step[i], {i, 1, n}]; acc];
+        total[4]"#
+      )
+      .unwrap(),
+      "20."
+    );
   }
 }
 

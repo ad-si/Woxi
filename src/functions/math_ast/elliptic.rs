@@ -261,9 +261,22 @@ pub fn elliptic_e_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
-/// Compute complete elliptic integral E(m) via series expansion
-/// E(m) = (pi/2) * [1 - sum_{n=1}^inf ((2n-1)!!/(2n)!!)^2 * m^n / (2n-1)]
+/// Compute complete elliptic integral E(m).
+///
+/// For m < 0 the power series below (in powers of m) diverges, so that
+/// range is delegated to the incomplete integral's numeric quadrature at
+/// phi = Pi/2, which stays accurate for any m < 1.
 fn elliptic_e(m: f64) -> f64 {
+  if m < 0.0 {
+    return elliptic_e_incomplete(std::f64::consts::FRAC_PI_2, m);
+  }
+  elliptic_e_series(m)
+}
+
+/// Compute complete elliptic integral E(m) via series expansion, valid for
+/// 0 <= m < 1.
+/// E(m) = (pi/2) * [1 - sum_{n=1}^inf ((2n-1)!!/(2n)!!)^2 * m^n / (2n-1)]
+fn elliptic_e_series(m: f64) -> f64 {
   // E(m) = (pi/2) * Σ_{n=0}^∞ ((2n)!/(2^n n!))^2 * (-m^n)/((2n-1)*4^n)
   // Simpler: E(m) = (pi/2) * [1 - Σ_{n=1}^∞ (1/2 choose n)^2 * m^n / (2n-1)]
   // Using the series: E(m) = pi/2 * Σ t_n where

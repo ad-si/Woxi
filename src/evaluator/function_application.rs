@@ -1872,6 +1872,43 @@ pub fn apply_curried_call(
     Expr::FunctionCall {
       name,
       args: func_args,
+    } if name == "CompiledFunction" => {
+      // A `CompiledFunction[…]` restored from a saved notebook (e.g. a
+      // Demonstration's `SaveDefinitions -> True` dump) carries Mathematica's
+      // full serialized form — id tuple, argument patterns, type/constant
+      // tables, raw bytecode, the uncompiled pure function, and a trailing
+      // evaluation flag — not the 2-argument `[specs, body]` shape woxi's own
+      // `Compile` produces above. woxi has no bytecode VM to run the middle
+      // arguments, but real Mathematica always embeds an uncompiled
+      // `Function[…]` alongside the bytecode as a correctness fallback (it's
+      // what runs when the compiled code can't handle an argument); applying
+      // that instead gives the same result the bytecode would. Without this,
+      // the call falls through to the generic case below and returns
+      // unevaluated — which then never collapses to a number and blows up
+      // any surrounding computation that reruns it (e.g. a Manipulate whose
+      // body composes it dozens of times).
+      // `CompiledFunction` holds its arguments (like `Compile`), so an
+      // embedded `Function[…]` is still the literal, unevaluated
+      // `FunctionCall` AST here, not the `NamedFunction`/`Function` value
+      // `Function[…]` evaluates to — evaluate it first to get something
+      // `apply_curried_call` can invoke.
+      match func_args.iter().find(|a| {
+        matches!(a, Expr::NamedFunction { .. } | Expr::Function { .. })
+          || matches!(a, Expr::FunctionCall { name, .. } if name == "Function")
+      }) {
+        Some(pure_fn) => {
+          let pure_fn = evaluate_expr_to_expr(pure_fn)?;
+          apply_curried_call(&pure_fn, args)
+        }
+        None => Ok(Expr::CurriedCall {
+          func: Box::new(func.clone()),
+          args: args.to_vec(),
+        }),
+      }
+    }
+    Expr::FunctionCall {
+      name,
+      args: func_args,
     } => {
       // Property access on a canonical music object, e.g.
       // MusicNote[<|…|>]["Pitch"] or MusicChord[<|…|>]["PitchList"].

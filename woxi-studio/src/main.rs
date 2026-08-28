@@ -537,6 +537,50 @@ impl WoxiStudio {
             editors.push(editor);
             continue;
           }
+          // A standalone dynamic-widget dump with no preceding Input cell —
+          // e.g. a notebook downloaded straight from a Wolfram
+          // Demonstrations Project share link — carries only the compiled
+          // widget, never its source. Rebuild a `Manipulate[…]` expression
+          // straight from the dump's "Body"/"Specifications" entries so the
+          // widget still opens live.
+          if matches!(cell.style, CellStyle::Output | CellStyle::Print)
+            && is_dynamic_box_dump(&cell.content)
+          {
+            if !state_cleared {
+              woxi::clear_state();
+              state_cleared = true;
+            }
+            evaluate_pending_initialization(&mut pending_init);
+            if let Some(state) =
+              instantiate_manipulate_from_box_dump(&cell.content)
+            {
+              editors.push(CellEditor {
+                content: text_editor::Content::with_text(&cell.content),
+                style: cell.style,
+                output: None,
+                stdout: None,
+                graphics_svg: None,
+                graphics_handle: None,
+                graphics_image: None,
+                output_svgs: Vec::new(),
+                output_images: Vec::new(),
+                output_dark: false,
+                output_all_svg: false,
+                sound: None,
+                warnings: Vec::new(),
+                undo_stack: Vec::new(),
+                redo_stack: Vec::new(),
+                output_stale: false,
+                is_collapsed: cell.collapsed,
+                manipulate_state: Some(state),
+                hyperlinks: Vec::new(),
+                stored_graphic: false,
+                output_content: text_editor::Content::new(),
+                stdout_content: text_editor::Content::new(),
+              });
+              continue;
+            }
+          }
           if matches!(cell.style, CellStyle::Input | CellStyle::Code) {
             pending_init.push(cell.content.clone());
           }
@@ -4802,12 +4846,17 @@ fn manipulate_color(code: &str) -> Color {
 
 /// Build a display-only editor for a stored Output cell the interpreter
 /// cannot regenerate: a Demonstrations snapshot (`RasterBox[
-/// CompressedData["…"]]`) shows as a graphic, a `CheckboxBox[…]` grid as
-/// read-only text lines. The original box text stays in `content` so
-/// saving round-trips it. `None` for outputs with no displayable form.
+/// CompressedData["…"]]`) or a vector `GraphicsBox[…]` (Point/Line/
+/// FilledCurve/Disk/Rectangle primitives) shows as a graphic, a
+/// `CheckboxBox[…]` grid as read-only text lines. The original box text
+/// stays in `content` so saving round-trips it. `None` for outputs with no
+/// displayable form.
 fn stored_output_editor(cell: &Cell) -> Option<CellEditor> {
-  let svg =
-    woxi::notebook::stored_output_image_svg(&cell.content).or_else(|| {
+  let svg = woxi::notebook::stored_output_image_svg(&cell.content)
+    .or_else(|| {
+      woxi::notebook::stored_output_vector_graphics_svg(&cell.content)
+    })
+    .or_else(|| {
       woxi::notebook::stored_output_checkbox_text(&cell.content)
         .map(|text| plain_text_svg(&text))
     })?;
@@ -5080,6 +5129,23 @@ fn instantiate_stored_manipulate(
   }
   let expr = woxi::interpret_to_expr(&statements[0]).ok()?;
   manipulate::ManipulateState::from_expr(&expr)
+}
+
+/// Rebuild the interactive widget for a standalone stored Output cell that
+/// holds a dynamic-widget dump with no preceding Input cell to fall back
+/// on — e.g. a notebook downloaded straight from a Wolfram Demonstrations
+/// Project share link, which carries only the compiled
+/// `Manipulate\`ManipulateBoxes[…]` widget and no editable source.
+/// [`woxi::notebook::reconstruct_manipulate_from_box_dump`] rebuilds a
+/// plain `Manipulate[…]` source expression from the dump's `"Body"` and
+/// `"Specifications"` entries, which [`instantiate_stored_manipulate`] then
+/// instantiates exactly as it would a notebook's own Input-cell source.
+fn instantiate_manipulate_from_box_dump(
+  stored_output: &str,
+) -> Option<manipulate::ManipulateState> {
+  let code =
+    woxi::notebook::reconstruct_manipulate_from_box_dump(stored_output)?;
+  instantiate_stored_manipulate(&code, stored_output)
 }
 
 fn evaluate_cell_statements(
@@ -8047,6 +8113,61 @@ mod tests {
     );
   }
 
+  /// A Demonstration-style local-binding helper: a `HoldFirst` function
+  /// pattern-matching a `{x_ = val_}` argument, which several Wolfram
+  /// Demonstrations use to build a `let`-style local binding (`Module`/
+  /// `With` don't work point-free inside a curried combinator). Woxi used
+  /// to actually run the held assignment as a side effect while
+  /// canonicalizing the stored pattern for dispatch, permanently binding
+  /// the pattern's left variable to whatever value the Manipulate's control
+  /// last passed in — so clicking the Setter leaked state across
+  /// re-evaluations instead of staying purely local to each one.
+  #[test]
+  fn held_let_binding_pattern_works_inside_a_live_manipulate() {
+    let expr = woxi::interpret_to_expr(
+      r#"Clear[bindLocal, base, opChoice, nn];
+Attributes[bindLocal] = {HoldFirst};
+bindLocal[{x_ = val_}, x_] := val;
+Manipulate[
+  If[opChoice == "double", 2, 1] * bindLocal[{nn = base}, nn],
+  {{base, 3, "start"}, 0, 10, 1, ControlType -> Setter},
+  {{opChoice, "increment"}, {"increment", "double"}}
+]"#,
+    )
+    .unwrap();
+    let mut state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("Manipulate builds a widget");
+    assert!(
+      state.error.is_none(),
+      "manipulate body errored: {:?}",
+      state.error
+    );
+    assert_eq!(state.text_output.as_deref(), Some("3"));
+
+    // Flip the Setter to "double" and re-evaluate, as clicking it would.
+    let choice_idx = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "opChoice")
+      .unwrap();
+    if let manipulate::ControlState::Discrete { current_index, .. } =
+      &mut state.controls[choice_idx]
+    {
+      *current_index = 1;
+    }
+    state.request_reeval(choice_idx);
+    state.run_scheduled_reeval();
+    assert!(
+      state.error.is_none(),
+      "manipulate body errored after Setter click: {:?}",
+      state.error
+    );
+    assert_eq!(state.text_output.as_deref(), Some("6"));
+
+    // The pattern's bound variable must never leak into global scope.
+    assert_eq!(woxi::interpret("nn").unwrap(), "nn");
+  }
+
   #[test]
   fn dynamic_box_dump_is_recognized() {
     // The saved box form of a live Manipulate (what Mathematica writes
@@ -8270,6 +8391,72 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`glyph$$ = \"pick a letter\"}, \"…
         assert_eq!(tone, "tone");
         assert_eq!(names, "names");
         assert_eq!(name_values, &["True".to_string(), "False".to_string()]);
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+  }
+
+  /// A notebook downloaded straight from a Wolfram Demonstrations Project
+  /// share link carries only the compiled `Manipulate`ManipulateBoxes[…]`
+  /// widget in a standalone Output cell — there is no Input cell with the
+  /// original `Manipulate[…]` source to fall back on, unlike a notebook
+  /// saved from the desktop FrontEnd (which keeps both). The widget must
+  /// still open live, rebuilt straight from the dump's "Body" and
+  /// "Specifications" entries.
+  #[test]
+  fn standalone_widget_dump_with_no_input_cell_opens_live() {
+    let nb_src = r##"Notebook[{
+Cell[BoxData[
+ DynamicModuleBox[{$CellContext`a$$ = 2, $CellContext`b$$ = 1},
+  DynamicBox[Manipulate`ManipulateBoxes[
+   1, StandardForm,
+   "Variables" :> {$CellContext`a$$ = 2, $CellContext`b$$ = 1},
+   "Body" :> Plot[$CellContext`a$$ Sin[$CellContext`b$$ $CellContext`x], \
+{$CellContext`x, 0, 2 Pi}],
+   "Specifications" :> {{{$CellContext`a$$, 2, "amplitude"}, 1, 5}, \
+{{$CellContext`b$$, 1, "frequency"}, {1, 2, 3}}},
+   "Options" :> {}],
+   DynamicModuleValues:>{}]]], "Output"]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect(
+        "a standalone widget dump with no Input cell must still \
+         instantiate on load",
+      );
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(widget.graphics_handle.is_some(), "the plot must draw");
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name: a,
+          min: a_min,
+          max: a_max,
+          current: a_now,
+          ..
+        },
+        manipulate::ControlState::Discrete {
+          name: b,
+          values: b_values,
+          ..
+        },
+      ] => {
+        assert_eq!(
+          (a.as_str(), *a_min, *a_max, *a_now),
+          ("a$$", 1.0, 5.0, 2.0)
+        );
+        assert_eq!(b, "b$$");
+        assert_eq!(
+          b_values,
+          &["1".to_string(), "2".to_string(), "3".to_string()]
+        );
       }
       other => panic!("unexpected controls: {other:?}"),
     }
@@ -21479,6 +21666,181 @@ SaveDefinitions -> True]";
     );
   }
 
+  /// Checked a randomly-sampled Wolfram Demonstrations Project notebook
+  /// simulating repeated die rolls and histogramming the results.
+  /// Independently written, not copied from any specific Demonstration:
+  /// this version rolls one die (not two summed), lets the number of sides
+  /// vary via its own explicit-choice slider, and tracks a running tally of
+  /// one chosen face via `Count` rather than the mode of a sum.
+  ///
+  /// The construct worth pinning down is the combination the sampled
+  /// Demonstration leans on: an explicit-value-list slider
+  /// (`{{sides, 6, …}, {4, 6, 8, 10, 12}}`) alongside a min/max/step slider
+  /// with `Appearance -> "Labeled"`, two `ControlType -> None` hidden state
+  /// variables a `Button` rewrites, `TrackedSymbols`, `AutorunSequencing`,
+  /// and an `Initialization :> (…)` block defining both a small
+  /// `Disk`/`Rectangle` die-face helper and a `Module`-based histogram
+  /// helper — including that helper's `Histogram[…, Ticks -> {explicit, …}]`
+  /// call, so this also exercises `Histogram`'s explicit-`Ticks` rendering
+  /// through the full Studio pipeline (not just a bare `Histogram[…]` call).
+  #[test]
+  fn demonstration_die_roll_histogram_manipulate_renders_with_hidden_state() {
+    let code = r#"Manipulate[
+      Column[{
+        rollHistogram[history, sides],
+        Row[{faceGraphic[Last[history]], "   tally: ", ToString[tally]}]
+      }],
+      Button["roll again",
+        history = Table[RandomInteger[{1, sides}], {trialCount}];
+        tally = Count[history, sides]
+      ],
+      {{sides, 6, "die sides"}, {4, 6, 8, 10, 12}},
+      {{trialCount, 30, "rolls"}, 1, 200, 1, Appearance -> "Labeled"},
+      {{history, {1, 2, 3}}, ControlType -> None},
+      {{tally, 0}, ControlType -> None},
+      TrackedSymbols :> {sides, trialCount, history, tally},
+      AutorunSequencing -> {1},
+      Initialization :> (
+        pipOffsets = {
+          {{0, 0}},
+          {{0.5, 0.5}, {-0.5, -0.5}},
+          {{0.5, 0.5}, {0, 0}, {-0.5, -0.5}}
+        };
+        faceGraphic[face_] := Graphics[
+          {{White, EdgeForm[Black], Rectangle[{-1, -1}, {1, 1}]},
+           {Black,
+            Disk[#, 0.15] & /@
+              pipOffsets[[Mod[face - 1, Length[pipOffsets]] + 1]]}},
+          ImageSize -> 40
+        ];
+        rollHistogram[data_, n_] := Module[{edges},
+          edges = Range[0.5, n + 0.5];
+          If[Length[data] == 0,
+            Graphics[{}, ImageSize -> {200, 150}],
+            Histogram[data, {edges}, ChartStyle -> Blue,
+              Ticks -> {Table[{k, ToString[k]}, {k, 1, n}], Automatic},
+              ImageSize -> {200, 150}]
+          ]
+        ];
+      )
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let mut state = manipulate::ManipulateState::from_expr(&expr).expect(
+      "an explicit-list slider, a Labeled slider, two hidden ControlType \
+       -> None variables and a Module/graphics Initialization block \
+       should all build a ManipulateState",
+    );
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(state.graphics_handle.is_some(), "the die face must render");
+
+    // The Button is its own control row (binding no variable); the two
+    // hidden `ControlType -> None` variables bind no visible row at all.
+    let names: Vec<&str> = state.controls.iter().map(|c| c.name()).collect();
+    assert_eq!(
+      names,
+      ["", "sides", "trialCount"],
+      "the button plus the two visible sliders, in spec order"
+    );
+    assert!(matches!(
+      &state.controls[0],
+      manipulate::ControlState::Button { .. }
+    ));
+
+    match &state.controls[1] {
+      manipulate::ControlState::Discrete {
+        values,
+        current_index,
+        ..
+      } => {
+        assert_eq!(values, &["4", "6", "8", "10", "12"]);
+        assert_eq!(*current_index, 1, "sides should start at 6");
+      }
+      other => panic!("sides should be an explicit-choice control: {other:?}"),
+    }
+    match &state.controls[2] {
+      manipulate::ControlState::Continuous {
+        min, max, current, ..
+      } => assert_eq!((*min, *max, *current), (1.0, 200.0, 30.0)),
+      other => panic!("trialCount should be a Labeled slider: {other:?}"),
+    }
+
+    let hidden = |s: &manipulate::ManipulateState, name: &str| -> String {
+      s.state
+        .iter()
+        .find(|(n, _)| n == name)
+        .map(|(_, v)| v.clone())
+        .unwrap_or_default()
+    };
+    assert_eq!(hidden(&state, "history"), "{1, 2, 3}");
+    assert_eq!(hidden(&state, "tally"), "0");
+
+    // Re-evaluate the body directly to inspect the actual rendered SVG: the
+    // Module-based helper's `Histogram[…, Ticks -> {explicit list, …}]`
+    // must draw exactly the face labels it was given (1..6 for the default
+    // 6-sided die), not the automatic "nice step" ones.
+    let render_body = |s: &manipulate::ManipulateState| -> String {
+      let bindings: Vec<(String, String)> = s
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .chain(s.state.iter().cloned())
+        .collect();
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&s.body)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the histogram + die face must render")
+    };
+    let svg = render_body(&state);
+    for face in 1..=6 {
+      assert!(
+        svg.contains(&format!(">{face}</text>")),
+        "explicit histogram tick label {face} missing: {svg}"
+      );
+    }
+    // Pip dots from the die-face helper's `Disk[...]`.
+    assert!(
+      svg.contains("<circle") || svg.contains("<ellipse"),
+      "the die face's pips must render as circles: {svg}"
+    );
+
+    // Pressing the button rewrites both hidden state variables; the widget
+    // must keep rendering afterwards with the new roll history.
+    let reroll = state
+      .controls
+      .iter()
+      .find_map(|c| match c {
+        manipulate::ControlState::Button { action, .. } => Some(action.clone()),
+        _ => None,
+      })
+      .expect("a reroll button");
+    state.apply_button_action(&reroll);
+    assert!(
+      state.error.is_none(),
+      "reroll button failed: {:?}",
+      state.error
+    );
+    assert_ne!(
+      hidden(&state, "history"),
+      "{1, 2, 3}",
+      "the button must overwrite the hidden roll history"
+    );
+    state.reevaluate();
+    assert!(
+      state.error.is_none(),
+      "re-render after rerolling failed: {:?}",
+      state.error
+    );
+    assert!(state.graphics_handle.is_some());
+  }
+
   /// visualizing node-prominence measures on a network: a `GraphPlot` whose
   /// `VertexRenderingFunction` sizes each point by a chosen centrality
   /// measure, with a `SetterBar` picking which of several small hardcoded
@@ -22333,6 +22695,57 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 30, $CellContext`s$$ = 5}, \"
     assert_ne!(
       as_line, as_polygon,
       "switching the popup from Line to Polygon must redraw with filled shapes"
+    );
+  }
+
+  /// A `SaveDefinitions -> True` dump can embed a helper as Mathematica's
+  /// full serialized `CompiledFunction[…]` — an id tuple, argument
+  /// patterns, type/constant tables, raw bytecode, the uncompiled pure
+  /// `Function[…]`, and a trailing evaluation flag — rather than the
+  /// `Compile[…]` call woxi's own Initialization cells would produce. woxi
+  /// has no bytecode VM, so calling such a value must fall back to the
+  /// embedded pure function instead of returning unevaluated. Before that
+  /// fallback existed, the unevaluated `CompiledFunction[…][args]` call
+  /// propagated into every Module that referenced the helper, and a
+  /// Manipulate composing it across a few dozen list elements (as several
+  /// roulette/epicycloid-style Demonstrations do) blew the resulting
+  /// expression up to gigabytes and never finished loading. Independently
+  /// written, not copied from any specific Wolfram Demonstration.
+  #[test]
+  fn saved_compiled_function_bytecode_falls_back_to_pure_function() {
+    let r = woxi::interpret(
+      r#"radius = CompiledFunction[{9, 9.0, 1234}, {_Integer, _Real}, {{2, 0, 0}}, {{}}, {0, 1, 2, 0, 0}, {{1}},
+        Function[{steps, angle}, N[steps + angle]], Evaluate];
+      radius[3, 0.5]"#,
+    );
+    assert_eq!(
+      r.unwrap_or_else(|e| format!("<error: {e:?}>")),
+      "3.5",
+      "a serialized CompiledFunction with no runnable bytecode VM must fall \
+       back to evaluating its embedded pure Function, not stay unevaluated"
+    );
+
+    // The same fallback must apply when the compiled helper is composed
+    // repeatedly inside a Manipulate's DynamicModule body — the shape that
+    // actually triggered the expression blow-up.
+    let nb_src = r#"Notebook[{
+Cell[BoxData["radius = CompiledFunction[{9, 9.0, 1234}, {_Integer, _Real}, {{2, 0, 0}}, {{}}, {0, 1, 2, 0, 0}, {{1}}, Function[{steps, angle}, N[steps + angle]], Evaluate]"], "Input"],
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[Table[radius[k, offset], {k, 1, count}], {{count, 3, \"count\"}, 1, 6, 1}, {{offset, 0.5, \"offset\"}, 0, 1, 0.1}]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`count$$ = 3, $CellContext`offset$$ = 0.5}, \"…\"]"], "Output"]
+}, Open]]
+}]"#;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .into_iter()
+      .find_map(|e| e.manipulate_state)
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "Table[radius[k, offset], …] must evaluate cleanly once radius[k, offset] \
+       reduces to a number instead of staying an ever-growing unevaluated call: {:?}",
+      widget.error
     );
   }
 }
