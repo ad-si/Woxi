@@ -359,6 +359,73 @@ mod set_delayed {
       clear_state();
       assert_eq!(interpret("f[a_ + b_] := a * b; f[3]").unwrap(), "f[3]");
     }
+
+    // Regression: a downvalue pattern that peers into a `Set` inside a
+    // `HoldFirst` argument (`f[a_ = b_] := ...`, the shape a `let`-style
+    // local-binding idiom uses) used to run the held assignment for real
+    // while *canonicalizing* the stored pattern for dispatch — replacing
+    // pattern variables with placeholder symbols and evaluating the result
+    // to look for an arithmetic normal form (as `1/x_` does for `x_^-1`).
+    // Evaluating `Set[placeholder_a, placeholder_b]` actually performs the
+    // assignment and collapses to just its right-hand side, permanently
+    // losing the left variable from the stored pattern. The lost slot then
+    // fell back to matching the *whole* argument, so the real call's raw,
+    // still-unevaluated `Set` ended up spliced into the (unheld) function
+    // body, where it fired for real once the body was evaluated.
+    #[test]
+    fn set_pattern_argument_does_not_run_the_held_assignment() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "Clear[g, uu]; SetAttributes[g, HoldFirst]; \
+           g[a_ = b_] := {a, b}; g[uu = 42]"
+        )
+        .unwrap(),
+        "{uu, 42}"
+      );
+      assert_eq!(interpret("uu").unwrap(), "uu");
+    }
+
+    // Same regression as above, but for the list-wrapped shape
+    // (`f[{a_ = b_}, ...] := ...`) an actual `let`-style `HoldFirst` binding
+    // uses. This argument goes through a separate list-pattern Part-accessor
+    // path that reconstructs `Part[{x = expr}, 1]` and evaluates it like
+    // ordinary code, running the assignment the same way.
+    #[test]
+    fn list_wrapped_set_pattern_does_not_run_the_held_assignment() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "Clear[myLet, uu]; Attributes[myLet] = {HoldFirst}; \
+           myLet[{a_ = b_}, a_] := b; myLet[{uu = 42}, uu]"
+        )
+        .unwrap(),
+        "42"
+      );
+      assert_eq!(interpret("uu").unwrap(), "uu");
+    }
+
+    // End-to-end version of the two regressions above: a Church-encoding
+    // style Demonstration builds a `let` binding out of a `HoldFirst`
+    // function and a curried infix combinator (`(lambda[x_] . body_)[arg_]
+    // := let[{x = arg}, body]`). Applying the identity combinator to a value
+    // used to leave the combinator's own bound variable permanently
+    // assigned to that value as a side effect of the two bugs above.
+    #[test]
+    fn curried_let_combinator_does_not_leak_its_bound_variable() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          r#"Clear[myLet, lam, vv]; Attributes[myLet] = {HoldFirst};
+myLet[{a_ = b_}, a_] := b;
+(lam[a_] \[CenterDot] body_)[arg_] := myLet[{a = arg}, body];
+(lam[vv] \[CenterDot] vv)[42]"#
+        )
+        .unwrap(),
+        "42"
+      );
+      assert_eq!(interpret("vv").unwrap(), "vv");
+    }
   }
 }
 

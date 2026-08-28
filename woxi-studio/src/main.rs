@@ -8047,6 +8047,61 @@ mod tests {
     );
   }
 
+  /// A Demonstration-style local-binding helper: a `HoldFirst` function
+  /// pattern-matching a `{x_ = val_}` argument, which several Wolfram
+  /// Demonstrations use to build a `let`-style local binding (`Module`/
+  /// `With` don't work point-free inside a curried combinator). Woxi used
+  /// to actually run the held assignment as a side effect while
+  /// canonicalizing the stored pattern for dispatch, permanently binding
+  /// the pattern's left variable to whatever value the Manipulate's control
+  /// last passed in — so clicking the Setter leaked state across
+  /// re-evaluations instead of staying purely local to each one.
+  #[test]
+  fn held_let_binding_pattern_works_inside_a_live_manipulate() {
+    let expr = woxi::interpret_to_expr(
+      r#"Clear[bindLocal, base, opChoice, nn];
+Attributes[bindLocal] = {HoldFirst};
+bindLocal[{x_ = val_}, x_] := val;
+Manipulate[
+  If[opChoice == "double", 2, 1] * bindLocal[{nn = base}, nn],
+  {{base, 3, "start"}, 0, 10, 1, ControlType -> Setter},
+  {{opChoice, "increment"}, {"increment", "double"}}
+]"#,
+    )
+    .unwrap();
+    let mut state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("Manipulate builds a widget");
+    assert!(
+      state.error.is_none(),
+      "manipulate body errored: {:?}",
+      state.error
+    );
+    assert_eq!(state.text_output.as_deref(), Some("3"));
+
+    // Flip the Setter to "double" and re-evaluate, as clicking it would.
+    let choice_idx = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "opChoice")
+      .unwrap();
+    if let manipulate::ControlState::Discrete { current_index, .. } =
+      &mut state.controls[choice_idx]
+    {
+      *current_index = 1;
+    }
+    state.request_reeval(choice_idx);
+    state.run_scheduled_reeval();
+    assert!(
+      state.error.is_none(),
+      "manipulate body errored after Setter click: {:?}",
+      state.error
+    );
+    assert_eq!(state.text_output.as_deref(), Some("6"));
+
+    // The pattern's bound variable must never leak into global scope.
+    assert_eq!(woxi::interpret("nn").unwrap(), "nn");
+  }
+
   #[test]
   fn dynamic_box_dump_is_recognized() {
     // The saved box form of a live Manipulate (what Mathematica writes

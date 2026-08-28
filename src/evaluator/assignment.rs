@@ -869,11 +869,59 @@ fn replace_placeholders_with_patterns(
   }
 }
 
+/// Whether `expr` calls an assignment-family function (`Set`, `SetDelayed`,
+/// `AddTo`, …) anywhere in its tree. `normalize_structural_pattern` evaluates
+/// a placeholder-substituted copy of the pattern to canonicalize benign
+/// arithmetic identities (`1/x_` → `x_^-1`); running that same evaluation on
+/// a pattern like `f[a_ = b_]` (the `HoldFirst` "let"-binding idiom used by
+/// held-argument code) would actually perform the placeholder assignment and
+/// collapse `Set[placeholder_a, placeholder_b]` down to just its right-hand
+/// side, permanently losing the left pattern variable (`a_`) from the stored
+/// pattern. Skip canonicalization for such patterns instead — they have no
+/// arithmetic normal form to look for.
+fn contains_mutating_head(expr: &Expr) -> bool {
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      matches!(
+        name.as_str(),
+        "Set"
+          | "SetDelayed"
+          | "UpSet"
+          | "UpSetDelayed"
+          | "TagSet"
+          | "TagSetDelayed"
+          | "TagUnset"
+          | "Unset"
+          | "AddTo"
+          | "SubtractFrom"
+          | "TimesBy"
+          | "DivideBy"
+          | "Increment"
+          | "Decrement"
+          | "PreIncrement"
+          | "PreDecrement"
+      ) || args.iter().any(contains_mutating_head)
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      contains_mutating_head(left) || contains_mutating_head(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_mutating_head(operand),
+    Expr::List(items) => items.iter().any(contains_mutating_head),
+    Expr::CurriedCall { func, args } => {
+      contains_mutating_head(func) || args.iter().any(contains_mutating_head)
+    }
+    Expr::Part { expr, index } => {
+      contains_mutating_head(expr) || contains_mutating_head(index)
+    }
+    _ => false,
+  }
+}
+
 /// Normalize a structural pattern by evaluating it with placeholder variables.
 /// E.g., `1/x_` (BinaryOp Divide) → `Power[x_, -1]` (canonical form).
 fn normalize_structural_pattern(pattern: &Expr) -> Expr {
   let vars = collect_pattern_vars(pattern);
-  if vars.is_empty() {
+  if vars.is_empty() || contains_mutating_head(pattern) {
     return pattern.clone();
   }
   let with_placeholders = replace_patterns_with_placeholders(pattern, &vars);
@@ -2954,6 +3002,28 @@ pub fn set_delayed_ast(
         // Supports a trailing BlankSequence (`__`) or BlankNullSequence (`___`)
         // element, which relaxes the length check and (for named sequence
         // elements) binds the sequence variable to the matching tail.
+        Expr::List(patterns) if patterns.iter().any(contains_mutating_head) => {
+          // An element like `x_ = expr_` (the `HoldFirst` "let"-binding
+          // idiom, e.g. `myLet[{x_ = expr_}, x_] := expr`) must never be
+          // decomposed via `build_list_pattern_match`'s Part accessors:
+          // reconstructing `Part[{x = expr}, 1]` and evaluating it like
+          // ordinary code would actually perform the assignment. Route it
+          // through the structural-pattern matcher instead — it binds `x`
+          // and `expr` by walking the held argument's structure, never
+          // evaluating it.
+          let param_name = format!("__sp{i}");
+          conditions.push(Some(call(
+            "__StructuralPattern__",
+            vec![
+              Expr::Identifier(param_name.clone()),
+              Expr::List(patterns.clone()),
+            ],
+          )));
+          params.push(param_name);
+          defaults.push(None);
+          heads.push(None);
+          blank_types.push(1);
+        }
         Expr::List(patterns) => {
           let param_name = format!("_lp{i}");
           // The combined condition checks the list length and that each
@@ -3057,7 +3127,24 @@ pub fn set_delayed_ast(
             }
             // `Pattern[name, {p1, p2, ...}]` — named list pattern.
             // Bind `name` to the entire list (via the param itself) AND
-            // destructure inner elements.
+            // destructure inner elements. An element containing a mutating
+            // head (`x_ = expr_`) skips the Part-accessor decomposition for
+            // the same reason as the unnamed list-pattern case above.
+            Expr::List(patterns)
+              if patterns.iter().any(contains_mutating_head) =>
+            {
+              conditions.push(Some(call(
+                "__StructuralPattern__",
+                vec![
+                  Expr::Identifier(pname.clone()),
+                  Expr::List(patterns.clone()),
+                ],
+              )));
+              params.push(pname);
+              defaults.push(None);
+              heads.push(None);
+              blank_types.push(1);
+            }
             Expr::List(patterns) => {
               let (combined_cond, bindings) =
                 build_list_pattern_match(patterns, &pname);
