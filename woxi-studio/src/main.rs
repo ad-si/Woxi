@@ -4662,6 +4662,38 @@ fn render_display_node<'a>(
         .on_press(Message::ManipulateDisplayAction(cell_idx, action.clone()))
         .into()
     }
+    DisplayNode::Popup {
+      target,
+      current,
+      choices,
+    } => {
+      // A `PopupMenu[Dynamic[lval], choices]` display element: a dropdown
+      // whose selection writes `lval = <chosen value>` back, exactly like
+      // Checkbox/Toggler's write-back mutation.
+      let value_labels: Vec<String> =
+        choices.iter().map(|(_, label)| label.clone()).collect();
+      let selected = choices
+        .iter()
+        .find(|(value, _)| value == current)
+        .map(|(_, label)| label.clone())
+        .or_else(|| value_labels.first().cloned());
+      let target = target.clone();
+      let choices_owned = choices.clone();
+      let on_select = move |chosen_label: String| {
+        let value = choices_owned
+          .iter()
+          .find(|(_, label)| *label == chosen_label)
+          .map(|(value, _)| value.clone())
+          .unwrap_or(chosen_label);
+        Message::ManipulateDisplayToggled(
+          cell_idx,
+          format!("{target} = {value}"),
+        )
+      };
+      pick_list(value_labels, selected, on_select)
+        .width(iced::Length::Shrink)
+        .into()
+    }
     DisplayNode::Spacer { width } => {
       space::Space::new().width(*width as f32).into()
     }
@@ -12293,6 +12325,7 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
         }
         DisplayNode::Button { label, .. } => walk(label, out),
         DisplayNode::Checkbox { .. }
+        | DisplayNode::Popup { .. }
         | DisplayNode::Spacer { .. }
         | DisplayNode::Text { .. }
         | DisplayNode::Static { .. } => {}
@@ -12303,6 +12336,128 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
       walk(t, &mut out);
     }
     out
+  }
+
+  /// Collect every `Popup` in a display tree, in reading order.
+  fn collect_popups(
+    trees: &[woxi::functions::graphics::DisplayNode],
+  ) -> Vec<woxi::functions::graphics::DisplayNode> {
+    use woxi::functions::graphics::DisplayNode;
+    fn walk(node: &DisplayNode, out: &mut Vec<DisplayNode>) {
+      match node {
+        DisplayNode::Popup { .. } => out.push(node.clone()),
+        DisplayNode::Panel(child) => walk(child, out),
+        DisplayNode::Grid(rows) => {
+          for row in rows {
+            for cell in row {
+              walk(cell, out);
+            }
+          }
+        }
+        DisplayNode::Column(children) | DisplayNode::Row(children) => {
+          for c in children {
+            walk(c, out);
+          }
+        }
+        DisplayNode::Toggler { label, .. }
+        | DisplayNode::Button { label, .. } => walk(label, out),
+        DisplayNode::Checkbox { .. }
+        | DisplayNode::Spacer { .. }
+        | DisplayNode::Text { .. }
+        | DisplayNode::Static { .. } => {}
+      }
+    }
+    let mut out = Vec::new();
+    for t in trees {
+      walk(t, &mut out);
+    }
+    out
+  }
+
+  /// The write-back target of every `Popup` in a display tree, in reading
+  /// order.
+  fn popup_targets(
+    trees: &[woxi::functions::graphics::DisplayNode],
+  ) -> Vec<String> {
+    use woxi::functions::graphics::DisplayNode;
+    collect_popups(trees)
+      .into_iter()
+      .map(|p| {
+        let DisplayNode::Popup { target, .. } = p else {
+          unreachable!("collect_popups only collects Popup nodes")
+        };
+        target
+      })
+      .collect()
+  }
+
+  #[test]
+  fn dynamic_popup_menu_count_tracks_a_control_and_selection_writes_back() {
+    use woxi::functions::graphics::DisplayNode;
+    // One color-tag dropdown per box, generated with `Outer`/a pure
+    // function over `Range[boxCount]` — not `Table` with a named iterator,
+    // which would leave the literal symbol stuck inside the held `Dynamic`
+    // (see the analogous interpreter-level test for why). `boxCount` is
+    // itself hidden state, so the popup count is dynamic.
+    let code = "Manipulate[tags, \
+      {{boxCount, 2}, 1, 4, 1, ControlType -> None}, \
+      {{tags, {1, 1, 1, 1}}, ControlType -> None}, \
+      Dynamic[Row[Outer[PopupMenu[Dynamic[tags[[#]]], {1, 2, 3}]&, \
+      Range[boxCount]]]]]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("popup-per-box Manipulate must build a widget");
+    assert!(state.error.is_none(), "body must render: {:?}", state.error);
+    assert_eq!(state.state.len(), 2, "boxCount and tags are hidden state");
+
+    // Two popups initially: boxCount starts at 2, one dropdown per box —
+    // and each renders through the iced pick_list arm without panicking.
+    assert_eq!(
+      popup_targets(&state.display_trees),
+      vec!["tags[[1]]".to_string(), "tags[[2]]".to_string()]
+    );
+    for t in &state.display_trees {
+      let _: Element<'_, Message> = render_display_node(0, t);
+    }
+
+    // Bumping the hidden `boxCount` state and re-rendering (as any control
+    // change does) changes how many popups render — the whole `Row[Outer[…
+    // ]]` re-expands from scratch under the `Dynamic` hold on every frame.
+    if let Some(slot) = state.state.iter_mut().find(|(n, _)| n == "boxCount") {
+      slot.1 = "4".to_string();
+    }
+    state.reevaluate();
+    assert_eq!(
+      popup_targets(&state.display_trees),
+      vec![
+        "tags[[1]]".to_string(),
+        "tags[[2]]".to_string(),
+        "tags[[3]]".to_string(),
+        "tags[[4]]".to_string(),
+      ]
+    );
+
+    // Selecting box 3's choice "3" fires `tags[[3]] = 3`; applying that
+    // mutation — exactly what `Message::ManipulateDisplayToggled` drives via
+    // `apply_display_mutation`, the same path a Toggler/Checkbox write-back
+    // uses — writes into that slot alone, and the popup preselects the new
+    // choice afterwards.
+    let popups = collect_popups(&state.display_trees);
+    let DisplayNode::Popup { target, .. } = &popups[2] else {
+      panic!("expected a Popup leaf, got {:?}", popups[2]);
+    };
+    assert_eq!(target, "tags[[3]]");
+    let mutation = format!("{target} = 3");
+    state.apply_display_mutation(&mutation);
+    assert_eq!(
+      state.state.iter().find(|(n, _)| n == "tags").unwrap().1,
+      "{1, 1, 3, 1}",
+      "only box 3's tag changes"
+    );
+    let popups = collect_popups(&state.display_trees);
+    let DisplayNode::Popup { current, .. } = &popups[2] else {
+      panic!("expected a Popup leaf");
+    };
+    assert_eq!(current, "3");
   }
 
   #[test]
