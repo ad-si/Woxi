@@ -1893,6 +1893,37 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_graphics3d_inset_text_draws_label() {
+    // `Inset[obj, {x, y, z}]` in `Graphics3D` — the Demonstrations gallery's
+    // usual way to place a label, almost always as
+    // `Inset[Text[Style[…]], pos]`. Regression: `Graphics3D`'s primitive
+    // collector only recognized a bare `Text[…, pos]` call, so `Inset[…]`
+    // was silently dropped and no label was drawn at all.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Graphics3D[{Arrow[{{0, 0, 0}, {1, 1, 1}}], \
+       Inset[Text[Style[\"O\", 15]], {0, 0, 0}]}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      svg.contains(">O<"),
+      "Inset[Text[…]] label was not drawn in Graphics3D: {svg}"
+    );
+
+    // The label's wrapper content (here a plain string) still typesets the
+    // same way when passed to Inset directly, without the Text[…] wrapper.
+    clear_state();
+    let svg2 = interpret(
+      "ExportString[Graphics3D[{Inset[\"AB\", {0, 0, 0}]}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      svg2.contains(">AB<"),
+      "Inset[…] with a bare string label was not drawn in Graphics3D: {svg2}"
+    );
+  }
+
+  #[test]
   fn test_plot_aspect_ratio_sizes_frame_not_canvas() {
     // AspectRatio sets the height/width ratio of the plotting *area* (the data
     // frame), not the whole image. A short ratio must therefore NOT squash the
