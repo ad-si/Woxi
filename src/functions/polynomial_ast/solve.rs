@@ -5880,9 +5880,9 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut x_prev = x0;
     let mut x_curr = x1_opt.unwrap_or(x0 + 0.1);
     let mut f_prev = find_root_eval_at(&func, &var, x_prev)?;
+    let mut f_curr = find_root_eval_at(&func, &var, x_curr)?;
 
     for _ in 0..max_iter {
-      let f_curr = find_root_eval_at(&func, &var, x_curr)?;
       if f_curr.abs() < tol {
         break;
       }
@@ -5890,10 +5890,37 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if denom.abs() < 1e-30 {
         break;
       }
-      let x_next = x_curr - f_curr * (x_curr - x_prev) / denom;
+      let step = f_curr * (x_curr - x_prev) / denom;
+      // A step can overshoot out of the function's real domain — e.g. a
+      // fractional power's base going negative — where evaluating the
+      // residual there yields a complex number rather than a real one.
+      // Halve the step toward the current point until it lands somewhere
+      // evaluable, the same backtracking the damped-Newton path above
+      // uses, instead of failing the whole solve over one bad iterate.
+      let mut shrink = 1.0;
+      let mut x_next = x_curr - step;
+      let mut f_next = find_root_eval_at(&func, &var, x_next)
+        .ok()
+        .filter(|v| v.is_finite());
+      for _ in 0..FIND_ROOT_MAX_BACKTRACKS {
+        if f_next.is_some() {
+          break;
+        }
+        shrink *= 0.5;
+        x_next = x_curr - step * shrink;
+        f_next = find_root_eval_at(&func, &var, x_next)
+          .ok()
+          .filter(|v| v.is_finite());
+      }
+      let Some(f_next_val) = f_next else {
+        return Err(InterpreterError::EvaluationError(
+          "FindRoot: cannot evaluate expression numerically".into(),
+        ));
+      };
       x_prev = x_curr;
       f_prev = f_curr;
       x_curr = x_next;
+      f_curr = f_next_val;
     }
 
     let result_val = Expr::Real(x_curr);

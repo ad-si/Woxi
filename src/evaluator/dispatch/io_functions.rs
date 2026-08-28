@@ -4644,6 +4644,11 @@ pub(crate) fn lays_out_a_graphic(expr: &Expr) -> bool {
   {
     return true;
   }
+  // A bare `LineLegend[…]` is a picture too — a Demonstration placing a
+  // legend beside its plot rather than attached via `Legended`.
+  if matches!(expr, Expr::FunctionCall { name, .. } if name == "LineLegend") {
+    return true;
+  }
   match expr {
     Expr::List(items) => items.iter().any(lays_out_a_graphic),
     // `Pane` and `Deploy` are transparent here: their own arms export what
@@ -5111,6 +5116,12 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       if name == "Legended" && !args.is_empty() =>
     {
       expr_to_svg(&args[0])
+    }
+    // A bare `LineLegend[…]` (not wrapped in `Legended`) is how a
+    // Demonstration places a legend beside its plot instead of attached to
+    // it — the front end typesets it as swatches either way.
+    Expr::FunctionCall { name, args } if name == "LineLegend" => {
+      crate::functions::graphics::line_legend_svg(args).unwrap_or_default()
     }
     // ComputationalMusic objects render as musical-staff notation.
     Expr::FunctionCall { name, .. }
