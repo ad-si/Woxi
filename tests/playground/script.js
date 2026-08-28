@@ -670,13 +670,23 @@ function renderManipulate(item) {
         // write-back mechanism the checkbox case above uses.
         const select = document.createElement("select")
         select.className = "manipulate-display-popup"
+        let matched = false
         for (const choice of node.choices || []) {
           const option = document.createElement("option")
           option.value = choice.value
           option.textContent = choice.label
-          if (choice.value === node.current) option.selected = true
+          if (choice.value === node.current) {
+            option.selected = true
+            matched = true
+          }
           select.appendChild(option)
         }
+        // A `<select>` defaults to its first `<option>` when none is marked
+        // `selected` — clear that explicitly so an unresolved/out-of-range
+        // `current` shows no selection instead of a fabricated one (and so
+        // that first choice stays clickable: otherwise it would already be
+        // the browser's selection and firing no `change` event).
+        if (!matched) select.selectedIndex = -1
         select.addEventListener("change", () => {
           requestUpdate([`${node.target} = ${select.value}`])
         })
