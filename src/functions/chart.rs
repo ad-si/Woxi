@@ -430,6 +430,10 @@ pub(crate) enum LabelPosition {
 }
 
 /// Parsed chart options.
+// Each flag is an independent Wolfram option (ImageSize's full-width mode,
+// Ticks, …), not a state machine, so they do not collapse into an enum —
+// matching `PlotOptions`, which has the same shape for the same reason.
+#[allow(clippy::struct_excessive_bools)]
 pub(crate) struct ChartOptions {
   pub svg_width: u32,
   pub svg_height: u32,
