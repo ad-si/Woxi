@@ -4802,12 +4802,17 @@ fn manipulate_color(code: &str) -> Color {
 
 /// Build a display-only editor for a stored Output cell the interpreter
 /// cannot regenerate: a Demonstrations snapshot (`RasterBox[
-/// CompressedData["…"]]`) shows as a graphic, a `CheckboxBox[…]` grid as
-/// read-only text lines. The original box text stays in `content` so
-/// saving round-trips it. `None` for outputs with no displayable form.
+/// CompressedData["…"]]`) or a vector `GraphicsBox[…]` (Point/Line/
+/// FilledCurve/Disk/Rectangle primitives) shows as a graphic, a
+/// `CheckboxBox[…]` grid as read-only text lines. The original box text
+/// stays in `content` so saving round-trips it. `None` for outputs with no
+/// displayable form.
 fn stored_output_editor(cell: &Cell) -> Option<CellEditor> {
-  let svg =
-    woxi::notebook::stored_output_image_svg(&cell.content).or_else(|| {
+  let svg = woxi::notebook::stored_output_image_svg(&cell.content)
+    .or_else(|| {
+      woxi::notebook::stored_output_vector_graphics_svg(&cell.content)
+    })
+    .or_else(|| {
       woxi::notebook::stored_output_checkbox_text(&cell.content)
         .map(|text| plain_text_svg(&text))
     })?;
