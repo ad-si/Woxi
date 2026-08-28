@@ -21666,6 +21666,181 @@ SaveDefinitions -> True]";
     );
   }
 
+  /// Checked a randomly-sampled Wolfram Demonstrations Project notebook
+  /// simulating repeated die rolls and histogramming the results.
+  /// Independently written, not copied from any specific Demonstration:
+  /// this version rolls one die (not two summed), lets the number of sides
+  /// vary via its own explicit-choice slider, and tracks a running tally of
+  /// one chosen face via `Count` rather than the mode of a sum.
+  ///
+  /// The construct worth pinning down is the combination the sampled
+  /// Demonstration leans on: an explicit-value-list slider
+  /// (`{{sides, 6, …}, {4, 6, 8, 10, 12}}`) alongside a min/max/step slider
+  /// with `Appearance -> "Labeled"`, two `ControlType -> None` hidden state
+  /// variables a `Button` rewrites, `TrackedSymbols`, `AutorunSequencing`,
+  /// and an `Initialization :> (…)` block defining both a small
+  /// `Disk`/`Rectangle` die-face helper and a `Module`-based histogram
+  /// helper — including that helper's `Histogram[…, Ticks -> {explicit, …}]`
+  /// call, so this also exercises `Histogram`'s explicit-`Ticks` rendering
+  /// through the full Studio pipeline (not just a bare `Histogram[…]` call).
+  #[test]
+  fn demonstration_die_roll_histogram_manipulate_renders_with_hidden_state() {
+    let code = r#"Manipulate[
+      Column[{
+        rollHistogram[history, sides],
+        Row[{faceGraphic[Last[history]], "   tally: ", ToString[tally]}]
+      }],
+      Button["roll again",
+        history = Table[RandomInteger[{1, sides}], {trialCount}];
+        tally = Count[history, sides]
+      ],
+      {{sides, 6, "die sides"}, {4, 6, 8, 10, 12}},
+      {{trialCount, 30, "rolls"}, 1, 200, 1, Appearance -> "Labeled"},
+      {{history, {1, 2, 3}}, ControlType -> None},
+      {{tally, 0}, ControlType -> None},
+      TrackedSymbols :> {sides, trialCount, history, tally},
+      AutorunSequencing -> {1},
+      Initialization :> (
+        pipOffsets = {
+          {{0, 0}},
+          {{0.5, 0.5}, {-0.5, -0.5}},
+          {{0.5, 0.5}, {0, 0}, {-0.5, -0.5}}
+        };
+        faceGraphic[face_] := Graphics[
+          {{White, EdgeForm[Black], Rectangle[{-1, -1}, {1, 1}]},
+           {Black,
+            Disk[#, 0.15] & /@
+              pipOffsets[[Mod[face - 1, Length[pipOffsets]] + 1]]}},
+          ImageSize -> 40
+        ];
+        rollHistogram[data_, n_] := Module[{edges},
+          edges = Range[0.5, n + 0.5];
+          If[Length[data] == 0,
+            Graphics[{}, ImageSize -> {200, 150}],
+            Histogram[data, {edges}, ChartStyle -> Blue,
+              Ticks -> {Table[{k, ToString[k]}, {k, 1, n}], Automatic},
+              ImageSize -> {200, 150}]
+          ]
+        ];
+      )
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let mut state = manipulate::ManipulateState::from_expr(&expr).expect(
+      "an explicit-list slider, a Labeled slider, two hidden ControlType \
+       -> None variables and a Module/graphics Initialization block \
+       should all build a ManipulateState",
+    );
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(state.graphics_handle.is_some(), "the die face must render");
+
+    // The Button is its own control row (binding no variable); the two
+    // hidden `ControlType -> None` variables bind no visible row at all.
+    let names: Vec<&str> = state.controls.iter().map(|c| c.name()).collect();
+    assert_eq!(
+      names,
+      ["", "sides", "trialCount"],
+      "the button plus the two visible sliders, in spec order"
+    );
+    assert!(matches!(
+      &state.controls[0],
+      manipulate::ControlState::Button { .. }
+    ));
+
+    match &state.controls[1] {
+      manipulate::ControlState::Discrete {
+        values,
+        current_index,
+        ..
+      } => {
+        assert_eq!(values, &["4", "6", "8", "10", "12"]);
+        assert_eq!(*current_index, 1, "sides should start at 6");
+      }
+      other => panic!("sides should be an explicit-choice control: {other:?}"),
+    }
+    match &state.controls[2] {
+      manipulate::ControlState::Continuous {
+        min, max, current, ..
+      } => assert_eq!((*min, *max, *current), (1.0, 200.0, 30.0)),
+      other => panic!("trialCount should be a Labeled slider: {other:?}"),
+    }
+
+    let hidden = |s: &manipulate::ManipulateState, name: &str| -> String {
+      s.state
+        .iter()
+        .find(|(n, _)| n == name)
+        .map(|(_, v)| v.clone())
+        .unwrap_or_default()
+    };
+    assert_eq!(hidden(&state, "history"), "{1, 2, 3}");
+    assert_eq!(hidden(&state, "tally"), "0");
+
+    // Re-evaluate the body directly to inspect the actual rendered SVG: the
+    // Module-based helper's `Histogram[…, Ticks -> {explicit list, …}]`
+    // must draw exactly the face labels it was given (1..6 for the default
+    // 6-sided die), not the automatic "nice step" ones.
+    let render_body = |s: &manipulate::ManipulateState| -> String {
+      let bindings: Vec<(String, String)> = s
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .chain(s.state.iter().cloned())
+        .collect();
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&s.body)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the histogram + die face must render")
+    };
+    let svg = render_body(&state);
+    for face in 1..=6 {
+      assert!(
+        svg.contains(&format!(">{face}</text>")),
+        "explicit histogram tick label {face} missing: {svg}"
+      );
+    }
+    // Pip dots from the die-face helper's `Disk[...]`.
+    assert!(
+      svg.contains("<circle") || svg.contains("<ellipse"),
+      "the die face's pips must render as circles: {svg}"
+    );
+
+    // Pressing the button rewrites both hidden state variables; the widget
+    // must keep rendering afterwards with the new roll history.
+    let reroll = state
+      .controls
+      .iter()
+      .find_map(|c| match c {
+        manipulate::ControlState::Button { action, .. } => Some(action.clone()),
+        _ => None,
+      })
+      .expect("a reroll button");
+    state.apply_button_action(&reroll);
+    assert!(
+      state.error.is_none(),
+      "reroll button failed: {:?}",
+      state.error
+    );
+    assert_ne!(
+      hidden(&state, "history"),
+      "{1, 2, 3}",
+      "the button must overwrite the hidden roll history"
+    );
+    state.reevaluate();
+    assert!(
+      state.error.is_none(),
+      "re-render after rerolling failed: {:?}",
+      state.error
+    );
+    assert!(state.graphics_handle.is_some());
+  }
+
   /// visualizing node-prominence measures on a network: a `GraphPlot` whose
   /// `VertexRenderingFunction` sizes each point by a chosen centrality
   /// measure, with a `SetterBar` picking which of several small hardcoded
