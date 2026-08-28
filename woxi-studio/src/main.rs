@@ -537,6 +537,50 @@ impl WoxiStudio {
             editors.push(editor);
             continue;
           }
+          // A standalone dynamic-widget dump with no preceding Input cell —
+          // e.g. a notebook downloaded straight from a Wolfram
+          // Demonstrations Project share link — carries only the compiled
+          // widget, never its source. Rebuild a `Manipulate[…]` expression
+          // straight from the dump's "Body"/"Specifications" entries so the
+          // widget still opens live.
+          if matches!(cell.style, CellStyle::Output | CellStyle::Print)
+            && is_dynamic_box_dump(&cell.content)
+          {
+            if !state_cleared {
+              woxi::clear_state();
+              state_cleared = true;
+            }
+            evaluate_pending_initialization(&mut pending_init);
+            if let Some(state) =
+              instantiate_manipulate_from_box_dump(&cell.content)
+            {
+              editors.push(CellEditor {
+                content: text_editor::Content::with_text(&cell.content),
+                style: cell.style,
+                output: None,
+                stdout: None,
+                graphics_svg: None,
+                graphics_handle: None,
+                graphics_image: None,
+                output_svgs: Vec::new(),
+                output_images: Vec::new(),
+                output_dark: false,
+                output_all_svg: false,
+                sound: None,
+                warnings: Vec::new(),
+                undo_stack: Vec::new(),
+                redo_stack: Vec::new(),
+                output_stale: false,
+                is_collapsed: cell.collapsed,
+                manipulate_state: Some(state),
+                hyperlinks: Vec::new(),
+                stored_graphic: false,
+                output_content: text_editor::Content::new(),
+                stdout_content: text_editor::Content::new(),
+              });
+              continue;
+            }
+          }
           if matches!(cell.style, CellStyle::Input | CellStyle::Code) {
             pending_init.push(cell.content.clone());
           }
@@ -5087,6 +5131,23 @@ fn instantiate_stored_manipulate(
   manipulate::ManipulateState::from_expr(&expr)
 }
 
+/// Rebuild the interactive widget for a standalone stored Output cell that
+/// holds a dynamic-widget dump with no preceding Input cell to fall back
+/// on — e.g. a notebook downloaded straight from a Wolfram Demonstrations
+/// Project share link, which carries only the compiled
+/// `Manipulate\`ManipulateBoxes[…]` widget and no editable source.
+/// [`woxi::notebook::reconstruct_manipulate_from_box_dump`] rebuilds a
+/// plain `Manipulate[…]` source expression from the dump's `"Body"` and
+/// `"Specifications"` entries, which [`instantiate_stored_manipulate`] then
+/// instantiates exactly as it would a notebook's own Input-cell source.
+fn instantiate_manipulate_from_box_dump(
+  stored_output: &str,
+) -> Option<manipulate::ManipulateState> {
+  let code =
+    woxi::notebook::reconstruct_manipulate_from_box_dump(stored_output)?;
+  instantiate_stored_manipulate(&code, stored_output)
+}
+
 fn evaluate_cell_statements(
   editor: &mut CellEditor,
   code: &str,
@@ -8330,6 +8391,72 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`glyph$$ = \"pick a letter\"}, \"…
         assert_eq!(tone, "tone");
         assert_eq!(names, "names");
         assert_eq!(name_values, &["True".to_string(), "False".to_string()]);
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+  }
+
+  /// A notebook downloaded straight from a Wolfram Demonstrations Project
+  /// share link carries only the compiled `Manipulate`ManipulateBoxes[…]`
+  /// widget in a standalone Output cell — there is no Input cell with the
+  /// original `Manipulate[…]` source to fall back on, unlike a notebook
+  /// saved from the desktop FrontEnd (which keeps both). The widget must
+  /// still open live, rebuilt straight from the dump's "Body" and
+  /// "Specifications" entries.
+  #[test]
+  fn standalone_widget_dump_with_no_input_cell_opens_live() {
+    let nb_src = r##"Notebook[{
+Cell[BoxData[
+ DynamicModuleBox[{$CellContext`a$$ = 2, $CellContext`b$$ = 1},
+  DynamicBox[Manipulate`ManipulateBoxes[
+   1, StandardForm,
+   "Variables" :> {$CellContext`a$$ = 2, $CellContext`b$$ = 1},
+   "Body" :> Plot[$CellContext`a$$ Sin[$CellContext`b$$ $CellContext`x], \
+{$CellContext`x, 0, 2 Pi}],
+   "Specifications" :> {{{$CellContext`a$$, 2, "amplitude"}, 1, 5}, \
+{{$CellContext`b$$, 1, "frequency"}, {1, 2, 3}}},
+   "Options" :> {}],
+   DynamicModuleValues:>{}]]], "Output"]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect(
+        "a standalone widget dump with no Input cell must still \
+         instantiate on load",
+      );
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(widget.graphics_handle.is_some(), "the plot must draw");
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name: a,
+          min: a_min,
+          max: a_max,
+          current: a_now,
+          ..
+        },
+        manipulate::ControlState::Discrete {
+          name: b,
+          values: b_values,
+          ..
+        },
+      ] => {
+        assert_eq!(
+          (a.as_str(), *a_min, *a_max, *a_now),
+          ("a$$", 1.0, 5.0, 2.0)
+        );
+        assert_eq!(b, "b$$");
+        assert_eq!(
+          b_values,
+          &["1".to_string(), "2".to_string(), "3".to_string()]
+        );
       }
       other => panic!("unexpected controls: {other:?}"),
     }

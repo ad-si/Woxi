@@ -2119,6 +2119,72 @@ pub fn saved_initialization_context_symbols(box_dump: &str) -> Vec<String> {
   names
 }
 
+/// The value of `"<key>" :> <value>` inside a FrontEnd box dump, up to the
+/// first top-level comma (or the end of the enclosing bracket/brace/paren).
+/// Skips over string literals, where brackets are just text.
+fn extract_arrow_value<'a>(box_dump: &'a str, key: &str) -> Option<&'a str> {
+  let marker = format!("\"{key}\"");
+  let rel = box_dump.find(&marker)?;
+  let rest = box_dump[rel + marker.len()..].trim_start();
+  let rest = rest.strip_prefix(":>")?.trim_start();
+
+  let mut depth = 0i32;
+  let mut in_string = false;
+  let mut prev_backslash = false;
+  for (i, c) in rest.char_indices() {
+    if in_string {
+      if c == '"' && !prev_backslash {
+        in_string = false;
+      }
+      prev_backslash = c == '\\' && !prev_backslash;
+      continue;
+    }
+    match c {
+      '"' => in_string = true,
+      '(' | '[' | '{' => depth += 1,
+      ')' | ']' | '}' => {
+        if depth == 0 {
+          return Some(rest[..i].trim_end());
+        }
+        depth -= 1;
+      }
+      ',' if depth == 0 => return Some(rest[..i].trim_end()),
+      _ => {}
+    }
+  }
+  let trimmed = rest.trim_end();
+  if trimmed.is_empty() {
+    None
+  } else {
+    Some(trimmed)
+  }
+}
+
+/// Rebuild a plain `Manipulate[body, spec, …]` source expression from a
+/// saved FrontEnd dynamic-widget dump (the `DynamicModuleBox[…]` text
+/// stored in the Output cell of an evaluated `Manipulate[…]`) when there is
+/// no Input cell holding the original source to re-evaluate — e.g. a
+/// notebook downloaded straight from a Wolfram Demonstrations Project share
+/// link, which carries only the compiled `Manipulate\`ManipulateBoxes[…]`
+/// widget and no editable Wolfram Language source.
+///
+/// The dump's `"Body" :> …` and `"Specifications" :> {…}` entries carry
+/// exactly the two pieces a `Manipulate[…]` call needs; `` $CellContext` ``
+/// prefixes and the FrontEnd's line-continuation `\` markers are stripped
+/// the same way [`extract_saved_initialization`] strips them, so the result
+/// evaluates as ordinary session-level input.
+pub fn reconstruct_manipulate_from_box_dump(box_dump: &str) -> Option<String> {
+  let clean = |s: &str| s.replace("$CellContext`", "").replace("\\\n", "");
+  let body = clean(extract_arrow_value(box_dump, "Body")?);
+  let specs = clean(extract_arrow_value(box_dump, "Specifications")?);
+  let specs = specs.trim();
+  let specs_inner = specs.strip_prefix('{')?.strip_suffix('}')?.trim();
+  if specs_inner.is_empty() {
+    return Some(format!("Manipulate[{body}]"));
+  }
+  Some(format!("Manipulate[{body}, {specs_inner}]"))
+}
+
 /// The prefix of `s` up to (excluding) the `)` matching an already-consumed
 /// `(`. Skips over string literals, where parentheses are just text.
 fn matching_paren_prefix(s: &str) -> Option<&str> {
@@ -5179,6 +5245,52 @@ yf4GL4DwC5VA4w
         "DynamicModuleBox[{}, DynamicBox[…]]"
       ),
       Vec::<String>::new()
+    );
+  }
+
+  #[test]
+  fn test_reconstruct_manipulate_from_box_dump() {
+    // A minimal stand-in for the `Manipulate`ManipulateBoxes[…]` structure
+    // Wolfram embeds in a saved Output cell: enough surrounding box syntax
+    // to exercise the extraction, with unrelated keys interleaved the way
+    // the real dump orders "Variables"/"ControllerVariables" before "Body".
+    let dump = "DynamicModuleBox[{$CellContext`a$$ = 2}, \
+      DynamicBox[Manipulate`ManipulateBoxes[\n\
+      1, StandardForm, \n\
+      \"Variables\" :> {$CellContext`a$$ = 2}, \n\
+      \"Body\" :> Plot[$CellContext`a$$*Sin[$CellContext`x], {$CellContext`x, 0, \
+      2 Pi}], \n\
+      \"Specifications\" :> {{{$CellContext`a$$, 2, \"amplitude\"}, 1, 5}}, \n\
+      \"Options\" :> {}],\n\
+      DynamicModuleValues:>{}]]";
+    let src = reconstruct_manipulate_from_box_dump(dump).unwrap();
+    assert_eq!(
+      src,
+      "Manipulate[Plot[a$$*Sin[x], {x, 0, 2 Pi}], {{a$$, 2, \"amplitude\"}, 1, 5}]"
+    );
+  }
+
+  #[test]
+  fn test_reconstruct_manipulate_from_box_dump_multiple_specs() {
+    let dump = "DynamicModuleBox[{}, DynamicBox[Manipulate`ManipulateBoxes[\n\
+      1, StandardForm, \n\
+      \"Body\" :> $CellContext`f[$CellContext`n$$, $CellContext`m$$], \n\
+      \"Specifications\" :> {{{$CellContext`n$$, 1, \"n\"}, 1, 10}, \
+      {{$CellContext`m$$, 1, \"m\"}, {1, 2, 3}}}]]]";
+    let src = reconstruct_manipulate_from_box_dump(dump).unwrap();
+    assert_eq!(
+      src,
+      "Manipulate[f[n$$, m$$], {{n$$, 1, \"n\"}, 1, 10}, {{m$$, 1, \"m\"}, {1, 2, 3}}]"
+    );
+  }
+
+  #[test]
+  fn test_reconstruct_manipulate_from_box_dump_absent() {
+    assert_eq!(
+      reconstruct_manipulate_from_box_dump(
+        "DynamicModuleBox[{}, DynamicBox[…]]"
+      ),
+      None
     );
   }
 
