@@ -5720,13 +5720,14 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   // Multivariate form: FindRoot[{eqns}, {{x, x0}, {y, y0}, ...}] — every
-  // variable spec is itself a {var, start} list. Solved with multidimensional
-  // Newton iteration.
+  // variable spec is itself a {var, start} list, optionally {var, x0, x1}
+  // for a per-variable secant hint. Solved with multidimensional Newton
+  // iteration.
   if let Expr::List(specs) = arg1
     && !specs.is_empty()
     && specs.iter().all(|s| {
       matches!(s, Expr::List(p)
-      if p.len() == 2 && is_findroot_var_expr(&p[0]))
+      if (p.len() == 2 || p.len() == 3) && is_findroot_var_expr(&p[0]))
     })
   {
     return find_root_multivariate(&args[0], specs);
@@ -5736,15 +5737,15 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // documented form (used throughout Wolfram's own examples) where each
   // variable spec is its own trailing argument instead of being wrapped in
   // one outer list. Collect every leading trailing argument that looks like
-  // a {var, start} pair; two or more means this is the multivariate form
-  // rather than the single-variable {var, x0} / {var, x0, x1} form handled
-  // below.
+  // a {var, start} or {var, x0, x1} pair; two or more means this is the
+  // multivariate form rather than the single-variable {var, x0} / {var, x0,
+  // x1} form handled below.
   if args.len() >= 3 {
     let candidate_specs: Vec<Expr> = args[1..]
       .iter()
       .take_while(|s| {
         matches!(s, Expr::List(p)
-        if p.len() == 2 && is_findroot_var_expr(&p[0]))
+        if (p.len() == 2 || p.len() == 3) && is_findroot_var_expr(&p[0]))
       })
       .cloned()
       .collect();
@@ -6718,8 +6719,12 @@ fn find_root_multivariate(
 ) -> Result<Expr, InterpreterError> {
   // Variables and starting points. A spec's variable is either a plain
   // symbol or an indexed variable like `u[1]` — see `is_findroot_var_expr`.
+  // A three-element spec `{var, x0, x1}` carries a second point used as a
+  // per-variable finite-difference step hint for the numerical Jacobian,
+  // mirroring the secant hint the single-variable form uses.
   let mut raw_vars: Vec<Expr> = Vec::new();
   let mut x: Vec<f64> = Vec::new();
+  let mut step_hint: Vec<Option<f64>> = Vec::new();
   for spec in specs {
     if let Expr::List(p) = spec {
       if !is_findroot_var_expr(&p[0]) {
@@ -6728,7 +6733,15 @@ fn find_root_multivariate(
         ));
       }
       raw_vars.push(p[0].clone());
-      x.push(find_root_eval_number(&p[1])?);
+      let x0 = find_root_eval_number(&p[1])?;
+      x.push(x0);
+      step_hint.push(if p.len() == 3 {
+        let x1 = find_root_eval_number(&p[2])?;
+        let h = (x1 - x0).abs();
+        if h > 1e-14 { Some(h) } else { None }
+      } else {
+        None
+      });
     }
   }
   let n = raw_vars.len();
@@ -6806,22 +6819,26 @@ fn find_root_multivariate(
     jac.push(row);
   }
 
-  // Newton iteration.
+  // Every entry that has no symbolic derivative needs two extra function
+  // evaluations (central difference) per iteration to refill it — for an
+  // opaque function like one wrapping `NDSolve` that cost dominates and a
+  // plain Newton iteration recomputing the whole Jacobian every step turns
+  // into hundreds of expensive re-solves. Broyden's quasi-Newton method
+  // amortizes that: the Jacobian is built by finite difference just once,
+  // then cheaply rank-1 updated from the step already taken, so each
+  // further iteration costs exactly the `n` evaluations needed for the
+  // residual itself.
+  let needs_finite_diff = jac
+    .iter()
+    .any(|row| row.iter().any(std::option::Option::is_none));
   let max_iter = 100;
   let tol = 1e-13;
-  for _ in 0..max_iter {
-    let mut fv = vec![0.0; n];
-    for (i, f) in eqns.iter().enumerate() {
-      fv[i] = find_root_eval_multivar(f, &vars, &x)?;
-    }
-    if fv.iter().fold(0.0f64, |a, &b| a.max(b.abs())) < tol {
-      break;
-    }
+  let eval_jacobian = |x: &[f64]| -> Result<Vec<Vec<f64>>, InterpreterError> {
     let mut jm = vec![vec![0.0; n]; n];
     for (i, row) in jac.iter().enumerate() {
       for (j, dij) in row.iter().enumerate() {
         let entry = match dij {
-          Some(d) => quietly(|| find_root_eval_multivar(d, &vars, &x))
+          Some(d) => quietly(|| find_root_eval_multivar(d, &vars, x))
             .ok()
             .filter(|v| v.is_finite()),
           None => None,
@@ -6829,10 +6846,10 @@ fn find_root_multivariate(
         jm[i][j] = if let Some(v) = entry {
           v
         } else {
-          let h = 1e-7 * x[j].abs().max(1.0);
-          let mut xp = x.clone();
+          let h = step_hint[j].unwrap_or(1e-7 * x[j].abs().max(1.0));
+          let mut xp = x.to_vec();
           xp[j] += h;
-          let mut xm = x.clone();
+          let mut xm = x.to_vec();
           xm[j] -= h;
           let fp = find_root_eval_multivar(&eqns[i], &vars, &xp)?;
           let fm = find_root_eval_multivar(&eqns[i], &vars, &xm)?;
@@ -6840,17 +6857,127 @@ fn find_root_multivariate(
         };
       }
     }
-    let neg_f: Vec<f64> = fv.iter().map(|v| -v).collect();
-    let Some(delta) = find_root_solve_linear(jm, neg_f) else {
-      break;
+    Ok(jm)
+  };
+
+  if needs_finite_diff {
+    // Broyden's method: one finite-difference Jacobian up front, then a
+    // rank-1 update from each accepted step. A step is only accepted if it
+    // improves the residual (backtracking, as the single-variable secant
+    // path above does); a rank-1 update built from a rejected long step
+    // would corrupt the Jacobian estimate rather than merely take a slow
+    // step, so a run of failed backtracks instead re-seeds the Jacobian
+    // with a fresh finite difference at the current point.
+    let residual_norm =
+      |fv: &[f64]| fv.iter().fold(0.0f64, |a, &b| a.max(b.abs()));
+    let eval_all = |x: &[f64]| -> Result<Vec<f64>, InterpreterError> {
+      let mut fv = vec![0.0; n];
+      for (i, f) in eqns.iter().enumerate() {
+        fv[i] = find_root_eval_multivar(f, &vars, x)?;
+      }
+      Ok(fv)
     };
-    let mut max_d = 0.0f64;
-    for (j, &dj) in delta.iter().enumerate() {
-      x[j] += dj;
-      max_d = max_d.max(dj.abs());
+    let mut fv = eval_all(&x)?;
+    let mut jm = eval_jacobian(&x)?;
+    let mut converged = residual_norm(&fv) < tol;
+    let mut iter_count = 0;
+    while !converged && iter_count < max_iter {
+      iter_count += 1;
+      let mut progressed = false;
+      for attempt in 0..2 {
+        let neg_f: Vec<f64> = fv.iter().map(|v| -v).collect();
+        let Some(delta) = find_root_solve_linear(jm.clone(), neg_f) else {
+          if attempt == 0 {
+            jm = eval_jacobian(&x)?;
+            continue;
+          }
+          break;
+        };
+        let base_norm = residual_norm(&fv);
+        let mut shrink = 1.0;
+        let mut accepted = None;
+        for _ in 0..FIND_ROOT_MAX_BACKTRACKS {
+          let x_trial: Vec<f64> = x
+            .iter()
+            .zip(&delta)
+            .map(|(&xj, &dj)| xj + dj * shrink)
+            .collect();
+          let fv_trial = eval_all(&x_trial)?;
+          if fv_trial.iter().all(|v| v.is_finite())
+            && residual_norm(&fv_trial) <= base_norm
+          {
+            accepted = Some((x_trial, fv_trial, shrink));
+            break;
+          }
+          shrink *= 0.5;
+        }
+        let Some((x_new, fv_new, shrink)) = accepted else {
+          // No backtrack improved on this Jacobian estimate — it has drifted
+          // too far from the true derivative. Re-seed it once and retry the
+          // step from scratch before giving up on this outer iteration.
+          if attempt == 0 {
+            jm = eval_jacobian(&x)?;
+            continue;
+          }
+          break;
+        };
+        let step: Vec<f64> = delta.iter().map(|d| d * shrink).collect();
+        // Rank-1 update: J += (Δf - JΔx) ΔxᵀΔx⁻¹ / (Δx · Δx).
+        let step_sq: f64 = step.iter().map(|d| d * d).sum();
+        if step_sq > 1e-300 {
+          for i in 0..n {
+            let j_dx: f64 = (0..n).map(|k| jm[i][k] * step[k]).sum();
+            let coeff = (fv_new[i] - fv[i] - j_dx) / step_sq;
+            for (k, &sk) in step.iter().enumerate() {
+              jm[i][k] += coeff * sk;
+            }
+          }
+        }
+        x = x_new;
+        fv = fv_new;
+        progressed = true;
+        if residual_norm(&fv) < tol {
+          converged = true;
+        }
+        break;
+      }
+      if !progressed {
+        break;
+      }
+      if converged {
+        break;
+      }
     }
-    if max_d < tol {
-      break;
+    if !converged {
+      crate::emit_message(&format!(
+        "FindRoot::cvmit: Failed to converge to the requested accuracy or \
+         precision within {max_iter} iterations."
+      ));
+    }
+  } else {
+    // Fully symbolic Jacobian: recomputing it every iteration costs no
+    // extra function evaluations, so plain damped-free Newton is simplest.
+    for _ in 0..max_iter {
+      let mut fv = vec![0.0; n];
+      for (i, f) in eqns.iter().enumerate() {
+        fv[i] = find_root_eval_multivar(f, &vars, &x)?;
+      }
+      if fv.iter().fold(0.0f64, |a, &b| a.max(b.abs())) < tol {
+        break;
+      }
+      let jm = eval_jacobian(&x)?;
+      let neg_f: Vec<f64> = fv.iter().map(|v| -v).collect();
+      let Some(delta) = find_root_solve_linear(jm, neg_f) else {
+        break;
+      };
+      let mut max_d = 0.0f64;
+      for (j, &dj) in delta.iter().enumerate() {
+        x[j] += dj;
+        max_d = max_d.max(dj.abs());
+      }
+      if max_d < tol {
+        break;
+      }
     }
   }
   let rules: Vec<Expr> = raw_vars
