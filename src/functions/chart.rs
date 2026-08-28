@@ -462,6 +462,11 @@ pub(crate) struct ChartOptions {
   /// renderer computes itself. Currently consumed by `Histogram`.
   pub ticks_x: Option<Vec<(f64, String)>>,
   pub ticks_y: Option<Vec<(f64, String)>>,
+  /// `Ticks -> None` suppresses tick marks/labels on both axes entirely,
+  /// matching `Plot`'s `Ticks` handling. `Automatic`/`All`/an explicit list
+  /// leave this `true` (the explicit list still overrides individual axes
+  /// via `ticks_x`/`ticks_y` above).
+  pub ticks: bool,
 }
 
 /// A chart label with optional rotation angle (in radians).
@@ -1360,6 +1365,7 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
     labeling_function: None,
     ticks_x: None,
     ticks_y: None,
+    ticks: true,
   };
   for opt in &args[1..] {
     if let Some((name, replacement)) =
@@ -1478,21 +1484,24 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
           opts.plot_range_x = rx;
           opts.plot_range_y = ry;
         }
-        // `Ticks -> {xspec, yspec}` with explicit positions (each an
-        // optional `{pos, label}` pair). `None`/`Automatic`/`All` leave the
-        // renderer's own automatic ticks in place — only an explicit list
-        // overrides them, matching Plot's `Ticks` handling.
-        "Ticks" => {
-          if let Expr::List(items) = replacement
-            && (1..=2).contains(&items.len())
-          {
+        // `Ticks -> None` suppresses ticks entirely; `Automatic`/`All` leave
+        // the renderer's own automatic ticks in place; an explicit
+        // `{xspec, yspec}` list overrides individual axes (each entry an
+        // optional `{pos, label}` pair) — matching Plot's `Ticks` handling.
+        "Ticks" => match replacement {
+          Expr::Identifier(s) if s == "None" => opts.ticks = false,
+          Expr::Identifier(s) if s == "Automatic" || s == "All" => {
+            opts.ticks = true;
+          }
+          Expr::List(items) if (1..=2).contains(&items.len()) => {
             opts.ticks_x =
               crate::functions::plot::parse_explicit_ticks(&items[0]);
             if let Some(y) = items.get(1) {
               opts.ticks_y = crate::functions::plot::parse_explicit_ticks(y);
             }
           }
-        }
+          _ => {}
+        },
         "BarOrigin" => {
           // Left/Right give horizontal bars; Bottom/Top stay vertical.
           if let Expr::Identifier(side) = replacement {

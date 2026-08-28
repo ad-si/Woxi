@@ -6757,15 +6757,16 @@ pub(crate) fn generate_histogram_svg(
     let y_major = nice_step(y_max - y_min, AXIS_TICK_TARGET);
     let x_minor_step = x_major / 5.0;
     let y_minor_step = y_major / 5.0;
-    // An axis given explicit `Ticks` draws its own marks/labels at exactly
-    // the positions asked for (after the mesh below), so plotters' automatic
-    // ones on that axis are suppressed here.
-    let x_tick_count = if opts.ticks_x.is_some() {
+    // `Ticks -> None` suppresses automatic ticks on both axes outright. An
+    // axis given explicit `Ticks` draws its own marks/labels at exactly the
+    // positions asked for (after the mesh below), so plotters' automatic
+    // ones on that axis are suppressed here too.
+    let x_tick_count = if !opts.ticks || opts.ticks_x.is_some() {
       0
     } else {
       ((x_hi - x_lo) / x_minor_step).round() as usize + 1
     };
-    let y_tick_count = if opts.ticks_y.is_some() {
+    let y_tick_count = if !opts.ticks || opts.ticks_y.is_some() {
       0
     } else {
       ((y_max - y_min) / y_minor_step).round() as usize + 1
@@ -6895,7 +6896,8 @@ pub(crate) fn generate_histogram_svg(
 
   // Extend labeled (major) ticks beyond the minor ticks drawn by plotters.
   // An axis given explicit `Ticks` draws its own marks/labels below instead,
-  // so the automatic majors must not be extended over it.
+  // so the automatic majors must not be extended over it; `Ticks -> None`
+  // suppresses this on both axes.
   {
     let x_major = nice_step(x_hi - x_lo, AXIS_TICK_TARGET);
     let y_major = nice_step(y_max - y_min, AXIS_TICK_TARGET);
@@ -6905,8 +6907,8 @@ pub(crate) fn generate_histogram_svg(
       plot_y0,
       plot_w,
       plot_h,
-      (opts.ticks_x.is_none()).then_some((x_lo, x_hi, x_major)),
-      (opts.ticks_y.is_none()).then_some((y_min, y_max, y_major)),
+      (opts.ticks && opts.ticks_x.is_none()).then_some((x_lo, x_hi, x_major)),
+      (opts.ticks && opts.ticks_y.is_none()).then_some((y_min, y_max, y_major)),
       MINOR_TICK_LEN as f64 * sf,
       MAJOR_TICK_LEN as f64 * sf,
       sf,

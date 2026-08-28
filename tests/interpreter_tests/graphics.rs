@@ -40,6 +40,29 @@ fn y_tick_labels(svg: &str) -> Vec<String> {
   labels.into_iter().map(|(_, text)| text).collect()
 }
 
+/// The x-axis tick labels of a rendered plot, left to right — the
+/// `text-anchor="middle"` counterpart of `y_tick_labels` above. Needed
+/// because a bare `svg.contains(">1</text>")`-style check can't tell an
+/// x-axis label from an unrelated y-axis label with the same text (and
+/// plotters wraps an automatic label's text in newlines, e.g. `>\n1\n</text>`,
+/// unlike the inline `>a</text>` explicit ticks render).
+fn x_tick_labels(svg: &str) -> Vec<String> {
+  let mut labels: Vec<(i64, String)> = svg
+    .split("<text ")
+    .skip(1)
+    .filter_map(|tag| tag.split_once('>'))
+    .filter(|(open, _)| open.contains("text-anchor=\"middle\""))
+    .filter_map(|(open, rest)| {
+      let x = open.split("x=\"").nth(1)?.split('"').next()?;
+      let text = rest.split('<').next()?.trim().to_string();
+      Some((x.parse::<f64>().ok()? as i64, text))
+    })
+    .filter(|(_, text)| !text.is_empty())
+    .collect();
+  labels.sort_by_key(|(x, _)| *x);
+  labels.into_iter().map(|(_, text)| text).collect()
+}
+
 /// Remove the embedded-font `<defs><style>…</style></defs>` block the exporter
 /// injects right after the opening `<svg>` tag, leaving the rest untouched.
 fn strip_font_style(svg: &str) -> String {
@@ -9291,23 +9314,14 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         "Histogram[{1, 2, 2, 3, 3, 3, 4, 4, 5}, {1}, Ticks -> \
          {{{1.5, \"a\"}, {2.5, \"b\"}, {3.5, \"c\"}}, Automatic}]",
       );
+      // The x axis shows exactly the explicit labels, in position order —
+      // none of the automatic bin-edge labels (1, 2, 3, 4, 5) leak through.
+      assert_eq!(x_tick_labels(&svg), ["a", "b", "c"]);
+      // The y axis (left on `Automatic`) keeps its own automatic labels,
+      // unaffected by the x axis's explicit ones.
       assert!(
-        svg.contains(">a</text>"),
-        "explicit x tick label 'a' missing"
-      );
-      assert!(
-        svg.contains(">b</text>"),
-        "explicit x tick label 'b' missing"
-      );
-      assert!(
-        svg.contains(">c</text>"),
-        "explicit x tick label 'c' missing"
-      );
-      // The automatic x labels (bin edges 1, 2, 3, 4, 5) must not leak
-      // through once explicit ticks replace them.
-      assert!(
-        !svg.contains(">1</text>"),
-        "automatic x tick label must be suppressed: {svg}"
+        !y_tick_labels(&svg).is_empty(),
+        "y axis should keep its automatic labels: {svg}"
       );
     }
 
@@ -9318,13 +9332,34 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       let svg = export_svg(
         "Histogram[{1, 2, 2, 3, 3, 3}, {1}, Ticks -> {{{1.5, \"lo\"}}}]",
       );
-      assert!(svg.contains(">lo</text>"), "explicit x tick label missing");
+      assert_eq!(x_tick_labels(&svg), ["lo"]);
       // Automatic y labels (e.g. the tallest bar's count) still show up,
       // same as without any `Ticks` option at all.
-      assert!(
-        svg.contains(">3</text>") == default_svg.contains(">3</text>"),
+      assert_eq!(
+        y_tick_labels(&svg),
+        y_tick_labels(&default_svg),
         "y axis must keep its automatic labels when only x ticks are given"
       );
+    }
+
+    #[test]
+    fn histogram_ticks_none_suppresses_all_ticks() {
+      // `Ticks -> None` draws no tick marks/labels on either axis, matching
+      // Plot's `Ticks -> None` semantics.
+      let svg = export_svg("Histogram[{1, 2, 2, 3, 3, 3}, {1}, Ticks -> None]");
+      assert!(
+        x_tick_labels(&svg).is_empty(),
+        "no automatic x tick labels expected with Ticks -> None: {svg}"
+      );
+      assert!(
+        y_tick_labels(&svg).is_empty(),
+        "no automatic y tick labels expected with Ticks -> None: {svg}"
+      );
+      // A *different* Histogram call without `Ticks -> None` still shows its
+      // automatic labels on both axes (independent options per call).
+      let svg_default = export_svg("Histogram[{1, 2, 2, 3, 3, 3}, {1}]");
+      assert!(!x_tick_labels(&svg_default).is_empty());
+      assert!(!y_tick_labels(&svg_default).is_empty());
     }
 
     #[test]
