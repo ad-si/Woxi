@@ -664,6 +664,24 @@ function renderManipulate(item) {
         }
         return span
       }
+      case "popup": {
+        // A `PopupMenu[Dynamic[lval], choices]` display element: a dropdown
+        // whose selection writes `lval = <chosen value>` back, the same
+        // write-back mechanism the checkbox case above uses.
+        const select = document.createElement("select")
+        select.className = "manipulate-display-popup"
+        for (const choice of node.choices || []) {
+          const option = document.createElement("option")
+          option.value = choice.value
+          option.textContent = choice.label
+          if (choice.value === node.current) option.selected = true
+          select.appendChild(option)
+        }
+        select.addEventListener("change", () => {
+          requestUpdate([`${node.target} = ${select.value}`])
+        })
+        return select
+      }
       case "static": {
         const div = document.createElement("div")
         if (node.svg) {

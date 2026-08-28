@@ -4571,6 +4571,51 @@ fn render_manipulate_widget<'a>(
   container(widget).padding(6).width(Fill).into()
 }
 
+/// One choice of a `DisplayNode::Popup` dropdown, as an iced `pick_list`
+/// option. Carries the choice's position in `DisplayNode::Popup::choices`
+/// rather than being keyed by its label text — `discrete_choice_label` is
+/// lossy (e.g. `1 -> "A", 2 -> "A"` renders the same label for two
+/// different values), so resolving a selection back to a value by label
+/// would make the second such choice unreachable through the UI.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PopupChoice {
+  index: usize,
+  label: String,
+}
+
+impl std::fmt::Display for PopupChoice {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(f, "{}", self.label)
+  }
+}
+
+/// Build a `DisplayNode::Popup`'s `pick_list` options and current selection
+/// from its `(value, label)` choices and the live value at `current`. Kept
+/// separate from `render_display_node` so the selection logic (in
+/// particular: no fabricated selection when nothing matches, and choices
+/// distinguished by index rather than by their possibly-colliding label)
+/// is unit-testable without going through iced.
+fn popup_menu_state(
+  choices: &[(String, String)],
+  current: &str,
+) -> (Vec<PopupChoice>, Option<PopupChoice>) {
+  let items: Vec<PopupChoice> = choices
+    .iter()
+    .enumerate()
+    .map(|(index, (_, label))| PopupChoice {
+      index,
+      label: label.clone(),
+    })
+    .collect();
+  // No selection (rather than fabricating one) when the live value at
+  // `target` doesn't match any choice.
+  let selected = choices
+    .iter()
+    .position(|(value, _)| value == current)
+    .map(|i| items[i].clone());
+  (items, selected)
+}
+
 /// Recursively render a Manipulate display-element widget tree into iced.
 /// Interactive checkboxes emit `ManipulateDisplayToggled` with the write-back
 /// assignment (`<target> = <on|off>`) to apply on toggle.
@@ -4669,28 +4714,21 @@ fn render_display_node<'a>(
     } => {
       // A `PopupMenu[Dynamic[lval], choices]` display element: a dropdown
       // whose selection writes `lval = <chosen value>` back, exactly like
-      // Checkbox/Toggler's write-back mutation.
-      let value_labels: Vec<String> =
-        choices.iter().map(|(_, label)| label.clone()).collect();
-      let selected = choices
-        .iter()
-        .find(|(value, _)| value == current)
-        .map(|(_, label)| label.clone())
-        .or_else(|| value_labels.first().cloned());
+      // Checkbox/Toggler's write-back mutation. Options carry their index
+      // (see `PopupChoice`) rather than being keyed by label text, since
+      // `discrete_choice_label` is lossy and two choices can render the
+      // same label (e.g. `1 -> "A", 2 -> "A"`).
+      let (items, selected) = popup_menu_state(choices, current);
       let target = target.clone();
       let choices_owned = choices.clone();
-      let on_select = move |chosen_label: String| {
-        let value = choices_owned
-          .iter()
-          .find(|(_, label)| *label == chosen_label)
-          .map(|(value, _)| value.clone())
-          .unwrap_or(chosen_label);
+      let on_select = move |chosen: PopupChoice| {
+        let value = choices_owned[chosen.index].0.clone();
         Message::ManipulateDisplayToggled(
           cell_idx,
           format!("{target} = {value}"),
         )
       };
-      pick_list(value_labels, selected, on_select)
+      pick_list(items, selected, on_select)
         .width(iced::Length::Shrink)
         .into()
     }
@@ -12389,6 +12427,46 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
         target
       })
       .collect()
+  }
+
+  #[test]
+  fn popup_menu_state_selects_nothing_when_current_matches_no_choice() {
+    // A live value outside the choice list (or `popup_node`'s own fallback
+    // to the target's raw InputForm when it can't evaluate) must not
+    // fabricate a selection by falling back to the first choice — the
+    // dropdown should show no selection, like Toggler/SetterBar do.
+    let choices = vec![
+      ("1".to_string(), "One".to_string()),
+      ("2".to_string(), "Two".to_string()),
+    ];
+    let (items, selected) = popup_menu_state(&choices, "unresolved_expr");
+    assert_eq!(items.len(), 2);
+    assert!(selected.is_none());
+
+    let (_, selected) = popup_menu_state(&choices, "1");
+    assert_eq!(selected.map(|c| c.index), Some(0));
+  }
+
+  #[test]
+  fn popup_menu_state_distinguishes_choices_with_colliding_labels() {
+    // `discrete_choice_label` can render two different values with the same
+    // label (e.g. `1 -> "A", 2 -> "A"`); each must still be its own,
+    // separately selectable option, keyed by position rather than text.
+    let choices = vec![
+      ("1".to_string(), "A".to_string()),
+      ("2".to_string(), "A".to_string()),
+    ];
+    let (items, _) = popup_menu_state(&choices, "1");
+    assert_eq!(items.len(), 2);
+    assert_ne!(items[0], items[1], "same label, different index");
+    assert_eq!(items[0].label, "A");
+    assert_eq!(items[1].label, "A");
+
+    // Selecting the second "A" resolves back to value "2", not "1".
+    let (_, selected_first) = popup_menu_state(&choices, "1");
+    let (_, selected_second) = popup_menu_state(&choices, "2");
+    assert_eq!(selected_first.map(|c| c.index), Some(0));
+    assert_eq!(selected_second.map(|c| c.index), Some(1));
   }
 
   #[test]
