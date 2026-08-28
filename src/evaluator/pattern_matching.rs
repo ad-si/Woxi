@@ -986,6 +986,13 @@ pub fn apply_replace_ast(
   expr: &Expr,
   rules: &Expr,
 ) -> Result<Expr, InterpreterError> {
+  let assoc_list;
+  let rules = if matches!(rules, Expr::Association(_)) {
+    assoc_list = association_to_rules(rules);
+    &assoc_list
+  } else {
+    rules
+  };
   // Check if rules is a list of rule-lists: Replace[x, {{x -> 1}, {x -> 2}}]
   if let Expr::List(outer_items) = rules
     && !outer_items.is_empty()
@@ -2337,6 +2344,26 @@ fn strip_hold_pattern(pattern: &Expr) -> Expr {
   canonicalize_pattern(pattern)
 }
 
+/// An Association used as a replacement-rules argument behaves as if it
+/// were the list of its `key -> value` pairs (Wolfram accepts an
+/// Association anywhere a list of rules is expected). Non-Association
+/// expressions pass through unchanged so callers can use this
+/// unconditionally.
+fn association_to_rules(rules: &Expr) -> Expr {
+  match rules {
+    Expr::Association(pairs) => Expr::List(
+      pairs
+        .iter()
+        .map(|(k, v)| Expr::Rule {
+          pattern: Box::new(k.clone()),
+          replacement: Box::new(v.clone()),
+        })
+        .collect(),
+    ),
+    other => other.clone(),
+  }
+}
+
 /// Canonicalize the left-hand side of every rule in `rules` (see
 /// [`canonicalize_pattern`]), so the AST, Flat and string-based replacement
 /// paths below all see the same pattern — a `HoldPattern[…]` left in place
@@ -2368,6 +2395,13 @@ pub fn apply_replace_all_ast(
   expr: &Expr,
   rules: &Expr,
 ) -> Result<Expr, InterpreterError> {
+  let assoc_list;
+  let rules = if matches!(rules, Expr::Association(_)) {
+    assoc_list = association_to_rules(rules);
+    &assoc_list
+  } else {
+    rules
+  };
   let canonical;
   let rules = if needs_canonicalization(rules) {
     canonical = canonicalize_rules(rules);
