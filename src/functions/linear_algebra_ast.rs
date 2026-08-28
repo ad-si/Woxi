@@ -387,6 +387,31 @@ fn fallback_plus(a: &Expr, b: &Expr) -> Expr {
   }
 }
 
+/// Sum every term in one `plus_ast` call instead of folding pairwise.
+///
+/// `plus_ast` flattens and re-collects *all* of its arguments on every
+/// call, so folding `n` terms with `n - 1` two-argument calls (`sum =
+/// eval_add(sum, term)`) re-flattens the ever-growing `sum` each time —
+/// O(1) + O(2) + … + O(n) = O(n²) work to add up `n` terms. A dot product
+/// of two length-`n` vectors needs exactly this sum, so that quadratic
+/// blowup turned every `Dot` call in a Newton-solved PDE discretization
+/// (each equation a dot product of a matrix row with hundreds of unknowns)
+/// into the dominant cost of the whole solve. Passing every term to
+/// `plus_ast` at once flattens and combines them in a single pass.
+fn eval_add_many(terms: Vec<Expr>) -> Expr {
+  match terms.len() {
+    0 => Expr::Integer(0),
+    1 => terms.into_iter().next().unwrap(),
+    _ => match crate::functions::math_ast::plus_ast(&terms) {
+      Ok(r) => r,
+      Err(_) => Expr::FunctionCall {
+        name: "Plus".to_string(),
+        args: terms.into(),
+      },
+    },
+  }
+}
+
 fn eval_mul(a: &Expr, b: &Expr) -> Expr {
   match (a, b) {
     (Expr::Integer(x), Expr::Integer(y)) => match x.checked_mul(*y) {
@@ -985,11 +1010,12 @@ pub fn dot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if va.len() != vb.len() {
       return dotsh();
     }
-    let mut sum = Expr::Integer(0);
-    for (a, b) in va.iter().zip(vb.iter()) {
-      sum = eval_add(&sum, &eval_mul(a, b));
-    }
-    return Ok(sum);
+    let terms: Vec<Expr> = va
+      .iter()
+      .zip(vb.iter())
+      .map(|(a, b)| eval_mul(a, b))
+      .collect();
+    return Ok(eval_add_many(terms));
   }
 
   // Matrix . Vector → vector
@@ -1002,11 +1028,12 @@ pub fn dot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     let mut result = Vec::new();
     for row in &ma {
-      let mut sum = Expr::Integer(0);
-      for (a, b) in row.iter().zip(vb.iter()) {
-        sum = eval_add(&sum, &eval_mul(a, b));
-      }
-      result.push(sum);
+      let terms: Vec<Expr> = row
+        .iter()
+        .zip(vb.iter())
+        .map(|(a, b)| eval_mul(a, b))
+        .collect();
+      result.push(eval_add_many(terms));
     }
     return Ok(Expr::List(result.into()));
   }
@@ -1022,11 +1049,9 @@ pub fn dot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let b_cols = mb.first().map_or(0, std::vec::Vec::len);
     let mut result = Vec::with_capacity(b_cols);
     for j in 0..b_cols {
-      let mut sum = Expr::Integer(0);
-      for i in 0..b_rows {
-        sum = eval_add(&sum, &eval_mul(&va[i], &mb[i][j]));
-      }
-      result.push(sum);
+      let terms: Vec<Expr> =
+        (0..b_rows).map(|i| eval_mul(&va[i], &mb[i][j])).collect();
+      result.push(eval_add_many(terms));
     }
     return Ok(Expr::List(result.into()));
   }
@@ -1045,11 +1070,10 @@ pub fn dot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     for i in 0..ma.len() {
       let mut row = Vec::new();
       for j in 0..b_cols {
-        let mut sum = Expr::Integer(0);
-        for k in 0..a_cols {
-          sum = eval_add(&sum, &eval_mul(&ma[i][k], &mb[k][j]));
-        }
-        row.push(sum);
+        let terms: Vec<Expr> = (0..a_cols)
+          .map(|k| eval_mul(&ma[i][k], &mb[k][j]))
+          .collect();
+        row.push(eval_add_many(terms));
       }
       result.push(row);
     }

@@ -8685,6 +8685,66 @@ mod find_root {
       "3.8317059702075125"
     );
   }
+
+  // Regression: a multivariate FindRoot on a genuinely *linear* system
+  // (a Jacobian that doesn't depend on x) should converge in essentially
+  // one Newton step. When the equations come from a numerically
+  // ill-conditioned matrix — a Chebyshev spectral-collocation
+  // differentiation matrix is a classic example, and PDE-solving
+  // Demonstrations commonly build one to discretize a Laplacian — the
+  // achievable residual can plateau well above the loop's tolerance
+  // purely from f64 rounding in the linear solve. The Newton loop used
+  // to burn through all `MaxIterations -> 100` iterations chasing that
+  // unreachable tolerance every single time, each iteration paying for a
+  // fresh equation/Jacobian evaluation — turning a solve that should
+  // finish in a handful of steps into the dominant cost of the whole
+  // computation. Tracking the best iterate seen and stopping as soon as
+  // the residual stops improving fixes this without weakening genuinely
+  // (even slowly) converging cases.
+  #[test]
+  fn ill_conditioned_linear_system_does_not_exhaust_max_iterations() {
+    // A Chebyshev differentiation matrix (Trefethen's standard formula)
+    // for a small spectral grid, applied twice (`Dm . Dm`) to get a
+    // second-derivative operator, then combined via a Kronecker sum into
+    // a 2D discrete Laplacian. Dirichlet boundary points get a trivial
+    // `u == 0` equation; interior points get the Laplacian row dotted
+    // against the full unknown vector, equal to zero except at one
+    // source point — a standard finite-difference/spectral Poisson setup.
+    let code = "\
+      n = 16; \
+      Dm = Table[ \
+        Which[ \
+          i == 0 && j == 0, (2 n^2 + 1)/6., \
+          i == n && j == n, -(2 n^2 + 1)/6., \
+          i == j, -N[Cos[i Pi/n]]/(2 (1 - Cos[i Pi/n]^2)), \
+          True, (If[i == 0 || i == n, 2., 1.]/If[j == 0 || j == n, 2., 1.]) * \
+            (-1)^(i + j)/(N[Cos[i Pi/n]] - N[Cos[j Pi/n]]) \
+        ], \
+        {i, 0, n}, {j, 0, n} \
+      ]; \
+      Dm2 = Dm . Dm; \
+      Lap = KroneckerProduct[Dm2, IdentityMatrix[n + 1]] + \
+        KroneckerProduct[IdentityMatrix[n + 1], Dm2]; \
+      m = (n + 1)^2; \
+      U = Array[u, m]; \
+      idx[p_, q_] := p*(n + 1) + q + 1; \
+      eqns = Flatten[Table[ \
+        If[p == 0 || p == n || q == 0 || q == n, \
+          u[idx[p, q]] == 0, \
+          Lap[[idx[p, q]]] . U == If[p == 8 && q == 8, 1., 0.]], \
+        {p, 0, n}, {q, 0, n}]]; \
+      guess = Table[{u[i], 0.}, {i, 1, m}]; \
+      sol = FindRoot[eqns, guess]; \
+      Length[sol]";
+    let start = std::time::Instant::now();
+    let result = interpret(code).unwrap();
+    assert!(
+      start.elapsed().as_secs() < 15,
+      "FindRoot on an ill-conditioned but linear system must stop once \
+       the residual stops improving, not chase every MaxIterations step"
+    );
+    assert_eq!(result, "289");
+  }
 }
 
 mod replace {
