@@ -884,6 +884,50 @@ mod compile {
     );
     assert_eq!(interpret("Head[cf]").unwrap(), "CompiledFunction");
   }
+
+  // Regression: a `.nb` notebook's `SaveDefinitions -> True` dump can embed a
+  // helper as Mathematica's fully serialized `CompiledFunction[…]` — an id
+  // tuple, argument patterns, type/constant tables, raw bytecode, the
+  // uncompiled pure `Function[…]`, and a trailing evaluation flag — rather
+  // than the 2-argument `[specs, body]` form woxi's own `Compile` produces.
+  // woxi has no bytecode VM to run the middle arguments, so calling such a
+  // value used to fall through to the generic case and stay unevaluated —
+  // `CompiledFunction[…][args]` — which then propagated into anything built
+  // on top of it. Real Mathematica always embeds the uncompiled pure
+  // function alongside the bytecode as a correctness fallback, so applying
+  // that instead gives the right answer without a bytecode interpreter.
+  #[test]
+  fn compiled_function_serialized_form_falls_back_to_pure_function() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"cf = CompiledFunction[{7, 7.0, 42}, {_Integer, _Real}, {{2, 0, 0}}, {{}}, {0, 1, 2, 0, 0}, {{1}},
+          Function[{a, b}, N[a] + b], Evaluate];
+        cf[3, 0.25]"#
+      )
+      .unwrap(),
+      "3.25"
+    );
+  }
+
+  // The same fallback must apply when the compiled helper is called deep
+  // inside a larger computation (a Module composing it several times), which
+  // is the shape that actually matters: the un-reduced call otherwise grows
+  // an ever-larger unevaluated expression at every level it passes through.
+  #[test]
+  fn compiled_function_serialized_form_reduces_inside_nested_calls() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"step = CompiledFunction[{7, 7.0, 42}, {_Integer}, {{2, 0, 0}}, {{}}, {0, 1, 2, 0, 0}, {{1}},
+          Function[{k}, N[2 k]], Evaluate];
+        total[n_] := Module[{acc}, acc = 0; Do[acc = acc + step[i], {i, 1, n}]; acc];
+        total[4]"#
+      )
+      .unwrap(),
+      "20."
+    );
+  }
 }
 
 mod dispatch {
