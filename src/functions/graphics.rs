@@ -1266,12 +1266,14 @@ pub(crate) fn line_legend_svg(args: &[Expr]) -> Option<String> {
 
   let mut entries: Vec<Expr> = Vec::new();
   for (label, spec) in labels.iter().zip(style_specs.iter()) {
-    let mut style = StyleState::default();
     // LineLegend's sample draws a plain visible stroke by default — not
     // the hairline `AbsoluteThickness[1]` an undirected `Line[…]`
     // primitive gets — so an entry with no `Thickness` directive of its
     // own still reads as a line, matching wolframscript's legend.
-    style.thickness = 0.05;
+    let mut style = StyleState {
+      thickness: 0.05,
+      ..StyleState::default()
+    };
     match spec {
       Expr::List(directives) => {
         for d in directives {

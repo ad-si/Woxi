@@ -14407,7 +14407,7 @@ mod line_legend {
       .collect();
     assert!(
       widths.len() >= 2
-        && widths.iter().cloned().fold(0.0, f64::max) > widths[0],
+        && widths.iter().copied().fold(0.0, f64::max) > widths[0],
       "Thickness[Large] should widen its sample relative to the default: {widths:?}"
     );
   }
