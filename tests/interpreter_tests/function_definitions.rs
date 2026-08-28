@@ -823,6 +823,31 @@ mod compile {
     // An argument only ever used arithmetically (not as a count) still
     // defaults to `_Real`.
     assert_eq!(interpret(r#"Compile[{x}, x + 1][3]"#).unwrap(), "4.");
+    // `FixedPointList[f, expr]` (2-arg form) ends in `expr`, the starting
+    // *value* — not a count, unlike the 3-arg `FixedPointList[f, expr,
+    // max]`. A bare argument in that position must still default to
+    // `_Real`.
+    assert_eq!(
+      interpret(r#"cf = Compile[{x}, FixedPointList[(#/2) &, x]]; cf[3][[1]]"#)
+        .unwrap(),
+      "3."
+    );
+    // `Array[f, n, r]`'s count is always the 2nd argument (`n`); the last
+    // argument (`r`, the index origin) is not a count and must still
+    // default to `_Real`.
+    assert_eq!(
+      interpret(r#"cf = Compile[{r}, Array[Sin, 3, r]]; cf[0][[1]]"#).unwrap(),
+      "0."
+    );
+    // A bare `{name}` is only a repetition count in `Do`/`Table`/`Sum`/
+    // `Product`'s own iterator-argument positions — not wherever a
+    // singleton list happens to appear. `Total[{x}]` uses `x` as data, not
+    // an iterator, and must still default to `_Real`.
+    assert_eq!(interpret(r#"Compile[{x}, Total[{x}]][2]"#).unwrap(), "2.");
+    assert_eq!(
+      interpret(r#"Compile[{x}, Total[{x}] / 3][2]"#).unwrap(),
+      "0.6666666666666666"
+    );
   }
 
   // A compiled function whose signature includes a real works in machine

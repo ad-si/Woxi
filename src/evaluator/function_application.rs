@@ -148,43 +148,59 @@ fn compile_arg_spec(spec: &Expr, body: &Expr) -> Option<(String, bool)> {
   }
 }
 
-/// Whether `body` uses the bare parameter `name` as a repetition count —
-/// the last argument of `NestList`/`Nest`/`NestWhileList`/`NestWhile`, or a
-/// bare `{name}` iterator spec (`Do[…, {name}]`, `Table[…, {name}]`, …).
+/// Whether `body` uses the bare parameter `name` in a fixed count
+/// *position* — the 3rd argument of `Nest`/`NestList`/`FixedPointList`, the
+/// 2nd of `Array`, or a bare `{name}` iterator spec in one of `Do`'s/
+/// `Table`'s/`Sum`'s/`Product`'s own iterator arguments (`Do[…, {name}]`).
 /// Compile infers such a parameter as `_Integer` even without an explicit
 /// type declaration, matching real Mathematica's usage-based inference.
 fn compile_param_used_as_integer_count(name: &str, expr: &Expr) -> bool {
   match expr {
     Expr::FunctionCall { name: fname, args } => {
-      let last_is_name =
-        matches!(args.last(), Some(Expr::Identifier(n)) if n == name);
-      if last_is_name
-        && matches!(
-          fname.as_str(),
-          "NestList"
-            | "Nest"
-            | "NestWhileList"
-            | "NestWhile"
-            | "FixedPointList"
-            | "Array"
-        )
-      {
+      // Each of these has a fixed count *position*, not just a trailing
+      // one: `FixedPointList[f, expr]` (2-arg) ends in `expr`, not a count,
+      // and `Array[f, n, r, …]`'s count `n` is always the 2nd argument,
+      // never the last once an index origin/head follows it. `NestWhile`/
+      // `NestWhileList` have no count argument at all in their base form
+      // (they iterate until `test` fails), so they are excluded entirely.
+      let is_count_position = match fname.as_str() {
+        // Nest[f, expr, n] / NestList[f, expr, n] — always exactly 3
+        // args, with the count last.
+        "Nest" | "NestList" if args.len() == 3 => {
+          matches!(args.last(), Some(Expr::Identifier(n)) if n == name)
+        }
+        // FixedPointList[f, expr, max] — only the 3-arg form has a count,
+        // and it is last.
+        "FixedPointList" if args.len() == 3 => {
+          matches!(args.last(), Some(Expr::Identifier(n)) if n == name)
+        }
+        // Array[f, n, …] — the count is always the 2nd argument.
+        "Array" if args.len() >= 2 => {
+          matches!(args.get(1), Some(Expr::Identifier(n)) if n == name)
+        }
+        // Do/Table/Sum/Product's iterator arguments (everything after the
+        // body/summand) may each be a bare `{name}` repetition-count spec
+        // — but only there: `name` appearing in a `{name}` list anywhere
+        // else (e.g. `Total[{x}]`, data rather than an iterator) is not a
+        // count.
+        "Do" | "Table" | "Sum" | "Product" if args.len() >= 2 => {
+          args[1..].iter().any(|it| {
+            matches!(it, Expr::List(items) if items.len() == 1
+              && matches!(items.first(), Some(Expr::Identifier(n)) if n == name))
+          })
+        }
+        _ => false,
+      };
+      if is_count_position {
         return true;
       }
       args
         .iter()
         .any(|a| compile_param_used_as_integer_count(name, a))
     }
-    Expr::List(items) => {
-      if items.len() == 1
-        && matches!(items.first(), Some(Expr::Identifier(n)) if n == name)
-      {
-        return true;
-      }
-      items
-        .iter()
-        .any(|it| compile_param_used_as_integer_count(name, it))
-    }
+    Expr::List(items) => items
+      .iter()
+      .any(|it| compile_param_used_as_integer_count(name, it)),
     Expr::BinaryOp { left, right, .. } => {
       compile_param_used_as_integer_count(name, left)
         || compile_param_used_as_integer_count(name, right)
