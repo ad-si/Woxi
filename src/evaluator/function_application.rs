@@ -123,23 +123,101 @@ pub fn distribute_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// the body uses no slots. SlotSequence `##` (== `##1`) counts as slot 1.
 /// The name of one `Compile` argument spec and whether its declared element
 /// type is `_Real`. A bare name (`x`) defaults to `_Real`, matching the
-/// Wolfram Language; `{s, _Integer, 0}` binds an integer instead, which a
-/// `Nest` count or a `Range` bound needs.
-fn compile_arg_spec(spec: &Expr) -> Option<(String, bool)> {
+/// Wolfram Language — unless `body` uses it as a repetition count
+/// (`NestList[…, x]`, a bare `{x}` iterator), in which case real Compile's
+/// usage-based type inference settles on `_Integer` instead, the same as an
+/// explicit `{s, _Integer, 0}` spec.
+fn compile_arg_spec(spec: &Expr, body: &Expr) -> Option<(String, bool)> {
   match spec {
-    Expr::Identifier(name) => Some((name.clone(), true)),
+    Expr::Identifier(name) => {
+      let real = !compile_param_used_as_integer_count(name, body);
+      Some((name.clone(), real))
+    }
     Expr::List(items) if !items.is_empty() => {
       let Expr::Identifier(name) = &items[0] else {
         return None;
       };
       let real = match items.get(1) {
         Some(Expr::Pattern { head, .. }) => head.as_deref() != Some("Integer"),
-        // No declared type — the default is `_Real`.
-        _ => true,
+        // No declared type — infer from usage, defaulting to `_Real`.
+        _ => !compile_param_used_as_integer_count(name, body),
       };
       Some((name.clone(), real))
     }
     _ => None,
+  }
+}
+
+/// Whether `body` uses the bare parameter `name` as a repetition count —
+/// the last argument of `NestList`/`Nest`/`NestWhileList`/`NestWhile`, or a
+/// bare `{name}` iterator spec (`Do[…, {name}]`, `Table[…, {name}]`, …).
+/// Compile infers such a parameter as `_Integer` even without an explicit
+/// type declaration, matching real Mathematica's usage-based inference.
+fn compile_param_used_as_integer_count(name: &str, expr: &Expr) -> bool {
+  match expr {
+    Expr::FunctionCall { name: fname, args } => {
+      let last_is_name =
+        matches!(args.last(), Some(Expr::Identifier(n)) if n == name);
+      if last_is_name
+        && matches!(
+          fname.as_str(),
+          "NestList"
+            | "Nest"
+            | "NestWhileList"
+            | "NestWhile"
+            | "FixedPointList"
+            | "Array"
+        )
+      {
+        return true;
+      }
+      args
+        .iter()
+        .any(|a| compile_param_used_as_integer_count(name, a))
+    }
+    Expr::List(items) => {
+      if items.len() == 1
+        && matches!(items.first(), Some(Expr::Identifier(n)) if n == name)
+      {
+        return true;
+      }
+      items
+        .iter()
+        .any(|it| compile_param_used_as_integer_count(name, it))
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      compile_param_used_as_integer_count(name, left)
+        || compile_param_used_as_integer_count(name, right)
+    }
+    Expr::UnaryOp { operand, .. } => {
+      compile_param_used_as_integer_count(name, operand)
+    }
+    Expr::CompoundExpr(items)
+    | Expr::Comparison {
+      operands: items, ..
+    } => items
+      .iter()
+      .any(|it| compile_param_used_as_integer_count(name, it)),
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => {
+      compile_param_used_as_integer_count(name, pattern)
+        || compile_param_used_as_integer_count(name, replacement)
+    }
+    Expr::Part { expr, index } => {
+      compile_param_used_as_integer_count(name, expr)
+        || compile_param_used_as_integer_count(name, index)
+    }
+    Expr::Function { body } => compile_param_used_as_integer_count(name, body),
+    Expr::NamedFunction { body, .. } => {
+      compile_param_used_as_integer_count(name, body)
+    }
+    _ => false,
   }
 }
 
@@ -1839,7 +1917,7 @@ pub fn apply_curried_call(
         .iter()
         .zip(args.iter())
         .filter_map(|(spec, arg)| {
-          let (name, real) = compile_arg_spec(spec)?;
+          let (name, real) = compile_arg_spec(spec, body)?;
           Some((
             name,
             if real {
@@ -1859,10 +1937,9 @@ pub fn apply_curried_call(
       // back inexact: `Compile[{{x, _Real, 0}}, Clip[x, {-4, 4}]][-5.]` is
       // `-4.`, not the exact bound. An all-integer signature keeps its exact
       // result.
-      let any_real = specs
-        .iter()
-        .zip(args.iter())
-        .any(|(spec, _)| matches!(compile_arg_spec(spec), Some((_, true))));
+      let any_real = specs.iter().zip(args.iter()).any(|(spec, _)| {
+        matches!(compile_arg_spec(spec, body), Some((_, true)))
+      });
       Ok(if any_real {
         coerce_to_real(&result)
       } else {

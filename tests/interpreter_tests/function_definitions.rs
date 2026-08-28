@@ -792,6 +792,39 @@ mod compile {
     );
   }
 
+  // A *bare* (no `{name, type}` spec at all) argument used only as a
+  // repetition count — the last argument of `Nest`/`NestList`, or a bare
+  // `{n}` iterator — is inferred as `_Integer` from usage, the same as an
+  // explicit `{n, _Integer, 0}` spec. Regression: a bare argument always
+  // defaulted to `_Real` regardless of usage, so a Setter control's exact
+  // integer value arrived at a compiled loop count as e.g. `100.` and
+  // `NestList` failed with `NestList::intnm` — how a Wolfram Demonstrations
+  // Project notebook's Manipulate output came out blank in Woxi Studio.
+  #[test]
+  fn compile_infers_integer_for_bare_repetition_count_arguments() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"Compile[{n}, NestList[# + 1 &, 0, n]][3]"#).unwrap(),
+      "{0, 1, 2, 3}"
+    );
+    assert_eq!(
+      interpret(r#"Compile[{n}, Nest[# + 1 &, 0, n]][5]"#).unwrap(),
+      "5"
+    );
+    // A bare `{count}` iterator spec (`Do`, `Table`, …) also infers
+    // `_Integer`.
+    assert_eq!(
+      interpret(
+        r#"cf = Compile[{count}, Module[{v = 0}, Do[v += 1, {count}]; v]]; cf[4]"#
+      )
+      .unwrap(),
+      "4"
+    );
+    // An argument only ever used arithmetically (not as a count) still
+    // defaults to `_Real`.
+    assert_eq!(interpret(r#"Compile[{x}, x + 1][3]"#).unwrap(), "4.");
+  }
+
   // A compiled function whose signature includes a real works in machine
   // reals throughout, so exact numbers that came from literals in the body
   // come back inexact. An all-integer signature keeps its exact result.
