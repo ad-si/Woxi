@@ -22211,4 +22211,128 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 30, $CellContext`s$$ = 5}, \"
       "wins, losses, longest win streak, longest loss streak"
     );
   }
+
+  /// A randomly-sampled Wolfram Demonstrations Project notebook draws
+  /// several overlapping curves around the origin, hue-colored by index,
+  /// with a slider controlling how tightly each curve twists and a
+  /// rule-form popup letting the viewer switch between rendering each
+  /// curve as `Point`s, a `Line`, or a filled `Polygon`. Independently
+  /// written, not copied from the original: this version traces a
+  /// limaçon-style radial bulge (`1 + 0.5 Cos[...]`) rather than the
+  /// original's particular curve family, and uses different variable
+  /// names, ranges, and labels throughout.
+  ///
+  /// The construct worth pinning down is the `render` popup built from
+  /// `# -> ToLowerCase[ToString@#] & /@ {Point, Line, Polygon}` — a
+  /// rule-form `Discrete` control whose *value* (substituted into the
+  /// body) is the bare head `Point`/`Line`/`Polygon` while its *label*
+  /// is the computed lowercase string — combined with continuous sliders
+  /// feeding a `Table` of `Hue`-colored curves whose head is the control
+  /// variable itself (`render[...]`).
+  #[test]
+  fn demonstration_looped_curves_manipulate_switches_render_shape() {
+    let code = r#"Manipulate[
+      Graphics[
+        Table[{
+          Hue[m/petals, 1, 1, If[render === Polygon, 0.4, 1]],
+          render[Table[
+            {Cos[t], Sin[t]} * (1 + 0.5 Cos[m Pi/petals + twist t]),
+            {t, 0, 2 Pi, 2 Pi/300}
+          ]]
+        }, {m, 1, petals}],
+        PlotRange -> 2, ImageSize -> 350
+      ],
+      {{twist, 3, "twist rate"}, -12, 12, Appearance -> "Labeled"},
+      {{petals, 3, "loop count"}, 1, 8, 1, Appearance -> "Labeled"},
+      {{render, Line, "render as"},
+        # -> ToLowerCase[ToString@#] & /@ {Point, Line, Polygon},
+        ControlPlacement -> Left}
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let mut state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("two labeled sliders + a rule-form popup should build a widget");
+
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the default 3 looped curves must render"
+    );
+
+    match &state.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name: twist_name,
+          min: twist_min,
+          max: twist_max,
+          current: twist_now,
+          ..
+        },
+        manipulate::ControlState::Continuous {
+          name: petals_name,
+          min: petals_min,
+          max: petals_max,
+          step: petals_step,
+          current: petals_now,
+          ..
+        },
+        manipulate::ControlState::Discrete {
+          name: render_name,
+          values: render_values,
+          value_labels: render_labels,
+          current_index: render_idx,
+          ..
+        },
+      ] => {
+        assert_eq!(twist_name.as_str(), "twist");
+        assert_eq!(*twist_min, -12.0);
+        assert_eq!(*twist_max, 12.0);
+        assert_eq!(*twist_now, 3.0);
+        assert_eq!(petals_name.as_str(), "petals");
+        assert_eq!(*petals_min, 1.0);
+        assert_eq!(*petals_max, 8.0);
+        assert_eq!(*petals_step, 1.0);
+        assert_eq!(*petals_now, 3.0);
+        assert_eq!(render_name.as_str(), "render");
+        assert_eq!(render_values.as_slice(), ["Point", "Line", "Polygon"]);
+        assert_eq!(render_labels.as_slice(), ["point", "line", "polygon"]);
+        assert_eq!(*render_idx, 1, "default render value is Line");
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+
+    let render = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&w.body)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the looped curves must render")
+    };
+    let as_line = render(&state);
+
+    let Some(manipulate::ControlState::Discrete { current_index, .. }) =
+      state.controls.get_mut(2)
+    else {
+      panic!("third control must be the render popup");
+    };
+    *current_index = 2; // Polygon
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    let as_polygon = render(&state);
+    assert_ne!(
+      as_line, as_polygon,
+      "switching the popup from Line to Polygon must redraw with filled shapes"
+    );
+  }
 }
