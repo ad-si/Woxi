@@ -11134,10 +11134,32 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn array_plot_sparse_array() {
+      // Regression: SparseArray's canonical internal form isn't a plain
+      // nested List, so ArrayPlot used to reject it with "first argument
+      // must be a matrix (list of lists)" instead of densifying it first.
+      let dense = export_svg("ArrayPlot[{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}]");
+      let sparse = export_svg(
+        "ArrayPlot[SparseArray[{{1, 1} -> 1, {2, 2} -> 1, {3, 3} -> 1}, {3, 3}]]",
+      );
+      assert_eq!(sparse, dense);
+    }
+
+    #[test]
     fn matrix_plot_basic() {
       insta::assert_snapshot!(export_svg(
         "MatrixPlot[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}]"
       ));
+    }
+
+    #[test]
+    fn matrix_plot_sparse_array() {
+      // Regression: same SparseArray-densification bug as ArrayPlot.
+      let dense = export_svg("MatrixPlot[{{1, 0}, {0, 2}}]");
+      let sparse = export_svg(
+        "MatrixPlot[SparseArray[{{1, 1} -> 1, {2, 2} -> 2}, {2, 2}]]",
+      );
+      assert_eq!(sparse, dense);
     }
 
     #[test]
