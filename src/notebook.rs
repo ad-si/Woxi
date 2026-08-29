@@ -787,6 +787,24 @@ fn extract_typeset_box(s: &str) -> Option<String> {
       "SuperscriptBox" if args.len() == 2 && draws_nothing(&conv(&args[0])) => {
         format!("Superscript[\"\", {}]", conv(&args[1]))
       }
+      // A script that isn't a valid expression on its own — e.g. a bare
+      // `-` used only to typeset an ion's charge, like the "H" of "H⁻"
+      // (`SuperscriptBox["H", "-"]`) — can't become `(a)^(b)`: `("H")^(-)`
+      // dangles the minus sign with no operand and fails to parse.
+      // Mathematica's own box-to-expression conversion falls back to the
+      // display wrapper `Superscript` whenever a script doesn't parse as
+      // an expression; mirror that here (same fallback `SubscriptBox`
+      // uses below for its subscript).
+      "SuperscriptBox"
+        if args.len() == 2
+          && crate::parse_to_expr(&conv(&args[1])).is_err() =>
+      {
+        format!(
+          "Superscript[{}, \"{}\"]",
+          conv(&args[0]),
+          escape_string(&conv(&args[1]))
+        )
+      }
       // `SuperscriptBox[a, b]` → `(a)^(b)`.
       "SuperscriptBox" if args.len() == 2 => {
         format!("({})^({})", conv(&args[0]), conv(&args[1]))
@@ -4792,6 +4810,18 @@ Cell["Chapter 2", "Chapter"]
     // A plain power whose box carries a display option must still convert.
     let s = r#"BoxData[SuperscriptBox["x", "2", MultilineFunction->None]]"#;
     assert_eq!(extract_cell_content(s), "(x)^(2)");
+  }
+
+  /// `SuperscriptBox["H", "-"]` typesets the hydride ion "H⁻": a bare `-`
+  /// with no operand, used purely for display. `(H)^(-)` would dangle the
+  /// minus sign and fail to parse — Mathematica itself falls back to the
+  /// unevaluated `Superscript` wrapper whenever a script isn't a valid
+  /// expression on its own. From the "Variational Calculations on the
+  /// Helium Isoelectronic Series" Demonstration's element/ion table.
+  #[test]
+  fn test_extract_cell_content_superscript_bare_minus() {
+    let s = r#"BoxData[SuperscriptBox["\"\<H\>\"", "-"]]"#;
+    assert_eq!(extract_cell_content(s), "Superscript[\"H\", \"-\"]");
   }
 
   #[test]
