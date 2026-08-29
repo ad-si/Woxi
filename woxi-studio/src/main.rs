@@ -23009,4 +23009,75 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`count$$ = 3, $CellContext`offset$$ 
       widget.error
     );
   }
+
+  #[test]
+  fn locator_pane_body_variable_gets_a_draggable_stand_in_beside_its_setter_bar()
+   {
+    // A Manipulate whose body is a bare `LocatorPane[Dynamic[var], graphic]`
+    // wrapping the whole picture (the Demonstrations "drag the marker on the
+    // picture" pattern): Wolfram lets the point be set either by dragging it
+    // directly on the graphic or, here, by one of two `SetterBar` presets
+    // the Specifications also give the same variable. This app has no raw
+    // canvas dragging — every Locator-style interaction becomes an X/Y
+    // slider pair instead — so without a synthesized stand-in row for the
+    // LocatorPane's own variable, the marker could only ever sit on one of
+    // the two presets, never anywhere else on the picture.
+    let code = "Manipulate[\
+      LocatorPane[Dynamic[mark], \
+        Graphics[{Blue, Disk[mark, .3]}, PlotRange -> {{-5, 5}, {-2, 2}}]], \
+      {{mark, {2, 0}, \"\"}, \
+       {{2, 0} -> \"east post\", {-2, 0} -> \"west post\"}, \
+       ControlType -> SetterBar}]";
+    let state = instantiate_stored_manipulate(code, "")
+      .expect("the LocatorPane Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+
+    let setter_bar = state
+      .controls
+      .iter()
+      .find(|c| {
+        c.name() == "mark"
+          && matches!(
+            c,
+            manipulate::ControlState::Discrete {
+              setter_bar: true,
+              ..
+            }
+          )
+      })
+      .expect("the SetterBar preset row must still be there");
+    if let manipulate::ControlState::Discrete { value_labels, .. } = setter_bar
+    {
+      assert_eq!(
+        value_labels,
+        &["east post".to_string(), "west post".to_string()]
+      );
+    }
+
+    let stand_in = state
+      .controls
+      .iter()
+      .find_map(|c| match c {
+        manipulate::ControlState::Slider2D {
+          name,
+          x_min,
+          x_max,
+          y_min,
+          y_max,
+          x,
+          y,
+          ..
+        } if name == "mark" => Some((*x_min, *x_max, *y_min, *y_max, *x, *y)),
+        _ => None,
+      })
+      .expect("a draggable stand-in row for `mark` must be added");
+    // Bounds come from the wrapped graphic's own `PlotRange` (LocatorPane
+    // gives none of its own); the initial position is the SetterBar's
+    // default choice, `{2, 0}`.
+    assert_eq!(stand_in, (-5.0, 5.0, -2.0, 2.0, 2.0, 0.0));
+  }
 }

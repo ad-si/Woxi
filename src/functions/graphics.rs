@@ -18226,6 +18226,57 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     }
   }
 
+  // A `LocatorPane[Dynamic[var], graphic]` drawn directly in the body — the
+  // Demonstrations "drag the point on the picture" pattern — gets its own
+  // draggable stand-in row here, alongside whatever row (if any) the
+  // Specifications already gave `var`; a `Locator`-type row for it already
+  // covers the same interaction, so only add one when none exists yet.
+  for (var, range_arg, graphic) in collect_body_locator_pane_vars(&args[0]) {
+    if controls.iter().any(|c| c.name() == var) {
+      // Already a visible row of some kind for it — unless that row is
+      // itself a draggable point, add another, independent one (the same
+      // "two rows, one binding" pattern a coarse/fine preset pair uses).
+      if controls.iter().any(|c| {
+        c.name() == var && matches!(c, ManipulateControl::Slider2D { .. })
+      }) {
+        continue;
+      }
+    } else if state.iter().any(|(n, _)| n == &var) {
+      // `ControlType -> None`: the author deliberately hid it, driving it
+      // through other visible controls instead (e.g. polar sliders writing
+      // a Cartesian locator back through the `Dynamic`'s callback) — respect
+      // that rather than surfacing a row they chose not to show.
+      continue;
+    }
+    // Only a variable whose default resolves to a plain `{x, y}` point is a
+    // fit for a single draggable stand-in slider — e.g. a `DynamicModule`
+    // local holding a list of several locators (a polygon's vertices) is
+    // left alone rather than showing a meaningless synthesized row for it.
+    let Some((x_initial, y_initial)) = crate::with_scoped_globals(
+      &initial_bindings,
+      || -> Option<(f64, f64)> {
+        let (_, code) = initial_bindings.iter().find(|(n, _)| *n == var)?;
+        let expr = crate::interpret_to_expr(code).ok()?;
+        list2_f64(&evaluate_expr_to_expr(&expr).ok()?)
+      },
+    ) else {
+      continue;
+    };
+    let ((x_min, y_min), (x_max, y_max)) =
+      pane_range(range_arg.as_ref(), &graphic);
+    controls.push(ManipulateControl::Slider2D {
+      name: var.clone(),
+      x_min,
+      x_max,
+      y_min,
+      y_max,
+      x_initial,
+      y_initial,
+      label: var,
+      write_callback: None,
+    });
+  }
+
   // A Manipulate with no controls or state at all (e.g. `Manipulate[x^2,
   // badspec]`, where `badspec` is neither a spec nor an option) isn't
   // renderable as an interactive widget — fall back to the plain path.
@@ -18478,6 +18529,56 @@ fn collect_body_locator_callbacks(
         {
           let callback = dargs.get(1).map(crate::syntax::expr_to_input_form);
           found.push((var.clone(), callback));
+        }
+        for a in args {
+          walk(a, found);
+        }
+      }
+      Expr::List(items) => {
+        for it in items {
+          walk(it, found);
+        }
+      }
+      Expr::CompoundExpr(items) => {
+        for it in items {
+          walk(it, found);
+        }
+      }
+      _ => {}
+    }
+  }
+  let mut found = Vec::new();
+  walk(expr, &mut found);
+  found
+}
+
+/// Every `LocatorPane[Dynamic[var], graphic, range…]` drawn directly in a
+/// Manipulate's body: `(var, explicit range arg, graphic)`. Unlike the
+/// `Locator[…]` primitive (see `collect_body_locator_callbacks`), a
+/// `LocatorPane` is the pane itself rather than a marker placed inside one —
+/// its variable normally has its own row in the Specifications (e.g. a
+/// `SetterBar` of presets), so it is never hidden `ControlType -> None`
+/// state waiting to be promoted. It still needs a draggable stand-in control
+/// of its own, added alongside whatever row the Specifications already gave
+/// the variable — the same "two independent rows for one binding" pattern
+/// Wolfram itself uses for a coarse/fine preset pair on one variable.
+fn collect_body_locator_pane_vars(
+  expr: &Expr,
+) -> Vec<(String, Option<Expr>, Expr)> {
+  fn walk(expr: &Expr, found: &mut Vec<(String, Option<Expr>, Expr)>) {
+    match expr {
+      Expr::FunctionCall { name, args } => {
+        if name == "LocatorPane"
+          && args.len() >= 2
+          && let Expr::FunctionCall {
+            name: dname,
+            args: dargs,
+          } = &args[0]
+          && dname == "Dynamic"
+          && let Some(Expr::Identifier(var)) = dargs.first()
+          && !found.iter().any(|(n, _, _)| n == var)
+        {
+          found.push((var.clone(), args.get(2).cloned(), args[1].clone()));
         }
         for a in args {
           walk(a, found);
@@ -19634,17 +19735,66 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
 }
 
 /// Interpret an optional trailing `{{xmin, ymin}, {xmax, ymax}}` range
-/// argument, defaulting to the unit square when absent or malformed. Shared by
-/// the `LocatorPane`/`ClickPane` pane extractors.
-fn pane_range(arg: Option<&Expr>) -> ((f64, f64), (f64, f64)) {
-  match arg {
-    Some(Expr::List(corners)) if corners.len() == 2 => {
-      match (list2_f64(&corners[0]), list2_f64(&corners[1])) {
-        (Some(lo), Some(hi)) => (lo, hi),
-        _ => ((0.0, 0.0), (1.0, 1.0)),
+/// argument. When absent or malformed, Wolfram takes a `LocatorPane`'s (or
+/// `ClickPane`'s) coordinate system from the `PlotRange` of the graphic it
+/// wraps, so `graphic` is searched for the first one before giving up and
+/// falling back to the unit square. Shared by the `LocatorPane`/`ClickPane`
+/// pane extractors.
+fn pane_range(arg: Option<&Expr>, graphic: &Expr) -> ((f64, f64), (f64, f64)) {
+  if let Some(Expr::List(corners)) = arg
+    && corners.len() == 2
+    && let (Some(lo), Some(hi)) =
+      (list2_f64(&corners[0]), list2_f64(&corners[1]))
+  {
+    return (lo, hi);
+  }
+  find_plot_range(graphic).unwrap_or(((0.0, 0.0), (1.0, 1.0)))
+}
+
+/// The first `PlotRange -> {{xmin, xmax}, {ymin, ymax}}` option found
+/// anywhere inside `expr`, searched depth-first. Used to infer a pane's
+/// coordinate system from the plot it displays when nothing states it
+/// explicitly.
+fn find_plot_range(expr: &Expr) -> Option<((f64, f64), (f64, f64))> {
+  if let Expr::Rule {
+    pattern,
+    replacement,
+  } = expr
+    && let Expr::Identifier(key) = pattern.as_ref()
+    && key == "PlotRange"
+    && let Expr::List(axes) = replacement.as_ref()
+    && axes.len() == 2
+    && let (Some((x_min, x_max)), Some((y_min, y_max))) =
+      (list2_f64(&axes[0]), list2_f64(&axes[1]))
+  {
+    return Some(((x_min, y_min), (x_max, y_max)));
+  }
+  match expr {
+    Expr::FunctionCall { args, .. } => {
+      for a in args {
+        if let Some(range) = find_plot_range(a) {
+          return Some(range);
+        }
       }
+      None
     }
-    _ => ((0.0, 0.0), (1.0, 1.0)),
+    Expr::List(items) => {
+      for it in items {
+        if let Some(range) = find_plot_range(it) {
+          return Some(range);
+        }
+      }
+      None
+    }
+    Expr::CompoundExpr(items) => {
+      for it in items {
+        if let Some(range) = find_plot_range(it) {
+          return Some(range);
+        }
+      }
+      None
+    }
+    _ => None,
   }
 }
 
@@ -19675,7 +19825,7 @@ pub fn extract_locator_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     pt => ("p".to_string(), Some(list2_f64(pt)?)),
   };
   let body_code = crate::syntax::expr_to_input_form(&args[1]);
-  let ((x_min, y_min), (x_max, y_max)) = pane_range(args.get(2));
+  let ((x_min, y_min), (x_max, y_max)) = pane_range(args.get(2), &args[1]);
   // Start the locator at the given point, else the range centre.
   let (x_initial, y_initial) = explicit_init
     .unwrap_or((f64::midpoint(x_min, x_max), f64::midpoint(y_min, y_max)));
@@ -19727,7 +19877,7 @@ pub fn extract_click_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
   // coordinate range in the middle.
   let func = args.last()?;
   let range_arg = if args.len() >= 3 { args.get(1) } else { None };
-  let ((x_min, y_min), (x_max, y_max)) = pane_range(range_arg);
+  let ((x_min, y_min), (x_max, y_max)) = pane_range(range_arg, &args[0]);
   // Bind the click position `pos` and show the handler applied to it; the body
   // re-evaluates `func[pos]` on every pad move.
   let func_code = crate::syntax::expr_to_input_form(func);
