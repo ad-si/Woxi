@@ -379,8 +379,9 @@ mod polyhedron_data_tests {
        Icosidodecahedron, Octahedron, PentakisDodecahedron, \
        RhombicDodecahedron, RhombicHexecontahedron, \
        RhombicTriacontahedron, SmallRhombicosidodecahedron, \
-       SmallRhombicuboctahedron, Tetrahedron, TruncatedDodecahedron, \
-       TruncatedIcosahedron, TruncatedOctahedron, TruncatedTetrahedron}"
+       SmallRhombicuboctahedron, Tetrahedron, TriangularOrthobicupola, \
+       TruncatedDodecahedron, TruncatedIcosahedron, TruncatedOctahedron, \
+       TruncatedTetrahedron}"
     );
   }
 
@@ -706,6 +707,67 @@ mod polyhedron_data_tests {
       )
       .unwrap(),
       "True"
+    );
+  }
+
+  // Johnson solid J27: two triangular cupolas joined hexagon-to-hexagon
+  // without a twist. Unlike the Platonic/Archimedean/Catalan solids above,
+  // it is not face-transitive, so it has no inscribed sphere.
+  #[test]
+  fn polyhedron_data_triangular_orthobicupola() {
+    assert_eq!(
+      interpret(r#"PolyhedronData["TriangularOrthobicupola", "VertexCount"]"#)
+        .unwrap(),
+      "12"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData["TriangularOrthobicupola", "EdgeCount"]"#)
+        .unwrap(),
+      "24"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData["TriangularOrthobicupola", "FaceCount"]"#)
+        .unwrap(),
+      "14"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData["TriangularOrthobicupola", "Volume"]"#)
+        .unwrap(),
+      "(5*Sqrt[2])/3"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData["TriangularOrthobicupola", "SurfaceArea"]"#)
+        .unwrap(),
+      "6 + 2*Sqrt[3]"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData["TriangularOrthobicupola", "Circumradius"]"#)
+        .unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData["TriangularOrthobicupola", "Inradius"]"#)
+        .unwrap(),
+      "Missing[NotApplicable]"
+    );
+    // Every vertex lies on the unit circumsphere.
+    assert_eq!(
+      interpret(
+        r#"Union[Round[Norm /@
+             N[PolyhedronData["TriangularOrthobicupola",
+               "VertexCoordinates"]], 10^-10]]"#
+      )
+      .unwrap(),
+      "{1}"
+    );
+    // 8 triangular faces and 6 square faces.
+    assert_eq!(
+      interpret(
+        r#"Sort[Length /@
+             PolyhedronData["TriangularOrthobicupola", "FaceIndices"]]"#
+      )
+      .unwrap(),
+      "{3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4}"
     );
   }
 }
