@@ -4644,6 +4644,11 @@ pub(crate) fn lays_out_a_graphic(expr: &Expr) -> bool {
   {
     return true;
   }
+  // A bare `LineLegend[…]` is a picture too — a Demonstration placing a
+  // legend beside its plot rather than attached via `Legended`.
+  if matches!(expr, Expr::FunctionCall { name, .. } if name == "LineLegend") {
+    return true;
+  }
   match expr {
     Expr::List(items) => items.iter().any(lays_out_a_graphic),
     // `Pane` and `Deploy` are transparent here: their own arms export what
@@ -4799,13 +4804,35 @@ fn locator_pane_graphic(args: &[Expr]) -> Option<Expr> {
     other => other,
   };
   let body = crate::evaluator::evaluate_expr_to_expr(held).ok()?;
+  let appearance = args[2..].iter().find_map(|o| match o {
+    Expr::Rule { pattern, replacement }
+      if matches!(pattern.as_ref(), Expr::Identifier(p) if p == "Appearance") =>
+    {
+      crate::evaluator::evaluate_expr_to_expr(replacement).ok()
+    }
+    _ => None,
+  });
   let (body_prims, body_opts) = match &body {
     Expr::FunctionCall { name, args }
       if name == "Graphics" && !args.is_empty() =>
     {
       (args[0].clone(), args[1..].to_vec())
     }
-    _ => return None,
+    // A body that evaluates straight to a rendered picture instead of
+    // staying the symbolic `Graphics[prims, opts]` above — `Show[…]`,
+    // `ContourPlot[…]`, or a `Which`/`If` switching between such plots
+    // (a Demonstration toggling between several plotted methods over
+    // the same locator) — can't have its marker spliced into a
+    // primitive list that doesn't exist here. Draw it via `Epilog`
+    // instead.
+    _ => {
+      return locator_pane_graphic_via_epilog(
+        held,
+        &body,
+        &points,
+        appearance.as_ref(),
+      );
+    }
   };
 
   // The default marker is sized against the plot range, so it stays a small
@@ -4834,15 +4861,6 @@ fn locator_pane_graphic(args: &[Expr]) -> Option<Expr> {
     })
     .unwrap_or(1.0);
 
-  let appearance = args[2..].iter().find_map(|o| match o {
-    Expr::Rule { pattern, replacement }
-      if matches!(pattern.as_ref(), Expr::Identifier(p) if p == "Appearance") =>
-    {
-      crate::evaluator::evaluate_expr_to_expr(replacement).ok()
-    }
-    _ => None,
-  });
-
   let mut prims = vec![body_prims];
   for (i, point) in points.iter().enumerate() {
     if let Some(marker) = locator_marker(appearance.as_ref(), i, point, span) {
@@ -4852,6 +4870,190 @@ fn locator_pane_graphic(args: &[Expr]) -> Option<Expr> {
   let mut graphics_args = vec![Expr::List(prims.into())];
   graphics_args.extend(body_opts);
   Some(call("Graphics", graphics_args))
+}
+
+/// The data-space extent a `LocatorPane` marker's default size is scaled
+/// against, for a body that only exists as a rendered picture (so there is
+/// no `PlotRange` option lying around in a primitive list to read, as
+/// `locator_pane_graphic` reads for the symbolic-`Graphics` case). Falls
+/// back to `1.0` — matching that case's own fallback — when the picture
+/// carries no source range (a plain `Graphics[…]` with no plot data, or a
+/// picture kind that keeps none).
+fn rendered_graphic_span(body: &Expr) -> f64 {
+  if let Expr::Graphics {
+    source: Some(src), ..
+  } = body
+  {
+    let x_extent = (src.x_range.1 - src.x_range.0).abs();
+    let y_extent = (src.y_range.1 - src.y_range.0).abs();
+    let span = x_extent.max(y_extent);
+    if span > 0.0 {
+      return span;
+    }
+  }
+  1.0
+}
+
+/// Whether `name` is a graphics-producing head known to accept an
+/// `Epilog -> {…}` option — extra primitives drawn on top of the picture,
+/// in the same data coordinates, without changing the call's arity the
+/// way appending a plain positional argument would.
+fn accepts_epilog_option(name: &str) -> bool {
+  name == "Show" || crate::functions::graphics::is_graphics_producing_head(name)
+}
+
+/// Add `Epilog -> markers` (merging with any `Epilog` already there) to a
+/// `FunctionCall` with a head [`accepts_epilog_option`] recognizes.
+fn with_epilog(name: &str, args: &[Expr], markers: &Expr) -> Expr {
+  let mut new_args: crate::ExprList = args.to_vec().into();
+  let existing = new_args.iter().position(|a| {
+    matches!(a, Expr::Rule { pattern, .. }
+      if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Epilog"))
+  });
+  match existing {
+    Some(pos) => {
+      let merged = match &new_args[pos] {
+        Expr::Rule { replacement, .. } => match replacement.as_ref() {
+          Expr::List(items) => {
+            let mut v = items.to_vec();
+            v.push(markers.clone());
+            Expr::List(v.into())
+          }
+          other => Expr::List(vec![other.clone(), markers.clone()].into()),
+        },
+        _ => markers.clone(),
+      };
+      new_args[pos] = Expr::Rule {
+        pattern: Box::new(Expr::Identifier("Epilog".to_string())),
+        replacement: Box::new(merged),
+      };
+    }
+    None => {
+      new_args.push(Expr::Rule {
+        pattern: Box::new(Expr::Identifier("Epilog".to_string())),
+        replacement: Box::new(markers.clone()),
+      });
+    }
+  }
+  Expr::FunctionCall {
+    name: name.to_string(),
+    args: new_args,
+  }
+}
+
+/// Recursively add `Epilog -> markers` to every graphics-producing call
+/// reachable through pure control-flow wrappers (`If`, `Which`, `Switch`,
+/// `With`, `Module`, `Block`, the trailing statement of a
+/// `CompoundExpr`) — without evaluating anything, so whichever branch such
+/// a body picks at evaluation time already draws the given markers. A
+/// `LocatorPane` body written `Which[cond1, Show[…], cond2, Show[…], …]`
+/// (a Demonstration switching between plotted methods over the same
+/// locator) is the motivating case: only the branch a `Which`/`If`
+/// actually selects is ever evaluated, so touching the others here is
+/// inert — they are never run at all. Anything else is returned
+/// unchanged, including a call whose head [`accepts_epilog_option`]
+/// does not recognize (appending an option to those could break their
+/// arity).
+fn inject_epilog_through_control_flow(expr: &Expr, markers: &Expr) -> Expr {
+  match expr {
+    Expr::FunctionCall { name, args } if name == "If" && args.len() >= 2 => {
+      let mut new_args = args.clone();
+      for branch in new_args.iter_mut().skip(1) {
+        *branch = inject_epilog_through_control_flow(branch, markers);
+      }
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args,
+      }
+    }
+    Expr::FunctionCall { name, args } if name == "Which" && args.len() >= 2 => {
+      let mut new_args = args.clone();
+      let mut i = 1;
+      while i < new_args.len() {
+        new_args[i] = inject_epilog_through_control_flow(&new_args[i], markers);
+        i += 2;
+      }
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args,
+      }
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Switch" && args.len() >= 3 =>
+    {
+      let mut new_args = args.clone();
+      let mut i = 2;
+      while i < new_args.len() {
+        new_args[i] = inject_epilog_through_control_flow(&new_args[i], markers);
+        i += 2;
+      }
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args,
+      }
+    }
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "With" | "Module" | "Block")
+        && args.len() == 2 =>
+    {
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: vec![
+          args[0].clone(),
+          inject_epilog_through_control_flow(&args[1], markers),
+        ]
+        .into(),
+      }
+    }
+    Expr::CompoundExpr(items) if !items.is_empty() => {
+      let mut new_items = items.clone();
+      let last = new_items.len() - 1;
+      new_items[last] =
+        inject_epilog_through_control_flow(&new_items[last], markers);
+      Expr::CompoundExpr(new_items)
+    }
+    Expr::FunctionCall { name, args } if accepts_epilog_option(name) => {
+      with_epilog(name, args, markers)
+    }
+    other => other.clone(),
+  }
+}
+
+/// [`locator_pane_graphic`]'s fallback for a body that evaluates straight
+/// to a rendered picture — `Show[…]`, `ContourPlot[…]`, or a `Which`/`If`
+/// switching between such plots — rather than staying the symbolic
+/// `Graphics[prims, opts]` the primitive-splicing path needs. Re-runs the
+/// body once more with the locator markers spliced in as an `Epilog` (see
+/// `inject_epilog_through_control_flow`), so they are drawn by the same
+/// renderer that drew the rest of the picture, in the same data
+/// coordinates. Falls back to the unmarked picture — still far better
+/// than the typeset-text fallback `evaluated_wrapper_svg`'s caller uses
+/// otherwise — when `body` is not a picture at all, or no graphics call
+/// is found to draw the markers on.
+fn locator_pane_graphic_via_epilog(
+  held: &Expr,
+  body: &Expr,
+  points: &[Expr],
+  appearance: Option<&Expr>,
+) -> Option<Expr> {
+  if !lays_out_a_graphic(body) {
+    return None;
+  }
+  let span = rendered_graphic_span(body);
+  let markers: Vec<Expr> = points
+    .iter()
+    .enumerate()
+    .filter_map(|(i, p)| locator_marker(appearance, i, p, span))
+    .collect();
+  if markers.is_empty() {
+    return Some(body.clone());
+  }
+  let augmented =
+    inject_epilog_through_control_flow(held, &Expr::List(markers.into()));
+  Some(
+    crate::evaluator::evaluate_expr_to_expr(&augmented)
+      .unwrap_or_else(|_| body.clone()),
+  )
 }
 
 /// A string shown through `Text` loses the quotation marks its own
@@ -5111,6 +5313,12 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       if name == "Legended" && !args.is_empty() =>
     {
       expr_to_svg(&args[0])
+    }
+    // A bare `LineLegend[…]` (not wrapped in `Legended`) is how a
+    // Demonstration places a legend beside its plot instead of attached to
+    // it — the front end typesets it as swatches either way.
+    Expr::FunctionCall { name, args } if name == "LineLegend" => {
+      crate::functions::graphics::line_legend_svg(args).unwrap_or_default()
     }
     // ComputationalMusic objects render as musical-staff notation.
     Expr::FunctionCall { name, .. }

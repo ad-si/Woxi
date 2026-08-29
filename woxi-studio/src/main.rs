@@ -4571,6 +4571,51 @@ fn render_manipulate_widget<'a>(
   container(widget).padding(6).width(Fill).into()
 }
 
+/// One choice of a `DisplayNode::Popup` dropdown, as an iced `pick_list`
+/// option. Carries the choice's position in `DisplayNode::Popup::choices`
+/// rather than being keyed by its label text — `discrete_choice_label` is
+/// lossy (e.g. `1 -> "A", 2 -> "A"` renders the same label for two
+/// different values), so resolving a selection back to a value by label
+/// would make the second such choice unreachable through the UI.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PopupChoice {
+  index: usize,
+  label: String,
+}
+
+impl std::fmt::Display for PopupChoice {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(f, "{}", self.label)
+  }
+}
+
+/// Build a `DisplayNode::Popup`'s `pick_list` options and current selection
+/// from its `(value, label)` choices and the live value at `current`. Kept
+/// separate from `render_display_node` so the selection logic (in
+/// particular: no fabricated selection when nothing matches, and choices
+/// distinguished by index rather than by their possibly-colliding label)
+/// is unit-testable without going through iced.
+fn popup_menu_state(
+  choices: &[(String, String)],
+  current: &str,
+) -> (Vec<PopupChoice>, Option<PopupChoice>) {
+  let items: Vec<PopupChoice> = choices
+    .iter()
+    .enumerate()
+    .map(|(index, (_, label))| PopupChoice {
+      index,
+      label: label.clone(),
+    })
+    .collect();
+  // No selection (rather than fabricating one) when the live value at
+  // `target` doesn't match any choice.
+  let selected = choices
+    .iter()
+    .position(|(value, _)| value == current)
+    .map(|i| items[i].clone());
+  (items, selected)
+}
+
 /// Recursively render a Manipulate display-element widget tree into iced.
 /// Interactive checkboxes emit `ManipulateDisplayToggled` with the write-back
 /// assignment (`<target> = <on|off>`) to apply on toggle.
@@ -4660,6 +4705,31 @@ fn render_display_node<'a>(
       button(render_display_node(cell_idx, label))
         .padding([2, 10])
         .on_press(Message::ManipulateDisplayAction(cell_idx, action.clone()))
+        .into()
+    }
+    DisplayNode::Popup {
+      target,
+      current,
+      choices,
+    } => {
+      // A `PopupMenu[Dynamic[lval], choices]` display element: a dropdown
+      // whose selection writes `lval = <chosen value>` back, exactly like
+      // Checkbox/Toggler's write-back mutation. Options carry their index
+      // (see `PopupChoice`) rather than being keyed by label text, since
+      // `discrete_choice_label` is lossy and two choices can render the
+      // same label (e.g. `1 -> "A", 2 -> "A"`).
+      let (items, selected) = popup_menu_state(choices, current);
+      let target = target.clone();
+      let choices_owned = choices.clone();
+      let on_select = move |chosen: PopupChoice| {
+        let value = choices_owned[chosen.index].0.clone();
+        Message::ManipulateDisplayToggled(
+          cell_idx,
+          format!("{target} = {value}"),
+        )
+      };
+      pick_list(items, selected, on_select)
+        .width(iced::Length::Shrink)
         .into()
     }
     DisplayNode::Spacer { width } => {
@@ -6862,6 +6932,34 @@ fn strip_svg_wrapper(svg: &str) -> &str {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  /// A Manipulate whose body calls a `Compile`d helper with bare
+  /// (undeclared-type) parameters that are only ever used as repetition
+  /// counts — `NestList[…, n]` and a `Do[…, {trials}]` iterator — mirroring
+  /// the "Compile a random-walk helper, drive it from Setter controls"
+  /// idiom common to Wolfram Demonstrations Project notebooks (independently
+  /// written, not copied from any specific one). Regression: every bare
+  /// Compile parameter defaulted to `_Real`, so a Setter control's exact
+  /// integer value arrived at the compiled body as e.g. `100.` and
+  /// `NestList` failed with `NestList::intnm` — which is how such a
+  /// notebook's Manipulate output came out blank in Woxi Studio.
+  #[test]
+  fn manipulate_compiled_helper_with_bare_integer_count_params() {
+    let code = r#"Manipulate[
+      walk[len, trials],
+      {{len, 10, "length"}, {5, 10, 20}, Setter},
+      {{trials, 5, "trials"}, {1, 5, 10}, Setter},
+      Initialization :> (
+        walk = Compile[{n, trials}, Module[{v = 0}, Do[v += Total[NestList[# + 1 &, 0, n]], {trials}]; v]];
+      )
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr).expect(
+      "bare-integer-count Compile helper should build a ManipulateState",
+    );
+    assert_eq!(state.error, None, "the compiled body must evaluate cleanly");
+  }
 
   /// A dissection Manipulate assembling colored polygon pieces with
   /// `Translate`/`Rotate`, a boolean checkbox control (`{False, True}`
@@ -12363,6 +12461,7 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
         }
         DisplayNode::Button { label, .. } => walk(label, out),
         DisplayNode::Checkbox { .. }
+        | DisplayNode::Popup { .. }
         | DisplayNode::Spacer { .. }
         | DisplayNode::Text { .. }
         | DisplayNode::Static { .. } => {}
@@ -12373,6 +12472,168 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
       walk(t, &mut out);
     }
     out
+  }
+
+  /// Collect every `Popup` in a display tree, in reading order.
+  fn collect_popups(
+    trees: &[woxi::functions::graphics::DisplayNode],
+  ) -> Vec<woxi::functions::graphics::DisplayNode> {
+    use woxi::functions::graphics::DisplayNode;
+    fn walk(node: &DisplayNode, out: &mut Vec<DisplayNode>) {
+      match node {
+        DisplayNode::Popup { .. } => out.push(node.clone()),
+        DisplayNode::Panel(child) => walk(child, out),
+        DisplayNode::Grid(rows) => {
+          for row in rows {
+            for cell in row {
+              walk(cell, out);
+            }
+          }
+        }
+        DisplayNode::Column(children) | DisplayNode::Row(children) => {
+          for c in children {
+            walk(c, out);
+          }
+        }
+        DisplayNode::Toggler { label, .. }
+        | DisplayNode::Button { label, .. } => walk(label, out),
+        DisplayNode::Checkbox { .. }
+        | DisplayNode::Spacer { .. }
+        | DisplayNode::Text { .. }
+        | DisplayNode::Static { .. } => {}
+      }
+    }
+    let mut out = Vec::new();
+    for t in trees {
+      walk(t, &mut out);
+    }
+    out
+  }
+
+  /// The write-back target of every `Popup` in a display tree, in reading
+  /// order.
+  fn popup_targets(
+    trees: &[woxi::functions::graphics::DisplayNode],
+  ) -> Vec<String> {
+    use woxi::functions::graphics::DisplayNode;
+    collect_popups(trees)
+      .into_iter()
+      .map(|p| {
+        let DisplayNode::Popup { target, .. } = p else {
+          unreachable!("collect_popups only collects Popup nodes")
+        };
+        target
+      })
+      .collect()
+  }
+
+  #[test]
+  fn popup_menu_state_selects_nothing_when_current_matches_no_choice() {
+    // A live value outside the choice list (or `popup_node`'s own fallback
+    // to the target's raw InputForm when it can't evaluate) must not
+    // fabricate a selection by falling back to the first choice — the
+    // dropdown should show no selection, like Toggler/SetterBar do.
+    let choices = vec![
+      ("1".to_string(), "One".to_string()),
+      ("2".to_string(), "Two".to_string()),
+    ];
+    let (items, selected) = popup_menu_state(&choices, "unresolved_expr");
+    assert_eq!(items.len(), 2);
+    assert!(selected.is_none());
+
+    let (_, selected) = popup_menu_state(&choices, "1");
+    assert_eq!(selected.map(|c| c.index), Some(0));
+  }
+
+  #[test]
+  fn popup_menu_state_distinguishes_choices_with_colliding_labels() {
+    // `discrete_choice_label` can render two different values with the same
+    // label (e.g. `1 -> "A", 2 -> "A"`); each must still be its own,
+    // separately selectable option, keyed by position rather than text.
+    let choices = vec![
+      ("1".to_string(), "A".to_string()),
+      ("2".to_string(), "A".to_string()),
+    ];
+    let (items, _) = popup_menu_state(&choices, "1");
+    assert_eq!(items.len(), 2);
+    assert_ne!(items[0], items[1], "same label, different index");
+    assert_eq!(items[0].label, "A");
+    assert_eq!(items[1].label, "A");
+
+    // Selecting the second "A" resolves back to value "2", not "1".
+    let (_, selected_first) = popup_menu_state(&choices, "1");
+    let (_, selected_second) = popup_menu_state(&choices, "2");
+    assert_eq!(selected_first.map(|c| c.index), Some(0));
+    assert_eq!(selected_second.map(|c| c.index), Some(1));
+  }
+
+  #[test]
+  fn dynamic_popup_menu_count_tracks_a_control_and_selection_writes_back() {
+    use woxi::functions::graphics::DisplayNode;
+    // One color-tag dropdown per box, generated with `Outer`/a pure
+    // function over `Range[boxCount]` — not `Table` with a named iterator,
+    // which would leave the literal symbol stuck inside the held `Dynamic`
+    // (see the analogous interpreter-level test for why). `boxCount` is
+    // itself hidden state, so the popup count is dynamic.
+    let code = "Manipulate[tags, \
+      {{boxCount, 2}, 1, 4, 1, ControlType -> None}, \
+      {{tags, {1, 1, 1, 1}}, ControlType -> None}, \
+      Dynamic[Row[Outer[PopupMenu[Dynamic[tags[[#]]], {1, 2, 3}]&, \
+      Range[boxCount]]]]]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("popup-per-box Manipulate must build a widget");
+    assert!(state.error.is_none(), "body must render: {:?}", state.error);
+    assert_eq!(state.state.len(), 2, "boxCount and tags are hidden state");
+
+    // Two popups initially: boxCount starts at 2, one dropdown per box —
+    // and each renders through the iced pick_list arm without panicking.
+    assert_eq!(
+      popup_targets(&state.display_trees),
+      vec!["tags[[1]]".to_string(), "tags[[2]]".to_string()]
+    );
+    for t in &state.display_trees {
+      let _: Element<'_, Message> = render_display_node(0, t);
+    }
+
+    // Bumping the hidden `boxCount` state and re-rendering (as any control
+    // change does) changes how many popups render — the whole `Row[Outer[…
+    // ]]` re-expands from scratch under the `Dynamic` hold on every frame.
+    if let Some(slot) = state.state.iter_mut().find(|(n, _)| n == "boxCount") {
+      slot.1 = "4".to_string();
+    }
+    state.reevaluate();
+    assert_eq!(
+      popup_targets(&state.display_trees),
+      vec![
+        "tags[[1]]".to_string(),
+        "tags[[2]]".to_string(),
+        "tags[[3]]".to_string(),
+        "tags[[4]]".to_string(),
+      ]
+    );
+
+    // Selecting box 3's choice "3" fires `tags[[3]] = 3`; applying that
+    // mutation — exactly what `Message::ManipulateDisplayToggled` drives via
+    // `apply_display_mutation`, the same path a Toggler/Checkbox write-back
+    // uses — writes into that slot alone, and the popup preselects the new
+    // choice afterwards.
+    let popups = collect_popups(&state.display_trees);
+    let DisplayNode::Popup { target, .. } = &popups[2] else {
+      panic!("expected a Popup leaf, got {:?}", popups[2]);
+    };
+    assert_eq!(target, "tags[[3]]");
+    let mutation = format!("{target} = 3");
+    state.apply_display_mutation(&mutation);
+    assert_eq!(
+      state.state.iter().find(|(n, _)| n == "tags").unwrap().1,
+      "{1, 1, 3, 1}",
+      "only box 3's tag changes"
+    );
+    let popups = collect_popups(&state.display_trees);
+    let DisplayNode::Popup { current, .. } = &popups[2] else {
+      panic!("expected a Popup leaf");
+    };
+    assert_eq!(current, "3");
   }
 
   #[test]
@@ -22644,6 +22905,130 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 30, $CellContext`s$$ = 5}, \"
     );
   }
 
+  /// A randomly-sampled Wolfram Demonstrations Project notebook draws
+  /// several overlapping curves around the origin, hue-colored by index,
+  /// with a slider controlling how tightly each curve twists and a
+  /// rule-form popup letting the viewer switch between rendering each
+  /// curve as `Point`s, a `Line`, or a filled `Polygon`. Independently
+  /// written, not copied from the original: this version traces a
+  /// limaçon-style radial bulge (`1 + 0.5 Cos[...]`) rather than the
+  /// original's particular curve family, and uses different variable
+  /// names, ranges, and labels throughout.
+  ///
+  /// The construct worth pinning down is the `render` popup built from
+  /// `# -> ToLowerCase[ToString@#] & /@ {Point, Line, Polygon}` — a
+  /// rule-form `Discrete` control whose *value* (substituted into the
+  /// body) is the bare head `Point`/`Line`/`Polygon` while its *label*
+  /// is the computed lowercase string — combined with continuous sliders
+  /// feeding a `Table` of `Hue`-colored curves whose head is the control
+  /// variable itself (`render[...]`).
+  #[test]
+  fn demonstration_looped_curves_manipulate_switches_render_shape() {
+    let code = r#"Manipulate[
+      Graphics[
+        Table[{
+          Hue[m/petals, 1, 1, If[render === Polygon, 0.4, 1]],
+          render[Table[
+            {Cos[t], Sin[t]} * (1 + 0.5 Cos[m Pi/petals + twist t]),
+            {t, 0, 2 Pi, 2 Pi/300}
+          ]]
+        }, {m, 1, petals}],
+        PlotRange -> 2, ImageSize -> 350
+      ],
+      {{twist, 3, "twist rate"}, -12, 12, Appearance -> "Labeled"},
+      {{petals, 3, "loop count"}, 1, 8, 1, Appearance -> "Labeled"},
+      {{render, Line, "render as"},
+        # -> ToLowerCase[ToString@#] & /@ {Point, Line, Polygon},
+        ControlPlacement -> Left}
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let mut state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("two labeled sliders + a rule-form popup should build a widget");
+
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the default 3 looped curves must render"
+    );
+
+    match &state.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name: twist_name,
+          min: twist_min,
+          max: twist_max,
+          current: twist_now,
+          ..
+        },
+        manipulate::ControlState::Continuous {
+          name: petals_name,
+          min: petals_min,
+          max: petals_max,
+          step: petals_step,
+          current: petals_now,
+          ..
+        },
+        manipulate::ControlState::Discrete {
+          name: render_name,
+          values: render_values,
+          value_labels: render_labels,
+          current_index: render_idx,
+          ..
+        },
+      ] => {
+        assert_eq!(twist_name.as_str(), "twist");
+        assert_eq!(*twist_min, -12.0);
+        assert_eq!(*twist_max, 12.0);
+        assert_eq!(*twist_now, 3.0);
+        assert_eq!(petals_name.as_str(), "petals");
+        assert_eq!(*petals_min, 1.0);
+        assert_eq!(*petals_max, 8.0);
+        assert_eq!(*petals_step, 1.0);
+        assert_eq!(*petals_now, 3.0);
+        assert_eq!(render_name.as_str(), "render");
+        assert_eq!(render_values.as_slice(), ["Point", "Line", "Polygon"]);
+        assert_eq!(render_labels.as_slice(), ["point", "line", "polygon"]);
+        assert_eq!(*render_idx, 1, "default render value is Line");
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+
+    let render = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&w.body)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the looped curves must render")
+    };
+    let as_line = render(&state);
+
+    let Some(manipulate::ControlState::Discrete { current_index, .. }) =
+      state.controls.get_mut(2)
+    else {
+      panic!("third control must be the render popup");
+    };
+    *current_index = 2; // Polygon
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    let as_polygon = render(&state);
+    assert_ne!(
+      as_line, as_polygon,
+      "switching the popup from Line to Polygon must redraw with filled shapes"
+    );
+  }
+
   /// A `SaveDefinitions -> True` dump can embed a helper as Mathematica's
   /// full serialized `CompiledFunction[…]` — an id tuple, argument
   /// patterns, type/constant tables, raw bytecode, the uncompiled pure
@@ -22693,5 +23078,76 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`count$$ = 3, $CellContext`offset$$ 
        reduces to a number instead of staying an ever-growing unevaluated call: {:?}",
       widget.error
     );
+  }
+
+  #[test]
+  fn locator_pane_body_variable_gets_a_draggable_stand_in_beside_its_setter_bar()
+   {
+    // A Manipulate whose body is a bare `LocatorPane[Dynamic[var], graphic]`
+    // wrapping the whole picture (the Demonstrations "drag the marker on the
+    // picture" pattern): Wolfram lets the point be set either by dragging it
+    // directly on the graphic or, here, by one of two `SetterBar` presets
+    // the Specifications also give the same variable. This app has no raw
+    // canvas dragging — every Locator-style interaction becomes an X/Y
+    // slider pair instead — so without a synthesized stand-in row for the
+    // LocatorPane's own variable, the marker could only ever sit on one of
+    // the two presets, never anywhere else on the picture.
+    let code = "Manipulate[\
+      LocatorPane[Dynamic[mark], \
+        Graphics[{Blue, Disk[mark, .3]}, PlotRange -> {{-5, 5}, {-2, 2}}]], \
+      {{mark, {2, 0}, \"\"}, \
+       {{2, 0} -> \"east post\", {-2, 0} -> \"west post\"}, \
+       ControlType -> SetterBar}]";
+    let state = instantiate_stored_manipulate(code, "")
+      .expect("the LocatorPane Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+
+    let setter_bar = state
+      .controls
+      .iter()
+      .find(|c| {
+        c.name() == "mark"
+          && matches!(
+            c,
+            manipulate::ControlState::Discrete {
+              setter_bar: true,
+              ..
+            }
+          )
+      })
+      .expect("the SetterBar preset row must still be there");
+    if let manipulate::ControlState::Discrete { value_labels, .. } = setter_bar
+    {
+      assert_eq!(
+        value_labels,
+        &["east post".to_string(), "west post".to_string()]
+      );
+    }
+
+    let stand_in = state
+      .controls
+      .iter()
+      .find_map(|c| match c {
+        manipulate::ControlState::Slider2D {
+          name,
+          x_min,
+          x_max,
+          y_min,
+          y_max,
+          x,
+          y,
+          ..
+        } if name == "mark" => Some((*x_min, *x_max, *y_min, *y_max, *x, *y)),
+        _ => None,
+      })
+      .expect("a draggable stand-in row for `mark` must be added");
+    // Bounds come from the wrapped graphic's own `PlotRange` (LocatorPane
+    // gives none of its own); the initial position is the SetterBar's
+    // default choice, `{2, 0}`.
+    assert_eq!(stand_in, (-5.0, 5.0, -2.0, 2.0, 2.0, 0.0));
   }
 }

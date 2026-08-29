@@ -203,8 +203,11 @@ pub(crate) fn evaluate_function_call_ast(
   }
   let _guard = DepthGuard;
 
-  const RECURSION_LIMIT: usize = 1024;
-  if depth > RECURSION_LIMIT {
+  // Same `$RecursionLimit` budget as `evaluate_expr_to_expr_impl`, read from
+  // the environment only once the depth passes the smallest limit Wolfram
+  // accepts for the variable (20).
+  const MIN_SETTABLE_RECURSION_LIMIT: usize = 20;
+  if depth > MIN_SETTABLE_RECURSION_LIMIT && depth > crate::recursion_limit() {
     return Ok(unevaluated(name, args));
   }
 

@@ -689,6 +689,9 @@ fn is_valid_replace_rules(expr: &Expr) -> bool {
       true
     }
     Expr::List(items) => items.iter().all(is_valid_replace_rules),
+    // An Association is accepted anywhere a list of rules is expected: it
+    // behaves as if it were the list of its key -> value pairs.
+    Expr::Association(_) => true,
     _ => false,
   }
 }
@@ -699,6 +702,16 @@ fn is_valid_replace_rules(expr: &Expr) -> bool {
 /// wolframscript shows the offending argument as a list of rules, so a bare
 /// rule is displayed wrapped in braces while one that is already a list is
 /// shown as is.
+/// Whether `expr` is a literal `Return[val]` — what `Block`, `Module`, `While`
+/// and `For` hand back when a `Return` unwinds out of them. Wolfram lets such
+/// a `Return` keep travelling up through `CompoundExpression` and the loops
+/// until a definition body consumes it, so every one of those boundaries has
+/// to recognise it.
+pub(crate) fn is_literal_return(expr: &Expr) -> bool {
+  matches!(expr, Expr::FunctionCall { name, args }
+    if name == "Return" && args.len() == 1)
+}
+
 pub(crate) fn reject_invalid_replace_rules(head: &str, rules: &Expr) -> bool {
   if is_valid_replace_rules(rules) {
     return false;
@@ -758,8 +771,11 @@ fn evaluate_expr_to_expr_impl(expr: &Expr) -> Result<Expr, InterpreterError> {
   }
   let _guard = DepthGuard;
 
-  const RECURSION_LIMIT: usize = 1024;
-  if depth > RECURSION_LIMIT {
+  // Reading `$RecursionLimit` out of the environment costs a hash lookup, so
+  // it only happens once the depth passes the smallest limit Wolfram accepts
+  // for the variable (20); shallower evaluations can never exceed any limit.
+  const MIN_SETTABLE_RECURSION_LIMIT: usize = 20;
+  if depth > MIN_SETTABLE_RECURSION_LIMIT && depth > crate::recursion_limit() {
     return Ok(expr.clone());
   }
 
@@ -3611,7 +3627,15 @@ pub fn evaluate_expr_to_expr_inner(
         #[allow(clippy::mut_range_bound)]
         for i in start_index..exprs.len() {
           match evaluate_expr_to_expr(&exprs[i]) {
-            Ok(val) => result = val,
+            Ok(val) => {
+              // A `Return[val]` produced by Block/Module/While/For
+              // short-circuits the remaining statements, the same way the
+              // `CompoundExpression[…]` spelling above does.
+              if is_literal_return(&val) {
+                return Ok(val);
+              }
+              result = val;
+            }
             Err(InterpreterError::GotoSignal(tag)) => {
               if let Some(label_idx) = find_label_index(exprs, &tag) {
                 start_index = label_idx + 1;

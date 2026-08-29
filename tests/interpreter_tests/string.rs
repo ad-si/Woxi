@@ -2157,6 +2157,19 @@ mod letter_number {
   }
 
   #[test]
+  fn named_backslash_decodes_to_ascii_backslash() {
+    // Unlike most named operator glyphs, `\[Backslash]` is not a
+    // private-use look-alike for a typeset form: it is literally the ASCII
+    // backslash (its `Backslash[a, b]` infix rendering is a separate
+    // display form). Regression: a Demonstrations Project notebook used
+    // `\[Backslash]` inside a table header string ("R\[Backslash]D"), and
+    // it fell through unresolved, printing the literal escape text.
+    assert_eq!(interpret("\"\\[Backslash]\"").unwrap(), "\\");
+    assert_eq!(interpret("StringLength[\"\\[Backslash]\"]").unwrap(), "1");
+    assert_eq!(interpret("\"R\\[Backslash]D\"").unwrap(), "R\\D");
+  }
+
+  #[test]
   fn greek_alpha_omega() {
     assert_eq!(interpret("LetterNumber[\"α\", \"Greek\"]").unwrap(), "1");
     assert_eq!(interpret("LetterNumber[\"ω\", \"Greek\"]").unwrap(), "24");

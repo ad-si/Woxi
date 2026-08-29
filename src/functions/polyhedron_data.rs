@@ -1306,6 +1306,44 @@ static POLYHEDRA: &[PolyhedronInfo] = &[
       {\"Amphichiral\", \"Equilateral\", \"Isohedron\", \
       \"Zonohedron\"}",
   },
+  PolyhedronInfo {
+    name: "TriangularOrthobicupola",
+    vertex_count: 12,
+    edge_count: 24,
+    face_count: 14,
+    // Two triangular cupolas glued hexagon-to-hexagon without a twist
+    // (Johnson solid J27): 8 equilateral triangles (area Sqrt[3]/4 each)
+    // plus 6 unit squares.
+    volume: "5*Sqrt[2]/3",
+    surface_area: "6 + 2*Sqrt[3]",
+    // All 12 vertices lie on the unit sphere (a consequence of the cupola
+    // being half of a cuboctahedron, whose own circumradius equals its
+    // edge length), but the triangle and square faces sit at different
+    // distances from the center, so there is no single inscribed sphere.
+    circumradius: "1",
+    inradius: "Missing[\"NotApplicable\"]",
+    // Hexagonal ring at z = 0 (radius 1, the shared "equator" of the two
+    // cupolas) plus the two triangular cupola caps at z = +-Sqrt[2/3]
+    // (radius 1/Sqrt[3], unrotated relative to each other, which is what
+    // makes this the "ortho" rather than "gyro" bicupola). z is the C3
+    // symmetry axis. Verified against the edge (all 1), circumradius (all
+    // vertices at distance 1 from the origin), Volume, and SurfaceArea
+    // above by direct computation from these coordinates.
+    vertices_src: "{\
+      {1, 0, 0}, {1/2, Sqrt[3]/2, 0}, {-1/2, Sqrt[3]/2, 0}, \
+      {-1, 0, 0}, {-1/2, -Sqrt[3]/2, 0}, {1/2, -Sqrt[3]/2, 0}, \
+      {1/2, Sqrt[3]/6, Sqrt[2/3]}, {-1/2, Sqrt[3]/6, Sqrt[2/3]}, \
+      {0, -Sqrt[3]/3, Sqrt[2/3]}, {1/2, Sqrt[3]/6, -Sqrt[2/3]}, \
+      {-1/2, Sqrt[3]/6, -Sqrt[2/3]}, {0, -Sqrt[3]/3, -Sqrt[2/3]}}",
+    faces_src: "{\
+      {7, 1, 2}, {8, 3, 4}, {9, 5, 6}, \
+      {7, 2, 3, 8}, {8, 4, 5, 9}, {9, 6, 1, 7}, {7, 8, 9}, \
+      {10, 2, 1}, {11, 4, 3}, {12, 6, 5}, \
+      {11, 3, 2, 10}, {12, 5, 4, 11}, {10, 1, 6, 12}, {10, 12, 11}}",
+    classes_src: "\
+      {\"Amphichiral\", \"Convex\", \"Equilateral\", \"Johnson\", \
+      \"Nonuniform\", \"Rigid\", \"Simple\"}",
+  },
 ];
 
 fn find_polyhedron(name: &str) -> Option<&'static PolyhedronInfo> {

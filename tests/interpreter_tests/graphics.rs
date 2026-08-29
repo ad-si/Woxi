@@ -4527,6 +4527,63 @@ mod plot3d {
         "expected the merged ring to keep its red PlotStyle"
       );
     }
+
+    /// A list of curves may be built from `ReplaceAll` rather than literal
+    /// triples — e.g. `{fx, fy, fz} /. rules` — which `HoldAll` leaves
+    /// unevaluated, so each curve's shape has to be discovered by
+    /// evaluating it once.
+    #[test]
+    fn multi_curve_from_replace_all() {
+      let svg = export_svg(
+        "rules = {fx -> Function[t, Cos[t]], fy -> Function[t, Sin[t]]}; \
+         ParametricPlot3D[{{fx[t], fy[t], 0} /. rules, \
+           {2 fx[t], 2 fy[t], 0} /. rules}, {t, 0, 2 Pi}]",
+      );
+      assert!(
+        svg.contains("<polyline") || svg.contains("<line"),
+        "expected line segments for the two ReplaceAll-resolved curves"
+      );
+    }
+
+    /// `soln = NDSolve[...]` returns a list of solution branches even when
+    /// there is only one, so `{fx, fy, fz} /. soln` comes back as a
+    /// 1-element list wrapping the triple rather than the triple itself.
+    /// Regression test for a Demonstration notebook ("Coupled Lorenz
+    /// Oscillators") whose `ParametricPlot3D[{{...} /. soln, {...} /. \
+    /// soln}, ...]` failed with "first argument must be {fx, fy, fz}"
+    /// because of this extra list level.
+    #[test]
+    fn multi_curve_from_ndsolve_shaped_replace_all() {
+      let svg = export_svg(
+        "soln = {{fx -> Function[t, Cos[t]], fy -> Function[t, Sin[t]], \
+           fz -> Function[t, 0]}}; \
+         ParametricPlot3D[{{fx[t], fy[t], fz[t]} /. soln, \
+           {2 fx[t], 2 fy[t], fz[t]} /. soln}, {t, 0, 2 Pi}]",
+      );
+      assert!(
+        svg.contains("<polyline") || svg.contains("<line"),
+        "expected line segments for the two NDSolve-shaped curves"
+      );
+    }
+
+    /// `PlotStyle -> {color1, color2}` on a multi-curve `ParametricPlot3D`
+    /// colors each curve individually instead of applying the whole list
+    /// as one blended directive to every curve.
+    #[test]
+    fn plot_style_list_colors_curves_individually() {
+      let svg = export_svg(
+        "ParametricPlot3D[{{Cos[t], Sin[t], 0}, {2 Cos[t], 2 Sin[t], 0}}, \
+         {t, 0, 2 Pi}, PlotStyle -> {Blue, Purple}]",
+      );
+      assert!(
+        svg.contains("rgb(0,0,255)"),
+        "expected the first curve to keep its Blue PlotStyle"
+      );
+      assert!(
+        svg.contains("rgb(128,0,128)"),
+        "expected the second curve to keep its Purple PlotStyle"
+      );
+    }
   }
 
   mod plot_misc {
@@ -11157,10 +11214,32 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn array_plot_sparse_array() {
+      // Regression: SparseArray's canonical internal form isn't a plain
+      // nested List, so ArrayPlot used to reject it with "first argument
+      // must be a matrix (list of lists)" instead of densifying it first.
+      let dense = export_svg("ArrayPlot[{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}]");
+      let sparse = export_svg(
+        "ArrayPlot[SparseArray[{{1, 1} -> 1, {2, 2} -> 1, {3, 3} -> 1}, {3, 3}]]",
+      );
+      assert_eq!(sparse, dense);
+    }
+
+    #[test]
     fn matrix_plot_basic() {
       insta::assert_snapshot!(export_svg(
         "MatrixPlot[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}]"
       ));
+    }
+
+    #[test]
+    fn matrix_plot_sparse_array() {
+      // Regression: same SparseArray-densification bug as ArrayPlot.
+      let dense = export_svg("MatrixPlot[{{1, 0}, {0, 2}}]");
+      let sparse = export_svg(
+        "MatrixPlot[SparseArray[{{1, 1} -> 1, {2, 2} -> 2}, {2, 2}]]",
+      );
+      assert_eq!(sparse, dense);
     }
 
     #[test]
@@ -11989,6 +12068,84 @@ ParametricPlot[f[t], {t, 0, 1}]]",
          Appearance -> None]",
       );
       assert!(!svg.contains("<ellipse"), "no marker was asked for: {svg}");
+    }
+
+    // `LocatorPane[locators, Dynamic[picture]]` — the picture is itself
+    // `Dynamic`-wrapped, as it is once it depends on something besides the
+    // locators (a Demonstration whose plot also reacts to a slider).
+    // `Show[…]` (like every other plot head) evaluates straight to a
+    // rendered picture rather than staying the symbolic
+    // `Graphics[prims, opts]` a marker can be spliced into, so this body
+    // shape used to fail that check and the whole pane exported as a
+    // strip of its own unevaluated source instead of a picture.
+    #[test]
+    fn locator_pane_draws_a_dynamic_wrapped_show_picture() {
+      let svg = export_svg(
+        "LocatorPane[{{0.5, 0.5}}, \
+         Dynamic[Show[Graphics[{Line[{{0, 0}, {1, 1}}]}, \
+         PlotRange -> {{0, 1}, {0, 1}}, ImageSize -> 200]]]]",
+      );
+      assert!(!svg.contains("LocatorPane"), "not the source: {svg}");
+      assert!(
+        svg.contains("<polyline") || svg.contains("<line"),
+        "the wrapped picture must still be drawn: {svg}"
+      );
+      assert_eq!(
+        svg.matches("<ellipse").count(),
+        1,
+        "the locator marker must still be drawn on top: {svg}"
+      );
+    }
+
+    // A body that picks its picture with `Which` (a Demonstration
+    // switching between plotted methods over the same locator, e.g.
+    // choosing which optimization algorithm's path to plot) only ever
+    // evaluates the branch it selects — the marker only has to reach that
+    // one branch, and never touches the others, which are never run.
+    #[test]
+    fn locator_pane_draws_the_which_branch_its_body_selects() {
+      let body = |mode: &str| {
+        format!(
+          "mode = \"{mode}\"; \
+           LocatorPane[{{{{0.5, 0.5}}}}, \
+           Dynamic[Which[mode == \"circle\", \
+             Show[Graphics[{{Disk[]}}, PlotRange -> {{{{0, 1}}, {{0, 1}}}}, \
+               ImageSize -> 200]], \
+             mode == \"square\", \
+             Show[Graphics[{{Rectangle[]}}, PlotRange -> {{{{0, 1}}, {{0, 1}}}}, \
+               ImageSize -> 200]]]]]"
+        )
+      };
+
+      let circle_svg = export_svg(&body("circle"));
+      assert!(
+        !circle_svg.contains("LocatorPane"),
+        "not the source: {circle_svg}"
+      );
+      assert_eq!(
+        circle_svg.matches("<ellipse").count(),
+        2,
+        "the selected disk plus the locator marker: {circle_svg}"
+      );
+      assert!(
+        !circle_svg.contains("<rect"),
+        "the other branch: {circle_svg}"
+      );
+
+      let square_svg = export_svg(&body("square"));
+      assert!(
+        !square_svg.contains("LocatorPane"),
+        "not the source: {square_svg}"
+      );
+      assert!(
+        square_svg.contains("<rect"),
+        "the selected square: {square_svg}"
+      );
+      assert_eq!(
+        square_svg.matches("<ellipse").count(),
+        1,
+        "just the locator marker this time: {square_svg}"
+      );
     }
 
     // A primitive whose argument is `Dynamic[…]` draws the value that
@@ -14417,6 +14574,117 @@ mod graphics_grid {
       !svg.contains(">Missing[]</text>"),
       "Missing[] should not render as literal text"
     );
+  }
+
+  // `"label" -> Graphics[…]` is the idiom Wolfram demonstrations use for a
+  // caption cell with an inline swatch (a color-preview disk next to its
+  // name, e.g. Wolfram Demonstrations Project's "Design of Mass Timber
+  // Panels as Heat Exchangers"). Wolfram typesets a `Rule` cell as its
+  // pattern, an arrow, and its replacement; only a Graphics-valued
+  // replacement is drawn — a Rule between two plain values still prints
+  // as text.
+  #[test]
+  fn rule_cell_with_graphics_replacement_renders_inline() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Grid[{{\"option\" -> Graphics[{Red, Disk[]}, ImageSize -> 20]}}]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(svg.starts_with("<svg"), "Should produce SVG output");
+    assert!(
+      !svg.contains("Graphics["),
+      "The Graphics[…] call should be rendered, not printed as source: {svg}"
+    );
+    assert!(
+      svg.contains("option"),
+      "The rule's pattern should still be shown as a label: {svg}"
+    );
+    assert!(
+      svg.contains("<circle") || svg.contains("<ellipse"),
+      "The rule's Graphics replacement should draw the disk: {svg}"
+    );
+  }
+
+  #[test]
+  fn rule_cell_with_plain_values_still_prints_as_text() {
+    clear_state();
+    let svg = export_svg("Grid[{{\"a\" -> 1}}]");
+    assert!(svg.contains('a'));
+    assert!(svg.contains('1'));
+  }
+}
+
+// A bare `LineLegend[…]` (not wrapped in `Legended`) is how Wolfram
+// Demonstrations often place a legend beside a plot instead of attaching it
+// via `PlotLegends` — Wolfram's front end typesets it as line-style swatches
+// and labels either way, rather than the symbolic `LineLegend[…]` call.
+mod line_legend {
+  use super::*;
+
+  #[test]
+  fn bare_line_legend_renders_as_swatches() {
+    clear_state();
+    // `LineLegend[…]` alone (no `Legended`/`Grid`/`Row` wrapper) still
+    // stays symbolic in its *printed* form, matching wolframscript's
+    // kernel-level InputForm — this only covers how it draws when a
+    // picture of it is asked for (`ExportString[…, "SVG"]`, or nested in
+    // a layout, which `line_legend_nested_in_grid_cell_renders_inline`
+    // below covers, and which is how Woxi Studio actually reaches it: a
+    // Demonstration places `LineLegend[…]` inside the `Grid`/`Row` a
+    // `Manipulate` body returns, never as the body's sole result).
+    let svg = export_svg("LineLegend[{Red, Blue}, {\"A\", \"B\"}]");
+    assert!(
+      !svg.contains("LineLegend["),
+      "Should be drawn, not printed as source: {svg}"
+    );
+    assert_eq!(
+      svg.matches("<line ").count(),
+      2,
+      "One line sample per entry: {svg}"
+    );
+    assert!(svg.contains('A') && svg.contains('B'));
+  }
+
+  #[test]
+  fn line_legend_honours_thickness_and_dashing_directives() {
+    clear_state();
+    let svg = export_svg(
+      "LineLegend[{Red, {Thickness[Large], Blue}, \
+       {Dashing[{0.05, 0.03}], Green}}, {\"A\", \"B\", \"C\"}]",
+    );
+    assert_eq!(svg.matches("<line ").count(), 3);
+    assert!(
+      svg.contains("stroke-dasharray"),
+      "The Dashing entry should produce a dashed sample: {svg}"
+    );
+    // The thick entry's stroke-width must exceed the plain-color entry's.
+    let widths: Vec<f64> = svg
+      .split("stroke-width=\"")
+      .skip(1)
+      .filter_map(|s| s.split('"').next())
+      .filter_map(|s| s.parse().ok())
+      .collect();
+    assert!(
+      widths.len() >= 2
+        && widths.iter().copied().fold(0.0, f64::max) > widths[0],
+      "Thickness[Large] should widen its sample relative to the default: {widths:?}"
+    );
+  }
+
+  #[test]
+  fn line_legend_nested_in_grid_cell_renders_inline() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Grid[{{Graphics[{Red, Disk[]}], LineLegend[{Red, Blue}, {\"x\", \"y\"}]}}]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(
+      !svg.contains("LineLegend["),
+      "Should be drawn inside the grid cell, not printed as source: {svg}"
+    );
+    assert_eq!(svg.matches("<line ").count(), 2);
   }
 }
 
@@ -18677,6 +18945,61 @@ mod manipulate {
     }
   }
 
+  // A hidden variable's control-type slot can spell `None` as a bare
+  // identifier after the bounds (`{{v, init}, min, max, None}`) instead of
+  // the `ControlType -> None` option rule — both mean the same thing, and
+  // a Demonstration is free to use either. A body-level `Locator[Dynamic[…]]`
+  // or `LocatorPane[Dynamic[…], …]` driving such a variable promotes it to a
+  // visible, draggable control either way: re-parsing the spec with its
+  // control-type marker swapped for `Locator` must actually strip the bare
+  // `None`, not just the `ControlType -> …` rule form, or the re-parsed spec
+  // reads as hidden all over again and the promotion silently loses the
+  // control instead of making it draggable. Regression: with only the rule
+  // form stripped, this variable disappeared from the spec entirely — not
+  // a control, not even hidden state.
+  #[test]
+  fn spec_body_locator_promotes_a_bare_none_control_type() {
+    let expr = interpret_to_expr(
+      "Manipulate[Graphics[{Locator[Dynamic[pt], Point[pt]]}], \
+       {{pt, {0.2, 1}}, {-1, -1}, {1, 1}, None}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    match &spec.controls[0] {
+      ManipulateControl::Slider2D {
+        name,
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+        ..
+      } => {
+        assert_eq!(name, "pt");
+        assert_eq!((*x_min, *x_max), (-1.0, 1.0));
+        assert_eq!((*y_min, *y_max), (-1.0, 1.0));
+      }
+      other => panic!("expected a draggable 2D control, got {other:?}"),
+    }
+  }
+
+  // The same bare-`None` shorthand, but driven by a whole-picture
+  // `LocatorPane[Dynamic[…], …]` (the "toggle between plotted methods"
+  // Demonstration pattern) rather than a bare `Locator[…]` primitive
+  // inside a `Graphics[…]` list.
+  #[test]
+  fn spec_body_locator_pane_promotes_a_bare_none_control_type() {
+    let expr = interpret_to_expr(
+      "Manipulate[LocatorPane[Dynamic[pt], Graphics[{Point[pt]}]], \
+       {{pt, {0.2, 1}}, {-1, -1}, {1, 1}, None}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    match &spec.controls[0] {
+      ManipulateControl::Slider2D { name, .. } => assert_eq!(name, "pt"),
+      other => panic!("expected a draggable 2D control, got {other:?}"),
+    }
+  }
+
   // A Demonstration that wants its pick list *inside* its own layout writes
   // `PopupMenu[Dynamic[var], choices]` in the body and declares `var` as a
   // hidden `ControlType -> None` variable. That is a control, so it becomes
@@ -21760,9 +22083,9 @@ mod manipulate {
       ManipulateControl::Discrete { name, values, .. } => {
         assert_eq!(name, "g");
         // The five Platonic solids, the Archimedean solids (and their
-        // duals) with icosahedral or cubic symmetry, and the rhombic
-        // hexecontahedron stellation.
-        assert_eq!(values.len(), 19, "every known solid");
+        // duals) with icosahedral or cubic symmetry, the rhombic
+        // hexecontahedron stellation, and the triangular orthobicupola.
+        assert_eq!(values.len(), 20, "every known solid");
         assert!(values.contains(&"\"Cube\"".to_string()));
         assert!(values.contains(&"\"TruncatedIcosahedron\"".to_string()));
       }
@@ -22070,6 +22393,193 @@ mod manipulate {
     assert!(
       json.contains(r#""bold":true,"color":"rgb(255,0,0)""#),
       "json: {json}"
+    );
+  }
+
+  // ── PopupMenu[…] inside a display element (dynamically many dropdowns) ──
+
+  /// A Demonstrations idiom: one `PopupMenu` per slot of a shared list
+  /// variable, generated by mapping a pure function over `Range[count]`
+  /// (not `Table` with a named iterator — `Dynamic` is `HoldFirst`, and
+  /// `Table[Dynamic[v[[i]]], {i, n}]` would leave the literal symbol `i`
+  /// stuck in every held `Dynamic`, the classic `Table`-inside-`Hold`
+  /// pitfall; a pure function's `#` substitutes before the hold takes
+  /// effect). Here: one shift-number dropdown per worker, count fixed at 2.
+  const SHIFT_PICKER_EXAMPLE: &str = "Manipulate[shifts, \
+    {{numWorkers, 2}, 1, 3, 1, ControlType -> None}, \
+    {{shifts, {1, 1, 1}}, None}, \
+    Dynamic[Row[Outer[PopupMenu[Dynamic[shifts[[#]]], {1, 2, 3}]&, \
+    Range[numWorkers]]]]]";
+
+  #[test]
+  fn display_popup_menu_renders_one_dropdown_per_slot() {
+    use woxi::functions::graphics::build_manipulate_display;
+    let expr = interpret_to_expr(SHIFT_PICKER_EXAMPLE).unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("shift picker");
+    assert_eq!(spec.displays.len(), 1, "one trailing display element");
+    let bindings = manipulate_initial_bindings(&spec);
+
+    let popups = woxi::with_scoped_globals(&bindings, || {
+      let tree = build_manipulate_display(&spec.displays[0], &[]);
+      let DisplayNode::Row(children) = tree else {
+        panic!("expected a Row of popups, got {tree:?}");
+      };
+      children
+    });
+    assert_eq!(popups.len(), 2, "numWorkers starts at 2");
+    for (i, popup) in popups.iter().enumerate() {
+      let DisplayNode::Popup {
+        target,
+        current,
+        choices,
+      } = popup
+      else {
+        panic!("expected a Popup leaf, got {popup:?}");
+      };
+      assert_eq!(*target, format!("shifts[[{}]]", i + 1));
+      assert_eq!(*current, "1", "every worker starts on shift 1");
+      assert_eq!(
+        choices,
+        &vec![
+          ("1".to_string(), "1".to_string()),
+          ("2".to_string(), "2".to_string()),
+          ("3".to_string(), "3".to_string()),
+        ]
+      );
+    }
+  }
+
+  #[test]
+  fn display_popup_menu_count_tracks_a_live_control() {
+    // Changing `numWorkers` and rebuilding the display — exactly what
+    // `ManipulateState::reevaluate` does on every control change — changes
+    // how many popups render, since the whole `Row[Outer[…]]` re-expands
+    // from scratch under the `Dynamic` hold on each rebuild.
+    use woxi::functions::graphics::build_manipulate_display;
+    let expr = interpret_to_expr(SHIFT_PICKER_EXAMPLE).unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("shift picker");
+
+    let count_for = |num_workers: &str| -> usize {
+      let bindings = vec![
+        ("numWorkers".to_string(), num_workers.to_string()),
+        ("shifts".to_string(), "{1, 1, 1}".to_string()),
+      ];
+      woxi::with_scoped_globals(&bindings, || {
+        let DisplayNode::Row(children) =
+          build_manipulate_display(&spec.displays[0], &[])
+        else {
+          panic!("expected a Row of popups");
+        };
+        children.len()
+      })
+    };
+    assert_eq!(count_for("1"), 1);
+    assert_eq!(count_for("2"), 2);
+    assert_eq!(count_for("3"), 3);
+  }
+
+  #[test]
+  fn display_popup_menu_selection_mutates_the_target_slot() {
+    // Selecting a choice fires `<target> = <value>`; applying that mutation
+    // (exactly what `apply_display_mutation` does in Woxi Studio) writes
+    // into the right slot of the shared list, leaving the others alone.
+    use woxi::functions::graphics::{
+      apply_manipulate_mutations, build_manipulate_display,
+    };
+    let expr = interpret_to_expr(SHIFT_PICKER_EXAMPLE).unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("shift picker");
+    let bindings = manipulate_initial_bindings(&spec);
+
+    let popups = woxi::with_scoped_globals(&bindings, || {
+      let DisplayNode::Row(children) =
+        build_manipulate_display(&spec.displays[0], &[])
+      else {
+        panic!("expected a Row of popups");
+      };
+      children
+    });
+    let DisplayNode::Popup { target, .. } = &popups[1] else {
+      panic!("expected a Popup leaf, got {:?}", popups[1]);
+    };
+    assert_eq!(target, "shifts[[2]]");
+    let mutation = format!("{target} = 3");
+
+    let updated = apply_manipulate_mutations(&bindings, &[mutation]);
+    assert_eq!(updated.len(), 1);
+    assert_eq!(updated[0].0, "shifts");
+    assert_eq!(updated[0].1, "{1, 3, 1}", "only worker 2's shift changes");
+
+    // Re-rendering with the mutated state preselects the new choice.
+    let mut bindings2 = bindings;
+    bindings2[1].1 = updated[0].1.clone();
+    let popups2 = woxi::with_scoped_globals(&bindings2, || {
+      let DisplayNode::Row(children) =
+        build_manipulate_display(&spec.displays[0], &[])
+      else {
+        panic!("expected a Row of popups");
+      };
+      children
+    });
+    let DisplayNode::Popup { current, .. } = &popups2[1] else {
+      panic!("expected a Popup leaf");
+    };
+    assert_eq!(current, "3");
+  }
+
+  #[test]
+  fn display_popup_menu_json_exposes_target_current_and_choices() {
+    // The Playground consumes the same tree as JSON.
+    use woxi::functions::graphics::render_manipulate_display;
+    let expr = interpret_to_expr(SHIFT_PICKER_EXAMPLE).unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("shift picker");
+    let bindings = manipulate_initial_bindings(&spec);
+    let json = woxi::with_scoped_globals(&bindings, || {
+      render_manipulate_display(&spec.displays[0], &[])
+    });
+    assert!(json.contains(r#""kind":"popup""#), "json: {json}");
+    assert!(json.contains(r#""target":"shifts[[1]]""#), "json: {json}");
+    assert!(json.contains(r#""current":"1""#), "json: {json}");
+    assert!(
+      json.contains(r#""choices":[{"value":"1","label":"1"}"#),
+      "json: {json}"
+    );
+  }
+
+  /// A `PopupMenu` choice list may itself be `value -> "label"` rules (a
+  /// lookup, not just plain numbers) and may be held (e.g. built with
+  /// `Thread[…]`) — the same shapes `togglerbar_node` already resolves for
+  /// `TogglerBar`, reused here via `discrete_choice_columns`.
+  #[test]
+  fn display_popup_menu_resolves_rule_form_and_held_choice_lists() {
+    use woxi::functions::graphics::build_manipulate_display;
+    let code = "Manipulate[color, \
+      {{color, \"red\"}, None}, \
+      Dynamic[PopupMenu[Dynamic[color], \
+      Thread[{\"red\", \"green\", \"blue\"} -> \
+      {\"Red\", \"Green\", \"Blue\"}]]]]";
+    let expr = interpret_to_expr(code).unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("color picker");
+    let bindings = manipulate_initial_bindings(&spec);
+    let node = woxi::with_scoped_globals(&bindings, || {
+      build_manipulate_display(&spec.displays[0], &[])
+    });
+    let DisplayNode::Popup {
+      target,
+      current,
+      choices,
+    } = node
+    else {
+      panic!("expected a Popup leaf, got {node:?}");
+    };
+    assert_eq!(target, "color");
+    assert_eq!(current, "\"red\"");
+    assert_eq!(
+      choices,
+      vec![
+        ("\"red\"".to_string(), "Red".to_string()),
+        ("\"green\"".to_string(), "Green".to_string()),
+        ("\"blue\"".to_string(), "Blue".to_string()),
+      ]
     );
   }
 
@@ -26749,5 +27259,72 @@ fn manipulate_module_which_affine_prolog_checkbox_and_traditional_plot_label() {
   assert!(
     !without_label.contains(">A</text>"),
     "Epilog's \"A\" label must not draw when labels is False: {without_label}"
+  );
+}
+
+#[test]
+fn test_plot_label_fraction_of_difference_keeps_numerator_grouped() {
+  // Regression: `expr_to_svg_markup`'s `Times[Rational[1, d], expr]` case
+  // joins the numerator and denominator with a literal `/`, not a real
+  // vinculum, so an additive numerator needs its own parens — otherwise
+  // `1/2 (p^2 - r^2)` rendered as `p^2 - r^2/2` (only the last term
+  // divided) instead of `(p^2 - r^2)/2`.
+  clear_state();
+  let svg = export_svg(
+    "Graphics[{Point[{0, 0}]}, PlotLabel -> Row[{q == 1/2 (p^2 - r^2)}]]",
+  );
+  assert!(
+    svg.contains(")/2"),
+    "expected the whole numerator grouped in parens before the /2: {svg}"
+  );
+  assert!(
+    !svg.contains("font-size=\"70%\">2</tspan>/2"),
+    "the /2 must not attach directly to the last squared term alone: {svg}"
+  );
+}
+
+#[test]
+fn test_show_merges_parametric_plot3d_surface_with_graphics3d() {
+  // Regression: ParametricPlot3D returned an opaquely pre-rendered
+  // Graphics3D with no symbolic `structure` (unlike Plot3D/ListPlot3D,
+  // which expose a GraphicsComplex structure for exactly this purpose), so
+  // `Show[Graphics3D[...], ParametricPlot3D[...]]` silently dropped the
+  // parametric surface and kept only the raw Graphics3D primitives.
+  clear_state();
+  let svg = export_svg(
+    "Show[Graphics3D[{Point[{0, 0, 0}]}], \
+     ParametricPlot3D[{u, v, 0}, {u, -1, 1}, {v, -1, 1}]]",
+  );
+  assert!(
+    svg.contains("<polygon") || svg.contains("<path"),
+    "expected the parametric surface's geometry in the merged render: {svg}"
+  );
+}
+
+#[test]
+fn test_show_parametric_plot3d_first_keeps_default_axes_and_box_ratios() {
+  // Regression: the `structure` block that lets ParametricPlot3D merge
+  // into `Show` (previous test) initially left out the `Axes -> True` /
+  // `BoxRatios -> {1, 1, Z_SCALE}` defaults that the analogous Plot3D
+  // block fills in. `Show` takes its merged options from the *first*
+  // graphic's own structure, so with ParametricPlot3D listed first the
+  // merged picture would silently lose axes and get a different aspect
+  // ratio than ParametricPlot3D's own standalone default.
+  clear_state();
+  let expr = woxi::interpret_to_expr(
+    "Show[ParametricPlot3D[{u, v, 0}, {u, -1, 1}, {v, -1, 1}], \
+     Graphics3D[{Point[{0, 0, 0}]}]]",
+  )
+  .unwrap();
+  let debug = format!("{expr:?}");
+  assert!(
+    debug.contains(
+      r#"pattern: Identifier("Axes"), replacement: Identifier("True")"#
+    ),
+    "expected the merged structure to default to Axes -> True: {debug}"
+  );
+  assert!(
+    debug.contains(r#"pattern: Identifier("BoxRatios")"#),
+    "expected the merged structure to default BoxRatios: {debug}"
   );
 }

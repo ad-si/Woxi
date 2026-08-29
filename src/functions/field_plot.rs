@@ -2863,6 +2863,8 @@ fn apply_named_color_function(name: &str, t: f64) -> (u8, u8, u8) {
 /// Cells can also be explicit color directives (e.g. Pink, Red).
 pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let data = evaluate_expr_to_expr(&args[0])?;
+  let data = crate::functions::list_helpers_ast::densify_sparse_array(&data)
+    .unwrap_or(data);
   let Expr::List(rows) = &data else {
     return Err(InterpreterError::EvaluationError(
       "ArrayPlot: first argument must be a matrix (list of lists)".into(),
@@ -3186,6 +3188,8 @@ fn frame_labelled_svg(
 /// MatrixPlot[matrix] - like ArrayPlot with automatic color scaling
 pub fn matrix_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let data = evaluate_expr_to_expr(&args[0])?;
+  let data = crate::functions::list_helpers_ast::densify_sparse_array(&data)
+    .unwrap_or(data);
   let Expr::List(rows) = &data else {
     return Err(InterpreterError::EvaluationError(
       "MatrixPlot: first argument must be a matrix".into(),

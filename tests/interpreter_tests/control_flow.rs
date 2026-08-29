@@ -4329,3 +4329,117 @@ mod off_for_the_general_symbol {
     );
   }
 }
+
+/// `$RecursionLimit` is a settable variable, not a constant: raising it (or
+/// setting it to `Infinity`) has to let a deeper user recursion through, and
+/// lowering it has to cut one short. Project Euler 188 raises it to iterate a
+/// 1855-deep tetration.
+mod recursion_limit {
+  use super::*;
+
+  const DEEP: &str = "h[0] := 0; h[n_] := 1 + h[n - 1]; ";
+
+  #[test]
+  fn default_is_wolframs_1024() {
+    clear_state();
+    assert_eq!(interpret("$RecursionLimit").unwrap(), "1024");
+  }
+
+  #[test]
+  fn assignment_is_readable() {
+    clear_state();
+    assert_eq!(
+      interpret("$RecursionLimit = 2000; $RecursionLimit").unwrap(),
+      "2000"
+    );
+  }
+
+  #[test]
+  fn raising_the_limit_lets_a_deeper_recursion_finish() {
+    clear_state();
+    assert_eq!(
+      interpret(&format!("$RecursionLimit = 4000; {DEEP} h[600]")).unwrap(),
+      "600"
+    );
+  }
+
+  #[test]
+  fn infinity_removes_the_limit() {
+    clear_state();
+    assert_eq!(
+      interpret(&format!("$RecursionLimit = Infinity; {DEEP} h[3000]"))
+        .unwrap(),
+      "3000"
+    );
+  }
+
+  #[test]
+  fn lowering_the_limit_cuts_the_recursion_short() {
+    clear_state();
+    let deep =
+      interpret(&format!("$RecursionLimit = 20; {DEEP} h[600]")).unwrap();
+    assert!(
+      deep.contains("h["),
+      "a recursion past the limit must stay unevaluated, got {deep}"
+    );
+  }
+}
+
+/// Wolfram lets `Return[x]` travel up through `CompoundExpression`, `While`
+/// and `For` until a definition body consumes it — only `Do` and `Scan` stop
+/// it. Woxi turns the signal into a literal `Return[x]` at each loop boundary,
+/// so every one of those boundaries has to keep passing it along; `For` used
+/// to swallow it and go on iterating (Project Euler 49 searches nested `For`
+/// loops and returned `Null`).
+mod return_propagation {
+  use super::*;
+
+  #[test]
+  fn for_loop_returns_from_the_enclosing_function() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"f[] := (For[i = 1, i < 5, i++, If[i == 3, Return["x"]]]; "after"); f[]"#
+      )
+      .unwrap(),
+      "x"
+    );
+  }
+
+  #[test]
+  fn while_loop_returns_from_the_enclosing_function() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"g[] := (i = 0; While[i < 5, i++; If[i == 3, Return["x"]]]; "after"); g[]"#
+      )
+      .unwrap(),
+      "x"
+    );
+  }
+
+  #[test]
+  fn nested_for_loops_return_from_the_enclosing_function() {
+    clear_state();
+    assert_eq!(
+      interpret(concat!(
+        r#"k[] := Block[{i, j}, For[i = 1, i < 5, i++, "#,
+        r#"For[j = 1, j < 5, j++, If[i*j == 6, Return["found"]]]]]; k[]"#
+      ))
+      .unwrap(),
+      "found"
+    );
+  }
+
+  #[test]
+  fn do_still_consumes_the_return() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"h[] := (Do[If[i == 3, Return["x"]], {i, 1, 5}]; "after"); h[]"#
+      )
+      .unwrap(),
+      "after"
+    );
+  }
+}

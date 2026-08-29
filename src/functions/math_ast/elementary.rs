@@ -1545,23 +1545,41 @@ fn floor_via_bigfloat(
     return None;
   }
   // Target precision: at least as many decimal digits as the integer part,
-  // plus a safety margin.
+  // plus a safety margin.  An argument that sits just below (or just above) an
+  // integer — `(10^15 - 1)^(1/15)` is 10 minus 6.7*10^-16 — needs however many
+  // digits it takes to separate it from that integer, so the evaluation is
+  // retried at growing precision while the fractional digits are still all 0s
+  // or all 9s and therefore say nothing about which side the true value is on.
   let mag_digits = approx.abs().log10().ceil() as i64;
-  let precision = (mag_digits.max(20) as usize) + 10;
-  let bits = nominal_bits(precision);
+  let base_precision = (mag_digits.max(20) as usize) + 10;
   let mut cc = Consts::new().ok()?;
   let rm = RoundingMode::ToEven;
-  let bf = expr_to_bigfloat(expr, bits, rm, &mut cc).ok()?;
-  let decimal = bigfloat_to_string(&bf, None, rm, &mut cc).ok()?;
-  // decimal looks like "[-]DIGITS.FRAC" (or just "[-]DIGITS.").
-  let (sign, rest) = if let Some(s) = decimal.strip_prefix('-') {
-    ("-", s)
-  } else {
-    ("", decimal.as_str())
-  };
-  let dot_pos = rest.find('.')?;
-  let int_part = &rest[..dot_pos];
-  let frac_part = &rest[dot_pos + 1..];
+  const EXTRA_DIGIT_STEPS: [usize; 4] = [0, 30, 120, 500];
+  let mut resolved: Option<(String, String, String)> = None;
+  for (step, extra) in EXTRA_DIGIT_STEPS.iter().enumerate() {
+    let bits = nominal_bits(base_precision + extra);
+    let bf = expr_to_bigfloat(expr, bits, rm, &mut cc).ok()?;
+    let decimal = bigfloat_to_string(&bf, None, rm, &mut cc).ok()?;
+    // decimal looks like "[-]DIGITS.FRAC" (or just "[-]DIGITS.").
+    let (sign, rest) = if let Some(s) = decimal.strip_prefix('-') {
+      ("-", s)
+    } else {
+      ("", decimal.as_str())
+    };
+    let dot_pos = rest.find('.')?;
+    let int_part = rest[..dot_pos].to_string();
+    let frac_part = rest[dot_pos + 1..].to_string();
+    let undecided = !frac_part.is_empty()
+      && (frac_part.chars().all(|c| c == '0')
+        || frac_part.chars().all(|c| c == '9'));
+    resolved = Some((sign.to_string(), int_part, frac_part));
+    if !undecided || step + 1 == EXTRA_DIGIT_STEPS.len() {
+      break;
+    }
+  }
+  let (sign, int_part, frac_part) = resolved?;
+  let (sign, int_part, frac_part) =
+    (sign.as_str(), int_part.as_str(), frac_part.as_str());
   // Parse the integer part as a BigInt.
   let int_str = format!("{sign}{int_part}");
   let int_bi = int_str.parse::<BigInt>().ok()?;
@@ -1585,6 +1603,18 @@ fn floor_via_bigfloat(
   } else {
     Some(Expr::BigInteger(adjusted))
   }
+}
+
+/// Whether `expr` is an exact (non-`Real`) expression whose double-precision
+/// value `approx` is so close to an integer that `Floor` / `Ceiling` cannot be
+/// decided from it. Machine reals are excluded: `Floor[10.]` is 10 by
+/// definition, there is no hidden exact value to resolve.
+fn is_ambiguous_near_integer(expr: &Expr, approx: f64) -> bool {
+  if crate::functions::predicate_ast::contains_real_literal(expr) {
+    return false;
+  }
+  let distance = (approx - approx.round()).abs();
+  distance < 1e-9 * approx.abs().max(1.0)
 }
 
 /// Floor[x] - Floor function
@@ -1692,8 +1722,22 @@ pub fn floor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // `Pi * 10^100`. Fall through to the arbitrary-precision path.
     // f64 has ~15-16 digits of integer precision, so any magnitude beyond
     // that needs BigFloat to preserve the integer part exactly.
-    if n.is_finite() && n.abs() < 1e15 {
+    // An exact argument whose f64 image lands on (or right next to) an
+    // integer cannot be decided in double precision: `(10^15 - 1)^(1/15)`
+    // rounds to exactly 10.0 even though it is strictly below 10, so `Floor`
+    // would answer 10 instead of 9. Such arguments go through the
+    // arbitrary-precision path, which grows its precision until the two sides
+    // of the integer separate.
+    if n.is_finite()
+      && n.abs() < 1e15
+      && !(is_ambiguous_near_integer(&args[0], n))
+    {
       return Ok(Expr::Integer(n.floor() as i128));
+    }
+    if n.is_finite()
+      && let Some(result) = floor_via_bigfloat(&args[0], n, true)
+    {
+      return Ok(result);
     }
     // BigFloat fallback: compute the expression to enough precision to
     // resolve the integer part exactly, then parse the leading digits as
@@ -1762,8 +1806,22 @@ pub fn ceiling_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(n) = try_eval_to_f64(&args[0]) {
     // f64 has ~15-16 digits of integer precision, so any magnitude beyond
     // that needs BigFloat to preserve the integer part exactly.
-    if n.is_finite() && n.abs() < 1e15 {
+    // An exact argument whose f64 image lands on (or right next to) an
+    // integer cannot be decided in double precision: `(10^15 - 1)^(1/15)`
+    // rounds to exactly 10.0 even though it is strictly below 10, so `Floor`
+    // would answer 10 instead of 9. Such arguments go through the
+    // arbitrary-precision path, which grows its precision until the two sides
+    // of the integer separate.
+    if n.is_finite()
+      && n.abs() < 1e15
+      && !(is_ambiguous_near_integer(&args[0], n))
+    {
       return Ok(Expr::Integer(n.ceil() as i128));
+    }
+    if n.is_finite()
+      && let Some(result) = floor_via_bigfloat(&args[0], n, false)
+    {
+      return Ok(result);
     }
     if let Some(result) = floor_via_bigfloat(&args[0], n, false) {
       return Ok(result);

@@ -1141,6 +1141,34 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_traditional_form_integrate_differential_svg_uses_plain_d() {
+    // Regression: `TraditionalForm[HoldForm[Integrate[…]]]` typesets the
+    // closing differential as the literal box glyph `\[DifferentialD]`
+    // (U+2146, "ⅆ"). That Mathematical Alphanumeric Symbols codepoint has no
+    // glyph in most non-Mathematica fonts, so the Playground/Studio SVG
+    // viewer's font-fallback substitute renders at a different width than
+    // the plain-ASCII advance the layout computed, overlapping the following
+    // variable (`ⅆx` reads as if it were "ddx"). The SVG must instead emit
+    // plain "d" (italicized like any other math variable), which every font
+    // has, so the two glyphs never overlap.
+    clear_state();
+    let svg = interpret_with_stdout(
+      "TraditionalForm[HoldForm[Integrate[x^2, {x, -1, 1}]]]",
+    )
+    .unwrap()
+    .output_svg
+    .expect("expected output SVG for TraditionalForm[HoldForm[Integrate[…]]]");
+    assert!(
+      !svg.contains('\u{2146}'),
+      "Integrate differential SVG must not contain the raw U+2146 glyph:\n{svg}"
+    );
+    assert!(
+      svg.contains(">d<"),
+      "Integrate differential SVG must render the differential as plain \"d\":\n{svg}"
+    );
+  }
+
+  #[test]
   fn test_scientific_real_output_svg_uses_superscript() {
     // Regression: a machine Real in scientific notation (`10.^10` → `1.*^10`)
     // must be typeset as `1. × 10^10` in the Playground/Studio SVG — a `×`
@@ -1893,6 +1921,37 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_graphics3d_inset_text_draws_label() {
+    // `Inset[obj, {x, y, z}]` in `Graphics3D` — the Demonstrations gallery's
+    // usual way to place a label, almost always as
+    // `Inset[Text[Style[…]], pos]`. Regression: `Graphics3D`'s primitive
+    // collector only recognized a bare `Text[…, pos]` call, so `Inset[…]`
+    // was silently dropped and no label was drawn at all.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Graphics3D[{Arrow[{{0, 0, 0}, {1, 1, 1}}], \
+       Inset[Text[Style[\"O\", 15]], {0, 0, 0}]}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      svg.contains(">O<"),
+      "Inset[Text[…]] label was not drawn in Graphics3D: {svg}"
+    );
+
+    // The label's wrapper content (here a plain string) still typesets the
+    // same way when passed to Inset directly, without the Text[…] wrapper.
+    clear_state();
+    let svg2 = interpret(
+      "ExportString[Graphics3D[{Inset[\"AB\", {0, 0, 0}]}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      svg2.contains(">AB<"),
+      "Inset[…] with a bare string label was not drawn in Graphics3D: {svg2}"
+    );
+  }
+
+  #[test]
   fn test_plot_aspect_ratio_sizes_frame_not_canvas() {
     // AspectRatio sets the height/width ratio of the plotting *area* (the data
     // frame), not the whole image. A short ratio must therefore NOT squash the
@@ -2246,6 +2305,34 @@ mod interpreter_tests {
       interpret("(a -> b) /. x_Symbol :> foo[x]").unwrap(),
       "foo[Rule][foo[a], foo[b]]",
     );
+  }
+
+  #[test]
+  fn test_replace_all_accepts_association_as_rules() {
+    // Regression: an Association used directly as the rules argument of
+    // ReplaceAll / ReplaceRepeated / Replace must behave as if it were the
+    // list of its key -> value pairs, matching wolframscript. Woxi used to
+    // reject it with ReplaceAll::reps ("neither a list of replacement rules
+    // nor a valid dispatch table").
+    clear_state();
+    assert_eq!(
+      interpret(r#"{"a", "b", "c"} /. <|"a" -> 1, "b" -> 2|>"#).unwrap(),
+      "{1, 2, c}",
+    );
+    assert_eq!(
+      interpret("{a, a, b} /. AssociationThread[{a, b}, {1, 2}]").unwrap(),
+      "{1, 1, 2}",
+    );
+    // ReplaceRepeated delegates to the same rule-shape validation.
+    assert_eq!(interpret("a //. <|a -> b, b -> c|>").unwrap(), "c",);
+    // Replace (top-level only) accepts an Association too.
+    assert_eq!(
+      interpret(r#"Replace["a", <|"a" -> 1, "b" -> 2|>]"#).unwrap(),
+      "1",
+    );
+    // An empty Association still counts as a valid (no-op) rule set rather
+    // than triggering the reps error.
+    assert_eq!(interpret("{a, b} /. <||>").unwrap(), "{a, b}");
   }
 
   #[test]

@@ -637,7 +637,7 @@ PlotLabels,Option for labeling plot curves,✅,none,10.4,597
 Scale,Scales a graphics object,✅,pure,6.0,597
 Log10,Returns the base-10 logarithm of a number,✅,pure,7.0,598
 EndPackage,Ends a package and puts its context on $ContextPath so its exports become visible,✅,effectful,1.0,599
-PolyhedronData,Properties of named polyhedra (Platonic solids; the icosahedral and cubic Archimedean solids and their duals; and the rhombic hexecontahedron stellation),🚧,pure,6.0,601
+PolyhedronData,Properties of named polyhedra (Platonic solids; the icosahedral and cubic Archimedean solids and their duals; the rhombic hexecontahedron stellation; and the triangular orthobicupola),🚧,pure,6.0,601
 PolyhedronOperations`Truncate,Corner-cuts each Polygon face of a graphics expression to a ratio (default 3/10) of its edge length; resolves Rotate/Translate-wrapped faces first,✅,pure,3.0,
 PolyhedronOperations`Stellate,Replaces each Polygon face of a graphics expression with a pyramid to a ratio (default 2) of the face's centroid distance; resolves Rotate/Translate-wrapped faces first,✅,pure,3.0,
 Nearest,Find the nearest elements in a list to a given value (numbers/vectors by Euclidean distance; strings by edit distance) — DistanceFunction supplies another metric; empty or non-list data reports ::near1,✅,pure,6.0,602
@@ -1841,7 +1841,7 @@ BeckmannDistribution,Beckmann distribution,,unevaluated,8.0,1849
 CoordinateTransformData,,🚫,,9.0,1849
 FirstCase,First element matching a pattern,✅,pure,10.0,1849
 EndOfFile,Symbol returned by Read at end of file,✅,pure,1.0,1852
-MathieuC,Mathieu C function,,unevaluated,3.0,1852
+MathieuC,Even Mathieu function (Floquet ODE integration; Woxi's q-to-zero normalisation differs from wolframscript's for q != 0),✅,pure,3.0,1852
 WeierstrassSigma,Weierstrass sigma function,,unevaluated,3.0,1852
 StringReplacePart,Replace a span of a string — a bare index means the span from the start and an unavailable span reports ::repart,✅,pure,3.0,1853
 KeyMap,Maps a function over the keys of an association; supports the operator form KeyMap[f][assoc],✅,pure,10.0,1855
@@ -2291,7 +2291,7 @@ WordSeparators,text processing option,🚫,None,2.0,2305
 ClockGauge,dynamic gauge display,🚫,None,9.0,2311
 DeleteDirectory,file system operation,✅,None,2.0,2311
 FunctionPeriod,symbolic period analysis (complex),🚫,None,10.0,2311
-MathieuCPrime,Mathieu function derivative (special function),🚫,None,3.0,2311
+MathieuCPrime,Derivative of the even Mathieu function with characteristic value a and parameter q,✅,pure,3.0,2311
 PartialCorrelationFunction,time series,🚫,None,9.0,2311
 Skip,Skip n values from a stream while reading,✅,None,2.0,2311
 DocumentNotebook,notebook creation,🚫,None,6.0,2317

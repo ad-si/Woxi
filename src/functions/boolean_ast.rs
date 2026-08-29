@@ -460,6 +460,11 @@ pub fn while_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Some(true) => {
         if args.len() == 2 {
           match evaluate_expr_to_expr(&args[1]) {
+            // A nested Block/Module/While/For already turned a `Return` into
+            // the literal `Return[val]`; pass it up instead of looping on.
+            Ok(val) if crate::evaluator::is_literal_return(&val) => {
+              return Ok(val);
+            }
             Ok(_) => {}
             Err(InterpreterError::BreakSignal) => break,
             Err(InterpreterError::ContinueSignal) => {}

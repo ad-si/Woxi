@@ -2566,40 +2566,45 @@ fn plot_style_for_surface(
   }
 }
 
-/// Parse a `PlotStyle` option value into one style per surface, mirroring
+/// Split a `PlotStyle` option value into one style item per plotted
+/// object (a surface or a curve), mirroring
 /// [`crate::functions::plot::parse_plot_style`]'s disambiguation for 2D
-/// `Plot`: with more than one surface, a flat list of colours/directives is
-/// read as one style per surface (`PlotStyle -> {Red, Blue}`), cycling when
-/// there are fewer styles than surfaces; a single style — one bare
-/// directive, or a list that mixes directives for a single style, like
-/// `{RGBColor[...], Opacity[.5]}` — applies to every surface alike. An
-/// empty result means `PlotStyle` was not given (or produced nothing
-/// applicable), so callers keep drawing the height-based rainbow default.
-fn parse_plot_style_3d(
-  replacement: &Expr,
-  num_surfaces: usize,
-) -> Vec<StyleState3D> {
+/// `Plot`: with more than one object, a flat list of colours/directives is
+/// read as one style per object (`PlotStyle -> {Red, Blue}`); a single
+/// style — one bare directive, or a list that mixes directives for a
+/// single style, like `{RGBColor[...], Opacity[.5]}` — applies to every
+/// object alike, so the whole value comes back as the sole item.
+fn plot_style_items(replacement: &Expr, num_objects: usize) -> Vec<Expr> {
   use crate::functions::graphics::parse_color;
 
   let val =
     evaluate_expr_to_expr(replacement).unwrap_or_else(|_| replacement.clone());
-  let items: Vec<Expr> = match &val {
-    Expr::List(list_items) if num_surfaces > 1 => {
-      let per_surface = list_items.iter().any(|item| {
+  match &val {
+    Expr::List(list_items) if num_objects > 1 => {
+      let per_object = list_items.iter().any(|item| {
         matches!(item, Expr::FunctionCall { name, .. } if name == "Directive")
           || matches!(item, Expr::List(_))
           || parse_color(item).is_some()
       });
-      if per_surface {
+      if per_object {
         list_items.to_vec()
       } else {
-        vec![val.clone()]
+        vec![val]
       }
     }
-    _ => vec![val.clone()],
-  };
+    _ => vec![val],
+  }
+}
 
-  items
+/// Parse a `PlotStyle` option value into one style per surface, cycling
+/// through fewer styles than surfaces. An empty result means `PlotStyle`
+/// was not given (or produced nothing applicable), so callers keep drawing
+/// the height-based rainbow default.
+fn parse_plot_style_3d(
+  replacement: &Expr,
+  num_surfaces: usize,
+) -> Vec<StyleState3D> {
+  plot_style_items(replacement, num_surfaces)
     .into_iter()
     .map(|item| {
       let mut style = StyleState3D::default();
@@ -3082,6 +3087,47 @@ fn parse_text3d_offset(spec: &Expr) -> Option<(f64, f64)> {
   }
 }
 
+/// Typesets `label_expr` (a `Text`/`Inset` label, e.g. a plain string or
+/// `Style[…]`) and pushes a `Text3D` primitive for it at `pos`, if it
+/// renders to non-empty text.
+fn push_text3d_label(
+  label_expr: &Expr,
+  pos: Point3D,
+  offset: (f64, f64),
+  style: &StyleState3D,
+  prims: &mut Vec<Primitive3D>,
+) {
+  let styled = crate::functions::chart::parse_styled_label(label_expr);
+  let (label, width_chars, font_size, color) = match styled {
+    Some(s) => (
+      s.svg(),
+      s.text.chars().count(),
+      s.font_size.unwrap_or(12.0),
+      s.color,
+    ),
+    None => (String::new(), 0, 12.0, None),
+  };
+  if label.is_empty() {
+    return;
+  }
+  let mut text_style = style.clone();
+  if let Some(c) = color {
+    text_style.color = Some((
+      (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+      (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+      (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+    ));
+  }
+  prims.push(Primitive3D::Text3D {
+    label,
+    pos,
+    offset,
+    font_size,
+    width_chars,
+    style: text_style,
+  });
+}
+
 fn collect_3d_primitives(
   expr: &Expr,
   style: &mut StyleState3D,
@@ -3258,37 +3304,28 @@ fn collect_3d_primitives(
         // reads the same wherever it is written.
         "Text" if args.len() >= 2 => {
           if let Some(pos) = parse_point3d(&args[1]) {
-            let styled = crate::functions::chart::parse_styled_label(&args[0]);
-            let (label, width_chars, font_size, color) = match styled {
-              Some(s) => (
-                s.svg(),
-                s.text.chars().count(),
-                s.font_size.unwrap_or(12.0),
-                s.color,
-              ),
-              None => (String::new(), 0, 12.0, None),
-            };
-            if !label.is_empty() {
-              let mut text_style = style.clone();
-              if let Some(c) = color {
-                text_style.color = Some((
-                  (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
-                  (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
-                  (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
-                ));
+            let offset = args
+              .get(2)
+              .and_then(parse_text3d_offset)
+              .unwrap_or((0.0, 0.0));
+            push_text3d_label(&args[0], pos, offset, style, prims);
+          }
+        }
+        // `Inset[obj, {x, y, z}]` places `obj` at a point of the scene.
+        // The Demonstrations gallery uses it almost exclusively as
+        // `Inset[Text[Style[…]], pos]`, so unwrap a `Text[…]` wrapper and
+        // fall through to the same label rendering `Text` uses above.
+        "Inset" if args.len() >= 2 => {
+          if let Some(pos) = parse_point3d(&args[1]) {
+            let label_expr = match &args[0] {
+              Expr::FunctionCall { name, args: inner }
+                if name == "Text" && !inner.is_empty() =>
+              {
+                &inner[0]
               }
-              prims.push(Primitive3D::Text3D {
-                label,
-                pos,
-                offset: args
-                  .get(2)
-                  .and_then(parse_text3d_offset)
-                  .unwrap_or((0.0, 0.0)),
-                font_size,
-                width_chars,
-                style: text_style,
-              });
-            }
+              other => other,
+            };
+            push_text3d_label(label_expr, pos, (0.0, 0.0), style, prims);
           }
         }
         "Cylinder" => {
@@ -9274,16 +9311,25 @@ fn parametric_plot3d_curve_ast(
     None => (None, None),
   };
 
-  // Build a primitives list: [<style directives>, Line[pts1], Line[pts2], …]
+  // One style per curve (cycling through fewer styles than curves), so
+  // `PlotStyle -> {Blue, Purple}` on two curves colors them individually
+  // instead of applying the whole list as a single blended directive.
+  let per_curve_styles: Vec<Expr> = plot_style
+    .as_ref()
+    .map(|ps| plot_style_items(ps, curves.len()))
+    .unwrap_or_default();
+
+  // Build a primitives list: [<style>, Line[pts1], <style>, Line[pts2], …]
   let mut prim_items: Vec<Expr> = Vec::new();
-  if let Some(ps) = &plot_style {
-    // Wrap whatever PlotStyle holds into a Directive[…] so that
-    // collect_3d_primitives picks up nested colors/Thickness/etc.
-    prim_items.push(call1("Directive", ps.clone()));
-  }
 
   let mut produced_any = false;
-  for curve in &curves {
+  for (curve_idx, curve) in curves.iter().enumerate() {
+    if !per_curve_styles.is_empty() {
+      // Wrap whatever PlotStyle holds into a Directive[…] so that
+      // collect_3d_primitives picks up nested colors/Thickness/etc.
+      let style = &per_curve_styles[curve_idx % per_curve_styles.len()];
+      prim_items.push(call1("Directive", style.clone()));
+    }
     let mut current_segment: Vec<Expr> = Vec::new();
     let flush = |seg: &mut Vec<Expr>, sink: &mut Vec<Expr>| {
       if seg.len() >= 2 {
@@ -9364,16 +9410,57 @@ fn evaluate_parametric_at_t(
   }
 }
 
+/// Peel off wrapping single-element lists, e.g. `{{fx, fy, fz}}`. A
+/// `soln = NDSolve[...]` result is a list of solution branches even when
+/// there is only one, so `{fx, fy, fz} /. soln` threads over that outer
+/// list and comes back as a 1-element list around the triple rather than
+/// the triple itself.
+fn unwrap_singleton_list(mut e: &Expr) -> &Expr {
+  while let Expr::List(sub) = e {
+    if sub.len() == 1 {
+      e = &sub[0];
+    } else {
+      break;
+    }
+  }
+  e
+}
+
+/// Resolve one curve/surface item into a `{fx, fy, fz}` triple: either it is
+/// already a literal 3-list, or it is a held expression like
+/// `{x[t], z[t], y[t]} /. soln` (an unevaluated `ReplaceAll` around a
+/// literal triple) that must be evaluated once, with `shadow_vars` cleared,
+/// to discover its shape.
+fn resolve_one_parametric_triple(
+  item: &Expr,
+  shadow_vars: &[&str],
+) -> Option<(Expr, Expr, Expr)> {
+  if let Expr::List(sub) = unwrap_singleton_list(item) {
+    return (sub.len() == 3)
+      .then(|| (sub[0].clone(), sub[1].clone(), sub[2].clone()));
+  }
+  let resolved =
+    crate::functions::plot::eval_body_vars_symbolic(item, shadow_vars);
+  match unwrap_singleton_list(&resolved) {
+    Expr::List(sub) if sub.len() == 3 => {
+      Some((sub[0].clone(), sub[1].clone(), sub[2].clone()))
+    }
+    _ => None,
+  }
+}
+
 /// Resolve `body` into one or more `{fx, fy, fz}` triples for
 /// `ParametricPlot3D`. `body` normally is already a literal `{fx, fy, fz}`
 /// (or a list of such triples), but a Demonstration idiom passes a helper
 /// call instead — e.g. `ParametricPlot3D[projection[u, v, ...], {u, ...},
-/// {v, ...}]` — which HoldAll leaves unevaluated and which must be
-/// evaluated once to discover its shape. `shadow_vars` (the iterator
-/// variables) are cleared for that one evaluation so a stray global left
-/// over from elsewhere in the notebook (e.g. an `Initialization :> (u =
-/// 0.; ...)`) doesn't freeze the surface at a single point instead of
-/// leaving `u`/`v` symbolic for the later per-sample substitution.
+/// {v, ...}]`, or wraps each curve of a multi-curve plot in a `ReplaceAll`
+/// like `{{fx, fy, fz} /. soln, {gx, gy, gz} /. soln}` — which `HoldAll`
+/// leaves unevaluated and which must be evaluated once to discover its
+/// shape. `shadow_vars` (the iterator variables) are cleared for that one
+/// evaluation so a stray global left over from elsewhere in the notebook
+/// (e.g. an `Initialization :> (u = 0.; ...)`) doesn't freeze the surface at
+/// a single point instead of leaving `u`/`v` symbolic for the later
+/// per-sample substitution.
 fn resolve_parametric_triples(
   body: &Expr,
   shadow_vars: &[&str],
@@ -9389,22 +9476,12 @@ fn resolve_parametric_triples(
     {
       Ok(vec![(items[0].clone(), items[1].clone(), items[2].clone())])
     }
-    Expr::List(items)
-      if !items.is_empty()
-        && items
-          .iter()
-          .all(|it| matches!(it, Expr::List(sub) if sub.len() == 3)) =>
-    {
-      Ok(
-        items
-          .iter()
-          .map(|item| match item {
-            Expr::List(sub) => (sub[0].clone(), sub[1].clone(), sub[2].clone()),
-            _ => unreachable!(),
-          })
-          .collect(),
-      )
-    }
+    Expr::List(items) if !items.is_empty() => items
+      .iter()
+      .map(|item| {
+        resolve_one_parametric_triple(item, shadow_vars).ok_or_else(err)
+      })
+      .collect(),
     Expr::List(_) => Err(err()),
     other => {
       let resolved =
@@ -9611,6 +9688,128 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     gz_max - gz_min
   };
 
+  // ── Symbolic structure: Graphics3D[GraphicsComplex[points, {…}]] ──
+  // `Show` merges the *primitives* of the graphics it is given, so a
+  // surface that exists only as a rendering is dropped when it is shown
+  // together with a `Graphics3D`. Emitting the sampled surface in world
+  // coordinates — coloured by height, the way the standalone render
+  // colours it — lets `Show[ParametricPlot3D[…], Graphics3D[…]]` draw both.
+  let structure = {
+    let complexes: Vec<Expr> = all_surface_points
+      .iter()
+      .enumerate()
+      .map(|(surface_idx, sg)| {
+        let mut index_of: Vec<Vec<Option<usize>>> =
+          vec![vec![None; GRID_N + 1]; GRID_N + 1];
+        let mut point_exprs: Vec<Expr> = Vec::new();
+        for (i, row) in sg.iter().enumerate() {
+          for (j, p) in row.iter().enumerate() {
+            if let Some((x, y, z)) = p {
+              index_of[i][j] = Some(point_exprs.len());
+              point_exprs.push(Expr::List(
+                vec![Expr::Real(*x), Expr::Real(*y), Expr::Real(*z)].into(),
+              ));
+            }
+          }
+        }
+        let mut content: Vec<Expr> = Vec::new();
+        if !matches!(mesh_mode, MeshMode::All) {
+          content.push(call0("EdgeForm"));
+        }
+        for i in 0..GRID_N {
+          for j in 0..GRID_N {
+            let (Some(a), Some(b), Some(c), Some(d)) = (
+              index_of[i][j],
+              index_of[i + 1][j],
+              index_of[i + 1][j + 1],
+              index_of[i][j + 1],
+            ) else {
+              continue;
+            };
+            let avg_z =
+              [sg[i][j], sg[i + 1][j], sg[i + 1][j + 1], sg[i][j + 1]]
+                .iter()
+                .filter_map(|p| p.map(|(_, _, z)| z))
+                .sum::<f64>()
+                / 4.0;
+            let avg_z_norm = (avg_z - gz_min) / rz;
+            let default_color = height_color(avg_z_norm);
+            let (cr, cg, cb) =
+              match plot_style_for_surface(&plot_styles, surface_idx) {
+                Some(style) => style.color.unwrap_or(default_color),
+                None => default_color,
+              };
+            content.push(Expr::List(
+              vec![
+                call(
+                  "RGBColor",
+                  vec![
+                    Expr::Real(cr as f64 / 255.0),
+                    Expr::Real(cg as f64 / 255.0),
+                    Expr::Real(cb as f64 / 255.0),
+                  ],
+                ),
+                call1(
+                  "Polygon",
+                  Expr::List(
+                    [a, b, c, d]
+                      .iter()
+                      .map(|&k| Expr::Integer(k as i128 + 1))
+                      .collect::<Vec<_>>()
+                      .into(),
+                  ),
+                ),
+              ]
+              .into(),
+            ));
+          }
+        }
+        Expr::FunctionCall {
+          name: "GraphicsComplex".to_string(),
+          args: vec![
+            Expr::List(point_exprs.into()),
+            Expr::List(content.into()),
+          ]
+          .into(),
+        }
+      })
+      .collect();
+    let content = if complexes.len() == 1 {
+      complexes.into_iter().next().expect("one complex")
+    } else {
+      Expr::List(complexes.into())
+    };
+    // `ParametricPlot3D` draws axes and squats its box the same way
+    // `Plot3D` does (see the analogous block above), where a bare
+    // `Graphics3D` does neither: both defaults are spelled out so a
+    // surface shown inside another graphic — with `ParametricPlot3D`
+    // itself first in the `Show` — keeps the shape it was drawn with.
+    let mut structure_args = vec![content];
+    structure_args.extend(args[3..].iter().cloned());
+    let names = |opt: &str| {
+      structure_args.iter().any(|o| {
+        matches!(o, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+          if matches!(pattern.as_ref(), Expr::Identifier(n) if n == opt))
+      })
+    };
+    let (names_axes, names_ratios) = (names("Axes"), names("BoxRatios"));
+    if !names_axes {
+      structure_args.push(Expr::Rule {
+        pattern: Box::new(Expr::Identifier("Axes".to_string())),
+        replacement: Box::new(Expr::Identifier("True".to_string())),
+      });
+    }
+    if !names_ratios {
+      structure_args.push(Expr::Rule {
+        pattern: Box::new(Expr::Identifier("BoxRatios".to_string())),
+        replacement: Box::new(Expr::List(
+          vec![Expr::Integer(1), Expr::Integer(1), Expr::Real(Z_SCALE)].into(),
+        )),
+      });
+    }
+    call("Graphics3D", structure_args)
+  };
+
   // Phase 2: Build triangles
   let mut all_triangles: Vec<Triangle> = Vec::new();
 
@@ -9728,5 +9927,5 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // A `PlotLabel` sets a title above the finished picture.
   let svg = with_plot_label(svg, args, svg_width, svg_height);
 
-  Ok(crate::graphics3d_result(svg))
+  Ok(crate::graphics3d_result_with_structure(svg, structure))
 }

@@ -11135,55 +11135,84 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     // n = p1^k1 * p2^k2 * ...
     // n^(p/q) = product of p_i^(k_i*p/q)
     // Each p_i^(k_i*p/q) = p_i^floor_i * p_i^(rem_i/q)
-    // The partial-extraction factorization below works in u64, so only run it
-    // when the base fits in u64 (perfect powers of larger bases are already
-    // handled exactly above). Casting a larger i128 to u64 truncates and
-    // corrupts the factorization (e.g. 2^90 as u64 == 0).
+    // The prime factorization of the base works in u64, so only run it when
+    // the base fits in u64 (perfect powers of larger bases are already handled
+    // exactly above). Casting a larger i128 to u64 truncates and corrupts the
+    // factorization (e.g. 2^90 as u64 == 0). The *exponent* stays i128 — a
+    // numerator past u64::MAX used to wrap, so `2^(29904177082838066039/10^18)`
+    // simplified as if the exponent were 11.457… instead of 29.904… — and the
+    // extracted integer part is a BigInt, because it outgrows i128 quickly
+    // (`2^(1000/7)` pulls out 2^142 and used to panic on overflow).
     if *numer > 0 && *denom > 0 && *b > 0 && *b <= u64::MAX as i128 {
-      let d = *denom as u64;
-      let n = *numer as u64;
-      let mut outside: i128 = 1;
+      // Above this the extracted factor is too large to be worth
+      // materialising; the power stays symbolic instead.
+      const MAX_EXTRACTED_EXPONENT: i128 = 100_000;
+      let d = *denom;
+      let n = *numer;
+      let mut outside = BigInt::from(1);
       // Collect (prime, remainder_exponent) pairs for the radical part
-      let mut radical_factors: Vec<(i128, u64)> = Vec::new();
+      let mut radical_factors: Vec<(i128, i128)> = Vec::new();
       let mut remaining = *b as u64;
       let mut factor = 2u64;
-      while factor * factor <= remaining {
-        let mut count = 0u64;
+      let mut too_large = false;
+      let extract = |count: i128,
+                     prime: u64,
+                     outside: &mut BigInt,
+                     radical_factors: &mut Vec<(i128, i128)>|
+       -> bool {
+        let Some(total) = count.checked_mul(n) else {
+          return false;
+        };
+        let extracted = total / d;
+        let leftover = total % d;
+        if extracted > MAX_EXTRACTED_EXPONENT {
+          return false;
+        }
+        if extracted > 0 {
+          *outside *= BigInt::from(prime).pow(extracted as u32);
+        }
+        if leftover > 0 {
+          radical_factors.push((i128::from(prime), leftover));
+        }
+        true
+      };
+      // Trial division is bounded: a base whose remaining cofactor has no
+      // factor below this is left whole. `(10^19 - 1)^(1/19)` is
+      // 3^2 * 1111111111111111111, and grinding the second (prime) factor out
+      // by trial division takes ~3*10^9 steps for a result that is the same
+      // either way — a cofactor kept whole splits into the identical
+      // extracted and radical parts.
+      const TRIAL_DIVISION_BOUND: u64 = 1_000_000;
+      while factor <= TRIAL_DIVISION_BOUND && factor * factor <= remaining {
+        let mut count: i128 = 0;
         while remaining.is_multiple_of(factor) {
           remaining /= factor;
           count += 1;
         }
-        if count > 0 {
-          let total = count * n;
-          let extracted = total / d;
-          let leftover = total % d;
-          if extracted > 0 {
-            outside *= (factor as i128).pow(extracted as u32);
-          }
-          if leftover > 0 {
-            radical_factors.push((factor as i128, leftover));
-          }
+        if count > 0
+          && !extract(count, factor, &mut outside, &mut radical_factors)
+        {
+          too_large = true;
+          break;
         }
         factor += 1;
       }
-      if remaining > 1 {
-        let total = n; // count=1
-        let extracted = total / d;
-        let leftover = total % d;
-        if extracted > 0 {
-          outside *= (remaining as i128).pow(extracted as u32);
-        }
-        if leftover > 0 {
-          radical_factors.push((remaining as i128, leftover));
-        }
+      if !too_large
+        && remaining > 1
+        && !extract(1, remaining, &mut outside, &mut radical_factors)
+      {
+        too_large = true;
+      }
+      if too_large {
+        return Ok(pow2(base.clone(), exp.clone()));
       }
 
       let has_radical = !radical_factors.is_empty();
-      let has_outside = outside > 1;
+      let has_outside = outside > BigInt::from(1);
 
       if !has_radical {
         // Fully simplified
-        return Ok(Expr::Integer(outside));
+        return Ok(bigint_to_expr(outside));
       }
 
       // Only simplify if we actually extracted something outside,
@@ -11193,7 +11222,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
       // would loop as 2^(1/3)*3^(1/3) → 6^(1/3) → ...).
       let mut reduced: Vec<(i128, i128)> = radical_factors
         .iter()
-        .map(|(_, rem_exp)| rat_reduce(*rem_exp as i128, d as i128))
+        .map(|(_, rem_exp)| rat_reduce(*rem_exp, d))
         .collect();
       reduced.sort_unstable();
       reduced.dedup();
@@ -11221,11 +11250,11 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
       // Build radical part: product of p_i^(rem_i/q)
       let mut rad_parts: Vec<Expr> = Vec::new();
       for (prime, rem_exp) in &radical_factors {
-        let (reduced_num, reduced_den) =
-          rat_reduce(*rem_exp as i128, d as i128);
+        let (reduced_num, reduced_den) = rat_reduce(*rem_exp, d);
         if reduced_den == 1 {
           // Integer power
-          rad_parts.push(Expr::Integer(prime.pow(reduced_num as u32)));
+          rad_parts
+            .push(bigint_to_expr(BigInt::from(*prime).pow(reduced_num as u32)));
         } else if reduced_num == 1 && reduced_den == 2 {
           rad_parts.push(make_sqrt(Expr::Integer(*prime)));
         } else {
@@ -11239,7 +11268,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
       // Combine: outside * rad_parts
       let mut all_factors: Vec<Expr> = Vec::new();
       if has_outside {
-        all_factors.push(Expr::Integer(outside));
+        all_factors.push(bigint_to_expr(outside));
       }
       all_factors.extend(rad_parts);
 

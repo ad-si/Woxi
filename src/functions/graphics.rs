@@ -1226,6 +1226,92 @@ pub(crate) fn color_swatch_svg(color: &Color) -> String {
   )
 }
 
+/// Render a standalone `LineLegend[{styles…}, {labels…}]` as its own small
+/// picture: one row per entry, a short line sample drawn in that entry's
+/// style followed by its label. A bare `LineLegend` (not wrapped in
+/// `Legended`) is how Demonstrations commonly place a legend beside a plot
+/// rather than attached to it via `PlotLegends`, and Wolfram's front end
+/// typesets it the same way either way — as swatches, not as source text.
+///
+/// Each style entry is either a plain color directive or a list ending in
+/// one (`{Thickness[Tiny], color}`, `{Dashing[{0, Small}], color}`);
+/// `apply_directive` — the same directive parser `Graphics` primitives use
+/// — reads each one, so `Thickness`/`AbsoluteThickness`/`Dashing` on a
+/// legend line render exactly as they would on the plotted line itself.
+pub(crate) fn line_legend_svg(args: &[Expr]) -> Option<String> {
+  if args.len() < 2 {
+    return None;
+  }
+  let Expr::List(style_specs) = &args[0] else {
+    return None;
+  };
+  let Expr::List(labels) = &args[1] else {
+    return None;
+  };
+  if style_specs.is_empty() || labels.is_empty() {
+    return None;
+  }
+
+  let sample_w = 30.0_f64;
+  let sample_h = 16.0_f64;
+  // `thickness_px`/`dash_attr` only read `bb` for the (unused, since a
+  // legend sample has no data range) relative-dashing branch, so any
+  // BBox is fine here.
+  let bb = BBox {
+    x_min: 0.0,
+    x_max: 1.0,
+    y_min: 0.0,
+    y_max: 1.0,
+  };
+
+  let mut entries: Vec<Expr> = Vec::new();
+  for (label, spec) in labels.iter().zip(style_specs.iter()) {
+    // LineLegend's sample draws a plain visible stroke by default — not
+    // the hairline `AbsoluteThickness[1]` an undirected `Line[…]`
+    // primitive gets — so an entry with no `Thickness` directive of its
+    // own still reads as a line, matching wolframscript's legend.
+    let mut style = StyleState {
+      thickness: 0.05,
+      ..StyleState::default()
+    };
+    match spec {
+      Expr::List(directives) => {
+        for d in directives {
+          apply_directive(d, &mut style);
+        }
+      }
+      other => {
+        apply_directive(other, &mut style);
+      }
+    }
+    let sw = thickness_px(style.thickness, &bb, sample_w).max(1.0);
+    let dash = dash_attr(style.dashing.as_ref(), &bb, sample_w);
+    let y = sample_h / 2.0;
+    let line_svg = format!(
+      "<svg width=\"{sample_w}\" height=\"{sample_h}\" viewBox=\"0 0 {sample_w} {sample_h}\" xmlns=\"http://www.w3.org/2000/svg\"><line x1=\"1\" y1=\"{y:.1}\" x2=\"{x2:.1}\" y2=\"{y:.1}\" stroke=\"{color}\" stroke-width=\"{sw:.2}\"{dash} stroke-linecap=\"butt\"/></svg>",
+      x2 = sample_w - 1.0,
+      color = style.color.to_svg_rgb(),
+    );
+    let line_item = Expr::Graphics {
+      svg: line_svg,
+      is_3d: false,
+      source: None,
+      head: None,
+      structure: None,
+    };
+    entries.push(call(
+      "Row",
+      vec![Expr::List(
+        vec![line_item, Expr::String(" ".to_string()), label.clone()].into(),
+      )],
+    ));
+  }
+  if entries.is_empty() {
+    return None;
+  }
+  column_to_svg(&[Expr::List(entries.into())])
+}
+
 // ── Directive parsing ────────────────────────────────────────────────────
 
 fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
@@ -7925,11 +8011,19 @@ impl BoxLayout {
     // missing-glyph box (▢). Substitute the public Unicode arrows so the
     // SVG output displays correctly everywhere. Each maps one char to one
     // char, so the width estimate below is unaffected.
+    // `\[DifferentialD]` (U+2146, the italic "ⅆ" used in `∫ … ⅆx`) is a rare
+    // Mathematical Alphanumeric Symbols codepoint most non-Mathematica fonts
+    // don't carry either — the SVG viewer's font-fallback glyph for it comes
+    // out a different width than the plain-ASCII advance computed below, so
+    // it overlaps the following variable (`ⅆx` renders as if it read "ddx").
+    // Map it to plain "d"; `is_math_italic_atom` below then italicizes the
+    // lone letter, giving the same look without depending on that glyph.
     let mapped: String = s
       .chars()
       .map(|c| match c {
         '\u{f522}' => '\u{2192}', // \[Rule] → →
         '\u{f51f}' => '\u{29f4}', // \[RuleDelayed] → ⧴
+        '\u{2146}' => 'd',        // \[DifferentialD] → d (italicized below)
         other => other,
       })
       .collect();
@@ -9248,7 +9342,17 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
             && matches!(&rargs[0], Expr::Integer(1))
             && matches!(&rargs[1], Expr::Integer(d) if *d > 0)
           {
+            // `stacked_fraction_svg` joins its arguments with a literal
+            // `/`, not a vinculum, so a `Plus`/`Minus` numerator needs its
+            // own parens here — otherwise `1/2*(tau^2 - sigma^2)` prints as
+            // `-sigma^2 + tau^2/2` (only the last term divided) instead of
+            // `(-sigma^2 + tau^2)/2`.
             let num_markup = expr_to_svg_markup(&args[1]);
+            let num_markup = if is_additive_expr(&args[1]) {
+              format!("({num_markup})")
+            } else {
+              num_markup
+            };
             let den_markup = expr_to_svg_markup(&rargs[1]);
             let num_w = estimate_display_width(&args[1]);
             let den_w = estimate_display_width(&rargs[1]);
@@ -11812,6 +11916,28 @@ pub fn parse_grid_style(directives: &[Expr]) -> GridStyle {
 /// expression's text form.
 fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
   let svg = match cell {
+    // `"label" -> Graphics[…]` is the idiom Wolfram demonstrations use for
+    // a caption row with an inline swatch (e.g. a color-preview disk next
+    // to its name). WL typesets a `Rule` as its pattern, an arrow, and its
+    // replacement, so build exactly that through the row layout rather
+    // than a bespoke composer, and only when the replacement is actually a
+    // picture — a `Rule` between two plain values still prints as text.
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if grid_cell_graphic(replacement).is_some() => {
+      let row = Expr::List(
+        vec![
+          (**pattern).clone(),
+          Expr::String("\u{2192}".to_string()),
+          (**replacement).clone(),
+        ]
+        .into(),
+      );
+      return row_to_svg(std::slice::from_ref(&row)).and_then(|svg| {
+        parse_svg_dimensions(&svg).map(|d| (svg, d.nat_w, d.nat_h))
+      });
+    }
     Expr::Graphics { svg, .. } => svg.clone(),
     // A styled graphic is still a graphic.
     Expr::FunctionCall { name, args }
@@ -11829,6 +11955,12 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
     // button and the waveform — rather than the `Play[…]` source text.
     Expr::FunctionCall { name, .. } if name == "Sound" || name == "Play" => {
       crate::functions::sound::sound_svg(cell)?
+    }
+    // A bare `LineLegend[…]` cell (not wrapped in `Legended`) is a legend
+    // key a Demonstration placed beside its plot — drawn as swatches, the
+    // same as when it is Legended's second argument.
+    Expr::FunctionCall { name, args } if name == "LineLegend" => {
+      line_legend_svg(args)?
     }
     // As above, a display wrapper that resolves to a picture is drawn
     // rather than printed as source.
@@ -14510,7 +14642,7 @@ fn compute_per_cell_width(n: usize, explicit_total: Option<f64>) -> i128 {
 /// honor the `ImageSize` option. Used to avoid injecting `ImageSize`
 /// into arbitrary user functions (which might error or behave oddly on
 /// unknown options) while still catching the common plot/chart cases.
-fn is_graphics_producing_head(name: &str) -> bool {
+pub(crate) fn is_graphics_producing_head(name: &str) -> bool {
   matches!(
     name,
     // Core graphics primitives
@@ -18044,7 +18176,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         {
           let promoted: Vec<Expr> = items
             .iter()
-            .filter(|it| !is_control_type_rule(it))
+            .filter(|it| !is_control_type_marker(it))
             .cloned()
             .chain(std::iter::once(Expr::Identifier("Locator".to_string())))
             .collect();
@@ -18123,6 +18255,57 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         controls.push(control);
       }
     }
+  }
+
+  // A `LocatorPane[Dynamic[var], graphic]` drawn directly in the body — the
+  // Demonstrations "drag the point on the picture" pattern — gets its own
+  // draggable stand-in row here, alongside whatever row (if any) the
+  // Specifications already gave `var`; a `Locator`-type row for it already
+  // covers the same interaction, so only add one when none exists yet.
+  for (var, range_arg, graphic) in collect_body_locator_pane_vars(&args[0]) {
+    if controls.iter().any(|c| c.name() == var) {
+      // Already a visible row of some kind for it — unless that row is
+      // itself a draggable point, add another, independent one (the same
+      // "two rows, one binding" pattern a coarse/fine preset pair uses).
+      if controls.iter().any(|c| {
+        c.name() == var && matches!(c, ManipulateControl::Slider2D { .. })
+      }) {
+        continue;
+      }
+    } else if state.iter().any(|(n, _)| n == &var) {
+      // `ControlType -> None`: the author deliberately hid it, driving it
+      // through other visible controls instead (e.g. polar sliders writing
+      // a Cartesian locator back through the `Dynamic`'s callback) — respect
+      // that rather than surfacing a row they chose not to show.
+      continue;
+    }
+    // Only a variable whose default resolves to a plain `{x, y}` point is a
+    // fit for a single draggable stand-in slider — e.g. a `DynamicModule`
+    // local holding a list of several locators (a polygon's vertices) is
+    // left alone rather than showing a meaningless synthesized row for it.
+    let Some((x_initial, y_initial)) = crate::with_scoped_globals(
+      &initial_bindings,
+      || -> Option<(f64, f64)> {
+        let (_, code) = initial_bindings.iter().find(|(n, _)| *n == var)?;
+        let expr = crate::interpret_to_expr(code).ok()?;
+        list2_f64(&evaluate_expr_to_expr(&expr).ok()?)
+      },
+    ) else {
+      continue;
+    };
+    let ((x_min, y_min), (x_max, y_max)) =
+      pane_range(range_arg.as_ref(), &graphic);
+    controls.push(ManipulateControl::Slider2D {
+      name: var.clone(),
+      x_min,
+      x_max,
+      y_min,
+      y_max,
+      x_initial,
+      y_initial,
+      label: var,
+      write_callback: None,
+    });
   }
 
   // A Manipulate with no controls or state at all (e.g. `Manipulate[x^2,
@@ -18337,16 +18520,36 @@ fn is_control_type_rule(item: &Expr) -> bool {
   )
 }
 
-/// The variables driven by `Locator[Dynamic[var, cb], …]` markers inside a
-/// Manipulate body, each with the InputForm of its write-back callback (the
-/// Dynamic's second argument), in first-seen order.
+/// Whether a control-spec item picks or hides the control's own type —
+/// either the `ControlType -> …` option, or the bare shorthand for it in
+/// the control-type slot after the bounds (`{{v, init}, min, max, None}`
+/// hides the control the same way `ControlType -> None` does). A
+/// promotion that swaps this marker for `Locator` (see
+/// `collect_body_locator_callbacks`'s callers) must strip both forms:
+/// leaving a bare `None` behind alongside the appended `Locator` marker
+/// makes the re-parsed spec hidden all over again, so the promotion
+/// silently loses the control instead of making it draggable.
+fn is_control_type_marker(item: &Expr) -> bool {
+  is_control_type_rule(item)
+    || matches!(item, Expr::Identifier(s) if s == "None")
+}
+
+/// The variables driven by `Locator[Dynamic[var, cb], …]` markers or a
+/// `LocatorPane[Dynamic[var, cb], …]` pane inside a Manipulate body, each
+/// with the InputForm of its write-back callback (the Dynamic's second
+/// argument), in first-seen order. `LocatorPane` is the whole-picture form
+/// (a Demonstration switching which plot it drags a point over draws the
+/// picture itself as `Dynamic`, with the pane wrapping that); `Locator` is
+/// the bare graphics primitive placed among ordinary primitives in a
+/// `Graphics[…]` list. Both drive their variable interactively the same
+/// way, so both promote it to a visible control below.
 fn collect_body_locator_callbacks(
   expr: &Expr,
 ) -> Vec<(String, Option<String>)> {
   fn walk(expr: &Expr, found: &mut Vec<(String, Option<String>)>) {
     match expr {
       Expr::FunctionCall { name, args } => {
-        if name == "Locator"
+        if (name == "Locator" || name == "LocatorPane")
           && let Some(Expr::FunctionCall {
             name: dname,
             args: dargs,
@@ -18357,6 +18560,56 @@ fn collect_body_locator_callbacks(
         {
           let callback = dargs.get(1).map(crate::syntax::expr_to_input_form);
           found.push((var.clone(), callback));
+        }
+        for a in args {
+          walk(a, found);
+        }
+      }
+      Expr::List(items) => {
+        for it in items {
+          walk(it, found);
+        }
+      }
+      Expr::CompoundExpr(items) => {
+        for it in items {
+          walk(it, found);
+        }
+      }
+      _ => {}
+    }
+  }
+  let mut found = Vec::new();
+  walk(expr, &mut found);
+  found
+}
+
+/// Every `LocatorPane[Dynamic[var], graphic, range…]` drawn directly in a
+/// Manipulate's body: `(var, explicit range arg, graphic)`. Unlike the
+/// `Locator[…]` primitive (see `collect_body_locator_callbacks`), a
+/// `LocatorPane` is the pane itself rather than a marker placed inside one —
+/// its variable normally has its own row in the Specifications (e.g. a
+/// `SetterBar` of presets), so it is never hidden `ControlType -> None`
+/// state waiting to be promoted. It still needs a draggable stand-in control
+/// of its own, added alongside whatever row the Specifications already gave
+/// the variable — the same "two independent rows for one binding" pattern
+/// Wolfram itself uses for a coarse/fine preset pair on one variable.
+fn collect_body_locator_pane_vars(
+  expr: &Expr,
+) -> Vec<(String, Option<Expr>, Expr)> {
+  fn walk(expr: &Expr, found: &mut Vec<(String, Option<Expr>, Expr)>) {
+    match expr {
+      Expr::FunctionCall { name, args } => {
+        if name == "LocatorPane"
+          && args.len() >= 2
+          && let Expr::FunctionCall {
+            name: dname,
+            args: dargs,
+          } = &args[0]
+          && dname == "Dynamic"
+          && let Some(Expr::Identifier(var)) = dargs.first()
+          && !found.iter().any(|(n, _, _)| n == var)
+        {
+          found.push((var.clone(), args.get(2).cloned(), args[1].clone()));
         }
         for a in args {
           walk(a, found);
@@ -19513,17 +19766,66 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
 }
 
 /// Interpret an optional trailing `{{xmin, ymin}, {xmax, ymax}}` range
-/// argument, defaulting to the unit square when absent or malformed. Shared by
-/// the `LocatorPane`/`ClickPane` pane extractors.
-fn pane_range(arg: Option<&Expr>) -> ((f64, f64), (f64, f64)) {
-  match arg {
-    Some(Expr::List(corners)) if corners.len() == 2 => {
-      match (list2_f64(&corners[0]), list2_f64(&corners[1])) {
-        (Some(lo), Some(hi)) => (lo, hi),
-        _ => ((0.0, 0.0), (1.0, 1.0)),
+/// argument. When absent or malformed, Wolfram takes a `LocatorPane`'s (or
+/// `ClickPane`'s) coordinate system from the `PlotRange` of the graphic it
+/// wraps, so `graphic` is searched for the first one before giving up and
+/// falling back to the unit square. Shared by the `LocatorPane`/`ClickPane`
+/// pane extractors.
+fn pane_range(arg: Option<&Expr>, graphic: &Expr) -> ((f64, f64), (f64, f64)) {
+  if let Some(Expr::List(corners)) = arg
+    && corners.len() == 2
+    && let (Some(lo), Some(hi)) =
+      (list2_f64(&corners[0]), list2_f64(&corners[1]))
+  {
+    return (lo, hi);
+  }
+  find_plot_range(graphic).unwrap_or(((0.0, 0.0), (1.0, 1.0)))
+}
+
+/// The first `PlotRange -> {{xmin, xmax}, {ymin, ymax}}` option found
+/// anywhere inside `expr`, searched depth-first. Used to infer a pane's
+/// coordinate system from the plot it displays when nothing states it
+/// explicitly.
+fn find_plot_range(expr: &Expr) -> Option<((f64, f64), (f64, f64))> {
+  if let Expr::Rule {
+    pattern,
+    replacement,
+  } = expr
+    && let Expr::Identifier(key) = pattern.as_ref()
+    && key == "PlotRange"
+    && let Expr::List(axes) = replacement.as_ref()
+    && axes.len() == 2
+    && let (Some((x_min, x_max)), Some((y_min, y_max))) =
+      (list2_f64(&axes[0]), list2_f64(&axes[1]))
+  {
+    return Some(((x_min, y_min), (x_max, y_max)));
+  }
+  match expr {
+    Expr::FunctionCall { args, .. } => {
+      for a in args {
+        if let Some(range) = find_plot_range(a) {
+          return Some(range);
+        }
       }
+      None
     }
-    _ => ((0.0, 0.0), (1.0, 1.0)),
+    Expr::List(items) => {
+      for it in items {
+        if let Some(range) = find_plot_range(it) {
+          return Some(range);
+        }
+      }
+      None
+    }
+    Expr::CompoundExpr(items) => {
+      for it in items {
+        if let Some(range) = find_plot_range(it) {
+          return Some(range);
+        }
+      }
+      None
+    }
+    _ => None,
   }
 }
 
@@ -19554,7 +19856,7 @@ pub fn extract_locator_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     pt => ("p".to_string(), Some(list2_f64(pt)?)),
   };
   let body_code = crate::syntax::expr_to_input_form(&args[1]);
-  let ((x_min, y_min), (x_max, y_max)) = pane_range(args.get(2));
+  let ((x_min, y_min), (x_max, y_max)) = pane_range(args.get(2), &args[1]);
   // Start the locator at the given point, else the range centre.
   let (x_initial, y_initial) = explicit_init
     .unwrap_or((f64::midpoint(x_min, x_max), f64::midpoint(y_min, y_max)));
@@ -19606,7 +19908,7 @@ pub fn extract_click_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
   // coordinate range in the middle.
   let func = args.last()?;
   let range_arg = if args.len() >= 3 { args.get(1) } else { None };
-  let ((x_min, y_min), (x_max, y_max)) = pane_range(range_arg);
+  let ((x_min, y_min), (x_max, y_max)) = pane_range(range_arg, &args[0]);
   // Bind the click position `pos` and show the handler applied to it; the body
   // re-evaluates `func[pos]` on every pad move.
   let func_code = crate::syntax::expr_to_input_form(func);
@@ -22621,6 +22923,22 @@ pub enum DisplayNode {
   /// Manipulate control argument. Demonstrations use these inside a
   /// `Dynamic[…]` caption to step a variable (`n++`, `n = 1`, …).
   Button { label: Box<Self>, action: String },
+  /// A `PopupMenu[Dynamic[lval], choices]` drawn as a display element (not a
+  /// top-level Manipulate control): a dropdown whose selection writes back
+  /// into `lval`. Unlike `TogglerBar`, `lval` need not be a bare symbol — a
+  /// Demonstration idiom generates one popup per slot of a shared list
+  /// (`PopupMenu[Dynamic[data[[i]]], …]` inside an `Outer`/`Table`), so
+  /// `target` is `lval`'s InputForm verbatim, mirroring `Checkbox::target`.
+  /// `current` is the InputForm of the value currently held there (which
+  /// choice to preselect); `choices` is each choice's `(value, label)`
+  /// InputForm/text pair, mirroring `togglerbar_node`'s choice-list
+  /// handling but for a single-select write-back rather than a toggled
+  /// list membership.
+  Popup {
+    target: String,
+    current: String,
+    choices: Vec<(String, String)>,
+  },
   /// A `Spacer[w]`: `w` printer's points of horizontal space.
   Spacer { width: f64 },
   /// A text leaf with its styled runs, so `Style["…", Bold, Red]` renders
@@ -22775,6 +23093,14 @@ fn display_expr_to_node(
           None => static_leaf_node(expr, bindings),
         }
       }
+      // `PopupMenu[Dynamic[lval], choices]` written inside a display
+      // element (e.g. one dropdown per slot of a list, generated by
+      // `Outer[PopupMenu[Dynamic[data[[#]]], …]&, Range[Length[data]]]`):
+      // a live, write-back dropdown, not the frozen source text.
+      "PopupMenu" if args.len() >= 2 => match popup_node(args) {
+        Some(node) => node,
+        None => static_leaf_node(expr, bindings),
+      },
       // `PaneSelector[{v1 -> content1, v2 -> content2, …}, sel]` used as a
       // caption/heading row (e.g. a "set the isothermal temperature" label
       // that swaps to "choose a nonisothermal temperature profile" as a
@@ -23029,6 +23355,52 @@ fn togglerbar_node(
   })
 }
 
+/// Build a `PopupMenu[Dynamic[lval], choices]` display: a dropdown whose
+/// selection writes a single new value back into `lval`. Unlike
+/// `togglerbar_node`, `lval` need not be a bare symbol (a Demonstration
+/// idiom targets one slot of a shared list, `Dynamic[data[[i]]]`), so the
+/// write-back target is kept as `lval`'s InputForm the way `checkbox_node`
+/// keeps its `target`, rather than requiring an `Identifier` the way
+/// `togglerbar_node`'s `var` does. The choice list may itself be held (e.g.
+/// `Thread[Range[1, 4] -> {…}]`) and each choice may be a plain value or a
+/// `value -> "label"` rule — reuses `discrete_choice_columns`, the same
+/// extraction the standalone `ControlType -> PopupMenu` control uses, so
+/// the two never drift apart. Returns `None` when the arguments don't have
+/// that shape (the caller falls back to a static rendering).
+fn popup_node(args: &[Expr]) -> Option<DisplayNode> {
+  let lval = match args.first() {
+    Some(Expr::FunctionCall { name, args: dargs })
+      if name == "Dynamic" && !dargs.is_empty() =>
+    {
+      &dargs[0]
+    }
+    _ => return None,
+  };
+  let target = crate::syntax::expr_to_input_form(lval);
+  // The choice list may be held (e.g. `Thread[Range[1, 4] -> {…}]`).
+  let choices_expr = match &args[1] {
+    l @ Expr::List(_) => l.clone(),
+    other => crate::evaluator::evaluate_expr_to_expr(other).ok()?,
+  };
+  let Expr::List(items) = &choices_expr else {
+    return None;
+  };
+  if items.is_empty() {
+    return None;
+  }
+  let (values, labels, _svgs) = discrete_choice_columns(items);
+  // The value currently held at `lval`, to preselect its choice.
+  let current = crate::evaluator::evaluate_expr_to_expr(lval).map_or_else(
+    |_| target.clone(),
+    |e| crate::syntax::expr_to_input_form(&e),
+  );
+  Some(DisplayNode::Popup {
+    target,
+    current,
+    choices: values.into_iter().zip(labels).collect(),
+  })
+}
+
 /// Fill in each checkbox's `checked` flag from the batched probe results, in
 /// the same pre-order the probes were collected.
 fn assign_checkbox_state(
@@ -23061,7 +23433,8 @@ fn assign_checkbox_state(
     }
     DisplayNode::Spacer { .. }
     | DisplayNode::Text { .. }
-    | DisplayNode::Static { .. } => {}
+    | DisplayNode::Static { .. }
+    | DisplayNode::Popup { .. } => {}
   }
 }
 
@@ -23159,6 +23532,28 @@ fn display_node_to_json(node: &DisplayNode) -> String {
       display_node_to_json(label),
       json_escape_manipulate(action),
     ),
+    DisplayNode::Popup {
+      target,
+      current,
+      choices,
+    } => {
+      let choices_json: Vec<String> = choices
+        .iter()
+        .map(|(value, label)| {
+          format!(
+            r#"{{"value":"{}","label":"{}"}}"#,
+            json_escape_manipulate(value),
+            json_escape_manipulate(label),
+          )
+        })
+        .collect();
+      format!(
+        r#"{{"kind":"popup","target":"{}","current":"{}","choices":[{}]}}"#,
+        json_escape_manipulate(target),
+        json_escape_manipulate(current),
+        choices_json.join(","),
+      )
+    }
     DisplayNode::Spacer { width } => {
       format!(r#"{{"kind":"spacer","width":{width}}}"#)
     }

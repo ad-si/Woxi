@@ -2581,7 +2581,26 @@ fn integrate_leg(
       cached_m,
     )?
     else {
-      return Ok(None);
+      // The step failed even after refinement — typically the trajectory
+      // itself diverges to infinity partway through the domain (a shooting
+      // guess that isn't yet the true boundary-value solution commonly
+      // does this well short of `x_to`). Rather than discarding every
+      // point integrated so far, hand back the leg truncated at the last
+      // point that was actually reached: the caller already builds the
+      // returned `InterpolatingFunction`'s domain from the first/last
+      // collected point rather than assuming it spans the requested
+      // range, so a truncated leg becomes a truncated (rather than a
+      // missing) solution — matching wolframscript, which likewise
+      // returns an `InterpolatingFunction` valid up to where it could
+      // integrate instead of failing the whole call (alongside the
+      // `NDSolve::ndsz` message it prints at the point stepping stalled).
+      if points.len() > 1 {
+        crate::emit_message(&format!(
+          "NDSolve::ndsz: At x == {x}, step size is effectively zero; \
+           singularity or stiff system suspected."
+        ));
+      }
+      return Ok(if points.len() > 1 { Some(points) } else { None });
     };
 
     if let Some(prev_g) = prev_event

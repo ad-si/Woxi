@@ -787,6 +787,24 @@ fn extract_typeset_box(s: &str) -> Option<String> {
       "SuperscriptBox" if args.len() == 2 && draws_nothing(&conv(&args[0])) => {
         format!("Superscript[\"\", {}]", conv(&args[1]))
       }
+      // A script that isn't a valid expression on its own — e.g. a bare
+      // `-` used only to typeset an ion's charge, like the "H" of "H⁻"
+      // (`SuperscriptBox["H", "-"]`) — can't become `(a)^(b)`: `("H")^(-)`
+      // dangles the minus sign with no operand and fails to parse.
+      // Mathematica's own box-to-expression conversion falls back to the
+      // display wrapper `Superscript` whenever a script doesn't parse as
+      // an expression; mirror that here (same fallback `SubscriptBox`
+      // uses below for its subscript).
+      "SuperscriptBox"
+        if args.len() == 2
+          && crate::parse_to_expr(&conv(&args[1])).is_err() =>
+      {
+        format!(
+          "Superscript[{}, \"{}\"]",
+          conv(&args[0]),
+          escape_string(&conv(&args[1]))
+        )
+      }
       // `SuperscriptBox[a, b]` → `(a)^(b)`.
       "SuperscriptBox" if args.len() == 2 => {
         format!("({})^({})", conv(&args[0]), conv(&args[1]))
@@ -1332,19 +1350,30 @@ fn extract_rowbox_content(s: &str) -> String {
       continue;
     }
     let piece = box_part_source(part);
-    // A bare `#`/`##` and a following letter-initial piece are *separate*
-    // sibling boxes here (implicit multiplication, e.g. `# Sin[Pi/u]`
-    // typeset without a literal space token between them), but gluing
-    // their text together verbatim would read back as named-slot syntax
-    // (`#Sin` = `Slot["Sin"]`) instead. Insert a space to keep the
-    // juxtaposition a product rather than change its meaning.
-    if result.ends_with('#')
-      && piece
-        .chars()
-        .next()
-        .is_some_and(|c| c.is_ascii_alphabetic())
-    {
+    // Two sibling boxes juxtaposed with no operator between them (no
+    // `\[InvisibleTimes]`, no literal `" "` part) mean implicit
+    // multiplication — e.g. `RowBox[{"a", RowBox[{"x", "^", "3"}]}]` for
+    // `a*x^3`. Gluing their text together verbatim would instead read back
+    // as one longer identifier: a trailing symbol swallows a following
+    // letter into a different name (`ax^3` parses as the single identifier
+    // `ax` to the third power, not `a` times `x^3`), and for a bare `#` it
+    // reads as named-slot syntax (`#Sin` = `Slot["Sin"]`). A trailing plain
+    // number is unambiguous either way (`2Product[…]` already reads back as
+    // `2*Product[…]`, since digits can't extend into letters), so only a
+    // trailing run that itself contains a letter is at risk.
+    let piece_starts_alpha = piece
+      .chars()
+      .next()
+      .is_some_and(|c| c.is_ascii_alphabetic());
+    let trailing_run_has_letter = result
+      .chars()
+      .rev()
+      .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+      .any(|c| c.is_ascii_alphabetic());
+    if result.ends_with('#') && piece_starts_alpha {
       result.push(' ');
+    } else if trailing_run_has_letter && piece_starts_alpha {
+      result.push('*');
     }
     result.push_str(&piece);
     i += 1;
@@ -4783,6 +4812,18 @@ Cell["Chapter 2", "Chapter"]
     assert_eq!(extract_cell_content(s), "(x)^(2)");
   }
 
+  /// `SuperscriptBox["H", "-"]` typesets the hydride ion "H⁻": a bare `-`
+  /// with no operand, used purely for display. `(H)^(-)` would dangle the
+  /// minus sign and fail to parse — Mathematica itself falls back to the
+  /// unevaluated `Superscript` wrapper whenever a script isn't a valid
+  /// expression on its own. From the "Variational Calculations on the
+  /// Helium Isoelectronic Series" Demonstration's element/ion table.
+  #[test]
+  fn test_extract_cell_content_superscript_bare_minus() {
+    let s = r#"BoxData[SuperscriptBox["\"\<H\>\"", "-"]]"#;
+    assert_eq!(extract_cell_content(s), "Superscript[\"H\", \"-\"]");
+  }
+
   #[test]
   fn test_extract_cell_content_squared_derivative() {
     // Nested: (φ'[t])^2 — a derivative RowBox inside a power box.
@@ -4808,6 +4849,23 @@ Cell["Chapter 2", "Chapter"]
     assert_eq!(
       crate::interpret(&format!("({content})&[3]")).unwrap(),
       "3*Cos[x]"
+    );
+  }
+
+  #[test]
+  fn test_extract_cell_content_symbol_before_power_juxtaposition() {
+    // A coefficient symbol directly followed by a power box with no
+    // operator between them — `RowBox[{"a", RowBox[{"x", "^", "3"}]}]` — is
+    // the FrontEnd's typeset form of `a*x^3` (implicit multiplication with
+    // no `\[InvisibleTimes]` token). Gluing the two pieces' text together
+    // verbatim reads back as the single identifier `ax` to the third power
+    // instead of `a` times `x^3`.
+    let s = r#"BoxData[RowBox[{"a", RowBox[{"x", "^", "3"}]}]]"#;
+    let content = extract_cell_content(s);
+    assert_eq!(content, "a*x^3");
+    assert_eq!(
+      crate::interpret(&format!("({content}) /. {{a -> 2, x -> 3}}")).unwrap(),
+      "54"
     );
   }
 
