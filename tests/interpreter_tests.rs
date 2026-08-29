@@ -2249,6 +2249,34 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_replace_all_accepts_association_as_rules() {
+    // Regression: an Association used directly as the rules argument of
+    // ReplaceAll / ReplaceRepeated / Replace must behave as if it were the
+    // list of its key -> value pairs, matching wolframscript. Woxi used to
+    // reject it with ReplaceAll::reps ("neither a list of replacement rules
+    // nor a valid dispatch table").
+    clear_state();
+    assert_eq!(
+      interpret(r#"{"a", "b", "c"} /. <|"a" -> 1, "b" -> 2|>"#).unwrap(),
+      "{1, 2, c}",
+    );
+    assert_eq!(
+      interpret("{a, a, b} /. AssociationThread[{a, b}, {1, 2}]").unwrap(),
+      "{1, 1, 2}",
+    );
+    // ReplaceRepeated delegates to the same rule-shape validation.
+    assert_eq!(interpret("a //. <|a -> b, b -> c|>").unwrap(), "c",);
+    // Replace (top-level only) accepts an Association too.
+    assert_eq!(
+      interpret(r#"Replace["a", <|"a" -> 1, "b" -> 2|>]"#).unwrap(),
+      "1",
+    );
+    // An empty Association still counts as a valid (no-op) rule set rather
+    // than triggering the reps error.
+    assert_eq!(interpret("{a, b} /. <||>").unwrap(), "{a, b}");
+  }
+
+  #[test]
   fn test_replace_all_rewrites_head_symbol() {
     // ReplaceAll treats a compound's head as an ordinary subexpression, so a
     // symbol-blank rule rewrites the head too, producing `f[h][...]` (a

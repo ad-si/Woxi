@@ -123,23 +123,117 @@ pub fn distribute_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// the body uses no slots. SlotSequence `##` (== `##1`) counts as slot 1.
 /// The name of one `Compile` argument spec and whether its declared element
 /// type is `_Real`. A bare name (`x`) defaults to `_Real`, matching the
-/// Wolfram Language; `{s, _Integer, 0}` binds an integer instead, which a
-/// `Nest` count or a `Range` bound needs.
-fn compile_arg_spec(spec: &Expr) -> Option<(String, bool)> {
+/// Wolfram Language — unless `body` uses it as a repetition count
+/// (`NestList[…, x]`, a bare `{x}` iterator), in which case real Compile's
+/// usage-based type inference settles on `_Integer` instead, the same as an
+/// explicit `{s, _Integer, 0}` spec.
+fn compile_arg_spec(spec: &Expr, body: &Expr) -> Option<(String, bool)> {
   match spec {
-    Expr::Identifier(name) => Some((name.clone(), true)),
+    Expr::Identifier(name) => {
+      let real = !compile_param_used_as_integer_count(name, body);
+      Some((name.clone(), real))
+    }
     Expr::List(items) if !items.is_empty() => {
       let Expr::Identifier(name) = &items[0] else {
         return None;
       };
       let real = match items.get(1) {
         Some(Expr::Pattern { head, .. }) => head.as_deref() != Some("Integer"),
-        // No declared type — the default is `_Real`.
-        _ => true,
+        // No declared type — infer from usage, defaulting to `_Real`.
+        _ => !compile_param_used_as_integer_count(name, body),
       };
       Some((name.clone(), real))
     }
     _ => None,
+  }
+}
+
+/// Whether `body` uses the bare parameter `name` in a fixed count
+/// *position* — the 3rd argument of `Nest`/`NestList`/`FixedPointList`, the
+/// 2nd of `Array`, or a bare `{name}` iterator spec in one of `Do`'s/
+/// `Table`'s/`Sum`'s/`Product`'s own iterator arguments (`Do[…, {name}]`).
+/// Compile infers such a parameter as `_Integer` even without an explicit
+/// type declaration, matching real Mathematica's usage-based inference.
+fn compile_param_used_as_integer_count(name: &str, expr: &Expr) -> bool {
+  match expr {
+    Expr::FunctionCall { name: fname, args } => {
+      // Each of these has a fixed count *position*, not just a trailing
+      // one: `FixedPointList[f, expr]` (2-arg) ends in `expr`, not a count,
+      // and `Array[f, n, r, …]`'s count `n` is always the 2nd argument,
+      // never the last once an index origin/head follows it. `NestWhile`/
+      // `NestWhileList` have no count argument at all in their base form
+      // (they iterate until `test` fails), so they are excluded entirely.
+      let is_count_position = match fname.as_str() {
+        // Nest[f, expr, n] / NestList[f, expr, n] — always exactly 3
+        // args, with the count last.
+        "Nest" | "NestList" if args.len() == 3 => {
+          matches!(args.last(), Some(Expr::Identifier(n)) if n == name)
+        }
+        // FixedPointList[f, expr, max] — only the 3-arg form has a count,
+        // and it is last.
+        "FixedPointList" if args.len() == 3 => {
+          matches!(args.last(), Some(Expr::Identifier(n)) if n == name)
+        }
+        // Array[f, n, …] — the count is always the 2nd argument.
+        "Array" if args.len() >= 2 => {
+          matches!(args.get(1), Some(Expr::Identifier(n)) if n == name)
+        }
+        // Do/Table/Sum/Product's iterator arguments (everything after the
+        // body/summand) may each be a bare `{name}` repetition-count spec
+        // — but only there: `name` appearing in a `{name}` list anywhere
+        // else (e.g. `Total[{x}]`, data rather than an iterator) is not a
+        // count.
+        "Do" | "Table" | "Sum" | "Product" if args.len() >= 2 => {
+          args[1..].iter().any(|it| {
+            matches!(it, Expr::List(items) if items.len() == 1
+              && matches!(items.first(), Some(Expr::Identifier(n)) if n == name))
+          })
+        }
+        _ => false,
+      };
+      if is_count_position {
+        return true;
+      }
+      args
+        .iter()
+        .any(|a| compile_param_used_as_integer_count(name, a))
+    }
+    Expr::List(items) => items
+      .iter()
+      .any(|it| compile_param_used_as_integer_count(name, it)),
+    Expr::BinaryOp { left, right, .. } => {
+      compile_param_used_as_integer_count(name, left)
+        || compile_param_used_as_integer_count(name, right)
+    }
+    Expr::UnaryOp { operand, .. } => {
+      compile_param_used_as_integer_count(name, operand)
+    }
+    Expr::CompoundExpr(items)
+    | Expr::Comparison {
+      operands: items, ..
+    } => items
+      .iter()
+      .any(|it| compile_param_used_as_integer_count(name, it)),
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => {
+      compile_param_used_as_integer_count(name, pattern)
+        || compile_param_used_as_integer_count(name, replacement)
+    }
+    Expr::Part { expr, index } => {
+      compile_param_used_as_integer_count(name, expr)
+        || compile_param_used_as_integer_count(name, index)
+    }
+    Expr::Function { body } => compile_param_used_as_integer_count(name, body),
+    Expr::NamedFunction { body, .. } => {
+      compile_param_used_as_integer_count(name, body)
+    }
+    _ => false,
   }
 }
 
@@ -1839,7 +1933,7 @@ pub fn apply_curried_call(
         .iter()
         .zip(args.iter())
         .filter_map(|(spec, arg)| {
-          let (name, real) = compile_arg_spec(spec)?;
+          let (name, real) = compile_arg_spec(spec, body)?;
           Some((
             name,
             if real {
@@ -1859,15 +1953,51 @@ pub fn apply_curried_call(
       // back inexact: `Compile[{{x, _Real, 0}}, Clip[x, {-4, 4}]][-5.]` is
       // `-4.`, not the exact bound. An all-integer signature keeps its exact
       // result.
-      let any_real = specs
-        .iter()
-        .zip(args.iter())
-        .any(|(spec, _)| matches!(compile_arg_spec(spec), Some((_, true))));
+      let any_real = specs.iter().zip(args.iter()).any(|(spec, _)| {
+        matches!(compile_arg_spec(spec, body), Some((_, true)))
+      });
       Ok(if any_real {
         coerce_to_real(&result)
       } else {
         result
       })
+    }
+    Expr::FunctionCall {
+      name,
+      args: func_args,
+    } if name == "CompiledFunction" => {
+      // A `CompiledFunction[…]` restored from a saved notebook (e.g. a
+      // Demonstration's `SaveDefinitions -> True` dump) carries Mathematica's
+      // full serialized form — id tuple, argument patterns, type/constant
+      // tables, raw bytecode, the uncompiled pure function, and a trailing
+      // evaluation flag — not the 2-argument `[specs, body]` shape woxi's own
+      // `Compile` produces above. woxi has no bytecode VM to run the middle
+      // arguments, but real Mathematica always embeds an uncompiled
+      // `Function[…]` alongside the bytecode as a correctness fallback (it's
+      // what runs when the compiled code can't handle an argument); applying
+      // that instead gives the same result the bytecode would. Without this,
+      // the call falls through to the generic case below and returns
+      // unevaluated — which then never collapses to a number and blows up
+      // any surrounding computation that reruns it (e.g. a Manipulate whose
+      // body composes it dozens of times).
+      // `CompiledFunction` holds its arguments (like `Compile`), so an
+      // embedded `Function[…]` is still the literal, unevaluated
+      // `FunctionCall` AST here, not the `NamedFunction`/`Function` value
+      // `Function[…]` evaluates to — evaluate it first to get something
+      // `apply_curried_call` can invoke.
+      match func_args.iter().find(|a| {
+        matches!(a, Expr::NamedFunction { .. } | Expr::Function { .. })
+          || matches!(a, Expr::FunctionCall { name, .. } if name == "Function")
+      }) {
+        Some(pure_fn) => {
+          let pure_fn = evaluate_expr_to_expr(pure_fn)?;
+          apply_curried_call(&pure_fn, args)
+        }
+        None => Ok(Expr::CurriedCall {
+          func: Box::new(func.clone()),
+          args: args.to_vec(),
+        }),
+      }
     }
     Expr::FunctionCall {
       name,

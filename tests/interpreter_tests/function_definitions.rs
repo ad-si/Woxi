@@ -359,6 +359,73 @@ mod set_delayed {
       clear_state();
       assert_eq!(interpret("f[a_ + b_] := a * b; f[3]").unwrap(), "f[3]");
     }
+
+    // Regression: a downvalue pattern that peers into a `Set` inside a
+    // `HoldFirst` argument (`f[a_ = b_] := ...`, the shape a `let`-style
+    // local-binding idiom uses) used to run the held assignment for real
+    // while *canonicalizing* the stored pattern for dispatch — replacing
+    // pattern variables with placeholder symbols and evaluating the result
+    // to look for an arithmetic normal form (as `1/x_` does for `x_^-1`).
+    // Evaluating `Set[placeholder_a, placeholder_b]` actually performs the
+    // assignment and collapses to just its right-hand side, permanently
+    // losing the left variable from the stored pattern. The lost slot then
+    // fell back to matching the *whole* argument, so the real call's raw,
+    // still-unevaluated `Set` ended up spliced into the (unheld) function
+    // body, where it fired for real once the body was evaluated.
+    #[test]
+    fn set_pattern_argument_does_not_run_the_held_assignment() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "Clear[g, uu]; SetAttributes[g, HoldFirst]; \
+           g[a_ = b_] := {a, b}; g[uu = 42]"
+        )
+        .unwrap(),
+        "{uu, 42}"
+      );
+      assert_eq!(interpret("uu").unwrap(), "uu");
+    }
+
+    // Same regression as above, but for the list-wrapped shape
+    // (`f[{a_ = b_}, ...] := ...`) an actual `let`-style `HoldFirst` binding
+    // uses. This argument goes through a separate list-pattern Part-accessor
+    // path that reconstructs `Part[{x = expr}, 1]` and evaluates it like
+    // ordinary code, running the assignment the same way.
+    #[test]
+    fn list_wrapped_set_pattern_does_not_run_the_held_assignment() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "Clear[myLet, uu]; Attributes[myLet] = {HoldFirst}; \
+           myLet[{a_ = b_}, a_] := b; myLet[{uu = 42}, uu]"
+        )
+        .unwrap(),
+        "42"
+      );
+      assert_eq!(interpret("uu").unwrap(), "uu");
+    }
+
+    // End-to-end version of the two regressions above: a Church-encoding
+    // style Demonstration builds a `let` binding out of a `HoldFirst`
+    // function and a curried infix combinator (`(lambda[x_] . body_)[arg_]
+    // := let[{x = arg}, body]`). Applying the identity combinator to a value
+    // used to leave the combinator's own bound variable permanently
+    // assigned to that value as a side effect of the two bugs above.
+    #[test]
+    fn curried_let_combinator_does_not_leak_its_bound_variable() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          r#"Clear[myLet, lam, vv]; Attributes[myLet] = {HoldFirst};
+myLet[{a_ = b_}, a_] := b;
+(lam[a_] \[CenterDot] body_)[arg_] := myLet[{a = arg}, body];
+(lam[vv] \[CenterDot] vv)[42]"#
+        )
+        .unwrap(),
+        "42"
+      );
+      assert_eq!(interpret("vv").unwrap(), "vv");
+    }
   }
 }
 
@@ -725,6 +792,64 @@ mod compile {
     );
   }
 
+  // A *bare* (no `{name, type}` spec at all) argument used only as a
+  // repetition count — the last argument of `Nest`/`NestList`, or a bare
+  // `{n}` iterator — is inferred as `_Integer` from usage, the same as an
+  // explicit `{n, _Integer, 0}` spec. Regression: a bare argument always
+  // defaulted to `_Real` regardless of usage, so a Setter control's exact
+  // integer value arrived at a compiled loop count as e.g. `100.` and
+  // `NestList` failed with `NestList::intnm` — how a Wolfram Demonstrations
+  // Project notebook's Manipulate output came out blank in Woxi Studio.
+  #[test]
+  fn compile_infers_integer_for_bare_repetition_count_arguments() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"Compile[{n}, NestList[# + 1 &, 0, n]][3]"#).unwrap(),
+      "{0, 1, 2, 3}"
+    );
+    assert_eq!(
+      interpret(r#"Compile[{n}, Nest[# + 1 &, 0, n]][5]"#).unwrap(),
+      "5"
+    );
+    // A bare `{count}` iterator spec (`Do`, `Table`, …) also infers
+    // `_Integer`.
+    assert_eq!(
+      interpret(
+        r#"cf = Compile[{count}, Module[{v = 0}, Do[v += 1, {count}]; v]]; cf[4]"#
+      )
+      .unwrap(),
+      "4"
+    );
+    // An argument only ever used arithmetically (not as a count) still
+    // defaults to `_Real`.
+    assert_eq!(interpret(r#"Compile[{x}, x + 1][3]"#).unwrap(), "4.");
+    // `FixedPointList[f, expr]` (2-arg form) ends in `expr`, the starting
+    // *value* — not a count, unlike the 3-arg `FixedPointList[f, expr,
+    // max]`. A bare argument in that position must still default to
+    // `_Real`.
+    assert_eq!(
+      interpret(r#"cf = Compile[{x}, FixedPointList[(#/2) &, x]]; cf[3][[1]]"#)
+        .unwrap(),
+      "3."
+    );
+    // `Array[f, n, r]`'s count is always the 2nd argument (`n`); the last
+    // argument (`r`, the index origin) is not a count and must still
+    // default to `_Real`.
+    assert_eq!(
+      interpret(r#"cf = Compile[{r}, Array[Sin, 3, r]]; cf[0][[1]]"#).unwrap(),
+      "0."
+    );
+    // A bare `{name}` is only a repetition count in `Do`/`Table`/`Sum`/
+    // `Product`'s own iterator-argument positions — not wherever a
+    // singleton list happens to appear. `Total[{x}]` uses `x` as data, not
+    // an iterator, and must still default to `_Real`.
+    assert_eq!(interpret(r#"Compile[{x}, Total[{x}]][2]"#).unwrap(), "2.");
+    assert_eq!(
+      interpret(r#"Compile[{x}, Total[{x}] / 3][2]"#).unwrap(),
+      "0.6666666666666666"
+    );
+  }
+
   // A compiled function whose signature includes a real works in machine
   // reals throughout, so exact numbers that came from literals in the body
   // come back inexact. An all-integer signature keeps its exact result.
@@ -816,6 +941,50 @@ mod compile {
       r.warnings
     );
     assert_eq!(interpret("Head[cf]").unwrap(), "CompiledFunction");
+  }
+
+  // Regression: a `.nb` notebook's `SaveDefinitions -> True` dump can embed a
+  // helper as Mathematica's fully serialized `CompiledFunction[…]` — an id
+  // tuple, argument patterns, type/constant tables, raw bytecode, the
+  // uncompiled pure `Function[…]`, and a trailing evaluation flag — rather
+  // than the 2-argument `[specs, body]` form woxi's own `Compile` produces.
+  // woxi has no bytecode VM to run the middle arguments, so calling such a
+  // value used to fall through to the generic case and stay unevaluated —
+  // `CompiledFunction[…][args]` — which then propagated into anything built
+  // on top of it. Real Mathematica always embeds the uncompiled pure
+  // function alongside the bytecode as a correctness fallback, so applying
+  // that instead gives the right answer without a bytecode interpreter.
+  #[test]
+  fn compiled_function_serialized_form_falls_back_to_pure_function() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"cf = CompiledFunction[{7, 7.0, 42}, {_Integer, _Real}, {{2, 0, 0}}, {{}}, {0, 1, 2, 0, 0}, {{1}},
+          Function[{a, b}, N[a] + b], Evaluate];
+        cf[3, 0.25]"#
+      )
+      .unwrap(),
+      "3.25"
+    );
+  }
+
+  // The same fallback must apply when the compiled helper is called deep
+  // inside a larger computation (a Module composing it several times), which
+  // is the shape that actually matters: the un-reduced call otherwise grows
+  // an ever-larger unevaluated expression at every level it passes through.
+  #[test]
+  fn compiled_function_serialized_form_reduces_inside_nested_calls() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"step = CompiledFunction[{7, 7.0, 42}, {_Integer}, {{2, 0, 0}}, {{}}, {0, 1, 2, 0, 0}, {{1}},
+          Function[{k}, N[2 k]], Evaluate];
+        total[n_] := Module[{acc}, acc = 0; Do[acc = acc + step[i], {i, 1, n}]; acc];
+        total[4]"#
+      )
+      .unwrap(),
+      "20."
+    );
   }
 }
 

@@ -2342,8 +2342,13 @@ fn grid_line_props(
 /// the tick was given as an expression (`Pi/2` reads `π/2`).
 /// `area` is the plotting rectangle `(x0, y0, w, h)` and `range` the data
 /// range `(x_min, x_max, y_min, y_max)` it maps, both in render units.
-fn explicit_ticks_svg(
-  opts: &PlotOptions,
+///
+/// Takes the explicit tick lists directly (rather than a whole options
+/// struct) so the plotters-based chart renderers (`Histogram`, `BarChart`, …)
+/// can share this one drawing routine instead of duplicating it.
+pub(crate) fn explicit_ticks_svg(
+  ticks_x: Option<&Vec<(f64, String)>>,
+  ticks_y: Option<&Vec<(f64, String)>>,
   (plot_x0, plot_y0, plot_w, plot_h): (f64, f64, f64, f64),
   (x_min, x_max, y_min, y_max): (f64, f64, f64, f64),
   sf: f64,
@@ -2353,7 +2358,7 @@ fn explicit_ticks_svg(
   let axis_y = plot_y0 + plot_h;
   let tick_len = sf * 5.0;
   let tick_font = sf * 13.0;
-  if let Some(ticks) = &opts.ticks_x {
+  if let Some(ticks) = ticks_x {
     for (pos, label) in ticks {
       if *pos < x_min || *pos > x_max || x_max <= x_min {
         continue;
@@ -2369,7 +2374,7 @@ fn explicit_ticks_svg(
       ));
     }
   }
-  if let Some(ticks) = &opts.ticks_y {
+  if let Some(ticks) = ticks_y {
     for (pos, label) in ticks {
       if *pos < y_min || *pos > y_max || y_max <= y_min {
         continue;
@@ -3463,7 +3468,8 @@ fn generate_svg_with_options(
 
     if let Some(insert_pos) = buf.rfind("</svg>") {
       let mut labels_svg = explicit_ticks_svg(
-        opts,
+        opts.ticks_x.as_ref(),
+        opts.ticks_y.as_ref(),
         (plot_x0, margin_top, plot_w, plot_h),
         (x_min, x_max, y_min, y_max),
         sf,
@@ -4416,7 +4422,8 @@ pub(crate) fn generate_scatter_svg_with_options(
   // in the same place the automatic ones would sit.
   if opts.ticks_x.is_some() || opts.ticks_y.is_some() {
     let ticks_svg = explicit_ticks_svg(
-      opts,
+      opts.ticks_x.as_ref(),
+      opts.ticks_y.as_ref(),
       (plot_x0, plot_y0, plot_w, plot_h),
       (x_min, x_max, y_min, y_max),
       RESOLUTION_SCALE as f64,
@@ -6750,8 +6757,20 @@ pub(crate) fn generate_histogram_svg(
     let y_major = nice_step(y_max - y_min, AXIS_TICK_TARGET);
     let x_minor_step = x_major / 5.0;
     let y_minor_step = y_major / 5.0;
-    let x_tick_count = ((x_hi - x_lo) / x_minor_step).round() as usize + 1;
-    let y_tick_count = ((y_max - y_min) / y_minor_step).round() as usize + 1;
+    // `Ticks -> None` suppresses automatic ticks on both axes outright. An
+    // axis given explicit `Ticks` draws its own marks/labels at exactly the
+    // positions asked for (after the mesh below), so plotters' automatic
+    // ones on that axis are suppressed here too.
+    let x_tick_count = if !opts.ticks || opts.ticks_x.is_some() {
+      0
+    } else {
+      ((x_hi - x_lo) / x_minor_step).round() as usize + 1
+    };
+    let y_tick_count = if !opts.ticks || opts.ticks_y.is_some() {
+      0
+    } else {
+      ((y_max - y_min) / y_minor_step).round() as usize + 1
+    };
 
     chart
       .configure_mesh()
@@ -6876,6 +6895,9 @@ pub(crate) fn generate_histogram_svg(
     render_height as f64 - top_margin as f64 - 10.0 * sf - x_label_area as f64;
 
   // Extend labeled (major) ticks beyond the minor ticks drawn by plotters.
+  // An axis given explicit `Ticks` draws its own marks/labels below instead,
+  // so the automatic majors must not be extended over it; `Ticks -> None`
+  // suppresses this on both axes.
   {
     let x_major = nice_step(x_hi - x_lo, AXIS_TICK_TARGET);
     let y_major = nice_step(y_max - y_min, AXIS_TICK_TARGET);
@@ -6885,8 +6907,8 @@ pub(crate) fn generate_histogram_svg(
       plot_y0,
       plot_w,
       plot_h,
-      Some((x_lo, x_hi, x_major)),
-      Some((y_min, y_max, y_major)),
+      (opts.ticks && opts.ticks_x.is_none()).then_some((x_lo, x_hi, x_major)),
+      (opts.ticks && opts.ticks_y.is_none()).then_some((y_min, y_max, y_major)),
       MINOR_TICK_LEN as f64 * sf,
       MAJOR_TICK_LEN as f64 * sf,
       sf,
@@ -6898,7 +6920,14 @@ pub(crate) fn generate_histogram_svg(
   let font_size = sf * 18.0;
   let title_font_size = sf * 22.0;
   if let Some(insert_pos) = buf.rfind("</svg>") {
-    let mut labels_svg = String::new();
+    let mut labels_svg = explicit_ticks_svg(
+      opts.ticks_x.as_ref(),
+      opts.ticks_y.as_ref(),
+      (plot_x0, plot_y0, plot_w, plot_h),
+      (x_lo, x_hi, y_min, y_max),
+      sf,
+      label_fill,
+    );
     let axis_y = plot_y0 + plot_h;
 
     // FrameLabel: centred outside the bottom/left edge.

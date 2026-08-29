@@ -5881,9 +5881,9 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut x_prev = x0;
     let mut x_curr = x1_opt.unwrap_or(x0 + 0.1);
     let mut f_prev = find_root_eval_at(&func, &var, x_prev)?;
+    let mut f_curr = find_root_eval_at(&func, &var, x_curr)?;
 
     for _ in 0..max_iter {
-      let f_curr = find_root_eval_at(&func, &var, x_curr)?;
       if f_curr.abs() < tol {
         break;
       }
@@ -5891,10 +5891,37 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if denom.abs() < 1e-30 {
         break;
       }
-      let x_next = x_curr - f_curr * (x_curr - x_prev) / denom;
+      let step = f_curr * (x_curr - x_prev) / denom;
+      // A step can overshoot out of the function's real domain — e.g. a
+      // fractional power's base going negative — where evaluating the
+      // residual there yields a complex number rather than a real one.
+      // Halve the step toward the current point until it lands somewhere
+      // evaluable, the same backtracking the damped-Newton path above
+      // uses, instead of failing the whole solve over one bad iterate.
+      let mut shrink = 1.0;
+      let mut x_next = x_curr - step;
+      let mut f_next = find_root_eval_at(&func, &var, x_next)
+        .ok()
+        .filter(|v| v.is_finite());
+      for _ in 0..FIND_ROOT_MAX_BACKTRACKS {
+        if f_next.is_some() {
+          break;
+        }
+        shrink *= 0.5;
+        x_next = x_curr - step * shrink;
+        f_next = find_root_eval_at(&func, &var, x_next)
+          .ok()
+          .filter(|v| v.is_finite());
+      }
+      let Some(f_next_val) = f_next else {
+        return Err(InterpreterError::EvaluationError(
+          "FindRoot: cannot evaluate expression numerically".into(),
+        ));
+      };
       x_prev = x_curr;
       f_prev = f_curr;
       x_curr = x_next;
+      f_curr = f_next_val;
     }
 
     let result_val = Expr::Real(x_curr);
@@ -6644,6 +6671,12 @@ fn find_root_rename_walk(
 
 /// Evaluate `expr` to an f64 with every variable in `vars` bound to the
 /// corresponding value in `vals`, in a single substitution pass.
+///
+/// Builds a fresh `vars`-length binding table on every call, so it is only
+/// cheap when called a handful of times per point. The Newton loop below
+/// evaluates a whole equation *and* Jacobian row at the same point `x` —
+/// call [`find_root_eval_multivar_at`] there instead, sharing one binding
+/// table across all of those calls (see its doc comment).
 fn find_root_eval_multivar(
   expr: &Expr,
   vars: &[String],
@@ -6652,7 +6685,26 @@ fn find_root_eval_multivar(
   let reals: Vec<Expr> = vals.iter().map(|&x| Expr::Real(x)).collect();
   let bindings: Vec<(&str, &Expr)> =
     vars.iter().map(String::as_str).zip(reals.iter()).collect();
-  let e = crate::syntax::substitute_variables(expr, &bindings);
+  find_root_eval_multivar_at(expr, &bindings)
+}
+
+/// Same as [`find_root_eval_multivar`], but takes an already-built binding
+/// table instead of rebuilding one from `vars`/`vals`.
+///
+/// A Newton iteration over `n` variables evaluates `n` equations plus an
+/// `n`×`n` Jacobian at the *same* point — up to `n^2 + n` calls that all
+/// need the identical `var -> value` table. Rebuilding that O(n) table
+/// inside every one of those calls (as [`find_root_eval_multivar`] does)
+/// turns one Newton iteration into O(n^3) work regardless of how sparse
+/// the equations are, since the rebuild cost is paid even when a given
+/// equation or Jacobian entry mentions only a few variables. Building the
+/// table once per iteration and sharing it here keeps that cost O(n) per
+/// iteration instead.
+fn find_root_eval_multivar_at(
+  expr: &Expr,
+  bindings: &[(&str, &Expr)],
+) -> Result<f64, InterpreterError> {
+  let e = crate::syntax::substitute_variables(expr, bindings);
   let evaled = crate::evaluator::evaluate_expr_to_expr(&e)?;
   match &evaled {
     Expr::Integer(k) => Ok(*k as f64),
@@ -6833,12 +6885,31 @@ fn find_root_multivariate(
     .any(|row| row.iter().any(std::option::Option::is_none));
   let max_iter = 100;
   let tol = 1e-13;
-  let eval_jacobian = |x: &[f64]| -> Result<Vec<Vec<f64>>, InterpreterError> {
+
+  // The point with the smallest residual seen so far, and that residual.
+  // A large, ill-conditioned system (e.g. a PDE collocation matrix, whose
+  // condition number grows with the grid size) can have an achievable
+  // residual floor well above `tol` — f64 rounding in the linear solve
+  // limits it, not the loop's remaining iterations. Once the residual
+  // stops improving from one iteration to the next, every further
+  // iteration is spending equation/Jacobian evaluations (each O(n)-plus)
+  // on numerical noise, not progress: burning through the rest of
+  // `max_iter` this way costs seconds to minutes on a large system
+  // without moving the answer. Tracking the best iterate and stopping the
+  // moment progress stalls returns that already-best point immediately
+  // instead, while leaving genuinely (even slowly) converging cases to
+  // keep iterating exactly as before. Both branches below update this.
+  let mut best_x = x.clone();
+  let mut best_resid = f64::INFINITY;
+
+  let eval_jacobian_at = |x: &[f64],
+                          bindings: &[(&str, &Expr)]|
+   -> Result<Vec<Vec<f64>>, InterpreterError> {
     let mut jm = vec![vec![0.0; n]; n];
     for (i, row) in jac.iter().enumerate() {
       for (j, dij) in row.iter().enumerate() {
         let entry = match dij {
-          Some(d) => quietly(|| find_root_eval_multivar(d, &vars, x))
+          Some(d) => quietly(|| find_root_eval_multivar_at(d, bindings))
             .ok()
             .filter(|v| v.is_finite()),
           None => None,
@@ -6878,8 +6949,13 @@ fn find_root_multivariate(
       Ok(fv)
     };
     let mut fv = eval_all(&x)?;
-    let mut jm = eval_jacobian(&x)?;
-    let mut converged = residual_norm(&fv) < tol;
+    let reals: Vec<Expr> = x.iter().map(|&v| Expr::Real(v)).collect();
+    let bindings: Vec<(&str, &Expr)> =
+      vars.iter().map(String::as_str).zip(reals.iter()).collect();
+    let mut jm = eval_jacobian_at(&x, &bindings)?;
+    best_resid = residual_norm(&fv);
+    best_x.clone_from(&x);
+    let mut converged = best_resid < tol;
     let mut iter_count = 0;
     while !converged && iter_count < max_iter {
       iter_count += 1;
@@ -6888,7 +6964,10 @@ fn find_root_multivariate(
         let neg_f: Vec<f64> = fv.iter().map(|v| -v).collect();
         let Some(delta) = find_root_solve_linear(jm.clone(), neg_f) else {
           if attempt == 0 {
-            jm = eval_jacobian(&x)?;
+            let reals: Vec<Expr> = x.iter().map(|&v| Expr::Real(v)).collect();
+            let bindings: Vec<(&str, &Expr)> =
+              vars.iter().map(String::as_str).zip(reals.iter()).collect();
+            jm = eval_jacobian_at(&x, &bindings)?;
             continue;
           }
           break;
@@ -6916,7 +6995,10 @@ fn find_root_multivariate(
           // too far from the true derivative. Re-seed it once and retry the
           // step from scratch before giving up on this outer iteration.
           if attempt == 0 {
-            jm = eval_jacobian(&x)?;
+            let reals: Vec<Expr> = x.iter().map(|&v| Expr::Real(v)).collect();
+            let bindings: Vec<(&str, &Expr)> =
+              vars.iter().map(String::as_str).zip(reals.iter()).collect();
+            jm = eval_jacobian_at(&x, &bindings)?;
             continue;
           }
           break;
@@ -6936,7 +7018,12 @@ fn find_root_multivariate(
         x = x_new;
         fv = fv_new;
         progressed = true;
-        if residual_norm(&fv) < tol {
+        let resid = residual_norm(&fv);
+        if resid < best_resid {
+          best_resid = resid;
+          best_x.clone_from(&x);
+        }
+        if resid < tol {
           converged = true;
         }
         break;
@@ -6957,15 +7044,32 @@ fn find_root_multivariate(
   } else {
     // Fully symbolic Jacobian: recomputing it every iteration costs no
     // extra function evaluations, so plain damped-free Newton is simplest.
+    let mut prev_resid = f64::INFINITY;
     for _ in 0..max_iter {
+      // Shared by every equation/Jacobian evaluation at this point — see
+      // `find_root_eval_multivar_at`'s doc comment for why this must be
+      // built once per iteration rather than once per entry.
+      let reals: Vec<Expr> = x.iter().map(|&v| Expr::Real(v)).collect();
+      let bindings: Vec<(&str, &Expr)> =
+        vars.iter().map(String::as_str).zip(reals.iter()).collect();
+
       let mut fv = vec![0.0; n];
       for (i, f) in eqns.iter().enumerate() {
-        fv[i] = find_root_eval_multivar(f, &vars, &x)?;
+        fv[i] = find_root_eval_multivar_at(f, &bindings)?;
       }
-      if fv.iter().fold(0.0f64, |a, &b| a.max(b.abs())) < tol {
+      let resid = fv.iter().fold(0.0f64, |a, &b| a.max(b.abs()));
+      if resid < best_resid {
+        best_resid = resid;
+        best_x.clone_from(&x);
+      }
+      if resid < tol {
         break;
       }
-      let jm = eval_jacobian(&x)?;
+      if resid >= prev_resid {
+        break;
+      }
+      prev_resid = resid;
+      let jm = eval_jacobian_at(&x, &bindings)?;
       let neg_f: Vec<f64> = fv.iter().map(|v| -v).collect();
       let Some(delta) = find_root_solve_linear(jm, neg_f) else {
         break;
@@ -6980,6 +7084,7 @@ fn find_root_multivariate(
       }
     }
   }
+  x = best_x;
   let rules: Vec<Expr> = raw_vars
     .iter()
     .zip(&x)

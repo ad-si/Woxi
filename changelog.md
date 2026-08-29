@@ -2,6 +2,25 @@
 
 # Unreleased
 
+- `Dot` sums a vector/matrix product's terms in one `Plus` call instead of
+    folding them pairwise. The pairwise fold re-flattened and re-collected
+    the whole running sum on every term, turning an n-term dot product into
+    O(n²) work; a PDE collocation method's equations — each a numeric
+    matrix row dotted against a vector of unknowns — made this the
+    dominant cost of solving even a moderately large linear system, which
+    is what kept a Wolfram Demonstration's `Manipulate` from ever finishing
+    in Woxi Studio.
+
+- Multivariate `FindRoot` tracks the best iterate seen and stops once the
+    residual stops improving, instead of always running all
+    `MaxIterations -> 100` steps. A numerically ill-conditioned but
+    genuinely linear system (a Chebyshev spectral-collocation
+    differentiation matrix, as PDE-solving Demonstrations commonly build,
+    is a classic example) can have an achievable residual floor above the
+    solver's tolerance purely from `f64` rounding in the linear solve; the
+    loop used to spend every remaining iteration re-evaluating the
+    equations and Jacobian chasing that unreachable tolerance.
+
 - `Table` and `Array` splice a per-iteration `Sequence[…]` result into the
     surrounding list instead of keeping it as one element, matching how
     `List[…]` construction always simplifies. This is what makes

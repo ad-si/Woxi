@@ -1226,6 +1226,92 @@ pub(crate) fn color_swatch_svg(color: &Color) -> String {
   )
 }
 
+/// Render a standalone `LineLegend[{styles…}, {labels…}]` as its own small
+/// picture: one row per entry, a short line sample drawn in that entry's
+/// style followed by its label. A bare `LineLegend` (not wrapped in
+/// `Legended`) is how Demonstrations commonly place a legend beside a plot
+/// rather than attached to it via `PlotLegends`, and Wolfram's front end
+/// typesets it the same way either way — as swatches, not as source text.
+///
+/// Each style entry is either a plain color directive or a list ending in
+/// one (`{Thickness[Tiny], color}`, `{Dashing[{0, Small}], color}`);
+/// `apply_directive` — the same directive parser `Graphics` primitives use
+/// — reads each one, so `Thickness`/`AbsoluteThickness`/`Dashing` on a
+/// legend line render exactly as they would on the plotted line itself.
+pub(crate) fn line_legend_svg(args: &[Expr]) -> Option<String> {
+  if args.len() < 2 {
+    return None;
+  }
+  let Expr::List(style_specs) = &args[0] else {
+    return None;
+  };
+  let Expr::List(labels) = &args[1] else {
+    return None;
+  };
+  if style_specs.is_empty() || labels.is_empty() {
+    return None;
+  }
+
+  let sample_w = 30.0_f64;
+  let sample_h = 16.0_f64;
+  // `thickness_px`/`dash_attr` only read `bb` for the (unused, since a
+  // legend sample has no data range) relative-dashing branch, so any
+  // BBox is fine here.
+  let bb = BBox {
+    x_min: 0.0,
+    x_max: 1.0,
+    y_min: 0.0,
+    y_max: 1.0,
+  };
+
+  let mut entries: Vec<Expr> = Vec::new();
+  for (label, spec) in labels.iter().zip(style_specs.iter()) {
+    // LineLegend's sample draws a plain visible stroke by default — not
+    // the hairline `AbsoluteThickness[1]` an undirected `Line[…]`
+    // primitive gets — so an entry with no `Thickness` directive of its
+    // own still reads as a line, matching wolframscript's legend.
+    let mut style = StyleState {
+      thickness: 0.05,
+      ..StyleState::default()
+    };
+    match spec {
+      Expr::List(directives) => {
+        for d in directives {
+          apply_directive(d, &mut style);
+        }
+      }
+      other => {
+        apply_directive(other, &mut style);
+      }
+    }
+    let sw = thickness_px(style.thickness, &bb, sample_w).max(1.0);
+    let dash = dash_attr(style.dashing.as_ref(), &bb, sample_w);
+    let y = sample_h / 2.0;
+    let line_svg = format!(
+      "<svg width=\"{sample_w}\" height=\"{sample_h}\" viewBox=\"0 0 {sample_w} {sample_h}\" xmlns=\"http://www.w3.org/2000/svg\"><line x1=\"1\" y1=\"{y:.1}\" x2=\"{x2:.1}\" y2=\"{y:.1}\" stroke=\"{color}\" stroke-width=\"{sw:.2}\"{dash} stroke-linecap=\"butt\"/></svg>",
+      x2 = sample_w - 1.0,
+      color = style.color.to_svg_rgb(),
+    );
+    let line_item = Expr::Graphics {
+      svg: line_svg,
+      is_3d: false,
+      source: None,
+      head: None,
+      structure: None,
+    };
+    entries.push(call(
+      "Row",
+      vec![Expr::List(
+        vec![line_item, Expr::String(" ".to_string()), label.clone()].into(),
+      )],
+    ));
+  }
+  if entries.is_empty() {
+    return None;
+  }
+  column_to_svg(&[Expr::List(entries.into())])
+}
+
 // ── Directive parsing ────────────────────────────────────────────────────
 
 fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
@@ -11791,6 +11877,28 @@ pub fn parse_grid_style(directives: &[Expr]) -> GridStyle {
 /// expression's text form.
 fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
   let svg = match cell {
+    // `"label" -> Graphics[…]` is the idiom Wolfram demonstrations use for
+    // a caption row with an inline swatch (e.g. a color-preview disk next
+    // to its name). WL typesets a `Rule` as its pattern, an arrow, and its
+    // replacement, so build exactly that through the row layout rather
+    // than a bespoke composer, and only when the replacement is actually a
+    // picture — a `Rule` between two plain values still prints as text.
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if grid_cell_graphic(replacement).is_some() => {
+      let row = Expr::List(
+        vec![
+          (**pattern).clone(),
+          Expr::String("\u{2192}".to_string()),
+          (**replacement).clone(),
+        ]
+        .into(),
+      );
+      return row_to_svg(std::slice::from_ref(&row)).and_then(|svg| {
+        parse_svg_dimensions(&svg).map(|d| (svg, d.nat_w, d.nat_h))
+      });
+    }
     Expr::Graphics { svg, .. } => svg.clone(),
     // A styled graphic is still a graphic.
     Expr::FunctionCall { name, args }
@@ -11808,6 +11916,12 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
     // button and the waveform — rather than the `Play[…]` source text.
     Expr::FunctionCall { name, .. } if name == "Sound" || name == "Play" => {
       crate::functions::sound::sound_svg(cell)?
+    }
+    // A bare `LineLegend[…]` cell (not wrapped in `Legended`) is a legend
+    // key a Demonstration placed beside its plot — drawn as swatches, the
+    // same as when it is Legended's second argument.
+    Expr::FunctionCall { name, args } if name == "LineLegend" => {
+      line_legend_svg(args)?
     }
     // As above, a display wrapper that resolves to a picture is drawn
     // rather than printed as source.
@@ -22600,6 +22714,22 @@ pub enum DisplayNode {
   /// Manipulate control argument. Demonstrations use these inside a
   /// `Dynamic[…]` caption to step a variable (`n++`, `n = 1`, …).
   Button { label: Box<Self>, action: String },
+  /// A `PopupMenu[Dynamic[lval], choices]` drawn as a display element (not a
+  /// top-level Manipulate control): a dropdown whose selection writes back
+  /// into `lval`. Unlike `TogglerBar`, `lval` need not be a bare symbol — a
+  /// Demonstration idiom generates one popup per slot of a shared list
+  /// (`PopupMenu[Dynamic[data[[i]]], …]` inside an `Outer`/`Table`), so
+  /// `target` is `lval`'s InputForm verbatim, mirroring `Checkbox::target`.
+  /// `current` is the InputForm of the value currently held there (which
+  /// choice to preselect); `choices` is each choice's `(value, label)`
+  /// InputForm/text pair, mirroring `togglerbar_node`'s choice-list
+  /// handling but for a single-select write-back rather than a toggled
+  /// list membership.
+  Popup {
+    target: String,
+    current: String,
+    choices: Vec<(String, String)>,
+  },
   /// A `Spacer[w]`: `w` printer's points of horizontal space.
   Spacer { width: f64 },
   /// A text leaf with its styled runs, so `Style["…", Bold, Red]` renders
@@ -22754,6 +22884,14 @@ fn display_expr_to_node(
           None => static_leaf_node(expr, bindings),
         }
       }
+      // `PopupMenu[Dynamic[lval], choices]` written inside a display
+      // element (e.g. one dropdown per slot of a list, generated by
+      // `Outer[PopupMenu[Dynamic[data[[#]]], …]&, Range[Length[data]]]`):
+      // a live, write-back dropdown, not the frozen source text.
+      "PopupMenu" if args.len() >= 2 => match popup_node(args) {
+        Some(node) => node,
+        None => static_leaf_node(expr, bindings),
+      },
       // `PaneSelector[{v1 -> content1, v2 -> content2, …}, sel]` used as a
       // caption/heading row (e.g. a "set the isothermal temperature" label
       // that swaps to "choose a nonisothermal temperature profile" as a
@@ -23008,6 +23146,52 @@ fn togglerbar_node(
   })
 }
 
+/// Build a `PopupMenu[Dynamic[lval], choices]` display: a dropdown whose
+/// selection writes a single new value back into `lval`. Unlike
+/// `togglerbar_node`, `lval` need not be a bare symbol (a Demonstration
+/// idiom targets one slot of a shared list, `Dynamic[data[[i]]]`), so the
+/// write-back target is kept as `lval`'s InputForm the way `checkbox_node`
+/// keeps its `target`, rather than requiring an `Identifier` the way
+/// `togglerbar_node`'s `var` does. The choice list may itself be held (e.g.
+/// `Thread[Range[1, 4] -> {…}]`) and each choice may be a plain value or a
+/// `value -> "label"` rule — reuses `discrete_choice_columns`, the same
+/// extraction the standalone `ControlType -> PopupMenu` control uses, so
+/// the two never drift apart. Returns `None` when the arguments don't have
+/// that shape (the caller falls back to a static rendering).
+fn popup_node(args: &[Expr]) -> Option<DisplayNode> {
+  let lval = match args.first() {
+    Some(Expr::FunctionCall { name, args: dargs })
+      if name == "Dynamic" && !dargs.is_empty() =>
+    {
+      &dargs[0]
+    }
+    _ => return None,
+  };
+  let target = crate::syntax::expr_to_input_form(lval);
+  // The choice list may be held (e.g. `Thread[Range[1, 4] -> {…}]`).
+  let choices_expr = match &args[1] {
+    l @ Expr::List(_) => l.clone(),
+    other => crate::evaluator::evaluate_expr_to_expr(other).ok()?,
+  };
+  let Expr::List(items) = &choices_expr else {
+    return None;
+  };
+  if items.is_empty() {
+    return None;
+  }
+  let (values, labels, _svgs) = discrete_choice_columns(items);
+  // The value currently held at `lval`, to preselect its choice.
+  let current = crate::evaluator::evaluate_expr_to_expr(lval).map_or_else(
+    |_| target.clone(),
+    |e| crate::syntax::expr_to_input_form(&e),
+  );
+  Some(DisplayNode::Popup {
+    target,
+    current,
+    choices: values.into_iter().zip(labels).collect(),
+  })
+}
+
 /// Fill in each checkbox's `checked` flag from the batched probe results, in
 /// the same pre-order the probes were collected.
 fn assign_checkbox_state(
@@ -23040,7 +23224,8 @@ fn assign_checkbox_state(
     }
     DisplayNode::Spacer { .. }
     | DisplayNode::Text { .. }
-    | DisplayNode::Static { .. } => {}
+    | DisplayNode::Static { .. }
+    | DisplayNode::Popup { .. } => {}
   }
 }
 
@@ -23138,6 +23323,28 @@ fn display_node_to_json(node: &DisplayNode) -> String {
       display_node_to_json(label),
       json_escape_manipulate(action),
     ),
+    DisplayNode::Popup {
+      target,
+      current,
+      choices,
+    } => {
+      let choices_json: Vec<String> = choices
+        .iter()
+        .map(|(value, label)| {
+          format!(
+            r#"{{"value":"{}","label":"{}"}}"#,
+            json_escape_manipulate(value),
+            json_escape_manipulate(label),
+          )
+        })
+        .collect();
+      format!(
+        r#"{{"kind":"popup","target":"{}","current":"{}","choices":[{}]}}"#,
+        json_escape_manipulate(target),
+        json_escape_manipulate(current),
+        choices_json.join(","),
+      )
+    }
     DisplayNode::Spacer { width } => {
       format!(r#"{{"kind":"spacer","width":{width}}}"#)
     }

@@ -9490,6 +9490,51 @@ mod findroot_symbolic_start {
   }
 }
 
+// A two-point `{var, x0, x1}` spec runs the secant method. Its raw step can
+// overshoot into a region where the residual isn't a real number — e.g. a
+// fractional power's base going negative — which used to abort the whole
+// solve with `FindRoot::nlnum` even though a root exists inside the given
+// bracket. The secant loop now backtracks (halves the step toward the
+// current point) the same way the damped single-point Newton path already
+// does, instead of failing on the first bad iterate.
+mod findroot_secant_domain_backtracking {
+  use super::*;
+
+  #[test]
+  fn secant_recovers_from_fractional_power_going_negative() {
+    // With coefficient 50, an unguarded secant step from {0.001, 0.9}
+    // lands on a negative x on its third iterate, where x^0.6 is complex —
+    // this used to report FindRoot::nlnum instead of the real root.
+    let result = interpret("FindRoot[5 == 50*x^0.6, {x, 0.001, 0.9}]").unwrap();
+    assert_eq!(result, "{x -> 0.021544346900318825}");
+  }
+
+  #[test]
+  fn secant_recovered_root_actually_solves_the_equation() {
+    let root =
+      interpret("x /. FindRoot[5 == 50*x^0.6, {x, 0.001, 0.9}]").unwrap();
+    let residual = interpret(&format!("N[50*({root})^0.6]")).unwrap();
+    assert_eq!(residual, "4.999999999999999");
+  }
+
+  #[test]
+  fn secant_still_works_for_a_larger_coefficient() {
+    let result =
+      interpret("FindRoot[5 == 100*x^0.6, {x, 0.001, 0.9}]").unwrap();
+    assert_eq!(result, "{x -> 0.006786044041487266}");
+  }
+
+  // A coefficient small enough that the unguarded secant path never left
+  // the real domain in the first place — guards against a regression that
+  // only shows up once backtracking is removed again.
+  #[test]
+  fn secant_regression_case_still_converges_directly() {
+    let result =
+      interpret("FindRoot[5 == 0.41*x^0.6, {x, 0.001, 0.9}]").unwrap();
+    assert_eq!(result, "{x -> 64.61156284605313}");
+  }
+}
+
 mod laplace_transform {
   use super::*;
 

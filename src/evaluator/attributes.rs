@@ -27,8 +27,10 @@ impl Attributes {
   pub const Protected: u32 = 1 << 15;
   pub const ReadProtected: u32 = 1 << 16;
   pub const SequenceHold: u32 = 1 << 17;
+  pub const Stub: u32 = 1 << 18;
+  pub const Temporary: u32 = 1 << 19;
 
-  const Masks: [&'static str; 18] = [
+  const Masks: [&'static str; 20] = [
     "Constant",
     "Flat",
     "HoldAll",
@@ -47,6 +49,8 @@ impl Attributes {
     "Protected",
     "ReadProtected",
     "SequenceHold",
+    "Stub",
+    "Temporary",
   ];
 
   pub fn mask(name: &str) -> u32 {

@@ -713,9 +713,17 @@ fn extract_typeset_box(s: &str) -> Option<String> {
   if s.starts_with("GraphicsBox[")
     && let Some(args) = split_args("GraphicsBox", s)
     && let Some(first) = args.first()
-    && let Some(image) = extract_image_from_boxes(first)
   {
-    return Some(image);
+    if let Some(image) = extract_image_from_boxes(first) {
+      return Some(image);
+    }
+    // Not a raster snapshot — an inline `Graphics[…]` literal built from
+    // vector primitives (`PointBox`, `FilledCurveBox`, …), e.g. a
+    // precomputed point set a Demonstration's initialization code bakes in
+    // rather than recomputing on every evaluation. Rebuild the evaluable
+    // `Graphics[…]` expression the same way, so the cell stays runnable
+    // instead of embedding raw, un-evaluable box syntax.
+    return Some(box_source_to_graphics_expr(s));
   }
   for head in [
     "FractionBox",
@@ -778,6 +786,24 @@ fn extract_typeset_box(s: &str) -> Option<String> {
       // stays unevaluated and keeps it.
       "SuperscriptBox" if args.len() == 2 && draws_nothing(&conv(&args[0])) => {
         format!("Superscript[\"\", {}]", conv(&args[1]))
+      }
+      // A script that isn't a valid expression on its own — e.g. a bare
+      // `-` used only to typeset an ion's charge, like the "H" of "H⁻"
+      // (`SuperscriptBox["H", "-"]`) — can't become `(a)^(b)`: `("H")^(-)`
+      // dangles the minus sign with no operand and fails to parse.
+      // Mathematica's own box-to-expression conversion falls back to the
+      // display wrapper `Superscript` whenever a script doesn't parse as
+      // an expression; mirror that here (same fallback `SubscriptBox`
+      // uses below for its subscript).
+      "SuperscriptBox"
+        if args.len() == 2
+          && crate::parse_to_expr(&conv(&args[1])).is_err() =>
+      {
+        format!(
+          "Superscript[{}, \"{}\"]",
+          conv(&args[0]),
+          escape_string(&conv(&args[1]))
+        )
       }
       // `SuperscriptBox[a, b]` → `(a)^(b)`.
       "SuperscriptBox" if args.len() == 2 => {
@@ -1324,19 +1350,30 @@ fn extract_rowbox_content(s: &str) -> String {
       continue;
     }
     let piece = box_part_source(part);
-    // A bare `#`/`##` and a following letter-initial piece are *separate*
-    // sibling boxes here (implicit multiplication, e.g. `# Sin[Pi/u]`
-    // typeset without a literal space token between them), but gluing
-    // their text together verbatim would read back as named-slot syntax
-    // (`#Sin` = `Slot["Sin"]`) instead. Insert a space to keep the
-    // juxtaposition a product rather than change its meaning.
-    if result.ends_with('#')
-      && piece
-        .chars()
-        .next()
-        .is_some_and(|c| c.is_ascii_alphabetic())
-    {
+    // Two sibling boxes juxtaposed with no operator between them (no
+    // `\[InvisibleTimes]`, no literal `" "` part) mean implicit
+    // multiplication — e.g. `RowBox[{"a", RowBox[{"x", "^", "3"}]}]` for
+    // `a*x^3`. Gluing their text together verbatim would instead read back
+    // as one longer identifier: a trailing symbol swallows a following
+    // letter into a different name (`ax^3` parses as the single identifier
+    // `ax` to the third power, not `a` times `x^3`), and for a bare `#` it
+    // reads as named-slot syntax (`#Sin` = `Slot["Sin"]`). A trailing plain
+    // number is unambiguous either way (`2Product[…]` already reads back as
+    // `2*Product[…]`, since digits can't extend into letters), so only a
+    // trailing run that itself contains a letter is at risk.
+    let piece_starts_alpha = piece
+      .chars()
+      .next()
+      .is_some_and(|c| c.is_ascii_alphabetic());
+    let trailing_run_has_letter = result
+      .chars()
+      .rev()
+      .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+      .any(|c| c.is_ascii_alphabetic());
+    if result.ends_with('#') && piece_starts_alpha {
       result.push(' ');
+    } else if trailing_run_has_letter && piece_starts_alpha {
+      result.push('*');
     }
     result.push_str(&piece);
     i += 1;
@@ -2109,6 +2146,72 @@ pub fn saved_initialization_context_symbols(box_dump: &str) -> Vec<String> {
     search_from = after_kw;
   }
   names
+}
+
+/// The value of `"<key>" :> <value>` inside a FrontEnd box dump, up to the
+/// first top-level comma (or the end of the enclosing bracket/brace/paren).
+/// Skips over string literals, where brackets are just text.
+fn extract_arrow_value<'a>(box_dump: &'a str, key: &str) -> Option<&'a str> {
+  let marker = format!("\"{key}\"");
+  let rel = box_dump.find(&marker)?;
+  let rest = box_dump[rel + marker.len()..].trim_start();
+  let rest = rest.strip_prefix(":>")?.trim_start();
+
+  let mut depth = 0i32;
+  let mut in_string = false;
+  let mut prev_backslash = false;
+  for (i, c) in rest.char_indices() {
+    if in_string {
+      if c == '"' && !prev_backslash {
+        in_string = false;
+      }
+      prev_backslash = c == '\\' && !prev_backslash;
+      continue;
+    }
+    match c {
+      '"' => in_string = true,
+      '(' | '[' | '{' => depth += 1,
+      ')' | ']' | '}' => {
+        if depth == 0 {
+          return Some(rest[..i].trim_end());
+        }
+        depth -= 1;
+      }
+      ',' if depth == 0 => return Some(rest[..i].trim_end()),
+      _ => {}
+    }
+  }
+  let trimmed = rest.trim_end();
+  if trimmed.is_empty() {
+    None
+  } else {
+    Some(trimmed)
+  }
+}
+
+/// Rebuild a plain `Manipulate[body, spec, …]` source expression from a
+/// saved FrontEnd dynamic-widget dump (the `DynamicModuleBox[…]` text
+/// stored in the Output cell of an evaluated `Manipulate[…]`) when there is
+/// no Input cell holding the original source to re-evaluate — e.g. a
+/// notebook downloaded straight from a Wolfram Demonstrations Project share
+/// link, which carries only the compiled `Manipulate\`ManipulateBoxes[…]`
+/// widget and no editable Wolfram Language source.
+///
+/// The dump's `"Body" :> …` and `"Specifications" :> {…}` entries carry
+/// exactly the two pieces a `Manipulate[…]` call needs; `` $CellContext` ``
+/// prefixes and the FrontEnd's line-continuation `\` markers are stripped
+/// the same way [`extract_saved_initialization`] strips them, so the result
+/// evaluates as ordinary session-level input.
+pub fn reconstruct_manipulate_from_box_dump(box_dump: &str) -> Option<String> {
+  let clean = |s: &str| s.replace("$CellContext`", "").replace("\\\n", "");
+  let body = clean(extract_arrow_value(box_dump, "Body")?);
+  let specs = clean(extract_arrow_value(box_dump, "Specifications")?);
+  let specs = specs.trim();
+  let specs_inner = specs.strip_prefix('{')?.strip_suffix('}')?.trim();
+  if specs_inner.is_empty() {
+    return Some(format!("Manipulate[{body}]"));
+  }
+  Some(format!("Manipulate[{body}, {specs_inner}]"))
 }
 
 /// The prefix of `s` up to (excluding) the `)` matching an already-consumed
@@ -3051,6 +3154,252 @@ pub fn stored_output_checkbox_text(content: &str) -> Option<String> {
     None
   } else {
     Some(lines.join("\n"))
+  }
+}
+
+/// Decode Mathematica's serialized packed array of machine reals found
+/// inside a `CompressedData["1:…"]` literal — the format the FrontEnd uses
+/// for the point/curve coordinates of a Demonstrations snapshot graphic
+/// (as opposed to `RawArray["UnsignedInteger8", …]`, the pixel format
+/// `parse_raw_array_u8` decodes). `payload` is the text between the
+/// quotes. Returns the array's dimensions together with its values in
+/// row-major order.
+fn decode_compressed_real_array(
+  payload: &str,
+) -> Option<(Vec<usize>, Vec<f64>)> {
+  let b64: String = payload.chars().filter(|c| !c.is_whitespace()).collect();
+  let b64 = b64.strip_prefix("1:")?;
+
+  use base64::Engine;
+  let compressed =
+    base64::engine::general_purpose::STANDARD.decode(b64).ok()?;
+  let mut raw = Vec::new();
+  std::io::Read::read_to_end(
+    &mut flate2::read::ZlibDecoder::new(&compressed[..]),
+    &mut raw,
+  )
+  .ok()?;
+
+  let mut pos = 0usize;
+  let take = |pos: &mut usize, n: usize| -> Option<&[u8]> {
+    let s = raw.get(*pos..*pos + n)?;
+    *pos += n;
+    Some(s)
+  };
+  let read_u32 = |pos: &mut usize| -> Option<u32> {
+    take(pos, 4).map(|b| u32::from_le_bytes(b.try_into().unwrap()))
+  };
+
+  if take(&mut pos, 4)? != b"!boR" {
+    return None;
+  }
+  // A packed array of machine reals is a single tag byte (`e`), the rank,
+  // that many dimensions, then the raw `f64` data — no type-name string,
+  // unlike the `RawArray["UnsignedInteger8", …]` pixel format above.
+  if take(&mut pos, 1)? != b"e" {
+    return None;
+  }
+  let rank = read_u32(&mut pos)? as usize;
+  if rank == 0 || rank > 4 {
+    return None;
+  }
+  let mut dims = Vec::with_capacity(rank);
+  let mut total = 1usize;
+  for _ in 0..rank {
+    let d = read_u32(&mut pos)? as usize;
+    total = total.checked_mul(d)?;
+    dims.push(d);
+  }
+  let bytes = take(&mut pos, total * 8)?;
+  let values = bytes
+    .as_chunks::<8>()
+    .0
+    .iter()
+    .map(|c| f64::from_le_bytes(*c))
+    .collect();
+  Some((dims, values))
+}
+
+/// Format a decoded packed real array (see `decode_compressed_real_array`)
+/// as the nested Wolfram Language list literal it represents, e.g. `[25,
+/// 2]` values format as `{{x1, y1}, {x2, y2}, …}`.
+fn packed_real_array_to_wl_list(dims: &[usize], values: &[f64]) -> String {
+  fn build(dims: &[usize], values: &[f64], offset: &mut usize) -> String {
+    let Some((&first, rest)) = dims.split_first() else {
+      let v = values[*offset];
+      *offset += 1;
+      return format!("{v}");
+    };
+    let items: Vec<String> =
+      (0..first).map(|_| build(rest, values, offset)).collect();
+    format!("{{{}}}", items.join(", "))
+  }
+  let mut offset = 0;
+  build(dims, values, &mut offset)
+}
+
+/// Rewrite a `.nb` box dump's vector-drawing heads (`PointBox`, `LineBox`,
+/// `DiskBox`, `RectangleBox`, `FilledCurveBox`, `GraphicsBox`, …) back to
+/// the `Graphics` primitives they typeset (`Point`, `Line`, `Disk`,
+/// `Rectangle`, `Polygon`, `Graphics`), and inlines any `CompressedData[…]`
+/// coordinate blob as a literal list, so the result parses and evaluates
+/// as an ordinary Wolfram Language expression. Display-only wrappers
+/// (`TagBox`, a `StyleBox`'s box-metadata options like `StripOnInput`) are
+/// dropped; the directives a `StyleBox` carries (`RGBColor`, `Thickness`,
+/// …) are kept in front of the primitives they apply to, the way
+/// `Graphics` itself represents a styled sublist. Anything not recognized
+/// (already-valid syntax like `RGBColor[…]`, bare numbers, option rules)
+/// is recursed into unchanged, in case it nests a `CompressedData` blob.
+fn box_source_to_graphics_expr(s: &str) -> String {
+  let s = s.trim();
+
+  if let Some(rest) = s.strip_prefix("CompressedData[\"") {
+    return rest
+      .find('"')
+      .and_then(|end| decode_compressed_real_array(&rest[..end]))
+      .map_or_else(
+        || "Null".to_string(),
+        |(dims, values)| packed_real_array_to_wl_list(&dims, &values),
+      );
+  }
+
+  if let Some(inner) = s.strip_prefix('{').and_then(|r| r.strip_suffix('}')) {
+    let items: Vec<String> = split_top_level_commas(inner)
+      .into_iter()
+      .map(|item| box_source_to_graphics_expr(item.trim()))
+      .collect();
+    return format!("{{{}}}", items.join(", "));
+  }
+
+  let box_call = |head: &str| -> Option<Vec<String>> {
+    let rest = s.strip_prefix(head)?.strip_prefix('[')?;
+    let (inner, _) = find_matching_bracket(rest).ok()?;
+    Some(
+      split_top_level_commas(inner)
+        .into_iter()
+        .map(|a| a.trim().to_string())
+        .collect(),
+    )
+  };
+
+  if let Some(args) = box_call("StyleBox")
+    && !args.is_empty()
+  {
+    let body = box_source_to_graphics_expr(&args[0]);
+    let dirs: Vec<String> = args[1..]
+      .iter()
+      .filter(|a| !is_option_arg(a))
+      .map(|a| box_source_to_graphics_expr(a))
+      .collect();
+    return if dirs.is_empty() {
+      body
+    } else {
+      format!("{{{}, {}}}", dirs.join(", "), body)
+    };
+  }
+
+  if let Some(args) = box_call("TagBox")
+    && let Some(first) = args.first()
+  {
+    return box_source_to_graphics_expr(first);
+  }
+
+  if let Some(args) = box_call("GraphicsBox")
+    && let Some(first) = args.first()
+  {
+    let body = box_source_to_graphics_expr(first);
+    let rest_args: Vec<String> = args[1..]
+      .iter()
+      .map(|a| box_source_to_graphics_expr(a))
+      .collect();
+    return if rest_args.is_empty() {
+      format!("Graphics[{body}]")
+    } else {
+      format!("Graphics[{body}, {}]", rest_args.join(", "))
+    };
+  }
+
+  if let Some(args) = box_call("FilledCurveBox")
+    && args.len() >= 2
+  {
+    // The first argument's tags describe how the point run is split into
+    // line/Bezier segments; approximating every segment as a straight
+    // line keeps this a general decoder rather than one tuned to a
+    // specific curve, at the cost of corner-cutting through Bezier
+    // control points instead of curving smoothly between them. The
+    // points themselves — the second argument — already trace the
+    // boundary in order, so a straight-edged `Polygon` through them is a
+    // reasonable approximation of the filled curve.
+    let points = box_source_to_graphics_expr(&args[1]);
+    return format!("Polygon[{points}]");
+  }
+
+  for (box_head, prim_head) in [
+    ("PointBox", "Point"),
+    ("LineBox", "Line"),
+    ("DiskBox", "Disk"),
+    ("RectangleBox", "Rectangle"),
+  ] {
+    if let Some(args) = box_call(box_head) {
+      let converted: Vec<String> = args
+        .iter()
+        .map(|a| box_source_to_graphics_expr(a))
+        .collect();
+      return format!("{prim_head}[{}]", converted.join(", "));
+    }
+  }
+
+  // Anything else (`RGBColor[…]`, `Hue[…]`, `Thickness[…]`, option rules,
+  // bare numbers/strings, …) is already valid Wolfram Language syntax;
+  // recurse into its arguments only in case a `CompressedData` happens to
+  // be nested inside one, rather than special-casing every directive head.
+  if let Some(open) = s.find('[')
+    && s[..open].chars().all(|c| c.is_alphanumeric() || c == '`')
+    && let Ok((inner, tail)) = find_matching_bracket(&s[open + 1..])
+    && tail.trim().is_empty()
+  {
+    let head = &s[..open];
+    let converted: Vec<String> = split_top_level_commas(inner)
+      .into_iter()
+      .map(|a| box_source_to_graphics_expr(a.trim()))
+      .collect();
+    return format!("{head}[{}]", converted.join(", "));
+  }
+
+  s.to_string()
+}
+
+/// Render a stored `GraphicsBox[…]` output that draws directly with vector
+/// primitives — `PointBox`, `LineBox`, `FilledCurveBox`, `DiskBox`,
+/// `RectangleBox` — rather than a `RasterBox` snapshot; this is the box
+/// form Wolfram's FrontEnd saves for a Demonstration's geometric
+/// constructions (Voronoi/Delaunay diagrams, tilings, lattice-point
+/// figures, …), which `stored_output_image_svg` does not cover. Rebuilds
+/// an evaluable `Graphics[…]` expression from the box dump (see
+/// `box_source_to_graphics_expr`) and renders it by evaluating that
+/// expression — the same path `ExportString[…, "SVG"]` uses — so the
+/// result matches the app's usual graphics styling. Returns `None` when
+/// `content` holds no vector `GraphicsBox`, or the reconstructed source
+/// fails to parse or evaluate (rather than showing a mangled picture).
+pub fn stored_output_vector_graphics_svg(content: &str) -> Option<String> {
+  if content.contains("RasterBox[") {
+    return None;
+  }
+  let start = content.find("GraphicsBox[")?;
+  let source = box_source_to_graphics_expr(&content[start..]);
+  if !source.starts_with("Graphics[") {
+    return None;
+  }
+  let expr = crate::parse_to_expr(&source).ok()?;
+  let crate::syntax::Expr::FunctionCall { name, args } = &expr else {
+    return None;
+  };
+  if name != "Graphics" {
+    return None;
+  }
+  match crate::functions::graphics::graphics_ast(args).ok()? {
+    crate::syntax::Expr::Graphics { ref svg, .. } => Some(svg.clone()),
+    _ => None,
   }
 }
 
@@ -4051,9 +4400,11 @@ Cell["Chapter 2", "Chapter"]
   #[test]
   fn test_extract_plain_graphicsbox_not_treated_as_image() {
     // A GraphicsBox without the RasterBox/ImageTag pair is not an image
-    // literal and must not be rewritten.
+    // literal — it typesets a vector graphic instead, and is rewritten to
+    // the `Graphics[…]` expression it draws so the cell stays runnable
+    // (rather than left as un-evaluable box syntax).
     let s = "GraphicsBox[DiskBox[{0, 0}]]";
-    assert_eq!(extract_cell_content(s), "GraphicsBox[DiskBox[{0, 0}]]");
+    assert_eq!(extract_cell_content(s), "Graphics[Disk[{0, 0}]]");
   }
 
   #[test]
@@ -4146,6 +4497,161 @@ Cell["Chapter 2", "Chapter"]
     assert!(svg.contains("data:image/png;base64,"), "{svg}");
     // Non-raster outputs decode to nothing.
     assert!(stored_output_image_svg("{1, 2, 3}").is_none());
+  }
+
+  /// Build the exact serialization Mathematica writes for a packed array
+  /// of machine reals — `!boR` + tag `e` + rank + dims + raw `f64` data,
+  /// zlib-compressed and base64-encoded behind a `1:` prefix — the same
+  /// format `test_stored_output_raster_snapshot_decodes_to_svg` builds for
+  /// the sibling `RawArray["UnsignedInteger8", …]` pixel format.
+  fn make_compressed_real_array(dims: &[u32], values: &[f64]) -> String {
+    let mut raw: Vec<u8> = Vec::new();
+    raw.extend_from_slice(b"!boR");
+    raw.push(b'e');
+    raw.extend_from_slice(&(dims.len() as u32).to_le_bytes());
+    for d in dims {
+      raw.extend_from_slice(&d.to_le_bytes());
+    }
+    for v in values {
+      raw.extend_from_slice(&v.to_le_bytes());
+    }
+
+    use base64::Engine;
+    use std::io::Write;
+    let mut enc = flate2::write::ZlibEncoder::new(
+      Vec::new(),
+      flate2::Compression::default(),
+    );
+    enc.write_all(&raw).unwrap();
+    let b64 =
+      base64::engine::general_purpose::STANDARD.encode(enc.finish().unwrap());
+    format!("1:{b64}")
+  }
+
+  #[test]
+  fn test_decode_compressed_real_array_round_trips() {
+    let payload =
+      make_compressed_real_array(&[3, 2], &[0.0, 0.0, 1.5, 2.25, -3.0, 4.0]);
+    let (dims, values) =
+      decode_compressed_real_array(&payload).expect("decodes");
+    assert_eq!(dims, vec![3, 2]);
+    assert_eq!(values, vec![0.0, 0.0, 1.5, 2.25, -3.0, 4.0]);
+    assert_eq!(
+      packed_real_array_to_wl_list(&dims, &values),
+      "{{0, 0}, {1.5, 2.25}, {-3, 4}}"
+    );
+  }
+
+  #[test]
+  fn test_box_source_to_graphics_expr_renames_primitive_boxes() {
+    assert_eq!(
+      box_source_to_graphics_expr("PointBox[{{0, 0}, {1, 1}}]"),
+      "Point[{{0, 0}, {1, 1}}]"
+    );
+    assert_eq!(
+      box_source_to_graphics_expr("LineBox[{{0, 0}, {1, 1}}]"),
+      "Line[{{0, 0}, {1, 1}}]"
+    );
+    assert_eq!(
+      box_source_to_graphics_expr("DiskBox[{0, 0}, 1]"),
+      "Disk[{0, 0}, 1]"
+    );
+    assert_eq!(
+      box_source_to_graphics_expr("RectangleBox[{0, 0}, {1, 1}]"),
+      "Rectangle[{0, 0}, {1, 1}]"
+    );
+  }
+
+  #[test]
+  fn test_box_source_to_graphics_expr_flattens_style_box() {
+    assert_eq!(
+      box_source_to_graphics_expr(
+        "StyleBox[{PointBox[{0, 0}]}, RGBColor[1, 0, 0], StripOnInput -> False]"
+      ),
+      "{RGBColor[1, 0, 0], {Point[{0, 0}]}}"
+    );
+  }
+
+  #[test]
+  fn test_box_source_to_graphics_expr_unwraps_tag_box() {
+    assert_eq!(
+      box_source_to_graphics_expr("TagBox[PointBox[{0, 0}], Whatever]"),
+      "Point[{0, 0}]"
+    );
+  }
+
+  #[test]
+  fn test_box_source_to_graphics_expr_filled_curve_to_polygon() {
+    // The tag structure (first argument) only distinguishes line/Bezier
+    // segments; it is dropped, and the point run (second argument) becomes
+    // a straight-edged `Polygon`.
+    assert_eq!(
+      box_source_to_graphics_expr(
+        "FilledCurveBox[{{{1, 2, 3}}}, {{{0, 0}, {1, 0}, {1, 1}}}, \
+         CurveClosed -> {1}]"
+      ),
+      "Polygon[{{{0, 0}, {1, 0}, {1, 1}}}]"
+    );
+  }
+
+  #[test]
+  fn test_box_source_to_graphics_expr_inlines_compressed_data() {
+    let payload = make_compressed_real_array(&[2, 2], &[0.0, 0.0, 1.0, 1.0]);
+    let source = format!(
+      "FilledCurveBox[{{{{1, 2, 2}}}}, {{CompressedData[\"{payload}\"]}}]"
+    );
+    assert_eq!(
+      box_source_to_graphics_expr(&source),
+      "Polygon[{{{0, 0}, {1, 1}}}]"
+    );
+  }
+
+  #[test]
+  fn test_stored_output_vector_graphics_svg_renders_points() {
+    let content = "Cell[BoxData[GraphicsBox[{RGBColor[1, 0, 0], \
+                    PointBox[{0, 0}]}]], \"Output\"]";
+    let svg = stored_output_vector_graphics_svg(content).expect("renders");
+    assert!(svg.contains("<svg"), "{svg}");
+    assert!(svg.contains("<circle"), "{svg}");
+  }
+
+  #[test]
+  fn test_stored_output_vector_graphics_svg_skips_raster_and_plain_content() {
+    // A raster snapshot is `stored_output_image_svg`'s job, not this one's.
+    let raster = "GraphicsBox[TagBox[RasterBox[CompressedData[\"1:x\"], \
+                  {{0, 1}, {1, 0}}, {0, 255}], BoxForm`ImageTag[\"Byte\"]]]";
+    assert!(stored_output_vector_graphics_svg(raster).is_none());
+    assert!(stored_output_vector_graphics_svg("{1, 2, 3}").is_none());
+  }
+
+  #[test]
+  fn test_extract_cell_content_inline_vector_graphics_literal_stays_runnable() {
+    // A Demonstration's initialization code sometimes bakes in a
+    // precomputed picture (e.g. a lattice of points) as an inline
+    // `Graphics[…]` literal rather than recomputing it on every
+    // evaluation; the FrontEnd typesets that literal as a `GraphicsBox[…]`
+    // of vector primitives, exactly like the one this regression guards
+    // (a real Demonstration used `pts = GraphicsBox[…]` this way, with
+    // `FilledCurveBox`/`PointBox` primitives holding `CompressedData`
+    // coordinates — reproduced here with synthetic data, not the original
+    // notebook's). Left unconverted, the reconstructed Input cell would
+    // embed that raw box syntax as code, which fails to evaluate; this
+    // must come back as ordinary, runnable `Graphics[…]` instead.
+    let payload =
+      make_compressed_real_array(&[3, 2], &[0.0, 0.0, 1.0, 0.0, 1.0, 1.0]);
+    let s = format!(
+      "RowBox[{{\"pts\", \"=\", GraphicsBox[{{StyleBox[{{FilledCurveBox[{{{{1, \
+       2, 3}}}}, {{CompressedData[\"{payload}\"]}}]}}, RGBColor[1, 0, 0]], \
+       PointBox[{{0, 0}}]}}]}}]"
+    );
+    let result = extract_cell_content(&s);
+    assert!(!result.contains("FilledCurveBox"), "{result}");
+    assert!(!result.contains("CompressedData"), "{result}");
+    assert!(result.contains("Graphics["), "{result}");
+    assert!(result.contains("Polygon["), "{result}");
+    assert!(result.contains("Point["), "{result}");
+    // The reconstructed source must actually parse as Wolfram Language.
+    assert!(crate::parse_to_expr(&result).is_ok(), "{result}");
   }
 
   #[test]
@@ -4306,6 +4812,18 @@ Cell["Chapter 2", "Chapter"]
     assert_eq!(extract_cell_content(s), "(x)^(2)");
   }
 
+  /// `SuperscriptBox["H", "-"]` typesets the hydride ion "H⁻": a bare `-`
+  /// with no operand, used purely for display. `(H)^(-)` would dangle the
+  /// minus sign and fail to parse — Mathematica itself falls back to the
+  /// unevaluated `Superscript` wrapper whenever a script isn't a valid
+  /// expression on its own. From the "Variational Calculations on the
+  /// Helium Isoelectronic Series" Demonstration's element/ion table.
+  #[test]
+  fn test_extract_cell_content_superscript_bare_minus() {
+    let s = r#"BoxData[SuperscriptBox["\"\<H\>\"", "-"]]"#;
+    assert_eq!(extract_cell_content(s), "Superscript[\"H\", \"-\"]");
+  }
+
   #[test]
   fn test_extract_cell_content_squared_derivative() {
     // Nested: (φ'[t])^2 — a derivative RowBox inside a power box.
@@ -4331,6 +4849,23 @@ Cell["Chapter 2", "Chapter"]
     assert_eq!(
       crate::interpret(&format!("({content})&[3]")).unwrap(),
       "3*Cos[x]"
+    );
+  }
+
+  #[test]
+  fn test_extract_cell_content_symbol_before_power_juxtaposition() {
+    // A coefficient symbol directly followed by a power box with no
+    // operator between them — `RowBox[{"a", RowBox[{"x", "^", "3"}]}]` — is
+    // the FrontEnd's typeset form of `a*x^3` (implicit multiplication with
+    // no `\[InvisibleTimes]` token). Gluing the two pieces' text together
+    // verbatim reads back as the single identifier `ax` to the third power
+    // instead of `a` times `x^3`.
+    let s = r#"BoxData[RowBox[{"a", RowBox[{"x", "^", "3"}]}]]"#;
+    let content = extract_cell_content(s);
+    assert_eq!(content, "a*x^3");
+    assert_eq!(
+      crate::interpret(&format!("({content}) /. {{a -> 2, x -> 3}}")).unwrap(),
+      "54"
     );
   }
 
@@ -4768,6 +5303,52 @@ yf4GL4DwC5VA4w
         "DynamicModuleBox[{}, DynamicBox[…]]"
       ),
       Vec::<String>::new()
+    );
+  }
+
+  #[test]
+  fn test_reconstruct_manipulate_from_box_dump() {
+    // A minimal stand-in for the `Manipulate`ManipulateBoxes[…]` structure
+    // Wolfram embeds in a saved Output cell: enough surrounding box syntax
+    // to exercise the extraction, with unrelated keys interleaved the way
+    // the real dump orders "Variables"/"ControllerVariables" before "Body".
+    let dump = "DynamicModuleBox[{$CellContext`a$$ = 2}, \
+      DynamicBox[Manipulate`ManipulateBoxes[\n\
+      1, StandardForm, \n\
+      \"Variables\" :> {$CellContext`a$$ = 2}, \n\
+      \"Body\" :> Plot[$CellContext`a$$*Sin[$CellContext`x], {$CellContext`x, 0, \
+      2 Pi}], \n\
+      \"Specifications\" :> {{{$CellContext`a$$, 2, \"amplitude\"}, 1, 5}}, \n\
+      \"Options\" :> {}],\n\
+      DynamicModuleValues:>{}]]";
+    let src = reconstruct_manipulate_from_box_dump(dump).unwrap();
+    assert_eq!(
+      src,
+      "Manipulate[Plot[a$$*Sin[x], {x, 0, 2 Pi}], {{a$$, 2, \"amplitude\"}, 1, 5}]"
+    );
+  }
+
+  #[test]
+  fn test_reconstruct_manipulate_from_box_dump_multiple_specs() {
+    let dump = "DynamicModuleBox[{}, DynamicBox[Manipulate`ManipulateBoxes[\n\
+      1, StandardForm, \n\
+      \"Body\" :> $CellContext`f[$CellContext`n$$, $CellContext`m$$], \n\
+      \"Specifications\" :> {{{$CellContext`n$$, 1, \"n\"}, 1, 10}, \
+      {{$CellContext`m$$, 1, \"m\"}, {1, 2, 3}}}]]]";
+    let src = reconstruct_manipulate_from_box_dump(dump).unwrap();
+    assert_eq!(
+      src,
+      "Manipulate[f[n$$, m$$], {{n$$, 1, \"n\"}, 1, 10}, {{m$$, 1, \"m\"}, {1, 2, 3}}]"
+    );
+  }
+
+  #[test]
+  fn test_reconstruct_manipulate_from_box_dump_absent() {
+    assert_eq!(
+      reconstruct_manipulate_from_box_dump(
+        "DynamicModuleBox[{}, DynamicBox[…]]"
+      ),
+      None
     );
   }
 

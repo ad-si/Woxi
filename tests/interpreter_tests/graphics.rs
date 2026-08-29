@@ -40,6 +40,29 @@ fn y_tick_labels(svg: &str) -> Vec<String> {
   labels.into_iter().map(|(_, text)| text).collect()
 }
 
+/// The x-axis tick labels of a rendered plot, left to right — the
+/// `text-anchor="middle"` counterpart of `y_tick_labels` above. Needed
+/// because a bare `svg.contains(">1</text>")`-style check can't tell an
+/// x-axis label from an unrelated y-axis label with the same text (and
+/// plotters wraps an automatic label's text in newlines, e.g. `>\n1\n</text>`,
+/// unlike the inline `>a</text>` explicit ticks render).
+fn x_tick_labels(svg: &str) -> Vec<String> {
+  let mut labels: Vec<(i64, String)> = svg
+    .split("<text ")
+    .skip(1)
+    .filter_map(|tag| tag.split_once('>'))
+    .filter(|(open, _)| open.contains("text-anchor=\"middle\""))
+    .filter_map(|(open, rest)| {
+      let x = open.split("x=\"").nth(1)?.split('"').next()?;
+      let text = rest.split('<').next()?.trim().to_string();
+      Some((x.parse::<f64>().ok()? as i64, text))
+    })
+    .filter(|(_, text)| !text.is_empty())
+    .collect();
+  labels.sort_by_key(|(x, _)| *x);
+  labels.into_iter().map(|(_, text)| text).collect()
+}
+
 /// Remove the embedded-font `<defs><style>…</style></defs>` block the exporter
 /// injects right after the opening `<svg>` tag, leaving the rest untouched.
 fn strip_font_style(svg: &str) -> String {
@@ -9283,6 +9306,63 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn histogram_explicit_ticks() {
+      // `Ticks -> {xspec, yspec}` draws exactly the given x positions/labels
+      // (bin-center labels here) instead of the automatic "nice step" ones,
+      // and leaves the y axis on `Automatic` untouched.
+      let svg = export_svg(
+        "Histogram[{1, 2, 2, 3, 3, 3, 4, 4, 5}, {1}, Ticks -> \
+         {{{1.5, \"a\"}, {2.5, \"b\"}, {3.5, \"c\"}}, Automatic}]",
+      );
+      // The x axis shows exactly the explicit labels, in position order —
+      // none of the automatic bin-edge labels (1, 2, 3, 4, 5) leak through.
+      assert_eq!(x_tick_labels(&svg), ["a", "b", "c"]);
+      // The y axis (left on `Automatic`) keeps its own automatic labels,
+      // unaffected by the x axis's explicit ones.
+      assert!(
+        !y_tick_labels(&svg).is_empty(),
+        "y axis should keep its automatic labels: {svg}"
+      );
+    }
+
+    #[test]
+    fn histogram_explicit_ticks_x_only() {
+      // `Ticks -> {xspec}` (no yspec) leaves the y axis on its own default.
+      let default_svg = export_svg("Histogram[{1, 2, 2, 3, 3, 3}, {1}]");
+      let svg = export_svg(
+        "Histogram[{1, 2, 2, 3, 3, 3}, {1}, Ticks -> {{{1.5, \"lo\"}}}]",
+      );
+      assert_eq!(x_tick_labels(&svg), ["lo"]);
+      // Automatic y labels (e.g. the tallest bar's count) still show up,
+      // same as without any `Ticks` option at all.
+      assert_eq!(
+        y_tick_labels(&svg),
+        y_tick_labels(&default_svg),
+        "y axis must keep its automatic labels when only x ticks are given"
+      );
+    }
+
+    #[test]
+    fn histogram_ticks_none_suppresses_all_ticks() {
+      // `Ticks -> None` draws no tick marks/labels on either axis, matching
+      // Plot's `Ticks -> None` semantics.
+      let svg = export_svg("Histogram[{1, 2, 2, 3, 3, 3}, {1}, Ticks -> None]");
+      assert!(
+        x_tick_labels(&svg).is_empty(),
+        "no automatic x tick labels expected with Ticks -> None: {svg}"
+      );
+      assert!(
+        y_tick_labels(&svg).is_empty(),
+        "no automatic y tick labels expected with Ticks -> None: {svg}"
+      );
+      // A *different* Histogram call without `Ticks -> None` still shows its
+      // automatic labels on both axes (independent options per call).
+      let svg_default = export_svg("Histogram[{1, 2, 2, 3, 3, 3}, {1}]");
+      assert!(!x_tick_labels(&svg_default).is_empty());
+      assert!(!y_tick_labels(&svg_default).is_empty());
+    }
+
+    #[test]
     fn histogram_image_size() {
       let svg =
         export_svg("Histogram[{1, 2, 2, 3, 3, 3}, ImageSize -> {500, 400}]");
@@ -11054,10 +11134,32 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn array_plot_sparse_array() {
+      // Regression: SparseArray's canonical internal form isn't a plain
+      // nested List, so ArrayPlot used to reject it with "first argument
+      // must be a matrix (list of lists)" instead of densifying it first.
+      let dense = export_svg("ArrayPlot[{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}]");
+      let sparse = export_svg(
+        "ArrayPlot[SparseArray[{{1, 1} -> 1, {2, 2} -> 1, {3, 3} -> 1}, {3, 3}]]",
+      );
+      assert_eq!(sparse, dense);
+    }
+
+    #[test]
     fn matrix_plot_basic() {
       insta::assert_snapshot!(export_svg(
         "MatrixPlot[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}]"
       ));
+    }
+
+    #[test]
+    fn matrix_plot_sparse_array() {
+      // Regression: same SparseArray-densification bug as ArrayPlot.
+      let dense = export_svg("MatrixPlot[{{1, 0}, {0, 2}}]");
+      let sparse = export_svg(
+        "MatrixPlot[SparseArray[{{1, 1} -> 1, {2, 2} -> 2}, {2, 2}]]",
+      );
+      assert_eq!(sparse, dense);
     }
 
     #[test]
@@ -14314,6 +14416,117 @@ mod graphics_grid {
       !svg.contains(">Missing[]</text>"),
       "Missing[] should not render as literal text"
     );
+  }
+
+  // `"label" -> Graphics[…]` is the idiom Wolfram demonstrations use for a
+  // caption cell with an inline swatch (a color-preview disk next to its
+  // name, e.g. Wolfram Demonstrations Project's "Design of Mass Timber
+  // Panels as Heat Exchangers"). Wolfram typesets a `Rule` cell as its
+  // pattern, an arrow, and its replacement; only a Graphics-valued
+  // replacement is drawn — a Rule between two plain values still prints
+  // as text.
+  #[test]
+  fn rule_cell_with_graphics_replacement_renders_inline() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Grid[{{\"option\" -> Graphics[{Red, Disk[]}, ImageSize -> 20]}}]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(svg.starts_with("<svg"), "Should produce SVG output");
+    assert!(
+      !svg.contains("Graphics["),
+      "The Graphics[…] call should be rendered, not printed as source: {svg}"
+    );
+    assert!(
+      svg.contains("option"),
+      "The rule's pattern should still be shown as a label: {svg}"
+    );
+    assert!(
+      svg.contains("<circle") || svg.contains("<ellipse"),
+      "The rule's Graphics replacement should draw the disk: {svg}"
+    );
+  }
+
+  #[test]
+  fn rule_cell_with_plain_values_still_prints_as_text() {
+    clear_state();
+    let svg = export_svg("Grid[{{\"a\" -> 1}}]");
+    assert!(svg.contains('a'));
+    assert!(svg.contains('1'));
+  }
+}
+
+// A bare `LineLegend[…]` (not wrapped in `Legended`) is how Wolfram
+// Demonstrations often place a legend beside a plot instead of attaching it
+// via `PlotLegends` — Wolfram's front end typesets it as line-style swatches
+// and labels either way, rather than the symbolic `LineLegend[…]` call.
+mod line_legend {
+  use super::*;
+
+  #[test]
+  fn bare_line_legend_renders_as_swatches() {
+    clear_state();
+    // `LineLegend[…]` alone (no `Legended`/`Grid`/`Row` wrapper) still
+    // stays symbolic in its *printed* form, matching wolframscript's
+    // kernel-level InputForm — this only covers how it draws when a
+    // picture of it is asked for (`ExportString[…, "SVG"]`, or nested in
+    // a layout, which `line_legend_nested_in_grid_cell_renders_inline`
+    // below covers, and which is how Woxi Studio actually reaches it: a
+    // Demonstration places `LineLegend[…]` inside the `Grid`/`Row` a
+    // `Manipulate` body returns, never as the body's sole result).
+    let svg = export_svg("LineLegend[{Red, Blue}, {\"A\", \"B\"}]");
+    assert!(
+      !svg.contains("LineLegend["),
+      "Should be drawn, not printed as source: {svg}"
+    );
+    assert_eq!(
+      svg.matches("<line ").count(),
+      2,
+      "One line sample per entry: {svg}"
+    );
+    assert!(svg.contains('A') && svg.contains('B'));
+  }
+
+  #[test]
+  fn line_legend_honours_thickness_and_dashing_directives() {
+    clear_state();
+    let svg = export_svg(
+      "LineLegend[{Red, {Thickness[Large], Blue}, \
+       {Dashing[{0.05, 0.03}], Green}}, {\"A\", \"B\", \"C\"}]",
+    );
+    assert_eq!(svg.matches("<line ").count(), 3);
+    assert!(
+      svg.contains("stroke-dasharray"),
+      "The Dashing entry should produce a dashed sample: {svg}"
+    );
+    // The thick entry's stroke-width must exceed the plain-color entry's.
+    let widths: Vec<f64> = svg
+      .split("stroke-width=\"")
+      .skip(1)
+      .filter_map(|s| s.split('"').next())
+      .filter_map(|s| s.parse().ok())
+      .collect();
+    assert!(
+      widths.len() >= 2
+        && widths.iter().copied().fold(0.0, f64::max) > widths[0],
+      "Thickness[Large] should widen its sample relative to the default: {widths:?}"
+    );
+  }
+
+  #[test]
+  fn line_legend_nested_in_grid_cell_renders_inline() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Grid[{{Graphics[{Red, Disk[]}], LineLegend[{Red, Blue}, {\"x\", \"y\"}]}}]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(
+      !svg.contains("LineLegend["),
+      "Should be drawn inside the grid cell, not printed as source: {svg}"
+    );
+    assert_eq!(svg.matches("<line ").count(), 2);
   }
 }
 
@@ -21967,6 +22180,193 @@ mod manipulate {
     assert!(
       json.contains(r#""bold":true,"color":"rgb(255,0,0)""#),
       "json: {json}"
+    );
+  }
+
+  // ── PopupMenu[…] inside a display element (dynamically many dropdowns) ──
+
+  /// A Demonstrations idiom: one `PopupMenu` per slot of a shared list
+  /// variable, generated by mapping a pure function over `Range[count]`
+  /// (not `Table` with a named iterator — `Dynamic` is `HoldFirst`, and
+  /// `Table[Dynamic[v[[i]]], {i, n}]` would leave the literal symbol `i`
+  /// stuck in every held `Dynamic`, the classic `Table`-inside-`Hold`
+  /// pitfall; a pure function's `#` substitutes before the hold takes
+  /// effect). Here: one shift-number dropdown per worker, count fixed at 2.
+  const SHIFT_PICKER_EXAMPLE: &str = "Manipulate[shifts, \
+    {{numWorkers, 2}, 1, 3, 1, ControlType -> None}, \
+    {{shifts, {1, 1, 1}}, None}, \
+    Dynamic[Row[Outer[PopupMenu[Dynamic[shifts[[#]]], {1, 2, 3}]&, \
+    Range[numWorkers]]]]]";
+
+  #[test]
+  fn display_popup_menu_renders_one_dropdown_per_slot() {
+    use woxi::functions::graphics::build_manipulate_display;
+    let expr = interpret_to_expr(SHIFT_PICKER_EXAMPLE).unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("shift picker");
+    assert_eq!(spec.displays.len(), 1, "one trailing display element");
+    let bindings = manipulate_initial_bindings(&spec);
+
+    let popups = woxi::with_scoped_globals(&bindings, || {
+      let tree = build_manipulate_display(&spec.displays[0], &[]);
+      let DisplayNode::Row(children) = tree else {
+        panic!("expected a Row of popups, got {tree:?}");
+      };
+      children
+    });
+    assert_eq!(popups.len(), 2, "numWorkers starts at 2");
+    for (i, popup) in popups.iter().enumerate() {
+      let DisplayNode::Popup {
+        target,
+        current,
+        choices,
+      } = popup
+      else {
+        panic!("expected a Popup leaf, got {popup:?}");
+      };
+      assert_eq!(*target, format!("shifts[[{}]]", i + 1));
+      assert_eq!(*current, "1", "every worker starts on shift 1");
+      assert_eq!(
+        choices,
+        &vec![
+          ("1".to_string(), "1".to_string()),
+          ("2".to_string(), "2".to_string()),
+          ("3".to_string(), "3".to_string()),
+        ]
+      );
+    }
+  }
+
+  #[test]
+  fn display_popup_menu_count_tracks_a_live_control() {
+    // Changing `numWorkers` and rebuilding the display — exactly what
+    // `ManipulateState::reevaluate` does on every control change — changes
+    // how many popups render, since the whole `Row[Outer[…]]` re-expands
+    // from scratch under the `Dynamic` hold on each rebuild.
+    use woxi::functions::graphics::build_manipulate_display;
+    let expr = interpret_to_expr(SHIFT_PICKER_EXAMPLE).unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("shift picker");
+
+    let count_for = |num_workers: &str| -> usize {
+      let bindings = vec![
+        ("numWorkers".to_string(), num_workers.to_string()),
+        ("shifts".to_string(), "{1, 1, 1}".to_string()),
+      ];
+      woxi::with_scoped_globals(&bindings, || {
+        let DisplayNode::Row(children) =
+          build_manipulate_display(&spec.displays[0], &[])
+        else {
+          panic!("expected a Row of popups");
+        };
+        children.len()
+      })
+    };
+    assert_eq!(count_for("1"), 1);
+    assert_eq!(count_for("2"), 2);
+    assert_eq!(count_for("3"), 3);
+  }
+
+  #[test]
+  fn display_popup_menu_selection_mutates_the_target_slot() {
+    // Selecting a choice fires `<target> = <value>`; applying that mutation
+    // (exactly what `apply_display_mutation` does in Woxi Studio) writes
+    // into the right slot of the shared list, leaving the others alone.
+    use woxi::functions::graphics::{
+      apply_manipulate_mutations, build_manipulate_display,
+    };
+    let expr = interpret_to_expr(SHIFT_PICKER_EXAMPLE).unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("shift picker");
+    let bindings = manipulate_initial_bindings(&spec);
+
+    let popups = woxi::with_scoped_globals(&bindings, || {
+      let DisplayNode::Row(children) =
+        build_manipulate_display(&spec.displays[0], &[])
+      else {
+        panic!("expected a Row of popups");
+      };
+      children
+    });
+    let DisplayNode::Popup { target, .. } = &popups[1] else {
+      panic!("expected a Popup leaf, got {:?}", popups[1]);
+    };
+    assert_eq!(target, "shifts[[2]]");
+    let mutation = format!("{target} = 3");
+
+    let updated = apply_manipulate_mutations(&bindings, &[mutation]);
+    assert_eq!(updated.len(), 1);
+    assert_eq!(updated[0].0, "shifts");
+    assert_eq!(updated[0].1, "{1, 3, 1}", "only worker 2's shift changes");
+
+    // Re-rendering with the mutated state preselects the new choice.
+    let mut bindings2 = bindings;
+    bindings2[1].1 = updated[0].1.clone();
+    let popups2 = woxi::with_scoped_globals(&bindings2, || {
+      let DisplayNode::Row(children) =
+        build_manipulate_display(&spec.displays[0], &[])
+      else {
+        panic!("expected a Row of popups");
+      };
+      children
+    });
+    let DisplayNode::Popup { current, .. } = &popups2[1] else {
+      panic!("expected a Popup leaf");
+    };
+    assert_eq!(current, "3");
+  }
+
+  #[test]
+  fn display_popup_menu_json_exposes_target_current_and_choices() {
+    // The Playground consumes the same tree as JSON.
+    use woxi::functions::graphics::render_manipulate_display;
+    let expr = interpret_to_expr(SHIFT_PICKER_EXAMPLE).unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("shift picker");
+    let bindings = manipulate_initial_bindings(&spec);
+    let json = woxi::with_scoped_globals(&bindings, || {
+      render_manipulate_display(&spec.displays[0], &[])
+    });
+    assert!(json.contains(r#""kind":"popup""#), "json: {json}");
+    assert!(json.contains(r#""target":"shifts[[1]]""#), "json: {json}");
+    assert!(json.contains(r#""current":"1""#), "json: {json}");
+    assert!(
+      json.contains(r#""choices":[{"value":"1","label":"1"}"#),
+      "json: {json}"
+    );
+  }
+
+  /// A `PopupMenu` choice list may itself be `value -> "label"` rules (a
+  /// lookup, not just plain numbers) and may be held (e.g. built with
+  /// `Thread[…]`) — the same shapes `togglerbar_node` already resolves for
+  /// `TogglerBar`, reused here via `discrete_choice_columns`.
+  #[test]
+  fn display_popup_menu_resolves_rule_form_and_held_choice_lists() {
+    use woxi::functions::graphics::build_manipulate_display;
+    let code = "Manipulate[color, \
+      {{color, \"red\"}, None}, \
+      Dynamic[PopupMenu[Dynamic[color], \
+      Thread[{\"red\", \"green\", \"blue\"} -> \
+      {\"Red\", \"Green\", \"Blue\"}]]]]";
+    let expr = interpret_to_expr(code).unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("color picker");
+    let bindings = manipulate_initial_bindings(&spec);
+    let node = woxi::with_scoped_globals(&bindings, || {
+      build_manipulate_display(&spec.displays[0], &[])
+    });
+    let DisplayNode::Popup {
+      target,
+      current,
+      choices,
+    } = node
+    else {
+      panic!("expected a Popup leaf, got {node:?}");
+    };
+    assert_eq!(target, "color");
+    assert_eq!(current, "\"red\"");
+    assert_eq!(
+      choices,
+      vec![
+        ("\"red\"".to_string(), "Red".to_string()),
+        ("\"green\"".to_string(), "Green".to_string()),
+        ("\"blue\"".to_string(), "Blue".to_string()),
+      ]
     );
   }
 

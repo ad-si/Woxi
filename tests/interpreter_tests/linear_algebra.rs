@@ -159,6 +159,39 @@ mod dot {
       "{2*x, 3*y}"
     );
   }
+
+  // Regression: Vector.Vector (and the Matrix.Vector/Vector.Matrix/
+  // Matrix.Matrix cases built the same way) summed a symbolic dot
+  // product's terms one at a time via repeated two-argument `Plus`
+  // calls (`sum = eval_add(sum, term)`). Each call re-flattens and
+  // re-collects the *whole* running sum, so summing n terms this way is
+  // O(1) + O(2) + … + O(n) = O(n²) — turning a dot product against a
+  // symbolic vector, the shape a PDE collocation method's equations take
+  // (a numeric matrix row dotted with a vector of unknowns), into the
+  // dominant cost of solving even a moderately large linear system. This
+  // stayed hidden in small tests because the quadratic term only bites
+  // once a single dot product has enough distinct symbolic terms.
+  // Passing every term to `Plus` in one call instead keeps the work
+  // linear in the vector length.
+  #[test]
+  fn large_sparse_symbolic_vector_dot_stays_fast() {
+    let start = std::time::Instant::now();
+    let result = interpret(
+      "k = 45; row = Table[If[Mod[i, k] == 0, N[i], 0.], {i, 1, 2000}]; \
+       total = row . Array[x, 2000]; \
+       total /. Table[x[i] -> 1, {i, 1, 2000}]",
+    )
+    .unwrap();
+    assert!(
+      start.elapsed().as_secs() < 5,
+      "a dot product against a symbolic vector must stay near-linear in \
+       the vector length, not quadratic"
+    );
+    // Sum of every multiple of 45 in [1, 2000]: 45 + 90 + ... + 1980.
+    let expected: f64 = (1..=2000).filter(|i| i % 45 == 0).sum::<i64>() as f64;
+    let val: f64 = result.parse().expect("should be a number");
+    assert_eq!(val, expected);
+  }
 }
 
 mod array_dot {
