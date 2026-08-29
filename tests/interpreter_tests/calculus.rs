@@ -9534,6 +9534,30 @@ mod findroot_symbolic_start {
     );
   }
 
+  // Regression test for the Broyden-fallback (opaque-function) branch's own
+  // `FindRoot::cvmit` emission, a code path distinct from the pre-existing
+  // single-variable one: a tight `MaxIterations` must still report failure
+  // to converge, and the (deliberately unconverged) best point reached so
+  // far, rather than either silently succeeding or panicking.
+  #[test]
+  fn findroot_multivariate_opaque_function_max_iterations_reports_cvmit() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "f[a_?NumericQ] := a^2 - 2; g[a_?NumericQ, b_?NumericQ] := a + b - 3; \
+       FindRoot[{f[x] == 0, g[x, y] == 0}, {x, 1, 1.2}, {y, 1, 1.2}, MaxIterations -> 1]",
+    )
+    .unwrap();
+    assert!(
+      result
+        .warnings
+        .iter()
+        .any(|w| w.contains("FindRoot::cvmit")),
+      "expected a cvmit message but got: {:?}",
+      result.warnings
+    );
+    assert_eq!(result.result, "{x -> 1.5, y -> 1.4999999999999993}");
+  }
+
   #[test]
   fn findroot_multivariate_invalid_max_iterations_reports_ioppfa() {
     clear_state();
