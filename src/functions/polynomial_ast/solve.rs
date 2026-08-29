@@ -6643,6 +6643,12 @@ fn find_root_rename_walk(
 
 /// Evaluate `expr` to an f64 with every variable in `vars` bound to the
 /// corresponding value in `vals`, in a single substitution pass.
+///
+/// Builds a fresh `vars`-length binding table on every call, so it is only
+/// cheap when called a handful of times per point. The Newton loop below
+/// evaluates a whole equation *and* Jacobian row at the same point `x` —
+/// call [`find_root_eval_multivar_at`] there instead, sharing one binding
+/// table across all of those calls (see its doc comment).
 fn find_root_eval_multivar(
   expr: &Expr,
   vars: &[String],
@@ -6651,7 +6657,26 @@ fn find_root_eval_multivar(
   let reals: Vec<Expr> = vals.iter().map(|&x| Expr::Real(x)).collect();
   let bindings: Vec<(&str, &Expr)> =
     vars.iter().map(String::as_str).zip(reals.iter()).collect();
-  let e = crate::syntax::substitute_variables(expr, &bindings);
+  find_root_eval_multivar_at(expr, &bindings)
+}
+
+/// Same as [`find_root_eval_multivar`], but takes an already-built binding
+/// table instead of rebuilding one from `vars`/`vals`.
+///
+/// A Newton iteration over `n` variables evaluates `n` equations plus an
+/// `n`×`n` Jacobian at the *same* point — up to `n^2 + n` calls that all
+/// need the identical `var -> value` table. Rebuilding that O(n) table
+/// inside every one of those calls (as [`find_root_eval_multivar`] does)
+/// turns one Newton iteration into O(n^3) work regardless of how sparse
+/// the equations are, since the rebuild cost is paid even when a given
+/// equation or Jacobian entry mentions only a few variables. Building the
+/// table once per iteration and sharing it here keeps that cost O(n) per
+/// iteration instead.
+fn find_root_eval_multivar_at(
+  expr: &Expr,
+  bindings: &[(&str, &Expr)],
+) -> Result<f64, InterpreterError> {
+  let e = crate::syntax::substitute_variables(expr, bindings);
   let evaled = crate::evaluator::evaluate_expr_to_expr(&e)?;
   match &evaled {
     Expr::Integer(k) => Ok(*k as f64),
@@ -6809,19 +6834,51 @@ fn find_root_multivariate(
   // Newton iteration.
   let max_iter = 100;
   let tol = 1e-13;
+  // The point with the smallest residual seen so far, and that residual.
+  // A large, ill-conditioned system (e.g. a PDE collocation matrix, whose
+  // condition number grows with the grid size) can have an achievable
+  // residual floor well above `tol` — f64 rounding in the linear solve
+  // limits it, not the loop's remaining iterations. Once the residual
+  // stops improving from one iteration to the next, every further
+  // iteration is spending equation/Jacobian evaluations (each O(n)-plus)
+  // on numerical noise, not progress: burning through the rest of
+  // `max_iter` this way costs seconds to minutes on a large system
+  // without moving the answer. Tracking the best iterate and stopping the
+  // moment progress stalls returns that already-best point immediately
+  // instead, while leaving genuinely (even slowly) converging cases to
+  // keep iterating exactly as before.
+  let mut best_x = x.clone();
+  let mut best_resid = f64::INFINITY;
+  let mut prev_resid = f64::INFINITY;
   for _ in 0..max_iter {
+    // Shared by every equation/Jacobian evaluation at this point — see
+    // `find_root_eval_multivar_at`'s doc comment for why this must be
+    // built once per iteration rather than once per entry.
+    let reals: Vec<Expr> = x.iter().map(|&v| Expr::Real(v)).collect();
+    let bindings: Vec<(&str, &Expr)> =
+      vars.iter().map(String::as_str).zip(reals.iter()).collect();
+
     let mut fv = vec![0.0; n];
     for (i, f) in eqns.iter().enumerate() {
-      fv[i] = find_root_eval_multivar(f, &vars, &x)?;
+      fv[i] = find_root_eval_multivar_at(f, &bindings)?;
     }
-    if fv.iter().fold(0.0f64, |a, &b| a.max(b.abs())) < tol {
+    let resid = fv.iter().fold(0.0f64, |a, &b| a.max(b.abs()));
+    if resid < best_resid {
+      best_resid = resid;
+      best_x.clone_from(&x);
+    }
+    if resid < tol {
       break;
     }
+    if resid >= prev_resid {
+      break;
+    }
+    prev_resid = resid;
     let mut jm = vec![vec![0.0; n]; n];
     for (i, row) in jac.iter().enumerate() {
       for (j, dij) in row.iter().enumerate() {
         let entry = match dij {
-          Some(d) => quietly(|| find_root_eval_multivar(d, &vars, &x))
+          Some(d) => quietly(|| find_root_eval_multivar_at(d, &bindings))
             .ok()
             .filter(|v| v.is_finite()),
           None => None,
@@ -6853,6 +6910,7 @@ fn find_root_multivariate(
       break;
     }
   }
+  x = best_x;
   let rules: Vec<Expr> = raw_vars
     .iter()
     .zip(&x)
