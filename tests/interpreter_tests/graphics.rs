@@ -21870,9 +21870,9 @@ mod manipulate {
       ManipulateControl::Discrete { name, values, .. } => {
         assert_eq!(name, "g");
         // The five Platonic solids, the Archimedean solids (and their
-        // duals) with icosahedral or cubic symmetry, and the rhombic
-        // hexecontahedron stellation.
-        assert_eq!(values.len(), 19, "every known solid");
+        // duals) with icosahedral or cubic symmetry, the rhombic
+        // hexecontahedron stellation, and the triangular orthobicupola.
+        assert_eq!(values.len(), 20, "every known solid");
         assert!(values.contains(&"\"Cube\"".to_string()));
         assert!(values.contains(&"\"TruncatedIcosahedron\"".to_string()));
       }
