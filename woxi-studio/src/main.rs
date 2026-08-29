@@ -4571,6 +4571,51 @@ fn render_manipulate_widget<'a>(
   container(widget).padding(6).width(Fill).into()
 }
 
+/// One choice of a `DisplayNode::Popup` dropdown, as an iced `pick_list`
+/// option. Carries the choice's position in `DisplayNode::Popup::choices`
+/// rather than being keyed by its label text — `discrete_choice_label` is
+/// lossy (e.g. `1 -> "A", 2 -> "A"` renders the same label for two
+/// different values), so resolving a selection back to a value by label
+/// would make the second such choice unreachable through the UI.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PopupChoice {
+  index: usize,
+  label: String,
+}
+
+impl std::fmt::Display for PopupChoice {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(f, "{}", self.label)
+  }
+}
+
+/// Build a `DisplayNode::Popup`'s `pick_list` options and current selection
+/// from its `(value, label)` choices and the live value at `current`. Kept
+/// separate from `render_display_node` so the selection logic (in
+/// particular: no fabricated selection when nothing matches, and choices
+/// distinguished by index rather than by their possibly-colliding label)
+/// is unit-testable without going through iced.
+fn popup_menu_state(
+  choices: &[(String, String)],
+  current: &str,
+) -> (Vec<PopupChoice>, Option<PopupChoice>) {
+  let items: Vec<PopupChoice> = choices
+    .iter()
+    .enumerate()
+    .map(|(index, (_, label))| PopupChoice {
+      index,
+      label: label.clone(),
+    })
+    .collect();
+  // No selection (rather than fabricating one) when the live value at
+  // `target` doesn't match any choice.
+  let selected = choices
+    .iter()
+    .position(|(value, _)| value == current)
+    .map(|i| items[i].clone());
+  (items, selected)
+}
+
 /// Recursively render a Manipulate display-element widget tree into iced.
 /// Interactive checkboxes emit `ManipulateDisplayToggled` with the write-back
 /// assignment (`<target> = <on|off>`) to apply on toggle.
@@ -4660,6 +4705,31 @@ fn render_display_node<'a>(
       button(render_display_node(cell_idx, label))
         .padding([2, 10])
         .on_press(Message::ManipulateDisplayAction(cell_idx, action.clone()))
+        .into()
+    }
+    DisplayNode::Popup {
+      target,
+      current,
+      choices,
+    } => {
+      // A `PopupMenu[Dynamic[lval], choices]` display element: a dropdown
+      // whose selection writes `lval = <chosen value>` back, exactly like
+      // Checkbox/Toggler's write-back mutation. Options carry their index
+      // (see `PopupChoice`) rather than being keyed by label text, since
+      // `discrete_choice_label` is lossy and two choices can render the
+      // same label (e.g. `1 -> "A", 2 -> "A"`).
+      let (items, selected) = popup_menu_state(choices, current);
+      let target = target.clone();
+      let choices_owned = choices.clone();
+      let on_select = move |chosen: PopupChoice| {
+        let value = choices_owned[chosen.index].0.clone();
+        Message::ManipulateDisplayToggled(
+          cell_idx,
+          format!("{target} = {value}"),
+        )
+      };
+      pick_list(items, selected, on_select)
+        .width(iced::Length::Shrink)
         .into()
     }
     DisplayNode::Spacer { width } => {
@@ -12293,6 +12363,7 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
         }
         DisplayNode::Button { label, .. } => walk(label, out),
         DisplayNode::Checkbox { .. }
+        | DisplayNode::Popup { .. }
         | DisplayNode::Spacer { .. }
         | DisplayNode::Text { .. }
         | DisplayNode::Static { .. } => {}
@@ -12303,6 +12374,168 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
       walk(t, &mut out);
     }
     out
+  }
+
+  /// Collect every `Popup` in a display tree, in reading order.
+  fn collect_popups(
+    trees: &[woxi::functions::graphics::DisplayNode],
+  ) -> Vec<woxi::functions::graphics::DisplayNode> {
+    use woxi::functions::graphics::DisplayNode;
+    fn walk(node: &DisplayNode, out: &mut Vec<DisplayNode>) {
+      match node {
+        DisplayNode::Popup { .. } => out.push(node.clone()),
+        DisplayNode::Panel(child) => walk(child, out),
+        DisplayNode::Grid(rows) => {
+          for row in rows {
+            for cell in row {
+              walk(cell, out);
+            }
+          }
+        }
+        DisplayNode::Column(children) | DisplayNode::Row(children) => {
+          for c in children {
+            walk(c, out);
+          }
+        }
+        DisplayNode::Toggler { label, .. }
+        | DisplayNode::Button { label, .. } => walk(label, out),
+        DisplayNode::Checkbox { .. }
+        | DisplayNode::Spacer { .. }
+        | DisplayNode::Text { .. }
+        | DisplayNode::Static { .. } => {}
+      }
+    }
+    let mut out = Vec::new();
+    for t in trees {
+      walk(t, &mut out);
+    }
+    out
+  }
+
+  /// The write-back target of every `Popup` in a display tree, in reading
+  /// order.
+  fn popup_targets(
+    trees: &[woxi::functions::graphics::DisplayNode],
+  ) -> Vec<String> {
+    use woxi::functions::graphics::DisplayNode;
+    collect_popups(trees)
+      .into_iter()
+      .map(|p| {
+        let DisplayNode::Popup { target, .. } = p else {
+          unreachable!("collect_popups only collects Popup nodes")
+        };
+        target
+      })
+      .collect()
+  }
+
+  #[test]
+  fn popup_menu_state_selects_nothing_when_current_matches_no_choice() {
+    // A live value outside the choice list (or `popup_node`'s own fallback
+    // to the target's raw InputForm when it can't evaluate) must not
+    // fabricate a selection by falling back to the first choice — the
+    // dropdown should show no selection, like Toggler/SetterBar do.
+    let choices = vec![
+      ("1".to_string(), "One".to_string()),
+      ("2".to_string(), "Two".to_string()),
+    ];
+    let (items, selected) = popup_menu_state(&choices, "unresolved_expr");
+    assert_eq!(items.len(), 2);
+    assert!(selected.is_none());
+
+    let (_, selected) = popup_menu_state(&choices, "1");
+    assert_eq!(selected.map(|c| c.index), Some(0));
+  }
+
+  #[test]
+  fn popup_menu_state_distinguishes_choices_with_colliding_labels() {
+    // `discrete_choice_label` can render two different values with the same
+    // label (e.g. `1 -> "A", 2 -> "A"`); each must still be its own,
+    // separately selectable option, keyed by position rather than text.
+    let choices = vec![
+      ("1".to_string(), "A".to_string()),
+      ("2".to_string(), "A".to_string()),
+    ];
+    let (items, _) = popup_menu_state(&choices, "1");
+    assert_eq!(items.len(), 2);
+    assert_ne!(items[0], items[1], "same label, different index");
+    assert_eq!(items[0].label, "A");
+    assert_eq!(items[1].label, "A");
+
+    // Selecting the second "A" resolves back to value "2", not "1".
+    let (_, selected_first) = popup_menu_state(&choices, "1");
+    let (_, selected_second) = popup_menu_state(&choices, "2");
+    assert_eq!(selected_first.map(|c| c.index), Some(0));
+    assert_eq!(selected_second.map(|c| c.index), Some(1));
+  }
+
+  #[test]
+  fn dynamic_popup_menu_count_tracks_a_control_and_selection_writes_back() {
+    use woxi::functions::graphics::DisplayNode;
+    // One color-tag dropdown per box, generated with `Outer`/a pure
+    // function over `Range[boxCount]` — not `Table` with a named iterator,
+    // which would leave the literal symbol stuck inside the held `Dynamic`
+    // (see the analogous interpreter-level test for why). `boxCount` is
+    // itself hidden state, so the popup count is dynamic.
+    let code = "Manipulate[tags, \
+      {{boxCount, 2}, 1, 4, 1, ControlType -> None}, \
+      {{tags, {1, 1, 1, 1}}, ControlType -> None}, \
+      Dynamic[Row[Outer[PopupMenu[Dynamic[tags[[#]]], {1, 2, 3}]&, \
+      Range[boxCount]]]]]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("popup-per-box Manipulate must build a widget");
+    assert!(state.error.is_none(), "body must render: {:?}", state.error);
+    assert_eq!(state.state.len(), 2, "boxCount and tags are hidden state");
+
+    // Two popups initially: boxCount starts at 2, one dropdown per box —
+    // and each renders through the iced pick_list arm without panicking.
+    assert_eq!(
+      popup_targets(&state.display_trees),
+      vec!["tags[[1]]".to_string(), "tags[[2]]".to_string()]
+    );
+    for t in &state.display_trees {
+      let _: Element<'_, Message> = render_display_node(0, t);
+    }
+
+    // Bumping the hidden `boxCount` state and re-rendering (as any control
+    // change does) changes how many popups render — the whole `Row[Outer[…
+    // ]]` re-expands from scratch under the `Dynamic` hold on every frame.
+    if let Some(slot) = state.state.iter_mut().find(|(n, _)| n == "boxCount") {
+      slot.1 = "4".to_string();
+    }
+    state.reevaluate();
+    assert_eq!(
+      popup_targets(&state.display_trees),
+      vec![
+        "tags[[1]]".to_string(),
+        "tags[[2]]".to_string(),
+        "tags[[3]]".to_string(),
+        "tags[[4]]".to_string(),
+      ]
+    );
+
+    // Selecting box 3's choice "3" fires `tags[[3]] = 3`; applying that
+    // mutation — exactly what `Message::ManipulateDisplayToggled` drives via
+    // `apply_display_mutation`, the same path a Toggler/Checkbox write-back
+    // uses — writes into that slot alone, and the popup preselects the new
+    // choice afterwards.
+    let popups = collect_popups(&state.display_trees);
+    let DisplayNode::Popup { target, .. } = &popups[2] else {
+      panic!("expected a Popup leaf, got {:?}", popups[2]);
+    };
+    assert_eq!(target, "tags[[3]]");
+    let mutation = format!("{target} = 3");
+    state.apply_display_mutation(&mutation);
+    assert_eq!(
+      state.state.iter().find(|(n, _)| n == "tags").unwrap().1,
+      "{1, 1, 3, 1}",
+      "only box 3's tag changes"
+    );
+    let popups = collect_popups(&state.display_trees);
+    let DisplayNode::Popup { current, .. } = &popups[2] else {
+      panic!("expected a Popup leaf");
+    };
+    assert_eq!(current, "3");
   }
 
   #[test]
