@@ -4660,7 +4660,19 @@ mod high_level_functions {
       .unwrap();
       assert!(svg.starts_with("<svg"), "should be SVG markup: {svg}");
       assert!(svg.contains('\u{222B}'), "∫ rendered: {svg}");
-      assert!(svg.contains('\u{2146}'), "ⅆ differential rendered: {svg}");
+      // The differential renders as plain (italicized) "d" rather than the
+      // literal `\[DifferentialD]` glyph (U+2146, "ⅆ"): that Mathematical
+      // Alphanumeric Symbols codepoint has no glyph in most non-Mathematica
+      // fonts, so an SVG viewer's font-fallback substitute comes out a
+      // different width than the plain-ASCII advance the layout computed,
+      // overlapping the following variable (`ⅆx` reading as if it were
+      // "ddx"). See `test_traditional_form_integrate_differential_svg_uses_plain_d`
+      // in tests/interpreter_tests.rs for the focused regression test.
+      assert!(
+        !svg.contains('\u{2146}'),
+        "no raw U+2146 differential glyph: {svg}"
+      );
+      assert!(svg.contains(">d<"), "d differential rendered: {svg}");
       assert!(!svg.contains("Integrate["), "no literal head: {svg}");
       assert!(!svg.contains("TagBox"), "no box-wrapper dump: {svg}");
     }
