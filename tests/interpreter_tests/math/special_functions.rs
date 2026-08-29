@@ -10411,6 +10411,60 @@ mod mathieu_s {
       "MathieuSPrime[a, q, z]"
     );
   }
+
+  #[test]
+  fn mathieu_c_q_zero_matches_cosine() {
+    let val = parse_real(&interpret("MathieuC[2, 0, 1.5]").unwrap());
+    let expected = (2.0_f64.sqrt() * 1.5).cos();
+    assert!(
+      (val - expected).abs() < 1e-9,
+      "MathieuC(2, 0, 1.5): got {val}, expected {expected}"
+    );
+  }
+
+  #[test]
+  fn mathieu_c_prime_q_zero_at_origin() {
+    let val = parse_real(&interpret("MathieuCPrime[3, 0, 0]").unwrap());
+    assert!(
+      val.abs() < 1e-9,
+      "MathieuCPrime(3, 0, 0): got {val}, expected 0"
+    );
+  }
+
+  #[test]
+  fn mathieu_c_prime_q_zero_matches_derivative() {
+    let val = parse_real(&interpret("MathieuCPrime[2, 0, 1.5]").unwrap());
+    let sa = 2.0_f64.sqrt();
+    let expected = -sa * (sa * 1.5).sin();
+    assert!(
+      (val - expected).abs() < 1e-9,
+      "MathieuCPrime(2, 0, 1.5): got {val}, expected {expected}"
+    );
+  }
+
+  #[test]
+  fn mathieu_c_one_at_origin() {
+    let val = parse_real(&interpret("MathieuC[2, 1, 0]").unwrap());
+    assert!(
+      (val - 1.0).abs() < 1e-12,
+      "MathieuC(2, 1, 0) should be 1, got {val}"
+    );
+  }
+
+  #[test]
+  fn mathieu_c_prime_finite_for_nonzero_q() {
+    let val = parse_real(&interpret("MathieuCPrime[2, 1, 3.2]").unwrap());
+    assert!(val.is_finite(), "expected a finite real, got {val}");
+  }
+
+  #[test]
+  fn mathieu_c_symbolic_passthrough() {
+    assert_eq!(interpret("MathieuC[a, q, z]").unwrap(), "MathieuC[a, q, z]");
+    assert_eq!(
+      interpret("MathieuCPrime[a, q, z]").unwrap(),
+      "MathieuCPrime[a, q, z]"
+    );
+  }
 }
 
 mod riemann_siegel_z {

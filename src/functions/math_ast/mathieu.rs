@@ -1,19 +1,22 @@
 //! Mathieu function numerical evaluation.
 //!
 //! For real `(a, q, z)` we provide a Floquet-based numerical solver.
-//! Wolfram's MathieuS / MathieuSPrime use a specific (a, q)-dependent
+//! Wolfram's Mathieu functions use a specific (a, q)-dependent
 //! normalisation tied to the Hill tridiagonal eigenvalue problem; that
-//! normalisation is not reproduced here. Instead the solution is
-//! anchored by the boundary condition that matches the `q → 0` limit
-//! (`MathieuS(a, 0, z) = sin(√a · z)` and
-//! `MathieuSPrime(a, 0, z) = √a · cos(√a · z)`).
+//! normalisation is not reproduced here. Instead each solution is
+//! anchored by the boundary condition that matches its `q → 0` limit:
+//! `MathieuS(a, 0, z) = sin(√a · z)`, `MathieuSPrime(a, 0, z) = √a ·
+//! cos(√a · z)`, `MathieuC(a, 0, z) = cos(√a · z)`, and
+//! `MathieuCPrime(a, 0, z) = -√a · sin(√a · z)`.
 //!
 //! For `q = 0` the closed forms above are exact; for `q ≠ 0` the result
-//! is the analytic continuation under the BC `y(0) = 0`, `y'(0) = √a`
-//! — which differs from wolframscript's specific numerical scaling by
-//! a smooth (a, q)-dependent factor. Users who need exact wolframscript
-//! agreement should compare ratios `MathieuSPrime(a, q, z) /
-//! MathieuSPrime(a, q, 0)` (these match to numerical precision).
+//! is the analytic continuation under the respective boundary condition
+//! (`y(0) = 0, y'(0) = √a` for the S family; `y(0) = 1, y'(0) = 0` for
+//! the C family) — which differs from wolframscript's specific
+//! numerical scaling by a smooth (a, q)-dependent factor. Users who
+//! need exact wolframscript agreement should compare ratios such as
+//! `MathieuSPrime(a, q, z) / MathieuSPrime(a, q, 0)` (these match to
+//! numerical precision).
 
 #[allow(unused_imports)]
 use super::*;
@@ -112,5 +115,44 @@ pub fn mathieu_s_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let yp0 = a.sqrt();
   let (_, yp) = integrate_mathieu(a, q, z, 0.0, yp0);
+  Ok(Expr::Real(yp))
+}
+
+/// MathieuC[a, q, z] — even Mathieu function, normalised to match
+/// `cos(√a · z)` at q = 0 (BC `y(0) = 1`, `y'(0) = 0`).
+pub fn mathieu_c_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 3 {
+    return Ok(unevaluated("MathieuC", args));
+  }
+  let (Some(a), Some(q), Some(z)) = (
+    try_real_f64(&args[0]),
+    try_real_f64(&args[1]),
+    try_real_f64(&args[2]),
+  ) else {
+    return Ok(unevaluated("MathieuC", args));
+  };
+  if a < 0.0 {
+    return Ok(unevaluated("MathieuC", args));
+  }
+  let (y, _) = integrate_mathieu(a, q, z, 1.0, 0.0);
+  Ok(Expr::Real(y))
+}
+
+/// MathieuCPrime[a, q, z] — derivative of MathieuC w.r.t. z.
+pub fn mathieu_c_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() != 3 {
+    return Ok(unevaluated("MathieuCPrime", args));
+  }
+  let (Some(a), Some(q), Some(z)) = (
+    try_real_f64(&args[0]),
+    try_real_f64(&args[1]),
+    try_real_f64(&args[2]),
+  ) else {
+    return Ok(unevaluated("MathieuCPrime", args));
+  };
+  if a < 0.0 {
+    return Ok(unevaluated("MathieuCPrime", args));
+  }
+  let (_, yp) = integrate_mathieu(a, q, z, 1.0, 0.0);
   Ok(Expr::Real(yp))
 }

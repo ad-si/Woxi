@@ -1984,13 +1984,15 @@ mod unimplemented_warnings {
   #[test]
   fn multiple_unimplemented_calls_consolidated_into_single_warning() {
     clear_state();
-    // MathieuS now has a numerical implementation; use MathieuC which
-    // is still unimplemented to exercise the multi-call warning path.
+    // MathieuS/MathieuC now have numerical implementations; use
+    // MathieuCharacteristicA, which is still unimplemented, to exercise
+    // the multi-call warning path.
     let result =
-      interpret_with_stdout("{CityData[1], MathieuC[1, 1, 1.0]}").unwrap();
+      interpret_with_stdout("{CityData[1], MathieuCharacteristicA[1, 1.0]}")
+        .unwrap();
     assert_eq!(result.warnings.len(), 1);
     assert!(result.warnings[0].contains("CityData[1]"));
-    assert!(result.warnings[0].contains("MathieuC[1, 1, 1.]"));
+    assert!(result.warnings[0].contains("MathieuCharacteristicA[1, 1.]"));
     assert!(
       result.warnings[0].contains("are built-in Wolfram Language functions")
     );

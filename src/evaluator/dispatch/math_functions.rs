@@ -1142,6 +1142,12 @@ pub fn dispatch_math_functions(
     "MathieuSPrime" if args.len() == 3 => {
       return Some(crate::functions::math_ast::mathieu_s_prime_ast(args));
     }
+    "MathieuC" if args.len() == 3 => {
+      return Some(crate::functions::math_ast::mathieu_c_ast(args));
+    }
+    "MathieuCPrime" if args.len() == 3 => {
+      return Some(crate::functions::math_ast::mathieu_c_prime_ast(args));
+    }
     "BesselY" if args.len() == 2 => {
       return Some(crate::functions::math_ast::bessel_y_ast(args));
     }
