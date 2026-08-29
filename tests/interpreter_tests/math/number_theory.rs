@@ -5002,6 +5002,46 @@ mod cases {
     );
   }
   #[test]
+  fn continued_fraction_of_a_quadratic_surd_stays_exact() {
+    // A quadratic irrational expands periodically, so `n` terms come from the
+    // exact integer recurrence. Reading them off an f64 drifts after ~20
+    // terms — Project Euler 57 walks 1000 of them.
+    assert_case(r#"Union[ContinuedFraction[Sqrt[2], 200]]"#, r#"{1, 2}"#);
+    assert_case(
+      r#"ContinuedFraction[Sqrt[13], 12]"#,
+      r#"{3, 1, 1, 1, 1, 6, 1, 1, 1, 1, 6, 1}"#,
+    );
+    assert_case(
+      r#"ContinuedFraction[GoldenRatio, 8]"#,
+      r#"{1, 1, 1, 1, 1, 1, 1, 1}"#,
+    );
+    assert_case(
+      r#"ContinuedFraction[(1 + Sqrt[5])/4, 9]"#,
+      r#"{0, 1, 4, 4, 4, 4, 4, 4, 4}"#,
+    );
+    // The 1- and 2-argument forms keep agreeing with each other.
+    assert_case(r#"ContinuedFraction[Sqrt[2]]"#, r#"{1, {2}}"#);
+    assert_case(
+      r#"ContinuedFraction[Pi, 10]"#,
+      r#"{3, 7, 15, 1, 292, 1, 1, 1, 2, 1}"#,
+    );
+  }
+
+  #[test]
+  fn from_continued_fraction_big_convergent() {
+    // The convergents of a long continued fraction outgrow i128 well before
+    // the last term, so the running numerator/denominator must be BigInts
+    // (Project Euler 65 sums the digits of this numerator).
+    assert_case(
+      r#"FromContinuedFraction[ContinuedFraction[E, 100]]"#,
+      r#"6963524437876961749120273824619538346438023188214475670667 / 2561737478789858711161539537921323010415623148113041714756"#,
+    );
+    assert_case(
+      r#"Total[IntegerDigits[Numerator[FromContinuedFraction[ContinuedFraction[E, 100]]]]]"#,
+      r#"272"#,
+    );
+  }
+  #[test]
   fn from_continued_fraction_periodic() {
     // A trailing sublist denotes the repeating block; the value is an exact
     // quadratic surd in wolframscript's canonical (P + S Sqrt[D])/Q form.

@@ -845,6 +845,36 @@ mod plus_numeric_contagion {
 mod big_integer {
   use super::*;
 
+  /// `n^(p/q)` pulls the whole part of the exponent out in front. The
+  /// exponent arithmetic must stay in i128 and the extracted factor must be a
+  /// BigInt: a numerator past `u64::MAX` used to wrap, so
+  /// `2^(29904177082838066039/10^18)` simplified as if the exponent were
+  /// 11.457… instead of 29.904… (Project Euler 197 iterates such a power),
+  /// and an extracted part beyond i128 used to panic outright.
+  #[test]
+  fn rational_exponent_whole_part_extraction() {
+    // 29904177082838066039/10^18 = 29.904…, so 2^29 = 536870912 comes out.
+    assert_eq!(
+      interpret("2^(29904177082838066039/1000000000000000000)").unwrap(),
+      "536870912*2^(904177082838066039/1000000000000000000)"
+    );
+    // 1000/7 = 142 + 6/7, and 2^142 needs more than i128.
+    assert_eq!(
+      interpret("2^(1000/7)").unwrap(),
+      "5575186299632655785383929568162090376495104*2^(6/7)"
+    );
+    // An extracted part too large to write down keeps the power symbolic.
+    assert_eq!(
+      interpret("2^(1000000000000000000/3)").unwrap(),
+      "2^(1000000000000000000/3)"
+    );
+    // The everyday cases are unchanged.
+    assert_eq!(
+      interpret("{2^(7/2), 8^(1/3), 100^(1/3), 6^(1/3), 12^(3/2)}").unwrap(),
+      "{8*Sqrt[2], 2, 10^(2/3), 6^(1/3), 24*Sqrt[3]}"
+    );
+  }
+
   #[test]
   fn power_exceeding_i128() {
     assert_eq!(

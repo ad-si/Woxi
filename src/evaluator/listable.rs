@@ -493,7 +493,7 @@ pub fn is_system_variable_name(name: &str) -> bool {
 /// Look up system $ variables
 pub fn get_system_variable(name: &str) -> Option<Expr> {
   match name {
-    "$RecursionLimit" => Some(Expr::Integer(256)),
+    "$RecursionLimit" => Some(Expr::Integer(1024)),
     "$IterationLimit" => Some(Expr::Integer(4096)),
     "$HistoryLength" => Some(Expr::Identifier("Infinity".to_string())),
     // Wolframscript runs each script as a fresh session, so `$Line` —

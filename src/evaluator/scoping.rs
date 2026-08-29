@@ -1066,6 +1066,11 @@ pub fn for_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // InputForm; interpret()'s top-level display unwraps it.
     if let Some(body) = body {
       match evaluate_expr_to_expr(body) {
+        // A nested Block/Module/While/For already turned a `Return` into the
+        // literal `Return[val]`; keep passing it up rather than iterating on.
+        Ok(val) if crate::evaluator::is_literal_return(&val) => {
+          return Ok(val);
+        }
         Ok(_) => {}
         Err(InterpreterError::BreakSignal) => break,
         Err(InterpreterError::ContinueSignal) => {}

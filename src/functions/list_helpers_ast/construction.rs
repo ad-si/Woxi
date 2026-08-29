@@ -4,6 +4,12 @@ use super::utilities::*;
 use super::*;
 use crate::functions::math_ast::rat_reduce;
 
+/// Longest list `Range` (and the geometric `PowerRange`) will build.  Wolfram
+/// caps these only by available memory — `Range[10^7]` is routine in
+/// Project-Euler-style code — so the limit is a runaway guard, not a
+/// language-level restriction.
+const MAX_RANGE_LENGTH: usize = 100_000_000;
+
 /// AST-based Table: generate a table of values.
 /// Table[expr, {i, min, max}] -> {expr with i=min, ..., expr with i=max}
 /// Table[expr, {i, max}] -> {expr with i=1, ..., expr with i=max}
@@ -594,7 +600,7 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Simplify to avoid overflow
       (cur_n, cur_d) = rat_reduce(cur_n, cur_d);
 
-      if results.len() > 1_000_000 {
+      if results.len() > MAX_RANGE_LENGTH {
         return Err(InterpreterError::EvaluationError(
           "Range: result too large".into(),
         ));
@@ -683,7 +689,7 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if count <= 0 {
           return Ok(Expr::List(vec![].into()));
         }
-        if count > 1_000_000 {
+        if count > MAX_RANGE_LENGTH as i128 {
           return Err(InterpreterError::EvaluationError(
             "Range: result too large".into(),
           ));
@@ -722,7 +728,7 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if count <= 0 {
         return Ok(Expr::List(vec![].into()));
       }
-      if count > 1_000_000 {
+      if count > MAX_RANGE_LENGTH as i128 {
         return Err(InterpreterError::EvaluationError(
           "Range: result too large".into(),
         ));
@@ -790,7 +796,7 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       f64_to_expr(val)
     });
     k += 1;
-    if k > 1_000_000 {
+    if k > MAX_RANGE_LENGTH as i128 {
       return Err(InterpreterError::EvaluationError(
         "Range: result too large".into(),
       ));
@@ -874,7 +880,7 @@ pub fn power_range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       };
       (cur_n, cur_d) = rat_reduce(next_n, next_d);
 
-      if results.len() > 1_000_000 {
+      if results.len() > MAX_RANGE_LENGTH {
         return Err(InterpreterError::EvaluationError(
           "PowerRange: result too large".into(),
         ));
