@@ -8560,6 +8560,88 @@ Cell[BoxData[
     }
   }
 
+  /// A polar-curve viewer Demonstration downloaded the same way (a bare
+  /// widget dump, no Input cell): its body reassigns a control variable
+  /// with `If[…, var = …]` before the plot that reads it, and its "zoom"
+  /// slider drives `PlotRange -> n - zoom$$` — a bare number, not a pair,
+  /// which has to frame the window `{-n, n}` square on *both* axes rather
+  /// than fall back to the automatic (and here wildly varying) data range.
+  #[test]
+  fn polar_curve_dump_with_a_zoom_slider_opens_live() {
+    let nb_src = r##"Notebook[{
+Cell[BoxData[
+ DynamicModuleBox[{$CellContext`b$$ = -2., $CellContext`c$$ = 5.,
+   $CellContext`zoom$$ = 0.},
+  DynamicBox[Manipulate`ManipulateBoxes[
+   1, StandardForm,
+   "Variables" :> {$CellContext`b$$ = -2., $CellContext`c$$ = 5.,
+     $CellContext`zoom$$ = 0.},
+   "Body" :> (If[$CellContext`b$$ == 0, $CellContext`b$$ = 0.001];
+    PolarPlot[($CellContext`c$$^$CellContext`b$$
+        Cos[$CellContext`b$$ $CellContext`\[Phi]])^(1/$CellContext`b$$), \
+{$CellContext`\[Phi], -2 Pi, 2 Pi},
+     PlotRange -> 50 - $CellContext`zoom$$, AspectRatio -> 1]),
+   "Specifications" :> {{{$CellContext`b$$, -2.}, -8, 8,
+      Appearance -> "Labeled"}, {{$CellContext`c$$, 5.}, 0.1, 50,
+      Appearance -> "Labeled"}, {{$CellContext`zoom$$, 0.}, 0, 45,
+      Appearance -> "Labeled"}},
+   "Options" :> {}],
+   DynamicModuleValues:>{}]]], "Output"]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let mut widget =
+      editors.into_iter().find_map(|e| e.manipulate_state).expect(
+        "a standalone widget dump with no Input cell must still \
+         instantiate on load",
+      );
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the polar curve must render at its initial (nonzero) b$$"
+    );
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Continuous { name: b, .. },
+        manipulate::ControlState::Continuous { name: c, .. },
+        manipulate::ControlState::Continuous {
+          name: zoom,
+          min: zoom_min,
+          max: zoom_max,
+          current: zoom_now,
+          ..
+        },
+      ] => {
+        assert_eq!(
+          (b.as_str(), c.as_str(), zoom.as_str()),
+          ("b$$", "c$$", "zoom$$")
+        );
+        assert_eq!((*zoom_min, *zoom_max, *zoom_now), (0.0, 45.0, 0.0));
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+
+    // Dragging zoom$$ to its max (45) shrinks the `PlotRange -> 50 - zoom$$`
+    // window down to a 5-wide square; re-rendering must not error out just
+    // because the window got tight.
+    if let manipulate::ControlState::Continuous { current, .. } =
+      &mut widget.controls[2]
+    {
+      *current = 45.0;
+    }
+    widget.reevaluate();
+    assert!(
+      widget.error.is_none(),
+      "re-render at max zoom failed: {:?}",
+      widget.error
+    );
+    assert!(widget.graphics_handle.is_some());
+  }
+
   /// A Demonstration whose `Initialization :> (Get["HypothesisTesting`"];)`
   /// loads the legacy `Statistics`HypothesisTests`` compatibility package
   /// and whose body extracts a named property with

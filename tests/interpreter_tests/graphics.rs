@@ -1743,6 +1743,33 @@ mod graphics {
       ));
     }
 
+    // `PlotRange -> r` (a bare number) means "r in all directions from the
+    // origin", equivalent to `{{-r, r}, {-r, r}}` — found via a
+    // Demonstration's polar-curve viewer, whose "zoom" slider shrinks the
+    // window by feeding a smaller number into a plain `PlotRange -> n`.
+    // `Graphics[…, PlotRange -> n]` alone is already covered by
+    // `test_plot_range_single_number` in miscellaneous_tests; this checks
+    // the same parsing reaches `PolarPlot`, which shares it.
+    #[test]
+    fn plot_range_scalar_bounds_a_polar_plot_on_both_axes() {
+      let tick_labels = |code: &str| -> Vec<f64> {
+        export_svg(code)
+          .split("<text ")
+          .skip(1)
+          .filter_map(|t| t.split_once('>'))
+          .filter_map(|(_, r)| r.split_once("</text>"))
+          .filter_map(|(v, _)| v.trim().parse::<f64>().ok())
+          .collect()
+      };
+      let ticks =
+        tick_labels("PolarPlot[Cos[t], {t, 0, 2 Pi}, PlotRange -> 20]");
+      assert!(
+        ticks.iter().any(|&v| v >= 15.0),
+        "an explicit scalar range must reach out to it on the x axis too, \
+         ticks: {ticks:?}"
+      );
+    }
+
     // `PlotRange -> All` shows every sampled value. The automatic range drops
     // extreme values as outliers, which for a steep curve cut the top off and
     // let it run out of the frame.

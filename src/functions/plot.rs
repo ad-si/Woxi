@@ -7929,6 +7929,8 @@ pub(crate) fn parse_style_directives(value: &Expr) -> Option<SeriesStyle> {
 ///
 /// Supported forms:
 /// - `All` / `Automatic` / `Full` → (None, None)
+/// - `r` (a bare number) → (Some((-r, r)), Some((-r, r))) — "r in all
+///   directions from the origin", equivalent to `{{-r, r}, {-r, r}}`
 /// - `{ymin, ymax}` → (None, Some((ymin, ymax)))
 /// - `{{xmin, xmax}, {ymin, ymax}}` → (Some(x), Some(y))
 /// - `{All, {ymin, ymax}}` / `{{xmin,xmax}, All}` → only the specified axis
@@ -7942,6 +7944,14 @@ pub(crate) fn parse_plot_range(
   if matches!(&val, Expr::Identifier(s) if s == "All" || s == "Automatic" || s == "Full")
   {
     return (None, None);
+  }
+
+  // A bare positive number `r` sets a square window centered at the
+  // origin on both axes.
+  if let Some(r) = try_eval_to_f64(&val)
+    && r > 0.0
+  {
+    return (Some((-r, r)), Some((-r, r)));
   }
 
   let parse_pair = |e: &Expr| -> Option<(f64, f64)> {
