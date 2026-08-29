@@ -6933,6 +6933,34 @@ fn strip_svg_wrapper(svg: &str) -> &str {
 mod tests {
   use super::*;
 
+  /// A Manipulate whose body calls a `Compile`d helper with bare
+  /// (undeclared-type) parameters that are only ever used as repetition
+  /// counts — `NestList[…, n]` and a `Do[…, {trials}]` iterator — mirroring
+  /// the "Compile a random-walk helper, drive it from Setter controls"
+  /// idiom common to Wolfram Demonstrations Project notebooks (independently
+  /// written, not copied from any specific one). Regression: every bare
+  /// Compile parameter defaulted to `_Real`, so a Setter control's exact
+  /// integer value arrived at the compiled body as e.g. `100.` and
+  /// `NestList` failed with `NestList::intnm` — which is how such a
+  /// notebook's Manipulate output came out blank in Woxi Studio.
+  #[test]
+  fn manipulate_compiled_helper_with_bare_integer_count_params() {
+    let code = r#"Manipulate[
+      walk[len, trials],
+      {{len, 10, "length"}, {5, 10, 20}, Setter},
+      {{trials, 5, "trials"}, {1, 5, 10}, Setter},
+      Initialization :> (
+        walk = Compile[{n, trials}, Module[{v = 0}, Do[v += Total[NestList[# + 1 &, 0, n]], {trials}]; v]];
+      )
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr).expect(
+      "bare-integer-count Compile helper should build a ManipulateState",
+    );
+    assert_eq!(state.error, None, "the compiled body must evaluate cleanly");
+  }
+
   /// A dissection Manipulate assembling colored polygon pieces with
   /// `Translate`/`Rotate`, a boolean checkbox control (`{False, True}`
   /// domain) toggling a hint overlay, and several `Tiny` step sliders with
