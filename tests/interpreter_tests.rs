@@ -1141,6 +1141,34 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_traditional_form_integrate_differential_svg_uses_plain_d() {
+    // Regression: `TraditionalForm[HoldForm[Integrate[…]]]` typesets the
+    // closing differential as the literal box glyph `\[DifferentialD]`
+    // (U+2146, "ⅆ"). That Mathematical Alphanumeric Symbols codepoint has no
+    // glyph in most non-Mathematica fonts, so the Playground/Studio SVG
+    // viewer's font-fallback substitute renders at a different width than
+    // the plain-ASCII advance the layout computed, overlapping the following
+    // variable (`ⅆx` reads as if it were "ddx"). The SVG must instead emit
+    // plain "d" (italicized like any other math variable), which every font
+    // has, so the two glyphs never overlap.
+    clear_state();
+    let svg = interpret_with_stdout(
+      "TraditionalForm[HoldForm[Integrate[x^2, {x, -1, 1}]]]",
+    )
+    .unwrap()
+    .output_svg
+    .expect("expected output SVG for TraditionalForm[HoldForm[Integrate[…]]]");
+    assert!(
+      !svg.contains('\u{2146}'),
+      "Integrate differential SVG must not contain the raw U+2146 glyph:\n{svg}"
+    );
+    assert!(
+      svg.contains(">d<"),
+      "Integrate differential SVG must render the differential as plain \"d\":\n{svg}"
+    );
+  }
+
+  #[test]
   fn test_scientific_real_output_svg_uses_superscript() {
     // Regression: a machine Real in scientific notation (`10.^10` → `1.*^10`)
     // must be typeset as `1. × 10^10` in the Playground/Studio SVG — a `×`

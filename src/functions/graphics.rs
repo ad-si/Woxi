@@ -7904,11 +7904,19 @@ impl BoxLayout {
     // missing-glyph box (▢). Substitute the public Unicode arrows so the
     // SVG output displays correctly everywhere. Each maps one char to one
     // char, so the width estimate below is unaffected.
+    // `\[DifferentialD]` (U+2146, the italic "ⅆ" used in `∫ … ⅆx`) is a rare
+    // Mathematical Alphanumeric Symbols codepoint most non-Mathematica fonts
+    // don't carry either — the SVG viewer's font-fallback glyph for it comes
+    // out a different width than the plain-ASCII advance computed below, so
+    // it overlaps the following variable (`ⅆx` renders as if it read "ddx").
+    // Map it to plain "d"; `is_math_italic_atom` below then italicizes the
+    // lone letter, giving the same look without depending on that glyph.
     let mapped: String = s
       .chars()
       .map(|c| match c {
         '\u{f522}' => '\u{2192}', // \[Rule] → →
         '\u{f51f}' => '\u{29f4}', // \[RuleDelayed] → ⧴
+        '\u{2146}' => 'd',        // \[DifferentialD] → d (italicized below)
         other => other,
       })
       .collect();
