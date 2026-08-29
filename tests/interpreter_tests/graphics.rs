@@ -4527,6 +4527,63 @@ mod plot3d {
         "expected the merged ring to keep its red PlotStyle"
       );
     }
+
+    /// A list of curves may be built from `ReplaceAll` rather than literal
+    /// triples — e.g. `{fx, fy, fz} /. rules` — which `HoldAll` leaves
+    /// unevaluated, so each curve's shape has to be discovered by
+    /// evaluating it once.
+    #[test]
+    fn multi_curve_from_replace_all() {
+      let svg = export_svg(
+        "rules = {fx -> Function[t, Cos[t]], fy -> Function[t, Sin[t]]}; \
+         ParametricPlot3D[{{fx[t], fy[t], 0} /. rules, \
+           {2 fx[t], 2 fy[t], 0} /. rules}, {t, 0, 2 Pi}]",
+      );
+      assert!(
+        svg.contains("<polyline") || svg.contains("<line"),
+        "expected line segments for the two ReplaceAll-resolved curves"
+      );
+    }
+
+    /// `soln = NDSolve[...]` returns a list of solution branches even when
+    /// there is only one, so `{fx, fy, fz} /. soln` comes back as a
+    /// 1-element list wrapping the triple rather than the triple itself.
+    /// Regression test for a Demonstration notebook ("Coupled Lorenz
+    /// Oscillators") whose `ParametricPlot3D[{{...} /. soln, {...} /. \
+    /// soln}, ...]` failed with "first argument must be {fx, fy, fz}"
+    /// because of this extra list level.
+    #[test]
+    fn multi_curve_from_ndsolve_shaped_replace_all() {
+      let svg = export_svg(
+        "soln = {{fx -> Function[t, Cos[t]], fy -> Function[t, Sin[t]], \
+           fz -> Function[t, 0]}}; \
+         ParametricPlot3D[{{fx[t], fy[t], fz[t]} /. soln, \
+           {2 fx[t], 2 fy[t], fz[t]} /. soln}, {t, 0, 2 Pi}]",
+      );
+      assert!(
+        svg.contains("<polyline") || svg.contains("<line"),
+        "expected line segments for the two NDSolve-shaped curves"
+      );
+    }
+
+    /// `PlotStyle -> {color1, color2}` on a multi-curve `ParametricPlot3D`
+    /// colors each curve individually instead of applying the whole list
+    /// as one blended directive to every curve.
+    #[test]
+    fn plot_style_list_colors_curves_individually() {
+      let svg = export_svg(
+        "ParametricPlot3D[{{Cos[t], Sin[t], 0}, {2 Cos[t], 2 Sin[t], 0}}, \
+         {t, 0, 2 Pi}, PlotStyle -> {Blue, Purple}]",
+      );
+      assert!(
+        svg.contains("rgb(0,0,255)"),
+        "expected the first curve to keep its Blue PlotStyle"
+      );
+      assert!(
+        svg.contains("rgb(128,0,128)"),
+        "expected the second curve to keep its Purple PlotStyle"
+      );
+    }
   }
 
   mod plot_misc {

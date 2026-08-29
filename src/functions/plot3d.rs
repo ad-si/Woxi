@@ -2566,40 +2566,45 @@ fn plot_style_for_surface(
   }
 }
 
-/// Parse a `PlotStyle` option value into one style per surface, mirroring
+/// Split a `PlotStyle` option value into one style item per plotted
+/// object (a surface or a curve), mirroring
 /// [`crate::functions::plot::parse_plot_style`]'s disambiguation for 2D
-/// `Plot`: with more than one surface, a flat list of colours/directives is
-/// read as one style per surface (`PlotStyle -> {Red, Blue}`), cycling when
-/// there are fewer styles than surfaces; a single style — one bare
-/// directive, or a list that mixes directives for a single style, like
-/// `{RGBColor[...], Opacity[.5]}` — applies to every surface alike. An
-/// empty result means `PlotStyle` was not given (or produced nothing
-/// applicable), so callers keep drawing the height-based rainbow default.
-fn parse_plot_style_3d(
-  replacement: &Expr,
-  num_surfaces: usize,
-) -> Vec<StyleState3D> {
+/// `Plot`: with more than one object, a flat list of colours/directives is
+/// read as one style per object (`PlotStyle -> {Red, Blue}`); a single
+/// style — one bare directive, or a list that mixes directives for a
+/// single style, like `{RGBColor[...], Opacity[.5]}` — applies to every
+/// object alike, so the whole value comes back as the sole item.
+fn plot_style_items(replacement: &Expr, num_objects: usize) -> Vec<Expr> {
   use crate::functions::graphics::parse_color;
 
   let val =
     evaluate_expr_to_expr(replacement).unwrap_or_else(|_| replacement.clone());
-  let items: Vec<Expr> = match &val {
-    Expr::List(list_items) if num_surfaces > 1 => {
-      let per_surface = list_items.iter().any(|item| {
+  match &val {
+    Expr::List(list_items) if num_objects > 1 => {
+      let per_object = list_items.iter().any(|item| {
         matches!(item, Expr::FunctionCall { name, .. } if name == "Directive")
           || matches!(item, Expr::List(_))
           || parse_color(item).is_some()
       });
-      if per_surface {
+      if per_object {
         list_items.to_vec()
       } else {
-        vec![val.clone()]
+        vec![val]
       }
     }
-    _ => vec![val.clone()],
-  };
+    _ => vec![val],
+  }
+}
 
-  items
+/// Parse a `PlotStyle` option value into one style per surface, cycling
+/// through fewer styles than surfaces. An empty result means `PlotStyle`
+/// was not given (or produced nothing applicable), so callers keep drawing
+/// the height-based rainbow default.
+fn parse_plot_style_3d(
+  replacement: &Expr,
+  num_surfaces: usize,
+) -> Vec<StyleState3D> {
+  plot_style_items(replacement, num_surfaces)
     .into_iter()
     .map(|item| {
       let mut style = StyleState3D::default();
@@ -9274,16 +9279,25 @@ fn parametric_plot3d_curve_ast(
     None => (None, None),
   };
 
-  // Build a primitives list: [<style directives>, Line[pts1], Line[pts2], …]
+  // One style per curve (cycling through fewer styles than curves), so
+  // `PlotStyle -> {Blue, Purple}` on two curves colors them individually
+  // instead of applying the whole list as a single blended directive.
+  let per_curve_styles: Vec<Expr> = plot_style
+    .as_ref()
+    .map(|ps| plot_style_items(ps, curves.len()))
+    .unwrap_or_default();
+
+  // Build a primitives list: [<style>, Line[pts1], <style>, Line[pts2], …]
   let mut prim_items: Vec<Expr> = Vec::new();
-  if let Some(ps) = &plot_style {
-    // Wrap whatever PlotStyle holds into a Directive[…] so that
-    // collect_3d_primitives picks up nested colors/Thickness/etc.
-    prim_items.push(call1("Directive", ps.clone()));
-  }
 
   let mut produced_any = false;
-  for curve in &curves {
+  for (curve_idx, curve) in curves.iter().enumerate() {
+    if !per_curve_styles.is_empty() {
+      // Wrap whatever PlotStyle holds into a Directive[…] so that
+      // collect_3d_primitives picks up nested colors/Thickness/etc.
+      let style = &per_curve_styles[curve_idx % per_curve_styles.len()];
+      prim_items.push(call1("Directive", style.clone()));
+    }
     let mut current_segment: Vec<Expr> = Vec::new();
     let flush = |seg: &mut Vec<Expr>, sink: &mut Vec<Expr>| {
       if seg.len() >= 2 {
@@ -9364,16 +9378,57 @@ fn evaluate_parametric_at_t(
   }
 }
 
+/// Peel off wrapping single-element lists, e.g. `{{fx, fy, fz}}`. A
+/// `soln = NDSolve[...]` result is a list of solution branches even when
+/// there is only one, so `{fx, fy, fz} /. soln` threads over that outer
+/// list and comes back as a 1-element list around the triple rather than
+/// the triple itself.
+fn unwrap_singleton_list(mut e: &Expr) -> &Expr {
+  while let Expr::List(sub) = e {
+    if sub.len() == 1 {
+      e = &sub[0];
+    } else {
+      break;
+    }
+  }
+  e
+}
+
+/// Resolve one curve/surface item into a `{fx, fy, fz}` triple: either it is
+/// already a literal 3-list, or it is a held expression like
+/// `{x[t], z[t], y[t]} /. soln` (an unevaluated `ReplaceAll` around a
+/// literal triple) that must be evaluated once, with `shadow_vars` cleared,
+/// to discover its shape.
+fn resolve_one_parametric_triple(
+  item: &Expr,
+  shadow_vars: &[&str],
+) -> Option<(Expr, Expr, Expr)> {
+  if let Expr::List(sub) = unwrap_singleton_list(item) {
+    return (sub.len() == 3)
+      .then(|| (sub[0].clone(), sub[1].clone(), sub[2].clone()));
+  }
+  let resolved =
+    crate::functions::plot::eval_body_vars_symbolic(item, shadow_vars);
+  match unwrap_singleton_list(&resolved) {
+    Expr::List(sub) if sub.len() == 3 => {
+      Some((sub[0].clone(), sub[1].clone(), sub[2].clone()))
+    }
+    _ => None,
+  }
+}
+
 /// Resolve `body` into one or more `{fx, fy, fz}` triples for
 /// `ParametricPlot3D`. `body` normally is already a literal `{fx, fy, fz}`
 /// (or a list of such triples), but a Demonstration idiom passes a helper
 /// call instead — e.g. `ParametricPlot3D[projection[u, v, ...], {u, ...},
-/// {v, ...}]` — which HoldAll leaves unevaluated and which must be
-/// evaluated once to discover its shape. `shadow_vars` (the iterator
-/// variables) are cleared for that one evaluation so a stray global left
-/// over from elsewhere in the notebook (e.g. an `Initialization :> (u =
-/// 0.; ...)`) doesn't freeze the surface at a single point instead of
-/// leaving `u`/`v` symbolic for the later per-sample substitution.
+/// {v, ...}]`, or wraps each curve of a multi-curve plot in a `ReplaceAll`
+/// like `{{fx, fy, fz} /. soln, {gx, gy, gz} /. soln}` — which `HoldAll`
+/// leaves unevaluated and which must be evaluated once to discover its
+/// shape. `shadow_vars` (the iterator variables) are cleared for that one
+/// evaluation so a stray global left over from elsewhere in the notebook
+/// (e.g. an `Initialization :> (u = 0.; ...)`) doesn't freeze the surface at
+/// a single point instead of leaving `u`/`v` symbolic for the later
+/// per-sample substitution.
 fn resolve_parametric_triples(
   body: &Expr,
   shadow_vars: &[&str],
@@ -9389,22 +9444,12 @@ fn resolve_parametric_triples(
     {
       Ok(vec![(items[0].clone(), items[1].clone(), items[2].clone())])
     }
-    Expr::List(items)
-      if !items.is_empty()
-        && items
-          .iter()
-          .all(|it| matches!(it, Expr::List(sub) if sub.len() == 3)) =>
-    {
-      Ok(
-        items
-          .iter()
-          .map(|item| match item {
-            Expr::List(sub) => (sub[0].clone(), sub[1].clone(), sub[2].clone()),
-            _ => unreachable!(),
-          })
-          .collect(),
-      )
-    }
+    Expr::List(items) if !items.is_empty() => items
+      .iter()
+      .map(|item| {
+        resolve_one_parametric_triple(item, shadow_vars).ok_or_else(err)
+      })
+      .collect(),
     Expr::List(_) => Err(err()),
     other => {
       let resolved =
