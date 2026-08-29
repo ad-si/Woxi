@@ -9779,8 +9779,34 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       Expr::List(complexes.into())
     };
+    // `ParametricPlot3D` draws axes and squats its box the same way
+    // `Plot3D` does (see the analogous block above), where a bare
+    // `Graphics3D` does neither: both defaults are spelled out so a
+    // surface shown inside another graphic — with `ParametricPlot3D`
+    // itself first in the `Show` — keeps the shape it was drawn with.
     let mut structure_args = vec![content];
     structure_args.extend(args[3..].iter().cloned());
+    let names = |opt: &str| {
+      structure_args.iter().any(|o| {
+        matches!(o, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+          if matches!(pattern.as_ref(), Expr::Identifier(n) if n == opt))
+      })
+    };
+    let (names_axes, names_ratios) = (names("Axes"), names("BoxRatios"));
+    if !names_axes {
+      structure_args.push(Expr::Rule {
+        pattern: Box::new(Expr::Identifier("Axes".to_string())),
+        replacement: Box::new(Expr::Identifier("True".to_string())),
+      });
+    }
+    if !names_ratios {
+      structure_args.push(Expr::Rule {
+        pattern: Box::new(Expr::Identifier("BoxRatios".to_string())),
+        replacement: Box::new(Expr::List(
+          vec![Expr::Integer(1), Expr::Integer(1), Expr::Real(Z_SCALE)].into(),
+        )),
+      });
+    }
     call("Graphics3D", structure_args)
   };
 

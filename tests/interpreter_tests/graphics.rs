@@ -27277,3 +27277,31 @@ fn test_show_merges_parametric_plot3d_surface_with_graphics3d() {
     "expected the parametric surface's geometry in the merged render: {svg}"
   );
 }
+
+#[test]
+fn test_show_parametric_plot3d_first_keeps_default_axes_and_box_ratios() {
+  // Regression: the `structure` block that lets ParametricPlot3D merge
+  // into `Show` (previous test) initially left out the `Axes -> True` /
+  // `BoxRatios -> {1, 1, Z_SCALE}` defaults that the analogous Plot3D
+  // block fills in. `Show` takes its merged options from the *first*
+  // graphic's own structure, so with ParametricPlot3D listed first the
+  // merged picture would silently lose axes and get a different aspect
+  // ratio than ParametricPlot3D's own standalone default.
+  clear_state();
+  let expr = woxi::interpret_to_expr(
+    "Show[ParametricPlot3D[{u, v, 0}, {u, -1, 1}, {v, -1, 1}], \
+     Graphics3D[{Point[{0, 0, 0}]}]]",
+  )
+  .unwrap();
+  let debug = format!("{expr:?}");
+  assert!(
+    debug.contains(
+      r#"pattern: Identifier("Axes"), replacement: Identifier("True")"#
+    ),
+    "expected the merged structure to default to Axes -> True: {debug}"
+  );
+  assert!(
+    debug.contains(r#"pattern: Identifier("BoxRatios")"#),
+    "expected the merged structure to default BoxRatios: {debug}"
+  );
+}
