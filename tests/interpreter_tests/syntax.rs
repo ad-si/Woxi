@@ -399,6 +399,34 @@ mod unary_minus_parsing {
       "{-I*a, -b, I*c}"
     );
   }
+
+  // Regression: `-Plus @@ list` parsed as `(-Plus) @@ list` instead of
+  // `-(Plus @@ list)` because NEGATE had higher precedence than Apply/Map in
+  // the climbing algorithm. This is a common Wolfram idiom for negating a
+  // sum or mapped result — e.g. the "Stress Distribution in a Circular
+  // Plate with Concentrated Radial Loadings" Demonstration computes a force
+  // resultant as `-Plus @@ (component & /@ points)`, which silently
+  // produced an unevaluated `(-Plus)[…]` head instead of the negated sum.
+  #[test]
+  fn negated_apply_and_map_bind_outside_the_shorthand() {
+    assert_eq!(interpret("-Plus @@ {1, 2, 3}").unwrap(), "-6");
+    assert_eq!(interpret("-Times @@ {2, 3, 4}").unwrap(), "-24");
+    assert_eq!(interpret("-(#*2) & /@ {1, 2, 3}").unwrap(), "{-2, -4, -6}");
+    assert_eq!(
+      interpret("Hold[-Plus @@ {1, 2, 3}]").unwrap(),
+      "Hold[-Plus @@ {1, 2, 3}]"
+    );
+    assert_eq!(
+      interpret("Hold[-f @@@ {{1, 2}}]").unwrap(),
+      "Hold[-f @@@ {{1, 2}}]"
+    );
+    // Still combines correctly with other operators: the minus binds the
+    // whole shorthand before multiplying.
+    assert_eq!(interpret("2 * -Plus @@ {1, 2, 3}").unwrap(), "-12");
+    // Power still binds tighter than the negated shorthand's operand:
+    // `{1, 2}^2` becomes `{1, 4}` before Apply and the negation run.
+    assert_eq!(interpret("-Plus @@ {1, 2}^2").unwrap(), "-5");
+  }
 }
 
 mod implicit_times_with_strings {
@@ -615,6 +643,30 @@ mod operator_shorthand_parens {
     // Higher-precedence operands stay unparenthesized.
     assert_eq!(interpret("Hold[f /@ a + b]").unwrap(), "Hold[f /@ a + b]");
     assert_eq!(interpret("Hold[f @@ a^2]").unwrap(), "Hold[f @@ a^2]");
+  }
+
+  // A leading unary minus binds looser than `@@`/`@@@`/`/@` (see
+  // `negated_apply_and_map_bind_outside_the_shorthand`), so a negated
+  // *function head* needs explicit parens to round-trip, while a negated
+  // whole-shorthand doesn't.
+  #[test]
+  fn held_negated_apply_map_round_trips() {
+    assert_eq!(
+      interpret("Hold[(-f) @@ {1, 2}]").unwrap(),
+      "Hold[(-f) @@ {1, 2}]"
+    );
+    assert_eq!(
+      interpret("Hold[(-f) /@ {1, 2}]").unwrap(),
+      "Hold[(-f) /@ {1, 2}]"
+    );
+    assert_eq!(
+      interpret("Hold[-f @@ {1, 2}]").unwrap(),
+      "Hold[-f @@ {1, 2}]"
+    );
+    assert_eq!(
+      interpret("Hold[-f /@ {1, 2}]").unwrap(),
+      "Hold[-f /@ {1, 2}]"
+    );
   }
 
   // An implicit product (`2 f`) is `Times` at multiplicative precedence, so

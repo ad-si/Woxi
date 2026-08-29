@@ -5778,9 +5778,12 @@ fn operator_precedence(op: &str) -> u8 {
     "." => 40,                           // Dot (higher than the ring ops)
     "\\[CircleDot]" | "\u{2299}" => 43,  // above Cross, below SmallCircle
     "\\[SmallCircle]" | "\u{2218}" => 44, // above CircleDot, below Apply
-    "@@@" | "@@" => 45,                  // Apply/MapApply
-    "/@" => 46,                          // Map (higher than Apply)
-    "NEGATE" => 47, // Unary minus (PreMinus): between Times/Dot and Power
+    "NEGATE" => 45, // Unary minus (PreMinus): between Times/Dot and Apply/Map,
+    // so `-f @@ list` reads as `-(f @@ list)` and `-f /@ list` as
+    // `-(f /@ list)`, matching Wolfram (Apply/Map bind tighter than a
+    // leading unary minus).
+    "@@@" | "@@" => 46,  // Apply/MapApply
+    "/@" => 47,          // Map (higher than Apply)
     "^" | "^_NEG" => 50, // Power (`^_NEG` is `a^-b` with negated right operand)
     s if s.starts_with('~') && s.ends_with('~') && s.len() > 2 => 53, // Tilde infix: a ~f~ b (higher than ^, lower than @)
     "@" => 56, // Prefix application
@@ -7959,8 +7962,8 @@ fn printed_infix_precedence(e: &Expr) -> Option<u8> {
     Expr::CompoundExpr(_) => Some(1),
     // `body &` binds looser than every operator shorthand.
     Expr::Function { .. } => Some(5),
-    Expr::Map { .. } => Some(44),
-    Expr::Apply { .. } | Expr::MapApply { .. } => Some(43),
+    Expr::Map { .. } => Some(47),
+    Expr::Apply { .. } | Expr::MapApply { .. } => Some(46),
     // ` !x` sits between `&&` and the application shorthands.
     Expr::UnaryOp {
       op: UnaryOperator::Not,
@@ -11450,13 +11453,13 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       )
     }
     Expr::Map { func, list } => {
-      format_map_apply_shorthand(func, list, "/@", 44)
+      format_map_apply_shorthand(func, list, "/@", 47)
     }
     Expr::Apply { func, list } => {
-      format_map_apply_shorthand(func, list, "@@", 43)
+      format_map_apply_shorthand(func, list, "@@", 46)
     }
     Expr::MapApply { func, list } => {
-      format_map_apply_shorthand(func, list, "@@@", 43)
+      format_map_apply_shorthand(func, list, "@@@", 46)
     }
     Expr::PrefixApply { func, arg } => {
       // f @ g is displayed as f[g] (Wolfram converts @ to function call notation)
