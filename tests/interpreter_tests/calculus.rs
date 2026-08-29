@@ -7989,6 +7989,58 @@ mod ndsolve {
   }
 
   #[test]
+  fn blow_up_before_domain_end_returns_a_truncated_interpolating_function() {
+    // Regression: a solution that diverges to infinity partway through the
+    // requested domain (y' = y^2, y(0) = 1 has the closed form
+    // y = 1/(1-t), a vertical asymptote at t = 1) used to discard every
+    // point integrated up to the blow-up and return NDSolve unevaluated —
+    // a shooting-method boundary-value search routinely guesses initial
+    // slopes whose trajectory blows up before reaching the requested
+    // endpoint, so failing outright on any such guess broke every solve
+    // downstream in the search. NDSolve should hand back an
+    // InterpolatingFunction truncated to the domain it actually covered,
+    // as wolframscript does (matching its `NDSolve::ndsz` behavior of
+    // returning a partial solution rather than none at all).
+    let result = interpret(
+      "sol = NDSolve[{y[t]^2 == y'[t], y[0] == 1}, y, {t, 0, 2}]; \
+       Head[sol[[1, 1, 2]]]",
+    )
+    .unwrap();
+    assert_eq!(result, "InterpolatingFunction");
+
+    let domain_end = interpret(
+      "sol = NDSolve[{y[t]^2 == y'[t], y[0] == 1}, y, {t, 0, 2}]; \
+       sol[[1, 1, 2, 1, 1, 2]]",
+    )
+    .unwrap();
+    let end: f64 = domain_end.parse().expect("should be a number");
+    assert!(
+      end > 0.9 && end < 1.5,
+      "expected the domain to be truncated near the t = 1 asymptote \
+       (well short of the requested t = 2), got {end}"
+    );
+  }
+
+  // wolframscript prints `NDSolve::ndsz` alongside the truncated
+  // InterpolatingFunction whenever integration stalls before the requested
+  // endpoint — the truncation above must not go silent about it.
+  #[test]
+  fn blow_up_before_domain_end_emits_ndsz() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "sol = NDSolve[{y[t]^2 == y'[t], y[0] == 1}, y, {t, 0, 2}]; \
+       Head[sol[[1, 1, 2]]]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "InterpolatingFunction");
+    assert!(
+      result.warnings.iter().any(|w| w.contains("NDSolve::ndsz")),
+      "expected an NDSolve::ndsz message but got: {:?}",
+      result.warnings
+    );
+  }
+
+  #[test]
   fn interior_initial_point_integrates_both_directions() {
     // The initial condition sits inside the domain: y' = y, y(1) = 1 on
     // {t, 0, 2} → y(t) = E^(t-1) on both sides of t = 1.
@@ -9394,6 +9446,132 @@ mod findroot_symbolic_start {
       interpret("FindRoot[{x^2 + y^2 == 1, x == y}, {{x, 0.5}, {y, 0.5}}]")
         .unwrap(),
       "{x -> 0.7071067811865476, y -> 0.7071067811865476}"
+    );
+  }
+
+  // A per-variable {var, x0, x1} secant/two-point spec, not just {var, x0},
+  // is also valid in the documented trailing-argument multivariate form and
+  // in the nested-list form — this is what a shooting-method Demonstration's
+  // `FindRoot[{eqn1, eqn2}, {a, a0, a1}, {b, b0, b1}]` uses. Regression test
+  // for a bug where a two-point spec fell out of multivariate detection
+  // entirely (which requires every spec to have exactly 2 elements),
+  // silently dropped the second variable, and searched only the first as if
+  // it were a single-variable secant problem.
+  #[test]
+  fn findroot_multivariate_two_point_trailing_args() {
+    assert_eq!(
+      interpret(
+        "FindRoot[{x + y - 1 == 0, x - y - 0.5 == 0}, {x, 0.1, 0.2}, {y, 0.1, 0.2}]"
+      )
+      .unwrap(),
+      "{x -> 0.75, y -> 0.25}"
+    );
+  }
+
+  #[test]
+  fn findroot_multivariate_two_point_nested_list() {
+    assert_eq!(
+      interpret(
+        "FindRoot[{x + y - 1 == 0, x - y - 0.5 == 0}, {{x, 0.1, 0.2}, {y, 0.1, 0.2}}]"
+      )
+      .unwrap(),
+      "{x -> 0.75, y -> 0.25}"
+    );
+  }
+
+  #[test]
+  fn findroot_multivariate_two_point_with_max_iterations() {
+    assert_eq!(
+      interpret(
+        "FindRoot[{x + y - 1 == 0, x - y - 0.5 == 0}, {x, 0.1, 0.2}, {y, 0.1, 0.2}, MaxIterations -> 500]"
+      )
+      .unwrap(),
+      "{x -> 0.75, y -> 0.25}"
+    );
+  }
+
+  // A multivariate system built from opaque (non-symbolically-differentiable)
+  // user functions has no symbolic Jacobian entry, so the solver falls back
+  // to Broyden's method (a finite-difference Jacobian seeded once, then
+  // cheaply rank-1 updated) rather than recomputing a finite-difference
+  // Jacobian every iteration. Regression test for that fallback converging
+  // to the correct root rather than stopping early on a spuriously "small"
+  // backtracked step.
+  #[test]
+  fn findroot_multivariate_opaque_function_broyden() {
+    assert_eq!(
+      interpret(
+        "f[a_?NumericQ] := a^2 - 2; g[a_?NumericQ, b_?NumericQ] := a + b - 3; FindRoot[{f[x] == 0, g[x, y] == 0}, {x, 1, 1.2}, {y, 1, 1.2}]"
+      )
+      .unwrap(),
+      "{x -> 1.4142135623730951, y -> 1.585786437626905}"
+    );
+  }
+
+  // Regression test: `MaxIterations` was accepted syntactically for the
+  // multivariate form (it parses as an ordinary trailing option) but was
+  // never actually threaded into the solver, which always ran up to a
+  // hardcoded 100 iterations regardless. A tight cap must now visibly limit
+  // how many Newton steps run, rather than silently converging anyway.
+  //
+  // This also guards a second, related bug: the multivariate loop tracked
+  // its best-seen point only at the *top* of each iteration (before taking
+  // that iteration's step), so the very last step of a run that stopped
+  // because it hit `MaxIterations` was computed and then discarded — with
+  // `MaxIterations -> 1` this used to return the untouched starting point
+  // instead of the one real Newton step taken.
+  #[test]
+  fn findroot_multivariate_max_iterations_caps_steps() {
+    // One Newton step from x0 = y0 = 10 lands at exactly x - (x^2-2)/(2x) =
+    // 5.1 and y - (y^2-3)/(2y) = 5.15 — nowhere near the converged
+    // sqrt(2), sqrt(3) — so `MaxIterations -> 1` must stop there.
+    assert_eq!(
+      interpret(
+        "FindRoot[{x^2 - 2 == 0, y^2 - 3 == 0}, {x, 10}, {y, 10}, MaxIterations -> 1]"
+      )
+      .unwrap(),
+      "{x -> 5.1, y -> 5.15}"
+    );
+  }
+
+  // Regression test for the Broyden-fallback (opaque-function) branch's own
+  // `FindRoot::cvmit` emission, a code path distinct from the pre-existing
+  // single-variable one: a tight `MaxIterations` must still report failure
+  // to converge, and the (deliberately unconverged) best point reached so
+  // far, rather than either silently succeeding or panicking.
+  #[test]
+  fn findroot_multivariate_opaque_function_max_iterations_reports_cvmit() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "f[a_?NumericQ] := a^2 - 2; g[a_?NumericQ, b_?NumericQ] := a + b - 3; \
+       FindRoot[{f[x] == 0, g[x, y] == 0}, {x, 1, 1.2}, {y, 1, 1.2}, MaxIterations -> 1]",
+    )
+    .unwrap();
+    assert!(
+      result
+        .warnings
+        .iter()
+        .any(|w| w.contains("FindRoot::cvmit")),
+      "expected a cvmit message but got: {:?}",
+      result.warnings
+    );
+    assert_eq!(result.result, "{x -> 1.5, y -> 1.4999999999999993}");
+  }
+
+  #[test]
+  fn findroot_multivariate_invalid_max_iterations_reports_ioppfa() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "FindRoot[{x + y - 1 == 0, x - y == 0}, {x, 0.1}, {y, 0.1}, MaxIterations -> \"bogus\"]",
+    )
+    .unwrap();
+    assert!(
+      result
+        .warnings
+        .iter()
+        .any(|w| w.contains("FindRoot::ioppfa")),
+      "expected an ioppfa message but got: {:?}",
+      result.warnings
     );
   }
 }

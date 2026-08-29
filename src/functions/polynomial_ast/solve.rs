@@ -5691,6 +5691,44 @@ const FIND_ROOT_DEFAULT_MAX_ITERATIONS: usize = 100;
 /// How many times one Newton step may be halved before it is accepted anyway.
 const FIND_ROOT_MAX_BACKTRACKS: usize = 60;
 
+/// Parse the `MaxIterations` option out of FindRoot's trailing option
+/// arguments, shared by the single-variable and multivariate forms so the
+/// validation and message stay in one place. `Ok(None)` means the option was
+/// absent or `Automatic` (caller should use its own default); an invalid
+/// value emits the `ioppfa` message and returns `Err(())`, on which the
+/// caller must return the whole call unevaluated, matching wolframscript.
+fn find_root_parse_max_iterations(opts: &[Expr]) -> Result<Option<usize>, ()> {
+  for opt in opts {
+    let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+    else {
+      continue;
+    };
+    let Expr::Identifier(name) = pattern.as_ref() else {
+      continue;
+    };
+    if name != "MaxIterations" {
+      continue;
+    }
+    return match replacement.as_ref() {
+      Expr::Integer(n) if *n >= 1 => Ok(Some(*n as usize)),
+      Expr::Identifier(id) if id == "Automatic" => Ok(None),
+      Expr::Identifier(id) if id == "Infinity" => Ok(Some(usize::MAX)),
+      other => {
+        crate::emit_message(&format!(
+          "FindRoot::ioppfa: The value of the option MaxIterations -> {} \
+           should be a positive integer, Infinity or Automatic.",
+          crate::syntax::format_expr(other, crate::syntax::ExprForm::Output)
+        ));
+        Err(())
+      }
+    };
+  }
+  Ok(None)
+}
+
 /// FindRoot[expr, {var, x0}] — numerically find a root using Newton's method.
 ///
 /// `expr` can be an expression (finds where it equals 0) or an equation `lhs == rhs`.
@@ -5720,36 +5758,46 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   // Multivariate form: FindRoot[{eqns}, {{x, x0}, {y, y0}, ...}] — every
-  // variable spec is itself a {var, start} list. Solved with multidimensional
-  // Newton iteration.
+  // variable spec is itself a {var, start} list, optionally {var, x0, x1}
+  // for a per-variable secant hint. Solved with multidimensional Newton
+  // iteration.
   if let Expr::List(specs) = arg1
     && !specs.is_empty()
     && specs.iter().all(|s| {
       matches!(s, Expr::List(p)
-      if p.len() == 2 && is_findroot_var_expr(&p[0]))
+      if (p.len() == 2 || p.len() == 3) && is_findroot_var_expr(&p[0]))
     })
   {
-    return find_root_multivariate(&args[0], specs);
+    let max_iter = match find_root_parse_max_iterations(&args[2..]) {
+      Ok(v) => v.unwrap_or(FIND_ROOT_DEFAULT_MAX_ITERATIONS),
+      Err(()) => return Ok(unevaluated("FindRoot", args)),
+    };
+    return find_root_multivariate(&args[0], specs, max_iter);
   }
 
   // Multivariate form: FindRoot[{eqns}, {x, x0}, {y, y0}, ...] — the
   // documented form (used throughout Wolfram's own examples) where each
   // variable spec is its own trailing argument instead of being wrapped in
   // one outer list. Collect every leading trailing argument that looks like
-  // a {var, start} pair; two or more means this is the multivariate form
-  // rather than the single-variable {var, x0} / {var, x0, x1} form handled
-  // below.
+  // a {var, start} or {var, x0, x1} pair; two or more means this is the
+  // multivariate form rather than the single-variable {var, x0} / {var, x0,
+  // x1} form handled below.
   if args.len() >= 3 {
     let candidate_specs: Vec<Expr> = args[1..]
       .iter()
       .take_while(|s| {
         matches!(s, Expr::List(p)
-        if p.len() == 2 && is_findroot_var_expr(&p[0]))
+        if (p.len() == 2 || p.len() == 3) && is_findroot_var_expr(&p[0]))
       })
       .cloned()
       .collect();
     if candidate_specs.len() >= 2 {
-      return find_root_multivariate(&args[0], &candidate_specs);
+      let opts = &args[1 + candidate_specs.len()..];
+      let max_iter = match find_root_parse_max_iterations(opts) {
+        Ok(v) => v.unwrap_or(FIND_ROOT_DEFAULT_MAX_ITERATIONS),
+        Err(()) => return Ok(unevaluated("FindRoot", args)),
+      };
+      return find_root_multivariate(&args[0], &candidate_specs, max_iter);
     }
   }
 
@@ -5757,7 +5805,10 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // and MaxIterations caps the number of steps. The rest are accepted and
   // ignored (see the note on AccuracyGoal/PrecisionGoal below).
   let mut use_secant = false;
-  let mut max_iter: usize = FIND_ROOT_DEFAULT_MAX_ITERATIONS;
+  let max_iter: usize = match find_root_parse_max_iterations(&args[2..]) {
+    Ok(v) => v.unwrap_or(FIND_ROOT_DEFAULT_MAX_ITERATIONS),
+    Err(()) => return Ok(unevaluated("FindRoot", args)),
+  };
   for opt in &args[2..] {
     let Expr::Rule {
       pattern,
@@ -5769,28 +5820,11 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let Expr::Identifier(name) = pattern.as_ref() else {
       continue;
     };
-    match name.as_str() {
-      "Method" => {
-        if let Expr::String(m) = replacement.as_ref()
-          && m == "Secant"
-        {
-          use_secant = true;
-        }
-      }
-      "MaxIterations" => match replacement.as_ref() {
-        Expr::Integer(n) if *n >= 1 => max_iter = *n as usize,
-        Expr::Identifier(id) if id == "Automatic" => {}
-        Expr::Identifier(id) if id == "Infinity" => max_iter = usize::MAX,
-        other => {
-          crate::emit_message(&format!(
-            "FindRoot::ioppfa: The value of the option MaxIterations -> {} \
-             should be a positive integer, Infinity or Automatic.",
-            crate::syntax::format_expr(other, crate::syntax::ExprForm::Output)
-          ));
-          return Ok(unevaluated("FindRoot", args));
-        }
-      },
-      _ => {}
+    if name == "Method"
+      && let Expr::String(m) = replacement.as_ref()
+      && m == "Secant"
+    {
+      use_secant = true;
     }
   }
 
@@ -6767,11 +6801,16 @@ fn find_root_solve_linear(
 fn find_root_multivariate(
   eqns_arg: &Expr,
   specs: &[Expr],
+  max_iter: usize,
 ) -> Result<Expr, InterpreterError> {
   // Variables and starting points. A spec's variable is either a plain
   // symbol or an indexed variable like `u[1]` — see `is_findroot_var_expr`.
+  // A three-element spec `{var, x0, x1}` carries a second point used as a
+  // per-variable finite-difference step hint for the numerical Jacobian,
+  // mirroring the secant hint the single-variable form uses.
   let mut raw_vars: Vec<Expr> = Vec::new();
   let mut x: Vec<f64> = Vec::new();
+  let mut step_hint: Vec<Option<f64>> = Vec::new();
   for spec in specs {
     if let Expr::List(p) = spec {
       if !is_findroot_var_expr(&p[0]) {
@@ -6780,7 +6819,15 @@ fn find_root_multivariate(
         ));
       }
       raw_vars.push(p[0].clone());
-      x.push(find_root_eval_number(&p[1])?);
+      let x0 = find_root_eval_number(&p[1])?;
+      x.push(x0);
+      step_hint.push(if p.len() == 3 {
+        let x1 = find_root_eval_number(&p[2])?;
+        let h = (x1 - x0).abs();
+        if h > 1e-14 { Some(h) } else { None }
+      } else {
+        None
+      });
     }
   }
   let n = raw_vars.len();
@@ -6858,9 +6905,20 @@ fn find_root_multivariate(
     jac.push(row);
   }
 
-  // Newton iteration.
-  let max_iter = 100;
+  // Every entry that has no symbolic derivative needs two extra function
+  // evaluations (central difference) per iteration to refill it — for an
+  // opaque function like one wrapping `NDSolve` that cost dominates and a
+  // plain Newton iteration recomputing the whole Jacobian every step turns
+  // into hundreds of expensive re-solves. Broyden's quasi-Newton method
+  // amortizes that: the Jacobian is built by finite difference just once,
+  // then cheaply rank-1 updated from the step already taken, so each
+  // further iteration costs exactly the `n` evaluations needed for the
+  // residual itself.
+  let needs_finite_diff = jac
+    .iter()
+    .any(|row| row.iter().any(std::option::Option::is_none));
   let tol = 1e-13;
+
   // The point with the smallest residual seen so far, and that residual.
   // A large, ill-conditioned system (e.g. a PDE collocation matrix, whose
   // condition number grows with the grid size) can have an achievable
@@ -6873,39 +6931,27 @@ fn find_root_multivariate(
   // without moving the answer. Tracking the best iterate and stopping the
   // moment progress stalls returns that already-best point immediately
   // instead, while leaving genuinely (even slowly) converging cases to
-  // keep iterating exactly as before.
+  // keep iterating exactly as before. Both branches below update this.
   let mut best_x = x.clone();
-  let mut best_resid = f64::INFINITY;
-  let mut prev_resid = f64::INFINITY;
-  for _ in 0..max_iter {
-    // Shared by every equation/Jacobian evaluation at this point — see
-    // `find_root_eval_multivar_at`'s doc comment for why this must be
-    // built once per iteration rather than once per entry.
-    let reals: Vec<Expr> = x.iter().map(|&v| Expr::Real(v)).collect();
-    let bindings: Vec<(&str, &Expr)> =
-      vars.iter().map(String::as_str).zip(reals.iter()).collect();
+  // Set by both branches below before their first read.
+  let mut best_resid;
+  // The two-point spec's step hint only seeds the very first Jacobian
+  // estimate — reusing it as a fixed-width central difference for the rest
+  // of the solve would keep probing the same offset from whatever point the
+  // iteration has moved to (potentially outside the domain the caller
+  // implied was valid) and would stay just as coarse once the iterate has
+  // moved far from `x0`, where the adaptive default is a better estimate.
+  let no_hint: Vec<Option<f64>> = vec![None; n];
 
-    let mut fv = vec![0.0; n];
-    for (i, f) in eqns.iter().enumerate() {
-      fv[i] = find_root_eval_multivar_at(f, &bindings)?;
-    }
-    let resid = fv.iter().fold(0.0f64, |a, &b| a.max(b.abs()));
-    if resid < best_resid {
-      best_resid = resid;
-      best_x.clone_from(&x);
-    }
-    if resid < tol {
-      break;
-    }
-    if resid >= prev_resid {
-      break;
-    }
-    prev_resid = resid;
+  let eval_jacobian_at = |x: &[f64],
+                          bindings: &[(&str, &Expr)],
+                          hint: &[Option<f64>]|
+   -> Result<Vec<Vec<f64>>, InterpreterError> {
     let mut jm = vec![vec![0.0; n]; n];
     for (i, row) in jac.iter().enumerate() {
       for (j, dij) in row.iter().enumerate() {
         let entry = match dij {
-          Some(d) => quietly(|| find_root_eval_multivar_at(d, &bindings))
+          Some(d) => quietly(|| find_root_eval_multivar_at(d, bindings))
             .ok()
             .filter(|v| v.is_finite()),
           None => None,
@@ -6913,10 +6959,10 @@ fn find_root_multivariate(
         jm[i][j] = if let Some(v) = entry {
           v
         } else {
-          let h = 1e-7 * x[j].abs().max(1.0);
-          let mut xp = x.clone();
+          let h = hint[j].unwrap_or(1e-7 * x[j].abs().max(1.0));
+          let mut xp = x.to_vec();
           xp[j] += h;
-          let mut xm = x.clone();
+          let mut xm = x.to_vec();
           xm[j] -= h;
           let fp = find_root_eval_multivar(&eqns[i], &vars, &xp)?;
           let fm = find_root_eval_multivar(&eqns[i], &vars, &xm)?;
@@ -6924,17 +6970,184 @@ fn find_root_multivariate(
         };
       }
     }
-    let neg_f: Vec<f64> = fv.iter().map(|v| -v).collect();
-    let Some(delta) = find_root_solve_linear(jm, neg_f) else {
-      break;
+    Ok(jm)
+  };
+
+  if needs_finite_diff {
+    // Broyden's method: one finite-difference Jacobian up front, then a
+    // rank-1 update from each accepted step. A step is only accepted if it
+    // improves the residual (backtracking, as the single-variable secant
+    // path above does); a rank-1 update built from a rejected long step
+    // would corrupt the Jacobian estimate rather than merely take a slow
+    // step, so a run of failed backtracks instead re-seeds the Jacobian
+    // with a fresh finite difference at the current point.
+    let residual_norm =
+      |fv: &[f64]| fv.iter().fold(0.0f64, |a, &b| a.max(b.abs()));
+    let eval_all = |x: &[f64]| -> Result<Vec<f64>, InterpreterError> {
+      let mut fv = vec![0.0; n];
+      for (i, f) in eqns.iter().enumerate() {
+        fv[i] = find_root_eval_multivar(f, &vars, x)?;
+      }
+      Ok(fv)
     };
-    let mut max_d = 0.0f64;
-    for (j, &dj) in delta.iter().enumerate() {
-      x[j] += dj;
-      max_d = max_d.max(dj.abs());
+    let mut fv = eval_all(&x)?;
+    let reals: Vec<Expr> = x.iter().map(|&v| Expr::Real(v)).collect();
+    let bindings: Vec<(&str, &Expr)> =
+      vars.iter().map(String::as_str).zip(reals.iter()).collect();
+    let mut jm = eval_jacobian_at(&x, &bindings, &step_hint)?;
+    best_resid = residual_norm(&fv);
+    best_x.clone_from(&x);
+    let mut converged = best_resid < tol;
+    let mut iter_count = 0;
+    while !converged && iter_count < max_iter {
+      iter_count += 1;
+      let mut progressed = false;
+      for attempt in 0..2 {
+        let neg_f: Vec<f64> = fv.iter().map(|v| -v).collect();
+        let Some(delta) = find_root_solve_linear(jm.clone(), neg_f) else {
+          if attempt == 0 {
+            let reals: Vec<Expr> = x.iter().map(|&v| Expr::Real(v)).collect();
+            let bindings: Vec<(&str, &Expr)> =
+              vars.iter().map(String::as_str).zip(reals.iter()).collect();
+            jm = eval_jacobian_at(&x, &bindings, &no_hint)?;
+            continue;
+          }
+          break;
+        };
+        let base_norm = residual_norm(&fv);
+        let mut shrink = 1.0;
+        let mut accepted = None;
+        for _ in 0..FIND_ROOT_MAX_BACKTRACKS {
+          let x_trial: Vec<f64> = x
+            .iter()
+            .zip(&delta)
+            .map(|(&xj, &dj)| xj + dj * shrink)
+            .collect();
+          // An opaque residual (e.g. one wrapping NDSolve) can fail outright
+          // at a wild trial point rather than merely return a non-finite
+          // value — treat that the same as a rejected trial (shrink and
+          // retry) instead of aborting the whole FindRoot call over one bad
+          // backtrack guess.
+          let fv_trial =
+            eval_all(&x_trial).unwrap_or_else(|_| vec![f64::NAN; n]);
+          if fv_trial.iter().all(|v| v.is_finite())
+            && residual_norm(&fv_trial) < base_norm
+          {
+            accepted = Some((x_trial, fv_trial, shrink));
+            break;
+          }
+          shrink *= 0.5;
+        }
+        let Some((x_new, fv_new, shrink)) = accepted else {
+          // No backtrack improved on this Jacobian estimate — it has drifted
+          // too far from the true derivative. Re-seed it once and retry the
+          // step from scratch before giving up on this outer iteration.
+          if attempt == 0 {
+            let reals: Vec<Expr> = x.iter().map(|&v| Expr::Real(v)).collect();
+            let bindings: Vec<(&str, &Expr)> =
+              vars.iter().map(String::as_str).zip(reals.iter()).collect();
+            jm = eval_jacobian_at(&x, &bindings, &no_hint)?;
+            continue;
+          }
+          break;
+        };
+        let step: Vec<f64> = delta.iter().map(|d| d * shrink).collect();
+        // Rank-1 update: J += (Δf - JΔx) ΔxᵀΔx⁻¹ / (Δx · Δx).
+        let step_sq: f64 = step.iter().map(|d| d * d).sum();
+        if step_sq > 1e-300 {
+          for i in 0..n {
+            let j_dx: f64 = (0..n).map(|k| jm[i][k] * step[k]).sum();
+            let coeff = (fv_new[i] - fv[i] - j_dx) / step_sq;
+            for (k, &sk) in step.iter().enumerate() {
+              jm[i][k] += coeff * sk;
+            }
+          }
+        }
+        x = x_new;
+        fv = fv_new;
+        progressed = true;
+        let resid = residual_norm(&fv);
+        if resid < best_resid {
+          best_resid = resid;
+          best_x.clone_from(&x);
+        }
+        if resid < tol {
+          converged = true;
+        }
+        break;
+      }
+      if !progressed {
+        break;
+      }
+      if converged {
+        break;
+      }
     }
-    if max_d < tol {
-      break;
+    // Only report exhausting the iteration budget when that is actually
+    // what happened — a stall break (`!progressed`, backtracking found no
+    // improving step even after re-seeding the Jacobian) settles on the
+    // best point found so far exactly like the plain-Newton branch below
+    // does silently, not a failure to converge within `max_iter` steps.
+    if !converged && iter_count >= max_iter {
+      crate::emit_message(&format!(
+        "FindRoot::cvmit: Failed to converge to the requested accuracy or \
+         precision within {max_iter} iterations."
+      ));
+    }
+  } else {
+    // Fully symbolic Jacobian: recomputing it every iteration costs no
+    // extra function evaluations, so plain damped-free Newton is simplest.
+    // The residual is re-checked and `best_x` updated immediately after
+    // every step (not just at the top of the next iteration) so a small
+    // `MaxIterations` still reflects the step just taken — otherwise the
+    // very last step of a run that stops because it hit `max_iter` would be
+    // computed and then silently discarded, exactly like the Broyden branch
+    // above already avoids by updating `best_x` right after each step.
+    let eval_residual =
+      |x: &[f64]| -> Result<(Vec<f64>, f64), InterpreterError> {
+        let reals: Vec<Expr> = x.iter().map(|&v| Expr::Real(v)).collect();
+        let bindings: Vec<(&str, &Expr)> =
+          vars.iter().map(String::as_str).zip(reals.iter()).collect();
+        let mut fv = vec![0.0; n];
+        for (i, f) in eqns.iter().enumerate() {
+          fv[i] = find_root_eval_multivar_at(f, &bindings)?;
+        }
+        let resid = fv.iter().fold(0.0f64, |a, &b| a.max(b.abs()));
+        Ok((fv, resid))
+      };
+    let (mut fv, mut resid) = eval_residual(&x)?;
+    best_resid = resid;
+    best_x.clone_from(&x);
+    let mut prev_resid = f64::INFINITY;
+    for _ in 0..max_iter {
+      if resid < tol {
+        break;
+      }
+      if resid >= prev_resid {
+        break;
+      }
+      prev_resid = resid;
+      let reals: Vec<Expr> = x.iter().map(|&v| Expr::Real(v)).collect();
+      let bindings: Vec<(&str, &Expr)> =
+        vars.iter().map(String::as_str).zip(reals.iter()).collect();
+      let jm = eval_jacobian_at(&x, &bindings, &no_hint)?;
+      let neg_f: Vec<f64> = fv.iter().map(|v| -v).collect();
+      let Some(delta) = find_root_solve_linear(jm, neg_f) else {
+        break;
+      };
+      let mut max_d = 0.0f64;
+      for (j, &dj) in delta.iter().enumerate() {
+        x[j] += dj;
+        max_d = max_d.max(dj.abs());
+      }
+      (fv, resid) = eval_residual(&x)?;
+      if resid < best_resid {
+        best_resid = resid;
+        best_x.clone_from(&x);
+      }
+      if max_d < tol {
+        break;
+      }
     }
   }
   x = best_x;
