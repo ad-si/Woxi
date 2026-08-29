@@ -689,6 +689,9 @@ fn is_valid_replace_rules(expr: &Expr) -> bool {
       true
     }
     Expr::List(items) => items.iter().all(is_valid_replace_rules),
+    // An Association is accepted anywhere a list of rules is expected: it
+    // behaves as if it were the list of its key -> value pairs.
+    Expr::Association(_) => true,
     _ => false,
   }
 }
