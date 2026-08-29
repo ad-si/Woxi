@@ -8021,6 +8021,25 @@ mod ndsolve {
     );
   }
 
+  // wolframscript prints `NDSolve::ndsz` alongside the truncated
+  // InterpolatingFunction whenever integration stalls before the requested
+  // endpoint — the truncation above must not go silent about it.
+  #[test]
+  fn blow_up_before_domain_end_emits_ndsz() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "sol = NDSolve[{y[t]^2 == y'[t], y[0] == 1}, y, {t, 0, 2}]; \
+       Head[sol[[1, 1, 2]]]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "InterpolatingFunction");
+    assert!(
+      result.warnings.iter().any(|w| w.contains("NDSolve::ndsz")),
+      "expected an NDSolve::ndsz message but got: {:?}",
+      result.warnings
+    );
+  }
+
   #[test]
   fn interior_initial_point_integrates_both_directions() {
     // The initial condition sits inside the domain: y' = y, y(1) = 1 on
@@ -9486,6 +9505,49 @@ mod findroot_symbolic_start {
       )
       .unwrap(),
       "{x -> 1.4142135623730951, y -> 1.585786437626905}"
+    );
+  }
+
+  // Regression test: `MaxIterations` was accepted syntactically for the
+  // multivariate form (it parses as an ordinary trailing option) but was
+  // never actually threaded into the solver, which always ran up to a
+  // hardcoded 100 iterations regardless. A tight cap must now visibly limit
+  // how many Newton steps run, rather than silently converging anyway.
+  //
+  // This also guards a second, related bug: the multivariate loop tracked
+  // its best-seen point only at the *top* of each iteration (before taking
+  // that iteration's step), so the very last step of a run that stopped
+  // because it hit `MaxIterations` was computed and then discarded — with
+  // `MaxIterations -> 1` this used to return the untouched starting point
+  // instead of the one real Newton step taken.
+  #[test]
+  fn findroot_multivariate_max_iterations_caps_steps() {
+    // One Newton step from x0 = y0 = 10 lands at exactly x - (x^2-2)/(2x) =
+    // 5.1 and y - (y^2-3)/(2y) = 5.15 — nowhere near the converged
+    // sqrt(2), sqrt(3) — so `MaxIterations -> 1` must stop there.
+    assert_eq!(
+      interpret(
+        "FindRoot[{x^2 - 2 == 0, y^2 - 3 == 0}, {x, 10}, {y, 10}, MaxIterations -> 1]"
+      )
+      .unwrap(),
+      "{x -> 5.1, y -> 5.15}"
+    );
+  }
+
+  #[test]
+  fn findroot_multivariate_invalid_max_iterations_reports_ioppfa() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "FindRoot[{x + y - 1 == 0, x - y == 0}, {x, 0.1}, {y, 0.1}, MaxIterations -> \"bogus\"]",
+    )
+    .unwrap();
+    assert!(
+      result
+        .warnings
+        .iter()
+        .any(|w| w.contains("FindRoot::ioppfa")),
+      "expected an ioppfa message but got: {:?}",
+      result.warnings
     );
   }
 }

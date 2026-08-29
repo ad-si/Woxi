@@ -2535,7 +2535,14 @@ fn integrate_leg(
       // range, so a truncated leg becomes a truncated (rather than a
       // missing) solution — matching wolframscript, which likewise
       // returns an `InterpolatingFunction` valid up to where it could
-      // integrate instead of failing the whole call.
+      // integrate instead of failing the whole call (alongside the
+      // `NDSolve::ndsz` message it prints at the point stepping stalled).
+      if points.len() > 1 {
+        crate::emit_message(&format!(
+          "NDSolve::ndsz: At x == {x}, step size is effectively zero; \
+           singularity or stiff system suspected."
+        ));
+      }
       return Ok(if points.len() > 1 { Some(points) } else { None });
     };
 
