@@ -11990,6 +11990,84 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(!svg.contains("<ellipse"), "no marker was asked for: {svg}");
     }
 
+    // `LocatorPane[locators, Dynamic[picture]]` — the picture is itself
+    // `Dynamic`-wrapped, as it is once it depends on something besides the
+    // locators (a Demonstration whose plot also reacts to a slider).
+    // `Show[…]` (like every other plot head) evaluates straight to a
+    // rendered picture rather than staying the symbolic
+    // `Graphics[prims, opts]` a marker can be spliced into, so this body
+    // shape used to fail that check and the whole pane exported as a
+    // strip of its own unevaluated source instead of a picture.
+    #[test]
+    fn locator_pane_draws_a_dynamic_wrapped_show_picture() {
+      let svg = export_svg(
+        "LocatorPane[{{0.5, 0.5}}, \
+         Dynamic[Show[Graphics[{Line[{{0, 0}, {1, 1}}]}, \
+         PlotRange -> {{0, 1}, {0, 1}}, ImageSize -> 200]]]]",
+      );
+      assert!(!svg.contains("LocatorPane"), "not the source: {svg}");
+      assert!(
+        svg.contains("<polyline") || svg.contains("<line"),
+        "the wrapped picture must still be drawn: {svg}"
+      );
+      assert_eq!(
+        svg.matches("<ellipse").count(),
+        1,
+        "the locator marker must still be drawn on top: {svg}"
+      );
+    }
+
+    // A body that picks its picture with `Which` (a Demonstration
+    // switching between plotted methods over the same locator, e.g.
+    // choosing which optimization algorithm's path to plot) only ever
+    // evaluates the branch it selects — the marker only has to reach that
+    // one branch, and never touches the others, which are never run.
+    #[test]
+    fn locator_pane_draws_the_which_branch_its_body_selects() {
+      let body = |mode: &str| {
+        format!(
+          "mode = \"{mode}\"; \
+           LocatorPane[{{{{0.5, 0.5}}}}, \
+           Dynamic[Which[mode == \"circle\", \
+             Show[Graphics[{{Disk[]}}, PlotRange -> {{{{0, 1}}, {{0, 1}}}}, \
+               ImageSize -> 200]], \
+             mode == \"square\", \
+             Show[Graphics[{{Rectangle[]}}, PlotRange -> {{{{0, 1}}, {{0, 1}}}}, \
+               ImageSize -> 200]]]]]"
+        )
+      };
+
+      let circle_svg = export_svg(&body("circle"));
+      assert!(
+        !circle_svg.contains("LocatorPane"),
+        "not the source: {circle_svg}"
+      );
+      assert_eq!(
+        circle_svg.matches("<ellipse").count(),
+        2,
+        "the selected disk plus the locator marker: {circle_svg}"
+      );
+      assert!(
+        !circle_svg.contains("<rect"),
+        "the other branch: {circle_svg}"
+      );
+
+      let square_svg = export_svg(&body("square"));
+      assert!(
+        !square_svg.contains("LocatorPane"),
+        "not the source: {square_svg}"
+      );
+      assert!(
+        square_svg.contains("<rect"),
+        "the selected square: {square_svg}"
+      );
+      assert_eq!(
+        square_svg.matches("<ellipse").count(),
+        1,
+        "just the locator marker this time: {square_svg}"
+      );
+    }
+
     // A primitive whose argument is `Dynamic[…]` draws the value that
     // argument has now — the shape a Demonstration's draggable points make.
     // The content arrives unexpanded (`Dynamic` is HoldFirst), and without
@@ -18784,6 +18862,61 @@ mod manipulate {
         assert_eq!((*y_min, *y_max), (-2.0, 2.0));
       }
       _ => panic!("expected 2D control"),
+    }
+  }
+
+  // A hidden variable's control-type slot can spell `None` as a bare
+  // identifier after the bounds (`{{v, init}, min, max, None}`) instead of
+  // the `ControlType -> None` option rule — both mean the same thing, and
+  // a Demonstration is free to use either. A body-level `Locator[Dynamic[…]]`
+  // or `LocatorPane[Dynamic[…], …]` driving such a variable promotes it to a
+  // visible, draggable control either way: re-parsing the spec with its
+  // control-type marker swapped for `Locator` must actually strip the bare
+  // `None`, not just the `ControlType -> …` rule form, or the re-parsed spec
+  // reads as hidden all over again and the promotion silently loses the
+  // control instead of making it draggable. Regression: with only the rule
+  // form stripped, this variable disappeared from the spec entirely — not
+  // a control, not even hidden state.
+  #[test]
+  fn spec_body_locator_promotes_a_bare_none_control_type() {
+    let expr = interpret_to_expr(
+      "Manipulate[Graphics[{Locator[Dynamic[pt], Point[pt]]}], \
+       {{pt, {0.2, 1}}, {-1, -1}, {1, 1}, None}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    match &spec.controls[0] {
+      ManipulateControl::Slider2D {
+        name,
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+        ..
+      } => {
+        assert_eq!(name, "pt");
+        assert_eq!((*x_min, *x_max), (-1.0, 1.0));
+        assert_eq!((*y_min, *y_max), (-1.0, 1.0));
+      }
+      other => panic!("expected a draggable 2D control, got {other:?}"),
+    }
+  }
+
+  // The same bare-`None` shorthand, but driven by a whole-picture
+  // `LocatorPane[Dynamic[…], …]` (the "toggle between plotted methods"
+  // Demonstration pattern) rather than a bare `Locator[…]` primitive
+  // inside a `Graphics[…]` list.
+  #[test]
+  fn spec_body_locator_pane_promotes_a_bare_none_control_type() {
+    let expr = interpret_to_expr(
+      "Manipulate[LocatorPane[Dynamic[pt], Graphics[{Point[pt]}]], \
+       {{pt, {0.2, 1}}, {-1, -1}, {1, 1}, None}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    match &spec.controls[0] {
+      ManipulateControl::Slider2D { name, .. } => assert_eq!(name, "pt"),
+      other => panic!("expected a draggable 2D control, got {other:?}"),
     }
   }
 

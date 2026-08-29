@@ -14611,7 +14611,7 @@ fn compute_per_cell_width(n: usize, explicit_total: Option<f64>) -> i128 {
 /// honor the `ImageSize` option. Used to avoid injecting `ImageSize`
 /// into arbitrary user functions (which might error or behave oddly on
 /// unknown options) while still catching the common plot/chart cases.
-fn is_graphics_producing_head(name: &str) -> bool {
+pub(crate) fn is_graphics_producing_head(name: &str) -> bool {
   matches!(
     name,
     // Core graphics primitives
@@ -18145,7 +18145,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         {
           let promoted: Vec<Expr> = items
             .iter()
-            .filter(|it| !is_control_type_rule(it))
+            .filter(|it| !is_control_type_marker(it))
             .cloned()
             .chain(std::iter::once(Expr::Identifier("Locator".to_string())))
             .collect();
@@ -18438,16 +18438,36 @@ fn is_control_type_rule(item: &Expr) -> bool {
   )
 }
 
-/// The variables driven by `Locator[Dynamic[var, cb], …]` markers inside a
-/// Manipulate body, each with the InputForm of its write-back callback (the
-/// Dynamic's second argument), in first-seen order.
+/// Whether a control-spec item picks or hides the control's own type —
+/// either the `ControlType -> …` option, or the bare shorthand for it in
+/// the control-type slot after the bounds (`{{v, init}, min, max, None}`
+/// hides the control the same way `ControlType -> None` does). A
+/// promotion that swaps this marker for `Locator` (see
+/// `collect_body_locator_callbacks`'s callers) must strip both forms:
+/// leaving a bare `None` behind alongside the appended `Locator` marker
+/// makes the re-parsed spec hidden all over again, so the promotion
+/// silently loses the control instead of making it draggable.
+fn is_control_type_marker(item: &Expr) -> bool {
+  is_control_type_rule(item)
+    || matches!(item, Expr::Identifier(s) if s == "None")
+}
+
+/// The variables driven by `Locator[Dynamic[var, cb], …]` markers or a
+/// `LocatorPane[Dynamic[var, cb], …]` pane inside a Manipulate body, each
+/// with the InputForm of its write-back callback (the Dynamic's second
+/// argument), in first-seen order. `LocatorPane` is the whole-picture form
+/// (a Demonstration switching which plot it drags a point over draws the
+/// picture itself as `Dynamic`, with the pane wrapping that); `Locator` is
+/// the bare graphics primitive placed among ordinary primitives in a
+/// `Graphics[…]` list. Both drive their variable interactively the same
+/// way, so both promote it to a visible control below.
 fn collect_body_locator_callbacks(
   expr: &Expr,
 ) -> Vec<(String, Option<String>)> {
   fn walk(expr: &Expr, found: &mut Vec<(String, Option<String>)>) {
     match expr {
       Expr::FunctionCall { name, args } => {
-        if name == "Locator"
+        if (name == "Locator" || name == "LocatorPane")
           && let Some(Expr::FunctionCall {
             name: dname,
             args: dargs,
