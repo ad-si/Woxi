@@ -27238,3 +27238,42 @@ fn manipulate_module_which_affine_prolog_checkbox_and_traditional_plot_label() {
     "Epilog's \"A\" label must not draw when labels is False: {without_label}"
   );
 }
+
+#[test]
+fn test_plot_label_fraction_of_difference_keeps_numerator_grouped() {
+  // Regression: `expr_to_svg_markup`'s `Times[Rational[1, d], expr]` case
+  // joins the numerator and denominator with a literal `/`, not a real
+  // vinculum, so an additive numerator needs its own parens — otherwise
+  // `1/2 (p^2 - r^2)` rendered as `p^2 - r^2/2` (only the last term
+  // divided) instead of `(p^2 - r^2)/2`.
+  clear_state();
+  let svg = export_svg(
+    "Graphics[{Point[{0, 0}]}, PlotLabel -> Row[{q == 1/2 (p^2 - r^2)}]]",
+  );
+  assert!(
+    svg.contains(")/2"),
+    "expected the whole numerator grouped in parens before the /2: {svg}"
+  );
+  assert!(
+    !svg.contains("font-size=\"70%\">2</tspan>/2"),
+    "the /2 must not attach directly to the last squared term alone: {svg}"
+  );
+}
+
+#[test]
+fn test_show_merges_parametric_plot3d_surface_with_graphics3d() {
+  // Regression: ParametricPlot3D returned an opaquely pre-rendered
+  // Graphics3D with no symbolic `structure` (unlike Plot3D/ListPlot3D,
+  // which expose a GraphicsComplex structure for exactly this purpose), so
+  // `Show[Graphics3D[...], ParametricPlot3D[...]]` silently dropped the
+  // parametric surface and kept only the raw Graphics3D primitives.
+  clear_state();
+  let svg = export_svg(
+    "Show[Graphics3D[{Point[{0, 0, 0}]}], \
+     ParametricPlot3D[{u, v, 0}, {u, -1, 1}, {v, -1, 1}]]",
+  );
+  assert!(
+    svg.contains("<polygon") || svg.contains("<path"),
+    "expected the parametric surface's geometry in the merged render: {svg}"
+  );
+}
