@@ -9688,6 +9688,128 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     gz_max - gz_min
   };
 
+  // ── Symbolic structure: Graphics3D[GraphicsComplex[points, {…}]] ──
+  // `Show` merges the *primitives* of the graphics it is given, so a
+  // surface that exists only as a rendering is dropped when it is shown
+  // together with a `Graphics3D`. Emitting the sampled surface in world
+  // coordinates — coloured by height, the way the standalone render
+  // colours it — lets `Show[ParametricPlot3D[…], Graphics3D[…]]` draw both.
+  let structure = {
+    let complexes: Vec<Expr> = all_surface_points
+      .iter()
+      .enumerate()
+      .map(|(surface_idx, sg)| {
+        let mut index_of: Vec<Vec<Option<usize>>> =
+          vec![vec![None; GRID_N + 1]; GRID_N + 1];
+        let mut point_exprs: Vec<Expr> = Vec::new();
+        for (i, row) in sg.iter().enumerate() {
+          for (j, p) in row.iter().enumerate() {
+            if let Some((x, y, z)) = p {
+              index_of[i][j] = Some(point_exprs.len());
+              point_exprs.push(Expr::List(
+                vec![Expr::Real(*x), Expr::Real(*y), Expr::Real(*z)].into(),
+              ));
+            }
+          }
+        }
+        let mut content: Vec<Expr> = Vec::new();
+        if !matches!(mesh_mode, MeshMode::All) {
+          content.push(call0("EdgeForm"));
+        }
+        for i in 0..GRID_N {
+          for j in 0..GRID_N {
+            let (Some(a), Some(b), Some(c), Some(d)) = (
+              index_of[i][j],
+              index_of[i + 1][j],
+              index_of[i + 1][j + 1],
+              index_of[i][j + 1],
+            ) else {
+              continue;
+            };
+            let avg_z =
+              [sg[i][j], sg[i + 1][j], sg[i + 1][j + 1], sg[i][j + 1]]
+                .iter()
+                .filter_map(|p| p.map(|(_, _, z)| z))
+                .sum::<f64>()
+                / 4.0;
+            let avg_z_norm = (avg_z - gz_min) / rz;
+            let default_color = height_color(avg_z_norm);
+            let (cr, cg, cb) =
+              match plot_style_for_surface(&plot_styles, surface_idx) {
+                Some(style) => style.color.unwrap_or(default_color),
+                None => default_color,
+              };
+            content.push(Expr::List(
+              vec![
+                call(
+                  "RGBColor",
+                  vec![
+                    Expr::Real(cr as f64 / 255.0),
+                    Expr::Real(cg as f64 / 255.0),
+                    Expr::Real(cb as f64 / 255.0),
+                  ],
+                ),
+                call1(
+                  "Polygon",
+                  Expr::List(
+                    [a, b, c, d]
+                      .iter()
+                      .map(|&k| Expr::Integer(k as i128 + 1))
+                      .collect::<Vec<_>>()
+                      .into(),
+                  ),
+                ),
+              ]
+              .into(),
+            ));
+          }
+        }
+        Expr::FunctionCall {
+          name: "GraphicsComplex".to_string(),
+          args: vec![
+            Expr::List(point_exprs.into()),
+            Expr::List(content.into()),
+          ]
+          .into(),
+        }
+      })
+      .collect();
+    let content = if complexes.len() == 1 {
+      complexes.into_iter().next().expect("one complex")
+    } else {
+      Expr::List(complexes.into())
+    };
+    // `ParametricPlot3D` draws axes and squats its box the same way
+    // `Plot3D` does (see the analogous block above), where a bare
+    // `Graphics3D` does neither: both defaults are spelled out so a
+    // surface shown inside another graphic — with `ParametricPlot3D`
+    // itself first in the `Show` — keeps the shape it was drawn with.
+    let mut structure_args = vec![content];
+    structure_args.extend(args[3..].iter().cloned());
+    let names = |opt: &str| {
+      structure_args.iter().any(|o| {
+        matches!(o, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+          if matches!(pattern.as_ref(), Expr::Identifier(n) if n == opt))
+      })
+    };
+    let (names_axes, names_ratios) = (names("Axes"), names("BoxRatios"));
+    if !names_axes {
+      structure_args.push(Expr::Rule {
+        pattern: Box::new(Expr::Identifier("Axes".to_string())),
+        replacement: Box::new(Expr::Identifier("True".to_string())),
+      });
+    }
+    if !names_ratios {
+      structure_args.push(Expr::Rule {
+        pattern: Box::new(Expr::Identifier("BoxRatios".to_string())),
+        replacement: Box::new(Expr::List(
+          vec![Expr::Integer(1), Expr::Integer(1), Expr::Real(Z_SCALE)].into(),
+        )),
+      });
+    }
+    call("Graphics3D", structure_args)
+  };
+
   // Phase 2: Build triangles
   let mut all_triangles: Vec<Triangle> = Vec::new();
 
@@ -9805,5 +9927,5 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // A `PlotLabel` sets a title above the finished picture.
   let svg = with_plot_label(svg, args, svg_width, svg_height);
 
-  Ok(crate::graphics3d_result(svg))
+  Ok(crate::graphics3d_result_with_structure(svg, structure))
 }

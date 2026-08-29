@@ -9321,7 +9321,17 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
             && matches!(&rargs[0], Expr::Integer(1))
             && matches!(&rargs[1], Expr::Integer(d) if *d > 0)
           {
+            // `stacked_fraction_svg` joins its arguments with a literal
+            // `/`, not a vinculum, so a `Plus`/`Minus` numerator needs its
+            // own parens here — otherwise `1/2*(tau^2 - sigma^2)` prints as
+            // `-sigma^2 + tau^2/2` (only the last term divided) instead of
+            // `(-sigma^2 + tau^2)/2`.
             let num_markup = expr_to_svg_markup(&args[1]);
+            let num_markup = if is_additive_expr(&args[1]) {
+              format!("({num_markup})")
+            } else {
+              num_markup
+            };
             let den_markup = expr_to_svg_markup(&rargs[1]);
             let num_w = estimate_display_width(&args[1]);
             let den_w = estimate_display_width(&rargs[1]);
