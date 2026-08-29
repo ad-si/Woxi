@@ -3082,6 +3082,47 @@ fn parse_text3d_offset(spec: &Expr) -> Option<(f64, f64)> {
   }
 }
 
+/// Typesets `label_expr` (a `Text`/`Inset` label, e.g. a plain string or
+/// `Style[…]`) and pushes a `Text3D` primitive for it at `pos`, if it
+/// renders to non-empty text.
+fn push_text3d_label(
+  label_expr: &Expr,
+  pos: Point3D,
+  offset: (f64, f64),
+  style: &StyleState3D,
+  prims: &mut Vec<Primitive3D>,
+) {
+  let styled = crate::functions::chart::parse_styled_label(label_expr);
+  let (label, width_chars, font_size, color) = match styled {
+    Some(s) => (
+      s.svg(),
+      s.text.chars().count(),
+      s.font_size.unwrap_or(12.0),
+      s.color,
+    ),
+    None => (String::new(), 0, 12.0, None),
+  };
+  if label.is_empty() {
+    return;
+  }
+  let mut text_style = style.clone();
+  if let Some(c) = color {
+    text_style.color = Some((
+      (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+      (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+      (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+    ));
+  }
+  prims.push(Primitive3D::Text3D {
+    label,
+    pos,
+    offset,
+    font_size,
+    width_chars,
+    style: text_style,
+  });
+}
+
 fn collect_3d_primitives(
   expr: &Expr,
   style: &mut StyleState3D,
@@ -3258,37 +3299,28 @@ fn collect_3d_primitives(
         // reads the same wherever it is written.
         "Text" if args.len() >= 2 => {
           if let Some(pos) = parse_point3d(&args[1]) {
-            let styled = crate::functions::chart::parse_styled_label(&args[0]);
-            let (label, width_chars, font_size, color) = match styled {
-              Some(s) => (
-                s.svg(),
-                s.text.chars().count(),
-                s.font_size.unwrap_or(12.0),
-                s.color,
-              ),
-              None => (String::new(), 0, 12.0, None),
-            };
-            if !label.is_empty() {
-              let mut text_style = style.clone();
-              if let Some(c) = color {
-                text_style.color = Some((
-                  (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
-                  (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
-                  (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
-                ));
+            let offset = args
+              .get(2)
+              .and_then(parse_text3d_offset)
+              .unwrap_or((0.0, 0.0));
+            push_text3d_label(&args[0], pos, offset, style, prims);
+          }
+        }
+        // `Inset[obj, {x, y, z}]` places `obj` at a point of the scene.
+        // The Demonstrations gallery uses it almost exclusively as
+        // `Inset[Text[Style[…]], pos]`, so unwrap a `Text[…]` wrapper and
+        // fall through to the same label rendering `Text` uses above.
+        "Inset" if args.len() >= 2 => {
+          if let Some(pos) = parse_point3d(&args[1]) {
+            let label_expr = match &args[0] {
+              Expr::FunctionCall { name, args: inner }
+                if name == "Text" && !inner.is_empty() =>
+              {
+                &inner[0]
               }
-              prims.push(Primitive3D::Text3D {
-                label,
-                pos,
-                offset: args
-                  .get(2)
-                  .and_then(parse_text3d_offset)
-                  .unwrap_or((0.0, 0.0)),
-                font_size,
-                width_chars,
-                style: text_style,
-              });
-            }
+              other => other,
+            };
+            push_text3d_label(label_expr, pos, (0.0, 0.0), style, prims);
           }
         }
         "Cylinder" => {
