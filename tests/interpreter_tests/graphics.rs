@@ -4748,6 +4748,29 @@ mod plot3d {
       assert!(svg.contains("<polygon"), "missing Epilog arrowhead");
     }
 
+    /// An Epilog element may be a call to a user-defined helper that draws
+    /// a custom shape via `Translate`/`Scale` around a primitive (the
+    /// idiom several Demonstrations use for a decoration built once and
+    /// reused at different positions/sizes — independently written here,
+    /// not copied from any specific Demonstration). Plot's own Epilog
+    /// renderer used to neither evaluate an unrecognized head to see what
+    /// it expanded to, nor understand `Translate`/`Scale` once it did, so
+    /// the whole element was silently dropped.
+    #[test]
+    fn plot_epilog_custom_shape_via_translate_and_scale() {
+      let svg = export_svg(
+        "zigzag[] := Line[{{0, 0}, {0.5, 1}, {1, 0}}]; \
+         decoration[t_, s_] := {Translate[Scale[zigzag[], {s, s}, {0, 0}], \
+         {t, 0}]}; \
+         Plot[Sin[x], {x, 0, 2 Pi}, Epilog -> {decoration[3, 0.5]}]",
+      );
+      assert!(
+        svg.contains("<polyline"),
+        "the custom shape's Line, reached only through the helper's \
+         Translate/Scale wrapping, must render: {svg}"
+      );
+    }
+
     /// An Epilog label may be typeset (`Subscript`) and boxed
     /// (`Framed[…, Background -> …]`) — a Demonstration marks each curve
     /// that way. Both used to print as their own source over the plot.

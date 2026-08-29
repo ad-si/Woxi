@@ -2040,8 +2040,29 @@ fn collect_primitives(
           parse_locator(args, prims);
         }
         _ => {
-          // Try as directive first
-          if !apply_directive(expr, style) {
+          // An unrecognized head may be a user-defined helper (e.g. a
+          // Demonstration's own `spring[t, b, s]`/`coil[th]` drawing a
+          // custom shape via `Translate`/`Scale`/`Line`, defined through
+          // `Initialization :> …`) that expands into recognized
+          // primitives once evaluated, rather than a nested graphics
+          // expression whose *arguments* should be scanned directly. Try
+          // evaluating it first; only fall back to scanning the raw
+          // arguments when evaluation makes no progress (still the same
+          // head), which also keeps this from looping forever on a
+          // genuinely undefined symbol.
+          let evaluated = crate::evaluator::evaluate_expr_to_expr(expr).ok();
+          let made_progress = matches!(
+            &evaluated,
+            Some(e) if !matches!(e, Expr::FunctionCall { name: n, .. } if n == name)
+          );
+          if made_progress {
+            collect_primitives(
+              evaluated.as_ref().unwrap(),
+              style,
+              prims,
+              errors,
+            );
+          } else if !apply_directive(expr, style) {
             // Not recognized - could be a nested graphics expression
             for a in args {
               collect_primitives(a, style, prims, errors);

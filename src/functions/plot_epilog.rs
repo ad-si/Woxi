@@ -457,6 +457,47 @@ fn render_item(
           ));
         }
       }
+      // `Translate[content, {dx, dy}]` shifts `content`; a list of offsets
+      // draws one shifted copy per entry (matches `Graphics[Translate[…]]`).
+      // A Demonstration's own custom-shape helper (e.g. a spring coil built
+      // from `Line`/`Scale`/`Translate` and returned by a user function
+      // used in `Epilog`) relies on this the same way `GeometricTransformation`
+      // below does.
+      "Translate" if args.len() == 2 => {
+        let offsets: Vec<(f64, f64)> = match point2(&args[1]) {
+          Some(p) => vec![p],
+          None => match &args[1] {
+            Expr::List(items) => items.iter().filter_map(point2).collect(),
+            _ => Vec::new(),
+          },
+        };
+        for (dx, dy) in offsets {
+          render_item(
+            &affine_map_points(&args[0], [[1.0, 0.0], [0.0, 1.0]], (dx, dy)),
+            style,
+            area,
+            out,
+          );
+        }
+      }
+      // `Scale[content, s]` / `Scale[content, {sx, sy}]` scales about the
+      // origin (Wolfram scales about the content's bounding-box center
+      // instead, which isn't cheaply computable from the raw expression
+      // here — a Demonstration's own shape helper always gives an explicit
+      // center, the form below, so this fallback is rarely exercised).
+      // `Scale[content, s, {cx, cy}]` scales about the given center.
+      "Scale" if args.len() >= 2 => {
+        let factors = match &args[1] {
+          Expr::List(_) => point2(&args[1]),
+          other => try_eval_to_f64(other).map(|s| (s, s)),
+        };
+        if let Some((sx, sy)) = factors {
+          let (cx, cy) = args.get(2).and_then(point2).unwrap_or((0.0, 0.0));
+          let m = [[sx, 0.0], [0.0, sy]];
+          let v = (cx * (1.0 - sx), cy * (1.0 - sy));
+          render_item(&affine_map_points(&args[0], m, v), style, area, out);
+        }
+      }
       // `GeometricTransformation[content, transform]` maps `content`
       // through an affine transform before drawing it — a Demonstration
       // reuses a plot's own curve or filled region this way (extracted via
@@ -570,7 +611,20 @@ fn render_item(
         }
         render_item(&args[0], &mut scoped, area, out);
       }
-      _ => {}
+      // An unrecognized head may be a user-defined helper (e.g. a
+      // Demonstration's own `spring[t, b, s]`/`coil[th]` drawing a custom
+      // shape via `Translate`/`Scale`/`Line`, defined through
+      // `Initialization :> …`) that expands into recognized primitives
+      // once evaluated. Try that before giving up; only recurse when
+      // evaluation made progress (a different head), so a genuinely
+      // undefined symbol can't loop.
+      _ => {
+        if let Ok(evaluated) = crate::evaluator::evaluate_expr_to_expr(expr)
+          && !matches!(&evaluated, Expr::FunctionCall { name: n, .. } if n == name)
+        {
+          render_item(&evaluated, style, area, out);
+        }
+      }
     },
     _ => {}
   }
