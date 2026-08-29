@@ -1226,6 +1226,92 @@ pub(crate) fn color_swatch_svg(color: &Color) -> String {
   )
 }
 
+/// Render a standalone `LineLegend[{styles…}, {labels…}]` as its own small
+/// picture: one row per entry, a short line sample drawn in that entry's
+/// style followed by its label. A bare `LineLegend` (not wrapped in
+/// `Legended`) is how Demonstrations commonly place a legend beside a plot
+/// rather than attached to it via `PlotLegends`, and Wolfram's front end
+/// typesets it the same way either way — as swatches, not as source text.
+///
+/// Each style entry is either a plain color directive or a list ending in
+/// one (`{Thickness[Tiny], color}`, `{Dashing[{0, Small}], color}`);
+/// `apply_directive` — the same directive parser `Graphics` primitives use
+/// — reads each one, so `Thickness`/`AbsoluteThickness`/`Dashing` on a
+/// legend line render exactly as they would on the plotted line itself.
+pub(crate) fn line_legend_svg(args: &[Expr]) -> Option<String> {
+  if args.len() < 2 {
+    return None;
+  }
+  let Expr::List(style_specs) = &args[0] else {
+    return None;
+  };
+  let Expr::List(labels) = &args[1] else {
+    return None;
+  };
+  if style_specs.is_empty() || labels.is_empty() {
+    return None;
+  }
+
+  let sample_w = 30.0_f64;
+  let sample_h = 16.0_f64;
+  // `thickness_px`/`dash_attr` only read `bb` for the (unused, since a
+  // legend sample has no data range) relative-dashing branch, so any
+  // BBox is fine here.
+  let bb = BBox {
+    x_min: 0.0,
+    x_max: 1.0,
+    y_min: 0.0,
+    y_max: 1.0,
+  };
+
+  let mut entries: Vec<Expr> = Vec::new();
+  for (label, spec) in labels.iter().zip(style_specs.iter()) {
+    // LineLegend's sample draws a plain visible stroke by default — not
+    // the hairline `AbsoluteThickness[1]` an undirected `Line[…]`
+    // primitive gets — so an entry with no `Thickness` directive of its
+    // own still reads as a line, matching wolframscript's legend.
+    let mut style = StyleState {
+      thickness: 0.05,
+      ..StyleState::default()
+    };
+    match spec {
+      Expr::List(directives) => {
+        for d in directives {
+          apply_directive(d, &mut style);
+        }
+      }
+      other => {
+        apply_directive(other, &mut style);
+      }
+    }
+    let sw = thickness_px(style.thickness, &bb, sample_w).max(1.0);
+    let dash = dash_attr(style.dashing.as_ref(), &bb, sample_w);
+    let y = sample_h / 2.0;
+    let line_svg = format!(
+      "<svg width=\"{sample_w}\" height=\"{sample_h}\" viewBox=\"0 0 {sample_w} {sample_h}\" xmlns=\"http://www.w3.org/2000/svg\"><line x1=\"1\" y1=\"{y:.1}\" x2=\"{x2:.1}\" y2=\"{y:.1}\" stroke=\"{color}\" stroke-width=\"{sw:.2}\"{dash} stroke-linecap=\"butt\"/></svg>",
+      x2 = sample_w - 1.0,
+      color = style.color.to_svg_rgb(),
+    );
+    let line_item = Expr::Graphics {
+      svg: line_svg,
+      is_3d: false,
+      source: None,
+      head: None,
+      structure: None,
+    };
+    entries.push(call(
+      "Row",
+      vec![Expr::List(
+        vec![line_item, Expr::String(" ".to_string()), label.clone()].into(),
+      )],
+    ));
+  }
+  if entries.is_empty() {
+    return None;
+  }
+  column_to_svg(&[Expr::List(entries.into())])
+}
+
 // ── Directive parsing ────────────────────────────────────────────────────
 
 fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
@@ -11791,6 +11877,28 @@ pub fn parse_grid_style(directives: &[Expr]) -> GridStyle {
 /// expression's text form.
 fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
   let svg = match cell {
+    // `"label" -> Graphics[…]` is the idiom Wolfram demonstrations use for
+    // a caption row with an inline swatch (e.g. a color-preview disk next
+    // to its name). WL typesets a `Rule` as its pattern, an arrow, and its
+    // replacement, so build exactly that through the row layout rather
+    // than a bespoke composer, and only when the replacement is actually a
+    // picture — a `Rule` between two plain values still prints as text.
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if grid_cell_graphic(replacement).is_some() => {
+      let row = Expr::List(
+        vec![
+          (**pattern).clone(),
+          Expr::String("\u{2192}".to_string()),
+          (**replacement).clone(),
+        ]
+        .into(),
+      );
+      return row_to_svg(std::slice::from_ref(&row)).and_then(|svg| {
+        parse_svg_dimensions(&svg).map(|d| (svg, d.nat_w, d.nat_h))
+      });
+    }
     Expr::Graphics { svg, .. } => svg.clone(),
     // A styled graphic is still a graphic.
     Expr::FunctionCall { name, args }
@@ -11808,6 +11916,12 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
     // button and the waveform — rather than the `Play[…]` source text.
     Expr::FunctionCall { name, .. } if name == "Sound" || name == "Play" => {
       crate::functions::sound::sound_svg(cell)?
+    }
+    // A bare `LineLegend[…]` cell (not wrapped in `Legended`) is a legend
+    // key a Demonstration placed beside its plot — drawn as swatches, the
+    // same as when it is Legended's second argument.
+    Expr::FunctionCall { name, args } if name == "LineLegend" => {
+      line_legend_svg(args)?
     }
     // As above, a display wrapper that resolves to a picture is drawn
     // rather than printed as source.

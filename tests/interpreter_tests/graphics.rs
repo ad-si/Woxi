@@ -14395,6 +14395,117 @@ mod graphics_grid {
       "Missing[] should not render as literal text"
     );
   }
+
+  // `"label" -> Graphics[…]` is the idiom Wolfram demonstrations use for a
+  // caption cell with an inline swatch (a color-preview disk next to its
+  // name, e.g. Wolfram Demonstrations Project's "Design of Mass Timber
+  // Panels as Heat Exchangers"). Wolfram typesets a `Rule` cell as its
+  // pattern, an arrow, and its replacement; only a Graphics-valued
+  // replacement is drawn — a Rule between two plain values still prints
+  // as text.
+  #[test]
+  fn rule_cell_with_graphics_replacement_renders_inline() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Grid[{{\"option\" -> Graphics[{Red, Disk[]}, ImageSize -> 20]}}]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(svg.starts_with("<svg"), "Should produce SVG output");
+    assert!(
+      !svg.contains("Graphics["),
+      "The Graphics[…] call should be rendered, not printed as source: {svg}"
+    );
+    assert!(
+      svg.contains("option"),
+      "The rule's pattern should still be shown as a label: {svg}"
+    );
+    assert!(
+      svg.contains("<circle") || svg.contains("<ellipse"),
+      "The rule's Graphics replacement should draw the disk: {svg}"
+    );
+  }
+
+  #[test]
+  fn rule_cell_with_plain_values_still_prints_as_text() {
+    clear_state();
+    let svg = export_svg("Grid[{{\"a\" -> 1}}]");
+    assert!(svg.contains('a'));
+    assert!(svg.contains('1'));
+  }
+}
+
+// A bare `LineLegend[…]` (not wrapped in `Legended`) is how Wolfram
+// Demonstrations often place a legend beside a plot instead of attaching it
+// via `PlotLegends` — Wolfram's front end typesets it as line-style swatches
+// and labels either way, rather than the symbolic `LineLegend[…]` call.
+mod line_legend {
+  use super::*;
+
+  #[test]
+  fn bare_line_legend_renders_as_swatches() {
+    clear_state();
+    // `LineLegend[…]` alone (no `Legended`/`Grid`/`Row` wrapper) still
+    // stays symbolic in its *printed* form, matching wolframscript's
+    // kernel-level InputForm — this only covers how it draws when a
+    // picture of it is asked for (`ExportString[…, "SVG"]`, or nested in
+    // a layout, which `line_legend_nested_in_grid_cell_renders_inline`
+    // below covers, and which is how Woxi Studio actually reaches it: a
+    // Demonstration places `LineLegend[…]` inside the `Grid`/`Row` a
+    // `Manipulate` body returns, never as the body's sole result).
+    let svg = export_svg("LineLegend[{Red, Blue}, {\"A\", \"B\"}]");
+    assert!(
+      !svg.contains("LineLegend["),
+      "Should be drawn, not printed as source: {svg}"
+    );
+    assert_eq!(
+      svg.matches("<line ").count(),
+      2,
+      "One line sample per entry: {svg}"
+    );
+    assert!(svg.contains('A') && svg.contains('B'));
+  }
+
+  #[test]
+  fn line_legend_honours_thickness_and_dashing_directives() {
+    clear_state();
+    let svg = export_svg(
+      "LineLegend[{Red, {Thickness[Large], Blue}, \
+       {Dashing[{0.05, 0.03}], Green}}, {\"A\", \"B\", \"C\"}]",
+    );
+    assert_eq!(svg.matches("<line ").count(), 3);
+    assert!(
+      svg.contains("stroke-dasharray"),
+      "The Dashing entry should produce a dashed sample: {svg}"
+    );
+    // The thick entry's stroke-width must exceed the plain-color entry's.
+    let widths: Vec<f64> = svg
+      .split("stroke-width=\"")
+      .skip(1)
+      .filter_map(|s| s.split('"').next())
+      .filter_map(|s| s.parse().ok())
+      .collect();
+    assert!(
+      widths.len() >= 2
+        && widths.iter().copied().fold(0.0, f64::max) > widths[0],
+      "Thickness[Large] should widen its sample relative to the default: {widths:?}"
+    );
+  }
+
+  #[test]
+  fn line_legend_nested_in_grid_cell_renders_inline() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Grid[{{Graphics[{Red, Disk[]}], LineLegend[{Red, Blue}, {\"x\", \"y\"}]}}]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(
+      !svg.contains("LineLegend["),
+      "Should be drawn inside the grid cell, not printed as source: {svg}"
+    );
+    assert_eq!(svg.matches("<line ").count(), 2);
+  }
 }
 
 mod plot_grid {
