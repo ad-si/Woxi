@@ -4815,17 +4815,74 @@ mod plot3d {
     /// the whole element was silently dropped.
     #[test]
     fn plot_epilog_custom_shape_via_translate_and_scale() {
+      // Three tiny calibration points at known data coordinates — drawn
+      // first, so they're the only `<circle>` elements in the SVG — let
+      // the test read back the renderer's own data-to-pixel mapping
+      // instead of hardcoding it, then check the decoration's *actual*
+      // rendered coordinates: `Scale[…, {0.5, 0.5}, {0, 0}]` halves the
+      // zigzag `Line[{{0,0},{0.5,1},{1,0}}]` to {{0,0},{0.25,0.5},{0.5,0}},
+      // then `Translate[…, {3, 0}]` shifts it to {{3,0},{3.25,0.5},{3.5,0}}.
+      // A version that instead walked every argument of the nested
+      // `Scale`/`Translate` uniformly (mistaking the `Scale`'s own factor
+      // and center arguments for geometric points) computed {3,0},
+      // {4.75,0.5},{6.5,0} for these same inputs — visibly wrong, but a
+      // bare `svg.contains("<polyline")` check can't tell the difference.
       let svg = export_svg(
         "zigzag[] := Line[{{0, 0}, {0.5, 1}, {1, 0}}]; \
          decoration[t_, s_] := {Translate[Scale[zigzag[], {s, s}, {0, 0}], \
          {t, 0}]}; \
-         Plot[Sin[x], {x, 0, 2 Pi}, Epilog -> {decoration[3, 0.5]}]",
+         Plot[Sin[x], {x, 0, 2 Pi}, PlotRange -> {{-1, 7}, {-2, 2}}, \
+         Epilog -> {PointSize[0.001], Point[{0, 0}], Point[{1, 0}], \
+         Point[{0, 1}], decoration[3, 0.5]}]",
       );
-      assert!(
-        svg.contains("<polyline"),
-        "the custom shape's Line, reached only through the helper's \
-         Translate/Scale wrapping, must render: {svg}"
+      let circle_cx: Vec<f64> = svg
+        .split("<circle ")
+        .skip(1)
+        .filter_map(|c| c.split_once("cx=\""))
+        .filter_map(|(_, r)| r.split_once('"'))
+        .filter_map(|(v, _)| v.parse().ok())
+        .collect();
+      let circle_cy: Vec<f64> = svg
+        .split("<circle ")
+        .skip(1)
+        .filter_map(|c| c.split_once("cy=\""))
+        .filter_map(|(_, r)| r.split_once('"'))
+        .filter_map(|(v, _)| v.parse().ok())
+        .collect();
+      assert_eq!(
+        circle_cx.len(),
+        3,
+        "expected exactly the 3 calibration points: {svg}"
       );
+      let px = |x: f64| circle_cx[0] + x * (circle_cx[1] - circle_cx[0]);
+      let py = |y: f64| circle_cy[0] + y * (circle_cy[2] - circle_cy[0]);
+
+      let polyline_points: Vec<Vec<(f64, f64)>> = svg
+        .split("points=\"")
+        .skip(1)
+        .filter_map(|s| s.split_once('"'))
+        .map(|(pts, _)| {
+          pts
+            .split_whitespace()
+            .filter_map(|p| p.split_once(','))
+            .filter_map(|(x, y)| Some((x.parse().ok()?, y.parse().ok()?)))
+            .collect()
+        })
+        .collect();
+      let zigzag = polyline_points
+        .iter()
+        .find(|pts| pts.len() == 3)
+        .expect("the decoration's 3-point zigzag Line must render");
+
+      let expected =
+        [(px(3.0), py(0.0)), (px(3.25), py(0.5)), (px(3.5), py(0.0))];
+      for (i, ((gx, gy), (ex, ey))) in zigzag.iter().zip(expected).enumerate() {
+        assert!(
+          (gx - ex).abs() < 1.0 && (gy - ey).abs() < 1.0,
+          "zigzag point {i}: got ({gx}, {gy}), expected scale-then-translate \
+           to land at ({ex}, {ey}): {svg}"
+        );
+      }
     }
 
     /// An Epilog label may be typeset (`Subscript`) and boxed

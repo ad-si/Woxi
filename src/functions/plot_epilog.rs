@@ -329,6 +329,56 @@ fn apply_directive(expr: &Expr, style: &mut EpilogStyle) -> bool {
 /// `Text[label, pt]`, `Rectangle[pt, pt]` — so this single recursive walk
 /// covers every primitive `render_item` knows about without special-casing
 /// each one's argument shape.
+/// The 2×2 matrix and translation a single `Translate[content, offset]` or
+/// `Scale[content, factors, center?]` node applies to its own content —
+/// *not* recursed into, just this one node's own parameters.
+fn local_transform(
+  name: &str,
+  args: &[Expr],
+) -> Option<([[f64; 2]; 2], (f64, f64))> {
+  match name {
+    "Translate" if args.len() == 2 => {
+      let (dx, dy) = point2(&args[1])?;
+      Some(([[1.0, 0.0], [0.0, 1.0]], (dx, dy)))
+    }
+    "Scale" if args.len() >= 2 => {
+      let (sx, sy) = match &args[1] {
+        Expr::List(_) => point2(&args[1])?,
+        other => {
+          let s = try_eval_to_f64(other)?;
+          (s, s)
+        }
+      };
+      let (cx, cy) = args.get(2).and_then(point2).unwrap_or((0.0, 0.0));
+      Some(([[sx, 0.0], [0.0, sy]], (cx * (1.0 - sx), cy * (1.0 - sy))))
+    }
+    _ => None,
+  }
+}
+
+/// Compose two affine maps so the combined map sends `p` to
+/// `m1 * (m2 * p + v2) + v1` — `(m2, v2)` applied first, `(m1, v1)` after.
+fn compose_affine(
+  (m1, v1): ([[f64; 2]; 2], (f64, f64)),
+  (m2, v2): ([[f64; 2]; 2], (f64, f64)),
+) -> ([[f64; 2]; 2], (f64, f64)) {
+  let m = [
+    [
+      m1[0][0] * m2[0][0] + m1[0][1] * m2[1][0],
+      m1[0][0] * m2[0][1] + m1[0][1] * m2[1][1],
+    ],
+    [
+      m1[1][0] * m2[0][0] + m1[1][1] * m2[1][0],
+      m1[1][0] * m2[0][1] + m1[1][1] * m2[1][1],
+    ],
+  ];
+  let v = (
+    m1[0][0] * v2.0 + m1[0][1] * v2.1 + v1.0,
+    m1[1][0] * v2.0 + m1[1][1] * v2.1 + v1.1,
+  );
+  (m, v)
+}
+
 fn affine_map_points(expr: &Expr, m: [[f64; 2]; 2], v: (f64, f64)) -> Expr {
   if let Expr::List(items) = expr
     && items.len() == 2
@@ -347,14 +397,30 @@ fn affine_map_points(expr: &Expr, m: [[f64; 2]; 2], v: (f64, f64)) -> Expr {
     Expr::List(items) => {
       Expr::List(items.iter().map(|it| affine_map_points(it, m, v)).collect())
     }
-    Expr::FunctionCall { name, args } => Expr::FunctionCall {
-      name: name.clone(),
-      args: args
-        .iter()
-        .map(|a| affine_map_points(a, m, v))
-        .collect::<Vec<_>>()
-        .into(),
-    },
+    // A nested `Translate`/`Scale` wraps its *own* content in its own
+    // transform. Composing algebraically and recursing straight into that
+    // content — once, with the combined transform — is the only way to
+    // tell its own parameter list (an offset, a pair of scale factors, a
+    // center) apart from actual geometric point data: walking every
+    // argument uniformly, as the fallback arm below does for an ordinary
+    // primitive, would wrongly translate/scale those parameters too (and
+    // then scale/translate the *already*-transformed point data again).
+    Expr::FunctionCall { name, args } => {
+      if !args.is_empty()
+        && let Some(local) = local_transform(name, args)
+      {
+        let composed = compose_affine((m, v), local);
+        return affine_map_points(&args[0], composed.0, composed.1);
+      }
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: args
+          .iter()
+          .map(|a| affine_map_points(a, m, v))
+          .collect::<Vec<_>>()
+          .into(),
+      }
+    }
     other => other.clone(),
   }
 }
