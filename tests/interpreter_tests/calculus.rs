@@ -7989,6 +7989,28 @@ mod ndsolve {
   }
 
   #[test]
+  fn ndsolve_holds_its_iterator_variable_against_an_outer_block_binding() {
+    // Regression: NDSolve's independent-variable spec `{t, tmin, tmax}`
+    // used to be evaluated eagerly like any other argument, so a `Block`
+    // (or a Manipulate control) binding a variable of the same name —
+    // `Block[{t = 5}, NDSolve[{y'[t] == 1, y[0] == 0}, {y}, {t, 0, 10}]]`,
+    // the shape `sol[t_] = First[NDSolve[…, {t, 0, tMax}]]` takes inside a
+    // Demonstration's Manipulate — substituted 5 for every `t` in the
+    // equations and the iterator spec before NDSolve ever ran, turning the
+    // ODE `y'[5] == 1` (undifferentiable) into nonsense and leaving NDSolve
+    // unevaluated. NDSolve now holds its arguments (matching Wolfram) so
+    // the outer binding never reaches the iterator symbol; `y' == 1` from
+    // `y(0) = 0` is `y = t`, so `y(7) = 7`.
+    let result = interpret(
+      "Block[{t = 5}, sol = First[NDSolve[{y'[t] == 1, y[0] == 0}, {y}, \
+       {t, 0, 10}]]]; y[7] /. sol",
+    )
+    .unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    assert!((val - 7.0).abs() < 1e-6, "Expected 7.0, got {val}");
+  }
+
+  #[test]
   fn blow_up_before_domain_end_returns_a_truncated_interpolating_function() {
     // Regression: a solution that diverges to infinity partway through the
     // requested domain (y' = y^2, y(0) = 1 has the closed form

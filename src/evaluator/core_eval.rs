@@ -2538,6 +2538,28 @@ pub fn evaluate_expr_to_expr_inner(
         // the primitives reference point *symbols*, not values, and must
         // stay symbolic until a `["Graphics"]` property substitutes them in.
         || name == "GeometricScene"
+        // NDSolve holds its equations, dependent variable(s) and
+        // independent-variable spec (matching Wolfram: NDSolve has
+        // HoldAll) so that an independent variable name reused elsewhere
+        // in the caller's scope — e.g. a Manipulate animation control
+        // also named `t`, as in the "Spring-Cart-Pendulum System"
+        // Demonstration's `sol[t_] = First[NDSolve[…, {t, 0, tMax}]]` —
+        // isn't substituted with its outer value before the solver ever
+        // sees `t` as the symbolic integration variable. The
+        // equations/bounds still resolve correctly: the solver
+        // substitutes each grid value for the iterator and evaluates the
+        // rest itself (picking up other free symbols, like a
+        // Module-local coefficient, from scope).
+        //
+        // DSolve is deliberately NOT held here even though real Wolfram
+        // gives it the same HoldAll attribute: unlike NDSolve's numeric
+        // stepper, DSolve's symbolic classifiers evaluate sub-expressions
+        // directly rather than through a scoped substitute-then-evaluate
+        // step, so holding its args swaps this bug for a silently wrong
+        // symbolic solution (`y[x] -> 5 + C[1]` instead of `x + C[1]`
+        // under `Block[{x = 5}, …]`) rather than fixing it.
+        || name == "NDSolve"
+        || name == "NDSolveValue"
         {
           // Show/GraphicsRow/GraphicsColumn/GraphicsGrid/PlotGrid/
           // BooleanTable aren't actually HoldAll in Wolfram Language, so a

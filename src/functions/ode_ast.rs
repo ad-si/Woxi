@@ -308,7 +308,64 @@ pub fn ndsolve_ast_with_head(
   args: &[Expr],
   head: &str,
 ) -> Result<Expr, InterpreterError> {
-  ndsolve_ast_inner(args).map(|expr| retag_unevaluated(expr, "NDSolve", head))
+  let evaluated = evaluate_ndsolve_args(args)?;
+  ndsolve_ast_inner(&evaluated)
+    .map(|expr| retag_unevaluated(expr, "NDSolve", head))
+}
+
+/// NDSolve holds its arguments (matching Wolfram — see the `NDSolve`/
+/// `NDSolveValue` entry in `core_eval.rs`'s held-function list) so that a
+/// `Block`/Manipulate-bound variable sharing a name with the independent
+/// variable — e.g. a Demonstration's own animation clock, when its ODE
+/// spells the domain as `{t, 0, tMax}` — can't get substituted into the
+/// iterator position before the solve ever sees `t` as symbolic. But
+/// holding everything would just as wrongly leave ordinary named
+/// equations unresolved (`eq1 = y'[t] == 1; NDSolve[{eq1, …}, …]`, a
+/// common idiom, needs `eq1` looked up). So evaluate the whole argument
+/// list normally except the domain spec's own iterator variable name(s)
+/// (one per positional domain argument, for the PDE form's two): the
+/// symbol is temporarily removed from scope — the same
+/// take/restore-symbol-values pair `Block` itself uses, applied directly
+/// rather than through a nested `Block[…]` call (which, evaluated through
+/// the ordinary interpreter, doesn't shadow an *already*-`Block`-bound
+/// outer value of the same name the way re-entering it directly does) —
+/// so it evaluates to itself rather than the caller's current value,
+/// exactly like `Table`/`Do`'s own iterator.
+fn evaluate_ndsolve_args(args: &[Expr]) -> Result<Vec<Expr>, InterpreterError> {
+  let n_pos = args
+    .iter()
+    .take_while(|a| !matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+    .count();
+  let mut iter_names: Vec<String> = Vec::new();
+  for &i in &[2usize, 3usize] {
+    if i < n_pos
+      && let Some(Expr::List(items)) = args.get(i)
+      && let Some(Expr::Identifier(name)) = items.first()
+    {
+      iter_names.push(name.clone());
+    }
+  }
+  if iter_names.is_empty() {
+    // No recognizable `{var, …}` domain spec (malformed call) — evaluate
+    // plainly so it still falls through to the ordinary "not a valid
+    // NDSolve call" outcome below instead of silently skipping evaluation.
+    return args
+      .iter()
+      .map(crate::evaluator::evaluate_expr_to_expr)
+      .collect();
+  }
+  let saved: Vec<_> = iter_names
+    .iter()
+    .map(|n| crate::evaluator::symbol_values::take_symbol_values(n))
+    .collect();
+  let result: Result<Vec<Expr>, InterpreterError> = args
+    .iter()
+    .map(crate::evaluator::evaluate_expr_to_expr)
+    .collect();
+  for s in saved {
+    crate::evaluator::symbol_values::restore_symbol_values(s);
+  }
+  result
 }
 
 fn ndsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {

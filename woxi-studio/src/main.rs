@@ -7072,6 +7072,76 @@ mod tests {
     );
   }
 
+  /// A Manipulate whose animation `Trigger` control is named `t` — the same
+  /// name several ODE Demonstrations use for both the animation clock and
+  /// the ODE's own independent variable, e.g. `sol[t_] = First[NDSolve[…,
+  /// {t, 0, tMax}]]` — plus an Epilog element that's a call to a
+  /// user-defined helper drawing a custom marker via `Translate`/`Scale`.
+  /// Independently written, not copied from any specific Demonstration; it
+  /// targets the general "ODE-driven Manipulate whose clock variable
+  /// doubles as the solver's own iterator, decorated with a helper-drawn
+  /// Epilog shape" construct category, which used to trip up two distinct
+  /// things: NDSolve's iterator getting the animation clock's *current
+  /// numeric value* substituted into it before the solve ever ran (turning
+  /// the ODE into nonsense), and an Epilog element that only resolves into
+  /// a recognized primitive once evaluated staying a raw, undrawn function
+  /// call.
+  #[test]
+  fn manipulate_trigger_shares_name_with_ndsolve_iterator_and_epilog_shape_helper()
+   {
+    let code = r#"Manipulate[
+      Module[{sol, pos},
+        sol[t_] = First[NDSolve[{y'[t] == -y[t], y[0] == 1}, {y}, {t, 0, 10}]];
+        pos[t_] = {y[t], 0} /. sol[t];
+        Graphics[{
+          Point[pos[t]],
+          marker[pos[t][[1]] - 0.1, 0.5]
+        }, PlotRange -> {{-1, 2}, {-1, 1}}]
+      ],
+      {{t, 0.01, ""}, 0.01, 10, 1, Trigger},
+      Initialization :> (
+        tick[th_] := Line[{{0, 0}, {th, 1}, {2 th, 0}}];
+        marker[x_, s_] := {Translate[Scale[tick[1], {s, s}, {0, 0}], {x, 0}]};
+      )
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr).expect(
+      "a Trigger control sharing the ODE's variable name should \
+        still build a ManipulateState",
+    );
+    assert!(
+      state.error.is_none(),
+      "the ODE must solve cleanly even though its iterator variable shares \
+       a name with the Trigger's own animation clock: {:?}",
+      state.error
+    );
+    let svg = {
+      let mut bindings: Vec<(String, String)> = state
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      bindings.extend(state.state.iter().cloned());
+      let code = match state.initialization.as_deref() {
+        Some(init) => format!("{init}; {}", state.body),
+        None => state.body.clone(),
+      };
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&code)
+      })
+      .expect("re-evaluating the body should not error")
+      .graphics
+      .expect("expected a rendered graphic")
+    };
+    assert!(
+      svg.contains("<polyline"),
+      "the marker helper's Line, reached only through its Translate/Scale \
+       wrapping, must render: {svg}"
+    );
+  }
+
   /// `{{bg, RGBColor[0, 0, 0], "background"}, ColorSlider}` builds a real
   /// `Color` control rather than being dropped or misread as a hidden
   /// binding, and on the first frame the bound variable is the spec's
