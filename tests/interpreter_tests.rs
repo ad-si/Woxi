@@ -2250,6 +2250,59 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_evaluate_escapes_hold_in_block_var_spec() {
+    // `Evaluate[…]` escapes any surrounding Hold attribute, including the
+    // held local-variable-specification argument of Block/Module/With.
+    // `Block[Evaluate[{f, g}], …]` — a Wolfram Demonstrations idiom for
+    // localizing whichever built-in a control variable currently holds —
+    // must see the already-substituted list `{Sin, ArcSin}`, not the
+    // literal, un-evaluated `Evaluate[{f, g}]` expression.
+    clear_state();
+    interpret("f = Sin; g = ArcSin;").unwrap();
+    // Localizing Sin/ArcSin themselves strips their evaluation rules, so
+    // the application inside stays literal — this is what lets a
+    // Demonstration's caption show the un-simplified function call. The
+    // coefficients keep `g[…]`'s argument from directly nesting inside
+    // `f[…]`, which is the shape this idiom is actually used for.
+    assert_eq!(
+      interpret("Block[Evaluate[{f, g}], HoldForm @@ {f[3 g[2 x]]}]").unwrap(),
+      "HoldForm[Sin[3*ArcSin[2*x]]]"
+    );
+    // Outside the Block, Sin/ArcSin evaluate normally again (no special
+    // rule fires here, so the application just stays put either way — the
+    // point is that no error or stray substitution leaks out of the Block).
+    assert_eq!(
+      interpret("Sin[3 ArcSin[2 x]]").unwrap(),
+      "Sin[3*ArcSin[2*x]]"
+    );
+  }
+
+  #[test]
+  fn test_evaluate_escapes_hold_in_module_and_with_var_spec() {
+    // Same Evaluate-escapes-Hold rule for Module and With: the spec list
+    // is computed from other bindings before Module/With's own local-var
+    // parsing runs, rather than being handed the literal `Evaluate[…]`
+    // wrapper and rejected as "not a List".
+    clear_state();
+    // A variable holding the *name* of the symbol to localize (a bare
+    // symbol spec, which only Module and Block allow).
+    interpret("localName = counter;").unwrap();
+    assert_eq!(
+      interpret("Module[Evaluate[{localName}], counter = 10; counter]")
+        .unwrap(),
+      "10"
+    );
+    clear_state();
+    // A variable holding a whole `symbol -> value` binding (With requires
+    // every local to have a value).
+    interpret("binding = pivot -> 9;").unwrap();
+    assert_eq!(
+      interpret("With[Evaluate[{binding}], pivot + 1]").unwrap(),
+      "10"
+    );
+  }
+
+  #[test]
   fn test_condition_in_module_with_expression() {
     // Condition guard with non-trivial expression in Module
     clear_state();

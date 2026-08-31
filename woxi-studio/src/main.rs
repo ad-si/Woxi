@@ -22987,6 +22987,169 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 30, $CellContext`s$$ = 5}, \"
     );
   }
 
+  /// A randomly-sampled Wolfram Demonstrations Project notebook ("Algebraic
+  /// Values of Trigonometric Functions of Inverse Trigonometric Functions")
+  /// shows an equation whose left side is a chosen trig function applied to
+  /// a scaled inverse-trig function, and whose right side is that same
+  /// expression algebraically simplified. Two popups pick the outer and
+  /// inner function, two sliders set the integer scale factors, and a
+  /// checkbox toggles the display width. Independently written, not copied
+  /// from the original: this version uses different function choices
+  /// (`Cos`/`ArcSin` rather than the original's `Sin`/`ArcSin` defaults,
+  /// with a smaller three-entry menu), different variable names, a single
+  /// flat `Grid` row instead of the original's nested 3x3 layout, and
+  /// different ranges, defaults and labels throughout.
+  ///
+  /// The construct worth pinning down is `Block[Evaluate[{trig, arcfn}],
+  /// HoldForm @@ {trig[coefA arcfn[coefB y]]}]`: the control variables
+  /// `trig`/`arcfn` already hold the actual `Cos`/`ArcSin` symbols by the
+  /// time the body runs, and `Evaluate[…]` forces that substitution through
+  /// `Block`'s hold *before* `Block` localizes those very symbols — which
+  /// is what keeps the left side of the equation showing the un-simplified
+  /// application (via `HoldForm`) while `Quiet[Factor[TrigExpand[…]]]`
+  /// still fully simplifies the identical expression on the right.
+  #[test]
+  fn demonstration_trig_inverse_identity_manipulate_shows_equation() {
+    let code = r#"Manipulate[
+      Grid[{{
+        Pane[
+          Text[TraditionalForm[
+            Block[Evaluate[{trig, arcfn}],
+              HoldForm @@ {trig[coefA arcfn[coefB y]]}] ==
+            Quiet[Factor[TrigExpand[trig[coefA arcfn[coefB y]]]]]
+          ]],
+          {480, If[wide, 350, Automatic]},
+          Alignment -> {Left, Top}
+        ]
+      }}],
+      {{trig, Cos, "outer function"}, {Sin, Cos, Tan}},
+      {{arcfn, ArcSin, "inner function"}, {ArcSin, ArcCos, ArcTan}},
+      {{coefA, 2, "outer scale"}, -15, 15, 1},
+      {{coefB, 3, "inner scale"}, -15, 15, 1},
+      {{wide, True, "wide layout"}, {True, False}}
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let mut state = manipulate::ManipulateState::from_expr(&expr).expect(
+      "two labeled popups, two labeled sliders, and a checkbox should build a widget",
+    );
+
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+
+    match &state.controls[..] {
+      [
+        manipulate::ControlState::Discrete {
+          name: trig_name,
+          values: trig_values,
+          current_index: trig_idx,
+          ..
+        },
+        manipulate::ControlState::Discrete {
+          name: arcfn_name,
+          values: arcfn_values,
+          current_index: arcfn_idx,
+          ..
+        },
+        manipulate::ControlState::Continuous {
+          name: coef_a_name,
+          min: coef_a_min,
+          max: coef_a_max,
+          current: coef_a_now,
+          ..
+        },
+        manipulate::ControlState::Continuous {
+          name: coef_b_name,
+          min: coef_b_min,
+          max: coef_b_max,
+          current: coef_b_now,
+          ..
+        },
+        manipulate::ControlState::Discrete {
+          name: wide_name,
+          values: wide_values,
+          current_index: wide_idx,
+          ..
+        },
+      ] => {
+        assert_eq!(trig_name.as_str(), "trig");
+        assert_eq!(trig_values.as_slice(), ["Sin", "Cos", "Tan"]);
+        assert_eq!(*trig_idx, 1, "default outer function is Cos");
+        assert_eq!(arcfn_name.as_str(), "arcfn");
+        assert_eq!(arcfn_values.as_slice(), ["ArcSin", "ArcCos", "ArcTan"]);
+        assert_eq!(*arcfn_idx, 0, "default inner function is ArcSin");
+        assert_eq!(coef_a_name.as_str(), "coefA");
+        assert_eq!(*coef_a_min, -15.0);
+        assert_eq!(*coef_a_max, 15.0);
+        assert_eq!(*coef_a_now, 2.0);
+        assert_eq!(coef_b_name.as_str(), "coefB");
+        assert_eq!(*coef_b_min, -15.0);
+        assert_eq!(*coef_b_max, 15.0);
+        assert_eq!(*coef_b_now, 3.0);
+        assert_eq!(wide_name.as_str(), "wide");
+        assert_eq!(wide_values.as_slice(), ["True", "False"]);
+        assert_eq!(*wide_idx, 0);
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+
+    // The widget renders the body as a typeset picture (Grid/Pane/Text all
+    // being display constructs), so the equation's actual text content is
+    // checked by evaluating the same body+bindings directly, bypassing the
+    // SVG rendering layer.
+    let equation_text = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      woxi::with_scoped_globals(&bindings, || woxi::interpret(&w.body))
+        .expect("body evaluates")
+    };
+
+    // The default `Cos[2 ArcSin[3 y]]` algebraically reduces to `1 - 18 y^2`
+    // (cos(2*ArcSin[3y]) = 1 - 2*sin(ArcSin[3y])^2 = 1 - 2*(3y)^2), and the
+    // un-simplified left side must still show the literal
+    // `Cos[2*ArcSin[3*y]]` application rather than that reduced form.
+    let text = equation_text(&state);
+    assert!(
+      text.contains("Cos[2*ArcSin[3*y]]"),
+      "left side must stay the un-simplified application: {text}"
+    );
+    assert!(
+      text.contains("1 - 18*y^2"),
+      "right side must be the fully simplified identity: {text}"
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the typeset equation must render as a picture"
+    );
+
+    // Switching the outer function to Sin must both keep the widget error-free
+    // and change what is displayed (a stale render would repeat the Cos case).
+    let Some(manipulate::ControlState::Discrete { current_index, .. }) =
+      state.controls.get_mut(0)
+    else {
+      panic!("first control must be the outer-function popup");
+    };
+    *current_index = 0; // Sin
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    let sin_text = equation_text(&state);
+    assert!(
+      sin_text.contains("Sin[2*ArcSin[3*y]]"),
+      "left side must switch to the Sin application: {sin_text}"
+    );
+    assert_ne!(
+      text, sin_text,
+      "switching the popup from Cos to Sin must change the displayed equation"
+    );
+  }
+
   /// A randomly-sampled Wolfram Demonstrations Project notebook draws
   /// several overlapping curves around the origin, hue-colored by index,
   /// with a slider controlling how tightly each curve twists and a
