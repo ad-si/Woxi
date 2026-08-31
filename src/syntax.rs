@@ -3655,6 +3655,18 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
         args: vec![operand].into(),
       }
     }
+    // `\[Piecewise]{{v1,c1},{v2,c2},…}` is the special-character input form
+    // for `Piecewise[{{v1,c1},{v2,c2},…}]` (the way the front end writes the
+    // piecewise brace notation). It binds to the following factor like a
+    // prefix function application.
+    Rule::PiecewisePrefix => {
+      let inners: Vec<_> = pair.into_inner().collect();
+      let operand = pair_to_expr(inners[1].clone());
+      Expr::FunctionCall {
+        name: "Piecewise".to_string(),
+        args: vec![operand].into(),
+      }
+    }
     Rule::Increment => {
       // x++ -> Increment[x]; chained `x++++` -> Increment[Increment[x]].
       // Grammar emits one base pair followed by N `IncrementOp` pairs

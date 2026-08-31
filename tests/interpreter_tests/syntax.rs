@@ -11140,6 +11140,42 @@ mod radical_prefix_operators {
   }
 }
 
+// `\[Piecewise]{{v1,c1},{v2,c2},…}` is the special-character input form for
+// `Piecewise[{{v1,c1},{v2,c2},…}]` that notebooks reconstruct from a
+// `GridBox` for the piecewise brace notation. Regression: a downloaded
+// Wolfram Demonstration ("Pulse Fourier Approximation") defines a function
+// body this way, and it used to parse as the bare symbol `Piecewise`
+// implicitly multiplied by the following list — silently dropping the
+// whole piecewise definition — instead of a `Piecewise[...]` call.
+mod piecewise_prefix_operator {
+  use super::*;
+
+  #[test]
+  fn piecewise_prefix_parses_as_a_function_call() {
+    assert_eq!(
+      interpret(r"\[Piecewise]{{1, x < 0}, {2, True}}").unwrap(),
+      "Piecewise[{{1, x < 0}}, 2]"
+    );
+    assert_eq!(
+      interpret(r"\[Piecewise]{{1, 0 < 1}, {2, True}}").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret(r"\[Piecewise]{{1, 5 < 1}, {2, True}}").unwrap(),
+      "2"
+    );
+  }
+
+  #[test]
+  fn piecewise_prefix_works_in_a_function_definition() {
+    assert_eq!(
+      interpret(r"f[t_] := \[Piecewise]{{1, t < 1}, {2, True}}; {f[0], f[5]}")
+        .unwrap(),
+      "{1, 2}"
+    );
+  }
+}
+
 // An applied anonymous function may carry `/.` / `//.`, which replace in the
 // *result* of the application. Regression: `f & [x] /. rules` did not parse.
 mod replace_after_applied_anonymous_function {
