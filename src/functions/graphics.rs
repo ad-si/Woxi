@@ -20194,6 +20194,22 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
     });
     return runs;
   }
+  // `Infinity`/`-Infinity`/`DirectedInfinity[…]` — a Demonstration's slider
+  // range endpoint (e.g. `Subscript[N, DirectedInfinity[1]]`) typesets as
+  // the single "∞" glyph, not the spelled-out word. Left to the generic
+  // `OutputForm` fallback below, the word "Infinity" would then run through
+  // `to_unicode_script` character-by-character when used as a sub-/
+  // superscript, producing a garbled mix of subscript letters and plain
+  // ones (Unicode has no subscript I, f, or y). Checked before the
+  // structural match so both a bare symbol and `DirectedInfinity[…]` reach
+  // here.
+  if let Some(glyph) = directed_infinity_glyph(expr) {
+    return vec![LabelRun {
+      text: glyph.to_string(),
+      italic: false,
+      ..Default::default()
+    }];
+  }
   // A square root — the notebook's `\[Sqrt]…` radical, which survives as the
   // `Sqrt` head inside a held expression and normalizes to `x^(1/2)`
   // elsewhere. Either spelling sets as the radical sign over its radicand, so
@@ -20409,6 +20425,38 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
     }
     _ => output_run(italic),
   }
+}
+
+/// The "∞"/"-∞" glyph for an infinity expression, in any of the shapes it
+/// can reach a held label as: the bare `Infinity` symbol, `-Infinity`
+/// (`Times[-1, Infinity]` or a unary minus), or `DirectedInfinity[±1]`.
+/// `None` when `expr` is not an infinity at all.
+fn directed_infinity_glyph(expr: &Expr) -> Option<&'static str> {
+  if !crate::functions::predicate_ast::is_directed_infinity(expr) {
+    return None;
+  }
+  let negative = match expr {
+    Expr::FunctionCall { name, args } if name == "DirectedInfinity" => {
+      matches!(args.first(), Some(Expr::Integer(n)) if *n < 0)
+    }
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      ..
+    } => true,
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      args.iter().any(|a| matches!(a, Expr::Integer(-1)))
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      matches!(left.as_ref(), Expr::Integer(-1))
+        || matches!(right.as_ref(), Expr::Integer(-1))
+    }
+    _ => false,
+  };
+  Some(if negative { "-\u{221E}" } else { "\u{221E}" })
 }
 
 /// The radicand of a square root written either way: as the `Sqrt[x]` head
@@ -23987,6 +24035,46 @@ mod manipulate_label_tests {
       vec![Expr::Integer(1), Expr::Identifier("y".into())],
     );
     assert_eq!(flatten_label_runs(&runs(&flat)), "y\u{2032}");
+  }
+
+  /// A slider's asymptote parameter labeled `Subscript[N, DirectedInfinity[1]]`
+  /// (what a `Manipulate` body's held `Subscript[N, Infinity]` evaluates to)
+  /// must typeset as "N∞", not spell "Infinity" out letter by letter through
+  /// the subscript-glyph table.
+  #[test]
+  fn subscript_of_directed_infinity_renders_the_infinity_glyph() {
+    let label = call(
+      "Subscript",
+      vec![
+        Expr::Identifier("N".into()),
+        call1("DirectedInfinity", Expr::Integer(1)),
+      ],
+    );
+    assert_eq!(flatten_label_runs(&runs(&label)), "N\u{221E}");
+  }
+
+  /// The negative-infinity variant, reaching the label as a `Superscript`
+  /// argument. The sign folds to its superscript form like any other
+  /// `to_unicode_script`-mapped character; only the letters of "Infinity"
+  /// itself have no such mapping, which is what this glyph shortcut avoids.
+  #[test]
+  fn superscript_of_negative_infinity_renders_the_signed_glyph() {
+    let label = call(
+      "Superscript",
+      vec![
+        Expr::Identifier("x".into()),
+        call1("DirectedInfinity", Expr::Integer(-1)),
+      ],
+    );
+    assert_eq!(flatten_label_runs(&runs(&label)), "x\u{207B}\u{221E}");
+  }
+
+  /// A bare `Infinity` symbol as a top-level label (e.g. a picker's own
+  /// choice text) also renders as the glyph rather than the word.
+  #[test]
+  fn bare_infinity_symbol_renders_the_glyph() {
+    let label = Expr::Identifier("Infinity".into());
+    assert_eq!(flatten_label_runs(&runs(&label)), "\u{221E}");
   }
 }
 
