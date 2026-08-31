@@ -23395,4 +23395,124 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`count$$ = 3, $CellContext`offset$$ 
     // default choice, `{2, 0}`.
     assert_eq!(stand_in, (-5.0, 5.0, -2.0, 2.0, 2.0, 0.0));
   }
+
+  #[test]
+  fn two_by_two_grid_manipulate_with_contour_and_surface_panels_renders() {
+    // Checked a randomly-sampled Wolfram Demonstrations Project notebook
+    // (a two-input production-function explorer) against Woxi Studio's
+    // Manipulate pipeline. Self-authored, construct-equivalent body — its
+    // own bivariate kernel and panel wording, not the notebook's own
+    // formula, labels, or presentation, which are copyrighted — exercising
+    // the general shape: an `Initialization :> {…}` block that defines a
+    // function by pattern assignment, differentiates it with `D`, simplifies
+    // one derivative with `Simplify`, and stashes a `ContourPlot` in a
+    // helper variable; a `GraphicsGrid` of four panels combining
+    // `Tooltip[Plot[…], Row[{…}]]`, `Show[helperVar, Graphics[{Line[…]}]]`,
+    // a `Plot` of two `Tooltip`-wrapped derivative curves, and
+    // `Show[Plot3D[…], Graphics3D[{Opacity[…], Polygon[…]}]]`; each panel
+    // uses `PlotRange`, `AxesLabel -> {Style[…, Italic], "…"}`,
+    // `ImagePadding`, and an `Epilog -> Text[…]`; driven by one
+    // `Appearance -> "Labeled"` continuous slider.
+    let code = "Manipulate[\
+      GraphicsGrid[{\
+        {Tooltip[Plot[g[level, b], {b, 0, 10}, \
+            PlotRange -> {0, 5}, \
+            AxesLabel -> {Style[\"b\", Italic], \"flux\"}, \
+            ImagePadding -> 15, \
+            Epilog -> Text[\"cross-section\", {5, 4.5}]], \
+          Row[{\"cross-section\"}]], \
+         Show[contourG, Graphics[{Line[{{0, level}, {10, level}}]}], \
+           ImagePadding -> 15]}, \
+        {Plot[{Tooltip[dGdb[level, b], Row[{\"slope wrt b\"}]], \
+            Tooltip[dGda[level, b], Row[{\"slope wrt a\"}]]}, {b, 0, 10}, \
+           PlotRange -> {-2, 2}, \
+           AxesLabel -> {Style[\"b\", Italic], \"rate\"}, \
+           ImagePadding -> 15, \
+           Epilog -> Text[\"rates\", {5, 1.8}]], \
+         Show[Plot3D[g[a, b], {a, 0, 10}, {b, 0, 10}, \
+             PlotRange -> {0, Automatic}, AxesLabel -> {\"b\", \"a\"}], \
+           Graphics3D[{Opacity[1], \
+             Polygon[{{0, level, 0}, {10, level, 0}, {10, level, 10}, \
+               {0, level, 10}}]}], \
+           ImagePadding -> 15]}}, \
+       ImageSize -> {480, 420}], \
+      {{level, 4, \"level\"}, 0.1, 10, Appearance -> \"Labeled\"}, \
+      Initialization :> {\
+        g[a_, b_] = (a^2*b^2 - a*b^3)/50; \
+        dGdb[a_, b_] = D[g[a, b], b]; \
+        dGda[a_, b_] = Simplify[D[g[a, b], a]]; \
+        contourG = ContourPlot[g[a, b], {a, 0, 10}, {b, 0, 10}, \
+          Contours -> 15, ContourShading -> False, Axes -> True, \
+          Frame -> False, \
+          AxesLabel -> {Style[\"b\", Italic], Style[\"a\", Italic]}]}]";
+    let state = instantiate_stored_manipulate(code, "")
+      .expect("the 2x2 GraphicsGrid Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the four-panel GraphicsGrid (Tooltip/Plot, Show/ContourPlot+Line, \
+       Plot of two derivative Tooltips, Show/Plot3D+Graphics3D) must draw"
+    );
+    match &state.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name,
+          label,
+          min,
+          max,
+          current,
+          ..
+        },
+      ] => {
+        assert_eq!(name, "level");
+        assert_eq!(label, "level");
+        assert_eq!(*min, 0.1);
+        assert_eq!(*max, 10.0);
+        assert_eq!(*current, 4.0);
+      }
+      other => panic!("expected one continuous control, got {other:?}"),
+    }
+
+    // Moving the slider re-evaluates all four panels against the new
+    // level without error, and the picture must actually change: both the
+    // cross-section curve and the horizontal marker line on the contour
+    // panel depend on `level`.
+    let render = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&w.body)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the GraphicsGrid must render")
+    };
+    let before = render(&state);
+
+    let mut state = state;
+    match &mut state.controls[0] {
+      manipulate::ControlState::Continuous { current, .. } => *current = 8.0,
+      other => panic!("expected a continuous control, got {other:?}"),
+    }
+    state.reevaluate();
+    assert!(
+      state.error.is_none(),
+      "body should still evaluate after moving the slider: {:?}",
+      state.error
+    );
+    assert!(state.graphics_handle.is_some());
+    let after = render(&state);
+    assert_ne!(
+      before, after,
+      "the rendered picture must change when the slider moves"
+    );
+  }
 }
