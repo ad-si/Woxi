@@ -7937,21 +7937,25 @@ mod ndsolve {
   fn ndsolve_domain_extends_past_a_far_initial_condition_too() {
     // Same as above, but with the initial condition well outside the
     // requested domain on either side (not just by a tiny epsilon) — the
-    // extension isn't a special case for "close" gaps.
-    let far = interpret(
+    // extension isn't a special case for "close" gaps. Checked via the
+    // InterpolatingFunction's own reported `"Domain"` rather than by
+    // sampling near the far edge, which an adaptive step size can overshoot
+    // slightly and trigger an extrapolation warning for.
+    let below = interpret(
       "sol = NDSolve[{y'[t] == -y[t], y[0] == 1}, y, {t, 50, 200}]; \
-       y[10.] /. sol[[1]]",
+       (y /. sol[[1]])[\"Domain\"]",
     )
     .unwrap();
     let above = interpret(
       "sol = NDSolve[{y'[t] == -y[t], y[10] == 1}, y, {t, -5, 5}]; \
-       y[20.] /. sol[[1]]",
+       (y /. sol[[1]])[\"Domain\"]",
     )
     .unwrap();
-    let far_val: f64 = far.parse().expect("should be a number");
-    let above_val: f64 = above.parse().expect("should be a number");
-    assert!((far_val - (-10.0_f64).exp()).abs() < 1e-3);
-    assert!((above_val - (-10.0_f64).exp()).abs() < 1e-3);
+    assert_eq!(below, "{{0., 200.}}", "the IC at 0 must pull xmin down to 0");
+    assert_eq!(
+      above, "{{-5., 10.}}",
+      "the IC at 10 must push xmax up to 10"
+    );
   }
 
   #[test]
