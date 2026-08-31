@@ -3,12 +3,32 @@ use super::*;
 
 /// Report a `With`/`Module`/`Block` whose local variable specification is not
 /// a List (`With[y, 3]`), and hand back the unevaluated call like Wolfram.
-fn non_list_local_spec(head: &str, args: &[Expr]) -> Expr {
+fn non_list_local_spec(head: &str, args: &[Expr], spec: &Expr) -> Expr {
   crate::emit_message(&format!(
     "{head}::lvlist: Local variable specification {} is not a List.",
-    crate::syntax::expr_to_string(&args[0])
+    crate::syntax::expr_to_string(spec)
   ));
   unevaluated(head, args)
+}
+
+/// `Evaluate[…]` escapes any surrounding `Hold` attribute, including the
+/// local-variable-specification argument of `Module`/`Block`/`With` (which
+/// is otherwise held unevaluated like the body). `Block[Evaluate[{f, g}],
+/// body]` is a common Wolfram Demonstrations idiom: it substitutes the
+/// *current values* of already-bound control variables — e.g. `f` holding
+/// `Sin` — before localizing those values' own symbols, which is what lets
+/// the body's `HoldForm` show an application like `Sin[…]` without
+/// simplifying it. Without unwrapping `Evaluate` here, that spec is passed
+/// through literally and rejected as "not a List".
+fn resolve_var_spec(vars_expr: &Expr) -> Result<Expr, InterpreterError> {
+  match vars_expr {
+    Expr::FunctionCall { name, args }
+      if name == "Evaluate" && args.len() == 1 =>
+    {
+      evaluate_expr_to_expr(&args[0])
+    }
+    _ => Ok(vars_expr.clone()),
+  }
 }
 
 /// One local of a scoping construct: the symbol it binds, its initializer
@@ -150,17 +170,18 @@ pub fn module_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let vars_expr = &args[0];
   let body_expr = &args[1];
+  let resolved_vars = resolve_var_spec(vars_expr)?;
 
   // Parse variable declarations from the first argument (should be a List)
-  let local_vars = match vars_expr {
+  let local_vars = match &resolved_vars {
     Expr::List(items) => match parse_local_vars(items, false) {
       Ok(vars) => vars,
       Err(err) => {
-        err.emit("Module", vars_expr);
+        err.emit("Module", &resolved_vars);
         return Ok(unevaluated("Module", args));
       }
     },
-    _ => return Ok(non_list_local_spec("Module", args)),
+    _ => return Ok(non_list_local_spec("Module", args, &resolved_vars)),
   };
 
   // Module scopes lexically: each local is renamed to a fresh var$n
@@ -232,17 +253,18 @@ pub fn block_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let vars_expr = &args[0];
   let body_expr = &args[1];
+  let resolved_vars = resolve_var_spec(vars_expr)?;
 
   // Parse variable declarations (same as Module)
-  let local_vars = match vars_expr {
+  let local_vars = match &resolved_vars {
     Expr::List(items) => match parse_local_vars(items, false) {
       Ok(vars) => vars,
       Err(err) => {
-        err.emit("Block", vars_expr);
+        err.emit("Block", &resolved_vars);
         return Ok(unevaluated("Block", args));
       }
     },
-    _ => return Ok(non_list_local_spec("Block", args)),
+    _ => return Ok(non_list_local_spec("Block", args, &resolved_vars)),
   };
 
   // Take every value each local stands for and set up the new ones.
@@ -1110,14 +1132,15 @@ pub fn with_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let vars_expr = &args[0];
   let body_expr = &args[1];
+  let resolved_vars = resolve_var_spec(vars_expr)?;
 
   // Parse variable declarations from the first argument (should be a List)
-  let bindings: Vec<(String, Expr)> = match vars_expr {
+  let bindings: Vec<(String, Expr)> = match &resolved_vars {
     Expr::List(items) => {
       let locals = match parse_local_vars(items, true) {
         Ok(vars) => vars,
         Err(err) => {
-          err.emit("With", vars_expr);
+          err.emit("With", &resolved_vars);
           return Ok(unevaluated("With", args));
         }
       };
@@ -1134,7 +1157,7 @@ pub fn with_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       vars
     }
-    _ => return Ok(non_list_local_spec("With", args)),
+    _ => return Ok(non_list_local_spec("With", args, &resolved_vars)),
   };
 
   // Substitute all bindings into the body simultaneously
