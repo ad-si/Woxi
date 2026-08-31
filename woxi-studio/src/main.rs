@@ -23144,7 +23144,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 30, $CellContext`s$$ = 5}, \"
         AbsoluteThickness[3], Gray, Opacity[0.5],
         Line[{{-3 - 15 Cos[alpha], -15 Sin[alpha]}, {-3 + 15 Cos[alpha], 15 Sin[alpha]}}],
         AbsoluteDashing[{10}],
-        Line[{{3,0}, {3 - 15 Cos[alpha+beta], -15 Sin[alpha+beta]}}],
+        Line[{{3,0}, {3 + 15 Cos[alpha+beta], 15 Sin[alpha+beta]}}],
         AbsolutePointSize[9], Red, Point[{-3,0}], Point[{3,0}],
         Cyan, Opacity[0.5], trail,
         Blue, meet = (Point[{px, py}] /. NSolve[
