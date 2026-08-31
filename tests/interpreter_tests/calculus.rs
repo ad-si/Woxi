@@ -7951,7 +7951,10 @@ mod ndsolve {
        (y /. sol[[1]])[\"Domain\"]",
     )
     .unwrap();
-    assert_eq!(below, "{{0., 200.}}", "the IC at 0 must pull xmin down to 0");
+    assert_eq!(
+      below, "{{0., 200.}}",
+      "the IC at 0 must pull xmin down to 0"
+    );
     assert_eq!(
       above, "{{-5., 10.}}",
       "the IC at 10 must push xmax up to 10"
