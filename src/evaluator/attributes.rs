@@ -104,6 +104,25 @@ impl Attributes {
 /// `get_builtin_attributes` consults this list before defaulting a known
 /// built-in to `Protected`.
 const UNPROTECTED_BUILTINS: &[&str] = &[
+  "$Context",
+  "$ContextPath",
+  "$Display",
+  "$DisplayFunction",
+  "$Echo",
+  "$Epilog",
+  "$IgnoreEOF",
+  "$Interrupted",
+  "$Line",
+  "$MaxPrecision",
+  "$MinPrecision",
+  "$Messages",
+  "$Output",
+  "$Path",
+  "$Post",
+  "$Pre",
+  "$PrePrint",
+  "$RecursionLimit",
+  "$Urgent",
   "AllowVersionUpdate",
   "AngleBracket",
   "Application",
@@ -680,6 +699,7 @@ pub fn get_builtin_attributes(name: &str) -> Attributes {
     | "Definition" | "FullDefinition" | "Quiet"
     | "OwnValues" | "DownValues" | "SubValues" | "UpValues"
     | "Protect" | "Unprotect"
+    | "$Aborted" | "$Failed"
     // NIntegrate has HoldAll in wolframscript, but this breaks tests so fix later.
     // | "NIntegrate"
     | "DefaultValues" | "FormatValues" | "NValues" | "Messages"
@@ -860,6 +880,7 @@ pub fn get_builtin_attributes(name: &str) -> Attributes {
     // unprotected).
     "List" | "Symbol"
     | "True" | "False"
+    | "$System" | "$Version" | "$VersionNumber"
     | "Locked" => A::Locked | A::Protected,
 
     // HoldAll + Protected + ReadProtected
