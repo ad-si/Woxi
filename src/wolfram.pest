@@ -173,7 +173,7 @@ LetterlikeSymbolChar = _{
 // handling in notebook.rs and the glyph list in graphics.rs.
 BigOperatorChar = _{ "\u{2211}" | "\u{220F}" }
 
-NamedCharBase = _{ !("\\[DifferentialD]" | "\\[Sqrt]" | "\\[CubeRoot]" | "\\[Element]" | "\\[NotElement]" | "\\[ReverseElement]" | "\\[DirectedEdge]" | "\\[UndirectedEdge]" | "\\[Distributed]" | "\\[Conditioned]" | "\\[Function]" | "\\[Transpose]" | "\\[ConjugateTranspose]" | "\\[Cross]" | "\\[TensorProduct]" | "\\[CircleTimes]" | "\\[CirclePlus]" | "\\[CenterDot]" | "\\[Times]" | "\\[Divide]" | "\\[CircleMinus]" | "\\[Star]" | "\\[Diamond]" | "\\[Backslash]" | "\\[CircleDot]" | "\\[SmallCircle]" | "\\[Wedge]" | "\\[Vee]" | "\\[Cap]" | "\\[Cup]" | "\\[DoubleRightTee]" | "\\[RightTee]" | "\\[DoubleLeftTee]" | "\\[LeftTee]" | "\\[And]" | "\\[Or]" | "\\[Not]" | "\\[Xor]" | "\\[Nand]" | "\\[Nor]" | "\\[Implies]" | "\\[Equivalent]" | "\\[Rule]" | "\\[RuleDelayed]" | "\\[Equal]" | "\\[NotEqual]" | "\\[LessEqual]" | "\\[GreaterEqual]") ~ "\\[" ~ ASCII_ALPHA+ ~ "]" | "\u{20AC}" | "\u{03F5}" | "\u{03C0}" | "\u{212F}" | "\u{2147}" | "\u{00B0}" | "\u{221E}" | "\u{2148}" | "\u{F74D}" | "\u{F74E}" | "\u{F74F}" | LetterlikeSymbolChar | BigOperatorChar }
+NamedCharBase = _{ !("\\[DifferentialD]" | "\\[Sqrt]" | "\\[CubeRoot]" | "\\[Piecewise]" | "\\[Element]" | "\\[NotElement]" | "\\[ReverseElement]" | "\\[DirectedEdge]" | "\\[UndirectedEdge]" | "\\[Distributed]" | "\\[Conditioned]" | "\\[Function]" | "\\[Transpose]" | "\\[ConjugateTranspose]" | "\\[Cross]" | "\\[TensorProduct]" | "\\[CircleTimes]" | "\\[CirclePlus]" | "\\[CenterDot]" | "\\[Times]" | "\\[Divide]" | "\\[CircleMinus]" | "\\[Star]" | "\\[Diamond]" | "\\[Backslash]" | "\\[CircleDot]" | "\\[SmallCircle]" | "\\[Wedge]" | "\\[Vee]" | "\\[Cap]" | "\\[Cup]" | "\\[DoubleRightTee]" | "\\[RightTee]" | "\\[DoubleLeftTee]" | "\\[LeftTee]" | "\\[And]" | "\\[Or]" | "\\[Not]" | "\\[Xor]" | "\\[Nand]" | "\\[Nor]" | "\\[Implies]" | "\\[Equivalent]" | "\\[Rule]" | "\\[RuleDelayed]" | "\\[Equal]" | "\\[NotEqual]" | "\\[LessEqual]" | "\\[GreaterEqual]") ~ "\\[" ~ ASCII_ALPHA+ ~ "]" | "\u{20AC}" | "\u{03F5}" | "\u{03C0}" | "\u{212F}" | "\u{2147}" | "\u{00B0}" | "\u{221E}" | "\u{2148}" | "\u{F74D}" | "\u{F74E}" | "\u{F74F}" | LetterlikeSymbolChar | BigOperatorChar }
 // Adjacent `\[Name]` segments (or named char + identifier chars)
 // concatenate into a single identifier — `\[CapitalGamma]\[Beta]` → `Γβ`,
 // `\[Angle]XYZ` → `∠XYZ`, `i\[Ellipsis]j` (when `i` then `\[Ellipsis]j`
@@ -636,6 +636,7 @@ Term = _{
   | ImplicitTimes
   | RadicalPrefix
   | DifferentialPrefix
+  | PiecewisePrefix
   | Unset
   | ApplyToOp
   | AddTo
@@ -684,6 +685,12 @@ RadicalPrefix = { RadicalOp ~ SimpleTerm ~ PartIndexSuffix? ~ ImplicitPowerSuffi
 // the prefix has to be tried before `Identifier` or `ⅆarea` reads as one name.
 DifferentialOp = { "\\[DifferentialD]" | "\u{2146}" | "\u{F74C}" }
 DifferentialPrefix = { DifferentialOp ~ SimpleTerm ~ PartIndexSuffix? ~ ImplicitPowerSuffix? }
+// `\[Piecewise]{{v1,c1},{v2,c2},…}` is the special-character input form for
+// `Piecewise[{{v1,c1},{v2,c2},…}]` — the notation front ends use for the
+// piecewise brace notebooks reconstruct from a `GridBox`. It binds like a
+// prefix function application to the following factor (normally a list).
+PiecewiseOp = { "\\[Piecewise]" }
+PiecewisePrefix = { PiecewiseOp ~ SimpleTerm }
 PrefixApplySimple = { (FunctionCall | Identifier) ~ "@" ~ SimpleTerm }
 SimpleTerm = _{
   // Increment/Decrement come first so a postfix `++` binds to its operand
@@ -693,6 +700,7 @@ SimpleTerm = _{
   | Decrement
   | RadicalPrefix
   | DifferentialPrefix
+  | PiecewisePrefix
   | UnsignedNumericValue
   | PrefixApplySimple
   | FunctionCall
@@ -715,6 +723,7 @@ SimpleTerm = _{
 TermNoImplicit = _{
     FunctionCallExtended
   | ImplicitTimes
+  | PiecewisePrefix
   | Unset
   | ApplyToOp
   | AddTo
