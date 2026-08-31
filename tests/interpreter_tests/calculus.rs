@@ -7909,6 +7909,59 @@ mod ndsolve {
   }
 
   #[test]
+  fn ndsolve_domain_extends_to_an_initial_condition_outside_it() {
+    // Regression: a Demonstration commonly states its initial condition at
+    // the natural reference point (`y[0] == n0`) but requests the solution
+    // from a tiny epsilon onward (`{t, 0.00001, 200}`) to dodge a
+    // singularity — a fractional power of `y`, a `LogPlot` — sitting right
+    // at that point. NDSolve used to require the initial condition to fall
+    // within the given domain and bailed out unevaluated otherwise, even
+    // though the integrator has to start at the initial condition regardless
+    // — it must extend the solved range to include it, exactly like the
+    // `{x, xmax}` shorthand already does.
+    // y' = -y, y(0) = 1 → y(t) = E^-t, so y(10) ≈ E^-10.
+    let result = interpret(
+      "sol = NDSolve[{y'[t] == -y[t], y[0] == 1}, y, {t, 0.00001, 200}]; \
+       y[10.] /. sol[[1]]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    let expected = (-10.0_f64).exp();
+    assert!(
+      (val - expected).abs() < 1e-3 * expected,
+      "Expected {expected}, got {val}"
+    );
+  }
+
+  #[test]
+  fn ndsolve_domain_extends_past_a_far_initial_condition_too() {
+    // Same as above, but with the initial condition well outside the
+    // requested domain on either side (not just by a tiny epsilon) — the
+    // extension isn't a special case for "close" gaps. Checked via the
+    // InterpolatingFunction's own reported `"Domain"` rather than by
+    // sampling near the far edge, which an adaptive step size can overshoot
+    // slightly and trigger an extrapolation warning for.
+    let below = interpret(
+      "sol = NDSolve[{y'[t] == -y[t], y[0] == 1}, y, {t, 50, 200}]; \
+       (y /. sol[[1]])[\"Domain\"]",
+    )
+    .unwrap();
+    let above = interpret(
+      "sol = NDSolve[{y'[t] == -y[t], y[10] == 1}, y, {t, -5, 5}]; \
+       (y /. sol[[1]])[\"Domain\"]",
+    )
+    .unwrap();
+    assert_eq!(
+      below, "{{0., 200.}}",
+      "the IC at 0 must pull xmin down to 0"
+    );
+    assert_eq!(
+      above, "{{-5., 10.}}",
+      "the IC at 10 must push xmax up to 10"
+    );
+  }
+
+  #[test]
   fn interpolating_function_input_form_has_no_placeholder() {
     // Regression: InterpolatingFunction's `<>` data placeholder — meant
     // only to keep display output short — was also applied under

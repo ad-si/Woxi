@@ -2188,7 +2188,15 @@ fn ndsolve_system(
   }
   let Some(x0) = x0 else { return Ok(None) };
   let (x_min, x_max) = if let Some(min) = x_min_given {
-    (min, x_max)
+    // The initial condition may sit just outside the requested output
+    // range — a Demonstration commonly states `y[0] == n0` at the natural
+    // reference point but plots from a tiny epsilon (`{t, 0.00001, 200}`)
+    // to dodge a singularity (a fractional power of `y`, a `LogPlot`, …)
+    // exactly at that point. The integrator still has to start at the
+    // initial condition, so the solved range extends to include it rather
+    // than rejecting the system outright — matching the `{x, xmax}`
+    // shorthand below, which already integrates from x0 unconditionally.
+    (min.min(x0), x_max.max(x0))
   } else {
     // {x, xmax} shorthand: integrate from x0 to xmax, in whichever
     // direction that is — x0 always lands on one edge of the range. An
@@ -2201,9 +2209,6 @@ fn ndsolve_system(
     }
     (x0.min(target), x0.max(target))
   };
-  if x0 < x_min - 1e-12 || x0 > x_max + 1e-12 {
-    return Ok(None);
-  }
 
   // Determine each function's order from the equations.
   for ode in &odes {
