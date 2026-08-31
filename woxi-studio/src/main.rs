@@ -23274,6 +23274,179 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 30, $CellContext`s$$ = 5}, \"
     );
   }
 
+  /// A randomly-sampled Wolfram Demonstrations Project notebook animates two
+  /// rays pivoting around two fixed points on the x-axis, tracing their
+  /// intersection point into a running path as the sweep angle changes, with
+  /// a `Button` to clear the trail. Woxi Studio already renders and
+  /// interacts with this correctly; pin it down with an independently
+  /// written regression test covering the same construct category
+  /// (different pivot points, angle names, colors, and trail-clearing
+  /// button wording throughout — not copied from the original).
+  ///
+  /// The construct worth pinning down is the combination of: a symbolic
+  /// `NSolve` on a linear-in-the-unknowns system (once the sweep angles are
+  /// substituted as numbers) that locates the intersection of the two rays;
+  /// an `AppendTo` into a `ControlType -> None` hidden "trail" variable
+  /// gated by comparing the current angle against a hidden "last angle"
+  /// variable, so the trail grows once per distinct slider position rather
+  /// than every re-render; `Disk` arcs whose angle range is driven by a
+  /// slider; a gradient background via `Polygon` + `VertexColors`; and a
+  /// `Button` row (binding no variable of its own) that resets the hidden
+  /// trail — all wired up with `Delimiter`s between the labeled sliders and
+  /// an `AutorunSequencing` option.
+  #[test]
+  fn demonstration_two_pivoting_rays_trace_their_intersection() {
+    let code = r#"Manipulate[
+      If[alpha == lastAlpha, Null,
+        AppendTo[trail, meet]; lastAlpha = alpha];
+      Graphics[{
+        Polygon[{{-12,-12},{12,-12},{12,12},{-12,12}},
+          VertexColors -> {Lighter[Gray,0.9], Lighter[Gray,0.9], Lighter[Green,0.7], Lighter[Green,0.5]}],
+        Orange, Opacity[0.6], Disk[{-3,0}, 1.5, {0, alpha}],
+        Purple, Opacity[0.6], Disk[{3,0}, 1.5, {0, alpha+beta}],
+        AbsoluteThickness[3], Gray, Opacity[0.5],
+        Line[{{-3 - 15 Cos[alpha], -15 Sin[alpha]}, {-3 + 15 Cos[alpha], 15 Sin[alpha]}}],
+        AbsoluteDashing[{10}],
+        Line[{{3,0}, {3 + 15 Cos[alpha+beta], 15 Sin[alpha+beta]}}],
+        AbsolutePointSize[9], Red, Point[{-3,0}], Point[{3,0}],
+        Cyan, Opacity[0.5], trail,
+        Blue, meet = (Point[{px, py}] /. NSolve[
+          {py == (px + 3) Tan[alpha], py == (px - 3) Tan[alpha + beta]},
+          {px, py}])
+      }, PlotRange -> 5, ImageSize -> 300],
+      {{alpha, 0.01, "sweep angle"}, 0.01, 6.2},
+      Delimiter,
+      {{beta, Pi/2, "phase offset"}, 0.01, 6.2},
+      Delimiter,
+      {{reset, 1, ""}, Button["Reset trail", trail = {}]&},
+      {{trail, {}, ""}, _, ControlType -> None},
+      {{meet, {}, ""}, _, ControlType -> None},
+      {{lastAlpha, Pi/4, ""}, _, ControlType -> None},
+      AutorunSequencing -> {1, 2}
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let mut state = manipulate::ManipulateState::from_expr(&expr).expect(
+      "two labeled sliders + delimiters + a button + hidden state should \
+       build a widget",
+    );
+
+    assert!(
+      state.error.is_none(),
+      "initial render failed: {:?}",
+      state.error
+    );
+    assert_eq!(
+      state.controls.iter().map(|c| c.name()).collect::<Vec<_>>(),
+      vec!["alpha", "", "beta", "", ""],
+      "panel rows: alpha slider, delimiter, beta slider, delimiter, button"
+    );
+    assert!(
+      matches!(state.controls[1], manipulate::ControlState::Divider),
+      "a bare Delimiter must become a Divider row"
+    );
+    assert!(
+      matches!(state.controls[3], manipulate::ControlState::Divider),
+      "the second Delimiter must also become a Divider row"
+    );
+    assert!(
+      matches!(state.controls[4], manipulate::ControlState::Button { .. }),
+      "the reset spec must become a Button row"
+    );
+    let hidden_names: Vec<&str> =
+      state.state.iter().map(|(n, _)| n.as_str()).collect();
+    assert_eq!(
+      hidden_names,
+      vec!["reset", "trail", "meet", "lastAlpha"],
+      "the button's own control var and the three ControlType->None vars \
+       should live in the hidden state list"
+    );
+    // lastAlpha starts at Pi/4, alpha starts at 0.01, so the guarded
+    // AppendTo already fired once during the initial render.
+    let trail_after_init = &state
+      .state
+      .iter()
+      .find(|(n, _)| n == "trail")
+      .expect("trail should be tracked as hidden state")
+      .1;
+    assert_eq!(
+      trail_after_init, "{{}}",
+      "the mismatched initial lastAlpha must seed the trail with one entry"
+    );
+
+    let render = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&w.body)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the two rays and their intersection must render")
+    };
+    let before = render(&state);
+
+    // Move the sweep-angle slider: the trail must grow by one entry and the
+    // rendered picture must change.
+    match &mut state.controls[0] {
+      manipulate::ControlState::Continuous { current, .. } => *current = 3.0,
+      other => panic!("expected alpha as a Continuous control, got {other:?}"),
+    }
+    state.reevaluate();
+    assert!(
+      state.error.is_none(),
+      "re-render after moving alpha failed: {:?}",
+      state.error
+    );
+    let trail_after_move = &state
+      .state
+      .iter()
+      .find(|(n, _)| n == "trail")
+      .expect("trail should still be tracked")
+      .1;
+    assert_eq!(
+      trail_after_move,
+      "{{}, {Point[{2.9994000199997335, 0.05999600007999924}]}}",
+      "moving alpha to a new value must append the previous intersection \
+       point to the trail"
+    );
+    let after = render(&state);
+    assert_ne!(
+      before, after,
+      "moving the sweep-angle slider must change the rendered picture"
+    );
+
+    // Press the "Reset trail" button: the hidden trail must clear.
+    let action = state
+      .controls
+      .iter()
+      .find_map(|c| match c {
+        manipulate::ControlState::Button { action, .. } => Some(action.clone()),
+        _ => None,
+      })
+      .expect("a Button row should be present");
+    state.apply_button_action(&action);
+    assert!(
+      state.error.is_none(),
+      "body should evaluate cleanly after the button clears the trail: {:?}",
+      state.error
+    );
+    let trail_after_reset = &state
+      .state
+      .iter()
+      .find(|(n, _)| n == "trail")
+      .expect("trail should still be tracked")
+      .1;
+    assert_eq!(
+      trail_after_reset, "{}",
+      "pressing the reset button must clear the trail back to an empty list"
+    );
+  }
+
   /// A `SaveDefinitions -> True` dump can embed a helper as Mathematica's
   /// full serialized `CompiledFunction[…]` — an id tuple, argument
   /// patterns, type/constant tables, raw bytecode, the uncompiled pure
