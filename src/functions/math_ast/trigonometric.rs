@@ -1944,7 +1944,7 @@ fn unary_condition_number(name: &str, x: f64) -> Option<f64> {
   use crate::functions::math_ast::number_theory::digamma;
   use crate::functions::math_ast::numeric_utils::{erf_f64, ln_gamma};
   // 2/Sqrt[Pi], the derivative constant of Erf/Erfc.
-  const TWO_OVER_SQRT_PI: f64 = 1.128_379_167_095_512_6;
+  const TWO_OVER_SQRT_PI: f64 = std::f64::consts::FRAC_2_SQRT_PI;
   let c = match name {
     // Sinh' = Cosh, so cond = x*Cosh/Sinh = x/Tanh[x]. Csch = 1/Sinh shares it.
     "Sinh" | "Csch" => x / x.tanh(),
