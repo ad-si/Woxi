@@ -10818,6 +10818,29 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    /// Regression: a pole in the sampled domain (`1/Sqrt[x^2 + y^2]` blows
+    /// up at the origin) used to dominate the raw min/max of the grid
+    /// samples, which fed both the color scale and the automatic contour
+    /// levels. That collapsed the entire rest of the plot into a single
+    /// flat color with no visible contour lines — everything except a
+    /// handful of pixels around the singularity scaled to the same end of
+    /// the range. The IQR-fenced `robust_value_range` keeps the pole from
+    /// swamping the well-behaved bulk of the domain, so multiple contour
+    /// lines should still be drawn away from it.
+    #[test]
+    fn contour_plot_pole_does_not_flatten_contour_levels() {
+      let svg = export_svg(
+        "ContourPlot[1/Sqrt[x^2 + y^2], {x, -2, 2}, {y, -2, 2}, \
+         ContourStyle -> {Dashed}]",
+      );
+      let polyline_count = svg.matches("<polyline").count();
+      assert!(
+        polyline_count > 1,
+        "expected multiple contour polylines away from the pole, got {polyline_count}: {}",
+        &svg[..svg.len().min(300)]
+      );
+    }
+
     /// `ContourStyle` colours and thickens the contour lines. Both the
     /// function form and the equation form draw through it — the equation
     /// form is how a Demonstration draws a stability boundary.
