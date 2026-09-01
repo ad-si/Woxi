@@ -635,6 +635,34 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
         }
         None
       }
+      // Fallback for a NumericQ special function with no hand-rolled case
+      // above (e.g. InverseBetaRegularized, InverseGammaRegularized): the
+      // real numeric implementation lives in the function's own dispatch,
+      // triggered by calling it with machine-Real arguments. Matches how
+      // `n_eval` re-evaluates an unhandled FunctionCall through the full
+      // evaluator. Extracting the result directly (rather than recursing
+      // into `try_eval_to_f64`) avoids looping forever on a user function
+      // tagged `NumericFunction` that has no definition to reduce it.
+      other if crate::functions::predicate_ast::is_numeric_function(other) => {
+        let mut real_args = Vec::with_capacity(args.len());
+        for a in args {
+          real_args.push(Expr::Real(try_eval_to_f64(a)?));
+        }
+        let new_expr = Expr::FunctionCall {
+          name: other.to_string(),
+          args: real_args.into(),
+        };
+        match crate::evaluator::evaluate_expr_to_expr(&new_expr) {
+          Ok(Expr::Real(v)) => Some(v),
+          Ok(Expr::Integer(n)) => Some(n as f64),
+          Ok(Expr::BigInteger(ref n)) => {
+            use num_traits::ToPrimitive;
+            n.to_f64()
+          }
+          Ok(Expr::BigFloat(ref digits, _)) => digits.parse::<f64>().ok(),
+          _ => None,
+        }
+      }
       _ => None,
     },
     _ => None,

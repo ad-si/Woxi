@@ -6820,6 +6820,88 @@ fn parse_range_spec(expr: &Expr) -> Option<(f64, f64)> {
   }
 }
 
+/// A single side's `PlotRangePadding` amount.
+#[derive(Clone, Copy)]
+enum PlotPadAmount {
+  None,
+  Automatic,
+  Absolute(f64),
+  Scaled(f64),
+}
+
+impl PlotPadAmount {
+  /// Resolve to an absolute amount given the axis's (unpadded) span.
+  /// `automatic_frac` is the fraction of the span `Automatic` falls back to.
+  fn resolve(self, span: f64, automatic_frac: f64) -> f64 {
+    match self {
+      Self::None => 0.0,
+      Self::Automatic => span * automatic_frac,
+      Self::Absolute(v) => v,
+      Self::Scaled(v) => span * v,
+    }
+  }
+}
+
+fn parse_plot_pad_amount(expr: &Expr) -> PlotPadAmount {
+  match expr {
+    Expr::Identifier(s) if s == "None" => PlotPadAmount::None,
+    Expr::Identifier(s) if s == "Automatic" => PlotPadAmount::Automatic,
+    Expr::FunctionCall { name, args }
+      if name == "Scaled" && args.len() == 1 =>
+    {
+      expr_to_f64(&args[0]).map_or(PlotPadAmount::None, PlotPadAmount::Scaled)
+    }
+    _ => expr_to_f64(expr).map_or(PlotPadAmount::None, PlotPadAmount::Absolute),
+  }
+}
+
+struct AxisPadding {
+  lo: PlotPadAmount,
+  hi: PlotPadAmount,
+}
+
+struct PlotRangePaddingSpec {
+  x: AxisPadding,
+  y: AxisPadding,
+}
+
+/// Parse a `PlotRangePadding` option value: a single spec (applied to both
+/// sides of both axes), `{xSpec, ySpec}`, or the full per-side form
+/// `{{xMinPad, xMaxPad}, {yMinPad, yMaxPad}}`.
+fn parse_plot_range_padding(expr: &Expr) -> PlotRangePaddingSpec {
+  fn symmetric(amt: PlotPadAmount) -> AxisPadding {
+    AxisPadding { lo: amt, hi: amt }
+  }
+  if let Expr::List(items) = expr
+    && items.len() == 2
+  {
+    if let (Expr::List(x_sides), Expr::List(y_sides)) = (&items[0], &items[1])
+      && x_sides.len() == 2
+      && y_sides.len() == 2
+    {
+      return PlotRangePaddingSpec {
+        x: AxisPadding {
+          lo: parse_plot_pad_amount(&x_sides[0]),
+          hi: parse_plot_pad_amount(&x_sides[1]),
+        },
+        y: AxisPadding {
+          lo: parse_plot_pad_amount(&y_sides[0]),
+          hi: parse_plot_pad_amount(&y_sides[1]),
+        },
+      };
+    }
+    return PlotRangePaddingSpec {
+      x: symmetric(parse_plot_pad_amount(&items[0])),
+      y: symmetric(parse_plot_pad_amount(&items[1])),
+    };
+  }
+  let amt = parse_plot_pad_amount(expr);
+  PlotRangePaddingSpec {
+    x: symmetric(amt),
+    y: symmetric(amt),
+  }
+}
+
 fn parse_background(expr: &Expr) -> Option<Color> {
   parse_color(expr)
 }
@@ -7101,6 +7183,10 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // they are collected only once the range is settled.
   let mut prolog: Option<Expr> = None;
   let mut epilog: Option<Expr> = None;
+  // `PlotRangePadding -> …`: extra room to leave around the effective plot
+  // range (the primitives' bounding box, or an explicit `PlotRange`).
+  // Unset keeps the existing flat-4%-on-automatic-axes default.
+  let mut plot_range_padding: Option<Expr> = None;
 
   for raw_opt in &args[1..] {
     let opt =
@@ -7130,6 +7216,9 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let (xr, yr) = parse_plot_range(replacement);
           plot_range_x = xr;
           plot_range_y = yr;
+        }
+        "PlotRangePadding" => {
+          plot_range_padding = Some(replacement.clone());
         }
         "Prolog" => prolog = Some(replacement.clone()),
         "Epilog" => epilog = Some(replacement.clone()),
@@ -7307,17 +7396,31 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
   }
 
-  // Apply 4% padding
-  bb = bb.with_padding(0.04);
-
-  // Apply PlotRange overrides
-  if let Some((lo, hi)) = plot_range_x {
-    bb.x_min = lo;
-    bb.x_max = hi;
-  }
-  if let Some((lo, hi)) = plot_range_y {
-    bb.y_min = lo;
-    bb.y_max = hi;
+  if let Some(padding_expr) = &plot_range_padding {
+    // `PlotRangePadding` pads whatever the effective range ends up being,
+    // whether that came from the primitives' automatic bounding box or an
+    // explicit `PlotRange`.
+    let (x_min, x_max) = plot_range_x.unwrap_or((bb.x_min, bb.x_max));
+    let (y_min, y_max) = plot_range_y.unwrap_or((bb.y_min, bb.y_max));
+    let spec = parse_plot_range_padding(padding_expr);
+    let x_span = x_max - x_min;
+    let y_span = y_max - y_min;
+    bb.x_min = x_min - spec.x.lo.resolve(x_span, 0.04);
+    bb.x_max = x_max + spec.x.hi.resolve(x_span, 0.04);
+    bb.y_min = y_min - spec.y.lo.resolve(y_span, 0.04);
+    bb.y_max = y_max + spec.y.hi.resolve(y_span, 0.04);
+  } else {
+    // Default: flat 4% padding on automatically-computed axes; an axis
+    // pinned by an explicit `PlotRange` is drawn exactly, with no padding.
+    bb = bb.with_padding(0.04);
+    if let Some((lo, hi)) = plot_range_x {
+      bb.x_min = lo;
+      bb.x_max = hi;
+    }
+    if let Some((lo, hi)) = plot_range_y {
+      bb.y_min = lo;
+      bb.y_max = hi;
+    }
   }
 
   // The plot range is settled, so the Prolog's and Epilog's own primitives
@@ -23576,6 +23679,16 @@ fn assign_checkbox_state(
 
 /// Render an unrecognized display leaf by evaluating it in scope and
 /// capturing its SVG (graphics) or text output.
+///
+/// `NumberForm`/`PaddedForm`/`AccountingForm` are display wrappers: the
+/// evaluated value stays symbolic (matching wolframscript's plain-text
+/// `OutputForm`, which `r.result` already renders correctly for a bare
+/// script-mode echo), but a live notebook typesets it into formatted
+/// digits — the common `Dynamic[NumberForm[…]]` control-caption readout a
+/// `Manipulate` uses to show its current value. `graphics_text_content`
+/// already does this for a label inside a picture; a leaf here is the same
+/// typeset context (a control panel caption, not a terminal), so it gets
+/// the same treatment before falling back to the plain OutputForm text.
 fn static_leaf_node(expr: &Expr, bindings: &[(String, String)]) -> DisplayNode {
   let code =
     manipulate_block_code(&crate::syntax::expr_to_input_form(expr), bindings);
@@ -23585,6 +23698,19 @@ fn static_leaf_node(expr: &Expr, bindings: &[(String, String)]) -> DisplayNode {
         DisplayNode::Static {
           svg: Some(svg),
           text: String::new(),
+        }
+      } else if let Some(Expr::FunctionCall { name, args }) = &r.expr
+        && matches!(
+          name.as_str(),
+          "NumberForm" | "PaddedForm" | "AccountingForm"
+        )
+        && !args.is_empty()
+        && let Some(formatted) =
+          crate::functions::string_ast::number_form_family_to_string(name, args)
+      {
+        DisplayNode::Static {
+          svg: None,
+          text: formatted.replace('\n', " ").trim().to_string(),
         }
       } else {
         let text = r
@@ -24398,6 +24524,41 @@ mod manipulate_display_pane_selector_tests {
     match node {
       DisplayNode::Row(children) => assert_eq!(children.len(), 2),
       other => panic!("expected a row node, got {other:?}"),
+    }
+  }
+}
+
+#[cfg(test)]
+mod manipulate_display_number_form_tests {
+  use super::*;
+
+  /// Regression: a `Dynamic[NumberForm[…]]` control-caption readout — the
+  /// idiom a `Manipulate` uses to show a live formatted value next to its
+  /// sliders (e.g. a speed-ratio readout) — leaked the literal
+  /// `NumberForm[…]` call as its displayed text instead of the formatted
+  /// digits. Bare script-mode echo of `NumberForm[…]` correctly stays
+  /// symbolic (wolframscript's own plain-text `OutputForm` does not
+  /// typeset it), but a control caption is rendered the way a live
+  /// notebook would typeset it, the same as a `NumberForm` inside a
+  /// graphic's `Text` label already is.
+  #[test]
+  fn dynamic_numberform_caption_renders_formatted_digits() {
+    let node = build_manipulate_display("Dynamic[NumberForm[1., {3, 2}]]", &[]);
+    match node {
+      DisplayNode::Static { text, svg: None } => assert_eq!(text, "1.00"),
+      other => panic!("expected a static text node, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn dynamic_paddedform_caption_renders_formatted_digits() {
+    // The leading padding is trimmed, matching how a `NumberForm`/`PaddedForm`
+    // label inside a graphic is rendered (`graphics_text_content`) — a
+    // caption widget shouldn't carry leading whitespace into its layout.
+    let node = build_manipulate_display("Dynamic[PaddedForm[7, 3]]", &[]);
+    match node {
+      DisplayNode::Static { text, svg: None } => assert_eq!(text, "7"),
+      other => panic!("expected a static text node, got {other:?}"),
     }
   }
 }

@@ -402,13 +402,28 @@ fn ndsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let opts = &args[n_pos..];
   let event = parse_event_locator_option(opts);
 
-  // Unknowns written as compound expressions (`Subscript[c, 1]`) are keyed
-  // by a fresh symbol while integrating, then restored in the result.
-  let renames = compound_head_renamings(&args[1], &args[2]);
-  let positional: Vec<Expr> = if renames.is_empty() {
+  // A stage-indexed family (`Table[x[i, t], {i, 1, n}]` as the dependent
+  // variable spec — a discretized PDE or a staged process model) is keyed
+  // by a fresh single-argument symbol per index, the same way a compound
+  // head is below, so the rest of the solver only ever sees ordinary
+  // `f[t]`-shaped unknowns.
+  let idx_renames = indexed_family_renamings(&args[1], &args[2]);
+  let indexed: Vec<Expr> = if idx_renames.is_empty() {
     args[..3].to_vec()
   } else {
     args[..3]
+      .iter()
+      .map(|a| rename_indexed_vars(a, &idx_renames))
+      .collect()
+  };
+
+  // Unknowns written as compound expressions (`Subscript[c, 1]`) are keyed
+  // by a fresh symbol while integrating, then restored in the result.
+  let renames = compound_head_renamings(&indexed[1], &indexed[2]);
+  let positional: Vec<Expr> = if renames.is_empty() {
+    indexed.clone()
+  } else {
+    indexed
       .iter()
       .map(|a| rename_compound_heads(a, &renames))
       .collect()
@@ -421,7 +436,10 @@ fn ndsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `Sin[θ[t]]`) even though nothing about integrating it numerically
   // needs the equation to be linear.
   match ndsolve_system(&positional, event.as_ref()) {
-    Ok(Some(result)) => Ok(restore_compound_heads(&result, &renames)),
+    Ok(Some(result)) => {
+      let result = restore_compound_heads(&result, &renames);
+      Ok(restore_indexed_vars(&result, &idx_renames))
+    }
     Ok(None) => Ok(unevaluated("NDSolve", args)),
     Err(e) => Err(e),
   }
@@ -1739,6 +1757,152 @@ fn restore_compound_heads(expr: &Expr, renames: &[(Expr, String)]) -> Expr {
     };
   }
   map_children(expr, &|c| restore_compound_heads(c, renames))
+}
+
+/// One member of a stage-indexed dependent-variable family: `head[index,
+/// x_name]` (e.g. `x[3, t]`, the 3rd entry of `Table[x[i, t], {i, 1, n}]`)
+/// is keyed by `fresh`, a synthesized single-argument symbol name.
+struct IndexedRename {
+  head: String,
+  index: Expr,
+  fresh: String,
+}
+
+/// Find every `head[index, x]` entry in the dependent-variable spec — the
+/// idiom a discretized PDE or a staged process model (a distillation
+/// column's per-tray composition, a chain of coupled oscillators, …) uses
+/// to name its unknowns: `Table[x[i, t], {i, 1, n}]` rather than `n`
+/// separately named functions. `ndsolve_system` below only understands
+/// `f[t]`-shaped unknowns, so each concrete `head[index, x]` is assigned a
+/// fresh 1-argument symbol; [`rename_indexed_vars`]/[`restore_indexed_vars`]
+/// translate the system into and back out of that vocabulary.
+fn indexed_family_renamings(vars: &Expr, domain: &Expr) -> Vec<IndexedRename> {
+  let x_name = match domain {
+    Expr::List(items) => match items.first() {
+      Some(Expr::Identifier(x)) => x.clone(),
+      _ => return Vec::new(),
+    },
+    _ => return Vec::new(),
+  };
+  let entries: Vec<&Expr> = match vars {
+    Expr::List(items) => items.iter().collect(),
+    single => vec![single],
+  };
+  let mut renames: Vec<IndexedRename> = Vec::new();
+  for entry in entries {
+    let Expr::FunctionCall { name, args } = entry else {
+      continue;
+    };
+    if args.len() != 2 {
+      continue;
+    }
+    let Some(Expr::Identifier(a)) = args.get(1) else {
+      continue;
+    };
+    if *a != x_name {
+      continue;
+    }
+    let index = args[0].clone();
+    let index_key = crate::syntax::expr_to_string(&index);
+    if renames.iter().any(|r| {
+      r.head == *name && crate::syntax::expr_to_string(&r.index) == index_key
+    }) {
+      continue;
+    }
+    let fresh = format!("NDSolve$idx${name}${}", renames.len() + 1);
+    renames.push(IndexedRename {
+      head: name.clone(),
+      index,
+      fresh,
+    });
+  }
+  renames
+}
+
+/// Rewrite `head[index, other]` — bare, or under `Derivative[0, k][head]`
+/// (the parsed form of `D[head[index, x], {x, k}]`) — to the matching
+/// family member's fresh symbol applied to `other` alone: `fresh[other]`,
+/// respectively `Derivative[k][fresh][other]`.
+fn rename_indexed_vars(expr: &Expr, renames: &[IndexedRename]) -> Expr {
+  if renames.is_empty() {
+    return expr.clone();
+  }
+  // `Derivative[0, k][head][index, other]`, the parsed form of
+  // `D[head[index, x], {x, k}]`: the leading `0` says the derivative isn't
+  // taken with respect to the index slot, so it collapses away with it.
+  if let Expr::CurriedCall { func, args } = expr
+    && args.len() == 2
+    && let Expr::CurriedCall {
+      func: deriv_head,
+      args: fname_args,
+    } = func.as_ref()
+    && fname_args.len() == 1
+    && let Expr::Identifier(fname) = &fname_args[0]
+    && let Expr::FunctionCall {
+      name: deriv_name,
+      args: orders,
+    } = deriv_head.as_ref()
+    && deriv_name == "Derivative"
+    && orders.len() == 2
+    && matches!(orders[0], Expr::Integer(0))
+  {
+    let index_key = crate::syntax::expr_to_string(&args[0]);
+    if let Some(r) = renames.iter().find(|r| {
+      r.head == *fname && crate::syntax::expr_to_string(&r.index) == index_key
+    }) {
+      let other = rename_indexed_vars(&args[1], renames);
+      return Expr::CurriedCall {
+        func: Box::new(Expr::CurriedCall {
+          func: Box::new(call("Derivative", vec![orders[1].clone()])),
+          args: vec![Expr::Identifier(r.fresh.clone())],
+        }),
+        args: vec![other],
+      };
+    }
+  }
+  if let Expr::FunctionCall { name, args } = expr
+    && args.len() == 2
+  {
+    let index_key = crate::syntax::expr_to_string(&args[0]);
+    if let Some(r) = renames.iter().find(|r| {
+      r.head == *name && crate::syntax::expr_to_string(&r.index) == index_key
+    }) {
+      let other = rename_indexed_vars(&args[1], renames);
+      return Expr::FunctionCall {
+        name: r.fresh.clone(),
+        args: vec![other].into(),
+      };
+    }
+  }
+  map_children(expr, &|c| rename_indexed_vars(c, renames))
+}
+
+/// The inverse of [`rename_indexed_vars`], applied to the solution rules:
+/// `NDSolve$idx$x$1 -> InterpolatingFunction[…][t]` becomes
+/// `x[1, t] -> InterpolatingFunction[…][t]`.
+fn restore_indexed_vars(expr: &Expr, renames: &[IndexedRename]) -> Expr {
+  if renames.is_empty() {
+    return expr.clone();
+  }
+  if let Expr::FunctionCall { name, args } = expr
+    && args.len() == 1
+    && let Some(r) = renames.iter().find(|r| r.fresh == *name)
+  {
+    let other = restore_indexed_vars(&args[0], renames);
+    return Expr::FunctionCall {
+      name: r.head.clone(),
+      args: vec![r.index.clone(), other].into(),
+    };
+  }
+  if let Expr::Identifier(name) = expr
+    && let Some(r) = renames.iter().find(|r| r.fresh == *name)
+  {
+    return Expr::FunctionCall {
+      name: r.head.clone(),
+      args: vec![r.index.clone()].into(),
+    };
+  }
+  map_children(expr, &|c| restore_indexed_vars(c, renames))
 }
 
 // ─── The NDSolve integrator ────────────────────────────────────────────

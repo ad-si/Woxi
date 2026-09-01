@@ -515,6 +515,47 @@ fn scaled_color(t: f64, color_function: Option<&str>) -> (u8, u8, u8) {
   }
 }
 
+/// Robust value range over a set of function samples — an IQR fence
+/// excludes extreme outliers so a singularity in the sampled domain (e.g. a
+/// pole in the plotted function) can't collapse the color scale and contour
+/// levels onto a handful of pixels around it, leaving the rest of the plot a
+/// single flat color. Mirrors `plot::sampled_y_range`'s approach for `Plot`'s
+/// y-range, applied here to a 2D function's sampled values.
+fn robust_value_range(values: &[f64]) -> (f64, f64) {
+  let mut vs: Vec<f64> =
+    values.iter().copied().filter(|v| v.is_finite()).collect();
+  if vs.is_empty() {
+    return (f64::INFINITY, f64::NEG_INFINITY);
+  }
+  vs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+  let n = vs.len();
+  if n == 1 {
+    return (vs[0], vs[0]);
+  }
+
+  let q1 = vs[n / 4];
+  let q3 = vs[3 * n / 4];
+  let iqr = q3 - q1;
+
+  // If IQR is negligible, no outliers — use the full min/max.
+  if iqr < 1e-10 {
+    return (vs[0], vs[n - 1]);
+  }
+
+  let fence_lo = q1 - 3.0 * iqr;
+  let fence_hi = q3 + 3.0 * iqr;
+
+  let v_min = vs.iter().copied().find(|&v| v >= fence_lo).unwrap_or(vs[0]);
+  let v_max = vs
+    .iter()
+    .rev()
+    .copied()
+    .find(|&v| v <= fence_hi)
+    .unwrap_or(vs[n - 1]);
+
+  (v_min, v_max)
+}
+
 /// Scale a value into [0,1] over [v_min, v_max] (0.5 for a flat range).
 fn scale_value(v: f64, v_min: f64, v_max: f64) -> f64 {
   let range = v_max - v_min;
@@ -1218,8 +1259,7 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Sample grid
   let mut grid = vec![vec![f64::NAN; FIELD_GRID]; FIELD_GRID];
-  let mut v_min = f64::INFINITY;
-  let mut v_max = f64::NEG_INFINITY;
+  let mut samples = Vec::with_capacity(FIELD_GRID * FIELD_GRID);
 
   for i in 0..FIELD_GRID {
     let x = x_min + (i as f64 + 0.5) / FIELD_GRID as f64 * (x_max - x_min);
@@ -1229,11 +1269,11 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         && v.is_finite()
       {
         grid[i][j] = v;
-        v_min = v_min.min(v);
-        v_max = v_max.max(v);
+        samples.push(v);
       }
     }
   }
+  let (v_min, v_max) = robust_value_range(&samples);
 
   // Use plotters for axes, then overlay the density image
   let mut area = field_plot_axes((x_min, x_max), (y_min, y_max), &opts)?;
@@ -1337,8 +1377,7 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Sample grid
   let mut grid = vec![vec![f64::NAN; n]; n];
-  let mut v_min = f64::INFINITY;
-  let mut v_max = f64::NEG_INFINITY;
+  let mut samples = Vec::with_capacity(n * n);
 
   for i in 0..n {
     let x = x_min + i as f64 / FIELD_GRID as f64 * (x_max - x_min);
@@ -1348,11 +1387,11 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         && v.is_finite()
       {
         grid[i][j] = v;
-        v_min = v_min.min(v);
-        v_max = v_max.max(v);
+        samples.push(v);
       }
     }
   }
+  let (v_min, v_max) = robust_value_range(&samples);
 
   if !v_min.is_finite() || !v_max.is_finite() {
     return Ok(crate::graphics_result(
@@ -2238,9 +2277,8 @@ pub fn stream_density_plot_ast(
   let grid_n = 60;
 
   // Compute magnitude field for density background
-  let mut v_min = f64::INFINITY;
-  let mut v_max = f64::NEG_INFINITY;
   let mut mag_grid = vec![vec![f64::NAN; grid_n]; grid_n];
+  let mut mag_samples = Vec::with_capacity(grid_n * grid_n);
 
   for i in 0..grid_n {
     let x = x_min + (i as f64 + 0.5) / grid_n as f64 * (x_max - x_min);
@@ -2250,12 +2288,12 @@ pub fn stream_density_plot_ast(
         let mag = (vx * vx + vy * vy).sqrt();
         if mag.is_finite() {
           mag_grid[i][j] = mag;
-          v_min = v_min.min(mag);
-          v_max = v_max.max(mag);
+          mag_samples.push(mag);
         }
       }
     }
   }
+  let (v_min, v_max) = robust_value_range(&mag_samples);
 
   // Use plotters for axes
   let area = generate_axes_only(
@@ -3430,4 +3468,47 @@ pub fn complex_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   svg.push_str("</svg>");
   Ok(crate::graphics_result(svg))
+}
+
+#[cfg(test)]
+mod robust_range_tests {
+  use super::robust_value_range;
+
+  #[test]
+  fn robust_value_range_ignores_a_pole() {
+    // A handful of samples near a singularity (huge magnitude, like a
+    // function blowing up at one grid point) shouldn't drag v_max out to
+    // where the rest of the well-behaved samples all scale to the same
+    // color. Mirrors the shape of a `ContourPlot`/`DensityPlot` grid sample
+    // set for a function like `1/Sqrt[x^2 + y^2]`.
+    let mut samples: Vec<f64> = (0..96).map(|i| i as f64 * 0.1).collect();
+    samples.extend([1.0e6, 2.0e6, 5.0e6, 1.0e7]);
+
+    let (v_min, v_max) = robust_value_range(&samples);
+
+    assert!(v_min <= 0.0, "got v_min={v_min}");
+    // The pole samples must be fenced off — the reported max should stay
+    // close to the well-behaved bulk, not jump to the outliers.
+    assert!(
+      v_max < 100.0,
+      "expected the pole samples to be excluded, got v_max={v_max}"
+    );
+  }
+
+  #[test]
+  fn robust_value_range_keeps_full_span_without_outliers() {
+    // A smooth, well-behaved sample set (no huge gap between the bulk and
+    // the extremes) should keep its literal min/max — nothing to fence off.
+    let samples: Vec<f64> = (0..100).map(|i| i as f64 * 0.1).collect();
+    let (v_min, v_max) = robust_value_range(&samples);
+    assert_eq!(v_min, 0.0);
+    assert_eq!(v_max, 9.9);
+  }
+
+  #[test]
+  fn robust_value_range_empty_is_non_finite() {
+    let (v_min, v_max) = robust_value_range(&[]);
+    assert!(!v_min.is_finite());
+    assert!(!v_max.is_finite());
+  }
 }

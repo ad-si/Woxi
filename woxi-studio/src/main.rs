@@ -24036,4 +24036,194 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`count$$ = 3, $CellContext`offset$$ 
       "the plot must still render after resetting"
     );
   }
+
+  /// A randomly-sampled Wolfram Demonstrations Project notebook builds a
+  /// `Flatten[Table[…], 1]` lattice of points, wraps it in
+  /// `Nearest[lattice -> Automatic]`, and uses a `Locator` control (a bare
+  /// `Locator` marker with no explicit corner bounds, so its range must fall
+  /// back to a padded box around the initial point) as the query position
+  /// for `nf[query, k]`, drawing the `k` nearest lattice points highlighted
+  /// among the rest. A resolution slider changes the lattice's `Table`
+  /// bounds and a fraction slider drives `k` through
+  /// `Max[1, Min[Round[frac*count], count]]`, echoed live into `PlotLabel`
+  /// via `ToString[...] <> " ... " <> ToString[...]`, alongside an `Epilog`
+  /// marker at the query point and `AutorunSequencing`. Woxi Studio already
+  /// builds and drives this correctly; pin it down with an independently
+  /// written regression test covering the same construct category (a square
+  /// grid instead of a hexagonal one, different colors, shapes and control
+  /// names throughout — not copied from the original).
+  #[test]
+  fn demonstration_nearest_points_on_a_lattice() {
+    let code = r#"Manipulate[
+   With[{pts = Flatten[Table[{i, j}, {j, 0, res}, {i, 0, res}], 1]},
+    With[{near = Nearest[pts -> Automatic]},
+     Graphics[{
+       EdgeForm[Gray], White, Rectangle[# - {0.4, 0.4}, # + {0.4, 0.4}] & /@ pts,
+       Blue, Disk[#, 0.3] & /@ (pts[[
+          near[query, Max[1, Min[Round[frac (res + 1)^2], (res + 1)^2]]]]]),
+       Red, PointSize[0.03], Point[query]},
+      PlotLabel ->
+       ToString[Max[1, Min[Round[frac (res + 1)^2], (res + 1)^2]]] <>
+        " nearest of " <> ToString[(res + 1)^2],
+      ImageSize -> {380, 300},
+      Epilog -> {Green, Circle[query, 0.15]}]]],
+  {{query, {2, 2}, "query point"}, Locator, Appearance -> None},
+  {{frac, 0.3, "fraction"}, 0, 1},
+  {{res, 6, "grid resolution"}, 0, 15, 1},
+  AutorunSequencing -> {2, 3}]"#;
+
+    let expr = woxi::interpret_to_expr(code).expect("parse/hold Manipulate");
+    let mut state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("a bare Locator + two bounded sliders should build a widget");
+
+    assert!(
+      state.error.is_none(),
+      "initial render failed: {:?}",
+      state.error
+    );
+    assert_eq!(
+      state.controls.iter().map(|c| c.name()).collect::<Vec<_>>(),
+      vec!["query", "frac", "res"],
+      "panel rows: query locator, fraction slider, resolution slider"
+    );
+    match &state.controls[0] {
+      manipulate::ControlState::Slider2D {
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+        x,
+        y,
+        ..
+      } => {
+        // No explicit corner bounds were given, so the range must fall back
+        // to a box padded by at least 1 unit around the initial point {2,2}
+        // (a degenerate single-point bounding box pads by a full unit).
+        assert_eq!((*x, *y), (2.0, 2.0));
+        assert_eq!((*x_min, *x_max, *y_min, *y_max), (1.0, 3.0, 1.0, 3.0));
+      }
+      other => panic!("expected `query` as a Slider2D stand-in, got {other:?}"),
+    }
+    assert!(
+      matches!(
+        state.controls[1],
+        manipulate::ControlState::Continuous { .. }
+      ),
+      "the fraction spec must become a Continuous slider"
+    );
+    assert!(
+      matches!(
+        state.controls[2],
+        manipulate::ControlState::Continuous { .. }
+      ),
+      "the resolution spec must become a Continuous slider"
+    );
+
+    let render = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&w.body)
+      })
+      .expect("body evaluates")
+    };
+    let initial = render(&state);
+    assert!(
+      initial.graphics.is_some(),
+      "the lattice, highlighted nearest points and query marker must render"
+    );
+    // frac = 0.3, res = 6 => (res+1)^2 = 49, Round[0.3*49] = 15.
+    assert!(
+      initial
+        .graphics
+        .as_deref()
+        .unwrap_or_default()
+        .contains("15 nearest of 49"),
+      "PlotLabel must report the live nearest-point count: {:?}",
+      initial.graphics
+    );
+
+    // Drag the query locator and move both sliders; the picture, the hidden
+    // clamp, and the PlotLabel must all track the new values without error.
+    for c in state.controls.iter_mut() {
+      match c {
+        manipulate::ControlState::Slider2D { name, x, y, .. }
+          if name == "query" =>
+        {
+          *x = 1.5;
+          *y = 2.5;
+        }
+        manipulate::ControlState::Continuous { name, current, .. }
+          if name == "frac" =>
+        {
+          *current = 0.8;
+        }
+        manipulate::ControlState::Continuous { name, current, .. }
+          if name == "res" =>
+        {
+          *current = 3.0;
+        }
+        _ => {}
+      }
+    }
+    state.reevaluate();
+    assert!(
+      state.error.is_none(),
+      "re-render after moving the controls failed: {:?}",
+      state.error
+    );
+    let after = render(&state);
+    // frac = 0.8, res = 3 => (res+1)^2 = 16, Round[0.8*16] = 13.
+    assert!(
+      after
+        .graphics
+        .as_deref()
+        .unwrap_or_default()
+        .contains("13 nearest of 16"),
+      "PlotLabel must recompute after the sliders move: {:?}",
+      after.graphics
+    );
+    assert_ne!(
+      initial.graphics, after.graphics,
+      "moving the query locator and both sliders must change the picture"
+    );
+
+    // The lattice degenerates to a single point at the lowest resolution;
+    // Nearest over a one-element list must still clamp and render cleanly.
+    for c in state.controls.iter_mut() {
+      match c {
+        manipulate::ControlState::Continuous { name, current, .. }
+          if name == "res" =>
+        {
+          *current = 0.0;
+        }
+        manipulate::ControlState::Continuous { name, current, .. }
+          if name == "frac" =>
+        {
+          *current = 0.0;
+        }
+        _ => {}
+      }
+    }
+    state.reevaluate();
+    assert!(
+      state.error.is_none(),
+      "a single-point lattice must still evaluate: {:?}",
+      state.error
+    );
+    let degenerate = render(&state);
+    assert!(
+      degenerate
+        .graphics
+        .as_deref()
+        .unwrap_or_default()
+        .contains("1 nearest of 1"),
+      "Max[1, Min[...]] must clamp the count up to 1 even when frac = 0: {:?}",
+      degenerate.graphics
+    );
+  }
 }

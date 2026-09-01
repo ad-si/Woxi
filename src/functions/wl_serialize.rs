@@ -14,7 +14,7 @@
 //! | `S` | string: `<i32 len><len UTF-8 bytes>`                                |
 //! | `s` | symbol (used as a head): `<i32 len><len UTF-8 bytes>`               |
 //! | `f` | normal expression: `<i32 nargs><head expr><arg expr>*nargs`         |
-//! | `n` | integer raw array: `<i32 type><i32 rank><i32 dims><packed ints>`    |
+//! | `n` | integer raw array: `<i32 type>?<i32 rank><i32 dims><packed ints>`  |
 //! | `e` | real packed array: `<i32 rank><i32 dims><packed f64>`               |
 //! | `b` | byte raw array: `<i32 rank><i32 dims><raw u8>`                      |
 //!
@@ -155,7 +155,16 @@ fn nest(dims: &[usize], leaves: &mut std::vec::IntoIter<Expr>) -> Expr {
 }
 
 fn read_dims(data: &[u8], pos: &mut usize, rank: i32) -> Option<Vec<usize>> {
-  if rank < 0 {
+  // A real WL array is never more than a handful of dimensions deep; a
+  // rank outside that range means a field got misread (garbage data, or —
+  // since `read_integer_array` now tries the `n` token's type-field and
+  // type-less layouts against the same bytes — the wrong layout landing on
+  // a small value from the other one and reading it as an enormous rank).
+  // Rejecting it here, before `Vec::with_capacity(rank as usize)`, avoids
+  // an allocation request large enough to abort the process outright
+  // (`Vec::with_capacity` aborts on allocation failure; it does not
+  // return an `Err` the caller could recover from).
+  if !(0..=64).contains(&rank) {
     return None;
   }
   let mut dims = Vec::with_capacity(rank as usize);
@@ -179,18 +188,54 @@ fn dims_product(dims: &[usize]) -> Option<usize> {
   dims.iter().try_fold(1usize, |acc, &d| acc.checked_mul(d))
 }
 
-/// `n` token — raw integer array. The element width is taken from the trailing
-/// payload (signed little-endian ints of 1/2/4/8 bytes), which makes the reader
-/// independent of the exact element-type code.
+/// `n` token — raw integer array. Two layouts have both been observed in
+/// real Wolfram output: `<i32 type><i32 rank><i32 dims><packed ints>` (a
+/// `TemporalData`/`TimeSeries` packed array — `type` disambiguating the
+/// element width when the trailing-bytes inference below is ambiguous) and
+/// `<i32 rank><i32 dims><packed ints>` with no type field at all (a
+/// `GraphicsComplex` face-index list saved by `Manipulate[…,
+/// SaveDefinitions -> True]`). Nothing in the token distinguishes which
+/// layout a given payload uses up front, so both are tried: the type-field
+/// layout first (it's the one the reader has always assumed, and the one a
+/// tie goes to), falling back to the type-less layout only when the first
+/// attempt's dimensions don't validate — e.g. reading a real rank as a type
+/// and a real first dimension as an absurd rank overflowed `dims_product`
+/// or failed the remaining-bytes check, so `deserialize` gave up and the
+/// caller's UTF-8 fallback failed too (the payload is binary, not text): a
+/// `SaveDefinitions` capture with such an array anywhere in it silently
+/// lost its whole `Initialization`, leaving every symbol it defines
+/// undefined and any `Graphics3D`/`Manipulate` built from them blank.
 fn read_integer_array(data: &[u8], pos: &mut usize) -> Option<Expr> {
-  let _typ = read_i32(data, pos)?;
-  let rank = read_i32(data, pos)?;
-  let dims = read_dims(data, pos, rank)?;
+  if let Some((expr, end)) = try_read_integer_array(data, *pos, true) {
+    *pos = end;
+    return Some(expr);
+  }
+  let (expr, end) = try_read_integer_array(data, *pos, false)?;
+  *pos = end;
+  Some(expr)
+}
+
+/// One attempt at reading the `n` token's rank/dims/data, optionally
+/// preceded by a 4-byte type field it discards. Returns the parsed
+/// expression and the position just past the consumed bytes, without
+/// mutating the caller's cursor — `read_integer_array` commits whichever
+/// attempt validates.
+fn try_read_integer_array(
+  data: &[u8],
+  start: usize,
+  with_type_field: bool,
+) -> Option<(Expr, usize)> {
+  let mut pos = start;
+  if with_type_field {
+    let _typ = read_i32(data, &mut pos)?;
+  }
+  let rank = read_i32(data, &mut pos)?;
+  let dims = read_dims(data, &mut pos, rank)?;
   let count: usize = dims_product(&dims)?;
   let values = if count == 0 {
     Vec::new()
   } else {
-    let rest = data.len().checked_sub(*pos)?;
+    let rest = data.len().checked_sub(pos)?;
     if rest % count != 0 {
       return None;
     }
@@ -201,17 +246,17 @@ fn read_integer_array(data: &[u8], pos: &mut usize) -> Option<Expr> {
     let mut vals = Vec::with_capacity(count);
     for _ in 0..count {
       let mut buf = [0u8; 8];
-      buf[..width].copy_from_slice(&data[*pos..*pos + width]);
+      buf[..width].copy_from_slice(&data[pos..pos + width]);
       // Sign-extend a little-endian signed integer of `width` bytes.
       let raw = u64::from_le_bytes(buf);
       let shift = 64 - width * 8;
       let signed = ((raw << shift) as i64) >> shift;
       vals.push(Expr::Integer(signed as i128));
-      *pos += width;
+      pos += width;
     }
     vals
   };
-  Some(nest(&dims, &mut values.into_iter()))
+  Some((nest(&dims, &mut values.into_iter()), pos))
 }
 
 /// `b` token — packed unsigned byte array: `<i32 rank><i32 dims><raw u8>`.
@@ -313,10 +358,21 @@ mod tests {
   // text (see `decompress_to_expr`).
   #[test]
   fn integer_array_with_overflowing_dims_does_not_panic() {
-    // n token: type 0, rank 3, dims {i32::MAX, i32::MAX, i32::MAX} — the
-    // product vastly exceeds usize::MAX on multiplication.
-    let data = b"!boRn\x00\x00\x00\x00\x03\x00\x00\x00\xff\xff\xff\x7f\xff\xff\xff\x7f\xff\xff\xff\x7f";
+    // n token: rank 3, dims {i32::MAX, i32::MAX, i32::MAX} — the product
+    // vastly exceeds usize::MAX on multiplication.
+    let data =
+      b"!boRn\x03\x00\x00\x00\xff\xff\xff\x7f\xff\xff\xff\x7f\xff\xff\xff\x7f";
     assert!(deserialize(data).is_none());
+  }
+
+  #[test]
+  fn reads_integer_array_token() {
+    // n token: rank 2, dims {2, 3}, signed 32-bit little-endian ints — the
+    // layout real Wolfram output uses for a GraphicsComplex face-index
+    // list, with no leading element-type field (unlike what an earlier,
+    // never-verified-against-real-output version of this reader assumed).
+    let data = b"!boRn\x02\x00\x00\x00\x02\x00\x00\x00\x03\x00\x00\x00\x01\x00\x00\x00\x02\x00\x00\x00\x03\x00\x00\x00\x04\x00\x00\x00\x05\x00\x00\x00\x06\x00\x00\x00";
+    assert_eq!(render(data), "{{1, 2, 3}, {4, 5, 6}}");
   }
 
   #[test]
