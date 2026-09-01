@@ -4711,6 +4711,7 @@ fn render_display_node<'a>(
       target,
       current,
       choices,
+      enabled,
     } => {
       // A `PopupMenu[Dynamic[lval], choices]` display element: a dropdown
       // whose selection writes `lval = <chosen value>` back, exactly like
@@ -4718,19 +4719,30 @@ fn render_display_node<'a>(
       // (see `PopupChoice`) rather than being keyed by label text, since
       // `discrete_choice_label` is lossy and two choices can render the
       // same label (e.g. `1 -> "A", 2 -> "A"`).
+      //
+      // A trailing `Enabled -> cond` that currently reads `False` greys the
+      // dropdown out and swallows selection, the same treatment a top-level
+      // control's `Enabled` condition gets (see `disabled_slider_style`).
+      let enabled = *enabled;
       let (items, selected) = popup_menu_state(choices, current);
       let target = target.clone();
       let choices_owned = choices.clone();
       let on_select = move |chosen: PopupChoice| {
+        if !enabled {
+          return Message::Noop;
+        }
         let value = choices_owned[chosen.index].0.clone();
         Message::ManipulateDisplayToggled(
           cell_idx,
           format!("{target} = {value}"),
         )
       };
-      pick_list(items, selected, on_select)
-        .width(iced::Length::Shrink)
-        .into()
+      let mut list =
+        pick_list(items, selected, on_select).width(iced::Length::Shrink);
+      if !enabled {
+        list = list.style(disabled_pick_list_style);
+      }
+      list.into()
     }
     DisplayNode::Spacer { width } => {
       space::Space::new().width(*width as f32).into()
@@ -5681,6 +5693,30 @@ fn disabled_slider_style(
       background: muted.into(),
       border_color: Color::TRANSPARENT,
       border_width: 0.0,
+    },
+  }
+}
+
+/// Greyed style for a Manipulate display-element `PopupMenu` whose `Enabled`
+/// condition currently reads `False`: text, handle and border drop to muted
+/// surface colors, matching `disabled_slider_style`'s treatment of a
+/// disabled top-level control.
+fn disabled_pick_list_style(
+  theme: &Theme,
+  _status: iced::widget::pick_list::Status,
+) -> iced::widget::pick_list::Style {
+  use iced::widget::pick_list::Style;
+  let palette = theme.extended_palette();
+  let muted = palette.background.strong.color;
+  Style {
+    text_color: muted,
+    placeholder_color: muted,
+    handle_color: muted,
+    background: palette.background.weak.color.into(),
+    border: Border {
+      radius: 2.0.into(),
+      width: 1.0,
+      color: palette.background.weak.color,
     },
   }
 }
@@ -12716,6 +12752,45 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
       panic!("expected a Popup leaf");
     };
     assert_eq!(current, "3");
+  }
+
+  #[test]
+  fn dynamic_popup_menu_honors_its_own_enabled_condition() {
+    use woxi::functions::graphics::DisplayNode;
+    // A body-drawn `PopupMenu[Dynamic[lval], choices, Enabled -> cond]`
+    // whose `lval` is a compound expression (`tags[[#]]`, one dropdown per
+    // slot of a shared list) can never be promoted to its own named
+    // Manipulate control the way `dynamic_popup_menu_count_tracks_…` above
+    // is — promotion only ever applies to a bare-symbol `ControlType ->
+    // None` variable. It stays a `DisplayNode::Popup`, so that is where its
+    // own `Enabled` option must be honored instead.
+    let code = "Manipulate[tags, \
+      {{limit, 2}, 1, 4, 1}, \
+      {{tags, {1, 1, 1, 1}}, ControlType -> None}, \
+      Dynamic[Row[Outer[PopupMenu[Dynamic[tags[[#]]], {1, 2, 3}, \
+        Enabled -> (# <= limit)]&, Range[4]]]]]";
+    let state = instantiate_stored_manipulate(code, "")
+      .expect("popup-per-box Manipulate must build a widget");
+    assert!(state.error.is_none(), "body must render: {:?}", state.error);
+
+    // `limit` starts at 2: the first two dropdowns (index <= 2) stay
+    // enabled, the last two (index > 2) start disabled.
+    let popups = collect_popups(&state.display_trees);
+    assert_eq!(popups.len(), 4, "one popup per Range[4] slot");
+    let enabled_flags: Vec<bool> = popups
+      .iter()
+      .map(|p| {
+        let DisplayNode::Popup { enabled, .. } = p else {
+          panic!("expected a Popup leaf, got {p:?}");
+        };
+        *enabled
+      })
+      .collect();
+    assert_eq!(
+      enabled_flags,
+      vec![true, true, false, false],
+      "Enabled -> (# <= limit) must gate each popup by its own index"
+    );
   }
 
   #[test]
@@ -23714,6 +23789,252 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`count$$ = 3, $CellContext`offset$$ 
     // gives none of its own); the initial position is the SetterBar's
     // default choice, `{2, 0}`.
     assert_eq!(stand_in, (-5.0, 5.0, -2.0, 2.0, 2.0, 0.0));
+  }
+
+  /// Checked a randomly-sampled Wolfram Demonstrations Project notebook
+  /// ("When Is a Piecewise Function Differentiable?") against Woxi Studio's
+  /// Manipulate pipeline. Its shape: a `SeedRandom`-seeded `Module` builds a
+  /// random piecewise quiz function from a table of base functions plus an
+  /// integer offset; a `RadioButtonBar` (given as `n -> "label"` rules)
+  /// picks which unknown(s) to solve for; two guess sliders are gated by
+  /// `Enabled -> !(mode == …)`; and — the part worth a dedicated
+  /// regression — two `PopupMenu[Dynamic[…], …, Enabled -> cond]` controls
+  /// are laid out directly in the body's `Pane[Column[Row[…]]]` (not as
+  /// top-level Manipulate control specs), the second one's `Enabled`
+  /// depending on the first popup's own live selection.
+  ///
+  /// This is a self-authored, construct-equivalent example (a made-up
+  /// "guess the piecewise coefficients" quiz with its own function table,
+  /// variable names and wording) — not the notebook's own code, data, or
+  /// text, which is copyrighted.
+  ///
+  /// Found and fixed by this test: a `PopupMenu` laid out in the body
+  /// (rather than declared as a Manipulate control) silently ignored its
+  /// own `Enabled` option — `popup_node` never looked past `args[0]`
+  /// (the bound variable) and `args[1]` (the choices), so the dropdown
+  /// stayed clickable regardless of its condition. Fixed by parsing a
+  /// trailing `Enabled -> cond` the same way top-level controls do and
+  /// carrying the resolved flag on `DisplayNode::Popup`, which Woxi
+  /// Studio's `pick_list` rendering and the Playground's `<select>`
+  /// rendering both now grey out and stop routing selections through.
+  #[test]
+  fn embedded_popup_menu_respects_its_own_enabled_condition() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[ \
+         SeedRandom[randomSeed]; \
+         Module[{base, intercept0, slope0, choicesA, choicesB, piece, guess}, \
+           base = {Cos[x], Sin[x], Exp[x], ArcTan[x], (x + 1)^3, \
+             (x + 1)^2, x}[[tableIndex]] + Random[Integer, {-2, 2}]; \
+           intercept0 = base /. x -> 0; \
+           choicesA = {-3, -2, -1, 0, 1, 2, 3}; \
+           slope0 = D[base, x] /. x -> 0; \
+           choicesB = {-3, -2, -1, 0, 1, 2, 3}; \
+           If[mode == 2, p = intercept0]; \
+           piece = Piecewise[{{base, x <= 0}, \
+             {Switch[mode, 3, Style[\"q\", Italic] x + Style[\"p\", Italic], \
+               1, Style[\"p\", Italic], 2, Style[\"q\", Italic] x], \
+              x > 0}}]; \
+           If[mode == 1, q = 0]; \
+           If[mode == 2, p = intercept0]; \
+           guess = Piecewise[{{base, x <= 0}, {p + q x, x > 0}}]; \
+           Pane[ \
+             Text@Style[ \
+               Column[{ \
+                 Row[Switch[mode, \
+                   3, {\"Find \", Style[\"p\", Italic], \" and \", \
+                     Style[\"q\", Italic], \" so f is differentiable.\"}, \
+                   1, {\"Find \", Style[\"p\", Italic], \" so f is continuous.\"}, \
+                   2, {\"Find \", Style[\"q\", Italic], \
+                     \" so f is differentiable.\"}]], \
+                 Row[{ \
+                   Pane[Column[{ \
+                     Row[{\"f(x) = \", TraditionalForm[piece]}], \
+                     Column[{ \
+                       Row[{ \
+                         If[guessedValue == -3, \" \", \
+                           If[guessedValue == intercept0, True, False]], \
+                         \"  \", \
+                         If[guessedSlope == -3, \" \", \
+                           If[guessedSlope == slope0, True, False]]}], \
+                       Row[{PopupMenu[Dynamic[guessedValue], choicesA, \
+                           Enabled -> (mode == 1 || mode == 3)], \
+                         PopupMenu[Dynamic[guessedSlope], choicesB, \
+                           Enabled -> ((guessedValue == intercept0 && \
+                              mode == 3) || mode == 2)]}]}]}], \
+                     ImageSize -> {230, 200}], \
+                   Plot[guess, {x, -2, 2}, \
+                     PlotRange -> {{-2.1, 2.1}, {-3.1, 3.1}}, \
+                     AspectRatio -> Automatic, \
+                     GridLines -> {Range[-2, 2, 0.2], Range[-3, 3, 0.2]}, \
+                     GridLinesStyle -> LightBlue, \
+                     ImageSize -> {310, 330}]}]}], 20], \
+             ImageSize -> {550, 380}]], \
+         {{mode, 3, \"select:\"}, \
+           {1 -> \"value\", 2 -> \"slope\", 3 -> \"value and slope\"}, \
+           ControlType -> RadioButtonBar}, \
+         {tableIndex, RandomInteger[{1, 4}], ControlType -> None}, \
+         {guessedValueFlag, {False, True}, ControlType -> None}, \
+         {guessedSlopeFlag, {False, True}, ControlType -> None}, \
+         {randomSeed, 12345, ControlType -> None}, \
+         {guessedValue, -3, ControlType -> None}, \
+         {guessedSlope, -3, ControlType -> None}, \
+         Button[\"new problem\", \
+           tableIndex = Random[Integer, {1, 7}]; \
+           randomSeed = Random[Integer, {1, 123578}]; \
+           guessedValue = -3; guessedSlope = -3; p = -3; q = -3], \
+         {{p, -3, Row[{\"guess for \", Style[\"p\", Italic]}]}, -3, 3, 0.1, \
+           Appearance -> \"Labeled\", Enabled -> !(mode == 2)}, \
+         {{q, -3, Row[{\"guess for \", Style[\"q\", Italic]}]}, -3, 3, 0.1, \
+           Appearance -> \"Labeled\", Enabled -> !(mode == 1)}, \
+         AutorunSequencing -> {6}, SaveDefinitions -> True]",
+    )
+    .expect("the Manipulate source must parse and evaluate");
+    let mut state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("the Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the Plot must render a graphic"
+    );
+
+    // `tableIndex`/`guessedValueFlag`/`guessedSlopeFlag`/`randomSeed` are
+    // `ControlType -> None` with no body-drawn widget of their own: live
+    // mutable state, but — like the `waveB`/`waveR`/`waveT` regression
+    // above — never their own named widget in `state.controls`. `guessedValue`
+    // and `guessedSlope` are also declared `ControlType -> None`, but each
+    // has a `PopupMenu[Dynamic[…], …]` drawn for it in the body, so they get
+    // promoted to real pick-list controls (this is the fix under test: doing
+    // that at all requires resolving each `PopupMenu`'s Module-local choice
+    // list, `choicesA`/`choicesB`, by replaying the assignments that precede
+    // it in the same scope, not just the Module's bare local declarations).
+    let names: Vec<&str> = state.controls.iter().map(|c| c.name()).collect();
+    for expected in ["mode", "p", "q", "guessedValue", "guessedSlope"] {
+      assert!(
+        names.contains(&expected),
+        "control {expected} must register: {names:?}"
+      );
+    }
+    for hidden in [
+      "tableIndex",
+      "guessedValueFlag",
+      "guessedSlopeFlag",
+      "randomSeed",
+    ] {
+      assert!(
+        !names.contains(&hidden),
+        "ControlType -> None state must not become its own widget: {hidden}"
+      );
+      assert!(
+        state.state.iter().any(|(n, _)| n == hidden),
+        "ControlType -> None state must still be tracked as live binding: {hidden}"
+      );
+    }
+
+    let mode_idx = names.iter().position(|n| *n == "mode").unwrap();
+    match &state.controls[mode_idx] {
+      manipulate::ControlState::Discrete {
+        value_labels,
+        setter_bar,
+        ..
+      } => {
+        assert_eq!(
+          value_labels,
+          &[
+            "value".to_string(),
+            "slope".to_string(),
+            "value and slope".to_string()
+          ]
+        );
+        assert!(*setter_bar, "ControlType -> RadioButtonBar must bar-ify");
+      }
+      other => panic!("expected Discrete for mode, got {other:?}"),
+    }
+
+    let p_idx = names.iter().position(|n| *n == "p").unwrap();
+    let q_idx = names.iter().position(|n| *n == "q").unwrap();
+    // Default mode is 3 ("value and slope"): both p and q sliders stay
+    // enabled (`Enabled -> !(mode == 2)` / `!(mode == 1)`).
+    assert!(
+      state.control_is_enabled[p_idx],
+      "p must be enabled when mode == 3"
+    );
+    assert!(
+      state.control_is_enabled[q_idx],
+      "q must be enabled when mode == 3"
+    );
+
+    let guessed_value_idx =
+      names.iter().position(|n| *n == "guessedValue").unwrap();
+    let guessed_slope_idx =
+      names.iter().position(|n| *n == "guessedSlope").unwrap();
+    for (idx, label) in
+      [(guessed_value_idx, "value"), (guessed_slope_idx, "slope")]
+    {
+      match &state.controls[idx] {
+        manipulate::ControlState::Discrete { values, popup, .. } => {
+          assert_eq!(
+            values,
+            &[
+              "-3".to_string(),
+              "-2".to_string(),
+              "-1".to_string(),
+              "0".to_string(),
+              "1".to_string(),
+              "2".to_string(),
+              "3".to_string()
+            ],
+            "the {label} PopupMenu's Module-local choice list must resolve"
+          );
+          assert!(*popup, "a body PopupMenu must promote to a dropdown");
+        }
+        other => panic!(
+          "expected a promoted Discrete popup for {label}, got {other:?}"
+        ),
+      }
+    }
+    // Default mode is 3 ("value and slope"): `Enabled -> (mode == 1 ||
+    // mode == 3)` holds, so the value popup starts enabled.
+    assert!(
+      state.control_is_enabled[guessed_value_idx],
+      "the value PopupMenu must be enabled for mode == 1 || mode == 3"
+    );
+    // `guessedValue` starts at its "unanswered" choice, -3, and every base
+    // function's derived intercept lands in [-2, 3] (the table's own values
+    // at x = 0 are all 0 or 1, plus an integer offset in -2 .. 2) — so
+    // `guessedValue == intercept0` can never hold yet, and mode != 2, so the
+    // slope PopupMenu's compound `Enabled` condition — itself referencing
+    // another Module local, `intercept0` — must resolve to false until a
+    // matching value is picked.
+    assert!(
+      !state.control_is_enabled[guessed_slope_idx],
+      "the slope PopupMenu must stay disabled until the value is matched"
+    );
+
+    // The reset button must fire cleanly and re-randomize the hidden
+    // `tableIndex`/`randomSeed` state alongside resetting the four
+    // user-facing guess variables, without breaking evaluation.
+    let button_action = state
+      .controls
+      .iter()
+      .find_map(|c| match c {
+        manipulate::ControlState::Button { action, .. } => Some(action.clone()),
+        _ => None,
+      })
+      .expect("the reset button must be present");
+    state.apply_button_action(&button_action);
+    assert!(
+      state.error.is_none(),
+      "the reset button must re-evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the plot must still render after resetting"
+    );
   }
 
   /// A randomly-sampled Wolfram Demonstrations Project notebook builds a
