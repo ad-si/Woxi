@@ -4421,6 +4421,32 @@ mod solve {
     );
   }
 
+  // A nonlinear two-variable system of plain equalities that Reduce's
+  // multi-variable elimination can't fully resolve (here because it embeds
+  // an unevaluated `{}[[1]]`/`{}[[2]]` Part-on-empty-list rather than a
+  // solvable value) used to hang and eventually crash: the elimination
+  // fallback re-spells the equation list as a conjunction and retries
+  // `Solve` on it, expecting the single-expression path to handle what the
+  // list path couldn't — but Solve's own And-to-List pre-pass immediately
+  // folds a conjunction of plain equalities straight back into the
+  // identical equation list, so the retry lands on the exact same
+  // unresolved system and recurses into itself forever. Found via a random
+  // Wolfram Demonstrations Project notebook (independently constructed
+  // here, not copied from it) whose Manipulate solved an equivalent
+  // two-equation system for two draggable points' coordinates.
+  #[test]
+  fn unresolved_multi_var_reduce_does_not_recurse_forever() {
+    assert_eq!(
+      interpret(
+        "Solve[{(-1 + y)*(-1 + {}[[1]]) == (-1 + x)*(-1 + {}[[2]]), \
+         (1 + y)*(1 + {}[[1]]) == (1 + x)*(1 + {}[[2]])}, {x, y}]"
+      )
+      .unwrap(),
+      "ToRules[Reduce[(-1 + y)*(-1 + {}[[1]]) == (-1 + x)*(-1 + {}[[2]]) && \
+       (1 + y)*(1 + {}[[1]]) == (1 + x)*(1 + {}[[2]]), {x, y}]]"
+    );
+  }
+
   // Generalized variables: an applied function `y[x]` is a valid unknown and
   // is solved for as a whole, matching wolframscript.
   #[test]

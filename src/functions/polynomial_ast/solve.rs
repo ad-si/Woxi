@@ -2063,7 +2063,16 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // wrapped. The conjunction spelling of the same system goes down the
       // single-expression path, which does handle those, so retry there
       // rather than hand back a `ToRules[Reduce[...]]` nobody asked for.
+      //
+      // But when every constraint is a plain equality, solve_ast's own
+      // And-to-List pre-pass (above) immediately folds that conjunction
+      // back into the identical `{eqs}, {vars}` pair this branch just
+      // failed on, landing right back here with the same unreduced
+      // `Reduce[...]` and recursing forever. Only retry when at least one
+      // constraint isn't a plain equality, so the retry actually reaches a
+      // different code path instead of looping back to this one.
       if matches!(&rules, Expr::FunctionCall { name, .. } if name == "ToRules")
+        && !all_equalities(&constraints)
       {
         let conjunction =
           constraints
