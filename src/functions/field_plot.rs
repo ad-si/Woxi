@@ -99,16 +99,14 @@ fn parse_field_plot_label(
 /// with [`crate::functions::plot::generate_axes_only_opts`], so the top
 /// margin, tick-label areas, and font-size fallback all move together.
 fn field_plot_label_margins(
-  plot_label: &Option<(String, Option<f64>)>,
+  plot_label: Option<&(String, Option<f64>)>,
 ) -> Option<crate::functions::plot::MarginOverrides> {
-  plot_label
-    .as_ref()
-    .map(|(_, size)| crate::functions::plot::MarginOverrides {
-      top_margin: ((size.unwrap_or(14.0) * 2.0).round() as u32)
-        * RESOLUTION_SCALE,
-      x_label_area: 40 * RESOLUTION_SCALE,
-      y_label_area: 65 * RESOLUTION_SCALE,
-    })
+  plot_label.map(|(_, size)| crate::functions::plot::MarginOverrides {
+    top_margin: ((size.unwrap_or(14.0) * 2.0).round() as u32)
+      * RESOLUTION_SCALE,
+    x_label_area: 40 * RESOLUTION_SCALE,
+    y_label_area: 65 * RESOLUTION_SCALE,
+  })
 }
 
 /// Split `Style[expr, …, n, …]` into its content and the font size `n`.
@@ -1797,7 +1795,7 @@ pub fn region_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let plot_label = parse_field_plot_label(args, 3);
 
   // Use plotters for axes, reserving room above the frame for a PlotLabel.
-  let margins = field_plot_label_margins(&plot_label);
+  let margins = field_plot_label_margins(plot_label.as_ref());
   let area = crate::functions::plot::generate_axes_only_opts(
     (x_min, x_max),
     (y_min, y_max),
@@ -1977,7 +1975,7 @@ pub fn vector_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Use plotters for axes, reserving room above the frame for a PlotLabel.
-  let margins = field_plot_label_margins(&plot_label);
+  let margins = field_plot_label_margins(plot_label.as_ref());
   let mut area = crate::functions::plot::generate_axes_only_opts(
     (x_min, x_max),
     (y_min, y_max),
@@ -2147,7 +2145,7 @@ pub fn stream_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let plot_label = parse_field_plot_label(args, 3);
 
   // Use plotters for axes, reserving room above the frame for a PlotLabel.
-  let margins = field_plot_label_margins(&plot_label);
+  let margins = field_plot_label_margins(plot_label.as_ref());
   let area = crate::functions::plot::generate_axes_only_opts(
     (x_min, x_max),
     (y_min, y_max),
@@ -2322,7 +2320,7 @@ pub fn stream_density_plot_ast(
   let (v_min, v_max) = robust_value_range(&mag_samples);
 
   // Use plotters for axes, reserving room above the frame for a PlotLabel.
-  let margins = field_plot_label_margins(&plot_label);
+  let margins = field_plot_label_margins(plot_label.as_ref());
   let area = crate::functions::plot::generate_axes_only_opts(
     (x_min, x_max),
     (y_min, y_max),
