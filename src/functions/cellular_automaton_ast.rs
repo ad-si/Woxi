@@ -17,15 +17,17 @@ use super::*;
 /// Init forms: {c1, c2, ...} (cyclic) or {{c1, c2, ...}, bg} (infinite
 /// background) for 1D rules; a matrix or {matrix, bg} for 2D rules.
 ///
-/// Step specifications: t and {t} (both steps 0..t), {{t}}, {{t1, t2}} and
-/// {{t1, t2, dt}} (a list of the selected states). {tspec, xspec} restricts
-/// a 1D rule's returned cells to xspec; {tspec, xspec, yspec} restricts a
-/// 2D rule's returned rows/columns to xspec/yspec. Each of xspec/yspec is
-/// `All`, an offset `n` (from 0 or -n to n), or `{from, to[, dx]}`. A
-/// windowed spec whose tspec is the explicit single-state `{{t}}` form
-/// returns that state bare rather than in a length-1 list; every other
-/// tspec form keeps returning a list even when it resolves to one state
-/// (e.g. bare `0`, or a `{{t1, t2}}` range that collapses to one step).
+/// Step specifications: the third argument is a bare `t` or the list
+/// `{tspec, xspec[, yspec]}`, whose leading element is always the tspec —
+/// `{1, 3}` is "steps 0..1, cells 0..3", not "steps 1 through 3".
+///
+/// tspec forms: `t` (steps 0 through t), `{t}` (step t alone, still in a
+/// list), `{{t}}` (step t alone, returned bare), `{t1, t2}` (steps t1
+/// through t2) and `{t1, t2, dt}` (every dt-th of those).
+///
+/// A 1D rule takes at most one space window (the cells); a 2D rule takes the
+/// rows and then the columns, with the columns defaulting to `All`. Each is
+/// `All`, an offset `n` (from 0 or -n to n), or `{from, to[, dx]}`.
 pub fn cellular_automaton_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || Ok(unevaluated("CellularAutomaton", args));
 
@@ -81,24 +83,21 @@ pub fn cellular_automaton_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return unevaluated();
   };
 
-  // A `{tspec, xspec}` window (one axis) only makes sense on a 1D rule; a
-  // `{tspec, xspec, yspec}` window (two axes) only makes sense on a 2D
-  // rule. `window_axes` tracks how many axes were named (0, 1 or 2)
-  // regardless of whether they resolved to `All` (`None`) or an explicit
-  // range, since even an `All` xspec/yspec is the wrong shape for the
-  // other dimensionality.
-  match (steps.window_axes, rule.two_d) {
-    (0, _) | (1, false) | (2, true) => {}
+  // There is one space window per space dimension: a 1D rule takes at most
+  // an `xspec` (the cells), a 2D rule an `xspec` and a `yspec` (the rows and
+  // the columns). Naming more is the wrong shape for the rule, even when
+  // every one of them is `All`. A 2D rule given only an `xspec` windows the
+  // rows and keeps every column.
+  let (cells, rows, cols) = match (steps.windows.as_slice(), rule.two_d) {
+    ([], _) => (None, None, None),
+    ([x], false) => (*x, None, None),
+    ([x], true) => (None, *x, None),
+    ([x, y], true) => (None, *x, *y),
     _ => return unevaluated(),
-  }
-  let Some(states) = evolve(
-    &rule,
-    &init,
-    background,
-    &steps.times,
-    steps.cells.or(steps.cols),
-    steps.rows,
-  ) else {
+  };
+  let Some(states) =
+    evolve(&rule, &init, background, &steps.times, cells.or(cols), rows)
+  else {
     return unevaluated();
   };
 
@@ -123,16 +122,14 @@ pub fn cellular_automaton_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     })
     .collect();
 
-  // A step spec with an explicit cell/row/column window (`{tspec, xspec}` or
-  // `{tspec, xspec, yspec}`) whose tspec is the explicit single-state
-  // `{{t}}` form returns that state bare, not wrapped in a length-1 list —
-  // e.g. `ArrayPlot[CellularAutomaton[rule, init, {{{t}}, All, All}]]`
-  // needs the matrix itself, not a singleton list holding it. Every other
-  // tspec form (bare `t`/`{t}`, or a `{{t1, t2[, dt]}}` range) keeps
-  // returning a list even when it happens to resolve to one state, since
-  // those forms are documented as always producing "a list of the
-  // selected states".
-  if steps.window_axes > 0 && steps.single_state {
+  // The explicit single-state tspec `{{t}}` returns that state bare, not
+  // wrapped in a length-1 list — e.g.
+  // `ArrayPlot[CellularAutomaton[rule, init, {{{t}}, All, All}]]` needs the
+  // matrix itself, not a singleton list holding it. Whether a space window
+  // follows makes no difference: `{{{t}}}` is bare too. Every other tspec
+  // form keeps returning a list even when it resolves to one state, since
+  // those are documented as producing "a list of the selected states".
+  if steps.single_state {
     debug_assert_eq!(exprs.len(), 1);
     return Ok(exprs.remove(0));
   }
@@ -152,26 +149,16 @@ struct RuleSpec {
 struct StepSpec {
   /// The (ascending) time steps whose states are returned.
   times: Vec<usize>,
-  /// 1D cell offsets to keep, as `(from, to, step)` relative to the first
-  /// cell of the initial condition. `None` keeps the whole affected region.
-  cells: Option<(i64, i64, usize)>,
-  /// 2D row offsets to keep (the `xspec` of a `{tspec, xspec, yspec}`
-  /// step spec), relative to the first row of the initial condition.
-  /// `None` keeps the whole affected region.
-  rows: Option<(i64, i64, usize)>,
-  /// 2D column offsets to keep (the `yspec`), relative to the first column
-  /// of the initial condition. `None` keeps the whole affected region.
-  cols: Option<(i64, i64, usize)>,
-  /// How many window axes were named: 0 for a bare `tspec`, 1 for
-  /// `{tspec, xspec}` (1D rules), 2 for `{tspec, xspec, yspec}` (2D
-  /// rules). A windowed spec (> 0) whose tspec was the explicit
-  /// single-state `{{t}}` form (see `single_state`) returns that state
-  /// bare rather than wrapped in a list.
-  window_axes: u8,
+  /// The space windows named after `tspec`, in order. Each is `(from, to,
+  /// step)` relative to the first cell/row/column of the initial condition,
+  /// or `None` for `All` (the whole affected region). A 1D rule takes at
+  /// most one (the cells); a 2D rule takes at most two (rows then columns,
+  /// with the columns defaulting to `All` when only one is given).
+  windows: Vec<Option<(i64, i64, usize)>>,
   /// Whether `tspec` was written as the explicit single-state `{{t}}`
   /// form, as opposed to a form documented as always yielding "a list of
-  /// the selected states" (bare `t`/`{t}`, or a `{{t1, t2[, dt]}}` range)
-  /// that merely happens to resolve to one step.
+  /// the selected states" (`t`, `{t}`, `{t1, t2}`, `{t1, t2, dt}`) that
+  /// merely happens to resolve to one step.
   single_state: bool,
 }
 
@@ -352,37 +339,40 @@ fn parse_weights(
 /// use, but keeps a typo like 10^12 steps from exhausting memory.
 const MAX_STATES: usize = 100_000;
 
-/// Parse a bare `tspec` — never a `{tspec, xspec[, yspec]}` window, which
-/// only the top level of `parse_step_spec` accepts. Returns the resolved
-/// times and whether `tspec` was written as the explicit single-state
+/// Parse a `tspec` — the first element of the `{tspec, xspec, …}` step spec
+/// (or the whole third argument when that is a bare integer). Returns the
+/// resolved times and whether it was written as the explicit single-state
 /// `{{t}}` form (see `StepSpec::single_state`).
 fn parse_tspec(expr: &Expr) -> Option<(Vec<usize>, bool)> {
+  let step = |t: &Expr| -> Option<usize> {
+    let t = usize::try_from(as_nonneg_int(t)?).ok()?;
+    (t < MAX_STATES).then_some(t)
+  };
   match expr {
     // t — all steps 0 through t.
     Expr::Integer(t) if *t >= 0 && (*t as u128) < MAX_STATES as u128 => {
       Some(((0..=(*t as usize)).collect(), false))
     }
-    Expr::List(items) if items.len() == 1 => match &items[0] {
-      // {t} — all steps 0 through t, identical to the bare `t` form.
-      Expr::Integer(t) if *t >= 0 && (*t as u128) < MAX_STATES as u128 => {
-        Some(((0..=(*t as usize)).collect(), false))
+    Expr::List(items) => match items.as_ref() {
+      // {{t}} — step t alone, returned bare rather than in a length-1 list.
+      // Tried before `{t}` so the inner list is not read as a step number.
+      [Expr::List(inner)] if inner.len() == 1 => {
+        Some((vec![step(&inner[0])?], true))
       }
-      // {{t}} — the explicit single state t.
-      Expr::List(ts) if ts.len() == 1 => {
-        let t = usize::try_from(as_nonneg_int(&ts[0])?).ok()?;
-        (t < MAX_STATES).then_some((vec![t], true))
-      }
-      // {{t1, t2}}, {{t1, t2, dt}} — a list of the selected states.
-      Expr::List(ts) if ts.len() == 2 || ts.len() == 3 => {
-        let vals: Option<Vec<u128>> = ts.iter().map(as_nonneg_int).collect();
-        let vals = vals?;
-        let t1 = usize::try_from(vals[0]).ok()?;
-        let t2 = usize::try_from(*vals.get(1).unwrap_or(&vals[0])).ok()?;
-        let dt = usize::try_from(*vals.get(2).unwrap_or(&1)).ok()?;
-        if t2 < t1 || dt == 0 || (t2 - t1) / dt >= MAX_STATES {
+      // {t} — step t alone, still returned inside a list.
+      [t] => Some((vec![step(t)?], false)),
+      // {t1, t2} and {t1, t2, dt} — the selected states, as a list.
+      [t1, t2] | [t1, t2, _] => {
+        let from = step(t1)?;
+        let to = step(t2)?;
+        let dt = match items.as_ref() {
+          [_, _, dt] => usize::try_from(as_nonneg_int(dt)?).ok()?,
+          _ => 1,
+        };
+        if to < from || dt == 0 || (to - from) / dt >= MAX_STATES {
           return None;
         }
-        Some(((t1..=t2).step_by(dt).collect(), false))
+        Some(((from..=to).step_by(dt).collect(), false))
       }
       _ => None,
     },
@@ -390,48 +380,23 @@ fn parse_tspec(expr: &Expr) -> Option<(Vec<usize>, bool)> {
   }
 }
 
+/// The third argument is either a bare `t` or a `{tspec, xspec, …}` list —
+/// the leading element is always the tspec, never a space window. That is
+/// what separates `{1, 3}` (steps 0..1 restricted to cells 0..3) from
+/// `{{1, 3}}` (steps 1 through 3 over every cell).
 fn parse_step_spec(expr: &Expr) -> Option<StepSpec> {
-  match expr {
-    // {tspec, xspec} — the time steps of `tspec`, restricted to the cells
-    // `xspec` names (1D rules only). `All` keeps every cell that could be
-    // affected.
-    Expr::List(items) if items.len() == 2 => {
-      let (times, single_state) = parse_tspec(&items[0])?;
-      Some(StepSpec {
-        times,
-        cells: parse_cell_spec(&items[1])?,
-        rows: None,
-        cols: None,
-        window_axes: 1,
-        single_state,
-      })
-    }
-    // {tspec, xspec, yspec} — the time steps of `tspec`, restricted to the
-    // rows `xspec` and columns `yspec` name (2D rules only).
-    Expr::List(items) if items.len() == 3 => {
-      let (times, single_state) = parse_tspec(&items[0])?;
-      Some(StepSpec {
-        times,
-        cells: None,
-        rows: parse_cell_spec(&items[1])?,
-        cols: parse_cell_spec(&items[2])?,
-        window_axes: 2,
-        single_state,
-      })
-    }
-    // A bare tspec, with no xspec/yspec window.
-    _ => {
-      let (times, single_state) = parse_tspec(expr)?;
-      Some(StepSpec {
-        times,
-        cells: None,
-        rows: None,
-        cols: None,
-        window_axes: 0,
-        single_state,
-      })
-    }
-  }
+  let (tspec, window_specs): (&Expr, &[Expr]) = match expr {
+    Expr::List(items) if !items.is_empty() => (&items[0], &items.as_ref()[1..]),
+    other => (other, &[]),
+  };
+  let (times, single_state) = parse_tspec(tspec)?;
+  let windows: Option<Vec<_>> =
+    window_specs.iter().map(parse_cell_spec).collect();
+  Some(StepSpec {
+    times,
+    windows: windows?,
+    single_state,
+  })
 }
 
 /// The cell offsets an `xspec` names, as `(from, to, step)`. `Ok(None)` means

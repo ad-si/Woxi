@@ -7,17 +7,39 @@ $ wo 'CellularAutomaton[90, {{1}, 0}, 2]'
 {{0, 0, 1, 0, 0}, {0, 1, 0, 1, 0}, {1, 0, 0, 0, 1}}
 ```
 
-The step specification `{{t}}` returns just the state at step `t`, wrapped in
-a list (`{t}` behaves like the bare `t` form, giving all steps `0` through `t`):
+The third argument is either a bare `t` or the list `{tspec, xspec[, yspec]}`,
+whose leading element is always the tspec. So `{3}` is that list with
+`tspec = 3` — every step `0` through `3`, like the bare form — while `{{3}}`
+puts the tspec `{3}` there, which is step `3` alone, still wrapped in a list:
 
 ```scrut
 $ wo 'CellularAutomaton[30, {{1}, 0}, {{3}}]'
 {{1, 1, 0, 1, 1, 1, 1}}
 ```
 
-Two-dimensional rules take a weight matrix and a range specification.
-`{{t1, t2, dt}}` selects the states at steps `t1` through `t2` in
-increments of `dt`:
+One more layer of braces, `{{{t}}}`, returns that state bare:
+
+```scrut
+$ wo 'CellularAutomaton[30, {{1}, 0}, {{{3}}}]'
+{1, 1, 0, 1, 1, 1, 1}
+```
+
+A two- or three-element tspec is a step range: `{t1, t2}` gives steps `t1`
+through `t2`, and `{t1, t2, dt}` every `dt`-th of those. Written without the
+extra braces the same numbers are space windows instead — `{1, 3}` is "steps
+`0` through `1`, cells `0` through `3`":
+
+```scrut
+$ wo 'CellularAutomaton[90, {{1}, 0}, {{1, 3}}]'
+{{0, 0, 1, 0, 1, 0, 0}, {0, 1, 0, 0, 0, 1, 0}, {1, 0, 1, 0, 1, 0, 1}}
+```
+
+```scrut
+$ wo 'CellularAutomaton[90, {{1}, 0}, {1, 3}]'
+{{1, 0, 0, 0}, {0, 1, 0, 0}}
+```
+
+Two-dimensional rules take a weight matrix and a range specification:
 
 ```scrut
 $ wo 'ArrayPlot /@ CellularAutomaton[{942, {2, {{0, 2, 0}, {2, 1, 2}, {0, 2, 0}}}, {1, 1}}, {{{1}}, 0}, {{10, 30, 10}}]'
@@ -26,8 +48,9 @@ $ wo 'ArrayPlot /@ CellularAutomaton[{942, {2, {{0, 2, 0}, {2, 1, 2}, {0, 2, 0}}
 
 `{tspec, xspec, yspec}` restricts a two-dimensional rule's rows and
 columns the same way `{tspec, xspec}` restricts a one-dimensional rule's
-cells. Naming a single step this way returns that state bare, not wrapped
-in a list — the shape `ArrayPlot` needs to plot it directly:
+cells; a two-dimensional rule given only an `xspec` windows its rows and
+keeps every column. The bare `{{t}}` tspec is what `ArrayPlot` needs to plot
+a state directly:
 
 ```scrut
 $ wo 'CellularAutomaton[{942, {2, {{0, 2, 0}, {2, 1, 2}, {0, 2, 0}}}, {1, 1}}, {{{1}}, 0}, {{{1}}, All, All}]'

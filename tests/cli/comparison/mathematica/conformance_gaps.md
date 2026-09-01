@@ -1836,6 +1836,20 @@ produces correctly, and `TeXForm` / `InputForm` want the corresponding
 renderer. An unsupported form (`Format[x^2, FullForm]`) stays unevaluated in
 WL and prints as `Format[x^2, FullForm]`.
 
+### `CellularAutomaton` refuses an explicit window it would have to allocate
+
+```sh
+wolframscript -code 'CellularAutomaton[90, {1, 0, 1}, {{{1}}, {0, 1000000000}}]'
+# a billion-cell list
+woxi eval 'CellularAutomaton[90, {1, 0, 1}, {{{1}}, {0, 1000000000}}]'
+# CellularAutomaton[90, {1, 0, 1}, {{{1}}, {0, 1000000000}}]
+```
+
+A cyclic initial condition never grows past its own size, so nothing bounds an
+explicit cell window against it; Woxi checks the window's length
+arithmetically and declines rather than collecting a billion indices. The
+tspec grammar and every window that fits in memory agree with WL exactly.
+
 ### `DownValues` drops a `/;` guard on a compound left-hand side
 
 `f[x_] := x^2 /; x > 0` round-trips, but

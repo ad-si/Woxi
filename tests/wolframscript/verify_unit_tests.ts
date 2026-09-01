@@ -1862,6 +1862,12 @@ function main() {
     // hangs (never terminates) on this integral, causing the batch to ETIMEDOUT.
     // Woxi intentionally keeps it unevaluated to match.
     "SurfaceArea[SphericalShell[{0, 0, 0}, {a, b}]]",
+    // An explicit billion-cell window: wolframscript really does print a
+    // billion cells, which overruns spawnSync's buffer (ENOBUFS) and costs the
+    // run ~15 minutes of halving retries before it gives up. Woxi declines the
+    // window instead of allocating it — a documented conformance gap, not
+    // something this harness can compare.
+    "CellularAutomaton[90, {1, 0, 1}, {{{1}}, {0, 1000000000}}]",
     // Astronomy: two cases that a numeric tolerance cannot rescue (the
     // ephemeris-precision cases are handled by APPROX_MATCH below instead).
     // Svalbard around the December solstice: Woxi reports Missing[NotApplicable]

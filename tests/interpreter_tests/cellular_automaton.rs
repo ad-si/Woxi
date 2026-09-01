@@ -214,16 +214,24 @@ mod cellular_automaton {
 
   #[test]
   fn two_dimensional_windowed_multi_step_stays_a_list() {
-    // The same `{{1}, xspec, yspec}` (2D) window, but naming more than one
-    // time step (`{1}` = steps 0 through 1) — a proper list of states, one
-    // matrix per step, exactly like the un-windowed `1` form.
+    // `{t1, t2}` is the multi-step tspec — steps t1 through t2, one matrix
+    // per step, exactly like the un-windowed `1` form. (The single-brace
+    // `{1}` next to it is step 1 *alone*, still wrapped in a list.)
+    assert_eq!(
+      interpret(
+        "CellularAutomaton[{942, {2, {{0, 2, 0}, {2, 1, 2}, {0, 2, 0}}}, \
+         {1, 1}}, {{{1}}, 0}, {{0, 1}, All, All}]"
+      )
+      .unwrap(),
+      "{{{0, 0, 0}, {0, 1, 0}, {0, 0, 0}}, {{0, 1, 0}, {1, 1, 1}, {0, 1, 0}}}"
+    );
     assert_eq!(
       interpret(
         "CellularAutomaton[{942, {2, {{0, 2, 0}, {2, 1, 2}, {0, 2, 0}}}, \
          {1, 1}}, {{{1}}, 0}, {{1}, All, All}]"
       )
       .unwrap(),
-      "{{{0, 0, 0}, {0, 1, 0}, {0, 0, 0}}, {{0, 1, 0}, {1, 1, 1}, {0, 1, 0}}}"
+      "{{{0, 1, 0}, {1, 1, 1}, {0, 1, 0}}}"
     );
   }
 
@@ -269,18 +277,34 @@ mod cellular_automaton {
   }
 
   #[test]
-  fn a_one_axis_window_is_invalid_on_a_two_dimensional_rule() {
-    // `{tspec, xspec}` (one window axis) only makes sense for a 1D rule,
-    // even when xspec is `All` (which alone can't distinguish "no window"
-    // from "the wrong number of window axes").
+  fn a_one_axis_window_on_a_two_dimensional_rule_windows_the_rows() {
+    // `{tspec, xspec}` is legal on a 2D rule: the one window axis is the
+    // *rows*, and the columns default to `All`.
     assert_eq!(
       interpret(
         "CellularAutomaton[{942, {2, {{0, 2, 0}, {2, 1, 2}, {0, 2, 0}}}, \
          {1, 1}}, {{{1}}, 0}, {{{1}}, All}]"
       )
       .unwrap(),
+      "{{0, 1, 0}, {1, 1, 1}, {0, 1, 0}}"
+    );
+    assert_eq!(
+      interpret(
+        "CellularAutomaton[{942, {2, {{0, 2, 0}, {2, 1, 2}, {0, 2, 0}}}, \
+         {1, 1}}, {{{1}}, 0}, {{{1}}, {0, 0}}]"
+      )
+      .unwrap(),
+      "{{1, 1, 1}}"
+    );
+    // Three window axes are one too many even for a 2D rule.
+    assert_eq!(
+      interpret(
+        "CellularAutomaton[{942, {2, {{0, 2, 0}, {2, 1, 2}, {0, 2, 0}}}, \
+         {1, 1}}, {{{1}}, 0}, {{{1}}, All, All, All}]"
+      )
+      .unwrap(),
       "CellularAutomaton[{942, {2, {{0, 2, 0}, {2, 1, 2}, {0, 2, 0}}}, \
-       {1, 1}}, {{{1}}, 0}, {{{1}}, All}]"
+       {1, 1}}, {{{1}}, 0}, {{{1}}, All, All, All}]"
     );
   }
 
@@ -295,23 +319,31 @@ mod cellular_automaton {
   }
 
   #[test]
-  fn a_two_element_tspec_is_not_a_nested_window() {
-    // A bare `{t1, t2}` is not a valid tspec on its own (that form needs
-    // an extra layer of braces, `{{t1, t2}}`); it must not be silently
-    // reparsed as a nested `{tspec, xspec}` window, which would smuggle a
-    // 1D cell window into a 2D row/column window.
+  fn the_leading_element_of_a_step_spec_is_always_the_tspec() {
+    // `{{t1, t2}, xspec}` is the `{t1, t2}` tspec (steps t1 through t2)
+    // with a space window, never a nested `{tspec, xspec}` window.
     assert_eq!(
       interpret(
         "CellularAutomaton[{942, {2, {{0, 2, 0}, {2, 1, 2}, {0, 2, 0}}}, \
          {1, 1}}, {{{1}}, 0}, {{0, 1}, All, All}]"
       )
       .unwrap(),
-      "CellularAutomaton[{942, {2, {{0, 2, 0}, {2, 1, 2}, {0, 2, 0}}}, \
-       {1, 1}}, {{{1}}, 0}, {{0, 1}, All, All}]"
+      "{{{0, 0, 0}, {0, 1, 0}, {0, 0, 0}}, {{0, 1, 0}, {1, 1, 1}, {0, 1, 0}}}"
     );
     assert_eq!(
       interpret("CellularAutomaton[90, {{1}, 0}, {{0, 1}, All}]").unwrap(),
-      "CellularAutomaton[90, {{1}, 0}, {{0, 1}, All}]"
+      "{{0, 1, 0}, {1, 0, 1}}"
+    );
+    // Conversely `{1, 3}` is tspec 1 (steps 0 through 1) windowed to cells
+    // 0 through 3 — *not* steps 1 through 3.
+    assert_eq!(
+      interpret("CellularAutomaton[90, {{1}, 0}, {1, 3}]").unwrap(),
+      "{{1, 0, 0, 0}, {0, 1, 0, 0}}"
+    );
+    assert_eq!(
+      interpret("CellularAutomaton[90, {{1}, 0}, {{1, 3}}]").unwrap(),
+      "{{0, 0, 1, 0, 1, 0, 0}, {0, 1, 0, 0, 0, 1, 0}, \
+       {1, 0, 1, 0, 1, 0, 1}}"
     );
   }
 
@@ -393,6 +425,106 @@ mod cellular_automaton {
 // The `{tspec, xspec}` step specification restricts the returned cells, and
 // the 2-argument / operator forms run a single step. All values verified
 // against wolframscript.
+// The third argument's grammar: it is either a bare `t` or the list
+// `{tspec, xspec[, yspec]}`, whose *leading* element is always the tspec.
+// Woxi used to read `{t}` as "steps 0 through t" and `{t1, t2}` as a
+// `{tspec, xspec}` window, which made `{{1}, All, All}` return two states
+// where wolframscript returns one, and rejected `{{0, 1}, All}` outright.
+mod time_specifications {
+  use super::*;
+
+  const R2D: &str =
+    "{942, {2, {{0, 2, 0}, {2, 1, 2}, {0, 2, 0}}}, {1, 1}}, {{{1}}, 0}";
+
+  #[test]
+  fn a_bare_t_and_a_one_element_spec_list_both_mean_steps_0_through_t() {
+    clear_state();
+    let all = "{{0, 0, 0, 1, 0, 0, 0}, {0, 0, 1, 0, 1, 0, 0}, \
+               {0, 1, 0, 0, 0, 1, 0}, {1, 0, 1, 0, 1, 0, 1}}";
+    assert_eq!(
+      interpret("CellularAutomaton[90, {{1}, 0}, 3]").unwrap(),
+      all
+    );
+    // `{3}` is the spec *list* `{tspec}` with tspec = 3, not the `{t}`
+    // tspec — same answer, by a different route.
+    assert_eq!(
+      interpret("CellularAutomaton[90, {{1}, 0}, {3}]").unwrap(),
+      all
+    );
+  }
+
+  #[test]
+  fn a_braced_t_selects_that_step_alone_but_keeps_the_list() {
+    clear_state();
+    assert_eq!(
+      interpret("CellularAutomaton[90, {{1}, 0}, {{3}}]").unwrap(),
+      "{{1, 0, 1, 0, 1, 0, 1}}"
+    );
+    assert_eq!(
+      interpret("CellularAutomaton[90, {{1}, 0}, {{3}, All}]").unwrap(),
+      "{{1, 0, 1, 0, 1, 0, 1}}"
+    );
+  }
+
+  #[test]
+  fn a_doubly_braced_t_returns_the_state_bare_with_or_without_a_window() {
+    clear_state();
+    assert_eq!(
+      interpret("CellularAutomaton[90, {{1}, 0}, {{{3}}}]").unwrap(),
+      "{1, 0, 1, 0, 1, 0, 1}"
+    );
+    assert_eq!(
+      interpret("CellularAutomaton[90, {{1}, 0}, {{{3}}, All}]").unwrap(),
+      "{1, 0, 1, 0, 1, 0, 1}"
+    );
+    assert_eq!(
+      interpret(&format!("CellularAutomaton[{R2D}, {{{{{{1}}}}}}]")).unwrap(),
+      "{{0, 1, 0}, {1, 1, 1}, {0, 1, 0}}"
+    );
+  }
+
+  #[test]
+  fn a_two_or_three_element_tspec_is_a_step_range() {
+    clear_state();
+    assert_eq!(
+      interpret("CellularAutomaton[90, {{1}, 0}, {{1, 3}}]").unwrap(),
+      "{{0, 0, 1, 0, 1, 0, 0}, {0, 1, 0, 0, 0, 1, 0}, \
+       {1, 0, 1, 0, 1, 0, 1}}"
+    );
+    // `{t1, t2, dt}` keeps every dt-th step.
+    assert_eq!(
+      interpret("CellularAutomaton[90, {{1}, 0}, {{0, 4, 2}}]").unwrap(),
+      "{{0, 0, 0, 0, 1, 0, 0, 0, 0}, {0, 0, 1, 0, 0, 0, 1, 0, 0}, \
+       {1, 0, 0, 0, 0, 0, 0, 0, 1}}"
+    );
+    // Written without the extra braces those are window specs instead: the
+    // three-element one names two space windows, which a 1D rule cannot
+    // take.
+    assert_eq!(
+      interpret("CellularAutomaton[90, {{1}, 0}, {0, 4, 2}]").unwrap(),
+      "CellularAutomaton[90, {{1}, 0}, {0, 4, 2}]"
+    );
+  }
+
+  #[test]
+  fn the_single_state_form_takes_exactly_one_step_number() {
+    clear_state();
+    assert_eq!(
+      interpret("CellularAutomaton[90, {{1}, 0}, {{{1, 3}}}]").unwrap(),
+      "CellularAutomaton[90, {{1}, 0}, {{{1, 3}}}]"
+    );
+  }
+
+  #[test]
+  fn a_one_dimensional_rule_takes_at_most_one_space_window() {
+    clear_state();
+    assert_eq!(
+      interpret("CellularAutomaton[90, {{1}, 0}, {{{1}}, All, All}]").unwrap(),
+      "CellularAutomaton[90, {{1}, 0}, {{{1}}, All, All}]"
+    );
+  }
+}
+
 mod step_and_cell_specs {
   use super::*;
 
@@ -511,11 +643,17 @@ mod step_and_cell_specs {
       interpret("CellularAutomaton[90, {{1}, 0}, {0, {-2, 2}}]").unwrap(),
       "{{0, 0, 1, 0, 0}}"
     );
-    // Likewise a `{{t1, t2}}` range that happens to collapse to one step.
+    // Likewise a `{t1, t2}` range that happens to collapse to one step.
+    assert_eq!(
+      interpret("CellularAutomaton[90, {{1}, 0}, {{5, 5}, {-2, 2}}]").unwrap(),
+      "{{0, 0, 0, 0, 0}}"
+    );
+    // The single-state form `{{t}}` takes exactly one step number, so
+    // `{{5, 5}}` is not a tspec at all and the call stays unevaluated.
     assert_eq!(
       interpret("CellularAutomaton[90, {{1}, 0}, {{{5, 5}}, {-2, 2}}]")
         .unwrap(),
-      "{{0, 0, 0, 0, 0}}"
+      "CellularAutomaton[90, {{1}, 0}, {{{5, 5}}, {-2, 2}}]"
     );
   }
 
