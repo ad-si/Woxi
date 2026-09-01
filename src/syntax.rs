@@ -383,10 +383,9 @@ pub fn named_char_to_unicode(name: &str) -> Option<&'static str> {
     "Times" => "\u{00D7}",
     "Divide" => "\u{00F7}",
     "CenterDot" => "\u{00B7}",
-    // Unlike most named operator glyphs, `\[Backslash]` is not a private-use
-    // look-alike: it is literally the ASCII backslash (its `Backslash[a, b]`
-    // infix rendering is a separate display form, handled elsewhere).
-    "Backslash" => "\\",
+    // `\[Backslash]` is the set-minus glyph ∖ (U+2216), not the ASCII `\`:
+    // `ToCharacterCode["\[Backslash]"]` is `{8726}`.
+    "Backslash" => "\u{2216}",
     // `\[Equal]` is the typeset `==`; it has its own private-use code point
     // rather than reusing the ASCII `=` (which is `Set`).
     "Equal" => "\u{F431}",
