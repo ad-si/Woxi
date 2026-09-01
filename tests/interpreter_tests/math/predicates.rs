@@ -1954,6 +1954,14 @@ mod cases {
     );
   }
   #[test]
+  fn numeric_q_inverse_beta_regularized() {
+    assert_case(r#"NumericQ[InverseBetaRegularized[1/4, 2, 3]]"#, r#"True"#);
+  }
+  #[test]
+  fn numeric_q_inverse_gamma_regularized() {
+    assert_case(r#"NumericQ[InverseGammaRegularized[2, 1/2]]"#, r#"True"#);
+  }
+  #[test]
   fn odd_q_1() {
     assert_case(r#"OddQ[-3]"#, r#"True"#);
   }
