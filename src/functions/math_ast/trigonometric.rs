@@ -1894,6 +1894,106 @@ pub fn cos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(unevaluated("Cos", args))
 }
 
+/// Evaluate `f[x]` at an arbitrary-precision `x`, propagating the precision
+/// tag through the *relative condition number*
+/// `cond = |x f'(x) / f(x)| = |d log f / d log x|`: a function that
+/// amplifies a relative perturbation by `cond` costs `log10(cond)` digits of
+/// precision, so `prec_out = prec_in - log10(cond)`. This is the same rule
+/// `Sin`/`Cos` apply inline; `cond` comes from the caller as a closure on the
+/// f64 value of `x`, since it is a different expression for every function.
+///
+/// `None` when `x` is not a `BigFloat`, so the caller can fall through to its
+/// other cases.
+fn bigfloat_unary(
+  name: &str,
+  x: &Expr,
+  cond: impl Fn(f64) -> f64,
+) -> Option<Result<Expr, InterpreterError>> {
+  let Expr::BigFloat(digits, prec) = x else {
+    return None;
+  };
+  // A value the arbitrary-precision evaluator cannot reach (`ArcCosh[0.`39.]`
+  // leaves the real branch) falls through to the function's own handling
+  // rather than turning into an error.
+  let result = n_eval_arbitrary(
+    &unevaluated(name, std::slice::from_ref(x)),
+    prec.max(1.0),
+  )
+  .ok()?;
+  // A complex (or otherwise non-real) result carries its own per-component
+  // markers from `n_eval_arbitrary`; only a plain real one is re-tagged here.
+  let Expr::BigFloat(out_digits, _) = &result else {
+    return Some(Ok(result));
+  };
+  let c = cond(digits.parse::<f64>().unwrap_or(0.0)).abs();
+  let prec_out = if c > 0.0 && c.is_finite() {
+    prec - c.log10()
+  } else {
+    *prec
+  };
+  Some(Ok(Expr::BigFloat(out_digits.clone(), prec_out)))
+}
+
+/// The relative condition number `|x f'(x) / f(x)|` of each unary function
+/// that has no arbitrary-precision path of its own, evaluated in f64.
+/// Grouped so the whole family stays in one place rather than each function
+/// growing its own copy of the rule — and so a reciprocal pair
+/// (`Tanh`/`Coth`, `Sinh`/`Csch`, `Cosh`/`Sech`) visibly shares one
+/// expression, which it must: `f` and `1/f` have the same condition number.
+fn unary_condition_number(name: &str, x: f64) -> Option<f64> {
+  use crate::functions::math_ast::number_theory::digamma;
+  use crate::functions::math_ast::numeric_utils::{erf_f64, ln_gamma};
+  // 2/Sqrt[Pi], the derivative constant of Erf/Erfc.
+  const TWO_OVER_SQRT_PI: f64 = 1.128_379_167_095_512_6;
+  let c = match name {
+    // Sinh' = Cosh, so cond = x*Cosh/Sinh = x/Tanh[x]. Csch = 1/Sinh shares it.
+    "Sinh" | "Csch" => x / x.tanh(),
+    // Cosh' = Sinh, so cond = x*Tanh[x]. Sech = 1/Cosh shares it.
+    "Cosh" | "Sech" => x * x.tanh(),
+    // Tanh' = Sech^2, so cond = x/(Sinh[x] Cosh[x]) = 2x/Sinh[2x].
+    // Coth = 1/Tanh shares it.
+    "Tanh" | "Coth" => 2.0 * x / (2.0 * x).sinh(),
+    "ArcTan" => x / ((1.0 + x * x) * x.atan()),
+    "ArcCot" => x / ((1.0 + x * x) * (1.0 / x).atan()),
+    "ArcSinh" => x / ((1.0 + x * x).sqrt() * x.asinh()),
+    "ArcCosh" => x / ((x * x - 1.0).sqrt() * x.acosh()),
+    "ArcTanh" => x / ((1.0 - x * x) * x.atanh()),
+    "ArcCoth" => x / ((1.0 - x * x) * (1.0 / x).atanh()),
+    // ArcSec[x] = ArcCos[1/x], ArcCsc[x] = ArcSin[1/x]: the |x| in the
+    // derivative cancels the x of the condition number.
+    "ArcSec" => 1.0 / ((x * x - 1.0).sqrt() * (1.0 / x).acos()),
+    "ArcCsc" => 1.0 / ((x * x - 1.0).sqrt() * (1.0 / x).asin()),
+    "ArcSech" => 1.0 / ((1.0 - x * x).sqrt() * (1.0 / x).acosh()),
+    "ArcCsch" => 1.0 / ((1.0 + x * x).sqrt() * (1.0 / x).asinh()),
+    // Gamma'/Gamma is the digamma function.
+    "Gamma" => x * digamma(x),
+    "LogGamma" => x * digamma(x) / ln_gamma(x),
+    "Erf" => x * TWO_OVER_SQRT_PI * (-x * x).exp() / erf_f64(x),
+    "Erfc" => x * TWO_OVER_SQRT_PI * (-x * x).exp() / (1.0 - erf_f64(x)),
+    _ => return None,
+  };
+  Some(c)
+}
+
+/// Arbitrary-precision evaluation for the unary functions whose own `_ast`
+/// paths only cover exact and machine-real arguments — the hyperbolics, the
+/// inverse circular/hyperbolic family, and `Gamma`/`LogGamma`/`Erf`/`Erfc`.
+/// Without this `Tanh[1.`20.]` stays unevaluated, which is what made
+/// `SetPrecision[Tanh[1], 3]` print as `Tanh[1.00]`.
+pub fn bigfloat_unary_dispatch(
+  name: &str,
+  args: &[Expr],
+) -> Option<Result<Expr, InterpreterError>> {
+  if args.len() != 1 || !matches!(&args[0], Expr::BigFloat(..)) {
+    return None;
+  }
+  // Membership in the table is the gate; `1.0` is just a probe value.
+  unary_condition_number(name, 1.0)?;
+  bigfloat_unary(name, &args[0], |x| {
+    unary_condition_number(name, x).unwrap_or(1.0)
+  })
+}
+
 /// Evaluate a circular function ratio at an arbitrary-precision argument, e.g.
 /// Tan[x] = Sin[x]/Cos[x] or Sec[x] = 1/Cos[x]. `num = None` means a constant 1
 /// numerator (for Sec/Csc). Both Sin/Cos have BigFloat paths and the division

@@ -7243,9 +7243,10 @@ mod topological_sort {
   }
 }
 
-// GraphData backs itself with a self-contained, curated set of named and
-// parametrized graphs (see src/functions/graph_data.rs) rather than the
-// full Wolfram Knowledgebase graph atlas.
+// GraphData backs itself with a self-contained slice of the Wolfram
+// Knowledgebase graph atlas (see src/functions/graph_data.rs) rather than the
+// full ~12500-entry enumeration. Everything it does carry uses Wolfram's own
+// names, vertex labelling and edge order, so the two agree entry for entry.
 mod graph_data {
   use super::*;
 
@@ -7255,14 +7256,22 @@ mod graph_data {
       interpret("MemberQ[GraphData[], \"PetersenGraph\"]").unwrap(),
       "True"
     );
+    // Woxi used to invent `"CompleteGraphK4"`, `"CycleGraphC6"` and friends
+    // for the parametrized families. Wolfram has no such names — they are
+    // spelled `{"Complete", 4}` and `{"Cycle", 6}` — so listing them made
+    // `MemberQ[GraphData[], …]` answer True where wolframscript answers
+    // False.
     assert_eq!(
       interpret("MemberQ[GraphData[], \"CompleteGraphK4\"]").unwrap(),
-      "True"
+      "False"
     );
-    let count = interpret("Length[GraphData[]]").unwrap();
-    assert!(
-      count.parse::<i64>().unwrap() > 50,
-      "expected a sizeable curated set, got {count}"
+    assert_eq!(
+      interpret("MemberQ[GraphData[], \"CycleGraphC6\"]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("MemberQ[GraphData[], \"UtilityGraph\"]").unwrap(),
+      "True"
     );
   }
 
@@ -7280,6 +7289,10 @@ mod graph_data {
       interpret("Head[GraphData[\"PetersenGraph\"]]").unwrap(),
       "Graph"
     );
+    assert_eq!(
+      interpret("Head[GraphData[{\"Complete\", 5}]]").unwrap(),
+      "Graph"
+    );
   }
 
   #[test]
@@ -7293,26 +7306,26 @@ mod graph_data {
       "15"
     );
     assert_eq!(
-      interpret("GraphData[\"CompleteGraphK4\", \"VertexCount\"]").unwrap(),
+      interpret("GraphData[{\"Complete\", 4}, \"VertexCount\"]").unwrap(),
       "4"
     );
     assert_eq!(
-      interpret("GraphData[\"CompleteGraphK4\", \"EdgeCount\"]").unwrap(),
+      interpret("GraphData[{\"Complete\", 4}, \"EdgeCount\"]").unwrap(),
       "6"
     );
     assert_eq!(
-      interpret("GraphData[\"CycleGraphC6\", \"VertexCount\"]").unwrap(),
+      interpret("GraphData[{\"Cycle\", 6}, \"VertexCount\"]").unwrap(),
       "6"
     );
     assert_eq!(
-      interpret("GraphData[\"CycleGraphC6\", \"EdgeCount\"]").unwrap(),
+      interpret("GraphData[{\"Cycle\", 6}, \"EdgeCount\"]").unwrap(),
       "6"
     );
   }
 
   #[test]
   fn edge_count_matches_vertex_count_and_edge_rules_for_every_graph() {
-    // Every curated graph's VertexCount/EdgeCount/EdgeRules stay consistent
+    // Every carried graph's VertexCount/EdgeCount/EdgeRules stay consistent
     // with the underlying Graph[...] object.
     let result = interpret(
       "AllTrue[GraphData[], (GraphData[#, \"EdgeCount\"] == \
@@ -7324,41 +7337,140 @@ mod graph_data {
     assert_eq!(result, "True");
   }
 
+  // Vertex labelling follows Wolfram's, so the edge rules match rule for
+  // rule — including the ones that are *not* the obvious labelling: the
+  // Petersen graph's outer cycle is not 1-2-3-4-5, a star's hub is its
+  // *last* vertex, and a cycle's wrap-around edge sorts second.
   #[test]
-  fn edge_rules_are_rules_between_vertices() {
+  fn edge_rules_follow_wolframs_vertex_labelling() {
     assert_eq!(
-      interpret("GraphData[\"CompleteGraphK4\", \"EdgeRules\"]").unwrap(),
+      interpret("GraphData[{\"Complete\", 4}, \"EdgeRules\"]").unwrap(),
       "{1 -> 2, 1 -> 3, 1 -> 4, 2 -> 3, 2 -> 4, 3 -> 4}"
+    );
+    assert_eq!(
+      interpret("GraphData[{\"Cycle\", 6}, \"EdgeRules\"]").unwrap(),
+      "{1 -> 2, 1 -> 6, 2 -> 3, 3 -> 4, 4 -> 5, 5 -> 6}"
+    );
+    assert_eq!(
+      interpret("GraphData[{\"Star\", 5}, \"EdgeRules\"]").unwrap(),
+      "{1 -> 5, 2 -> 5, 3 -> 5, 4 -> 5}"
+    );
+    assert_eq!(
+      interpret("GraphData[{\"Wheel\", 5}, \"EdgeRules\"]").unwrap(),
+      "{1 -> 2, 1 -> 4, 1 -> 5, 2 -> 3, 2 -> 5, 3 -> 4, 3 -> 5, 4 -> 5}"
+    );
+    assert_eq!(
+      interpret("GraphData[{\"CompleteBipartite\", {2, 4}}, \"EdgeRules\"]")
+        .unwrap(),
+      "{1 -> 3, 1 -> 4, 1 -> 5, 1 -> 6, 2 -> 3, 2 -> 4, 2 -> 5, 2 -> 6}"
+    );
+    assert_eq!(
+      interpret("GraphData[\"PetersenGraph\", \"EdgeRules\"]").unwrap(),
+      "{1 -> 3, 1 -> 4, 1 -> 6, 2 -> 4, 2 -> 5, 2 -> 7, 3 -> 5, 3 -> 8, \
+       4 -> 9, 5 -> 10, 6 -> 7, 6 -> 10, 7 -> 8, 8 -> 9, 9 -> 10}"
     );
   }
 
+  // A named entity that *is* a family member is the very same graph, so the
+  // two spellings can never drift apart.
   #[test]
-  fn unknown_name_gives_missing() {
+  fn named_aliases_agree_with_their_parametrized_spelling() {
+    assert_eq!(
+      interpret(
+        "GraphData[\"TetrahedralGraph\", \"EdgeRules\"] == \
+         GraphData[{\"Complete\", 4}, \"EdgeRules\"]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "GraphData[\"UtilityGraph\", \"EdgeRules\"] == \
+         GraphData[{\"CompleteBipartite\", {3, 3}}, \"EdgeRules\"]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("GraphData[\"SquareGraph\", \"EdgeRules\"]").unwrap(),
+      "{1 -> 2, 1 -> 4, 2 -> 3, 3 -> 4}"
+    );
+  }
+
+  // "Name" is the human-readable description (with Wolfram's U+2010 hyphen
+  // in the size prefix), "StandardName" the canonical entity — which for a
+  // spec Wolfram has no name for is the spec itself.
+  #[test]
+  fn name_and_standard_name() {
+    assert_eq!(
+      interpret("GraphData[\"PetersenGraph\", \"Name\"]").unwrap(),
+      "Petersen graph"
+    );
+    assert_eq!(
+      interpret("GraphData[{\"Complete\", 4}, \"StandardName\"]").unwrap(),
+      "TetrahedralGraph"
+    );
+    assert_eq!(
+      interpret(
+        "ToString[GraphData[{\"Cycle\", 6}, \"StandardName\"], InputForm]"
+      )
+      .unwrap(),
+      "{\"Cycle\", 6}"
+    );
+    assert_eq!(
+      interpret("GraphData[{\"Cycle\", 6}, \"Name\"]").unwrap(),
+      "6\u{2010}cycle graph"
+    );
+    // Wolfram collapses a spec onto its canonical spelling before naming it:
+    // K(1,3) is the claw graph, which is the 4-star.
+    assert_eq!(
+      interpret("GraphData[{\"CompleteBipartite\", {1, 3}}, \"StandardName\"]")
+        .unwrap(),
+      "ClawGraph"
+    );
+    assert_eq!(
+      interpret("GraphData[{\"Wheel\", 4}, \"StandardName\"]").unwrap(),
+      "TetrahedralGraph"
+    );
+  }
+
+  // wolframscript emits `GraphData::notent` and leaves the call unevaluated
+  // rather than answering `Missing["NotAvailable"]`.
+  #[test]
+  fn unknown_name_stays_unevaluated() {
     assert_eq!(
       interpret("GraphData[\"NotARealGraphName\"]").unwrap(),
-      "Missing[NotAvailable]"
+      "GraphData[NotARealGraphName]"
     );
     assert_eq!(
       interpret("GraphData[\"NotARealGraphName\", \"VertexCount\"]").unwrap(),
-      "Missing[NotAvailable]"
+      "GraphData[NotARealGraphName, VertexCount]"
+    );
+    assert_eq!(
+      interpret("GraphData[\"CompleteGraphK4\", \"VertexCount\"]").unwrap(),
+      "GraphData[CompleteGraphK4, VertexCount]"
     );
   }
 
+  // Likewise `GraphData::notprop` for an unknown property — and a bare
+  // symbol is *not* a shorthand for the string, it is simply not a property.
   #[test]
-  fn unknown_property_gives_missing() {
+  fn unknown_property_stays_unevaluated() {
     assert_eq!(
       interpret("GraphData[\"PetersenGraph\", \"NotAProperty\"]").unwrap(),
-      "Missing[NotAvailable]"
+      "GraphData[PetersenGraph, NotAProperty]"
+    );
+    assert_eq!(
+      interpret("Head[GraphData[\"PetersenGraph\", Image]]").unwrap(),
+      "GraphData"
     );
   }
 
   #[test]
-  fn bare_symbol_property_is_accepted_like_a_string() {
-    // Some older Demonstrations pass the property as a bare symbol
-    // (e.g. `GraphData[name, Image]`) instead of a string.
+  fn properties_lists_the_answerable_properties() {
     assert_eq!(
-      interpret("Head[GraphData[\"PetersenGraph\", Image]]").unwrap(),
-      "Graph"
+      interpret("MemberQ[GraphData[\"Properties\"], \"EdgeCount\"]").unwrap(),
+      "True"
     );
   }
 

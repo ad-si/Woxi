@@ -391,7 +391,8 @@ fn run_notebook_manipulate_epilog_label_has_no_precision_marker() {
   // `Plot` `Epilog` label via `ToString[SetPrecision[expr, n]]`. The label
   // text must be the plain rounded decimal (matching wolframscript), not
   // the raw InputForm digits with a `` `n `` precision marker still
-  // attached.
+  // attached — and `SetPrecision` must have re-evaluated the expression its
+  // numeric leaves unlocked, so this is `0.762` and not `Tanh[1.00]`.
   let nb = concat!(
     "Notebook[{\n",
     "Cell[BoxData[\"Print[ToString[SetPrecision[Tanh[1], 3]]]\"], \"Input\"]\n",
@@ -403,7 +404,7 @@ fn run_notebook_manipulate_epilog_label_has_no_precision_marker() {
   let (stdout, stderr, ok) = run_file(&path);
   let _ = std::fs::remove_file(&path);
   assert!(ok, "woxi run notebook failed: stderr={stderr}");
-  assert_eq!(stdout.trim(), "Tanh[1.00]");
+  assert_eq!(stdout.trim(), "0.762");
 }
 
 #[test]

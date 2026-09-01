@@ -136,6 +136,17 @@ pub fn dispatch_math_functions(
   name: &str,
   args: &[Expr],
 ) -> Option<Result<Expr, InterpreterError>> {
+  // The hyperbolics, the inverse circular/hyperbolic family and
+  // Gamma/LogGamma/Erf/Erfc have no arbitrary-precision path inside their own
+  // `_ast` functions, so an arbitrary-precision argument would fall through
+  // every case and come back unevaluated. Handled here, before dispatch,
+  // because none of those functions' symbolic simplifications apply to a
+  // plain number anyway.
+  if let Some(result) =
+    crate::functions::math_ast::bigfloat_unary_dispatch(name, args)
+  {
+    return Some(result);
+  }
   match name {
     // AST-native math functions
     "Plus" => {
