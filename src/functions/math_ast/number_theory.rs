@@ -4435,8 +4435,9 @@ pub fn binomial_coeff(n: i128, k: i128) -> i128 {
     if n >= 0 {
       return 0;
     }
-    let sign = if (n + k) % 2 == 0 { 1 } else { -1 };
-    return sign * binomial_coeff(-k - 1, -n - 1);
+    let negate = (n + k) % 2 != 0;
+    let r = binomial_coeff(-k - 1, -n - 1);
+    return if negate { -r } else { r };
   }
   if k == 0 {
     return 1;
@@ -4454,8 +4455,9 @@ pub fn binomial_coeff(n: i128, k: i128) -> i128 {
     result
   } else {
     // Generalized: Binomial[-n, k] = (-1)^k * Binomial[n+k-1, k]
-    let sign = if k % 2 == 0 { 1 } else { -1 };
-    sign * binomial_coeff(-n + k - 1, k)
+    let negate = k % 2 != 0;
+    let r = binomial_coeff(-n + k - 1, k);
+    if negate { -r } else { r }
   }
 }
 
