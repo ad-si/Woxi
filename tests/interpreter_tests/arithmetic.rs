@@ -863,10 +863,11 @@ mod big_integer {
       interpret("2^(1000/7)").unwrap(),
       "5575186299632655785383929568162090376495104*2^(6/7)"
     );
-    // An extracted part too large to write down keeps the power symbolic.
+    // Past `$MaxNumber` there is nothing to extract: the whole power is
+    // `Overflow[]`.
     assert_eq!(
       interpret("2^(1000000000000000000/3)").unwrap(),
-      "2^(1000000000000000000/3)"
+      "Overflow[]"
     );
     // The everyday cases are unchanged.
     assert_eq!(
@@ -7893,6 +7894,49 @@ qué tal?"; a/b//MakeBoxes"#,
     assert_case(
       r#"1234567890; 1234567890; 1234567890; 1234567890; 9934567890; 1234567890; 1234567890; -1234567890; -1234567890; -1234567890; -1234567890; -1234567890; -9934567890; 12345678900987654321; -1234567890; 12345678900987654321; 12345678900987654321; 92345678900987654329; 12345678900987654321; 12345678900987654321; 92345678900987654329; 12345678900987654321; 12345678900987654321; 12345678900987654321; 12345678900987654321; -12345678900987654321; -12345678900987654321; -12345678900987654321; -12345678900987654321; -12345678900987654321; -12345678900987654321; -99345678900987654321; -12345678900987654321; -99345678900987654321; -12345678900987654321"#,
       r#"-12345678900987654321"#,
+    );
+  }
+}
+
+/// wolframscript's largest representable number is `$MaxNumber`, about
+/// `1.605*10^1355718576299609`. A power past it answers `Overflow[]` (or
+/// `Underflow[]` on the way to zero) with a `General::ovfl`/`General::unfl`
+/// message. Woxi used to leave `2^(10^18/3)` symbolic and to *hang* on
+/// `2^(10^20)`, trying to materialise a number with 3*10^19 digits.
+mod power_overflow {
+  use woxi::interpret;
+
+  #[test]
+  fn a_power_past_max_number_overflows() {
+    assert_eq!(interpret("2^(10^18/3)").unwrap(), "Overflow[]");
+    assert_eq!(interpret("2^(10^20)").unwrap(), "Overflow[]");
+    assert_eq!(interpret("3^(10^18/7)").unwrap(), "Overflow[]");
+    assert_eq!(interpret("10^(10^18)").unwrap(), "Overflow[]");
+    // A machine-real base is sized the same way.
+    assert_eq!(interpret("2.0^(10^18)").unwrap(), "Overflow[]");
+  }
+
+  #[test]
+  fn a_power_past_min_number_underflows() {
+    assert_eq!(interpret("2^(-10^18/3)").unwrap(), "Underflow[]");
+    assert_eq!(interpret("2^(-10^20)").unwrap(), "Underflow[]");
+  }
+
+  // The guard sizes the *value*, so a base of magnitude 1 and a tiny
+  // exponent are untouched however large the other operand is.
+  #[test]
+  fn magnitude_one_bases_and_tiny_exponents_are_untouched() {
+    assert_eq!(interpret("1^(10^20)").unwrap(), "1");
+    assert_eq!(interpret("(-1)^(10^20)").unwrap(), "1");
+    assert_eq!(interpret("0^(10^20)").unwrap(), "0");
+    assert_eq!(
+      interpret("2^(1/(10^20))").unwrap(),
+      "2^(1/100000000000000000000)"
+    );
+    // Large but representable stays exact.
+    assert_eq!(
+      interpret("Length[IntegerDigits[2^100000]]").unwrap(),
+      "30103"
     );
   }
 }

@@ -9725,6 +9725,65 @@ pub fn power_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   power_two(&args[0], &args[1])
 }
 
+/// The value of a literal real number as an `f64`, or `None` when the
+/// expression is not one. Only used to size a power against `$MaxNumber`, so
+/// an approximation — including an `inf` for a bignum past `f64`'s range — is
+/// exactly what is wanted.
+fn literal_real_f64(expr: &Expr) -> Option<f64> {
+  match expr {
+    Expr::Integer(n) => Some(*n as f64),
+    Expr::BigInteger(n) => n.to_string().parse::<f64>().ok(),
+    Expr::Real(f) => Some(*f),
+    Expr::BigFloat(digits, _) => digits.parse::<f64>().ok(),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      Some(literal_real_f64(&args[0])? / literal_real_f64(&args[1])?)
+    }
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => Some(-literal_real_f64(operand)?),
+    _ => None,
+  }
+}
+
+/// `Overflow[]`/`Underflow[]` for a numeric power whose magnitude leaves the
+/// representable range, matching wolframscript's `$MaxNumber` of about
+/// `1.605*10^1355718576299609` (and, by symmetry, `$MinNumber`).
+fn try_power_overflow(base: &Expr, exp: &Expr) -> Option<Expr> {
+  const MAX_LOG10: f64 = 1.3557185762996092e15;
+  let b = literal_real_f64(base)?;
+  let e = literal_real_f64(exp)?;
+  if b == 0.0 || !b.is_finite() || e.is_nan() {
+    return None;
+  }
+  // `|b| == 1` never leaves the range however large the exponent — and with
+  // an `inf` exponent that product is `NaN`, which the negated comparison
+  // (rather than `<=`) correctly treats as "not an overflow".
+  let magnitude = e * b.abs().log10();
+  #[allow(clippy::neg_cmp_op_on_partial_ord)]
+  if !(magnitude.abs() > MAX_LOG10) {
+    return None;
+  }
+  let (head, message) = if magnitude > 0.0 {
+    (
+      "Overflow",
+      "General::ovfl: Overflow occurred in computation.",
+    )
+  } else {
+    (
+      "Underflow",
+      "General::unfl: Underflow occurred in computation.",
+    )
+  };
+  crate::emit_message(message);
+  Some(Expr::FunctionCall {
+    name: head.to_string(),
+    args: Vec::new().into(),
+  })
+}
+
 /// Helper for Power of two arguments
 pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
   // A time-series operand keeps the series, combining the values.
@@ -9767,6 +9826,14 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
   // x^1 -> x
   if matches!(exp, Expr::Integer(1)) {
     return Ok(base.clone());
+  }
+
+  // A power past what wolframscript can represent is `Overflow[]` (or
+  // `Underflow[]` on the way to zero), with a message — not a symbolic
+  // result, and certainly not an attempt to materialise a number with 10^17
+  // digits. `2^(10^18/3)` used to stay symbolic and `2^(10^20)` used to hang.
+  if let Some(result) = try_power_overflow(base, exp) {
+    return Ok(result);
   }
 
   // Arbitrary-precision base (BigFloat) raised to a real power: compute the

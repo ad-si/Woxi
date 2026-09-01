@@ -441,6 +441,23 @@ woxi eval '1.0*^308 * 10'              # Infinity
 Anything that grows past ~1.8*^308 is affected, so `Exp`/`Power` of a few
 hundred silently loses the answer rather than approximating it.
 
+### `Overflow[]` is not absorbing, and its head is not `Real`
+
+Woxi returns `Overflow[]`/`Underflow[]` for a power past `$MaxNumber`, but the
+object itself is inert rather than WL's absorbing one:
+
+```sh
+wolframscript -code 'ToString[Overflow[] + 1, InputForm]'   # Overflow[]
+woxi eval 'ToString[Overflow[] + 1, InputForm]'             # 1 + Overflow[]
+
+wolframscript -code 'Head[Overflow[]]'                      # Real
+woxi eval 'Head[Overflow[]]'                                # Overflow
+```
+
+Between `10^5` and the `$MaxNumber` boundary Woxi also keeps a rational power
+symbolic (`2^(10^10/3)` stays `2^(10000000000/3)`) where WL materialises the
+extracted integer factor.
+
 ### Positive and Sign underflow on a rational below the double range
 
 ```sh
