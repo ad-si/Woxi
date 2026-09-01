@@ -7592,6 +7592,43 @@ mod ndsolve {
     );
   }
 
+  /// Unknowns are also written as a single function of two arguments —
+  /// `x[i, t]` rather than `Subscript[x, i][t]` — the idiom a discretized
+  /// PDE or a staged process model (a chain of tanks, a distillation
+  /// column's per-tray composition) uses: `Table[x[i, t], {i, 1, n}]` as
+  /// the dependent-variable spec, with the equations themselves generated
+  /// the same way (`Join[{eq[1]}, Table[eq[i], {i, 2, n - 1}], {eq[n]}]`).
+  /// Each `x[k, t]` is keyed by a fresh single-argument symbol while
+  /// integrating and restored in the solution rules.
+  #[test]
+  fn two_argument_indexed_unknowns_are_solved_and_restored() {
+    // Three well-mixed tanks in a row, each exchanging with its neighbors:
+    // x[1]' = x[2]-x[1], x[2]' = x[1]-2x[2]+x[3], x[3]' = x[2]-x[3]. Total
+    // mass x[1]+x[2]+x[3] is conserved, so all three relax to 1/3.
+    let system = "eq[1] = D[x[1, t], {t, 1}] == x[2, t] - x[1, t]; \
+       eq[i_] := D[x[i, t], {t, 1}] == x[i - 1, t] - 2 x[i, t] + x[i + 1, t]; \
+       eq[3] = D[x[3, t], {t, 1}] == x[2, t] - x[3, t]; \
+       sol = NDSolve[Join[{eq[1]}, Table[eq[i], {i, 2, 2}], {eq[3]}, \
+       Table[x[i, 0] == If[i == 1, 1, 0], {i, 1, 3}]], \
+       Table[x[i, t], {i, 1, 3}], {t, 0, 20}]; ";
+    assert_eq!(
+      interpret(&format!("{system}sol[[1]][[All, 1]]")).unwrap(),
+      "{x[1, t], x[2, t], x[3, t]}",
+      "the indexed unknowns come back verbatim, not the fresh solver symbol"
+    );
+    for i in 1..=3 {
+      let value: f64 =
+        interpret(&format!("{system}First[x[{i}, t] /. sol] /. t -> 20.0"))
+          .unwrap()
+          .parse()
+          .expect("should be a number");
+      assert!(
+        (value - 1.0 / 3.0).abs() < 1e-3,
+        "x[{i}] should have relaxed to 1/3 by t=20, got {value}"
+      );
+    }
+  }
+
   /// A forcing term that is nonzero only on a very narrow interval — an
   /// injected tracer pulse — must not be integrated as though it lasted a
   /// whole grid step, which would inflate the solution by the ratio of the
