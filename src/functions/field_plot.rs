@@ -213,6 +213,10 @@ struct DensityContourOptions {
   /// `PlotLabel -> …`: the caption drawn above the plot, already typeset
   /// as SVG markup, alongside the font size its outer `Style` asked for.
   plot_label: Option<(String, Option<f64>)>,
+  /// `RegionFunction -> f`: keep only grid cells where `f[x, y, z]` (the
+  /// plotted value `z`) is `True`; other cells are left blank, matching
+  /// `Plot3D`/`ContourPlot3D`'s `RegionFunction`.
+  region_function: Option<Expr>,
 }
 
 /// Parse ImageSize, ColorFunction, Contours, ContourShading, Mesh,
@@ -230,6 +234,7 @@ fn parse_density_contour_options(
   let mut contour_style = None;
   let mut frame_labels = crate::functions::plot::FrameLabels::default();
   let mut epilog: Vec<Expr> = Vec::new();
+  let mut region_function: Option<Expr> = None;
   for opt in &args[start..] {
     if let Expr::Rule {
       pattern,
@@ -314,6 +319,9 @@ fn parse_density_contour_options(
             other => vec![other],
           };
         }
+        "RegionFunction" => {
+          region_function = Some(replacement.clone());
+        }
         _ => {}
       }
     }
@@ -331,7 +339,23 @@ fn parse_density_contour_options(
     frame_labels,
     epilog,
     plot_label: parse_field_plot_label(args, start),
+    region_function,
   }
+}
+
+/// Whether `(x, y, z)` satisfies `region`, a `RegionFunction ->
+/// Function[{x, y, z}, …]` value: called positionally exactly like
+/// `Plot3D`/`ContourPlot3D`'s region function, so it does not need the
+/// plot's own x/y variable names substituted in first.
+fn region_allows(region: &Expr, x: f64, y: f64, z: f64) -> bool {
+  let call = Expr::CurriedCall {
+    func: Box::new(region.clone()),
+    args: vec![Expr::Real(x), Expr::Real(y), Expr::Real(z)],
+  };
+  matches!(
+    evaluate_expr_to_expr(&call),
+    Ok(Expr::Identifier(ref s)) if s == "True"
+  )
 }
 
 impl DensityContourOptions {
@@ -1267,6 +1291,10 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let y = y_min + (j as f64 + 0.5) / FIELD_GRID as f64 * (y_max - y_min);
       if let Some(v) = evaluate_at_xy(body, &xvar, &yvar, x, y)
         && v.is_finite()
+        && opts
+          .region_function
+          .as_ref()
+          .is_none_or(|r| region_allows(r, x, y, v))
       {
         grid[i][j] = v;
         samples.push(v);
@@ -1385,6 +1413,10 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let y = y_min + j as f64 / FIELD_GRID as f64 * (y_max - y_min);
       if let Some(v) = evaluate_at_xy(body, &xvar, &yvar, x, y)
         && v.is_finite()
+        && opts
+          .region_function
+          .as_ref()
+          .is_none_or(|r| region_allows(r, x, y, v))
       {
         grid[i][j] = v;
         samples.push(v);
