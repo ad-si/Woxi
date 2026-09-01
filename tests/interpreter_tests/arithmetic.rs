@@ -8014,6 +8014,151 @@ mod set_precision {
       "3."
     );
   }
+
+  // The rewritten expression is evaluated again: setting the precision of
+  // `Tanh[1]`'s only leaf makes the argument inexact, which is exactly what
+  // lets `Tanh` evaluate. Woxi used to stop after the walk and answer with
+  // the literal `Tanh[1.`3.]`.
+  #[test]
+  fn the_rewritten_expression_is_evaluated_again() {
+    assert_eq!(
+      interpret("ToString[SetPrecision[Tanh[1], 3]]").unwrap(),
+      "0.762"
+    );
+    assert_eq!(
+      interpret("SetPrecision[Tanh[1], 3]").unwrap(),
+      "0.7615941559557648881`3.2585008449265427"
+    );
+    // A head with no numeric behaviour keeps its converted leaf.
+    assert_eq!(interpret("SetPrecision[f[1], 3]").unwrap(), "f[1.`3.]");
+    // Nothing numeric to convert: no re-evaluation, no loop.
+    assert_eq!(interpret("SetPrecision[x, 10]").unwrap(), "x");
+  }
+}
+
+/// Arbitrary-precision arguments used to fall through every case of the
+/// hyperbolic, inverse-circular/hyperbolic and Gamma/Erf functions, coming
+/// back unevaluated — `Tanh[1.`20.]` rather than a number. Both halves were
+/// missing: `N`'s arbitrary-precision evaluator had no entry for the
+/// reciprocal functions at all, and the `_ast` functions had no `BigFloat`
+/// branch. Values verified against wolframscript.
+mod arbitrary_precision_transcendentals {
+  use woxi::interpret;
+
+  #[test]
+  fn hyperbolic_family() {
+    assert_eq!(
+      interpret("Sinh[N[1/2, 20]]").unwrap(),
+      "0.52109530549374736162242562641149155911`19.965782088755336"
+    );
+    assert_eq!(
+      interpret("Cosh[N[1/2, 20]]").unwrap(),
+      "1.12762596520638078522622516140267201255`20.636277902572626"
+    );
+    // A function and its reciprocal share one condition number, so the
+    // precision markers of these three pairs have to agree exactly.
+    assert_eq!(
+      interpret("Precision[Csch[N[1/2, 20]]] == Precision[Sinh[N[1/2, 20]]]")
+        .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("Precision[Sech[N[1/2, 20]]] == Precision[Cosh[N[1/2, 20]]]")
+        .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("Precision[Coth[N[1/2, 20]]] == Precision[Tanh[N[1/2, 20]]]")
+        .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("Csch[N[1/2, 20]]").unwrap(),
+      "1.91903475133494371949220287872700615959`19.965782088755336"
+    );
+    assert_eq!(
+      interpret("Coth[N[1/2, 20]]").unwrap(),
+      "2.16395341373865284877000401021802311709`20.070112223892355"
+    );
+  }
+
+  #[test]
+  fn inverse_circular_and_hyperbolic_family() {
+    assert_eq!(
+      interpret("ArcTan[N[1/2, 20]]").unwrap(),
+      "0.46364760900080611621425623146121440203`20.064128033169684"
+    );
+    assert_eq!(
+      interpret("ArcCot[N[1/2, 20]]").unwrap(),
+      "1.10714871779409050301706546017853704007`20.442145970092128"
+    );
+    assert_eq!(
+      interpret("ArcSinh[N[1/2, 20]]").unwrap(),
+      "0.48121182505960344749775891342436842314`20.031821293103135"
+    );
+    assert_eq!(
+      interpret("ArcTanh[N[1/2, 20]]").unwrap(),
+      "0.54930614433405484569762261846126285232`19.91590571596062"
+    );
+    assert_eq!(
+      interpret("ArcCsch[N[1/2, 20]]").unwrap(),
+      "1.44363547517881034249327674027310526941`20.207912552158817"
+    );
+  }
+
+  #[test]
+  fn gamma_and_error_functions() {
+    assert_eq!(
+      interpret("Gamma[N[1/2, 20]]").unwrap(),
+      "1.7724538509055160272981674833411451828`20.007996872469224"
+    );
+    assert_eq!(
+      interpret("LogGamma[N[1/2, 20]]").unwrap(),
+      "0.57236494292470008707171367567652935582`19.76566989804507"
+    );
+    assert_eq!(
+      interpret("Erf[N[1/2, 20]]").unwrap(),
+      "0.52049987781304653768274665389196452874`20.073569188719144"
+    );
+  }
+
+  // The same functions through `N[…, p]` on an *exact* argument, which the
+  // arbitrary-precision evaluator could not reach either.
+  #[test]
+  fn n_reaches_the_reciprocal_functions() {
+    assert_eq!(
+      interpret("N[Sech[1], 20]").unwrap(),
+      "0.64805427366388539957497735322615032311`20."
+    );
+    assert_eq!(
+      interpret("N[Csch[1], 20]").unwrap(),
+      "0.85091812823932154513384276328717528418`20."
+    );
+    // `Coth`/`Cot` go through cosh/sinh and cos/sin rather than `1/Tanh`
+    // and `1/Tan`, which would cost a unit in the last displayed digit.
+    assert_eq!(
+      interpret("N[Coth[1], 20]").unwrap(),
+      "1.31303528549933130363616124693084783291`20."
+    );
+    assert_eq!(
+      interpret("N[ArcCot[1/2], 20]").unwrap(),
+      "1.10714871779409050301706546017853704007`20."
+    );
+    assert_eq!(
+      interpret("N[LogGamma[1/2], 20]").unwrap(),
+      "0.57236494292470008707171367567652935582`20."
+    );
+  }
+
+  // An argument outside the real branch is left to the function's own
+  // handling rather than becoming an evaluation error.
+  #[test]
+  fn an_argument_off_the_real_branch_falls_through() {
+    assert_eq!(
+      interpret("ArcCosh[0.000000000000000000000000000000000000000]").unwrap(),
+      "1.5707963267948966192313216916397514420985846996875529104875`39.*I"
+    );
+  }
 }
 
 mod set_accuracy {

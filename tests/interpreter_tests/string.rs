@@ -9559,7 +9559,8 @@ mod to_string_bigfloat {
   // BigFloat printed its raw InputForm digits with the `` `p `` marker still
   // attached (e.g. `Tanh[1.`3.]` instead of `Tanh[1.00]`, surfaced by a
   // Wolfram Demonstration's Manipulate body: `ToString[SetPrecision[Tanh[mL]/
-  // mL, 3]]` inside a Plot Epilog label).
+  // mL, 3]]` inside a Plot Epilog label). `f[1.`3.]` (no definition for `f`)
+  // is the case that still nests a marker-carrying BigFloat.
   #[test]
   fn to_string_bigfloat_nested_in_list_strips_marker() {
     assert_eq!(interpret("ToString[{N[Pi, 5]}]").unwrap(), "{3.1416}");
@@ -9568,9 +9569,11 @@ mod to_string_bigfloat {
   #[test]
   fn to_string_bigfloat_nested_in_function_call_strips_marker() {
     assert_eq!(interpret("ToString[f[N[Pi, 5]]]").unwrap(), "f[3.1416]");
+    // `f` has no definition, so the BigFloat stays nested; `Tanh` does, and
+    // `SetPrecision` re-evaluates, so this one collapses to the number.
     assert_eq!(
       interpret("ToString[SetPrecision[Tanh[1], 3]]").unwrap(),
-      "Tanh[1.00]"
+      "0.762"
     );
   }
 
