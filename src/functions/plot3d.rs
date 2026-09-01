@@ -9470,26 +9470,35 @@ fn resolve_parametric_triples(
       "ParametricPlot3D: first argument must be {fx, fy, fz}".into(),
     )
   };
+  // A single `{fx, fy, fz}` triple, or a list of such triples (each item
+  // possibly still needing its own resolution, e.g. a held `helper[u, v]`
+  // call or a `{fx, fy, fz} /. rules` substitution).
+  let resolve_items =
+    |items: &[Expr]| -> Result<Vec<(Expr, Expr, Expr)>, InterpreterError> {
+      if items.len() == 3 && !matches!(&items[0], Expr::List(_)) {
+        return Ok(vec![(
+          items[0].clone(),
+          items[1].clone(),
+          items[2].clone(),
+        )]);
+      }
+      if items.is_empty() {
+        return Err(err());
+      }
+      items
+        .iter()
+        .map(|item| {
+          resolve_one_parametric_triple(item, shadow_vars).ok_or_else(err)
+        })
+        .collect()
+    };
   match body {
-    Expr::List(items)
-      if items.len() == 3 && !matches!(&items[0], Expr::List(_)) =>
-    {
-      Ok(vec![(items[0].clone(), items[1].clone(), items[2].clone())])
-    }
-    Expr::List(items) if !items.is_empty() => items
-      .iter()
-      .map(|item| {
-        resolve_one_parametric_triple(item, shadow_vars).ok_or_else(err)
-      })
-      .collect(),
-    Expr::List(_) => Err(err()),
+    Expr::List(items) => resolve_items(items),
     other => {
       let resolved =
         crate::functions::plot::eval_body_vars_symbolic(other, shadow_vars);
-      match &resolved {
-        Expr::List(items) if items.len() == 3 => {
-          Ok(vec![(items[0].clone(), items[1].clone(), items[2].clone())])
-        }
+      match unwrap_singleton_list(&resolved) {
+        Expr::List(items) => resolve_items(items),
         _ => Err(err()),
       }
     }
