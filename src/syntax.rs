@@ -5778,7 +5778,6 @@ fn operator_precedence(op: &str) -> u8 {
     // `*` and `/`, so they bind at the same level.
     "\\[Times]" | "\u{00D7}" => 33,
     "\\[Divide]" | "\u{00F7}" => 33,
-    "<>" => 30, // StringJoin (same level as Plus)
     // Symbolic ring operators, ordered to match wolframscript:
     // Dot > CircleTimes > CenterDot > Times > … > CirclePlus > Plus.
     "\\[CirclePlus]" | "\u{2295}" => 31, // between Plus and Times
@@ -5797,9 +5796,16 @@ fn operator_precedence(op: &str) -> u8 {
     // so `-f @@ list` reads as `-(f @@ list)` and `-f /@ list` as
     // `-(f /@ list)`, matching Wolfram (Apply/Map bind tighter than a
     // leading unary minus).
-    "@@@" | "@@" => 46,  // Apply/MapApply
-    "/@" => 47,          // Map (higher than Apply)
     "^" | "^_NEG" => 50, // Power (`^_NEG` is `a^-b` with negated right operand)
+    // `Precedence[StringJoin]` is 600 — above `Power` (590), not at `Plus`'s
+    // level: `a <> b^c` is `(a <> b)^c` and `a <> b*c` is `(a <> b)*c`.
+    "<>" => 51, // StringJoin
+    // `Precedence` gives `Apply`, `Map` and `MapApply` the *same* 620, and
+    // wolframscript parses the mixed chain right-associatively:
+    // `a /@ b @@ c` is `Map[a, Apply[b, c]]`. They bind tighter than
+    // `StringJoin` and `Power` (`Plus @@ {1, 2}^2` is `(Plus @@ {1, 2})^2`)
+    // and looser than the tilde infix.
+    "@@@" | "@@" | "/@" => 52, // Apply/MapApply/Map
     s if s.starts_with('~') && s.ends_with('~') && s.len() > 2 => 53, // Tilde infix: a ~f~ b (higher than ^, lower than @)
     "@" => 56, // Prefix application
     // Composition/RightComposition bind tighter than prefix application (so
