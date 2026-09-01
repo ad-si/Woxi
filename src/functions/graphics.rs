@@ -23488,6 +23488,16 @@ fn assign_checkbox_state(
 
 /// Render an unrecognized display leaf by evaluating it in scope and
 /// capturing its SVG (graphics) or text output.
+///
+/// `NumberForm`/`PaddedForm`/`AccountingForm` are display wrappers: the
+/// evaluated value stays symbolic (matching wolframscript's plain-text
+/// `OutputForm`, which `r.result` already renders correctly for a bare
+/// script-mode echo), but a live notebook typesets it into formatted
+/// digits — the common `Dynamic[NumberForm[…]]` control-caption readout a
+/// `Manipulate` uses to show its current value. `graphics_text_content`
+/// already does this for a label inside a picture; a leaf here is the same
+/// typeset context (a control panel caption, not a terminal), so it gets
+/// the same treatment before falling back to the plain OutputForm text.
 fn static_leaf_node(expr: &Expr, bindings: &[(String, String)]) -> DisplayNode {
   let code =
     manipulate_block_code(&crate::syntax::expr_to_input_form(expr), bindings);
@@ -23497,6 +23507,19 @@ fn static_leaf_node(expr: &Expr, bindings: &[(String, String)]) -> DisplayNode {
         DisplayNode::Static {
           svg: Some(svg),
           text: String::new(),
+        }
+      } else if let Some(Expr::FunctionCall { name, args }) = &r.expr
+        && matches!(
+          name.as_str(),
+          "NumberForm" | "PaddedForm" | "AccountingForm"
+        )
+        && !args.is_empty()
+        && let Some(formatted) =
+          crate::functions::string_ast::number_form_family_to_string(name, args)
+      {
+        DisplayNode::Static {
+          svg: None,
+          text: formatted.replace('\n', " ").trim().to_string(),
         }
       } else {
         let text = r
@@ -24308,6 +24331,41 @@ mod manipulate_display_pane_selector_tests {
     match node {
       DisplayNode::Row(children) => assert_eq!(children.len(), 2),
       other => panic!("expected a row node, got {other:?}"),
+    }
+  }
+}
+
+#[cfg(test)]
+mod manipulate_display_number_form_tests {
+  use super::*;
+
+  /// Regression: a `Dynamic[NumberForm[…]]` control-caption readout — the
+  /// idiom a `Manipulate` uses to show a live formatted value next to its
+  /// sliders (e.g. a speed-ratio readout) — leaked the literal
+  /// `NumberForm[…]` call as its displayed text instead of the formatted
+  /// digits. Bare script-mode echo of `NumberForm[…]` correctly stays
+  /// symbolic (wolframscript's own plain-text `OutputForm` does not
+  /// typeset it), but a control caption is rendered the way a live
+  /// notebook would typeset it, the same as a `NumberForm` inside a
+  /// graphic's `Text` label already is.
+  #[test]
+  fn dynamic_numberform_caption_renders_formatted_digits() {
+    let node = build_manipulate_display("Dynamic[NumberForm[1., {3, 2}]]", &[]);
+    match node {
+      DisplayNode::Static { text, svg: None } => assert_eq!(text, "1.00"),
+      other => panic!("expected a static text node, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn dynamic_paddedform_caption_renders_formatted_digits() {
+    // The leading padding is trimmed, matching how a `NumberForm`/`PaddedForm`
+    // label inside a graphic is rendered (`graphics_text_content`) — a
+    // caption widget shouldn't carry leading whitespace into its layout.
+    let node = build_manipulate_display("Dynamic[PaddedForm[7, 3]]", &[]);
+    match node {
+      DisplayNode::Static { text, svg: None } => assert_eq!(text, "7"),
+      other => panic!("expected a static text node, got {other:?}"),
     }
   }
 }
