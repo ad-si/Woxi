@@ -6820,6 +6820,88 @@ fn parse_range_spec(expr: &Expr) -> Option<(f64, f64)> {
   }
 }
 
+/// A single side's `PlotRangePadding` amount.
+#[derive(Clone, Copy)]
+enum PlotPadAmount {
+  None,
+  Automatic,
+  Absolute(f64),
+  Scaled(f64),
+}
+
+impl PlotPadAmount {
+  /// Resolve to an absolute amount given the axis's (unpadded) span.
+  /// `automatic_frac` is the fraction of the span `Automatic` falls back to.
+  fn resolve(self, span: f64, automatic_frac: f64) -> f64 {
+    match self {
+      Self::None => 0.0,
+      Self::Automatic => span * automatic_frac,
+      Self::Absolute(v) => v,
+      Self::Scaled(v) => span * v,
+    }
+  }
+}
+
+fn parse_plot_pad_amount(expr: &Expr) -> PlotPadAmount {
+  match expr {
+    Expr::Identifier(s) if s == "None" => PlotPadAmount::None,
+    Expr::Identifier(s) if s == "Automatic" => PlotPadAmount::Automatic,
+    Expr::FunctionCall { name, args }
+      if name == "Scaled" && args.len() == 1 =>
+    {
+      expr_to_f64(&args[0]).map_or(PlotPadAmount::None, PlotPadAmount::Scaled)
+    }
+    _ => expr_to_f64(expr).map_or(PlotPadAmount::None, PlotPadAmount::Absolute),
+  }
+}
+
+struct AxisPadding {
+  lo: PlotPadAmount,
+  hi: PlotPadAmount,
+}
+
+struct PlotRangePaddingSpec {
+  x: AxisPadding,
+  y: AxisPadding,
+}
+
+/// Parse a `PlotRangePadding` option value: a single spec (applied to both
+/// sides of both axes), `{xSpec, ySpec}`, or the full per-side form
+/// `{{xMinPad, xMaxPad}, {yMinPad, yMaxPad}}`.
+fn parse_plot_range_padding(expr: &Expr) -> PlotRangePaddingSpec {
+  fn symmetric(amt: PlotPadAmount) -> AxisPadding {
+    AxisPadding { lo: amt, hi: amt }
+  }
+  if let Expr::List(items) = expr
+    && items.len() == 2
+  {
+    if let (Expr::List(x_sides), Expr::List(y_sides)) = (&items[0], &items[1])
+      && x_sides.len() == 2
+      && y_sides.len() == 2
+    {
+      return PlotRangePaddingSpec {
+        x: AxisPadding {
+          lo: parse_plot_pad_amount(&x_sides[0]),
+          hi: parse_plot_pad_amount(&x_sides[1]),
+        },
+        y: AxisPadding {
+          lo: parse_plot_pad_amount(&y_sides[0]),
+          hi: parse_plot_pad_amount(&y_sides[1]),
+        },
+      };
+    }
+    return PlotRangePaddingSpec {
+      x: symmetric(parse_plot_pad_amount(&items[0])),
+      y: symmetric(parse_plot_pad_amount(&items[1])),
+    };
+  }
+  let amt = parse_plot_pad_amount(expr);
+  PlotRangePaddingSpec {
+    x: symmetric(amt),
+    y: symmetric(amt),
+  }
+}
+
 fn parse_background(expr: &Expr) -> Option<Color> {
   parse_color(expr)
 }
@@ -7101,6 +7183,10 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // they are collected only once the range is settled.
   let mut prolog: Option<Expr> = None;
   let mut epilog: Option<Expr> = None;
+  // `PlotRangePadding -> …`: extra room to leave around the effective plot
+  // range (the primitives' bounding box, or an explicit `PlotRange`).
+  // Unset keeps the existing flat-4%-on-automatic-axes default.
+  let mut plot_range_padding: Option<Expr> = None;
 
   for raw_opt in &args[1..] {
     let opt =
@@ -7130,6 +7216,9 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let (xr, yr) = parse_plot_range(replacement);
           plot_range_x = xr;
           plot_range_y = yr;
+        }
+        "PlotRangePadding" => {
+          plot_range_padding = Some(replacement.clone());
         }
         "Prolog" => prolog = Some(replacement.clone()),
         "Epilog" => epilog = Some(replacement.clone()),
@@ -7307,17 +7396,31 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
   }
 
-  // Apply 4% padding
-  bb = bb.with_padding(0.04);
-
-  // Apply PlotRange overrides
-  if let Some((lo, hi)) = plot_range_x {
-    bb.x_min = lo;
-    bb.x_max = hi;
-  }
-  if let Some((lo, hi)) = plot_range_y {
-    bb.y_min = lo;
-    bb.y_max = hi;
+  if let Some(padding_expr) = &plot_range_padding {
+    // `PlotRangePadding` pads whatever the effective range ends up being,
+    // whether that came from the primitives' automatic bounding box or an
+    // explicit `PlotRange`.
+    let (x_min, x_max) = plot_range_x.unwrap_or((bb.x_min, bb.x_max));
+    let (y_min, y_max) = plot_range_y.unwrap_or((bb.y_min, bb.y_max));
+    let spec = parse_plot_range_padding(padding_expr);
+    let x_span = x_max - x_min;
+    let y_span = y_max - y_min;
+    bb.x_min = x_min - spec.x.lo.resolve(x_span, 0.04);
+    bb.x_max = x_max + spec.x.hi.resolve(x_span, 0.04);
+    bb.y_min = y_min - spec.y.lo.resolve(y_span, 0.04);
+    bb.y_max = y_max + spec.y.hi.resolve(y_span, 0.04);
+  } else {
+    // Default: flat 4% padding on automatically-computed axes; an axis
+    // pinned by an explicit `PlotRange` is drawn exactly, with no padding.
+    bb = bb.with_padding(0.04);
+    if let Some((lo, hi)) = plot_range_x {
+      bb.x_min = lo;
+      bb.x_max = hi;
+    }
+    if let Some((lo, hi)) = plot_range_y {
+      bb.y_min = lo;
+      bb.y_max = hi;
+    }
   }
 
   // The plot range is settled, so the Prolog's and Epilog's own primitives
