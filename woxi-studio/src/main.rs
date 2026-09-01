@@ -18108,6 +18108,153 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`ctrl$$ = 1, $CellContext`P$$ = 760}
     );
   }
 
+  /// Checked a randomly-sampled Wolfram Demonstrations Project notebook (a
+  /// rotating-polytope viewer) against Woxi Studio's Manipulate pipeline.
+  /// Its shape: a `Module` rebuilds a projected point set from two rotation
+  /// matrices on every frame, a `Which` picks between a colored-face
+  /// `GraphicsComplex` (`VertexColors`) and a translucent one, the render
+  /// choice is a `RadioButtonBar` given as a list of `n -> "label"` rules,
+  /// and — the part worth a dedicated regression — a `Grid` lays out two
+  /// `Control[…]` `Animator`s next to `Dynamic[NumberForm[Chop[…]]]` angle
+  /// readouts, each wrapped in its own `Style[…, FontColor -> …]`, with a
+  /// `Button` resetting both tracked angles via `Dynamic[(a = 0; b = 0)]`.
+  ///
+  /// This is a self-authored, construct-equivalent example (a made-up
+  /// "twisting cube" scenario with its own coordinates, colors, and
+  /// variable names) — not the notebook's own code, data, or wording,
+  /// which is copyrighted.
+  #[test]
+  fn twisting_cube_manipulate_builds_its_grid_of_animators() {
+    woxi::interpret(
+      "base = {{1, 1, 1}, {1, 1, -1}, {1, -1, 1}, {1, -1, -1}, \
+                {-1, 1, 1}, {-1, 1, -1}, {-1, -1, 1}, {-1, -1, -1}}; \
+       faces = {{1, 2, 4, 3}, {5, 6, 8, 7}, {1, 2, 6, 5}, {3, 4, 8, 7}, \
+                {1, 3, 7, 5}, {2, 4, 8, 6}}; \
+       faceColors = {Red, Red, Green, Green, Blue, Blue, Yellow, Yellow};",
+    )
+    .expect("the cube's static data must define");
+
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[ \
+         Module[{rot1, rot2, pts, dfig}, \
+           rot1 = {{1, 0, 0}, {0, Cos[roll], -Sin[roll]}, \
+             {0, Sin[roll], Cos[roll]}}; \
+           rot2 = {{Cos[pitch], 0, Sin[pitch]}, {0, 1, 0}, \
+             {-Sin[pitch], 0, Cos[pitch]}}; \
+           pts = Table[(base[[i]].rot1).rot2, {i, 1, 8}]; \
+           Which[ \
+             shading == 1, \
+             dfig = Graphics3D[{EdgeForm[Black], \
+               GraphicsComplex[pts, Polygon[faces], \
+                 VertexColors -> faceColors]}], \
+             shading == 2, \
+             dfig = Graphics3D[{Opacity[op], \
+               GraphicsComplex[pts, Polygon[faces]]}] \
+           ]; \
+           Show[dfig, Boxed -> False, ViewPoint -> {1.3, -2.4, 1.5}, \
+             AspectRatio -> Automatic, ImageSize -> {300, 300}] \
+         ], \
+         {{shading, 1, \"shading\"}, {1 -> \"solid\", 2 -> \"glass\"}, \
+           ControlType -> RadioButtonBar}, \
+         {{op, 0.6, \"opacity\"}, 0, 1, ControlType -> Slider, \
+           Appearance -> \"Labeled\"}, \
+         {{axes, 0, \"show axes\"}, {0, 1}, ControlType -> Checkbox}, \
+         Delimiter, \
+         Grid[{ \
+           {\"roll\", Control[{{roll, 0, \"\"}, 0., 2. Pi, \
+             ControlType -> Animator, ImageSize -> Tiny, \
+             AnimationRunning -> False}], \
+             Style[Dynamic[NumberForm[Chop[roll/N[Degree]], {4, 0}]], \
+               FontColor -> GrayLevel[0]]}, \
+           {\"pitch\", Control[{{pitch, 0, \"\"}, 0., 2. Pi, \
+             ControlType -> Animator, ImageSize -> Tiny, \
+             AnimationRunning -> False}], \
+             Style[Dynamic[NumberForm[Chop[pitch/N[Degree]], {4, 0}]], \
+               FontColor -> GrayLevel[0]]} \
+         }], \
+         Button[\"reset\", Dynamic[(roll = 0; pitch = 0)], \
+           Background -> LightYellow], \
+         ControlPlacement -> Left, \
+         SynchronousUpdating -> True, \
+         TrackedSymbols -> {roll, pitch, shading, op, axes}, \
+         SaveDefinitions -> True]",
+    )
+    .expect("the Manipulate source must parse and evaluate");
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("the Manipulate must build a widget");
+
+    assert!(
+      state.error.is_none(),
+      "initial body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the initial (shading == 1) branch must render a graphic"
+    );
+    assert_eq!(
+      state.control_placement,
+      manipulate::ControlPlacement::Left,
+      "ControlPlacement -> Left must reach the widget"
+    );
+
+    let names: Vec<&str> = state.controls.iter().map(|c| c.name()).collect();
+    assert!(
+      names.contains(&"roll") && names.contains(&"pitch"),
+      "the two `Control[…]` Animators nested inside the `Grid` must still \
+       register as controls, alongside the top-level shading/op/axes ones: \
+       {names:?}"
+    );
+
+    let (roll, pitch): (Option<f64>, Option<f64>) =
+      state.controls.iter().fold((None, None), |acc, c| match c {
+        manipulate::ControlState::Continuous { name, min, max, .. }
+          if name == "roll" =>
+        {
+          (Some(*max - *min), acc.1)
+        }
+        manipulate::ControlState::Continuous { name, min, max, .. }
+          if name == "pitch" =>
+        {
+          (acc.0, Some(*max - *min))
+        }
+        _ => acc,
+      });
+    assert!(
+      roll.is_some_and(|span| (span - 2.0 * std::f64::consts::PI).abs() < 1e-9),
+      "the roll Animator's 0. .. 2. Pi range must reach the widget: {roll:?}"
+    );
+    assert!(
+      pitch
+        .is_some_and(|span| (span - 2.0 * std::f64::consts::PI).abs() < 1e-9),
+      "the pitch Animator's 0. .. 2. Pi range must reach the widget: {pitch:?}"
+    );
+
+    let shading_bar = state
+      .controls
+      .iter()
+      .find(|c| c.name() == "shading")
+      .expect("the shading RadioButtonBar control must be present");
+    match shading_bar {
+      manipulate::ControlState::Discrete {
+        value_labels,
+        setter_bar,
+        ..
+      } => {
+        assert_eq!(
+          value_labels,
+          &["solid".to_string(), "glass".to_string()],
+          "the rule-form choices' right-hand labels must be used"
+        );
+        assert!(
+          *setter_bar,
+          "ControlType -> RadioButtonBar must force the bar layout"
+        );
+      }
+      other => panic!("expected a Discrete control for shading, got {other:?}"),
+    }
+  }
+
   /// Checked a randomly-sampled Wolfram Demonstrations Project notebook (an
   /// electrochemistry Manipulate simulating two diffusing, interconverting
   /// species reacting at one wall) against Woxi Studio's Manipulate
