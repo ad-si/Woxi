@@ -10467,7 +10467,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           || matches!(
             &args[1],
             Expr::BinaryOp {
-              op: BinaryOperator::Divide,
+              op: BinaryOperator::Divide | BinaryOperator::Times,
               ..
             }
           )
