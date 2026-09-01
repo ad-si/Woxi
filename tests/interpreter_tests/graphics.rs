@@ -1743,6 +1743,135 @@ mod graphics {
       ));
     }
 
+    // `PlotRangePadding` was silently ignored (it wasn't parsed at all), so
+    // an explicit `PlotRange` always rendered with zero padding around it —
+    // found via a Demonstration's logo-shaped `Graphics` that relied on
+    // `PlotRangePadding -> 1` to leave visible margin around a narrow
+    // `PlotRange`; without it, the curves filled the frame edge to edge and
+    // were clipped. The point below sits exactly at the `PlotRange`
+    // corner, so its rendered pixel position directly shows how much
+    // padding was applied around that corner.
+    mod plot_range_padding {
+      use super::*;
+
+      /// The pixel `(cx, cy)` of the lone `<circle>` a single `Point[]`
+      /// renders as.
+      fn point_px(svg: &str) -> (f64, f64) {
+        let tag = svg.split("<circle ").nth(1).expect("a circle");
+        let attr = |name: &str| -> f64 {
+          tag
+            .split(&format!("{name}=\""))
+            .nth(1)
+            .and_then(|s| s.split('"').next())
+            .unwrap_or_else(|| panic!("circle {name} in {tag}"))
+            .parse()
+            .unwrap_or_else(|_| panic!("numeric circle {name} in {tag}"))
+        };
+        (attr("cx"), attr("cy"))
+      }
+
+      // With no `PlotRangePadding`, an explicit `PlotRange` is drawn exactly
+      // (the existing default), so a point at its corner lands right on the
+      // image edge.
+      #[test]
+      fn unset_leaves_no_room() {
+        let svg = export_svg(
+          "Graphics[{Point[{0, 0}]}, PlotRange -> {{0, 1}, {0, 1}}, \
+           ImageSize -> {100, 100}, Axes -> False]",
+        );
+        let (cx, _) = point_px(&svg);
+        assert!(cx < 5.0, "expected the corner point flush left, cx={cx}");
+      }
+
+      // A plain number pads both axes by that many plot units on every
+      // side: `{0,1}` padded by 1 becomes `{-1,2}` (span 3), so the corner
+      // point sits a third of the way in.
+      #[test]
+      fn absolute_number_pads_both_axes() {
+        let svg = export_svg(
+          "Graphics[{Point[{0, 0}]}, PlotRange -> {{0, 1}, {0, 1}}, \
+           PlotRangePadding -> 1, ImageSize -> {100, 100}, Axes -> False]",
+        );
+        let (cx, _) = point_px(&svg);
+        assert!(
+          (28.0..39.0).contains(&cx),
+          "expected the point ~1/3 into the image (padded {{-1,2}} span), \
+           cx={cx}"
+        );
+      }
+
+      // `None` explicitly asks for zero padding — same as leaving the
+      // option unset.
+      #[test]
+      fn none_leaves_no_room() {
+        let svg = export_svg(
+          "Graphics[{Point[{0, 0}]}, PlotRange -> {{0, 1}, {0, 1}}, \
+           PlotRangePadding -> None, ImageSize -> {100, 100}, Axes -> False]",
+        );
+        let (cx, _) = point_px(&svg);
+        assert!(cx < 5.0, "expected the corner point flush left, cx={cx}");
+      }
+
+      // `Scaled[s]` pads by a fraction of the axis's own span. With a
+      // {0,1} range (span 1) and `Scaled[1]`, the padding equals the whole
+      // span, giving the same {-1,2} result as `PlotRangePadding -> 1`.
+      #[test]
+      fn scaled_pads_by_a_fraction_of_the_span() {
+        let svg = export_svg(
+          "Graphics[{Point[{0, 0}]}, PlotRange -> {{0, 1}, {0, 1}}, \
+           PlotRangePadding -> Scaled[1], ImageSize -> {100, 100}, Axes -> False]",
+        );
+        let (cx, _) = point_px(&svg);
+        assert!(
+          (28.0..39.0).contains(&cx),
+          "expected the point ~1/3 into the image (padded {{-1,2}} span), \
+           cx={cx}"
+        );
+      }
+
+      // `{xSpec, ySpec}` pads each axis independently: no room on x, a full
+      // unit on y, so the corner point stays flush on x but moves inward
+      // on y. `AspectRatio -> Full` keeps the two axes independently
+      // scaled — without it, a fixed square `ImageSize` re-expands the
+      // narrower (unpadded) axis to match the padded one, so the "no
+      // padding" side wouldn't actually measure as unpadded.
+      #[test]
+      fn per_axis_list_pads_each_axis_independently() {
+        let svg = export_svg(
+          "Graphics[{Point[{0, 0}]}, PlotRange -> {{0, 1}, {0, 1}}, \
+           PlotRangePadding -> {0, 1}, ImageSize -> {100, 100}, \
+           AspectRatio -> Full, Axes -> False]",
+        );
+        let (cx, cy) = point_px(&svg);
+        assert!(cx < 5.0, "expected no x padding, cx={cx}");
+        assert!(
+          (61.0..72.0).contains(&cy),
+          "expected the point ~1/3 into the image on y (padded {{-1,2}} \
+           span, y flipped so the low corner sits near the bottom), cy={cy}"
+        );
+      }
+
+      // The full per-side form `{{xMinPad, xMaxPad}, {yMinPad, yMaxPad}}`
+      // pads each side independently: padding only the max side of x
+      // shifts the whole (unpadded-on-min) axis without touching where the
+      // min-corner point lands. `AspectRatio -> Full` again keeps the axes
+      // independently scaled (see the comment above).
+      #[test]
+      fn full_per_side_form_only_pads_the_named_side() {
+        let svg = export_svg(
+          "Graphics[{Point[{0, 0}]}, PlotRange -> {{0, 1}, {0, 1}}, \
+           PlotRangePadding -> {{0, 2}, {0, 0}}, \
+           ImageSize -> {100, 100}, AspectRatio -> Full, Axes -> False]",
+        );
+        let (cx, cy) = point_px(&svg);
+        // x range becomes {0,3} (span 3): the min-corner point (x=0) still
+        // sits flush left since only the max side padded.
+        assert!(cx < 5.0, "expected the min corner flush left, cx={cx}");
+        // y wasn't padded at all.
+        assert!(cy > 95.0, "expected no y padding, cy={cy}");
+      }
+    }
+
     // `PlotRange -> r` (a bare number) means "r in all directions from the
     // origin", equivalent to `{{-r, r}, {-r, r}}` — found via a
     // Demonstration's polar-curve viewer, whose "zoom" slider shrinks the
