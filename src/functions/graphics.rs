@@ -18772,7 +18772,7 @@ fn rewrap_in_popup_scopes(mut code: Expr, scopes: &[PopupScope]) -> Expr {
         name: (*head).to_string(),
         args: vec![(*binds).clone(), code].into(),
       },
-      PopupScope::Prefix(stmts) if stmts.is_empty() => code,
+      PopupScope::Prefix([]) => code,
       PopupScope::Prefix(stmts) => {
         let mut items = stmts.to_vec();
         items.push(code);
