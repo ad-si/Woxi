@@ -22516,6 +22516,7 @@ mod manipulate {
         target,
         current,
         choices,
+        ..
       } = popup
       else {
         panic!("expected a Popup leaf, got {popup:?}");
@@ -22651,6 +22652,7 @@ mod manipulate {
       target,
       current,
       choices,
+      ..
     } = node
     else {
       panic!("expected a Popup leaf, got {node:?}");

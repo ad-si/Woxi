@@ -18201,11 +18201,10 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         // list the body computes. The list is re-resolved on every frame
         // (through `dynamic_values`) because it usually depends on the
         // other controls — and the body draws it that way too.
-        if let Some((_, choices_code)) =
-          body_popups.iter().find(|(n, _)| *n == name)
+        if let Some(popup) = body_popups.iter().find(|p| p.var == name)
           && let Some(choices) =
             crate::with_scoped_globals(&initial_bindings, || {
-              crate::interpret_to_expr(choices_code)
+              crate::interpret_to_expr(&popup.choices_code)
                 .ok()
                 .and_then(|e| evaluate_expr_to_expr(&e).ok())
             })
@@ -18226,16 +18225,17 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
             ]
             .into(),
           );
-          if let Some(ParsedControl::Visible {
-            control: c,
-            enabled: enabled2,
-            ..
-          }) = parse_manipulate_control(&promoted, &[])
+          if let Some(ParsedControl::Visible { control: c, .. }) =
+            parse_manipulate_control(&promoted, &[])
           {
-            if let Some(cond) = enabled2 {
-              control_enabled.push((c.name().to_string(), cond));
+            // The promoted control spec never carries the original
+            // `PopupMenu[…, Enabled -> cond]`'s own condition (it is built
+            // fresh above from just the name/default/choices), so it is
+            // registered here instead of through `enabled2`.
+            if let Some(cond) = &popup.enabled_code {
+              control_enabled.push((c.name().to_string(), cond.clone()));
             }
-            dynamic_values.push((name.clone(), choices_code.clone()));
+            dynamic_values.push((name.clone(), popup.choices_code.clone()));
             promoted_popups.push(name.clone());
             controls.push(c);
             continue;
@@ -18633,28 +18633,80 @@ fn collect_body_locator_pane_vars(
   found
 }
 
-/// The variable and choice-list code of every `PopupMenu[Dynamic[var], …]`
-/// written inside a Manipulate body.
+/// A `PopupMenu[Dynamic[var], choices, Enabled -> cond]` found inside a
+/// Manipulate body, promoted out of it to become a real control.
+struct BodyPopupMenu {
+  var: String,
+  /// Code that reproduces `choices` on its own, outside the body.
+  choices_code: String,
+  /// Code that reproduces a trailing `Enabled -> cond` on its own, outside
+  /// the body. `None` when there is no such option (or it is trivially
+  /// `True`) — the promoted control then stays unconditionally enabled.
+  enabled_code: Option<String>,
+}
+
+/// A scope the walk in [`collect_body_popup_menus`] has descended through,
+/// innermost last, needed to re-wrap a `PopupMenu`'s choice list or
+/// `Enabled` condition so it evaluates the same way standalone as it does in
+/// place. Borrows from the body's own AST rather than cloning it while
+/// walking — a body can be one large `CompoundExpr` of statements, and
+/// pushing one scope frame per statement must stay linear in its length.
+enum PopupScope<'a> {
+  /// A `With`/`Module`/`Block[{locals…}, …]` wrapping the code that follows.
+  Localize(&'a str, &'a Expr),
+  /// The statements before the current one in an enclosing `CompoundExpr`
+  /// (`a = 1; b = 2; PopupMenu[…]` — `b`'s definition, and everything
+  /// before it, must run before a use of `b` makes sense on its own).
+  Prefix(&'a [Expr]),
+}
+
+/// Re-wrap `code` in every enclosing scope, innermost first, so it evaluates
+/// the same way standalone as it does nested in the body it was taken from.
+fn rewrap_in_popup_scopes(mut code: Expr, scopes: &[PopupScope]) -> Expr {
+  for scope in scopes.iter().rev() {
+    code = match scope {
+      PopupScope::Localize(head, binds) => Expr::FunctionCall {
+        name: (*head).to_string(),
+        args: vec![(*binds).clone(), code].into(),
+      },
+      PopupScope::Prefix(stmts) if stmts.is_empty() => code,
+      PopupScope::Prefix(stmts) => {
+        let mut items = stmts.to_vec();
+        items.push(code);
+        Expr::CompoundExpr(items)
+      }
+    };
+  }
+  code
+}
+
+/// The variable, choice-list code and `Enabled` code of every
+/// `PopupMenu[Dynamic[var], …]` written inside a Manipulate body.
 ///
 /// Putting a pick list in the body rather than in the control panel is how a
-/// Demonstration places it inside its own layout. The choice list normally
-/// depends on locals the body itself introduces (`With[{choices = …}, …
-/// PopupMenu[Dynamic[an], choices] …]`), so the code returned here re-wraps
-/// the list in whatever `With`/`Module`/`Block` scopes enclose it — that
-/// makes it evaluable on its own, outside the body, which is what promoting
-/// the pick list to a real control needs.
-fn collect_body_popup_menus(expr: &Expr) -> Vec<(String, String)> {
-  fn walk(
-    expr: &Expr,
-    scopes: &mut Vec<(String, Expr)>,
-    found: &mut Vec<(String, String)>,
+/// Demonstration places it inside its own layout. Its choice list (and any
+/// `Enabled` condition) normally depends on locals the body itself
+/// introduces — either a `With`/`Module`/`Block` local's own initializer
+/// (`With[{choices = …}, … PopupMenu[Dynamic[an], choices] …]`) or one
+/// assigned by an earlier statement in the same scope (`Module[{choices},
+/// choices = …; … PopupMenu[Dynamic[an], choices, Enabled -> …] …]`, the
+/// more common Demonstrations idiom for a computed quiz/puzzle). The code
+/// returned here re-wraps each in whatever scopes enclose it — the
+/// `With`/`Module`/`Block` itself, and any statements preceding it in the
+/// same `CompoundExpr` — so it evaluates the same way on its own, outside
+/// the body, which is what promoting the pick list to a real control needs.
+fn collect_body_popup_menus(expr: &Expr) -> Vec<BodyPopupMenu> {
+  fn walk<'a>(
+    expr: &'a Expr,
+    scopes: &mut Vec<PopupScope<'a>>,
+    found: &mut Vec<BodyPopupMenu>,
   ) {
     match expr {
       Expr::FunctionCall { name, args } => {
         if matches!(name.as_str(), "With" | "Module" | "Block")
           && args.len() == 2
         {
-          scopes.push((name.clone(), args[0].clone()));
+          scopes.push(PopupScope::Localize(name.as_str(), &args[0]));
           walk(&args[1], scopes, found);
           scopes.pop();
           return;
@@ -18667,16 +18719,23 @@ fn collect_body_popup_menus(expr: &Expr) -> Vec<(String, String)> {
           }) = args.first()
           && dname == "Dynamic"
           && let Some(Expr::Identifier(var)) = dargs.first()
-          && !found.iter().any(|(n, _)| n == var)
+          && !found.iter().any(|p| &p.var == var)
         {
-          let mut code = args[1].clone();
-          for (head, binds) in scopes.iter().rev() {
-            code = Expr::FunctionCall {
-              name: head.clone(),
-              args: vec![binds.clone(), code].into(),
-            };
-          }
-          found.push((var.clone(), crate::syntax::expr_to_input_form(&code)));
+          let choices_code = crate::syntax::expr_to_input_form(
+            &rewrap_in_popup_scopes(args[1].clone(), scopes),
+          );
+          let enabled_code =
+            extract_enabled_condition(&args[2..]).map(|cond| {
+              crate::syntax::expr_to_input_form(&rewrap_in_popup_scopes(
+                cond.clone(),
+                scopes,
+              ))
+            });
+          found.push(BodyPopupMenu {
+            var: var.clone(),
+            choices_code,
+            enabled_code,
+          });
         }
         for a in args {
           walk(a, scopes, found);
@@ -18688,8 +18747,10 @@ fn collect_body_popup_menus(expr: &Expr) -> Vec<(String, String)> {
         }
       }
       Expr::CompoundExpr(items) => {
-        for it in items {
-          walk(it, scopes, found);
+        for i in 0..items.len() {
+          scopes.push(PopupScope::Prefix(&items[..i]));
+          walk(&items[i], scopes, found);
+          scopes.pop();
         }
       }
       _ => {}
@@ -21086,35 +21147,9 @@ fn parse_manipulate_control(
   };
   let label = flatten_label_runs(&label_runs);
 
-  // `Enabled -> cond` / `Enabled :> cond` gates the control. `Dynamic[expr]`
-  // unwraps to its live condition `expr`; a plain value is used as-is. The
-  // default `Enabled -> True` needs no gating and yields `None` so the control
-  // stays unconditionally enabled.
-  let enabled: Option<String> = items.iter().find_map(|it| match it {
-    Expr::Rule {
-      pattern,
-      replacement,
-    }
-    | Expr::RuleDelayed {
-      pattern,
-      replacement,
-    } if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Enabled") => {
-      let cond = match replacement.as_ref() {
-        Expr::FunctionCall { name, args }
-          if name == "Dynamic" && args.len() == 1 =>
-        {
-          &args[0]
-        }
-        other => other,
-      };
-      if matches!(cond, Expr::Identifier(s) if s == "True") {
-        None
-      } else {
-        Some(crate::syntax::expr_to_input_form(cond))
-      }
-    }
-    _ => None,
-  });
+  // `Enabled -> cond` / `Enabled :> cond` gates the control.
+  let enabled: Option<String> =
+    extract_enabled_condition(items).map(crate::syntax::expr_to_input_form);
 
   // `TrackingFunction -> f` / `:> f` runs `f[newValue]` whenever this
   // control's value changes, so a Demonstration can reset a companion
@@ -22982,10 +23017,16 @@ pub enum DisplayNode {
   /// InputForm/text pair, mirroring `togglerbar_node`'s choice-list
   /// handling but for a single-select write-back rather than a toggled
   /// list membership.
+  ///
+  /// `enabled` is a trailing `Enabled -> cond` option's live value (`True`
+  /// when absent): a Demonstration idiom disables one embedded PopupMenu
+  /// until another one is set correctly (e.g. asking for the slope only
+  /// once the intercept guess matches).
   Popup {
     target: String,
     current: String,
     choices: Vec<(String, String)>,
+    enabled: bool,
   },
   /// A `Spacer[w]`: `w` printer's points of horizontal space.
   Spacer { width: f64 },
@@ -23415,6 +23456,42 @@ fn togglerbar_node(
 /// extraction the standalone `ControlType -> PopupMenu` control uses, so
 /// the two never drift apart. Returns `None` when the arguments don't have
 /// that shape (the caller falls back to a static rendering).
+/// Extract a trailing `Enabled -> cond` / `Enabled :> cond` option's live
+/// condition from a control or display spec's trailing items. `Dynamic[expr]`
+/// unwraps to its live condition `expr`; a plain value is used as-is. The
+/// default `Enabled -> True` needs no gating and yields `None`, the same as
+/// no `Enabled` option at all — both leave the control unconditionally
+/// enabled. Shared by top-level control specs (`parse_manipulate_control`),
+/// an embedded `PopupMenu[…, Enabled -> …]` (`popup_node`), and one such
+/// `PopupMenu` promoted out of a Manipulate body (`collect_body_popup_menus`).
+fn extract_enabled_condition(items: &[Expr]) -> Option<&Expr> {
+  items.iter().find_map(|it| match it {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Enabled") => {
+      let cond = match replacement.as_ref() {
+        Expr::FunctionCall { name, args }
+          if name == "Dynamic" && args.len() == 1 =>
+        {
+          &args[0]
+        }
+        other => other,
+      };
+      if matches!(cond, Expr::Identifier(s) if s == "True") {
+        None
+      } else {
+        Some(cond)
+      }
+    }
+    _ => None,
+  })
+}
+
 fn popup_node(args: &[Expr]) -> Option<DisplayNode> {
   let lval = match args.first() {
     Some(Expr::FunctionCall { name, args: dargs })
@@ -23442,10 +23519,21 @@ fn popup_node(args: &[Expr]) -> Option<DisplayNode> {
     |_| target.clone(),
     |e| crate::syntax::expr_to_input_form(&e),
   );
+  // A trailing `Enabled -> cond`, evaluated against the same live bindings
+  // `current` just used. Anything but a `False` result — including a failed
+  // evaluation — leaves the popup enabled, matching
+  // `manipulate_condition_enabled`'s lenient default for top-level controls.
+  let enabled = extract_enabled_condition(&args[2..]).is_none_or(|cond| {
+    !matches!(
+      crate::evaluator::evaluate_expr_to_expr(cond),
+      Ok(Expr::Identifier(ref s)) if s == "False"
+    )
+  });
   Some(DisplayNode::Popup {
     target,
     current,
     choices: values.into_iter().zip(labels).collect(),
+    enabled,
   })
 }
 
@@ -23584,6 +23672,7 @@ fn display_node_to_json(node: &DisplayNode) -> String {
       target,
       current,
       choices,
+      enabled,
     } => {
       let choices_json: Vec<String> = choices
         .iter()
@@ -23596,10 +23685,11 @@ fn display_node_to_json(node: &DisplayNode) -> String {
         })
         .collect();
       format!(
-        r#"{{"kind":"popup","target":"{}","current":"{}","choices":[{}]}}"#,
+        r#"{{"kind":"popup","target":"{}","current":"{}","choices":[{}],"enabled":{}}}"#,
         json_escape_manipulate(target),
         json_escape_manipulate(current),
         choices_json.join(","),
+        enabled,
       )
     }
     DisplayNode::Spacer { width } => {

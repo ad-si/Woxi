@@ -687,9 +687,16 @@ function renderManipulate(item) {
         // that first choice stays clickable: otherwise it would already be
         // the browser's selection and firing no `change` event).
         if (!matched) select.selectedIndex = -1
-        select.addEventListener("change", () => {
-          requestUpdate([`${node.target} = ${select.value}`])
-        })
+        // A trailing `Enabled -> cond` currently reading `False` greys the
+        // dropdown out and blocks selection, mirroring the checkbox case's
+        // `disabled` treatment above.
+        if (node.enabled === false) {
+          select.disabled = true
+        } else {
+          select.addEventListener("change", () => {
+            requestUpdate([`${node.target} = ${select.value}`])
+          })
+        }
         return select
       }
       case "static": {
