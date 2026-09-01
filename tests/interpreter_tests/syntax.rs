@@ -423,9 +423,86 @@ mod unary_minus_parsing {
     // Still combines correctly with other operators: the minus binds the
     // whole shorthand before multiplying.
     assert_eq!(interpret("2 * -Plus @@ {1, 2, 3}").unwrap(), "-12");
-    // Power still binds tighter than the negated shorthand's operand:
-    // `{1, 2}^2` becomes `{1, 4}` before Apply and the negation run.
-    assert_eq!(interpret("-Plus @@ {1, 2}^2").unwrap(), "-5");
+    // `Precedence[Apply]` (620) is above `Precedence[Power]` (590), so the
+    // Apply runs *first* and the sum is what gets squared: `(1 + 2)^2`.
+    assert_eq!(interpret("-Plus @@ {1, 2}^2").unwrap(), "-9");
+  }
+}
+
+/// `Precedence` ranks `StringJoin` (600), `Power` (590), `Apply`/`Map`/
+/// `MapApply` (620), the tilde infix (630) and prefix `@` (640) in an order
+/// Woxi used to get wrong in three places: `Map` sat above `Apply` instead of
+/// beside it, both sat *below* `Power`, and `StringJoin` sat down at `Plus`.
+mod map_apply_stringjoin_precedence {
+  use super::*;
+
+  #[test]
+  fn map_and_apply_share_one_level_and_group_to_the_right() {
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[a @@ b /@ c]]]").unwrap(),
+      "Hold[Apply[a, Map[b, c]]]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[a /@ b @@ c]]]").unwrap(),
+      "Hold[Map[a, Apply[b, c]]]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[a @@@ b /@ c]]]").unwrap(),
+      "Hold[MapApply[a, Map[b, c]]]"
+    );
+  }
+
+  #[test]
+  fn map_and_apply_bind_tighter_than_power() {
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[Plus @@ {1, 2}^2]]]").unwrap(),
+      "Hold[Power[Apply[Plus, List[1, 2]], 2]]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[f /@ x^2]]]").unwrap(),
+      "Hold[Power[Map[f, x], 2]]"
+    );
+    assert_eq!(interpret("Plus @@ {1, 2}^2").unwrap(), "9");
+  }
+
+  #[test]
+  fn string_join_binds_tighter_than_power_times_and_plus() {
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[a <> b^c]]]").unwrap(),
+      "Hold[Power[StringJoin[a, b], c]]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[a <> b*c]]]").unwrap(),
+      "Hold[Times[StringJoin[a, b], c]]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[a <> b + c]]]").unwrap(),
+      "Hold[Plus[StringJoin[a, b], c]]"
+    );
+  }
+
+  #[test]
+  fn string_join_binds_looser_than_map_and_apply() {
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[a /@ b <> c]]]").unwrap(),
+      "Hold[StringJoin[Map[a, b], c]]"
+    );
+  }
+
+  #[test]
+  fn tilde_infix_and_prefix_at_bind_tighter_than_map_and_power() {
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[a ~f~ b /@ c]]]").unwrap(),
+      "Hold[Map[f[a, b], c]]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[a ~f~ b^2]]]").unwrap(),
+      "Hold[Power[f[a, b], 2]]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[a@b^2]]]").unwrap(),
+      "Hold[Power[a[b], 2]]"
+    );
   }
 }
 

@@ -15,6 +15,10 @@ struct PolyhedronInfo {
   surface_area: &'static str,
   circumradius: &'static str,
   inradius: &'static str,
+  /// The midradius (the edge-tangent sphere's radius) for unit edge length,
+  /// as WL source. `Missing["NotApplicable"]` for the solids whose edges are
+  /// not all the same distance from the center.
+  midradius: &'static str,
   /// Exact vertex coordinates for unit edge length, as WL source, in
   /// Wolfram's canonical orientation and vertex order (the z axis is the
   /// polar symmetry axis where there is one). Used both for the
@@ -39,6 +43,7 @@ static POLYHEDRA: &[PolyhedronInfo] = &[
     surface_area: "Sqrt[3]",
     circumradius: "Sqrt[3/8]",
     inradius: "1/(2*Sqrt[6])",
+    midradius: "1/(2*Sqrt[2])",
     // Apex on the +z axis, then the base triangle in the
     // z = -Inradius plane.
     vertices_src: "{\
@@ -63,6 +68,7 @@ static POLYHEDRA: &[PolyhedronInfo] = &[
     surface_area: "6",
     circumradius: "Sqrt[3]/2",
     inradius: "1/2",
+    midradius: "1/Sqrt[2]",
     vertices_src: "{\
       {-1/2, -1/2, -1/2}, {-1/2, -1/2, 1/2}, \
       {-1/2, 1/2, -1/2}, {-1/2, 1/2, 1/2}, \
@@ -87,6 +93,7 @@ static POLYHEDRA: &[PolyhedronInfo] = &[
     surface_area: "2*Sqrt[3]",
     circumradius: "1/Sqrt[2]",
     inradius: "1/Sqrt[6]",
+    midradius: "1/2",
     vertices_src: "{\
       {-1/Sqrt[2], 0, 0}, {0, 1/Sqrt[2], 0}, \
       {0, 0, -1/Sqrt[2]}, {0, 0, 1/Sqrt[2]}, \
@@ -108,6 +115,7 @@ static POLYHEDRA: &[PolyhedronInfo] = &[
     surface_area: "3*Sqrt[5*(5 + 2*Sqrt[5])]",
     circumradius: "(Sqrt[15] + Sqrt[3])/4",
     inradius: "Sqrt[250 + 110*Sqrt[5]]/20",
+    midradius: "(3 + Sqrt[5])/4",
     // Two wide vertex rings around the equator (antipodal pairs first),
     // then the two rings of the top and bottom faces; z is the C5 axis.
     vertices_src: "{\
@@ -146,10 +154,13 @@ static POLYHEDRA: &[PolyhedronInfo] = &[
     vertex_count: 12,
     edge_count: 30,
     face_count: 20,
-    volume: "(5*(3 + Sqrt[5]))/12",
+    // wolframscript reports the volume through `GoldenRatio`, not the
+    // expanded surd: `(5*GoldenRatio^2)/6`.
+    volume: "(5*GoldenRatio^2)/6",
     surface_area: "5*Sqrt[3]",
     circumradius: "Sqrt[10 + 2*Sqrt[5]]/4",
     inradius: "(3*Sqrt[3] + Sqrt[15])/12",
+    midradius: "GoldenRatio/2",
     // The two poles, then the two staggered vertex rings (antipodal
     // pairs adjacent); z is the C5 axis through the poles.
     vertices_src: "{\
@@ -186,10 +197,12 @@ static POLYHEDRA: &[PolyhedronInfo] = &[
     vertex_count: 12,
     edge_count: 18,
     face_count: 8,
-    volume: "23*Sqrt[2]/12",
+    // wolframscript leaves the radical in the denominator here.
+    volume: "23/(6*Sqrt[2])",
     surface_area: "7*Sqrt[3]",
     circumradius: "Sqrt[22]/4",
     inradius: "Missing[\"NotApplicable\"]",
+    midradius: "3/(2*Sqrt[2])",
     // A regular tetrahedron (cube corners with an even number of minus
     // signs) with each corner cut off a third of the way along every
     // incident edge — exactly the ratio that makes the new hexagonal
@@ -224,6 +237,7 @@ static POLYHEDRA: &[PolyhedronInfo] = &[
     surface_area: "6 + 12*Sqrt[3]",
     circumradius: "Sqrt[10]/2",
     inradius: "Missing[\"NotApplicable\"]",
+    midradius: "3/2",
     // All permutations of {0, ±Sqrt[2]/2, ±Sqrt[2]} — the space-filling
     // truncation of the octahedron (Kelvin's tetrakaidecahedron).
     vertices_src: "{\
@@ -255,10 +269,14 @@ static POLYHEDRA: &[PolyhedronInfo] = &[
     vertex_count: 24,
     edge_count: 48,
     face_count: 26,
-    volume: "(12 + 10*Sqrt[2])/3",
-    surface_area: "18 + 2*Sqrt[3]",
+    // wolframscript splits off the integer part of the volume rather than
+    // putting the whole sum over 3, and pulls the common 2 out of the
+    // surface area rather than distributing it.
+    volume: "4 + (10*Sqrt[2])/3",
+    surface_area: "2*(9 + Sqrt[3])",
     circumradius: "Sqrt[5 + 2*Sqrt[2]]/2",
     inradius: "Missing[\"NotApplicable\"]",
+    midradius: "Sqrt[4 + 2*Sqrt[2]]/2",
     // All permutations of {±1/2, ±1/2, ±(1 + Sqrt[2])/2} — the cuboctahedron
     // with its square faces pulled apart and re-joined through a new square
     // at every vertex and edge.
@@ -300,6 +318,7 @@ static POLYHEDRA: &[PolyhedronInfo] = &[
     surface_area: "8*Sqrt[2]",
     circumradius: "Missing[\"NotApplicable\"]",
     inradius: "Sqrt[2/3]",
+    midradius: "(2*Sqrt[2])/3",
     vertices_src: "{\
       {-Sqrt[2/3], -Sqrt[2/3], 0}, {-Sqrt[2/3], 0, -1/Sqrt[3]}, \
       {-Sqrt[2/3], 0, 1/Sqrt[3]}, {-Sqrt[2/3], Sqrt[2/3], 0}, \
@@ -327,6 +346,7 @@ static POLYHEDRA: &[PolyhedronInfo] = &[
     surface_area: "Sqrt[4370 + 1850*Sqrt[5]]",
     circumradius: "Missing[\"NotApplicable\"]",
     inradius: "Root[121 - 5710*#1^2 + 820*#1^4 & , 4, 0]",
+    midradius: "5/4 + 13/(4*Sqrt[5])",
     vertices_src: "\
       {{0, 0, -11/Sqrt[85 - 31*Sqrt[5]]}, {0, 0, \
       11/Sqrt[85 - 31*Sqrt[5]]}, {0, -11/Sqrt[85 - 31*Sqrt[5]], 0}, \
@@ -439,6 +459,7 @@ static POLYHEDRA: &[PolyhedronInfo] = &[
     surface_area: "Sqrt[30*(10 + 3*Sqrt[5] + Sqrt[75 + 30*Sqrt[5]])]",
     circumradius: "(1 + Sqrt[5])/2",
     inradius: "Missing[\"NotApplicable\"]",
+    midradius: "Sqrt[5 + 2*Sqrt[5]]/2",
     vertices_src: "\
       {{0, (-1 - Sqrt[5])/2, 0}, {0, (1 + Sqrt[5])/2, 0}, \
       {Sqrt[1/8 - 1/(8*Sqrt[5])], (-1 - Sqrt[5])/4, \
@@ -500,6 +521,7 @@ static POLYHEDRA: &[PolyhedronInfo] = &[
     surface_area: "Sqrt[22626/5 + 9738/Sqrt[5]]",
     circumradius: "Missing[\"NotApplicable\"]",
     inradius: "Sqrt[3477/964 + 7707/(964*Sqrt[5])]",
+    midradius: "5/4 + 13/(4*Sqrt[5])",
     vertices_src: "\
       {{0, 0, -1/2*Sqrt[15 + 33/Sqrt[5]]}, {0, 0, \
       Sqrt[15 + 33/Sqrt[5]]/2}, {0, -1/2*Sqrt[15 + 33/Sqrt[5]], 0}, \
@@ -631,6 +653,7 @@ static POLYHEDRA: &[PolyhedronInfo] = &[
     surface_area: "30*(1 + Sqrt[2*(4 + Sqrt[5] + Sqrt[15 + 6*Sqrt[5]])])",
     circumradius: "Sqrt[31 + 12*Sqrt[5]]/2",
     inradius: "Missing[\"NotApplicable\"]",
+    midradius: "Sqrt[30 + 12*Sqrt[5]]/2",
     vertices_src: "\
       {{-1, (-3 - Sqrt[5])/4, (-7 - 3*Sqrt[5])/4}, {-1, \
       (-3 - Sqrt[5])/4, (7 + 3*Sqrt[5])/4}, {-1, (3 + Sqrt[5])/4, \
@@ -771,6 +794,7 @@ static POLYHEDRA: &[PolyhedronInfo] = &[
     surface_area: "(5*Sqrt[(421 + 63*Sqrt[5])/2])/3",
     circumradius: "Missing[\"NotApplicable\"]",
     inradius: "Root[361 - 3816*#1^2 + 1744*#1^4 & , 4, 0]",
+    midradius: "(11 + 3*Sqrt[5])/12",
     vertices_src: "\
       {{Root[361 - 765*#1^2 + 405*#1^4 & , 2, 0], 0, \
       Sqrt[29 + 62/Sqrt[5]]/6}, {Sqrt[1 + 2/Sqrt[5]], 0, \
@@ -846,6 +870,7 @@ static POLYHEDRA: &[PolyhedronInfo] = &[
     surface_area: "5*Sqrt[3*(61 + 24*Sqrt[5] + 4*Sqrt[15 + 6*Sqrt[5]])]",
     circumradius: "Sqrt[74 + 30*Sqrt[5]]/4",
     inradius: "Missing[\"NotApplicable\"]",
+    midradius: "(5 + 3*Sqrt[5])/4",
     vertices_src: "\
       {{0, (-1 - Sqrt[5])/2, Sqrt[25/8 + (11*Sqrt[5])/8]}, {0, \
       (-1 - Sqrt[5])/2, Root[5 - 100*#1^2 + 16*#1^4 & , 1, 0]}, {0, \
@@ -970,6 +995,7 @@ static POLYHEDRA: &[PolyhedronInfo] = &[
     surface_area: "3*Sqrt[5*(65 + 2*Sqrt[5] + 4*Sqrt[75 + 30*Sqrt[5]])]",
     circumradius: "Sqrt[58 + 18*Sqrt[5]]/4",
     inradius: "Missing[\"NotApplicable\"]",
+    midradius: "(3*GoldenRatio)/2",
     vertices_src: "\
       {{-1/2*Sqrt[1 - 2/Sqrt[5]], -1 - Sqrt[5]/2, \
       Sqrt[9/8 + 9/(8*Sqrt[5])]}, {-1/2*Sqrt[1 - 2/Sqrt[5]], \
@@ -1088,6 +1114,7 @@ static POLYHEDRA: &[PolyhedronInfo] = &[
     surface_area: "5*(6 + Sqrt[3]) + 3*5^(3/4)*Sqrt[2 + Sqrt[5]]",
     circumradius: "Sqrt[11 + 4*Sqrt[5]]/2",
     inradius: "Missing[\"NotApplicable\"]",
+    midradius: "Sqrt[10 + 4*Sqrt[5]]/2",
     vertices_src: "\
       {{-1/2, -1/2, -1 - Sqrt[5]/2}, {-1/2, -1/2, (2 + Sqrt[5])/2}, \
       {-1/2, 1/2, -1 - Sqrt[5]/2}, {-1/2, 1/2, (2 + Sqrt[5])/2}, \
@@ -1166,6 +1193,7 @@ static POLYHEDRA: &[PolyhedronInfo] = &[
     surface_area: "12*Sqrt[5]",
     circumradius: "Missing[\"NotApplicable\"]",
     inradius: "Sqrt[1 + 2/Sqrt[5]]",
+    midradius: "1 + 1/Sqrt[5]",
     vertices_src: "\
       {{0, 0, (-1 - Sqrt[5])/2}, {0, 0, (1 + Sqrt[5])/2}, \
       {(5 - Sqrt[5])/10, Root[1 - 5*#1^2 + 5*#1^4 & , 1, 0], \
@@ -1228,6 +1256,7 @@ static POLYHEDRA: &[PolyhedronInfo] = &[
     surface_area: "24*Sqrt[5]",
     circumradius: "Missing[\"NotApplicable\"]",
     inradius: "Sqrt[(5 + Sqrt[5])/10]",
+    midradius: "Missing[\"NotApplicable\"]",
     // A nonconvex stellation of the rhombic triacontahedron: take a unit
     // dodecahedron and move its 20 vertices, 12 face centers, and 30 edge
     // midpoints radially to circumradius*(GoldenRatio+1)/2, inradius*
@@ -1315,13 +1344,16 @@ static POLYHEDRA: &[PolyhedronInfo] = &[
     // (Johnson solid J27): 8 equilateral triangles (area Sqrt[3]/4 each)
     // plus 6 unit squares.
     volume: "5*Sqrt[2]/3",
-    surface_area: "6 + 2*Sqrt[3]",
+    // wolframscript keeps the common factor pulled out rather than
+    // distributing it: `2*(3 + Sqrt[3])`, not `6 + 2*Sqrt[3]`.
+    surface_area: "2*(3 + Sqrt[3])",
     // All 12 vertices lie on the unit sphere (a consequence of the cupola
     // being half of a cuboctahedron, whose own circumradius equals its
     // edge length), but the triangle and square faces sit at different
     // distances from the center, so there is no single inscribed sphere.
     circumradius: "1",
     inradius: "Missing[\"NotApplicable\"]",
+    midradius: "Sqrt[3]/2",
     // Hexagonal ring at z = 0 (radius 1, the shared "equator" of the two
     // cupolas) plus the two triangular cupola caps at z = +-Sqrt[2/3]
     // (radius 1/Sqrt[3], unrotated relative to each other, which is what
@@ -1354,6 +1386,14 @@ fn find_polyhedron(name: &str) -> Option<&'static PolyhedronInfo> {
 
 /// The exact unit-edge volume of a Platonic solid, as WL source.
 pub fn unit_volume_src(name: &str) -> Option<&'static str> {
+  // wolframscript prints the same icosahedral volume two ways: the entity
+  // (`PolyhedronData["Icosahedron", "Volume"]`) through `GoldenRatio`, the
+  // region (`Volume[Icosahedron[]]`) as a plain surd. It is the only solid
+  // where the two forms disagree, so it is overridden here rather than by
+  // carrying a second column across all twenty entries.
+  if name == "Icosahedron" {
+    return Some("(5*(3 + Sqrt[5]))/12");
+  }
   find_polyhedron(name).map(|p| p.volume)
 }
 
@@ -1547,6 +1587,7 @@ static PROPERTIES: &[&str] = &[
   "Faces",
   "Inradius",
   "Insphere",
+  "Midradius",
   "SurfaceArea",
   "VertexCoordinates",
   "VertexCount",
@@ -1644,6 +1685,7 @@ pub fn polyhedron_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "SurfaceArea" => eval_wl(info.surface_area),
         "Circumradius" => eval_wl(info.circumradius),
         "Inradius" => eval_wl(info.inradius),
+        "Midradius" => eval_wl(info.midradius),
         "VertexCoordinates" => eval_wl(info.vertices_src),
         "EdgeIndices" => edge_indices(info),
         "FaceIndices" => face_indices(info),

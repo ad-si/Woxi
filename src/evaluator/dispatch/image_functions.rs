@@ -872,11 +872,19 @@ pub fn dispatch_image_functions(
     // ColorData[n, "ColorList"]: the ordered list of colors in indexed
     // scheme n (e.g. `ColorData[97, "ColorList"]` — the default plot palette).
     "ColorData" if args.len() == 2 => {
-      // ColorData["HTML", name] and ColorData["Legacy", name]: the named
-      // colour, both drawn from the same X11-derived named-colour table.
+      // ColorData["Legacy", name]: the old `Graphics`Colors`` palette, which
+      // is a different table from the CSS one — see `LEGACY_COLORS`.
       if let (Expr::String(scheme), Expr::String(color_name)) =
         (&args[0], &args[1])
-        && (scheme == "HTML" || scheme == "Legacy")
+        && scheme == "Legacy"
+        && let Some(color) = legacy_named_color(color_name)
+      {
+        return Some(Ok(color));
+      }
+      // ColorData["HTML", name]: the named CSS colour.
+      if let (Expr::String(scheme), Expr::String(color_name)) =
+        (&args[0], &args[1])
+        && scheme == "HTML"
         && let Some((r, g, b)) = html_named_color(color_name)
       {
         // wolframscript keeps an exactly-zero channel exact: `Aqua` is
@@ -2086,6 +2094,233 @@ fn html_named_color(name: &str) -> Option<(f64, f64, f64)> {
     .iter()
     .find(|(n, ..)| n.eq_ignore_ascii_case(name))
     .map(|&(_, r, g, b)| (r, g, b))
+}
+
+/// The `"Legacy"` named-colour scheme. Despite the overlapping names it is
+/// *not* the CSS table: it is the old `Graphics`Colors`` package's palette,
+/// whose channels are stored to six digits and miss the exact `n/255` values
+/// by ~1e-5 (`Wheat` is `0.960799`, not `245/255 = 0.960784`). It also carries
+/// ~50 artists'-pigment names the CSS table has no entry for (`AlizarinCrimson`,
+/// `TerreVerte`, …) and lacks ~50 CSS ones (`Tan`, `Teal`, `WhiteSmoke`, …),
+/// so the two schemes need separate tables.
+///
+/// The trailing mask says which channels wolframscript keeps *exact*: bit 0 is
+/// red, bit 1 green, bit 2 blue. It is per entry rather than per value —
+/// `Orange` is `RGBColor[1, 0.5, 0]` while `Chartreuse` is
+/// `RGBColor[0.498001, 1., 0.]` with the very same 1 and 0 inexact.
+const LEGACY_COLORS: &[(&str, f64, f64, f64, u8)] = &[
+  ("AliceBlue", 0.941206, 0.972503, 1.0, 0b000),
+  ("AlizarinCrimson", 0.889996, 0.149998, 0.209998, 0b000),
+  ("Antique", 0.980575, 0.92233, 0.844661, 0b000),
+  ("Apricot", 1.0, 0.340007, 0.129994, 0b000),
+  ("Aquamarine", 0.498001, 1.0, 0.831401, 0b000),
+  ("AureolineYellow", 1.0, 0.659993, 0.140004, 0b000),
+  ("Azure", 0.94174, 1.0, 1.0, 0b000),
+  ("Banana", 0.889996, 0.810007, 0.340007, 0b000),
+  ("Beige", 0.640004, 0.580004, 0.5, 0b000),
+  ("Bisque", 1.0, 0.898053, 0.771844, 0b000),
+  ("Black", 0.0, 0.0, 0.0, 0b111),
+  ("BlanchedAlmond", 1.0, 0.921598, 0.803903, 0b000),
+  ("Blue", 0.0, 0.0, 1.0, 0b111),
+  ("BlueViolet", 0.5412, 0.1686, 0.886303, 0b000),
+  ("Brick", 0.610004, 0.400006, 0.119999, 0b000),
+  ("Brown", 0.6, 0.4, 0.2, 0b000),
+  ("BrownMadder", 0.859996, 0.159993, 0.159993, 0b000),
+  ("BrownOchre", 0.53, 0.260002, 0.119999, 0b000),
+  ("Burlywood", 0.870602, 0.721595, 0.529405, 0b000),
+  ("BurntSienna", 0.539994, 0.209998, 0.059999, 0b000),
+  ("BurntUmber", 0.539994, 0.200003, 0.140004, 0b000),
+  ("CadetBlue", 0.372494, 0.619602, 0.627506, 0b000),
+  ("CadmiumLemon", 1.0, 0.889996, 0.009995, 0b000),
+  ("CadmiumOrange", 1.0, 0.380001, 0.009995, 0b000),
+  ("CadmiumYellow", 1.0, 0.599994, 0.069994, 0b000),
+  ("Carrot", 0.930006, 0.569994, 0.129994, 0b000),
+  ("Cerulean", 0.020005, 0.719993, 0.799997, 0b000),
+  ("Chartreuse", 0.498001, 1.0, 0.0, 0b000),
+  ("Chocolate", 0.823496, 0.411802, 0.117603, 0b000),
+  ("ChromeOxideGreen", 0.400006, 0.5, 0.080004, 0b000),
+  ("CinnabarGreen", 0.380001, 0.700003, 0.159993, 0b000),
+  ("Cobalt", 0.239998, 0.350002, 0.670003, 0b000),
+  ("CobaltGreen", 0.239998, 0.569994, 0.250008, 0b000),
+  ("ColdGray", 0.5, 0.539994, 0.53, 0b000),
+  ("Coral", 1.0, 0.498001, 0.3137, 0b000),
+  ("CornflowerBlue", 0.392193, 0.584307, 0.929395, 0b000),
+  ("Cornsilk", 1.0, 0.972503, 0.862697, 0b000),
+  ("Cyan", 0.0, 1.0, 1.0, 0b111),
+  ("CyanWhite", 0.878399, 1.0, 1.0, 0b000),
+  ("DarkGoldenrod", 0.721595, 0.525498, 0.043107, 0b000),
+  ("DarkGreen", 0.0, 0.392193, 0.0, 0b000),
+  ("DarkKhaki", 0.741203, 0.717597, 0.419599, 0b000),
+  ("DarkOliveGreen", 0.333293, 0.419599, 0.184301, 0b000),
+  ("DarkOrange", 1.0, 0.548997, 0.0, 0b000),
+  ("DarkOrchid", 0.599994, 0.196097, 0.799997, 0b000),
+  ("DarkSeaGreen", 0.560793, 0.737297, 0.560793, 0b000),
+  ("DarkSlateBlue", 0.282403, 0.239204, 0.545106, 0b000),
+  ("DarkSlateGray", 0.184301, 0.309793, 0.309793, 0b000),
+  ("DarkTurquoise", 0.0, 0.807794, 0.819605, 0b000),
+  ("DarkViolet", 0.580401, 0.0, 0.827494, 0b000),
+  ("DeepCadmiumRed", 0.889996, 0.089999, 0.050005, 0b000),
+  ("DeepCobaltViolet", 0.569994, 0.129994, 0.619999, 0b000),
+  ("DeepMadderLake", 0.889996, 0.179998, 0.189993, 0b000),
+  ("DeepNaplesYellow", 1.0, 0.659993, 0.069994, 0b000),
+  ("DeepOchre", 0.449995, 0.239998, 0.099994, 0b000),
+  ("DeepPink", 1.0, 0.078402, 0.576495, 0b000),
+  ("DeepSkyBlue", 0.0, 0.749, 1.0, 0b000),
+  ("DimGray", 0.333333, 0.333333, 0.333333, 0b000),
+  ("DodgerBlue", 0.117603, 0.564699, 1.0, 0b000),
+  ("Eggshell", 0.990005, 0.900006, 0.790002, 0b000),
+  ("EmeraldGreen", 0.0, 0.790002, 0.340007, 0b000),
+  ("EnglishRed", 0.829997, 0.239998, 0.099994, 0b000),
+  ("Firebrick", 0.698004, 0.133305, 0.133305, 0b000),
+  ("Floral", 1.0, 0.980407, 0.941206, 0b000),
+  ("ForestGreen", 0.133305, 0.545106, 0.133305, 0b000),
+  ("Gainsboro", 0.862697, 0.862697, 0.862697, 0b000),
+  ("GeraniumLake", 0.889996, 0.069994, 0.189993, 0b000),
+  ("Ghost", 0.972503, 0.972503, 1.0, 0b000),
+  ("Gold", 1.0, 0.843104, 0.0, 0b000),
+  ("Goldenrod", 0.8549, 0.647099, 0.125507, 0b000),
+  ("GoldOchre", 0.780007, 0.47, 0.149998, 0b000),
+  ("Gray", 0.5, 0.5, 0.5, 0b000),
+  ("Green", 0.0, 1.0, 0.0, 0b111),
+  ("GreenishUmber", 1.0, 0.239998, 0.050005, 0b000),
+  ("GreenYellow", 0.678396, 1.0, 0.184301, 0b000),
+  ("Honeydew", 0.941206, 1.0, 0.941206, 0b000),
+  ("HotPink", 1.0, 0.411802, 0.705893, 0b000),
+  ("IndianRed", 0.689993, 0.089999, 0.119999, 0b000),
+  ("Indigo", 0.03, 0.179998, 0.329997, 0b000),
+  ("Ivory", 1.0, 1.0, 0.941206, 0b000),
+  ("IvoryBlack", 0.159993, 0.140004, 0.129994, 0b000),
+  ("Khaki", 0.941206, 0.902005, 0.548997, 0b000),
+  ("LampBlack", 0.179998, 0.280007, 0.230003, 0b000),
+  ("Lavender", 0.902005, 0.902005, 0.980407, 0b000),
+  ("LavenderBlush", 1.0, 0.941206, 0.960799, 0b000),
+  ("LawnGreen", 0.486297, 0.988205, 0.0, 0b000),
+  ("LemonChiffon", 1.0, 0.980407, 0.803903, 0b000),
+  ("LightBeige", 0.960799, 0.960799, 0.862697, 0b000),
+  ("LightBlue", 0.678396, 0.847102, 0.902005, 0b000),
+  ("LightCadmiumRed", 1.0, 0.009995, 0.050005, 0b000),
+  ("LightCadmiumYellow", 1.0, 0.689993, 0.059999, 0b000),
+  ("LightCoral", 0.941206, 0.501999, 0.501999, 0b000),
+  ("LightGoldenrod", 0.933302, 0.866695, 0.509796, 0b000),
+  ("LightGray", 0.666666, 0.666666, 0.666666, 0b000),
+  ("LightPink", 1.0, 0.713706, 0.756905, 0b000),
+  ("LightSalmon", 1.0, 0.627506, 0.478393, 0b000),
+  ("LightSeaGreen", 0.125507, 0.698004, 0.666707, 0b000),
+  ("LightSkyBlue", 0.529405, 0.807794, 0.980407, 0b000),
+  ("LightSlateBlue", 0.517594, 0.439207, 1.0, 0b000),
+  ("LightSlateGray", 0.466704, 0.533296, 0.599994, 0b000),
+  ("LightSteelBlue", 0.690207, 0.768593, 0.870602, 0b000),
+  ("LightViridian", 0.430006, 1.0, 0.440001, 0b000),
+  ("LightYellow", 1.0, 1.0, 0.878399, 0b000),
+  ("LimeGreen", 0.196097, 0.803903, 0.196097, 0b000),
+  ("Linen", 0.980407, 0.941206, 0.902005, 0b000),
+  ("Magenta", 1.0, 0.0, 1.0, 0b111),
+  ("ManganeseBlue", 0.009995, 0.659993, 0.619999, 0b000),
+  ("Maroon", 0.690207, 0.188192, 0.376507, 0b000),
+  ("MarsOrange", 0.589999, 0.269997, 0.080004, 0b000),
+  ("MarsYellow", 0.889996, 0.440001, 0.099994, 0b000),
+  ("MediumAquamarine", 0.400006, 0.803903, 0.666707, 0b000),
+  ("MediumBlue", 0.0, 0.0, 0.803903, 0b000),
+  ("MediumOrchid", 0.729408, 0.333293, 0.827494, 0b000),
+  ("MediumPurple", 0.576495, 0.439207, 0.858806, 0b000),
+  ("MediumSeaGreen", 0.235298, 0.702002, 0.443098, 0b000),
+  ("MediumSlateBlue", 0.482406, 0.407804, 0.933302, 0b000),
+  ("MediumSpringGreen", 0.0, 0.980407, 0.6039, 0b000),
+  ("MediumTurquoise", 0.282403, 0.819605, 0.799997, 0b000),
+  ("MediumVioletRed", 0.780404, 0.0824, 0.521607, 0b000),
+  ("Melon", 0.889996, 0.659993, 0.410001, 0b000),
+  ("MidnightBlue", 0.097995, 0.097995, 0.439207, 0b000),
+  ("Mint", 0.739998, 0.990005, 0.790002, 0b000),
+  ("MintCream", 0.960799, 1.0, 0.980407, 0b000),
+  ("MistyRose", 1.0, 0.894101, 0.882397, 0b000),
+  ("Moccasin", 1.0, 0.894101, 0.709799, 0b000),
+  ("Navajo", 1.0, 0.870602, 0.678396, 0b000),
+  ("Navy", 0.0, 0.0, 0.501999, 0b000),
+  ("NavyBlue", 0.0, 0.0, 0.501999, 0b000),
+  ("Oak", 1.0, 0.490005, 0.250008, 0b000),
+  ("OldLace", 0.992203, 0.960799, 0.902005, 0b000),
+  ("Olive", 0.230003, 0.370006, 0.170003, 0b000),
+  ("OliveDrab", 0.419599, 0.556902, 0.137303, 0b000),
+  ("Orange", 1.0, 0.5, 0.0, 0b101),
+  ("OrangeRed", 1.0, 0.270608, 0.0, 0b000),
+  ("Orchid", 0.8549, 0.439207, 0.839198, 0b000),
+  ("PaleGoldenrod", 0.933302, 0.909803, 0.666707, 0b000),
+  ("PaleGreen", 0.596103, 0.984298, 0.596103, 0b000),
+  ("PaleTurquoise", 0.6863, 0.933302, 0.933302, 0b000),
+  ("PaleVioletRed", 0.858806, 0.439207, 0.576495, 0b000),
+  ("PapayaWhip", 1.0, 0.9373, 0.835307, 0b000),
+  ("Peach", 0.44, 0.26, 0.26, 0b000),
+  ("PeachPuff", 1.0, 0.8549, 0.725501, 0b000),
+  ("Peacock", 0.200003, 0.629994, 0.790002, 0b000),
+  ("PermanentGreen", 0.039995, 0.790002, 0.170003, 0b000),
+  ("PermanentRedViolet", 0.859996, 0.149998, 0.269997, 0b000),
+  ("Peru", 0.803903, 0.521607, 0.247093, 0b000),
+  ("Pink", 1.0, 0.5, 0.5, 0b001),
+  ("Plum", 0.866695, 0.627506, 0.866695, 0b000),
+  ("PowderBlue", 0.690207, 0.878399, 0.902005, 0b000),
+  ("PrussianBlue", 0.18, 0.18, 0.31, 0b000),
+  ("Purple", 0.5, 0.0, 0.5, 0b010),
+  ("Raspberry", 0.53, 0.149998, 0.340007, 0b000),
+  ("RawSienna", 0.780007, 0.380001, 0.080004, 0b000),
+  ("RawUmber", 0.449995, 0.290002, 0.069994, 0b000),
+  ("Red", 1.0, 0.0, 0.0, 0b111),
+  ("RoseMadder", 0.889996, 0.209998, 0.219993, 0b000),
+  ("RosyBrown", 0.737297, 0.560793, 0.560793, 0b000),
+  ("RoyalBlue", 0.254906, 0.411802, 0.882397, 0b000),
+  ("SaddleBrown", 0.545106, 0.270608, 0.074496, 0b000),
+  ("Salmon", 0.980407, 0.501999, 0.447096, 0b000),
+  ("SandyBrown", 0.956893, 0.643101, 0.376507, 0b000),
+  ("SapGreen", 0.189993, 0.5, 0.080004, 0b000),
+  ("SeaGreen", 0.180395, 0.545106, 0.341197, 0b000),
+  ("Seashell", 1.0, 0.960799, 0.933302, 0b000),
+  ("Sepia", 0.370006, 0.149998, 0.069994, 0b000),
+  ("Sienna", 0.627506, 0.321604, 0.176504, 0b000),
+  ("SkyBlue", 0.529405, 0.807794, 0.921598, 0b000),
+  ("SlateBlue", 0.415693, 0.352901, 0.803903, 0b000),
+  ("SlateGray", 0.439207, 0.501999, 0.564699, 0b000),
+  ("Smoke", 0.960799, 0.960799, 0.960799, 0b000),
+  ("Snow", 1.0, 0.980407, 0.980407, 0b000),
+  ("SpringGreen", 0.0, 1.0, 0.498001, 0b000),
+  ("SteelBlue", 0.274499, 0.509796, 0.705893, 0b000),
+  ("TerreVerte", 0.219993, 0.370006, 0.059999, 0b000),
+  ("Thistle", 0.847102, 0.749, 0.847102, 0b000),
+  ("Titanium", 0.990005, 1.0, 0.940001, 0b000),
+  ("Tomato", 1.0, 0.388195, 0.278405, 0b000),
+  ("Turquoise", 0.250999, 0.878399, 0.815699, 0b000),
+  ("TurquoiseBlue", 0.0, 0.780007, 0.550005, 0b000),
+  ("Ultramarine", 0.069994, 0.039995, 0.559999, 0b000),
+  ("UltramarineViolet", 0.359996, 0.140004, 0.430006, 0b000),
+  ("VanDykeBrown", 0.370006, 0.149998, 0.020005, 0b000),
+  ("VenetianRed", 0.829997, 0.099994, 0.119999, 0b000),
+  ("Violet", 0.559999, 0.370006, 0.599994, 0b000),
+  ("VioletRed", 0.815699, 0.125507, 0.564699, 0b000),
+  ("WarmGray", 0.5, 0.5, 0.410001, 0b000),
+  ("Wheat", 0.960799, 0.870602, 0.702002, 0b000),
+  ("White", 1.0, 1.0, 1.0, 0b111),
+  ("Yellow", 1.0, 1.0, 0.0, 0b111),
+  ("YellowBrown", 0.86, 0.58, 0.44, 0b000),
+  ("YellowGreen", 0.6039, 0.803903, 0.196097, 0b000),
+  ("YellowOchre", 0.889996, 0.509995, 0.089999, 0b000),
+  ("Zinc", 0.990005, 0.97, 1.0, 0b000),
+];
+
+/// `ColorData["Legacy", name]` → the named legacy colour as an `RGBColor`,
+/// with each channel already exact-or-inexact as wolframscript stores it.
+fn legacy_named_color(name: &str) -> Option<Expr> {
+  let &(_, r, g, b, exact) = LEGACY_COLORS
+    .iter()
+    .find(|(n, ..)| n.eq_ignore_ascii_case(name))?;
+  let channel = |v: f64, bit: u8| {
+    if exact & (1 << bit) != 0 {
+      Expr::Integer(v as i128)
+    } else {
+      Expr::Real(v)
+    }
+  };
+  Some(call(
+    "RGBColor",
+    vec![channel(r, 0), channel(g, 1), channel(b, 2)],
+  ))
 }
 
 #[cfg(test)]

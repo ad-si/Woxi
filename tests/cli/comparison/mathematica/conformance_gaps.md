@@ -441,6 +441,23 @@ woxi eval '1.0*^308 * 10'              # Infinity
 Anything that grows past ~1.8*^308 is affected, so `Exp`/`Power` of a few
 hundred silently loses the answer rather than approximating it.
 
+### `Overflow[]` is not absorbing, and its head is not `Real`
+
+Woxi returns `Overflow[]`/`Underflow[]` for a power past `$MaxNumber`, but the
+object itself is inert rather than WL's absorbing one:
+
+```sh
+wolframscript -code 'ToString[Overflow[] + 1, InputForm]'   # Overflow[]
+woxi eval 'ToString[Overflow[] + 1, InputForm]'             # 1 + Overflow[]
+
+wolframscript -code 'Head[Overflow[]]'                      # Real
+woxi eval 'Head[Overflow[]]'                                # Overflow
+```
+
+Between `10^5` and the `$MaxNumber` boundary Woxi also keeps a rational power
+symbolic (`2^(10^10/3)` stays `2^(10000000000/3)`) where WL materialises the
+extracted integer factor.
+
 ### Positive and Sign underflow on a rational below the double range
 
 ```sh
@@ -627,6 +644,86 @@ damping schedule for an *oscillating* Newton also differs
 (`FindRoot[x^3 - 2x + 2, {x, 0}, MaxIterations -> 4]` is `0.816037292480469`
 in WL, `0.8142908074786004` here), and the three-argument secant form differs
 in the last digit.
+
+### `FindRoot` with two starting points keeps WL's iteration residue
+
+A two-point spec (`{x, x0, x1}`) makes WL build its Jacobian from the *secant*
+through the two points rather than from a derivative, and stop as soon as the
+step is under tolerance — so the answer carries a couple of ULP of that
+Jacobian's error even when the exact root is representable:
+
+```sh
+wolframscript -code 'FindRoot[{x + y - 1 == 0, x - y - 0.5 == 0}, {x, 0.1, 0.2}, {y, 0.1, 0.2}]'
+# {x -> 0.7500000000000002, y -> 0.2500000000000001}
+woxi eval 'FindRoot[{x + y - 1 == 0, x - y - 0.5 == 0}, {x, 0.1, 0.2}, {y, 0.1, 0.2}]'
+# {x -> 0.75, y -> 0.25}
+```
+
+The secant slope of `x + y - 1` between `x = 0.1` and `x = 0.2` is
+`1.0000000000000009`, not `1`, which is exactly where WL's two low bits come
+from; Woxi uses the symbolic Jacobian and lands on the exact root. The same
+shows up on `FindRoot[5 == 50*x^0.6, {x, 0.001, 0.9}]`
+(`0.021544346900318832` in WL, `0.021544346900318825` here) and on an opaque
+`_?NumericQ` system, where Woxi's Broyden iterate is 1 ULP off WL's.
+Matching it means reproducing WL's Broyden update, line search and
+convergence test bit for bit — and being *less* accurate than the exact root.
+
+### Arbitrary-precision `Tanh`, `Erf` and `Gamma` carry a different precision tag
+
+Woxi propagates a precision tag through a transcendental with the first-order
+relative condition number `|x f'(x) / f(x)|`, which is the rule WL's own
+`Sin`/`Cos`/`Sinh`/`ArcTan` markers match to ~15 digits. Four functions do not
+follow it in WL:
+
+```sh
+wolframscript -code 'ToString[Tanh[N[1/2, 20]], InputForm]'
+# 0.46211715726000975850231848364367254873`19.881723602858166
+woxi eval 'ToString[Tanh[N[1/2, 20]], InputForm]'
+# 0.46211715726000975850231848364367254873`20.070112223892355
+```
+
+The *values* agree; only the tag differs. Two things cause it. The smaller one
+is arithmetic: Woxi evaluates the condition number and its logarithm in `f64`,
+so even where the rule *is* WL's the tag differs in the last digit or two
+(`Cosh[N[1/2, 20]]` is `…`20.636277902572626` here against
+`…`20.636277902572633`), exactly as for the accuracy-form literal above. The
+larger one is the rule itself: WL's `Tanh` tag tracks whichever
+internal route it took (it matches the condition number at `x = 1` and the
+`Sinh`/`Cosh` quotient's error sum at `x = 1/2`), and its `Erf`/`Erfc` tags
+report its own algorithm's error, not the conditioning — at `x = 1/2` it
+claims 19.02 digits and its 21st digit onward is already wrong, where Woxi's
+value is correct to the last digit shown. `Gamma`/`LogGamma` differ in the
+third decimal of the tag for the same reason. **Not reproducible.**
+
+### Display digits past the claimed precision differ
+
+An arbitrary-precision number prints more digits than its precision tag
+claims, and the surplus ones are not required to agree:
+
+```sh
+wolframscript -code 'ToString[N[Coth[1], 20], InputForm]'
+# 1.31303528549933130363616124693084783292`20.
+woxi eval 'ToString[N[Coth[1], 20], InputForm]'
+# 1.31303528549933130363616124693084783291`20.
+```
+
+`coth(1)` is `1.313035285499331303636161246930847832912…`, so Woxi's digit is
+the correctly rounded one. `Cot` at 40 digits is the same story.
+
+### `Power` of two arbitrary-precision numbers keeps too many digits
+
+```sh
+wolframscript -code 'ToString[SetPrecision[Sqrt[2], 5], InputForm]'
+# 1.4142135623730950488`5.301029995663981
+woxi eval 'ToString[SetPrecision[Sqrt[2], 5], InputForm]'
+# 1.41421356237309504880168872420969807857`5.301029995663981
+```
+
+`Power` computes at the operands' bit budget and does not re-truncate the
+decimal string to the digit count the *result's* precision tier calls for, the
+way `N[…, p]` does. A machine-real exponent is also not contagious:
+`N[2, 20]^0.5` is `1.4142135623730951` (machine) in WL and an
+arbitrary-precision number here.
 
 ### Cross-platform libm differences
 
@@ -1739,6 +1836,20 @@ produces correctly, and `TeXForm` / `InputForm` want the corresponding
 renderer. An unsupported form (`Format[x^2, FullForm]`) stays unevaluated in
 WL and prints as `Format[x^2, FullForm]`.
 
+### `CellularAutomaton` refuses an explicit window it would have to allocate
+
+```sh
+wolframscript -code 'CellularAutomaton[90, {1, 0, 1}, {{{1}}, {0, 1000000000}}]'
+# a billion-cell list
+woxi eval 'CellularAutomaton[90, {1, 0, 1}, {{{1}}, {0, 1000000000}}]'
+# CellularAutomaton[90, {1, 0, 1}, {{{1}}, {0, 1000000000}}]
+```
+
+A cyclic initial condition never grows past its own size, so nothing bounds an
+explicit cell window against it; Woxi checks the window's length
+arithmetically and declines rather than collecting a billion indices. The
+tspec grammar and every window that fits in memory agree with WL exactly.
+
 ### `DownValues` drops a `/;` guard on a compound left-hand side
 
 `f[x_] := x^2 /; x > 0` round-trips, but
@@ -2679,6 +2790,18 @@ not global normalization). Maximum error ≤ 1 LSB of int16.
 
 Wolfram's graph layer is igraph-backed, and two classes of its output are not
 recoverable from outside.
+
+### `GraphData[]` carries a slice of the atlas, not all 12474 entries
+
+Woxi bundles the named entities it can answer every property for, plus the
+parametrized families (`{"Complete", n}`, `{"Cycle", n}`, `{"Path", n}`,
+`{"Star", n}`, `{"Wheel", n}`, `{"CompleteBipartite", {m, k}}`). Names,
+vertex labelling and edge order follow Wolfram's, and an unknown entity gets
+the same `GraphData::notent` message and unevaluated result — but
+`Length[GraphData[]]` is 14 against WL's 12474, and any entity outside the
+bundled set is a `notent` where WL answers. Only the ~760-entry property list
+is likewise abridged: `GraphData["Properties"]` returns the nine properties
+Woxi answers.
 
 ### Selection among equal optima
 

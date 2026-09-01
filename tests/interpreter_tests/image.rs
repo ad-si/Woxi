@@ -7289,30 +7289,74 @@ mod color_data_gradients {
     );
   }
 
-  // `ColorData["Legacy", name]` shares the HTML scheme's named-colour table
-  // — the palette a Demonstration's pre-v6 `ColorData["Legacy", ...]`
-  // graphics directives reach for. Regression: it stayed unevaluated and
-  // reported the head as unimplemented (found via a random Demonstrations
-  // Project notebook).
+  // `ColorData["Legacy", name]` is the pre-v6 `Graphics`Colors`` palette a
+  // Demonstration's `ColorData["Legacy", ...]` graphics directives reach for.
+  // Regression: it stayed unevaluated and reported the head as unimplemented
+  // (found via a random Demonstrations Project notebook), and was then wired
+  // to the *HTML* table — whose exact `n/255` channels miss the legacy
+  // six-digit ones by ~1e-5.
   #[test]
   fn color_data_legacy_named_colors() {
     clear_state();
     assert_eq!(
       interpret("ColorData[\"Legacy\", \"Wheat\"]").unwrap(),
-      "RGBColor[0.9607843137254902, 0.8705882352941177, 0.7019607843137254]"
+      "RGBColor[0.960799, 0.870602, 0.702002]"
     );
     assert_eq!(
       interpret("ColorData[\"Legacy\", \"Lavender\"]").unwrap(),
-      "RGBColor[0.9019607843137255, 0.9019607843137255, 0.9803921568627451]"
+      "RGBColor[0.902005, 0.902005, 0.980407]"
     );
     assert_eq!(
       interpret("ColorData[\"Legacy\", \"Tomato\"]").unwrap(),
-      "RGBColor[1., 0.38823529411764707, 0.2784313725490196]"
+      "RGBColor[1., 0.388195, 0.278405]"
     );
     // The lookup ignores case, matching the HTML scheme's behavior.
     assert_eq!(
       interpret("ColorData[\"Legacy\", \"wheat\"]").unwrap(),
-      "RGBColor[0.9607843137254902, 0.8705882352941177, 0.7019607843137254]"
+      "RGBColor[0.960799, 0.870602, 0.702002]"
+    );
+  }
+
+  // Which channels stay exact is stored per entry, not derived from the
+  // value: `Orange` keeps its 1 and 0 exact while `Chartreuse` has the very
+  // same 1 and 0 as machine reals.
+  #[test]
+  fn color_data_legacy_keeps_wolframs_exact_channels() {
+    clear_state();
+    assert_eq!(
+      interpret("ColorData[\"Legacy\", \"Black\"]").unwrap(),
+      "RGBColor[0, 0, 0]"
+    );
+    assert_eq!(
+      interpret("ColorData[\"Legacy\", \"Orange\"]").unwrap(),
+      "RGBColor[1, 0.5, 0]"
+    );
+    assert_eq!(
+      interpret("ColorData[\"Legacy\", \"Chartreuse\"]").unwrap(),
+      "RGBColor[0.498001, 1., 0.]"
+    );
+  }
+
+  // The two schemes carry different name sets: the legacy palette has ~50
+  // artists'-pigment names CSS has no entry for, and lacks ~50 CSS ones.
+  #[test]
+  fn color_data_legacy_and_html_name_sets_are_distinct() {
+    clear_state();
+    assert_eq!(
+      interpret("ColorData[\"Legacy\", \"AlizarinCrimson\"]").unwrap(),
+      "RGBColor[0.889996, 0.149998, 0.209998]"
+    );
+    assert_eq!(
+      interpret("ColorData[\"HTML\", \"AlizarinCrimson\"]").unwrap(),
+      "ColorData[HTML, AlizarinCrimson]"
+    );
+    assert_eq!(
+      interpret("ColorData[\"HTML\", \"Tan\"]").unwrap(),
+      "RGBColor[0.8235294117647058, 0.7058823529411764, 0.5490196078431373]"
+    );
+    assert_eq!(
+      interpret("ColorData[\"Legacy\", \"Tan\"]").unwrap(),
+      "ColorData[Legacy, Tan]"
     );
   }
 

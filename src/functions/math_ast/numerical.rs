@@ -728,12 +728,15 @@ pub fn bigfloat_to_string(
 }
 
 /// SetPrecision[expr, precision] — set every numeric leaf of `expr` to a
-/// fixed precision without otherwise evaluating the expression.
+/// fixed precision.
 ///
 /// Unlike `N`, SetPrecision walks the expression tree symbolically: numeric
 /// leaves are converted to BigFloat (or, with MachinePrecision, demoted to
 /// a machine-precision Real), while symbolic heads and identifiers are
-/// preserved verbatim.
+/// preserved verbatim. The rewritten expression is then evaluated again, as
+/// wolframscript does with any result a function hands back: the numeric
+/// leaves are what unlock the numeric evaluation, so `SetPrecision[Tanh[1],
+/// 3]` is `Tanh[1.`3.]` and therefore `0.762`, not a literal `Tanh[1.00]`.
 pub fn set_precision_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Ok(unevaluated("SetPrecision", args));
@@ -775,14 +778,20 @@ pub fn set_precision_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let max_fraction_digits =
     ((display_bits as f64 + 1.0) * std::f64::consts::LOG10_2).floor() as usize;
 
-  set_precision_walk(
+  let rewritten = set_precision_walk(
     expr,
     precision_f64,
     bits,
     Some(max_fraction_digits),
     rm,
     &mut cc,
-  )
+  )?;
+  // Re-evaluate only when the walk actually changed something, so an
+  // expression with no numeric leaf to convert cannot loop.
+  if crate::evaluator::pattern_matching::expr_equal(&rewritten, expr) {
+    return Ok(rewritten);
+  }
+  crate::evaluator::evaluate_expr_to_expr(&rewritten)
 }
 
 /// Walk `expr` and convert every numeric leaf to a BigFloat at `precision`.
@@ -1609,6 +1618,44 @@ pub fn expr_to_bigfloat(
         "ArcTanh" if args.len() == 1 => {
           let v = expr_to_bigfloat(&args[0], bits, rm, cc)?;
           Ok(v.atanh(bits, rm, cc))
+        }
+        // The reciprocal circular/hyperbolic functions and the inverses of
+        // the reciprocals. astro-float has no primitive for any of them, but
+        // each is one `1/x` away from a primitive that it does have — and
+        // leaving them out is what made `N[Coth[1], 20]` come back as
+        // `Coth[1.`20.]`.
+        "Cot" | "Sec" | "Csc" | "Coth" | "Sech" | "Csch" if args.len() == 1 => {
+          let v = expr_to_bigfloat(&args[0], bits, rm, cc)?;
+          // `Cot`/`Coth` go through `Cos/Sin` and `Cosh/Sinh` rather than
+          // `1/Tan`: reciprocating an already-rounded tangent costs a unit
+          // in the last displayed digit against wolframscript.
+          let (num, den) = match name.as_str() {
+            "Cot" => (v.cos(bits, rm, cc), v.sin(bits, rm, cc)),
+            "Sec" => (BigFloat::from_i32(1, bits), v.cos(bits, rm, cc)),
+            "Csc" => (BigFloat::from_i32(1, bits), v.sin(bits, rm, cc)),
+            "Coth" => (v.cosh(bits, rm, cc), v.sinh(bits, rm, cc)),
+            "Sech" => (BigFloat::from_i32(1, bits), v.cosh(bits, rm, cc)),
+            _ => (BigFloat::from_i32(1, bits), v.sinh(bits, rm, cc)),
+          };
+          Ok(num.div(&den, bits, rm))
+        }
+        "ArcCot" | "ArcSec" | "ArcCsc" | "ArcCoth" | "ArcSech" | "ArcCsch"
+          if args.len() == 1 =>
+        {
+          let v = expr_to_bigfloat(&args[0], bits, rm, cc)?;
+          let r = BigFloat::from_i32(1, bits).div(&v, bits, rm);
+          Ok(match name.as_str() {
+            "ArcCot" => r.atan(bits, rm, cc),
+            "ArcSec" => r.acos(bits, rm, cc),
+            "ArcCsc" => r.asin(bits, rm, cc),
+            "ArcCoth" => r.atanh(bits, rm, cc),
+            "ArcSech" => r.acosh(bits, rm, cc),
+            _ => r.asinh(bits, rm, cc),
+          })
+        }
+        "LogGamma" if args.len() == 1 => {
+          let z = expr_to_bigfloat(&args[0], bits, rm, cc)?;
+          Ok(gamma_bigfloat(&z, bits, rm, cc).ln(bits, rm, cc))
         }
         "Plus" => {
           // Evaluated Plus[a, b, c, ...] as a function call

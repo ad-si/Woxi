@@ -49,7 +49,8 @@ mod polyhedron_data_tests {
     );
     assert_eq!(
       interpret(r#"PolyhedronData["Icosahedron", "Volume"]"#).unwrap(),
-      "(5*(3 + Sqrt[5]))/12"
+      // wolframscript reports this one through GoldenRatio.
+      "(5*GoldenRatio^2)/6"
     );
   }
 
@@ -82,6 +83,45 @@ mod polyhedron_data_tests {
     assert_eq!(
       interpret(r#"PolyhedronData["Octahedron", "Circumradius"]"#).unwrap(),
       "1/Sqrt[2]"
+    );
+  }
+
+  // "Midradius" — the radius of the edge-tangent sphere — was the one
+  // radius the entity table left out, so every solid answered with an
+  // unevaluated `PolyhedronData[…, "Midradius"]`.
+  #[test]
+  fn polyhedron_data_midradius() {
+    assert_eq!(
+      interpret(r#"PolyhedronData["Tetrahedron", "Midradius"]"#).unwrap(),
+      "1/(2*Sqrt[2])"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData["Cube", "Midradius"]"#).unwrap(),
+      "1/Sqrt[2]"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData["Octahedron", "Midradius"]"#).unwrap(),
+      "1/2"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData["Dodecahedron", "Midradius"]"#).unwrap(),
+      "(3 + Sqrt[5])/4"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData["Icosahedron", "Midradius"]"#).unwrap(),
+      "GoldenRatio/2"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData["TriangularOrthobicupola", "Midradius"]"#)
+        .unwrap(),
+      "Sqrt[3]/2"
+    );
+    // Unlike every other solid in the table, the rhombic hexecontahedron's
+    // edges are not all the same distance from the center.
+    assert_eq!(
+      interpret(r#"PolyhedronData["RhombicHexecontahedron", "Midradius"]"#)
+        .unwrap(),
+      "Missing[NotApplicable]"
     );
   }
 
@@ -220,7 +260,7 @@ mod polyhedron_data_tests {
     assert_eq!(
       interpret(r#"PolyhedronData["Properties"]"#).unwrap(),
       "{Circumradius, Classes, EdgeCount, EdgeIndices, FaceCount, \
-       FaceIndices, Faces, Inradius, Insphere, SurfaceArea, \
+       FaceIndices, Faces, Inradius, Insphere, Midradius, SurfaceArea, \
        VertexCoordinates, VertexCount, Volume}"
     );
   }
@@ -582,7 +622,7 @@ mod polyhedron_data_tests {
             PolyhedronData["SmallRhombicuboctahedron", "Volume"]}"#
       )
       .unwrap(),
-      "{(23*Sqrt[2])/12, 8*Sqrt[2], (12 + 10*Sqrt[2])/3}"
+      "{23/(6*Sqrt[2]), 8*Sqrt[2], 4 + (10*Sqrt[2])/3}"
     );
     // None has a true insphere: their two face types sit at different
     // distances from the center.
@@ -738,7 +778,9 @@ mod polyhedron_data_tests {
     assert_eq!(
       interpret(r#"PolyhedronData["TriangularOrthobicupola", "SurfaceArea"]"#)
         .unwrap(),
-      "6 + 2*Sqrt[3]"
+      // wolframscript keeps the common factor out front rather than
+      // distributing it over the sum.
+      "2*(3 + Sqrt[3])"
     );
     assert_eq!(
       interpret(r#"PolyhedronData["TriangularOrthobicupola", "Circumradius"]"#)

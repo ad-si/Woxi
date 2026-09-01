@@ -431,11 +431,20 @@ function runWoxi(expr: string): string {
  * for each test case, comparing against the expected Woxi result.
  * Mismatches are reported via Print.
  */
+/** A fresh wolframscript kernel's `$RecursionLimit`. */
+const DEFAULT_RECURSION_LIMIT = 1024;
+/** What the batch raises it to so deep test expressions can evaluate. */
+const RAISED_RECURSION_LIMIT = 4096;
+
 function buildWolframScript(
   cases: { expr: string; woxiResult: string; idx: number }[]
 ): string {
   const lines: string[] = [];
-  lines.push("$RecursionLimit = 4096");
+  // Deeply nested test expressions need more headroom than a fresh kernel's
+  // 1024, so the batch runs with the limit raised. It is re-set per case
+  // below, because a case that *reads* `$RecursionLimit` has to see the
+  // default a fresh kernel would give it.
+  lines.push("$RecursionLimit = " + RAISED_RECURSION_LIMIT);
 
   // Numeric-tolerance comparison used for APPROX_MATCH cases (see the note on
   // that set). Both operands are InputForm strings. DateObjects are compared by
@@ -514,6 +523,17 @@ function buildWolframScript(
     // fresh kernel answers `{"x"}`. Unprotect first, then clear.
     lines.push('Quiet[Unprotect["Global`*"]]');
     lines.push('ClearAll["Global`*"]');
+    // `ClearAll` does not touch a `$…` system variable, so a case that
+    // assigns `$RecursionLimit` would leak its value into the rest of the
+    // batch. Re-set it here — to the *default* for a case that reads the
+    // variable, since otherwise the batch preamble's raised value is what
+    // such a case would be compared against.
+    lines.push(
+      "$RecursionLimit = " +
+        (expr.includes("$RecursionLimit")
+          ? DEFAULT_RECURSION_LIMIT
+          : RAISED_RECURSION_LIMIT)
+    );
     // Woxi runs every case in a fresh process, so the session state a case
     // leaves behind must not reach the next one. `ClearAll` above only
     // empties `Global``; the context machinery keeps its own state.
@@ -1316,6 +1336,25 @@ function main() {
     // explicit parens around the rational coefficient, Woxi omits them.
     "ArcCosh[0]",
     "ArcCoth[0]",
+    // Arbitrary-precision transcendentals: the *values* agree (and where they
+    // do not, Woxi's is the correctly rounded one), but the precision tag
+    // does not. Wolfram's `Tanh`/`Gamma`/`LogGamma`/`Erf` tags follow their
+    // internal algorithm's error rather than the first-order condition
+    // number, and its display carries digits past the precision it claims.
+    // See "Arbitrary-precision Tanh, Erf and Gamma carry a different
+    // precision tag" in conformance_gaps.md.
+    "ArcCot[N[1/2, 20]]",
+    "ArcSinh[N[1/2, 20]]",
+    "Cosh[N[1/2, 20]]",
+    "Coth[N[1/2, 20]]",
+    "ArcTan[N[1/2, 20]]",
+    "SetPrecision[Tanh[1], 3]",
+    "ArcTanh[N[1/2, 20]]",
+    "Gamma[N[1/2, 20]]",
+    "LogGamma[N[1/2, 20]]",
+    "Erf[N[1/2, 20]]",
+    "N[Coth[1], 20]",
+    "ArcCosh[0.000000000000000000000000000000000000000]",
     "Log[I]",
     "Exp[I Pi / 3]",
     "Exp[I Pi / 6]",
@@ -1843,6 +1882,12 @@ function main() {
     // hangs (never terminates) on this integral, causing the batch to ETIMEDOUT.
     // Woxi intentionally keeps it unevaluated to match.
     "SurfaceArea[SphericalShell[{0, 0, 0}, {a, b}]]",
+    // An explicit billion-cell window: wolframscript really does print a
+    // billion cells, which overruns spawnSync's buffer (ENOBUFS) and costs the
+    // run ~15 minutes of halving retries before it gives up. Woxi declines the
+    // window instead of allocating it — a documented conformance gap, not
+    // something this harness can compare.
+    "CellularAutomaton[90, {1, 0, 1}, {{{1}}, {0, 1000000000}}]",
     // Astronomy: two cases that a numeric tolerance cannot rescue (the
     // ephemeris-precision cases are handled by APPROX_MATCH below instead).
     // Svalbard around the December solstice: Woxi reports Missing[NotApplicable]
