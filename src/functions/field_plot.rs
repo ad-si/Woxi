@@ -1178,7 +1178,10 @@ struct MeshGrid {
 
 /// Sample a mesh function over the plot's grid and pick `count` evenly
 /// spaced levels across the values it takes — `MeshFunctions -> {10 #1 &}`
-/// with `Mesh -> 11` gives eleven lines of constant x.
+/// with `Mesh -> 11` gives eleven lines of constant x. `region_mask`, when
+/// given, is the main plot's already `RegionFunction`-masked grid (NaN
+/// outside the region): a cell excluded there is excluded here too, so mesh
+/// lines don't spill past the region boundary the contours/bands stop at.
 #[allow(clippy::too_many_arguments)]
 fn sample_mesh_grid(
   f: &Expr,
@@ -1189,6 +1192,7 @@ fn sample_mesh_grid(
   y_min: f64,
   y_max: f64,
   count: usize,
+  region_mask: Option<&[Vec<f64>]>,
 ) -> Option<MeshGrid> {
   let n = FIELD_GRID + 1;
   let mut grid = vec![vec![f64::NAN; n]; n];
@@ -1197,6 +1201,12 @@ fn sample_mesh_grid(
     let x = x_min + i as f64 / FIELD_GRID as f64 * (x_max - x_min);
     for j in 0..n {
       let y = y_min + j as f64 / FIELD_GRID as f64 * (y_max - y_min);
+      let masked = region_mask
+        .and_then(|m| m.get(i).and_then(|row| row.get(j)))
+        .is_some_and(|v| !v.is_finite());
+      if masked {
+        continue;
+      }
       // A mesh function is usually a pure function of the two
       // coordinates (`10 #1 &`); a plain expression in x and y works too.
       let v = mesh_function_value(f, xvar, yvar, x, y)?;
@@ -1448,7 +1458,17 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       functions
         .iter()
         .filter_map(|f| {
-          sample_mesh_grid(f, &xvar, &yvar, x_min, x_max, y_min, y_max, count)
+          sample_mesh_grid(
+            f,
+            &xvar,
+            &yvar,
+            x_min,
+            x_max,
+            y_min,
+            y_max,
+            count,
+            Some(&grid),
+          )
         })
         .collect()
     }
@@ -1701,6 +1721,10 @@ fn contour_plot_equations(
         let y = y_min + j as f64 / FIELD_GRID as f64 * (y_max - y_min);
         if let Some(v) = evaluate_at_xy(body, &xvar, &yvar, x, y)
           && v.is_finite()
+          && opts
+            .region_function
+            .as_ref()
+            .is_none_or(|r| region_allows(r, x, y, v))
         {
           *cell = v;
           any_finite = true;

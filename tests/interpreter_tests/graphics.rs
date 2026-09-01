@@ -11037,6 +11037,38 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    /// `RegionFunction` also restricts the equation form
+    /// (`ContourPlot[lhs == rhs, …]`, drawn by `contour_plot_equations`, a
+    /// separate code path from the function form above): a circle clipped
+    /// to `x > 0` must only draw its right half.
+    #[test]
+    fn contour_plot_equation_region_function_restricts_curve() {
+      let result = interpret(
+        "pts = Flatten[Cases[ContourPlot[x^2 + y^2 == 1, {x, -2, 2}, \
+         {y, -2, 2}, RegionFunction -> Function[{x, y, z}, x > 0]][[1]], \
+         _Line, Infinity][[All, 1]], 1]; \
+         {Length[pts] > 0, AllTrue[pts, #[[1]] > -0.1 &]}",
+      )
+      .unwrap();
+      assert_eq!(result, "{True, True}", "result: {result}");
+    }
+
+    /// `Mesh -> n` grid lines must stop at the same `RegionFunction`
+    /// boundary as the contour bands/lines, not spill across the whole
+    /// rectangular domain.
+    #[test]
+    fn contour_plot_mesh_respects_region_function() {
+      let result = interpret(
+        "pts = Flatten[Cases[ContourPlot[x + y, {x, 0, 4}, {y, 0, 4}, \
+         RegionFunction -> Function[{x, y, z}, 4 < x^2 + y^2 < 16], \
+         Mesh -> 10][[1]], _Line, Infinity][[All, 1]], 1]; \
+         {Length[pts] > 0, \
+          AllTrue[pts, (r2 = #[[1]]^2 + #[[2]]^2; 4 - 0.3 <= r2 <= 16 + 0.3) &]}",
+      )
+      .unwrap();
+      assert_eq!(result, "{True, True}", "result: {result}");
+    }
+
     /// `ContourStyle` colours and thickens the contour lines. Both the
     /// function form and the equation form draw through it — the equation
     /// form is how a Demonstration draws a stability boundary.
