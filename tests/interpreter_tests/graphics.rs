@@ -11212,6 +11212,20 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn vector_plot_plot_label_renders() {
+      // Regression: VectorPlot built its axes with `generate_axes_only`,
+      // which never reserved room for or drew a `PlotLabel` at all — unlike
+      // ContourPlot/DensityPlot/Plot, which already rendered it. A
+      // Demonstration's "plot type" switch (VectorPlot vs. ContourPlot vs.
+      // Plot3D, all fed the same PlotLabel) silently lost its title only on
+      // the vector-field branch.
+      let svg = export_svg(
+        "VectorPlot[{-y, x}, {x, -2, 2}, {y, -2, 2}, PlotLabel -> \"field\"]",
+      );
+      assert!(svg.contains(">field<"), "{svg}");
+    }
+
+    #[test]
     fn vector_plot3d_basic() {
       insta::assert_snapshot!(export_svg(
         "VectorPlot3D[{x, y, z}, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}]"
@@ -11345,6 +11359,16 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       ));
     }
 
+    #[test]
+    fn stream_plot_plot_label_renders() {
+      // Regression: StreamPlot shared VectorPlot's `generate_axes_only`
+      // call, so it silently dropped `PlotLabel` the same way.
+      let svg = export_svg(
+        "StreamPlot[{-y, x}, {x, -2, 2}, {y, -2, 2}, PlotLabel -> \"flow\"]",
+      );
+      assert!(svg.contains(">flow<"), "{svg}");
+    }
+
     // Part 1 of a field plot is its graphics content, so a Demonstration can
     // lift the field into a `Graphics[{Opacity[…], StreamPlot[…][[1]]}]` of
     // its own instead of showing the plot on its own.
@@ -11419,6 +11443,17 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       insta::assert_snapshot!(export_svg(
         "StreamDensityPlot[{-y, x}, {x, -2, 2}, {y, -2, 2}]"
       ));
+    }
+
+    #[test]
+    fn stream_density_plot_plot_label_renders() {
+      // Regression: StreamDensityPlot shared VectorPlot's
+      // `generate_axes_only` call too, so it also silently dropped
+      // `PlotLabel`.
+      let svg = export_svg(
+        "StreamDensityPlot[{-y, x}, {x, -2, 2}, {y, -2, 2}, PlotLabel -> \"magnitude\"]",
+      );
+      assert!(svg.contains(">magnitude<"), "{svg}");
     }
 
     #[test]
