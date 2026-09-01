@@ -533,10 +533,6 @@ fn gamma_incomplete_upper_int_a(
   } else {
     call("Plus", terms)
   };
-  let mut n_minus_1_factorial: i128 = 1;
-  for i in 2..n as i128 {
-    n_minus_1_factorial *= i;
-  }
   let exp_neg_z = Expr::FunctionCall {
     name: "Power".to_string(),
     args: vec![
@@ -545,13 +541,10 @@ fn gamma_incomplete_upper_int_a(
     ]
     .into(),
   };
-  let result = if n_minus_1_factorial == 1 {
+  let result = if factorial == 1 {
     call("Times", vec![exp_neg_z, sum])
   } else {
-    call(
-      "Times",
-      vec![Expr::Integer(n_minus_1_factorial), exp_neg_z, sum],
-    )
+    call("Times", vec![Expr::Integer(factorial), exp_neg_z, sum])
   };
   crate::evaluator::evaluate_expr_to_expr(&result)
 }
@@ -699,10 +692,10 @@ pub fn gamma_fn(x: f64) -> f64 {
 /// Beta[z, a, b] = integral_0^z t^(a-1) (1 - t)^(b-1) dt
 /// Exact factorial as a BigInt, so Beta of larger integer arguments does not
 /// overflow i128 (e.g. Beta[20, 20] needs 39! ≈ 2×10^46).
-fn factorial_big(n: usize) -> BigInt {
+fn factorial_big(n: u64) -> BigInt {
   let mut result = BigInt::from(1);
   for i in 2..=n {
-    result *= i as u64;
+    result *= i;
   }
   result
 }
@@ -836,7 +829,7 @@ pub fn beta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           // When a, b are half-integers, Γ(n+1/2) = (2n)! sqrt(π) / (4^n n!)
           // So Gamma product has π, and if sum is integer, Γ(sum) is (sum-1)!
           // Beta = Γ(a)Γ(b) / (sum-1)!
-          let sum_int = (sum2 / 2) as usize;
+          let sum_int = (sum2 / 2) as u64;
           {
             let sum_fact = factorial_big(sum_int - 1);
             // Compute Γ(a) * Γ(b) / (sum-1)! where a, b are half-integers
@@ -1201,14 +1194,16 @@ fn gamma_half_integer_parts_big(k2: i128) -> Option<(BigInt, BigInt, i128)> {
     return None;
   }
   if k2 % 2 == 0 {
-    let m = (k2 / 2) as usize;
+    let m = (k2 / 2) as u64;
     Some((factorial_big(m - 1), BigInt::from(1), 0))
   } else {
-    let m = ((k2 - 1) / 2) as usize;
-    let two_m_fact = factorial_big(2 * m);
-    let m_fact = factorial_big(m);
-    let four_m = BigInt::from(4).pow(m as u32);
-    Some((two_m_fact, four_m * m_fact, 1))
+    let m = ((k2 - 1) / 2) as u64;
+    let mut numer = BigInt::from(1);
+    for i in (m + 1)..=(2 * m) {
+      numer *= i;
+    }
+    let denom = BigInt::from(4).pow(m as u32);
+    Some((numer, denom, 1))
   }
 }
 

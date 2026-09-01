@@ -4603,14 +4603,13 @@ fn try_integrate_sin_cos_product(factors: &[&Expr], var: &str) -> Option<Expr> {
     let mut terms: Vec<Expr> = Vec::new();
     for j in 0..=k {
       let binom = crate::functions::binomial_coeff(k as i128, j as i128);
-      let sign = if j % 2 == 0 { 1i128 } else { -1 };
       let new_cos_power = cos_power + 2 * j;
       let new_power = new_cos_power + 1;
       let cos_power_expr =
         pow2(cos_f.clone(), Expr::Integer(new_power as i128));
-      // coefficient = binom * sign * (-1) / ((new_power) * a)
-      // = -binom * sign / (new_power * a)
-      let numer = -sign * binom;
+      // coefficient = binom * (-1)^j * (-1) / ((new_power) * a)
+      // = (-1)^{j+1} binom / (new_power * a)
+      let numer = if j % 2 == 0 { -binom } else { binom };
       let total_divisor =
         simplify(times2(Expr::Integer(new_power as i128), coeff.clone()));
       let term = if numer == 1 {
@@ -4639,12 +4638,11 @@ fn try_integrate_sin_cos_product(factors: &[&Expr], var: &str) -> Option<Expr> {
     let mut terms: Vec<Expr> = Vec::new();
     for j in 0..=k {
       let binom = crate::functions::binomial_coeff(k as i128, j as i128);
-      let sign = if j % 2 == 0 { 1i128 } else { -1 };
       let new_sin_power = sin_power + 2 * j;
       let new_power = new_sin_power + 1;
       let sin_power_expr =
         pow2(sin_f.clone(), Expr::Integer(new_power as i128));
-      let numer = sign * binom;
+      let numer = if j % 2 != 0 { -binom } else { binom };
       let total_divisor =
         simplify(times2(Expr::Integer(new_power as i128), coeff.clone()));
       let term = if numer == 1 {
@@ -4813,15 +4811,10 @@ fn try_integrate_trig_quotient(
       terms.push(coeff_term(-1, 1, call1("Log", trig_pow("Cos", 1)), &coeff));
       for j in 1..=k {
         let binom = crate::functions::binomial_coeff(k as i128, j as i128);
+        let numer = if j % 2 == 0 { -binom } else { binom };
         let denom = 2 * j as i128;
-        let sign = if j % 2 == 1 { 1 } else { -1 };
-        let (binom, denom) = rat_reduce(binom, denom);
-        terms.push(coeff_term(
-          sign * binom,
-          denom,
-          trig_pow("Cos", 2 * j),
-          &coeff,
-        ));
+        let (numer, denom) = rat_reduce(numer, denom);
+        terms.push(coeff_term(numer, denom, trig_pow("Cos", 2 * j), &coeff));
       }
     }
     return Some(call("Plus", terms));
@@ -4842,15 +4835,10 @@ fn try_integrate_trig_quotient(
       terms.push(coeff_term(1, 1, call1("Log", trig_pow("Sin", 1)), &coeff));
       for j in 1..=k {
         let binom = crate::functions::binomial_coeff(k as i128, j as i128);
+        let numer = if j % 2 != 0 { -binom } else { binom };
         let denom = 2 * j as i128;
-        let sign = if j % 2 == 1 { -1 } else { 1 };
-        let (binom, denom) = rat_reduce(binom, denom);
-        terms.push(coeff_term(
-          sign * binom,
-          denom,
-          trig_pow("Sin", 2 * j),
-          &coeff,
-        ));
+        let (numer, denom) = rat_reduce(numer, denom);
+        terms.push(coeff_term(numer, denom, trig_pow("Sin", 2 * j), &coeff));
       }
     } else {
       // Even p ≥ 4 needs wolframscript's multiple-angle presentation.
