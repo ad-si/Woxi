@@ -2192,6 +2192,34 @@ mod graphics {
         "Valid point should still render: {svg}"
       );
     }
+
+    #[test]
+    fn inverse_beta_regularized_coordinate_numericizes() {
+      // InverseBetaRegularized[...] is NumericQ (Attributes includes
+      // NumericFunction), so a coordinate built from it must be numericized
+      // for rendering rather than left symbolic (which the renderer can't
+      // draw and reports as an error).
+      let svg = export_svg(
+        "Graphics[{Line[{{InverseBetaRegularized[1/4, 2, 3], 0}, {0, 1}}]}]",
+      );
+      assert!(
+        !svg.contains("should be a pair of numbers"),
+        "Coordinate built from InverseBetaRegularized should numericize: {svg}"
+      );
+      assert!(svg.contains("<polyline"), "Line should render: {svg}");
+    }
+
+    #[test]
+    fn inverse_gamma_regularized_coordinate_numericizes() {
+      let svg = export_svg(
+        "Graphics[{Line[{{InverseGammaRegularized[2, 1/2], 0}, {0, 1}}]}]",
+      );
+      assert!(
+        !svg.contains("should be a pair of numbers"),
+        "Coordinate built from InverseGammaRegularized should numericize: {svg}"
+      );
+      assert!(svg.contains("<polyline"), "Line should render: {svg}");
+    }
   }
 }
 
