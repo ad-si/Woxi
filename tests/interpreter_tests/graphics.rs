@@ -17751,6 +17751,36 @@ mod parametric_plot3d {
     assert!(svg.contains("<svg"));
   }
 
+  /// Regression (Wolfram Demonstration "Torsion of an Elastic Beam with
+  /// Rectangular Cross Section"): the 2-iterator (surface) form's first
+  /// argument can be a whole list of `{fx, fy, fz}` triples wrapped in one
+  /// outer `ReplaceAll`, e.g. `ReplaceAll[{helper1[u, v], helper2[u, v]},
+  /// rules]`, so it overlays several surfaces from one call — the same
+  /// multi-surface idiom `body_from_function_call` covers for a single
+  /// helper call. `HoldAll` leaves the whole `ReplaceAll` unevaluated, and
+  /// evaluating it once (with `u`/`v` cleared) used to produce a 2-element
+  /// list of 3-lists that only matched the single-triple `items.len() == 3`
+  /// case, so it failed with "first argument must be {fx, fy, fz}" even
+  /// though each element was itself a valid triple.
+  #[test]
+  fn surface_list_from_replace_all() {
+    clear_state();
+    interpret(
+      "lower[a_, b_] := {Sin[a], Cos[a], b}; \
+               upper[a_, b_] := {Sin[a] + 2, Cos[a] + 2, b};",
+    )
+    .unwrap();
+    let svg = export_svg(
+      "ParametricPlot3D[ReplaceAll[{lower[u, v], upper[u, v]}, {}], \
+       {u, 0, 2 Pi}, {v, 0, 1}]",
+    );
+    assert!(svg.contains("<svg"));
+    assert!(
+      svg.matches("<polygon").count() > 1,
+      "expected polygon fills for both overlaid surfaces"
+    );
+  }
+
   /// Every `<polygon>` fill colour in the SVG, as `(r, g, b)` triples — see
   /// the identical helper documented in `plot3d::options`.
   fn fill_colors(svg: &str) -> Vec<(u32, u32, u32)> {
