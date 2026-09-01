@@ -3184,6 +3184,36 @@ fn cdf_extreme_value(
   eval(&pow2(e(), neg1(pow2(e(), ab))))
 }
 
+/// `Variance[GompertzMakehamDistribution[l, x0]]` for concrete numeric `l`,
+/// `x0`: Simpson's rule against the closed-form density (no elementary
+/// closed form exists for the second central moment), evaluated directly in
+/// `f64` rather than through the AST integrator so that repeated calls
+/// (e.g. from `FindRoot` fitting `l`/`x0` to a target mean/stdev) stay fast.
+/// The upper cutoff is extended until the CDF leaves negligible tail mass.
+fn gompertz_makeham_variance_numeric(l: f64, x0: f64, mean: f64) -> f64 {
+  let pdf = |x: f64| -> f64 {
+    let lx = l * x;
+    l * x0 * (lx + (1.0 - lx.exp()) * x0).exp()
+  };
+  let cdf = |x: f64| -> f64 { 1.0 - ((1.0 - (l * x).exp()) * x0).exp() };
+  let mut hi = mean.abs().max(1.0) * 4.0;
+  for _ in 0..200 {
+    if cdf(hi) > 1.0 - 1e-13 {
+      break;
+    }
+    hi *= 1.5;
+  }
+  let n = 4_000;
+  let dx = hi / n as f64;
+  let mut sum = 0.0;
+  for i in 0..=n {
+    let x = i as f64 * dx;
+    let weight = if i == 0 || i == n { 0.5 } else { 1.0 };
+    sum += weight * (x - mean).powi(2) * pdf(x);
+  }
+  sum * dx
+}
+
 // PDF[GompertzMakehamDistribution[l, x0], x] = Piecewise[{{E^(l*x + (1 - E^(l*x))*x0)*l*x0, x >= 0}}, 0]
 fn pdf_gompertz_makeham(
   dargs: &[Expr],
@@ -3858,56 +3888,61 @@ pub fn expectation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let var_name = vars.into_iter().next().unwrap();
 
-  // Compute E[f(x)] using known moment formulas
-  // First try to get mean and variance for common distributions
-  let (mean, variance) = distribution_mean_variance(dist_name, dargs)?;
+  // Compute E[f(x)] using known moment formulas when a closed form exists
+  // for this distribution. Distributions with no such formula (e.g. a
+  // TruncatedDistribution wrapping a distribution with no elementary
+  // variance) fall through to the symbolic/numerical paths below instead
+  // of aborting the whole computation.
+  let mean_variance = distribution_mean_variance(dist_name, dargs).ok();
 
-  // Check if expr is just the variable (E[x] = mean)
-  if matches!(expr, Expr::Identifier(n) if *n == var_name) {
-    return eval(&mean);
-  }
-
-  // Check if expr is x^2 (E[x^2] = Var + Mean^2)
-  if is_power_of_var(expr, &var_name, 2) {
-    // For LogNormal and Weibull, Var + Mean^2 does not simplify to the clean
-    // closed-form second moment (E^(2 m + 2 s^2), b^2 Gamma[1 + 2/a]), so use
-    // the raw-moment formula directly.
-    if matches!(
-      dist_name,
-      "LogNormalDistribution"
-        | "WeibullDistribution"
-        | "HalfNormalDistribution"
-    ) && let Some(raw) = distribution_raw_moment(dist_name, dargs, 2)
-    {
-      return Ok(raw);
+  if let Some((mean, variance)) = &mean_variance {
+    // Check if expr is just the variable (E[x] = mean)
+    if matches!(expr, Expr::Identifier(n) if *n == var_name) {
+      return eval(mean);
     }
-    let result = plus2(variance.clone(), pow2(mean.clone(), int(2)));
-    return eval(&result);
-  }
 
-  // Check for linear expressions: a*x + b
-  if let Some((a, b)) = extract_linear(expr, &var_name) {
-    // E[a*x + b] = a*E[x] + b
-    let result = plus2(times2(a, mean), b);
-    return eval(&result);
-  }
+    // Check if expr is x^2 (E[x^2] = Var + Mean^2)
+    if is_power_of_var(expr, &var_name, 2) {
+      // For LogNormal and Weibull, Var + Mean^2 does not simplify to the
+      // clean closed-form second moment (E^(2 m + 2 s^2), b^2 Gamma[1 +
+      // 2/a]), so use the raw-moment formula directly.
+      if matches!(
+        dist_name,
+        "LogNormalDistribution"
+          | "WeibullDistribution"
+          | "HalfNormalDistribution"
+      ) && let Some(raw) = distribution_raw_moment(dist_name, dargs, 2)
+      {
+        return Ok(raw);
+      }
+      let result = plus2(variance.clone(), pow2(mean.clone(), int(2)));
+      return eval(&result);
+    }
 
-  // MGF identity: E[c · Exp[t·x]] = c · MGF_X(t). Recognised for normal
-  // distributions where MGF(t) = exp(μ t + σ² t²/2), giving exact
-  // symbolic results like `3 Sqrt[E]` instead of numerical surrogates.
-  if dist_name == "NormalDistribution"
-    && let Some((c, t)) = extract_mgf_pattern(expr, &var_name)
-  {
-    let mu = mean.clone();
-    let sigma_sq = variance.clone();
-    // exponent = μ t + σ² t² / 2
-    let mu_t = times2(mu, t.clone());
-    let half = call("Rational", vec![int(1), int(2)]);
-    let sigma_sq_t_sq_half =
-      times2(times2(sigma_sq, pow2(t.clone(), int(2))), half);
-    let exponent = plus2(mu_t, sigma_sq_t_sq_half);
-    let mgf = pow2(Expr::Identifier("E".to_string()), exponent);
-    return eval(&times2(c, mgf));
+    // Check for linear expressions: a*x + b
+    if let Some((a, b)) = extract_linear(expr, &var_name) {
+      // E[a*x + b] = a*E[x] + b
+      let result = plus2(times2(a, mean.clone()), b);
+      return eval(&result);
+    }
+
+    // MGF identity: E[c · Exp[t·x]] = c · MGF_X(t). Recognised for normal
+    // distributions where MGF(t) = exp(μ t + σ² t²/2), giving exact
+    // symbolic results like `3 Sqrt[E]` instead of numerical surrogates.
+    if dist_name == "NormalDistribution"
+      && let Some((c, t)) = extract_mgf_pattern(expr, &var_name)
+    {
+      let mu = mean.clone();
+      let sigma_sq = variance.clone();
+      // exponent = μ t + σ² t² / 2
+      let mu_t = times2(mu, t.clone());
+      let half = call("Rational", vec![int(1), int(2)]);
+      let sigma_sq_t_sq_half =
+        times2(times2(sigma_sq.clone(), pow2(t.clone(), int(2))), half);
+      let exponent = plus2(mu_t, sigma_sq_t_sq_half);
+      let mgf = pow2(Expr::Identifier("E".to_string()), exponent);
+      return eval(&times2(c, mgf));
+    }
   }
 
   // Polynomial integrands: exact raw moments (the numerical fallback
@@ -5428,15 +5463,24 @@ pub fn distribution_mean_variance(
       let xi = dargs[1].clone();
       // Mean = (E^xi * Gamma[0, xi]) / lambda
       let gamma_0_xi = call("Gamma", vec![int(0), xi.clone()]);
-      let mean = div2(times2(pow2(e(), xi), gamma_0_xi), lambda.clone());
-      // Variance has no simple closed form in elementary functions;
-      // GompertzMakehamDistribution is intentionally absent from the
-      // Variance dispatch list, so this placeholder is never returned
-      // to the user. Provide an unevaluated stub so the tuple typechecks.
-      let var = call(
-        "Variance",
-        vec![unevaluated("GompertzMakehamDistribution", dargs)],
-      );
+      let mean =
+        div2(times2(pow2(e(), xi.clone()), gamma_0_xi), lambda.clone());
+      // The variance has no simple closed form in elementary functions. With
+      // concrete numeric parameters (as produced by, e.g., FindRoot fitting
+      // a distribution to a target mean/stdev), integrate the second central
+      // moment against the density numerically instead of leaving the whole
+      // computation stuck on a symbolic placeholder. With symbolic
+      // parameters it stays unevaluated, same as wolframscript.
+      let var = match (try_eval_to_f64(&lambda), try_eval_to_f64(&xi)) {
+        (Some(l), Some(x0)) if l != 0.0 => {
+          let mean_num = try_eval_to_f64(&eval(&mean)?).unwrap_or(0.0);
+          Expr::Real(gompertz_makeham_variance_numeric(l, x0, mean_num))
+        }
+        _ => call(
+          "Variance",
+          vec![unevaluated("GompertzMakehamDistribution", dargs)],
+        ),
+      };
       Ok((mean, var))
     }
     "FrechetDistribution" => {
@@ -6154,6 +6198,42 @@ fn contains_var(expr: &Expr, var: &str) -> bool {
   }
 }
 
+/// One side of a `TruncatedDistribution[{a, b}, base]` domain, as a finite
+/// `f64` usable as an integration bound. When `bound` is already a finite
+/// number, that value is used directly. Otherwise (an infinite bound, e.g.
+/// `{x0, Infinity}`) the base distribution's CDF is searched outward from
+/// `seed` — expanding the step on each probe — until it has captured all
+/// but `eps` of the tail on that side (`positive` selects which tail).
+/// Returns `None` if `base`'s CDF can't be evaluated numerically.
+fn truncated_side_bound(
+  bound: &Expr,
+  base: &Expr,
+  seed: f64,
+  positive: bool,
+  eps: f64,
+) -> Option<f64> {
+  if let Some(v) = try_eval_to_f64(bound)
+    && v.is_finite()
+  {
+    return Some(v);
+  }
+  let cdf_at = |x: f64| -> Option<f64> {
+    try_eval_to_f64(&cdf_ast(&[base.clone(), Expr::Real(x)]).ok()?)
+  };
+  let mut x = seed;
+  let mut step = 1.0_f64;
+  for _ in 0..200 {
+    x = if positive { x + step } else { x - step };
+    let c = cdf_at(x)?;
+    let reached = if positive { c > 1.0 - eps } else { c < eps };
+    step *= 1.5;
+    if reached {
+      break;
+    }
+  }
+  Some(x)
+}
+
 /// Numerical expectation via Monte Carlo or numerical integration.
 fn expectation_numerical(
   expr: &Expr,
@@ -6166,8 +6246,43 @@ fn expectation_numerical(
   // Get integration range and PDF for quadrature
   let n_points = 1000;
 
+  let unevaluated_result = || {
+    call(
+      "Expectation",
+      vec![
+        expr.clone(),
+        call(
+          "Distributed",
+          vec![
+            Expr::Identifier(var.to_string()),
+            unevaluated(dist_name, dargs),
+          ],
+        ),
+      ],
+    )
+  };
+
   // Determine integration bounds based on distribution
   let (lo, hi): (f64, f64) = match dist_name {
+    "TruncatedDistribution" if dargs.len() == 2 => {
+      let Expr::List(bounds) = &dargs[0] else {
+        return unevaluated_result();
+      };
+      if bounds.len() != 2 {
+        return unevaluated_result();
+      }
+      let base = &dargs[1];
+      let a_finite = try_eval_to_f64(&bounds[0]).filter(|v| v.is_finite());
+      let b_finite = try_eval_to_f64(&bounds[1]).filter(|v| v.is_finite());
+      let seed_lo = a_finite.unwrap_or_else(|| b_finite.unwrap_or(0.0) - 1.0);
+      let seed_hi = b_finite.unwrap_or_else(|| a_finite.unwrap_or(0.0) + 1.0);
+      let lo = truncated_side_bound(&bounds[0], base, seed_hi, false, 1e-12);
+      let hi = truncated_side_bound(&bounds[1], base, seed_lo, true, 1e-12);
+      match (lo, hi) {
+        (Some(lo), Some(hi)) if hi > lo => (lo, hi),
+        _ => return unevaluated_result(),
+      }
+    }
     "UniformDistribution" => {
       let (a, b) = match dargs.len() {
         0 => (0.0, 1.0),
@@ -6205,22 +6320,8 @@ fn expectation_numerical(
       };
       (mu - 6.0 * sigma, mu + 6.0 * sigma)
     }
-    _ => {
-      // Return unevaluated for unsupported distributions
-      return call(
-        "Expectation",
-        vec![
-          expr.clone(),
-          call(
-            "Distributed",
-            vec![
-              Expr::Identifier(var.to_string()),
-              unevaluated(dist_name, dargs),
-            ],
-          ),
-        ],
-      );
-    }
+    // Return unevaluated for unsupported distributions
+    _ => return unevaluated_result(),
   };
 
   // Numerical integration: E[f(x)] = integral f(x) * pdf(x) dx
