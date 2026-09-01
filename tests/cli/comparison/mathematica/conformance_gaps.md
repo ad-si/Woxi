@@ -2791,6 +2791,18 @@ not global normalization). Maximum error ≤ 1 LSB of int16.
 Wolfram's graph layer is igraph-backed, and two classes of its output are not
 recoverable from outside.
 
+### `GraphData[]` carries a slice of the atlas, not all 12474 entries
+
+Woxi bundles the named entities it can answer every property for, plus the
+parametrized families (`{"Complete", n}`, `{"Cycle", n}`, `{"Path", n}`,
+`{"Star", n}`, `{"Wheel", n}`, `{"CompleteBipartite", {m, k}}`). Names,
+vertex labelling and edge order follow Wolfram's, and an unknown entity gets
+the same `GraphData::notent` message and unevaluated result — but
+`Length[GraphData[]]` is 14 against WL's 12474, and any entity outside the
+bundled set is a `notent` where WL answers. Only the ~760-entry property list
+is likewise abridged: `GraphData["Properties"]` returns the nine properties
+Woxi answers.
+
 ### Selection among equal optima
 
 `FindVertexCover`, `FindEdgeCover`, `FindVertexCut` and `FindEdgeCut` each pick

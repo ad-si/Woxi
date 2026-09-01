@@ -620,7 +620,7 @@ Specularity,Specifies the specular highlight of 3D surfaces,✅,pure,6.0,576
 Minimize,Global symbolic minimization of a function over variables with optional constraints and an optional Reals or Integers domain,✅,pure,5.0,577
 Begin,Switches $Context so names read afterwards belong to that context,✅,effectful,1.0,578
 RepeatedTiming,Time expression evaluation with repeated sampling,✅,effectful,10.1,579
-GraphData,Self-contained named-graph knowledge base backing GraphData[] (known names) GraphData[name] (the Graph[...] object) and GraphData[name property] (VertexCount/EdgeCount/VertexList/EdgeList/EdgeRules/AdjacencyMatrix/Image/Name) -- not the full Wolfram Knowledgebase graph atlas,✅,pure,6.0,580
+GraphData,Self-contained slice of the named-graph knowledge base backing GraphData[] (known names) GraphData[spec] (the Graph[...] object) and GraphData[spec property] (VertexCount/EdgeCount/VertexList/EdgeList/EdgeRules/AdjacencyMatrix/Graph/Name/StandardName) for both the named entities and the parametrized specs {Complete n} {Cycle n} {Path n} {Star n} {Wheel n} {CompleteBipartite {m k}} -- not the full Wolfram Knowledgebase graph atlas,✅,pure,6.0,580
 FileNameJoin,Join file path components,✅,pure,7.0,582
 ToFileName,Join directory path components into a file name string,✅,pure,1.0,
 InverseFunction,Represents the inverse of a function or geometric transform,✅,pure,2.0,584
