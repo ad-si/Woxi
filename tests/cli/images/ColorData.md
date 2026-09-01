@@ -65,9 +65,17 @@ $ wo 'ColorData["HTML", "Aqua"]'
 RGBColor[0, 1., 1.]
 ```
 
-The `"Legacy"` scheme shares the same named-colour table:
+The `"Legacy"` scheme is the pre-v6 `Graphics`Colors`` palette. Despite the
+overlapping names it is a different table from `"HTML"`: its channels are
+stored to six digits rather than as exact `n/255`, and it carries artists'
+pigment names the CSS table has no entry for.
 
 ```scrut
 $ wo 'ColorData["Legacy", "Wheat"]'
-RGBColor[0.9607843137254902, 0.8705882352941177, 0.7019607843137254]
+RGBColor[0.960799, 0.870602, 0.702002]
+```
+
+```scrut
+$ wo 'ColorData["Legacy", "AlizarinCrimson"]'
+RGBColor[0.889996, 0.149998, 0.209998]
 ```
