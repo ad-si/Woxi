@@ -431,11 +431,20 @@ function runWoxi(expr: string): string {
  * for each test case, comparing against the expected Woxi result.
  * Mismatches are reported via Print.
  */
+/** A fresh wolframscript kernel's `$RecursionLimit`. */
+const DEFAULT_RECURSION_LIMIT = 1024;
+/** What the batch raises it to so deep test expressions can evaluate. */
+const RAISED_RECURSION_LIMIT = 4096;
+
 function buildWolframScript(
   cases: { expr: string; woxiResult: string; idx: number }[]
 ): string {
   const lines: string[] = [];
-  lines.push("$RecursionLimit = 4096");
+  // Deeply nested test expressions need more headroom than a fresh kernel's
+  // 1024, so the batch runs with the limit raised. It is re-set per case
+  // below, because a case that *reads* `$RecursionLimit` has to see the
+  // default a fresh kernel would give it.
+  lines.push("$RecursionLimit = " + RAISED_RECURSION_LIMIT);
 
   // Numeric-tolerance comparison used for APPROX_MATCH cases (see the note on
   // that set). Both operands are InputForm strings. DateObjects are compared by
@@ -514,6 +523,17 @@ function buildWolframScript(
     // fresh kernel answers `{"x"}`. Unprotect first, then clear.
     lines.push('Quiet[Unprotect["Global`*"]]');
     lines.push('ClearAll["Global`*"]');
+    // `ClearAll` does not touch a `$…` system variable, so a case that
+    // assigns `$RecursionLimit` would leak its value into the rest of the
+    // batch. Re-set it here — to the *default* for a case that reads the
+    // variable, since otherwise the batch preamble's raised value is what
+    // such a case would be compared against.
+    lines.push(
+      "$RecursionLimit = " +
+        (expr.includes("$RecursionLimit")
+          ? DEFAULT_RECURSION_LIMIT
+          : RAISED_RECURSION_LIMIT)
+    );
     // Woxi runs every case in a fresh process, so the session state a case
     // leaves behind must not reach the next one. `ClearAll` above only
     // empties `Global``; the context machinery keeps its own state.
