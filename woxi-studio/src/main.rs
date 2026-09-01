@@ -24226,4 +24226,177 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`count$$ = 3, $CellContext`offset$$ 
       degenerate.graphics
     );
   }
+
+  /// A randomly-sampled Wolfram Demonstrations Project notebook (Multipole
+  /// Fields) builds a `Sum` of point-source terms placed evenly around a
+  /// circle (count set by an integer slider with `Appearance -> "Labeled"`),
+  /// feeds it through a `Delimiter`-separated "plot type" popup whose three
+  /// choices are `Plot3D`, `(ContourPlot[SlotSequence[1], …] &)`, and a
+  /// `Quiet[VectorPlot[Evaluate[-{D[#, x], D[#, y]}], …]] &` gradient-field
+  /// function (the default), and switches `Mesh`/`MaxRecursion` via
+  /// `ControlActive[…, If[view === Plot3D, …]]` plus a `PlotLabel` that
+  /// names the source count through `ReplaceAll` against an integer table.
+  /// Woxi Studio already builds and drives this correctly; pin it down with
+  /// an independently written regression test covering the same construct
+  /// category (a ring of point sources instead of multipole terms,
+  /// different names, counts and labels throughout — not copied from the
+  /// original).
+  #[test]
+  fn demonstration_ring_source_field() {
+    let code = r#"Manipulate[
+  view$[Sum[1/Sqrt[(x - Cos[2. Pi (k/count$)])^2 + (y - Sin[2. Pi (k/count$)])^2], {k, 1, count$}],
+    {x, -2, 2}, {y, -2, 2},
+    PlotRange -> {-cap$, cap$}, MeshFunctions -> {#3 &}, Ticks -> None,
+    PlotRangePadding -> 0,
+    Mesh -> ControlActive[None, If[view$ === Plot3D, 12, None]],
+    MaxRecursion -> ControlActive[1, If[view$ === Plot3D, 3, 1]],
+    PlotLabel -> Style[
+      ReplaceAll[count$, {2 -> "binary", 3 -> "ternary", 4 -> "quaternary", 5 -> "quinary", 6 -> "senary"}],
+      "Label"],
+    ImageSize -> {400, 300}],
+  {{count$, 3, "source count"}, 2, 6, 1, Appearance -> "Labeled"}, Delimiter,
+  {{view$,
+     Quiet[VectorPlot[Evaluate[-{D[#, x], D[#, y]}], {x, -2, 2}, {y, -2, 2}, ImageSize -> {400, 300}, VectorPoints -> 15]] &,
+     "view mode"},
+   {Plot3D -> "surface",
+    (ContourPlot[SlotSequence[1], FrameTicks -> None] &) -> "contours",
+    (Quiet[VectorPlot[Evaluate[-{D[#, x], D[#, y]}], {x, -2, 2}, {y, -2, 2}, ImageSize -> {400, 300}, VectorPoints -> 15]] &) -> "gradient"}},
+  {{cap$, 8, "value cap"}, 4, 16}
+]"#;
+
+    let expr = woxi::interpret_to_expr(code).expect("parse/hold Manipulate");
+    let mut state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("a labeled slider, a Delimiter, a Rule-choice popup, and a plain slider should build a widget");
+    assert!(
+      state.error.is_none(),
+      "initial build failed: {:?}",
+      state.error
+    );
+    assert_eq!(
+      state.controls.iter().map(|c| c.name()).collect::<Vec<_>>(),
+      vec!["count$", "", "view$", "cap$"],
+      "panel rows: source-count slider, the Delimiter as an unnamed row, the view-mode popup, the cap slider"
+    );
+    assert!(
+      matches!(state.controls[1], manipulate::ControlState::Divider),
+      "Delimiter must become a Divider row"
+    );
+    match &state.controls[2] {
+      manipulate::ControlState::Discrete {
+        values,
+        value_labels,
+        current_index,
+        ..
+      } => {
+        assert_eq!(
+          value_labels,
+          &vec!["surface", "contours", "gradient"],
+          "the three Rule labels, in source order"
+        );
+        // The default `view$` value is textually identical to the third
+        // choice's function, so it must resolve to that index.
+        assert_eq!(
+          *current_index, 2,
+          "the default gradient function must match the third choice"
+        );
+        assert!(
+          values[0] == "Plot3D",
+          "the first choice's bound value is the bare symbol Plot3D: {values:?}"
+        );
+      }
+      other => panic!("expected `view$` as a Discrete popup, got {other:?}"),
+    }
+
+    let render = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&w.body)
+      })
+      .expect("body evaluates")
+    };
+    let initial = render(&state);
+    assert!(
+      initial.graphics.is_some(),
+      "the default gradient-field view must render"
+    );
+    // The gradient-field choice's function only names `#` (the body), so
+    // Wolfram's Slot substitution drops every argument after the first —
+    // the outer PlotLabel/PlotRange/MeshFunctions never reach it, and this
+    // view's own hard-coded VectorPlot draws no title. Only the Plot3D and
+    // contour choices forward the full argument list (a bare symbol and
+    // `SlotSequence[1]` both pass everything through), so PlotLabel is
+    // checked after switching to one of those below.
+    assert!(
+      !initial
+        .graphics
+        .as_deref()
+        .unwrap_or_default()
+        .contains("ternary"),
+      "the gradient view's Slot-only function must not see the outer PlotLabel: {:?}",
+      initial.graphics
+    );
+
+    // Switch the view mode to the surface (Plot3D) choice and re-render.
+    for c in state.controls.iter_mut() {
+      if let manipulate::ControlState::Discrete {
+        name,
+        current_index,
+        ..
+      } = c
+        && name == "view$"
+      {
+        *current_index = 0;
+      }
+    }
+    state.reevaluate();
+    assert!(
+      state.error.is_none(),
+      "switching to the Plot3D surface view must not error: {:?}",
+      state.error
+    );
+    let surface = render(&state);
+    assert!(
+      surface.graphics.is_some(),
+      "the Plot3D surface view must also render"
+    );
+    assert!(
+      surface
+        .graphics
+        .as_deref()
+        .unwrap_or_default()
+        .contains("ternary"),
+      "Plot3D receives the full argument list, so PlotLabel must report the source count (3 -> ternary): {:?}",
+      surface.graphics
+    );
+
+    // Move the source-count slider and confirm the PlotLabel tracks it.
+    for c in state.controls.iter_mut() {
+      if let manipulate::ControlState::Continuous { name, current, .. } = c
+        && name == "count$"
+      {
+        *current = 5.0;
+      }
+    }
+    state.reevaluate();
+    assert!(
+      state.error.is_none(),
+      "moving the source-count slider must not error: {:?}",
+      state.error
+    );
+    let after = render(&state);
+    assert!(
+      after
+        .graphics
+        .as_deref()
+        .unwrap_or_default()
+        .contains("quinary"),
+      "PlotLabel must recompute after the slider moves (5 -> quinary): {:?}",
+      after.graphics
+    );
+  }
 }
