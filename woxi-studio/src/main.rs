@@ -24226,4 +24226,101 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`count$$ = 3, $CellContext`offset$$ 
       degenerate.graphics
     );
   }
+
+  /// A Manipulate whose body typesets a running total as a formula (no
+  /// `Graphics`) via `Text[TraditionalForm[…]]`, driven by an exponent
+  /// slider (`Appearance -> "Labeled"`) and a discrete rule-labeled control
+  /// switching which weighting function multiplies the summand — mirroring
+  /// the general construct category of Wolfram Demonstrations Project
+  /// notebooks that display a symbolic identity rather than a picture
+  /// (independently written, not copied from any specific one). Regression:
+  /// `Sum[k^s, {k, 1, n}]` only had hand-derived closed forms for s = 2..5,
+  /// and `Sum[k^s*HarmonicNumber[k], {k, 1, n}]` had none at all, so the
+  /// formula stayed as a raw, un-typeset `Sum[…]` for any exponent above 5
+  /// (or any use of the harmonic weighting) instead of a closed form.
+  #[test]
+  fn manipulate_text_formula_power_times_harmonic_weight() {
+    let code = r#"Manipulate[
+      Text[TraditionalForm[Pane[(total == ReleaseHold[total]) /. {deg -> exponent, weight -> choice}, {380, 260}]]],
+      {{exponent, 6, "exponent"}, 1, 15, 1, Appearance -> "Labeled"},
+      {{choice, HarmonicNumber, "weight"}, {PolyGamma -> "digamma weight", HarmonicNumber -> "harmonic weight"}},
+      Initialization :> {total = HoldForm[Sum[j^deg*weight[j], j]]}
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let mut state = manipulate::ManipulateState::from_expr(&expr).expect(
+      "an exponent slider plus a rule-labeled weight picker should build a widget",
+    );
+    assert!(
+      state.error.is_none(),
+      "initial render failed: {:?}",
+      state.error
+    );
+    assert_eq!(
+      state.controls.iter().map(|c| c.name()).collect::<Vec<_>>(),
+      vec!["exponent", "choice"],
+      "panel rows: exponent slider, weight picker"
+    );
+    assert!(
+      matches!(
+        state.controls[0],
+        manipulate::ControlState::Continuous { .. }
+      ),
+      "the exponent spec must become a Continuous slider"
+    );
+    match &state.controls[1] {
+      manipulate::ControlState::Discrete {
+        values,
+        value_labels,
+        ..
+      } => {
+        assert_eq!(values, &["PolyGamma", "HarmonicNumber"]);
+        assert_eq!(value_labels, &["digamma weight", "harmonic weight"]);
+      }
+      other => panic!("expected a Discrete control, got {other:?}"),
+    }
+
+    // The default weight (HarmonicNumber) must close to a typeset formula,
+    // not a raw unevaluated Sum or an Indeterminate boundary artifact.
+    assert!(
+      state.graphics_handle.is_none(),
+      "a Text[...] body draws no graphic"
+    );
+    // The formula reads `HoldForm[Sum[...]] == <closed form>` — the LHS
+    // stays an unevaluated `Sum[...]` on purpose (it names the symbolic
+    // total being displayed); only the right-hand side is the closed form
+    // this test is pinning down.
+    let formula = state.text_output.clone().unwrap_or_default();
+    let rhs = formula.rsplit("==").next().unwrap_or_default();
+    assert!(
+      rhs.contains("HarmonicNumber")
+        && !rhs.contains("Sum[")
+        && !rhs.contains("Indeterminate"),
+      "expected a closed-form harmonic formula, got: {formula:?}"
+    );
+
+    // Dragging the exponent slider re-evaluates cleanly for every degree in
+    // its range, not just the hand-derived ones that used to work.
+    for exponent in [1.0, 2.0, 5.0, 9.0, 15.0] {
+      for c in &mut state.controls {
+        if let manipulate::ControlState::Continuous { name, current, .. } = c
+          && name == "exponent"
+        {
+          *current = exponent;
+        }
+      }
+      state.reevaluate();
+      assert!(
+        state.error.is_none(),
+        "exponent {exponent} failed: {:?}",
+        state.error
+      );
+      let formula = state.text_output.clone().unwrap_or_default();
+      let rhs = formula.rsplit("==").next().unwrap_or_default();
+      assert!(
+        !rhs.contains("Sum[") && !rhs.contains("Indeterminate"),
+        "exponent {exponent} did not close to a formula: {formula:?}"
+      );
+    }
+  }
 }

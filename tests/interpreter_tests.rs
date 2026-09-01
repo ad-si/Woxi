@@ -1806,6 +1806,128 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_sum_of_kth_powers_beyond_the_hand_derived_degrees() {
+    // `Sum[k^s, {k, 1, n}]` used to hand-derive one closed form per degree
+    // (s = 2..5) and leave every higher power unevaluated — a Demonstration
+    // sampled from the Wolfram Demonstrations Project ("Summation by
+    // Parts") drives a slider up to degree 17, so a numeric answer was
+    // needed for every degree in between too, not just the five that had
+    // been transcribed by hand. Faulhaber's formula (Bernoulli numbers)
+    // closes any degree; each result is checked against a brute-force sum
+    // for several `n`, and s = 2..5 must still print exactly as before.
+    clear_state();
+    assert_eq!(
+      interpret("Sum[k^2, {k, 1, n}]").unwrap(),
+      "(n*(1 + n)*(1 + 2*n))/6"
+    );
+    assert_eq!(
+      interpret("Sum[k^3, {k, 1, n}]").unwrap(),
+      "(n^2*(1 + n)^2)/4"
+    );
+    assert_eq!(
+      interpret("Sum[k^5, {k, 1, n}]").unwrap(),
+      "(n^2*(1 + n)^2*(-1 + 2*n + 2*n^2))/12"
+    );
+    for s in [1, 6, 7, 9, 17] {
+      let closed_form = interpret(&format!("Sum[k^{s}, {{k, 1, n}}]")).unwrap();
+      assert!(
+        !closed_form.contains("Sum["),
+        "degree {s} stayed unevaluated: {closed_form}"
+      );
+      for n in [1, 2, 5, 12] {
+        let via_formula: i64 =
+          interpret(&format!("Sum[k^{s}, {{k, 1, n}}] /. n -> {n}"))
+            .unwrap()
+            .parse()
+            .unwrap();
+        let brute_force: i64 = interpret(&format!("Sum[k^{s}, {{k, 1, {n}}}]"))
+          .unwrap()
+          .parse()
+          .unwrap();
+        assert_eq!(
+          via_formula, brute_force,
+          "degree {s}, n = {n}: {closed_form}"
+        );
+      }
+    }
+  }
+
+  #[test]
+  fn test_sum_of_power_times_harmonic_number() {
+    // The same "Summation by Parts" Demonstration's whole point is a
+    // closed form for `Sum[k^s HarmonicNumber[k], {k, 1, n}]` — discrete
+    // summation by parts (Abel summation), independently re-derived here
+    // rather than read off the notebook. Checked against a brute-force sum
+    // (with `HarmonicNumber` expanded numerically) for several `n`.
+    // wolframscript/Woxi print a machine real past a certain magnitude in
+    // `1.234*^6`-style scientific notation, which Rust's `f64` parser
+    // rejects outright (it wants `1.234e6`).
+    fn parse_wolfram_real(s: &str) -> f64 {
+      s.replace("*^", "e").parse().unwrap()
+    }
+
+    clear_state();
+    for s in [1, 2, 4, 8] {
+      let closed_form =
+        interpret(&format!("Sum[k^{s}*HarmonicNumber[k], {{k, 1, n}}]"))
+          .unwrap();
+      assert!(
+        !closed_form.contains("Sum["),
+        "degree {s} stayed unevaluated: {closed_form}"
+      );
+      for n in [1, 2, 5, 9] {
+        let via_formula = parse_wolfram_real(
+          &interpret(&format!(
+            "N[Sum[k^{s}*HarmonicNumber[k], {{k, 1, n}}] /. n -> {n}]"
+          ))
+          .unwrap(),
+        );
+        let brute_force = parse_wolfram_real(
+          &interpret(&format!(
+            "N[Sum[k^{s}*HarmonicNumber[k], {{k, 1, {n}}}]]"
+          ))
+          .unwrap(),
+        );
+        assert!(
+          (via_formula - brute_force).abs() < 1e-6 * brute_force.abs().max(1.0),
+          "degree {s}, n = {n}: formula {via_formula} vs brute force \
+           {brute_force} ({closed_form})"
+        );
+      }
+    }
+  }
+
+  #[test]
+  fn test_indefinite_sum_drops_a_nonfinite_boundary_term() {
+    // `Sum[f[i], i]` (indefinite) closes as `f(0) + Sum[f[k], {k, 1, i-1}]`.
+    // For a summand with a genuine pole at 0 (`1/k`, `PolyGamma[k]`) that
+    // boundary term evaluates to `ComplexInfinity`/`Indeterminate` and used
+    // to poison the whole result through `Plus`, even though the
+    // antidifference itself is perfectly well defined there — wolframscript's
+    // `Sum[1/i, i]` is `HarmonicNumber[-1 + i]`, exactly the telescoping
+    // part alone. A non-finite boundary term is now dropped instead of
+    // added in.
+    clear_state();
+    assert_eq!(interpret("Sum[1/k, k]").unwrap(), "HarmonicNumber[-1 + k]");
+    assert!(
+      !interpret("Sum[PolyGamma[k], k]")
+        .unwrap()
+        .contains("Indeterminate"),
+      "a pole at the boundary must not poison the whole sum"
+    );
+    assert!(
+      !interpret("Sum[k*PolyGamma[k], k]")
+        .unwrap()
+        .contains("Indeterminate"),
+      "a pole at the boundary must not poison the whole sum"
+    );
+    // A regular (non-singular) summand is unaffected: the boundary term is
+    // still added in as before.
+    assert_eq!(interpret("Sum[1, i]").unwrap(), "i");
+    assert_eq!(interpret("Sum[i, i]").unwrap(), "((-1 + i)*i)/2");
+  }
+
+  #[test]
   fn test_distinct_images_are_not_same_q_or_equal() {
     // `expr_to_string` reports every `Image[…]` as the same `-Image-`
     // display placeholder. `SameQ`/`Equal` and the structural-equality
