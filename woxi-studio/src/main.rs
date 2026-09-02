@@ -5186,13 +5186,29 @@ fn instantiate_stored_manipulate(
   if statements.len() != 1 {
     return None;
   }
+  let expr = woxi::interpret_to_expr(&statements[0]).ok()?;
   // `Manipulate[…, SaveDefinitions -> True]` embeds the definitions its
-  // body depends on in the stored output's Initialization. Run them once
-  // (Wolfram's SynchronousInitialization) before instantiating, so the
-  // widget works right when the notebook opens — before any of the
-  // notebook's definition cells have been evaluated.
-  if let Some(init) =
-    woxi::notebook::extract_saved_initialization(stored_output)
+  // body depends on in the stored output's Initialization, because the
+  // Manipulate's own `Initialization` option is absent — the helper
+  // definitions live in a separate "Initialization Code" cell instead. Run
+  // the recovered copy once (Wolfram's SynchronousInitialization) before
+  // instantiating, so the widget works right when the notebook opens —
+  // before any of the notebook's definition cells have been evaluated.
+  //
+  // Wolfram embeds this very same `Initialization:>(…)` shape in the box
+  // dump for *any* Manipulate that carries its own `Initialization :> …`
+  // option too, not just a `SaveDefinitions -> True` one. Recovering and
+  // running that FullForm copy in that case is pure duplication — the live
+  // source's `Initialization` already runs it correctly a moment later —
+  // and running it twice can leave a helper function bound to a broken
+  // duplicate rule (its Module locals shadow differently in FullForm).
+  // Only fall back to the stored copy when the live source truly has none
+  // of its own.
+  let has_own_initialization =
+    woxi::functions::graphics::manipulate_has_own_initialization(&expr);
+  if !has_own_initialization
+    && let Some(init) =
+      woxi::notebook::extract_saved_initialization(stored_output)
   {
     // These names lived in the DynamicModule's private `$CellContext`` in
     // Wolfram, isolated from anything of the same name elsewhere —
@@ -5209,7 +5225,6 @@ fn instantiate_stored_manipulate(
     }
     let _ = woxi::interpret(&init);
   }
-  let expr = woxi::interpret_to_expr(&statements[0]).ok()?;
   manipulate::ManipulateState::from_expr(&expr)
 }
 
@@ -8544,6 +8559,47 @@ Cell[BoxData["standalone output"], "Output"]
       state.text_output.as_deref(),
       Some("5"),
       "the notebook's own Midpoint must win over the built-in"
+    );
+  }
+
+  #[test]
+  fn stored_manipulate_own_initialization_skips_saved_box_dump_copy() {
+    // Wolfram embeds an `Initialization:>(…)` copy of *any* Manipulate's own
+    // `Initialization :> …` option into its cached DynamicModuleBox output —
+    // not only for a `SaveDefinitions -> True` one. Regression: that copy
+    // was mistaken for a SaveDefinitions recovery and evaluated a second
+    // time (in FullForm) ahead of the live Initialization, which could leave
+    // a helper function bound to a broken duplicate rule (this is how the
+    // Wolfram Demonstrations Project's "Spherical Pendulum" notebook's
+    // NDSolve-backed body broke in the Studio). The stored copy must only
+    // run when the live source has no Initialization of its own.
+    woxi::clear_state();
+    let dump = "DynamicModuleBox[{$CellContext`x$$ = 0}, \
+      DynamicBox[…],\n\
+      Deinitialization:>None,\n\
+      Initialization:>({$CellContext`sawBoxDumpInit = True}; \
+      Typeset`initDone$$ = True),\n\
+      SynchronousInitialization->True]";
+    let state = instantiate_stored_manipulate(
+      "Manipulate[x, {x, 0, 10}, Initialization :> (ownOffset = 1)]",
+      dump,
+    )
+    .unwrap();
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert_eq!(
+      woxi::interpret("sawBoxDumpInit").ok().as_deref(),
+      Some("sawBoxDumpInit"),
+      "the stored box dump's cached Initialization copy must not run \
+       when the Manipulate already carries its own"
+    );
+    assert_eq!(
+      woxi::interpret("ownOffset").ok().as_deref(),
+      Some("1"),
+      "the live Initialization must still run"
     );
   }
 
