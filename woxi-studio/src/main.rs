@@ -21097,6 +21097,53 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`nmax$$ = 10}, DynamicBox[\[Ellipsis
     assert!(state.graphics_handle.is_some());
   }
 
+  /// A saved `ManipulateBoxes[…]` dump — the shape a Wolfram Demonstration
+  /// downloaded straight from a share link carries, with no Input-cell
+  /// source to fall back on (see [`instantiate_manipulate_from_box_dump`]) —
+  /// can declare a helper variable whose "Specifications" entry names no
+  /// range, no discrete choice list and no colour: just `{{var, value},
+  /// "someTag"}`, where the tag is an internal type marker the front end
+  /// uses (`"function"` for a `Compile`d helper only ever called from the
+  /// body) rather than a real control domain. Before this test's fix such a
+  /// spec matched none of `parse_manipulate_control`'s recognized shapes and
+  /// was dropped entirely — taking the variable's only binding with it — so
+  /// the body's call to it raised an evaluation error instead of running.
+  #[test]
+  fn tagged_helper_specification_binds_without_a_spurious_control() {
+    let dump = "DynamicModuleBox[{}, DynamicBox[Manipulate`ManipulateBoxes[\n\
+      1, StandardForm, \n\
+      \"Body\" :> $CellContext`helper$$[$CellContext`n$$], \n\
+      \"Specifications\" :> {\
+        {{$CellContext`helper$$, \
+          CompiledFunction[{1, 2, 3}, {Blank[Integer]}, {}, \
+            Function[{$CellContext`x}, $CellContext`x^2], Evaluate]}, \
+          \"function\"}, \
+        {{$CellContext`n$$, 3}, 1, 10}}, \n\
+      \"Options\" :> {}],\n\
+      DynamicModuleValues:>{}]]";
+    let state = instantiate_manipulate_from_box_dump(dump)
+      .expect("the reconstructed Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "the helper$$ binding must resolve instead of erroring: {:?}",
+      state.error
+    );
+    assert_eq!(
+      state
+        .controls
+        .iter()
+        .map(|c| c.name().to_string())
+        .collect::<Vec<_>>(),
+      vec!["n$$"],
+      "the tagged helper spec must not create a spurious second control: \
+       {:?}",
+      state.controls
+    );
+    // helper$$ falls back to the embedded uncompiled `Function[{x}, x^2]`
+    // applied to n$$'s initial value 3.
+    assert_eq!(state.text_output.as_deref(), Some("9"));
+  }
+
   /// A synthetic "throw a dart at a target" Manipulate in the shape the
   /// "Dart Practice" Demonstration uses: the interactive picture lives in a
   /// `DynamicModule` wrapping the Manipulate body, and a `Button` embedded
@@ -24427,6 +24474,143 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`count$$ = 3, $CellContext`offset$$ 
         "exponent {exponent} did not close to a formula: {formula:?}"
       );
     }
+  }
+
+  /// A randomly-sampled Wolfram Demonstrations Project notebook ("Rolling
+  /// Two Dice with Weighted History") reweights each new random draw so
+  /// outcomes that have appeared less than a running target frequency get
+  /// picked more often, then plots the resulting frequencies against the
+  /// target ones once the run finishes. Independently written, not copied
+  /// from the original: this version draws from a 6-color urn (not dice),
+  /// reinforces weights from a `deficit` (target minus observed-so-far,
+  /// clipped non-negative) instead of the original's `2^(...)`
+  /// information-theoretic exponent, uses different helper and variable
+  /// names, a `Clip`-based instead of a division-based weighting, and a
+  /// `showTally` checkbox toggling a `Column` of `{color, count}` pairs
+  /// instead of the original's raw-rolls dump.
+  ///
+  /// The construct worth pinning down is a `Manipulate` `Initialization`
+  /// block defining a helper (`freqOf`) that closes over an
+  /// `Initialization`-scoped list (`colors$$`), called from a
+  /// `Module`-local `For`/`Increment` loop in the body that rebuilds a
+  /// weighted `RandomChoice` argument (`deficit -> colors$$`) fresh on
+  /// every iteration — together with `Tally[Sort[...]]` and a
+  /// `Riffle`/`Partition` comparison `ListPlot`.
+  #[test]
+  fn demonstration_urn_reinforcement_manipulate_builds_its_history() {
+    let code = r#"Manipulate[
+      SeedRandom[seed];
+      Module[{drawn = {}, k, deficit, picked},
+        For[k = 1, k <= draws, Increment[k],
+          deficit = Clip[base$$ - freqOf[drawn], {0, Infinity}] + 1;
+          picked =
+            If[k <= warmup || RandomReal[] < pRandom,
+              RandomChoice[base$$ -> colors$$],
+              RandomChoice[deficit -> colors$$]
+            ];
+          drawn = Append[drawn, picked]
+        ];
+        Pane[
+          Column[{
+            Style["last draw: " <> ToString[Last[drawn]], Bold],
+            If[showTally,
+              comparePlot[freqOf[drawn]],
+              ""
+            ],
+            Style["tally", Bold],
+            If[showTally, Tally[Sort[drawn]], ""]
+          }]
+        ]
+      ],
+      {{seed, 11, "seed"}, 1, 999999, 1, Appearance -> "Labeled", ImageSize -> 100},
+      {{draws, 40, "draws"}, 1, 300, 1, Appearance -> "Labeled", ImageSize -> 100},
+      {{warmup, 4, "warmup draws"}, 0, 20, 1, Appearance -> "Labeled", ImageSize -> 100},
+      {{pRandom, 0.15, "random fraction"}, 0, 1, Appearance -> "Labeled", ImageSize -> 100},
+      {{showTally, True, "show tally"}, {False, True}},
+      Initialization :> (
+        colors$$ = Range[1, 6];
+        base$$ = {2, 3, 5, 3, 2, 1};
+        freqOf[data_] := Table[Count[data, colors$$[[c]]], {c, 1, Length[colors$$]}];
+        comparePlot[f_] := ListPlot[{
+          Partition[Riffle[colors$$, base$$], 2],
+          Partition[Riffle[colors$$, f], 2]
+        }, PlotStyle -> {Gray, Darker[Green]}, PlotRange -> {{0.5, 6.5}, {0, 15}}];
+      )
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("four labelled sliders and a checkbox should build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+
+    match &state.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name: seed_name, ..
+        },
+        manipulate::ControlState::Continuous {
+          name: draws_name, ..
+        },
+        manipulate::ControlState::Continuous {
+          name: warmup_name, ..
+        },
+        manipulate::ControlState::Continuous {
+          name: prandom_name, ..
+        },
+        manipulate::ControlState::Discrete {
+          name: tally_name,
+          values: tally_values,
+          current_index: tally_index,
+          ..
+        },
+      ] => {
+        assert_eq!(seed_name, "seed");
+        assert_eq!(draws_name, "draws");
+        assert_eq!(warmup_name, "warmup");
+        assert_eq!(prandom_name, "pRandom");
+        assert_eq!(tally_name, "showTally");
+        assert_eq!(tally_values, &["False", "True"]);
+        assert_eq!(*tally_index, 1, "showTally defaults to True");
+      }
+      other => panic!("expected four sliders and a checkbox, got {other:?}"),
+    }
+
+    // With `warmup = 4` and `pRandom = 0.15`, most of the 40 draws pick
+    // from the reinforced `deficit` weights, which keep every color's
+    // count from drifting far below its `base$$` share — so all six
+    // colors must appear at least once. Checked independently against
+    // `woxi eval` on the same from-scratch helpers, seeded with 11.
+    let bindings: Vec<(String, String)> = state
+      .controls
+      .iter()
+      .map(|c| (c.name().to_string(), c.current_code()))
+      .collect();
+    let tally = woxi::with_scoped_globals(&bindings, || {
+      woxi::interpret_with_stdout(
+        r#"SeedRandom[seed];
+        Module[{drawn = {}, k, deficit, picked},
+          For[k = 1, k <= draws, Increment[k],
+            deficit = Clip[base$$ - freqOf[drawn], {0, Infinity}] + 1;
+            picked =
+              If[k <= warmup || RandomReal[] < pRandom,
+                RandomChoice[base$$ -> colors$$],
+                RandomChoice[deficit -> colors$$]
+              ];
+            drawn = Append[drawn, picked]
+          ];
+          Sort[Tally[drawn][[All, 1]]]
+        ]"#,
+      )
+    })
+    .expect("the reinforcement helpers must evaluate");
+    assert_eq!(
+      tally.result, "{1, 2, 3, 4, 5, 6}",
+      "every color must be drawn at least once over 40 reinforced draws"
+    );
   }
 
   /// A randomly-sampled Wolfram Demonstrations Project notebook (Multipole
