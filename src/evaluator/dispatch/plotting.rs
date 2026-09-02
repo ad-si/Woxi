@@ -229,11 +229,18 @@ pub fn dispatch_plotting(
       // expression symbolic.
       match crate::evaluator::evaluate_expr_to_expr(&args[0]) {
         // A TimeSeries / TemporalData or an Association is a valid
-        // (non-List) data source.
+        // (non-List) data source, and so is a display wrapper
+        // (`Tooltip`, `Style`, ...) around any of those.
         Ok(evaluated)
-          if !matches!(evaluated, Expr::List(_) | Expr::Association(_))
-            && crate::functions::timeseries_ast::temporal_paths(&evaluated)
-              .is_none() =>
+          if !matches!(
+            crate::functions::list_plot::strip_plot_data_display_wrapper(
+              &evaluated
+            ),
+            Expr::List(_) | Expr::Association(_)
+          ) && crate::functions::timeseries_ast::temporal_paths(
+            &evaluated,
+          )
+          .is_none() =>
         {
           crate::emit_message(&format!(
             "ListLinePlot::lpn: {} is not a list of numbers or pairs of numbers.",

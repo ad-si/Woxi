@@ -6997,6 +6997,43 @@ mod tests {
     assert_eq!(state.error, None, "the compiled body must evaluate cleanly");
   }
 
+  /// A supply/demand-style Manipulate whose body computes a running-average
+  /// series and plots it with `ListLinePlot[Tooltip[series, "label"], ...]`
+  /// alongside ordinary `Plot`s, mirroring the "wrap the whole data series in
+  /// a Tooltip so hovering shows a name" idiom common to Wolfram
+  /// Demonstrations Project economics notebooks (independently written, not
+  /// copied from any specific one). Regression: `ListLinePlot` treated the
+  /// `Tooltip[...]` wrapper as invalid data (it only unwrapped `Tooltip`
+  /// around individual points, not around the whole series), emitted
+  /// `ListLinePlot::lpn`, and left the call unevaluated — so this cell's
+  /// second panel came out blank in Woxi Studio.
+  #[test]
+  fn manipulate_list_line_plot_tooltip_wrapped_series() {
+    let code = r#"Manipulate[
+      GraphicsGrid[{{
+        Plot[a x, {x, 0, 10}],
+        ListLinePlot[Tooltip[Table[Accumulate[Range[n]][[i]]/i, {i, n}], "running average"]]
+      }}],
+      {{a, 1}, 0, 2},
+      {{n, 10}, 5, 20, 1}
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr).expect(
+      "a Tooltip-wrapped ListLinePlot series should build a ManipulateState",
+    );
+
+    assert_eq!(
+      state.error, None,
+      "a whole-series Tooltip wrapper must not fail data validation: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the GraphicsGrid panel should still render"
+    );
+  }
+
   /// A dissection Manipulate assembling colored polygon pieces with
   /// `Translate`/`Rotate`, a boolean checkbox control (`{False, True}`
   /// domain) toggling a hint overlay, and several `Tiny` step sliders with
