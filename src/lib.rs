@@ -2491,25 +2491,7 @@ fn format_top_level_result(result_expr: syntax::Expr, depth: usize) -> String {
   let result_expr = render_tabular_if_needed(result_expr);
   // In visual mode, render TableForm[list], MatrixForm[list], and Column[list] as SVGs
   let result_expr = if VISUAL_MODE.with(|v| *v.borrow()) {
-    // Strip the wrappers that only say how to set what they hold, so the
-    // passes below see the wrapped content (e.g. Pane[Column[{…,
-    // Graphics[…]}]] renders the column with its embedded graphic). CLI
-    // mode keeps the symbolic Pane[…] echo to match wolframscript.
-    let result_expr = unwrap_display_pass_through(&result_expr);
-    let result_expr = render_interactive_pane_if_needed(result_expr);
-    let result_expr = render_labeled_if_needed(result_expr);
-    let result_expr = render_dynamic_if_needed(result_expr);
-    let result_expr = render_graphics_fc_if_needed(result_expr);
-    let result_expr = render_color_if_needed(result_expr);
-    let result_expr = render_tableform_if_needed(result_expr);
-    let result_expr = render_matrixform_if_needed(result_expr);
-    let result_expr = render_traditionalform_list_if_needed(result_expr);
-    let result_expr = render_styled_layout_if_needed(result_expr);
-    let result_expr = render_column_if_needed(result_expr);
-    let result_expr = render_row_if_needed(result_expr);
-    let result_expr = render_treeform_if_needed(result_expr);
-    let result_expr = render_framed_if_needed(result_expr);
-    render_highlighted_if_needed(result_expr)
+    render_visual_display_pipeline(&result_expr)
   } else {
     result_expr
   };
@@ -3283,6 +3265,7 @@ fn render_inline_display_wrapper(expr: &syntax::Expr) -> syntax::Expr {
   let expr = unwrap_display_pass_through(expr);
   let expr = render_interactive_pane_if_needed(expr);
   let expr = render_dynamic_if_needed(expr);
+  let expr = render_event_handler_if_needed(expr);
   let expr = render_grid_if_needed(expr);
   let expr = render_dataset_if_needed(expr);
   let expr = render_tabular_if_needed(expr);
@@ -3324,6 +3307,55 @@ fn render_dynamic_if_needed(expr: syntax::Expr) -> syntax::Expr {
     }
     _ => expr,
   }
+}
+
+/// In visual (notebook) display mode, `EventHandler[content, event-rules…]`
+/// displays `content` — the front end wires the event rules to live mouse
+/// input, which Woxi's visual hosts don't wire through, but the wrapped
+/// content still renders exactly as it would on its own (a Demonstrations
+/// idiom wraps the whole `Dynamic[Show[…]]` display of a Manipulate in an
+/// `EventHandler` to make it click-to-toggle). Script/CLI mode keeps the
+/// symbolic `EventHandler[…]` echo to match wolframscript.
+fn render_event_handler_if_needed(expr: syntax::Expr) -> syntax::Expr {
+  if !is_visual_mode() {
+    return expr;
+  }
+  match &expr {
+    syntax::Expr::FunctionCall { name, args }
+      if name == "EventHandler" && !args.is_empty() =>
+    {
+      render_visual_display_pipeline(&args[0])
+    }
+    _ => expr,
+  }
+}
+
+/// The full visual-mode display-rendering pipeline: release `Dynamic[…]`
+/// holds, drop `EventHandler[…]` event rules, and render `TableForm`,
+/// `MatrixForm`, `Column`, `Row`, `Grid`, … wrappers into embedded SVGs.
+/// Used for a cell's top-level result and, recursively, for the content an
+/// `EventHandler[…]` wraps once its event rules have been dropped.
+fn render_visual_display_pipeline(expr: &syntax::Expr) -> syntax::Expr {
+  // Strip the wrappers that only say how to set what they hold, so the
+  // passes below see the wrapped content (e.g. Pane[Column[{…,
+  // Graphics[…]}]] renders the column with its embedded graphic). CLI
+  // mode keeps the symbolic Pane[…] echo to match wolframscript.
+  let expr = unwrap_display_pass_through(expr);
+  let expr = render_interactive_pane_if_needed(expr);
+  let expr = render_labeled_if_needed(expr);
+  let expr = render_dynamic_if_needed(expr);
+  let expr = render_event_handler_if_needed(expr);
+  let expr = render_graphics_fc_if_needed(expr);
+  let expr = render_color_if_needed(expr);
+  let expr = render_tableform_if_needed(expr);
+  let expr = render_matrixform_if_needed(expr);
+  let expr = render_traditionalform_list_if_needed(expr);
+  let expr = render_styled_layout_if_needed(expr);
+  let expr = render_column_if_needed(expr);
+  let expr = render_row_if_needed(expr);
+  let expr = render_treeform_if_needed(expr);
+  let expr = render_framed_if_needed(expr);
+  render_highlighted_if_needed(expr)
 }
 
 /// If `expr` is `Column[{…}]`, render it as an SVG column and return `-Graphics-`.
@@ -3383,7 +3415,10 @@ fn render_styled_layout_if_needed(expr: syntax::Expr) -> syntax::Expr {
     } => inner_name.as_str(),
     _ => return expr,
   };
-  if !matches!(inner_name, "Column" | "Row" | "Grid" | "TextGrid") {
+  if !matches!(
+    inner_name,
+    "Column" | "Row" | "Grid" | "TextGrid" | "Dynamic"
+  ) {
     return expr;
   }
   let rendered = match inner_name {
@@ -3399,6 +3434,16 @@ fn render_styled_layout_if_needed(expr: syntax::Expr) -> syntax::Expr {
         render_row_if_needed(styled)
       }
     }
+    // `Style[Dynamic[…], directives…]` — a Demonstration idiom that styles
+    // (or, as with `DynamicEvaluationTimeout`, merely annotates) a live
+    // display rather than a static layout. The directives carry no visual
+    // meaning for an already-rendered graphic, so releasing the `Dynamic`
+    // hold and dropping them is the same trade `render_event_handler_if_needed`
+    // makes for the event rules it wraps.
+    // Releasing the `Dynamic` hold only gets as far as a symbolic
+    // `Graphics[…]`/`Image[…]` call — same as the top-level pipeline, it
+    // still needs a render pass to turn that into the drawn picture.
+    "Dynamic" => render_graphics_fc_if_needed(render_dynamic_if_needed(inner)),
     // Rebuild `Style[inner, directives…]` (with the outer wrappers now
     // stripped) rather than pushing the directives into each cell, so this
     // hits the same `Style[Grid[…], …]` arm of `render_grid_if_needed` a
@@ -3414,7 +3459,10 @@ fn render_styled_layout_if_needed(expr: syntax::Expr) -> syntax::Expr {
       render_grid_if_needed(restyled)
     }
   };
-  if matches!(rendered, syntax::Expr::Graphics { .. }) {
+  if matches!(
+    rendered,
+    syntax::Expr::Graphics { .. } | syntax::Expr::Image { .. }
+  ) {
     rendered
   } else {
     expr
