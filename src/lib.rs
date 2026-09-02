@@ -2491,7 +2491,7 @@ fn format_top_level_result(result_expr: syntax::Expr, depth: usize) -> String {
   let result_expr = render_tabular_if_needed(result_expr);
   // In visual mode, render TableForm[list], MatrixForm[list], and Column[list] as SVGs
   let result_expr = if VISUAL_MODE.with(|v| *v.borrow()) {
-    render_visual_display_pipeline(result_expr)
+    render_visual_display_pipeline(&result_expr)
   } else {
     result_expr
   };
@@ -3324,7 +3324,7 @@ fn render_event_handler_if_needed(expr: syntax::Expr) -> syntax::Expr {
     syntax::Expr::FunctionCall { name, args }
       if name == "EventHandler" && !args.is_empty() =>
     {
-      render_visual_display_pipeline(args[0].clone())
+      render_visual_display_pipeline(&args[0])
     }
     _ => expr,
   }
@@ -3335,12 +3335,12 @@ fn render_event_handler_if_needed(expr: syntax::Expr) -> syntax::Expr {
 /// `MatrixForm`, `Column`, `Row`, `Grid`, … wrappers into embedded SVGs.
 /// Used for a cell's top-level result and, recursively, for the content an
 /// `EventHandler[…]` wraps once its event rules have been dropped.
-fn render_visual_display_pipeline(expr: syntax::Expr) -> syntax::Expr {
+fn render_visual_display_pipeline(expr: &syntax::Expr) -> syntax::Expr {
   // Strip the wrappers that only say how to set what they hold, so the
   // passes below see the wrapped content (e.g. Pane[Column[{…,
   // Graphics[…]}]] renders the column with its embedded graphic). CLI
   // mode keeps the symbolic Pane[…] echo to match wolframscript.
-  let expr = unwrap_display_pass_through(&expr);
+  let expr = unwrap_display_pass_through(expr);
   let expr = render_interactive_pane_if_needed(expr);
   let expr = render_labeled_if_needed(expr);
   let expr = render_dynamic_if_needed(expr);
