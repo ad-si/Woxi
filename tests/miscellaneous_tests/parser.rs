@@ -182,6 +182,54 @@ mod tests {
   }
 
   #[test]
+  fn test_parse_truncated_nested_groups_rejected_quickly() {
+    // Regression (fuzz finding, nightly 2026-09-02): a *truncated* script —
+    // an unclosed group with real code inside it — cost 2-3x more to reject
+    // per nesting level, because every enclosing alternative parsed the same
+    // contents again before failing. Rejecting a 4 KB truncated `Graphics`
+    // script took 0.6 s, which is over the fuzzer's 10 s timeout in a
+    // sanitizer build. The balanced-group guards in the grammar make it a
+    // linear scan instead.
+    let body = "Line[{{1.5, -1.2}, {0.2, -0.8}}],\n".repeat(40);
+    let cases = [
+      format!("{}{body}", "f[\n".repeat(10)),
+      format!("{}{body}", "{\n".repeat(10)),
+      format!("{}{body}", "(\n".repeat(10)),
+      format!("{}{body}", "<|a -> ".repeat(10)),
+      // The head of a truncated call is a string / number / list literal.
+      format!("{}{body}", "\"s\"[\n".repeat(10)),
+      format!("{}{body}", "{1}[\n".repeat(10)),
+    ];
+    for input in &cases {
+      let start = std::time::Instant::now();
+      assert!(parse(input).is_err(), "should not parse: {input:?}");
+      assert!(
+        start.elapsed() < std::time::Duration::from_secs(5),
+        "rejection took too long for: {input:?}"
+      );
+    }
+  }
+
+  #[test]
+  fn test_parse_groups_closed_inside_string_literals() {
+    // The balanced-group guards skip strings and comments, so a bracket that
+    // is only string content neither opens nor closes a group — and `\"` is
+    // an escaped quote, not the end of the literal.
+    for input in [
+      r#"f["\""]"#,
+      r#"f["]"]"#,
+      r#"{"}"}"#,
+      r#"("(")"#,
+      r#"<|"a" -> "|>"|>"#,
+      r#"f["a(*b", "c"]"#,
+      "f[a (* ] *), b]",
+    ] {
+      let pair = parse(input).unwrap().next().unwrap();
+      assert_eq!(pair.as_rule(), Rule::Program, "Failed to parse: {input}");
+    }
+  }
+
+  #[test]
   fn test_parse_deeply_nested_bracket_groups() {
     // Regression: a term that is just a bracket group was parsed twice (three
     // times for parentheses) because `ImplicitTimes`, `ParenExtended` and
