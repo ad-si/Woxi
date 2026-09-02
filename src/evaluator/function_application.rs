@@ -148,6 +148,19 @@ fn compile_arg_spec(spec: &Expr, body: &Expr) -> Option<(String, bool)> {
   }
 }
 
+/// Whether a `Compile` argument spec is a scalar (rank-0) parameter — a
+/// bare name, or `{name}`/`{name, _Type}` — as opposed to a declared array
+/// (`{name, _Type, rank}`). Only a scalar position threads when the
+/// enclosing `CompiledFunction` is `RuntimeAttributes -> {Listable}`; an
+/// array-typed position is meant to receive a list itself, so a list
+/// argument there is passed through unchanged.
+fn compile_spec_is_scalar(spec: &Expr) -> bool {
+  match spec {
+    Expr::List(items) => items.len() <= 2,
+    _ => true,
+  }
+}
+
 /// Whether `body` uses the bare parameter `name` in a fixed count
 /// *position* — the 3rd argument of `Nest`/`NestList`/`FixedPointList`, the
 /// 2nd of `Array`, or a bare `{name}` iterator spec in one of `Do`'s/
@@ -1917,6 +1930,71 @@ pub fn apply_curried_call(
     } if name == "TransformationFunction" && func_args.len() == 1 => {
       // TransformationFunction[matrix][{x, y, ...}] — apply affine transformation
       apply_transformation_function(&func_args[0], args)
+    }
+    Expr::FunctionCall {
+      name,
+      args: func_args,
+    } if name == "CompiledFunction"
+      && func_args.len() == 3
+      && matches!(&func_args[2], Expr::Identifier(s) if s == "Listable") =>
+    {
+      // `Compile[…, RuntimeAttributes -> {Listable}]` makes the resulting
+      // CompiledFunction itself Listable: a call with a list at one of its
+      // scalar-typed argument positions (e.g. `f[{1+I, 2+I}, y]` where `x`
+      // is declared `_Complex`, not `_Complex, 1`) threads element-wise,
+      // broadcasting the other arguments — the idiom Wolfram Demonstrations
+      // Project notebooks lean on to evaluate a `Compile`d kernel over an
+      // `ArrayPlot`/`Table` grid in one call. Without this, the list was
+      // passed straight into the body as one opaque value, so a body using
+      // it as a scalar (e.g. `NestWhileList[…, x, …]`) silently computed
+      // the wrong thing instead of a per-element result.
+      let specs: Vec<&Expr> = match &func_args[0] {
+        Expr::List(items) => items.iter().collect(),
+        other => vec![other],
+      };
+      let scalar_positions: Vec<bool> =
+        specs.iter().map(|s| compile_spec_is_scalar(s)).collect();
+      let list_len =
+        args
+          .iter()
+          .zip(scalar_positions.iter())
+          .find_map(|(a, &is_scalar)| match a {
+            Expr::List(items) if is_scalar => Some(items.len()),
+            _ => None,
+          });
+      match list_len {
+        Some(len)
+          if args.iter().zip(scalar_positions.iter()).all(
+            |(a, &is_scalar)| match a {
+              Expr::List(items) if is_scalar => items.len() == len,
+              _ => true,
+            },
+          ) =>
+        {
+          let mut results = Vec::with_capacity(len);
+          for i in 0..len {
+            let threaded_args: Vec<Expr> = args
+              .iter()
+              .zip(scalar_positions.iter())
+              .map(|(a, &is_scalar)| match a {
+                Expr::List(items) if is_scalar => items[i].clone(),
+                _ => a.clone(),
+              })
+              .collect();
+            results.push(apply_curried_call(func, &threaded_args)?);
+          }
+          Ok(Expr::List(results.into()))
+        }
+        // No listed scalar-position argument (or mismatched lengths) —
+        // behave exactly like the plain 2-argument CompiledFunction.
+        _ => apply_curried_call(
+          &call(
+            "CompiledFunction",
+            vec![func_args[0].clone(), func_args[1].clone()],
+          ),
+          args,
+        ),
+      }
     }
     Expr::FunctionCall {
       name,

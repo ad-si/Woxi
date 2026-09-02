@@ -2,6 +2,15 @@
 
 # Unreleased
 
+- `ContourPlot` and `DensityPlot` honor `RegionFunction -> Function[{x, y,
+    z}, …]`, masking out grid cells where it is not `True` instead of
+    silently ignoring the option and filling the whole rectangular domain.
+    `Plot3D`/`ContourPlot3D` already supported `RegionFunction`; a
+    Wolfram Demonstration ("Steady-State Heat Conduction in an Annulus")
+    plotting its solution only over an annulus (`RegionFunction ->
+    Function[{x, y, z}, r1^2 < x^2 + y^2 < r2^2]`) rendered as a solid
+    square in Woxi Studio instead of the ring the physics is defined on.
+
 - `Dot` sums a vector/matrix product's terms in one `Plus` call instead of
     folding them pairwise. The pairwise fold re-flattened and re-collected
     the whole running sum on every term, turning an n-term dot product into

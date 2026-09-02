@@ -45,17 +45,6 @@ fn main() {
     if !matches!(cell.style, CellStyle::Input | CellStyle::Code) {
       continue;
     }
-    // `Manipulate[…, SaveDefinitions -> True]` stores the definitions its
-    // body depends on in the following Output cell's widget dump. The
-    // Studio runs them before instantiating; do the same here, or a
-    // Demonstration's helper functions look undefined.
-    if let Some(next) = all_cells.get(idx + 1)
-      && next.style == CellStyle::Output
-      && let Some(init) =
-        woxi::notebook::extract_saved_initialization(&next.content)
-    {
-      let _ = woxi::interpret(&init);
-    }
     let code = cell.content.trim();
     for stmt in woxi::split_into_statements(code) {
       // Evaluate for side effects (definitions) exactly like the studio.
@@ -63,6 +52,26 @@ fn main() {
       let Ok(expr) = woxi::interpret_to_expr(&stmt) else {
         continue;
       };
+      // `Manipulate[…, SaveDefinitions -> True]` stores the definitions its
+      // body depends on in the following Output cell's widget dump, because
+      // the Manipulate's own `Initialization` option is absent. The Studio
+      // runs the recovered copy before instantiating, or a Demonstration's
+      // helper functions look undefined — but only when the live source
+      // truly has no `Initialization` of its own: Wolfram embeds this same
+      // box-dump shape for an ordinary `Initialization :> …` Manipulate too,
+      // and running that FullForm copy a second time (ahead of the live one
+      // `ManipulateState::from_expr` runs) can leave a helper function bound
+      // to a broken duplicate rule.
+      let has_own_initialization =
+        woxi::functions::graphics::manipulate_has_own_initialization(&expr);
+      if !has_own_initialization
+        && let Some(next) = all_cells.get(idx + 1)
+        && next.style == CellStyle::Output
+        && let Some(init) =
+          woxi::notebook::extract_saved_initialization(&next.content)
+      {
+        let _ = woxi::interpret(&init);
+      }
       let Some(state) = manipulate::ManipulateState::from_expr(&expr) else {
         if let Ok(res) = &eval
           && res.result.starts_with("Manipulate[")

@@ -93,6 +93,22 @@ fn parse_field_plot_label(
   })
 }
 
+/// The axes margins that leave room for a field plot's `PlotLabel`, or
+/// `None` when there is no label to draw (the caller then keeps plotters'
+/// default margins). Shared by every field plot that draws its own axes
+/// with [`crate::functions::plot::generate_axes_only_opts`], so the top
+/// margin, tick-label areas, and font-size fallback all move together.
+fn field_plot_label_margins(
+  plot_label: Option<&(String, Option<f64>)>,
+) -> Option<crate::functions::plot::MarginOverrides> {
+  plot_label.map(|(_, size)| crate::functions::plot::MarginOverrides {
+    top_margin: ((size.unwrap_or(14.0) * 2.0).round() as u32)
+      * RESOLUTION_SCALE,
+    x_label_area: 40 * RESOLUTION_SCALE,
+    y_label_area: 65 * RESOLUTION_SCALE,
+  })
+}
+
 /// Split `Style[expr, …, n, …]` into its content and the font size `n`.
 fn peel_label_font_size(value: &Expr) -> (&Expr, Option<f64>) {
   let Expr::FunctionCall { name, args } = value else {
@@ -213,6 +229,10 @@ struct DensityContourOptions {
   /// `PlotLabel -> …`: the caption drawn above the plot, already typeset
   /// as SVG markup, alongside the font size its outer `Style` asked for.
   plot_label: Option<(String, Option<f64>)>,
+  /// `RegionFunction -> f`: keep only grid cells where `f[x, y, z]` (the
+  /// plotted value `z`) is `True`; other cells are left blank, matching
+  /// `Plot3D`/`ContourPlot3D`'s `RegionFunction`.
+  region_function: Option<Expr>,
 }
 
 /// Parse ImageSize, ColorFunction, Contours, ContourShading, Mesh,
@@ -230,6 +250,7 @@ fn parse_density_contour_options(
   let mut contour_style = None;
   let mut frame_labels = crate::functions::plot::FrameLabels::default();
   let mut epilog: Vec<Expr> = Vec::new();
+  let mut region_function: Option<Expr> = None;
   for opt in &args[start..] {
     if let Expr::Rule {
       pattern,
@@ -314,6 +335,9 @@ fn parse_density_contour_options(
             other => vec![other],
           };
         }
+        "RegionFunction" => {
+          region_function = Some(replacement.clone());
+        }
         _ => {}
       }
     }
@@ -331,7 +355,23 @@ fn parse_density_contour_options(
     frame_labels,
     epilog,
     plot_label: parse_field_plot_label(args, start),
+    region_function,
   }
+}
+
+/// Whether `(x, y, z)` satisfies `region`, a `RegionFunction ->
+/// Function[{x, y, z}, …]` value: called positionally exactly like
+/// `Plot3D`/`ContourPlot3D`'s region function, so it does not need the
+/// plot's own x/y variable names substituted in first.
+fn region_allows(region: &Expr, x: f64, y: f64, z: f64) -> bool {
+  let call = Expr::CurriedCall {
+    func: Box::new(region.clone()),
+    args: vec![Expr::Real(x), Expr::Real(y), Expr::Real(z)],
+  };
+  matches!(
+    evaluate_expr_to_expr(&call),
+    Ok(Expr::Identifier(ref s)) if s == "True"
+  )
 }
 
 impl DensityContourOptions {
@@ -1154,7 +1194,10 @@ struct MeshGrid {
 
 /// Sample a mesh function over the plot's grid and pick `count` evenly
 /// spaced levels across the values it takes — `MeshFunctions -> {10 #1 &}`
-/// with `Mesh -> 11` gives eleven lines of constant x.
+/// with `Mesh -> 11` gives eleven lines of constant x. `region_mask`, when
+/// given, is the main plot's already `RegionFunction`-masked grid (NaN
+/// outside the region): a cell excluded there is excluded here too, so mesh
+/// lines don't spill past the region boundary the contours/bands stop at.
 #[allow(clippy::too_many_arguments)]
 fn sample_mesh_grid(
   f: &Expr,
@@ -1165,6 +1208,7 @@ fn sample_mesh_grid(
   y_min: f64,
   y_max: f64,
   count: usize,
+  region_mask: Option<&[Vec<f64>]>,
 ) -> Option<MeshGrid> {
   let n = FIELD_GRID + 1;
   let mut grid = vec![vec![f64::NAN; n]; n];
@@ -1173,6 +1217,12 @@ fn sample_mesh_grid(
     let x = x_min + i as f64 / FIELD_GRID as f64 * (x_max - x_min);
     for j in 0..n {
       let y = y_min + j as f64 / FIELD_GRID as f64 * (y_max - y_min);
+      let masked = region_mask
+        .and_then(|m| m.get(i).and_then(|row| row.get(j)))
+        .is_some_and(|v| !v.is_finite());
+      if masked {
+        continue;
+      }
       // A mesh function is usually a pure function of the two
       // coordinates (`10 #1 &`); a plain expression in x and y works too.
       let v = mesh_function_value(f, xvar, yvar, x, y)?;
@@ -1267,6 +1317,10 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let y = y_min + (j as f64 + 0.5) / FIELD_GRID as f64 * (y_max - y_min);
       if let Some(v) = evaluate_at_xy(body, &xvar, &yvar, x, y)
         && v.is_finite()
+        && opts
+          .region_function
+          .as_ref()
+          .is_none_or(|r| region_allows(r, x, y, v))
       {
         grid[i][j] = v;
         samples.push(v);
@@ -1385,6 +1439,10 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let y = y_min + j as f64 / FIELD_GRID as f64 * (y_max - y_min);
       if let Some(v) = evaluate_at_xy(body, &xvar, &yvar, x, y)
         && v.is_finite()
+        && opts
+          .region_function
+          .as_ref()
+          .is_none_or(|r| region_allows(r, x, y, v))
       {
         grid[i][j] = v;
         samples.push(v);
@@ -1416,7 +1474,17 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       functions
         .iter()
         .filter_map(|f| {
-          sample_mesh_grid(f, &xvar, &yvar, x_min, x_max, y_min, y_max, count)
+          sample_mesh_grid(
+            f,
+            &xvar,
+            &yvar,
+            x_min,
+            x_max,
+            y_min,
+            y_max,
+            count,
+            Some(&grid),
+          )
         })
         .collect()
     }
@@ -1669,6 +1737,10 @@ fn contour_plot_equations(
         let y = y_min + j as f64 / FIELD_GRID as f64 * (y_max - y_min);
         if let Some(v) = evaluate_at_xy(body, &xvar, &yvar, x, y)
           && v.is_finite()
+          && opts
+            .region_function
+            .as_ref()
+            .is_none_or(|r| region_allows(r, x, y, v))
         {
           *cell = v;
           any_finite = true;
@@ -1779,14 +1851,7 @@ pub fn region_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let plot_label = parse_field_plot_label(args, 3);
 
   // Use plotters for axes, reserving room above the frame for a PlotLabel.
-  let margins = plot_label.as_ref().map(|(_, size)| {
-    crate::functions::plot::MarginOverrides {
-      top_margin: ((size.unwrap_or(14.0) * 2.0).round() as u32)
-        * crate::functions::plot::RESOLUTION_SCALE,
-      x_label_area: 40 * crate::functions::plot::RESOLUTION_SCALE,
-      y_label_area: 65 * crate::functions::plot::RESOLUTION_SCALE,
-    }
-  });
+  let margins = field_plot_label_margins(plot_label.as_ref());
   let area = crate::functions::plot::generate_axes_only_opts(
     (x_min, x_max),
     (y_min, y_max),
@@ -1945,6 +2010,7 @@ pub fn vector_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let body = resolved.as_ref().unwrap_or(&args[0]);
   let (svg_width, svg_height, full_width) = parse_field_options(args, 3);
   let epilog = parse_vector_plot_epilog(args, 3);
+  let plot_label = parse_field_plot_label(args, 3);
 
   let x_step = (x_max - x_min) / VECTOR_GRID as f64;
   let y_step = (y_max - y_min) / VECTOR_GRID as f64;
@@ -1964,18 +2030,24 @@ pub fn vector_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  // Use plotters for axes
-  let mut area = generate_axes_only(
+  // Use plotters for axes, reserving room above the frame for a PlotLabel.
+  let margins = field_plot_label_margins(plot_label.as_ref());
+  let mut area = crate::functions::plot::generate_axes_only_opts(
     (x_min, x_max),
     (y_min, y_max),
     svg_width,
     svg_height,
     full_width,
+    None,
+    margins.as_ref(),
   )?;
 
   let mut svg = std::mem::take(&mut area.svg);
   if let Some(pos) = svg.rfind("</svg>") {
     svg.truncate(pos);
+  }
+  if let Some(label) = &plot_label {
+    inject_field_plot_label(&mut svg, &area, label);
   }
 
   let cell_size =
@@ -2126,14 +2198,18 @@ pub fn stream_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   );
   let body = resolved.as_ref().unwrap_or(&args[0]);
   let (svg_width, svg_height, full_width) = parse_field_options(args, 3);
+  let plot_label = parse_field_plot_label(args, 3);
 
-  // Use plotters for axes
-  let area = generate_axes_only(
+  // Use plotters for axes, reserving room above the frame for a PlotLabel.
+  let margins = field_plot_label_margins(plot_label.as_ref());
+  let area = crate::functions::plot::generate_axes_only_opts(
     (x_min, x_max),
     (y_min, y_max),
     svg_width,
     svg_height,
     full_width,
+    None,
+    margins.as_ref(),
   )?;
 
   let plot_x0 = area.plot_x0;
@@ -2146,9 +2222,12 @@ pub fn stream_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let ay_min = area.y_min;
   let ay_max = area.y_max;
 
-  let mut svg = area.svg;
+  let mut svg = area.svg.clone();
   if let Some(pos) = svg.rfind("</svg>") {
     svg.truncate(pos);
+  }
+  if let Some(label) = &plot_label {
+    inject_field_plot_label(&mut svg, &area, label);
   }
 
   let to_px = |x: f64, y: f64| -> (f64, f64) {
@@ -2273,6 +2352,7 @@ pub fn stream_density_plot_ast(
   );
   let body = resolved.as_ref().unwrap_or(&args[0]);
   let (svg_width, svg_height, full_width) = parse_field_options(args, 3);
+  let plot_label = parse_field_plot_label(args, 3);
 
   let grid_n = 60;
 
@@ -2295,13 +2375,16 @@ pub fn stream_density_plot_ast(
   }
   let (v_min, v_max) = robust_value_range(&mag_samples);
 
-  // Use plotters for axes
-  let area = generate_axes_only(
+  // Use plotters for axes, reserving room above the frame for a PlotLabel.
+  let margins = field_plot_label_margins(plot_label.as_ref());
+  let area = crate::functions::plot::generate_axes_only_opts(
     (x_min, x_max),
     (y_min, y_max),
     svg_width,
     svg_height,
     full_width,
+    None,
+    margins.as_ref(),
   )?;
 
   let plot_x0 = area.plot_x0;
@@ -2314,9 +2397,12 @@ pub fn stream_density_plot_ast(
   let ay_min = area.y_min;
   let ay_max = area.y_max;
 
-  let mut svg = area.svg;
+  let mut svg = area.svg.clone();
   if let Some(pos) = svg.rfind("</svg>") {
     svg.truncate(pos);
+  }
+  if let Some(label) = &plot_label {
+    inject_field_plot_label(&mut svg, &area, label);
   }
 
   let to_px = |x: f64, y: f64| -> (f64, f64) {
