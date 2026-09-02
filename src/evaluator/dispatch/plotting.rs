@@ -163,6 +163,9 @@ pub fn dispatch_plotting(
     "GraphicsGrid" if !args.is_empty() => {
       Some(crate::functions::graphics::graphics_grid_ast(args))
     }
+    "Overlay" if !args.is_empty() => {
+      Some(crate::functions::graphics::overlay_ast(args))
+    }
     "PlotGrid" if !args.is_empty() => {
       Some(crate::functions::graphics::plot_grid_ast(args))
     }
