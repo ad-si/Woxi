@@ -603,7 +603,7 @@ ColorFunctionScaling,Option to scale color function input,✅,none,4.0,559
 Values,Returns the values of an association (optionally wrapping each with a head),✅,pure,10.0,560
 Cuboid,3D graphics primitive representing a cuboid,✅,none,2.0,561
 AbsoluteTime,Total seconds since January 1 1900,✅,contextual,2.0,562
-ExampleData,Serves the bundled example datasets by type and name: the list of types; the entries of one type; a dataset itself; or one of its properties (only the NetworkGraph type is bundled so far with the classic empirical networks),✅,pure,6.0,563
+ExampleData,Serves the bundled example datasets by type and name: the list of types; the entries of one type; a dataset itself; or one of its properties (NetworkGraph data is bundled with the classic empirical networks; TestImage only bundles its name catalogue rather than pixel data),✅,pure,6.0,563
 TwoWayRule,Represent a two-way transformation rule,✅,none,11.2,564
 Initialization,Option for initialization code,✅,none,6.0,565
 StringCases,Returns substrings matching a pattern (threading over a list of strings; supports a count limit and the Overlaps and IgnoreCase options),✅,pure,5.1,566
@@ -2161,7 +2161,7 @@ BubbleChart3D,Creates a 3D bubble chart visualization,🚫,None,7.0,2170
 OverwriteTarget,Option specifying whether to overwrite an existing target file,🚫,None,11.0,2170
 EdgeDelete,Delete one or more edges from a graph while keeping all vertices,✅,pure,8.0,2172
 ImageValuePositions,Returns positions of pixels with a specified value in an image,🚫,None,9.0,2172
-ImageHistogram,Plots the histogram of pixel values in an image,🚫,None,7.0,2174
+ImageHistogram,Plots the histogram of pixel values in an image,✅,pure,7.0,2174
 PasteButton,Represents a button that pastes content when clicked,🚫,None,6.0,2174
 FindGraphCommunities,Finds community structure in a graph,🚫,None,9.0,2179
 ImageSizeMultipliers,Option for scaling image display size,🚫,None,6.0,2179

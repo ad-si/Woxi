@@ -671,6 +671,27 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_named_character_identifier_keeps_trailing_dollar_signs() {
+    // Wolfram's FrontEnd names a Manipulate-tracked variable built from a
+    // named character with a trailing `$$` (e.g. `\[Delta]$$`); the whole
+    // thing must parse as one Symbol, not split into the bare named
+    // character and a separate `$$` symbol joined by implicit
+    // multiplication. This is exactly the shape a Demonstration's
+    // `{{\[Delta]$$, 0.015}, 0.01, 0.025, 0.001}` Manipulate control spec
+    // takes once its `$CellContext`` prefix is stripped when Woxi Studio
+    // rebuilds a saved widget from a notebook with no Input-cell source.
+    clear_state();
+    assert_eq!(interpret("Head[\\[Delta]$$]").unwrap(), "Symbol");
+    assert_eq!(interpret("\\[Delta]$$ = 3; \\[Delta]$$ + 1").unwrap(), "4");
+    clear_state();
+    // The same holds for a function-call head, not just a bare symbol.
+    assert_eq!(
+      interpret("\\[Theta]$$[x_] := x^2; \\[Theta]$$[5]").unwrap(),
+      "25"
+    );
+  }
+
+  #[test]
   fn test_expression_then_comment() {
     // Expression followed by comment should evaluate the expression
     clear_state();
@@ -2048,6 +2069,59 @@ mod interpreter_tests {
         "{head} ignored AspectRatio 1/3: {lw}x{lh}"
       );
     }
+  }
+
+  #[test]
+  fn test_list_line_plot_accepts_whole_series_tooltip_wrapper() {
+    // `ListLinePlot[Tooltip[data, label], ...]` wraps the *entire* data
+    // series in a Tooltip (as opposed to `Tooltip` wrapping individual
+    // points) so hovering the line shows `label`. This must plot exactly
+    // like the bare series, not report `ListLinePlot::lpn` and stay
+    // unevaluated: the data-argument validity check only unwrapped
+    // `Tooltip` around single points, not around the whole list.
+    clear_state();
+    let bare = interpret_with_stdout("ListLinePlot[{1, 4, 9, 16}]").unwrap();
+    clear_state();
+    let wrapped = interpret_with_stdout(
+      "ListLinePlot[Tooltip[{1, 4, 9, 16}, \"squares\"]]",
+    )
+    .unwrap();
+    assert!(
+      wrapped.warnings.is_empty(),
+      "a whole-series Tooltip wrapper must not raise ListLinePlot::lpn: {:?}",
+      wrapped.warnings
+    );
+    assert_eq!(
+      wrapped.result, bare.result,
+      "a Tooltip-wrapped series should render identically to the bare series"
+    );
+  }
+
+  #[test]
+  fn test_list_line_plot_accepts_tooltip_wrapped_time_series() {
+    // Same whole-argument-wrapper bug as
+    // `test_list_line_plot_accepts_whole_series_tooltip_wrapper`, but for the
+    // non-List `TimeSeries` data source: the `ListLinePlot::lpn` guard must
+    // strip the `Tooltip` before checking for temporal data too, not just
+    // before the List/Association check.
+    clear_state();
+    let bare =
+      interpret_with_stdout("ListLinePlot[TimeSeries[{{1, 2}, {2, 4}}]]")
+        .unwrap();
+    clear_state();
+    let wrapped = interpret_with_stdout(
+      "ListLinePlot[Tooltip[TimeSeries[{{1, 2}, {2, 4}}], \"series\"]]",
+    )
+    .unwrap();
+    assert!(
+      wrapped.warnings.is_empty(),
+      "a Tooltip-wrapped TimeSeries must not raise ListLinePlot::lpn: {:?}",
+      wrapped.warnings
+    );
+    assert_eq!(
+      wrapped.result, bare.result,
+      "a Tooltip-wrapped TimeSeries should render identically to the bare one"
+    );
   }
 
   #[test]

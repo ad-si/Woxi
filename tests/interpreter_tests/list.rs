@@ -4262,6 +4262,23 @@ mod clip {
   }
 
   #[test]
+  fn clip_infinity_as_a_bound_evaluates() {
+    // Regression: the bounds themselves accept `±Infinity` for a one-sided
+    // range, the same way the clipped value does above. Previously only
+    // `try_eval_to_f64` (which rejects Infinity) was used on the bounds,
+    // so any `Clip[x, {.., Infinity}]` or `Clip[x, {-Infinity, ..}]` stayed
+    // unevaluated no matter what `x` was.
+    assert_eq!(interpret("Clip[5, {0, Infinity}]").unwrap(), "5");
+    assert_eq!(interpret("Clip[-5, {0, Infinity}]").unwrap(), "0");
+    assert_eq!(interpret("Clip[-5, {-Infinity, 0}]").unwrap(), "-5");
+    assert_eq!(interpret("Clip[5, {-Infinity, 0}]").unwrap(), "0");
+    assert_eq!(
+      interpret("Clip[{-5, 1, 3.5}, {0, Infinity}]").unwrap(),
+      "{0, 1, 3.5}"
+    );
+  }
+
+  #[test]
   fn clip_indeterminate_returns_indeterminate() {
     assert_eq!(interpret("Clip[Indeterminate]").unwrap(), "Indeterminate");
   }
@@ -8905,6 +8922,126 @@ mod range_real {
     assert_eq!(
       interpret("Range[Sqrt[2], 5 Sqrt[2], Sqrt[2]]").unwrap(),
       "{Sqrt[2], 2*Sqrt[2], 3*Sqrt[2], 4*Sqrt[2], 5*Sqrt[2]}"
+    );
+  }
+
+  // Numeric contagion: Range[start, stop, di] is computed as start + k*di.
+  // When `di` (or `start` itself) is an inexact machine real, every
+  // element becomes inexact — including k=0, since `start + 0*di` still
+  // numericizes `start` via arithmetic with an inexact operand. Regression
+  // test: the first element used to stay exact/symbolic while the rest
+  // became machine reals.
+  #[test]
+  fn range_symbolic_start_inexact_step_first_element_numericized() {
+    assert_eq!(
+      interpret("Range[Pi/4, 2 Pi - Pi/4, (2 Pi/4)//N]").unwrap(),
+      "{0.7853981633974483, 2.356194490192345, 3.9269908169872414, \
+       5.497787143782138}"
+    );
+  }
+
+  #[test]
+  fn range_integer_start_inexact_step_numericized() {
+    assert_eq!(
+      interpret("Range[1, 5, 1.0]").unwrap(),
+      "{1., 2., 3., 4., 5.}"
+    );
+  }
+
+  // Regression test: an exact Rational start (not just Integer/symbolic)
+  // with an inexact step used to leave the first element as the untouched
+  // Rational `1/2` instead of numericizing it to `0.5` — this exercises
+  // the plain f64 fallback path (both min and step have a numeric value,
+  // so `has_symbolic` is false) rather than the symbolic-endpoint path.
+  #[test]
+  fn range_rational_start_inexact_step_numericized() {
+    assert_eq!(
+      interpret("Range[1/2, 5, 0.5]").unwrap(),
+      "{0.5, 1., 1.5, 2., 2.5, 3., 3.5, 4., 4.5, 5.}"
+    );
+  }
+
+  #[test]
+  fn range_zero_start_inexact_step_numericized() {
+    assert_eq!(
+      interpret("Range[0, 2 Pi, Pi/3.]").unwrap(),
+      "{0., 1.0471975511965976, 2.0943951023931953, 3.141592653589793, \
+       4.1887902047863905, 5.235987755982988, 6.283185307179586}"
+    );
+  }
+
+  #[test]
+  fn range_symbolic_pi_start_inexact_step_numericized() {
+    assert_eq!(
+      interpret("Range[Pi, 2 Pi, 0.5]").unwrap(),
+      "{3.141592653589793, 3.641592653589793, 4.141592653589793, \
+       4.641592653589793, 5.141592653589793, 5.641592653589793, \
+       6.141592653589793}"
+    );
+  }
+
+  // `max`/`stop` never affects exactness, only where the range terminates:
+  // an exact start with an exact step stays exact even when stop is Real.
+  #[test]
+  fn range_exact_start_step_inexact_stop_stays_exact() {
+    assert_eq!(
+      interpret("Range[Pi/4, 5.0, 1]").unwrap(),
+      "{Pi/4, 1 + Pi/4, 2 + Pi/4, 3 + Pi/4, 4 + Pi/4}"
+    );
+  }
+
+  // An unbound symbol has no numeric value, so N[] leaves it unchanged —
+  // numericizing the first element is a no-op here.
+  #[test]
+  fn range_unbound_symbol_start_inexact_step() {
+    assert_eq!(
+      interpret("Range[a, a + 5, 1.]").unwrap(),
+      "{a, 1. + a, 2. + a, 3. + a, 4. + a, 5. + a}"
+    );
+  }
+
+  // Start already past stop with an exact step: still empty, not affected
+  // by the contagion fix (regression guard for the ratio-based counting
+  // path staying correct).
+  #[test]
+  fn range_real_start_past_stop_empty() {
+    assert_eq!(interpret("Range[3.5, Pi, 1]").unwrap(), "{}");
+  }
+
+  // Off-by-one regression (found via the "Maurer Rose Chords" Wolfram
+  // Demonstration, which sweeps angles with exactly this idiom):
+  // `Range[Pi/n, 2 Pi - Pi/n, 2 Pi/n]` is mathematically exactly `n`
+  // evenly-spaced points, but computing `(max - min) / step` through
+  // `Pi`-based machine reals used to land a hair under the exact integer
+  // step count for several `n` — e.g. `Length[Range[Pi/360, 2 Pi -
+  // Pi/360, 2 Pi/360]]` silently returned 359, dropping the sweep's last
+  // point. Checked across a spread of `n`, not just the one that first
+  // exposed it, since only some values were affected (8, 16, 300 and 360
+  // under-counted by one; the others already happened to round the right
+  // way).
+  #[test]
+  fn range_pi_sweep_count_matches_n_for_every_n() {
+    for n in [
+      3, 6, 7, 8, 12, 16, 20, 60, 120, 180, 200, 300, 359, 360, 361,
+    ] {
+      let code = format!("Length[Range[Pi/{n}, 2 Pi - Pi/{n}, 2 Pi/{n}]]");
+      assert_eq!(
+        interpret(&code).unwrap(),
+        n.to_string(),
+        "Range[Pi/{n}, 2 Pi - Pi/{n}, 2 Pi/{n}] must have exactly {n} points"
+      );
+    }
+  }
+
+  // Same rounding tolerance, exercised through the separate
+  // fully-symbolic-endpoint path (an unbound `a` leaves `min`/`max`
+  // without a numeric value, so only the `(max - min) / step` ratio gets
+  // evaluated to determine the count).
+  #[test]
+  fn range_pi_sweep_count_matches_n_with_symbolic_endpoint() {
+    assert_eq!(
+      interpret("Length[Range[a, a + 2 Pi - 2 Pi/360, 2 Pi/360]]").unwrap(),
+      "360"
     );
   }
 }
