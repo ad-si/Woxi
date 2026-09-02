@@ -2879,25 +2879,41 @@ fn try_symbolic_sum(
       let remainder = qr_list[1].clone();
       let n_minus_1 = plus2(max_expr.clone(), Expr::Integer(-1));
       let q_sum = sum_polynomial_over_var(&q_of_k, var_name, &n_minus_1)?;
-      let s_of_n = faulhaber_power_sum(s, max_expr)?;
-      let h_n = call1("HarmonicNumber", max_expr.clone());
-      // Keep the `HarmonicNumber[n]` coefficient and the plain polynomial
-      // remainder separate through `Factor` (`(S(n) - r) H_n + (r -
-      // Q(n-1))`), rather than expanding both into one `Plus` and factoring
-      // that blob — `Factor` has no way to regroup terms around the opaque
-      // `HarmonicNumber[n]` atom once they are mixed, so it would otherwise
-      // hand back the fully expanded (and far uglier) polynomial.
-      let h_coeff = crate::functions::polynomial_ast::factor_ast(&[
-        crate::evaluator::evaluate_expr_to_expr(&minus2(
-          s_of_n,
-          remainder.clone(),
-        ))?,
-      ])?;
-      let poly_part = crate::functions::polynomial_ast::factor_ast(&[
-        crate::evaluator::evaluate_expr_to_expr(&minus2(remainder, q_sum))?,
-      ])?;
+      // `S(k) = (k+1) q(k) + r` (the division above) holds for every `k`,
+      // so at `k = n` it gives `S(n) - r = (n+1) q(n)` without an explicit
+      // `S(n)` recomputation, and (used below) `(S(n)-r)/(n+1) = q(n)`.
+      let q_of_n = crate::evaluator::evaluate_expr_to_expr(
+        &crate::syntax::substitute_variable(&q_of_k, var_name, max_expr),
+      )?;
+      let n_plus_1 = plus2(max_expr.clone(), Expr::Integer(1));
+      // wolframscript states this identity with the *shifted* harmonic
+      // number `HarmonicNumber[n + 1]` rather than `HarmonicNumber[n]`
+      // (matching the convention already used elsewhere in this file, e.g.
+      // `Sum[1/k, k] = HarmonicNumber[-1 + k]`) — rewriting `H(n) = H(n+1)
+      // - 1/(n+1)` moves the coefficient of `H(n)` (`S(n) - r`) onto
+      // `H(n+1)` and folds the `-1/(n+1)` part into the polynomial
+      // remainder as `- (S(n)-r)/(n+1) = -q(n)`.
+      let h_coeff_raw = crate::evaluator::evaluate_expr_to_expr(&times2(
+        n_plus_1,
+        q_of_n.clone(),
+      ))?;
+      let poly_part_raw = crate::evaluator::evaluate_expr_to_expr(&minus2(
+        minus2(remainder, q_sum),
+        q_of_n,
+      ))?;
+      let h_n1 =
+        call1("HarmonicNumber", plus2(max_expr.clone(), Expr::Integer(1)));
+      // Keep the `HarmonicNumber[n+1]` coefficient and the plain polynomial
+      // remainder separate through `Factor` (`Factor` alone can't regroup
+      // terms around the opaque `HarmonicNumber[…]` atom once they're mixed
+      // into one `Plus`, so factoring the combined expression would hand
+      // back the fully expanded, far uglier polynomial instead).
+      let h_coeff =
+        crate::functions::polynomial_ast::factor_ast(&[h_coeff_raw])?;
+      let poly_part =
+        crate::functions::polynomial_ast::factor_ast(&[poly_part_raw])?;
       let result = crate::evaluator::evaluate_expr_to_expr(&plus2(
-        times2(h_coeff, h_n),
+        times2(h_coeff, h_n1),
         poly_part,
       ))?;
       return Ok(Some(result));
