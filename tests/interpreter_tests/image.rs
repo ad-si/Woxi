@@ -7614,6 +7614,59 @@ mod demonstration_image_filters {
     );
   }
 
+  #[test]
+  fn image_histogram_returns_graphics() {
+    clear_state();
+    assert_eq!(
+      interpret("Head[ImageHistogram[Image[{{0., 0.5, 1.}}]]]").unwrap(),
+      "Graphics"
+    );
+    // A color image's histogram is Graphics too, regardless of Appearance.
+    assert_eq!(
+      interpret(
+        "Head[ImageHistogram[Image[{{{0., 0., 0.}, {1., 1., 1.}}}], \
+         Appearance -> \"Separated\"]]"
+      )
+      .unwrap(),
+      "Graphics"
+    );
+  }
+
+  // The Appearance -> "Separated" form is the one the "Histogram
+  // Equalization" Demonstration actually uses to compare an image against
+  // its equalized version side by side — a regression guard for the bug
+  // where the underlying function was simply unimplemented.
+  #[test]
+  fn image_histogram_separated_renders_one_panel_per_channel() {
+    clear_state();
+    let svg = interpret(
+      "ExportString[ImageHistogram[\
+       Image[{{{0., 0., 1.}, {1., 0., 0.}}}], \
+       Appearance -> \"Separated\"], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.starts_with("<svg"));
+    // Three channels means three side-by-side <svg> panels nested in the
+    // combined GraphicsRow output.
+    assert_eq!(svg.matches("<svg").count(), 4);
+  }
+
+  #[test]
+  fn image_histogram_grayscale_renders_a_single_panel() {
+    clear_state();
+    let svg = interpret(
+      "ExportString[ImageHistogram[Image[{{0., 0.5, 1.}}]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.starts_with("<svg"));
+  }
+
+  #[test]
+  fn image_histogram_reports_a_non_image() {
+    clear_state();
+    assert_eq!(interpret("ImageHistogram[5]").unwrap(), "ImageHistogram[5]");
+  }
+
   /// A five-pixel bar with a one-pixel spur growing out of its middle.
   const BAR: &str = "Image[{{0, 0, 1, 0, 0}, {1, 1, 1, 1, 1}}]";
 

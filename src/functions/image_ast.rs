@@ -1741,6 +1741,130 @@ pub fn histogram_transform_ast(
   })
 }
 
+/// The colors `ImageHistogram` draws each channel's curve in: gray for a
+/// single-channel image, otherwise red/green/blue for the first three
+/// channels and gray for any beyond that (e.g. an alpha channel).
+fn image_histogram_channel_colors(
+  channels: usize,
+) -> Vec<crate::functions::graphics::Color> {
+  use crate::functions::graphics::Color;
+  if channels <= 1 {
+    return vec![Color::new(0.5, 0.5, 0.5)];
+  }
+  [
+    Color::new(1.0, 0.0, 0.0),
+    Color::new(0.0, 0.65, 0.0),
+    Color::new(0.0, 0.0, 1.0),
+  ]
+  .into_iter()
+  .chain(std::iter::repeat(Color::new(0.5, 0.5, 0.5)))
+  .take(channels)
+  .collect()
+}
+
+fn image_histogram_chart_options() -> crate::functions::chart::ChartOptions {
+  crate::functions::chart::ChartOptions {
+    svg_width: crate::functions::plot::DEFAULT_WIDTH,
+    svg_height: crate::functions::plot::DEFAULT_HEIGHT,
+    full_width: false,
+    chart_labels: Vec::new(),
+    chart_label_position: crate::functions::chart::LabelPosition::Below,
+    plot_label: None,
+    axes_label: None,
+    frame_label: None,
+    chart_style: Vec::new(),
+    chart_style_scheme: None,
+    chart_legends: Vec::new(),
+    chart_legends_auto: false,
+    plot_range_x: Some((0.0, 255.0)),
+    plot_range_y: None,
+    bar_origin_left: false,
+    labeling_function: None,
+    ticks_x: None,
+    ticks_y: None,
+    ticks: true,
+  }
+}
+
+/// ImageHistogram[image] / ImageHistogram[image, opts...] — the
+/// distribution of each channel's pixel values, scaled to the usual 0-255
+/// display range. `Appearance -> "Separated"` draws one histogram per
+/// channel side by side; any other setting (the default, `"RGB"`,
+/// `"Transparent"`, `"Stacked"`) overlays them translucently in one plot,
+/// the same treatment `Histogram` already gives several datasets.
+pub fn image_histogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() {
+    return Ok(unevaluated("ImageHistogram", args));
+  }
+  let Expr::Image {
+    width,
+    height,
+    channels,
+    data,
+    ..
+  } = &args[0]
+  else {
+    crate::emit_message(&format!(
+      "ImageHistogram::imginv: Expecting an image or graphics instead of {}.",
+      crate::syntax::expr_to_string(&args[0])
+    ));
+    return Ok(unevaluated("ImageHistogram", args));
+  };
+
+  let separated = args[1..].iter().any(|opt| {
+    crate::functions::graphics::option_name_value(opt).is_some_and(
+      |(name, value)| {
+        name == "Appearance"
+          && matches!(value.as_ref(), Expr::String(s) if s == "Separated")
+      },
+    )
+  });
+
+  let w = *width as usize;
+  let h = *height as usize;
+  let ch = (*channels as usize).max(1);
+  let pixels = w * h;
+  let colors = image_histogram_channel_colors(ch);
+  let datasets: Vec<Vec<f64>> = (0..ch)
+    .map(|c| (0..pixels).map(|i| data[i * ch + c] * 255.0).collect())
+    .collect();
+  let bin_spec = crate::functions::plot::BinSpec::Width(1.0);
+
+  if separated {
+    let mut items = Vec::with_capacity(ch);
+    for (c, dataset) in datasets.iter().enumerate() {
+      let mut opts = image_histogram_chart_options();
+      opts.chart_style = vec![colors[c]];
+      let svg = crate::functions::plot::generate_histogram_svg(
+        std::slice::from_ref(dataset),
+        Some(&bin_spec),
+        crate::functions::plot::HistogramHeight::Count,
+        &mut opts,
+      )?;
+      items.push(Expr::Graphics {
+        svg,
+        is_3d: false,
+        source: None,
+        head: None,
+        structure: None,
+      });
+    }
+    return crate::functions::graphics::graphics_row_ast(&[Expr::List(
+      items.into(),
+    )]);
+  }
+
+  let mut opts = image_histogram_chart_options();
+  opts.chart_style = colors;
+  let svg = crate::functions::plot::generate_histogram_svg(
+    &datasets,
+    Some(&bin_spec),
+    crate::functions::plot::HistogramHeight::Count,
+    &mut opts,
+  )?;
+  Ok(crate::graphics_result(svg))
+}
+
 /// ImageReflect[img] / ImageReflect[img, side] / ImageReflect[img, s1 -> s2].
 /// Default: vertical (top↔bottom) flip. Horizontal / vertical sides reflect
 /// across the perpendicular axis; rules between perpendicular sides do the

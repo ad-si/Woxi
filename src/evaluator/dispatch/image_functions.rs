@@ -712,6 +712,9 @@ pub fn dispatch_image_functions(
     "HistogramTransform" if !args.is_empty() => {
       return Some(crate::functions::image_ast::histogram_transform_ast(args));
     }
+    "ImageHistogram" if !args.is_empty() => {
+      return Some(crate::functions::image_ast::image_histogram_ast(args));
+    }
     "Pruning" if !args.is_empty() => {
       return Some(crate::functions::image_ast::pruning_ast(args));
     }

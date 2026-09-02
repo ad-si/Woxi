@@ -9,12 +9,18 @@
 //! - `ExampleData[{"type", "name"}]` — the data itself.
 //! - `ExampleData[{"type", "name"}, "property"]` — one property of it.
 //!
-//! Only `"NetworkGraph"` is bundled so far, and only with the classic
+//! Only `"NetworkGraph"` data is bundled so far, and only with the classic
 //! networks listed in `resources/network_graphs.txt.gz`; a type or name
 //! that is not bundled stays unevaluated rather than returning wrong data.
 //! The bundled networks are assembled from the publications they come from
 //! and carry the names Wolfram's catalogue lists them under, so a script
 //! that asks for one of them by name gets the same data from either engine.
+//!
+//! `"TestImage"` is a partial exception: its name catalogue is bundled (see
+//! `TEST_IMAGE_NAMES`) so scripts that build UI from the catalogue — a
+//! `Control` popup, `Thread[...]` over the name list — see the real
+//! entries, but no photographic data is bundled, so
+//! `ExampleData[{"TestImage", name}]` stays unevaluated for every name.
 
 use std::sync::LazyLock;
 
@@ -208,7 +214,64 @@ fn network_graph_property(g: &NetworkGraph, property: &str) -> Option<Expr> {
 }
 
 /// The example-data types Woxi bundles.
-const TYPES: &[&str] = &["NetworkGraph"];
+const TYPES: &[&str] = &["NetworkGraph", "TestImage"];
+
+/// The `"TestImage"` catalogue of names. Woxi bundles no photographic data
+/// (there is no license to redistribute the actual pixels), so only the
+/// name catalogue is exposed: `ExampleData["TestImage"]` returns the same
+/// `{"TestImage", name}` pairs Wolfram lists, which is enough for scripts
+/// that build UI from the catalogue (a `Control` popup, `Thread[...]` over
+/// the name list, …). `ExampleData[{"TestImage", name}]` itself stays
+/// unevaluated for every name, same as an un-bundled `NetworkGraph`.
+const TEST_IMAGE_NAMES: &[&str] = &[
+  "Aerial",
+  "Aerial2",
+  "Airplane",
+  "Airplane2",
+  "Airport",
+  "APC",
+  "Apples",
+  "Boat",
+  "Bridge",
+  "CarAndAPC",
+  "CarAndAPC2",
+  "ChemicalPlant",
+  "Clock",
+  "Couple",
+  "Couple2",
+  "Elaine",
+  "F16",
+  "Flower",
+  "Girl",
+  "Girl2",
+  "Girl3",
+  "Gray21",
+  "House",
+  "House2",
+  "JellyBeans",
+  "JellyBeans2",
+  "Man",
+  "Mandrill",
+  "Marruecos",
+  "Moon",
+  "Peppers",
+  "RadcliffeCamera",
+  "ResolutionChart",
+  "Ruler",
+  "Sailboat",
+  "Splash",
+  "Stall",
+  "Tank",
+  "Tank2",
+  "Tank3",
+  "Tiffany",
+  "Tree",
+  "Truck",
+  "TruckAndAPC",
+  "TruckAndAPC2",
+  "U2",
+  "Volubilis",
+];
 
 /// `ExampleData[…]` — see the module documentation for the call forms.
 pub fn example_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -229,15 +292,17 @@ pub fn example_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Expr::String(kind) = &args[0]
     && args.len() == 1
   {
-    if kind != "NetworkGraph" {
-      return unevaluated();
-    }
+    let names: Vec<&str> = match kind.as_str() {
+      "NetworkGraph" => NETWORK_GRAPHS.iter().map(|g| g.name).collect(),
+      "TestImage" => TEST_IMAGE_NAMES.to_vec(),
+      _ => return unevaluated(),
+    };
     return Ok(Expr::List(
-      NETWORK_GRAPHS
-        .iter()
-        .map(|g| {
+      names
+        .into_iter()
+        .map(|name| {
           Expr::List(
-            vec![Expr::String(kind.clone()), Expr::String(g.name.to_string())]
+            vec![Expr::String(kind.clone()), Expr::String(name.to_string())]
               .into(),
           )
         })
