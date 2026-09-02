@@ -2919,6 +2919,61 @@ mod list {
   }
 
   #[test]
+  fn gompertz_makeham_variance_numeric_via_quadrature() {
+    // The second central moment has no elementary closed form, so with
+    // concrete numeric parameters it is computed by numerical integration
+    // against the density instead of staying stuck on a symbolic
+    // placeholder (regression: this used to make `StandardDeviation` never
+    // evaluate to a number, which broke `FindRoot` calls that fit a
+    // GompertzMakehamDistribution to a target mean/stdev — e.g. a
+    // Wolfram Demonstration bootstrapping a mortality curve).
+    //
+    // wolframscript is unavailable in this environment, so this is instead
+    // cross-checked against an independent computation built from already
+    // separately-tested primitives: `E[X^2] - Mean^2` via `NIntegrate` over
+    // the (also separately tested) `PDF[GompertzMakehamDistribution[...]]`.
+    let variance =
+      interpret("Variance[GompertzMakehamDistribution[0.07, 0.004]]")
+        .unwrap()
+        .parse::<f64>()
+        .unwrap();
+    let cross_check = interpret(
+      "NIntegrate[x^2*PDF[GompertzMakehamDistribution[0.07, 0.004], x], \
+       {x, 0, 2000}] - Mean[GompertzMakehamDistribution[0.07, 0.004]]^2",
+    )
+    .unwrap()
+    .parse::<f64>()
+    .unwrap();
+    assert!(
+      (variance - cross_check).abs() < 1e-3,
+      "Variance = {variance}, cross-check = {cross_check}"
+    );
+
+    // StandardDeviation = Sqrt[Variance] and stays consistent with it.
+    let stdev =
+      interpret("StandardDeviation[GompertzMakehamDistribution[0.07, 0.004]]")
+        .unwrap()
+        .parse::<f64>()
+        .unwrap();
+    assert!(
+      (stdev * stdev - variance).abs() < 1e-6,
+      "stdev^2 = {}, variance = {variance}",
+      stdev * stdev
+    );
+  }
+
+  #[test]
+  fn gompertz_makeham_variance_stays_symbolic_for_symbolic_parameters() {
+    // With symbolic parameters, Variance still has no closed form and
+    // stays unevaluated (matching wolframscript) rather than attempting
+    // (and failing) numeric integration.
+    assert_eq!(
+      interpret("Variance[GompertzMakehamDistribution[l, x]]").unwrap(),
+      "Variance[GompertzMakehamDistribution[l, x]]"
+    );
+  }
+
+  #[test]
   fn extreme_value_zero_arg_form() {
     // Zero-arg form defaults to a = 0, b = 1.
     assert_eq!(

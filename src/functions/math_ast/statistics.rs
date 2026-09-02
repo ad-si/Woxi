@@ -1245,6 +1245,7 @@ pub fn variance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         | "WeibullDistribution"
         | "FrechetDistribution"
         | "ExtremeValueDistribution"
+        | "GompertzMakehamDistribution"
         | "HalfNormalDistribution"
         | "HypoexponentialDistribution"
         | "CoxianDistribution"
