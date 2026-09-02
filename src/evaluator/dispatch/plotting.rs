@@ -232,15 +232,15 @@ pub fn dispatch_plotting(
         // (non-List) data source, and so is a display wrapper
         // (`Tooltip`, `Style`, ...) around any of those.
         Ok(evaluated)
-          if !matches!(
-            crate::functions::list_plot::strip_plot_data_display_wrapper(
-              &evaluated
-            ),
-            Expr::List(_) | Expr::Association(_)
-          ) && crate::functions::timeseries_ast::temporal_paths(
-            &evaluated,
-          )
-          .is_none() =>
+          if {
+            let stripped =
+              crate::functions::list_plot::strip_plot_data_display_wrapper(
+                &evaluated,
+              );
+            !matches!(stripped, Expr::List(_) | Expr::Association(_))
+              && crate::functions::timeseries_ast::temporal_paths(&stripped)
+                .is_none()
+          } =>
         {
           crate::emit_message(&format!(
             "ListLinePlot::lpn: {} is not a list of numbers or pairs of numbers.",

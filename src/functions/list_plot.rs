@@ -201,12 +201,10 @@ pub fn strip_plot_data_display_wrapper(expr: &Expr) -> Expr {
 /// `{1, Style[2, Red], 3}` keeps its numbers. `Callout` is kept as a
 /// `Labeled` so its label still draws.
 fn canonicalize_element(e: &Expr) -> Expr {
-  match e {
+  let e = strip_plot_data_display_wrapper(e);
+  match &e {
     Expr::FunctionCall { name, args } if !args.is_empty() => {
       match name.as_str() {
-        _ if PLOT_DATA_DISPLAY_WRAPPER_HEADS.contains(&name.as_str()) => {
-          canonicalize_element(&args[0])
-        }
         "Callout" if args.len() >= 2 => Expr::FunctionCall {
           name: "Labeled".into(),
           args: vec![canonicalize_element(&args[0]), args[1].clone()].into(),
@@ -218,7 +216,7 @@ fn canonicalize_element(e: &Expr) -> Expr {
     Expr::List(inner) => {
       Expr::List(inner.iter().map(canonicalize_element).collect())
     }
-    _ => e.clone(),
+    _ => e,
   }
 }
 
@@ -247,6 +245,7 @@ fn weighted_data_values(args: &[Expr]) -> Expr {
 /// `Association`s. The `data -> labels` rule form is handled by the caller.
 fn canonicalize_plot_data(expr: &Expr, keys_label_points: bool) -> Expr {
   let e = evaluate_expr_to_expr(expr).unwrap_or_else(|_| expr.clone());
+  let e = strip_plot_data_display_wrapper(&e);
   match &e {
     Expr::Association(pairs) => association_to_data(pairs, keys_label_points),
     Expr::List(items) => {
@@ -254,9 +253,6 @@ fn canonicalize_plot_data(expr: &Expr, keys_label_points: bool) -> Expr {
     }
     Expr::FunctionCall { name, args } if !args.is_empty() => {
       match name.as_str() {
-        _ if PLOT_DATA_DISPLAY_WRAPPER_HEADS.contains(&name.as_str()) => {
-          canonicalize_plot_data(&args[0], keys_label_points)
-        }
         "Callout" if args.len() >= 2 => Expr::FunctionCall {
           name: "Labeled".into(),
           args: vec![
