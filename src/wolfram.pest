@@ -202,7 +202,7 @@ OutShortcut = @{ "%" ~ ASCII_DIGIT+ | "%"+ }
 // SimpleAnonymousFunction is # or # op term followed by & (not &&)
 SimpleAnonymousFunction = { Slot ~ (Operator ~ SlotTerm)? ~ "&" ~ !"&" }
 // SlotTerm is what can follow an operator in an anonymous function body
-SlotTerm = _{ PartExtract | NumericValue | Constant | String | FunctionCall | Identifier | SlotSequence | Slot | "(" ~ Expression ~ ")" }
+SlotTerm = _{ PartExtract | NumericValue | Constant | String | FunctionCall | Identifier | SlotSequence | Slot | &BalancedParens ~ "(" ~ Expression ~ ")" }
 // FunctionAnonymousFunction is a function call (like If[...]) followed by & (not &&)
 // Optional BracketArgs allow direct calls: If[# > 0, #, 0]&[5]
 // ListCall handles List used as a function head: {f, g}[x] → applies each element to args
@@ -241,14 +241,17 @@ ListExtended = {
 // every nesting level (see `SoloBracketGroup`).
 ParenCallSuffix = { BracketArgs+ }
 ParenExtended = {
-    &("(" ~ NestedContent ~ ")" ~ (DerivativePrime | PartOpen | "["))
+    &(BalancedParens ~ (DerivativePrime | PartOpen | "["))
     ~ "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")"
     ~ (DerivativePrime ~ ParenCallSuffix? | PartIndexSuffix | ParenCallSuffix)
 }
 // RuleAnonymousFunction handles ReplacementRule& - for expressions like {#, First@#2} -> "Q" &
 RuleAnonymousFunction = { ReplacementRule ~ "&" ~ !"&" }
 // BaseFunctionCall is a function call that doesn't include anonymous functions to avoid recursion
-BaseFunctionCall = { (Identifier | NamedCharIdentifier) ~ DerivativePrime? ~ ("[" ~ (FunctionArg ~ ("," ~ FunctionArg)*)? ~ "]")+ }
+// The bracket groups carry the same closing-bracket guard as `BracketArgs`
+// (see there) — this rule spells its arguments out rather than reusing
+// `BracketArgs` because its callers read the `FunctionArg` pairs directly.
+BaseFunctionCall = { (Identifier | NamedCharIdentifier) ~ DerivativePrime? ~ (&BalancedBrackets ~ "[" ~ (FunctionArg ~ ("," ~ FunctionArg)*)? ~ "]")+ }
 
 // Atomic so that WHITESPACE/COMMENT tokens are not consumed within
 // the operator span — otherwise as_str() would include e.g. comments
@@ -345,7 +348,7 @@ Operator = @{
 // identifier, so it needs an explicit path here.
 PostfixFunction = {
     SimpleAnonymousFunction
-  | ("(" ~ Expression ~ ")" | List | BaseFunctionCall | Identifier) ~ ("&" ~ !"&")?
+  | (&BalancedParens ~ "(" ~ Expression ~ ")" | List | BaseFunctionCall | Identifier) ~ ("&" ~ !"&")?
 }
 
 // Increment/Decrement: x++ or x-- (postfix operators)
@@ -427,11 +430,7 @@ NegativeImplicitFirst = { "-" ~ UnsignedNumericValue }
 // `((((((1))))))` used to exhaust the parser call limit. `SoloBracketGroup` is a
 // zero-width, linear scan that rejects the attempt up front when the group is
 // followed by something that can never begin a juxtaposed second factor.
-BracketGroupScan = _{
-    "<|" ~ NestedContent ~ "|>"
-  | "{" ~ NestedContent ~ "}"
-  | "(" ~ NestedContent ~ ")"
-}
+BracketGroupScan = _{ BalancedAssociation | BalancedBraces | BalancedParens }
 // Deliberately conservative: characters that could also start a factor suffix
 // (`[`, `^`, `!`, `.`, `'`, `?`, `:`) are absent, so `{1, 2}^2 x` still takes
 // the (slower) ImplicitTimes path rather than being mis-rejected.
@@ -667,7 +666,7 @@ Term = _{
   | AssociationExtended
   | Association
   | ParenExtended
-  | "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")"
+  | &BalancedParens ~ "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")"
 }
 
 // SimpleTerm is used for implicit multiplication - doesn't include ImplicitTimes to avoid recursion
@@ -715,7 +714,7 @@ SimpleTerm = _{
   | List
   | StringCall
   | String
-  | "(" ~ Expression ~ ")"
+  | &BalancedParens ~ "(" ~ Expression ~ ")"
 }
 
 // TermNoImplicit is like Term but without ImplicitTimes - used for function bodies
@@ -752,7 +751,7 @@ TermNoImplicit = _{
   | AssociationExtended
   | Association
   | ParenExtended
-  | "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")"
+  | &BalancedParens ~ "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")"
 }
 
 // ExpressionNoImplicit is like Expression but uses TermNoImplicit
@@ -769,7 +768,7 @@ ExpressionNoImplicit = {
 // a?b[c] uses a trailing BracketArgs* so it parses as PatternTest[a, b][c]
 // rather than PatternTest[a, b[c]].
 // The test can be an Identifier or a parenthesized expression (e.g. anonymous function)
-PatternTestFunc = _{ Identifier | "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")" }
+PatternTestFunc = _{ Identifier | &BalancedParens ~ "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")" }
 PatternTest = {
     PatternName? ~ PatternBlanks ~ PatternTestHead? ~ "?" ~ PatternTestFunc
   | PatternTestLhsParen ~ "?" ~ !"?" ~ PatternTestFunc ~ BracketArgs*
@@ -893,7 +892,7 @@ OmittedArg = { &"," }
 OmittedTrailingArg = { &("}" | "]") }
 ListItemOrOmitted = _{ ListItem | OmittedArg }
 ListItemOrOmittedLast = _{ ListItem | OmittedArg | OmittedTrailingArg }
-List = { "{" ~ (ListItemOrOmitted ~ ("," ~ ListItemOrOmittedLast)*)? ~ "}" }
+List = { &BalancedBraces ~ "{" ~ (ListItemOrOmitted ~ ("," ~ ListItemOrOmittedLast)*)? ~ "}" }
 // ListItem can be a ReplacementRule (with optional & suffix) or an Expression
 // ReplacementRule must be tried first because x_ -> y looks like Expression x_ followed by -> operator
 // RuleAnonymousFunction is merged with ReplacementRule to avoid parsing content twice.
@@ -921,6 +920,12 @@ RuleReplaceSuffix = { ("//." | "/.") ~ (&HasRuleOperator ~ ReplacementRule | Lis
 // scan and make the whole expression unparseable.  Listed first in every
 // alternation so `(*` is never mistaken for a parenthesis group.
 ScanComment = @{ "(*" ~ (ScanComment | (!"(*" ~ !"*)" ~ ANY))* ~ "*)" }
+// String literals must be skipped by the balanced scans for the same reason:
+// a quoted `"]"` or `"(*"` is data, not structure.  The escape branch matters
+// because `"\""` is a two-character escape whose second character would
+// otherwise close the literal early and leave the rest of the scan reading
+// code as string content.
+ScanString = @{ "\"" ~ ("\\" ~ ANY | !"\"" ~ ANY)* ~ "\"" }
 // The Term chain used after an infix Operator: an optional leading sign,
 // a Term, then the usual postfix suffixes. Shared by ListItemRule and
 // FunctionArgRule below so `(pattern -> replacement) &` can chain a
@@ -935,26 +940,35 @@ RuleOperatorTerm = _{
 // Scan forward looking for -> or :> at the current nesting depth
 NestedContent = _{ (
     ScanComment
-  | "<|" ~ NestedContent ~ "|>"
-  | "{" ~ NestedContent ~ "}"
-  | "[" ~ NestedContent ~ "]"
-  | "(" ~ NestedContent ~ ")"
+  | BalancedAssociation
+  | BalancedBraces
+  | BalancedBrackets
+  | BalancedParens
   // The Unicode part brackets group the way `[[…]]` does, so the commas
   // and semicolons inside them are skipped with them.
   | "\u{27E6}" ~ NestedContent ~ "\u{27E7}"
   | "\u{301A}" ~ NestedContent ~ "\u{301B}"
-  | "\"" ~ (!("\"") ~ ANY)* ~ "\""
+  | ScanString
   | !("<|" | "|>" | "{" | "}" | "[" | "]" | "(" | ")" | "\u{27E6}" | "\u{27E7}" | "\u{301A}" | "\u{301B}" | "\"") ~ ANY
 )* }
+// A whole balanced group, as a zero-width, linear scan.  Used as a positive
+// guard in front of every rule that parses a group's contents: a PEG has no
+// way to remember that the group turned out to be unclosed, so without the
+// guard each enclosing alternative parses the same contents again and the cost
+// of rejecting an unclosed group grows exponentially with the nesting depth.
+BalancedAssociation = _{ "<|" ~ NestedContent ~ "|>" }
+BalancedBraces      = _{ "{" ~ NestedContent ~ "}" }
+BalancedBrackets    = _{ "[" ~ NestedContent ~ "]" }
+BalancedParens      = _{ "(" ~ NestedContent ~ ")" }
 HasRuleOperator = _{ (
     ScanComment
-  | "<|" ~ NestedContent ~ "|>"
-  | "{" ~ NestedContent ~ "}"
-  | "[" ~ NestedContent ~ "]"
-  | "(" ~ NestedContent ~ ")"
+  | BalancedAssociation
+  | BalancedBraces
+  | BalancedBrackets
+  | BalancedParens
   | "\u{27E6}" ~ NestedContent ~ "\u{27E7}"
   | "\u{301A}" ~ NestedContent ~ "\u{301B}"
-  | "\"" ~ (!("\"") ~ ANY)* ~ "\""
+  | ScanString
   | "<->"                       // skip TwoWayRule (don't match its "->" substring as a rule operator)
   | !("->" | "\u{2192}" | ":>" | "<|" | "|>" | "}" | "," | "]" | ")" | "\u{27E7}" | "\u{301B}" | "\"") ~ ANY
 )* ~ ("->" | "\u{2192}" | ":>") }
@@ -963,13 +977,13 @@ HasRuleOperator = _{ (
 HasSemicolon = @{ (
     ScanComment
   | ";;" ~ !(";" | "=")         // skip ;; span separators
-  | "<|" ~ NestedContent ~ "|>"
-  | "{" ~ NestedContent ~ "}"
-  | "[" ~ NestedContent ~ "]"
-  | "(" ~ NestedContent ~ ")"
+  | BalancedAssociation
+  | BalancedBraces
+  | BalancedBrackets
+  | BalancedParens
   | "\u{27E6}" ~ NestedContent ~ "\u{27E7}"
   | "\u{301A}" ~ NestedContent ~ "\u{301B}"
-  | "\"" ~ (!("\"") ~ ANY)* ~ "\""
+  | ScanString
   | !(";" | "<|" | "|>" | "}" | "," | "]" | ")" | "\u{27E7}" | "\u{301B}" | "\"") ~ ANY
 )* ~ ";" ~ !";" }
 ListItem = _{ &HasRuleOperator ~ ListItemRule | &HasSemicolon ~ CompoundExpression | Expression }
@@ -979,7 +993,7 @@ AssociationItem = { RuleOperand ~ ("->" | "\u{2192}" | ":>") ~ RuleOperand }
 // as Association[a, b] and AssociationQ returns False.
 AssociationNonRuleItem = { Expression }
 AssociationElement     = _{ AssociationItem | AssociationNonRuleItem }
-Association     = { "<|" ~ ( AssociationElement ~ ("," ~ AssociationElement)* )? ~ "|>" }
+Association     = { &BalancedAssociation ~ "<|" ~ ( AssociationElement ~ ("," ~ AssociationElement)* )? ~ "|>" }
 // AssociationExtended handles bracket access on association literals:
 //   <|...|>["key"]      — key lookup (CurriedCall)
 //   <|...|>[["key"]]    — Part extraction
@@ -987,7 +1001,7 @@ Association     = { "<|" ~ ( AssociationElement ~ ("," ~ AssociationElement)* )?
 // scan avoids parsing a plain `<|...|>` twice.
 AssociationCallSuffix = { BracketArgs+ }
 AssociationExtended = {
-    &("<|" ~ NestedContent ~ "|>" ~ (PartOpen | "["))
+    &(BalancedAssociation ~ (PartOpen | "["))
     ~ Association ~ (PartIndexSuffix | AssociationCallSuffix)
 }
 
@@ -1007,7 +1021,16 @@ FunctionArg = _{ &HasRuleOperator ~ FunctionArgRule | &HasSemicolon ~ CompoundEx
 // BracketArgs groups arguments within a single bracket pair, allowing proper chained call parsing
 FunctionArgOrOmitted = _{ FunctionArg | OmittedArg }
 FunctionArgOrOmittedLast = _{ FunctionArg | OmittedArg | OmittedTrailingArg }
-BracketArgs = { "[" ~ (FunctionArgOrOmitted ~ ("," ~ FunctionArgOrOmittedLast)*)? ~ "]" }
+// A closing `]` is a precondition for this rule, and finding it costs a linear
+// scan, while parsing the arguments to discover the same thing costs an
+// exponential one: `Term` reaches a function call through three alternatives
+// (`FunctionCallExtended`, and `ImplicitTimes` twice — via `PrefixApplySimple`
+// and `FunctionCall`), so an unclosed `f[g[h[…` used to parse its contents 3^n
+// times before failing.  A truncated 4 KB script took 0.6 s to reject (a fuzz
+// finding); with the guard it is rejected on the first scan.  `NestedContent`
+// skips strings and comments, so a `"]"` or a `(* ] *)` inside the group does
+// not count as the closer.
+BracketArgs = { &BalancedBrackets ~ "[" ~ (FunctionArgOrOmitted ~ ("," ~ FunctionArgOrOmittedLast)*)? ~ "]" }
 // A trailing prime may itself be applied to further bracket args, same as
 // FunctionCallExtended: `x[i]''[t]` -> `Derivative[2][x[i]][t]`. This matters
 // inside implicit multiplication (`m x[i]''[t]`), where SimpleTerm uses this

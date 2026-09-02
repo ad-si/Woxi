@@ -17871,6 +17871,40 @@ fn is_track_everything_symbol(sym: &str) -> bool {
   matches!(sym, "All" | "Full" | "Manipulate" | "Automatic" | "True")
 }
 
+/// Whether a `Manipulate[…]`/`Animate[…]` call carries its own
+/// `Initialization :> …`/`Initialization -> …` option, checked structurally
+/// (no evaluation, no side effects) so a caller can decide whether a
+/// *different* recovered copy of Initialization — e.g. one salvaged from a
+/// notebook's cached box-dump output for a `SaveDefinitions -> True`
+/// Manipulate — is actually needed. Wolfram embeds that same box-dump shape
+/// for a Manipulate with its own `Initialization` too, so recovering and
+/// running it there would just duplicate what the live source already runs.
+pub fn manipulate_has_own_initialization(expr: &Expr) -> bool {
+  let Expr::FunctionCall { name, args } = expr else {
+    return false;
+  };
+  if name != "Manipulate" && name != "Animate" {
+    return false;
+  }
+  // A Manipulate whose body is itself an `Animate[…]` flattens the inner
+  // Animate's own Initialization into the combined spec (see
+  // `extract_manipulate_spec`), so check there too.
+  if name == "Manipulate"
+    && let Some(Expr::FunctionCall { name: n, .. }) = args.first()
+    && n == "Animate"
+    && manipulate_has_own_initialization(&args[0])
+  {
+    return true;
+  }
+  args.iter().skip(1).any(|spec| {
+    matches!(
+      spec,
+      Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+        if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Initialization")
+    )
+  })
+}
+
 /// Attempt to extract a `ManipulateSpec` from a held `Manipulate[…]` or
 /// `Animate[…]` expression. `Animate` shares `Manipulate`'s argument shape
 /// (a body followed by `{u, umin, umax}`-style control specs) but auto-plays,
