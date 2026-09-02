@@ -2111,10 +2111,18 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let inner_sum_raw = sum_ast(&[body_in_fresh, iter_spec])?;
     // `inner_sum_raw` may not have closed to a value (e.g. `PolyGamma`/`Sin`
     // have no Sum handling at all), in which case it still holds the fresh
-    // dummy variable inside an unevaluated `Sum[…]`. Substitute it back to
-    // the caller's own variable name before it can leak into either return
-    // path below, or a still-symbolic result exposes the internal
-    // `$sum_indef_…_$` name.
+    // dummy — as both the summand's argument and, inside the held
+    // `Sum[…]`'s own iterator spec, the bound variable name. Substituting
+    // the dummy back to the caller's variable in that case would let the
+    // bound variable shadow the free occurrence in its own upper bound
+    // (`Sum[f[k], {k, 1, -1 + k}]`), which is ill-formed — so hand back the
+    // original call unevaluated instead of a broken partial rewrite.
+    if crate::functions::polynomial_ast::contains_var(
+      &inner_sum_raw,
+      &fresh_name,
+    ) {
+      return Ok(unevaluated("Sum", args));
+    }
     let inner_sum = crate::syntax::substitute_variable(
       &inner_sum_raw,
       &fresh_name,

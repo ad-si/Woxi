@@ -1978,14 +1978,14 @@ mod interpreter_tests {
         !result.contains("Indeterminate"),
         "{code}: a pole at the boundary must not poison the whole sum, got {result}"
       );
-      // The antidifference has no closed form either, so the result stays a
-      // symbolic `Sum[...]` — but it must be expressed in the caller's own
-      // variable, not the internal `$sum_indef_k_$` dummy the indefinite-sum
-      // rewrite substitutes in and must substitute back out.
-      assert!(
-        !result.contains("sum_indef"),
-        "{code}: leaked the internal dummy variable, got {result}"
-      );
+      // The antidifference has no closed form either (no `Sum` handling for
+      // `PolyGamma`), so the rewrite must hand back the original call
+      // unevaluated rather than a partial rewrite still holding the
+      // internal `$sum_indef_k_$` dummy — which would otherwise leak either
+      // as a bare occurrence, or (worse) get blindly substituted back to
+      // `k` and shadow the free `k` inside the held `Sum`'s own iterator
+      // spec (`Sum[PolyGamma[k], {k, 1, -1 + k}]`, ill-formed).
+      assert_eq!(result, code, "{code}: must stay unevaluated verbatim");
     }
     assert!(
       !interpret("Sum[Log[i], i]").unwrap().contains("Infinity"),
@@ -1999,9 +1999,12 @@ mod interpreter_tests {
     assert_eq!(interpret("Sum[1, i]").unwrap(), "i");
     assert_eq!(interpret("Sum[i, i]").unwrap(), "((-1 + i)*i)/2");
     for code in ["Sum[Sin[k], k]", "Sum[f[k], k]"] {
-      assert!(
-        !interpret(code).unwrap().contains("sum_indef"),
-        "{code}: leaked the internal dummy variable"
+      assert_eq!(
+        interpret(code).unwrap(),
+        code,
+        "{code}: an unclosed antidifference must stay unevaluated verbatim, \
+         not leak the internal dummy variable or produce an ill-formed \
+         iterator that shadows its own free variable"
       );
     }
   }
