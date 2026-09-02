@@ -1906,25 +1906,44 @@ mod interpreter_tests {
     // antidifference itself is perfectly well defined there — wolframscript's
     // `Sum[1/i, i]` is `HarmonicNumber[-1 + i]`, exactly the telescoping
     // part alone. A non-finite boundary term is now dropped instead of
-    // added in.
+    // added in. `Log[0]` evaluates to a plain (unary-negated) `Infinity`
+    // rather than `ComplexInfinity`/`Indeterminate` — a different spelling
+    // of "non-finite" that must be caught too, or it still poisons the sum
+    // through `Plus` the same way.
     clear_state();
     assert_eq!(interpret("Sum[1/k, k]").unwrap(), "HarmonicNumber[-1 + k]");
+    for code in ["Sum[PolyGamma[k], k]", "Sum[k*PolyGamma[k], k]"] {
+      let result = interpret(code).unwrap();
+      assert!(
+        !result.contains("Indeterminate"),
+        "{code}: a pole at the boundary must not poison the whole sum, got {result}"
+      );
+      // The antidifference has no closed form either, so the result stays a
+      // symbolic `Sum[...]` — but it must be expressed in the caller's own
+      // variable, not the internal `$sum_indef_k_$` dummy the indefinite-sum
+      // rewrite substitutes in and must substitute back out.
+      assert!(
+        !result.contains("sum_indef"),
+        "{code}: leaked the internal dummy variable, got {result}"
+      );
+    }
     assert!(
-      !interpret("Sum[PolyGamma[k], k]")
-        .unwrap()
-        .contains("Indeterminate"),
-      "a pole at the boundary must not poison the whole sum"
-    );
-    assert!(
-      !interpret("Sum[k*PolyGamma[k], k]")
-        .unwrap()
-        .contains("Indeterminate"),
-      "a pole at the boundary must not poison the whole sum"
+      !interpret("Sum[Log[i], i]").unwrap().contains("Infinity"),
+      "a plain (non-ComplexInfinity) infinite boundary term must not poison \
+       the whole sum either"
     );
     // A regular (non-singular) summand is unaffected: the boundary term is
-    // still added in as before.
+    // still added in as before, and an unresolved antidifference (no Sum
+    // pattern for `Sin`/a bare symbolic function) still must not leak the
+    // dummy variable either.
     assert_eq!(interpret("Sum[1, i]").unwrap(), "i");
     assert_eq!(interpret("Sum[i, i]").unwrap(), "((-1 + i)*i)/2");
+    for code in ["Sum[Sin[k], k]", "Sum[f[k], k]"] {
+      assert!(
+        !interpret(code).unwrap().contains("sum_indef"),
+        "{code}: leaked the internal dummy variable"
+      );
+    }
   }
 
   #[test]

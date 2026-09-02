@@ -2014,12 +2014,46 @@ fn strip_alternating_factor(body: &Expr, var: &str) -> Option<Expr> {
   })
 }
 
-/// True for `Indeterminate`, `ComplexInfinity`, or a `DirectedInfinity[…]` —
-/// the markers a division or a pole (`1/0`, `PolyGamma[0]`, …) evaluates to,
-/// rather than raising an `InterpreterError`.
+/// True for `Indeterminate`, `ComplexInfinity`, `Infinity` (in any of the
+/// spellings a negation can leave it in: a bare identifier, `-Infinity` as
+/// `UnaryOp[Minus, …]`, or `Times[-1, Infinity]`), or a `DirectedInfinity[…]`
+/// — the markers a division or a pole (`1/0`, `PolyGamma[0]`, `Log[0]`, …)
+/// evaluates to, rather than raising an `InterpreterError`.
 fn is_nonfinite_boundary_value(expr: &Expr) -> bool {
-  matches!(expr, Expr::Identifier(s) if s == "Indeterminate" || s == "ComplexInfinity")
+  let is_infinity = |e: &Expr| matches!(e, Expr::Identifier(s) | Expr::Constant(s) if s == "Infinity");
+  if is_infinity(expr)
+    || matches!(expr, Expr::Identifier(s) if s == "Indeterminate" || s == "ComplexInfinity")
     || matches!(expr, Expr::FunctionCall { name, .. } if name == "DirectedInfinity")
+  {
+    return true;
+  }
+  if let Expr::UnaryOp {
+    op: UnaryOperator::Minus,
+    operand,
+  } = expr
+  {
+    return is_infinity(operand);
+  }
+  let times_args: Option<&[Expr]> = match expr {
+    Expr::FunctionCall { name, args } if name == "Times" => Some(args),
+    _ => None,
+  };
+  if let Some(args) = times_args
+    && args.len() == 2
+  {
+    return (matches!(&args[0], Expr::Integer(-1)) && is_infinity(&args[1]))
+      || (matches!(&args[1], Expr::Integer(-1)) && is_infinity(&args[0]));
+  }
+  if let Expr::BinaryOp {
+    op: BinaryOperator::Times,
+    left,
+    right,
+  } = expr
+  {
+    return (matches!(left.as_ref(), Expr::Integer(-1)) && is_infinity(right))
+      || (matches!(right.as_ref(), Expr::Integer(-1)) && is_infinity(left));
+  }
+  false
 }
 
 pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -2074,7 +2108,18 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     );
     let iter_spec =
       Expr::List(vec![fresh.clone(), Expr::Integer(1), upper].into());
-    let inner_sum = sum_ast(&[body_in_fresh, iter_spec])?;
+    let inner_sum_raw = sum_ast(&[body_in_fresh, iter_spec])?;
+    // `inner_sum_raw` may not have closed to a value (e.g. `PolyGamma`/`Sin`
+    // have no Sum handling at all), in which case it still holds the fresh
+    // dummy variable inside an unevaluated `Sum[…]`. Substitute it back to
+    // the caller's own variable name before it can leak into either return
+    // path below, or a still-symbolic result exposes the internal
+    // `$sum_indef_…_$` name.
+    let inner_sum = crate::syntax::substitute_variable(
+      &inner_sum_raw,
+      &fresh_name,
+      &Expr::Identifier(var_name.clone()),
+    );
     // Evaluate f(0). A summand with a genuine pole at 0 (`1/k`,
     // `PolyGamma[k]`, …) makes this boundary term non-finite even though
     // the antidifference itself is perfectly well defined there (e.g.
