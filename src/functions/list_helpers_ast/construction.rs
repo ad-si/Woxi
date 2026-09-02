@@ -508,6 +508,31 @@ fn table_over_iterator(
 
 use crate::functions::math_ast::expr_to_rational;
 
+/// Number of steps from `min` to `max` implied by `ratio = (max - min) /
+/// step`, tolerant of floating-point rounding at an exact integer
+/// boundary. Used by the symbolic/machine-real branches of [`range_ast`]
+/// below, where `min`/`max`/`step` are only reachable as `f64` (e.g. via
+/// `N[…]` on a `Pi`-based bound).
+///
+/// A ratio that is mathematically exactly integral can still land a hair
+/// under it in `f64` — e.g. `Range[Pi/n, 2 Pi - Pi/n, 2 Pi/n]` has a ratio
+/// of exactly `n - 1`, but computing it through `Pi`-based machine reals
+/// can produce `n - 1 - epsilon`. A plain `.floor()` then reads that as
+/// one step short and the range silently drops its last element (`Range[
+/// Pi/360, 2 Pi - Pi/360, 2 Pi/360]` returned 359 points instead of 360
+/// before this rounding tolerance was added). Snapping a ratio that is
+/// within a relative `1e-9` of an integer to that integer fixes the
+/// boundary without affecting a ratio that is genuinely non-integral
+/// (which still truncates towards `min` exactly as `Range` requires).
+fn range_step_count(ratio: f64) -> i128 {
+  let rounded = ratio.round();
+  if (ratio - rounded).abs() <= 1e-9 * rounded.abs().max(1.0) {
+    rounded as i128
+  } else {
+    ratio.floor() as i128
+  }
+}
+
 /// AST-based Range: generate a range of numbers.
 /// Range[n] -> {1, 2, ..., n}
 /// Range[min, max] -> {min, ..., max}
@@ -637,6 +662,24 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     || expr_to_f64(&step_expr).is_none();
 
   if has_symbolic {
+    // Numeric contagion: Range[start, stop, di] is computed as
+    // start + k*di for k = 0, 1, 2, .... When `di` (or `start` itself)
+    // is an inexact machine real, every element becomes inexact —
+    // including k=0, since `start + 0` still numericizes `start` via
+    // arithmetic with an inexact operand (`0*di` is inexact `0.`).
+    // `max`/`stop` never affects exactness — it only controls where the
+    // range terminates.
+    let any_real =
+      matches!(&min_expr, Expr::Real(_)) || matches!(&step_expr, Expr::Real(_));
+    let first_elem = |min_expr: &Expr| -> Result<Expr, InterpreterError> {
+      if any_real {
+        let n_expr = call1("N", min_expr.clone());
+        crate::evaluator::evaluate_expr_to_expr(&n_expr)
+      } else {
+        Ok(min_expr.clone())
+      }
+    };
+
     // Try to evaluate numerically to determine count
     let min_f = try_numeric(&min_expr);
     let max_f = try_numeric(&max_expr);
@@ -685,7 +728,7 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if let Some(ratio_val) = ratio_val
         && ratio_val.is_finite()
       {
-        let count = ratio_val.floor() as i128 + 1;
+        let count = range_step_count(ratio_val) + 1;
         if count <= 0 {
           return Ok(Expr::List(vec![].into()));
         }
@@ -697,7 +740,7 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let mut results = Vec::with_capacity(count as usize);
         for k in 0..count {
           let elem = if k == 0 {
-            min_expr.clone()
+            first_elem(&min_expr)?
           } else {
             let k_times_step =
               call("Times", vec![Expr::Integer(k), step_expr.clone()]);
@@ -724,7 +767,7 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ));
         return Ok(call);
       }
-      let count = ((max_val - min_val) / step_val).floor() as i128 + 1;
+      let count = range_step_count((max_val - min_val) / step_val) + 1;
       if count <= 0 {
         return Ok(Expr::List(vec![].into()));
       }
@@ -737,7 +780,7 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       for k in 0..count {
         // Generate min_expr + k * step_expr symbolically
         let elem = if k == 0 {
-          min_expr.clone()
+          first_elem(&min_expr)?
         } else {
           let k_times_step = times2(Expr::Integer(k), step_expr.clone());
           let sum = plus2(min_expr.clone(), k_times_step);

@@ -231,4 +231,85 @@ mod example_data_tests {
       "ExampleData[{NetworkGraph, ZacharyKarateClub}, Nope]"
     );
   }
+
+  /// Woxi bundles no photographic data, only the `"TestImage"` name
+  /// catalogue — enough for a script to build UI (a `Control` popup,
+  /// `Thread[...]` over the name list) from `ExampleData["TestImage"]`
+  /// without the actual pixels being available.
+  #[test]
+  fn lists_the_test_image_catalogue() {
+    clear_state();
+    assert_eq!(
+      interpret("MemberQ[ExampleData[], \"TestImage\"]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("Length[ExampleData[\"TestImage\"]] > 0").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "And @@ (MatchQ[#, {_String, _String}] & /@ \
+         ExampleData[\"TestImage\"])"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("Union[First /@ ExampleData[\"TestImage\"]]").unwrap(),
+      "{TestImage}"
+    );
+    // The catalogue lists each name once.
+    assert_eq!(
+      interpret(
+        "Length[ExampleData[\"TestImage\"]] == \
+         Length[Union[Last /@ ExampleData[\"TestImage\"]]]"
+      )
+      .unwrap(),
+      "True"
+    );
+    for name in ["Couple", "Mandrill", "House", "Peppers"] {
+      assert_eq!(
+        interpret(&format!(
+          "MemberQ[ExampleData[\"TestImage\"], {{\"TestImage\", \"{name}\"}}]"
+        ))
+        .unwrap(),
+        "True",
+        "{name}"
+      );
+    }
+  }
+
+  /// The name catalogue is bundled, but no pixel data is: asking for one
+  /// of the catalogued images stays unevaluated rather than returning
+  /// invented pixels.
+  #[test]
+  fn test_image_pixel_data_stays_unbundled() {
+    clear_state();
+    assert_eq!(
+      interpret("ExampleData[{\"TestImage\", \"Couple\"}]").unwrap(),
+      "ExampleData[{TestImage, Couple}]"
+    );
+  }
+
+  /// The Wolfram Demonstration "Histogram Equalization" builds its image
+  /// picker from exactly this pattern:
+  /// `imageNames = ExampleData["TestImage"]; Thread[imageNames ->
+  /// imageNames[[All, 2]]]` — a rule list pairing each `{"TestImage",
+  /// name}` entry with its bare name. This regression test guards that
+  /// the catalogue is a concrete, evaluated list so `Thread` (and so the
+  /// `Control` popup built from it) actually has something to work with.
+  #[test]
+  fn thread_over_the_catalogue_builds_display_rules() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "imageNames = ExampleData[\"TestImage\"]; \
+         MatchQ[Thread[imageNames -> imageNames[[All, 2]]], \
+         {({_String, _String} -> _String) ..}]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
 }

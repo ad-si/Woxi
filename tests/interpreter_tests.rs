@@ -2216,6 +2216,59 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_list_line_plot_accepts_whole_series_tooltip_wrapper() {
+    // `ListLinePlot[Tooltip[data, label], ...]` wraps the *entire* data
+    // series in a Tooltip (as opposed to `Tooltip` wrapping individual
+    // points) so hovering the line shows `label`. This must plot exactly
+    // like the bare series, not report `ListLinePlot::lpn` and stay
+    // unevaluated: the data-argument validity check only unwrapped
+    // `Tooltip` around single points, not around the whole list.
+    clear_state();
+    let bare = interpret_with_stdout("ListLinePlot[{1, 4, 9, 16}]").unwrap();
+    clear_state();
+    let wrapped = interpret_with_stdout(
+      "ListLinePlot[Tooltip[{1, 4, 9, 16}, \"squares\"]]",
+    )
+    .unwrap();
+    assert!(
+      wrapped.warnings.is_empty(),
+      "a whole-series Tooltip wrapper must not raise ListLinePlot::lpn: {:?}",
+      wrapped.warnings
+    );
+    assert_eq!(
+      wrapped.result, bare.result,
+      "a Tooltip-wrapped series should render identically to the bare series"
+    );
+  }
+
+  #[test]
+  fn test_list_line_plot_accepts_tooltip_wrapped_time_series() {
+    // Same whole-argument-wrapper bug as
+    // `test_list_line_plot_accepts_whole_series_tooltip_wrapper`, but for the
+    // non-List `TimeSeries` data source: the `ListLinePlot::lpn` guard must
+    // strip the `Tooltip` before checking for temporal data too, not just
+    // before the List/Association check.
+    clear_state();
+    let bare =
+      interpret_with_stdout("ListLinePlot[TimeSeries[{{1, 2}, {2, 4}}]]")
+        .unwrap();
+    clear_state();
+    let wrapped = interpret_with_stdout(
+      "ListLinePlot[Tooltip[TimeSeries[{{1, 2}, {2, 4}}], \"series\"]]",
+    )
+    .unwrap();
+    assert!(
+      wrapped.warnings.is_empty(),
+      "a Tooltip-wrapped TimeSeries must not raise ListLinePlot::lpn: {:?}",
+      wrapped.warnings
+    );
+    assert_eq!(
+      wrapped.result, bare.result,
+      "a Tooltip-wrapped TimeSeries should render identically to the bare one"
+    );
+  }
+
+  #[test]
   fn test_plot_label_style_sets_frame_label_size_and_color() {
     // LabelStyle -> {size, color} must restyle the FrameLabel/AxesLabel/
     // PlotLabel text; it used to be accepted and silently dropped, so a

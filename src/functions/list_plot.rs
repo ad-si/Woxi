@@ -164,18 +164,47 @@ fn association_to_data(
   Expr::List(pairs.iter().map(|(_, v)| v.clone()).collect())
 }
 
+/// Head names that ListPlot-family functions (and ordinary `Plot`) treat as
+/// transparent display wrappers around a data argument: `Tooltip[data,
+/// label]`, `Style[data, ...]`, etc. draw the underlying data with the
+/// wrapper's presentation but are otherwise invisible to data validation.
+pub const PLOT_DATA_DISPLAY_WRAPPER_HEADS: [&str; 8] = [
+  "Tooltip",
+  "Style",
+  "Legended",
+  "Annotation",
+  "PopupWindow",
+  "Mouseover",
+  "StatusArea",
+  "Button",
+];
+
+/// Peel a chain of [`PLOT_DATA_DISPLAY_WRAPPER_HEADS`] wrappers to expose
+/// the data expression underneath, e.g. `Tooltip[{1, 2, 3}, "cost"]` ->
+/// `{1, 2, 3}`. Used both to validate a data argument (is it a wrapper
+/// around a list?) and, via [`canonicalize_plot_data`]/[`canonicalize_element`],
+/// to actually strip it before parsing.
+pub fn strip_plot_data_display_wrapper(expr: &Expr) -> Expr {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if !args.is_empty()
+        && PLOT_DATA_DISPLAY_WRAPPER_HEADS.contains(&name.as_str()) =>
+    {
+      strip_plot_data_display_wrapper(&args[0])
+    }
+    _ => expr.clone(),
+  }
+}
+
 /// Strip display wrappers from a single list entry (a scalar, an `{x, y}`
 /// pair, or a nested series), recursing into inner lists so that
 /// `{1, Style[2, Red], 3}` keeps its numbers. `Callout` is kept as a
 /// `Labeled` so its label still draws.
 fn canonicalize_element(e: &Expr) -> Expr {
-  match e {
+  let e = strip_plot_data_display_wrapper(e);
+  match &e {
     Expr::FunctionCall { name, args } if !args.is_empty() => {
       match name.as_str() {
-        "Tooltip" | "Style" | "Legended" | "Annotation" | "PopupWindow"
-        | "Mouseover" | "StatusArea" | "Button" => {
-          canonicalize_element(&args[0])
-        }
         "Callout" if args.len() >= 2 => Expr::FunctionCall {
           name: "Labeled".into(),
           args: vec![canonicalize_element(&args[0]), args[1].clone()].into(),
@@ -187,7 +216,7 @@ fn canonicalize_element(e: &Expr) -> Expr {
     Expr::List(inner) => {
       Expr::List(inner.iter().map(canonicalize_element).collect())
     }
-    _ => e.clone(),
+    _ => e,
   }
 }
 
@@ -216,6 +245,7 @@ fn weighted_data_values(args: &[Expr]) -> Expr {
 /// `Association`s. The `data -> labels` rule form is handled by the caller.
 fn canonicalize_plot_data(expr: &Expr, keys_label_points: bool) -> Expr {
   let e = evaluate_expr_to_expr(expr).unwrap_or_else(|_| expr.clone());
+  let e = strip_plot_data_display_wrapper(&e);
   match &e {
     Expr::Association(pairs) => association_to_data(pairs, keys_label_points),
     Expr::List(items) => {
@@ -223,10 +253,6 @@ fn canonicalize_plot_data(expr: &Expr, keys_label_points: bool) -> Expr {
     }
     Expr::FunctionCall { name, args } if !args.is_empty() => {
       match name.as_str() {
-        "Tooltip" | "Style" | "Legended" | "Annotation" | "PopupWindow"
-        | "Mouseover" | "StatusArea" | "Button" => {
-          canonicalize_plot_data(&args[0], keys_label_points)
-        }
         "Callout" if args.len() >= 2 => Expr::FunctionCall {
           name: "Labeled".into(),
           args: vec![
