@@ -671,6 +671,27 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_named_character_identifier_keeps_trailing_dollar_signs() {
+    // Wolfram's FrontEnd names a Manipulate-tracked variable built from a
+    // named character with a trailing `$$` (e.g. `\[Delta]$$`); the whole
+    // thing must parse as one Symbol, not split into the bare named
+    // character and a separate `$$` symbol joined by implicit
+    // multiplication. This is exactly the shape a Demonstration's
+    // `{{\[Delta]$$, 0.015}, 0.01, 0.025, 0.001}` Manipulate control spec
+    // takes once its `$CellContext`` prefix is stripped when Woxi Studio
+    // rebuilds a saved widget from a notebook with no Input-cell source.
+    clear_state();
+    assert_eq!(interpret("Head[\\[Delta]$$]").unwrap(), "Symbol");
+    assert_eq!(interpret("\\[Delta]$$ = 3; \\[Delta]$$ + 1").unwrap(), "4");
+    clear_state();
+    // The same holds for a function-call head, not just a bare symbol.
+    assert_eq!(
+      interpret("\\[Theta]$$[x_] := x^2; \\[Theta]$$[5]").unwrap(),
+      "25"
+    );
+  }
+
+  #[test]
   fn test_expression_then_comment() {
     // Expression followed by comment should evaluate the expression
     clear_state();
