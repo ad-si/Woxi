@@ -3415,7 +3415,10 @@ fn render_styled_layout_if_needed(expr: syntax::Expr) -> syntax::Expr {
     } => inner_name.as_str(),
     _ => return expr,
   };
-  if !matches!(inner_name, "Column" | "Row" | "Grid" | "TextGrid" | "Dynamic") {
+  if !matches!(
+    inner_name,
+    "Column" | "Row" | "Grid" | "TextGrid" | "Dynamic"
+  ) {
     return expr;
   }
   let rendered = match inner_name {
@@ -3456,7 +3459,10 @@ fn render_styled_layout_if_needed(expr: syntax::Expr) -> syntax::Expr {
       render_grid_if_needed(restyled)
     }
   };
-  if matches!(rendered, syntax::Expr::Graphics { .. } | syntax::Expr::Image { .. }) {
+  if matches!(
+    rendered,
+    syntax::Expr::Graphics { .. } | syntax::Expr::Image { .. }
+  ) {
     rendered
   } else {
     expr
