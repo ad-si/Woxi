@@ -3437,7 +3437,10 @@ fn render_styled_layout_if_needed(expr: syntax::Expr) -> syntax::Expr {
     // meaning for an already-rendered graphic, so releasing the `Dynamic`
     // hold and dropping them is the same trade `render_event_handler_if_needed`
     // makes for the event rules it wraps.
-    "Dynamic" => render_dynamic_if_needed(inner),
+    // Releasing the `Dynamic` hold only gets as far as a symbolic
+    // `Graphics[…]`/`Image[…]` call — same as the top-level pipeline, it
+    // still needs a render pass to turn that into the drawn picture.
+    "Dynamic" => render_graphics_fc_if_needed(render_dynamic_if_needed(inner)),
     // Rebuild `Style[inner, directives…]` (with the outer wrappers now
     // stripped) rather than pushing the directives into each cell, so this
     // hits the same `Style[Grid[…], …]` arm of `render_grid_if_needed` a
