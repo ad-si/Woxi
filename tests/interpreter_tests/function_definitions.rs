@@ -943,6 +943,58 @@ mod compile {
     assert_eq!(interpret("Head[cf]").unwrap(), "CompiledFunction");
   }
 
+  // Regression: `RuntimeAttributes -> {Listable}` was accepted syntactically
+  // (see `compile_accepts_trailing_option_rules` above) but never made the
+  // resulting `CompiledFunction` actually thread over a list argument — it
+  // was passed straight into the body as one opaque value instead of being
+  // mapped element-wise, the way `SetAttributes[f, Listable]` threads an
+  // ordinary function. That happened to go unnoticed for bodies built from
+  // already-Listable primitives (`Abs`, `Plus`, …), which thread on their
+  // own regardless of the compiled function's own attribute — but a body
+  // using a scalar-typed parameter as opaque state passed to a
+  // non-Listable list-producing function (`NestWhileList`, as many Wolfram
+  // Demonstrations Project escape-time fractal kernels do) computed the
+  // wrong thing entirely: a matrix argument collapsed to a single scalar
+  // result instead of a same-shaped matrix of per-element results.
+  #[test]
+  fn compile_listable_runtime_attribute_threads_over_list_argument() {
+    clear_state();
+    let r = woxi::interpret_with_stdout(
+      r#"escapeSteps = Compile[{{z0, _Complex}, {c, _Complex}, {maxSteps, _Integer}},
+           Length[NestWhileList[#^2 + c &, z0, Abs[#] <= 2 &, 1, maxSteps]],
+           RuntimeAttributes -> {Listable}];
+         escapeSteps[{{0.+0. I, 2.+2. I}, {3.+0. I, 0.1+0.1 I}}, -1.+0. I, 20]"#,
+    )
+    .unwrap();
+    // (0, 0) and (0.1, 0.1) both fall in the basin of the map's attracting
+    // {0, -1} 2-cycle and never escape, so all 20 allowed applications run:
+    // 21 elements (the initial value plus 20 applications). (2, 2) and (3,
+    // 0) start outside the escape radius, so the very first `test` check
+    // fails and the list stays just the initial value: 1 element. The
+    // `_Complex` spec makes the whole compiled function work in machine
+    // reals, so the integer `Length` comes back real-coerced (`21.`/`1.`).
+    assert_eq!(r.result, "{{21., 1.}, {1., 21.}}");
+    assert!(
+      r.warnings.is_empty(),
+      "unexpected messages: {:?}",
+      r.warnings
+    );
+    // A plain (non-Listable) CompiledFunction must keep passing a list
+    // argument straight through as opaque state, unchanged by this fix:
+    // `Abs` and `<=` thread over the 2-element list on their own, but the
+    // result is a 2-element list of booleans, not a single True/False, so
+    // `NestWhileList`'s test is never definitely satisfied and it stops
+    // after just the initial value.
+    assert_eq!(
+      interpret(
+        r#"raw = Compile[{{z0, _Complex}}, Length[NestWhileList[#^2 &, z0, Abs[#] <= 2 &, 1, 3]]];
+           raw[{0.5+0. I, 0.5+0. I}]"#
+      )
+      .unwrap(),
+      "1."
+    );
+  }
+
   // Regression: a `.nb` notebook's `SaveDefinitions -> True` dump can embed a
   // helper as Mathematica's fully serialized `CompiledFunction[…]` — an id
   // tuple, argument patterns, type/constant tables, raw bytecode, the

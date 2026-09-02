@@ -6997,6 +6997,55 @@ mod tests {
     assert_eq!(state.error, None, "the compiled body must evaluate cleanly");
   }
 
+  /// An escape-time fractal Manipulate: an `Initialization`-defined
+  /// `Compile`d kernel with `RuntimeAttributes -> {Listable}` is called on
+  /// a `Table`-built grid of complex numbers and rendered through
+  /// `ArrayPlot`, with three Tiny-sized sliders and `ControlPlacement ->
+  /// Left` — the general shape several Wolfram Demonstrations Project
+  /// notebooks use for a Julia/Mandelbrot-style renderer (independently
+  /// written, not copied from any specific one). Regression: a compiled
+  /// function's `RuntimeAttributes -> {Listable}` option was accepted
+  /// syntactically but never made the resulting `CompiledFunction` thread
+  /// over a list/matrix argument — the whole matrix was passed into the
+  /// body as one opaque value instead of being mapped element-wise, so a
+  /// body using its scalar-typed parameter as state for a non-Listable
+  /// function like `NestWhileList` silently collapsed a same-shaped-matrix
+  /// result down to a single scalar, which meant `ArrayPlot` never got a
+  /// matrix to render at all (`ArrayPlot::rectype`) and Woxi Studio's
+  /// output for the whole Manipulate came out blank.
+  #[test]
+  fn manipulate_listable_compile_kernel_feeds_array_plot() {
+    let code = r#"Manipulate[
+      ArrayPlot[
+        Quiet@escapeGrid[Table[a + b I, {b, -1., 1., step}, {a, -1., 1., step}], c + 0. I, maxSteps],
+        ColorFunction -> (ColorData["TemperatureMap"][#] &)
+      ],
+      {{c, -1., "c"}, -2., 2., .1, ImageSize -> Tiny, Appearance -> "Labeled"},
+      {{maxSteps, 10, "iterations"}, 2, 50, 1, ImageSize -> Tiny, Appearance -> "Labeled"},
+      {{step, 0.5, "resolution"}, 0.1, 1., 0.1, ImageSize -> Tiny},
+      ControlPlacement -> Left,
+      SaveDefinitions -> True,
+      Initialization :> (
+        escapeGrid = Compile[{{z0, _Complex}, {c, _Complex}, {maxSteps, _Integer}},
+          Length[NestWhileList[#^2 + c &, z0, Abs[#] <= 2 &, 1, maxSteps]],
+          RuntimeAttributes -> {Listable}];
+      )
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr).expect(
+      "a Listable-Compile escape-time kernel feeding ArrayPlot should build a ManipulateState",
+    );
+    assert_eq!(
+      state.error, None,
+      "ArrayPlot must receive a real matrix, not a collapsed scalar"
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the escape-time grid should render as a graphic"
+    );
+  }
+
   /// A dissection Manipulate assembling colored polygon pieces with
   /// `Translate`/`Rotate`, a boolean checkbox control (`{False, True}`
   /// domain) toggling a hint overlay, and several `Tiny` step sliders with
