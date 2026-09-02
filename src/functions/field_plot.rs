@@ -93,6 +93,22 @@ fn parse_field_plot_label(
   })
 }
 
+/// The axes margins that leave room for a field plot's `PlotLabel`, or
+/// `None` when there is no label to draw (the caller then keeps plotters'
+/// default margins). Shared by every field plot that draws its own axes
+/// with [`crate::functions::plot::generate_axes_only_opts`], so the top
+/// margin, tick-label areas, and font-size fallback all move together.
+fn field_plot_label_margins(
+  plot_label: Option<&(String, Option<f64>)>,
+) -> Option<crate::functions::plot::MarginOverrides> {
+  plot_label.map(|(_, size)| crate::functions::plot::MarginOverrides {
+    top_margin: ((size.unwrap_or(14.0) * 2.0).round() as u32)
+      * RESOLUTION_SCALE,
+    x_label_area: 40 * RESOLUTION_SCALE,
+    y_label_area: 65 * RESOLUTION_SCALE,
+  })
+}
+
 /// Split `Style[expr, …, n, …]` into its content and the font size `n`.
 fn peel_label_font_size(value: &Expr) -> (&Expr, Option<f64>) {
   let Expr::FunctionCall { name, args } = value else {
@@ -1835,14 +1851,7 @@ pub fn region_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let plot_label = parse_field_plot_label(args, 3);
 
   // Use plotters for axes, reserving room above the frame for a PlotLabel.
-  let margins = plot_label.as_ref().map(|(_, size)| {
-    crate::functions::plot::MarginOverrides {
-      top_margin: ((size.unwrap_or(14.0) * 2.0).round() as u32)
-        * crate::functions::plot::RESOLUTION_SCALE,
-      x_label_area: 40 * crate::functions::plot::RESOLUTION_SCALE,
-      y_label_area: 65 * crate::functions::plot::RESOLUTION_SCALE,
-    }
-  });
+  let margins = field_plot_label_margins(plot_label.as_ref());
   let area = crate::functions::plot::generate_axes_only_opts(
     (x_min, x_max),
     (y_min, y_max),
@@ -2001,6 +2010,7 @@ pub fn vector_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let body = resolved.as_ref().unwrap_or(&args[0]);
   let (svg_width, svg_height, full_width) = parse_field_options(args, 3);
   let epilog = parse_vector_plot_epilog(args, 3);
+  let plot_label = parse_field_plot_label(args, 3);
 
   let x_step = (x_max - x_min) / VECTOR_GRID as f64;
   let y_step = (y_max - y_min) / VECTOR_GRID as f64;
@@ -2020,18 +2030,24 @@ pub fn vector_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  // Use plotters for axes
-  let mut area = generate_axes_only(
+  // Use plotters for axes, reserving room above the frame for a PlotLabel.
+  let margins = field_plot_label_margins(plot_label.as_ref());
+  let mut area = crate::functions::plot::generate_axes_only_opts(
     (x_min, x_max),
     (y_min, y_max),
     svg_width,
     svg_height,
     full_width,
+    None,
+    margins.as_ref(),
   )?;
 
   let mut svg = std::mem::take(&mut area.svg);
   if let Some(pos) = svg.rfind("</svg>") {
     svg.truncate(pos);
+  }
+  if let Some(label) = &plot_label {
+    inject_field_plot_label(&mut svg, &area, label);
   }
 
   let cell_size =
@@ -2182,14 +2198,18 @@ pub fn stream_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   );
   let body = resolved.as_ref().unwrap_or(&args[0]);
   let (svg_width, svg_height, full_width) = parse_field_options(args, 3);
+  let plot_label = parse_field_plot_label(args, 3);
 
-  // Use plotters for axes
-  let area = generate_axes_only(
+  // Use plotters for axes, reserving room above the frame for a PlotLabel.
+  let margins = field_plot_label_margins(plot_label.as_ref());
+  let area = crate::functions::plot::generate_axes_only_opts(
     (x_min, x_max),
     (y_min, y_max),
     svg_width,
     svg_height,
     full_width,
+    None,
+    margins.as_ref(),
   )?;
 
   let plot_x0 = area.plot_x0;
@@ -2202,9 +2222,12 @@ pub fn stream_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let ay_min = area.y_min;
   let ay_max = area.y_max;
 
-  let mut svg = area.svg;
+  let mut svg = area.svg.clone();
   if let Some(pos) = svg.rfind("</svg>") {
     svg.truncate(pos);
+  }
+  if let Some(label) = &plot_label {
+    inject_field_plot_label(&mut svg, &area, label);
   }
 
   let to_px = |x: f64, y: f64| -> (f64, f64) {
@@ -2329,6 +2352,7 @@ pub fn stream_density_plot_ast(
   );
   let body = resolved.as_ref().unwrap_or(&args[0]);
   let (svg_width, svg_height, full_width) = parse_field_options(args, 3);
+  let plot_label = parse_field_plot_label(args, 3);
 
   let grid_n = 60;
 
@@ -2351,13 +2375,16 @@ pub fn stream_density_plot_ast(
   }
   let (v_min, v_max) = robust_value_range(&mag_samples);
 
-  // Use plotters for axes
-  let area = generate_axes_only(
+  // Use plotters for axes, reserving room above the frame for a PlotLabel.
+  let margins = field_plot_label_margins(plot_label.as_ref());
+  let area = crate::functions::plot::generate_axes_only_opts(
     (x_min, x_max),
     (y_min, y_max),
     svg_width,
     svg_height,
     full_width,
+    None,
+    margins.as_ref(),
   )?;
 
   let plot_x0 = area.plot_x0;
@@ -2370,9 +2397,12 @@ pub fn stream_density_plot_ast(
   let ay_min = area.y_min;
   let ay_max = area.y_max;
 
-  let mut svg = area.svg;
+  let mut svg = area.svg.clone();
   if let Some(pos) = svg.rfind("</svg>") {
     svg.truncate(pos);
+  }
+  if let Some(label) = &plot_label {
+    inject_field_plot_label(&mut svg, &area, label);
   }
 
   let to_px = |x: f64, y: f64| -> (f64, f64) {
