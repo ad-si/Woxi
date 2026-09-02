@@ -20992,6 +20992,53 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`nmax$$ = 10}, DynamicBox[\[Ellipsis
     assert!(state.graphics_handle.is_some());
   }
 
+  /// A saved `ManipulateBoxes[…]` dump — the shape a Wolfram Demonstration
+  /// downloaded straight from a share link carries, with no Input-cell
+  /// source to fall back on (see [`instantiate_manipulate_from_box_dump`]) —
+  /// can declare a helper variable whose "Specifications" entry names no
+  /// range, no discrete choice list and no colour: just `{{var, value},
+  /// "someTag"}`, where the tag is an internal type marker the front end
+  /// uses (`"function"` for a `Compile`d helper only ever called from the
+  /// body) rather than a real control domain. Before this test's fix such a
+  /// spec matched none of `parse_manipulate_control`'s recognized shapes and
+  /// was dropped entirely — taking the variable's only binding with it — so
+  /// the body's call to it raised an evaluation error instead of running.
+  #[test]
+  fn tagged_helper_specification_binds_without_a_spurious_control() {
+    let dump = "DynamicModuleBox[{}, DynamicBox[Manipulate`ManipulateBoxes[\n\
+      1, StandardForm, \n\
+      \"Body\" :> $CellContext`helper$$[$CellContext`n$$], \n\
+      \"Specifications\" :> {\
+        {{$CellContext`helper$$, \
+          CompiledFunction[{1, 2, 3}, {Blank[Integer]}, {}, \
+            Function[{$CellContext`x}, $CellContext`x^2], Evaluate]}, \
+          \"function\"}, \
+        {{$CellContext`n$$, 3}, 1, 10}}, \n\
+      \"Options\" :> {}],\n\
+      DynamicModuleValues:>{}]]";
+    let state = instantiate_manipulate_from_box_dump(dump)
+      .expect("the reconstructed Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "the helper$$ binding must resolve instead of erroring: {:?}",
+      state.error
+    );
+    assert_eq!(
+      state
+        .controls
+        .iter()
+        .map(|c| c.name().to_string())
+        .collect::<Vec<_>>(),
+      vec!["n$$"],
+      "the tagged helper spec must not create a spurious second control: \
+       {:?}",
+      state.controls
+    );
+    // helper$$ falls back to the embedded uncompiled `Function[{x}, x^2]`
+    // applied to n$$'s initial value 3.
+    assert_eq!(state.text_output.as_deref(), Some("9"));
+  }
+
   /// A synthetic "throw a dart at a target" Manipulate in the shape the
   /// "Dart Practice" Demonstration uses: the interactive picture lives in a
   /// `DynamicModule` wrapping the Manipulate body, and a `Button` embedded

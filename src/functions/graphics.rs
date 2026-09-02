@@ -21928,6 +21928,28 @@ fn parse_manipulate_control(
     });
   }
 
+  // A single bound that fully evaluates but is none of the above (a colour,
+  // a list of choices, a widget-building function) has no way to become a
+  // control — it is an internal helper value tagged with some marker
+  // Wolfram's front end doesn't expose as a real domain. A Demonstration's
+  // saved `ManipulateBoxes[…]` dump does this for a `Compile`d helper
+  // function only ever called from the body: `{{f$$, CompiledFunction[…]},
+  // "function"}` names no range, no choice list, and no colour — just a
+  // fixed value and an internal type tag. Bind it as a fixed constant
+  // instead of falling through to `None` below and dropping the whole
+  // spec — and with it the variable's only value — the way a bound that
+  // fails to evaluate (an unbound symbol the caller's post-body-bindings
+  // retry might still resolve to a real list) must keep doing.
+  if bounds.len() == 1
+    && crate::evaluator::evaluate_expr_to_expr(bounds[0]).is_ok()
+  {
+    let value = explicit_initial.as_ref().map_or_else(
+      || crate::syntax::expr_to_input_form(bounds[0]),
+      manipulate_value_to_input_form,
+    );
+    return Some(ParsedControl::Fixed { name, value });
+  }
+
   // No domain at all — `{u, uinit}` or `{{u, uinit, ulbl}, opts…}` with
   // nothing but options (`FieldSize -> n`, `Enabled -> cond`, …) after the
   // head. Wolfram's default widget for a bare variable with no min/max and
