@@ -213,6 +213,10 @@ struct DensityContourOptions {
   /// `PlotLabel -> …`: the caption drawn above the plot, already typeset
   /// as SVG markup, alongside the font size its outer `Style` asked for.
   plot_label: Option<(String, Option<f64>)>,
+  /// `RegionFunction -> f`: keep only grid cells where `f[x, y, z]` (the
+  /// plotted value `z`) is `True`; other cells are left blank, matching
+  /// `Plot3D`/`ContourPlot3D`'s `RegionFunction`.
+  region_function: Option<Expr>,
 }
 
 /// Parse ImageSize, ColorFunction, Contours, ContourShading, Mesh,
@@ -230,6 +234,7 @@ fn parse_density_contour_options(
   let mut contour_style = None;
   let mut frame_labels = crate::functions::plot::FrameLabels::default();
   let mut epilog: Vec<Expr> = Vec::new();
+  let mut region_function: Option<Expr> = None;
   for opt in &args[start..] {
     if let Expr::Rule {
       pattern,
@@ -314,6 +319,9 @@ fn parse_density_contour_options(
             other => vec![other],
           };
         }
+        "RegionFunction" => {
+          region_function = Some(replacement.clone());
+        }
         _ => {}
       }
     }
@@ -331,7 +339,23 @@ fn parse_density_contour_options(
     frame_labels,
     epilog,
     plot_label: parse_field_plot_label(args, start),
+    region_function,
   }
+}
+
+/// Whether `(x, y, z)` satisfies `region`, a `RegionFunction ->
+/// Function[{x, y, z}, …]` value: called positionally exactly like
+/// `Plot3D`/`ContourPlot3D`'s region function, so it does not need the
+/// plot's own x/y variable names substituted in first.
+fn region_allows(region: &Expr, x: f64, y: f64, z: f64) -> bool {
+  let call = Expr::CurriedCall {
+    func: Box::new(region.clone()),
+    args: vec![Expr::Real(x), Expr::Real(y), Expr::Real(z)],
+  };
+  matches!(
+    evaluate_expr_to_expr(&call),
+    Ok(Expr::Identifier(ref s)) if s == "True"
+  )
 }
 
 impl DensityContourOptions {
@@ -1154,7 +1178,10 @@ struct MeshGrid {
 
 /// Sample a mesh function over the plot's grid and pick `count` evenly
 /// spaced levels across the values it takes — `MeshFunctions -> {10 #1 &}`
-/// with `Mesh -> 11` gives eleven lines of constant x.
+/// with `Mesh -> 11` gives eleven lines of constant x. `region_mask`, when
+/// given, is the main plot's already `RegionFunction`-masked grid (NaN
+/// outside the region): a cell excluded there is excluded here too, so mesh
+/// lines don't spill past the region boundary the contours/bands stop at.
 #[allow(clippy::too_many_arguments)]
 fn sample_mesh_grid(
   f: &Expr,
@@ -1165,6 +1192,7 @@ fn sample_mesh_grid(
   y_min: f64,
   y_max: f64,
   count: usize,
+  region_mask: Option<&[Vec<f64>]>,
 ) -> Option<MeshGrid> {
   let n = FIELD_GRID + 1;
   let mut grid = vec![vec![f64::NAN; n]; n];
@@ -1173,6 +1201,12 @@ fn sample_mesh_grid(
     let x = x_min + i as f64 / FIELD_GRID as f64 * (x_max - x_min);
     for j in 0..n {
       let y = y_min + j as f64 / FIELD_GRID as f64 * (y_max - y_min);
+      let masked = region_mask
+        .and_then(|m| m.get(i).and_then(|row| row.get(j)))
+        .is_some_and(|v| !v.is_finite());
+      if masked {
+        continue;
+      }
       // A mesh function is usually a pure function of the two
       // coordinates (`10 #1 &`); a plain expression in x and y works too.
       let v = mesh_function_value(f, xvar, yvar, x, y)?;
@@ -1267,6 +1301,10 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let y = y_min + (j as f64 + 0.5) / FIELD_GRID as f64 * (y_max - y_min);
       if let Some(v) = evaluate_at_xy(body, &xvar, &yvar, x, y)
         && v.is_finite()
+        && opts
+          .region_function
+          .as_ref()
+          .is_none_or(|r| region_allows(r, x, y, v))
       {
         grid[i][j] = v;
         samples.push(v);
@@ -1385,6 +1423,10 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let y = y_min + j as f64 / FIELD_GRID as f64 * (y_max - y_min);
       if let Some(v) = evaluate_at_xy(body, &xvar, &yvar, x, y)
         && v.is_finite()
+        && opts
+          .region_function
+          .as_ref()
+          .is_none_or(|r| region_allows(r, x, y, v))
       {
         grid[i][j] = v;
         samples.push(v);
@@ -1416,7 +1458,17 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       functions
         .iter()
         .filter_map(|f| {
-          sample_mesh_grid(f, &xvar, &yvar, x_min, x_max, y_min, y_max, count)
+          sample_mesh_grid(
+            f,
+            &xvar,
+            &yvar,
+            x_min,
+            x_max,
+            y_min,
+            y_max,
+            count,
+            Some(&grid),
+          )
         })
         .collect()
     }
@@ -1669,6 +1721,10 @@ fn contour_plot_equations(
         let y = y_min + j as f64 / FIELD_GRID as f64 * (y_max - y_min);
         if let Some(v) = evaluate_at_xy(body, &xvar, &yvar, x, y)
           && v.is_finite()
+          && opts
+            .region_function
+            .as_ref()
+            .is_none_or(|r| region_allows(r, x, y, v))
         {
           *cell = v;
           any_finite = true;

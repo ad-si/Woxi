@@ -10927,6 +10927,38 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       ));
     }
 
+    /// `RegionFunction -> Function[{x, y, z}, …]` masks out grid cells
+    /// where it is `False`, matching `Plot3D`/`ContourPlot3D`'s option of
+    /// the same name. A region excluding the whole domain leaves no
+    /// sample behind, so no `<image>` bitmap is embedded at all — the
+    /// same as a plot with nothing to draw.
+    #[test]
+    fn density_plot_region_function_excludes_everything() {
+      let svg = export_svg(
+        "DensityPlot[x + y, {x, 0, 1}, {y, 0, 1}, \
+         RegionFunction -> Function[{x, y, z}, False]]",
+      );
+      assert!(
+        !svg.contains("<image"),
+        "expected no embedded bitmap, got: {svg}"
+      );
+    }
+
+    /// A region excluding only part of the domain still renders the
+    /// allowed part (regression: `RegionFunction` used to be silently
+    /// ignored by `DensityPlot`/`ContourPlot`, filling the whole grid).
+    #[test]
+    fn density_plot_region_function_keeps_partial_region() {
+      let svg = export_svg(
+        "DensityPlot[x + y, {x, 0, 4}, {y, 0, 4}, \
+         RegionFunction -> Function[{x, y, z}, 4 < x^2 + y^2 < 16]]",
+      );
+      assert!(
+        svg.contains("<image"),
+        "expected an embedded bitmap, got: {svg}"
+      );
+    }
+
     #[test]
     fn contour_plot_basic() {
       insta::assert_snapshot!(export_svg(
@@ -10968,6 +11000,73 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         "expected multiple contour polylines away from the pole, got {polyline_count}: {}",
         &svg[..svg.len().min(300)]
       );
+    }
+
+    /// `RegionFunction -> Function[{x, y, z}, …]` restricts the plot to
+    /// grid cells where it is `True` — the annulus a "Steady-State Heat
+    /// Conduction in an Annulus" style Demonstration draws its ContourPlot
+    /// over. Every filled band's polygon point must fall inside the ring
+    /// (loosened by one grid cell's diagonal to absorb marching-squares
+    /// interpolation right at the boundary), and there must be at least
+    /// one such point.
+    #[test]
+    fn contour_plot_region_function_restricts_grid() {
+      let result = interpret(
+        "pts = Flatten[Cases[ContourPlot[x + y, {x, 0, 4}, {y, 0, 4}, \
+         RegionFunction -> Function[{x, y, z}, 4 < x^2 + y^2 < 16]][[1]], \
+         _Polygon, Infinity][[All, 1]], 1]; \
+         {Length[pts] > 0, \
+          AllTrue[pts, (r2 = #[[1]]^2 + #[[2]]^2; 4 - 0.3 <= r2 <= 16 + 0.3) &]}",
+      )
+      .unwrap();
+      assert_eq!(result, "{True, True}", "result: {result}");
+    }
+
+    /// A `RegionFunction` that excludes the whole domain leaves no sample
+    /// behind, matching a plot whose function is undefined everywhere —
+    /// no filled bands, no contour lines.
+    #[test]
+    fn contour_plot_region_function_excludes_everything() {
+      let svg = export_svg(
+        "ContourPlot[x + y, {x, 0, 1}, {y, 0, 1}, \
+         RegionFunction -> Function[{x, y, z}, False]]",
+      );
+      assert!(
+        !svg.contains("<polyline") && !svg.contains("<polygon"),
+        "expected a blank plot, got: {svg}"
+      );
+    }
+
+    /// `RegionFunction` also restricts the equation form
+    /// (`ContourPlot[lhs == rhs, …]`, drawn by `contour_plot_equations`, a
+    /// separate code path from the function form above): a circle clipped
+    /// to `x > 0` must only draw its right half.
+    #[test]
+    fn contour_plot_equation_region_function_restricts_curve() {
+      let result = interpret(
+        "pts = Flatten[Cases[ContourPlot[x^2 + y^2 == 1, {x, -2, 2}, \
+         {y, -2, 2}, RegionFunction -> Function[{x, y, z}, x > 0]][[1]], \
+         _Line, Infinity][[All, 1]], 1]; \
+         {Length[pts] > 0, AllTrue[pts, #[[1]] > -0.1 &]}",
+      )
+      .unwrap();
+      assert_eq!(result, "{True, True}", "result: {result}");
+    }
+
+    /// `Mesh -> n` grid lines must stop at the same `RegionFunction`
+    /// boundary as the contour bands/lines, not spill across the whole
+    /// rectangular domain.
+    #[test]
+    fn contour_plot_mesh_respects_region_function() {
+      let result = interpret(
+        "pts = Flatten[Cases[ContourPlot[x + y, {x, 0, 4}, {y, 0, 4}, \
+         RegionFunction -> Function[{x, y, z}, 4 < x^2 + y^2 < 16], \
+         Mesh -> 10][[1]], _Line, Infinity][[All, 1]], 1]; \
+         {Length[pts] > 0, \
+          AllTrue[pts, (r2 = #[[1]]^2 + #[[2]]^2; 4 - 0.3 <= r2 <= 16 + 0.3) &]}",
+      )
+      .unwrap();
+      assert_eq!(result, "{True, True}", "result: {result}");
     }
 
     /// `ContourStyle` colours and thickens the contour lines. Both the
