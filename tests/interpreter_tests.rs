@@ -2156,6 +2156,27 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_negative_product_exponent_keeps_parens_in_input_form() {
+    // Regression: `Power[base, -(k*rest)]` printed via a division (moving
+    // the negative-exponent factor to the denominator) must parenthesize
+    // the positive exponent it reconstructs. `denominator_form` strips a
+    // `UnaryOp::Minus` exponent down to its `BinaryOp::Times` operand, and
+    // the exponent-parenthesization check only recognized a `Times`
+    // spelled as `Expr::FunctionCall` — a `BinaryOp::Times` exponent (the
+    // shape juxtaposed factors like `-k ((-1+x))^(2)` parse to, e.g. from
+    // a Wolfram Demonstrations notebook's reconstructed box source)
+    // printed without parens, so `E^(k*(-1+x)^2)` came back as
+    // `E^k*(-1+x)^2`: precedence silently pulls `(-1+x)^2` out of the
+    // exponent, changing the value.
+    clear_state();
+    assert_eq!(
+      interpret("ToString[Hold[(x-1)(E)^(-k((-1+x))^(2))], InputForm]")
+        .unwrap(),
+      "Hold[(x - 1)/E^(k*(-1 + x)^2)]"
+    );
+  }
+
+  #[test]
   fn test_definition_of_compound_expression_body_keeps_parens() {
     // Same regression, surfaced through Definition[] (which formats
     // DownValues by hand rather than through expr_to_input_form): a
