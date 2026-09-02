@@ -2799,10 +2799,13 @@ pub fn clip_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (min_expr, max_expr, min_val, max_val) = if args.len() >= 2 {
     match &args[1] {
       Expr::List(bounds) if bounds.len() == 2 => {
-        let Some(min) = try_eval_to_f64(&bounds[0]) else {
+        // `±Infinity` is a common one-sided bound (e.g. `Clip[x, {0,
+        // Infinity}]` to only reject negatives), so bounds must accept it
+        // the same way the clipped value itself does just below.
+        let Some(min) = try_eval_to_f64_with_infinity(&bounds[0]) else {
           return unevaluated();
         };
-        let Some(max) = try_eval_to_f64(&bounds[1]) else {
+        let Some(max) = try_eval_to_f64_with_infinity(&bounds[1]) else {
           return unevaluated();
         };
         (bounds[0].clone(), bounds[1].clone(), min, max)

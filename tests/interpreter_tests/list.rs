@@ -4262,6 +4262,23 @@ mod clip {
   }
 
   #[test]
+  fn clip_infinity_as_a_bound_evaluates() {
+    // Regression: the bounds themselves accept `±Infinity` for a one-sided
+    // range, the same way the clipped value does above. Previously only
+    // `try_eval_to_f64` (which rejects Infinity) was used on the bounds,
+    // so any `Clip[x, {.., Infinity}]` or `Clip[x, {-Infinity, ..}]` stayed
+    // unevaluated no matter what `x` was.
+    assert_eq!(interpret("Clip[5, {0, Infinity}]").unwrap(), "5");
+    assert_eq!(interpret("Clip[-5, {0, Infinity}]").unwrap(), "0");
+    assert_eq!(interpret("Clip[-5, {-Infinity, 0}]").unwrap(), "-5");
+    assert_eq!(interpret("Clip[5, {-Infinity, 0}]").unwrap(), "0");
+    assert_eq!(
+      interpret("Clip[{-5, 1, 3.5}, {0, Infinity}]").unwrap(),
+      "{0, 1, 3.5}"
+    );
+  }
+
+  #[test]
   fn clip_indeterminate_returns_indeterminate() {
     assert_eq!(interpret("Clip[Indeterminate]").unwrap(), "Indeterminate");
   }
