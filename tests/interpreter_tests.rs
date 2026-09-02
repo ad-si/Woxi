@@ -762,6 +762,45 @@ mod interpreter_tests {
     );
   }
 
+  /// A Demonstration idiom wraps a Manipulate body's live picture in
+  /// `EventHandler[Style[Dynamic[graphic], opts], "MouseClicked" :> action]`
+  /// so clicking the picture toggles some state. Woxi's visual hosts don't
+  /// wire the click itself through to `MousePosition`, but the picture must
+  /// still render — before this fix, an unrecognized `EventHandler[…]` head
+  /// fell all the way through the display pipeline unresolved and the cell
+  /// showed its raw source text instead of the graphic. Independently
+  /// written, not copied from any specific Demonstration.
+  #[test]
+  fn test_event_handler_wrapped_dynamic_graphic_still_renders() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "EventHandler[\
+         Style[Dynamic[Graphics[{Blue, Disk[]}]], \
+           DynamicEvaluationTimeout -> 20], \
+         \"MouseClicked\" :> Null\
+       ]",
+    )
+    .unwrap();
+    let svg = r.graphics.expect(
+      "expected the wrapped graphic to render instead of the raw \
+       EventHandler[...] source echo",
+    );
+    assert!(svg.contains("<svg"));
+  }
+
+  /// Script/CLI mode keeps EventHandler's canonical symbolic form, matching
+  /// wolframscript run without a front end — only Woxi's visual hosts
+  /// (Playground, Studio) release it to show the wrapped content.
+  #[test]
+  fn event_handler_stays_symbolic_in_script_mode() {
+    clear_state();
+    assert_eq!(
+      interpret("EventHandler[Graphics[{Circle[]}], \"MouseClicked\" :> 1]")
+        .unwrap(),
+      "EventHandler[-Graphics-, MouseClicked :> 1]"
+    );
+  }
+
   #[test]
   fn test_export_graphic_does_not_render_inline() {
     // Exporting a graphic (e.g. BarChart) to a file writes the file and
@@ -2209,6 +2248,27 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_negative_product_exponent_keeps_parens_in_input_form() {
+    // Regression: `Power[base, -(k*rest)]` printed via a division (moving
+    // the negative-exponent factor to the denominator) must parenthesize
+    // the positive exponent it reconstructs. `denominator_form` strips a
+    // `UnaryOp::Minus` exponent down to its `BinaryOp::Times` operand, and
+    // the exponent-parenthesization check only recognized a `Times`
+    // spelled as `Expr::FunctionCall` — a `BinaryOp::Times` exponent (the
+    // shape juxtaposed factors like `-k ((-1+x))^(2)` parse to, e.g. from
+    // a Wolfram Demonstrations notebook's reconstructed box source)
+    // printed without parens, so `E^(k*(-1+x)^2)` came back as
+    // `E^k*(-1+x)^2`: precedence silently pulls `(-1+x)^2` out of the
+    // exponent, changing the value.
+    clear_state();
+    assert_eq!(
+      interpret("ToString[Hold[(x-1)(E)^(-k((-1+x))^(2))], InputForm]")
+        .unwrap(),
+      "Hold[(x - 1)/E^(k*(-1 + x)^2)]"
+    );
+  }
+
+  #[test]
   fn test_definition_of_compound_expression_body_keeps_parens() {
     // Same regression, surfaced through Definition[] (which formats
     // DownValues by hand rather than through expr_to_input_form): a
@@ -3063,6 +3123,12 @@ mod interpreter_tests {
       // undefined symbol that value is the symbol itself. The script-mode
       // echo `Dynamic[x]` is covered by dynamic_stays_symbolic_in_text_mode.
       ("Dynamic[x]", "x"),
+      // EventHandler displays its content in visual mode the same way —
+      // the front end wires the event rules to live input, which a
+      // notebook host still shows the content without. Script mode keeps
+      // the symbolic echo, covered by
+      // event_handler_stays_symbolic_in_script_mode below.
+      ("EventHandler[a, b]", "a"),
       ("Setter[a, b]", "Setter[a, b]"),
       ("Slider[0.5]", "Slider[0.5]"),
       ("Toggler[a, b]", "Toggler[a, b]"),

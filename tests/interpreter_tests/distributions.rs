@@ -8360,6 +8360,38 @@ mod truncated_distribution {
     );
   }
 
+  // Regression: `Expectation`/`NExpectation` used to abort with "unsupported
+  // distribution TruncatedDistribution" whenever the base distribution had
+  // no closed-form Mean/Variance registered (e.g. a Wolfram Demonstration's
+  // `NExpectation[z, z \[Distributed] TruncatedDistribution[{x0, Infinity},
+  // GompertzMakehamDistribution[...]]]`), because the lookup error aborted
+  // the whole computation instead of falling through to the generic
+  // symbolic/numerical paths. `Expectation[x, x ~ dist]` must always agree
+  // with the already-tested `Mean[dist]` path.
+  #[test]
+  fn expectation_of_the_identity_matches_mean() {
+    assert_eq!(
+      interpret(&format!("Expectation[x, x \\[Distributed] {HALF}]")).unwrap(),
+      interpret(&format!("Mean[{HALF}]")).unwrap()
+    );
+  }
+
+  #[test]
+  fn nexpectation_over_an_infinite_truncation_falls_through_to_quadrature() {
+    // Same distribution as `a_continuous_base_integrates` (mean of a
+    // standard normal kept on [0, Infinity)), but reached through
+    // `NExpectation` instead of `Mean` — exercising the generic numerical
+    // fallback rather than the closed-form truncated-moment path.
+    let got = interpret(
+      "NExpectation[x, x \\[Distributed] TruncatedDistribution[{0, Infinity}, \
+       NormalDistribution[]]]",
+    )
+    .unwrap()
+    .parse::<f64>()
+    .unwrap();
+    assert!((got - 0.7978845608028654).abs() < 1e-3, "got {got}");
+  }
+
   // Rounded to dodge last-digit float noise in the normal CDF.
   #[test]
   fn a_normal_base_renormalizes_numerically() {

@@ -5186,13 +5186,29 @@ fn instantiate_stored_manipulate(
   if statements.len() != 1 {
     return None;
   }
+  let expr = woxi::interpret_to_expr(&statements[0]).ok()?;
   // `Manipulate[…, SaveDefinitions -> True]` embeds the definitions its
-  // body depends on in the stored output's Initialization. Run them once
-  // (Wolfram's SynchronousInitialization) before instantiating, so the
-  // widget works right when the notebook opens — before any of the
-  // notebook's definition cells have been evaluated.
-  if let Some(init) =
-    woxi::notebook::extract_saved_initialization(stored_output)
+  // body depends on in the stored output's Initialization, because the
+  // Manipulate's own `Initialization` option is absent — the helper
+  // definitions live in a separate "Initialization Code" cell instead. Run
+  // the recovered copy once (Wolfram's SynchronousInitialization) before
+  // instantiating, so the widget works right when the notebook opens —
+  // before any of the notebook's definition cells have been evaluated.
+  //
+  // Wolfram embeds this very same `Initialization:>(…)` shape in the box
+  // dump for *any* Manipulate that carries its own `Initialization :> …`
+  // option too, not just a `SaveDefinitions -> True` one. Recovering and
+  // running that FullForm copy in that case is pure duplication — the live
+  // source's `Initialization` already runs it correctly a moment later —
+  // and running it twice can leave a helper function bound to a broken
+  // duplicate rule (its Module locals shadow differently in FullForm).
+  // Only fall back to the stored copy when the live source truly has none
+  // of its own.
+  let has_own_initialization =
+    woxi::functions::graphics::manipulate_has_own_initialization(&expr);
+  if !has_own_initialization
+    && let Some(init) =
+      woxi::notebook::extract_saved_initialization(stored_output)
   {
     // These names lived in the DynamicModule's private `$CellContext`` in
     // Wolfram, isolated from anything of the same name elsewhere —
@@ -5209,7 +5225,6 @@ fn instantiate_stored_manipulate(
     }
     let _ = woxi::interpret(&init);
   }
-  let expr = woxi::interpret_to_expr(&statements[0]).ok()?;
   manipulate::ManipulateState::from_expr(&expr)
 }
 
@@ -7034,6 +7049,55 @@ mod tests {
     );
   }
 
+  /// An escape-time fractal Manipulate: an `Initialization`-defined
+  /// `Compile`d kernel with `RuntimeAttributes -> {Listable}` is called on
+  /// a `Table`-built grid of complex numbers and rendered through
+  /// `ArrayPlot`, with three Tiny-sized sliders and `ControlPlacement ->
+  /// Left` — the general shape several Wolfram Demonstrations Project
+  /// notebooks use for a Julia/Mandelbrot-style renderer (independently
+  /// written, not copied from any specific one). Regression: a compiled
+  /// function's `RuntimeAttributes -> {Listable}` option was accepted
+  /// syntactically but never made the resulting `CompiledFunction` thread
+  /// over a list/matrix argument — the whole matrix was passed into the
+  /// body as one opaque value instead of being mapped element-wise, so a
+  /// body using its scalar-typed parameter as state for a non-Listable
+  /// function like `NestWhileList` silently collapsed a same-shaped-matrix
+  /// result down to a single scalar, which meant `ArrayPlot` never got a
+  /// matrix to render at all (`ArrayPlot::rectype`) and Woxi Studio's
+  /// output for the whole Manipulate came out blank.
+  #[test]
+  fn manipulate_listable_compile_kernel_feeds_array_plot() {
+    let code = r#"Manipulate[
+      ArrayPlot[
+        Quiet@escapeGrid[Table[a + b I, {b, -1., 1., step}, {a, -1., 1., step}], c + 0. I, maxSteps],
+        ColorFunction -> (ColorData["TemperatureMap"][#] &)
+      ],
+      {{c, -1., "c"}, -2., 2., .1, ImageSize -> Tiny, Appearance -> "Labeled"},
+      {{maxSteps, 10, "iterations"}, 2, 50, 1, ImageSize -> Tiny, Appearance -> "Labeled"},
+      {{step, 0.5, "resolution"}, 0.1, 1., 0.1, ImageSize -> Tiny},
+      ControlPlacement -> Left,
+      SaveDefinitions -> True,
+      Initialization :> (
+        escapeGrid = Compile[{{z0, _Complex}, {c, _Complex}, {maxSteps, _Integer}},
+          Length[NestWhileList[#^2 + c &, z0, Abs[#] <= 2 &, 1, maxSteps]],
+          RuntimeAttributes -> {Listable}];
+      )
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr).expect(
+      "a Listable-Compile escape-time kernel feeding ArrayPlot should build a ManipulateState",
+    );
+    assert_eq!(
+      state.error, None,
+      "ArrayPlot must receive a real matrix, not a collapsed scalar"
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the escape-time grid should render as a graphic"
+    );
+  }
+
   /// A dissection Manipulate assembling colored polygon pieces with
   /// `Translate`/`Rotate`, a boolean checkbox control (`{False, True}`
   /// domain) toggling a hint overlay, and several `Tiny` step sliders with
@@ -8532,6 +8596,47 @@ Cell[BoxData["standalone output"], "Output"]
       state.text_output.as_deref(),
       Some("5"),
       "the notebook's own Midpoint must win over the built-in"
+    );
+  }
+
+  #[test]
+  fn stored_manipulate_own_initialization_skips_saved_box_dump_copy() {
+    // Wolfram embeds an `Initialization:>(…)` copy of *any* Manipulate's own
+    // `Initialization :> …` option into its cached DynamicModuleBox output —
+    // not only for a `SaveDefinitions -> True` one. Regression: that copy
+    // was mistaken for a SaveDefinitions recovery and evaluated a second
+    // time (in FullForm) ahead of the live Initialization, which could leave
+    // a helper function bound to a broken duplicate rule (this is how the
+    // Wolfram Demonstrations Project's "Spherical Pendulum" notebook's
+    // NDSolve-backed body broke in the Studio). The stored copy must only
+    // run when the live source has no Initialization of its own.
+    woxi::clear_state();
+    let dump = "DynamicModuleBox[{$CellContext`x$$ = 0}, \
+      DynamicBox[…],\n\
+      Deinitialization:>None,\n\
+      Initialization:>({$CellContext`sawBoxDumpInit = True}; \
+      Typeset`initDone$$ = True),\n\
+      SynchronousInitialization->True]";
+    let state = instantiate_stored_manipulate(
+      "Manipulate[x, {x, 0, 10}, Initialization :> (ownOffset = 1)]",
+      dump,
+    )
+    .unwrap();
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert_eq!(
+      woxi::interpret("sawBoxDumpInit").ok().as_deref(),
+      Some("sawBoxDumpInit"),
+      "the stored box dump's cached Initialization copy must not run \
+       when the Manipulate already carries its own"
+    );
+    assert_eq!(
+      woxi::interpret("ownOffset").ok().as_deref(),
+      Some("1"),
+      "the live Initialization must still run"
     );
   }
 
@@ -24261,6 +24366,179 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`count$$ = 3, $CellContext`offset$$ 
         .contains("1 nearest of 1"),
       "Max[1, Min[...]] must clamp the count up to 1 even when frac = 0: {:?}",
       degenerate.graphics
+    );
+  }
+
+  /// A randomly-sampled Wolfram Demonstrations Project notebook (Multipole
+  /// Fields) builds a `Sum` of point-source terms placed evenly around a
+  /// circle (count set by an integer slider with `Appearance -> "Labeled"`),
+  /// feeds it through a `Delimiter`-separated "plot type" popup whose three
+  /// choices are `Plot3D`, `(ContourPlot[SlotSequence[1], …] &)`, and a
+  /// `Quiet[VectorPlot[Evaluate[-{D[#, x], D[#, y]}], …]] &` gradient-field
+  /// function (the default), and switches `Mesh`/`MaxRecursion` via
+  /// `ControlActive[…, If[view === Plot3D, …]]` plus a `PlotLabel` that
+  /// names the source count through `ReplaceAll` against an integer table.
+  /// Woxi Studio already builds and drives this correctly; pin it down with
+  /// an independently written regression test covering the same construct
+  /// category (a ring of point sources instead of multipole terms,
+  /// different names, counts and labels throughout — not copied from the
+  /// original).
+  #[test]
+  fn demonstration_ring_source_field() {
+    let code = r#"Manipulate[
+  view$[Sum[1/Sqrt[(x - Cos[2. Pi (k/count$)])^2 + (y - Sin[2. Pi (k/count$)])^2], {k, 1, count$}],
+    {x, -2, 2}, {y, -2, 2},
+    PlotRange -> {-cap$, cap$}, MeshFunctions -> {#3 &}, Ticks -> None,
+    PlotRangePadding -> 0,
+    Mesh -> ControlActive[None, If[view$ === Plot3D, 12, None]],
+    MaxRecursion -> ControlActive[1, If[view$ === Plot3D, 3, 1]],
+    PlotLabel -> Style[
+      ReplaceAll[count$, {2 -> "binary", 3 -> "ternary", 4 -> "quaternary", 5 -> "quinary", 6 -> "senary"}],
+      "Label"],
+    ImageSize -> {400, 300}],
+  {{count$, 3, "source count"}, 2, 6, 1, Appearance -> "Labeled"}, Delimiter,
+  {{view$,
+     Quiet[VectorPlot[Evaluate[-{D[#, x], D[#, y]}], {x, -2, 2}, {y, -2, 2}, ImageSize -> {400, 300}, VectorPoints -> 15]] &,
+     "view mode"},
+   {Plot3D -> "surface",
+    (ContourPlot[SlotSequence[1], FrameTicks -> None] &) -> "contours",
+    (Quiet[VectorPlot[Evaluate[-{D[#, x], D[#, y]}], {x, -2, 2}, {y, -2, 2}, ImageSize -> {400, 300}, VectorPoints -> 15]] &) -> "gradient"}},
+  {{cap$, 8, "value cap"}, 4, 16}
+]"#;
+
+    let expr = woxi::interpret_to_expr(code).expect("parse/hold Manipulate");
+    let mut state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("a labeled slider, a Delimiter, a Rule-choice popup, and a plain slider should build a widget");
+    assert!(
+      state.error.is_none(),
+      "initial build failed: {:?}",
+      state.error
+    );
+    assert_eq!(
+      state.controls.iter().map(|c| c.name()).collect::<Vec<_>>(),
+      vec!["count$", "", "view$", "cap$"],
+      "panel rows: source-count slider, the Delimiter as an unnamed row, the view-mode popup, the cap slider"
+    );
+    assert!(
+      matches!(state.controls[1], manipulate::ControlState::Divider),
+      "Delimiter must become a Divider row"
+    );
+    match &state.controls[2] {
+      manipulate::ControlState::Discrete {
+        values,
+        value_labels,
+        current_index,
+        ..
+      } => {
+        assert_eq!(
+          value_labels,
+          &vec!["surface", "contours", "gradient"],
+          "the three Rule labels, in source order"
+        );
+        // The default `view$` value is textually identical to the third
+        // choice's function, so it must resolve to that index.
+        assert_eq!(
+          *current_index, 2,
+          "the default gradient function must match the third choice"
+        );
+        assert!(
+          values[0] == "Plot3D",
+          "the first choice's bound value is the bare symbol Plot3D: {values:?}"
+        );
+      }
+      other => panic!("expected `view$` as a Discrete popup, got {other:?}"),
+    }
+
+    let render = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&w.body)
+      })
+      .expect("body evaluates")
+    };
+    let initial = render(&state);
+    assert!(
+      initial.graphics.is_some(),
+      "the default gradient-field view must render"
+    );
+    // The gradient-field choice's function only names `#` (the body), so
+    // Wolfram's Slot substitution drops every argument after the first —
+    // the outer PlotLabel/PlotRange/MeshFunctions never reach it, and this
+    // view's own hard-coded VectorPlot draws no title. Only the Plot3D and
+    // contour choices forward the full argument list (a bare symbol and
+    // `SlotSequence[1]` both pass everything through), so PlotLabel is
+    // checked after switching to one of those below.
+    assert!(
+      !initial
+        .graphics
+        .as_deref()
+        .unwrap_or_default()
+        .contains("ternary"),
+      "the gradient view's Slot-only function must not see the outer PlotLabel: {:?}",
+      initial.graphics
+    );
+
+    // Switch the view mode to the surface (Plot3D) choice and re-render.
+    for c in state.controls.iter_mut() {
+      if let manipulate::ControlState::Discrete {
+        name,
+        current_index,
+        ..
+      } = c
+        && name == "view$"
+      {
+        *current_index = 0;
+      }
+    }
+    state.reevaluate();
+    assert!(
+      state.error.is_none(),
+      "switching to the Plot3D surface view must not error: {:?}",
+      state.error
+    );
+    let surface = render(&state);
+    assert!(
+      surface.graphics.is_some(),
+      "the Plot3D surface view must also render"
+    );
+    assert!(
+      surface
+        .graphics
+        .as_deref()
+        .unwrap_or_default()
+        .contains("ternary"),
+      "Plot3D receives the full argument list, so PlotLabel must report the source count (3 -> ternary): {:?}",
+      surface.graphics
+    );
+
+    // Move the source-count slider and confirm the PlotLabel tracks it.
+    for c in state.controls.iter_mut() {
+      if let manipulate::ControlState::Continuous { name, current, .. } = c
+        && name == "count$"
+      {
+        *current = 5.0;
+      }
+    }
+    state.reevaluate();
+    assert!(
+      state.error.is_none(),
+      "moving the source-count slider must not error: {:?}",
+      state.error
+    );
+    let after = render(&state);
+    assert!(
+      after
+        .graphics
+        .as_deref()
+        .unwrap_or_default()
+        .contains("quinary"),
+      "PlotLabel must recompute after the slider moves (5 -> quinary): {:?}",
+      after.graphics
     );
   }
 }
