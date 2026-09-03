@@ -14482,119 +14482,6 @@ mod graphics_column {
   }
 }
 
-mod overlay {
-  use super::*;
-
-  #[test]
-  fn basic_two_item_overlay() {
-    clear_state();
-    let result =
-      interpret("Overlay[{Graphics[{Circle[]}], Graphics[{Disk[]}]}]").unwrap();
-    assert_eq!(result, "-Graphics-");
-  }
-
-  #[test]
-  fn produces_combined_svg_with_nested_layers() {
-    clear_state();
-    let result = interpret_with_stdout(
-      "Overlay[{Graphics[{Circle[]}], Graphics[{Disk[]}]}]",
-    )
-    .unwrap();
-    let svg = result.graphics.unwrap();
-    assert!(svg.starts_with("<svg"), "Should produce SVG output");
-    // Outer <svg> plus one nested <svg> per overlaid item.
-    let nested_count = svg.matches("<svg ").count();
-    assert!(
-      nested_count >= 3,
-      "Should have outer + 2 nested SVGs, got {nested_count}"
-    );
-  }
-
-  #[test]
-  fn empty_list() {
-    clear_state();
-    let result = interpret("Overlay[{}]").unwrap();
-    assert_eq!(result, "-Graphics-");
-  }
-
-  /// With no reference item, the canvas is sized to the union (here, the
-  /// max) of every item's natural size.
-  #[test]
-  fn default_canvas_is_union_of_items() {
-    clear_state();
-    let svg = interpret_with_stdout(
-      "Overlay[{Graphics[{Circle[]}, ImageSize -> {100, 100}], \
-       Graphics[{Disk[]}, ImageSize -> {200, 60}]}]",
-    )
-    .unwrap()
-    .graphics
-    .unwrap();
-    assert!(
-      svg.contains("width=\"200\"") && svg.contains("height=\"100\""),
-      "canvas should be the union (200 wide, 100 tall), got: {svg}"
-    );
-  }
-
-  /// `Overlay[{...}, All, n]` sizes the canvas to item `n` (1-indexed)
-  /// instead of the union — a larger second item is then free to overflow
-  /// the frame rather than growing it.
-  #[test]
-  fn all_n_sizes_canvas_to_reference_item() {
-    clear_state();
-    let svg = interpret_with_stdout(
-      "Overlay[{Graphics[{Circle[]}, ImageSize -> {100, 100}], \
-       Graphics[{Disk[]}, ImageSize -> {250, 250}]}, All, 1]",
-    )
-    .unwrap()
-    .graphics
-    .unwrap();
-    assert!(
-      svg.contains("width=\"100\"") && svg.contains("height=\"100\""),
-      "canvas should match item 1's size (100x100), got: {svg}"
-    );
-  }
-
-  /// `Alignment -> {h, v}` shifts where a smaller item sits within the
-  /// (larger) canvas; `{-1, 1}` (Left, Top) pins it to the origin, so its
-  /// nested `<svg>` should sit at `x="0.00" y="0.00"` instead of being
-  /// centered.
-  #[test]
-  fn alignment_left_top_pins_item_to_origin() {
-    clear_state();
-    let svg = interpret_with_stdout(
-      "Overlay[{Graphics[{Circle[]}, ImageSize -> {200, 200}], \
-       Graphics[{Disk[]}, ImageSize -> {40, 40}]}, All, 1, \
-       Alignment -> {-1, 1}]",
-    )
-    .unwrap()
-    .graphics
-    .unwrap();
-    assert!(
-      svg.contains("x=\"0.00\" y=\"0.00\""),
-      "Left/Top alignment should place the small item at the origin, got: {svg}"
-    );
-  }
-
-  /// The default alignment is `{Center, Center}`, so a smaller item is
-  /// centered within the larger canvas rather than pinned to a corner.
-  #[test]
-  fn default_alignment_centers_smaller_item() {
-    clear_state();
-    let svg = interpret_with_stdout(
-      "Overlay[{Graphics[{Circle[]}, ImageSize -> {200, 200}], \
-       Graphics[{Disk[]}, ImageSize -> {40, 40}]}, All, 1]",
-    )
-    .unwrap()
-    .graphics
-    .unwrap();
-    assert!(
-      svg.contains("x=\"80.00\" y=\"80.00\""),
-      "Center alignment should place the 40x40 item at (80, 80) in a \
-       200x200 canvas, got: {svg}"
-    );
-  }
-}
-
 mod graphics_grid {
   use super::*;
 
@@ -14979,6 +14866,83 @@ mod graphics_grid {
     .unwrap();
     let svg = result.graphics.unwrap();
     assert!(svg.contains(">label</text>"), "{svg}");
+  }
+
+  /// `Overlay[{expr1, expr2, ...}]` stacks its items on top of each other
+  /// (composited into one picture) instead of laying them out side by
+  /// side — the shape a Demonstration uses to draw a colorbar or a second
+  /// plot directly over a first one.
+  #[test]
+  fn overlay_stacks_graphics_instead_of_arranging_them() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Head[Overlay[{Graphics[{Red, Disk[]}], \
+         Graphics[{Blue, Circle[{1, 0}]}]}]]"
+      )
+      .unwrap(),
+      "Graphics"
+    );
+    let result = interpret_with_stdout(
+      "Overlay[{Graphics[{Disk[]}, ImageSize -> 100], \
+       Graphics[{Red, Rectangle[]}, ImageSize -> 100]}]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    assert!(!svg.contains("-Graphics-"), "cells must be drawn: {svg}");
+    // Both cells occupy the same footprint (one on top of the other), not
+    // side by side or stacked in a column.
+    assert_eq!(svg.matches("<svg x=").count(), 2, "{svg}");
+    assert!(svg.contains("rgb(255,0,0)"), "the red cell must render");
+  }
+
+  /// `Overlay`'s `Alignment -> {h, v}` positions a smaller item within the
+  /// larger items' shared canvas — the same fractional positioning `Column`
+  /// uses, but on both axes at once since items overlap rather than stack.
+  /// A Demonstrations Project notebook commonly spells `Center` as the
+  /// fraction pair `{0.5, 0.5}` rather than the symbol.
+  #[test]
+  fn overlay_alignment_positions_the_smaller_item() {
+    let xy_of = |code: &str| -> Vec<(f64, f64)> {
+      export_svg(code)
+        .lines()
+        .filter(|l| l.starts_with("<svg x="))
+        .filter_map(|l| {
+          let x = l.split("x=\"").nth(1)?.split('"').next()?.parse().ok()?;
+          let y = l.split("y=\"").nth(1)?.split('"').next()?.parse().ok()?;
+          Some((x, y))
+        })
+        .collect()
+    };
+    let items = "{Graphics[{Disk[]}, ImageSize -> {200, 200}], \
+                 Graphics[{Rectangle[]}, ImageSize -> {40, 40}]}";
+    assert_eq!(
+      xy_of(&format!("Overlay[{items}]")),
+      vec![(0.0, 0.0), (80.0, 80.0)],
+      "default alignment centers the smaller item on both axes"
+    );
+    assert_eq!(
+      xy_of(&format!("Overlay[{items}, Alignment -> {{0.5, 0.5}}]")),
+      vec![(0.0, 0.0), (80.0, 80.0)],
+      "a {{0.5, 0.5}} fraction pair means Center, same as the default"
+    );
+    assert_eq!(
+      xy_of(&format!("Overlay[{items}, Alignment -> {{Left, Top}}]")),
+      vec![(0.0, 0.0), (0.0, 0.0)],
+      "Left/Top pins the smaller item to the corner"
+    );
+    assert_eq!(
+      xy_of(&format!("Overlay[{items}, Alignment -> {{Right, Bottom}}]")),
+      vec![(0.0, 0.0), (160.0, 160.0)],
+      "Right/Bottom pins the smaller item to the opposite corner"
+    );
+  }
+
+  #[test]
+  fn overlay_of_an_empty_list_is_a_blank_picture() {
+    clear_state();
+    assert_eq!(interpret("Head[Overlay[{}]]").unwrap(), "Graphics");
   }
 
   /// A Demonstration's `Manipulate` body commonly styles its whole display

@@ -1167,7 +1167,7 @@ Subsuperscript,Subsuperscript notation wrapper (stays symbolic),✅,unevaluated,
 KelvinBei,Kelvin bei function (imaginary part of BesselJ on a rotated argument),✅,pure,6.0,1153
 CubeRoot,Returns the real-valued cube root,✅,pure,9.0,1154
 ContinuousAction,Option for continuous action during interactive manipulation,✅,pure,6.0,1155
-Overlay,Superimposes graphics or expressions centered on top of each other,✅,pure,8.0,1156
+Overlay,Displays a collection of items overlaid on top of each other,✅,pure,8.0,1156
 Permissions,,🚫,,10.0,1157
 CirclePlus,Represents the direct sum or XOR operator,✅,pure,3.0,1158
 TableAlignments,,🚫,,2.0,1159
