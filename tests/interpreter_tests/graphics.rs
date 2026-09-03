@@ -19716,6 +19716,27 @@ mod manipulate {
   }
 
   #[test]
+  fn tooltip_wrapped_control_arg_is_not_vsform() {
+    // A trailing `Tooltip[control, hint]` argument is a Demonstrations
+    // pattern for a custom widget (often a `DynamicModule` wrapping its own
+    // `Manipulator`/`EventHandler`) that shows a hover hint instead of a
+    // label, as in "Continuous Changes in Self-Similar Fractals"'s zoom-point
+    // selector. It is a control-panel content item, not a malformed variable
+    // specification, so wolframscript shows it with no Manipulate::vsform
+    // message.
+    let result = woxi::interpret_with_stdout(
+      "Manipulate[x, {x, 0, 1}, Tooltip[Manipulator[Dynamic[x]], \"pick a value\"]]",
+    )
+    .unwrap();
+    assert!(
+      !result.warnings.iter().any(|w| w.contains("vsform")),
+      "no vsform expected, got {:?}",
+      result.warnings
+    );
+    assert!(result.result.starts_with("Manipulate["));
+  }
+
+  #[test]
   fn row_control_and_button_args_are_not_vsform() {
     // wolframscript shows control objects and layout wrappers in the
     // control area without a Manipulate::vsform message.
