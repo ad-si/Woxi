@@ -15139,6 +15139,182 @@ pub fn plot_grid_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   graphics_grid_ast(args)
 }
 
+// ── Overlay ─────────────────────────────────────────────────────────
+
+/// Map one `Alignment` component to a fraction in `[-1, 1]`, matching
+/// Wolfram's convention for `Overlay`: `Left`/`Bottom` are `-1`,
+/// `Center`/`Automatic` are `0`, and `Right`/`Top` are `1`. A bare number
+/// (including fractional values) passes through unchanged so
+/// `Alignment -> {0, -1}`-style specs work the same as the named forms.
+fn overlay_align_component(expr: &Expr) -> Option<f64> {
+  match expr {
+    Expr::Identifier(s) => match s.as_str() {
+      "Left" | "Bottom" => Some(-1.0),
+      "Center" | "Automatic" => Some(0.0),
+      "Right" | "Top" => Some(1.0),
+      _ => None,
+    },
+    other => try_eval_to_f64(other),
+  }
+}
+
+/// Parse `Overlay`'s `Alignment -> {horizontal, vertical}` option (or a
+/// single spec applied to both axes). Defaults to `{Center, Center}`,
+/// i.e. `(0.0, 0.0)`.
+fn parse_overlay_alignment(expr: &Expr) -> (f64, f64) {
+  match expr {
+    Expr::List(pair) if pair.len() == 2 => {
+      let h = overlay_align_component(&pair[0]).unwrap_or(0.0);
+      let v = overlay_align_component(&pair[1]).unwrap_or(0.0);
+      (h, v)
+    }
+    single => {
+      let v = overlay_align_component(single).unwrap_or(0.0);
+      (v, v)
+    }
+  }
+}
+
+/// `Overlay[{expr1, expr2, ...}]` superimposes every item centered on top
+/// of the others (later items drawn over earlier ones), unlike
+/// `GraphicsRow`/`GraphicsColumn`/`GraphicsGrid`, which lay items out
+/// side by side.
+///
+/// - `Overlay[{...}]` / `Overlay[{...}, All]` — canvas sized to the union
+///   of every item's natural size.
+/// - `Overlay[{...}, All, n]` — canvas sized to item `n` (1-indexed)
+///   instead; other items are still aligned on top of it and may be
+///   clipped or extend past the frame.
+/// - `Overlay[..., Alignment -> {h, v}]` — controls where each item sits
+///   within the canvas (see `overlay_align_component`).
+pub fn overlay_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.is_empty() {
+    return Err(InterpreterError::EvaluationError(
+      "Overlay called with 0 arguments; 1 argument is expected.".into(),
+    ));
+  }
+
+  let list_owned;
+  let items: &[Expr] = if let Expr::List(items) = &args[0] {
+    items
+  } else {
+    list_owned = evaluate_expr_to_expr(&args[0])?;
+    match &list_owned {
+      Expr::List(items) => items,
+      _ => {
+        return Err(InterpreterError::EvaluationError(
+          "Overlay expects a list as its first argument".into(),
+        ));
+      }
+    }
+  };
+
+  let empty_svg = || {
+    crate::graphics_result(
+      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
+    )
+  };
+
+  if items.is_empty() {
+    return Ok(empty_svg());
+  }
+
+  // Render each item to its own SVG (or None if it doesn't render), so a
+  // later reference-size index `n` still lines up with the original item
+  // positions even if some items don't produce a rendering.
+  let parsed_slots: Vec<Option<ParsedSvg>> = items
+    .iter()
+    .map(|item| {
+      let evaluated = evaluate_expr_to_expr(item).ok()?;
+      let svg = crate::evaluator::expr_to_svg(&evaluated);
+      if svg.is_empty() {
+        None
+      } else {
+        parse_svg_dimensions(&svg)
+      }
+    })
+    .collect();
+
+  if parsed_slots.iter().all(Option::is_none) {
+    return Ok(empty_svg());
+  }
+
+  // Trailing positional/option arguments: a bare `All` is the (default)
+  // union-sizing request and is otherwise a no-op; a number selects the
+  // reference item (1-indexed); `Alignment -> {h, v}` sets the placement.
+  let mut ref_index: Option<usize> = None;
+  let mut alignment = (0.0_f64, 0.0_f64);
+  for arg in &args[1..] {
+    match arg {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Alignment") =>
+      {
+        alignment = parse_overlay_alignment(replacement);
+      }
+      Expr::Identifier(s) if s == "All" => {}
+      other => {
+        if let Some(n) = try_eval_to_f64(other) {
+          let idx = n.round() as i64 - 1;
+          if idx >= 0 {
+            ref_index = Some(idx as usize);
+          }
+        }
+      }
+    }
+  }
+
+  let (canvas_w, canvas_h) = ref_index
+    .and_then(|i| parsed_slots.get(i))
+    .and_then(Option::as_ref)
+    .map_or_else(
+      || {
+        parsed_slots
+          .iter()
+          .flatten()
+          .fold((0.0_f64, 0.0_f64), |(mw, mh), p| {
+            (mw.max(p.nat_w), mh.max(p.nat_h))
+          })
+      },
+      |p| (p.nat_w, p.nat_h),
+    );
+  let canvas_w = canvas_w.max(1.0);
+  let canvas_h = canvas_h.max(1.0);
+
+  // Horizontal fraction: -1 (Left) -> 0.0, 0 (Center) -> 0.5, 1 (Right) -> 1.0.
+  // Vertical fraction is flipped because SVG y grows downward: 1 (Top) ->
+  // 0.0 (canvas top), -1 (Bottom) -> 1.0 (canvas bottom).
+  let (h_align, v_align) = alignment;
+  let h_frac = f64::midpoint(h_align, 1.0);
+  let v_frac = (1.0 - v_align) / 2.0;
+
+  let mut svg = String::with_capacity(4096);
+  svg.push_str(&format!(
+    "<svg width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\" xmlns=\"http://www.w3.org/2000/svg\">\n",
+    canvas_w.ceil() as u32,
+    canvas_h.ceil() as u32,
+    canvas_w.ceil() as u32,
+    canvas_h.ceil() as u32,
+  ));
+
+  for p in parsed_slots.iter().flatten() {
+    let x = (canvas_w - p.nat_w) * h_frac;
+    let y = (canvas_h - p.nat_h) * v_frac;
+    svg.push_str(&format!(
+      "<svg x=\"{x:.2}\" y=\"{y:.2}\" width=\"{:.2}\" height=\"{:.2}\" viewBox=\"{}\">\n",
+      p.nat_w, p.nat_h, p.view_box,
+    ));
+    svg.push_str(&p.inner_content);
+    svg.push_str("</svg>\n");
+  }
+
+  svg.push_str("</svg>");
+
+  crate::clear_captured_graphics();
+  Ok(crate::graphics_result(svg))
+}
+
 // ── Tabular SVG rendering ────────────────────────────────────────────
 
 /// Convert a Tabular[data, schema] to an SVG table.

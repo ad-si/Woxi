@@ -14482,6 +14482,119 @@ mod graphics_column {
   }
 }
 
+mod overlay {
+  use super::*;
+
+  #[test]
+  fn basic_two_item_overlay() {
+    clear_state();
+    let result =
+      interpret("Overlay[{Graphics[{Circle[]}], Graphics[{Disk[]}]}]").unwrap();
+    assert_eq!(result, "-Graphics-");
+  }
+
+  #[test]
+  fn produces_combined_svg_with_nested_layers() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Overlay[{Graphics[{Circle[]}], Graphics[{Disk[]}]}]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(svg.starts_with("<svg"), "Should produce SVG output");
+    // Outer <svg> plus one nested <svg> per overlaid item.
+    let nested_count = svg.matches("<svg ").count();
+    assert!(
+      nested_count >= 3,
+      "Should have outer + 2 nested SVGs, got {nested_count}"
+    );
+  }
+
+  #[test]
+  fn empty_list() {
+    clear_state();
+    let result = interpret("Overlay[{}]").unwrap();
+    assert_eq!(result, "-Graphics-");
+  }
+
+  /// With no reference item, the canvas is sized to the union (here, the
+  /// max) of every item's natural size.
+  #[test]
+  fn default_canvas_is_union_of_items() {
+    clear_state();
+    let svg = interpret_with_stdout(
+      "Overlay[{Graphics[{Circle[]}, ImageSize -> {100, 100}], \
+       Graphics[{Disk[]}, ImageSize -> {200, 60}]}]",
+    )
+    .unwrap()
+    .graphics
+    .unwrap();
+    assert!(
+      svg.contains("width=\"200\"") && svg.contains("height=\"100\""),
+      "canvas should be the union (200 wide, 100 tall), got: {svg}"
+    );
+  }
+
+  /// `Overlay[{...}, All, n]` sizes the canvas to item `n` (1-indexed)
+  /// instead of the union — a larger second item is then free to overflow
+  /// the frame rather than growing it.
+  #[test]
+  fn all_n_sizes_canvas_to_reference_item() {
+    clear_state();
+    let svg = interpret_with_stdout(
+      "Overlay[{Graphics[{Circle[]}, ImageSize -> {100, 100}], \
+       Graphics[{Disk[]}, ImageSize -> {250, 250}]}, All, 1]",
+    )
+    .unwrap()
+    .graphics
+    .unwrap();
+    assert!(
+      svg.contains("width=\"100\"") && svg.contains("height=\"100\""),
+      "canvas should match item 1's size (100x100), got: {svg}"
+    );
+  }
+
+  /// `Alignment -> {h, v}` shifts where a smaller item sits within the
+  /// (larger) canvas; `{-1, 1}` (Left, Top) pins it to the origin, so its
+  /// nested `<svg>` should sit at `x="0.00" y="0.00"` instead of being
+  /// centered.
+  #[test]
+  fn alignment_left_top_pins_item_to_origin() {
+    clear_state();
+    let svg = interpret_with_stdout(
+      "Overlay[{Graphics[{Circle[]}, ImageSize -> {200, 200}], \
+       Graphics[{Disk[]}, ImageSize -> {40, 40}]}, All, 1, \
+       Alignment -> {-1, 1}]",
+    )
+    .unwrap()
+    .graphics
+    .unwrap();
+    assert!(
+      svg.contains("x=\"0.00\" y=\"0.00\""),
+      "Left/Top alignment should place the small item at the origin, got: {svg}"
+    );
+  }
+
+  /// The default alignment is `{Center, Center}`, so a smaller item is
+  /// centered within the larger canvas rather than pinned to a corner.
+  #[test]
+  fn default_alignment_centers_smaller_item() {
+    clear_state();
+    let svg = interpret_with_stdout(
+      "Overlay[{Graphics[{Circle[]}, ImageSize -> {200, 200}], \
+       Graphics[{Disk[]}, ImageSize -> {40, 40}]}, All, 1]",
+    )
+    .unwrap()
+    .graphics
+    .unwrap();
+    assert!(
+      svg.contains("x=\"80.00\" y=\"80.00\""),
+      "Center alignment should place the 40x40 item at (80, 80) in a \
+       200x200 canvas, got: {svg}"
+    );
+  }
+}
+
 mod graphics_grid {
   use super::*;
 
