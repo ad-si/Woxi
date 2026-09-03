@@ -8844,6 +8844,58 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    /// Regression: `RegionPlot` (like several other plot heads — anything
+    /// that renders straight to SVG without keeping a plot-source series or
+    /// a symbolic primitives `structure`) landed in `Show`'s
+    /// `rendered_graphics` bucket, and a `Graphics[{Text[…]}]` caption
+    /// layered alongside it merged into `merged_primitives` instead (a bare
+    /// `Graphics[…]` keeps its primitives). `Show` only ever consulted
+    /// `rendered_graphics` when `merged_primitives` was completely empty, so
+    /// once *both* buckets held something, the `RegionPlot` layer was
+    /// silently dropped and only the caption drew — the "shade a region,
+    /// caption it separately, `Show` them together" idiom several Wolfram
+    /// Demonstrations Project notebooks use for combined figures.
+    #[test]
+    fn show_merges_region_plot_with_a_separately_built_caption() {
+      let svg = export_svg(
+        "Show[{RegionPlot[x^2 + y^2 < 1, {x, -2, 2}, {y, -2, 2}], \
+           Graphics[{Text[\"caption\", {0, 0}]}]}, ImageSize -> {200, 200}]",
+      );
+      assert!(
+        svg.contains("rgb(94,129,181)"),
+        "the shaded region must still draw: {svg}"
+      );
+      assert!(
+        svg.contains("caption"),
+        "the caption must still draw: {svg}"
+      );
+    }
+
+    /// The same drop happened with two `RegionPlot`-like opaque graphics and
+    /// *no* primitives at all — `Show` returned only the first of
+    /// `rendered_graphics` unconditionally. `x^2 + y^2 < 1` and its
+    /// complement `x^2 + y^2 > 1` together fill nearly all of the plot
+    /// range (everything but a thin boundary ring), so overlaying both
+    /// region fills draws far more of the default region colour than
+    /// either one alone.
+    #[test]
+    fn show_merges_two_opaque_region_plots() {
+      let single =
+        export_svg("RegionPlot[x^2 + y^2 < 1, {x, -2, 2}, {y, -2, 2}]");
+      let combined = export_svg(
+        "Show[{RegionPlot[x^2 + y^2 < 1, {x, -2, 2}, {y, -2, 2}], \
+           RegionPlot[x^2 + y^2 > 1, {x, -2, 2}, {y, -2, 2}]}]",
+      );
+      let fill = "rgb(94,129,181)";
+      let single_count = single.matches(fill).count();
+      let combined_count = combined.matches(fill).count();
+      assert!(
+        combined_count > single_count * 3 / 2,
+        "expected both regions' fills (combined {combined_count} vs one \
+         region's {single_count}), not just the first one kept"
+      );
+    }
+
     // wolframscript accepts arbitrarily many curves in
     // `ParametricPlot[{{fx1,fy1}, {fx2,fy2}, …}, {t, …}]`. Woxi
     // previously rejected 3+ curves with a fatal error because
@@ -13409,6 +13461,94 @@ mod graphics_list {
     let svg = result.graphics.unwrap();
     let nested_count = svg.matches("<svg x=").count();
     assert_eq!(nested_count, 4, "Expected 4 nested SVGs for TableForm list");
+  }
+
+  /// Regression: `has_form_wrapper`/`unwrap_form_wrappers` only recognized a
+  /// bare `TableForm[data]` (exactly one argument), so a `TableForm[data,
+  /// opts…]` wrapping graphics — the shape every Demonstrations-style
+  /// "assemble two panels side by side" idiom actually uses, e.g.
+  /// `TableForm[{panelA, panelB}, TableDirections -> Row, TableSpacing ->
+  /// {0}]` — never got unwrapped to its list, so the list-of-graphics
+  /// combine pass never ran and only a single stray panel rendered instead
+  /// of both.
+  #[test]
+  fn tableform_wrapping_1d_graphics_list_with_options() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "TableForm[Table[Graphics[{Disk[]}], {i, 1, 2}], TableDirections -> Row, TableSpacing -> {0}]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    assert!(result.graphics.is_some());
+    let svg = result.graphics.unwrap();
+    let nested_count = svg.matches("<svg x=").count();
+    assert_eq!(
+      nested_count, 2,
+      "Expected both panels combined despite the trailing TableForm options: {svg}"
+    );
+  }
+
+  /// Regression: a `Style[…, opts]` wrapping a `TableForm` of graphics (the
+  /// common `Style[dispatcher[choice], Background -> …]` idiom, where
+  /// `dispatcher` resolves to a `TableForm[{panelA, panelB}, …]`) was never
+  /// unwrapped either, for the same reason — only `TableForm`/`MathMLForm`/…
+  /// heads were peeled, not `Style`.
+  #[test]
+  fn style_wrapped_tableform_graphics_list_combines() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Style[TableForm[Table[Graphics[{Disk[]}], {i, 1, 2}], TableDirections -> Row], Background -> Red]",
+    )
+    .unwrap();
+    assert!(result.graphics.is_some());
+    let svg = result.graphics.unwrap();
+    let nested_count = svg.matches("<svg x=").count();
+    assert_eq!(
+      nested_count, 2,
+      "Expected both panels combined through the Style wrapper: {svg}"
+    );
+  }
+
+  /// Regression: the list-of-graphics combine pass picked its SVGs by
+  /// slicing the last N entries off the *shared* capture buffer, assuming
+  /// they lined up positionally with the current list's items. An
+  /// intervening statement that itself combined-and-cleared a graphics list
+  /// (e.g. an `Initialization` block building several `TableForm[{panelA,
+  /// panelB}, …]`-valued helper variables before the one actually
+  /// displayed) left that buffer holding a *different* combine's leftovers,
+  /// so the final display combined the wrong panels — or, once too few were
+  /// left, silently fell back to a single stray one. Each list item already
+  /// carries its own rendered SVG (`Expr::Graphics { svg, .. }`), which is
+  /// now used directly instead of trusting the buffer's tail.
+  #[test]
+  fn tableform_graphics_list_survives_intervening_combine() {
+    clear_state();
+    let result = interpret_with_stdout(
+      r#"
+      panelA = Graphics[Text["Alpha"]];
+      panelB = Graphics[Text["Bravo"]];
+      decoy = TableForm[{panelA, panelB}, TableDirections -> Row];
+      panelC = Graphics[Text["Charlie"]];
+      panelD = Graphics[Text["Delta"]];
+      TableForm[{panelC, panelD}, TableDirections -> Row]
+      "#,
+    )
+    .unwrap();
+    assert!(result.graphics.is_some());
+    let svg = result.graphics.unwrap();
+    let nested_count = svg.matches("<svg x=").count();
+    assert_eq!(
+      nested_count, 2,
+      "Expected the final pair (panelC/panelD), not leftovers from the decoy combine: {svg}"
+    );
+    assert!(
+      svg.contains("Charlie") && svg.contains("Delta"),
+      "expected the final pair's own labels: {svg}"
+    );
+    assert!(
+      !svg.contains("Alpha") && !svg.contains("Bravo"),
+      "must not leak the decoy combine's panels: {svg}"
+    );
   }
 
   #[test]

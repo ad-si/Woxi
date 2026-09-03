@@ -3752,6 +3752,22 @@ fn composed_layout_svg(expr: &syntax::Expr) -> Option<String> {
   svg.starts_with("<svg").then_some(svg)
 }
 
+/// The SVG an already-evaluated graphics item carries on itself — from
+/// `Expr::Graphics { svg, .. }`, peeling a `Style[…]` wrapper first. `None`
+/// for the bare `-Graphics-`/`-Image-` text placeholder, which carries no
+/// data of its own.
+fn item_embedded_svg(expr: &syntax::Expr) -> Option<String> {
+  match expr {
+    syntax::Expr::Graphics { svg, .. } => Some(svg.clone()),
+    syntax::Expr::FunctionCall { name, args }
+      if name == "Style" && !args.is_empty() =>
+    {
+      item_embedded_svg(&args[0])
+    }
+    _ => None,
+  }
+}
+
 /// If the result is a list (1D, 2D, or 3D) of `-Graphics-` items,
 /// or a `TableForm` wrapping such a list, combine captured SVGs into a grid.
 fn render_graphics_list_if_needed(expr: syntax::Expr) -> syntax::Expr {
@@ -3759,10 +3775,17 @@ fn render_graphics_list_if_needed(expr: syntax::Expr) -> syntax::Expr {
   let has_tableform = has_form_wrapper(&expr, "TableForm");
   let inner = unwrap_form_wrappers(&expr);
 
+  // NB: an empty buffer does *not* mean there's nothing to combine — a
+  // Woxi Studio Manipulate runs its `Initialization` and body as separate
+  // `interpret_with_stdout` calls (each starting with a fresh, empty
+  // buffer), so a body that merely returns an already-built value (e.g.
+  // `pickShow[choice]` handing back a `TableForm[{panelA, panelB}, …]`
+  // assembled during Initialization) triggers no new graphics-producing
+  // calls at all — the items below carry their own embedded SVGs instead
+  // (see `item_embedded_svg`) and don't need the buffer. Only the
+  // positional-slice fallbacks further down actually require it, and they
+  // already guard their own use of `all_svgs`.
   let all_svgs = get_all_captured_graphics();
-  if all_svgs.is_empty() {
-    return expr;
-  }
 
   // A layout that holds pictures — `Grid[{{plot1, plot2}, …}]`, a `Column`
   // of them, a `Pane` around either — is one picture in a notebook, laid
@@ -3777,14 +3800,31 @@ fn render_graphics_list_if_needed(expr: syntax::Expr) -> syntax::Expr {
 
   // 1D list of Graphics
   if let syntax::Expr::List(items) = inner {
-    if items.iter().all(is_graphics_placeholder)
-      && items.len() > 1
-      && items.len() <= all_svgs.len()
-    {
-      // Take the last N SVGs (they correspond to the list items)
-      let start = all_svgs.len() - items.len();
-      let row: Vec<String> = all_svgs[start..].to_vec();
-      if let Some(combined) = functions::graphics::graphics_list_svg(&row) {
+    if items.iter().all(is_graphics_placeholder) && items.len() > 1 {
+      // Each item's own embedded SVG is authoritative when present. The
+      // shared capture buffer accumulates every graphic created during the
+      // whole statement sequence (e.g. every intermediate assignment in an
+      // Initialization block), and an earlier statement that itself
+      // combined-and-cleared a graphics list (a nested TableForm assigned
+      // to its own variable, say) leaves the buffer's tail no longer
+      // aligned with these items — so a positional "last N" slice of it
+      // can silently pick up stale entries. Only fall back to that
+      // heuristic when an item is a bare `-Graphics-`/`-Image-`
+      // placeholder with no SVG of its own.
+      let row = items
+        .iter()
+        .map(item_embedded_svg)
+        .collect::<Option<Vec<String>>>()
+        .or_else(|| {
+          (items.len() <= all_svgs.len()).then(|| {
+            // Take the last N SVGs (they correspond to the list items)
+            let start = all_svgs.len() - items.len();
+            all_svgs[start..].to_vec()
+          })
+        });
+      if let Some(row) = row
+        && let Some(combined) = functions::graphics::graphics_list_svg(&row)
+      {
         // Clear and re-capture with the combined SVG
         clear_captured_graphics();
         return graphics_result(combined);
@@ -3810,24 +3850,42 @@ fn render_graphics_list_if_needed(expr: syntax::Expr) -> syntax::Expr {
           }
         })
         .sum();
-      if total_cells <= all_svgs.len() {
-        let start = all_svgs.len() - total_cells;
-        let mut offset = start;
-        let mut rows: Vec<Vec<String>> = Vec::new();
-        for item in items {
-          if let syntax::Expr::List(inner) = item {
-            let row: Vec<String> =
-              all_svgs[offset..offset + inner.len()].to_vec();
-            offset += inner.len();
-            rows.push(row);
-          }
-        }
-        if let Some(combined) =
+      // Prefer each item's own embedded SVG (see the 1D case above for why
+      // the shared capture buffer's positional tail can be stale); fall
+      // back to the buffer heuristic only when some item has no SVG of its
+      // own.
+      let rows = items
+        .iter()
+        .map(|item| match item {
+          syntax::Expr::List(inner) => inner
+            .iter()
+            .map(item_embedded_svg)
+            .collect::<Option<Vec<_>>>(),
+          _ => None,
+        })
+        .collect::<Option<Vec<Vec<String>>>>()
+        .or_else(|| {
+          (total_cells <= all_svgs.len()).then(|| {
+            let start = all_svgs.len() - total_cells;
+            let mut offset = start;
+            let mut rows: Vec<Vec<String>> = Vec::new();
+            for item in items {
+              if let syntax::Expr::List(inner) = item {
+                let row: Vec<String> =
+                  all_svgs[offset..offset + inner.len()].to_vec();
+                offset += inner.len();
+                rows.push(row);
+              }
+            }
+            rows
+          })
+        });
+      if let Some(rows) = rows
+        && let Some(combined) =
           functions::graphics::combine_graphics_svgs(&rows)
-        {
-          clear_captured_graphics();
-          return graphics_result(combined);
-        }
+      {
+        clear_captured_graphics();
+        return graphics_result(combined);
       }
     }
 
@@ -3928,10 +3986,21 @@ fn render_graphics_list_if_needed(expr: syntax::Expr) -> syntax::Expr {
 }
 
 /// Check if an expression has a specific form wrapper (e.g. "TableForm")
+///
+/// `TableForm` carries its data as the first argument with any options
+/// (`TableDirections -> Row`, `TableSpacing -> {0}`, …) trailing it, so this
+/// looks at `args[0]` rather than requiring exactly one argument — a
+/// `TableForm[data, opts…]` wrapping graphics is the shape every
+/// Demonstrations-style "assemble the panel, TableDirections -> Row" idiom
+/// actually uses. `Style[…]` is peeled through the same way (its directives
+/// carry no meaning for the already-rendered picture this unwrap feeds into,
+/// same trade `is_graphics_placeholder` already makes for individual items)
+/// so a body like `Style[dispatcher[choice], Background -> …]` that resolves
+/// to a `TableForm` of graphics is still recognized.
 fn has_form_wrapper(expr: &syntax::Expr, target: &str) -> bool {
   match expr {
     syntax::Expr::FunctionCall { name, args }
-      if args.len() == 1
+      if !args.is_empty()
         && matches!(
           name.as_str(),
           "TableForm"
@@ -3940,6 +4009,7 @@ fn has_form_wrapper(expr: &syntax::Expr, target: &str) -> bool {
             | "InputForm"
             | "OutputForm"
             | "TraditionalForm"
+            | "Style"
         ) =>
     {
       name == target || has_form_wrapper(&args[0], target)
@@ -3949,10 +4019,12 @@ fn has_form_wrapper(expr: &syntax::Expr, target: &str) -> bool {
 }
 
 /// Unwrap form wrappers like TableForm, MathMLForm, StandardForm, etc.
+/// See `has_form_wrapper` for why this looks at `args[0]` rather than
+/// requiring exactly one argument.
 fn unwrap_form_wrappers(expr: &syntax::Expr) -> &syntax::Expr {
   match expr {
     syntax::Expr::FunctionCall { name, args }
-      if args.len() == 1
+      if !args.is_empty()
         && matches!(
           name.as_str(),
           "TableForm"
@@ -3961,6 +4033,7 @@ fn unwrap_form_wrappers(expr: &syntax::Expr) -> &syntax::Expr {
             | "InputForm"
             | "OutputForm"
             | "TraditionalForm"
+            | "Style"
         ) =>
     {
       unwrap_form_wrappers(&args[0])
