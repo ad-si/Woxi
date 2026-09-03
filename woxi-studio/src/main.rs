@@ -24988,4 +24988,108 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`count$$ = 3, $CellContext`offset$$ 
       "ControlActive's steady-state (second) argument must be used outside a drag: {rendered:?}"
     );
   }
+
+  /// Checked a randomly-sampled Wolfram Demonstrations Project notebook
+  /// ("Horizontal Visibility Graphs for Elementary Cellular Automata")
+  /// whose body superimposes a highlighted graph (built with
+  /// `HighlightGraph`/`FindShortestPath`/`PathGraph`) and a live
+  /// `Dynamic[Graphics[...]]` strip via `Overlay[{...}, All, n, Alignment
+  /// -> {...}]` — the graph picture sets the canvas size and the dynamic
+  /// strip is pinned to its bottom edge on top of it. The panel also
+  /// carries a numeric slider, a `Delimiter`, a `Setter` control, an
+  /// `Initialization`-defined helper, `ControlPlacement -> Left`, and a
+  /// `Bookmarks` list of preset parameter combinations. Independently
+  /// written, not copied from any specific Demonstration: a different
+  /// helper name, graph shape (a plain cycle rather than a random
+  /// cellular-automaton evolution) and preset values throughout.
+  ///
+  /// Regression coverage for `Overlay`, which was entirely unimplemented
+  /// before this: the panel must build and render without error, and the
+  /// composed picture must carry both overlaid layers, not just one of
+  /// them.
+  #[test]
+  fn manipulate_overlay_of_highlighted_graph_and_dynamic_strip() {
+    let code = r#"Manipulate[
+      Overlay[{
+        HighlightGraph[
+          ringGraph[rings],
+          {VertexList[ringGraph[rings]],
+           PathGraph[FindShortestPath[ringGraph[rings], 1, rings]]},
+          VertexLabels -> "Name",
+          VertexSize -> Small,
+          ImageSize -> {260, 260}
+        ],
+        Dynamic[
+          Graphics[
+            {Opacity[0.35], Hue[mode/3], Rectangle[{0, 0}, {mode, 1}]},
+            PlotRange -> {{0, 3}, {0, 1}}, Axes -> False,
+            AspectRatio -> 1/6, ImageSize -> 260
+          ]
+        ]
+      }, All, 1, Alignment -> {0, -1}],
+      {{rings, 6, "ring size"}, 3, 12, 1, ImageSize -> Tiny},
+      Delimiter,
+      {{mode, 1, ""}, {1 -> "sum", 2 -> "max", 3 -> "min"}, Setter},
+      ControlPlacement -> Left,
+      SynchronousUpdating -> True,
+      FrameMargins -> 0,
+      Initialization :> (
+        ringGraph[k_] := CycleGraph[k]
+      ),
+      Bookmarks -> {
+        "small ring" :> {rings = 4, mode = 1},
+        "large ring" :> {rings = 10, mode = 3}
+      }
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr).expect(
+      "the graph+dynamic-overlay Manipulate should build a ManipulateState",
+    );
+
+    assert_eq!(
+      state.error, None,
+      "the Overlay body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert_eq!(
+      state.control_placement,
+      manipulate::ControlPlacement::Left,
+      "ControlPlacement -> Left must survive into the widget state"
+    );
+    let names: Vec<&str> = state.controls.iter().map(|c| c.name()).collect();
+    assert_eq!(
+      names,
+      ["rings", "", "mode"],
+      "the slider, the Delimiter row, and the Setter control"
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the overlaid graph+dynamic-strip picture should render"
+    );
+
+    // The composed picture must carry both layers, not just one of them:
+    // the highlighted graph and the dynamic strip's Rectangle should both
+    // show up in the rendered SVG.
+    let bindings: Vec<(String, String)> = state
+      .controls
+      .iter()
+      .filter(|c| c.binds_variable())
+      .map(|c| (c.name().to_string(), c.current_code()))
+      .collect();
+    let svg = woxi::with_scoped_globals(&bindings, || {
+      woxi::interpret_with_stdout(&state.body)
+    })
+    .expect("body evaluates")
+    .graphics
+    .expect("the overlay panel must render");
+    assert!(
+      svg.matches("<svg ").count() >= 3,
+      "the composited picture should nest both overlaid layers: {svg}"
+    );
+    assert!(
+      svg.contains("<rect"),
+      "the dynamic strip's Rectangle should be present in the overlay: {svg}"
+    );
+  }
 }
