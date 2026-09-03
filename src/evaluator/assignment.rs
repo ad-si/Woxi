@@ -3194,6 +3194,39 @@ pub fn set_delayed_ast(
             }
           }
         }
+        // A bare symbol with no `_` in this slot (e.g. `f[j_, Np]` where
+        // `Np` already holds a value, from `Np = Npp - 1` inside a Module)
+        // is not a pattern at all — WL requires an explicit `_` to
+        // introduce a pattern variable, so a plain symbol here is evaluated
+        // to its current value and matched literally, the same as a
+        // numeric literal (`f[j_, 5]`). Without this, the symbol became an
+        // unconstrained second wildcard slot indistinguishable in
+        // specificity from a fully generic `f[j_, k_]` overload, so the
+        // wrong rule could fire and return `Null` instead of the intended
+        // literal-argument overload.
+        //
+        // Exempt slot 0 of `Default[sym, …] := …`: that's the redirected
+        // storage for `sym`'s DefaultValues (see `belongs_to` in
+        // symbol_values.rs and `definition_text` in
+        // dispatch/complex_and_special.rs), both of which identify "this
+        // Default entry is sym's" by literal name — `params.first() ==
+        // sym` — rather than by evaluating a condition. Turning that slot
+        // into a `_dv0`/SameQ pair would hide the entry from
+        // `Definition[sym]`, `ClearAll[sym]`, and `Block`'s save/restore.
+        Expr::Identifier(name)
+          if !name.contains('_') && !(func_name == "Default" && i == 0) =>
+        {
+          let param_name = format!("_dv{i}");
+          let eval_arg = evaluate_expr_to_expr(arg)?;
+          conditions.push(Some(Expr::Comparison {
+            operands: vec![Expr::Identifier(param_name.clone()), eval_arg],
+            operators: vec![ComparisonOp::SameQ],
+          }));
+          params.push(param_name);
+          blank_types.push(1);
+          defaults.push(None);
+          heads.push(None);
+        }
         // Simple pattern: x_ or x_Head
         _ => {
           let (pat_name, head, blank_type) = extract_pattern_info(arg);
