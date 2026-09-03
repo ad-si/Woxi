@@ -18193,12 +18193,27 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       continue;
     }
     let (spec, rename) = rewrite_compound_control_var(spec);
-    let parsed = if let Some(parsed) =
-      crate::with_scoped_globals(&initial_bindings, || {
-        parse_manipulate_control(&spec, &sibling_names)
-      }) {
-      parsed
-    } else {
+    let first_pass = crate::with_scoped_globals(&initial_bindings, || {
+      parse_manipulate_control(&spec, &sibling_names)
+    });
+    // A Locator/Slider2D spec whose corner bounds or initial point reference
+    // a global the body only assigns as a side effect (not another control
+    // variable, which `initial_bindings` already covers, e.g. a geometric
+    // constant like `r = eyeRadius = 1.3` used by a later Locator's range)
+    // can't resolve to a numeric point on this first pass and silently
+    // downgrades to `Fixed`. Wolfram evaluates the body once before laying
+    // out controls, so by the time it reads a Locator's bounds such globals
+    // already hold their assigned values — retry it too against the
+    // bindings a full body run leaves behind, the same fallback an
+    // unparseable spec gets below.
+    let needs_body_retry = match &first_pass {
+      None => true,
+      Some(ParsedControl::Fixed { .. }) => {
+        matches!(&spec, Expr::List(items) if spec_marks_locator(items))
+      }
+      _ => false,
+    };
+    let parsed = if needs_body_retry {
       // Wolfram evaluates the body once before laying the controls out, so
       // a control whose choice list is a symbol the *body* fills in —
       // `{{k, 9, " "}, choices, ControlType -> PopupMenu}` next to a
@@ -18213,17 +18228,25 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
           manipulate_post_body_bindings(args.first(), &initial_bindings)
         })
         .clone();
-      let Some(parsed) = crate::with_scoped_globals(&after_body, || {
+      match crate::with_scoped_globals(&after_body, || {
         parse_manipulate_control(&spec, &sibling_names)
-      }) else {
-        // A spec neither the leading-assignment probe nor a full body run
-        // can make sense of is skipped rather than failing the whole
-        // Manipulate — one unrecognised control row must not take every
-        // other, already-understood row down with it (see the comment
-        // above the loop on `Initialization`/`TrackedSymbols`).
-        continue;
-      };
-      parsed
+      }) {
+        Some(retried) => retried,
+        None => match first_pass {
+          // The full body run didn't turn this Locator into anything
+          // better than the first pass's `Fixed` fallback — keep it rather
+          // than dropping the binding entirely.
+          Some(parsed) => parsed,
+          // A spec neither the leading-assignment probe nor a full body run
+          // can make sense of is skipped rather than failing the whole
+          // Manipulate — one unrecognised control row must not take every
+          // other, already-understood row down with it (see the comment
+          // above the loop on `Initialization`/`TrackedSymbols`).
+          None => continue,
+        },
+      }
+    } else {
+      first_pass.unwrap()
     };
     match parsed {
       ParsedControl::Visible {
@@ -18669,6 +18692,22 @@ fn is_control_type_rule(item: &Expr) -> bool {
 fn is_control_type_marker(item: &Expr) -> bool {
   is_control_type_rule(item)
     || matches!(item, Expr::Identifier(s) if s == "None")
+}
+
+/// Whether a control spec's items declare a `Locator` control, either as the
+/// bare marker (`{{p, init}, pmin, pmax, Locator}`) or `ControlType ->
+/// Locator`.
+fn spec_marks_locator(items: &[Expr]) -> bool {
+  items.iter().any(|it| {
+    matches!(it, Expr::Identifier(s) if s == "Locator")
+      || matches!(
+        it,
+        Expr::Rule { pattern, replacement }
+        | Expr::RuleDelayed { pattern, replacement }
+          if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "ControlType")
+            && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "Locator")
+      )
+  })
 }
 
 /// The variables driven by `Locator[Dynamic[var, cb], …]` markers or a
@@ -21309,16 +21348,7 @@ fn parse_manipulate_control(
   // `Locator` controls (`{{p, init}, pmin, pmax, Locator}`, as a bare
   // marker or `ControlType -> Locator`) and hidden `ControlType -> None`
   // variables (`{{v, init}, ControlType -> None}`).
-  let is_locator = items.iter().any(|it| {
-    matches!(it, Expr::Identifier(s) if s == "Locator")
-      || matches!(
-        it,
-        Expr::Rule { pattern, replacement }
-        | Expr::RuleDelayed { pattern, replacement }
-          if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "ControlType")
-            && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "Locator")
-      )
-  });
+  let is_locator = spec_marks_locator(items);
   // `{{x, 1}, None}` states the control's domain as `None`, which is the
   // positional spelling of `ControlType -> None`: the variable is bound but
   // no widget is drawn (verified against wolframscript, which shows no
@@ -24453,6 +24483,40 @@ mod manipulate_dynamic_control_list_tests {
         );
       }
       other => panic!("expected a Locator control, got {other:?}"),
+    }
+  }
+
+  /// A Locator's corner bounds (and even its own initial point) may name a
+  /// plain global the body only assigns as an ordinary side effect — not
+  /// another control's variable, which the initial-value probe already
+  /// covers, but one a Demonstration sets once near the top of a large body
+  /// (e.g. a shared geometric constant every helper function reads).
+  /// Wolfram evaluates the body once before laying the controls out, so
+  /// that global already holds its assigned value by the time the Locator's
+  /// bounds are read — Woxi must retry against a full body run instead of
+  /// silently downgrading the control to a fixed, undraggable point.
+  #[test]
+  fn locator_bound_by_body_only_global_becomes_interactive() {
+    let s = spec(
+      "Manipulate[k = 2; Graphics[{Point[p]}], \
+       {{p, {0, k}}, {0, 0}, {0, 10 k}, Locator}]",
+    );
+    assert_eq!(names(&s), vec!["p"]);
+    match &s.controls[0] {
+      ManipulateControl::Slider2D {
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+        x_initial,
+        y_initial,
+        ..
+      } => {
+        assert_eq!((*x_min, *x_max), (0.0, 0.0));
+        assert_eq!((*y_min, *y_max), (0.0, 20.0));
+        assert_eq!((*x_initial, *y_initial), (0.0, 2.0));
+      }
+      other => panic!("expected a Slider2D control, got {other:?}"),
     }
   }
 
