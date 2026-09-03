@@ -11691,6 +11691,18 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // If we have pre-rendered Graphics but no primitives from Graphics[...],
   // return the rendered result directly. Single-arg Show just passes through.
   if merged_primitives.is_empty() && !rendered_graphics.is_empty() {
+    if rendered_graphics.len() == 1 {
+      return Ok(rendered_graphics[0].clone());
+    }
+    // More than one opaque pre-rendered graphic (e.g. `Show[{regionPlot,
+    // Graphics[{Text[…]}]}]`, the Demonstrations idiom that overlays a
+    // caption built separately onto a plot): none of them kept its
+    // primitives or plot-source series to merge symbolically, so the only
+    // way to combine them is to stack their already-rendered pictures. Only
+    // returning the first one silently dropped every other layer.
+    if let Some(svg) = overlay_rendered_graphics_svgs(&rendered_graphics) {
+      return Ok(crate::graphics_result(svg));
+    }
     return Ok(rendered_graphics[0].clone());
   }
 
@@ -11702,10 +11714,27 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut graphics_args = vec![content];
   graphics_args.extend(merged_options);
 
-  if is_3d {
+  let primitives_result = if is_3d {
     crate::functions::plot3d::graphics3d_ast(&graphics_args)
   } else {
     graphics_ast(&graphics_args)
+  }?;
+
+  if rendered_graphics.is_empty() {
+    return Ok(primitives_result);
+  }
+  // Opaque pre-rendered graphics (no primitives, no plot source — e.g. a
+  // `RegionPlot`) alongside `Graphics[…]` primitives that merged above:
+  // stack the primitives-rendered picture with each opaque layer, the same
+  // best-effort overlay used when there are no primitives at all. Without
+  // this, `rendered_graphics` was computed and then never looked at again
+  // once `merged_primitives` had anything in it, so a `Show[{regionPlot,
+  // labelGraphic}]` silently dropped `regionPlot` entirely.
+  let mut layers_to_overlay = vec![primitives_result.clone()];
+  layers_to_overlay.extend(rendered_graphics.iter().cloned());
+  match overlay_rendered_graphics_svgs(&layers_to_overlay) {
+    Some(svg) => Ok(crate::graphics_result(svg)),
+    None => Ok(primitives_result),
   }
 }
 
@@ -14189,6 +14218,64 @@ fn parse_svg_dimensions(svg: &str) -> Option<ParsedSvg> {
     nat_w,
     nat_h,
   })
+}
+
+/// Stack several already-rendered `Expr::Graphics` pictures on top of one
+/// another, for `Show[{g1, g2, …}]` where none of `g1, g2, …` kept
+/// primitives or plot-source series to merge symbolically (e.g. a
+/// `RegionPlot` shown together with a `Graphics[{Text[…]}]` caption built
+/// separately — both render straight to SVG with nothing left to combine
+/// at the expression level). Matching Wolfram's "the merged graphic takes
+/// its shape from the first graphic" rule, the first picture's natural
+/// size is the canvas every later layer is stretched to fit, so they all
+/// share one frame even when their own native sizes differ.
+///
+/// This is a best-effort visual overlay, not a coordinate-accurate merge:
+/// each layer keeps its own internal `PlotRange` (there is no shared
+/// coordinate data to reconcile once a graphic is only an SVG), so layers
+/// drawn against different ranges won't line up point-for-point. It still
+/// beats silently dropping every layer but the first, which is what
+/// `Show` did before this existed.
+fn overlay_rendered_graphics_svgs(graphics: &[Expr]) -> Option<String> {
+  let svgs: Vec<&str> = graphics
+    .iter()
+    .filter_map(|g| match g {
+      Expr::Graphics { svg, .. } => Some(svg.as_str()),
+      _ => None,
+    })
+    .collect();
+  let (first, rest) = svgs.split_first()?;
+  let canvas = parse_svg_dimensions(first)?;
+  let (canvas_w, canvas_h) = (canvas.nat_w, canvas.nat_h);
+
+  let mut out = String::with_capacity(4096);
+  out.push_str(&format!(
+    "<svg width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\" \
+     xmlns=\"http://www.w3.org/2000/svg\">\n",
+    canvas_w.ceil() as u32,
+    canvas_h.ceil() as u32,
+    canvas_w.ceil() as u32,
+    canvas_h.ceil() as u32,
+  ));
+  out.push_str(&format!(
+    "<svg x=\"0\" y=\"0\" width=\"{:.0}\" height=\"{:.0}\" viewBox=\"{}\">\n",
+    canvas_w, canvas_h, canvas.view_box,
+  ));
+  out.push_str(&canvas.inner_content);
+  out.push_str("</svg>\n");
+  for svg in rest {
+    let Some(layer) = parse_svg_dimensions(svg) else {
+      continue;
+    };
+    out.push_str(&format!(
+      "<svg x=\"0\" y=\"0\" width=\"{:.0}\" height=\"{:.0}\" viewBox=\"{}\">\n",
+      canvas_w, canvas_h, layer.view_box,
+    ));
+    out.push_str(&layer.inner_content);
+    out.push_str("</svg>\n");
+  }
+  out.push_str("</svg>");
+  Some(out)
 }
 
 /// Combine multiple SVG strings arranged as rows of cells into a single SVG.

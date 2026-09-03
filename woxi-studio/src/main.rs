@@ -9470,6 +9470,150 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`fig$$ = 1, $CellContext`k$$ = 0}, D
     }
   }
 
+  /// A logic-diagram picker Manipulate: a single `PopupMenu`-style control
+  /// whose choice list mixes plain-string labels with `Row[{Style[…,
+  /// Italic], " …", Style[…, Italic]}]` labels, and whose body is a
+  /// `Style[…, Background -> …]`-wrapped dispatcher built entirely inside
+  /// `Initialization` from `RegionPlot`-based components assembled with
+  /// `TableForm[…, TableDirections -> Row]` — the general shape of the
+  /// "boolean-logic circuit Venn diagrams" family of Wolfram Demonstrations
+  /// Project notebooks (independently written, not copied from any specific
+  /// one). Also exercises the "stack two lines of text via `Divide` and
+  /// `TableForm`" captioning idiom those notebooks use for figure labels.
+  #[test]
+  fn manipulate_region_plot_popup_with_row_styled_choice_labels() {
+    let code = r#"Manipulate[
+      Style[
+        pickShow[choice],
+        Background -> Lighter[ColorData["Legacy", "Goldenrod"], 0.25]
+      ],
+      {{choice, 3, "select option"},
+       {1 -> "plain label",
+        2 -> Row[{Style["p", Italic], " implies ", Style["q", Italic]}],
+        3 -> Style["p", Italic]}},
+      Initialization :> (
+        regionA = p^2 + q^2 < 1;
+        regionB = (p - 1)^2 + q^2 < 1;
+        leftPic = RegionPlot[regionA && regionB, {p, -2, 2}, {q, -2, 2},
+          BoundaryStyle -> Directive[Black, Thick], Frame -> True,
+          FrameTicks -> False,
+          ColorFunction -> ColorData["SouthwestColors"],
+          PerformanceGoal -> "Quality"];
+        rightPic = RegionPlot[regionA || regionB, {p, -2, 2}, {q, -2, 2},
+          BoundaryStyle -> Directive[Black, Thick], Frame -> True,
+          FrameTicks -> False, Mesh -> 15, MeshStyle -> Opacity[0.3],
+          ColorFunction -> ColorData["SouthwestColors"],
+          PerformanceGoal -> "Quality"];
+        captionRow = Row[{Subscript[Style["f", Italic], "1"], "  {0,1}"}];
+        captionLabel = Graphics[{Text[
+          Style[TableForm[PadLeft[{"Header" / captionRow}, 1, " "],
+            TableDirections -> Row], Bold, Medium],
+          {1.15, -1.75}]}];
+        show1 = TableForm[
+          {Show[{leftPic, captionLabel}, ImageSize -> {200, 200}],
+           Show[{rightPic, captionLabel}, ImageSize -> {200, 200}]},
+          TableDirections -> Row, TableSpacing -> {0}];
+        show2 = TableForm[
+          {Show[{rightPic, captionLabel}, ImageSize -> {200, 200}],
+           Show[{leftPic, captionLabel}, ImageSize -> {200, 200}]},
+          TableDirections -> Row, TableSpacing -> {0}];
+        show3 = show1;
+        pickShow[n_] := Return[Which[n == 1, show1, n == 2, show2, n == 3, show3]];
+      )
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let mut state = manipulate::ManipulateState::from_expr(&expr).expect(
+      "the popup-with-Row-labels notebook should build a ManipulateState",
+    );
+    assert_eq!(
+      state.error, None,
+      "the body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the assembled RegionPlot table should render"
+    );
+
+    match &state.controls[..] {
+      [
+        manipulate::ControlState::Discrete {
+          name,
+          values,
+          value_labels,
+          current_index,
+          ..
+        },
+      ] => {
+        assert_eq!(name, "choice");
+        assert_eq!(values, &["1", "2", "3"]);
+        // Row[{Style[…, Italic], " implies ", Style[…, Italic]}] and a bare
+        // Style[…] both flatten to plain text for the choice label.
+        assert_eq!(value_labels, &["plain label", "p implies q", "p"]);
+        // Explicit initial value 3 is the last choice.
+        assert_eq!(*current_index, 2);
+      }
+      other => panic!("expected a single popup control, got {other:?}"),
+    }
+
+    // Switching the picker must actually change what's rendered — show1 and
+    // show2 assemble the same two panels in opposite order.
+    let render = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      let code = match w.initialization.as_deref() {
+        Some(init) => format!("{init}; {}", w.body),
+        None => w.body.clone(),
+      };
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&code)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the assembled table must render")
+    };
+
+    let third = render(&state);
+    match &mut state.controls[0] {
+      manipulate::ControlState::Discrete { current_index, .. } => {
+        *current_index = 0
+      }
+      other => panic!("expected the popup control, got {other:?}"),
+    }
+    state.reevaluate();
+    assert!(
+      state.error.is_none(),
+      "choice 1 must evaluate cleanly: {:?}",
+      state.error
+    );
+    let first = render(&state);
+
+    match &mut state.controls[0] {
+      manipulate::ControlState::Discrete { current_index, .. } => {
+        *current_index = 1
+      }
+      other => panic!("expected the popup control, got {other:?}"),
+    }
+    state.reevaluate();
+    assert!(
+      state.error.is_none(),
+      "choice 2 must evaluate cleanly: {:?}",
+      state.error
+    );
+    let second = render(&state);
+
+    assert_ne!(
+      first, second,
+      "the swapped panel order must change the render"
+    );
+    assert_ne!(third, second);
+  }
+
   #[test]
   fn two_circular_windows_notebook_opens_with_its_widget() {
     // End-to-end regression for the "Two Circular Windows" Demonstration.
