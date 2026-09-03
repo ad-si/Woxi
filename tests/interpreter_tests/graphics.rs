@@ -971,6 +971,61 @@ mod graphics {
       insta::assert_snapshot!(export_svg("Graphics[{EdgeForm[Red], Disk[]}]"));
     }
 
+    /// `CapForm[…]` sets the SVG `stroke-linecap` a `Line` is drawn with;
+    /// left unset, Woxi keeps its existing butt cap (also Wolfram's
+    /// default). A random Wolfram Demonstration notebook ("Styling Line
+    /// Caps and Line Joins") builds its whole `Manipulate` around switching
+    /// this per line, so a missing implementation left every cap butt no
+    /// matter what the control picked.
+    #[test]
+    fn cap_form_sets_stroke_linecap() {
+      let linecap = |form: &str| -> String {
+        let svg = export_svg(&format!(
+          "Graphics[{{CapForm[\"{form}\"], Line[{{{{0, 0}}, {{1, 1}}}}]}}]"
+        ));
+        svg
+          .split("stroke-linecap=\"")
+          .nth(1)
+          .and_then(|s| s.split('"').next())
+          .unwrap_or_default()
+          .to_string()
+      };
+      assert_eq!(linecap("Butt"), "butt");
+      assert_eq!(linecap("Round"), "round");
+      assert_eq!(linecap("Square"), "square");
+    }
+
+    /// `JoinForm[…]` sets the SVG `stroke-linejoin` a multi-segment `Line`
+    /// is drawn with, and `JoinForm[{"Miter", limit}]` also sets
+    /// `stroke-miterlimit`. Left unset, Woxi keeps its existing rounded
+    /// join. Companion to `cap_form_sets_stroke_linecap` above, for the
+    /// same Demonstration.
+    #[test]
+    fn join_form_sets_stroke_linejoin() {
+      let linejoin = |form: &str| -> String {
+        let svg = export_svg(&format!(
+          "Graphics[{{JoinForm[{form}], Line[{{{{0, 0}}, {{1, 1}}, {{2, 0}}}}]}}]"
+        ));
+        svg
+          .split("stroke-linejoin=\"")
+          .nth(1)
+          .and_then(|s| s.split('"').next())
+          .unwrap_or_default()
+          .to_string()
+      };
+      assert_eq!(linejoin("\"Miter\""), "miter");
+      assert_eq!(linejoin("\"Round\""), "round");
+      assert_eq!(linejoin("\"Bevel\""), "bevel");
+
+      let svg = export_svg(
+        "Graphics[{JoinForm[{\"Miter\", 5}], Line[{{0, 0}, {1, 1}, {2, 0}}]}]",
+      );
+      assert!(
+        svg.contains("stroke-miterlimit=\"5.00\""),
+        "explicit miter limit should carry through: {svg}"
+      );
+    }
+
     /// `FaceForm` sets only the fill of area primitives (Disk, Polygon,
     /// Rectangle); unlike a bare colour directive, it must not recolour a
     /// `Text` that follows it. A random Wolfram Demonstration notebook
