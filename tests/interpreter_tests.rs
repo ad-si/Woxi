@@ -395,6 +395,45 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_bare_symbol_pattern_arg_matches_its_current_value() {
+    // A bare symbol with no `_` in a pattern-argument slot is not a pattern
+    // variable — WL requires an explicit `_` to introduce one — so it is
+    // evaluated to its current value and matched literally, the same as a
+    // numeric literal written directly. This is the idiom demonstrations
+    // commonly use inside a `Module`: `n = 5; f[x_, n] := ...` only matches
+    // when the second argument is `5`. Before the fix, the bare symbol
+    // became an unconstrained second wildcard, indistinguishable in
+    // specificity from a fully generic `f[x_, y_]` overload, so calls meant
+    // for the literal-argument rule fell through to the generic one instead
+    // (concretely, `Null` from an `If[cond, then]` with no `else` whose
+    // `cond` referenced the never-bound outer symbol).
+    clear_state();
+    interpret("n = 5;").unwrap();
+    interpret("f[x_, n] := matchedLiteral[x]").unwrap();
+    interpret("f[x_, y_] := general[x, y]").unwrap();
+    assert_eq!(interpret("f[1, 5]").unwrap(), "matchedLiteral[1]");
+    assert_eq!(interpret("f[1, 6]").unwrap(), "general[1, 6]");
+    clear_state();
+  }
+
+  #[test]
+  fn test_bare_symbol_pattern_arg_both_positions() {
+    // Same idiom with the literal-valued symbol in the first slot instead,
+    // and a second overload using the symbol in the last slot — mirroring
+    // the `d[j_, Np]` / `d[Np, j_]` pair from the Frank-Kamenetskii
+    // Demonstration's collocation-matrix construction.
+    clear_state();
+    interpret("np = 3;").unwrap();
+    interpret("d[np, j_] := fromNp[j]").unwrap();
+    interpret("d[j_, np] := toNp[j]").unwrap();
+    interpret("d[j_, k_] := generic[j, k]").unwrap();
+    assert_eq!(interpret("d[3, 7]").unwrap(), "fromNp[7]");
+    assert_eq!(interpret("d[7, 3]").unwrap(), "toNp[7]");
+    assert_eq!(interpret("d[2, 7]").unwrap(), "generic[2, 7]");
+    clear_state();
+  }
+
+  #[test]
   fn test_list_pattern_head_constraint() {
     // Issue #119: per-element head constraints inside a list pattern must be
     // enforced — `g[{n1_Integer, n2_Integer}]` must NOT match a non-integer
