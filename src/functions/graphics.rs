@@ -317,6 +317,73 @@ struct StyleState {
   /// big they are and — for a custom head — what to draw there. `None`
   /// keeps Wolfram's default: one head at the tip.
   arrowheads: Option<Vec<ArrowHead>>,
+  /// `CapForm[…]`: how the ends of an open stroked primitive (`Line`,
+  /// `Arrow`) are drawn. `None` keeps Woxi's existing butt-cap rendering.
+  cap_form: Option<LineCapKind>,
+  /// `JoinForm[…]`: how the corners of a multi-segment stroked primitive
+  /// are drawn, with an optional miter limit for `JoinForm[{"Miter", n}]`.
+  /// `None` keeps Woxi's existing round-join rendering.
+  join_form: Option<(LineJoinKind, Option<f64>)>,
+}
+
+/// `CapForm[…]` setting, read off a `Line`/`Arrow` style directive.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum LineCapKind {
+  Butt,
+  Round,
+  Square,
+}
+
+/// `JoinForm[…]` setting, read off a `Line`/`Arrow` style directive.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum LineJoinKind {
+  Miter,
+  Round,
+  Bevel,
+}
+
+/// Parse a `CapForm[…]` argument (`"Butt"`, `"Round"`, `"Square"`, or the
+/// bare symbol forms) into the cap kind it names.
+fn parse_cap_form(expr: &Expr) -> Option<LineCapKind> {
+  let name = match expr {
+    Expr::String(s) => s.as_str(),
+    Expr::Identifier(s) => s.as_str(),
+    _ => return None,
+  };
+  match name {
+    "Butt" => Some(LineCapKind::Butt),
+    "Round" => Some(LineCapKind::Round),
+    "Square" => Some(LineCapKind::Square),
+    _ => None,
+  }
+}
+
+/// Parse a `JoinForm[…]` argument: either a bare join name (`"Miter"`,
+/// `"Round"`, `"Bevel"`) or `{"Miter", limit}`, which sets the miter limit
+/// past which a sharp corner is beveled instead.
+fn parse_join_form(expr: &Expr) -> Option<(LineJoinKind, Option<f64>)> {
+  match expr {
+    Expr::String(_) | Expr::Identifier(_) => {
+      let name = match expr {
+        Expr::String(s) => s.as_str(),
+        Expr::Identifier(s) => s.as_str(),
+        _ => unreachable!(),
+      };
+      let kind = match name {
+        "Miter" => LineJoinKind::Miter,
+        "Round" => LineJoinKind::Round,
+        "Bevel" => LineJoinKind::Bevel,
+        _ => return None,
+      };
+      Some((kind, None))
+    }
+    Expr::List(items) if items.len() == 2 => {
+      let (kind, _) = parse_join_form(&items[0])?;
+      let limit = expr_to_f64(&items[1]);
+      Some((kind, limit))
+    }
+    _ => None,
+  }
 }
 
 /// One entry of an `Arrowheads` specification.
@@ -494,6 +561,8 @@ impl Default for StyleState {
       font_family: String::new(),
       text_background: None,
       arrowheads: None,
+      cap_form: None,
+      join_form: None,
     }
   }
 }
@@ -1385,6 +1454,18 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
       // draw there instead of a triangle.
       "Arrowheads" if args.len() == 1 => {
         style.arrowheads = parse_arrowheads(&args[0]);
+        true
+      }
+      "CapForm" if args.len() == 1 => {
+        if let Some(c) = parse_cap_form(&args[0]) {
+          style.cap_form = Some(c);
+        }
+        true
+      }
+      "JoinForm" if args.len() == 1 => {
+        if let Some(j) = parse_join_form(&args[0]) {
+          style.join_form = Some(j);
+        }
         true
       }
       "Dashing" if !args.is_empty() => {
@@ -5164,6 +5245,36 @@ fn dash_attr(dashing: Option<&Vec<f64>>, _bb: &BBox, svg_w: f64) -> String {
   }
 }
 
+/// The `stroke-linecap` value for a `Line`/`Arrow` stroke, from its
+/// `CapForm[…]` directive. Unset (`None`) keeps Woxi's pre-existing butt
+/// cap, which is also what `CapForm["Butt"]` — Wolfram's default — asks for.
+fn stroke_linecap_attr(cap_form: Option<LineCapKind>) -> &'static str {
+  match cap_form {
+    Some(LineCapKind::Round) => "round",
+    Some(LineCapKind::Square) => "square",
+    Some(LineCapKind::Butt) | None => "butt",
+  }
+}
+
+/// The `stroke-linejoin` value (and, for a miter join with an explicit
+/// limit, a `stroke-miterlimit` attribute) for a `Line`/`Arrow` stroke,
+/// from its `JoinForm[…]` directive. Unset (`None`) keeps Woxi's
+/// pre-existing rounded join.
+fn stroke_linejoin_attrs(
+  join_form: Option<(LineJoinKind, Option<f64>)>,
+) -> (&'static str, String) {
+  match join_form {
+    Some((LineJoinKind::Bevel, _)) => ("bevel", String::new()),
+    Some((LineJoinKind::Round, _)) | None => ("round", String::new()),
+    Some((LineJoinKind::Miter, limit)) => {
+      let miterlimit = limit
+        .map(|l| format!(" stroke-miterlimit=\"{:.2}\"", l.max(1.0)))
+        .unwrap_or_default();
+      ("miter", miterlimit)
+    }
+  }
+}
+
 fn format_tick_value(v: f64) -> String {
   if v.abs() < 1e-10 {
     return "0".to_string();
@@ -5944,6 +6055,8 @@ fn render_primitive(
       let color = style.effective_color();
       let sw = thickness_px(style.thickness, bb, svg_w).max(0.5);
       let dash = dash_attr(style.dashing.as_ref(), bb, svg_w);
+      let cap = stroke_linecap_attr(style.cap_form);
+      let (join, miterlimit) = stroke_linejoin_attrs(style.join_form);
       // `VertexColors` assigns one color per point, in order, across all
       // segments concatenated — only usable when the count actually lines
       // up with the points being drawn.
@@ -5994,13 +6107,13 @@ fn render_primitive(
               format!("url(#{gid})")
             };
             out.push_str(&format!(
-              "<line x1=\"{x1:.2}\" y1=\"{y1:.2}\" x2=\"{x2:.2}\" y2=\"{y2:.2}\" stroke=\"{stroke}\" stroke-width=\"{sw:.2}\" stroke-linecap=\"butt\"{dash}/>\n",
+              "<line x1=\"{x1:.2}\" y1=\"{y1:.2}\" x2=\"{x2:.2}\" y2=\"{y2:.2}\" stroke=\"{stroke}\" stroke-width=\"{sw:.2}\" stroke-linecap=\"{cap}\"{dash}/>\n",
             ));
           }
           point_idx += screen_pts.len();
         } else {
           out.push_str(&format!(
-            "<polyline points=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{sw:.2}\" stroke-linejoin=\"round\" stroke-linecap=\"butt\"{}{}/>\n",
+            "<polyline points=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{sw:.2}\" stroke-linejoin=\"{join}\" stroke-linecap=\"{cap}\"{miterlimit}{}{}/>\n",
             pts.join(" "),
             color.to_svg_rgb(),
             color.opacity_attr(),
@@ -6354,6 +6467,8 @@ fn render_primitive(
       let color = style.effective_color();
       let sw = thickness_px(style.thickness, bb, svg_w).max(0.5);
       let dash = dash_attr(style.dashing.as_ref(), bb, svg_w);
+      let cap = stroke_linecap_attr(style.cap_form);
+      let (join, miterlimit) = stroke_linejoin_attrs(style.join_form);
 
       // Draw the line
       let pts: Vec<String> = trimmed
@@ -6363,7 +6478,7 @@ fn render_primitive(
         })
         .collect();
       out.push_str(&format!(
-        "<polyline points=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{sw:.2}\" stroke-linejoin=\"round\" stroke-linecap=\"butt\"{}{}/>\n",
+        "<polyline points=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{sw:.2}\" stroke-linejoin=\"{join}\" stroke-linecap=\"{cap}\"{miterlimit}{}{}/>\n",
         pts.join(" "),
         color.to_svg_rgb(),
         color.opacity_attr(),

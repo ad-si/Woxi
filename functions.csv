@@ -1426,7 +1426,7 @@ Kurtosis,Computes the kurtosis of a list or distribution,✅,pure,6.0,1416
 CellAutoOverwrite,Cell auto-overwrite option,🚫,io,3.0,1417
 NotebookOpen,Open a notebook file,🚫,io,3.0,1418
 VertexLabelStyle,Style for vertex labels in graphs,🚫,pure,8.0,1419
-JoinForm,Graphics join form directive,🚫,pure,7.0,1420
+JoinForm,Option for line join form in graphics,✅,none,7.0,1420
 Accuracy,Returns the number of accurate decimal digits,✅,pure,1.0,1422
 TransformationFunctions,Functions for Simplify transformations,🚫,pure,4.0,1422
 Tetrahedron,Symbolic tetrahedron geometric region; stays unevaluated and is consumed by region functions (Volume/RegionMeasure/RegionCentroid/…),✅,unevaluated,10.0,1424
