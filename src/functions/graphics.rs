@@ -15065,6 +15065,129 @@ pub fn graphics_column_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// Overlay[{expr1, expr2, ...}] or Overlay[{...}, Alignment -> align]
+/// Stacks items on top of each other at a shared alignment point, instead
+/// of laying them out side by side — e.g. a plot and a colorbar computed
+/// separately, composited into one picture. Each item renders at its own
+/// natural size; the combined canvas is the bounding box needed to hold
+/// every item once aligned.
+pub fn overlay_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let list_owned;
+  let items: &[Expr] = if let Expr::List(items) = &args[0] {
+    items
+  } else {
+    list_owned = evaluate_expr_to_expr(&args[0])?;
+    match &list_owned {
+      Expr::List(items) => items,
+      _ => {
+        return Err(InterpreterError::EvaluationError(
+          "Overlay expects a list as its first argument".into(),
+        ));
+      }
+    }
+  };
+
+  if items.is_empty() {
+    return Ok(crate::graphics_result(
+      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
+    ));
+  }
+
+  let (align_h, align_v) = parse_overlay_alignment(&args[1..]);
+
+  let svgs: Vec<String> = items
+    .iter()
+    .filter_map(|item| {
+      let evaluated = evaluate_expr_to_expr(item).ok()?;
+      let svg = crate::evaluator::expr_to_svg(&evaluated);
+      (!svg.is_empty()).then_some(svg)
+    })
+    .collect();
+
+  if svgs.is_empty() {
+    return Ok(crate::graphics_result(
+      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
+    ));
+  }
+
+  let dims: Vec<(f64, f64)> = svgs
+    .iter()
+    .map(|s| svg_natural_size(s).unwrap_or((0.0, 0.0)))
+    .collect();
+  let canvas_w = dims.iter().fold(0.0_f64, |m, (w, _)| m.max(*w));
+  let canvas_h = dims.iter().fold(0.0_f64, |m, (_, h)| m.max(*h));
+
+  let mut inner = String::new();
+  for (svg, (w, h)) in svgs.iter().zip(dims.iter()) {
+    let cx = align_h * (canvas_w - w) + w / 2.0;
+    let cy = align_v * (canvas_h - h) + h / 2.0;
+    inner.push_str(&embed_svg_centered(svg, cx, cy, *w, *h));
+  }
+
+  let combined = format!(
+    "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{canvas_w:.2}\" height=\"{canvas_h:.2}\" viewBox=\"0 0 {canvas_w:.2} {canvas_h:.2}\">\n{inner}</svg>\n"
+  );
+  crate::clear_captured_graphics();
+  Ok(crate::graphics_result(combined))
+}
+
+/// Parse `Alignment -> spec` for `Overlay`. `spec` is either a single
+/// symbol/number applied to both axes, or `{horizontal, vertical}`. Each
+/// axis accepts `Left`/`Center`/`Right` (horizontal) or `Top`/`Center`/
+/// `Bottom` (vertical), or a bare number used directly as the alignment
+/// fraction (0 = left/top edge, 1 = right/bottom edge — the convention a
+/// Demonstrations Project notebook typically writes as `{0.5, 0.5}` for
+/// `Center`). Defaults to `{Center, Center}`: real Mathematica defaults the
+/// vertical axis to `Baseline`, but `Overlay`'s items are almost always
+/// full graphics rather than text runs, for which `Baseline` and `Center`
+/// coincide.
+fn parse_overlay_alignment(args: &[Expr]) -> (f64, f64) {
+  let mut align_h = 0.5;
+  let mut align_v = 0.5;
+  for arg in args {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = arg
+      && matches!(pattern.as_ref(), Expr::Identifier(name) if name == "Alignment")
+    {
+      match replacement.as_ref() {
+        Expr::List(parts) if parts.len() == 2 => {
+          if let Some(f) = alignment_axis_fraction(&parts[0], true) {
+            align_h = f;
+          }
+          if let Some(f) = alignment_axis_fraction(&parts[1], false) {
+            align_v = f;
+          }
+        }
+        other => {
+          if let Some(f) = alignment_axis_fraction(other, true) {
+            align_h = f;
+            align_v = f;
+          }
+        }
+      }
+    }
+  }
+  (align_h, align_v)
+}
+
+/// A single `Alignment` axis value as a 0..1 fraction (see
+/// `parse_overlay_alignment`).
+fn alignment_axis_fraction(expr: &Expr, horizontal: bool) -> Option<f64> {
+  match expr {
+    Expr::Identifier(name) => match name.as_str() {
+      "Center" | "Baseline" => Some(0.5),
+      "Left" if horizontal => Some(0.0),
+      "Right" if horizontal => Some(1.0),
+      "Top" if !horizontal => Some(0.0),
+      "Bottom" if !horizontal => Some(1.0),
+      _ => None,
+    },
+    _ => try_eval_to_f64(expr),
+  }
+}
+
 /// GraphicsGrid[{{g1, g2}, {g3, g4}}, opts...]
 /// Arranges graphics in a 2D grid.
 pub fn graphics_grid_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {

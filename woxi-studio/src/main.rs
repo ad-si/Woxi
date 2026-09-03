@@ -7012,6 +7012,31 @@ mod tests {
     assert_eq!(state.error, None, "the compiled body must evaluate cleanly");
   }
 
+  /// A Manipulate whose body composites two independently computed plots
+  /// with `Overlay[{…}, Alignment -> {0.5, 0.5}]` — the shape a Wolfram
+  /// Demonstrations Project notebook uses to draw one plot directly on top
+  /// of another, e.g. a solution curve over a heat-map inset (independently
+  /// written, not copied from any specific one). Regression: `Overlay` was
+  /// unimplemented, so the body's final expression evaluated to a bare
+  /// symbolic `Overlay[…]` call instead of a picture, leaving the widget's
+  /// graphic blank in Woxi Studio.
+  #[test]
+  fn manipulate_body_overlaying_two_plots() {
+    let code = r#"Manipulate[
+      Overlay[{Plot[Sin[a x], {x, 0, 2 Pi}], Graphics[{Red, Disk[{0, 0}, 0.2]}]}, Alignment -> {0.5, 0.5}],
+      {{a, 1}, 1, 3}
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("Overlay body should build a ManipulateState");
+    assert_eq!(state.error, None, "the Overlay body must evaluate cleanly");
+    assert!(
+      state.graphics_handle.is_some(),
+      "the composited picture must render"
+    );
+  }
+
   /// A supply/demand-style Manipulate whose body computes a running-average
   /// series and plots it with `ListLinePlot[Tooltip[series, "label"], ...]`
   /// alongside ordinary `Plot`s, mirroring the "wrap the whole data series in
