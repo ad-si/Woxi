@@ -3214,7 +3214,7 @@ pub fn set_delayed_ast(
         // into a `_dv0`/SameQ pair would hide the entry from
         // `Definition[sym]`, `ClearAll[sym]`, and `Block`'s save/restore.
         Expr::Identifier(name)
-          if !name.contains('_') && !(func_name == "Default" && i == 0) =>
+          if !(name.contains('_') || (func_name == "Default" && i == 0)) =>
         {
           let param_name = format!("_dv{i}");
           let eval_arg = evaluate_expr_to_expr(arg)?;
