@@ -17129,7 +17129,11 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // (a Demonstration lining up its whole control panel inside an outer
       // `Grid`), not a control itself. `OpenerView[{label, content}]` is the
       // same pattern for a collapsible disclosure widget (e.g. a "circuit
-      // diagram" aside tucked below the sliders).
+      // diagram" aside tucked below the sliders). `Tooltip[control, hint]`
+      // is the same pattern for a custom control (often a `DynamicModule`
+      // wrapping its own `Manipulator`/`EventHandler`) that shows a hover
+      // hint instead of a label — a Demonstration's zoom-point selector is
+      // commonly written this way.
       Expr::FunctionCall { name, .. }
         if matches!(
           name.as_str(),
@@ -17144,6 +17148,7 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             | "TabView"
             | "Item"
             | "OpenerView"
+            | "Tooltip"
         ) =>
       {
         out_args.push(spec.clone());
