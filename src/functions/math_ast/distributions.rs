@@ -5465,21 +5465,54 @@ pub fn distribution_mean_variance(
       let gamma_0_xi = call("Gamma", vec![int(0), xi.clone()]);
       let mean =
         div2(times2(pow2(e(), xi.clone()), gamma_0_xi), lambda.clone());
-      // The variance has no simple closed form in elementary functions. With
-      // concrete numeric parameters (as produced by, e.g., FindRoot fitting
-      // a distribution to a target mean/stdev), integrate the second central
-      // moment against the density numerically instead of leaving the whole
-      // computation stuck on a symbolic placeholder. With symbolic
-      // parameters it stays unevaluated, same as wolframscript.
+      // The variance has no *elementary* closed form, but it does have one
+      // in terms of the exponential integral and a ₃F₃ (the same one
+      // wolframscript reports):
+      //
+      //   Var = -E^ξ (-6 γ² - π² + 6 E^ξ Ei(-ξ)²
+      //               + 12 ξ ₃F₃({1,1,1}, {2,2,2}, -ξ)
+      //               - 12 γ Log[ξ] - 6 Log[ξ]²) / (6 λ²)
+      //
+      // With concrete numeric parameters (as produced by, e.g., FindRoot
+      // fitting a distribution to a target mean/stdev) the second central
+      // moment is integrated against the density numerically instead, which
+      // keeps repeated calls cheap and hands back a plain machine number.
       let var = match (try_eval_to_f64(&lambda), try_eval_to_f64(&xi)) {
         (Some(l), Some(x0)) if l != 0.0 => {
           let mean_num = try_eval_to_f64(&eval(&mean)?).unwrap_or(0.0);
           Expr::Real(gompertz_makeham_variance_numeric(l, x0, mean_num))
         }
-        _ => call(
-          "Variance",
-          vec![unevaluated("GompertzMakehamDistribution", dargs)],
-        ),
+        _ => {
+          // `EulerGamma` is not one of the grammar's `Constant` symbols
+          // (only `Pi`, `E` and `Degree` are), so it has to be spelled as
+          // an `Identifier` or `N[…]` will not fold it to a number.
+          let euler_gamma = Expr::Identifier("EulerGamma".to_string());
+          let log_xi = call1("Log", xi.clone());
+          let ei = call1("ExpIntegralEi", neg1(xi.clone()));
+          let pfq = call(
+            "HypergeometricPFQ",
+            vec![
+              Expr::List(vec![int(1), int(1), int(1)].into()),
+              Expr::List(vec![int(2), int(2), int(2)].into()),
+              neg1(xi.clone()),
+            ],
+          );
+          let bracket = call(
+            "Plus",
+            vec![
+              times2(int(-6), pow2(euler_gamma.clone(), int(2))),
+              neg1(pow2(pi(), int(2))),
+              times2(int(6), times2(pow2(e(), xi.clone()), pow2(ei, int(2)))),
+              times2(int(12), times2(xi.clone(), pfq)),
+              times2(int(-12), times2(euler_gamma, log_xi.clone())),
+              times2(int(-6), pow2(log_xi, int(2))),
+            ],
+          );
+          eval(&div2(
+            neg1(times2(pow2(e(), xi), bracket)),
+            times2(int(6), pow2(lambda.clone(), int(2))),
+          ))?
+        }
       };
       Ok((mean, var))
     }

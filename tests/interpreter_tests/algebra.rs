@@ -2177,6 +2177,26 @@ mod cancel {
     assert_eq!(interpret("Cancel[(x^3 - x)/(x^2 - 1)]").unwrap(), "x");
   }
 
+  /// A quotient whose "variables" are opaque subexpressions — an applied
+  /// function, a part extraction, a transcendental call — cancels the same
+  /// way it would with plain symbols in their place. The polynomial gcd
+  /// only knows how to take a symbol as a variable, so these are
+  /// abstracted into stand-in symbols first and put back afterwards
+  /// (`opaque_atoms`); without that, such a quotient came back untouched.
+  #[test]
+  fn cancel_over_opaque_subexpressions() {
+    for (code, expected) in [
+      ("Cancel[(f[1]*f[2] - f[2]^2)/(f[1] - f[2])]", "f[2]"),
+      ("Cancel[(q[[1]]^2 - 1)/(q[[1]] - 1)]", "1 + q[[1]]"),
+      ("Cancel[(Log[x]^2 - 1)/(Log[x] - 1)]", "1 + Log[x]"),
+      ("Simplify[(f[1]*f[2] - f[2]^2)/(f[1] - f[2])]", "f[2]"),
+      ("Simplify[(Log[x]^2 - 1)/(Log[x] - 1)]", "1 + Log[x]"),
+      ("Simplify[Sin[x]/(2*Sin[x])]", "1/2"),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
   #[test]
   fn cancel_symbolic_common_factor() {
     assert_eq!(interpret("Cancel[(a*b)/(a*c)]").unwrap(), "b/c");
@@ -4421,30 +4441,41 @@ mod solve {
     );
   }
 
-  // A nonlinear two-variable system of plain equalities that Reduce's
-  // multi-variable elimination can't fully resolve (here because it embeds
-  // an unevaluated `{}[[1]]`/`{}[[2]]` Part-on-empty-list rather than a
-  // solvable value) used to hang and eventually crash: the elimination
-  // fallback re-spells the equation list as a conjunction and retries
-  // `Solve` on it, expecting the single-expression path to handle what the
-  // list path couldn't — but Solve's own And-to-List pre-pass immediately
-  // folds a conjunction of plain equalities straight back into the
-  // identical equation list, so the retry lands on the exact same
-  // unresolved system and recurses into itself forever. Found via a random
-  // Wolfram Demonstrations Project notebook (independently constructed
-  // here, not copied from it) whose Manipulate solved an equivalent
-  // two-equation system for two draggable points' coordinates.
+  // A two-variable system whose coefficients are opaque — here an
+  // unevaluated `{}[[1]]`/`{}[[2]]` Part-on-empty-list, but a `f[1]` or a
+  // `q[[1]]` behaves the same — is solved for the unknowns with those
+  // coefficients carried along, exactly as it would be with plain symbols
+  // in their place: `{{x -> {}[[1]], y -> {}[[2]]}}`. Three things had to
+  // hold for that:
+  //
+  //   * a `Part` counts as constant with respect to a variable
+  //     (`is_constant_wrt`), or the linear-system path refuses the system;
+  //   * `Simplify` can cancel a quotient whose "variables" are opaque
+  //     subexpressions, or the answer comes back as the uncancelled
+  //     quotients Gaussian elimination produced;
+  //   * the elimination fallback must not recurse into itself — it used to
+  //     re-spell the equation list as a conjunction and retry `Solve`,
+  //     whose own And-to-List pre-pass folded it straight back into the
+  //     identical equation list, hanging and eventually crashing.
+  //
+  // Found via a random Wolfram Demonstrations Project notebook
+  // (independently constructed here, not copied from it) whose Manipulate
+  // solved an equivalent two-equation system for two draggable points'
+  // coordinates.
   #[test]
-  fn unresolved_multi_var_reduce_does_not_recurse_forever() {
-    assert_eq!(
-      interpret(
-        "Solve[{(-1 + y)*(-1 + {}[[1]]) == (-1 + x)*(-1 + {}[[2]]), \
-         (1 + y)*(1 + {}[[1]]) == (1 + x)*(1 + {}[[2]])}, {x, y}]"
-      )
-      .unwrap(),
-      "ToRules[Reduce[(-1 + y)*(-1 + {}[[1]]) == (-1 + x)*(-1 + {}[[2]]) && \
-       (1 + y)*(1 + {}[[1]]) == (1 + x)*(1 + {}[[2]]), {x, y}]]"
-    );
+  fn multi_var_system_with_opaque_coefficients_is_solved() {
+    for coefficients in ["{}[[1]], {}[[2]]", "q[[1]], q[[2]]", "f[1], f[2]"] {
+      let (a, b) = coefficients.split_once(", ").unwrap();
+      assert_eq!(
+        interpret(&format!(
+          "Solve[{{(-1 + y)*(-1 + {a}) == (-1 + x)*(-1 + {b}), \
+           (1 + y)*(1 + {a}) == (1 + x)*(1 + {b})}}, {{x, y}}]"
+        ))
+        .unwrap(),
+        format!("{{{{x -> {a}, y -> {b}}}}}"),
+        "coefficients {coefficients}"
+      );
+    }
   }
 
   // Generalized variables: an applied function `y[x]` is a valid unknown and

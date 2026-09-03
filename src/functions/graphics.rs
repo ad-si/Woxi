@@ -15267,32 +15267,27 @@ pub fn graphics_column_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
-/// Overlay[{expr1, expr2, ...}] or Overlay[{...}, Alignment -> align]
-/// Stacks items on top of each other at a shared alignment point, instead
-/// of laying them out side by side — e.g. a plot and a colorbar computed
-/// separately, composited into one picture. Each item renders at its own
-/// natural size; the combined canvas is the bounding box needed to hold
-/// every item once aligned.
-pub fn overlay_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let list_owned;
-  let items: &[Expr] = if let Expr::List(items) = &args[0] {
-    items
-  } else {
-    list_owned = evaluate_expr_to_expr(&args[0])?;
-    match &list_owned {
-      Expr::List(items) => items,
-      _ => {
-        return Err(InterpreterError::EvaluationError(
-          "Overlay expects a list as its first argument".into(),
-        ));
-      }
-    }
+/// The composed picture of `Overlay[{expr1, expr2, ...}]` (optionally
+/// `Overlay[{...}, Alignment -> align]`).
+///
+/// `Overlay` stacks its items on top of each other at a shared alignment
+/// point, instead of laying them out side by side — e.g. a plot and a
+/// colorbar computed separately, composited into one picture. Each item
+/// renders at its own natural size; the combined canvas is the bounding
+/// box needed to hold every item once aligned.
+///
+/// Like `Grid` and `Column`, `Overlay` itself stays symbolic (the head is
+/// what `Head[Overlay[…]]` reports); only the *display* is a picture, so
+/// this returns the SVG rather than an `Expr`. `None` when the first
+/// argument is not a list, i.e. when there is nothing to compose.
+pub fn overlay_svg(args: &[Expr]) -> Option<String> {
+  let empty =
+    || Some("<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string());
+  let Some(Expr::List(items)) = args.first() else {
+    return None;
   };
-
   if items.is_empty() {
-    return Ok(crate::graphics_result(
-      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
-    ));
+    return empty();
   }
 
   let (align_h, align_v) = parse_overlay_alignment(&args[1..]);
@@ -15300,16 +15295,13 @@ pub fn overlay_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let svgs: Vec<String> = items
     .iter()
     .filter_map(|item| {
-      let evaluated = evaluate_expr_to_expr(item).ok()?;
-      let svg = crate::evaluator::expr_to_svg(&evaluated);
+      let svg = crate::evaluator::expr_to_svg(item);
       (!svg.is_empty()).then_some(svg)
     })
     .collect();
 
   if svgs.is_empty() {
-    return Ok(crate::graphics_result(
-      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
-    ));
+    return empty();
   }
 
   let dims: Vec<(f64, f64)> = svgs
@@ -15326,11 +15318,9 @@ pub fn overlay_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     inner.push_str(&embed_svg_centered(svg, cx, cy, *w, *h));
   }
 
-  let combined = format!(
+  Some(format!(
     "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{canvas_w:.2}\" height=\"{canvas_h:.2}\" viewBox=\"0 0 {canvas_w:.2} {canvas_h:.2}\">\n{inner}</svg>\n"
-  );
-  crate::clear_captured_graphics();
-  Ok(crate::graphics_result(combined))
+  ))
 }
 
 /// Parse `Alignment -> spec` for `Overlay`. `spec` is either a single

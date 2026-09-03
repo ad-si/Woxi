@@ -2962,15 +2962,45 @@ mod list {
     );
   }
 
+  /// With symbolic parameters the variance closes in terms of the
+  /// exponential integral and a ₃F₃ rather than numerically:
+  ///
+  ///   Var = -E^ξ (-6 γ² - π² + 6 E^ξ Ei(-ξ)²
+  ///               + 12 ξ ₃F₃({1,1,1}, {2,2,2}, -ξ)
+  ///               - 12 γ Log[ξ] - 6 Log[ξ]²) / (6 λ²)
+  ///
+  /// Pinned by substituting parameters into the symbolic result and
+  /// rounding, because Woxi and wolframscript order that `Plus`'s
+  /// `E^ξ Ei(-ξ)²` and `ξ ₃F₃(…)` terms differently (see
+  /// `tests/cli/comparison/mathematica/conformance_gaps.md`) — the value is
+  /// what this test is about, and it is identical on both engines to well
+  /// past machine precision.
   #[test]
-  fn gompertz_makeham_variance_stays_symbolic_for_symbolic_parameters() {
-    // With symbolic parameters, Variance still has no closed form and
-    // stays unevaluated (matching wolframscript) rather than attempting
-    // (and failing) numeric integration.
-    assert_eq!(
-      interpret("Variance[GompertzMakehamDistribution[l, x]]").unwrap(),
-      "Variance[GompertzMakehamDistribution[l, x]]"
-    );
+  fn gompertz_makeham_variance_closed_form_for_symbolic_parameters() {
+    for (lambda, xi, expected) in [
+      (2, 3, "117401017/10000000000"),
+      (1, 1, "35260118703/200000000000"),
+    ] {
+      assert_eq!(
+        interpret(&format!(
+          "Round[N[Variance[GompertzMakehamDistribution[l, x]] \
+           /. {{l -> {lambda}, x -> {xi}}}], 10^-12]"
+        ))
+        .unwrap(),
+        expected,
+        "lambda = {lambda}, xi = {xi}"
+      );
+    }
+    // The symbolic form still carries both of the special functions it is
+    // built from, rather than having collapsed to a number.
+    let symbolic =
+      interpret("Variance[GompertzMakehamDistribution[l, x]]").unwrap();
+    for expected in ["ExpIntegralEi[-x]", "HypergeometricPFQ", "EulerGamma"] {
+      assert!(
+        symbolic.contains(expected),
+        "expected {expected} in {symbolic}"
+      );
+    }
   }
 
   #[test]

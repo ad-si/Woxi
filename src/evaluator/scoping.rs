@@ -8,7 +8,22 @@ fn non_list_local_spec(head: &str, args: &[Expr], spec: &Expr) -> Expr {
     "{head}::lvlist: Local variable specification {} is not a List.",
     crate::syntax::expr_to_string(spec)
   ));
-  unevaluated(head, args)
+  unevaluated_with_spec(head, args, spec)
+}
+
+/// The unevaluated echo of a malformed scoping call.
+///
+/// `Evaluate[…]` in the specification argument has already been resolved by
+/// [`resolve_var_spec`], and Wolfram echoes the call with that *resolved*
+/// specification in place: `With[Evaluate[{pivot -> 9}], pivot + 1]` comes
+/// back as `With[{pivot -> 9}, pivot + 1]`, not with the `Evaluate` still
+/// wrapped around it.
+fn unevaluated_with_spec(head: &str, args: &[Expr], spec: &Expr) -> Expr {
+  let mut echo = args.to_vec();
+  if let Some(first) = echo.first_mut() {
+    *first = spec.clone();
+  }
+  unevaluated(head, &echo)
 }
 
 /// `Evaluate[…]` escapes any surrounding `Hold` attribute, including the
@@ -87,6 +102,13 @@ impl LocalSpecError {
 
 /// Split `x = v` / `x := v` into target and value, whichever way the parser
 /// spelled the assignment.
+///
+/// A *rule* is not an assignment: `With[{x -> 9}, …]` is as malformed as
+/// `With[{x}, …]` (Wolfram reports `With::lvws`, `Module::lvsym`), so
+/// `x -> v` is deliberately not accepted here. Substituting through it
+/// anyway silently made a rule-valued variable act like a binding — the
+/// shape `With[Evaluate[{binding}], …]` produces when `binding` happens
+/// to hold a rule instead of the intended assignment.
 fn as_local_assignment(item: &Expr) -> Option<(&Expr, &Expr, bool)> {
   match item {
     Expr::FunctionCall { name, args }
@@ -94,14 +116,6 @@ fn as_local_assignment(item: &Expr) -> Option<(&Expr, &Expr, bool)> {
     {
       Some((&args[0], &args[1], name == "SetDelayed"))
     }
-    Expr::Rule {
-      pattern,
-      replacement,
-    } => Some((pattern, replacement, false)),
-    Expr::RuleDelayed {
-      pattern,
-      replacement,
-    } => Some((pattern, replacement, true)),
     _ => None,
   }
 }
@@ -178,7 +192,7 @@ pub fn module_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Ok(vars) => vars,
       Err(err) => {
         err.emit("Module", &resolved_vars);
-        return Ok(unevaluated("Module", args));
+        return Ok(unevaluated_with_spec("Module", args, &resolved_vars));
       }
     },
     _ => return Ok(non_list_local_spec("Module", args, &resolved_vars)),
@@ -261,7 +275,7 @@ pub fn block_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Ok(vars) => vars,
       Err(err) => {
         err.emit("Block", &resolved_vars);
-        return Ok(unevaluated("Block", args));
+        return Ok(unevaluated_with_spec("Block", args, &resolved_vars));
       }
     },
     _ => return Ok(non_list_local_spec("Block", args, &resolved_vars)),
@@ -1141,7 +1155,7 @@ pub fn with_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Ok(vars) => vars,
         Err(err) => {
           err.emit("With", &resolved_vars);
-          return Ok(unevaluated("With", args));
+          return Ok(unevaluated_with_spec("With", args, &resolved_vars));
         }
       };
       let mut vars = Vec::new();

@@ -259,6 +259,27 @@ implemented for `Sort` and `Order` but not for the `Plus` comparator, which is
 the delicate one (it is not strictly transitive and its sort is wrapped in a
 panic guard with a string-key fallback).
 
+### A power of a function call sorts before everything
+
+```sh
+wolframscript -code 'Sort[{g[x]^2, x}]'   # {x, g[x]^2}
+woxi eval 'Sort[{g[x]^2, x}]'             # {g[x]^2, x}
+```
+
+WL gives a `Power` its **base**'s place in the order, so `g[x]^2` sorts where
+`g[x]` does — after `f[x]` and after every bare symbol. Woxi's `Power[g[x], 2]`
+falls through to the generic "a function call sorts after atoms" rule and so
+leads unconditionally. All three comparators are affected (`Sort`, `Order` and
+the `Plus` one), which is why the divergence also shows up in printed sums:
+`g[x]^2 + x*f[x]` is `x*f[x] + g[x]^2` in WL. A symbol base is unaffected
+(`Sort[{y^2, x}]` agrees, via the string fallback).
+
+Surfaces in `Variance[GompertzMakehamDistribution[l, x]]`, whose closed form
+holds both an `E^x ExpIntegralEi[-x]^2` and an `x HypergeometricPFQ[…]` term:
+WL puts the `ExpIntegralEi` one first (`E` < `H`), Woxi the other. Value
+identical, display only — the unit test pins the value by substituting
+parameters and rounding.
+
 ### A scaled sum is ordered by its last term, not its first
 
 `FunctionExpand[Gamma[0, z]]` is `-ExpIntegralEi[-z] + (-Log[-z^(-1)] +
@@ -3044,6 +3065,20 @@ wolframscript knows (it answers `ExampleData::notpropx`). Its own list is
 LongDescription, Name, Source, StandardName, VertexCount, VertexProperty`.
 Deliberate: the catalogue is Wolfram's. Write tests against shape and
 presence, never against either side's catalogue.
+
+### `ExampleData[{"TestImage", name}]` ships no pixels
+
+```sh
+wolframscript -code 'ExampleData[{"TestImage", "Couple"}]'  # Image[NumericArray[…]]
+woxi eval 'ExampleData[{"TestImage", "Couple"}]'            # ExampleData[{TestImage, Couple}]
+```
+
+Deliberate: the photographs behind that catalogue are not Woxi's to
+redistribute. The *name* catalogue is bundled, so `ExampleData["TestImage"]`
+returns the same `{"TestImage", name}` pairs and a script that builds an image
+picker from it (the "Histogram Equalization" Demonstration's popup, say) still
+gets the real entries. Asking for the data itself stays unevaluated rather than
+returning invented pixels.
 
 ### `ShortTimeFourier` partitions differently
 

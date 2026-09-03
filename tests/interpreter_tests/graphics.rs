@@ -11116,11 +11116,18 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     /// (loosened by one grid cell's diagonal to absorb marching-squares
     /// interpolation right at the boundary), and there must be at least
     /// one such point.
+    ///
+    /// `Normal` first: Wolfram wraps a contour plot's primitives in a
+    /// `GraphicsComplex`, so its `Polygon`s hold *indices* into a shared
+    /// coordinate list rather than the points themselves. `Normal`
+    /// resolves that indirection on both engines, keeping the assertion
+    /// about the geometry rather than about which of the two equivalent
+    /// primitive encodings a plot happens to use.
     #[test]
     fn contour_plot_region_function_restricts_grid() {
       let result = interpret(
-        "pts = Flatten[Cases[ContourPlot[x + y, {x, 0, 4}, {y, 0, 4}, \
-         RegionFunction -> Function[{x, y, z}, 4 < x^2 + y^2 < 16]][[1]], \
+        "pts = Flatten[Cases[Normal[ContourPlot[x + y, {x, 0, 4}, {y, 0, 4}, \
+         RegionFunction -> Function[{x, y, z}, 4 < x^2 + y^2 < 16]]][[1]], \
          _Polygon, Infinity][[All, 1]], 1]; \
          {Length[pts] > 0, \
           AllTrue[pts, (r2 = #[[1]]^2 + #[[2]]^2; 4 - 0.3 <= r2 <= 16 + 0.3) &]}",
@@ -11151,8 +11158,8 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     #[test]
     fn contour_plot_equation_region_function_restricts_curve() {
       let result = interpret(
-        "pts = Flatten[Cases[ContourPlot[x^2 + y^2 == 1, {x, -2, 2}, \
-         {y, -2, 2}, RegionFunction -> Function[{x, y, z}, x > 0]][[1]], \
+        "pts = Flatten[Cases[Normal[ContourPlot[x^2 + y^2 == 1, {x, -2, 2}, \
+         {y, -2, 2}, RegionFunction -> Function[{x, y, z}, x > 0]]][[1]], \
          _Line, Infinity][[All, 1]], 1]; \
          {Length[pts] > 0, AllTrue[pts, #[[1]] > -0.1 &]}",
       )
@@ -11166,9 +11173,9 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     #[test]
     fn contour_plot_mesh_respects_region_function() {
       let result = interpret(
-        "pts = Flatten[Cases[ContourPlot[x + y, {x, 0, 4}, {y, 0, 4}, \
+        "pts = Flatten[Cases[Normal[ContourPlot[x + y, {x, 0, 4}, {y, 0, 4}, \
          RegionFunction -> Function[{x, y, z}, 4 < x^2 + y^2 < 16], \
-         Mesh -> 10][[1]], _Line, Infinity][[All, 1]], 1]; \
+         Mesh -> 10]][[1]], _Line, Infinity][[All, 1]], 1]; \
          {Length[pts] > 0, \
           AllTrue[pts, (r2 = #[[1]]^2 + #[[2]]^2; 4 - 0.3 <= r2 <= 16 + 0.3) &]}",
       )
@@ -15067,6 +15074,10 @@ mod graphics_grid {
   /// (composited into one picture) instead of laying them out side by
   /// side — the shape a Demonstration uses to draw a colorbar or a second
   /// plot directly over a first one.
+  ///
+  /// Like `Grid` and `Column`, `Overlay` is a display wrapper rather than a
+  /// picture: the head stays `Overlay` and the echo lists its items, while
+  /// only the *rendering* is the composed picture.
   #[test]
   fn overlay_stacks_graphics_instead_of_arranging_them() {
     clear_state();
@@ -15076,8 +15087,18 @@ mod graphics_grid {
          Graphics[{Blue, Circle[{1, 0}]}]}]]"
       )
       .unwrap(),
-      "Graphics"
+      "Overlay"
     );
+    // CLI mode keeps the symbolic echo wolframscript prints.
+    assert_eq!(
+      interpret(
+        "Overlay[{Graphics[{Disk[]}, ImageSize -> 100], \
+         Graphics[{Red, Rectangle[]}, ImageSize -> 100]}]"
+      )
+      .unwrap(),
+      "Overlay[{-Graphics-, -Graphics-}]"
+    );
+    // A notebook host (Playground, Studio) shows the composed picture.
     let result = interpret_with_stdout(
       "Overlay[{Graphics[{Disk[]}, ImageSize -> 100], \
        Graphics[{Red, Rectangle[]}, ImageSize -> 100]}]",
@@ -15137,7 +15158,8 @@ mod graphics_grid {
   #[test]
   fn overlay_of_an_empty_list_is_a_blank_picture() {
     clear_state();
-    assert_eq!(interpret("Head[Overlay[{}]]").unwrap(), "Graphics");
+    assert_eq!(interpret("Head[Overlay[{}]]").unwrap(), "Overlay");
+    assert_eq!(interpret("Overlay[{}]").unwrap(), "Overlay[{}]");
   }
 
   /// A Demonstration's `Manipulate` body commonly styles its whole display

@@ -7971,13 +7971,17 @@ mod ndsolve {
   }
 
   #[test]
-  fn ndsolve_domain_extends_past_a_far_initial_condition_too() {
+  fn ndsolve_reports_the_requested_domain_not_the_integrated_one() {
     // Same as above, but with the initial condition well outside the
     // requested domain on either side (not just by a tiny epsilon) — the
-    // extension isn't a special case for "close" gaps. Checked via the
-    // InterpolatingFunction's own reported `"Domain"` rather than by
-    // sampling near the far edge, which an adaptive step size can overshoot
-    // slightly and trigger an extrapolation warning for.
+    // extension isn't a special case for "close" gaps. What comes back is
+    // still a solution over the range that was *asked* for: integrating had
+    // to start at the initial condition, but the run-up to the requested
+    // range is not part of the answer (wolframscript reports the same
+    // domain, and warns `ifun::dmval` for a query inside the run-up).
+    // Checked via the InterpolatingFunction's own reported `"Domain"`
+    // rather than by sampling near the far edge, which an adaptive step
+    // size can overshoot slightly and trigger an extrapolation warning for.
     let below = interpret(
       "sol = NDSolve[{y'[t] == -y[t], y[0] == 1}, y, {t, 50, 200}]; \
        (y /. sol[[1]])[\"Domain\"]",
@@ -7988,13 +7992,21 @@ mod ndsolve {
        (y /. sol[[1]])[\"Domain\"]",
     )
     .unwrap();
-    assert_eq!(
-      below, "{{0., 200.}}",
-      "the IC at 0 must pull xmin down to 0"
-    );
-    assert_eq!(
-      above, "{{-5., 10.}}",
-      "the IC at 10 must push xmax up to 10"
+    assert_eq!(below, "{{50., 200.}}", "the IC at 0 is only the run-up");
+    assert_eq!(above, "{{-5., 5.}}", "the IC at 10 is only the run-up");
+    // The solution over the requested range is still the right one: the
+    // integration did reach it from the initial condition.
+    let sampled = interpret(
+      "sol = NDSolve[{y'[t] == -y[t], y[0] == 1}, y, {t, 2, 5}]; \
+       (y /. sol[[1]])[3.]",
+    )
+    .unwrap()
+    .parse::<f64>()
+    .expect("should be a number");
+    let expected = (-3.0_f64).exp();
+    assert!(
+      (sampled - expected).abs() < 1e-6 * expected,
+      "expected {expected}, got {sampled}"
     );
   }
 
@@ -9569,14 +9581,20 @@ mod findroot_symbolic_start {
   // entirely (which requires every spec to have exactly 2 elements),
   // silently dropped the second variable, and searched only the first as if
   // it were a single-variable secant problem.
+  //
+  // The root is read back through `{x, y} /. …` (so a dropped variable still
+  // shows up, as a leftover symbol) and rounded: which iterate a secant run
+  // stops on differs by an ULP or two between implementations, and the point
+  // under test is the search, not the last bit of the answer.
   #[test]
   fn findroot_multivariate_two_point_trailing_args() {
     assert_eq!(
       interpret(
-        "FindRoot[{x + y - 1 == 0, x - y - 0.5 == 0}, {x, 0.1, 0.2}, {y, 0.1, 0.2}]"
+        "Round[{x, y} /. FindRoot[{x + y - 1 == 0, x - y - 0.5 == 0}, \
+         {x, 0.1, 0.2}, {y, 0.1, 0.2}], 10^-12]"
       )
       .unwrap(),
-      "{x -> 0.75, y -> 0.25}"
+      "{3/4, 1/4}"
     );
   }
 
@@ -9584,10 +9602,11 @@ mod findroot_symbolic_start {
   fn findroot_multivariate_two_point_nested_list() {
     assert_eq!(
       interpret(
-        "FindRoot[{x + y - 1 == 0, x - y - 0.5 == 0}, {{x, 0.1, 0.2}, {y, 0.1, 0.2}}]"
+        "Round[{x, y} /. FindRoot[{x + y - 1 == 0, x - y - 0.5 == 0}, \
+         {{x, 0.1, 0.2}, {y, 0.1, 0.2}}], 10^-12]"
       )
       .unwrap(),
-      "{x -> 0.75, y -> 0.25}"
+      "{3/4, 1/4}"
     );
   }
 
@@ -9595,10 +9614,11 @@ mod findroot_symbolic_start {
   fn findroot_multivariate_two_point_with_max_iterations() {
     assert_eq!(
       interpret(
-        "FindRoot[{x + y - 1 == 0, x - y - 0.5 == 0}, {x, 0.1, 0.2}, {y, 0.1, 0.2}, MaxIterations -> 500]"
+        "Round[{x, y} /. FindRoot[{x + y - 1 == 0, x - y - 0.5 == 0}, \
+         {x, 0.1, 0.2}, {y, 0.1, 0.2}, MaxIterations -> 500], 10^-12]"
       )
       .unwrap(),
-      "{x -> 0.75, y -> 0.25}"
+      "{3/4, 1/4}"
     );
   }
 
@@ -9613,10 +9633,12 @@ mod findroot_symbolic_start {
   fn findroot_multivariate_opaque_function_broyden() {
     assert_eq!(
       interpret(
-        "f[a_?NumericQ] := a^2 - 2; g[a_?NumericQ, b_?NumericQ] := a + b - 3; FindRoot[{f[x] == 0, g[x, y] == 0}, {x, 1, 1.2}, {y, 1, 1.2}]"
+        "f[a_?NumericQ] := a^2 - 2; g[a_?NumericQ, b_?NumericQ] := a + b - 3; \
+         Round[{x, y} /. FindRoot[{f[x] == 0, g[x, y] == 0}, \
+         {x, 1, 1.2}, {y, 1, 1.2}], 10^-12]"
       )
       .unwrap(),
-      "{x -> 1.4142135623730951, y -> 1.585786437626905}"
+      "{1414213562373/1000000000000, 1585786437627/1000000000000}"
     );
   }
 
@@ -9703,8 +9725,13 @@ mod findroot_secant_domain_backtracking {
     // With coefficient 50, an unguarded secant step from {0.001, 0.9}
     // lands on a negative x on its third iterate, where x^0.6 is complex —
     // this used to report FindRoot::nlnum instead of the real root.
-    let result = interpret("FindRoot[5 == 50*x^0.6, {x, 0.001, 0.9}]").unwrap();
-    assert_eq!(result, "{x -> 0.021544346900318825}");
+    // Rounded: which iterate the secant run stops on differs by an ULP or
+    // two between implementations, and what is under test is that a root is
+    // found at all.
+    let result =
+      interpret("Round[x /. FindRoot[5 == 50*x^0.6, {x, 0.001, 0.9}], 10^-12]")
+        .unwrap();
+    assert_eq!(result, "215443469/10000000000");
   }
 
   #[test]
@@ -9717,9 +9744,11 @@ mod findroot_secant_domain_backtracking {
 
   #[test]
   fn secant_still_works_for_a_larger_coefficient() {
-    let result =
-      interpret("FindRoot[5 == 100*x^0.6, {x, 0.001, 0.9}]").unwrap();
-    assert_eq!(result, "{x -> 0.006786044041487266}");
+    let result = interpret(
+      "Round[x /. FindRoot[5 == 100*x^0.6, {x, 0.001, 0.9}], 10^-12]",
+    )
+    .unwrap();
+    assert_eq!(result, "6786044041/1000000000000");
   }
 
   // A coefficient small enough that the unguarded secant path never left

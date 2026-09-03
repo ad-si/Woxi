@@ -2056,6 +2056,106 @@ fn is_nonfinite_boundary_value(expr: &Expr) -> bool {
   false
 }
 
+/// Rewrite the harmonic-number spelling of an indefinite sum's
+/// antidifference into the polygamma spelling wolframscript reports.
+///
+/// An antidifference is only fixed up to an additive constant, and the two
+/// engines pick different ones. Closing `Sum[1/k^s, k]` through the definite
+/// sum `Sum[1/j^s, {j, 1, k - 1}]` lands on `HarmonicNumber[k - 1, s]`;
+/// wolframscript drops that form's `Zeta[s]` offset (`EulerGamma`, for
+/// `s == 1`) and reports the polygamma term alone. For an integer `s >= 1`,
+///
+///   HarmonicNumber[k-1, s] = Zeta[s] + (-1)^(s+1)/(s-1)! PolyGamma[s-1, k]
+///
+/// so `Sum[1/k, k]` is `PolyGamma[0, k]`, `Sum[1/k^2, k]` is
+/// `-PolyGamma[1, k]`, `Sum[1/k^3, k]` is `PolyGamma[2, k]/2`, and so on.
+/// Every `HarmonicNumber[…]` in the result is rewritten, so a scaled summand
+/// (`Sum[3/k, k]` → `3 PolyGamma[0, k]`) is normalized too. A symbolic order
+/// keeps the harmonic form, which is what wolframscript reports for it
+/// (`Sum[1/k^s, k]` → `HarmonicNumber[-1 + k, s]`).
+fn harmonic_antidifference_as_polygamma(expr: &Expr, var_name: &str) -> Expr {
+  // Highest order rewritten: `(s-1)!` is the coefficient's denominator, so
+  // this only has to stay inside i128 — well beyond any order a closed form
+  // is asked for in practice.
+  const MAX_ORDER: i128 = 20;
+  let rewrite = |args: &[Expr]| -> Option<Expr> {
+    // The argument must be exactly `var - 1`; anything else is a harmonic
+    // number that did not come from this antidifference.
+    let shifted = crate::helpers::plus2(
+      args.first()?.clone(),
+      crate::helpers::minus2(
+        Expr::Integer(1),
+        Expr::Identifier(var_name.into()),
+      ),
+    );
+    if !matches!(
+      crate::evaluator::evaluate_expr_to_expr(&shifted),
+      Ok(Expr::Integer(0))
+    ) {
+      return None;
+    }
+    let order = match args.len() {
+      1 => 1,
+      2 => match &args[1] {
+        Expr::Integer(s) if (1..=MAX_ORDER).contains(s) => *s,
+        _ => return None,
+      },
+      _ => return None,
+    };
+    let factorial: i128 = (1..order).product();
+    let coefficient = Expr::FunctionCall {
+      name: "Rational".to_string(),
+      args: vec![
+        Expr::Integer(if order % 2 == 0 { -1 } else { 1 }),
+        Expr::Integer(factorial),
+      ]
+      .into(),
+    };
+    let polygamma = crate::helpers::call(
+      "PolyGamma",
+      vec![
+        Expr::Integer(order - 1),
+        Expr::Identifier(var_name.to_string()),
+      ],
+    );
+    crate::evaluator::evaluate_expr_to_expr(&crate::helpers::times2(
+      coefficient,
+      polygamma,
+    ))
+    .ok()
+  };
+  match expr {
+    Expr::FunctionCall { name, args } if name == "HarmonicNumber" => {
+      rewrite(args).unwrap_or_else(|| expr.clone())
+    }
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args
+        .iter()
+        .map(|a| harmonic_antidifference_as_polygamma(a, var_name))
+        .collect(),
+    },
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(|a| harmonic_antidifference_as_polygamma(a, var_name))
+        .collect(),
+    ),
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(harmonic_antidifference_as_polygamma(left, var_name)),
+      right: Box::new(harmonic_antidifference_as_polygamma(right, var_name)),
+    },
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(harmonic_antidifference_as_polygamma(
+        operand, var_name,
+      )),
+    },
+    _ => expr.clone(),
+  }
+}
+
 pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 {
     // Sum requires at least 2 arguments
@@ -2128,10 +2228,11 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       &fresh_name,
       &Expr::Identifier(var_name.clone()),
     );
+    let inner_sum = harmonic_antidifference_as_polygamma(&inner_sum, var_name);
     // Evaluate f(0). A summand with a genuine pole at 0 (`1/k`,
     // `PolyGamma[k]`, …) makes this boundary term non-finite even though
     // the antidifference itself is perfectly well defined there (e.g.
-    // `Sum[1/i, i]` closes to `HarmonicNumber[i - 1]`, matching wolframscript,
+    // `Sum[1/i, i]` closes to `PolyGamma[0, i]`, matching wolframscript,
     // which is exactly `inner_sum` alone) — so a non-finite f(0) is dropped
     // rather than poisoning the whole result through `Plus`.
     let f_at_zero =

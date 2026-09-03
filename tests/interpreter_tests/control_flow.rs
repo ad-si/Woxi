@@ -537,6 +537,49 @@ mod with_scoping {
     }
   }
 
+  /// A *rule* is not an assignment: `{x -> 9}` is as malformed a local
+  /// variable specification as `{x}` is. Substituting through it anyway let
+  /// a rule-valued variable act like a binding — which is what
+  /// `With[Evaluate[{binding}], …]` produces when `binding` happens to hold
+  /// `x -> 9` rather than the intended `x = 9`.
+  ///
+  /// `Evaluate[…]` escapes the binder's `HoldAll`, so the echo shows the
+  /// *resolved* specification, not the `Evaluate` wrapper.
+  #[test]
+  fn a_rule_is_not_a_local_assignment() {
+    for (code, expected, message) in [
+      (
+        "With[{pivot -> 9}, pivot + 1]",
+        "With[{pivot -> 9}, pivot + 1]",
+        "With::lvws: Variable pivot -> 9 in local variable specification \
+         {pivot -> 9} requires a value.",
+      ),
+      (
+        "binding = pivot -> 9; With[Evaluate[{binding}], pivot + 1]",
+        "With[{pivot -> 9}, pivot + 1]",
+        "With::lvws: Variable pivot -> 9 in local variable specification \
+         {pivot -> 9} requires a value.",
+      ),
+      (
+        "Module[{pivot -> 9}, pivot + 1]",
+        "Module[{pivot -> 9}, pivot + 1]",
+        "Module::lvsym: Local variable specification {pivot -> 9} contains \
+         pivot -> 9, which is not a symbol or an assignment to a symbol.",
+      ),
+      (
+        "Block[{pivot -> 9}, pivot + 1]",
+        "Block[{pivot -> 9}, pivot + 1]",
+        "Block::lvsym: Local variable specification {pivot -> 9} contains \
+         pivot -> 9, which is not a symbol or an assignment to a symbol.",
+      ),
+    ] {
+      assert_local_spec_message(code, expected, message);
+    }
+    // A genuine assignment still binds, both spellings of it.
+    assert_eq!(interpret("With[{pivot = 9}, pivot + 1]").unwrap(), "10");
+    assert_eq!(interpret("With[{pivot := 9}, pivot + 1]").unwrap(), "10");
+  }
+
   #[test]
   fn a_local_may_not_be_declared_twice() {
     for (code, expected, message) in [

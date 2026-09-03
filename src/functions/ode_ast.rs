@@ -2202,6 +2202,43 @@ fn find_function_call(expr: &Expr, fname: &str) -> Option<Expr> {
 /// which differentiates the interpolating piece.
 const NDSOLVE_INTERPOLATION_ORDER: i128 = 3;
 
+/// Restrict integrated solution samples (ascending in x) to `[lo, hi]`.
+///
+/// A bound that falls between two grid points becomes a sample of its own,
+/// interpolated from the neighbours at the same order the returned
+/// `InterpolatingFunction` uses, so the reported domain is exactly the
+/// requested range rather than the nearest grid point to it. A bound that
+/// already coincides with a grid point keeps that point untouched.
+fn clip_points_to_range(
+  points: &[(f64, Vec<f64>)],
+  lo: f64,
+  hi: f64,
+) -> Vec<(f64, Vec<f64>)> {
+  let tol = (hi - lo).abs().max(1.0) * 1e-9;
+  let xs: Vec<f64> = points.iter().map(|(x, _)| *x).collect();
+  let bound = |target: f64| -> (f64, Vec<f64>) {
+    if let Some(p) = points.iter().find(|(x, _)| (x - target).abs() <= tol) {
+      return p.clone();
+    }
+    let state = (0..points[0].1.len())
+      .map(|k| {
+        let ys: Vec<f64> = points.iter().map(|(_, s)| s[k]).collect();
+        interp_1d_xy_f64(&xs, &ys, target, NDSOLVE_INTERPOLATION_ORDER as usize)
+      })
+      .collect();
+    (target, state)
+  };
+  let mut clipped = vec![bound(lo)];
+  clipped.extend(
+    points
+      .iter()
+      .filter(|(x, _)| *x > lo + tol && *x < hi - tol)
+      .cloned(),
+  );
+  clipped.push(bound(hi));
+  clipped
+}
+
 fn ndsolve_system(
   args: &[Expr],
   event: Option<&EventSpec>,
@@ -2351,6 +2388,10 @@ fn ndsolve_system(
     return Ok(None);
   }
   let Some(x0) = x0 else { return Ok(None) };
+  // The range that was *asked* for, before the integration range below is
+  // widened to reach the initial condition. The solution is reported over
+  // this range (see the clipping step after the integration).
+  let requested_range = x_min_given.map(|min| (min, x_max));
   let (x_min, x_max) = if let Some(min) = x_min_given {
     // The initial condition may sit just outside the requested output
     // range — a Demonstration commonly states `y[0] == n0` at the natural
@@ -2527,6 +2568,26 @@ fn ndsolve_system(
   points.extend(forward);
   if points.len() < 2 {
     return Ok(None);
+  }
+  // Integrating had to start at the initial condition even when that sits
+  // outside the requested range, but the solution NDSolve hands back only
+  // covers the range that was asked for:
+  // `NDSolve[{y'[t] == -y[t], y[0] == 1}, y, {t, 50, 200}]` reports a
+  // domain of `{{50., 200.}}` and warns (`ifun::dmval`) about a query at
+  // t == 0, rather than quietly carrying the run-up along.
+  //
+  // Only ever *narrows*: an integration that stalled before the requested
+  // endpoint (a singularity, a step size driven to zero) covers less than
+  // was asked for, and that truncated domain is the answer.
+  if let Some((req_lo, req_hi)) = requested_range {
+    let lo = req_lo.max(points.first().unwrap().0);
+    let hi = req_hi.min(points.last().unwrap().0);
+    if hi > lo {
+      points = clip_points_to_range(&points, lo, hi);
+    }
+    if points.len() < 2 {
+      return Ok(None);
+    }
   }
   let x_lo = points.first().unwrap().0;
   let x_hi = points.last().unwrap().0;

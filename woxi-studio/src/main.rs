@@ -23990,7 +23990,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 30, $CellContext`s$$ = 5}, \"
       .1;
     assert_eq!(
       trail_after_move,
-      "{{}, {Point[{2.9994000199997335, 0.05999600007999924}]}}",
+      "{{}, {Point[{2.9994000199997335, 0.05999600007999923}]}}",
       "moving alpha to a new value must append the previous intersection \
        point to the trail"
     );

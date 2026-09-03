@@ -2003,14 +2003,16 @@ mod interpreter_tests {
     // boundary term evaluates to `ComplexInfinity`/`Indeterminate` and used
     // to poison the whole result through `Plus`, even though the
     // antidifference itself is perfectly well defined there — wolframscript's
-    // `Sum[1/i, i]` is `HarmonicNumber[-1 + i]`, exactly the telescoping
-    // part alone. A non-finite boundary term is now dropped instead of
-    // added in. `Log[0]` evaluates to a plain (unary-negated) `Infinity`
-    // rather than `ComplexInfinity`/`Indeterminate` — a different spelling
-    // of "non-finite" that must be caught too, or it still poisons the sum
+    // `Sum[1/i, i]` is `PolyGamma[0, i]`, exactly the telescoping part alone
+    // (up to the additive constant an antidifference is free to pick; see
+    // `harmonic_antidifference_as_polygamma`). A non-finite boundary term is
+    // now dropped instead of added in. `Log[0]` evaluates to a plain
+    // (unary-negated) `Infinity` rather than
+    // `ComplexInfinity`/`Indeterminate` — a different spelling of
+    // "non-finite" that must be caught too, or it still poisons the sum
     // through `Plus` the same way.
     clear_state();
-    assert_eq!(interpret("Sum[1/k, k]").unwrap(), "HarmonicNumber[-1 + k]");
+    assert_eq!(interpret("Sum[1/k, k]").unwrap(), "PolyGamma[0, k]");
     for code in ["Sum[PolyGamma[k], k]", "Sum[k*PolyGamma[k], k]"] {
       let result = interpret(code).unwrap();
       assert!(
@@ -2046,6 +2048,42 @@ mod interpreter_tests {
          iterator that shadows its own free variable"
       );
     }
+  }
+
+  /// An antidifference is only fixed up to an additive constant, and
+  /// wolframscript reports the one *without* the `Zeta[s]` offset that the
+  /// harmonic-number form carries: `Sum[1/k^s, k]` comes back as a plain
+  /// multiple of `PolyGamma[s - 1, k]` rather than `HarmonicNumber[k-1, s]`
+  /// (which differs from it by `Zeta[s]`, or `EulerGamma` when `s == 1`).
+  #[test]
+  fn test_indefinite_reciprocal_power_sum_is_a_polygamma() {
+    clear_state();
+    for (order, expected) in [
+      (1, "PolyGamma[0, k]"),
+      (2, "-PolyGamma[1, k]"),
+      (3, "PolyGamma[2, k]/2"),
+      (4, "-1/6*PolyGamma[3, k]"),
+      (5, "PolyGamma[4, k]/24"),
+    ] {
+      assert_eq!(
+        interpret(&format!("Sum[1/k^{order}, k]")).unwrap(),
+        expected,
+        "order {order}"
+      );
+    }
+    // A constant factor rides along on the rewritten term.
+    assert_eq!(interpret("Sum[3/k, k]").unwrap(), "3*PolyGamma[0, k]");
+    // The definite sum keeps the harmonic-number form — there the additive
+    // constant is pinned by the lower limit, so the two spellings are not
+    // interchangeable.
+    assert_eq!(
+      interpret("Sum[1/k, {k, 1, n}]").unwrap(),
+      "HarmonicNumber[n]"
+    );
+    assert_eq!(
+      interpret("Sum[1/k^2, {k, 1, n}]").unwrap(),
+      "HarmonicNumber[n, 2]"
+    );
   }
 
   #[test]
@@ -2610,12 +2648,16 @@ mod interpreter_tests {
       "10"
     );
     clear_state();
-    // A variable holding a whole `symbol -> value` binding (With requires
-    // every local to have a value).
+    // Same for `With`, seen through its validation: a variable holding a
+    // `symbol -> value` *rule* is not a binding (`With` wants `pivot = 9`;
+    // see `a_rule_is_not_a_local_assignment`), and the rejection quotes the
+    // resolved specification `{pivot -> 9}` rather than the literal
+    // `Evaluate[{binding}]` — which is exactly what shows that the
+    // `Evaluate` was released before the local-var parsing ran.
     interpret("binding = pivot -> 9;").unwrap();
     assert_eq!(
       interpret("With[Evaluate[{binding}], pivot + 1]").unwrap(),
-      "10"
+      "With[{pivot -> 9}, pivot + 1]"
     );
   }
 

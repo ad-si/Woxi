@@ -110,14 +110,84 @@ fn contains_inner_fraction(e: &Expr) -> bool {
 }
 
 fn cancel_expr(expr: &Expr) -> Expr {
-  cancel_expr_impl(expr, true)
+  cancel_expr_with_opaque_fallback(expr, true)
 }
 
 /// Like `cancel_expr` but without the wolframscript Cancel quotient-sign
 /// canonicalization, for callers whose WL counterpart keeps the raw
 /// quotient sign (D[ArcCoth[x^2], x] stays (2*x)/(1 - x^4)).
 pub fn cancel_expr_keep_quotient_sign(expr: &Expr) -> Expr {
-  cancel_expr_impl(expr, false)
+  cancel_expr_with_opaque_fallback(expr, false)
+}
+
+/// The direct cancellation, falling back to the opaque-atom abstraction
+/// (see [`cancel_via_opaque_atoms`]) only for a quotient the direct path
+/// leaves exactly as it found it, and only when the fallback genuinely
+/// cancels something.
+///
+/// "Genuinely" is measured by leaf count: the stand-in symbols do not sort
+/// where the subexpressions they replace do, so an abstracted round trip
+/// that cancels *nothing* still comes back with its factors reordered
+/// (`2 a x Hypergeometric1F1[…]` as `2 a Hypergeometric1F1[…] x`). Requiring
+/// the result to be smaller keeps those round trips out.
+fn cancel_expr_with_opaque_fallback(
+  expr: &Expr,
+  canonicalize_sign: bool,
+) -> Expr {
+  let direct = cancel_expr_impl(expr, canonicalize_sign);
+  if expr_to_string(&direct) != expr_to_string(expr) {
+    return direct;
+  }
+  match cancel_via_opaque_atoms(expr, canonicalize_sign) {
+    Some(alt)
+      if super::simplify::leaf_count(&alt)
+        < super::simplify::leaf_count(expr) =>
+    {
+      alt
+    }
+    _ => direct,
+  }
+}
+
+/// Cancel a quotient whose "variables" are opaque subexpressions the
+/// polynomial engine cannot take directly (`f[1]`, `q[[1]]`, `Sin[a]`, …),
+/// by abstracting each into a fresh symbol, cancelling that, and putting
+/// them back. `(f[1] f[2] - f[2]^2)/(f[1] - f[2])` cancels to `f[2]` the
+/// same way `(a b - b^2)/(a - b)` cancels to `b`.
+///
+/// `None` when there is nothing to abstract or the abstracted attempt
+/// changed nothing, so this is purely a fallback for quotients the direct
+/// path leaves untouched.
+fn cancel_via_opaque_atoms(
+  expr: &Expr,
+  canonicalize_sign: bool,
+) -> Option<Expr> {
+  if !super::helpers::shares_opaque_atom_across_quotient(expr) {
+    return None;
+  }
+  let mut atoms = Vec::new();
+  opaque_atoms(expr, &mut atoms);
+  if atoms.is_empty() {
+    return None;
+  }
+  // `$` is not valid in a user-written symbol read from Wolfram source, so
+  // these names cannot collide with anything already in the expression.
+  let names: Vec<Expr> = (0..atoms.len())
+    .map(|i| Expr::Identifier(format!("Woxi$cancel${i}")))
+    .collect();
+  let mut abstracted = expr.clone();
+  for (atom, name) in atoms.iter().zip(&names) {
+    abstracted = super::solve::substitute_expr(&abstracted, atom, name);
+  }
+  let cancelled = cancel_expr_impl(&abstracted, canonicalize_sign);
+  if expr_to_string(&cancelled) == expr_to_string(&abstracted) {
+    return None;
+  }
+  let mut restored = cancelled;
+  for (atom, name) in atoms.iter().zip(&names) {
+    restored = super::solve::substitute_expr(&restored, name, atom);
+  }
+  Some(restored)
 }
 
 fn cancel_expr_impl(expr: &Expr, canonicalize_sign: bool) -> Expr {

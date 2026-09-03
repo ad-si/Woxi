@@ -3177,6 +3177,58 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// parameterised equation, a system that stays underdetermined, a polynomial
 /// Woxi cannot solve in radicals — which leaves the caller on its previous
 /// path.
+/// True if `expr` carries a subexpression that is neither arithmetic
+/// structure, a number (exact or a numeric constant like `Log[2]`), nor one
+/// of the unknowns — an opaque symbolic coefficient such as `q[[1]]`,
+/// `f[1]` or `Sin[a]`.
+///
+/// Such a coefficient is a free parameter exactly like a free symbol is,
+/// which is what the caller uses it for. A subexpression that *does* mention
+/// an unknown is left alone: it makes the equation non-polynomial in that
+/// unknown, which the caller's own `is_polynomial` check already rejects.
+fn has_opaque_parameter(expr: &Expr, vars: &[String]) -> bool {
+  match expr {
+    Expr::Integer(_)
+    | Expr::BigInteger(_)
+    | Expr::Real(_)
+    | Expr::BigFloat(..)
+    | Expr::Identifier(_)
+    | Expr::Constant(_) => false,
+    Expr::FunctionCall { name, args }
+      if matches!(
+        name.as_str(),
+        "Plus" | "Times" | "Power" | "Rational" | "Subtract" | "Divide"
+      ) =>
+    {
+      args.iter().any(|a| has_opaque_parameter(a, vars))
+    }
+    Expr::BinaryOp { op, left, right }
+      if matches!(
+        op,
+        BinaryOperator::Plus
+          | BinaryOperator::Minus
+          | BinaryOperator::Times
+          | BinaryOperator::Divide
+          | BinaryOperator::Power
+      ) =>
+    {
+      has_opaque_parameter(left, vars) || has_opaque_parameter(right, vars)
+    }
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => has_opaque_parameter(operand, vars),
+    other => {
+      if crate::functions::math_ast::try_eval_to_f64(other).is_some() {
+        return false;
+      }
+      let mut free = Vec::new();
+      collect_solve_vars(other, &mut free);
+      !free.iter().any(|f| vars.contains(f))
+    }
+  }
+}
+
 fn try_solve_polynomial_system(eqs: &[Expr], vars: &[String]) -> Option<Expr> {
   // One variable is the ordinary single-equation case, and a system with
   // fewer equations than variables is underdetermined.
@@ -3193,10 +3245,17 @@ fn try_solve_polynomial_system(eqs: &[Expr], vars: &[String]) -> Option<Expr> {
     let poly = expand_and_combine(&minus2(lhs, rhs));
     // Every symbol has to be one of the unknowns: a free parameter leaves
     // the solutions symbolic, and a symbolic solution cannot be checked
-    // against the equations it did not come from.
+    // against the equations it did not come from. An opaque coefficient
+    // (`q[[1]]`, `f[1]`) is such a parameter too even though it is not a
+    // symbol — without this, a system whose coefficients are all opaque
+    // looked parameter-free and went down the resultant path, which
+    // returned the uncancelled quotients the general elimination path
+    // reports as the plain `{{x -> q[[1]], y -> q[[2]]}}`.
     let mut free = Vec::new();
     collect_solve_vars(&poly, &mut free);
-    if free.iter().any(|f| !vars.contains(f)) {
+    if free.iter().any(|f| !vars.contains(f))
+      || has_opaque_parameter(&poly, vars)
+    {
       return None;
     }
     if !vars

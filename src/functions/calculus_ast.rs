@@ -1927,6 +1927,14 @@ pub fn is_constant_wrt(expr: &Expr, var: &str) -> bool {
     Expr::Comparison { operands, .. } => {
       operands.iter().all(|e| is_constant_wrt(e, var))
     }
+    // A part extraction is a value like any other: `q[[1]]` is constant
+    // w.r.t. `x`. Left to the catch-all, an unevaluated `Part` (e.g. the
+    // `{}[[1]]` a Part-on-empty-list leaves behind) counted as depending on
+    // *every* variable, so `Solve`/`Reduce` refused a system that merely
+    // carried one as an opaque coefficient.
+    Expr::Part { expr, index } => {
+      is_constant_wrt(expr, var) && is_constant_wrt(index, var)
+    }
     _ => false,
   }
 }

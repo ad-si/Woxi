@@ -244,3 +244,68 @@ pub(super) fn compare_exprs(a: &Expr, b: &Expr) -> std::cmp::Ordering {
   let sb = expr_to_string(b);
   sa.cmp(&sb)
 }
+
+/// Every maximal subexpression of `expr` that the polynomial engine cannot
+/// use as a variable — a function call (`f[1]`, `Sin[a]`), a part extraction
+/// (`q[[1]]`), anything that is not arithmetic structure or an atom.
+/// Deduplicated by rendering, in first-seen order.
+pub(super) fn opaque_atoms(expr: &Expr, out: &mut Vec<Expr>) {
+  let push = |out: &mut Vec<Expr>, e: &Expr| {
+    let key = expr_to_string(e);
+    if !out.iter().any(|seen| expr_to_string(seen) == key) {
+      out.push(e.clone());
+    }
+  };
+  match expr {
+    Expr::Integer(_)
+    | Expr::BigInteger(_)
+    | Expr::Real(_)
+    | Expr::BigFloat(..)
+    | Expr::Identifier(_)
+    | Expr::Constant(_) => {}
+    Expr::FunctionCall { name, args }
+      if matches!(
+        name.as_str(),
+        "Plus" | "Times" | "Power" | "Rational" | "Subtract" | "Divide"
+      ) =>
+    {
+      args.iter().for_each(|a| opaque_atoms(a, out));
+    }
+    Expr::BinaryOp { op, left, right }
+      if matches!(
+        op,
+        BinaryOperator::Plus
+          | BinaryOperator::Minus
+          | BinaryOperator::Times
+          | BinaryOperator::Divide
+          | BinaryOperator::Power
+      ) =>
+    {
+      opaque_atoms(left, out);
+      opaque_atoms(right, out);
+    }
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => opaque_atoms(operand, out),
+    other => push(out, other),
+  }
+}
+
+/// True if `expr` is a quotient whose numerator and denominator share an
+/// opaque subexpression (see [`opaque_atoms`]) — the only shape in which
+/// abstracting those subexpressions into stand-in symbols can cancel
+/// anything. Cheap enough to gate the (otherwise doubled) retry on.
+pub(super) fn shares_opaque_atom_across_quotient(expr: &Expr) -> bool {
+  let (num, den) = super::together::extract_num_den(expr);
+  if matches!(den, Expr::Integer(1)) {
+    return false;
+  }
+  let (mut in_num, mut in_den) = (Vec::new(), Vec::new());
+  opaque_atoms(&num, &mut in_num);
+  opaque_atoms(&den, &mut in_den);
+  in_num.iter().any(|a| {
+    let key = expr_to_string(a);
+    in_den.iter().any(|b| expr_to_string(b) == key)
+  })
+}

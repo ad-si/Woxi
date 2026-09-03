@@ -3272,6 +3272,7 @@ fn render_inline_display_wrapper(expr: &syntax::Expr) -> syntax::Expr {
   let expr = render_tableform_if_needed(expr);
   let expr = render_matrixform_if_needed(expr);
   let expr = render_traditionalform_list_if_needed(expr);
+  let expr = render_overlay_if_needed(expr);
   let expr = render_column_if_needed(expr);
   let expr = render_row_if_needed(expr);
   let expr = render_treeform_if_needed(expr);
@@ -3351,11 +3352,42 @@ fn render_visual_display_pipeline(expr: &syntax::Expr) -> syntax::Expr {
   let expr = render_matrixform_if_needed(expr);
   let expr = render_traditionalform_list_if_needed(expr);
   let expr = render_styled_layout_if_needed(expr);
+  let expr = render_overlay_if_needed(expr);
   let expr = render_column_if_needed(expr);
   let expr = render_row_if_needed(expr);
   let expr = render_treeform_if_needed(expr);
   let expr = render_framed_if_needed(expr);
   render_highlighted_if_needed(expr)
+}
+
+/// If `expr` is `Overlay[{…}]`, composite its items into the one stacked
+/// picture a notebook shows and return `-Graphics-`.
+///
+/// Like `Grid`/`Column`/`Row`, `Overlay` stays symbolic through evaluation —
+/// `Head[Overlay[…]]` is `Overlay`, and CLI mode keeps the
+/// `Overlay[{-Graphics-, …}]` echo wolframscript prints. Only the visual
+/// (notebook) display is the composed picture.
+fn render_overlay_if_needed(expr: syntax::Expr) -> syntax::Expr {
+  match &expr {
+    syntax::Expr::FunctionCall { name, args }
+      if name == "Overlay" && !args.is_empty() =>
+    {
+      // Pre-render display wrappers inside the items, so an item that is
+      // itself a layout (a `Grid` of plots, say) is drawn rather than
+      // written out as source.
+      let mut new_args: Vec<syntax::Expr> = args.to_vec();
+      if let syntax::Expr::List(items) = &args[0] {
+        new_args[0] = syntax::Expr::List(
+          items.iter().map(render_inline_display_wrapper).collect(),
+        );
+      }
+      match functions::graphics::overlay_svg(&new_args) {
+        Some(svg) => graphics_result(svg),
+        None => expr,
+      }
+    }
+    _ => expr,
+  }
 }
 
 /// If `expr` is `Column[{…}]`, render it as an SVG column and return `-Graphics-`.
@@ -3741,7 +3773,14 @@ fn composed_layout_svg(expr: &syntax::Expr) -> Option<String> {
   };
   if !matches!(
     name.as_str(),
-    "Grid" | "Column" | "Row" | "Labeled" | "Pane" | "Item" | "ClickPane"
+    "Grid"
+      | "Column"
+      | "Row"
+      | "Labeled"
+      | "Overlay"
+      | "Pane"
+      | "Item"
+      | "ClickPane"
   ) {
     return None;
   }

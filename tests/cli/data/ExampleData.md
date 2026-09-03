@@ -5,7 +5,7 @@ available types.
 
 ```scrut
 $ wo 'ExampleData[]'
-{NetworkGraph}
+{NetworkGraph, TestImage}
 ```
 
 `ExampleData["type"]` lists the entries of that type, each a `{type, name}`

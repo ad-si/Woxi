@@ -163,9 +163,11 @@ pub fn dispatch_plotting(
     "GraphicsGrid" if !args.is_empty() => {
       Some(crate::functions::graphics::graphics_grid_ast(args))
     }
-    "Overlay" if !args.is_empty() => {
-      Some(crate::functions::graphics::overlay_ast(args))
-    }
+    // Overlay is a display wrapper, not a picture: `Head[Overlay[…]]` is
+    // `Overlay`, and it echoes as `Overlay[{-Graphics-, …}]`. Returning
+    // None keeps it symbolic; the output stage composes the stacked
+    // picture (see `expr_to_svg`'s `Overlay` arm).
+    "Overlay" if !args.is_empty() => None,
     "PlotGrid" if !args.is_empty() => {
       Some(crate::functions::graphics::plot_grid_ast(args))
     }

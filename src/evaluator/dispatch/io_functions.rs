@@ -4656,6 +4656,7 @@ pub(crate) fn lays_out_a_graphic(expr: &Expr) -> bool {
     // renderer, so it counts as a picture too.
     Expr::FunctionCall { name, args }
       if LAYOUT_HEADS.contains(&name.as_str())
+        || name == "Overlay"
         || name == "Pane"
         || name == "Deploy"
         || name == "Framed" =>
@@ -5235,6 +5236,14 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
         _ => vec![vec![content], vec![label]],
       };
       crate::functions::graphics::combine_graphics_svgs(&rows)
+        .unwrap_or_else(|| expr_text_svg(expr))
+    }
+    // `Overlay[{item, …}]` stacks its items into one picture instead of
+    // arranging them in a grid, so it gets its own compositor.
+    Expr::FunctionCall { name, args }
+      if name == "Overlay" && !args.is_empty() =>
+    {
+      crate::functions::graphics::overlay_svg(args)
         .unwrap_or_else(|| expr_text_svg(expr))
     }
     // `Grid`/`Column`/`Row` holding a picture are composed cell by cell —

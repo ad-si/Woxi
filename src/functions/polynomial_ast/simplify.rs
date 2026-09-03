@@ -4155,6 +4155,48 @@ fn substitute_var(expr: &Expr, var: &str, replacement: &Expr) -> Expr {
 // ─── Simplify ───────────────────────────────────────────────────────
 
 /// Simplify[expr] or Simplify[expr, Assumptions -> cond] - User-facing simplification
+/// Simplify `expr` with every opaque subexpression (`f[1]`, `q[[1]]`,
+/// `Sin[a]`, …) standing in as a fresh symbol, so the polynomial machinery
+/// treats it as the plain variable it behaves like, and put them back
+/// afterwards. `(f[1] f[2] - f[2]^2)/(f[1] - f[2])` then collapses to
+/// `f[2]`, the way `(a b - b^2)/(a - b)` collapses to `b`.
+///
+/// `None` when there is nothing to abstract, or when the abstracted attempt
+/// came back unchanged. The caller decides whether to keep the result, by
+/// leaf count — Simplify's own "smaller is better" criterion — so this can
+/// only ever improve on the direct attempt.
+fn simplify_via_opaque_atoms(expr: &Expr) -> Option<Expr> {
+  // Only a quotient sharing an opaque subexpression between numerator and
+  // denominator can gain anything here, and the retry costs a whole second
+  // simplification pass — so nothing else pays for it.
+  if !super::helpers::shares_opaque_atom_across_quotient(expr) {
+    return None;
+  }
+  let mut atoms = Vec::new();
+  super::helpers::opaque_atoms(expr, &mut atoms);
+  if atoms.is_empty() {
+    return None;
+  }
+  // `$` cannot appear in a symbol read from Wolfram source, so these
+  // stand-ins cannot collide with anything already in the expression.
+  let names: Vec<Expr> = (0..atoms.len())
+    .map(|i| Expr::Identifier(format!("Woxi$simplify${i}")))
+    .collect();
+  let mut abstracted = expr.clone();
+  for (atom, name) in atoms.iter().zip(&names) {
+    abstracted = super::solve::substitute_expr(&abstracted, atom, name);
+  }
+  let simplified = simplify_expr_with_together(&abstracted);
+  if expr_to_string(&simplified) == expr_to_string(&abstracted) {
+    return None;
+  }
+  let mut restored = simplified;
+  for (atom, name) in atoms.iter().zip(&names) {
+    restored = super::solve::substitute_expr(&restored, name, atom);
+  }
+  Some(restored)
+}
+
 pub fn simplify_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() {
     return Err(InterpreterError::EvaluationError(
@@ -4237,6 +4279,21 @@ pub fn simplify_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let simplified = simplify_expr_with_together(&args[0]);
   let assumed = apply_active_assumptions(&simplified);
+  // Retry with the opaque parts abstracted, and keep it only when it comes
+  // back genuinely simpler than both the direct attempt and the input —
+  // Simplify's own criterion (see `simplify_via_opaque_atoms`). The
+  // stand-in symbols do not sort where the subexpressions they replace do,
+  // so an abstracted round trip that simplifies nothing still comes back
+  // with its factors reordered; the strict comparison keeps those out.
+  let assumed = match simplify_via_opaque_atoms(&args[0]) {
+    Some(alt)
+      if leaf_count(&alt) < leaf_count(&assumed)
+        && leaf_count(&alt) < leaf_count(&args[0]) =>
+    {
+      alt
+    }
+    _ => assumed,
+  };
   // wolframscript's default Simplify merges integer-base logs (whether standalone
   // like `2 Log[2]` -> `Log[4]` or summed like `Log[2]+Log[3]` -> `Log[6]`) into
   // a single Log when that reduces its digit-aware complexity measure.
@@ -9553,7 +9610,7 @@ fn contains_fractional_power(e: &Expr) -> bool {
 
 /// Count the complexity of an expression (leaf nodes + internal nodes).
 /// Used as a metric for choosing the simplest form.
-fn leaf_count(expr: &Expr) -> usize {
+pub(super) fn leaf_count(expr: &Expr) -> usize {
   match expr {
     Expr::Integer(_)
     | Expr::Real(_)

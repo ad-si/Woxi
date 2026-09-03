@@ -1176,6 +1176,17 @@ function main() {
     "Insphere[Tetrahedron[{{0,0,0},{1,0,0},{0,1,0},{0,0,1}}]]",
     // Variance symbolic: Plus ordering of BesselK terms (different ordering of positive/negative terms)
     "Variance[HyperbolicDistribution[a, b, d, m]]",
+    // GompertzMakeham Variance: the closed form matches term for term, but
+    // Woxi's Plus comparator gives `Power[FunctionCall, n]` the wrong place,
+    // so the `E^x ExpIntegralEi[-x]^2` and `x HypergeometricPFQ[…]` terms
+    // print in the other order (see conformance_gaps.md, "A power of a
+    // function call sorts before everything"). The unit test pins the value
+    // by substituting parameters and rounding.
+    "Variance[GompertzMakehamDistribution[l, x]]",
+    // ExampleData[{"TestImage", …}] returns the photograph in wolframscript;
+    // Woxi bundles the name catalogue but not the pixels, which are not ours
+    // to redistribute (see conformance_gaps.md).
+    'ExampleData[{"TestImage", "Couple"}]',
     // LogLogistic Variance: canonical Plus/Times ordering. Symbolic form
     // orders the inner Plus terms differently (2 g Csc[...] first vs WL's
     // -(Pi Csc[Pi/g]^2) first); the numeric form places the Pi factor before
