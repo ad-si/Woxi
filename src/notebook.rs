@@ -1267,6 +1267,32 @@ fn partial_derivative_vars(s: &str) -> Option<String> {
   (base.trim() == "\u{2202}").then(|| extract_cell_content(&args[1]))
 }
 
+/// Append `piece` to `result`, inserting the operator implicit
+/// multiplication needs when the two would otherwise fuse into one longer
+/// identifier — e.g. a preceding `2 \[Pi]` (rendered as the bare letter
+/// `π`) directly followed by `Integrate[…]` must not read back as the
+/// single undefined symbol `πIntegrate`. Mirrors the juxtaposition rule
+/// applied to ordinary sibling box pieces below: a trailing run of word
+/// characters that contains a letter, followed by a piece starting with a
+/// letter, needs a `*` between them (a `#` prefix needs a space instead,
+/// for named-slot syntax); a trailing digit run is left alone since digits
+/// can't extend into letters on re-parse.
+fn push_juxtaposed(result: &mut String, piece: &str) {
+  let piece_starts_alpha =
+    piece.chars().next().is_some_and(char::is_alphabetic);
+  let trailing_run_has_letter = result
+    .chars()
+    .rev()
+    .take_while(|c| c.is_alphanumeric() || *c == '_')
+    .any(char::is_alphabetic);
+  if result.ends_with('#') && piece_starts_alpha {
+    result.push(' ');
+  } else if trailing_run_has_letter && piece_starts_alpha {
+    result.push('*');
+  }
+  result.push_str(piece);
+}
+
 /// Extract text from a RowBox expression by concatenating string
 /// elements.
 fn extract_rowbox_content(s: &str) -> String {
@@ -1286,7 +1312,7 @@ fn extract_rowbox_content(s: &str) -> String {
       && let Some((head, iterator)) = big_operator_call(part)
     {
       let body = extract_rowbox_content(&parts[i + 1..].join(","));
-      result.push_str(&format!("{head}[{body}, {iterator}]"));
+      push_juxtaposed(&mut result, &format!("{head}[{body}, {iterator}]"));
       break;
     }
     // The integral sign also takes the rest of the row as its body; the `ⅆx`
@@ -1302,7 +1328,10 @@ fn extract_rowbox_content(s: &str) -> String {
         }
         None => var.trim().to_string(),
       };
-      result.push_str(&format!("Integrate[{integrand}, {iterator}]"));
+      push_juxtaposed(
+        &mut result,
+        &format!("Integrate[{integrand}, {iterator}]"),
+      );
       break;
     }
     // The partial-derivative operator takes the rest of the row as its
@@ -1323,8 +1352,10 @@ fn extract_rowbox_content(s: &str) -> String {
       && is_bare_named_char(part, "LeftBracketingBar")
       && is_bare_named_char(parts[i + 2].trim(), "RightBracketingBar")
     {
-      result
-        .push_str(&format!("Abs[{}]", box_part_source(parts[i + 1].trim())));
+      push_juxtaposed(
+        &mut result,
+        &format!("Abs[{}]", box_part_source(parts[i + 1].trim())),
+      );
       i += 3;
       continue;
     }
@@ -1361,21 +1392,7 @@ fn extract_rowbox_content(s: &str) -> String {
     // number is unambiguous either way (`2Product[…]` already reads back as
     // `2*Product[…]`, since digits can't extend into letters), so only a
     // trailing run that itself contains a letter is at risk.
-    let piece_starts_alpha = piece
-      .chars()
-      .next()
-      .is_some_and(|c| c.is_ascii_alphabetic());
-    let trailing_run_has_letter = result
-      .chars()
-      .rev()
-      .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
-      .any(|c| c.is_ascii_alphabetic());
-    if result.ends_with('#') && piece_starts_alpha {
-      result.push(' ');
-    } else if trailing_run_has_letter && piece_starts_alpha {
-      result.push('*');
-    }
-    result.push_str(&piece);
+    push_juxtaposed(&mut result, &piece);
     i += 1;
   }
   result
@@ -5073,6 +5090,33 @@ Cell[BoxData[
       panic!("expected a single cell");
     };
     assert_eq!(cell.content, "Integrate[((x)^(2)+1), {x, 0, 2}]");
+  }
+
+  /// A coefficient ending in a named-character letter (`2 \[Pi]`, typeset
+  /// as the bare glyph `π`) directly followed by the integral sign must
+  /// not fuse into the single undefined symbol `πIntegrate` once the sign
+  /// is replaced by the `Integrate[...]` call — `π` and `Integrate` need
+  /// an inserted `*` between them, the same as any other juxtaposition
+  /// that would otherwise merge two identifiers.
+  #[test]
+  fn integral_after_named_character_coefficient_keeps_them_apart() {
+    let nb = r#"Notebook[{
+Cell[BoxData[
+ RowBox[{"2", "\[Pi]",
+  SubsuperscriptBox["\[Integral]", "0", "h"],
+  RowBox[{"x", RowBox[{"\[DifferentialD]", "x"}]}]}]], "Input"]
+}]"#;
+    let parsed = parse_notebook(nb).unwrap();
+    let CellEntry::Single(cell) = &parsed.cells[0] else {
+      panic!("expected a single cell");
+    };
+    assert_eq!(cell.content, "2\u{03c0}*Integrate[x, {x, 0, h}]");
+    // Re-parsing the recovered source must evaluate the integral, not call
+    // an undefined `πIntegrate` symbol.
+    assert_eq!(
+      crate::interpret(&format!("{} /. h -> 1", cell.content)).unwrap(),
+      "Pi"
+    );
   }
 
   /// Some notebooks typeset the `ⅆx` that closes an integral body with an

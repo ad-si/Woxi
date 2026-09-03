@@ -15008,6 +15008,83 @@ mod graphics_grid {
     assert!(svg.contains(">label</text>"), "{svg}");
   }
 
+  /// `Overlay[{expr1, expr2, ...}]` stacks its items on top of each other
+  /// (composited into one picture) instead of laying them out side by
+  /// side — the shape a Demonstration uses to draw a colorbar or a second
+  /// plot directly over a first one.
+  #[test]
+  fn overlay_stacks_graphics_instead_of_arranging_them() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Head[Overlay[{Graphics[{Red, Disk[]}], \
+         Graphics[{Blue, Circle[{1, 0}]}]}]]"
+      )
+      .unwrap(),
+      "Graphics"
+    );
+    let result = interpret_with_stdout(
+      "Overlay[{Graphics[{Disk[]}, ImageSize -> 100], \
+       Graphics[{Red, Rectangle[]}, ImageSize -> 100]}]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    assert!(!svg.contains("-Graphics-"), "cells must be drawn: {svg}");
+    // Both cells occupy the same footprint (one on top of the other), not
+    // side by side or stacked in a column.
+    assert_eq!(svg.matches("<svg x=").count(), 2, "{svg}");
+    assert!(svg.contains("rgb(255,0,0)"), "the red cell must render");
+  }
+
+  /// `Overlay`'s `Alignment -> {h, v}` positions a smaller item within the
+  /// larger items' shared canvas — the same fractional positioning `Column`
+  /// uses, but on both axes at once since items overlap rather than stack.
+  /// A Demonstrations Project notebook commonly spells `Center` as the
+  /// fraction pair `{0.5, 0.5}` rather than the symbol.
+  #[test]
+  fn overlay_alignment_positions_the_smaller_item() {
+    let xy_of = |code: &str| -> Vec<(f64, f64)> {
+      export_svg(code)
+        .lines()
+        .filter(|l| l.starts_with("<svg x="))
+        .filter_map(|l| {
+          let x = l.split("x=\"").nth(1)?.split('"').next()?.parse().ok()?;
+          let y = l.split("y=\"").nth(1)?.split('"').next()?.parse().ok()?;
+          Some((x, y))
+        })
+        .collect()
+    };
+    let items = "{Graphics[{Disk[]}, ImageSize -> {200, 200}], \
+                 Graphics[{Rectangle[]}, ImageSize -> {40, 40}]}";
+    assert_eq!(
+      xy_of(&format!("Overlay[{items}]")),
+      vec![(0.0, 0.0), (80.0, 80.0)],
+      "default alignment centers the smaller item on both axes"
+    );
+    assert_eq!(
+      xy_of(&format!("Overlay[{items}, Alignment -> {{0.5, 0.5}}]")),
+      vec![(0.0, 0.0), (80.0, 80.0)],
+      "a {{0.5, 0.5}} fraction pair means Center, same as the default"
+    );
+    assert_eq!(
+      xy_of(&format!("Overlay[{items}, Alignment -> {{Left, Top}}]")),
+      vec![(0.0, 0.0), (0.0, 0.0)],
+      "Left/Top pins the smaller item to the corner"
+    );
+    assert_eq!(
+      xy_of(&format!("Overlay[{items}, Alignment -> {{Right, Bottom}}]")),
+      vec![(0.0, 0.0), (160.0, 160.0)],
+      "Right/Bottom pins the smaller item to the opposite corner"
+    );
+  }
+
+  #[test]
+  fn overlay_of_an_empty_list_is_a_blank_picture() {
+    clear_state();
+    assert_eq!(interpret("Head[Overlay[{}]]").unwrap(), "Graphics");
+  }
+
   /// A Demonstration's `Manipulate` body commonly styles its whole display
   /// as `Pane[Text@Style[Grid[{…}], size], {w, h}]` — a `Style` sitting
   /// above `Text`/`Pane` wrappers, not directly on the `Grid`. The styled-

@@ -15152,6 +15152,129 @@ pub fn graphics_column_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+/// Overlay[{expr1, expr2, ...}] or Overlay[{...}, Alignment -> align]
+/// Stacks items on top of each other at a shared alignment point, instead
+/// of laying them out side by side — e.g. a plot and a colorbar computed
+/// separately, composited into one picture. Each item renders at its own
+/// natural size; the combined canvas is the bounding box needed to hold
+/// every item once aligned.
+pub fn overlay_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let list_owned;
+  let items: &[Expr] = if let Expr::List(items) = &args[0] {
+    items
+  } else {
+    list_owned = evaluate_expr_to_expr(&args[0])?;
+    match &list_owned {
+      Expr::List(items) => items,
+      _ => {
+        return Err(InterpreterError::EvaluationError(
+          "Overlay expects a list as its first argument".into(),
+        ));
+      }
+    }
+  };
+
+  if items.is_empty() {
+    return Ok(crate::graphics_result(
+      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
+    ));
+  }
+
+  let (align_h, align_v) = parse_overlay_alignment(&args[1..]);
+
+  let svgs: Vec<String> = items
+    .iter()
+    .filter_map(|item| {
+      let evaluated = evaluate_expr_to_expr(item).ok()?;
+      let svg = crate::evaluator::expr_to_svg(&evaluated);
+      (!svg.is_empty()).then_some(svg)
+    })
+    .collect();
+
+  if svgs.is_empty() {
+    return Ok(crate::graphics_result(
+      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
+    ));
+  }
+
+  let dims: Vec<(f64, f64)> = svgs
+    .iter()
+    .map(|s| svg_natural_size(s).unwrap_or((0.0, 0.0)))
+    .collect();
+  let canvas_w = dims.iter().fold(0.0_f64, |m, (w, _)| m.max(*w));
+  let canvas_h = dims.iter().fold(0.0_f64, |m, (_, h)| m.max(*h));
+
+  let mut inner = String::new();
+  for (svg, (w, h)) in svgs.iter().zip(dims.iter()) {
+    let cx = align_h * (canvas_w - w) + w / 2.0;
+    let cy = align_v * (canvas_h - h) + h / 2.0;
+    inner.push_str(&embed_svg_centered(svg, cx, cy, *w, *h));
+  }
+
+  let combined = format!(
+    "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{canvas_w:.2}\" height=\"{canvas_h:.2}\" viewBox=\"0 0 {canvas_w:.2} {canvas_h:.2}\">\n{inner}</svg>\n"
+  );
+  crate::clear_captured_graphics();
+  Ok(crate::graphics_result(combined))
+}
+
+/// Parse `Alignment -> spec` for `Overlay`. `spec` is either a single
+/// symbol/number applied to both axes, or `{horizontal, vertical}`. Each
+/// axis accepts `Left`/`Center`/`Right` (horizontal) or `Top`/`Center`/
+/// `Bottom` (vertical), or a bare number used directly as the alignment
+/// fraction (0 = left/top edge, 1 = right/bottom edge — the convention a
+/// Demonstrations Project notebook typically writes as `{0.5, 0.5}` for
+/// `Center`). Defaults to `{Center, Center}`: real Mathematica defaults the
+/// vertical axis to `Baseline`, but `Overlay`'s items are almost always
+/// full graphics rather than text runs, for which `Baseline` and `Center`
+/// coincide.
+fn parse_overlay_alignment(args: &[Expr]) -> (f64, f64) {
+  let mut align_h = 0.5;
+  let mut align_v = 0.5;
+  for arg in args {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = arg
+      && matches!(pattern.as_ref(), Expr::Identifier(name) if name == "Alignment")
+    {
+      match replacement.as_ref() {
+        Expr::List(parts) if parts.len() == 2 => {
+          if let Some(f) = alignment_axis_fraction(&parts[0], true) {
+            align_h = f;
+          }
+          if let Some(f) = alignment_axis_fraction(&parts[1], false) {
+            align_v = f;
+          }
+        }
+        other => {
+          if let Some(f) = alignment_axis_fraction(other, true) {
+            align_h = f;
+            align_v = f;
+          }
+        }
+      }
+    }
+  }
+  (align_h, align_v)
+}
+
+/// A single `Alignment` axis value as a 0..1 fraction (see
+/// `parse_overlay_alignment`).
+fn alignment_axis_fraction(expr: &Expr, horizontal: bool) -> Option<f64> {
+  match expr {
+    Expr::Identifier(name) => match name.as_str() {
+      "Center" | "Baseline" => Some(0.5),
+      "Left" if horizontal => Some(0.0),
+      "Right" if horizontal => Some(1.0),
+      "Top" if !horizontal => Some(0.0),
+      "Bottom" if !horizontal => Some(1.0),
+      _ => None,
+    },
+    _ => try_eval_to_f64(expr),
+  }
+}
+
 /// GraphicsGrid[{{g1, g2}, {g3, g4}}, opts...]
 /// Arranges graphics in a 2D grid.
 pub fn graphics_grid_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -18280,12 +18403,27 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       continue;
     }
     let (spec, rename) = rewrite_compound_control_var(spec);
-    let parsed = if let Some(parsed) =
-      crate::with_scoped_globals(&initial_bindings, || {
-        parse_manipulate_control(&spec, &sibling_names)
-      }) {
-      parsed
-    } else {
+    let first_pass = crate::with_scoped_globals(&initial_bindings, || {
+      parse_manipulate_control(&spec, &sibling_names)
+    });
+    // A Locator/Slider2D spec whose corner bounds or initial point reference
+    // a global the body only assigns as a side effect (not another control
+    // variable, which `initial_bindings` already covers, e.g. a geometric
+    // constant like `r = eyeRadius = 1.3` used by a later Locator's range)
+    // can't resolve to a numeric point on this first pass and silently
+    // downgrades to `Fixed`. Wolfram evaluates the body once before laying
+    // out controls, so by the time it reads a Locator's bounds such globals
+    // already hold their assigned values — retry it too against the
+    // bindings a full body run leaves behind, the same fallback an
+    // unparseable spec gets below.
+    let needs_body_retry = match &first_pass {
+      None => true,
+      Some(ParsedControl::Fixed { .. }) => {
+        matches!(&spec, Expr::List(items) if spec_marks_locator(items))
+      }
+      _ => false,
+    };
+    let parsed = if needs_body_retry {
       // Wolfram evaluates the body once before laying the controls out, so
       // a control whose choice list is a symbol the *body* fills in —
       // `{{k, 9, " "}, choices, ControlType -> PopupMenu}` next to a
@@ -18300,17 +18438,25 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
           manipulate_post_body_bindings(args.first(), &initial_bindings)
         })
         .clone();
-      let Some(parsed) = crate::with_scoped_globals(&after_body, || {
+      match crate::with_scoped_globals(&after_body, || {
         parse_manipulate_control(&spec, &sibling_names)
-      }) else {
-        // A spec neither the leading-assignment probe nor a full body run
-        // can make sense of is skipped rather than failing the whole
-        // Manipulate — one unrecognised control row must not take every
-        // other, already-understood row down with it (see the comment
-        // above the loop on `Initialization`/`TrackedSymbols`).
-        continue;
-      };
-      parsed
+      }) {
+        Some(retried) => retried,
+        None => match first_pass {
+          // The full body run didn't turn this Locator into anything
+          // better than the first pass's `Fixed` fallback — keep it rather
+          // than dropping the binding entirely.
+          Some(parsed) => parsed,
+          // A spec neither the leading-assignment probe nor a full body run
+          // can make sense of is skipped rather than failing the whole
+          // Manipulate — one unrecognised control row must not take every
+          // other, already-understood row down with it (see the comment
+          // above the loop on `Initialization`/`TrackedSymbols`).
+          None => continue,
+        },
+      }
+    } else {
+      first_pass.unwrap()
     };
     match parsed {
       ParsedControl::Visible {
@@ -18756,6 +18902,22 @@ fn is_control_type_rule(item: &Expr) -> bool {
 fn is_control_type_marker(item: &Expr) -> bool {
   is_control_type_rule(item)
     || matches!(item, Expr::Identifier(s) if s == "None")
+}
+
+/// Whether a control spec's items declare a `Locator` control, either as the
+/// bare marker (`{{p, init}, pmin, pmax, Locator}`) or `ControlType ->
+/// Locator`.
+fn spec_marks_locator(items: &[Expr]) -> bool {
+  items.iter().any(|it| {
+    matches!(it, Expr::Identifier(s) if s == "Locator")
+      || matches!(
+        it,
+        Expr::Rule { pattern, replacement }
+        | Expr::RuleDelayed { pattern, replacement }
+          if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "ControlType")
+            && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "Locator")
+      )
+  })
 }
 
 /// The variables driven by `Locator[Dynamic[var, cb], …]` markers or a
@@ -21396,16 +21558,7 @@ fn parse_manipulate_control(
   // `Locator` controls (`{{p, init}, pmin, pmax, Locator}`, as a bare
   // marker or `ControlType -> Locator`) and hidden `ControlType -> None`
   // variables (`{{v, init}, ControlType -> None}`).
-  let is_locator = items.iter().any(|it| {
-    matches!(it, Expr::Identifier(s) if s == "Locator")
-      || matches!(
-        it,
-        Expr::Rule { pattern, replacement }
-        | Expr::RuleDelayed { pattern, replacement }
-          if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "ControlType")
-            && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "Locator")
-      )
-  });
+  let is_locator = spec_marks_locator(items);
   // `{{x, 1}, None}` states the control's domain as `None`, which is the
   // positional spelling of `ControlType -> None`: the variable is bound but
   // no widget is drawn (verified against wolframscript, which shows no
@@ -24540,6 +24693,40 @@ mod manipulate_dynamic_control_list_tests {
         );
       }
       other => panic!("expected a Locator control, got {other:?}"),
+    }
+  }
+
+  /// A Locator's corner bounds (and even its own initial point) may name a
+  /// plain global the body only assigns as an ordinary side effect — not
+  /// another control's variable, which the initial-value probe already
+  /// covers, but one a Demonstration sets once near the top of a large body
+  /// (e.g. a shared geometric constant every helper function reads).
+  /// Wolfram evaluates the body once before laying the controls out, so
+  /// that global already holds its assigned value by the time the Locator's
+  /// bounds are read — Woxi must retry against a full body run instead of
+  /// silently downgrading the control to a fixed, undraggable point.
+  #[test]
+  fn locator_bound_by_body_only_global_becomes_interactive() {
+    let s = spec(
+      "Manipulate[k = 2; Graphics[{Point[p]}], \
+       {{p, {0, k}}, {0, 0}, {0, 10 k}, Locator}]",
+    );
+    assert_eq!(names(&s), vec!["p"]);
+    match &s.controls[0] {
+      ManipulateControl::Slider2D {
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+        x_initial,
+        y_initial,
+        ..
+      } => {
+        assert_eq!((*x_min, *x_max), (0.0, 0.0));
+        assert_eq!((*y_min, *y_max), (0.0, 20.0));
+        assert_eq!((*x_initial, *y_initial), (0.0, 2.0));
+      }
+      other => panic!("expected a Slider2D control, got {other:?}"),
     }
   }
 
