@@ -2014,6 +2014,48 @@ fn strip_alternating_factor(body: &Expr, var: &str) -> Option<Expr> {
   })
 }
 
+/// True for `Indeterminate`, `ComplexInfinity`, `Infinity` (in any of the
+/// spellings a negation can leave it in: a bare identifier, `-Infinity` as
+/// `UnaryOp[Minus, …]`, or `Times[-1, Infinity]`), or a `DirectedInfinity[…]`
+/// — the markers a division or a pole (`1/0`, `PolyGamma[0]`, `Log[0]`, …)
+/// evaluates to, rather than raising an `InterpreterError`.
+fn is_nonfinite_boundary_value(expr: &Expr) -> bool {
+  let is_infinity = |e: &Expr| matches!(e, Expr::Identifier(s) | Expr::Constant(s) if s == "Infinity");
+  if is_infinity(expr)
+    || matches!(expr, Expr::Identifier(s) if s == "Indeterminate" || s == "ComplexInfinity")
+    || matches!(expr, Expr::FunctionCall { name, .. } if name == "DirectedInfinity")
+  {
+    return true;
+  }
+  if let Expr::UnaryOp {
+    op: UnaryOperator::Minus,
+    operand,
+  } = expr
+  {
+    return is_infinity(operand);
+  }
+  let times_args: Option<&[Expr]> = match expr {
+    Expr::FunctionCall { name, args } if name == "Times" => Some(args),
+    _ => None,
+  };
+  if let Some(args) = times_args
+    && args.len() == 2
+  {
+    return (matches!(&args[0], Expr::Integer(-1)) && is_infinity(&args[1]))
+      || (matches!(&args[1], Expr::Integer(-1)) && is_infinity(&args[0]));
+  }
+  if let Expr::BinaryOp {
+    op: BinaryOperator::Times,
+    left,
+    right,
+  } = expr
+  {
+    return (matches!(left.as_ref(), Expr::Integer(-1)) && is_infinity(right))
+      || (matches!(right.as_ref(), Expr::Integer(-1)) && is_infinity(left));
+  }
+  false
+}
+
 pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 {
     // Sum requires at least 2 arguments
@@ -2066,11 +2108,38 @@ pub fn sum_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     );
     let iter_spec =
       Expr::List(vec![fresh.clone(), Expr::Integer(1), upper].into());
-    let inner_sum = sum_ast(&[body_in_fresh, iter_spec])?;
-    // Evaluate f(0)
+    let inner_sum_raw = sum_ast(&[body_in_fresh, iter_spec])?;
+    // `inner_sum_raw` may not have closed to a value (e.g. `PolyGamma`/`Sin`
+    // have no Sum handling at all), in which case it still holds the fresh
+    // dummy — as both the summand's argument and, inside the held
+    // `Sum[…]`'s own iterator spec, the bound variable name. Substituting
+    // the dummy back to the caller's variable in that case would let the
+    // bound variable shadow the free occurrence in its own upper bound
+    // (`Sum[f[k], {k, 1, -1 + k}]`), which is ill-formed — so hand back the
+    // original call unevaluated instead of a broken partial rewrite.
+    if crate::functions::polynomial_ast::contains_var(
+      &inner_sum_raw,
+      &fresh_name,
+    ) {
+      return Ok(unevaluated("Sum", args));
+    }
+    let inner_sum = crate::syntax::substitute_variable(
+      &inner_sum_raw,
+      &fresh_name,
+      &Expr::Identifier(var_name.clone()),
+    );
+    // Evaluate f(0). A summand with a genuine pole at 0 (`1/k`,
+    // `PolyGamma[k]`, …) makes this boundary term non-finite even though
+    // the antidifference itself is perfectly well defined there (e.g.
+    // `Sum[1/i, i]` closes to `HarmonicNumber[i - 1]`, matching wolframscript,
+    // which is exactly `inner_sum` alone) — so a non-finite f(0) is dropped
+    // rather than poisoning the whole result through `Plus`.
     let f_at_zero =
       crate::syntax::substitute_variable(&args[0], var_name, &Expr::Integer(0));
     let f_at_zero_eval = crate::evaluator::evaluate_expr_to_expr(&f_at_zero)?;
+    if is_nonfinite_boundary_value(&f_at_zero_eval) {
+      return Ok(inner_sum);
+    }
     return crate::functions::math_ast::plus_ast(&[f_at_zero_eval, inner_sum]);
   }
 
@@ -2433,6 +2502,111 @@ fn collect_times_factors(e: &Expr, out: &mut Vec<Expr>) {
   }
 }
 
+/// The exponent `s` of a monomial `var^s` in the summation variable, with a
+/// bare `var` read as `s = 1`. `None` when `f` is not a power of `var` with
+/// a concrete integer exponent.
+fn monomial_power_of_var(f: &Expr, var_name: &str) -> Option<i128> {
+  match f {
+    Expr::Identifier(name) if name == var_name => Some(1),
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } if matches!(left.as_ref(), Expr::Identifier(name) if name == var_name) => {
+      match right.as_ref() {
+        Expr::Integer(s) => Some(*s),
+        _ => None,
+      }
+    }
+    _ => None,
+  }
+}
+
+/// `Sum_{k=1}^{upper} k^s`, as a raw (unfactored) polynomial expression in
+/// `upper`, via Faulhaber's formula with Bernoulli numbers:
+/// `1/(s+1) * Sum_{j=0}^s Binomial[s+1, j] BernoulliB[j] (upper+1)^(s+1-j)`.
+fn faulhaber_power_sum(
+  s: i128,
+  upper: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let upper_plus_1 = plus2(upper.clone(), Expr::Integer(1));
+  let mut terms: Vec<Expr> = Vec::with_capacity((s + 1) as usize);
+  for j in 0..=s {
+    let bern =
+      crate::functions::math_ast::bernoulli_b_ast(&[Expr::Integer(j)])?;
+    // Every odd Bernoulli number past B_1 is zero; skip those terms.
+    if matches!(&bern, Expr::Integer(0)) {
+      continue;
+    }
+    let binom = crate::functions::math_ast::binomial_ast(&[
+      Expr::Integer(s + 1),
+      Expr::Integer(j),
+    ])?;
+    let power_term = pow2(upper_plus_1.clone(), Expr::Integer(s + 1 - j));
+    terms.push(times2(times2(binom, bern), power_term));
+  }
+  let raw = div2(call("Plus", terms), Expr::Integer(s + 1));
+  crate::evaluator::evaluate_expr_to_expr(&raw)
+}
+
+/// The exponent `s` when `body` is exactly `var^s * HarmonicNumber[var]`
+/// (either factor order; a bare `var` factor reads as `s = 1`). `None` for
+/// any other shape, including a `HarmonicNumber` with a second (order)
+/// argument.
+fn monomial_times_single_harmonic(body: &Expr, var_name: &str) -> Option<i128> {
+  let factors =
+    crate::functions::polynomial_ast::collect_multiplicative_factors(body);
+  if factors.len() != 2 {
+    return None;
+  }
+  let is_harmonic = |e: &Expr| {
+    matches!(e, Expr::FunctionCall { name, args }
+      if name == "HarmonicNumber"
+        && args.len() == 1
+        && matches!(&args[0], Expr::Identifier(v) if v == var_name))
+  };
+  if is_harmonic(&factors[0]) {
+    monomial_power_of_var(&factors[1], var_name)
+  } else if is_harmonic(&factors[1]) {
+    monomial_power_of_var(&factors[0], var_name)
+  } else {
+    None
+  }
+}
+
+/// `Sum_{k=1}^{upper} poly(k)` for an arbitrary univariate polynomial `poly`
+/// in `var_name`, by summing each of its monomial terms through
+/// `faulhaber_power_sum` (the constant term contributes `c_0 * upper`).
+fn sum_polynomial_over_var(
+  poly: &Expr,
+  var_name: &str,
+  upper: &Expr,
+) -> Result<Expr, InterpreterError> {
+  let coeffs = crate::functions::polynomial_ast::coefficient_list_ast(&[
+    poly.clone(),
+    Expr::Identifier(var_name.to_string()),
+  ])?;
+  let Expr::List(ref items) = coeffs else {
+    return crate::evaluator::evaluate_expr_to_expr(&Expr::Integer(0));
+  };
+  let mut terms: Vec<Expr> = Vec::new();
+  for (degree, coeff) in items.iter().enumerate() {
+    if matches!(coeff, Expr::Integer(0)) {
+      continue;
+    }
+    let piece = if degree == 0 {
+      times2(coeff.clone(), upper.clone())
+    } else {
+      times2(coeff.clone(), faulhaber_power_sum(degree as i128, upper)?)
+    };
+    terms.push(piece);
+  }
+  if terms.is_empty() {
+    return Ok(Expr::Integer(0));
+  }
+  crate::evaluator::evaluate_expr_to_expr(&call("Plus", terms))
+}
+
 /// If `f` is `base^var` (in either Power spelling), return `base`.
 fn power_with_exponent_var(f: &Expr, var_name: &str) -> Option<Expr> {
   match f {
@@ -2668,109 +2842,93 @@ fn try_symbolic_sum(
     return Ok(Some(result));
   }
 
-  // Sum[k, {k, 1, n}] = n*(1 + n)/2
+  // Sum[k^s, {k, 1, n}] = Faulhaber's formula, for any concrete positive
+  // integer power s (a bare `k` counts as s = 1). The raw expansion is
+  // handed to `Factor` so the printed form matches wolframscript's own
+  // canonical grouping (verified for s = 2..5 against the previously
+  // hand-derived formulas here — e.g. `Factor[n^3/3 + n^2/2 + n/6]`
+  // reproduces `n*(1+n)*(1+2*n)/6` exactly) instead of one hardcoded
+  // closed form per degree.
+  if let Some(1) = min_concrete
+    && let Some(s) = monomial_power_of_var(body, var_name)
+    && (1..=64).contains(&s)
+  {
+    let evaluated = faulhaber_power_sum(s, max_expr)?;
+    let factored = crate::functions::polynomial_ast::factor_ast(&[evaluated])?;
+    return Ok(Some(factored));
+  }
+
+  // Sum[k^s * HarmonicNumber[k], {k, 1, n}] via discrete summation by parts
+  // (the technique the "Summation by Parts" Demonstration illustrates):
+  // with S(x) = Sum_{k=1}^x k^s and ΔH_k = H_{k+1} - H_k = 1/(k+1),
+  //   Sum_{k=1}^n k^s H_k = S(n) H_n - Sum_{k=1}^{n-1} S(k)/(k+1).
+  // Dividing S(k) by (k+1) gives S(k) = (k+1) q(k) + r, where the remainder
+  // r = S(-1) is a constant, so
+  //   Sum_{k=1}^{n-1} S(k)/(k+1) = Sum_{k=1}^{n-1} q(k) + r (H_n - 1),
+  // and Sum_{k=1}^{n-1} q(k) closes term-by-term through the same Faulhaber
+  // formula (q has degree s, one less than S). Verified numerically against
+  // the brute-force sum for many (s, n) pairs, and the s = 2..5 cases here
+  // print through the same `Factor` pass validated above.
+  if let Some(1) = min_concrete
+    && let Some(s) = monomial_times_single_harmonic(body, var_name)
+    && (1..=64).contains(&s)
+  {
+    let k = Expr::Identifier(var_name.to_string());
+    let s_of_k = faulhaber_power_sum(s, &k)?;
+    let k_plus_1 = plus2(k.clone(), Expr::Integer(1));
+    let qr =
+      crate::functions::polynomial_ast::polynomial_quotient_remainder_ast(&[
+        s_of_k, k_plus_1, k,
+      ])?;
+    if let Expr::List(ref qr_list) = qr
+      && qr_list.len() == 2
+    {
+      let q_of_k = qr_list[0].clone();
+      let remainder = qr_list[1].clone();
+      let n_minus_1 = plus2(max_expr.clone(), Expr::Integer(-1));
+      let q_sum = sum_polynomial_over_var(&q_of_k, var_name, &n_minus_1)?;
+      // `S(k) = (k+1) q(k) + r` (the division above) holds for every `k`,
+      // so at `k = n` it gives `S(n) - r = (n+1) q(n)` without an explicit
+      // `S(n)` recomputation, and (used below) `(S(n)-r)/(n+1) = q(n)`.
+      let q_of_n = crate::evaluator::evaluate_expr_to_expr(
+        &crate::syntax::substitute_variable(&q_of_k, var_name, max_expr),
+      )?;
+      let n_plus_1 = plus2(max_expr.clone(), Expr::Integer(1));
+      // wolframscript states this identity with the *shifted* harmonic
+      // number `HarmonicNumber[n + 1]` rather than `HarmonicNumber[n]`
+      // (matching the convention already used elsewhere in this file, e.g.
+      // `Sum[1/k, k] = HarmonicNumber[-1 + k]`) — rewriting `H(n) = H(n+1)
+      // - 1/(n+1)` moves the coefficient of `H(n)` (`S(n) - r`) onto
+      // `H(n+1)` and folds the `-1/(n+1)` part into the polynomial
+      // remainder as `- (S(n)-r)/(n+1) = -q(n)`.
+      let h_coeff_raw = crate::evaluator::evaluate_expr_to_expr(&times2(
+        n_plus_1,
+        q_of_n.clone(),
+      ))?;
+      let poly_part_raw = crate::evaluator::evaluate_expr_to_expr(&minus2(
+        minus2(remainder, q_sum),
+        q_of_n,
+      ))?;
+      let h_n1 =
+        call1("HarmonicNumber", plus2(max_expr.clone(), Expr::Integer(1)));
+      // Keep the `HarmonicNumber[n+1]` coefficient and the plain polynomial
+      // remainder separate through `Factor` (`Factor` alone can't regroup
+      // terms around the opaque `HarmonicNumber[…]` atom once they're mixed
+      // into one `Plus`, so factoring the combined expression would hand
+      // back the fully expanded, far uglier polynomial instead).
+      let h_coeff =
+        crate::functions::polynomial_ast::factor_ast(&[h_coeff_raw])?;
+      let poly_part =
+        crate::functions::polynomial_ast::factor_ast(&[poly_part_raw])?;
+      let result = crate::evaluator::evaluate_expr_to_expr(&plus2(
+        times2(h_coeff, h_n1),
+        poly_part,
+      ))?;
+      return Ok(Some(result));
+    }
+  }
+
   if let Some(1) = min_concrete {
-    if matches!(body, Expr::Identifier(name) if name == var_name) {
-      let n = max_expr.clone();
-      return Ok(Some(div2(
-        times2(n.clone(), plus2(Expr::Integer(1), n)),
-        Expr::Integer(2),
-      )));
-    }
-
-    // Sum[k^2, {k, 1, n}] = n*(1 + n)*(1 + 2*n)/6
-    if let Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left: base,
-      right: exp,
-    } = body
-      && matches!(base.as_ref(), Expr::Identifier(name) if name == var_name)
-      && matches!(exp.as_ref(), Expr::Integer(2))
-    {
-      let n = max_expr.clone();
-      return Ok(Some(div2(
-        times2(
-          times2(n.clone(), plus2(Expr::Integer(1), n.clone())),
-          plus2(Expr::Integer(1), times2(Expr::Integer(2), n)),
-        ),
-        Expr::Integer(6),
-      )));
-    }
-
-    // Sum[k^3, {k, 1, n}] = (n*(1 + n)/2)^2
-    if let Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left: base,
-      right: exp,
-    } = body
-      && matches!(base.as_ref(), Expr::Identifier(name) if name == var_name)
-      && matches!(exp.as_ref(), Expr::Integer(3))
-    {
-      let n = max_expr.clone();
-      // (n*(1+n)/2)^2
-      return Ok(Some(pow2(
-        div2(
-          times2(n.clone(), plus2(Expr::Integer(1), n)),
-          Expr::Integer(2),
-        ),
-        Expr::Integer(2),
-      )));
-    }
-
-    // Sum[k^4, {k, 1, n}] = n*(1+n)*(1+2*n)*(-1+3*n+3*n^2)/30
-    if let Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left: base,
-      right: exp,
-    } = body
-      && matches!(base.as_ref(), Expr::Identifier(name) if name == var_name)
-      && matches!(exp.as_ref(), Expr::Integer(4))
-    {
-      let n = max_expr.clone();
-      // n*(1+n)*(1+2*n)*(-1+3*n+3*n^2)/30
-      let n_plus_1 = plus2(Expr::Integer(1), n.clone());
-      let one_plus_2n =
-        plus2(Expr::Integer(1), times2(Expr::Integer(2), n.clone()));
-      let neg1_plus_3n_plus_3n2 = plus2(
-        Expr::Integer(-1),
-        plus2(
-          times2(Expr::Integer(3), n.clone()),
-          times2(Expr::Integer(3), pow2(n.clone(), Expr::Integer(2))),
-        ),
-      );
-      let numerator = call(
-        "Times",
-        vec![n, n_plus_1, one_plus_2n, neg1_plus_3n_plus_3n2],
-      );
-      return Ok(Some(div2(numerator, Expr::Integer(30))));
-    }
-
-    // Sum[k^5, {k, 1, n}] = n^2*(1+n)^2*(-1+2*n+2*n^2)/12
-    if let Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left: base,
-      right: exp,
-    } = body
-      && matches!(base.as_ref(), Expr::Identifier(name) if name == var_name)
-      && matches!(exp.as_ref(), Expr::Integer(5))
-    {
-      let n = max_expr.clone();
-      // n^2*(1+n)^2*(-1+2*n+2*n^2)/12
-      let n_sq = pow2(n.clone(), Expr::Integer(2));
-      let n_plus_1_sq =
-        pow2(plus2(Expr::Integer(1), n.clone()), Expr::Integer(2));
-      let neg1_plus_2n_plus_2n2 = plus2(
-        Expr::Integer(-1),
-        plus2(
-          times2(Expr::Integer(2), n.clone()),
-          times2(Expr::Integer(2), pow2(n, Expr::Integer(2))),
-        ),
-      );
-      let numerator =
-        call("Times", vec![n_sq, n_plus_1_sq, neg1_plus_2n_plus_2n2]);
-      return Ok(Some(div2(numerator, Expr::Integer(12))));
-    }
-
     // Sum[HarmonicNumber[k], {k, 1, n}]      = HyperHarmonicNumber[2, n]
     // Sum[HarmonicNumber[k, r], {k, 1, n}]   = HyperHarmonicNumber[2, n, r]
     // (the r-fold cumulative sum of harmonic numbers), when the order r is
