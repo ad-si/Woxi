@@ -379,9 +379,8 @@ thread_local! {
 // Numbered output history: `$Line` at the time of evaluation → the value
 // that line produced. This is what makes `Out[9]` / `%9` — and the
 // relative `%%…` forms, which resolve to `Out[$Line - k]` — return real
-// values in a session that advances `$Line` (the terminal REPL and the
-// Jupyter kernel). Hosts that leave `$Line` at 1 simply never accumulate
-// more than one entry and fall back to `LAST_OUTPUT_EXPR`.
+// values in a session that numbers its input lines (the terminal REPL and
+// the Jupyter kernel).
 thread_local! {
     static OUTPUT_HISTORY: RefCell<std::collections::HashMap<i128, syntax::Expr>> =
       RefCell::new(std::collections::HashMap::new());
@@ -391,7 +390,7 @@ thread_local! {
 /// can resolve to it. Called from `interpret_with_stdout` after success.
 fn set_last_output(expr: syntax::Expr) {
   let line = current_line();
-  if line > 0 {
+  if line_numbering_enabled() && line > 0 {
     OUTPUT_HISTORY.with(|c| c.borrow_mut().insert(line, expr.clone()));
   }
   LAST_OUTPUT_EXPR.with(|c| *c.borrow_mut() = Some(expr));
@@ -406,6 +405,17 @@ pub fn get_last_output() -> Option<syntax::Expr> {
 /// evaluated in this session. Backs `Out[k]`.
 pub fn get_output_at_line(line: i128) -> Option<syntax::Expr> {
   OUTPUT_HISTORY.with(|c| c.borrow().get(&line).cloned())
+}
+
+/// Whether the host numbers its input lines, i.e. assigns `$Line` before
+/// each evaluation. Only then does a numbered history mean anything:
+/// woxi-studio, the playground and the JupyterLite kernel evaluate cell
+/// after cell without ever advancing `$Line`, so every value would land in
+/// — and be read back out of — the same slot, making `Out[1]` answer with
+/// whatever ran most recently. Those hosts keep only the single previous
+/// value that backs `%`.
+fn line_numbering_enabled() -> bool {
+  ENV.with(|e| e.borrow().contains_key("$Line"))
 }
 
 /// The current input-line number (`$Line`). Defaults to 1 — the value

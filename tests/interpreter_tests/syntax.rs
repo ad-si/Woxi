@@ -9461,6 +9461,23 @@ mod out_history {
     reset();
   }
 
+  // woxi-studio, the playground and the JupyterLite kernel evaluate cell
+  // after cell without ever assigning `$Line`. They must keep exactly the
+  // single-value history that backs `%` — if every cell were filed under
+  // the same line number, `Out[1]` would answer with whatever ran last
+  // instead of staying symbolic.
+  #[test]
+  fn a_host_that_does_not_number_lines_keeps_only_the_previous_value() {
+    reset();
+    assert_eq!(interpret_with_stdout("2 + 3").unwrap().result, "5");
+    assert_eq!(interpret_with_stdout("10 * 10").unwrap().result, "100");
+    assert_eq!(interpret_with_stdout("N[%]").unwrap().result, "100.");
+    assert_eq!(interpret_with_stdout("Out[1]").unwrap().result, "Out[1]");
+    assert_eq!(interpret_with_stdout("Out[2]").unwrap().result, "Out[2]");
+    assert_eq!(interpret_with_stdout("%%").unwrap().result, "Out[0]");
+    reset();
+  }
+
   #[test]
   fn bare_in_is_the_previous_line() {
     reset();
