@@ -3240,7 +3240,11 @@ fn skellam_params(dist: &Expr) -> Option<(Expr, Expr)> {
 }
 
 fn fact_i128(n: i128) -> i128 {
-  (1..=n).product::<i128>().max(1)
+  let mut r = 1i128;
+  for i in 2..=n {
+    r *= i;
+  }
+  r
 }
 
 /// Integer partitions of `n` into parts >= 2 (each part non-increasing).
@@ -4318,7 +4322,7 @@ fn factorial_moment_of_distribution(
   r: i128,
 ) -> Option<Expr> {
   let times = |fs: Vec<Expr>| call("Times", fs);
-  let r_factorial: i128 = (1..=r).product::<i128>().max(1);
+  let r_factorial = fact_i128(r);
   match (name, dargs) {
     // Poisson: E[X^(r)] = lambda^r (the defining property).
     ("PoissonDistribution", [lam]) => Some(pow2(lam.clone(), Expr::Integer(r))),

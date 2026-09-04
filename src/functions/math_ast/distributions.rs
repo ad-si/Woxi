@@ -13995,11 +13995,11 @@ fn pdf_noncentral_chi_square(
       }
       // odd: x^((v-2)/2) / ((v-2)!! Sqrt[2 Pi] E^(x/2)), negative
       // powers of x move into the denominator
-      let dfact = (1..=(v - 2)).step_by(2).product::<i128>().max(1);
+      let vm2_fact2 = (1..=(v - 2)).step_by(2).product::<i128>().max(1);
       let sqrt_2pi = sqrt(call("Times", vec![int(2), pi()]));
       let mut den_factors: Vec<Expr> = Vec::new();
-      if dfact > 1 {
-        den_factors.push(int(dfact));
+      if vm2_fact2 > 1 {
+        den_factors.push(int(vm2_fact2));
       }
       den_factors.push(e_pow);
       den_factors.push(sqrt_2pi);

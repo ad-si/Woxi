@@ -424,8 +424,8 @@ fn jacobi_p_rational_ab(
   let mut terms: Vec<Expr> = Vec::with_capacity(n + 1);
   for s in 0..=n {
     // Denominator 2^s · s! · (n-s)!.
-    let s_fact: i128 = (1..=s as i128).product::<i128>().max(1);
-    let ns_fact: i128 = (1..=(n - s) as i128).product::<i128>().max(1);
+    let s_fact = fact(s);
+    let ns_fact = fact(n - s);
     let Some(den) = (1i128 << s)
       .checked_mul(s_fact)
       .and_then(|v| v.checked_mul(ns_fact))
@@ -2499,13 +2499,20 @@ pub fn gegenbauer_c_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+fn fact(n: usize) -> i128 {
+  let mut r = 1i128;
+  for i in 2..=n {
+    r *= i as i128;
+  }
+  r
+}
+
 /// GegenbauerC[n, λ, x] for a non-negative integer n and a symbolic order λ,
 /// built from the explicit series
 ///   C_n^λ(x) = Σ_{k=0}^{⌊n/2⌋} (-1)^k · Pochhammer[λ, n-k]/(k! (n-2k)!) · (2x)^{n-2k}.
 /// The Pochhammer factors λ(1+λ)…(n-k-1+λ) are kept as an unexpanded product so
 /// the result matches wolframscript's factored form.
 fn gegenbauer_symbolic_lambda(n: usize, lambda: &Expr, x: &Expr) -> Expr {
-  let fact = |m: usize| (1..=m).map(|v| v as i128).product::<i128>().max(1);
   let mut terms: Vec<Expr> = Vec::new();
   for k in 0..=(n / 2) {
     let power = n - 2 * k; // exponent of x
@@ -3099,7 +3106,7 @@ fn generalized_laguerre_l_ast(
   let pow = |b: Expr, e: i128| call("Power", vec![b, Expr::Integer(e)]);
   let mut sum_terms: Vec<Expr> = Vec::with_capacity(n + 1);
   for k in 0..=n {
-    let k_fact: i128 = (1..=k as i128).product::<i128>().max(1);
+    let k_fact = fact(k);
     sum_terms.push(call(
       "Times",
       vec![

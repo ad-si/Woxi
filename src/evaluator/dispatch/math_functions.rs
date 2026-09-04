@@ -2886,7 +2886,10 @@ pub fn dispatch_math_functions(
         crate::functions::math_ast::plus_ast(&terms).ok()?
       };
       // Divide by d! (1 for d = 0).
-      let factorial: i128 = (1..=d).product::<i128>().max(1);
+      let mut factorial = 1i128;
+      for i in 2..=d {
+        factorial *= i;
+      }
       let result = crate::functions::math_ast::times_ast(&[
         sum,
         call("Rational", vec![Expr::Integer(1), Expr::Integer(factorial)]),

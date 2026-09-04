@@ -1094,13 +1094,10 @@ fn polygamma_numeric(n: usize, mut z: f64) -> f64 {
   }
 
   let sign = if n.is_multiple_of(2) { -1.0 } else { 1.0 }; // (-1)^{n+1}
-  let nfact = {
-    let mut f = 1.0_f64;
-    for i in 2..=n {
-      f *= i as f64;
-    }
-    f
-  };
+  let mut nfact = 1.0_f64;
+  for i in 2..=n {
+    nfact *= i as f64;
+  }
 
   // Use recurrence to shift z to a large value
   let mut shift_sum = 0.0;
