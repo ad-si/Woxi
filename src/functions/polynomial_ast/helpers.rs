@@ -271,16 +271,16 @@ pub(super) fn opaque_atoms(expr: &Expr, out: &mut Vec<Expr>) {
     {
       args.iter().for_each(|a| opaque_atoms(a, out));
     }
-    Expr::BinaryOp { op, left, right }
-      if matches!(
-        op,
+    Expr::BinaryOp {
+      op:
         BinaryOperator::Plus
-          | BinaryOperator::Minus
-          | BinaryOperator::Times
-          | BinaryOperator::Divide
-          | BinaryOperator::Power
-      ) =>
-    {
+        | BinaryOperator::Minus
+        | BinaryOperator::Times
+        | BinaryOperator::Divide
+        | BinaryOperator::Power,
+      left,
+      right,
+    } => {
       opaque_atoms(left, out);
       opaque_atoms(right, out);
     }

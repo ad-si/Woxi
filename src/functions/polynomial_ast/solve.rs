@@ -3202,18 +3202,16 @@ fn has_opaque_parameter(expr: &Expr, vars: &[String]) -> bool {
     {
       args.iter().any(|a| has_opaque_parameter(a, vars))
     }
-    Expr::BinaryOp { op, left, right }
-      if matches!(
-        op,
+    Expr::BinaryOp {
+      op:
         BinaryOperator::Plus
-          | BinaryOperator::Minus
-          | BinaryOperator::Times
-          | BinaryOperator::Divide
-          | BinaryOperator::Power
-      ) =>
-    {
-      has_opaque_parameter(left, vars) || has_opaque_parameter(right, vars)
-    }
+        | BinaryOperator::Minus
+        | BinaryOperator::Times
+        | BinaryOperator::Divide
+        | BinaryOperator::Power,
+      left,
+      right,
+    } => has_opaque_parameter(left, vars) || has_opaque_parameter(right, vars),
     Expr::UnaryOp {
       op: UnaryOperator::Minus,
       operand,
