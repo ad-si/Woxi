@@ -5323,14 +5323,19 @@ pub fn highlight_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // A part that names neither a vertex nor an edge of `g` is dropped.
   let mut vertex_rules: Vec<Expr> = Vec::new();
   let mut edge_rules: Vec<Expr> = Vec::new();
+  // The parts themselves, with their `Style` wrappers dropped — what
+  // `AnnotationValue[g, GraphHighlight]` reads back.
+  let mut highlighted: Vec<Expr> = Vec::new();
   for (part, style) in items {
     let rule = |target: Expr| Expr::Rule {
       pattern: Box::new(target),
       replacement: Box::new(style.clone()),
     };
     if vertices.iter().any(|v| vertex_matches_rule(v, &part)) {
+      highlighted.push(part.clone());
       vertex_rules.push(rule(part));
     } else if edges.iter().any(|e| same_edge(e, &part)) {
+      highlighted.push(part.clone());
       edge_rules.push(rule(part));
     }
   }
@@ -5355,6 +5360,10 @@ pub fn highlight_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       replacement: Box::new(Expr::List(value.into())),
     });
   }
+  merged.push(Expr::Rule {
+    pattern: Box::new(Expr::Identifier("GraphHighlight".to_string())),
+    replacement: Box::new(Expr::List(highlighted.into())),
+  });
 
   let merged_names: Vec<&str> = merged
     .iter()

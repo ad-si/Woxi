@@ -3783,6 +3783,43 @@ mod highlight_graph {
     );
   }
 
+  // The highlighted parts are recorded on the graph, so they can be read
+  // back with AnnotationValue — with their Style wrappers dropped.
+  #[test]
+  fn records_the_highlighted_parts_as_an_annotation() {
+    assert_eq!(
+      interpret(&format!(
+        "AnnotationValue[HighlightGraph[{G}, {{2}}], GraphHighlight]"
+      ))
+      .unwrap(),
+      "{2}"
+    );
+    assert_eq!(
+      interpret(&format!(
+        "AnnotationValue[HighlightGraph[{G}, \
+         {{Style[1, Green], Style[3, Blue]}}], GraphHighlight]"
+      ))
+      .unwrap(),
+      "{1, 3}"
+    );
+    // A part that is not in the graph is not highlighted, so not recorded.
+    assert_eq!(
+      interpret(&format!(
+        "AnnotationValue[HighlightGraph[{G}, {{9}}], GraphHighlight]"
+      ))
+      .unwrap(),
+      "{}"
+    );
+    // An edge counts too.
+    assert_eq!(
+      interpret(&format!(
+        "Length[AnnotationValue[HighlightGraph[{G}, 1 <-> 2], GraphHighlight]]"
+      ))
+      .unwrap(),
+      "1"
+    );
+  }
+
   #[test]
   fn highlights_vertices_in_red_by_default() {
     let svg = interpret(&format!(
