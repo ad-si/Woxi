@@ -1852,6 +1852,14 @@ fn evaluate_function_call_ast_inner(
   if let Some(result) = image_functions::dispatch_image_functions(name, args) {
     return result;
   }
+  // Sockets come before the stream functions: `Close`, `ReadString`,
+  // `ReadLine`, `Read` and `BinaryReadList` all take a `SocketObject` as
+  // readily as an `InputStream`, and only the socket dispatch can tell.
+  if let Some(result) =
+    crate::functions::socket_ast::dispatch_socket_functions(name, args)
+  {
+    return result;
+  }
   if let Some(result) = io_functions::dispatch_io_functions(name, args) {
     return result;
   }

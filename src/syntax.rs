@@ -8480,6 +8480,17 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           "Could not connect to DisplayForm[TagBox[\"{url}\", Short[#1, 3] & ]]."
         );
       }
+      // Special case: SocketObject["uuid"] / SocketListener[id].
+      // wolframscript prints the UUID bare — `SocketObject[TCPSERVER-a1b2…]`
+      // — in InputForm as well as OutputForm, so the quotes come off in
+      // both. Neither form round-trips back to the same object anyway:
+      // a socket only exists in the session that opened it.
+      if name == "SocketObject"
+        && args.len() == 1
+        && let Expr::String(uuid) = &args[0]
+      {
+        return format!("SocketObject[{uuid}]");
+      }
       // Special case: ByteArray
       if name == "ByteArray" && args.len() == 1 && is_output {
         // OutputForm: ByteArray[<n>]

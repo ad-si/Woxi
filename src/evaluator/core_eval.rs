@@ -2296,6 +2296,10 @@ pub fn evaluate_expr_to_expr_inner(
                 #[cfg(target_arch = "wasm32")]
                 crate::wasm::sleep_seconds(s);
               }
+              // A pause is where a socket handler gets its turn: it runs on
+              // this thread, so it can only fire where evaluation stops to
+              // wait. wolframscript behaves the same way.
+              crate::functions::socket_ast::pump_socket_events();
               return Ok(Expr::Identifier("Null".to_string()));
             }
             _ => {
@@ -3626,6 +3630,9 @@ pub fn evaluate_expr_to_expr_inner(
         // next `'goto_loop` pass, which is exactly the intent.
         #[allow(clippy::mut_range_bound)]
         for i in start_index..exprs.len() {
+          // Between statements is the other place a socket handler can run.
+          // Costs one relaxed atomic load while no socket is listening.
+          crate::functions::socket_ast::pump_socket_events();
           match evaluate_expr_to_expr(&exprs[i]) {
             Ok(val) => {
               // A `Return[val]` produced by Block/Module/While/For

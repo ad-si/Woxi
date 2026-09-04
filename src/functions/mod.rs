@@ -85,6 +85,7 @@ pub mod resource_function_ast;
 pub mod root_ast;
 pub mod rsolve_ast;
 pub mod scoping;
+pub mod socket_ast;
 pub mod sound;
 pub mod string_ast;
 pub mod sum_convergence_ast;

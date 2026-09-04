@@ -1615,6 +1615,9 @@ pub fn clear_state() {
   evaluator::assignment::SUB_VALUES.with(|m| m.borrow_mut().clear());
   evaluator::assignment::N_VALUES.with(|m| m.borrow_mut().clear());
   functions::entity_ast::clear_entity_stores();
+  // Closes this thread's sockets and stops the threads behind them, so a
+  // cleared session cannot inherit a server bound by an earlier one.
+  functions::socket_ast::clear_sockets();
   #[cfg(not(target_arch = "wasm32"))]
   functions::paclet::clear_loaded_directories();
   unseed_rng();

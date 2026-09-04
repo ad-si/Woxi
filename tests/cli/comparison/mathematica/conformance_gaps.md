@@ -3333,3 +3333,99 @@ where wolframscript gives `----0+--0++0`. The divergence is inside `btadd`'s
 `Fold` over a transposed, padded character matrix combined with a multi-clause
 `StringReplace` over alternative patterns — a pattern-matching or accumulator
 bug, not the (already fixed) `#0@` self-reference.
+
+## Sockets
+
+The TCP socket functions (`SocketOpen`, `SocketConnect`, `SocketListen`,
+`SocketReadMessage`, `SocketReadyQ`, `SocketWaitNext`, `SocketWaitAll`,
+`Sockets`) were implemented against behaviour recorded from wolframscript in
+advance. The entries below are the parts of that surface **no wolframscript
+run has confirmed**: the machine Woxi is developed on has no Wolfram Engine, so
+these are Woxi's choices, not verified matches. Check each one against
+wolframscript before writing a conformance test on it.
+
+### Property *values* are unverified
+
+The property *names* are the recorded ones —
+`sock["Properties"]` gives `ConnectedClients`, `DestinationHostname`,
+`DestinationIPAddress`, `DestinationPort`, `DirectionType`, `InprocQ`,
+`Protocol`, `Scheme`, `SocketListener`, `Type`, `UUID`, and
+`lis["Properties"]` gives `CharacterEncoding`, `HandlerFunctions`,
+`HandlerFunctionsKeys`, `RecordSeparators`, `Socket` — but only
+`DestinationPort` was ever seen with a value. Woxi answers `"TCP"` for
+`Protocol`, `"tcp"` for `Scheme`, `"ZMQ_STREAM"` for `Type`, `"Server"` /
+`"Client"` for `DirectionType`, `False` for `InprocQ`, `"UTF-8"` for
+`CharacterEncoding` and `{}` for `RecordSeparators`. Wolfram's socket layer is
+built on ZeroMQ, so the last three in particular may well read differently.
+
+`c["SourcePort"]` returning `{}` *was* recorded, so Woxi answers `{}` for every
+property it does not keep. Whether wolframscript does the same for an
+arbitrary unknown property, or only for the ones it knows about but leaves
+empty, is untested.
+
+### Handler associations for events other than `"Received"`
+
+A `"Received"` handler is called with the recorded seven keys —
+`TimeStamp`, `SourceSocket`, `Socket`, `Data`, `DataBytes`, `DataByteArray`,
+`MultipartComplete` — in that order. What `"Accepted"`, `"Closed"` and
+`"Error"` handlers get was never recorded; Woxi passes `TimeStamp`,
+`SourceSocket` and `Socket`, plus a `Message` key for `"Error"`.
+
+`Data` and `DataBytes` are delayed association entries (`key :> value`), so a
+handler that only reads `DataByteArray` pays neither the text decoding nor one
+`Expr` per byte. Which of the keys wolframscript delays is unverified; the
+laziness itself is what the recorded behaviour called for.
+
+### `SocketWaitNext` and `SocketWaitAll` on a timeout
+
+The one recorded data point is that both stayed **unevaluated** for a client
+socket with nothing pending and a one-second timeout. Woxi generalizes that:
+each waits for activity on the listed sockets — an event a listener handled,
+including one on a connection it accepted, or data waiting on the wire — and
+leaves the call unevaluated when the timeout runs out. `SocketWaitNext`
+returns the socket, `SocketWaitAll` the list it was given. Whether
+wolframscript's rule is the same, or whether "unevaluated" was reporting
+something narrower (a client socket being an invalid argument, say), is
+unknown.
+
+### `SocketReadMessage[sock, n]`
+
+`SocketReadMessage[c, 2]` was recorded returning unevaluated with nothing
+pending, which is equally consistent with wolframscript having no
+two-argument form at all. Woxi reads up to `n` bytes of what has already
+arrived and stays unevaluated when nothing has — agreeing with the
+recorded case either way, but a superset if the form does not exist.
+
+### Error text
+
+`The socket object … is invalid or not open.` and
+`Failed socket operation: …` are free text, not tagged messages: they leave
+`$MessageList` empty, which is what was recorded. The exact wording of the
+second was recorded only for a privileged-port bind (`Permission denied`);
+Woxi uses the operating system's message for every bind failure, and reports
+`$Failed` as the value.
+
+### A socket read races its own listener
+
+Reading a connection directly (`SocketReadMessage`, `ReadString`, …) while a
+`SocketListen` handler is attached to it means two readers on one socket, and
+which of them gets a given chunk is a matter of timing. wolframscript polls
+the same socket from both places and presumably has the same problem, but this
+was not tested. Use one or the other, not both.
+
+### Timing of handler calls
+
+Handlers run on the thread that evaluates Wolfram code — the only thread that
+may touch an `Expr` — so they fire where evaluation waits: `Pause`, a blocking
+socket read, `SocketWaitNext`/`SocketWaitAll`, `SocketReadyQ` with a timeout,
+and between statements. A long computation with no such point defers every
+handler until it ends. The recorded wolframscript behaviour agrees (a handler
+observably fired during a later blocking call rather than at write time), but
+only for that one case.
+
+### No transport but TCP
+
+`SocketOpen[port, "UDP"]`, ZeroMQ schemes (`"inproc://…"`, `"ZMQ_*"` socket
+types) and `SocketOpen`'s `"ZMQ_STREAM"`-family options are not implemented:
+anything that is not TCP leaves the call unevaluated. `Sockets["TCP"]` is
+accepted and is the same as `Sockets[]`.

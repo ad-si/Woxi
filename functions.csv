@@ -1370,7 +1370,7 @@ UnitVector,Generate a unit vector with a 1 at a specified position,✅,pure,6.0,
 DeleteFile,Delete a file from the filesystem,✅,effectful,2.0,1359
 StruveH,Struve function H_n(z); elementary closed form at order +-1/2 and +-3/2; numeric for inexact args,✅,pure,4.0,1360
 EllipticPi,Elliptic integral of the third kind,✅,pure,1.0,1362
-LibraryFunctionLoad,Load a compiled library function for use in the Wolfram Language,✅,io,8.0,1362
+LibraryFunctionLoad,Load a compiled library function for use in the Wolfram Language,🚫,,8.0,1362
 Hypergeometric0F1Regularized,Regularized confluent hypergeometric limit function,✅,pure,3.0,1363
 Cells,Represent cells in a notebook,✅,pure,9.0,1364
 PointLegend,Legend showing labeled points for plots,✅,pure,9.0,1365
@@ -2395,7 +2395,7 @@ WordCounts,Counts word occurrences in a string (surrounding punctuation stripped
 AutoAction,UI interaction,🚫,None,6.0,2421
 ByteOrdering,binary data option,🚫,None,5.2,2421
 ChartElements,chart customization,🚫,None,7.0,2421
-DeleteObject,cloud/object deletion,🚫,None,11.2,2421
+DeleteObject,Delete a socket listener or other session object,✅,effectful,11.2,2421
 GeoDestination,Geodesic destination point given distance and azimuth,✅,pure,7.0,2421
 LaplacianGaussianFilter,image filtering,🚫,None,7.0,2421
 Restricted,domain restriction,🚫,None,10.0,2421
@@ -3298,7 +3298,7 @@ FindTransientRepeat,Split a sequence into {transient repeat} where repeat is the
 InverseContinuousWaveletTransform,Inverse continuous wavelet transform (least-squares reconstruction),✅,pure,8.0,3353
 Perimeter,Compute the perimeter of a region,✅,pure,11.1,3353
 PriceGraphDistribution,,,,8.0,3353
-SocketConnect,,🚫,,10.3,3353
+SocketConnect,Connect to a TCP endpoint and return a SocketObject,✅,effectful,10.3,3353
 AlgebraicNumberPolynomial,,,,6.0,3363
 ArgumentsOptions,,,,12.2,3363
 DayRound,Rounds a date to a day of a given weekday or day-type class,✅,pure,9.0,3363
@@ -3780,7 +3780,7 @@ PermutationListQ,True if list is a valid permutation,✅,1,8.0,3862
 QPolyGamma,,,,7.0,3862
 RightTeeArrow,,,,3.0,3862
 SkellamDistribution,Skellam distribution of the difference of two Poisson variables,✅,pure,8.0,3862
-SocketListen,,🚫,,11.2,3862
+SocketListen,Run handler functions for everything arriving on a socket,✅,effectful,11.2,3862
 SpecificityGoal,,🚫,,10.1,3862
 TemplateIf,Template element inserting one of two clauses by a condition,✅,pure,10.0,3862
 TracyWidomDistribution,,,,10.3,3862
@@ -3911,7 +3911,7 @@ PrecedenceForm,Formatting wrapper that specifies precedence for output display,�
 RandomPointConfiguration,,,,12.2,4006
 SiegelTukeyTest,,,,8.0,4006
 SierpinskiCurve,Closed Sierpinski square curve as a Line (Wirth recursion with fixed half-step 32 matching wolframscript coordinates),✅,pure,11.1,4006
-SocketOpen,,🚫,,11.2,4006
+SocketOpen,Open a listening TCP socket on a port,✅,effectful,11.2,4006
 SpectralLineData,,🚫,,11.1,4006
 StreamMarkers,,,,11.3,4006
 TravelDistanceList,,🚫,,10.4,4006
@@ -4035,7 +4035,7 @@ KendallTauTest,,,,9.0,4138
 KeypointStrength,,,,10.0,4138
 NetPairEmbeddingOperator,,🚫,,11.1,4138
 ParametricFunction,,,,9.0,4138
-SocketReadMessage,,🚫,,11.2,4138
+SocketReadMessage,Read the bytes available on a socket as a ByteArray,✅,effectful,11.2,4138
 SolarSystemFeatureData,,🚫,,10.0,4138
 SpatialMedian,,,,11.1,4138
 StabilityMargins,,,,8.0,4138
@@ -4140,7 +4140,7 @@ FunctionMeromorphic,,,,12.2,4262
 GenomeLookup,,🚫,,7.0,4262
 GeodesicClosing,,🚫,,9.0,4262
 HITSCentrality,,,,8.0,4262
-IPAddress,,,,10.3,4262
+IPAddress,IP address wrapper (stays symbolic),✅,unevaluated,10.3,4262
 Image3DProjection,,🚫,,11.1,4262
 Initialize,,,,11.2,4262
 IsolatingInterval,,,,6.0,4262
@@ -4474,7 +4474,7 @@ ReturnExpressionPacket,,🚫,,3.0,4612
 RulerUnits,,,,4.0,4612
 SequenceRestLayer,,🚫,,11.1,4612
 SmithDelayCompensator,,,,9.0,4612
-SocketReadyQ,,🚫,,11.2,4612
+SocketReadyQ,Test whether a socket has data waiting to be read,✅,effectful,11.2,4612
 SpheroidalJoiningFactor,,🚫,,6.0,4612
 StackInhibit,,,,2.0,4612
 StringRotateLeft,Rotates characters in a string to the left,✅,pure,9.0,4612
@@ -4894,7 +4894,7 @@ RequiredPhysicalQuantities,,,,10.0,5079
 RipleyK,,,,12.2,5079
 SelectionCreateCell,,🚫,,3.0,5079
 ServiceDisconnect,,🚫,,10.0,5079
-Sockets,,🚫,,11.2,5079
+Sockets,List the sockets currently open in this session,✅,effectful,11.2,5079
 StripWrapperBoxes,,🚫,,6.0,5079
 Superset,,,,3.0,5079
 SupersetEqual,,,,3.0,5079
@@ -4985,8 +4985,8 @@ ResourceSubmit,,🚫,,11.2,5184
 ReverseElement,Symbolic reverse element relation,✅,pure,3.0,5184
 SearchIndices,,🚫,,10.2,5184
 SearchResultObject,,🚫,,11.0,5184
-SocketObject,,🚫,,10.3,5184
-SocketWaitNext,,🚫,,11.2,5184
+SocketObject,Symbolic representation of an open socket,✅,unevaluated,10.3,5184
+SocketWaitNext,Wait until one of a list of sockets sees activity,✅,effectful,11.2,5184
 StereochemistryElements,,,,12.0,5184
 SurvivalModel,,,,9.0,5184
 SystemModeler,,🚫,,11.3,5184
@@ -5166,7 +5166,7 @@ RightVectorBar,,,,3.0,5390
 ShortDownArrow,,,,3.0,5390
 ShortLeftArrow,,,,3.0,5390
 ShortUpArrow,,,,3.0,5390
-SocketWaitAll,,🚫,,11.2,5390
+SocketWaitAll,Wait until every socket in a list sees activity,✅,effectful,11.2,5390
 SquareSubset,,,,3.0,5390
 SquareSubsetEqual,,,,3.0,5390
 SquareSuperset,,,,3.0,5390
@@ -5971,7 +5971,7 @@ SliderBoxOptions,,🚫,,6.0,
 SmoothPointDensity,,,,12.2,
 SnippetsVideo,,🚫,,13.0,
 SnubPolyhedron,,,,12.0,
-SocketListener,,🚫,,11.2,
+SocketListener,Symbolic representation of an active socket listener,✅,unevaluated,11.2,
 SolarTime,,🚫,,12.3,
 SolidBoundaryLoadValue,,,,13.0,
 SolidDisplacementCondition,,,,13.0,

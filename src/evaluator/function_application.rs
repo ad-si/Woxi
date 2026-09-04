@@ -1772,6 +1772,32 @@ pub fn apply_curried_call(
         })
       }
     }
+    // SocketObject[uuid]["property"] / SocketListener[id]["property"].
+    Expr::FunctionCall {
+      name,
+      args: obj_args,
+    } if (name == "SocketObject" || name == "SocketListener")
+      && obj_args.len() == 1
+      && args.len() == 1
+      && matches!(&args[0], Expr::String(_)) =>
+    {
+      let Expr::String(property) = &args[0] else {
+        unreachable!()
+      };
+      let value = match (name.as_str(), &obj_args[0]) {
+        ("SocketObject", Expr::String(uuid)) => {
+          crate::functions::socket_ast::socket_property(uuid, property)
+        }
+        ("SocketListener", Expr::Integer(id)) => {
+          crate::functions::socket_ast::listener_property(*id, property)
+        }
+        _ => None,
+      };
+      Ok(value.unwrap_or_else(|| Expr::CurriedCall {
+        func: Box::new(func.clone()),
+        args: args.to_vec(),
+      }))
+    }
     Expr::FunctionCall {
       name,
       args: func_args,

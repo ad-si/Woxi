@@ -1,0 +1,14 @@
+---
+source: tests/script_snapshot_tests.rs
+expression: stdout
+---
+SocketObject
+True
+True
+TCP
+SocketListener
+True
+SocketObject
+True
+!stekcos ,olleH
+{}

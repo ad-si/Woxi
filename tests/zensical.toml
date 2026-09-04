@@ -1728,6 +1728,14 @@ nav = [
     { "WriteString" = "file_system/WriteString.md" },
     { "XMLTemplate" = "file_system/XMLTemplate.md" },
   ] },
+  { "Sockets" = [
+    "sockets.md",
+    { "SocketOpen" = "sockets/SocketOpen.md" },
+    { "SocketConnect" = "sockets/SocketConnect.md" },
+    { "SocketListen" = "sockets/SocketListen.md" },
+    { "SocketReadMessage" = "sockets/SocketReadMessage.md" },
+    { "Sockets" = "sockets/Sockets.md" },
+  ] },
   { "Contexts & Packages" = [
     "contexts.md",
     { "Rubi" = "rubi.md" },

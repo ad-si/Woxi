@@ -335,7 +335,6 @@ Woxi does **not** support.
 - `ExternalEvaluate` (Python, NodeJS)
 - `TaskObject` and task control: `SessionSubmit`, `LocalSubmit`,
     `TaskWait`, `TaskSuspend`, `TaskRemove`
-- Socket servers: `SocketOpen`, `SocketListen`, `SocketReadMessage`
 - `RadonTransform`, `InverseRadonTransform`
 - Weierstrass utilities: `WeierstrassHalfPeriodW1`,
     `WeierstrassInvariantG2`, `WeierstrassE1`, `WeierstrassEta1`
@@ -418,7 +417,7 @@ Woxi does **not** support.
     `WordTranslation`
 - Symbolic differential eigenproblems: `DEigensystem`
 - Travel: `TravelDistance`, `TravelDirectionsData`
-- Low-level networking: `SocketConnect`, `HostLookup`, `IPAddress`
+- Low-level networking: `HostLookup`
 - Data: `AnatomyData`, `MortalityData`, `StandardOceanData`
 - `EntityInstance`, `GenerateHTTPResponse`
 

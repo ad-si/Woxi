@@ -328,6 +328,8 @@ enum WriteTarget {
   /// A `"!command"` named directly instead of through an open stream: the
   /// command runs for this one write and is fed exactly its bytes.
   Command(String),
+  /// An open `SocketObject`, named by its UUID.
+  Socket(String),
 }
 
 /// Resolve the first argument of `Write`/`WriteString`/`BinaryWrite` to the
@@ -339,6 +341,11 @@ fn io_write_target(expr: &Expr) -> Option<WriteTarget> {
   // counterparts name the process's own streams, never a file of that name.
   if let Some(is_stdout) = standard_stream_channel(expr) {
     return Some(WriteTarget::Standard(is_stdout));
+  }
+  // A socket is written to as directly as a stream is, and is the one
+  // write target that is neither a name nor a stream object.
+  if let Some(uuid) = crate::functions::socket_ast::socket_object_uuid(expr) {
+    return Some(WriteTarget::Socket(uuid));
   }
   match expr {
     Expr::String(spec) => Some(match command_file_spec(spec) {
@@ -463,6 +470,12 @@ fn write_target_bytes(
     }
     WriteTarget::Sink(state) => {
       command_sink_write(state, bytes);
+      Ok(())
+    }
+    // A socket that is gone has already said so in wolframscript's words,
+    // so the write is simply dropped rather than raised as an error.
+    WriteTarget::Socket(uuid) => {
+      crate::functions::socket_ast::socket_write_bytes(uuid, bytes);
       Ok(())
     }
     WriteTarget::Command(command) => {
@@ -2648,6 +2661,21 @@ pub fn dispatch_io_functions(
         match &args[1] {
           Expr::Integer(n) => vec![(*n & 0xff) as u8],
           Expr::String(s) => s.as_bytes().to_vec(),
+          // A ByteArray writes its bytes as they stand — the only way to
+          // put binary data on a socket without one Integer per byte.
+          Expr::FunctionCall {
+            name,
+            args: ba_args,
+          } if name == "ByteArray" && ba_args.len() == 1 => {
+            let Expr::String(b64) = &ba_args[0] else {
+              return Some(Ok(unevaluated()));
+            };
+            use base64::Engine;
+            match base64::engine::general_purpose::STANDARD.decode(b64) {
+              Ok(bytes) => bytes,
+              Err(_) => return Some(Ok(unevaluated())),
+            }
+          }
           Expr::List(items) => {
             let mut out = Vec::with_capacity(items.len());
             for it in items {

@@ -3738,6 +3738,7 @@ mod interpreter_tests {
   mod quantity;
   mod rosetta_script_fixes;
   mod row;
+  mod sockets;
   mod special_functions;
   mod statistics;
   mod string;
