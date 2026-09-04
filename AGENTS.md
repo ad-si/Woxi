@@ -57,6 +57,19 @@ There is 3 levels of tests:
 - To see the graphical output of expressions wrap them with:
     `ExportString[<expression>, "SVG"]`
 - Commit directly on `main` unless a branch is explicitly requested.
-- Never implement a construct twice (e.g. `/@` and `Map`).
+- Never implement a construct twice (e.g. `/@` and `Map`, `@@@` and `MapApply`,
+    `/.` and `ReplaceAll`, `OrderingBy` and `Ordering`).
     Duplicates drift apart and are a common cause of divergences.
     Always delegate to the single canonical implementation.
+- Verified-but-unfixed divergences from `wolframscript` are catalogued in
+    `tests/cli/comparison/mathematica/conformance_gaps.md`.
+    Check there before investigating one, and record new ones there.
+- `scrut test tests/cli` runs each testcase from an isolated temporary
+    directory, so it invokes the **installed** `woxi` (`~/.cargo/bin/woxi`)
+    rather than the working tree — a local doc-test run silently checks a stale
+    binary. To test the working tree without `cargo install`:
+
+    ```sh
+    mkdir -p /tmp/woxibin && cp target/debug/woxi /tmp/woxibin/
+    PATH=/tmp/woxibin:$PATH scrut test tests/cli
+    ```
