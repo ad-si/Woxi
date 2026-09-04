@@ -27,6 +27,21 @@ which is also how wolframscript behaves.
 - [`SocketReadMessage`](sockets/SocketReadMessage.md)
 - [`Sockets`](sockets/Sockets.md)
 
+## Throughput
+
+Measured over loopback in a release build, pushing 1 GiB through a
+`SocketListen` handler in 64 KiB chunks:
+
+- **~435 MB/s** when the handler does not look at the payload.
+  This is what the transport itself sustains, including the one base64
+  encode per chunk that building `DataByteArray` costs.
+- **~142 MB/s** when the handler reads the payload back out
+  (`Length[#["DataByteArray"]]`).
+
+The gap between the two is not the socket code: a `ByteArray` is stored as
+a base64 string, so every read of one decodes it again. A handler that
+needs the bytes only once should take them once.
+
 Sockets also work with the ordinary stream functions:
 `WriteString`, `WriteLine`, `Write` and `BinaryWrite` send to one,
 and `ReadString`, `ReadLine`, `Read` and `BinaryReadList` read from one.
