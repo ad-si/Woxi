@@ -8535,7 +8535,11 @@ fn simplex_edges(pts: &[Expr]) -> Option<Vec<Expr>> {
 
 /// `n!` as an `i128` for small `n`.
 fn factorial_small(n: usize) -> i128 {
-  (1..=n as i128).product::<i128>().max(1)
+  let mut r = 1i128;
+  for i in 2..=n {
+    r *= i as i128;
+  }
+  r
 }
 
 /// Decompose Parallelogram arguments into (base point, v1, v2), applying the
@@ -8898,7 +8902,7 @@ fn triangle_moment_parts(
     times(vec![d1[0].clone(), d2[1].clone()]),
     times(vec![int_e(-1), d1[1].clone(), d2[0].clone()]),
   ]))?;
-  let factorial = |m: i128| -> i128 { (1..=m).product::<i128>().max(1) };
+  let factorial = |m: i128| factorial_small(m as usize);
   let multinom = |m: i128, a: i128, b: i128| -> i128 {
     factorial(m) / (factorial(a) * factorial(b) * factorial(m - a - b))
   };
@@ -11884,10 +11888,7 @@ fn try_polynomial(vals: &[(i128, i128)], var_name: &str) -> Option<Expr> {
       terms.push(rational_to_expr(diffs[k].0, diffs[k].1));
     } else {
       // Compute coefficient: diffs[k] / k!
-      let mut factorial: i128 = 1;
-      for j in 1..=k as i128 {
-        factorial *= j;
-      }
+      let factorial = factorial_small(k);
       let coeff = rat_div(diffs[k], (factorial, 1))?;
 
       // Build product (n-1)(n-2)...(n-k) as a polynomial

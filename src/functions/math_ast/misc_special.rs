@@ -1688,6 +1688,15 @@ pub fn weber_e_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(unevaluated("WeberE", args))
 }
 
+// (2n)!/n! = (n+1)(n+2) ... (2n)
+fn rising(n: i128) -> BigInt {
+  let mut r = BigInt::from(1);
+  for i in (n + 1)..=(2 * n) {
+    r *= i;
+  }
+  r
+}
+
 /// WeberE[n, z] for an integer order n and exact argument z, as the finite
 /// polynomial-in-z over Pi minus StruveH[|n|, z]. See [`weber_e_ast`].
 fn weber_e_integer_closed_form(
@@ -1695,15 +1704,6 @@ fn weber_e_integer_closed_form(
   z: &Expr,
 ) -> Result<Expr, InterpreterError> {
   let m = n.unsigned_abs() as i128; // |n|
-  let fact = |k: i128| -> BigInt {
-    let mut r = BigInt::from(1);
-    let mut i = 2i128;
-    while i <= k {
-      r *= i;
-      i += 1;
-    }
-    r
-  };
   let pi = Expr::Constant("Pi".to_string());
   let pi_inv = pow2(pi, Expr::Integer(-1));
 
@@ -1713,9 +1713,8 @@ fn weber_e_integer_closed_form(
   if m >= 1 {
     let kmax = (m - 1) / 2;
     for k in 0..=kmax {
-      let raw_num =
-        fact(2 * k) * fact(m - k) * BigInt::from(2).pow((m - 2 * k + 1) as u32);
-      let raw_den = fact(2 * (m - k)) * fact(k);
+      let raw_num = rising(k) * BigInt::from(2).pow((m - 2 * k + 1) as u32);
+      let raw_den = rising(m - k);
       let coeff = make_rational_expr(&raw_num, &raw_den);
       let p = m - 2 * k - 1;
       let mut factors = vec![coeff];
@@ -1990,8 +1989,7 @@ fn wigner_d_small_symbolic(
     }
     let sign_exp = m1mm2 + s;
     let sign: i128 = if sign_exp.rem_euclid(2) == 0 { 1 } else { -1 };
-    let denom: i128 =
-      fact(jpm1 - s) * fact(s) * fact(s - m1mm2) * fact(jmm2 - s);
+    let denom = fact(jpm1 - s) * fact(s) * fact(s - m1mm2) * fact(jmm2 - s);
 
     let cos_term = if cos_power == 0 {
       Expr::Integer(1)

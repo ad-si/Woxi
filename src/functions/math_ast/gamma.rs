@@ -346,10 +346,7 @@ pub fn gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           // Positive half-integers: Gamma[(1+2n)/2] where n = (num-1)/2
           // Gamma[(2n+1)/2] = (2n)! * Sqrt[Pi] / (4^n * n!)
           let n = (num - 1) / 2;
-          let mut numer = BigInt::from(1);
-          for i in (n + 1)..=(2 * n) {
-            numer *= i;
-          }
+          let numer = rising(n as u64);
           let denom = BigInt::from(4).pow(n as u32);
           return Ok(gamma_half_expr(&numer, &denom, false));
         } else if num < 0 {
@@ -358,10 +355,7 @@ pub fn gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let n = (1 - num) / 2;
           let is_neg = n % 2 != 0;
           let numer = BigInt::from(4).pow(n as u32);
-          let mut denom = BigInt::from(1);
-          for i in (n + 1)..=(2 * n) {
-            denom *= i;
-          }
+          let denom = rising(n as u64);
           return Ok(gamma_half_expr(&numer, &denom, is_neg));
         }
       }
@@ -684,6 +678,15 @@ pub fn gamma_fn(x: f64) -> f64 {
     let t = x + g + 0.5;
     (2.0 * std::f64::consts::PI).sqrt() * t.powf(x + 0.5) * (-t).exp() * sum
   }
+}
+
+// (2n)! / n! = (n+1)(n+2)...(2n)
+fn rising(n: u64) -> BigInt {
+  let mut r = BigInt::from(1);
+  for i in (n + 1)..=(2 * n) {
+    r *= i;
+  }
+  r
 }
 
 /// Beta[a, b] - Euler beta function
@@ -1198,10 +1201,7 @@ fn gamma_half_integer_parts_big(k2: i128) -> Option<(BigInt, BigInt, i128)> {
     Some((factorial_big(m - 1), BigInt::from(1), 0))
   } else {
     let m = ((k2 - 1) / 2) as u64;
-    let mut numer = BigInt::from(1);
-    for i in (m + 1)..=(2 * m) {
-      numer *= i;
-    }
+    let numer = rising(m);
     let denom = BigInt::from(4).pow(m as u32);
     Some((numer, denom, 1))
   }
