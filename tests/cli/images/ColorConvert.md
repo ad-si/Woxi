@@ -53,9 +53,11 @@ $ wo 'ImageChannels[ColorConvert[Image[{{0.5}}], "CMYK"]]'
 4
 ```
 
-An alpha channel is not a color channel and rides along unchanged:
+An alpha channel is not a color channel and rides along unchanged. The color
+space has to be spelled out for a four-channel image, since four numbers per
+pixel could as well be a `CMYK` one:
 
 ```scrut
-$ wo 'ImageData[ColorConvert[Image[{{{1., 0., 0., 0.25}}}], "HSB"]]'
+$ wo 'ImageData[ColorConvert[Image[{{{1., 0., 0., 0.25}}}, ColorSpace -> "RGB"], "HSB"]]'
 {{{0., 1., 1., 0.25}}}
 ```

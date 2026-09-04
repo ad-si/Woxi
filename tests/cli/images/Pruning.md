@@ -2,29 +2,36 @@
 
 Removes the outermost branches of thin objects in an image.
 
-One pass deletes every *endpoint* — a foreground pixel with exactly one of its
-eight neighbors lit. Here that is the two ends of a bar; the pixel sticking out
-of its middle has three neighbors below it, so it is a junction rather than a
-tip:
+`Pruning[image, n]` runs `n` passes, each of which deletes every *endpoint* —
+a foreground pixel at the tip of a branch. Here that is the two ends of the
+bar and the pixel sticking out of its middle:
 
 ```scrut
-$ wo 'ImageData[Pruning[Image[{{0, 0, 1, 0, 0}, {1, 1, 1, 1, 1}}]]]'
-{{0., 0., 1., 0., 0.}, {0., 1., 1., 1., 0.}}
+$ wo 'ImageData[Pruning[Image[{{0, 0, 1, 0, 0}, {1, 1, 1, 1, 1}}], 1]]'
+{{0., 0., 0., 0., 0.}, {0., 1., 1., 1., 0.}}
 ```
 
-`Pruning[image, n]` repeats the pass `n` times, so it eats back every branch at
-most `n` pixels long — one pixel of the spur below per pass:
+Every pass eats one more pixel off each branch, so `n` passes remove every
+branch at most `n` pixels long:
 
 ```scrut
 $ wo 'ImageData[Pruning[Image[{{0, 0, 1, 0, 0}, {0, 0, 1, 0, 0}, {0, 0, 1, 0, 0}, {1, 1, 1, 1, 1}}], 2]]'
-{{0., 0., 0., 0., 0.}, {0., 0., 0., 0., 0.}, {0., 0., 1., 0., 0.}, {0., 1., 1., 1., 0.}}
+{{0., 0., 0., 0., 0.}, {0., 0., 0., 0., 0.}, {0., 0., 1., 0., 0.}, {0., 0., 1., 0., 0.}}
 ```
 
 `Infinity` keeps going until nothing more falls away:
 
 ```scrut
 $ wo 'ImageData[Pruning[Image[{{0, 0, 1, 0, 0}, {0, 0, 1, 0, 0}, {1, 1, 1, 1, 1}}], Infinity]]'
-{{0., 0., 0., 0., 0.}, {0., 0., 1., 0., 0.}, {0., 1., 1., 1., 0.}}
+{{0., 0., 0., 0., 0.}, {0., 0., 0., 0., 0.}, {0., 0., 1., 0., 0.}}
+```
+
+A connected piece that never branches is a shape rather than a branch, so
+`Pruning[image, n]` leaves it whole however many passes are asked for:
+
+```scrut
+$ wo 'ImageData[Pruning[Image[{{1, 1, 1, 1, 1}}], Infinity]]'
+{{1., 1., 1., 1., 1.}}
 ```
 
 A pixel with no lit neighbor at all is an isolated point, not the tip of a
@@ -47,6 +54,6 @@ A branch length that is not a non-negative integer is reported:
 ```scrut
 $ wo 'Pruning[Image[{{1, 0}}], -1]'
 
-Pruning::intnm: Non-negative machine-sized integer expected at position 2 in Pruning[-Image-, -1].
+Pruning::invniter: Expecting a non-negative integer value for the number of iterations.
 Pruning[-Image-, -1]
 ```

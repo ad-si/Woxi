@@ -8,14 +8,15 @@ four dark pixels come back as an even ramp:
 
 ```scrut
 $ wo 'ImageData[HistogramTransform[Image[{{0., 0.1, 0.2, 0.3}}]]]'
-{{0., 0.3333333432674408, 0.6666666865348816, 1.}}
+{{0.12352941185235977, 0.3745098114013672, 0.6254901885986328, 0.8764705657958984}}
 ```
 
-A histogram that is already flat is left alone:
+A histogram that is already flat is left alone, so an image that already uses
+every one of the 256 display levels once comes back unchanged:
 
 ```scrut
-$ wo 'ImageData[HistogramTransform[Image[{{0., 0.25, 0.5, 0.75, 1.}}]]]'
-{{0., 0.25, 0.5, 0.75, 1.}}
+$ wo 'Max[Abs[ImageData[HistogramTransform[Image[{N[Range[0, 255]/255]}]]] - {N[Range[0, 255]/255]}]] < 0.001'
+True
 ```
 
 Each channel of a multichannel image is equalized on its own, so the same
@@ -23,14 +24,16 @@ value can land differently in different channels:
 
 ```scrut
 $ wo 'ImageData[HistogramTransform[Image[{{{0., 0.5, 1.}, {0.5, 1., 0.}}}]]]'
-{{{0., 0., 1.}, {1., 1., 0.}}}
+{{{0.24901960790157318, 0.24901960790157318, 0.7509803771972656}, {0.7509803771972656, 0.7509803771972656, 0.24901960790157318}}}
 ```
 
-A constant channel has nothing to spread out and passes through untouched:
+Every pixel of one value lands in the middle of the band the equalization
+gives that value, so repeated values stay together and share the space they
+take up in the histogram:
 
 ```scrut
-$ wo 'ImageData[HistogramTransform[Image[{{0.4, 0.4}}]]]'
-{{0.4000000059604645, 0.4000000059604645}}
+$ wo 'ImageData[HistogramTransform[Image[{{0., 0., 0., 1.}}]]]'
+{{0.3745098114013672, 0.3745098114013672, 0.3745098114013672, 0.8764705657958984}}
 ```
 
 A first argument that is not an image is reported:
@@ -38,6 +41,6 @@ A first argument that is not an image is reported:
 ```scrut
 $ wo 'HistogramTransform[5]'
 
-HistogramTransform::imginv: Expecting an image or graphics instead of 5.
+HistogramTransform::imginv: 5 should be an image, a dataset or a list of datasets.
 HistogramTransform[5]
 ```

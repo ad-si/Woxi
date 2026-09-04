@@ -7554,29 +7554,40 @@ mod demonstration_image_filters {
   fn color_convert_carries_alpha_through() {
     clear_state();
     assert_eq!(
-      form("ImageData[ColorConvert[Image[{{{1., 0., 0., 0.25}}}], \"HSB\"]]"),
+      form(
+        "ImageData[ColorConvert[Image[{{{1., 0., 0., 0.25}}}, \
+         ColorSpace -> \"RGB\"], \"HSB\"]]"
+      ),
       "{{{0., 1., 1., 0.25}}}"
     );
   }
 
   // HistogramTransform spreads the pixel values over the whole range: four
-  // dark values become an even ramp from 0 to 1.
+  // dark values become an even ramp. Every pixel lands in the *middle* of
+  // the band its value gets, which is why the ramp runs from 31.5/255 to
+  // 223.5/255 rather than from 0 to 1.
   #[test]
   fn histogram_transform_flattens_the_histogram() {
     clear_state();
     assert_eq!(
       form("ImageData[HistogramTransform[Image[{{0., 0.1, 0.2, 0.3}}]]]"),
-      "{{0., 0.3333333432674408, 0.6666666865348816, 1.}}"
+      "{{0.12352941185235977, 0.3745098114013672, 0.6254901885986328, \
+       0.8764705657958984}}"
     );
   }
 
-  // An already-flat histogram is a fixed point of the transform.
+  // An already-flat histogram is a fixed point of the transform: an image
+  // that uses each of the 256 display levels once comes back unchanged.
   #[test]
   fn histogram_transform_leaves_a_uniform_ramp_alone() {
     clear_state();
     assert_eq!(
-      form("ImageData[HistogramTransform[Image[{{0., 0.25, 0.5, 0.75, 1.}}]]]"),
-      "{{0., 0.25, 0.5, 0.75, 1.}}"
+      interpret(
+        "Max[Abs[ImageData[HistogramTransform[Image[{N[Range[0, 255]/255]}]]] \
+         - {N[Range[0, 255]/255]}]] < 0.001"
+      )
+      .unwrap(),
+      "True"
     );
   }
 
@@ -7590,18 +7601,31 @@ mod demonstration_image_filters {
         "ImageData[HistogramTransform[\
          Image[{{{0., 0.5, 1.}, {0.5, 1., 0.}}}]]]"
       ),
-      "{{{0., 0., 1.}, {1., 1., 0.}}}"
+      "{{{0.24901960790157318, 0.24901960790157318, 0.7509803771972656}, \
+       {0.7509803771972656, 0.7509803771972656, 0.24901960790157318}}}"
     );
   }
 
-  // A constant channel has nothing to spread out and passes through
-  // untouched rather than dividing by zero.
+  // Repeated values stay together and share the space they take up in the
+  // histogram, landing in the middle of their own band.
   #[test]
-  fn histogram_transform_keeps_a_constant_channel() {
+  fn histogram_transform_keeps_repeated_values_together() {
+    clear_state();
+    assert_eq!(
+      form("ImageData[HistogramTransform[Image[{{0., 0., 0., 1.}}]]]"),
+      "{{0.3745098114013672, 0.3745098114013672, 0.3745098114013672, \
+       0.8764705657958984}}"
+    );
+  }
+
+  // A constant channel has nothing to spread out, so every pixel lands in
+  // the middle of the one band there is.
+  #[test]
+  fn histogram_transform_centers_a_constant_channel() {
     clear_state();
     assert_eq!(
       form("ImageData[HistogramTransform[Image[{{0.4, 0.4}}]]]"),
-      "{{0.4000000059604645, 0.4000000059604645}}"
+      "{{0.5, 0.5}}"
     );
   }
 
@@ -7670,14 +7694,14 @@ mod demonstration_image_filters {
   /// A five-pixel bar with a one-pixel spur growing out of its middle.
   const BAR: &str = "Image[{{0, 0, 1, 0, 0}, {1, 1, 1, 1, 1}}]";
 
-  // One pass deletes every endpoint — here the two ends of the bar. The
-  // spur has three neighbors below it, so it is a junction, not a tip.
+  // One pass deletes every endpoint — the two ends of the bar and the spur
+  // above its middle.
   #[test]
   fn pruning_removes_branch_endpoints() {
     clear_state();
     assert_eq!(
-      form(&format!("ImageData[Pruning[{BAR}]]")),
-      "{{0., 0., 1., 0., 0.}, {0., 1., 1., 1., 0.}}"
+      form(&format!("ImageData[Pruning[{BAR}, 1]]")),
+      "{{0., 0., 0., 0., 0.}, {0., 1., 1., 1., 0.}}"
     );
   }
 
@@ -7700,24 +7724,17 @@ mod demonstration_image_filters {
     assert_eq!(
       form(&format!("ImageData[Pruning[{SPUR}, 2]]")),
       "{{0., 0., 0., 0., 0.}, {0., 0., 0., 0., 0.}, \
-       {0., 0., 1., 0., 0.}, {0., 1., 1., 1., 0.}}"
+       {0., 0., 1., 0., 0.}, {0., 0., 1., 0., 0.}}"
         .replace("       ", "")
     );
-    // No second argument means a single pass…
-    assert_eq!(
-      form(&format!("ImageData[Pruning[{SPUR}]]")),
-      form(&format!("ImageData[Pruning[{SPUR}, 1]]"))
-    );
-    // …and n = 0 is the identity.
+    // n = 0 is the identity.
     assert_eq!(
       form(&format!("ImageData[Pruning[{BAR}, 0]]")),
       "{{0., 0., 1., 0., 0.}, {1., 1., 1., 1., 1.}}"
     );
   }
 
-  // Infinity prunes until nothing more falls away. What is left here is a
-  // three-pixel bar under the spur, where every pixel has two or more
-  // neighbors.
+  // Infinity prunes until nothing more falls away.
   #[test]
   fn pruning_to_infinity_stops_when_stable() {
     clear_state();
@@ -7726,9 +7743,48 @@ mod demonstration_image_filters {
         "ImageData[Pruning[Image[{{0, 0, 1, 0, 0}, {0, 0, 1, 0, 0}, \
          {1, 1, 1, 1, 1}}], Infinity]]"
       ),
-      "{{0., 0., 0., 0., 0.}, {0., 0., 1., 0., 0.}, \
-       {0., 1., 1., 1., 0.}}"
+      "{{0., 0., 0., 0., 0.}, {0., 0., 0., 0., 0.}, \
+       {0., 0., 1., 0., 0.}}"
         .replace("       ", "")
+    );
+  }
+
+  // A connected piece that never branches is a shape, not a branch, so the
+  // counted form leaves it whole however many passes are asked for.
+  #[test]
+  fn pruning_with_a_count_keeps_an_unbranched_arc() {
+    clear_state();
+    assert_eq!(
+      form("ImageData[Pruning[Image[{{1, 1, 1, 1, 1}}], Infinity]]"),
+      "{{1., 1., 1., 1., 1.}}"
+    );
+  }
+
+  // The bare form has no such protection: it wears every thin arc down to
+  // a single pixel. It is a different operation from any pass count —
+  // wolframscript draws the same distinction.
+  #[test]
+  fn pruning_without_a_count_erodes_an_arc_to_a_point() {
+    clear_state();
+    assert_eq!(
+      form("ImageData[Pruning[Image[{{1, 1, 1, 1, 1}}]]]"),
+      "{{0., 0., 1., 0., 0.}}"
+    );
+  }
+
+  // The tip of a diagonal staircase has two neighbors, but they touch each
+  // other, so it is still a tip. The corner of a solid block has three
+  // neighbors that also touch — two of them edge-adjacent — and is not.
+  #[test]
+  fn pruning_reads_diagonal_tips_and_block_corners_apart() {
+    clear_state();
+    assert_eq!(
+      form("ImageData[Pruning[Image[{{1, 1, 0}, {0, 1, 1}}]]]"),
+      "{{0., 1., 0.}, {0., 0., 0.}}"
+    );
+    assert_eq!(
+      form("ImageData[Pruning[Image[{{1, 1, 1}, {1, 1, 1}, {1, 1, 1}}]]]"),
+      "{{1., 1., 1.}, {1., 1., 1.}, {1., 1., 1.}}"
     );
   }
 
@@ -7756,20 +7812,22 @@ mod demonstration_image_filters {
   #[test]
   fn pruning_reports_a_bad_branch_length() {
     clear_state();
-    assert_eq!(
-      interpret("Pruning[Image[{{1, 0}}], -1]").unwrap(),
-      "Pruning[-Image-, -1]"
-    );
+    let result = interpret_with_stdout("Pruning[Image[{{1, 0}}], -1]").unwrap();
+    assert_eq!(result.result, "Pruning[-Image-, -1]");
   }
 
-  // ColorBalance maps its reference color onto white exactly — that is the
-  // whole point of white balancing.
+  // ColorBalance divides away the *chromaticity* of its reference, not the
+  // reference itself, so the cast goes but the brightness stays: green
+  // lands on the neutral gray of green's own luminance, not on white.
   #[test]
-  fn color_balance_maps_the_reference_to_white() {
+  fn color_balance_maps_the_reference_to_a_neutral_gray() {
     clear_state();
     assert_eq!(
-      form("ImageData[ColorBalance[Image[{{{0., 1., 0.}}}], Green]]"),
-      "{{{1., 1., 1.}}}"
+      interpret(
+        "Round[100 ImageData[ColorBalance[Image[{{{0., 1., 0.}}}], Green]]]"
+      )
+      .unwrap(),
+      "{{{86, 86, 86}}}"
     );
   }
 
@@ -7826,14 +7884,22 @@ mod demonstration_image_filters {
     );
   }
 
-  // A single-channel image has no color to rebalance and comes back as it
-  // went in.
+  // A single-channel image has no color channels to rebalance, but the
+  // balancing gives it some: it is taken up to RGB first.
   #[test]
-  fn color_balance_leaves_grayscale_alone() {
+  fn color_balance_takes_grayscale_up_to_rgb() {
     clear_state();
     assert_eq!(
-      form("ImageData[ColorBalance[Image[{{0.3, 0.7}}], Green]]"),
-      "{{0.30000001192092896, 0.699999988079071}}"
+      interpret(
+        "Round[100 ImageData[ColorBalance[Image[{{0.3, 0.7}}], Green]]]"
+      )
+      .unwrap(),
+      "{{{40, 21, 86}, {92, 51, 100}}}"
+    );
+    assert_eq!(
+      interpret("ImageColorSpace[ColorBalance[Image[{{0.3, 0.7}}], Green]]")
+        .unwrap(),
+      "RGB"
     );
   }
 

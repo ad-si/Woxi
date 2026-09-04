@@ -1697,7 +1697,7 @@ pub fn histogram_transform_ast(
   } = &args[0]
   else {
     crate::emit_message(&format!(
-      "HistogramTransform::imginv: Expecting an image or graphics instead of {}.",
+      "HistogramTransform::imginv: {} should be an image, a dataset or a list of datasets.",
       crate::syntax::expr_to_string(&args[0])
     ));
     return Ok(unevaluated("HistogramTransform", args));
@@ -1718,17 +1718,21 @@ pub fn histogram_transform_ast(
     sorted
       .sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     let n = sorted.len() as f64;
-    // cdf[min] is the share of pixels sitting at the channel minimum.
-    let min = sorted[0];
-    let at_min = sorted.partition_point(|&v| v <= min) as f64 / n;
-    let span = 1.0 - at_min;
-    if span <= 0.0 {
-      continue; // constant channel: nothing to spread out
-    }
     for i in 0..pixels {
       let v = data[i * ch + c_idx];
-      let cdf = sorted.partition_point(|&s| s <= v) as f64 / n;
-      new_data[i * ch + c_idx] = ((cdf - at_min) / span).clamp(0.0, 1.0);
+      // The *midpoint* of the value's own step of the cumulative
+      // distribution — the share of pixels strictly below it plus half the
+      // share sitting on it. Every pixel of one value therefore lands in the
+      // middle of the band the equalization gives that value, so a channel
+      // whose values are the 256 display levels comes back unchanged and a
+      // constant channel comes back at 0.5.
+      let below = sorted.partition_point(|&s| s < v) as f64;
+      let equal = sorted.partition_point(|&s| s <= v) as f64 - below;
+      let mid = (below + equal / 2.0) / n;
+      // The distribution runs over 256 display levels but the levels
+      // themselves are `k/255`, so the band midpoints are rescaled from the
+      // one range to the other.
+      new_data[i * ch + c_idx] = ((mid * 256.0 - 0.5) / 255.0).clamp(0.0, 1.0);
     }
   }
   Ok(Expr::Image {
@@ -5380,13 +5384,138 @@ pub fn colorize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(unevaluated("Colorize", args))
 }
 
+/// The positions of the 8-connected foreground neighbors of pixel `i`.
+/// Everything beyond the border counts as background.
+fn neighbors_of(
+  alive: &[bool],
+  w: usize,
+  h: usize,
+  i: usize,
+) -> Vec<(usize, usize)> {
+  let (y, x) = (i / w, i % w);
+  let mut out = Vec::with_capacity(8);
+  for dy in -1i64..=1 {
+    for dx in -1i64..=1 {
+      if dy == 0 && dx == 0 {
+        continue;
+      }
+      let ny = y as i64 + dy;
+      let nx = x as i64 + dx;
+      if ny < 0 || nx < 0 || ny >= h as i64 || nx >= w as i64 {
+        continue;
+      }
+      if alive[ny as usize * w + nx as usize] {
+        out.push((ny as usize, nx as usize));
+      }
+    }
+  }
+  out
+}
+
+/// Whether pixel `i` is the tip of a branch: its foreground neighbors form
+/// a single 8-connected clump, and at most one of them is edge-adjacent.
+///
+/// The clump condition is what makes the end of a diagonal staircase a tip
+/// even though it has two neighbors; the 4-neighbor cap is what stops the
+/// corner of a solid block — whose three neighbors are also one clump —
+/// from counting as one. A pixel with no neighbors at all is an isolated
+/// point rather than a tip, and survives.
+fn is_branch_tip(alive: &[bool], w: usize, h: usize, i: usize) -> bool {
+  if !alive[i] {
+    return false;
+  }
+  let neighbors = neighbors_of(alive, w, h, i);
+  if neighbors.is_empty() {
+    return false;
+  }
+  let (y, x) = (i / w, i % w);
+  let edge_adjacent = neighbors
+    .iter()
+    .filter(|(ny, nx)| ny.abs_diff(y) + nx.abs_diff(x) == 1)
+    .count();
+  if edge_adjacent > 1 {
+    return false;
+  }
+  // One clump: grow from the first neighbor through 8-adjacency.
+  let mut seen = vec![false; neighbors.len()];
+  seen[0] = true;
+  let mut stack = vec![0usize];
+  let mut reached = 1;
+  while let Some(a) = stack.pop() {
+    for b in 0..neighbors.len() {
+      if seen[b] {
+        continue;
+      }
+      if neighbors[a].0.abs_diff(neighbors[b].0) <= 1
+        && neighbors[a].1.abs_diff(neighbors[b].1) <= 1
+      {
+        seen[b] = true;
+        reached += 1;
+        stack.push(b);
+      }
+    }
+  }
+  reached == neighbors.len()
+}
+
+/// Label the 8-connected components of a foreground mask. The result has
+/// one entry per pixel: `Some(label)` for a foreground pixel, `None` for a
+/// background one. Labels are numbered from 0 in raster order of their
+/// first pixel.
+fn connected_components(
+  alive: &[bool],
+  w: usize,
+  h: usize,
+) -> Vec<Option<usize>> {
+  let mut labels: Vec<Option<usize>> = vec![None; w * h];
+  let mut next = 0usize;
+  let mut stack: Vec<(usize, usize)> = Vec::new();
+  for start in 0..w * h {
+    if !alive[start] || labels[start].is_some() {
+      continue;
+    }
+    let label = next;
+    next += 1;
+    labels[start] = Some(label);
+    stack.push((start / w, start % w));
+    while let Some((y, x)) = stack.pop() {
+      for dy in -1i64..=1 {
+        for dx in -1i64..=1 {
+          let ny = y as i64 + dy;
+          let nx = x as i64 + dx;
+          if ny < 0 || nx < 0 || ny >= h as i64 || nx >= w as i64 {
+            continue;
+          }
+          let i = ny as usize * w + nx as usize;
+          if alive[i] && labels[i].is_none() {
+            labels[i] = Some(label);
+            stack.push((ny as usize, nx as usize));
+          }
+        }
+      }
+    }
+  }
+  labels
+}
+
 /// Pruning[img] / Pruning[img, n] — remove the outermost branches of the
-/// thin objects in an image by setting their pixels to black. One pass
-/// deletes every *endpoint*: a foreground pixel with exactly one
-/// 8-connected foreground neighbor. Repeating the pass `n` times therefore
-/// eats back every branch that is at most `n` pixels long, which is
-/// Wolfram's `Pruning[image, n]`; `Pruning[image]` is `n = 1`, and
-/// `Pruning[image, Infinity]` repeats until nothing more falls away.
+/// thin objects in an image by setting their pixels to black.
+///
+/// One pass deletes every *endpoint*: a foreground pixel whose 8-connected
+/// foreground neighbors are either a single pixel or two pixels that touch
+/// each other (the tip of a staircase). A pixel with three or more
+/// neighbors is a *branch point*.
+///
+/// `Pruning[img, n]` runs `n` such passes — `Infinity` runs them until
+/// nothing more falls away — and prunes only the connected components that
+/// contain a branch point, so a component that is one unbranched arc is a
+/// shape rather than a branch and is left whole however long the pass count
+/// is.
+///
+/// `Pruning[img]` is a different operation, not `n = 1`: it erodes from
+/// both ends without that protection, so every thin arc is worn down to a
+/// single pixel. wolframscript draws the same distinction between the two
+/// forms.
 ///
 /// A pixel with no foreground neighbor at all is an isolated point, not a
 /// branch tip, and survives. Surviving pixels keep their original value,
@@ -5414,21 +5543,24 @@ pub fn pruning_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated());
   }
   // The branch-length limit: a non-negative integer, or Infinity for
-  // "until stable". Anything else is reported the way Wolfram reports a
-  // bad level specification and left unevaluated.
+  // "until stable". Anything else is reported as `invniter` and left
+  // unevaluated. With no limit given at all every arc is worn down to a
+  // point, which is a different operation — see the doc comment.
   let passes: usize = match args.get(1) {
-    None => 1,
+    None => usize::MAX,
     Some(Expr::Identifier(name)) if name == "Infinity" => usize::MAX,
     Some(Expr::Integer(n)) if *n >= 0 => *n as usize,
-    Some(other) => {
-      crate::emit_message(&format!(
-        "Pruning::intnm: Non-negative machine-sized integer expected at position 2 in Pruning[{}, {}].",
-        crate::syntax::expr_to_string(&args[0]),
-        crate::syntax::expr_to_string(other)
-      ));
+    Some(_) => {
+      crate::emit_message(
+        "Pruning::invniter: Expecting a non-negative integer value for the \
+         number of iterations.",
+      );
       return Ok(unevaluated());
     }
   };
+  // Only the explicit-count form protects unbranched components; the bare
+  // `Pruning[img]` wears every arc down to a single pixel.
+  let protect_unbranched = args.len() > 1;
 
   let w = *width as usize;
   let h = *height as usize;
@@ -5442,34 +5574,65 @@ pub fn pruning_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut alive: Vec<bool> = (0..w * h)
       .map(|i| new_data[i * ch + c_idx] != 0.0)
       .collect();
-    for _ in 0..passes {
-      let mut doomed: Vec<usize> = Vec::new();
-      for y in 0..h {
-        for x in 0..w {
-          if !alive[y * w + x] {
-            continue;
-          }
-          let mut neighbors = 0;
-          for dy in -1i64..=1 {
-            for dx in -1i64..=1 {
-              if dy == 0 && dx == 0 {
-                continue;
-              }
-              let ny = y as i64 + dy;
-              let nx = x as i64 + dx;
-              if ny < 0 || nx < 0 || ny >= h as i64 || nx >= w as i64 {
-                continue; // outside the border is background
-              }
-              if alive[ny as usize * w + nx as usize] {
-                neighbors += 1;
-              }
-            }
-          }
-          if neighbors == 1 {
-            doomed.push(y * w + x);
-          }
+    // `Pruning[img, n]` only touches components that had a branch point to
+    // begin with: a component that is one unbranched arc is a shape, not a
+    // branch, and survives however many passes are asked for. The bare
+    // `Pruning[img]` has no such protection.
+    let prunable: Vec<bool> = if protect_unbranched {
+      let labels = connected_components(&alive, w, h);
+      let count = labels.iter().flatten().max().map_or(0, |l| l + 1);
+      let mut branched = vec![false; count];
+      for i in 0..w * h {
+        if let Some(label) = labels[i]
+          && neighbors_of(&alive, w, h, i).len() >= 3
+        {
+          branched[label] = true;
         }
       }
+      (0..w * h)
+        .map(|i| labels[i].is_some_and(|label| branched[label]))
+        .collect()
+    } else {
+      vec![true; w * h]
+    };
+
+    for _ in 0..passes {
+      let labels = connected_components(&alive, w, h);
+      let component_count = labels.iter().flatten().max().map_or(0, |l| l + 1);
+      let doomed_mask: Vec<bool> = (0..w * h)
+        .map(|i| prunable[i] && is_branch_tip(&alive, w, h, i))
+        .collect();
+      let mut doomed: Vec<usize> =
+        (0..w * h).filter(|&i| doomed_mask[i]).collect();
+
+      // A component all of whose pixels are tips would vanish altogether.
+      // `Pruning[img, n]` leaves such a component alone for good; the bare
+      // form keeps its first pixel, so a thin arc wears down to a single
+      // point rather than to nothing.
+      let mut all_tips = vec![true; component_count];
+      for i in 0..w * h {
+        if let Some(label) = labels[i]
+          && !doomed_mask[i]
+        {
+          all_tips[label] = false;
+        }
+      }
+      let mut spared = vec![false; component_count];
+      doomed.retain(|&i| {
+        let Some(label) = labels[i] else { return true };
+        if !all_tips[label] {
+          return true;
+        }
+        if protect_unbranched {
+          return false; // the whole component stays
+        }
+        if spared[label] {
+          return true;
+        }
+        spared[label] = true;
+        false
+      });
+
       if doomed.is_empty() {
         break; // stable; further passes would change nothing
       }
@@ -8727,15 +8890,19 @@ fn srgb_to_lms(r: f64, g: f64, b: f64) -> (f64, f64, f64) {
 ///
 /// Every pixel is taken into Bradford LMS cone space, each of the three
 /// cone responses is scaled by `target / ref` in that same space, and the
-/// result comes back to sRGB clipped to `[0, 1]`. The reference color
-/// therefore lands exactly on the target — plain `ColorBalance[img, col]`
-/// maps `col` to white, so an image shot under a green cast comes back
-/// neutral (and a neutral image comes back magenta).
+/// result comes back to sRGB clipped to `[0, 1]`.
 ///
-/// A single-channel image carries no color to rebalance and is returned
-/// unchanged; an alpha channel rides along untouched. The automatic
-/// `ColorBalance[img]` form, which has to *estimate* the reference from
-/// the image, is not implemented and stays unevaluated.
+/// The two cone responses being divided are those of the *chromaticities*
+/// of the reference and the target — each color's XYZ normalized to
+/// `Y = 1` — so the adaptation changes the color cast without changing how
+/// bright the picture is. That is why `ColorBalance[img, Green]` sends
+/// green not to white but to the gray of green's own luminance, and why a
+/// neutral gray comes back magenta.
+///
+/// A single-channel image is taken up to RGB first, so a grayscale picture
+/// comes back colored; an alpha channel rides along untouched. The
+/// automatic `ColorBalance[img]` form, which has to *estimate* the
+/// reference from the image, is not implemented and stays unevaluated.
 pub fn color_balance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || unevaluated("ColorBalance", args);
   let Expr::Image {
@@ -8777,23 +8944,42 @@ pub fn color_balance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated());
   };
 
-  let (sl, sm, ss) = srgb_to_lms(source.r, source.g, source.b);
-  let (tl, tm, ts) = srgb_to_lms(target.r, target.g, target.b);
-  // A reference with no response in some cone (black, say) gives no
-  // finite gain, so there is nothing to adapt to.
+  let (Some((sl, sm, ss)), Some((tl, tm, ts))) = (
+    chromaticity_lms(source.r, source.g, source.b),
+    chromaticity_lms(target.r, target.g, target.b),
+  ) else {
+    // A reference with no luminance (black) has no chromaticity to adapt
+    // away from, so there is nothing to do.
+    return Ok(unevaluated());
+  };
   if sl <= 0.0 || sm <= 0.0 || ss <= 0.0 {
     return Ok(unevaluated());
   }
   let gains = (tl / sl, tm / sm, ts / ss);
 
-  let ch = *channels as usize;
-  if ch < 3 {
-    return Ok(args[0].clone()); // no color to rebalance
-  }
+  // A grayscale picture has no color channels to rebalance, but the
+  // balancing gives it some: wolframscript takes it up to RGB first.
+  let ch = (*channels as usize).max(3);
+  let pixels = *width as usize * *height as usize;
+  let mut new_data = if (*channels as usize) < 3 {
+    let mut expanded = Vec::with_capacity(pixels * 3);
+    for i in 0..pixels {
+      let gray = data[i * *channels as usize];
+      expanded.extend_from_slice(&[gray, gray, gray]);
+    }
+    expanded
+  } else {
+    data.as_ref().clone()
+  };
+  let color_space = if (*channels as usize) < 3 {
+    Some("RGB")
+  } else {
+    *color_space
+  };
+
   let lms_to_xyz = mat3_inverse(&XYZ_TO_LMS_BRADFORD);
   let xyz_to_linear_rgb = mat3_inverse(&LINEAR_RGB_TO_XYZ_D50);
-  let mut new_data = data.as_ref().clone();
-  for i in 0..(*width as usize * *height as usize) {
+  for i in 0..pixels {
     let base = i * ch;
     let (l, m, s) =
       srgb_to_lms(new_data[base], new_data[base + 1], new_data[base + 2]);
@@ -8805,13 +8991,29 @@ pub fn color_balance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     new_data[base + 2] = linear_to_srgb(b).clamp(0.0, 1.0);
   }
   Ok(Expr::Image {
-    color_space: *color_space,
+    color_space,
     width: *width,
     height: *height,
-    channels: *channels,
+    channels: ch as u8,
     data: Arc::new(new_data),
     image_type: *image_type,
   })
+}
+
+/// The Bradford cone responses of a color's *chromaticity* — its XYZ
+/// normalized to `Y = 1`. Dividing one of these by another is the gain
+/// that changes a color cast without changing the brightness. `None` for
+/// a color with no luminance at all.
+fn chromaticity_lms(r: f64, g: f64, b: f64) -> Option<(f64, f64, f64)> {
+  let (x, y, z) = linear_rgb_to_xyz_d50(
+    srgb_to_linear(r),
+    srgb_to_linear(g),
+    srgb_to_linear(b),
+  );
+  if y <= 0.0 {
+    return None;
+  }
+  Some(mat3_apply(&XYZ_TO_LMS_BRADFORD, (x / y, 1.0, z / y)))
 }
 
 /// ColorDistance[c1, c2] — Euclidean distance between two colors in
