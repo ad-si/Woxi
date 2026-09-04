@@ -49,10 +49,11 @@ mod example_data_tests {
       interpret("Union[First /@ ExampleData[\"NetworkGraph\"]]").unwrap(),
       "{NetworkGraph}"
     );
-    // Everything Woxi bundles is listed, and nothing else is claimed.
+    // Wolfram's whole catalogue is listed — Woxi bundles the data for only
+    // some of it, but the names are the same ones.
     assert_eq!(
       interpret("Length[ExampleData[\"NetworkGraph\"]]").unwrap(),
-      NETWORKS.len().to_string()
+      "228"
     );
     for (name, _, _) in NETWORKS {
       assert_eq!(
@@ -310,6 +311,67 @@ mod example_data_tests {
       )
       .unwrap(),
       "True"
+    );
+  }
+
+  // A name outside the catalogue is reported; one that is in the catalogue
+  // but whose data Woxi does not bundle stays quietly unevaluated.
+  #[test]
+  fn an_unknown_entity_is_reported() {
+    clear_state();
+    assert_eq!(
+      interpret("ExampleData[{\"NetworkGraph\", \"NoSuchNetwork\"}]").unwrap(),
+      "ExampleData[{NetworkGraph, NoSuchNetwork}]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "ExampleData::notent: \"NoSuchNetwork\" is not a known entity for the \
+         collection \"NetworkGraph\". Use ExampleData[\"NetworkGraph\"] for a \
+         list of entities."
+      )),
+      "expected notent message, got {msgs:?}"
+    );
+    // A catalogued name whose data is not bundled is not an unknown entity.
+    clear_state();
+    assert_eq!(
+      interpret("ExampleData[{\"NetworkGraph\", \"WorldWideWeb\"}]").unwrap(),
+      "ExampleData[{NetworkGraph, WorldWideWeb}]"
+    );
+    assert!(woxi::get_captured_messages_raw().is_empty());
+  }
+
+  #[test]
+  fn an_unknown_collection_is_reported() {
+    clear_state();
+    assert_eq!(
+      interpret("ExampleData[\"NoSuchType\"]").unwrap(),
+      "ExampleData[NoSuchType]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "ExampleData::notcoll: \"NoSuchType\" is not a known collection for \
+         ExampleData. Use ExampleData[] for a list of collections."
+      )),
+      "expected notcoll message, got {msgs:?}"
+    );
+  }
+
+  #[test]
+  fn an_unknown_property_is_reported() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ExampleData[{\"NetworkGraph\", \"LesMiserables\"}, \"NoSuchProperty\"]"
+      )
+      .unwrap(),
+      "ExampleData[{NetworkGraph, LesMiserables}, NoSuchProperty]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains("ExampleData::notpropx")),
+      "expected notpropx message, got {msgs:?}"
     );
   }
 }

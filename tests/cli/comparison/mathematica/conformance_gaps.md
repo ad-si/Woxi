@@ -3169,13 +3169,17 @@ blurred data either. Woxi leaves any non-zero scale unevaluated.
 
 ### `ExampleData` bundles its own data and properties
 
-Woxi ships the `"NetworkGraph"` datasets it assembled from the original
-sources rather than Wolfram's catalogue, and exposes the properties that data
-supports — `"VertexList"`, `"EdgeRules"`, `"AdjacencyMatrix"` — none of which
+Woxi lists Wolfram's whole 228-entry `"NetworkGraph"` catalogue (so
+`ExampleData["NetworkGraph"]` and `ExampleData::notent` agree), but ships the
+data for only the handful of classic networks it assembled from the original
+sources, and exposes the properties that data supports — `"VertexList"`, `"EdgeRules"`, `"AdjacencyMatrix"` — none of which
 wolframscript knows (it answers `ExampleData::notpropx`). Its own list is
 `ByteCount, Description, EdgeCount, EdgeProperty, FullGraph, Graph,
 LongDescription, Name, Source, StandardName, VertexCount, VertexProperty`.
-Deliberate: the catalogue is Wolfram's. Write tests against shape and
+`ExampleData[]` likewise names only the two collections Woxi serves, against
+wolframscript's nineteen, and the vertex *names* of a bundled network follow
+the original publication (`"MlleBaptistine"`) rather than Wolfram's spelling
+(`"Mlle Baptistine"`). Deliberate: the catalogue is Wolfram's. Write tests against shape and
 presence, never against either side's catalogue.
 
 ### `ExampleData[{"TestImage", name}]` ships no pixels

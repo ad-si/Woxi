@@ -4,8 +4,8 @@
 available types.
 
 ```scrut
-$ wo 'ExampleData[]'
-{NetworkGraph, TestImage}
+$ wo 'MemberQ[ExampleData[], "NetworkGraph"]'
+True
 ```
 
 `ExampleData["type"]` lists the entries of that type, each a `{type, name}`
@@ -13,7 +13,7 @@ pair ready to be passed straight back in.
 
 ```scrut
 $ wo 'ExampleData["NetworkGraph"][[1]]'
-{NetworkGraph, ZacharyKarateClub}
+{NetworkGraph, AmericanCollegeFootball}
 ```
 
 `ExampleData[{"type", "name"}]` is the data itself — for a network, a `Graph`.
@@ -30,15 +30,21 @@ $ wo 'ExampleData[{"NetworkGraph", "LesMiserables"}, "VertexCount"]'
 77
 ```
 
+The data itself is a real `Graph`, so the graph functions work on it:
+
 ```scrut
-$ wo 'ExampleData[{"NetworkGraph", "LesMiserables"}, "VertexList"][[1 ;; 3]]'
-{Myriel, Napoleon, MlleBaptistine}
+$ wo 'MemberQ[VertexList[ExampleData[{"NetworkGraph", "LesMiserables"}]], "Napoleon"]'
+True
 ```
 
-A dataset that is not bundled stays unevaluated rather than returning
-something made up.
+A name that is not in the catalogue at all is reported.
 
 ```scrut
 $ wo 'ExampleData[{"NetworkGraph", "NoSuchNetwork"}]'
+
+ExampleData::notent: "NoSuchNetwork" is not a known entity for the collection "NetworkGraph". Use ExampleData["NetworkGraph"] for a list of entities.
 ExampleData[{NetworkGraph, NoSuchNetwork}]
 ```
+
+A catalogued dataset Woxi does not bundle stays unevaluated rather than
+returning something made up.
