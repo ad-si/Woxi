@@ -4,6 +4,7 @@ Trigonometric, hyperbolic, exponential, and logarithmic functions.
 
 ## Trigonometric Functions
 
+- [`Pi`](elementart/Pi.md)
 - [`Cos`](elementary/Cos.md)
 - [`Cot`](elementary/Cot.md)
 - [`Csc`](elementary/Csc.md)
@@ -46,10 +47,11 @@ Trigonometric, hyperbolic, exponential, and logarithmic functions.
 
 ## Exponential and Logarithmic Functions
 
+- [`E`](elementary/E.md)
+- [`Exp`](elementary/Exp.md)
 - [`Log`](elementary/Log.md)
 - [`Log2`](elementary/Log2.md)
 - [`Log10`](elementary/Log10.md)
-- [`Exp`](elementary/Exp.md)
 
 ## Additional Functions
 

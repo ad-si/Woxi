@@ -5,6 +5,7 @@ helpers for checking and converting numeric values.
 
 - [`NumericQ`](complex/NumericQ.md)
 - [`NumberQ`](complex/NumberQ.md)
+- [`I`](complex/I.md)
 - [`Re`](complex/Re.md)
 - [`Im`](complex/Im.md)
 - [`Conjugate`](complex/Conjugate.md)
