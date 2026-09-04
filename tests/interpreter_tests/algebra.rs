@@ -509,6 +509,26 @@ mod expand {
     assert_eq!(interpret("Expand[5]").unwrap(), "5");
   }
 
+  // Regression (issue #766): terms whose rational coefficients are spelled
+  // differently still share one bucket, so they cancel instead of piling up
+  // as `1 - 1 + x - x`. A rational factor is part of the coefficient, not of
+  // the monomial's variable part.
+  #[test]
+  fn rational_coefficients_cancel() {
+    assert_eq!(interpret("Expand[1 + x - 2*(1/2 + x/2)]").unwrap(), "0");
+    assert_eq!(
+      interpret("Expand[(1 + x + x^2 - x^3) - 2*(1/2 + x/2 + x^2/2 - x^3/2)]")
+        .unwrap(),
+      "0"
+    );
+    assert_eq!(interpret("Expand[(1 + x) - 3*(1/3 + x/3)]").unwrap(), "0");
+    assert_eq!(interpret("Expand[(y + 1)*x/2 - x/2]").unwrap(), "(x*y)/2");
+    assert_eq!(
+      interpret("Expand[(49*(16 + 2*x))/26 - (19*(20 + 3*x))/13]").unwrap(),
+      "12/13 - (8*x)/13"
+    );
+  }
+
   #[test]
   fn difference_of_squares() {
     assert_eq!(interpret("Expand[(x + 2)*(x - 2)]").unwrap(), "-4 + x^2");
@@ -9323,6 +9343,35 @@ mod polynomial_reduce {
       "{{x + y}, x + y}"
     );
   }
+
+  /// A divisor with rational coefficients divides exactly (issue #766).
+  /// The reduction only terminates once the running remainder collapses to
+  /// the literal 0 — Expand used to leave `1/2 - 1/2 + x/2 - x/2 + …`
+  /// uncombined, so the loop hit its guard and gave up unevaluated.
+  #[test]
+  fn rational_divisor_divides_exactly() {
+    assert_eq!(
+      interpret(
+        "PolynomialReduce[1 - 2 x^3 + x^4, {(1 + x + x^2 - x^3)/2}, x]"
+      )
+      .unwrap(),
+      "{{2 - 2*x}, 0}"
+    );
+  }
+
+  /// A single divisor may be given without the surrounding list.
+  #[test]
+  fn divisor_without_list() {
+    assert_eq!(
+      interpret("PolynomialReduce[x^2 + 1, x + 1, x]").unwrap(),
+      "{{-1 + x}, 2}"
+    );
+    assert_eq!(
+      interpret("PolynomialReduce[1 - 2 x^3 + x^4, (1 + x + x^2 - x^3)/2, x]")
+        .unwrap(),
+      "{{2 - 2*x}, 0}"
+    );
+  }
 }
 
 mod solve_expression_target {
@@ -14806,9 +14855,12 @@ mod cases {
   }
   #[test]
   fn simplify_10() {
+    // The first component is `(12 - 8x)/13`; Simplify displays it with the
+    // sign pulled out, the same way it does for the already-combined
+    // spelling `Simplify[12/13 - (8 x)/13]`.
     assert_case(
       r#"LeastSquares[{{1, 2}, {2, 3}, {5, 6}}, {1, 5, 3}]; Simplify[LeastSquares[{{1, 2}, {2, 3}, {5, 6}}, {1, x, 3}]]"#,
-      r#"{(-4*(-3 + 2*x))/13, (-4 + 7*x)/13}"#,
+      r#"{-((-12 + 8*x)/13), (-4 + 7*x)/13}"#,
     );
   }
   #[test]

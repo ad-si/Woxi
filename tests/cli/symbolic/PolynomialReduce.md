@@ -24,6 +24,20 @@ $ wo 'PolynomialReduce[x^2, {3 x + 1}, x]'
 {{-1/9 + x/3}, 1/9}
 ```
 
+A divisor with rational coefficients divides just as exactly:
+
+```scrut
+$ wo 'PolynomialReduce[1 - 2 x^3 + x^4, {(1 + x + x^2 - x^3)/2}, x]'
+{{2 - 2*x}, 0}
+```
+
+A single divisor may be given without the surrounding list:
+
+```scrut
+$ wo 'PolynomialReduce[x^2 + 1, x + 1, x]'
+{{-1 + x}, 2}
+```
+
 When no divisor can reduce the polynomial, it is returned as the remainder:
 
 ```scrut

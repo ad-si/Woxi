@@ -116,9 +116,13 @@ pub fn polynomial_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 3 {
     return Ok(unevaluated());
   }
+  // A single divisor may be given without the surrounding list, the way the
+  // other polynomial-division functions take one; the result still reports
+  // its quotient inside a one-element list:
+  // PolynomialReduce[x^2, x, x] → {{x}, 0}.
   let divisors: Vec<Expr> = match &args[1] {
     Expr::List(items) => items.to_vec(),
-    _ => return Ok(unevaluated()),
+    other => vec![other.clone()],
   };
   // Multivariate form: {x1, x2, …} with two or more variables uses
   // lexicographic multivariate division (via the Gröbner machinery).

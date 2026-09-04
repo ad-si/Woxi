@@ -934,6 +934,15 @@ fn is_numeric_scalar(e: &Expr) -> bool {
       matches!(args[0], Expr::Integer(_) | Expr::BigInteger(_))
         && matches!(args[1], Expr::Integer(_) | Expr::BigInteger(_))
     }
+    // A quotient of numeric literals is a number too: expansion builds
+    // `Divide` nodes (e.g. the leading-coefficient ratio in
+    // PolynomialReduce) that never went through the evaluator's
+    // Rational normalization.
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } => is_numeric_scalar(left) && is_numeric_scalar(right),
     _ => false,
   }
 }
@@ -1293,11 +1302,32 @@ fn sort_var_factors_canonical(factors: &mut [Expr]) {
   });
 }
 
+/// Multiply two numeric coefficients, keeping rationals in normal form.
+/// `multiply_exprs` only folds integers, so `2 * 1/2` would stay an
+/// unevaluated `Times` and two terms that differ only in how their rational
+/// coefficient is spelled would never combine.
+fn multiply_numeric_coeff(a: &Expr, b: &Expr) -> Expr {
+  if matches!(a, Expr::Integer(1)) {
+    return b.clone();
+  }
+  if matches!(b, Expr::Integer(1)) {
+    return a.clone();
+  }
+  crate::evaluator::evaluate_function_call_ast("Times", &[a.clone(), b.clone()])
+    .unwrap_or_else(|_| multiply_exprs(a, b))
+}
+
 /// Decompose a term into (numeric_coefficient, sort_key, variable_factors).
 /// E.g. 3*x^2*y → (3, "x^2*y", [x^2, y])
 ///      -x → (-1, "x^1", [x])
 ///      5 → (5, "", [])
 pub(super) fn decompose_term(term: &Expr) -> (Expr, String, Vec<Expr>) {
+  // A bare number — including a Rational or a quotient of numeric literals —
+  // is a pure coefficient with an empty variable part, so `1/2` and `-1/2`
+  // land in the same bucket as any other constant.
+  if is_numeric_scalar(term) {
+    return (term.clone(), String::new(), vec![]);
+  }
   match term {
     Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_) => {
       (term.clone(), String::new(), vec![])
@@ -1325,19 +1355,18 @@ pub(super) fn decompose_term(term: &Expr) -> (Expr, String, Vec<Expr>) {
 
       for f in &factors {
         match f {
-          Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_) => {
-            numeric_coeff = multiply_exprs(&numeric_coeff, f);
+          _ if is_numeric_scalar(f) => {
+            numeric_coeff = multiply_numeric_coeff(&numeric_coeff, f);
           }
           Expr::UnaryOp {
             op: UnaryOperator::Minus,
             operand,
           } => {
             numeric_coeff = negate_term(&numeric_coeff);
-            match operand.as_ref() {
-              Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_) => {
-                numeric_coeff = multiply_exprs(&numeric_coeff, operand);
-              }
-              _ => var_factors.push(*operand.clone()),
+            if is_numeric_scalar(operand) {
+              numeric_coeff = multiply_numeric_coeff(&numeric_coeff, operand);
+            } else {
+              var_factors.push(*operand.clone());
             }
           }
           _ => var_factors.push(f.clone()),
@@ -1363,11 +1392,10 @@ pub(super) fn decompose_term(term: &Expr) -> (Expr, String, Vec<Expr>) {
       let mut var_factors: Vec<Expr> = Vec::new();
 
       for f in args {
-        match f {
-          Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_) => {
-            numeric_coeff = multiply_exprs(&numeric_coeff, f);
-          }
-          _ => var_factors.push(f.clone()),
+        if is_numeric_scalar(f) {
+          numeric_coeff = multiply_numeric_coeff(&numeric_coeff, f);
+        } else {
+          var_factors.push(f.clone());
         }
       }
 
