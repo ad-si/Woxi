@@ -92,7 +92,6 @@ x + 2*x^2 + x^3
 - [`Simplify`](symbolic/Simplify.md)
 - [`FullSimplify`](symbolic/FullSimplify.md)
 - [`Solve`](symbolic/Solve.md)
-- [`NSolve`](symbolic/NSolve.md)
 - [`Reduce`](symbolic/Reduce.md)
 - [`SeriesCoefficient`](symbolic/SeriesCoefficient.md)
 - [`FindRoot`](symbolic/FindRoot.md)
@@ -104,6 +103,18 @@ x + 2*x^2 + x^3
 - [`FourierTransform`](symbolic/FourierTransform.md)
 - [`LaplaceTransform`](symbolic/LaplaceTransform.md)
 - [`InverseLaplaceTransform`](symbolic/InverseLaplaceTransform.md)
+
+## Numerical evaluation
+
+- [`N`](symbolic/N.md)
+- [`NDSolve`](symbolic/NDSolve.md)
+- [`NDSolveValue`](symbolic/NDSolveValue.md)
+- [`NIntegrate`](symbolic/NIntegrate.md)
+- [`NMaximize`](symbolic/NMaximize.md)
+- [`NMaxValue`](symbolic/NMaxValue.md)
+- [`NMinimize`](symbolic/NMinimize.md)
+- [`NMinValue`](symbolic/NMinValue.md)
+- [`NSolve`](symbolic/NSolve.md)
 
 ## Additional Functions
 
@@ -140,8 +151,6 @@ x + 2*x^2 + x^3
 - [`MinimalPolynomial`](symbolic/MinimalPolynomial.md)
 - [`Minimize`](symbolic/Minimize.md)
 - [`MonomialList`](symbolic/MonomialList.md)
-- [`NMaxValue`](symbolic/NMaxValue.md)
-- [`NMinValue`](symbolic/NMinValue.md)
 - [`PolynomialMod`](symbolic/PolynomialMod.md)
 - [`PolynomialQ`](symbolic/PolynomialQ.md)
 - [`PolynomialQuotientRemainder`](symbolic/PolynomialQuotientRemainder.md)
@@ -159,7 +168,6 @@ x + 2*x^2 + x^3
 - [`Interpolation`](symbolic/Interpolation.md)
 - [`FindFit`](symbolic/FindFit.md)
 - [`FindClusters`](symbolic/FindClusters.md)
-- [`NIntegrate`](symbolic/NIntegrate.md)
 - [`MatrixExp`](symbolic/MatrixExp.md)
 - [`AsymptoticSolve`](symbolic/AsymptoticSolve.md)
 - [`CoefficientArrays`](symbolic/CoefficientArrays.md)
@@ -180,10 +188,6 @@ x + 2*x^2 + x^3
 - [`InverseFourier`](symbolic/InverseFourier.md)
 - [`InverseFunction`](symbolic/InverseFunction.md)
 - [`ListInterpolation`](symbolic/ListInterpolation.md)
-- [`NDSolve`](symbolic/NDSolve.md)
-- [`NDSolveValue`](symbolic/NDSolveValue.md)
-- [`NMaximize`](symbolic/NMaximize.md)
-- [`NMinimize`](symbolic/NMinimize.md)
 - [`RSolve`](symbolic/RSolve.md)
 - [`RecurrenceTable`](symbolic/RecurrenceTable.md)
 - [`Series`](symbolic/Series.md)
