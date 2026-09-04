@@ -1428,6 +1428,23 @@ mod to_character_code {
   /// them are private-use characters rather than the standard Unicode
   /// look-alike: `\[WarningSign]` is U+F725, not U+26A0 (⚠), and
   /// `\[Earth]` is U+F3DF, not U+2641 (♁).
+  // A `\[Name]` Wolfram has no character for is reported by the reader and
+  // left in the string exactly as written, so nothing is invented.
+  #[test]
+  fn an_unknown_long_name_is_reported_and_kept_verbatim() {
+    assert_eq!(
+      interpret(r#"ToCharacterCode[{"\[Tab]", "\[RawTab]"}]"#).unwrap(),
+      "{{92, 91, 84, 97, 98, 93}, {9}}"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs
+        .iter()
+        .any(|m| m.contains("Syntax::sntufn: Unknown unicode longname Tab.")),
+      "expected sntufn message, got {msgs:?}"
+    );
+  }
+
   #[test]
   fn pictograph_and_astronomical_named_chars() {
     assert_eq!(

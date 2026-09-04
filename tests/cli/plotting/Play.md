@@ -2,13 +2,8 @@
 
 Builds a sound object whose amplitude is the given function of the time
 variable (in seconds). The result is a `Sound` object, so it reports
-`Head -> Sound`, prints as `-Sound-`, and — in the visual hosts (the Woxi
-Playground and Woxi Studio) — renders a playable audio widget.
-
-```scrut
-$ wo 'Play[Sin[2 Pi 440 t], {t, 0, 1}]'
--Sound-
-```
+`Head -> Sound` and — in the visual hosts (the Woxi Playground and Woxi
+Studio) — renders a playable audio widget.
 
 ```scrut
 $ wo 'Head[Play[Sin[2 Pi 440 t], {t, 0, 1}]]'
@@ -28,5 +23,7 @@ unevaluated:
 
 ```scrut
 $ wo 'Play[Sin[t], {t, 0, 1}, 5]'
+
+Play::nonopt: Options expected (instead of 5) beyond position 2 in Play[Sin[t], {t, 0, 1}, 5]. An option must be a rule or a list of rules.
 Play[Sin[t], {t, 0, 1}, 5]
 ```

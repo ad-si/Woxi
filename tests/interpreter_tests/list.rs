@@ -12264,6 +12264,27 @@ mod parallel_cases {
     assert_eq!(sel.result, "Select[{1, 2}]");
   }
 
+  // Capping the number of matches is the one `Select` argument form that has
+  // no parallel implementation: it warns and evaluates sequentially, so the
+  // answer still comes back.
+  #[test]
+  fn a_match_count_cannot_be_parallelized() {
+    let result =
+      interpret_with_stdout("ParallelSelect[{1, 2, 3, 4, 5}, # > 3 &, 2]")
+        .unwrap();
+    assert_eq!(result.result, "{4, 5}");
+    assert_eq!(
+      result.stdout,
+      "\nParallelSelect::nopar1: Select[{1, 2, 3, 4, 5}, #1 > 3 & , 2] \
+       cannot be parallelized; proceeding with sequential evaluation.\n"
+    );
+    // Without the count there is nothing to warn about.
+    let plain =
+      interpret_with_stdout("ParallelSelect[{1, 2, 3, 4}, EvenQ]").unwrap();
+    assert_eq!(plain.result, "{2, 4}");
+    assert_eq!(plain.stdout, "");
+  }
+
   #[test]
   fn attributes_match_wolframscript() {
     assert_eq!(

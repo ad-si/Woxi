@@ -2650,7 +2650,12 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
                 if let Some(unicode) = named_char_to_unicode(&name) {
                   result.push_str(unicode);
                 } else {
-                  // Unknown named char: preserve original
+                  // A name Wolfram has no character for is reported by the
+                  // reader and left in the string as written, so `"\[Tab]"`
+                  // stays the six characters `\`, `[`, `T`, `a`, `b`, `]`.
+                  crate::emit_message(&format!(
+                    "Syntax::sntufn: Unknown unicode longname {name}."
+                  ));
                   result.push_str("\\[");
                   result.push_str(&name);
                   result.push(']');

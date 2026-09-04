@@ -17,10 +17,13 @@ $ wo 'ToCharacterCode["\[Alpha]\[WarningSign]\[ScriptCapitalD]"]'
 {945, 63269, 63347}
 ```
 
-A name Wolfram has no character for is left as written, so nothing is
-invented: `\[Tab]` is six characters, while `\[RawTab]` is the tab.
+A name Wolfram has no character for is reported by the reader and left as
+written, so nothing is invented: `\[Tab]` is six characters, while
+`\[RawTab]` is the tab.
 
 ```scrut
 $ wo 'ToCharacterCode[{"\[Tab]", "\[RawTab]"}]'
+
+Syntax::sntufn: Unknown unicode longname Tab.
 {{92, 91, 84, 97, 98, 93}, {9}}
 ```

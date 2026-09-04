@@ -228,6 +228,17 @@ fn intnm_message(name: &str, args: &[Expr], pos: usize) -> Expr {
   call
 }
 
+/// Emit `<Parallel><F>::nopar1: <serial call> cannot be parallelized;
+/// proceeding with sequential evaluation.` — what wolframscript reports for a
+/// `Parallel*` call whose argument form has no parallel implementation.
+fn emit_nopar1(name: &str, serial: &str, args: &[Expr]) {
+  crate::emit_message_to_stdout(&format!(
+    "{name}::nopar1: {} cannot be parallelized; proceeding with \
+     sequential evaluation.",
+    crate::syntax::expr_to_string(&unevaluated(serial, args))
+  ));
+}
+
 /// Split a trailing `SameTest -> f` option off an argument list
 /// (FixedPoint / FixedPointList).
 fn split_same_test_option(args: &[Expr]) -> (Vec<Expr>, Option<Expr>) {
@@ -2086,7 +2097,12 @@ pub fn dispatch_list_operations(
     "Select" | "ParallelSelect" if args.len() == 2 => {
       return Some(list_helpers_ast::select_ast(&args[0], &args[1], None));
     }
+    // Capping the number of matches is what the parallel form cannot do:
+    // wolframscript reports `::nopar1` and evaluates the serial `Select`.
     "Select" | "ParallelSelect" if args.len() == 3 => {
+      if name == "ParallelSelect" {
+        emit_nopar1(name, "Select", args);
+      }
       return Some(list_helpers_ast::select_ast(
         &args[0],
         &args[1],
@@ -2300,11 +2316,7 @@ pub fn dispatch_list_operations(
     // to that serial function, which then stays unevaluated.
     "ParallelCases" | "ParallelSelect" if args.len() == 1 => {
       let serial = name.trim_start_matches("Parallel");
-      crate::emit_message_to_stdout(&format!(
-        "{name}::nopar1: {} cannot be parallelized; proceeding with \
-         sequential evaluation.",
-        crate::syntax::expr_to_string(&unevaluated(serial, args))
-      ));
+      emit_nopar1(name, serial, args);
       return Some(Ok(unevaluated(serial, args)));
     }
     // FirstCase[list, pattern] or FirstCase[list, pattern, default]

@@ -2657,6 +2657,21 @@ text as glyph outlines, `rgb(%)` colours — for every graphics type. A test tha
 prints raw SVG can never match. Assert the meaning instead (`Area[Polygon[…]]`
 rather than counting `<polygon>` tags).
 
+### `Play` prints as `-Sound-`
+
+```sh
+wolframscript -code 'Play[Sin[2 Pi 440 t], {t, 0, 1}]'
+# Sound[SampledSoundFunction[CompiledFunction[{11, 15., 5446}, …], 8000, 8000]]
+woxi eval 'Play[Sin[2 Pi 440 t], {t, 0, 1}]'
+# -Sound-
+```
+
+wolframscript compiles the amplitude function and prints the whole compiled
+object, internal register layout and all. Woxi wraps the inert `Play` call in
+a `Sound`, which reports the same `Head` and renders the same playable widget,
+but prints as the short form. Test with `Head`, `AudioSampleRate` or
+`AudioLength`, never against the printed form.
+
 
 ## Images
 

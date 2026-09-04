@@ -661,6 +661,20 @@ fn play_falls_back_to_the_default_rate() {
   );
 }
 
+// Everything past the time iterator has to be an option; a bare value there
+// is reported and leaves the call unevaluated.
+#[test]
+fn play_reports_a_non_option_after_the_iterator() {
+  assert_eq!(
+    interpret("Play[Sin[t], {t, 0, 1}, 5]").unwrap(),
+    "Play[Sin[t], {t, 0, 1}, 5]"
+  );
+  assert_eq!(
+    interpret("Head[Play[Sin[t], {t, 0, 1}, SampleRate -> 16000]]").unwrap(),
+    "Sound"
+  );
+}
+
 // ─── Capture / web search stubs ──────────────────────────────────────────────
 
 #[test]

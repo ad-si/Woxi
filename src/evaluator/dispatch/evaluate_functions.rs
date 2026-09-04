@@ -11131,8 +11131,23 @@ fn evaluate_function_call_ast_inner(
   if name == "Play"
     && args.len() >= 2
     && matches!(&args[1], Expr::List(items) if items.len() == 3)
-    && args[2..].iter().all(crate::syntax::is_rule_expr)
   {
+    // Everything past the iterator has to be an option — a rule or a list of
+    // rules. A bare value there is reported as `nonopt` and leaves the call
+    // unevaluated, like wolframscript.
+    let is_option = |a: &Expr| match a {
+      Expr::List(items) => items.iter().all(crate::syntax::is_rule_expr),
+      other => crate::syntax::is_rule_expr(other),
+    };
+    if let Some(bad) = args[2..].iter().find(|a| !is_option(a)) {
+      let unevaluated_call = unevaluated("Play", args);
+      crate::emit_message(&format!(
+        "Play::nonopt: Options expected (instead of {}) beyond position 2 in {}. An option must be a rule or a list of rules.",
+        crate::syntax::expr_to_string(bad),
+        crate::syntax::expr_to_string(&unevaluated_call)
+      ));
+      return Ok(unevaluated_call);
+    }
     return Ok(call("Sound", vec![unevaluated("Play", args)]));
   }
 
