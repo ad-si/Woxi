@@ -665,7 +665,10 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "HilbertMatrix" => Some((1, 1)),
     "HistogramDistribution" => Some((1, 2)),
     "HistogramList" => Some((1, 2)),
-    "HypothesisTesting`MeanTest" => Some((1, usize::MAX)),
+    // `HypothesisTesting`MeanTest` / `…`MeanDifferenceTest` deliberately have
+    // no arity entry: the legacy package reports every wrong call — including
+    // the empty one — as `::badargs` rather than `::argm`, so the functions
+    // check their own arguments.
     "HoldForm" => Some((1, 1)),
     "Hyperfactorial" => Some((1, 1)),
     "BinormalDistribution" => Some((1, 3)),

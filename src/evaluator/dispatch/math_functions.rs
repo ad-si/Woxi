@@ -853,9 +853,16 @@ pub fn dispatch_math_functions(
     "LocationTest" if !args.is_empty() && args.len() <= 3 => {
       return Some(crate::functions::math_ast::location_test_ast(args));
     }
-    "HypothesisTesting`MeanTest" if !args.is_empty() => {
+    "HypothesisTesting`MeanTest" => {
       return Some(
         crate::functions::math_ast::hypothesis_testing_mean_test_ast(args),
+      );
+    }
+    "HypothesisTesting`MeanDifferenceTest" => {
+      return Some(
+        crate::functions::math_ast::hypothesis_testing_mean_difference_test_ast(
+          args,
+        ),
       );
     }
     "PearsonChiSquareTest" if !args.is_empty() && args.len() <= 3 => {

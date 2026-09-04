@@ -4691,12 +4691,22 @@ fn extract_numeric_list_flat(
   Ok(vals)
 }
 
+/// The arithmetic mean of a sample.
+fn sample_mean(sample: &[f64]) -> f64 {
+  sample.iter().sum::<f64>() / sample.len() as f64
+}
+
+/// The unbiased (n - 1) sample variance.
+fn sample_variance(sample: &[f64]) -> f64 {
+  let n = sample.len() as f64;
+  let mean = sample_mean(sample);
+  sample.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (n - 1.0)
+}
+
 fn one_sample_t_test(data: &[f64], mu0: f64) -> (f64, f64) {
   let n = data.len() as f64;
-  let mean = data.iter().sum::<f64>() / n;
-  let variance =
-    data.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (n - 1.0);
-  let se = (variance / n).sqrt();
+  let mean = sample_mean(data);
+  let se = (sample_variance(data) / n).sqrt();
   let t = if se == 0.0 {
     if (mean - mu0).abs() == 0.0 {
       0.0
@@ -4712,12 +4722,10 @@ fn one_sample_t_test(data: &[f64], mu0: f64) -> (f64, f64) {
 fn two_sample_t_test(data1: &[f64], data2: &[f64], mu0: f64) -> (f64, f64) {
   let n1 = data1.len() as f64;
   let n2 = data2.len() as f64;
-  let mean1 = data1.iter().sum::<f64>() / n1;
-  let mean2 = data2.iter().sum::<f64>() / n2;
-  let var1 =
-    data1.iter().map(|x| (x - mean1).powi(2)).sum::<f64>() / (n1 - 1.0);
-  let var2 =
-    data2.iter().map(|x| (x - mean2).powi(2)).sum::<f64>() / (n2 - 1.0);
+  let mean1 = sample_mean(data1);
+  let mean2 = sample_mean(data2);
+  let var1 = sample_variance(data1);
+  let var2 = sample_variance(data2);
   let se = (var1 / n1 + var2 / n2).sqrt();
   let t = if se == 0.0 {
     let diff = mean1 - mean2 - mu0;
@@ -4826,83 +4834,394 @@ fn format_location_test_result(
   }
 }
 
-/// `HypothesisTesting`MeanTest[data, mu0, opts]` - the legacy
-/// `Statistics`HypothesisTests`` / `HypothesisTesting`` compatibility-package
-/// one- or two-sample mean test. Unlike the modern `LocationTest`, which
-/// returns a single requested property, the legacy function reports a list
-/// of context-qualified rules (`HypothesisTesting`TwoSidedPValue`, etc.) so
-/// that callers extract results with `property /. MeanTest[...]`. The
-/// underlying t-statistic and degrees of freedom are computed by the same
-/// helpers `LocationTest` uses, so the two never drift apart.
+// ─── HypothesisTesting` (legacy compatibility package) ────────────────
+//
+// `MeanTest` / `MeanDifferenceTest` are the `Statistics`HypothesisTests`` /
+// `HypothesisTesting`` compatibility-package tests that older notebooks
+// reach for after `Needs["HypothesisTesting`"]`. Unlike the modern
+// `LocationTest`, which returns a single requested property, they answer
+// with a *rule* — `HypothesisTesting`OneSidedPValue -> p`, or
+// `HypothesisTesting`TwoSidedPValue -> p` under `TwoSided -> True` — so
+// callers pull the number out with `property /. MeanTest[…]`. Both share
+// their t statistic and degrees of freedom with `LocationTest`, so the two
+// never drift apart.
+
+/// The option settings the legacy tests share. Every option may be written
+/// with or without the `HypothesisTesting`` context prefix, the way
+/// notebooks that put the context on `$ContextPath` spell them.
+#[derive(Default)]
+struct LegacyTestOptions {
+  two_sided: bool,
+  full_report: bool,
+  equal_variances: bool,
+  /// `KnownVariance -> v` (or `-> {v1, v2}`). When set, the statistic is
+  /// standard normal instead of Student t and no variance is estimated from
+  /// the sample.
+  known_variance: Option<Vec<f64>>,
+}
+
+/// A symbol's name with the optional `HypothesisTesting`` prefix removed.
+fn legacy_symbol_name(expr: &Expr) -> Option<&str> {
+  match expr {
+    Expr::Identifier(s) => {
+      Some(s.strip_prefix("HypothesisTesting`").unwrap_or(s))
+    }
+    _ => None,
+  }
+}
+
+fn legacy_option_flag(value: &Expr) -> Option<bool> {
+  match legacy_symbol_name(value)? {
+    "True" => Some(true),
+    "False" => Some(false),
+    _ => None,
+  }
+}
+
+/// Read the trailing option rules of a legacy test. `None` when one of them
+/// is not an option the package knows, which makes the caller report
+/// `::badargs` and stay unevaluated, exactly as the package does.
+fn parse_legacy_test_options(opts: &[Expr]) -> Option<LegacyTestOptions> {
+  let mut parsed = LegacyTestOptions::default();
+  for opt in opts {
+    let (lhs, rhs, _) = crate::functions::expr_form::rule_parts(opt)?;
+    match legacy_symbol_name(lhs)? {
+      "TwoSided" => parsed.two_sided = legacy_option_flag(rhs)?,
+      "FullReport" => parsed.full_report = legacy_option_flag(rhs)?,
+      "EqualVariances" => parsed.equal_variances = legacy_option_flag(rhs)?,
+      "KnownVariance" => {
+        parsed.known_variance = match rhs {
+          Expr::Identifier(s) if s == "None" => None,
+          Expr::List(items) => Some(extract_numeric_list_flat(items).ok()?),
+          other => Some(vec![try_eval_to_f64(other)?]),
+        }
+      }
+      _ => return None,
+    }
+  }
+  Some(parsed)
+}
+
+/// The samples a legacy test's data argument describes: a flat list of
+/// numbers is one sample, a matrix is one sample per *column* (its rows are
+/// observations of several variables), which is what makes the package's
+/// tests answer with a list of p-values. The flag says which of the two it
+/// was, since that decides whether the result is a number or a list.
+fn legacy_test_samples(data: &Expr) -> Option<(Vec<Vec<f64>>, bool)> {
+  let Expr::List(items) = data else {
+    return None;
+  };
+  if items.is_empty() {
+    return None;
+  }
+  if items.iter().all(|item| matches!(item, Expr::List(_))) {
+    let rows = items
+      .iter()
+      .map(|row| match row {
+        Expr::List(cells) => extract_numeric_list_flat(cells).ok(),
+        _ => None,
+      })
+      .collect::<Option<Vec<_>>>()?;
+    let width = rows[0].len();
+    if width == 0 || rows.iter().any(|row| row.len() != width) {
+      return None;
+    }
+    let columns = (0..width)
+      .map(|j| rows.iter().map(|row| row[j]).collect())
+      .collect();
+    Some((columns, true))
+  } else {
+    Some((vec![extract_numeric_list_flat(items).ok()?], false))
+  }
+}
+
+/// The one-sided p-value of a statistic: the tail of its distribution beyond
+/// the observed value, in whichever direction the sample landed. `df` is the
+/// Student t degrees of freedom, or `None` for the standard normal a
+/// `KnownVariance` setting selects.
+fn legacy_one_sided_p(stat: f64, df: Option<f64>) -> Option<f64> {
+  if stat.is_nan() {
+    return None;
+  }
+  Some(match df {
+    Some(df) => t_test_p_value(stat, df) / 2.0,
+    None => erfc_f64(stat.abs() / std::f64::consts::SQRT_2) / 2.0,
+  })
+}
+
+/// `(mean - mu0) / standardError`, with the degenerate zero-spread sample
+/// mapped the way the package's `0/0` and `x/0` do: indeterminate when the
+/// sample sits exactly on the hypothesised value, infinite otherwise.
+fn legacy_statistic(difference: f64, standard_error: f64) -> f64 {
+  if standard_error == 0.0 {
+    if difference == 0.0 {
+      f64::NAN
+    } else {
+      difference.signum() * f64::INFINITY
+    }
+  } else {
+    difference / standard_error
+  }
+}
+
+fn legacy_rule(head: &str, value: Expr) -> Expr {
+  Expr::Rule {
+    pattern: Box::new(Expr::Identifier(head.to_string())),
+    replacement: Box::new(value),
+  }
+}
+
+fn legacy_p_value_expr(p: Option<f64>, two_sided: bool) -> Expr {
+  match p {
+    Some(p) => Expr::Real(if two_sided { 2.0 * p } else { p }),
+    None => Expr::Identifier("Indeterminate".to_string()),
+  }
+}
+
+/// `FullReport -> TableForm[{{location, statistic, distribution}}, …]`, the
+/// single-row summary table the legacy tests prepend to their p-value rule
+/// under `FullReport -> True`. `location_heading` is `"Mean"` for `MeanTest`
+/// and `"MeanDiff"` for `MeanDifferenceTest`.
+fn legacy_full_report_rule(
+  location: Expr,
+  statistic: Expr,
+  df: Option<f64>,
+  location_heading: &str,
+) -> Expr {
+  let distribution = match df {
+    Some(df) => call("StudentTDistribution", vec![num_to_expr(df)]),
+    None => call(
+      "NormalDistribution",
+      vec![Expr::Integer(0), Expr::Integer(1)],
+    ),
+  };
+  let headings = Expr::List(
+    vec![
+      Expr::Identifier("None".to_string()),
+      Expr::List(
+        vec![
+          Expr::String(location_heading.to_string()),
+          Expr::String("TestStat".to_string()),
+          Expr::String("Distribution".to_string()),
+        ]
+        .into(),
+      ),
+    ]
+    .into(),
+  );
+  let table = call(
+    "TableForm",
+    vec![
+      Expr::List(
+        vec![Expr::List(vec![location, statistic, distribution].into())].into(),
+      ),
+      legacy_rule("TableHeadings", headings),
+    ],
+  );
+  legacy_rule("HypothesisTesting`FullReport", table)
+}
+
+/// `HypothesisTesting`MeanTest[data, mu0, opts]` — the legacy one-sample
+/// mean test. `data` is a list of observations, or a matrix whose columns
+/// are tested independently.
 pub fn hypothesis_testing_mean_test_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  if args.is_empty() {
-    return Err(InterpreterError::EvaluationError(
-      "MeanTest expects at least 1 argument".into(),
+  crate::emit_message(
+    "General::obsfun: The function MeanTest is now obsolete and has been \
+     superseded by LocationTest.",
+  );
+  let unevaluated_call = || unevaluated("HypothesisTesting`MeanTest", args);
+  let badargs = || {
+    crate::emit_message(
+      "MeanTest::badargs: Incorrect number or type of arguments.",
+    );
+    unevaluated("HypothesisTesting`MeanTest", args)
+  };
+
+  if args.len() < 2 {
+    return Ok(badargs());
+  }
+  let Some(options) = parse_legacy_test_options(&args[2..]) else {
+    return Ok(badargs());
+  };
+  let Some((samples, vectorized)) = legacy_test_samples(&args[0]) else {
+    return Ok(badargs());
+  };
+
+  // `mu0` is one value, or one per column of a matrix argument.
+  let mu0 = match &args[1] {
+    Expr::List(items) => match extract_numeric_list_flat(items) {
+      Ok(values) if values.len() == samples.len() => values,
+      _ => return Ok(unevaluated_call()),
+    },
+    other => match try_eval_to_f64(other) {
+      Some(value) => vec![value; samples.len()],
+      // A symbolic `mu0` (including `Automatic`) leaves the package building
+      // a symbolic Piecewise; Woxi keeps the call unevaluated instead.
+      None => return Ok(unevaluated_call()),
+    },
+  };
+
+  let n = samples[0].len() as f64;
+  let variances = match &options.known_variance {
+    Some(known) if known.len() == 1 => vec![known[0]; samples.len()],
+    Some(known) if known.len() == samples.len() => known.clone(),
+    Some(_) => return Ok(badargs()),
+    None => {
+      if n < 2.0 {
+        crate::emit_message(&format!(
+          "Variance::shlen: The argument {} should have at least two \
+           elements.",
+          format_expr(&args[0], ExprForm::Output)
+        ));
+        crate::emit_message(
+          "MeanTest::novar: Unable to estimate variance from the sample.",
+        );
+        return Ok(unevaluated_call());
+      }
+      samples.iter().map(|s| sample_variance(s)).collect()
+    }
+  };
+  let df = options.known_variance.is_none().then_some(n - 1.0);
+
+  let mut means = Vec::with_capacity(samples.len());
+  let mut statistics = Vec::with_capacity(samples.len());
+  let mut p_values = Vec::with_capacity(samples.len());
+  for (j, sample) in samples.iter().enumerate() {
+    let mean = sample_mean(sample);
+    let statistic = legacy_statistic(mean - mu0[j], (variances[j] / n).sqrt());
+    means.push(Expr::Real(mean));
+    statistics.push(if statistic.is_nan() {
+      Expr::Identifier("Indeterminate".to_string())
+    } else {
+      Expr::Real(statistic)
+    });
+    p_values.push(legacy_p_value_expr(
+      legacy_one_sided_p(statistic, df),
+      options.two_sided,
     ));
   }
 
-  let mu0 = if args.len() >= 2 {
-    match &args[1] {
-      Expr::Identifier(s) if s == "Automatic" => 0.0,
-      other => match try_eval_to_f64(other) {
-        Some(v) => v,
-        None => {
-          return Ok(unevaluated("HypothesisTesting`MeanTest", args));
-        }
-      },
+  let collect = |values: Vec<Expr>| -> Expr {
+    if vectorized {
+      Expr::List(values.into())
+    } else {
+      values.into_iter().next().unwrap_or(Expr::Integer(0))
     }
+  };
+  let p_rule = legacy_rule(
+    if options.two_sided {
+      "HypothesisTesting`TwoSidedPValue"
+    } else {
+      "HypothesisTesting`OneSidedPValue"
+    },
+    collect(p_values),
+  );
+  if !options.full_report {
+    return Ok(p_rule);
+  }
+  let report =
+    legacy_full_report_rule(collect(means), collect(statistics), df, "Mean");
+  Ok(Expr::List(vec![report, p_rule].into()))
+}
+
+/// `HypothesisTesting`MeanDifferenceTest[list1, list2, diff0, opts]` — the
+/// legacy two-sample test of `mean1 - mean2 == diff0`. Welch's unequal
+/// variances by default, pooled under `EqualVariances -> True`.
+pub fn hypothesis_testing_mean_difference_test_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  crate::emit_message(
+    "General::obsfun: The function MeanDifferenceTest is now obsolete and \
+     has been superseded by LocationTest.",
+  );
+  let unevaluated_call =
+    || unevaluated("HypothesisTesting`MeanDifferenceTest", args);
+  let badargs = || {
+    crate::emit_message(
+      "MeanDifferenceTest::badargs: Incorrect number or type of arguments.",
+    );
+    unevaluated("HypothesisTesting`MeanDifferenceTest", args)
+  };
+
+  if args.len() < 3 {
+    return Ok(badargs());
+  }
+  let Some(options) = parse_legacy_test_options(&args[3..]) else {
+    return Ok(badargs());
+  };
+  // Only plain samples: the package's own matrix handling is broken (it
+  // builds a StudentTDistribution over a list of degrees of freedom).
+  let (Some((first, false)), Some((second, false))) =
+    (legacy_test_samples(&args[0]), legacy_test_samples(&args[1]))
+  else {
+    return Ok(badargs());
+  };
+  let (data1, data2) = (&first[0], &second[0]);
+  let Some(diff0) = try_eval_to_f64(&args[2]) else {
+    return Ok(unevaluated_call());
+  };
+
+  let (n1, n2) = (data1.len() as f64, data2.len() as f64);
+  let difference = sample_mean(data1) - sample_mean(data2) - diff0;
+
+  let (statistic, df) = if let Some(known) = &options.known_variance {
+    let (v1, v2) = match known.len() {
+      1 => (known[0], known[0]),
+      2 => (known[0], known[1]),
+      _ => return Ok(badargs()),
+    };
+    (
+      legacy_statistic(difference, (v1 / n1 + v2 / n2).sqrt()),
+      None,
+    )
   } else {
-    0.0
-  };
-
-  let (t_stat, df) = match &args[0] {
-    Expr::List(items) if !items.is_empty() => {
-      if items.len() == 2
-        && matches!(&items[0], Expr::List(_))
-        && matches!(&items[1], Expr::List(_))
-      {
-        let vals1 = extract_numeric_list(&items[0])?;
-        let vals2 = extract_numeric_list(&items[1])?;
-        if vals1.len() < 2 || vals2.len() < 2 {
-          return Err(InterpreterError::EvaluationError(
-            "MeanTest: each sample needs at least 2 elements".into(),
-          ));
-        }
-        two_sample_t_test(&vals1, &vals2, mu0)
-      } else {
-        let vals = extract_numeric_list_flat(items)?;
-        if vals.len() < 2 {
-          return Err(InterpreterError::EvaluationError(
-            "MeanTest: need at least 2 elements".into(),
-          ));
-        }
-        one_sample_t_test(&vals, mu0)
-      }
+    if n1 < 2.0 || n2 < 2.0 {
+      crate::emit_message(
+        "MeanDifferenceTest::novar: Unable to estimate variance from the \
+         sample.",
+      );
+      return Ok(unevaluated_call());
     }
-    _ => return Ok(unevaluated("HypothesisTesting`MeanTest", args)),
-  };
-
-  let two_sided_p = t_test_p_value(t_stat, df);
-  let one_sided_p = two_sided_p / 2.0;
-
-  let rule = |head: &str, value: Expr| -> Expr {
-    Expr::Rule {
-      pattern: Box::new(Expr::Identifier(head.to_string())),
-      replacement: Box::new(value),
+    if options.equal_variances {
+      let pooled = ((n1 - 1.0) * sample_variance(data1)
+        + (n2 - 1.0) * sample_variance(data2))
+        / (n1 + n2 - 2.0);
+      let standard_error = (pooled * (1.0 / n1 + 1.0 / n2)).sqrt();
+      (
+        legacy_statistic(difference, standard_error),
+        Some(n1 + n2 - 2.0),
+      )
+    } else {
+      // Welch–Satterthwaite, shared with LocationTest's two-sample branch.
+      let (statistic, df) = two_sample_t_test(data1, data2, diff0);
+      (statistic, Some(df))
     }
   };
 
-  Ok(Expr::List(
-    vec![
-      rule("HypothesisTesting`TestStatistic", num_to_expr(t_stat)),
-      rule("HypothesisTesting`DegreesOfFreedom", num_to_expr(df)),
-      rule("HypothesisTesting`OneSidedPValue", num_to_expr(one_sided_p)),
-      rule("HypothesisTesting`TwoSidedPValue", num_to_expr(two_sided_p)),
-    ]
-    .into(),
-  ))
+  let p_rule = legacy_rule(
+    if options.two_sided {
+      "HypothesisTesting`TwoSidedPValue"
+    } else {
+      "HypothesisTesting`OneSidedPValue"
+    },
+    legacy_p_value_expr(legacy_one_sided_p(statistic, df), options.two_sided),
+  );
+  if !options.full_report {
+    return Ok(p_rule);
+  }
+  let report = legacy_full_report_rule(
+    Expr::Real(sample_mean(data1) - sample_mean(data2)),
+    if statistic.is_nan() {
+      Expr::Identifier("Indeterminate".to_string())
+    } else {
+      Expr::Real(statistic)
+    },
+    df,
+    "MeanDiff",
+  );
+  Ok(Expr::List(vec![report, p_rule].into()))
 }
 
 fn t_test_p_value(t_stat: f64, df: f64) -> f64 {

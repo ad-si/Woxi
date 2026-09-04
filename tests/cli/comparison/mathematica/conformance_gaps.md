@@ -1906,11 +1906,26 @@ counter value is a session number that can never be pinned), and
 
 ### Legacy package names
 
-Any `Combinatorica`…` or `PolyhedronOperations`…` symbol Woxi implements (e.g.
-`UnrankPermutation`, `Truncate`, `Stellate`) evaluates where wolframscript
-leaves it unevaluated, because the package is not loaded. Woxi has no package
-system for `Needs` to load into, so the qualified names are always live. With
-the package loaded the results agree.
+Any `Combinatorica`…`, `PolyhedronOperations`…` or `HypothesisTesting`…`
+symbol Woxi implements (e.g. `UnrankPermutation`, `Truncate`, `Stellate`,
+`MeanTest`, `MeanDifferenceTest`) evaluates where wolframscript leaves it
+unevaluated, because the package is not loaded. Woxi has no package system for
+`Needs` to load into, so the qualified names are always live. With the package
+loaded the results agree.
+
+`Needs` also does not put such a context on `$ContextPath`, so where
+wolframscript prints `OneSidedPValue -> …` after
+`Needs["HypothesisTesting`"]`, Woxi prints the qualified
+`HypothesisTesting`OneSidedPValue -> …` — the same expression, spelled in
+full. For the same reason a bare `MeanTest` never resolves to the package's
+symbol here. Compare through `property /. …`, not on the printed rule.
+
+`HypothesisTesting`MeanTest[data, mu0]` with a symbolic `mu0` (including
+`Automatic`, which the package does *not* read as 0) or symbolic `data` stays
+unevaluated in Woxi; wolframscript builds a symbolic `Piecewise` of
+`BetaRegularized` branches out of it. `MeanDifferenceTest` with matrix samples
+stays unevaluated too — the package's own matrix handling there is broken,
+producing a `StudentTDistribution` over a *list* of degrees of freedom.
 
 ### `$VersionNumber` is a string
 

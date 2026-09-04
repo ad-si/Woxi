@@ -6304,6 +6304,8 @@ Developer`ToPackedArray,Packs a full rectangular array of machine numbers into o
 Internal`DynamicLibraryExtension,"Shared-library file extension of the host platform without the dot (""so"" ""dylib"" or ""dll"")",✅,pure,9.0,
 Language`ExtendedFullDefinition,All definitions a symbol carries (own down sub up default option message and attribute values) as one inert expression that can be assigned to another symbol to install them there,✅,pure,11.2,
 PacletManager`Package`loadWolframLanguageCode,Loads the Wolfram Language implementation a paclet provides for a context by reading the named file under the paclet root,✅,effectful,10.0,
+HypothesisTesting`MeanTest,Legacy one-sample mean test answering with an OneSidedPValue (or TwoSidedPValue under TwoSided -> True) rule; a matrix argument tests each column; options KnownVariance and FullReport,✅,pure,1.0,
+HypothesisTesting`MeanDifferenceTest,Legacy two-sample test of a mean difference answering with an OneSidedPValue (or TwoSidedPValue under TwoSided -> True) rule; Welch degrees of freedom unless EqualVariances -> True; options KnownVariance and FullReport,✅,pure,1.0,
 CodeParser`CodeTokenize,Source split into its tokens as LeafNode expressions each carrying the span it came from,✅,pure,12.0,
 CodeParser`CodeConcreteParse,Concrete syntax tree of source code — every character belongs to a token and the tokens carry their source spans,✅,pure,12.0,
 CodeParser`CodeParse,Abstract syntax tree of source code carrying an ErrorNode when the source does not read,✅,pure,12.0,

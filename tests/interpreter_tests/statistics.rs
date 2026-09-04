@@ -4918,17 +4918,24 @@ mod location_test {
   }
 }
 
-mod hypothesis_testing_mean_test {
+mod hypothesis_testing_legacy_package {
   use super::*;
 
-  // `HypothesisTesting`MeanTest` is the legacy `Statistics`HypothesisTests``
-  // / `HypothesisTesting`` compatibility-package mean test, loaded via
-  // `Get["HypothesisTesting`"]` (or `Needs["HypothesisTesting`"]`) in older
-  // notebooks. Unlike `LocationTest`, it reports a list of context-qualified
-  // rules so callers pull out a property with
-  // `property /. MeanTest[data, mu0, opts]`. It shares its t-statistic and
-  // degrees-of-freedom computation with `LocationTest`, so the numbers below
-  // match that suite's `location_test` module exactly.
+  // `HypothesisTesting`MeanTest` and `HypothesisTesting`MeanDifferenceTest`
+  // are the legacy `Statistics`HypothesisTests`` / `HypothesisTesting``
+  // compatibility-package tests that older notebooks reach for after
+  // `Needs["HypothesisTesting`"]`. Unlike the modern `LocationTest`, which
+  // returns a single requested property, they answer with a *rule* —
+  // `OneSidedPValue -> p`, or `TwoSidedPValue -> p` under
+  // `TwoSided -> True` — so callers pull the number out with
+  // `property /. MeanTest[…]`. Every expression below is written with the
+  // `Needs` in front and the symbols context-qualified, which is the only
+  // spelling wolframscript can be compared against: without the `Needs` the
+  // package is not loaded there, and a bare `MeanTest` in the same input
+  // unit is read before the `Needs` runs.
+  //
+  // The p-values are rounded to an exact rational so both engines print the
+  // same string; the raw machine reals differ in their last digits.
 
   #[test]
   fn get_hypothesis_testing_context_is_a_noop() {
@@ -4937,135 +4944,329 @@ mod hypothesis_testing_mean_test {
   }
 
   #[test]
-  fn one_sample_rule_list_shape() {
+  fn one_sample_answers_with_a_single_rule() {
     clear_state();
-    let result = interpret(
-      "HypothesisTesting`MeanTest[{1.2, 0.5, 1.9, 2.1, 0.8, 1.5}, 0]",
-    )
-    .unwrap();
-    assert!(
-      result.contains("HypothesisTesting`TestStatistic ->"),
-      "got: {result}"
-    );
-    assert!(
-      result.contains("HypothesisTesting`DegreesOfFreedom ->"),
-      "got: {result}"
-    );
-    assert!(
-      result.contains("HypothesisTesting`OneSidedPValue ->"),
-      "got: {result}"
-    );
-    assert!(
-      result.contains("HypothesisTesting`TwoSidedPValue ->"),
-      "got: {result}"
+    assert_eq!(
+      interpret(
+        "Needs[\"HypothesisTesting`\"]; \
+         Head[HypothesisTesting`MeanTest[{1.2, 0.5, 1.9, 2.1, 0.8, 1.5}, 0]]"
+      )
+      .unwrap(),
+      "Rule"
     );
   }
 
   #[test]
-  fn two_sided_p_value_matches_location_test() {
+  fn one_sided_p_value_is_the_default() {
     clear_state();
-    let result = interpret(
-      "HypothesisTesting`TwoSidedPValue /. HypothesisTesting`MeanTest[\
-       {1.2, 0.5, 1.9, 2.1, 0.8, 1.5}, 0, HypothesisTesting`TwoSided -> True]",
-    )
-    .unwrap();
-    let val: f64 = result.parse().unwrap();
-    assert!(
-      (val - 0.0033200264871519245).abs() < 1e-8,
-      "Expected ~0.00332 (LocationTest's PValue), got {val}"
+    assert_eq!(
+      interpret(
+        "Needs[\"HypothesisTesting`\"]; \
+         Round[HypothesisTesting`OneSidedPValue /. \
+         HypothesisTesting`MeanTest[{1.2, 0.5, 1.9, 2.1, 0.8, 1.5}, 0], \
+         10^-12]"
+      )
+      .unwrap(),
+      "415003311/250000000000"
     );
   }
 
   #[test]
-  fn one_sided_p_value_is_half_two_sided() {
+  fn two_sided_option_switches_the_reported_property() {
     clear_state();
-    let two_sided: f64 = interpret(
-      "HypothesisTesting`TwoSidedPValue /. HypothesisTesting`MeanTest[{1.2, 0.5, 1.9, 2.1, 0.8, 1.5}, 0]",
-    )
-    .unwrap()
-    .parse()
-    .unwrap();
-    let one_sided: f64 = interpret(
-      "HypothesisTesting`OneSidedPValue /. HypothesisTesting`MeanTest[{1.2, 0.5, 1.9, 2.1, 0.8, 1.5}, 0]",
-    )
-    .unwrap()
-    .parse()
-    .unwrap();
-    assert!(
-      (one_sided - two_sided / 2.0).abs() < 1e-12,
-      "OneSidedPValue ({one_sided}) should be half of TwoSidedPValue ({two_sided})"
+    assert_eq!(
+      interpret(
+        "Needs[\"HypothesisTesting`\"]; \
+         Round[HypothesisTesting`TwoSidedPValue /. \
+         HypothesisTesting`MeanTest[{1.2, 0.5, 1.9, 2.1, 0.8, 1.5}, 0, \
+         HypothesisTesting`TwoSided -> True], 10^-12]"
+      )
+      .unwrap(),
+      "3320026487/1000000000000"
     );
   }
 
   #[test]
-  fn test_statistic_matches_location_test() {
+  fn two_sided_p_value_is_twice_location_tests_p_value() {
+    // The legacy test and `LocationTest` share their t statistic and degrees
+    // of freedom, so the difference is exactly zero.
     clear_state();
-    let result = interpret(
-      "HypothesisTesting`TestStatistic /. HypothesisTesting`MeanTest[{1.2, 0.5, 1.9, 2.1, 0.8, 1.5}, 0]",
-    )
-    .unwrap();
-    let val: f64 = result.parse().unwrap();
-    assert!(
-      (val - 5.252257314388901).abs() < 1e-10,
-      "Expected ~5.2523 (LocationTest's TestStatistic), got {val}"
+    assert_eq!(
+      interpret(
+        "Needs[\"HypothesisTesting`\"]; \
+         Round[2*(HypothesisTesting`OneSidedPValue /. \
+         HypothesisTesting`MeanTest[{1.2, 0.5, 1.9, 2.1, 0.8, 1.5}, 0]) - \
+         LocationTest[{1.2, 0.5, 1.9, 2.1, 0.8, 1.5}, 0, \"PValue\"], 10^-12]"
+      )
+      .unwrap(),
+      "0"
     );
   }
 
   #[test]
   fn nonzero_mu0() {
     clear_state();
-    let result = interpret(
-      "HypothesisTesting`TwoSidedPValue /. HypothesisTesting`MeanTest[{1.2, 0.5, 1.9, 2.1, 0.8, 1.5}, 1]",
-    )
-    .unwrap();
-    let val: f64 = result.parse().unwrap();
-    assert!(
-      (val - 0.2461912778840749).abs() < 1e-8,
-      "Expected ~0.2462 (LocationTest's PValue at mu0=1), got {val}"
+    assert_eq!(
+      interpret(
+        "Needs[\"HypothesisTesting`\"]; \
+         Round[HypothesisTesting`OneSidedPValue /. \
+         HypothesisTesting`MeanTest[{1.2, 0.5, 1.9, 2.1, 0.8, 1.5}, 2], \
+         10^-12]"
+      )
+      .unwrap(),
+      "23375456953/1000000000000"
     );
   }
 
   #[test]
-  fn automatic_mu0_defaults_to_zero() {
+  fn matrix_data_tests_every_column() {
     clear_state();
-    let result = interpret(
-      "HypothesisTesting`TwoSidedPValue /. HypothesisTesting`MeanTest[{1.2, 0.5, 1.9, 2.1, 0.8, 1.5}, Automatic]",
-    )
-    .unwrap();
-    let val: f64 = result.parse().unwrap();
-    assert!(
-      (val - 0.0033200264871519245).abs() < 1e-8,
-      "Expected ~0.00332, got {val}"
+    assert_eq!(
+      interpret(
+        "Needs[\"HypothesisTesting`\"]; \
+         Round[HypothesisTesting`OneSidedPValue /. \
+         HypothesisTesting`MeanTest[{{1, 2}, {3, 4}, {5, 7}}, 0], 10^-12]"
+      )
+      .unwrap(),
+      "{60844967173/1000000000000, 48218769543/1000000000000}"
     );
   }
 
   #[test]
-  fn two_sample_test() {
+  fn matrix_data_takes_one_mu0_per_column() {
     clear_state();
-    let result = interpret(
-      "HypothesisTesting`TwoSidedPValue /. HypothesisTesting`MeanTest[{{1.2, 0.5, 1.9}, {2.1, 0.8, 1.5}}, 0]",
-    )
-    .unwrap();
-    let val: f64 = result.parse().unwrap();
-    assert!(
-      (val - 0.6541475396789262).abs() < 1e-3,
-      "Expected ~0.654 (LocationTest's two-sample PValue), got {val}"
+    assert_eq!(
+      interpret(
+        "Needs[\"HypothesisTesting`\"]; \
+         Round[HypothesisTesting`OneSidedPValue /. \
+         HypothesisTesting`MeanTest[{{1, 2}, {3, 4}, {5, 7}}, {0, 1}], 10^-12]"
+      )
+      .unwrap(),
+      "{60844967173/1000000000000, 74371734621/1000000000000}"
     );
   }
 
   #[test]
-  fn extraction_pattern_used_in_demonstrations() {
-    // The exact idiom Wolfram Demonstrations Project notebooks use after
-    // `Needs["HypothesisTesting`"]`: extract a single named property from
-    // the returned rule list.
+  fn known_variance_uses_the_normal_distribution() {
     clear_state();
-    let result = interpret(
-      "x = RandomReal[NormalDistribution[0, 1], 30]; \
-       p = HypothesisTesting`TwoSidedPValue /. HypothesisTesting`MeanTest[x, 0, HypothesisTesting`TwoSided -> True]; \
-       0 <= p <= 1",
-    )
-    .unwrap();
-    assert_eq!(result, "True");
+    assert_eq!(
+      interpret(
+        "Needs[\"HypothesisTesting`\"]; \
+         Round[HypothesisTesting`OneSidedPValue /. \
+         HypothesisTesting`MeanTest[{1, 2, 3, 4}, 0, \
+         HypothesisTesting`KnownVariance -> 2], 10^-12]"
+      )
+      .unwrap(),
+      "203476009/1000000000000"
+    );
+  }
+
+  #[test]
+  fn known_variance_reports_a_normal_distribution_in_the_full_report() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Needs[\"HypothesisTesting`\"]; \
+         HypothesisTesting`MeanTest[{1, 2, 3, 4}, 0, \
+         HypothesisTesting`KnownVariance -> 2, \
+         HypothesisTesting`FullReport -> True][[1, 2, 1, 1, 3]]"
+      )
+      .unwrap(),
+      "NormalDistribution[0, 1]"
+    );
+  }
+
+  #[test]
+  fn full_report_reports_the_student_t_distribution() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Needs[\"HypothesisTesting`\"]; \
+         HypothesisTesting`MeanTest[{1, 2, 3, 4}, 0, \
+         HypothesisTesting`FullReport -> True][[1, 2, 1, 1, 3]]"
+      )
+      .unwrap(),
+      "StudentTDistribution[3]"
+    );
+  }
+
+  #[test]
+  fn full_report_table_headings() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Needs[\"HypothesisTesting`\"]; \
+         HypothesisTesting`MeanTest[{1, 2, 3, 4}, 0, \
+         HypothesisTesting`FullReport -> True][[1, 2, 2, 2]]"
+      )
+      .unwrap(),
+      "{None, {Mean, TestStat, Distribution}}"
+    );
+  }
+
+  #[test]
+  fn no_arguments_is_badargs_not_an_arity_error() {
+    // The package reports every wrong call as `::badargs`, including the
+    // empty one, so `MeanTest` carries no arity declaration of its own.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Needs[\"HypothesisTesting`\"]; \
+         Head[HypothesisTesting`MeanTest[]] === HypothesisTesting`MeanTest"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn empty_data_stays_unevaluated() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Needs[\"HypothesisTesting`\"]; \
+         Head[HypothesisTesting`MeanTest[{}, 0]] === \
+         HypothesisTesting`MeanTest"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn single_observation_cannot_estimate_a_variance() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Needs[\"HypothesisTesting`\"]; \
+         Head[HypothesisTesting`MeanTest[{5}, 0]] === \
+         HypothesisTesting`MeanTest"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn single_observation_is_fine_with_a_known_variance() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Needs[\"HypothesisTesting`\"]; \
+         Round[HypothesisTesting`OneSidedPValue /. \
+         HypothesisTesting`MeanTest[{5}, 0, \
+         HypothesisTesting`KnownVariance -> 1], 10^-12]"
+      )
+      .unwrap(),
+      "71663/250000000000"
+    );
+  }
+
+  #[test]
+  fn two_sample_difference_test() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Needs[\"HypothesisTesting`\"]; \
+         Round[HypothesisTesting`OneSidedPValue /. \
+         HypothesisTesting`MeanDifferenceTest[{1.2, 0.5, 1.9}, \
+         {2.1, 0.8, 1.5}, 0], 10^-12]"
+      )
+      .unwrap(),
+      "327137497259/1000000000000"
+    );
+  }
+
+  #[test]
+  fn two_sample_difference_test_two_sided() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Needs[\"HypothesisTesting`\"]; \
+         Round[HypothesisTesting`TwoSidedPValue /. \
+         HypothesisTesting`MeanDifferenceTest[{1.2, 0.5, 1.9}, \
+         {2.1, 0.8, 1.5}, 0, HypothesisTesting`TwoSided -> True], 10^-12]"
+      )
+      .unwrap(),
+      "654274994517/1000000000000"
+    );
+  }
+
+  #[test]
+  fn equal_variances_pools_the_samples() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Needs[\"HypothesisTesting`\"]; \
+         Round[HypothesisTesting`OneSidedPValue /. \
+         HypothesisTesting`MeanDifferenceTest[{1.2, 0.5, 1.9}, \
+         {2.1, 0.8, 1.5}, 0, HypothesisTesting`EqualVariances -> True], \
+         10^-12]"
+      )
+      .unwrap(),
+      "327073769839/1000000000000"
+    );
+  }
+
+  #[test]
+  fn equal_variances_gives_integer_degrees_of_freedom() {
+    // Welch's default leaves a fractional df; pooling gives n1 + n2 - 2.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Needs[\"HypothesisTesting`\"]; \
+         HypothesisTesting`MeanDifferenceTest[{1.2, 0.5, 1.9}, \
+         {2.1, 0.8, 1.5}, 0, HypothesisTesting`EqualVariances -> True, \
+         HypothesisTesting`FullReport -> True][[1, 2, 1, 1, 3]]"
+      )
+      .unwrap(),
+      "StudentTDistribution[4]"
+    );
+  }
+
+  #[test]
+  fn difference_test_full_report_table_headings() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Needs[\"HypothesisTesting`\"]; \
+         HypothesisTesting`MeanDifferenceTest[{1.2, 0.5, 1.9}, \
+         {2.1, 0.8, 1.5}, 0, HypothesisTesting`FullReport -> True]\
+         [[1, 2, 2, 2]]"
+      )
+      .unwrap(),
+      "{None, {MeanDiff, TestStat, Distribution}}"
+    );
+  }
+
+  #[test]
+  fn difference_test_known_variances() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Needs[\"HypothesisTesting`\"]; \
+         Round[HypothesisTesting`OneSidedPValue /. \
+         HypothesisTesting`MeanDifferenceTest[{1.2, 0.5, 1.9}, \
+         {2.1, 0.8, 1.5}, 0, HypothesisTesting`KnownVariance -> {1, 2}], \
+         10^-12]"
+      )
+      .unwrap(),
+      "385608311/976562500"
+    );
+  }
+
+  #[test]
+  fn difference_test_needs_a_hypothesised_difference() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Needs[\"HypothesisTesting`\"]; \
+         Head[HypothesisTesting`MeanDifferenceTest[{1, 2, 3}, {4, 5, 6}]] === \
+         HypothesisTesting`MeanDifferenceTest"
+      )
+      .unwrap(),
+      "True"
+    );
   }
 }
 
