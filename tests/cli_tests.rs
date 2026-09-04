@@ -483,6 +483,77 @@ fn repl_percent_references_previous_output() {
 }
 
 #[test]
+fn repl_out_returns_the_value_of_a_numbered_line() {
+  // Regression for #765: `Out[n]` / `%n` must return line n's value rather
+  // than echoing themselves. Verified against wolframscript's REPL.
+  let (stdout, stderr, ok) =
+    run_repl("1 + 1\n2 + 2\nOut[1]\n%2\nOut[1] + Out[2]\n");
+  assert!(ok, "woxi repl failed: stderr={stderr}");
+  assert_eq!(
+    stdout,
+    "Out[1]= 2\n\nOut[2]= 4\n\nOut[3]= 2\n\nOut[4]= 4\n\nOut[5]= 6\n\n"
+  );
+}
+
+#[test]
+fn repl_percent_runs_reach_further_back() {
+  // `%%` is `Out[$Line - 2]`, `%%%` is `Out[$Line - 3]` — each run of `%`
+  // counts back from the current line, not just to the previous output.
+  let (stdout, stderr, ok) = run_repl("11\n22\n33\n%%%\n%%\n");
+  assert!(ok, "woxi repl failed: stderr={stderr}");
+  // Line 4 reaches back to line 1 (11); line 5 reaches back to line 3 (33).
+  assert_eq!(
+    stdout,
+    "Out[1]= 11\n\nOut[2]= 22\n\nOut[3]= 33\n\nOut[4]= 11\n\nOut[5]= 33\n\n"
+  );
+}
+
+#[test]
+fn repl_out_stays_symbolic_for_lines_never_evaluated() {
+  // A reference to a line the session has not reached keeps the literal
+  // `Out[k]` form, and one that resolves to a non-positive index clamps to
+  // `Out[0]` — both matching wolframscript.
+  let (stdout, stderr, ok) = run_repl("Out[10]\nOut[0]\n%%%%\n");
+  assert!(ok, "woxi repl failed: stderr={stderr}");
+  // Line 2 is `%`-free, so `Out[0]` prints as itself; line 3's `%%%%`
+  // resolves to `Out[3 - 4]`, which clamps to `Out[0]`.
+  assert_eq!(
+    stdout,
+    "Out[1]= Out[10]\n\nOut[2]= Out[0]\n\nOut[3]= Out[0]\n\n"
+  );
+}
+
+#[test]
+fn repl_out_records_a_line_whose_output_was_suppressed() {
+  // A trailing semicolon hides the `Out[n]=` line but the value is still
+  // history, so `Out[n]` retrieves it.
+  let (stdout, stderr, ok) = run_repl("a = 7;\nOut[1]\n");
+  assert!(ok, "woxi repl failed: stderr={stderr}");
+  assert_eq!(stdout, "Out[2]= 7\n\n");
+}
+
+#[test]
+fn repl_in_reevaluates_a_numbered_input() {
+  // `In[n]` re-runs the input entered on line n; `In[-1]` re-runs the
+  // previous line's input.
+  let (stdout, stderr, ok) = run_repl("x = 5\nx^2\nIn[2]\nIn[-1]\n");
+  assert!(ok, "woxi repl failed: stderr={stderr}");
+  assert_eq!(
+    stdout,
+    "Out[1]= 5\n\nOut[2]= 25\n\nOut[3]= 25\n\nOut[4]= 25\n\n"
+  );
+}
+
+#[test]
+fn repl_self_referential_in_does_not_recurse() {
+  // `In[1]` typed *on* line 1 would re-evaluate itself forever; the
+  // reference stays symbolic instead, as it does in wolframscript.
+  let (stdout, stderr, ok) = run_repl("In[1]\nIn[3]\n");
+  assert!(ok, "woxi repl failed: stderr={stderr}");
+  assert_eq!(stdout, "Out[1]= In[1]\n\nOut[2]= In[3]\n\n");
+}
+
+#[test]
 fn repl_suppresses_output_on_trailing_semicolon() {
   let (stdout, stderr, ok) = run_repl("a = 7;\na + 1\n");
   assert!(ok, "woxi repl failed: stderr={stderr}");

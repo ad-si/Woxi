@@ -9384,6 +9384,147 @@ mod out_shortcut {
     assert_eq!(interpret("Hold[Out[1]]").unwrap(), "Hold[Out[1]]");
     assert_eq!(interpret("Hold[Out[42]]").unwrap(), "Hold[Out[42]]");
   }
+
+  #[test]
+  fn bare_percent_run_parses_as_a_relative_out() {
+    // The offset stays relative in the parse tree — resolving it against
+    // `$Line` is the evaluator's job — which is also why a held `%%` prints
+    // back as `%%` rather than as a resolved index.
+    assert_eq!(interpret("Hold[%]").unwrap(), "Hold[%]");
+    assert_eq!(interpret("Hold[%%]").unwrap(), "Hold[%%]");
+    assert_eq!(interpret("Hold[%%%]").unwrap(), "Hold[%%%]");
+  }
+}
+
+// Numbered `In[]` / `Out[]` history (issue #765). Script mode keeps none —
+// covered by `out_shortcut` above — so these drive `$Line` by hand the way a
+// session host (the terminal REPL, the Jupyter kernel) does, and use
+// `interpret_with_stdout`, whose visual mode enables history recording.
+mod out_history {
+  use woxi::{clear_state, interpret_with_stdout};
+
+  /// Evaluate `input` as session line `line`, returning the printed result.
+  fn eval_line(line: i128, input: &str) -> String {
+    woxi::set_system_variable("$Line", &line.to_string());
+    interpret_with_stdout(input).unwrap().result
+  }
+
+  /// Start from a session with no bindings, no history and `$Line` back at
+  /// its fresh-session value, so nothing leaks between tests on this thread.
+  fn reset() {
+    clear_state();
+    woxi::clear_last_output();
+  }
+
+  #[test]
+  fn out_returns_the_value_of_a_numbered_line() {
+    reset();
+    assert_eq!(eval_line(1, "1 + 1"), "2");
+    assert_eq!(eval_line(2, "2 + 2"), "4");
+    assert_eq!(eval_line(3, "Out[1]"), "2");
+    assert_eq!(eval_line(4, "%2"), "4");
+    assert_eq!(eval_line(5, "Out[1] + Out[2]"), "6");
+    reset();
+  }
+
+  #[test]
+  fn percent_runs_count_back_from_the_current_line() {
+    reset();
+    assert_eq!(eval_line(1, "11"), "11");
+    assert_eq!(eval_line(2, "22"), "22");
+    assert_eq!(eval_line(3, "33"), "33");
+    assert_eq!(eval_line(4, "%%%"), "11");
+    assert_eq!(eval_line(5, "%%"), "33");
+    assert_eq!(eval_line(6, "%"), "33");
+    reset();
+  }
+
+  #[test]
+  fn unreached_lines_stay_symbolic() {
+    reset();
+    assert_eq!(eval_line(1, "Out[10]"), "Out[10]");
+    assert_eq!(eval_line(2, "Out[0]"), "Out[0]");
+    // `Out[2 - 4]` clamps at `Out[0]`.
+    assert_eq!(eval_line(3, "%%%%"), "Out[0]");
+    reset();
+  }
+
+  #[test]
+  fn in_reevaluates_a_numbered_input() {
+    reset();
+    assert_eq!(eval_line(1, "x765 = 5"), "5");
+    woxi::record_input_line(1, "x765 = 5");
+    assert_eq!(eval_line(2, "x765^2"), "25");
+    woxi::record_input_line(2, "x765^2");
+    assert_eq!(eval_line(3, "In[2]"), "25");
+    assert_eq!(eval_line(4, "In[-2]"), "25");
+    reset();
+  }
+
+  #[test]
+  fn bare_in_is_the_previous_line() {
+    reset();
+    assert_eq!(eval_line(1, "6 * 7"), "42");
+    woxi::record_input_line(1, "6 * 7");
+    assert_eq!(eval_line(2, "In[]"), "42");
+    assert_eq!(eval_line(2, "Out[]"), "42");
+    reset();
+  }
+
+  #[test]
+  fn self_referential_in_does_not_recurse() {
+    reset();
+    woxi::record_input_line(1, "In[1]");
+    assert_eq!(eval_line(1, "In[1]"), "In[1]");
+    // A line that was never entered has no input to re-run either.
+    assert_eq!(eval_line(2, "In[7]"), "In[7]");
+    reset();
+  }
+
+  // Only a machine-sized integer names a line. Anything else — a real, a
+  // symbol, a string, a bignum — draws `::intm`, and more than one
+  // argument draws `::argt`; both leave the reference unevaluated.
+  #[test]
+  fn a_non_integer_index_reports_intm() {
+    reset();
+    for (input, shown) in [
+      ("Out[1.5]", "Out[1.5]"),
+      ("Out[x]", "Out[x]"),
+      ("Out[\"a\"]", "Out[a]"),
+      ("Out[2^70]", "Out[1180591620717411303424]"),
+      ("In[1.5]", "In[1.5]"),
+      ("In[x]", "In[x]"),
+    ] {
+      let head = if input.starts_with("In") { "In" } else { "Out" };
+      let r = interpret_with_stdout(input).unwrap();
+      assert_eq!(r.result, shown);
+      assert!(
+        r.warnings.iter().any(|w| w.contains(&format!(
+          "{head}::intm: Machine-sized integer expected at position 1 in \
+           {shown}."
+        ))),
+        "{input}: {:?}",
+        r.warnings
+      );
+    }
+    reset();
+  }
+
+  #[test]
+  fn more_than_one_argument_reports_argt() {
+    reset();
+    let r = interpret_with_stdout("Out[1, 2]").unwrap();
+    assert_eq!(r.result, "Out[1, 2]");
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "Out::argt: Out called with 2 arguments; 0 or 1 arguments are expected."
+    )));
+    let r = interpret_with_stdout("In[1, 2]").unwrap();
+    assert_eq!(r.result, "In[1, 2]");
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "In::argt: In called with 2 arguments; 0 or 1 arguments are expected."
+    )));
+    reset();
+  }
 }
 
 mod cases {

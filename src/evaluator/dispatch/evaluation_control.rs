@@ -1,6 +1,51 @@
 #[allow(unused_imports)]
 use super::*;
 
+/// Resolve an `In[…]` / `Out[…]` argument list to the input line it names.
+///
+/// Returns the argument as written (`None` for the bare `In[]` / `Out[]`
+/// form, which means the previous line) together with the absolute line
+/// number it points at: a negative argument counts back from `$Line`, a
+/// non-negative one already is the line. `None` overall means the
+/// reference is malformed — wolframscript's `::intm` / `::argt` message
+/// has been emitted and the caller should leave the call unevaluated.
+///
+/// Shared by both heads so their index arithmetic and messages cannot
+/// drift apart.
+pub(crate) fn history_line_index(
+  name: &str,
+  args: &[Expr],
+) -> Option<(Option<i128>, i128)> {
+  let offset = match args {
+    [] => None,
+    // Only a machine-sized integer names a line; wolframscript rejects a
+    // real, a symbol, a string or a bignum with the same message.
+    [Expr::Integer(n)] if i64::try_from(*n).is_ok() => Some(*n),
+    [_] => {
+      crate::emit_message(&format!(
+        "{name}::intm: Machine-sized integer expected at position 1 in {}.",
+        crate::syntax::expr_to_output(&unevaluated(name, args))
+      ));
+      return None;
+    }
+    _ => {
+      crate::emit_message(&format!(
+        "{name}::argt: {name} called with {} arguments; 0 or 1 arguments \
+         are expected.",
+        args.len()
+      ));
+      return None;
+    }
+  };
+  let k = offset.unwrap_or(-1);
+  let index = if k < 0 {
+    crate::current_line().saturating_add(k)
+  } else {
+    k
+  };
+  Some((offset, index))
+}
+
 pub fn dispatch_evaluation_control(
   name: &str,
   args: &[Expr],
@@ -38,25 +83,35 @@ pub fn dispatch_evaluation_control(
       return Some(Ok(Expr::Identifier("Infinity".to_string())));
     }
     "Out" => {
-      // `Out[]` and `Out[k]` for k <= 0 resolve to the cached previous
-      // output if one is available (set after each successful evaluation
-      // by `interpret_with_stdout`). Without a cached value we collapse to
-      // `Out[0]` for parity with wolframscript on `$Line == 1`. Positive
-      // integers stay symbolic — we don't keep numbered history.
-      let target: Option<i128> = match args {
-        [] => Some(0),
-        [Expr::Integer(n)] => Some(*n),
-        _ => None,
+      // `Out[]` is `Out[-1]`, and a negative index counts back from the
+      // current input line: `Out[-k]` is `Out[$Line - k]` (which is what
+      // the `%%…` shortcuts parse to). The resolved line is looked up in
+      // the session's numbered output history, so `Out[9]` / `%9` return
+      // what line 9 produced.
+      //
+      // A line that was never evaluated — including every line in
+      // script mode, where `$Line` is always 1 and no history is kept —
+      // leaves the reference symbolic as `Out[k]`, with the index clamped
+      // at 0, matching wolframscript.
+      let Some((offset, index)) = history_line_index("Out", args) else {
+        return Some(Ok(unevaluated("Out", args)));
       };
-      if let Some(k) = target {
-        if k <= 0
+      if crate::output_history_enabled() {
+        if index > 0
+          && let Some(prev) = crate::get_output_at_line(index)
+        {
+          return Some(Ok(prev));
+        }
+        // Hosts that never advance `$Line` (woxi-studio, the playground)
+        // accumulate no numbered history, but `%` must still reach the
+        // previous cell's result.
+        if offset == Some(-1)
           && let Some(prev) = crate::get_last_output()
         {
           return Some(Ok(prev));
         }
-        let normalized = if k <= 0 { 0 } else { k };
-        return Some(Ok(call1("Out", Expr::Integer(normalized))));
       }
+      return Some(Ok(call1("Out", Expr::Integer(index.max(0)))));
     }
     "Evaluate" if args.len() == 1 => {
       return Some(Ok(args[0].clone()));

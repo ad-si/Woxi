@@ -325,8 +325,11 @@ pub fn is_repl_mode() -> bool {
 }
 
 /// Whether output history (`%` / `Out[]`) should persist across evaluations.
-/// True in both visual (notebook) mode and terminal REPL mode.
-fn output_history_enabled() -> bool {
+/// True in both visual (notebook) mode and terminal REPL mode. Plain
+/// `interpret` — the `woxi eval` / script path, one fresh process per
+/// program — neither records nor consults history, so `%` collapses to
+/// `Out[0]` exactly as it does in wolframscript's script mode.
+pub fn output_history_enabled() -> bool {
   VISUAL_MODE.with(|v| *v.borrow()) || REPL_MODE.with(|v| *v.borrow())
 }
 
@@ -366,16 +369,31 @@ thread_local! {
 
 // Most-recent evaluated expression for `%` / `Out[]` shortcuts. Set by
 // `interpret_with_stdout` after each successful evaluation and consulted by
-// the `Out[]` dispatch path. Independent of `$Line`: we only retain the
-// latest value (mirroring what woxi-studio actually needs for cells like
-// `N[%]` that reference the previous cell's result).
+// the `Out[]` dispatch path. Kept alongside the numbered history below
+// because hosts that don't maintain `$Line` (woxi-studio, the playground)
+// still need `%` to reach the previous cell's result.
 thread_local! {
     static LAST_OUTPUT_EXPR: RefCell<Option<syntax::Expr>> = const { RefCell::new(None) };
+}
+
+// Numbered output history: `$Line` at the time of evaluation → the value
+// that line produced. This is what makes `Out[9]` / `%9` — and the
+// relative `%%…` forms, which resolve to `Out[$Line - k]` — return real
+// values in a session that advances `$Line` (the terminal REPL and the
+// Jupyter kernel). Hosts that leave `$Line` at 1 simply never accumulate
+// more than one entry and fall back to `LAST_OUTPUT_EXPR`.
+thread_local! {
+    static OUTPUT_HISTORY: RefCell<std::collections::HashMap<i128, syntax::Expr>> =
+      RefCell::new(std::collections::HashMap::new());
 }
 
 /// Stash an evaluated expression so subsequent `%` / `Out[]` references
 /// can resolve to it. Called from `interpret_with_stdout` after success.
 fn set_last_output(expr: syntax::Expr) {
+  let line = current_line();
+  if line > 0 {
+    OUTPUT_HISTORY.with(|c| c.borrow_mut().insert(line, expr.clone()));
+  }
   LAST_OUTPUT_EXPR.with(|c| *c.borrow_mut() = Some(expr));
 }
 
@@ -384,10 +402,75 @@ pub fn get_last_output() -> Option<syntax::Expr> {
   LAST_OUTPUT_EXPR.with(|c| c.borrow().clone())
 }
 
+/// The value produced on input line `line`, if that line has been
+/// evaluated in this session. Backs `Out[k]`.
+pub fn get_output_at_line(line: i128) -> Option<syntax::Expr> {
+  OUTPUT_HISTORY.with(|c| c.borrow().get(&line).cloned())
+}
+
+/// The current input-line number (`$Line`). Defaults to 1 — the value
+/// wolframscript reports in a fresh script-mode session — when no host has
+/// advanced it.
+pub fn current_line() -> i128 {
+  let stored = ENV.with(|e| e.borrow().get("$Line").cloned());
+  let text = match stored {
+    Some(StoredValue::Raw(s)) => s,
+    Some(StoredValue::ExprVal(syntax::Expr::Integer(n))) => return n,
+    _ => return 1,
+  };
+  text.trim().parse::<i128>().unwrap_or(1)
+}
+
 /// Drop the cached previous output — used when the studio resets state
 /// before re-evaluating the whole notebook.
 pub fn clear_last_output() {
   LAST_OUTPUT_EXPR.with(|c| *c.borrow_mut() = None);
+  OUTPUT_HISTORY.with(|c| c.borrow_mut().clear());
+  INPUT_HISTORY.with(|c| c.borrow_mut().clear());
+}
+
+// Numbered input history: `$Line` → the source text entered on that line.
+// `In[k]` re-evaluates it, the way a Wolfram session does. Only hosts that
+// hand us their input line by line (the terminal REPL, the Jupyter kernel)
+// record here; script mode keeps no input history at all.
+thread_local! {
+    static INPUT_HISTORY: RefCell<std::collections::HashMap<i128, String>> =
+      RefCell::new(std::collections::HashMap::new());
+    // Lines whose input is currently being re-evaluated, so a self-
+    // referential `In[k]` cannot recurse forever.
+    static INPUT_EXPANDING: RefCell<std::collections::HashSet<i128>> =
+      RefCell::new(std::collections::HashSet::new());
+}
+
+/// Record the source text evaluated on input line `line`, so a later
+/// `In[line]` can re-run it.
+pub fn record_input_line(line: i128, text: &str) {
+  if line > 0 {
+    INPUT_HISTORY
+      .with(|c| c.borrow_mut().insert(line, text.trim().to_string()));
+  }
+}
+
+/// Marks a line as being re-evaluated; clears the mark when dropped.
+pub struct InputExpansion(i128);
+
+impl Drop for InputExpansion {
+  fn drop(&mut self) {
+    INPUT_EXPANDING.with(|c| {
+      c.borrow_mut().remove(&self.0);
+    });
+  }
+}
+
+/// Claim line `line`'s recorded input for re-evaluation, returning its
+/// source text along with a guard that releases the claim. Returns `None`
+/// when the line has no recorded input or is already being expanded
+/// (`In[1]` on line 1, say), which keeps `In[k]` symbolic instead of
+/// recursing.
+pub fn begin_input_expansion(line: i128) -> Option<(String, InputExpansion)> {
+  let text = INPUT_HISTORY.with(|c| c.borrow().get(&line).cloned())?;
+  let fresh = INPUT_EXPANDING.with(|c| c.borrow_mut().insert(line));
+  fresh.then(|| (text, InputExpansion(line)))
 }
 
 // Structured result of the most recent top-level evaluation. Unlike
@@ -416,6 +499,11 @@ fn set_last_result_expr(expr: syntax::Expr) {
 fn set_fast_path_result_expr(expr: syntax::Expr) {
   record_value_expr(&expr);
   if INTERPRET_DEPTH.with(|d| *d.borrow()) == 0 {
+    // A line that is nothing but a literal (`11`) is still a line with a
+    // value, so it has to enter `%` / `Out[]` history like any other.
+    if output_history_enabled() {
+      set_last_output(expr.clone());
+    }
     set_last_result_expr(expr);
   }
 }

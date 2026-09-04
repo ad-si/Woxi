@@ -3326,6 +3326,23 @@ The error goes to stderr but the exit code stays 0, so a shell check like
 `woxi eval '…' >/dev/null 2>&1 && echo OK` reports OK even when the expression
 failed. (`wolframscript -file` has the same property.)
 
+### `woxi repl` does not tag the output prompt with the result's form
+
+When a REPL line evaluates to an output-form wrapper, wolframscript moves the
+wrapper into the prompt and prints the wrapped expression:
+
+```text
+In[1]:= 7//FullForm
+Out[1]//FullForm= 7      (* wolframscript *)
+Out[1]= FullForm[7]      (* woxi repl     *)
+```
+
+Same for `MatrixForm`, `TableForm`, `InputForm` and the other form wrappers.
+`woxi eval` is unaffected — script mode prints `FullForm[7]` on both sides.
+The REPL gets only the formatted string back from `interpret`, so tagging the
+prompt needs the result expression (and a per-wrapper rendering) plumbed
+through to `repl.rs`.
+
 ### `balanced_ternary` computes a wrong value
 
 `btmultiply["+-0++0+", btsubtract[tobt@-436, "+-++-"]]` gives `+--0` in Woxi

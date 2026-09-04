@@ -197,6 +197,12 @@ impl WoxiKernel {
   ) -> Result<()> {
     debug!("Execute[{}]: {}", self.execution_count.0, req.code);
 
+    // Keep `$Line` in step with the cell number so `In[]` / `Out[]` and the
+    // `%` shortcuts address the same lines the notebook shows, and record
+    // the cell source so `In[n]` can re-run it.
+    woxi::set_system_variable("$Line", &self.execution_count.0.to_string());
+    woxi::record_input_line(self.execution_count.0 as i128, &req.code);
+
     // Send execute_input
     let execute_input = jupyter_protocol::ExecuteInput {
       code: req.code.clone(),

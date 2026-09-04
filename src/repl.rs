@@ -69,8 +69,9 @@ impl Session {
     }
 
     // Keep `$Line` in sync so `In[]` / `Out[]` indices line up with the
-    // prompts the user sees.
+    // prompts the user sees, and record the input so `In[n]` can re-run it.
     woxi::set_system_variable("$Line", &self.line.to_string());
+    woxi::record_input_line(i128::from(self.line), input);
 
     match interpret(input) {
       // "\0" is the sentinel for suppressed output (Null, a trailing

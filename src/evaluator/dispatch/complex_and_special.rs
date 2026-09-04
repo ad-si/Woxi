@@ -1918,16 +1918,22 @@ pub fn dispatch_complex_and_special(
       return Some(Ok(unevaluated(name, args)));
     }
 
-    // `In[k]` references prior input. With no input history (script mode),
-    // `In[-N]` resolves to `In[$Line - N]`, which clamps to `In[0]` for any
-    // non-positive index. Positive indices stay unevaluated as `In[k]`.
-    "In" if args.len() == 1 => {
-      if let Expr::Integer(k) = &args[0]
-        && *k <= 0
+    // `In[k]` re-evaluates the input entered on line k; `In[]` and `In[-N]`
+    // count back from the current line, i.e. `In[$Line - N]`. A line with
+    // no recorded input — every line in script mode, where no history is
+    // kept — stays unevaluated as `In[k]`, with the index clamped at 0.
+    "In" => {
+      let Some((_, index)) =
+        super::evaluation_control::history_line_index("In", args)
+      else {
+        return Some(Ok(unevaluated("In", args)));
+      };
+      if index > 0
+        && let Some((source, _guard)) = crate::begin_input_expansion(index)
       {
-        return Some(Ok(call1("In", Expr::Integer(0))));
+        return Some(crate::interpret_to_expr(&source));
       }
-      return Some(Ok(unevaluated("In", args)));
+      return Some(Ok(call1("In", Expr::Integer(index.max(0)))));
     }
 
     // SequenceForm[a, b, c, ...] prints the concatenated string forms of
