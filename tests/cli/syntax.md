@@ -104,7 +104,7 @@ A leading unary minus binds looser than `@@`, `@@@` and `/@`, so `-Plus @@
 list` negates the whole applied result rather than negating just `Plus`:
 
 ```scrut
-$ wo '-Plus @@ {1, 2, 3}'
+$ wo 'x = -Plus @@ {1, 2, 3}'
 -6
 ```
 

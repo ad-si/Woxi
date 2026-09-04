@@ -28073,3 +28073,115 @@ fn test_show_parametric_plot3d_first_keeps_default_axes_and_box_ratios() {
     "expected the merged structure to default BoxRatios: {debug}"
   );
 }
+
+// The exact SVG these render belongs here rather than in a `tests/cli` doc
+// test: wolframscript exports cairo SVG with per-run ids, so neither the
+// element names nor a byte-for-byte comparison of two exports can be asserted
+// in a conformance-checked document. The doc tests keep the engine-neutral
+// projection; the drawing itself is pinned below.
+
+#[test]
+fn test_geometric_transformation_reflects_the_drawn_line() {
+  // Reflecting `y = x` turns the horizontal segment {{0,0},{2,0}} into the
+  // vertical one from {0,0} to {0,2}.
+  clear_state();
+  let svg = export_svg(
+    "Graphics[GeometricTransformation[Line[{{0, 0}, {2, 0}}], \
+     ReflectionTransform[{-1, 1}]], PlotRange -> {{-1, 3}, {-1, 3}}]",
+  );
+  assert!(
+    svg.contains("90.00,270.00 90.00,90.00"),
+    "expected the reflected, vertical segment: {svg}"
+  );
+}
+
+#[test]
+fn test_graphics3d_plot_label_is_typeset_into_the_drawing() {
+  clear_state();
+  let svg = export_svg(
+    "Graphics3D[Sphere[], PlotLabel -> \
+     Style[Row[{\"Torus \", \"Knot\"}], FontSize -> 18]]",
+  );
+  assert!(
+    svg.contains("Torus Knot"),
+    "expected the Row label drawn as one string: {svg}"
+  );
+}
+
+#[test]
+fn test_tube_along_a_bspline_curve_is_drawn_as_a_surface() {
+  clear_state();
+  let svg = export_svg(
+    "Graphics3D[Tube[BSplineCurve[{{0, 0, 0}, {1, 2, 0}, {2, 0, 1}}], 0.2]]",
+  );
+  assert!(
+    svg.contains("<polygon"),
+    "expected the tube's surface, not a bare curve: {svg}"
+  );
+}
+
+#[test]
+fn test_parametric_plot3d_tube_plot_style_is_drawn_as_a_surface() {
+  clear_state();
+  let svg = export_svg(
+    "ParametricPlot3D[{Cos[t], Sin[t], t/5}, {t, 0, 6.2}, \
+     PlotStyle -> {Red, Tube[0.2]}]",
+  );
+  assert!(
+    svg.contains("<polygon"),
+    "expected PlotStyle -> Tube to thicken the curve into a surface: {svg}"
+  );
+}
+
+#[test]
+fn test_infinite_line_is_clipped_to_the_plot_range() {
+  // An infinite line drawn into a box is the segment between its two exit
+  // points, so the two pictures are the same drawing.
+  clear_state();
+  let clipped = export_svg(
+    "Graphics3D[InfiniteLine[{{0, 0, 0}, {1, 1, 1}}], PlotRange -> 10]",
+  );
+  let segment = export_svg(
+    "Graphics3D[Line[{{-10, -10, -10}, {10, 10, 10}}], PlotRange -> 10]",
+  );
+  assert_eq!(clipped, segment);
+}
+
+#[test]
+fn test_sphere_with_several_centres_draws_one_sphere_each() {
+  clear_state();
+  let many = export_svg("Graphics3D[Sphere[{{1, 0, 0}, {-1, 0, 0}}, 0.5]]");
+  let separate =
+    export_svg("Graphics3D[{Sphere[{1, 0, 0}, 0.5], Sphere[{-1, 0, 0}, 0.5]}]");
+  assert_eq!(many, separate);
+}
+
+#[test]
+fn test_highlight_graph_draws_the_highlighted_parts_red() {
+  clear_state();
+  let one_vertex = export_svg("HighlightGraph[Graph[{1 <-> 2, 2 <-> 3}], {2}]");
+  assert_eq!(one_vertex.matches("rgb(255,0,0)").count(), 1);
+
+  clear_state();
+  let one_edge =
+    export_svg("HighlightGraph[Graph[{1 <-> 2, 2 <-> 3}], 1 <-> 2]");
+  assert_eq!(one_edge.matches("rgb(255,0,0)").count(), 1);
+
+  // `Style[part, colour]` inside the specification picks the colour.
+  clear_state();
+  let styled = export_svg(
+    "HighlightGraph[Graph[{1 <-> 2, 2 <-> 3}], \
+     {Style[1, Green], Style[3, Blue]}]",
+  );
+  assert_eq!(styled.matches("rgb(0,255,0)").count(), 1);
+
+  // A subgraph highlights both of its vertices and the edge between them.
+  clear_state();
+  let subgraph = interpret(
+    "g = Graph[{1 <-> 2, 2 <-> 3}]; \
+     StringCount[ExportString[HighlightGraph[g, Subgraph[g, {1, 2}]], \"SVG\"], \
+     \"rgb(255,0,0)\"]",
+  )
+  .unwrap();
+  assert_eq!(subgraph, "3");
+}

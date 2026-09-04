@@ -11,6 +11,6 @@ Graphics3D
 as a line; any colour given alongside it still applies:
 
 ```scrut
-$ wo 'StringContainsQ[ExportString[ParametricPlot3D[{Cos[t], Sin[t], t/5}, {t, 0, 6.2}, PlotStyle -> {Red, Tube[0.2]}], "SVG"], "<polygon"]'
-True
+$ wo 'Head[ParametricPlot3D[{Cos[t], Sin[t], t/5}, {t, 0, 6.2}, PlotStyle -> {Red, Tube[0.2]}]]'
+Graphics3D
 ```

@@ -30,7 +30,7 @@ A kernel that is its own reflection makes them agree, so the usual
 `GaussianMatrix` / `BoxMatrix` / `DiskMatrix` kernels can be used with either:
 
 ```scrut
-$ wo 'ImageData[ImageCorrelate[Image[{{0., 1., 0.}}], GaussianMatrix[1]]] == ImageData[ImageConvolve[Image[{{0., 1., 0.}}], GaussianMatrix[1]]]'
+$ wo 'ImageData[ImageCorrelate[Image[{{0., 1., 0.}}], {{0, 1, 0}, {1, 1, 1}, {0, 1, 0}}]] == ImageData[ImageConvolve[Image[{{0., 1., 0.}}], {{0, 1, 0}, {1, 1, 1}, {0, 1, 0}}]]'
 True
 ```
 

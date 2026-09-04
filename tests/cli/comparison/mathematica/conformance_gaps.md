@@ -2657,6 +2657,19 @@ text as glyph outlines, `rgb(%)` colours — for every graphics type. A test tha
 prints raw SVG can never match. Assert the meaning instead (`Area[Polygon[…]]`
 rather than counting `<polygon>` tags).
 
+Cairo also stamps per-run ids into the output, so even comparing wolframscript
+with *itself* fails:
+
+```sh
+wolframscript -code 'ExportString[Graphics[Line[{{0, 0}, {1, 1}}]], "SVG"] ===
+                     ExportString[Graphics[Line[{{0, 0}, {1, 1}}]], "SVG"]'
+# False
+```
+
+Two pictures that are the same drawing therefore cannot be compared through
+`ExportString` in a doc test either; pin those in
+`tests/interpreter_tests/graphics.rs` instead.
+
 ### `Play` prints as `-Sound-`
 
 ```sh
@@ -2671,6 +2684,23 @@ object, internal register layout and all. Woxi wraps the inert `Play` call in
 a `Sound`, which reports the same `Head` and renders the same playable widget,
 but prints as the short form. Test with `Head`, `AudioSampleRate` or
 `AudioLength`, never against the printed form.
+
+### `GraphPlot` accepts a `DirectedEdge`-keyed edge shape rule
+
+```sh
+wolframscript -code 'Head[GraphPlot[{1 -> 2, 2 -> 3},
+                       EdgeShapeFunction -> {DirectedEdge[1, 2] -> (Line[#1] &)}]]'
+# GraphPlot   (unevaluated, no message)
+woxi eval 'Head[GraphPlot[{1 -> 2, 2 -> 3},
+             EdgeShapeFunction -> {DirectedEdge[1, 2] -> (Line[#1] &)}]]'
+# Graphics
+```
+
+wolframscript's `GraphPlot` builds an *undirected* graph out of a rule list, so
+only an `UndirectedEdge`-keyed rule matches a part of it; a `DirectedEdge` key
+matches nothing and the whole call is abandoned without a message. Woxi accepts
+either key. Not reproduced: silently abandoning the plot looks like a defect,
+and the same call with an `UndirectedEdge` key conforms on both sides.
 
 
 ## Images

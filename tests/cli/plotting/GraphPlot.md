@@ -58,7 +58,7 @@ Graphics
 ```
 
 ```scrut
-$ wo 'Head[GraphPlot[{1 -> 2, 2 -> 3}, EdgeShapeFunction -> {DirectedEdge[1, 2] -> ({Red, Line[#1]} &)}]]'
+$ wo 'Head[GraphPlot[{1 -> 2, 2 -> 3}, EdgeShapeFunction -> {UndirectedEdge[1, 2] -> ({Red, Line[#1]} &)}]]'
 Graphics
 ```
 
