@@ -6235,22 +6235,20 @@ mod file_names {
     std::fs::remove_dir_all(&root).ok();
   }
 
-  // A two-element level specification reports the levels in between,
-  // with `Infinity` as an open upper end.
+  // A two-element level specification is not one: wolframscript has no
+  // range form, so the call stays unevaluated rather than guessing.
   #[test]
-  fn level_range_reports_the_levels_in_between() {
+  fn level_range_is_not_a_level_specification() {
     let root = nested_tree("level_range");
-    assert_eq!(
-      relative_hits(&root, "{2, 3}"),
-      "sub/sub/target.txt|sub/target.txt"
-    );
-    assert_eq!(relative_hits(&root, "{1, 4}"), relative_hits(&root, "4"));
-    assert_eq!(
-      relative_hits(&root, "{2, Infinity}"),
-      "sub/sub/sub/target.txt|sub/sub/target.txt|sub/target.txt"
-    );
-    // A range whose start is past its end matches nothing.
-    assert_eq!(relative_hits(&root, "{3, 2}"), "");
+    for spec in ["{2, 3}", "{1, 4}", "{2, Infinity}"] {
+      assert_eq!(
+        interpret(&format!(
+          "Head[FileNames[\"target.txt\", \"{root}\", {spec}]]"
+        ))
+        .unwrap(),
+        "FileNames"
+      );
+    }
     std::fs::remove_dir_all(&root).ok();
   }
 

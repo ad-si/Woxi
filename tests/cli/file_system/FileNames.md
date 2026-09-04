@@ -67,18 +67,12 @@ $ wo 'FileNames["report.txt", "docs", {2}]'
 {docs/inner/report.txt}
 ```
 
-Two levels in braces give the range of levels to search:
+Braces hold a single level only — there is no range form,
+so a two-element list is not a level specification and stays unevaluated:
 
 ```scrut
 $ wo 'FileNames["report.txt", "docs", {2, 3}]'
-{docs/inner/deeper/report.txt, docs/inner/report.txt}
-```
-
-`Infinity` works as the upper end of the range as well:
-
-```scrut
-$ wo 'FileNames["report.txt", "docs", {2, Infinity}]'
-{docs/inner/deeper/report.txt, docs/inner/report.txt}
+FileNames[report.txt, docs, {2, 3}]
 ```
 
 The current directory is the one `SetDirectory` last set,

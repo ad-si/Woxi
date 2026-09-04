@@ -3439,7 +3439,6 @@ pub fn dispatch_io_functions(
     // FileNames["pattern", "dir"] — list files in dir matching pattern
     // FileNames["pattern", "dir", n] — descend n directory levels
     // FileNames["pattern", "dir", {n}] — only the n-th level
-    // FileNames["pattern", "dir", {n1, n2}] — levels n1 through n2
     // FileNames["pattern", "dir", Infinity] — recursive search
     #[cfg(not(target_arch = "wasm32"))]
     "FileNames" if args.len() <= 3 => {
@@ -4504,10 +4503,9 @@ fn file_names_levels(spec: &Expr) -> Option<FileNameLevels> {
         let n = file_names_level_number(only)?;
         Some(FileNameLevels { min: n, max: n })
       }
-      [from, to] => Some(FileNameLevels {
-        min: file_names_level_number(from)?,
-        max: file_names_level_number(to)?,
-      }),
+      // A level *range* is not part of the specification: wolframscript
+      // leaves `FileNames[p, d, {n1, n2}]` unevaluated, so only `{n}` and
+      // `{}` are accepted here.
       _ => None,
     },
     other => Some(FileNameLevels {
