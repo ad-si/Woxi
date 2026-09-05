@@ -2,6 +2,9 @@ use super::together::negate_expr;
 #[allow(unused_imports)]
 use super::*;
 
+use super::reduce_backend::{
+  try_linear_integer_reduce, try_linear_rational_reduce,
+};
 use crate::functions::calculus_ast::{is_constant_wrt, simplify};
 use crate::functions::math_ast::try_eval_to_f64;
 
@@ -11,6 +14,16 @@ use crate::functions::math_ast::try_eval_to_f64;
 ///
 /// Reduces equations and inequalities to a canonical disjunctive form.
 pub fn reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if let Some(result) = try_linear_integer_reduce(args) {
+    return Ok(result);
+  }
+  if let Some(result) = try_linear_rational_reduce(args) {
+    return Ok(result);
+  }
+  reduce_internal_ast(args)
+}
+
+fn reduce_internal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
       "Reduce expects 2 or 3 arguments".into(),
@@ -1268,8 +1281,13 @@ fn reduce_inequality(
   if is_constant_wrt(&expanded, var) {
     // No variable — evaluate the comparison numerically
     let val = simplify(expanded);
-    let result = evaluate_constant_ineq(&val, op);
-    return Ok(result);
+    if let Some(result) = evaluate_constant_ineq(&val, op) {
+      return Ok(result);
+    }
+    // The constraint is independent of the requested variable but still
+    // constrains a parameter.  Preserve it instead of treating every
+    // non-numeric condition as True (e.g. Reduce[a > 0, x] -> a > 0).
+    return Ok(make_comparison(&val, &Expr::Integer(0), op));
   }
 
   // Try to find the degree
@@ -1504,7 +1522,7 @@ fn try_reduce_abs_not_equal(
 }
 
 /// Evaluate a constant inequality (no variable present).
-fn evaluate_constant_ineq(val: &Expr, op: CompOp) -> Expr {
+fn evaluate_constant_ineq(val: &Expr, op: CompOp) -> Option<Expr> {
   // Try to get a numeric value
   if let Some(n) = expr_to_number(val) {
     let result = match op {
@@ -1515,10 +1533,9 @@ fn evaluate_constant_ineq(val: &Expr, op: CompOp) -> Expr {
       CompOp::Equal => n == 0.0,
       CompOp::NotEqual => n != 0.0,
     };
-    return bool_expr(result);
+    return Some(bool_expr(result));
   }
-  // Can't evaluate
-  bool_expr(true)
+  None
 }
 
 /// Try to extract a numeric value from an expression.
