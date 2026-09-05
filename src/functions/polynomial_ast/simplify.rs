@@ -7017,14 +7017,6 @@ fn is_plus_expr(expr: &Expr) -> bool {
   }
 }
 
-thread_local! {
-  /// Guards the re-simplification of a sum that collapsed into a single
-  /// fraction, so the sum and quotient pipelines cannot hand a term back and
-  /// forth between their two shapes.
-  static RESIMPLIFYING_QUOTIENT: std::cell::Cell<bool> =
-    const { std::cell::Cell::new(false) };
-}
-
 /// Simplify a sum — `Plus[…]` or a `+`/`-` binary tree — by expanding and
 /// combining it, then offering the like-denominator, Together and
 /// trig-polynomial rewrites as candidates.
@@ -7055,16 +7047,21 @@ fn simplify_additive(expr: &Expr) -> Expr {
     }
   }
   // A sum that collapsed into a single fraction goes through the quotient
-  // pipeline too — the same one the already-combined spelling takes — so two
+  // stage too — the same one the already-combined spelling takes — so two
   // spellings of one value cannot simplify differently: `Simplify[12/13 -
   // (8x)/13]` used to stop at `(12 - 8x)/13` (which the later candidate
   // selection displayed as `-((-12 + 8x)/13)`) while `Simplify[(12 - 8x)/13]`
   // reached the content-extracted `(-4*(-3 + 2x))/13`.
   //
-  // Only when the numerator is still a plain sum: an already-factored
-  // numerator (`k*q*(1 + (1+s)^(15/4))`) would be re-expanded by the round
-  // trip, undoing a grouping the sum pipeline just found. RESIMPLIFYING_
-  // QUOTIENT keeps the two pipelines from handing the term back and forth.
+  // `simplify_division` is called directly rather than routing the quotient
+  // back through `simplify_expr`: the numerator and denominator here are
+  // already simplified, and re-entering the generic dispatcher would walk
+  // back into this function and risk the two pipelines handing the term back
+  // and forth.
+  //
+  // Only when the numerator is still a plain sum — an already-factored
+  // numerator (`k*q*(1 + (1+s)^(15/4))`) would be re-expanded by the
+  // quotient stage, undoing a grouping the sum pipeline just found.
   let (num, den) = super::together::extract_num_den(&best);
   let collapsed_to_quotient = !matches!(den, Expr::Integer(1))
     && (matches!(&num, Expr::FunctionCall { name, .. } if name == "Plus")
@@ -7075,12 +7072,8 @@ fn simplify_additive(expr: &Expr) -> Expr {
           ..
         }
       ));
-  if collapsed_to_quotient && !RESIMPLIFYING_QUOTIENT.with(std::cell::Cell::get)
-  {
-    RESIMPLIFYING_QUOTIENT.with(|f| f.set(true));
-    let requotiented = simplify_expr(&best);
-    RESIMPLIFYING_QUOTIENT.with(|f| f.set(false));
-    best = requotiented;
+  if collapsed_to_quotient {
+    best = simplify_division(&num, &den);
   }
   best
 }

@@ -1002,11 +1002,7 @@ fn fold_term_numerics(expr: &Expr) -> Expr {
       let mut rest: Vec<Expr> = Vec::new();
       for f in &factors {
         if is_numeric_scalar(f) {
-          coeff = crate::evaluator::evaluate_function_call_ast(
-            "Times",
-            &[coeff.clone(), f.clone()],
-          )
-          .unwrap_or_else(|_| multiply_exprs(&coeff, f));
+          coeff = multiply_numeric_coeff(&coeff, f);
         } else {
           rest.push(f.clone());
         }
