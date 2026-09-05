@@ -1492,6 +1492,24 @@ mod simplify {
     );
   }
 
+  // A sum that combines into a single fraction must simplify to the same
+  // form as the already-combined spelling of the same value: the sum used to
+  // stop at `(12 - 8x)/13` (displayed `-((-12 + 8x)/13)`) while the quotient
+  // reached the content-extracted `(-4*(-3 + 2x))/13`.
+  #[test]
+  fn sum_and_quotient_spellings_agree() {
+    for spelling in [
+      "Simplify[12/13 - (8*x)/13]",
+      "Simplify[(12 - 8*x)/13]",
+      "Simplify[(24 - 16*x)/26]",
+      "Simplify[24/26 - (16*x)/26]",
+    ] {
+      assert_eq!(interpret(spelling).unwrap(), "(-4*(-3 + 2*x))/13");
+    }
+    assert_eq!(interpret("Simplify[3/2 + x/2]").unwrap(), "(3 + x)/2");
+    assert_eq!(interpret("Simplify[(3 + x)/2]").unwrap(), "(3 + x)/2");
+  }
+
   #[test]
   fn trig_polynomial_cos_dominant() {
     assert_eq!(
@@ -14855,12 +14873,9 @@ mod cases {
   }
   #[test]
   fn simplify_10() {
-    // The first component is `(12 - 8x)/13`; Simplify displays it with the
-    // sign pulled out, the same way it does for the already-combined
-    // spelling `Simplify[12/13 - (8 x)/13]`.
     assert_case(
       r#"LeastSquares[{{1, 2}, {2, 3}, {5, 6}}, {1, 5, 3}]; Simplify[LeastSquares[{{1, 2}, {2, 3}, {5, 6}}, {1, x, 3}]]"#,
-      r#"{-((-12 + 8*x)/13), (-4 + 7*x)/13}"#,
+      r#"{(-4*(-3 + 2*x))/13, (-4 + 7*x)/13}"#,
     );
   }
   #[test]
