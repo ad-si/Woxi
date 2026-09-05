@@ -7017,6 +7017,67 @@ fn is_plus_expr(expr: &Expr) -> bool {
   }
 }
 
+/// Simplify a sum — `Plus[…]` or a `+`/`-` binary tree — by expanding and
+/// combining it, then offering the like-denominator, Together and
+/// trig-polynomial rewrites as candidates.
+fn simplify_additive(expr: &Expr) -> Expr {
+  let combined = expand_and_combine(expr);
+  let trig = apply_trig_identities(&combined);
+  let mut best = trig;
+  let mut best_c = leaf_count(&best);
+  // Try combining like-denominator terms
+  let with_fracs = combine_like_denominator_terms(&best);
+  let c = leaf_count(&with_fracs);
+  if c < best_c {
+    best = with_fracs;
+    best_c = c;
+  }
+  // Try Together + factor + cancel
+  let together = try_together_simplify(&best);
+  let c = leaf_count(&together);
+  if c < best_c {
+    best = together;
+    best_c = c;
+  }
+  // Try trig polynomial simplification (Pythagorean sub + power reduction)
+  if let Some(trig_reduced) = try_trig_polynomial_simplify(&best) {
+    let c = leaf_count(&trig_reduced);
+    if c < best_c {
+      best = trig_reduced;
+    }
+  }
+  // A sum that collapsed into a single fraction goes through the quotient
+  // stage too — the same one the already-combined spelling takes — so two
+  // spellings of one value cannot simplify differently: `Simplify[12/13 -
+  // (8x)/13]` used to stop at `(12 - 8x)/13` (which the later candidate
+  // selection displayed as `-((-12 + 8x)/13)`) while `Simplify[(12 - 8x)/13]`
+  // reached the content-extracted `(-4*(-3 + 2x))/13`.
+  //
+  // `simplify_division` is called directly rather than routing the quotient
+  // back through `simplify_expr`: the numerator and denominator here are
+  // already simplified, and re-entering the generic dispatcher would walk
+  // back into this function and risk the two pipelines handing the term back
+  // and forth.
+  //
+  // Only when the numerator is still a plain sum — an already-factored
+  // numerator (`k*q*(1 + (1+s)^(15/4))`) would be re-expanded by the
+  // quotient stage, undoing a grouping the sum pipeline just found.
+  let (num, den) = super::together::extract_num_den(&best);
+  let collapsed_to_quotient = !matches!(den, Expr::Integer(1))
+    && (matches!(&num, Expr::FunctionCall { name, .. } if name == "Plus")
+      || matches!(
+        &num,
+        Expr::BinaryOp {
+          op: BinaryOperator::Plus | BinaryOperator::Minus,
+          ..
+        }
+      ));
+  if collapsed_to_quotient {
+    best = simplify_division(&num, &den);
+  }
+  best
+}
+
 /// Full simplification: expand, combine like terms, simplify.
 pub fn simplify_expr(expr: &Expr) -> Expr {
   let normal = simplify_expr_inner(expr);
@@ -7077,34 +7138,7 @@ fn simplify_expr_inner(expr: &Expr) -> Expr {
     Expr::BinaryOp {
       op: BinaryOperator::Plus | BinaryOperator::Minus,
       ..
-    } => {
-      let combined = expand_and_combine(expr);
-      let trig = apply_trig_identities(&combined);
-      let mut best = trig;
-      let mut best_c = leaf_count(&best);
-      // Try combining like-denominator terms
-      let with_fracs = combine_like_denominator_terms(&best);
-      let c = leaf_count(&with_fracs);
-      if c < best_c {
-        best = with_fracs;
-        best_c = c;
-      }
-      // Try Together + factor + cancel
-      let together = try_together_simplify(&best);
-      let c = leaf_count(&together);
-      if c < best_c {
-        best = together;
-        best_c = c;
-      }
-      // Try trig polynomial simplification (Pythagorean sub + power reduction)
-      if let Some(trig_reduced) = try_trig_polynomial_simplify(&best) {
-        let c = leaf_count(&trig_reduced);
-        if c < best_c {
-          best = trig_reduced;
-        }
-      }
-      best
-    }
+    } => simplify_additive(expr),
 
     Expr::UnaryOp { op, operand } => {
       let inner = simplify_expr(operand);
@@ -7116,32 +7150,7 @@ fn simplify_expr_inner(expr: &Expr) -> Expr {
 
     // Handle FunctionCall forms of Plus, Times, Power
     Expr::FunctionCall { name, args } => match name.as_str() {
-      "Plus" => {
-        let combined = expand_and_combine(expr);
-        let trig = apply_trig_identities(&combined);
-        let mut best = trig;
-        let mut best_c = leaf_count(&best);
-        let with_fracs = combine_like_denominator_terms(&best);
-        let c = leaf_count(&with_fracs);
-        if c < best_c {
-          best = with_fracs;
-          best_c = c;
-        }
-        let together = try_together_simplify(&best);
-        let c = leaf_count(&together);
-        if c < best_c {
-          best = together;
-          best_c = c;
-        }
-        // Try trig polynomial simplification
-        if let Some(trig_reduced) = try_trig_polynomial_simplify(&best) {
-          let c = leaf_count(&trig_reduced);
-          if c < best_c {
-            best = trig_reduced;
-          }
-        }
-        best
-      }
+      "Plus" => simplify_additive(expr),
       "Times" => {
         // Check for fraction form: Times[..., Power[den, -1]]
         let (num, den) = super::together::extract_num_den(expr);

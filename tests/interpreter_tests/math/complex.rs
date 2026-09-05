@@ -511,9 +511,12 @@ mod re_tests {
     );
     assert_eq!(interpret("Re[E^(I*Log[3])]").unwrap(), "Cos[Log[3]]");
     assert_eq!(interpret("Re[E^(I*E)]").unwrap(), "Cos[E]");
+    // Canonical Plus ordering puts the number (`I/3` is `Complex[0, 1/3]`)
+    // before the radical term, matching what plain evaluation of
+    // `I/3 + (2 Sqrt[2])/3` prints.
     assert_eq!(
       interpret("ComplexExpand[E^(I*ArcSin[1/3])]").unwrap(),
-      "(2*Sqrt[2])/3 + I/3"
+      "I/3 + (2*Sqrt[2])/3"
     );
     // A complex-valued argument has no real value and still stays put.
     assert_eq!(interpret("Re[E^(I*x)]").unwrap(), "Re[E^(I*x)]");
