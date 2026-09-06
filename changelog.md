@@ -2,6 +2,19 @@
 
 # Unreleased
 
+- `woxi lsp` starts a Language Server Protocol server for the Wolfram
+    Language, so any editor with an LSP client can check and explore
+    Woxi scripts. It publishes diagnostics (syntax errors, and warnings
+    naming the symbols this interpreter does not implement), answers hover
+    and completion requests from the same `functions.csv` registry the
+    interpreter uses, and resolves go-to-definition, find-references,
+    occurrence highlighting and the document outline from the assignments
+    in the edited file. The analysis runs on a forgiving tokenizer rather
+    than the grammar, so it keeps working while a file is mid-edit, and
+    syntax errors are only reported for input that no path of the
+    interpreter accepts — line continuations and newline-separated
+    statements are preprocessed exactly as `woxi run` does.
+
 - `ContourPlot` and `DensityPlot` honor `RegionFunction -> Function[{x, y,
     z}, …]`, masking out grid cells where it is not `True` instead of
     silently ignoring the option and filling the whole rectangular domain.

@@ -11,6 +11,7 @@ pub mod evaluator;
 pub mod expr_list;
 pub mod functions;
 pub mod helpers;
+pub mod lsp;
 pub mod notebook;
 pub mod syntax;
 pub mod utils;
