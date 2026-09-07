@@ -1,6 +1,6 @@
 use crate::InterpreterError;
-use crate::helpers::{bool_expr, call, call1};
-use crate::syntax::{Expr, unevaluated};
+use crate::helpers::{bool_expr, call, call1, unevaluated};
+use crate::syntax::Expr;
 
 pub mod data;
 pub mod edit;

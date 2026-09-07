@@ -1,9 +1,9 @@
 use crate::helpers::{
-  binop, bool_expr, call, call0, call1, div2, minus2, neg1, plus2, pow2, times2,
+  binop, bool_expr, call, call0, call1, div2, minus2, neg1, plus2, pow2,
+  times2, unevaluated,
 };
 use crate::syntax::{
   BinaryOperator, ComparisonOp, Expr, UnaryOperator, expr_to_string,
-  unevaluated,
 };
 use crate::{ENV, InterpreterError, PART_DEPTH, StoredValue, interpret};
 use num_bigint::{BigInt, Sign};

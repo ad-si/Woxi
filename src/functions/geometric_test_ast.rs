@@ -11,7 +11,6 @@
 //! expression is left unevaluated (matching how the interpreter treats
 //! unsupported cases elsewhere).
 
-#[allow(unused_imports)]
 use super::*;
 
 /// Absolute tolerance for orientation / sign tests (exact-zero comparisons on
@@ -1130,7 +1129,7 @@ pub fn convex_polyhedron_q_ast(
       "ConvexPolyhedronQ::argx: ConvexPolyhedronQ called with {n} {noun}; \
        1 argument is expected."
     ));
-    return Ok(crate::syntax::unevaluated("ConvexPolyhedronQ", args));
+    return Ok(unevaluated("ConvexPolyhedronQ", args));
   }
   if let Some((points, faces)) = polyhedron_faces(&args[0]) {
     return Ok(bool_expr(convex_polyhedron(&points, &faces)));

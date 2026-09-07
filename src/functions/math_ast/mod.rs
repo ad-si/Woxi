@@ -4,11 +4,12 @@
 
 use crate::InterpreterError;
 use crate::helpers::{
-  binop, bool_expr, call, call0, call1, div2, minus2, neg1, plus2, pow2, times2,
+  binop, bool_expr, call, call0, call1, div2, minus2, neg1, plus2, pow2,
+  times2, unevaluated,
 };
 use crate::syntax::{
   BinaryOperator, ComparisonOp, Expr, UnaryOperator, expr_to_output,
-  expr_to_string, unevaluated,
+  expr_to_string,
 };
 use num_bigint::{BigInt, Sign};
 
@@ -22,7 +23,6 @@ mod digits;
 mod distributions;
 mod elementary;
 mod elliptic;
-pub use elliptic::neville_theta_ast;
 pub(crate) mod gamma;
 mod hypergeometric;
 pub(crate) mod integrals;

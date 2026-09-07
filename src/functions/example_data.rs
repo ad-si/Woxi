@@ -28,10 +28,7 @@
 
 use std::sync::LazyLock;
 
-#[allow(unused_imports)]
 use super::*;
-use crate::InterpreterError;
-use crate::syntax::{Expr, unevaluated};
 
 /// One bundled network dataset.
 struct NetworkGraph {

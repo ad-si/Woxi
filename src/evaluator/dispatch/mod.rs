@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 
 pub mod arg_count;
@@ -7,8 +6,6 @@ mod audio_functions;
 mod boolean_functions;
 pub(crate) mod calculus_functions;
 pub mod complex_and_special;
-pub use complex_and_special::builtin_default_value;
-pub use complex_and_special::builtin_default_value_at_position;
 mod datetime_functions;
 pub(crate) mod evaluate_functions;
 mod evaluation_control;

@@ -51,6 +51,13 @@ pub fn call1(name: &str, arg: Expr) -> Expr {
   call(name, vec![arg])
 }
 
+pub fn unevaluated(name: &str, args: &[Expr]) -> Expr {
+  Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.to_vec().into(),
+  }
+}
+
 /// Build the boolean symbol `True` or `False`.
 pub fn bool_expr(b: bool) -> Expr {
   Expr::Identifier(if b { "True" } else { "False" }.to_string())

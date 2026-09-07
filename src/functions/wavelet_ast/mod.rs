@@ -3,8 +3,8 @@
 //! coefficient manipulation and visualization.
 
 use crate::InterpreterError;
-use crate::helpers::{call, call0, call1};
-use crate::syntax::{Expr, expr_to_string, unevaluated};
+use crate::helpers::{call, call0, call1, unevaluated};
+use crate::syntax::{Expr, expr_to_string};
 
 pub mod continuous;
 pub mod data;

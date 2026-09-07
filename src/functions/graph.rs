@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 use crate::functions::graphics::{Color, graphics_ast, parse_color};
 use petgraph::graph::{DiGraph, NodeIndex, UnGraph};
@@ -3149,7 +3148,7 @@ pub fn find_fundamental_cycles_ast(
 ) -> Result<Expr, InterpreterError> {
   let unevaluated = || Ok(unevaluated("FindFundamentalCycles", args));
   let call_display = || {
-    expr_to_string(&crate::syntax::unevaluated("FindFundamentalCycles", args))
+    expr_to_string(&crate::helpers::unevaluated("FindFundamentalCycles", args))
   };
 
   if args.is_empty() {

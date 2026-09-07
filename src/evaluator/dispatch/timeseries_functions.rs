@@ -4,7 +4,6 @@
 //! runs before `list_operations` so the statistics heads can pull the value
 //! path out of a `TimeSeries` before the generic list handlers see it.
 
-#[allow(unused_imports)]
 use super::*;
 use crate::functions::timeseries_ast;
 
@@ -66,7 +65,7 @@ pub(super) fn dispatch_timeseries_functions(
         ))
         .is_some() =>
     {
-      Some(Ok(crate::syntax::unevaluated("EventSeries", args)))
+      Some(Ok(unevaluated("EventSeries", args)))
     }
     "TimeSeriesShift" => Some(timeseries_ast::time_series_shift_ast(args)),
     "TimeSeriesRescale" => Some(timeseries_ast::time_series_rescale_ast(args)),

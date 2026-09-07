@@ -8,10 +8,10 @@ use crate::functions::math_ast::{
 };
 use crate::helpers::{
   bool_expr, call, call0, call1, div2, minus2, neg1, plus2, pow2, times2,
+  unevaluated,
 };
 use crate::syntax::{
   BinaryOperator, ComparisonOp, Expr, UnaryOperator, expr_to_string,
-  unevaluated,
 };
 use num_bigint::BigInt;
 
@@ -76,4 +76,4 @@ pub use simplify::*;
 pub use solve::*;
 pub use symmetric_reduction::*;
 pub use to_radicals::*;
-pub use together::{together_ast, together_expr};
+pub use together::*;

@@ -1,6 +1,4 @@
-#[allow(unused_imports)]
 use super::utilities::*;
-#[allow(unused_imports)]
 use super::*;
 
 /// Wolfram canonical ordering for expressions.
@@ -707,7 +705,7 @@ pub fn position_extreme_ast(
       crate::emit_message(&format!(
         "{name}::intpma: Positive machine-sized integer or Automatic expected at position 2 in {}.",
         crate::syntax::format_expr(
-          &crate::syntax::unevaluated(name, args),
+          &crate::helpers::unevaluated(name, args),
           crate::syntax::ExprForm::Output
         )
       ));

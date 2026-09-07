@@ -3,7 +3,6 @@
 //! These functions work directly with `Expr` AST nodes for symbolic differentiation
 //! and integration.
 
-#[allow(unused_imports)]
 use super::*;
 use crate::functions::math_ast::{gcd_i128, is_sqrt, make_sqrt, rat_reduce};
 
@@ -16373,14 +16372,14 @@ pub fn dt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       return Ok(result);
     }
-    return Ok(crate::syntax::unevaluated("Dt", args));
+    return Ok(unevaluated("Dt", args));
   }
 
   let var = match &args[1] {
     Expr::Identifier(s) => s.clone(),
     // A non-symbol differentiation variable has no total derivative rule;
     // hold the expression rather than erroring out.
-    _ => return Ok(crate::syntax::unevaluated("Dt", args)),
+    _ => return Ok(unevaluated("Dt", args)),
   };
   let result = total_differentiate(&args[0], &var)?;
   Ok(simplify(result))
@@ -16411,7 +16410,7 @@ fn canonical_dt(args: &[Expr]) -> Expr {
         };
         specs.push((v.clone(), *n));
       }
-      _ => return crate::syntax::unevaluated("Dt", args),
+      _ => return unevaluated("Dt", args),
     }
   }
 
@@ -16433,7 +16432,7 @@ fn canonical_dt(args: &[Expr]) -> Expr {
       Expr::List(vec![Expr::Identifier(var), Expr::Integer(order)].into())
     });
   }
-  crate::syntax::unevaluated("Dt", &new_args)
+  unevaluated("Dt", &new_args)
 }
 
 /// Check if an expression is a true constant (number or named constant).

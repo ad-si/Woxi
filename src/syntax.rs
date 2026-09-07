@@ -1,3 +1,4 @@
+use crate::helpers::unevaluated;
 use num_bigint::{BigInt, Sign};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -16692,13 +16693,6 @@ pub fn replace_identifier_in_expr(
         .collect(),
     ),
     _ => expr.clone(),
-  }
-}
-
-pub fn unevaluated(name: &str, args: &[Expr]) -> Expr {
-  Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.to_vec().into(),
   }
 }
 
