@@ -698,6 +698,7 @@ pub fn get_builtin_attributes(name: &str) -> Attributes {
     | "Defer" | "Compile" | "CompiledFunction" | "Which"
     | "Clear" | "ClearAll" | "Condition" | "Off" | "On"
     | "TimeConstrained" | "MemoryConstrained" | "TagUnset" | "NProduct"
+    | "Monitor"
     | "Definition" | "FullDefinition" | "Quiet"
     | "OwnValues" | "DownValues" | "SubValues" | "UpValues"
     | "Protect" | "Unprotect"

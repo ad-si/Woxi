@@ -452,6 +452,17 @@ pub fn dispatch_complex_and_special(
       }
       return Some(result);
     }
+    // Monitor[expr, mon] evaluates `expr` and returns it; the monitored
+    // display is a front-end affair, so without one there is nothing to
+    // show (wolframscript is silent too). Rubi shows its loading progress
+    // with it.
+    "Monitor" if args.len() == 2 => {
+      crate::emit_message(
+        "FrontEndObject::notavail: A front end is not available; certain \
+         operations require a front end.",
+      );
+      return Some(crate::evaluator::evaluate_expr_to_expr(&args[0]));
+    }
     "TimeConstrained" if args.len() == 2 || args.len() == 3 => {
       let limit_secs = match &args[1] {
         Expr::Real(f) => Some(*f),

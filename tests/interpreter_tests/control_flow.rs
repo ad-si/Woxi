@@ -4512,3 +4512,32 @@ mod compound_assignment_on_a_list {
     );
   }
 }
+
+/// `Monitor[expr, mon]` is `expr`: the monitored display needs a front end.
+/// Rubi wraps its rule loading in one. Verified against wolframscript.
+mod monitor_evaluates_its_expression {
+  use super::*;
+
+  #[test]
+  fn the_expression_is_evaluated_and_returned_and_the_monitor_ignored() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Monitor[Do[k = i, {i, 1, 5}]; k, ProgressIndicator[i, {1, 6}]]"
+      )
+      .unwrap(),
+      "5"
+    );
+    assert_eq!(interpret("Monitor[1 + 1, undefined[i]]").unwrap(), "2");
+    let result =
+      interpret_with_stdout("Monitor[Do[Null, {i, 3}]; 7, i]").unwrap();
+    assert_eq!(result.result, "7");
+    assert_eq!(
+      result.warnings,
+      vec![
+        "FrontEndObject::notavail: A front end is not available; certain operations require a front end."
+          .to_string()
+      ]
+    );
+  }
+}
