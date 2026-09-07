@@ -7036,6 +7036,7 @@ dependencies = [
  "uuid",
  "wasm-bindgen",
  "web-time",
+ "woxi-reduce",
  "zeromq",
 ]
 
@@ -7046,6 +7047,16 @@ dependencies = [
  "num-bigint",
  "pyo3",
  "woxi",
+]
+
+[[package]]
+name = "woxi-reduce"
+version = "0.1.0"
+dependencies = [
+ "criterion",
+ "num-bigint",
+ "num-traits",
+ "proptest",
 ]
 
 [[package]]

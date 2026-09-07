@@ -83,6 +83,15 @@ $ wo 'Solve[{Sin[x] == 0, 0 < x < 7}, x]'
 {{x -> Pi}, {x -> 2*Pi}}
 ```
 
+Over the integers, a Boolean affine system is solved completely when its
+constraints prove that every requested variable has a finite range. Exact
+inequalities, disequalities, and congruences can be combined:
+
+```scrut
+$ wo 'Solve[0 <= x <= 5 && 0 <= y <= 5 && Mod[x + 2 y, 4] == 3, {x, y}, Integers]'
+{{x -> 1, y -> 1}, {x -> 1, y -> 3}, {x -> 1, y -> 5}, {x -> 3, y -> 0}, {x -> 3, y -> 2}, {x -> 3, y -> 4}, {x -> 5, y -> 1}, {x -> 5, y -> 3}, {x -> 5, y -> 5}}
+```
+
 `Modulus -> n` solves over the integers modulo `n`, so the answers are residues
 rather than radicals:
 

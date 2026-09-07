@@ -14,6 +14,16 @@ pub fn resolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
     return Ok(unevaluated(args));
   }
+  if let Some(result) =
+    crate::functions::polynomial_ast::try_linear_rational_resolve(args)
+  {
+    return Ok(result);
+  }
+  if let Some(result) =
+    crate::functions::polynomial_ast::try_linear_integer_resolve(args)
+  {
+    return Ok(result);
+  }
   // Optional domain: only Reals (or omitted, which defaults to complexes
   // in Wolfram, but the rules below are domain-agnostic for the
   // supported families)
