@@ -174,6 +174,42 @@ Or simply use our
 It runs fully self-contained in your browser and no data is send to the cloud.
 
 
+### Editor Integration
+
+Woxi ships a [Language Server Protocol] server for the Wolfram Language:
+
+```sh
+woxi lsp
+```
+
+It speaks LSP over stdin/stdout, which is how editors start it, and
+provides
+
+- **Diagnostics** — syntax errors, plus warnings on the symbols this
+    interpreter does not implement, so you see what a script will not do
+    before running it
+- **Hover documentation** and **completion** for every built-in symbol,
+    from the same registry the interpreter uses, and for the symbols the
+    edited file defines itself
+- **Go to definition**, **find references**, occurrence highlighting and
+    the **document outline**, computed from the file's assignments
+
+Configure your editor to run `woxi lsp` for `.wl`, `.wls`, `.m` and `.nb`
+files. For [Neovim]'s built-in client that is:
+
+```lua
+vim.lsp.config.woxi = {
+  cmd = { "woxi", "lsp" },
+  filetypes = { "wolfram" },
+  root_markers = { ".git" },
+}
+vim.lsp.enable("woxi")
+```
+
+[Language Server Protocol]: https://microsoft.github.io/language-server-protocol/
+[Neovim]: https://neovim.io
+
+
 ## CLI Comparison With [WolframScript]
 
 [WolframScript]: https://www.wolfram.com/wolframscript/index.php.en
@@ -184,6 +220,7 @@ Woxi | WolframScript
 `woxi run script.wls` | `wolframscript script.wls`
 `woxi run notebook.nb` | *not supported* (can't run `.nb` files directly)
 `woxi repl` | `wolframscript` (no arguments)
+`woxi lsp` | *not supported* (no language server)
 
 
 ## Contributing

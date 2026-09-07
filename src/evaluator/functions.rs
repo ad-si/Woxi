@@ -4,23 +4,62 @@ use std::sync::LazyLock;
 // functions.csv format: name,description,implementation_status,effect_level,version,rank
 static FUNCTIONS_CSV: &str = include_str!("../../functions.csv");
 
+/// How completely Woxi implements a `System`` symbol, taken from the
+/// `implementation_status` column of functions.csv.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImplementationStatus {
+  /// ✅ — implemented.
+  Implemented,
+  /// 🚧 — partially implemented: some forms or options are missing.
+  Partial,
+  /// 🚫 — out of scope for Woxi (e.g. it needs the Wolfram Cloud).
+  NotPlanned,
+  /// Listed in functions.csv, but not implemented (yet).
+  NotImplemented,
+}
+
+/// Implementation status of every symbol in functions.csv.
+static IMPLEMENTATION_STATUS: LazyLock<
+  HashMap<&'static str, ImplementationStatus>,
+> = LazyLock::new(|| {
+  FUNCTIONS_CSV
+    .lines()
+    .skip(1)
+    .filter_map(|line| {
+      let fields: Vec<&str> = line.splitn(4, ',').collect();
+      let name = fields.first()?.trim();
+      let status = fields.get(2).unwrap_or(&"").trim();
+      if name.is_empty() || name == "-----" {
+        return None;
+      }
+      let status = if status.starts_with("✅") {
+        ImplementationStatus::Implemented
+      } else if status.starts_with("🚧") {
+        ImplementationStatus::Partial
+      } else if status.starts_with("🚫") {
+        ImplementationStatus::NotPlanned
+      } else {
+        ImplementationStatus::NotImplemented
+      };
+      Some((name, status))
+    })
+    .collect()
+});
+
+/// Look up how completely Woxi implements a built-in symbol.
+/// `None` for names that are not `System`` symbols at all.
+pub fn implementation_status(name: &str) -> Option<ImplementationStatus> {
+  IMPLEMENTATION_STATUS.get(name).copied()
+}
+
 /// Set of known Wolfram Language function names (from functions.csv)
 /// that are NOT yet implemented in Woxi.
 static KNOWN_WOLFRAM_FUNCTIONS: LazyLock<HashSet<&'static str>> =
   LazyLock::new(|| {
-    FUNCTIONS_CSV
-      .lines()
-      .skip(1)
-      .filter_map(|line| {
-        let fields: Vec<&str> = line.splitn(4, ',').collect();
-        let name = fields.first()?.trim();
-        let status = fields.get(2).unwrap_or(&"").trim();
-        if !status.starts_with("✅") && !name.is_empty() && name != "-----" {
-          Some(name)
-        } else {
-          None
-        }
-      })
+    IMPLEMENTATION_STATUS
+      .iter()
+      .filter(|(_, status)| **status != ImplementationStatus::Implemented)
+      .map(|(name, _)| *name)
       .collect()
   });
 
