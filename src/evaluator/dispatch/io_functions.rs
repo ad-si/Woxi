@@ -212,6 +212,194 @@ pub(crate) fn run_command_capture(command: &str) -> Option<String> {
     .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
 }
 
+/// `RunProcess[cmd, (prop, (input,)) opts…]` — see the dispatch arm.
+#[cfg(not(target_arch = "wasm32"))]
+fn run_process_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  use std::io::{Read, Write};
+  use std::process::{Command, Stdio};
+
+  let is_option =
+    |e: &Expr| matches!(e, Expr::Rule { .. } | Expr::RuleDelayed { .. });
+  let positional: Vec<&Expr> =
+    args.iter().take_while(|a| !is_option(a)).collect();
+  let options: Vec<&Expr> = args.iter().skip(positional.len()).collect();
+  if positional.is_empty()
+    || positional.len() > 3
+    || !options.iter().all(|o| is_option(o))
+  {
+    return Ok(unevaluated("RunProcess", args));
+  }
+
+  // The program and its arguments: a string is a program name, a list is
+  // the program followed by its arguments. Neither goes through a shell.
+  let words: Vec<String> = match positional[0] {
+    Expr::String(s) => vec![s.clone()],
+    Expr::List(items) => {
+      let mut words = Vec::with_capacity(items.len());
+      for item in items {
+        match item {
+          Expr::String(s) => words.push(s.clone()),
+          other => words.push(crate::syntax::expr_to_string(other)),
+        }
+      }
+      words
+    }
+    _ => return Ok(unevaluated("RunProcess", args)),
+  };
+  let Some((program, program_args)) = words.split_first() else {
+    return Ok(unevaluated("RunProcess", args));
+  };
+
+  // Which of the results to return.
+  let property = match positional.get(1) {
+    None => None,
+    Some(Expr::Identifier(a)) if a == "All" => None,
+    Some(Expr::String(p))
+      if matches!(
+        p.as_str(),
+        "ExitCode" | "StandardOutput" | "StandardError"
+      ) =>
+    {
+      Some(p.clone())
+    }
+    Some(other) => {
+      crate::emit_message(&format!(
+        "RunProcess::pbad: {} is not a valid RunProcess property.",
+        crate::syntax::expr_to_string(other)
+      ));
+      return Ok(Expr::Identifier("$Failed".to_string()));
+    }
+  };
+  let input: Option<String> = match positional.get(2) {
+    None => None,
+    Some(Expr::String(s)) => Some(s.clone()),
+    Some(other) => Some(crate::syntax::expr_to_string(other)),
+  };
+
+  let mut command = Command::new(program);
+  command.args(program_args);
+  for option in options {
+    let (Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    }) = option
+    else {
+      continue;
+    };
+    let Expr::Identifier(name) = pattern.as_ref() else {
+      continue;
+    };
+    let value = crate::evaluator::evaluate_expr_to_expr(replacement)?;
+    match name.as_str() {
+      "ProcessDirectory" => {
+        if let Expr::String(dir) = &value {
+          command.current_dir(crate::vfs::resolve(dir));
+        }
+      }
+      "ProcessEnvironment" => {
+        let pairs: Vec<(Expr, Expr)> = match &value {
+          Expr::Association(pairs) => pairs.clone(),
+          Expr::List(rules) => rules
+            .iter()
+            .filter_map(|r| match r {
+              Expr::Rule {
+                pattern,
+                replacement,
+              }
+              | Expr::RuleDelayed {
+                pattern,
+                replacement,
+              } => Some(((**pattern).clone(), (**replacement).clone())),
+              _ => None,
+            })
+            .collect(),
+          // Inherited (the default) keeps the interpreter's environment.
+          _ => continue,
+        };
+        command.env_clear();
+        let text = |e: &Expr| match e {
+          Expr::String(s) => s.clone(),
+          other => crate::syntax::expr_to_string(other),
+        };
+        for (key, val) in &pairs {
+          command.env(text(key), text(val));
+        }
+      }
+      _ => {}
+    }
+  }
+  command
+    .stdin(if input.is_some() {
+      Stdio::piped()
+    } else {
+      Stdio::null()
+    })
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped());
+
+  let Ok(mut child) = command.spawn() else {
+    crate::emit_message(&format!(
+      "RunProcess::pnfd: Program {program} not found. Check the path and file permissions."
+    ));
+    return Ok(Expr::Identifier("$Failed".to_string()));
+  };
+  // Feed the input on its own thread: a program that writes a lot before
+  // reading would otherwise deadlock against our reads below.
+  let feeder = input.and_then(|text| {
+    child.stdin.take().map(|mut stdin| {
+      std::thread::spawn(move || {
+        let _ = stdin.write_all(text.as_bytes());
+      })
+    })
+  });
+  let stderr_reader = child.stderr.take().map(|mut stderr| {
+    std::thread::spawn(move || {
+      let mut buf = Vec::new();
+      let _ = stderr.read_to_end(&mut buf);
+      buf
+    })
+  });
+  let mut stdout_bytes = Vec::new();
+  if let Some(mut stdout) = child.stdout.take() {
+    let _ = stdout.read_to_end(&mut stdout_bytes);
+  }
+  let stderr_bytes = stderr_reader
+    .and_then(|t| t.join().ok())
+    .unwrap_or_default();
+  if let Some(t) = feeder {
+    let _ = t.join();
+  }
+  let status = child.wait();
+
+  // A process that was killed by a signal has no exit code.
+  let exit_code = match status {
+    Ok(s) => s.code().map_or_else(
+      || Expr::Identifier("None".to_string()),
+      |c| Expr::Integer(i128::from(c)),
+    ),
+    Err(_) => Expr::Identifier("None".to_string()),
+  };
+  let stdout =
+    Expr::String(String::from_utf8_lossy(&stdout_bytes).into_owned());
+  let stderr =
+    Expr::String(String::from_utf8_lossy(&stderr_bytes).into_owned());
+
+  Ok(match property.as_deref() {
+    Some("ExitCode") => exit_code,
+    Some("StandardOutput") => stdout,
+    Some("StandardError") => stderr,
+    _ => Expr::Association(vec![
+      (Expr::String("ExitCode".to_string()), exit_code),
+      (Expr::String("StandardOutput".to_string()), stdout),
+      (Expr::String("StandardError".to_string()), stderr),
+    ]),
+  })
+}
+
 /// Split a Wolfram file specification into the external command it names.
 /// `"!sort -u"` runs `sort -u`; anything without the leading `!` is a
 /// plain file path.
@@ -896,6 +1084,16 @@ pub fn dispatch_io_functions(
         "so"
       };
       return Some(Ok(Expr::String(extension.to_string())));
+    }
+    // RunProcess[prog], RunProcess[{prog, arg, …}] — run a program to
+    // completion and report its exit code and output streams.
+    // RunProcess[cmd, "StandardOutput" | "StandardError" | "ExitCode" | All]
+    // picks one of them; a third argument is fed to its standard input.
+    // ProcessDirectory -> dir runs it there, ProcessEnvironment -> env
+    // (an association or list of rules, or Inherited) sets its variables.
+    #[cfg(not(target_arch = "wasm32"))]
+    "RunProcess" if !args.is_empty() => {
+      return Some(run_process_ast(args));
     }
     // GetEnvironment[] — all environment variables as a List of rules.
     "GetEnvironment" if args.is_empty() => {

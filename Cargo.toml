@@ -287,6 +287,13 @@ version = "0.13"
 default-features = false
 features = ["text"]
 
+# Reads PDF files for `Import`: object parsing, xref/object streams and
+# stream decompression. The page content is interpreted in
+# `functions::pdf_import`.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies.lopdf]
+version = "0.44"
+default-features = false
+
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 libc = "0.2"
 calamine = "0.34"

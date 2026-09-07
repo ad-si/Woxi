@@ -565,3 +565,38 @@ mod head_patterns_in_a_package {
     );
   }
 }
+
+mod relative_sub_contexts {
+  use super::*;
+
+  // `` `Info`$Version `` inside a package names a symbol in a sub-context
+  // of the package (MaTeX declares its version this way); a short name
+  // that is a system variable does not make it the system variable.
+  #[test]
+  fn relative_name_with_sub_context_resolves_under_the_package() {
+    clear_state();
+    interpret(
+      "BeginPackage[\"RelCtx`\"]\n`Info`$Version = \"1.0\"\n`Info`build = 7\nEndPackage[]\n",
+    )
+    .unwrap();
+    assert_eq!(interpret("RelCtx`Info`$Version").unwrap(), "1.0");
+    assert_eq!(interpret("RelCtx`Info`build").unwrap(), "7");
+    assert_eq!(interpret("Names[\"RelCtx`*\"]").unwrap(), "{}");
+    assert_eq!(
+      interpret("MemberQ[Names[\"RelCtx`Info`*\"], \"RelCtx`Info`$Version\"]")
+        .unwrap(),
+      "True"
+    );
+    assert_eq!(interpret("Length[Names[\"RelCtx`Info`*\"]]").unwrap(), "2");
+  }
+
+  #[test]
+  fn relative_name_outside_a_package_lives_under_global() {
+    clear_state();
+    assert_eq!(interpret("Context[`relA`relB]").unwrap(), "Global`relA`");
+    assert_eq!(
+      interpret("`relA`relB === Global`relA`relB").unwrap(),
+      "True"
+    );
+  }
+}

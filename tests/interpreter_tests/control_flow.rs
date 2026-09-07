@@ -4486,3 +4486,29 @@ mod return_propagation {
     );
   }
 }
+
+mod compound_assignment_on_a_list {
+  use super::*;
+
+  // `{w, h} *= k` is `{w, h} = {w, h} k`: every target is updated.
+  #[test]
+  fn times_by_on_a_list_of_symbols() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{cw, ch, cd} = {{1.5}, {2}, {3}}; {cw, ch, cd} *= 2; {cw, ch, cd}"
+      )
+      .unwrap(),
+      "{{3.}, {4}, {6}}"
+    );
+  }
+
+  #[test]
+  fn add_to_on_a_list_of_symbols() {
+    clear_state();
+    assert_eq!(
+      interpret("{ca, cb} = {1, 2}; {ca, cb} += 10; {ca, cb}").unwrap(),
+      "{11, 12}"
+    );
+  }
+}

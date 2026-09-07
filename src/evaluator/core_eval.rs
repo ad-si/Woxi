@@ -108,6 +108,20 @@ fn needs_reevaluation(expr: &Expr, self_name: &str) -> bool {
     Expr::BinaryOp { .. } => true,
     Expr::UnaryOp { .. } => true,
     Expr::CurriedCall { .. } => true,
+    // `line := lines[[i]]` reads the part afresh each time, like a call.
+    Expr::Part { .. } => true,
+    Expr::Comparison { .. } => true,
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => {
+      needs_reevaluation(pattern, self_name)
+        || needs_reevaluation(replacement, self_name)
+    }
     _ => false,
   }
 }
@@ -1556,12 +1570,26 @@ pub fn evaluate_expr_to_expr_inner(
               | Expr::Part { .. }
               | Expr::FunctionCall { .. }
               | Expr::CurriedCall { .. }
+              | Expr::List(_)
           ) {
             emit_rvalue(name, &args[0]);
             return Ok(Expr::FunctionCall {
               name: name.clone(),
               args: args.clone(),
             });
+          }
+          // `{w, h} *= k` is `{w, h} = {w, h} k`: the list of targets is
+          // read, combined, and assigned back element by element.
+          if let Expr::List(_) = &args[0] {
+            let current_val = evaluate_expr_to_expr(&args[0])?;
+            let rhs = evaluate_expr_to_expr(&args[1])?;
+            let new_val = evaluate_expr_to_expr(&Expr::BinaryOp {
+              op,
+              left: Box::new(current_val),
+              right: Box::new(rhs),
+            })?;
+            crate::evaluator::assignment::set_ast(&args[0], &new_val)?;
+            return Ok(new_val);
           }
           if let Expr::Identifier(var_name) = &args[0] {
             let current = ENV.with(|e| e.borrow().get(var_name).cloned());
@@ -1814,6 +1842,17 @@ pub fn evaluate_expr_to_expr_inner(
             Some(StoredValue::ExprVal(e)) => e,
             Some(StoredValue::Raw(s)) => crate::syntax::string_to_expr(&s)
               .unwrap_or(Expr::List(vec![].into())),
+            // An association gains the appended rule as an entry — the same
+            // write `Append[assoc, rule]` followed by `Set` would make.
+            Some(StoredValue::Association(_)) => {
+              let assoc = evaluate_expr_to_expr(&args[0])?;
+              let appended = evaluate_expr_to_expr(&Expr::FunctionCall {
+                name: if is_append { "Append" } else { "Prepend" }.to_string(),
+                args: vec![assoc, elem].into(),
+              })?;
+              crate::evaluator::assignment::set_ast(&args[0], &appended)?;
+              return Ok(appended);
+            }
             // System variables like `$BoxForms` aren't in ENV until written —
             // first AppendTo seeds the env from the built-in default.
             _ => {
@@ -2639,22 +2678,49 @@ pub fn evaluate_expr_to_expr_inner(
             Expr::Function { .. }
             | Expr::NamedFunction { .. }
             | Expr::FunctionCall { .. } => {
-              // For Function[{params}, body, attrs] with HoldAll/HoldFirst/
-              // HoldRest, suppress argument evaluation so the function body
-              // sees the unevaluated forms.
-              let hold_attrs = function_hold_attributes(stored_expr);
-              let mut prepared: Vec<Expr> = Vec::with_capacity(args.len());
-              for (i, a) in args.iter().enumerate() {
-                let hold = hold_attrs.0
-                  || (hold_attrs.1 && i == 0)
-                  || (hold_attrs.2 && i > 0);
-                if hold {
-                  prepared.push(a.clone());
-                } else {
-                  prepared.push(evaluate_expr_to_expr(a)?);
+              // A stored call is a delayed body to evaluate first — the
+              // memoization idiom `tpl := tpl = StringTemplate[…]` yields
+              // the template, not the `Set` — and what it yields is what
+              // gets applied.
+              let head_value = match stored_expr {
+                Expr::FunctionCall { .. } => {
+                  evaluate_expr_to_expr(&Expr::Identifier(name.clone()))?
                 }
+                other => other.clone(),
+              };
+              if let Expr::Identifier(new_head) = &head_value
+                && new_head != name
+              {
+                return Err(InterpreterError::TailCall(Box::new(
+                  Expr::FunctionCall {
+                    name: new_head.clone(),
+                    args: args.to_vec().into(),
+                  },
+                )));
               }
-              return apply_curried_call(stored_expr, &prepared);
+              if matches!(
+                head_value,
+                Expr::Function { .. }
+                  | Expr::NamedFunction { .. }
+                  | Expr::FunctionCall { .. }
+              ) {
+                // For Function[{params}, body, attrs] with HoldAll/HoldFirst/
+                // HoldRest, suppress argument evaluation so the function body
+                // sees the unevaluated forms.
+                let hold_attrs = function_hold_attributes(&head_value);
+                let mut prepared: Vec<Expr> = Vec::with_capacity(args.len());
+                for (i, a) in args.iter().enumerate() {
+                  let hold = hold_attrs.0
+                    || (hold_attrs.1 && i == 0)
+                    || (hold_attrs.2 && i > 0);
+                  if hold {
+                    prepared.push(a.clone());
+                  } else {
+                    prepared.push(evaluate_expr_to_expr(a)?);
+                  }
+                }
+                return apply_curried_call(&head_value, &prepared);
+              }
             }
             _ => {}
           }

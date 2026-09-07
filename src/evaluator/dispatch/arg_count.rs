@@ -730,7 +730,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "ImageType" => Some((1, 1)),
     "Implies" => Some((2, 2)),
     "Indexed" => Some((2, 2)),
-    "Import" => Some((1, 2)),
+    "Import" => Some((1, usize::MAX)),
     // Beyond the format come options, which the handler checks itself.
     "ImportString" => Some((1, usize::MAX)),
     "IncidenceGraph" => Some((1, 2)),
@@ -1277,6 +1277,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Rule" => Some((2, 2)),
     "RulePlot" => Some((1, usize::MAX)),
     "Run" => Some((1, 1)),
+    "RunProcess" => Some((1, usize::MAX)),
     "Save" => Some((2, 2)),
     "SawtoothWave" => Some((1, 2)),
     "ScalarTripleProduct" => Some((3, 3)),

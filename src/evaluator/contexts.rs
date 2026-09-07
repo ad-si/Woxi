@@ -220,15 +220,22 @@ fn is_user_symbol(name: &str) -> bool {
   {
     return false;
   }
-  if is_system_variable_name(short_name(name)) {
-    return false;
-  }
   // A pattern variable arrives with its blank suffix stripped, but a stray
   // `_` (or a slot) is not a symbol name.
   if name.contains(['_', '#', '%']) {
     return false;
   }
+  // A name that spells out a context of its own (or a relative one) is a
+  // symbol of that context whatever its short name: `Foo`Info`$Version`
+  // is the package's, not the system variable, and `Foo`Print` is not the
+  // built-in `Print`.
+  if name.contains('`') && !name.starts_with("System`") {
+    return true;
+  }
   let bare = short_name(name);
+  if is_system_variable_name(bare) {
+    return false;
+  }
   !is_builtin_symbol(bare) && get_builtin_attributes(bare).is_empty()
 }
 
@@ -312,7 +319,15 @@ pub fn resolve(name: &str) -> String {
   {
     return bare.to_string();
   }
-  if !contexts_active() || !is_user_symbol(name) {
+  if !contexts_active() {
+    // With no package open a relative name lives under `Global``:
+    // `` `a`b `` is `Global`a`b`.
+    return match name.strip_prefix('`') {
+      Some(relative) if is_user_symbol(name) => format!("Global`{relative}"),
+      _ => name.to_string(),
+    };
+  }
+  if !is_user_symbol(name) {
     return name.to_string();
   }
   // A name that starts with a backtick is relative to the current context;

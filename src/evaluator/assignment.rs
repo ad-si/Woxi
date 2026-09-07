@@ -557,6 +557,50 @@ fn collect_binary_children(
 /// tests, upvalue/downvalue placeholders) rather than a pattern variable the
 /// user wrote. Synthetic names already carry their slot index, so they never
 /// repeat and must never be mistaken for a repeated pattern variable.
+/// How many arguments a pattern can stand for, as the blank type a
+/// definition slot records: 1 for exactly one, 2 for one or more
+/// (`Repeated`, a multi-element `PatternSequence`), 3 for zero or more
+/// (`RepeatedNull`, `BlankNullSequence`). A named body such as
+/// `r : (_Rule | _RuleDelayed)...` has to claim every argument its
+/// sequence admits, not the single one a plain named slot takes.
+pub fn pattern_blank_type(pattern: &Expr) -> u8 {
+  match pattern {
+    Expr::Pattern { blank_type, .. } | Expr::PatternTest { blank_type, .. } => {
+      *blank_type
+    }
+    Expr::Identifier(name) if name.starts_with('_') => {
+      name.chars().take_while(|c| *c == '_').count().min(3) as u8
+    }
+    Expr::FunctionCall { name, args } => match name.as_str() {
+      "BlankSequence" => 2,
+      "BlankNullSequence" | "RepeatedNull" => 3,
+      // `Repeated[p, {0, n}]` admits an empty run.
+      "Repeated" => match args.get(1) {
+        Some(Expr::List(spec))
+          if spec.len() == 2 && matches!(spec[0], Expr::Integer(0)) =>
+        {
+          3
+        }
+        _ => 2,
+      },
+      "PatternSequence" => match args.len() {
+        0 => 3,
+        1 => pattern_blank_type(&args[0]),
+        _ => 2,
+      },
+      "Longest" | "Shortest" | "Condition" | "HoldPattern"
+        if !args.is_empty() =>
+      {
+        pattern_blank_type(&args[0])
+      }
+      "Pattern" if args.len() == 2 => pattern_blank_type(&args[1]),
+      "Alternatives" => args.iter().map(pattern_blank_type).max().unwrap_or(1),
+      _ => 1,
+    },
+    _ => 1,
+  }
+}
+
 fn is_synthetic_param(name: &str) -> bool {
   name.is_empty()
     || name.starts_with("_lp")
@@ -2271,15 +2315,37 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
 
       if is_pattern {
         let (pat_name, head, blank_type) = extract_pattern_info(arg);
-        let final_name = if pat_name.is_empty() {
-          param_name
+        // `Pattern[name, body]` with a body beyond a blank (`r : _Rule..`,
+        // `x : (_Integer | _Real)`): keep the body as a structural pattern
+        // so the constraint holds at dispatch, and let a sequence body
+        // claim its whole run of arguments.
+        if pat_name.is_empty()
+          && let Expr::FunctionCall {
+            name: pat_head,
+            args: pat_args,
+          } = arg
+          && pat_head == "Pattern"
+          && pat_args.len() == 2
+          && let Expr::Identifier(bound) = &pat_args[0]
+        {
+          conditions.push(Some(call(
+            "__StructuralPattern__",
+            vec![Expr::Identifier(bound.clone()), arg.clone()],
+          )));
+          params.push(bound.clone());
+          heads.push(None);
+          blank_types.push(pattern_blank_type(arg));
         } else {
-          pat_name
-        };
-        params.push(final_name);
-        conditions.push(None);
-        heads.push(head);
-        blank_types.push(blank_type);
+          let final_name = if pat_name.is_empty() {
+            param_name
+          } else {
+            pat_name
+          };
+          params.push(final_name);
+          conditions.push(None);
+          heads.push(head);
+          blank_types.push(blank_type);
+        }
       } else {
         // Evaluate the literal argument value
         let eval_arg = evaluate_expr_to_expr(arg)?;
@@ -3169,6 +3235,8 @@ pub fn set_delayed_ast(
             // body] as a structural pattern matched at dispatch time —
             // previously the constraint was silently dropped, so
             // s[x : (_Integer | _Real)] matched any argument at all.
+            // A sequence body (`r : (_Rule)..`) spans as many arguments
+            // as its run takes, so the slot is recorded as a sequence.
             _ => {
               conditions.push(Some(call(
                 "__StructuralPattern__",
@@ -3177,7 +3245,7 @@ pub fn set_delayed_ast(
               params.push(pname);
               defaults.push(None);
               heads.push(None);
-              blank_types.push(1);
+              blank_types.push(pattern_blank_type(arg));
             }
           }
         }
@@ -3679,8 +3747,23 @@ fn build_list_pattern_match(
   let last_pat_idx = patterns.len().saturating_sub(1);
   for (eidx, pat) in patterns.iter().enumerate() {
     // The trailing sequence element matches the (length-checked) tail; it has
-    // no single Part to test against.
+    // no single Part to test against. A constrained one (`__String`,
+    // `__?test`) is matched against the tail as a whole, so `{__String}`
+    // takes `{"a", "b"}` and not `{x}`.
     if trailing_seq && eidx == last_pat_idx {
+      let constrained = match pat {
+        Expr::PatternTest { .. } => true,
+        other => extract_pattern_info(other).1.is_some(),
+      };
+      if constrained {
+        rule_conds.push(call(
+          "MatchQ",
+          vec![
+            call("Drop", vec![base.clone(), Expr::Integer(eidx as i128)]),
+            Expr::List(vec![pat.clone()].into()),
+          ],
+        ));
+      }
       continue;
     }
     // Emit a `MatchQ` guard for every element. For a constrained element
@@ -4186,11 +4269,17 @@ pub fn extract_pattern_info(expr: &Expr) -> (String, Option<String>, u8) {
       if name == "Pattern" && args.len() == 2 =>
     {
       // Pattern[name, Blank[head]], Pattern[name, BlankSequence[head]], Pattern[name, BlankNullSequence[head]]
+      // Any other body (`Repeated`, `Except`, `Alternatives`, …) is not a
+      // plain named blank: it is left for the structural-pattern handling.
       if let Expr::Identifier(pat_name) = &args[0]
         && let Expr::FunctionCall {
           name: blank_name,
           args: blank_args,
         } = &args[1]
+        && matches!(
+          blank_name.as_str(),
+          "Blank" | "BlankSequence" | "BlankNullSequence"
+        )
       {
         let blank_type = match blank_name.as_str() {
           "Blank" => 1,

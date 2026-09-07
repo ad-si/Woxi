@@ -28185,3 +28185,68 @@ fn test_highlight_graph_draws_the_highlighted_parts_red() {
   .unwrap();
   assert_eq!(subgraph, "3");
 }
+
+mod options_of_a_graphic {
+  use super::*;
+
+  // `Options[g, opt]` reads the options a graphic was drawn with.
+  #[test]
+  fn options_of_a_graphics_expression() {
+    assert_eq!(
+      interpret("Options[Graphics[{Disk[]}, ImageSize -> 20], ImageSize]")
+        .unwrap(),
+      "{ImageSize -> 20}"
+    );
+    assert_eq!(
+      interpret("Options[Graphics[{Disk[]}], ImageSize]").unwrap(),
+      "{}"
+    );
+    assert_eq!(
+      interpret("Options[Graphics[{Disk[]}, ImageSize -> 20, Axes -> True]]")
+        .unwrap(),
+      "{ImageSize -> 20, Axes -> True}"
+    );
+  }
+
+  #[test]
+  fn options_of_a_shown_graphic() {
+    assert_eq!(
+      interpret(
+        "Options[Show[Graphics[{Disk[]}], ImageSize -> {30, 15}], ImageSize]"
+      )
+      .unwrap(),
+      "{ImageSize -> {30, 15}}"
+    );
+  }
+
+  // A picture with no primitives to redraw (an imported SVG) is resized
+  // by `Show[…, ImageSize -> …]`.
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn show_resizes_an_imported_svg() {
+    let dir = std::env::temp_dir()
+      .join(format!("woxi_show_resize_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("box.svg");
+    std::fs::write(
+      &path,
+      r#"<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"><rect width="40" height="20" fill="red"/></svg>"#,
+    )
+    .unwrap();
+    let p = path.display().to_string().replace('\\', "/");
+    assert_eq!(
+      interpret(&format!(
+        r#"Options[Show[Import["{p}"], ImageSize -> {{30, 15}}], ImageSize]"#
+      ))
+      .unwrap(),
+      "{ImageSize -> {30, 15}}"
+    );
+    let svg = interpret(&format!(
+      r#"ExportString[Show[Import["{p}"], ImageSize -> {{30, 15}}], "SVG"]"#
+    ))
+    .unwrap();
+    assert!(svg.contains(r#"width="30" height="15""#), "{svg}");
+    assert!(svg.contains(r#"viewBox="0 0 40 20""#), "{svg}");
+    let _ = std::fs::remove_dir_all(&dir);
+  }
+}

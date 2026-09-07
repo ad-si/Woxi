@@ -270,6 +270,29 @@ fn repeat_ok(
   true
 }
 
+/// Match the argument(s) a structural slot received against its pattern.
+/// A sequence slot (`r : (_Rule)..`) may hold several arguments packed as
+/// `Sequence[…]`, or none: they are matched as the elements of a list
+/// against the one-element list pattern, which is how the pattern sees the
+/// arguments of a call.
+fn structural_slot_match(
+  arg: &Expr,
+  pattern: &Expr,
+  is_sequence: bool,
+) -> Option<Vec<(String, Expr)>> {
+  if !is_sequence {
+    return crate::evaluator::pattern_matching::match_pattern(arg, pattern);
+  }
+  let items: Vec<Expr> = match arg {
+    Expr::FunctionCall { name, args } if name == "Sequence" => args.to_vec(),
+    other => vec![other.clone()],
+  };
+  crate::evaluator::pattern_matching::match_pattern(
+    &Expr::List(items.into()),
+    &Expr::List(vec![pattern.clone()].into()),
+  )
+}
+
 /// The pattern-variable names the argument splitter must treat as repeated.
 ///
 /// `constrain_repeated_params` stores every slot after the first occurrence of
@@ -1212,11 +1235,11 @@ fn evaluate_function_call_ast_inner(
                 crate::evaluator::pattern_matching::push_match_context(
                   &positional_ctx,
                 );
-                let match_result =
-                  crate::evaluator::pattern_matching::match_pattern(
-                    &canonical_arg,
-                    pattern,
-                  );
+                let match_result = structural_slot_match(
+                  &canonical_arg,
+                  pattern,
+                  blank_types[idx] >= 2,
+                );
                 crate::evaluator::pattern_matching::pop_match_context();
                 if let Some(bindings) = match_result {
                   // Check consistency: structural bindings must not conflict
@@ -1539,11 +1562,11 @@ fn evaluate_function_call_ast_inner(
                   crate::evaluator::pattern_matching::push_match_context(
                     &positional_ctx,
                   );
-                  let match_result =
-                    crate::evaluator::pattern_matching::match_pattern(
-                      &canonical_arg,
-                      pattern,
-                    );
+                  let match_result = structural_slot_match(
+                    &canonical_arg,
+                    pattern,
+                    blank_types[idx] >= 2,
+                  );
                   crate::evaluator::pattern_matching::pop_match_context();
                   if let Some(bindings) = match_result {
                     // Check consistency: structural bindings must not conflict

@@ -5259,3 +5259,149 @@ mod a_guard_inside_a_scoping_construct_keeps_the_definition {
     );
   }
 }
+
+mod sequence_pattern_slots {
+  use super::*;
+
+  // A named sequence body (`r : _Rule..`) claims as many arguments as its
+  // run takes — MaTeX's `ConfigureMaTeX[rules : (_Rule | _RuleDelayed)...]`
+  // relies on it. Outputs verified against wolframscript.
+  #[test]
+  fn named_repeated_takes_the_whole_run() {
+    clear_state();
+    assert_eq!(
+      interpret("sq1[r:_Rule..] := {r}; {sq1[a->1], sq1[a->1, b->2], sq1[]}")
+        .unwrap(),
+      "{{a -> 1}, {a -> 1, b -> 2}, sq1[]}"
+    );
+  }
+
+  #[test]
+  fn named_repeated_null_admits_no_arguments() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "sq2[rules : (_Rule|_RuleDelayed)...] := {rules}; \
+         {sq2[], sq2[a->1], sq2[a->1, b:>2], sq2[1]}"
+      )
+      .unwrap(),
+      "{{}, {a -> 1}, {a -> 1, b :> 2}, sq2[1]}"
+    );
+  }
+
+  #[test]
+  fn sequence_slot_between_single_slots() {
+    clear_state();
+    assert_eq!(
+      interpret("sq3[x_, r:_Rule.., y_] := {x, {r}, y}; sq3[1, a->1, b->2, 3]")
+        .unwrap(),
+      "{1, {a -> 1, b -> 2}, 3}"
+    );
+  }
+
+  #[test]
+  fn named_pattern_sequence() {
+    clear_state();
+    assert_eq!(
+      interpret("sq4[r:PatternSequence[_,_]] := {r}; {sq4[1,2], sq4[1]}")
+        .unwrap(),
+      "{{1, 2}, sq4[1]}"
+    );
+  }
+
+  // The immediate assignment keeps the constraint too.
+  #[test]
+  fn set_keeps_a_sequence_body() {
+    clear_state();
+    assert_eq!(
+      interpret("sq5[r:_Rule..] = 7; {sq5[a->1, b->2], sq5[1]}").unwrap(),
+      "{7, sq5[1]}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("sq6[r:Except[_Integer]] = 7; {sq6[1], sq6[a]}").unwrap(),
+      "{sq6[1], 7}"
+    );
+  }
+}
+
+mod constrained_trailing_sequence_in_list_pattern {
+  use super::*;
+
+  // `{__String}` only takes a list of strings; previously the trailing
+  // sequence's head was never checked, so `{x}` matched too.
+  #[test]
+  fn head_of_trailing_sequence_is_enforced() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ts1[tex:{__String}] := 1; ts1[tex_List] := 2; \
+         {ts1[{\"a\"}], ts1[{x}], ts1[{}], ts1[{\"a\", 1}], ts1[{\"a\", \"b\"}]}"
+      )
+      .unwrap(),
+      "{1, 2, 2, 2, 1}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ts2[{x_, r__Integer}] := {x, r}; {ts2[{1, 2, 3}], ts2[{1, a}]}"
+      )
+      .unwrap(),
+      "{{1, 2, 3}, ts2[{1, a}]}"
+    );
+  }
+
+  #[test]
+  fn test_of_trailing_sequence_is_enforced() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ts3[{r___?StringQ}] := {r}; {ts3[{\"a\"}], ts3[{}], ts3[{1}]}"
+      )
+      .unwrap(),
+      "{{a}, {}, ts3[{1}]}"
+    );
+  }
+}
+
+mod delayed_own_values {
+  use super::*;
+
+  // `line := lines[[i]]` reads the part afresh on every access.
+  #[test]
+  fn part_body_is_reevaluated() {
+    clear_state();
+    assert_eq!(interpret("dl = {1, 2}; dp := dl[[1]]; dp").unwrap(), "1");
+    assert_eq!(interpret("dl = {5}; dp").unwrap(), "5");
+  }
+
+  #[test]
+  fn part_body_inside_module() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Module[{lines = {\"a\", \"b\"}, i = 1, line}, \
+         line := lines[[i]]; {line, StringMatchQ[line, \"a\"]}]"
+      )
+      .unwrap(),
+      "{a, True}"
+    );
+  }
+
+  // The memoization idiom `tpl := tpl = expr` used as a head: the head is
+  // evaluated (which computes and stores the value) before being applied.
+  #[test]
+  fn memoized_head_is_evaluated_before_application() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "tpl := tpl = StringTemplate[\"a `x`\"]; \
+         {tpl[<|\"x\" -> 1|>], tpl[<|\"x\" -> 2|>]}"
+      )
+      .unwrap(),
+      "{a 1, a 2}"
+    );
+    clear_state();
+    assert_eq!(interpret("dh := dh = df[]; dh[3]").unwrap(), "df[][3]");
+  }
+}

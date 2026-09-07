@@ -415,6 +415,15 @@ pub fn apply_interpreter(
     });
   }
 
+  // A list of inputs is interpreted element by element.
+  if let [Expr::List(items)] = applied {
+    let results: Result<Vec<Expr>, InterpreterError> = items
+      .iter()
+      .map(|item| apply_interpreter(domain, std::slice::from_ref(item)))
+      .collect();
+    return Ok(Expr::List(results?.into()));
+  }
+
   // Scalar interpreter types: parse a string (or numeric input) into a typed
   // value, matching wolframscript. Unparseable inputs stay unevaluated (the
   // Failure object wolframscript returns is not reproduced here).
