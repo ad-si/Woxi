@@ -127,8 +127,8 @@ pub(crate) fn reject_bad_distribution_params(dist: &Expr) -> bool {
     crate::emit_message(&format!(
       "{name}::posprm: Parameter {} at position {pos} in {} is expected to \
        be positive.",
-      crate::syntax::expr_to_string(arg),
-      crate::syntax::expr_to_string(dist),
+      expr_to_string(arg),
+      expr_to_string(dist),
     ));
     return true;
   }
@@ -2390,11 +2390,8 @@ fn cdf_multinormal(dargs: &[Expr], x: &Expr) -> Result<Expr, InterpreterError> {
   if matrix_symmetric_positive_definite(sigma) == Some(false) {
     crate::emit_message(&format!(
       "MultinormalDistribution::posdefprm: The value {} at position 2 in {} is expected to be a symmetric positive definite matrix.",
-      crate::syntax::expr_to_string(sigma_expr),
-      crate::syntax::expr_to_string(&unevaluated(
-        "MultinormalDistribution",
-        dargs
-      ))
+      expr_to_string(sigma_expr),
+      expr_to_string(&unevaluated("MultinormalDistribution", dargs))
     ));
     return Ok(unevaluated_call());
   }
@@ -6273,7 +6270,7 @@ fn expectation_numerical(
   var: &str,
   dist_name: &str,
   dargs: &[Expr],
-) -> crate::syntax::Expr {
+) -> Expr {
   use crate::functions::plot::substitute_var;
 
   // Get integration range and PDF for quadrature
@@ -7579,7 +7576,7 @@ fn failure_distribution_cdf_value(
   if has_not(bexpr) {
     crate::emit_message(&format!(
       "FailureDistribution::nonunate: The Boolean expression {} is not positive unate. Use UnateQ to test if a Boolean expression is unate.",
-      crate::syntax::expr_to_string(bexpr).trim()
+      expr_to_string(bexpr).trim()
     ));
     return Ok(None);
   }
@@ -8363,13 +8360,12 @@ fn wakeby_checked(dargs: &[Expr]) -> Option<()> {
     return None;
   }
   let num = try_eval_to_f64;
-  let dist =
-    || crate::syntax::expr_to_string(&unevaluated("WakebyDistribution", dargs));
+  let dist = || expr_to_string(&unevaluated("WakebyDistribution", dargs));
   for pos in [0usize, 2] {
     if num(&dargs[pos]).is_some_and(|v| v <= 0.0) {
       crate::emit_message(&format!(
         "WakebyDistribution::posprm: Parameter {} at position {} in {} is expected to be positive.",
-        crate::syntax::expr_to_string(&dargs[pos]),
+        expr_to_string(&dargs[pos]),
         pos + 1,
         dist()
       ));
@@ -8571,16 +8567,12 @@ fn compound_poisson_mean_variance(
     return bail();
   }
   let num = try_eval_to_f64;
-  let dist_str = || {
-    crate::syntax::expr_to_string(&unevaluated(
-      "CompoundPoissonDistribution",
-      dargs,
-    ))
-  };
+  let dist_str =
+    || expr_to_string(&unevaluated("CompoundPoissonDistribution", dargs));
   if num(&dargs[0]).is_some_and(|v| v <= 0.0) {
     crate::emit_message(&format!(
       "CompoundPoissonDistribution::posprm: Parameter {} at position 1 in {} is expected to be positive.",
-      crate::syntax::expr_to_string(&dargs[0]),
+      expr_to_string(&dargs[0]),
       dist_str()
     ));
     return bail();
@@ -8594,8 +8586,8 @@ fn compound_poisson_mean_variance(
     // the raw fallback, which we replicate verbatim.
     crate::emit_message(&format!(
       "CompoundPoissonDistribution::univ: -- Message text not found -- ({}) ({}) ({})",
-      crate::syntax::expr_to_string(&dargs[1]),
-      crate::syntax::expr_to_string(&dargs[0]),
+      expr_to_string(&dargs[1]),
+      expr_to_string(&dargs[0]),
       dist_str()
     ));
     return bail();
@@ -8603,8 +8595,8 @@ fn compound_poisson_mean_variance(
   if !inner_name.ends_with("Distribution") {
     crate::emit_message(&format!(
       "CompoundPoissonDistribution::univ: -- Message text not found -- ({}) ({}) ({})",
-      crate::syntax::expr_to_string(&dargs[1]),
-      crate::syntax::expr_to_string(&dargs[0]),
+      expr_to_string(&dargs[1]),
+      expr_to_string(&dargs[0]),
       dist_str()
     ));
     return bail();
@@ -8634,12 +8626,11 @@ fn hoyt_checked(dargs: &[Expr]) -> Option<()> {
     return None;
   }
   let num = try_eval_to_f64;
-  let dist =
-    || crate::syntax::expr_to_string(&unevaluated("HoytDistribution", dargs));
+  let dist = || expr_to_string(&unevaluated("HoytDistribution", dargs));
   if num(&dargs[0]).is_some_and(|v| !(v > 0.0 && v <= 1.0)) {
     crate::emit_message(&format!(
       "HoytDistribution::pprobprm: Parameter {} at position 1 in {} is expected to be positive and less than or equal to 1.",
-      crate::syntax::expr_to_string(&dargs[0]),
+      expr_to_string(&dargs[0]),
       dist()
     ));
     return None;
@@ -8647,7 +8638,7 @@ fn hoyt_checked(dargs: &[Expr]) -> Option<()> {
   if num(&dargs[1]).is_some_and(|v| v <= 0.0) {
     crate::emit_message(&format!(
       "HoytDistribution::posprm: Parameter {} at position 2 in {} is expected to be positive.",
-      crate::syntax::expr_to_string(&dargs[1]),
+      expr_to_string(&dargs[1]),
       dist()
     ));
     return None;
@@ -8755,17 +8746,13 @@ fn variance_gamma_checked(dargs: &[Expr]) -> Option<()> {
     return None;
   }
   let num = try_eval_to_f64;
-  let dist = || {
-    crate::syntax::expr_to_string(&unevaluated(
-      "VarianceGammaDistribution",
-      dargs,
-    ))
-  };
+  let dist =
+    || expr_to_string(&unevaluated("VarianceGammaDistribution", dargs));
   for pos in 0..2 {
     if num(&dargs[pos]).is_some_and(|v| v <= 0.0) {
       crate::emit_message(&format!(
         "VarianceGammaDistribution::posprm: Parameter {} at position {} in {} is expected to be positive.",
-        crate::syntax::expr_to_string(&dargs[pos]),
+        expr_to_string(&dargs[pos]),
         pos + 1,
         dist()
       ));
@@ -8935,16 +8922,12 @@ fn tsallis_checked(dargs: &[Expr]) -> Option<()> {
     return None;
   }
   let num = try_eval_to_f64;
-  let dist = || {
-    crate::syntax::expr_to_string(&unevaluated(
-      "TsallisQGaussianDistribution",
-      dargs,
-    ))
-  };
+  let dist =
+    || expr_to_string(&unevaluated("TsallisQGaussianDistribution", dargs));
   if num(&dargs[1]).is_some_and(|v| v <= 0.0) {
     crate::emit_message(&format!(
       "TsallisQGaussianDistribution::posprm: Parameter {} at position 2 in {} is expected to be positive.",
-      crate::syntax::expr_to_string(&dargs[1]),
+      expr_to_string(&dargs[1]),
       dist()
     ));
     return None;
@@ -8952,7 +8935,7 @@ fn tsallis_checked(dargs: &[Expr]) -> Option<()> {
   if num(&dargs[2]).is_some_and(|v| v >= 3.0) {
     crate::emit_message(&format!(
       "TsallisQGaussianDistribution::lss: Parameter {} at position 3 in {} is expected to be less than 3.",
-      crate::syntax::expr_to_string(&dargs[2]),
+      expr_to_string(&dargs[2]),
       dist()
     ));
     return None;
@@ -9499,12 +9482,9 @@ fn hotelling_checked(dargs: &[Expr]) -> Option<()> {
     if num(&dargs[pos]).is_some_and(|v| v <= 0.0) {
       crate::emit_message(&format!(
         "HotellingTSquareDistribution::posprm: Parameter {} at position {} in {} is expected to be positive.",
-        crate::syntax::expr_to_string(&dargs[pos]),
+        expr_to_string(&dargs[pos]),
         pos + 1,
-        crate::syntax::expr_to_string(&unevaluated(
-          "HotellingTSquareDistribution",
-          dargs
-        ))
+        expr_to_string(&unevaluated("HotellingTSquareDistribution", dargs))
       ));
       return None;
     }
@@ -9729,13 +9709,12 @@ fn benini_checked(dargs: &[Expr]) -> Option<()> {
     return None;
   }
   let num = try_eval_to_f64;
-  let dist =
-    || crate::syntax::expr_to_string(&unevaluated("BeniniDistribution", dargs));
+  let dist = || expr_to_string(&unevaluated("BeniniDistribution", dargs));
   for pos in 0..2 {
     if num(&dargs[pos]).is_some_and(|v| v < 0.0) {
       crate::emit_message(&format!(
         "BeniniDistribution::nnegprm: Parameter {} at position {} in {} is expected to be non-negative.",
-        crate::syntax::expr_to_string(&dargs[pos]),
+        expr_to_string(&dargs[pos]),
         pos + 1,
         dist()
       ));
@@ -9745,7 +9724,7 @@ fn benini_checked(dargs: &[Expr]) -> Option<()> {
   if num(&dargs[2]).is_some_and(|v| v <= 0.0) {
     crate::emit_message(&format!(
       "BeniniDistribution::posprm: Parameter {} at position 3 in {} is expected to be positive.",
-      crate::syntax::expr_to_string(&dargs[2]),
+      expr_to_string(&dargs[2]),
       dist()
     ));
     return None;
@@ -9926,11 +9905,8 @@ fn vonmises_checked(dargs: &[Expr]) -> Option<()> {
   if num(&dargs[1]).is_some_and(|v| v < 0.0) {
     crate::emit_message(&format!(
       "VonMisesDistribution::nnegprm: Parameter {} at position 2 in {} is expected to be non-negative.",
-      crate::syntax::expr_to_string(&dargs[1]),
-      crate::syntax::expr_to_string(&unevaluated(
-        "VonMisesDistribution",
-        dargs
-      ))
+      expr_to_string(&dargs[1]),
+      expr_to_string(&unevaluated("VonMisesDistribution", dargs))
     ));
     return None;
   }
@@ -9977,17 +9953,13 @@ fn hyperexponential_checked(dargs: &[Expr]) -> Option<(Vec<Expr>, Vec<Expr>)> {
   let [Expr::List(probs), Expr::List(rates)] = dargs else {
     return None;
   };
-  let dist = || {
-    crate::syntax::expr_to_string(&unevaluated(
-      "HyperexponentialDistribution",
-      dargs,
-    ))
-  };
+  let dist =
+    || expr_to_string(&unevaluated("HyperexponentialDistribution", dargs));
   if probs.len() != rates.len() {
     crate::emit_message(&format!(
       "HyperexponentialDistribution::eqln: The values {} and {} at positions 1 and 2 in {} are expected to have the same length.",
-      crate::syntax::expr_to_string(&dargs[0]),
-      crate::syntax::expr_to_string(&dargs[1]),
+      expr_to_string(&dargs[0]),
+      expr_to_string(&dargs[1]),
       dist()
     ));
     return None;
@@ -10000,7 +9972,7 @@ fn hyperexponential_checked(dargs: &[Expr]) -> Option<(Vec<Expr>, Vec<Expr>)> {
   if negative || bad_sum {
     crate::emit_message(&format!(
       "HyperexponentialDistribution::vprobprm: The value {} at position 1 in {} is expected to be a list of non-negative numbers summing to 1.",
-      crate::syntax::expr_to_string(&dargs[0]),
+      expr_to_string(&dargs[0]),
       dist()
     ));
     return None;
@@ -10008,7 +9980,7 @@ fn hyperexponential_checked(dargs: &[Expr]) -> Option<(Vec<Expr>, Vec<Expr>)> {
   if rates.iter().any(|r| num(r).is_some_and(|v| v <= 0.0)) {
     crate::emit_message(&format!(
       "HyperexponentialDistribution::vrpos: The value {} at position 2 in {} is expected to be a list of positive numbers.",
-      crate::syntax::expr_to_string(&dargs[1]),
+      expr_to_string(&dargs[1]),
       dist()
     ));
     return None;
@@ -10162,13 +10134,12 @@ fn coxian_checked(dargs: &[Expr]) -> Option<(Vec<Expr>, Vec<Expr>)> {
   let [Expr::List(alphas), Expr::List(rates)] = dargs else {
     return None;
   };
-  let dist =
-    || crate::syntax::expr_to_string(&unevaluated("CoxianDistribution", dargs));
+  let dist = || expr_to_string(&unevaluated("CoxianDistribution", dargs));
   if rates.len() != alphas.len() + 1 {
     crate::emit_message(&format!(
       "CoxianDistribution::eqln2: The length of {} at position 2 should be 1 more than the length of {} at position 1 in {}.",
-      crate::syntax::expr_to_string(&dargs[1]),
-      crate::syntax::expr_to_string(&dargs[0]),
+      expr_to_string(&dargs[1]),
+      expr_to_string(&dargs[0]),
       dist()
     ));
     return None;
@@ -10180,7 +10151,7 @@ fn coxian_checked(dargs: &[Expr]) -> Option<(Vec<Expr>, Vec<Expr>)> {
   {
     crate::emit_message(&format!(
       "CoxianDistribution::vprobprm2: The value {} at position 1 in {} is expected to be a list of numbers between 0 and 1, inclusive.",
-      crate::syntax::expr_to_string(&dargs[0]),
+      expr_to_string(&dargs[0]),
       dist()
     ));
     return None;
@@ -10188,7 +10159,7 @@ fn coxian_checked(dargs: &[Expr]) -> Option<(Vec<Expr>, Vec<Expr>)> {
   if rates.iter().any(|r| num(r).is_some_and(|v| v <= 0.0)) {
     crate::emit_message(&format!(
       "CoxianDistribution::vrpos: The value {} at position 2 in {} is expected to be a list of positive numbers.",
-      crate::syntax::expr_to_string(&dargs[1]),
+      expr_to_string(&dargs[1]),
       dist()
     ));
     return None;
@@ -10936,12 +10907,8 @@ pub fn negative_multinomial_covariance(
 pub fn wishart_mean_variance(
   dargs: &[Expr],
 ) -> Result<(Expr, Expr), InterpreterError> {
-  let dist_str = || {
-    crate::syntax::expr_to_string(&unevaluated(
-      "WishartMatrixDistribution",
-      dargs,
-    ))
-  };
+  let dist_str =
+    || expr_to_string(&unevaluated("WishartMatrixDistribution", dargs));
   let fail = |msg: String| -> Result<(Expr, Expr), InterpreterError> {
     crate::emit_message(&msg);
     Err(InterpreterError::EvaluationError(
@@ -10959,7 +10926,7 @@ pub fn wishart_mean_variance(
   let posdefprm = |s: &Expr| {
     format!(
       "WishartMatrixDistribution::posdefprm: The value {} at position 2 in {} is expected to be a symmetric positive definite matrix.",
-      crate::syntax::expr_to_string(s),
+      expr_to_string(s),
       dist_str()
     )
   };
@@ -13180,7 +13147,7 @@ fn data_distribution_pdf_cdf(
 /// support conditions, and the coefficient quirks (6*E^...,
 /// E^.../Sqrt[2*Pi], (3*E^...)/Sqrt[2*Pi], and the lambda = 2 special
 /// case E^...*Sqrt[2/Pi]).
-fn pdf_product_distribution(dargs: &[Expr], x: &Expr) -> crate::syntax::Expr {
+fn pdf_product_distribution(dargs: &[Expr], x: &Expr) -> Expr {
   let unevaluated = || {
     call(
       "PDF",
@@ -17758,9 +17725,7 @@ fn singh_maddala_mean_variance(
 
 /// Mean and variance for the 4-argument BetaPrimeDistribution[p, q, b, a]
 /// (power b, scale a), each existing only above a moment threshold in b*q.
-fn beta_prime4_mean_variance(
-  dargs: &[Expr],
-) -> (crate::syntax::Expr, crate::syntax::Expr) {
+fn beta_prime4_mean_variance(dargs: &[Expr]) -> (Expr, Expr) {
   let (p, q, b, a) = (
     dargs[0].clone(),
     dargs[1].clone(),
@@ -17805,9 +17770,7 @@ fn beta_prime4_mean_variance(
 
 /// Mean and variance for the 3-argument ParetoDistribution[k, a, m]
 /// (Type II / Lomax, scale k, location m).
-fn pareto3_mean_variance(
-  dargs: &[Expr],
-) -> (crate::syntax::Expr, crate::syntax::Expr) {
+fn pareto3_mean_variance(dargs: &[Expr]) -> (Expr, Expr) {
   let (k, a, m) = (dargs[0].clone(), dargs[1].clone(), dargs[2].clone());
   // Mean = k/(a - 1) + m, for a > 1.
   let mean = piecewise(
@@ -17836,9 +17799,7 @@ fn pareto3_mean_variance(
 
 /// Mean and variance for the 4-argument ParetoDistribution[k, a, g, m]
 /// (extra shape g), each existing only above a threshold in a/g.
-fn pareto4_mean_variance(
-  dargs: &[Expr],
-) -> (crate::syntax::Expr, crate::syntax::Expr) {
+fn pareto4_mean_variance(dargs: &[Expr]) -> (Expr, Expr) {
   let (k, a, g, m) = (
     dargs[0].clone(),
     dargs[1].clone(),
@@ -17983,11 +17944,11 @@ pub fn truncated_distribution_value(
       vec![
         Expr::Comparison {
           operands: vec![lo.clone(), x.clone()],
-          operators: vec![crate::syntax::ComparisonOp::LessEqual],
+          operators: vec![ComparisonOp::LessEqual],
         },
         Expr::Comparison {
           operands: vec![x.clone(), hi.clone()],
-          operators: vec![crate::syntax::ComparisonOp::LessEqual],
+          operators: vec![ComparisonOp::LessEqual],
         },
       ],
     )
@@ -18079,19 +18040,18 @@ pub fn censored_distribution_value(
   let eval = |name: &str, args: Vec<Expr>| -> Result<Expr, InterpreterError> {
     crate::evaluator::evaluate_expr_to_expr(&call(name, args))
   };
-  let decides =
-    |a: &Expr, op: crate::syntax::ComparisonOp, b: &Expr| -> Option<bool> {
-      let r = crate::evaluator::evaluate_expr_to_expr(&Expr::Comparison {
-        operands: vec![a.clone(), b.clone()],
-        operators: vec![op],
-      })
-      .ok()?;
-      match r {
-        Expr::Identifier(ref t) if t == "True" => Some(true),
-        Expr::Identifier(ref t) if t == "False" => Some(false),
-        _ => None,
-      }
-    };
+  let decides = |a: &Expr, op: ComparisonOp, b: &Expr| -> Option<bool> {
+    let r = crate::evaluator::evaluate_expr_to_expr(&Expr::Comparison {
+      operands: vec![a.clone(), b.clone()],
+      operators: vec![op],
+    })
+    .ok()?;
+    match r {
+      Expr::Identifier(ref t) if t == "True" => Some(true),
+      Expr::Identifier(ref t) if t == "False" => Some(false),
+      _ => None,
+    }
+  };
 
   match head {
     "CDF" => {

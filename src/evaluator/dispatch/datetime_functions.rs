@@ -180,7 +180,7 @@ pub fn dispatch_datetime_functions(
         } else {
           crate::emit_message(&format!(
             "TimeZoneOffset::zone: Time zone specification {} should be a real number, integer or time zone string.",
-            crate::syntax::expr_to_output(zone)
+            expr_to_output(zone)
           ));
           return unevaluated();
         }
@@ -234,7 +234,7 @@ pub fn dispatch_datetime_functions(
       }
       crate::emit_message(&format!(
         "DateInterval::arg: Argument {} cannot be interpreted as a date or time input.",
-        crate::syntax::expr_to_string(&args[0])
+        expr_to_string(&args[0])
       ));
       return Some(Ok(unevaluated("DateInterval", args)));
     }
@@ -420,8 +420,8 @@ pub fn dispatch_datetime_functions(
         && let Expr::List(items) = &args[0]
         && let Some(normalized) =
           crate::functions::datetime_ast::normalize_date_components(items)
-        && crate::syntax::expr_to_string(&Expr::List(normalized.clone().into()))
-          != crate::syntax::expr_to_string(&args[0])
+        && expr_to_string(&Expr::List(normalized.clone().into()))
+          != expr_to_string(&args[0])
       {
         let mut new_args = vec![Expr::List(normalized.into())];
         new_args.extend(args[1..].iter().cloned());

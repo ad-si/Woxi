@@ -182,7 +182,7 @@ pub fn exponent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// across the additive terms of `expr`. The expression is NOT expanded, so a
 /// compound form such as `x + 1` keeps its structure
 /// (Exponent[(x + 1)^2, x + 1] = 2). A form that never appears contributes 0.
-fn exponent_of_form(args: &[Expr]) -> crate::syntax::Expr {
+fn exponent_of_form(args: &[Expr]) -> Expr {
   let form = &args[1];
   let terms = super::coefficient::collect_additive_terms(&args[0]);
   let mut powers: Vec<Rat> =
@@ -344,7 +344,7 @@ fn build_max_expr(mut exprs: Vec<Expr>) -> Expr {
   let mut seen: std::collections::HashSet<String> =
     std::collections::HashSet::new();
   exprs.retain(|e| {
-    let key = crate::syntax::expr_to_string(e);
+    let key = expr_to_string(e);
     seen.insert(key)
   });
   // Defer to Max's own evaluator: it will pick the max when all entries are

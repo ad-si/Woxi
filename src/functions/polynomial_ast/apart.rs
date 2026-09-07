@@ -199,7 +199,7 @@ fn apart_expr_raw(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
 }
 
 /// Perform partial fraction decomposition for a proper fraction (deg(num) < deg(den))
-fn apart_proper_fraction(expr: &Expr, var: &str) -> crate::syntax::Expr {
+fn apart_proper_fraction(expr: &Expr, var: &str) -> Expr {
   let (num, den) = match expr {
     Expr::BinaryOp {
       op: BinaryOperator::Divide,

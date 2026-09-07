@@ -3,7 +3,6 @@ use super::*;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::{DEFAULT_HEIGHT, DEFAULT_WIDTH, parse_image_size};
-use crate::syntax::expr_to_output;
 
 /// Dash length for the "Small" named size in Dashing directives.
 /// This is the default dash segment length used by Dashed, Dotted, etc.
@@ -3054,14 +3053,14 @@ fn graphics_text_content(expr: &Expr) -> String {
       if (name == "Subscript" || name == "Superscript") && args.len() >= 2 =>
     {
       crate::functions::chart::expr_to_label(expr)
-        .unwrap_or_else(|| crate::syntax::expr_to_string(expr))
+        .unwrap_or_else(|| expr_to_string(expr))
     }
     _ => {
       let text = match crate::functions::string_ast::to_string_ast(
         std::slice::from_ref(expr),
       ) {
         Ok(Expr::String(ref s)) => s.clone(),
-        _ => crate::syntax::expr_to_string(expr),
+        _ => expr_to_string(expr),
       };
       typeset_constants_in_text(&text)
     }
@@ -8816,13 +8815,13 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
             elements,
           };
         }
-        let text = crate::syntax::expr_to_output(expr);
+        let text = expr_to_output(expr);
         BoxLayout::text(&text, font_size)
       }
 
       // Unknown function: render as text
       _ => {
-        let text = crate::syntax::expr_to_output(expr);
+        let text = expr_to_output(expr);
         BoxLayout::text(&text, font_size)
       }
     },
@@ -8852,7 +8851,7 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
     }
 
     _ => {
-      let text = crate::syntax::expr_to_output(expr);
+      let text = expr_to_output(expr);
       BoxLayout::text(&text, font_size)
     }
   }
@@ -10614,7 +10613,7 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
     }
 
     // Fallback: use expr_to_output for anything else
-    _ => svg_escape(&crate::syntax::expr_to_output(expr)),
+    _ => svg_escape(&expr_to_output(expr)),
   }
 }
 
@@ -10991,7 +10990,7 @@ pub fn estimate_box_display_width(expr: &Expr) -> f64 {
 
     Expr::List(items) => items.iter().map(estimate_box_display_width).sum(),
 
-    _ => crate::syntax::expr_to_output(expr).len() as f64,
+    _ => expr_to_output(expr).len() as f64,
   }
 }
 
@@ -11079,7 +11078,7 @@ fn merge_option(opts: &mut Vec<Expr>, opt: &Expr) {
 }
 
 /// Merge two PlotRange values by taking the union (min of mins, max of maxes).
-fn merge_plot_ranges(a: &Expr, b: &Expr) -> crate::syntax::Expr {
+fn merge_plot_ranges(a: &Expr, b: &Expr) -> Expr {
   let (ax, ay) = parse_plot_range(a);
   let (bx, by) = parse_plot_range(b);
 
@@ -17499,7 +17498,7 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // wolframscript's behavior.
         crate::emit_message(&format!(
           "Manipulate::vsform: Manipulate argument {} does not have the correct form for a variable specification.",
-          crate::syntax::expr_to_string(spec)
+          expr_to_string(spec)
         ));
         out_args.push(spec.clone());
       }
@@ -21084,7 +21083,7 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       _ => output_run(italic),
     },
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } => script_runs(
@@ -21145,14 +21144,14 @@ fn directed_infinity_glyph(expr: &Expr) -> Option<&'static str> {
       matches!(args.first(), Some(Expr::Integer(n)) if *n < 0)
     }
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       ..
     } => true,
     Expr::FunctionCall { name, args } if name == "Times" => {
       args.iter().any(|a| matches!(a, Expr::Integer(-1)))
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Times,
+      op: BinaryOperator::Times,
       left,
       right,
     } => {
@@ -21179,7 +21178,7 @@ fn radical_radicand(expr: &Expr) -> Option<&Expr> {
         )
       }
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::Divide,
+        op: BinaryOperator::Divide,
         left,
         right,
       } => {
@@ -21199,7 +21198,7 @@ fn radical_radicand(expr: &Expr) -> Option<&Expr> {
       args.first()
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } if is_one_half(right) => Some(left),
@@ -21214,7 +21213,7 @@ fn reciprocal_base(expr: &Expr) -> Option<&Expr> {
   // unevaluated expression, as a negated `1`.
   let is_minus_one = |e: &Expr| {
     matches!(e, Expr::Integer(-1))
-      || matches!(e, Expr::UnaryOp { op: crate::syntax::UnaryOperator::Minus, operand }
+      || matches!(e, Expr::UnaryOp { op: UnaryOperator::Minus, operand }
         if matches!(operand.as_ref(), Expr::Integer(1)))
   };
   match expr {
@@ -21224,7 +21223,7 @@ fn reciprocal_base(expr: &Expr) -> Option<&Expr> {
       args.first()
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } if is_minus_one(right) => Some(left),
@@ -21319,9 +21318,9 @@ fn contains_presentation_head(expr: &Expr) -> bool {
 /// are compound. The spellings match the OutputForm renderer this falls
 /// back to, so a label reads the same whichever path builds it.
 fn arithmetic_label_operator(
-  op: crate::syntax::BinaryOperator,
+  op: BinaryOperator,
 ) -> Option<(&'static str, bool)> {
-  use crate::syntax::BinaryOperator as Op;
+  use BinaryOperator as Op;
   Some(match op {
     Op::Plus => (" + ", false),
     Op::Minus => (" - ", false),
@@ -24462,7 +24461,7 @@ fn curve_order(name: &str, args: &[Expr], max_n: i128) -> Option<i128> {
         "{}::intpm: Positive machine-sized integer expected at position 1 in {}[{}].",
         name,
         name,
-        crate::syntax::expr_to_output(other)
+        expr_to_output(other)
       ));
       None
     }

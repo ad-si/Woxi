@@ -727,7 +727,6 @@ mod tests {
 
   #[test]
   fn times_map_to_date_objects_at_precision() {
-    use crate::syntax::expr_to_output;
     let day = time_to_date_object("+1879-03-14T00:00:00Z", 11).unwrap();
     assert_eq!(expr_to_output(&day), "DateObject[{1879, 3, 14}, Day]");
     let month = time_to_date_object("+1879-03-14T00:00:00Z", 10).unwrap();

@@ -215,7 +215,7 @@ fn generate_k_permutations(
     if used[i] {
       continue;
     }
-    let key = crate::syntax::expr_to_string(&items[i]);
+    let key = expr_to_string(&items[i]);
     if !seen_at_level.insert(key) {
       continue;
     }

@@ -49,7 +49,7 @@ pub fn wavelet_phi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(wavelet_phi_psi_ast(args, true))
 }
 
-fn wavelet_phi_psi_ast(args: &[Expr], phi: bool) -> crate::syntax::Expr {
+fn wavelet_phi_psi_ast(args: &[Expr], phi: bool) -> Expr {
   let fname = if phi { "WaveletPhi" } else { "WaveletPsi" };
   let positional: Vec<&Expr> = args
     .iter()

@@ -1130,3 +1130,109 @@ fn install_kernel_fails_when_jupyter_fails() {
 
   std::fs::remove_dir_all(&dir).ok();
 }
+
+/// Frame a JSON-RPC message the way the language server protocol does.
+fn lsp_frame(body: &str) -> String {
+  format!("Content-Length: {}\r\n\r\n{body}", body.len())
+}
+
+/// Split a language server's output stream into its message bodies.
+fn lsp_messages(stream: &str) -> Vec<serde_json::Value> {
+  let mut messages = Vec::new();
+  let mut rest = stream;
+  while let Some(separator) = rest.find("\r\n\r\n") {
+    let length: usize = rest[..separator]
+      .lines()
+      .find_map(|line| {
+        line
+          .strip_prefix("Content-Length:")
+          .map(|value| value.trim().parse().expect("a numeric Content-Length"))
+      })
+      .expect("a Content-Length header");
+    let body = &rest[separator + 4..separator + 4 + length];
+    messages.push(serde_json::from_str(body).expect("a JSON body"));
+    rest = &rest[separator + 4 + length..];
+  }
+  assert!(rest.is_empty(), "trailing bytes after the last message");
+  messages
+}
+
+/// `woxi lsp` speaks the protocol over stdin/stdout: it answers requests,
+/// pushes diagnostics for an opened document, and exits successfully after
+/// a `shutdown`/`exit` handshake.
+#[test]
+fn lsp_serves_a_session_over_stdio() {
+  use std::io::Write;
+  use std::process::Stdio;
+
+  let session = [
+    r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#,
+    r#"{"jsonrpc":"2.0","method":"initialized","params":{}}"#,
+    concat!(
+      r#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":"#,
+      r#"{"textDocument":{"uri":"file:///a.wls","languageId":"wolfram","#,
+      r#""version":1,"text":"f[x_] := x^2\nWordData[1]\n"}}}"#
+    ),
+    concat!(
+      r#"{"jsonrpc":"2.0","id":2,"method":"textDocument/hover","params":"#,
+      r#"{"textDocument":{"uri":"file:///a.wls"},"#,
+      r#""position":{"line":0,"character":0}}}"#
+    ),
+    r#"{"jsonrpc":"2.0","id":3,"method":"shutdown"}"#,
+    r#"{"jsonrpc":"2.0","method":"exit"}"#,
+  ]
+  .iter()
+  .map(|message| lsp_frame(message))
+  .collect::<String>();
+
+  let mut child = Command::new(woxi_bin())
+    .arg("lsp")
+    .arg("--stdio")
+    .stdin(Stdio::piped())
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped())
+    .spawn()
+    .expect("failed to spawn woxi lsp");
+  child
+    .stdin
+    .take()
+    .expect("stdin")
+    .write_all(session.as_bytes())
+    .expect("failed to write the session");
+  let output = child
+    .wait_with_output()
+    .expect("failed to wait for woxi lsp");
+
+  assert!(
+    output.status.success(),
+    "woxi lsp exited with {:?}: stderr={}",
+    output.status.code(),
+    String::from_utf8_lossy(&output.stderr)
+  );
+  let messages = lsp_messages(&String::from_utf8_lossy(&output.stdout));
+  assert_eq!(messages.len(), 4, "unexpected messages: {messages:?}");
+  assert_eq!(messages[0]["result"]["serverInfo"]["name"], "woxi");
+  assert_eq!(messages[1]["method"], "textDocument/publishDiagnostics");
+  let diagnostics = messages[1]["params"]["diagnostics"]
+    .as_array()
+    .expect("a diagnostics array");
+  assert_eq!(diagnostics.len(), 1);
+  assert!(
+    diagnostics[0]["message"]
+      .as_str()
+      .unwrap()
+      .contains("WordData"),
+    "unexpected diagnostic: {}",
+    diagnostics[0]
+  );
+  assert!(
+    messages[2]["result"]["contents"]["value"]
+      .as_str()
+      .unwrap()
+      .contains("f[x_] := x^2"),
+    "unexpected hover: {}",
+    messages[2]
+  );
+  assert_eq!(messages[3]["id"], 3);
+  assert_eq!(messages[3]["result"], serde_json::Value::Null);
+}

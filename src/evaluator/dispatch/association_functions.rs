@@ -64,10 +64,10 @@ pub fn dispatch_association_functions(
             let keys_str = if args.is_empty() {
               String::new()
             } else {
-              crate::syntax::expr_to_string(&args[0])
+              expr_to_string(&args[0])
             };
             let vals_str = if args.len() >= 2 {
-              crate::syntax::expr_to_string(&args[1])
+              expr_to_string(&args[1])
             } else {
               String::new()
             };

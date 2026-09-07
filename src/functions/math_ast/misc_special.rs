@@ -1932,7 +1932,7 @@ fn wigner_d_small_symbolic(
   m1_2: i64,
   m2_2: i64,
   theta: &Expr,
-) -> crate::syntax::Expr {
+) -> Expr {
   let jpm1 = i64::midpoint(j2, m1_2);
   let jmm1 = (j2 - m1_2) / 2;
   let jpm2 = i64::midpoint(j2, m2_2);

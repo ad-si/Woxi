@@ -1636,6 +1636,7 @@
   - [Rubi](rubi.md)
 - [Scripting](scripting.md)
 - [Jupyter](jupyter.md)
+- [Language Server](lsp.md)
 - [Python](python.md)
 - [Studio](studio.md)
 - [Effect Levels](effect_levels.md)

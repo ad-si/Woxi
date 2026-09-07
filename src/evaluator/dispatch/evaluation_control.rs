@@ -24,7 +24,7 @@ pub(crate) fn history_line_index(
     [_] => {
       crate::emit_message(&format!(
         "{name}::intm: Machine-sized integer expected at position 1 in {}.",
-        crate::syntax::expr_to_output(&unevaluated(name, args))
+        expr_to_output(&unevaluated(name, args))
       ));
       return None;
     }
@@ -686,7 +686,7 @@ pub fn dispatch_evaluation_control(
         _ => {
           crate::emit_message(&format!(
             "ByteArray::lend: The argument at position 1 in ByteArray[{}] should be a vector of unsigned byte values or a Base64-encoded string.",
-            crate::syntax::expr_to_string(&args[0])
+            expr_to_string(&args[0])
           ));
           return Some(Ok(unevaluated("ByteArray", args)));
         }
@@ -887,8 +887,8 @@ pub fn dispatch_evaluation_control(
         Err(e) => return Some(Err(e)),
       };
       // Compare via printed form since Expr doesn't implement PartialEq.
-      let orig_str = crate::syntax::expr_to_string(&original);
-      let eval_str = crate::syntax::expr_to_string(&evaluated);
+      let orig_str = expr_to_string(&original);
+      let eval_str = expr_to_string(&evaluated);
       if orig_str == eval_str {
         return Some(Ok(Expr::List(vec![].into())));
       }

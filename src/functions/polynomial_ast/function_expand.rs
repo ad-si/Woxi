@@ -255,7 +255,7 @@ fn negate_if_negative(t: &Expr) -> Option<Expr> {
   };
   match t {
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => Some((**operand).clone()),
     Expr::Integer(n) if *n < 0 => Some(mk_int(-n)),
@@ -568,8 +568,7 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
         return Some(result);
       }
       if let Ok(split) = function_expand_inner(&result)
-        && crate::syntax::expr_to_string(&split)
-          != crate::syntax::expr_to_string(&result)
+        && expr_to_string(&split) != expr_to_string(&result)
         && let Ok(v) = crate::evaluator::evaluate_expr_to_expr(&split)
       {
         return Some(v);

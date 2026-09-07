@@ -9,7 +9,7 @@ fn emit_rvalue(fname: &str, target: &Expr) {
     "{}::rvalue: {} is not a variable with a value, so its value cannot be \
      changed.",
     fname,
-    crate::syntax::expr_to_output(target)
+    expr_to_output(target)
   ));
 }
 
@@ -731,8 +731,8 @@ pub(crate) fn reject_invalid_replace_rules(head: &str, rules: &Expr) -> bool {
     return false;
   }
   let shown = match rules {
-    Expr::List(_) => crate::syntax::expr_to_output(rules),
-    _ => format!("{{{}}}", crate::syntax::expr_to_output(rules)),
+    Expr::List(_) => expr_to_output(rules),
+    _ => format!("{{{}}}", expr_to_output(rules)),
   };
   crate::emit_message(&format!(
     "{head}::reps: {shown} is neither a list of replacement rules nor a \
@@ -1216,8 +1216,8 @@ pub fn evaluate_expr_to_expr_inner(
             // to the built-in handler. `Expr` doesn't impl `PartialEq` so
             // compare via the canonical InputForm rendering.
             let original = unevaluated("SetDelayed", args);
-            let unchanged = crate::syntax::expr_to_string(&result)
-              == crate::syntax::expr_to_string(&original);
+            let unchanged =
+              expr_to_string(&result) == expr_to_string(&original);
             if !unchanged {
               return Ok(result);
             }
@@ -1282,7 +1282,7 @@ pub fn evaluate_expr_to_expr_inner(
             ENV.with(|e| {
               e.borrow_mut().insert(
                 var_name.clone(),
-                StoredValue::Raw(crate::syntax::expr_to_string(&new_val)),
+                StoredValue::Raw(expr_to_string(&new_val)),
               );
             });
             // Post-increment/decrement returns old value; pre returns new value
@@ -1316,7 +1316,7 @@ pub fn evaluate_expr_to_expr_inner(
           crate::emit_message(&format!(
             "{}::rvalue: {} is not a variable with a value, so its value cannot be changed.",
             name,
-            crate::syntax::expr_to_string(&args[0])
+            expr_to_string(&args[0])
           ));
           return Ok(Expr::FunctionCall {
             name: name.clone(),
@@ -1419,7 +1419,7 @@ pub fn evaluate_expr_to_expr_inner(
               m.borrow().get(head).is_some_and(|defs| !defs.is_empty())
             });
             if !had_any {
-              let lhs_str = crate::syntax::expr_to_string(&args[0]);
+              let lhs_str = expr_to_string(&args[0]);
               crate::emit_message(&format!(
                 "Unset::norep: Assignment on {head} for {lhs_str} not found."
               ));
@@ -1430,7 +1430,7 @@ pub fn evaluate_expr_to_expr_inner(
             // outer head can have different inner patterns (e.g.
             // `MakeBoxes[F[x__], fmt_]` vs `MakeBoxes[G[x___], fmt_]`); we
             // need per-entry comparison so unsetting one keeps the other.
-            let target_lhs_str = crate::syntax::expr_to_string(&args[0]);
+            let target_lhs_str = expr_to_string(&args[0]);
             let mut removed_any = false;
             crate::FUNC_DEFS.with(|m| {
               let mut map = m.borrow_mut();
@@ -1476,8 +1476,7 @@ pub fn evaluate_expr_to_expr_inner(
                       name: head.clone(),
                       args: pattern_args.into(),
                     };
-                    let entry_lhs_str =
-                      crate::syntax::expr_to_string(&entry_lhs);
+                    let entry_lhs_str = expr_to_string(&entry_lhs);
                     entry_lhs_str != target_lhs_str
                   },
                 );
@@ -1488,7 +1487,7 @@ pub fn evaluate_expr_to_expr_inner(
               }
             });
             if !removed_any {
-              let lhs_str = crate::syntax::expr_to_string(&args[0]);
+              let lhs_str = expr_to_string(&args[0]);
               crate::emit_message(&format!(
                 "Unset::norep: Assignment on {head} for {lhs_str} not found."
               ));
@@ -1544,7 +1543,7 @@ pub fn evaluate_expr_to_expr_inner(
           }
           crate::emit_message(&format!(
             "ApplyTo::rvalue: {} is not a variable with a value, so its value cannot be changed.",
-            crate::syntax::expr_to_string(&args[0])
+            expr_to_string(&args[0])
           ));
           return Ok(Expr::FunctionCall {
             name: name.clone(),
@@ -1646,9 +1645,7 @@ pub fn evaluate_expr_to_expr_inner(
           ) {
             let target = evaluated_call_target(&args[0])?;
             let current_val = evaluate_expr_to_expr(&target)?;
-            if crate::syntax::expr_to_string(&current_val)
-              == crate::syntax::expr_to_string(&target)
-            {
+            if expr_to_string(&current_val) == expr_to_string(&target) {
               emit_rvalue(name, &args[0]);
               return Ok(Expr::FunctionCall {
                 name: name.clone(),
@@ -1712,7 +1709,7 @@ pub fn evaluate_expr_to_expr_inner(
                 "{}::normal: Nonatomic expression expected at position 1 in \
                  {}.",
                 name,
-                crate::syntax::expr_to_output(&unevaluated(name, args))
+                expr_to_output(&unevaluated(name, args))
               ));
               return Ok(unevaluated(name, args));
             }
@@ -1731,8 +1728,7 @@ pub fn evaluate_expr_to_expr_inner(
         {
           let is_append = name == "AppendTo";
           let mut current = evaluate_expr_to_expr(&args[0])?;
-          let has_value = crate::syntax::expr_to_string(&current)
-            != crate::syntax::expr_to_string(&args[0]);
+          let has_value = expr_to_string(&current) != expr_to_string(&args[0]);
           if has_value {
             let elem = evaluate_expr_to_expr(&args[1])?;
             let new_val = match &mut current {
@@ -1766,7 +1762,7 @@ pub fn evaluate_expr_to_expr_inner(
                   "{}::normal: Nonatomic expression expected at position 1 \
                    in {}.",
                   name,
-                  crate::syntax::expr_to_output(&unevaluated(name, args))
+                  expr_to_output(&unevaluated(name, args))
                 ));
                 return Ok(unevaluated(name, args));
               }
@@ -1999,7 +1995,7 @@ pub fn evaluate_expr_to_expr_inner(
           let pairs: Vec<(String, Expr)> = match &new_val {
             Expr::Association(items) => items
               .iter()
-              .map(|(k, v)| (crate::syntax::expr_to_string(k), v.clone()))
+              .map(|(k, v)| (expr_to_string(k), v.clone()))
               .collect(),
             _ => unreachable!(),
           };
@@ -2054,7 +2050,7 @@ pub fn evaluate_expr_to_expr_inner(
           let pairs: Vec<(String, Expr)> = match &new_val {
             Expr::Association(items) => items
               .iter()
-              .map(|(k, v)| (crate::syntax::expr_to_string(k), v.clone()))
+              .map(|(k, v)| (expr_to_string(k), v.clone()))
               .collect(),
             _ => unreachable!(),
           };
@@ -2343,8 +2339,7 @@ pub fn evaluate_expr_to_expr_inner(
             }
             _ => {
               let shown = evaluated.as_ref().unwrap_or(&args[0]);
-              let call_str =
-                crate::syntax::expr_to_string(&call1("Pause", shown.clone()));
+              let call_str = expr_to_string(&call1("Pause", shown.clone()));
               crate::emit_message(&format!(
                 "Pause::numnm: Non-negative machine-sized number expected at position 1 in {call_str}."
               ));
@@ -2378,10 +2373,10 @@ pub fn evaluate_expr_to_expr_inner(
               Expr::FunctionCall { name, args }
                 if name == "MessageName" && args.len() == 2 =>
               {
-                let sym = crate::syntax::expr_to_string(&args[0]);
+                let sym = expr_to_string(&args[0]);
                 let tag = match &args[1] {
                   Expr::String(s) => s.clone(),
-                  other => crate::syntax::expr_to_string(other),
+                  other => expr_to_string(other),
                 };
                 out.push(format!("{sym}::{tag}"));
               }
@@ -2764,9 +2759,7 @@ pub fn evaluate_expr_to_expr_inner(
               name: name.clone(),
               args: evaluated_args.to_vec().into(),
             };
-            if crate::syntax::expr_to_string(&dispatched)
-              != crate::syntax::expr_to_string(&untouched)
-            {
+            if expr_to_string(&dispatched) != expr_to_string(&untouched) {
               return Ok(dispatched);
             }
           }
@@ -3157,10 +3150,7 @@ pub fn evaluate_expr_to_expr_inner(
                   if real {
                     None
                   } else {
-                    Some(format!(
-                      "{} Infinity",
-                      crate::syntax::expr_to_string(&args[0])
-                    ))
+                    Some(format!("{} Infinity", expr_to_string(&args[0])))
                   }
                 }
                 _ => None,

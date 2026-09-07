@@ -30,7 +30,7 @@ fn exprs_equal_simple(a: &Expr, b: &Expr) -> bool {
     (Expr::Integer(x), Expr::Integer(y)) => x == y,
     (Expr::Real(x), Expr::Real(y)) => x == y,
     (Expr::Identifier(x), Expr::Identifier(y)) => x == y,
-    _ => crate::syntax::expr_to_string(a) == crate::syntax::expr_to_string(b),
+    _ => expr_to_string(a) == expr_to_string(b),
   }
 }
 

@@ -391,7 +391,7 @@ pub fn time_series_rescale_ast(
     crate::emit_message(&format!(
       "TimeSeriesRescale::trng: The argument {} is not a valid pair of \
        strictly increasing time points.",
-      crate::syntax::expr_to_string(&args[1])
+      expr_to_string(&args[1])
     ));
     return echo();
   }
@@ -487,10 +487,7 @@ pub fn time_series_thread_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     for series in &all {
       let found = series.iter().find(|(t, _)| match (to_time(t), key) {
         (Some(a), Some(b)) => a == b,
-        _ => {
-          crate::syntax::expr_to_string(t)
-            == crate::syntax::expr_to_string(time)
-        }
+        _ => expr_to_string(t) == expr_to_string(time),
       });
       match found {
         Some((_, v)) => values.push(v.clone()),
@@ -687,10 +684,7 @@ fn split_component_paths(pairs: Vec<(Expr, Expr)>) -> Vec<Vec<(Expr, Expr)>> {
         .filter_map(|(t, v)| match v {
           Expr::Association(kv) => kv
             .iter()
-            .find(|(k, _)| {
-              crate::syntax::expr_to_output(k)
-                == crate::syntax::expr_to_output(key)
-            })
+            .find(|(k, _)| expr_to_output(k) == expr_to_output(key))
             .map(|(_, val)| (t.clone(), val.clone())),
           _ => None,
         })
@@ -1154,7 +1148,7 @@ fn window_bound(e: &Expr) -> Option<f64> {
   if matches!(e, Expr::Identifier(s) | Expr::Constant(s) if s == "Infinity") {
     return Some(f64::INFINITY);
   }
-  if crate::syntax::expr_to_string(e) == "-Infinity" {
+  if expr_to_string(e) == "-Infinity" {
     return Some(f64::NEG_INFINITY);
   }
   to_time(e)
@@ -1511,7 +1505,7 @@ mod tests {
   }
 
   fn render(e: &Expr) -> String {
-    crate::syntax::expr_to_string(e)
+    expr_to_string(e)
   }
 
   #[test]

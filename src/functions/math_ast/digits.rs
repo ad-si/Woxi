@@ -2697,7 +2697,7 @@ pub fn integer_reverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Some(_) => {
         crate::emit_message(&format!(
           "IntegerReverse::intpm: Positive machine-sized integer expected at position 3 in {}.",
-          crate::syntax::expr_to_string(&unevaluated("IntegerReverse", args))
+          expr_to_string(&unevaluated("IntegerReverse", args))
         ));
         return uneval();
       }

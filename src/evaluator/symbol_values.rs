@@ -11,7 +11,6 @@
 //! [`restore_symbol_values`].
 
 use super::*;
-use crate::syntax::Expr;
 
 /// One `FUNC_DEFS` entry: `(params, conditions, defaults, head_constraints,
 /// blank_types, body)`.
@@ -131,15 +130,14 @@ pub(crate) fn take_symbol_values(sym: &str) -> SymbolValues {
   saved.up = crate::UPVALUES.with(|m| m.borrow_mut().remove(sym));
   if let Some(up_defs) = &saved.up {
     for (outer_func, params, _, _, _, body, _, _) in up_defs {
-      let body_str = crate::syntax::expr_to_string(body);
+      let body_str = expr_to_string(body);
       let pulled = crate::FUNC_DEFS.with(|m| {
         let mut map = m.borrow_mut();
         let Some(entries) = map.get_mut(outer_func) else {
           return Vec::new();
         };
-        let matches = |d: &FuncDef| {
-          &d.0 == params && crate::syntax::expr_to_string(&d.5) == body_str
-        };
+        let matches =
+          |d: &FuncDef| &d.0 == params && expr_to_string(&d.5) == body_str;
         if !entries.iter().any(matches) {
           return Vec::new();
         }

@@ -1832,7 +1832,7 @@ pub fn dispatch_math_functions(
           crate::emit_message(&format!(
             "StieltjesGamma::intnm: Non-negative machine-sized integer \
              expected at position 1 in StieltjesGamma[{}].",
-            crate::syntax::expr_to_string(other)
+            expr_to_string(other)
           ));
           unevaluated
         }
@@ -1866,7 +1866,7 @@ pub fn dispatch_math_functions(
           crate::emit_message(&format!(
             "StieltjesGamma::intnm: Non-negative machine-sized integer \
              expected at position 1 in StieltjesGamma[{}].",
-            crate::syntax::expr_to_string(other)
+            expr_to_string(other)
           ));
           unevaluated
         }
@@ -2825,8 +2825,8 @@ pub fn dispatch_math_functions(
           // A negative (or otherwise invalid) integer: message + unevaluated.
           crate::emit_message(&format!(
             "CardinalBSplineBasis::intnm: Non-negative machine-sized integer expected at position 1 in CardinalBSplineBasis[{}, {}].",
-            crate::syntax::expr_to_string(&args[0]),
-            crate::syntax::expr_to_string(&args[1]),
+            expr_to_string(&args[0]),
+            expr_to_string(&args[1]),
           ));
           return Some(Ok(unevaluated()));
         }
@@ -2928,9 +2928,9 @@ pub fn dispatch_math_functions(
       if n < 0 {
         crate::emit_message(&format!(
           "BernsteinBasis::intnm: Non-negative machine-sized integer expected at position 2 in BernsteinBasis[{}, {}, {}].",
-          crate::syntax::expr_to_string(&args[0]),
-          crate::syntax::expr_to_string(&args[1]),
-          crate::syntax::expr_to_string(&args[2]),
+          expr_to_string(&args[0]),
+          expr_to_string(&args[1]),
+          expr_to_string(&args[2]),
         ));
         return Some(Ok(unevaluated()));
       }
@@ -4320,8 +4320,8 @@ pub fn dispatch_math_functions(
         if is_zero {
           crate::emit_message(&format!(
             "ShearingMatrix::proj: The projection of {} onto the plane defined by {} has zero magnitude.",
-            crate::syntax::expr_to_string(&args[1]),
-            crate::syntax::expr_to_string(&args[2]),
+            expr_to_string(&args[1]),
+            expr_to_string(&args[2]),
           ));
           return Some(Ok(unevaluated("ShearingMatrix", args)));
         }
@@ -4531,8 +4531,8 @@ pub fn dispatch_math_functions(
     }
     // BinaryDistance[u, v] — 0 if u == v, 1 otherwise
     "BinaryDistance" if args.len() == 2 => {
-      let s1 = crate::syntax::expr_to_string(&args[0]);
-      let s2 = crate::syntax::expr_to_string(&args[1]);
+      let s1 = expr_to_string(&args[0]);
+      let s2 = expr_to_string(&args[1]);
       return Some(Ok(Expr::Integer(i128::from(s1 != s2))));
     }
     // SquaresR[k, n] — number of representations of n as sum of k squares
@@ -4660,7 +4660,7 @@ pub fn dispatch_math_functions(
         let new_operands: Vec<Expr> = operands
           .iter()
           .map(|op| Expr::FunctionCall {
-            name: crate::syntax::expr_to_string(&args[0]),
+            name: expr_to_string(&args[0]),
             args: vec![op.clone()].into(),
           })
           .collect();
@@ -4966,7 +4966,7 @@ pub fn dispatch_math_functions(
         {
           crate::emit_message(&format!(
             "ChampernowneNumber::ibase: Base {} is not an integer greater than 1.",
-            crate::syntax::expr_to_output(first)
+            expr_to_output(first)
           ));
         }
       }
@@ -5056,7 +5056,7 @@ fn qgamma_ast(z_expr: &Expr, q_expr: &Expr) -> Result<Expr, InterpreterError> {
 /// Algorithm: Express x in base 3. If a digit 1 appears, replace it
 /// and all subsequent digits with a single "1" in base 2.
 /// Replace all 2s with 1s. Read the result in base 2.
-fn cantor_staircase_ast(arg: &Expr) -> crate::syntax::Expr {
+fn cantor_staircase_ast(arg: &Expr) -> Expr {
   use crate::functions::math_ast::{expr_to_i128, try_eval_to_f64};
 
   // Handle exact integers
@@ -5271,7 +5271,7 @@ fn qfactorial_ast(
 
 /// Find minimum linear recurrence coefficients {c1, c2, ..., cd} such that
 /// a[n] = c1*a[n-1] + c2*a[n-2] + ... + cd*a[n-d] for all valid n.
-fn find_linear_recurrence_impl(seq: &[Expr]) -> crate::syntax::Expr {
+fn find_linear_recurrence_impl(seq: &[Expr]) -> Expr {
   // Convert sequence to rationals
   let mut rats: Vec<(i128, i128)> = Vec::new();
   for e in seq {
@@ -5483,7 +5483,7 @@ fn substitute_complex_vars(expr: &Expr, vars: &[String]) -> Expr {
 
 /// ComplexExpand[expr] — expand complex-valued functions assuming all
 /// variables are real. E.g. Sin[x + I*y] → Sin[x]*Cosh[y] + I*Cos[x]*Sinh[y].
-fn complex_expand_ast(expr: &Expr) -> crate::syntax::Expr {
+fn complex_expand_ast(expr: &Expr) -> Expr {
   // Re-evaluate so arithmetic left by the generic Plus/Times recursion folds
   // (e.g. the `-0` from Re[a + b I] = -Im[b] + Re[a] → -0 + a).
   let folded = ce_simplify(complex_expand_recursive(expr));
@@ -5500,7 +5500,7 @@ fn complex_expand_ast(expr: &Expr) -> crate::syntax::Expr {
 /// Like `complex_expand_ast` but additionally distributes products via
 /// Expand, used by the 2-arg form `ComplexExpand[expr, vars]` so the
 /// polynomial result is a single distributed Plus chain.
-fn complex_expand_with_expand(expr: &Expr) -> crate::syntax::Expr {
+fn complex_expand_with_expand(expr: &Expr) -> Expr {
   let expanded = complex_expand_recursive(expr);
   let distributed = crate::evaluator::evaluate_function_call_ast(
     "Expand",

@@ -107,10 +107,7 @@ pub fn array_components_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut rule_map: std::collections::HashMap<String, Expr> =
     std::collections::HashMap::new();
   // Default rule: integer 0 -> 0.
-  rule_map.insert(
-    crate::syntax::expr_to_string(&Expr::Integer(0)),
-    Expr::Integer(0),
-  );
+  rule_map.insert(expr_to_string(&Expr::Integer(0)), Expr::Integer(0));
   if args.len() >= 3 {
     let rule_list: Vec<Expr> = match &args[2] {
       Expr::List(rs) => rs.to_vec(),
@@ -123,7 +120,7 @@ pub fn array_components_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } = r
       {
         rule_map.insert(
-          crate::syntax::expr_to_string(pattern.as_ref()),
+          expr_to_string(pattern.as_ref()),
           replacement.as_ref().clone(),
         );
       }
@@ -165,7 +162,7 @@ pub fn array_components_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     next_index: &mut i128,
     claimed: &std::collections::HashSet<i128>,
   ) -> Expr {
-    let key = crate::syntax::expr_to_string(expr);
+    let key = expr_to_string(expr);
     if let Some(existing) = label_for_key.get(&key) {
       return existing.clone();
     }
@@ -794,8 +791,8 @@ pub fn symmetric_matrix_q_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
       // Check symmetry: m[i][j] == m[j][i]
       for i in 0..n {
         for j in (i + 1)..n {
-          let a = crate::syntax::expr_to_string(&grid[i][j]);
-          let b = crate::syntax::expr_to_string(&grid[j][i]);
+          let a = expr_to_string(&grid[i][j]);
+          let b = expr_to_string(&grid[j][i]);
           if a != b {
             return Ok(bool_expr(false));
           }
@@ -858,8 +855,8 @@ pub fn to_packed_array_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "Developer`ToPackedArray::nonopt: Options expected (instead of {}) \
          beyond position 2 in {}. An option must be a rule or a list of \
          rules.",
-        crate::syntax::expr_to_output(offender),
-        crate::syntax::expr_to_output(&unevaluated_call())
+        expr_to_output(offender),
+        expr_to_output(&unevaluated_call())
       ));
       return Ok(unevaluated_call());
     }
@@ -867,7 +864,7 @@ pub fn to_packed_array_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       crate::emit_message(&format!(
         "Developer`ToPackedArray::optx: Unknown option {} in {}.",
         name,
-        crate::syntax::expr_to_output(&unevaluated_call())
+        expr_to_output(&unevaluated_call())
       ));
       return Ok(unevaluated_call());
     }
@@ -930,12 +927,12 @@ fn is_option_like(expr: &Expr) -> bool {
 fn first_option_name(expr: &Expr) -> Option<String> {
   match expr {
     Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } => {
-      Some(crate::syntax::expr_to_output(pattern))
+      Some(expr_to_output(pattern))
     }
     Expr::FunctionCall { name, args }
       if (name == "Rule" || name == "RuleDelayed") && args.len() == 2 =>
     {
-      Some(crate::syntax::expr_to_output(&args[0]))
+      Some(expr_to_output(&args[0]))
     }
     Expr::List(items) => items.iter().find_map(first_option_name),
     _ => None,

@@ -2274,7 +2274,7 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
           {
             specialized = true;
             for c in concrete {
-              let key = crate::syntax::expr_to_string(&c);
+              let key = expr_to_string(&c);
               if seen.insert(key) {
                 out.push(c);
               }
@@ -2325,7 +2325,7 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
               if ineqs.iter().any(|ineq| ineq_false(ineq, replacement)))
           }));
           if !violated {
-            let key = crate::syntax::expr_to_string(sol);
+            let key = expr_to_string(sol);
             if seen.insert(key) {
               out.push(sol.clone());
             }
@@ -2387,9 +2387,9 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
       };
       if is_eq {
         // Check if lhs matches target → solve for target
-        let target_str = crate::syntax::expr_to_string(target_expr);
-        let lhs_str = crate::syntax::expr_to_string(&lhs);
-        let rhs_str = crate::syntax::expr_to_string(&rhs);
+        let target_str = expr_to_string(target_expr);
+        let lhs_str = expr_to_string(&lhs);
+        let rhs_str = expr_to_string(&rhs);
         if lhs_str == target_str {
           return Ok(Expr::List(
             vec![Expr::List(
@@ -2456,7 +2456,7 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     _ => {
       // Solve::naqs: expr is not a quantified system of equations and inequalities.
-      let expr_str = crate::syntax::expr_to_string(&args[0]);
+      let expr_str = expr_to_string(&args[0]);
       crate::emit_message(&format!(
         "Solve::naqs: {expr_str} is not a quantified system of equations and inequalities."
       ));
@@ -9105,7 +9105,7 @@ fn minimize_try_ilp(
   vars: &[String],
   maximize: bool,
   func_name: &str,
-) -> std::option::Option<crate::syntax::Expr> {
+) -> std::option::Option<Expr> {
   use std::collections::HashSet;
 
   // Walk an `Element[…, Integers]` subject and collect identifier leaves.
@@ -9781,7 +9781,7 @@ fn minimize_constrained_nd(
   vars: &[String],
   maximize: bool,
   func_name: &str,
-) -> crate::syntax::Expr {
+) -> Expr {
   // First try pure LP (linear objective + linear constraints)
   if vars.len() >= 2
     && let Some(result) = minimize_lp_2d(f, constraints, vars, maximize)
@@ -9930,7 +9930,7 @@ fn minimize_constrained_boundary(
   constraints: &[Expr],
   vars: &[String],
   maximize: bool,
-) -> std::option::Option<crate::syntax::Expr> {
+) -> std::option::Option<Expr> {
   let n = vars.len();
 
   // Collect all linear constraints
@@ -10581,7 +10581,7 @@ pub fn find_minimum_ast(
         &Expr::Real(x[i]),
       );
     }
-    let value_str = crate::syntax::expr_to_output(&substituted);
+    let value_str = expr_to_output(&substituted);
     let var_str: String = if vars.len() == 1 {
       format!("{{{}}} = {{{}}}", vars[0], x[0])
     } else {
@@ -10821,7 +10821,7 @@ fn specialize_periodic_solution(
   for ineq in ineqs {
     if let Expr::Comparison { operands, .. } = ineq {
       for op in operands {
-        if crate::syntax::expr_to_string(op) == var_name {
+        if expr_to_string(op) == var_name {
           continue;
         }
         if let Some(v) = try_eval_to_f64(op) {
@@ -12193,15 +12193,13 @@ fn nminimize_infeasible_result(
     } = term
     {
       for i in 0..operators.len() {
-        constraint_strs.push(crate::syntax::expr_to_output(
-          &Expr::Comparison {
-            operands: vec![operands[i].clone(), operands[i + 1].clone()],
-            operators: vec![operators[i]],
-          },
-        ));
+        constraint_strs.push(expr_to_output(&Expr::Comparison {
+          operands: vec![operands[i].clone(), operands[i + 1].clone()],
+          operators: vec![operators[i]],
+        }));
       }
     } else {
-      constraint_strs.push(crate::syntax::expr_to_output(term));
+      constraint_strs.push(expr_to_output(term));
     }
   }
   crate::emit_message(&format!(
@@ -12292,7 +12290,7 @@ fn pick_best_optimum(
   constraints: &[Expr],
   vars: &[String],
   maximize: bool,
-) -> crate::syntax::Expr {
+) -> Expr {
   let comparisons = collect_atomic_comparisons(constraints);
   let mut best: Option<(Expr, f64, bool)> = None;
 

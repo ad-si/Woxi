@@ -182,7 +182,7 @@ fn polylog_s1(z_expr: &Expr) -> Result<Expr, InterpreterError> {
   }
 }
 
-fn polylog_s1_symbolic(z_expr: &Expr) -> crate::syntax::Expr {
+fn polylog_s1_symbolic(z_expr: &Expr) -> Expr {
   let one_minus_z = minus2(Expr::Integer(1), z_expr.clone());
   times2(Expr::Integer(-1), call1("Log", one_minus_z))
 }
@@ -293,7 +293,7 @@ fn eulerian_numbers(n: usize) -> Vec<i128> {
 }
 
 /// PolyLog[s, -1] = -(1 - 2^{1-s}) * Zeta[s] for s >= 2
-fn polylog_at_neg1(s: i128) -> crate::syntax::Expr {
+fn polylog_at_neg1(s: i128) -> Expr {
   let s_usize = s as usize;
 
   if s % 2 == 0 {

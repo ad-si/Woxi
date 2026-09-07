@@ -11,7 +11,8 @@ use crate::helpers::{
   unevaluated,
 };
 use crate::syntax::{
-  BinaryOperator, ComparisonOp, Expr, UnaryOperator, expr_to_string,
+  BinaryOperator, ComparisonOp, Expr, UnaryOperator, expr_to_output,
+  expr_to_string,
 };
 use num_bigint::BigInt;
 

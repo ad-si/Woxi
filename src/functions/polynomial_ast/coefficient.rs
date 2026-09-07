@@ -335,10 +335,7 @@ fn factor_subset_remainder(
 /// variable monomial — e.g. `2*x`, `(-2)*x`, `b*x`. Each expanded term
 /// must contain the form's factor multiset literally; the leftover
 /// factors form the contribution.
-fn coefficient_of_general_form(
-  expr: &Expr,
-  form_factors: &[Expr],
-) -> crate::syntax::Expr {
+fn coefficient_of_general_form(expr: &Expr, form_factors: &[Expr]) -> Expr {
   let expanded = expand_expr(expr);
   let terms = collect_additive_terms(&expanded);
   let mut contributions: Vec<Expr> = Vec::new();
@@ -364,10 +361,7 @@ fn coefficient_of_general_form(
 }
 
 /// Extract the coefficient of a multivariate monomial from a polynomial.
-fn coefficient_of_monomial(
-  expr: &Expr,
-  var_powers: &[(String, i128)],
-) -> crate::syntax::Expr {
+fn coefficient_of_monomial(expr: &Expr, var_powers: &[(String, i128)]) -> Expr {
   let expanded = expand_expr(expr);
   let terms = collect_additive_terms(&expanded);
   let mut coeff_sum: Vec<Expr> = Vec::new();

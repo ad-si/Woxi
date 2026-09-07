@@ -704,8 +704,8 @@ fn lookup_user_default(
     if let Ok(result) = crate::evaluator::evaluate_expr_to_expr(&call) {
       // If evaluation produced something other than the unevaluated form,
       // a user-defined Default fired.
-      let call_str = crate::syntax::expr_to_string(&call);
-      let result_str = crate::syntax::expr_to_string(&result);
+      let call_str = expr_to_string(&call);
+      let result_str = expr_to_string(&result);
       if result_str != call_str {
         return Some(result);
       }
@@ -716,7 +716,6 @@ fn lookup_user_default(
 
 /// Map a BinaryOperator to the corresponding Wolfram Language function name.
 fn binary_op_to_func_name(op: BinaryOperator) -> &'static str {
-  use BinaryOperator;
   match op {
     BinaryOperator::Plus => "Plus",
     BinaryOperator::Times => "Times",
@@ -1456,7 +1455,7 @@ fn try_align_groups(
       if let Some(test) = &seq_info.test {
         for e in &elements {
           let test_call = Expr::FunctionCall {
-            name: crate::syntax::expr_to_string(test),
+            name: expr_to_string(test),
             args: vec![e.clone()].into(),
           };
           let result =

@@ -142,6 +142,16 @@ enum Commands {
     #[arg(trailing_var_arg = true)]
     args: Vec<String>,
   },
+  /// Start a Language Server Protocol server for the Wolfram Language
+  ///
+  /// The server communicates over stdin/stdout, which is how editors
+  /// launch it. `--stdio` is accepted (and ignored) because most editor
+  /// clients pass it by convention.
+  Lsp {
+    /// Communicate over stdin/stdout (the default and only transport)
+    #[arg(long)]
+    stdio: bool,
+  },
   /// Start a simple Jupyter kernel that always returns "hello world"
   Jupyter {
     /// Path to the Jupyter connection file (JSON) provided by the
@@ -250,6 +260,14 @@ fn run(cli: Cli) {
 
       run_script(&file, args);
     }
+    Commands::Lsp { stdio: _ } => match woxi::lsp::run_stdio() {
+      Ok(0) => {}
+      Ok(code) => std::process::exit(code),
+      Err(e) => {
+        eprintln!("Error running language server: {e}");
+        std::process::exit(1);
+      }
+    },
     Commands::Jupyter { connection_file } => {
       if let Err(e) = jupyter::run(connection_file.as_deref()) {
         eprintln!("Error starting Jupyter kernel: {e}");

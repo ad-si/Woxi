@@ -1695,11 +1695,8 @@ fn compound_head_renamings(vars: &Expr, domain: &Expr) -> Vec<(Expr, String)> {
     if matches!(head, Expr::Identifier(_)) {
       continue;
     }
-    let key = crate::syntax::expr_to_string(&head);
-    if renames
-      .iter()
-      .any(|(h, _)| crate::syntax::expr_to_string(h) == key)
-    {
+    let key = expr_to_string(&head);
+    if renames.iter().any(|(h, _)| expr_to_string(h) == key) {
       continue;
     }
     let fresh = format!("NDSolve$fn${}", renames.len() + 1);
@@ -1712,9 +1709,9 @@ fn compound_head_renamings(vars: &Expr, domain: &Expr) -> Vec<(Expr, String)> {
 /// `Subscript[c, 1][t]` into `NDSolve$fn$1[t]` and
 /// `Derivative[1][Subscript[c, 1]][t]` into `Derivative[1][NDSolve$fn$1][t]`.
 fn rename_compound_heads(expr: &Expr, renames: &[(Expr, String)]) -> Expr {
-  let key = crate::syntax::expr_to_string(expr);
+  let key = expr_to_string(expr);
   for (head, fresh) in renames {
-    if crate::syntax::expr_to_string(head) == key {
+    if expr_to_string(head) == key {
       return Expr::Identifier(fresh.clone());
     }
   }
@@ -1803,10 +1800,11 @@ fn indexed_family_renamings(vars: &Expr, domain: &Expr) -> Vec<IndexedRename> {
       continue;
     }
     let index = args[0].clone();
-    let index_key = crate::syntax::expr_to_string(&index);
-    if renames.iter().any(|r| {
-      r.head == *name && crate::syntax::expr_to_string(&r.index) == index_key
-    }) {
+    let index_key = expr_to_string(&index);
+    if renames
+      .iter()
+      .any(|r| r.head == *name && expr_to_string(&r.index) == index_key)
+    {
       continue;
     }
     let fresh = format!("NDSolve$idx${name}${}", renames.len() + 1);
@@ -1846,10 +1844,11 @@ fn rename_indexed_vars(expr: &Expr, renames: &[IndexedRename]) -> Expr {
     && orders.len() == 2
     && matches!(orders[0], Expr::Integer(0))
   {
-    let index_key = crate::syntax::expr_to_string(&args[0]);
-    if let Some(r) = renames.iter().find(|r| {
-      r.head == *fname && crate::syntax::expr_to_string(&r.index) == index_key
-    }) {
+    let index_key = expr_to_string(&args[0]);
+    if let Some(r) = renames
+      .iter()
+      .find(|r| r.head == *fname && expr_to_string(&r.index) == index_key)
+    {
       let other = rename_indexed_vars(&args[1], renames);
       return Expr::CurriedCall {
         func: Box::new(Expr::CurriedCall {
@@ -1863,10 +1862,11 @@ fn rename_indexed_vars(expr: &Expr, renames: &[IndexedRename]) -> Expr {
   if let Expr::FunctionCall { name, args } = expr
     && args.len() == 2
   {
-    let index_key = crate::syntax::expr_to_string(&args[0]);
-    if let Some(r) = renames.iter().find(|r| {
-      r.head == *name && crate::syntax::expr_to_string(&r.index) == index_key
-    }) {
+    let index_key = expr_to_string(&args[0]);
+    if let Some(r) = renames
+      .iter()
+      .find(|r| r.head == *name && expr_to_string(&r.index) == index_key)
+    {
       let other = rename_indexed_vars(&args[1], renames);
       return Expr::FunctionCall {
         name: r.fresh.clone(),
@@ -5453,7 +5453,7 @@ fn expr_to_f64(expr: &Expr) -> Result<f64, InterpreterError> {
     }
     _ => Err(InterpreterError::EvaluationError(format!(
       "cannot convert {} to a numeric value",
-      crate::syntax::expr_to_string(expr)
+      expr_to_string(expr)
     ))),
   }
 }
@@ -5751,7 +5751,7 @@ fn build_2d_list_interpolation(
   grid: &Grid,
   interp_order: i128,
   head: &str,
-) -> crate::syntax::Expr {
+) -> Expr {
   let (exprs, _vals) = &grid;
   let nr = exprs.len();
   let nc = exprs[0].len();
@@ -6780,7 +6780,7 @@ fn lagrange_polynomial(
     for j in 0..m {
       if j != i {
         factors.push(Expr::BinaryOp {
-          op: crate::syntax::BinaryOperator::Divide,
+          op: BinaryOperator::Divide,
           left: Box::new(minus(var, &xs[j])),
           right: Box::new(minus(&xs[i], &xs[j])),
         });
@@ -7684,7 +7684,7 @@ fn collect_second_order_pde_terms(
 
 /// Whether `name` occurs anywhere in `expr` as a symbol.
 fn expr_mentions(expr: &Expr, name: &str) -> bool {
-  crate::syntax::expr_to_string(expr)
+  expr_to_string(expr)
     .split(|c: char| !(c.is_alphanumeric() || c == '$'))
     .any(|tok| tok == name)
 }

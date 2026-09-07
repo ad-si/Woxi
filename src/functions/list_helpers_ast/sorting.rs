@@ -15,7 +15,7 @@ pub fn expr_to_complex_parts(e: &Expr) -> Option<(f64, f64)> {
     return Some((v, 0.0));
   }
   // Check if expression contains I (complex unit)
-  let s = crate::syntax::expr_to_string(e);
+  let s = expr_to_string(e);
   if !s.contains('I') {
     return None;
   }
@@ -124,7 +124,7 @@ pub fn expr_to_complex_parts(e: &Expr) -> Option<(f64, f64)> {
 /// Check if an expression is Infinity or -Infinity (DirectedInfinity).
 /// In Wolfram's canonical ordering, these sort after all finite numbers.
 fn is_infinity_expr(e: &Expr) -> Option<i8> {
-  let s = crate::syntax::expr_to_string(e);
+  let s = expr_to_string(e);
   if s == "Infinity" {
     Some(1)
   } else if s == "-Infinity" {
@@ -340,9 +340,9 @@ pub fn canonical_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
         let base_exp = |e: &Expr| -> Option<(String, f64)> {
           if let Some((base, exp)) = power_parts(e) {
             let v = crate::functions::math_ast::try_eval_to_f64(&exp)?;
-            Some((crate::syntax::expr_to_string(&base), v))
+            Some((expr_to_string(&base), v))
           } else {
-            Some((crate::syntax::expr_to_string(e), 1.0))
+            Some((expr_to_string(e), 1.0))
           }
         };
         let a_is_pow = power_parts(a).is_some();
@@ -498,8 +498,8 @@ pub fn canonical_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
       }
 
       // Atomic non-numeric: string/symbol comparison
-      let sa = crate::syntax::expr_to_string(a);
-      let sb = crate::syntax::expr_to_string(b);
+      let sa = expr_to_string(a);
+      let sb = expr_to_string(b);
       wolfram_string_cmp(&sa, &sb)
     }
   }
@@ -796,7 +796,7 @@ fn limit_ordering(
     };
     crate::emit_message(&format!(
       "Take::take: Cannot take positions {from} through {to} in {}.",
-      crate::syntax::expr_to_output(&Expr::List(ordering.into()))
+      expr_to_output(&Expr::List(ordering.into()))
     ));
     return None;
   }
@@ -1016,8 +1016,8 @@ fn by_key_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
   if let Some(ord) = exact_real_cmp(a, b) {
     return ord;
   }
-  let ka = crate::syntax::expr_to_string(a);
-  let kb = crate::syntax::expr_to_string(b);
+  let ka = expr_to_string(a);
+  let kb = expr_to_string(b);
   if let (Ok(na), Ok(nb)) = (ka.parse::<f64>(), kb.parse::<f64>()) {
     na.partial_cmp(&nb).unwrap_or(std::cmp::Ordering::Equal)
   } else {
@@ -1077,10 +1077,10 @@ fn minimal_maximal_by_assoc(
       .cloned();
     let result: Vec<(Expr, Expr)> = match extreme {
       Some(ex) => {
-        let ex_str = crate::syntax::expr_to_string(&ex);
+        let ex_str = expr_to_string(&ex);
         keyed
           .into_iter()
-          .filter(|(_, c)| crate::syntax::expr_to_string(c) == ex_str)
+          .filter(|(_, c)| expr_to_string(c) == ex_str)
           .map(|(kv, _)| kv)
           .collect()
       }
@@ -1139,10 +1139,10 @@ pub fn minimal_by_ast(
       .cloned();
 
     if let Some(min_k) = min_key {
-      let min_str = crate::syntax::expr_to_string(&min_k);
+      let min_str = expr_to_string(&min_k);
       let result: Vec<Expr> = keyed
         .into_iter()
-        .filter(|(_, k)| crate::syntax::expr_to_string(k) == min_str)
+        .filter(|(_, k)| expr_to_string(k) == min_str)
         .map(|(item, _)| item)
         .collect();
       Ok(Expr::List(result.into()))
@@ -1203,10 +1203,10 @@ pub fn maximal_by_ast(
       .cloned();
 
     if let Some(max_k) = max_key {
-      let max_str = crate::syntax::expr_to_string(&max_k);
+      let max_str = expr_to_string(&max_k);
       let result: Vec<Expr> = keyed
         .into_iter()
-        .filter(|(_, k)| crate::syntax::expr_to_string(k) == max_str)
+        .filter(|(_, k)| expr_to_string(k) == max_str)
         .map(|(item, _)| item)
         .collect();
       Ok(Expr::List(result.into()))
@@ -1556,7 +1556,7 @@ pub fn compare_exprs(a: &Expr, b: &Expr) -> i64 {
   // -1/9*t^2 (degree ascending; wolframscript-verified). The string
   // comparison below would order "E^(-1/9*t^2)" first on '1' < '2'.
   if let (Some((ba, ea)), Some((bb, eb))) = (power_parts(a), power_parts(b))
-    && crate::syntax::expr_to_string(&ba) == crate::syntax::expr_to_string(&bb)
+    && expr_to_string(&ba) == expr_to_string(&bb)
   {
     let ord = compare_exprs(&ea, &eb);
     if ord != 0 {
@@ -1594,8 +1594,8 @@ pub fn compare_exprs(a: &Expr, b: &Expr) -> i64 {
     match (a_is_atom, b_is_atom) {
       (true, true) => {
         // Both atoms: alphabetical comparison
-        let a_str = crate::syntax::expr_to_string(a);
-        let b_str = crate::syntax::expr_to_string(b);
+        let a_str = expr_to_string(a);
+        let b_str = expr_to_string(b);
         wolfram_string_order(&a_str, &b_str)
       }
       (true, false) => {
@@ -1612,7 +1612,7 @@ pub fn compare_exprs(a: &Expr, b: &Expr) -> i64 {
           return -1;
         }
         let b_key = expr_sort_key(b);
-        let a_str = crate::syntax::expr_to_string(a);
+        let a_str = expr_to_string(a);
         let cmp = wolfram_string_order(&a_str, &b_key);
         if cmp == 0 {
           1 // atom comes before compound with same key
@@ -1629,7 +1629,7 @@ pub fn compare_exprs(a: &Expr, b: &Expr) -> i64 {
           return 1;
         }
         let a_key = expr_sort_key(a);
-        let b_str = crate::syntax::expr_to_string(b);
+        let b_str = expr_to_string(b);
         let cmp = wolfram_string_order(&a_key, &b_str);
         if cmp == 0 {
           -1 // compound comes after atom with same key
@@ -1671,8 +1671,8 @@ pub fn compare_exprs(a: &Expr, b: &Expr) -> i64 {
         if cmp != 0 {
           return cmp;
         }
-        let a_str = crate::syntax::expr_to_string(a);
-        let b_str = crate::syntax::expr_to_string(b);
+        let a_str = expr_to_string(a);
+        let b_str = expr_to_string(b);
         wolfram_string_order(&a_str, &b_str)
       }
     }
@@ -1693,7 +1693,7 @@ fn int_base_power(e: &Expr) -> Option<((i128, i128), f64)> {
       (args[0].clone(), args[1].clone())
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } => ((**left).clone(), (**right).clone()),
@@ -1765,7 +1765,7 @@ fn power_parts(e: &Expr) -> Option<(Expr, Expr)> {
       Some((args[0].clone(), args[1].clone()))
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Power,
+      op: BinaryOperator::Power,
       left,
       right,
     } => Some(((**left).clone(), (**right).clone())),
@@ -2040,10 +2040,7 @@ fn sum_highest_term_negates(sum: &Expr, atom: &Expr) -> bool {
     _ => None,
   };
   match negated_inner {
-    Some(inner) => {
-      crate::syntax::expr_to_string(&inner)
-        == crate::syntax::expr_to_string(atom)
-    }
+    Some(inner) => expr_to_string(&inner) == expr_to_string(atom),
     None => false,
   }
 }
@@ -2093,20 +2090,20 @@ pub fn expr_sort_key(e: &Expr) -> String {
         && let Some(last) = args.last()
       {
         if is_atom_expr(last) {
-          return crate::syntax::expr_to_string(last);
+          return expr_to_string(last);
         }
         return expr_sort_key(last);
       }
       // For Power/Sqrt: sort key is the base (same as BinaryOp::Power)
       if name == "Power" && args.len() == 2 {
         if is_atom_expr(&args[0]) {
-          return crate::syntax::expr_to_string(&args[0]);
+          return expr_to_string(&args[0]);
         }
         return expr_sort_key(&args[0]);
       }
       if let Some(sqrt_arg) = crate::functions::math_ast::is_sqrt(e) {
         if is_atom_expr(sqrt_arg) {
-          return crate::syntax::expr_to_string(sqrt_arg);
+          return expr_to_string(sqrt_arg);
         }
         return expr_sort_key(sqrt_arg);
       }
@@ -2123,32 +2120,32 @@ pub fn expr_sort_key(e: &Expr) -> String {
       if let Expr::FunctionCall { name, .. } = func.as_ref() {
         return name.clone();
       }
-      crate::syntax::expr_to_string(e)
+      expr_to_string(e)
     }
     Expr::BinaryOp { op, left, right } => {
       match op {
         BinaryOperator::Power => {
           // Power: sort key is the base (recurse for compound bases)
           if is_atom_expr(left) {
-            crate::syntax::expr_to_string(left)
+            expr_to_string(left)
           } else {
             expr_sort_key(left)
           }
         }
         BinaryOperator::Plus | BinaryOperator::Times => {
           // For binary plus/times: use the "larger" operand
-          let l = crate::syntax::expr_to_string(left);
-          let r = crate::syntax::expr_to_string(right);
+          let l = expr_to_string(left);
+          let r = expr_to_string(right);
           if wolfram_string_order(&l, &r) >= 0 {
             r
           } else {
             l
           }
         }
-        _ => crate::syntax::expr_to_string(e),
+        _ => expr_to_string(e),
       }
     }
-    _ => crate::syntax::expr_to_string(e),
+    _ => expr_to_string(e),
   }
 }
 

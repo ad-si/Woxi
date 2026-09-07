@@ -13,10 +13,10 @@
 //! coordinates). [`resolve_transforms`] does the equivalent resolution so
 //! the truncation/stellation itself can run per `Polygon` face.
 
+use super::*;
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot3d::rotation_matrix;
 use crate::helpers::call1;
-use crate::syntax::Expr;
 
 /// `Truncate[expr]` truncates to this fraction of each edge's length.
 pub(crate) const DEFAULT_TRUNCATE_RATIO: f64 = 0.3;

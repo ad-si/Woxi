@@ -337,7 +337,7 @@ pub fn dispatch_linear_algebra_functions(
       let call = unevaluated("IdentityMatrix", args);
       crate::emit_message(&format!(
         "IdentityMatrix::targ: Argument {} at position 2 should be a list or sparse array.",
-        crate::syntax::expr_to_string(&args[1])
+        expr_to_string(&args[1])
       ));
       return Some(Ok(call));
     }
@@ -364,7 +364,7 @@ pub fn dispatch_linear_algebra_functions(
           crate::emit_message(&format!(
             "UnitVector::intpm: Positive machine-sized integer expected at position {} in {}.",
             args.len(),
-            crate::syntax::expr_to_string(&call)
+            expr_to_string(&call)
           ));
         } else {
           crate::emit_message(&format!(
@@ -582,8 +582,7 @@ pub fn dispatch_linear_algebra_functions(
                 Expr::Integer(n as i128),
               ]);
             if let Ok(id) = identity {
-              let result = crate::syntax::expr_to_string(&evaluated)
-                == crate::syntax::expr_to_string(&id);
+              let result = expr_to_string(&evaluated) == expr_to_string(&id);
               return Some(Ok(bool_expr(result)));
             }
           }
@@ -971,7 +970,7 @@ pub fn dispatch_linear_algebra_functions(
         crate::emit_message(&format!(
           "MatrixMinimalPolynomial::matsq: Argument {} at position 1 is not \
            a nonempty square matrix.",
-          crate::syntax::expr_to_string(&args[0])
+          expr_to_string(&args[0])
         ));
         return Some(Ok(unevaluated("MatrixMinimalPolynomial", args)));
       }
@@ -2852,7 +2851,7 @@ pub fn dispatch_linear_algebra_functions(
       }
       crate::emit_message(&format!(
         "CrossMatrix::notre: The first argument {} must be a non-complex number or a list of non-complex numbers.",
-        crate::syntax::expr_to_string(&args[0])
+        expr_to_string(&args[0])
       ));
       return Some(Ok(unevaluated("CrossMatrix", args)));
     }
@@ -3692,11 +3691,7 @@ fn kronecker_product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Binary dissimilarity functions for binary (0/1) vectors.
-fn binary_dissimilarity_ast(
-  name: &str,
-  a: &Expr,
-  b: &Expr,
-) -> crate::syntax::Expr {
+fn binary_dissimilarity_ast(name: &str, a: &Expr, b: &Expr) -> Expr {
   let (list_a, list_b) = match (a, b) {
     (Expr::List(la), Expr::List(lb)) if la.len() == lb.len() => (la, lb),
     _ => {
@@ -4196,7 +4191,7 @@ fn roll_pitch_yaw_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     other => {
       crate::emit_message(&format!(
         "RollPitchYawMatrix::ang: {} should be a list of three real-valued quantities.",
-        crate::syntax::expr_to_output(other)
+        expr_to_output(other)
       ));
       return Ok(unevaluated("RollPitchYawMatrix", args));
     }
@@ -4536,7 +4531,7 @@ fn lyapunov_solve_common(
     crate::emit_message(&format!(
       "{}::matsq: Argument {} at position 1 is not a nonempty square matrix.",
       name,
-      crate::syntax::expr_to_output(&args[0])
+      expr_to_output(&args[0])
     ));
     return unevaluated();
   }
@@ -4549,7 +4544,7 @@ fn lyapunov_solve_common(
       crate::emit_message(&format!(
         "{}::matsq: Argument {} at position 2 is not a nonempty square matrix.",
         name,
-        crate::syntax::expr_to_output(&args[1])
+        expr_to_output(&args[1])
       ));
       return unevaluated();
     }
@@ -4571,8 +4566,8 @@ fn lyapunov_solve_common(
     crate::emit_message(&format!(
       "{}::ndims: The arguments {} and {} have incorrect dimensions.",
       name,
-      crate::syntax::expr_to_output(&args[0]),
-      crate::syntax::expr_to_output(c_expr)
+      expr_to_output(&args[0]),
+      expr_to_output(c_expr)
     ));
     return unevaluated();
   }

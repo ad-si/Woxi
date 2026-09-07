@@ -633,7 +633,7 @@ pub fn entity_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
-fn entity_list_for_type(type_name: &str) -> crate::syntax::Expr {
+fn entity_list_for_type(type_name: &str) -> Expr {
   if !is_type_registered(type_name) {
     if type_name == "Country" {
       return Expr::List(
@@ -680,10 +680,7 @@ fn entity_list_for_type(type_name: &str) -> crate::syntax::Expr {
   Expr::List(entities.into())
 }
 
-fn entity_list_for_class(
-  type_name: &str,
-  class_name: &str,
-) -> crate::syntax::Expr {
+fn entity_list_for_class(type_name: &str, class_name: &str) -> Expr {
   if !is_type_registered(type_name) {
     return Expr::FunctionCall {
       name: "Missing".to_string(),
@@ -724,7 +721,7 @@ fn entity_list_for_class(
   Expr::List(entities.into())
 }
 
-fn entity_count_for_type(type_name: &str) -> crate::syntax::Expr {
+fn entity_count_for_type(type_name: &str) -> Expr {
   if !is_type_registered(type_name) {
     if type_name == "Country" {
       return Expr::Integer(
@@ -825,7 +822,7 @@ pub fn entity_properties_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
-fn entity_properties_for_type(type_name: &str) -> crate::syntax::Expr {
+fn entity_properties_for_type(type_name: &str) -> Expr {
   if !is_type_registered(type_name) {
     return Expr::FunctionCall {
       name: "Missing".to_string(),

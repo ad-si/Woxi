@@ -220,7 +220,7 @@ pub fn gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() == 3 {
     let (a, z0, z1) = (&args[0], &args[1], &args[2]);
     // Gamma[a, z, z] = 0
-    if crate::syntax::expr_to_string(z0) == crate::syntax::expr_to_string(z1) {
+    if expr_to_string(z0) == expr_to_string(z1) {
       return Ok(Expr::Integer(0));
     }
     // Gamma[a, z0, Infinity] = Gamma[a, z0]   (Gamma[a, Infinity] = 0)

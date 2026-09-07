@@ -2746,7 +2746,7 @@ fn collect_dirac_like_terms(terms: Vec<Expr>) -> Vec<Expr> {
 
     let base_key = base_parts
       .iter()
-      .map(crate::syntax::expr_to_string)
+      .map(expr_to_string)
       .collect::<Vec<_>>()
       .join("*");
 
@@ -3056,10 +3056,9 @@ fn inverse_mellin_inner(
           // The 1/n prefactor must be among the constants.
           let inv_n =
             call("Rational", vec![Expr::Integer(1), Expr::Integer(*nn)]);
-          let pos = consts.iter().position(|c| {
-            crate::syntax::expr_to_string(c)
-              == crate::syntax::expr_to_string(&inv_n)
-          })?;
+          let pos = consts
+            .iter()
+            .position(|c| expr_to_string(c) == expr_to_string(&inv_n))?;
           let mut rest = consts.clone();
           rest.remove(pos);
           let result = e_pow(neg(make_power(x.clone(), Expr::Integer(*nn))));
@@ -3177,13 +3176,12 @@ fn inverse_mellin_inner(
         };
         if neg_s_ok && !depends_on(a_part, sv) {
           // Require the 1/Gamma[a] constant.
-          let inv_gamma = crate::syntax::expr_to_string(&call(
+          let inv_gamma = expr_to_string(&call(
             "Power",
             vec![call1("Gamma", a_part.clone()), Expr::Integer(-1)],
           ));
-          let pos = consts
-            .iter()
-            .position(|c| crate::syntax::expr_to_string(c) == inv_gamma)?;
+          let pos =
+            consts.iter().position(|c| expr_to_string(c) == inv_gamma)?;
           let mut rest = consts.clone();
           rest.remove(pos);
           let result = pow2(
@@ -4880,7 +4878,7 @@ fn symbolic_series_coefficient(f: &Expr, spec: &Expr) -> Option<Expr> {
     is_int(&residual, 0).then_some(a)
   };
   // `(a)` string with parentheses so a negative `a` keeps its sign inside a power.
-  let paren = |a: &Expr| format!("({})", crate::syntax::expr_to_string(a));
+  let paren = |a: &Expr| format!("({})", expr_to_string(a));
 
   // Build and parse `Piecewise[{{coeff, cond}}, 0]`.
   let build = |coeff_src: String, cond: &str| -> Option<Expr> {
@@ -4976,7 +4974,7 @@ fn symbolic_series_coefficient(f: &Expr, spec: &Expr) -> Option<Expr> {
       if !is_int(&residual, 0) {
         return None;
       }
-      let p_str = crate::syntax::expr_to_string(exp);
+      let p_str = expr_to_string(exp);
       let cond = match exp.as_ref() {
         Expr::Integer(p) => {
           format!("Inequality[0, LessEqual, {nvar}, LessEqual, {p}]")
@@ -5136,7 +5134,7 @@ fn gf_inner(
     && fargs.len() == 1
     && matches!(&fargs[0], Expr::Identifier(v) if v == n)
   {
-    let xs = crate::syntax::expr_to_string(x);
+    let xs = expr_to_string(x);
     let src = match fname.as_str() {
       "Fibonacci" => Some(format!("-({xs}/(-1 + {xs} + {xs}^2))")),
       "LucasL" => Some(format!("(-2 + {xs})/(-1 + {xs} + {xs}^2)")),
@@ -5295,7 +5293,7 @@ fn gf_power(
   exp: &Expr,
   n: &str,
   x: &Expr,
-) -> std::option::Option<crate::syntax::Expr> {
+) -> std::option::Option<Expr> {
   // Case: a^n where a doesn't depend on n => 1/(1 - a*x)
   if matches!(exp, Expr::Identifier(name) if name == n) && !depends_on(base, n)
   {
@@ -5352,7 +5350,7 @@ fn gf_power(
 /// Generating function for n^k: Sum[n^k * x^n, {n, 0, inf}]
 /// Uses the formula involving Eulerian numbers: result = Sum[A(k,j) * x^(j+1), j=0..k-1] / (1-x)^(k+1)
 /// where A(k,j) are the Eulerian numbers.
-fn gf_n_power_k(k: i128, x: &Expr) -> crate::syntax::Expr {
+fn gf_n_power_k(k: i128, x: &Expr) -> Expr {
   // Compute Eulerian numbers A(k, j) for j = 0..k-1
   let k_usize = k as usize;
   let eulerian = compute_eulerian_numbers(k_usize);
@@ -5525,9 +5523,7 @@ fn gf_times(
   // Try expanding the product and handling as a sum
   // e.g. n*(-1+n) → -n + n^2
   let expanded = crate::functions::polynomial_ast::expand_expr(&recombined);
-  if crate::syntax::expr_to_string(&expanded)
-    != crate::syntax::expr_to_string(&recombined)
-  {
+  if expr_to_string(&expanded) != expr_to_string(&recombined) {
     return gf_inner(&expanded, n, x);
   }
 
@@ -5559,7 +5555,7 @@ fn gf_binomial(
   bottom: &Expr,
   n: &str,
   x: &Expr,
-) -> std::option::Option<crate::syntax::Expr> {
+) -> std::option::Option<Expr> {
   // Binomial[n, k] where k is constant: x^k/(-1+x)^(k+1) (with sign adjustment)
   // Canonical Wolfram form uses (-1+x) as base.
   // (1-x)^(k+1) = (-1)^(k+1) * (-1+x)^(k+1), so negate numerator when (k+1) is odd.
@@ -5643,7 +5639,7 @@ fn gf_divide(
       if let Some(k) =
         n_and_k(fargs[0], fargs[1]).or_else(|| n_and_k(fargs[1], fargs[0]))
       {
-        let xs = crate::syntax::expr_to_string(x);
+        let xs = expr_to_string(x);
         let km1 = k - 1;
         let src = format!(
           "(-Log[1 - {xs}]/{xs} - Sum[{xs}^(m - 1)/m, {{m, 1, {km1}}}])/{xs}^{km1}"
@@ -5686,10 +5682,8 @@ fn gf_divide(
     // and leave the generating function unevaluated instead.
     let (pnum, pden) =
       crate::functions::polynomial_ast::together::extract_num_den(&product);
-    if crate::syntax::expr_to_string(&pnum)
-      == crate::syntax::expr_to_string(num)
-      && crate::syntax::expr_to_string(&pden)
-        == crate::syntax::expr_to_string(den)
+    if expr_to_string(&pnum) == expr_to_string(num)
+      && expr_to_string(&pden) == expr_to_string(den)
     {
       return Ok(None);
     }
@@ -6040,7 +6034,7 @@ fn egf_power(
   exp: &Expr,
   n: &str,
   x: &Expr,
-) -> std::option::Option<crate::syntax::Expr> {
+) -> std::option::Option<Expr> {
   // Case: c^n where c doesn't depend on n => e^(c*x)
   if !depends_on(base, n) && matches!(exp, Expr::Identifier(name) if name == n)
   {

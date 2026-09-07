@@ -235,7 +235,7 @@ fn emit_nopar1(name: &str, serial: &str, args: &[Expr]) {
   crate::emit_message_to_stdout(&format!(
     "{name}::nopar1: {} cannot be parallelized; proceeding with \
      sequential evaluation.",
-    crate::syntax::expr_to_string(&unevaluated(serial, args))
+    expr_to_string(&unevaluated(serial, args))
   ));
 }
 
@@ -852,7 +852,7 @@ fn longest_ordered_sequence(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       crate::emit_message(&format!(
         "LongestOrderedSequence::list: List expected at position 1 in {}.",
-        crate::syntax::expr_to_string(&symbolic())
+        expr_to_string(&symbolic())
       ));
       return Ok(symbolic());
     }
@@ -1869,8 +1869,8 @@ pub fn dispatch_list_operations(
       let iseqs = || {
         crate::emit_message(&format!(
           "TakeList::iseqs: Cannot take list {} of sequence specifications at level 1 of {}.",
-          crate::syntax::expr_to_string(&args[1]),
-          crate::syntax::expr_to_string(&args[0])
+          expr_to_string(&args[1]),
+          expr_to_string(&args[0])
         ));
       };
       // Walk a (start, end) window over `items`, consuming front or back
@@ -1934,7 +1934,7 @@ pub fn dispatch_list_operations(
             crate::emit_message(&format!(
               "TakeList::seqs: Sequence specification (+n, -n, {{+n}}, {{-n}}, {{m, n}} or {{m, n, s}}) expected at position {} in {}.",
               idx + 1,
-              crate::syntax::expr_to_string(&args[1])
+              expr_to_string(&args[1])
             ));
             return Some(Ok(unevaluated));
           }
@@ -2952,7 +2952,7 @@ pub fn dispatch_list_operations(
       if is_atom {
         crate::emit_message(&format!(
           "Signature::normal: Nonatomic expression expected at position 1 in Signature[{}].",
-          crate::syntax::expr_to_output(&args[0])
+          expr_to_output(&args[0])
         ));
       }
       return Some(Ok(unevaluated("Signature", args)));
@@ -3264,9 +3264,7 @@ pub fn dispatch_list_operations(
       // Only re-evaluate when densification actually changed the expression,
       // to avoid disturbing the plain `Normal[expr]` (no Association/
       // SparseArray) pass-through.
-      if crate::syntax::expr_to_string(&converted)
-        == crate::syntax::expr_to_string(&args[0])
-      {
+      if expr_to_string(&converted) == expr_to_string(&args[0]) {
         return Some(Ok(converted));
       }
       return Some(Ok(evaluate_expr_to_expr(&converted).unwrap_or(converted)));
@@ -3707,10 +3705,7 @@ pub fn dispatch_list_operations(
           _ => {
             crate::emit_message(&format!(
               "FixedPointList::intnm: Non-negative machine-sized integer expected at position 3 in {}.",
-              crate::syntax::expr_to_string(&unevaluated(
-                "FixedPointList",
-                args
-              ))
+              expr_to_string(&unevaluated("FixedPointList", args))
             ));
             return Some(Ok(unevaluated("FixedPointList", args)));
           }
@@ -3736,7 +3731,7 @@ pub fn dispatch_list_operations(
         {
           crate::emit_message(&format!(
             "Transpose::nmtx: The first two levels of {} cannot be transposed.",
-            crate::syntax::expr_to_string(&args[0])
+            expr_to_string(&args[0])
           ));
           Ok(unevaluated("Transpose", args))
         }
@@ -3756,7 +3751,7 @@ pub fn dispatch_list_operations(
         } else {
           crate::emit_message(&format!(
             "TensorTranspose::symmperm: Invalid permutation or symmetry generator {}.",
-            crate::syntax::expr_to_string(&args[1])
+            expr_to_string(&args[1])
           ));
           return Some(Ok(unevaluated("TensorTranspose", args)));
         }
@@ -3769,7 +3764,7 @@ pub fn dispatch_list_operations(
         TensorTransposeResult::Ok(e) => e,
         TensorTransposeResult::RankError { rank } => {
           let perm_str = match perm {
-            Some(p) => crate::syntax::expr_to_string(&Expr::List(p.into())),
+            Some(p) => expr_to_string(&Expr::List(p.into())),
             None => "{2, 1}".to_string(),
           };
           crate::emit_message(&format!(
@@ -3779,7 +3774,7 @@ pub fn dispatch_list_operations(
         }
         TensorTransposeResult::SymmPerm => {
           let perm_str = match perm {
-            Some(p) => crate::syntax::expr_to_string(&Expr::List(p.into())),
+            Some(p) => expr_to_string(&Expr::List(p.into())),
             None => "{2, 1}".to_string(),
           };
           crate::emit_message(&format!(
@@ -3907,14 +3902,14 @@ pub fn dispatch_list_operations(
                 format!(
                   "Join::normal1: Expression {} at position 1 is expected to \
                    have nonatomic subexpression at level {}.",
-                  crate::syntax::expr_to_string(a),
+                  expr_to_string(a),
                   level
                 )
               } else {
                 format!(
                   "Join::headsd: Expression {} at position {} is expected to \
                    have head List for all expressions at level {}.",
-                  crate::syntax::expr_to_string(a),
+                  expr_to_string(a),
                   i + 1,
                   level
                 )
@@ -4079,7 +4074,7 @@ pub fn dispatch_list_operations(
         {
           crate::emit_message(&format!(
             "Thread::tdlen: Objects of unequal length in {} cannot be combined.",
-            crate::syntax::expr_to_string(&args[0])
+            expr_to_string(&args[0])
           ));
           Ok(args[0].clone())
         }
@@ -4098,7 +4093,7 @@ pub fn dispatch_list_operations(
         {
           crate::emit_message(&format!(
             "Thread::tdlen: Objects of unequal length in {} cannot be combined.",
-            crate::syntax::expr_to_string(&args[0])
+            expr_to_string(&args[0])
           ));
           Ok(args[0].clone())
         }
@@ -4146,7 +4141,7 @@ pub fn dispatch_list_operations(
           "Thread::tpos: Cannot thread over positions {} through {} in {}.",
           lo,
           hi,
-          crate::syntax::expr_to_string(&args[0])
+          expr_to_string(&args[0])
         ));
         return Some(unevaluated());
       }
@@ -4161,7 +4156,7 @@ pub fn dispatch_list_operations(
           {
             crate::emit_message(&format!(
               "Thread::tdlen: Objects of unequal length in {} cannot be combined.",
-              crate::syntax::expr_to_string(&args[0])
+              expr_to_string(&args[0])
             ));
             Ok(args[0].clone())
           }
@@ -4239,7 +4234,7 @@ pub fn dispatch_list_operations(
       }
       crate::emit_message(&format!(
         "{name}::tree: Tree expected at position 1 in {}.",
-        crate::syntax::expr_to_string(&unevaluated(name, args)),
+        expr_to_string(&unevaluated(name, args)),
       ));
       return Some(Ok(unevaluated(name, args)));
     }
@@ -4261,7 +4256,7 @@ pub fn dispatch_list_operations(
       ) {
         crate::emit_message(&format!(
           "ExpressionTree::struct: {} is not a valid expression structure. Valid structures include \"HeadTrees\", \"Heads\", \"Subexpressions\" and \"Atoms\".",
-          crate::syntax::expr_to_output(&args[1])
+          expr_to_output(&args[1])
         ));
         return Some(Ok(unevaluated("ExpressionTree", args)));
       }
@@ -4288,7 +4283,7 @@ pub fn dispatch_list_operations(
       if tree_node(&args[0]).is_none() {
         crate::emit_message(&format!(
           "RootTree::tree: Tree expected at position 1 in {}.",
-          crate::syntax::expr_to_string(&unevaluated())
+          expr_to_string(&unevaluated())
         ));
         return Some(Ok(unevaluated()));
       }
@@ -4325,7 +4320,7 @@ pub fn dispatch_list_operations(
       }
       crate::emit_message(&format!(
         "{name}::tree: Tree expected at position 1 in {}.",
-        crate::syntax::expr_to_string(&unevaluated(name, args)),
+        expr_to_string(&unevaluated(name, args)),
       ));
       return Some(Ok(unevaluated(name, args)));
     }
@@ -4346,7 +4341,7 @@ pub fn dispatch_list_operations(
       if tree_node(&args[0]).is_none() {
         crate::emit_message(&format!(
           "TreeReplacePart::tree: Tree expected at position 1 in {}.",
-          crate::syntax::expr_to_string(&unevaluated())
+          expr_to_string(&unevaluated())
         ));
         return Some(Ok(unevaluated()));
       }
@@ -4387,7 +4382,7 @@ pub fn dispatch_list_operations(
       if tree_node(&args[0]).is_none() {
         crate::emit_message(&format!(
           "TreeInsert::tree: Tree expected at position 1 in {}.",
-          crate::syntax::expr_to_string(&unevaluated())
+          expr_to_string(&unevaluated())
         ));
         return Some(Ok(unevaluated()));
       }
@@ -4402,8 +4397,8 @@ pub fn dispatch_list_operations(
       }
       crate::emit_message(&format!(
         "TreeInsert::ins: Cannot insert at position {} in {}.",
-        crate::syntax::expr_to_string(&args[2]),
-        crate::syntax::expr_to_string(&args[0])
+        expr_to_string(&args[2]),
+        expr_to_string(&args[0])
       ));
       return Some(Ok(unevaluated()));
     }
@@ -4414,7 +4409,7 @@ pub fn dispatch_list_operations(
       if tree_node(&args[0]).is_none() {
         crate::emit_message(&format!(
           "TreeDelete::tree: Tree expected at position 1 in {}.",
-          crate::syntax::expr_to_string(&unevaluated())
+          expr_to_string(&unevaluated())
         ));
         return Some(Ok(unevaluated()));
       }
@@ -4436,7 +4431,7 @@ pub fn dispatch_list_operations(
       if tree_node(&args[0]).is_none() {
         crate::emit_message(&format!(
           "TreeLevel::tree: Tree expected at position 1 in {}.",
-          crate::syntax::expr_to_string(&unevaluated())
+          expr_to_string(&unevaluated())
         ));
         return Some(Ok(unevaluated()));
       }
@@ -4461,7 +4456,7 @@ pub fn dispatch_list_operations(
       if tree_node(&args[0]).is_none() {
         crate::emit_message(&format!(
           "TreeSelect::tree: Tree expected at position 1 in {}.",
-          crate::syntax::expr_to_string(&unevaluated())
+          expr_to_string(&unevaluated())
         ));
         return Some(Ok(unevaluated()));
       }
@@ -4485,7 +4480,7 @@ pub fn dispatch_list_operations(
           rest[0] = Expr::Identifier(tree_str);
           crate::emit_message(&format!(
             "TreeSelect::innf: Non-negative integer or Infinity expected at position -1 in {}.",
-            crate::syntax::expr_to_string(&call("TreeSelect", rest))
+            expr_to_string(&call("TreeSelect", rest))
           ));
           return Some(Ok(unevaluated()));
         }
@@ -4531,7 +4526,7 @@ pub fn dispatch_list_operations(
       }
       crate::emit_message(&format!(
         "TreePosition::tree: Tree expected at position 1 in {}.",
-        crate::syntax::expr_to_string(&unevaluated())
+        expr_to_string(&unevaluated())
       ));
       return Some(Ok(unevaluated()));
     }
@@ -4545,7 +4540,7 @@ pub fn dispatch_list_operations(
       if tree_node(&args[0]).is_none() {
         crate::emit_message(&format!(
           "TreeExtract::tree: Tree expected at position 1 in {}.",
-          crate::syntax::expr_to_string(&unevaluated())
+          expr_to_string(&unevaluated())
         ));
         return Some(Ok(unevaluated()));
       }
@@ -4553,8 +4548,8 @@ pub fn dispatch_list_operations(
       let psl1 = || {
         crate::emit_message(&format!(
           "TreeExtract::psl1: Position specification {} in TreeExtract[-Tree-, {}] is not applicable.",
-          crate::syntax::expr_to_string(&args[1]),
-          crate::syntax::expr_to_string(&args[1])
+          expr_to_string(&args[1]),
+          expr_to_string(&args[1])
         ));
         unevaluated()
       };
@@ -4597,7 +4592,7 @@ pub fn dispatch_list_operations(
       Ok(None) => {
         crate::emit_message(&format!(
           "TreeMap::tree: Tree expected at position 2 in {}.",
-          crate::syntax::expr_to_string(&unevaluated("TreeMap", args)),
+          expr_to_string(&unevaluated("TreeMap", args)),
         ));
         return Some(Ok(unevaluated("TreeMap", args)));
       }
@@ -4613,7 +4608,7 @@ pub fn dispatch_list_operations(
       }
       crate::emit_message(&format!(
         "TreeLeaves::tree: Tree expected at position 1 in {}.",
-        crate::syntax::expr_to_string(&unevaluated("TreeLeaves", args))
+        expr_to_string(&unevaluated("TreeLeaves", args))
       ));
       return Some(Ok(unevaluated("TreeLeaves", args)));
     }
@@ -4633,7 +4628,7 @@ pub fn dispatch_list_operations(
       }
       crate::emit_message(&format!(
         "TreeCases::tree: Tree expected at position 1 in {}.",
-        crate::syntax::expr_to_string(&unevaluated())
+        expr_to_string(&unevaluated())
       ));
       return Some(Ok(unevaluated()));
     }
@@ -4643,7 +4638,7 @@ pub fn dispatch_list_operations(
       Ok(None) => {
         crate::emit_message(&format!(
           "TreeScan::tree: Tree expected at position 2 in {}.",
-          crate::syntax::expr_to_string(&unevaluated("TreeScan", args))
+          expr_to_string(&unevaluated("TreeScan", args))
         ));
         return Some(Ok(unevaluated("TreeScan", args)));
       }
@@ -4664,7 +4659,7 @@ pub fn dispatch_list_operations(
       }
       crate::emit_message(&format!(
         "TreeCount::tree: Tree expected at position 1 in {}.",
-        crate::syntax::expr_to_string(&unevaluated())
+        expr_to_string(&unevaluated())
       ));
       return Some(Ok(unevaluated()));
     }
@@ -4687,7 +4682,7 @@ pub fn dispatch_list_operations(
     }
     "Through" if args.len() == 2 => {
       // Through[expr, h] - only apply if head of expr matches h
-      let head_filter = crate::syntax::expr_to_string(&args[1]);
+      let head_filter = expr_to_string(&args[1]);
       return Some(list_helpers_ast::through_ast(&args[0], Some(&head_filter)));
     }
     "Comap" if args.len() == 1 => {
@@ -4728,7 +4723,7 @@ pub fn dispatch_list_operations(
             args: vec![expr.clone()].into(),
           })
           .map(|_| Expr::FunctionCall {
-            name: crate::syntax::expr_to_string(p),
+            name: expr_to_string(p),
             args: vec![expr.clone()].into(),
           }),
         );
@@ -5144,7 +5139,7 @@ pub fn dispatch_list_operations(
           crate::emit_message(&format!(
             "Indexed::partw: Part {} of {} does not exist.",
             n,
-            crate::syntax::expr_to_string(&current)
+            expr_to_string(&current)
           ));
           return Some(Ok(unevaluated("Indexed", args)));
         }
@@ -5566,10 +5561,9 @@ pub fn dispatch_list_operations(
         for elem in elems {
           let key = crate::evaluator::apply_function_to_arg(f, elem)
             .unwrap_or_else(|_| elem.clone());
-          let key_str = crate::syntax::expr_to_string(&key);
-          if let Some(pos) = keys
-            .iter()
-            .position(|k| crate::syntax::expr_to_string(k) == key_str)
+          let key_str = expr_to_string(&key);
+          if let Some(pos) =
+            keys.iter().position(|k| expr_to_string(k) == key_str)
           {
             counts[pos] += 1;
           } else {
@@ -5752,7 +5746,7 @@ pub fn dispatch_list_operations(
     // JoinAcross[list1, list2, key] — join associations on a common key
     "JoinAcross" if args.len() == 3 => {
       if let (Expr::List(l1), Expr::List(l2)) = (&args[0], &args[1]) {
-        let key_str = crate::syntax::expr_to_string(&args[2]);
+        let key_str = expr_to_string(&args[2]);
         let mut results = Vec::new();
         for a1 in l1 {
           let key_val = get_assoc_value(a1, &key_str);
@@ -5760,8 +5754,7 @@ pub fn dispatch_list_operations(
             for a2 in l2 {
               let key_val2 = get_assoc_value(a2, &key_str);
               if let Some(ref kv2) = key_val2
-                && crate::syntax::expr_to_string(kv)
-                  == crate::syntax::expr_to_string(kv2)
+                && expr_to_string(kv) == expr_to_string(kv2)
               {
                 // Merge the two associations
                 let merged = merge_associations(a1, a2);
@@ -5824,8 +5817,8 @@ pub fn dispatch_list_operations(
       if !matches!(&args[0], Expr::List(_)) {
         crate::emit_message(&format!(
           "SequencePosition::list: List expected at position 1 in SequencePosition[{}, {}].",
-          crate::syntax::expr_to_string(&args[0]),
-          crate::syntax::expr_to_string(&args[1])
+          expr_to_string(&args[0]),
+          expr_to_string(&args[1])
         ));
         return Some(Ok(unevaluated("SequencePosition", args)));
       }
@@ -5951,8 +5944,8 @@ pub fn dispatch_list_operations(
       if !matches!(&args[0], Expr::List(_)) {
         crate::emit_message(&format!(
           "SequenceCases::list: List expected at position 1 in SequenceCases[{}, {}].",
-          crate::syntax::expr_to_string(&args[0]),
-          crate::syntax::expr_to_string(&args[1])
+          expr_to_string(&args[0]),
+          expr_to_string(&args[1])
         ));
         return Some(Ok(unevaluated("SequenceCases", args)));
       }
@@ -6105,8 +6098,8 @@ pub fn dispatch_list_operations(
       if !matches!(&args[0], Expr::List(_)) {
         crate::emit_message(&format!(
           "SequenceSplit::list: List expected at position 1 in SequenceSplit[{}, {}].",
-          crate::syntax::expr_to_string(&args[0]),
-          crate::syntax::expr_to_string(&args[1])
+          expr_to_string(&args[0]),
+          expr_to_string(&args[1])
         ));
         return Some(Ok(unevaluated("SequenceSplit", args)));
       }
@@ -6119,7 +6112,7 @@ pub fn dispatch_list_operations(
           let call = unevaluated("SequenceSplit", args);
           crate::emit_message(&format!(
             "SequenceSplit::ipnf: Positive integer or Infinity expected at position 3 in {}.",
-            crate::syntax::expr_to_string(&call)
+            expr_to_string(&call)
           ));
           return Some(Ok(call));
         }
@@ -6261,8 +6254,8 @@ pub fn dispatch_list_operations(
         let call = unevaluated("SequenceCount", args);
         crate::emit_message(&format!(
           "SequenceCount::nonopt: Options expected (instead of {}) beyond position 2 in {}. An option must be a rule or a list of rules.",
-          crate::syntax::expr_to_string(opt),
-          crate::syntax::expr_to_string(&call)
+          expr_to_string(opt),
+          expr_to_string(&call)
         ));
         return Some(Ok(call));
       }
@@ -6382,7 +6375,7 @@ pub fn dispatch_list_operations(
       if !matches!(&args[0], Expr::List(_)) {
         crate::emit_message(&format!(
           "SequenceReplace::list: List expected at position 1 in {}.",
-          crate::syntax::expr_to_string(&unevaluated("SequenceReplace", args)),
+          expr_to_string(&unevaluated("SequenceReplace", args)),
         ));
         return Some(Ok(unevaluated("SequenceReplace", args)));
       }
@@ -6522,7 +6515,7 @@ pub fn dispatch_list_operations(
       let Expr::List(list) = &args[0] else {
         crate::emit_message(&format!(
           "SubsetReplace::list: List expected at position 1 in {}.",
-          crate::syntax::expr_to_string(&unevaluated())
+          expr_to_string(&unevaluated())
         ));
         return Some(Ok(unevaluated()));
       };
@@ -8203,7 +8196,7 @@ fn normal_convert_associations(expr: &Expr) -> Expr {
 /// Combines a matrix of sub-matrices (blocks) into a single matrix.
 /// Scalar entries (e.g. 0) are expanded to zero/constant matrices
 /// of the appropriate dimensions inferred from neighboring blocks.
-fn array_flatten_ast(arg: &Expr) -> crate::syntax::Expr {
+fn array_flatten_ast(arg: &Expr) -> Expr {
   // arg should be a list of rows, where each row is a list of blocks (sub-matrices)
   let Expr::List(block_rows) = arg else {
     return call1("ArrayFlatten", arg.clone());
@@ -8494,7 +8487,7 @@ fn nearest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     crate::emit_message(&format!(
       "Nearest::near1: {} is neither a list of real points nor a valid list \
        of rules.",
-      crate::syntax::expr_to_output(&args[0])
+      expr_to_output(&args[0])
     ));
     return Ok(unevaluated("Nearest", args));
   }
@@ -8937,7 +8930,7 @@ fn compose_transformation_functions(parts: &[Expr]) -> Option<Expr> {
     .then(|| call1("TransformationFunction", product))
 }
 
-fn position_index_ast(expr: &Expr) -> crate::syntax::Expr {
+fn position_index_ast(expr: &Expr) -> Expr {
   // `PositionIndex[list]` indexes values by their integer positions;
   // `PositionIndex[assoc]` indexes the association's values by their keys.
   let pairs: Vec<(Expr, Expr)> = match expr {
@@ -8962,10 +8955,9 @@ fn position_index_ast(expr: &Expr) -> crate::syntax::Expr {
   // value's first appearance.
   let mut map: Vec<(Expr, Vec<Expr>)> = Vec::new();
   for (pos, item) in pairs {
-    let item_str = crate::syntax::expr_to_string(&item);
-    if let Some(entry) = map
-      .iter_mut()
-      .find(|(k, _)| crate::syntax::expr_to_string(k) == item_str)
+    let item_str = expr_to_string(&item);
+    if let Some(entry) =
+      map.iter_mut().find(|(k, _)| expr_to_string(k) == item_str)
     {
       entry.1.push(pos);
     } else {
@@ -9739,7 +9731,7 @@ fn build_inner_sparse(
 ) -> Expr {
   let func_name = match func {
     Expr::Identifier(s) => s.clone(),
-    _ => crate::syntax::expr_to_string(func),
+    _ => expr_to_string(func),
   };
   let make_call = |trailing: Expr| {
     let mut call_args = Vec::with_capacity(outer_vals.len() + 1);

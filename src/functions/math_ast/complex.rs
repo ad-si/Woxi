@@ -638,9 +638,7 @@ fn conjugate_one(expr: &Expr) -> Result<Expr, InterpreterError> {
     let mut bare: Vec<Expr> = Vec::new();
     for t in &terms {
       let c = conjugate_one(t)?;
-      if crate::syntax::expr_to_string(&c)
-        == crate::syntax::expr_to_string(&conj_wrap(t))
-      {
+      if expr_to_string(&c) == expr_to_string(&conj_wrap(t)) {
         bare.push(t.clone());
       } else {
         simplified.push(c);
@@ -752,8 +750,7 @@ fn conjugate_one(expr: &Expr) -> Result<Expr, InterpreterError> {
   {
     let num = conjugate_one(left)?;
     let den = conjugate_one(right)?;
-    let clean =
-      |e: &Expr| !crate::syntax::expr_to_string(e).contains("Conjugate[");
+    let clean = |e: &Expr| !expr_to_string(e).contains("Conjugate[");
     if clean(&num) && clean(&den) {
       return crate::evaluator::evaluate_expr_to_expr(&div2(num, den));
     }

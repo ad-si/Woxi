@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 
 /// Convert an Expr to a boolean value.
@@ -68,7 +67,7 @@ pub fn apply_func_to_two_args(
       crate::evaluator::evaluate_function_call_ast(name, &new_args)
     }
     _ => {
-      let func_str = crate::syntax::expr_to_string(func);
+      let func_str = expr_to_string(func);
       crate::evaluator::evaluate_function_call_ast(
         &func_str,
         &[arg1.clone(), arg2.clone()],
@@ -109,7 +108,7 @@ pub fn apply_func_to_args(
       crate::evaluator::evaluate_function_call_ast(name, &new_args)
     }
     _ => {
-      let func_str = crate::syntax::expr_to_string(func);
+      let func_str = expr_to_string(func);
       crate::evaluator::evaluate_function_call_ast(&func_str, call_args)
     }
   }
@@ -228,7 +227,7 @@ pub fn apply_func_to_n_args(
       crate::evaluator::evaluate_function_call_ast(name, &new_args)
     }
     _ => {
-      let func_str = crate::syntax::expr_to_string(func);
+      let func_str = expr_to_string(func);
       crate::evaluator::evaluate_function_call_ast(&func_str, args)
     }
   }

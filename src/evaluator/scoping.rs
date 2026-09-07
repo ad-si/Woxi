@@ -6,7 +6,7 @@ use super::*;
 fn non_list_local_spec(head: &str, args: &[Expr], spec: &Expr) -> Expr {
   crate::emit_message(&format!(
     "{head}::lvlist: Local variable specification {} is not a List.",
-    crate::syntax::expr_to_string(spec)
+    expr_to_string(spec)
   ));
   unevaluated_with_spec(head, args, spec)
 }
@@ -414,8 +414,8 @@ pub fn block_random_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         crate::emit_message(&format!(
           "BlockRandom::nonopt: Options expected (instead of {}) beyond \
            position 1 in {}. An option must be a rule or a list of rules.",
-          crate::syntax::expr_to_output(opt),
-          crate::syntax::expr_to_output(&unevaluated("BlockRandom", args))
+          expr_to_output(opt),
+          expr_to_output(&unevaluated("BlockRandom", args))
         ));
         return Ok(unevaluated("BlockRandom", args));
       }
@@ -424,7 +424,7 @@ pub fn block_random_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some((name, _)) = options.iter().find(|(n, _)| n != "RandomSeeding") {
     crate::emit_message(&format!(
       "BlockRandom::optx: Unknown option {name} in {}.",
-      crate::syntax::expr_to_output(&unevaluated("BlockRandom", args))
+      expr_to_output(&unevaluated("BlockRandom", args))
     ));
     return Ok(unevaluated("BlockRandom", args));
   }
@@ -451,7 +451,7 @@ pub fn block_random_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
          not Automatic, Inherited, an integer, string or valid \
          RandomGeneratorState expression. Using the default seeding for \
          BlockRandom instead.",
-        crate::syntax::expr_to_output(spec)
+        expr_to_output(spec)
       ));
     }
   }

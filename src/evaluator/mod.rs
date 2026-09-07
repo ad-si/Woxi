@@ -3,7 +3,8 @@ use crate::helpers::{
   times2, unevaluated,
 };
 use crate::syntax::{
-  BinaryOperator, ComparisonOp, Expr, UnaryOperator, expr_to_string,
+  BinaryOperator, ComparisonOp, Expr, UnaryOperator, expr_to_output,
+  expr_to_string,
 };
 use crate::{ENV, InterpreterError, PART_DEPTH, StoredValue, interpret};
 use num_bigint::{BigInt, Sign};

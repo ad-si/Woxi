@@ -115,7 +115,7 @@ fn magnitude_in_unit(expr: &Expr, target_unit: &str) -> Option<f64> {
   // may be stored as a String (`"AngularDegrees"`) or a symbol.
   let unit_name = match &args[1] {
     Expr::String(s) => s.clone(),
-    other => crate::syntax::expr_to_string(other),
+    other => expr_to_string(other),
   };
   if unit_name == target_unit {
     return crate::functions::graphics::expr_to_f64(&args[0]);
@@ -498,7 +498,7 @@ pub fn dms_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Some(_) => {
       crate::emit_message(&format!(
         "DMSString::num: {} cannot be interpreted as a numerical angle specification.",
-        crate::syntax::expr_to_output(&args[0])
+        expr_to_output(&args[0])
       ));
       return unevaluated();
     }
@@ -536,7 +536,7 @@ pub fn dms_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         _ => {
           crate::emit_message(&format!(
             "DMSString::dms: {} cannot be interpreted as a degree-minute-second list specification.",
-            crate::syntax::expr_to_output(&args[0])
+            expr_to_output(&args[0])
           ));
           unevaluated()
         }
@@ -554,7 +554,7 @@ pub fn dms_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       crate::emit_message(&format!(
         "DMSString::ang: {} cannot be interpreted as a degree-minute-second angle specification.",
-        crate::syntax::expr_to_output(&args[0])
+        expr_to_output(&args[0])
       ));
       unevaluated()
     }
@@ -564,7 +564,7 @@ pub fn dms_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         crate::emit_message(&format!(
           "DMSString::ang: {} cannot be interpreted as a degree-minute-second angle specification.",
-          crate::syntax::expr_to_output(other)
+          expr_to_output(other)
         ));
         unevaluated()
       }
@@ -614,8 +614,7 @@ mod tests {
     let list = |a: i128, b: i128| {
       Expr::List(vec![Expr::Integer(a), Expr::Integer(b)].into())
     };
-    let render =
-      |e: Expr| crate::syntax::expr_to_string(&geo_antipode_ast(&[e]).unwrap());
+    let render = |e: Expr| expr_to_string(&geo_antipode_ast(&[e]).unwrap());
     // Western longitude shifts east, exact integers preserved.
     assert_eq!(render(list(40, -100)), "{-40, 80}");
     // Longitude 0 maps to 180 (the boundary stays positive).

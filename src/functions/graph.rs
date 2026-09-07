@@ -1831,10 +1831,7 @@ pub fn graph_reciprocity(edges: &[Expr]) -> Option<Expr> {
     return None; // mixed graph
   }
   let key = |u: &Expr, v: &Expr, directed: bool| -> (String, String) {
-    let (ku, kv) = (
-      crate::syntax::expr_to_string(u),
-      crate::syntax::expr_to_string(v),
-    );
+    let (ku, kv) = (expr_to_string(u), expr_to_string(v));
     if directed || ku <= kv {
       (ku, kv)
     } else {
@@ -1853,10 +1850,7 @@ pub fn graph_reciprocity(edges: &[Expr]) -> Option<Expr> {
   let reciprocated = parsed
     .iter()
     .filter(|(u, v, _)| {
-      let (ku, kv) = (
-        crate::syntax::expr_to_string(u),
-        crate::syntax::expr_to_string(v),
-      );
+      let (ku, kv) = (expr_to_string(u), expr_to_string(v));
       ku == kv || dir_set.contains(&(kv, ku))
     })
     .count();
@@ -1879,15 +1873,15 @@ pub fn graph_disjoint_union(graphs: &[(&[Expr], &[Expr])]) -> Expr {
     let mut label: HashMap<String, i128> = HashMap::new();
     for (j, v) in verts.iter().enumerate() {
       let new_id = (offset + j + 1) as i128;
-      label.insert(crate::syntax::expr_to_string(v), new_id);
+      label.insert(expr_to_string(v), new_id);
       new_vertices.push(Expr::Integer(new_id));
     }
     for e in *edges {
       match edge_endpoints(e) {
         Some((u, v, directed)) => {
           match (
-            label.get(&crate::syntax::expr_to_string(&u)),
-            label.get(&crate::syntax::expr_to_string(&v)),
+            label.get(&expr_to_string(&u)),
+            label.get(&expr_to_string(&v)),
           ) {
             (Some(&nu), Some(&nv)) => {
               // Undirected endpoints are stored canonically as (min, max).
@@ -2517,7 +2511,7 @@ pub fn undirected_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let not_a_graph = || {
     crate::emit_message(&format!(
       "UndirectedGraph::graph: A graph object is expected at position 1 in {}.",
-      crate::syntax::expr_to_string(&unevaluated())
+      expr_to_string(&unevaluated())
     ));
     Ok(unevaluated())
   };
@@ -3547,7 +3541,7 @@ pub fn transitive_closure_graph_ast(
     _ => return Ok(unevaluated(args)),
   };
 
-  let key = |e: &Expr| crate::syntax::expr_to_string(e);
+  let key = |e: &Expr| expr_to_string(e);
   let index: std::collections::HashMap<String, usize> = vertices
     .iter()
     .enumerate()
@@ -3649,7 +3643,7 @@ pub fn transitive_reduction_graph_ast(
     _ => return Ok(unevaluated(args)),
   };
 
-  let key = |e: &Expr| crate::syntax::expr_to_string(e);
+  let key = |e: &Expr| expr_to_string(e);
   let index: std::collections::HashMap<String, usize> = vertices
     .iter()
     .enumerate()
@@ -3733,7 +3727,7 @@ pub fn reverse_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let not_a_graph = || {
     crate::emit_message(&format!(
       "ReverseGraph::graph: A graph object is expected at position 1 in {}.",
-      crate::syntax::expr_to_string(&unevaluated())
+      expr_to_string(&unevaluated())
     ));
     Ok(unevaluated())
   };
@@ -3754,7 +3748,7 @@ pub fn reverse_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => return not_a_graph(),
   };
 
-  let key = |e: &Expr| crate::syntax::expr_to_string(e);
+  let key = |e: &Expr| expr_to_string(e);
   let index: std::collections::HashMap<String, usize> = vertices
     .iter()
     .enumerate()
@@ -3813,7 +3807,7 @@ pub fn directed_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let not_a_graph = || {
     crate::emit_message(&format!(
       "DirectedGraph::graph: A graph object is expected at position 1 in {}.",
-      crate::syntax::expr_to_string(&unevaluated())
+      expr_to_string(&unevaluated())
     ));
     Ok(unevaluated())
   };
@@ -3834,7 +3828,7 @@ pub fn directed_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => return not_a_graph(),
   };
 
-  let key = |e: &Expr| crate::syntax::expr_to_string(e);
+  let key = |e: &Expr| expr_to_string(e);
   let index: std::collections::HashMap<String, usize> = vertices
     .iter()
     .enumerate()
@@ -3922,7 +3916,7 @@ pub fn find_independent_vertex_set_ast(
   if n == 0 || n > 64 {
     return Ok(unevaluated(args));
   }
-  let key = |e: &Expr| crate::syntax::expr_to_string(e);
+  let key = |e: &Expr| expr_to_string(e);
   let index: std::collections::HashMap<String, usize> = vertices
     .iter()
     .enumerate()
@@ -4008,7 +4002,7 @@ pub fn vertex_component_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     _ => return Ok(unevaluated(args)),
   };
-  let key = |e: &Expr| crate::syntax::expr_to_string(e);
+  let key = |e: &Expr| expr_to_string(e);
   let index: std::collections::HashMap<String, usize> = vertices
     .iter()
     .enumerate()
@@ -4050,7 +4044,7 @@ pub fn vertex_component_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       crate::emit_message(&format!(
         "VertexComponent::inv: The argument {} in {} is not a valid vertex.",
         key(seed),
-        crate::syntax::expr_to_string(&call(
+        expr_to_string(&call(
           "VertexComponent",
           vec![graph.clone(), args[1].clone()]
         ))
@@ -4122,7 +4116,7 @@ pub fn vertex_reach_component_ast(
     _ => return Ok(unevaluated()),
   };
 
-  let key = |e: &Expr| crate::syntax::expr_to_string(e);
+  let key = |e: &Expr| expr_to_string(e);
   let index: std::collections::HashMap<String, usize> = vertices
     .iter()
     .enumerate()
@@ -4168,10 +4162,7 @@ pub fn vertex_reach_component_ast(
         "{}::inv: The argument {} in {} is not a valid vertex.",
         name,
         key(seed),
-        crate::syntax::expr_to_string(&call(
-          name,
-          vec![graph.clone(), args[1].clone()]
-        ))
+        expr_to_string(&call(name, vec![graph.clone(), args[1].clone()]))
       ));
       return Ok(unevaluated());
     }
@@ -4234,7 +4225,7 @@ pub fn weighted_adjacency_graph_ast(
     None => (1..=n as i128).map(Expr::Integer).collect(),
   };
   let is_edge = |e: &Expr| !matches!(e, Expr::Identifier(s) if s == "Infinity");
-  let key = |e: &Expr| crate::syntax::expr_to_string(e);
+  let key = |e: &Expr| expr_to_string(e);
   let symmetric =
     (0..n).all(|i| (0..n).all(|j| key(&rows[i][j]) == key(&rows[j][i])));
 
@@ -4515,7 +4506,7 @@ pub fn nearest_neighbor_graph_ast(
     _ => {
       crate::emit_message(&format!(
         "NearestNeighborGraph::list: List expected at position 1 in {}.",
-        crate::syntax::expr_to_string(&unevaluated(args))
+        expr_to_string(&unevaluated(args))
       ));
       return Ok(unevaluated(args));
     }
@@ -5491,7 +5482,7 @@ pub fn kirchhoff_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let not_square = || {
     crate::emit_message(&format!(
       "KirchhoffGraph::matsq: Argument {} at position {} is not a nonempty square matrix.",
-      crate::syntax::expr_to_output(matrix_expr),
+      expr_to_output(matrix_expr),
       matrix_pos
     ));
     Ok(unevaluated())
@@ -5499,11 +5490,8 @@ pub fn kirchhoff_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let invalid = || {
     crate::emit_message(&format!(
       "KirchhoffGraph::inv: The argument {} in {} is not a valid Kirchhoff matrix.",
-      crate::syntax::expr_to_output(matrix_expr),
-      crate::syntax::expr_to_string(&call(
-        "KirchhoffGraph",
-        vec![matrix_expr.clone()]
-      ))
+      expr_to_output(matrix_expr),
+      expr_to_string(&call("KirchhoffGraph", vec![matrix_expr.clone()]))
     ));
     Ok(unevaluated())
   };
@@ -5593,7 +5581,7 @@ pub fn incidence_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let not_a_matrix = || {
     crate::emit_message(&format!(
       "IncidenceGraph::matrix: Argument {} at position {} is not a nonempty rectangular matrix.",
-      crate::syntax::expr_to_output(matrix_expr),
+      expr_to_output(matrix_expr),
       matrix_pos
     ));
     Ok(unevaluated())
@@ -5601,8 +5589,8 @@ pub fn incidence_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let invalid = || {
     crate::emit_message(&format!(
       "IncidenceGraph::inv: The argument {} in {} is not a valid incidence matrix.",
-      crate::syntax::expr_to_output(matrix_expr),
-      crate::syntax::expr_to_string(&unevaluated())
+      expr_to_output(matrix_expr),
+      expr_to_string(&unevaluated())
     ));
     Ok(unevaluated())
   };
@@ -7249,9 +7237,7 @@ fn same_edge(a: &Expr, b: &Expr) -> bool {
   let Some((b1, b2, b_directed)) = edge_endpoints(b) else {
     return false;
   };
-  let eq = |x: &Expr, y: &Expr| {
-    crate::syntax::expr_to_string(x) == crate::syntax::expr_to_string(y)
-  };
+  let eq = |x: &Expr, y: &Expr| expr_to_string(x) == expr_to_string(y);
   (eq(&a1, &b1) && eq(&a2, &b2))
     || (!a_directed && !b_directed && eq(&a1, &b2) && eq(&a2, &b1))
 }
@@ -7288,19 +7274,19 @@ pub fn vertex_replace_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => return Ok(original()),
   };
   let rename = |v: &Expr| -> Expr {
-    let key = crate::syntax::expr_to_string(v);
+    let key = expr_to_string(v);
     rules
       .iter()
-      .find(|(from, _)| crate::syntax::expr_to_string(from) == key)
+      .find(|(from, _)| expr_to_string(from) == key)
       .map_or_else(|| v.clone(), |(_, to)| to.clone())
   };
   let mut new_vertices: Vec<Expr> = Vec::with_capacity(vertices.len());
   for v in &vertices {
     let renamed = rename(v);
-    let key = crate::syntax::expr_to_string(&renamed);
+    let key = expr_to_string(&renamed);
     if !new_vertices
       .iter()
-      .any(|existing| crate::syntax::expr_to_string(existing) == key)
+      .any(|existing| expr_to_string(existing) == key)
     {
       new_vertices.push(renamed);
     }
@@ -7462,9 +7448,7 @@ fn value_fallback(value: &Expr) -> Option<Expr> {
 /// Whether `item` is the vertex or edge the rule on the left names.
 fn names_item(lhs: &Expr, item: &Expr, scope: Scope) -> bool {
   match scope {
-    Scope::Vertex => {
-      crate::syntax::expr_to_string(lhs) == crate::syntax::expr_to_string(item)
-    }
+    Scope::Vertex => expr_to_string(lhs) == expr_to_string(item),
     Scope::Edge => same_edge(lhs, item),
   }
 }
@@ -7476,9 +7460,10 @@ fn item_position(
   edges: &[Expr],
   item: &Expr,
 ) -> Option<(Scope, usize)> {
-  if let Some(i) = vertices.iter().position(|v| {
-    crate::syntax::expr_to_string(v) == crate::syntax::expr_to_string(item)
-  }) {
+  if let Some(i) = vertices
+    .iter()
+    .position(|v| expr_to_string(v) == expr_to_string(item))
+  {
     return Some((Scope::Vertex, i));
   }
   edges
@@ -7680,7 +7665,7 @@ pub fn graph_annotation_keys_ast(
   let Some((vertices, edges, options)) = graph_parts(graph) else {
     crate::emit_message(&format!(
       "AnnotationKeys::pvobj: {} is not an object with annotations.",
-      crate::syntax::expr_to_string(&args[0])
+      expr_to_string(&args[0])
     ));
     return Ok(original());
   };
@@ -7768,7 +7753,7 @@ pub fn graph_annotation_delete_ast(
   let Some((vertices, edges, options)) = graph_parts(graph) else {
     crate::emit_message(&format!(
       "AnnotationDelete::pvobj: {} is not an object with annotations.",
-      crate::syntax::expr_to_string(&args[0])
+      expr_to_string(&args[0])
     ));
     return Ok(original());
   };
@@ -7878,9 +7863,9 @@ pub fn graph_set_property_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .collect();
   if let Some(item) = item {
     let index = if property.starts_with("Vertex") {
-      vertices.iter().position(|v| {
-        crate::syntax::expr_to_string(v) == crate::syntax::expr_to_string(item)
-      })
+      vertices
+        .iter()
+        .position(|v| expr_to_string(v) == expr_to_string(item))
     } else {
       edges.iter().position(|e| same_edge(e, item))
     };
@@ -7917,9 +7902,9 @@ pub fn graph_options_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let name_of = |o: &Expr| match o {
     Expr::Rule { pattern, .. } => match pattern.as_ref() {
       Expr::Identifier(s) => s.clone(),
-      other => crate::syntax::expr_to_string(other),
+      other => expr_to_string(other),
     },
-    other => crate::syntax::expr_to_string(other),
+    other => expr_to_string(other),
   };
   options.sort_by(|a, b| {
     crate::functions::list_helpers_ast::sorting::wolfram_string_order(
@@ -8081,10 +8066,10 @@ pub fn edge_tagged_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(original());
     };
     for v in [&a, &b] {
-      let key = crate::syntax::expr_to_string(v);
+      let key = expr_to_string(v);
       if !vertices
         .iter()
-        .any(|existing| crate::syntax::expr_to_string(existing) == key)
+        .any(|existing| expr_to_string(existing) == key)
       {
         vertices.push((*v).clone());
       }

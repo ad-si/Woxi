@@ -239,7 +239,7 @@ fn contains_slot(expr: &Expr) -> bool {
 }
 
 /// Convert Root[f&, k] to radical form.
-fn root_to_radical(func: &Expr, k_expr: &Expr) -> crate::syntax::Expr {
+fn root_to_radical(func: &Expr, k_expr: &Expr) -> Expr {
   let k = match k_expr {
     Expr::Integer(n) => *n,
     _ => {
@@ -266,9 +266,7 @@ fn root_to_radical(func: &Expr, k_expr: &Expr) -> crate::syntax::Expr {
 
   // Generate all roots and sort them, then pick the k-th one
   // Check if it's a pure polynomial x^n + c = 0 (only leading and constant terms)
-  let is_pure = coeffs[1..degree]
-    .iter()
-    .all(|c| crate::syntax::expr_to_string(c) == "0");
+  let is_pure = coeffs[1..degree].iter().all(|c| expr_to_string(c) == "0");
 
   let roots = if is_pure && degree >= 1 {
     Some(solve_pure_nth(&coeffs[degree], &coeffs[0], degree as i128))
@@ -304,7 +302,7 @@ fn root_to_radical(func: &Expr, k_expr: &Expr) -> crate::syntax::Expr {
 }
 
 /// Solve linear: a0 + a1*x = 0 → x = -a0/a1
-fn solve_linear(coeffs: &[Expr]) -> std::vec::Vec<crate::syntax::Expr> {
+fn solve_linear(coeffs: &[Expr]) -> std::vec::Vec<Expr> {
   vec![call(
     "Times",
     vec![
@@ -316,7 +314,7 @@ fn solve_linear(coeffs: &[Expr]) -> std::vec::Vec<crate::syntax::Expr> {
 }
 
 /// Solve quadratic: a0 + a1*x + a2*x^2 = 0
-fn solve_quadratic(coeffs: &[Expr]) -> std::vec::Vec<crate::syntax::Expr> {
+fn solve_quadratic(coeffs: &[Expr]) -> std::vec::Vec<Expr> {
   let a = &coeffs[2];
   let b = &coeffs[1];
   let c = &coeffs[0];
@@ -347,7 +345,7 @@ fn solve_quadratic(coeffs: &[Expr]) -> std::vec::Vec<crate::syntax::Expr> {
 
 /// Solve depressed cubic x^3 + px + q = 0 using Cardano's formula.
 /// Then shift for general cubic a0 + a1*x + a2*x^2 + a3*x^3 = 0.
-fn solve_cubic(coeffs: &[Expr]) -> std::vec::Vec<crate::syntax::Expr> {
+fn solve_cubic(coeffs: &[Expr]) -> std::vec::Vec<Expr> {
   // Normalize: divide by leading coefficient
   let a3 = &coeffs[3];
   let a2 = &coeffs[2];
@@ -356,8 +354,8 @@ fn solve_cubic(coeffs: &[Expr]) -> std::vec::Vec<crate::syntax::Expr> {
 
   // For now, handle the common case: x^n - c = 0 (binomial)
   // Check if a2 == 0 and a1 == 0: pure cubic a3*x^3 + a0 = 0
-  let a2_str = crate::syntax::expr_to_string(a2);
-  let a1_str = crate::syntax::expr_to_string(a1);
+  let a2_str = expr_to_string(a2);
+  let a1_str = expr_to_string(a1);
 
   if a2_str == "0" && a1_str == "0" {
     return solve_pure_nth(a3, a0, 3);
@@ -470,7 +468,7 @@ fn solve_pure_nth(
   leading: &Expr,
   constant: &Expr,
   n: i128,
-) -> std::vec::Vec<crate::syntax::Expr> {
+) -> std::vec::Vec<Expr> {
   // x^n = -a0/an
   let base = mk_times(
     mk_times(mk_int(-1), constant.clone()),
@@ -547,9 +545,9 @@ fn solve_quartic(coeffs: &[Expr]) -> Option<Vec<Expr>> {
   let a1 = &coeffs[1];
   let a0 = &coeffs[0];
 
-  let a3_str = crate::syntax::expr_to_string(a3);
-  let a2_str = crate::syntax::expr_to_string(a2);
-  let a1_str = crate::syntax::expr_to_string(a1);
+  let a3_str = expr_to_string(a3);
+  let a2_str = expr_to_string(a2);
+  let a1_str = expr_to_string(a1);
 
   // Pure quartic: a4*x^4 + a0 = 0
   if a3_str == "0" && a2_str == "0" && a1_str == "0" {

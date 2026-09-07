@@ -36,7 +36,7 @@ pub fn convex_hull_mesh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(convex_hull_mesh_2d(pts, args))
 }
 
-fn convex_hull_mesh_2d(pts: &[Expr], args: &[Expr]) -> crate::syntax::Expr {
+fn convex_hull_mesh_2d(pts: &[Expr], args: &[Expr]) -> Expr {
   // Parse points, keeping the original coordinate expressions (to preserve
   // exact display) and tracking whether every coordinate is exact.
   let mut coords: Vec<(f64, f64)> = Vec::new();

@@ -992,7 +992,7 @@ fn expr_to_f64(e: &Expr) -> Option<f64> {
       }
     }
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => expr_to_f64(operand).map(|v| -v),
     _ => None,
@@ -1193,11 +1193,7 @@ pub fn full_moon_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(next_phase_function("FullMoon", Phase::Full, args))
 }
 
-fn next_phase_function(
-  name: &str,
-  phase: Phase,
-  args: &[Expr],
-) -> crate::syntax::Expr {
+fn next_phase_function(name: &str, phase: Phase, args: &[Expr]) -> Expr {
   let jd = match args {
     [] => now_jd(),
     [date] => match parse_date_arg(date) {
@@ -1307,7 +1303,7 @@ fn body_position_ast(
   name: &str,
   ra_dec_dist: fn(f64) -> (f64, f64, f64),
   args: &[Expr],
-) -> crate::syntax::Expr {
+) -> Expr {
   let (positional, system) = split_celestial_options(args);
   let Some(((lat, lon), jd)) = parse_location_date(&positional) else {
     return unevaluated(name, args);
@@ -1406,7 +1402,7 @@ pub fn sidereal_time_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 // ─── Sunrise / Sunset / DaylightQ ───────────────────────────────────
 
-fn sun_event_ast(name: &str, rise: bool, args: &[Expr]) -> crate::syntax::Expr {
+fn sun_event_ast(name: &str, rise: bool, args: &[Expr]) -> Expr {
   let Some(((lat, lon), jd)) = parse_location_date(args) else {
     return unevaluated(name, args);
   };

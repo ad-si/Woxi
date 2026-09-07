@@ -540,7 +540,7 @@ pub fn dispatch_predicate_functions(
         Some(_) => {
           crate::emit_message(&format!(
             "CreateUUID::string: String expected at position 1 in {}.",
-            crate::syntax::expr_to_string(&unevaluated("CreateUUID", args))
+            expr_to_string(&unevaluated("CreateUUID", args))
           ));
           return Some(Ok(unevaluated("CreateUUID", args)));
         }
@@ -612,7 +612,7 @@ pub fn dispatch_predicate_functions(
         _ => {
           crate::emit_message(&format!(
             "Unique::usym: {} is not a symbol or a valid symbol name.",
-            crate::syntax::expr_to_string(&args[0])
+            expr_to_string(&args[0])
           ));
           return Some(Ok(unevaluated("Unique", args)));
         }
@@ -1360,7 +1360,7 @@ pub fn dispatch_predicate_functions(
           crate::emit_message_to_stdout(&format!(
             "Context::ssle: Symbol or string expected at position 1 in \
              Context[{}].",
-            crate::syntax::expr_to_output(other)
+            expr_to_output(other)
           ));
           return Some(Ok(unevaluated("Context", args)));
         }
@@ -1691,7 +1691,7 @@ pub fn dispatch_predicate_functions(
           let v = evaluate_expr_to_expr(&v)?;
           Ok(match &wrapper {
             Some(h) => Expr::FunctionCall {
-              name: crate::syntax::expr_to_string(h),
+              name: expr_to_string(h),
               args: vec![v].into(),
             },
             None => v,
