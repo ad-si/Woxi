@@ -11,7 +11,9 @@ mod tests {
   use proptest::test_runner::RngSeed;
 
   use super::super::lower::formula_from_expr;
+  use super::super::try_linear_integer_reduce;
   use super::*;
+  use crate::syntax::Expr;
 
   fn parse(source: &str) -> Formula {
     formula_from_expr(&crate::parse_to_expr(source).unwrap()).unwrap()
@@ -94,6 +96,42 @@ mod tests {
     assert_eq!(eliminate("ForAll[x, x <= a || x > a]"), Formula::True);
     assert_eq!(eliminate("ForAll[x, Exists[y, y > x]]"), Formula::True);
     assert_eq!(eliminate("Exists[x, ForAll[y, y <= x]]"), Formula::False);
+  }
+
+  // A lone linear equation in several integer unknowns is routed to the
+  // lattice-parametrizing Diophantine reducer, not to Cooper elimination,
+  // which would only restate the equation as a degenerate two-sided bound.
+  #[test]
+  fn underdetermined_linear_equations_are_left_to_the_diophantine_reducer() {
+    fn args(source: &str) -> Vec<Expr> {
+      let call = crate::parse_to_expr(source).unwrap();
+      let Expr::FunctionCall { args, .. } = &call else {
+        panic!("test input must be a Reduce call");
+      };
+      args.to_vec()
+    }
+    for source in [
+      "Reduce[2 x == 4 y, {x, y}, Integers]",
+      "Reduce[3 x + 5 y == 1, {x, y}, Integers]",
+      "Reduce[2 x + 4 y == 5, {x, y}, Integers]",
+      "Reduce[2 x == 4, {x, y}, Integers]",
+    ] {
+      assert!(
+        try_linear_integer_reduce(&args(source)).is_none(),
+        "{source}"
+      );
+    }
+    // A single unknown, or anything beyond a lone equation, stays here.
+    assert!(
+      try_linear_integer_reduce(&args("Reduce[2 x == 4, x, Integers]"))
+        .is_some()
+    );
+    assert!(
+      try_linear_integer_reduce(&args(
+        "Reduce[2 x == 4 y && x >= 0, {x, y}, Integers]"
+      ))
+      .is_some()
+    );
   }
 
   #[test]

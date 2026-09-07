@@ -8,7 +8,7 @@
 
 use num_bigint::BigInt;
 use num_traits::{One, ToPrimitive};
-use woxi_reduce::Rational;
+use woxi_reduce::{Atom, Formula, Rational, Relation};
 
 use crate::helpers::call;
 use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
@@ -47,7 +47,9 @@ pub(super) fn try_linear_rational_reduce(args: &[Expr]) -> Option<Expr> {
 /// explicit integer request.
 pub(super) fn try_linear_integer_reduce(args: &[Expr]) -> Option<Expr> {
   let request = lower::request_from_args(args)?;
-  if request.domain != ReduceDomain::Integers {
+  if request.domain != ReduceDomain::Integers
+    || is_underdetermined_linear_equation(&request)
+  {
     return None;
   }
   let result = emit::canonical_integer_formula(
@@ -77,6 +79,24 @@ pub(super) fn try_linear_integer_reduce(args: &[Expr]) -> Option<Expr> {
     }
   }
   Some(expression)
+}
+
+/// A lone linear equation in several integer unknowns, e.g.
+/// `Reduce[2 x == 4 y, {x, y}, Integers]`. Its solution set is an unbounded
+/// lattice that wolframscript reports parametrized with fresh integer
+/// parameters (`C[1] ∈ Integers && x == 2 C[1] && y == C[1]`). Cooper
+/// elimination cannot express that shape — it would only restate the equation
+/// as a degenerate two-sided bound on one unknown — so such requests are
+/// left to the extended-Euclidean Diophantine reducer in `reduce.rs`, which
+/// is the single canonical implementation of that parametrization.
+fn is_underdetermined_linear_equation(
+  request: &lower::LinearReduceRequest,
+) -> bool {
+  request.targets.len() >= 2
+    && matches!(
+      request.formula,
+      Formula::Atom(Atom::Relation(Relation::Equal, _))
+    )
 }
 
 pub(crate) fn try_linear_rational_resolve(args: &[Expr]) -> Option<Expr> {
