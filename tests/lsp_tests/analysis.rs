@@ -379,6 +379,14 @@ fn no_repository_script_reports_a_syntax_error() {
     if path.extension().is_none_or(|ext| ext != "wls") {
       continue;
     }
+    // `_`-prefixed scripts are local scratch files (gitignored as
+    // `/tests/scripts/_*`), not part of the repository.
+    if path
+      .file_name()
+      .is_some_and(|name| name.to_string_lossy().starts_with('_'))
+    {
+      continue;
+    }
     let source = std::fs::read_to_string(&path).unwrap();
     let source = woxi::without_shebang(&source);
     let errors: Vec<_> = diagnostics(&source, &tokenize(&source), &[])

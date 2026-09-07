@@ -5523,3 +5523,237 @@ mod standalone_sequence_patterns {
     );
   }
 }
+
+/// A `/;` guard on a rule's replacement decides whether the rule applies at
+/// all: when the test is not True the match is passed over, and the next
+/// rule (or the original expression) is used. Verified against wolframscript.
+mod guarded_replacements {
+  use super::*;
+
+  #[test]
+  fn a_failing_guard_leaves_the_expression_alone() {
+    clear_state();
+    assert_eq!(interpret("ReplaceAll[1, x_ :> 5 /; x > 2]").unwrap(), "1");
+    assert_eq!(interpret("Replace[1, x_ :> 5 /; x > 2]").unwrap(), "1");
+    assert_eq!(
+      interpret("{1, 5, 9} /. x_Integer :> x^2 /; x > 2").unwrap(),
+      "{1, 25, 81}"
+    );
+    assert_eq!(
+      interpret("{1, 5} //. x_Integer :> x + 1 /; x < 3").unwrap(),
+      "{3, 5}"
+    );
+  }
+
+  #[test]
+  fn a_failing_guard_lets_the_next_rule_fire() {
+    clear_state();
+    assert_eq!(
+      interpret("{1, 5} /. {x_ :> 0 /; x > 2, x_ :> 1}").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("Replace[{1, 5}, x_ :> 0 /; x > 2, {1}]").unwrap(),
+      "{1, 0}"
+    );
+  }
+
+  #[test]
+  fn the_guard_may_sit_inside_the_scoping_construct_that_binds_it() {
+    clear_state();
+    assert_eq!(
+      interpret("{1, 5} /. x_ :> With[{y = x}, y^2 /; y > 2]").unwrap(),
+      "{1, 25}"
+    );
+  }
+
+  #[test]
+  fn collecting_functions_drop_the_matches_whose_guard_fails() {
+    clear_state();
+    assert_eq!(
+      interpret("Cases[{1, 5, 9}, x_ :> x^2 /; x > 2]").unwrap(),
+      "{25, 81}"
+    );
+    assert_eq!(
+      interpret("ReplaceList[5, x_ :> 0 /; x > 2]").unwrap(),
+      "{0}"
+    );
+    assert_eq!(interpret("ReplaceList[1, x_ :> 0 /; x > 2]").unwrap(), "{}");
+    assert_eq!(
+      interpret("SequenceCases[{1, 5, 9}, {x_} :> x /; x > 2]").unwrap(),
+      "{5, 9}"
+    );
+    assert_eq!(
+      interpret("SequenceReplace[{1, 5, 9}, {x_} :> 0 /; x > 2]").unwrap(),
+      "{1, 0, 0}"
+    );
+  }
+}
+
+/// Inside `Hold`, `Defer` and the other hold heads a replacement is inserted
+/// as it stands; evaluating it is the held expression's business.
+mod replacements_inside_held_heads {
+  use super::*;
+
+  #[test]
+  fn the_inserted_right_hand_side_is_not_evaluated() {
+    clear_state();
+    assert_eq!(
+      interpret("Hold[f[1]] /. f[x_] :> g[x + 1]").unwrap(),
+      "Hold[g[1 + 1]]"
+    );
+    assert_eq!(
+      interpret("Hold[f[1]] /. f[x_] -> g[x + 1]").unwrap(),
+      "Hold[g[1 + 1]]"
+    );
+    assert_eq!(
+      interpret("Defer[f[1]] /. f[x_] -> g[x + 1]").unwrap(),
+      "Defer[g[1 + 1]]"
+    );
+    assert_eq!(
+      interpret("Hold[f[1], f[2]] /. f[x_] :> g[x + 1]").unwrap(),
+      "Hold[g[1 + 1], g[2 + 1]]"
+    );
+    // Outside a hold head the result evaluates as usual.
+    assert_eq!(interpret("f[1] /. f[x_] :> g[x + 1]").unwrap(), "g[2]");
+    assert_eq!(
+      interpret("Cases[Hold[f[1]], f[x_] :> g[x + 1], Infinity]").unwrap(),
+      "{g[2]}"
+    );
+  }
+
+  #[test]
+  fn guards_are_still_checked_inside_a_hold() {
+    clear_state();
+    assert_eq!(
+      interpret("Hold[1] /. x_Integer :> 5 /; x > 2").unwrap(),
+      "Hold[1]"
+    );
+    assert_eq!(
+      interpret("Hold[3] /. x_Integer :> 5 /; x > 2").unwrap(),
+      "Hold[5]"
+    );
+    assert_eq!(
+      interpret("Hold[f[3]] /. f[x_] :> g[x + 1] /; x > 2").unwrap(),
+      "Hold[g[3 + 1]]"
+    );
+  }
+}
+
+/// `MatchQ[Unevaluated[e], pat]` tests `e` as written — the wrapper keeps it
+/// from evaluating and is not itself matched. Verified against wolframscript.
+mod match_q_of_an_unevaluated_expression {
+  use super::*;
+
+  #[test]
+  fn the_wrapper_is_transparent() {
+    clear_state();
+    assert_eq!(
+      interpret("MatchQ[Unevaluated[f[1]], f[_]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("MatchQ[Unevaluated[f[1 + 2]], f[_Integer]]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("MatchQ[Unevaluated[f[1]], HoldPattern[f[_]]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "MatchQ[Unevaluated[Int[x^-3 sin[x], x]], \\
+         HoldPattern[Int[(c_. + d_.*x_)^m_.*sin[e_. + f_.*x_], x_Symbol]]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+}
+
+/// A curried call such as `Defer[Int][u, x]` — Rubi's deferred integral —
+/// is an ordinary compound: its head is a part, its head is found by
+/// `FreeQ`, and a sequence pattern spans its arguments. Verified against
+/// wolframscript.
+mod curried_calls_are_ordinary_compounds {
+  use super::*;
+
+  #[test]
+  fn part_reaches_the_head_and_the_arguments() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "u = Defer[Subst][a, x, v]; {u[[0]], u[[1]], u[[2]], u[[3]], u[[-1]]}"
+      )
+      .unwrap(),
+      "{Defer[Subst], a, x, v, v}"
+    );
+  }
+
+  #[test]
+  fn free_q_looks_at_the_head() {
+    clear_state();
+    assert_eq!(
+      interpret("FreeQ[Defer[Int][u, x], Defer[Int]]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("FreeQ[f[2 Defer[Int][u, x]], Defer[Int]]").unwrap(),
+      "False"
+    );
+    assert_eq!(interpret("FreeQ[Defer[Int][u, x], Int]").unwrap(), "False");
+    assert_eq!(interpret("FreeQ[Defer[Int][u, x], Subst]").unwrap(), "True");
+  }
+
+  #[test]
+  fn sequence_patterns_span_the_arguments() {
+    clear_state();
+    assert_eq!(
+      interpret("MatchQ[Defer[Subst][a, x, v], Defer[Subst][__]]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("Cases[{Defer[Int][u, x], g[Defer[Subst][a, x, v]]}, Defer[Subst][__], Infinity]")
+        .unwrap(),
+      "{Defer[Subst][a, x, v]}"
+    );
+    assert_eq!(
+      interpret("Defer[Subst][a, x, v] /. Defer[Subst][u_, y__] :> {u, y}")
+        .unwrap(),
+      "{a, x, v}"
+    );
+  }
+}
+
+/// Rewriting a curried call's head to a symbol gives an ordinary call, also
+/// inside a hold head where nothing evaluates: Rubi turns its deferred
+/// `Defer[Int][u, x]` back into `Int[u, x]` this way before typesetting it.
+mod rewritten_curried_heads_become_calls {
+  use super::*;
+
+  #[test]
+  fn the_result_is_a_plain_call_inside_a_hold() {
+    clear_state();
+    assert_eq!(
+      interpret("MatchQ[HoldComplete[Defer[Int][a, x]] /. Defer[Int] -> Int, HoldComplete[Int[_, _]]]")
+        .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "MatchQ[HoldComplete[Defer[Int][a, x]] /. {Defer[Int] -> Int, Defer[Subst] -> Subst}, \\
+         HoldComplete[Int[_, _]]]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "Format[HoldPattern[Int[e_, x_]], TraditionalForm] := HoldForm[Integrate[e, x]]; \\
+         ToString[HoldForm @@ (HoldComplete[Defer[Int][a, x]] /. {Defer[Int] -> Int}), TeXForm]"
+      )
+      .unwrap(),
+      "\\int a \\, dx"
+    );
+  }
+}

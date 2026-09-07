@@ -138,7 +138,7 @@ UnsignedNumericValue = { BasePrefix | UnsignedPrecisionReal | UnsignedReal | Uns
 // than `L` — but they name symbols like any other letter, and a notebook
 // writes them as the bare character. The letters Unicode does have (ℬ, ℯ, ℓ,
 // …) are ordinary `LETTER`s and need no help.
-PrivateUseLetter = _{ '\u{F6B2}'..'\u{F6CB}' | '\u{F770}'..'\u{F789}' }
+PrivateUseLetter = _{ '\u{F6B2}'..'\u{F6CB}' | '\u{F770}'..'\u{F789}' | '\u{F6E6}'..'\u{F6FF}' | '\u{F7A4}'..'\u{F7BD}' }
 
 // PatternName is an identifier that will be followed by _ in a Pattern
 // It must start with a letter and can contain letters, digits, but NOT trailing underscores
@@ -157,7 +157,7 @@ PatternName = @{ (ASCII_ALPHA | LETTER | PrivateUseLetter) ~ (ASCII_ALPHANUMERIC
 // Demonstration commonly uses `\[FilledSquare]`/`\[EmptySquare]` etc. as
 // grid-cell markers. Mirrors the "Geometric and miscellaneous symbols"
 // section of `named_char_to_unicode` in syntax.rs.
-LetterlikeSymbolChar = _{
+LetterlikeSymbolChar = _{ "\u{2026}" | "\u{22EF}" | "\u{22EE}" | "\u{22F0}" | "\u{22F1}" |
   "\u{2220}" | "\u{25A0}" | "\u{25A1}" | "\u{25FC}" | "\u{25FB}" | "\u{25AA}" | "\u{25AB}"
   | "\u{25CF}" | "\u{25CB}" | "\u{F750}" | "\u{25E6}" | "\u{25C6}" | "\u{25C7}"
   | "\u{25B2}" | "\u{25B3}" | "\u{25BC}" | "\u{25BD}" | "\u{25C0}" | "\u{25B6}"
@@ -848,11 +848,14 @@ PatternOptionalNamedBlank = { PatternName ~ ":" ~ "_" ~ !("_" | "?") ~ Identifie
 // PatternOptionalDefault: x_. or _. (Optional pattern with system-determined default)
 // The dot must not be followed by a digit (decimal) or another dot (.. or ...)
 // Note: x_Head. and _Head. are NOT valid in Wolfram Language (syntax error)
-PatternOptionalDefaultSimple = { PatternName? ~ "_" ~ "." ~ !ASCII_DIGIT ~ !"." }
+// Compound-atomic (`$`): the name, the blanks and the head must be adjacent.
+// `m_ g` is `Times[m_, g]`, not `m_g`, and `a_ x_` is a product of two
+// patterns — implicit whitespace between the pieces would glue them together.
+PatternOptionalDefaultSimple = ${ PatternName? ~ "_" ~ "." ~ !ASCII_DIGIT ~ !"." }
 // PatternBlanks: silent atomic rule matching 1-3 underscores (Blank, BlankSequence, BlankNullSequence)
 PatternBlanks = _{ "___" | "__" | "_" }
-PatternWithHead = { PatternName? ~ PatternBlanks ~ !("_") ~ Identifier }
-PatternSimple = { PatternName? ~ PatternBlanks ~ !("_" | "?" | ".") }
+PatternWithHead = ${ PatternName? ~ PatternBlanks ~ !("_") ~ Identifier }
+PatternSimple = ${ PatternName? ~ PatternBlanks ~ !("_" | "?" | ".") }
 // PatternNamed: `name : body` is `Pattern[name, body]` — a named pattern
 // where the body is any expression the pattern should match. Distinct
 // from `name_:default` (Optional with default) and `name::tag`
@@ -874,7 +877,9 @@ Pattern = { PatternCondition | PatternTest | PatternOptionalNamedBlank | Pattern
 // `;;` is one of `ConditionExpr`'s own operators and binds tighter than the
 // rule operator.
 RuleOperand = _{ ConditionExpr }
-ReplacementRule = { RuleOperand ~ ("/;" ~ ConditionExpr)? ~ ("->" | "\u{2192}" | ":>") ~ (ReplacementRule | RuleOperand) }
+// The replacement may carry its own conditions: `a :> b /; c` is
+// `RuleDelayed[a, Condition[b, c]]`, since `/;` binds tighter than the arrow.
+ReplacementRule = { RuleOperand ~ ("/;" ~ ConditionExpr)? ~ ("->" | "\u{2192}" | ":>") ~ (ReplacementRule | RuleOperand ~ ("/;" ~ ConditionExpr)*) }
 
 // Replacement expressions: expr /. rule or expr //. rule
 ReplaceAllExpr = { Term ~ "/." ~ (&HasRuleOperator ~ ReplacementRule | List | ConditionExpr) }

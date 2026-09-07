@@ -5405,3 +5405,81 @@ mod delayed_own_values {
     assert_eq!(interpret("dh := dh = df[]; dh[3]").unwrap(), "df[][3]");
   }
 }
+
+/// The left-hand side of a definition is evaluated the way any call is: an
+/// argument the head holds stays as written. Verified against wolframscript.
+mod held_left_hand_side_arguments {
+  use super::*;
+
+  #[test]
+  fn a_held_symbol_argument_is_not_replaced_by_its_value() {
+    clear_state();
+    assert_eq!(
+      interpret("n = 3; k[n] := 1; DownValues[k]").unwrap(),
+      "{HoldPattern[k[3]] :> 1}"
+    );
+    assert_eq!(
+      interpret("SetAttributes[q, HoldFirst]; q[n] := 2; DownValues[q]")
+        .unwrap(),
+      "{HoldPattern[q[n]] :> 2}"
+    );
+  }
+
+  #[test]
+  fn a_held_pattern_argument_keeps_its_head_even_when_that_head_has_rules() {
+    clear_state();
+    // Rubi's `Steps[Int[expr_, x_]] := …` relies on this: `Int` has a rule
+    // for every two-argument call, and `Steps` is HoldFirst.
+    assert_eq!(
+      interpret(
+        "Int[e_, x_] := foo[e, x]; SetAttributes[h, HoldFirst]; \
+         h[Int[e_, x_]] := {e, x}; DownValues[h]"
+      )
+      .unwrap(),
+      "{HoldPattern[h[Int[e_, x_]]] :> {e, x}}"
+    );
+    assert_eq!(interpret("h[Int[a, b]]").unwrap(), "{a, b}");
+    // Without the attribute the argument is evaluated, as wolframscript does.
+    assert_eq!(
+      interpret("g[Int[e_, x_]] := {e, x}; DownValues[g]").unwrap(),
+      "{HoldPattern[g[foo[e_, x_]]] :> {e, x}}"
+    );
+  }
+}
+
+/// A body may carry several `/;` guards, one wrapped around the other —
+/// Rubi's step display wraps every rule's `rhs /; cond` in a further
+/// `/; SimplifyFlag`. Each guard is tested outermost first; a failing one
+/// hands the call to the next definition. Verified against wolframscript.
+mod nested_condition_guards {
+  use super::*;
+
+  #[test]
+  fn every_guard_must_pass_and_a_failing_one_tries_the_next_rule() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "flag = True; f[x_] := Condition[Condition[x^2, x > 0], flag]; \
+         f[x_] := other[x]; {f[3], f[-3]}"
+      )
+      .unwrap(),
+      "{9, other[-3]}"
+    );
+    assert_eq!(
+      interpret("Block[{flag = False}, f[3]]").unwrap(),
+      "other[3]"
+    );
+    assert_eq!(
+      interpret("g[x_] := x^2 /; x > 0 /; flag; {g[3], g[-3]}").unwrap(),
+      "{9, g[-3]}"
+    );
+    assert_eq!(
+      interpret(
+        "h[x_] := Condition[Condition[Condition[x^2, x > 0], flag], x < 10]; \
+         {h[3], h[30], h[-1]}"
+      )
+      .unwrap(),
+      "{9, h[30], h[-1]}"
+    );
+  }
+}

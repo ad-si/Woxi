@@ -1004,8 +1004,11 @@ pub fn dispatch_io_functions(
         && mn_name == "MessageName"
         && mn_args.len() == 2
       {
+        // The tag names the symbol the way it is written where the
+        // message appears: `Int::wrngUsage`, not `Rubi`Int::wrngUsage`,
+        // while the package's context is on `$ContextPath`.
         let sym_name = match &mn_args[0] {
-          Expr::Identifier(s) => s.clone(),
+          Expr::Identifier(s) => crate::evaluator::contexts::display_name(s),
           other => expr_to_string(other),
         };
         let tag = match &mn_args[1] {

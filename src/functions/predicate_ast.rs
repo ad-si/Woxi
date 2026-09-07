@@ -1776,6 +1776,17 @@ pub fn free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .iter()
           .any(|e| contains_form(e, form, form_str, use_pattern))
       }
+      // `Defer[Int][u, x]`: the head `Defer[Int]` is a subexpression too,
+      // so `FreeQ[…, Defer[Int]]` and `FreeQ[…, Int]` both find it.
+      Expr::CurriedCall {
+        func,
+        args: call_args,
+      } => {
+        contains_form(func, form, form_str, use_pattern)
+          || call_args
+            .iter()
+            .any(|e| contains_form(e, form, form_str, use_pattern))
+      }
       Expr::BinaryOp {
         op, left, right, ..
       } => {
@@ -2720,11 +2731,21 @@ pub fn match_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "MatchQ expects exactly 2 arguments".into(),
     ));
   }
+  // `MatchQ[Unevaluated[e], pat]` tests the expression as written; the
+  // wrapper itself is not part of it.
+  let subject = match &args[0] {
+    Expr::FunctionCall { name, args: inner }
+      if name == "Unevaluated" && inner.len() == 1 =>
+    {
+      &inner[0]
+    }
+    other => other,
+  };
   // Use the bindings-tracking matcher so that repeated pattern variables
   // like {a_, b_, a_} correctly require both `a_` positions to bind to
   // the same value.
   let matches =
-    crate::evaluator::pattern_matching::match_pattern(&args[0], &args[1])
+    crate::evaluator::pattern_matching::match_pattern(subject, &args[1])
       .is_some();
   Ok(bool_expr(matches))
 }

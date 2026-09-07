@@ -56,11 +56,11 @@ again in every process — the `.mx` fast-load path in the paclet's
 `Kernel/init.m` needs `DumpSave`, which Woxi does not implement, so nothing is
 cached between runs.
 
-`$LoadShowSteps = False` switches off Rubi's step-display machinery, and is
-currently required. Left out, Rubi additionally rewrites all 7400 rules to
-record the steps they take — which Woxi has not finished after half an hour
-and ten gigabytes. The cost is that `Steps`, `Step` and `Stats` are
-unavailable; `Int` itself is unaffected.
+`$LoadShowSteps = False` switches off Rubi's step-display machinery. Left at
+its default of `True`, Rubi additionally rewrites all 7400 rules to record
+the steps they take, which costs about two more minutes of loading and makes
+`Steps`, `Step` and `Stats` available (see below). `Int` itself is the same
+either way.
 
 
 ## Integrating
@@ -96,6 +96,33 @@ of the package. Woxi's own `Integrate` is unaffected by loading Rubi; the two
 live side by side.
 
 
+## Showing the steps
+
+With the step display loaded (`$LoadShowSteps` left at `True`),
+`Steps[Int[expr, x]]` prints the rule applied at every step; with
+`RubiPrintInformation -> False` it instead returns the recorded steps and the
+result. Each intermediate expression arrives as a
+`RubiIntermediateResult[HoldComplete[…]]`, the integrals still to be done
+written as `Int[…]`:
+
+```wolfram
+{steps, result} = Steps[Int[(x^2 + x + 1)/(x^4 + x^3 + x + 1), x],
+  RubiPrintInformation -> False];
+Cases[steps, RubiIntermediateResult[HoldComplete[e_]] :> HoldForm[e], Infinity]
+(* {Int[1/(3*(1 + x)^2) + 2/(3*(1 - x + x^2)), x],
+    -1/(3*(1 + x)) + 2/3 ⋆ Int[1/(1 - x + x^2), x],
+    -1/(3*(1 + x)) - 4/3 ⋆ Subst[Int[1/(-3 - x^2), x], x, -1 + 2*x],
+    -1/(3*(1 + x)) - (4*ArcTan[(1 - 2*x)/Sqrt[3]])/(3*Sqrt[3])} *)
+```
+
+The `⋆` is Rubi's `Star`, a coefficient kept in front of an integral for
+display. Rubi also defines how `Int` is typeset, so the steps convert to TeX
+as integrals — `Convert`TeX`ExpressionToTeX[HoldForm[e]]` gives
+`\int \frac{1}{3 (1+x)^2}+\frac{2}{3 \left(1-x+x^2\right)} \, dx` for the
+first one — which is what the *IntWithStepsOfTeXForm* notebook builds its
+`aligned` environment from.
+
+
 ## What does not work yet
 
 Rubi loads unmodified and integrates, but it is not fully supported. On a
@@ -104,13 +131,22 @@ Rubi loads unmodified and integrates, but it is not fully supported. On a
 same function written another way. What is left:
 
 - **Loading is slow.** About a minute against roughly twenty seconds under
-  `wolframscript`, and there is no `.mx` cache to make the second run faster.
-- **Step display is out of reach.** `Steps[Int[…]]`, `Step` and `Stats` need
-  the rule rewriting that `$LoadShowSteps = False` turns off. With it on, the
-  load does not finish in a reasonable time.
+  `wolframscript` (three minutes with the step display), and there is no
+  `.mx` cache to make the second run faster. Rubi's progress bar is a
+  `Monitor`, which Woxi does not implement, so the load also reports that.
+- **Powers times a trigonometric function fall through.**
+  `Int[Sin[x]/x^3, x]`, `Int[x^2*Sin[x], x]` and `Int[Cos[x]/x^2, x]` come
+  back as `Int[…]`: the `(c + d x)^m Sin[e + f x]` rules never fire, so a
+  step display of them shows nothing either.
 - **Two integrals exhaust memory.** `Int[Sin[x]^3*Cos[x]^2, x]` and
   `Int[Sin[x]*Cos[x]^3, x]` run for minutes and are killed;
   `wolframscript` answers both instantly.
+- **Some step sequences take another road.** `Int[Sqrt[x + Sqrt[x]], x]`
+  ends in a hypergeometric function where Rubi reaches an inverse
+  hyperbolic tangent, and the terms of an intermediate sum can come out in
+  a different order — both are the rule-ordering differences above seen
+  step by step. The rule text recorded next to each step keeps its `FreeQ`
+  conditions and writes them in linear box syntax rather than `DisplayForm`.
 - **`Int[ArcSin[x], x]` comes back unevaluated.** The rule that should fire
   sits behind the `Unintegrable` fallback meant to catch what it declines —
   Woxi ranks two rules by how much structure each pattern carries, where the

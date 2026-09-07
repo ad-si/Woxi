@@ -725,7 +725,9 @@ pub fn get_builtin_attributes(name: &str) -> Attributes {
     // by the explicit name-match in core_eval.rs), not via the
     // attribute. Adding HoldAll here would diverge from `Attributes[
     // Manipulate]` in wolframscript without changing semantics.
-    "Manipulate" => A::Protected | A::ReadProtected,
+    "Manipulate" | "Convert`TeX`ExpressionToTeX" => {
+      A::Protected | A::ReadProtected
+    }
     // Control: Protected (matches wolframscript). Like Manipulate it holds
     // its argument via the explicit name-match in core_eval.rs rather than a
     // HoldAll attribute.

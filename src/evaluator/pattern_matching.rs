@@ -5,6 +5,14 @@ use std::cell::RefCell;
 // Used by Orderless matching with Optional patterns to check compatibility
 // with already-bound variables from outer pattern contexts.
 thread_local! {
+  /// How many hold heads (`Hold`, `Defer`, …) the single-rule replacement
+  /// walk is currently inside. A rule that fires in there has its
+  /// right-hand side inserted as is: `Hold[f[1]] /. f[x_] :> g[x + 1]` is
+  /// `Hold[g[1 + 1]]`, the evaluation being the held expression's to do.
+  static REPLACE_HOLD_DEPTH: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+thread_local! {
   static MATCH_CONTEXT: RefCell<Vec<Vec<(String, Expr)>>> = const { RefCell::new(Vec::new()) };
   /// Stack of LHS Condition expressions active during pattern matching.
   /// When the top of the stack is `Some`, `match_args_with_sequences`
@@ -419,9 +427,20 @@ fn try_ast_pattern_replace_impl(
     Expr::FunctionCall { name, args } => {
       let mut new_args = Vec::new();
       let mut any_matched = false;
-      for arg in args {
-        new_args.push(recurse(arg, &mut any_matched)?);
+      let holds = is_hold_head(name);
+      if holds {
+        REPLACE_HOLD_DEPTH.with(|d| d.set(d.get() + 1));
       }
+      let recursed: Result<(), InterpreterError> = (|| {
+        for arg in args {
+          new_args.push(recurse(arg, &mut any_matched)?);
+        }
+        Ok(())
+      })();
+      if holds {
+        REPLACE_HOLD_DEPTH.with(|d| d.set(d.get() - 1));
+      }
+      recursed?;
       // The head `name` is a subexpression too: `h[a] /. x_Symbol :> f[x]`
       // becomes `f[h][f[a]]`.
       let new_head =
@@ -457,10 +476,9 @@ fn try_ast_pattern_replace_impl(
         }
       }
       if any_matched {
-        Ok(Some(Expr::CurriedCall {
-          func: Box::new(new_func),
-          args: new_args,
-        }))
+        // A head rewritten to a symbol makes an ordinary call:
+        // `Defer[Int][u, x] /. Defer[Int] -> Int` is `Int[u, x]`.
+        Ok(Some(rebuild_call_with_head(new_func, new_args)))
       } else {
         Ok(None)
       }
@@ -939,23 +957,38 @@ fn try_ast_pattern_replace_single(
         return Ok(None);
       }
     }
-    // Substitute bindings into replacement using apply_bindings
-    let result = apply_bindings(replacement, &bindings)?;
-    // RHS `Condition[expr, test]` semantics: evaluate test; True →
-    // return expr, False → reject the rule (return None).
-    if let Expr::FunctionCall { name, args } = &result
-      && name == "Condition"
-      && args.len() == 2
-    {
-      match interpret(&expr_to_string(&args[1])) {
-        Ok(t) if t == "True" => return Ok(Some(args[0].clone())),
-        Ok(t) if t == "False" => return Ok(None),
-        _ => {}
-      }
-    }
-    return Ok(Some(result));
+    return instantiate_replacement(replacement, &bindings);
   }
   Ok(None)
+}
+
+/// Instantiate a rule's right-hand side once its pattern has matched:
+/// substitute the bindings, evaluate, and honour a `/;` guard on the
+/// replacement. `x_ :> body /; test` only applies when `test` comes out
+/// True with the bindings in place; otherwise the rule is passed over as if
+/// it had not matched (`None`). The guard may also sit inside the scoping
+/// construct that binds its names — `x_ :> With[{y = x}, y^2 /; y > 2]` —
+/// which evaluating the construct surfaces as a `Condition` result.
+pub fn instantiate_replacement(
+  replacement: &Expr,
+  bindings: &[(String, Expr)],
+) -> Result<Option<Expr>, InterpreterError> {
+  let held = REPLACE_HOLD_DEPTH.with(std::cell::Cell::get) > 0;
+  let result = apply_bindings_with(replacement, bindings, !held)?;
+  if let Expr::FunctionCall { name, args } = &result
+    && name == "Condition"
+    && args.len() == 2
+  {
+    return match evaluate_expr_to_expr(&args[1])? {
+      Expr::Identifier(ref t) if t == "True" => Ok(Some(if held {
+        args[0].clone()
+      } else {
+        evaluate_expr_to_expr(&args[0])?
+      })),
+      _ => Ok(None),
+    };
+  }
+  Ok(Some(result))
 }
 
 /// Extract the pattern Expr and optional /; condition string from a rule's pattern field.
@@ -2219,8 +2252,9 @@ fn try_flat_replace_all(
           let indices: Vec<usize> = (0..args.len()).collect();
           if let Some((matched_indices, bindings)) =
             find_orderless_subset_match(name, args, &indices, pat_args, sub_len)
+            && let Some(replaced) =
+              instantiate_replacement(replacement, &bindings)?
           {
-            let replaced = apply_bindings(replacement, &bindings)?;
             let mut new_args: Vec<Expr> = args
               .iter()
               .enumerate()
@@ -2273,8 +2307,10 @@ fn try_flat_replace_all(
             if bindings_opt.is_none() {
               bindings_opt = try_match(literal_args);
             }
-            if let Some(bindings) = bindings_opt {
-              let replaced = apply_bindings(replacement, &bindings)?;
+            if let Some(bindings) = bindings_opt
+              && let Some(replaced) =
+                instantiate_replacement(replacement, &bindings)?
+            {
               let mut new_args = args[..start].to_vec();
               new_args.push(replaced);
               new_args.extend_from_slice(&args[start + sub_len..]);
@@ -2538,9 +2574,19 @@ pub fn apply_replace_all_ast(
     pattern,
     replacement,
   } = rules
-    && let Some(result) = try_flat_replace_all(expr, pattern, replacement)?
   {
-    return Ok(result);
+    if let Some(result) = try_flat_replace_all(expr, pattern, replacement)? {
+      return Ok(result);
+    }
+    // The structural matchers are authoritative for a pattern rule: when
+    // they found nothing to rewrite — including a match whose `/;` guard on
+    // the replacement failed — the textual fallback below must not have a
+    // second go, or `1 /. x_ :> 5 /; x > 2` would come out as the
+    // unevaluated guard instead of `1`.
+    let stripped = strip_hold_pattern(pattern);
+    if !matches!(stripped, Expr::Raw(_)) && contains_pattern(&stripped) {
+      return Ok(expr.clone());
+    }
   }
 
   // Try AST-level symbol replacement (handles Expr::List head replacement for List -> X)
@@ -4646,18 +4692,15 @@ fn match_pattern_impl(
         args: expr_args,
       } = expr
       {
-        if pat_args.len() != expr_args.len() {
-          return None;
-        }
         let mut bindings = match_pattern(expr_func, pat_func)?;
-        for (p, e) in pat_args.iter().zip(expr_args.iter()) {
-          push_match_context(&bindings);
-          let result = match_pattern(e, p);
-          pop_match_context();
-          let b = result?;
-          if !merge_bindings(&mut bindings, b) {
-            return None;
-          }
+        // The arguments match like a call's: `Defer[Subst][__]` takes any
+        // number of them.
+        push_match_context(&bindings);
+        let result = match_args_with_sequences(expr_args, pat_args);
+        pop_match_context();
+        let b = result?;
+        if !merge_bindings(&mut bindings, b) {
+          return None;
         }
         Some(bindings)
       } else {
@@ -4892,6 +4935,16 @@ pub fn apply_bindings(
   replacement: &Expr,
   bindings: &[(String, Expr)],
 ) -> Result<Expr, InterpreterError> {
+  apply_bindings_with(replacement, bindings, true)
+}
+
+/// `apply_bindings`, optionally leaving the substituted expression
+/// unevaluated (for a replacement made inside a held expression).
+fn apply_bindings_with(
+  replacement: &Expr,
+  bindings: &[(String, Expr)],
+  evaluate: bool,
+) -> Result<Expr, InterpreterError> {
   // Pull the `__OptionsPattern__` sentinel (set by `match_args_with_sequences`
   // when the pattern contained an OptionsPattern slot) out of the binding
   // list so it doesn't get substituted into the replacement; instead push
@@ -4932,6 +4985,9 @@ pub fn apply_bindings(
   }
   let result =
     crate::syntax::substitute_pattern_bindings(replacement, &filtered_refs);
+  if !evaluate {
+    return Ok(result);
+  }
   if has_opts {
     crate::OPTION_VALUE_CONTEXT.with(|ctx| {
       ctx.borrow_mut().push((String::new(), opt_pairs));
@@ -5099,7 +5155,12 @@ fn pattern_arg_is_optional(arg: &Expr) -> bool {
 fn is_hold_head(name: &str) -> bool {
   matches!(
     name,
-    "Hold" | "HoldComplete" | "HoldCompleteForm" | "HoldForm" | "HoldPattern"
+    "Hold"
+      | "HoldComplete"
+      | "HoldCompleteForm"
+      | "HoldForm"
+      | "HoldPattern"
+      | "Defer"
   )
 }
 
@@ -5165,19 +5226,21 @@ fn apply_replace_all_multi_ast_impl(
       } else {
         evaluate_expr_to_expr(&result)?
       };
-      // RHS Condition[expr, test] semantics: True → expr, False → skip.
+      // RHS Condition[expr, test] semantics: True → expr, anything else →
+      // the rule is passed over.
       if let Expr::FunctionCall { name, args } = &evaluated
         && name == "Condition"
         && args.len() == 2
       {
         match evaluate_expr_to_expr(&args[1]) {
           Ok(t) if matches!(&t, Expr::Identifier(s) if s == "True") => {
-            return Ok(args[0].clone());
+            return if held {
+              Ok(args[0].clone())
+            } else {
+              evaluate_expr_to_expr(&args[0])
+            };
           }
-          Ok(t) if matches!(&t, Expr::Identifier(s) if s == "False") => {
-            continue;
-          }
-          _ => {}
+          _ => continue,
         }
       }
       return Ok(evaluated);
@@ -5315,10 +5378,8 @@ fn apply_replace_all_multi_ast_impl(
         .iter()
         .map(|arg| apply_replace_all_multi_ast_impl(arg, rules, held))
         .collect();
-      Ok(Expr::CurriedCall {
-        func: Box::new(new_func),
-        args: new_args?,
-      })
+      // A head rewritten to a symbol makes an ordinary call.
+      Ok(rebuild_call_with_head(new_func, new_args?))
     }
     Expr::Rule {
       pattern,

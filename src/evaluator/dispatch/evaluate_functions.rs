@@ -1354,19 +1354,12 @@ fn evaluate_function_call_ast_inner(
         }
         // If the body returned Condition[expr, test], evaluate the test
         // as a guard: True → return expr, otherwise this overload fails.
-        match &result {
-          Ok(Expr::FunctionCall {
-            name: cond_name,
-            args: cond_args,
-          }) if cond_name == "Condition" && cond_args.len() == 2 => {
-            match evaluate_expr_to_expr(&cond_args[1]) {
-              Ok(Expr::Identifier(ref s)) if s == "True" => {
-                return evaluate_expr_to_expr(&cond_args[0]);
-              }
-              _ => continue, // condition not met, try next overload
-            }
+        {
+          let value = result?;
+          match unwrap_condition_guards(value)? {
+            Some(value) => return Ok(value),
+            None => continue, // condition not met, try next overload
           }
-          _ => return result,
         }
       }
 
@@ -1704,19 +1697,12 @@ fn evaluate_function_call_ast_inner(
         }
         // If the body returned Condition[expr, test], evaluate the test
         // as a guard: True → return expr, otherwise this overload fails.
-        match &result {
-          Ok(Expr::FunctionCall {
-            name: cond_name,
-            args: cond_args,
-          }) if cond_name == "Condition" && cond_args.len() == 2 => {
-            match evaluate_expr_to_expr(&cond_args[1]) {
-              Ok(Expr::Identifier(ref s)) if s == "True" => {
-                return evaluate_expr_to_expr(&cond_args[0]);
-              }
-              _ => {} // condition not met, try next permutation
-            }
+        {
+          let value = result?;
+          match unwrap_condition_guards(value)? {
+            Some(value) => return Ok(value),
+            None => {} // condition not met, try next permutation
           }
-          _ => return result,
         }
       } // end permutation loop
       // No permutation matched; fall through to the next overload.
@@ -13755,5 +13741,30 @@ fn collect_condition_symbols(expr: &Expr, out: &mut Vec<Expr>) {
     }
     Expr::UnaryOp { operand, .. } => collect_condition_symbols(operand, out),
     _ => {}
+  }
+}
+
+/// Resolve the `/;` guards a definition's body evaluated to. `body /; test`
+/// gives `Condition[body, test]`; a rule wrapped twice — the way Rubi's
+/// step display does it, `(rhs /; cond) /; SimplifyFlag` — gives a nested
+/// one. Each guard is tested in turn, outermost first; the body inside a
+/// passing guard is evaluated, and a failing guard means the definition
+/// does not apply (`None`).
+fn unwrap_condition_guards(
+  mut value: Expr,
+) -> Result<Option<Expr>, InterpreterError> {
+  loop {
+    let Expr::FunctionCall { name, args } = &value else {
+      return Ok(Some(value));
+    };
+    if name != "Condition" || args.len() != 2 {
+      return Ok(Some(value));
+    }
+    match evaluate_expr_to_expr(&args[1])? {
+      Expr::Identifier(ref s) if s == "True" => {
+        value = evaluate_expr_to_expr(&args[0])?;
+      }
+      _ => return Ok(None),
+    }
   }
 }

@@ -6300,6 +6300,7 @@ SetProperty,Graph with an annotation set for one of its vertices or edges,✅,pu
 Evaluated,Option for whether to evaluate a plot's function once symbolically,✅,pure,6.0,
 ParallelSelect,Parallel version of Select (evaluated sequentially),✅,pure,14.2,
 ParallelCases,Parallel version of Cases (evaluated sequentially),✅,pure,14.2,
+Convert`TeX`ExpressionToTeX,The converter behind TeXForm — returns the TeX of an expression as a string,✅,pure,1.0,
 Developer`ToPackedArray,Packs a full rectangular array of machine numbers into one numeric type; an optional second argument converts the leaves to Integer Real or Complex and anything unpackable is returned unchanged,✅,pure,4.0,
 Internal`DynamicLibraryExtension,"Shared-library file extension of the host platform without the dot (""so"" ""dylib"" or ""dll"")",✅,pure,9.0,
 Language`ExtendedFullDefinition,All definitions a symbol carries (own down sub up default option message and attribute values) as one inert expression that can be assigned to another symbol to install them there,✅,pure,11.2,

@@ -861,6 +861,23 @@ fn extract_part_ast_rest(
         Ok(part_take_unevaluated(expr, index))
       }
     }
+    // `f[a][b, c]` has head `f[a]` and parts `b`, `c`.
+    Expr::CurriedCall { func, args } => {
+      if idx == 0 {
+        return Ok(func.as_ref().clone());
+      }
+      let len = args.len() as i64;
+      let actual_idx = if idx < 0 { len + idx } else { idx - 1 };
+      if actual_idx >= 0 && actual_idx < len {
+        Ok(args[actual_idx as usize].clone())
+      } else {
+        let expr_str = crate::syntax::expr_to_string(expr);
+        crate::emit_message_to_stdout(&format!(
+          "Part::partw: Part {idx} of {expr_str} does not exist."
+        ));
+        Ok(part_take_unevaluated(expr, index))
+      }
+    }
     Expr::Rule {
       pattern,
       replacement,

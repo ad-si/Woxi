@@ -207,6 +207,39 @@ mod shadowing {
     assert_eq!(interpret("Context[ctxShad]").unwrap(), "Q`");
   }
 
+  // The other way round as well: a symbol created in the private context
+  // while it is current — a package reading a `Global`` flag into its own
+  // `$flag` — is not reported either, since the private context never
+  // reaches `$ContextPath`. wolframscript is silent here too.
+  #[test]
+  fn a_private_symbol_next_to_a_global_one_is_not_reported() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "ctxFlag = 2\nBeginPackage[\"R`\"]\nBegin[\"`Private`\"]\n\
+       ctxFlag = 10\nEnd[]\nEndPackage[]\nR`Private`ctxFlag",
+    )
+    .unwrap();
+    assert_eq!(result.stdout, "");
+    assert_eq!(result.result, "10");
+    assert_eq!(interpret("ctxFlag").unwrap(), "2");
+  }
+
+  // A message names its symbol the way the symbol is written at that
+  // point: the package's `pf` is `pf::bad`, not `P`pf::bad`, while `P``
+  // is on `$ContextPath`.
+  #[test]
+  fn a_message_tag_uses_the_symbols_display_name() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "BeginPackage[\"P`\"]\npf::usage = \"pf\"\npf::bad = \"Bad `1`.\"\n\
+       Begin[\"`Private`\"]\npf[x_] := (Message[pf::bad, x]; $Failed)\nEnd[]\n\
+       EndPackage[]\npf[1]",
+    )
+    .unwrap();
+    assert_eq!(result.warnings, vec!["pf::bad: Bad 1.".to_string()]);
+    assert_eq!(result.result, "$Failed");
+  }
+
   // A private context is on nobody's `$ContextPath`, so a `Global`` symbol
   // of the same name is not a clash and nothing is reported.
   #[test]

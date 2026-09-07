@@ -6031,17 +6031,23 @@ pub fn dispatch_list_operations(
                   &subseq, match_pat,
                 )
               {
-                if let Some(repl) = replacement {
-                  // Rule/RuleDelayed: apply bindings to replacement
-                  match crate::evaluator::pattern_matching::apply_bindings(
-                    repl, &bindings,
-                  ) {
-                    Ok(result) => results.push(result),
-                    Err(_) => results.push(subseq),
+                // Rule/RuleDelayed: instantiate the replacement; a failing
+                // `/;` guard on it means this subsequence is not a match.
+                let produced = match replacement {
+                  Some(repl) => {
+                    match crate::evaluator::pattern_matching::instantiate_replacement(
+                      repl, &bindings,
+                    ) {
+                      Ok(r) => r,
+                      Err(_) => Some(subseq),
+                    }
                   }
-                } else {
-                  results.push(subseq);
-                }
+                  None => Some(subseq),
+                };
+                let Some(produced) = produced else {
+                  continue;
+                };
+                results.push(produced);
                 matched = true;
                 // `Overlaps -> All` keeps looking for shorter matches at this
                 // same start position instead of moving on.
@@ -6181,15 +6187,22 @@ pub fn dispatch_list_operations(
                 None
               };
               if let Some(bindings) = bindings {
-                let repl = rule.replacement.map(|repl| {
-                  match crate::evaluator::pattern_matching::apply_bindings(
-                    repl, &bindings,
-                  ) {
-                    Ok(r) => evaluate_expr_to_expr(&r)
-                      .unwrap_or_else(|_| subseq.clone()),
-                    Err(_) => subseq.clone(),
+                let repl = match rule.replacement {
+                  Some(repl) => {
+                    match crate::evaluator::pattern_matching::instantiate_replacement(
+                      repl, &bindings,
+                    ) {
+                      // A failing `/;` guard on the replacement: no match.
+                      Ok(None) => continue,
+                      Ok(Some(r)) => Some(
+                        evaluate_expr_to_expr(&r)
+                          .unwrap_or_else(|_| subseq.clone()),
+                      ),
+                      Err(_) => Some(subseq.clone()),
+                    }
                   }
-                });
+                  None => None,
+                };
                 hit = Some((i + len, repl));
                 break 'rules;
               }
@@ -6474,10 +6487,14 @@ pub fn dispatch_list_operations(
               if let Some(bindings) = bindings {
                 let replaced = match rule.replacement {
                   Some(repl) => {
-                    match crate::evaluator::pattern_matching::apply_bindings(
+                    match crate::evaluator::pattern_matching::instantiate_replacement(
                       repl, &bindings,
                     ) {
-                      Ok(r) => evaluate_expr_to_expr(&r).unwrap_or(subseq),
+                      // A failing `/;` guard on the replacement: no match.
+                      Ok(None) => continue,
+                      Ok(Some(r)) => {
+                        evaluate_expr_to_expr(&r).unwrap_or(subseq)
+                      }
                       Err(_) => subseq,
                     }
                   }
@@ -6577,20 +6594,24 @@ pub fn dispatch_list_operations(
             if let Some(bindings) = bindings {
               let replaced = match rule.replacement {
                 Some(repl) => {
-                  match crate::evaluator::pattern_matching::apply_bindings(
+                  match crate::evaluator::pattern_matching::instantiate_replacement(
                     repl, &bindings,
                   ) {
-                    Ok(r) => {
-                      evaluate_expr_to_expr(&r).unwrap_or(values.clone())
+                    // A failing `/;` guard on the replacement: no match.
+                    Ok(None) => None,
+                    Ok(Some(r)) => {
+                      Some(evaluate_expr_to_expr(&r).unwrap_or(values.clone()))
                     }
-                    Err(_) => values.clone(),
+                    Err(_) => Some(values.clone()),
                   }
                 }
-                None => values.clone(),
+                None => Some(values.clone()),
               };
-              replacement_at[combo[0]] = Some(replaced);
-              for &idx in &combo {
-                consumed[idx] = true;
+              if let Some(replaced) = replaced {
+                replacement_at[combo[0]] = Some(replaced);
+                for &idx in &combo {
+                  consumed[idx] = true;
+                }
               }
             }
           }

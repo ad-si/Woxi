@@ -21918,3 +21918,20 @@ mod large_range {
     assert_eq!(interpret("Last[Range[2, 1500000, 2]]").unwrap(), "1500000");
   }
 }
+
+/// Part 0 of an atom is its head, also at the end of a longer part
+/// specification: `{k}[[1, 0]]` is `Symbol`, not a `Part::partd` complaint.
+mod part_zero_of_an_atom_inside_a_spec {
+  use super::*;
+
+  #[test]
+  fn the_head_of_a_nested_atom_is_reachable() {
+    clear_state();
+    let result = interpret_with_stdout("{k}[[1, 0]]").unwrap();
+    assert_eq!(result.result, "Symbol");
+    assert_eq!(result.stdout, "");
+    assert_eq!(interpret("Defer[{k}][[1, 1, 0]]").unwrap(), "Symbol");
+    assert_eq!(interpret("{{1.5}}[[1, 1, 0]]").unwrap(), "Real");
+    assert_eq!(interpret("{\"s\"}[[1, 0]]").unwrap(), "String");
+  }
+}

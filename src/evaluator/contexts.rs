@@ -266,9 +266,12 @@ fn symbol_exists(full_name: &str) -> bool {
 /// shadows (or is shadowed by) the others.
 ///
 /// Only contexts that can actually shadow are counted: those on
-/// `$ContextPath`, the current context, and `Global``, which every session
-/// returns to. A package's private context is on none of them, so defining
-/// `Global`priv` alongside `P`Private`priv` is not a clash.
+/// `$ContextPath` and `Global``, which every session returns to. A package's
+/// private context is on neither — not even while it is the current context
+/// — so `P`Private`flag` created next to a `Global`flag` is not a clash, and
+/// neither is `Global`priv` alongside `P`Private`priv`. (wolframscript
+/// reports `P`x` created inside `BeginPackage["P`"]` next to a `Global`x`,
+/// where `P`` is on the path, but stays silent for `P`Private`x`.)
 fn create_symbol(full_name: &str) {
   let is_new =
     SYMBOL_TABLE.with(|t| t.borrow_mut().insert(full_name.to_string()));
@@ -278,7 +281,6 @@ fn create_symbol(full_name: &str) {
   let bare = short_name(full_name);
   let own_context = context_of(full_name);
   let mut visible = crate::current_context_path();
-  visible.push(crate::current_context());
   visible.push("Global`".to_string());
   let mut others: Vec<String> = created_symbols()
     .iter()

@@ -345,6 +345,71 @@ pub fn named_char_to_unicode(name: &str) -> Option<&'static str> {
     "ScriptX" => "\u{F6C9}",
     "ScriptY" => "\u{F6CA}",
     "ScriptZ" => "\u{F6CB}",
+    // Double-struck letters and digits. Wolfram keeps these in the private
+    // use area too: capitals at U+F7A4…, lower case at U+F6E6…, digits at
+    // U+F7DB… (`\[DoubleStruckCapitalZ]`, the integers in a usage message).
+    "DoubleStruckCapitalA" => "\u{F7A4}",
+    "DoubleStruckCapitalB" => "\u{F7A5}",
+    "DoubleStruckCapitalC" => "\u{F7A6}",
+    "DoubleStruckCapitalD" => "\u{F7A7}",
+    "DoubleStruckCapitalE" => "\u{F7A8}",
+    "DoubleStruckCapitalF" => "\u{F7A9}",
+    "DoubleStruckCapitalG" => "\u{F7AA}",
+    "DoubleStruckCapitalH" => "\u{F7AB}",
+    "DoubleStruckCapitalI" => "\u{F7AC}",
+    "DoubleStruckCapitalJ" => "\u{F7AD}",
+    "DoubleStruckCapitalK" => "\u{F7AE}",
+    "DoubleStruckCapitalL" => "\u{F7AF}",
+    "DoubleStruckCapitalM" => "\u{F7B0}",
+    "DoubleStruckCapitalN" => "\u{F7B1}",
+    "DoubleStruckCapitalO" => "\u{F7B2}",
+    "DoubleStruckCapitalP" => "\u{F7B3}",
+    "DoubleStruckCapitalQ" => "\u{F7B4}",
+    "DoubleStruckCapitalR" => "\u{F7B5}",
+    "DoubleStruckCapitalS" => "\u{F7B6}",
+    "DoubleStruckCapitalT" => "\u{F7B7}",
+    "DoubleStruckCapitalU" => "\u{F7B8}",
+    "DoubleStruckCapitalV" => "\u{F7B9}",
+    "DoubleStruckCapitalW" => "\u{F7BA}",
+    "DoubleStruckCapitalX" => "\u{F7BB}",
+    "DoubleStruckCapitalY" => "\u{F7BC}",
+    "DoubleStruckCapitalZ" => "\u{F7BD}",
+    "DoubleStruckA" => "\u{F6E6}",
+    "DoubleStruckB" => "\u{F6E7}",
+    "DoubleStruckC" => "\u{F6E8}",
+    "DoubleStruckD" => "\u{F6E9}",
+    "DoubleStruckE" => "\u{F6EA}",
+    "DoubleStruckF" => "\u{F6EB}",
+    "DoubleStruckG" => "\u{F6EC}",
+    "DoubleStruckH" => "\u{F6ED}",
+    "DoubleStruckI" => "\u{F6EE}",
+    "DoubleStruckJ" => "\u{F6EF}",
+    "DoubleStruckK" => "\u{F6F0}",
+    "DoubleStruckL" => "\u{F6F1}",
+    "DoubleStruckM" => "\u{F6F2}",
+    "DoubleStruckN" => "\u{F6F3}",
+    "DoubleStruckO" => "\u{F6F4}",
+    "DoubleStruckP" => "\u{F6F5}",
+    "DoubleStruckQ" => "\u{F6F6}",
+    "DoubleStruckR" => "\u{F6F7}",
+    "DoubleStruckS" => "\u{F6F8}",
+    "DoubleStruckT" => "\u{F6F9}",
+    "DoubleStruckU" => "\u{F6FA}",
+    "DoubleStruckV" => "\u{F6FB}",
+    "DoubleStruckW" => "\u{F6FC}",
+    "DoubleStruckX" => "\u{F6FD}",
+    "DoubleStruckY" => "\u{F6FE}",
+    "DoubleStruckZ" => "\u{F6FF}",
+    "DoubleStruckZero" => "\u{F7DB}",
+    "DoubleStruckOne" => "\u{F7DC}",
+    "DoubleStruckTwo" => "\u{F7DD}",
+    "DoubleStruckThree" => "\u{F7DE}",
+    "DoubleStruckFour" => "\u{F7DF}",
+    "DoubleStruckFive" => "\u{F7E0}",
+    "DoubleStruckSix" => "\u{F7E1}",
+    "DoubleStruckSeven" => "\u{F7E2}",
+    "DoubleStruckEight" => "\u{F7E3}",
+    "DoubleStruckNine" => "\u{F7E4}",
     // Common symbols
     "Euro" => "\u{20AC}",
     "Micro" => "\u{00B5}",
@@ -921,6 +986,8 @@ fn is_symbol_letter(c: char) -> bool {
   c.is_alphabetic()
     || ('\u{F6B2}'..='\u{F6CB}').contains(&c)
     || ('\u{F770}'..='\u{F789}').contains(&c)
+    || ('\u{F6E6}'..='\u{F6FF}').contains(&c)
+    || ('\u{F7A4}'..='\u{F7BD}').contains(&c)
     || is_letterlike_symbol_char(c)
 }
 
@@ -934,7 +1001,15 @@ fn is_symbol_letter(c: char) -> bool {
 fn is_letterlike_symbol_char(c: char) -> bool {
   matches!(
     c,
-    '\u{2220}'
+    // Ellipses: `\[Ellipsis]`, `\[CenterEllipsis]`, `\[VerticalEllipsis]`,
+    // `\[AscendingEllipsis]`, `\[DescendingEllipsis]` — symbols, as in
+    // Rubi's `Int[a*u + b*v + \[CenterEllipsis], x]` display strings.
+    '\u{2026}'
+      | '\u{22EF}'
+      | '\u{22EE}'
+      | '\u{22F0}'
+      | '\u{22F1}'
+      | '\u{2220}'
       | '\u{25A0}'
       | '\u{25A1}'
       | '\u{25FC}'
@@ -3090,33 +3165,39 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
       let pair_start = pair.as_span().start();
       let full_str = pair.as_str().to_string();
       let children: Vec<_> = pair.into_inner().collect();
-      // The operator sits between the second-to-last and last children;
-      // checking only that span keeps chained rules with mixed arrows
-      // (a -> b :> c) classified correctly.
-      let op_from = children[children.len() - 2].as_span().end() - pair_start;
-      let op_to = children[children.len() - 1].as_span().start() - pair_start;
-      let is_delayed = full_str[op_from..op_to].contains(":>");
-      // Grammar: ConditionExpr ~ ("/;" ~ ConditionExpr)? ~ ("->" | ":>") ~ ConditionExpr
-      // 2 children: pattern -> replacement
-      // 3 children: pattern /; condition -> replacement
-      let (pattern, replacement) = if children.len() == 3 {
-        // pattern /; condition :> replacement
-        // Build a proper Condition[pattern, test] AST node
-        let pattern_expr = pair_to_expr(children[0].clone());
-        let condition_expr = pair_to_expr(children[1].clone());
-        (
-          Expr::FunctionCall {
-            name: "Condition".to_string(),
-            args: vec![pattern_expr, condition_expr].into(),
-          },
-          pair_to_expr(children[2].clone()),
-        )
-      } else {
-        (
-          pair_to_expr(children[0].clone()),
-          pair_to_expr(children[1].clone()),
-        )
+      // Grammar: operand ~ ("/;" ~ cond)? ~ ("->" | ":>") ~ (rule | operand ~ ("/;" ~ cond)*)
+      // The children carry no operator tokens, so the arrow is found in the
+      // gap between two consecutive children. Everything before it is the
+      // pattern (with an optional condition), everything after it the
+      // replacement (with any number of conditions).
+      let gap = |i: usize| -> &str {
+        let from = children[i - 1].as_span().end() - pair_start;
+        let to = children[i].as_span().start() - pair_start;
+        &full_str[from..to]
       };
+      let arrow_at = (1..children.len())
+        .find(|&i| {
+          let g = gap(i);
+          g.contains("->") || g.contains(":>") || g.contains('\u{2192}')
+        })
+        .unwrap_or(children.len() - 1);
+      let is_delayed = gap(arrow_at).contains(":>");
+      let mut pattern = pair_to_expr(children[0].clone());
+      if arrow_at == 2 {
+        // pattern /; condition -> replacement
+        pattern = Expr::FunctionCall {
+          name: "Condition".to_string(),
+          args: vec![pattern, pair_to_expr(children[1].clone())].into(),
+        };
+      }
+      // `a :> b /; c /; d` is `RuleDelayed[a, Condition[Condition[b, c], d]]`.
+      let mut replacement = pair_to_expr(children[arrow_at].clone());
+      for cond in &children[arrow_at + 1..] {
+        replacement = Expr::FunctionCall {
+          name: "Condition".to_string(),
+          args: vec![replacement, pair_to_expr(cond.clone())].into(),
+        };
+      }
       if is_delayed {
         Expr::RuleDelayed {
           pattern: Box::new(pattern),
@@ -3879,7 +3960,27 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
             });
           }
         } else {
-          factors.push(pair_to_expr(inners[i].clone()));
+          let factor = pair_to_expr(inners[i].clone());
+          // A parenthesised product is one factor of the chain. Keep it
+          // whole, as a `Times` call, so that splicing the chain into a
+          // surrounding `/` (see `flatten_times_chain`) cannot reach into
+          // it: `a/(b c) d` is `(a/(b c)) d`, not `(a/b) c d`.
+          let factor = if inners[i].as_rule() == Rule::Expression
+            && matches!(
+              factor,
+              Expr::BinaryOp {
+                op: BinaryOperator::Times,
+                ..
+              }
+            ) {
+            Expr::FunctionCall {
+              name: "Times".to_string(),
+              args: flatten_times_chain(&factor).into(),
+            }
+          } else {
+            factor
+          };
+          factors.push(factor);
         }
         i += 1;
       }

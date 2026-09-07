@@ -5785,13 +5785,89 @@ fn tex_matrix_rows(items: &[Expr]) -> Option<Vec<Vec<Expr>>> {
   Some(rows)
 }
 
+thread_local! {
+  /// Set by the sum renderer just before it renders a term, and consumed by
+  /// the product renderer: a negated `Star` term of a sum is written
+  /// without brackets (`a-\frac{1}{2}*f(x)`), while on its own it is
+  /// `-\left(\frac{1}{2}*f(x)\right)`.
+  static TEX_SUM_TERM: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+  /// Set while the contents of a `HoldForm` are rendered: a held expression
+  /// is shown exactly as written, so its sums and products keep their
+  /// argument order instead of being rearranged for display.
+  static TEX_HELD: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+  /// Nesting depth of `expr_to_tex`. Only the outermost call applies the
+  /// user's `Format[…, TraditionalForm]` rules and trims the result.
+  static TEX_DEPTH: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Whether the expression being rendered sits inside a `HoldForm`.
+fn tex_held() -> bool {
+  TEX_HELD.with(std::cell::Cell::get)
+}
+
+/// Render an expression as TeX, the way `TeXForm` does.
+///
+/// wolframscript typesets through `TraditionalForm`, so a user-defined
+/// `Format[head[…], TraditionalForm]` rule shapes the output (Rubi's `Int`
+/// shows as an integral sign); the rules are applied once, to the whole
+/// expression, before rendering. The result is trimmed at the end only —
+/// every TeX control word is written with a trailing space (`\pi `), which
+/// wolframscript keeps inside the string and drops at its end.
 pub fn expr_to_tex(expr: &Expr) -> String {
-  // HoldForm[x] is a display wrapper; render its content transparently.
+  struct Depth;
+  impl Drop for Depth {
+    fn drop(&mut self) {
+      TEX_DEPTH.with(|d| d.set(d.get() - 1));
+    }
+  }
+  let outermost = TEX_DEPTH.with(|d| {
+    let depth = d.get();
+    d.set(depth + 1);
+    depth == 0
+  });
+  let _depth = Depth;
+  if !outermost {
+    return expr_to_tex_inner(expr);
+  }
+  use crate::evaluator::dispatch::complex_and_special as forms;
+  let formatted = if forms::has_format_rules() {
+    Some(forms::apply_format_recursively(expr, "TraditionalForm"))
+  } else {
+    None
+  };
+  let was_held = TEX_HELD.with(|h| h.replace(false));
+  let out = expr_to_tex_inner(formatted.as_ref().unwrap_or(expr));
+  TEX_HELD.with(|h| h.set(was_held));
+  out.trim_end().to_string()
+}
+
+fn expr_to_tex_inner(expr: &Expr) -> String {
+  // Only a product consumes the "term of a sum" flag; any other node
+  // clears it so it cannot leak into a nested product.
+  let is_product = matches!(
+    expr,
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      ..
+    } | Expr::BinaryOp {
+      op: BinaryOperator::Times | BinaryOperator::Divide,
+      ..
+    }
+  ) || matches!(expr, Expr::FunctionCall { name, args }
+      if name == "Times" && args.len() >= 2);
+  if !is_product {
+    TEX_SUM_TERM.with(|f| f.set(false));
+  }
+  // HoldForm[x] is a display wrapper; render its content transparently —
+  // but as written, without the reordering an evaluated sum gets.
   if let Expr::FunctionCall { name, args } = expr
     && name == "HoldForm"
     && args.len() == 1
   {
-    return expr_to_tex(&args[0]);
+    let was_held = TEX_HELD.with(|h| h.replace(true));
+    let out = expr_to_tex(&args[0]);
+    TEX_HELD.with(|h| h.set(was_held));
+    return out;
   }
   // OutputForm[x] renders the content to its OutputForm text first, then
   // TeXForm wraps that in `\text{…}`. Wolfram prints
@@ -5821,8 +5897,8 @@ pub fn expr_to_tex(expr: &Expr) -> String {
     Expr::Identifier(name) | Expr::Constant(name) => tex_identifier(name),
     Expr::UnaryOp {
       op: UnaryOperator::Minus,
-      operand,
-    } => format!("-{}", expr_to_tex(operand)),
+      ..
+    } => tex_product(expr),
     Expr::UnaryOp {
       op: UnaryOperator::Not,
       operand,
@@ -5832,8 +5908,11 @@ pub fn expr_to_tex(expr: &Expr) -> String {
       left,
       right,
     } => {
+      TEX_SUM_TERM.with(|f| f.set(true));
       let l = expr_to_tex(left);
+      TEX_SUM_TERM.with(|f| f.set(true));
       let r = expr_to_tex(right);
+      TEX_SUM_TERM.with(|f| f.set(false));
       // Check if right side starts with minus to avoid x+-y
       if r.starts_with('-') {
         format!("{l}{r}")
@@ -5841,21 +5920,25 @@ pub fn expr_to_tex(expr: &Expr) -> String {
         format!("{l}+{r}")
       }
     }
+    // A held `a - b` is written as it stands: the subtrahend is bracketed
+    // when it is a sum (`a-(b-c)`), and `a - -b` keeps both signs.
     Expr::BinaryOp {
       op: BinaryOperator::Minus,
       left,
       right,
-    } => format!("{}-{}", expr_to_tex(left), expr_to_tex(right)),
+    } => {
+      TEX_SUM_TERM.with(|f| f.set(true));
+      let l = expr_to_tex(left);
+      TEX_SUM_TERM.with(|f| f.set(true));
+      let r = expr_to_tex(right);
+      TEX_SUM_TERM.with(|f| f.set(false));
+      let r = if is_tex_sum(right) { tex_paren(&r) } else { r };
+      format!("{l}-{r}")
+    }
     Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left,
-      right,
-    } => tex_times(left, right),
-    Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left,
-      right,
-    } => format!("\\frac{{{}}}{{{}}}", expr_to_tex(left), expr_to_tex(right)),
+      op: BinaryOperator::Times | BinaryOperator::Divide,
+      ..
+    } => tex_product(expr),
     Expr::BinaryOp {
       op: BinaryOperator::Power,
       left,
@@ -5921,9 +6004,38 @@ pub fn expr_to_tex(expr: &Expr) -> String {
         return format!("\\left(\n{array}\n\\right)");
       }
       let parts: Vec<String> = items.iter().map(expr_to_tex).collect();
-      format!("\\{{{}\\}}", parts.join(","))
+      tex_braces(&parts.join(","))
     }
     Expr::FunctionCall { name, args } => tex_function_call(name, args),
+    // Patterns are typeset as text, with the blanks escaped for TeX:
+    // `x_` is `\text{x$\_$}`, `d_Integer` is `\text{d$\_$Integer}`.
+    Expr::Pattern {
+      name,
+      head,
+      blank_type,
+    } => tex_pattern_text(name, head.as_deref(), *blank_type),
+    Expr::PatternOptional {
+      name,
+      head,
+      default,
+    } => match default {
+      Some(default) => format!(
+        "{}:{}",
+        tex_pattern_text(name, head.as_deref(), 1),
+        expr_to_tex(default)
+      ),
+      None => format!("\\text{{{}$\\_$.}}", tex_escape_text(name)),
+    },
+    Expr::PatternTest {
+      name,
+      head,
+      blank_type,
+      test,
+    } => format!(
+      "{}?{}",
+      tex_pattern_text(name, head.as_deref(), *blank_type),
+      expr_to_tex(test)
+    ),
     // wolframscript writes the arrow tight on its left: `x\to y` — unless
     // the left side ends in a macro, which needs the separating space
     // (`\alpha \to y`).
@@ -5993,10 +6105,261 @@ pub fn expr_to_tex(expr: &Expr) -> String {
       {
         return tex_derivative(orders, &inner_args[0], Some(args));
       }
-      expr_to_output(expr)
+      // `f[a][b]` is `f(a)(b)`; a compound head is bracketed first:
+      // `f[a][b][c]` is `(f(a)(b))(c)` and `(a b)[c]` is `(a b)(c)`.
+      let head = match func.as_ref() {
+        Expr::CurriedCall { .. }
+        | Expr::BinaryOp { .. }
+        | Expr::UnaryOp { .. } => tex_paren(&expr_to_tex(func)),
+        Expr::FunctionCall { name, args: inner }
+          if matches!(name.as_str(), "Plus" | "Times") && inner.len() >= 2 =>
+        {
+          tex_paren(&expr_to_tex(func))
+        }
+        _ => expr_to_tex(func),
+      };
+      format!("{head}{}", tex_paren_list(args))
     }
     _ => expr_to_output(expr),
   }
+}
+
+/// The TeX text of a pattern: the name, the blanks written as `$\_$` and an
+/// optional head, all inside `\text{…}` as wolframscript writes it.
+fn tex_pattern_text(name: &str, head: Option<&str>, blanks: u8) -> String {
+  let blanks = "\\_".repeat(usize::from(blanks.max(1)));
+  format!(
+    "\\text{{{}${blanks}${}}}",
+    tex_escape_text(name),
+    head.map(tex_escape_text).unwrap_or_default()
+  )
+}
+
+/// Whether rendered TeX is "tall" — holds a fraction, radical, script,
+/// stacked accent or derivative prime — so that the delimiters around it
+/// need `\left…\right` sizing. Text runs (`\text{x$\_$}`) are ignored:
+/// their contents are typeset as words, not as mathematics.
+fn tex_is_tall(inner: &str) -> bool {
+  let mut rest = inner;
+  let mut stripped = String::with_capacity(inner.len());
+  while let Some(start) = rest.find("\\text{") {
+    stripped.push_str(&rest[..start]);
+    let body = &rest[start + "\\text{".len()..];
+    let mut depth = 1usize;
+    let mut end = body.len();
+    for (i, c) in body.char_indices() {
+      match c {
+        '{' => depth += 1,
+        '}' => {
+          depth -= 1;
+          if depth == 0 {
+            end = i + 1;
+            break;
+          }
+        }
+        _ => {}
+      }
+    }
+    rest = &body[end..];
+  }
+  stripped.push_str(rest);
+  ["\\frac", "\\sqrt", "\\overset", "\\underset", "^", "_", "'"]
+    .iter()
+    .any(|marker| stripped.contains(marker))
+}
+
+/// Wrap rendered TeX in a delimiter pair, sized with `\left…\right` when
+/// the content is tall: `f(x)` but `f\left(\frac{a}{b}\right)`.
+fn tex_wrap(inner: &str, open: &str, close: &str) -> String {
+  if tex_is_tall(inner) {
+    format!("\\left{open}{inner}\\right{close}")
+  } else {
+    format!("{open}{inner}{close}")
+  }
+}
+
+/// Parenthesize rendered TeX, sizing the parentheses to the content.
+fn tex_paren(inner: &str) -> String {
+  tex_wrap(inner, "(", ")")
+}
+
+/// Square-bracket rendered TeX, sizing the brackets to the content.
+fn tex_bracket(inner: &str) -> String {
+  tex_wrap(inner, "[", "]")
+}
+
+/// Brace rendered TeX as a list, sizing the braces to the content.
+fn tex_braces(inner: &str) -> String {
+  tex_wrap(inner, "\\{", "\\}")
+}
+
+/// A script (sub- or superscript) needs braces only when it is more than
+/// one character: `^n` but `^{n+1}`.
+fn tex_script_group(tex: &str) -> String {
+  if tex.chars().count() == 1 {
+    tex.to_string()
+  } else {
+    format!("{{{tex}}}")
+  }
+}
+
+/// The body of an integral, sum, product or derivative: a sum is bracketed
+/// (`\int (a+b) \, dx`, `\int \left(\frac{a}{b}+c\right) \, dx`), anything
+/// else stands as it is.
+fn tex_summand(body: &Expr) -> String {
+  let tex = expr_to_tex(body);
+  if is_tex_sum(body) {
+    tex_paren(&tex)
+  } else {
+    tex
+  }
+}
+
+/// A function's argument list, comma-separated inside sized parentheses.
+fn tex_paren_list(args: &[Expr]) -> String {
+  tex_paren(&args.iter().map(expr_to_tex).collect::<Vec<_>>().join(","))
+}
+
+/// The factors a product is made of, in writing order, as `Times` would
+/// hold them: nested products are flattened, a division contributes its
+/// divisor as a reciprocal power, and a unary minus contributes a `-1`.
+/// `inverted` collects the factors of a divisor.
+fn product_factors(expr: &Expr, inverted: bool, out: &mut Vec<Expr>) {
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => {
+      product_factors(left, inverted, out);
+      product_factors(right, inverted, out);
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } => {
+      product_factors(left, inverted, out);
+      product_factors(right, !inverted, out);
+    }
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => {
+      out.push(Expr::Integer(-1));
+      product_factors(operand, inverted, out);
+    }
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      for arg in args {
+        product_factors(arg, inverted, out);
+      }
+    }
+    _ if !inverted => out.push(expr.clone()),
+    // A divisor that is itself a power flips its exponent's sign; anything
+    // else becomes a reciprocal.
+    Expr::FunctionCall { name, args }
+      if name == "Power"
+        && args.len() == 2
+        && matches!(&args[1], Expr::Integer(_)) =>
+    {
+      let Expr::Integer(n) = &args[1] else {
+        unreachable!()
+      };
+      out.push(call("Power", vec![args[0].clone(), Expr::Integer(-n)]));
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } if matches!(right.as_ref(), Expr::Integer(_)) => {
+      let Expr::Integer(n) = right.as_ref() else {
+        unreachable!()
+      };
+      out.push(call(
+        "Power",
+        vec![left.as_ref().clone(), Expr::Integer(-n)],
+      ));
+    }
+    _ => out.push(call("Power", vec![expr.clone(), Expr::Integer(-1)])),
+  }
+}
+
+/// Render a product written with infix operators (`a b / c`, `-x`) through
+/// the same path as an evaluated `Times`, so it becomes one fraction with
+/// its sign in front.
+fn tex_product(expr: &Expr) -> String {
+  let mut factors = Vec::new();
+  product_factors(expr, false, &mut factors);
+  tex_times_nary_with(&factors, false)
+}
+
+/// The terms of a sum written with infix operators or as a `Plus` call, in
+/// writing order; a subtrahend arrives negated.
+fn sum_terms(expr: &Expr, out: &mut Vec<Expr>) {
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => {
+      sum_terms(left, out);
+      sum_terms(right, out);
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Minus,
+      left,
+      right,
+    } => {
+      sum_terms(left, out);
+      out.push(call(
+        "Times",
+        vec![Expr::Integer(-1), right.as_ref().clone()],
+      ));
+    }
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      out.extend(args.iter().cloned());
+    }
+    Expr::FunctionCall { name, args } if name == NEGATED_SUM => {
+      let mut inner = Vec::new();
+      sum_terms(&args[0], &mut inner);
+      out.extend(
+        inner
+          .into_iter()
+          .map(|t| call("Times", vec![Expr::Integer(-1), t])),
+      );
+    }
+    _ => out.push(expr.clone()),
+  }
+}
+
+/// Whether an expression is a sum (`a + b`, `a - b`, `Plus[a, b]`).
+fn is_tex_sum(expr: &Expr) -> bool {
+  matches!(
+    expr,
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus | BinaryOperator::Minus,
+      ..
+    }
+  ) || matches!(expr, Expr::FunctionCall { name, args }
+      if (name == "Plus" && args.len() >= 2)
+        || (name == NEGATED_SUM && args.len() == 1))
+}
+
+/// A private wrapper the product renderer puts around a sum that absorbs
+/// the product's minus sign (`-(a + b) c` → `(-a-b) c`); it never leaves
+/// the renderer.
+const NEGATED_SUM: &str = "TeX`NegatedSum";
+
+/// A sum with its sign flipped, term by term: `-(a + b)` is `-a-b`, the way
+/// wolframscript distributes a minus over a held sum.
+fn tex_negated_sum(sum: &Expr) -> String {
+  let mut terms = Vec::new();
+  sum_terms(sum, &mut terms);
+  let negated: Vec<Expr> = terms
+    .into_iter()
+    .map(|t| call("Times", vec![Expr::Integer(-1), t]))
+    .collect();
+  tex_function_call("Plus", &negated)
 }
 
 /// Convert an identifier to its TeX representation.
@@ -6006,14 +6369,12 @@ pub fn expr_to_tex(expr: &Expr) -> String {
 /// (Floor[x/2] → `\left\lfloor \frac{x}{2}\right\rfloor`) and uses the plain
 /// delimiters otherwise (Floor[x] → `\lfloor x\rfloor`).
 fn tex_delimited(inner: &str, ldelim: &str, rdelim: &str) -> String {
-  let tall = inner.contains("\\frac")
-    || inner.contains("\\sqrt")
-    || inner.contains('^')
-    || inner.contains('_');
-  if tall {
-    format!("\\left{ldelim} {inner}\\right{rdelim}")
+  // The closing delimiter is written with a trailing space, like a control
+  // word (`| x| `, `\lfloor x\rfloor `); the end of the output is trimmed.
+  if tex_is_tall(inner) {
+    format!("\\left{ldelim} {inner}\\right{rdelim} ")
   } else {
-    format!("{ldelim} {inner}{rdelim}")
+    format!("{ldelim} {inner}{rdelim} ")
   }
 }
 
@@ -6239,6 +6600,23 @@ fn tex_arrow_lhs(expr: &Expr) -> String {
 }
 
 fn tex_identifier(name: &str) -> String {
+  let shown = if name.contains('`') {
+    crate::evaluator::contexts::display_name(name)
+  } else {
+    name.to_string()
+  };
+  let tex = tex_identifier_bare(&shown);
+  // wolframscript writes every control word with a trailing space (`\pi `,
+  // `\alpha `) so the character after it can never be read as part of the
+  // name; the space is only dropped at the very end of the output.
+  if ends_with_tex_macro(&tex) {
+    format!("{tex} ")
+  } else {
+    tex
+  }
+}
+
+fn tex_identifier_bare(name: &str) -> String {
   match name {
     "Pi" => "\\pi".to_string(),
     "E" => "e".to_string(),
@@ -6343,10 +6721,6 @@ fn tex_identifier(name: &str) -> String {
 
 /// Handle binary multiplication in TeX (space-separated).
 /// Delegates to `tex_times_nary` for fraction handling.
-fn tex_times(left: &Expr, right: &Expr) -> String {
-  tex_times_nary(&[left.clone(), right.clone()])
-}
-
 /// Check if an expression is Power[base, negative_integer]
 /// and return (base, positive_exponent) if so.
 fn as_neg_int_power(expr: &Expr) -> Option<(&Expr, i128)> {
@@ -6392,6 +6766,11 @@ fn tex_denom_factor(base: &Expr, pos_exp: i128) -> String {
   if pos_exp == 1 {
     // No parens needed in denominator when exponent is 1
     expr_to_tex(base)
+  } else if matches!(base, Expr::FunctionCall { name, args }
+    if args.len() == 1 && !matches!(name.as_str(), "Plus" | "Times"))
+  {
+    // A function power keeps its usual shape: `\log ^2(x)`, `f(x)^2`.
+    tex_power(base, &Expr::Integer(pos_exp))
   } else {
     let exp_str = pos_exp.to_string();
     if exp_str.len() == 1 {
@@ -6413,40 +6792,309 @@ fn tex_parens_plain(expr: &Expr) -> String {
     _ => false,
   };
   if needs_parens {
-    format!("({})", expr_to_tex(expr))
+    tex_paren(&expr_to_tex(expr))
   } else {
     expr_to_tex(expr)
+  }
+}
+
+/// The cofunction that writes the reciprocal of a trigonometric function:
+/// `1/Sin[u]` is `Csc[u]`, `1/Sec[u]` is `Cos[u]`.
+fn tex_reciprocal_trig(base: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = base else {
+    return None;
+  };
+  if args.len() != 1 {
+    return None;
+  }
+  let cofunction = match name.as_str() {
+    "Sin" => "Csc",
+    "Csc" => "Sin",
+    "Cos" => "Sec",
+    "Sec" => "Cos",
+    "Tan" => "Cot",
+    "Cot" => "Tan",
+    "Sinh" => "Csch",
+    "Csch" => "Sinh",
+    "Cosh" => "Sech",
+    "Sech" => "Cosh",
+    "Tanh" => "Coth",
+    "Coth" => "Tanh",
+    _ => return None,
+  };
+  Some(call(cofunction, vec![args[0].clone()]))
+}
+
+/// The quotient function a numerator and a reciprocal (already turned into
+/// its cofunction) collapse into: `Cos[u] Csc[u]` is `Cot[u]`, `Sin[u]
+/// Sec[u]` is `Tan[u]`, and likewise for the hyperbolic pair.
+fn tex_trig_quotient(numer: &Expr, reciprocal: &Expr) -> Option<Expr> {
+  let (
+    Expr::FunctionCall { name: n, args: na },
+    Expr::FunctionCall { name: r, args: ra },
+  ) = (numer, reciprocal)
+  else {
+    return None;
+  };
+  if na.len() != 1
+    || ra.len() != 1
+    || !crate::evaluator::pattern_matching::expr_equal(&na[0], &ra[0])
+  {
+    return None;
+  }
+  let quotient = match (n.as_str(), r.as_str()) {
+    ("Cos", "Csc") => "Cot",
+    ("Sin", "Sec") => "Tan",
+    ("Cosh", "Csch") => "Coth",
+    ("Sinh", "Sech") => "Tanh",
+    _ => return None,
+  };
+  Some(call(quotient, vec![na[0].clone()]))
+}
+
+/// `Power[base, -p/q]` split into the base and the positive exponent.
+fn negative_power_parts(expr: &Expr) -> Option<(&Expr, Expr)> {
+  let (base, exp) = match expr {
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      (&args[0], &args[1])
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => (left.as_ref(), right.as_ref()),
+    _ => return None,
+  };
+  match tex_rational_parts(exp) {
+    Some((p, q)) if p < 0 && q > 1 => Some((
+      base,
+      call("Rational", vec![Expr::Integer(-p), Expr::Integer(q)]),
+    )),
+    _ => None,
+  }
+}
+
+/// The integer numerator and denominator of a rational literal, whether it
+/// is stored as `Rational[p, q]` or as the parsed quotient `p/q`.
+fn tex_rational_parts(expr: &Expr) -> Option<(i128, i128)> {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      match (&args[0], &args[1]) {
+        (Expr::Integer(p), Expr::Integer(q)) => Some((*p, *q)),
+        _ => None,
+      }
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } => match (left.as_ref(), right.as_ref()) {
+      (Expr::Integer(p), Expr::Integer(q)) => Some((*p, *q)),
+      _ => None,
+    },
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => tex_rational_parts(operand).map(|(p, q)| (-p, q)),
+    _ => None,
+  }
+}
+
+/// The box weight of a power: a radical for a root, a fraction for a
+/// negative exponent, a script otherwise (see `tex_box_weight`).
+fn tex_power_weight(base: &Expr, exp: &Expr) -> usize {
+  let base = tex_box_weight(base);
+  match (exp, tex_rational_parts(exp)) {
+    (Expr::Integer(n), _) if *n < 0 => 2 + base,
+    (_, Some((p, _))) => {
+      if p < 0 {
+        2 + base
+      } else {
+        1 + base
+      }
+    }
+    (exp, None) => 1 + base + tex_box_weight(exp),
+  }
+}
+
+/// A rough count of the boxes wolframscript's TraditionalForm would build
+/// for an expression: one for each row, script, radical or bracket, two for
+/// a fraction, none for an atom. It decides whether a rational coefficient
+/// folds into a fraction with its factor (`\frac{f(x^2)}{2}`, weight 2) or
+/// stays beside it (`\frac{1}{2} \log \left(1+x^2\right)`, weight 3).
+fn tex_box_weight(expr: &Expr) -> usize {
+  let sum_of = |items: &[Expr]| items.iter().map(tex_box_weight).sum::<usize>();
+  match expr {
+    Expr::Integer(_)
+    | Expr::BigInteger(_)
+    | Expr::Real(_)
+    | Expr::BigFloat(..)
+    | Expr::Identifier(_)
+    | Expr::Constant(_)
+    | Expr::String(_) => 0,
+    Expr::List(items) => 1 + sum_of(items),
+    Expr::UnaryOp { operand, .. } => 1 + tex_box_weight(operand),
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } => 2 + tex_box_weight(left) + tex_box_weight(right),
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => tex_power_weight(left, right),
+    Expr::BinaryOp { left, right, .. } => {
+      1 + tex_box_weight(left) + tex_box_weight(right)
+    }
+    // `f(x)'` is a script on the row of the call; `f'(x)` a script on `f`
+    // in a row.
+    Expr::CurriedCall { func, args } if matches!(func.as_ref(), Expr::FunctionCall { name, .. } if name == "Derivative") => {
+      1 + sum_of(args)
+    }
+    Expr::CurriedCall { func, args }
+      if matches!(func.as_ref(), Expr::CurriedCall { func: inner, .. }
+        if matches!(inner.as_ref(), Expr::FunctionCall { name, .. } if name == "Derivative")) =>
+    {
+      2 + sum_of(args)
+    }
+    Expr::FunctionCall { name, args } => match name.as_str() {
+      "Rational" => 2,
+      "Complex" => 1,
+      "Power" if args.len() == 2 => tex_power_weight(&args[0], &args[1]),
+      // `x'` is a script on `x`; `f'(x)` a script on `f` in a row.
+      "Derivative" if args.len() == 2 => 1 + tex_box_weight(&args[1]),
+      "Derivative" if args.len() > 2 => 2 + sum_of(&args[2..]),
+      "Plus" | "Times" | "Star" | "Sqrt" | "Abs" => 1 + sum_of(args),
+      // An inverse function is written with a script on its name
+      // (`\tan ^{-1}`), one box more than a plain call.
+      "ArcSin" | "ArcCos" | "ArcTan" | "ArcCot" | "ArcSec" | "ArcCsc"
+      | "ArcSinh" | "ArcCosh" | "ArcTanh" | "ArcCoth" | "ArcSech"
+      | "ArcCsch" => 2 + sum_of(args),
+      // A call with several arguments is a row of rows, with separators.
+      _ if args.len() >= 2 => 3 + sum_of(args),
+      _ => 1 + sum_of(args),
+    },
+    Expr::CurriedCall { func, args } => 1 + tex_box_weight(func) + sum_of(args),
+    _ => 1,
   }
 }
 
 /// Handle n-ary Times in TeX, splitting into \frac when negative-integer
 /// Power factors are present (matching Wolfram TeXForm).
 fn tex_times_nary(args: &[Expr]) -> String {
-  use BinaryOperator as B;
+  // Only an evaluated, flat `Times[-1, sum, …]` distributes its sign over
+  // the sum (see below); a product written with operators never does.
+  let flat_minus_one = args.len() >= 3
+    && args.iter().any(|a| matches!(a, Expr::Integer(-1)))
+    && args.iter().any(is_tex_sum);
+  tex_times_nary_with(args, flat_minus_one)
+}
+
+fn tex_times_nary_with(args: &[Expr], distribute_sign: bool) -> String {
+  let sum_term = TEX_SUM_TERM.with(|f| f.replace(false));
   let tex_needs_product_parens = |arg: &Expr| -> bool {
-    matches!(
-      arg,
-      Expr::BinaryOp {
-        op: B::Plus | B::Minus,
-        ..
-      }
-    ) || matches!(arg, Expr::FunctionCall { name, args }
-        if name == "Plus" && args.len() >= 2)
+    is_tex_sum(arg)
+      || matches!(arg, Expr::FunctionCall { name, args }
+        if name == "Star" && args.len() >= 2)
   };
 
-  // Check for -1 leading factor
-  let (mut negate, factors) = if matches!(&args[0], Expr::Integer(-1)) {
-    (true, &args[1..])
-  } else {
-    (false, args)
-  };
+  // Every negative numeric factor contributes its sign to the front of the
+  // product and stays behind as its magnitude; a `-1` (also what a unary
+  // minus contributes) vanishes: `a (-b) c` is `-a b c`, `-2 x/3` is
+  // `-\frac{2 x}{3}`. A `1` left over from `1/2 Sin[x]` is dropped too.
+  // Nested products and quotients among the arguments are spliced in as
+  // factors (`Times[-1, Times[-1, c]]` is `c`).
+  let mut flat: Vec<Expr> = Vec::with_capacity(args.len());
+  for arg in args {
+    product_factors(arg, false, &mut flat);
+  }
+  let args: &[Expr] = &flat;
+  let mut negate = false;
+  let mut from_minus_one = false;
+  let mut owned: Vec<Expr> = Vec::with_capacity(args.len());
+  for arg in args {
+    match arg {
+      Expr::Integer(-1) => {
+        negate = !negate;
+        from_minus_one = true;
+      }
+      Expr::Integer(n) if *n < 0 => {
+        negate = !negate;
+        from_minus_one = false;
+        owned.push(Expr::Integer(-n));
+      }
+      Expr::Real(f) if *f < 0.0 => {
+        negate = !negate;
+        from_minus_one = false;
+        owned.push(Expr::Real(-f));
+      }
+      _ => owned.push(arg.clone()),
+    }
+  }
+  // A written `p/q …` (`-4/3 Star[…]`, `1/2 Sin[x]`, `x/2`) carries its
+  // numerator and denominator as separate factors; gather them into the
+  // rational coefficient an evaluated product would hold, so both render
+  // alike.
+  if let Some(q_pos) = owned.iter().position(|f| {
+    matches!(f, Expr::FunctionCall { name, args }
+      if name == "Power" && args.len() == 2
+        && matches!(&args[0], Expr::Integer(q) if *q > 1)
+        && matches!(&args[1], Expr::Integer(-1)))
+  }) {
+    let removed = owned.remove(q_pos);
+    let Expr::FunctionCall { args: pw, .. } = &removed else {
+      unreachable!()
+    };
+    let Expr::Integer(q) = pw[0] else {
+      unreachable!()
+    };
+    let p = match owned.first() {
+      Some(Expr::Integer(p)) => {
+        let p = *p;
+        owned.remove(0);
+        p
+      }
+      _ => 1,
+    };
+    owned.insert(
+      0,
+      call("Rational", vec![Expr::Integer(p), Expr::Integer(q)]),
+    );
+  }
+  if owned.len() > 1 {
+    owned.retain(|f| !matches!(f, Expr::Integer(1)));
+  }
+  if owned.is_empty() {
+    owned.push(Expr::Integer(1));
+  }
+  // An evaluated product's `-1` factor is distributed over its sum factor,
+  // as wolframscript shows `Times[-1, Plus[a, b], c]`: `c (-a-b)`. Only a
+  // bare `-1` in a flat product with further factors does this; `-2 (a +
+  // b)` keeps its coefficient, and a held `-(b + c) d` or `-(b + c)` stays
+  // as written.
+  if negate
+    && from_minus_one
+    && distribute_sign
+    && let Some(pos) = owned.iter().position(is_tex_sum)
+  {
+    let sum = owned[pos].clone();
+    owned[pos] = call(NEGATED_SUM, vec![sum]);
+    negate = false;
+  }
+  let factors: &[Expr] = &owned;
 
   // A leading rational coefficient p/q (q > 1) is folded into the fraction —
   // wolframscript renders `Sqrt[x]/2` as `\frac{\sqrt{x}}{2}`, not
-  // `\frac{1}{2}\sqrt{x}`, and `2 x/(3 y)` as `\frac{2 x}{3 y}`. The exception
-  // is a product of several factors that includes a parenthesised sum, where
-  // wolframscript keeps the coefficient separate (`(1/2)(a+b)c` →
-  // `\frac{1}{2} c (a+b)`).
+  // `\frac{1}{2}\sqrt{x}`, and `2 x/(3 y)` as `\frac{2 x}{3 y}` — unless the
+  // rest of the product is "large": several factors, or one factor whose
+  // typeset boxes are too many for wolframscript's taste (see
+  // `tex_box_weight`). Then the coefficient stays a separate `\frac{p}{q}`:
+  // `(1/2)(a+b)c` → `\frac{1}{2} c (a+b)`, `(3x^2-1)/2` →
+  // `\frac{1}{2} \left(3 x^2-1\right)`. Other denominator factors always
+  // fold everything into one fraction (`\frac{a+b}{3 c}`).
   let mut rat_num: Option<i128> = None; // |p|, folded into the numerator
   let mut rat_den: Option<i128> = None; // q, folded into the denominator
   let mut leading_rational: Option<&Expr> = None;
@@ -6459,8 +7107,23 @@ fn tex_times_nary(args: &[Expr]) -> String {
     && q.abs() > 1
   {
     let rest = &factors[1..];
-    let has_plus = rest.iter().any(&tex_needs_product_parens);
-    if rest.len() <= 1 || !has_plus {
+    let other_denominators = rest.iter().any(|f| {
+      as_neg_int_power(f).is_some() || negative_power_parts(f).is_some()
+    });
+    // Several factors form one more row, and a sum among them is bracketed.
+    let weight = match rest {
+      [] => 0,
+      [only] => tex_box_weight(only),
+      many => {
+        1 + many
+          .iter()
+          .map(|f| tex_box_weight(f) + usize::from(is_tex_sum(f)))
+          .sum::<usize>()
+      }
+    };
+    let fold =
+      other_denominators || weight + usize::from(negate != (*p < 0)) <= 2;
+    if fold {
       if *p < 0 {
         negate = !negate;
       }
@@ -6478,15 +7141,115 @@ fn tex_times_nary(args: &[Expr]) -> String {
 
   // Partition remaining factors into numerator factors and denominator factors
   let mut numer_args: Vec<&Expr> = Vec::new();
-  let mut denom: Vec<String> = Vec::new();
+  let mut denom: Vec<(String, bool)> = Vec::new(); // (tex, is a bare sum)
   if let Some(d) = rat_den {
-    denom.push(d.to_string());
+    denom.push((d.to_string(), false));
   }
+  // A reciprocal trigonometric function is written as its cofunction in
+  // the numerator, in place: `1/Sin[x]` is `\csc (x)`, `Sec[x]/Sin[x]` is
+  // `\csc (x) \sec (x)`.
+  let mut numer_owned: Vec<Expr> = Vec::new();
   for arg in factors {
     if let Some((base, pos_exp)) = as_neg_int_power(arg) {
-      denom.push(tex_denom_factor(base, pos_exp));
+      if let Some(cofunction) = tex_reciprocal_trig(base) {
+        numer_owned.push(if pos_exp == 1 {
+          cofunction
+        } else {
+          call("Power", vec![cofunction, Expr::Integer(pos_exp)])
+        });
+        continue;
+      }
+      denom.push((
+        tex_denom_factor(base, pos_exp),
+        pos_exp == 1 && is_tex_sum(base),
+      ));
+    } else if let Some((base, positive)) = negative_power_parts(arg) {
+      // `x^(-1/2)` is a denominator `\sqrt{x}`.
+      denom.push((tex_power(base, &positive), false));
     } else {
-      numer_args.push(arg);
+      numer_owned.push(arg.clone());
+    }
+  }
+  // `Cos[x]/Sin[x]` is `\cot (x)`: a cofunction next to the function it
+  // complements collapses into the quotient function.
+  let mut i = 0;
+  while i < numer_owned.len() {
+    let partner = (0..numer_owned.len()).filter(|&j| j != i).find_map(|j| {
+      tex_trig_quotient(&numer_owned[j], &numer_owned[i]).map(|q| (j, q))
+    });
+    if let Some((j, quotient)) = partner {
+      let keep = i.min(j);
+      numer_owned.remove(i.max(j));
+      numer_owned[keep] = quotient;
+      i = 0;
+    } else {
+      i += 1;
+    }
+  }
+  numer_args.extend(numer_owned.iter());
+  // A sum among several denominator factors needs its parentheses back:
+  // `\frac{1}{3 (1+x)}`, while alone it is `\frac{1}{1+x}`.
+  let denom: Vec<String> = if denom.len() > 1 {
+    denom
+      .into_iter()
+      .map(|(tex, is_sum)| if is_sum { tex_paren(&tex) } else { tex })
+      .collect()
+  } else {
+    denom.into_iter().map(|(tex, _)| tex).collect()
+  };
+  // wolframscript moves the symbols and powers of an evaluated product in
+  // front of a parenthesised sum that has no constant term: `(a+b) c` is
+  // `c (a+b)` and `x (a+b) c` is `c x (a+b)`, while the polynomial `(x+1) y`
+  // keeps its order. A held product keeps its written order.
+  let constant_free_sum = |e: &Expr| {
+    // `(a+b)^2` counts like `a+b`.
+    let e = match e {
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        &args[0]
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        ..
+      } => left.as_ref(),
+      other => other,
+    };
+    if !is_tex_sum(e) {
+      return false;
+    }
+    let mut terms = Vec::new();
+    sum_terms(e, &mut terms);
+    !terms.iter().any(|t| {
+      matches!(t, Expr::Integer(_) | Expr::Real(_))
+        || tex_rational_parts(t).is_some()
+    })
+  };
+  if !tex_held()
+    && let Some(first_sum) =
+      numer_args.iter().position(|a| constant_free_sum(a))
+  {
+    let (before, after) = numer_args.split_at(first_sum);
+    let is_atom = |e: &&Expr| {
+      matches!(
+        e,
+        Expr::Integer(_)
+          | Expr::Real(_)
+          | Expr::Identifier(_)
+          | Expr::Constant(_)
+      ) || matches!(e, Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2
+          && matches!(&args[0], Expr::Identifier(_) | Expr::Constant(_)))
+        || matches!(e, Expr::BinaryOp { op: BinaryOperator::Power, left, .. }
+          if matches!(left.as_ref(), Expr::Identifier(_) | Expr::Constant(_)))
+    };
+    let moved: Vec<&Expr> = after.iter().copied().filter(is_atom).collect();
+    if !moved.is_empty() {
+      let mut reordered: Vec<&Expr> = before.to_vec();
+      reordered.extend(moved);
+      reordered.extend(after.iter().copied().filter(|e| !is_atom(e)));
+      numer_args = reordered;
     }
   }
 
@@ -6508,8 +7271,16 @@ fn tex_times_nary(args: &[Expr]) -> String {
   }
   numer.extend(numer_args.iter().map(|arg| {
     let tex = expr_to_tex(arg);
-    if multi && tex_needs_product_parens(arg) {
-      format!("({tex})")
+    // A negated lone factor is bracketed when it is a `Star` (`-(a*b)`;
+    // except as a term of a sum) or, in a held expression, a sum with no
+    // fraction to sit in: `-(b+c)`, but `-\frac{b+c}{d}`.
+    let negated_alone = !multi
+      && negate
+      && (matches!(arg, Expr::FunctionCall { name, args }
+          if name == "Star" && args.len() >= 2 && !sum_term)
+        || (denom.is_empty() && is_tex_sum(arg)));
+    if (multi || negated_alone) && tex_needs_product_parens(arg) {
+      tex_paren(&tex)
     } else {
       tex
     }
@@ -6564,10 +7335,19 @@ fn tex_power(base: &Expr, exp: &Expr) -> String {
     }
   }
 
-  // Negative integer exponent: Power[x, -n] → \frac{1}{x^n}
+  // Negative integer exponent: Power[x, -n] → \frac{1}{x^n} — except for a
+  // trigonometric function, whose reciprocal is its cofunction:
+  // `1/Sin[x]` is `\csc (x)`, `1/Sin[x]^2` is `\csc ^2(x)`.
   if let Expr::Integer(n) = exp
     && *n < 0
   {
+    if let Some(cofunction) = tex_reciprocal_trig(base) {
+      return if *n == -1 {
+        expr_to_tex(&cofunction)
+      } else {
+        tex_power(&cofunction, &Expr::Integer(-n))
+      };
+    }
     return format!("\\frac{{1}}{{{}}}", tex_denom_factor(base, -n));
   }
   // A negative rational exponent moves into the denominator as well:
@@ -6650,7 +7430,7 @@ fn tex_base_with_parens(base: &Expr) -> String {
     _ => false,
   };
   if needs_parens {
-    format!("\\left({}\\right)", expr_to_tex(base))
+    tex_paren(&expr_to_tex(base))
   } else {
     expr_to_tex(base)
   }
@@ -6803,7 +7583,7 @@ fn tex_atom_or_paren(expr: &Expr) -> String {
     ),
     _ => false,
   };
-  if atomic { inner } else { format!("({inner})") }
+  if atomic { inner } else { tex_paren(&inner) }
 }
 
 /// Render an operand for a postfix operator (factorial), parenthesizing
@@ -6825,7 +7605,7 @@ fn tex_postfix_arg(expr: &Expr) -> String {
     }
     _ => false,
   };
-  if needs { format!("({inner})") } else { inner }
+  if needs { tex_paren(&inner) } else { inner }
 }
 
 /// Render a subscript index, wrapping it in braces only when multi-character.
@@ -6887,29 +7667,19 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
           ..
         }
       ) {
-        format!("({})", expr_to_tex(&args[0]))
+        tex_paren_list(&args[0..=0]).clone()
       } else {
         expr_to_tex(&args[0])
       };
       format!("{lhs}\\in {dom}")
     }
     // Max/Min/GCD use LaTeX operator names; LCM is plain text.
-    "Max" if !args.is_empty() => format!(
-      "\\max ({})",
-      args.iter().map(expr_to_tex).collect::<Vec<_>>().join(",")
-    ),
-    "Min" if !args.is_empty() => format!(
-      "\\min ({})",
-      args.iter().map(expr_to_tex).collect::<Vec<_>>().join(",")
-    ),
-    "GCD" if !args.is_empty() => format!(
-      "\\gcd ({})",
-      args.iter().map(expr_to_tex).collect::<Vec<_>>().join(",")
-    ),
-    "LCM" if !args.is_empty() => format!(
-      "\\text{{lcm}}({})",
-      args.iter().map(expr_to_tex).collect::<Vec<_>>().join(",")
-    ),
+    "Max" if !args.is_empty() => format!("\\max {}", tex_paren_list(args)),
+    "Min" if !args.is_empty() => format!("\\min {}", tex_paren_list(args)),
+    "GCD" if !args.is_empty() => format!("\\gcd {}", tex_paren_list(args)),
+    "LCM" if !args.is_empty() => {
+      format!("\\text{{lcm}}{}", tex_paren_list(args))
+    }
     // Mod[a, b] -> (a \bmod b), parenthesizing compound operands.
     "Mod" if args.len() == 2 => format!(
       "({} \\bmod {})",
@@ -6927,15 +7697,15 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
     // Bessel functions -> J_n(x), Y_n(x), I_n(x), K_n(x).
     "BesselJ" | "BesselY" | "BesselI" | "BesselK" if args.len() == 2 => {
       format!(
-        "{}_{}({})",
+        "{}_{}{}",
         &name[6..7],
         tex_sub(&args[0]),
-        expr_to_tex(&args[1])
+        tex_paren_list(&args[1..=1])
       )
     }
     // LegendreP[n, x] -> P_n(x).
     "LegendreP" if args.len() == 2 => {
-      format!("P_{}({})", tex_sub(&args[0]), expr_to_tex(&args[1]))
+      format!("P_{}{}", tex_sub(&args[0]), tex_paren_list(&args[1..=1]))
     }
     // Subscripted families: index in a subscript, optional applied argument.
     // Fibonacci[n] -> F_n, Fibonacci[n, x] -> F_n(x); SphericalBesselJ[n, x]
@@ -6956,10 +7726,10 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
         format!("{}_{}", letter, tex_sub(&args[0]))
       } else {
         format!(
-          "{}_{}({})",
+          "{}_{}{}",
           letter,
           tex_sub(&args[0]),
-          expr_to_tex(&args[1])
+          tex_paren_list(&args[1..=1])
         )
       }
     }
@@ -6987,7 +7757,9 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
       format!("{}^{{-1}}", tex_atom_or_paren(&args[0]))
     }
     "Det" if args.len() == 1 => format!("| {}|", expr_to_tex(&args[0])),
-    "Arg" if args.len() == 1 => format!("\\arg ({})", expr_to_tex(&args[0])),
+    "Arg" if args.len() == 1 => {
+      format!("\\arg {}", tex_paren_list(&args[0..=0]))
+    }
     // Norm[v, p] -> \| v\| _p (the 1-arg form is handled above).
     "Norm" if args.len() == 2 => {
       format!("\\| {}\\| _{}", expr_to_tex(&args[0]), tex_sub(&args[1]))
@@ -7008,52 +7780,60 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
     }
     // Integral/error special functions with conventional abbreviations.
     "Erfi" if args.len() == 1 => {
-      format!("\\text{{erfi}}({})", expr_to_tex(&args[0]))
+      format!("\\text{{erfi}}{}", tex_paren_list(&args[0..=0]))
     }
-    "FresnelC" if args.len() == 1 => format!("C({})", expr_to_tex(&args[0])),
-    "FresnelS" if args.len() == 1 => format!("S({})", expr_to_tex(&args[0])),
+    "FresnelC" if args.len() == 1 => {
+      format!("C{}", tex_paren_list(&args[0..=0]))
+    }
+    "FresnelS" if args.len() == 1 => {
+      format!("S{}", tex_paren_list(&args[0..=0]))
+    }
     "ExpIntegralEi" if args.len() == 1 => {
-      format!("\\text{{Ei}}({})", expr_to_tex(&args[0]))
+      format!("\\text{{Ei}}{}", tex_paren_list(&args[0..=0]))
     }
     "LogIntegral" if args.len() == 1 => {
-      format!("\\text{{li}}({})", expr_to_tex(&args[0]))
+      format!("\\text{{li}}{}", tex_paren_list(&args[0..=0]))
     }
     "SinIntegral" if args.len() == 1 => {
-      format!("\\text{{Si}}({})", expr_to_tex(&args[0]))
+      format!("\\text{{Si}}{}", tex_paren_list(&args[0..=0]))
     }
     "CosIntegral" if args.len() == 1 => {
-      format!("\\text{{Ci}}({})", expr_to_tex(&args[0]))
+      format!("\\text{{Ci}}{}", tex_paren_list(&args[0..=0]))
     }
     "Gudermannian" if args.len() == 1 => {
-      format!("\\text{{gd}}({})", expr_to_tex(&args[0]))
+      format!("\\text{{gd}}{}", tex_paren_list(&args[0..=0]))
     }
     "Haversine" if args.len() == 1 => {
-      format!("\\text{{hav}}({})", expr_to_tex(&args[0]))
+      format!("\\text{{hav}}{}", tex_paren_list(&args[0..=0]))
     }
     "AiryAi" if args.len() == 1 => {
-      format!("\\text{{Ai}}({})", expr_to_tex(&args[0]))
+      format!("\\text{{Ai}}{}", tex_paren_list(&args[0..=0]))
     }
     "AiryBi" if args.len() == 1 => {
-      format!("\\text{{Bi}}({})", expr_to_tex(&args[0]))
+      format!("\\text{{Bi}}{}", tex_paren_list(&args[0..=0]))
     }
     "AiryAiPrime" if args.len() == 1 => {
-      format!("\\text{{Ai}}'({})", expr_to_tex(&args[0]))
+      format!("\\text{{Ai}}'{}", tex_paren_list(&args[0..=0]))
     }
     "AiryBiPrime" if args.len() == 1 => {
-      format!("\\text{{Bi}}'({})", expr_to_tex(&args[0]))
+      format!("\\text{{Bi}}'{}", tex_paren_list(&args[0..=0]))
     }
     "InverseErf" if args.len() == 1 => {
-      format!("\\text{{erf}}^{{-1}}({})", expr_to_tex(&args[0]))
+      format!("\\text{{erf}}^{{-1}}{}", tex_paren_list(&args[0..=0]))
     }
     "InverseErfc" if args.len() == 1 => {
-      format!("\\text{{erfc}}^{{-1}}({})", expr_to_tex(&args[0]))
+      format!("\\text{{erfc}}^{{-1}}{}", tex_paren_list(&args[0..=0]))
     }
     // Single-letter special functions: EllipticK/E -> K(m)/E(m),
     // ProductLog -> W(x), HypergeometricU -> U(a,b,x), LerchPhi -> \Phi (...).
-    "EllipticK" if args.len() == 1 => format!("K({})", expr_to_tex(&args[0])),
-    "EllipticE" if args.len() == 1 => format!("E({})", expr_to_tex(&args[0])),
+    "EllipticK" if args.len() == 1 => {
+      format!("K{}", tex_paren_list(&args[0..=0]))
+    }
+    "EllipticE" if args.len() == 1 => {
+      format!("E{}", tex_paren_list(&args[0..=0]))
+    }
     "ProductLog" if args.len() == 1 => {
-      format!("W({})", expr_to_tex(&args[0]))
+      format!("W{}", tex_paren_list(&args[0..=0]))
     }
     "HypergeometricU" if args.len() == 3 => format!(
       "U({},{},{})",
@@ -7069,9 +7849,9 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
     ),
     // PolyLog[s, x] -> \text{Li}_s(x).
     "PolyLog" if args.len() == 2 => format!(
-      "\\text{{Li}}_{}({})",
+      "\\text{{Li}}_{}{}",
       tex_sub(&args[0]),
-      expr_to_tex(&args[1])
+      tex_paren_list(&args[1..=1])
     ),
     // Accent functions: OverHat -> \hat{x}, etc.
     "OverHat" | "OverTilde" | "OverDot" | "UnderBar" if args.len() == 1 => {
@@ -7085,16 +7865,16 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
     }
     // PolyGamma[n, x] -> \psi ^{(n)}(x).
     "PolyGamma" if args.len() == 2 => format!(
-      "\\psi ^{{({})}}({})",
+      "\\psi ^{{({})}}{}",
       expr_to_tex(&args[0]),
-      expr_to_tex(&args[1])
+      tex_paren_list(&args[1..=1])
     ),
     // DiracDelta / HeavisideTheta -> \delta (x) / \theta (x).
     "DiracDelta" if args.len() == 1 => {
-      format!("\\delta ({})", expr_to_tex(&args[0]))
+      format!("\\delta {}", tex_paren_list(&args[0..=0]))
     }
     "HeavisideTheta" if args.len() == 1 => {
-      format!("\\theta ({})", expr_to_tex(&args[0]))
+      format!("\\theta {}", tex_paren_list(&args[0..=0]))
     }
     // OverBar[x] -> \bar{x}.
     "OverBar" if args.len() == 1 => {
@@ -7149,12 +7929,11 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
       args.iter().map(expr_to_tex).collect::<Vec<_>>().join(",")
     ),
     // UnitStep -> \theta (x); Sinc -> \text{sinc}(x).
-    "UnitStep" if !args.is_empty() => format!(
-      "\\theta ({})",
-      args.iter().map(expr_to_tex).collect::<Vec<_>>().join(",")
-    ),
+    "UnitStep" if !args.is_empty() => {
+      format!("\\theta {}", tex_paren_list(args))
+    }
     "Sinc" if args.len() == 1 => {
-      format!("\\text{{sinc}}({})", expr_to_tex(&args[0]))
+      format!("\\text{{sinc}}{}", tex_paren_list(&args[0..=0]))
     }
     // KroneckerDelta[i, j, ...] -> \delta _{i,j,...}.
     "KroneckerDelta" if !args.is_empty() => format!(
@@ -7177,66 +7956,63 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
     // Trig functions
     "Sin" | "Cos" | "Tan" | "Cot" | "Sec" | "Csc" if args.len() == 1 => {
       let fn_tex = format!("\\{}", name.to_lowercase());
-      format!("{} ({})", fn_tex, expr_to_tex(&args[0]))
+      format!("{} {}", fn_tex, tex_paren_list(&args[0..=0]))
     }
     // Inverse trig
     "ArcSin" if args.len() == 1 => {
-      format!("\\sin ^{{-1}}({})", expr_to_tex(&args[0]))
+      format!("\\sin ^{{-1}}{}", tex_paren_list(&args[0..=0]))
     }
     "ArcCos" if args.len() == 1 => {
-      format!("\\cos ^{{-1}}({})", expr_to_tex(&args[0]))
+      format!("\\cos ^{{-1}}{}", tex_paren_list(&args[0..=0]))
     }
     "ArcTan" if args.len() == 1 => {
-      format!("\\tan ^{{-1}}({})", expr_to_tex(&args[0]))
+      format!("\\tan ^{{-1}}{}", tex_paren_list(&args[0..=0]))
     }
     // Remaining inverse trig (the primitives have a LaTeX command name).
     "ArcCot" | "ArcSec" | "ArcCsc" if args.len() == 1 => {
       format!(
-        "\\{} ^{{-1}}({})",
+        "\\{} ^{{-1}}{}",
         name[3..].to_lowercase(),
-        expr_to_tex(&args[0])
+        tex_paren_list(&args[0..=0])
       )
     }
     // Hyperbolic functions: sinh/cosh/tanh/coth are LaTeX primitives,
     // sech/csch are rendered with \text{}.
     "Sinh" | "Cosh" | "Tanh" | "Coth" if args.len() == 1 => {
-      format!("\\{} ({})", name.to_lowercase(), expr_to_tex(&args[0]))
+      format!("\\{} {}", name.to_lowercase(), tex_paren_list(&args[0..=0]))
     }
     "Sech" | "Csch" if args.len() == 1 => {
       format!(
-        "\\text{{{}}}({})",
+        "\\text{{{}}}{}",
         name.to_lowercase(),
-        expr_to_tex(&args[0])
+        tex_paren_list(&args[0..=0])
       )
     }
     // Inverse hyperbolic functions.
     "ArcSinh" | "ArcCosh" | "ArcTanh" | "ArcCoth" if args.len() == 1 => {
       format!(
-        "\\{} ^{{-1}}({})",
+        "\\{} ^{{-1}}{}",
         name[3..].to_lowercase(),
-        expr_to_tex(&args[0])
+        tex_paren_list(&args[0..=0])
       )
     }
     "ArcSech" | "ArcCsch" if args.len() == 1 => {
       format!(
-        "\\text{{{}}}^{{-1}}({})",
+        "\\text{{{}}}^{{-1}}{}",
         name[3..].to_lowercase(),
-        expr_to_tex(&args[0])
+        tex_paren_list(&args[0..=0])
       )
     }
     // Special functions with dedicated LaTeX notation.
     "Sign" if args.len() == 1 => {
-      format!("\\text{{sgn}}({})", expr_to_tex(&args[0]))
+      format!("\\text{{sgn}}{}", tex_paren_list(&args[0..=0]))
     }
     "Gamma" if !args.is_empty() => {
       let inner: Vec<String> = args.iter().map(expr_to_tex).collect();
-      format!("\\Gamma ({})", inner.join(","))
+      format!("\\Gamma {}", tex_paren(&inner.join(",")))
     }
     "Zeta" if args.len() == 1 || args.len() == 2 => {
-      format!(
-        "\\zeta ({})",
-        args.iter().map(expr_to_tex).collect::<Vec<_>>().join(",")
-      )
+      format!("\\zeta {}", tex_paren_list(args))
     }
     // The Stieltjes constants carry their index as a subscript.
     "StieltjesGamma" if args.len() == 1 => {
@@ -7298,6 +8074,40 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
       .map(|a| tex_logic_operand(a, "Nor", 20))
       .collect::<Vec<_>>()
       .join("\\bar{\\vee}"),
+    n if n == NEGATED_SUM && args.len() == 1 => tex_negated_sum(&args[0]),
+    // `e:_` is the named blank `e_`.
+    "Pattern"
+      if args.len() == 2
+        && matches!(&args[0], Expr::Identifier(_))
+        && matches!(&args[1], Expr::Pattern { name, .. } if name.is_empty()) =>
+    {
+      let Expr::Identifier(n) = &args[0] else {
+        unreachable!()
+      };
+      let Expr::Pattern {
+        head, blank_type, ..
+      } = &args[1]
+      else {
+        unreachable!()
+      };
+      tex_pattern_text(n, head.as_deref(), *blank_type)
+    }
+    // Star[a, b] is the infix `a*b`; Rubi shows a distributed coefficient
+    // with it.
+    "Star" if args.len() >= 2 => {
+      args.iter().map(expr_to_tex).collect::<Vec<_>>().join("*")
+    }
+    // Overscript[x, o] / Underscript[x, u] stack the script on the base.
+    "Overscript" if args.len() == 2 => format!(
+      "\\overset{{{}}}{{{}}}",
+      expr_to_tex(&args[1]),
+      expr_to_tex(&args[0])
+    ),
+    "Underscript" if args.len() == 2 => format!(
+      "\\underset{{{}}}{{{}}}",
+      expr_to_tex(&args[1]),
+      expr_to_tex(&args[0])
+    ),
     // Display wrappers that only affect styling render their content.
     "Style" if !args.is_empty() => expr_to_tex(&args[0]),
     "Defer" | "Inactive" if args.len() == 1 => expr_to_tex(&args[0]),
@@ -7336,16 +8146,16 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
       expr_to_tex(&args[0])
     ),
     "Re" if args.len() == 1 => {
-      format!("\\Re({})", expr_to_tex(&args[0]))
+      format!("\\Re{}", tex_paren_list(&args[0..=0]))
     }
     "Im" if args.len() == 1 => {
-      format!("\\Im({})", expr_to_tex(&args[0]))
+      format!("\\Im{}", tex_paren_list(&args[0..=0]))
     }
     "Erf" if args.len() == 1 => {
-      format!("\\text{{erf}}({})", expr_to_tex(&args[0]))
+      format!("\\text{{erf}}{}", tex_paren_list(&args[0..=0]))
     }
     "Erfc" if args.len() == 1 => {
-      format!("\\text{{erfc}}({})", expr_to_tex(&args[0]))
+      format!("\\text{{erfc}}{}", tex_paren_list(&args[0..=0]))
     }
     "Beta" if args.len() == 2 => {
       format!("B({},{})", expr_to_tex(&args[0]), expr_to_tex(&args[1]))
@@ -7356,13 +8166,13 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
     }
     // Log
     "Log" if args.len() == 1 => {
-      format!("\\log ({})", expr_to_tex(&args[0]))
+      format!("\\log {}", tex_paren_list(&args[0..=0]))
     }
     "Log" if args.len() == 2 => {
       format!(
-        "\\log _{{{}}}({})",
+        "\\log _{{{}}}{}",
         expr_to_tex(&args[0]),
-        expr_to_tex(&args[1])
+        tex_paren_list(&args[1..=1])
       )
     }
     // Sqrt
@@ -7386,21 +8196,49 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
     // constants to the end (matching Wolfram's TeXForm convention),
     // then rotate so a non-negative term leads (avoid starting with -z+x, prefer x-z)
     "Plus" if !args.is_empty() => {
+      let tex_term = |term: &Expr| {
+        TEX_SUM_TERM.with(|f| f.set(true));
+        let t = expr_to_tex(term);
+        TEX_SUM_TERM.with(|f| f.set(false));
+        t
+      };
+      // A held sum is shown as written: no constants-last reordering and
+      // no rotation to a leading positive term.
+      if tex_held() {
+        let mut result = String::new();
+        for (i, term) in args.iter().enumerate() {
+          let t = tex_term(term);
+          if i > 0 && !t.starts_with('-') {
+            result.push('+');
+          }
+          result.push_str(&t);
+        }
+        return result;
+      }
       // Partition into symbolic and numeric terms, keeping relative order.
       // A numeric multiple of `I` counts as numeric: wolframscript treats a
       // complex number as one atom, so it trails the symbolic terms just as
       // a plain number does.
       let mut symbolic: Vec<&Expr> = Vec::new();
       let mut numeric: Vec<&Expr> = Vec::new();
+      // The named constants (`Pi`, `E`) trail the symbolic terms just as
+      // the numbers do: `x+\pi `, `1+e`; an imaginary term comes last of
+      // all (`\pi +i`).
+      let mut imaginary: Vec<&Expr> = Vec::new();
       for arg in args {
-        if matches!(arg, Expr::Integer(_) | Expr::Real(_))
-          || is_imaginary_term(arg)
+        if is_imaginary_term(arg) {
+          imaginary.push(arg);
+        } else if matches!(
+          arg,
+          Expr::Integer(_) | Expr::Real(_) | Expr::Constant(_)
+        ) || matches!(arg, Expr::Identifier(s) if s == "Pi" || s == "E")
         {
           numeric.push(arg);
         } else {
           symbolic.push(arg);
         }
       }
+      numeric.extend(imaginary);
       // Real part and imaginary part together form one complex atom, printed
       // in that order and bracketed when other terms surround it.
       let complex_unit = match numeric.as_slice() {
@@ -7422,7 +8260,7 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
         symbolic.iter().copied().chain(numeric).collect()
       };
       let mut tex_strs: Vec<String> =
-        reordered_args.iter().map(|a| expr_to_tex(a)).collect();
+        reordered_args.iter().map(|a| tex_term(a)).collect();
       if let Some(unit) = complex_unit {
         tex_strs.push(unit);
       }
@@ -7465,17 +8303,14 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
         && bounds.len() >= 3
       {
         return format!(
-          "\\sum _{{{}={}}}^{{{}}} {}",
+          "\\sum _{{{}={}}}^{} {}",
           expr_to_tex(&bounds[0]),
           expr_to_tex(&bounds[1]),
-          expr_to_tex(&bounds[2]),
-          expr_to_tex(&args[0])
+          tex_script_group(&expr_to_tex(&bounds[2])),
+          tex_summand(&args[0])
         );
       }
-      format!(
-        "\\text{{Sum}}({})",
-        args.iter().map(expr_to_tex).collect::<Vec<_>>().join(",")
-      )
+      format!("\\text{{Sum}}{}", tex_paren_list(args))
     }
     // Product
     "Product" if args.len() == 2 => {
@@ -7483,17 +8318,14 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
         && bounds.len() >= 3
       {
         return format!(
-          "\\prod _{{{}={}}}^{{{}}} {}",
+          "\\prod _{{{}={}}}^{} {}",
           expr_to_tex(&bounds[0]),
           expr_to_tex(&bounds[1]),
-          expr_to_tex(&bounds[2]),
-          expr_to_tex(&args[0])
+          tex_script_group(&expr_to_tex(&bounds[2])),
+          tex_summand(&args[0])
         );
       }
-      format!(
-        "\\text{{Product}}({})",
-        args.iter().map(expr_to_tex).collect::<Vec<_>>().join(",")
-      )
+      format!("\\text{{Product}}{}", tex_paren_list(args))
     }
     // Integrate
     "Integrate" if args.len() == 2 => {
@@ -7513,14 +8345,14 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
           "\\int_{}^{} {} \\, d{}",
           brace_if_needed(&expr_to_tex(&bounds[1])),
           brace_if_needed(&expr_to_tex(&bounds[2])),
-          expr_to_tex(&args[0]),
+          tex_summand(&args[0]),
           expr_to_tex(&bounds[0])
         );
       }
       // Indefinite integral
       format!(
         "\\int {} \\, d{}",
-        expr_to_tex(&args[0]),
+        tex_summand(&args[0]),
         expr_to_tex(&args[1])
       )
     }
@@ -7528,7 +8360,7 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
     "D" if args.len() == 2 => {
       format!(
         "\\frac{{\\partial {}}}{{\\partial {}}}",
-        expr_to_tex(&args[0]),
+        tex_summand(&args[0]),
         expr_to_tex(&args[1])
       )
     }
@@ -7600,10 +8432,7 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
         }
         format!("\\begin{{cases}}\n{}\n\\end{{cases}}", rows.join(" \\\\\n"))
       } else {
-        format!(
-          "\\text{{Piecewise}}({})",
-          args.iter().map(expr_to_tex).collect::<Vec<_>>().join(",")
-        )
+        format!("\\text{{Piecewise}}{}", tex_paren_list(args))
       }
     }
     // Complex
@@ -7675,15 +8504,19 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
     // function with math parentheses (f[x] -> f(x), myf[x] -> \text{myf}(x)).
     _ => {
       let args_tex: Vec<String> = args.iter().map(expr_to_tex).collect();
+      // A package symbol is written by its short name while its context is
+      // on `$ContextPath` (`Int`, not `Rubi`Int`).
+      let shown = crate::evaluator::contexts::display_name(name);
+      let name = shown.as_str();
       if crate::evaluator::get_builtin_function_info(name).is_some() {
-        format!("\\text{{{}}}[{}]", name, args_tex.join(","))
+        format!("\\text{{{}}}{}", name, tex_bracket(&args_tex.join(",")))
       } else {
         let head = if name.chars().count() == 1 {
           name.to_string()
         } else {
           format!("\\text{{{name}}}")
         };
-        format!("{}({})", head, args_tex.join(","))
+        format!("{}{}", head, tex_paren(&args_tex.join(",")))
       }
     }
   }
@@ -13255,10 +14088,22 @@ pub(crate) fn map_expr_tree(
       name: name.clone(),
       args: args.iter().map(go).collect(),
     },
-    Expr::CurriedCall { func, args } => Expr::CurriedCall {
-      func: Box::new(go(func)),
-      args: args.iter().map(go).collect(),
-    },
+    // A head mapped to a symbol makes an ordinary call:
+    // `Defer[Int][u, x]` with `Defer[Int]` → `Int` is `Int[u, x]`.
+    Expr::CurriedCall { func, args } => {
+      let func = go(func);
+      if let Expr::Identifier(name) = &func {
+        Expr::FunctionCall {
+          name: name.clone(),
+          args: args.iter().map(go).collect(),
+        }
+      } else {
+        Expr::CurriedCall {
+          func: Box::new(func),
+          args: args.iter().map(go).collect(),
+        }
+      }
+    }
     Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
       op: *op,
       left: Box::new(go(left)),

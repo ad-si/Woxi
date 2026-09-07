@@ -1007,14 +1007,16 @@ pub fn dispatch_complex_and_special(
       {
         let mut results: Vec<Expr> = Vec::new();
         for bindings in all_bindings {
-          let mut rhs = replacement.as_ref().clone();
-          for (name, value) in bindings {
-            rhs = crate::syntax::substitute_variable(&rhs, &name, &value);
-          }
-          let evaluated = match evaluate_expr_to_expr(&rhs) {
-            Ok(r) => r,
-            Err(e) => return Some(Err(e)),
-          };
+          // A failing `/;` guard on the replacement drops this match.
+          let evaluated =
+            match crate::evaluator::pattern_matching::instantiate_replacement(
+              replacement,
+              &bindings,
+            ) {
+              Ok(Some(r)) => r,
+              Ok(None) => continue,
+              Err(e) => return Some(Err(e)),
+            };
           results.push(evaluated);
           if let Some(n) = max_matches
             && results.len() as i128 >= n
@@ -1068,12 +1070,13 @@ pub fn dispatch_complex_and_special(
             if !all_bindings.is_empty() {
               let mut results: Vec<Expr> = Vec::new();
               for bindings in all_bindings {
-                let mut rhs = replacement.as_ref().clone();
-                for (name, value) in bindings {
-                  rhs = crate::syntax::substitute_variable(&rhs, &name, &value);
-                }
-                let evaluated = match evaluate_expr_to_expr(&rhs) {
-                  Ok(r) => r,
+                // A failing `/;` guard on the replacement drops this match.
+                let evaluated = match crate::evaluator::pattern_matching::instantiate_replacement(
+                  replacement,
+                  &bindings,
+                ) {
+                  Ok(Some(r)) => r,
+                  Ok(None) => continue,
                   Err(e) => return Some(Err(e)),
                 };
                 results.push(evaluated);
@@ -1109,15 +1112,14 @@ pub fn dispatch_complex_and_special(
           &args[0], &pattern,
         ) {
           Some(bindings) => {
-            let mut rhs = replacement.as_ref().clone();
-            for (name, value) in bindings {
-              rhs = crate::syntax::substitute_variable(&rhs, &name, &value);
-            }
-            let evaluated = match evaluate_expr_to_expr(&rhs) {
-              Ok(r) => r,
-              Err(e) => return Some(Err(e)),
-            };
-            return Some(Ok(Expr::List(vec![evaluated].into())));
+            // A failing `/;` guard on the replacement is no match.
+            return Some(
+              crate::evaluator::pattern_matching::instantiate_replacement(
+                &replacement,
+                &bindings,
+              )
+              .map(|r| Expr::List(r.into_iter().collect::<Vec<_>>().into())),
+            );
           }
           None => return Some(Ok(Expr::List(vec![].into()))),
         }
@@ -1686,43 +1688,17 @@ pub fn dispatch_complex_and_special(
     // to every form. With no matching rule the call is transparent and
     // returns the inner expression unchanged.
     "Format" if !args.is_empty() => {
-      if let Expr::FunctionCall { name: head, .. } = &args[0] {
-        let target_form = if args.len() >= 2 {
-          if let Expr::Identifier(form) = &args[1] {
-            Some(form.clone())
-          } else {
-            None
-          }
+      let target_form = if args.len() >= 2 {
+        if let Expr::Identifier(form) = &args[1] {
+          Some(form.as_str())
         } else {
           None
-        };
-        let rules = crate::evaluator::assignment::FORMAT_VALUES
-          .with(|m| m.borrow().get(head).cloned().unwrap_or_default());
-        // Two-phase lookup: when a target form is given, prefer rules
-        // tagged with that form, then fall back to 1-arg rules (empty
-        // form name). Without a target form, only consider 1-arg rules.
-        let phases: Vec<&str> = match &target_form {
-          Some(t) => vec![t.as_str(), ""],
-          None => vec![""],
-        };
-        for phase in phases {
-          for (rule_form, lhs, rhs) in &rules {
-            if rule_form != phase {
-              continue;
-            }
-            if let Some(bindings) =
-              crate::evaluator::pattern_matching::match_pattern(&args[0], lhs)
-            {
-              let substituted =
-                bindings.iter().fold(rhs.clone(), |acc, (k, v)| {
-                  crate::syntax::substitute_variable(&acc, k, v)
-                });
-              return Some(crate::evaluator::evaluate_expr_to_expr(
-                &substituted,
-              ));
-            }
-          }
         }
+      } else {
+        None
+      };
+      if let Some(formatted) = lookup_format_rule(&args[0], target_form) {
+        return Some(formatted);
       }
       // No user rule matched. With `Format[expr, OutputForm]`, wolframscript
       // returns the 2D ASCII rendering of the expression.
@@ -2874,6 +2850,55 @@ fn expr_to_full_box_form(expr: &Expr) -> Expr {
   call1("RowBox", Expr::List(parts.into()))
 }
 
+/// The user-defined `Format` rule that applies to `expr`, instantiated: the
+/// first `Format[pat, form] := body` (or form-less `Format[pat] := body`)
+/// under `expr`'s head whose pattern matches, with the bindings substituted
+/// into `body` and the result evaluated. `None` when no rule matches.
+///
+/// `expr` itself is only matched, never evaluated — a format rule describes
+/// how a held expression is displayed, so `HoldForm[Int[…]]` must reach its
+/// `Format[Int[e_, x_], TraditionalForm]` rule without `Int` being called.
+pub fn lookup_format_rule(
+  expr: &Expr,
+  target_form: Option<&str>,
+) -> Option<Result<Expr, InterpreterError>> {
+  let Expr::FunctionCall { name: head, .. } = expr else {
+    return None;
+  };
+  let rules = crate::evaluator::assignment::FORMAT_VALUES
+    .with(|m| m.borrow().get(head).cloned())?;
+  // Two-phase lookup: when a target form is given, prefer rules tagged with
+  // that form, then fall back to 1-arg rules (empty form name). Without a
+  // target form, only consider 1-arg rules.
+  let phases: Vec<&str> = match target_form {
+    Some(t) => vec![t, ""],
+    None => vec![""],
+  };
+  for phase in phases {
+    for (rule_form, lhs, rhs) in &rules {
+      if rule_form != phase {
+        continue;
+      }
+      if let Some(bindings) =
+        crate::evaluator::pattern_matching::match_pattern(expr, lhs)
+      {
+        let substituted = bindings.iter().fold(rhs.clone(), |acc, (k, v)| {
+          crate::syntax::substitute_variable(&acc, k, v)
+        });
+        return Some(crate::evaluator::evaluate_expr_to_expr(&substituted));
+      }
+    }
+  }
+  None
+}
+
+/// Whether any `Format` rule has been defined at all — a cheap gate for the
+/// renderers, which otherwise walk every expression looking for one.
+pub fn has_format_rules() -> bool {
+  crate::evaluator::assignment::FORMAT_VALUES
+    .with(|m| m.try_borrow().is_ok_and(|m| !m.is_empty()))
+}
+
 /// Convert an expression to its box form representation for TraditionalForm/StandardForm.
 /// Walk `expr` bottom-up and apply any user-defined `Format[head[…]]`
 /// rules so subexpressions surface in their formatted shape. Used by
@@ -2894,31 +2919,29 @@ pub fn apply_format_recursively(expr: &Expr, target_form: &str) -> Expr {
         .map(|i| apply_format_recursively(i, target_form))
         .collect(),
     ),
+    // A held expression keeps its infix operators as tree nodes; their
+    // operands are subexpressions like any other (`HoldForm[a + Int[…]]`).
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(apply_format_recursively(left, target_form)),
+      right: Box::new(apply_format_recursively(right, target_form)),
+    },
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(apply_format_recursively(operand, target_form)),
+    },
+    Expr::CurriedCall { func, args } => Expr::CurriedCall {
+      func: Box::new(apply_format_recursively(func, target_form)),
+      args: args
+        .iter()
+        .map(|a| apply_format_recursively(a, target_form))
+        .collect(),
+    },
     _ => expr.clone(),
   };
-  if let Expr::FunctionCall { name: head, .. } = &recursed {
-    let has_format = crate::evaluator::assignment::FORMAT_VALUES
-      .with(|m| m.borrow().contains_key(head));
-    if has_format {
-      let format_call = call(
-        "Format",
-        vec![recursed.clone(), Expr::Identifier(target_form.to_string())],
-      );
-      if let Ok(formatted) =
-        crate::evaluator::evaluate_expr_to_expr(&format_call)
-      {
-        let unchanged = matches!(
-          &formatted,
-          Expr::FunctionCall { name, args }
-            if name == "Format"
-            && (args.len() == 1 || args.len() == 2)
-            && crate::evaluator::pattern_matching::expr_equal(&args[0], &recursed)
-        );
-        if !unchanged {
-          return formatted;
-        }
-      }
-    }
+  if let Some(Ok(formatted)) = lookup_format_rule(&recursed, Some(target_form))
+  {
+    return formatted;
   }
   recursed
 }

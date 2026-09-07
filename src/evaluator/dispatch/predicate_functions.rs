@@ -1293,6 +1293,13 @@ pub fn dispatch_predicate_functions(
     "TeXForm" if args.len() == 1 => {
       return Some(Ok(unevaluated("TeXForm", args)));
     }
+    // The converter behind `TeXForm`, which returns the TeX as a string:
+    // `Convert`TeX`ExpressionToTeX[x^2]` is `"x^2"`.
+    "Convert`TeX`ExpressionToTeX" if args.len() == 1 => {
+      return Some(Ok(Expr::String(
+        crate::functions::string_ast::expr_to_tex(&args[0]),
+      )));
+    }
     "FortranForm" if args.len() == 1 => {
       return Some(Ok(unevaluated("FortranForm", args)));
     }

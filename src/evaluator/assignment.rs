@@ -72,6 +72,13 @@ fn pattern_head_tag(expr: &Expr) -> Option<String> {
 fn format_pattern_head(pat: &Expr) -> Option<String> {
   match pat {
     Expr::Identifier(s) => Some(s.clone()),
+    // `Format[HoldPattern[Dist[u_, v_, _]], TraditionalForm] := …` files
+    // under `Dist`: the wrapper only keeps the pattern from evaluating.
+    Expr::FunctionCall { name, args }
+      if name == "HoldPattern" && args.len() == 1 =>
+    {
+      format_pattern_head(&args[0])
+    }
     Expr::FunctionCall { name, .. } => Some(name.clone()),
     _ => None,
   }
@@ -957,6 +964,24 @@ fn contains_mutating_head(expr: &Expr) -> bool {
     }
     _ => false,
   }
+}
+
+/// Whether the `index`-th argument of a call to `head` is held by the
+/// head's attributes. Such an argument on a definition's left-hand side is
+/// stored as written rather than evaluated: with `q` HoldFirst, `q[n] := 2`
+/// defines `q[n]`, not `q[3]`, and `Steps[Int[e_, x_]] := …` keeps the
+/// `Int[…]` pattern even though `Int` has rules of that shape.
+pub(crate) fn lhs_slot_is_held(head: &str, index: usize) -> bool {
+  use crate::evaluator::Attributes as A;
+  let has = |attr: u32| {
+    crate::func_attrs_contains(head, attr)
+      || (crate::evaluator::get_builtin_attributes(head).contains(attr)
+        && !crate::func_attrs_removed_contains(head, attr))
+  };
+  has(A::HoldAll)
+    || has(A::HoldAllComplete)
+    || (index == 0 && has(A::HoldFirst))
+    || (index > 0 && has(A::HoldRest))
 }
 
 /// Normalize a structural pattern by evaluating it with placeholder variables.
@@ -2347,8 +2372,12 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
           blank_types.push(blank_type);
         }
       } else {
-        // Evaluate the literal argument value
-        let eval_arg = evaluate_expr_to_expr(arg)?;
+        // Evaluate the literal argument value — unless the head holds it.
+        let eval_arg = if lhs_slot_is_held(func_name, i) {
+          arg.clone()
+        } else {
+          evaluate_expr_to_expr(arg)?
+        };
         // Condition: _dvN === eval_arg (using SameQ for exact matching)
         conditions.push(Some(Expr::Comparison {
           operands: vec![Expr::Identifier(param_name.clone()), eval_arg],
@@ -3272,7 +3301,11 @@ pub fn set_delayed_ast(
           if !(name.contains('_') || (func_name == "Default" && i == 0)) =>
         {
           let param_name = format!("_dv{i}");
-          let eval_arg = evaluate_expr_to_expr(arg)?;
+          let eval_arg = if lhs_slot_is_held(func_name, i) {
+            arg.clone()
+          } else {
+            evaluate_expr_to_expr(arg)?
+          };
           conditions.push(Some(Expr::Comparison {
             operands: vec![Expr::Identifier(param_name.clone()), eval_arg],
             operators: vec![ComparisonOp::SameQ],
@@ -3298,8 +3331,13 @@ pub fn set_delayed_ast(
             if crate::evaluator::pattern_matching::contains_pattern(arg) {
               // Structural pattern (e.g., 1/x_, a_ + b_) — normalize and store
               // the pattern AST in a __StructuralPattern__ marker for dispatch-time matching.
+              // A held slot keeps the pattern exactly as written.
               let param_name = format!("__sp{i}");
-              let normalized = normalize_structural_pattern(arg);
+              let normalized = if lhs_slot_is_held(func_name, i) {
+                arg.clone()
+              } else {
+                normalize_structural_pattern(arg)
+              };
               conditions.push(Some(call(
                 "__StructuralPattern__",
                 vec![Expr::Identifier(param_name.clone()), normalized],
@@ -3310,7 +3348,11 @@ pub fn set_delayed_ast(
               // Literal value (not a pattern) — create a SameQ condition
               // e.g., f[1] := ... should only match when arg === 1
               let param_name = format!("_dv{i}");
-              let eval_arg = evaluate_expr_to_expr(arg)?;
+              let eval_arg = if lhs_slot_is_held(func_name, i) {
+                arg.clone()
+              } else {
+                evaluate_expr_to_expr(arg)?
+              };
               conditions.push(Some(Expr::Comparison {
                 operands: vec![Expr::Identifier(param_name.clone()), eval_arg],
                 operators: vec![ComparisonOp::SameQ],

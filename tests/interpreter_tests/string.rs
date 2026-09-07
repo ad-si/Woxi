@@ -14691,3 +14691,284 @@ mod regular_expression_look_around {
     );
   }
 }
+
+/// TeXForm typesetting rules verified against wolframscript: sized
+/// delimiters, held expressions shown as written, one fraction per product
+/// with the sign in front, control words with their trailing space, and the
+/// user's `Format[…, TraditionalForm]` rules.
+mod tex_form_typesetting {
+  use super::*;
+
+  fn tex(code: &str) -> String {
+    interpret(&format!("ToString[{code}, TeXForm]")).unwrap()
+  }
+
+  #[test]
+  fn delimiters_grow_around_tall_content() {
+    clear_state();
+    assert_eq!(tex("f[a, b]"), "f(a,b)");
+    assert_eq!(tex("f[a/b]"), "f\\left(\\frac{a}{b}\\right)");
+    assert_eq!(tex("Sin[x^2]"), "\\sin \\left(x^2\\right)");
+    assert_eq!(tex("HoldForm[Log[1 + x]]"), "\\log (1+x)");
+    assert_eq!(
+      tex("HoldForm[Int[Sin[x]/x^3, x]]"),
+      "\\text{Int}\\left(\\frac{\\sin (x)}{x^3},x\\right)"
+    );
+    assert_eq!(
+      tex("Round[a/b]"),
+      "\\text{Round}\\left[\\frac{a}{b}\\right]"
+    );
+    assert_eq!(tex("{a/b, c}"), "\\left\\{\\frac{a}{b},c\\right\\}");
+    assert_eq!(tex("f[x'']"), "f\\left(x''\\right)");
+    assert_eq!(tex("f[Abs[x]]"), "f(| x| )");
+    assert_eq!(
+      tex("f[Abs[a/b]]"),
+      "f\\left(\\left| \\frac{a}{b}\\right| \\right)"
+    );
+    // Parentheses around a factor or a power base follow the same rule.
+    assert_eq!(tex("(1 + x^2) y"), "\\left(x^2+1\\right) y");
+    assert_eq!(tex("(1 + x)^2"), "(x+1)^2");
+    assert_eq!(tex("(1 + x^2)^2"), "\\left(x^2+1\\right)^2");
+    // A text run is never tall, whatever it contains.
+    assert_eq!(tex("HoldForm[f[x_]]"), "f(\\text{x$\\_$})");
+  }
+
+  #[test]
+  fn a_sum_under_an_integral_or_big_operator_is_bracketed() {
+    clear_state();
+    assert_eq!(tex("HoldForm[Integrate[a + b, x]]"), "\\int (a+b) \\, dx");
+    assert_eq!(tex("HoldForm[Integrate[a b, x]]"), "\\int a b \\, dx");
+    assert_eq!(
+      tex("HoldForm[Integrate[a/b + c, x]]"),
+      "\\int \\left(\\frac{a}{b}+c\\right) \\, dx"
+    );
+    assert_eq!(tex("HoldForm[Integrate[-a, x]]"), "\\int -a \\, dx");
+    assert_eq!(
+      tex("HoldForm[Integrate[a + b, {x, 0, 1}]]"),
+      "\\int_0^1 (a+b) \\, dx"
+    );
+    assert_eq!(
+      tex("HoldForm[Sum[a + b, {i, 1, n}]]"),
+      "\\sum _{i=1}^n (a+b)"
+    );
+    assert_eq!(
+      tex("HoldForm[D[a + b, x]]"),
+      "\\frac{\\partial (a+b)}{\\partial x}"
+    );
+  }
+
+  #[test]
+  fn a_held_expression_is_shown_as_written() {
+    clear_state();
+    assert_eq!(tex("HoldForm[1 + x]"), "1+x");
+    assert_eq!(tex("1 + x"), "x+1");
+    assert_eq!(tex("HoldForm[y x]"), "y x");
+    assert_eq!(tex("HoldForm[-1 + 2 x]"), "-1+2 x");
+    assert_eq!(tex("HoldForm[1 - x + x^2]"), "1-x+x^2");
+  }
+
+  #[test]
+  fn a_product_is_one_fraction_with_its_sign_in_front() {
+    clear_state();
+    assert_eq!(
+      tex("HoldForm[-Sin[x]/(2 x^2)]"),
+      "-\\frac{\\sin (x)}{2 x^2}"
+    );
+    assert_eq!(tex("HoldForm[-1/2*Cos[x]/x]"), "-\\frac{\\cos (x)}{2 x}");
+    assert_eq!(
+      tex("HoldForm[-1/2*Cos[x]/x - Sin[x]/(2*x^2) - SinIntegral[x]/2]"),
+      "-\\frac{\\cos (x)}{2 x}-\\frac{\\sin (x)}{2 x^2}-\\frac{\\text{Si}(x)}{2}"
+    );
+    assert_eq!(
+      tex("HoldForm[1/(2 Sqrt[2]) Subst[u, x]]"),
+      "\\frac{\\text{Subst}(u,x)}{2 \\sqrt{2}}"
+    );
+    assert_eq!(tex("HoldForm[a/b/c]"), "\\frac{a}{b c}");
+    assert_eq!(tex("HoldForm[(a/b)/(c/d)]"), "\\frac{a d}{b c}");
+    assert_eq!(tex("HoldForm[-1/(3 (1 + x))]"), "-\\frac{1}{3 (1+x)}");
+    assert_eq!(tex("HoldForm[-x/y]"), "-\\frac{x}{y}");
+    assert_eq!(tex("HoldForm[a (-b) c]"), "-a b c");
+    assert_eq!(tex("HoldForm[-2 x/3]"), "-\\frac{2 x}{3}");
+    // A held minus in front of a sum stays put; an evaluated product's `-1`
+    // is distributed over its sum factor.
+    assert_eq!(tex("HoldForm[-(b + c)]"), "-(b+c)");
+    assert_eq!(tex("HoldForm[-(a + b) c]"), "-(a+b) c");
+    assert_eq!(tex("HoldForm[-(1 + x^2)/(3 y)]"), "-\\frac{1+x^2}{3 y}");
+    assert_eq!(tex("HoldForm[a - (b - c)]"), "a-(b-c)");
+    assert_eq!(tex("HoldForm[a - -b]"), "a--b");
+    assert_eq!(tex("HoldForm[x - 2 (b + c)]"), "x-2 (b+c)");
+    assert_eq!(tex("-(a + b) c"), "c (-a-b)");
+    assert_eq!(tex("-(1 + x^2)/(3 y)"), "\\frac{-x^2-1}{3 y}");
+    assert_eq!(
+      tex("HoldForm[-(4/3) Star[Subst[a, b]]]"),
+      "-\\frac{4}{3} \\text{Star}[\\text{Subst}(a,b)]"
+    );
+  }
+
+  #[test]
+  fn a_rational_coefficient_folds_into_a_small_factor_only() {
+    clear_state();
+    assert_eq!(tex("1/2 f[x^2]"), "\\frac{f\\left(x^2\\right)}{2}");
+    assert_eq!(
+      tex("1/2 f[a/b]"),
+      "\\frac{1}{2} f\\left(\\frac{a}{b}\\right)"
+    );
+    assert_eq!(
+      tex("With[{e = 1/2 Log[1 + x^2]}, HoldForm[e]]"),
+      "\\frac{1}{2} \\log \\left(1+x^2\\right)"
+    );
+    assert_eq!(tex("-1/2 f[x^2]"), "-\\frac{1}{2} f\\left(x^2\\right)");
+    assert_eq!(tex("1/2 Sin[x] Cos[x]"), "\\frac{1}{2} \\cos (x) \\sin (x)");
+    assert_eq!(
+      tex("Sin[Pi/2 x]"),
+      "\\sin \\left(\\frac{\\pi  x}{2}\\right)"
+    );
+    assert_eq!(tex("-1/4 Sqrt[x]"), "-\\frac{\\sqrt{x}}{4}");
+    assert_eq!(
+      tex("HoldForm[1/2 Int[u, x]]"),
+      "\\frac{1}{2} \\text{Int}(u,x)"
+    );
+    assert_eq!(tex("2 x/3"), "\\frac{2 x}{3}");
+    assert_eq!(tex("(a + b)/(3 c)"), "\\frac{a+b}{3 c}");
+    assert_eq!(tex("1/2 Sin[x]^2"), "\\frac{\\sin ^2(x)}{2}");
+    assert_eq!(tex("1/2 x'"), "\\frac{x'}{2}");
+    assert_eq!(tex("1/2 f[x]'"), "\\frac{f(x)'}{2}");
+  }
+
+  #[test]
+  fn symbols_precede_a_sum_without_a_constant_term() {
+    clear_state();
+    assert_eq!(tex("(a + b) c"), "c (a+b)");
+    assert_eq!(tex("x (a + b) c"), "c x (a+b)");
+    assert_eq!(tex("(1 + x) y"), "(x+1) y");
+    assert_eq!(tex("c^2 (a + b)"), "c^2 (a+b)");
+    assert_eq!(tex("(a + b) Sin[c]"), "(a+b) \\sin (c)");
+    assert_eq!(tex("(a + b) c/d"), "\\frac{c (a+b)}{d}");
+  }
+
+  #[test]
+  fn reciprocal_trigonometric_functions_use_their_cofunction() {
+    clear_state();
+    assert_eq!(tex("1/Sin[x]"), "\\csc (x)");
+    assert_eq!(tex("1/Sin[x]^2"), "\\csc ^2(x)");
+    assert_eq!(tex("x/Sin[x]"), "x \\csc (x)");
+    assert_eq!(tex("Cos[x]/Sin[x]"), "\\cot (x)");
+    assert_eq!(tex("1/Sinh[x]"), "\\text{csch}(x)");
+    assert_eq!(tex("1/(x Sin[x])"), "\\frac{\\csc (x)}{x}");
+    assert_eq!(tex("1/Log[x]"), "\\frac{1}{\\log (x)}");
+    assert_eq!(tex("1/Log[x]^2"), "\\frac{1}{\\log ^2(x)}");
+  }
+
+  #[test]
+  fn control_words_carry_a_trailing_space() {
+    clear_state();
+    assert_eq!(tex("Pi/2"), "\\frac{\\pi }{2}");
+    assert_eq!(tex("{Pi, 1}"), "\\{\\pi ,1\\}");
+    assert_eq!(tex("Pi x"), "\\pi  x");
+    assert_eq!(tex("2 Pi"), "2 \\pi");
+    assert_eq!(tex("alpha + 1"), "\\alpha +1");
+    assert_eq!(tex("f[alpha]"), "f(\\alpha )");
+    assert_eq!(tex("x^Pi"), "x^{\\pi }");
+    assert_eq!(tex("Pi + x"), "x+\\pi");
+    assert_eq!(tex("Pi + I"), "\\pi +i");
+    assert_eq!(tex("-Infinity"), "-\\infty");
+  }
+
+  #[test]
+  fn star_curried_calls_scripts_and_patterns() {
+    clear_state();
+    assert_eq!(
+      tex("HoldForm[Star[1/2, Foo[x]]]"),
+      "\\frac{1}{2}*\\text{Foo}(x)"
+    );
+    assert_eq!(tex("HoldForm[a + Star[b, c]]"), "a+b*c");
+    assert_eq!(tex("HoldForm[f[Star[a, b]]]"), "f(a*b)");
+    assert_eq!(
+      tex("HoldForm[a - Star[1/2, Foo[x]]]"),
+      "a-\\frac{1}{2}*\\text{Foo}(x)"
+    );
+    assert_eq!(
+      tex("HoldForm[f[-Star[1/2, Foo[x]]]]"),
+      "f\\left(-\\left(\\frac{1}{2}*\\text{Foo}(x)\\right)\\right)"
+    );
+    assert_eq!(tex("2 Star[a, b]"), "2 (a*b)");
+    assert_eq!(
+      tex("HoldForm[-Star[1/2, Foo[x]]]"),
+      "-\\left(\\frac{1}{2}*\\text{Foo}(x)\\right)"
+    );
+    assert_eq!(tex("HoldForm[f[a][b]]"), "f(a)(b)");
+    assert_eq!(tex("HoldForm[f[a][b][c]]"), "(f(a)(b))(c)");
+    assert_eq!(tex("HoldForm[Sin[a][b]]"), "\\sin (a)(b)");
+    assert_eq!(
+      tex("HoldForm[f[a/b][c]]"),
+      "f\\left(\\frac{a}{b}\\right)(c)"
+    );
+    assert_eq!(
+      tex("HoldForm[Overscript[x, 2] + Underscript[y, 3]]"),
+      "\\overset{2}{x}+\\underset{3}{y}"
+    );
+    assert_eq!(
+      tex("HoldForm[f[a_, b__, c___, d_Integer, e:_, g_?IntegerQ, h_:1]]"),
+      "f(\\text{a$\\_$},\\text{b$\\_\\_$},\\text{c$\\_\\_\\_$},\\text{d$\\_$Integer},\\text{e$\\_$},\\text{g$\\_$}?\\text{IntegerQ},\\text{h$\\_$}:1)"
+    );
+  }
+
+  #[test]
+  fn format_rules_for_traditional_form_shape_the_tex() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Format[HoldPattern[Int[e_, x_]], TraditionalForm] := HoldForm[Integrate[e, x]]\n\
+         ToString[HoldForm[a + Int[Cos[x]/x^2, x]], TeXForm]"
+      )
+      .unwrap(),
+      "a+\\int \\frac{\\cos (x)}{x^2} \\, dx"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Format[HoldPattern[Dist[u_, v_, _]], TraditionalForm] := HoldForm[u * v]\n\
+         ToString[HoldForm[Dist[1/2, Int[a, x], x]], TeXForm]"
+      )
+      .unwrap(),
+      "\\frac{1}{2} \\text{Int}(a,x)"
+    );
+    clear_state();
+    // The formatted expression is matched, not evaluated.
+    let result = interpret_with_stdout(
+      "Format[foo[e_], TraditionalForm] := HoldForm[bar[e]]\n\
+       foo[e_] := (Print[\"EVAL\"]; 99)\n\
+       ToString[HoldForm[foo[1] + 2], TeXForm]",
+    )
+    .unwrap();
+    assert_eq!(result.stdout, "");
+    assert_eq!(result.result, "\\text{bar}(1)+2");
+  }
+
+  #[test]
+  fn expression_to_tex_is_the_converter_behind_tex_form() {
+    clear_state();
+    assert_eq!(
+      interpret("Convert`TeX`ExpressionToTeX[HoldForm[Sin[x]/x^3]]").unwrap(),
+      "\\frac{\\sin (x)}{x^3}"
+    );
+    assert_eq!(
+      interpret("Head[Convert`TeX`ExpressionToTeX[x]]").unwrap(),
+      "String"
+    );
+    assert_eq!(
+      interpret("Convert`TeX`ExpressionToTeX[1 + 1]").unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("Attributes[Convert`TeX`ExpressionToTeX]").unwrap(),
+      "{Protected, ReadProtected}"
+    );
+    let result =
+      interpret_with_stdout("Convert`TeX`ExpressionToTeX[x, y]").unwrap();
+    assert!(result.warnings[0].contains(
+      "Convert`TeX`ExpressionToTeX::argx: Convert`TeX`ExpressionToTeX called with 2 arguments; 1 argument is expected."
+    ));
+    assert_eq!(result.result, "Convert`TeX`ExpressionToTeX[x, y]");
+  }
+}

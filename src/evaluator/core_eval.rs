@@ -4065,6 +4065,8 @@ pub fn evaluate_expr_to_expr_inner(
               part_too_deep = true;
               break;
             }
+            // An atom has no parts — except part 0, its head:
+            // `{k}[[1, 0]]` is `Symbol`.
             if matches!(
               &result,
               Expr::Identifier(_)
@@ -4072,7 +4074,8 @@ pub fn evaluate_expr_to_expr_inner(
                 | Expr::BigInteger(_)
                 | Expr::Real(_)
                 | Expr::String(_)
-            ) {
+            ) && !matches!(idx, Expr::Integer(0))
+            {
               part_too_deep = true;
               hit_atom_mid = true;
               break;

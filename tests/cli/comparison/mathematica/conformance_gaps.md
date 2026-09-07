@@ -157,21 +157,75 @@ though its total degree is lower — so this needs WL's actual lexicographic
 monomial comparison. Everything else in a 211-expression TeXForm sweep
 agrees.
 
-### TeXForm stacks a rational coefficient that wolframscript factors out
+### TeXForm writes a rational exponent's quotient with a `\left.` bar
 
 ```sh
-wolframscript -code 'ToString[TeXForm[(3 x^2 - 1)/2]]'  # \frac{1}{2} \left(3 x^2-1\right)
-woxi eval 'ToString[TeXForm[(3 x^2 - 1)/2]]'            # \frac{3 x^2-1}{2}
+wolframscript -code 'ToString[TeXForm[x^(1/(2 y))]]'  # x^{\left.\frac{1}{2}\right/y}
+woxi eval 'ToString[TeXForm[x^(1/(2 y))]]'            # x^{\frac{1}{2 y}}
 ```
 
-Same for `LegendreP[2, x]`, which evaluates to that expression in both
-engines. A sum without a numeric term is stacked by both
-(`(a + b)/2` → `\frac{a+b}{2}`, `3 (a + b)/2` → `\frac{3 (a+b)}{2}`), so the
-trigger looks like a numeric term inside the numerator; the rule was not
-pinned down.
+(Whether a rational coefficient folds into its factor's fraction —
+`\frac{f(x)}{2}` against `\frac{1}{2} \log \left(x^2+1\right)` — now follows
+a box-count estimate of the factor that reproduces every probed case; see
+`tex_box_weight` in `src/functions/string_ast.rs`.)
 
-`x^(1/(2 y))` is a smaller instance of the same class: WL writes
-`x^{\left.\frac{1}{2}\right/y}`, Woxi `x^{\frac{1}{2 y}}`.
+### TeXForm orders a product's factors by Woxi's own `Times` order
+
+```sh
+wolframscript -code 'ToString[TeXForm[Sin[x]^2 Star[a, b]]]'  # \sin ^2(x) (a*b)
+woxi eval 'ToString[TeXForm[Sin[x]^2 Star[a, b]]]'            # (a*b) \sin ^2(x)
+
+wolframscript -code 'ToString[TeXForm[(1 + x) y (a + b)]]'    # (x+1) y (a+b)
+woxi eval 'ToString[TeXForm[(1 + x) y (a + b)]]'              # y (a+b) (x+1)
+
+wolframscript -code 'ToString[TeXForm[Sec[x]/Sin[x]]]'        # \csc (x) \sec (x)
+woxi eval 'ToString[TeXForm[Sec[x]/Sin[x]]]'                  # \sec (x) \csc (x)
+```
+
+The renderer shows the factors in the order the evaluated `Times` holds
+them (moving symbols ahead of a constant-free sum, as WL does). The
+difference is upstream, in how Woxi sorts `Star[a, b]` against a power, one
+sum against another, and a reciprocal against a call; see the `Times`
+ordering entries below.
+
+### A minus written in front of a held rational coefficient
+
+```sh
+wolframscript -code 'ToString[TeXForm[HoldForm[-(4/3) Subst[a, b]]]]'  # \frac{1}{3} (-4) \text{Subst}(a,b)
+woxi eval 'ToString[TeXForm[HoldForm[-(4/3) Subst[a, b]]]]'            # -\frac{4}{3} \text{Subst}(a,b)
+```
+
+WL boxes the held `Times[Times[-1, Times[4, Power[3, -1]]], Subst[a, b]]`
+piecewise, leaving `(-4)` stranded behind the `\frac{1}{3}`; Woxi gathers
+the coefficient into one signed fraction, as both engines do for the
+evaluated `Times[Rational[-4, 3], Subst[a, b]]`. Not reproduced on purpose.
+
+### A held `1/x` loses its explicit `1` in FullForm and Part
+
+```sh
+wolframscript -code 'ToString[FullForm[Hold[1/(2 y) z]]]'  # Hold[Times[Times[1, Power[Times[2, y], -1]], z]]
+woxi eval 'ToString[FullForm[Hold[1/(2 y) z]]]'            # Hold[Times[Power[Times[2, y], -1], z]]
+
+wolframscript -code 'Hold[1/(2 y)][[1, 1]]'  # 1
+woxi eval 'Hold[1/(2 y)][[1, 1]]'            # 2*y
+```
+
+WL reads `1/(2 y)` as `Times[1, Power[Times[2, y], -1]]` and keeps the `1`
+while the expression is held; Woxi's parse tree is the quotient itself, so
+`Part` sees the divisor and the exponent as its two parts. The evaluated
+expression is the same in both.
+
+### TraditionalForm boxes a multi-argument call's arguments as one RowBox
+
+```sh
+wolframscript -code 'ToString[Int[Cos[x]/x^2, x], TraditionalForm]'
+# DisplayForm[FormBox[RowBox[{Int, (, RowBox[{FractionBox[…], ,, x}], )}], TraditionalForm]]
+woxi eval 'ToString[Int[Cos[x]/x^2, x], TraditionalForm]'
+# DisplayForm[FormBox[RowBox[{Int, (, FractionBox[…], ,, x, )}], TraditionalForm]]
+```
+
+Woxi lays the arguments out flat in the call's row; WL nests them in a row
+of their own. Same picture, different box tree.
 
 ### TraditionalForm boxes are written out inline instead of as TemplateBoxes
 

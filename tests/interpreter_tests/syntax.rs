@@ -12187,3 +12187,162 @@ mod escaped_quotes_and_statement_boundaries {
     assert_eq!(interpret("StringLength[\"a\\\\\"]").unwrap(), "2");
   }
 }
+
+/// Whitespace separates a pattern from what follows it: `m_ g` is the
+/// product of the pattern `m_` and the symbol `g`, only `m_g` names a head.
+/// Every expectation verified against wolframscript.
+mod pattern_blanks_are_tight {
+  use super::*;
+
+  #[test]
+  fn a_space_after_the_blank_starts_a_new_factor() {
+    assert_eq!(interpret("Hold[m_ g[c]][[1, 0]]").unwrap(), "Times");
+    assert_eq!(interpret("Hold[m_ g][[1, 0]]").unwrap(), "Times");
+    assert_eq!(interpret("Hold[m_g][[1, 0]]").unwrap(), "Pattern");
+    assert_eq!(interpret("Hold[m__ g[c]][[1, 0]]").unwrap(), "Times");
+    assert_eq!(interpret("Hold[m_. g[c]][[1, 0]]").unwrap(), "Times");
+    assert_eq!(interpret("Hold[_ g[c]][[1, 0]]").unwrap(), "Times");
+  }
+
+  #[test]
+  fn two_patterns_side_by_side_are_a_product() {
+    assert_eq!(interpret("Length[Hold[a_ x_][[1]]]").unwrap(), "2");
+    assert_eq!(interpret("Hold[a_ x_][[1, 2, 0]]").unwrap(), "Pattern");
+    assert_eq!(
+      interpret("Hold[a_ x_] /. Times -> List").unwrap(),
+      "Hold[{a_, x_}]"
+    );
+    assert_eq!(
+      interpret("Hold[m_ x_Integer][[1, 2]] // Head").unwrap(),
+      "Pattern"
+    );
+  }
+
+  #[test]
+  fn a_rubi_style_left_hand_side_parses() {
+    assert_eq!(
+      interpret(
+        "Hold[Int[(a_ + b_ x_)^m_ Sin[c_ + d_ x_], x_Symbol] :> 1][[1, 0]]"
+      )
+      .unwrap(),
+      "RuleDelayed"
+    );
+  }
+}
+
+/// `a :> b /; c` puts the guard on the replacement side —
+/// `RuleDelayed[a, Condition[b, c]]` — also as a function argument or list
+/// element, where the rule grammar used to stop at `/;`.
+mod rule_replacement_conditions {
+  use super::*;
+
+  #[test]
+  fn a_guard_after_the_arrow_belongs_to_the_replacement() {
+    assert_eq!(
+      interpret("Hold[f[a :> b /; c]][[1, 1, 2, 0]]").unwrap(),
+      "Condition"
+    );
+    assert_eq!(
+      interpret("Hold[f[a -> b /; c]][[1, 1, 2, 0]]").unwrap(),
+      "Condition"
+    );
+    assert_eq!(
+      interpret("Hold[{a :> b /; c, d}][[1, 1, 2, 0]]").unwrap(),
+      "Condition"
+    );
+    assert_eq!(interpret("Hold[{a :> b /; c, d}][[1, 2]]").unwrap(), "d");
+  }
+
+  #[test]
+  fn guards_chain_and_a_left_guard_stays_on_the_pattern() {
+    assert_eq!(
+      interpret("Hold[f[a :> b /; c /; d]][[1, 1, 2, 1, 0]]").unwrap(),
+      "Condition"
+    );
+    assert_eq!(
+      interpret("Hold[f[a :> b /; c /; d]][[1, 1, 2, 2]]").unwrap(),
+      "d"
+    );
+    assert_eq!(
+      interpret("Hold[f[a /; b :> c]][[1, 1, 1, 0]]").unwrap(),
+      "Condition"
+    );
+    assert_eq!(
+      interpret("Hold[f[a :> b /; c && d]][[1, 1, 2, 2, 0]]").unwrap(),
+      "And"
+    );
+  }
+
+  #[test]
+  fn the_guard_is_honoured_when_the_rule_is_applied() {
+    assert_eq!(interpret("ReplaceAll[3, x_ :> 5 /; x > 2]").unwrap(), "5");
+    assert_eq!(interpret("ReplaceAll[1, x_ :> 5 /; x > 2]").unwrap(), "1");
+  }
+}
+
+/// A parenthesised product is one factor of the implicit chain around it, so
+/// a division in front of it divides by the whole product.
+mod parenthesised_products_in_implicit_chains {
+  use super::*;
+
+  #[test]
+  fn a_division_by_a_bracketed_product_keeps_the_bracket() {
+    assert_eq!(interpret("1/(2 3) 4").unwrap(), "2/3");
+    assert_eq!(interpret("Hold[a/(b c) d][[1, 2]]").unwrap(), "d");
+    assert_eq!(
+      interpret("Hold[a/(b c) d] /. Times -> tt").unwrap(),
+      "Hold[tt[a/tt[b, c], d]]"
+    );
+  }
+}
+
+/// The double-struck letters and digits are named characters in the private
+/// use area, like the script letters; `\[DoubleStruckCapitalZ]` appears in
+/// package usage messages.
+mod double_struck_named_characters {
+  use super::*;
+
+  #[test]
+  fn they_have_wolframs_code_points_and_the_letters_spell_symbols() {
+    assert_eq!(
+      interpret("ToCharacterCode[\"\\[DoubleStruckCapitalZ]\"]").unwrap(),
+      "{63421}"
+    );
+    assert_eq!(
+      interpret("ToCharacterCode[\"\\[DoubleStruckA]\\[DoubleStruckZero]\"]")
+        .unwrap(),
+      "{63206, 63451}"
+    );
+    assert_eq!(
+      interpret("Head[\\[DoubleStruckCapitalR]]").unwrap(),
+      "Symbol"
+    );
+  }
+}
+
+/// The ellipsis characters are letterlike symbols, as in Rubi's display
+/// strings `Int[a*u + b*v + \[CenterEllipsis], x]`. Verified against
+/// wolframscript.
+mod ellipsis_characters_are_symbols {
+  use super::*;
+
+  #[test]
+  fn they_read_and_print_as_symbols() {
+    assert_eq!(
+      interpret("{Head[\\[Ellipsis]], Head[\\[CenterEllipsis]], Head[\\[VerticalEllipsis]]}")
+        .unwrap(),
+      "{Symbol, Symbol, Symbol}"
+    );
+    assert_eq!(
+      interpret("ToString[Hold[\\[Ellipsis], \\[CenterEllipsis]], InputForm]")
+        .unwrap(),
+      "Hold[…, ⋯]"
+    );
+    assert_eq!(interpret("ToExpression[\"f[⋯]\"]").unwrap(), "f[⋯]");
+    assert_eq!(
+      interpret("ToExpression[\"a*u + b*v + \\\\[CenterEllipsis]\"] // Head")
+        .unwrap(),
+      "Plus"
+    );
+  }
+}

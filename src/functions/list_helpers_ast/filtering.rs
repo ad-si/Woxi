@@ -276,9 +276,11 @@ pub fn first_case_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Rule/RuleDelayed form: match against LHS, return RHS with bindings
       if let Some(bindings) =
         crate::evaluator::pattern_matching::match_pattern(item, match_pat)
+        && let Some(result) =
+          crate::evaluator::pattern_matching::instantiate_replacement(
+            repl, &bindings,
+          )?
       {
-        let result =
-          crate::evaluator::pattern_matching::apply_bindings(repl, &bindings)?;
         return Ok(result);
       }
     } else if matches_pattern_ast(item, match_pat) {
@@ -976,9 +978,15 @@ fn cases_visit(
       crate::evaluator::pattern_matching::match_pattern(expr, match_pat)
   {
     match replacement {
-      Some(repl) => out.push(
-        crate::evaluator::pattern_matching::apply_bindings(repl, &bindings)?,
-      ),
+      Some(repl) => {
+        if let Some(result) =
+          crate::evaluator::pattern_matching::instantiate_replacement(
+            repl, &bindings,
+          )?
+        {
+          out.push(result);
+        }
+      }
       None => out.push(expr.clone()),
     }
     if limit.is_some_and(|n| out.len() >= n) {
