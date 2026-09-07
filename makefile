@@ -21,6 +21,74 @@ test-unit:
 		--failure-output=final
 
 
+# Self-contained acceptance suite for the exact linear Reduce campaign.
+.PHONY: test-reduce-core
+test-reduce-core:
+	cargo nextest run -p woxi-reduce \
+		--show-progress=none \
+		--status-level=fail \
+		--failure-output=final
+
+
+.PHONY: bench-reduce
+bench-reduce:
+	cargo bench -p woxi-reduce --bench reduce
+
+
+.PHONY: test-reduce
+test-reduce: test-reduce-core
+	cargo nextest run -p woxi \
+		--lib \
+		--test reduce_tests \
+		--test interpreter_tests \
+		-E 'binary(reduce_tests) | test(/functions::polynomial_ast::reduce_backend::/) | test(/interpreter_tests::algebra::(reduce|resolve)::/)' \
+		--show-progress=none \
+		--status-level=fail \
+		--failure-output=final
+
+
+# Larger deterministic property run. It remains entirely self-contained.
+.PHONY: test-reduce-fuzz
+test-reduce-fuzz:
+	WOXI_REDUCE_PROPTEST_CASES=4096 cargo nextest run --test reduce_tests \
+		-E 'test(/properties::/)' \
+		--show-progress=none \
+		--status-level=fail \
+		--failure-output=final
+	cargo nextest run --lib --profile slow --run-ignored only \
+		-E 'test(generated_bounded_formulas_agree_with_exhaustive_integer_evaluation)' \
+		--show-progress=none \
+		--status-level=fail \
+		--failure-output=final
+
+
+# Development-only comparison with Wolfram. This is never part of the runtime
+# implementation or the self-contained test target.
+.PHONY: test-reduce-oracle
+test-reduce-oracle:
+	@command -v wolframscript >/dev/null || \
+		(echo "wolframscript is required for test-reduce-oracle"; exit 1)
+	cargo nextest run --test reduce_tests --run-ignored only \
+		-E 'test(/oracle::/)' \
+		--show-progress=none \
+		--status-level=fail \
+		--failure-output=final
+
+
+# Independent semantic oracle for generated dense linear formulas. Z3 is a
+# development dependency only; the shipped solver and normal test target do
+# not invoke it.
+.PHONY: test-reduce-smt-oracle
+test-reduce-smt-oracle:
+	@command -v z3 >/dev/null || \
+		(echo "z3 is required for test-reduce-smt-oracle"; exit 1)
+	cargo nextest run --lib --run-ignored only \
+		-E 'test(/generated_closed(_presburger)?_formulas_agree_with_z3/)' \
+		--show-progress=none \
+		--status-level=fail \
+		--failure-output=final
+
+
 # Run all tests gated behind the `slow-tests` cargo feature: the heavy
 # script snapshot tests (see `slow_script_test!` in
 # tests/script_snapshot_tests.rs) and the wikidata tests that query the
@@ -460,4 +528,3 @@ release:
 		"     - https://reddit.com/r/Julia/ \n" \
 		"     - https://reddit.com/r/octave/ \n" \
 		"     - https://reddit.com/r/buildinpublic/ \n"
-

@@ -197,6 +197,10 @@ script_test!(script_fizzbuzz_3, "fizzbuzz_3.wls");
 script_test!(script_fizzbuzz_4, "fizzbuzz_4.wls");
 script_test!(script_fizzbuzz_5, "fizzbuzz_5.wls");
 script_test!(script_hello_world, "hello_world.wls");
+script_test!(
+  script_rule54_finite_integer_solve,
+  "rule54_finite_integer_solve.wls"
+);
 script_test!(script_n_queens_problem_1, "n-queens_problem_1.wls");
 script_test!(script_n_queens_problem_2, "n-queens_problem_2.wls");
 slow_script_test!(script_lindenmayer, "lindenmayer.wls");
