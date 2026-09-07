@@ -717,7 +717,7 @@ fn select_single(spec: &Expr) -> bool {
   false
 }
 
-fn cwd_property(cwd: &Cwd, prop: &str) -> crate::syntax::Expr {
+fn cwd_property(cwd: &Cwd, prop: &str) -> Expr {
   match prop {
     "Properties" => Expr::List(
       [

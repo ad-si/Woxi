@@ -191,18 +191,15 @@ fn query_take_parts(data: &Expr, specs: &[Expr]) -> Option<Expr> {
         } else {
           let found = pairs
             .iter()
-            .find(|(k, _)| {
-              crate::syntax::expr_to_string(k)
-                == crate::syntax::expr_to_string(s)
-            })
+            .find(|(k, _)| expr_to_string(k) == expr_to_string(s))
             .map(|(_, v)| v.clone());
           (s.clone(), found.unwrap_or_else(|| missing("KeyAbsent", s)))
         };
         // Repeating a key does not repeat the entry.
-        if !picked.iter().any(|(k, _)| {
-          crate::syntax::expr_to_string(k)
-            == crate::syntax::expr_to_string(&key)
-        }) {
+        if !picked
+          .iter()
+          .any(|(k, _)| expr_to_string(k) == expr_to_string(&key))
+        {
           picked.push((key, value));
         }
       }

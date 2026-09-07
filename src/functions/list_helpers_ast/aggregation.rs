@@ -178,7 +178,7 @@ pub fn group_by_ast(
     let mut order: Vec<String> = Vec::new();
     for (k, v) in assoc_pairs {
       let key = apply_func_ast(key_func, v)?;
-      let key_str = crate::syntax::expr_to_string(&key);
+      let key_str = expr_to_string(&key);
       let stored = match val_func {
         Some(g) => apply_func_ast(g, v)?,
         None => v.clone(),
@@ -232,7 +232,7 @@ pub fn group_by_ast(
 
   for item in items {
     let key = apply_func_ast(key_func, item)?;
-    let key_str = crate::syntax::expr_to_string(&key);
+    let key_str = expr_to_string(&key);
     let value = match val_func {
       Some(g) => apply_func_ast(g, item)?,
       None => item.clone(),
@@ -274,7 +274,7 @@ fn group_by_nested(
   let mut order: Vec<String> = Vec::new();
   for item in items {
     let key = apply_func_ast(&funcs[0], item)?;
-    let key_str = crate::syntax::expr_to_string(&key);
+    let key_str = expr_to_string(&key);
     if let Some(group) = groups.get_mut(&key_str) {
       group.push(item.clone());
     } else {
@@ -315,7 +315,7 @@ fn group_by_nested_assoc(
   let mut order: Vec<String> = Vec::new();
   for (k, v) in entries {
     let key = apply_func_ast(&funcs[0], v)?;
-    let key_str = crate::syntax::expr_to_string(&key);
+    let key_str = expr_to_string(&key);
     if let Some(group) = groups.get_mut(&key_str) {
       group.push((k.clone(), v.clone()));
     } else {
@@ -774,7 +774,7 @@ pub fn median_ast(list: &Expr) -> Result<Expr, InterpreterError> {
   if items.iter().all(is_quantity) {
     let unit_key = |e: &Expr| -> Option<String> {
       if let Expr::FunctionCall { args, .. } = e {
-        Some(crate::syntax::expr_to_string(&args[1]))
+        Some(expr_to_string(&args[1]))
       } else {
         None
       }
@@ -1193,10 +1193,9 @@ pub fn gather_ast(list: &Expr) -> Result<Expr, InterpreterError> {
   };
   let mut groups: Vec<Vec<Expr>> = Vec::new();
   for item in items {
-    let found = groups.iter_mut().find(|g| {
-      crate::syntax::expr_to_string(&g[0])
-        == crate::syntax::expr_to_string(item)
-    });
+    let found = groups
+      .iter_mut()
+      .find(|g| expr_to_string(&g[0]) == expr_to_string(item));
     if let Some(group) = found {
       group.push(item.clone());
     } else {
@@ -1267,7 +1266,7 @@ pub fn gather_by_ast(
   let mut groups: Vec<(String, Vec<Expr>)> = Vec::new();
   for item in items {
     let key = apply_func_ast(func, item)?;
-    let key_str = crate::syntax::expr_to_string(&key);
+    let key_str = expr_to_string(&key);
     let found = groups.iter_mut().find(|(k, _)| *k == key_str);
     if let Some((_, group)) = found {
       group.push(item.clone());
@@ -1296,7 +1295,7 @@ fn gather_by_nested(
   let mut groups: Vec<(String, Vec<Expr>)> = Vec::new();
   for item in items {
     let key = apply_func_ast(func, item)?;
-    let key_str = crate::syntax::expr_to_string(&key);
+    let key_str = expr_to_string(&key);
     let found = groups.iter_mut().find(|(k, _)| *k == key_str);
     if let Some((_, group)) = found {
       group.push(item.clone());
@@ -1363,9 +1362,7 @@ pub fn split_ast(list: &Expr) -> Result<Expr, InterpreterError> {
   let mut groups: Vec<Vec<Expr>> = vec![vec![items[0].clone()]];
   for item in items.iter().skip(1) {
     let last_group = groups.last().unwrap();
-    if crate::syntax::expr_to_string(&last_group[0])
-      == crate::syntax::expr_to_string(item)
-    {
+    if expr_to_string(&last_group[0]) == expr_to_string(item) {
       groups.last_mut().unwrap().push(item.clone());
     } else {
       groups.push(vec![item.clone()]);
@@ -1458,9 +1455,7 @@ pub fn split_by_ast(
   let mut groups: Vec<Vec<Expr>> = vec![vec![items[0].clone()]];
   for item in items.iter().skip(1) {
     let key = apply_func_ast(func, item)?;
-    if crate::syntax::expr_to_string(&key)
-      == crate::syntax::expr_to_string(&prev_key)
-    {
+    if expr_to_string(&key) == expr_to_string(&prev_key) {
       groups.last_mut().unwrap().push(item.clone());
     } else {
       groups.push(vec![item.clone()]);
@@ -2188,7 +2183,7 @@ pub fn histogram_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let Expr::List(data) = &args[0] else {
     crate::emit_message(&format!(
       "HistogramList::ldata: {} is not a valid dataset or list of datasets.",
-      crate::syntax::expr_to_string(&args[0])
+      expr_to_string(&args[0])
     ));
     return Ok(unevaluated("HistogramList", args));
   };
@@ -2228,7 +2223,7 @@ pub fn histogram_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::Integer(_) | Expr::Real(_) => {
         crate::emit_message(&format!(
           "HistogramList::hbins: The bin specification {} cannot be used to determine either how many or which bins to use.",
-          crate::syntax::expr_to_string(&args[1])
+          expr_to_string(&args[1])
         ));
         if matches!(&args[1], Expr::Real(v) if *v > 0.0) {
           wl_bin_spec(&values, None)
@@ -2480,10 +2475,10 @@ pub fn all_same_by_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(bool_expr(true));
   }
   let first_val = apply_func_ast(&args[1], &items[0])?;
-  let first_str = crate::syntax::expr_to_string(&first_val);
+  let first_str = expr_to_string(&first_val);
   for item in &items[1..] {
     let val = apply_func_ast(&args[1], item)?;
-    if crate::syntax::expr_to_string(&val) != first_str {
+    if expr_to_string(&val) != first_str {
       return Ok(bool_expr(false));
     }
   }
@@ -2699,7 +2694,7 @@ fn cluster_keys_emit_values(
   keys: &[Expr],
   vals: &[Expr],
   raw_input: &Expr,
-) -> crate::syntax::Expr {
+) -> Expr {
   // Numeric keys only.
   let mut numeric_keys: Vec<f64> = Vec::with_capacity(keys.len());
   for k in keys {
@@ -3049,11 +3044,7 @@ fn edit_distance_str(a: &str, b: &str) -> u32 {
   prev[n]
 }
 
-fn find_clusters_with_k(
-  list: &Expr,
-  k: usize,
-  raw_args: &[Expr],
-) -> crate::syntax::Expr {
+fn find_clusters_with_k(list: &Expr, k: usize, raw_args: &[Expr]) -> Expr {
   let items = match list {
     Expr::List(items) => items.clone(),
     _ => {

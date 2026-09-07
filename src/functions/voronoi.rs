@@ -262,7 +262,7 @@ fn are_collinear(sites: &[(f64, f64)]) -> bool {
   true
 }
 
-fn voronoi_collinear(sites: &[(f64, f64)]) -> crate::syntax::Expr {
+fn voronoi_collinear(sites: &[(f64, f64)]) -> Expr {
   // Sort sites along their collinear direction
   let (x0, y0) = sites[0];
   let (x1, y1) = sites[1];
@@ -394,7 +394,7 @@ fn voronoi_collinear(sites: &[(f64, f64)]) -> crate::syntax::Expr {
   build_mesh_region(&all_verts, &cells)
 }
 
-fn voronoi_2_sites(sites: &[(f64, f64)]) -> crate::syntax::Expr {
+fn voronoi_2_sites(sites: &[(f64, f64)]) -> Expr {
   let (x0, y0) = sites[0];
   let (x1, y1) = sites[1];
 
@@ -508,10 +508,7 @@ fn voronoi_2_sites(sites: &[(f64, f64)]) -> crate::syntax::Expr {
   build_mesh_region(&all_verts, &cells)
 }
 
-fn build_mesh_region(
-  all_verts: &[(f64, f64)],
-  cells: &[Vec<usize>],
-) -> crate::syntax::Expr {
+fn build_mesh_region(all_verts: &[(f64, f64)], cells: &[Vec<usize>]) -> Expr {
   // Build MeshRegion[{{x1,y1},...}, {Polygon[{{i1,i2,...},{j1,j2,...}}]}]
   // Vertices list (1-indexed coordinates)
   let verts_expr: Vec<Expr> = all_verts

@@ -2426,7 +2426,7 @@ pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if let Some(p) = &p_expr {
       crate::emit_message(&format!(
         "Norm::ptype: The second argument of Norm, {}, should be a symbol, Infinity or an integer or real number not less than 1 for vector p-norms; or 1, 2, Infinity or \"Frobenius\" for matrix norms.",
-        crate::syntax::expr_to_string(p)
+        expr_to_string(p)
       ));
     }
     Ok(unevaluated("Norm", args))
@@ -7172,7 +7172,7 @@ pub fn list_z_transform_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let Expr::List(items) = &args[0] else {
     crate::emit_message(&format!(
       "ListZTransform::arg1: Expected a numeric array instead of {}.",
-      crate::syntax::expr_to_output(&args[0])
+      expr_to_output(&args[0])
     ));
     return uneval();
   };
@@ -7220,7 +7220,7 @@ pub fn discrete_hadamard_transform_ast(
   let data_err = || {
     crate::emit_message(&format!(
       "DiscreteHadamardTransform::data: {} is not a numerical array.",
-      crate::syntax::expr_to_output(&args[0])
+      expr_to_output(&args[0])
     ));
     Ok(unevaluated("DiscreteHadamardTransform", args))
   };

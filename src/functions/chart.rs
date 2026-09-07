@@ -498,7 +498,7 @@ pub(crate) fn expr_to_label(e: &Expr) -> Option<String> {
     Expr::String(s) => Some(s.clone()),
     Expr::Identifier(s) => Some(s.clone()),
     Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_) => {
-      Some(crate::syntax::expr_to_string(e))
+      Some(expr_to_string(e))
     }
     // A styled label reads as its content — a Demonstration writes its
     // frame labels as `Style["force (kN)", 12]`. The same holds for the
@@ -3812,7 +3812,7 @@ pub fn word_cloud_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let ev = evaluate_expr_to_expr(item).unwrap_or(item.clone());
     match &ev {
       Expr::String(s) => words.push(s.clone()),
-      _ => words.push(crate::syntax::expr_to_string(&ev)),
+      _ => words.push(expr_to_string(&ev)),
     }
   }
 

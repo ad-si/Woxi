@@ -565,10 +565,9 @@ fn map_at_rebuilt(
     && let Some(key) = extract_assoc_key(pos_spec)
     && !selects_positions(key)
   {
-    let key_str = crate::syntax::expr_to_string(key);
-    if let Some(idx) = pairs
-      .iter()
-      .position(|(k, _)| crate::syntax::expr_to_string(k) == key_str)
+    let key_str = expr_to_string(key);
+    if let Some(idx) =
+      pairs.iter().position(|(k, _)| expr_to_string(k) == key_str)
     {
       let mut new_pairs = pairs.clone();
       new_pairs[idx].1 = apply_func_ast(func, &new_pairs[idx].1)?;
@@ -696,10 +695,10 @@ fn map_at_rebuilt(
           return Some(vec![n]);
         }
         let key = extract_assoc_key(entry)?;
-        let key_str = crate::syntax::expr_to_string(key);
+        let key_str = expr_to_string(key);
         pairs
           .iter()
-          .position(|(k, _)| crate::syntax::expr_to_string(k) == key_str)
+          .position(|(k, _)| expr_to_string(k) == key_str)
           .map(|i| vec![i as i128 + 1])
       }
       other => expr_to_i128(other).map(|n| vec![n]),

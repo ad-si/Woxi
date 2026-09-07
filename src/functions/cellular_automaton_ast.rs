@@ -70,7 +70,7 @@ pub fn cellular_automaton_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let Some(rule) = parse_rule(&args[0]) else {
     crate::emit_message(&format!(
       "CellularAutomaton::nspecnl: Rule specification {} should be an Integer, a List, a pure Boolean function, a String or an Association.",
-      crate::syntax::expr_to_string(&args[0])
+      expr_to_string(&args[0])
     ));
     return unevaluated();
   };

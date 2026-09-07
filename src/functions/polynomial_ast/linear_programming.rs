@@ -110,7 +110,7 @@ fn expr_to_rat(e: &Expr) -> Option<Rat> {
     Expr::BigInteger(n) => Some(Rat::from_int(n.clone())),
     Expr::Real(f) => rat_from_f64(*f),
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => expr_to_rat(operand).map(|r| r.neg()),
     Expr::FunctionCall { name, args }

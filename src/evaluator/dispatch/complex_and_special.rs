@@ -376,7 +376,7 @@ pub fn dispatch_complex_and_special(
     }
     "Echo" if !args.is_empty() && args.len() <= 3 => {
       let label = if args.len() >= 2 {
-        crate::syntax::expr_to_output(&args[1])
+        expr_to_output(&args[1])
       } else {
         ">> ".to_string()
       };
@@ -392,9 +392,9 @@ pub fn dispatch_complex_and_special(
           Ok(v) => v,
           Err(e) => return Some(Err(e)),
         };
-        crate::syntax::expr_to_output(&result)
+        expr_to_output(&result)
       } else {
-        crate::syntax::expr_to_output(&args[0])
+        expr_to_output(&args[0])
       };
       let line = if args.len() >= 2 {
         format!(">> {label} {display_expr}")
@@ -1943,7 +1943,7 @@ pub fn dispatch_complex_and_special(
         .iter()
         .map(|a| match a {
           Expr::String(s) => s.clone(),
-          _ => crate::syntax::expr_to_string(a),
+          _ => expr_to_string(a),
         })
         .collect::<String>();
       return Some(Ok(Expr::Raw(rendered)));
@@ -1968,8 +1968,8 @@ pub fn dispatch_complex_and_special(
         // First try the position-less form.
         let one_arg_call = call1("Default", args[0].clone());
         if let Ok(result) = evaluate_expr_to_expr(&one_arg_call) {
-          let original = crate::syntax::expr_to_string(&one_arg_call);
-          let after = crate::syntax::expr_to_string(&result);
+          let original = expr_to_string(&one_arg_call);
+          let after = expr_to_string(&result);
           if after != original {
             return Some(Ok(result));
           }
@@ -2039,7 +2039,7 @@ fn tag_matches_pattern(tag: &Expr, patt: &Expr) -> bool {
   if crate::evaluator::pattern_matching::contains_pattern(patt) {
     crate::evaluator::pattern_matching::match_pattern(tag, patt).is_some()
   } else {
-    crate::syntax::expr_to_string(tag) == crate::syntax::expr_to_string(patt)
+    expr_to_string(tag) == expr_to_string(patt)
   }
 }
 
@@ -2854,7 +2854,7 @@ fn expr_to_full_box_form(expr: &Expr) -> Expr {
       "Times".to_string(),
       vec![Expr::Integer(-1), *operand.clone()],
     ),
-    _ => return Expr::String(crate::syntax::expr_to_string(expr)),
+    _ => return Expr::String(expr_to_string(expr)),
   };
   let mut parts: Vec<Expr> =
     vec![Expr::String(head), Expr::String("[".to_string())];
@@ -4152,7 +4152,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       // formatted shape (e.g. `Format[F[x_, y_], InputForm] := {…}`
       // turns `InputForm[F[1., "l"]]` into `{"In", GG[…]}` text).
       let formatted_inner = apply_format_recursively(&args[0], "InputForm");
-      let inner_str = crate::syntax::expr_to_string(&formatted_inner);
+      let inner_str = expr_to_string(&formatted_inner);
       Expr::FunctionCall {
         name: "InterpretationBox".to_string(),
         args: vec![
@@ -5638,7 +5638,7 @@ fn join_with_dot(parts: Vec<Expr>) -> Expr {
 
 /// Convert an expression to a string box (for expressions we don't have explicit box forms for)
 fn box_as_output_string(expr: &Expr) -> Expr {
-  let s = crate::syntax::expr_to_output(expr);
+  let s = expr_to_output(expr);
   // If it's a simple identifier-like string, return as Identifier
   if s
     .chars()
@@ -6366,7 +6366,7 @@ fn disjoint_shapes_intersect(a: &DisjointShape, b: &DisjointShape) -> bool {
 /// RegionDisjoint[reg1, reg2, …] — True when the regions are pairwise
 /// disjoint. Zero regions are vacuously disjoint; a single supported
 /// region is too. Unsupported arguments leave the call unevaluated.
-fn compute_region_disjoint(args: &[Expr]) -> crate::syntax::Expr {
+fn compute_region_disjoint(args: &[Expr]) -> Expr {
   let shapes: Option<Vec<DisjointShape>> = args
     .iter()
     .map(|a| disjoint_shape(strip_region_wrapper(a)))
@@ -7891,7 +7891,7 @@ fn compute_region_dimension(expr: &Expr) -> Result<Expr, InterpreterError> {
 /// RegionEmbeddingDimension[region] — the dimension of the ambient space the
 /// region lives in, i.e. the number of coordinates. This equals the number of
 /// `{min, max}` pairs in the region's bounding box.
-fn compute_region_embedding_dimension(expr: &Expr) -> crate::syntax::Expr {
+fn compute_region_embedding_dimension(expr: &Expr) -> Expr {
   if let Expr::FunctionCall { name, args } = expr {
     match name.as_str() {
       "StadiumShape" if stadium_parts(args).is_some() => {
@@ -7938,7 +7938,7 @@ fn compute_region_embedding_dimension(expr: &Expr) -> crate::syntax::Expr {
 
 /// Compute the axis-aligned bounding box of a geometric region as a list of
 /// `{min, max}` pairs, one per dimension.
-fn compute_region_bounds(expr: &Expr) -> crate::syntax::Expr {
+fn compute_region_bounds(expr: &Expr) -> Expr {
   let unevaluated = || call("RegionBounds", vec![expr.clone()]);
   // HalfLine[{p1, p2}] — half-line from p1 toward p2. Each dimension's
   // bounds depend on the sign of (p2 - p1)[d]:
@@ -12515,13 +12515,13 @@ fn normalize_region(expr: &Expr) -> Option<Expr> {
 /// Normalize polygon vertices to a canonical sorted form for comparison.
 /// We sort vertices lexicographically by their string representation to get
 /// a rotation/order-independent comparison.
-fn normalize_polygon_vertices(mut vertices: Vec<Expr>) -> crate::syntax::Expr {
+fn normalize_polygon_vertices(mut vertices: Vec<Expr>) -> Expr {
   vertices.sort_by(|a, b| format!("{a:?}").cmp(&format!("{b:?}")));
   call1("Polygon", Expr::List(vertices.into()))
 }
 
 /// Compute RegionEqual[r1, r2, ...].
-fn compute_region_equal(args: &[Expr]) -> crate::syntax::Expr {
+fn compute_region_equal(args: &[Expr]) -> Expr {
   // RegionEqual[] and RegionEqual[r] → True
   if args.len() <= 1 {
     return bool_expr(true);
@@ -13151,7 +13151,7 @@ fn compute_circumscribed_ball(expr: &Expr) -> Result<Expr, InterpreterError> {
     if !is_region_head(expr) {
       crate::emit_message(&format!(
         "CircumscribedBall::spec: {} is not a valid CircumscribedBall specification.",
-        crate::syntax::expr_to_string(expr)
+        expr_to_string(expr)
       ));
     }
     return uneval();
@@ -13190,7 +13190,7 @@ fn compute_bounding_region(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let Some(coords) = region_point_list(&args[0], true) else {
     crate::emit_message(&format!(
       "BoundingRegion::regl: The argument {} should be a region or a list of points.",
-      crate::syntax::expr_to_string(&args[0])
+      expr_to_string(&args[0])
     ));
     return uneval();
   };
@@ -13204,7 +13204,7 @@ fn compute_bounding_region(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let bad_spec = || {
     let shown = match &args[1] {
       Expr::String(s) => s.clone(),
-      other => crate::syntax::expr_to_string(other),
+      other => expr_to_string(other),
     };
     crate::emit_message(&format!(
       "BoundingRegion::spec: {shown} is not a valid type specification for bounding regions."
@@ -13853,7 +13853,7 @@ fn compute_insphere(expr: &Expr) -> Result<Expr, InterpreterError> {
         };
         crate::emit_message(&format!(
           "Insphere::indep: Insphere does not exist for {}.",
-          crate::syntax::expr_to_string(&normalized)
+          expr_to_string(&normalized)
         ));
         Ok(call1("Insphere", normalized))
       }
@@ -15009,7 +15009,7 @@ fn region_product_pair(a: &Expr, b: &Expr) -> Option<Expr> {
 /// `RegionProduct[reg1, reg2, …]` — the Cartesian product of its arguments,
 /// taken two at a time from the left. A product Wolfram does not name is left
 /// standing over whatever has been combined so far.
-fn compute_region_product(args: &[Expr]) -> crate::syntax::Expr {
+fn compute_region_product(args: &[Expr]) -> Expr {
   if args.is_empty() {
     crate::emit_message(
       "RegionProduct::argm: RegionProduct called with 0 arguments; \

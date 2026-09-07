@@ -174,7 +174,7 @@ fn tabular_from_list_of_associations(rows: &[Expr], args: &[Expr]) -> Expr {
   for row in rows {
     if let Expr::Association(pairs) = row {
       for (k, _) in pairs {
-        let key_str = crate::syntax::expr_to_string(k);
+        let key_str = expr_to_string(k);
         if key_set.insert(key_str.clone()) {
           col_keys.push(k.clone());
           col_key_strs.push(key_str);
@@ -188,7 +188,7 @@ fn tabular_from_list_of_associations(rows: &[Expr], args: &[Expr]) -> Expr {
     && let Expr::List(names) = &args[1]
   {
     col_keys = names.to_vec();
-    col_key_strs = names.iter().map(crate::syntax::expr_to_string).collect();
+    col_key_strs = names.iter().map(expr_to_string).collect();
   }
 
   // Infer column types
@@ -201,7 +201,7 @@ fn tabular_from_list_of_associations(rows: &[Expr], args: &[Expr]) -> Expr {
         if let Expr::Association(pairs) = r {
           pairs
             .iter()
-            .find(|(k, _)| crate::syntax::expr_to_string(k) == *key_str)
+            .find(|(k, _)| expr_to_string(k) == *key_str)
             .map(|(_, v)| v)
         } else {
           None

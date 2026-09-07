@@ -1,6 +1,5 @@
 use plotters::prelude::{Color, *};
 
-#[allow(unused_imports)]
 use super::*;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::graphics::{Color as GfxColor, parse_color};
@@ -1375,7 +1374,7 @@ pub(crate) fn equation_zero_body(e: &Expr) -> Option<Expr> {
       operators,
     } if operands.len() == 2
       && operators.len() == 1
-      && operators[0] == crate::syntax::ComparisonOp::Equal =>
+      && operators[0] == ComparisonOp::Equal =>
     {
       (&operands[0], &operands[1])
     }
@@ -1385,7 +1384,7 @@ pub(crate) fn equation_zero_body(e: &Expr) -> Option<Expr> {
     _ => return None,
   };
   Some(Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Minus,
+    op: BinaryOperator::Minus,
     left: Box::new(lhs.clone()),
     right: Box::new(rhs.clone()),
   })

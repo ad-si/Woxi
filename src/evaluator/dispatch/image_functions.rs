@@ -178,7 +178,7 @@ fn gradient_strip_image(controls: &[(f64, f64, f64)]) -> Expr {
           option(
             "AspectRatio",
             Expr::BinaryOp {
-              op: crate::syntax::BinaryOperator::Divide,
+              op: BinaryOperator::Divide,
               left: Box::new(Expr::Integer(1)),
               right: Box::new(Expr::Integer(8)),
             },
@@ -385,7 +385,7 @@ fn import_json(
 /// `$Failed` after the magic-byte check passes — but without the error
 /// message, mirroring wolframscript's silent success on a valid file.
 #[cfg(not(target_arch = "wasm32"))]
-fn import_netpbm(path: &str) -> crate::syntax::Expr {
+fn import_netpbm(path: &str) -> Expr {
   if !crate::vfs::exists(path) {
     // wolframscript prints Import::nffil to stdout for a missing file.
     crate::emit_message_to_stdout(&format!(
@@ -1661,7 +1661,7 @@ pub fn dispatch_image_functions(
         // string — match that message format.
         crate::emit_message(&format!(
           "ImportString::string: First argument {} is not a string.",
-          crate::syntax::expr_to_string(&args[0])
+          expr_to_string(&args[0])
         ));
         return Some(Ok(unevaluated("ImportString", args)));
       };

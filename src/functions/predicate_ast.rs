@@ -613,7 +613,7 @@ pub fn is_numeric_q(expr: &Expr) -> bool {
                 && let Expr::Identifier(cond_val) = &operands[1]
                 && cond_val == name
               {
-                let body_str = crate::syntax::expr_to_string(body);
+                let body_str = expr_to_string(body);
                 return body_str == "True";
               }
             }
@@ -1645,7 +1645,7 @@ pub fn free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let form = &args[1];
-  let form_str = crate::syntax::expr_to_string(form);
+  let form_str = expr_to_string(form);
 
   // A packed array object or a tree is an atom: nothing inside it counts as
   // a part, so only the object itself can match.
@@ -1687,7 +1687,7 @@ pub fn free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if crate::functions::list_helpers_ast::matches_pattern_ast(expr, form) {
         return true;
       }
-    } else if crate::syntax::expr_to_string(expr) == form_str {
+    } else if expr_to_string(expr) == form_str {
       return true;
     }
     // Rational and Complex are atoms: their internal parts (numerator/
@@ -2013,9 +2013,10 @@ pub fn palindrome_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Ok(bool_expr(is_palindrome))
     }
     Expr::List(items) => {
-      let is_palindrome = items.iter().zip(items.iter().rev()).all(|(a, b)| {
-        crate::syntax::expr_to_string(a) == crate::syntax::expr_to_string(b)
-      });
+      let is_palindrome = items
+        .iter()
+        .zip(items.iter().rev())
+        .all(|(a, b)| expr_to_string(a) == expr_to_string(b));
       Ok(bool_expr(is_palindrome))
     }
     Expr::Integer(n) => {
@@ -2076,8 +2077,8 @@ pub fn divisible_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let exact_message = |e: &Expr| {
     crate::emit_message(&format!(
       "Divisible::exact: Argument {} in {} is not an exact number.",
-      crate::syntax::expr_to_output(e),
-      crate::syntax::expr_to_output(&unevaluated())
+      expr_to_output(e),
+      expr_to_output(&unevaluated())
     ));
   };
 
@@ -2640,7 +2641,7 @@ pub fn construct_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       args: inner_args,
     } if inner_args.is_empty() => name.clone(),
     // If head is already a function call like f[a], we need to use it as string for nested application
-    _ => crate::syntax::expr_to_string(head),
+    _ => expr_to_string(head),
   };
 
   // Construct[f, a, b, c] => f[a, b, c]
@@ -2834,9 +2835,9 @@ pub fn subset_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Default: structural membership.
   let superset_strs: Vec<String> =
-    superset.iter().map(crate::syntax::expr_to_string).collect();
+    superset.iter().map(expr_to_string).collect();
   for elem in subset {
-    let s = crate::syntax::expr_to_string(elem);
+    let s = expr_to_string(elem);
     if !superset_strs.contains(&s) {
       return Ok(bool_expr(false));
     }
@@ -2918,10 +2919,8 @@ fn intersecting_or_disjoint(
       })
     })
   } else {
-    let a_strs: Vec<String> =
-      a.iter().map(crate::syntax::expr_to_string).collect();
-    b.iter()
-      .any(|e| a_strs.contains(&crate::syntax::expr_to_string(e)))
+    let a_strs: Vec<String> = a.iter().map(expr_to_string).collect();
+    b.iter().any(|e| a_strs.contains(&expr_to_string(e)))
   };
   Ok(Expr::Identifier(
     if has_common == want_common {
@@ -2949,7 +2948,7 @@ pub fn duplicate_free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       crate::emit_message(&format!(
         "DuplicateFreeQ::normal: Nonatomic expression expected at position 1 in DuplicateFreeQ[{}].",
-        crate::syntax::expr_to_output(&args[0])
+        expr_to_output(&args[0])
       ));
       return Ok(unevaluated("DuplicateFreeQ", args));
     }
@@ -2979,7 +2978,7 @@ pub fn duplicate_free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut seen: std::collections::HashSet<String> =
     std::collections::HashSet::new();
   for elem in elements {
-    if !seen.insert(crate::syntax::expr_to_string(elem)) {
+    if !seen.insert(expr_to_string(elem)) {
       return Ok(bool_expr(false));
     }
   }
@@ -3107,7 +3106,7 @@ pub fn mandelbrot_set_iteration_count_ast(
       "MandelbrotSetIterationCount[{}]",
       args
         .iter()
-        .map(crate::syntax::expr_to_output)
+        .map(expr_to_output)
         .collect::<Vec<_>>()
         .join(", ")
     )
@@ -3145,7 +3144,7 @@ pub fn mandelbrot_set_iteration_count_ast(
       other => {
         crate::emit_message(&format!(
           "MandelbrotSetIterationCount::nonopt: Options expected (instead of {}) beyond position {} in {}. An option must be a rule or a list of rules.",
-          crate::syntax::expr_to_output(other),
+          expr_to_output(other),
           i + 1,
           call_str()
         ));
@@ -3162,7 +3161,7 @@ pub fn mandelbrot_set_iteration_count_ast(
       _ => {
         crate::emit_message(&format!(
           "MandelbrotSetIterationCount::optx: Unknown option {} in {}.",
-          crate::syntax::expr_to_output(arg),
+          expr_to_output(arg),
           call_str()
         ));
         return unevaluated();
@@ -3240,7 +3239,7 @@ pub fn mandelbrot_set_member_q_ast(
       "MandelbrotSetMemberQ[{}]",
       args
         .iter()
-        .map(crate::syntax::expr_to_output)
+        .map(expr_to_output)
         .collect::<Vec<_>>()
         .join(", ")
     )
@@ -3268,7 +3267,7 @@ pub fn mandelbrot_set_member_q_ast(
   let nonopt = |offender: &Expr, position: usize| {
     crate::emit_message(&format!(
       "MandelbrotSetMemberQ::nonopt: Options expected (instead of {}) beyond position {} in {}. An option must be a rule or a list of rules.",
-      crate::syntax::expr_to_output(offender),
+      expr_to_output(offender),
       position,
       call_str()
     ));
@@ -3321,7 +3320,7 @@ pub fn mandelbrot_set_member_q_ast(
       _ => {
         crate::emit_message(&format!(
           "MandelbrotSetMemberQ::optx: Unknown option {} in {}.",
-          crate::syntax::expr_to_output(opt),
+          expr_to_output(opt),
           call_str()
         ));
         return unevaluated();

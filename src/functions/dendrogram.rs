@@ -240,7 +240,7 @@ fn parse_data(arg: &Expr) -> Option<(Vec<Expr>, Vec<String>)> {
 fn expr_to_label(expr: &Expr) -> String {
   match expr {
     Expr::String(s) => s.clone(),
-    other => crate::syntax::expr_to_output(other),
+    other => expr_to_output(other),
   }
 }
 

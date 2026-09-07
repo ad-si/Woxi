@@ -13,10 +13,9 @@
 //!                     "Context" -> {"MyPaclet`"}}}|>]
 //! ```
 
+use super::*;
 use std::cell::RefCell;
 use std::path::{Component, Path, PathBuf};
-
-use crate::syntax::Expr;
 
 thread_local! {
   /// Directories registered by `PacletDirectoryLoad`, in registration order.

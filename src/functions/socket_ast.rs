@@ -302,7 +302,7 @@ fn listener_object_id(expr: &Expr) -> Option<i128> {
 fn invalid_socket_message(uuid: &str) {
   crate::emit_message_to_stdout(&format!(
     "The socket object {} is invalid or not open.",
-    crate::syntax::expr_to_string(&socket_expr(uuid))
+    expr_to_string(&socket_expr(uuid))
   ));
 }
 
@@ -1674,7 +1674,7 @@ fn dispatch_native(
         if !stop_listener(id) {
           crate::emit_message_to_stdout(&format!(
             "The socket listener {} is invalid or not open.",
-            crate::syntax::expr_to_string(&args[0])
+            expr_to_string(&args[0])
           ));
           return Some(Ok(Expr::Identifier("$Failed".to_string())));
         }

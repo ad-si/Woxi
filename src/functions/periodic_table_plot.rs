@@ -309,7 +309,7 @@ fn parse_highlights(first: Option<&Expr>) -> HighlightSpec {
           crate::emit_message_to_stdout(&format!(
             "PeriodicTablePlot::inpt: Input {} should be an \"Element\" \
              Entity or EntityProperty.",
-            crate::syntax::expr_to_output(other)
+            expr_to_output(other)
           ));
           HighlightSpec::Unevaluated
         }

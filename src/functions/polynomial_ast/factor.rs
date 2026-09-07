@@ -1885,10 +1885,7 @@ fn divide_terms_by(
 }
 
 /// Factor out the GCD of numeric coefficients from all terms.
-pub(crate) fn factor_terms_numeric(
-  expanded: &Expr,
-  terms: &[Expr],
-) -> crate::syntax::Expr {
+pub(crate) fn factor_terms_numeric(expanded: &Expr, terms: &[Expr]) -> Expr {
   let Some((num_gcd, den_lcm, coeffs)) = rational_content(terms) else {
     return expanded.clone();
   };
@@ -1932,7 +1929,7 @@ pub(crate) fn factor_terms_numeric(
 /// FactorTerms[poly, x] — factor out terms that don't depend on x.
 /// Groups terms by power of x, collects the coefficient of each power,
 /// then factors out the polynomial GCD of those coefficient expressions.
-fn factor_terms_wrt_var(expr: &Expr, var: &str) -> crate::syntax::Expr {
+fn factor_terms_wrt_var(expr: &Expr, var: &str) -> Expr {
   let terms = collect_additive_terms(expr);
 
   // Collect coefficients for each power of x
@@ -2368,10 +2365,9 @@ fn product_square_free(expr: &Expr) -> Result<Option<Expr>, InterpreterError> {
   let mut items: Vec<(Expr, i128)> = Vec::new();
   let mut sum_changed = false;
   let merge = |base: Expr, exp: i128, items: &mut Vec<(Expr, i128)>| {
-    let key = crate::syntax::expr_to_string(&base);
-    if let Some(entry) = items
-      .iter_mut()
-      .find(|(b, _)| crate::syntax::expr_to_string(b) == key)
+    let key = expr_to_string(&base);
+    if let Some(entry) =
+      items.iter_mut().find(|(b, _)| expr_to_string(b) == key)
     {
       entry.1 += exp;
     } else {
@@ -2414,9 +2410,7 @@ fn product_square_free(expr: &Expr) -> Result<Option<Expr>, InterpreterError> {
     // Square-free factor the primitive (a sum, so this recursion cannot
     // re-enter the product path).
     let factored = factor_square_free_ast(std::slice::from_ref(&primitive))?;
-    if crate::syntax::expr_to_string(&factored)
-      != crate::syntax::expr_to_string(&primitive)
-    {
+    if expr_to_string(&factored) != expr_to_string(&primitive) {
       sum_changed = true;
     }
     let Some((n2, d2, sub_items)) = decompose_content_factors(&factored) else {
@@ -3568,7 +3562,7 @@ fn min_term_coefficient(expr: &Expr) -> i128 {
 fn factor_multivariate(
   expanded: &Expr,
   vars: std::collections::HashSet<String>,
-) -> crate::syntax::Expr {
+) -> Expr {
   // Fast path: a^n ± b^n decomposes directly via cyclotomic polynomials.
   // Skips the expensive Kronecker substitution path, which was effectively
   // hanging on inputs like `Factor[x^10 - y^10]` (degree-110 sparse trial

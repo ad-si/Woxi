@@ -133,7 +133,7 @@ pub fn table_iterators_invalid(name: &str, iters: &[Expr]) -> Option<String> {
         return Some(format!(
           "{}::nliter: Nonlist iterator {} at position {} does not evaluate to a real numeric value.",
           name,
-          crate::syntax::expr_to_string(iter),
+          expr_to_string(iter),
           position
         ));
       }
@@ -256,7 +256,7 @@ pub fn table_ast(
           // and returns the call unevaluated rather than raising an error.
           crate::emit_message(&format!(
             "Table::itraw: Raw object {} cannot be used as an iterator.",
-            crate::syntax::expr_to_string(other)
+            expr_to_string(other)
           ));
           return Ok(call("Table", vec![body.clone(), iter_spec.clone()]));
         }
@@ -981,7 +981,7 @@ pub fn constant_array_ast(
       if crate::functions::predicate_ast::is_numeric_q(d) {
         crate::emit_message(&format!(
           "ConstantArray::ilsmn: Single or list of non-negative machine-sized integers expected at position 2 of {}.",
-          crate::syntax::expr_to_string(&call(
+          expr_to_string(&call(
             "ConstantArray",
             vec![elem.clone(), dims.clone()]
           ))
@@ -1176,7 +1176,7 @@ pub fn do_ast(body: &Expr, iter_spec: &Expr) -> Result<Expr, InterpreterError> {
           // returns the call unevaluated rather than raising an error.
           crate::emit_message(&format!(
             "Do::itraw: Raw object {} cannot be used as an iterator.",
-            crate::syntax::expr_to_string(other)
+            expr_to_string(other)
           ));
           return Ok(call("Do", vec![body.clone(), iter_spec.clone()]));
         }
@@ -1469,7 +1469,7 @@ pub fn do_multi_ast(
     {
       crate::emit_message(&format!(
         "Do::itraw: Raw object {} cannot be used as an iterator.",
-        crate::syntax::expr_to_string(&items[0])
+        expr_to_string(&items[0])
       ));
       return Ok(Expr::FunctionCall {
         name: "Do".to_string(),
@@ -1852,7 +1852,7 @@ pub fn array_multi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           _ => {
             // Fall back to invoking the function via the standard call form
             // (e.g. Composition, named symbols stored as values, …).
-            let func_str = crate::syntax::expr_to_string(func);
+            let func_str = expr_to_string(func);
             crate::evaluator::evaluate_function_call_ast(&func_str, &index_args)
           }
         }
@@ -2315,7 +2315,7 @@ fn collect_dense_rules(
       }
     }
     _ => {
-      if crate::syntax::expr_to_string(expr) != default_str {
+      if expr_to_string(expr) != default_str {
         rules.push((indices.clone(), expr.clone()));
       }
     }
@@ -2353,7 +2353,7 @@ fn parse_sparse_data(
 
   // Dense nested list: must be rectangular.
   let shape = dense_shape(data)?;
-  let default_str = crate::syntax::expr_to_string(default);
+  let default_str = expr_to_string(default);
   let mut rules = Vec::new();
   let mut indices = Vec::new();
   collect_dense_rules(data, &mut indices, &mut rules, &default_str);
@@ -2440,7 +2440,7 @@ pub fn sparse_array_normalize_ast(
   // matches wolframscript:
   //   Normal[SparseArray[{1 -> 5, 1 -> 9}, 3]] == {5, 0, 0}
   // BTreeMap gives us deterministic lexicographic ordering.
-  let default_str = crate::syntax::expr_to_string(&default);
+  let default_str = expr_to_string(&default);
   let mut dedup: std::collections::BTreeMap<Vec<i128>, Expr> =
     std::collections::BTreeMap::new();
   for (pos, val) in parsed_rules {
@@ -2454,7 +2454,7 @@ pub fn sparse_array_normalize_ast(
     {
       continue;
     }
-    if crate::syntax::expr_to_string(&val) == default_str {
+    if expr_to_string(&val) == default_str {
       continue;
     }
     dedup.entry(pos).or_insert(val);
@@ -2732,7 +2732,7 @@ fn sparse_stored_paths(dense: &Expr, background: &Expr) -> Vec<Vec<usize>> {
       }
       return;
     }
-    if crate::syntax::expr_to_string(e) != crate::syntax::expr_to_string(bg) {
+    if expr_to_string(e) != expr_to_string(bg) {
       out.push(path.clone());
     }
   }
@@ -2815,9 +2815,7 @@ pub fn try_sparse_array_arithmetic(head: &str, args: &[Expr]) -> Option<Expr> {
       });
     }
     let value = apply(operands)?;
-    if crate::syntax::expr_to_string(&value)
-      == crate::syntax::expr_to_string(&background)
-    {
+    if expr_to_string(&value) == expr_to_string(&background) {
       continue;
     }
     rules.push(Expr::Rule {

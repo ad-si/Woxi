@@ -446,11 +446,8 @@ fn apply_test_bool(test: &Expr, elem: &Expr) -> bool {
       crate::evaluator::evaluate_expr_to_expr(&substituted).ok()
     }
     _ => {
-      let call_str = format!(
-        "({})[{}]",
-        crate::syntax::expr_to_string(test),
-        crate::syntax::expr_to_string(elem)
-      );
+      let call_str =
+        format!("({})[{}]", expr_to_string(test), expr_to_string(elem));
       crate::interpret(&call_str).ok().map(|r| {
         if r == "True" {
           bool_expr(true)
@@ -569,11 +566,8 @@ pub fn matches_pattern_ast(expr: &Expr, pattern: &Expr) -> bool {
         }
         _ => {
           // General expression used as function: call (test)[expr]
-          let call_str = format!(
-            "({})[{}]",
-            crate::syntax::expr_to_string(test),
-            crate::syntax::expr_to_string(expr)
-          );
+          let call_str =
+            format!("({})[{}]", expr_to_string(test), expr_to_string(expr));
           crate::interpret(&call_str).ok().map(|r| {
             if r == "True" {
               bool_expr(true)
@@ -613,8 +607,7 @@ pub fn matches_pattern_ast(expr: &Expr, pattern: &Expr) -> bool {
     Expr::FunctionCall { name, args }
       if name == "Verbatim" && args.len() == 1 =>
     {
-      crate::syntax::expr_to_string(expr)
-        == crate::syntax::expr_to_string(&args[0])
+      expr_to_string(expr) == expr_to_string(&args[0])
     }
     // Except[c] - matches anything that doesn't match c
     // Except[c, pattern] - matches pattern but not c
@@ -681,8 +674,8 @@ pub fn matches_pattern_ast(expr: &Expr, pattern: &Expr) -> bool {
           .is_some()
       } else if pat_name == "Except" || pat_name == "PatternTest" {
         // Already handled above or not a structural match
-        let pattern_str = crate::syntax::expr_to_string(pattern);
-        let expr_str = crate::syntax::expr_to_string(expr);
+        let pattern_str = expr_to_string(pattern);
+        let expr_str = expr_to_string(expr);
         expr_str == pattern_str
       } else if let Expr::FunctionCall {
         name: expr_name,
@@ -763,8 +756,8 @@ pub fn matches_pattern_ast(expr: &Expr, pattern: &Expr) -> bool {
     }
     // Literal comparison
     _ => {
-      let pattern_str = crate::syntax::expr_to_string(pattern);
-      let expr_str = crate::syntax::expr_to_string(expr);
+      let pattern_str = expr_to_string(pattern);
+      let expr_str = expr_to_string(expr);
       expr_str == pattern_str
     }
   }
@@ -1802,7 +1795,7 @@ pub fn contains_only_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let mut found = false;
       for elem in elems {
         let call = Expr::FunctionCall {
-          name: crate::syntax::expr_to_string(&test),
+          name: expr_to_string(&test),
           args: vec![item.clone(), elem.clone()].into(),
         };
         // Try treating `test` as a callable expression (e.g. Equal).
@@ -1827,11 +1820,10 @@ pub fn contains_only_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   use std::collections::HashSet;
-  let allowed: HashSet<String> =
-    elems.iter().map(crate::syntax::expr_to_string).collect();
+  let allowed: HashSet<String> = elems.iter().map(expr_to_string).collect();
 
   for item in list {
-    if !allowed.contains(&crate::syntax::expr_to_string(item)) {
+    if !allowed.contains(&expr_to_string(item)) {
       return Ok(bool_expr(false));
     }
   }
@@ -2355,7 +2347,7 @@ pub fn commonest_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let Expr::List(items) = &args[0] else {
     crate::emit_message(&format!(
       "CommonestFilter::arg1: The first argument {} should be a rectangular array, image or video.",
-      crate::syntax::expr_to_string(&args[0])
+      expr_to_string(&args[0])
     ));
     return Ok(unevaluated(args));
   };
@@ -2376,15 +2368,12 @@ pub fn commonest_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Commonest in `window` with the tie rules; elements compare by
   // their printed form
   let pick = |window: &[&Expr], center: &Expr| -> Expr {
-    let keys: Vec<String> = window
-      .iter()
-      .map(|e| crate::syntax::expr_to_string(e))
-      .collect();
+    let keys: Vec<String> = window.iter().map(|e| expr_to_string(e)).collect();
     let count_of = |key: &str| -> usize {
       keys.iter().filter(|k| k.as_str() == key).count()
     };
     let max_count = keys.iter().map(|k| count_of(k)).max().unwrap_or(0);
-    let center_key = crate::syntax::expr_to_string(center);
+    let center_key = expr_to_string(center);
     if count_of(&center_key) == max_count {
       return center.clone();
     }
@@ -2411,7 +2400,7 @@ pub fn commonest_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if rows.iter().any(|row| row.len() != width) {
       crate::emit_message(&format!(
         "CommonestFilter::arg1: The first argument {} should be a rectangular array, image or video.",
-        crate::syntax::expr_to_string(&args[0])
+        expr_to_string(&args[0])
       ));
       return Ok(unevaluated(args));
     }

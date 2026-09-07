@@ -1910,7 +1910,7 @@ fn regularized_infinite_sum(
   // search on the printed form would trip over a name like `Sin` containing `n`.
   let mentions_var = |e: &Expr| {
     let probe = crate::syntax::substitute_variable(e, var, &Expr::Integer(0));
-    crate::syntax::expr_to_string(&probe) != crate::syntax::expr_to_string(e)
+    expr_to_string(&probe) != expr_to_string(e)
   };
   if coefficients.iter().any(mentions_var) {
     return Ok(None);
@@ -1943,7 +1943,7 @@ fn regularized_infinite_sum(
   // A pole (`Zeta[1]`, from a `1/n` term) leaves `ComplexInfinity` or an
   // unevaluated `Zeta` behind instead of a value; either means the summand is
   // outside the scheme's reach.
-  let rendered = crate::syntax::expr_to_string(&canonical);
+  let rendered = expr_to_string(&canonical);
   if rendered.contains("ComplexInfinity")
     || rendered.contains("Indeterminate")
     || rendered.contains("Zeta")
@@ -2784,9 +2784,7 @@ fn try_binomial_theorem_sum(
     return None;
   }
   // The upper limit must be exactly the Binomial's first argument.
-  if crate::syntax::expr_to_string(&n)
-    != crate::syntax::expr_to_string(max_expr)
-  {
+  if expr_to_string(&n) != expr_to_string(max_expr) {
     return None;
   }
 
@@ -2928,8 +2926,7 @@ fn try_symbolic_sum(
     && name == "Binomial"
     && args.len() == 2
     && matches!(&args[1], Expr::Identifier(v) if v == var_name)
-    && crate::syntax::expr_to_string(&args[0])
-      == crate::syntax::expr_to_string(max_expr)
+    && expr_to_string(&args[0]) == expr_to_string(max_expr)
   {
     let two_n = times2(Expr::Integer(2), max_expr.clone());
     let result = call("Binomial", vec![two_n, max_expr.clone()]);
@@ -3981,7 +3978,7 @@ fn try_telescoping_rational_sum(
   body: &Expr,
   var_name: &str,
   min: i128,
-) -> std::option::Option<crate::syntax::Expr> {
+) -> std::option::Option<Expr> {
   // Trim trailing zero coefficients to get true degrees.
   let trim = |mut v: Vec<(i128, i128)>| {
     while v.len() > 1 && v.last() == Some(&(0, 1)) {
@@ -4133,7 +4130,7 @@ fn try_rational_pole_telescoping_sum(
   body: &Expr,
   var_name: &str,
   min: i128,
-) -> std::option::Option<crate::syntax::Expr> {
+) -> std::option::Option<Expr> {
   use std::collections::{HashMap, HashSet};
   let trim = |mut v: Vec<(i128, i128)>| {
     while v.len() > 1 && v.last() == Some(&(0, 1)) {
@@ -5368,7 +5365,7 @@ pub fn angle_path_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let steps_err = || {
     crate::emit_message(&format!(
       "AnglePath3D::steps: Invalid steps specification {}.",
-      crate::syntax::expr_to_output(&args[0])
+      expr_to_output(&args[0])
     ));
     unevaluated()
   };

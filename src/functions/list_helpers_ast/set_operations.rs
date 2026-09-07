@@ -25,7 +25,7 @@ pub fn tally_ast(list: &Expr) -> Result<Expr, InterpreterError> {
   let mut order: Vec<String> = Vec::new();
 
   for item in items {
-    let key_str = crate::syntax::expr_to_string(item);
+    let key_str = expr_to_string(item);
     if let Some((_, count)) = counts.get_mut(&key_str) {
       *count += 1;
     } else {
@@ -111,7 +111,7 @@ pub fn counts_ast(list: &Expr) -> Result<Expr, InterpreterError> {
   let mut order: Vec<String> = Vec::new();
 
   for item in items {
-    let key_str = crate::syntax::expr_to_string(item);
+    let key_str = expr_to_string(item);
     if let Some((_, count)) = counts.get_mut(&key_str) {
       *count += 1;
     } else {
@@ -159,7 +159,7 @@ pub fn delete_duplicates_ast(
     let mut seen: HashSet<String> = HashSet::new();
     let mut result: Vec<(Expr, Expr)> = Vec::new();
     for (k, v) in pairs {
-      if seen.insert(crate::syntax::expr_to_string(v)) {
+      if seen.insert(expr_to_string(v)) {
         result.push((k.clone(), v.clone()));
       }
     }
@@ -203,7 +203,7 @@ pub fn delete_duplicates_ast(
     let mut seen: HashSet<String> = HashSet::new();
     let mut result = Vec::new();
     for item in items {
-      if seen.insert(crate::syntax::expr_to_string(item)) {
+      if seen.insert(expr_to_string(item)) {
         result.push(item.clone());
       }
     }
@@ -326,14 +326,10 @@ fn all_association_pairs(lists: &[Expr]) -> Option<Vec<&[(Expr, Expr)]>> {
 
 /// True if `pairs` contains a key->value pair structurally equal to (k, v).
 fn pairs_contain(pairs: &[(Expr, Expr)], k: &Expr, v: &Expr) -> bool {
-  let (ks, vs) = (
-    crate::syntax::expr_to_string(k),
-    crate::syntax::expr_to_string(v),
-  );
-  pairs.iter().any(|(k2, v2)| {
-    crate::syntax::expr_to_string(k2) == ks
-      && crate::syntax::expr_to_string(v2) == vs
-  })
+  let (ks, vs) = (expr_to_string(k), expr_to_string(v));
+  pairs
+    .iter()
+    .any(|(k2, v2)| expr_to_string(k2) == ks && expr_to_string(v2) == vs)
 }
 
 pub fn union_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -347,7 +343,7 @@ pub fn union_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut map: HashMap<String, (Expr, Expr)> = HashMap::new();
     for pairs in &assocs {
       for (k, v) in *pairs {
-        let ks = crate::syntax::expr_to_string(k);
+        let ks = expr_to_string(k);
         if !map.contains_key(&ks) {
           order.push(ks.clone());
         }
@@ -376,7 +372,7 @@ pub fn union_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut seen: HashSet<String> = HashSet::new();
     for items in &slices {
       for item in *items {
-        let key_str = crate::syntax::expr_to_string(item);
+        let key_str = expr_to_string(item);
         if seen.insert(key_str) {
           result.push(item.clone());
         }
@@ -479,28 +475,23 @@ pub fn intersection_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(wrap(Vec::new()));
   };
 
-  let mut common: HashSet<String> = first_items
-    .iter()
-    .map(crate::syntax::expr_to_string)
-    .collect();
+  let mut common: HashSet<String> =
+    first_items.iter().map(expr_to_string).collect();
 
   // Intersect with each subsequent list
   for items in slices.iter().skip(1) {
-    let list_set: HashSet<String> =
-      items.iter().map(crate::syntax::expr_to_string).collect();
+    let list_set: HashSet<String> = items.iter().map(expr_to_string).collect();
     common = common.intersection(&list_set).cloned().collect();
   }
 
   // Collect matching elements and sort canonically (like Mathematica)
   let mut result: Vec<Expr> = first_items
     .iter()
-    .filter(|item| common.contains(&crate::syntax::expr_to_string(item)))
+    .filter(|item| common.contains(&expr_to_string(item)))
     .cloned()
     .collect();
   sort_canonical(&mut result);
-  result.dedup_by(|a, b| {
-    crate::syntax::expr_to_string(a) == crate::syntax::expr_to_string(b)
-  });
+  result.dedup_by(|a, b| expr_to_string(a) == expr_to_string(b));
 
   Ok(wrap(result))
 }
@@ -512,7 +503,7 @@ pub fn intersection_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
 fn intersection_with_same_test(
   slices: &[&[Expr]],
   test: &Expr,
-) -> std::vec::Vec<crate::syntax::Expr> {
+) -> std::vec::Vec<Expr> {
   let first_items: Vec<Expr> = match slices.first() {
     Some(items) => items.to_vec(),
     None => return Vec::new(),
@@ -605,7 +596,7 @@ pub fn complement_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut exclude: HashSet<String> = HashSet::new();
   for items in slices.iter().skip(1) {
     for item in *items {
-      exclude.insert(crate::syntax::expr_to_string(item));
+      exclude.insert(expr_to_string(item));
     }
   }
 
@@ -617,7 +608,7 @@ pub fn complement_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut result: Vec<Expr> = first_items
     .iter()
     .filter(|item| {
-      let s = crate::syntax::expr_to_string(item);
+      let s = expr_to_string(item);
       !exclude.contains(&s) && seen.insert(s)
     })
     .cloned()
@@ -701,7 +692,7 @@ pub fn delete_elements_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let Expr::List(elems) = elems_expr else {
     crate::emit_message(&format!(
       "DeleteElements::invl: The argument {} is not a list.",
-      crate::syntax::expr_to_string(elems_expr)
+      expr_to_string(elems_expr)
     ));
     let rhs = match mult_expr {
       Some(m) => m.clone(),
@@ -732,7 +723,7 @@ pub fn delete_elements_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let ilsmp = |bad: &Expr| {
     crate::emit_message(&format!(
       "DeleteElements::ilsmp: Single or list of positive machine-sized integers expected at position 1 of {}.",
-      crate::syntax::expr_to_string(bad)
+      expr_to_string(bad)
     ));
   };
 
@@ -768,7 +759,7 @@ pub fn delete_elements_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Map each element (by SameQ string key) to its remaining removal budget.
   let mut remaining: HashMap<String, usize> = HashMap::new();
   for (e, b) in elems.iter().zip(budgets.iter()) {
-    let key = crate::syntax::expr_to_string(e);
+    let key = expr_to_string(e);
     let slot = remaining.entry(key).or_insert(0);
     *slot = slot.saturating_add(*b);
   }
@@ -776,7 +767,7 @@ pub fn delete_elements_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let result: Vec<Expr> = items
     .iter()
     .filter(|item| {
-      let key = crate::syntax::expr_to_string(item);
+      let key = expr_to_string(item);
       if let Some(b) = remaining.get_mut(&key)
         && *b > 0
       {
@@ -809,7 +800,7 @@ pub fn delete_duplicates_by_ast(
 
   for item in items {
     let key = apply_func_ast(func, item)?;
-    let key_str = crate::syntax::expr_to_string(&key);
+    let key_str = expr_to_string(&key);
     if seen.insert(key_str) {
       result.push(item.clone());
     }
@@ -836,9 +827,7 @@ pub fn delete_adjacent_duplicates_ast(
   // True when `b` continues the run `a` starts.
   let same = |a: &Expr, b: &Expr| -> Result<bool, InterpreterError> {
     match test {
-      None => {
-        Ok(crate::syntax::expr_to_string(a) == crate::syntax::expr_to_string(b))
-      }
+      None => Ok(expr_to_string(a) == expr_to_string(b)),
       Some(t) => {
         let r = apply_func_to_two_args(t, a, b)?;
         Ok(matches!(&r, Expr::Identifier(s) if s == "True"))
@@ -929,7 +918,7 @@ pub fn commonest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // counts: Vec<(key, item, count, first_appearance)>
   let mut counts: Vec<(String, &Expr, usize, usize)> = Vec::new();
   for (idx, item) in items.iter().enumerate() {
-    let key = crate::syntax::expr_to_string(item);
+    let key = expr_to_string(item);
     if let Some(entry) = counts.iter_mut().find(|(k, _, _, _)| k == &key) {
       entry.2 += 1;
     } else {
@@ -1014,9 +1003,7 @@ pub fn unique_elements_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Precompute the set of keys present in each list.
       let key_sets: Vec<HashSet<String>> = slices
         .iter()
-        .map(|(items, _)| {
-          items.iter().map(crate::syntax::expr_to_string).collect()
-        })
+        .map(|(items, _)| items.iter().map(expr_to_string).collect())
         .collect();
 
       let mut result = Vec::with_capacity(slices.len());
@@ -1024,7 +1011,7 @@ pub fn unique_elements_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let mut seen: HashSet<String> = HashSet::new();
         let mut unique = Vec::new();
         for item in *items {
-          let key = crate::syntax::expr_to_string(item);
+          let key = expr_to_string(item);
           let in_other = key_sets
             .iter()
             .enumerate()
@@ -1101,7 +1088,7 @@ pub fn symmetric_difference_ast(
     // Deduplicate within this list
     let mut seen_in_list = std::collections::HashSet::new();
     for item in items {
-      let key = crate::syntax::expr_to_string(item);
+      let key = expr_to_string(item);
       if seen_in_list.insert(key.clone()) {
         membership_count
           .entry(key)
@@ -1119,9 +1106,7 @@ pub fn symmetric_difference_ast(
     .collect();
 
   // Sort canonically (matching Complement/Union behavior)
-  result.sort_by(|a, b| {
-    crate::syntax::expr_to_string(a).cmp(&crate::syntax::expr_to_string(b))
-  });
+  result.sort_by_key(expr_to_string);
 
   Ok(Expr::List(result.into()))
 }

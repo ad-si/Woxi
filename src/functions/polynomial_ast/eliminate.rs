@@ -156,7 +156,7 @@ pub fn contains_var(expr: &Expr, var: &str) -> bool {
 fn eliminate_one_variable(
   equations: &[Expr],
   var: &str,
-) -> std::vec::Vec<crate::syntax::Expr> {
+) -> std::vec::Vec<Expr> {
   // Find an equation containing the variable, preferring linear ones
   let mut solve_idx = None;
   let mut solve_degree = i128::MAX;
@@ -209,7 +209,7 @@ fn eliminate_one_variable(
 }
 
 /// Simplify an equation by evaluating both sides
-fn simplify_equation(eq: &Expr) -> crate::syntax::Expr {
+fn simplify_equation(eq: &Expr) -> Expr {
   match eq {
     Expr::Comparison {
       operands,

@@ -441,7 +441,7 @@ fn message_symbols() -> Vec<String> {
         operators,
       }) = cond
         && operators.len() == 1
-        && matches!(operators[0], crate::syntax::ComparisonOp::SameQ)
+        && matches!(operators[0], ComparisonOp::SameQ)
         && operands.len() == 2
         && matches!(&operands[0], Expr::Identifier(p) if params.first() == Some(p))
         && let Expr::Identifier(symbol) = &operands[1]

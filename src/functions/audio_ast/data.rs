@@ -357,7 +357,7 @@ pub fn duration_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let durinv = |e: &Expr| {
     crate::emit_message(&format!(
       "Duration::durinv: Expecting an audio, sound, video, time series or date interval object instead of {}.",
-      crate::syntax::expr_to_string(e)
+      expr_to_string(e)
     ));
   };
 
@@ -492,10 +492,7 @@ fn audio_argument(name: &str, args: &[Expr]) -> Option<AudioData> {
   if audio.is_none() {
     crate::emit_message(&format!(
       "{name}::audio: Expecting an audio object instead of {}.",
-      args
-        .first()
-        .map(crate::syntax::expr_to_string)
-        .unwrap_or_default()
+      args.first().map(expr_to_string).unwrap_or_default()
     ));
   }
   audio
@@ -602,7 +599,7 @@ pub fn audio_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "AudioData::audiodtype: The specified data type {} should be \
          \"SignedInteger8\", \"SignedInteger16\", \"SignedInteger32\", \
          \"Real32\", \"Real64\" or Automatic.",
-        crate::syntax::expr_to_string(other)
+        expr_to_string(other)
       ));
       return echo();
     }

@@ -698,9 +698,8 @@ pub fn inverse_z_transform_ast(
     sign = norm_sign;
     let a_pow_n = pow2(a.clone(), n.clone());
     let factors = times_factors(&num);
-    let fstr: Vec<String> =
-      factors.iter().map(crate::syntax::expr_to_string).collect();
-    let a_str = crate::syntax::expr_to_string(&a);
+    let fstr: Vec<String> = factors.iter().map(expr_to_string).collect();
+    let a_str = expr_to_string(&a);
     let matches_multiset = |expected: &[String]| {
       let mut want = expected.to_vec();
       want.sort();
@@ -723,10 +722,7 @@ pub fn inverse_z_transform_ast(
       && matches_multiset(&[
         a_str.clone(),
         z_var.clone(),
-        crate::syntax::expr_to_string(&plus(vec![
-          a.clone(),
-          Expr::Identifier(z_var.clone()),
-        ])),
+        expr_to_string(&plus(vec![a.clone(), Expr::Identifier(z_var.clone())])),
       ])
     {
       return Ok(times(vec![a_pow_n, pow2(n.clone(), Expr::Integer(2))]));

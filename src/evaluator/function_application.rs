@@ -643,8 +643,8 @@ pub fn apply_function_to_arg(
           "Function::fpct: Too many parameters in {{{}}} to be filled from Function[{{{}}}, {}][{}].",
           params.join(", "),
           params.join(", "),
-          crate::syntax::expr_to_string(body),
-          crate::syntax::expr_to_string(arg),
+          expr_to_string(body),
+          expr_to_string(arg),
         ));
         return Ok(Expr::CurriedCall {
           func: Box::new(func.clone()),
@@ -974,7 +974,7 @@ fn operator_form_accepts_subject(name: &str, subject: &Expr) -> bool {
   if !accepted {
     crate::emit_message(&format!(
       "Merge::list1: The argument {} is not a valid list of Associations or rules or lists of rules.",
-      crate::syntax::expr_to_output(subject)
+      expr_to_output(subject)
     ));
   }
   accepted
@@ -1162,13 +1162,12 @@ pub fn apply_curried_call(
       // Named-parameter function: substitute each param with corresponding arg
       if params.len() > args.len() {
         // Too many parameters for the given arguments — return unevaluated
-        let args_str: Vec<String> =
-          args.iter().map(crate::syntax::expr_to_string).collect();
+        let args_str: Vec<String> = args.iter().map(expr_to_string).collect();
         crate::emit_message(&format!(
           "Function::fpct: Too many parameters in {{{}}} to be filled from Function[{{{}}}, {}][{}].",
           params.join(", "),
           params.join(", "),
-          crate::syntax::expr_to_string(body),
+          expr_to_string(body),
           args_str.join(", "),
         ));
         return Ok(Expr::CurriedCall {
@@ -1291,11 +1290,11 @@ pub fn apply_curried_call(
       let line = if func_args.len() == 2 {
         format!(
           ">> {} {}",
-          crate::syntax::expr_to_output(&func_args[0]),
-          crate::syntax::expr_to_output(&display)
+          expr_to_output(&func_args[0]),
+          expr_to_output(&display)
         )
       } else {
-        format!(">> {}", crate::syntax::expr_to_output(&display))
+        format!(">> {}", expr_to_output(&display))
       };
       println!("{line}");
       crate::capture_stdout(&line);
@@ -1309,8 +1308,8 @@ pub fn apply_curried_call(
     } if name == "EchoLabel" && func_args.len() == 1 && args.len() == 1 => {
       let line = format!(
         ">> {} {}",
-        crate::syntax::expr_to_output(&func_args[0]),
-        crate::syntax::expr_to_output(&args[0])
+        expr_to_output(&func_args[0]),
+        expr_to_output(&args[0])
       );
       println!("{line}");
       crate::capture_stdout(&line);
@@ -2566,10 +2565,7 @@ pub fn apply_curried_call(
 }
 
 /// Evaluate BezierFunction[{control_points}][t] using de Casteljau's algorithm.
-fn evaluate_bezier_function(
-  func_args: &[Expr],
-  args: &[Expr],
-) -> crate::syntax::Expr {
+fn evaluate_bezier_function(func_args: &[Expr], args: &[Expr]) -> Expr {
   if args.len() != 1 {
     return unevaluated("BezierFunction", func_args);
   }
@@ -2712,10 +2708,7 @@ fn bspline_point_coords(e: &Expr) -> Option<Vec<f64>> {
 /// parameters (one per spline dimension). Curves take a single parameter and
 /// surfaces take two; the control points are evaluated via (tensor-product)
 /// de Boor. Non-numeric parameters leave the application unevaluated.
-fn evaluate_bspline_function(
-  func_args: &[Expr],
-  args: &[Expr],
-) -> crate::syntax::Expr {
+fn evaluate_bspline_function(func_args: &[Expr], args: &[Expr]) -> Expr {
   // When the spline can't be sampled (symbolic parameters, malformed form),
   // echo the object applied to its parameters: `BSplineFunction[...][params]`.
   let unevaluated = || Expr::CurriedCall {

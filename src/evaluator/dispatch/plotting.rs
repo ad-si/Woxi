@@ -249,7 +249,7 @@ pub fn dispatch_plotting(
         {
           crate::emit_message(&format!(
             "ListLinePlot::lpn: {} is not a list of numbers or pairs of numbers.",
-            crate::syntax::expr_to_string(&evaluated)
+            expr_to_string(&evaluated)
           ));
           Some(Ok(unevaluated("ListLinePlot", args)))
         }
@@ -579,10 +579,8 @@ pub fn dispatch_plotting(
         crate::capture_stdout("");
         return Some(Ok(Expr::Identifier("Null".to_string())));
       }
-      let display_str: String = args
-        .iter()
-        .map(crate::syntax::expr_to_output)
-        .collect::<String>();
+      let display_str: String =
+        args.iter().map(expr_to_output).collect::<String>();
       if !crate::is_quiet_print() {
         println!("{display_str}");
       }

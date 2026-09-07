@@ -47,7 +47,7 @@ pub fn turing_machine_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if !matches!(&args[2], Expr::Integer(n) if *n >= 0) {
     crate::emit_message(&format!(
       "TuringMachine::tspec: The time specification {} must be an integer >= 0.",
-      crate::syntax::expr_to_string(&args[2])
+      expr_to_string(&args[2])
     ));
     return Ok(unevaluated("TuringMachine", args));
   }

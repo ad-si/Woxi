@@ -432,10 +432,8 @@ pub fn rule_dominates(
   }
   // Every guard of `b` must also guard `a`, else `a` accepts inputs `b` rejects.
   // Compare guards by their string form (Expr has no PartialEq).
-  let a_guard_strs: Vec<String> =
-    a_guards.iter().map(crate::syntax::expr_to_string).collect();
-  let b_guard_strs: Vec<String> =
-    b_guards.iter().map(crate::syntax::expr_to_string).collect();
+  let a_guard_strs: Vec<String> = a_guards.iter().map(expr_to_string).collect();
+  let b_guard_strs: Vec<String> = b_guards.iter().map(expr_to_string).collect();
   for g in &b_guard_strs {
     if !a_guard_strs.contains(g) {
       return false;
@@ -636,7 +634,7 @@ fn pattern_var_key(name: &str, expr: &Expr) -> String {
   if !name.is_empty() {
     return name.to_string();
   }
-  let shape: String = crate::syntax::expr_to_string(expr)
+  let shape: String = expr_to_string(expr)
     .chars()
     .map(|c| if c.is_ascii_alphanumeric() { c } else { 'x' })
     .collect();
@@ -1058,10 +1056,7 @@ pub fn get_attributes(expr: &Expr) -> Option<u32> {
 
 /// Helper for Attributes[f] = value / Attributes[f] := value
 /// Extracts attribute symbols from value, validates, and sets them on the symbol.
-fn set_attributes_from_value(
-  sym_name: &str,
-  rhs_value: &Expr,
-) -> crate::syntax::Expr {
+fn set_attributes_from_value(sym_name: &str, rhs_value: &Expr) -> Expr {
   // Check if symbol is locked
   let is_locked = crate::func_attrs_contains(sym_name, Attributes::Locked);
   if is_locked {
@@ -1174,11 +1169,11 @@ pub(crate) fn clear_upvalues_of(sym: &str) {
   for (outer_func, params, _conds, _defaults, _heads, body, _lhs, _rhs) in
     &up_defs
   {
-    let body_str = crate::syntax::expr_to_string(body);
+    let body_str = expr_to_string(body);
     crate::FUNC_DEFS.with(|m| {
       if let Some(entry) = m.borrow_mut().get_mut(outer_func) {
         entry.retain(|(p, _, _, _, _, b)| {
-          !(p == params && crate::syntax::expr_to_string(b) == body_str)
+          !(p == params && expr_to_string(b) == body_str)
         });
       }
     });
@@ -1369,10 +1364,7 @@ fn set_downvalues_from_rules(
 }
 
 /// Helper for Options[f] = value — set options for symbol f
-fn set_options_from_value(
-  sym_name: &str,
-  rhs_value: &Expr,
-) -> crate::syntax::Expr {
+fn set_options_from_value(sym_name: &str, rhs_value: &Expr) -> Expr {
   // Extract rules from the value
   let rules = match rhs_value {
     Expr::List(items) => items.clone(),
@@ -1481,7 +1473,7 @@ fn seed_system_variable(name: &str) {
     Expr::Association(items) => StoredValue::Association(
       items
         .iter()
-        .map(|(k, v)| (crate::syntax::expr_to_string(k), v.clone()))
+        .map(|(k, v)| (expr_to_string(k), v.clone()))
         .collect(),
     ),
     Expr::List(_) => StoredValue::ExprVal(value.clone()),
@@ -2252,7 +2244,7 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
       crate::emit_message(&format!(
         "Set::write: Tag {} in {} is Protected.",
         func_name,
-        crate::syntax::expr_to_string(lhs)
+        expr_to_string(lhs)
       ));
       return Ok(rhs_value);
     }
@@ -2349,7 +2341,7 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
       if arg_exprs.len() == conditions.len() {
         let key = arg_exprs
           .iter()
-          .map(crate::syntax::expr_to_string)
+          .map(expr_to_string)
           .collect::<Vec<_>>()
           .join("\u{1}");
         crate::MEMO_VALUES.with(|m| {
@@ -2374,16 +2366,14 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
         // semantics. Compare on params + conditions structurally.
         let cond_strs: Vec<Option<String>> = conditions
           .iter()
-          .map(|c| c.as_ref().map(crate::syntax::expr_to_string))
+          .map(|c| c.as_ref().map(expr_to_string))
           .collect();
         entry.retain(|(p, c, _, _, _, _)| {
           if p != &params {
             return true;
           }
-          let other_strs: Vec<Option<String>> = c
-            .iter()
-            .map(|c| c.as_ref().map(crate::syntax::expr_to_string))
-            .collect();
+          let other_strs: Vec<Option<String>> =
+            c.iter().map(|c| c.as_ref().map(expr_to_string)).collect();
           other_strs != cond_strs
         });
         let pos = entry
@@ -2511,11 +2501,8 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
         // matching `DownValues` and how a Demonstration's Manipulate body
         // re-evaluates (and thus re-defines) its SubValues on every control
         // change.
-        let lhs_str = crate::syntax::expr_to_string(&evaluated_lhs);
-        match rules
-          .iter()
-          .position(|(l, _)| crate::syntax::expr_to_string(l) == lhs_str)
-        {
+        let lhs_str = expr_to_string(&evaluated_lhs);
+        match rules.iter().position(|(l, _)| expr_to_string(l) == lhs_str) {
           Some(idx) => rules[idx] = (evaluated_lhs, rhs_value.clone()),
           None => rules.push((evaluated_lhs, rhs_value.clone())),
         }
@@ -2714,7 +2701,7 @@ pub fn set_delayed_ast(
       crate::emit_message(&format!(
         "SetDelayed::write: Tag {} in {} is Protected.",
         t,
-        crate::syntax::expr_to_string(lhs)
+        expr_to_string(lhs)
       ));
       return Ok(Expr::Identifier("$Failed".to_string()));
     }
@@ -2945,7 +2932,7 @@ pub fn set_delayed_ast(
     // Messages, Format rules, …) are exempt — see
     // `is_value_redirect_head`.
     if is_downvalue_head_protected(func_name) {
-      let lhs_str = crate::syntax::expr_to_string(lhs);
+      let lhs_str = expr_to_string(lhs);
       crate::emit_message(&format!(
         "SetDelayed::write: Tag {func_name} in {lhs_str} is Protected."
       ));
@@ -3468,11 +3455,8 @@ pub fn set_delayed_ast(
         // matching `DownValues`, and how a Demonstration's Manipulate body
         // re-evaluates on every control change, redefining each SubValue
         // with an identical LHS on every one of those re-evaluations.
-        let lhs_str = crate::syntax::expr_to_string(&evaluated_lhs);
-        match rules
-          .iter()
-          .position(|(l, _)| crate::syntax::expr_to_string(l) == lhs_str)
-        {
+        let lhs_str = expr_to_string(&evaluated_lhs);
+        match rules.iter().position(|(l, _)| expr_to_string(l) == lhs_str) {
           Some(idx) => rules[idx] = (evaluated_lhs, body.clone()),
           None => rules.push((evaluated_lhs, body.clone())),
         }
@@ -4315,7 +4299,7 @@ pub fn tag_set_delayed_ast(
       } else {
         "TagSetDelayed"
       },
-      crate::syntax::expr_to_string(lhs)
+      expr_to_string(lhs)
     ));
     return Ok(if evaluate_rhs {
       body
@@ -4616,13 +4600,13 @@ pub fn tag_set_delayed_ast(
   // Store in UPVALUES for introspection and cleanup.
   // If an upvalue with the same original LHS already exists, replace it.
   // Use original_lhs (with Condition wrapper) for display purposes.
-  let lhs_str = crate::syntax::expr_to_string(original_lhs);
+  let lhs_str = expr_to_string(original_lhs);
   crate::UPVALUES.with(|m| {
     let mut defs = m.borrow_mut();
     let entry = defs.entry(tag_name).or_insert_with(Vec::new);
     if let Some(pos) =
       entry.iter().position(|(_, _, _, _, _, _, orig_lhs, _)| {
-        crate::syntax::expr_to_string(orig_lhs) == lhs_str
+        expr_to_string(orig_lhs) == lhs_str
       })
     {
       entry[pos] = (
@@ -4656,10 +4640,7 @@ pub fn tag_set_delayed_ast(
   let blank_types = vec![1u8; params.len()];
   let cond_strs: Vec<String> = conditions
     .iter()
-    .map(|c| {
-      c.as_ref()
-        .map_or(String::new(), crate::syntax::expr_to_string)
-    })
+    .map(|c| c.as_ref().map_or(String::new(), expr_to_string))
     .collect();
   crate::FUNC_DEFS.with(|m| {
     let mut defs = m.borrow_mut();
@@ -4669,11 +4650,7 @@ pub fn tag_set_delayed_ast(
         // Only remove if conditions also match
         let existing_cond_strs: Vec<String> = c
           .iter()
-          .map(|cond| {
-            cond
-              .as_ref()
-              .map_or(String::new(), crate::syntax::expr_to_string)
-          })
+          .map(|cond| cond.as_ref().map_or(String::new(), expr_to_string))
           .collect();
         existing_cond_strs != cond_strs
       } else {
@@ -4725,7 +4702,7 @@ pub fn tag_unset_ast(tag: &Expr, lhs: &Expr) -> Result<Expr, InterpreterError> {
     _ => return Ok(Expr::Identifier("Null".to_string())),
   };
 
-  let lhs_str = crate::syntax::expr_to_string(lhs);
+  let lhs_str = expr_to_string(lhs);
 
   // Remove matching entries from UPVALUES
   let removed = crate::UPVALUES.with(|m| {
@@ -4743,10 +4720,9 @@ pub fn tag_unset_ast(tag: &Expr, lhs: &Expr) -> Result<Expr, InterpreterError> {
           orig_lhs,
           _orig_body,
         )| {
-          let orig_lhs_str = crate::syntax::expr_to_string(orig_lhs);
+          let orig_lhs_str = expr_to_string(orig_lhs);
           if orig_lhs_str == lhs_str {
-            removed_entries
-              .push((rule_params.clone(), crate::syntax::expr_to_string(body)));
+            removed_entries.push((rule_params.clone(), expr_to_string(body)));
             false
           } else {
             true
@@ -4766,7 +4742,7 @@ pub fn tag_unset_ast(tag: &Expr, lhs: &Expr) -> Result<Expr, InterpreterError> {
       if let Some(entry) = m.borrow_mut().get_mut(&outer_func) {
         for (params, body_str) in &removed {
           entry.retain(|(p, _, _, _, _, b)| {
-            !(p == params && crate::syntax::expr_to_string(b) == *body_str)
+            !(p == params && expr_to_string(b) == *body_str)
           });
         }
       }
@@ -4819,8 +4795,8 @@ pub fn upset_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
     // aborting with an InterpreterError.
     crate::emit_message(&format!(
       "UpSet::normal: Nonatomic expression expected at position 1 in {} ^= {}.",
-      crate::syntax::expr_to_string(lhs),
-      crate::syntax::expr_to_string(rhs)
+      expr_to_string(lhs),
+      expr_to_string(rhs)
     ));
     return Ok(call("UpSet", vec![lhs.clone(), rhs.clone()]));
   };
@@ -4899,7 +4875,7 @@ pub fn upset_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
   if tags.is_empty() {
     return Err(InterpreterError::EvaluationError(format!(
       "UpSet::nosym: {} does not contain a symbol to attach a rule to.",
-      crate::syntax::expr_to_string(lhs)
+      expr_to_string(lhs)
     )));
   }
 
@@ -4924,8 +4900,8 @@ pub fn upset_delayed_ast(
     _ => {
       return Err(InterpreterError::EvaluationError(format!(
         "UpSetDelayed::normal: Nonatomic expression expected at position 1 in {} ^:= {}",
-        crate::syntax::expr_to_string(lhs),
-        crate::syntax::expr_to_string(rhs)
+        expr_to_string(lhs),
+        expr_to_string(rhs)
       )));
     }
   };
@@ -4950,7 +4926,7 @@ pub fn upset_delayed_ast(
   if tags.is_empty() {
     return Err(InterpreterError::EvaluationError(format!(
       "UpSetDelayed::nosym: {} does not contain a symbol to attach a rule to.",
-      crate::syntax::expr_to_string(lhs)
+      expr_to_string(lhs)
     )));
   }
 

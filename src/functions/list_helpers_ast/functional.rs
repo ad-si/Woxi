@@ -196,7 +196,7 @@ fn fixed_point_converged(
 
 /// FixedPoint/FixedPointList default comparison: SameQ semantics.
 fn same_q_default(a: &Expr, b: &Expr) -> bool {
-  crate::syntax::expr_to_string(a) == crate::syntax::expr_to_string(b)
+  expr_to_string(a) == expr_to_string(b)
     || crate::functions::boolean_ast::same_q_real_bigfloat(a, b)
 }
 
@@ -1703,9 +1703,9 @@ pub fn inner_ast(
       crate::emit_message(&format!(
         "Inner::incom: Length {} of dimension 1 in {} is incommensurate with length {} of dimension 1 in {}.",
         l1_len,
-        crate::syntax::expr_to_string(list1),
+        expr_to_string(list1),
         l2_len,
-        crate::syntax::expr_to_string(list2),
+        expr_to_string(list2),
       ));
       Ok(call(
         "Inner",
@@ -2020,8 +2020,7 @@ pub fn find_repeat_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if items.is_empty() {
         return Ok(Expr::List(vec![].into()));
       }
-      let strs: Vec<String> =
-        items.iter().map(crate::syntax::expr_to_string).collect();
+      let strs: Vec<String> = items.iter().map(expr_to_string).collect();
       match find_repeat_period(&strs, min_reps) {
         Some(p) => Ok(Expr::List(items[..p].to_vec().into())),
         None => Ok(Expr::List(vec![].into())),
@@ -2043,10 +2042,8 @@ pub fn find_repeat_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if pairs.is_empty() {
         return Ok(Expr::Association(vec![]));
       }
-      let strs: Vec<String> = pairs
-        .iter()
-        .map(|(_, v)| crate::syntax::expr_to_string(v))
-        .collect();
+      let strs: Vec<String> =
+        pairs.iter().map(|(_, v)| expr_to_string(v)).collect();
       match find_repeat_period(&strs, min_reps) {
         Some(p) => Ok(Expr::Association(pairs[..p].to_vec())),
         None => Ok(Expr::Association(vec![])),
@@ -2055,7 +2052,7 @@ pub fn find_repeat_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       crate::emit_message(&format!(
         "FindRepeat::arg1: The first argument {} to FindRepeat is expected to be a list, an association or a string.",
-        crate::syntax::expr_to_string(arg)
+        expr_to_string(arg)
       ));
       Ok(unevaluated("FindRepeat", args))
     }
@@ -2105,7 +2102,7 @@ pub fn find_transient_repeat_ast(
     _ => {
       crate::emit_message(&format!(
         "FindTransientRepeat::intp: Positive integer expected at position 2 in {}.",
-        crate::syntax::expr_to_string(&unevaluated())
+        expr_to_string(&unevaluated())
       ));
       return Ok(unevaluated());
     }
@@ -2113,8 +2110,7 @@ pub fn find_transient_repeat_ast(
 
   match &args[0] {
     Expr::List(items) => {
-      let strs: Vec<String> =
-        items.iter().map(crate::syntax::expr_to_string).collect();
+      let strs: Vec<String> = items.iter().map(expr_to_string).collect();
       let (t, p) = transient_repeat_split(&strs, n);
       Ok(Expr::List(
         vec![
@@ -2138,10 +2134,8 @@ pub fn find_transient_repeat_ast(
       ))
     }
     Expr::Association(pairs) => {
-      let strs: Vec<String> = pairs
-        .iter()
-        .map(|(_, v)| crate::syntax::expr_to_string(v))
-        .collect();
+      let strs: Vec<String> =
+        pairs.iter().map(|(_, v)| expr_to_string(v)).collect();
       let (t, p) = transient_repeat_split(&strs, n);
       Ok(Expr::List(
         vec![

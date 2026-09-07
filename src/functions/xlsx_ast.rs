@@ -171,7 +171,7 @@ fn write_cell(
       } else {
         // Fall back to the canonical textual form (e.g. unbound symbols,
         // complex numbers, nested expressions).
-        let text = crate::syntax::expr_to_string(value);
+        let text = expr_to_string(value);
         worksheet.write_string(row, col, &text).map_err(to_err)?;
       }
     }
@@ -225,7 +225,7 @@ pub fn xlsx_export_file(
   } else {
     return Err(InterpreterError::EvaluationError(format!(
       "Export: xlsx data must be a list, got {}",
-      crate::syntax::expr_to_string(data)
+      expr_to_string(data)
     )));
   };
 

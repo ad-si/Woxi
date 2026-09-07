@@ -126,7 +126,7 @@ pub fn http_request_extract(func_args: &[Expr], arg: &Expr) -> Option<Expr> {
 fn emit_notprop(spec: &Expr, arg_count: usize) {
   let name = match spec {
     Expr::String(s) => s.clone(),
-    other => crate::syntax::expr_to_string(other),
+    other => expr_to_string(other),
   };
   crate::emit_message_to_stdout(&format!(
     "HTTPRequest::notprop: {name} is not a known property for \
@@ -527,7 +527,7 @@ fn apply_assoc_overrides(parts: &mut UrlParts, pairs: &[(Expr, Expr)]) {
 fn rule_side_to_string(expr: &Expr) -> String {
   match expr {
     Expr::String(s) => s.clone(),
-    other => crate::syntax::expr_to_string(other),
+    other => expr_to_string(other),
   }
 }
 
@@ -628,7 +628,7 @@ pub fn url_read_ast(arg: &Expr) -> Result<Expr, InterpreterError> {
   for (name, value) in request_headers(assoc) {
     let value = match &value {
       Expr::String(s) => s.clone(),
-      other => crate::syntax::expr_to_string(other),
+      other => expr_to_string(other),
     };
     cmd.arg("-H").arg(format!("{name}: {value}"));
   }
@@ -898,7 +898,7 @@ pub fn url_parse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     other => {
       crate::emit_message(&format!(
         "URLParse::invuri: The URI {} is invalid.",
-        crate::syntax::expr_to_output(other)
+        expr_to_output(other)
       ));
       return unevaluated();
     }
@@ -1017,7 +1017,7 @@ pub fn url_parse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let invcomp = || {
     crate::emit_message(&format!(
       "URLParse::invcomp: The component specification {} is invalid.",
-      crate::syntax::expr_to_output(spec)
+      expr_to_output(spec)
     ));
   };
   match spec {

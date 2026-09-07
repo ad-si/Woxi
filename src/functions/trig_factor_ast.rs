@@ -175,7 +175,7 @@ fn negated(e: &Expr) -> Option<&Expr> {
 }
 
 fn same(a: &Expr, b: &Expr) -> bool {
-  crate::syntax::expr_to_string(a) == crate::syntax::expr_to_string(b)
+  expr_to_string(a) == expr_to_string(b)
 }
 
 fn factor(expr: &Expr) -> Option<Expr> {

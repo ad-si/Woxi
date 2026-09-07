@@ -109,7 +109,7 @@ fn error_extremes(all_series: &[Vec<ErrPoint>]) -> Vec<Vec<(f64, f64)>> {
 fn label_string(e: &Expr) -> String {
   match e {
     Expr::String(s) => s.clone(),
-    other => crate::syntax::expr_to_output(other),
+    other => expr_to_output(other),
   }
 }
 
@@ -513,7 +513,7 @@ fn unwrap_labeled(expr: &Expr) -> Option<(Expr, String)> {
   {
     let label = match &args[1] {
       Expr::String(s) => s.clone(),
-      other => crate::syntax::expr_to_output(other),
+      other => expr_to_output(other),
     };
     Some((args[0].clone(), label))
   } else {

@@ -1684,7 +1684,7 @@ fn legendre_q_associated_ast(
   n_expr: &Expr,
   m_expr: &Expr,
   z_expr: &Expr,
-) -> crate::syntax::Expr {
+) -> Expr {
   let unevaluated = || {
     call(
       "LegendreQ",
@@ -3208,7 +3208,7 @@ fn laguerre_eval_f64(n: usize, x: f64) -> f64 {
 
 /// Build symbolic Laguerre polynomial L_n(x)
 /// Output as (c_0 + c_1*x + c_2*x^2 + ...) / n!
-fn laguerre_polynomial_symbolic(n: usize, x: &Expr) -> crate::syntax::Expr {
+fn laguerre_polynomial_symbolic(n: usize, x: &Expr) -> Expr {
   use num_traits::Zero;
   let (n_fact, coeffs) = laguerre_scaled_coefficients(n);
   let mut terms: Vec<Expr> = Vec::new();
@@ -3500,7 +3500,7 @@ fn hermite_coefficients(n: usize) -> Option<Vec<i128>> {
 /// canonical Sin-based form. Treats both `Power[..., Rational[1, 2]]` and
 /// the equivalent BinaryOp tree.
 fn rewrite_sqrt_one_minus_cos_sq(expr: &Expr, theta: &Expr) -> Expr {
-  let theta_str = crate::syntax::expr_to_string(theta);
+  let theta_str = expr_to_string(theta);
   // Match Cos[θ]^2 in any form (BinaryOp::Power or Power FunctionCall).
   let is_cos_theta_sq = |e: &Expr| -> bool {
     let (base, exp) = match e {
@@ -3519,7 +3519,7 @@ fn rewrite_sqrt_one_minus_cos_sq(expr: &Expr, theta: &Expr) -> Expr {
     if !matches!(exp, Expr::Integer(2)) {
       return false;
     }
-    matches!(base, Expr::FunctionCall { name, args } if name == "Cos" && args.len() == 1 && crate::syntax::expr_to_string(&args[0]) == theta_str)
+    matches!(base, Expr::FunctionCall { name, args } if name == "Cos" && args.len() == 1 && expr_to_string(&args[0]) == theta_str)
   };
   let is_one_minus_cos_sq = |e: &Expr| -> bool {
     // Match: 1 - Cos[θ]^2 in either `BinaryOp::Minus` or

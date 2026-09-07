@@ -213,7 +213,7 @@ pub fn thread_binary_op(
         };
         crate::emit_message(&format!(
           "Thread::tdlen: Objects of unequal length in {} cannot be combined.",
-          crate::syntax::expr_to_string(&unevaluated)
+          expr_to_string(&unevaluated)
         ));
         return Ok(unevaluated);
       }

@@ -694,9 +694,7 @@ pub(crate) fn wavelet_filters(spec: &WaveletSpec) -> Option<WaveletFilters> {
 /// WaveletFilterCoefficients[wave], [wave, filtspec] — filter coefficients
 /// as {{n, c_n}, …} pairs. Exact values are returned for the families with
 /// closed-form filters; other families give machine-precision values.
-pub(crate) fn wavelet_filter_coefficients_ast(
-  args: &[Expr],
-) -> crate::syntax::Expr {
+pub(crate) fn wavelet_filter_coefficients_ast(args: &[Expr]) -> Expr {
   // Strip options (WorkingPrecision) from the tail.
   let mut positional: Vec<&Expr> = Vec::new();
   let mut exact_requested = false;
@@ -748,7 +746,7 @@ fn single_filter_result(
   filt_spec: &Expr,
   exact_requested: bool,
   orig_args: &[Expr],
-) -> crate::syntax::Expr {
+) -> Expr {
   let Expr::String(kind) = filt_spec else {
     crate::emit_message(&format!(
       "WaveletFilterCoefficients::invspec: {} is not a valid filter specification.",

@@ -411,7 +411,7 @@ fn write_string_to_channel(
   for arg in &args[1..] {
     match arg {
       Expr::String(s) => text.push_str(s),
-      other => text.push_str(&crate::syntax::expr_to_string(other)),
+      other => text.push_str(&expr_to_string(other)),
     }
   }
   text.push_str(terminator);
@@ -818,12 +818,12 @@ pub fn dispatch_io_functions(
       {
         let sym_name = match &mn_args[0] {
           Expr::Identifier(s) => s.clone(),
-          other => crate::syntax::expr_to_string(other),
+          other => expr_to_string(other),
         };
         let tag = match &mn_args[1] {
           Expr::String(s) => s.clone(),
           Expr::Identifier(s) => s.clone(),
-          other => crate::syntax::expr_to_string(other),
+          other => expr_to_string(other),
         };
         // Evaluate MessageName[sym, tag]. If it resolves to a String, use it
         // as the text; otherwise treat the text as unset.
@@ -969,7 +969,7 @@ pub fn dispatch_io_functions(
           _ => {
             eprintln!(
               "SetEnvironment::setraw: {} must be a string or None.",
-              crate::syntax::expr_to_string(val)
+              expr_to_string(val)
             );
             Some(false)
           }
@@ -1054,7 +1054,7 @@ pub fn dispatch_io_functions(
         Some(other) => {
           crate::emit_message(&format!(
             "ReadString::iterm: Invalid terminator value {}.",
-            crate::syntax::expr_to_string(other)
+            expr_to_string(other)
           ));
           return Some(Ok(unevaluated("ReadString", args)));
         }
@@ -1321,7 +1321,7 @@ pub fn dispatch_io_functions(
       let exprs = &args[..args.len() - 1];
       let content = exprs
         .iter()
-        .map(crate::syntax::expr_to_string)
+        .map(expr_to_string)
         .collect::<Vec<_>>()
         .join("\n");
       let to_write = if exprs.is_empty() {
@@ -1357,7 +1357,7 @@ pub fn dispatch_io_functions(
       let exprs = &args[..args.len() - 1];
       let content = exprs
         .iter()
-        .map(crate::syntax::expr_to_string)
+        .map(expr_to_string)
         .collect::<Vec<_>>()
         .join("\n");
       if !exprs.is_empty() {
@@ -1400,7 +1400,7 @@ pub fn dispatch_io_functions(
         other => {
           return Some(Err(InterpreterError::EvaluationError(format!(
             "Export: first argument must be a filename string, got {}",
-            crate::syntax::expr_to_string(other)
+            expr_to_string(other)
           ))));
         }
       };
@@ -1664,7 +1664,7 @@ pub fn dispatch_io_functions(
           }
         }
         Expr::String(s) => s.clone(),
-        other => crate::syntax::expr_to_string(other),
+        other => expr_to_string(other),
       };
       if let Err(e) = std::fs::write(crate::vfs::resolve(&filename), &content)
         .map_err(|e| InterpreterError::EvaluationError(format!("Export: {e}")))
@@ -1685,7 +1685,7 @@ pub fn dispatch_io_functions(
         other => {
           return Some(Err(InterpreterError::EvaluationError(format!(
             "Export: first argument must be a filename string, got {}",
-            crate::syntax::expr_to_string(other)
+            expr_to_string(other)
           ))));
         }
       };
@@ -2016,7 +2016,7 @@ pub fn dispatch_io_functions(
           }
         }
         _ => {
-          let arg_str = crate::syntax::expr_to_string(&args[0]);
+          let arg_str = expr_to_string(&args[0]);
           crate::emit_message(&format!(
             "Find::stream: {arg_str} is not a string, SocketObject, InputStream[ ] or OutputStream[ ]."
           ));
@@ -2051,8 +2051,7 @@ pub fn dispatch_io_functions(
       // $Failed with the matching wolframscript message; a failed file in
       // a file LIST contributes a $Failed element instead.
       let failed = || Some(Ok(Expr::Identifier("$Failed".to_string())));
-      let call_display =
-        || crate::syntax::expr_to_output(&unevaluated("FindList", args));
+      let call_display = || expr_to_output(&unevaluated("FindList", args));
       if args.len() < 2 {
         let (tag, noun) = if args.len() == 1 {
           ("argtu", "1 argument")
@@ -2073,7 +2072,7 @@ pub fn dispatch_io_functions(
           if !is_opt {
             crate::emit_message(&format!(
               "FindList::nonopt: Options expected (instead of {}) beyond position 3 in {}. An option must be a rule or a list of rules.",
-              crate::syntax::expr_to_string(extra),
+              expr_to_string(extra),
               call_display()
             ));
             return failed();
@@ -2119,7 +2118,7 @@ pub fn dispatch_io_functions(
         other => {
           crate::emit_message(&format!(
             "FindList::stream: {} is not a string, SocketObject, InputStream[ ] or OutputStream[ ].",
-            crate::syntax::expr_to_string(other)
+            expr_to_string(other)
           ));
           return failed();
         }
@@ -2133,7 +2132,7 @@ pub fn dispatch_io_functions(
         let Expr::String(path) = f else {
           crate::emit_message(&format!(
             "FindList::stream: {} is not a string, SocketObject, InputStream[ ] or OutputStream[ ].",
-            crate::syntax::expr_to_string(f)
+            expr_to_string(f)
           ));
           if !is_list {
             return failed();
@@ -2430,7 +2429,7 @@ pub fn dispatch_io_functions(
           for item in items {
             match item {
               Expr::String(s) => strs.push(s.clone()),
-              other => strs.push(crate::syntax::expr_to_string(other)),
+              other => strs.push(expr_to_string(other)),
             }
           }
           strs
@@ -2473,11 +2472,11 @@ pub fn dispatch_io_functions(
                 } => {
                   let key = match pattern.as_ref() {
                     Expr::String(s) => s.clone(),
-                    other => crate::syntax::expr_to_string(other),
+                    other => expr_to_string(other),
                   };
                   let val = match replacement.as_ref() {
                     Expr::String(s) => s.clone(),
-                    other => crate::syntax::expr_to_string(other),
+                    other => expr_to_string(other),
                   };
                   pairs.push((key, val));
                 }
@@ -2887,7 +2886,7 @@ pub fn dispatch_io_functions(
         other => {
           return Some(Err(InterpreterError::EvaluationError(format!(
             "StringToStream: argument must be a string, got {}",
-            crate::syntax::expr_to_string(other)
+            expr_to_string(other)
           ))));
         }
       };
@@ -2945,7 +2944,7 @@ pub fn dispatch_io_functions(
               return Some(Ok(Expr::String(name)));
             }
             None => {
-              let stream_str = crate::syntax::expr_to_string(&args[0]);
+              let stream_str = expr_to_string(&args[0]);
               crate::emit_message(&format!("{stream_str} is not open."));
               return Some(Ok(unevaluated("Close", args)));
             }
@@ -2957,7 +2956,7 @@ pub fn dispatch_io_functions(
         }
         _ => {
           // Anything else is a type error — match wolframscript's message.
-          let arg_str = crate::syntax::expr_to_string(&args[0]);
+          let arg_str = expr_to_string(&args[0]);
           crate::emit_message_to_stdout(&format!(
             "Close::stream: {arg_str} is not a string, SocketObject, InputStream[ ] or OutputStream[ ]."
           ));
@@ -2980,7 +2979,7 @@ pub fn dispatch_io_functions(
             if let Some(pos) = get_stream_position(*id as usize) {
               return Some(Ok(Expr::Integer(pos as i128)));
             }
-            let stream_str = crate::syntax::expr_to_string(stream);
+            let stream_str = expr_to_string(stream);
             crate::emit_message(&format!(
               "StreamPosition::openx: {stream_str} is not open."
             ));
@@ -3031,7 +3030,7 @@ pub fn dispatch_io_functions(
                   if p > stream_len {
                     // wolframscript emits SetStreamPosition::stmrng
                     // and clamps the position to the end of stream.
-                    let stream_str = crate::syntax::expr_to_string(stream);
+                    let stream_str = expr_to_string(stream);
                     crate::emit_message(&format!(
                       "SetStreamPosition::stmrng: Cannot set the current point in {stream_str} to position {p}; the requested position exceeds the length of the stream."
                     ));
@@ -3045,7 +3044,7 @@ pub fn dispatch_io_functions(
               set_stream_position(id_usize, pos);
               return Some(Ok(Expr::Integer(pos as i128)));
             }
-            let stream_str = crate::syntax::expr_to_string(stream);
+            let stream_str = expr_to_string(stream);
             crate::emit_message(&format!(
               "SetStreamPosition::openx: {stream_str} is not open."
             ));
@@ -3240,7 +3239,7 @@ pub fn dispatch_io_functions(
       };
       let mut content = String::new();
       for arg in &args[1..] {
-        content.push_str(&crate::syntax::expr_to_string(arg));
+        content.push_str(&expr_to_string(arg));
       }
       content.push('\n');
       if let Err(e) = write_targets_bytes(&targets, content.as_bytes(), "Write")
@@ -3323,14 +3322,14 @@ pub fn dispatch_io_functions(
             {
               let params_str = pattern_args
                 .iter()
-                .map(crate::syntax::expr_to_string)
+                .map(expr_to_string)
                 .collect::<Vec<_>>()
                 .join(", ");
               sym_lines.push(format!(
                 "{}[{}] := {}",
                 sym,
                 params_str,
-                crate::syntax::expr_to_string(&display_body)
+                expr_to_string(&display_body)
               ));
               continue;
             }
@@ -3351,7 +3350,7 @@ pub fn dispatch_io_functions(
                   && operands.len() == 2
                 {
                   // Literal value dispatch: use the value directly
-                  return crate::syntax::expr_to_string(&operands[1]);
+                  return expr_to_string(&operands[1]);
                 }
 
                 let head = heads.get(i).and_then(|h| h.as_ref());
@@ -3365,19 +3364,12 @@ pub fn dispatch_io_functions(
                 };
 
                 if let Some(def) = default {
-                  param_str = format!(
-                    "{}:{}",
-                    param_str,
-                    crate::syntax::expr_to_string(def)
-                  );
+                  param_str = format!("{}:{}", param_str, expr_to_string(def));
                 }
 
                 if let Some(cond) = condition {
-                  param_str = format!(
-                    "{} /; {}",
-                    param_str,
-                    crate::syntax::expr_to_string(cond)
-                  );
+                  param_str =
+                    format!("{} /; {}", param_str, expr_to_string(cond));
                 }
 
                 param_str
@@ -3385,7 +3377,7 @@ pub fn dispatch_io_functions(
               .collect::<Vec<_>>()
               .join(", ");
 
-            let body_str = crate::syntax::expr_to_string(body);
+            let body_str = expr_to_string(body);
 
             // Use = for literal-dispatch (all params are _dvN), := otherwise
             let is_literal_dispatch = params
@@ -3405,14 +3397,12 @@ pub fn dispatch_io_functions(
         });
         if let Some(stored) = own_value {
           let val_str = match stored {
-            crate::StoredValue::ExprVal(e) => crate::syntax::expr_to_string(&e),
+            crate::StoredValue::ExprVal(e) => expr_to_string(&e),
             crate::StoredValue::Raw(val) => val,
             crate::StoredValue::Association(items) => {
               let parts: Vec<String> = items
                 .iter()
-                .map(|(k, v)| {
-                  format!("{} -> {}", k, crate::syntax::expr_to_string(v))
-                })
+                .map(|(k, v)| format!("{} -> {}", k, expr_to_string(v)))
                 .collect();
               format!("<|{}|>", parts.join(", "))
             }
@@ -3428,7 +3418,7 @@ pub fn dispatch_io_functions(
         {
           let opts_str = opts
             .iter()
-            .map(crate::syntax::expr_to_string)
+            .map(expr_to_string)
             .collect::<Vec<_>>()
             .join(", ");
           sym_lines.push(format!("Options[{sym}] = {{{opts_str}}}"));
@@ -3718,7 +3708,7 @@ pub fn dispatch_io_functions(
         other => {
           crate::emit_message(&format!(
             "FileSize::badfile: The specified argument, {}, should be a valid string or File object.",
-            crate::syntax::expr_to_output(other)
+            expr_to_output(other)
           ));
           return unevaluated();
         }
@@ -3912,7 +3902,7 @@ pub fn dispatch_io_functions(
       if let Some(arg) = args.first() {
         let prompt = match arg {
           Expr::String(p) => p.clone(),
-          _ => crate::syntax::expr_to_string(arg),
+          _ => expr_to_string(arg),
         };
         if !crate::is_quiet_print() {
           use std::io::Write as _;
@@ -4132,14 +4122,14 @@ fn csv_cell(expr: &Expr, quote_strings: bool) -> String {
     // Machine numbers are written bare; a bigger integer is quoted, like
     // every other non-machine value.
     Expr::Integer(n) if i64::try_from(*n).is_ok() => n.to_string(),
-    Expr::Real(_) => crate::syntax::expr_to_string(expr),
+    Expr::Real(_) => expr_to_string(expr),
     // The booleans are lower-cased and left unquoted.
     Expr::Identifier(name) if name == "True" || name == "False" => {
       name.to_lowercase()
     }
     // A list is written out; any other compound expression has no CSV
     // representation and becomes the placeholder `-Head-`.
-    Expr::List(_) => quoted(crate::syntax::expr_to_string(expr)),
+    Expr::List(_) => quoted(expr_to_string(expr)),
     Expr::FunctionCall { .. }
     | Expr::BinaryOp { .. }
     | Expr::UnaryOp { .. }
@@ -4149,14 +4139,11 @@ fn csv_cell(expr: &Expr, quote_strings: bool) -> String {
     {
       let head =
         crate::functions::predicate_ast::head_ast(std::slice::from_ref(expr))
-          .map_or_else(
-            |_| "Expression".to_string(),
-            |h| crate::syntax::expr_to_string(&h),
-          );
+          .map_or_else(|_| "Expression".to_string(), |h| expr_to_string(&h));
       quoted(format!("-{head}-"))
     }
     // Symbols, rationals and the other atoms keep their text, quoted.
-    _ => quoted(crate::syntax::expr_to_string(expr)),
+    _ => quoted(expr_to_string(expr)),
   }
 }
 
@@ -4298,7 +4285,7 @@ fn url_build_from_parts(entries: &[(Expr, Expr)]) -> String {
   };
   let text = |e: &Expr| match e {
     Expr::String(s) => s.clone(),
-    other => crate::syntax::expr_to_string(other),
+    other => expr_to_string(other),
   };
 
   let scheme = lookup("Scheme").map(&text);
@@ -4431,7 +4418,7 @@ fn flatten_file_patterns(pattern: &Expr, out: &mut Vec<Expr>) {
       }
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::Alternatives,
+      op: BinaryOperator::Alternatives,
       left,
       right,
     } => {
