@@ -380,46 +380,18 @@ pub fn lookup_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  // If the second argument is a list of keys, look up each one
-  if let Expr::List(keys) = &args[1]
-    && let Expr::Association(_) = &args[0]
-  {
-    let results: Result<Vec<Expr>, InterpreterError> = keys
-      .iter()
-      .map(|key| {
-        let mut new_args = vec![args[0].clone(), key.clone()];
-        if args.len() >= 3 {
-          new_args.push(args[2].clone());
-        }
-        lookup_ast(&new_args)
-      })
-      .collect();
-    return Ok(Expr::List(results?.into()));
-  }
-
-  let key_str = crate::syntax::expr_to_string(&args[1]);
-  // Compare keys structurally: a string key ("a") must NOT match a symbol
-  // key (a), matching wolframscript (and Woxi's part-access path).
-  let key_cmp = key_str.as_str();
-
   match &args[0] {
     Expr::Association(items) => {
-      for (k, v) in items {
-        let k_str = crate::syntax::expr_to_string(k);
-        let k_cmp = k_str.as_str();
-        if k_cmp == key_cmp {
-          return Ok(assoc_entry_value(k, v));
-        }
+      // A list of keys looks each one up — once: a key that is itself a
+      // list (`{"c", 3}`) is one key, not a list of keys to thread over.
+      if let Expr::List(keys) = &args[1] {
+        let results: Vec<Expr> = keys
+          .iter()
+          .map(|key| lookup_key(items, key, args.get(2)))
+          .collect();
+        return Ok(Expr::List(results.into()));
       }
-      // Default value if provided
-      if args.len() >= 3 {
-        return Ok(args[2].clone());
-      }
-      // Return Missing["KeyAbsent", key]
-      Ok(call(
-        "Missing",
-        vec![Expr::String("KeyAbsent".to_string()), args[1].clone()],
-      ))
+      Ok(lookup_key(items, &args[1], args.get(2)))
     }
     Expr::List(items) => {
       // Thread Lookup over a list of associations
@@ -440,6 +412,30 @@ pub fn lookup_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       &args[0],
       args,
     )),
+  }
+}
+
+/// The value stored under `key`, the given default when there is none, and
+/// `Missing["KeyAbsent", key]` without one. Keys compare structurally: a
+/// string key `"a"` does not match a symbol key `a`, matching wolframscript
+/// (and Woxi's part-access path).
+fn lookup_key(
+  items: &[(Expr, Expr)],
+  key: &Expr,
+  default: Option<&Expr>,
+) -> Expr {
+  let key_str = crate::syntax::expr_to_string(key);
+  for (k, v) in items {
+    if crate::syntax::expr_to_string(k) == key_str {
+      return assoc_entry_value(k, v);
+    }
+  }
+  match default {
+    Some(d) => d.clone(),
+    None => call(
+      "Missing",
+      vec![Expr::String("KeyAbsent".to_string()), key.clone()],
+    ),
   }
 }
 

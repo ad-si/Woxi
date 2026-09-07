@@ -5490,3 +5490,36 @@ mod free_q_sees_operator_forms {
     );
   }
 }
+
+mod standalone_sequence_patterns {
+  use super::*;
+
+  // A sequence pattern on its own matches an expression as a one-element
+  // sequence, the way wolframscript does.
+  #[test]
+  fn repeated_matches_a_single_expression() {
+    assert_eq!(interpret("MatchQ[a -> 1, _Rule..]").unwrap(), "True");
+    assert_eq!(interpret("MatchQ[a -> 1, r:(_Rule)..]").unwrap(), "True");
+    assert_eq!(interpret("MatchQ[1, RepeatedNull[_]]").unwrap(), "True");
+    assert_eq!(interpret("MatchQ[{1, 2}, _List..]").unwrap(), "True");
+    assert_eq!(interpret("MatchQ[a, _Rule..]").unwrap(), "False");
+    assert_eq!(interpret("MatchQ[1, Repeated[_, {2}]]").unwrap(), "False");
+  }
+
+  #[test]
+  fn pattern_sequence_needs_its_element_count() {
+    assert_eq!(interpret("MatchQ[1, PatternSequence[_]]").unwrap(), "True");
+    assert_eq!(
+      interpret("MatchQ[1, PatternSequence[_, _]]").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn cases_with_a_repeated_pattern() {
+    assert_eq!(
+      interpret("Cases[{a -> 1, 2, b :> 3}, _Rule..]").unwrap(),
+      "{a -> 1}"
+    );
+  }
+}

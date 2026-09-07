@@ -251,6 +251,7 @@ fn import_format_name(name: &str) -> Option<&'static str> {
     "TSV" => "tsv",
     "JSON" | "RawJSON" => "json",
     "SVG" => "svg",
+    "PDF" => "pdf",
     "XLSX" => "xlsx",
     "XLS" => "xls",
     "ODS" => "ods",
@@ -339,6 +340,73 @@ fn import_svg(path: &str, is_url: bool) -> Result<Expr, InterpreterError> {
   }
   let svg = import_read_text(path, is_url)?;
   Ok(crate::graphics_result(svg))
+}
+
+/// `Import[pdf, element]`: the pages as `Graphics` by default or for
+/// `"Pages"`, one page for `{"Pages", n}`, the page count, or the text.
+#[cfg(not(target_arch = "wasm32"))]
+fn import_pdf_element(
+  path: &str,
+  element: Option<&Expr>,
+) -> Result<Expr, InterpreterError> {
+  if !crate::vfs::exists(path) {
+    crate::emit_message(&format!(
+      "Import::nffil: File {path} not found during Import."
+    ));
+    return Ok(Expr::Identifier("$Failed".to_string()));
+  }
+  use crate::functions::pdf_import;
+  let pages =
+    |path: &str| pdf_import::import_pages(path).map(|p| Expr::List(p.into()));
+  match element {
+    None => pages(path),
+    Some(Expr::String(e)) => match e.as_str() {
+      "Pages" | "Graphics" => pages(path),
+      "PageCount" => {
+        pdf_import::page_count(path).map(|n| Expr::Integer(n as i128))
+      }
+      "Plaintext" | "Text" => pdf_import::plaintext(path).map(Expr::String),
+      "Elements" => Ok(Expr::List(
+        ["PageCount", "Pages", "Plaintext"]
+          .iter()
+          .map(|e| Expr::String((*e).to_string()))
+          .collect::<Vec<_>>()
+          .into(),
+      )),
+      _ => {
+        crate::emit_message(&format!(
+          "Import::noelem: The Import element \"{e}\" is not present when importing as PDF."
+        ));
+        Ok(Expr::Identifier("$Failed".to_string()))
+      }
+    },
+    // {"Pages", n} — one page, counted from 1.
+    Some(Expr::List(items))
+      if items.len() == 2
+        && matches!(&items[0], Expr::String(e) if e == "Pages")
+        && matches!(&items[1], Expr::Integer(_)) =>
+    {
+      let Expr::Integer(n) = &items[1] else {
+        unreachable!()
+      };
+      let all = pdf_import::import_pages(path)?;
+      if let Some(page) = usize::try_from(*n - 1).ok().and_then(|i| all.get(i))
+      {
+        return Ok(page.clone());
+      }
+      crate::emit_message(&format!(
+        "Import::noelem: The Import element {{\"Pages\", {n}}} is not present when importing as PDF."
+      ));
+      Ok(Expr::Identifier("$Failed".to_string()))
+    }
+    Some(other) => {
+      crate::emit_message(&format!(
+        "Import::noelem: The Import element {} is not present when importing as PDF.",
+        crate::syntax::expr_to_string(other)
+      ));
+      Ok(Expr::Identifier("$Failed".to_string()))
+    }
+  }
 }
 
 /// Read the textual contents of a path that is either a local file or an
@@ -1142,6 +1210,28 @@ pub fn dispatch_image_functions(
       let _ = std::fs::remove_file(&temp);
       return result;
     }
+    // Import[file, (elem,) opt -> value, …] — the options (CharacterEncoding
+    // and the like) do not change what is read here; import the file as
+    // the arguments before them say.
+    "Import"
+      if args.len() >= 2
+        && matches!(
+          args[args.len() - 1],
+          Expr::Rule { .. } | Expr::RuleDelayed { .. }
+        ) =>
+    {
+      let core: Vec<Expr> = args
+        .iter()
+        .take_while(|a| {
+          !matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+        })
+        .cloned()
+        .collect();
+      if core.is_empty() || core.len() > 2 {
+        return Some(Ok(unevaluated("Import", args)));
+      }
+      return dispatch_image_functions("Import", &core);
+    }
     "Import" if args.len() == 1 => {
       let Some(path) = import_path_spec(&args[0]) else {
         return Some(Ok(unevaluated("Import", args)));
@@ -1154,6 +1244,19 @@ pub fn dispatch_image_functions(
       #[cfg(target_arch = "wasm32")]
       if !is_url {
         return Some(import_virtual(&path, None));
+      }
+
+      if ext == "pdf" && !is_url {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+          return Some(import_pdf_element(&path, None));
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+          return Some(Err(InterpreterError::EvaluationError(
+            "Import: PDF import is not available in the browser".into(),
+          )));
+        }
       }
 
       if ext == "svg" {
@@ -1466,6 +1569,23 @@ pub fn dispatch_image_functions(
             )));
           }
         }
+      }
+
+      // A PDF's elements: "Pages" (the default), "PageCount", "Plaintext".
+      #[cfg(not(target_arch = "wasm32"))]
+      if (file_ext == "pdf" || ext == "pdf") && !is_url {
+        let element: Option<Expr> = match &args[1] {
+          Expr::List(items) if matches!(items.first(), Some(Expr::String(f)) if f == "PDF") => {
+            match items.len() {
+              1 => None,
+              2 => Some(items[1].clone()),
+              _ => Some(Expr::List(items[1..].to_vec().into())),
+            }
+          }
+          Expr::String(f) if f == "PDF" => None,
+          other => Some(other.clone()),
+        };
+        return Some(import_pdf_element(&path, element.as_ref()));
       }
 
       // Formats with handling of their own have claimed the call by now.

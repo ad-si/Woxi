@@ -11692,6 +11692,24 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // return the rendered result directly. Single-arg Show just passes through.
   if merged_primitives.is_empty() && !rendered_graphics.is_empty() {
     if rendered_graphics.len() == 1 {
+      // `Show[g, ImageSize -> …]` on a picture with no primitives to
+      // redraw (an imported SVG or PDF page) resizes the picture it has.
+      let image_size = merged_options.iter().find_map(|opt| {
+        option_name_value(opt)
+          .filter(|(name, _)| *name == "ImageSize")
+          .map(|(_, value)| value.into_owned())
+      });
+      if let (Some(size), Expr::Graphics { svg, .. }) =
+        (image_size, &rendered_graphics[0])
+        && let Some(resized) = svg_with_image_size(svg, &size)
+      {
+        let mut shown = rendered_graphics[0].clone();
+        if let Expr::Graphics { svg, .. } = &mut shown {
+          *svg = resized;
+        }
+        crate::capture_graphics(shown_svg(&shown));
+        return Ok(shown);
+      }
       return Ok(rendered_graphics[0].clone());
     }
     // More than one opaque pre-rendered graphic (e.g. `Show[{regionPlot,
@@ -14141,6 +14159,136 @@ fn parse_svg_numeric_attr(svg: &str, attr: &str) -> Option<f64> {
     .find(|c: char| !(c.is_ascii_digit() || c == '.' || c == '-'))
     .unwrap_or(raw.len());
   raw[..numeric_end].parse().ok()
+}
+
+/// The options a rendered graphic was drawn with: the ones of its symbolic
+/// `Graphics[prims, opts…]` form, or — for a picture that has no such form,
+/// like an imported page — its `ImageSize`, read off the rendering.
+pub fn graphics_options(expr: &Expr) -> Option<Vec<Expr>> {
+  let option_rules = |args: &[Expr]| -> Vec<Expr> {
+    splice_option_lists(args)
+      .iter()
+      .skip(1)
+      .filter(|a| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+      .cloned()
+      .collect()
+  };
+  // A `Graphics[…]` call that has not been rendered yet.
+  if let Expr::FunctionCall { name, args } = expr
+    && (name == "Graphics" || name == "Graphics3D")
+    && !args.is_empty()
+  {
+    let args: Vec<Expr> = args.iter().cloned().collect();
+    return Some(option_rules(&args));
+  }
+  let Expr::Graphics { svg, structure, .. } = expr else {
+    return None;
+  };
+  if let Some(structure) = structure
+    && let Expr::FunctionCall { name, args } = structure.as_ref()
+    && (name == "Graphics" || name == "Graphics3D")
+  {
+    let args: Vec<Expr> = args.iter().cloned().collect();
+    return Some(option_rules(&args));
+  }
+  let (w, h) = svg_natural_size(svg)?;
+  let size = |v: f64| {
+    if v.fract() == 0.0 {
+      Expr::Integer(v as i128)
+    } else {
+      Expr::Real(v)
+    }
+  };
+  Some(vec![Expr::Rule {
+    pattern: Box::new(Expr::Identifier("ImageSize".to_string())),
+    replacement: Box::new(Expr::List(vec![size(w), size(h)].into())),
+  }])
+}
+
+/// The SVG of a rendered graphic.
+fn shown_svg(expr: &Expr) -> &str {
+  match expr {
+    Expr::Graphics { svg, .. } => svg,
+    _ => "",
+  }
+}
+
+/// `svg` displayed at an `ImageSize`: the root element's width and height
+/// are replaced, and its picture scales into them through a viewBox (one
+/// made from the old size when it had none). A width alone keeps the
+/// picture's aspect ratio.
+pub(crate) fn svg_with_image_size(svg: &str, size: &Expr) -> Option<String> {
+  use std::fmt::Write;
+  let (nat_w, nat_h) = svg_natural_size(svg)?;
+  // The size may still be arithmetic (`ImageSize -> 2. {w, h}` scales a
+  // picture); evaluate it before reading it.
+  let evaluated = match size {
+    Expr::List(_) | Expr::Integer(_) | Expr::Real(_) | Expr::Identifier(_) => {
+      None
+    }
+    other => evaluate_expr_to_expr(other).ok(),
+  };
+  let size = evaluated.as_ref().unwrap_or(size);
+  // An explicit `{w, h}` keeps its exact values (an imported page is sized
+  // in fractional points); any other spec goes through the usual parsing.
+  let numeric = |e: &Expr| match e {
+    Expr::Integer(n) => Some(*n as f64),
+    Expr::Real(r) => Some(*r),
+    _ => None,
+  };
+  let explicit = match size {
+    Expr::List(items) if items.len() == 2 => {
+      match (numeric(&items[0]), numeric(&items[1])) {
+        (Some(w), Some(h)) if w > 0.0 && h > 0.0 => Some((w, h)),
+        _ => None,
+      }
+    }
+    _ => None,
+  };
+  let (w, h) = if let Some(size) = explicit {
+    size
+  } else {
+    let (w, h, _) = crate::functions::plot::parse_image_size(
+      size,
+      nat_w.round().max(1.0) as u32,
+      nat_h.round().max(1.0) as u32,
+    )?;
+    (f64::from(w), f64::from(h))
+  };
+  let header = svg_root_header(svg)?;
+  let header_start = svg.find("<svg")?;
+  let header_end = header_start + header.len();
+  let mut new_header = String::from("<svg");
+  let mut rest = header["<svg".len()..].to_string();
+  for attr in ["width", "height"] {
+    rest = remove_svg_attr(&rest, attr);
+  }
+  let _ = write!(new_header, " width=\"{w}\" height=\"{h}\"");
+  if find_svg_attr(header, "viewBox").is_none() {
+    let _ = write!(new_header, " viewBox=\"0 0 {nat_w} {nat_h}\"");
+  }
+  new_header.push_str(&rest);
+  Some(format!(
+    "{}{}{}",
+    &svg[..header_start],
+    new_header,
+    &svg[header_end..]
+  ))
+}
+
+/// `header` without its `attr="…"` (or single-quoted) attribute.
+fn remove_svg_attr(header: &str, attr: &str) -> String {
+  for quote in ['"', '\''] {
+    let needle = format!(" {attr}={quote}");
+    if let Some(start) = header.find(&needle) {
+      let value_start = start + needle.len();
+      if let Some(rel_end) = header[value_start..].find(quote) {
+        let end = value_start + rel_end + 1;
+        return format!("{}{}", &header[..start], &header[end..]);
+      }
+    }
+  }
+  header.to_string()
 }
 
 /// The natural display size of a rendered picture, in pixels. That is the

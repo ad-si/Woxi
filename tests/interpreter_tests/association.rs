@@ -2341,3 +2341,58 @@ mod association_lookup_chains {
     );
   }
 }
+
+mod lookup_with_list_keys {
+  use super::*;
+
+  // A key that is itself a list is one key: `Lookup[assoc, {key1, key2}]`
+  // looks each of them up once and does not thread into them.
+  #[test]
+  fn list_valued_keys_are_looked_up_whole() {
+    assert_eq!(
+      interpret("Lookup[<|{1, 2} -> x, 3 -> y|>, {{1, 2}, 3}]").unwrap(),
+      "{x, y}"
+    );
+    assert_eq!(
+      interpret("Lookup[<|{1, 2} -> x|>, {1, 2}]").unwrap(),
+      "{Missing[KeyAbsent, 1], Missing[KeyAbsent, 2]}"
+    );
+    assert_eq!(
+      interpret("Lookup[<|{1, 2} -> x|>, {{1, 2}, {3}}, 0]").unwrap(),
+      "{x, 0}"
+    );
+  }
+}
+
+mod append_to_association {
+  use super::*;
+
+  #[test]
+  fn append_to_adds_an_entry() {
+    clear_state();
+    assert_eq!(
+      interpret("ata = <|\"a\" -> 1|>; AppendTo[ata, \"b\" -> 2]; ata")
+        .unwrap(),
+      "<|a -> 1, b -> 2|>"
+    );
+    clear_state();
+    assert_eq!(
+      interpret("atb = <|\"a\" -> 1|>; PrependTo[atb, \"b\" -> 2]; atb")
+        .unwrap(),
+      "<|b -> 2, a -> 1|>"
+    );
+  }
+
+  #[test]
+  fn append_to_inside_a_scanned_pure_function() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "atc = <|\"a\" -> 1|>; \
+         Scan[If[True, AppendTo[atc, #]]&, {\"b\" -> 2, \"c\" -> 3}]; atc"
+      )
+      .unwrap(),
+      "<|a -> 1, b -> 2, c -> 3|>"
+    );
+  }
+}

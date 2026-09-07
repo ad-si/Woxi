@@ -2795,7 +2795,13 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
       // has to be decided at read time by the context resolver (which maps
       // it back to the plain `x` that Woxi stores a Global symbol under).
       let s = pair.as_str();
-      let name = s.strip_prefix('`').unwrap_or(s).to_string();
+      // A leading backtick followed by a sub-context (`` `Info`$Version ``)
+      // stays relative: it names a symbol in a sub-context of `$Context`,
+      // and only the context resolver knows which context that is.
+      let name = match s.strip_prefix('`') {
+        Some(rest) if !rest.contains('`') => rest.to_string(),
+        _ => s.to_string(),
+      };
       // Expand any embedded `\[Name]` segments to their Unicode chars so
       // `Z\[Infinity]` becomes the single identifier `Z∞`, matching
       // wolframscript's identifier-character semantics.

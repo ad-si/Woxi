@@ -598,12 +598,18 @@ pub fn apply_function_to_arg(
 ) -> Result<Expr, InterpreterError> {
   match func {
     Expr::Identifier(name) => {
-      // Check if this identifier is a variable holding another function/value
+      // Check if this identifier is a variable holding another function/value.
+      // The symbol is evaluated rather than its stored body applied as it
+      // stands: a delayed value (`tpl := tpl = StringTemplate[…]`, the
+      // memoization idiom) yields the function it computes, not the `Set`.
       let resolved = ENV.with(|e| e.borrow().get(name).cloned());
       match &resolved {
         Some(StoredValue::ExprVal(expr)) if !matches!(expr, Expr::Identifier(n) if n == name) =>
         {
-          return apply_function_to_arg(expr, arg);
+          let value = evaluate_expr_to_expr(func)?;
+          if !matches!(&value, Expr::Identifier(n) if n == name) {
+            return apply_function_to_arg(&value, arg);
+          }
         }
         _ => {}
       }

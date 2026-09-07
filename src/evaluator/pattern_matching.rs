@@ -2843,6 +2843,37 @@ fn merge_option_rules(defaults: &[Expr], explicit: &[Expr]) -> Vec<Expr> {
   result
 }
 
+/// Whether `pattern` is a `Repeated`, `RepeatedNull` or `PatternSequence`
+/// (possibly named, or under `Longest`/`Shortest`) — the sequence patterns
+/// that can stand in for a single expression outside a call.
+fn is_standalone_sequence_pattern(pattern: &Expr) -> bool {
+  match pattern {
+    Expr::FunctionCall { name, args } => match name.as_str() {
+      "Repeated" | "RepeatedNull" => !args.is_empty() && args.len() <= 2,
+      "PatternSequence" => true,
+      "Pattern" if args.len() == 2 => is_standalone_sequence_pattern(&args[1]),
+      "Longest" | "Shortest" if args.len() == 1 => {
+        is_standalone_sequence_pattern(&args[0])
+      }
+      _ => false,
+    },
+    _ => false,
+  }
+}
+
+/// The elements a standalone sequence pattern stands for inside a list:
+/// a `PatternSequence[p1, p2, …]` spreads into its members (so that
+/// `{1}` against `{_, _}` fails outright instead of re-entering the
+/// standalone rule for ever), anything else is the one element it is.
+fn sequence_pattern_elements(pattern: &Expr) -> Vec<Expr> {
+  match pattern {
+    Expr::FunctionCall { name, args } if name == "PatternSequence" => {
+      args.iter().flat_map(sequence_pattern_elements).collect()
+    }
+    other => vec![other.clone()],
+  }
+}
+
 /// Check if a pattern is a sequence pattern (BlankSequence or BlankNullSequence).
 fn get_sequence_info(pattern: &Expr) -> Option<SeqInfo> {
   match pattern {
@@ -3951,6 +3982,16 @@ fn match_pattern_impl(
     && args.len() == 1
   {
     return match_pattern_impl(expr, &args[0]);
+  }
+  // A sequence pattern on its own (`_Rule..`, `RepeatedNull[_]`,
+  // `r : PatternSequence[_, _]`) matches an expression as a one-element
+  // sequence: `MatchQ[a -> 1, _Rule..]` is True. The list matcher already
+  // runs a sequence against elements, so match `{expr}` against `{pattern}`.
+  if is_standalone_sequence_pattern(pattern) {
+    return match_pattern_impl(
+      &Expr::List(vec![expr.clone()].into()),
+      &Expr::List(sequence_pattern_elements(pattern).into()),
+    );
   }
   // Longest[p] / Shortest[p] only pick which split of a sequence to try
   // first (handled where the sequence is matched); around anything else

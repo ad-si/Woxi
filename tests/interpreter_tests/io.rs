@@ -10740,3 +10740,285 @@ mod import_named_format {
     std::fs::remove_file(path).ok();
   }
 }
+
+mod import_options {
+  use super::*;
+
+  // Options such as CharacterEncoding ride along after the element.
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn text_import_accepts_character_encoding() {
+    let dir = std::env::temp_dir()
+      .join(format!("woxi_import_options_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("greeting.txt");
+    std::fs::write(&path, "héllo\n").unwrap();
+    let p = unixify(&path.display().to_string());
+    assert_eq!(
+      interpret(&format!(
+        r#"Import["{p}", "Text", CharacterEncoding -> "UTF-8"]"#
+      ))
+      .unwrap(),
+      "héllo"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+  }
+}
+
+mod run_process {
+  use super::*;
+
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn reports_exit_code_and_both_streams() {
+    let result = interpret(
+      r#"ToString[RunProcess[{"sh", "-c", "printf out; printf err >&2; exit 3"}], InputForm]"#,
+    )
+    .unwrap();
+    assert_eq!(
+      result,
+      r#"<|"ExitCode" -> 3, "StandardOutput" -> "out", "StandardError" -> "err"|>"#
+    );
+  }
+
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn a_property_picks_one_result() {
+    assert_eq!(
+      interpret(
+        r#"RunProcess[{"sh", "-c", "printf hello"}, "StandardOutput"]"#
+      )
+      .unwrap(),
+      "hello"
+    );
+    assert_eq!(
+      interpret(r#"RunProcess[{"sh", "-c", "exit 4"}, "ExitCode"]"#).unwrap(),
+      "4"
+    );
+    assert_eq!(
+      interpret(r#"Keys[RunProcess[{"true"}, All]]"#).unwrap(),
+      "{ExitCode, StandardOutput, StandardError}"
+    );
+  }
+
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn input_is_fed_to_standard_input() {
+    assert_eq!(
+      interpret(r#"RunProcess[{"cat"}, "StandardOutput", "fed input"]"#)
+        .unwrap(),
+      "fed input"
+    );
+  }
+
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn process_directory_and_environment_options() {
+    assert_eq!(
+      interpret(
+        r#"StringTrim@RunProcess[{"sh", "-c", "pwd"}, "StandardOutput", ProcessDirectory -> "/"]"#
+      )
+      .unwrap(),
+      "/"
+    );
+    assert_eq!(
+      interpret(
+        r#"StringTrim@RunProcess[{"sh", "-c", "echo $WOXI_RP"}, "StandardOutput", ProcessEnvironment -> <|"WOXI_RP" -> "bar"|>]"#
+      )
+      .unwrap(),
+      "bar"
+    );
+    assert_eq!(
+      interpret(
+        r#"StringTrim@RunProcess[{"sh", "-c", "echo $WOXI_RP"}, "StandardOutput", ProcessEnvironment -> {"WOXI_RP" -> "baz"}]"#
+      )
+      .unwrap(),
+      "baz"
+    );
+  }
+
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn a_missing_program_or_bad_property_fails() {
+    let result =
+      interpret_with_stdout(r#"RunProcess["woxi-no-such-program"]"#).unwrap();
+    assert_eq!(result.result, "$Failed");
+    assert!(
+      result
+        .warnings
+        .iter()
+        .any(|w| w.contains("RunProcess::pnfd"))
+    );
+    let result =
+      interpret_with_stdout(r#"RunProcess[{"true"}, "Bogus"]"#).unwrap();
+    assert_eq!(result.result, "$Failed");
+    assert!(
+      result
+        .warnings
+        .iter()
+        .any(|w| w.contains("RunProcess::pbad"))
+    );
+  }
+}
+
+mod import_pdf {
+  use super::*;
+
+  /// A one-page PDF drawn from `content`, with the given page resources.
+  #[cfg(not(target_arch = "wasm32"))]
+  fn pdf_bytes(content: &str, resources: &str) -> Vec<u8> {
+    let objects = [
+      "<< /Type /Catalog /Pages 2 0 R >>".to_string(),
+      "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_string(),
+      format!(
+        "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 50 40] /Contents 4 0 R {resources} >>"
+      ),
+      format!(
+        "<< /Length {} >>\nstream\n{content}\nendstream",
+        content.len()
+      ),
+    ];
+    let mut out = b"%PDF-1.4\n".to_vec();
+    let mut offsets = Vec::new();
+    for (i, object) in objects.iter().enumerate() {
+      offsets.push(out.len());
+      out.extend_from_slice(
+        format!("{} 0 obj\n{object}\nendobj\n", i + 1).as_bytes(),
+      );
+    }
+    let xref = out.len();
+    out.extend_from_slice(
+      format!("xref\n0 {}\n0000000000 65535 f \n", objects.len() + 1)
+        .as_bytes(),
+    );
+    for offset in offsets {
+      out.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
+    }
+    out.extend_from_slice(
+      format!(
+        "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n",
+        objects.len() + 1
+      )
+      .as_bytes(),
+    );
+    out
+  }
+
+  #[cfg(not(target_arch = "wasm32"))]
+  fn write_pdf(name: &str, content: &str, resources: &str) -> String {
+    let dir = std::env::temp_dir()
+      .join(format!("woxi_import_pdf_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join(name);
+    std::fs::write(&path, pdf_bytes(content, resources)).unwrap();
+    unixify(&path.display().to_string())
+  }
+
+  const SHAPES: &str = "1 0 0 rg 10 10 30 20 re f 0 0 1 RG 2 w 5 5 m 45 35 l S";
+
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn pages_import_as_graphics_of_the_page_size() {
+    let p = write_pdf("shapes.pdf", SHAPES, "");
+    assert_eq!(
+      interpret(&format!(
+        r#"pg = Import["{p}"]; {{Head[pg], Length[pg], Head[First[pg]], Options[First[pg], ImageSize]}}"#
+      ))
+      .unwrap(),
+      "{List, 1, Graphics, {ImageSize -> {50, 40}}}"
+    );
+    assert_eq!(
+      interpret(&format!(r#"Import["{p}", "PageCount"]"#)).unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret(&format!(r#"Import["{p}", {{"PDF", "Pages", 1}}]"#)).unwrap(),
+      "-Graphics-"
+    );
+  }
+
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn vector_content_becomes_paths() {
+    let p = write_pdf("paths.pdf", SHAPES, "");
+    let svg = interpret(&format!(
+      r#"ExportString[First@Import["{p}", "Pages"], "SVG"]"#
+    ))
+    .unwrap();
+    assert!(svg.contains(r#"width="50" height="40""#), "{svg}");
+    assert!(
+      svg.contains(
+        r#"<path d="M10 10L40 10L40 30L10 30Z" fill="rgb(255,0,0)"/>"#
+      ),
+      "{svg}"
+    );
+    assert!(
+      svg.contains(
+        r#"<path d="M5 5L45 35" fill="none" stroke="rgb(0,0,255)" stroke-width="2"/>"#
+      ),
+      "{svg}"
+    );
+    // PDF's y axis points up; the page group flips it.
+    assert!(svg.contains(r#"matrix(1 0 0 -1 0 40)"#), "{svg}");
+  }
+
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn text_is_drawn_and_extracted() {
+    let p = write_pdf(
+      "text.pdf",
+      "BT /F1 12 Tf 10 20 Td (Hi there) Tj ET",
+      "/Resources << /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >> >> >>",
+    );
+    let svg =
+      interpret(&format!(r#"ExportString[First@Import["{p}"], "SVG"]"#))
+        .unwrap();
+    assert!(svg.contains("<text "), "{svg}");
+    assert!(svg.contains(">Hi there</text>"), "{svg}");
+    assert!(svg.contains("Helvetica"), "{svg}");
+    assert!(svg.contains(r#"font-weight="bold""#), "{svg}");
+    assert_eq!(
+      interpret(&format!(r#"Import["{p}", "Plaintext"]"#)).unwrap(),
+      "Hi there"
+    );
+  }
+
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn show_resizes_an_imported_page() {
+    let p = write_pdf("resize.pdf", SHAPES, "");
+    assert_eq!(
+      interpret(&format!(
+        r#"Options[Show[First@Import["{p}"], ImageSize -> {{25, 20}}, BaselinePosition -> Scaled[0.3]], ImageSize]"#
+      ))
+      .unwrap(),
+      "{ImageSize -> {25, 20}}"
+    );
+    let svg = interpret(&format!(
+      r#"ExportString[Show[First@Import["{p}"], ImageSize -> {{25, 20}}], "SVG"]"#
+    ))
+    .unwrap();
+    assert!(svg.contains(r#"width="25" height="20""#), "{svg}");
+    assert!(svg.contains(r#"viewBox="0 0 50 40""#), "{svg}");
+  }
+
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn missing_elements_and_pages_fail() {
+    let p = write_pdf("elements.pdf", SHAPES, "");
+    let result = interpret_with_stdout(&format!(
+      r#"Import["{p}", {{"PDF", "Pages", 2}}]"#
+    ))
+    .unwrap();
+    assert_eq!(result.result, "$Failed");
+    assert!(result.warnings.iter().any(|w| w.contains("Import::noelem")));
+    let result =
+      interpret_with_stdout(&format!(r#"Import["{p}", "Bogus"]"#)).unwrap();
+    assert_eq!(result.result, "$Failed");
+    assert!(result.warnings.iter().any(|w| w.contains("Import::noelem")));
+    assert_eq!(
+      interpret(&format!(r#"Import["{p}", "Elements"]"#)).unwrap(),
+      "{PageCount, Pages, Plaintext}"
+    );
+  }
+}

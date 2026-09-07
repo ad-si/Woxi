@@ -232,7 +232,7 @@ ColumnForm,Legacy display directive stacking elements one per line (renders at t
 FontColor,Option symbol for specifying text color in Style,✅,pure,3.0,175
 NIntegrate,Computes a numerical integral by tanh-sinh quadrature — which handles an endpoint singularity — falling back to an adaptive Simpson rule for oscillatory integrands and using a tangent substitution for infinite bounds,✅,pure,1.0,176
 Dashed,Shorthand for Dashing[{Small Small}] line style,✅,pure,6.0,177
-Import,"Imports data from a file (images CSV XLSX TXT PPM/PGM/PBM/PNM WAV and other audio; CERN ROOT incl. TH1/TH2 histograms and TTree branch data via element paths; CSV/TSV row/column subsets via {""Data"" rowspec colspec} position specs); an .xml file reads into symbolic XML",✅,effectful,4.0,178
+Import,"Imports data from a file (images CSV XLSX TXT PPM/PGM/PBM/PNM WAV and other audio; CERN ROOT incl. TH1/TH2 histograms and TTree branch data via element paths; CSV/TSV row/column subsets via {""Data"" rowspec colspec} position specs); an .xml file reads into symbolic XML; a PDF gives one Graphics per page with PageCount and Plaintext elements",✅,effectful,4.0,178
 Thread,Threads a function over corresponding list elements,✅,pure,1.0,179
 Arrow,Represents an arrow graphics primitive,✅,pure,6.0,181
 Scaled,Represents a scaled position or size,✅,pure,1.0,183
@@ -1752,7 +1752,7 @@ JoinedCurve,Joined curve graphics primitive,✅,unevaluated,8.0,1754
 DefaultButton,Default button control,,unevaluated,6.0,1760
 GeoMarker,Geographic marker primitive for GeoGraphics,✅,pure,10.0,1760
 MultiplicativeOrder,Multiplicative order modulo n,✅,computation,4.0,1760
-RunProcess,Run external process,,unevaluated,10.0,1760
+RunProcess,Runs a program to completion (a string names it; a list adds its arguments) and returns its ExitCode StandardOutput and StandardError as an association; a property name picks one; a third argument is fed to its standard input; ProcessDirectory and ProcessEnvironment set where and with which variables it runs,✅,effectful,10.0,1760
 StartingStepSize,Starting step size option,,unevaluated,4.0,1760
 Trigger,Trigger control (stays symbolic in script mode),✅,unevaluated,6.0,1760
 ContentSelectable,Content selectable option,,unevaluated,6.0,1761
@@ -3803,7 +3803,7 @@ HostLookup,,🚫,,10.3,3889
 ImageCooccurrence,,🚫,,8.0,3889
 LindleyDistribution,Lindley distribution (Mean Variance and exponential PDF/CDF on positive reals),✅,pure,8.0,3889
 MardiaKurtosisTest,,,,8.0,3889
-ProcessDirectory,,🚫,,10.0,3889
+ProcessDirectory,Option of RunProcess naming the directory the program runs in,✅,pure,10.0,3889
 ResourceUpdate,,🚫,,11.2,3889
 ResponseForm,,🚫,,10.0,3889
 Subresultants,Principal subresultant coefficients of two polynomials,✅,pure,4.0,3889
@@ -4179,7 +4179,7 @@ ObservableDecomposition,,,,8.0,4291
 OutputNamePacket,,🚫,,3.0,4291
 ParametricRampLayer,,🚫,,12.1,4291
 PolygonDecomposition,,,,12.0,4291
-ProcessEnvironment,,🚫,,10.0,4291
+ProcessEnvironment,Option of RunProcess giving the environment variables of the program as an association or list of rules (Inherited keeps the interpreter’s own),✅,pure,10.0,4291
 RudinShapiro,Returns -1 raised to the number of overlapping 11 pairs in the binary expansion of n (Listable),✅,pure,10.2,4291
 SliderBox,,🚫,,6.0,4291
 UnconstrainedParameters,,,,12.0,4291

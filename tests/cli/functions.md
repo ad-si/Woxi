@@ -74,6 +74,7 @@ icon: lucide/square-function
 - [`RayleighDistribution`](functions/RayleighDistribution.md)
 - [`Return`](functions/Return.md)
 - [`Run`](functions/Run.md)
+- [`RunProcess`](functions/RunProcess.md)
 - [`StudentTDistribution`](functions/StudentTDistribution.md)
 - [`SubtractFrom`](functions/SubtractFrom.md)
 - [`Switch`](functions/Switch.md)

@@ -1485,6 +1485,31 @@ pub fn dispatch_predicate_functions(
           Err(e) => return Some(Err(e)),
         },
       };
+      // A rendered graphic carries the options it was drawn with.
+      if let Some(opts) =
+        crate::functions::graphics::graphics_options(&func_arg)
+      {
+        if args.len() == 1 {
+          return Some(Ok(Expr::List(opts.into())));
+        }
+        let opt_arg = match evaluate_expr_to_expr(&args[1]) {
+          Ok(v) => v,
+          Err(e) => return Some(Err(e)),
+        };
+        let Expr::Identifier(opt_name) = &opt_arg else {
+          return Some(Ok(Expr::List(vec![].into())));
+        };
+        let matching: Vec<Expr> = opts
+          .into_iter()
+          .filter(|rule| match rule {
+            Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } => {
+              matches!(pattern.as_ref(), Expr::Identifier(n) if n == opt_name)
+            }
+            _ => false,
+          })
+          .collect();
+        return Some(Ok(Expr::List(matching.into())));
+      }
       let func_name = match &func_arg {
         Expr::Identifier(name) => name.clone(),
         _ => {

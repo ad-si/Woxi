@@ -492,3 +492,16 @@ mod interpreter_scalar_tests {
     assert_eq!(interpret(r#"Interpreter["Integer"][42]"#).unwrap(), "42");
   }
 }
+
+mod interpreter_over_lists {
+  use super::*;
+
+  #[test]
+  fn number_interpreter_threads_over_a_list() {
+    assert_eq!(
+      interpret("Interpreter[\"Number\"][{\"12.5\", \"3\"}]").unwrap(),
+      "{12.5, 3}"
+    );
+    assert_eq!(interpret("Interpreter[\"Number\"][{}]").unwrap(), "{}");
+  }
+}

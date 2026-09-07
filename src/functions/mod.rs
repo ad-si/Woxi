@@ -68,6 +68,8 @@ pub mod ode_ast;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod paclet;
 pub mod parametric_plot;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod pdf_import;
 pub mod periodic_table_plot;
 pub mod plot;
 pub mod plot3d;
