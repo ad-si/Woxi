@@ -113,7 +113,7 @@ pub fn is_confirmation_throw(tag: &Option<Box<Expr>>) -> bool {
 pub fn confirm_failure(value: &Expr, information: Expr) -> Expr {
   let has_info = !matches!(&information, Expr::Identifier(s) if s == "Null");
   let (template, parameters) = if has_info {
-    (crate::syntax::expr_to_output(&information), Vec::new())
+    (expr_to_output(&information), Vec::new())
   } else {
     ("`` encountered.".to_string(), vec![value.clone()])
   };
@@ -246,7 +246,7 @@ fn fill_template(template: &str, parameters: &[Expr]) -> String {
   while let Some(at) = rest.find("``") {
     out.push_str(&rest[..at]);
     match next.next() {
-      Some(p) => out.push_str(&crate::syntax::expr_to_output(p)),
+      Some(p) => out.push_str(&expr_to_output(p)),
       None => out.push_str("``"),
     }
     rest = &rest[at + 2..];
@@ -343,7 +343,7 @@ fn untagged_exception(spec: &Expr) -> Expr {
     "Exception::untagged: The construction of the untagged exception from \
      general expression {} is not supported. Please provide some exception \
      tag.",
-    crate::syntax::expr_to_output(spec)
+    expr_to_output(spec)
   ));
   let pairs: Vec<(Expr, Expr)> = vec![
     (string("ErrorType"), string("UnttaggedExceptionPayload")),
@@ -414,10 +414,9 @@ pub fn exception_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let Expr::List(tags) = &eargs[0] else {
       unreachable!("checked by is_canonical_exception")
     };
-    ok = tags.iter().any(|t| {
-      crate::syntax::expr_to_string(t)
-        == crate::syntax::expr_to_string(&args[1])
-    });
+    ok = tags
+      .iter()
+      .any(|t| expr_to_string(t) == expr_to_string(&args[1]));
   }
   Ok(Expr::Identifier(
     if ok { "True" } else { "False" }.to_string(),

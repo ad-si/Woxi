@@ -740,7 +740,7 @@ fn partial_inverse(
   dwd: &Dwd,
   filters: &super::filters::WaveletFilters,
   r: usize,
-) -> crate::syntax::Expr {
+) -> Expr {
   let n = dwd.refinement();
   let keep = n - r;
   let mut coeffs: BTreeMap<Vec<u8>, CoefArray> = BTreeMap::new();
@@ -1088,7 +1088,7 @@ pub fn apply_dwd(func: &Expr, args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(out.into()))
 }
 
-fn dwd_property(dwd: &Dwd, prop: &str) -> crate::syntax::Expr {
+fn dwd_property(dwd: &Dwd, prop: &str) -> Expr {
   match prop {
     "Properties" => Expr::List(
       [

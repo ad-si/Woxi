@@ -1280,12 +1280,12 @@ fn units_compatible(u1: &Expr, u2: &Expr) -> bool {
     return info1.dimensions == info2.dimensions;
   }
   // If we can't decompose, they're compatible only if identical
-  crate::syntax::expr_to_string(u1) == crate::syntax::expr_to_string(u2)
+  expr_to_string(u1) == expr_to_string(u2)
 }
 
 /// Check if two unit expressions are the same unit.
 fn units_equal(u1: &Expr, u2: &Expr) -> bool {
-  crate::syntax::expr_to_string(u1) == crate::syntax::expr_to_string(u2)
+  expr_to_string(u1) == expr_to_string(u2)
 }
 
 /// Normalize input spelling/case variants to the canonical unit-table key.
@@ -1615,7 +1615,7 @@ pub fn quantity_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if is_pure_number(&args[0]) {
         crate::emit_message(&format!(
           "Quantity::unkunit: Unable to interpret unit specification {}.",
-          crate::syntax::expr_to_output(&args[0])
+          expr_to_output(&args[0])
         ));
         return Ok(unevaluated("Quantity", args));
       }
@@ -2044,8 +2044,8 @@ pub fn unit_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if from.dimensions != to.dimensions {
         return Err(InterpreterError::EvaluationError(format!(
           "{} and {} are incompatible units.",
-          crate::syntax::expr_to_string(unit),
-          crate::syntax::expr_to_string(target)
+          expr_to_string(unit),
+          expr_to_string(target)
         )));
       }
       // Convert: new_mag = mag * (from_si / to_si)
@@ -2164,8 +2164,8 @@ pub fn try_quantity_plus(
   for q in &quantity_args[1..] {
     let (_m, u) = is_quantity(q).unwrap();
     if !units_compatible(ref_unit, u) {
-      let u1_name = crate::syntax::expr_to_string(ref_unit);
-      let u2_name = crate::syntax::expr_to_string(u);
+      let u1_name = expr_to_string(ref_unit);
+      let u2_name = expr_to_string(u);
       crate::emit_message(&format!(
         "Quantity::compat: {u1_name} and {u2_name} are incompatible units."
       ));

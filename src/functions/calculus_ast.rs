@@ -68,7 +68,7 @@ pub fn d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           crate::emit_message(&format!(
             "D::optx: Unknown option {} in {}.",
             opt,
-            crate::syntax::expr_to_output(&unevaluated())
+            expr_to_output(&unevaluated())
           ));
           return Ok(unevaluated());
         }
@@ -10632,7 +10632,7 @@ fn bounded_trig_extremum(
   // 1/Abs[Sin[g]] — the reciprocal of something that gets arbitrarily close
   // to 0 while never exceeding 1.
   if let Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Power,
+    op: BinaryOperator::Power,
     left,
     right,
   } = expr
@@ -18829,7 +18829,7 @@ fn limit_resolved(e: &Expr) -> bool {
 /// division is put through the evaluator before the limit is taken.
 fn ratio(f: &Expr, g: &Expr) -> Expr {
   let quotient = Expr::BinaryOp {
-    op: crate::syntax::BinaryOperator::Divide,
+    op: BinaryOperator::Divide,
     left: Box::new(f.clone()),
     right: Box::new(g.clone()),
   };
@@ -18937,7 +18937,7 @@ pub fn asymptotic_comparison_ast(
     crate::emit_message(&format!(
       "{}::lim: Limit specification {} is not of the form x -> x0.",
       name,
-      crate::syntax::expr_to_output(rule)
+      expr_to_output(rule)
     ));
     return Ok(original());
   };

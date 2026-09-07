@@ -216,7 +216,7 @@ fn expr_to_label(expr: &Expr) -> String {
   let evaluated = evaluate_expr_to_expr(expr).unwrap_or_else(|_| expr.clone());
   match &evaluated {
     Expr::String(s) => s.clone(),
-    other => crate::syntax::expr_to_output(other),
+    other => expr_to_output(other),
   }
 }
 

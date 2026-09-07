@@ -125,7 +125,7 @@ fn build_normal(head: &Expr, args: Vec<Expr>) -> Expr {
       args: args.into(),
     },
     other => Expr::FunctionCall {
-      name: crate::syntax::expr_to_string(other),
+      name: expr_to_string(other),
       args: args.into(),
     },
   }
@@ -296,7 +296,7 @@ mod tests {
   use super::*;
 
   fn render(data: &[u8]) -> String {
-    crate::syntax::expr_to_string(&deserialize(data).unwrap())
+    expr_to_string(&deserialize(data).unwrap())
   }
 
   #[test]

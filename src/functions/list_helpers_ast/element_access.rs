@@ -802,7 +802,7 @@ fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
   if count >= 0 {
     if count > len {
       // Print warning to stderr and return unevaluated
-      let list_str = crate::syntax::expr_to_string(list);
+      let list_str = expr_to_string(list);
       crate::emit_message(&format!(
         "Take::take: Cannot take positions 1 through {count} in {list_str}."
       ));
@@ -812,7 +812,7 @@ fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
   } else {
     if -count > len {
       // Print warning to stderr and return unevaluated
-      let list_str = crate::syntax::expr_to_string(list);
+      let list_str = expr_to_string(list);
       crate::emit_message(&format!(
         "Take::take: Cannot take positions {count} through -1 in {list_str}."
       ));
@@ -1211,10 +1211,8 @@ pub fn insert_ast(
         })
       }
       Expr::FunctionCall { name, args } if name == "Key" && args.len() == 1 => {
-        let ks = crate::syntax::expr_to_string(&args[0]);
-        pairs
-          .iter()
-          .position(|(k, _)| crate::syntax::expr_to_string(k) == ks)
+        let ks = expr_to_string(&args[0]);
+        pairs.iter().position(|(k, _)| expr_to_string(k) == ks)
       }
       _ => None,
     };
@@ -1369,11 +1367,8 @@ fn extract_resolve(subject: &Expr, path: &[ExtractComp]) -> ExtractOutcome {
         let Expr::Association(pairs) = &current else {
           return ExtractOutcome::Partd;
         };
-        let key_str = crate::syntax::expr_to_string(key);
-        match pairs
-          .iter()
-          .find(|(k, _)| crate::syntax::expr_to_string(k) == key_str)
-        {
+        let key_str = expr_to_string(key);
+        match pairs.iter().find(|(k, _)| expr_to_string(k) == key_str) {
           Some((_, v)) => {
             let value = v.clone();
             current = value;
@@ -1609,16 +1604,12 @@ fn assoc_position_index(spec: &Expr, pairs: &[(Expr, Expr)]) -> Option<usize> {
       (idx >= 0 && (idx as usize) < pairs.len()).then_some(idx as usize)
     }
     Expr::FunctionCall { name, args } if name == "Key" && args.len() == 1 => {
-      let ks = crate::syntax::expr_to_string(&args[0]);
-      pairs
-        .iter()
-        .position(|(k, _)| crate::syntax::expr_to_string(k) == ks)
+      let ks = expr_to_string(&args[0]);
+      pairs.iter().position(|(k, _)| expr_to_string(k) == ks)
     }
     Expr::String(_) | Expr::Identifier(_) => {
-      let ks = crate::syntax::expr_to_string(spec);
-      pairs
-        .iter()
-        .position(|(k, _)| crate::syntax::expr_to_string(k) == ks)
+      let ks = expr_to_string(spec);
+      pairs.iter().position(|(k, _)| expr_to_string(k) == ks)
     }
     Expr::List(items) if items.len() == 1 => {
       assoc_position_index(&items[0], pairs)
@@ -2035,7 +2026,7 @@ pub fn delete_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         crate::emit_message(&format!(
           "Delete::partw: Part {{{}}} of {} does not exist.",
           pos,
-          crate::syntax::expr_to_string(&args[0])
+          expr_to_string(&args[0])
         ));
         return Ok(unevaluated("Delete", args));
       }
@@ -2195,7 +2186,7 @@ fn delete_at_position_general(
   items: &[Expr],
   pos: i128,
   head_name: Option<&str>,
-) -> crate::syntax::Expr {
+) -> Expr {
   let wrap = |result_items: Vec<Expr>| -> Expr {
     match head_name {
       Some(h) => call(h, result_items),

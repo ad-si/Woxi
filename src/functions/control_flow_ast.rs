@@ -25,7 +25,7 @@ pub fn switch_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Evaluate the test expression
   let test = evaluate_expr_to_expr(&args[0])?;
-  let test_str = crate::syntax::expr_to_string(&test);
+  let test_str = expr_to_string(&test);
 
   // Iterate pattern-value pairs (the argument list is odd, so `rest` is even
   // and every pattern has a value — there is no leftover default argument).
@@ -404,11 +404,7 @@ fn do_trace(
       // Each step is printed wrapped in HoldCompleteForm, the same way
       // TraceScan's steps reach the scanning function wrapped in HoldForm.
       let wrapped = call1("HoldCompleteForm", expr.clone());
-      let line = format!(
-        "{}{}",
-        " ".repeat(depth),
-        crate::syntax::expr_to_output(&wrapped)
-      );
+      let line = format!("{}{}", " ".repeat(depth), expr_to_output(&wrapped));
       if !crate::is_quiet_print() {
         println!("{line}");
       }

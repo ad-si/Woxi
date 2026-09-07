@@ -220,7 +220,7 @@ pub fn image_constructor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       let shown = match second {
         Expr::String(s) => s.clone(),
-        e => crate::syntax::expr_to_string(e),
+        e => expr_to_string(e),
       };
       crate::emit_message(&format!(
         "Image::imgdtype: The specified data type {shown} should be \"Bit\", \"Byte\", \"Bit16\", \"Real32\" or \"Real64\"."
@@ -236,7 +236,7 @@ pub fn image_constructor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if !matches!(opt, Expr::Rule { .. } | Expr::RuleDelayed { .. }) {
       return Err(InterpreterError::EvaluationError(format!(
         "Image: extra argument is not a Rule option: {}",
-        crate::syntax::expr_to_string(opt)
+        expr_to_string(opt)
       )));
     }
   }
@@ -336,7 +336,7 @@ pub fn image_constructor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let invalid = || {
     crate::emit_message(&format!(
       "Image::imgarray: The specified argument {} should be an array of rank 2 or 3 with machine-sized numbers.",
-      crate::syntax::expr_to_string(&args[0])
+      expr_to_string(&args[0])
     ));
   };
   let parsed = parse_image_array(raw_arg);
@@ -471,7 +471,7 @@ fn expr_to_f64(expr: &Expr) -> Result<f64, InterpreterError> {
   crate::functions::math_ast::try_eval_to_f64(expr).ok_or_else(|| {
     InterpreterError::EvaluationError(format!(
       "Image: expected a number, got {}",
-      crate::syntax::expr_to_string(expr)
+      expr_to_string(expr)
     ))
   })
 }
@@ -567,7 +567,7 @@ pub fn image_dimensions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // returning the unevaluated call.
   crate::emit_message(&format!(
     "ImageDimensions::imginv: Expecting an image or graphics instead of {}.",
-    crate::syntax::expr_to_string(&args[0])
+    expr_to_string(&args[0])
   ));
   Ok(unevaluated("ImageDimensions", args))
 }
@@ -645,7 +645,7 @@ pub fn image_aspect_ratio_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   crate::emit_message(&format!(
     "ImageAspectRatio::imginv: Expecting an image or graphics instead of {}.",
-    crate::syntax::expr_to_string(&args[0])
+    expr_to_string(&args[0])
   ));
   Ok(unevaluated("ImageAspectRatio", args))
 }
@@ -666,7 +666,7 @@ pub fn image_channels_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   crate::emit_message(&format!(
     "ImageChannels::imginv: Expecting an image or graphics instead of {}.",
-    crate::syntax::expr_to_string(&args[0])
+    expr_to_string(&args[0])
   ));
   Ok(unevaluated("ImageChannels", args))
 }
@@ -725,7 +725,7 @@ pub fn image_type_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   crate::emit_message(&format!(
     "ImageType::imginv: Expecting an image or graphics instead of {}.",
-    crate::syntax::expr_to_string(&args[0])
+    expr_to_string(&args[0])
   ));
   Ok(unevaluated("ImageType", args))
 }
@@ -867,7 +867,7 @@ pub fn image_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     crate::emit_message(&format!(
       "ImageData::imginv: Expecting an image or graphics instead of {}.",
-      crate::syntax::expr_to_string(&args[0])
+      expr_to_string(&args[0])
     ));
     Ok(unevaluated("ImageData", args))
   }
@@ -903,7 +903,7 @@ pub fn pixel_value_positions_ast(
   else {
     crate::emit_message(&format!(
       "PixelValuePositions::imginv: Expecting an image or graphics instead of {}.",
-      crate::syntax::expr_to_string(&args[0])
+      expr_to_string(&args[0])
     ));
     return Ok(unevaluated("PixelValuePositions", args));
   };
@@ -996,7 +996,7 @@ pub fn image_color_space_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // unevaluated instead of erroring out.
   crate::emit_message(&format!(
     "ImageColorSpace::imginv: Expecting an image or graphics instead of {}.",
-    crate::syntax::expr_to_string(&args[0])
+    expr_to_string(&args[0])
   ));
   Ok(unevaluated("ImageColorSpace", args))
 }
@@ -1154,7 +1154,7 @@ pub fn color_negate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // list of such objects.` on `ColorNegate[$Failed]`.
       crate::emit_message(&format!(
         "ColorNegate::imginv: {} should be a valid image, a color directive or a list of such objects.",
-        crate::syntax::expr_to_string(other)
+        expr_to_string(other)
       ));
       Ok(unevaluated("ColorNegate", args))
     }
@@ -1175,7 +1175,7 @@ pub fn binarize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if !matches!(&args[0], Expr::Image { .. }) {
     crate::emit_message(&format!(
       "Binarize::imginv: Expecting an image or graphics instead of {}.",
-      crate::syntax::expr_to_string(&args[0])
+      expr_to_string(&args[0])
     ));
     return Ok(unevaluated("Binarize", args));
   }
@@ -1350,7 +1350,7 @@ pub fn image_effect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   else {
     crate::emit_message(&format!(
       "ImageEffect::imginv: Expecting an image or graphics instead of {}.",
-      crate::syntax::expr_to_string(&args[0])
+      expr_to_string(&args[0])
     ));
     return Ok(unevaluated("ImageEffect", args));
   };
@@ -1442,7 +1442,7 @@ fn blur_radius_pair(head: &str, args: &[Expr]) -> Option<(f64, f64)> {
     crate::emit_message(&format!(
       "{}::imginv: Expecting an image or graphics instead of {}.",
       head,
-      crate::syntax::expr_to_string(&args[0])
+      expr_to_string(&args[0])
     ));
     return None;
   }
@@ -1519,7 +1519,7 @@ pub fn thumbnail_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if !matches!(&args[0], Expr::Image { .. }) {
     crate::emit_message(&format!(
       "Thumbnail::imginv: Expecting an image or graphics instead of {}.",
-      crate::syntax::expr_to_string(&args[0])
+      expr_to_string(&args[0])
     ));
     return Ok(unevaluated("Thumbnail", args));
   }
@@ -1564,7 +1564,7 @@ pub fn image_adjust_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   else {
     crate::emit_message(&format!(
       "ImageAdjust::imginv: Expecting an image or graphics instead of {}.",
-      crate::syntax::expr_to_string(&args[0])
+      expr_to_string(&args[0])
     ));
     return Ok(unevaluated("ImageAdjust", args));
   };
@@ -1594,7 +1594,7 @@ pub fn image_adjust_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // A list of any other length isn't a spec ImageAdjust knows.
     crate::emit_message(&format!(
       "ImageAdjust::arg2: Invalid correction parameters {}.",
-      crate::syntax::expr_to_string(&args[1])
+      expr_to_string(&args[1])
     ));
     return Ok(unevaluated("ImageAdjust", args));
   } else {
@@ -1698,7 +1698,7 @@ pub fn histogram_transform_ast(
   else {
     crate::emit_message(&format!(
       "HistogramTransform::imginv: {} should be an image, a dataset or a list of datasets.",
-      crate::syntax::expr_to_string(&args[0])
+      expr_to_string(&args[0])
     ));
     return Ok(unevaluated("HistogramTransform", args));
   };
@@ -1810,7 +1810,7 @@ pub fn image_histogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   else {
     crate::emit_message(&format!(
       "ImageHistogram::imginv: Expecting an image or graphics instead of {}.",
-      crate::syntax::expr_to_string(&args[0])
+      expr_to_string(&args[0])
     ));
     return Ok(unevaluated("ImageHistogram", args));
   };
@@ -2002,7 +2002,7 @@ pub fn image_reflect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     crate::emit_message(&format!(
       "ImageReflect::imgvinv: Expecting an image, graphics or video instead of {}.",
-      crate::syntax::expr_to_string(&args[0])
+      expr_to_string(&args[0])
     ));
     Ok(unevaluated("ImageReflect", args))
   }
@@ -2021,7 +2021,7 @@ pub fn image_rotate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if !matches!(&args[0], Expr::Image { .. }) {
     crate::emit_message(&format!(
       "ImageRotate::imginv: Expecting an image or graphics instead of {}.",
-      crate::syntax::expr_to_string(&args[0])
+      expr_to_string(&args[0])
     ));
     return Ok(unevaluated("ImageRotate", args));
   }
@@ -2160,7 +2160,7 @@ pub fn image_resize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if !matches!(&args[0], Expr::Image { .. }) {
     crate::emit_message(&format!(
       "ImageResize::imginv: Expecting an image or graphics instead of {}.",
-      crate::syntax::expr_to_string(&args[0])
+      expr_to_string(&args[0])
     ));
     return Ok(unevaluated("ImageResize", args));
   }
@@ -2536,7 +2536,7 @@ fn as_int(e: &Expr) -> Option<i64> {
   match e {
     Expr::Integer(n) => Some(*n as i64),
     Expr::UnaryOp {
-      op: crate::syntax::UnaryOperator::Minus,
+      op: UnaryOperator::Minus,
       operand,
     } => as_int(operand).map(|n| -n),
     _ => None,
@@ -2979,7 +2979,7 @@ pub fn dominant_colors_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if !matches!(&args[0], Expr::Image { .. }) {
     crate::emit_message(&format!(
       "DominantColors::imginv: Expecting an image or graphics instead of {{{}}}.",
-      crate::syntax::expr_to_string(&args[0])
+      expr_to_string(&args[0])
     ));
     return Ok(unevaluated("DominantColors", args));
   }
@@ -3197,7 +3197,7 @@ pub fn image_apply_ast(
     let call = match func {
       Expr::Function { body } => crate::syntax::substitute_slots(body, &[arg]),
       _ => Expr::FunctionCall {
-        name: crate::syntax::expr_to_string(func),
+        name: expr_to_string(func),
         args: vec![arg].into(),
       },
     };
@@ -3893,7 +3893,7 @@ fn pointwise_image_op(
   crate::emit_message(&format!(
     "{}::imginv: Expecting an image or graphics instead of {}.",
     name,
-    crate::syntax::expr_to_string(bad)
+    expr_to_string(bad)
   ));
   Ok(unevaluated(name, args))
 }
@@ -3973,7 +3973,7 @@ pub fn random_image_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let range = Expr::List(vec![bound(0, min_val), bound(1, max_val)].into());
     crate::emit_message(&format!(
       "RandomImage::bddist: The specified random distribution UniformDistribution[{}] should generate a real number or a list of real numbers.",
-      crate::syntax::expr_to_string(&range)
+      expr_to_string(&range)
     ));
     return Ok(unevaluated("RandomImage", args));
   }
@@ -4037,7 +4037,7 @@ pub fn pixel_value_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   else {
     crate::emit_message(&format!(
       "PixelValue::imginv: Expecting an image or graphics instead of {}.",
-      crate::syntax::expr_to_string(&args[0])
+      expr_to_string(&args[0])
     ));
     return Ok(unevaluated("PixelValue", args));
   };
@@ -4101,7 +4101,7 @@ pub fn text_recognize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if !matches!(&args[0], Expr::Image { .. }) && !is_valid_image3d(&args[0]) {
     crate::emit_message(&format!(
       "TextRecognize::imgvinv: Expecting an image, graphics or video instead of {}.",
-      crate::syntax::expr_to_string(&args[0])
+      expr_to_string(&args[0])
     ));
     return Ok(unevaluated("TextRecognize", args));
   }
@@ -4330,7 +4330,7 @@ pub fn median_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// The body of `median_filter_ast`, reached with a range already
 /// resolved for list data.
-fn median_filter_body(args: &[Expr]) -> crate::syntax::Expr {
+fn median_filter_body(args: &[Expr]) -> Expr {
   let r = crate::functions::math_ast::try_eval_to_f64(&args[1])
     .filter(|v| *v >= 0.0)
     .map(|v| v as usize);
@@ -4460,7 +4460,7 @@ fn median_filter_body(args: &[Expr]) -> crate::syntax::Expr {
     // wolframscript prints MedianFilter::arg1 to stdout for a non-array arg.
     crate::emit_message_to_stdout(&format!(
       "MedianFilter::arg1: The first argument {} should be a rectangular array, image or video.",
-      crate::syntax::expr_to_string(&args[0])
+      expr_to_string(&args[0])
     ));
   }
   unevaluated("MedianFilter", args)
@@ -4667,7 +4667,7 @@ pub fn image_difference_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if parts(arg).is_none() {
       crate::emit_message(&format!(
         "ImageDifference::imginv: Expecting an image or graphics instead of {}.",
-        crate::syntax::expr_to_string(arg)
+        expr_to_string(arg)
       ));
       return echo();
     }
@@ -4764,7 +4764,7 @@ pub fn neighborhood_radius(
     if report {
       crate::emit_message(&format!(
         "{head}::bdrad: {} is not a valid neighborhood range specification.",
-        crate::syntax::expr_to_string(spec)
+        expr_to_string(spec)
       ));
     }
     None
@@ -4789,7 +4789,7 @@ fn aggregating_filter_ast(
   agg: &str,
   filter_name: &str,
   range: NeighborhoodRange,
-) -> crate::syntax::Expr {
+) -> Expr {
   let r = neighborhood_radius(filter_name, &args[1], range, false);
 
   if let (Expr::List(elems), Some(r)) = (&args[0], r) {
@@ -4863,7 +4863,7 @@ fn aggregating_filter_ast(
   } else if !matches!(&args[0], Expr::Image { .. } | Expr::List(_)) {
     crate::emit_message(&format!(
       "{filter_name}::arg1: The first argument {} should be a rectangular array, image or video.",
-      crate::syntax::expr_to_string(&args[0])
+      expr_to_string(&args[0])
     ));
   }
   unevaluated(filter_name, args)
@@ -4956,7 +4956,7 @@ fn spatial_filter_ast(
   else {
     crate::emit_message(&format!(
       "{head}::imginv: Expecting an image or graphics instead of {}.",
-      crate::syntax::expr_to_string(&args[0])
+      expr_to_string(&args[0])
     ));
     return Ok(unevaluated(head, args));
   };
@@ -5033,7 +5033,7 @@ pub fn gaussian_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if !valid && !args.is_empty() {
       crate::emit_message(&format!(
         "GaussianFilter::arg1: The first argument {} should be a rectangular array, image or video.",
-        crate::syntax::expr_to_string(&args[0])
+        expr_to_string(&args[0])
       ));
     }
     return Ok(unevaluated("GaussianFilter", args));
@@ -5110,7 +5110,7 @@ pub fn gaussian_filter_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   crate::emit_message(&format!(
     "GaussianFilter::arg1: The first argument {} should be a rectangular array, image or video.",
-    crate::syntax::expr_to_string(&args[0])
+    expr_to_string(&args[0])
   ));
   Ok(unevaluated("GaussianFilter", args))
 }
@@ -5316,7 +5316,7 @@ fn expr_to_f64_opt(e: &Expr) -> Option<f64> {
   }
 }
 
-fn symbolic_gaussian_matrix(args: &[Expr]) -> crate::syntax::Expr {
+fn symbolic_gaussian_matrix(args: &[Expr]) -> Expr {
   unevaluated("GaussianMatrix", args)
 }
 
@@ -5378,7 +5378,7 @@ pub fn colorize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if !is_image {
     crate::emit_message(&format!(
       "Colorize::invinput: Expecting an integer matrix or an image instead of {}.",
-      crate::syntax::expr_to_string(&args[0])
+      expr_to_string(&args[0])
     ));
   }
   Ok(unevaluated("Colorize", args))
@@ -5535,7 +5535,7 @@ pub fn pruning_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   else {
     crate::emit_message(&format!(
       "Pruning::imginv: Expecting an image or graphics instead of {}.",
-      crate::syntax::expr_to_string(&args[0])
+      expr_to_string(&args[0])
     ));
     return Ok(unevaluated());
   };
@@ -5673,7 +5673,7 @@ pub fn morphological_binarize_ast(
   else {
     crate::emit_message(&format!(
       "MorphologicalBinarize::imginv: Expecting an image or graphics instead of {}.",
-      crate::syntax::expr_to_string(&args[0])
+      expr_to_string(&args[0])
     ));
     return Ok(unevaluated());
   };
@@ -5687,7 +5687,7 @@ pub fn morphological_binarize_ast(
   let Some((t1, t2)) = thresholds else {
     crate::emit_message(&format!(
       "MorphologicalBinarize::bdarg2: Invalid threshold specification {}.",
-      crate::syntax::expr_to_string(&args[1])
+      expr_to_string(&args[1])
     ));
     return Ok(unevaluated());
   };
@@ -5757,7 +5757,7 @@ pub fn image_value_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   else {
     crate::emit_message(&format!(
       "ImageValue::imginv: Expecting an image or graphics instead of {}.",
-      crate::syntax::expr_to_string(&args[0])
+      expr_to_string(&args[0])
     ));
     return Ok(unevaluated());
   };
@@ -5795,7 +5795,7 @@ pub fn image_value_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let Some(spec) = spec else {
     crate::emit_message(&format!(
       "ImageValue::imgrng: The specified argument {} should be an image, a graphics object or a list of coordinates.",
-      crate::syntax::expr_to_string(&args[1])
+      expr_to_string(&args[1])
     ));
     return Ok(unevaluated());
   };
@@ -6220,7 +6220,7 @@ pub fn filling_transform_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   else {
     crate::emit_message(&format!(
       "FillingTransform::imginv: Expecting an image or graphics instead of {}.",
-      crate::syntax::expr_to_string(&args[0])
+      expr_to_string(&args[0])
     ));
     return Ok(unevaluated());
   };
@@ -6272,14 +6272,14 @@ pub fn filling_transform_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Some(_) => {
           crate::emit_message(&format!(
             "FillingTransform::invh: The height specification {} must be positive.",
-            crate::syntax::expr_to_string(e)
+            expr_to_string(e)
           ));
           return Ok(unevaluated());
         }
         None => {
           crate::emit_message(&format!(
             "FillingTransform::arg2: Expecting either a marker or depth specification as the second argument instead of {}.",
-            crate::syntax::expr_to_string(e)
+            expr_to_string(e)
           ));
           return Ok(unevaluated());
         }
@@ -6460,7 +6460,7 @@ pub fn distance_transform_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   else {
     crate::emit_message(&format!(
       "DistanceTransform::imginv: Expecting an image or graphics instead of {}.",
-      crate::syntax::expr_to_string(&args[0])
+      expr_to_string(&args[0])
     ));
     return Ok(unevaluated());
   };
@@ -6470,7 +6470,7 @@ pub fn distance_transform_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       crate::emit_message(&format!(
         "DistanceTransform::rthres: The specified threshold value {} should represent a real number.",
-        crate::syntax::expr_to_string(&args[1])
+        expr_to_string(&args[1])
       ));
       return Ok(unevaluated());
     }
@@ -6572,7 +6572,7 @@ pub fn color_combine_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       let shown = match &args[1] {
         Expr::String(s) => s.clone(),
-        e => crate::syntax::expr_to_string(e),
+        e => expr_to_string(e),
       };
       crate::emit_message(&format!(
         "ColorCombine::imgcstype: {shown} is an invalid color space specification."
@@ -6586,7 +6586,7 @@ pub fn color_combine_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let invalid_list = || {
     crate::emit_message(&format!(
       "ColorCombine::ccbinput: {} should be a list of images with the same image dimensions.",
-      crate::syntax::expr_to_string(&args[0])
+      expr_to_string(&args[0])
     ));
   };
   let Expr::List(items) = &args[0] else {
@@ -6686,7 +6686,7 @@ pub fn color_separate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   else {
     crate::emit_message(&format!(
       "ColorSeparate::imginv: Expecting an image or graphics instead of {}.",
-      crate::syntax::expr_to_string(&args[0])
+      expr_to_string(&args[0])
     ));
     return Ok(unevaluated("ColorSeparate", args));
   };
@@ -6714,7 +6714,7 @@ pub fn color_quantize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if !matches!(&args[0], Expr::Image { .. }) {
     crate::emit_message(&format!(
       "ColorQuantize::imginv: Expecting an image or graphics instead of {}.",
-      crate::syntax::expr_to_string(&args[0])
+      expr_to_string(&args[0])
     ));
   }
   Ok(unevaluated("ColorQuantize", args))
@@ -6735,7 +6735,7 @@ pub fn threshold_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if !is_array_like {
     crate::emit_message(&format!(
       "Threshold::wlist: Argument {} should be one of rectangular array of any depth, image, sound or sampled sound list.",
-      crate::syntax::expr_to_string(&args[0])
+      expr_to_string(&args[0])
     ));
     return Ok(unevaluated());
   }
@@ -6846,7 +6846,7 @@ pub fn threshold_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     crate::emit_message(&format!(
       "Threshold::nlist: Argument {} is not a nonempty list or rectangular array of numeric quantities.",
-      crate::syntax::expr_to_string(&args[0])
+      expr_to_string(&args[0])
     ));
     return Ok(unevaluated());
   }
@@ -6855,7 +6855,7 @@ pub fn threshold_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     crate::emit_message(&format!(
       "Threshold::nlist: Argument {} is not a nonempty list or rectangular array of numeric quantities.",
-      crate::syntax::expr_to_string(&args[0])
+      expr_to_string(&args[0])
     ));
     Ok(unevaluated())
   }
@@ -7206,7 +7206,7 @@ pub fn image_partition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   else {
     crate::emit_message(&format!(
       "ImagePartition::imginv: Expecting an image or graphics instead of {}.",
-      crate::syntax::expr_to_string(&args[0])
+      expr_to_string(&args[0])
     ));
     return Ok(unevaluated());
   };
@@ -7216,7 +7216,7 @@ pub fn image_partition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   else {
     crate::emit_message(&format!(
       "ImagePartition::arg2: {} is not a valid size specification for image partitions.",
-      crate::syntax::expr_to_string(&args[1])
+      expr_to_string(&args[1])
     ));
     return Ok(unevaluated());
   };
@@ -7242,19 +7242,19 @@ pub fn image_partition_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if let (Some(a), Some(b)) = (step_of(&items[0]), step_of(&items[1])) {
           (a, b)
         } else {
-          invalid(&crate::syntax::expr_to_string(&args[2]));
+          invalid(&expr_to_string(&args[2]));
           return Ok(unevaluated());
         }
       }
       Expr::List(_) => {
-        invalid(&crate::syntax::expr_to_string(&args[2]));
+        invalid(&expr_to_string(&args[2]));
         return Ok(unevaluated());
       }
       e => {
         if let Some(d) = step_of(e) {
           (d, d)
         } else {
-          let shown = crate::syntax::expr_to_string(e);
+          let shown = expr_to_string(e);
           invalid(&format!("{{{shown}, {shown}}}"));
           return Ok(unevaluated());
         }
@@ -7358,7 +7358,7 @@ pub fn image_take_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     crate::emit_message(&format!(
       "ImageTake::imginv: Expecting an image or graphics instead of {}.",
-      crate::syntax::expr_to_string(&args[0])
+      expr_to_string(&args[0])
     ));
     Ok(unevaluated("ImageTake", args))
   }
@@ -8726,7 +8726,7 @@ fn resolve_color_value(
     }
     _ => Err(InterpreterError::EvaluationError(format!(
       "ConstantImage: unsupported value {}",
-      crate::syntax::expr_to_string(expr)
+      expr_to_string(expr)
     ))),
   }
 }
@@ -8916,7 +8916,7 @@ pub fn color_balance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   else {
     crate::emit_message(&format!(
       "ColorBalance::imginv: Expecting an image or graphics instead of {}.",
-      crate::syntax::expr_to_string(&args[0])
+      expr_to_string(&args[0])
     ));
     return Ok(unevaluated());
   };
@@ -9065,13 +9065,13 @@ pub fn color_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let lab1 = color_to_lab(&args[0]).ok_or_else(|| {
     InterpreterError::EvaluationError(format!(
       "ColorDistance: unsupported color {}",
-      crate::syntax::expr_to_string(&args[0])
+      expr_to_string(&args[0])
     ))
   })?;
   let lab2 = color_to_lab(&args[1]).ok_or_else(|| {
     InterpreterError::EvaluationError(format!(
       "ColorDistance: unsupported color {}",
-      crate::syntax::expr_to_string(&args[1])
+      expr_to_string(&args[1])
     ))
   })?;
 

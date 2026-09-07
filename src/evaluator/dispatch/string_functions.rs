@@ -236,7 +236,7 @@ pub fn dispatch_string_functions(
       if !is_valid_codepoint_arg(&args[0]) {
         crate::emit_message(&format!(
           "FromCharacterCode::intnm: Non-negative machine-sized integer expected at position 1 in FromCharacterCode[{}].",
-          crate::syntax::expr_to_string(&args[0]),
+          expr_to_string(&args[0]),
         ));
         return Some(Ok(unevaluated("FromCharacterCode", args)));
       }
@@ -481,8 +481,7 @@ pub fn dispatch_string_functions(
           }
           match (num_val(a), num_val(b)) {
             (Some(x), Some(y)) => x.partial_cmp(&y).unwrap_or(Ordering::Equal),
-            _ => crate::syntax::expr_to_string(a)
-              .cmp(&crate::syntax::expr_to_string(b)),
+            _ => expr_to_string(a).cmp(&expr_to_string(b)),
           }
         }
         let mut items: Vec<Expr> = elems.to_vec();

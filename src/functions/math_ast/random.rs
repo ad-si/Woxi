@@ -5,13 +5,13 @@ use super::*;
 /// invalid dimension specification (a negative integer, a non-integer, or a
 /// list containing one) in position 2 of a Random* array generator, matching
 /// wolframscript instead of raising a hard evaluation error.
-fn random_array_dims_error(name: &str, args: &[Expr]) -> crate::syntax::Expr {
+fn random_array_dims_error(name: &str, args: &[Expr]) -> Expr {
   let call = unevaluated(name, args);
   crate::emit_message(&format!(
     "{}::array: The array dimensions {} given in position 2 of {} should be a list of non-negative machine-sized integers giving the dimensions for the result.",
     name,
-    crate::syntax::expr_to_string(&args[1]),
-    crate::syntax::expr_to_string(&call)
+    expr_to_string(&args[1]),
+    expr_to_string(&call)
   ));
   call
 }
@@ -951,7 +951,7 @@ pub fn random_choice_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // raising a hard error (wolframscript parity).
         crate::emit_message(&format!(
           "RandomChoice::lrwl: The items for choice {} should be a nonempty list or a rule weights -> choices.",
-          crate::syntax::expr_to_string(&args[0])
+          expr_to_string(&args[0])
         ));
         return Ok(unevaluated("RandomChoice", args));
       }
@@ -1120,8 +1120,7 @@ pub fn random_sample_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // Match wolframscript: emit RandomSample::intnm and return the
         // call unevaluated rather than aborting. Covers the dim-list
         // form (e.g. {2, 3}) which Wolfram doesn't support either.
-        let arg_strs: Vec<String> =
-          args.iter().map(crate::syntax::expr_to_output).collect();
+        let arg_strs: Vec<String> = args.iter().map(expr_to_output).collect();
         crate::emit_message(&format!(
           "RandomSample::intnm: Non-negative machine-sized integer expected at position 2 in RandomSample[{}].",
           arg_strs.join(", "),
@@ -1635,7 +1634,7 @@ pub fn random_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Real(_) => {
       crate::emit_message(&format!(
         "RandomPrime::intp: {} is not a positive integer.",
-        crate::syntax::expr_to_string(&args[0])
+        expr_to_string(&args[0])
       ));
       return uneval();
     }
@@ -1647,7 +1646,7 @@ pub fn random_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           Expr::Integer(_) | Expr::Real(_) => {
             crate::emit_message(&format!(
               "RandomPrime::intp: {} is not a positive integer.",
-              crate::syntax::expr_to_string(it)
+              expr_to_string(it)
             ));
             return uneval();
           }
@@ -1675,7 +1674,7 @@ pub fn random_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let posdim = || {
     crate::emit_message(&format!(
       "RandomPrime::posdim: The dimensions parameter {} is expected to be a positive integer or a list of positive integers.",
-      crate::syntax::expr_to_string(&args[1])
+      expr_to_string(&args[1])
     ));
     Ok(unevaluated("RandomPrime", args))
   };

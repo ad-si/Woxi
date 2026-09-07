@@ -169,10 +169,9 @@ fn reduce_xor_operands(
         // Two syntactically-identical operands cancel: a ⊻ a = False.
         // Remove the existing partner instead of keeping the duplicate so
         // an even multiplicity vanishes and an odd one keeps a single copy.
-        let ev_str = crate::syntax::expr_to_string(&evaluated);
-        if let Some(pos) = remaining
-          .iter()
-          .position(|e| crate::syntax::expr_to_string(e) == ev_str)
+        let ev_str = expr_to_string(&evaluated);
+        if let Some(pos) =
+          remaining.iter().position(|e| expr_to_string(e) == ev_str)
         {
           remaining.remove(pos);
         } else {
@@ -253,7 +252,7 @@ pub fn same_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // arguments (e.g. comparing the steps of NestWhileList[f, x, UnsameQ, 2]),
   // turns each comparison into a costly re-traversal.
   let first = &args[0];
-  let first_str = crate::syntax::expr_to_string(first);
+  let first_str = expr_to_string(first);
 
   for arg in args.iter().skip(1) {
     // `expr_to_string` reports every `Image[…]` as the same `-Image-`
@@ -267,7 +266,7 @@ pub fn same_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       continue;
     }
-    let val_str = crate::syntax::expr_to_string(arg);
+    let val_str = expr_to_string(arg);
     if val_str != first_str && !same_q_real_bigfloat(first, arg) {
       return Ok(bool_expr(false));
     }
@@ -378,8 +377,7 @@ pub fn unsame_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // placeholder, so that string fast path would treat any two images as
   // identical regardless of their pixel data — compare those pairs
   // structurally instead.
-  let strs: Vec<String> =
-    args.iter().map(crate::syntax::expr_to_string).collect();
+  let strs: Vec<String> = args.iter().map(expr_to_string).collect();
 
   // UnsameQ is True only if ALL pairs are different
   for i in 0..strs.len() {
@@ -556,7 +554,7 @@ pub fn all_components_equal(a: &Expr, b: &Expr) -> bool {
       if let (Some(va), Some(vb)) = (try_eval_to_f64(a), try_eval_to_f64(b)) {
         va == vb
       } else {
-        crate::syntax::expr_to_string(a) == crate::syntax::expr_to_string(b)
+        expr_to_string(a) == expr_to_string(b)
       }
     }
   }
@@ -597,7 +595,7 @@ pub fn infinity_equal_verdict(a: &Expr, b: &Expr) -> Option<Option<bool>> {
       Expr::FunctionCall { name, args } if name == "DirectedInfinity" => {
         match args.len() {
           0 => Some(None),
-          1 => Some(Some(crate::syntax::expr_to_string(&args[0]))),
+          1 => Some(Some(expr_to_string(&args[0]))),
           _ => None,
         }
       }
@@ -675,7 +673,7 @@ pub fn equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   use crate::functions::math_ast::try_eval_to_f64;
 
-  let first_str = crate::syntax::expr_to_string(&args[0]);
+  let first_str = expr_to_string(&args[0]);
   let mut all_identical = true;
 
   for arg in args.iter().skip(1) {
@@ -692,7 +690,7 @@ pub fn equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       continue;
     }
-    let val_str = crate::syntax::expr_to_string(arg);
+    let val_str = expr_to_string(arg);
     if val_str != first_str {
       all_identical = false;
       break;
@@ -850,8 +848,7 @@ pub fn unequal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   use crate::functions::math_ast::try_eval_to_f64;
 
-  let strs: Vec<String> =
-    args.iter().map(crate::syntax::expr_to_string).collect();
+  let strs: Vec<String> = args.iter().map(expr_to_string).collect();
   let has_free = args.iter().any(crate::evaluator::has_free_symbols);
 
   // For symbolic chains, Wolfram only collapses Unequal to False when an
@@ -983,9 +980,7 @@ pub fn implies_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Some(false) => not_ast(&[a]),
         None => {
           // Implies[a, a] → True.
-          if crate::syntax::expr_to_string(&a)
-            == crate::syntax::expr_to_string(&b)
-          {
+          if expr_to_string(&a) == expr_to_string(&b) {
             Ok(bool_expr(true))
           } else {
             Ok(call("Implies", vec![a, b]))
@@ -1081,7 +1076,7 @@ pub fn equivalent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Duplicate operands are redundant (Equivalent[a, b, a] == Equivalent[a, b]),
   // matching wolframscript. Keep first-occurrence order.
   let mut seen = std::collections::HashSet::new();
-  remaining.retain(|e| seen.insert(crate::syntax::expr_to_string(e)));
+  remaining.retain(|e| seen.insert(expr_to_string(e)));
 
   // If we have both True and False, it's False
   if has_true && has_false {
@@ -1271,17 +1266,11 @@ fn dnf_literal(e: &Expr) -> (String, bool, Expr) {
     Expr::UnaryOp {
       op: UnaryOperator::Not,
       operand,
-    } => (
-      crate::syntax::expr_to_string(operand),
-      false,
-      (**operand).clone(),
-    ),
-    Expr::FunctionCall { name, args } if name == "Not" && args.len() == 1 => (
-      crate::syntax::expr_to_string(&args[0]),
-      false,
-      args[0].clone(),
-    ),
-    _ => (crate::syntax::expr_to_string(e), true, e.clone()),
+    } => (expr_to_string(operand), false, (**operand).clone()),
+    Expr::FunctionCall { name, args } if name == "Not" && args.len() == 1 => {
+      (expr_to_string(&args[0]), false, args[0].clone())
+    }
+    _ => (expr_to_string(e), true, e.clone()),
   }
 }
 
@@ -1825,7 +1814,7 @@ fn is_tautological_clause(clause: &Expr) -> bool {
 
 /// Simple structural equality check for expressions
 fn expr_eq(a: &Expr, b: &Expr) -> bool {
-  crate::syntax::expr_to_string(a) == crate::syntax::expr_to_string(b)
+  expr_to_string(a) == expr_to_string(b)
 }
 
 /// Distribute Or over And to achieve CNF (AND of ORs).
@@ -2202,13 +2191,13 @@ pub fn boolean_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Expr::FunctionCall { name, args }
           if name == "Not" && args.len() == 1 =>
         {
-          (vec![crate::syntax::expr_to_string(&args[0])], vec![0])
+          (vec![expr_to_string(&args[0])], vec![0])
         }
         Expr::UnaryOp {
           op: UnaryOperator::Not,
           operand,
-        } => (vec![crate::syntax::expr_to_string(operand)], vec![0]),
-        _ => (vec![crate::syntax::expr_to_string(e)], vec![1]),
+        } => (vec![expr_to_string(operand)], vec![0]),
+        _ => (vec![expr_to_string(e)], vec![1]),
       }
     }
     match expr {
@@ -2317,12 +2306,12 @@ fn reduce_cnf_clauses(expr: &Expr) -> Expr {
         Expr::FunctionCall { name, args }
           if name == "Not" && args.len() == 1 =>
         {
-          (true, crate::syntax::expr_to_string(&args[0]))
+          (true, expr_to_string(&args[0]))
         }
         Expr::UnaryOp {
           op: UnaryOperator::Not,
           operand,
-        } => (true, crate::syntax::expr_to_string(operand)),
+        } => (true, expr_to_string(operand)),
         Expr::Identifier(name) => (false, name.clone()),
         _ => return None,
       };
@@ -3016,10 +3005,7 @@ fn greedy_cover(primes: &[Implicant], minterms: &[u64]) -> Vec<Implicant> {
 /// The variables are given as expressions rather than names because
 /// `BooleanFunction[k, n, vars]` accepts any expression per position (a
 /// Demonstration typically passes styled labels), not just symbols.
-fn implicants_to_expr(
-  implicants: &[Implicant],
-  vars: &[Expr],
-) -> crate::syntax::Expr {
+fn implicants_to_expr(implicants: &[Implicant], vars: &[Expr]) -> Expr {
   if implicants.is_empty() {
     return bool_expr(false);
   }
@@ -3125,10 +3111,7 @@ pub fn boolean_counting_function_ast(
     crate::emit_message(&format!(
       "BooleanCountingFunction::bspec: {} is not a valid \
        BooleanCountingFunction specification.",
-      crate::syntax::expr_to_output(&unevaluated(
-        "BooleanCountingFunction",
-        args
-      ))
+      expr_to_output(&unevaluated("BooleanCountingFunction", args))
     ));
     return Ok(unevaluated("BooleanCountingFunction", args));
   }
@@ -3452,11 +3435,7 @@ pub fn vector_less_equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(vector_compare_ast(args, "VectorLessEqual", true))
 }
 
-fn vector_compare_ast(
-  args: &[Expr],
-  name: &str,
-  allow_equal: bool,
-) -> crate::syntax::Expr {
+fn vector_compare_ast(args: &[Expr], name: &str, allow_equal: bool) -> Expr {
   // VectorLess/VectorLessEqual takes exactly 1 argument: a list of vectors/scalars
   if args.len() != 1 {
     return unevaluated(name, args);
@@ -3628,7 +3607,7 @@ pub fn boolean_variables_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Resolve the variable list for the 1- or 2-argument satisfiability forms.
-fn satisfiability_vars(args: &[Expr]) -> std::vec::Vec<crate::syntax::Expr> {
+fn satisfiability_vars(args: &[Expr]) -> std::vec::Vec<Expr> {
   if args.len() == 2 {
     match &args[1] {
       Expr::List(items) => items.iter().cloned().collect(),
@@ -3999,7 +3978,7 @@ pub fn unate_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return unevaluated();
   }
   // Which variable positions to test for positive unateness.
-  let key = |e: &Expr| crate::syntax::expr_to_string(e);
+  let key = |e: &Expr| expr_to_string(e);
   let checked: Vec<usize> = match args.get(1) {
     None => (0..n).collect(),
     Some(Expr::List(sel)) => sel

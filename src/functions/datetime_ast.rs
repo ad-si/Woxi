@@ -1302,14 +1302,14 @@ pub fn time_zone_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   else {
     crate::emit_message(&format!(
       "TimeZoneConvert::nodobj: First argument {} in TimeZoneConvert is not a DateObject.",
-      crate::syntax::expr_to_output(&args[0])
+      expr_to_output(&args[0])
     ));
     return unevaluated();
   };
   if dname != "DateObject" || dargs.is_empty() {
     crate::emit_message(&format!(
       "TimeZoneConvert::nodobj: First argument {} in TimeZoneConvert is not a DateObject.",
-      crate::syntax::expr_to_output(&args[0])
+      expr_to_output(&args[0])
     ));
     return unevaluated();
   }
@@ -1364,7 +1364,7 @@ pub fn time_zone_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let Some(target_display) = tz_display(&target_tz) else {
     crate::emit_message(&format!(
       "DateObject::zone: Time zone specification {} should be a real number, integer or time zone string.",
-      crate::syntax::expr_to_output(&target_tz)
+      expr_to_output(&target_tz)
     ));
     return unevaluated();
   };
@@ -1414,7 +1414,7 @@ pub fn time_zone_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let Some(target_offset) = zone_offset_hours(&target_tz, &utc, false) else {
     crate::emit_message(&format!(
       "DateObject::zone: Time zone specification {} should be a real number, integer or time zone string.",
-      crate::syntax::expr_to_output(&target_tz)
+      expr_to_output(&target_tz)
     ));
     return unevaluated();
   };
@@ -1771,7 +1771,7 @@ fn quantity_increment_text(magnitude: &Expr, unit: &str) -> String {
   } else {
     format!("{unit_lower}s")
   };
-  format!("{} {}", crate::syntax::expr_to_string(magnitude), word)
+  format!("{} {}", expr_to_string(magnitude), word)
 }
 
 fn make_date_result(
@@ -2044,11 +2044,7 @@ pub fn date_difference_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   ))
 }
 
-fn date_difference_multi_unit(
-  c1: &[f64],
-  c2: &[f64],
-  units: &Expr,
-) -> crate::syntax::Expr {
+fn date_difference_multi_unit(c1: &[f64], c2: &[f64], units: &Expr) -> Expr {
   // Multi-unit decomposition like {"Week", "Day"} → MixedMagnitude[{9, 6}].
   // Walk the unit list largest-to-smallest, taking the integer part of each
   // bucket and passing the remainder down. Returns the unevaluated form for
@@ -2498,8 +2494,8 @@ pub fn day_name_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let call = unevaluated("DayName", args);
     crate::emit_message(&format!(
       "DayName::nonopt: Options expected (instead of {}) beyond position 1 in {}. An option must be a rule or a list of rules.",
-      crate::syntax::expr_to_string(bad),
-      crate::syntax::expr_to_string(&call)
+      expr_to_string(bad),
+      expr_to_string(&call)
     ));
     return Ok(call);
   }
@@ -4270,7 +4266,7 @@ pub fn date_within_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let arg_error = |e: &Expr| {
     crate::emit_message(&format!(
       "DateWithinQ::arg: Argument {} is not a valid date object expression.",
-      crate::syntax::expr_to_output(e)
+      expr_to_output(e)
     ));
   };
   let Some((s1, e1)) = span(&args[0]) else {
@@ -4492,7 +4488,7 @@ pub fn date_overlaps_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let arg_error = |e: &Expr| {
     crate::emit_message(&format!(
       "DateOverlapsQ::arg: Argument {} is not a valid date object expression.",
-      crate::syntax::expr_to_output(e)
+      expr_to_output(e)
     ));
   };
   let (Some(a), Some(b)) = (spans(&args[0]), spans(&args[1])) else {
@@ -4554,7 +4550,7 @@ pub fn from_julian_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => {
       crate::emit_message(&format!(
         "FromJulianDate::arg: Argument {} cannot be interpreted as a Julian date input.",
-        crate::syntax::expr_to_output(&args[0])
+        expr_to_output(&args[0])
       ));
       return unevaluated();
     }

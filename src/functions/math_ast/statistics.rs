@@ -4023,7 +4023,7 @@ pub fn quantile_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if invalid {
     crate::emit_message(&format!(
       "Quantile::nquan: The Quantile specification {} should be a number or a list of numbers between 0 and 1.",
-      crate::syntax::expr_to_string(&args[1])
+      expr_to_string(&args[1])
     ));
     return Ok(unevaluated("Quantile", args));
   }
@@ -4150,7 +4150,7 @@ pub fn quantile_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(quantile_single(&sorted, &args[1]))
 }
 
-fn quantile_single(sorted: &[&Expr], q: &Expr) -> crate::syntax::Expr {
+fn quantile_single(sorted: &[&Expr], q: &Expr) -> Expr {
   let n = sorted.len();
   // Default Quantile uses Type 1 (inverse of CDF)
   // Index = Ceiling[q * n]
@@ -4754,7 +4754,7 @@ fn format_location_test_result(
   df: f64,
   property: &str,
   test_name: &str,
-) -> crate::syntax::Expr {
+) -> Expr {
   match property {
     "TestStatistic" => num_to_expr(t_stat),
     "PValue" => {
@@ -7017,7 +7017,7 @@ pub fn absolute_correlation_function_ast(
   let bdlag = || {
     crate::emit_message(&format!(
       "AbsoluteCorrelationFunction::bdlag: The lag specification {} should be a symbol, an integer with magnitude less than the length of the data or a range specification indicating such integers.",
-      crate::syntax::expr_to_string(&args[1])
+      expr_to_string(&args[1])
     ));
   };
   let single = |h: i128| -> Result<Expr, InterpreterError> {

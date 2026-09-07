@@ -5075,7 +5075,7 @@ pub fn insert_statement_separators(input: &str) -> String {
         && !ends_with_tag_set
         && !ends_with_operator
         && !ends_with_prefix_not
-        && !crate::syntax::ends_with_continuing_named_operator(&code_tail);
+        && !syntax::ends_with_continuing_named_operator(&code_tail);
 
       if needs_semi {
         // Defer the semicolon — record position before the newline
@@ -5296,7 +5296,7 @@ pub fn split_into_statements(input: &str) -> Vec<String> {
         && !ends_with_condition
         && !ends_with_operator
         && !ends_with_prefix_not
-        && !crate::syntax::ends_with_continuing_named_operator(&code_tail);
+        && !syntax::ends_with_continuing_named_operator(&code_tail);
 
       if should_split {
         let stmt = current.trim().to_string();

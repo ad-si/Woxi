@@ -5834,7 +5834,7 @@ fn simplify_cost_key(e: &Expr) -> (usize, usize) {
 }
 
 fn exprs_equal(a: &Expr, b: &Expr) -> bool {
-  crate::syntax::expr_to_string(a) == crate::syntax::expr_to_string(b)
+  expr_to_string(a) == expr_to_string(b)
 }
 
 /// Apply `together_expr` only to proper sub-expressions of `expr`, leaving the
@@ -5960,11 +5960,7 @@ pub(crate) fn apply_active_assumptions(expr: &Expr) -> Expr {
 /// predicate like `x > 0`) or the option form `Simplify[expr, Assumptions -> assum]`.
 /// The assumption is combined with any existing `$Assumptions` (e.g. set by a
 /// surrounding `Assuming[...]`) using `And`, so nested assumptions accumulate.
-fn simplify_with_assumptions(
-  expr: &Expr,
-  opts: &Expr,
-  full: bool,
-) -> crate::syntax::Expr {
+fn simplify_with_assumptions(expr: &Expr, opts: &Expr, full: bool) -> Expr {
   // Extract the assumption value and decide whether it should *replace*
   // or *combine* with `$Assumptions`. wolframscript treats the option
   // form `Simplify[expr, Assumptions -> asn]` as a per-call override
@@ -6301,9 +6297,7 @@ fn full_simplify_expr(expr: &Expr) -> Expr {
   // front; if anything changed, continue simplifying the denested form so that
   // e.g. Sqrt[5+2Sqrt[6]] + Sqrt[5-2Sqrt[6]] combines to 2 Sqrt[3].
   let denested = denest_nested_radicals(expr);
-  if crate::syntax::expr_to_string(&denested)
-    != crate::syntax::expr_to_string(expr)
-  {
+  if expr_to_string(&denested) != expr_to_string(expr) {
     return full_simplify_expr(&denested);
   }
   let expr = &denested;
@@ -6515,10 +6509,10 @@ fn gamma_factor_absorb(expr: &Expr) -> Option<Expr> {
     let Some(arg) = gamma_arg(&factors[gi]) else {
       continue;
     };
-    let arg_key = crate::syntax::expr_to_string(&arg);
-    let Some(fi) = (0..factors.len()).find(|&fi| {
-      fi != gi && crate::syntax::expr_to_string(&factors[fi]) == arg_key
-    }) else {
+    let arg_key = expr_to_string(&arg);
+    let Some(fi) = (0..factors.len())
+      .find(|&fi| fi != gi && expr_to_string(&factors[fi]) == arg_key)
+    else {
       continue;
     };
     // Gamma[arg + 1].

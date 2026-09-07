@@ -2345,9 +2345,7 @@ pub fn erf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return crate::evaluator::evaluate_expr_to_expr(&neg1(erf_z0));
     }
     // Erf[z, z] = 0
-    if crate::syntax::expr_to_string(&args[0])
-      == crate::syntax::expr_to_string(&args[1])
-    {
+    if expr_to_string(&args[0]) == expr_to_string(&args[1]) {
       return Ok(Expr::Integer(0));
     }
     // Numeric: as soon as either argument is inexact, wolframscript
@@ -6083,9 +6081,7 @@ pub fn trig_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       crate::evaluator::evaluate_function_call_ast("Expand", &[evaluated])?;
     let combined =
       crate::evaluator::evaluate_function_call_ast("Together", &[expanded])?;
-    if crate::syntax::expr_to_string(&combined)
-      == crate::syntax::expr_to_string(&current)
-    {
+    if expr_to_string(&combined) == expr_to_string(&current) {
       break;
     }
     current = combined;

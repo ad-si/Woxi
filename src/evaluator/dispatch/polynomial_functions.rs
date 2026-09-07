@@ -843,7 +843,7 @@ fn modulus_equation_system(expr: &Expr) -> Option<Vec<(Expr, Expr)>> {
       Some(all)
     }
     Expr::BinaryOp {
-      op: crate::syntax::BinaryOperator::And,
+      op: BinaryOperator::And,
       left,
       right,
     } => {

@@ -418,8 +418,8 @@ pub fn subresultant_polynomials_ast(
   }
 
   let npolys_message = |poly1: &Expr, poly2: &Expr| {
-    let p1 = crate::syntax::expr_to_string(poly1);
-    let p2 = crate::syntax::expr_to_string(poly2);
+    let p1 = expr_to_string(poly1);
+    let p2 = expr_to_string(poly2);
     crate::emit_message(&format!(
       "SubresultantPolynomials::npolys: {p1} and {p2} should be polynomials \
        with exact coefficients and the degree of {p1} in {var} should not \
@@ -612,8 +612,8 @@ pub fn subresultant_polynomial_remainders_ast(
   };
 
   let npolys_message = |poly1: &Expr, poly2: &Expr| {
-    let p1 = crate::syntax::expr_to_string(poly1);
-    let p2 = crate::syntax::expr_to_string(poly2);
+    let p1 = expr_to_string(poly1);
+    let p2 = expr_to_string(poly2);
     crate::emit_message(&format!(
       "SubresultantPolynomialRemainders::npolys: {p1} and {p2} should be \
        polynomials with exact coefficients and the degree of {p1} in {var} \

@@ -33,7 +33,7 @@ pub fn dirichlet_character_ast(
   if j <= 0 {
     crate::emit_message(&format!(
       "DirichletCharacter::intp: Positive integer expected at position 2 in {}.",
-      crate::syntax::expr_to_string(&unevaluated(args))
+      expr_to_string(&unevaluated(args))
     ));
     return Ok(unevaluated(args));
   }
@@ -42,7 +42,7 @@ pub fn dirichlet_character_ast(
     crate::emit_message(&format!(
       "DirichletCharacter::invl: Argument {} at position 2 in {} should be a positive integer less than or equal to {}.",
       j,
-      crate::syntax::expr_to_string(&unevaluated(args)),
+      expr_to_string(&unevaluated(args)),
       phi
     ));
     return Ok(unevaluated(args));
@@ -357,7 +357,7 @@ pub fn dirichlet_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if j <= 0 {
     crate::emit_message(&format!(
       "DirichletL::intp: Positive integer expected at position 2 in {}.",
-      crate::syntax::expr_to_string(&unevaluated(args))
+      expr_to_string(&unevaluated(args))
     ));
     return Ok(unevaluated(args));
   }
@@ -366,7 +366,7 @@ pub fn dirichlet_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     crate::emit_message(&format!(
       "DirichletL::invl: Argument {} at position 2 in {} should be a positive integer less than or equal to {}.",
       j,
-      crate::syntax::expr_to_string(&unevaluated(args)),
+      expr_to_string(&unevaluated(args)),
       phi
     ));
     return Ok(unevaluated(args));

@@ -18,7 +18,7 @@
 //! `ErrorNode` the abstract tree is expected to carry, positioned where the
 //! reader gave up.
 
-use crate::syntax::Expr;
+use super::*;
 
 /// How a node reports the piece of source it came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -89,7 +89,7 @@ fn expr_to_str(expr: &Expr) -> std::string::String {
     Expr::Real(f) => crate::syntax::format_real(*f),
     _ => {
       // Try to get string representation
-      let s = crate::syntax::expr_to_string(expr);
+      let s = expr_to_string(expr);
       // If it's a quoted string, strip the quotes
       if s.starts_with('"') && s.ends_with('"') && s.len() >= 2 {
         s[1..s.len() - 1].to_string()
@@ -140,7 +140,7 @@ pub fn string_length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Non-string argument: emit message and return unevaluated (matches wolframscript).
   crate::emit_message(&format!(
     "StringLength::string: String expected at position 1 in {}.",
-    crate::syntax::expr_to_string(&unevaluated("StringLength", args))
+    expr_to_string(&unevaluated("StringLength", args))
   ));
   Ok(unevaluated("StringLength", args))
 }
@@ -600,7 +600,7 @@ pub fn string_join_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
       Expr::BinaryOp {
-        op: crate::syntax::BinaryOperator::StringJoin,
+        op: BinaryOperator::StringJoin,
         left,
         right,
       } => {
@@ -632,7 +632,7 @@ pub fn string_join_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .iter()
       .map(|a| match a {
         Expr::String(s) => s.clone(),
-        _ => crate::syntax::expr_to_string(a),
+        _ => expr_to_string(a),
       })
       .collect::<Vec<_>>()
       .join("<>");
@@ -1355,8 +1355,8 @@ fn has_ignore_case_option(args: &[Expr]) -> bool {
       pattern,
       replacement,
     } = arg
-      && crate::syntax::expr_to_string(pattern) == "IgnoreCase"
-      && crate::syntax::expr_to_string(replacement) == "True"
+      && expr_to_string(pattern) == "IgnoreCase"
+      && expr_to_string(replacement) == "True"
     {
       return true;
     }
@@ -4698,9 +4698,7 @@ fn table_form_to_string(arg: &Expr) -> Option<String> {
     let rows: Vec<Vec<String>> = items
       .iter()
       .map(|row| match row {
-        Expr::List(cells) => {
-          cells.iter().map(crate::syntax::expr_to_output).collect()
-        }
+        Expr::List(cells) => cells.iter().map(expr_to_output).collect(),
         _ => vec![],
       })
       .collect();
@@ -4728,8 +4726,7 @@ fn table_form_to_string(arg: &Expr) -> Option<String> {
     Some(lines.join("\n\n"))
   } else {
     // A flat vector renders one element per row.
-    let lines: Vec<String> =
-      items.iter().map(crate::syntax::expr_to_output).collect();
+    let lines: Vec<String> = items.iter().map(expr_to_output).collect();
     Some(lines.join("\n\n"))
   }
 }
@@ -4749,9 +4746,7 @@ fn matrix_form_to_string(arg: &Expr) -> Option<String> {
     let rows: Vec<Vec<String>> = items
       .iter()
       .map(|row| match row {
-        Expr::List(cells) => {
-          cells.iter().map(crate::syntax::expr_to_output).collect()
-        }
+        Expr::List(cells) => cells.iter().map(expr_to_output).collect(),
         _ => vec![],
       })
       .collect();
@@ -4778,8 +4773,7 @@ fn matrix_form_to_string(arg: &Expr) -> Option<String> {
     Some(lines.join("\n\n"))
   } else {
     // A flat vector renders one element per row (single column).
-    let lines: Vec<String> =
-      items.iter().map(crate::syntax::expr_to_output).collect();
+    let lines: Vec<String> = items.iter().map(expr_to_output).collect();
     Some(lines.join("\n\n"))
   }
 }
@@ -4856,7 +4850,7 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if is_numeric_form {
       crate::emit_message(&format!(
         "ToString::fmtval: {} is not a valid format type.",
-        crate::syntax::expr_to_output(&args[1])
+        expr_to_output(&args[1])
       ));
       return Ok(unevaluated("ToString", args));
     }
@@ -4941,8 +4935,7 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && !inner_args.is_empty()
     && let Expr::List(items) = &inner_args[0]
   {
-    let lines: Vec<String> =
-      items.iter().map(crate::syntax::expr_to_output).collect();
+    let lines: Vec<String> = items.iter().map(expr_to_output).collect();
     return Ok(Expr::String(lines.join("\n")));
   }
 
@@ -5034,8 +5027,8 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
       recursed[0] = e.clone();
       match to_string_ast(&recursed) {
         Ok(Expr::String(ref s)) => s.clone(),
-        Ok(other) => crate::syntax::expr_to_output(&other),
-        Err(_) => crate::syntax::expr_to_output(e),
+        Ok(other) => expr_to_output(&other),
+        Err(_) => expr_to_output(e),
       }
     };
     let parts: Vec<String> = items.iter().map(&render).collect();
@@ -5316,7 +5309,7 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
       );
       // Use OutputForm-style rendering (strings without surrounding
       // quotes), then escape `{` / `}` using TeX's `$\{$` / `$\}$`.
-      let input_text = crate::syntax::expr_to_output(&formatted);
+      let input_text = expr_to_output(&formatted);
       let escaped = input_text.replace('{', "$\\{$").replace('}', "$\\}$");
       return Ok(Expr::String(format!("\\text{{{escaped}}}")));
     }
@@ -5580,7 +5573,7 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// noise in e.g. `0.47000000000000003` renders as `0.47`). Used for chart
 /// labels, which Wolfram typesets in OutputForm rather than full precision.
 pub fn to_string_default_form(expr: &Expr) -> String {
-  crate::syntax::expr_to_output(&truncate_machine_reals_for_to_string(expr))
+  expr_to_output(&truncate_machine_reals_for_to_string(expr))
 }
 
 /// Round a machine-precision Real to 6 significant decimal digits — the
@@ -6000,9 +5993,9 @@ pub fn expr_to_tex(expr: &Expr) -> String {
       {
         return tex_derivative(orders, &inner_args[0], Some(args));
       }
-      crate::syntax::expr_to_output(expr)
+      expr_to_output(expr)
     }
-    _ => crate::syntax::expr_to_output(expr),
+    _ => expr_to_output(expr),
   }
 }
 
@@ -7821,7 +7814,7 @@ fn mathml_inner(expr: &Expr, depth: usize) -> String {
 
     // Fallback: render via output form
     _ => {
-      let s = crate::syntax::expr_to_output(expr);
+      let s = expr_to_output(expr);
       format!("{}<mi>{}</mi>", indent, mathml_escape(&s))
     }
   }
@@ -8318,7 +8311,7 @@ pub fn expr_to_boxes(expr: &Expr) -> String {
     Expr::FunctionCall { name, args } => box_function_call(name, args),
 
     // Fallback
-    _ => crate::syntax::expr_to_output(expr),
+    _ => expr_to_output(expr),
   }
 }
 
@@ -8487,7 +8480,7 @@ fn box_function_call(name: &str, args: &[Expr]) -> String {
 /// Out-of-range indices leave the placeholder literal in the output and
 /// emit a StringForm::sfr warning, matching wolframscript.
 pub(crate) fn format_string_form(template: &str, values: &[Expr]) -> String {
-  format_string_form_with(template, values, crate::syntax::expr_to_output)
+  format_string_form_with(template, values, expr_to_output)
 }
 
 /// Fill a message's template slots — the same `` `` `` / `` `n` ``
@@ -8500,7 +8493,7 @@ pub(crate) fn format_message_template(
   template: &str,
   values: &[Expr],
 ) -> String {
-  format_slots(template, values, crate::syntax::expr_to_output, false)
+  format_slots(template, values, expr_to_output, false)
 }
 
 /// `format_string_form`, rendering each substituted value with `fmt` instead
@@ -8635,7 +8628,7 @@ pub fn apply_string_template(
     for (k, v) in pairs {
       let key = match k {
         Expr::String(s) => s.clone(),
-        other => crate::syntax::expr_to_string(other),
+        other => expr_to_string(other),
       };
       named.insert(key, v.clone());
     }
@@ -8663,7 +8656,7 @@ pub fn apply_string_template(
         named.get(&content)
       };
       if let Some(v) = value {
-        result.push_str(&crate::syntax::expr_to_output(v));
+        result.push_str(&expr_to_output(v));
       }
       // Unfilled slots contribute nothing.
       i = close + 1;
@@ -8708,7 +8701,7 @@ pub fn to_expression_ast_as(
     let interpreted = crate::evaluator::evaluate_expr_to_expr(&ib_args[1])?;
     if args.len() == 3 {
       let wrapped = Expr::FunctionCall {
-        name: crate::syntax::expr_to_string(&args[2]),
+        name: expr_to_string(&args[2]),
         args: vec![interpreted].into(),
       };
       return crate::evaluator::evaluate_expr_to_expr(&wrapped);
@@ -8733,7 +8726,7 @@ pub fn to_expression_ast_as(
   if args.len() == 3 {
     let parsed = parse_program_to_expr(&s)?;
     let wrapped = Expr::FunctionCall {
-      name: crate::syntax::expr_to_string(&args[2]),
+      name: expr_to_string(&args[2]),
       args: vec![parsed].into(),
     };
     return crate::evaluator::evaluate_expr_to_expr(&wrapped);
@@ -9315,7 +9308,7 @@ pub fn to_character_code_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // codepoints directly.
   let encoding = args.get(1).map(|e| match e {
     Expr::String(s) => s.clone(),
-    _ => crate::syntax::expr_to_string(e),
+    _ => expr_to_string(e),
   });
   let is_utf8 = encoding.as_deref().is_some_and(|e| {
     let e = e.replace('-', "").to_ascii_lowercase();
@@ -9341,7 +9334,7 @@ pub fn to_character_code_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       crate::emit_message(&format!(
         "ToCharacterCode::strse: A string or list of strings is \
          expected at position 1 in {}.",
-        crate::syntax::expr_to_string(&unevaluated("ToCharacterCode", args))
+        expr_to_string(&unevaluated("ToCharacterCode", args))
       ));
       return Ok(unevaluated("ToCharacterCode", args));
     }
@@ -9358,7 +9351,7 @@ pub fn to_character_code_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     crate::emit_message(&format!(
       "ToCharacterCode::strse: A string or list of strings is \
        expected at position 1 in {}.",
-      crate::syntax::expr_to_string(&unevaluated("ToCharacterCode", args))
+      expr_to_string(&unevaluated("ToCharacterCode", args))
     ));
     return Ok(unevaluated("ToCharacterCode", args));
   }
@@ -10448,7 +10441,7 @@ pub fn capitalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() == 2 {
     let kind = match &args[1] {
       Expr::String(k) => k.clone(),
-      _ => crate::syntax::expr_to_string(&args[1]),
+      _ => expr_to_string(&args[1]),
     };
     if !matches!(kind.as_str(), "AllWords" | "FirstWord" | "LongWords") {
       // "TitleCase" depends on part-of-speech data we do not model; any
@@ -10560,9 +10553,7 @@ pub fn edit_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let s = if lower { s.to_lowercase() } else { s.clone() };
         s.chars().map(|c| c.to_string()).collect()
       }
-      Expr::List(items) => {
-        items.iter().map(crate::syntax::expr_to_output).collect()
-      }
+      Expr::List(items) => items.iter().map(expr_to_output).collect(),
       _ => {
         let s = expr_to_str(expr);
         let s = if lower { s.to_lowercase() } else { s };
@@ -10599,9 +10590,7 @@ pub fn edit_distance_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 fn alignment_tokens(expr: &Expr) -> std::vec::Vec<std::string::String> {
   match expr {
     Expr::String(s) => s.chars().map(|c| c.to_string()).collect(),
-    Expr::List(items) => {
-      items.iter().map(crate::syntax::expr_to_output).collect()
-    }
+    Expr::List(items) => items.iter().map(expr_to_output).collect(),
     _ => {
       let s = expr_to_str(expr);
       s.chars().map(|c| c.to_string()).collect()
@@ -10689,9 +10678,7 @@ pub fn damerau_levenshtein_distance_ast(
         let s = if lower { s.to_lowercase() } else { s.clone() };
         s.chars().map(|c| c.to_string()).collect()
       }
-      Expr::List(items) => {
-        items.iter().map(crate::syntax::expr_to_output).collect()
-      }
+      Expr::List(items) => items.iter().map(expr_to_output).collect(),
       _ => {
         let s = expr_to_str(expr);
         let s = if lower { s.to_lowercase() } else { s };
@@ -10786,9 +10773,7 @@ fn longest_common_run(a: &[String], b: &[String]) -> (usize, usize, usize) {
 /// characters or a list's elements (compared by their output form).
 fn lcs_tokens(expr: &Expr) -> Option<Vec<String>> {
   match expr {
-    Expr::List(items) => {
-      Some(items.iter().map(crate::syntax::expr_to_output).collect())
-    }
+    Expr::List(items) => Some(items.iter().map(expr_to_output).collect()),
     Expr::String(s) => Some(s.chars().map(|c| c.to_string()).collect()),
     _ => None,
   }
@@ -10808,10 +10793,8 @@ pub fn longest_common_subsequence_ast(
 
   // List inputs compare whole elements and return the matching sublist.
   if let (Expr::List(l1), Expr::List(l2)) = (&args[0], &args[1]) {
-    let t1: Vec<String> =
-      l1.iter().map(crate::syntax::expr_to_output).collect();
-    let t2: Vec<String> =
-      l2.iter().map(crate::syntax::expr_to_output).collect();
+    let t1: Vec<String> = l1.iter().map(expr_to_output).collect();
+    let t2: Vec<String> = l2.iter().map(expr_to_output).collect();
     let (start, _, len) = longest_common_run(&t1, &t2);
     let sub: Vec<Expr> = l1[start..start + len].to_vec();
     return Ok(Expr::List(sub.into()));
@@ -10882,10 +10865,8 @@ pub fn longest_common_sequence_ast(
 
   // List inputs compare whole elements and return the matching sublist.
   if let (Expr::List(l1), Expr::List(l2)) = (&args[0], &args[1]) {
-    let t1: Vec<String> =
-      l1.iter().map(crate::syntax::expr_to_output).collect();
-    let t2: Vec<String> =
-      l2.iter().map(crate::syntax::expr_to_output).collect();
+    let t1: Vec<String> = l1.iter().map(expr_to_output).collect();
+    let t2: Vec<String> = l2.iter().map(expr_to_output).collect();
     let sub: Vec<Expr> = lcs_index_pairs(&t1, &t2)
       .iter()
       .map(|&(i, _)| l1[i].clone())
@@ -11024,10 +11005,8 @@ pub fn sequence_alignment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       (true, c1, c2, Vec::<Expr>::new(), Vec::<Expr>::new())
     }
     (Expr::List(l1), Expr::List(l2)) => {
-      let c1: Vec<String> =
-        l1.iter().map(crate::syntax::expr_to_output).collect();
-      let c2: Vec<String> =
-        l2.iter().map(crate::syntax::expr_to_output).collect();
+      let c1: Vec<String> = l1.iter().map(expr_to_output).collect();
+      let c2: Vec<String> = l2.iter().map(expr_to_output).collect();
       let o1: Vec<Expr> = l1.iter().cloned().collect();
       let o2: Vec<Expr> = l2.iter().cloned().collect();
       (false, c1, c2, o1, o2)
@@ -11985,8 +11964,8 @@ pub fn alphabetic_sort_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::List(items) => {
       let mut sorted = items.clone();
       sorted.sort_by(|a, b| {
-        let sa = crate::syntax::expr_to_string(a).to_lowercase();
-        let sb = crate::syntax::expr_to_string(b).to_lowercase();
+        let sa = expr_to_string(a).to_lowercase();
+        let sb = expr_to_string(b).to_lowercase();
         sa.cmp(&sb)
       });
       Ok(Expr::List(sorted))
@@ -12104,7 +12083,7 @@ pub fn hash_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if hash_type == "Expression" {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
-    let repr = crate::syntax::expr_to_string(&args[0]);
+    let repr = expr_to_string(&args[0]);
     let mut hasher = DefaultHasher::new();
     repr.hash(&mut hasher);
     let h = hasher.finish();
@@ -12272,7 +12251,7 @@ pub fn compress_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     )));
   }
   let evaluated = crate::evaluator::evaluate_expr_to_expr(&args[0])?;
-  let repr = crate::syntax::expr_to_string(&evaluated);
+  let repr = expr_to_string(&evaluated);
 
   use flate2::Compression;
   use flate2::write::ZlibEncoder;
@@ -12475,7 +12454,7 @@ pub fn read_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => {
         let formatted_args = args
           .iter()
-          .map(crate::syntax::expr_to_string)
+          .map(expr_to_string)
           .collect::<Vec<_>>()
           .join(", ");
         crate::emit_message(&format!(
@@ -12572,7 +12551,7 @@ fn read_list_record(
   text: &str,
   types: &[Expr],
   max_count: Option<usize>,
-) -> crate::syntax::Expr {
+) -> Expr {
   let mut results = Vec::new();
 
   for line in text.lines() {
@@ -13031,7 +13010,7 @@ pub fn expr_to_c(expr: &Expr) -> String {
     } => c_like_comparison(operands, operators, &expr_to_c, false),
     // Rational numbers are FunctionCall{name:"Rational", args:[num, den]}
     // but they get evaluated before reaching here, so this pattern is rare
-    _ => crate::syntax::expr_to_string(expr),
+    _ => expr_to_string(expr),
   }
 }
 
@@ -13157,7 +13136,7 @@ pub fn expr_to_fortran(expr: &Expr) -> String {
       operands,
       operators,
     } => c_like_comparison(operands, operators, &expr_to_fortran, true),
-    _ => crate::syntax::expr_to_string(expr),
+    _ => expr_to_string(expr),
   }
 }
 
@@ -13532,13 +13511,13 @@ fn template_slot_value(key: &Expr, args: &Expr) -> Option<Expr> {
       let key_str = match key {
         Expr::String(s) => s.clone(),
         Expr::Identifier(s) => s.clone(),
-        other => crate::syntax::expr_to_string(other),
+        other => expr_to_string(other),
       };
       pairs.iter().find_map(|(k, v)| {
         let k_str = match k {
           Expr::String(s) => s.clone(),
           Expr::Identifier(s) => s.clone(),
-          other => crate::syntax::expr_to_string(other),
+          other => expr_to_string(other),
         };
         (k_str == key_str).then(|| v.clone())
       })
@@ -13547,7 +13526,7 @@ fn template_slot_value(key: &Expr, args: &Expr) -> Option<Expr> {
       let key_str = match key {
         Expr::String(s) => s.clone(),
         Expr::Identifier(s) => s.clone(),
-        other => crate::syntax::expr_to_string(other),
+        other => expr_to_string(other),
       };
       pairs.iter().find_map(|rule| {
         let (k, v) = match rule {
@@ -13564,7 +13543,7 @@ fn template_slot_value(key: &Expr, args: &Expr) -> Option<Expr> {
         let k_str = match k {
           Expr::String(s) => s.clone(),
           Expr::Identifier(s) => s.clone(),
-          other => crate::syntax::expr_to_string(other),
+          other => expr_to_string(other),
         };
         (k_str == key_str).then(|| v.clone())
       })
@@ -13585,7 +13564,7 @@ fn template_object_apply(
   let render = |e: &Expr| -> String {
     match e {
       Expr::String(s) => s.clone(),
-      other => crate::syntax::expr_to_string(other),
+      other => expr_to_string(other),
     }
   };
 
@@ -13618,7 +13597,7 @@ fn template_object_apply(
         let evaluated = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
         result.push_str(&render(&evaluated));
       }
-      other => result.push_str(&crate::syntax::expr_to_string(other)),
+      other => result.push_str(&expr_to_string(other)),
     }
   }
   Ok(Expr::String(result))
@@ -13688,7 +13667,7 @@ pub fn template_apply_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       for (i, item) in items.iter().enumerate() {
         let value_str = match item {
           Expr::String(s) => s.clone(),
-          other => crate::syntax::expr_to_string(other),
+          other => expr_to_string(other),
         };
         map.insert((i + 1).to_string(), value_str);
       }
@@ -13699,11 +13678,11 @@ pub fn template_apply_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       for (k, v) in pairs {
         let key = match k {
           Expr::String(s) => s.clone(),
-          other => crate::syntax::expr_to_string(other),
+          other => expr_to_string(other),
         };
         let value = match v {
           Expr::String(s) => s.clone(),
-          other => crate::syntax::expr_to_string(other),
+          other => expr_to_string(other),
         };
         map.insert(key, value);
       }
@@ -13736,11 +13715,11 @@ pub fn template_apply_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         };
         let key = match key_expr {
           Expr::String(s) => s.clone(),
-          other => crate::syntax::expr_to_string(other),
+          other => expr_to_string(other),
         };
         let value = match val_expr {
           Expr::String(s) => s.clone(),
-          other => crate::syntax::expr_to_string(other),
+          other => expr_to_string(other),
         };
         map.insert(key, value);
       }
@@ -13934,7 +13913,7 @@ fn query_stringify(e: &Expr) -> String {
     Expr::String(s) => s.clone(),
     Expr::Identifier(id) if id == "True" => "true".to_string(),
     Expr::Identifier(id) if id == "False" => "false".to_string(),
-    _ => crate::syntax::expr_to_string(e),
+    _ => expr_to_string(e),
   }
 }
 
@@ -14123,7 +14102,7 @@ pub fn byte_array_to_string_ast(
   }
   crate::emit_message(&format!(
     "ByteArrayToString::barray: {} is not a ByteArray object or {{}}.",
-    crate::syntax::expr_to_string(&args[0])
+    expr_to_string(&args[0])
   ));
   Ok(unevaluated("ByteArrayToString", args))
 }
@@ -15317,7 +15296,7 @@ fn padded_form_to_string(
       _ => {
         // Reals/rationals: render via output form, padded to width n+1.
         crate::functions::math_ast::expr_to_num(value)?;
-        let body = crate::syntax::expr_to_output(value);
+        let body = expr_to_output(value);
         Some(pad_left(&body, (*n as usize) + 1, lpad))
       }
     },
@@ -15600,7 +15579,7 @@ fn expand_expression_slots(
         let value = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
         out.push_str(&match &value {
           Expr::String(text) => text.clone(),
-          other => crate::syntax::expr_to_string(other),
+          other => expr_to_string(other),
         });
       }
       Err(_) => out.push_str(&rest[start..end + 2]),
@@ -15778,7 +15757,7 @@ pub fn snippet_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         crate::emit_message(&format!(
           "Snippet::invspec: Specification {} should be an integer or Span.",
-          crate::syntax::expr_to_output(spec)
+          expr_to_output(spec)
         ));
         return Ok(Expr::Identifier("$Failed".to_string()));
       }
@@ -15921,11 +15900,11 @@ pub fn character_normalize_ast(
       // Strings show quoted in the message; anything else in OutputForm.
       let shown = match other {
         Expr::String(s) => format!("\"{s}\""),
-        _ => crate::syntax::expr_to_output(other),
+        _ => expr_to_output(other),
       };
       let text = match other {
         Expr::String(s) => s.clone(),
-        _ => crate::syntax::expr_to_output(other),
+        _ => expr_to_output(other),
       };
       let listing = |skip: Option<&str>| {
         let names: Vec<String> = NORMALIZATION_FORMS

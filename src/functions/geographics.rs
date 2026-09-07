@@ -1606,7 +1606,7 @@ fn geographics_impl(
   content: &Expr,
   opt_args: &[Expr],
   legend: Option<Legend>,
-) -> crate::syntax::Expr {
+) -> Expr {
   // Options: ImageSize (width), GeoRange, GeoProjection, GeoGridLines.
   let mut width = 360.0_f64;
   let mut range = GeoRange::Auto;

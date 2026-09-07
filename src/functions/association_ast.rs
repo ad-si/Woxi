@@ -287,7 +287,7 @@ pub fn key_drop_from_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "KeyDropFrom expects exactly 2 arguments".into(),
     ));
   }
-  let key_str = crate::syntax::expr_to_string(&args[1]);
+  let key_str = expr_to_string(&args[1]);
   // Compare keys structurally: a string key ("a") must NOT match a symbol
   // key (a), matching wolframscript (and Woxi's part-access path).
   let key_cmp = key_str.as_str();
@@ -297,7 +297,7 @@ pub fn key_drop_from_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let filtered: Vec<(Expr, Expr)> = items
         .iter()
         .filter(|(k, _)| {
-          let k_str = crate::syntax::expr_to_string(k);
+          let k_str = expr_to_string(k);
           let k_cmp = k_str.as_str();
           k_cmp != key_cmp
         })
@@ -328,7 +328,7 @@ pub fn key_exists_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "KeyExistsQ expects exactly 2 arguments".into(),
     ));
   }
-  let key_str = crate::syntax::expr_to_string(&args[1]);
+  let key_str = expr_to_string(&args[1]);
   // Compare keys structurally: a string key ("a") must NOT match a symbol
   // key (a), matching wolframscript (and Woxi's part-access path).
   let key_cmp = key_str.as_str();
@@ -336,7 +336,7 @@ pub fn key_exists_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match &args[0] {
     Expr::Association(items) => {
       for (k, _) in items {
-        let k_str = crate::syntax::expr_to_string(k);
+        let k_str = expr_to_string(k);
         let k_cmp = k_str.as_str();
         if k_cmp == key_cmp {
           return Ok(bool_expr(true));
@@ -350,7 +350,7 @@ pub fn key_exists_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       for item in items {
         if let Some(k) = extract_rule_key(item) {
-          let k_str = crate::syntax::expr_to_string(&k);
+          let k_str = expr_to_string(&k);
           if k_str.as_str() == key_cmp {
             return Ok(bool_expr(true));
           }
@@ -397,7 +397,7 @@ pub fn lookup_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(results?.into()));
   }
 
-  let key_str = crate::syntax::expr_to_string(&args[1]);
+  let key_str = expr_to_string(&args[1]);
   // Compare keys structurally: a string key ("a") must NOT match a symbol
   // key (a), matching wolframscript (and Woxi's part-access path).
   let key_cmp = key_str.as_str();
@@ -405,7 +405,7 @@ pub fn lookup_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match &args[0] {
     Expr::Association(items) => {
       for (k, v) in items {
-        let k_str = crate::syntax::expr_to_string(k);
+        let k_str = expr_to_string(k);
         let k_cmp = k_str.as_str();
         if k_cmp == key_cmp {
           return Ok(assoc_entry_value(k, v));
@@ -461,8 +461,8 @@ pub fn key_sort_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           crate::functions::list_helpers_ast::comparator_cmp(p, &a.0, &b.0)
         }),
         None => sorted.sort_by(|a, b| {
-          let ka = crate::syntax::expr_to_string(&a.0);
-          let kb = crate::syntax::expr_to_string(&b.0);
+          let ka = expr_to_string(&a.0);
+          let kb = expr_to_string(&b.0);
           if let (Ok(na), Ok(nb)) = (ka.parse::<f64>(), kb.parse::<f64>()) {
             na.partial_cmp(&nb).unwrap_or(std::cmp::Ordering::Equal)
           } else {
@@ -650,7 +650,7 @@ pub fn merge_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let push_pair = |key_values: &mut Vec<(String, Expr, Vec<Expr>)>,
                    k: &Expr,
                    v: &Expr| {
-    let k_str = crate::syntax::expr_to_string(k);
+    let k_str = expr_to_string(k);
     if let Some(entry) = key_values.iter_mut().find(|(ks, _, _)| *ks == k_str) {
       entry.2.push(v.clone());
     } else {
@@ -785,10 +785,8 @@ pub fn key_take_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Keys compare structurally (a string key "a" must not match a symbol a).
   let keep_keys: Vec<String> = match &args[1] {
-    Expr::List(items) => {
-      items.iter().map(crate::syntax::expr_to_string).collect()
-    }
-    other => vec![crate::syntax::expr_to_string(other)],
+    Expr::List(items) => items.iter().map(expr_to_string).collect(),
+    other => vec![expr_to_string(other)],
   };
 
   match &args[0] {
@@ -796,7 +794,7 @@ pub fn key_take_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let mut result = Vec::new();
       for desired_key in &keep_keys {
         for (k, v) in items {
-          let k_str = crate::syntax::expr_to_string(k);
+          let k_str = expr_to_string(k);
           let k_cmp = k_str.as_str();
           if k_cmp == desired_key {
             result.push((k.clone(), v.clone()));
@@ -826,10 +824,8 @@ pub fn key_drop_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Keys compare structurally (a string key "a" must not match a symbol a).
   let drop_keys: Vec<String> = match &args[1] {
-    Expr::List(items) => {
-      items.iter().map(crate::syntax::expr_to_string).collect()
-    }
-    other => vec![crate::syntax::expr_to_string(other)],
+    Expr::List(items) => items.iter().map(expr_to_string).collect(),
+    other => vec![expr_to_string(other)],
   };
 
   match &args[0] {
@@ -837,7 +833,7 @@ pub fn key_drop_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let result: Vec<(Expr, Expr)> = items
         .iter()
         .filter(|(k, _)| {
-          let k_str = crate::syntax::expr_to_string(k);
+          let k_str = expr_to_string(k);
           let k_cmp = k_str.as_str();
           !drop_keys.iter().any(|dk| dk == k_cmp)
         })
@@ -971,7 +967,7 @@ pub fn key_union_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut seen_keys: Vec<String> = Vec::new();
   for assoc in &all_assocs {
     for (key, _) in assoc {
-      let key_str = crate::syntax::expr_to_string(key);
+      let key_str = expr_to_string(key);
       if !seen_keys.contains(&key_str) {
         seen_keys.push(key_str);
         all_keys.push(key.clone());
@@ -984,10 +980,10 @@ pub fn key_union_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   for assoc in &all_assocs {
     let mut new_items: Vec<(Expr, Expr)> = Vec::new();
     for key in &all_keys {
-      let key_str = crate::syntax::expr_to_string(key);
+      let key_str = expr_to_string(key);
       let value = assoc
         .iter()
-        .find(|(k, _)| crate::syntax::expr_to_string(k) == key_str)
+        .find(|(k, _)| expr_to_string(k) == key_str)
         .map(|(_, v)| v.clone());
       if let Some(v) = value {
         new_items.push((key.clone(), v));
@@ -995,7 +991,7 @@ pub fn key_union_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let missing = match default_fn {
           Some(func) => {
             let call = Expr::FunctionCall {
-              name: crate::syntax::expr_to_string(func),
+              name: expr_to_string(func),
               args: vec![key.clone()].into(),
             };
             crate::evaluator::evaluate_expr_to_expr(&call)?
@@ -1070,11 +1066,10 @@ pub fn key_intersection_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .iter()
     .map(|(k, _)| k.clone())
     .filter(|k| {
-      let ks = crate::syntax::expr_to_string(k);
-      all_assocs[1..].iter().all(|a| {
-        a.iter()
-          .any(|(k2, _)| crate::syntax::expr_to_string(k2) == ks)
-      })
+      let ks = expr_to_string(k);
+      all_assocs[1..]
+        .iter()
+        .all(|a| a.iter().any(|(k2, _)| expr_to_string(k2) == ks))
     })
     .collect();
 
@@ -1084,10 +1079,10 @@ pub fn key_intersection_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let items: Vec<(Expr, Expr)> = common_keys
         .iter()
         .map(|k| {
-          let ks = crate::syntax::expr_to_string(k);
+          let ks = expr_to_string(k);
           let v = assoc
             .iter()
-            .find(|(k2, _)| crate::syntax::expr_to_string(k2) == ks)
+            .find(|(k2, _)| expr_to_string(k2) == ks)
             .map(|(_, v)| v.clone())
             .unwrap();
           (k.clone(), v)
@@ -1119,12 +1114,12 @@ pub fn key_complement_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let other_keys: Vec<String> = all_assocs[1..]
     .iter()
-    .flat_map(|a| a.iter().map(|(k, _)| crate::syntax::expr_to_string(k)))
+    .flat_map(|a| a.iter().map(|(k, _)| expr_to_string(k)))
     .collect();
 
   let items: Vec<(Expr, Expr)> = all_assocs[0]
     .iter()
-    .filter(|(k, _)| !other_keys.contains(&crate::syntax::expr_to_string(k)))
+    .filter(|(k, _)| !other_keys.contains(&expr_to_string(k)))
     .cloned()
     .collect();
 

@@ -271,10 +271,7 @@ fn require_audio(
   if audio.is_none() {
     crate::emit_message(&format!(
       "{name}::audio: Expecting an audio object instead of {}.",
-      args
-        .first()
-        .map(crate::syntax::expr_to_string)
-        .unwrap_or_default()
+      args.first().map(expr_to_string).unwrap_or_default()
     ));
   }
   audio

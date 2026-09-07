@@ -8074,7 +8074,7 @@ pub(crate) fn bare_tick_label(e: &Expr, pos: f64) -> String {
       // A negative literal may arrive either folded into the number or as
       // a minus applied to it, depending on how the list was written.
       Expr::UnaryOp {
-        op: crate::syntax::UnaryOperator::Minus,
+        op: UnaryOperator::Minus,
         operand,
       } => is_literal_number(operand),
       _ => false,
@@ -8271,7 +8271,7 @@ pub(crate) fn parse_plot_legends(
         .iter()
         .map(|item| {
           crate::functions::chart::expr_to_label(item)
-            .unwrap_or_else(|| crate::syntax::expr_to_string(item))
+            .unwrap_or_else(|| expr_to_string(item))
         })
         .collect();
       (labels, false, false, LegendPosition::Right)
@@ -8860,7 +8860,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       bodies.push(&cargs[0]);
       let label = match &cargs[1] {
         Expr::String(s) => s.clone(),
-        other => crate::syntax::expr_to_output(other),
+        other => expr_to_output(other),
       };
       plot_opts.callout_labels.push(Some(label));
     } else {
@@ -8874,9 +8874,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && plot_opts.plot_legends.is_empty()
   {
     for b in &bodies {
-      plot_opts
-        .plot_legends
-        .push(crate::syntax::expr_to_output(b));
+      plot_opts.plot_legends.push(expr_to_output(b));
     }
   }
 
@@ -9198,9 +9196,7 @@ fn log_scale_plot_ast(
     && plot_opts.plot_legends.is_empty()
   {
     for b in &bodies {
-      plot_opts
-        .plot_legends
-        .push(crate::syntax::expr_to_output(b));
+      plot_opts.plot_legends.push(expr_to_output(b));
     }
   }
 

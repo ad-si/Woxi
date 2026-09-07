@@ -1549,7 +1549,7 @@ fn reduce_linear_inequality(
   var: &str,
   op: CompOp,
   domain: Option<&str>,
-) -> crate::syntax::Expr {
+) -> Expr {
   let terms = collect_additive_terms(poly);
   let mut a_parts: Vec<Expr> = Vec::new();
   let mut b_parts: Vec<Expr> = Vec::new();
@@ -1603,7 +1603,7 @@ fn reduce_quadratic_inequality(
   var: &str,
   op: CompOp,
   domain: Option<&str>,
-) -> crate::syntax::Expr {
+) -> Expr {
   let terms = collect_additive_terms(poly);
   let mut coeffs: Vec<Expr> = Vec::new();
   for d in 0..=2 {

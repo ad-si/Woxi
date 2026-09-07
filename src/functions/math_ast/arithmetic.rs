@@ -6550,7 +6550,7 @@ fn combine_like_bases(args: Vec<Expr>) -> Result<Vec<Expr>, InterpreterError> {
 fn try_series_data_times_var_power(
   series: &Expr,
   power: &Expr,
-) -> std::option::Option<crate::syntax::Expr> {
+) -> std::option::Option<Expr> {
   // Match a SeriesData head.
   let (var, x0, coeffs, nmin, nmax, denom) = match series {
     Expr::FunctionCall { name, args }
@@ -12353,7 +12353,7 @@ pub fn min_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Sum BigFloat (precision-tagged) numbers with precision tracking.
 /// Handles BigFloat + BigFloat and BigFloat + Integer/Rational.
-fn bigfloat_plus(args: &[Expr]) -> crate::syntax::Expr {
+fn bigfloat_plus(args: &[Expr]) -> Expr {
   // Extract (f64_value, precision) for each argument
   // BigFloat: use stored precision; Integer/Rational: infinite precision
   let mut sum_val: f64 = 0.0;

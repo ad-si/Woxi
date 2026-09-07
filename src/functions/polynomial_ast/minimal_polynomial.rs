@@ -2147,7 +2147,7 @@ pub fn number_field_signature_ast(
   }
   crate::emit_message(&format!(
     "NumberFieldSignature::nalg: {} is not an explicit algebraic number.",
-    crate::syntax::expr_to_string(&alpha)
+    expr_to_string(&alpha)
   ));
   Ok(unevaluated("NumberFieldSignature", args))
 }
@@ -2172,7 +2172,7 @@ fn algebraic_minpoly(
 fn nalg_unevaluated(head: &str, args: &[Expr]) -> Expr {
   crate::emit_message(&format!(
     "{head}::nalg: {} is not an explicit algebraic number.",
-    crate::syntax::expr_to_string(&args[0])
+    expr_to_string(&args[0])
   ));
   unevaluated(head, args)
 }
@@ -2376,7 +2376,7 @@ pub fn number_field_discriminant_ast(
   {
     crate::emit_message(&format!(
       "NumberFieldDiscriminant::nalg: {} is not an explicit algebraic number.",
-      crate::syntax::expr_to_string(&args[0])
+      expr_to_string(&args[0])
     ));
     return unevaluated();
   }

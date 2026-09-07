@@ -289,11 +289,7 @@ pub fn partition_multi_dim_ast(
 }
 
 /// Flatten[expr, n, head] - flatten expressions with a specific head
-fn flatten_head_ast(
-  list: &Expr,
-  depth: i128,
-  head: &str,
-) -> crate::syntax::Expr {
+fn flatten_head_ast(list: &Expr, depth: i128, head: &str) -> Expr {
   fn flatten_with_head(
     expr: &Expr,
     depth: i128,
@@ -395,11 +391,7 @@ fn flatten_together_depth(expr: &Expr, head: &str) -> usize {
   }
 }
 
-fn flatten_dims_ast(
-  list: &Expr,
-  dim_spec: &[Vec<usize>],
-  head: &str,
-) -> crate::syntax::Expr {
+fn flatten_dims_ast(list: &Expr, dim_spec: &[Vec<usize>], head: &str) -> Expr {
   // Access element at given multi-index, returns None if out of bounds
   fn access(expr: &Expr, indices: &[usize], head: &str) -> Option<Expr> {
     if indices.is_empty() {
@@ -964,7 +956,7 @@ pub fn transpose_perm_ast(
 
   // The literal call, used for messages and the unevaluated return value.
   let perm_list = Expr::List(perm.to_vec().into());
-  let perm_str = crate::syntax::expr_to_string(&perm_list);
+  let perm_str = expr_to_string(&perm_list);
   let unevaluated =
     || Ok(call("Transpose", vec![list.clone(), perm_list.clone()]));
 
@@ -978,7 +970,7 @@ pub fn transpose_perm_ast(
       _ => {
         crate::emit_message(&format!(
           "Transpose::perm1: Entry {} in permutation {} is not a positive machine integer.",
-          crate::syntax::expr_to_string(p),
+          expr_to_string(p),
           perm_str
         ));
         return unevaluated();
@@ -1012,7 +1004,7 @@ pub fn transpose_perm_ast(
     crate::emit_message(&format!(
       "Transpose::tperm: Permutation {} is longer than the dimensions {} of the expression.",
       perm_str,
-      crate::syntax::expr_to_string(&dims_list)
+      expr_to_string(&dims_list)
     ));
     return unevaluated();
   }
@@ -1973,10 +1965,10 @@ pub fn join_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
       if let Expr::Association(pairs) = list {
         for (k, v) in pairs {
           // Later values override earlier ones for the same key
-          let key_str = crate::syntax::expr_to_string(k);
+          let key_str = expr_to_string(k);
           if let Some(pos) = result
             .iter()
-            .position(|(ek, _)| crate::syntax::expr_to_string(ek) == key_str)
+            .position(|(ek, _)| expr_to_string(ek) == key_str)
           {
             result[pos] = (k.clone(), v.clone());
           } else {
@@ -2087,10 +2079,10 @@ pub fn append_ast(list: &Expr, elem: &Expr) -> Result<Expr, InterpreterError> {
       // Append a rule to an association
       // If the key already exists, remove the old entry (new one goes to end)
       if let Some((k, v)) = extract_rule_pair(elem) {
-        let key_str = crate::syntax::expr_to_string(&k);
+        let key_str = expr_to_string(&k);
         let mut result: Vec<(Expr, Expr)> = pairs
           .iter()
-          .filter(|(ek, _)| crate::syntax::expr_to_string(ek) != key_str)
+          .filter(|(ek, _)| expr_to_string(ek) != key_str)
           .cloned()
           .collect();
         result.push((k, v));
@@ -2123,12 +2115,12 @@ pub fn prepend_ast(list: &Expr, elem: &Expr) -> Result<Expr, InterpreterError> {
       // Prepend a rule to an association
       // If the key already exists, remove the old entry (new one goes to front)
       if let Some((k, v)) = extract_rule_pair(elem) {
-        let key_str = crate::syntax::expr_to_string(&k);
+        let key_str = expr_to_string(&k);
         let mut result = vec![(k, v)];
         result.extend(
           pairs
             .iter()
-            .filter(|(ek, _)| crate::syntax::expr_to_string(ek) != key_str)
+            .filter(|(ek, _)| expr_to_string(ek) != key_str)
             .cloned(),
         );
         Ok(Expr::Association(result))

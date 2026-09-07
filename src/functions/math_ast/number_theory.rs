@@ -2958,7 +2958,7 @@ fn factor_integer_rational(
   Ok(Expr::List(result.into()))
 }
 
-fn factor_integer_i128(n: i128) -> crate::syntax::Expr {
+fn factor_integer_i128(n: i128) -> Expr {
   if n == 0 {
     // wolframscript: FactorInteger[0] = {{0, 1}} (0 treated as 0^1).
     return Expr::List(
@@ -3024,7 +3024,7 @@ fn factor_integer_i128(n: i128) -> crate::syntax::Expr {
   Expr::List(factors.into())
 }
 
-fn factor_integer_bigint(n: &BigInt) -> crate::syntax::Expr {
+fn factor_integer_bigint(n: &BigInt) -> Expr {
   use num_traits::{One, Signed, Zero};
 
   if n.is_zero() {
@@ -3170,7 +3170,7 @@ pub fn integer_partitions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let nninfseq = || {
     crate::emit_message(&format!(
       "IntegerPartitions::nninfseq: Position 2 of {} must be All, Infinity, nmax, {{nmin}}, {{nmin, nmax}} or {{nmin, nmax, dn}}, where nmin is a non-negative integer, nmax is a non-negative integer or Infinity, and dn is a nonzero integer.",
-      crate::syntax::expr_to_string(&unevaluated("IntegerPartitions", args))
+      expr_to_string(&unevaluated("IntegerPartitions", args))
     ));
     Ok(unevaluated("IntegerPartitions", args))
   };

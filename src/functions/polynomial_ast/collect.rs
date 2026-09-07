@@ -205,7 +205,7 @@ pub fn collect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         name: if let Expr::Identifier(n) = h {
           n.clone()
         } else {
-          crate::syntax::expr_to_string(h)
+          expr_to_string(h)
         },
         args: vec![combined_coeff].into(),
       };
@@ -607,8 +607,7 @@ fn build_times_chain(factors: &[Expr]) -> Expr {
 /// Recursively replace every occurrence of `from` with `to` in `expr`,
 /// using structural equality (via pretty-printed form).
 fn substitute_expr_local(expr: &Expr, from: &Expr, to: &Expr) -> Expr {
-  if crate::syntax::expr_to_string(expr) == crate::syntax::expr_to_string(from)
-  {
+  if expr_to_string(expr) == expr_to_string(from) {
     return to.clone();
   }
   match expr {

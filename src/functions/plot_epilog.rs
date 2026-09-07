@@ -602,7 +602,7 @@ fn render_item(
           // SVG markup; a plain one goes through the same path, which
           // escapes it.
           let label = styled.as_ref().map_or_else(
-            || svg_escape_text(&crate::syntax::expr_to_output(body)),
+            || svg_escape_text(&expr_to_output(body)),
             super::chart::StyledLabel::svg,
           );
           let font_size =

@@ -4111,7 +4111,7 @@ fn integer_eigenvectors(
   matrix: &[Vec<Expr>],
   int_matrix: &[Vec<i128>],
   n: usize,
-) -> crate::syntax::Expr {
+) -> Expr {
   let coeffs = char_poly_coefficients(int_matrix);
   let mut eigenvalues = find_polynomial_roots(&coeffs);
   sort_eigenvalues(&mut eigenvalues);
@@ -4449,7 +4449,7 @@ fn normalize_symbolic_eigenvector(v: Vec<Expr>) -> Vec<Expr> {
 }
 
 /// Compute eigenvectors for a numeric (f64) matrix.
-fn numeric_eigenvectors(matrix: &[Vec<Expr>], n: usize) -> crate::syntax::Expr {
+fn numeric_eigenvectors(matrix: &[Vec<Expr>], n: usize) -> Expr {
   // Convert to f64 matrix
   let f_matrix: Vec<Vec<f64>> = matrix
     .iter()
@@ -5377,7 +5377,7 @@ fn linear_solve_rectangular(
   b: &[Expr],
   ncols: usize,
   args: &[Expr],
-) -> crate::syntax::Expr {
+) -> Expr {
   // Augment [A | b] and reduce.
   let aug: Vec<Vec<Expr>> = matrix
     .iter()
@@ -6695,7 +6695,7 @@ pub fn lower_triangularize_ast(
   Ok(triangularize_ast(args, false))
 }
 
-fn triangularize_ast(args: &[Expr], upper: bool) -> crate::syntax::Expr {
+fn triangularize_ast(args: &[Expr], upper: bool) -> Expr {
   let name = if upper {
     "UpperTriangularize"
   } else {
@@ -11623,7 +11623,7 @@ pub fn schur_decomposition_ast(
       crate::emit_message(&format!(
         "SchurDecomposition::matsq: Argument {} at position 1 is not a \
          nonempty square matrix.",
-        crate::syntax::expr_to_output(&args[0])
+        expr_to_output(&args[0])
       ));
       return Ok(original());
     }
@@ -11676,7 +11676,7 @@ pub fn schur_decomposition_ast(
     crate::emit_message(&format!(
       "SchurDecomposition::matsq: Argument {} at position 1 is not a nonempty \
        square matrix.",
-      crate::syntax::expr_to_output(&args[0])
+      expr_to_output(&args[0])
     ));
     return Ok(original());
   }

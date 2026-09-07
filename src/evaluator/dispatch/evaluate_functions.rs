@@ -174,9 +174,7 @@ fn resolve_param_default(default: &Expr) -> Option<Expr> {
     return Some(default.clone());
   }
   let evaluated = crate::evaluator::evaluate_expr_to_expr(default).ok()?;
-  if crate::syntax::expr_to_string(&evaluated)
-    == crate::syntax::expr_to_string(default)
-  {
+  if expr_to_string(&evaluated) == expr_to_string(default) {
     return None;
   }
   Some(evaluated)
@@ -998,7 +996,7 @@ fn evaluate_function_call_ast_inner(
     }
     let key = args
       .iter()
-      .map(crate::syntax::expr_to_string)
+      .map(expr_to_string)
       .collect::<Vec<_>>()
       .join("\u{1}");
     cache.get(&key).map(|(_, v)| v.clone())
@@ -1612,7 +1610,7 @@ fn evaluate_function_call_ast_inner(
               if !is_identifier_like(name))
             {
               cond_ok = matches!(
-                crate::interpret(&crate::syntax::expr_to_string(
+                crate::interpret(&expr_to_string(
                   &substituted_cond
                 )),
                 Ok(ref s) if s == "True"
@@ -2999,7 +2997,7 @@ fn evaluate_function_call_ast_inner(
         if !is_perm {
           crate::emit_message(&format!(
             "PermutationList::permlist: Invalid permutation list {}.",
-            crate::syntax::expr_to_string(&args[0])
+            expr_to_string(&args[0])
           ));
           return Ok(unevaluated(name, args));
         }
@@ -3015,7 +3013,7 @@ fn evaluate_function_call_ast_inner(
                 "PermutationList::lowlen: Required length {} is smaller than maximum {} of support of {}.",
                 n,
                 support_max,
-                crate::syntax::expr_to_string(&args[0])
+                expr_to_string(&args[0])
               ));
               return Ok(unevaluated(name, args));
             }
@@ -3600,16 +3598,15 @@ fn evaluate_function_call_ast_inner(
       if !is_opt {
         crate::emit_message(&format!(
           "HararyGraph::nonopt: Options expected (instead of {}) beyond position 2 in {}. An option must be a rule or a list of rules.",
-          crate::syntax::expr_to_string(extra),
-          crate::syntax::expr_to_string(&unevaluated("HararyGraph", args))
+          expr_to_string(extra),
+          expr_to_string(&unevaluated("HararyGraph", args))
         ));
         return Ok(unevaluated("HararyGraph", args));
       }
     }
     // Positive machine-sized integers required (intpm); reals, zero, and
     // negative integers warn, symbolic arguments stay silent.
-    let call_str =
-      || crate::syntax::expr_to_string(&unevaluated("HararyGraph", args));
+    let call_str = || expr_to_string(&unevaluated("HararyGraph", args));
     let classify = |e: &Expr| -> Option<Option<i128>> {
       // Some(Some(v)): positive integer; Some(None): invalid numeric
       // (emit intpm); None: symbolic (stay unevaluated silently)
@@ -4470,8 +4467,7 @@ fn evaluate_function_call_ast_inner(
     } = &mix_args[1]
     && param_dist_name == "BetaDistribution"
     && param_dist_args.len() == 2
-    && crate::syntax::expr_to_string(&mix_args[0])
-      == crate::syntax::expr_to_string(&dist_args[1])
+    && expr_to_string(&mix_args[0]) == expr_to_string(&dist_args[1])
   {
     return Ok(Expr::FunctionCall {
       name: "BetaBinomialDistribution".to_string(),
@@ -9616,7 +9612,7 @@ fn evaluate_function_call_ast_inner(
     // Non-string / non-list-of-strings argument: emit the
     // wolframscript-style type-error message and leave the call
     // unevaluated.
-    let arg_str = crate::syntax::expr_to_string(&args[0]);
+    let arg_str = expr_to_string(&args[0]);
     crate::emit_message(&format!(
       "DeleteFile::strs: A string or nonempty list of strings is expected at position 1 in DeleteFile[{arg_str}]."
     ));
@@ -9687,7 +9683,7 @@ fn evaluate_function_call_ast_inner(
     let path = if let Expr::String(s) = &args[0] {
       s.clone()
     } else {
-      let arg_str = crate::syntax::expr_to_string(&args[0]);
+      let arg_str = expr_to_string(&args[0]);
       crate::emit_message(&format!(
         "DeleteDirectory::strs: A string or nonempty list of strings is expected at position 1 in DeleteDirectory[{arg_str}]."
       ));
@@ -10993,7 +10989,7 @@ fn evaluate_function_call_ast_inner(
       crate::emit_message(&format!(
         "{}::arg1: The first argument {} should be a rectangular array, image or video.",
         name,
-        crate::syntax::expr_to_string(&args[0])
+        expr_to_string(&args[0])
       ));
       return Ok(unevaluated(name, args));
     }
@@ -11151,8 +11147,8 @@ fn evaluate_function_call_ast_inner(
       let unevaluated_call = unevaluated("Play", args);
       crate::emit_message(&format!(
         "Play::nonopt: Options expected (instead of {}) beyond position 2 in {}. An option must be a rule or a list of rules.",
-        crate::syntax::expr_to_string(bad),
-        crate::syntax::expr_to_string(&unevaluated_call)
+        expr_to_string(bad),
+        expr_to_string(&unevaluated_call)
       ));
       return Ok(unevaluated_call);
     }
@@ -12091,8 +12087,8 @@ fn evaluate_blend(args: &[Expr]) -> Option<Expr> {
       let colors_expr = Expr::List(colors.clone());
       crate::emit_message(&format!(
         "Blend::argl: {} should be a real number or a list of non-negative numbers, which has the same length as {}.",
-        crate::syntax::expr_to_string(&args[1]),
-        crate::syntax::expr_to_string(&colors_expr),
+        expr_to_string(&args[1]),
+        expr_to_string(&colors_expr),
       ));
       return None;
     }
@@ -12375,7 +12371,7 @@ fn blend_two_rational(
   t_num: i128,
   t_den: i128,
   as_graylevel: bool,
-) -> crate::syntax::Expr {
+) -> Expr {
   // (1-t) = (t_den - t_num) / t_den
   let one_minus_t_num = t_den - t_num;
 
@@ -12401,7 +12397,7 @@ fn blend_two_rational(
 
 /// FunctionInterpolation[expr, {x, xmin, xmax}] — sample a function and build
 /// an InterpolatingFunction with cubic spline interpolation.
-fn function_interpolation_ast(args: &[Expr]) -> crate::syntax::Expr {
+fn function_interpolation_ast(args: &[Expr]) -> Expr {
   if let Expr::List(spec) = &args[1]
     && spec.len() == 3
     && let Expr::Identifier(var_name) = &spec[0]
@@ -12934,7 +12930,7 @@ fn find_maximum_flow_impl(
   source: &Expr,
   sink: &Expr,
   args: &[Expr],
-) -> crate::syntax::Expr {
+) -> Expr {
   let vertex_idx = |v: &Expr| -> Option<usize> {
     verts
       .iter()
@@ -13138,10 +13134,7 @@ fn find_graph_isomorphism_impl(
 }
 
 /// FindSpanningTree using petgraph's min_spanning_tree (unit weights)
-fn find_spanning_tree_impl(
-  verts: &[Expr],
-  edges: &[Expr],
-) -> crate::syntax::Expr {
+fn find_spanning_tree_impl(verts: &[Expr], edges: &[Expr]) -> Expr {
   if verts.is_empty() {
     return call(
       "Graph",

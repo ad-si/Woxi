@@ -14,7 +14,7 @@
 //! outer boundary through a bridge edge, and the resulting simple polygon
 //! is ear-clipped.
 
-use crate::syntax::Expr;
+use super::*;
 
 /// Split a `Polygon`/`Triangle` first argument into its outer boundary and
 /// hole boundaries. Returns `None` when the argument is not a rule, i.e.
