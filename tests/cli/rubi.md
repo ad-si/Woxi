@@ -126,37 +126,30 @@ first one — which is what the *IntWithStepsOfTeXForm* notebook builds its
 ## What does not work yet
 
 Rubi loads unmodified and integrates, but it is not fully supported. On a
-30-integral sample, 20 answers are character-for-character what
-`wolframscript` gets from the same package, and 6 of the remaining 10 are the
-same function written another way. What is left:
+30-integral sample, 27 answers are character-for-character what
+`wolframscript` gets from the same package, and the other 3 are the same
+function written another way. The *IntWithStepsOfTeXForm* pipeline above
+reproduces three of its four notebook examples exactly; in the fourth
+(`Sqrt[Tan[x]]`) one intermediate sum lists two `Subst` terms the other way
+round. What is left:
 
 - **Loading is slow.** About a minute against roughly twenty seconds under
   `wolframscript` (three minutes with the step display), and there is no
   `.mx` cache to make the second run faster. Rubi's progress bar is a
-  `Monitor`, which Woxi does not implement, so the load also reports that.
-- **Powers times a trigonometric function fall through.**
-  `Int[Sin[x]/x^3, x]`, `Int[x^2*Sin[x], x]` and `Int[Cos[x]/x^2, x]` come
-  back as `Int[…]`: the `(c + d x)^m Sin[e + f x]` rules never fire, so a
-  step display of them shows nothing either.
+  `Monitor`, which Woxi evaluates without drawing, so the load also reports
+  that no front end is available.
 - **Two integrals exhaust memory.** `Int[Sin[x]^3*Cos[x]^2, x]` and
   `Int[Sin[x]*Cos[x]^3, x]` run for minutes and are killed;
   `wolframscript` answers both instantly.
-- **Some step sequences take another road.** `Int[Sqrt[x + Sqrt[x]], x]`
-  ends in a hypergeometric function where Rubi reaches an inverse
-  hyperbolic tangent, and the terms of an intermediate sum can come out in
-  a different order — both are the rule-ordering differences above seen
-  step by step. The rule text recorded next to each step keeps its `FreeQ`
-  conditions and writes them in linear box syntax rather than `DisplayForm`.
-- **`Int[ArcSin[x], x]` comes back unevaluated.** The rule that should fire
-  sits behind the `Unintegrable` fallback meant to catch what it declines —
-  Woxi ranks two rules by how much structure each pattern carries, where the
-  language asks whether one's match set is inside the other's.
-- **Answers can be shaped differently.** `Int[Sec[x]^2, x]` is `Sec[x]*Sin[x]`
-  rather than `Tan[x]`, `Int[E^x*x, x]` is `-Gamma[2, -x]` rather than
-  `E^x*(x - 1)`, and sums come out in Woxi's own `Plus` order. Same functions,
-  reached along a different path.
-- **`Int[x/(a + b*x^2), x]` is off by a constant**: `Log[1 + b x^2/a]/(2 b)`
-  where Rubi gives `Log[a + b x^2]/(2 b)`.
-
-The current divergences are catalogued in
-[Conformance gaps](comparison/mathematica/conformance_gaps.md).
+- **A few rule paths differ.** `Int[E^x*x, x]` is `-Gamma[2, -x]` rather
+  than `E^x*(x - 1)`, and `Int[1/(a + b*Cos[x]), x]` reaches its arctangent
+  through a different substitution — same functions, other valid
+  antiderivatives, from a different rule firing first.
+- **Some products are ordered differently.** `x^2*Sqrt[a^2 - x^2]` prints as
+  `Sqrt[a^2 - x^2]*x^2`, and a sum of two `Subst` terms whose integrands are
+  `(Sqrt[2] + 2 x)/(-1 - Sqrt[2] x - x^2)` and `(Sqrt[2] - 2 x)/(-1 + Sqrt[2] x - x^2)`
+  lists them the other way round. Value-identical, display-only.
+- **The rule text recorded next to each step** keeps its `FreeQ` conditions
+  and writes them in linear box syntax rather than `DisplayForm`, and the
+  rule numbers differ (Woxi numbers 7391 rules where `wolframscript` has
+  7300).

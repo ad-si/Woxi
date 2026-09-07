@@ -5757,3 +5757,112 @@ mod rewritten_curried_heads_become_calls {
     );
   }
 }
+
+/// How an Orderless pattern pairs its slots with the arguments: compound
+/// patterns first, then optional blanks, then plain blanks, each taking the
+/// first unused argument it matches, backtracking when a later slot cannot
+/// be filled. Every reading here is wolframscript's.
+mod orderless_slot_readings {
+  use super::*;
+
+  #[test]
+  fn an_optional_coefficient_takes_what_is_there() {
+    clear_state();
+    assert_eq!(
+      interpret("Replace[3 x, d_.*x_ :> {d, x}]").unwrap(),
+      "{3, x}"
+    );
+    assert_eq!(
+      interpret("Replace[x^2, x_^n_. :> {x, n}]").unwrap(),
+      "{x, 2}"
+    );
+    assert_eq!(
+      interpret("Replace[x, a_. + b_.*x_ :> {a, b, x}]").unwrap(),
+      "{0, 1, x}"
+    );
+    assert_eq!(
+      interpret("Replace[2 x, a_. + b_.*x_ :> {a, b, x}]").unwrap(),
+      "{0, 2, x}"
+    );
+    assert_eq!(
+      interpret("Replace[3 x y, d_.*x_ :> {d, x}]").unwrap(),
+      "{3, x*y}"
+    );
+    assert_eq!(
+      interpret("Replace[x y, d_.*x_ :> {d, x}]").unwrap(),
+      "{x, y}"
+    );
+    assert_eq!(interpret("Replace[3, d_.*x_ :> {d, x}]").unwrap(), "{1, 3}");
+    assert_eq!(
+      interpret("Replace[a b, x_.*y_ :> {x, y}]").unwrap(),
+      "{a, b}"
+    );
+  }
+
+  #[test]
+  fn compound_slots_are_placed_first() {
+    clear_state();
+    assert_eq!(
+      interpret("Replace[2 + 3 x, a_. + b_.*x_ :> {a, b, x}]").unwrap(),
+      "{3*x, 1, 2}"
+    );
+    assert_eq!(
+      interpret("Replace[2 x^3, c_.*x_^n_. :> {c, x, n}]").unwrap(),
+      "{x^3, 2, 1}"
+    );
+    assert_eq!(
+      interpret("Replace[x + y, a_. + b_.*x_ :> {a, b, x}]").unwrap(),
+      "{y, 1, x}"
+    );
+    assert_eq!(
+      interpret("Replace[2 x + 3 y, a_. + b_.*x_ :> {a, b, x}]").unwrap(),
+      "{3*y, 2, x}"
+    );
+    assert_eq!(
+      interpret("Replace[x^2 y, c_.*x_^n_. :> {c, x, n}]").unwrap(),
+      "{y, x, 2}"
+    );
+    assert_eq!(
+      interpret("Replace[Sqrt[x] y, c_.*x_^n_. :> {c, x, n}]").unwrap(),
+      "{y, x, 1/2}"
+    );
+  }
+
+  #[test]
+  fn a_shared_variable_steers_the_reading_of_its_siblings() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Replace[(2 + 3 x)^5 s[x], (c_. + d_.*x_)^m_ s[x_] :> {c, d, x, m}]"
+      )
+      .unwrap(),
+      "{2, 3, x, 5}"
+    );
+    assert_eq!(
+      interpret("ReplaceAll[(2 + 3 x)^5 s[7 x], (c_. + d_.*x_)^m_ s[f_.*x_] :> {c, d, x, m, f}]")
+        .unwrap(),
+      "{2, 3, x, 5, 7}"
+    );
+    assert_eq!(
+      interpret(
+        "MatchQ[(2 + 3 x)^5 s[7 x] t[x], (c_. + d_.*x_)^m_ s[f_.*x_] t[x_]]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("MatchQ[(2 + 3 x)^5 s[7 x], s[f_.*x_] (c_. + d_.*x_)^m_]")
+        .unwrap(),
+      "True"
+    );
+    // A rule reading the argument the way Rubi's trig rules do.
+    assert_eq!(
+      interpret(
+        "int[(c_. + d_.*x_)^m_*s[e_. + f_.*x_], x_Symbol] := {c, d, m, e, f}; \\
+         int[(2 + 3 x)^5 s[7 x], x]"
+      )
+      .unwrap(),
+      "{2, 3, 5, 0, 7}"
+    );
+  }
+}

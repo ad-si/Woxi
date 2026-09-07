@@ -9557,7 +9557,11 @@ pub fn to_expression_ast_as(
   // lets a holding head keep its argument unevaluated — e.g.
   // ToExpression["1+1", InputForm, Hold] is Hold[1 + 1], not Hold[2].
   if args.len() == 3 {
-    let parsed = parse_program_to_expr(&s)?;
+    // The parse is read like any other input: its symbols resolve against
+    // the contexts open now (`MakeExpression["Int[u]"]` with `Rubi\`` on
+    // `$ContextPath` names `Rubi\`Int`, not a fresh `Global\`Int`).
+    let parsed =
+      crate::evaluator::contexts::rewrite(&parse_program_to_expr(&s)?);
     let wrapped = Expr::FunctionCall {
       name: expr_to_string(&args[2]),
       args: vec![parsed].into(),

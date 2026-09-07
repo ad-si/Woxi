@@ -7815,7 +7815,8 @@ fn format_times_with_denominator(
   }
   let numer_factors: Vec<&Expr> = numer_factors_owned.iter().collect();
 
-  // Format a single factor with parens around Plus
+  // Format a single factor with parens around Plus (and the looser-binding
+  // infix products such as Star)
   let fmt_factor = |a: &Expr| -> String {
     let s = formatter(a);
     if matches!(a, Expr::FunctionCall { name, .. } if name == "Plus")
@@ -7826,6 +7827,7 @@ fn format_times_with_denominator(
           ..
         }
       )
+      || is_looser_than_times_infix(a)
     {
       format!("({s})")
     } else {
@@ -9330,9 +9332,20 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         let parts: Vec<String> = args.iter().map(&fmt).collect();
         return parts.join(" \u{22C0} ");
       }
-      // Star[a, b, ...] displays as a ⋆ b ⋆ ...
+      // Star[a, b, ...] displays as a ⋆ b ⋆ ... (Precedence 390: a sum
+      // operand is parenthesised, a product operand is not)
       if name == "Star" && args.len() >= 2 {
-        let parts: Vec<String> = args.iter().map(&fmt).collect();
+        let parts: Vec<String> = args
+          .iter()
+          .map(|a| {
+            let s = fmt(a);
+            if star_operand_needs_parens(a) {
+              format!("({s})")
+            } else {
+              s
+            }
+          })
+          .collect();
         return parts.join(" \u{22C6} ");
       }
       // Diamond[a, b, ...] displays as a ⋄ b ⋄ ...
@@ -9801,6 +9814,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                   ..
                 }
               )
+              || is_looser_than_times_infix(a)
             {
               format!("({s})")
             } else {
@@ -9838,6 +9852,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                   ..
                 }
               )
+              || is_looser_than_times_infix(a)
             {
               format!("({s})")
             } else {
@@ -9935,6 +9950,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                       ..
                     }
                   )
+                  || is_looser_than_times_infix(a)
                 {
                   format!("({s})")
                 } else {
@@ -9979,6 +9995,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                     ..
                   }
                 )
+                || is_looser_than_times_infix(a)
               {
                 format!("({s})")
               } else {
@@ -10131,6 +10148,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                         ..
                       }
                     )
+                    || is_looser_than_times_infix(a)
                   {
                     format!("({s})")
                   } else {
@@ -10188,6 +10206,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                         ..
                       }
                     )
+                    || is_looser_than_times_infix(a)
                   {
                     format!("({s})")
                   } else {
@@ -10216,6 +10235,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                   ..
                 }
               )
+              || is_looser_than_times_infix(a)
               // Complex numbers (except plain I = Complex[0,1]) need parens in Times (InputForm only)
               || (!is_output && matches!(a, Expr::FunctionCall { name, args } if name == "Complex"
                 && args.len() == 2
@@ -10549,6 +10569,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         let exp_str = fmt(&args[1]);
         // Wrap base in parens if it's lower precedence than Power or is a negative number
         let base = if matches!(&args[0], Expr::FunctionCall { name, .. } if name == "Plus" || name == "Times")
+          || is_infix_display_call(&args[0])
           || matches!(
             &args[0],
             Expr::BinaryOp {
@@ -10580,6 +10601,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             }
           )
           || matches!(&args[1], Expr::Integer(n) if *n < 0)
+          || matches!(&args[1], Expr::Real(f) if *f < 0.0)
           || matches!(
             &args[1],
             Expr::UnaryOp {
@@ -11141,6 +11163,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           ))
         || (matches!(op, BinaryOperator::Power)
           && matches!(left.as_ref(), Expr::Integer(n) if *n < 0))
+        || (matches!(op, BinaryOperator::Power) && is_infix_display_call(left))
         // A Power base that prints with a leading minus (e.g. -I, a Complex
         // such as Complex[0, -1]) must be parenthesized: `-I^k` reparses as
         // `-(I^k)` rather than `(-I)^k`.
@@ -11228,6 +11251,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             ..
           }
         ) || matches!(e, Expr::Integer(n) if *n < 0)
+          || matches!(e, Expr::Real(f) if *f < 0.0)
           || matches!(e, Expr::FunctionCall { name, args } if name == "Times" && !args.is_empty() && matches!(&args[0], Expr::Integer(n) if *n < 0))
       };
       let needs_right_parens = (is_multiplicative && is_additive(right))
@@ -12891,7 +12915,17 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
       parts.join(" \u{22C0} ")
     }
     Expr::FunctionCall { name, args } if name == "Star" && args.len() >= 2 => {
-      let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
+      let parts: Vec<String> = args
+        .iter()
+        .map(|a| {
+          let s = expr_to_input_form(a);
+          if star_operand_needs_parens(a) {
+            format!("({s})")
+          } else {
+            s
+          }
+        })
+        .collect();
       parts.join(" \u{22C6} ")
     }
     Expr::FunctionCall { name, args }
@@ -13308,6 +13342,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
       let base = expr_to_input_form(&args[0]);
       let base_str = if matches!(&args[0], Expr::FunctionCall { name, .. }
         if name == "Times" || name == "Plus" || name == "Power")
+        || is_infix_display_call(&args[0])
         || matches!(
           &args[0],
           Expr::BinaryOp {
@@ -13388,6 +13423,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
                     ..
                   }
                 )
+                || is_looser_than_times_infix(a)
               {
                 format!("({s})")
               } else {
@@ -13401,6 +13437,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
             let s = expr_to_input_form(a);
             if matches!(a, Expr::FunctionCall { name, .. } if name == "Plus")
               || matches!(a, Expr::BinaryOp { op: BinaryOperator::Plus | BinaryOperator::Minus, .. })
+              || is_looser_than_times_infix(a)
               || matches!(a, Expr::FunctionCall { name, args } if name == "Complex"
                 && args.len() == 2
                 && !matches!((&args[0], &args[1]), (Expr::Integer(0), Expr::Integer(1))))
@@ -13564,7 +13601,23 @@ fn format_image_value(v: f64, image_type: ImageType) -> String {
 
 /// Parse a string into an Expr AST.
 /// This is used when we need to convert external string input to AST form.
+/// Parse text into an expression the way the reader does: symbols resolve
+/// against the contexts open right now. Every runtime re-parse of rendered
+/// text (a stored value, a string-based replacement) goes through here, and
+/// rendered text carries symbols under their *display* names — `Rubi\`Int`
+/// prints as `Int` while `Rubi\`` is on `$ContextPath` — so reading it back
+/// without resolving would silently turn package symbols into `Global\``
+/// ones (Rubi's `Defer[Int]` stopped matching its own `Defer[Int] -> Int`).
 pub fn string_to_expr(s: &str) -> Result<Expr, crate::InterpreterError> {
+  let expr = string_to_expr_unresolved(s)?;
+  if crate::evaluator::contexts::contexts_active() {
+    Ok(crate::evaluator::contexts::rewrite(&expr))
+  } else {
+    Ok(expr)
+  }
+}
+
+fn string_to_expr_unresolved(s: &str) -> Result<Expr, crate::InterpreterError> {
   let trimmed = s.trim();
 
   // Handle empty string - return as empty quoted string literal
@@ -16070,13 +16123,62 @@ fn factor_boxes(factors: &[&Expr], extra_boxes: usize) -> Vec<TextBox> {
     .iter()
     .map(|e| {
       let tb = expr_to_textbox(e);
-      if row_len > 1 && is_plus_expr(e) {
+      if row_len > 1 && (is_plus_expr(e) || is_looser_than_times_infix(e)) {
         parenthesize(&tb)
       } else {
         tb
       }
     })
     .collect()
+}
+
+/// An infix product that binds looser than `Times` (Wolfram's
+/// `Precedence[Star]` is 390 against 400 for `Times`), so it is
+/// parenthesised as a factor: `x*(a ⋆ b)`. The other symbolic products
+/// (Wedge, Diamond, CircleDot, …) bind tighter and stay bare.
+fn is_looser_than_times_infix(e: &Expr) -> bool {
+  matches!(e, Expr::FunctionCall { name, args }
+  if args.len() >= 2
+    && matches!(
+      name.as_str(),
+      "Star" | "CirclePlus" | "CircleMinus" | "Tilde" | "Subset" | "LeftArrow"
+        | "DotEqual"
+    ))
+}
+
+/// A call that prints as an infix operator (`a ⋆ b`, `a ⊗ b`, `a ∧ b`, …),
+/// every one of which binds looser than `Power`: as a Power base it is
+/// parenthesised, `(a ⋆ b)^2`.
+fn is_infix_display_call(e: &Expr) -> bool {
+  matches!(e, Expr::FunctionCall { name, args }
+  if args.len() >= 2
+    && matches!(
+      name.as_str(),
+      "Star" | "CircleTimes" | "CenterDot" | "CircleDot" | "Wedge" | "Diamond"
+        | "Backslash" | "SmallCircle" | "Vee" | "Tilde" | "CirclePlus"
+        | "CircleMinus" | "Subset" | "LeftArrow" | "DotEqual"
+    ))
+}
+
+/// An operand of `Star` (Precedence 390) that binds looser than it — a sum,
+/// a comparison, a rule, a logical combination — and so is parenthesised:
+/// `x ⋆ (a + b)` but `x ⋆ a*b`.
+fn star_operand_needs_parens(e: &Expr) -> bool {
+  match e {
+    Expr::BinaryOp { op, .. } => matches!(
+      op,
+      BinaryOperator::Plus
+        | BinaryOperator::Minus
+        | BinaryOperator::And
+        | BinaryOperator::Or
+        | BinaryOperator::StringJoin
+        | BinaryOperator::Alternatives
+    ),
+    Expr::Comparison { .. } => true,
+    Expr::Rule { .. } | Expr::RuleDelayed { .. } => true,
+    Expr::FunctionCall { name, args } => args.len() >= 2 && name == "Plus",
+    _ => false,
+  }
 }
 
 /// Wrap a box in parentheses on the baseline row.

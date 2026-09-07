@@ -3196,8 +3196,9 @@ mod tests {
       let svg = tf_svg("TraditionalForm[r'/r == Tan[t/3]]");
       assert!(svg.contains('\u{2032}'), "prime drawn: {svg}");
       assert!(!svg.contains(">Derivative<"), "head hidden: {svg}");
+      // `1/Cos[t/3]^3` evaluates to `Sec[t/3]^3`, as in Wolfram.
       let svg = tf_svg("TraditionalForm[r == 1/Cos[t/3]^3]");
-      assert!(svg.contains(">cos<"), "cos drawn: {svg}");
+      assert!(svg.contains(">sec<"), "sec drawn: {svg}");
       assert!(!svg.contains(">-3<"), "no negative exponent: {svg}");
     }
 

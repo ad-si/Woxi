@@ -134,14 +134,14 @@ fn cancel_expr_with_opaque_fallback(
   expr: &Expr,
   canonicalize_sign: bool,
 ) -> Expr {
+  // The direct path may reshape a quotient without cancelling anything
+  // (reordering a numerator it could not factor), so the opaque-atom
+  // attempt is always made and the smaller result wins.
   let direct = cancel_expr_impl(expr, canonicalize_sign);
-  if expr_to_string(&direct) != expr_to_string(expr) {
-    return direct;
-  }
   match cancel_via_opaque_atoms(expr, canonicalize_sign) {
     Some(alt)
       if super::simplify::leaf_count(&alt)
-        < super::simplify::leaf_count(expr) =>
+        < super::simplify::leaf_count(&direct) =>
     {
       alt
     }
@@ -162,9 +162,9 @@ fn cancel_via_opaque_atoms(
   expr: &Expr,
   canonicalize_sign: bool,
 ) -> Option<Expr> {
-  if !super::helpers::shares_opaque_atom_across_quotient(expr) {
-    return None;
-  }
+  // An opaque atom on one side only is still a coefficient the polynomial
+  // engine must not choke on: `(-1 + f[a] + z - 2 f[a] z + f[a] z^2)/((z-1) z)`
+  // cancels its `z - 1` just like the version with a plain symbol `a`.
   let mut atoms = Vec::new();
   opaque_atoms(expr, &mut atoms);
   if atoms.is_empty() {
@@ -187,7 +187,9 @@ fn cancel_via_opaque_atoms(
   for (atom, name) in atoms.iter().zip(&names) {
     restored = super::solve::substitute_expr(&restored, name, atom);
   }
-  Some(restored)
+  // Re-evaluate so the products are in canonical order again (`z*f[a]`,
+  // not the `f[a]*z` the placeholder name sorted into).
+  Some(crate::evaluator::evaluate_expr_to_expr(&restored).unwrap_or(restored))
 }
 
 fn cancel_expr_impl(expr: &Expr, canonicalize_sign: bool) -> Expr {

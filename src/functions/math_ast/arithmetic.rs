@@ -2144,37 +2144,6 @@ fn extract_var_exp_pairs(e: &Expr) -> Option<Vec<(String, f64)>> {
     // `Pi/8 - x`, `a + E` but `E + x`. The lowercase key gives the
     // case-insensitive order under the byte-wise pair comparison.
     Expr::Constant(c) => Some(vec![(c.to_lowercase(), 1.0)]),
-    // Treat the real-valued complex-component functions (Re, Im, Abs, Arg,
-    // Conjugate) as polynomial "variables" keyed by their full string form
-    // so that products like `Im[z]^2*Re[z]` sort as polynomials in
-    // (Re[z], Im[z]). Generic FunctionCall heads stay opaque. The lowercase
-    // key gives Wolfram's case-insensitive order against plain variables
-    // (`a + Conjugate[a]` but `Conjugate[x] + x`).
-    Expr::FunctionCall { name, .. }
-      if matches!(name.as_str(), "Re" | "Im" | "Abs" | "Arg" | "Conjugate") =>
-    {
-      Some(vec![(expr_to_string(e).to_lowercase(), 1.0)])
-    }
-    // Curried `Derivative[…][f][args…]` calls behave like algebraic
-    // variables for Plus-ordering purposes: keying them by their full
-    // string form lets `2*Derivative[0,2,1][f][x^2,x,2*y]` sort
-    // alongside `8*x*Derivative[1,1,1][f][x^2,x,2*y]` so the resulting
-    // Plus matches wolframscript's x-degree-ascending order. Walk down
-    // through nested CurriedCalls (Derivative[n][f][args…] is two
-    // levels of currying) until we find the head.
-    e if {
-      fn root_head_is_derivative(x: &Expr) -> bool {
-        match x {
-          Expr::CurriedCall { func, .. } => root_head_is_derivative(func),
-          Expr::FunctionCall { name, .. } => name == "Derivative",
-          _ => false,
-        }
-      }
-      matches!(e, Expr::CurriedCall { .. }) && root_head_is_derivative(e)
-    } =>
-    {
-      Some(vec![(expr_to_string(e), 1.0)])
-    }
     Expr::BinaryOp {
       op: BinaryOperator::Power,
       left,
@@ -2203,12 +2172,6 @@ fn extract_var_exp_pairs(e: &Expr) -> Option<Vec<(String, f64)>> {
         let exp = expr_to_f64(right).unwrap_or(f64::INFINITY);
         return Some(vec![(indexed_var_key(left), exp)]);
       }
-      if let Expr::FunctionCall { name, .. } = left.as_ref()
-        && matches!(name.as_str(), "Re" | "Im" | "Abs" | "Arg" | "Conjugate")
-      {
-        let exp = expr_to_f64(right)?;
-        return Some(vec![(expr_to_string(left).to_lowercase(), exp)]);
-      }
       None
     }
     Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
@@ -2224,12 +2187,6 @@ fn extract_var_exp_pairs(e: &Expr) -> Option<Vec<(String, f64)>> {
       if is_indexed_variable(&args[0]) {
         let exp = expr_to_f64(&args[1]).unwrap_or(f64::INFINITY);
         return Some(vec![(indexed_var_key(&args[0]), exp)]);
-      }
-      if let Expr::FunctionCall { name: inner, .. } = &args[0]
-        && matches!(inner.as_str(), "Re" | "Im" | "Abs" | "Arg" | "Conjugate")
-      {
-        let exp = expr_to_f64(&args[1])?;
-        return Some(vec![(expr_to_string(&args[0]).to_lowercase(), exp)]);
       }
       None
     }
@@ -2597,6 +2554,29 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
 
   let pa = term_priority(a);
   let pb = term_priority(b);
+  // Two call-led terms order by head name whatever their priority class,
+  // then from their last factor: `Log[c] + Subst[a, b]`, `f[c] + Gamma[y]`,
+  // `Log[c] + x*Zeta[y]`, `Cos[b]*Sin[a] + Sin[a]^2`.
+  if let Some(ord) = call_led_order(a, b) {
+    return ord;
+  }
+  {
+    // A term built only from numbers, symbols, sums, products and powers
+    // sorts before a call-led term: `E^y + f[c]`,
+    // `E^(-t) + Derivative[1][f][t]`, `(x*Sqrt[1 + x^2])/2 + ArcSinh[x]/2`.
+    // (A sum that hides calls, `d^e*(Log[b] + Log[c])`, is not algebraic
+    // and keeps the leading-variable rule below.)
+    let (_, base_a) = decompose_term(a);
+    let (_, base_b) = decompose_term(b);
+    match (
+      is_purely_algebraic(&base_a) && plus_term_call_head(&base_b).is_some(),
+      is_purely_algebraic(&base_b) && plus_term_call_head(&base_a).is_some(),
+    ) {
+      (true, false) => return std::cmp::Ordering::Less,
+      (false, true) => return std::cmp::Ordering::Greater,
+      _ => {}
+    }
+  }
   if pa != pb {
     // Different priorities normally means transcendental terms (priority 1)
     // sort after polynomial-like ones (priority 0). However, when one term
@@ -2712,22 +2692,6 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
       let (_, none_base) = decompose_term(none_term);
       // Symbolic powers of numeric bases ((-1)^n, 2^b) sort before any
       // polynomial-like term — wolframscript: (-1)^n + C[1], 2^b + x[3].
-      let is_numeric_base_symbolic_power = |e: &Expr| -> bool {
-        let (base, exp): (&Expr, &Expr) = match e {
-          Expr::BinaryOp {
-            op: BinaryOperator::Power,
-            left,
-            right,
-          } => (left, right),
-          Expr::FunctionCall { name, args }
-            if name == "Power" && args.len() == 2 =>
-          {
-            (&args[0], &args[1])
-          }
-          _ => return false,
-        };
-        expr_to_f64(base).is_some() && expr_to_f64(exp).is_none()
-      };
       if is_numeric_base_symbolic_power(&none_base) {
         return if a_has_pairs {
           std::cmp::Ordering::Greater
@@ -2735,7 +2699,10 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
           std::cmp::Ordering::Less
         };
       }
-      if contains_opaque_fn_call(none_term) || term_priority(&none_base) >= 1 {
+      if contains_opaque_fn_call(none_term)
+        || term_priority(&none_base) >= 1
+        || plus_term_call_head(&none_base).is_some()
+      {
         return if a_has_pairs {
           std::cmp::Ordering::Less
         } else {
@@ -2934,7 +2901,13 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
       let fn_a = extract_primary_fn_name(&base_a);
       let fn_b = extract_primary_fn_name(&base_b);
       if let (Some(ref na), Some(ref nb)) = (fn_a, fn_b) {
-        let cmp = na.cmp(nb);
+        let cmp = match crate::functions::list_helpers_ast::wolfram_string_order(
+          na, nb,
+        ) {
+          0 => std::cmp::Ordering::Equal,
+          ord if ord > 0 => std::cmp::Ordering::Less,
+          _ => std::cmp::Ordering::Greater,
+        };
         if cmp != std::cmp::Ordering::Equal {
           return cmp;
         }
@@ -3150,18 +3123,659 @@ fn strip_complex_literal_coeff(e: &Expr) -> Option<Expr> {
   None
 }
 
+/// Heads that make an expression arithmetic rather than a "function call"
+/// for Plus ordering purposes.
+fn is_arithmetic_head(name: &str) -> bool {
+  matches!(
+    name,
+    "Plus"
+      | "Times"
+      | "Power"
+      | "Sqrt"
+      | "Rational"
+      | "Complex"
+      | "Minus"
+      | "Subtract"
+      | "Divide"
+      | "Pattern"
+      | "Blank"
+      | "BlankSequence"
+      | "BlankNullSequence"
+      | "Optional"
+      | "PatternTest"
+      | "Condition"
+      | "Alternatives"
+      | "HoldPattern"
+      | "List"
+      | "Slot"
+      | "Sequence"
+      | "Underflow"
+      | "Overflow"
+      | "DirectedInfinity"
+      | "Interval"
+  )
+}
+
+/// Head key of a curried call (`Derivative[1][f][x]`) for Plus ordering:
+/// Wolfram sorts them after every symbol-headed call, so the key collates
+/// after any symbol name.
+const CURRIED_HEAD_KEY: &str = "\u{10FFFF}";
+
+/// Wolfram's symbol order on two Plus-term head keys, with curried heads
+/// last.
+fn call_head_cmp(a: &str, b: &str) -> std::cmp::Ordering {
+  match (a == CURRIED_HEAD_KEY, b == CURRIED_HEAD_KEY) {
+    (true, true) => std::cmp::Ordering::Equal,
+    (true, false) => std::cmp::Ordering::Greater,
+    (false, true) => std::cmp::Ordering::Less,
+    (false, false) => {
+      match crate::functions::list_helpers_ast::wolfram_string_order(a, b) {
+        0 => std::cmp::Ordering::Equal,
+        ord if ord > 0 => std::cmp::Ordering::Less,
+        _ => std::cmp::Ordering::Greater,
+      }
+    }
+  }
+}
+
+/// Numbers, symbols and constants combined only by sums, products and
+/// powers — no function call anywhere inside.
+fn is_purely_algebraic(e: &Expr) -> bool {
+  match e {
+    Expr::Integer(_)
+    | Expr::BigInteger(_)
+    | Expr::Real(_)
+    | Expr::BigFloat(..)
+    | Expr::Identifier(_)
+    | Expr::Constant(_) => true,
+    Expr::FunctionCall { name, args } => {
+      matches!(
+        name.as_str(),
+        "Plus" | "Times" | "Power" | "Sqrt" | "Rational" | "Complex"
+      ) && args.iter().all(is_purely_algebraic)
+    }
+    Expr::BinaryOp { op, left, right } => {
+      matches!(
+        op,
+        BinaryOperator::Plus
+          | BinaryOperator::Minus
+          | BinaryOperator::Times
+          | BinaryOperator::Divide
+          | BinaryOperator::Power
+      ) && is_purely_algebraic(left)
+        && is_purely_algebraic(right)
+    }
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => is_purely_algebraic(operand),
+    _ => false,
+  }
+}
+
+/// `E^x`, `2^n`, `(-1)^k`: a numeric base with a symbolic exponent. Sorts
+/// before polynomial terms and before calls (`E^x + f[x]`, `2^b + x[3]`).
+fn is_numeric_base_symbolic_power(e: &Expr) -> bool {
+  let (base, exp): (&Expr, &Expr) = match e {
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => (left, right),
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      (&args[0], &args[1])
+    }
+    _ => return false,
+  };
+  (expr_to_f64(base).is_some() || matches!(base, Expr::Constant(_)))
+    && expr_to_f64(exp).is_none()
+}
+
+/// A product's factors, with `a/b` read as `a*b^-1`; a non-product is its
+/// own single factor.
+fn plus_term_factors(e: &Expr) -> Vec<Expr> {
+  fn go(e: &Expr, out: &mut Vec<Expr>) {
+    match e {
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        for a in args {
+          go(a, out);
+        }
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left,
+        right,
+      } => {
+        go(left, out);
+        go(right, out);
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left,
+        right,
+      } => {
+        go(left, out);
+        out.push(call(
+          "Power",
+          vec![right.as_ref().clone(), Expr::Integer(-1)],
+        ));
+      }
+      other => out.push(other.clone()),
+    }
+  }
+  let mut out = Vec::new();
+  go(e, &mut out);
+  out
+}
+
+/// A call (or curried call) that is not an arithmetic form.
+fn is_bare_call(e: &Expr) -> bool {
+  matches!(e, Expr::CurriedCall { .. })
+    || matches!(e, Expr::FunctionCall { name, .. } if !is_arithmetic_head(name))
+}
+
+/// An evaluated `Derivative[1][f][x]` is stored flat as
+/// `Derivative[1, f, x]`; it orders like the curried call it prints as.
+fn is_curried_derivative(e: &Expr) -> bool {
+  matches!(e, Expr::CurriedCall { .. })
+    || matches!(e, Expr::FunctionCall { name, args } if name == "Derivative" && args.len() >= 2)
+}
+
+/// Split a factor into its call and exponent: `Sin[x]` → (`Sin[x]`, 1),
+/// `Sin[x]^n` → (`Sin[x]`, `n`); `None` for factors that are not calls.
+fn call_factor_parts(f: &Expr) -> Option<(Expr, Expr)> {
+  match f {
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => is_bare_call(left)
+      .then(|| (left.as_ref().clone(), right.as_ref().clone())),
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      is_bare_call(&args[0]).then(|| (args[0].clone(), args[1].clone()))
+    }
+    Expr::FunctionCall { name, .. } if !is_arithmetic_head(name) => {
+      Some((f.clone(), Expr::Integer(1)))
+    }
+    Expr::CurriedCall { .. } => Some((f.clone(), Expr::Integer(1))),
+    _ => None,
+  }
+}
+
+/// Coarse class of an expression in Wolfram's canonical order: numbers,
+/// then strings, then symbols, then everything else.
+fn wl_order_rank(e: &Expr) -> u8 {
+  match e {
+    Expr::Integer(_)
+    | Expr::BigInteger(_)
+    | Expr::Real(_)
+    | Expr::BigFloat(..) => 0,
+    Expr::FunctionCall { name, args }
+      if (name == "Rational" || name == "Complex") && args.len() == 2 =>
+    {
+      0
+    }
+    Expr::String(_) => 1,
+    Expr::Identifier(_) | Expr::Constant(_) => 2,
+    _ => 3,
+  }
+}
+
+/// Sums, products, powers and their atoms: the expressions Wolfram
+/// compares as polynomials.
+fn wl_poly_like(e: &Expr) -> bool {
+  match e {
+    Expr::Integer(_)
+    | Expr::BigInteger(_)
+    | Expr::Real(_)
+    | Expr::BigFloat(..)
+    | Expr::Identifier(_)
+    | Expr::Constant(_) => true,
+    Expr::FunctionCall { name, args } => {
+      matches!(name.as_str(), "Plus" | "Times" | "Power")
+        || ((name == "Rational" || name == "Complex") && args.len() == 2)
+    }
+    Expr::BinaryOp { op, .. } => matches!(
+      op,
+      BinaryOperator::Plus
+        | BinaryOperator::Minus
+        | BinaryOperator::Times
+        | BinaryOperator::Divide
+        | BinaryOperator::Power
+    ),
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      ..
+    } => true,
+    _ => false,
+  }
+}
+
+/// The summands of a sum (a non-sum is its own single summand).
+fn wl_summands(e: &Expr) -> Vec<Expr> {
+  fn go(e: &Expr, out: &mut Vec<Expr>) {
+    match e {
+      Expr::FunctionCall { name, args } if name == "Plus" => {
+        for a in args {
+          go(a, out);
+        }
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Plus,
+        left,
+        right,
+      } => {
+        go(left, out);
+        go(right, out);
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Minus,
+        left,
+        right,
+      } => {
+        go(left, out);
+        out.push(times2(Expr::Integer(-1), right.as_ref().clone()));
+      }
+      other => out.push(other.clone()),
+    }
+  }
+  let mut out = Vec::new();
+  go(e, &mut out);
+  out
+}
+
+/// A product's numeric coefficient (as a machine number, for ordering
+/// only) and its remaining non-numeric factors in canonical order; a bare
+/// number has no factors at all. The factors are re-sorted here rather than
+/// taken as stored, so "the last factor" means the same thing on both sides
+/// of a comparison even where Woxi's own `Times` order strays from Wolfram's.
+fn wl_coeff_and_factors(e: &Expr) -> (f64, Vec<Expr>) {
+  let (coeff, base) = decompose_term(e);
+  let mut c = coeff.to_f64();
+  let mut factors = Vec::new();
+  for f in plus_term_factors(&base) {
+    match expr_to_f64(&f) {
+      Some(v) => c *= v,
+      None => factors.push(f),
+    }
+  }
+  factors.sort_by(wl_arg_order);
+  (c, factors)
+}
+
+/// Base and exponent of a factor (`x` → (`x`, 1)).
+fn wl_base_exp(f: &Expr) -> (Expr, Expr) {
+  match f {
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => (left.as_ref().clone(), right.as_ref().clone()),
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      (args[0].clone(), args[1].clone())
+    }
+    other => (other.clone(), Expr::Integer(1)),
+  }
+}
+
+/// Wolfram's canonical order (`Order`, as `Sort` uses it) on two call
+/// arguments, as far as Plus-term ordering needs it: numbers, then strings,
+/// then symbols, then compound expressions. Sums and products compare as
+/// polynomials from their last (highest) term — `a*b < a + b < c`,
+/// `-1 + x < x < 1 + x < x + y`, `x < 2*x < x^2` — and calls by head, then
+/// arity, then arguments left to right (`f[x] < f[y] < f[x, x]`). All
+/// wolframscript-verified (`h[a*b] + h[c]`, `Log[-1 + x] + Log[x]`,
+/// `f[2*x] + f[1 + x]`, `Conjugate[a*b] + 2*Conjugate[c]`).
+fn wl_arg_order(a: &Expr, b: &Expr) -> std::cmp::Ordering {
+  wl_arg_order_pass(a, b, false)
+}
+
+fn wl_arg_order_pass(
+  a: &Expr,
+  b: &Expr,
+  shape_only: bool,
+) -> std::cmp::Ordering {
+  use std::cmp::Ordering;
+  let (ra, rb) = (wl_order_rank(a), wl_order_rank(b));
+  let compound_poly = |e: &Expr| wl_order_rank(e) == 3 && wl_poly_like(e);
+  // A sum, product or power against anything but a number compares as a
+  // polynomial, with calls as atoms: `-x < x`, `a*b < c`, `Log[x] < 1 + Log[x]`.
+  if ra.min(rb) >= 2 && (compound_poly(a) || compound_poly(b)) {
+    let o = wl_shape_order(a, b);
+    if o != Ordering::Equal || shape_only {
+      return o;
+    }
+    return wl_full_order(a, b);
+  }
+  if ra != rb {
+    return ra.cmp(&rb);
+  }
+  let by_name = |x: &str, y: &str| -> Ordering {
+    match crate::functions::list_helpers_ast::wolfram_string_order(x, y) {
+      0 => Ordering::Equal,
+      o if o > 0 => Ordering::Less,
+      _ => Ordering::Greater,
+    }
+  };
+  let args_order = |xa: &[Expr], xb: &[Expr]| -> Ordering {
+    xa.len().cmp(&xb.len()).then_with(|| {
+      xa.iter()
+        .zip(xb.iter())
+        .map(|(x, y)| wl_arg_order_pass(x, y, shape_only))
+        .find(|o| *o != Ordering::Equal)
+        .unwrap_or(Ordering::Equal)
+    })
+  };
+  match ra {
+    0 => {
+      let (Some(x), Some(y)) = (expr_to_f64(a), expr_to_f64(b)) else {
+        return compare_expr_canonical(a, b);
+      };
+      x.partial_cmp(&y).unwrap_or(Ordering::Equal)
+    }
+    1 | 2 => by_name(&expr_to_string(a), &expr_to_string(b)),
+    _ => match (a, b) {
+      (
+        Expr::FunctionCall { name: na, args: xa },
+        Expr::FunctionCall { name: nb, args: xb },
+      ) => by_name(na, nb).then_with(|| args_order(xa, xb)),
+      (Expr::FunctionCall { .. }, Expr::CurriedCall { .. }) => Ordering::Less,
+      (Expr::CurriedCall { .. }, Expr::FunctionCall { .. }) => {
+        Ordering::Greater
+      }
+      (
+        Expr::CurriedCall { func: fa, args: xa },
+        Expr::CurriedCall { func: fb, args: xb },
+      ) => {
+        wl_arg_order_pass(fa, fb, shape_only).then_with(|| args_order(xa, xb))
+      }
+      (Expr::List(xa), Expr::List(xb)) => args_order(xa, xb),
+      _ => compare_expr_canonical(a, b),
+    },
+  }
+}
+
+/// Numeric exponent of a factor's base, if concrete.
+fn wl_poly_exponent(f: &Expr) -> Expr {
+  wl_base_exp(f).1
+}
+
+/// First pass of the polynomial comparison behind `wl_arg_order`: the
+/// *shapes* of two polynomials — summands from the last, then the bases of
+/// a monomial's factors from the last — ignoring exponents and numeric
+/// coefficients. A leftover summand on the longer side sorts it first only
+/// when that summand is a negative number (`-1 + x < x < 1 + x`,
+/// `b + c < a + b + c`, `2*x < 1 + x`, `x^2 < 1 + x`).
+fn wl_shape_order(a: &Expr, b: &Expr) -> std::cmp::Ordering {
+  use std::cmp::Ordering;
+  let sa = wl_summands(a);
+  let sb = wl_summands(b);
+  if sa.len() > 1 || sb.len() > 1 {
+    // A product whose factors are exactly the other side's summands sorts
+    // first: `a*b < a + b`, `a*x < a + x`.
+    let product_of_summands = |prod: &Expr, terms: &[Expr]| -> bool {
+      let (coeff, factors) = wl_coeff_and_factors(prod);
+      coeff == 1.0
+        && factors.len() == terms.len()
+        && factors
+          .iter()
+          .zip(terms.iter())
+          .all(|(f, t)| wl_arg_order(f, t) == Ordering::Equal)
+    };
+    if sa.len() == 1 && product_of_summands(&sa[0], &sb) {
+      return Ordering::Less;
+    }
+    if sb.len() == 1 && product_of_summands(&sb[0], &sa) {
+      return Ordering::Greater;
+    }
+    for (x, y) in sa.iter().rev().zip(sb.iter().rev()) {
+      let o = wl_shape_order(x, y);
+      if o != Ordering::Equal {
+        return o;
+      }
+    }
+    return match sa.len().cmp(&sb.len()) {
+      Ordering::Equal => Ordering::Equal,
+      Ordering::Less => {
+        let leftover = &sb[sb.len() - sa.len() - 1];
+        if expr_to_f64(leftover).is_some_and(|v| v < 0.0) {
+          Ordering::Greater
+        } else {
+          Ordering::Less
+        }
+      }
+      Ordering::Greater => {
+        let leftover = &sa[sa.len() - sb.len() - 1];
+        if expr_to_f64(leftover).is_some_and(|v| v < 0.0) {
+          Ordering::Less
+        } else {
+          Ordering::Greater
+        }
+      }
+    };
+  }
+  let (ca, fa) = wl_coeff_and_factors(a);
+  let (cb, fb) = wl_coeff_and_factors(b);
+  for (x, y) in fa.iter().rev().zip(fb.iter().rev()) {
+    let (base_x, _) = wl_base_exp(x);
+    let (base_y, _) = wl_base_exp(y);
+    let o = wl_base_order(&base_x, &base_y, wl_shape_order);
+    if o != Ordering::Equal {
+      return o;
+    }
+  }
+  let o = fa.len().cmp(&fb.len());
+  if o != Ordering::Equal {
+    return o;
+  }
+  // The sign of a monomial is part of its shape (`1 - x < x`, `-x < x`);
+  // its magnitude is not (`2*x < 1 + x`, but `x < 2*x`).
+  (ca < 0.0).cmp(&(cb < 0.0)).reverse()
+}
+
+/// Second pass: two polynomials of the same shape order by exponents from
+/// the last factor, then by numeric coefficient (`x < x^2`, `-x < x < 2*x`).
+fn wl_full_order(a: &Expr, b: &Expr) -> std::cmp::Ordering {
+  use std::cmp::Ordering;
+  let sa = wl_summands(a);
+  let sb = wl_summands(b);
+  if sa.len() > 1 || sb.len() > 1 {
+    for (x, y) in sa.iter().rev().zip(sb.iter().rev()) {
+      let o = wl_full_order(x, y);
+      if o != Ordering::Equal {
+        return o;
+      }
+    }
+    return Ordering::Equal;
+  }
+  let (ca, fa) = wl_coeff_and_factors(a);
+  let (cb, fb) = wl_coeff_and_factors(b);
+  for (x, y) in fa.iter().rev().zip(fb.iter().rev()) {
+    let (base_x, _) = wl_base_exp(x);
+    let (base_y, _) = wl_base_exp(y);
+    let o = wl_base_order(&base_x, &base_y, wl_full_order);
+    if o != Ordering::Equal {
+      return o;
+    }
+    let o = compare_call_exponents(&wl_poly_exponent(x), &wl_poly_exponent(y));
+    if o != Ordering::Equal {
+      return o;
+    }
+  }
+  ca.partial_cmp(&cb).unwrap_or(Ordering::Equal)
+}
+
+/// Order two factor bases: compound polynomials by the given pass, atoms
+/// and calls by `wl_arg_order`.
+fn wl_base_order(
+  a: &Expr,
+  b: &Expr,
+  poly_pass: fn(&Expr, &Expr) -> std::cmp::Ordering,
+) -> std::cmp::Ordering {
+  let compound_poly = |e: &Expr| wl_order_rank(e) == 3 && wl_poly_like(e);
+  if compound_poly(a) || compound_poly(b) {
+    if wl_order_rank(a).min(wl_order_rank(b)) < 2 {
+      return wl_order_rank(a).cmp(&wl_order_rank(b));
+    }
+    poly_pass(a, b)
+  } else {
+    wl_arg_order(a, b)
+  }
+}
+
+/// Exponents compare numerically, numeric before symbolic, symbolic ones
+/// canonically: `Sin[x] + Sin[x]^2 + Sin[x]^m + Sin[x]^n`.
+fn compare_call_exponents(a: &Expr, b: &Expr) -> std::cmp::Ordering {
+  match (expr_to_f64(a), expr_to_f64(b)) {
+    (Some(x), Some(y)) => {
+      x.partial_cmp(&y).unwrap_or(std::cmp::Ordering::Equal)
+    }
+    (Some(_), None) => std::cmp::Ordering::Less,
+    (None, Some(_)) => std::cmp::Ordering::Greater,
+    (None, None) => wl_arg_order(a, b),
+  }
+}
+
+/// Order two call factors as Wolfram's canonical `Times` does: by head,
+/// then by the call itself (its arguments), then by exponent.
+fn compare_call_factors(
+  (ca, ea): &(Expr, Expr),
+  (cb, eb): &(Expr, Expr),
+) -> std::cmp::Ordering {
+  let ha = plus_term_call_head(ca).unwrap_or_default();
+  let hb = plus_term_call_head(cb).unwrap_or_default();
+  call_head_cmp(&ha, &hb)
+    .then_with(|| wl_arg_order(ca, cb))
+    .then_with(|| compare_call_exponents(ea, eb))
+}
+
+/// Split a call-led term base into its last call factor (call, exponent)
+/// and the product of the remaining factors, if any.
+fn split_last_call_factor(base: &Expr) -> Option<((Expr, Expr), Option<Expr>)> {
+  let factors = plus_term_factors(base);
+  let mut last: Option<(usize, (Expr, Expr))> = None;
+  for (i, f) in factors.iter().enumerate() {
+    if let Some(parts) = call_factor_parts(f)
+      && !last
+        .as_ref()
+        .is_some_and(|(_, l)| compare_call_factors(&parts, l).is_lt())
+    {
+      last = Some((i, parts));
+    }
+  }
+  let (idx, parts) = last?;
+  let rest: Vec<Expr> = factors
+    .into_iter()
+    .enumerate()
+    .filter_map(|(i, f)| (i != idx).then_some(f))
+    .collect();
+  let rest = match rest.len() {
+    0 => None,
+    1 => rest.into_iter().next(),
+    _ => Some(call("Times", rest)),
+  };
+  Some((parts, rest))
+}
+
+/// Wolfram orders two call-led Plus terms (`Sin[x]`, `x*Log[x]`,
+/// `f[x]^2*g[x]`, `Derivative[1][f][x]`) from their last factor: by head
+/// name, then by that call's arguments, then by its exponent, and only
+/// then by the remaining factors — `Cos[b]*Sin[a] + Sin[a]^2`,
+/// `Sin[a] + x*Sin[b]`, `x*Sin[a] + y*Sin[a]`, `Sin[x] + Sin[x]/x`.
+/// `None` when either term is not call-led or the two are tied.
+fn call_led_order(a: &Expr, b: &Expr) -> Option<std::cmp::Ordering> {
+  let (_, base_a) = decompose_term(a);
+  let (_, base_b) = decompose_term(b);
+  let ha = plus_term_call_head(&base_a)?;
+  let hb = plus_term_call_head(&base_b)?;
+  let ord = call_head_cmp(&ha, &hb);
+  if ord != std::cmp::Ordering::Equal {
+    return Some(ord);
+  }
+  let (fa, rest_a) = split_last_call_factor(&base_a)?;
+  let (fb, rest_b) = split_last_call_factor(&base_b)?;
+  let ord = compare_call_factors(&fa, &fb);
+  if ord != std::cmp::Ordering::Equal {
+    return Some(ord);
+  }
+  match (rest_a, rest_b) {
+    (None, None) => None,
+    (None, Some(_)) => Some(std::cmp::Ordering::Less),
+    (Some(_), None) => Some(std::cmp::Ordering::Greater),
+    (Some(ra), Some(rb)) => {
+      let ord = wl_arg_order(&ra, &rb);
+      (ord != std::cmp::Ordering::Equal).then_some(ord)
+    }
+  }
+}
+
+/// The function call a Plus term is "led" by: the call itself, the base of
+/// a power of a call, or — for a product — the call factor that sorts last
+/// in canonical `Times` order (Wolfram compares products from their last
+/// factor, and `Times` puts calls in symbol order). `None` for purely
+/// arithmetic terms.
+///
+/// Wolfram sorts every such term after the symbols, powers and products
+/// (`z^2 + ArcTanh[y]`, `x + C[1]`) and orders the calls among themselves
+/// by head name in symbol order (`Log[c] + Subst[a, b]`, `f[c] + Gamma[y]`).
+fn plus_term_call_head(e: &Expr) -> Option<String> {
+  fn later(a: Option<String>, b: Option<String>) -> Option<String> {
+    match (a, b) {
+      (Some(a), Some(b)) => {
+        Some(if call_head_cmp(&a, &b).is_gt() { a } else { b })
+      }
+      (a, None) => a,
+      (None, b) => b,
+    }
+  }
+  match e {
+    Expr::FunctionCall { name, args } if name == "Times" => args
+      .iter()
+      .fold(None, |acc, arg| later(acc, plus_term_call_head(arg))),
+    Expr::FunctionCall { name, args }
+      if name == "Power" && !args.is_empty() =>
+    {
+      plus_term_call_head(&args[0])
+    }
+    e if is_curried_derivative(e) => Some(CURRIED_HEAD_KEY.to_string()),
+    Expr::FunctionCall { name, .. } if !is_arithmetic_head(name) => {
+      Some(name.clone())
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times | BinaryOperator::Divide,
+      left,
+      right,
+    } => later(plus_term_call_head(left), plus_term_call_head(right)),
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      ..
+    } => plus_term_call_head(left),
+    _ => None,
+  }
+}
+
 /// Extract the primary transcendental function name from a term.
 /// For `Sin[x]` → Some("Sin"), for `x*Cos[x]` → Some("Cos") (looking inside Times).
 /// Returns None for non-transcendental terms.
 fn extract_primary_fn_name(e: &Expr) -> Option<String> {
   match e {
-    // Look inside Times products for the earliest (alphabetically) transcendental function
+    // Look inside Times products for the transcendental factor that sorts
+    // last in canonical `Times` order — Wolfram compares products from
+    // their last factor: `Cosh[y]*Sin[x]` is a `Sin` term, so it precedes
+    // `Cos[x]*Sinh[y]`, a `Sinh` term.
     Expr::FunctionCall { name, args } if name == "Times" => {
       let mut best: Option<String> = None;
       for arg in args {
         if let Some(n) = extract_primary_fn_name(arg) {
           best = Some(match best {
-            Some(b) if b <= n => b,
+            Some(b)
+              if crate::functions::list_helpers_ast::wolfram_string_order(
+                &b, &n,
+              ) < 0 =>
+            {
+              b
+            }
             _ => n,
           });
         }
@@ -3186,7 +3800,15 @@ fn extract_primary_fn_name(e: &Expr) -> Option<String> {
       let l = extract_primary_fn_name(left);
       let r = extract_primary_fn_name(right);
       match (l, r) {
-        (Some(a), Some(b)) => Some(if a <= b { a } else { b }),
+        (Some(a), Some(b)) => Some(
+          if crate::functions::list_helpers_ast::wolfram_string_order(&a, &b)
+            < 0
+          {
+            a
+          } else {
+            b
+          },
+        ),
         (Some(a), None) => Some(a),
         (None, b) => b,
       }
@@ -5934,6 +6556,123 @@ fn primary_trig_reciprocal(head: &str) -> Option<&'static str> {
   })
 }
 
+/// A trig or hyperbolic head → the head of its reciprocal (both ways).
+fn trig_reciprocal_partner(head: &str) -> Option<&'static str> {
+  reciprocal_trig_primary(head).or_else(|| primary_trig_reciprocal(head))
+}
+
+/// Wolfram's automatic reductions of two trig (or hyperbolic) factors of
+/// the same argument in a product: the pair on the left combines into the
+/// head on the right (`None` cancels to 1), one power at a time —
+/// `Cos[x]*Csc[x]` is `Cot[x]`, `Cos[x]^2*Csc[x]` is `Cos[x]*Cot[x]`,
+/// `Sin[x]*Csc[x]` is 1. wolframscript-verified for every pair.
+const TRIG_PAIR_RULES: &[(&str, &str, Option<&str>)] = &[
+  ("Sin", "Csc", None),
+  ("Cos", "Sec", None),
+  ("Tan", "Cot", None),
+  ("Cos", "Csc", Some("Cot")),
+  ("Sin", "Sec", Some("Tan")),
+  ("Tan", "Csc", Some("Sec")),
+  ("Cot", "Sec", Some("Csc")),
+  ("Tan", "Cos", Some("Sin")),
+  ("Cot", "Sin", Some("Cos")),
+  ("Sinh", "Csch", None),
+  ("Cosh", "Sech", None),
+  ("Tanh", "Coth", None),
+  ("Cosh", "Csch", Some("Coth")),
+  ("Sinh", "Sech", Some("Tanh")),
+  ("Tanh", "Csch", Some("Sech")),
+  ("Coth", "Sech", Some("Csch")),
+  ("Tanh", "Cosh", Some("Sinh")),
+  ("Coth", "Sinh", Some("Cosh")),
+];
+
+/// Apply `TRIG_PAIR_RULES` to the factors of a product: trig factors with
+/// positive integer exponents are grouped by argument and reduced until no
+/// rule applies (`Cos[x]^2/Sin[x]^3` → `Cot[x]^2*Csc[x]`,
+/// `Tan[x]*Cos[x]*Csc[x]` → 1). Everything else passes through untouched.
+fn combine_trig_pairs(args: Vec<Expr>) -> Vec<Expr> {
+  const TRIG_HEADS: &[&str] = &[
+    "Sin", "Cos", "Tan", "Cot", "Sec", "Csc", "Sinh", "Cosh", "Tanh", "Coth",
+    "Sech", "Csch",
+  ];
+  // (argument key, argument, head → exponent)
+  let mut groups: Vec<(String, Expr, Vec<(&'static str, i128)>)> = Vec::new();
+  let mut passthrough: Vec<Expr> = Vec::new();
+  for arg in &args {
+    let (base, exp) = extract_base_exponent(arg);
+    let entry = match (&base, &exp) {
+      (Expr::FunctionCall { name, args: fa }, Expr::Integer(n))
+        if fa.len() == 1 && *n > 0 =>
+      {
+        TRIG_HEADS
+          .iter()
+          .find(|h| **h == name.as_str())
+          .map(|h| (*h, fa[0].clone(), *n))
+      }
+      _ => None,
+    };
+    let Some((head, farg, n)) = entry else {
+      passthrough.push(arg.clone());
+      continue;
+    };
+    let key = expr_to_string(&farg);
+    let group = if let Some(g) = groups.iter_mut().find(|g| g.0 == key) {
+      g
+    } else {
+      groups.push((key, farg, Vec::new()));
+      groups.last_mut().unwrap()
+    };
+    match group.2.iter_mut().find(|(h, _)| *h == head) {
+      Some(slot) => slot.1 += n,
+      None => group.2.push((head, n)),
+    }
+  }
+  if groups.iter().all(|g| g.2.len() < 2) {
+    return args;
+  }
+  let mut out = passthrough;
+  for (_, farg, mut heads) in groups {
+    let mut changed = true;
+    while changed {
+      changed = false;
+      for (x, y, z) in TRIG_PAIR_RULES {
+        let ex = heads.iter().find(|(h, _)| h == x).map(|(_, n)| *n);
+        let ey = heads.iter().find(|(h, _)| h == y).map(|(_, n)| *n);
+        let (Some(ex), Some(ey)) = (ex, ey) else {
+          continue;
+        };
+        let m = ex.min(ey);
+        if m <= 0 {
+          continue;
+        }
+        for (h, n) in &mut heads {
+          if h == x || h == y {
+            *n -= m;
+          }
+        }
+        if let Some(z) = z {
+          match heads.iter_mut().find(|(h, _)| h == z) {
+            Some(slot) => slot.1 += m,
+            None => heads.push((z, m)),
+          }
+        }
+        heads.retain(|(_, n)| *n != 0);
+        changed = true;
+      }
+    }
+    for (head, n) in heads {
+      let f = call(head, vec![farg.clone()]);
+      out.push(if n == 1 {
+        f
+      } else {
+        call("Power", vec![f, Expr::Integer(n)])
+      });
+    }
+  }
+  out
+}
+
 /// Primary trig/hyperbolic head → itself as a 'static string.
 fn primary_trig_self(head: &str) -> Option<&'static str> {
   Some(match head {
@@ -6175,6 +6914,7 @@ fn combine_like_bases(args: Vec<Expr>) -> Result<Vec<Expr>, InterpreterError> {
     return Ok(args);
   }
   let args = combine_reciprocal_trig(args)?;
+  let args = combine_trig_pairs(args);
   if args.len() <= 1 {
     return Ok(args);
   }
@@ -9786,6 +10526,19 @@ fn try_power_overflow(base: &Expr, exp: &Expr) -> Option<Expr> {
 
 /// Helper for Power of two arguments
 pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
+  // A negative integer power of a trig or hyperbolic function is its
+  // reciprocal partner raised to the positive power: `Sin[x]^-1` is
+  // `Csc[x]`, `Cot[x]^-2` is `Tan[x]^2`, `Sech[x]^-1` is `Cosh[x]`
+  // (wolframscript-verified; fractional, real and symbolic exponents stay).
+  if let Expr::Integer(n) = exp
+    && *n < 0
+    && let Expr::FunctionCall { name, args } = base
+    && args.len() == 1
+    && let Some(partner) = trig_reciprocal_partner(name)
+  {
+    return power_two(&call(partner, args.to_vec()), &Expr::Integer(-n));
+  }
+
   // A time-series operand keeps the series, combining the values.
   if let Some(result) = crate::functions::timeseries_ast::try_series_arithmetic(
     "Power",

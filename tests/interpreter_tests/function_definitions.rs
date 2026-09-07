@@ -5483,3 +5483,71 @@ mod nested_condition_guards {
     );
   }
 }
+
+/// Definitions are ordered by what their patterns match, the way the Wolfram
+/// Language does it: a rule whose pattern is matched by an earlier rule's
+/// pattern (with its variables frozen) is tried first; rules that cannot be
+/// related, and rules whose guards differ, stay in definition order. Every
+/// order here was verified against wolframscript.
+mod definition_order_by_subsumption {
+  use super::*;
+
+  #[test]
+  fn a_structurally_narrower_rule_moves_ahead() {
+    clear_state();
+    assert_eq!(
+      interpret("p[a_ + b_] := 1; p[a_ + 2] := 2; DownValues[p]").unwrap(),
+      "{HoldPattern[p[2 + (a_)]] :> 2, HoldPattern[p[(a_) + (b_)]] :> 1}"
+    );
+    assert_eq!(
+      interpret("r[u_*v_] := 1; r[u_^2*v_] := 2; DownValues[r]").unwrap(),
+      "{HoldPattern[r[(u_)^2*(v_)]] :> 2, HoldPattern[r[(u_)*(v_)]] :> 1}"
+    );
+    assert_eq!(
+      interpret("w[f_[x_], x_] := 1; w[g[x_], x_] := 2; DownValues[w]")
+        .unwrap(),
+      "{HoldPattern[w[g[x_], x_]] :> 2, HoldPattern[w[(f_)[x_], x_]] :> 1}"
+    );
+  }
+
+  #[test]
+  fn rubis_specific_trig_rule_precedes_the_general_one() {
+    clear_state();
+    // Rubi defines the general `(c+d x)^m (a+b sin)^n` rule first and the
+    // `(c+d x)^m sin` rule later; the latter is a special case (a -> 0,
+    // b -> 1, n -> 1) and must be tried first.
+    assert_eq!(
+      interpret(
+        "q[(c_. + d_.*x_)^m_.*(a_. + b_.*s[e_. + f_.*x_])^n_., x_] := 1; \\
+         q[(c_. + d_.*x_)^m_*s[e_. + f_.*x_], x_] := 2; DownValues[q]"
+      )
+      .unwrap(),
+      "{HoldPattern[q[((c_.) + (d_.)*(x_))^(m_)*s[(e_.) + (f_.)*(x_)], x_]] :> 2, \
+       HoldPattern[q[((c_.) + (d_.)*(x_))^(m_.)*((a_.) + (b_.)*s[(e_.) + (f_.)*(x_)])^(n_.), x_]] :> 1}"
+    );
+    assert_eq!(interpret("q[x^-3 s[x], x]").unwrap(), "2");
+  }
+
+  #[test]
+  fn guards_keep_rules_in_definition_order_unless_the_narrower_one_has_them_too()
+   {
+    clear_state();
+    assert_eq!(
+      interpret("g[x_] := 1 /; x > 5; g[x_Integer] := 2; DownValues[g]")
+        .unwrap(),
+      "{HoldPattern[g[x_]] :> 1 /; x > 5, HoldPattern[g[x_Integer]] :> 2}"
+    );
+    assert_eq!(
+      interpret("h[x_] := 1; h[x_] := 2 /; x > 5; DownValues[h]").unwrap(),
+      "{HoldPattern[h[x_]] :> 2 /; x > 5, HoldPattern[h[x_]] :> 1}"
+    );
+    assert_eq!(
+      interpret("k[x_] := 1 /; x > 5; k[x_] := 2; DownValues[k]").unwrap(),
+      "{HoldPattern[k[x_]] :> 1 /; x > 5, HoldPattern[k[x_]] :> 2}"
+    );
+    assert_eq!(
+      interpret("v[x_ + y_] := 1; v[x_ + x_] := 2; DownValues[v]").unwrap(),
+      "{HoldPattern[v[(x_) + (y_)]] :> 1, HoldPattern[v[2*(x_)]] :> 2}"
+    );
+  }
+}

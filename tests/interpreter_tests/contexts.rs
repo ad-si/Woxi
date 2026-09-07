@@ -294,6 +294,31 @@ mod display {
 mod names_and_contexts {
   use super::*;
 
+  // A string parsed into a held expression is read like any other input:
+  // its symbols resolve against the contexts open at the time, so a package
+  // symbol on `$ContextPath` is found rather than a fresh `Global\`` one
+  // being created (wolframscript-verified; Rubi's step display depends on
+  // it, re-activating `Defer[Int]` by matching the symbol `Int` it parsed).
+  #[test]
+  fn held_string_parses_resolve_package_symbols() {
+    assert_eq!(
+      interpret(
+        "BeginPackage[\"Foo`\"]; Int::usage = \"x\"; EndPackage[]; \
+         ReleaseHold[MakeExpression[\"Int\"]] === Foo`Int"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "BeginPackage[\"Bar`\"]; Int::usage = \"x\"; EndPackage[]; \
+         ToExpression[\"Int[u]\", InputForm, Hold] === Hold[Bar`Int[u]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
   // A pattern's context part selects the context and its name part the
   // symbol, so `S`*` does not reach into `S`Private``.
   #[test]

@@ -3552,17 +3552,13 @@ mod limit {
   // Product 0 * Infinity at a finite point: the L'Hopital rewrite must use the
   // 0/0 orientation (Log[2-x]/Cot[Pi x/2]) — the Infinity/Infinity orientation
   // differentiates Tan into ever-larger expressions that never resolve. This
-  // case previously did not terminate; here we only require that it resolves
-  // quickly to the correct numeric value (2/Pi ~ 0.6366).
+  // case previously did not terminate; with `1/Tan` canonicalized to `Cot`
+  // the 0/0 orientation resolves exactly, as in wolframscript.
   #[test]
   fn limit_tan_times_log_product_terminates() {
-    let out = interpret("Limit[Tan[Pi x/2] Log[2 - x], x -> 1]").unwrap();
-    let val: f64 = out.parse().unwrap_or_else(|_| {
-      panic!("expected a numeric limit, got {out}");
-    });
-    assert!(
-      (val - std::f64::consts::FRAC_2_PI).abs() < 1e-6,
-      "expected ~2/Pi, got {val}"
+    assert_eq!(
+      interpret("Limit[Tan[Pi x/2] Log[2 - x], x -> 1]").unwrap(),
+      "2/Pi"
     );
   }
 
@@ -5582,7 +5578,7 @@ mod erf {
     // Product rule.
     assert_eq!(
       interpret("D[x Sign[x], x]").unwrap(),
-      "x*Derivative[1][Sign][x] + Sign[x]"
+      "Sign[x] + x*Derivative[1][Sign][x]"
     );
     // Second derivative differentiates Sign' to Sign''.
     assert_eq!(
@@ -10496,7 +10492,7 @@ mod inverse_laplace_transform {
     );
     assert_eq!(
       interpret("InverseLaplaceTransform[s^2/(s + 1), s, t]").unwrap(),
-      "Derivative[1][DiracDelta][t] + E^(-t) - DiracDelta[t]"
+      "E^(-t) - DiracDelta[t] + Derivative[1][DiracDelta][t]"
     );
   }
 
@@ -17596,6 +17592,58 @@ mod bounded_oscillation_extrema {
     );
     assert_eq!(
       interpret("MaxLimit[1/Abs[Cos[x]], x -> Infinity]").unwrap(),
+      "Infinity"
+    );
+  }
+}
+
+mod cancelling_poles {
+  use super::*;
+
+  // Two terms that each diverge at the point but cancel: the sum is combined
+  // over a common denominator before any numerical probe, which would lose
+  // the cancellation between two ~1/h terms (wolframscript-verified).
+  #[test]
+  fn sum_of_cancelling_poles() {
+    assert_eq!(
+      interpret("Limit[1/(z - 1) - 1/(z^2 - z), z -> 1]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("Limit[1/(z - 1) + 1/(z^2 - z), z -> 1]").unwrap(),
+      "Indeterminate"
+    );
+  }
+
+  // The Laurent model of Zeta at 1 carries StieltjesGamma[1] as a
+  // coefficient; the cancellation of the pole factor must survive it.
+  #[test]
+  fn zeta_pole_models_with_call_coefficients() {
+    assert_eq!(
+      interpret("Limit[Zeta[z] - Zeta[z]/z, z -> 1]").unwrap(),
+      "1"
+    );
+    assert_eq!(interpret("Limit[(z - 1) Zeta[z]/z, z -> 1]").unwrap(), "1");
+  }
+
+  // `1/Sin[x]` evaluates to `Csc[x]`; the oscillation analysis must see
+  // through the reciprocal head (wolframscript-verified).
+  #[test]
+  fn reciprocal_trig_extrema() {
+    assert_eq!(
+      interpret("MaxLimit[Abs[Csc[x]], x -> Infinity]").unwrap(),
+      "Infinity"
+    );
+    assert_eq!(
+      interpret("MinLimit[Abs[Csc[x]], x -> Infinity]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("MinLimit[Csc[x], x -> Infinity]").unwrap(),
+      "-Infinity"
+    );
+    assert_eq!(
+      interpret("MaxLimit[Sec[x], x -> Infinity]").unwrap(),
       "Infinity"
     );
   }

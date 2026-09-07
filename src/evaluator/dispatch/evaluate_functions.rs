@@ -1699,10 +1699,10 @@ fn evaluate_function_call_ast_inner(
         // as a guard: True → return expr, otherwise this overload fails.
         {
           let value = result?;
-          match unwrap_condition_guards(value)? {
-            Some(value) => return Ok(value),
-            None => {} // condition not met, try next permutation
+          if let Some(value) = unwrap_condition_guards(value)? {
+            return Ok(value);
           }
+          // condition not met, try next permutation
         }
       } // end permutation loop
       // No permutation matched; fall through to the next overload.

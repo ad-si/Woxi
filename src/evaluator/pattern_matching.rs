@@ -1772,56 +1772,93 @@ fn pattern_contains_optional(pat: &Expr) -> bool {
   }
 }
 
-/// Count how many PatternOptional variables in a pattern tree have their
-/// default value in the given bindings.  Used to prefer Orderless matches
-/// that maximise default usage (Wolfram semantics).
-fn count_optional_defaults_used(
-  outer_func: &str,
-  pat_args: &[Expr],
-  bindings: &[(String, Expr)],
-) -> usize {
-  let mut count = 0;
-  for pat in pat_args {
-    count += count_defaults_in_pat(pat, outer_func, bindings);
-  }
-  count
+/// The order in which the Wolfram Language fills the slots of an Orderless
+/// pattern: compound patterns, then optional blanks, then plain blanks —
+/// each keeping its place among its kind.
+fn wolfram_slot_order(pat_args: &[Expr]) -> Vec<usize> {
+  let class = |p: &Expr| -> u8 {
+    match p {
+      Expr::PatternOptional { .. } => 1,
+      Expr::FunctionCall { name, .. } if name == "Optional" => 1,
+      Expr::Pattern { .. } | Expr::PatternTest { .. } => 2,
+      Expr::FunctionCall { name, .. }
+        if name == "Pattern" || name == "Blank" || name == "PatternTest" =>
+      {
+        2
+      }
+      Expr::Identifier(n) if n.starts_with('_') => 2,
+      _ => 0,
+    }
+  };
+  let mut order: Vec<usize> = (0..pat_args.len()).collect();
+  order.sort_by_key(|&i| class(&pat_args[i]));
+  order
 }
 
-fn count_defaults_in_pat(
-  pat: &Expr,
-  context_func: &str,
-  bindings: &[(String, Expr)],
-) -> usize {
-  match pat {
-    Expr::PatternOptional { name, default, .. } => {
-      // Determine the default value
-      let default_val = match default {
-        Some(d) => Some(d.as_ref().clone()),
-        None => crate::evaluator::builtin_default_value(context_func),
-      };
-      if let Some(def) = default_val {
-        if let Some((_, val)) = bindings.iter().find(|(n, _)| n == name) {
-          usize::from(expr_equal(val, &def))
-        } else {
-          0
-        }
-      } else {
-        0
-      }
-    }
-    Expr::FunctionCall { name, args } => args
-      .iter()
-      .map(|a| count_defaults_in_pat(a, name, bindings))
-      .sum(),
-    Expr::BinaryOp { op, left, right } => {
-      let func =
-        crate::evaluator::pattern_matching::binary_op_to_func_name(*op);
-      let ctx = if func.is_empty() { context_func } else { func };
-      count_defaults_in_pat(left, ctx, bindings)
-        + count_defaults_in_pat(right, ctx, bindings)
-    }
-    _ => 0,
+/// Fill the slots of an Orderless pattern in the given order, each with
+/// the first unused argument it matches, backtracking when a later slot
+/// cannot be filled. With `prefer_context` only bindings agreeing with the
+/// enclosing match are accepted.
+#[allow(clippy::too_many_arguments)]
+fn orderless_slot_search(
+  pat_args: &[Expr],
+  expr_args: &[Expr],
+  order: &[usize],
+  depth: usize,
+  used: &mut [bool],
+  bindings: &mut [(String, Expr)],
+  prefer_context: bool,
+) -> Option<Vec<(String, Expr)>> {
+  if depth == order.len() {
+    return Some(bindings.to_vec());
   }
+  let pattern = &pat_args[order[depth]];
+  for j in 0..expr_args.len() {
+    if used[j] {
+      continue;
+    }
+    push_match_context(bindings);
+    let result = match_pattern(&expr_args[j], pattern);
+    pop_match_context();
+    let Some(found) = result else {
+      continue;
+    };
+    let mut merged = bindings.to_vec();
+    if !merge_bindings(&mut merged, found) {
+      continue;
+    }
+    if prefer_context && !bindings_compatible_with_context(&merged) {
+      continue;
+    }
+    used[j] = true;
+    let deeper = orderless_slot_search(
+      pat_args,
+      expr_args,
+      order,
+      depth + 1,
+      used,
+      &mut merged,
+      prefer_context,
+    );
+    used[j] = false;
+    if deeper.is_some() {
+      return deeper;
+    }
+  }
+  None
+}
+
+/// The order in which a call's argument patterns are matched: the ones
+/// without optionals first. They bind their variables unambiguously, and
+/// those bindings then steer the readings of an optional-laden sibling —
+/// `Int[(c_. + d_.*x_)^m_ Sin[e_. + f_.*x_], x_Symbol]` reads its first
+/// argument with `x` already known to be the symbol. Matching in a
+/// different order does not change what a match binds, only which of
+/// several readings is found.
+fn constrained_first_order(pat_args: &[Expr]) -> Vec<usize> {
+  let mut order: Vec<usize> = (0..pat_args.len()).collect();
+  order.sort_by_key(|&i| usize::from(pattern_contains_optional(&pat_args[i])));
+  order
 }
 
 /// Try simple symbol replacement at the AST level.
@@ -2787,6 +2824,66 @@ pub fn expr_equal(a: &Expr, b: &Expr) -> bool {
         && a1.len() == a2.len()
         && a1.iter().zip(a2.iter()).all(|(x, y)| expr_equal(x, y))
     }
+    // The operator nodes of a held or unevaluated expression compare
+    // structurally too, so that two rule guards (`FreeQ[…] && LtQ[m, -1]`)
+    // are told apart at the first differing node rather than by rendering
+    // both to text.
+    (
+      Expr::BinaryOp {
+        op: o1,
+        left: l1,
+        right: r1,
+      },
+      Expr::BinaryOp {
+        op: o2,
+        left: l2,
+        right: r2,
+      },
+    ) => o1 == o2 && expr_equal(l1, l2) && expr_equal(r1, r2),
+    (
+      Expr::UnaryOp {
+        op: o1,
+        operand: x1,
+      },
+      Expr::UnaryOp {
+        op: o2,
+        operand: x2,
+      },
+    ) => o1 == o2 && expr_equal(x1, x2),
+    (
+      Expr::Comparison {
+        operands: x1,
+        operators: p1,
+      },
+      Expr::Comparison {
+        operands: x2,
+        operators: p2,
+      },
+    ) => {
+      p1 == p2
+        && x1.len() == x2.len()
+        && x1.iter().zip(x2.iter()).all(|(x, y)| expr_equal(x, y))
+    }
+    (
+      Expr::CurriedCall { func: f1, args: a1 },
+      Expr::CurriedCall { func: f2, args: a2 },
+    ) => {
+      expr_equal(f1, f2)
+        && a1.len() == a2.len()
+        && a1.iter().zip(a2.iter()).all(|(x, y)| expr_equal(x, y))
+    }
+    (
+      Expr::Pattern {
+        name: n1,
+        head: h1,
+        blank_type: b1,
+      },
+      Expr::Pattern {
+        name: n2,
+        head: h2,
+        blank_type: b2,
+      },
+    ) => n1 == n2 && h1 == h2 && b1 == b2,
     // Images have no useful textual form (`expr_to_string` reports the
     // `-Image-` display placeholder for every one of them), so the
     // catch-all below would treat any two images as equal regardless of
@@ -4586,84 +4683,50 @@ fn match_pattern_impl(
             }
             return None;
           }
-          // For Orderless functions (Times, Plus), try all permutations
+          // For Orderless functions (Times, Plus) the arguments are paired
+          // up the way the Wolfram Language searches: compound argument
+          // patterns first, then optional blanks, then plain blanks, each
+          // taking the first unused argument it matches, backtracking when a
+          // later slot cannot be filled. That is what makes `a_. + b_.*y_`
+          // read `2 + 3 w` as `b -> 1, y -> 2, a -> 3 w`, and `d_.*x_` read
+          // `3 x` as `d -> 3, x -> x`. When that order finds nothing — an
+          // inner reading chosen early clashes with a sibling, as in
+          // `(c_. + d_.*x_)^m_ s[x_]` against `(2 + 3 x)^5 s[x]` — the
+          // constrained slots go first instead, so their bindings steer the
+          // readings of the optional-laden ones.
           let is_orderless =
             crate::evaluator::listable::is_builtin_orderless(pat_name)
               || crate::func_attrs_contains(pat_name, Attributes::Orderless);
-          if is_orderless && pat_args.len() >= 2 {
-            // Try all permutations of expression args against pattern args.
-            // When Optional patterns are present, prefer matches where more
-            // Optional patterns use their default values (Wolfram semantics).
-            let perms = permutations(expr_args);
-            let has_optionals = pat_args.iter().any(pattern_contains_optional);
-            let mut best_match: Option<(Vec<(String, Expr)>, usize)> = None;
-            for perm in perms {
-              let mut bindings = Vec::new();
-              let mut matched = true;
-              for (p, e) in pat_args.iter().zip(perm.iter()) {
-                push_match_context(&bindings);
-                let result = match_pattern(e, p);
-                pop_match_context();
-                if let Some(b) = result {
-                  if !merge_bindings(&mut bindings, b) {
-                    matched = false;
-                    break;
-                  }
-                } else {
-                  matched = false;
-                  break;
-                }
-              }
-              if matched {
-                if !has_optionals {
-                  // No optionals — return first match immediately
-                  return Some(bindings);
-                }
-                // Check compatibility with outer context bindings
-                if !bindings_compatible_with_context(&bindings) {
-                  continue;
-                }
-                let score =
-                  count_optional_defaults_used(pat_name, pat_args, &bindings);
-                if let Some((_, best_score)) = &best_match {
-                  if score > *best_score {
-                    best_match = Some((bindings, score));
-                  }
-                } else {
-                  best_match = Some((bindings, score));
-                }
-              }
-            }
-            // If no context-compatible match found with Optional scoring,
-            // fall back to first match without context check
-            if best_match.is_none() {
-              for perm in permutations(expr_args) {
+          if is_orderless
+            && pat_args.len() >= 2
+            && pat_args.len() == expr_args.len()
+          {
+            let wolfram = wolfram_slot_order(pat_args);
+            let constrained = constrained_first_order(pat_args);
+            let reversed: Vec<usize> = wolfram.iter().rev().copied().collect();
+            let orders = [wolfram, constrained, reversed];
+            for prefer_context in [true, false] {
+              for order in &orders {
+                let mut used = vec![false; expr_args.len()];
                 let mut bindings = Vec::new();
-                let mut matched = true;
-                for (p, e) in pat_args.iter().zip(perm.iter()) {
-                  push_match_context(&bindings);
-                  let result = match_pattern(e, p);
-                  pop_match_context();
-                  if let Some(b) = result {
-                    if !merge_bindings(&mut bindings, b) {
-                      matched = false;
-                      break;
-                    }
-                  } else {
-                    matched = false;
-                    break;
-                  }
-                }
-                if matched {
-                  return Some(bindings);
+                if let Some(b) = orderless_slot_search(
+                  pat_args,
+                  expr_args,
+                  order,
+                  0,
+                  &mut used,
+                  &mut bindings,
+                  prefer_context,
+                ) {
+                  return Some(b);
                 }
               }
-              return None;
             }
-            best_match.map(|(b, _)| b)
+            None
           } else {
             let mut bindings = Vec::new();
-            for (p, e) in pat_args.iter().zip(expr_args.iter()) {
+            for i in constrained_first_order(pat_args) {
+              let (p, e) = (&pat_args[i], &expr_args[i]);
               push_match_context(&bindings);
               let result = match_pattern(e, p);
               pop_match_context();

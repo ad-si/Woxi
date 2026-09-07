@@ -431,7 +431,7 @@ mod generating_function {
   fn shifted_sequence() {
     assert_eq!(
       interpret("GeneratingFunction[f[n + 1], n, x]").unwrap(),
-      "(GeneratingFunction[f[n], n, x] - f[0])/x"
+      "(-f[0] + GeneratingFunction[f[n], n, x])/x"
     );
   }
 

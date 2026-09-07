@@ -2172,6 +2172,23 @@ mod factor_list {
 mod cancel {
   use super::*;
 
+  // A function call that appears only on one side of the quotient is a
+  // coefficient for the polynomial engine, exactly like a plain symbol
+  // (wolframscript-verified).
+  #[test]
+  fn cancel_with_call_coefficients() {
+    assert_eq!(
+      interpret("Cancel[(-1 + f[a] + z - 2 f[a] z + f[a] z^2)/((-1 + z) z)]")
+        .unwrap(),
+      "(1 - f[a] + z*f[a])/z"
+    );
+    assert_eq!(
+      interpret("Cancel[(-1 + s[1] + z - 2 s[1] z + s[1] z^2)/((-1 + z) z)]")
+        .unwrap(),
+      "(1 - s[1] + z*s[1])/z"
+    );
+  }
+
   #[test]
   fn cancel_simple() {
     assert_eq!(interpret("Cancel[(x^2 - 1)/(x - 1)]").unwrap(), "1 + x");

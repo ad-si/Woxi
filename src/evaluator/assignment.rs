@@ -285,20 +285,312 @@ fn pattern_specificity_score(
   (max_blank * 10).saturating_sub(head_bonus + cond_bonus + rule_cond_bonus)
 }
 
+/// Whether two guard expressions are the same expression, node for node.
+/// Both come from the same reader, so a difference in representation is a
+/// difference in the guard; unlike `expr_equal` this never renders the
+/// operands to text, which matters when it runs for every pair of Rubi's
+/// seven thousand rules.
+fn guards_equal(a: &Expr, b: &Expr) -> bool {
+  let all = |xs: &[Expr], ys: &[Expr]| {
+    xs.len() == ys.len()
+      && xs.iter().zip(ys.iter()).all(|(x, y)| guards_equal(x, y))
+  };
+  match (a, b) {
+    (Expr::Integer(x), Expr::Integer(y)) => x == y,
+    (Expr::BigInteger(x), Expr::BigInteger(y)) => x == y,
+    (Expr::Real(x), Expr::Real(y)) => x == y,
+    (Expr::String(x), Expr::String(y)) => x == y,
+    (Expr::Identifier(x), Expr::Identifier(y)) => x == y,
+    (Expr::Constant(x), Expr::Constant(y)) => x == y,
+    (Expr::Slot(x), Expr::Slot(y)) => x == y,
+    (Expr::List(xs), Expr::List(ys)) => all(xs, ys),
+    (
+      Expr::FunctionCall { name: n1, args: a1 },
+      Expr::FunctionCall { name: n2, args: a2 },
+    ) => n1 == n2 && all(a1, a2),
+    (
+      Expr::BinaryOp {
+        op: o1,
+        left: l1,
+        right: r1,
+      },
+      Expr::BinaryOp {
+        op: o2,
+        left: l2,
+        right: r2,
+      },
+    ) => o1 == o2 && guards_equal(l1, l2) && guards_equal(r1, r2),
+    (
+      Expr::UnaryOp {
+        op: o1,
+        operand: x1,
+      },
+      Expr::UnaryOp {
+        op: o2,
+        operand: x2,
+      },
+    ) => o1 == o2 && guards_equal(x1, x2),
+    (
+      Expr::Comparison {
+        operands: x1,
+        operators: p1,
+      },
+      Expr::Comparison {
+        operands: x2,
+        operators: p2,
+      },
+    ) => p1 == p2 && all(x1, x2),
+    (
+      Expr::CurriedCall { func: f1, args: a1 },
+      Expr::CurriedCall { func: f2, args: a2 },
+    ) => guards_equal(f1, f2) && all(a1, a2),
+    (
+      Expr::Pattern {
+        name: n1,
+        head: h1,
+        blank_type: b1,
+      },
+      Expr::Pattern {
+        name: n2,
+        head: h2,
+        blank_type: b2,
+      },
+    ) => n1 == n2 && h1 == h2 && b1 == b2,
+    (
+      Expr::PatternOptional {
+        name: n1,
+        head: h1,
+        default: d1,
+      },
+      Expr::PatternOptional {
+        name: n2,
+        head: h2,
+        default: d2,
+      },
+    ) => {
+      n1 == n2
+        && h1 == h2
+        && match (d1, d2) {
+          (Some(x), Some(y)) => guards_equal(x, y),
+          (None, None) => true,
+          _ => false,
+        }
+    }
+    (
+      Expr::PatternTest {
+        name: n1,
+        head: h1,
+        blank_type: b1,
+        test: t1,
+      },
+      Expr::PatternTest {
+        name: n2,
+        head: h2,
+        blank_type: b2,
+        test: t2,
+      },
+    ) => n1 == n2 && h1 == h2 && b1 == b2 && guards_equal(t1, t2),
+    (
+      Expr::Rule {
+        pattern: p1,
+        replacement: r1,
+      },
+      Expr::Rule {
+        pattern: p2,
+        replacement: r2,
+      },
+    )
+    | (
+      Expr::RuleDelayed {
+        pattern: p1,
+        replacement: r1,
+      },
+      Expr::RuleDelayed {
+        pattern: p2,
+        replacement: r2,
+      },
+    ) => guards_equal(p1, p2) && guards_equal(r1, r2),
+    (Expr::Function { body: b1 }, Expr::Function { body: b2 }) => {
+      guards_equal(b1, b2)
+    }
+    _ => false,
+  }
+}
+
+/// Whether `slot_patterns` can rebuild a rule's argument patterns: it
+/// cannot for list-destructuring and option-pattern slots.
+fn slots_reconstructible(params: &[String]) -> bool {
+  !params
+    .iter()
+    .any(|p| p.starts_with("_lp") || p.starts_with("__opts"))
+}
+
+/// The argument patterns of a stored rule, rebuilt from its slots: a
+/// structural slot carries its pattern in a `__StructuralPattern__` marker, a
+/// literal slot its value in a `SameQ` guard, and a plain slot is a blank
+/// with its head, blank type and default. `None` for the slot kinds whose
+/// constraints are not reconstructible here (list destructuring, option
+/// patterns).
+fn slot_patterns(
+  params: &[String],
+  heads: &[Option<String>],
+  blank_types: &[u8],
+  conditions: &[Option<Expr>],
+  defaults: &[Option<Expr>],
+) -> Option<Vec<Expr>> {
+  let mut out = Vec::with_capacity(heads.len());
+  for i in 0..heads.len() {
+    let name = params.get(i)?;
+    if name.is_empty() {
+      continue; // a guard-only slot
+    }
+    if name.starts_with("_lp") || name.starts_with("__opts") {
+      return None;
+    }
+    let cond = conditions.get(i).and_then(|c| c.as_ref());
+    if let Some(Expr::FunctionCall { name: cn, args }) = cond
+      && cn == "__StructuralPattern__"
+      && args.len() == 2
+    {
+      out.push(args[1].clone());
+      continue;
+    }
+    if name.starts_with("_dv")
+      && let Some(Expr::Comparison {
+        operands,
+        operators,
+      }) = cond
+      && operands.len() == 2
+      && matches!(operators.as_slice(), [ComparisonOp::SameQ])
+    {
+      out.push(operands[1].clone());
+      continue;
+    }
+    let head = heads.get(i).cloned().flatten();
+    let blank_type = blank_types.get(i).copied().unwrap_or(1);
+    out.push(match defaults.get(i).and_then(|d| d.as_ref()) {
+      Some(default) => Expr::PatternOptional {
+        name: name.clone(),
+        head,
+        default: Some(Box::new(default.clone())),
+      },
+      None => Expr::Pattern {
+        name: name.clone(),
+        head,
+        blank_type,
+      },
+    });
+  }
+  Some(out)
+}
+
+/// Whether the rule with argument patterns `a` matches a strict subset of what
+/// the rule with patterns `b` matches: `b` matches `a`'s patterns with their
+/// variables frozen into symbols, and `a` does not match `b`'s the same way.
+/// `Some(false)` when they are equivalent, `None` when `b` does not cover
+/// `a` at all or a sequence pattern makes the freezing unsound.
+fn structural_subsumes(a: &[Expr], b: &[Expr]) -> Option<bool> {
+  if a.len() != b.len() {
+    return None;
+  }
+  let frozen_a = freeze_patterns(a)?;
+  let frozen_b = freeze_patterns(b)?;
+  let as_call = |args: &[Expr]| Expr::FunctionCall {
+    name: "Woxi`RuleShape".to_string(),
+    args: args.to_vec().into(),
+  };
+  let b_covers_a = crate::evaluator::pattern_matching::match_pattern(
+    &as_call(&frozen_a),
+    &as_call(b),
+  )
+  .is_some();
+  if !b_covers_a {
+    return None;
+  }
+  let a_covers_b = crate::evaluator::pattern_matching::match_pattern(
+    &as_call(&frozen_b),
+    &as_call(a),
+  )
+  .is_some();
+  Some(!a_covers_b)
+}
+
+/// The patterns with every pattern variable replaced by a symbol of its own,
+/// so that another pattern can be matched against them. A sequence blank
+/// stands for any number of arguments, which one symbol cannot represent, so
+/// such patterns are not frozen.
+fn freeze_patterns(patterns: &[Expr]) -> Option<Vec<Expr>> {
+  let counter = std::cell::Cell::new(0usize);
+  let unsound = std::cell::Cell::new(false);
+  let frozen: Vec<Expr> = patterns
+    .iter()
+    .map(|p| {
+      crate::functions::string_ast::map_expr_tree(p, &|node: &Expr| {
+        let (name, blank_type) = match node {
+          Expr::Pattern {
+            name, blank_type, ..
+          } => (name.clone(), *blank_type),
+          Expr::PatternOptional { name, .. } => (name.clone(), 1),
+          Expr::PatternTest {
+            name, blank_type, ..
+          } => (name.clone(), *blank_type),
+          Expr::FunctionCall { name: h, args }
+            if h == "Pattern" && args.len() == 2 =>
+          {
+            if let Expr::Identifier(n) = &args[0] {
+              (n.clone(), 1)
+            } else {
+              (String::new(), 1)
+            }
+          }
+          Expr::FunctionCall { name: h, .. }
+            if h == "Blank" || h == "Optional" || h == "PatternTest" =>
+          {
+            (String::new(), 1)
+          }
+          Expr::FunctionCall { name: h, .. }
+            if h == "BlankSequence" || h == "BlankNullSequence" =>
+          {
+            unsound.set(true);
+            return None;
+          }
+          _ => return None,
+        };
+        if blank_type > 1 {
+          unsound.set(true);
+        }
+        // The same variable freezes to the same symbol, so a pattern that
+        // repeats it (`x_` twice in `(c_.+d_.*x_)^m_ sin[e_.+f_.*x_]`)
+        // can still be matched by another that repeats it too.
+        if name.is_empty() {
+          counter.set(counter.get() + 1);
+          Some(Expr::Identifier(format!(
+            "Woxi`Frozen`blank{}",
+            counter.get()
+          )))
+        } else {
+          Some(Expr::Identifier(format!("Woxi`Frozen`{name}")))
+        }
+      })
+    })
+    .collect();
+  if unsound.get() { None } else { Some(frozen) }
+}
+
 /// Split a rule's stored arrays into its argument positions (head + blank type)
 /// and its guard expressions, for partial-order comparison. Appended guard-only
 /// slots (empty param name, line ~2149) contribute a guard but not a position;
 /// a real position whose condition slot holds a `/;` guard contributes both a
 /// position and a guard. `__StructuralPattern__` markers are structural, not
 /// guards. A whole-rule `Condition[body, test]` wrapper also contributes a guard.
-fn rule_positions_and_guards(
+fn rule_positions_and_guards<'a>(
   params: &[String],
-  heads: &[Option<String>],
+  heads: &'a [Option<String>],
   blank_types: &[u8],
-  conditions: &[Option<Expr>],
+  conditions: &'a [Option<Expr>],
   defaults: &[Option<Expr>],
-  body: &Expr,
-) -> (Vec<(Option<String>, u8, bool)>, Vec<Expr>) {
+  body: &'a Expr,
+) -> (Vec<(Option<&'a String>, u8, bool)>, Vec<&'a Expr>) {
   let mut positions = Vec::new();
   let mut guards = Vec::new();
   for i in 0..heads.len() {
@@ -307,31 +599,31 @@ fn rule_positions_and_guards(
       params.get(i).is_some_and(std::string::String::is_empty);
     if is_guard_slot {
       if let Some(c) = cond {
-        guards.push(c.clone());
+        guards.push(c);
       }
       continue;
     }
     let is_optional = defaults.get(i).is_some_and(std::option::Option::is_some);
-    positions.push((heads[i].clone(), blank_types[i], is_optional));
+    positions.push((heads[i].as_ref(), blank_types[i], is_optional));
     if let Some(c) = cond {
       let is_structural_marker = matches!(
         c,
         Expr::FunctionCall { name, .. } if name == "__StructuralPattern__"
       );
       if !is_structural_marker {
-        guards.push(c.clone());
+        guards.push(c);
       }
     }
   }
   // A whole-rule `/;` guard sits in a condition slot past the last position.
   for cond in conditions.iter().skip(heads.len()).flatten() {
-    guards.push(cond.clone());
+    guards.push(cond);
   }
   if let Expr::FunctionCall { name, args } = body
     && name == "Condition"
     && args.len() == 2
   {
-    guards.push(args[1].clone());
+    guards.push(&args[1]);
   }
   (positions, guards)
 }
@@ -375,18 +667,49 @@ pub fn rule_dominates(
         matches!(c, Expr::FunctionCall { name, .. } if name == "__StructuralPattern__")
       })
   };
-  if needs_score_fallback(a_params, a_conds)
-    || needs_score_fallback(b_params, b_conds)
-  {
-    return pattern_specificity_score(a_params, a_bt, a_heads, a_conds, a_body)
-      < pattern_specificity_score(b_params, b_bt, b_heads, b_conds, b_body);
-  }
   let (a_pos, a_guards) = rule_positions_and_guards(
     a_params, a_heads, a_bt, a_conds, a_defaults, a_body,
   );
   let (b_pos, b_guards) = rule_positions_and_guards(
     b_params, b_heads, b_bt, b_conds, b_defaults, b_body,
   );
+  if needs_score_fallback(a_params, a_conds)
+    || needs_score_fallback(b_params, b_conds)
+  {
+    // A nested structural pattern (`f[g[x_]]`, most of Rubi's 7000 rules)
+    // is compared the way the language does it: `a` is more specific than
+    // `b` when `b`'s pattern matches `a`'s with `a`'s variables frozen and
+    // not the other way round, and `a` keeps every guard `b` has. Two rules
+    // this cannot relate — and every pair whose guards differ — stay in
+    // definition order. Only list-destructuring rules, whose constraints
+    // live in opaque `MatchQ` conditions, still fall back to the linear
+    // specificity score.
+    let has_guard =
+      |gs: &[&Expr], g: &Expr| gs.iter().any(|h| guards_equal(h, g));
+    if slots_reconstructible(a_params) && slots_reconstructible(b_params) {
+      // Guards are compared first: they differ between most pairs of
+      // rules, and rebuilding the patterns is what costs.
+      if b_guards.iter().any(|g| !has_guard(&a_guards, g)) {
+        return false;
+      }
+      let a_extra_guard = a_guards.iter().any(|g| !has_guard(&b_guards, g));
+      if a_pos.len() != b_pos.len() {
+        return false;
+      }
+      let (Some(a_args), Some(b_args)) = (
+        slot_patterns(a_params, a_heads, a_bt, a_conds, a_defaults),
+        slot_patterns(b_params, b_heads, b_bt, b_conds, b_defaults),
+      ) else {
+        return false;
+      };
+      return match structural_subsumes(&a_args, &b_args) {
+        Some(strictly) => strictly || a_extra_guard,
+        None => false,
+      };
+    }
+    return pattern_specificity_score(a_params, a_bt, a_heads, a_conds, a_body)
+      < pattern_specificity_score(b_params, b_bt, b_heads, b_conds, b_body);
+  }
   // Optional (defaulted) trailing positions let a rule match a range of
   // arities: `[required, total]`. `a`'s match set is a subset of `b`'s only if
   // every arity `a` accepts, `b` also accepts — i.e. `b` requires no more than
@@ -439,8 +762,10 @@ pub fn rule_dominates(
   }
   // Every guard of `b` must also guard `a`, else `a` accepts inputs `b` rejects.
   // Compare guards by their string form (Expr has no PartialEq).
-  let a_guard_strs: Vec<String> = a_guards.iter().map(expr_to_string).collect();
-  let b_guard_strs: Vec<String> = b_guards.iter().map(expr_to_string).collect();
+  let a_guard_strs: Vec<String> =
+    a_guards.iter().map(|g| expr_to_string(g)).collect();
+  let b_guard_strs: Vec<String> =
+    b_guards.iter().map(|g| expr_to_string(g)).collect();
   for g in &b_guard_strs {
     if !a_guard_strs.contains(g) {
       return false;

@@ -178,15 +178,15 @@ woxi eval 'ToString[TeXForm[Sin[x]^2 Star[a, b]]]'            # (a*b) \sin ^2(x)
 wolframscript -code 'ToString[TeXForm[(1 + x) y (a + b)]]'    # (x+1) y (a+b)
 woxi eval 'ToString[TeXForm[(1 + x) y (a + b)]]'              # y (a+b) (x+1)
 
-wolframscript -code 'ToString[TeXForm[Sec[x]/Sin[x]]]'        # \csc (x) \sec (x)
-woxi eval 'ToString[TeXForm[Sec[x]/Sin[x]]]'                  # \sec (x) \csc (x)
+wolframscript -code 'ToString[x^2 Sqrt[a^2 - x^2], InputForm]'  # x^2*Sqrt[a^2 - x^2]
+woxi eval 'ToString[x^2 Sqrt[a^2 - x^2], InputForm]'            # Sqrt[a^2 - x^2]*x^2
 ```
 
 The renderer shows the factors in the order the evaluated `Times` holds
 them (moving symbols ahead of a constant-free sum, as WL does). The
 difference is upstream, in how Woxi sorts `Star[a, b]` against a power, one
-sum against another, and a reciprocal against a call; see the `Times`
-ordering entries below.
+sum against another, and a power of a sum against a power of a symbol; see
+the `Times` ordering entries below.
 
 ### A minus written in front of a held rational coefficient
 
@@ -283,6 +283,64 @@ Woxi has three independent canonical-order comparators (one for `Sort`, one for
 Wolfram. Diagnose an ordering divergence by testing `Sort[…]`, `Order[a, b]`
 and the bare `a + b` separately.
 
+The `Plus` comparator follows Wolfram for every term led by a function call
+(`plus_call_led_ordering` in `tests/interpreter_tests/arithmetic.rs`): calls
+sort after the symbols, powers and products, by head name, then from the
+last factor of a product by that call's arguments, its exponent and the
+remaining factors. What is left are the entries below.
+
+### `Sort` puts a symbol before a sum, and a call before its curried form
+
+```sh
+wolframscript -code 'Sort[{c, a + b}]'          # {a + b, c}
+woxi eval 'Sort[{c, a + b}]'                    # {c, a + b}
+
+wolframscript -code 'Sort[{f[x][y], f[x]}]'     # {f[x], f[x][y]}
+woxi eval 'Sort[{f[x][y], f[x]}]'               # {f[x][y], f[x]}
+```
+
+Wolfram compares a sum against a symbol from the sum's last term (`b < c`)
+and a curried call after the plain call with the same head. The `Plus`
+comparator has both rules (`h[a + b] + h[c]`, `f[x] + f[x][y]`); the `Sort`
+comparator still orders by expression class first.
+
+### Two rational-function arguments of the same head
+
+```sh
+wolframscript -code 'ToString[Subst[f[(Sqrt[2] - 2 x)/(-1 + Sqrt[2] x - x^2)], x] + Subst[f[(Sqrt[2] + 2 x)/(-1 - Sqrt[2] x - x^2)], x], InputForm]'
+# Subst[f[(Sqrt[2] + 2*x)/(-1 - Sqrt[2]*x - x^2)], x] + Subst[f[(Sqrt[2] - 2*x)/(-1 + Sqrt[2]*x - x^2)], x]
+woxi eval 'ToString[Subst[f[(Sqrt[2] - 2 x)/(-1 + Sqrt[2] x - x^2)], x] + Subst[f[(Sqrt[2] + 2 x)/(-1 - Sqrt[2] x - x^2)], x], InputForm]'
+# Subst[f[(Sqrt[2] - 2*x)/(-1 + Sqrt[2]*x - x^2)], x] + Subst[f[(Sqrt[2] + 2*x)/(-1 - Sqrt[2]*x - x^2)], x]
+```
+
+Wolfram decides this pair by the denominators (`-1 - Sqrt[2] x - x^2` before
+`-1 + Sqrt[2] x - x^2`); Woxi's argument comparison reaches the numerators
+first. Surfaces in one intermediate sum of Rubi's `Int[Sqrt[Tan[x]], x]`
+step display.
+
+### A symbolic multiple of `Infinity` cancels against itself
+
+```sh
+wolframscript -code 'a Infinity - a Infinity'   # a*-Infinity + a*Infinity
+woxi eval 'a Infinity - a Infinity'             # 0
+```
+
+Woxi collects the two terms as like terms; WL leaves the sum (its two
+`DirectedInfinity` products are not combined). Numeric multiples agree
+(`Infinity - Infinity` is `Indeterminate` in both), though the `Infinity::indet`
+message names `-Infinity + Infinity` where WL says
+`ComplexInfinity + ComplexInfinity` for `ComplexInfinity - ComplexInfinity`.
+
+### Held symbols compare by short name
+
+```sh
+wolframscript -code 'BeginPackage["Foo`"]; Int::usage = "x"; EndPackage[]; Hold[Foo`Int] === Hold[Global`Int]'  # False
+woxi eval 'BeginPackage["Foo`"]; Int::usage = "x"; EndPackage[]; Hold[Foo`Int] === Hold[Global`Int]'            # True
+```
+
+`Foo`x === Global`x` is `False` in both, but inside a compound expression
+Woxi's structural comparison sees the two symbols under their short name.
+
 ### Plus orders a reciprocal monomial before a power of a sum
 
 ```sh
@@ -292,12 +350,6 @@ woxi eval 'ToString[1/x + Sqrt[1 - x^(-2)], InputForm]'            # x^(-1) + Sq
 
 Only the *reciprocal* monomial diverges — `x + Sqrt[1 - x^2]` agrees, and the
 `Times` counterpart of the rule is implemented.
-
-### Plus puts a composite term before a bare symbol
-
-`1 - n + Floor[k]` in WL against `1 + Floor[k] - n` in Woxi. Surfaces in
-symbolic distribution CDFs with mixed symbol and `Floor` terms, e.g.
-`CDF[PascalDistribution[n, p], k]`.
 
 ### A string atom sorts before a product in Plus
 
@@ -1680,39 +1732,28 @@ conductor/Round-2 computation), as are non-monic minimal polynomials of degree
 
 The [Rubi](../../rubi.md) rule base is the densest available exercise of the
 pattern matcher and the definition store: 7000 rules, all read back out of
-`DownValues` and rewritten before use. It loads unmodified and integrates, and
-on a 30-integral sample 20 answers are character-for-character
-`wolframscript`'s, with 6 of the remaining 10 the same function written another
-way. What is left, all of it ordinary Woxi behaviour rather than anything about
-the package:
+`DownValues` and rewritten before use. It loads unmodified, integrates, and
+its step display (`$LoadShowSteps = True`, `Steps`) works. On a 30-integral
+sample 27 answers are character-for-character `wolframscript`'s and the
+other 3 are the same function written another way; the
+*IntWithStepsOfTeXForm* notebook reproduces three of its four examples
+exactly. What is left, all of it ordinary Woxi behaviour rather than
+anything about the package:
 
 - **Loading takes about a minute** against roughly twenty seconds under
-  `wolframscript`, and Rubi's step-display machinery (`$LoadShowSteps = True`,
-  the default) rewrites all 7000 rules on load — which Woxi has not finished
-  after half an hour and ten gigabytes. `Steps`, `Step` and `Stats` are
-  therefore out of reach.
-- **`Int[Sin[x]^3*Cos[x]^2, x]` and `Int[Sin[x]*Cos[x]^3, x]`** run for minutes
-  and exhaust memory. `wolframscript` answers both instantly.
-- **`Int[ArcSin[x], x]`** comes back as `Defer[Int][ArcSin[x], x]`. The rule is
-  loaded — it sits at index 6964 of `DownValues[Int]` where wolframscript has
-  it at 5130, behind the `Unintegrable` fallback that is meant to catch what it
-  declines. Woxi orders two rules by how much structure each pattern carries;
-  the language asks whether one's match set is contained in the other's. The
-  two disagree for patterns that are simply incomparable
-  (`f[(d_.*x_)^m_.*(a_. + b_.*g[x_])^n_.]` matches products that
-  `f[(a_. + b_.*g[x_])^n_.]` never sees), and every later rule of that kind
-  walks the general one further toward the back. Approximating containment
-  with a cheap shape key was tried and reverted — it moved the errors rather
-  than removing them, trading `Int[ArcTan[x], x]` for `Int[1/(1 + x^3), x]`.
-  The fix is the containment test itself, made cheap enough to run at each of
-  7000 insertions.
-- **`Int[x/(a + b*x^2), x]`** is `Log[1 + b x^2/a]/(2 b)` where Rubi gives
-  `Log[a + b x^2]/(2 b)` — off by a constant, from a different rule firing.
-- **Equivalent but differently shaped answers** are common and not bugs as
-  such: `Int[Sec[x]^2, x]` is `Sec[x]*Sin[x]` rather than `Tan[x]`,
-  `Int[E^x*x, x]` is `-Gamma[2, -x]` rather than `E^x*(x - 1)`,
-  `Int[x/(1 + x^4), x]` and `Int[1/(a + b*Cos[x]), x]` pick other valid
-  antiderivatives, and sums come out in Woxi's own `Plus` order.
+  `wolframscript`, three with the step display.
+- **`Int[Sin[x]^3*Cos[x]^2, x]` and `Int[Sin[x]*Cos[x]^3, x]`** run for
+  minutes and exhaust memory. `wolframscript` answers both instantly.
+- **`Int[E^x*x, x]`** is `-Gamma[2, -x]` where Rubi gives `-E^x + E^x*x`, and
+  **`Int[1/(a + b*Cos[x]), x]`** reaches its arctangent through another
+  substitution: a different rule fires first. Equivalent antiderivatives.
+- **`x^2*Sqrt[a^2 - x^2]`** prints as `Sqrt[a^2 - x^2]*x^2` (the `Times`
+  order of a power of a sum against a power of a symbol), and one
+  intermediate sum of `Int[Sqrt[Tan[x]], x]` lists two `Subst` terms the
+  other way round (see the ordering entries above).
+- **The rule text recorded beside each step** keeps its `FreeQ` conditions
+  and is written in linear box syntax rather than `DisplayForm`, and the
+  rule numbers differ (7391 rules against 7300).
 
 ### `Derivative[n][f][x]` is stored flat, so structural functions see three parts
 

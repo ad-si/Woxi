@@ -10652,9 +10652,40 @@ fn bounded_trig_extremum(
     return Ok(None);
   };
   if name == "Abs" && fargs.len() == 1 {
+    // Abs[Csc[g]] is 1/Abs[Sin[g]]: arbitrarily close to 1, unbounded above.
+    if let Expr::FunctionCall {
+      name: inner,
+      args: iargs,
+    } = &fargs[0]
+      && (inner == "Csc" || inner == "Sec")
+      && iargs.len() == 1
+    {
+      let partner = if inner == "Csc" { "Sin" } else { "Cos" };
+      let base = call1(partner, iargs[0].clone());
+      return Ok(bounded_trig_extremum(&base, rule, "MaxLimit")?.map(|_| {
+        if fn_name == "MaxLimit" {
+          Expr::Identifier("Infinity".to_string())
+        } else {
+          Expr::Integer(1)
+        }
+      }));
+    }
     // The oscillation is the same; only the lower end of the range moves.
     let inner = bounded_trig_extremum(&fargs[0], rule, "MaxLimit")?;
     return Ok(inner.map(|_| Expr::Integer(i128::from(fn_name == "MaxLimit"))));
+  }
+  // Csc[g] and Sec[g] (the evaluated forms of 1/Sin[g] and 1/Cos[g]) are
+  // unbounded in both directions when their argument diverges.
+  if (name == "Csc" || name == "Sec") && fargs.len() == 1 {
+    let partner = if name == "Csc" { "Sin" } else { "Cos" };
+    let base = call1(partner, fargs[0].clone());
+    return Ok(bounded_trig_extremum(&base, rule, "MaxLimit")?.map(|_| {
+      if fn_name == "MaxLimit" {
+        Expr::Identifier("Infinity".to_string())
+      } else {
+        neg1(Expr::Identifier("Infinity".to_string()))
+      }
+    }));
   }
   if (name != "Sin" && name != "Cos") || fargs.len() != 1 {
     return Ok(None);
@@ -12177,6 +12208,26 @@ fn limit_strategies(args: &[Expr]) -> Result<Expr, InterpreterError> {
           return limit_ast(&next_args);
         }
       }
+    }
+  }
+
+  // A sum whose terms individually diverge at the point
+  // (`1/(z-1) - 1/(z^2 - z)`, the Laurent model of `Zeta[z] - Zeta[z]/z`)
+  // is combined over a common denominator first: the numerical fallback
+  // would lose the cancellation between two ~1/h terms and report 0.
+  if additive_terms(&args[0]).len() >= 2 {
+    let combined = crate::evaluator::evaluate_expr_to_expr(&call(
+      "Together",
+      vec![args[0].clone()],
+    ))?;
+    if additive_terms(&combined).len() < 2
+      && expr_to_string(&combined) != expr_to_string(&args[0])
+    {
+      let mut next_args = vec![combined, args[1].clone()];
+      if args.len() == 3 {
+        next_args.push(args[2].clone());
+      }
+      return limit_ast(&next_args);
     }
   }
 

@@ -727,6 +727,363 @@ mod arithmetic {
   }
 }
 
+/// Wolfram's canonical Plus order for terms led by a function call: every
+/// call sorts after the symbols, powers and products; calls order by head
+/// name (case-insensitive, like symbols), then from the last factor of a
+/// product by that call's arguments, its exponent, and only then by the
+/// remaining factors. Every expectation is wolframscript-verified.
+mod plus_call_led_ordering {
+  use super::*;
+
+  fn check(cases: &[(&str, &str)]) {
+    for (input, expected) in cases {
+      assert_eq!(
+        interpret(&format!("InputForm[{input}]")).unwrap(),
+        format!("InputForm[{expected}]"),
+        "{input}"
+      );
+    }
+  }
+
+  #[test]
+  fn calls_sort_after_symbols_powers_and_products() {
+    check(&[
+      ("Sqrt[z] + ArcTanh[y]", "Sqrt[z] + ArcTanh[y]"),
+      ("z^2 + ArcTanh[y]", "z^2 + ArcTanh[y]"),
+      ("z + Abs[y]", "z + Abs[y]"),
+      ("z + Beta[a, b]", "z + Beta[a, b]"),
+      ("z + Subst[a, b]", "z + Subst[a, b]"),
+      ("z + Conjugate[y]", "z + Conjugate[y]"),
+      ("Re[x]^2 + x^2", "x^2 + Re[x]^2"),
+      ("Conjugate[x] x + x^2", "x^2 + x*Conjugate[x]"),
+      ("Abs[x] + x", "x + Abs[x]"),
+      ("z + Subscript[a, 1]", "z + Subscript[a, 1]"),
+      ("E^y + f[c]", "E^y + f[c]"),
+      ("E^(-t) + f[t]", "E^(-t) + f[t]"),
+      ("Sin[x] + x[1]", "Sin[x] + x[1]"),
+      (
+        "Sqrt[1 + x^2] x/2 + ArcSinh[x]/2",
+        "(x*Sqrt[1 + x^2])/2 + ArcSinh[x]/2",
+      ),
+      ("Log[x] + Sqrt[1 + x]", "Sqrt[1 + x] + Log[x]"),
+      ("Log[2] + Sqrt[2]", "Sqrt[2] + Log[2]"),
+      ("x^x + Log[x]", "x^x + Log[x]"),
+      ("I Pi + Log[2]", "I*Pi + Log[2]"),
+      // A sum hiding calls is not algebraic: the leading-variable rule holds.
+      (
+        "Log[a] + d^e (Log[b] + Log[c]) + Log[f]",
+        "Log[a] + d^e*(Log[b] + Log[c]) + Log[f]",
+      ),
+    ]);
+  }
+
+  #[test]
+  fn calls_order_by_head_name_case_insensitively() {
+    check(&[
+      ("Subst[a, b] + Log[c]", "Log[c] + Subst[a, b]"),
+      ("Zeta[c] + Log[c]", "Log[c] + Zeta[c]"),
+      ("Star[a, b] + Log[c]", "Log[c] + a \u{22C6} b"),
+      ("f[c] + Gamma[y]", "f[c] + Gamma[y]"),
+      ("Erf[y] + f[c]", "Erf[y] + f[c]"),
+      ("f[c] + Floor[y]", "f[c] + Floor[y]"),
+      ("Beta[a, b] + f[c]", "Beta[a, b] + f[c]"),
+      ("Log[c] + Re[y]", "Log[c] + Re[y]"),
+      ("Log[c] + Max[a, b]", "Log[c] + Max[a, b]"),
+      ("f[c] + y!", "f[c] + y!"),
+      (
+        "Log[x^2 + y^2]/2 + I Arg[x + I y]",
+        "I*Arg[x + I*y] + Log[x^2 + y^2]/2",
+      ),
+      (
+        "GeneratingFunction[f[n], n, x] - f[0]",
+        "-f[0] + GeneratingFunction[f[n], n, x]",
+      ),
+    ]);
+  }
+
+  #[test]
+  fn products_order_by_their_last_call_factor() {
+    check(&[
+      ("x ArcSinh[y] + Log[c]", "x*ArcSinh[y] + Log[c]"),
+      ("Log[c] + x Zeta[y]", "Log[c] + x*Zeta[y]"),
+      ("Sin[c] ArcTan[y] + Log[c]", "Log[c] + ArcTan[y]*Sin[c]"),
+      ("Log[c] + Sin[c] Zeta[y]", "Log[c] + Sin[c]*Zeta[y]"),
+      (
+        "Cosh[y] Sin[x] + I Cos[x] Sinh[y]",
+        "Cosh[y]*Sin[x] + I*Cos[x]*Sinh[y]",
+      ),
+      (
+        "Log[c] Sin[b] + Log[b] Sin[c]",
+        "Log[c]*Sin[b] + Log[b]*Sin[c]",
+      ),
+      (
+        "C[1] Cos[x] + Cos[x] Log[Cos[x]] + x Sin[x] + C[2] Sin[x]",
+        "C[1]*Cos[x] + Cos[x]*Log[Cos[x]] + x*Sin[x] + C[2]*Sin[x]",
+      ),
+      (
+        "Sin[a] Cos[b] + Cos[a] Sin[b] + Sin[a] Sin[b] + Cos[a] Cos[b]",
+        "Cos[a]*Cos[b] + Cos[b]*Sin[a] + Cos[a]*Sin[b] + Sin[a]*Sin[b]",
+      ),
+    ]);
+  }
+
+  #[test]
+  fn same_head_orders_by_arguments_then_exponent_then_rest() {
+    check(&[
+      ("x Sin[a] + Sin[b]", "x*Sin[a] + Sin[b]"),
+      ("Sin[a] + Sin[b] x", "Sin[a] + x*Sin[b]"),
+      ("x^2 Dt[a] + 2 a x Dt[x]", "x^2*Dt[a] + 2*a*x*Dt[x]"),
+      ("x h[a + b] + h[c]", "x*h[a + b] + h[c]"),
+      ("h[c] + h[a b] + h[a + b]", "h[a*b] + h[a + b] + h[c]"),
+      ("Sin[a]^2 + Cos[b] Sin[a]", "Cos[b]*Sin[a] + Sin[a]^2"),
+      ("x Sin[a] + Sin[a]^2", "x*Sin[a] + Sin[a]^2"),
+      ("x Sin[a]^2 + y Sin[a]", "y*Sin[a] + x*Sin[a]^2"),
+      ("Sin[x]^2 + Sin[x] Log[x]", "Log[x]*Sin[x] + Sin[x]^2"),
+      (
+        "Sin[x]^2 + Sin[y]^2 + Sin[x] Sin[y]",
+        "Sin[x]^2 + Sin[x]*Sin[y] + Sin[y]^2",
+      ),
+      (
+        "Cos[x]^3 Sin[x] + Cos[x] Sin[x]^3",
+        "Cos[x]^3*Sin[x] + Cos[x]*Sin[x]^3",
+      ),
+      ("x Sin[a] + y Sin[a]", "x*Sin[a] + y*Sin[a]"),
+      ("x^2 Sin[a] + y Sin[a]", "x^2*Sin[a] + y*Sin[a]"),
+      ("Sin[x]/x + Sin[x]", "Sin[x] + Sin[x]/x"),
+      ("Sin[x]/x^2 + Sin[x]/x", "Sin[x]/x^2 + Sin[x]/x"),
+      ("E^x Sin[x] + x Sin[x]", "E^x*Sin[x] + x*Sin[x]"),
+      ("Sqrt[x] Sin[x] + x Sin[x]", "Sqrt[x]*Sin[x] + x*Sin[x]"),
+      ("Log[x] Sin[x] + x Sin[x]", "x*Sin[x] + Log[x]*Sin[x]"),
+      ("f[x] Sin[x] + x Sin[x]", "x*Sin[x] + f[x]*Sin[x]"),
+      ("Sin[x]/f[x] + Sin[x]/x", "Sin[x]/x + Sin[x]/f[x]"),
+      (
+        "Sin[x] + Sin[x] (1 + Log[x])",
+        "Sin[x] + (1 + Log[x])*Sin[x]",
+      ),
+      (
+        "Sin[x] Log[x] + Sin[x] (1 + Log[x])",
+        "Log[x]*Sin[x] + (1 + Log[x])*Sin[x]",
+      ),
+      (
+        "(1 + x) Sin[x] + Log[x] Sin[x]",
+        "(1 + x)*Sin[x] + Log[x]*Sin[x]",
+      ),
+      (
+        "Sin[a] + a Sin[a] + Sin[a]^2 + a Sin[a]^2 + Sin[b] + a Sin[b]",
+        "Sin[a] + a*Sin[a] + Sin[a]^2 + a*Sin[a]^2 + Sin[b] + a*Sin[b]",
+      ),
+      ("Sin[x]^x + Sin[x]", "Sin[x] + Sin[x]^x"),
+      ("Sin[x]^n + Sin[x]^2", "Sin[x]^2 + Sin[x]^n"),
+      ("Log[x]/x + Log[x]^2/x", "Log[x]/x + Log[x]^2/x"),
+      ("Log[x]/x^2 + Log[x]^2/x", "Log[x]/x^2 + Log[x]^2/x"),
+      (
+        "b Beta[b, 1 + 2/a] - b^2 Beta[b, 1 + a^(-1)]^2",
+        "-(b^2*Beta[b, 1 + a^(-1)]^2) + b*Beta[b, 1 + 2/a]",
+      ),
+      (
+        "2 g Csc[2 Pi/g] - Pi Csc[Pi/g]^2",
+        "-(Pi*Csc[Pi/g]^2) + 2*g*Csc[(2*Pi)/g]",
+      ),
+      ("Conjugate[2 c + a b]", "Conjugate[a*b] + 2*Conjugate[c]"),
+      (
+        "Im[z]^2 Re[z] + Im[z] Re[z]^2",
+        "Im[z]^2*Re[z] + Im[z]*Re[z]^2",
+      ),
+    ]);
+  }
+
+  #[test]
+  fn call_arguments_compare_in_canonical_order() {
+    check(&[
+      ("Log[1 - x] + Log[1 + x]", "Log[1 - x] + Log[1 + x]"),
+      ("Log[1 - x] + Log[x]", "Log[1 - x] + Log[x]"),
+      ("Log[-1 + x] + Log[x]", "Log[-1 + x] + Log[x]"),
+      ("Log[x] + Log[x + y]", "Log[x] + Log[x + y]"),
+      ("Log[x y] + Log[x + y]", "Log[x*y] + Log[x + y]"),
+      ("Log[2] + Log[x]", "Log[2] + Log[x]"),
+      ("Sin[a + b] + Sin[c]", "Sin[a + b] + Sin[c]"),
+      ("Sin[a b] + Sin[c]", "Sin[a*b] + Sin[c]"),
+      ("Sin[1 + a] + Sin[a]", "Sin[a] + Sin[1 + a]"),
+      ("Sin[2 a] + Sin[a]", "Sin[a] + Sin[2*a]"),
+      ("Sin[a] + Sin[a^2]", "Sin[a] + Sin[a^2]"),
+      ("Sin[a]^2 + Sin[a^2]", "Sin[a]^2 + Sin[a^2]"),
+      ("Sin[x]^2 + Sin[2 x]", "Sin[x]^2 + Sin[2*x]"),
+      ("Sin[a - b] + Sin[a + b]", "Sin[a - b] + Sin[a + b]"),
+      ("f[2 x] + f[x^2]", "f[2*x] + f[x^2]"),
+      ("f[1 + x] + f[2 x]", "f[2*x] + f[1 + x]"),
+      ("f[1 + x] + f[x^2]", "f[x^2] + f[1 + x]"),
+      ("f[a b] + f[2 a]", "f[2*a] + f[a*b]"),
+      ("f[-x] + f[x]", "f[-x] + f[x]"),
+      ("f[x/2] + f[2 x]", "f[x/2] + f[2*x]"),
+      ("f[1/x] + f[x]", "f[x^(-1)] + f[x]"),
+      ("f[1/x] + f[1]", "f[1] + f[x^(-1)]"),
+      ("f[Sqrt[x]] + f[x]", "f[Sqrt[x]] + f[x]"),
+      ("f[E^x] + f[x]", "f[E^x] + f[x]"),
+      ("f[Sin[x]] + f[x]", "f[x] + f[Sin[x]]"),
+      ("f[a x] + f[a + x]", "f[a*x] + f[a + x]"),
+      ("f[a + b x] + f[b + a x]", "f[b + a*x] + f[a + b*x]"),
+      ("f[1 + x] + f[2 + x]", "f[1 + x] + f[2 + x]"),
+      ("f[1 + x] + f[-2 + x]", "f[-2 + x] + f[1 + x]"),
+      ("f[1 + x] + f[-1 - x]", "f[-1 - x] + f[1 + x]"),
+      ("f[x] + f[Pi]", "f[Pi] + f[x]"),
+      ("f[y, 1] + f[x, 2]", "f[x, 2] + f[y, 1]"),
+      (
+        "f[x] + f[x, y] + f[y] + f[x, x]",
+        "f[x] + f[y] + f[x, x] + f[x, y]",
+      ),
+      ("f[{1, 2}] + f[{1}]", "f[{1}] + f[{1, 2}]"),
+      ("f[{1, 2}] + f[x]", "f[x] + f[{1, 2}]"),
+    ]);
+    // Strings sort before symbols (the `InputForm[…]` wrapper itself prints
+    // strings bare, so go through ToString).
+    assert_eq!(
+      interpret("ToString[InputForm[f[\"b\"] + f[a]]]").unwrap(),
+      "f[\"b\"] + f[a]"
+    );
+  }
+
+  #[test]
+  fn curried_derivatives_sort_after_every_call() {
+    check(&[
+      ("x + Derivative[1][f][x]", "x + Derivative[1][f][x]"),
+      (
+        "Derivative[1][f][t] + E^(-t)",
+        "E^(-t) + Derivative[1][f][t]",
+      ),
+      ("Derivative[1][f][t] + f[t]", "f[t] + Derivative[1][f][t]"),
+      (
+        "Log[x] + x Derivative[1][f][x]",
+        "Log[x] + x*Derivative[1][f][x]",
+      ),
+      (
+        "g[x] + x Derivative[1][f][x]",
+        "g[x] + x*Derivative[1][f][x]",
+      ),
+      (
+        "Derivative[1][DiracDelta][t] + E^(-t) - DiracDelta[t]",
+        "E^(-t) - DiracDelta[t] + Derivative[1][DiracDelta][t]",
+      ),
+      (
+        "Derivative[1][f][x] + Derivative[2][f][x]",
+        "Derivative[1][f][x] + Derivative[2][f][x]",
+      ),
+      (
+        "x Derivative[1][f][x] + Derivative[2][f][x]",
+        "x*Derivative[1][f][x] + Derivative[2][f][x]",
+      ),
+      (
+        "Derivative[1][g][x] + Derivative[1][f][x]^2",
+        "Derivative[1][f][x]^2 + Derivative[1][g][x]",
+      ),
+      ("D[x Sign[x], x]", "Sign[x] + x*Derivative[1][Sign][x]"),
+      ("f[x][y] + f[x]", "f[x] + f[x][y]"),
+      ("f[x][y] + f[a][y]", "f[a][y] + f[x][y]"),
+    ]);
+  }
+}
+
+/// `Star` (Precedence 390) binds looser than `Times` (400) and tighter than
+/// `Plus` (310): it is parenthesised as a factor and parenthesises a sum
+/// operand. wolframscript-verified.
+mod star_operator_parenthesization {
+  use super::*;
+
+  #[test]
+  fn star_inside_a_product() {
+    assert_eq!(
+      interpret("InputForm[x Star[a, b]]").unwrap(),
+      "InputForm[x*(a \u{22C6} b)]"
+    );
+    assert_eq!(
+      interpret("InputForm[Sin[c] Star[a, b] + Log[c]]").unwrap(),
+      "InputForm[Log[c] + Sin[c]*(a \u{22C6} b)]"
+    );
+    assert_eq!(
+      interpret("InputForm[-x Star[a, b]]").unwrap(),
+      "InputForm[-(x*(a \u{22C6} b))]"
+    );
+    assert_eq!(
+      interpret("InputForm[Star[a, b]/x]").unwrap(),
+      "InputForm[(a \u{22C6} b)/x]"
+    );
+    assert_eq!(
+      interpret("InputForm[Star[a, b]^2]").unwrap(),
+      "InputForm[(a \u{22C6} b)^2]"
+    );
+    assert_eq!(
+      interpret("ToString[x Star[a, b]]").unwrap(),
+      "x (a \u{22C6} b)"
+    );
+  }
+
+  #[test]
+  fn star_operands() {
+    assert_eq!(
+      interpret("InputForm[Star[x, a + b]]").unwrap(),
+      "InputForm[x \u{22C6} (a + b)]"
+    );
+    assert_eq!(
+      interpret("InputForm[Star[x, a b]]").unwrap(),
+      "InputForm[x \u{22C6} a*b]"
+    );
+    assert_eq!(
+      interpret("InputForm[z + Star[a, b]]").unwrap(),
+      "InputForm[z + a \u{22C6} b]"
+    );
+  }
+}
+
+mod negative_real_exponent_form {
+  use super::*;
+
+  // wolframscript parenthesises a negative real exponent like a negative
+  // integer one: `x^(-2.)`, `Sin[x]^(-2.)`.
+  #[test]
+  fn negative_real_exponent_is_parenthesized() {
+    assert_eq!(interpret("InputForm[x^-2.]").unwrap(), "InputForm[x^(-2.)]");
+    assert_eq!(interpret("Sin[x]^-2.").unwrap(), "Sin[x]^(-2.)");
+    assert_eq!(interpret("InputForm[x^2.]").unwrap(), "InputForm[x^2.]");
+  }
+}
+
+mod interval_symbolic_scalars {
+  use super::*;
+
+  // Interval arithmetic only absorbs numeric scalars (wolframscript-verified).
+  #[test]
+  fn symbolic_scalars_stay_outside() {
+    assert_eq!(
+      interpret("Interval[{1, 2}] + z").unwrap(),
+      "z + Interval[{1, 2}]"
+    );
+    assert_eq!(
+      interpret("Interval[{1, 2}] - z").unwrap(),
+      "-z + Interval[{1, 2}]"
+    );
+    assert_eq!(
+      interpret("Interval[{1, 2}] z").unwrap(),
+      "z*Interval[{1, 2}]"
+    );
+    assert_eq!(
+      interpret("Interval[{1, 2}] + z + Interval[{3, 4}]").unwrap(),
+      "z + Interval[{4, 6}]"
+    );
+  }
+
+  #[test]
+  fn numeric_scalars_are_absorbed() {
+    assert_eq!(
+      interpret("Interval[{1, 2}] + Pi").unwrap(),
+      "Interval[{1 + Pi, 2 + Pi}]"
+    );
+    assert_eq!(
+      interpret("Interval[{1, 2}] + Sqrt[2]").unwrap(),
+      "Interval[{1 + Sqrt[2], 2 + Sqrt[2]}]"
+    );
+    assert_eq!(interpret("2 Interval[{1, 2}]").unwrap(), "Interval[{2, 4}]");
+  }
+}
+
 mod real_number_formatting {
   use super::*;
 
@@ -4995,14 +5352,91 @@ mod expand_threading {
     );
   }
 
-  // Boundaries that must NOT collapse: different arguments, lone reciprocals,
-  // and cross-function quotients (Wolfram's Cos/Sin -> Cot is a separate,
-  // form-divergent canonicalization that Woxi does not perform).
+  // Boundaries that must NOT collapse: different arguments and lone
+  // reciprocals. Cross-function quotients of one argument DO reduce, as in
+  // Wolfram (`Cos[x]/Sin[x]` is `Cot[x]`).
   #[test]
   fn reciprocal_trig_non_pairs_unchanged() {
     assert_eq!(interpret("Sin[x] Csc[y]").unwrap(), "Csc[y]*Sin[x]");
     assert_eq!(interpret("Csc[x]").unwrap(), "Csc[x]");
-    assert_eq!(interpret("Cos[x]/Sin[x]").unwrap(), "Cos[x]/Sin[x]");
+    assert_eq!(interpret("Cos[x]/Sin[x]").unwrap(), "Cot[x]");
+    assert_eq!(interpret("Sin[x]/Sin[2 x]").unwrap(), "Csc[2*x]*Sin[x]");
+  }
+
+  // wolframscript's automatic reciprocal-trig canonicalization: a negative
+  // integer power of a trig function is its reciprocal partner, and two
+  // trig factors of one argument reduce pairwise (`Cos[x]*Csc[x]` → `Cot[x]`,
+  // `Cos[x]^2/Sin[x]^3` → `Cot[x]^2*Csc[x]`). All wolframscript-verified.
+  #[test]
+  fn reciprocal_trig_powers_and_pairs() {
+    let cases = [
+      ("Sin[x]^-1", "Csc[x]"),
+      ("Sin[x]^-2", "Csc[x]^2"),
+      ("Sin[2 x]^-1", "Csc[2*x]"),
+      ("Tan[x]^-1", "Cot[x]"),
+      ("Cot[x]^-2", "Tan[x]^2"),
+      ("Sec[x]^-1", "Cos[x]"),
+      ("Csc[x]^-1", "Sin[x]"),
+      ("Sinh[x]^-1", "Csch[x]"),
+      ("Tanh[x]^-1", "Coth[x]"),
+      ("Coth[x]^-1", "Tanh[x]"),
+      ("Sech[x]^-1", "Cosh[x]"),
+      ("Csch[x]^-1", "Sinh[x]"),
+      ("Cosh[x]^-1", "Sech[x]"),
+      ("Sin[x]^(-3/2)", "Sin[x]^(-3/2)"),
+      ("Sin[x]^(-n)", "Sin[x]^(-n)"),
+      ("(1/Sin[x])^(1/2)", "Sqrt[Csc[x]]"),
+      ("Cos[x]/Sin[x]", "Cot[x]"),
+      ("Cos[x]^2/Sin[x]", "Cos[x]*Cot[x]"),
+      ("Cos[x]/Sin[x]^2", "Cot[x]*Csc[x]"),
+      ("Cos[x]^2/Sin[x]^3", "Cot[x]^2*Csc[x]"),
+      ("Sin[x]/Cos[x]", "Tan[x]"),
+      ("Sin[x]^2/Cos[x]", "Sin[x]*Tan[x]"),
+      ("Tan[x]/Sin[x]", "Sec[x]"),
+      ("Sin[x] Cot[x]", "Cos[x]"),
+      ("Cos[x] Tan[x]", "Sin[x]"),
+      ("Sin[x]/Tan[x]", "Cos[x]"),
+      ("Cos[x]/Tan[x]", "Cos[x]*Cot[x]"),
+      ("Tan[x]/Cos[x]", "Sec[x]*Tan[x]"),
+      ("Sinh[x]/Cosh[x]", "Tanh[x]"),
+      ("Cosh[x]/Sinh[x]", "Coth[x]"),
+      ("Sec[x] Sin[x]", "Tan[x]"),
+      ("Csc[x] Cos[x]", "Cot[x]"),
+      ("Sec[x] Cos[x]", "1"),
+      ("Csc[x]^2 Cos[x]^2", "Cot[x]^2"),
+      ("Sin[x]^-1 Sin[y]", "Csc[x]*Sin[y]"),
+      ("x/Sin[x]", "x*Csc[x]"),
+      ("E^x/Sin[x]", "E^x*Csc[x]"),
+      ("1/(2 Sin[x])", "Csc[x]/2"),
+      ("1/(x Sin[x])", "Csc[x]/x"),
+      ("Sin[x]^-1 Cos[x]^-1", "Csc[x]*Sec[x]"),
+      ("Cos[x]^3/Sin[x]^3", "Cot[x]^3"),
+      ("Tan[x]^2/Sin[x]", "Sec[x]*Tan[x]"),
+      ("Tan[x]/Sin[x]^2", "Csc[x]*Sec[x]"),
+      ("Cot[x]/Cos[x]", "Csc[x]"),
+      ("Cot[x] Sin[x]^2", "Cos[x]*Sin[x]"),
+      ("Tan[x]^2 Cos[x]", "Sin[x]*Tan[x]"),
+      ("Sec[x]^2 Cos[x]", "Sec[x]"),
+      ("Csc[x]^2 Sin[x]", "Csc[x]"),
+      ("Tan[x] Cot[x]", "1"),
+      ("Sin[x] Cos[x] Csc[x]", "Cos[x]"),
+      ("Tan[x] Csc[x]", "Sec[x]"),
+      ("Cot[x] Sec[x]", "Csc[x]"),
+      ("Tan[x] Sec[x]", "Sec[x]*Tan[x]"),
+      ("Sec[x]/Tan[x]", "Csc[x]"),
+      ("Csc[x]/Cot[x]", "Sec[x]"),
+      ("Tan[x]/Sec[x]", "Sin[x]"),
+      ("Cot[x]/Csc[x]", "Cos[x]"),
+      ("Cos[x] Sin[x]^-3", "Cot[x]*Csc[x]^2"),
+      ("Cosh[x] Csch[x]", "Coth[x]"),
+      ("Sinh[x] Sech[x]", "Tanh[x]"),
+      ("Tanh[x] Cosh[x]", "Sinh[x]"),
+      ("Coth[x] Sinh[x]", "Cosh[x]"),
+      ("Sinh[x]^2/Cosh[x]", "Sinh[x]*Tanh[x]"),
+    ];
+    for (input, expected) in cases {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
   }
 
   // ─── Hyperbolic parity ────────────────────────────────────────────

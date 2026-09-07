@@ -669,7 +669,7 @@ mod log_logistic_distribution {
   fn variance_symbolic() {
     assert_eq!(
       interpret("Variance[LogLogisticDistribution[g, s]]").unwrap(),
-      "Piecewise[{{(Pi*s^2*(2*g*Csc[(2*Pi)/g] - Pi*Csc[Pi/g]^2))/g^2, \
+      "Piecewise[{{(Pi*s^2*(-(Pi*Csc[Pi/g]^2) + 2*g*Csc[(2*Pi)/g]))/g^2, \
        g > 2}}, Indeterminate]"
     );
   }

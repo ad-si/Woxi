@@ -762,12 +762,73 @@ pub fn interval_member_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 // ─── Arithmetic Hooks ───────────────────────────────────────────────────────
 
 /// Hook for Plus: Interval + Interval, Interval + scalar, scalar + Interval.
+/// Interval arithmetic only absorbs numeric scalars: `Interval[{1, 2}] + Pi`
+/// is `Interval[{1 + Pi, 2 + Pi}]`, but `Interval[{1, 2}] + z` stays a sum.
+fn is_numeric_scalar(a: &Expr) -> bool {
+  matches!(
+    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "NumericQ".to_string(),
+      args: vec![a.clone()].into(),
+    }),
+    Ok(Expr::Identifier(ref t)) if t == "True"
+  )
+}
+
+/// Split the arguments of an interval operation into the part interval
+/// arithmetic absorbs (intervals and numeric scalars) and the symbolic
+/// scalars it leaves alone. `None` when there is nothing to combine: a
+/// single interval among symbolic scalars is already the canonical form.
+fn split_symbolic_scalars(args: &[Expr]) -> Option<(Vec<Expr>, Vec<Expr>)> {
+  let (numeric, symbolic): (Vec<Expr>, Vec<Expr>) = args
+    .iter()
+    .cloned()
+    .partition(|a| is_interval(a).is_some() || is_numeric_scalar(a));
+  if symbolic.is_empty() {
+    return Some((numeric, symbolic));
+  }
+  (numeric.len() >= 2).then_some((numeric, symbolic))
+}
+
+/// Flatten nested sums or products so an interval reached through a
+/// left-associated `(a + b) + c` is seen beside the others.
+fn flatten_nested(args: &[Expr], head: &str) -> Vec<Expr> {
+  let mut out = Vec::new();
+  for a in args {
+    match a {
+      Expr::FunctionCall { name, args: inner } if name == head => {
+        out.extend(flatten_nested(inner, head));
+      }
+      Expr::BinaryOp { op, left, right }
+        if (head == "Plus" && matches!(op, BinaryOperator::Plus))
+          || (head == "Times" && matches!(op, BinaryOperator::Times)) =>
+      {
+        out.extend(flatten_nested(&[(**left).clone()], head));
+        out.extend(flatten_nested(&[(**right).clone()], head));
+      }
+      other => out.push(other.clone()),
+    }
+  }
+  out
+}
+
 pub fn try_interval_plus(
   args: &[Expr],
 ) -> Option<Result<Expr, InterpreterError>> {
   if !has_interval(args) {
     return None;
   }
+  let flat = flatten_nested(args, "Plus");
+  let (args, symbolic) = split_symbolic_scalars(&flat)?;
+  if !symbolic.is_empty() {
+    let combined = match try_interval_plus(&args)? {
+      Ok(e) => e,
+      Err(e) => return Some(Err(e)),
+    };
+    let mut terms = symbolic;
+    terms.push(combined);
+    return Some(crate::functions::math_ast::plus_ast(&terms));
+  }
+  let args = &args[..];
 
   // Separate intervals and scalars, wrapping scalars as Interval[{x, x}]
   let mut current_spans: Vec<(Expr, Expr)> = vec![];
@@ -815,6 +876,18 @@ pub fn try_interval_times(
   if !has_interval(args) {
     return None;
   }
+  let flat = flatten_nested(args, "Times");
+  let (args, symbolic) = split_symbolic_scalars(&flat)?;
+  if !symbolic.is_empty() {
+    let combined = match try_interval_times(&args)? {
+      Ok(e) => e,
+      Err(e) => return Some(Err(e)),
+    };
+    let mut factors = symbolic;
+    factors.push(combined);
+    return Some(crate::functions::math_ast::times_ast(&factors));
+  }
+  let args = &args[..];
 
   let mut current_spans: Vec<(Expr, Expr)> = vec![];
   let mut first = true;
