@@ -3,8 +3,8 @@
 This document is the implementation contract for Woxi's self-contained linear
 quantifier-elimination engine. It covers ordered linear arithmetic over the
 reals and rationals and first-order Presburger arithmetic over the integers.
-The precise supported surface grammar and completion gates are recorded in
-[`REDUCE_ROADMAP.md`](../../REDUCE_ROADMAP.md).
+The supported surface grammar is documented in
+[`tests/cli/symbolic/Reduce.md`](../../tests/cli/symbolic/Reduce.md).
 
 The engine is a decision procedure, not a collection of expression templates.
 Every accepted input must be lowered completely, decided with exact arithmetic,
@@ -44,6 +44,7 @@ Theory logic in `crates/woxi-reduce/src/` is split as follows:
 | `affine.rs` | Sparse affine terms with deterministic variable ordering |
 | `formula.rs` | Relations, divisibility atoms, Boolean formulas, binders, free-variable analysis, NNF, stable normalization, memoized sharing, and budgeted exact subsumption |
 | `rational_qe.rs` | Dense linear quantifier elimination with deterministic growth-based variable ordering |
+| `equalities.rs` | Restores explicit equations in a decided result: folds complementary half-spaces, applies the integer gcd feasibility test, and substitutes solved target variables |
 | `presburger.rs` | Cooper elimination, integer-specific normalization, congruence simplification, and deterministic finite-instantiation cost ordering |
 
 Woxi-specific adapter logic remains in
@@ -453,7 +454,7 @@ Reference-to-module mapping:
 | Result | Implementation location | Required cross-check |
 | --- | --- | --- |
 | Dense-order projection | `rational_qe.rs` | Ferrante-Rackoff/AFP examples plus exact generated valuations |
-| NNF and Boolean QE scaffolding | `normalize.rs`, `formula.rs` | AFP structure plus metamorphic duality tests |
+| NNF and Boolean QE scaffolding | `formula.rs` | AFP structure plus metamorphic duality tests |
 | Cooper finite boundary/residue theorem | `presburger.rs` | Original paper and Chaieb-Nipkow/AFP executable cases |
 | GCD/CRT normalization | `exact.rs`, `presburger.rs` | Bézout identities and exhaustive small moduli |
 | Omega-style fast paths, if added | a later optimization module | Must agree with Cooper baseline on every accepted input |

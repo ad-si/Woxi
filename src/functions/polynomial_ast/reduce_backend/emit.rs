@@ -1,12 +1,13 @@
 //! Deterministic conversion from the linear IR back to Woxi expressions.
 
+use std::cmp::Ordering;
 use std::collections::BTreeSet;
 
 use num_bigint::BigInt;
 use num_traits::{One, Signed, Zero};
 use woxi_reduce::{
   AffineTerm, Atom, Formula, Quantifier, Rational, Relation, Variable,
-  crt_pair, euclidean_mod, lcm, solve_linear_congruence,
+  ceil_div, crt_pair, euclidean_mod, floor_div, lcm, solve_linear_congruence,
 };
 
 use crate::helpers::call;
@@ -14,24 +15,34 @@ use crate::syntax::{BinaryOperator, ComparisonOp, Expr, UnaryOperator};
 
 use super::{bigint_expr, rational_expr};
 
+/// Finite single-variable results are materialized from the disjunctive
+/// normal form of the decided formula; past this many branches the result is
+/// printed structurally instead.
+const MAX_FINITE_DNF_BRANCHES: usize = 100_000;
+
 pub(super) fn formula_expr(formula: &Formula) -> Expr {
-  formula_expr_for_targets(formula, &[])
+  formula_expr_for_targets(formula, &[], false)
 }
 
+/// Prints a decided formula solved for `targets`. `integral` says the result
+/// describes integers, which changes which variable an equation is solved
+/// for.
 pub(super) fn formula_expr_for_targets(
   formula: &Formula,
   targets: &[Variable],
+  integral: bool,
 ) -> Expr {
   match formula {
     Formula::True => Expr::Identifier("True".to_string()),
     Formula::False => Expr::Identifier("False".to_string()),
-    Formula::Atom(atom) => atom_expr(atom, targets),
-    Formula::And(children) => interval_expr(children, targets)
-      .unwrap_or_else(|| fold_binary(children, BinaryOperator::And, targets)),
-    Formula::Or(children) => fold_binary(children, BinaryOperator::Or, targets),
+    Formula::Atom(atom) => atom_expr(atom, targets, integral),
+    Formula::And(children) => conjunction_expr(children, targets, integral),
+    Formula::Or(children) => {
+      fold_binary(children, BinaryOperator::Or, targets, integral)
+    }
     Formula::Not(inner) => Expr::UnaryOp {
       op: UnaryOperator::Not,
-      operand: Box::new(formula_expr_for_targets(inner, targets)),
+      operand: Box::new(formula_expr_for_targets(inner, targets, integral)),
     },
     Formula::Quantified(quantifier, variables, body) => call(
       match quantifier {
@@ -40,7 +51,7 @@ pub(super) fn formula_expr_for_targets(
       },
       vec![
         variables_expr(variables),
-        formula_expr_for_targets(body, targets),
+        formula_expr_for_targets(body, targets, integral),
       ],
     ),
   }
@@ -53,7 +64,7 @@ pub(super) fn finite_integer_target_expr(
   formula: &Formula,
   target: &Variable,
 ) -> Option<Expr> {
-  let branches = integer_dnf(formula)?;
+  let branches = formula.clone().dnf_branches(MAX_FINITE_DNF_BRANCHES)?;
   let mut values = BTreeSet::new();
   for branch in branches {
     values.extend(finite_integer_branch_values(&branch, target)?);
@@ -76,44 +87,6 @@ pub(super) fn finite_integer_target_expr(
   ))
 }
 
-fn integer_dnf(formula: &Formula) -> Option<Vec<Vec<Atom>>> {
-  match formula {
-    Formula::True => Some(vec![Vec::new()]),
-    Formula::False => Some(Vec::new()),
-    Formula::Atom(atom) => Some(vec![vec![atom.clone()]]),
-    Formula::Or(children) => {
-      let mut output = Vec::new();
-      for child in children {
-        output.extend(integer_dnf(child)?);
-        if output.len() > 100_000 {
-          return None;
-        }
-      }
-      Some(output)
-    }
-    Formula::And(children) => {
-      let mut product = vec![Vec::new()];
-      for child in children {
-        let alternatives = integer_dnf(child)?;
-        let mut next = Vec::new();
-        for prefix in &product {
-          for alternative in &alternatives {
-            let mut conjunction = prefix.clone();
-            conjunction.extend(alternative.iter().cloned());
-            next.push(conjunction);
-            if next.len() > 100_000 {
-              return None;
-            }
-          }
-        }
-        product = next;
-      }
-      Some(product)
-    }
-    Formula::Not(_) | Formula::Quantified(_, _, _) => None,
-  }
-}
-
 fn finite_integer_branch_values(
   atoms: &[Atom],
   target: &Variable,
@@ -125,6 +98,31 @@ fn finite_integer_branch_values(
 
   for atom in atoms {
     match atom {
+      Atom::Relation(Relation::Equal, term) => {
+        if term.coefficients.len() != 1
+          || !term.constant.is_integer()
+          || !term.coefficient(target).is_integer()
+        {
+          return None;
+        }
+        let coefficient = term.coefficient(target).numerator;
+        if coefficient.is_zero() {
+          return None;
+        }
+        let value = -term.constant.numerator.clone();
+        if !(&value % &coefficient).is_zero() {
+          return Some(Vec::new());
+        }
+        let value = value / coefficient;
+        upper = Some(match upper {
+          Some(old) => std::cmp::min(old, value.clone()),
+          None => value.clone(),
+        });
+        lower = Some(match lower {
+          Some(old) => std::cmp::max(old, value),
+          None => value,
+        });
+      }
       Atom::Relation(Relation::LessEqual, term) => {
         if term.coefficients.len() != 1
           || !term.constant.is_integer()
@@ -339,103 +337,65 @@ pub(super) fn canonical_integer_formula(
   }
 }
 
-fn floor_div(numerator: &BigInt, denominator: &BigInt) -> BigInt {
-  debug_assert!(!denominator.is_zero());
-  let quotient = numerator / denominator;
-  let remainder = numerator % denominator;
-  if !remainder.is_zero() && remainder.sign() != denominator.sign() {
-    quotient - 1
-  } else {
-    quotient
-  }
-}
-
-fn ceil_div(numerator: &BigInt, denominator: &BigInt) -> BigInt {
-  -floor_div(&(-numerator), denominator)
-}
-
-fn atom_expr(atom: &Atom, targets: &[Variable]) -> Expr {
+fn atom_expr(atom: &Atom, targets: &[Variable], integral: bool) -> Expr {
   match atom {
-    Atom::Relation(relation, term) => relation_expr(*relation, term, targets),
+    Atom::Relation(relation, term) => {
+      relation_expr(*relation, term, targets, integral)
+    }
     Atom::Divides {
       modulus,
       term,
       negated,
-    } => {
-      if let Some(expression) =
-        target_congruence_expr(modulus, term, *negated, targets)
-      {
-        return expression;
-      }
-      let divides =
-        call("Divisible", vec![term_expr(term), bigint_expr(modulus)]);
-      if *negated {
-        Expr::UnaryOp {
-          op: UnaryOperator::Not,
-          operand: Box::new(divides),
-        }
-      } else {
-        divides
-      }
-    }
+    } => congruence_expr(modulus, term, *negated),
   }
 }
 
-fn target_congruence_expr(
-  modulus: &BigInt,
-  term: &AffineTerm,
-  negated: bool,
-  targets: &[Variable],
-) -> Option<Expr> {
-  for target in targets {
-    let coefficient = term.coefficient(target);
-    if !coefficient.is_integer()
-      || coefficient.numerator.abs() != BigInt::one()
-      || term.coefficients.len() != 1
-      || !term.constant.is_integer()
-    {
-      continue;
-    }
-    let residue = if coefficient.numerator.sign() == num_bigint::Sign::Plus {
-      -term.constant.numerator.clone()
+/// `m | (t + c)` prints as the congruence `Mod[t, m] == r` it was most likely
+/// written as, with the residue `r = -c mod m`.
+fn congruence_expr(modulus: &BigInt, term: &AffineTerm, negated: bool) -> Expr {
+  let residue = euclidean_mod(-term.constant.numerator.clone(), modulus);
+  let mut variable_part = term.clone();
+  variable_part.constant = Rational::zero();
+  Expr::Comparison {
+    operands: vec![
+      call("Mod", vec![term_expr(&variable_part), bigint_expr(modulus)]),
+      bigint_expr(&residue),
+    ],
+    operators: vec![if negated {
+      ComparisonOp::NotEqual
     } else {
-      term.constant.numerator.clone()
-    };
-    let mut residue = residue % modulus;
-    if residue.sign() == num_bigint::Sign::Minus {
-      residue += modulus;
-    }
-    return Some(Expr::Comparison {
-      operands: vec![
-        call(
-          "Mod",
-          vec![Expr::Identifier(target.name.clone()), bigint_expr(modulus)],
-        ),
-        bigint_expr(&residue),
-      ],
-      operators: vec![if negated {
-        ComparisonOp::NotEqual
-      } else {
-        ComparisonOp::Equal
-      }],
-    });
+      ComparisonOp::Equal
+    }],
   }
-  None
 }
 
 fn relation_expr(
   relation: Relation,
   term: &AffineTerm,
   targets: &[Variable],
+  integral: bool,
 ) -> Expr {
-  let isolated = targets
+  // Wolfram solves each relation for the last of the requested variables it
+  // mentions, treating the earlier ones as the outer coordinates. An integer
+  // equation is solved for a variable with a unit coefficient when it has
+  // one, so `x - 2 y == 0` prints as `x == 2 y` rather than `y == x/2`.
+  let mut mentioned = targets
     .iter()
-    .find(|target| !term.coefficient(target).is_zero())
-    .cloned()
-    .or_else(|| {
-      (term.coefficients.len() == 1)
-        .then(|| term.coefficients.keys().next().unwrap().clone())
-    });
+    .rev()
+    .filter(|target| !term.coefficient(target).is_zero());
+  let isolated = if integral && relation == Relation::Equal {
+    mentioned
+      .clone()
+      .find(|target| term.coefficient(target).numerator.abs().is_one())
+      .or_else(|| mentioned.next())
+  } else {
+    mentioned.next()
+  }
+  .cloned()
+  .or_else(|| {
+    (term.coefficients.len() == 1)
+      .then(|| term.coefficients.keys().next().unwrap().clone())
+  });
   if let Some(variable) = isolated
     && let Some((relation, boundary)) =
       isolate_relation(relation, term, &variable)
@@ -472,64 +432,123 @@ fn isolate_relation(
   Some((relation, boundary))
 }
 
-fn interval_expr(children: &[Formula], targets: &[Variable]) -> Option<Expr> {
-  if children.len() != 2 {
-    return None;
-  }
-  'targets: for target in targets {
+/// Emits a conjunction. Two one-sided bounds on the same variable whose
+/// boundaries involve no requested variable merge into one `Inequality`
+/// chain, or into an equation when they coincide. Conjuncts are ordered as
+/// Wolfram orders them: conditions on parameters first, then on the requested
+/// variables in the order they were asked for.
+fn conjunction_expr(
+  children: &[Formula],
+  targets: &[Variable],
+  integral: bool,
+) -> Expr {
+  let mut consumed = vec![false; children.len()];
+  let mut items: Vec<(Option<usize>, Expr)> = Vec::new();
+  for (position, target) in targets.iter().enumerate() {
     let mut lower = None;
     let mut upper = None;
-    for child in children {
+    for (index, child) in children.iter().enumerate() {
+      if consumed[index] {
+        continue;
+      }
       let Formula::Atom(Atom::Relation(relation, term)) = child else {
-        break;
+        continue;
       };
       let Some((relation, boundary)) =
         isolate_relation(*relation, term, target)
       else {
-        continue 'targets;
+        continue;
       };
+      if targets
+        .iter()
+        .any(|other| !boundary.coefficient(other).is_zero())
+      {
+        continue;
+      }
       match relation {
         Relation::Greater | Relation::GreaterEqual if lower.is_none() => {
-          lower = Some((relation, boundary));
+          lower = Some((index, relation, boundary));
         }
         Relation::Less | Relation::LessEqual if upper.is_none() => {
-          upper = Some((relation, boundary));
+          upper = Some((index, relation, boundary));
         }
-        _ => break,
+        _ => {}
       }
     }
-    if let (
-      Some((lower_relation, lower_bound)),
-      Some((upper_relation, upper_bound)),
-    ) = (lower, upper)
-    {
-      return Some(call(
-        "Inequality",
-        vec![
-          term_expr(&lower_bound),
-          Expr::Identifier(
-            match lower_relation {
-              Relation::Greater => "Less",
-              Relation::GreaterEqual => "LessEqual",
-              _ => unreachable!(),
-            }
-            .to_string(),
-          ),
-          Expr::Identifier(target.name.clone()),
-          Expr::Identifier(
-            match upper_relation {
-              Relation::Less => "Less",
-              Relation::LessEqual => "LessEqual",
-              _ => unreachable!(),
-            }
-            .to_string(),
-          ),
-          term_expr(&upper_bound),
-        ],
+    if let (Some(lower), Some(upper)) = (lower, upper) {
+      consumed[lower.0] = true;
+      consumed[upper.0] = true;
+      items.push((
+        Some(position),
+        bounds_expr(target, lower.1, &lower.2, upper.1, &upper.2),
       ));
     }
   }
-  None
+  for (index, child) in children.iter().enumerate() {
+    if consumed[index] {
+      continue;
+    }
+    let key = targets
+      .iter()
+      .rposition(|target| child.contains_variable(target));
+    items.push((key, formula_expr_for_targets(child, targets, integral)));
+  }
+  items.sort_by_key(|(key, _)| *key);
+  fold_owned_binary(
+    items
+      .into_iter()
+      .map(|(_, expression)| expression)
+      .collect(),
+    BinaryOperator::And,
+  )
+}
+
+fn bounds_expr(
+  target: &Variable,
+  lower_relation: Relation,
+  lower_bound: &AffineTerm,
+  upper_relation: Relation,
+  upper_bound: &AffineTerm,
+) -> Expr {
+  if lower_bound == upper_bound {
+    let closed = lower_relation == Relation::GreaterEqual
+      && upper_relation == Relation::LessEqual;
+    return if closed {
+      Expr::Comparison {
+        operands: vec![
+          Expr::Identifier(target.name.clone()),
+          term_expr(lower_bound),
+        ],
+        operators: vec![ComparisonOp::Equal],
+      }
+    } else {
+      Expr::Identifier("False".to_string())
+    };
+  }
+  call(
+    "Inequality",
+    vec![
+      term_expr(lower_bound),
+      Expr::Identifier(
+        match lower_relation {
+          Relation::Greater => "Less",
+          Relation::GreaterEqual => "LessEqual",
+          _ => unreachable!(),
+        }
+        .to_string(),
+      ),
+      Expr::Identifier(target.name.clone()),
+      Expr::Identifier(
+        match upper_relation {
+          Relation::Less => "Less",
+          Relation::LessEqual => "LessEqual",
+          _ => unreachable!(),
+        }
+        .to_string(),
+      ),
+      term_expr(upper_bound),
+    ],
+  )
 }
 
 fn reverse_order(relation: Relation) -> Relation {
@@ -542,15 +561,35 @@ fn reverse_order(relation: Relation) -> Relation {
   }
 }
 
+/// Prints a term with its constant first, the order `Plus` sorts to.
 pub(super) fn term_expr(term: &AffineTerm) -> Expr {
   let mut summands = Vec::new();
+  if !term.constant.is_zero() || term.coefficients.is_empty() {
+    summands.push(rational_expr(&term.constant));
+  }
   for (variable, coefficient) in &term.coefficients {
     summands.push(coefficient_variable_expr(coefficient, variable));
   }
-  if !term.constant.is_zero() || summands.is_empty() {
-    summands.push(rational_expr(&term.constant));
-  }
   fold_owned_binary(summands, BinaryOperator::Plus)
+}
+
+/// Whether the formula fixes `target` to one integer on every branch, so a
+/// domain-membership conjunct for it would be redundant.
+pub(super) fn target_is_pinned(formula: &Formula, target: &Variable) -> bool {
+  match formula {
+    Formula::Atom(Atom::Relation(Relation::Equal, term)) => {
+      term.coefficients.len() == 1
+        && term.coefficient(target) == Rational::one()
+        && term.constant.is_integer()
+    }
+    Formula::And(children) => {
+      children.iter().any(|child| target_is_pinned(child, target))
+    }
+    Formula::Or(children) => {
+      children.iter().all(|child| target_is_pinned(child, target))
+    }
+    _ => false,
+  }
 }
 
 fn coefficient_variable_expr(
@@ -595,20 +634,71 @@ fn fold_binary(
   children: &[Formula],
   operator: BinaryOperator,
   targets: &[Variable],
+  integral: bool,
 ) -> Expr {
   let mut ordered = children.iter().collect::<Vec<_>>();
-  if operator == BinaryOperator::And && !targets.is_empty() {
-    ordered.sort_by_key(|child| {
-      targets.iter().any(|target| child.contains_variable(target))
+  if operator == BinaryOperator::Or {
+    // Regions along the first variable's axis in increasing order.
+    ordered.sort_by(|left, right| {
+      compare_disjuncts(
+        disjunct_key(left, targets),
+        disjunct_key(right, targets),
+      )
     });
   }
   fold_owned_binary(
     ordered
       .into_iter()
-      .map(|child| formula_expr_for_targets(child, targets))
+      .map(|child| formula_expr_for_targets(child, targets, integral))
       .collect::<Vec<_>>(),
     operator,
   )
+}
+
+/// The first requested variable a branch mentions and, when the branch bounds
+/// it by a constant, that boundary.
+fn disjunct_key(
+  formula: &Formula,
+  targets: &[Variable],
+) -> Option<(usize, Option<Rational>)> {
+  let index = targets
+    .iter()
+    .position(|target| formula.contains_variable(target))?;
+  Some((index, constant_boundary(formula, &targets[index])))
+}
+
+fn constant_boundary(formula: &Formula, target: &Variable) -> Option<Rational> {
+  match formula {
+    Formula::Atom(Atom::Relation(relation, term)) => {
+      let (_, boundary) = isolate_relation(*relation, term, target)?;
+      boundary.is_constant().then_some(boundary.constant)
+    }
+    Formula::And(children) => children
+      .iter()
+      .find_map(|child| constant_boundary(child, target)),
+    _ => None,
+  }
+}
+
+fn compare_disjuncts(
+  left: Option<(usize, Option<Rational>)>,
+  right: Option<(usize, Option<Rational>)>,
+) -> Ordering {
+  match (left, right) {
+    (None, None) => Ordering::Equal,
+    (None, Some(_)) => Ordering::Less,
+    (Some(_), None) => Ordering::Greater,
+    (Some((left_index, left_bound)), Some((right_index, right_bound))) => {
+      left_index.cmp(&right_index).then_with(|| {
+        match (left_bound, right_bound) {
+          (Some(left), Some(right)) => left.numeric_cmp(&right),
+          (None, None) => Ordering::Equal,
+          (None, Some(_)) => Ordering::Greater,
+          (Some(_), None) => Ordering::Less,
+        }
+      })
+    }
+  }
 }
 
 fn fold_owned_binary(expressions: Vec<Expr>, operator: BinaryOperator) -> Expr {
@@ -658,7 +748,7 @@ mod tests {
         (Variable::free("x"), Rational::one()),
       ]),
     };
-    assert_eq!(expr_to_string(&term_expr(&term)), "x - y/2 + 2/3");
+    assert_eq!(expr_to_string(&term_expr(&term)), "2/3 + x - y/2");
   }
 
   #[test]
@@ -680,7 +770,7 @@ mod tests {
     let formula = Formula::Or(vec![less, odd]).normalized();
     assert_eq!(
       expr_to_string(&formula_expr(&formula)),
-      "x < 0 || Divisible[x + -1, 2]"
+      "x < 0 || Mod[x, 2] == 1"
     );
   }
 
@@ -692,7 +782,7 @@ mod tests {
       .add(&AffineTerm::constant(Rational::integer(BigInt::from(3))));
     let formula = Formula::Atom(Atom::Relation(Relation::LessEqual, term));
     assert_eq!(
-      expr_to_string(&formula_expr_for_targets(&formula, &[x])),
+      expr_to_string(&formula_expr_for_targets(&formula, &[x], false)),
       "x >= 3/2"
     );
   }
@@ -713,7 +803,7 @@ mod tests {
     ])
     .normalized();
     assert_eq!(
-      expr_to_string(&formula_expr_for_targets(&formula, &[x])),
+      expr_to_string(&formula_expr_for_targets(&formula, &[x], false)),
       "Inequality[0, Less, x, Less, 2]"
     );
   }
@@ -731,7 +821,7 @@ mod tests {
       .unwrap(),
     );
     assert_eq!(
-      expr_to_string(&formula_expr_for_targets(&formula, &[x])),
+      expr_to_string(&formula_expr_for_targets(&formula, &[x], true)),
       "Mod[x, 6] == 1"
     );
   }
@@ -769,14 +859,6 @@ mod tests {
   }
 
   #[test]
-  fn exact_signed_floor_and_ceiling_division_bracket_rationals() {
-    assert_eq!(floor_div(&BigInt::from(-7), &BigInt::from(3)), (-3).into());
-    assert_eq!(ceil_div(&BigInt::from(-7), &BigInt::from(3)), (-2).into());
-    assert_eq!(floor_div(&BigInt::from(7), &BigInt::from(-3)), (-3).into());
-    assert_eq!(ceil_div(&BigInt::from(7), &BigInt::from(-3)), (-2).into());
-  }
-
-  #[test]
   fn integer_output_rounds_bounds_and_reduces_linear_congruences() {
     let x = Variable::free("x");
     let lower = Formula::Atom(Atom::Relation(
@@ -789,6 +871,7 @@ mod tests {
       expr_to_string(&formula_expr_for_targets(
         &canonical_integer_formula(&lower, std::slice::from_ref(&x)),
         std::slice::from_ref(&x),
+        true,
       )),
       "x >= 3"
     );
@@ -807,6 +890,7 @@ mod tests {
       expr_to_string(&formula_expr_for_targets(
         &canonical_integer_formula(&congruence, std::slice::from_ref(&x)),
         std::slice::from_ref(&x),
+        true,
       )),
       "Mod[x, 5] == 1"
     );

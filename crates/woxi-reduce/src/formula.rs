@@ -439,6 +439,53 @@ impl Formula {
     self.all_variables().contains(variable)
   }
 
+  /// Converts a quantifier-free NNF formula into disjunctive normal form, as
+  /// a list of conjunctions of atoms. `None` when the formula still contains
+  /// a negation or a binder, or when the expansion would exceed `limit`
+  /// branches: Boolean products grow exponentially, so every caller decides
+  /// what it can afford instead of expanding without bound.
+  pub fn dnf_branches(self, limit: usize) -> Option<Vec<Vec<Atom>>> {
+    match self {
+      Self::True => Some(vec![Vec::new()]),
+      Self::False => Some(Vec::new()),
+      Self::Atom(atom) => Some(vec![vec![atom]]),
+      Self::Or(children) => {
+        let mut result = Vec::new();
+        for child in children {
+          result.extend(child.dnf_branches(limit)?);
+          if result.len() > limit {
+            return None;
+          }
+        }
+        Some(result)
+      }
+      Self::And(children) => {
+        let mut result = vec![Vec::new()];
+        for child in children {
+          let alternatives = child.dnf_branches(limit)?;
+          if alternatives.is_empty() {
+            return Some(Vec::new());
+          }
+          if result.len().saturating_mul(alternatives.len()) > limit {
+            return None;
+          }
+          let mut product =
+            Vec::with_capacity(result.len() * alternatives.len());
+          for prefix in &result {
+            for suffix in &alternatives {
+              let mut branch = prefix.clone();
+              branch.extend(suffix.iter().cloned());
+              product.push(branch);
+            }
+          }
+          result = product;
+        }
+        Some(result)
+      }
+      Self::Not(_) | Self::Quantified(_, _, _) => None,
+    }
+  }
+
   pub fn substitute(
     &self,
     variable: &Variable,

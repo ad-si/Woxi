@@ -1,7 +1,4 @@
-//! Acceptance harness for the self-contained linear `Reduce` campaign.
-//!
-//! The ordinary test suite must remain independent of external solvers. The
-//! ignored `oracle` module is selected only by `make test-reduce-oracle`.
+//! Acceptance tests for the exact linear `Reduce` engine (`woxi-reduce`).
 
 use woxi::interpret;
 

@@ -117,6 +117,25 @@ pub fn lcm(left: &BigInt, right: &BigInt) -> BigInt {
   (left / gcd(left.clone(), right.clone()) * right).abs()
 }
 
+/// Exact `floor(numerator / denominator)` for a nonzero denominator of either
+/// sign.
+pub fn floor_div(numerator: &BigInt, denominator: &BigInt) -> BigInt {
+  debug_assert!(!denominator.is_zero());
+  let quotient = numerator / denominator;
+  let remainder = numerator % denominator;
+  if !remainder.is_zero() && remainder.sign() != denominator.sign() {
+    quotient - 1
+  } else {
+    quotient
+  }
+}
+
+/// Exact `ceil(numerator / denominator)` for a nonzero denominator of either
+/// sign.
+pub fn ceil_div(numerator: &BigInt, denominator: &BigInt) -> BigInt {
+  -floor_div(&(-numerator), denominator)
+}
+
 pub fn extended_gcd(left: &BigInt, right: &BigInt) -> (BigInt, BigInt, BigInt) {
   let (mut old_remainder, mut remainder) = (left.clone(), right.clone());
   let (mut old_left, mut left_coefficient) = (BigInt::one(), BigInt::zero());

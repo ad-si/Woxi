@@ -1,7 +1,4 @@
-//! One explicit harness case for every row of the scoped grammar.
-//!
-//! Cases marked ignored are executable specifications for later roadmap gates,
-//! not claims about the current implementation.
+//! One explicit case for every row of the supported linear grammar.
 
 use super::assert_reduces;
 

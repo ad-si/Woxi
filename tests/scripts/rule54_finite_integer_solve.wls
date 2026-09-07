@@ -1,6 +1,7 @@
-(* Post-substitution affine systems extracted from tower/wl/rule54/data/*_capture.json.
-   They deliberately contain only the solver boundary: package loading, JSON
-   traversal, and association evaluation are tested by Tower itself. *)
+(* Finite affine integer systems as they arise after substituting concrete
+   parameters into a cellular-automaton (Rule 54) timing model: chained
+   inequalities, equalities, a Mod congruence, and a disequality, each with a
+   provably bounded solution set. Only the solver boundary is exercised. *)
 
 delay1 = s >= 0 && s <= 25 && -4 s + 709 >= 600 &&
   -4 s + 709 >= 641 && -4 s + 711 <= -4 s + 740 &&

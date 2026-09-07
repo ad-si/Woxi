@@ -1,8 +1,6 @@
 //! Deterministic, table-driven dense-linear acceptance corpus.
 //!
 //! Each loop is a family of independently asserted public evaluator cases.
-//! The case counter is intentional: Gate 2 requires at least 200 curated
-//! formulas in addition to generated property and development-oracle tests.
 
 use super::assert_reduces;
 

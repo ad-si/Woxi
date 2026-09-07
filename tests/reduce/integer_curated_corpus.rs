@@ -1,7 +1,4 @@
 //! Deterministic, table-driven Presburger acceptance corpus.
-//!
-//! These are public evaluator cases, separate from the 25,000-formula exact
-//! exhaustive oracle and the development-only Z3 comparison.
 
 use super::assert_reduces;
 

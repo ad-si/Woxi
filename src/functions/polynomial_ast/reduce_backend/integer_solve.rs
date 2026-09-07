@@ -9,12 +9,21 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use num_bigint::{BigInt, Sign};
 use num_traits::{One, ToPrimitive, Zero};
-use woxi_reduce::{AffineTerm, Atom, Formula, Relation, Variable, gcd};
+use woxi_reduce::{
+  AffineTerm, Atom, Formula, Quantifier, Relation, Variable, ceil_div,
+  euclidean_mod, floor_div, rational_qe, solve_linear_congruence,
+};
 
 use crate::syntax::Expr;
 
 const MAX_DNF_BRANCHES: usize = 4096;
 const MAX_ENUMERATED_POINTS: u64 = 1_000_000;
+/// Conjunctions up to this size have their real relaxation decided before
+/// bound propagation; larger ones rely on the pass limit alone.
+const MAX_RELAXATION_ATOMS: usize = 128;
+/// Safety net for bound propagation. With a feasible real relaxation the
+/// integer bounds converge long before this.
+const MAX_PROPAGATION_PASSES: usize = 4096;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum FiniteIntegerSolve {
@@ -74,7 +83,7 @@ pub(crate) fn solve_finite_integer(
   else {
     return FiniteIntegerSolve::NotApplicable;
   };
-  let Some(branches) = dnf_branches(formula, MAX_DNF_BRANCHES) else {
+  let Some(branches) = formula.dnf_branches(MAX_DNF_BRANCHES) else {
     return FiniteIntegerSolve::Unsupported;
   };
 
@@ -129,49 +138,6 @@ fn constraints_formula(expr: &Expr) -> Option<Formula> {
   }
 }
 
-/// Converts NNF to explicit conjunction branches transactionally. The guard
-/// prevents adversarial Boolean products from causing exponential growth.
-fn dnf_branches(formula: Formula, limit: usize) -> Option<Vec<Vec<Atom>>> {
-  match formula {
-    Formula::True => Some(vec![Vec::new()]),
-    Formula::False => Some(Vec::new()),
-    Formula::Atom(atom) => Some(vec![vec![atom]]),
-    Formula::Or(children) => {
-      let mut result = Vec::new();
-      for child in children {
-        result.extend(dnf_branches(child, limit)?);
-        if result.len() > limit {
-          return None;
-        }
-      }
-      Some(result)
-    }
-    Formula::And(children) => {
-      let mut result = vec![Vec::new()];
-      for child in children {
-        let alternatives = dnf_branches(child, limit)?;
-        if alternatives.is_empty() {
-          return Some(Vec::new());
-        }
-        if result.len().saturating_mul(alternatives.len()) > limit {
-          return None;
-        }
-        let mut product = Vec::with_capacity(result.len() * alternatives.len());
-        for prefix in &result {
-          for suffix in &alternatives {
-            let mut branch = prefix.clone();
-            branch.extend(suffix.iter().cloned());
-            product.push(branch);
-          }
-        }
-        result = product;
-      }
-      Some(result)
-    }
-    Formula::Not(_) | Formula::Quantified(_, _, _) => None,
-  }
-}
-
 enum BranchSolve {
   Unsupported,
   Infeasible,
@@ -185,9 +151,23 @@ fn solve_conjunction(atoms: &[Atom], targets: &[Variable]) -> BranchSolve {
     .map(|variable| (variable, Bounds::default()))
     .collect::<BTreeMap<_, _>>();
 
+  // Interval propagation only terminates when the conjunction has a real
+  // solution: every derived bound holds at that point, so the integer bounds
+  // converge towards it. Without one (a negative cycle such as
+  // x <= y - 1 && y <= z - 1 && z <= x - 1) each pass would tighten the
+  // bounds by one forever, so decide the real relaxation first.
+  if atoms.len() <= MAX_RELAXATION_ATOMS {
+    match real_relaxation_is_feasible(atoms, targets) {
+      Some(false) => return BranchSolve::Infeasible,
+      Some(true) => {}
+      None => return BranchSolve::Unsupported,
+    }
+  }
+
   // Interval propagation is monotone: each successful update tightens a
   // bound. Iterate until a full pass makes no progress.
-  loop {
+  let mut converged = false;
+  for _ in 0..MAX_PROPAGATION_PASSES {
     let mut changed = false;
     for atom in atoms {
       let Atom::Relation(Relation::LessEqual, term) = atom else {
@@ -221,8 +201,12 @@ fn solve_conjunction(atoms: &[Atom], targets: &[Variable]) -> BranchSolve {
       return BranchSolve::Infeasible;
     }
     if !changed {
+      converged = true;
       break;
     }
+  }
+  if !converged {
+    return BranchSolve::Unsupported;
   }
 
   if bounds
@@ -253,6 +237,31 @@ fn solve_conjunction(atoms: &[Atom], targets: &[Variable]) -> BranchSolve {
     BranchSolve::Infeasible
   } else {
     BranchSolve::Solved(solutions)
+  }
+}
+
+/// Decides whether the order atoms of a conjunction have a real solution by
+/// eliminating every target with the exact dense engine. `None` when that
+/// engine declines the request.
+fn real_relaxation_is_feasible(
+  atoms: &[Atom],
+  targets: &[Variable],
+) -> Option<bool> {
+  let relations = atoms
+    .iter()
+    .filter(|atom| matches!(atom, Atom::Relation(..)))
+    .cloned()
+    .map(Formula::Atom)
+    .collect::<Vec<_>>();
+  let closed = Formula::Quantified(
+    Quantifier::Exists,
+    targets.to_vec(),
+    Box::new(Formula::And(relations)),
+  );
+  match rational_qe::eliminate_quantifiers(closed)? {
+    Formula::True => Some(true),
+    Formula::False => Some(false),
+    _ => None,
   }
 }
 
@@ -304,26 +313,6 @@ fn minimum_rest(
   Some(value)
 }
 
-fn floor_div(numerator: &BigInt, denominator: &BigInt) -> BigInt {
-  let quotient = numerator / denominator;
-  let remainder = numerator % denominator;
-  if !remainder.is_zero() && numerator.sign() != denominator.sign() {
-    quotient - BigInt::one()
-  } else {
-    quotient
-  }
-}
-
-fn ceil_div(numerator: &BigInt, denominator: &BigInt) -> BigInt {
-  let quotient = numerator / denominator;
-  let remainder = numerator % denominator;
-  if !remainder.is_zero() && numerator.sign() == denominator.sign() {
-    quotient + BigInt::one()
-  } else {
-    quotient
-  }
-}
-
 /// Uses the strongest one-variable divisibility atom as an enumeration stride.
 /// Remaining congruences are still checked by `atom_holds`, so this is purely a
 /// completeness-preserving search reduction.
@@ -344,7 +333,7 @@ fn enumeration_domain(
     }
   }
   let (residue, step) = stride;
-  let start = lower + positive_mod(&(residue - lower), &step);
+  let start = lower + euclidean_mod(residue - lower, &step);
   if &start > upper {
     return None;
   }
@@ -380,41 +369,11 @@ fn unary_congruence(
   if !coefficient.is_integer() || coefficient.is_zero() {
     return None;
   }
-
-  let divisor = gcd(coefficient.numerator.clone(), modulus.clone());
-  let right = -term.constant.numerator.clone();
-  if !(&right % &divisor).is_zero() {
-    return Some(None);
-  }
-  let reduced_modulus = modulus / &divisor;
-  if reduced_modulus.is_one() {
-    return Some(Some((BigInt::zero(), BigInt::one())));
-  }
-  let reduced_coefficient = &coefficient.numerator / &divisor;
-  let reduced_right = right / divisor;
-  let coefficient_mod = positive_mod(&reduced_coefficient, &reduced_modulus);
-  let (_, inverse, _) = extended_gcd(coefficient_mod, reduced_modulus.clone());
-  let residue = positive_mod(&(reduced_right * inverse), &reduced_modulus);
-  Some(Some((residue, reduced_modulus)))
-}
-
-fn positive_mod(value: &BigInt, modulus: &BigInt) -> BigInt {
-  let residue = value % modulus;
-  if residue.sign() == Sign::Minus {
-    residue + modulus
-  } else {
-    residue
-  }
-}
-
-fn extended_gcd(left: BigInt, right: BigInt) -> (BigInt, BigInt, BigInt) {
-  if right.is_zero() {
-    return (left, BigInt::one(), BigInt::zero());
-  }
-  let quotient = &left / &right;
-  let remainder = &left % &right;
-  let (gcd, x, y) = extended_gcd(right, remainder);
-  (gcd, y.clone(), x - quotient * y)
+  Some(solve_linear_congruence(
+    &coefficient.numerator,
+    &(-term.constant.numerator.clone()),
+    modulus,
+  ))
 }
 
 fn enumerate(
@@ -489,18 +448,4 @@ pub(crate) fn integer_expr(value: BigInt) -> Expr {
   value
     .to_i128()
     .map_or_else(|| Expr::BigInteger(value), Expr::Integer)
-}
-
-#[cfg(test)]
-mod tests {
-  use super::*;
-
-  #[test]
-  fn signed_integer_division_rounds_outward() {
-    assert_eq!(floor_div(&BigInt::from(7), &BigInt::from(3)), 2.into());
-    assert_eq!(floor_div(&BigInt::from(-7), &BigInt::from(3)), (-3).into());
-    assert_eq!(ceil_div(&BigInt::from(7), &BigInt::from(3)), 3.into());
-    assert_eq!(ceil_div(&BigInt::from(-7), &BigInt::from(3)), (-2).into());
-    assert_eq!(ceil_div(&BigInt::from(7), &BigInt::from(-3)), (-2).into());
-  }
 }

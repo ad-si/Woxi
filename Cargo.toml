@@ -3,7 +3,7 @@ members = [".", "crates/woxi-reduce", "woxi-studio", "woxi-py"]
 # Unscoped commands at the root (`cargo build`, `make test`, CI) build only
 # the interpreter; woxi-studio (iced → wgpu/winit, 100+ extra crates) is
 # built explicitly via `-p woxi-studio` / `make install-macos-app`.
-default-members = ["."]
+default-members = [".", "crates/woxi-reduce"]
 resolver = "3"
 # The cargo-fuzz crate is its own workspace: it needs nightly + libFuzzer
 # and must not affect the root Cargo.lock or default builds.

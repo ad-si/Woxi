@@ -1064,7 +1064,7 @@ wolframscript adapts. `Length[(y /. s[[1]])[[2]]]` is 1001 against 13. Note
 that stock wolframscript's *default* tolerances can be **less** accurate than
 Woxi's here — get a converged reference before treating a difference as a bug.
 
-### `Reduce` does not eliminate quantifiers
+### `Reduce` eliminates quantifiers only from linear formulas
 
 ```sh
 wolframscript -code 'Reduce[Exists[y, x == y^2], x, Reals]'      # x >= 0
@@ -1074,9 +1074,39 @@ wolframscript -code 'Reduce[ForAll[y, x + y^2 >= x], x, Reals]'  # True
 woxi eval 'Reduce[ForAll[y, x + y^2 >= x], x, Reals]'            # Reduce[ForAll[y, x + y^2 >= x], x]
 ```
 
-`Exists` and `ForAll` are parsed but never eliminated. Note the unevaluated
-form also drops the `Reals` domain argument, which is a separate bug in the
-echo path.
+`Exists` and `ForAll` over exact linear formulas with an explicit `Reals`,
+`Rationals` or `Integers` domain are eliminated by the `woxi-reduce` crate.
+Nonlinear bodies are still never eliminated. Note the unevaluated form also
+drops the `Reals` domain argument, which is a separate bug in the echo path.
+
+### Linear `Reduce` over an explicit domain: unverified surface forms
+
+The exact linear engine returns logically correct conditions, but the
+following shapes were not checked against `wolframscript` and are known or
+suspected to print differently:
+
+- Unbounded integer congruence classes print as a `Mod` condition where WL
+  parametrizes with `C[1]`: `Reduce[Mod[x, 3] == 1, x, Integers]` gives
+  `Element[x, Integers] && Mod[x, 3] == 1`; WL gives
+  `Element[C[1], Integers] && x == 1 + 3 C[1]`. The same applies to
+  `Reduce[Exists[y, x == 2 y + 1], x, Integers]`.
+- An integer equation that is not a lone equation (`2 x == 4 y && x >= 0`)
+  stays an equation between the variables, `x == 2*y && y >= 0`, where WL
+  parametrizes with `C[1]`. A lone linear equation in several unknowns does
+  use the `C[k]` parametrization.
+- A finite integer solution set in several variables prints as an interval
+  plus an equation, `Inequality[0, LessEqual, x, LessEqual, 3] && y == 3 - x`
+  for `x + y == 3 && x >= 0 && y >= 0`, where WL enumerates the four points.
+- A rational boundary prints in expanded form, `y == 3/2 - x/2`, where WL
+  prints `y == (3 - x)/2`.
+- Requests whose exact elimination would need more than 65,536 Cooper
+  instantiations for one variable (a huge lcm of moduli) or more than 65,536
+  disjunctive branches are declined and fall through to the older routes,
+  which usually leave them unevaluated.
+- A symbol carrying the `Constant` attribute (`Pi`, `E`) is not accepted by
+  the linear engine, so `Reduce[x > 4 && x < Pi, x, Reals]` falls through to
+  the older route, which wrongly returns `Inequality[4, Less, x, Less, Pi]`
+  instead of `False`; the same holds on the default domain.
 
 ### Other `Reduce` and `FindInstance` divergences
 

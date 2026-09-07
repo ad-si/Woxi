@@ -13,6 +13,12 @@ use super::affine::{AffineTerm, Variable};
 use super::exact::{Rational, lcm};
 use super::formula::{Atom, Formula, FormulaMemo, Quantifier, Relation};
 
+/// Cooper's existential elimination instantiates the body once per residue
+/// of the divisibility period and once per transition point. Past this many
+/// instances for one variable the request is declined (`None`) rather than
+/// allowed to spin; a caller can then fall back to another route.
+pub const MAX_COOPER_INSTANCES: u64 = 65_536;
+
 pub fn eliminate_quantifiers(formula: Formula) -> Option<Formula> {
   let normalized = normalize_integer_formula(formula)?;
   let mut memo = FormulaMemo::default();
@@ -267,6 +273,11 @@ fn eliminate_exists(body: Formula, variable: &Variable) -> Option<Formula> {
 
   let period = divisibility_period(&body, variable);
   let transitions = transition_points(&body, variable)?;
+  if &period * BigInt::from(transitions.len() + 1)
+    > BigInt::from(MAX_COOPER_INSTANCES)
+  {
+    return None;
+  }
   let mut disjuncts = Vec::new();
   let mut residue = BigInt::zero();
   while residue < period {

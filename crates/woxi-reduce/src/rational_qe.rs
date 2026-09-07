@@ -12,6 +12,11 @@ use super::affine::{AffineTerm, Variable};
 use super::exact::Rational;
 use super::formula::{Atom, Formula, FormulaMemo, Quantifier, Relation};
 
+/// Boolean structure is expanded to DNF before each projection. Past this many
+/// branches the request is declined (`None`) rather than allowed to grow
+/// without bound.
+pub const MAX_DNF_BRANCHES: usize = 65_536;
+
 pub fn eliminate_quantifiers(formula: Formula) -> Option<Formula> {
   let mut memo = FormulaMemo::default();
   eliminate_recursive(formula.into_nnf().normalized(), &mut memo)
@@ -197,7 +202,7 @@ fn eliminate_forall(body: Formula, variable: &Variable) -> Option<Formula> {
 
 fn eliminate_exists(body: Formula, variable: &Variable) -> Option<Formula> {
   let body = split_variable_disequalities(body, variable).normalized();
-  let branches = to_dnf(body)?;
+  let branches = body.dnf_branches(MAX_DNF_BRANCHES)?;
   let projected = branches
     .into_iter()
     .map(|branch| project_conjunction(branch, variable))
@@ -234,39 +239,6 @@ fn split_variable_disequalities(
       unreachable!("inner quantifiers and negations are eliminated first")
     }
     leaf => leaf,
-  }
-}
-
-/// Returns a disjunction of conjunctions, represented as `Vec<Vec<Atom>>`.
-fn to_dnf(formula: Formula) -> Option<Vec<Vec<Atom>>> {
-  match formula {
-    Formula::True => Some(vec![Vec::new()]),
-    Formula::False => Some(Vec::new()),
-    Formula::Atom(atom) => Some(vec![vec![atom]]),
-    Formula::Or(children) => {
-      let mut output = Vec::new();
-      for child in children {
-        output.extend(to_dnf(child)?);
-      }
-      Some(output)
-    }
-    Formula::And(children) => {
-      let mut product = vec![Vec::new()];
-      for child in children {
-        let alternatives = to_dnf(child)?;
-        let mut next = Vec::new();
-        for prefix in &product {
-          for alternative in &alternatives {
-            let mut conjunction = prefix.clone();
-            conjunction.extend(alternative.iter().cloned());
-            next.push(conjunction);
-          }
-        }
-        product = next;
-      }
-      Some(product)
-    }
-    Formula::Not(_) | Formula::Quantified(_, _, _) => None,
   }
 }
 

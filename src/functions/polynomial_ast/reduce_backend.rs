@@ -13,10 +13,8 @@ use woxi_reduce::{Atom, Formula, Rational, Relation};
 use crate::helpers::call;
 use crate::syntax::{BinaryOperator, Expr, UnaryOperator};
 
-#[allow(dead_code)]
 mod emit;
 mod integer_solve;
-#[allow(dead_code)]
 mod lower;
 #[cfg(test)]
 mod presburger_tests;
@@ -38,9 +36,16 @@ pub(super) fn try_linear_rational_reduce(args: &[Expr]) -> Option<Expr> {
   ) {
     return None;
   }
-  let result =
-    woxi_reduce::rational_qe::eliminate_quantifiers(request.formula)?;
-  Some(emit::formula_expr_for_targets(&result, &request.targets))
+  let result = woxi_reduce::equalities::fold_equalities(
+    woxi_reduce::rational_qe::eliminate_quantifiers(request.formula)?,
+    &request.targets,
+    false,
+  );
+  Some(emit::formula_expr_for_targets(
+    &result,
+    &request.targets,
+    false,
+  ))
 }
 
 /// Runs the self-contained Presburger engine for every completely lowered
@@ -53,7 +58,11 @@ pub(super) fn try_linear_integer_reduce(args: &[Expr]) -> Option<Expr> {
     return None;
   }
   let result = emit::canonical_integer_formula(
-    &woxi_reduce::presburger::eliminate_quantifiers(request.formula)?,
+    &woxi_reduce::equalities::fold_equalities(
+      woxi_reduce::presburger::eliminate_quantifiers(request.formula)?,
+      &request.targets,
+      true,
+    ),
     &request.targets,
   );
   if let [target] = request.targets.as_slice()
@@ -61,24 +70,35 @@ pub(super) fn try_linear_integer_reduce(args: &[Expr]) -> Option<Expr> {
   {
     return Some(expression);
   }
-  let mut expression =
-    emit::formula_expr_for_targets(&result, &request.targets);
-  for target in request.targets.iter().rev() {
-    if result.contains_variable(target) {
-      expression = Expr::BinaryOp {
-        op: BinaryOperator::And,
-        left: Box::new(call(
-          "Element",
-          vec![
-            Expr::Identifier(target.name.clone()),
-            Expr::Identifier("Integers".to_string()),
-          ],
-        )),
-        right: Box::new(expression),
-      };
-    }
+  let expression =
+    emit::formula_expr_for_targets(&result, &request.targets, true);
+  if matches!(result, Formula::True | Formula::False) {
+    return Some(expression);
   }
-  Some(expression)
+  // Every requested variable that the result does not fix to an integer
+  // keeps its domain: `Element[x | y, Integers] && ...`, the form
+  // wolframscript uses for several variables.
+  let membership = request
+    .targets
+    .iter()
+    .filter(|target| !emit::target_is_pinned(&result, target))
+    .map(|target| Expr::Identifier(target.name.clone()))
+    .reduce(|left, right| Expr::BinaryOp {
+      op: BinaryOperator::Alternatives,
+      left: Box::new(left),
+      right: Box::new(right),
+    });
+  Some(match membership {
+    Some(members) => Expr::BinaryOp {
+      op: BinaryOperator::And,
+      left: Box::new(call(
+        "Element",
+        vec![members, Expr::Identifier("Integers".to_string())],
+      )),
+      right: Box::new(expression),
+    },
+    None => expression,
+  })
 }
 
 /// A lone linear equation in several integer unknowns, e.g.

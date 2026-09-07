@@ -6,6 +6,7 @@
 //! their surface representation.
 
 pub mod affine;
+pub mod equalities;
 pub mod exact;
 pub mod formula;
 pub mod presburger;
@@ -13,7 +14,7 @@ pub mod rational_qe;
 
 pub use affine::{AffineTerm, Variable};
 pub use exact::{
-  Rational, crt_pair, euclidean_mod, extended_gcd, gcd, lcm,
-  solve_linear_congruence,
+  Rational, ceil_div, crt_pair, euclidean_mod, extended_gcd, floor_div, gcd,
+  lcm, solve_linear_congruence,
 };
 pub use formula::{Atom, Formula, FormulaMemo, Quantifier, Relation};

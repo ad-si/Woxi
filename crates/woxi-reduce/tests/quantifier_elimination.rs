@@ -277,3 +277,60 @@ fn cooper_order_uses_the_smaller_residue_period() {
     Some(y)
   );
 }
+
+// Cooper elimination instantiates the body once per residue of the lcm of
+// all moduli in which the variable occurs. Two large coprime moduli would
+// need about 10^12 instantiations; the engine declines instead of spinning.
+#[test]
+fn oversized_divisibility_periods_are_declined() {
+  let x = Variable::bound("x", 0);
+  let congruence = |modulus: i64, residue: i64| {
+    Formula::Atom(
+      Atom::divides(
+        BigInt::from(modulus),
+        variable_term(&x).subtract(&AffineTerm::constant(integer(residue))),
+        false,
+      )
+      .unwrap(),
+    )
+  };
+  let formula = Formula::Quantified(
+    Quantifier::Exists,
+    vec![x.clone()],
+    Box::new(Formula::And(vec![
+      congruence(1_000_003, 1),
+      congruence(1_000_033, 2),
+    ])),
+  );
+  assert_eq!(presburger::eliminate_quantifiers(formula), None);
+
+  // A period within the limit is still decided exactly.
+  let small = Formula::Quantified(
+    Quantifier::Exists,
+    vec![x.clone()],
+    Box::new(Formula::And(vec![congruence(4, 1), congruence(6, 2)])),
+  );
+  assert_eq!(
+    presburger::eliminate_quantifiers(small),
+    Some(Formula::False)
+  );
+}
+
+// Disjunctive normal form is only expanded up to the caller's branch limit.
+#[test]
+fn dnf_expansion_respects_the_branch_limit() {
+  let x = Variable::free("x");
+  let atom = |value: i64| {
+    relation(
+      Relation::Less,
+      variable_term(&x).subtract(&AffineTerm::constant(integer(value))),
+    )
+  };
+  let pair = |value: i64| Formula::Or(vec![atom(value), atom(value + 100)]);
+  let product = Formula::And((0..10).map(pair).collect());
+  assert_eq!(
+    product.clone().dnf_branches(1024).map(|b| b.len()),
+    Some(1024)
+  );
+  assert_eq!(product.dnf_branches(1023), None);
+}

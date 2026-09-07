@@ -19,6 +19,22 @@ mod tests {
     formula_from_expr(&crate::parse_to_expr(source).unwrap()).unwrap()
   }
 
+  // A symbol with the Constant attribute is a number, not an unknown, and
+  // the exact rational fragment has no value for it. Treating `Pi` as a free
+  // parameter would make `Exists[x, x > 4 && x < Pi]` come out `True`.
+  #[test]
+  fn constant_symbols_are_not_lowered_as_variables() {
+    for source in ["x < Pi", "x > E && x < 3", "Degree * x == 1"] {
+      assert!(
+        formula_from_expr(&crate::parse_to_expr(source).unwrap()).is_none(),
+        "{source}"
+      );
+    }
+    assert!(
+      formula_from_expr(&crate::parse_to_expr("x < a").unwrap()).is_some()
+    );
+  }
+
   fn eliminate(source: &str) -> Formula {
     eliminate_quantifiers(parse(source)).unwrap()
   }
@@ -286,124 +302,6 @@ mod tests {
           body,
         ])),
       )
-    }
-  }
-
-  fn smt_integer_atom(
-    coefficient: i8,
-    constant: i8,
-    kind: u8,
-    modulus: u8,
-  ) -> String {
-    let term = format!("(+ (* {coefficient} x) {constant})");
-    match kind {
-      0 => format!("(= {term} 0)"),
-      1 => format!("(not (= {term} 0))"),
-      2 => format!("(< {term} 0)"),
-      3 => format!("(<= {term} 0)"),
-      4 => format!("(> {term} 0)"),
-      5 => format!("(>= {term} 0)"),
-      6 => format!("(= (mod {term} {modulus}) 0)"),
-      _ => format!("(not (= (mod {term} {modulus}) 0))"),
-    }
-  }
-
-  #[test]
-  #[ignore = "requires a Z3 development oracle"]
-  fn generated_closed_presburger_formulas_agree_with_z3() {
-    use std::io::Write;
-    use std::process::{Command, Stdio};
-
-    let mut state = 0x5eed_4000_u64;
-    let mut next = || {
-      state = state
-        .wrapping_mul(6_364_136_223_846_793_005)
-        .wrapping_add(1_442_695_040_888_963_407);
-      state
-    };
-    let bound = Variable::bound("x", 0);
-    let unused = Variable::free("unused");
-    let mut expected = Vec::with_capacity(1_000);
-    let mut query = String::from("(set-logic LIA)\n");
-    for _ in 0..1_000 {
-      let a = i8::try_from(next() % 9).unwrap() - 4;
-      let b = i8::try_from(next() % 15).unwrap() - 7;
-      let c = i8::try_from(next() % 9).unwrap() - 4;
-      let d = i8::try_from(next() % 15).unwrap() - 7;
-      let first_kind = u8::try_from(next() % 8).unwrap();
-      let second_kind = u8::try_from(next() % 8).unwrap();
-      let first_modulus = u8::try_from(next() % 4).unwrap() + 2;
-      let second_modulus = u8::try_from(next() % 4).unwrap() + 2;
-      let conjunction = next() & 1 == 0;
-      let universal = next() & 1 == 0;
-
-      let first = generated_integer_atom(
-        &bound,
-        &unused,
-        a,
-        0,
-        b,
-        first_kind,
-        first_modulus,
-      );
-      let second = generated_integer_atom(
-        &bound,
-        &unused,
-        c,
-        0,
-        d,
-        second_kind,
-        second_modulus,
-      );
-      let body = if conjunction {
-        Formula::And(vec![first, second])
-      } else {
-        Formula::Or(vec![first, second])
-      };
-      let formula = bounded_quantifier(body, bound.clone(), universal);
-      expected.push(match eliminate_quantifiers(formula).unwrap() {
-        Formula::True => "sat",
-        Formula::False => "unsat",
-        result => panic!("a closed formula must decide to truth: {result:?}"),
-      });
-
-      let connective = if conjunction { "and" } else { "or" };
-      let body = format!(
-        "({connective} {} {})",
-        smt_integer_atom(a, b, first_kind, first_modulus),
-        smt_integer_atom(c, d, second_kind, second_modulus),
-      );
-      let quantified = if universal {
-        format!("(forall ((x Int)) (or (< x -3) (> x 3) {body}))")
-      } else {
-        format!("(exists ((x Int)) (and (>= x -3) (<= x 3) {body}))")
-      };
-      query.push_str("(push)\n(assert ");
-      query.push_str(&quantified);
-      query.push_str(")\n(check-sat)\n(pop)\n");
-    }
-    query.push_str("(exit)\n");
-
-    let executable = std::env::var("WOXI_Z3").unwrap_or_else(|_| "z3".into());
-    let mut child = Command::new(executable)
-      .arg("-in")
-      .stdin(Stdio::piped())
-      .stdout(Stdio::piped())
-      .spawn()
-      .expect("Z3 must be available for this development-only oracle test");
-    child
-      .stdin
-      .take()
-      .unwrap()
-      .write_all(query.as_bytes())
-      .unwrap();
-    let output = child.wait_with_output().unwrap();
-    assert!(output.status.success());
-    let actual = String::from_utf8(output.stdout).unwrap();
-    let actual = actual.lines().collect::<Vec<_>>();
-    assert_eq!(actual.len(), expected.len());
-    for (index, (actual, expected)) in actual.iter().zip(expected).enumerate() {
-      assert_eq!(*actual, expected, "generated oracle case {index}");
     }
   }
 

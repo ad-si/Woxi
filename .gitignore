@@ -8,7 +8,6 @@
 /mathics
 /node_modules
 /target
-/crates/*/target
 /tests/_*
 /tests/book
 /tests/jupyterlite

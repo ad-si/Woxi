@@ -9594,6 +9594,28 @@ mod solve_with_domain {
     assert_eq!(interpret("Solve[False, x, Integers]").unwrap(), "{}");
     assert_eq!(interpret("Solve[True, x, Integers]").unwrap(), "{{}}");
   }
+
+  // A cycle of difference constraints with negative total weight has no real
+  // solution, so no integer one either. Bound propagation alone would tighten
+  // the lower bounds by one per pass forever; the real relaxation is decided
+  // first, so this returns promptly.
+  #[test]
+  fn integers_infeasible_difference_cycle_terminates() {
+    assert_eq!(
+      interpret(
+        "Solve[x >= 0 && y >= 0 && z >= 0 && x <= y - 1 && y <= z - 1 && z <= x - 1, {x, y, z}, Integers]"
+      )
+      .unwrap(),
+      "{}"
+    );
+    assert_eq!(
+      interpret(
+        "Solve[0 <= x <= 10^12 && 0 <= y <= 10^12 && x <= y - 1 && y <= x - 1, {x, y}, Integers]"
+      )
+      .unwrap(),
+      "{}"
+    );
+  }
 }
 
 // Modulus -> n solves over the integers modulo n. Without it Solve answered

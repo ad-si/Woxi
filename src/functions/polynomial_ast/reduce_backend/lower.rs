@@ -71,10 +71,15 @@ impl LoweringContext {
       return Some(AffineTerm::constant(value));
     }
     match expr {
+      // A symbol with the Constant attribute (Pi, E, Degree, ...) is a
+      // number, not an unknown; it is outside the exact rational fragment.
       Expr::Identifier(name)
         if !matches!(
           name.as_str(),
           "True" | "False" | "I" | "Infinity" | "ComplexInfinity"
+        ) && !crate::func_attrs_contains(
+          name,
+          crate::evaluator::Attributes::Constant,
         ) =>
       {
         Some(AffineTerm::variable(self.variable(name)))
