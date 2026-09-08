@@ -68,17 +68,6 @@ slow-timeout = { period = "60s", terminate-after = 1 }
 filter = 'test(rolling_polygon_on_catenary_notebook_rolls_its_polygon)'
 slow-timeout = { period = "120s", terminate-after = 1 }
 
-# `zeta_pole_residues` asserts five `Residue[..., {z, 1}]` cases, each of
-# which takes a `Limit` at Zeta's pole; the numeric probe of Zeta near its
-# pole that this falls back to converges slowly (~16s standalone in debug
-# builds). That is under the 20s default, but not under full parallel CI
-# load. Give it a wider window until the underlying `Limit`/`Residue` perf
-# regression on `Zeta` is fixed (tracked separately — see PR #776
-# discussion).
-[[profile.default.overrides]]
-filter = 'test(zeta_pole_residues)'
-slow-timeout = { period = "120s", terminate-after = 1 }
-
 # The remaining (non-`#[ignore]`d) RosettaCode script snapshots run a few
 # seconds in debug builds; under full parallel load they can brush past the
 # default 20s timeout. Give them a safety ceiling. The genuinely heavy
