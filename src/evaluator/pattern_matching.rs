@@ -282,7 +282,7 @@ fn try_ast_pattern_replace(
 /// like `x_Symbol :> f[x]` rewrites `h` inside `h[a]`. A symbol head keeps the
 /// `FunctionCall` form; any other head becomes a `CurriedCall`, matching
 /// Wolfram's `f[h][args]`.
-fn rebuild_call_with_head(head: Expr, args: Vec<Expr>) -> Expr {
+pub(crate) fn rebuild_call_with_head(head: Expr, args: Vec<Expr>) -> Expr {
   if let Expr::Identifier(h) = &head {
     Expr::FunctionCall {
       name: h.clone(),
@@ -2258,8 +2258,96 @@ fn try_symbol_replace_all(
         }
       })
     }
+    // A blank's head restriction and a pattern's own name are ordinary
+    // symbols in the expression: `x_obj /. obj -> t` is `x_t`, which is how
+    // WLJS's `CreateUType` derives one object type's definitions from
+    // another's. They are held here as plain strings rather than as
+    // subexpressions, so the generic recursion above cannot see them.
+    Expr::Pattern {
+      name,
+      head,
+      blank_type,
+    } => {
+      let (new_name, new_head) =
+        renamed_pattern_parts(name, head.as_deref(), pattern_sym, replacement)?;
+      Some(Expr::Pattern {
+        name: new_name,
+        head: new_head,
+        blank_type: *blank_type,
+      })
+    }
+    Expr::PatternTest {
+      name,
+      head,
+      blank_type,
+      test,
+    } => {
+      let renamed =
+        renamed_pattern_parts(name, head.as_deref(), pattern_sym, replacement);
+      let new_test = try_symbol_replace_all(test, pattern_sym, replacement);
+      let (new_name, new_head) =
+        renamed.unwrap_or_else(|| (name.clone(), head.clone()));
+      (new_name != *name || new_head != *head || new_test.is_some()).then(
+        || Expr::PatternTest {
+          name: new_name,
+          head: new_head,
+          blank_type: *blank_type,
+          test: Box::new(new_test.unwrap_or_else(|| (**test).clone())),
+        },
+      )
+    }
+    Expr::PatternOptional {
+      name,
+      head,
+      default,
+    } => {
+      let renamed =
+        renamed_pattern_parts(name, head.as_deref(), pattern_sym, replacement);
+      let new_default = default
+        .as_ref()
+        .and_then(|d| try_symbol_replace_all(d, pattern_sym, replacement));
+      let (new_name, new_head) =
+        renamed.unwrap_or_else(|| (name.clone(), head.clone()));
+      (new_name != *name || new_head != *head || new_default.is_some()).then(
+        || Expr::PatternOptional {
+          name: new_name,
+          head: new_head,
+          default: new_default.map(Box::new).or_else(|| default.clone()),
+        },
+      )
+    }
     _ => None,
   }
+}
+
+/// The name and head-restriction a pattern gets when `pattern_sym -> replacement`
+/// is applied to it, or `None` when neither names `pattern_sym`. Only a symbol
+/// can stand in, because both slots are stored as bare names.
+fn renamed_pattern_parts(
+  name: &str,
+  head: Option<&str>,
+  pattern_sym: &str,
+  replacement: &Expr,
+) -> Option<(String, Option<String>)> {
+  let Expr::Identifier(new_symbol) = replacement else {
+    return None;
+  };
+  let renames_name = name == pattern_sym;
+  let renames_head = head == Some(pattern_sym);
+  (renames_name || renames_head).then(|| {
+    (
+      if renames_name {
+        new_symbol.clone()
+      } else {
+        name.to_string()
+      },
+      if renames_head {
+        Some(new_symbol.clone())
+      } else {
+        head.map(str::to_string)
+      },
+    )
+  })
 }
 
 /// Try Flat subsequence replacement. For a Flat function f, matches f[a,b] within f[a,b,c]
@@ -5076,6 +5164,9 @@ pub fn resolve_identifier_to_func_name(name: &str) -> Option<String> {
       {
         Some(resolved.clone())
       }
+      // A symbol read inside a package carries its context, so the stored
+      // text of `cache = wcache` is `Foo\`Private\`wcache`; the backticks
+      // are part of the name.
       Some(StoredValue::Raw(s))
         if s != name
           && !s.is_empty()
@@ -5083,9 +5174,10 @@ pub fn resolve_identifier_to_func_name(name: &str) -> Option<String> {
             .chars()
             .next()
             .is_some_and(|c| c.is_ascii_alphabetic() || c == '$')
-          && s
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$') =>
+          && s.chars().all(|c| {
+            c.is_ascii_alphanumeric() || c == '_' || c == '$' || c == '`'
+          })
+          && !s.ends_with('`') =>
       {
         Some(s.clone())
       }
@@ -5185,7 +5277,7 @@ fn required_rule_heads<'a>(
 
 /// Whether `name` heads a pattern construct rather than naming the head an
 /// expression must have.
-fn is_pattern_construct_head(name: &str) -> bool {
+pub(crate) fn is_pattern_construct_head(name: &str) -> bool {
   matches!(
     name,
     "Blank"
@@ -5355,10 +5447,20 @@ fn apply_replace_all_multi_ast_impl(
       Ok(Expr::List(new_items.into()))
     }
     Expr::FunctionCall { name, args } => {
-      let child_held = held || is_hold_head(name);
+      // An argument a Hold attribute protects is as held as one inside
+      // `Hold` itself: with `SetAttributes[g, HoldAll]`, `g[f[1, 2]] /. {f ->
+      // Plus}` is `g[1 + 2]`, not `g[3]`. WLX leans on this — it rewrites
+      // `StringJoinFake -> StringJoin` inside its own `HoldAll` wrapper and
+      // expects the joins to stay unevaluated until the component runs.
       let new_args: Result<Vec<Expr>, _> = args
         .iter()
-        .map(|arg| apply_replace_all_multi_ast_impl(arg, rules, child_held))
+        .enumerate()
+        .map(|(index, arg)| {
+          let child_held = held
+            || is_hold_head(name)
+            || crate::evaluator::core_eval::holds_argument_at(name, index);
+          apply_replace_all_multi_ast_impl(arg, rules, child_held)
+        })
         .collect();
       let new_args = new_args?;
       // Check if any rule replaces the function head
@@ -5520,6 +5622,52 @@ fn apply_replace_all_multi_ast_impl(
         .collect();
       Ok(Expr::CompoundExpr(new_stmts?))
     }
+    // The application operators the parser keeps in a shape of their own.
+    // A rule reaches into `f @@ list` as into any other call: WLX's `f @@
+    // Join[…]`, held inside its own wrapper, is where the templating rewrite
+    // `Hold2 -> Identity` has to land.
+    Expr::Apply { func, list } => Ok(Expr::Apply {
+      func: Box::new(apply_replace_all_multi_ast_impl(func, rules, held)?),
+      list: Box::new(apply_replace_all_multi_ast_impl(list, rules, held)?),
+    }),
+    Expr::Map { func, list } => Ok(Expr::Map {
+      func: Box::new(apply_replace_all_multi_ast_impl(func, rules, held)?),
+      list: Box::new(apply_replace_all_multi_ast_impl(list, rules, held)?),
+    }),
+    Expr::MapApply { func, list } => Ok(Expr::MapApply {
+      func: Box::new(apply_replace_all_multi_ast_impl(func, rules, held)?),
+      list: Box::new(apply_replace_all_multi_ast_impl(list, rules, held)?),
+    }),
+    Expr::PrefixApply { func, arg } => Ok(Expr::PrefixApply {
+      func: Box::new(apply_replace_all_multi_ast_impl(func, rules, held)?),
+      arg: Box::new(apply_replace_all_multi_ast_impl(arg, rules, held)?),
+    }),
+    Expr::Postfix { expr: inner, func } => Ok(Expr::Postfix {
+      expr: Box::new(apply_replace_all_multi_ast_impl(inner, rules, held)?),
+      func: Box::new(apply_replace_all_multi_ast_impl(func, rules, held)?),
+    }),
+    Expr::ReplaceAll {
+      expr: inner,
+      rules: inner_rules,
+    } => Ok(Expr::ReplaceAll {
+      expr: Box::new(apply_replace_all_multi_ast_impl(inner, rules, held)?),
+      rules: Box::new(apply_replace_all_multi_ast_impl(
+        inner_rules,
+        rules,
+        held,
+      )?),
+    }),
+    Expr::ReplaceRepeated {
+      expr: inner,
+      rules: inner_rules,
+    } => Ok(Expr::ReplaceRepeated {
+      expr: Box::new(apply_replace_all_multi_ast_impl(inner, rules, held)?),
+      rules: Box::new(apply_replace_all_multi_ast_impl(
+        inner_rules,
+        rules,
+        held,
+      )?),
+    }),
     // Atoms and other nodes without children — return unchanged
     _ => Ok(expr.clone()),
   }

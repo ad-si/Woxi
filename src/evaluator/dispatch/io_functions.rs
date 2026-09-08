@@ -2531,6 +2531,24 @@ pub fn dispatch_io_functions(
           return Some(Ok(Expr::String(joined)));
         }
       }
+      // A single string is a path already; joining it normalises it —
+      // `FileNameJoin["a//b/"]` is `"a/b"` — which is how WLX's importer
+      // canonicalises the path it stores in a component.
+      if let Expr::String(path) = &args[0] {
+        let pieces: Vec<&str> = path.split(sep).collect();
+        let absolute = pieces.first().is_some_and(|piece| piece.is_empty());
+        let body = pieces
+          .iter()
+          .filter(|piece| !piece.is_empty())
+          .copied()
+          .collect::<Vec<_>>()
+          .join(&sep.to_string());
+        return Some(Ok(Expr::String(if absolute {
+          format!("{sep}{body}")
+        } else {
+          body
+        })));
+      }
       return Some(Ok(unevaluated("FileNameJoin", args)));
     }
     "FileNameSplit" if args.len() == 1 => {
@@ -2538,13 +2556,16 @@ pub fn dispatch_io_functions(
         if s.is_empty() {
           return Some(Ok(Expr::List(vec![].into())));
         }
-        let parts: Vec<Expr> = s
-          .split('/')
-          .collect::<Vec<&str>>()
+        // Only *trailing* separators are dropped: `"/a/b/"` splits to
+        // `{"", "a", "b"}` — the leading empty piece is what marks the path
+        // absolute — and an interior `"a//b"` keeps its empty piece too.
+        let mut pieces: Vec<&str> = s.split('/').collect();
+        while pieces.last().is_some_and(|piece| piece.is_empty()) {
+          pieces.pop();
+        }
+        let parts: Vec<Expr> = pieces
           .into_iter()
-          .enumerate()
-          .filter(|(i, part)| !(*i > 0 && part.is_empty()))
-          .map(|(_, part)| Expr::String(part.to_string()))
+          .map(|part| Expr::String(part.to_string()))
           .collect();
         return Some(Ok(Expr::List(parts.into())));
       }

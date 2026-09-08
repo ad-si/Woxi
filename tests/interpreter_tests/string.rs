@@ -14972,3 +14972,53 @@ mod tex_form_typesetting {
     assert_eq!(result.result, "Convert`TeX`ExpressionToTeX[x, y]");
   }
 }
+
+/// A trailing `;` ends an empty statement, so a program written with one is
+/// a `CompoundExpression` whose last part is `Null`. WLX reads a `.wlx` file
+/// statement by statement through the three-argument `ToExpression` and
+/// matches on that trailing `Null` to find the names to localise. Verified
+/// against wolframscript.
+mod to_expression_keeps_a_trailing_semicolon {
+  use super::*;
+
+  #[test]
+  fn a_trailing_semicolon_adds_a_null() {
+    assert_eq!(
+      interpret(
+        "ToString[ToExpression[\"a := 1;\", InputForm, Hold], InputForm]"
+      )
+      .unwrap(),
+      "Hold[a := 1; ]"
+    );
+    assert_eq!(
+      interpret(
+        "ToString[ToExpression[\"{a, b} = c;\", InputForm, Hold], InputForm]"
+      )
+      .unwrap(),
+      "Hold[{a, b} = c; ]"
+    );
+    assert_eq!(
+      interpret(
+        "ToString[ToExpression[\"2; 3;\", InputForm, Hold], InputForm]"
+      )
+      .unwrap(),
+      "Hold[2; 3; ]"
+    );
+  }
+
+  #[test]
+  fn without_one_the_expression_stands_alone() {
+    assert_eq!(
+      interpret(
+        "ToString[ToExpression[\"a := 1\", InputForm, Hold], InputForm]"
+      )
+      .unwrap(),
+      "Hold[a := 1]"
+    );
+    assert_eq!(
+      interpret("ToString[ToExpression[\"2; 3\", InputForm, Hold], InputForm]")
+        .unwrap(),
+      "Hold[2; 3]"
+    );
+  }
+}

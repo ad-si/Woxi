@@ -9533,10 +9533,10 @@ pub fn to_expression_ast_as(
   {
     let interpreted = crate::evaluator::evaluate_expr_to_expr(&ib_args[1])?;
     if args.len() == 3 {
-      let wrapped = Expr::FunctionCall {
-        name: expr_to_string(&args[2]),
-        args: vec![interpreted].into(),
-      };
+      let wrapped = crate::evaluator::pattern_matching::rebuild_call_with_head(
+        args[2].clone(),
+        vec![interpreted],
+      );
       return crate::evaluator::evaluate_expr_to_expr(&wrapped);
     }
     return Ok(interpreted);
@@ -9562,10 +9562,13 @@ pub fn to_expression_ast_as(
     // `$ContextPath` names `Rubi\`Int`, not a fresh `Global\`Int`).
     let parsed =
       crate::evaluator::contexts::rewrite(&parse_program_to_expr(&s)?);
-    let wrapped = Expr::FunctionCall {
-      name: expr_to_string(&args[2]),
-      args: vec![parsed].into(),
-    };
+    // The head need not be a symbol: WLX wraps its interpolations with
+    // `FakeHold @* ToString`, and `Composition[…][parsed]` is a call of a
+    // compound head, not of a symbol spelled `"FakeHold @* ToString"`.
+    let wrapped = crate::evaluator::pattern_matching::rebuild_call_with_head(
+      args[2].clone(),
+      vec![parsed],
+    );
     return crate::evaluator::evaluate_expr_to_expr(&wrapped);
   }
   // Multi-statement input (e.g. "2\n3" or "2; 3") evaluates each statement
@@ -9596,6 +9599,14 @@ pub(crate) fn parse_program_to_expr(
       if crate::is_statement_rule(node.as_rule()) {
         exprs.push(pair_to_expr(node));
       }
+    }
+    // A trailing `;` ends an empty statement, so the program is a
+    // `CompoundExpression` whose last part is `Null` — `ToExpression["a :=
+    // 1;", InputForm, Hold]` is `Hold[a := 1; ]`, not `Hold[a := 1]`. WLX
+    // reads a `.wlx` file statement by statement this way and matches on the
+    // trailing `Null` to find the names to localise.
+    if normalized.trim_end().ends_with(';') && !exprs.is_empty() {
+      exprs.push(Expr::Identifier("Null".to_string()));
     }
     match exprs.len() {
       0 => {}

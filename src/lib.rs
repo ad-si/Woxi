@@ -12,6 +12,7 @@ pub mod expr_list;
 pub mod functions;
 pub mod helpers;
 pub mod lsp;
+pub mod named_characters;
 pub mod notebook;
 pub mod syntax;
 pub mod utils;
@@ -1404,6 +1405,23 @@ pub fn current_context_path() -> Vec<String> {
     .with(|s| s.borrow().last().cloned())
     .or_else(|| CONTEXT_PATH_BASE.with(|b| b.borrow().clone()))
     .unwrap_or_else(|| vec!["System`".to_string(), "Global`".to_string()])
+}
+
+/// Put `context` at the front of `$ContextPath`, as loading a package that
+/// provides it does. A context already on the path stays where it is.
+pub fn prepend_to_context_path(context: &str) {
+  let mut path = current_context_path();
+  if path.iter().any(|entry| entry == context) {
+    return;
+  }
+  path.insert(0, context.to_string());
+  CONTEXT_PATH_STACK.with(|s| {
+    let mut stack = s.borrow_mut();
+    match stack.last_mut() {
+      Some(top) => *top = path,
+      None => CONTEXT_PATH_BASE.with(|b| *b.borrow_mut() = Some(path)),
+    }
+  });
 }
 
 /// Push a new `$ContextPath` value (used by `BeginPackage[]`).

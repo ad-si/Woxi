@@ -658,3 +658,47 @@ mod relative_sub_contexts {
     );
   }
 }
+
+/// `cache = wcache` inside a package makes `cache[…]` a call of `wcache`.
+/// The value has to keep its context: the text `wcache` alone names a
+/// different, undefined symbol once the package's private context is gone.
+/// WLJS's WLX importer switches its memoiser on exactly this way.
+mod a_symbol_stored_in_a_variable_keeps_its_context {
+  use super::*;
+
+  const ALIASING_PACKAGE: &str = "BeginPackage[\"A`\"]\n\
+     aliasPub;\n\
+     Begin[\"`Private`\"]\n\
+     aliasWorker[e_, i_String] := {\"worker\", e, i}\n\
+     aliasVia = aliasWorker\n\
+     aliasPub[] := aliasVia[4, \"H\"]\n\
+     End[]\n\
+     EndPackage[]\n";
+
+  #[test]
+  fn the_alias_dispatches_to_the_private_worker() {
+    clear_state();
+    assert_eq!(
+      interpret(&format!("{ALIASING_PACKAGE}aliasPub[]")).unwrap(),
+      "{worker, 4, H}"
+    );
+    // And from outside the package, through the same alias.
+    assert_eq!(
+      interpret("A`Private`aliasVia[3, \"H\"]").unwrap(),
+      "{worker, 3, H}"
+    );
+  }
+
+  #[test]
+  fn an_alias_handed_out_of_the_package_still_works() {
+    clear_state();
+    interpret(&format!(
+      "{ALIASING_PACKAGE}Global`aliasOut = A`Private`aliasWorker;"
+    ))
+    .unwrap();
+    assert_eq!(
+      interpret("Global`aliasOut[5, \"H\"]").unwrap(),
+      "{worker, 5, H}"
+    );
+  }
+}

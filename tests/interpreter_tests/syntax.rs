@@ -12382,3 +12382,98 @@ mod ring_operator_characters {
     assert_eq!(interpret("a \\[Wedge] b \\[Wedge] c").unwrap(), "a ⋀ b ⋀ c");
   }
 }
+
+/// The named-character table is Wolfram's whole table, transcribed from the
+/// `UnicodeCharacters.tr` a Wolfram Engine ships and checked name by name
+/// against `ToCharacterCode` under wolframscript. A package that writes a
+/// character nobody anticipated — WLJS's autocomplete data writes
+/// `\[TwoWayRule]`, `\[Application]` and `\[CupCap]` inside usage strings —
+/// has to get the glyph, not a `Syntax::sntufn` message and the escape left
+/// as written.
+mod complete_named_character_table {
+  use super::*;
+
+  #[test]
+  fn the_names_wljs_writes_are_read() {
+    assert_eq!(
+      interpret(
+        "ToCharacterCode[\"\\[TwoWayRule]\\[Application]\\[CupCap]\\[DoubleStruckCapitalR]\"]"
+      )
+      .unwrap(),
+      "{61728, 62768, 8781, 63413}"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      !msgs.iter().any(|m| m.contains("sntufn")),
+      "a known name must not warn, got {msgs:?}"
+    );
+  }
+
+  /// A handful of long names carry a digit, so the reader cannot stop at the
+  /// first non-letter.
+  #[test]
+  fn a_long_name_may_contain_a_digit() {
+    assert_eq!(
+      interpret("ToCharacterCode[\"\\[Mod1Key]\\[Mod2Key]\"]").unwrap(),
+      "{63446, 63447}"
+    );
+  }
+
+  /// The `\[Raw…]` family names the ASCII punctuation, so a notebook can
+  /// write a character it cannot type.
+  #[test]
+  fn the_raw_family_names_ascii_punctuation() {
+    assert_eq!(
+      interpret("ToCharacterCode[\"\\[RawStar]\\[RawPlus]\\[RawDollar]\"]")
+        .unwrap(),
+      "{42, 43, 36}"
+    );
+  }
+
+  /// Names Wolfram has no character for still warn and stay literal.
+  #[test]
+  fn an_unknown_name_still_warns() {
+    assert_eq!(
+      interpret("StringLength[\"\\[Tab]\"]").unwrap(),
+      "6",
+      "the escape stays in the string as written"
+    );
+  }
+}
+
+/// A bracketed pattern body ends the `sym : pat : val` chain: `x : (y : z)`
+/// is `Pattern[x, Pattern[y, z]]`, while the bare `x : y : z` is the
+/// `Optional[Pattern[x, y], z]` the chain rule builds. WLJS's `MakeBoxes`
+/// upvalues are written in the bracketed form.
+mod bracketed_pattern_body {
+  use super::*;
+
+  #[test]
+  fn brackets_end_the_colon_chain() {
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[x:(y:z)]]]").unwrap(),
+      "Hold[Pattern[x, Pattern[y, z]]]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[x:(y:f[_])]]]").unwrap(),
+      "Hold[Pattern[x, Pattern[y, f[Blank[]]]]]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[x:((y:z))]]]").unwrap(),
+      "Hold[Pattern[x, Pattern[y, z]]]"
+    );
+  }
+
+  #[test]
+  fn the_bare_chain_is_unchanged() {
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[x:y:z]]]").unwrap(),
+      "Hold[Optional[Pattern[x, y], z]]"
+    );
+    // The body's own chain is still a chain.
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[x:(y:z:w)]]]").unwrap(),
+      "Hold[Pattern[x, Optional[Pattern[y, z], w]]]"
+    );
+  }
+}

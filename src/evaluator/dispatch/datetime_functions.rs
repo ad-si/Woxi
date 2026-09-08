@@ -277,6 +277,58 @@ pub fn dispatch_datetime_functions(
           &Expr::Identifier("Now".to_string()),
         ));
       }
+      // `DateObject[date, granularity]` re-tags a date that is already a
+      // `DateObject`: `DateObject[Now, "Hour"]` is the hour `Now` falls in,
+      // which is what a package memoising once an hour keys its cache on.
+      if let Expr::FunctionCall {
+        name: inner_name,
+        args: inner_args,
+      } = &args[0]
+        && inner_name == "DateObject"
+        && let Some(Expr::List(components)) = inner_args.first()
+      {
+        if args.len() == 1 {
+          return Some(Ok(args[0].clone()));
+        }
+        if let Expr::String(granularity) = &args[1]
+          && let Some(width) = granularity_component_count(granularity)
+        {
+          let mut rebuilt: Vec<Expr> = Vec::with_capacity(width);
+          for index in 0..width {
+            rebuilt.push(match components.get(index) {
+              // `"Second"` drops the fraction `"Instant"` keeps.
+              Some(Expr::Real(seconds))
+                if index == 5 && granularity == "Second" =>
+              {
+                Expr::Integer(seconds.trunc() as i128)
+              }
+              Some(component) => component.clone(),
+              // Days and months count from 1, the clock parts from 0.
+              None if index < 3 => Expr::Integer(1),
+              None => Expr::Integer(0),
+            });
+          }
+          let mut new_args = vec![Expr::List(rebuilt.into()), args[1].clone()];
+          // The calendar and offset travel with the date. A date that
+          // carries neither only grows them when the new granularity is
+          // fine enough to need them, and then the offset is `None`.
+          if width >= 4 || inner_args.len() > 2 {
+            new_args.push(
+              inner_args
+                .get(2)
+                .cloned()
+                .unwrap_or_else(|| Expr::String("Gregorian".to_string())),
+            );
+            new_args.push(
+              inner_args
+                .get(3)
+                .cloned()
+                .unwrap_or_else(|| Expr::Identifier("None".to_string())),
+            );
+          }
+          return Some(Ok(call("DateObject", new_args)));
+        }
+      }
       // DateObject[n] — n is absolute seconds since Wolfram's epoch
       // (1900-01-01 00:00:00 UTC). Convert to a calendar instant.
       #[cfg(feature = "cli")]

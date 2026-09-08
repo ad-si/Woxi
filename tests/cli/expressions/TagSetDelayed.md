@@ -34,3 +34,35 @@ Together they implement modular arithmetic, where `m[a, n]` stands for
 $ wo 'm /: m[a_, n_] + m[b_, n_] := m[Mod[a + b, n], n]; m /: c_Integer m[a_, n_] := m[Mod[c a, n], n]; m[3, 7] - m[6, 7]'
 m[4, 7]
 ```
+
+The tag has to sit where the stored rule can be found again, but the wrappers
+that only name a pattern or restrict it are transparent — which is how an
+object system writes its formatting rule:
+
+```scrut
+$ wo 'obj /: fmt[o : obj[_Symbol]] := "boxed"; fmt[obj[x]]'
+boxed
+```
+
+```scrut
+$ wo 'obj /: fmt[obj[_]?q] := 1; Length[UpValues[obj]]'
+1
+```
+
+A tag buried deeper than that has nowhere to hang the rule, and nothing is
+defined:
+
+```scrut
+$ wo 'obj /: fmt[wrap[obj[_]]] := 1; Length[UpValues[obj]]'
+
+TagSetDelayed::tagpos: Tag obj in fmt[wrap[obj[_]]] is too deep for an assigned rule to be found.
+0
+```
+
+An assignment also consults the upvalues of the symbols on its *right*, so a
+symbol can give `sym := f[…]` a meaning of its own:
+
+```scrut
+$ wo 'wrapper /: SetDelayed[s_, wrapper[a_]] := (s := held[a]); tpl := wrapper["x"]; tpl'
+held[x]
+```

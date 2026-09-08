@@ -2734,8 +2734,20 @@ pub fn evaluate_expr_to_expr_inner(
             },
           )));
         }
-        // Check if name is a variable holding an association (for nested access: assoc["a", "b"])
-        if let Some(StoredValue::Association(_)) = var_val {
+        // Check if name is a variable holding an association (for nested
+        // access: assoc["a", "b"]). A scoping construct binds its locals as
+        // ordinary expression values, so `Block[{o = <|…|>}, o["k"]]` has to
+        // reach the association through that representation too — it is how
+        // WLX hands a component its `$Options`.
+        let scoped_assoc = match &var_val {
+          Some(StoredValue::ExprVal(Expr::Association(pairs))) => {
+            Some(pairs.clone())
+          }
+          _ => None,
+        };
+        if matches!(var_val, Some(StoredValue::Association(_)))
+          || scoped_assoc.is_some()
+        {
           // Evaluate arguments and perform nested access. A `Sequence[…]`
           // among them splices first, the way it does for any other head —
           // `f[k_, rest__] := assoc[k, rest]` reaches here with the
@@ -2763,7 +2775,15 @@ pub fn evaluate_expr_to_expr_inner(
               return Ok(dispatched);
             }
           }
-          return association_nested_access(name, &evaluated_args);
+          return match scoped_assoc {
+            Some(pairs) => Ok(
+              crate::evaluator::pattern_matching::association_lookup_chain(
+                &pairs,
+                &evaluated_args,
+              ),
+            ),
+            None => association_nested_access(name, &evaluated_args),
+          };
         }
 
         // Try early dispatch for held functions
@@ -2848,8 +2868,11 @@ pub fn evaluate_expr_to_expr_inner(
         _ => {}
       }
 
-      let left_val = evaluate_expr_to_expr(left)?;
-      let right_val = evaluate_expr_to_expr(right)?;
+      // An operator always consumes its operands, so an `Unevaluated[…]`
+      // wrapper comes off here the way it does before any other head's rules
+      // run: `Unevaluated[1 + 1] + 3` is 5.
+      let left_val = strip_unevaluated(&evaluate_expr_to_expr(left)?);
+      let right_val = strip_unevaluated(&evaluate_expr_to_expr(right)?);
 
       // Splice Sequence operands into the corresponding n-ary operation, e.g.
       // `Sequence[1, 2] + Sequence[3, 4]` -> `Plus[1, 2, 3, 4]` = 10. Map
@@ -3095,10 +3118,25 @@ pub fn evaluate_expr_to_expr_inner(
         return Ok(bool_expr(true));
       }
 
+      // As with the arithmetic operators, a comparison consumes its
+      // operands, so `Unevaluated[Symbol] === Symbol` is True. Only the
+      // structural comparisons take the wrapper off here: the arithmetic
+      // ones compare the *unevaluated* content, which Woxi cannot hand them
+      // without evaluating it (see "Unevaluated" in conformance_gaps.md).
+      let structural = operators
+        .iter()
+        .all(|op| matches!(op, ComparisonOp::SameQ | ComparisonOp::UnsameQ));
       let values: Vec<Expr> = operands
         .iter()
-        .map(evaluate_expr_to_expr)
-        .collect::<Result<_, _>>()?;
+        .map(|operand| {
+          let value = evaluate_expr_to_expr(operand)?;
+          Ok(if structural {
+            strip_unevaluated(&value)
+          } else {
+            value
+          })
+        })
+        .collect::<Result<_, InterpreterError>>()?;
 
       // Mixed-operator chains (e.g. `a == b != c`, `a < b > c`) split into
       // pairwise `a op1 b && b op2 c && …` per wolframscript. Homogeneous

@@ -1728,6 +1728,28 @@ conductor/Round-2 computation), as are non-monic minimal polynomials of degree
 
 ## Expression structure and evaluation
 
+### `Unevaluated` comes off for some heads and not others
+
+The wrapper is stripped where it was verified to matter — the arithmetic and
+structural operators, `SameQ`/`UnsameQ`, `Print`, and the built-ins that
+already took it (`Length`, `Head`, `Sqrt`, `Options`, `Information`) — but
+not as the general rule Wolfram applies, which takes every `Unevaluated[…]`
+off just before the head's own rules run and puts it back if nothing was
+consumed:
+
+```sh
+wolframscript -code 'Print[Unevaluated[1] < 2]'
+# True
+woxi eval 'Unevaluated[1] < 2'
+# Unevaluated[1] < 2
+```
+
+The arithmetic comparisons are the ones this reaches. Wolfram compares the
+*unevaluated* content and answers `Unevaluated[1 + 1] == 2` with the
+comparison itself; Woxi would have to evaluate the content to compare it at
+all, so stripping there would answer `True` where Wolfram does not. The
+wrapper is therefore left in place for `==`, `<`, `>` and their relatives.
+
 ### Rubi loads and integrates, but not everything it computes agrees
 
 The [Rubi](../../rubi.md) rule base is the densest available exercise of the
@@ -1754,6 +1776,34 @@ anything about the package:
 - **The rule text recorded beside each step** keeps its `FreeQ` conditions
   and is written in linear box syntax rather than `DisplayForm`, and the
   rule numbers differ (7391 rules against 7300).
+
+### A held `;`-sequence is not bracketed inside a tighter operator
+
+```sh
+wolframscript -code 'Hold[(a; b) + c]'
+# Hold[(a; b) + c]
+woxi eval 'Hold[(a; b) + c]'
+# Hold[a; b + c]
+```
+
+`CompoundExpression` has the lowest precedence of any operator, so the
+printed form re-parses as `CompoundExpression[a, Plus[b, c]]` — a different
+expression. Inside a call it is right: `Hold[f[(a; b), c]]` prints as
+`Hold[f[a; b, c]]`, as wolframscript does.
+
+### Newline-separated statements become one `CompoundExpression`
+
+```sh
+wolframscript -code 'ToExpression["2\n3", InputForm, Hold]'
+# Hold[2, 3]
+woxi eval 'ToExpression["2\n3", InputForm, Hold]'
+# Hold[2; 3]
+```
+
+The reader turns every statement separator into a `;` before parsing, so it
+cannot tell a newline from one. A `;`-separated program agrees
+(`ToExpression["2; 3", InputForm, Hold]` is `Hold[2; 3]` in both), and so
+does a trailing `;` (`Hold[a := 1; ]`).
 
 ### `Derivative[n][f][x]` is stored flat, so structural functions see three parts
 
@@ -2220,6 +2270,23 @@ the float-noise class above.
 
 
 ## Patterns, strings and parsing
+
+### A tagged assignment cannot have a curried left-hand side
+
+```sh
+wolframscript -code 'f /: g[a_][f[_]] := 1; UpValues[f]'
+# {HoldPattern[g[a_][f[_]]] :> 1}
+woxi eval 'f /: g[a_][f[_]] := 1; UpValues[f]'
+# {HoldPattern[g[a_, f[_]]] :> 1}
+```
+
+`tag /: lhs := rhs` reads its left-hand side as a single call, so the two
+bracket groups of `g[a_][f[_]]` are merged into one argument list and the
+rule that gets stored fires on `g[1, f[2]]` instead. The upvalue store keys a
+rule by one head and a flat parameter list, which a subvalue-shaped rule has
+nowhere to go in; `g[a_][f[_]] := 1` *without* a tag is fine (it becomes a
+`SubValues` entry). Reached through `Hold`/`ReleaseHold` the same definition
+reports `TagSetDelayed::tagpos` and defines nothing.
 
 ### `x_ y_` is mis-parsed
 

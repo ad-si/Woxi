@@ -1135,6 +1135,27 @@ fn try_sub_value_curried_match(
   None
 }
 
+/// Nest `funcs` around `args` in the order given and evaluate the result.
+///
+/// `Composition[f, g][x]` is the *expression* `f[g[x]]`, so it is assembled
+/// whole and evaluated once: applying the functions one at a time would
+/// evaluate `g[x]` before `f`'s hold attributes could reach it, and WLX's
+/// `ToExpression[…, InputForm, FakeHold @* ToString]` depends on the
+/// `ToString` staying unevaluated inside the `HoldAll` `FakeHold`.
+fn compose_and_evaluate<'a>(
+  funcs: impl Iterator<Item = &'a Expr>,
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let mut built: Vec<Expr> = args.to_vec();
+  for func in funcs {
+    built = vec![crate::evaluator::pattern_matching::rebuild_call_with_head(
+      func.clone(),
+      built,
+    )];
+  }
+  crate::evaluator::evaluate_expr_to_expr(&built[0])
+}
+
 pub fn apply_curried_call(
   func: &Expr,
   args: &[Expr],
@@ -2187,20 +2208,10 @@ pub fn apply_curried_call(
         evaluate_function_call_ast(name, &new_args)
       } else if name == "Composition" && !func_args.is_empty() {
         // Composition[f, g, h][x] applies functions right-to-left: f[g[h[x]]]
-        let mut result = args.to_vec();
-        for f in func_args.iter().rev() {
-          let intermediate = apply_curried_call(f, &result)?;
-          result = vec![intermediate];
-        }
-        Ok(result.into_iter().next().unwrap())
+        Ok(compose_and_evaluate(func_args.iter().rev(), args)?)
       } else if name == "RightComposition" && !func_args.is_empty() {
         // RightComposition[f, g, h][x] applies functions left-to-right: h[g[f[x]]]
-        let mut result = args.to_vec();
-        for f in func_args {
-          let intermediate = apply_curried_call(f, &result)?;
-          result = vec![intermediate];
-        }
-        Ok(result.into_iter().next().unwrap())
+        Ok(compose_and_evaluate(func_args.iter(), args)?)
       } else if (name == "MapAt" || name == "SubsetMap")
         && func_args.len() == 2
         && args.len() == 1

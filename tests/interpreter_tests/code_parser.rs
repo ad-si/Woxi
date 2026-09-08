@@ -32,7 +32,8 @@ mod code_tokenize {
       "a /. b :> c // d",
     ] {
       let joined = interpret(&format!(
-        "StringJoin[Cases[CodeParser`CodeTokenize[{}], \
+        "Needs[\"CodeParser`\"]\n\
+         StringJoin[Cases[CodeParser`CodeTokenize[{}], \
            LeafNode[_, s_String, _] :> s]]",
         wl_string(source)
       ))
@@ -49,7 +50,7 @@ mod code_tokenize {
     clear_state();
     assert_eq!(
       interpret(
-        "ToString[Cases[CodeParser`CodeTokenize[\"f[1] (* c *)\"], \
+        "Needs[\"CodeParser`\"]\nToString[Cases[CodeParser`CodeTokenize[\"f[1] (* c *)\"], \
            LeafNode[k_, _, _] :> k], InputForm]"
       )
       .unwrap(),
@@ -64,7 +65,7 @@ mod code_tokenize {
     clear_state();
     assert_eq!(
       interpret(
-        "ToString[Cases[CodeParser`CodeTokenize[\"a===b\"], \
+        "Needs[\"CodeParser`\"]\nToString[Cases[CodeParser`CodeTokenize[\"a===b\"], \
            LeafNode[k_, _, _] :> k], InputForm]"
       )
       .unwrap(),
@@ -95,7 +96,7 @@ mod code_tokenize {
     ] {
       assert_eq!(
         interpret(&format!(
-          "ToString[Cases[CodeParser`CodeTokenize[{}], \
+          "Needs[\"CodeParser`\"]\nToString[Cases[CodeParser`CodeTokenize[{}], \
              LeafNode[k_, _, _] :> k], InputForm]",
           wl_string(source)
         ))
@@ -113,7 +114,7 @@ mod code_tokenize {
     clear_state();
     assert_eq!(
       interpret(
-        "ToString[Cases[CodeParser`CodeTokenize[\"a[[1]]\"], \
+        "Needs[\"CodeParser`\"]\nToString[Cases[CodeParser`CodeTokenize[\"a[[1]]\"], \
            LeafNode[k_, _, _] :> k], InputForm]"
       )
       .unwrap(),
@@ -136,7 +137,7 @@ mod code_tokenize {
     ] {
       assert_eq!(
         interpret(&format!(
-          "ToString[Cases[CodeParser`CodeTokenize[{}], \
+          "Needs[\"CodeParser`\"]\nToString[Cases[CodeParser`CodeTokenize[{}], \
              LeafNode[k_, _, _] :> k], InputForm]",
           wl_string(source)
         ))
@@ -154,7 +155,7 @@ mod code_tokenize {
     clear_state();
     assert_eq!(
       interpret(
-        "ToString[Cases[CodeParser`CodeTokenize[\"a   b\"], \
+        "Needs[\"CodeParser`\"]\nToString[Cases[CodeParser`CodeTokenize[\"a   b\"], \
            LeafNode[k_, _, _] :> k], InputForm]"
       )
       .unwrap(),
@@ -182,7 +183,7 @@ mod code_tokenize {
     ] {
       assert_eq!(
         interpret(&format!(
-          "ToString[Cases[CodeParser`CodeTokenize[{}], \
+          "Needs[\"CodeParser`\"]\nToString[Cases[CodeParser`CodeTokenize[{}], \
              LeafNode[k_, _, _] :> k], InputForm]",
           wl_string(source)
         ))
@@ -212,7 +213,7 @@ mod code_tokenize {
     ] {
       assert_eq!(
         interpret(&format!(
-          "ToString[Cases[CodeParser`CodeTokenize[{}], \
+          "Needs[\"CodeParser`\"]\nToString[Cases[CodeParser`CodeTokenize[{}], \
              LeafNode[k_, _, _] :> k], InputForm]",
           wl_string(source)
         ))
@@ -234,7 +235,7 @@ mod source_conventions {
     clear_state();
     assert_eq!(
       interpret(
-        "ToString[Cases[CodeParser`CodeConcreteParse[\"a\\nbb\\nc\", \
+        "Needs[\"CodeParser`\"]\nToString[Cases[CodeParser`CodeConcreteParse[\"a\\nbb\\nc\", \
            CodeParser`SourceConvention -> \"SourceCharacterIndex\"][[2]], \
            LeafNode[Token`Newline, _, a_] :> Lookup[a, Source, Nothing]], \
            InputForm]"
@@ -250,7 +251,7 @@ mod source_conventions {
     clear_state();
     assert_eq!(
       interpret(
-        "ToString[Cases[CodeParser`CodeConcreteParse[\"a\\nbb\"][[2]], \
+        "Needs[\"CodeParser`\"]\nToString[Cases[CodeParser`CodeConcreteParse[\"a\\nbb\"][[2]], \
            LeafNode[Token`Newline, _, a_] :> Lookup[a, Source, Nothing]], \
            InputForm]"
       )
@@ -266,7 +267,7 @@ mod source_conventions {
     clear_state();
     assert_eq!(
       interpret(
-        "str = \"a\\nbb\\nc\"; \
+        "Needs[\"CodeParser`\"]\nstr = \"a\\nbb\\nc\"; \
          Select[Select[(StringTake[str, \
            Partition[Join[{1}, #, {StringLength[str]}], 2]] &@ \
            Flatten[{#1 - 1, #2 + 1} & @@@ Sort@Cases[ \
@@ -290,7 +291,7 @@ mod code_parse {
     for source in ["f[x_] := x^2", "1 + 2", "{a, b, c}", "Module[{x = 1}, x]"] {
       assert_eq!(
         interpret(&format!(
-          "Length[Cases[CodeParser`CodeParse[{}], \
+          "Needs[\"CodeParser`\"]\nLength[Cases[CodeParser`CodeParse[{}], \
              (ErrorNode | AbstractSyntaxErrorNode | UnterminatedGroupNode \
               | UnterminatedCallNode)[___], Infinity]]",
           wl_string(source)
@@ -307,7 +308,7 @@ mod code_parse {
     clear_state();
     assert_eq!(
       interpret(
-        "ToString[Cases[CodeParser`CodeParse[\"f[x_] := ]\"], \
+        "Needs[\"CodeParser`\"]\nToString[Cases[CodeParser`CodeParse[\"f[x_] := ]\"], \
            ErrorNode[_, _, a_] :> Lookup[a, Source, Nothing], Infinity], \
            InputForm]"
       )
@@ -321,7 +322,7 @@ mod code_parse {
   fn the_reported_line_follows_the_source() {
     clear_state();
     let reported = interpret(
-      "ToString[Cases[CodeParser`CodeParse[\"a = 1\\nb = ]\"], \
+      "Needs[\"CodeParser`\"]\nToString[Cases[CodeParser`CodeParse[\"a = 1\\nb = ]\"], \
          ErrorNode[_, _, s_] :> First[Lookup[s, Source, {{0, 0}}]], \
          Infinity], InputForm]",
     )
@@ -342,9 +343,65 @@ mod needs_the_context {
   fn the_context_is_available() {
     clear_state();
     assert_eq!(
-      interpret("Needs[\"CodeParser`\"]; Head[CodeParser`CodeTokenize[\"1\"]]")
+      interpret("Needs[\"CodeParser`\"]\nHead[CodeParser`CodeTokenize[\"1\"]]")
         .unwrap(),
       "List"
+    );
+  }
+
+  /// Loading the context puts it on `$ContextPath` and brings its names into
+  /// being, so a package that writes `LeafNode` means
+  /// `CodeParser`LeafNode` — the head the nodes actually carry. WLX cuts a
+  /// `.wlx` file with exactly that pattern.
+  #[test]
+  fn its_names_resolve_in_the_context() {
+    clear_state();
+    assert_eq!(
+      interpret("Needs[\"CodeParser`\"]\nContext[LeafNode]").unwrap(),
+      "CodeParser`"
+    );
+    assert_eq!(
+      interpret("Needs[\"CodeParser`\"]\nLeafNode === CodeParser`LeafNode")
+        .unwrap(),
+      "True"
+    );
+  }
+}
+
+/// The concrete tree's *top* level is the top level of the source: a bracket
+/// collects its tokens under a `GroupNode`, so a newline inside one is not a
+/// place a statement ends. WLX splits a `.wlx` file at the newlines it finds
+/// at that level.
+mod bracketed_runs_are_grouped {
+  use super::*;
+
+  #[test]
+  fn a_newline_inside_a_bracket_is_not_at_the_top_level() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Needs[\"CodeParser`\"]\nLength[Cases[\
+           CodeParser`CodeConcreteParse[\"f[1,\\n2]\\ng\\n\", \
+             CodeParser`SourceConvention -> \"SourceCharacterIndex\"][[2]], \
+           LeafNode[Token`Newline, _, _]]]"
+      )
+      .unwrap(),
+      "2",
+      "only the two newlines outside the brackets are at the top level"
+    );
+  }
+
+  #[test]
+  fn a_bracket_becomes_a_group_node() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Needs[\"CodeParser`\"]\nToString[Cases[\
+           CodeParser`CodeConcreteParse[\"f[1] {2} (3)\"][[2]], \
+           GroupNode[k_, _, _] :> k, Infinity], InputForm]"
+      )
+      .unwrap(),
+      "{GroupSquare, List, GroupParen}"
     );
   }
 }

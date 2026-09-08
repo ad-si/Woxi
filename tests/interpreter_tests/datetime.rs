@@ -4396,3 +4396,91 @@ mod date_object_granularity {
     );
   }
 }
+
+/// A `DateObject` is itself a date specification, so `DateObject[date,
+/// granularity]` re-tags one: `DateObject[Now, "Hour"]` is the hour `Now`
+/// falls in — the key a package memoising once an hour caches on. The
+/// calendar and offset travel with the date; a date that carries neither
+/// only grows them when the new granularity is fine enough to need them.
+/// Verified against wolframscript.
+mod retagging_an_existing_date {
+  use super::*;
+
+  const INSTANT: &str = "DateObject[{2026, 9, 8, 10, 14, 50.5}]";
+
+  #[test]
+  fn a_coarser_granularity_truncates_the_components() {
+    assert_eq!(
+      interpret(&format!("DateObject[{INSTANT}, \"Hour\"]")).unwrap(),
+      "DateObject[{2026, 9, 8, 10}, Hour, Gregorian, 0.]"
+    );
+    assert_eq!(
+      interpret(&format!("DateObject[{INSTANT}, \"Minute\"]")).unwrap(),
+      "DateObject[{2026, 9, 8, 10, 14}, Minute, Gregorian, 0.]"
+    );
+    assert_eq!(
+      interpret(&format!("DateObject[{INSTANT}, \"Day\"]")).unwrap(),
+      "DateObject[{2026, 9, 8}, Day, Gregorian, 0.]"
+    );
+    assert_eq!(
+      interpret(&format!("DateObject[{INSTANT}, \"Month\"]")).unwrap(),
+      "DateObject[{2026, 9}, Month, Gregorian, 0.]"
+    );
+    assert_eq!(
+      interpret(&format!("DateObject[{INSTANT}, \"Year\"]")).unwrap(),
+      "DateObject[{2026}, Year, Gregorian, 0.]"
+    );
+  }
+
+  /// `"Second"` drops the fraction that `"Instant"` keeps.
+  #[test]
+  fn second_and_instant_differ_in_the_fraction() {
+    assert_eq!(
+      interpret(&format!("DateObject[{INSTANT}, \"Second\"]")).unwrap(),
+      "DateObject[{2026, 9, 8, 10, 14, 50}, Second, Gregorian, 0.]"
+    );
+    assert_eq!(
+      interpret(&format!("DateObject[{INSTANT}, \"Instant\"]")).unwrap(),
+      "DateObject[{2026, 9, 8, 10, 14, 50.5}, Instant, Gregorian, 0.]"
+    );
+  }
+
+  /// A month has no calendar or offset of its own; refining it to an hour
+  /// pads the components and gives the offset as `None`.
+  #[test]
+  fn refining_a_coarse_date_pads_it() {
+    assert_eq!(
+      interpret("DateObject[DateObject[{2026, 9}], \"Day\"]").unwrap(),
+      "DateObject[{2026, 9, 1}, Day]"
+    );
+    assert_eq!(
+      interpret("DateObject[DateObject[{2026, 9}], \"Hour\"]").unwrap(),
+      "DateObject[{2026, 9, 1, 0}, Hour, Gregorian, None]"
+    );
+  }
+
+  #[test]
+  fn a_date_alone_is_returned_unchanged() {
+    assert_eq!(
+      interpret(&format!("DateObject[{INSTANT}]")).unwrap(),
+      "DateObject[{2026, 9, 8, 10, 14, 50.5}, Instant, Gregorian, 0.]"
+    );
+    assert_eq!(
+      interpret(&format!("DateObjectQ[DateObject[{INSTANT}, \"Hour\"]]"))
+        .unwrap(),
+      "True"
+    );
+  }
+
+  /// Two dates re-tagged to the same hour are the same date — this is what
+  /// makes the memoisation idiom `cache[expr, DateObject[Now, "Hour"]]`
+  /// find its entry on the second call instead of recomputing.
+  #[test]
+  fn the_same_hour_compares_equal() {
+    assert_eq!(
+      interpret("DateObject[Now, \"Hour\"] == DateObject[Now, \"Hour\"]")
+        .unwrap(),
+      "True"
+    );
+  }
+}
