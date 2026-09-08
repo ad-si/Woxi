@@ -774,8 +774,52 @@ pub fn evaluate_poly(coeffs: &[i128], x: i128) -> i128 {
   result
 }
 
+/// Divisor lists computed so far, keyed by the number they belong to.
+///
+/// The rational-root search asks for the divisors of the same coefficient
+/// once per candidate root, and a `Simplify` over an expression with big
+/// rational coefficients — the exact probe points a `Limit` walks towards
+/// its target, for one — repeats that for every subexpression it rewrites.
+/// One `Limit[(z - 1) Zeta[z], z -> 1]` asked for the divisors of the same
+/// seventeen 11-to-35-digit numbers 800 times over, and each miss walks a
+/// million trial divisions of a 128-bit integer.
+fn divisor_cache(
+  n: i128,
+  compute: impl FnOnce(i128) -> Vec<i128>,
+) -> Vec<i128> {
+  use std::cell::RefCell;
+  use std::collections::HashMap;
+
+  /// Entries kept before the cache is dropped. The numbers come from the
+  /// expression being simplified, so an unbounded cache would grow with a
+  /// long-running session rather than with the work at hand.
+  const CAPACITY: usize = 1024;
+
+  thread_local! {
+    static CACHE: RefCell<HashMap<i128, Vec<i128>>> =
+      RefCell::new(HashMap::new());
+  }
+  if let Some(hit) = CACHE.with(|cache| cache.borrow().get(&n).cloned()) {
+    return hit;
+  }
+  let divisors = compute(n);
+  CACHE.with(|cache| {
+    let mut cache = cache.borrow_mut();
+    if cache.len() >= CAPACITY {
+      cache.clear();
+    }
+    cache.insert(n, divisors.clone());
+  });
+  divisors
+}
+
 /// Get all positive divisors of n.
 fn integer_divisors(n: i128) -> Vec<i128> {
+  divisor_cache(n, integer_divisors_uncached)
+}
+
+/// [`integer_divisors`] without the memoization.
+fn integer_divisors_uncached(n: i128) -> Vec<i128> {
   // Trial division stops here rather than at `sqrt(n)`: a `Simplify` inside a
   // rule-based integration reaches this with 25-digit coefficients, and
   // walking every integer below their square root never finishes. Whatever
@@ -791,7 +835,16 @@ fn integer_divisors(n: i128) -> Vec<i128> {
   let mut factors: Vec<(i128, u32)> = Vec::new();
   let mut p = 2i128;
   while p <= TRIAL_LIMIT && p.saturating_mul(p) <= rest {
-    if rest % p == 0 {
+    // Trial division of a number that fits in 64 bits is a single machine
+    // instruction; of one that does not, a called-out software routine an
+    // order of magnitude slower. Most of the million steps below divide a
+    // remainder that has long since shrunk into 64 bits, so take that path
+    // whenever it applies.
+    let divides = match (u64::try_from(rest), u64::try_from(p)) {
+      (Ok(rest64), Ok(p64)) => rest64 % p64 == 0,
+      _ => rest % p == 0,
+    };
+    if divides {
       let mut multiplicity = 0;
       while rest % p == 0 {
         rest /= p;
@@ -4444,5 +4497,50 @@ fn build_multivariate_result(overall: i128, factors: &[(Expr, usize)]) -> Expr {
     // order; running through `times_ast` applies the canonical Times
     // sort that Times itself uses.
     times_ast(&result_factors).unwrap_or_else(|_| build_product(result_factors))
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::{integer_divisors, integer_divisors_uncached};
+
+  /// Every positive divisor of `n`, found the obvious way.
+  fn divisors_by_brute_force(n: i128) -> Vec<i128> {
+    (1..=n.abs()).filter(|d| n.abs() % d == 0).collect()
+  }
+
+  #[test]
+  fn the_divisors_of_a_small_number_are_all_of_them() {
+    for n in [1, 2, 12, -12, 97, 360, 1024, 5040, 999_983] {
+      assert_eq!(
+        integer_divisors(n),
+        divisors_by_brute_force(n),
+        "divisors of {n}"
+      );
+    }
+    // Zero has no divisor list to speak of; the caller only needs one entry.
+    assert_eq!(integer_divisors(0), vec![1]);
+  }
+
+  #[test]
+  fn memoizing_the_divisors_does_not_change_them() {
+    // Including the numbers a `Limit` towards a pole asks about again and
+    // again — the exact rationals of its probe points, up to 35 digits.
+    for n in [
+      0,
+      1,
+      -12,
+      360,
+      68_717_248_529,
+      150_094_628_194_290_239,
+      4_722_366_480_653_442_089_219,
+      22_528_399_544_939_150_079_832_048_061_255_039,
+    ] {
+      let expected = integer_divisors_uncached(n);
+      // The first call computes, the second answers from the cache, and
+      // both must agree with the uncached result.
+      assert_eq!(integer_divisors(n), expected, "first call for {n}");
+      assert_eq!(integer_divisors(n), expected, "second call for {n}");
+    }
   }
 }

@@ -72,6 +72,58 @@
     (`"a/b"`) instead of leaving the call unevaluated, and
     `FileNameSplit["a//b"]` keeps the interior empty piece.
 
+- The rational-root search remembers the divisor lists it computes, and
+    trial-divides in 64-bit arithmetic wherever the remainder fits.
+    `Residue[Zeta[z], {z, 1}]` walked a million 128-bit trial divisions for
+    each of the same seventeen 11-to-35-digit numbers, 800 times over — the
+    exact rationals of the probe points a `Limit` takes towards its pole,
+    which reach `Factor` through `Simplify`'s `Cancel`. The five residues of
+    the `zeta_pole_residues` test took 16.2 s together, over the 20 s
+    per-test limit under CI's parallel load and so red on `main` since
+    c5658a3; they now take 4.2 s, with no pathological loop left in the
+    profile (the rest is ordinary symbolic evaluation). Neither change
+    alters a single divisor list.
+
+- `woxi lsp` gained the four editor features that were still missing:
+    semantic highlighting, formatting, code actions, and the spelling
+    hints the code actions fix.
+
+    Semantic tokens classify a file by what its names mean rather than by
+    how they look — a built-in, a symbol the file defines itself, the
+    parameter of a definition (`x` in `f[x_] := x^2`, wherever it occurs
+    in that definition) or the slot of a pure function — which is what an
+    editor's own grammar cannot know.
+
+    Formatting normalizes the spacing between tokens and the indentation
+    of every line, and moves no line break at all: an expression written
+    across six lines stays across six lines. That also means the formatted
+    file has the same lines as the original, so an editor gets one edit
+    per changed line and range formatting is exact. Every result is
+    checked against its input before it is handed back — same tokens, same
+    line breaks, no two atoms run together, and, for a file that reads as
+    an expression at all, the same expression — and a result that fails
+    the check is dropped and the file left as it was. Formatting all 607
+    scripts in `tests/scripts` passes that check, and each one still runs
+    to the same output.
+
+    The new `spelling` diagnostic points out a capitalized name that is a
+    typo away from a `System`` symbol (`Lenght` for `Length`, measured
+    with the interpreter's own `DamerauLevenshteinDistance`, so a
+    transposition counts as the single edit it is), and a code action
+    corrects it — one occurrence, or every one in the file under
+    `source.fixAll`. Names the file defines or binds as a pattern, and
+    lowercase names, are the author's own and never flagged.
+
+    Several lexical gaps in the language server's tokenizer surfaced while
+    building this and are fixed: a number may now start with its decimal
+    point (`.7`), a slot or output reference is one token rather than a
+    punctuation mark followed by a symbol (`#1`, `##2`, `#name`, `%3`),
+    `<<`, `>>`, `>>>`, `//=` and `/:` are read as the operators they are
+    rather than as two tokens each, and comments are kept by the scanner
+    instead of being dropped before anything can see them. The first two
+    also stop `#name` from being reported as an unimplemented built-in and
+    `.7` from being read as a dot applied to a `7`.
+
 - `woxi lsp` starts a Language Server Protocol server for the Wolfram
     Language, so any editor with an LSP client can check and explore
     Woxi scripts. It publishes diagnostics (syntax errors, and warnings

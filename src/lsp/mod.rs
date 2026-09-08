@@ -4,14 +4,21 @@
 //! The server speaks LSP over stdin/stdout, which is what editors expect
 //! from a command they launch themselves. It provides
 //!
-//! - diagnostics: syntax errors from Woxi's own grammar, plus warnings on
+//! - diagnostics: syntax errors from Woxi's own grammar, warnings on
 //!   symbols this interpreter does not implement (so a script's
-//!   unsupported parts are visible before running it),
+//!   unsupported parts are visible before running it), and hints on names
+//!   that are one typo away from a built-in,
 //! - hover documentation and completion for every `System`` symbol, drawn
 //!   from the same `functions.csv` registry the interpreter uses, and for
 //!   the symbols the edited file defines itself,
 //! - go to definition, find references, occurrence highlighting and the
-//!   document outline, computed from the file's assignments.
+//!   document outline, computed from the file's assignments,
+//! - semantic highlighting, which tells a file's own definitions and the
+//!   parameters of a definition apart from the built-ins around them,
+//! - formatting, which normalizes the spacing and indentation of a file
+//!   without moving a single line break (see [`format`]),
+//! - code actions, which correct a misspelled built-in in one place or
+//!   throughout the file.
 //!
 //! Everything is derived from a forgiving tokeniser rather than the full
 //! parser, so the answers stay useful while a file is mid-edit and does
@@ -20,6 +27,7 @@
 //! [Language Server Protocol]: https://microsoft.github.io/language-server-protocol/
 
 pub mod analysis;
+pub mod format;
 pub mod protocol;
 mod server;
 
