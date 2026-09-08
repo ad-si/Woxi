@@ -12346,3 +12346,39 @@ mod ellipsis_characters_are_symbols {
     );
   }
 }
+
+/// The symbolic ring operators are ordinary characters as well as operators.
+/// Rubi prints `\[Star]` between a coefficient and an integral, so reading one
+/// inside a string must give the glyph rather than a `Syntax::sntufn` message
+/// and the escape left as written. Verified against wolframscript.
+mod ring_operator_characters {
+  use super::*;
+
+  #[test]
+  fn they_read_as_single_characters_in_strings() {
+    assert_eq!(
+      interpret(
+        "ToCharacterCode[\"\\[CirclePlus]\\[CircleMinus]\\[CircleTimes]\\[CircleDot]\\[Star]\\[Diamond]\\[SmallCircle]\\[Wedge]\\[Vee]\"]"
+      )
+      .unwrap(),
+      "{8853, 8854, 8855, 8857, 8902, 8900, 8728, 8896, 8897}"
+    );
+    assert_eq!(interpret("StringLength[\"\\[Star]\\[Vee]\"]").unwrap(), "2");
+    assert_eq!(
+      interpret("\"2/3 \" <> \"\\[Star]\" <> \" Int\"").unwrap(),
+      "2/3 ⋆ Int"
+    );
+  }
+
+  #[test]
+  fn they_still_parse_as_infix_operators() {
+    assert_eq!(
+      interpret(
+        "{Head[a \\[Star] b], Head[a \\[CirclePlus] b], Head[a \\[SmallCircle] b], Head[a \\[Diamond] b], Head[a \\[CircleDot] b], Head[a \\[CircleMinus] b], Head[a \\[CircleTimes] b], Head[a \\[Vee] b]}"
+      )
+      .unwrap(),
+      "{Star, CirclePlus, SmallCircle, Diamond, CircleDot, CircleMinus, CircleTimes, Vee}"
+    );
+    assert_eq!(interpret("a \\[Wedge] b \\[Wedge] c").unwrap(), "a ⋀ b ⋀ c");
+  }
+}

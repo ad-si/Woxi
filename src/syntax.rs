@@ -452,6 +452,19 @@ pub fn named_char_to_unicode(name: &str) -> Option<&'static str> {
     // `\[Backslash]` is the set-minus glyph ∖ (U+2216), not the ASCII `\`:
     // `ToCharacterCode["\[Backslash]"]` is `{8726}`.
     "Backslash" => "\u{2216}",
+    // The symbolic ring operators the parser already reads as infix operators
+    // (`a \[CirclePlus] b` → `CirclePlus[a, b]`). They are ordinary characters
+    // too, so a package that only prints one — Rubi writes its `Star` between
+    // a coefficient and an integral — must get the glyph, not a message.
+    "CirclePlus" => "\u{2295}",
+    "CircleMinus" => "\u{2296}",
+    "CircleTimes" => "\u{2297}",
+    "CircleDot" => "\u{2299}",
+    "Star" => "\u{22C6}",
+    "Diamond" => "\u{22C4}",
+    "SmallCircle" => "\u{2218}",
+    "Wedge" => "\u{22C0}",
+    "Vee" => "\u{22C1}",
     // `\[Equal]` is the typeset `==`; it has its own private-use code point
     // rather than reusing the ASCII `=` (which is `Set`).
     "Equal" => "\u{F431}",

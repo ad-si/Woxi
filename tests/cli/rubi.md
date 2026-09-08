@@ -123,6 +123,30 @@ first one — which is what the *IntWithStepsOfTeXForm* notebook builds its
 `aligned` environment from.
 
 
+## Typesetting the steps with MaTeX
+
+[MaTeX] turns that TeX back into graphics by running LaTeX on it and importing
+the resulting PDF, and it runs on Woxi as it ships. Its release paclet is a ZIP
+archive like Rubi's; it needs `pdflatex` (with the `standalone` class) and
+Ghostscript 9.15 or later, which it looks for in the usual macOS locations:
+
+```wolfram
+Get["MaTeX-1.7.10/MaTeX.m"];
+ConfigureMaTeX[
+  "pdfLaTeX" -> StringTrim@RunProcess[{"which", "pdflatex"}, "StandardOutput"],
+  "Ghostscript" -> StringTrim@RunProcess[{"which", "gs"}, "StandardOutput"]];
+MaTeX["\\int \\frac{1}{x} \\, \\mathrm{d}x = \\log (x)"]
+(* -Graphics- *)
+```
+
+The result is ordinary graphics, so outside a front end it can be `Export`ed.
+Running the *IntWithStepsOfTeXForm* notebook this way — `woxi run` on the
+notebook, Rubi and MaTeX unpacked beside it — typesets all four of its
+examples.
+
+[MaTeX]: https://github.com/szhorvat/MaTeX
+
+
 ## What does not work yet
 
 Rubi loads unmodified and integrates, but it is not fully supported. On a
