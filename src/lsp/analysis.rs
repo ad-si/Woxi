@@ -2,10 +2,12 @@
 //!
 //! The language server must answer questions about code that is still being
 //! typed, i.e. code that usually does not parse. So instead of the pest
-//! grammar it works on a forgiving token stream: comments and strings are
-//! skipped, everything else is classified just precisely enough to find
-//! symbols and assignments. The grammar is still used — but only to report
-//! syntax errors (see [`diagnostics`]).
+//! grammar it works on a forgiving token stream: strings and comments are
+//! single tokens, everything else is classified just precisely enough to
+//! find symbols and assignments, to highlight them ([`semantic_tokens`])
+//! and to say which of them are misspellings of a built-in
+//! ([`spelling_suggestion`]). The grammar is still used — but only to
+//! report syntax errors (see [`diagnostics`]).
 
 use crate::evaluator::functions::{
   ImplementationStatus, implementation_status,
@@ -26,6 +28,12 @@ pub enum TokenKind {
   Close,
   /// Anything else: operators, `,`, `;`, `#`, `&`, …
   Operator,
+  /// A `(* … *)` comment, including its delimiters.
+  ///
+  /// [`tokenize`] drops these — everything that reasons about the code
+  /// itself is easier to write without them — so only [`scan`], and with
+  /// it the highlighter and the formatter, ever sees one.
+  Comment,
 }
 
 /// A lexical token, addressed by byte offsets into the source it came from.
@@ -46,10 +54,10 @@ impl Token {
 /// Multi-character operators, longest first so that greedy matching never
 /// splits e.g. `===` into `==` and `=`.
 const OPERATORS: &[&str] = &[
-  "^:=", "//@", "//.", "|->", "===", "=!=", "@@@", "...", ";;", ":=", "::",
-  "=.", "==", "<=", ">=", "!=", "->", ":>", "/.", "/;", "/@", "//", "@@", "@*",
-  "**", "++", "--", "+=", "-=", "*=", "/=", "^=", "&&", "||", "<>", "~~", "..",
-  "<|", "|>", "*^", "^^",
+  "^:=", "//@", "//.", "//=", "|->", "===", "=!=", "@@@", "...", ">>>", ";;",
+  ":=", "::", "=.", "==", "<=", ">=", "!=", "->", ":>", "/.", "/;", "/@", "/:",
+  "//", "@@", "@*", "**", "++", "--", "+=", "-=", "*=", "/=", "^=", "&&", "||",
+  "<>", "~~", "..", "<<", ">>", "<|", "|>", "*^", "^^",
 ];
 
 fn is_symbol_start(c: char) -> bool {
@@ -60,11 +68,12 @@ fn is_symbol_continuation(c: char) -> bool {
   c.is_alphanumeric() || c == '$' || c == '`'
 }
 
-/// Split `source` into tokens, dropping whitespace and `(* comments *)`.
+/// Split `source` into tokens, dropping whitespace but keeping
+/// `(* comments *)`.
 ///
 /// Never fails: unterminated strings and comments simply run to the end of
 /// the input, which is exactly the state a file is in while being typed.
-pub fn tokenize(source: &str) -> Vec<Token> {
+pub fn scan(source: &str) -> Vec<Token> {
   let chars: Vec<(usize, char)> = source.char_indices().collect();
   let offset_at = |i: usize| chars.get(i).map_or(source.len(), |&(o, _)| o);
   let char_at = |i: usize| chars.get(i).map(|&(_, c)| c);
@@ -96,6 +105,11 @@ pub fn tokenize(source: &str) -> Vec<Token> {
           _ => i += 1,
         }
       }
+      tokens.push(Token {
+        kind: TokenKind::Comment,
+        start,
+        end: offset_at(i),
+      });
       continue;
     }
 
@@ -120,7 +134,10 @@ pub fn tokenize(source: &str) -> Vec<Token> {
       continue;
     }
 
-    if c.is_ascii_digit() {
+    // A number, which may start with its decimal point: `.5` is `0.5`.
+    if c.is_ascii_digit()
+      || (c == '.' && char_at(i + 1).is_some_and(|c| c.is_ascii_digit()))
+    {
       while char_at(i).is_some_and(|c| c.is_ascii_digit() || c == '.') {
         i += 1;
       }
@@ -176,6 +193,30 @@ pub fn tokenize(source: &str) -> Vec<Token> {
       continue;
     }
 
+    // Slots (`#`, `##2`, `#name`) and output references (`%`, `%%%`,
+    // `%3`) are single tokens: their parts only mean anything glued
+    // together, and the name of `#name` is not a symbol of its own.
+    if c == '#' || c == '%' {
+      while char_at(i) == Some(c) {
+        i += 1;
+      }
+      if c == '#' {
+        while char_at(i).is_some_and(is_symbol_continuation) {
+          i += 1;
+        }
+      } else {
+        while char_at(i).is_some_and(|c| c.is_ascii_digit()) {
+          i += 1;
+        }
+      }
+      tokens.push(Token {
+        kind: TokenKind::Operator,
+        start,
+        end: offset_at(i),
+      });
+      continue;
+    }
+
     let rest = &source[start..];
     let matched = OPERATORS.iter().find(|op| rest.starts_with(**op));
     let text = match matched {
@@ -195,6 +236,19 @@ pub fn tokenize(source: &str) -> Vec<Token> {
   }
 
   tokens
+}
+
+/// Split `source` into tokens, dropping whitespace and `(* comments *)`.
+///
+/// This is [`scan`] without the comments: a comment can appear between any
+/// two tokens, so code that looks at what follows what — finding
+/// assignments, deciding where a statement ends — would have to skip them
+/// at every step.
+pub fn tokenize(source: &str) -> Vec<Token> {
+  scan(source)
+    .into_iter()
+    .filter(|token| token.kind != TokenKind::Comment)
+    .collect()
 }
 
 /// Whether a definition assigns to a symbol on its own (`x = 1`) or to a
@@ -359,6 +413,7 @@ pub fn occurrences(source: &str, tokens: &[Token], name: &str) -> Vec<Token> {
 pub enum Severity {
   Error = 1,
   Warning = 2,
+  Information = 3,
 }
 
 /// A problem found in a document, addressed by byte offsets.
@@ -386,7 +441,10 @@ pub fn diagnostics(
   if let Some(error) = syntax_error(source) {
     return vec![error];
   }
-  unsupported_builtins(source, tokens, definitions)
+  let mut diagnostics = unsupported_builtins(source, tokens, definitions);
+  diagnostics.extend(misspelled_symbols(source, tokens, definitions));
+  diagnostics.sort_by_key(|diagnostic| diagnostic.range);
+  diagnostics
 }
 
 /// Run the Wolfram grammar over `source` and turn a parse failure into a
@@ -551,4 +609,368 @@ impl LineIndex {
     }
     offset.min(line_end)
   }
+}
+
+/// The semantic token types this server reports, in the order the LSP
+/// legend lists them: a token's type is sent as an index into this table.
+pub const SEMANTIC_TOKEN_TYPES: &[&str] = &[
+  "comment",
+  "string",
+  "number",
+  "operator",
+  "function",
+  "variable",
+  "parameter",
+  "property",
+];
+
+/// The semantic token modifiers this server reports, in legend order: a
+/// token's modifiers are sent as a bit set over this table.
+pub const SEMANTIC_TOKEN_MODIFIERS: &[&str] =
+  &["declaration", "defaultLibrary"];
+
+/// Bit of `declaration` in a [`SemanticToken`]'s modifier set: the symbol
+/// is being defined here rather than used.
+pub const MODIFIER_DECLARATION: u32 = 1;
+/// Bit of `defaultLibrary` in a [`SemanticToken`]'s modifier set: the
+/// symbol is a built-in rather than something the file introduces.
+pub const MODIFIER_DEFAULT_LIBRARY: u32 = 2;
+
+/// One highlighted piece of source, addressed by byte offsets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SemanticToken {
+  pub range: (usize, usize),
+  /// Index into [`SEMANTIC_TOKEN_TYPES`].
+  pub token_type: u32,
+  /// Bit set over [`SEMANTIC_TOKEN_MODIFIERS`].
+  pub modifiers: u32,
+}
+
+/// Index of `name` in [`SEMANTIC_TOKEN_TYPES`].
+fn semantic_type(name: &str) -> u32 {
+  SEMANTIC_TOKEN_TYPES
+    .iter()
+    .position(|type_name| *type_name == name)
+    .expect("semantic token type is part of the legend") as u32
+}
+
+/// Classify every token of `source` for semantic highlighting.
+///
+/// The editor's own grammar colors the file by its shapes; this says what
+/// the shapes *mean* — which names are built-ins, which the file defines
+/// itself, and which are only the parameters of a definition.
+///
+/// Tokens never span a line: an editor may reject a multi-line one, so a
+/// comment or string that covers several lines is reported per line.
+pub fn semantic_tokens(
+  source: &str,
+  definitions: &[Definition],
+) -> Vec<SemanticToken> {
+  let tokens = scan(source);
+  let parameters = parameter_bindings(source, &tokens, definitions);
+  let mut semantic = Vec::new();
+  let mut previous: Option<Token> = None;
+  for (i, token) in tokens.iter().enumerate() {
+    let (token_type, modifiers) = match token.kind {
+      TokenKind::Comment => (semantic_type("comment"), 0),
+      TokenKind::Str => (semantic_type("string"), 0),
+      TokenKind::Number => (semantic_type("number"), 0),
+      TokenKind::Open | TokenKind::Close | TokenKind::Operator => {
+        // A slot is the argument of a pure function, so it is highlighted
+        // like the parameter of a named one: `#`, `#1`, `#name`.
+        if token.text(source).starts_with('#') {
+          (semantic_type("parameter"), 0)
+        } else {
+          (semantic_type("operator"), 0)
+        }
+      }
+      TokenKind::Symbol => {
+        classify_symbol(source, &tokens, i, previous, definitions, &parameters)
+      }
+    };
+    for range in split_at_line_breaks(source, (token.start, token.end)) {
+      semantic.push(SemanticToken {
+        range,
+        token_type,
+        modifiers,
+      });
+    }
+    previous = Some(*token);
+  }
+  semantic
+}
+
+/// The semantic type and modifiers of the symbol token at `index`.
+fn classify_symbol(
+  source: &str,
+  tokens: &[Token],
+  index: usize,
+  previous: Option<Token>,
+  definitions: &[Definition],
+  parameters: &[(String, (usize, usize))],
+) -> (u32, u32) {
+  let token = tokens[index];
+  let name = token.text(source);
+
+  // `f::usage` names a message of `f`, not a symbol of its own.
+  if previous.is_some_and(|t| t.text(source) == "::") {
+    return (semantic_type("property"), 0);
+  }
+
+  // A name bound by a pattern (`f[x_] := x^2`) is a parameter wherever it
+  // appears inside the definition that binds it.
+  if parameters.iter().any(|(parameter, (start, end))| {
+    parameter == name && *start <= token.start && token.end <= *end
+  }) {
+    let declares = tokens
+      .get(index + 1)
+      .is_some_and(|next| next.start == token.end && next.text(source) == "_");
+    let modifiers = if declares { MODIFIER_DECLARATION } else { 0 };
+    return (semantic_type("parameter"), modifiers);
+  }
+
+  // A symbol the file defines itself shadows any built-in of that name.
+  if let Some(definition) = definitions
+    .iter()
+    .find(|definition| definition.name == name)
+  {
+    let token_type = match definition.kind {
+      DefinitionKind::Function => semantic_type("function"),
+      DefinitionKind::Variable => semantic_type("variable"),
+    };
+    let declares = definitions
+      .iter()
+      .any(|definition| definition.name_range == (token.start, token.end));
+    let modifiers = if declares { MODIFIER_DECLARATION } else { 0 };
+    return (token_type, modifiers);
+  }
+
+  if implementation_status(name).is_some() {
+    return (semantic_type("function"), MODIFIER_DEFAULT_LIBRARY);
+  }
+  (semantic_type("variable"), 0)
+}
+
+/// The names bound by the patterns of each definition, paired with the
+/// range of the definition binding them.
+///
+/// `f[x_] := x^2` binds `x` for the whole of the definition, so both the
+/// `x_` and the `x` in the body are parameters rather than free symbols.
+fn parameter_bindings(
+  source: &str,
+  tokens: &[Token],
+  definitions: &[Definition],
+) -> Vec<(String, (usize, usize))> {
+  let mut bindings: Vec<(String, (usize, usize))> = Vec::new();
+  for definition in definitions {
+    if definition.kind != DefinitionKind::Function {
+      continue;
+    }
+    let (start, end) = definition.full_range;
+    // Tokens are ordered, so the definition's own tokens are a slice of
+    // them: a file of many definitions must not cost one pass over the
+    // whole token stream each.
+    let first = tokens.partition_point(|token| token.start < start);
+    for (i, token) in tokens.iter().enumerate().skip(first) {
+      if token.end > end {
+        break;
+      }
+      if token.kind != TokenKind::Symbol {
+        continue;
+      }
+      // Only a `_` glued to the name binds it: `x_`, `x__`, `x_Integer`.
+      let binds = tokens.get(i + 1).is_some_and(|next| {
+        next.start == token.end && next.text(source) == "_"
+      });
+      let name = token.text(source).to_string();
+      if binds && !bindings.contains(&(name.clone(), (start, end))) {
+        bindings.push((name, (start, end)));
+      }
+    }
+  }
+  bindings
+}
+
+/// Split a byte range at the line breaks it contains, dropping the breaks
+/// themselves and any line the range covers no characters of.
+fn split_at_line_breaks(
+  source: &str,
+  (start, end): (usize, usize),
+) -> Vec<(usize, usize)> {
+  let text = &source[start..end];
+  if !text.contains('\n') {
+    return vec![(start, end)];
+  }
+  let mut ranges = Vec::new();
+  let mut line_start = start;
+  for (offset, c) in text.char_indices() {
+    if c != '\n' {
+      continue;
+    }
+    let mut line_end = start + offset;
+    if source[line_start..line_end].ends_with('\r') {
+      line_end -= 1;
+    }
+    if line_end > line_start {
+      ranges.push((line_start, line_end));
+    }
+    line_start = start + offset + 1;
+  }
+  if end > line_start {
+    ranges.push((line_start, end));
+  }
+  ranges
+}
+
+/// Shortest symbol name a spelling suggestion is offered for. Below it
+/// every name is close to some built-in, so a suggestion says nothing.
+const MIN_SPELLCHECK_LENGTH: usize = 4;
+
+/// Number of edits a name may be away from a built-in and still be taken
+/// for a misspelling of it. Longer names get a wider radius: a typo is
+/// about as likely in a long name as in a short one, but an unrelated name
+/// is far less likely to land within two edits of a long built-in.
+fn spelling_tolerance(length: usize) -> usize {
+  if length >= 8 { 2 } else { 1 }
+}
+
+/// Every `System`` symbol name, sorted, held once: the spell checker walks
+/// the whole list for each name it checks, and rebuilding it there would
+/// cost more than the comparisons do.
+static BUILTIN_NAMES: std::sync::LazyLock<Vec<&'static str>> =
+  std::sync::LazyLock::new(
+    crate::evaluator::functions::all_builtin_symbol_names,
+  );
+
+/// The built-in symbol `name` was most likely meant to be, if any.
+///
+/// Only capitalized names are checked: every `System`` symbol starts with
+/// an uppercase letter, and the Wolfram Language's own convention reserves
+/// lowercase names for the user's variables — so a lowercase `list` is a
+/// variable, not a misspelling of `List`.
+pub fn spelling_suggestion(name: &str) -> Option<&'static str> {
+  if name.len() < MIN_SPELLCHECK_LENGTH
+    || !name.chars().all(|c| c.is_ascii_alphanumeric())
+    || !name.starts_with(|c: char| c.is_ascii_uppercase())
+    // A name ending in a digit is a numbered one of the author's own —
+    // `Option1`, `Option2` — not a slip of the finger.
+    || name.ends_with(|c: char| c.is_ascii_digit())
+    || crate::evaluator::functions::is_builtin_symbol(name)
+  {
+    return None;
+  }
+  let tolerance = spelling_tolerance(name.len());
+  let mut best: Option<(usize, &'static str)> = None;
+  for candidate in BUILTIN_NAMES.iter().copied() {
+    // Only names that could plausibly be the one meant are measured: this
+    // runs on every keystroke against every `System`` symbol, and the
+    // distance itself is far more expensive than the comparison. A name
+    // too different in length cannot be within `tolerance` edits at all,
+    // and one that starts with another letter has nothing to have been
+    // recognized by.
+    if candidate.len().abs_diff(name.len()) > tolerance
+      || !candidate.as_bytes()[0].eq_ignore_ascii_case(&name.as_bytes()[0])
+    {
+      continue;
+    }
+    // A trailing `Q` marks a predicate and a trailing `s` a plural or a
+    // domain — `BooleanQ`, `Booleans`, `Integers` — so a name that is a
+    // built-in without one of them is a related name of the author's,
+    // not a typo of it.
+    if ["Q", "s"].iter().any(|suffix| {
+      candidate.strip_suffix(suffix) == Some(name)
+        || name.strip_suffix(suffix) == Some(candidate)
+    }) {
+      continue;
+    }
+    let distance = edit_distance(name, candidate);
+    if distance > tolerance {
+      continue;
+    }
+    // The list is sorted, so an equally close candidate never displaces
+    // the first one and the suggestion is deterministic.
+    if best.is_none_or(|(best_distance, _)| distance < best_distance) {
+      best = Some((distance, candidate));
+    }
+  }
+  best.map(|(_, candidate)| candidate)
+}
+
+/// The distance between two symbol names, as the interpreter's own
+/// `DamerauLevenshteinDistance` computes it: the number of insertions,
+/// deletions, substitutions and transpositions between them. Swapping two
+/// letters — `Lenght` for `Length` — is the typo a spell checker has to
+/// catch, and plain Levenshtein counts it as two edits rather than one.
+fn edit_distance(a: &str, b: &str) -> usize {
+  let distance =
+    crate::functions::string_ast::damerau_levenshtein_distance_ast(&[
+      crate::syntax::Expr::String(a.to_string()),
+      crate::syntax::Expr::String(b.to_string()),
+    ]);
+  match distance {
+    Ok(crate::syntax::Expr::Integer(distance)) => {
+      distance.unsigned_abs() as usize
+    }
+    // The distance of two strings always evaluates; a name that somehow
+    // does not is simply not suggested for.
+    _ => usize::MAX,
+  }
+}
+
+/// Point out symbols that are one typo away from a built-in.
+///
+/// An undefined symbol is not an error in the Wolfram Language — it stands
+/// for itself — so this only fires where a built-in is close enough that
+/// the name was almost certainly meant to be it, and a code action offers
+/// the correction. Symbols the file defines or binds as a pattern are
+/// deliberate names and left alone.
+fn misspelled_symbols(
+  source: &str,
+  tokens: &[Token],
+  definitions: &[Definition],
+) -> Vec<Diagnostic> {
+  let parameters = parameter_bindings(source, tokens, definitions);
+  // The same name usually occurs more than once, and looking a name up is
+  // the expensive part of this.
+  let mut suggestions: Vec<(&str, Option<&'static str>)> = Vec::new();
+  let mut diagnostics = Vec::new();
+  for (i, token) in tokens.iter().enumerate() {
+    if token.kind != TokenKind::Symbol {
+      continue;
+    }
+    let name = token.text(source);
+    if definitions.iter().any(|definition| definition.name == name)
+      || parameters.iter().any(|(parameter, _)| parameter == name)
+    {
+      continue;
+    }
+    // `f::usage` names a message, not the symbol `usage`.
+    if tokens
+      .get(i.wrapping_sub(1))
+      .is_some_and(|t| t.text(source) == "::")
+    {
+      continue;
+    }
+    let suggestion = if let Some((_, suggestion)) =
+      suggestions.iter().find(|(seen, _)| *seen == name)
+    {
+      *suggestion
+    } else {
+      let suggestion = spelling_suggestion(name);
+      suggestions.push((name, suggestion));
+      suggestion
+    };
+    let Some(suggestion) = suggestion else {
+      continue;
+    };
+    diagnostics.push(Diagnostic {
+      range: (token.start, token.end),
+      severity: Severity::Information,
+      code: "spelling",
+      message: format!(
+        "`{name}` is not a known symbol; did you mean `{suggestion}`?"
+      ),
+    });
+  }
+  diagnostics
 }

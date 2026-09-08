@@ -22,10 +22,11 @@ convention.
 ## Features
 
 Diagnostics
-: Syntax errors, and warnings naming every symbol this interpreter does
-  not implement — so you see which parts of a script Woxi will not run
-  before running it. Symbols the file defines itself shadow the built-in
-  and are never warned about.
+: Syntax errors, warnings naming every symbol this interpreter does not
+  implement — so you see which parts of a script Woxi will not run before
+  running it — and hints on names that are one typo away from a built-in
+  (`Lenght` for `Length`). Symbols the file defines itself shadow the
+  built-in and are never warned about.
 
 Hover
 : The description of the symbol under the cursor, its implementation
@@ -43,6 +44,26 @@ Document outline
 : The file's top-level definitions. Locals bound inside `Module`, `Block`
   or `With` are left out of the outline, but are still found by
   go to definition.
+
+Semantic highlighting
+: Every token classified by what it means rather than by how it looks: the
+  built-ins apart from the symbols the file defines itself, and the
+  parameters of a definition (`x` in `f[x_] := x^2`, and the `#1` of a
+  pure function) apart from both.
+
+Formatting
+: One space around each operator, none inside brackets, and one level of
+  indentation per open bracket. The line breaks are the author's: an
+  expression written across six lines stays across six lines, and one
+  written on a single line is never exploded. A file whose formatting
+  would not read back as the very same code — same tokens, same lines —
+  is left untouched rather than rewritten. Range formatting reformats the
+  whole file and reports back only the lines the editor asked about.
+
+Code actions
+: A quick fix replacing a misspelled built-in with the symbol it was meant
+  to be, and a `source.fixAll` action correcting every misspelling in the
+  file at once — which is what an editor configured to fix on save runs.
 
 Hover, completion and navigation are computed from a forgiving tokenizer
 rather than the grammar, so they keep working while a file is mid-edit

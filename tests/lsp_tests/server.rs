@@ -73,6 +73,47 @@ fn diagnostics_of(notifications: &[Value]) -> &Vec<Value> {
     .unwrap()
 }
 
+/// Decode a `semanticTokens` response into `(line, character, length,
+/// type, modifiers)` tuples, resolving the indices through the legend the
+/// server advertised.
+fn decoded_semantic_tokens(
+  legend: &Value,
+  result: &Value,
+) -> Vec<(u64, u64, u64, String, Vec<String>)> {
+  let types = legend["tokenTypes"].as_array().unwrap();
+  let modifier_names = legend["tokenModifiers"].as_array().unwrap();
+  let data: Vec<u64> = result["data"]
+    .as_array()
+    .unwrap()
+    .iter()
+    .map(|value| value.as_u64().unwrap())
+    .collect();
+  let mut decoded = Vec::new();
+  let (mut line, mut character) = (0, 0);
+  for token in data.chunks(5) {
+    line += token[0];
+    character = if token[0] == 0 {
+      character + token[1]
+    } else {
+      token[1]
+    };
+    let modifiers = modifier_names
+      .iter()
+      .enumerate()
+      .filter(|(i, _)| token[4] & (1 << i) != 0)
+      .map(|(_, name)| name.as_str().unwrap().to_string())
+      .collect();
+    decoded.push((
+      line,
+      character,
+      token[2],
+      types[token[3] as usize].as_str().unwrap().to_string(),
+      modifiers,
+    ));
+  }
+  decoded
+}
+
 #[test]
 fn initialize_advertises_the_supported_features() {
   let mut server = Server::new();
@@ -87,6 +128,19 @@ fn initialize_advertises_the_supported_features() {
   assert_eq!(capabilities["documentSymbolProvider"], json!(true));
   assert_eq!(capabilities["documentHighlightProvider"], json!(true));
   assert!(capabilities["completionProvider"].is_object());
+  assert_eq!(capabilities["documentFormattingProvider"], json!(true));
+  assert_eq!(capabilities["documentRangeFormattingProvider"], json!(true));
+  assert_eq!(capabilities["semanticTokensProvider"]["full"], json!(true));
+  assert_eq!(capabilities["semanticTokensProvider"]["range"], json!(true));
+  assert!(
+    capabilities["semanticTokensProvider"]["legend"]["tokenTypes"]
+      .as_array()
+      .is_some_and(|types| types.contains(&json!("function")))
+  );
+  assert_eq!(
+    capabilities["codeActionProvider"]["codeActionKinds"],
+    json!(["quickfix", "source.fixAll"])
+  );
   assert_eq!(responses[0]["result"]["serverInfo"]["name"], json!("woxi"));
 }
 
@@ -473,4 +527,293 @@ fn positions_in_lines_with_wide_characters_resolve_correctly() {
     request(&mut server, "textDocument/hover", &position_params(0, 12));
   let value = result["contents"]["value"].as_str().unwrap();
   assert!(value.contains("### Sin"), "unexpected hover: {value}");
+}
+
+#[test]
+fn semantic_tokens_classify_the_whole_file() {
+  let mut server = Server::new();
+  let legend = server.handle_message(&json!({
+    "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {},
+  }))[0]["result"]["capabilities"]["semanticTokensProvider"]["legend"]
+    .clone();
+  open(&mut server, "square[x_] := x^2\nPrint[square[3]]");
+  let result = request(
+    &mut server,
+    "textDocument/semanticTokens/full",
+    &json!({ "textDocument": { "uri": "file:///test.wls" } }),
+  );
+  let tokens = decoded_semantic_tokens(&legend, &result);
+  assert_eq!(
+    tokens[0],
+    (
+      0,
+      0,
+      6,
+      "function".to_string(),
+      vec!["declaration".to_string()]
+    )
+  );
+  assert_eq!(
+    tokens[2],
+    (
+      0,
+      7,
+      1,
+      "parameter".to_string(),
+      vec!["declaration".to_string()]
+    )
+  );
+  // `Print` on the second line is a built-in, and the deltas restart the
+  // character count at the beginning of that line.
+  let print = tokens.iter().find(|token| token.0 == 1).unwrap();
+  assert_eq!(
+    *print,
+    (
+      1,
+      0,
+      5,
+      "function".to_string(),
+      vec!["defaultLibrary".to_string()]
+    )
+  );
+}
+
+#[test]
+fn semantic_tokens_of_a_range_cover_only_that_range() {
+  let mut server = Server::new();
+  let legend = server.handle_message(&json!({
+    "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {},
+  }))[0]["result"]["capabilities"]["semanticTokensProvider"]["legend"]
+    .clone();
+  open(&mut server, "x = 1\ny = 2\nz = 3");
+  let result = request(
+    &mut server,
+    "textDocument/semanticTokens/range",
+    &json!({
+      "textDocument": { "uri": "file:///test.wls" },
+      "range": {
+        "start": { "line": 1, "character": 0 },
+        "end": { "line": 1, "character": 5 },
+      },
+    }),
+  );
+  let tokens = decoded_semantic_tokens(&legend, &result);
+  assert!(tokens.iter().all(|token| token.0 == 1));
+  assert_eq!(tokens[0].3, "variable");
+}
+
+#[test]
+fn formatting_reports_an_edit_per_changed_line() {
+  let mut server = initialized_server();
+  open(&mut server, "f[x_]:=x^2\n{1,  2}\ny = 3\n");
+  let edits = request(
+    &mut server,
+    "textDocument/formatting",
+    &json!({
+      "textDocument": { "uri": "file:///test.wls" },
+      "options": { "tabSize": 2, "insertSpaces": true },
+    }),
+  );
+  assert_eq!(
+    edits,
+    json!([
+      {
+        "range": {
+          "start": { "line": 0, "character": 0 },
+          "end": { "line": 0, "character": 10 },
+        },
+        "newText": "f[x_] := x^2",
+      },
+      {
+        "range": {
+          "start": { "line": 1, "character": 0 },
+          "end": { "line": 1, "character": 7 },
+        },
+        "newText": "{1, 2}",
+      },
+    ])
+  );
+}
+
+#[test]
+fn formatting_an_already_formatted_document_changes_nothing() {
+  let mut server = initialized_server();
+  open(&mut server, "x = 1;\ny = 2;\n");
+  let edits = request(
+    &mut server,
+    "textDocument/formatting",
+    &json!({ "textDocument": { "uri": "file:///test.wls" }, "options": {} }),
+  );
+  assert_eq!(edits, json!([]));
+}
+
+#[test]
+fn range_formatting_leaves_the_lines_outside_the_range_alone() {
+  let mut server = initialized_server();
+  open(&mut server, "f[x_]:=x^2\n{1,  2}\n");
+  let edits = request(
+    &mut server,
+    "textDocument/rangeFormatting",
+    &json!({
+      "textDocument": { "uri": "file:///test.wls" },
+      "range": {
+        "start": { "line": 1, "character": 0 },
+        "end": { "line": 1, "character": 7 },
+      },
+      "options": { "tabSize": 2, "insertSpaces": true },
+    }),
+  );
+  assert_eq!(edits.as_array().unwrap().len(), 1);
+  assert_eq!(edits[0]["range"]["start"]["line"], json!(1));
+  assert_eq!(edits[0]["newText"], json!("{1, 2}"));
+}
+
+#[test]
+fn formatting_uses_the_editor_s_indentation_settings() {
+  let mut server = initialized_server();
+  open(&mut server, "f[\n1\n]");
+  let edits = request(
+    &mut server,
+    "textDocument/formatting",
+    &json!({
+      "textDocument": { "uri": "file:///test.wls" },
+      "options": { "tabSize": 4, "insertSpaces": true },
+    }),
+  );
+  assert_eq!(edits[0]["newText"], json!("    1"));
+}
+
+#[test]
+fn a_code_action_corrects_a_misspelled_built_in() {
+  let mut server = initialized_server();
+  open(&mut server, "Lenght[{1, 2}]");
+  let actions = request(
+    &mut server,
+    "textDocument/codeAction",
+    &json!({
+      "textDocument": { "uri": "file:///test.wls" },
+      "range": {
+        "start": { "line": 0, "character": 0 },
+        "end": { "line": 0, "character": 6 },
+      },
+      "context": { "diagnostics": [] },
+    }),
+  );
+  assert_eq!(actions.as_array().unwrap().len(), 1);
+  assert_eq!(actions[0]["title"], json!("Change `Lenght` to `Length`"));
+  assert_eq!(actions[0]["kind"], json!("quickfix"));
+  assert_eq!(actions[0]["diagnostics"][0]["code"], json!("spelling"));
+  let edits = &actions[0]["edit"]["changes"]["file:///test.wls"];
+  assert_eq!(edits[0]["newText"], json!("Length"));
+  assert_eq!(
+    edits[0]["range"],
+    json!({
+      "start": { "line": 0, "character": 0 },
+      "end": { "line": 0, "character": 6 },
+    })
+  );
+}
+
+#[test]
+fn a_code_action_is_only_offered_for_what_the_request_covers() {
+  let mut server = initialized_server();
+  open(&mut server, "Lenght[{1, 2}]\nRevrese[{1, 2}]");
+  let on_the_second_line = request(
+    &mut server,
+    "textDocument/codeAction",
+    &json!({
+      "textDocument": { "uri": "file:///test.wls" },
+      "range": {
+        "start": { "line": 1, "character": 2 },
+        "end": { "line": 1, "character": 2 },
+      },
+      "context": { "diagnostics": [], "only": ["quickfix"] },
+    }),
+  );
+  assert_eq!(on_the_second_line.as_array().unwrap().len(), 1);
+  assert_eq!(
+    on_the_second_line[0]["title"],
+    json!("Change `Revrese` to `Reverse`")
+  );
+}
+
+#[test]
+fn one_code_action_fixes_every_misspelling_in_the_file() {
+  let mut server = initialized_server();
+  open(&mut server, "Lenght[{1, 2}]\nRevrese[{1, 2}]");
+  let actions = request(
+    &mut server,
+    "textDocument/codeAction",
+    &json!({
+      "textDocument": { "uri": "file:///test.wls" },
+      "range": {
+        "start": { "line": 0, "character": 0 },
+        "end": { "line": 1, "character": 15 },
+      },
+      "context": { "diagnostics": [] },
+    }),
+  );
+  let fix_all = actions
+    .as_array()
+    .unwrap()
+    .iter()
+    .find(|action| action["kind"] == json!("source.fixAll"))
+    .expect("a fix-all action");
+  assert_eq!(fix_all["title"], json!("Fix all 2 spelling suggestions"));
+  assert_eq!(
+    fix_all["edit"]["changes"]["file:///test.wls"]
+      .as_array()
+      .unwrap()
+      .len(),
+    2
+  );
+  // A client that asked only for quick fixes does not get it.
+  let quick_fixes_only = request(
+    &mut server,
+    "textDocument/codeAction",
+    &json!({
+      "textDocument": { "uri": "file:///test.wls" },
+      "range": {
+        "start": { "line": 0, "character": 0 },
+        "end": { "line": 1, "character": 15 },
+      },
+      "context": { "diagnostics": [], "only": ["quickfix"] },
+    }),
+  );
+  assert!(
+    quick_fixes_only
+      .as_array()
+      .unwrap()
+      .iter()
+      .all(|action| action["kind"] == json!("quickfix"))
+  );
+}
+
+#[test]
+fn a_misspelling_is_published_as_a_hint_alongside_the_other_diagnostics() {
+  let mut server = initialized_server();
+  let notifications = open(&mut server, "Lenght[{1, 2}]");
+  let diagnostics = diagnostics_of(&notifications);
+  assert_eq!(diagnostics.len(), 1);
+  assert_eq!(diagnostics[0]["severity"], json!(3));
+  assert_eq!(diagnostics[0]["code"], json!("spelling"));
+  assert_eq!(diagnostics[0]["source"], json!("woxi"));
+}
+
+#[test]
+fn the_new_requests_need_an_open_document() {
+  let mut server = initialized_server();
+  for method in [
+    "textDocument/semanticTokens/full",
+    "textDocument/formatting",
+    "textDocument/codeAction",
+  ] {
+    let responses = server.handle_message(&json!({
+      "jsonrpc": "2.0",
+      "id": 7,
+      "method": method,
+      "params": { "textDocument": { "uri": "file:///missing.wls" } },
+    }));
+    assert_eq!(responses[0]["error"]["code"], json!(-32602), "{method}");
+  }
 }

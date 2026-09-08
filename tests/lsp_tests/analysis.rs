@@ -1,8 +1,10 @@
 //! Tokenisation, definition discovery, diagnostics and position mapping.
 
 use woxi::lsp::analysis::{
-  Definition, DefinitionKind, LineIndex, Severity, TokenKind, diagnostics,
-  find_definitions, occurrences, symbol_at, tokenize,
+  Definition, DefinitionKind, LineIndex, MODIFIER_DECLARATION,
+  MODIFIER_DEFAULT_LIBRARY, SEMANTIC_TOKEN_TYPES, Severity, TokenKind,
+  diagnostics, find_definitions, occurrences, scan, semantic_tokens,
+  spelling_suggestion, symbol_at, tokenize,
 };
 
 /// The `(kind, text)` of every token of `source`.
@@ -431,5 +433,208 @@ proptest::proptest! {
       let (line, character) = index.position(&source, start);
       proptest::prop_assert_eq!(index.offset(&source, line, character), start);
     }
+  }
+}
+
+/// The `(type, modifiers, text)` of every semantic token of `source`.
+fn highlights(source: &str) -> Vec<(&'static str, u32, &str)> {
+  let definitions = find_definitions(source, &tokenize(source));
+  semantic_tokens(source, &definitions)
+    .into_iter()
+    .map(|token| {
+      (
+        SEMANTIC_TOKEN_TYPES[token.token_type as usize],
+        token.modifiers,
+        &source[token.range.0..token.range.1],
+      )
+    })
+    .collect()
+}
+
+#[test]
+fn scanning_keeps_the_comments_tokenizing_drops() {
+  let source = "x = 1 (* one *)";
+  assert_eq!(
+    scan(source)
+      .into_iter()
+      .map(|token| (token.kind, token.text(source)))
+      .collect::<Vec<_>>(),
+    vec![
+      (TokenKind::Symbol, "x"),
+      (TokenKind::Operator, "="),
+      (TokenKind::Number, "1"),
+      (TokenKind::Comment, "(* one *)"),
+    ]
+  );
+  assert!(
+    tokens_of(source)
+      .iter()
+      .all(|(kind, _)| *kind != TokenKind::Comment)
+  );
+}
+
+#[test]
+fn a_slot_is_one_token() {
+  assert_eq!(
+    tokens_of("#1 + ##2 + #name & /@ %3"),
+    vec![
+      (TokenKind::Operator, "#1"),
+      (TokenKind::Operator, "+"),
+      (TokenKind::Operator, "##2"),
+      (TokenKind::Operator, "+"),
+      (TokenKind::Operator, "#name"),
+      (TokenKind::Operator, "&"),
+      (TokenKind::Operator, "/@"),
+      (TokenKind::Operator, "%3"),
+    ]
+  );
+}
+
+#[test]
+fn reads_the_multi_character_operators_as_one_token() {
+  for (source, operator) in [
+    ("<<\"init.m\"", "<<"),
+    ("expr >> \"out.txt\"", ">>"),
+    ("expr >>> \"out.txt\"", ">>>"),
+    ("x //= f", "//="),
+    ("g /: f[g[x_]] := x", "/:"),
+  ] {
+    assert!(
+      tokens_of(source)
+        .iter()
+        .any(|(kind, text)| *kind == TokenKind::Operator && *text == operator),
+      "{operator} was not read as one token in: {source}"
+    );
+  }
+}
+
+#[test]
+fn a_number_may_start_with_its_decimal_point() {
+  assert_eq!(
+    tokens_of("{.7, 1.5}"),
+    vec![
+      (TokenKind::Open, "{"),
+      (TokenKind::Number, ".7"),
+      (TokenKind::Operator, ","),
+      (TokenKind::Number, "1.5"),
+      (TokenKind::Close, "}"),
+    ]
+  );
+  // A repetition is still an operator: `.` only starts a number before a
+  // digit.
+  assert_eq!(
+    tokens_of("{1 ..}"),
+    vec![
+      (TokenKind::Open, "{"),
+      (TokenKind::Number, "1"),
+      (TokenKind::Operator, ".."),
+      (TokenKind::Close, "}"),
+    ]
+  );
+}
+
+#[test]
+fn highlights_built_ins_apart_from_the_file_s_own_symbols() {
+  assert_eq!(
+    highlights("total = Total[{1, \"a\"}] (* sum *)"),
+    vec![
+      ("variable", MODIFIER_DECLARATION, "total"),
+      ("operator", 0, "="),
+      ("function", MODIFIER_DEFAULT_LIBRARY, "Total"),
+      ("operator", 0, "["),
+      ("operator", 0, "{"),
+      ("number", 0, "1"),
+      ("operator", 0, ","),
+      ("string", 0, "\"a\""),
+      ("operator", 0, "}"),
+      ("operator", 0, "]"),
+      ("comment", 0, "(* sum *)"),
+    ]
+  );
+}
+
+#[test]
+fn highlights_a_pattern_name_as_a_parameter_throughout_its_definition() {
+  assert_eq!(
+    highlights("square[x_] := x^2"),
+    vec![
+      ("function", MODIFIER_DECLARATION, "square"),
+      ("operator", 0, "["),
+      ("parameter", MODIFIER_DECLARATION, "x"),
+      ("operator", 0, "_"),
+      ("operator", 0, "]"),
+      ("operator", 0, ":="),
+      ("parameter", 0, "x"),
+      ("operator", 0, "^"),
+      ("number", 0, "2"),
+    ]
+  );
+  // Outside the definition that binds it the same name is free again.
+  assert_eq!(
+    highlights("square[x_] := x^2\nx = 3")[9],
+    ("variable", MODIFIER_DECLARATION, "x")
+  );
+}
+
+#[test]
+fn highlights_a_slot_as_a_parameter_and_a_message_as_a_property() {
+  assert_eq!(highlights("#1 &")[0], ("parameter", 0, "#1"));
+  assert_eq!(highlights("f::usage")[2], ("property", 0, "usage"));
+}
+
+#[test]
+fn a_multi_line_token_is_highlighted_one_line_at_a_time() {
+  assert_eq!(
+    highlights("(* one\n   two *)"),
+    vec![("comment", 0, "(* one"), ("comment", 0, "   two *)")]
+  );
+}
+
+#[test]
+fn suggests_the_built_in_a_misspelled_name_was_meant_to_be() {
+  assert_eq!(spelling_suggestion("Lenght"), Some("Length"));
+  assert_eq!(spelling_suggestion("Reverze"), Some("Reverse"));
+  assert_eq!(spelling_suggestion("StringJion"), Some("StringJoin"));
+  // A name that is spelled right, or is nothing like a built-in, or is a
+  // lowercase name of the user's own, is left alone.
+  assert_eq!(spelling_suggestion("Length"), None);
+  assert_eq!(spelling_suggestion("Wobblefish"), None);
+  assert_eq!(spelling_suggestion("lenght"), None);
+  assert_eq!(spelling_suggestion("Abc"), None);
+  // A numbered name of the author's own, and a name the language's `…Q`
+  // convention relates to a built-in, are both deliberate.
+  assert_eq!(spelling_suggestion("Option1"), None);
+  assert_eq!(spelling_suggestion("Boolean"), None);
+}
+
+#[test]
+fn reports_a_misspelled_built_in_as_a_hint_with_its_correction() {
+  let source = "Lenght[{1, 2}]";
+  let tokens = tokenize(source);
+  let definitions = find_definitions(source, &tokens);
+  let reported = diagnostics(source, &tokens, &definitions);
+  assert_eq!(reported.len(), 1);
+  assert_eq!(reported[0].code, "spelling");
+  assert_eq!(reported[0].severity, Severity::Information);
+  assert_eq!(reported[0].range, (0, 6));
+  assert!(reported[0].message.contains("`Length`"));
+}
+
+#[test]
+fn a_symbol_the_file_introduces_is_never_a_misspelling() {
+  for source in [
+    // Defined here…
+    "Lenght[x_] := x; Lenght[{1, 2}]",
+    // …or bound as a pattern.
+    "f[Lenght_] := Lenght + 1",
+  ] {
+    let tokens = tokenize(source);
+    let definitions = find_definitions(source, &tokens);
+    assert!(
+      diagnostics(source, &tokens, &definitions)
+        .iter()
+        .all(|diagnostic| diagnostic.code != "spelling"),
+      "spelling reported for: {source}"
+    );
   }
 }

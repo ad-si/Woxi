@@ -4,6 +4,8 @@
 
 mod lsp_tests {
   mod analysis;
+  mod corpus;
+  mod format;
   mod protocol;
   mod server;
 }

@@ -10,8 +10,9 @@ use serde_json::{Value, json};
 use std::collections::HashMap;
 
 use super::analysis::{
-  Definition, DefinitionKind, LineIndex, Severity, Token, find_definitions,
-  occurrences, symbol_at, tokenize,
+  Definition, DefinitionKind, LineIndex, SEMANTIC_TOKEN_MODIFIERS,
+  SEMANTIC_TOKEN_TYPES, Severity, Token, find_definitions, occurrences,
+  spelling_suggestion, symbol_at, tokenize,
 };
 use super::protocol::{
   INVALID_PARAMS, INVALID_REQUEST, METHOD_NOT_FOUND, SERVER_NOT_INITIALIZED,
@@ -31,6 +32,10 @@ const COMPLETION_KIND_FUNCTION: i64 = 3;
 const COMPLETION_KIND_VARIABLE: i64 = 6;
 const SYMBOL_KIND_FUNCTION: i64 = 12;
 const SYMBOL_KIND_VARIABLE: i64 = 13;
+
+/// `CodeActionKind` values from the specification.
+const QUICK_FIX: &str = "quickfix";
+const SOURCE_FIX_ALL: &str = "source.fixAll";
 
 /// `DocumentHighlightKind` values from the specification.
 const HIGHLIGHT_KIND_TEXT: i64 = 1;
@@ -209,6 +214,11 @@ impl Server {
       "textDocument/references" => self.references(params),
       "textDocument/documentHighlight" => self.document_highlight(params),
       "textDocument/documentSymbol" => self.document_symbol(params),
+      "textDocument/semanticTokens/full" => self.semantic_tokens(params, false),
+      "textDocument/semanticTokens/range" => self.semantic_tokens(params, true),
+      "textDocument/formatting" => self.formatting(params, false),
+      "textDocument/rangeFormatting" => self.formatting(params, true),
+      "textDocument/codeAction" => self.code_action(params),
       _ => Err((METHOD_NOT_FOUND, format!("unsupported request: {method}"))),
     }
   }
@@ -340,6 +350,7 @@ impl Server {
         "severity": match diagnostic.severity {
           Severity::Error => 1,
           Severity::Warning => 2,
+          Severity::Information => 3,
         },
         "code": diagnostic.code,
         "source": "woxi",
@@ -555,6 +566,277 @@ impl Server {
       .collect();
     Ok(Value::Array(symbols))
   }
+
+  /// `textDocument/semanticTokens/full` and `…/range`: the whole file's
+  /// highlighting, or only the part of it the request asked about.
+  fn semantic_tokens(
+    &self,
+    params: &Value,
+    ranged: bool,
+  ) -> Result<Value, (i64, String)> {
+    let document = self.document(params)?;
+    let tokens =
+      super::analysis::semantic_tokens(&document.text, &document.definitions);
+    let limit = if ranged {
+      Some(byte_range(document, params)?)
+    } else {
+      None
+    };
+    let mut data: Vec<u32> = Vec::new();
+    let (mut previous_line, mut previous_character) = (0_u32, 0_u32);
+    for token in tokens {
+      if limit.is_some_and(|(start, end)| {
+        token.range.1 <= start || token.range.0 >= end
+      }) {
+        continue;
+      }
+      let (line, character) =
+        document.line_index.position(&document.text, token.range.0);
+      let (_, end_character) =
+        document.line_index.position(&document.text, token.range.1);
+      // The tokens come in source order, so these never wrap; saturating
+      // rather than panicking is the right way for a server to be wrong.
+      let delta_line = line.saturating_sub(previous_line);
+      let delta_character = if delta_line == 0 {
+        character.saturating_sub(previous_character)
+      } else {
+        character
+      };
+      data.extend([
+        delta_line,
+        delta_character,
+        end_character.saturating_sub(character),
+        token.token_type,
+        token.modifiers,
+      ]);
+      (previous_line, previous_character) = (line, character);
+    }
+    Ok(json!({ "data": data }))
+  }
+
+  /// `textDocument/formatting` and `…/rangeFormatting`.
+  ///
+  /// Both reformat the whole document — indentation depends on what came
+  /// before the range, so a range cannot be formatted on its own — and a
+  /// range request then reports only the edits of the lines it covers.
+  fn formatting(
+    &self,
+    params: &Value,
+    ranged: bool,
+  ) -> Result<Value, (i64, String)> {
+    let document = self.document(params)?;
+    let options = super::format::Options {
+      tab_size: params
+        .pointer("/options/tabSize")
+        .and_then(Value::as_u64)
+        .map_or(super::format::Options::default().tab_size, |size| {
+          size.max(1) as usize
+        }),
+      insert_spaces: params
+        .pointer("/options/insertSpaces")
+        .and_then(Value::as_bool)
+        .unwrap_or(true),
+    };
+    let formatted = super::format::format(&document.text, &options);
+    let lines = if ranged {
+      let range = params
+        .get("range")
+        .ok_or_else(|| (INVALID_PARAMS, "missing range".to_string()))?;
+      let first = range
+        .pointer("/start/line")
+        .and_then(Value::as_u64)
+        .unwrap_or(0) as u32;
+      let last = range
+        .pointer("/end/line")
+        .and_then(Value::as_u64)
+        .unwrap_or(u64::from(u32::MAX)) as u32;
+      Some((first, last))
+    } else {
+      None
+    };
+    Ok(Value::Array(text_edits(document, &formatted, lines)))
+  }
+
+  /// `textDocument/codeAction`: the fixes offered for the requested range.
+  ///
+  /// The one thing a language server can fix in a language where every
+  /// undefined symbol is legal is a name that was meant to be another:
+  /// `Lenght[…]` for `Length[…]`.
+  fn code_action(&self, params: &Value) -> Result<Value, (i64, String)> {
+    let document = self.document(params)?;
+    let uri = params
+      .pointer("/textDocument/uri")
+      .and_then(Value::as_str)
+      .unwrap_or_default();
+    let (start, end) = byte_range(document, params)?;
+    let only: Vec<&str> = params
+      .pointer("/context/only")
+      .and_then(Value::as_array)
+      .map(|kinds| kinds.iter().filter_map(Value::as_str).collect())
+      .unwrap_or_default();
+
+    // Every misspelling in the file, and the correction for it.
+    let corrections: Vec<(super::analysis::Diagnostic, &'static str)> =
+      super::analysis::diagnostics(
+        &document.text,
+        &document.tokens,
+        &document.definitions,
+      )
+      .into_iter()
+      .filter(|diagnostic| diagnostic.code == "spelling")
+      .filter_map(|diagnostic| {
+        let name = &document.text[diagnostic.range.0..diagnostic.range.1];
+        let suggestion = spelling_suggestion(name)?;
+        Some((diagnostic, suggestion))
+      })
+      .collect();
+
+    let mut actions = Vec::new();
+    if kind_requested(&only, QUICK_FIX) {
+      for (diagnostic, suggestion) in &corrections {
+        // Only what the cursor or selection actually touches.
+        if diagnostic.range.1 < start || diagnostic.range.0 > end {
+          continue;
+        }
+        let name = &document.text[diagnostic.range.0..diagnostic.range.1];
+        actions.push(json!({
+          "title": format!("Change `{name}` to `{suggestion}`"),
+          "kind": QUICK_FIX,
+          "diagnostics": [diagnostic_json(document, diagnostic)],
+          "isPreferred": true,
+          "edit": {
+            "changes": {
+              uri: [{
+                "range": document.range(diagnostic.range),
+                "newText": suggestion,
+              }],
+            },
+          },
+        }));
+      }
+    }
+    // One action for the whole file, so a file full of the same typo is
+    // fixed in a single step (and by an editor's "fix all on save").
+    if kind_requested(&only, SOURCE_FIX_ALL) && corrections.len() > 1 {
+      let edits: Vec<Value> = corrections
+        .iter()
+        .map(|(diagnostic, suggestion)| {
+          json!({
+            "range": document.range(diagnostic.range),
+            "newText": suggestion,
+          })
+        })
+        .collect();
+      actions.push(json!({
+        "title": format!("Fix all {} spelling suggestions", edits.len()),
+        "kind": SOURCE_FIX_ALL,
+        "diagnostics": corrections
+          .iter()
+          .map(|(diagnostic, _)| diagnostic_json(document, diagnostic))
+          .collect::<Vec<Value>>(),
+        "edit": { "changes": { uri: edits } },
+      }));
+    }
+    Ok(Value::Array(actions))
+  }
+}
+
+/// The byte range a request's `range` covers.
+fn byte_range(
+  document: &Document,
+  params: &Value,
+) -> Result<(usize, usize), (i64, String)> {
+  let range = params
+    .get("range")
+    .ok_or_else(|| (INVALID_PARAMS, "missing range".to_string()))?;
+  let start = range
+    .get("start")
+    .map_or(0, |position| document.offset_of(position));
+  let end = range
+    .get("end")
+    .map_or(document.text.len(), |position| document.offset_of(position));
+  Ok((start.min(end), start.max(end)))
+}
+
+/// Whether an action of `kind` is one the request asked for. An empty
+/// `only` list asks for everything; otherwise a kind matches when a
+/// requested kind is it or a prefix of it, as the specification defines.
+fn kind_requested(only: &[&str], kind: &str) -> bool {
+  only.is_empty()
+    || only.iter().any(|requested| {
+      kind == *requested || kind.starts_with(&format!("{requested}."))
+    })
+}
+
+/// The `Diagnostic` a code action refers back to, in the shape the client
+/// was sent it in.
+fn diagnostic_json(
+  document: &Document,
+  diagnostic: &super::analysis::Diagnostic,
+) -> Value {
+  json!({
+    "range": document.range(diagnostic.range),
+    "severity": match diagnostic.severity {
+      Severity::Error => 1,
+      Severity::Warning => 2,
+      Severity::Information => 3,
+    },
+    "code": diagnostic.code,
+    "source": "woxi",
+    "message": diagnostic.message,
+  })
+}
+
+/// The edits turning `document` into `formatted`, restricted to the lines
+/// `first..=last` when a line range is given.
+///
+/// The formatter keeps a document's lines, so the two texts line up and
+/// only the lines that actually changed are sent — an editor then leaves
+/// the cursor and the folds of every untouched line alone. Should that
+/// ever not hold, the whole document is replaced instead.
+fn text_edits(
+  document: &Document,
+  formatted: &str,
+  lines: Option<(u32, u32)>,
+) -> Vec<Value> {
+  if formatted == document.text {
+    return Vec::new();
+  }
+  let old: Vec<&str> = document.text.split('\n').collect();
+  let new: Vec<&str> = formatted.split('\n').collect();
+  if old.len() != new.len() {
+    let end = document
+      .line_index
+      .position(&document.text, document.text.len());
+    return vec![json!({
+      "range": {
+        "start": { "line": 0, "character": 0 },
+        "end": { "line": end.0, "character": end.1 },
+      },
+      "newText": formatted,
+    })];
+  }
+  let mut edits = Vec::new();
+  for (line, (before, after)) in old.iter().zip(new.iter()).enumerate() {
+    if before == after {
+      continue;
+    }
+    let line = line as u32;
+    if lines.is_some_and(|(first, last)| line < first || line > last) {
+      continue;
+    }
+    edits.push(json!({
+      "range": {
+        "start": { "line": line, "character": 0 },
+        "end": {
+          "line": line,
+          "character": before.chars().map(char::len_utf16).sum::<usize>(),
+        },
+      },
+      "newText": after,
+    }));
+  }
+  edits
 }
 
 /// Sort key putting implemented symbols before everything Woxi cannot run.
@@ -661,6 +943,19 @@ fn initialize_result() -> Value {
       "referencesProvider": true,
       "documentHighlightProvider": true,
       "documentSymbolProvider": true,
+      "semanticTokensProvider": {
+        "legend": {
+          "tokenTypes": SEMANTIC_TOKEN_TYPES,
+          "tokenModifiers": SEMANTIC_TOKEN_MODIFIERS,
+        },
+        "full": true,
+        "range": true,
+      },
+      "documentFormattingProvider": true,
+      "documentRangeFormattingProvider": true,
+      "codeActionProvider": {
+        "codeActionKinds": [QUICK_FIX, SOURCE_FIX_ALL],
+      },
     },
     "serverInfo": {
       "name": "woxi",
