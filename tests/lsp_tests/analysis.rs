@@ -372,23 +372,7 @@ fn an_astral_character_takes_two_utf16_code_units() {
 /// rejecting valid code.
 #[test]
 fn no_repository_script_reports_a_syntax_error() {
-  let scripts = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-    .join("tests")
-    .join("scripts");
-  let mut checked = 0;
-  for entry in std::fs::read_dir(&scripts).unwrap() {
-    let path = entry.unwrap().path();
-    if path.extension().is_none_or(|ext| ext != "wls") {
-      continue;
-    }
-    // `_`-prefixed scripts are local scratch files (gitignored as
-    // `/tests/scripts/_*`), not part of the repository.
-    if path
-      .file_name()
-      .is_some_and(|name| name.to_string_lossy().starts_with('_'))
-    {
-      continue;
-    }
+  for path in super::repository::script_paths() {
     let source = std::fs::read_to_string(&path).unwrap();
     let source = woxi::without_shebang(&source);
     let errors: Vec<_> = diagnostics(&source, &tokenize(&source), &[])
@@ -401,9 +385,7 @@ fn no_repository_script_reports_a_syntax_error() {
       path.display(),
       errors.first().map(|error| &error.message)
     );
-    checked += 1;
   }
-  assert!(checked > 100, "expected the script suite, found {checked}");
 }
 
 proptest::proptest! {

@@ -7,5 +7,6 @@ mod lsp_tests {
   mod corpus;
   mod format;
   mod protocol;
+  mod repository;
   mod server;
 }

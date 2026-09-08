@@ -13,21 +13,15 @@ use woxi::lsp::format::{Options, format};
 
 /// Every `.wls` script in the repository, as `(name, source)`.
 fn scripts() -> Vec<(String, String)> {
-  let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/scripts");
-  let mut scripts: Vec<(String, String)> = std::fs::read_dir(dir)
-    .expect("tests/scripts is readable")
-    .filter_map(|entry| {
-      let path = entry.ok()?.path();
-      if path.extension()?.to_str()? != "wls" {
-        return None;
-      }
-      let name = path.file_name()?.to_str()?.to_string();
-      Some((name, std::fs::read_to_string(&path).ok()?))
+  super::repository::script_paths()
+    .into_iter()
+    .map(|path| {
+      let name = path.file_name().unwrap().to_string_lossy().into_owned();
+      let source = std::fs::read_to_string(&path)
+        .unwrap_or_else(|_| panic!("{} is readable", path.display()));
+      (name, source)
     })
-    .collect();
-  scripts.sort();
-  assert!(scripts.len() > 100, "expected the script corpus to be here");
-  scripts
+    .collect()
 }
 
 /// The `(kind, text)` of every token of `source`, comments included.
