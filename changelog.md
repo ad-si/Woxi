@@ -2,6 +2,18 @@
 
 # Unreleased
 
+- The rational-root search remembers the divisor lists it computes, and
+    trial-divides in 64-bit arithmetic wherever the remainder fits.
+    `Residue[Zeta[z], {z, 1}]` walked a million 128-bit trial divisions for
+    each of the same seventeen 11-to-35-digit numbers, 800 times over — the
+    exact rationals of the probe points a `Limit` takes towards its pole,
+    which reach `Factor` through `Simplify`'s `Cancel`. The five residues of
+    the `zeta_pole_residues` test took 16.2 s together, over the 20 s
+    per-test limit under CI's parallel load and so red on `main` since
+    c5658a3; they now take 4.2 s, with no pathological loop left in the
+    profile (the rest is ordinary symbolic evaluation). Neither change
+    alters a single divisor list.
+
 - `woxi lsp` gained the four editor features that were still missing:
     semantic highlighting, formatting, code actions, and the spelling
     hints the code actions fix.
