@@ -579,8 +579,12 @@ pub fn dispatch_plotting(
         crate::capture_stdout("");
         return Some(Ok(Expr::Identifier("Null".to_string())));
       }
-      let display_str: String =
-        args.iter().map(expr_to_output).collect::<String>();
+      // Printing consumes its arguments, so an `Unevaluated[…]` wrapper
+      // comes off first: `Print[Unevaluated[Symbol]]` writes `Symbol`.
+      let display_str: String = args
+        .iter()
+        .map(|arg| expr_to_output(&crate::evaluator::strip_unevaluated(arg)))
+        .collect::<String>();
       if !crate::is_quiet_print() {
         println!("{display_str}");
       }

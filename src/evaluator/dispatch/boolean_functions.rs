@@ -88,11 +88,22 @@ pub fn dispatch_boolean_functions(
     "ControlActive" if args.is_empty() => {
       return Some(Ok(bool_expr(false)));
     }
+    // A structural comparison consumes its arguments, so the `Unevaluated`
+    // wrapper comes off first: `SameQ[Unevaluated[x], x]` is True. It is
+    // what WLX's `With[{s = Extract[…, Unevaluated]}, s === Symbol]` asks.
     "SameQ" => {
-      return Some(crate::functions::boolean_ast::same_q_ast(args));
+      let bare: Vec<Expr> = args
+        .iter()
+        .map(crate::evaluator::strip_unevaluated)
+        .collect();
+      return Some(crate::functions::boolean_ast::same_q_ast(&bare));
     }
     "UnsameQ" => {
-      return Some(crate::functions::boolean_ast::unsame_q_ast(args));
+      let bare: Vec<Expr> = args
+        .iter()
+        .map(crate::evaluator::strip_unevaluated)
+        .collect();
+      return Some(crate::functions::boolean_ast::unsame_q_ast(&bare));
     }
     "Which" => {
       // which_ast handles all arities: Which[] -> Null, even counts process

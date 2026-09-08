@@ -86,12 +86,12 @@ impl Token {
   /// `LeafNode[kind, "text", <|Source -> …|>]`.
   fn to_leaf_node(&self, convention: Convention) -> Expr {
     Expr::FunctionCall {
-      name: "LeafNode".to_string(),
+      name: "CodeParser`LeafNode".to_string(),
       args: vec![
         Expr::Identifier(self.kind.clone()),
         Expr::String(self.text.clone()),
         Expr::Association(vec![(
-          Expr::Identifier("Source".to_string()),
+          Expr::Identifier("CodeParser`Source".to_string()),
           self.source(convention),
         )]),
       ]
@@ -945,18 +945,90 @@ pub fn code_tokenize(source: &str, convention: Convention) -> Expr {
   )
 }
 
+/// The `GroupNode` kind an opening bracket starts, and the token that
+/// closes it.
+fn group_kind(open_token: &str) -> Option<(&'static str, &'static str)> {
+  Some(match open_token {
+    "Token`OpenSquare" => ("GroupSquare", "Token`CloseSquare"),
+    "Token`OpenCurly" => ("List", "Token`CloseCurly"),
+    "Token`OpenParen" => ("GroupParen", "Token`CloseParen"),
+    "Token`LessBar" => ("Association", "Token`BarGreater"),
+    _ => return None,
+  })
+}
+
+/// Collect `tokens[*index…]` into concrete-tree nodes until `closer` (or the
+/// end of the tokens when there is none to look for), grouping each bracketed
+/// run under a `GroupNode`. `index` is left just past the closing token.
+fn group_tokens(
+  tokens: &[Token],
+  index: &mut usize,
+  closer: Option<&str>,
+  convention: Convention,
+) -> Vec<Expr> {
+  let mut nodes: Vec<Expr> = Vec::new();
+  while *index < tokens.len() {
+    let token = &tokens[*index];
+    if closer == Some(token.kind.as_str()) {
+      nodes.push(token.to_leaf_node(convention));
+      *index += 1;
+      return nodes;
+    }
+    if let Some((kind, inner_closer)) = group_kind(&token.kind) {
+      let opened_at = *index;
+      let mut children = vec![token.to_leaf_node(convention)];
+      *index += 1;
+      children.extend(group_tokens(
+        tokens,
+        index,
+        Some(inner_closer),
+        convention,
+      ));
+      let group = Token {
+        kind: kind.to_string(),
+        text: String::new(),
+        first: tokens[opened_at].first,
+        past: tokens[*index - 1].past,
+        start_line_column: tokens[opened_at].start_line_column,
+        end_line_column: tokens[*index - 1].end_line_column,
+      };
+      nodes.push(Expr::FunctionCall {
+        name: "CodeParser`GroupNode".to_string(),
+        args: vec![
+          Expr::Identifier(kind.to_string()),
+          Expr::List(children.into()),
+          Expr::Association(vec![(
+            Expr::Identifier("CodeParser`Source".to_string()),
+            group.source(convention),
+          )]),
+        ]
+        .into(),
+      });
+    } else {
+      nodes.push(token.to_leaf_node(convention));
+      *index += 1;
+    }
+  }
+  nodes
+}
+
 /// `CodeParser`CodeConcreteParse[source]` — the concrete tree.
 ///
-/// The children are the tokens themselves. A fuller implementation would
-/// group them under the operator nodes they belong to; what callers ask the
-/// concrete tree for, and what this answers, is where each piece of the
-/// source sits.
+/// The children are the tokens themselves, except that a bracketed run is
+/// collected under the `GroupNode` it belongs to. That is what makes the
+/// *top* level of the tree the top level of the source: WLX cuts a `.wlx`
+/// file at the newlines it finds there, and a newline inside a bracket is
+/// not a place a statement ends. A fuller implementation would go on to
+/// group the operator nodes as well.
 pub fn code_concrete_parse(source: &str, convention: Convention) -> Expr {
+  let tokens = tokenize(source);
+  let mut index = 0;
+  let children = group_tokens(&tokens, &mut index, None, convention);
   Expr::FunctionCall {
-    name: "ContainerNode".to_string(),
+    name: "CodeParser`ContainerNode".to_string(),
     args: vec![
       Expr::Identifier("String".to_string()),
-      code_tokenize(source, convention),
+      Expr::List(children.into()),
       Expr::Association(vec![]),
     ]
     .into(),
@@ -983,7 +1055,7 @@ pub fn code_parse(source: &str, convention: Convention) -> Expr {
     Err(error) => vec![error_node(source, &error.to_string(), convention)],
   };
   Expr::FunctionCall {
-    name: "ContainerNode".to_string(),
+    name: "CodeParser`ContainerNode".to_string(),
     args: vec![
       Expr::Identifier("String".to_string()),
       Expr::List(children.into()),
@@ -1011,11 +1083,14 @@ fn error_node(source: &str, message: &str, convention: Convention) -> Expr {
     ),
   };
   Expr::FunctionCall {
-    name: "ErrorNode".to_string(),
+    name: "CodeParser`ErrorNode".to_string(),
     args: vec![
       Expr::Identifier("Token`Error`UnexpectedCharacter".to_string()),
       Expr::String(message.to_string()),
-      Expr::Association(vec![(Expr::Identifier("Source".to_string()), span)]),
+      Expr::Association(vec![(
+        Expr::Identifier("CodeParser`Source".to_string()),
+        span,
+      )]),
     ]
     .into(),
   }
@@ -1059,4 +1134,43 @@ fn character_index_of(source: &str, line: usize, column: usize) -> usize {
     index += 1;
   }
   index
+}
+
+/// The names `CodeParser`` exports, so that reading one of them inside a
+/// package that loaded the context resolves *there*: WLX cuts a `.wlx` file
+/// with `Cases[…, LeafNode[Token`Newline, _, a_] :> Lookup[a, Source, …]]`,
+/// and the bare `LeafNode` in that pattern has to be the same symbol the
+/// nodes carry as their head. Woxi has no package files, so nothing else
+/// would ever bring these into being.
+///
+/// The node heads Woxi never builds are declared too: a package that matches
+/// on `InfixNode` should be looking at `CodeParser`InfixNode` and finding
+/// nothing, not at a symbol of its own.
+const EXPORTED_SYMBOLS: &[&str] = &[
+  "BinaryNode",
+  "BoxNode",
+  "CallNode",
+  "CodeConcreteParse",
+  "CodeParse",
+  "CodeTokenize",
+  "CompoundNode",
+  "ContainerNode",
+  "ErrorNode",
+  "GroupNode",
+  "InfixNode",
+  "LeafNode",
+  "PostfixNode",
+  "PrefixBinaryNode",
+  "PrefixNode",
+  "Source",
+  "SourceCharacterIndex",
+  "SourceConvention",
+  "TernaryNode",
+];
+
+/// Bring the `CodeParser`` names into being, as loading the paclet does.
+pub fn register_context_symbols() {
+  for name in EXPORTED_SYMBOLS {
+    crate::evaluator::contexts::create_symbol(&format!("CodeParser`{name}"));
+  }
 }

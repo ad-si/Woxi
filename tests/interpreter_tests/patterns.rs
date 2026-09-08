@@ -5866,3 +5866,310 @@ mod orderless_slot_readings {
     );
   }
 }
+
+/// `tag /: lhs := rhs` needs the tag somewhere the stored rule can be found
+/// again. The wrappers that only name a pattern, restrict it or say how
+/// greedily to match it are transparent: WLJS writes its formatting rule as
+/// `UObject /: MakeBoxes[object : UObject[…], form : …] := …`, and Wolfram
+/// files that under `UObject`. Verified against wolframscript.
+mod tagged_rule_reachability {
+  use super::*;
+
+  #[test]
+  fn a_named_pattern_still_carries_its_tag() {
+    clear_state();
+    assert_eq!(
+      interpret("tagF /: tagG[x:tagF[_]] := 1; UpValues[tagF]").unwrap(),
+      "{HoldPattern[tagG[x:tagF[_]]] :> 1}"
+    );
+  }
+
+  #[test]
+  fn the_transparent_wrappers_are_transparent() {
+    for lhs in [
+      "tagG[(x:tagF[_])?q]",
+      "tagG[x:tagF[_] /; c]",
+      "tagG[HoldPattern[tagF[_]]]",
+      "tagG[Verbatim[tagF[_]]]",
+      "tagG[Longest[tagF[_]]]",
+      "tagG[Shortest[tagF[_]]]",
+      "tagG[Repeated[tagF[_]]]",
+      "tagG[RepeatedNull[tagF[_]]]",
+      "tagG[x:(y:tagF[_])]",
+      "tagG[Blank[tagF]]",
+    ] {
+      clear_state();
+      assert_eq!(
+        interpret(&format!("tagF /: {lhs} := 1; Length[UpValues[tagF]]"))
+          .unwrap(),
+        "1",
+        "{lhs} should carry the tag"
+      );
+    }
+  }
+
+  /// The wrappers Wolfram does *not* look through, and a tag that really is
+  /// too deep, all still report `tagpos` and define nothing.
+  #[test]
+  fn a_tag_that_is_really_too_deep_is_still_refused() {
+    for lhs in [
+      "tagG[tagH[tagF[_]]]",
+      "tagG[Optional[x:tagF[_]]]",
+      "tagG[Except[tagF[_]]]",
+      "tagG[PatternSequence[tagF[_]]]",
+      "tagG[{tagF[_]}]",
+    ] {
+      clear_state();
+      assert_eq!(
+        interpret(&format!("tagF /: {lhs} := 1; Length[UpValues[tagF]]"))
+          .unwrap(),
+        "0",
+        "{lhs} should be too deep"
+      );
+      let msgs = woxi::get_captured_messages_raw();
+      assert!(
+        msgs.iter().any(|m| m.contains("TagSetDelayed::tagpos")),
+        "expected tagpos for {lhs}, got {msgs:?}"
+      );
+    }
+  }
+}
+
+/// A blank's head restriction and a pattern's own name are ordinary symbols
+/// that a replacement rule reaches: `x_obj /. obj -> t` is `x_t`. WLJS's
+/// `CreateUType` derives one object type from another exactly this way, by
+/// rewriting the parent's whole definition with `parent -> type`.
+mod replacing_a_patterns_head {
+  use super::*;
+
+  #[test]
+  fn a_symbol_rule_rewrites_the_head_restriction() {
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[x_f] /. f -> g]]").unwrap(),
+      "Hold[Pattern[x, Blank[g]]]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[x__f] /. f -> g]]").unwrap(),
+      "Hold[Pattern[x, BlankSequence[g]]]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[x___f] /. f -> g]]").unwrap(),
+      "Hold[Pattern[x, BlankNullSequence[g]]]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[_f] /. f -> g]]").unwrap(),
+      "Hold[Blank[g]]"
+    );
+    assert_eq!(
+      interpret(
+        "ToString[FullForm[Hold[Set[n_Symbol, o_UObj]] /. UObj -> Tcp]]"
+      )
+      .unwrap(),
+      "Hold[Set[Pattern[n, Blank[Symbol]], Pattern[o, Blank[Tcp]]]]"
+    );
+  }
+
+  #[test]
+  fn it_reaches_the_name_and_the_wrappers_too() {
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[x_f] /. x -> y]]").unwrap(),
+      "Hold[Pattern[y, Blank[f]]]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[x_f?q] /. f -> g]]").unwrap(),
+      "Hold[PatternTest[Pattern[x, Blank[g]], q]]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[x_f?q] /. q -> r]]").unwrap(),
+      "Hold[PatternTest[Pattern[x, Blank[f]], r]]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[x_f : d] /. f -> g]]").unwrap(),
+      "Hold[Optional[Pattern[x, Blank[g]], d]]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[x_f : d] /. d -> e]]").unwrap(),
+      "Hold[Optional[Pattern[x, Blank[f]], e]]"
+    );
+  }
+
+  /// A rule that names none of the pattern's parts leaves it alone.
+  #[test]
+  fn an_unrelated_rule_changes_nothing() {
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[x_f] /. h -> g]]").unwrap(),
+      "Hold[Pattern[x, Blank[f]]]"
+    );
+  }
+}
+
+/// An argument a Hold attribute protects is as held under `/.` as one inside
+/// `Hold` itself. WLJS's WLX importer rewrites `StringJoinFake -> StringJoin`
+/// inside its own `HoldAll` wrapper and expects the joins to stay unevaluated
+/// until the component runs. Verified against wolframscript.
+mod replacement_respects_hold_attributes {
+  use super::*;
+
+  #[test]
+  fn a_head_rewritten_under_hold_all_does_not_evaluate() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "SetAttributes[holdG, HoldAll]; holdG[qq[1, 2]] /. {qq -> Plus}"
+      )
+      .unwrap(),
+      "holdG[1 + 2]"
+    );
+    assert_eq!(
+      interpret("holdG[sjF[\"a\", \"b\"]] /. {sjF -> StringJoin}").unwrap(),
+      "holdG[StringJoin[a, b]]"
+    );
+    // Nothing holds the list, so its own contents still evaluate.
+    assert_eq!(interpret("{qq[1, 2]} /. {qq -> Plus}").unwrap(), "{3}");
+  }
+
+  #[test]
+  fn hold_first_and_hold_rest_hold_only_their_own_arguments() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "SetAttributes[holdF, HoldFirst]; \
+         holdF[qq[1, 2], qq[3, 4]] /. {qq -> Plus}"
+      )
+      .unwrap(),
+      "holdF[1 + 2, 7]"
+    );
+    assert_eq!(
+      interpret(
+        "SetAttributes[holdR, HoldRest]; \
+         holdR[qq[1, 2], qq[3, 4]] /. {qq -> Plus}"
+      )
+      .unwrap(),
+      "holdR[3, 3 + 4]"
+    );
+  }
+
+  /// The delayed right-hand side is not evaluated inside a held argument
+  /// either: with `y = 5`, `g[x] /. {x :> y}` is `g[y]`.
+  #[test]
+  fn a_delayed_replacement_stays_unevaluated_under_hold() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "holdY = 5; SetAttributes[holdG2, HoldAll]; \
+                 holdG2[holdX] /. {holdX :> holdY}"
+      )
+      .unwrap(),
+      "holdG2[holdY]"
+    );
+  }
+}
+
+/// A sequence-bound pattern variable splices where it is substituted, not
+/// only where the result is evaluated: `{v}` with `v` bound to `Sequence[a,
+/// b]` is `{a, b}` even inside a `Hold` attribute's argument. WLX builds a
+/// component's `Module` variable list with
+/// `vars /. _@{v__} :> Module[{v}, …]`. Verified against wolframscript.
+mod a_sequence_binding_splices_where_it_lands {
+  use super::*;
+
+  #[test]
+  fn it_splices_inside_a_held_head() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "SetAttributes[seqFH, HoldAll]; \
+         ToString[seqHold[{aa, bb, cc}] /. _@{v__} :> \
+           seqFH[Module[{v}, {v}]], InputForm]"
+      )
+      .unwrap(),
+      "seqFH[Module[{aa, bb, cc}, {aa, bb, cc}]]"
+    );
+    assert_eq!(
+      interpret(
+        "ToString[Hold[{aa, bb}] /. _@{v__} :> Module[{v}, 1], InputForm]"
+      )
+      .unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn it_still_splices_where_evaluation_would_have() {
+    clear_state();
+    assert_eq!(
+      interpret("Hold[{aa, bb}] /. _@{v__} :> {v}").unwrap(),
+      "{aa, bb}"
+    );
+    assert_eq!(
+      interpret("Hold[{aa, bb}] /. _@{v__} :> seqF[v]").unwrap(),
+      "seqF[aa, bb]"
+    );
+  }
+
+  /// A `Sequence[…]` written out in the replacement is not a binding, so it
+  /// stays as written.
+  #[test]
+  fn a_written_out_sequence_is_left_alone() {
+    clear_state();
+    assert_eq!(
+      interpret("ToString[Hold[{Sequence[1, 2]}], InputForm]").unwrap(),
+      "Hold[{Sequence[1, 2]}]"
+    );
+  }
+}
+
+/// A tagged rule whose argument is written inside a pattern wrapper still
+/// dispatches on the head the wrapper wraps: `obj /: fmt[o : obj[s_Symbol]]
+/// := …` fires on `fmt[obj[x]]` and binds both names. WLJS's `UObject /:
+/// MakeBoxes[object : UObject[symbol_Symbol?AssociationQ], …] := …` is this
+/// shape. Verified against wolframscript.
+mod a_wrapped_pattern_argument_still_dispatches {
+  use super::*;
+
+  #[test]
+  fn a_named_structural_pattern_binds_both_names() {
+    clear_state();
+    assert_eq!(
+      interpret("wobj /: wfmt[o : wobj[s_Symbol]] := {o, s}; wfmt[wobj[x]]")
+        .unwrap(),
+      "{wobj[x], x}"
+    );
+  }
+
+  #[test]
+  fn a_pattern_test_and_a_named_blank_dispatch_too() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "wq[_] := True; wobj2 /: wfmt2[wobj2[_]?wq] := \"b\"; wfmt2[wobj2[x]]"
+      )
+      .unwrap(),
+      "b"
+    );
+    assert_eq!(
+      interpret("wobj3 /: wfmt3[o : _wobj3] := \"b\"; wfmt3[wobj3[x]]")
+        .unwrap(),
+      "b"
+    );
+  }
+
+  /// An alternatives slot next to it still restricts what matches.
+  #[test]
+  fn a_later_alternatives_slot_still_restricts() {
+    clear_state();
+    interpret(
+      "wobj4 /: wfmt4[o : wobj4[_Symbol], f : StandardForm | TraditionalForm] \
+       := {o, f}",
+    )
+    .unwrap();
+    assert_eq!(
+      interpret("wfmt4[wobj4[x], StandardForm]").unwrap(),
+      "{wobj4[x], StandardForm}"
+    );
+    assert_eq!(
+      interpret("wfmt4[wobj4[x], OtherForm]").unwrap(),
+      "wfmt4[wobj4[x], OtherForm]"
+    );
+  }
+}

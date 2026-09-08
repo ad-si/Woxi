@@ -36,3 +36,27 @@ True
 $ wo 'DateObject[{2024, 2, 29}]["Granularity"]'
 Day
 ```
+
+A date is itself a date specification, so a second `DateObject` re-tags it —
+`DateObject[Now, "Hour"]` is the hour `Now` falls in, the key a package
+caching once an hour keys its entries on:
+
+```scrut
+$ wo 'DateObject[DateObject[{2026, 9, 8, 10, 14, 50.5}], "Hour"]'
+DateObject[{2026, 9, 8, 10}, Hour, Gregorian, 0.]
+```
+
+`"Second"` drops the fraction that `"Instant"` keeps:
+
+```scrut
+$ wo 'DateObject[DateObject[{2026, 9, 8, 10, 14, 50.5}], "Second"]'
+DateObject[{2026, 9, 8, 10, 14, 50}, Second, Gregorian, 0.]
+```
+
+Refining a coarse date pads the missing components; a date that carries no
+offset of its own gets `None`:
+
+```scrut
+$ wo 'DateObject[DateObject[{2026, 9}], "Hour"]'
+DateObject[{2026, 9, 1, 0}, Hour, Gregorian, None]
+```

@@ -1940,9 +1940,9 @@ fn flatten_times_chain(expr: &Expr) -> Vec<Expr> {
 /// the head at the bottom of its call/part chain — `UObject[sym]["key"]` is
 /// reached through `UObject` — and the symbols that head's arguments name,
 /// which is where `obj /: Set[f[obj], v_] := …` attaches.
-fn assignment_upvalue_tags(lhs: &Expr) -> Vec<String> {
+fn assignment_upvalue_tags(part: &Expr) -> Vec<String> {
   let mut tags: Vec<String> = Vec::new();
-  let mut current = lhs;
+  let mut current = part;
   loop {
     match current {
       Expr::Identifier(name) => {
@@ -1984,7 +1984,16 @@ fn try_assignment_upvalue(
   lhs: &Expr,
   rhs: &Expr,
 ) -> Option<Result<Expr, InterpreterError>> {
-  let tags = assignment_upvalue_tags(lhs);
+  // Both sides of the assignment are level-1 parts of it, so both carry
+  // tags: WLX writes `ImportComponent /: SetDelayed[symbol_,
+  // ImportComponent[args_, opts___]] := …` to give `tpl := ImportComponent[…]`
+  // a meaning of its own, and the only symbol that names is on the right.
+  let mut tags = assignment_upvalue_tags(lhs);
+  for tag in assignment_upvalue_tags(rhs) {
+    if !tags.contains(&tag) {
+      tags.push(tag);
+    }
+  }
   if tags.is_empty() {
     return None;
   }
@@ -2320,11 +2329,16 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
           .insert(var_name.clone(), StoredValue::ExprVal(rhs_value.clone()))
       });
     } else {
+      // A symbol keeps its context: `cache = wcache` inside a package has to
+      // store `Pkg\`Private\`wcache`, not the `wcache` it prints as, or
+      // reading the value back names a different (undefined) symbol.
+      let stored = match &rhs_value {
+        Expr::Identifier(symbol) => symbol.clone(),
+        other => expr_to_string(other),
+      };
       ENV.with(|e| {
-        e.borrow_mut().insert(
-          var_name.clone(),
-          StoredValue::Raw(expr_to_string(&rhs_value)),
-        )
+        e.borrow_mut()
+          .insert(var_name.clone(), StoredValue::Raw(stored))
       });
     }
 
@@ -3764,32 +3778,49 @@ pub fn set_delayed_ast(
       .flatten()
       .any(|c| condition_is_literal_arg(&params, c));
 
-    crate::FUNC_DEFS.with(|m| {
-      let mut defs = m.borrow_mut();
-      let entry = defs.entry(func_name.clone()).or_insert_with(Vec::new);
-      let insert_pos = if suppress_specificity_sort() {
-        // DownValues[f] := {...} replay: append in source order so the
-        // caller's listing is preserved.
-        entry.len()
-      } else if has_literal_conditions {
-        // Literal-match definitions go before pattern definitions but after
-        // existing literal definitions (preserving definition order).
-        entry
-          .iter()
-          .position(|(pp, c, _, _, _, _)| {
+    // Where the new rule goes among the ones already stored. Comparing two
+    // rules *matches patterns*, and matching evaluates — a `/;` guard, a
+    // `?test` — and evaluation reads the definition table back (a symbol's
+    // context is resolved against the defined names). So the table must not
+    // stay borrowed across the scan: read one rule at a time, letting go of
+    // the borrow before each comparison.
+    let stored_rule_count = crate::FUNC_DEFS.with(|m| {
+      m.borrow()
+        .get(func_name.as_str())
+        .map_or(0, std::vec::Vec::len)
+    });
+    let stored_rule = |index: usize| {
+      crate::FUNC_DEFS.with(|m| {
+        m.borrow()
+          .get(func_name.as_str())
+          .and_then(|entry| entry.get(index))
+          .cloned()
+      })
+    };
+    let insert_pos = if suppress_specificity_sort() {
+      // DownValues[f] := {...} replay: append in source order so the
+      // caller's listing is preserved.
+      stored_rule_count
+    } else if has_literal_conditions {
+      // Literal-match definitions go before pattern definitions but after
+      // existing literal definitions (preserving definition order).
+      (0..stored_rule_count)
+        .find(|&index| {
+          stored_rule(index).is_some_and(|(pp, c, _, _, _, _)| {
             !c.iter()
               .flatten()
-              .any(|cc| condition_is_literal_arg(pp, cc))
+              .any(|cc| condition_is_literal_arg(&pp, cc))
           })
-          .unwrap_or(entry.len())
-      } else {
-        // Insert by the rule partial order: place the new rule before the first
-        // existing rule it strictly dominates (is more specific than). Rules it
-        // does not dominate — including incomparable ones — keep definition
-        // order, matching Wolfram.
-        entry
-          .iter()
-          .position(|(p, c, d, h, bt, b)| {
+        })
+        .unwrap_or(stored_rule_count)
+    } else {
+      // Insert by the rule partial order: place the new rule before the first
+      // existing rule it strictly dominates (is more specific than). Rules it
+      // does not dominate — including incomparable ones — keep definition
+      // order, matching Wolfram.
+      (0..stored_rule_count)
+        .find(|&index| {
+          stored_rule(index).is_some_and(|(p, c, d, h, bt, b)| {
             rule_dominates(
               &params,
               &heads,
@@ -3797,16 +3828,24 @@ pub fn set_delayed_ast(
               &conditions,
               &defaults,
               &final_body,
-              p,
-              h,
-              bt,
-              c,
-              d,
-              b,
+              &p,
+              &h,
+              &bt,
+              &c,
+              &d,
+              &b,
             )
           })
-          .unwrap_or(entry.len())
-      };
+        })
+        .unwrap_or(stored_rule_count)
+    };
+
+    crate::FUNC_DEFS.with(|m| {
+      let mut defs = m.borrow_mut();
+      let entry = defs.entry(func_name.clone()).or_insert_with(Vec::new);
+      // A guard evaluated during the scan above could itself have defined a
+      // rule for the same symbol; never index past what is there now.
+      let insert_pos = insert_pos.min(entry.len());
       entry.insert(
         insert_pos,
         (params, conditions, defaults, heads, blank_types, final_body),
@@ -4673,12 +4712,49 @@ pub fn extract_pattern_info(expr: &Expr) -> (String, Option<String>, u8) {
   }
 }
 
+/// The wrappers a pattern may sit inside without moving any deeper: they
+/// name the pattern, restrict it or say how greedily to match it, but the
+/// expression they match still has the same head. `obj /: f[x:obj[_]] := …`
+/// and `obj /: f[obj[_]?q] := …` are both tagged where Wolfram can find
+/// them again; `Optional`, `Except`, `PatternSequence` and `Alternatives`
+/// are *not* in this list, because Wolfram rejects them too.
+fn strip_pattern_wrappers(arg: &Expr) -> &Expr {
+  match arg {
+    Expr::FunctionCall { name, args }
+      if args.len() == 1
+        && matches!(
+          name.as_str(),
+          "HoldPattern"
+            | "Verbatim"
+            | "Longest"
+            | "Shortest"
+            | "Repeated"
+            | "RepeatedNull"
+        ) =>
+    {
+      strip_pattern_wrappers(&args[0])
+    }
+    // `Repeated[p, spec]`, `p /; test` and `p?test` all keep `p` first.
+    Expr::FunctionCall { name, args }
+      if args.len() == 2
+        && matches!(
+          name.as_str(),
+          "Pattern" | "PatternTest" | "Condition" | "Repeated" | "RepeatedNull"
+        ) =>
+    {
+      strip_pattern_wrappers(&args[usize::from(name == "Pattern")])
+    }
+    other => other,
+  }
+}
+
 /// Whether an argument of a tagged assignment's left-hand side names `tag`
 /// somewhere the assignment can find it again: as itself, as its own head
 /// however many calls deep the head chain runs (`UObj[s_Symbol][k_String]`
 /// is tagged `UObj`), or as the head a blank restricts to (`f[x_obj]`).
 /// A tag buried in an argument's *arguments* does not count.
 fn argument_carries_tag(tag: &str, arg: &Expr) -> bool {
+  let arg = strip_pattern_wrappers(arg);
   if pattern_head_tag(arg).as_deref() == Some(tag) {
     return true;
   }
@@ -4892,10 +4968,17 @@ pub fn tag_set_delayed_ast(
 
   for (i, arg) in lhs_args.iter().enumerate() {
     let arg = unwrap_longest_shortest(arg);
+    // A pattern wrapper is not the head of the expression the argument
+    // matches: `o : obj[_Symbol]` matches an `obj[…]`, not a `Pattern[…]`.
+    // Those go to the structural-pattern path below, which stores the
+    // pattern itself and binds its variables.
+    let is_wrapped_pattern = matches!(arg, Expr::FunctionCall { name, .. }
+      if crate::evaluator::pattern_matching::is_pattern_construct_head(name));
     if let Expr::FunctionCall {
       name: arg_func_name,
       args: inner_args,
     } = arg
+      && !is_wrapped_pattern
     {
       let param_name = format!("_up{i}");
       heads.push(Some(arg_func_name.clone()));

@@ -5551,3 +5551,100 @@ mod definition_order_by_subsumption {
     );
   }
 }
+
+/// An assignment consults the upvalues of the symbols on *both* sides: WLJS's
+/// WLX importer writes `ImportComponent /: SetDelayed[symbol_,
+/// ImportComponent[args_, opts___]] := …` so that `tpl := ImportComponent[…]`
+/// stores a component rather than the component's expansion, and the only
+/// symbol that rule is tagged by is on the right. Verified against
+/// wolframscript.
+mod an_assignment_consults_the_right_hand_sides_upvalues {
+  use super::*;
+
+  #[test]
+  fn a_set_delayed_upvalue_claims_the_definition() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "upIC /: SetDelayed[symbol_, upIC[args_]] := (symbol := upHeld[args]); \
+         upA := upIC[\"x\"]; \
+         upA"
+      )
+      .unwrap(),
+      "upHeld[x]"
+    );
+  }
+
+  /// The wrapper-object idiom the importer builds on: the upvalue turns a
+  /// delayed definition into a parameterised one.
+  #[test]
+  fn the_upvalue_can_define_a_parameterised_symbol() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "SetAttributes[upEHO, HoldFirst]; \
+         upEHO /: SetDelayed[symbol_, upEHO[obj_, assoc_]] := \
+           (symbol[rules___Rule] := \
+             Block[{upOpts = Association[{rules}]}, ReleaseHold[obj]]); \
+         upC := upEHO[Hold[upOpts[\"k\"]], <|\"Path\" -> \"p\"|>]; \
+         upC[\"k\" -> 7]"
+      )
+      .unwrap(),
+      "7"
+    );
+  }
+
+  /// A left-hand-side upvalue still claims the assignment, as before.
+  #[test]
+  fn a_left_hand_side_upvalue_still_wins() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "upObj /: Set[upObj[k_], v_] := upStored[k, v]; upObj[\"a\"] = 1"
+      )
+      .unwrap(),
+      "upStored[a, 1]"
+    );
+  }
+}
+
+/// A scoping construct binds its locals as ordinary values, so an
+/// association bound by `Block` or `Module` still answers a key the way a
+/// global one does. WLX hands a component its `$Options` this way.
+mod a_scoped_association_answers_a_key {
+  use super::*;
+
+  #[test]
+  fn block_and_module_locals_are_callable() {
+    clear_state();
+    assert_eq!(
+      interpret("Block[{scopedA = <|\"k\" -> 7|>}, scopedA[\"k\"]]").unwrap(),
+      "7"
+    );
+    assert_eq!(
+      interpret("Module[{scopedA = <|\"k\" -> 7|>}, scopedA[\"k\"]]").unwrap(),
+      "7"
+    );
+    assert_eq!(
+      interpret("With[{scopedA = <|\"k\" -> 7|>}, scopedA[\"k\"]]").unwrap(),
+      "7"
+    );
+  }
+
+  /// Nested access and a missing key behave as they do for a global.
+  #[test]
+  fn nested_keys_and_missing_keys_behave() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Block[{scopedB = <|\"a\" -> <|\"b\" -> 2|>|>}, scopedB[\"a\"][\"b\"]]"
+      )
+      .unwrap(),
+      "2"
+    );
+    assert_eq!(
+      interpret("Block[{scopedB = <|\"a\" -> 1|>}, scopedB[\"z\"]]").unwrap(),
+      "Missing[KeyAbsent, z]"
+    );
+  }
+}

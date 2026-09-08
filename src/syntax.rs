@@ -212,518 +212,18 @@ pub struct PlotSeriesData {
 }
 
 /// Convert a Wolfram named character name (e.g. "Pi", "Alpha", "Sum") to its
-/// Unicode string. Returns None if the name is not recognized.
+/// Unicode string. Returns None if the name is not one Wolfram has a
+/// character for, which is what makes the reader report `Syntax::sntufn` and
+/// leave the escape in the string.
 ///
-/// The code point returned is the one Wolfram itself stores, which for a
-/// large part of the table is a *private-use* character rather than the
-/// standard Unicode look-alike: `\[WarningSign]` is U+F725, not U+26A0, and
-/// `ToCharacterCode` has to report exactly that. Only Wolfram's own fonts
-/// draw those code points, so text that gets *drawn* runs through
-/// [`substitute_private_use_glyphs`] first; the string itself keeps the
-/// canonical code point.
+/// The table lives in [`crate::named_characters`]; see its module comment for
+/// where it comes from and why so much of it is private-use code points.
 pub fn named_char_to_unicode(name: &str) -> Option<&'static str> {
-  Some(match name {
-    // Constants / special identifiers (render as Unicode in strings)
-    "ExponentialE" => "\u{F74D}",
-    "Degree" => "\u{00B0}",
-    "Infinity" => "\u{221E}",
-    "ImaginaryI" => "\u{F74E}",
-    "ImaginaryJ" => "\u{F74F}",
-    // Lowercase Greek (Pi handled here too)
-    "Alpha" => "\u{03B1}",
-    "Beta" => "\u{03B2}",
-    "Gamma" => "\u{03B3}",
-    "Delta" => "\u{03B4}",
-    "Epsilon" => "\u{03F5}",
-    "Zeta" => "\u{03B6}",
-    "Eta" => "\u{03B7}",
-    "Theta" => "\u{03B8}",
-    "Iota" => "\u{03B9}",
-    "Kappa" => "\u{03BA}",
-    "Lambda" => "\u{03BB}",
-    "Mu" => "\u{03BC}",
-    "Nu" => "\u{03BD}",
-    "Xi" => "\u{03BE}",
-    "Omicron" => "\u{03BF}",
-    "Pi" => "\u{03C0}",
-    "Rho" => "\u{03C1}",
-    "Sigma" => "\u{03C3}",
-    "FinalSigma" => "\u{03C2}",
-    "Tau" => "\u{03C4}",
-    "Upsilon" => "\u{03C5}",
-    "Phi" => "\u{03D5}",
-    "CurlyPhi" => "\u{03C6}",
-    "CurlyEpsilon" => "\u{03B5}",
-    "CurlyTheta" => "\u{03D1}",
-    "CurlyKappa" => "\u{03F0}",
-    "CurlyPi" => "\u{03D6}",
-    "CurlyRho" => "\u{03F1}",
-    "Chi" => "\u{03C7}",
-    "Psi" => "\u{03C8}",
-    "Omega" => "\u{03C9}",
-    // Uppercase Greek
-    "CapitalAlpha" => "\u{0391}",
-    "CapitalBeta" => "\u{0392}",
-    "CapitalGamma" => "\u{0393}",
-    "CapitalDelta" => "\u{0394}",
-    "CapitalEpsilon" => "\u{0395}",
-    "CapitalZeta" => "\u{0396}",
-    "CapitalEta" => "\u{0397}",
-    "CapitalTheta" => "\u{0398}",
-    "CapitalIota" => "\u{0399}",
-    "CapitalKappa" => "\u{039A}",
-    "CapitalLambda" => "\u{039B}",
-    "CapitalMu" => "\u{039C}",
-    "CapitalNu" => "\u{039D}",
-    "CapitalXi" => "\u{039E}",
-    "CapitalOmicron" => "\u{039F}",
-    "CapitalPi" => "\u{03A0}",
-    "CapitalRho" => "\u{03A1}",
-    "CapitalSigma" => "\u{03A3}",
-    "CapitalTau" => "\u{03A4}",
-    "CapitalUpsilon" => "\u{03A5}",
-    "CapitalPhi" => "\u{03A6}",
-    "CapitalChi" => "\u{03A7}",
-    "CapitalPsi" => "\u{03A8}",
-    "CapitalOmega" => "\u{03A9}",
-    // Script (calligraphic) letters. The letters whose script forms
-    // predate the Mathematical Alphanumeric Symbols block live in
-    // Letterlike Symbols (U+2100–214F) instead of U+1D49C–1D4CF.
-    // Script letters. Wolfram keeps its own script alphabet in the private
-    // use area (U+F770… and U+F6B2…) and only falls back to the standard
-    // letterlike symbols where Unicode has one (ℬ, ℯ, ℓ, …) — the
-    // Mathematical Alphanumeric Symbols block is *not* what it stores.
-    "ScriptCapitalA" => "\u{F770}",
-    "ScriptCapitalB" => "\u{212C}",
-    "ScriptCapitalC" => "\u{F772}",
-    "ScriptCapitalD" => "\u{F773}",
-    "ScriptCapitalE" => "\u{2130}",
-    "ScriptCapitalF" => "\u{2131}",
-    "ScriptCapitalG" => "\u{F776}",
-    "ScriptCapitalH" => "\u{210B}",
-    "ScriptCapitalI" => "\u{2110}",
-    "ScriptCapitalJ" => "\u{F779}",
-    "ScriptCapitalK" => "\u{F77A}",
-    "ScriptCapitalL" => "\u{2112}",
-    "ScriptCapitalM" => "\u{2133}",
-    "ScriptCapitalN" => "\u{F77D}",
-    "ScriptCapitalO" => "\u{F77E}",
-    "ScriptCapitalP" => "\u{F77F}",
-    "ScriptCapitalQ" => "\u{F780}",
-    "ScriptCapitalR" => "\u{211B}",
-    "ScriptCapitalS" => "\u{F782}",
-    "ScriptCapitalT" => "\u{F783}",
-    "ScriptCapitalU" => "\u{F784}",
-    "ScriptCapitalV" => "\u{F785}",
-    "ScriptCapitalW" => "\u{F786}",
-    "ScriptCapitalX" => "\u{F787}",
-    "ScriptCapitalY" => "\u{F788}",
-    "ScriptCapitalZ" => "\u{F789}",
-    "ScriptA" => "\u{F6B2}",
-    "ScriptB" => "\u{F6B3}",
-    "ScriptC" => "\u{F6B4}",
-    "ScriptD" => "\u{F6B5}",
-    "ScriptE" => "\u{212F}",
-    "ScriptF" => "\u{F6B7}",
-    "ScriptG" => "\u{210A}",
-    "ScriptH" => "\u{F6B9}",
-    "ScriptI" => "\u{F6BA}",
-    "ScriptJ" => "\u{F6BB}",
-    "ScriptK" => "\u{F6BC}",
-    "ScriptL" => "\u{2113}",
-    "ScriptM" => "\u{F6BE}",
-    "ScriptN" => "\u{F6BF}",
-    "ScriptO" => "\u{2134}",
-    "ScriptP" => "\u{F6C1}",
-    "ScriptQ" => "\u{F6C2}",
-    "ScriptR" => "\u{F6C3}",
-    "ScriptS" => "\u{F6C4}",
-    "ScriptT" => "\u{F6C5}",
-    "ScriptU" => "\u{F6C6}",
-    "ScriptV" => "\u{F6C7}",
-    "ScriptW" => "\u{F6C8}",
-    "ScriptX" => "\u{F6C9}",
-    "ScriptY" => "\u{F6CA}",
-    "ScriptZ" => "\u{F6CB}",
-    // Double-struck letters and digits. Wolfram keeps these in the private
-    // use area too: capitals at U+F7A4…, lower case at U+F6E6…, digits at
-    // U+F7DB… (`\[DoubleStruckCapitalZ]`, the integers in a usage message).
-    "DoubleStruckCapitalA" => "\u{F7A4}",
-    "DoubleStruckCapitalB" => "\u{F7A5}",
-    "DoubleStruckCapitalC" => "\u{F7A6}",
-    "DoubleStruckCapitalD" => "\u{F7A7}",
-    "DoubleStruckCapitalE" => "\u{F7A8}",
-    "DoubleStruckCapitalF" => "\u{F7A9}",
-    "DoubleStruckCapitalG" => "\u{F7AA}",
-    "DoubleStruckCapitalH" => "\u{F7AB}",
-    "DoubleStruckCapitalI" => "\u{F7AC}",
-    "DoubleStruckCapitalJ" => "\u{F7AD}",
-    "DoubleStruckCapitalK" => "\u{F7AE}",
-    "DoubleStruckCapitalL" => "\u{F7AF}",
-    "DoubleStruckCapitalM" => "\u{F7B0}",
-    "DoubleStruckCapitalN" => "\u{F7B1}",
-    "DoubleStruckCapitalO" => "\u{F7B2}",
-    "DoubleStruckCapitalP" => "\u{F7B3}",
-    "DoubleStruckCapitalQ" => "\u{F7B4}",
-    "DoubleStruckCapitalR" => "\u{F7B5}",
-    "DoubleStruckCapitalS" => "\u{F7B6}",
-    "DoubleStruckCapitalT" => "\u{F7B7}",
-    "DoubleStruckCapitalU" => "\u{F7B8}",
-    "DoubleStruckCapitalV" => "\u{F7B9}",
-    "DoubleStruckCapitalW" => "\u{F7BA}",
-    "DoubleStruckCapitalX" => "\u{F7BB}",
-    "DoubleStruckCapitalY" => "\u{F7BC}",
-    "DoubleStruckCapitalZ" => "\u{F7BD}",
-    "DoubleStruckA" => "\u{F6E6}",
-    "DoubleStruckB" => "\u{F6E7}",
-    "DoubleStruckC" => "\u{F6E8}",
-    "DoubleStruckD" => "\u{F6E9}",
-    "DoubleStruckE" => "\u{F6EA}",
-    "DoubleStruckF" => "\u{F6EB}",
-    "DoubleStruckG" => "\u{F6EC}",
-    "DoubleStruckH" => "\u{F6ED}",
-    "DoubleStruckI" => "\u{F6EE}",
-    "DoubleStruckJ" => "\u{F6EF}",
-    "DoubleStruckK" => "\u{F6F0}",
-    "DoubleStruckL" => "\u{F6F1}",
-    "DoubleStruckM" => "\u{F6F2}",
-    "DoubleStruckN" => "\u{F6F3}",
-    "DoubleStruckO" => "\u{F6F4}",
-    "DoubleStruckP" => "\u{F6F5}",
-    "DoubleStruckQ" => "\u{F6F6}",
-    "DoubleStruckR" => "\u{F6F7}",
-    "DoubleStruckS" => "\u{F6F8}",
-    "DoubleStruckT" => "\u{F6F9}",
-    "DoubleStruckU" => "\u{F6FA}",
-    "DoubleStruckV" => "\u{F6FB}",
-    "DoubleStruckW" => "\u{F6FC}",
-    "DoubleStruckX" => "\u{F6FD}",
-    "DoubleStruckY" => "\u{F6FE}",
-    "DoubleStruckZ" => "\u{F6FF}",
-    "DoubleStruckZero" => "\u{F7DB}",
-    "DoubleStruckOne" => "\u{F7DC}",
-    "DoubleStruckTwo" => "\u{F7DD}",
-    "DoubleStruckThree" => "\u{F7DE}",
-    "DoubleStruckFour" => "\u{F7DF}",
-    "DoubleStruckFive" => "\u{F7E0}",
-    "DoubleStruckSix" => "\u{F7E1}",
-    "DoubleStruckSeven" => "\u{F7E2}",
-    "DoubleStruckEight" => "\u{F7E3}",
-    "DoubleStruckNine" => "\u{F7E4}",
-    // Common symbols
-    "Euro" => "\u{20AC}",
-    "Micro" => "\u{00B5}",
-    "Angstrom" => "\u{212B}",
-    "HBar" => "\u{210F}",
-    // Math operators and symbols
-    "Sum" => "\u{2211}",
-    "Product" => "\u{220F}",
-    "Integral" => "\u{222B}",
-    "PartialD" => "\u{2202}",
-    "Del" => "\u{2207}",
-    "DifferentialD" => "\u{F74C}",
-    "CapitalDifferentialD" => "\u{F74B}",
-    "Sqrt" => "\u{221A}",
-    "CubeRoot" => "\u{221B}",
-    "Not" => "\u{00AC}",
-    "And" => "\u{2227}",
-    "Or" => "\u{2228}",
-    "ForAll" => "\u{2200}",
-    "Exists" => "\u{2203}",
-    "NotExists" => "\u{2204}",
-    "EmptySet" => "\u{2205}",
-    "Element" => "\u{2208}",
-    "NotElement" => "\u{2209}",
-    "ReverseElement" => "\u{220B}",
-    "Subset" => "\u{2282}",
-    "Superset" => "\u{2283}",
-    "SubsetEqual" => "\u{2286}",
-    "SupersetEqual" => "\u{2287}",
-    // Wolfram's `\[Union]`/`\[Intersection]` are the n-ary forms (⋃/⋂,
-    // U+22C3/U+22C2), not the binary ∪/∩ (U+222A/U+2229).
-    "Union" => "\u{22C3}",
-    "Intersection" => "\u{22C2}",
-    "Minus" => "\u{2212}",
-    "PlusMinus" => "\u{00B1}",
-    "MinusPlus" => "\u{2213}",
-    "Times" => "\u{00D7}",
-    "Divide" => "\u{00F7}",
-    "CenterDot" => "\u{00B7}",
-    // `\[Backslash]` is the set-minus glyph ∖ (U+2216), not the ASCII `\`:
-    // `ToCharacterCode["\[Backslash]"]` is `{8726}`.
-    "Backslash" => "\u{2216}",
-    // The symbolic ring operators the parser already reads as infix operators
-    // (`a \[CirclePlus] b` → `CirclePlus[a, b]`). They are ordinary characters
-    // too, so a package that only prints one — Rubi writes its `Star` between
-    // a coefficient and an integral — must get the glyph, not a message.
-    "CirclePlus" => "\u{2295}",
-    "CircleMinus" => "\u{2296}",
-    "CircleTimes" => "\u{2297}",
-    "CircleDot" => "\u{2299}",
-    "Star" => "\u{22C6}",
-    "Diamond" => "\u{22C4}",
-    "SmallCircle" => "\u{2218}",
-    "Wedge" => "\u{22C0}",
-    "Vee" => "\u{22C1}",
-    // `\[Equal]` is the typeset `==`; it has its own private-use code point
-    // rather than reusing the ASCII `=` (which is `Set`).
-    "Equal" => "\u{F431}",
-    "NotEqual" => "\u{2260}",
-    "LessEqual" => "\u{2264}",
-    "GreaterEqual" => "\u{2265}",
-    // The slanted comparison family. `\[LessSlantEqual]` is the glyph a
-    // Demonstration writes its ≤ relation with; the negated pair lives in
-    // Wolfram's private use area, like the other negated operators.
-    "LessSlantEqual" => "\u{2A7D}",
-    "GreaterSlantEqual" => "\u{2A7E}",
-    "NotLessSlantEqual" => "\u{F424}",
-    "NotGreaterSlantEqual" => "\u{F429}",
-    "LessFullEqual" => "\u{2266}",
-    "GreaterFullEqual" => "\u{2267}",
-    "NotLessEqual" => "\u{2270}",
-    "NotGreaterEqual" => "\u{2271}",
-    "LessTilde" => "\u{2272}",
-    "GreaterTilde" => "\u{2273}",
-    "LessEqualGreater" => "\u{22DA}",
-    "GreaterEqualLess" => "\u{22DB}",
-    "Proportional" => "\u{221D}",
-    "Congruent" => "\u{2261}",
-    "Tilde" => "\u{223C}",
-    "TildeTilde" => "\u{2248}",
-    "LeftArrow" => "\u{2190}",
-    "RightArrow" => "\u{2192}",
-    "UpArrow" => "\u{2191}",
-    "DownArrow" => "\u{2193}",
-    "LeftRightArrow" => "\u{2194}",
-    "UpDownArrow" => "\u{2195}",
-    "DoubleLeftArrow" => "\u{21D0}",
-    "DoubleRightArrow" => "\u{21D2}",
-    "DoubleUpArrow" => "\u{21D1}",
-    "DoubleDownArrow" => "\u{21D3}",
-    "DoubleLeftRightArrow" => "\u{21D4}",
-    "DoubleUpDownArrow" => "\u{21D5}",
-    // Long arrows — the reaction arrows a chemistry Demonstration writes
-    // between reactants and products.
-    "LongLeftArrow" => "\u{27F5}",
-    "LongRightArrow" => "\u{27F6}",
-    "LongLeftRightArrow" => "\u{27F7}",
-    "DoubleLongLeftArrow" => "\u{27F8}",
-    "DoubleLongRightArrow" => "\u{27F9}",
-    "DoubleLongLeftRightArrow" => "\u{27FA}",
-    "Equilibrium" => "\u{21CC}",
-    "ReverseEquilibrium" => "\u{21CB}",
-    "UpEquilibrium" => "\u{296E}",
-    "ReverseUpEquilibrium" => "\u{296F}",
-    "LeftTeeArrow" => "\u{21A4}",
-    "RightTeeArrow" => "\u{21A6}",
-    "UpTeeArrow" => "\u{21A5}",
-    "DownTeeArrow" => "\u{21A7}",
-    "Rule" => "\u{F522}",
-    "RuleDelayed" => "\u{F51F}",
-    "DirectedEdge" => "\u{F3D5}",
-    "UndirectedEdge" => "\u{F3D4}",
-    "Distributed" => "\u{F3D2}",
-    "Conditioned" => "\u{F3D3}",
-    "Cross" => "\u{F4A0}",
-    "TensorProduct" => "\u{F3DA}",
-    // Dots
-    "Ellipsis" => "\u{2026}",
-    "CenterEllipsis" => "\u{22EF}",
-    "VerticalEllipsis" => "\u{22EE}",
-    "AscendingEllipsis" => "\u{22F0}",
-    "DescendingEllipsis" => "\u{22F1}",
-    // Geometric and miscellaneous symbols (used as identifier-character
-    // literals in Wolfram, e.g. `\[Angle]XYZ` is the symbol `∠XYZ`).
-    "Angle" => "\u{2220}",
-    "FilledSquare" => "\u{25A0}",
-    "EmptySquare" => "\u{25A1}",
-    "FilledSmallSquare" => "\u{25FC}",
-    "EmptySmallSquare" => "\u{25FB}",
-    "FilledVerySmallSquare" => "\u{25AA}",
-    "EmptyVerySmallSquare" => "\u{25AB}",
-    "FilledCircle" => "\u{25CF}",
-    "EmptyCircle" => "\u{25CB}",
-    "FilledSmallCircle" => "\u{F750}",
-    "EmptySmallCircle" => "\u{25E6}",
-    "FilledDiamond" => "\u{25C6}",
-    "EmptyDiamond" => "\u{25C7}",
-    "FilledUpTriangle" => "\u{25B2}",
-    "EmptyUpTriangle" => "\u{25B3}",
-    "FilledDownTriangle" => "\u{25BC}",
-    "EmptyDownTriangle" => "\u{25BD}",
-    "FilledLeftTriangle" => "\u{25C0}",
-    "FilledRightTriangle" => "\u{25B6}",
-    "Placeholder" => "\u{F528}",
-    "SelectionPlaceholder" => "\u{F527}",
-    // Pictographs and signs. Demonstrations reach for these inside prose
-    // and control labels — a setter caption reading "…\[LongDash]\
-    // \[WarningSign] slow!" must draw the sign, not the escape.
-    "WarningSign" => "\u{F725}",
-    "Checkmark" => "\u{2713}",
-    "WatchIcon" => "\u{231A}",
-    "FivePointedStar" => "\u{2605}",
-    "SixPointedStar" => "\u{2736}",
-    // Musical accidentals
-    "Sharp" => "\u{266F}",
-    "Flat" => "\u{266D}",
-    "Natural" => "\u{266E}",
-    // Astronomical symbols (the Sun and the planets, U+2609 and
-    // U+263F-U+2647). Wolfram departs from that block twice: `\[Earth]` is a
-    // private-use glyph and `\[Uranus]` is the astronomical ⛢ rather than the
-    // astrological ♅.
-    "Sun" => "\u{2609}",
-    "Mercury" => "\u{263F}",
-    "Venus" => "\u{2640}",
-    "Earth" => "\u{F3DF}",
-    "Mars" => "\u{2642}",
-    "Jupiter" => "\u{2643}",
-    "Saturn" => "\u{2644}",
-    "Uranus" => "\u{26E2}",
-    "Neptune" => "\u{2646}",
-    "Pluto" => "\u{2647}",
-    // Braces/brackets
-    "LeftAngleBracket" => "\u{2329}",
-    "RightAngleBracket" => "\u{232A}",
-    "LeftCeiling" => "\u{2308}",
-    "RightCeiling" => "\u{2309}",
-    "LeftFloor" => "\u{230A}",
-    "RightFloor" => "\u{230B}",
-    "LeftDoubleBracket" => "\u{301A}",
-    "RightDoubleBracket" => "\u{301B}",
-    // Abs/Norm bars. Wolfram has no public Unicode code point for these
-    // (unlike the ASCII `|` they visually resemble), so like `Rule` and
-    // `Equal` above they live in the private use area.
-    "LeftBracketingBar" => "\u{F603}",
-    "RightBracketingBar" => "\u{F604}",
-    "LeftDoubleBracketingBar" => "\u{F605}",
-    "RightDoubleBracketingBar" => "\u{F606}",
-    // Whitespace control characters (Wolfram treats these as the raw chars).
-    // `\[IndentingNewLine]` is the FrontEnd's own newline, so it carries a
-    // private-use code point instead of U+000A.
-    "NewLine" => "\n",
-    "IndentingNewLine" => "\u{F3A3}",
-    "LineSeparator" => "\u{2028}",
-    "ParagraphSeparator" => "\u{2029}",
-    // Typographic punctuation
-    "OpenCurlyQuote" => "\u{2018}",
-    "CloseCurlyQuote" => "\u{2019}",
-    "OpenCurlyDoubleQuote" => "\u{201C}",
-    "CloseCurlyDoubleQuote" => "\u{201D}",
-    "Hyphen" => "\u{2010}",
-    "Dash" => "\u{2013}",
-    "LongDash" => "\u{2014}",
-    "LeftGuillemet" => "\u{00AB}",
-    "RightGuillemet" => "\u{00BB}",
-    "Prime" => "\u{2032}",
-    "DoublePrime" => "\u{2033}",
-    "Bullet" => "\u{2022}",
-    "Dagger" => "\u{2020}",
-    "DoubleDagger" => "\u{2021}",
-    "Section" => "\u{00A7}",
-    "Paragraph" => "\u{00B6}",
-    "Copyright" => "\u{00A9}",
-    "RegisteredTrademark" => "\u{00AE}",
-    "Trademark" => "\u{2122}",
-    "Continuation" => "\u{F3B1}",
-    // The span characters fill the cells a `Grid` entry reaches over. They
-    // draw nothing, but they are characters: `StringLength` counts them.
-    "SpanFromLeft" => "\u{F3BA}",
-    "SpanFromAbove" => "\u{F3BB}",
-    "SpanFromBoth" => "\u{F3BC}",
-    // The `\[Raw…]` family names the ASCII control characters, so that a
-    // notebook can write one without embedding an untypeable byte.
-    "RawEscape" => "\u{001B}",
-    "RawTab" => "\t",
-    "RawReturn" => "\r",
-    "RawSpace" => " ",
-    // Miscellaneous
-    "Null" => "\u{F3A0}",
-    "InvisibleSpace" => "\u{F360}",
-    "ThinSpace" => "\u{2009}",
-    "MediumSpace" => "\u{205F}",
-    "ThickSpace" => "\u{2005}",
-    "VeryThinSpace" => "\u{200A}",
-    "NegativeVeryThinSpace" => "\u{F380}",
-    "NegativeThinSpace" => "\u{F382}",
-    "NegativeMediumSpace" => "\u{F383}",
-    "NegativeThickSpace" => "\u{F384}",
-    "InvisibleTimes" => "\u{2062}",
-    "InvisibleComma" => "\u{F765}",
-    "InvisibleApplication" => "\u{F76D}",
-    // Placeholders the FrontEnd hangs a *prefix* or *postfix* script on, so
-    // that `\!\(\*SuperscriptBox[\(\[InvisiblePrefixScriptBase]\), \(1\)]\)Σ`
-    // typesets as `¹Σ`. They carry no glyph of their own, but they are
-    // characters that `StringLength` counts — only drawing drops them.
-    "InvisiblePrefixScriptBase" => "\u{F3B3}",
-    "InvisiblePostfixScriptBase" => "\u{F3B4}",
-    // Accented Latin letters (Latin-1 supplement). Wolfram names them by
-    // base letter + diacritic, e.g. `\[CCedilla]` is ç, `\[ODoubleDot]` is
-    // ö. Needed so imported text (e.g. "Curaçao") compares equal to source
-    // written with the named-character escapes.
-    "AGrave" => "\u{00E0}",
-    "AAcute" => "\u{00E1}",
-    "AHat" => "\u{00E2}",
-    "ATilde" => "\u{00E3}",
-    "ADoubleDot" => "\u{00E4}",
-    "ARing" => "\u{00E5}",
-    "AE" => "\u{00E6}",
-    "CCedilla" => "\u{00E7}",
-    "EGrave" => "\u{00E8}",
-    "EAcute" => "\u{00E9}",
-    "EHat" => "\u{00EA}",
-    "EDoubleDot" => "\u{00EB}",
-    "IGrave" => "\u{00EC}",
-    "IAcute" => "\u{00ED}",
-    "IHat" => "\u{00EE}",
-    "IDoubleDot" => "\u{00EF}",
-    "Eth" => "\u{00F0}",
-    "NTilde" => "\u{00F1}",
-    "OGrave" => "\u{00F2}",
-    "OAcute" => "\u{00F3}",
-    "OHat" => "\u{00F4}",
-    "OTilde" => "\u{00F5}",
-    "ODoubleDot" => "\u{00F6}",
-    "OSlash" => "\u{00F8}",
-    "UGrave" => "\u{00F9}",
-    "UAcute" => "\u{00FA}",
-    "UHat" => "\u{00FB}",
-    "UDoubleDot" => "\u{00FC}",
-    "YAcute" => "\u{00FD}",
-    "Thorn" => "\u{00FE}",
-    "YDoubleDot" => "\u{00FF}",
-    "SZ" => "\u{00DF}",
-    "CapitalAGrave" => "\u{00C0}",
-    "CapitalAAcute" => "\u{00C1}",
-    "CapitalAHat" => "\u{00C2}",
-    "CapitalATilde" => "\u{00C3}",
-    "CapitalADoubleDot" => "\u{00C4}",
-    "CapitalARing" => "\u{00C5}",
-    "CapitalAE" => "\u{00C6}",
-    "CapitalCCedilla" => "\u{00C7}",
-    "CapitalEGrave" => "\u{00C8}",
-    "CapitalEAcute" => "\u{00C9}",
-    "CapitalEHat" => "\u{00CA}",
-    "CapitalEDoubleDot" => "\u{00CB}",
-    "CapitalIGrave" => "\u{00CC}",
-    "CapitalIAcute" => "\u{00CD}",
-    "CapitalIHat" => "\u{00CE}",
-    "CapitalIDoubleDot" => "\u{00CF}",
-    "CapitalEth" => "\u{00D0}",
-    "CapitalNTilde" => "\u{00D1}",
-    "CapitalOGrave" => "\u{00D2}",
-    "CapitalOAcute" => "\u{00D3}",
-    "CapitalOHat" => "\u{00D4}",
-    "CapitalOTilde" => "\u{00D5}",
-    "CapitalODoubleDot" => "\u{00D6}",
-    "CapitalOSlash" => "\u{00D8}",
-    "CapitalUGrave" => "\u{00D9}",
-    "CapitalUAcute" => "\u{00DA}",
-    "CapitalUHat" => "\u{00DB}",
-    "CapitalUDoubleDot" => "\u{00DC}",
-    "CapitalYAcute" => "\u{00DD}",
-    "CapitalThorn" => "\u{00DE}",
-    _ => return None,
-  })
+  let table = crate::named_characters::NAMED_CHARACTERS;
+  table
+    .binary_search_by(|(candidate, _)| (*candidate).cmp(name))
+    .ok()
+    .map(|index| table[index].1)
 }
 
 /// Wolfram keeps a large part of its character set in the Unicode private use
@@ -2728,7 +2228,9 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
                   found_close = true;
                   break;
                 }
-                if ch.is_ascii_alphabetic() {
+                // A few long names carry a digit (`\[Mod1Key]`), so the name
+                // runs over alphanumerics, not letters alone.
+                if ch.is_ascii_alphanumeric() {
                   name.push(ch);
                   chars.next();
                 } else {
@@ -3302,8 +2804,19 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
       // here to match. Repeated chains (`a:b:c:d:e`) keep nesting the
       // Optional on the right (`Optional[Pattern[a, b], <inner>]`),
       // which mirrors wolframscript's `a:b:(c:d:e)` display.
+      let source = pair.as_str();
+      let source_start = pair.as_span().start();
       let mut inner = pair.into_inner();
-      let name = inner.next().unwrap().as_str().to_string();
+      let name_pair = inner.next().unwrap();
+      let name = name_pair.as_str().to_string();
+      // Brackets end the chain: `x : (y : z)` is `Pattern[x, Pattern[y, z]]`,
+      // not the `Optional[Pattern[x, y], z]` that the bare `x : y : z` means.
+      // The grammar drops the brackets, so this reads them off the source.
+      let body_is_bracketed = source
+        [name_pair.as_span().end() - source_start..]
+        .trim_start()
+        .strip_prefix(':')
+        .is_some_and(|body| body.trim_start().starts_with('('));
       let mut body = pair_to_expr(inner.next().unwrap());
       let mut rest = inner.peekable();
       if rest
@@ -3356,6 +2869,7 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
       } = &body
         && bn == "Pattern"
         && bargs.len() == 2
+        && !body_is_bracketed
       {
         return Expr::FunctionCall {
           name: "Optional".to_string(),
@@ -8144,6 +7658,7 @@ fn printed_infix_precedence(e: &Expr) -> Option<u8> {
       "Condition" if args.len() == 2 => Some(13),
       "Pattern" if args.len() == 2 => Some(14),
       "StringJoin" if args.len() >= 2 => Some(30),
+      "CompoundExpression" if args.len() >= 2 => Some(1),
       "Power" if args.len() == 2 => Some(48),
       _ => None,
     },
@@ -8471,6 +7986,15 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       }
     }
     Expr::FunctionCall { name, args } => {
+      // `CompoundExpression[a, b]` written out is the same expression as
+      // `a; b` and prints the same way. One argument does not: `Hold[
+      // CompoundExpression[a]]` stays in call form, as wolframscript does.
+      if name == "CompoundExpression" && args.len() >= 2 {
+        return format_expr(
+          &Expr::CompoundExpr(args.to_vec()),
+          ExprForm::Input,
+        );
+      }
       // Named slot Slot["name"] displays as #name (matching wolframscript).
       if name == "Slot"
         && args.len() == 1
@@ -12301,6 +11825,13 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
 fn expr_to_input_form_impl(expr: &Expr) -> String {
   let _guard = TrueInputFormGuard(IN_TRUE_INPUT_FORM.with(|c| c.replace(true)));
   match expr {
+    // `CompoundExpression[a, b]` written out prints as `a; b`, the same as
+    // the `;` the parser reads.
+    Expr::FunctionCall { name, args }
+      if name == "CompoundExpression" && args.len() >= 2 =>
+    {
+      expr_to_input_form(&Expr::CompoundExpr(args.to_vec()))
+    }
     // `Definition[sym]` / `FullDefinition[sym]` print as the definition text
     // in every form, InputForm included (as wolframscript does).
     Expr::FunctionCall { name, args }
@@ -14793,6 +14324,35 @@ pub fn substitute_pattern_bindings(
   substitute_variables_impl(expr, bindings, true)
 }
 
+/// Substitute into each part of a list or a call, splicing a part that was a
+/// pattern variable bound to a `Sequence[…]`.
+///
+/// `f[a, b, c]` matched against `f[v__]` binds `v` to `Sequence[a, b, c]`, and
+/// `{v}` in the replacement is `{a, b, c}` — the substitution splices, so it
+/// reads that way even where a `Hold` attribute keeps the list from
+/// evaluating. WLX's `vars /. _@{v__} :> Module[{v}, …]` builds a component's
+/// local variable list exactly like this. A `Sequence[…]` written out in the
+/// replacement itself is left alone; only a bound variable's value splices.
+fn substitute_parts(
+  items: &[Expr],
+  bindings: &[(&str, &Expr)],
+  template: bool,
+) -> Vec<Expr> {
+  let mut out: Vec<Expr> = Vec::with_capacity(items.len());
+  for item in items {
+    let substituted = substitute_variables_impl(item, bindings, template);
+    match (item, &substituted) {
+      (Expr::Identifier(_), Expr::FunctionCall { name, args })
+        if name == "Sequence" =>
+      {
+        out.extend(args.iter().cloned());
+      }
+      _ => out.push(substituted),
+    }
+  }
+  out
+}
+
 /// Work out a pure function's parameter list while substituting into it.
 ///
 /// Returns the parameter names to use, the bindings that still reach the body,
@@ -15077,12 +14637,9 @@ fn substitute_variables_impl(
       }
       expr.clone()
     }
-    Expr::List(items) => Expr::List(
-      items
-        .iter()
-        .map(|e| substitute_variables_impl(e, bindings, template))
-        .collect(),
-    ),
+    Expr::List(items) => {
+      Expr::List(substitute_parts(items, bindings, template).into())
+    }
     Expr::FunctionCall { name, args } if name == "Part" && args.len() == 2 => {
       match resolve_synthetic_list_part(expr, bindings) {
         Some(resolved) => resolved,
@@ -15155,10 +14712,7 @@ fn substitute_variables_impl(
       {
         return substitute_into_scoping_construct(name, args, bindings);
       }
-      let new_args: Vec<Expr> = args
-        .iter()
-        .map(|e| substitute_variables_impl(e, bindings, template))
-        .collect();
+      let new_args: Vec<Expr> = substitute_parts(args, bindings, template);
       // Check if the function name itself is being substituted
       for &(var_name, value) in bindings {
         if name == var_name {

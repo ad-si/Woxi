@@ -2,6 +2,76 @@
 
 # Unreleased
 
+- The WLJS Notebook backend gets past module loading. Its adapter branch
+    surfaced six language gaps, all of them fixed here and all verified
+    against `wolframscript`:
+
+    - **Named characters** — the table is now Wolfram's whole table (1100
+        names, transcribed from a Wolfram Engine's `UnicodeCharacters.tr`
+        and checked name by name against `ToCharacterCode`) instead of the
+        437 that had been added one at a time. `\[TwoWayRule]`,
+        `\[Application]` and `\[CupCap]` — written inside WLJS's
+        autocomplete usage strings — no longer report `Syntax::sntufn` and
+        stay in the string as escapes. A long name may also carry a digit
+        (`\[Mod1Key]`).
+
+    - **Tagged rules** — `tag /: lhs := rhs` looks through the wrappers that
+        only name a pattern, restrict it or say how greedily to match it
+        (`Pattern`, `PatternTest`, `Condition`, `HoldPattern`, `Verbatim`,
+        `Longest`/`Shortest`, `Repeated`/`RepeatedNull`), so WLJS's
+        `UObject /: MakeBoxes[object : UObject[…], form : …] := …` stores
+        its rule instead of reporting `TagSetDelayed::tagpos`. Brackets end
+        the `sym : pat : val` chain, so `x : (y : z)` is `Pattern[x,
+        Pattern[y, z]]`, not `Optional[Pattern[x, y], z]`.
+
+    - **Assignment upvalues** — an assignment consults the upvalues of the
+        symbols on *both* sides, so `tpl := ImportComponent[…]` reaches
+        `ImportComponent /: SetDelayed[symbol_, ImportComponent[args_,
+        opts___]] := …`. Without it every WLX component ran its body once
+        at load time, with its `$Options` unbound.
+
+    - **Replacement** — a symbol rule reaches a blank's head restriction and
+        a pattern's own name (`x_obj /. obj -> t` is `x_t`), which is how
+        WLJS's `CreateUType` derives one object type from another; `/.`
+        descends into `f @@ list`, `f /@ list` and the other application
+        operators; and an argument a `Hold` attribute protects is as held
+        under `/.` as one inside `Hold` (`g[f[1, 2]] /. {f -> Plus}` is
+        `g[1 + 2]` for a `HoldAll` `g`).
+
+    - **Scoping and contexts** — `Block[{o = <|…|>}, o["k"]]` answers the
+        key; `cache = wcache` inside a package stores the symbol with its
+        context, so calling through the alias reaches the same definitions;
+        and storing a definition no longer holds the definition table
+        borrowed while it compares rules, which crashed the interpreter
+        when a comparison read the table back.
+
+    - **`Composition` and `DateObject`** — `Composition[f, g][x]` is built
+        and then evaluated as a whole, so a holding `f` keeps `g[x]`
+        unevaluated (WLX interpolates with `FakeHold @* ToString`), and
+        `ToExpression[str, form, h]` accepts a compound `h`.
+        `DateObject[date, granularity]` re-tags an existing date, so
+        `DateObject[Now, "Hour"]` is the hour it falls in — the key WLX's
+        cache is keyed on.
+
+    - **`CodeParser`** — loading the context brings its names into being and
+        puts it on `$ContextPath`, so a package that writes `LeafNode` means
+        `CodeParser\`LeafNode` — the head the nodes carry. A bracketed run
+        of tokens is collected under a `GroupNode`, which makes the *top*
+        level of the concrete tree the top level of the source: WLX cuts a
+        `.wlx` file at the newlines it finds there, and a newline inside a
+        bracket is not a place a statement ends.
+
+    - **Reading and substituting** — `ToExpression["a := 1;", InputForm,
+        Hold]` keeps the trailing `Null` the empty statement stands for, and
+        `CompoundExpression[a, b]` written out prints as `a; b`. A
+        sequence-bound pattern variable splices where it is *substituted*
+        rather than only where the result is evaluated, so
+        `Hold[{a, b}] /. _@{v__} :> Module[{v}, …]` localises both names.
+
+- `FileNameJoin["a//b/"]` normalises a path given as a single string
+    (`"a/b"`) instead of leaving the call unevaluated, and
+    `FileNameSplit["a//b"]` keeps the interior empty piece.
+
 - `woxi lsp` starts a Language Server Protocol server for the Wolfram
     Language, so any editor with an LSP client can check and explore
     Woxi scripts. It publishes diagnostics (syntax errors, and warnings

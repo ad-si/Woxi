@@ -272,7 +272,7 @@ fn symbol_exists(full_name: &str) -> bool {
 /// neither is `Global`priv` alongside `P`Private`priv`. (wolframscript
 /// reports `P`x` created inside `BeginPackage["P`"]` next to a `Global`x`,
 /// where `P`` is on the path, but stays silent for `P`Private`x`.)
-fn create_symbol(full_name: &str) {
+pub(crate) fn create_symbol(full_name: &str) {
   let is_new =
     SYMBOL_TABLE.with(|t| t.borrow_mut().insert(full_name.to_string()));
   if !is_new {

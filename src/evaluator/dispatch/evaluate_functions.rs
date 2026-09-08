@@ -624,11 +624,27 @@ fn is_identifier_like(s: &str) -> bool {
 ///
 /// A context already loaded, or one that ships with the Wolfram Language
 /// (Woxi keeps every built-in in one namespace), needs no file.
+/// Bring into being the symbols a context that ships with the Wolfram
+/// Language exports. Woxi keeps its built-ins in one namespace, so nothing
+/// else would create them — and a package that reads one of the names by its
+/// short form has to land on the same symbol the built-in produces.
+fn register_standard_context_symbols(ctx: &str) {
+  if ctx == "CodeParser`" {
+    crate::functions::code_parser::register_context_symbols();
+    // Reading `LeafNode` after the context is loaded has to find
+    // `CodeParser`LeafNode`, which is what putting the context on
+    // `$ContextPath` is for. Only the contexts Woxi has symbols for go on
+    // the path; the rest stay named but empty, as before.
+    crate::prepend_to_context_path(ctx);
+  }
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 fn load_needed_context(ctx: &str) -> Result<(), InterpreterError> {
   if crate::utils::is_standard_distribution_context(ctx)
     || crate::packages_list().iter().any(|pkg| pkg == ctx)
   {
+    register_standard_context_symbols(ctx);
     crate::register_package(ctx.to_string());
     return Ok(());
   }
@@ -2310,6 +2326,7 @@ fn evaluate_function_call_ast_inner(
       return Ok(unevaluated("Needs", args));
     }
     if crate::utils::is_standard_distribution_context(ctx) {
+      register_standard_context_symbols(ctx);
       return Ok(Expr::Identifier("Null".to_string()));
     }
     // An already-loaded context is not read a second time.

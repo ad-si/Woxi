@@ -3502,3 +3502,53 @@ mod apply_and_map_at_compound_heads {
     assert_eq!(interpret("MapAt[f, a && b, {2}]").unwrap(), "a && f[b]");
   }
 }
+
+/// `Composition[f, g][x]` is the *expression* `f[g[x]]`, so it is built and
+/// then evaluated as a whole: a holding `f` keeps `g[x]` unevaluated. WLX
+/// interpolates with `ToExpression[…, InputForm, FakeHold @* ToString]` and
+/// relies on the `ToString` surviving inside the `HoldAll` wrapper until the
+/// wrapper is stripped. Verified against wolframscript.
+mod composition_under_a_holding_head {
+  use super::*;
+
+  #[test]
+  fn the_outer_head_holds_the_inner_call() {
+    clear_state();
+    assert_eq!(
+      interpret("SetAttributes[compFH, HoldAll]; (compFH @* ToString)[1 + 2]")
+        .unwrap(),
+      "compFH[ToString[3]]"
+    );
+    // Without a hold attribute the inner call evaluates as usual.
+    assert_eq!(interpret("(compG @* ToString)[1 + 2]").unwrap(), "compG[3]");
+    // `ToString` of the outer call is the text of the call it wraps.
+    assert_eq!(
+      interpret("SetAttributes[compFH, HoldAll]; (ToString @* compFH)[1 + 2]")
+        .unwrap(),
+      "compFH[3]"
+    );
+  }
+
+  /// `ToExpression[str, form, h]` takes any head, not only a symbol.
+  #[test]
+  fn to_expression_accepts_a_compound_wrapper_head() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "SetAttributes[compFH, HoldAll]; \
+         ToExpression[\"1+2\", InputForm, compFH @* ToString]"
+      )
+      .unwrap(),
+      "compFH[ToString[3]]"
+    );
+    // Stripping the wrapper leaves the `ToString` to run.
+    assert_eq!(
+      interpret(
+        "ToExpression[\"1+2\", InputForm, compFH @* ToString] //. \
+         {compFH[x_] :> x}"
+      )
+      .unwrap(),
+      "3"
+    );
+  }
+}

@@ -11022,3 +11022,45 @@ mod import_pdf {
     );
   }
 }
+
+/// A path is a list of names or the string that spells it out, so
+/// `FileNameJoin` takes either: given a string it normalises the path —
+/// which is how WLX's importer canonicalises the path it stores in a
+/// component. Verified against wolframscript.
+mod file_name_join_on_a_string {
+  use super::*;
+
+  #[test]
+  fn a_single_string_is_a_path_already() {
+    assert_eq!(interpret(r#"FileNameJoin["a"]"#).unwrap(), "a");
+    assert_eq!(
+      interpret(r#"FileNameJoin["/a/b/c.wlx"]"#).unwrap(),
+      "/a/b/c.wlx"
+    );
+    assert_eq!(interpret(r#"FileNameJoin["./a"]"#).unwrap(), "./a");
+    assert_eq!(interpret(r#"FileNameJoin["../a"]"#).unwrap(), "../a");
+  }
+
+  #[test]
+  fn repeated_and_trailing_separators_collapse() {
+    assert_eq!(interpret(r#"FileNameJoin["a//b"]"#).unwrap(), "a/b");
+    assert_eq!(interpret(r#"FileNameJoin["/a/b/"]"#).unwrap(), "/a/b");
+    assert_eq!(interpret(r#"FileNameJoin["a/"]"#).unwrap(), "a");
+    assert_eq!(interpret(r#"FileNameJoin["//a/b"]"#).unwrap(), "/a/b");
+    assert_eq!(interpret(r#"FileNameJoin[""]"#).unwrap(), "/");
+    assert_eq!(interpret(r#"FileNameJoin["/"]"#).unwrap(), "/");
+  }
+
+  /// `FileNameSplit` keeps every empty piece but the trailing ones: the
+  /// leading empty is what marks the path absolute.
+  #[test]
+  fn split_keeps_interior_empty_pieces() {
+    assert_eq!(interpret(r#"FileNameSplit["a//b"]"#).unwrap(), "{a, , b}");
+    assert_eq!(
+      interpret(r#"FileNameSplit["//a/b"]"#).unwrap(),
+      "{, , a, b}"
+    );
+    assert_eq!(interpret(r#"FileNameSplit["/a/b/"]"#).unwrap(), "{, a, b}");
+    assert_eq!(interpret(r#"Length[FileNameSplit["a//b"]]"#).unwrap(), "3");
+  }
+}
