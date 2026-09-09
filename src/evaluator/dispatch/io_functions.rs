@@ -486,6 +486,45 @@ fn stream_file_path(filename: &str) -> String {
   crate::vfs::resolve(filename).to_string_lossy().into_owned()
 }
 
+/// The components of a path, the way `FileNameSplit` reports them: split on
+/// the separator, then drop *exactly one* trailing empty piece. `"/a/b/"` is
+/// `{"", "a", "b"}` — the leading empty piece is what marks the path absolute
+/// — while `"/a/b//"` keeps one empty piece at the end, just as an interior
+/// `"a//b"` keeps its own. `FileNameDepth` is the length of this list, and
+/// `FileNameTake`/`FileNameDrop` take and drop from it.
+pub(crate) fn file_name_pieces(path: &str, sep: char) -> Vec<&str> {
+  if path.is_empty() {
+    return Vec::new();
+  }
+  let mut pieces: Vec<&str> = path.split(sep).collect();
+  if pieces.last().is_some_and(|piece| piece.is_empty()) {
+    pieces.pop();
+  }
+  pieces
+}
+
+/// Join path components the way `FileNameJoin` does: empty components are
+/// dropped, except that a leading empty one marks the result absolute. So
+/// `{"a", "", "b"}` is `"a/b"`, `{"", "a"}` is `"/a"` and `{""}` is `"/"`.
+pub(crate) fn file_name_join<'a>(
+  pieces: impl IntoIterator<Item = &'a str>,
+  sep: char,
+) -> String {
+  let pieces: Vec<&str> = pieces.into_iter().collect();
+  let absolute = pieces.first().is_some_and(|piece| piece.is_empty());
+  let body = pieces
+    .iter()
+    .filter(|piece| !piece.is_empty())
+    .copied()
+    .collect::<Vec<_>>()
+    .join(&sep.to_string());
+  if absolute {
+    format!("{sep}{body}")
+  } else {
+    body
+  }
+}
+
 /// Bytes for a binary read. An open stream is served from the registry, so
 /// a `"!command"` pipe reads the command's output; `path` (the stream's
 /// name) is the fallback for a stream that is no longer open.
@@ -2516,54 +2555,31 @@ pub fn dispatch_io_functions(
         std::path::MAIN_SEPARATOR
       };
       if let Expr::List(parts) = &args[0] {
-        let segments: Vec<String> = parts
+        let segments: Vec<&str> = parts
           .iter()
           .filter_map(|e| {
             if let Expr::String(s) = e {
-              Some(s.clone())
+              Some(s.as_str())
             } else {
               None
             }
           })
           .collect();
         if segments.len() == parts.len() {
-          let joined = segments.join(&sep.to_string());
-          return Some(Ok(Expr::String(joined)));
+          return Some(Ok(Expr::String(file_name_join(segments, sep))));
         }
       }
       // A single string is a path already; joining it normalises it —
       // `FileNameJoin["a//b/"]` is `"a/b"` — which is how WLX's importer
       // canonicalises the path it stores in a component.
       if let Expr::String(path) = &args[0] {
-        let pieces: Vec<&str> = path.split(sep).collect();
-        let absolute = pieces.first().is_some_and(|piece| piece.is_empty());
-        let body = pieces
-          .iter()
-          .filter(|piece| !piece.is_empty())
-          .copied()
-          .collect::<Vec<_>>()
-          .join(&sep.to_string());
-        return Some(Ok(Expr::String(if absolute {
-          format!("{sep}{body}")
-        } else {
-          body
-        })));
+        return Some(Ok(Expr::String(file_name_join(path.split(sep), sep))));
       }
       return Some(Ok(unevaluated("FileNameJoin", args)));
     }
     "FileNameSplit" if args.len() == 1 => {
       if let Expr::String(s) = &args[0] {
-        if s.is_empty() {
-          return Some(Ok(Expr::List(vec![].into())));
-        }
-        // Only *trailing* separators are dropped: `"/a/b/"` splits to
-        // `{"", "a", "b"}` — the leading empty piece is what marks the path
-        // absolute — and an interior `"a//b"` keeps its empty piece too.
-        let mut pieces: Vec<&str> = s.split('/').collect();
-        while pieces.last().is_some_and(|piece| piece.is_empty()) {
-          pieces.pop();
-        }
-        let parts: Vec<Expr> = pieces
+        let parts: Vec<Expr> = file_name_pieces(s, '/')
           .into_iter()
           .map(|part| Expr::String(part.to_string()))
           .collect();
@@ -2572,16 +2588,9 @@ pub fn dispatch_io_functions(
       return Some(Ok(unevaluated("FileNameSplit", args)));
     }
     "FileNameDepth" if args.len() == 1 => {
+      // The depth is just how many components `FileNameSplit` reports.
       if let Expr::String(s) = &args[0] {
-        if s.is_empty() {
-          return Some(Ok(Expr::Integer(0)));
-        }
-        let count = s
-          .split('/')
-          .enumerate()
-          .filter(|(i, part)| !(*i > 0 && part.is_empty()))
-          .count() as i128;
-        return Some(Ok(Expr::Integer(count)));
+        return Some(Ok(Expr::Integer(file_name_pieces(s, '/').len() as i128)));
       }
       return Some(Ok(unevaluated("FileNameDepth", args)));
     }
@@ -4031,42 +4040,30 @@ pub fn dispatch_io_functions(
         } else {
           -1 // default: drop last component
         };
-        let sep = std::path::MAIN_SEPARATOR_STR;
-        let parts: Vec<&str> = path.split(sep).collect();
+        // The whole family splits on '/', the separator `FileNameSplit`
+        // and `FileNameTake` use.
+        let sep = '/';
+        let parts = file_name_pieces(path, sep);
         let total = parts.len() as i128;
-        let result = if n >= 0 {
+        let kept: &[&str] = if n >= 0 {
           // Drop first n components
           let skip = (n as usize).min(parts.len());
-          parts[skip..].join(sep)
+          &parts[skip..]
         } else {
           // Drop last |n| components
           let keep = (total + n).max(0) as usize;
-          parts[..keep].join(sep)
+          &parts[..keep]
         };
-        return Some(Ok(Expr::String(result)));
+        return Some(Ok(Expr::String(file_name_join(
+          kept.iter().copied(),
+          sep,
+        ))));
       }
     }
     "FileNameTake" if !args.is_empty() && args.len() <= 2 => {
       if let Expr::String(path) = &args[0] {
-        // Path components, matching FileNameSplit: split on '/', dropping
-        // empty segments except a leading one (the absolute-root marker).
-        let components: Vec<String> = path
-          .split('/')
-          .enumerate()
-          .filter(|(i, part)| !(*i > 0 && part.is_empty()))
-          .map(|(_, part)| part.to_string())
-          .collect();
+        let components = file_name_pieces(path, '/');
         let total = components.len() as i128;
-        // Root-aware join: a slice consisting only of the leading "" marker
-        // (or otherwise joining to nothing) is the absolute root "/".
-        let join = |parts: &[String]| -> String {
-          let joined = parts.join("/");
-          if joined.is_empty() && !parts.is_empty() {
-            "/".to_string()
-          } else {
-            joined
-          }
-        };
         // Resolve the take specification into a 0-indexed `[start, end)` range.
         let slice: Option<(usize, usize)> = match args.get(1) {
           // Default: just the last component.
@@ -4107,7 +4104,10 @@ pub fn dispatch_io_functions(
           && s <= e
           && e <= components.len()
         {
-          return Some(Ok(Expr::String(join(&components[s..e]))));
+          return Some(Ok(Expr::String(file_name_join(
+            components[s..e].iter().copied(),
+            '/',
+          ))));
         }
       }
       return Some(Ok(unevaluated("FileNameTake", args)));

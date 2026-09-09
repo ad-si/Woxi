@@ -3982,9 +3982,62 @@ mod file_name_split {
     assert_eq!(interpret(r#"FileNameSplit["a/b/c"]"#).unwrap(), "{a, b, c}");
   }
 
+  // The root is one component — the empty piece that marks a path absolute —
+  // not none: only a *single* trailing separator is dropped. Verified against
+  // wolframscript.
   #[test]
   fn root_path() {
     assert_eq!(interpret(r#"FileNameSplit["/"]"#).unwrap(), "{}");
+    assert_eq!(
+      interpret(r#"ToString[FileNameSplit["/"], InputForm]"#).unwrap(),
+      r#"{""}"#
+    );
+  }
+
+  // Every separator past the first trailing one keeps its own empty piece,
+  // just like an interior `"a//b"` does. Verified against wolframscript.
+  #[test]
+  fn only_one_trailing_separator_is_dropped() {
+    for (path, expected) in [
+      ("//", r#"{"", ""}"#),
+      ("///", r#"{"", "", ""}"#),
+      ("a//", r#"{"a", ""}"#),
+      ("a///", r#"{"a", "", ""}"#),
+      ("/a//", r#"{"", "a", ""}"#),
+      ("/a/b//", r#"{"", "a", "b", ""}"#),
+      ("a//b", r#"{"a", "", "b"}"#),
+    ] {
+      assert_eq!(
+        interpret(&format!(r#"ToString[FileNameSplit["{path}"], InputForm]"#))
+          .unwrap(),
+        expected,
+        "FileNameSplit[{path:?}]"
+      );
+    }
+  }
+
+  // FileNameDepth is the length of the split, so it has to agree on every
+  // one of those. Verified against wolframscript.
+  #[test]
+  fn depth_matches_split_length() {
+    for (path, expected) in [
+      ("", "0"),
+      ("/", "1"),
+      ("//", "2"),
+      ("///", "3"),
+      ("a", "1"),
+      ("a/", "1"),
+      ("a//b", "3"),
+      ("a///", "3"),
+      ("/a/b", "3"),
+      ("/a/b//", "4"),
+    ] {
+      assert_eq!(
+        interpret(&format!(r#"FileNameDepth["{path}"]"#)).unwrap(),
+        expected,
+        "FileNameDepth[{path:?}]"
+      );
+    }
   }
 
   #[test]
@@ -11051,7 +11104,7 @@ mod file_name_join_on_a_string {
     assert_eq!(interpret(r#"FileNameJoin["/"]"#).unwrap(), "/");
   }
 
-  /// `FileNameSplit` keeps every empty piece but the trailing ones: the
+  /// `FileNameSplit` keeps every empty piece but one trailing one: the
   /// leading empty is what marks the path absolute.
   #[test]
   fn split_keeps_interior_empty_pieces() {
@@ -11062,5 +11115,50 @@ mod file_name_join_on_a_string {
     );
     assert_eq!(interpret(r#"FileNameSplit["/a/b/"]"#).unwrap(), "{, a, b}");
     assert_eq!(interpret(r#"Length[FileNameSplit["a//b"]]"#).unwrap(), "3");
+  }
+
+  /// A list joins by the same rule a string does: empty components drop out,
+  /// except that a leading one makes the result absolute. Verified against
+  /// wolframscript.
+  #[test]
+  fn a_list_joins_like_a_string() {
+    for (list, expected) in [
+      (r#"{"a", "", "b"}"#, "a/b"),
+      (r#"{""}"#, "/"),
+      (r#"{"", ""}"#, "/"),
+      (r#"{"", "", ""}"#, "/"),
+      (r#"{"", "a"}"#, "/a"),
+      (r#"{"a", ""}"#, "a"),
+      (r#"{}"#, ""),
+    ] {
+      assert_eq!(
+        interpret(&format!(
+          r#"FileNameJoin[{list}, OperatingSystem -> "Unix"]"#
+        ))
+        .unwrap(),
+        expected,
+        "FileNameJoin[{list}]"
+      );
+    }
+  }
+
+  /// `FileNameTake` and `FileNameDrop` slice the `FileNameSplit` components
+  /// and join them back, so an empty piece they keep renders as the root.
+  /// Verified against wolframscript.
+  #[test]
+  fn take_and_drop_slice_the_split_components() {
+    for (expr, expected) in [
+      (r#"FileNameTake["/a/b//"]"#, "/"),
+      (r#"FileNameTake["//"]"#, "/"),
+      (r#"FileNameTake["a//"]"#, "/"),
+      (r#"FileNameTake["a//b"]"#, "b"),
+      (r#"FileNameTake["a//b", -2]"#, "/b"),
+      (r#"FileNameTake["/a/b//", 2]"#, "/a"),
+      (r#"FileNameDrop["/a/b//", 1]"#, "a/b"),
+      (r#"FileNameDrop["a//b", -1]"#, "a"),
+      (r#"FileNameDrop["//", 1]"#, "/"),
+    ] {
+      assert_eq!(interpret(expr).unwrap(), expected, "{expr}");
+    }
   }
 }
