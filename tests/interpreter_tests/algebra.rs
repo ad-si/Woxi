@@ -6601,10 +6601,62 @@ mod reduce {
     assert_eq!(interpret("Reduce[True, x]").unwrap(), "True");
   }
 
+  /// A statement the target variable does not appear in is still *reduced* —
+  /// over its own variables. The second argument only says which variables to
+  /// eliminate last, so `Reduce[a^2 < 4, x]` solves for `a` all the same.
+  /// Verified against wolframscript.
   #[test]
-  fn target_independent_parameter_condition_is_preserved() {
+  fn target_independent_parameter_condition_is_reduced() {
     assert_eq!(interpret("Reduce[a > 0, x]").unwrap(), "a > 0");
-    assert_eq!(interpret("Reduce[a^2 < 4, x]").unwrap(), "-4 + a^2 < 0");
+    assert_eq!(
+      interpret("Reduce[a^2 < 4, x]").unwrap(),
+      "Inequality[-2, Less, a, Less, 2]"
+    );
+    assert_eq!(interpret("Reduce[a^2 > 4, x]").unwrap(), "a < -2 || a > 2");
+    assert_eq!(
+      interpret("Reduce[a^2 == 4, x]").unwrap(),
+      "a == -2 || a == 2"
+    );
+    assert_eq!(interpret("Reduce[b^3 < 8, x]").unwrap(), "b < 2");
+  }
+
+  /// Independent conjuncts reduce independently and the ones the target does
+  /// not appear in come first, the order wolframscript eliminates them in.
+  /// Conjuncts sharing a variable still reduce together.
+  #[test]
+  fn independent_conjuncts_reduce_separately_and_lead() {
+    assert_eq!(
+      interpret("Reduce[x > 1 && a^2 < 4, x]").unwrap(),
+      "Inequality[-2, Less, a, Less, 2] && x > 1"
+    );
+    assert_eq!(
+      interpret("Reduce[x > 1 && a^2 < 4 && b^2 < 9, x]").unwrap(),
+      "Inequality[-2, Less, a, Less, 2] && Inequality[-3, Less, b, Less, 3] \
+       && x > 1"
+    );
+    assert_eq!(
+      interpret("Reduce[a^2 < 4 || x > 1, x]").unwrap(),
+      "Inequality[-2, Less, a, Less, 2] || x > 1"
+    );
+    // `a^2 < 4` and `a > 0` share `a`, so they are one constraint.
+    assert_eq!(
+      interpret("Reduce[a^2 < 4 && a > 0, x]").unwrap(),
+      "Inequality[0, Less, a, Less, 2]"
+    );
+  }
+
+  /// `Reduce[expr]` names no variables, so every variable of the statement
+  /// is eliminated. Verified against wolframscript.
+  #[test]
+  fn one_argument_reduces_over_every_variable() {
+    assert_eq!(
+      interpret("Reduce[a^2 < 4]").unwrap(),
+      "Inequality[-2, Less, a, Less, 2]"
+    );
+    assert_eq!(
+      interpret("Reduce[a^2 < 4 && x > 1]").unwrap(),
+      "Inequality[-2, Less, a, Less, 2] && x > 1"
+    );
   }
 
   // A linear equation with a symbolic leading coefficient must include the

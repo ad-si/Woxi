@@ -1213,6 +1213,60 @@ echo path.
   `27^5 + 84^5 + 110^5 + 133^5 == 144^5` stays unevaluated where wolframscript
   finds it.
 
+### `Reduce` over `Rationals` omits the `Element` conjunct
+
+Only a discrete solution set stands on its own over the rationals; an interval
+has to say that just its rational points are meant, and wolframscript writes
+that as a leading `Element`. Woxi drops it, and the surrounding rational
+surface diverges with it:
+
+```sh
+wolframscript -code 'Reduce[x >= 2, x, Rationals]'       # Element[x, Rationals] && x >= 2
+woxi eval 'Reduce[x >= 2, x, Rationals]'                 # x >= 2
+
+wolframscript -code 'Reduce[True, x, Rationals]'         # Element[x, Rationals]
+woxi eval 'Reduce[True, x, Rationals]'                   # True
+
+wolframscript -code 'Reduce[x != 2, x, Rationals]'       # Element[x, Rationals] && (x < 2 || x > 2)
+woxi eval 'Reduce[x != 2, x, Rationals]'                 # x != 2
+
+wolframscript -code 'Reduce[x >= 2 && x <= 2, x, Rationals]'  # x == 2
+woxi eval 'Reduce[x >= 2 && x <= 2, x, Rationals]'            # 2 <= x <= 2
+```
+
+Several targets share one `Element` over an `Alternatives`, which the integer
+domain gets wrong the same way even though it does emit the conjunct:
+
+```sh
+wolframscript -code 'Reduce[x > 2 && y < 1, {x, y}, Integers]'
+# Element[x | y, Integers] && x >= 3 && y <= 0
+woxi eval 'Reduce[x > 2 && y < 1, {x, y}, Integers]'
+# Element[x, Integers] && Element[y, Integers] && y <= 0 && x >= 3
+```
+
+The curated oracle case `Reduce[1/3 < x && x <= 5/7, x, Rationals]` in
+`tests/reduce/oracle.rs` is the recorded instance; it is the one failure
+`make test-slow` reports on a machine with `z3` installed and network access.
+
+### `Reduce` leaves a joint multi-variable constraint unevaluated
+
+Constraints that share a variable are reduced together, and the joint case is
+only implemented for what the linear engines cover. A shared-variable group
+that needs a cylindrical decomposition stays unevaluated:
+
+```sh
+wolframscript -code 'Reduce[a < b && b < 2 && x > 0, x]'
+# a < 2 && Inequality[a, Less, b, Less, 2] && x > 0
+woxi eval 'Reduce[a < b && b < 2 && x > 0, x]'
+# Reduce[a < b && b < 2, {a, b}] && x > 0
+
+wolframscript -code 'Reduce[a x > 0, x]'    # (a < 0 && x < 0) || (a > 0 && x > 0)
+woxi eval 'Reduce[a x > 0, x]'              # Reduce[a*x + 0 > 0, x]
+```
+
+Independent constraints *are* separated and reduced one group at a time, so
+`Reduce[x > 1 && a^2 < 4 && b^2 < 9, x]` matches.
+
 ### Solve over a system of two Abs equations gives no solutions
 
 ```sh

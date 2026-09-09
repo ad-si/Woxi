@@ -286,7 +286,8 @@ pub fn dispatch_polynomial_functions(
       }
       return Some(crate::functions::polynomial_ast::reduce_ast(args));
     }
-    "Reduce" if args.len() == 2 => {
+    // `Reduce[expr]` names no variables and eliminates all of them.
+    "Reduce" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::polynomial_ast::reduce_ast(args));
     }
     "FindInstance" if args.len() >= 2 && args.len() <= 4 => {

@@ -57,8 +57,15 @@ fn reduce_internal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None
   };
 
-  // Extract variable names
-  let vars = extract_reduce_vars(&args[1]);
+  // Extract variable names. `Reduce[expr]` names none, and then every
+  // variable of the statement is eliminated.
+  let vars = if let Some(spec) = args.get(1) {
+    extract_reduce_vars(spec)
+  } else {
+    let mut own = Vec::new();
+    constraint_variables(expr, &mut own);
+    own
+  };
   if vars.is_empty() {
     return Ok(unevaluated("Reduce", args));
   }
@@ -562,6 +569,125 @@ fn extract_reduce_vars(expr: &Expr) -> Vec<String> {
   }
 }
 
+/// The free variables of a constraint, in the order they first appear.
+///
+/// These are the variables `Reduce` falls back to when the caller's list
+/// names none of them: `Reduce[a^2 < 4, x]` still answers `-2 < a < 2`,
+/// because a statement that does not mention `x` is not thereby unconstrained.
+fn constraint_variables(expr: &Expr, out: &mut Vec<String>) {
+  match expr {
+    Expr::Identifier(_) => {
+      for name in extract_reduce_vars(expr) {
+        if !out.contains(&name) {
+          out.push(name);
+        }
+      }
+    }
+    // Every other argument of an `Inequality[…]` is an operator name, not
+    // an operand, so `Less` must not be read as a variable.
+    Expr::FunctionCall { name, args } if name == "Inequality" => {
+      for operand in args.iter().step_by(2) {
+        constraint_variables(operand, out);
+      }
+    }
+    // `Element[x, Integers]` constrains `x`; `Integers` names the domain.
+    Expr::FunctionCall { name, args }
+      if (name == "Element" || name == "NotElement") && args.len() == 2 =>
+    {
+      constraint_variables(&args[0], out);
+    }
+    Expr::FunctionCall { args, .. } => {
+      for a in args {
+        constraint_variables(a, out);
+      }
+    }
+    Expr::List(items) => {
+      for a in items {
+        constraint_variables(a, out);
+      }
+    }
+    Expr::Comparison { operands, .. } => {
+      for a in operands {
+        constraint_variables(a, out);
+      }
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      constraint_variables(left, out);
+      constraint_variables(right, out);
+    }
+    Expr::UnaryOp { operand, .. } => constraint_variables(operand, out),
+    _ => {}
+  }
+}
+
+/// The variables of `expr` that `vars` says nothing about, or `None` when
+/// `vars` covers at least one of them (so the ordinary reduction applies).
+fn variables_outside(expr: &Expr, vars: &[String]) -> Option<Vec<String>> {
+  let mut own = Vec::new();
+  constraint_variables(expr, &mut own);
+  if own.is_empty() || own.iter().any(|v| vars.contains(v)) {
+    return None;
+  }
+  Some(own)
+}
+
+/// Partition constraints into the groups that have to be reduced together:
+/// two constraints belong to the same group when they share a variable,
+/// transitively. Each group comes with its own variables, in first-appearance
+/// order, and the groups themselves keep the order their first constraint
+/// appeared in.
+fn group_by_shared_variables(
+  constraints: &[Expr],
+) -> Vec<(Vec<Expr>, Vec<String>)> {
+  let mut groups: Vec<(Vec<Expr>, Vec<String>)> = Vec::new();
+  for constraint in constraints {
+    let mut own = Vec::new();
+    constraint_variables(constraint, &mut own);
+    // Every existing group sharing a variable with this constraint merges
+    // into the first such group, so `a < b && b < c && x > 0` keeps the
+    // `a`/`b`/`c` chain in one piece.
+    let touching: Vec<usize> = groups
+      .iter()
+      .enumerate()
+      .filter(|(_, (_, vars))| vars.iter().any(|v| own.contains(v)))
+      .map(|(i, _)| i)
+      .collect();
+    match touching.split_first() {
+      None => groups.push((vec![constraint.clone()], own)),
+      Some((&first, rest)) => {
+        for &other in rest.iter().rev() {
+          let (moved, moved_vars) = groups.remove(other);
+          groups[first].0.extend(moved);
+          for v in moved_vars {
+            if !groups[first].1.contains(&v) {
+              groups[first].1.push(v);
+            }
+          }
+        }
+        groups[first].0.push(constraint.clone());
+        for v in own {
+          if !groups[first].1.contains(&v) {
+            groups[first].1.push(v);
+          }
+        }
+      }
+    }
+  }
+  groups
+}
+
+/// Join constraints back into an `And` chain.
+fn and_chain(constraints: &[Expr]) -> Expr {
+  constraints
+    .iter()
+    .skip(1)
+    .fold(constraints[0].clone(), |acc, c| Expr::BinaryOp {
+      op: BinaryOperator::And,
+      left: Box::new(acc),
+      right: Box::new(c.clone()),
+    })
+}
+
 /// Core reduction logic.
 fn reduce_expr(
   expr: &Expr,
@@ -642,6 +768,14 @@ fn reduce_expr(
   } = expr
   {
     return reduce_and(left, right, vars, domain);
+  }
+
+  // A constraint the caller's variables do not appear in is reduced over its
+  // own variables rather than left alone: wolframscript eliminates every
+  // variable of the statement, and the second argument only says which ones
+  // to eliminate last. `Reduce[a^2 < 4, x]` is `-2 < a < 2`.
+  if let Some(own) = variables_outside(expr, vars) {
+    return reduce_expr(expr, &own, domain);
   }
 
   // A chained two-sided numeric bound such as `0 < x < 5` (a 3-operand
@@ -2067,6 +2201,42 @@ fn reduce_and(
 
   if constraints.is_empty() {
     return Ok(bool_expr(true));
+  }
+
+  // Constraints that share no variable are independent, so each is reduced
+  // over its own variables. Ones that *do* share a variable have to be
+  // reduced together — `a^2 < 4 && a > 0` is `0 < a < 2`, not the two bounds
+  // side by side. wolframscript eliminates the variables the caller did not
+  // name first, so their groups lead the answer:
+  // `Reduce[x > 1 && a^2 < 4, x]` is `-2 < a < 2 && x > 1`. (Before this
+  // split those conjuncts were dropped outright, losing the `a` constraint.)
+  let mut groups = group_by_shared_variables(&constraints);
+  groups.sort_by_key(|(_, group_vars)| {
+    i32::from(group_vars.iter().any(|v| vars.contains(v)))
+  });
+  // A constraint with no variables at all has no group of its own to be
+  // reduced over, so leave the whole conjunction to the path below.
+  let splits = groups.iter().all(|(_, group_vars)| !group_vars.is_empty())
+    && (groups.len() > 1
+      || groups.first().is_some_and(|(_, group_vars)| {
+        group_vars.len() != vars.len()
+          || !group_vars.iter().all(|v| vars.contains(v))
+      }));
+  if splits {
+    let mut parts = Vec::new();
+    for (group, group_vars) in groups {
+      let reduced = reduce_expr(&and_chain(&group), &group_vars, domain)?;
+      if matches!(&reduced, Expr::Identifier(s) if s == "False") {
+        return Ok(bool_expr(false));
+      }
+      if !matches!(&reduced, Expr::Identifier(s) if s == "True") {
+        parts.push(reduced);
+      }
+    }
+    if parts.is_empty() {
+      return Ok(bool_expr(true));
+    }
+    return Ok(and_chain(&parts));
   }
 
   // Separate equations from inequalities

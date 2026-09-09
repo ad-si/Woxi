@@ -1208,7 +1208,8 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "NearestTo" => Some((1, 2)),
     "Reap" => Some((1, 3)),
     "RecurrenceTable" => Some((3, 3)),
-    "Reduce" => Some((2, 3)),
+    // `Reduce[expr]` eliminates every variable of the statement.
+    "Reduce" => Some((1, 3)),
     "Refine" => Some((1, 2)),
     "ReflectionMatrix" => Some((1, 1)),
     "RegionBounds" => Some((1, 1)),
