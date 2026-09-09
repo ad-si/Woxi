@@ -31,16 +31,54 @@ interface TestCase {
 
 /** Unescape Rust string escapes: \" → ", \\ → \, \n → newline.
  * A backslash at the end of a line is Rust's line continuation: it and the
- * following indentation are not part of the string. */
+ * following indentation are not part of the string.
+ *
+ * This has to be a single left-to-right pass, not a chain of `replace`s: a
+ * source line ending in `\\` is an *escaped* backslash followed by a real
+ * newline — a Wolfram line continuation inside the test expression — and a
+ * `/\\\r?\n/` pass would consume the second backslash of that pair and leave
+ * the first one glued to the next line (`… := 1; \q[…]`, which is a syntax
+ * error for both interpreters).
+ *
+ * Escapes other than `\"`, `\\`, `\n` and `\u{…}` are left untouched (as a
+ * backslash plus the character) because in these tests they are Wolfram
+ * escapes such as `\t` or `\[Alpha]`, not Rust ones. */
 function unescapeRust(s: string): string {
-  return s
-    .replace(/\\\r?\n[ \t]*/g, "")
-    .replace(/\\"/g, '"')
-    .replace(/\\n/g, "\n")
-    .replace(/\\u\{([0-9a-fA-F]+)\}/g, (_, hex) =>
-      String.fromCodePoint(parseInt(hex, 16))
-    )
-    .replace(/\\\\/g, "\\");
+  let out = "";
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] !== "\\") {
+      out += s[i];
+      continue;
+    }
+    const next = s[i + 1];
+    if (next === "\n" || next === "\r") {
+      // Rust line continuation: drop the newline and the following indent.
+      i++;
+      if (next === "\r" && s[i + 1] === "\n") i++;
+      while (s[i + 1] === " " || s[i + 1] === "\t") i++;
+    } else if (next === '"') {
+      out += '"';
+      i++;
+    } else if (next === "\\") {
+      out += "\\";
+      i++;
+    } else if (next === "n") {
+      out += "\n";
+      i++;
+    } else if (next === "u" && s[i + 2] === "{") {
+      const end = s.indexOf("}", i + 3);
+      const hex = end === -1 ? "" : s.substring(i + 3, end);
+      if (/^[0-9a-fA-F]+$/.test(hex)) {
+        out += String.fromCodePoint(parseInt(hex, 16));
+        i = end;
+      } else {
+        out += s[i];
+      }
+    } else {
+      out += s[i];
+    }
+  }
+  return out;
 }
 
 function escapeRegex(s: string): string {
@@ -381,6 +419,29 @@ function joinStatements(parts: string[]): string {
 }
 
 /**
+ * Drop the reader's own messages from woxi's stdout.
+ *
+ * `Syntax::` messages — `"\[Tab]"` reporting `Syntax::sntufn`, say — are
+ * emitted while the input is being *parsed*, so the `Quiet` wrapping the
+ * expression never gets a chance to suppress them. On the wolframscript side
+ * the same message goes to the batch script's own output rather than into the
+ * string being compared, so leaving them in here would mismatch every case
+ * that carries one even though both interpreters agree. Each message is
+ * printed after a blank line, which goes with it.
+ */
+function stripReadTimeMessages(output: string): string {
+  const kept: string[] = [];
+  for (const line of output.split("\n")) {
+    if (/^Syntax::\w+: /.test(line)) {
+      if (kept[kept.length - 1] === "") kept.pop();
+      continue;
+    }
+    kept.push(line);
+  }
+  return kept.join("\n");
+}
+
+/**
  * Run an expression through woxi eval, wrapping it in
  * ToString[expr, InputForm] to get the canonical comparison format.
  *
@@ -420,7 +481,7 @@ function runWoxi(expr: string): string {
     });
     // Preserve leading whitespace (important for OutputForm 2D rendering),
     // only strip trailing line breaks from CLI output.
-    return output.replace(/[\r\n]+$/, "");
+    return stripReadTimeMessages(output).replace(/[\r\n]+$/, "");
   } catch {
     return "<WOXI_ERROR>";
   }
@@ -538,6 +599,19 @@ function buildWolframScript(
     // leaves behind must not reach the next one. `ClearAll` above only
     // empties `Global``; the context machinery keeps its own state.
     lines.push("$ContextAliases = <||>");
+    // A socket outlives the symbol that named it, so `ClearAll` leaves it
+    // open and `Sockets[]` keeps growing down the batch — every later case
+    // that looks at the list sees the ones its predecessors opened. Woxi
+    // runs each case in a fresh process, where the list starts empty.
+    //
+    // Only socket cases get the cleanup: touching `Sockets[]` autoloads the
+    // sockets package, and *that* leaks — it leaves `Automatic` carrying
+    // `ReadProtected`, so an unrelated `Attributes[Automatic]` case further
+    // down the batch would answer `{Protected, ReadProtected}` where a fresh
+    // kernel says `{Protected}`.
+    if (/\bSocket(Object|Listener|Open|Connect|Listen|s|ReadMessage|ReadyQ|Wait(Next|All))\b/.test(expr)) {
+      lines.push("Quiet[Close /@ Sockets[]]");
+    }
     lines.push(...restores);
 
     const exprEscaped = escapeForWolfram(expr);
@@ -910,6 +984,13 @@ function main() {
     /\bWriteString\[\s*"stderr"/, // Same as above
     /\bFindFile\[/,           // Path lookups depend on Mathematica install location
 
+    // An expression that *measures* exported SVG is as
+    // implementation-specific as the SVG itself, and the plain-SVG filter
+    // further down only catches results that are the SVG. wolframscript
+    // writes colours as `rgb(70.000763%,0%,0%)` where Woxi writes
+    // `rgb(255,0,0)`, so counting a colour, a tag or a length can never
+    // agree even when both renderers draw the same picture.
+    /\bExportString\[[\s\S]*"SVG"/,
     /\bStack\[/,        // Returns internal evaluation stack (different call frames per implementation)
     /\bRasterize\[/,
     /\bN\[Erf\[/,    // Arbitrary-precision Erf differs in low-order digits (different algorithm)
