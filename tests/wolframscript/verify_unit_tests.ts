@@ -542,6 +542,22 @@ function buildWolframScript(
       " {a$, b$}]]]"
   );
 
+  // A mismatch report is read by a human, so an oversized wolframscript result
+  // is shortened before it is printed. Untruncated, one case can bury a whole
+  // run: `ExampleData[{"NetworkGraph", "WorldWideWeb"}]` evaluates to a
+  // 325,729-vertex Graph whose InputForm is a single 51 MB line, which overruns
+  // spawnSync's maxBuffer (ENOBUFS) and costs ~15 minutes of halving retries
+  // before the case is finally written off as a flake. Only the printed excerpt
+  // is shortened — the comparison itself still uses the full string, so no
+  // mismatch is hidden.
+  lines.push("WX`MaxReport = 2000");
+  lines.push(
+    "WX`Report[s$_String] := If[StringLength[s$] > WX`MaxReport," +
+      ' StringTake[s$, WX`MaxReport] <> "... (" <>' +
+      " ToString[StringLength[s$] - WX`MaxReport] <>" +
+      ' " more characters omitted)", s$]'
+  );
+
   // Cases that unprotect a symbol and then define it (`Unprotect[Red];
   // Red = 42`) change what that name means for the rest of the batch, where
   // Woxi runs each case in a fresh process. Collect every name any case in
@@ -654,7 +670,7 @@ function buildWolframScript(
         " If[" + mismatchTest + "," +
         " Print[" + wLabel + "];" +
         ' Print["  Woxi:    ' + expectedEscaped + '"];' +
-        ' Print["  Wolfram: " <> rr$$]]]'
+        ' Print["  Wolfram: " <> WX`Report[rr$$]]]]'
     );
   }
 
@@ -2224,6 +2240,11 @@ function main() {
     // "AdjacencyMatrix"). Deliberate: the catalogue is Wolfram's.
     'ExampleData[{"NetworkGraph", "ZacharyKarateClub"}, "VertexList"][[1 ;; 3]]',
     'ExampleData[{"NetworkGraph", "LesMiserables"}, "VertexList"][[1 ;; 2]]',
+    // The mirror image: a name Wolfram's catalogue has but whose data Woxi does
+    // not bundle stays unevaluated (that is what the unit test pins), while
+    // wolframscript returns the actual 325,729-vertex web graph — a 51 MB
+    // InputForm that no comparison can use. See conformance_gaps.md.
+    'ExampleData[{"NetworkGraph", "WorldWideWeb"}]',
 
     // TriangleCenter of a triangle embedded in 3D: wolframscript only
     // handles the 2D case and stays unevaluated.

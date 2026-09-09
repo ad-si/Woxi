@@ -3482,6 +3482,18 @@ the original publication (`"MlleBaptistine"`) rather than Wolfram's spelling
 (`"Mlle Baptistine"`). Deliberate: the catalogue is Wolfram's. Write tests against shape and
 presence, never against either side's catalogue.
 
+A catalogued name whose data Woxi does not bundle stays quietly unevaluated
+(no `ExampleData::notent` — the name *is* known), where wolframscript returns
+the network:
+
+```sh
+wolframscript -code 'ExampleData[{"NetworkGraph", "WorldWideWeb"}]'  # Graph[…] — 325 729 vertices
+woxi eval 'ExampleData[{"NetworkGraph", "WorldWideWeb"}]'            # ExampleData[{NetworkGraph, WorldWideWeb}]
+```
+
+That one is worth naming because its `InputForm` is a single 51 MB line: any
+harness that captures wolframscript's stdout has to cap what it prints.
+
 ### `ExampleData[{"TestImage", name}]` ships no pixels
 
 ```sh
