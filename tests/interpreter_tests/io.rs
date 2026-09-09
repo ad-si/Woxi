@@ -10894,8 +10894,13 @@ mod run_process {
     );
   }
 
+  /// Spelled with a POSIX shell, so it is Unix-only: Windows has no
+  /// `/bin/sh`, and an MSYS `pwd` reports its own view of the root
+  /// (`/d` for `D:\`) rather than the directory that was asked for.
+  /// `windows_process_directory_and_environment_options` covers the same
+  /// two options there.
   #[test]
-  #[cfg(not(target_arch = "wasm32"))]
+  #[cfg(all(unix, not(target_arch = "wasm32")))]
   fn process_directory_and_environment_options() {
     assert_eq!(
       interpret(
@@ -10918,6 +10923,53 @@ mod run_process {
       .unwrap(),
       "baz"
     );
+  }
+
+  /// The same two options on Windows, spelled with `cmd.exe`: the directory
+  /// is shown by what `dir` lists in it, and the variable by what `echo`
+  /// expands. `ProcessEnvironment` replaces the environment outright, search
+  /// path included, so the interpreter is named by its absolute `COMSPEC`
+  /// path and keeps the `SystemRoot` it needs to start.
+  #[test]
+  #[cfg(all(windows, not(target_arch = "wasm32")))]
+  fn windows_process_directory_and_environment_options() {
+    // Paths reach the interpreter with forward slashes, the way every
+    // other path in these tests does — a backslash is an escape in a
+    // Wolfram Language string. `SystemRoot` is a value rather than a path
+    // we hand to the interpreter, so it keeps its native spelling.
+    let shell =
+      unixify(&std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".into()));
+    let root = std::env::var("SystemRoot")
+      .unwrap_or_default()
+      .replace('\\', r"\\");
+
+    let dir = std::env::temp_dir()
+      .join(format!("woxi_run_process_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("marker.txt"), "").unwrap();
+    assert_eq!(
+      interpret(&format!(
+        r#"StringTrim@RunProcess[{{"{shell}", "/c", "dir", "/b"}}, "StandardOutput", ProcessDirectory -> "{}"]"#,
+        unixify(&dir.display().to_string())
+      ))
+      .unwrap(),
+      "marker.txt"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+
+    for environment in [
+      format!(r#"<|"WOXI_RP" -> "bar", "SystemRoot" -> "{root}"|>"#),
+      format!(r#"{{"WOXI_RP" -> "bar", "SystemRoot" -> "{root}"}}"#),
+    ] {
+      assert_eq!(
+        interpret(&format!(
+          r#"StringTrim@RunProcess[{{"{shell}", "/c", "echo", "%WOXI_RP%"}}, "StandardOutput", ProcessEnvironment -> {environment}]"#
+        ))
+        .unwrap(),
+        "bar",
+        "ProcessEnvironment -> {environment}"
+      );
+    }
   }
 
   /// A `ProcessEnvironment` replaces the environment outright, search path
@@ -11148,25 +11200,65 @@ mod import_pdf {
 mod file_name_join_on_a_string {
   use super::*;
 
+  /// The separator is the host's unless `OperatingSystem` names another, so
+  /// every expectation below spells the option out — otherwise the results
+  /// would read `a\b` on Windows.
   #[test]
   fn a_single_string_is_a_path_already() {
-    assert_eq!(interpret(r#"FileNameJoin["a"]"#).unwrap(), "a");
-    assert_eq!(
-      interpret(r#"FileNameJoin["/a/b/c.wlx"]"#).unwrap(),
-      "/a/b/c.wlx"
-    );
-    assert_eq!(interpret(r#"FileNameJoin["./a"]"#).unwrap(), "./a");
-    assert_eq!(interpret(r#"FileNameJoin["../a"]"#).unwrap(), "../a");
+    let join = |path: &str| {
+      interpret(&format!(
+        r#"FileNameJoin["{path}", OperatingSystem -> "Unix"]"#
+      ))
+      .unwrap()
+    };
+    assert_eq!(join("a"), "a");
+    assert_eq!(join("/a/b/c.wlx"), "/a/b/c.wlx");
+    assert_eq!(join("./a"), "./a");
+    assert_eq!(join("../a"), "../a");
   }
 
   #[test]
   fn repeated_and_trailing_separators_collapse() {
-    assert_eq!(interpret(r#"FileNameJoin["a//b"]"#).unwrap(), "a/b");
-    assert_eq!(interpret(r#"FileNameJoin["/a/b/"]"#).unwrap(), "/a/b");
-    assert_eq!(interpret(r#"FileNameJoin["a/"]"#).unwrap(), "a");
-    assert_eq!(interpret(r#"FileNameJoin["//a/b"]"#).unwrap(), "/a/b");
-    assert_eq!(interpret(r#"FileNameJoin[""]"#).unwrap(), "/");
-    assert_eq!(interpret(r#"FileNameJoin["/"]"#).unwrap(), "/");
+    for (path, expected) in [
+      ("a//b", "a/b"),
+      ("/a/b/", "/a/b"),
+      ("a/", "a"),
+      ("//a/b", "/a/b"),
+      ("", "/"),
+      ("/", "/"),
+    ] {
+      assert_eq!(
+        interpret(&format!(
+          r#"FileNameJoin["{path}", OperatingSystem -> "Unix"]"#
+        ))
+        .unwrap(),
+        expected,
+        "FileNameJoin[\"{path}\"]"
+      );
+    }
+  }
+
+  /// Windows reads either separator, so both collapse there and the result
+  /// is spelled with backslashes. Verified against wolframscript.
+  #[test]
+  fn windows_collapses_either_separator() {
+    for (path, expected) in [
+      (r"a//b", r"a\b"),
+      (r"a\\b", r"a\b"),
+      (r"a\\/b", r"a\b"),
+      (r"a/\\b", r"a\b"),
+      (r"/a/b/", r"\a\b"),
+      (r"", r"\"),
+    ] {
+      assert_eq!(
+        interpret(&format!(
+          r#"FileNameJoin["{path}", OperatingSystem -> "Windows"]"#
+        ))
+        .unwrap(),
+        expected,
+        "FileNameJoin[\"{path}\"]"
+      );
+    }
   }
 
   /// `FileNameSplit` keeps every empty piece but one trailing one: the

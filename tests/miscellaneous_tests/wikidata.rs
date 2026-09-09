@@ -134,10 +134,21 @@ mod tests {
     #[cfg(feature = "slow-tests")]
     #[ignore = "network: queries the live wikidata.org API; runs in nightly `make test-slow`"]
     fn entity_values_become_external_identifiers() {
-      assert_eq!(
-        interpret("WikidataData[\"Q405\", \"P361\"] // First").unwrap(),
-        "ExternalIdentifier[WikidataID, Q18589965, \
-         <|Label -> Earth-Moon system, Description -> Moon orbiting Earth|>]"
+      let result =
+        interpret("WikidataData[\"Q405\", \"P361\"] // First").unwrap();
+      // The label is live data — Wikidata replaced the hyphen of
+      // "Earth-Moon system" with an en dash on 2026-09-08 — so what is
+      // asserted is the shape of the identifier and the metadata keys it
+      // carries, with the dash left open.
+      assert!(
+        result.starts_with(
+          "ExternalIdentifier[WikidataID, Q18589965, <|Label -> Earth"
+        ),
+        "{result}"
+      );
+      assert!(
+        result.ends_with("Moon system, Description -> Moon orbiting Earth|>]"),
+        "{result}"
       );
     }
 

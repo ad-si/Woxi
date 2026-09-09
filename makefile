@@ -96,12 +96,19 @@ test-reduce-smt-oracle:
 # at all without the feature) because the scripts take tens of seconds
 # each in debug builds and the wikidata tests need network access. This
 # target runs nightly, so hitting the live endpoint is fine.
+#
+# `--run-ignored only` would otherwise also select the two oracle suites,
+# which need a tool that is a development dependency rather than something
+# this target may assume: wolframscript (`test-reduce-oracle`) and z3
+# (`test-reduce-smt-oracle`). They have their own targets, which check for
+# their tool first; excluding them here keeps this one self-contained.
 .PHONY: test-slow
 test-slow:
 	cargo nextest run \
 		--features slow-tests \
 		--profile slow \
 		--run-ignored only \
+		-E 'not (test(/_agree_with_z3$$/) or test(/oracle::/))' \
 		--show-progress=none \
 		--status-level=fail \
 		--failure-output=final
@@ -307,8 +314,8 @@ install-debug:
 # APP_DEST selects where the bundle is written — /Applications for a
 # local install, a staging directory for the release workflow, which
 # zips it up as a release asset. STUDIO_PROFILE selects the cargo
-# profile; the release workflow overrides it to `release` so the CLI and
-# the Studio share a single compile of the woxi crate.
+# profile; the release workflow builds the same one, so a downloaded
+# bundle is what a local install would have produced.
 APP_DEST ?= /Applications
 APP_BUNDLE := $(APP_DEST)/Woxi Studio.app
 STUDIO_PROFILE ?= studio

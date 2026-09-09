@@ -84,10 +84,18 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             libwayland-dev libxkbcommon-dev libx11-dev
 
-      # Both binaries in one invocation and one profile, so the woxi crate
-      # is compiled once rather than once per profile.
-      - name: Build the CLI and the Studio
-        run: cargo build --release --locked -p woxi -p woxi-studio
+      - name: Build the CLI
+        run: cargo build --release --locked -p woxi
+
+      # The Studio gets its own profile (thin LTO, parallel codegen) rather
+      # than sharing the CLI's `release` one. Fat LTO with a single codegen
+      # unit over the whole iced/wgpu tree plus the interpreter is a single
+      # rustc process large enough to get the 16 GB arm64 Linux runner
+      # killed mid-link ("the runner has received a shutdown signal"), and
+      # this is the profile a local `make install-macos-app` ships anyway.
+      # The cost is compiling the woxi crate a second time.
+      - name: Build the Studio
+        run: cargo build --profile studio --locked -p woxi-studio
 
       - name: Package the archives
         if: runner.os != 'Windows'
@@ -102,7 +110,7 @@ jobs:
           # bare binary; the bundle is assembled by the same make target
           # `make install-macos-app` uses locally.
           if [ "$RUNNER_OS" = "macOS" ]; then
-            make macos-app APP_DEST="$PWD/stage-app" STUDIO_PROFILE=release
+            make macos-app APP_DEST="$PWD/stage-app"
             # Seal the bundle with an ad-hoc signature: on arm64 the
             # linker only signs the executable, leaving Info.plist and the
             # icon uncovered. This is not a Developer ID signature, so a
@@ -114,7 +122,7 @@ jobs:
             ditto -c -k --keepParent "stage-app/Woxi Studio.app" \
               "dist/woxi-studio-$VERSION-$TARGET.zip"
           else
-            cp target/release/woxi-studio readme.md license.txt stage/woxi-studio/
+            cp target/studio/woxi-studio readme.md license.txt stage/woxi-studio/
             tar -czf "dist/woxi-studio-$VERSION-$TARGET.tar.gz" \
               -C stage/woxi-studio woxi-studio readme.md license.txt
           fi
@@ -125,7 +133,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path dist, stage/woxi, stage/woxi-studio | Out-Null
           Copy-Item target/release/woxi.exe, readme.md, license.txt stage/woxi
-          Copy-Item target/release/woxi-studio.exe, readme.md, license.txt stage/woxi-studio
+          Copy-Item target/studio/woxi-studio.exe, readme.md, license.txt stage/woxi-studio
           Compress-Archive -Path stage/woxi/* `
             -DestinationPath "dist/woxi-$env:VERSION-$env:TARGET.zip"
           Compress-Archive -Path stage/woxi-studio/* `

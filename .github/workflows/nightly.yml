@@ -25,8 +25,19 @@ jobs:
     - uses: taiki-e/install-action@v2
       with:
         tool: nextest
+    # Z3 is a development dependency, so `make test-slow` leaves the Reduce
+    # backend's semantic oracle out (`make test-reduce-smt-oracle` below is
+    # what runs it) and this job is the one place it is installed.
+    - name: Install the Z3 oracle
+      run: sudo apt-get update && sudo apt-get install -y --no-install-recommends z3
     - name: Run slow and network tests
       run: make test-slow
+    # The one place the Reduce backend's generated formulas are checked
+    # against an independent solver.
+    - name: Run the Z3 oracle for the Reduce backend
+      # Runs even when a slow test already failed, so one night reports both.
+      if: '!cancelled()'
+      run: make test-reduce-smt-oracle
 
   # Release-ready archives of the interpreter CLI and the Studio notebook
   # editor for every platform a release ships (see build-archives.yml).

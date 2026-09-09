@@ -68,6 +68,15 @@ slow-timeout = { period = "60s", terminate-after = 1 }
 filter = 'test(rolling_polygon_on_catenary_notebook_rolls_its_polygon)'
 slow-timeout = { period = "120s", terminate-after = 1 }
 
+# `formatting_every_script_keeps_it_the_same_code` formats all ~870 scripts
+# in `tests/scripts` four times over (format, re-tokenize, re-parse, format
+# again for idempotence): ~6s standalone on fast hardware, but past the 20s
+# default on the slower Windows runner of the nightly job under full
+# parallel load. Give it a wider window.
+[[profile.default.overrides]]
+filter = 'test(formatting_every_script_keeps_it_the_same_code)'
+slow-timeout = { period = "120s", terminate-after = 1 }
+
 # The remaining (non-`#[ignore]`d) RosettaCode script snapshots run a few
 # seconds in debug builds; under full parallel load they can brush past the
 # default 20s timeout. Give them a safety ceiling. The genuinely heavy

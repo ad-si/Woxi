@@ -2611,9 +2611,16 @@ pub fn dispatch_io_functions(
       }
       // A single string is a path already; joining it normalises it —
       // `FileNameJoin["a//b/"]` is `"a/b"` — which is how WLX's importer
-      // canonicalises the path it stores in a component.
+      // canonicalises the path it stores in a component. Windows reads
+      // either separator, so both split a path there; on Unix a backslash
+      // is an ordinary character in a file name.
       if let Expr::String(path) = &args[0] {
-        return Some(Ok(Expr::String(file_name_join(path.split(sep), sep))));
+        let pieces: Vec<&str> = if sep == '\\' {
+          path.split(['\\', '/']).collect()
+        } else {
+          path.split(sep).collect()
+        };
+        return Some(Ok(Expr::String(file_name_join(pieces, sep))));
       }
       return Some(Ok(unevaluated("FileNameJoin", args)));
     }
