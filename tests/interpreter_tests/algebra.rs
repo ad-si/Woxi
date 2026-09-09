@@ -9441,6 +9441,11 @@ mod polynomial_reduce {
   /// The reduction only terminates once the running remainder collapses to
   /// the literal 0 — Expand used to leave `1/2 - 1/2 + x/2 - x/2 + …`
   /// uncombined, so the loop hit its guard and gave up unevaluated.
+  ///
+  /// The clearing factor stays in front of the quotient rather than being
+  /// distributed into it — `2 (1 - x)`, not `2 - 2 x`. Only
+  /// `PolynomialReduce` presents it that way; `PolynomialQuotient` expands.
+  /// Verified against wolframscript.
   #[test]
   fn rational_divisor_divides_exactly() {
     assert_eq!(
@@ -9448,7 +9453,23 @@ mod polynomial_reduce {
         "PolynomialReduce[1 - 2 x^3 + x^4, {(1 + x + x^2 - x^3)/2}, x]"
       )
       .unwrap(),
-      "{{2 - 2*x}, 0}"
+      "{{2*(1 - x)}, 0}"
+    );
+    assert_eq!(
+      interpret(
+        "PolynomialReduce[1 - 2 x^3 + x^4, {(1 + x + x^2 - x^3)/3}, x]"
+      )
+      .unwrap(),
+      "{{3*(1 - x)}, 0}"
+    );
+    // Each divisor carries its own factor: `x + 1` clears nothing.
+    assert_eq!(
+      interpret("PolynomialReduce[x^4, {x^2/2 + x, x + 1}, x]").unwrap(),
+      "{{2*(4 - 2*x + x^2), -8}, 8}"
+    );
+    assert_eq!(
+      interpret("PolynomialQuotientRemainder[x^4, x^2/2 + x, x]").unwrap(),
+      "{8 - 4*x + 2*x^2, -8*x}"
     );
   }
 
@@ -9462,7 +9483,7 @@ mod polynomial_reduce {
     assert_eq!(
       interpret("PolynomialReduce[1 - 2 x^3 + x^4, (1 + x + x^2 - x^3)/2, x]")
         .unwrap(),
-      "{{2 - 2*x}, 0}"
+      "{{2*(1 - x)}, 0}"
     );
   }
 }

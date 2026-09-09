@@ -243,6 +243,27 @@ pub fn polynomial_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // A divisor written with a rational denominator — `(1 + x + x^2 - x^3)/2`
+  // — is reduced against its cleared numerator, and the clearing factor is
+  // left standing in front of the quotient rather than distributed into it:
+  // wolframscript answers `{{2*(1 - x)}, 0}`, not `{{2 - 2*x}, 0}`. Only
+  // `PolynomialReduce` presents it that way; `PolynomialQuotient` expands.
+  for (i, divisor) in divisors.iter().enumerate() {
+    if is_zero(&quotients[i]) {
+      continue;
+    }
+    let Ok(Expr::Integer(m)) =
+      eval(call1("Denominator", call1("Together", divisor.clone())))
+    else {
+      continue;
+    };
+    if m <= 1 {
+      continue;
+    }
+    let scaled = expand(&build_div(&quotients[i], &Expr::Integer(m)));
+    quotients[i] = build_mul(&Expr::Integer(m), &scaled);
+  }
+
   Ok(Expr::List(
     vec![Expr::List(quotients.into()), remainder].into(),
   ))
