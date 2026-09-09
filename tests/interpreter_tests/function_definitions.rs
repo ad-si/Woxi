@@ -5492,6 +5492,31 @@ mod nested_condition_guards {
 mod definition_order_by_subsumption {
   use super::*;
 
+  /// A bare pattern is parenthesized wherever it is the operand of an infix
+  /// operator, in `InputForm` as well as in the printed form — the two
+  /// renderers used to disagree about a `Plus` term. Verified against
+  /// wolframscript.
+  #[test]
+  fn a_pattern_term_of_a_sum_is_parenthesized_in_input_form() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "p[a_ + b_] := 1; p[a_ + 2] := 2; \
+         ToString[DownValues[p], InputForm]"
+      )
+      .unwrap(),
+      "{HoldPattern[p[2 + (a_)]] :> 2, HoldPattern[p[(a_) + (b_)]] :> 1}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        "v[x_ + y_] := 1; v[x_ + x_] := 2; ToString[DownValues[v], InputForm]"
+      )
+      .unwrap(),
+      "{HoldPattern[v[(x_) + (y_)]] :> 1, HoldPattern[v[2*(x_)]] :> 2}"
+    );
+  }
+
   #[test]
   fn a_structurally_narrower_rule_moves_ahead() {
     clear_state();

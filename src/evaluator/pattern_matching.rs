@@ -311,15 +311,22 @@ fn rule_with_new_head(
         .unwrap_or_else(|| p.clone())
     })
     .collect();
+  build_with_head(new_parts, replacement)
+}
+
+/// `parts` under `replacement` as their head: `List` rebuilds a list, a
+/// symbol a plain call, and anything else the curried form `(head)[parts]`.
+/// The parts are used as given — no further replacement is run on them.
+fn build_with_head(parts: Vec<Expr>, replacement: &Expr) -> Expr {
   match replacement {
-    Expr::Identifier(head) if head == "List" => Expr::List(new_parts.into()),
+    Expr::Identifier(head) if head == "List" => Expr::List(parts.into()),
     Expr::Identifier(head) => Expr::FunctionCall {
       name: head.clone(),
-      args: new_parts.into(),
+      args: parts.into(),
     },
     other => Expr::CurriedCall {
       func: Box::new(other.clone()),
-      args: new_parts,
+      args: parts,
     },
   }
 }
@@ -1961,6 +1968,35 @@ fn try_symbol_replace_all(
 
     // Recurse into BinaryOp (Plus, Times, Divide, Power, etc.)
     Expr::BinaryOp { op, left, right } => {
+      // `a/b` is `Times[a, Power[b, -1]]`, so a `Divide` node answers to a
+      // rule on either head even though it carries neither spelling. The
+      // nesting the reader built is kept — `a/(b c) d` is
+      // `Times[Times[a, Power[Times[b, c], -1]], d]`, not one flat product —
+      // because `Times`'s Flat attribute only applies once it evaluates.
+      if *op == BinaryOperator::Divide
+        && matches!(pattern_sym, "Times" | "Power")
+      {
+        let new_left = try_symbol_replace_all(left, pattern_sym, replacement)
+          .unwrap_or_else(|| left.as_ref().clone());
+        let new_right = try_symbol_replace_all(right, pattern_sym, replacement)
+          .unwrap_or_else(|| right.as_ref().clone());
+        let power = |head: Expr| Expr::FunctionCall {
+          name: "Power".to_string(),
+          args: vec![head, Expr::Integer(-1)].into(),
+        };
+        return Some(if pattern_sym == "Times" {
+          build_with_head(vec![new_left, power(new_right)], replacement)
+        } else {
+          Expr::BinaryOp {
+            op: BinaryOperator::Times,
+            left: Box::new(new_left),
+            right: Box::new(build_with_head(
+              vec![new_right, Expr::Integer(-1)],
+              replacement,
+            )),
+          }
+        });
+      }
       // Head replacement: a rule targeting the operator's symbol (e.g.
       // `Plus -> Times`) rewrites a held `a + b` into `a*b`, mirroring the
       // FunctionCall-head case above. Flat operators are flattened first so

@@ -12289,9 +12289,37 @@ mod parenthesised_products_in_implicit_chains {
   fn a_division_by_a_bracketed_product_keeps_the_bracket() {
     assert_eq!(interpret("1/(2 3) 4").unwrap(), "2/3");
     assert_eq!(interpret("Hold[a/(b c) d][[1, 2]]").unwrap(), "d");
+    // `a/b` is `Times[a, Power[b, -1]]`, so the division answers to a rule
+    // on `Times` even though nothing spells it. Held, the nesting the reader
+    // built survives — `Times` only flattens once it evaluates.
     assert_eq!(
       interpret("Hold[a/(b c) d] /. Times -> tt").unwrap(),
-      "Hold[tt[a/tt[b, c], d]]"
+      "Hold[tt[tt[a, tt[b, c]^(-1)], d]]"
+    );
+    assert_eq!(
+      interpret("Hold[a/b] /. Times -> tt").unwrap(),
+      "Hold[tt[a, b^(-1)]]"
+    );
+    assert_eq!(
+      interpret("Hold[a/b/c] /. Times -> tt").unwrap(),
+      "Hold[tt[tt[a, b^(-1)], c^(-1)]]"
+    );
+    // The implicit `Power[b, -1]` answers to a rule on `Power` too.
+    assert_eq!(
+      interpret("Hold[a/b] /. Power -> pp").unwrap(),
+      "Hold[a*pp[b, -1]]"
+    );
+    // An unrelated head leaves the division alone.
+    assert_eq!(interpret("Hold[a/b] /. Plus -> pp").unwrap(), "Hold[a/b]");
+    // The new head may be anything a head replacement accepts.
+    assert_eq!(
+      interpret("Hold[a/b] /. Times -> List").unwrap(),
+      "Hold[{a, b^(-1)}]"
+    );
+    // A plain product still flattens: `Times` is n-ary as the reader built it.
+    assert_eq!(
+      interpret("Hold[a b c] /. Times -> tt").unwrap(),
+      "Hold[tt[a, b, c]]"
     );
   }
 }

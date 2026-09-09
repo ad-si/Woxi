@@ -815,6 +815,9 @@ ConditionOp = @{
   | "\\[RightTee]" | "\u{22A2}"   // RightTee (⊢)
   | "\\[DoubleLeftTee]" | "\u{2AE4}" // DoubleLeftTee (⫤)
   | "\\[LeftTee]" | "\u{22A3}"    // LeftTee (⊣)
+  | "::" ~ !":"                   // MessageName: `a :> f::tag` is a rule
+                                  // whose replacement is `MessageName[f, "tag"]`,
+                                  // since `::` binds tighter than everything here
   | "===" | "=!=" | "==" | "\u{2A75}" | "\\[Equal]" | "\u{F431}" | "!=" | "\u{2260}" | "\\[NotEqual]"  // Comparison, ⩵, ≠
   | "<->"                         // TwoWayRule (must be before <>, <=, <)
   | "<>"                          // StringJoin (must be before < to avoid partial match)

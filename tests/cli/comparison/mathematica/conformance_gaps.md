@@ -54,6 +54,25 @@ Woxi prints `Hold[{1, 2}?f]` in both. A `Graph`'s options are the same story:
 InputForm wraps them in a `List` (and reorders them into its own canonical
 order), the printed form does not.
 
+### A nested `Plus`/`Times` operand is not bracketed
+
+`Times` and `Plus` only flatten once they evaluate, so a *held* expression can
+carry one inside another. wolframscript brackets the inner one so the printed
+form re-reads as the same tree; Woxi prints the flat spelling, which re-reads
+as the flattened expression:
+
+```sh
+wolframscript -code 'ToString[Hold[Times[Times[a, b], c]], InputForm]' # Hold[(a*b)*c]
+woxi eval 'ToString[Hold[Times[Times[a, b], c]], InputForm]'          # Hold[a*b*c]
+wolframscript -code 'ToString[Hold[Plus[Plus[a, b], c]], InputForm]'  # Hold[(a + b) + c]
+woxi eval 'ToString[Hold[Plus[Plus[a, b], c]], InputForm]'            # Hold[a + b + c]
+```
+
+The values agree — the two trees are equal once evaluated — and Woxi's reader
+never builds a nested one, so this only shows on an expression written in
+function form under a hold, or produced by a head replacement on a held
+division (`Hold[a/(b c) d] /. Power -> pp`).
+
 ### Unary minus inside a pure function round-trips as a subtraction
 
 ```sh

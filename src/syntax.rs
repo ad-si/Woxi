@@ -7787,13 +7787,21 @@ fn format_part_brackets(
 /// (`format_expr` and `expr_to_input_form`) call it for every operand, chained
 /// comparisons included (`Hold[(a_) == (b_) == (c_)]`).
 fn comparison_operand_needs_parens(e: &Expr) -> bool {
+  is_bare_pattern(e)
+    || prints_as_not(e)
+    || printed_infix_precedence(e).is_some_and(|p| p < 30)
+}
+
+/// A bare `a_` / `a_:v` / `a_?t`, which wolframscript wraps wherever it is
+/// an operand of an infix operator — `(a_) + (b_)`, `(a_)*(b_)`,
+/// `(a_) != (b_)` — so the `_` cannot swallow what follows it.
+fn is_bare_pattern(e: &Expr) -> bool {
   matches!(
     e,
     Expr::Pattern { .. }
       | Expr::PatternOptional { .. }
       | Expr::PatternTest { .. }
-  ) || prints_as_not(e)
-    || printed_infix_precedence(e).is_some_and(|p| p < 30)
+  )
 }
 
 /// Whether the *leading* term of a `Plus`/`Subtract` chain must be
@@ -7811,7 +7819,7 @@ fn comparison_operand_needs_parens(e: &Expr) -> bool {
 /// itself a `Plus` — unlike a *non*-leading term at the same precedence,
 /// see `plus_nonleading_term_needs_parens`.
 fn plus_term_needs_parens(e: &Expr) -> bool {
-  printed_infix_precedence(e).is_some_and(|p| p < 30)
+  is_bare_pattern(e) || printed_infix_precedence(e).is_some_and(|p| p < 30)
 }
 
 /// Whether a *non-leading* term of a `Plus`/`Subtract` chain — one printed
@@ -7825,7 +7833,7 @@ fn plus_term_needs_parens(e: &Expr) -> bool {
 /// -(b + c)]` as `a - b + c` drops the sign that should apply to `c`
 /// (`a - b + c` re-parses as `Plus[a, -b, c]`, not `Plus[a, -b, -c]`).
 fn plus_nonleading_term_needs_parens(e: &Expr) -> bool {
-  printed_infix_precedence(e).is_some_and(|p| p <= 30)
+  is_bare_pattern(e) || printed_infix_precedence(e).is_some_and(|p| p <= 30)
 }
 
 /// Render an application shorthand (`f /@ list`, `f @@ list`, `f @@@ list`)
@@ -8193,12 +8201,14 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       if name == "StringSkeleton" && args.len() == 1 {
         return format!("<<{}>>", fmt(&args[0]));
       }
-      // MessageName[sym, "tag"] shows as sym::tag under ToString, the same
-      // infix form InputForm uses — `ToString[k::usage]` is "k::usage" in
-      // wolframscript. The bare script-mode echo keeps the long head form
-      // (see `IN_TO_STRING`).
-      if is_output && in_to_string() && name == "MessageName" && args.len() == 2
-      {
+      // MessageName[sym, "tag"] shows as sym::tag under ToString, in both
+      // OutputForm and InputForm — `ToString[k::usage]` is "k::usage" in
+      // wolframscript. Both forms have to be handled here, not only in
+      // `expr_to_input_form`: an operand of an infix operator comes back
+      // through this renderer, so without it `ToString[Hold[f::bar + 1],
+      // InputForm]` prints the long head form. The bare script-mode echo
+      // keeps that long form (see `IN_TO_STRING`).
+      if in_to_string() && name == "MessageName" && args.len() == 2 {
         let tag = match &args[1] {
           Expr::String(s) => s.clone(),
           Expr::Identifier(s) => s.clone(),
