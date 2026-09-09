@@ -2023,6 +2023,39 @@ fn try_assignment_upvalue(
   None
 }
 
+/// Report a Part assignment that could not be carried out, the way
+/// wolframscript does, and answer whether the failure was one of those: a
+/// specification that runs past an atom is `Set::partd` and names the
+/// left-hand side itself (`a[[1,2]]`, spelled without spaces), while a
+/// position the expression does not have is `Set::partw`, which
+/// [`set_part_deep`] already worded. Either way the symbol keeps its value.
+/// Anything else is not a Part failure and the caller carries on.
+fn emit_part_set_failure(
+  err: &InterpreterError,
+  var_name: &str,
+  indices: &[Expr],
+) -> bool {
+  let InterpreterError::EvaluationError(message) = err else {
+    return false;
+  };
+  if message == crate::evaluator::scoping::PART_SET_TOO_DEEP {
+    let spec = indices
+      .iter()
+      .map(|i| crate::syntax::format_expr(i, crate::syntax::ExprForm::Output))
+      .collect::<Vec<_>>()
+      .join(",");
+    crate::emit_message(&format!(
+      "Set::partd: Part specification {var_name}[[{spec}]] is longer than depth of object."
+    ));
+    return true;
+  }
+  if message.starts_with("Set::partw:") {
+    crate::emit_message(message);
+    return true;
+  }
+  false
+}
+
 pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
   let lhs = &normalize_symbol_lhs(lhs);
   // Unwrap Condition on LHS: f[x_] /; test = body is parsed as
@@ -2187,7 +2220,14 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
           _ => unreachable!("is_assoc guarantees a stored Association"),
         }
       });
-      set_part_deep(&mut assoc_expr, &eval_indices, &rhs_value)?;
+      if let Err(err) =
+        set_part_deep(&mut assoc_expr, &eval_indices, &rhs_value)
+      {
+        if emit_part_set_failure(&err, &var_name, &eval_indices) {
+          return Ok(rhs_value);
+        }
+        return Err(err);
+      }
       let new_value = match &assoc_expr {
         Expr::Association(items) => StoredValue::Association(
           items
@@ -2199,6 +2239,7 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
         other => StoredValue::ExprVal(other.clone()),
       };
       crate::ENV.with(|e| e.borrow_mut().insert(var_name.clone(), new_value));
+      crate::evaluator::part_extraction::note_part_assigned(&var_name);
       return Ok(rhs_value);
     }
 
@@ -2212,8 +2253,18 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
         Err(InterpreterError::EvaluationError("not ExprVal".into()))
       }
     });
-    if modified_in_place.is_ok() {
-      return Ok(rhs_value);
+    match &modified_in_place {
+      Ok(()) => {
+        crate::evaluator::part_extraction::note_part_assigned(&var_name);
+        return Ok(rhs_value);
+      }
+      // A value that is there but has no such part reports its own message
+      // and stays as it was; anything else falls through to the paths below.
+      Err(err) => {
+        if emit_part_set_failure(err, &var_name, &eval_indices) {
+          return Ok(rhs_value);
+        }
+      }
     }
 
     // Fallback: parse stored string, modify, store back as ExprVal
@@ -2227,11 +2278,19 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
     if let Some(stored_str) = stored_str {
       let mut stored_expr =
         string_to_expr(&stored_str).unwrap_or(Expr::Raw(stored_str));
-      set_part_deep(&mut stored_expr, &eval_indices, &rhs_value)?;
+      if let Err(err) =
+        set_part_deep(&mut stored_expr, &eval_indices, &rhs_value)
+      {
+        if emit_part_set_failure(&err, &var_name, &eval_indices) {
+          return Ok(rhs_value);
+        }
+        return Err(err);
+      }
       crate::ENV.with(|e| {
         e.borrow_mut()
-          .insert(var_name, StoredValue::ExprVal(stored_expr))
+          .insert(var_name.clone(), StoredValue::ExprVal(stored_expr))
       });
+      crate::evaluator::part_extraction::note_part_assigned(&var_name);
       return Ok(rhs_value);
     }
 
@@ -2248,6 +2307,9 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
   // they should still be assignable (subject to the Protected check),
   // matching wolframscript's `Pi = 4` → emits Set::wrsym and returns 4.
   if let Expr::Identifier(var_name) | Expr::Constant(var_name) = lhs {
+    // Whatever the symbol held, it is about to be replaced by an evaluated
+    // right-hand side, so nothing is left over from a Part assignment.
+    crate::evaluator::part_extraction::forget_part_assigned(var_name);
     // Fast path for `var = var <> rhs` when the RHS evaluates to a string
     // and `var` already holds a string. Mutates the stored String in
     // place so a tight `Do[s = s <> c, …]` accumulator stays linear in

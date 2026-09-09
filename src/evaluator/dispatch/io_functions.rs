@@ -345,9 +345,12 @@ fn run_process_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // A replaced environment also replaces the search path: the program name
   // is looked up in *its* `PATH`, not the interpreter's, which is the only
   // one `Command` would consult. So an environment that carries no `PATH`
-  // finds nothing but an absolute or explicitly relative name.
+  // finds nothing but an absolute or explicitly relative name. Windows reads
+  // either slash, so a name carrying either one is already a path there.
+  let names_a_path =
+    program.contains(path_separators(std::path::MAIN_SEPARATOR));
   let resolved: std::path::PathBuf = match &environment {
-    Some(env) if !program.contains(std::path::MAIN_SEPARATOR) => {
+    Some(env) if !names_a_path => {
       let path = env
         .iter()
         .find(|(key, _)| key == "PATH")
@@ -536,11 +539,46 @@ pub(crate) fn file_name_pieces(path: &str, sep: char) -> Vec<&str> {
   if path.is_empty() {
     return Vec::new();
   }
-  let mut pieces: Vec<&str> = path.split(sep).collect();
+  let mut pieces: Vec<&str> = path.split(path_separators(sep)).collect();
   if pieces.last().is_some_and(|piece| piece.is_empty()) {
     pieces.pop();
   }
   pieces
+}
+
+/// The separators a path written for `sep`'s operating system may use.
+/// Windows reads either slash, so both split a path there; on Unix a
+/// backslash is an ordinary character in a file name and only `/` divides.
+pub(crate) fn path_separators(sep: char) -> &'static [char] {
+  if sep == '\\' { &['\\', '/'] } else { &['/'] }
+}
+
+/// The separator the `FileName*` functions work in: the one named by an
+/// `OperatingSystem -> "Windows" | "Unix" | "MacOSX"` option among `args`,
+/// or the host's own when none is given.
+pub(crate) fn file_name_separator(args: &[Expr]) -> char {
+  for arg in args {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = arg
+      && matches!(pattern.as_ref(),
+        Expr::Identifier(n) | Expr::Constant(n) if n == "OperatingSystem")
+      && let Expr::String(os) = replacement.as_ref()
+    {
+      return if os == "Windows" { '\\' } else { '/' };
+    }
+  }
+  std::path::MAIN_SEPARATOR
+}
+
+/// The positional arguments of a `FileName*` call — everything that is not
+/// an option rule.
+pub(crate) fn file_name_positional(args: &[Expr]) -> Vec<&Expr> {
+  args
+    .iter()
+    .filter(|arg| !matches!(arg, Expr::Rule { .. }))
+    .collect()
 }
 
 /// Join path components the way `FileNameJoin` does: empty components are
@@ -2615,18 +2653,15 @@ pub fn dispatch_io_functions(
       // either separator, so both split a path there; on Unix a backslash
       // is an ordinary character in a file name.
       if let Expr::String(path) = &args[0] {
-        let pieces: Vec<&str> = if sep == '\\' {
-          path.split(['\\', '/']).collect()
-        } else {
-          path.split(sep).collect()
-        };
+        let pieces: Vec<&str> = path.split(path_separators(sep)).collect();
         return Some(Ok(Expr::String(file_name_join(pieces, sep))));
       }
       return Some(Ok(unevaluated("FileNameJoin", args)));
     }
-    "FileNameSplit" if args.len() == 1 => {
-      if let Expr::String(s) = &args[0] {
-        let parts: Vec<Expr> = file_name_pieces(s, '/')
+    "FileNameSplit" if !args.is_empty() && args.len() <= 2 => {
+      let sep = file_name_separator(args);
+      if let [Expr::String(s)] = file_name_positional(args).as_slice() {
+        let parts: Vec<Expr> = file_name_pieces(s, sep)
           .into_iter()
           .map(|part| Expr::String(part.to_string()))
           .collect();
@@ -2634,10 +2669,11 @@ pub fn dispatch_io_functions(
       }
       return Some(Ok(unevaluated("FileNameSplit", args)));
     }
-    "FileNameDepth" if args.len() == 1 => {
+    "FileNameDepth" if !args.is_empty() && args.len() <= 2 => {
       // The depth is just how many components `FileNameSplit` reports.
-      if let Expr::String(s) = &args[0] {
-        return Some(Ok(Expr::Integer(file_name_pieces(s, '/').len() as i128)));
+      let sep = file_name_separator(args);
+      if let [Expr::String(s)] = file_name_positional(args).as_slice() {
+        return Some(Ok(Expr::Integer(file_name_pieces(s, sep).len() as i128)));
       }
       return Some(Ok(unevaluated("FileNameDepth", args)));
     }
@@ -4080,16 +4116,17 @@ pub fn dispatch_io_functions(
       }));
     }
     // FileNameDrop["path", n] — drop n path components
-    "FileNameDrop" if !args.is_empty() && args.len() <= 2 => {
-      if let Expr::String(path) = &args[0] {
-        let n = if args.len() == 2 {
-          expr_to_i128(&args[1])?
-        } else {
-          -1 // default: drop last component
+    "FileNameDrop" if !args.is_empty() && args.len() <= 3 => {
+      // The whole family splits and rejoins on the operating system's
+      // separator, the one `FileNameSplit` and `FileNameTake` use.
+      let sep = file_name_separator(args);
+      let positional = file_name_positional(args);
+      if let Some(Expr::String(path)) = positional.first() {
+        let n = match positional.get(1) {
+          Some(spec) => expr_to_i128(spec)?,
+          // Default: drop the last component.
+          None => -1,
         };
-        // The whole family splits on '/', the separator `FileNameSplit`
-        // and `FileNameTake` use.
-        let sep = '/';
         let parts = file_name_pieces(path, sep);
         let total = parts.len() as i128;
         let kept: &[&str] = if n >= 0 {
@@ -4107,12 +4144,14 @@ pub fn dispatch_io_functions(
         ))));
       }
     }
-    "FileNameTake" if !args.is_empty() && args.len() <= 2 => {
-      if let Expr::String(path) = &args[0] {
-        let components = file_name_pieces(path, '/');
+    "FileNameTake" if !args.is_empty() && args.len() <= 3 => {
+      let sep = file_name_separator(args);
+      let positional = file_name_positional(args);
+      if let Some(Expr::String(path)) = positional.first() {
+        let components = file_name_pieces(path, sep);
         let total = components.len() as i128;
         // Resolve the take specification into a 0-indexed `[start, end)` range.
-        let slice: Option<(usize, usize)> = match args.get(1) {
+        let slice: Option<(usize, usize)> = match positional.get(1).copied() {
           // Default: just the last component.
           None => {
             if total == 0 {
@@ -4153,7 +4192,7 @@ pub fn dispatch_io_functions(
         {
           return Some(Ok(Expr::String(file_name_join(
             components[s..e].iter().copied(),
-            '/',
+            sep,
           ))));
         }
       }

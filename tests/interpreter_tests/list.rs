@@ -21935,3 +21935,323 @@ mod part_zero_of_an_atom_inside_a_spec {
     assert_eq!(interpret("{\"s\"}[[1, 0]]").unwrap(), "String");
   }
 }
+
+/// A rational and a complex number are atoms — `AtomQ[1/2]` is True — even
+/// though they are stored as `Rational[n, d]` and a Plus-Times tree. Every
+/// positional function has to treat them the way it treats `5`, or a loop
+/// like `a[[i]] = expr` keeps rewriting a number into an ever-bigger
+/// expression: that is what made the fuzzer's Bernoulli script (below) run
+/// for minutes instead of a fraction of a second.
+mod atomic_numbers_have_no_parts {
+  use super::*;
+
+  #[test]
+  fn part_of_a_rational_is_too_deep() {
+    for spec in ["1", "2", "3", "-1"] {
+      let result = interpret_with_stdout(&format!("(1/2)[[{spec}]]")).unwrap();
+      assert_eq!(result.result, format!("(1/2)[[{spec}]]"));
+      assert!(
+        result.warnings.iter().any(|w| w.contains(&format!(
+          "Part::partd: Part specification (1/2)[[{spec}]] is longer than depth of object."
+        ))),
+        "expected partd for [[{spec}]], got {:?}",
+        result.warnings
+      );
+    }
+  }
+
+  #[test]
+  fn part_of_a_complex_is_too_deep() {
+    let result = interpret_with_stdout("(3 + 4 I)[[1]]").unwrap();
+    assert_eq!(result.result, "(3 + 4*I)[[1]]");
+    assert!(
+      result.warnings.iter().any(|w| w.contains("Part::partd")),
+      "expected partd, got {:?}",
+      result.warnings
+    );
+    assert!(
+      interpret_with_stdout("(3.5 + 2.5 I)[[2]]")
+        .unwrap()
+        .warnings
+        .iter()
+        .any(|w| w.contains("Part::partd"))
+    );
+  }
+
+  /// Part 0 is still the head, and it is the number's own head — not the
+  /// `Times`/`Plus` the value happens to be built from.
+  #[test]
+  fn part_zero_is_the_number_s_head() {
+    assert_eq!(interpret("(1/2)[[0]]").unwrap(), "Rational");
+    assert_eq!(interpret("Part[3 + 4 I, 0]").unwrap(), "Complex");
+    assert_eq!(interpret("{1/2}[[1, 0]]").unwrap(), "Rational");
+  }
+
+  /// Reaching past one inside a longer specification is too deep as well.
+  #[test]
+  fn a_nested_rational_ends_the_path() {
+    let result = interpret_with_stdout("{1/2}[[1, 1]]").unwrap();
+    assert_eq!(result.result, "{1/2}[[1,1]]");
+    assert!(
+      result.warnings.iter().any(|w| w.contains("Part::partd")),
+      "expected partd, got {:?}",
+      result.warnings
+    );
+  }
+
+  #[test]
+  fn the_positional_functions_leave_them_alone() {
+    clear_state();
+    assert_eq!(interpret("ReplacePart[1/2, 1 -> 9]").unwrap(), "1/2");
+    assert_eq!(
+      interpret("ReplacePart[3 + 4 I, 1 -> 9]").unwrap(),
+      "3 + 4*I"
+    );
+    for (input, message) in [
+      (
+        "Delete[1/2, 1]",
+        "Delete::partw: Part 1 of 1/2 does not exist.",
+      ),
+      (
+        "Take[1/2, 1]",
+        "Take::take: Cannot take positions 1 through 1 in 1/2.",
+      ),
+      (
+        "Drop[1/2, 1]",
+        "Drop::drop: Cannot drop positions 1 through 1 in 1/2.",
+      ),
+      (
+        "Insert[1/2, 9, 1]",
+        "Insert::ins: Cannot insert at position {1} in 1/2",
+      ),
+      (
+        "Extract[1/2, 1]",
+        "Extract::partd: Part specification {1} is longer than depth of object.",
+      ),
+      (
+        "MapAt[f, 1/2, 1]",
+        "MapAt::partw: Part {1} of 1/2 does not exist.",
+      ),
+      (
+        "Delete[3 + 4 I, 1]",
+        "Delete::partw: Part 1 of 3 + 4*I does not exist.",
+      ),
+    ] {
+      let result = interpret_with_stdout(input).unwrap();
+      assert!(
+        result.warnings.iter().any(|w| w.contains(message)),
+        "expected {message:?} for {input}, got {:?}",
+        result.warnings
+      );
+    }
+  }
+}
+
+/// What a Part assignment reports when it cannot be carried out. Reaching
+/// past an atom is `Set::partd` and names the left-hand side; a position the
+/// expression does not have is `Set::partw` and names the expression; only a
+/// symbol without a value is `Set::noval`. In every case the value stays as
+/// it was.
+mod part_assignment_failures {
+  use super::*;
+
+  fn failing(code: &str) -> (String, Vec<String>) {
+    let result = interpret_with_stdout(code).unwrap();
+    (result.result, result.warnings)
+  }
+
+  #[test]
+  fn reaching_past_an_atom_is_partd() {
+    for (code, value) in [
+      ("a = 1/2; a[[1]] = 9; a", "1/2"),
+      ("a = 1/2; a[[3]] = 9; a", "1/2"),
+      ("a = 3 + 4 I; a[[1]] = 9; a", "3 + 4*I"),
+      ("a = 2.5; a[[1]] = 9; a", "2.5"),
+      ("a = 7; a[[1]] = 9; a", "7"),
+      ("a = \"str\"; a[[1]] = 9; a", "str"),
+    ] {
+      clear_state();
+      let (result, warnings) = failing(code);
+      assert_eq!(result, value, "{code}");
+      assert!(
+        warnings.iter().any(|w| w.contains(
+          "Set::partd: Part specification a[[1]] is longer than depth of object."
+        ) || w.contains(
+          "Set::partd: Part specification a[[3]] is longer than depth of object."
+        )),
+        "expected partd for {code}, got {warnings:?}"
+      );
+    }
+  }
+
+  /// The reported specification carries every index, spelled the way
+  /// wolframscript spells it — without spaces.
+  #[test]
+  fn the_whole_specification_is_named() {
+    for code in ["a = 1/2; a[[1,2]] = 9", "a = {1,2}; a[[1,2]] = 9"] {
+      clear_state();
+      let (_, warnings) = failing(code);
+      assert!(
+        warnings.iter().any(|w| w.contains(
+          "Set::partd: Part specification a[[1,2]] is longer than depth of object."
+        )),
+        "expected the full spec for {code}, got {warnings:?}"
+      );
+    }
+  }
+
+  #[test]
+  fn a_position_that_is_not_there_is_partw() {
+    for (code, value, message) in [
+      (
+        "a = f[0,1]; a[[3]] = 9; a",
+        "f[0, 1]",
+        "Set::partw: Part 3 of f[0, 1] does not exist.",
+      ),
+      (
+        "a = {1,2}; a[[5]] = 9; a",
+        "{1, 2}",
+        "Set::partw: Part 5 of {1, 2} does not exist.",
+      ),
+    ] {
+      clear_state();
+      let (result, warnings) = failing(code);
+      assert_eq!(result, value, "{code}");
+      assert!(
+        warnings.iter().any(|w| w.contains(message)),
+        "expected {message:?} for {code}, got {warnings:?}"
+      );
+    }
+  }
+
+  #[test]
+  fn a_symbol_without_a_value_is_still_noval() {
+    clear_state();
+    let (result, warnings) = failing("freshPartNoval[[1]] = 9; freshPartNoval");
+    assert_eq!(result, "freshPartNoval");
+    assert!(
+      warnings.iter().any(|w| w.contains(
+        "Set::noval: Symbol freshPartNoval in part assignment does not have an immediate value."
+      )),
+      "expected noval, got {warnings:?}"
+    );
+  }
+
+  /// Part 0 is the head: assigning to it re-heads the expression, and a list
+  /// is just `List[…]`, so it can be re-headed and headed back.
+  #[test]
+  fn assigning_part_zero_replaces_the_head() {
+    clear_state();
+    assert_eq!(interpret("a = {1,2}; a[[0]] = g; a").unwrap(), "g[1, 2]");
+    assert_eq!(interpret("a = f[1,2]; a[[0]] = List; a").unwrap(), "{1, 2}");
+    assert_eq!(interpret("a = f[1,2]; a[[0]] = 5; a").unwrap(), "5[1, 2]");
+  }
+
+  /// A negative position counts from the end of a call, just as it does for
+  /// a list.
+  #[test]
+  fn a_negative_position_counts_from_the_end() {
+    clear_state();
+    assert_eq!(interpret("a = f[1,2]; a[[-1]] = 9; a").unwrap(), "f[1, 9]");
+    assert_eq!(
+      interpret("a = f[1,2,3]; a[[-2]] = 9; a").unwrap(),
+      "f[1, 9, 3]"
+    );
+  }
+
+  /// Descending below a head is too deep.
+  #[test]
+  fn part_zero_cannot_be_descended_into() {
+    clear_state();
+    let (_, warnings) = failing("a = f[1,2]; a[[0,1]] = 9");
+    assert!(
+      warnings.iter().any(|w| w.contains(
+        "Set::partd: Part specification a[[0,1]] is longer than depth of object."
+      )),
+      "expected partd, got {warnings:?}"
+    );
+  }
+
+  /// A part assignment stores the expression it rebuilt without evaluating
+  /// it — reading the symbol is what evaluates it — so `Times[1, f[x]]`
+  /// reads back as `f[x]`, and a part of it is a part of `f[x]`.
+  #[test]
+  fn the_rebuilt_expression_is_evaluated_when_read() {
+    clear_state();
+    assert_eq!(interpret("a = sC f[x]; a[[1]] = 1; Head[a]").unwrap(), "f");
+    assert_eq!(interpret("a = sC f[x]; a[[1]] = 1; a[[0]]").unwrap(), "f");
+    assert_eq!(
+      interpret("ClearAll[g]; a = g[1,2]; g[x_,y_] := x+y; a[[1]] = 5; a")
+        .unwrap(),
+      "7"
+    );
+    // Once the value is a rational, its parts are out of reach again.
+    clear_state();
+    let result = interpret_with_stdout(
+      "a = sC nt[0,4]; a[[1]] = 1/1; a[[2]] = 1/2; a[[1]]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "(1/2)[[1]]");
+    assert!(
+      result.warnings.iter().any(|w| w.contains("Part::partd")),
+      "expected partd, got {:?}",
+      result.warnings
+    );
+  }
+
+  /// The same holds for a value left unevaluated deeper down: a list is
+  /// handed to Part as it stands, so what comes *out* of it is evaluated.
+  #[test]
+  fn a_rebuilt_value_inside_a_list_is_evaluated_when_read() {
+    clear_state();
+    assert_eq!(
+      interpret("a = {sC f[x]}; a[[1,1]] = 1; a[[1]]").unwrap(),
+      "f[x]"
+    );
+    assert_eq!(
+      interpret("a = {sC f[x]}; a[[1,1]] = 1; Head[a[[1]]]").unwrap(),
+      "f"
+    );
+    assert_eq!(
+      interpret("a = {sC f[x]}; a[[1,1]] = 1; a[[1,0]]").unwrap(),
+      "f"
+    );
+    assert_eq!(
+      interpret("a = {{sC f[x]}}; a[[1,1,1]] = 1; a[[1,1,0]]").unwrap(),
+      "f"
+    );
+  }
+
+  /// The fuzzer's Bernoulli script: every `a[[j]]` on the now-atomic `a`
+  /// stays unevaluated, so the loop terminates instead of doubling the size
+  /// of `a`'s value on each of its 200-odd iterations.
+  #[test]
+  fn a_loop_assigning_into_an_atom_terminates() {
+    clear_state();
+    let result = interpret_with_stdout(
+      r#"
+      bernoulli[n_] := Module[{a = sC ntaontArray[0, n + 2]},
+        Do[
+          a[[m]] = 1/m;
+          If[m == 1 && a[[1]] != 0, Print[{m - 1, a[[1]]}]];
+          Do[
+           a[[j - 1]] = (j - 1)*(a[[j - 1]] - a[[j]]);
+           If[j == 2 && a[[1]] != 0, Print[{m - 1, a[[1]]}]];
+           , {j, m, 2, -1}];
+          , {m, 1, n + 1}];
+        ];
+      bernoulli[6]
+      "#,
+    )
+    .unwrap();
+    let printed: Vec<&str> = result
+      .stdout
+      .lines()
+      .filter(|line| line.starts_with('{'))
+      .collect();
+    assert_eq!(
+      printed,
+      ["{1, 1/2}", "{2, 2}", "{3, 2}", "{4, 2}", "{5, 2}", "{6, 2}"]
+    );
+  }
+}

@@ -1188,9 +1188,31 @@ pub fn with_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   crate::evaluator::evaluate_value(&substituted)
 }
 
+/// Marker error from [`set_part_deep`] for a specification that reaches past
+/// an atom. The caller turns it into `Set::partd`, which names the
+/// assignment's left-hand side (`a[[1]]`) rather than the value it ran out
+/// of depth on, so the message can only be built there.
+pub const PART_SET_TOO_DEEP: &str = "Set::partd";
+
+/// The `Set::partw` a Part assignment reports when the position exists in
+/// neither direction. Already spelled the way wolframscript prints it, so
+/// the caller only has to emit it.
+fn part_set_no_such_part(index: &Expr, target: &Expr) -> InterpreterError {
+  InterpreterError::EvaluationError(format!(
+    "Set::partw: Part {} of {} does not exist.",
+    crate::syntax::format_expr(index, crate::syntax::ExprForm::Output),
+    expr_to_string(target)
+  ))
+}
+
 /// Recursively set a value at a path of indices within an Expr.
 /// Supports lists and FunctionCall arguments (e.g., Grid[[1, row, col]]).
 /// Supports Span indices (e.g., `A[[;;, 2]] = {6, 7}`).
+///
+/// The expression is stored the way it was rebuilt, without being evaluated
+/// again — just as wolframscript does. Reading the symbol is what evaluates
+/// it, which is why `eval_part_base` evaluates a stored value before taking
+/// a part of it.
 pub fn set_part_deep(
   expr: &mut Expr,
   indices: &[Expr],
@@ -1199,6 +1221,15 @@ pub fn set_part_deep(
   if indices.is_empty() {
     *expr = value.clone();
     return Ok(());
+  }
+
+  // An atom has no parts to assign into. A rational and a complex number
+  // are atoms too, so `a = 1/2; a[[1]] = 9` must not rewrite the stored
+  // `Rational[1, 2]` into `Rational[9, 2]`.
+  if crate::evaluator::part_extraction::is_atomic_number_expr(expr) {
+    return Err(InterpreterError::EvaluationError(
+      PART_SET_TOO_DEEP.to_string(),
+    ));
   }
 
   // Handle `All` index (a[[All]] = ...) — equivalent to Span[1, All].
@@ -1394,36 +1425,59 @@ pub fn set_part_deep(
     }
   };
 
-  match expr {
-    Expr::List(items) => {
-      let len = items.len() as i64;
-      let actual_idx = if idx < 0 { len + idx } else { idx - 1 };
-      if actual_idx < 0 || actual_idx >= len {
-        return Err(InterpreterError::EvaluationError(format!(
-          "Part::partw: Part {idx} of list does not exist."
-        )));
-      }
-      set_part_deep(&mut items[actual_idx as usize], &indices[1..], value)
+  // Only a list and a function call have positions to descend into; every
+  // other value is an atom, so the specification is longer than its depth.
+  let len = match &*expr {
+    Expr::List(items) => items.len() as i64,
+    Expr::FunctionCall { args, .. } => args.len() as i64,
+    _ => {
+      return Err(InterpreterError::EvaluationError(
+        PART_SET_TOO_DEEP.to_string(),
+      ));
     }
-    Expr::FunctionCall { args, .. } => {
-      // Part 0 is the head, Part 1.. are arguments (1-indexed)
-      if idx == 0 {
-        return Err(InterpreterError::EvaluationError(
-          "Cannot set Part 0 (head) of a function call".into(),
-        ));
-      }
-      let actual_idx = (idx - 1) as usize;
-      if actual_idx >= args.len() {
-        return Err(InterpreterError::EvaluationError(format!(
-          "Part::partw: Part {idx} of expression does not exist."
-        )));
-      }
-      set_part_deep(&mut args[actual_idx], &indices[1..], value)
+  };
+  // Part 0 is the head: assigning to it re-heads the expression.
+  if idx == 0 {
+    if indices.len() > 1 {
+      return Err(InterpreterError::EvaluationError(
+        PART_SET_TOO_DEEP.to_string(),
+      ));
     }
-    _ => Err(InterpreterError::EvaluationError(
-      "Part assignment: cannot index into this expression".into(),
-    )),
+    set_part_head(expr, value);
+    return Ok(());
   }
+  let actual_idx = if idx < 0 { len + idx } else { idx - 1 };
+  if actual_idx < 0 || actual_idx >= len {
+    return Err(part_set_no_such_part(&indices[0], expr));
+  }
+  let actual_idx = actual_idx as usize;
+  let inner = match expr {
+    Expr::List(items) => &mut items[actual_idx],
+    Expr::FunctionCall { args, .. } => &mut args[actual_idx],
+    _ => unreachable!("the length match already rejected every other form"),
+  };
+  set_part_deep(inner, &indices[1..], value)
+}
+
+/// `expr[[0]] = h` — replace the head, keeping the arguments. A list becomes
+/// an `h[…]` call and `h = List` turns a call back into a list, matching
+/// wolframscript, where `{1, 2}` is just `List[1, 2]`. Any expression may be
+/// a head there, so `f[1, 2][[0]] = 5` really does yield `5[1, 2]`.
+fn set_part_head(expr: &mut Expr, value: &Expr) {
+  let args = match expr {
+    Expr::List(items) => items.clone(),
+    Expr::FunctionCall { args, .. } => args.clone(),
+    _ => unreachable!("only a list or a call reaches the head assignment"),
+  };
+  let head = match value {
+    Expr::Identifier(name) | Expr::Constant(name) => name.clone(),
+    other => expr_to_string(other),
+  };
+  *expr = if head == "List" {
+    Expr::List(args)
+  } else {
+    Expr::FunctionCall { name: head, args }
+  };
 }
 
 /// Resolve a Span[start, end] (or Span[start, end, step]) over a sequence of

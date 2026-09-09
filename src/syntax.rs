@@ -7754,6 +7754,11 @@ fn part_base_needs_parens(base: &Expr) -> bool {
   printed_infix_precedence(base).is_some()
     || matches!(base, Expr::Integer(n) if *n < 0)
     || matches!(base, Expr::Real(f) if *f < 0.0)
+    // A rational is a `Rational[n, d]` call but prints as the quotient
+    // `n/d`, so `(1/2)[[1]]` would otherwise print as `1/2[[1]]` — which
+    // re-parses as `1/(2[[1]])`.
+    || matches!(base, Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2)
 }
 
 /// Render a Part application as `base[[i,j,…]]`, parenthesizing the base when

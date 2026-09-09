@@ -10926,36 +10926,37 @@ mod run_process {
   }
 
   /// The same two options on Windows, spelled with `cmd.exe`: the directory
-  /// is shown by what `dir` lists in it, and the variable by what `echo`
-  /// expands. `ProcessEnvironment` replaces the environment outright, search
-  /// path included, so the interpreter is named by its absolute `COMSPEC`
-  /// path and keeps the `SystemRoot` it needs to start.
+  /// is shown by the `cd` the shell reports (`pwd`'s counterpart there), and
+  /// the variable by what `echo` expands. `ProcessEnvironment` replaces the
+  /// environment outright, search path included, so the interpreter is named
+  /// by its absolute `COMSPEC` path and keeps the `SystemRoot` it needs to
+  /// start.
   #[test]
   #[cfg(all(windows, not(target_arch = "wasm32")))]
   fn windows_process_directory_and_environment_options() {
     // Paths reach the interpreter with forward slashes, the way every
     // other path in these tests does — a backslash is an escape in a
     // Wolfram Language string. `SystemRoot` is a value rather than a path
-    // we hand to the interpreter, so it keeps its native spelling.
+    // we hand to the interpreter, so it keeps its native spelling; it also
+    // names a directory every Windows install has, which is what the
+    // working directory is checked against.
     let shell =
       unixify(&std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".into()));
-    let root = std::env::var("SystemRoot")
-      .unwrap_or_default()
-      .replace('\\', r"\\");
+    let system_root =
+      std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".into());
+    let root = system_root.replace('\\', r"\\");
 
-    let dir = std::env::temp_dir()
-      .join(format!("woxi_run_process_{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(dir.join("marker.txt"), "").unwrap();
-    assert_eq!(
-      interpret(&format!(
-        r#"StringTrim@RunProcess[{{"{shell}", "/c", "dir", "/b"}}, "StandardOutput", ProcessDirectory -> "{}"]"#,
-        unixify(&dir.display().to_string())
-      ))
-      .unwrap(),
-      "marker.txt"
+    let reported = interpret(&format!(
+      r#"StringTrim@RunProcess[{{"{shell}", "/c", "cd"}}, "StandardOutput", ProcessDirectory -> "{}"]"#,
+      unixify(&system_root)
+    ))
+    .unwrap();
+    // `cd` prints the directory in the file system's own spelling, which
+    // need not match `SystemRoot`'s case.
+    assert!(
+      reported.eq_ignore_ascii_case(&system_root),
+      "ProcessDirectory: expected {system_root}, got {reported}"
     );
-    let _ = std::fs::remove_dir_all(&dir);
 
     for environment in [
       format!(r#"<|"WOXI_RP" -> "bar", "SystemRoot" -> "{root}"|>"#),
@@ -10990,11 +10991,20 @@ mod run_process {
       run(r#", ProcessEnvironment -> <|"PATH" -> "/bin"|>"#).result,
       "hi"
     );
+    // A search path that leads somewhere real but holds no `sh`. It has to
+    // be a directory this test owns: `/usr/bin` looks empty of shells on
+    // macOS yet carries one on a usr-merged Linux, where `/bin` is a
+    // symbolic link to it.
+    let empty = std::env::temp_dir()
+      .join(format!("woxi_empty_path_{}", std::process::id()));
+    std::fs::create_dir_all(&empty).unwrap();
+    let empty_path = empty.display().to_string();
     for option in [
-      r#", ProcessEnvironment -> <|"A" -> "b"|>"#,
-      r#", ProcessEnvironment -> {"A" -> "b"}"#,
-      r#", ProcessEnvironment -> <|"PATH" -> "/usr/bin"|>"#,
+      r#", ProcessEnvironment -> <|"A" -> "b"|>"#.to_string(),
+      r#", ProcessEnvironment -> {"A" -> "b"}"#.to_string(),
+      format!(r#", ProcessEnvironment -> <|"PATH" -> "{empty_path}"|>"#),
     ] {
+      let option = option.as_str();
       let result = run(option);
       assert_eq!(result.result, "StringTrim[$Failed]", "{option}");
       assert!(
@@ -11005,6 +11015,7 @@ mod run_process {
         result.warnings
       );
     }
+    let _ = std::fs::remove_dir_all(&empty);
   }
 
   #[test]

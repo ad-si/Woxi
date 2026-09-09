@@ -3985,7 +3985,7 @@ pub fn evaluate_expr_to_expr_inner(
             }
           });
           if let Some(v) = elem {
-            return Ok(v);
+            return part_extraction::evaluate_if_part_assigned(var_name, v);
           }
         }
       }
@@ -4077,7 +4077,7 @@ pub fn evaluate_expr_to_expr_inner(
         });
         if let Some(v) = elem {
           PART_DEPTH.with(|d| *d.borrow_mut() -= 1);
-          return Ok(v);
+          return part_extraction::evaluate_if_part_assigned(var_name, v);
         }
       }
 
@@ -4092,6 +4092,12 @@ pub fn evaluate_expr_to_expr_inner(
       } else {
         // Fast path: no All, use original optimized approach
         let mut result = extract_part_ast(&base_val, &indices[0])?;
+        // A piece of a symbol that has had a Part assignment may still be
+        // unevaluated, and the next index addresses what it evaluates to.
+        if let Expr::Identifier(var_name) = base_expr {
+          result =
+            part_extraction::evaluate_if_part_assigned(var_name, result)?;
+        }
 
         if indices.len() > 1 {
           // Multi-index Part: if extraction returns an unevaluated Part at
@@ -4105,14 +4111,16 @@ pub fn evaluate_expr_to_expr_inner(
             }
             // An atom has no parts — except part 0, its head:
             // `{k}[[1, 0]]` is `Symbol`.
-            if matches!(
+            if (matches!(
               &result,
               Expr::Identifier(_)
                 | Expr::Integer(_)
                 | Expr::BigInteger(_)
                 | Expr::Real(_)
                 | Expr::String(_)
-            ) && !matches!(idx, Expr::Integer(0))
+            ) || crate::evaluator::part_extraction::is_atomic_number_expr(
+              &result,
+            )) && !matches!(idx, Expr::Integer(0))
             {
               part_too_deep = true;
               hit_atom_mid = true;
@@ -4149,6 +4157,17 @@ pub fn evaluate_expr_to_expr_inner(
         result
       };
 
+      // A Part assignment stores the expression it rebuilt without evaluating
+      // it, so a piece taken out of a symbol that has had one is evaluated
+      // here — `a = {sC f[x]}; a[[1,1]] = 1` leaves `Times[1, f[x]]` inside
+      // the list, and `a[[1]]` is the `f[x]` it stands for.
+      let result = match base_expr {
+        Expr::Identifier(var_name) => {
+          part_extraction::evaluate_if_part_assigned(var_name, result)?
+        }
+        _ => result,
+      };
+
       // Part::partd / Part::pspec1: warn only at the outermost Part level
       let at_outermost = PART_DEPTH.with(|d| *d.borrow() == 0);
       if at_outermost && let Expr::Part { .. } = &result {
@@ -4174,6 +4193,9 @@ pub fn evaluate_expr_to_expr_inner(
           )
           // A tree is an atom, so a part specification is always too deep.
           || matches!(base, Expr::FunctionCall { name, .. } if name == "Tree")
+          // So are a rational and a complex number, whatever they are
+          // stored as.
+          || crate::evaluator::part_extraction::is_atomic_number_expr(base)
         {
           let part_str = crate::syntax::format_expr(
             &result,

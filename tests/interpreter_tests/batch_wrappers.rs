@@ -7154,49 +7154,88 @@ mod batch_unevaluated_wrappers_2 {
     assert_eq!(interpret("UnequalTo[5][5]").unwrap(), "False");
   }
 
-  // FileNameDrop
+  // FileNameDrop — spelled for both operating systems on every host, since
+  // the separator a path is written with is the one it comes back joined
+  // with. A Windows path has to reach the interpreter with its backslashes
+  // escaped: `"a\b"` is a backspace in a Wolfram Language string.
+  fn file_name_drop(spec: &str, os: &str) -> String {
+    let sep = if os == "Windows" { r"\\" } else { "/" };
+    interpret(&format!(
+      r#"FileNameDrop["a{sep}b{sep}c{sep}d.txt"{spec}, OperatingSystem -> "{os}"]"#
+    ))
+    .unwrap()
+  }
   #[test]
   fn file_name_drop_default() {
-    let sep = std::path::MAIN_SEPARATOR_STR;
-    assert_eq!(
-      interpret(&format!("FileNameDrop[\"a{sep}b{sep}c{sep}d.txt\"]")).unwrap(),
-      format!("a{sep}b{sep}c")
-    );
+    assert_eq!(file_name_drop("", "Unix"), "a/b/c");
+    assert_eq!(file_name_drop("", "Windows"), r"a\b\c");
   }
   #[test]
   fn file_name_drop_positive() {
-    let sep = std::path::MAIN_SEPARATOR_STR;
-    assert_eq!(
-      interpret(&format!("FileNameDrop[\"a{sep}b{sep}c{sep}d.txt\", 1]"))
-        .unwrap(),
-      format!("b{sep}c{sep}d.txt")
-    );
+    assert_eq!(file_name_drop(", 1", "Unix"), "b/c/d.txt");
+    assert_eq!(file_name_drop(", 1", "Windows"), r"b\c\d.txt");
   }
   #[test]
   fn file_name_drop_positive_2() {
-    let sep = std::path::MAIN_SEPARATOR_STR;
-    assert_eq!(
-      interpret(&format!("FileNameDrop[\"a{sep}b{sep}c{sep}d.txt\", 2]"))
-        .unwrap(),
-      format!("c{sep}d.txt")
-    );
+    assert_eq!(file_name_drop(", 2", "Unix"), "c/d.txt");
+    assert_eq!(file_name_drop(", 2", "Windows"), r"c\d.txt");
   }
   #[test]
   fn file_name_drop_negative() {
-    let sep = std::path::MAIN_SEPARATOR_STR;
-    assert_eq!(
-      interpret(&format!("FileNameDrop[\"a{sep}b{sep}c{sep}d.txt\", -1]"))
-        .unwrap(),
-      format!("a{sep}b{sep}c")
-    );
+    assert_eq!(file_name_drop(", -1", "Unix"), "a/b/c");
+    assert_eq!(file_name_drop(", -1", "Windows"), r"a\b\c");
   }
   #[test]
   fn file_name_drop_negative_2() {
-    let sep = std::path::MAIN_SEPARATOR_STR;
+    assert_eq!(file_name_drop(", -2", "Unix"), "a/b");
+    assert_eq!(file_name_drop(", -2", "Windows"), r"a\b");
+  }
+  /// Windows reads either separator, so a path written with slashes still
+  /// splits there — and comes back joined with backslashes.
+  #[test]
+  fn file_name_drop_windows_reads_slashes() {
     assert_eq!(
-      interpret(&format!("FileNameDrop[\"a{sep}b{sep}c{sep}d.txt\", -2]"))
+      interpret(r#"FileNameDrop["a/b/c", -1, OperatingSystem -> "Windows"]"#)
         .unwrap(),
-      format!("a{sep}b")
+      r"a\b"
+    );
+  }
+  /// A backslash is an ordinary character in a Unix file name, so it never
+  /// divides a path there.
+  #[test]
+  fn file_name_split_unix_keeps_backslashes() {
+    assert_eq!(
+      interpret(r#"FileNameSplit["a\\b", OperatingSystem -> "Unix"]"#).unwrap(),
+      r"{a\b}"
+    );
+  }
+  #[test]
+  fn file_name_split_windows() {
+    assert_eq!(
+      interpret(r#"FileNameSplit["a\\b\\c", OperatingSystem -> "Windows"]"#)
+        .unwrap(),
+      "{a, b, c}"
+    );
+  }
+  #[test]
+  fn file_name_depth_windows() {
+    assert_eq!(
+      interpret(r#"FileNameDepth["a\\b\\c", OperatingSystem -> "Windows"]"#)
+        .unwrap(),
+      "3"
+    );
+  }
+  #[test]
+  fn file_name_take_windows() {
+    assert_eq!(
+      interpret(r#"FileNameTake["a\\b\\c", OperatingSystem -> "Windows"]"#)
+        .unwrap(),
+      "c"
+    );
+    assert_eq!(
+      interpret(r#"FileNameTake["a\\b\\c", 2, OperatingSystem -> "Windows"]"#)
+        .unwrap(),
+      r"a\b"
     );
   }
 

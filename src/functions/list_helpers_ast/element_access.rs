@@ -694,7 +694,13 @@ fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
 
   let (items, head): (&[Expr], Option<&str>) = match list {
     Expr::List(items) => (items.as_slice(), None),
-    Expr::FunctionCall { name: h, args } => (args.as_slice(), Some(h.as_str())),
+    // A rational and a complex number are atoms, not the `Rational[n, d]`
+    // and `Plus[…]` they are stored as, so they fall through to the message.
+    Expr::FunctionCall { name: h, args }
+      if !crate::evaluator::part_extraction::is_atomic_number_expr(list) =>
+    {
+      (args.as_slice(), Some(h.as_str()))
+    }
     _ => {
       if let Some((from, to)) = spec_range(n) {
         take_drop_message("Take", from, to, list);
@@ -867,7 +873,12 @@ pub fn drop_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
 
   let (items, drop_head): (&[Expr], Option<&str>) = match list {
     Expr::List(items) => (items.as_slice(), None),
-    Expr::FunctionCall { name: h, args } => (args.as_slice(), Some(h.as_str())),
+    // See `take_ast`: an atomic number keeps its parts to itself.
+    Expr::FunctionCall { name: h, args }
+      if !crate::evaluator::part_extraction::is_atomic_number_expr(list) =>
+    {
+      (args.as_slice(), Some(h.as_str()))
+    }
     _ => {
       if let Some((from, to)) = spec_range(n) {
         take_drop_message("Drop", from, to, list);
@@ -1343,6 +1354,11 @@ fn extract_resolve(subject: &Expr, path: &[ExtractComp]) -> ExtractOutcome {
       }
       ExtractComp::Idx(n) => {
         use crate::functions::expr_form::{ExprForm, decompose_expr};
+        // A rational and a complex number are atoms, so the specification
+        // is longer than their depth however deep it goes.
+        if crate::evaluator::part_extraction::is_atomic_number_expr(&current) {
+          return ExtractOutcome::Partd;
+        }
         let items: Vec<Expr> = match &current {
           Expr::List(items) => items.to_vec(),
           Expr::FunctionCall { args, .. } => args.to_vec(),
@@ -1641,6 +1657,10 @@ pub(crate) fn parts_and_head(
     // `Expr::Association` before reaching here, and the positional
     // `ReplacePart[assoc, x, 1]` spelling stays unevaluated in wolframscript.
     Expr::Association(_) => None,
+    // A rational and a complex number decompose to `Rational[n, d]` and
+    // `Complex[re, im]` in FullForm, but they are atoms: `Delete[1/2, 1]`
+    // and `ReplacePart[3 + 4 I, 1 -> 9]` must not reach those parts.
+    _ if crate::evaluator::part_extraction::is_atomic_number_expr(expr) => None,
     _ => match decompose_expr(expr) {
       ExprForm::Composite { head, children } => Some((children, Some(head))),
       ExprForm::Atom(_) => None,

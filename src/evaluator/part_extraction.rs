@@ -260,19 +260,80 @@ pub fn apply_part_indices(
   }
 }
 
-/// Evaluate the base expression of a Part, with optimization for identifiers in ENV
+thread_local! {
+  /// The symbols whose stored value was rebuilt by a Part assignment. Such a
+  /// value is stored the way it was assembled, without being evaluated again
+  /// — that is what wolframscript does, and reading the symbol is what
+  /// evaluates it. So `a = sC f[x]; a[[1]] = 1` leaves `Times[1, f[x]]`
+  /// behind, and a later `a[[2]] = …` really does address *that* expression's
+  /// second part, while `a` itself reads back as `f[x]`.
+  ///
+  /// Every other stored value came from evaluating a right-hand side and is
+  /// already in evaluated form, so the far more common `bigTable[[i]]` never
+  /// pays for a re-evaluation it cannot need.
+  static PART_ASSIGNED: std::cell::RefCell<std::collections::HashSet<String>> =
+    std::cell::RefCell::new(std::collections::HashSet::new());
+}
+
+/// Remember that `var_name`'s value was rebuilt by a Part assignment.
+pub fn note_part_assigned(var_name: &str) {
+  PART_ASSIGNED.with(|set| set.borrow_mut().insert(var_name.to_string()));
+}
+
+/// Forget it again — the symbol has just been given a whole new value, which
+/// arrived evaluated.
+pub fn forget_part_assigned(var_name: &str) {
+  PART_ASSIGNED.with(|set| {
+    let mut set = set.borrow_mut();
+    if !set.is_empty() {
+      set.remove(var_name);
+    }
+  });
+}
+
+/// Evaluate what was read out of `var_name` if a Part assignment could have
+/// left it unevaluated. `eval_part_base` covers the value itself; this covers
+/// a piece taken out of a stored list, which is handed over as it stands.
+pub fn evaluate_if_part_assigned(
+  var_name: &str,
+  part: Expr,
+) -> Result<Expr, InterpreterError> {
+  if was_part_assigned(var_name) {
+    evaluate_expr_to_expr(&part)
+  } else {
+    Ok(part)
+  }
+}
+
+fn was_part_assigned(var_name: &str) -> bool {
+  PART_ASSIGNED
+    .with(|set| !set.borrow().is_empty() && set.borrow().contains(var_name))
+}
+
+/// Evaluate the base expression of a Part, with optimization for identifiers
+/// in ENV.
+///
+/// A stored value is handed back as it stands unless a Part assignment left
+/// it unevaluated — see `PART_ASSIGNED` — since re-walking a whole table on
+/// every `a[[i]]` is what this shortcut exists to avoid. A list is handed
+/// back either way: evaluating one is what makes filling a table quadratic,
+/// and its elements were evaluated as they were assigned.
 pub fn eval_part_base(e: &Expr) -> Result<Expr, InterpreterError> {
   if let Expr::Identifier(var_name) = e {
-    let env_result = ENV.with(|env| {
+    let stored = ENV.with(|env| {
       let env = env.borrow();
-      if let Some(StoredValue::ExprVal(stored)) = env.get(var_name) {
-        Some(Ok(stored.clone()))
-      } else {
-        None
+      match env.get(var_name) {
+        Some(StoredValue::ExprVal(stored)) => Some(stored.clone()),
+        _ => None,
       }
     });
-    if let Some(r) = env_result {
-      return r;
+    if let Some(stored) = stored {
+      return if matches!(stored, Expr::List(_)) || !was_part_assigned(var_name)
+      {
+        Ok(stored)
+      } else {
+        evaluate_expr_to_expr(&stored)
+      };
     }
   }
   evaluate_expr_to_expr(e)
@@ -364,7 +425,35 @@ pub fn extract_part_ast(
       index: Box::new(index.clone()),
     });
   }
+
+  // A rational or a complex number is an atom as well, however it happens to
+  // be stored: `(1/2)[[1]]` must not reach the `Rational[1, 2]` numerator,
+  // and `(3 + 4 I)[[1]]` must not reach into the Plus-Times tree. Only part 0
+  // — the head — resolves; anything else stays unevaluated for the caller to
+  // report as Part::partd.
+  if is_atomic_number_expr(expr) {
+    if matches!(index, Expr::Integer(0)) {
+      return crate::functions::predicate_ast::head_ast(std::slice::from_ref(
+        expr,
+      ));
+    }
+    return Ok(Expr::Part {
+      expr: Box::new(expr.clone()),
+      index: Box::new(index.clone()),
+    });
+  }
   extract_part_ast_rest(expr, index)
+}
+
+/// Whether `expr` is one of the numbers that Wolfram stores as a compound
+/// expression but treats as an atom: a `Rational[n, d]` or a complex number.
+/// The cheap shape test comes first so the hot Part paths (lists,
+/// associations, …) never pay for the complex-number extraction.
+pub(crate) fn is_atomic_number_expr(expr: &Expr) -> bool {
+  matches!(
+    expr,
+    Expr::FunctionCall { .. } | Expr::BinaryOp { .. } | Expr::UnaryOp { .. }
+  ) && crate::functions::predicate_ast::is_atomic_number(expr)
 }
 
 /// The symbolic `Graphics[…]` form of a rendered graphic, so the sequence
