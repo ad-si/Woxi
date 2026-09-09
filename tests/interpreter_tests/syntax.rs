@@ -12505,3 +12505,76 @@ mod bracketed_pattern_body {
     );
   }
 }
+
+/// A `base^^digits` literal whose base is outside 2–36, or whose digits the
+/// base cannot spell, is refused rather than read: wolframscript reports
+/// `General::base` or `General::digit` and the read yields `$Failed`. Woxi
+/// used to hand the base straight to Rust's radix parser, which panics
+/// outside that range — the fuzzer found `Print[1^^111100010010000000]` —
+/// and silently answered `0` for a digit that was too large.
+mod base_literals {
+  use super::*;
+
+  fn refused(code: &str, message: &str) {
+    let result = interpret_with_stdout(code).unwrap();
+    assert_eq!(result.result, "$Failed", "{code}");
+    assert!(
+      result.warnings.iter().any(|w| w.contains(message)),
+      "expected {message:?} for {code}, got {:?}",
+      result.warnings
+    );
+  }
+
+  #[test]
+  fn a_base_outside_two_to_thirty_six_is_refused() {
+    for (code, base) in [
+      ("1^^111", "1"),
+      ("0^^101", "0"),
+      ("37^^abc", "37"),
+      ("100^^5", "100"),
+      // A base too large to read at all is reported as 0, as it is there.
+      ("99999999999999999999^^1", "0"),
+    ] {
+      refused(
+        code,
+        &format!(
+          "General::base: Requested base {base} in {code} should be between 2 and 36."
+        ),
+      );
+    }
+  }
+
+  /// The offending digit is named by its 1-based position in the digits as
+  /// written, the point of a fractional literal included.
+  #[test]
+  fn a_digit_the_base_cannot_spell_is_refused() {
+    for (code, position, digits, base) in [
+      ("2^^1012", 4, "1012", 2),
+      ("2^^1021", 3, "1021", 2),
+      ("16^^gg", 1, "gg", 16),
+      ("8^^19", 2, "19", 8),
+      ("2^^1.012", 5, "1.012", 2),
+      ("10^^12a", 3, "12a", 10),
+    ] {
+      refused(
+        code,
+        &format!(
+          "General::digit: Digit at position {position} in {digits} is too large to be used in base {base}."
+        ),
+      );
+    }
+  }
+
+  #[test]
+  fn a_well_formed_literal_still_reads() {
+    assert_eq!(interpret("2^^11").unwrap(), "3");
+    assert_eq!(interpret("16^^FF").unwrap(), "255");
+    assert_eq!(interpret("36^^zz").unwrap(), "1295");
+    assert_eq!(interpret("2^^1.01").unwrap(), "1.25");
+    assert_eq!(interpret("16^^FF.A").unwrap(), "255.625");
+    assert_eq!(
+      interpret("19^^91g5dcg2h6da7260a9f3c4a").unwrap(),
+      "123456789012345678901234567890"
+    );
+  }
+}

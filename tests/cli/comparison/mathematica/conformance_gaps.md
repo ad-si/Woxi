@@ -2613,6 +2613,28 @@ message that embeds one (`Set::write`, `ImageAdjust::arg2`, …). Each
 message site formats with `expr_to_string`; matching WL means routing them
 through the OutputForm renderer instead.
 
+### A refused base literal does not also report a syntax error
+
+wolframscript treats `base^^digits` with a base outside 2–36, or with a digit
+the base cannot spell, as text it could not read: it reports the reason and
+then the syntax error that reading stopped at. Woxi reports the reason and
+returns `$Failed` without the second message.
+
+```sh
+wolframscript -code '1^^111'
+# General::base: Requested base 1 in 1^^111 should be between 2 and 36.
+# ToExpression::sntx: Invalid syntax in or before "1^^111 ".
+# $Failed
+woxi eval '1^^111'
+# General::base: Requested base 1 in 1^^111 should be between 2 and 36.
+# $Failed
+```
+
+Same for `General::digit` (`2^^1012`). This is the general shape of Woxi's
+read-time errors: input the grammar rejects reports a parser error of its own
+rather than `ToExpression::sntx`/`::sntxi`, and in a script the lines before
+it do not run.
+
 ### `Read` does not report unreadable input
 
 ```sh

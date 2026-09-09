@@ -2169,8 +2169,29 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
       // Parse base^^digits format (e.g. 16^^FF = 255, 2^^1010 = 10,
       // 2^^1.01 = 1.25, 16^^FF.A = 255.625)
       let parts: Vec<&str> = s.splitn(2, "^^").collect();
-      let base: u32 = parts[0].parse().unwrap_or(10);
+      // A base too large to read at all is reported as 0, the way
+      // wolframscript reports `99999999999999999999^^1`.
+      let base: u32 = parts[0].parse().unwrap_or(0);
       let digits = parts[1];
+      if !(2..=36).contains(&base) {
+        crate::emit_message(&format!(
+          "General::base: Requested base {base} in {s} should be between 2 and 36."
+        ));
+        return Expr::Identifier("$Failed".to_string());
+      }
+      // The first digit the base cannot spell, named by its 1-based position
+      // in the digits as written — the point of a fractional literal counts
+      // as one of them.
+      if let Some(position) = digits
+        .chars()
+        .position(|c| c != '.' && c.to_digit(base).is_none())
+      {
+        crate::emit_message(&format!(
+          "General::digit: Digit at position {} in {digits} is too large to be used in base {base}.",
+          position + 1
+        ));
+        return Expr::Identifier("$Failed".to_string());
+      }
       let lower = digits.to_lowercase();
       if let Some(dot_pos) = lower.find('.') {
         // Fractional base literal — produce Real(f64).

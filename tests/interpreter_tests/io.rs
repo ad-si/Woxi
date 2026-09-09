@@ -4100,6 +4100,19 @@ mod file_name_split {
 mod file_name_take {
   use super::*;
 
+  /// The components come back joined with the operating system's separator,
+  /// so a result that carries one is named for both — and checked on every
+  /// host, since the answer must not depend on where the tests run.
+  pub(super) fn for_both_systems(call: &str, unix: &str, windows: &str) {
+    for (os, expected) in [("Unix", unix), ("Windows", windows)] {
+      let code = format!(
+        "{}, OperatingSystem -> \"{os}\"]",
+        call.trim_end_matches(']')
+      );
+      assert_eq!(interpret(&code).unwrap(), expected, "{code}");
+    }
+  }
+
   // FileNameTake[path] returns the last path component.
   #[test]
   fn default_is_last_component() {
@@ -4114,8 +4127,8 @@ mod file_name_take {
   // counts as the first component and renders as "/".
   #[test]
   fn positive_count_takes_leading_components() {
-    assert_eq!(interpret(r#"FileNameTake["/a/b/c.txt", 1]"#).unwrap(), "/");
-    assert_eq!(interpret(r#"FileNameTake["/a/b/c.txt", 2]"#).unwrap(), "/a");
+    for_both_systems(r#"FileNameTake["/a/b/c.txt", 1]"#, "/", r"\");
+    for_both_systems(r#"FileNameTake["/a/b/c.txt", 2]"#, "/a", r"\a");
   }
 
   // A negative count takes the last |n| components.
@@ -4125,27 +4138,23 @@ mod file_name_take {
       interpret(r#"FileNameTake["/a/b/c.txt", -1]"#).unwrap(),
       "c.txt"
     );
-    assert_eq!(
-      interpret(r#"FileNameTake["/a/b/c.txt", -2]"#).unwrap(),
-      "b/c.txt"
+    for_both_systems(
+      r#"FileNameTake["/a/b/c.txt", -2]"#,
+      "b/c.txt",
+      r"b\c.txt",
     );
-    assert_eq!(
-      interpret(r#"FileNameTake["/usr/local/bin", -2]"#).unwrap(),
-      "local/bin"
+    for_both_systems(
+      r#"FileNameTake["/usr/local/bin", -2]"#,
+      "local/bin",
+      r"local\bin",
     );
   }
 
   // A {m, n} range takes components m through n (1-indexed, inclusive).
   #[test]
   fn range_takes_component_slice() {
-    assert_eq!(
-      interpret(r#"FileNameTake["/a/b/c.txt", {2, 3}]"#).unwrap(),
-      "a/b"
-    );
-    assert_eq!(
-      interpret(r#"FileNameTake["a/b/c", {1, 2}]"#).unwrap(),
-      "a/b"
-    );
+    for_both_systems(r#"FileNameTake["/a/b/c.txt", {2, 3}]"#, "a/b", r"a\b");
+    for_both_systems(r#"FileNameTake["a/b/c", {1, 2}]"#, "a/b", r"a\b");
   }
 }
 
@@ -10934,28 +10943,30 @@ mod run_process {
   #[test]
   #[cfg(all(windows, not(target_arch = "wasm32")))]
   fn windows_process_directory_and_environment_options() {
-    // Paths reach the interpreter with forward slashes, the way every
-    // other path in these tests does — a backslash is an escape in a
-    // Wolfram Language string. `SystemRoot` is a value rather than a path
-    // we hand to the interpreter, so it keeps its native spelling; it also
-    // names a directory every Windows install has, which is what the
-    // working directory is checked against.
-    let shell =
-      unixify(&std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".into()));
+    // Paths are spelled the way Windows spells them, with their backslashes
+    // escaped for the Wolfram Language string that carries them: a
+    // forward-slash `cmd.exe` is a path Windows itself accepts but the shell
+    // then reads as a run of `/W`-style switches. `SystemRoot` names a
+    // directory every Windows install has, and is what the working directory
+    // is checked against.
+    let escape = |path: &str| path.replace('\\', r"\\");
+    let shell = escape(
+      &std::env::var("COMSPEC")
+        .unwrap_or_else(|_| r"C:\Windows\system32\cmd.exe".into()),
+    );
     let system_root =
       std::env::var("SystemRoot").unwrap_or_else(|_| r"C:\Windows".into());
-    let root = system_root.replace('\\', r"\\");
+    let root = escape(&system_root);
 
     let reported = interpret(&format!(
-      r#"StringTrim@RunProcess[{{"{shell}", "/c", "cd"}}, "StandardOutput", ProcessDirectory -> "{}"]"#,
-      unixify(&system_root)
+      r#"StringTrim@RunProcess[{{"{shell}", "/c", "cd"}}, "StandardOutput", ProcessDirectory -> "{root}"]"#
     ))
     .unwrap();
     // `cd` prints the directory in the file system's own spelling, which
     // need not match `SystemRoot`'s case.
     assert!(
       reported.eq_ignore_ascii_case(&system_root),
-      "ProcessDirectory: expected {system_root}, got {reported}"
+      "ProcessDirectory: expected {system_root}, got {reported:?}"
     );
 
     for environment in [
@@ -11315,18 +11326,18 @@ mod file_name_join_on_a_string {
   /// Verified against wolframscript.
   #[test]
   fn take_and_drop_slice_the_split_components() {
-    for (expr, expected) in [
-      (r#"FileNameTake["/a/b//"]"#, "/"),
-      (r#"FileNameTake["//"]"#, "/"),
-      (r#"FileNameTake["a//"]"#, "/"),
-      (r#"FileNameTake["a//b"]"#, "b"),
-      (r#"FileNameTake["a//b", -2]"#, "/b"),
-      (r#"FileNameTake["/a/b//", 2]"#, "/a"),
-      (r#"FileNameDrop["/a/b//", 1]"#, "a/b"),
-      (r#"FileNameDrop["a//b", -1]"#, "a"),
-      (r#"FileNameDrop["//", 1]"#, "/"),
+    assert_eq!(interpret(r#"FileNameTake["a//b"]"#).unwrap(), "b");
+    assert_eq!(interpret(r#"FileNameDrop["a//b", -1]"#).unwrap(), "a");
+    for (expr, unix, windows) in [
+      (r#"FileNameTake["/a/b//"]"#, "/", r"\"),
+      (r#"FileNameTake["//"]"#, "/", r"\"),
+      (r#"FileNameTake["a//"]"#, "/", r"\"),
+      (r#"FileNameTake["a//b", -2]"#, "/b", r"\b"),
+      (r#"FileNameTake["/a/b//", 2]"#, "/a", r"\a"),
+      (r#"FileNameDrop["/a/b//", 1]"#, "a/b", r"a\b"),
+      (r#"FileNameDrop["//", 1]"#, "/", r"\"),
     ] {
-      assert_eq!(interpret(expr).unwrap(), expected, "{expr}");
+      super::file_name_take::for_both_systems(expr, unix, windows);
     }
   }
 }
