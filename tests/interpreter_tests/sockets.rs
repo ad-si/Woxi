@@ -86,17 +86,55 @@ mod sockets {
     #[test]
     fn host_and_port_spellings_agree() {
       clear_state();
-      // `SocketConnect` takes the endpoint as a string, as a host/port pair
-      // and as a list; all three reach the same server.
+      // `SocketConnect` takes the endpoint as a `"host:port"` string and as
+      // a `{host, port}` list; both reach the same server.
       let result = interpret(
         "srv = SocketOpen[0]; port = srv[\"DestinationPort\"]; \
          a = SocketConnect[\"127.0.0.1:\" <> ToString[port]]; \
-         b = SocketConnect[\"127.0.0.1\", port]; \
          d = SocketConnect[{\"127.0.0.1\", port}]; \
-         Union[Map[#[\"DestinationPort\"] &, {a, b, d}]] === {port}",
+         Union[Map[#[\"DestinationPort\"] &, {a, d}]] === {port}",
       )
       .unwrap();
       assert_eq!(result, "True");
+    }
+
+    // The second argument is the *protocol*, not a port — so the host/port
+    // pair has to be written as a list. Every ZeroMQ spelling is served over
+    // TCP here, and anything else is the documented `noproto` failure.
+    #[test]
+    fn the_second_argument_is_the_protocol() {
+      clear_state();
+      let result = interpret(
+        "srv = SocketOpen[0]; port = srv[\"DestinationPort\"]; \
+         Map[Head[SocketConnect[{\"127.0.0.1\", port}, #]] &, \
+             {\"TCP\", \"tcp\", \"ZMQ\", \"ZMQ_PAIR\", \"ZMQ_STREAM\"}]",
+      )
+      .unwrap();
+      assert_eq!(
+        result,
+        "{SocketObject, SocketObject, SocketObject, SocketObject, \
+         SocketObject}"
+      );
+    }
+
+    #[test]
+    fn an_unsupported_protocol_is_a_failure() {
+      clear_state();
+      assert_eq!(
+        interpret("ToString[SocketConnect[\"127.0.0.1:80\", 42], InputForm]")
+          .unwrap(),
+        "Failure[\"SocketsLink\", <|\"MessageTemplate\" :> \
+         SocketConnect::noproto, \"MessageParameters\" -> {\"42\"}|>]"
+      );
+      clear_state();
+      // `SocketOpen["127.0.0.1", 0]` reads the `0` as a protocol, so the
+      // host/port pair is a failure there too — under `SocketOpen`'s own
+      // message tag.
+      assert_eq!(
+        interpret("ToString[SocketOpen[\"127.0.0.1\", 0], InputForm]").unwrap(),
+        "Failure[\"SocketsLink\", <|\"MessageTemplate\" :> \
+         SocketOpen::noproto, \"MessageParameters\" -> {\"0\"}|>]"
+      );
     }
   }
 
@@ -166,11 +204,14 @@ mod sockets {
       assert_eq!(result, "True");
     }
 
+    // `"SocketListener"` is a property wolframscript *does* keep, so an
+    // absent listener reads as `None` rather than as the `{}` an unknown
+    // property gives.
     #[test]
     fn a_socket_without_a_listener_reports_none() {
       clear_state();
       let result = interpret("SocketOpen[0][\"SocketListener\"]").unwrap();
-      assert_eq!(result, "{}");
+      assert_eq!(result, "None");
     }
 
     #[test]
@@ -198,30 +239,43 @@ mod sockets {
       assert_eq!(result, "True");
     }
 
+    // `HandlerFunctionsKeys` is the *option* — which keys the handler asked
+    // for — not the keys the association actually carries. Its default names
+    // four of the seven, and it can be set.
     #[test]
-    fn handler_functions_keys_name_the_association_a_handler_gets() {
+    fn handler_functions_keys_is_the_option_not_the_association() {
       clear_state();
       let result = interpret(
         "srv = SocketOpen[0]; \
          SocketListen[srv, Identity][\"HandlerFunctionsKeys\"]",
       )
       .unwrap();
-      assert_eq!(
-        result,
-        "{TimeStamp, SourceSocket, Socket, Data, DataBytes, DataByteArray, \
-         MultipartComplete}"
-      );
+      assert_eq!(result, "{Timestamp, Socket, SourceSocket, Data}");
     }
 
     #[test]
-    fn a_bare_handler_is_the_received_handler() {
+    fn handler_functions_keys_can_be_set() {
+      clear_state();
+      let result = interpret(
+        "srv = SocketOpen[0]; \
+         lis = SocketListen[srv, Identity, HandlerFunctionsKeys -> {\"Data\"}]; \
+         {lis[\"HandlerFunctionsKeys\"], Keys[lis[\"HandlerFunctions\"]]}",
+      )
+      .unwrap();
+      assert_eq!(result, "{{Data}, {DataReceived}}");
+    }
+
+    // The event an incoming chunk is filed under is `"DataReceived"` — the
+    // only handler name wolframscript accepts.
+    #[test]
+    fn a_bare_handler_is_the_data_received_handler() {
       clear_state();
       let result = interpret(
         "srv = SocketOpen[0]; \
          Keys[SocketListen[srv, Identity][\"HandlerFunctions\"]]",
       )
       .unwrap();
-      assert_eq!(result, "{Received}");
+      assert_eq!(result, "{DataReceived}");
     }
   }
 
@@ -475,11 +529,25 @@ mod sockets {
       assert_eq!(result, "{}");
     }
 
+    // `Close` answers with the endpoint it closed, spelled `"host:port"`,
+    // not with the socket object. `DeleteObject` on a socket is the same
+    // operation and answers the same way. The port is read *before* the
+    // close: a closed socket's properties are a `Failure` in wolframscript.
     #[test]
-    fn close_hands_back_the_socket() {
+    fn close_hands_back_the_endpoint_it_closed() {
       clear_state();
-      let result =
-        interpret("srv = SocketOpen[0]; Close[srv] === srv").unwrap();
+      let result = interpret(
+        "srv = SocketOpen[0]; port = srv[\"DestinationPort\"]; \
+         Close[srv] === \"127.0.0.1:\" <> ToString[port]",
+      )
+      .unwrap();
+      assert_eq!(result, "True");
+      clear_state();
+      let result = interpret(
+        "srv = SocketOpen[0]; port = srv[\"DestinationPort\"]; \
+         DeleteObject[srv] === \"127.0.0.1:\" <> ToString[port]",
+      )
+      .unwrap();
       assert_eq!(result, "True");
     }
 
@@ -555,7 +623,7 @@ mod sockets {
          DeleteObject[lis]; srv[\"SocketListener\"]",
       )
       .unwrap();
-      assert_eq!(result, "{}");
+      assert_eq!(result, "None");
     }
 
     #[test]

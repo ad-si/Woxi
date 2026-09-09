@@ -10,12 +10,15 @@ $ wo 'Head[SocketListen[SocketOpen[0], Identity]]'
 SocketListener
 ```
 
-The handler is called with an association.
-Its keys are the ones `"HandlerFunctionsKeys"` names:
+The handler is called with an association carrying
+`TimeStamp`, `SourceSocket`, `Socket`, `Data`, `DataBytes`,
+`DataByteArray` and `MultipartComplete`.
+`"HandlerFunctionsKeys"` is the *option* saying which of those
+the handler asked for, and it defaults to four of them:
 
 ```scrut
 $ wo 'SocketListen[SocketOpen[0], Identity]["HandlerFunctionsKeys"]'
-{TimeStamp, SourceSocket, Socket, Data, DataBytes, DataByteArray, MultipartComplete}
+{Timestamp, Socket, SourceSocket, Data}
 ```
 
 Handlers run on the thread that evaluates Wolfram code,
@@ -31,5 +34,5 @@ ping
 
 ```scrut
 $ wo 'srv = SocketOpen[0]; DeleteObject[SocketListen[srv, Identity]]; srv["SocketListener"]'
-{}
+None
 ```

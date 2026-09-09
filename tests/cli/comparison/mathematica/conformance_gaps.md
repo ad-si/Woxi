@@ -3556,13 +3556,32 @@ property it does not keep. Whether wolframscript does the same for an
 arbitrary unknown property, or only for the ones it knows about but leaves
 empty, is untested.
 
-### Handler associations for events other than `"Received"`
+### Handler associations for events other than `"DataReceived"`
 
-A `"Received"` handler is called with the recorded seven keys —
+A `"DataReceived"` handler is called with the recorded seven keys —
 `TimeStamp`, `SourceSocket`, `Socket`, `Data`, `DataBytes`, `DataByteArray`,
-`MultipartComplete` — in that order. What `"Accepted"`, `"Closed"` and
-`"Error"` handlers get was never recorded; Woxi passes `TimeStamp`,
-`SourceSocket` and `Socket`, plus a `Message` key for `"Error"`.
+`MultipartComplete` — in that order. `"DataReceived"` is the only event name
+wolframscript accepts: any other key makes `lis["HandlerFunctions"]` read
+`Missing["NotAvailable", "HandlerFunctions"]`. Woxi keeps `"Accepted"`,
+`"Closed"` and `"Error"` as extensions, and what wolframscript would pass such
+a handler was never recorded; Woxi passes `TimeStamp`, `SourceSocket` and
+`Socket`, plus a `Message` key for `"Error"`.
+
+### A closed socket is closed again without complaint
+
+wolframscript answers a second `Close` with a failure object naming the socket:
+
+```sh
+wolframscript -code 'srv = SocketOpen[0]; Close[srv]; Close[srv]'
+# Failure["SocketsLink", <|"MessageTemplate" :> SocketObject::invalidSock,
+#                          "MessageParameters" -> {SocketObject["TCPSERVER-…"]}|>]
+woxi eval 'srv = SocketOpen[0]; Close[srv]; Close[srv]'
+# "127.0.0.1:…"
+```
+
+The rest of Woxi's socket layer reports an unusable socket as `$Failed` plus a
+free-text line rather than as a `Failure[…]`, so this is one instance of a
+wider difference in how the two report a bad socket.
 
 `Data` and `DataBytes` are delayed association entries (`key :> value`), so a
 handler that only reads `DataByteArray` pays neither the text decoding nor one

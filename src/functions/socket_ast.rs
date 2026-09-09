@@ -124,8 +124,12 @@ struct Registry {
 struct ListenerEntry {
   socket: String,
   /// `HandlerFunctions -> <|…|>` broken out by event name. A bare
-  /// `SocketListen[sock, f]` registers `f` under `"Received"`.
+  /// `SocketListen[sock, f]` registers `f` under `"DataReceived"`.
   handlers: Vec<(String, Expr)>,
+  /// The `HandlerFunctionsKeys` option: which keys a handler asked to be
+  /// given. It is *not* the set of keys the handler association carries —
+  /// wolframscript passes all seven of those whatever this says — it is only
+  /// what the listener reports back for the option.
   handler_keys: Vec<String>,
   stop: Arc<AtomicBool>,
 }
@@ -324,40 +328,119 @@ struct Endpoint {
   port: u16,
 }
 
-/// Read an endpoint out of the argument list, ignoring a trailing
-/// `"TCP"` protocol argument. `None` for anything that is not an endpoint,
-/// which leaves the call unevaluated.
+/// The protocol names the second argument of `SocketOpen` / `SocketConnect`
+/// may carry, matched case-insensitively. Every one of them is served over
+/// TCP here — that is the only transport implemented, and it is what
+/// wolframscript's own `sock["Type"]` reports for a plain socket anyway.
 #[cfg(not(target_arch = "wasm32"))]
-fn parse_endpoint(args: &[Expr], default_host: &str) -> Option<Endpoint> {
-  // The protocol argument is accepted but carries no information: TCP is
-  // the only transport implemented, and the only one `SocketOpen`'s
-  // default names.
-  let args: Vec<&Expr> = args
-    .iter()
-    .filter(|a| !matches!(a, Expr::String(s) if s == "TCP"))
-    .collect();
-  match args.as_slice() {
-    [Expr::Integer(port)] => Some(Endpoint {
+const SOCKET_PROTOCOLS: [&str; 14] = [
+  "TCP",
+  "ZMQ",
+  "ZMQ_PAIR",
+  "ZMQ_PUB",
+  "ZMQ_SUB",
+  "ZMQ_REQ",
+  "ZMQ_REP",
+  "ZMQ_DEALER",
+  "ZMQ_ROUTER",
+  "ZMQ_PULL",
+  "ZMQ_PUSH",
+  "ZMQ_XPUB",
+  "ZMQ_XSUB",
+  "ZMQ_STREAM",
+];
+
+/// Why an argument list is not an endpoint.
+#[cfg(not(target_arch = "wasm32"))]
+enum EndpointError {
+  /// Not an endpoint at all, so the call stays unevaluated.
+  Unparsable,
+  /// A second argument that is not one of `SOCKET_PROTOCOLS`, spelled as
+  /// the failure reports it.
+  BadProtocol(String),
+}
+
+/// Read an endpoint out of the argument list.
+///
+/// The second argument is the *protocol*, not a port:
+/// `SocketConnect["127.0.0.1", 8000]` is a protocol error in wolframscript,
+/// not a host/port pair — the pair is written `{"127.0.0.1", 8000}`.
+#[cfg(not(target_arch = "wasm32"))]
+fn parse_endpoint(
+  args: &[Expr],
+  default_host: &str,
+) -> Result<Endpoint, EndpointError> {
+  let (spec, protocol) = match args {
+    [spec] => (spec, None),
+    [spec, protocol] => (spec, Some(protocol)),
+    _ => return Err(EndpointError::Unparsable),
+  };
+  if let Some(protocol) = protocol {
+    let name = match protocol {
+      Expr::String(s) => s.clone(),
+      other => expr_to_string(other),
+    };
+    if !SOCKET_PROTOCOLS
+      .iter()
+      .any(|known| known.eq_ignore_ascii_case(&name))
+    {
+      return Err(EndpointError::BadProtocol(name));
+    }
+  }
+  let port_endpoint = |port: &i128| {
+    Some(Endpoint {
       host: default_host.to_string(),
       port: u16::try_from(*port).ok()?,
-    }),
-    [Expr::String(spec)] => parse_host_port(spec, default_host),
-    [Expr::String(host), Expr::Integer(port)] => Some(Endpoint {
-      host: host.clone(),
-      port: u16::try_from(*port).ok()?,
-    }),
-    [Expr::List(items)] => {
-      let items: Vec<Expr> = items.iter().cloned().collect();
-      let refs: Vec<&Expr> = items.iter().collect();
-      match refs.as_slice() {
-        [Expr::String(host), Expr::Integer(port)] => Some(Endpoint {
+    })
+  };
+  let endpoint = match spec {
+    Expr::Integer(port) => port_endpoint(port),
+    Expr::String(spec) => parse_host_port(spec, default_host),
+    Expr::List(items) => match &items.iter().collect::<Vec<_>>()[..] {
+      [Expr::String(host), Expr::Integer(port)] => {
+        u16::try_from(*port).ok().map(|port| Endpoint {
           host: host.clone(),
-          port: u16::try_from(*port).ok()?,
-        }),
-        _ => None,
+          port,
+        })
       }
-    }
+      _ => None,
+    },
     _ => None,
+  };
+  endpoint.ok_or(EndpointError::Unparsable)
+}
+
+/// The `Failure` wolframscript answers with for an unsupported protocol.
+#[cfg(not(target_arch = "wasm32"))]
+fn bad_protocol_failure(head: &str, protocol: &str) -> Expr {
+  let template = Expr::FunctionCall {
+    name: "MessageName".to_string(),
+    args: vec![
+      Expr::Identifier(head.to_string()),
+      Expr::String("noproto".to_string()),
+    ]
+    .into(),
+  };
+  let key = Expr::String("MessageTemplate".to_string());
+  Expr::FunctionCall {
+    name: "Failure".to_string(),
+    args: vec![
+      Expr::String("SocketsLink".to_string()),
+      Expr::Association(vec![
+        (
+          key.clone(),
+          Expr::RuleDelayed {
+            pattern: Box::new(key),
+            replacement: Box::new(template),
+          },
+        ),
+        (
+          Expr::String("MessageParameters".to_string()),
+          Expr::List(vec![Expr::String(protocol.to_string())].into()),
+        ),
+      ]),
+    ]
+    .into(),
   }
 }
 
@@ -407,8 +490,12 @@ fn register(uuid: &str, entry: SocketEntry) -> Expr {
 /// system for a free one, which `sock["DestinationPort"]` then reports.
 #[cfg(not(target_arch = "wasm32"))]
 fn socket_open(args: &[Expr]) -> Expr {
-  let Some(endpoint) = parse_endpoint(args, "127.0.0.1") else {
-    return unevaluated("SocketOpen", args);
+  let endpoint = match parse_endpoint(args, "127.0.0.1") {
+    Ok(endpoint) => endpoint,
+    Err(EndpointError::BadProtocol(protocol)) => {
+      return bad_protocol_failure("SocketOpen", &protocol);
+    }
+    Err(EndpointError::Unparsable) => return unevaluated("SocketOpen", args),
   };
   let listener =
     match TcpListener::bind((endpoint.host.as_str(), endpoint.port)) {
@@ -453,8 +540,14 @@ fn socket_open(args: &[Expr]) -> Expr {
 /// is parked in `connect_error` until the first operation asks for it.
 #[cfg(not(target_arch = "wasm32"))]
 fn socket_connect(args: &[Expr]) -> Expr {
-  let Some(endpoint) = parse_endpoint(args, "127.0.0.1") else {
-    return unevaluated("SocketConnect", args);
+  let endpoint = match parse_endpoint(args, "127.0.0.1") {
+    Ok(endpoint) => endpoint,
+    Err(EndpointError::BadProtocol(protocol)) => {
+      return bad_protocol_failure("SocketConnect", &protocol);
+    }
+    Err(EndpointError::Unparsable) => {
+      return unevaluated("SocketConnect", args);
+    }
   };
   let resolved: Vec<SocketAddr> = (endpoint.host.as_str(), endpoint.port)
     .to_socket_addrs()
@@ -509,17 +602,55 @@ fn socket_connect(args: &[Expr]) -> Expr {
 // Listening
 // ---------------------------------------------------------------------------
 
+/// The event name wolframscript files an incoming chunk under.
+#[cfg(not(target_arch = "wasm32"))]
+const DATA_RECEIVED: &str = "DataReceived";
+
+/// The default `HandlerFunctionsKeys` a listener reports.
+#[cfg(not(target_arch = "wasm32"))]
+const DEFAULT_HANDLER_FUNCTIONS_KEYS: [&str; 4] =
+  ["Timestamp", "Socket", "SourceSocket", "Data"];
+
 /// The handler functions a `SocketListen` call sets up, as
-/// `(event name, function)` pairs.
+/// `(event name, function)` pairs, together with its `HandlerFunctionsKeys`.
 ///
 /// `SocketListen[sock, f]` is the short form for
-/// `HandlerFunctions -> <|"Received" -> f|>`; the long form may name any
-/// of `"Accepted"`, `"Received"`, `"Closed"` and `"Error"`.
+/// `HandlerFunctions -> <|"DataReceived" -> f|>`, the only event
+/// wolframscript names; the long form may also name Woxi's `"Accepted"`,
+/// `"Closed"` and `"Error"`.
 #[cfg(not(target_arch = "wasm32"))]
-fn parse_handlers(spec: &[Expr]) -> Option<Vec<(String, Expr)>> {
+fn parse_handlers(spec: &[Expr]) -> Option<(Vec<(String, Expr)>, Vec<String>)> {
   let mut handlers = Vec::new();
+  let mut keys: Vec<String> = DEFAULT_HANDLER_FUNCTIONS_KEYS
+    .iter()
+    .map(|k| (*k).to_string())
+    .collect();
   for arg in spec {
     match arg {
+      // HandlerFunctionsKeys -> {…} only says which keys the handler wants;
+      // it never becomes a handler itself.
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } if matches!(&**pattern,
+          Expr::Identifier(n) | Expr::String(n)
+            if n == "HandlerFunctionsKeys") =>
+      {
+        let Expr::List(items) = &**replacement else {
+          return None;
+        };
+        keys = items
+          .iter()
+          .map(|item| match item {
+            Expr::String(s) | Expr::Identifier(s) => Some(s.clone()),
+            _ => None,
+          })
+          .collect::<Option<Vec<_>>>()?;
+      }
       // HandlerFunctions -> <|"Received" :> f, …|>
       Expr::Rule {
         pattern,
@@ -571,11 +702,11 @@ fn parse_handlers(spec: &[Expr]) -> Option<Vec<(String, Expr)>> {
           _ => return None,
         }
       }
-      // Anything else in the second position is the "Received" handler.
-      other => handlers.push(("Received".to_string(), other.clone())),
+      // Anything else in the second position is the "DataReceived" handler.
+      other => handlers.push((DATA_RECEIVED.to_string(), other.clone())),
     }
   }
-  Some(handlers)
+  Some((handlers, keys))
 }
 
 /// `SocketListen[sock, handler]` — run `handler` for everything that
@@ -585,7 +716,7 @@ fn socket_listen(args: &[Expr]) -> Expr {
   let Some(uuid) = socket_object_uuid(&args[0]) else {
     return unevaluated("SocketListen", args);
   };
-  let Some(handlers) = parse_handlers(&args[1..]) else {
+  let Some((handlers, handler_keys)) = parse_handlers(&args[1..]) else {
     return unevaluated("SocketListen", args);
   };
   let listener_state = with_registry(|reg| {
@@ -621,15 +752,6 @@ fn socket_listen(args: &[Expr]) -> Expr {
     crate::with_rng(|rng| rand::RngCore::fill_bytes(rng, &mut bytes));
     i128::from(u64::from_be_bytes(bytes) >> 1)
   };
-  let handler_keys = vec![
-    "TimeStamp".to_string(),
-    "SourceSocket".to_string(),
-    "Socket".to_string(),
-    "Data".to_string(),
-    "DataBytes".to_string(),
-    "DataByteArray".to_string(),
-    "MultipartComplete".to_string(),
-  ];
   let stop = Arc::new(AtomicBool::new(false));
   LISTENERS.with(|l| {
     l.borrow_mut().insert(
@@ -953,7 +1075,7 @@ fn handle_event(event: &SocketEvent) -> Option<String> {
   }
   let event_name = match &event.kind {
     EventKind::Accepted => "Accepted",
-    EventKind::Data(_) => "Received",
+    EventKind::Data(_) => DATA_RECEIVED,
     EventKind::Closed => "Closed",
     EventKind::Error(_) => "Error",
   };
@@ -1353,7 +1475,14 @@ fn socket_close(uuid: &str) -> Expr {
       }
     });
   }
-  socket_expr(uuid)
+  // wolframscript answers with the endpoint that was closed, spelled
+  // `"host:port"`, not with the socket object.
+  with_registry(|reg| {
+    reg.entries.get(uuid).map_or_else(
+      || Expr::Identifier("$Failed".to_string()),
+      |entry| Expr::String(format!("{}:{}", entry.dest_host, entry.dest_port)),
+    )
+  })
 }
 
 /// Stop a listener's threads and forget it.
@@ -1451,9 +1580,12 @@ pub fn socket_property(uuid: &str, property: &str) -> Option<Expr> {
       "InprocQ" => crate::helpers::bool_expr(false),
       "Protocol" => Expr::String("TCP".to_string()),
       "Scheme" => Expr::String("tcp".to_string()),
-      "SocketListener" => entry
-        .listener_id
-        .map_or_else(empty, |id| call1("SocketListener", Expr::Integer(id))),
+      // A socket nobody is listening on reports `None`, not the empty list
+      // an unknown property gives.
+      "SocketListener" => entry.listener_id.map_or_else(
+        || Expr::Identifier("None".to_string()),
+        |id| call1("SocketListener", Expr::Integer(id)),
+      ),
       "Type" => Expr::String("ZMQ_STREAM".to_string()),
       "UUID" => Expr::String(uuid.to_string()),
       _ => empty(),
@@ -1680,9 +1812,10 @@ fn dispatch_native(
         }
         return Some(Ok(Expr::Identifier("Null".to_string())));
       }
+      // On a socket `DeleteObject` *is* `Close`, down to the endpoint string
+      // it answers with.
       let uuid = socket_arg?;
-      socket_close(&uuid);
-      Some(Ok(Expr::Identifier("Null".to_string())))
+      Some(Ok(socket_close(&uuid)))
     }
     // ReadString[sock] — everything up to the peer's close.
     "ReadString" if args.len() == 1 && socket_arg.is_some() => {
