@@ -28197,14 +28197,48 @@ mod options_of_a_graphic {
         .unwrap(),
       "{ImageSize -> 20}"
     );
+    // An option the graphic says nothing about reads as its head's default,
+    // not as nothing.
     assert_eq!(
       interpret("Options[Graphics[{Disk[]}], ImageSize]").unwrap(),
-      "{}"
+      "{ImageSize -> Automatic}"
+    );
+    assert_eq!(
+      interpret("Options[Graphics[{Disk[]}], PlotRange]").unwrap(),
+      "{PlotRange -> All}"
+    );
+    assert_eq!(
+      interpret("Options[Graphics3D[{Sphere[]}], Boxed]").unwrap(),
+      "{Boxed -> True}"
     );
     assert_eq!(
       interpret("Options[Graphics[{Disk[]}, ImageSize -> 20, Axes -> True]]")
         .unwrap(),
       "{ImageSize -> 20, Axes -> True}"
+    );
+  }
+
+  /// The defaults those fall back to are `Options[Graphics]` and
+  /// `Options[Graphics3D]`, both taken from wolframscript.
+  #[test]
+  fn the_heads_carry_the_documented_default_tables() {
+    assert_eq!(interpret("Length[Options[Graphics]]").unwrap(), "39");
+    assert_eq!(interpret("Length[Options[Graphics3D]]").unwrap(), "54");
+    assert_eq!(
+      interpret("ToString[Take[Options[Graphics], 6], InputForm]").unwrap(),
+      "{AlignmentPoint -> Center, AspectRatio -> Automatic, Axes -> False, \
+       AxesLabel -> None, AxesOrigin -> Automatic, AxesStyle -> {}}"
+    );
+    // The two delayed entries stay delayed: `$DisplayFunction` and
+    // `$PlotInteractivity` are read when the option is used, not now.
+    assert_eq!(
+      interpret("ToString[Options[Graphics, DisplayFunction], InputForm]")
+        .unwrap(),
+      "{DisplayFunction :> $DisplayFunction}"
+    );
+    assert_eq!(
+      interpret("ToString[Options[Graphics3D, ViewPoint], InputForm]").unwrap(),
+      "{ViewPoint -> {1.3, -2.4, 2.}}"
     );
   }
 

@@ -1506,15 +1506,28 @@ pub fn dispatch_predicate_functions(
         let Expr::Identifier(opt_name) = &opt_arg else {
           return Some(Ok(Expr::List(vec![].into())));
         };
-        let matching: Vec<Expr> = opts
-          .into_iter()
-          .filter(|rule| match rule {
-            Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } => {
-              matches!(pattern.as_ref(), Expr::Identifier(n) if n == opt_name)
-            }
-            _ => false,
-          })
-          .collect();
+        let named = |rules: Vec<Expr>| -> Vec<Expr> {
+          rules
+            .into_iter()
+            .filter(|rule| match rule {
+              Expr::Rule { pattern, .. }
+              | Expr::RuleDelayed { pattern, .. } => {
+                matches!(pattern.as_ref(), Expr::Identifier(n) if n == opt_name)
+              }
+              _ => false,
+            })
+            .collect()
+        };
+        let mut matching = named(opts);
+        // A graphic only carries the options it was drawn with, so an
+        // option it says nothing about reads as its head's default —
+        // `Options[Graphics[…], ImageSize]` is `{ImageSize -> Automatic}`.
+        if matching.is_empty()
+          && let Some(head) =
+            crate::functions::graphics::graphics_options_head(&func_arg)
+        {
+          matching = named(builtin_default_options(head));
+        }
         return Some(Ok(Expr::List(matching.into())));
       }
       let func_name = match &func_arg {
@@ -2047,6 +2060,109 @@ pub fn builtin_default_options(func_name: &str) -> Vec<Expr> {
     }
     // Same shape, but Position defaults Heads -> True.
     "Position" => vec![make_rule("Heads", id("True"))],
+    // The graphics option defaults. A `Graphics[…]` expression only carries
+    // the options it was actually drawn with, so `Options[g, opt]` falls
+    // back to these for the rest.
+    "Graphics" => vec![
+      make_rule("AlignmentPoint", id("Center")),
+      make_rule("AspectRatio", id("Automatic")),
+      make_rule("Axes", id("False")),
+      make_rule("AxesLabel", id("None")),
+      make_rule("AxesOrigin", id("Automatic")),
+      make_rule("AxesStyle", list(vec![])),
+      make_rule("Background", id("None")),
+      make_rule("BaselinePosition", id("Automatic")),
+      make_rule("BaseStyle", list(vec![])),
+      make_rule("ColorOutput", id("Automatic")),
+      make_rule("ContentSelectable", id("Automatic")),
+      make_rule("CoordinatesToolOptions", id("Automatic")),
+      make_rule_delayed("DisplayFunction", id("$DisplayFunction")),
+      make_rule("Epilog", list(vec![])),
+      make_rule_delayed("FormatType", id("TraditionalForm")),
+      make_rule("Frame", id("False")),
+      make_rule("FrameLabel", id("None")),
+      make_rule("FrameStyle", list(vec![])),
+      make_rule("FrameTicks", id("Automatic")),
+      make_rule("FrameTicksStyle", list(vec![])),
+      make_rule("GridLines", id("None")),
+      make_rule("GridLinesStyle", list(vec![])),
+      make_rule("ImageMargins", real(0.0)),
+      make_rule("ImagePadding", id("All")),
+      make_rule("ImageSize", id("Automatic")),
+      make_rule("ImageSizeRaw", id("Automatic")),
+      make_rule("LabelStyle", list(vec![])),
+      make_rule("Method", id("Automatic")),
+      make_rule_delayed("PlotInteractivity", id("$PlotInteractivity")),
+      make_rule("PlotLabel", id("None")),
+      make_rule("PlotRange", id("All")),
+      make_rule("PlotRangeClipping", id("False")),
+      make_rule("PlotRangePadding", id("Automatic")),
+      make_rule("PlotRegion", id("Automatic")),
+      make_rule("PreserveImageOptions", id("Automatic")),
+      make_rule("Prolog", list(vec![])),
+      make_rule("RotateLabel", id("True")),
+      make_rule("Ticks", id("Automatic")),
+      make_rule("TicksStyle", list(vec![])),
+    ],
+    "Graphics3D" => vec![
+      make_rule("AlignmentPoint", id("Center")),
+      make_rule("AspectRatio", id("Automatic")),
+      make_rule("AutomaticImageSize", id("False")),
+      make_rule("Axes", id("False")),
+      make_rule("AxesEdge", id("Automatic")),
+      make_rule("AxesLabel", id("None")),
+      make_rule("AxesOrigin", id("Automatic")),
+      make_rule("AxesStyle", list(vec![])),
+      make_rule("Background", id("None")),
+      make_rule("BaselinePosition", id("Automatic")),
+      make_rule("BaseStyle", list(vec![])),
+      make_rule("Boxed", id("True")),
+      make_rule("BoxRatios", id("Automatic")),
+      make_rule("BoxStyle", list(vec![])),
+      make_rule("ClipPlanes", id("None")),
+      make_rule("ClipPlanesStyle", id("Automatic")),
+      make_rule("ColorOutput", id("Automatic")),
+      make_rule("ContentSelectable", id("Automatic")),
+      make_rule("ControllerLinking", id("False")),
+      make_rule("ControllerMethod", id("Automatic")),
+      make_rule("ControllerPath", id("Automatic")),
+      make_rule("CoordinatesToolOptions", id("Automatic")),
+      make_rule_delayed("DisplayFunction", id("$DisplayFunction")),
+      make_rule("Epilog", list(vec![])),
+      make_rule("FaceGrids", id("None")),
+      make_rule("FaceGridsStyle", list(vec![])),
+      make_rule_delayed("FormatType", id("TraditionalForm")),
+      make_rule("ImageMargins", real(0.0)),
+      make_rule("ImagePadding", id("All")),
+      make_rule("ImageSize", id("Automatic")),
+      make_rule("ImageSizeRaw", id("Automatic")),
+      make_rule("LabelStyle", list(vec![])),
+      make_rule("Lighting", id("Automatic")),
+      make_rule("Method", id("Automatic")),
+      make_rule_delayed("PlotInteractivity", id("$PlotInteractivity")),
+      make_rule("PlotLabel", id("None")),
+      make_rule("PlotRange", id("All")),
+      make_rule("PlotRangePadding", id("Automatic")),
+      make_rule("PlotRegion", id("Automatic")),
+      make_rule("PreserveImageOptions", id("Automatic")),
+      make_rule("Prolog", list(vec![])),
+      make_rule("RotationAction", Expr::String("Fit".to_string())),
+      make_rule("SphericalRegion", id("Automatic")),
+      make_rule("Ticks", id("Automatic")),
+      make_rule("TicksStyle", list(vec![])),
+      make_rule("TouchscreenAutoZoom", id("False")),
+      make_rule("ViewAngle", id("Automatic")),
+      make_rule("ViewCenter", id("Automatic")),
+      make_rule("ViewMatrix", id("Automatic")),
+      make_rule("ViewPoint", list(vec![real(1.3), real(-2.4), real(2.0)])),
+      make_rule("ViewProjection", id("Automatic")),
+      make_rule("ViewRange", id("All")),
+      make_rule("ViewVector", id("Automatic")),
+      make_rule(
+        "ViewVertical",
+        list(vec![Expr::Integer(0), Expr::Integer(0), Expr::Integer(1)]),
+      ),
+    ],
     // Polynomial-manipulation defaults (matching wolframscript).
     "Expand" | "ExpandAll" => vec![
       make_rule("Modulus", Expr::Integer(0)),

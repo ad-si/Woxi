@@ -2622,6 +2622,27 @@ The result is right — the call stays unevaluated either way — but the
 `Outer::heads` message is missing. Every other `Outer` form checked
 (per-list levels, general heads, operator form) agrees.
 
+### `Options` does not report an unknown option name
+
+```sh
+wolframscript -code 'Options[Graphics[{Disk[]}], Frobnicate]'
+# Options::optnf: Frobnicate is not a known option for Graphics.
+# {}
+woxi eval 'Options[Graphics[{Disk[]}], Frobnicate]'
+# {}
+```
+
+The value agrees. On a head with no options at all the second argument is
+dropped rather than answered, which does not:
+
+```sh
+wolframscript -code 'Options[f[1, 2], Axes]'   # Options::optnf: … ; {}
+woxi eval 'Options[f[1, 2], Axes]'             # Options[f[1, 2]]
+```
+
+A list of option names is not accepted either — `Options[g, {Axes, PlotRange}]`
+gives `{}` where WL answers both.
+
 ### Rasterize with an unknown element aborts the whole script
 
 ```sh

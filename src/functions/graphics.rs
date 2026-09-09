@@ -14160,6 +14160,27 @@ fn parse_svg_numeric_attr(svg: &str, attr: &str) -> Option<f64> {
   raw[..numeric_end].parse().ok()
 }
 
+/// The head a graphic's options belong to: `"Graphics"` or `"Graphics3D"`,
+/// whether the expression is still symbolic or already rendered. It is what
+/// `Options[g, opt]` falls back to for an option `g` does not carry.
+pub fn graphics_options_head(expr: &Expr) -> Option<&str> {
+  let symbolic = match expr {
+    Expr::Graphics {
+      structure: Some(structure),
+      ..
+    } => structure.as_ref(),
+    other => other,
+  };
+  match symbolic {
+    Expr::FunctionCall { name, .. }
+      if name == "Graphics" || name == "Graphics3D" =>
+    {
+      Some(name)
+    }
+    _ => None,
+  }
+}
+
 /// The options a rendered graphic was drawn with: the ones of its symbolic
 /// `Graphics[prims, opts…]` form, or — for a picture that has no such form,
 /// like an imported page — its `ImageSize`, read off the rendering.
