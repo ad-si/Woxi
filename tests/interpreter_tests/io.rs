@@ -10876,18 +10876,53 @@ mod run_process {
     );
     assert_eq!(
       interpret(
-        r#"StringTrim@RunProcess[{"sh", "-c", "echo $WOXI_RP"}, "StandardOutput", ProcessEnvironment -> <|"WOXI_RP" -> "bar"|>]"#
+        r#"StringTrim@RunProcess[{"/bin/sh", "-c", "echo $WOXI_RP"}, "StandardOutput", ProcessEnvironment -> <|"WOXI_RP" -> "bar"|>]"#
       )
       .unwrap(),
       "bar"
     );
     assert_eq!(
       interpret(
-        r#"StringTrim@RunProcess[{"sh", "-c", "echo $WOXI_RP"}, "StandardOutput", ProcessEnvironment -> {"WOXI_RP" -> "baz"}]"#
+        r#"StringTrim@RunProcess[{"/bin/sh", "-c", "echo $WOXI_RP"}, "StandardOutput", ProcessEnvironment -> {"WOXI_RP" -> "baz"}]"#
       )
       .unwrap(),
       "baz"
     );
+  }
+
+  /// A `ProcessEnvironment` replaces the environment outright, search path
+  /// included: the program name is looked up in *its* `PATH`, so an
+  /// environment that carries none finds nothing but an absolute or
+  /// explicitly relative name. Verified against wolframscript.
+  #[test]
+  #[cfg(all(unix, not(target_arch = "wasm32")))]
+  fn process_environment_replaces_the_search_path() {
+    let run = |option: &str| {
+      interpret_with_stdout(&format!(
+        r#"StringTrim@RunProcess[{{"sh", "-c", "echo hi"}}, "StandardOutput"{option}]"#
+      ))
+      .unwrap()
+    };
+    assert_eq!(run("").result, "hi");
+    assert_eq!(
+      run(r#", ProcessEnvironment -> <|"PATH" -> "/bin"|>"#).result,
+      "hi"
+    );
+    for option in [
+      r#", ProcessEnvironment -> <|"A" -> "b"|>"#,
+      r#", ProcessEnvironment -> {"A" -> "b"}"#,
+      r#", ProcessEnvironment -> <|"PATH" -> "/usr/bin"|>"#,
+    ] {
+      let result = run(option);
+      assert_eq!(result.result, "StringTrim[$Failed]", "{option}");
+      assert!(
+        result.warnings.iter().any(|w| w.contains(
+          r#"RunProcess::pnfd: Program sh not found. Check Environment["PATH"]."#
+        )),
+        "expected the pnfd line for {option}, got {:?}",
+        result.warnings
+      );
+    }
   }
 
   #[test]

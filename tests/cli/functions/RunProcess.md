@@ -39,8 +39,12 @@ $ wo 'RunProcess[{"sh", "-c", "pwd"}, "StandardOutput", ProcessDirectory -> "/"]
 
 ```
 
+A `ProcessEnvironment` replaces the environment outright, search path
+included, so the program is looked up in *its* `PATH` — an absolute name
+needs none:
+
 ```scrut
-$ wo 'RunProcess[{"sh", "-c", "echo $GREETING"}, "StandardOutput", ProcessEnvironment -> <|"GREETING" -> "hi"|>]'
+$ wo 'RunProcess[{"/bin/sh", "-c", "echo $GREETING"}, "StandardOutput", ProcessEnvironment -> <|"GREETING" -> "hi"|>]'
 hi
 
 ```
@@ -50,6 +54,6 @@ A program that cannot be found gives `$Failed`:
 ```scrut
 $ wo 'RunProcess["no-such-program-anywhere"]'
 
-RunProcess::pnfd: Program no-such-program-anywhere not found. Check the path and file permissions.
+RunProcess::pnfd: Program no-such-program-anywhere not found. Check Environment["PATH"].
 $Failed
 ```

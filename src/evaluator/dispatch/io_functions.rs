@@ -276,8 +276,10 @@ fn run_process_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Some(other) => Some(crate::syntax::expr_to_string(other)),
   };
 
-  let mut command = Command::new(program);
-  command.args(program_args);
+  let mut directory: Option<std::path::PathBuf> = None;
+  // `Inherited` (the default) keeps the interpreter's environment; anything
+  // else replaces it outright.
+  let mut environment: Option<Vec<(String, String)>> = None;
   for option in options {
     let (Expr::Rule {
       pattern,
@@ -297,7 +299,7 @@ fn run_process_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     match name.as_str() {
       "ProcessDirectory" => {
         if let Expr::String(dir) = &value {
-          command.current_dir(crate::vfs::resolve(dir));
+          directory = Some(crate::vfs::resolve(dir));
         }
       }
       "ProcessEnvironment" => {
@@ -317,19 +319,60 @@ fn run_process_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               _ => None,
             })
             .collect(),
-          // Inherited (the default) keeps the interpreter's environment.
           _ => continue,
         };
-        command.env_clear();
         let text = |e: &Expr| match e {
           Expr::String(s) => s.clone(),
           other => crate::syntax::expr_to_string(other),
         };
-        for (key, val) in &pairs {
-          command.env(text(key), text(val));
-        }
+        environment = Some(
+          pairs
+            .iter()
+            .map(|(key, val)| (text(key), text(val)))
+            .collect(),
+        );
       }
       _ => {}
+    }
+  }
+
+  let not_found = || {
+    crate::emit_message(&format!(
+      "RunProcess::pnfd: Program {program} not found. Check Environment[\"PATH\"]."
+    ));
+    Ok(Expr::Identifier("$Failed".to_string()))
+  };
+  // A replaced environment also replaces the search path: the program name
+  // is looked up in *its* `PATH`, not the interpreter's, which is the only
+  // one `Command` would consult. So an environment that carries no `PATH`
+  // finds nothing but an absolute or explicitly relative name.
+  let resolved: std::path::PathBuf = match &environment {
+    Some(env) if !program.contains(std::path::MAIN_SEPARATOR) => {
+      let path = env
+        .iter()
+        .find(|(key, _)| key == "PATH")
+        .map(|(_, value)| value.as_str())
+        .unwrap_or_default();
+      let Some(found) = std::env::split_paths(path)
+        .map(|dir| dir.join(program))
+        .find(|candidate| candidate.is_file())
+      else {
+        return not_found();
+      };
+      found
+    }
+    _ => program.into(),
+  };
+
+  let mut command = Command::new(resolved);
+  command.args(program_args);
+  if let Some(directory) = directory {
+    command.current_dir(directory);
+  }
+  if let Some(environment) = environment {
+    command.env_clear();
+    for (key, value) in environment {
+      command.env(key, value);
     }
   }
   command
@@ -342,10 +385,7 @@ fn run_process_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .stderr(Stdio::piped());
 
   let Ok(mut child) = command.spawn() else {
-    crate::emit_message(&format!(
-      "RunProcess::pnfd: Program {program} not found. Check the path and file permissions."
-    ));
-    return Ok(Expr::Identifier("$Failed".to_string()));
+    return not_found();
   };
   // Feed the input on its own thread: a program that writes a lot before
   // reading would otherwise deadlock against our reads below.
