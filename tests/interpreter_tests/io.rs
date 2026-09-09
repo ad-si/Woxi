@@ -3426,6 +3426,36 @@ mod read {
     assert_eq!(result, "Tengo una\nvaca lechera.");
   }
 
+  /// The value read keeps its head. Reading used to run the text through
+  /// `interpret` and re-read its *printed* form, which loses the head of
+  /// anything whose output form is not its input form — a quoted `"x"`
+  /// came back as the symbol `x`. Verified against wolframscript.
+  #[test]
+  fn read_expression_keeps_the_head_of_what_it_read() {
+    for (input, expected) in [
+      (r#"\"x\""#, r#""x""#),
+      (
+        r#"\"Tengo una\nvaca lechera.\""#,
+        r#""Tengo una\nvaca lechera.""#,
+      ),
+      ("1 + 2", "3"),
+      ("abc", "abc"),
+      ("{1, 2}", "{1, 2}"),
+      ("f[1] + f[2]", "f[1] + f[2]"),
+      ("", "EndOfFile"),
+    ] {
+      clear_state();
+      assert_eq!(
+        interpret(&format!(
+          r#"ToString[Read[StringToStream["{input}"]], InputForm]"#
+        ))
+        .unwrap(),
+        expected,
+        "Read[StringToStream[{input:?}]]"
+      );
+    }
+  }
+
   #[test]
   fn read_end_of_file() {
     clear_state();

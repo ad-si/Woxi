@@ -2540,6 +2540,20 @@ message that embeds one (`Set::write`, `ImageAdjust::arg2`, …). Each
 message site formats with `expr_to_string`; matching WL means routing them
 through the OutputForm renderer instead.
 
+### `Read` does not report unreadable input
+
+```sh
+wolframscript -code 's = StringToStream["1+"]; Read[s]'
+# Read::readt: Invalid input found when reading 1+ from StringToStream[1+].
+# $Failed
+woxi eval 's = StringToStream["1+"]; Read[s]'
+# $Failed
+```
+
+The value agrees; only the message is missing. The reader that produces it
+sees the text and the requested type but not the stream expression the
+message names, so emitting it means plumbing that through.
+
 ### Outer does not report mismatched heads
 
 ```sh

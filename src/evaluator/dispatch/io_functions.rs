@@ -4315,12 +4315,14 @@ fn read_single_type(remaining: &str, read_type: &Expr) -> (Expr, usize) {
       } else {
         remaining.len()
       };
-      match crate::interpret(line) {
-        Ok(result_str) => {
-          let expr = crate::syntax::string_to_expr(&result_str)
-            .unwrap_or(Expr::Identifier(result_str));
-          (expr, advance)
-        }
+      // Parse and evaluate the expression itself. Going through
+      // `interpret`'s *printed* form and re-reading that loses the head of
+      // anything whose output form is not its input form — a quoted
+      // `"x"` came back as the symbol `x`, since a string prints bare.
+      let value = crate::syntax::string_to_expr(line)
+        .and_then(|parsed| crate::evaluator::evaluate_expr_to_expr(&parsed));
+      match value {
+        Ok(expr) => (expr, advance),
         Err(_) => (Expr::Identifier("$Failed".to_string()), advance),
       }
     }
