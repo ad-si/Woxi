@@ -1094,8 +1094,13 @@ mod messages {
       .iter()
       .filter(|m| m.contains("Power::infy: Infinite expression"))
       .count();
-    // All five are captured (Check/Quiet still see them) …
-    assert_eq!(infy, 5, "all messages captured: {msgs:?}");
+    // Only the three that printed are captured. Past the limit a message is
+    // gone rather than merely silent — that is what `$MessageList` shows in
+    // wolframscript, and it is what keeps a loop that raises the same
+    // message thousands of times from paying to render each one (see
+    // `emit_message_with`). Check still sees the first three, which is all
+    // it needs to know a message was raised.
+    assert_eq!(infy, 3, "messages captured up to the limit: {msgs:?}");
     // … and exactly one General::stop notice is recorded after the third.
     let stops: Vec<&String> = msgs
       .iter()

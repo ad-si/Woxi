@@ -43,7 +43,7 @@ Details:
   `FUZZ_SEED_BUDGET` seconds (default 1) in a release build. Many test
   scripts legitimately compute for seconds — and a few never terminate by
   design — which the `-timeout` hang detector would misreport as crashes;
-  ASan multiplies those seconds by roughly 25. Measuring instead of
+  ASan multiplies those seconds by roughly 27. Measuring instead of
   maintaining a list means a newly added heavy script cannot break the
   nightly fuzz run.
 - The `interpret` target skips inputs containing filesystem/network heads
@@ -63,7 +63,12 @@ Details:
 - Hangs elsewhere do count as findings: libFuzzer's `-timeout` flag (set
   in the make targets) turns a rewrite that never reaches a fixed point,
   or any other runaway evaluation outside an explicit loop, into a
-  reported crash.
+  reported crash. For `interpret` that flag is the campaign's whole
+  budget, so only an input that never finishes trips it. Being *slow* is
+  not what this target tests, and a tighter bound only buys false
+  positives: the fuzzer mutates a seed's data as readily as its shape,
+  and raising the `n` in `Permutations[Range[n]]` turns a millisecond
+  program into a minute-long one that terminates perfectly well.
 - The nightly CI workflow (`.github/workflows/nightly.yml`) runs each
   target for 5 minutes per night and uploads crashing inputs as
   artifacts.

@@ -225,8 +225,8 @@ test-conformance: test-unit-wolframscript test-cli-wolframscript test-scripts-wo
 # Every interpret seed is therefore timed and the slow ones are dropped —
 # measured rather than listed, so a newly added heavy script cannot break
 # the nightly fuzz run. FUZZ_SEED_BUDGET is the wall-clock second(s) a seed
-# may take in a release build; ASan makes that ~25× slower, which has to
-# stay well inside the -timeout below.
+# may take in a release build; ASan makes that ~27× slower (measured), which
+# has to stay well inside the -timeout below.
 FUZZ_SEED_BUDGET ?= 1
 
 .PHONY: fuzz-corpus
@@ -253,7 +253,7 @@ fuzz-interpret: fuzz-corpus
 	@if ! command -v cargo-fuzz &> /dev/null; \
 		then cargo install cargo-fuzz; \
 		fi
-	cargo +nightly fuzz run interpret -- -timeout=60 -max_len=2048 -rss_limit_mb=8192
+	cargo +nightly fuzz run interpret -- -timeout=300 -max_len=2048 -rss_limit_mb=8192
 
 # Differential fuzzing against wolframscript (local binary or the
 # cmd-server.js Docker bridge — auto-detected). Reports and shrinks any

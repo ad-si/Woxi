@@ -2776,6 +2776,30 @@ but does not emit `$GeoLocation::dloff` or the per-function `Fn::geoloc`.
   re-evaluates a failing specification, so it prints some messages twice, and
   applies `General::stop` after three identical ones.
 
+### A too-deep `Part` on a packed array is `Part::partd1`
+
+Which of the two messages wolframscript picks depends on whether the object is
+a packed array, a storage detail Woxi has no equivalent of. Woxi always emits
+`Part::partd`, which is the unpacked answer:
+
+```sh
+# Unpacked — both engines agree:
+wolframscript -code '{{1, 2}, {3, 4}}[[1, 1, 1]]'
+# Part::partd: Part specification …[[1,1,1]] is longer than depth of object.
+
+# Packed (anything Range, Table or Permutations built) — WL switches message:
+wolframscript -code 'Range[5][[1, 1]]'
+# Part::partd1: Depth of object {1, 2, 3, 4, 5} is not sufficient for the
+# given part specification.
+woxi eval 'Range[5][[1, 1]]'
+# Part::partd: Part specification {1, 2, 3, 4, 5}[[1,1]] is longer than depth …
+```
+
+Packing the literal with ``Developer`ToPackedArray`` and unpacking the
+`Range` with ``Developer`FromPackedArray`` swap the two messages over, which
+is how the rule was confirmed. The values agree — both engines return the
+`Part` expression unevaluated.
+
 ### `ArgMax` with an invalid constraint form
 
 `ArgMax[{list}, fn]` — WL emits `ArgMax::consf`, Woxi silently echoes.

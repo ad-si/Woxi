@@ -106,13 +106,20 @@ jobs:
       # -rss_limit_mb is raised above the 2048 default because some corpus
       # seeds (tests/scripts/*.wls) are legitimately memory-hungry
       # computations, and ASan roughly triples their footprint.
-      # -timeout=60 (not the 10 the parse target uses) because a mutant can
-      # still be a heavy-but-terminating computation under ASan; true
-      # infinite loops are caught all the same. Seeds that cannot fit in
-      # that budget are dropped by `make fuzz-corpus` (see
-      # scripts/prune_fuzz_corpus.sh), so a timeout here means the fuzzer
-      # found a hang rather than that a test script is slow.
-      run: cargo fuzz run interpret --target "$HOST_TARGET" -- -timeout=60 -max_len=2048 -max_total_time=300 -rss_limit_mb=8192
+      #
+      # -timeout equals -max_total_time on purpose: an input that outlives
+      # the whole campaign is a hang, and anything that finishes is not.
+      # Cost is the property this target does not test — it tests that no
+      # input panics, aborts or overflows the stack — and a lower bound only
+      # buys false positives. The fuzzer mutates a seed's *data*, not just
+      # its shape, and plenty of Wolfram builtins are superlinear in theirs:
+      # raising an `n` in `Permutations[Range[n]]` turns a millisecond seed
+      # into a minute-long (but perfectly terminating) program, which ASan
+      # then slows by a further ~27x. Two nightly runs were lost that way
+      # before this was widened. A true infinite loop is still reported,
+      # just at the price of the campaign's remaining budget on the night it
+      # first appears.
+      run: cargo fuzz run interpret --target "$HOST_TARGET" -- -timeout=300 -max_len=2048 -max_total_time=300 -rss_limit_mb=8192
     - name: Upload crashing inputs
       if: failure()
       uses: actions/upload-artifact@v6

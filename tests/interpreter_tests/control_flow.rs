@@ -1207,6 +1207,47 @@ mod check {
     );
   }
 
+  // Past the `General::stop` limit a message is not merely undisplayed, it
+  // is not recorded either: `$MessageList` keeps the three that printed plus
+  // the notice, however many more the calculation raised. Verified against
+  // wolframscript.
+  //
+  // This is also what keeps a loop that trips the same message thousands of
+  // times cheap — building the text of a `Part` message means printing the
+  // whole object it indexed, and the nightly fuzzer reported
+  // `per = Permutations[Range[6], {6}]; Do[per[[1, 1, 1]], …]` as a hang
+  // while Woxi was formatting 14 kB of permutations for messages nobody
+  // would ever see.
+  #[test]
+  fn message_list_stops_after_three_repeats() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"ff::test = "hi"; Do[Message[ff::test], {10}]; $MessageList"#
+      )
+      .unwrap(),
+      "{HoldForm[MessageName[ff, test]], HoldForm[MessageName[ff, test]], \
+       HoldForm[MessageName[ff, test]], HoldForm[MessageName[General, stop]]}"
+    );
+    // The counter runs inside `Quiet` just as it does outside.
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"gg::test = "hi"; Quiet[Do[Message[gg::test], {10}]; $MessageList]"#
+      )
+      .unwrap(),
+      "{HoldForm[MessageName[gg, test]], HoldForm[MessageName[gg, test]], \
+       HoldForm[MessageName[gg, test]], HoldForm[MessageName[General, stop]]}"
+    );
+    // The same bound holds for a message an evaluation raises by itself.
+    clear_state();
+    assert_eq!(
+      interpret("per = {{1, 2}, {3, 4}}; Do[per[[1, 1, 1]], {t, 1, 10}]; Length[$MessageList]")
+        .unwrap(),
+      "4"
+    );
+  }
+
   // Messages silenced by an inner Quiet don't trigger an outer Check.
   #[test]
   fn check_ignores_quieted_messages() {

@@ -918,6 +918,53 @@ pub fn emit_message(msg: &str) {
   let _ = emit_message_core(msg);
 }
 
+/// Like [`emit_message`], but renders the text only when the message still
+/// has somewhere to go.
+///
+/// Some messages quote the whole expression they are about — a failing
+/// `Part` names the object it indexed — so building one costs as much as
+/// printing that object. A loop that trips the same message on a large list
+/// pays it every iteration even though wolframscript stops after three:
+/// `per = Permutations[Range[6], {6}]; Do[per[[1,1,1]], {t, 1, 4320}]` spent
+/// four seconds formatting 14 kB of permutations 4320 times over, enough for
+/// the nightly fuzzer to report it as a hang. Checking the `General::stop`
+/// counter first makes the run flat.
+///
+/// `name` is the `Head::tag` the built message will carry; `build` must
+/// produce a message that starts with it.
+pub fn emit_message_with(name: &str, build: impl FnOnce() -> String) {
+  if message_name_is_off(name) || message_stop_count(name) >= 3 {
+    return;
+  }
+  emit_message(&build());
+}
+
+/// Whether `Off` covers a `Head::tag`, without a message to scan. Mirrors
+/// the tag matching in [`message_is_off`], including `Off[General::tag]`
+/// standing in for every symbol's `tag`.
+fn message_name_is_off(name: &str) -> bool {
+  OFF_MESSAGES.with(|set| {
+    let set = set.borrow();
+    if set.is_empty() {
+      return false;
+    }
+    if set.contains(name) {
+      return true;
+    }
+    match name.find("::") {
+      Some(dc) => set.contains(&format!("General::{}", &name[dc + 2..])),
+      None => false,
+    }
+  })
+}
+
+/// How many times a `Head::tag` has already been emitted in this
+/// calculation. At three the next one is suppressed (see
+/// [`emit_message_core`]).
+fn message_stop_count(name: &str) -> usize {
+  MESSAGE_STOP_COUNTS.with(|m| m.borrow().get(name).copied().unwrap_or(0))
+}
+
 /// Public wrapper for [`message_name`], used by Check's tag filtering.
 pub fn message_name_of(msg: &str) -> Option<String> {
   message_name(msg)
@@ -950,18 +997,12 @@ fn emit_message_core(msg: &str) -> (bool, Option<String>) {
   if message_is_off(msg) {
     return (false, None);
   }
-  CAPTURED_MESSAGES.with(|buffer| {
-    buffer.borrow_mut().push(msg.to_string());
-  });
-  // A quieted message still joins `$MessageList` — wolframscript's `Quiet`
-  // saves and restores the list around the block, so the entry is visible to
-  // code *inside* the block and gone once it returns (see `quiet_ast`).
-  if let Some(name) = message_name(msg) {
-    MESSAGE_LIST.with(|m| m.borrow_mut().push(name));
-  }
-  if is_quiet() {
-    return (false, None);
-  }
+  // Count before recording. Past the limit a message is not merely
+  // undisplayed, it is gone: wolframscript's `$MessageList` holds the three
+  // that printed plus the `General::stop` notice, however many more the
+  // calculation went on to generate. The counter runs inside `Quiet` just as
+  // it does outside — `Quiet[Do[{{1,2},{3,4}}[[1,1,1]], {10}]; $MessageList]`
+  // is the same four entries — so this precedes the `is_quiet` check too.
   let mut stop_line: Option<String> = None;
   if let Some(name) = message_name(msg)
     && name != "General::stop"
@@ -982,12 +1023,27 @@ fn emit_message_core(msg: &str) -> (bool, Option<String>) {
       // `Off[General::stop]` silences the notice itself, leaving only the
       // suppression it announces.
       if !message_is_off(&stop) {
-        CAPTURED_MESSAGES.with(|buffer| {
-          buffer.borrow_mut().push(stop.clone());
-        });
         stop_line = Some(stop);
       }
     }
+  }
+  CAPTURED_MESSAGES.with(|buffer| {
+    buffer.borrow_mut().push(msg.to_string());
+  });
+  // A quieted message still joins `$MessageList` — wolframscript's `Quiet`
+  // saves and restores the list around the block, so the entry is visible to
+  // code *inside* the block and gone once it returns (see `quiet_ast`).
+  if let Some(name) = message_name(msg) {
+    MESSAGE_LIST.with(|m| m.borrow_mut().push(name));
+  }
+  if let Some(stop) = &stop_line {
+    CAPTURED_MESSAGES.with(|buffer| {
+      buffer.borrow_mut().push(stop.clone());
+    });
+    MESSAGE_LIST.with(|m| m.borrow_mut().push("General::stop".to_string()));
+  }
+  if is_quiet() {
+    return (false, None);
   }
   let to_stdout = MESSAGES_TO_STDOUT.with(|f| *f.borrow());
   let trace = format_stack_trace();

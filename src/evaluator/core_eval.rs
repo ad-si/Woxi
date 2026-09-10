@@ -4086,6 +4086,11 @@ pub fn evaluate_expr_to_expr_inner(
       // to an out-of-bounds index (Part::partw, already emitted).
       let mut hit_atom_mid = false;
       let base_val = eval_part_base(base_expr)?;
+      // Read off the base's head before the too-deep branch below consumes
+      // the value: `base_val` is the whole object, and cloning it a second
+      // time just to ask what its head is doubled the cost of every failing
+      // Part on a large list.
+      let base_holds = head_holds_arguments(&base_val);
       let result = if needs_mapping {
         // All requires collecting indices and mapping — must clone base
         apply_part_indices(&base_val, &indices)?
@@ -4132,7 +4137,7 @@ pub fn evaluate_expr_to_expr_inner(
             part_too_deep = true;
           }
           if part_too_deep {
-            result = base_val.clone();
+            result = base_val;
             for idx in &indices {
               result = Expr::Part {
                 expr: Box::new(result),
@@ -4151,7 +4156,7 @@ pub fn evaluate_expr_to_expr_inner(
       // `Hold[1 + 1][[1]]` is 2. Results that keep the holding head (such as
       // `Hold[1 + 1, 2 + 2][[{1, 2}]]`) are unaffected, since evaluating them
       // just re-applies the same hold.
-      let result = if head_holds_arguments(&base_val) {
+      let result = if base_holds {
         evaluate_expr_to_expr(&result)?
       } else {
         result
@@ -4197,13 +4202,17 @@ pub fn evaluate_expr_to_expr_inner(
           // stored as.
           || crate::evaluator::part_extraction::is_atomic_number_expr(base)
         {
-          let part_str = crate::syntax::format_expr(
-            &result,
-            crate::syntax::ExprForm::Output,
-          );
-          crate::emit_message(&format!(
-            "Part::partd: Part specification {part_str} is longer than depth of object."
-          ));
+          // Lazily: the message quotes the whole object, so rendering it is
+          // as expensive as printing the list that was indexed.
+          crate::emit_message_with("Part::partd", || {
+            let part_str = crate::syntax::format_expr(
+              &result,
+              crate::syntax::ExprForm::Output,
+            );
+            format!(
+              "Part::partd: Part specification {part_str} is longer than depth of object."
+            )
+          });
         }
       }
       Ok(result)
