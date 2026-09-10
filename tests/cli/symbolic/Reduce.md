@@ -20,11 +20,18 @@ x < 1
 
 Exact linear integer formulas use Woxi's self-contained Presburger engine.
 Unbounded solution sets are represented symbolically rather than searched up
-to an arbitrary cap:
+to an arbitrary cap, and a residue class is reported as a parametrization:
 
 ```scrut
 $ wo 'Reduce[Exists[y, x == 2 y + 1], x, Integers]'
-Element[x, Integers] && Mod[x, 2] == 1
+Element[C[1], Integers] && x == 1 + 2*C[1]
+```
+
+A bound on the variable becomes a bound on the parameter:
+
+```scrut
+$ wo 'Reduce[Mod[x, 6] == 4 && x > 10, x, Integers]'
+Element[C[1], Integers] && C[1] >= 2 && x == 4 + 6*C[1]
 ```
 
 Neither engine invokes Wolfram, an SMT solver, or another subprocess. Inputs

@@ -35,13 +35,13 @@ fn curated_presburger_matrix_has_320_public_cases() {
     cases += 1;
   }
 
-  // Unbounded canonical residue classes.
+  // Unbounded canonical residue classes, reported as a parametrization.
   for index in 0_i64..40 {
     let modulus = index + 2;
     let residue = (3 * index + 1).rem_euclid(modulus);
     assert_reduces(
       &format!("Reduce[Mod[x, {modulus}] == {residue}, x, Integers]"),
-      &format!("Element[x, Integers] && Mod[x, {modulus}] == {residue}"),
+      &residue_class("x", residue, modulus),
     );
     cases += 1;
   }
@@ -56,7 +56,7 @@ fn curated_presburger_matrix_has_320_public_cases() {
         2 * modulus,
         2 * residue
       ),
-      &format!("Element[x, Integers] && Mod[x, {modulus}] == {residue}"),
+      &residue_class("x", residue, modulus),
     );
     cases += 1;
   }
@@ -99,7 +99,7 @@ fn curated_presburger_matrix_has_320_public_cases() {
     let residue = offset.rem_euclid(2);
     assert_reduces(
       &format!("Reduce[Exists[y, x == 2*y + {offset}], x, Integers]"),
-      &format!("Element[x, Integers] && Mod[x, 2] == {residue}"),
+      &residue_class("x", residue, 2),
     );
     cases += 1;
   }
@@ -132,6 +132,17 @@ fn curated_presburger_matrix_has_320_public_cases() {
   }
 
   assert_eq!(cases, 320, "the curated Gate 3 corpus count is contractual");
+}
+
+/// `Element[C[1], Integers] && x == 1 + 2*C[1]` — a residue class the way
+/// wolframscript reports one, parametrized rather than as a congruence.
+fn residue_class(variable: &str, residue: i64, modulus: i64) -> String {
+  let progression = if residue == 0 {
+    format!("{variable} == {modulus}*C[1]")
+  } else {
+    format!("{variable} == {residue} + {modulus}*C[1]")
+  };
+  format!("Element[C[1], Integers] && {progression}")
 }
 
 fn equality_disjunction(variable: &str, values: &[i64]) -> String {

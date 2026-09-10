@@ -61,6 +61,12 @@ pub(super) fn try_linear_integer_reduce(args: &[Expr]) -> Option<Expr> {
   {
     return Some(expression);
   }
+  // A residue class is reported as a parametrization, never as a congruence.
+  if let Some(expression) =
+    emit::parametrized_integer_expr(&result, &request.targets)
+  {
+    return Some(expression);
+  }
   let mut expression =
     emit::formula_expr_for_targets(&result, &request.targets);
   for target in request.targets.iter().rev() {

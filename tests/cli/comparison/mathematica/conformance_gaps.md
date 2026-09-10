@@ -1312,19 +1312,23 @@ woxi eval 'Solve[{x^2 + y^2 == 1, y == 0}, {x, y}]'
 The single-variable case agrees (`Solve[x^2 == 4, x]` is `{{x -> -2}, {x -> 2}}`
 in both), so the system path sorts where wolframscript does not.
 
-### Solve over the integers drops a range constraint
+### `Solve` does not parametrize an unbounded integer congruence
 
 ```sh
-wolframscript -code 'Solve[Mod[x, 3] == 1 && 0 <= x < 10, x, Integers]'
-# {{x -> 1}, {x -> 4}, {x -> 7}}
-woxi eval 'Solve[Mod[x, 3] == 1 && 0 <= x < 10, x, Integers]'
-# Solve[Mod[x, 3] == 1, x]
+wolframscript -code 'Solve[Mod[x, 3] == 1, x, Integers]'
+# {{x -> ConditionalExpression[1 + 3*C[1], Element[C[1], Integers]]}}
+woxi eval 'Solve[Mod[x, 3] == 1, x, Integers]'
+# Solve[Mod[x, 3] == 1, x, Integers]
 ```
 
-Bounded linear systems over the integers are already enumerated; a `Mod`
-congruence with an explicit range is the same shape. The returned expression
-having lost both the bound and the domain makes this look worse than a plain
-unevaluated result.
+`Reduce` has the answer — it reports the class as
+`Element[C[1], Integers] && x == 1 + 3*C[1]` — so what is missing is `Solve`
+turning that into a rule with the parameter's membership as the
+`ConditionalExpression` condition.
+
+The *bounded* case agrees:
+`Solve[Mod[x, 3] == 1 && 0 <= x < 10, x, Integers]` is `{{x -> 1}, {x -> 4},
+{x -> 7}}` in both (rechecked 2026-09-10).
 
 ### `Roots` root ordering
 

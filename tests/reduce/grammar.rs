@@ -48,7 +48,7 @@ fn all_scoped_domains_have_a_surface_case() {
 fn divisibility_and_mod_surface_forms() {
   assert_reduces(
     "Reduce[Mod[x, 3] == 1, x, Integers]",
-    "Element[x, Integers] && Mod[x, 3] == 1",
+    "Element[C[1], Integers] && x == 1 + 3*C[1]",
   );
 }
 
