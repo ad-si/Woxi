@@ -1182,6 +1182,14 @@ fn delayed(key: &str, value: Expr) -> (Expr, Expr) {
 #[cfg(not(target_arch = "wasm32"))]
 struct SocketUnusable;
 
+/// Whether `Close` (or the close of the listener that accepted it) has
+/// already taken this socket down. A socket that was never registered counts
+/// as open, so an unknown object still falls through to its own handling.
+#[cfg(not(target_arch = "wasm32"))]
+fn is_closed(uuid: &str) -> bool {
+  with_registry(|reg| reg.entries.get(uuid).is_some_and(|entry| entry.closed))
+}
+
 /// The connection behind a socket, or the "invalid or not open" complaint.
 #[cfg(not(target_arch = "wasm32"))]
 fn usable_stream(uuid: &str) -> Result<Arc<TcpStream>, SocketUnusable> {
@@ -1546,8 +1554,19 @@ fn string_list(items: &[&str]) -> Expr {
 
 /// `SocketObject[…]["property"]`. An unknown property gives the empty list,
 /// which is what wolframscript answers for one it does not keep.
+///
+/// A closed socket answers nothing at all: wolframscript rejects *every*
+/// query on it — `"DestinationPort"` as much as `"UUID"` or `"Properties"` —
+/// with the same invalid-socket failure a read gets, so the object cannot be
+/// used to reconstruct what it was connected to. Woxi reports that as a bare
+/// `$Failed`, without the free-text line a read prints: wolframscript prints
+/// nothing either, because there the failure *is* the returned
+/// `Failure["SocketsLink", …]` object (see the conformance gaps doc).
 #[cfg(not(target_arch = "wasm32"))]
 pub fn socket_property(uuid: &str, property: &str) -> Option<Expr> {
+  if is_closed(uuid) {
+    return Some(Expr::Identifier("$Failed".to_string()));
+  }
   if property == "Properties" {
     return Some(string_list(&SOCKET_PROPERTIES));
   }

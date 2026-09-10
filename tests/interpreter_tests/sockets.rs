@@ -571,6 +571,40 @@ mod sockets {
     }
 
     #[test]
+    fn a_closed_socket_answers_no_property() {
+      clear_state();
+      // wolframscript rejects every query on a closed socket — the port as
+      // much as the UUID or the property list — so the object cannot be used
+      // to read back what it was connected to. The port has to be taken
+      // while the socket is still open.
+      let result = interpret(
+        "srv = SocketOpen[0]; p = srv[\"DestinationPort\"]; Close[srv]; \
+         {IntegerQ[p], srv[\"DestinationPort\"], srv[\"UUID\"], \
+          srv[\"Properties\"]}",
+      )
+      .unwrap();
+      assert_eq!(result, "{True, $Failed, $Failed, $Failed}");
+    }
+
+    #[test]
+    fn a_rejected_property_query_prints_nothing() {
+      clear_state();
+      // Unlike a read, wolframscript prints no line here: the failure is the
+      // value it returns. Printing one would land in the middle of whatever
+      // expression asked for the property.
+      let result = interpret_with_stdout(
+        "srv = SocketOpen[0]; Close[srv]; srv[\"DestinationPort\"]",
+      )
+      .unwrap();
+      assert_eq!(result.result, "$Failed");
+      assert!(
+        result.warnings.is_empty(),
+        "expected no message, got {:?}",
+        result.warnings
+      );
+    }
+
+    #[test]
     fn the_invalid_socket_line_is_not_a_tagged_message() {
       clear_state();
       // wolframscript prints free text here and leaves `$MessageList` alone.

@@ -14,12 +14,17 @@ $ wo 'srv = SocketOpen[0]; SocketListen[srv, WriteString[#["SourceSocket"], "abc
 ByteArray
 ```
 
-Reading a socket that has been closed says so,
-and gives `$Failed`:
+Reading a socket that has been closed says so, and gives `$Failed`:
 
-```scrut
-$ wo 'c = SocketConnect["127.0.0.1:1"]; SocketReadMessage[c]'
-
-The socket object SocketObject\[[0-9a-f-]+\] is invalid or not open. (regex)
-$Failed
+```wolfram
+c = SocketConnect["127.0.0.1:1"]; SocketReadMessage[c]
+(* The socket object SocketObject[…] is invalid or not open. *)
+(* $Failed *)
 ```
+
+That one is deliberately not a testcase. Wolfram reports an unusable socket
+as a `Failure[…]` object rather than as a printed line plus `$Failed`, and it
+connects lazily, so `SocketReadMessage` on this very input waits for a first
+byte that never comes and never returns at all — see "Sockets" in the
+conformance gaps. The behaviour above is covered by the unit tests in
+`tests/interpreter_tests/sockets.rs` instead.

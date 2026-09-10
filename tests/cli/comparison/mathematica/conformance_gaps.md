@@ -3736,6 +3736,62 @@ two-argument form at all. Woxi reads up to `n` bytes of what has already
 arrived and stays unevaluated when nothing has — agreeing with the
 recorded case either way, but a superset if the form does not exist.
 
+### An unusable socket is `$Failed`, not a `Failure[…]` object
+
+Verified against wolframscript on 2026-09-10, and the root of most of the
+entries in this section. Every operation on a socket wolframscript considers
+unusable returns the *same object*:
+
+```wolfram
+Failure["SocketsLink",
+  <|"MessageTemplate" :> SocketObject::invalidSock,
+    "MessageParameters" -> {SocketObject["baef81c0-…"]}|>]
+```
+
+and prints nothing — reads, `Close` on an already closed socket, and every
+property query, `"UUID"` and `"Properties"` included. (A read that fails for
+another reason carries a different template, e.g.
+`SocketReadMessage::zmqerror` with `{"Interrupted system call"}`.) Woxi prints
+the free-text line and returns `$Failed` instead.
+
+Displayed at top level the `Failure` renders as its message text with the
+socket spelled as a front-end summary box (a `DisplayForm[TagBox[…]]` of
+several kilobytes of `GraphicsBox`), so **no testcase that displays one can
+conform** — which is why the closed-socket read lives in
+`tests/interpreter_tests/sockets.rs` rather than in the doc tests.
+
+*Resolved 2026-09-10:* Woxi used to keep answering property queries on a
+**closed** socket (`Close[srv]; srv["DestinationPort"]` gave the port back
+where wolframscript failed). It now rejects them all with `$Failed`, silently
+— wolframscript prints nothing there either, since its failure is the
+returned object. Only the shape of the failure value still differs.
+
+### A refused connection blocks `SocketReadMessage` forever
+
+Verified against wolframscript on 2026-09-10. Connecting to a port nothing
+listens on still yields a socket, because Wolfram connects lazily:
+
+```sh
+wolframscript -code 'c = SocketConnect["127.0.0.1:1"]; Head[c]'   # SocketObject
+```
+
+`SocketReadMessage[c]` then waits for a first byte that never arrives and
+never returns — there is no default timeout. Woxi detects the unusable socket
+instead and answers `The socket object … is invalid or not open.` plus
+`$Failed`.
+
+`tests/cli/sockets/SocketReadMessage.md` used to run exactly that as a
+testcase; it now shows it as an untested example and leaves the behaviour to
+the unit tests, because no bound on the call makes it conform. Never run it
+against wolframscript: a stuck `wolframscript`
+holds the single license slot, so every *later* invocation fails with the
+misleading `Your Wolfram Engine installation is not activated`, which turns
+one hanging testcase into dozens of unrelated failed documents. `scrut`'s
+per-document timeout does not prevent this — it reaps its own shell but not
+the `wolframscript` below it. The `wo` wrapper caps each attempt at
+`WO_TIMEOUT` seconds (300 by default) and kills the kernel with it for
+exactly this reason.
+
 ### Error text
 
 `The socket object … is invalid or not open.` and
