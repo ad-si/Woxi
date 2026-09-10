@@ -133,6 +133,16 @@ test-cli-wolframscript: install-cli
 	@if ! command -v scrut &> /dev/null; \
 		then cargo install scrut; \
 		fi
+	@# Lazily initialized wolframscript subsystems download their data on
+	@# first use and print a progress bar into the testcase's output, which
+	@# fails whichever document happens to touch them first (tests/cli/
+	@# astronomy.md: "Downloading ephemeris data (1.72 MB of 5.13 MB) …").
+	@# Pay those one-time costs here, outside any compared output.
+	@echo "Warming lazily initialized wolframscript subsystems …"
+	@wolframscript -code 'FullMoon[DateObject[{2024, 1, 1}]];' \
+		> /dev/null 2>&1 || true
+	@wolframscript -code 'DayRange[{2000,1,1},{2000,1,1},Sunday];' \
+		> /dev/null 2>&1 || true
 	WOXI_USE_WOLFRAM=true \
 		scrut test tests/cli
 
