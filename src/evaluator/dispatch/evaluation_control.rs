@@ -766,63 +766,7 @@ pub fn dispatch_evaluation_control(
         return Some(Ok(Expr::List(items.into())));
       }
       if let Expr::String(pattern) = &args[0] {
-        // A name pattern is matched in two parts: everything up to the last
-        // backtick selects the context, the rest selects the symbol. A
-        // pattern without a backtick looks in the contexts on
-        // `$ContextPath`, which is why `Names["List*"]` finds the built-ins
-        // (they are `System`` symbols) and `Names["S`*"]` does not reach
-        // into `S`Private``. A leading `$ContextAliases` alias names the
-        // context it stands for, here as anywhere else.
-        let pattern = &crate::evaluator::contexts::expand_alias(pattern);
-        let (context_pattern, name_pattern) = match pattern.rfind('`') {
-          Some(last) => (
-            Some(pattern[..=last].to_string()),
-            pattern[last + 1..].to_string(),
-          ),
-          None => (None, pattern.clone()),
-        };
-        // Wolfram name patterns: `*` matches any run of characters (0+);
-        // `@` matches one or more lowercase letters (so `List@` matches
-        // `Listable`, `Listen`, but not `List` itself).
-        let to_regex = |glob: &str| {
-          regex::Regex::new(&format!(
-            "^{}$",
-            glob
-              .replace('.', "\\.")
-              .replace('*', ".*")
-              .replace('@', "[a-z]+")
-          ))
-        };
-        let (Ok(name_re), Some(context_re)) = (
-          to_regex(&name_pattern),
-          match &context_pattern {
-            None => Some(None),
-            Some(ctx) => to_regex(ctx).ok().map(Some),
-          },
-        ) else {
-          return Some(Ok(Expr::List(vec![].into())));
-        };
-        let path = crate::current_context_path();
-        let mut names: Vec<String> =
-          crate::evaluator::contexts::known_symbols()
-            .into_iter()
-            .filter(|(context, name)| {
-              name_re.is_match(name)
-                && match &context_re {
-                  Some(re) => re.is_match(context),
-                  // Without a context in the pattern, only symbols visible
-                  // on `$ContextPath` are listed.
-                  None => path.contains(context),
-                }
-            })
-            .map(|(context, name)| {
-              crate::evaluator::contexts::display_name(
-                &crate::evaluator::contexts::full_name(&context, &name),
-              )
-            })
-            .collect();
-        names.sort_by_key(|n| crate::evaluator::contexts::name_sort_key(n));
-        names.dedup();
+        let names = crate::evaluator::contexts::names_matching(pattern);
         return Some(Ok(Expr::List(
           names.into_iter().map(Expr::String).collect(),
         )));

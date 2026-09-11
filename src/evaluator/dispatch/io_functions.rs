@@ -2639,7 +2639,14 @@ pub fn dispatch_io_functions(
           })
           .collect();
         if segments.len() == parts.len() {
-          return Some(Ok(Expr::String(file_name_join(segments, sep))));
+          // A component may itself carry separators. Splitting them out
+          // collapses the runs the join would otherwise leave behind, so
+          // `{"/a", "b/", "c.wlx"}` is `"/a/b/c.wlx"`, not `"/a/b//c.wlx"`.
+          let pieces: Vec<&str> = segments
+            .iter()
+            .flat_map(|segment| segment.split(path_separators(sep)))
+            .collect();
+          return Some(Ok(Expr::String(file_name_join(pieces, sep))));
         }
       }
       // A single string is a path already; joining it normalises it —

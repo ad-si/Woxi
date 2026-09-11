@@ -979,6 +979,23 @@ fn symbol_name(e: &Expr) -> Option<String> {
   }
 }
 
+/// The symbols `Protect`/`Unprotect` address. Besides a symbol they take a
+/// string naming one — or a name pattern such as `"System`Cell*"`, matched
+/// the way `Names` matches it — and a list of any of those.
+fn protect_targets(args: &[Expr]) -> Vec<String> {
+  let mut names = Vec::new();
+  for arg in args {
+    match arg {
+      Expr::String(pattern) => {
+        names.extend(crate::evaluator::contexts::names_matching(pattern));
+      }
+      Expr::List(items) => names.extend(protect_targets(items)),
+      other => names.extend(symbol_name(other)),
+    }
+  }
+  names
+}
+
 pub fn dispatch_attributes(
   name: &str,
   args: &[Expr],
@@ -1090,87 +1107,83 @@ pub fn dispatch_attributes(
     }
     "Protect" => {
       let mut protected_syms = Vec::new();
-      for arg in args {
-        if let Some(sym) = symbol_name(arg) {
-          let sym = &sym;
-          // If Protected is a builtin attribute that was previously removed,
-          // restore it by pruning FUNC_ATTRS_REMOVED. Otherwise add as a
-          // user-set attribute.
-          let builtin = get_builtin_attributes(sym);
-          let was_builtin = builtin.contains(Attributes::Protected);
-          if was_builtin {
-            crate::FUNC_ATTRS_REMOVED.with(|m| {
-              let mut removed = m.borrow_mut();
-              removed.entry(sym.clone()).and_modify(|a| {
-                (*a).remove(Attributes::Protected);
-              });
+      for sym in protect_targets(args) {
+        let sym = &sym;
+        // If Protected is a builtin attribute that was previously removed,
+        // restore it by pruning FUNC_ATTRS_REMOVED. Otherwise add as a
+        // user-set attribute.
+        let builtin = get_builtin_attributes(sym);
+        let was_builtin = builtin.contains(Attributes::Protected);
+        if was_builtin {
+          crate::FUNC_ATTRS_REMOVED.with(|m| {
+            let mut removed = m.borrow_mut();
+            removed.entry(sym.clone()).and_modify(|a| {
+              (*a).remove(Attributes::Protected);
             });
-          } else {
-            crate::FUNC_ATTRS.with(|m| {
-              let mut attrs = m.borrow_mut();
-              let mask = Attributes::Protected;
-              attrs
-                .entry(sym.clone())
-                .and_modify(|a| (*a).add(mask))
-                .or_insert(Attributes::new(mask));
-            });
-          }
-          protected_syms.push(Expr::String(sym.clone()));
+          });
+        } else {
+          crate::FUNC_ATTRS.with(|m| {
+            let mut attrs = m.borrow_mut();
+            let mask = Attributes::Protected;
+            attrs
+              .entry(sym.clone())
+              .and_modify(|a| (*a).add(mask))
+              .or_insert(Attributes::new(mask));
+          });
         }
+        protected_syms.push(Expr::String(sym.clone()));
       }
       return Some(Ok(Expr::List(protected_syms.into())));
     }
     "Unprotect" => {
       let mut unprotected_syms = Vec::new();
-      for arg in args {
-        if let Some(sym) = symbol_name(arg) {
-          let sym = &sym;
-          let is_locked = {
-            let builtin = get_builtin_attributes(sym);
-            if builtin.contains(Attributes::Locked) {
-              true
-            } else {
-              crate::func_attrs_contains(sym.as_str(), Attributes::Locked)
-            }
-          };
-          if is_locked {
-            crate::emit_message(&format!(
-              "Protect::locked: Symbol {sym} is locked."
-            ));
-            continue;
-          }
-          // A symbol counts as Protected if either its builtin default
-          // attributes or its user-stored attributes contain "Protected".
-          let was_user_protected = crate::FUNC_ATTRS.with(|m| {
-            let mut attrs = m.borrow_mut();
-            if let Some(entry) = attrs.get_mut(sym) {
-              let before = entry.to_u32();
-              let after = before & !Attributes::Protected;
-              if before == after {
-                false
-              } else {
-                attrs.insert(sym.clone(), Attributes::new(after));
-                true
-              }
-            } else {
-              false
-            }
-          });
+      for sym in protect_targets(args) {
+        let sym = &sym;
+        let is_locked = {
           let builtin = get_builtin_attributes(sym);
-          let was_builtin_protected = builtin.contains(Attributes::Protected);
-          if was_builtin_protected {
-            crate::FUNC_ATTRS_REMOVED.with(|m| {
-              let mut removed = m.borrow_mut();
-              let mask = Attributes::Protected;
-              removed
-                .entry(sym.clone())
-                .and_modify(|a| (*a).add(mask))
-                .or_insert(Attributes::new(mask));
-            });
+          if builtin.contains(Attributes::Locked) {
+            true
+          } else {
+            crate::func_attrs_contains(sym.as_str(), Attributes::Locked)
           }
-          if was_user_protected || was_builtin_protected {
-            unprotected_syms.push(Expr::String(sym.clone()));
+        };
+        if is_locked {
+          crate::emit_message(&format!(
+            "Protect::locked: Symbol {sym} is locked."
+          ));
+          continue;
+        }
+        // A symbol counts as Protected if either its builtin default
+        // attributes or its user-stored attributes contain "Protected".
+        let was_user_protected = crate::FUNC_ATTRS.with(|m| {
+          let mut attrs = m.borrow_mut();
+          if let Some(entry) = attrs.get_mut(sym) {
+            let before = entry.to_u32();
+            let after = before & !Attributes::Protected;
+            if before == after {
+              false
+            } else {
+              attrs.insert(sym.clone(), Attributes::new(after));
+              true
+            }
+          } else {
+            false
           }
+        });
+        let builtin = get_builtin_attributes(sym);
+        let was_builtin_protected = builtin.contains(Attributes::Protected);
+        if was_builtin_protected {
+          crate::FUNC_ATTRS_REMOVED.with(|m| {
+            let mut removed = m.borrow_mut();
+            let mask = Attributes::Protected;
+            removed
+              .entry(sym.clone())
+              .and_modify(|a| (*a).add(mask))
+              .or_insert(Attributes::new(mask));
+          });
+        }
+        if was_user_protected || was_builtin_protected {
+          unprotected_syms.push(Expr::String(sym.clone()));
         }
       }
       return Some(Ok(Expr::List(unprotected_syms.into())));

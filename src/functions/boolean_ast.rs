@@ -479,12 +479,10 @@ pub fn while_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           ));
         }
       }
-      Some(false) => break,
-      None => {
-        return Err(InterpreterError::EvaluationError(
-          "While: test must evaluate to True or False".into(),
-        ));
-      }
+      // `While` runs the body only while the test is literally `True`.
+      // Any other result — `False`, a number, an unassigned symbol — ends
+      // the loop quietly, exactly as wolframscript does.
+      _ => break,
     }
   }
 

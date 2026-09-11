@@ -2574,6 +2574,91 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_protect_takes_strings_and_lists_of_symbols() {
+    // `Protect`/`Unprotect` address a symbol, a string naming one, a string
+    // name pattern, or a list of any of those. Only the bare symbol worked,
+    // so `Unprotect["Style"]` silently left the symbol Protected (#603).
+    clear_state();
+    assert_eq!(
+      interpret("Unprotect[{Style, MetaInformation}]").unwrap(),
+      "{Style, MetaInformation}"
+    );
+    assert_eq!(
+      interpret("Style = 5; MetaInformation = 6; Style").unwrap(),
+      "5"
+    );
+
+    clear_state();
+    assert_eq!(interpret("Unprotect[\"Style\"]").unwrap(), "{Style}");
+    assert_eq!(interpret("Style = 5; Style").unwrap(), "5");
+
+    // A pattern selects every matching name, and `Protect` puts it back.
+    clear_state();
+    interpret("aa = 1; ab = 2; ba = 3").unwrap();
+    assert_eq!(interpret("Protect[\"Global`a*\"]").unwrap(), "{aa, ab}");
+    assert_eq!(interpret("Unprotect[\"Global`a*\"]").unwrap(), "{aa, ab}");
+    clear_state();
+    assert_eq!(interpret("Attributes[CellFrame]").unwrap(), "{Protected}");
+    assert_eq!(
+      interpret("Unprotect[\"System`CellFra*\"]; Attributes[CellFrame]")
+        .unwrap(),
+      "{}"
+    );
+    assert_eq!(
+      interpret("Protect[\"System`CellFra*\"]; Attributes[CellFrame]").unwrap(),
+      "{Protected}"
+    );
+    // A pattern that matches nothing changes nothing.
+    assert_eq!(interpret("Unprotect[\"NoSuchSymbol*\"]").unwrap(), "{}");
+    clear_state();
+  }
+
+  #[test]
+  fn test_while_stops_on_a_non_boolean_test() {
+    // `While` runs its body only while the test is literally `True`; every
+    // other result ends the loop quietly. Raising an error instead aborted
+    // the whole `Get` of `wljs-snippets/src/Library.wl` (issue #603).
+    clear_state();
+    assert_eq!(interpret("i = 0; While[i, i = i + 1]; i").unwrap(), "0");
+    assert_eq!(interpret("Clear[q]; While[q, 1]; done").unwrap(), "done");
+    assert_eq!(interpret("k = 0; While[5, k = 1]; k").unwrap(), "0");
+    assert_eq!(interpret("j = 0; While[\"yes\", j = 1]; j").unwrap(), "0");
+  }
+
+  #[test]
+  fn test_file_name_join_collapses_separators_inside_components() {
+    // A component may carry its own separators; the join must not leave a
+    // run of them behind, or `StringTake[…, -3]` on the result diverges.
+    clear_state();
+    assert_eq!(
+      interpret("FileNameJoin[{\"/a\", \"b/\", \"c.wlx\"}]").unwrap(),
+      "/a/b/c.wlx"
+    );
+    assert_eq!(
+      interpret("FileNameJoin[{\"a//b\", \"c\"}]").unwrap(),
+      "a/b/c"
+    );
+    assert_eq!(interpret("FileNameJoin[{\"/a\", \"/b\"}]").unwrap(), "/a/b");
+    assert_eq!(interpret("FileNameJoin[{\"//a\", \"b\"}]").unwrap(), "/a/b");
+    assert_eq!(interpret("FileNameJoin[{\"/\"}]").unwrap(), "/");
+    assert_eq!(interpret("FileNameJoin[{\"/\", \"a\"}]").unwrap(), "/a");
+    assert_eq!(interpret("FileNameJoin[{\"/a/b/\"}]").unwrap(), "/a/b");
+    assert_eq!(interpret("FileNameJoin[{}]").unwrap(), "");
+    assert_eq!(
+      interpret(
+        "FileNameJoin[{\"a/\", \"b\"}, OperatingSystem -> \"Windows\"]"
+      )
+      .unwrap(),
+      "a\\b"
+    );
+    // A non-string component leaves the call unevaluated.
+    assert_eq!(
+      interpret("FileNameJoin[{\"/a\", 5}]").unwrap(),
+      "FileNameJoin[{/a, 5}]"
+    );
+  }
+
+  #[test]
   fn test_comment_after_condition_in_set_delayed() {
     // SetDelayed with Condition and inline comment should work
     clear_state();

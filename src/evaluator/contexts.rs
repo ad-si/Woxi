@@ -428,6 +428,62 @@ pub fn known_symbols() -> Vec<(String, String)> {
   symbols
 }
 
+/// The symbol names a Wolfram name pattern selects, in `Names` order.
+///
+/// The pattern is matched in two parts: everything up to the last backtick
+/// selects the context, the rest selects the symbol. A pattern without a
+/// backtick looks in the contexts on `$ContextPath`, which is why `"List*"`
+/// finds the built-ins (they are `System`` symbols) and `"S`*"` does not
+/// reach into `S`Private``. A leading `$ContextAliases` alias names the
+/// context it stands for, here as anywhere else. `*` matches any run of
+/// characters, `@` one or more lowercase letters (so `"List@"` matches
+/// `Listable` and `Listen`, but not `List` itself).
+///
+/// `Names`, `Protect` and `Unprotect` all select names this way.
+pub fn names_matching(pattern: &str) -> Vec<String> {
+  let pattern = &expand_alias(pattern);
+  let (context_pattern, name_pattern) = match pattern.rfind('`') {
+    Some(last) => (
+      Some(pattern[..=last].to_string()),
+      pattern[last + 1..].to_string(),
+    ),
+    None => (None, pattern.clone()),
+  };
+  let to_regex = |glob: &str| {
+    regex::Regex::new(&format!(
+      "^{}$",
+      glob
+        .replace('.', "\\.")
+        .replace('*', ".*")
+        .replace('@', "[a-z]+")
+    ))
+  };
+  let (Ok(name_re), Some(context_re)) = (
+    to_regex(&name_pattern),
+    match &context_pattern {
+      None => Some(None),
+      Some(ctx) => to_regex(ctx).ok().map(Some),
+    },
+  ) else {
+    return Vec::new();
+  };
+  let path = crate::current_context_path();
+  let mut names: Vec<String> = known_symbols()
+    .into_iter()
+    .filter(|(context, name)| {
+      name_re.is_match(name)
+        && match &context_re {
+          Some(re) => re.is_match(context),
+          None => path.contains(context),
+        }
+    })
+    .map(|(context, name)| display_name(&full_name(&context, &name)))
+    .collect();
+  names.sort_by_key(|n| name_sort_key(n));
+  names.dedup();
+  names
+}
+
 /// The order the Wolfram Language lists symbol names in: case-insensitive,
 /// with `$` sorting after the letters (`zz1`, `zzA`, `zzb`, `zz$`).
 pub fn name_sort_key(name: &str) -> String {
