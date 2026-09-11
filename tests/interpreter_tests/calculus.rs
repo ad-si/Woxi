@@ -12282,6 +12282,78 @@ mod interpolation_2d_scattered {
        blame NDSolve: {err}"
     );
   }
+
+  // The documented multidimensional scattered-data form is a list of
+  // `{coords, value}` pairs — `{{{x1, y1}, f1}, {{x2, y2}, f2}, ...}` —
+  // rather than the flat `{x, y, z}` triples `Flatten[Table[Table[…]]]`
+  // produces. Both shapes describe the same grid and must interpolate
+  // identically.
+  mod coordinate_value_pairs {
+    use super::*;
+
+    #[test]
+    fn exact_grid_point_matches_flat_triple_form() {
+      assert_eq!(
+        interpret(
+          "Interpolation[Flatten[Table[{{x, y}, x + 2 y}, {x, 0, 3}, {y, 0, 3}], 1], \
+           InterpolationOrder -> 1][1, 1]"
+        )
+        .unwrap(),
+        "3"
+      );
+    }
+
+    #[test]
+    fn interpolated_point_matches_flat_triple_form() {
+      assert_eq!(
+        interpret(
+          "Interpolation[Flatten[Table[{{x, y}, x + 2 y}, {x, 0, 3}, {y, 0, 3}], 1], \
+           InterpolationOrder -> 1][2.5, 1.5]"
+        )
+        .unwrap(),
+        "5.5"
+      );
+    }
+
+    #[test]
+    fn per_axis_interpolation_order() {
+      assert_eq!(
+        interpret(
+          "Interpolation[Flatten[Table[{{x, y}, x + 2 y}, {x, 0, 3}, {y, 0, 3}], 1], \
+           InterpolationOrder -> {1, 1}][2, 3]"
+        )
+        .unwrap(),
+        "8"
+      );
+    }
+
+    #[test]
+    fn property_domain() {
+      assert_eq!(
+        interpret(
+          "Interpolation[Flatten[Table[{{x, y}, x + y}, {x, 0, 3}, {y, 0, 3}], 1]][\"Domain\"]"
+        )
+        .unwrap(),
+        "{{0, 3}, {0, 3}}"
+      );
+    }
+
+    // Scattered (non-rectangular) `{coords, value}` data falls back to the
+    // ordinary handling exactly like the flat-triple form does, rather than
+    // being misread as a partial grid.
+    #[test]
+    fn incomplete_grid_does_not_crash_or_blame_ndsolve() {
+      let err =
+        interpret("Interpolation[{{{1, 1}, 2}, {{1, 2}, 3}, {{2, 1}, 4}}]")
+          .unwrap_err()
+          .to_string();
+      assert!(
+        !err.contains("NDSolve"),
+        "a numeric-conversion failure reached from Interpolation must not \
+         blame NDSolve: {err}"
+      );
+    }
+  }
 }
 
 mod trig_expand {
