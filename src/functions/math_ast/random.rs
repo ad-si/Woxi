@@ -52,6 +52,18 @@ pub fn random_integer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           ))
         }
       }
+      // `RandomInteger[{imax}]` omits `imin`, which defaults to 0 — same as
+      // the bare `RandomInteger[imax]` form (wolframscript accepts both).
+      Expr::List(items) if items.len() == 1 => {
+        if let Expr::Integer(max) = &items[0] {
+          let (lo, hi) = if *max < 0 { (*max, 0) } else { (0, *max) };
+          Ok(Expr::Integer(crate::with_rng(|rng| rng.gen_range(lo..=hi))))
+        } else {
+          Err(InterpreterError::EvaluationError(
+            "RandomInteger: range must be integers".into(),
+          ))
+        }
+      }
       _ => Err(InterpreterError::EvaluationError(
         "RandomInteger: invalid argument".into(),
       )),
@@ -82,6 +94,16 @@ pub fn random_integer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             (&items[0], &items[1])
           {
             (*min, *max)
+          } else {
+            return Err(InterpreterError::EvaluationError(
+              "RandomInteger: range must be integers".into(),
+            ));
+          }
+        }
+        // `RandomInteger[{imax}, dims]` omits `imin`, which defaults to 0.
+        Expr::List(items) if items.len() == 1 => {
+          if let Expr::Integer(max) = &items[0] {
+            (0i128, *max)
           } else {
             return Err(InterpreterError::EvaluationError(
               "RandomInteger: range must be integers".into(),

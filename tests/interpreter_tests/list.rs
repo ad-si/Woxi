@@ -6786,6 +6786,34 @@ mod random_integer {
     );
     assert_eq!(interpret("RandomInteger[0]").unwrap(), "0");
   }
+
+  // `RandomInteger[{imax}]` omits `imin`, which defaults to 0 — same as the
+  // bare `RandomInteger[imax]` form. Regression for the Wolfram
+  // Demonstrations `RandomInteger[{1}, {rows, cols}]` idiom, which used to
+  // raise "invalid range" instead of drawing a 0/1 array.
+  #[test]
+  fn single_element_range() {
+    assert_eq!(
+      interpret("AllTrue[Table[RandomInteger[{5}], {100}], 0 <= # <= 5 &]")
+        .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn single_element_range_with_dims() {
+    assert_eq!(
+      interpret("Dimensions[RandomInteger[{1}, {20, 10}]]").unwrap(),
+      "{20, 10}"
+    );
+    assert_eq!(
+      interpret(
+        "AllTrue[Flatten[RandomInteger[{1}, {20, 10}]], # == 0 || # == 1 &]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
 }
 
 mod distributions {
