@@ -7747,14 +7747,26 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     seen
   };
-  if !shadow_defs.is_empty() {
-    svg.push_str("<defs>\n");
-    for ds in &shadow_defs {
-      svg.push_str(&ds.filter_def(1.0));
-      svg.push('\n');
-    }
-    svg.push_str("</defs>\n");
+  // Clip primitives to the drawing area (`PlotRangeClipping -> Automatic`,
+  // Wolfram's default): a primitive whose coordinates fall outside the
+  // plot range — an explicit `PlotRange` narrower than the data, an
+  // Epilog/Prolog point placed past the frame, `ListPlot`'s automatic
+  // outlier-cropping range — must be cut off at the frame edge rather than
+  // drawn past it into the picture's margins or off the canvas entirely.
+  // The id is derived from the drawing area's own size (like
+  // `DropShadow::filter_id`) so two differently-sized pictures merged into
+  // one document (`GraphicsRow`, `Inset`) never collide, while pictures
+  // that happen to share a size safely share one identical definition.
+  let clip_id = format!("plotClip_{svg_w:.0}x{svg_h:.0}");
+  svg.push_str("<defs>\n");
+  svg.push_str(&format!(
+    "<clipPath id=\"{clip_id}\"><rect x=\"0\" y=\"0\" width=\"{svg_w:.2}\" height=\"{svg_h:.2}\"/></clipPath>\n"
+  ));
+  for ds in &shadow_defs {
+    svg.push_str(&ds.filter_def(1.0));
+    svg.push('\n');
   }
+  svg.push_str("</defs>\n");
 
   // Background (covers the full SVG including margins)
   if let Some(bg) = background {
@@ -7840,7 +7852,11 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Render primitives. A primitive with a drop shadow is wrapped in a
   // <g> that applies the shadow filter, so each primitive casts its own
-  // shadow (overlapping shadows stack, giving the depth effect).
+  // shadow (overlapping shadows stack, giving the depth effect). The whole
+  // group is clipped to the drawing area so a primitive that falls outside
+  // the plot range is cut off at the frame edge instead of spilling into
+  // the margins or off the canvas.
+  svg.push_str(&format!("<g clip-path=\"url(#{clip_id})\">\n"));
   for (prim_index, prim) in primitives.iter().enumerate() {
     let shadow = prim.style().and_then(|s| s.drop_shadow.as_ref());
     if let Some(ds) = shadow {
@@ -7851,6 +7867,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       svg.push_str("</g>\n");
     }
   }
+  svg.push_str("</g>\n");
 
   if frame {
     render_frame(&mut svg, &bb, svg_w, svg_h, frame_ticks);

@@ -1546,7 +1546,16 @@ mod graphics {
       let svg = export_svg(
         "Graphics[{Style[{Red, Disk[{0, 0}, 1]}, Background -> White]}]",
       );
-      assert!(!svg.contains("<rect"), "no panel behind a shape:\n{svg}");
+      // The only `<rect>` allowed is the drawing-area clip-path's own,
+      // inside `<defs>`; none should appear as a drawn primitive.
+      assert!(
+        !svg
+          .split("</defs>")
+          .nth(1)
+          .unwrap_or(&svg)
+          .contains("<rect"),
+        "no panel behind a shape:\n{svg}"
+      );
       assert!(svg.contains("rgb(255,0,0)"), "the disk stays red:\n{svg}");
     }
 
@@ -1656,8 +1665,10 @@ mod graphics {
       let raster_box = export_svg(&format!(
         "Graphics[{{RasterBox[{data}, {{{{0, 0}}, {{2, 2}}}}, {{0, 255}}]}}]"
       ));
-      // Four cells, one <rect> each.
-      assert_eq!(raster.matches("<rect").count(), 4, "{raster}");
+      // Four cells, one <rect> each (plus the drawing-area clip-path's own
+      // <rect>, inside <defs>).
+      let drawn_rects = raster.split("</defs>").nth(1).unwrap_or(&raster);
+      assert_eq!(drawn_rects.matches("<rect").count(), 4, "{raster}");
       assert_eq!(raster, raster_box);
     }
 
@@ -1737,7 +1748,10 @@ mod graphics {
         !svg.contains("Framed["),
         "the frame must be drawn, not printed: {svg}"
       );
-      let rect = svg
+      // Skip past `<defs>`, which holds the drawing-area clip-path's own
+      // (unstyled) `<rect>`, to reach the frame's.
+      let drawn = svg.split("</defs>").nth(1).unwrap_or(&svg);
+      let rect = drawn
         .split("<rect ")
         .nth(1)
         .and_then(|r| r.split_once("/>"))
@@ -1753,7 +1767,8 @@ mod graphics {
         "Graphics[{Text[Framed[\"hi\", Background -> Yellow, \
          FrameStyle -> None], {0, 0}]}]",
       );
-      let rect = svg
+      let drawn = svg.split("</defs>").nth(1).unwrap_or(&svg);
+      let rect = drawn
         .split("<rect ")
         .nth(1)
         .and_then(|r| r.split_once("/>"))
@@ -1796,6 +1811,39 @@ mod graphics {
       insta::assert_snapshot!(export_svg(
         "Graphics[{Circle[]}, PlotRange -> {{-2, 2}, {-2, 2}}]"
       ));
+    }
+
+    // A primitive that falls outside an explicit `PlotRange` used to be
+    // drawn in full — spilling past the frame and, for a large enough
+    // excursion, off the canvas entirely — instead of being cut off at the
+    // range boundary the way `PlotRangeClipping -> Automatic` (the
+    // default) clips it. Found via a Demonstration whose `Epilog` drew a
+    // guide line that ran past its `Plot`'s frame edge.
+    #[test]
+    fn primitive_beyond_plot_range_is_clipped_to_the_drawing_area() {
+      let svg = export_svg(
+        "Graphics[{Line[{{0, 0}, {20, 20}}]}, \
+         PlotRange -> {{0, 10}, {0, 10}}, Axes -> False, ImageSize -> 360]",
+      );
+      assert!(
+        svg.contains("clip-path"),
+        "the primitives must be clipped to the drawing area: {svg}"
+      );
+      // No frame/axes means the drawing area is the whole 360x360 canvas.
+      assert!(
+        svg.contains(
+          "<rect x=\"0\" y=\"0\" width=\"360.00\" height=\"360.00\"/>"
+        ),
+        "the clip rect must match the drawing area: {svg}"
+      );
+      // The line's own geometry is unchanged (clipping is a rendering
+      // effect, not a geometric one) — it still reaches the point that
+      // maps outside the canvas; only the `<g clip-path>` around it stops
+      // it from being drawn there.
+      assert!(
+        svg.contains("720.00,-360.00"),
+        "the unclipped endpoint should still be present in the geometry: {svg}"
+      );
     }
 
     // `PlotRangePadding` was silently ignored (it wasn't parsed at all), so
@@ -5042,6 +5090,43 @@ mod plot3d {
       assert!(svg.contains(">peak</text>"), "missing Epilog text");
       assert!(svg.contains("<ellipse"), "missing Epilog disk");
       assert!(svg.contains("<polygon"), "missing Epilog arrowhead");
+    }
+
+    // A Prolog/Epilog primitive placed outside the plot's data range used
+    // to be drawn in full rather than cut off at the frame edge, and —
+    // since a `Plot` injects both fragments as separate self-contained SVG
+    // strings — giving each fragment's `<clipPath>` the same id (derived
+    // only from the shared plotting rectangle) left the document with two
+    // elements sharing one id, which a renderer is free to resolve however
+    // it likes; either bug can silently un-clip content. Found via a
+    // Demonstration whose `Epilog` drew a step function one segment past
+    // its `Plot`'s frame.
+    #[test]
+    fn plot_prolog_and_epilog_beyond_range_are_clipped_with_distinct_ids() {
+      let svg = export_svg(
+        "Plot[Sin[x], {x, 0, 2 Pi}, PlotRange -> {{0, 2 Pi}, {-1, 1}}, \
+         Prolog -> {Line[{{0, 0}, {100, 0}}]}, \
+         Epilog -> {Line[{{0, 0}, {100, 0}}]}]",
+      );
+      let clip_ids: Vec<&str> = svg
+        .split("clipPath id=\"")
+        .skip(1)
+        .filter_map(|s| s.split('"').next())
+        .collect();
+      assert_eq!(
+        clip_ids.len(),
+        2,
+        "expected one clip-path per fragment: {svg}"
+      );
+      assert_ne!(
+        clip_ids[0], clip_ids[1],
+        "the Prolog and Epilog clip ids must not collide: {svg}"
+      );
+      assert_eq!(
+        svg.matches("clip-path=\"url(#").count(),
+        2,
+        "both fragments must reference a clip-path: {svg}"
+      );
     }
 
     /// An Epilog element may be a call to a user-defined helper that draws
@@ -12714,7 +12799,11 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         "the selected disk plus the locator marker: {circle_svg}"
       );
       assert!(
-        !circle_svg.contains("<rect"),
+        !circle_svg
+          .split("</defs>")
+          .nth(1)
+          .unwrap_or(&circle_svg)
+          .contains("<rect"),
         "the other branch: {circle_svg}"
       );
 
@@ -16983,7 +17072,16 @@ mod raster {
     let svg =
       export_svg("Graphics[Raster[Table[Mod[i + j, 2], {i, 80}, {j, 80}]]]");
     assert!(svg.contains("data:image/png;base64,"), "{svg}");
-    assert!(!svg.contains("<rect"), "{svg}");
+    // No per-pixel `<rect>` is drawn — only the drawing-area clip-path's
+    // own, inside `<defs>`.
+    assert!(
+      !svg
+        .split("</defs>")
+        .nth(1)
+        .unwrap_or(&svg)
+        .contains("<rect"),
+      "{svg}"
+    );
   }
 }
 
@@ -26364,7 +26462,9 @@ mod drop_shadowing_render {
   fn none_color_disables_shadow() {
     let svg = export_svg("Graphics[{DropShadowing[None], Disk[]}]");
     assert!(!svg.contains("feDropShadow"));
-    assert!(!svg.contains("<defs>"));
+    // `<defs>` still holds the drawing-area clip-path even with no shadow
+    // filter to define.
+    assert!(!svg.contains("<filter"));
   }
 
   #[test]

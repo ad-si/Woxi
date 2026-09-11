@@ -3,5 +3,10 @@ source: tests/interpreter_tests/graphics.rs
 expression: "export_svg(\"Graphics[Circle[{0, 0}, {2, 1}]]\")"
 ---
 <svg width="360" height="180" viewBox="0 0 360 180" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<clipPath id="plotClip_360x180"><rect x="0" y="0" width="360.00" height="180.00"/></clipPath>
+</defs>
+<g clip-path="url(#plotClip_360x180)">
 <ellipse cx="180.00" cy="90.00" rx="166.67" ry="83.33" fill="none" stroke="rgb(0,0,0)" stroke-width="1.00"/>
+</g>
 </svg>
