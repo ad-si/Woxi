@@ -7134,6 +7134,69 @@ mod random_variate {
   }
 
   #[test]
+  fn bernoulli_single_is_zero_or_one() {
+    // BernoulliDistribution[p] samples 0 or 1, never left unevaluated.
+    assert_eq!(
+      interpret(
+        "AllTrue[Table[RandomVariate[BernoulliDistribution[0.5]], {50}], \
+         (# == 0 || # == 1) &]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn bernoulli_deterministic_endpoints() {
+    // p = 0 always gives 0; p = 1 always gives 1.
+    assert_eq!(
+      interpret("RandomVariate[BernoulliDistribution[0]]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("RandomVariate[BernoulliDistribution[1]]").unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn bernoulli_list_all_zero_or_one() {
+    assert_eq!(
+      interpret(
+        "AllTrue[RandomVariate[BernoulliDistribution[0.5], 100], \
+         (# == 0 || # == 1) &]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn bernoulli_mean_near_p() {
+    // Mean of many Bernoulli(0.3) samples should be near p = 0.3.
+    let result: f64 =
+      interpret("Mean[N[RandomVariate[BernoulliDistribution[0.3], 3000]]]")
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert!(result > 0.2 && result < 0.4, "got {result}");
+  }
+
+  #[test]
+  fn bernoulli_random_integer_matches_random_variate() {
+    // RandomInteger[dist] delegates to RandomVariate exactly like
+    // RandomInteger[BinomialDistribution[...]] does.
+    assert_eq!(
+      interpret(
+        "AllTrue[Table[RandomInteger[BernoulliDistribution[0.5]], {50}], \
+         (# == 0 || # == 1) &]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
   fn binormal_single() {
     // BinormalDistribution[rho] is 2-D standard normal with correlation rho.
     let result = interpret("RandomVariate[BinormalDistribution[1/2]]").unwrap();

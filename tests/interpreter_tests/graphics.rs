@@ -6171,6 +6171,80 @@ mod plot3d {
       assert!(!svg.contains("</tspan>"), "{svg}");
     }
 
+    /// A multi-character `AxesLabel` on a plain `Graphics[]` (not a `Plot`,
+    /// which sizes its own margins separately) used to reserve a fixed,
+    /// too-small gutter for the label text, so the outer word ran past the
+    /// declared canvas width and was clipped by the SVG viewport.
+    #[test]
+    fn graphics_axes_label_does_not_overflow_the_canvas() {
+      let svg = export_svg(
+        r#"Graphics[{Rectangle[{0, 0}, {1, 1}]}, Axes -> True,
+          AxesLabel -> {"state", "visits"}, ImageSize -> {260, 240}]"#,
+      );
+      let (canvas_w, canvas_h) = {
+        let tag = svg.lines().next().unwrap();
+        let get = |name: &str| -> f64 {
+          tag
+            .split(&format!("{name}=\""))
+            .nth(1)
+            .and_then(|v| v.split('"').next())
+            .and_then(|v| v.parse().ok())
+            .unwrap()
+        };
+        (get("width"), get("height"))
+      };
+      // The labels are drawn inside `<g transform="translate(mx,my)">`, so
+      // their own `x`/`y` are local to that group — add its offset back to
+      // get canvas-absolute coordinates.
+      let (margin_left, _margin_top) = {
+        let line = svg
+          .lines()
+          .find(|l| l.contains("<g transform=\"translate("))
+          .unwrap_or_else(|| panic!("no margin group: {svg}"));
+        let inner = line
+          .split("translate(")
+          .nth(1)
+          .and_then(|v| v.split(')').next())
+          .unwrap_or_else(|| panic!("bad transform: {line}"));
+        let mut parts = inner.split(',').map(|v| v.parse::<f64>().unwrap());
+        (parts.next().unwrap(), parts.next().unwrap())
+      };
+      let text_tag = |content: &str| -> String {
+        svg
+          .lines()
+          .find(|l| l.contains(&format!(">{content}<")))
+          .unwrap_or_else(|| panic!("no {content} label in {svg}"))
+          .to_string()
+      };
+      let attr = |line: &str, name: &str| -> f64 {
+        line
+          .split(&format!("{name}=\""))
+          .nth(1)
+          .and_then(|v| v.split('"').next())
+          .and_then(|v| v.parse().ok())
+          .unwrap_or_else(|| panic!("no {name} in {line}"))
+      };
+      // The x label starts to the right of the axis and reads left to
+      // right, so its whole run — start plus its rendered width — must
+      // stay left of the canvas edge instead of being clipped by it.
+      let state = text_tag("state");
+      let state_x = margin_left + attr(&state, "x");
+      assert!(
+        state_x + "state".len() as f64 * 7.0 < canvas_w,
+        "x AxesLabel overflows the canvas ({state_x} on a {canvas_w} wide \
+         canvas): {state}"
+      );
+      // The y label is centred on the y axis, so its left half must stay
+      // right of the canvas' left edge (x = 0).
+      let visits = text_tag("visits");
+      let visits_x = margin_left + attr(&visits, "x");
+      assert!(
+        visits_x - "visits".len() as f64 * 7.0 / 2.0 > 0.0,
+        "y AxesLabel overflows the canvas' left edge ({visits_x}): {visits}"
+      );
+      assert!(canvas_h > 0.0, "sanity: canvas has a height");
+    }
+
     /// A named style brings its size and colour from the stylesheet:
     /// `Style[…, "Section"]` is large and orange, `"Label"` small and
     /// black. Measured against wolframscript's own rendering.

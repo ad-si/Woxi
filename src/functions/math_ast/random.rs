@@ -1600,6 +1600,32 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
     }
+    Expr::FunctionCall { name, args: dargs }
+      if name == "BernoulliDistribution" && dargs.len() == 1 =>
+    {
+      // BernoulliDistribution[p]: 1 with probability p, 0 with probability
+      // 1 - p (a single Binomial[1, p] trial).
+      let prob = expr_to_num(&dargs[0]).ok_or_else(|| {
+        InterpreterError::EvaluationError(
+          "BernoulliDistribution: invalid success probability".into(),
+        )
+      })?;
+      if !(0.0..=1.0).contains(&prob) {
+        return Ok(unevaluated("RandomVariate", args));
+      }
+      let sample_bernoulli = || -> i128 {
+        crate::with_rng(|rng| (rng.gen_range(0.0..1.0) < prob) as i128)
+      };
+      match n {
+        None => Ok(Expr::Integer(sample_bernoulli())),
+        Some(count) => {
+          let out: Vec<Expr> = (0..count)
+            .map(|_| Expr::Integer(sample_bernoulli()))
+            .collect();
+          Ok(Expr::List(out.into()))
+        }
+      }
+    }
     _ => Ok(unevaluated("RandomVariate", args)),
   }
 }

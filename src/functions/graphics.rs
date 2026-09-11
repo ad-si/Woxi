@@ -7620,6 +7620,36 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // against the opposite edge and clipped whatever sat at the far side.
   let y_axis_interior = axes.1 && bb.x_min <= 0.0 && 0.0 <= bb.x_max;
   let x_axis_interior = axes.0 && bb.y_min <= 0.0 && 0.0 <= bb.y_max;
+  // An AxesLabel sits at the end of its axis (Wolfram's placement), so
+  // the x label needs room to the right and the y label room above. The
+  // label arrives as SVG markup (plain text, or with sub/superscript
+  // tspans from `Style[…]`); approximate its rendered width from its
+  // visible character count at the same 14px sans-serif size it draws
+  // with, so a longer label reserves more room instead of overflowing a
+  // fixed gutter and getting clipped by the canvas edge.
+  fn axis_label_width(markup: &str) -> f64 {
+    let mut visible_chars = 0usize;
+    let mut in_tag = false;
+    for c in markup.chars() {
+      match c {
+        '<' => in_tag = true,
+        '>' => in_tag = false,
+        _ if !in_tag => visible_chars += 1,
+        _ => {}
+      }
+    }
+    visible_chars as f64 * 7.5
+  }
+  let has_x_axis_label =
+    axes_label.as_ref().is_some_and(|(x, _)| !x.is_empty());
+  let has_y_axis_label =
+    axes_label.as_ref().is_some_and(|(_, y)| !y.is_empty());
+  let x_axis_label_width = axes_label
+    .as_ref()
+    .map_or(0.0, |(x, _)| axis_label_width(x));
+  let y_axis_label_width = axes_label
+    .as_ref()
+    .map_or(0.0, |(_, y)| axis_label_width(y));
   let margin_left: f64 = if frame_gutter || (axes.1 && !y_axis_interior) {
     50.0
   } else if frame {
@@ -7628,7 +7658,14 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     6.0
   } else {
     0.0
-  } + if has_left_caption { 20.0 } else { 0.0 };
+  } + if has_left_caption { 20.0 } else { 0.0 }
+    // The y-axis label is centred on the axis, so half its width bleeds
+    // left of it and needs its own room instead of running off the edge.
+    + if has_y_axis_label {
+      y_axis_label_width / 2.0
+    } else {
+      0.0
+    };
   let margin_bottom: f64 = if frame_gutter || (axes.0 && !x_axis_interior) {
     25.0
   } else if frame {
@@ -7638,12 +7675,6 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     0.0
   } + if has_bottom_caption { 20.0 } else { 0.0 };
-  // An AxesLabel sits at the end of its axis (Wolfram's placement), so
-  // the x label needs room to the right and the y label room above.
-  let has_x_axis_label =
-    axes_label.as_ref().is_some_and(|(x, _)| !x.is_empty());
-  let has_y_axis_label =
-    axes_label.as_ref().is_some_and(|(_, y)| !y.is_empty());
   let margin_right: f64 = if frame {
     10.0
   } else if y_axis_interior {
@@ -7652,8 +7683,11 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     6.0
   } else {
     0.0
-  } + if has_x_axis_label { 24.0 } else { 0.0 }
-    + if has_right_caption { 20.0 } else { 0.0 };
+  } + if has_x_axis_label {
+    x_axis_label_width + 8.0
+  } else {
+    0.0
+  } + if has_right_caption { 20.0 } else { 0.0 };
   // A multi-line title (a `Grid`/`Column` label) claims one further line
   // height per extra row on top of the single-line strip.
   let label_strip: f64 = match &plot_label {
