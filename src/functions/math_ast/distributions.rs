@@ -23,7 +23,7 @@ fn pi() -> Expr {
 }
 
 fn infinity() -> Expr {
-  Expr::Identifier("Infinity".to_string())
+  id_expr("Infinity")
 }
 
 fn neg_infinity() -> Expr {
@@ -31,7 +31,7 @@ fn neg_infinity() -> Expr {
 }
 
 fn indeterminate() -> Expr {
-  Expr::Identifier("Indeterminate".to_string())
+  id_expr("Indeterminate")
 }
 
 fn int(n: i128) -> Expr {
@@ -482,7 +482,7 @@ fn reliability_distribution_pdf(
   let dummy = if is_var {
     x.clone()
   } else {
-    Expr::Identifier("$WoxiReliabilityT$".to_string())
+    id_expr("$WoxiReliabilityT$")
   };
   let Some(s) = reliability_distribution_survival(dargs, &dummy)? else {
     return Ok(None);
@@ -818,10 +818,7 @@ pub fn hazard_function_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       call(
         "Times",
         vec![
-          pow2(
-            Expr::Identifier("E".to_string()),
-            div2(pow2(x.clone(), int(2)), int(2)),
-          ),
+          pow2(id_expr("E"), div2(pow2(x.clone(), int(2)), int(2))),
           call("Erfc", vec![div2(x.clone(), sqrt(int(2)))]),
         ],
       ),
@@ -1718,7 +1715,7 @@ fn pdf_meixner(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   let d = dargs[3].clone();
 
   let xm = minus2(x, m); // x - m
-  let i = Expr::Identifier("I".to_string());
+  let i = id_expr("I");
   let iy = div2(times2(i, xm.clone()), a.clone()); // I (x-m)/a
   let two_pow = pow2(int(2), plus2(int(-1), times2(int(2), d.clone())));
   let e_part = pow2(e(), div2(times2(b.clone(), xm), a.clone()));
@@ -3937,7 +3934,7 @@ pub fn expectation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let sigma_sq_t_sq_half =
         times2(times2(sigma_sq.clone(), pow2(t.clone(), int(2))), half);
       let exponent = plus2(mu_t, sigma_sq_t_sq_half);
-      let mgf = pow2(Expr::Identifier("E".to_string()), exponent);
+      let mgf = pow2(id_expr("E"), exponent);
       return eval(&times2(c, mgf));
     }
   }
@@ -5188,19 +5185,16 @@ pub fn distribution_mean_variance(
       let sigma = dargs[1].clone();
       // Mean = E^(mu + sigma^2/2)
       let mean = pow2(
-        Expr::Identifier("E".to_string()),
+        id_expr("E"),
         plus2(mu.clone(), div2(pow2(sigma.clone(), int(2)), int(2))),
       );
       // Var = E^(2*mu + sigma^2) * (E^(sigma^2) - 1)
       let var = times2(
         pow2(
-          Expr::Identifier("E".to_string()),
+          id_expr("E"),
           plus2(times2(int(2), mu), pow2(sigma.clone(), int(2))),
         ),
-        minus2(
-          pow2(Expr::Identifier("E".to_string()), pow2(sigma, int(2))),
-          int(1),
-        ),
+        minus2(pow2(id_expr("E"), pow2(sigma, int(2))), int(1)),
       );
       Ok((mean, var))
     }
@@ -5480,7 +5474,7 @@ pub fn distribution_mean_variance(
           // `EulerGamma` is not one of the grammar's `Constant` symbols
           // (only `Pi`, `E` and `Degree` are), so it has to be spelled as
           // an `Identifier` or `N[…]` will not fold it to a number.
-          let euler_gamma = Expr::Identifier("EulerGamma".to_string());
+          let euler_gamma = id_expr("EulerGamma");
           let log_xi = call1("Log", xi.clone());
           let ei = call1("ExpIntegralEi", neg1(xi.clone()));
           let pfq = call(
@@ -6814,8 +6808,8 @@ fn pdf_lognormal(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
   );
   let denom = times2(
     times2(
-      pow2(Expr::Identifier("E".to_string()), exponent),
-      sqrt(times2(int(2), Expr::Identifier("Pi".to_string()))),
+      pow2(id_expr("E"), exponent),
+      sqrt(times2(int(2), id_expr("Pi"))),
     ),
     times2(sigma, x.clone()),
   );
@@ -7705,7 +7699,7 @@ fn cdf_failure_distribution(
   // Piecewise shape there), then substitute a concrete point at the end.
   let var = match &x {
     Expr::Identifier(_) => x.clone(),
-    _ => Expr::Identifier("t".to_string()),
+    _ => id_expr("t"),
   };
   let Some((value, strict)) = failure_distribution_cdf_value(dargs, &var)?
   else {
@@ -7749,7 +7743,7 @@ fn pdf_failure_distribution(
   // The derivative needs a symbolic variable to differentiate against.
   let var = match &x {
     Expr::Identifier(_) => x.clone(),
-    _ => Expr::Identifier("t".to_string()),
+    _ => id_expr("t"),
   };
   let Some((value, _)) = failure_distribution_cdf_value(dargs, &var)? else {
     return unevaluated(x);
@@ -8316,9 +8310,9 @@ fn dmp_stationary_pdf(
     "Inequality",
     vec![
       int(1),
-      Expr::Identifier("LessEqual".to_string()),
+      id_expr("LessEqual"),
       x.clone(),
-      Expr::Identifier("LessEqual".to_string()),
+      id_expr("LessEqual"),
       int(n as i128),
     ],
   );
@@ -12568,7 +12562,7 @@ fn pdf_multinormal(dargs: &[Expr], x: &Expr) -> Result<Expr, InterpreterError> {
     terms.push(term);
   }
   let exponent = div2(call("Plus", terms), int(2));
-  let e_pow = pow2(Expr::Identifier("E".to_string()), exponent);
+  let e_pow = pow2(id_expr("E"), exponent);
 
   // Normalizer: (2*Pi)^(k/2) * Sqrt[det]
   let det: i128 = variances.iter().product();
@@ -13224,7 +13218,7 @@ fn pdf_product_distribution(dargs: &[Expr], x: &Expr) -> Expr {
       }
     }
   }
-  let e_pow = pow2(Expr::Identifier("E".to_string()), call("Plus", terms));
+  let e_pow = pow2(id_expr("E"), call("Plus", terms));
   let sqrt = |e: Expr| call1("Sqrt", e);
 
   // Assemble the density with wolframscript's coefficient shapes
@@ -14843,7 +14837,7 @@ fn min_stable_mean_variance(
   b: &Expr,
   g: &Expr,
 ) -> Result<(Expr, Expr), InterpreterError> {
-  let euler_gamma = Expr::Identifier("EulerGamma".to_string());
+  let euler_gamma = id_expr("EulerGamma");
   let mean_gumbel = || {
     plus2(
       a.clone(),
@@ -15207,7 +15201,7 @@ fn max_stable_mean_variance(
   b: &Expr,
   g: &Expr,
 ) -> Result<(Expr, Expr), InterpreterError> {
-  let euler_gamma = Expr::Identifier("EulerGamma".to_string());
+  let euler_gamma = id_expr("EulerGamma");
   let mean_gumbel = || plus2(a.clone(), times2(b.clone(), euler_gamma.clone()));
   let one_minus_g = call(
     "Plus",
@@ -16434,13 +16428,7 @@ pub fn moyal_mean_variance(
       ));
     }
   };
-  let sum = call(
-    "Plus",
-    vec![
-      Expr::Identifier("EulerGamma".to_string()),
-      call1("Log", int(2)),
-    ],
-  );
+  let sum = call("Plus", vec![id_expr("EulerGamma"), call1("Log", int(2))]);
   let mean = if matches!(&m, Expr::Integer(0)) && matches!(&s, Expr::Integer(1))
   {
     eval(&sum)?
@@ -16989,10 +16977,7 @@ fn gumbel_mean_variance(
   };
   let mean = eval(&plus2(
     a,
-    times2(
-      int(-1),
-      times2(b.clone(), Expr::Identifier("EulerGamma".to_string())),
-    ),
+    times2(int(-1), times2(b.clone(), id_expr("EulerGamma"))),
   ))?;
   let var = eval(&div2(
     call("Times", vec![pow2(b, int(2)), pow2(pi(), int(2))]),
@@ -17507,7 +17492,7 @@ fn pdf_benktander_weibull(
   if !benktander_weibull_valid(a, b) {
     return Ok(unevaluated(dargs, x));
   }
-  let e = || Expr::Identifier("E".to_string());
+  let e = || id_expr("E");
   // E^((a (1 - x^b))/b) x^(b-2) (1 - b + a x^b).
   let body = |t: &Expr| -> Result<Expr, InterpreterError> {
     let exponent = div2(
@@ -17561,7 +17546,7 @@ fn cdf_benktander_weibull(
   if !benktander_weibull_valid(a, b) {
     return Ok(unevaluated(dargs, x));
   }
-  let e = || Expr::Identifier("E".to_string());
+  let e = || id_expr("E");
   // 1 - E^((a (1 - x^b))/b) x^(b-1).
   let body = |t: &Expr| -> Result<Expr, InterpreterError> {
     let exponent = div2(
@@ -17603,7 +17588,7 @@ fn benktander_weibull_mean_variance(
       "BenktanderWeibullDistribution expects 2 arguments".into(),
     ));
   };
-  let e = || Expr::Identifier("E".to_string());
+  let e = || id_expr("E");
   let mean = eval(&plus2(int(1), div2(int(1), a.clone())))?;
   // (-1 + (2 a E^(a/b) ExpIntegralE[1 - 1/b, a/b]) / b) / a^2.
   let exp_int = call(
@@ -17879,7 +17864,7 @@ pub fn truncated_mean_variance(
     return Ok(None);
   };
   let z = truncated_normalization(&lo, &hi, &base)?;
-  let x = Expr::Identifier("Global`truncx".to_string());
+  let x = id_expr("Global`truncx");
   // Integrate[x^k PDF[base, x], {x, lo, hi}] / z gives the k-th raw moment.
   let moment = |k: i128| -> Result<Option<Expr>, InterpreterError> {
     let density = pdf_ast(&[base.clone(), x.clone()])?;
@@ -18084,7 +18069,7 @@ pub fn censored_mean_variance(
   let Some((lo, hi, base)) = censored_parts(dist) else {
     return Ok(None);
   };
-  let x = Expr::Identifier("Global`censx".to_string());
+  let x = id_expr("Global`censx");
   let eval = |name: &str, args: Vec<Expr>| -> Result<Expr, InterpreterError> {
     crate::evaluator::evaluate_expr_to_expr(&call(name, args))
   };

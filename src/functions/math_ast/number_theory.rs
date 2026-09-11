@@ -401,7 +401,7 @@ pub fn make_rational_expr(num: &BigInt, den: &BigInt) -> Expr {
   if den.is_zero() {
     // Wolfram returns ComplexInfinity for 1/0 — preserve that here so
     // callers see the same surface behaviour.
-    return Expr::Identifier("ComplexInfinity".to_string());
+    return id_expr("ComplexInfinity");
   }
   let (n, d) = rat_reduce_bigint(num, den);
   if d.is_one() {
@@ -454,7 +454,7 @@ pub fn factorial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(n) = expr_to_i128(&args[0]) {
     if n < 0 {
       // Factorial of negative integers is ComplexInfinity
-      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+      return Ok(id_expr("ComplexInfinity"));
     }
     if n <= 1 {
       return Ok(Expr::Integer(1));
@@ -468,7 +468,7 @@ pub fn factorial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // finite garbage value at those poles instead of diverging, so detect
     // them explicitly. (A negative non-integer, e.g. -1.5, stays finite.)
     if *f < 0.0 && f.fract() == 0.0 {
-      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+      return Ok(id_expr("ComplexInfinity"));
     }
     // An integer-valued real index gives the exact factorial rounded to a
     // machine real: Factorial[5.0] -> 120., not the float-Gamma
@@ -490,7 +490,7 @@ pub fn factorial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Factorial[x] = Gamma[x+1] for real numbers
     let result = gamma_fn(*f + 1.0);
     if result.is_infinite() {
-      Ok(Expr::Identifier("ComplexInfinity".to_string()))
+      Ok(id_expr("ComplexInfinity"))
     } else {
       Ok(Expr::Real(result))
     }
@@ -1352,7 +1352,7 @@ pub fn pauli_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let Some(k) = expr_to_i128(&args[0]) else {
     return Ok(unevaluated("PauliMatrix", args));
   };
-  let i_expr = Expr::Identifier("I".to_string());
+  let i_expr = id_expr("I");
   let neg_i = times2(Expr::Integer(-1), i_expr.clone());
   match k {
     0 => Ok(Expr::List(
@@ -1607,16 +1607,16 @@ pub fn harmonic_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Identifier(n) | Expr::Constant(n) if n == "Infinity");
   if is_infinity {
     if args.len() == 1 {
-      return Ok(Expr::Identifier("Infinity".to_string()));
+      return Ok(id_expr("Infinity"));
     }
     if let Some(s) = expr_to_num(&args[1]) {
       if s > 1.0 {
         let zeta = call1("Zeta", args[1].clone());
         return crate::evaluator::evaluate_expr_to_expr(&zeta);
       } else if s >= 0.0 {
-        return Ok(Expr::Identifier("Infinity".to_string()));
+        return Ok(id_expr("Infinity"));
       }
-      return Ok(Expr::Identifier("Indeterminate".to_string()));
+      return Ok(id_expr("Indeterminate"));
     }
     // Symbolic order: stay unevaluated.
     return Ok(unevaluated("HarmonicNumber", args));
@@ -1646,7 +1646,7 @@ pub fn harmonic_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && r < 0
   {
     let j = -r;
-    let k = Expr::Identifier("k".to_string());
+    let k = id_expr("k");
     let summand = if j == 1 {
       k.clone()
     } else {
@@ -1679,7 +1679,7 @@ pub fn harmonic_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Some(r_expr) => matches!(expr_to_i128(r_expr), Some(r) if r >= 1),
       };
       if order_is_positive {
-        return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+        return Ok(id_expr("ComplexInfinity"));
       }
       return Ok(unevaluated("HarmonicNumber", args));
     }
@@ -2375,7 +2375,7 @@ fn factor_integer_gaussian(n_expr: &Expr) -> Result<Expr, InterpreterError> {
       args: vec![
         n_expr.clone(),
         Expr::Rule {
-          pattern: Box::new(Expr::Identifier("GaussianIntegers".to_string())),
+          pattern: Box::new(id_expr("GaussianIntegers")),
           replacement: Box::new(bool_expr(true)),
         },
       ]
@@ -4314,7 +4314,7 @@ pub fn binomial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         // Only the numerator has a pole → ComplexInfinity.
         if num_pole && !den_pole_k && !den_pole_nk {
-          return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+          return Ok(id_expr("ComplexInfinity"));
         }
         // Binomial[n, k] = Gamma[n+1] / (Gamma[k+1] * Gamma[n-k+1])
         // Use log-gamma for better precision
@@ -5444,7 +5444,7 @@ pub fn frobenius_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // If GCD > 1, infinitely many integers can't be represented
   if g > 1 {
-    return Ok(Expr::Identifier("Infinity".to_string()));
+    return Ok(id_expr("Infinity"));
   }
 
   // For two coprime numbers, use the closed formula: a*b - a - b
@@ -8852,7 +8852,7 @@ fn extract_perfect_square_bigint(n: &BigInt) -> (BigInt, BigInt) {
 fn bigint_rational_to_expr(num: &BigInt, den: &BigInt) -> Expr {
   use num_traits::One;
   if den.is_zero() {
-    return Expr::Identifier("ComplexInfinity".to_string());
+    return id_expr("ComplexInfinity");
   }
   let (n, d) = rat_reduce_bigint(num, den);
   if d.is_one() {
@@ -9097,7 +9097,7 @@ pub fn farey_sequence_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "FareySequence::intpm: Positive machine-sized integer expected at position 1 in {}.",
         expr_to_string(&unevaluated(args))
       ));
-      return Ok(Expr::Identifier("Null".to_string()));
+      return Ok(null_expr());
     }
     _ => return Ok(unevaluated(args)),
   };
@@ -9162,7 +9162,7 @@ pub fn fibonorial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       Ok(bigint_to_expr(product))
     }
-    Expr::Integer(_) => Ok(Expr::Identifier("ComplexInfinity".to_string())),
+    Expr::Integer(_) => Ok(id_expr("ComplexInfinity")),
     _ if is_non_integer_number => {
       crate::emit_message(&format!(
         "Fibonorial::intnm: Non-negative machine-sized integer expected at position 1 in {}.",

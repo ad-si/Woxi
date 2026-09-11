@@ -1028,15 +1028,10 @@ pub fn spherical_harmonic_y_ast(
       name: "Power".to_string(),
       args: vec![
         const_expr("E"),
-        Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![
-            Expr::Identifier("I".to_string()),
-            Expr::Integer(m),
-            args[3].clone(),
-          ]
-          .into(),
-        },
+        call(
+          "Times",
+          vec![id_expr("I"), Expr::Integer(m), args[3].clone()],
+        ),
       ]
       .into(),
     }
@@ -2338,7 +2333,7 @@ fn gegenbauer_c_two_arg_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // result matches Wolfram's general form (2*ChebyshevT[n, x])/n.
   let prefactor = match &args[0] {
     Expr::Integer(0) => {
-      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+      return Ok(id_expr("ComplexInfinity"));
     }
     Expr::Integer(n) => make_rational(2, *n),
     other => div2(Expr::Integer(2), other.clone()),

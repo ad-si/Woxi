@@ -49,7 +49,7 @@ pub fn abs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Handle any expression containing Infinity → Infinity
   if contains_infinity(&args[0]) {
-    return Ok(Expr::Identifier("Infinity".to_string()));
+    return Ok(id_expr("Infinity"));
   }
   // Handle integers and reals directly
   match &args[0] {
@@ -444,8 +444,7 @@ pub fn sign_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && is_strictly_positive_real(base)
   {
     let im_exp = call1("Im", exp.clone());
-    let new_exp =
-      call("Times", vec![Expr::Identifier("I".to_string()), im_exp]);
+    let new_exp = call("Times", vec![id_expr("I"), im_exp]);
     return crate::evaluator::evaluate_expr_to_expr(&call(
       "Power",
       vec![base.clone(), new_exp],
@@ -456,10 +455,10 @@ pub fn sign_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::Integer(1));
   }
   if matches!(&args[0], Expr::Identifier(s) if s == "ComplexInfinity") {
-    return Ok(Expr::Identifier("Indeterminate".to_string()));
+    return Ok(id_expr("Indeterminate"));
   }
   if matches!(&args[0], Expr::Identifier(s) if s == "Indeterminate") {
-    return Ok(Expr::Identifier("Indeterminate".to_string()));
+    return Ok(id_expr("Indeterminate"));
   }
   // Check for -Infinity (UnaryOp::Minus applied to Infinity)
   if let Expr::UnaryOp {
@@ -658,10 +657,7 @@ pub fn sign_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         name: "Plus".to_string(),
         args: vec![
           Expr::Real(re / abs),
-          call(
-            "Times",
-            vec![Expr::Real(im / abs), Expr::Identifier("I".to_string())],
-          ),
+          call("Times", vec![Expr::Real(im / abs), id_expr("I")]),
         ]
         .into(),
       });
@@ -692,7 +688,7 @@ pub fn sign_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           pulled.push(Expr::Integer(-1));
           simplified = true;
         } else if is_imaginary_unit(f) {
-          pulled.push(Expr::Identifier("I".to_string()));
+          pulled.push(id_expr("I"));
           simplified = true;
         } else {
           kept.push((*f).clone());
@@ -756,15 +752,15 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return sqrt_ast(&[u_args[0].clone()]);
   }
   if matches!(&args[0], Expr::Identifier(s) if s == "Indeterminate") {
-    return Ok(Expr::Identifier("Indeterminate".to_string()));
+    return Ok(id_expr("Indeterminate"));
   }
   // Sqrt[Infinity] = Infinity
   if matches!(&args[0], Expr::Identifier(s) if s == "Infinity") {
-    return Ok(Expr::Identifier("Infinity".to_string()));
+    return Ok(id_expr("Infinity"));
   }
   // Sqrt[ComplexInfinity] = ComplexInfinity
   if matches!(&args[0], Expr::Identifier(s) if s == "ComplexInfinity") {
-    return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+    return Ok(id_expr("ComplexInfinity"));
   }
   // Sqrt of an arbitrary-precision BigFloat: delegate to Power[base, 1/2] so
   // the precision-tracked bigfloat path computes it (rather than leaving
@@ -906,7 +902,7 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(n) if *n < 0 => {
       let pos = -*n;
       let sqrt_pos = sqrt_ast(&[Expr::Integer(pos)])?;
-      times_ast(&[Expr::Identifier("I".to_string()), sqrt_pos])
+      times_ast(&[id_expr("I"), sqrt_pos])
     }
     Expr::Real(f) if *f >= 0.0 => Ok(Expr::Real(f.sqrt())),
     // Sqrt of a negative machine real is the numeric imaginary 0. + Sqrt[|f|] I
@@ -1476,7 +1472,7 @@ pub fn surd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Surd::indet: Indeterminate expression Surd[{}, 0] encountered.",
       expr_to_string(base)
     ));
-    return Ok(Expr::Identifier("Indeterminate".to_string()));
+    return Ok(id_expr("Indeterminate"));
   }
 
   // Exact path: an integer degree n with an exact (non-machine-Real) base.
@@ -1504,7 +1500,7 @@ pub fn surd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         crate::emit_message(
           "Surd::noneg: Surd is not defined for even roots of negative values.",
         );
-        return Ok(Expr::Identifier("Indeterminate".to_string()));
+        return Ok(id_expr("Indeterminate"));
       }
       // Odd root of a negative value: -(|b|^(1/n)).
       return negate(power(negate(base.clone())?)?);
@@ -1757,14 +1753,7 @@ pub fn floor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "Plus",
         &[
           Expr::Integer(floor_re),
-          Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![
-              Expr::Integer(floor_im),
-              Expr::Identifier("I".to_string()),
-            ]
-            .into(),
-          },
+          call("Times", vec![Expr::Integer(floor_im), id_expr("I")]),
         ],
       )
     }
@@ -1838,14 +1827,7 @@ pub fn ceiling_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "Plus",
         &[
           Expr::Integer(ceil_re),
-          Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![
-              Expr::Integer(ceil_im),
-              Expr::Identifier("I".to_string()),
-            ]
-            .into(),
-          },
+          call("Times", vec![Expr::Integer(ceil_im), id_expr("I")]),
         ],
       )
     }
@@ -1961,7 +1943,7 @@ fn floor_ceil_two_arg(
   {
     if an == 0 {
       // Floor[x, 0] or Ceiling[x, 0] → Indeterminate
-      return Ok(Expr::Identifier("Indeterminate".to_string()));
+      return Ok(id_expr("Indeterminate"));
     }
     // x/a = (xn * ad) / (xd * an)
     let num = xn * ad;
@@ -2018,7 +2000,7 @@ fn floor_ceil_two_arg(
   // Fall back to floating point
   if let (Some(xf), Some(af)) = (try_eval_to_f64(x), try_eval_to_f64(a)) {
     if af == 0.0 {
-      return Ok(Expr::Identifier("Indeterminate".to_string()));
+      return Ok(id_expr("Indeterminate"));
     }
     let result = if is_floor {
       (xf / af).floor() * af
@@ -2191,10 +2173,7 @@ pub fn round_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let im = round_ast(&[cargs[1].clone()])?;
     return crate::evaluator::evaluate_function_call_ast(
       "Plus",
-      &[
-        re,
-        call("Times", vec![im, Expr::Identifier("I".to_string())]),
-      ],
+      &[re, call("Times", vec![im, id_expr("I")])],
     );
   }
   // Exact complex in Plus/Times form: extract and round parts separately
@@ -2207,10 +2186,7 @@ pub fn round_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let im_rounded = round_ast(&[im_rat])?;
     return crate::evaluator::evaluate_function_call_ast(
       "Plus",
-      &[
-        re_rounded,
-        call("Times", vec![im_rounded, Expr::Identifier("I".to_string())]),
-      ],
+      &[re_rounded, call("Times", vec![im_rounded, id_expr("I")])],
     );
   }
   if let Some(n) = try_eval_to_f64(&args[0]) {
@@ -2257,7 +2233,7 @@ fn infinite_mod_quotient(
   m: &Expr,
   n: &Expr,
 ) -> Option<Result<Expr, InterpreterError>> {
-  let indet = || Ok(Expr::Identifier("Indeterminate".to_string()));
+  let indet = || Ok(id_expr("Indeterminate"));
   let m_inf = is_infinite_expr(m);
   let n_inf = is_infinite_expr(n);
   if !m_inf && !n_inf {
@@ -2371,7 +2347,7 @@ fn mod2_ast(m: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
       "Mod::indet: Indeterminate expression Mod[{}, 0] encountered.",
       expr_to_string(m)
     ));
-    return Ok(Expr::Identifier("Indeterminate".to_string()));
+    return Ok(id_expr("Indeterminate"));
   }
   // BigInteger fast-path so `Mod[2^200, 10^100]` doesn't fall through
   // to the float branch and lose precision. Mirrors the
@@ -2393,7 +2369,7 @@ fn mod2_ast(m: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
         "Mod::indet: Indeterminate expression Mod[{}, 0] encountered.",
         expr_to_string(m)
       ));
-      return Ok(Expr::Identifier("Indeterminate".to_string()));
+      return Ok(id_expr("Indeterminate"));
     }
     let rem: BigInt = ((&mb % &nb) + &nb) % &nb;
     // Demote to native i128 when the result fits, since downstream
@@ -2413,7 +2389,7 @@ fn mod2_ast(m: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
         "Mod::indet: Indeterminate expression Mod[{}, 0] encountered.",
         expr_to_string(m)
       ));
-      return Ok(Expr::Identifier("Indeterminate".to_string()));
+      return Ok(id_expr("Indeterminate"));
     }
     // Convert to common denominator: m = mn/md, n = nn/nd
     // Mod[mn/md, nn/nd] = Mod[mn*nd, nn*md] / (md*nd)
@@ -2439,7 +2415,7 @@ fn mod2_ast(m: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
         "Mod::indet: Indeterminate expression Mod[{}, 0] encountered.",
         expr_to_string(m)
       ));
-      return Ok(Expr::Identifier("Indeterminate".to_string()));
+      return Ok(id_expr("Indeterminate"));
     }
     // floor_quot = Floor[m/n]; evaluating the quotient first lets exact
     // cancellations (e.g. 2*Pi/Pi -> 2) happen so the floor is exact.
@@ -2472,7 +2448,7 @@ fn mod2_ast(m: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
         "Mod::indet: Indeterminate expression Mod[{}, 0] encountered.",
         expr_to_string(m)
       ));
-      return Ok(Expr::Identifier("Indeterminate".to_string()));
+      return Ok(id_expr("Indeterminate"));
     }
     let result = ((a % b) + b) % b;
     // This path is only reached when an operand is an inexact machine real, so
@@ -2508,7 +2484,7 @@ fn mod3_ast(m: &Expr, n: &Expr, d: &Expr) -> Result<Expr, InterpreterError> {
       expr_to_string(m),
       expr_to_string(d)
     ));
-    return Ok(Expr::Identifier("Indeterminate".to_string()));
+    return Ok(id_expr("Indeterminate"));
   }
   // Try exact rational arithmetic
   if let (Some((mn, md)), Some((nn, nd)), Some((dn, dd))) =
@@ -2520,7 +2496,7 @@ fn mod3_ast(m: &Expr, n: &Expr, d: &Expr) -> Result<Expr, InterpreterError> {
         expr_to_string(m),
         expr_to_string(d)
       ));
-      return Ok(Expr::Identifier("Indeterminate".to_string()));
+      return Ok(id_expr("Indeterminate"));
     }
     // m - d = (mn*dd - dn*md) / (md*dd)
     let diff_n = mn * dd - dn * md;
@@ -2551,7 +2527,7 @@ fn mod3_ast(m: &Expr, n: &Expr, d: &Expr) -> Result<Expr, InterpreterError> {
         expr_to_string(m),
         expr_to_string(d)
       ));
-      return Ok(Expr::Identifier("Indeterminate".to_string()));
+      return Ok(id_expr("Indeterminate"));
     }
     // floor_quot = Floor[(m - d)/n]
     let diff = minus2(m.clone(), d.clone());
@@ -2572,7 +2548,7 @@ fn mod3_ast(m: &Expr, n: &Expr, d: &Expr) -> Result<Expr, InterpreterError> {
         expr_to_string(m),
         expr_to_string(d)
       ));
-      return Ok(Expr::Identifier("Indeterminate".to_string()));
+      return Ok(id_expr("Indeterminate"));
     }
     let result = a - b * ((a - c) / b).floor();
     // Reached only when an operand is an inexact machine real, so the result
@@ -2625,12 +2601,12 @@ pub fn quotient_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       crate::emit_message(&format!(
         "Quotient::indet: Indeterminate expression {call} encountered."
       ));
-      return Ok(Expr::Identifier("Indeterminate".to_string()));
+      return Ok(id_expr("Indeterminate"));
     }
     crate::emit_message(&format!(
       "Quotient::infy: Infinite expression {call} encountered."
     ));
-    return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+    return Ok(id_expr("ComplexInfinity"));
   }
 
   // 3-argument form: Quotient[n, m, d] = Floor[(n - d) / m]
@@ -2888,7 +2864,7 @@ pub fn integer_exponent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   if n.is_zero() {
-    return Ok(Expr::Identifier("Infinity".to_string()));
+    return Ok(id_expr("Infinity"));
   }
 
   let mut count: i128 = 0;
@@ -2910,10 +2886,7 @@ pub fn integer_exponent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 fn build_complex_result(re: Expr, im: Expr) -> Result<Expr, InterpreterError> {
   crate::evaluator::evaluate_function_call_ast(
     "Plus",
-    &[
-      re,
-      call("Times", vec![im, Expr::Identifier("I".to_string())]),
-    ],
+    &[re, call("Times", vec![im, id_expr("I")])],
   )
 }
 
@@ -3066,7 +3039,7 @@ pub fn fractional_part_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // FractionalPart[Indeterminate] -> Indeterminate.
   if matches!(&args[0], Expr::Identifier(s) if s == "Indeterminate") {
-    return Ok(Expr::Identifier("Indeterminate".to_string()));
+    return Ok(id_expr("Indeterminate"));
   }
   // Exact complex rational: apply FractionalPart to real and imag parts
   // separately (FractionalPart truncates toward zero).

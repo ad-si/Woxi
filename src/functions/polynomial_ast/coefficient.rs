@@ -1406,13 +1406,8 @@ fn build_sparse_array_for_coefficients(
     );
     return Expr::FunctionCall {
       name: "SparseArray".to_string(),
-      args: vec![
-        Expr::Identifier("Automatic".to_string()),
-        dims_list,
-        Expr::Integer(0),
-        inner,
-      ]
-      .into(),
+      args: vec![id_expr("Automatic"), dims_list, Expr::Integer(0), inner]
+        .into(),
     };
   }
   // Sort entries by index for deterministic CSR layout.
@@ -1445,13 +1440,8 @@ fn build_sparse_array_for_coefficients(
     );
     return Expr::FunctionCall {
       name: "SparseArray".to_string(),
-      args: vec![
-        Expr::Identifier("Automatic".to_string()),
-        dims_list,
-        Expr::Integer(0),
-        inner,
-      ]
-      .into(),
+      args: vec![id_expr("Automatic"), dims_list, Expr::Integer(0), inner]
+        .into(),
     };
   }
   // k ≥ 2: rowPtr length n+1, colIndices are (k-1)-tuples.
@@ -1489,13 +1479,7 @@ fn build_sparse_array_for_coefficients(
   );
   Expr::FunctionCall {
     name: "SparseArray".to_string(),
-    args: vec![
-      Expr::Identifier("Automatic".to_string()),
-      dims_list,
-      Expr::Integer(0),
-      inner,
-    ]
-    .into(),
+    args: vec![id_expr("Automatic"), dims_list, Expr::Integer(0), inner].into(),
   }
 }
 
@@ -1588,7 +1572,7 @@ fn build_sparse_array_multi(
   let make_outer = |inner: Expr| Expr::FunctionCall {
     name: "SparseArray".to_string(),
     args: vec![
-      Expr::Identifier("Automatic".to_string()),
+      id_expr("Automatic"),
       dims_list.clone(),
       Expr::Integer(0),
       inner,

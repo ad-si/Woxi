@@ -1411,7 +1411,7 @@ fn solve_modular(
       positional[0].clone(),
       positional[1].clone(),
       Expr::Rule {
-        pattern: Box::new(Expr::Identifier("Modulus".to_string())),
+        pattern: Box::new(id_expr("Modulus")),
         replacement: Box::new(Expr::Integer(n)),
       },
     ]
@@ -2836,8 +2836,7 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let imag_part =
             solve_divide(&Expr::Integer(sqrt_out), &Expr::Integer(2 * ai));
           let make_sol = |sign_minus: bool| -> Expr {
-            let i_part =
-              multiply_exprs(&Expr::Identifier("I".to_string()), &imag_part);
+            let i_part = multiply_exprs(&id_expr("I"), &imag_part);
             simplify(Expr::BinaryOp {
               op: if sign_minus {
                 BinaryOperator::Minus
@@ -2867,7 +2866,7 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
           (nb, so, den)
         };
         let sqrt_part = multiply_exprs(
-          &Expr::Identifier("I".to_string()),
+          &id_expr("I"),
           &if so == 1 {
             make_sqrt(Expr::Integer(sqrt_in))
           } else {
@@ -3107,7 +3106,7 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 let p = frac_num / g;
                 let q = frac_den / g;
                 let multiplier = if p == 1 && q == 2 {
-                  Expr::Identifier("I".to_string())
+                  id_expr("I")
                 } else {
                   Expr::FunctionCall {
                     name: "Power".to_string(),
@@ -4474,10 +4473,8 @@ fn try_solve_trig_eq(eq: &Expr, var: &str) -> Option<Expr> {
   let var_expr = Expr::Identifier(var.to_string());
   let pi = const_expr("Pi");
   let c1 = call1("C", Expr::Integer(1));
-  let element_c1_integers = call(
-    "Element",
-    vec![c1.clone(), Expr::Identifier("Integers".to_string())],
-  );
+  let element_c1_integers =
+    call("Element", vec![c1.clone(), id_expr("Integers")]);
   let two_pi_c1 = times2(Expr::Integer(2), times2(pi.clone(), c1.clone()));
   let pi_c1 = times2(pi.clone(), c1.clone());
   let neg_half_pi = times2(make_rational(-1, 2), pi.clone());
@@ -4693,8 +4690,8 @@ fn try_solve_inverse_function(
               name: "Times".to_string(),
               args: vec![
                 Expr::Integer(2),
-                Expr::Identifier("I".to_string()),
-                Expr::Identifier("Pi".to_string()),
+                id_expr("I"),
+                id_expr("Pi"),
                 c1.clone(),
               ]
               .into(),
@@ -4716,14 +4713,8 @@ fn try_solve_inverse_function(
         };
         let cond = Expr::FunctionCall {
           name: "ConditionalExpression".to_string(),
-          args: vec![
-            general,
-            call(
-              "Element",
-              vec![c1, Expr::Identifier("Integers".to_string())],
-            ),
-          ]
-          .into(),
+          args: vec![general, call("Element", vec![c1, id_expr("Integers")])]
+            .into(),
         };
         return Some(Ok(Expr::List(
           vec![Expr::List(
@@ -6500,8 +6491,7 @@ fn find_root_complex_newton(
   let value = if im.abs() < 1e-14 {
     Expr::Real(re)
   } else {
-    let im_term =
-      times2(Expr::Real(im.abs()), Expr::Identifier("I".to_string()));
+    let im_term = times2(Expr::Real(im.abs()), id_expr("I"));
     let combined = if im >= 0.0 {
       plus2(Expr::Real(re), im_term)
     } else {
@@ -7665,11 +7655,7 @@ fn minimize_ast_inner(
       for var in &vars {
         constraints.push(Expr::FunctionCall {
           name: "Element".to_string(),
-          args: vec![
-            Expr::Identifier(var.clone()),
-            Expr::Identifier("Integers".to_string()),
-          ]
-          .into(),
+          args: vec![Expr::Identifier(var.clone()), id_expr("Integers")].into(),
         });
       }
     }
@@ -8290,14 +8276,14 @@ fn minimize_neg_infinity_result(
   maximize: bool,
   var_toward_positive: bool,
 ) -> Expr {
-  let neg_infinity = || neg1(Expr::Identifier("Infinity".to_string()));
+  let neg_infinity = || neg1(id_expr("Infinity"));
   let inf_val = if maximize {
-    Expr::Identifier("Infinity".to_string())
+    id_expr("Infinity")
   } else {
     neg_infinity()
   };
   let x_val = if var_toward_positive {
-    Expr::Identifier("Infinity".to_string())
+    id_expr("Infinity")
   } else {
     neg_infinity()
   };
@@ -9303,7 +9289,7 @@ fn minimize_extract_linear_expr(
 /// Single-variable constrained minimize.
 /// `Infinity` or `-Infinity` as an expression.
 fn signed_infinity(positive: bool) -> Expr {
-  let infinity = Expr::Identifier("Infinity".to_string());
+  let infinity = id_expr("Infinity");
   if positive {
     infinity
   } else {
@@ -12046,15 +12032,15 @@ fn nminimize_infeasible_result(
   ));
 
   let inf = if maximize {
-    neg1(Expr::Identifier("Infinity".to_string()))
+    neg1(id_expr("Infinity"))
   } else {
-    Expr::Identifier("Infinity".to_string())
+    id_expr("Infinity")
   };
   let rules: Vec<Expr> = vars
     .iter()
     .map(|var| Expr::Rule {
       pattern: Box::new(Expr::Identifier(var.clone())),
-      replacement: Box::new(Expr::Identifier("Indeterminate".to_string())),
+      replacement: Box::new(id_expr("Indeterminate")),
     })
     .collect();
   Expr::List(vec![inf, Expr::List(rules.into())].into())
@@ -12067,15 +12053,15 @@ fn nminimize_unbounded_result(vars: &[String], maximize: bool) -> Expr {
   let func_name = if maximize { "NMaximize" } else { "NMinimize" };
   crate::emit_message(&format!("{func_name}::ubnd: The problem is unbounded."));
   let inf = if maximize {
-    Expr::Identifier("Infinity".to_string())
+    id_expr("Infinity")
   } else {
-    neg1(Expr::Identifier("Infinity".to_string()))
+    neg1(id_expr("Infinity"))
   };
   let rules: Vec<Expr> = vars
     .iter()
     .map(|var| Expr::Rule {
       pattern: Box::new(Expr::Identifier(var.clone())),
-      replacement: Box::new(Expr::Identifier("Indeterminate".to_string())),
+      replacement: Box::new(id_expr("Indeterminate")),
     })
     .collect();
   Expr::List(vec![inf, Expr::List(rules.into())].into())

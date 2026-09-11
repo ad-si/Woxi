@@ -45,7 +45,7 @@ pub fn zeta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match &args[0] {
     Expr::Identifier(s) if s == "Infinity" => return Ok(Expr::Integer(1)),
     Expr::Identifier(s) if s == "ComplexInfinity" => {
-      return Ok(Expr::Identifier("Indeterminate".to_string()));
+      return Ok(id_expr("Indeterminate"));
     }
     _ => {}
   }
@@ -55,7 +55,7 @@ pub fn zeta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let n = *n;
       if n == 1 {
         // Zeta[1] = ComplexInfinity (pole)
-        return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+        return Ok(id_expr("ComplexInfinity"));
       }
       if n == 0 {
         // Zeta[0] = -1/2
@@ -85,7 +85,7 @@ pub fn zeta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Zeta has a simple pole at s = 1: Zeta[1.] = ComplexInfinity (like the
       // exact Zeta[1]), not a real Infinity.
       if *f == 1.0 {
-        return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+        return Ok(id_expr("ComplexInfinity"));
       }
       // Numeric evaluation
       let result = zeta_numeric(*f);
@@ -133,7 +133,7 @@ pub fn hurwitz_zeta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && let Some(s_val) = expr_to_f64(s)
     && s_val > 0.0
   {
-    return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+    return Ok(id_expr("ComplexInfinity"));
   }
 
   // Otherwise HurwitzZeta agrees with the two-argument Zeta. Reuse it.
@@ -162,7 +162,7 @@ fn hurwitz_zeta_ast_inner(
 
   // Zeta[1, a] = ComplexInfinity (pole)
   if matches!(s_expr, Expr::Integer(1)) {
-    return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+    return Ok(id_expr("ComplexInfinity"));
   }
 
   // Zeta[s, 1/2] = (-1 + 2^s) * Zeta[s] for all s
@@ -560,10 +560,7 @@ fn zeta_positive_even(two_n: usize) -> Option<Expr> {
   }
 
   // Build: num * Pi^(2n) / den
-  let pi_power = pow2(
-    Expr::Identifier("Pi".to_string()),
-    Expr::Integer(two_n as i128),
-  );
+  let pi_power = pow2(id_expr("Pi"), Expr::Integer(two_n as i128));
 
   if num == 1 && den == 1 {
     Some(pi_power)
@@ -894,7 +891,7 @@ pub fn polygamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Expr::Integer(z) = z_expr
     && *z <= 0
   {
-    return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+    return Ok(id_expr("ComplexInfinity"));
   }
 
   match z_expr {
@@ -921,7 +918,7 @@ pub fn polygamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // there it is ComplexInfinity, not the real +/-Infinity the numeric
       // series would diverge to. (A non-integer negative z is finite.)
       if *f <= 0.0 && f.fract() == 0.0 {
-        return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+        return Ok(id_expr("ComplexInfinity"));
       }
       Ok(Expr::Real(polygamma_numeric(n, *f)))
     }
@@ -974,7 +971,7 @@ fn z_expr_from_args(expr: &Expr) -> &Expr {
 
 /// Build digamma at positive integer: H_{z-1} - EulerGamma
 fn polygamma_digamma_integer(z: usize) -> Expr {
-  let euler = Expr::Identifier("EulerGamma".to_string());
+  let euler = id_expr("EulerGamma");
   if z == 1 {
     // H_0 = 0, so result is -EulerGamma
     return times2(Expr::Integer(-1), euler);
@@ -1055,10 +1052,7 @@ fn polygamma_multiply_zeta_by_nfact(two_n: usize, nfact: i128) -> Option<Expr> {
     (num, den) = rat_reduce(num, den);
   }
 
-  let pi_power = pow2(
-    Expr::Identifier("Pi".to_string()),
-    Expr::Integer(two_n as i128),
-  );
+  let pi_power = pow2(id_expr("Pi"), Expr::Integer(two_n as i128));
 
   if num == 1 && den == 1 {
     Some(pi_power)
@@ -1284,7 +1278,7 @@ pub fn hurwitz_lerch_phi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Expr::Integer(a) = &args[2]
     && *a <= 0
   {
-    return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+    return Ok(id_expr("ComplexInfinity"));
   }
   // Otherwise delegate to LerchPhi; keep the HurwitzLerchPhi head when LerchPhi
   // itself stays unevaluated.
@@ -1304,10 +1298,7 @@ fn complex_real(re: f64, im: f64) -> Expr {
     "Plus",
     vec![
       Expr::Real(re),
-      call(
-        "Times",
-        vec![Expr::Real(im), Expr::Identifier("I".to_string())],
-      ),
+      call("Times", vec![Expr::Real(im), id_expr("I")]),
     ],
   )
 }
@@ -1494,7 +1485,7 @@ pub fn prime_zeta_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if matches!(&args[0], Expr::Integer(1))
     || matches!(&args[0], Expr::Real(v) if *v == 1.0)
   {
-    return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+    return Ok(id_expr("ComplexInfinity"));
   }
 
   // Only evaluate numerically for Real (approximate) arguments
@@ -1974,7 +1965,7 @@ pub fn dirichlet_beta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     // β(2) is Catalan's constant.
     if n == 2 {
-      return Ok(Expr::Identifier("Catalan".to_string()));
+      return Ok(id_expr("Catalan"));
     }
     // Odd positive integers: β(2k+1) = (-1)^k E_{2k} π^(2k+1) / (4^(k+1)(2k)!).
     if n % 2 == 1 {
@@ -1986,7 +1977,7 @@ pub fn dirichlet_beta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       )?;
       let pi_pow = crate::evaluator::evaluate_function_call_ast(
         "Power",
-        &[Expr::Identifier("Pi".to_string()), Expr::Integer(n)],
+        &[id_expr("Pi"), Expr::Integer(n)],
       )?;
       let numer = crate::evaluator::evaluate_function_call_ast(
         "Times",

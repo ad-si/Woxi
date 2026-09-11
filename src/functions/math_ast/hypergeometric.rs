@@ -191,7 +191,7 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if a_list.is_empty() && b_list.is_empty() {
     return crate::evaluator::evaluate_expr_to_expr(&call(
       "Power",
-      vec![Expr::Identifier("E".to_string()), z.clone()],
+      vec![id_expr("E"), z.clone()],
     ));
   }
 
@@ -360,7 +360,7 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if a_keys == b_keys {
       return crate::evaluator::evaluate_expr_to_expr(&call(
         "Power",
-        vec![Expr::Identifier("E".to_string()), z.clone()],
+        vec![id_expr("E"), z.clone()],
       ));
     }
   }
@@ -660,7 +660,7 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let sum_a: f64 = a_vals.iter().sum();
       let sum_b: f64 = b_vals.iter().sum();
       if sum_b - sum_a <= 0.0 {
-        return Ok(Expr::Identifier("Infinity".to_string()));
+        return Ok(id_expr("Infinity"));
       }
     }
     // For p > q+1 and |z| >= 1, the series diverges
@@ -669,7 +669,7 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     let result = hypergeometric_pfq_numeric(&a_vals, &b_vals, z_val);
     if result.is_infinite() {
-      return Ok(Expr::Identifier("Infinity".to_string()));
+      return Ok(id_expr("Infinity"));
     }
     return Ok(Expr::Real(result));
   }
@@ -875,7 +875,7 @@ pub fn hypergeometric_pfq_regularized_ast(
       }
       return Ok(unevaluated("HypergeometricPFQRegularized", args));
     }
-    return Ok(Expr::Identifier("Infinity".to_string()));
+    return Ok(id_expr("Infinity"));
   }
 
   // Check if any argument is Real (to decide numeric vs symbolic evaluation)
@@ -920,7 +920,7 @@ pub fn hypergeometric_pfq_regularized_ast(
       }
       let result = pfq_val / gamma_prod;
       if result.is_infinite() {
-        return Ok(Expr::Identifier("Infinity".to_string()));
+        return Ok(id_expr("Infinity"));
       }
       return Ok(Expr::Real(result));
     }
@@ -1273,7 +1273,7 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       crate::evaluator::evaluate_function_call_ast("Plus", &terms)?;
     let exp_part = crate::evaluator::evaluate_function_call_ast(
       "Power",
-      &[Expr::Identifier("E".to_string()), z.clone()],
+      &[id_expr("E"), z.clone()],
     )?;
     return crate::evaluator::evaluate_function_call_ast(
       "Times",
@@ -1291,8 +1291,7 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let z = &args[2];
     let plus = call("Plus", vec![Expr::Integer(b_int), z.clone()]);
     let ratio = div2(plus, Expr::Integer(b_int));
-    let exp_z =
-      call("Power", vec![Expr::Identifier("E".to_string()), z.clone()]);
+    let exp_z = call("Power", vec![id_expr("E"), z.clone()]);
     let prod = times2(ratio, exp_z);
     return crate::evaluator::evaluate_expr_to_expr(&prod);
   }
@@ -1381,10 +1380,7 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       e_n /= &g_num;
       c_n /= &g_num;
     }
-    let exp_part = call(
-      "Power",
-      vec![Expr::Identifier("E".to_string()), Expr::Integer(z_int)],
-    );
+    let exp_part = call("Power", vec![id_expr("E"), Expr::Integer(z_int)]);
     let e_term = if e_n == BigInt::from(0) {
       Expr::Integer(0)
     } else if e_n == BigInt::from(1) {
@@ -1815,8 +1811,7 @@ pub fn hypergeometric_u_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ]
         .into(),
       })?;
-    let exp_z =
-      call("Power", vec![Expr::Identifier("E".to_string()), z.clone()]);
+    let exp_z = call("Power", vec![id_expr("E"), z.clone()]);
     let gamma = call("Gamma", vec![one_minus_a, z]);
     return crate::evaluator::evaluate_expr_to_expr(&call(
       "Times",
@@ -1844,8 +1839,7 @@ pub fn hypergeometric_u_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     let z = &args[2];
     let pow = call("Power", vec![z.clone(), Expr::Integer(1 - *b)]);
-    let exp_z =
-      call("Power", vec![Expr::Identifier("E".to_string()), z.clone()]);
+    let exp_z = call("Power", vec![id_expr("E"), z.clone()]);
     let gamma = call("Gamma", vec![Expr::Integer(*b - 1), z.clone()]);
     return crate::evaluator::evaluate_expr_to_expr(&call(
       "Times",
@@ -1869,8 +1863,7 @@ pub fn hypergeometric_u_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       vec![z.clone(), Expr::Integer(-1)],
     ))?;
     // U[2, 2, z] = z^{-1} - E^z · Gamma[0, z]
-    let exp_z =
-      call("Power", vec![Expr::Identifier("E".to_string()), z.clone()]);
+    let exp_z = call("Power", vec![id_expr("E"), z.clone()]);
     let mut u_curr =
       crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
         name: "Plus".to_string(),
@@ -2714,7 +2707,7 @@ pub fn whittaker_m_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // z^(m+1/2) -> 0. Return 0. (or 0 for exact args).
         return Ok(Expr::Integer(0));
       } else if re < 0.0 {
-        return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+        return Ok(id_expr("ComplexInfinity"));
       }
       // re == 0 (m = -1/2): no closed-form simplification, fall through.
     }
@@ -2801,7 +2794,7 @@ pub fn whittaker_w_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if m_re > -0.5 && m_re < 0.5 {
           return Ok(Expr::Integer(0));
         } else if m_re < -0.5 {
-          return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+          return Ok(id_expr("ComplexInfinity"));
         } else if m_re > 0.5 {
           // ComplexInfinity unless m - k + 1/2 is a non-positive integer.
           if let Some((k_re, k_im)) = try_extract_complex_float(&args[0])
@@ -2813,7 +2806,7 @@ pub fn whittaker_w_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               return Ok(Expr::Integer(0));
             }
           }
-          return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+          return Ok(id_expr("ComplexInfinity"));
         }
         // m_re == 1/2: value = Γ(2 m) / Γ(m - k + 1/2) = 1/Γ(1 - k).
         if let Some((k_re, k_im)) = try_extract_complex_float(&args[0])

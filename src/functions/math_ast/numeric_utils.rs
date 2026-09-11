@@ -648,10 +648,7 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
         for a in args {
           real_args.push(Expr::Real(try_eval_to_f64(a)?));
         }
-        let new_expr = Expr::FunctionCall {
-          name: other.to_string(),
-          args: real_args.into(),
-        };
+        let new_expr = call(other, real_args);
         match crate::evaluator::evaluate_expr_to_expr(&new_expr) {
           Ok(Expr::Real(v)) => Some(v),
           Ok(Expr::Integer(n)) => Some(n as f64),
@@ -1075,7 +1072,7 @@ pub fn complex_rational_to_expr(
   }
 
   // Pure imaginary
-  let i_expr = Expr::Identifier("I".to_string());
+  let i_expr = id_expr("I");
   if re_n == 0 {
     if matches!(&imag_part, Expr::Integer(1)) {
       return i_expr;
@@ -1330,7 +1327,7 @@ pub fn try_extract_complex_float(expr: &Expr) -> Option<(f64, f64)> {
 
 /// Build a complex number expression from float parts.
 pub fn build_complex_float_expr(re: f64, im: f64) -> Expr {
-  let i_expr = Expr::Identifier("I".to_string());
+  let i_expr = id_expr("I");
   let im_abs = im.abs();
 
   if im == 0.0 {
@@ -1361,7 +1358,7 @@ pub fn build_complex_float_expr(re: f64, im: f64) -> Expr {
 /// when it's zero. Matches wolframscript's NRoots/N output that prints e.g.
 /// `0. + 1.*I` rather than just `I` for pure imaginary numerics.
 pub fn build_complex_float_expr_keep_real(re: f64, im: f64) -> Expr {
-  let i_expr = Expr::Identifier("I".to_string());
+  let i_expr = id_expr("I");
   let im_abs = im.abs();
   // Always materialise the coefficient as `Real * I` so the |coeff|==1 case
   // prints as `1.*I` rather than bare `I` — wolframscript's numeric form.
@@ -1388,7 +1385,7 @@ pub fn build_complex_expr(
   }
 
   let (in_s, id_s) = rat_reduce(im_num, im_den);
-  let i_expr = Expr::Identifier("I".to_string());
+  let i_expr = id_expr("I");
 
   // Build the imaginary term with correct sign handling
   let im_abs_num = in_s.abs();
@@ -1413,7 +1410,7 @@ pub fn build_complex_expr(
     } else {
       // -n*I: build Times[-n, I] directly
       let coeff = make_rational(-im_abs_num, id_s);
-      times2(coeff, Expr::Identifier("I".to_string()))
+      times2(coeff, id_expr("I"))
     };
   }
 

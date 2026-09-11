@@ -621,7 +621,7 @@ fn conjugate_one(expr: &Expr) -> Result<Expr, InterpreterError> {
   if let Expr::Identifier(name) = expr
     && name == "I"
   {
-    return times_ast(&[Expr::Integer(-1), Expr::Identifier("I".to_string())]);
+    return times_ast(&[Expr::Integer(-1), id_expr("I")]);
   }
 
   // Distribute over Plus, but keep purely-symbolic ("bare") terms grouped
@@ -690,10 +690,7 @@ fn conjugate_one(expr: &Expr) -> Result<Expr, InterpreterError> {
       let i_factor: Option<Expr> = match i_mod {
         1 => {
           // Conjugate[I] = -I
-          Some(call(
-            "Times",
-            vec![Expr::Integer(-1), Expr::Identifier("I".to_string())],
-          ))
+          Some(call("Times", vec![Expr::Integer(-1), id_expr("I")]))
         }
         2 => {
           // I*I = -1, Conjugate[-1] = -1
@@ -701,7 +698,7 @@ fn conjugate_one(expr: &Expr) -> Result<Expr, InterpreterError> {
         }
         3 => {
           // I^3 = -I, Conjugate[-I] = I
-          Some(Expr::Identifier("I".to_string()))
+          Some(id_expr("I"))
         }
         _ => None, // i_mod == 0: no I factor
       };
@@ -1093,7 +1090,7 @@ pub fn arg_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return if sign > 0 {
       Ok(Expr::Integer(0))
     } else if sign < 0 {
-      Ok(Expr::Identifier("Pi".to_string()))
+      Ok(id_expr("Pi"))
     } else {
       Ok(Expr::Integer(0))
     };
@@ -1104,7 +1101,7 @@ pub fn arg_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return if *f > 0.0 {
       Ok(Expr::Integer(0))
     } else if *f < 0.0 {
-      Ok(Expr::Identifier("Pi".to_string()))
+      Ok(id_expr("Pi"))
     } else {
       Ok(Expr::Integer(0))
     };
@@ -1116,7 +1113,7 @@ pub fn arg_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && let Some(v) = try_eval_to_f64(&args[0])
   {
     return if v < 0.0 {
-      Ok(Expr::Identifier("Pi".to_string()))
+      Ok(id_expr("Pi"))
     } else {
       Ok(Expr::Integer(0))
     };
@@ -1132,7 +1129,7 @@ pub fn arg_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return if rn > 0 {
         Ok(Expr::Integer(0))
       } else if rn < 0 {
-        Ok(Expr::Identifier("Pi".to_string()))
+        Ok(id_expr("Pi"))
       } else {
         Ok(Expr::Integer(0))
       };
@@ -1196,7 +1193,7 @@ pub fn arg_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       // re < 0, im >= 0: Pi - ArcTan[|ratio|]
       // re < 0, im < 0: -Pi + ArcTan[|ratio|]
-      let pi = Expr::Identifier("Pi".to_string());
+      let pi = id_expr("Pi");
       if in_ > 0 {
         return Ok(minus2(pi, arctan_expr));
       }
@@ -1236,15 +1233,15 @@ pub fn make_rational_times_pi(n: i128, d: i128) -> Expr {
   let (n, d) = rat_reduce(n, d);
   if d == 1 {
     if n == 1 {
-      Expr::Identifier("Pi".to_string())
+      id_expr("Pi")
     } else if n == -1 {
-      negate_expr(Expr::Identifier("Pi".to_string()))
+      negate_expr(id_expr("Pi"))
     } else {
-      times2(Expr::Integer(n), Expr::Identifier("Pi".to_string()))
+      times2(Expr::Integer(n), id_expr("Pi"))
     }
   } else {
     let coeff = make_rational(n, d);
-    times2(coeff, Expr::Identifier("Pi".to_string()))
+    times2(coeff, id_expr("Pi"))
   }
 }
 
@@ -1331,10 +1328,7 @@ pub fn rationalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     return crate::evaluator::evaluate_function_call_ast(
       "Plus",
-      &[
-        re_c,
-        call("Times", vec![im_c, Expr::Identifier("I".to_string())]),
-      ],
+      &[re_c, call("Times", vec![im_c, id_expr("I")])],
     );
   }
 
@@ -1708,10 +1702,7 @@ fn exact_complex_rational_numden(expr: &Expr) -> Option<(Expr, Expr)> {
       name: "Plus".to_string(),
       args: vec![
         Expr::Integer(re_num),
-        call(
-          "Times",
-          vec![Expr::Integer(im_num), Expr::Identifier("I".to_string())],
-        ),
+        call("Times", vec![Expr::Integer(im_num), id_expr("I")]),
       ]
       .into(),
     }

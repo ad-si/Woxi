@@ -222,7 +222,7 @@ fn mittag_leffler_two_arg(
         // E^z
         return crate::evaluator::evaluate_expr_to_expr(&call(
           "Power",
-          vec![Expr::Identifier("E".to_string()), z.clone()],
+          vec![id_expr("E"), z.clone()],
         ));
       }
       2 => {
@@ -660,7 +660,7 @@ pub fn meijer_g_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           name: "Times".to_string(),
           args: vec![
             Expr::Integer(3),
-            Expr::Identifier("E".to_string()),
+            id_expr("E"),
             call1("ExpIntegralEi", Expr::Integer(-1)),
           ]
           .into(),
@@ -1860,10 +1860,7 @@ pub fn wigner_d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         name: "Plus".to_string(),
         args: vec![
           Expr::Real(re),
-          call(
-            "Times",
-            vec![Expr::Real(im), Expr::Identifier("I".to_string())],
-          ),
+          call("Times", vec![Expr::Real(im), id_expr("I")]),
         ]
         .into(),
       })
@@ -1911,10 +1908,7 @@ fn wigner_d_symbolic(
       let num = (2.0 * coef).round() as i128;
       Some(call("Rational", vec![Expr::Integer(num), Expr::Integer(2)]))?
     };
-    let exponent = call(
-      "Times",
-      vec![Expr::Identifier("I".to_string()), coef_expr, ang.clone()],
-    );
+    let exponent = call("Times", vec![id_expr("I"), coef_expr, ang.clone()]);
     Some(call("Power", vec![const_expr("E"), exponent]))
   };
   let e1 = exp_factor(m1, phi)?;
@@ -3134,7 +3128,7 @@ pub fn effective_interest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   if p_is_zero {
     // -1 + E^r
-    let e_r = call("Power", vec![Expr::Identifier("E".to_string()), r.clone()]);
+    let e_r = call("Power", vec![id_expr("E"), r.clone()]);
     let expr = call("Plus", vec![Expr::Integer(-1), e_r]);
     return crate::evaluator::evaluate_expr_to_expr(&expr);
   }
@@ -3253,7 +3247,7 @@ pub fn real_exponent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if matches!(&abs_expr, Expr::Integer(0))
     || matches!(&abs_expr, Expr::Real(f) if *f == 0.0)
   {
-    return Ok(neg1(Expr::Identifier("Infinity".to_string())));
+    return Ok(neg1(id_expr("Infinity")));
   }
 
   let magnitude = match try_eval_to_f64(&abs_expr) {

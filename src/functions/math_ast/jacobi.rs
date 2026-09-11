@@ -897,7 +897,7 @@ pub fn jacobi_cs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let m = &args[1];
 
   if is_expr_zero(u) {
-    return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+    return Ok(id_expr("ComplexInfinity"));
   }
   if is_expr_zero(m) {
     return Ok(call1("Cot", u.clone()));
@@ -927,7 +927,7 @@ pub fn jacobi_ds_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let m = &args[1];
 
   if is_expr_zero(u) {
-    return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+    return Ok(id_expr("ComplexInfinity"));
   }
   if is_expr_zero(m) {
     return Ok(call1("Csc", u.clone()));
@@ -957,7 +957,7 @@ pub fn jacobi_ns_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let m = &args[1];
 
   if is_expr_zero(u) {
-    return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+    return Ok(id_expr("ComplexInfinity"));
   }
   if is_expr_zero(m) {
     return Ok(call1("Csc", u.clone()));

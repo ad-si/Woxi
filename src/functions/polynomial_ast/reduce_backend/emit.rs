@@ -9,7 +9,7 @@ use woxi_reduce::{
   crt_pair, euclidean_mod, lcm, solve_linear_congruence,
 };
 
-use crate::helpers::call;
+use crate::helpers::{bool_expr, call, id_expr, neg1, plus2, times2};
 use crate::syntax::{BinaryOperator, ComparisonOp, Expr, UnaryOperator};
 
 use super::{bigint_expr, rational_expr};
@@ -23,8 +23,8 @@ pub(super) fn formula_expr_for_targets(
   targets: &[Variable],
 ) -> Expr {
   match formula {
-    Formula::True => Expr::Identifier("True".to_string()),
-    Formula::False => Expr::Identifier("False".to_string()),
+    Formula::True => bool_expr(true),
+    Formula::False => bool_expr(false),
     Formula::Atom(atom) => atom_expr(atom, targets),
     Formula::And(children) => interval_expr(children, targets)
       .unwrap_or_else(|| fold_binary(children, BinaryOperator::And, targets)),
@@ -572,16 +572,9 @@ fn coefficient_variable_expr(
   } else if coefficient.numerator == -BigInt::one()
     && coefficient.denominator.is_one()
   {
-    Expr::UnaryOp {
-      op: UnaryOperator::Minus,
-      operand: Box::new(variable),
-    }
+    neg1(variable)
   } else {
-    Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(rational_expr(coefficient)),
-      right: Box::new(variable),
-    }
+    times2(rational_expr(coefficient), variable)
   }
 }
 
@@ -623,8 +616,8 @@ fn fold_owned_binary(expressions: Vec<Expr>, operator: BinaryOperator) -> Expr {
   let mut expressions = expressions.into_iter();
   let Some(first) = expressions.next() else {
     return match operator {
-      BinaryOperator::And => Expr::Identifier("True".to_string()),
-      BinaryOperator::Or => Expr::Identifier("False".to_string()),
+      BinaryOperator::And => bool_expr(true),
+      BinaryOperator::Or => bool_expr(false),
       BinaryOperator::Plus => Expr::Integer(0),
       _ => unreachable!("only associative n-ary operators are folded"),
     };
@@ -1039,20 +1032,12 @@ fn parametrized_value(
   let scaled = if modulus.is_one() {
     parameter
   } else {
-    Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(bigint_expr(modulus)),
-      right: Box::new(parameter),
-    }
+    times2(bigint_expr(modulus), parameter)
   };
   if residue.is_zero() {
     scaled
   } else {
-    Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left: Box::new(bigint_expr(residue)),
-      right: Box::new(scaled),
-    }
+    plus2(bigint_expr(residue), scaled)
   }
 }
 
@@ -1074,10 +1059,7 @@ fn name_parameters(expression: Expr, count: usize) -> Expr {
 }
 
 fn integer_membership(what: Expr) -> Expr {
-  call(
-    "Element",
-    vec![what, Expr::Identifier("Integers".to_string())],
-  )
+  call("Element", vec![what, id_expr("Integers")])
 }
 
 fn comparison_op(relation: Relation) -> ComparisonOp {

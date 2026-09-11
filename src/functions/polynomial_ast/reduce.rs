@@ -215,11 +215,7 @@ fn tighten_integer_one_sided(result: &Expr, var: &str) -> Option<Expr> {
   };
   let element = Expr::FunctionCall {
     name: "Element".to_string(),
-    args: vec![
-      Expr::Identifier(var.to_string()),
-      Expr::Identifier("Integers".to_string()),
-    ]
-    .into(),
+    args: vec![Expr::Identifier(var.to_string()), id_expr("Integers")].into(),
   };
   let comp = Expr::Comparison {
     operands: vec![
@@ -1321,7 +1317,7 @@ fn try_reduce_arc_degrees(
     name: "Times".to_string(),
     args: vec![
       rhs.clone(),
-      Expr::Identifier("Pi".to_string()),
+      id_expr("Pi"),
       call("Rational", vec![Expr::Integer(1), Expr::Integer(180)]),
     ]
     .into(),
@@ -1797,11 +1793,8 @@ fn reduce_quadratic_inequality(
         } else {
           Expr::FunctionCall {
             name: "Element".to_string(),
-            args: vec![
-              Expr::Identifier(var.to_string()),
-              Expr::Identifier("Reals".to_string()),
-            ]
-            .into(),
+            args: vec![Expr::Identifier(var.to_string()), id_expr("Reals")]
+              .into(),
           }
         }
       } else {
@@ -1824,11 +1817,8 @@ fn reduce_quadratic_inequality(
           } else {
             Expr::FunctionCall {
               name: "Element".to_string(),
-              args: vec![
-                Expr::Identifier(var.to_string()),
-                Expr::Identifier("Reals".to_string()),
-              ]
-              .into(),
+              args: vec![Expr::Identifier(var.to_string()), id_expr("Reals")]
+                .into(),
             }
           }
         }
@@ -1846,11 +1836,8 @@ fn reduce_quadratic_inequality(
           } else {
             Expr::FunctionCall {
               name: "Element".to_string(),
-              args: vec![
-                Expr::Identifier(var.to_string()),
-                Expr::Identifier("Reals".to_string()),
-              ]
-              .into(),
+              args: vec![Expr::Identifier(var.to_string()), id_expr("Reals")]
+                .into(),
             }
           }
         }
@@ -2706,10 +2693,7 @@ impl Affine {
       if *coeff == 0 {
         continue;
       }
-      let param = Expr::FunctionCall {
-        name: "C".to_string(),
-        args: vec![Expr::Integer((slot + 1) as i128)].into(),
-      };
+      let param = call("C", vec![Expr::Integer((slot + 1) as i128)]);
       let term = if *coeff == 1 {
         param
       } else {
@@ -2984,11 +2968,8 @@ fn try_reduce_linear_diophantine(
     })
     .collect();
 
-  let integers = || Expr::Identifier("Integers".to_string());
-  let element = |what: Expr| Expr::FunctionCall {
-    name: "Element".to_string(),
-    args: vec![what, integers()].into(),
-  };
+  let integers = || id_expr("Integers");
+  let element = |what: Expr| call("Element", vec![what, integers()]);
 
   // A variable the equation never mentions is unconstrained: wolframscript
   // leaves it as itself under its own `Element[v, Integers]` rather than
@@ -3004,10 +2985,7 @@ fn try_reduce_linear_diophantine(
   // Every parameter shares one membership conjunct, written with
   // Alternatives: `Element[C[1] | C[2], Integers]`.
   if let Some(membership) = (0..total_params)
-    .map(|slot| Expr::FunctionCall {
-      name: "C".to_string(),
-      args: vec![Expr::Integer((slot + 1) as i128)].into(),
-    })
+    .map(|slot| call("C", vec![Expr::Integer((slot + 1) as i128)]))
     .reduce(|acc, p| Expr::BinaryOp {
       op: BinaryOperator::Alternatives,
       left: Box::new(acc),

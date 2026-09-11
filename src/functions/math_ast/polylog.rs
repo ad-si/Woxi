@@ -142,7 +142,7 @@ fn polylog_integer_s(
 fn polylog_s1(z_expr: &Expr) -> Result<Expr, InterpreterError> {
   match z_expr {
     Expr::Integer(0) => Ok(Expr::Integer(0)),
-    Expr::Integer(1) => Ok(Expr::Identifier("Infinity".to_string())),
+    Expr::Integer(1) => Ok(id_expr("Infinity")),
     Expr::Integer(z) => {
       // 1-z is an integer, construct -Log[1-z]
       let one_minus_z = Expr::Integer(1 - z);
@@ -191,7 +191,7 @@ fn polylog_s1_symbolic(z_expr: &Expr) -> Expr {
 fn polylog_s0(z_expr: &Expr) -> Result<Expr, InterpreterError> {
   match z_expr {
     Expr::Integer(0) => Ok(Expr::Integer(0)),
-    Expr::Integer(1) => Ok(Expr::Identifier("ComplexInfinity".to_string())),
+    Expr::Integer(1) => Ok(id_expr("ComplexInfinity")),
     Expr::Integer(z) => {
       // z/(1-z) as rational
       Ok(make_rational(*z, 1 - z))
@@ -220,7 +220,7 @@ fn polylog_negative_s(
   match z_expr {
     Expr::Integer(0) => return Ok(Expr::Integer(0)),
     Expr::Integer(1) => {
-      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+      return Ok(id_expr("ComplexInfinity"));
     }
     // Inexact input → machine number.
     Expr::Real(f) => return Ok(Expr::Real(polylog_numeric(-(n as f64), *f))),
@@ -335,7 +335,7 @@ fn polylog_at_neg1(s: i128) -> Expr {
       (final_num, final_den) = rat_reduce(final_num, final_den);
 
       // Build coefficient * Pi^s
-      let pi_power = pow2(Expr::Identifier("Pi".to_string()), Expr::Integer(s));
+      let pi_power = pow2(id_expr("Pi"), Expr::Integer(s));
 
       if final_num.abs() == 1 && final_den == 1 {
         if final_num == 1 {
@@ -377,7 +377,7 @@ fn polylog_at_neg1(s: i128) -> Expr {
 ///   PolyLog[2, 1/2] = Pi^2/12 - Log[2]^2/2
 ///   PolyLog[3, 1/2] = (-2*Pi^2*Log[2] + 4*Log[2]^3 + 21*Zeta[3])/24
 fn polylog_at_half(s: i128) -> Option<Expr> {
-  let pi = Expr::Identifier("Pi".to_string());
+  let pi = id_expr("Pi");
   let log2 = call1("Log", Expr::Integer(2));
 
   if s == 2 {

@@ -1400,7 +1400,7 @@ pub fn from_continued_fraction_ast(
   };
 
   if elements.is_empty() {
-    return Ok(Expr::Identifier("Infinity".to_string()));
+    return Ok(id_expr("Infinity"));
   }
 
   // Periodic continued fraction: the last element is a sublist holding the
@@ -2231,7 +2231,7 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // emitted as 0 by the loop above; this only fires when the caller
       // explicitly requests more digits than the precision supports.)
       while digit_exprs.len() < num_digits {
-        digit_exprs.push(Expr::Identifier("Indeterminate".to_string()));
+        digit_exprs.push(id_expr("Indeterminate"));
       }
       return Ok(Expr::List(
         vec![Expr::List(digit_exprs.into()), Expr::Integer(exponent)].into(),
@@ -3604,7 +3604,7 @@ pub fn number_digit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           (BigUint::one() << ((-e2) as u64), bb.pow((-k) as u32))
         };
         if lhs < rhs {
-          Expr::Identifier("Indeterminate".to_string())
+          id_expr("Indeterminate")
         } else {
           Expr::Integer(exact_digit(p, q, k))
         }
@@ -3627,7 +3627,7 @@ pub fn number_digit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           (BigUint::one() << ((-e2) as u64), bb.pow((-k) as u32))
         };
         if lhs < rhs {
-          return Expr::Identifier("Indeterminate".to_string());
+          return id_expr("Indeterminate");
         }
         let idx = *exp10 as i128 - k;
         if idx < 0 {

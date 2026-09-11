@@ -509,9 +509,7 @@ pub fn linear_programming_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       crate::emit_message(
         "LinearProgramming::lpsub: This problem is unbounded.",
       );
-      let inds: Vec<Expr> = (0..n)
-        .map(|_| Expr::Identifier("Indeterminate".to_string()))
-        .collect();
+      let inds: Vec<Expr> = (0..n).map(|_| id_expr("Indeterminate")).collect();
       Ok(Expr::List(inds.into()))
     }
     LpResult::Infeasible => {

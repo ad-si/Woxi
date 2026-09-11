@@ -1004,7 +1004,7 @@ fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
         Some(true) => refine_expr(&args[1], info, assumption),
         Some(false) => match args.get(2) {
           Some(otherwise) => refine_expr(otherwise, info, assumption),
-          None => Expr::Identifier("Null".to_string()),
+          None => null_expr(),
         },
         None => expr.clone(),
       }
@@ -1519,7 +1519,7 @@ fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
           return refined_args.into_iter().next().unwrap();
         }
         if s == "False" {
-          return Expr::Identifier("Undefined".to_string());
+          return id_expr("Undefined");
         }
       }
       Expr::FunctionCall {
@@ -2069,14 +2069,11 @@ fn infinity_direction(expr: &Expr) -> Option<i64> {
 /// `DirectedInfinity[-1]` (which renders as `-Infinity`).
 fn signed_infinity(sign: i64) -> Expr {
   if sign >= 0 {
-    Expr::Identifier("Infinity".to_string())
+    id_expr("Infinity")
   } else {
     // `Times[-1, Infinity]` renders as `-Infinity` (matching wolframscript);
     // `DirectedInfinity[-1]` would print in its unevaluated head form here.
-    call(
-      "Times",
-      vec![Expr::Integer(-1), Expr::Identifier("Infinity".to_string())],
-    )
+    call("Times", vec![Expr::Integer(-1), id_expr("Infinity")])
   }
 }
 
@@ -2649,10 +2646,7 @@ fn refine_log(
     return Some(Expr::FunctionCall {
       name: "Plus".to_string(),
       args: vec![
-        call(
-          "Times",
-          vec![Expr::Identifier("I".to_string()), const_expr("Pi")],
-        ),
+        call("Times", vec![id_expr("I"), const_expr("Pi")]),
         call1("Log", neg1(arg.clone())),
       ]
       .into(),
@@ -4244,14 +4238,14 @@ pub fn simplify_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     let combined = match (override_asn, positional.len()) {
       (Some(o), 0) => Expr::Rule {
-        pattern: Box::new(Expr::Identifier("Assumptions".to_string())),
+        pattern: Box::new(id_expr("Assumptions")),
         replacement: Box::new(o),
       },
       (Some(o), _) => {
         let mut and_args = vec![o];
         and_args.extend(positional);
         Expr::Rule {
-          pattern: Box::new(Expr::Identifier("Assumptions".to_string())),
+          pattern: Box::new(id_expr("Assumptions")),
           replacement: Box::new(call("And", and_args)),
         }
       }
@@ -7218,7 +7212,7 @@ fn simplify_conditional_expression(value: &Expr, cond: &Expr) -> Expr {
       return simplify_expr(value);
     }
     if s == "False" {
-      return Expr::Identifier("Undefined".to_string());
+      return id_expr("Undefined");
     }
   }
   let cond_str = expr_to_string(cond);
@@ -7248,7 +7242,7 @@ fn simplify_conditional_expression(value: &Expr, cond: &Expr) -> Expr {
     || assumptions_str == format!("Not[{cond_str}]")
   {
     // Assumptions negate the condition → Undefined.
-    return Expr::Identifier("Undefined".to_string());
+    return id_expr("Undefined");
   }
   // Simple single-variable inequality contradiction: e.g. `$Assumptions =
   // {a <= 0}` against `ConditionalExpression[v, a > 0]`. wolframscript
@@ -7269,7 +7263,7 @@ fn simplify_conditional_expression(value: &Expr, cond: &Expr) -> Expr {
       // Contradiction with any assumption ⇒ whole AND is False.
       for a in &assumption_items {
         if inequalities_contradict(a, &c_atom) {
-          return Expr::Identifier("Undefined".to_string());
+          return id_expr("Undefined");
         }
       }
       // Drop conjuncts already implied by an assumption (literal match

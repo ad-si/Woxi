@@ -281,7 +281,7 @@ pub fn n_eval(expr: &Expr) -> Result<Expr, InterpreterError> {
             // for complex power results where imaginary part is numerically zero)
             return Ok(plus2(
               Expr::Real(re),
-              times2(Expr::Real(0.0), Expr::Identifier("I".to_string())),
+              times2(Expr::Real(0.0), id_expr("I")),
             ));
           }
           return Ok(build_complex_float_expr(re, im));
@@ -2001,7 +2001,7 @@ fn build_complex_bigfloat_result(
   rm: astro_float::RoundingMode,
   cc: &mut astro_float::Consts,
 ) -> Result<Expr, InterpreterError> {
-  let i_expr = Expr::Identifier("I".to_string());
+  let i_expr = id_expr("I");
   let max_digits: Option<usize> = None;
 
   if im.is_zero() {
@@ -2023,7 +2023,7 @@ fn build_complex_bigfloat_result(
       // Pure negative imaginary: -|im|*I
       let neg_im_str = bigfloat_to_string(im, max_digits, rm, cc)?;
       let neg_im_bf = Expr::BigFloat(neg_im_str, precision as f64);
-      return Ok(times2(neg_im_bf, Expr::Identifier("I".to_string())));
+      return Ok(times2(neg_im_bf, id_expr("I")));
     }
     return Ok(abs_im_term);
   }
@@ -2063,7 +2063,7 @@ fn build_complex_result_with_string_precision(
   };
   let im_raw = Expr::Raw(format!("{im_abs_str}`{prec_im_str}"));
 
-  let i_expr = Expr::Identifier("I".to_string());
+  let i_expr = id_expr("I");
   let abs_im_term = times2(im_raw, i_expr);
 
   if im_negative {
@@ -2901,9 +2901,9 @@ pub fn precision_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   match &args[0] {
     Expr::Integer(_) | Expr::BigInteger(_) | Expr::Constant(_) => {
-      Ok(Expr::Identifier("Infinity".to_string()))
+      Ok(id_expr("Infinity"))
     }
-    Expr::Real(_) => Ok(Expr::Identifier("MachinePrecision".to_string())),
+    Expr::Real(_) => Ok(id_expr("MachinePrecision")),
     Expr::BigFloat(digits, prec) => {
       // A literal zero BigFloat (e.g. `0.`20`, `0.``3`) reports
       // precision 0 in Wolfram — there are no significant digits when
@@ -2918,14 +2918,14 @@ pub fn precision_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Identifier(name)
       if name == "Infinity" || name == "ComplexInfinity" =>
     {
-      Ok(Expr::Identifier("Infinity".to_string()))
+      Ok(id_expr("Infinity"))
     }
     Expr::BinaryOp {
       op: BinaryOperator::Divide,
       ..
     } => {
       // Exact rationals like 1/2 have infinite precision
-      Ok(Expr::Identifier("Infinity".to_string()))
+      Ok(id_expr("Infinity"))
     }
     Expr::List(items) => {
       // Precision of a list is the minimum precision of its elements,
@@ -2973,14 +2973,12 @@ pub fn precision_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
       if saw_machine && saw_arb {
-        return Ok(Expr::Identifier("MachinePrecision".to_string()));
+        return Ok(id_expr("MachinePrecision"));
       }
       match min_prec {
-        Some(_) if min_is_machine => {
-          Ok(Expr::Identifier("MachinePrecision".to_string()))
-        }
+        Some(_) if min_is_machine => Ok(id_expr("MachinePrecision")),
         Some(p) => Ok(Expr::Real(p)),
-        None => Ok(Expr::Identifier("Infinity".to_string())),
+        None => Ok(id_expr("Infinity")),
       }
     }
     // For symbolic expressions, check if any subexpression has finite precision.
@@ -3022,14 +3020,12 @@ pub fn precision_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
       match min_prec {
-        Some(_) if min_is_machine => {
-          Ok(Expr::Identifier("MachinePrecision".to_string()))
-        }
+        Some(_) if min_is_machine => Ok(id_expr("MachinePrecision")),
         Some(p) => Ok(Expr::Real(p)),
-        None => Ok(Expr::Identifier("Infinity".to_string())),
+        None => Ok(id_expr("Infinity")),
       }
     }
-    _ => Ok(Expr::Identifier("Infinity".to_string())),
+    _ => Ok(id_expr("Infinity")),
   }
 }
 
@@ -3043,7 +3039,7 @@ pub fn accuracy_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   match &args[0] {
     Expr::Integer(_) | Expr::BigInteger(_) | Expr::Constant(_) => {
-      Ok(Expr::Identifier("Infinity".to_string()))
+      Ok(id_expr("Infinity"))
     }
     Expr::Real(f) => {
       // Accuracy = MachinePrecision - Log10[Abs[x]]
@@ -3077,12 +3073,12 @@ pub fn accuracy_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         || name == "ComplexInfinity"
         || name == "Indeterminate" =>
     {
-      Ok(Expr::Identifier("Infinity".to_string()))
+      Ok(id_expr("Infinity"))
     }
     Expr::BinaryOp {
       op: BinaryOperator::Divide,
       ..
-    } => Ok(Expr::Identifier("Infinity".to_string())),
+    } => Ok(id_expr("Infinity")),
     // Complex number with finite-accuracy parts: apply Wolfram's formula
     // Accuracy[Complex[re, im]] = -Log10[Sqrt[10^(-2*Acc[re]) + 10^(-2*Acc[im])]].
     // Without this, `Accuracy[Complex[3.00``2, 4.00``2]]` would just take
@@ -3119,11 +3115,11 @@ pub fn accuracy_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       Ok(match min_finite {
         Some(v) => Expr::Real(v),
-        None => Expr::Identifier("Infinity".to_string()),
+        None => id_expr("Infinity"),
       })
     }
     // Symbolic identifiers (variables) have infinite accuracy
-    Expr::Identifier(_) => Ok(Expr::Identifier("Infinity".to_string())),
+    Expr::Identifier(_) => Ok(id_expr("Infinity")),
     // For symbolic expressions and lists, take the minimum of the
     // children's accuracies. Wolfram: Accuracy[F[1.3, Pi, A]] → 15.840…,
     // picking the less-accurate Real over the exact Pi/A. Lists are
@@ -3146,10 +3142,10 @@ pub fn accuracy_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       Ok(match min_finite {
         Some(v) => Expr::Real(v),
-        None => Expr::Identifier("Infinity".to_string()),
+        None => id_expr("Infinity"),
       })
     }
-    _ => Ok(Expr::Identifier("Infinity".to_string())),
+    _ => Ok(id_expr("Infinity")),
   }
 }
 
@@ -5342,17 +5338,11 @@ pub fn list_fourier_sequence_transform_ast(
       // a_k * E^(-I * omega * k)
       let k_expr = Expr::Integer(k as i128);
       // -I * omega * k
-      let exponent = Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![
-          Expr::Integer(-1),
-          Expr::Identifier("I".to_string()),
-          omega.clone(),
-          k_expr,
-        ]
-        .into(),
-      };
-      let exp_term = pow2(Expr::Identifier("E".to_string()), exponent);
+      let exponent = call(
+        "Times",
+        vec![Expr::Integer(-1), id_expr("I"), omega.clone(), k_expr],
+      );
+      let exp_term = pow2(id_expr("E"), exponent);
       let term = times2(coeff.clone(), exp_term);
       terms.push(term);
     }
@@ -5377,16 +5367,8 @@ pub fn list_fourier_sequence_transform_ast(
 /// `Sinc[Pi/2]` → `2/Pi`, instead of being rounded back from a float.
 fn window_expr(name: &str, x: &Expr) -> Option<Expr> {
   // `k Pi x`, the argument of the trigonometric terms.
-  let pi_x = |k: i128| {
-    call(
-      "Times",
-      vec![
-        Expr::Integer(k),
-        Expr::Identifier("Pi".to_string()),
-        x.clone(),
-      ],
-    )
-  };
+  let pi_x =
+    |k: i128| call("Times", vec![Expr::Integer(k), id_expr("Pi"), x.clone()]);
   // Σ aₖ Cos[2πkx], the cosine-sum windows' common shape.
   let cosine_sum = |numerators: &[i128], denom: i128| {
     let terms: Vec<Expr> = numerators
@@ -5586,10 +5568,7 @@ pub fn tukey_window_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .into(),
   };
   let theta = div2(theta_num, alpha);
-  let cos = call(
-    "Cos",
-    vec![times2(Expr::Identifier("Pi".to_string()), theta)],
-  );
+  let cos = call("Cos", vec![times2(id_expr("Pi"), theta)]);
   crate::evaluator::evaluate_expr_to_expr(&div2(
     call("Plus", vec![Expr::Integer(1), cos]),
     Expr::Integer(2),
@@ -5781,15 +5760,10 @@ pub fn bohman_window_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Exact: (1 - 2 Abs[x]) Cos[2 Pi Abs[x]] + Sin[2 Pi Abs[x]] / Pi.
   let abs_x = call1("Abs", x.clone());
-  let two_pi_absx = Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: vec![
-      Expr::Integer(2),
-      Expr::Identifier("Pi".to_string()),
-      abs_x.clone(),
-    ]
-    .into(),
-  };
+  let two_pi_absx = call(
+    "Times",
+    vec![Expr::Integer(2), id_expr("Pi"), abs_x.clone()],
+  );
   let one_minus_2ax = Expr::FunctionCall {
     name: "Plus".to_string(),
     args: vec![
@@ -5801,7 +5775,7 @@ pub fn bohman_window_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let cos = call1("Cos", two_pi_absx.clone());
   let sin = call1("Sin", two_pi_absx);
   let term1 = call("Times", vec![one_minus_2ax, cos]);
-  let term2 = div2(sin, Expr::Identifier("Pi".to_string()));
+  let term2 = div2(sin, id_expr("Pi"));
   crate::evaluator::evaluate_expr_to_expr(&call("Plus", vec![term1, term2]))
 }
 
@@ -6493,10 +6467,7 @@ fn root_sum_n_eval(poly_arg: &Expr, fn_arg: &Expr) -> Option<Expr> {
       name: "Plus".to_string(),
       args: vec![
         Expr::Real(sum_re),
-        call(
-          "Times",
-          vec![Expr::Real(sum_im), Expr::Identifier("I".to_string())],
-        ),
+        call("Times", vec![Expr::Real(sum_im), id_expr("I")]),
       ]
       .into(),
     })
@@ -6587,10 +6558,7 @@ pub(crate) fn root_n_eval(poly_arg: &Expr, k_arg: &Expr) -> Option<Expr> {
       name: "Plus".to_string(),
       args: vec![
         Expr::Real(re),
-        call(
-          "Times",
-          vec![Expr::Real(im), Expr::Identifier("I".to_string())],
-        ),
+        call("Times", vec![Expr::Real(im), id_expr("I")]),
       ]
       .into(),
     })
@@ -7147,7 +7115,7 @@ pub fn cosine_sum_window_ast(
                 name: "Times".to_string(),
                 args: vec![
                   Expr::Integer(2 * k as i128),
-                  Expr::Identifier("Pi".to_string()),
+                  id_expr("Pi"),
                   args[0].clone(),
                 ]
                 .into(),
@@ -7382,7 +7350,7 @@ pub fn parametric_window_ast(
     "PoissonWindow" => call(
       "Power",
       vec![
-        Expr::Identifier("E".to_string()),
+        id_expr("E"),
         call(
           "Times",
           vec![Expr::Integer(-2), alpha_expr, call1("Abs", args[0].clone())],
@@ -7406,11 +7374,7 @@ pub fn parametric_window_ast(
               "Cos",
               call(
                 "Times",
-                vec![
-                  Expr::Integer(2),
-                  Expr::Identifier("Pi".to_string()),
-                  args[0].clone(),
-                ],
+                vec![Expr::Integer(2), id_expr("Pi"), args[0].clone()],
               ),
             ),
           ],

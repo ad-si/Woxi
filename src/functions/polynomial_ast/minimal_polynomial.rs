@@ -1491,7 +1491,7 @@ fn char_poly_of_rational_matrix(
   let n = mat.len();
   // Build the symbolic matrix and let the evaluator take the determinant, so
   // the arithmetic stays exact.
-  let var = Expr::Identifier("MinimalPolynomial$r".to_string());
+  let var = id_expr("MinimalPolynomial$r");
   let rat_expr = |r: Rat| {
     if r.1 == 1 {
       Expr::Integer(r.0)
@@ -2367,7 +2367,7 @@ pub fn number_field_discriminant_ast(
     return unevaluated();
   }
   let ev = crate::evaluator::evaluate_expr_to_expr;
-  let var = Expr::Identifier("NumberFieldDiscriminant$x".to_string());
+  let var = id_expr("NumberFieldDiscriminant$x");
   let mp = ev(&call(
     "MinimalPolynomial",
     vec![args[0].clone(), var.clone()],

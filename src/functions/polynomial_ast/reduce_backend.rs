@@ -6,6 +6,7 @@
 //! theories fall through to Woxi's established specialized reducers without
 //! invoking an external process.
 
+use super::*;
 use num_bigint::BigInt;
 use num_traits::{One, ToPrimitive};
 use woxi_reduce::{Atom, Formula, Rational, Relation};
@@ -75,10 +76,7 @@ pub(super) fn try_linear_integer_reduce(args: &[Expr]) -> Option<Expr> {
         op: BinaryOperator::And,
         left: Box::new(call(
           "Element",
-          vec![
-            Expr::Identifier(target.name.clone()),
-            Expr::Identifier("Integers".to_string()),
-          ],
+          vec![Expr::Identifier(target.name.clone()), id_expr("Integers")],
         )),
         right: Box::new(expression),
       };
