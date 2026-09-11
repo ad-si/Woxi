@@ -1258,6 +1258,71 @@ mod check {
     );
     clear_state();
     assert_eq!(interpret(r#"Quiet[Check[1/0, "err"]]"#).unwrap(), "err");
+    // Both at once: the inner Quiet is still the deeper one.
+    clear_state();
+    assert_eq!(
+      interpret(r#"Quiet[Check[Quiet[1/0], "err"]]"#).unwrap(),
+      "ComplexInfinity"
+    );
+  }
+
+  // `General::stop` withholds a message from the output; it does not stop
+  // the message being generated, so `Check` keeps reacting to it. Before
+  // this, the fourth and later iterations returned the value — which in
+  // WLJS Notebook silently took a failed `.wln` parse for a successful one.
+  #[test]
+  fn check_still_fires_once_general_stop_suppresses_the_message() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"Table[Check[1/0, "F"], {6}]"#).unwrap(),
+      "{F, F, F, F, F, F}"
+    );
+    // The tag-filtered form counts the same way.
+    clear_state();
+    assert_eq!(
+      interpret(r#"Table[Check[1/0, "F", Power::infy], {6}]"#).unwrap(),
+      "{F, F, F, F, F, F}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(r#"Table[Check[1/0, "F", Part::partd], {6}]"#).unwrap(),
+      "{ComplexInfinity, ComplexInfinity, ComplexInfinity, \
+       ComplexInfinity, ComplexInfinity, ComplexInfinity}"
+    );
+    // Suppression does not change what `$MessageList` keeps: three of the
+    // message plus the `General::stop` notice.
+    clear_state();
+    assert_eq!(
+      interpret(r#"Table[Check[1/0, "F"], {6}]; Length[$MessageList]"#)
+        .unwrap(),
+      "4"
+    );
+  }
+
+  // `Check` reacts to messages, not to control flow.
+  #[test]
+  fn check_passes_control_flow_signals_through() {
+    clear_state();
+    assert_eq!(interpret(r#"Catch[Check[Throw[1], "F"]]"#).unwrap(), "1");
+    clear_state();
+    interpret(r#"f[] := Module[{}, Check[Return[7], "F"]; 99]"#).unwrap();
+    assert_eq!(interpret("f[]").unwrap(), "7");
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"r = {}; Do[Check[Break[], "F"]; AppendTo[r, t], {t, 3}]; r"#
+      )
+      .unwrap(),
+      "{}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"r = {}; Do[Check[Continue[], "F"]; AppendTo[r, t], {t, 3}]; r"#
+      )
+      .unwrap(),
+      "{}"
+    );
   }
 }
 

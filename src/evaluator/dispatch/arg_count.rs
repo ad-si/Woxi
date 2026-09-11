@@ -1198,7 +1198,9 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Read" => Some((1, 2)),
     "ReadLine" => Some((1, 1)),
     "ReadList" => Some((1, 3)),
-    "ReadString" => Some((1, 2)),
+    // One or two positional arguments plus any number of option rules;
+    // `ReadString` itself reports `ReadString::argt` for a third positional.
+    "ReadString" => Some((1, usize::MAX)),
     "RealAbs" => Some((1, 1)),
     "RealDigits" => Some((1, 4)),
     "RealExponent" => Some((1, 2)),

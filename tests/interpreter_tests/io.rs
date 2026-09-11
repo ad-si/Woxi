@@ -2910,6 +2910,130 @@ mod read_string {
       "expected iterm message, got {msgs:?}"
     );
   }
+
+  // A terminator may be a string pattern. The read returns the text before
+  // the first match and consumes the match. WLJS Notebook's `.wln` reader is
+  // written entirely in terms of this.
+  #[test]
+  fn a_pattern_terminator_reads_up_to_the_first_match() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"s = StringToStream["aaa%---%HEAD%---%\nbbb"]; \
+           ReadString[s, "%" ~~ Repeated["-", {1, 10}] ~~ "%HEAD%" \
+                          ~~ Repeated["-", {1, 10}] ~~ "%"]"#
+      )
+      .unwrap(),
+      "aaa"
+    );
+    // The match is consumed, so the next read starts after it. wolframscript
+    // answers `EndOfFile` here instead — see "ReadString" in
+    // tests/cli/comparison/mathematica/conformance_gaps.md.
+    assert_eq!(interpret("ReadString[s]").unwrap(), "\nbbb");
+
+    // A leading `___` puts the match at the very start: nothing comes before.
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"t = StringToStream["aaa%HEAD%rest"]; ReadString[t, ___ ~~ "%HEAD%"]"#
+      )
+      .unwrap(),
+      ""
+    );
+
+    // Alternatives and anchors work, and `StartOfLine` means a real line
+    // start rather than the start of what is left to read.
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"u = StringToStream["one\ntwo\nthree"]; \
+           {ReadString[u, EndOfLine | "\r"], ReadString[u, StartOfLine ~~ "three"]}"#
+      )
+      .unwrap(),
+      "{one, \ntwo\n}"
+    );
+  }
+
+  #[test]
+  fn a_pattern_terminator_that_does_not_match_reports_notfound() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"s = StringToStream["abc"]; ReadString[s, StartOfLine ~~ "zzz"]"#
+      )
+      .unwrap(),
+      "abc"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs
+        .iter()
+        .any(|m| m
+          .contains("ReadString::notfound: Specified terminator not found.")),
+      "expected notfound message, got {msgs:?}"
+    );
+    // Everything was consumed.
+    assert_eq!(interpret("ReadString[s]").unwrap(), "EndOfFile");
+  }
+
+  // An anchor or a repeat on its own is not a terminator, though the same
+  // construct inside an `Alternatives` or a `StringExpression` is.
+  #[test]
+  fn a_bare_anchor_is_not_a_terminator() {
+    clear_state();
+    // The stream number depends on how many streams the session has opened,
+    // so only the head and the terminator are pinned.
+    let unevaluated =
+      interpret(r#"ReadString[StringToStream["a\nb"], EndOfLine]"#).unwrap();
+    assert!(
+      unevaluated.starts_with("ReadString[InputStream[String, ")
+        && unevaluated.ends_with("], EndOfLine]"),
+      "expected an unevaluated ReadString, got {unevaluated}"
+    );
+    clear_state();
+    let unevaluated =
+      interpret(r#"ReadString[StringToStream["a-b"], Repeated["-", {1, 3}]]"#)
+        .unwrap();
+    assert!(
+      unevaluated.ends_with("], Repeated[-, {1, 3}]]"),
+      "expected an unevaluated ReadString, got {unevaluated}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(r#"ReadString[StringToStream["a\nb"], EndOfLine | "\r"]"#)
+        .unwrap(),
+      "a"
+    );
+  }
+
+  // Option rules may follow the terminator; a third positional argument is
+  // what `ReadString::argt` is about.
+  #[test]
+  fn options_follow_the_terminator() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"ReadString[StringToStream["a-b"], "-", TimeConstraint -> 10]"#
+      )
+      .unwrap(),
+      "a"
+    );
+    clear_state();
+    let unevaluated =
+      interpret(r#"ReadString[StringToStream["a-b"], "-", "x"]"#).unwrap();
+    assert!(
+      unevaluated.ends_with("], -, x]"),
+      "expected an unevaluated ReadString, got {unevaluated}"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "ReadString::argt: ReadString called with 3 arguments; \
+         1 or 2 arguments are expected."
+      )),
+      "expected argt message, got {msgs:?}"
+    );
+  }
 }
 
 mod read_list {

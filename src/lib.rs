@@ -594,11 +594,95 @@ thread_local! {
     /// `Symbol::tag` names of the messages generated during the current
     /// calculation, in order — the content of `$MessageList`.
     static MESSAGE_LIST: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    /// How many messages have been generated, by `Quiet` nesting depth and
+    /// by name.
+    ///
+    /// `Check` reacts to a message being *generated*, not to its being
+    /// printed, so a message `General::stop` withheld still triggers it —
+    /// `Do[Check[1/0, "F"], {6}]` is `"F"` six times in wolframscript, not
+    /// three. `CAPTURED_MESSAGES`, `MESSAGE_LIST` and the printed output all
+    /// stop at three, which is why `Check` cannot be read off them.
+    ///
+    /// The depth is recorded because only a `Quiet` *inside* the `Check`
+    /// stops it: `Check[Quiet[1/0], "F"]` is `ComplexInfinity` but
+    /// `Quiet[Check[1/0, "F"]]` is `"F"`. A `Check` counts the messages
+    /// generated at its own depth or above it, never the deeper ones.
+    ///
+    /// Unlike the other three this is never reset: only differences across a
+    /// `Check` are ever read, and a reset in between would make one negative.
+    /// It holds counts rather than a list of names so that a loop generating
+    /// millions of messages does not grow it.
+    static GENERATED_MESSAGES: RefCell<GeneratedMessages> =
+      RefCell::new(GeneratedMessages::default());
+}
+
+/// Counts of generated messages, indexed by `Quiet` nesting depth.
+/// See [`GENERATED_MESSAGES`].
+#[derive(Default)]
+struct GeneratedMessages {
+  by_depth: Vec<usize>,
+  by_name: std::collections::HashMap<String, Vec<usize>>,
+}
+
+impl GeneratedMessages {
+  fn record(&mut self, name: Option<String>, depth: usize) {
+    fn bump(counts: &mut Vec<usize>, depth: usize) {
+      if counts.len() <= depth {
+        counts.resize(depth + 1, 0);
+      }
+      counts[depth] += 1;
+    }
+    bump(&mut self.by_depth, depth);
+    if let Some(name) = name {
+      bump(self.by_name.entry(name).or_default(), depth);
+    }
+  }
+
+  fn upto(counts: &[usize], depth: usize) -> usize {
+    counts.iter().take(depth + 1).sum()
+  }
 }
 
 /// The `Symbol::tag` names behind `$MessageList`, oldest first.
 pub fn message_list_names() -> Vec<String> {
   MESSAGE_LIST.with(|m| m.borrow().clone())
+}
+
+/// The current `Quiet` nesting depth, which `Check` snapshots on entry.
+pub fn quiet_depth() -> usize {
+  QUIET_LEVEL.with(|level| *level.borrow())
+}
+
+/// How many messages have been generated so far at `Quiet` depth `depth` or
+/// above it, including the ones `General::stop` kept from printing.
+/// See [`GENERATED_MESSAGES`].
+pub fn generated_message_count(depth: usize) -> usize {
+  GENERATED_MESSAGES
+    .with(|m| GeneratedMessages::upto(&m.borrow().by_depth, depth))
+}
+
+/// How many times `name` (a `Symbol::tag`) has been generated so far at
+/// `Quiet` depth `depth` or above it.
+pub fn generated_message_count_of(name: &str, depth: usize) -> usize {
+  GENERATED_MESSAGES.with(|m| {
+    m.borrow()
+      .by_name
+      .get(name)
+      .map_or(0, |counts| GeneratedMessages::upto(counts, depth))
+  })
+}
+
+/// How many unimplemented built-in calls have been recorded so far. Woxi
+/// reports one as a warning, and `Check` treats it as it does a message.
+pub fn unimplemented_call_count() -> usize {
+  UNIMPLEMENTED_CALLS.with(|buffer| buffer.borrow().len())
+}
+
+/// Record a generated message for `Check`, whatever becomes of its display.
+fn note_generated_message(msg: &str) {
+  let name = message_name(msg);
+  let depth = quiet_depth();
+  GENERATED_MESSAGES.with(|m| m.borrow_mut().record(name, depth));
 }
 
 // Set of message tags suppressed via `Off[head::tag]`. Keys are formatted as
@@ -1004,6 +1088,7 @@ fn emit_message_core(msg: &str) -> (bool, Option<String>) {
   // it does outside — `Quiet[Do[{{1,2},{3,4}}[[1,1,1]], {10}]; $MessageList]`
   // is the same four entries — so this precedes the `is_quiet` check too.
   let mut stop_line: Option<String> = None;
+  let mut past_the_limit = false;
   if let Some(name) = message_name(msg)
     && name != "General::stop"
   {
@@ -1014,7 +1099,7 @@ fn emit_message_core(msg: &str) -> (bool, Option<String>) {
       *c
     });
     if count > 3 {
-      return (false, None);
+      past_the_limit = true;
     }
     if count == 3 {
       let stop = format!(
@@ -1026,6 +1111,11 @@ fn emit_message_core(msg: &str) -> (bool, Option<String>) {
         stop_line = Some(stop);
       }
     }
+  }
+  // `Check` watches generation, so it is told before the limit is applied.
+  note_generated_message(msg);
+  if past_the_limit {
+    return (false, None);
   }
   CAPTURED_MESSAGES.with(|buffer| {
     buffer.borrow_mut().push(msg.to_string());

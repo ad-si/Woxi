@@ -3004,6 +3004,66 @@ fn compile_string_pattern(
   )
 }
 
+/// Is `expr` something `ReadString` accepts as a terminator?
+///
+/// wolframscript takes a string, an `Alternatives` or `StringExpression` of
+/// any parts, a blank, and a character class, but refuses a bare anchor or
+/// repeat: `ReadString[s, StartOfLine ~~ "c"]` reads, `ReadString[s,
+/// StartOfLine]` reports `ReadString::iterm`. The head is what decides —
+/// `EndOfLine` alone is refused, `EndOfLine | "\r"` is not.
+pub(crate) fn is_read_terminator(expr: &Expr) -> bool {
+  match expr {
+    Expr::String(_) => true,
+    Expr::Identifier(name) | Expr::Constant(name) => matches!(
+      name.as_str(),
+      "DigitCharacter"
+        | "LetterCharacter"
+        | "WordCharacter"
+        | "WhitespaceCharacter"
+        | "HexadecimalCharacter"
+        | "PunctuationCharacter"
+    ),
+    Expr::Pattern { .. } => true,
+    Expr::FunctionCall { name, .. } => matches!(
+      name.as_str(),
+      "StringExpression"
+        | "Alternatives"
+        | "Blank"
+        | "BlankSequence"
+        | "BlankNullSequence"
+    ),
+    _ => false,
+  }
+}
+
+/// The byte range of the first match of the string pattern `pattern` inside
+/// `text`, searching from `from`. `None` when it does not match.
+///
+/// Anchors are resolved against the whole of `text`, not against the tail
+/// being searched, so a `StartOfLine` in the pattern means a real line start.
+/// `ReadString` uses this to stop at a pattern terminator.
+pub(crate) fn first_string_pattern_match(
+  text: &str,
+  from: usize,
+  pattern: &Expr,
+) -> Option<std::ops::Range<usize>> {
+  let (re, constraints) = compile_string_pattern(pattern, false)?.ok()?;
+  let mut i = from;
+  loop {
+    let caps = re.captures_at(text, i)?;
+    let m = caps.get(0)?;
+    if caps_satisfy_constraints(&caps, &constraints) {
+      return Some(m.range());
+    }
+    // Step one character past this match's start and look again.
+    let next = text[m.start()..].chars().next().map(char::len_utf8)?;
+    i = m.start() + next;
+    if i > text.len() {
+      return None;
+    }
+  }
+}
+
 /// Find all non-empty match spans (byte ranges) of `re` in `s` that satisfy the
 /// back-reference `constraints`. Scans left to right; with `overlapping` it
 /// advances one character past each match start, otherwise past the whole

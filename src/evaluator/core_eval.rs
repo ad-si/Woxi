@@ -2384,20 +2384,29 @@ pub fn evaluate_expr_to_expr_inner(
               _ => {}
             }
           }
-          let warnings_before = crate::get_captured_warnings().len();
-          let msgs_before = crate::get_captured_messages_raw().len();
+          // A message counts as soon as it is generated, even when
+          // `General::stop` withholds it from the output — so the counters
+          // rather than the captured-message buffer are what is compared.
+          // Only a `Quiet` deeper than this `Check` hides one from it.
+          let depth = crate::quiet_depth();
+          let mut tags: Vec<String> = Vec::new();
+          for spec in &args[2..] {
+            collect_message_tags(spec, &mut tags);
+          }
+          let tag_counts_before: Vec<usize> = tags
+            .iter()
+            .map(|tag| crate::generated_message_count_of(tag, depth))
+            .collect();
+          let messages_before = crate::generated_message_count(depth);
+          let unimplemented_before = crate::unimplemented_call_count();
           match evaluate_expr_to_expr(&args[0]) {
             Ok(result) => {
               let triggered = if args.len() == 2 {
-                crate::get_captured_warnings().len() > warnings_before
+                crate::generated_message_count(depth) > messages_before
+                  || crate::unimplemented_call_count() > unimplemented_before
               } else {
-                let mut tags: Vec<String> = Vec::new();
-                for spec in &args[2..] {
-                  collect_message_tags(spec, &mut tags);
-                }
-                let msgs = crate::get_captured_messages_raw();
-                msgs[msgs_before.min(msgs.len())..].iter().any(|m| {
-                  crate::message_name_of(m).is_some_and(|n| tags.contains(&n))
+                tags.iter().zip(&tag_counts_before).any(|(tag, before)| {
+                  crate::generated_message_count_of(tag, depth) > *before
                 })
               };
               if triggered {
@@ -2407,6 +2416,19 @@ pub fn evaluate_expr_to_expr_inner(
               }
               return Ok(result);
             }
+            // `Check` reacts to messages, not to control flow: a `Throw`,
+            // `Return`, `Break`, `Continue`, `Goto` or `Abort` raised inside
+            // it passes straight through, so `Catch[Check[Throw[1], "F"]]`
+            // is `1` and not `"F"`.
+            Err(
+              signal @ (InterpreterError::ReturnValue(_)
+              | InterpreterError::BreakSignal
+              | InterpreterError::ContinueSignal
+              | InterpreterError::ThrowValue(_, _)
+              | InterpreterError::Abort
+              | InterpreterError::TailCall(_)
+              | InterpreterError::GotoSignal(_)),
+            ) => return Err(signal),
             Err(_) => {
               return Err(InterpreterError::TailCall(Box::new(
                 args[1].clone(),

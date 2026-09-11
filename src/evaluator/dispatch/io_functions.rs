@@ -571,9 +571,9 @@ pub(crate) fn file_name_separator(args: &[Expr]) -> char {
   std::path::MAIN_SEPARATOR
 }
 
-/// The positional arguments of a `FileName*` call — everything that is not
-/// an option rule.
-pub(crate) fn file_name_positional(args: &[Expr]) -> Vec<&Expr> {
+/// The positional arguments of a call — everything that is not an option
+/// rule. Used by the `FileName*` family and by `ReadString`.
+pub(crate) fn positional_args(args: &[Expr]) -> Vec<&Expr> {
   args
     .iter()
     .filter(|arg| !matches!(arg, Expr::Rule { .. }))
@@ -1356,14 +1356,33 @@ pub fn dispatch_io_functions(
       });
     }
     // ReadString[src] — everything left in `src`;
-    // ReadString[src, term] — up to the next terminator.
+    // ReadString[src, term] — up to the next terminator, which is a literal
+    // string or a string pattern; option rules may follow either form.
     // `src` is a file path or an InputStream, which the read consumes.
     #[cfg(not(target_arch = "wasm32"))]
-    "ReadString" if args.len() == 1 || args.len() == 2 => {
-      // Only a string terminator is meaningful.
-      let terminator = match args.get(1) {
-        None => None,
-        Some(Expr::String(t)) if !t.is_empty() => Some(t.clone()),
+    "ReadString" if !args.is_empty() => {
+      let positional = positional_args(args);
+      if positional.len() > 2 {
+        crate::emit_message(&format!(
+          "ReadString::argt: ReadString called with {} arguments; \
+           1 or 2 arguments are expected.",
+          args.len()
+        ));
+        return Some(Ok(unevaluated("ReadString", args)));
+      }
+      // A terminator is either a literal string — the fast path, which stops
+      // at the first occurrence — or a string pattern such as
+      // `StartOfLine ~~ "%" ~~ ___ ~~ "%"`, which stops at the first match.
+      let mut terminator: Option<String> = None;
+      let mut terminator_pattern: Option<&Expr> = None;
+      match positional.get(1) {
+        None => {}
+        Some(Expr::String(t)) if !t.is_empty() => terminator = Some(t.clone()),
+        Some(other)
+          if crate::functions::string_ast::is_read_terminator(other) =>
+        {
+          terminator_pattern = Some(other);
+        }
         Some(other) => {
           crate::emit_message(&format!(
             "ReadString::iterm: Invalid terminator value {}.",
@@ -1371,9 +1390,9 @@ pub fn dispatch_io_functions(
           ));
           return Some(Ok(unevaluated("ReadString", args)));
         }
-      };
+      }
 
-      let (content, position, stream_id) = match &args[0] {
+      let (content, position, stream_id) = match positional[0] {
         Expr::String(path) => {
           let content = match command_file_spec(path) {
             Some(command) => run_command_capture(command),
@@ -1405,7 +1424,30 @@ pub fn dispatch_io_functions(
         _ => return Some(Ok(unevaluated("ReadString", args))),
       };
 
-      let rest = &content[position.min(content.len())..];
+      let position = position.min(content.len());
+      if let Some(pattern) = terminator_pattern {
+        if position == content.len() {
+          return Some(Ok(id_expr("EndOfFile")));
+        }
+        // The text before the match; the match itself is consumed. With no
+        // match wolframscript reports it and hands back all that is left.
+        let (text, end) = if let Some(m) =
+          crate::functions::string_ast::first_string_pattern_match(
+            &content, position, pattern,
+          ) {
+          (content[position..m.start].to_string(), m.end)
+        } else {
+          crate::emit_message(
+            "ReadString::notfound: Specified terminator not found.",
+          );
+          (content[position..].to_string(), content.len())
+        };
+        if let Some(id) = stream_id {
+          set_stream_position(id, end);
+        }
+        return Some(Ok(Expr::String(text)));
+      }
+      let rest = &content[position..];
       let Some((text, consumed)) =
         read_string_chunk(rest, terminator.as_deref())
       else {
@@ -2662,7 +2704,7 @@ pub fn dispatch_io_functions(
     }
     "FileNameSplit" if !args.is_empty() && args.len() <= 2 => {
       let sep = file_name_separator(args);
-      if let [Expr::String(s)] = file_name_positional(args).as_slice() {
+      if let [Expr::String(s)] = positional_args(args).as_slice() {
         let parts: Vec<Expr> = file_name_pieces(s, sep)
           .into_iter()
           .map(|part| Expr::String(part.to_string()))
@@ -2674,7 +2716,7 @@ pub fn dispatch_io_functions(
     "FileNameDepth" if !args.is_empty() && args.len() <= 2 => {
       // The depth is just how many components `FileNameSplit` reports.
       let sep = file_name_separator(args);
-      if let [Expr::String(s)] = file_name_positional(args).as_slice() {
+      if let [Expr::String(s)] = positional_args(args).as_slice() {
         return Some(Ok(Expr::Integer(file_name_pieces(s, sep).len() as i128)));
       }
       return Some(Ok(unevaluated("FileNameDepth", args)));
@@ -4118,7 +4160,7 @@ pub fn dispatch_io_functions(
       // The whole family splits and rejoins on the operating system's
       // separator, the one `FileNameSplit` and `FileNameTake` use.
       let sep = file_name_separator(args);
-      let positional = file_name_positional(args);
+      let positional = positional_args(args);
       if let Some(Expr::String(path)) = positional.first() {
         let n = match positional.get(1) {
           Some(spec) => expr_to_i128(spec)?,
@@ -4144,7 +4186,7 @@ pub fn dispatch_io_functions(
     }
     "FileNameTake" if !args.is_empty() && args.len() <= 3 => {
       let sep = file_name_separator(args);
-      let positional = file_name_positional(args);
+      let positional = positional_args(args);
       if let Some(Expr::String(path)) = positional.first() {
         let components = file_name_pieces(path, sep);
         let total = components.len() as i128;

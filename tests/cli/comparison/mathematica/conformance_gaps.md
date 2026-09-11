@@ -3517,6 +3517,32 @@ blurred data either. Woxi leaves any non-zero scale unevaluated.
 
 ## Import, export, units and system
 
+### A plain read after a pattern read still sees the rest of the stream
+
+`ReadString[stream, patt]` returns the text before the first match of `patt`
+and consumes the match. wolframscript implements that by pulling a
+10 000-character chunk into a buffer: later *pattern* reads consume from the
+buffer and continue correctly, but a later plain `ReadString[stream]` reads
+from the underlying file position instead, which the chunk already moved
+past. On anything under 10 000 characters that means the rest of the stream
+is simply lost:
+
+```sh
+wolframscript -code 's = StringToStream["aaa%HEAD%rest"]; {ReadString[s, ___ ~~ "%HEAD%"], ReadString[s]}'
+# {, EndOfFile}
+woxi eval 's = StringToStream["aaa%HEAD%rest"]; {ReadString[s, ___ ~~ "%HEAD%"], ReadString[s]}'
+# {, rest}
+```
+
+`StreamPosition` shows the same thing from the other side: after a pattern
+read wolframscript reports the chunk's file offset (10000, or the file size
+for a shorter file) where Woxi reports the logical position just past the
+match. Every value a pattern read *returns* agrees, including a whole
+sequence of them — WLJS Notebook's `.wln` reader is four pattern reads on one
+stream and gives identical text on both. Only mixing a pattern read with a
+plain read on the same stream diverges, which is why Woxi keeps the
+self-consistent behaviour rather than emulating the buffer.
+
 ### `ExampleData` bundles its own data and properties
 
 Woxi lists Wolfram's whole 228-entry `"NetworkGraph"` catalogue (so
