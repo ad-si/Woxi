@@ -517,10 +517,8 @@ pub fn graphics_symbolic_form(expr: &Expr) -> Option<Expr> {
         if let Some(polygon_points) = series_fill_polygon(s) {
           let fill_color = s.fill_color.unwrap_or(s.color);
           let opacity = s.fill_opacity.unwrap_or(0.2);
-          let styled_fill = Expr::FunctionCall {
-            name: "Opacity".to_string(),
-            args: vec![Expr::Real(opacity), rgb_expr(fill_color)].into(),
-          };
+          let styled_fill =
+            call("Opacity", vec![Expr::Real(opacity), rgb_expr(fill_color)]);
           let polygon = Expr::FunctionCall {
             name: "Polygon".to_string(),
             args: vec![Expr::List(
@@ -664,7 +662,7 @@ fn extract_part_ast_rest(
       // Integer index: access by position (return value, not rule)
       Expr::Integer(i) => {
         if *i == 0 {
-          return Ok(Expr::Identifier("Association".to_string()));
+          return Ok(id_expr("Association"));
         }
         if let Some((k, v)) = entry_at(*i) {
           return Ok(crate::functions::association_ast::assoc_entry_value(
@@ -719,7 +717,7 @@ fn extract_part_ast_rest(
                     pattern,
                     replacement,
                   } => ((**pattern).clone(), (**replacement).clone()),
-                  _ => (r.clone(), Expr::Identifier("Null".to_string())),
+                  _ => (r.clone(), null_expr()),
                 })
                 .collect(),
             )
@@ -897,7 +895,7 @@ fn extract_part_ast_rest(
     Expr::List(items) => {
       if idx == 0 {
         // Part[{...}, 0] returns the head, which is List
-        return Ok(Expr::Identifier("List".to_string()));
+        return Ok(id_expr("List"));
       }
       let len = items.len() as i64;
       let actual_idx = if idx < 0 { len + idx } else { idx - 1 };

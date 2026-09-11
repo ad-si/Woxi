@@ -66,3 +66,14 @@ pub fn bool_expr(b: bool) -> Expr {
 pub fn const_expr(name: &str) -> Expr {
   Expr::Constant(name.to_string())
 }
+
+pub fn id_expr(name: &str) -> Expr {
+  Expr::Identifier(name.to_string())
+}
+
+pub fn null_expr() -> Expr {
+  id_expr("Null")
+}
+pub fn fail_expr() -> Expr {
+  id_expr("$Failed")
+}

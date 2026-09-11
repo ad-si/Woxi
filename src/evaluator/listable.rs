@@ -497,7 +497,7 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
   match name {
     "$RecursionLimit" => Some(Expr::Integer(1024)),
     "$IterationLimit" => Some(Expr::Integer(4096)),
-    "$HistoryLength" => Some(Expr::Identifier("Infinity".to_string())),
+    "$HistoryLength" => Some(id_expr("Infinity")),
     // Wolframscript runs each script as a fresh session, so `$Line` —
     // the input-line counter — always reads as 1 regardless of how many
     // statements have been evaluated.
@@ -534,7 +534,7 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
     // (2^-1022), not the smallest subnormal — so their product rounds
     // cleanly to ~4.
     "$MinMachineNumber" => Some(Expr::Real(f64::MIN_POSITIVE)),
-    "$MaxPrecision" => Some(Expr::Identifier("Infinity".to_string())),
+    "$MaxPrecision" => Some(id_expr("Infinity")),
     "$MinPrecision" => Some(Expr::Integer(0)),
     "$SystemWordLength" => Some(Expr::Integer(usize::BITS as i128)),
     // -1 for little-endian, 1 for big-endian (Wolfram convention).
@@ -729,11 +729,7 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
         })
         .unwrap_or_else(|| {
           Expr::List(
-            vec![
-              Expr::Identifier("StandardForm".to_string()),
-              Expr::Identifier("TraditionalForm".to_string()),
-            ]
-            .into(),
+            vec![id_expr("StandardForm"), id_expr("TraditionalForm")].into(),
           )
         });
       if let Expr::List(box_items) = &box_forms {
@@ -797,11 +793,7 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
         })
         .unwrap_or_else(|| {
           Expr::List(
-            vec![
-              Expr::Identifier("StandardForm".to_string()),
-              Expr::Identifier("TraditionalForm".to_string()),
-            ]
-            .into(),
+            vec![id_expr("StandardForm"), id_expr("TraditionalForm")].into(),
           )
         });
       if let Expr::List(box_items) = &box_forms {
@@ -822,11 +814,7 @@ pub fn get_system_variable(name: &str) -> Option<Expr> {
     }
     // `$BoxForms` — the default box-form list, {StandardForm, TraditionalForm}.
     "$BoxForms" => Some(Expr::List(
-      vec![
-        Expr::Identifier("StandardForm".to_string()),
-        Expr::Identifier("TraditionalForm".to_string()),
-      ]
-      .into(),
+      vec![id_expr("StandardForm"), id_expr("TraditionalForm")].into(),
     )),
     // Fixed list of supported encodings, in wolframscript's exact order.
     // This is a registry-style list, not an alphabetical sort — EUC-JP

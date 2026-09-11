@@ -1825,7 +1825,7 @@ pub fn dispatch_math_functions(
     "StieltjesGamma" if args.len() == 1 => {
       let unevaluated = unevaluated("StieltjesGamma", args);
       return Some(Ok(match &args[0] {
-        Expr::Integer(0) => Expr::Identifier("EulerGamma".to_string()),
+        Expr::Integer(0) => id_expr("EulerGamma"),
         Expr::Integer(n) if *n >= 1 => unevaluated,
         Expr::Identifier(_) => unevaluated,
         other => {
@@ -2017,7 +2017,7 @@ pub fn dispatch_math_functions(
           return Some(Ok(Expr::Integer(0)));
         }
         Expr::Identifier(s) if s == "ComplexInfinity" => {
-          return Some(Ok(Expr::Identifier("Indeterminate".to_string())));
+          return Some(Ok(id_expr("Indeterminate")));
         }
         Expr::UnaryOp {
           op: UnaryOperator::Minus,
@@ -3379,14 +3379,8 @@ pub fn dispatch_math_functions(
           && matches!(&imin_expr, Expr::Integer(1))
           && matches!(&imax_expr, Expr::Identifier(s) if s == "Infinity")
         {
-          let result = Expr::FunctionCall {
-            name: "Plus".to_string(),
-            args: vec![
-              Expr::Integer(-1),
-              Expr::Identifier("GoldenRatio".to_string()),
-            ]
-            .into(),
-          };
+          let result =
+            call("Plus", vec![Expr::Integer(-1), id_expr("GoldenRatio")]);
           return Some(crate::evaluator::evaluate_expr_to_expr(&result));
         }
         if let (Expr::Integer(imin), Expr::Integer(imax)) =
@@ -5017,7 +5011,7 @@ fn qgamma_ast(z_expr: &Expr, q_expr: &Expr) -> Result<Expr, InterpreterError> {
   };
   if n <= 0 {
     // Poles at the non-positive integers.
-    return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+    return Ok(id_expr("ComplexInfinity"));
   }
   if n == 1 {
     // QGamma[1, q] = 1, but an inexact (machine-real) q yields an inexact 1.
@@ -5430,10 +5424,7 @@ fn substitute_complex_vars(expr: &Expr, vars: &[String]) -> Expr {
   match expr {
     Expr::Identifier(name) if vars.iter().any(|v| v == name) => plus2(
       call1("Re", Expr::Identifier(name.clone())),
-      times2(
-        Expr::Identifier("I".to_string()),
-        call1("Im", Expr::Identifier(name.clone())),
-      ),
+      times2(id_expr("I"), call1("Im", Expr::Identifier(name.clone()))),
     ),
     // `Re[z]`, `Im[z]`, `Arg[z]` for a complex-vars `z` are
     // primitives Wolfram emits as-is. `Arg[anything-with-z]` is also
@@ -5688,9 +5679,9 @@ fn group_imag_terms(expr: &Expr) -> Expr {
     };
   }
   let i_term = if matches!(imag, Expr::Integer(1)) {
-    Expr::Identifier("I".to_string())
+    id_expr("I")
   } else {
-    call("Times", vec![Expr::Identifier("I".to_string()), imag])
+    call("Times", vec![id_expr("I"), imag])
   };
   if real_parts.is_empty() {
     return crate::evaluator::evaluate_expr_to_expr(&i_term).unwrap_or(i_term);
@@ -6223,10 +6214,7 @@ fn complex_expand_recursive(expr: &Expr) -> Expr {
               let sinh_b = call1("Sinh", im);
               return ce_simplify(plus2(
                 times2(sin_a, cosh_b),
-                times2(
-                  Expr::Identifier("I".to_string()),
-                  times2(cos_a, sinh_b),
-                ),
+                times2(id_expr("I"), times2(cos_a, sinh_b)),
               ));
             }
             // Cos[a + I*b] = Cos[a]*Cosh[b] - I*Sin[a]*Sinh[b]
@@ -6237,10 +6225,7 @@ fn complex_expand_recursive(expr: &Expr) -> Expr {
               let sinh_b = call1("Sinh", im);
               return ce_simplify(minus2(
                 times2(cos_a, cosh_b),
-                times2(
-                  Expr::Identifier("I".to_string()),
-                  times2(sin_a, sinh_b),
-                ),
+                times2(id_expr("I"), times2(sin_a, sinh_b)),
               ));
             }
             // Sinh[a + I*b] = Sinh[a]*Cos[b] + I*Cosh[a]*Sin[b]
@@ -6251,10 +6236,7 @@ fn complex_expand_recursive(expr: &Expr) -> Expr {
               let sin_b = call1("Sin", im);
               return ce_simplify(plus2(
                 times2(sinh_a, cos_b),
-                times2(
-                  Expr::Identifier("I".to_string()),
-                  times2(cosh_a, sin_b),
-                ),
+                times2(id_expr("I"), times2(cosh_a, sin_b)),
               ));
             }
             // Tanh[a + I*b] = (Sinh[2a] + I*Sin[2b]) / (Cos[2b] + Cosh[2a]).
@@ -6273,7 +6255,7 @@ fn complex_expand_recursive(expr: &Expr) -> Expr {
               let imag_part = div2(sin_2b, denom);
               return ce_simplify(plus2(
                 real_part,
-                times2(Expr::Identifier("I".to_string()), imag_part),
+                times2(id_expr("I"), imag_part),
               ));
             }
             // Cosh[a + I*b] = Cosh[a]*Cos[b] + I*Sinh[a]*Sin[b]
@@ -6284,10 +6266,7 @@ fn complex_expand_recursive(expr: &Expr) -> Expr {
               let sin_b = call1("Sin", im);
               return ce_simplify(plus2(
                 times2(cosh_a, cos_b),
-                times2(
-                  Expr::Identifier("I".to_string()),
-                  times2(sinh_a, sin_b),
-                ),
+                times2(id_expr("I"), times2(sinh_a, sin_b)),
               ));
             }
             // Exp[a + I*b] = E^a*Cos[b] + I*E^a*Sin[b]
@@ -6297,7 +6276,7 @@ fn complex_expand_recursive(expr: &Expr) -> Expr {
               let sin_b = call1("Sin", im);
               return ce_simplify(plus2(
                 times2(exp_a.clone(), cos_b),
-                times2(Expr::Identifier("I".to_string()), times2(exp_a, sin_b)),
+                times2(id_expr("I"), times2(exp_a, sin_b)),
               ));
             }
             // Abs[a + I*b] = Sqrt[a^2 + b^2]
@@ -6326,10 +6305,7 @@ fn complex_expand_recursive(expr: &Expr) -> Expr {
             let mag_sq =
               plus2(pow2(re, Expr::Integer(2)), pow2(im, Expr::Integer(2)));
             let log_term = div2(call1("Log", mag_sq), Expr::Integer(2));
-            let arg_term = times2(
-              Expr::Identifier("I".to_string()),
-              call1("Arg", arg.clone()),
-            );
+            let arg_term = times2(id_expr("I"), call1("Arg", arg.clone()));
             return ce_simplify(plus2(log_term, arg_term));
           }
           // Real argument (im == 0): Abs[u] = Sqrt[u^2]. The im != 0 case is
@@ -6348,10 +6324,7 @@ fn complex_expand_recursive(expr: &Expr) -> Expr {
             });
           }
           "Conjugate" => {
-            return ce_simplify(minus2(
-              re,
-              times2(Expr::Identifier("I".to_string()), im),
-            ));
+            return ce_simplify(minus2(re, times2(id_expr("I"), im)));
           }
           _ => {}
         }
@@ -6392,7 +6365,7 @@ fn complex_expand_recursive(expr: &Expr) -> Expr {
           let sin_b = call1("Sin", inner_arg);
           return ce_simplify(plus2(
             times2(exp_a.clone(), cos_b),
-            times2(Expr::Identifier("I".to_string()), times2(exp_a, sin_b)),
+            times2(id_expr("I"), times2(exp_a, sin_b)),
           ));
         }
       }
@@ -6571,7 +6544,7 @@ fn trig_to_exp_recursive(expr: &Expr) -> Expr {
   match expr {
     Expr::FunctionCall { name, args } if args.len() == 1 => {
       let arg = trig_to_exp_recursive(&args[0]);
-      let i = Expr::Identifier("I".to_string());
+      let i = id_expr("I");
       let e = const_expr("E");
       let half = call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]);
       match name.as_str() {

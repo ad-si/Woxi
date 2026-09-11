@@ -996,9 +996,7 @@ fn expr_tree_decompose(e: &Expr) -> Option<(Expr, Vec<Expr>)> {
     Expr::FunctionCall { name, args } => {
       Some((Expr::Identifier(name.clone()), args.to_vec()))
     }
-    Expr::List(items) => {
-      Some((Expr::Identifier("List".to_string()), items.to_vec()))
-    }
+    Expr::List(items) => Some((id_expr("List"), items.to_vec())),
     Expr::CurriedCall { func, args } => Some(((**func).clone(), args.clone())),
     Expr::BinaryOp { .. }
     | Expr::UnaryOp { .. }
@@ -1016,10 +1014,7 @@ fn expr_tree_decompose(e: &Expr) -> Option<(Expr, Vec<Expr>)> {
 /// "HeadTrees" (see ExpressionTree docs).
 fn build_expression_tree(e: &Expr, structure: &str) -> Expr {
   match expr_tree_decompose(e) {
-    None => call(
-      "Tree",
-      vec![e.clone(), Expr::Identifier("None".to_string())],
-    ),
+    None => call("Tree", vec![e.clone(), id_expr("None")]),
     Some((head, args)) => {
       let children: Vec<Expr> = args
         .iter()
@@ -1027,7 +1022,7 @@ fn build_expression_tree(e: &Expr, structure: &str) -> Expr {
         .collect();
       let data = match structure {
         "Subexpressions" => e.clone(),
-        "Atoms" => Expr::Identifier("Null".to_string()),
+        "Atoms" => null_expr(),
         // A compound head becomes its own tree; an atomic head stays as-is.
         "HeadTrees" if expr_tree_decompose(&head).is_some() => {
           build_expression_tree(&head, "HeadTrees")
@@ -1284,10 +1279,7 @@ fn tree_replacement_value(v: &Expr) -> Expr {
   {
     v.clone()
   } else {
-    call(
-      "Tree",
-      vec![v.clone(), Expr::Identifier("None".to_string())],
-    )
+    call("Tree", vec![v.clone(), id_expr("None")])
   }
 }
 
@@ -3948,7 +3940,7 @@ pub fn dispatch_list_operations(
         return Some(Ok(Expr::FunctionCall {
           name: "WeightedData".to_string(),
           args: vec![
-            Expr::Identifier("Automatic".to_string()),
+            id_expr("Automatic"),
             Expr::List(vec![args[0].clone(), args[1].clone()].into()),
           ]
           .into(),
@@ -4178,10 +4170,7 @@ pub fn dispatch_list_operations(
             if is_tree(c) {
               c.clone()
             } else {
-              call(
-                "Tree",
-                vec![c.clone(), Expr::Identifier("None".to_string())],
-              )
+              call("Tree", vec![c.clone(), id_expr("None")])
             }
           })
           .collect();
@@ -4634,7 +4623,7 @@ pub fn dispatch_list_operations(
     }
     // TreeScan[f, tree] — apply f to every node's data bottom-up, for effect.
     "TreeScan" if args.len() == 2 => match tree_scan(&args[0], &args[1]) {
-      Ok(Some(())) => return Some(Ok(Expr::Identifier("Null".to_string()))),
+      Ok(Some(())) => return Some(Ok(null_expr())),
       Ok(None) => {
         crate::emit_message(&format!(
           "TreeScan::tree: Tree expected at position 2 in {}.",
@@ -5057,8 +5046,7 @@ pub fn dispatch_list_operations(
     // effects and returns Null, matching wolframscript.
     "Do" | "ParallelDo" if args.len() == 1 => {
       return Some(
-        crate::evaluator::evaluate_expr_to_expr(&args[0])
-          .map(|_| Expr::Identifier("Null".to_string())),
+        crate::evaluator::evaluate_expr_to_expr(&args[0]).map(|_| null_expr()),
       );
     }
     "Do" | "ParallelDo" if args.len() >= 2 => {
@@ -5256,7 +5244,7 @@ pub fn dispatch_list_operations(
     }
     // Composition[] -> Identity
     "Composition" if args.is_empty() => {
-      return Some(Ok(Expr::Identifier("Identity".to_string())));
+      return Some(Ok(id_expr("Identity")));
     }
     // Composition[f] -> f
     "Composition" if args.len() == 1 => {
@@ -5283,7 +5271,7 @@ pub fn dispatch_list_operations(
     }
     // RightComposition[] -> Identity
     "RightComposition" if args.is_empty() => {
-      return Some(Ok(Expr::Identifier("Identity".to_string())));
+      return Some(Ok(id_expr("Identity")));
     }
     // RightComposition[f] -> f
     "RightComposition" if args.len() == 1 => {
@@ -5473,7 +5461,7 @@ pub fn dispatch_list_operations(
       return Some(list_helpers_ast::tensor_expand_ast(&args[0]));
     }
     "Inner" if args.len() == 3 => {
-      let plus = Expr::Identifier("Plus".to_string());
+      let plus = id_expr("Plus");
       return Some(list_helpers_ast::inner_ast(
         &args[0], &args[1], &args[2], &plus,
       ));
@@ -7405,7 +7393,7 @@ pub fn dispatch_list_operations(
           return Some(Ok(Expr::Integer(min_val)));
         }
         // Empty Cycles → wolframscript returns Infinity (no moved points).
-        return Some(Ok(Expr::Identifier("Infinity".to_string())));
+        return Some(Ok(id_expr("Infinity")));
       }
       if let Expr::List(perm) = &args[0] {
         let mut min_val: Option<i128> = None;
@@ -9558,7 +9546,7 @@ fn build_sparse_array_csr(
   let make_outer = |inner: Expr| Expr::FunctionCall {
     name: "SparseArray".to_string(),
     args: vec![
-      Expr::Identifier("Automatic".to_string()),
+      id_expr("Automatic"),
       dims_list.clone(),
       default.clone(),
       inner,

@@ -2882,14 +2882,8 @@ pub fn dispatch_linear_algebra_functions(
         {
           use crate::functions::math_ast::make_rational;
           let cos_pi = |num: i128, den: i128| -> Expr {
-            let angle = Expr::FunctionCall {
-              name: "Times".to_string(),
-              args: vec![
-                make_rational(num, den),
-                Expr::Identifier("Pi".to_string()),
-              ]
-              .into(),
-            };
+            let angle =
+              call("Times", vec![make_rational(num, den), id_expr("Pi")]);
             call1("Cos", angle)
           };
           let times = |a: Expr, b: Expr| call("Times", vec![a, b]);
@@ -2975,14 +2969,7 @@ pub fn dispatch_linear_algebra_functions(
               // Simplify the fraction 2*exp/n
               let (snum, sden) = rat_reduce(2 * exp, n as i128);
               let angle = if sden == 1 {
-                Expr::FunctionCall {
-                  name: "Times".to_string(),
-                  args: vec![
-                    Expr::Integer(snum),
-                    Expr::Identifier("Pi".to_string()),
-                  ]
-                  .into(),
-                }
+                call("Times", vec![Expr::Integer(snum), id_expr("Pi")])
               } else {
                 Expr::FunctionCall {
                   name: "Times".to_string(),
@@ -2991,21 +2978,15 @@ pub fn dispatch_linear_algebra_functions(
                       "Rational",
                       vec![Expr::Integer(snum), Expr::Integer(sden)],
                     ),
-                    Expr::Identifier("Pi".to_string()),
+                    id_expr("Pi"),
                   ]
                   .into(),
                 }
               };
               // Build (Cos[angle] + I*Sin[angle]) / Sqrt[n]
               let cos_part = call1("Cos", angle.clone());
-              let sin_part = Expr::FunctionCall {
-                name: "Times".to_string(),
-                args: vec![
-                  Expr::Identifier("I".to_string()),
-                  call1("Sin", angle),
-                ]
-                .into(),
-              };
+              let sin_part =
+                call("Times", vec![id_expr("I"), call1("Sin", angle)]);
               let omega = call("Plus", vec![cos_part, sin_part]);
               let entry = call("Times", vec![omega, inv_sqrt_n.clone()]);
               row.push(entry);
@@ -3225,7 +3206,7 @@ fn lu_decomposition_ast(mat: &Expr) -> Result<Expr, InterpreterError> {
     let perm_data = Expr::List(
       vec![
         call1("Cycles", Expr::List(vec![].into())),
-        Expr::Identifier("Infinity".into()),
+        id_expr("Infinity"),
       ]
       .into(),
     );
@@ -3411,13 +3392,8 @@ fn lu_decomposition_ast(mat: &Expr) -> Result<Expr, InterpreterError> {
     Expr::Integer(0)
   };
 
-  let perm_data = Expr::List(
-    vec![
-      lu_pivots_to_cycles(&pivots),
-      Expr::Identifier("Infinity".into()),
-    ]
-    .into(),
-  );
+  let perm_data =
+    Expr::List(vec![lu_pivots_to_cycles(&pivots), id_expr("Infinity")].into());
 
   Ok(Expr::List(
     vec![
@@ -3494,7 +3470,7 @@ fn lu_infinity_condition(matrix: &[Vec<Expr>]) -> Expr {
   let norm_a = lu_infinity_norm(matrix);
 
   let Ok(inv) = evaluate_expr_to_expr(&call1("Inverse", orig)) else {
-    return Expr::Identifier("Infinity".into());
+    return id_expr("Infinity");
   };
   let mut inv_mat: Vec<Vec<Expr>> = Vec::with_capacity(n);
   match &inv {
@@ -3502,16 +3478,16 @@ fn lu_infinity_condition(matrix: &[Vec<Expr>]) -> Expr {
       for row in rows {
         match row {
           Expr::List(cols) if cols.len() == n => inv_mat.push(cols.to_vec()),
-          _ => return Expr::Identifier("Infinity".into()),
+          _ => return id_expr("Infinity"),
         }
       }
     }
-    _ => return Expr::Identifier("Infinity".into()),
+    _ => return id_expr("Infinity"),
   }
   let norm_inv = lu_infinity_norm(&inv_mat);
   match (norm_a, norm_inv) {
     (Some(a), Some(b)) => Expr::Real(a * b),
-    _ => Expr::Identifier("Infinity".into()),
+    _ => id_expr("Infinity"),
   }
 }
 
@@ -3743,7 +3719,7 @@ fn binary_dissimilarity_ast(name: &str, a: &Expr, b: &Expr) -> Expr {
   };
 
   if den == 0 {
-    return Expr::Identifier("Indeterminate".to_string());
+    return id_expr("Indeterminate");
   }
 
   crate::functions::math_ast::make_rational(num, den)
@@ -4018,7 +3994,7 @@ fn matrix_power_2x2_symbolic_block(
   // Power[I, n]]`, which is mathematically wrong for symbolic n.
   let lam_power = |re: i128, im: i128| -> Expr {
     let base = if re == 0 && im == 1 {
-      Expr::Identifier("I".to_string())
+      id_expr("I")
     } else if re == 0 {
       call("Complex", vec![Expr::Integer(0), Expr::Integer(im)])
     } else {
@@ -4031,7 +4007,7 @@ fn matrix_power_2x2_symbolic_block(
 
   // `λ_1 − λ_2 = k·I`. Use Complex form for the same reason as above.
   let lambda_diff = if k == 1 {
-    Expr::Identifier("I".to_string())
+    id_expr("I")
   } else {
     call("Complex", vec![Expr::Integer(0), Expr::Integer(k)])
   };
@@ -4341,10 +4317,7 @@ fn rotation_matrix_plane(
   let e2 = evaluate_expr_to_expr(&call1("Normalize", w))?;
 
   let outer = |a: &Expr, b: &Expr| {
-    call(
-      "Outer",
-      vec![Expr::Identifier("Times".to_string()), a.clone(), b.clone()],
-    )
+    call("Outer", vec![id_expr("Times"), a.clone(), b.clone()])
   };
   let sin = call1("Sin", theta.clone());
   let cos_m1 =

@@ -315,7 +315,7 @@ pub fn dispatch_predicate_functions(
         return false_result();
       }
       // A fresh variable avoids any collision with symbols in the input.
-      let var = Expr::Identifier("AlgebraicIntegerQ$x".to_string());
+      let var = id_expr("AlgebraicIntegerQ$x");
       let mp = match evaluate_expr_to_expr(&call(
         "MinimalPolynomial",
         vec![args[0].clone(), var.clone()],

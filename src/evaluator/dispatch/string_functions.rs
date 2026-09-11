@@ -136,8 +136,8 @@ pub fn dispatch_string_functions(
       if let Expr::String(_) = &args[0] {
         let te_args = vec![
           args[0].clone(),
-          Expr::Identifier("InputForm".to_string()),
-          Expr::Identifier("HoldComplete".to_string()),
+          id_expr("InputForm"),
+          id_expr("HoldComplete"),
         ];
         return Some(crate::functions::string_ast::to_expression_ast(&te_args));
       }

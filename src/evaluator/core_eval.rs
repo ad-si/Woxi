@@ -494,7 +494,7 @@ pub fn named_color_expr(name: &str) -> Option<Expr> {
 pub fn style_directive_expr(name: &str) -> Option<Expr> {
   let thickness =
     |size: &str| call1("Thickness", Expr::Identifier(size.to_string()));
-  let small = || Expr::Identifier("Small".to_string());
+  let small = || id_expr("Small");
   let dashing =
     |segments: Vec<Expr>| call1("Dashing", Expr::List(segments.into()));
   Some(match name {
@@ -584,9 +584,9 @@ fn evaluate_expr_to_expr_early_dispatch(
     }
     "CompoundExpression" => {
       if args.is_empty() {
-        return Ok(Some(Expr::Identifier("Null".to_string())));
+        return Ok(Some(null_expr()));
       }
-      let mut result = Expr::Identifier("Null".to_string());
+      let mut result = null_expr();
       let mut start_index = 0;
       'goto_loop: loop {
         // `start_index` is reassigned on a Goto and only takes effect on the
@@ -628,10 +628,7 @@ fn evaluate_expr_to_expr_early_dispatch(
       } = &result
         && n == "Sequence"
       {
-        result = seq_args
-          .last()
-          .cloned()
-          .unwrap_or_else(|| Expr::Identifier("Null".to_string()));
+        result = seq_args.last().cloned().unwrap_or_else(null_expr);
       }
       return Ok(Some(result));
     }
@@ -649,7 +646,7 @@ fn evaluate_expr_to_expr_early_dispatch(
     }
     "RepeatedTiming" if args.len() == 1 => {
       let mut times = Vec::new();
-      let mut last_result = Expr::Identifier("Null".to_string());
+      let mut last_result = null_expr();
       let overall_start = web_time::Instant::now();
       for _ in 0..100 {
         let start = web_time::Instant::now();
@@ -1167,7 +1164,7 @@ pub fn evaluate_expr_to_expr_inner(
                 args[2].clone(),
               )));
             }
-            return Ok(Expr::Identifier("Null".to_string()));
+            return Ok(null_expr());
           }
           // Condition didn't evaluate to True/False - return unevaluated
           let mut new_args = vec![cond];
@@ -1339,9 +1336,9 @@ pub fn evaluate_expr_to_expr_inner(
             if had_value.is_none() {
               // No OwnValue was set. Mathematica still returns Null for
               // 'foo =.' even if foo was never defined, so do the same.
-              return Ok(Expr::Identifier("Null".to_string()));
+              return Ok(null_expr());
             }
-            return Ok(Expr::Identifier("Null".to_string()));
+            return Ok(null_expr());
           }
           // OwnValues[sym] =. clears the OwnValue for sym (equivalent to
           // sym =.). Wolfram returns Null whether or not the value was set.
@@ -1354,7 +1351,7 @@ pub fn evaluate_expr_to_expr_inner(
             && let Expr::Identifier(var_name) = &lhs_args[0]
           {
             ENV.with(|e| e.borrow_mut().remove(var_name));
-            return Ok(Expr::Identifier("Null".to_string()));
+            return Ok(null_expr());
           }
           // SubValues[sym] =. and DownValues[sym] =. clear the corresponding
           // function definitions for sym. A SubValue rule (from `f[a][b] =
@@ -1377,7 +1374,7 @@ pub fn evaluate_expr_to_expr_inner(
                 m.borrow_mut().remove(sym_name);
               });
             }
-            return Ok(Expr::Identifier("Null".to_string()));
+            return Ok(null_expr());
           }
           // UpValues[sym] =. removes every upvalue rule attached to
           // `sym`. Each rule lives in two places: `UPVALUES[sym]` (for
@@ -1393,7 +1390,7 @@ pub fn evaluate_expr_to_expr_inner(
             && let Expr::Identifier(sym_name) = &lhs_args[0]
           {
             crate::evaluator::assignment::clear_upvalues_of(sym_name);
-            return Ok(Expr::Identifier("Null".to_string()));
+            return Ok(null_expr());
           }
           // Messages[sym] =. — Woxi has no per-symbol message storage
           // yet; treat as a no-op success.
@@ -1405,7 +1402,7 @@ pub fn evaluate_expr_to_expr_inner(
             && lhs_args.len() == 1
             && matches!(&lhs_args[0], Expr::Identifier(_))
           {
-            return Ok(Expr::Identifier("Null".to_string()));
+            return Ok(null_expr());
           }
           // Pattern-based unset: f[args] =.
           // Requires a matching DownValue in FUNC_DEFS; otherwise Mathematica
@@ -1423,7 +1420,7 @@ pub fn evaluate_expr_to_expr_inner(
               crate::emit_message(&format!(
                 "Unset::norep: Assignment on {head} for {lhs_str} not found."
               ));
-              return Ok(Expr::Identifier("$Failed".to_string()));
+              return Ok(fail_expr());
             }
             // Reconstruct each entry's LHS pattern and remove only the entry
             // whose LHS matches the unset pattern. Two entries with the same
@@ -1491,12 +1488,12 @@ pub fn evaluate_expr_to_expr_inner(
               crate::emit_message(&format!(
                 "Unset::norep: Assignment on {head} for {lhs_str} not found."
               ));
-              return Ok(Expr::Identifier("$Failed".to_string()));
+              return Ok(fail_expr());
             }
             let _ = lhs_args;
-            return Ok(Expr::Identifier("Null".to_string()));
+            return Ok(null_expr());
           }
-          return Ok(Expr::Identifier("Null".to_string()));
+          return Ok(null_expr());
         }
         // Definition and FullDefinition have HoldAll in Wolfram, so their
         // argument stays unevaluated. Information has no Hold attribute —
@@ -2063,7 +2060,7 @@ pub fn evaluate_expr_to_expr_inner(
         // Special handling for Return - raises ReturnValue to short-circuit evaluation
         if name == "Return" {
           let val = if args.is_empty() {
-            Expr::Identifier("Null".to_string())
+            null_expr()
           } else {
             evaluate_expr_to_expr(&args[0])?
           };
@@ -2129,8 +2126,7 @@ pub fn evaluate_expr_to_expr_inner(
               // Caught. With a third argument, apply f to value and tag.
               if args.len() == 3 {
                 let f = evaluate_expr_to_expr(&args[2])?;
-                let tag_expr = thrown_tag
-                  .map_or_else(|| Expr::Identifier("Null".to_string()), |t| *t);
+                let tag_expr = thrown_tag.map_or_else(null_expr, |t| *t);
                 let application = if let Expr::Identifier(fname) = &f {
                   Expr::FunctionCall {
                     name: fname.clone(),
@@ -2231,7 +2227,7 @@ pub fn evaluate_expr_to_expr_inner(
           } else if args.len() >= 3 {
             evaluate_expr_to_expr(&args[2])?
           } else {
-            Expr::Identifier("Null".to_string())
+            null_expr()
           };
           let value = evaluate_expr_to_expr(&args[0])?;
           let failure = match name.as_str() {
@@ -2335,7 +2331,7 @@ pub fn evaluate_expr_to_expr_inner(
               // this thread, so it can only fire where evaluation stops to
               // wait. wolframscript behaves the same way.
               crate::functions::socket_ast::pump_socket_events();
-              return Ok(Expr::Identifier("Null".to_string()));
+              return Ok(null_expr());
             }
             _ => {
               let shown = evaluated.as_ref().unwrap_or(&args[0]);
@@ -3717,7 +3713,7 @@ pub fn evaluate_expr_to_expr_inner(
       Ok(bool_expr(true))
     }
     Expr::CompoundExpr(exprs) => {
-      let mut result = Expr::Identifier("Null".to_string());
+      let mut result = null_expr();
       let mut start_index = 0;
       'goto_loop: loop {
         // `start_index` is reassigned on a Goto and only takes effect on the
@@ -3758,10 +3754,7 @@ pub fn evaluate_expr_to_expr_inner(
       } = &result
         && n == "Sequence"
       {
-        result = seq_args
-          .last()
-          .cloned()
-          .unwrap_or_else(|| Expr::Identifier("Null".to_string()));
+        result = seq_args.last().cloned().unwrap_or_else(null_expr);
       }
       Ok(result)
     }

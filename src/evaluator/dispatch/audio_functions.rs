@@ -51,14 +51,10 @@ pub(super) fn dispatch_audio_functions(
     }
     // AudioCapture[] records from a microphone; this environment has no
     // audio input device, so it fails like wolframscript does headless.
-    "AudioCapture" if args.is_empty() => {
-      Some(Ok(Expr::Identifier("$Failed".to_string())))
-    }
+    "AudioCapture" if args.is_empty() => Some(Ok(fail_expr())),
     // WebAudioSearch requires the paid web audio search service; without
     // service credentials it fails.
-    "WebAudioSearch" if !args.is_empty() => {
-      Some(Ok(Expr::Identifier("$Failed".to_string())))
-    }
+    "WebAudioSearch" if !args.is_empty() => Some(Ok(fail_expr())),
     _ => None,
   }
 }
