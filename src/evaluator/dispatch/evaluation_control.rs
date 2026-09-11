@@ -80,7 +80,7 @@ pub fn dispatch_evaluation_control(
       return Some(evaluate_expr_to_expr(&stripped));
     }
     "TimeRemaining" if args.is_empty() => {
-      return Some(Ok(Expr::Identifier("Infinity".to_string())));
+      return Some(Ok(id_expr("Infinity")));
     }
     "Out" => {
       // `Out[]` is `Out[-1]`, and a negative index counts back from the
@@ -872,7 +872,7 @@ pub fn dispatch_evaluation_control(
         if args.len() >= 3 {
           return Some(evaluate_expr_to_expr(&args[2]));
         }
-        return Some(Ok(Expr::Identifier("Null".to_string())));
+        return Some(Ok(null_expr()));
       } else if args.len() == 4 {
         return Some(evaluate_expr_to_expr(&args[3]));
       }

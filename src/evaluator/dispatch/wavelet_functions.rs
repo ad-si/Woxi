@@ -58,7 +58,7 @@ pub(super) fn dispatch_wavelet_functions(
       {
         Some(crate::evaluator::function_application::apply_curried_call(
           &args[0],
-          &[Expr::Identifier("All".to_string())],
+          &[id_expr("All")],
         ))
       } else {
         None

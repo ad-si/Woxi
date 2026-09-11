@@ -87,7 +87,7 @@ pub fn dispatch_structural(
       });
       let mut compiled_args = vec![args[0].clone(), args[1].clone()];
       if listable {
-        compiled_args.push(Expr::Identifier("Listable".to_string()));
+        compiled_args.push(id_expr("Listable"));
       }
       return Some(Ok(call("CompiledFunction", compiled_args)));
     }
@@ -96,7 +96,7 @@ pub fn dispatch_structural(
         (expr_to_i128(&args[0]), expr_to_i128(&args[1]))
       {
         if d == 0 {
-          return Some(Ok(Expr::Identifier("ComplexInfinity".to_string())));
+          return Some(Ok(id_expr("ComplexInfinity")));
         }
         return Some(Ok(crate::functions::math_ast::make_rational(n, d)));
       }

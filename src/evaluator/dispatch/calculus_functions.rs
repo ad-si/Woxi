@@ -647,7 +647,7 @@ pub fn dispatch_calculus_functions(
         if idx_u < coeffs.len() {
           return Some(Ok(coeffs[idx_u].clone()));
         }
-        return Some(Ok(Expr::Identifier("Indeterminate".to_string())));
+        return Some(Ok(id_expr("Indeterminate")));
       }
       // SeriesCoefficient[f, {x, x0, n}]
       if let Expr::List(spec) = &args[1]
@@ -2212,7 +2212,7 @@ fn dirac_delta_derivative(k: i128, t: &str) -> Expr {
   Expr::CurriedCall {
     func: Box::new(Expr::CurriedCall {
       func: Box::new(call("Derivative", vec![Expr::Integer(k)])),
-      args: vec![Expr::Identifier("DiracDelta".to_string())],
+      args: vec![id_expr("DiracDelta")],
     }),
     args: vec![t_id],
   }
@@ -2815,15 +2815,11 @@ fn mellin_transform(
     let result = make_times(vec![
       expr.clone(),
       Expr::Integer(2),
-      Expr::Identifier("Pi".to_string()),
-      Expr::FunctionCall {
-        name: "DiracDelta".to_string(),
-        args: vec![make_times(vec![
-          Expr::Identifier("I".to_string()),
-          s_expr.clone(),
-        ])]
-        .into(),
-      },
+      id_expr("Pi"),
+      call(
+        "DiracDelta",
+        vec![make_times(vec![id_expr("I"), s_expr.clone()])],
+      ),
     ]);
     return crate::evaluator::evaluate_expr_to_expr(&result);
   };
@@ -2883,7 +2879,7 @@ fn inverse_mellin_inner(
   x: &Expr,
 ) -> Option<(Expr, bool)> {
   let neg = |e: Expr| make_times(vec![Expr::Integer(-1), e]);
-  let e_pow = |e: Expr| pow2(Expr::Identifier("E".to_string()), e);
+  let e_pow = |e: Expr| pow2(id_expr("E"), e);
   let is_s = |e: &Expr| matches!(e, Expr::Identifier(v) if v == sv);
   let is_pi = |e: &Expr| {
     matches!(e, Expr::Constant(c) if c == "Pi")
@@ -3216,11 +3212,8 @@ fn mellin_inner(expr: &Expr, x: &str, s: &Expr) -> Option<Expr> {
   let two_pi_delta = |arg: Expr| -> Expr {
     make_times(vec![
       Expr::Integer(2),
-      Expr::Identifier("Pi".to_string()),
-      call(
-        "DiracDelta",
-        vec![make_times(vec![Expr::Identifier("I".to_string()), arg])],
-      ),
+      id_expr("Pi"),
+      call("DiracDelta", vec![make_times(vec![id_expr("I"), arg])]),
     ])
   };
   let gamma = |arg: Expr| -> Expr { call1("Gamma", arg) };
@@ -3376,15 +3369,8 @@ fn mellin_inner(expr: &Expr, x: &str, s: &Expr) -> Option<Expr> {
         // displayed via Pi Csc[Pi t] when p == 1.
         let core = if matches!(p, Expr::Integer(1)) {
           make_times(vec![
-            Expr::Identifier("Pi".to_string()),
-            Expr::FunctionCall {
-              name: "Csc".to_string(),
-              args: vec![make_times(vec![
-                Expr::Identifier("Pi".to_string()),
-                s_eff.clone(),
-              ])]
-              .into(),
-            },
+            id_expr("Pi"),
+            call("Csc", vec![make_times(vec![id_expr("Pi"), s_eff.clone()])]),
           ])
         } else {
           make_times(vec![
@@ -3415,7 +3401,7 @@ fn mellin_inner(expr: &Expr, x: &str, s: &Expr) -> Option<Expr> {
             return None;
           }
           let half_pi_s = make_times(vec![
-            Expr::Identifier("Pi".to_string()),
+            id_expr("Pi"),
             s.clone(),
             call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
           ]);
@@ -3451,15 +3437,8 @@ fn mellin_inner(expr: &Expr, x: &str, s: &Expr) -> Option<Expr> {
             return None;
           }
           Some(make_times(vec![
-            Expr::Identifier("Pi".to_string()),
-            Expr::FunctionCall {
-              name: "Csc".to_string(),
-              args: vec![make_times(vec![
-                Expr::Identifier("Pi".to_string()),
-                s.clone(),
-              ])]
-              .into(),
-            },
+            id_expr("Pi"),
+            call("Csc", vec![make_times(vec![id_expr("Pi"), s.clone()])]),
             make_power(s.clone(), Expr::Integer(-1)),
           ]))
         }
@@ -3527,10 +3506,7 @@ fn mellin_inner(expr: &Expr, x: &str, s: &Expr) -> Option<Expr> {
               half.clone(),
               make_times(vec![half.clone(), s.clone()]),
             ])),
-            make_power(
-              make_sqrt(Expr::Identifier("Pi".to_string())),
-              Expr::Integer(-1),
-            ),
+            make_power(make_sqrt(id_expr("Pi")), Expr::Integer(-1)),
             make_power(s.clone(), Expr::Integer(-1)),
           ]))
         }
@@ -4663,9 +4639,9 @@ fn simplify_domain_constraint(constraint: &Expr, var: &str) -> Expr {
                 name: "Inequality".to_string(),
                 args: vec![
                   indexed[i].1.clone(),
-                  Expr::Identifier("Less".to_string()),
+                  id_expr("Less"),
                   var_expr.clone(),
-                  Expr::Identifier("Less".to_string()),
+                  id_expr("Less"),
                   indexed[i + 1].1.clone(),
                 ].into(),
               });
@@ -6425,7 +6401,7 @@ fn fourier_sin_cos_transform_inner(
       };
       return Some(make_plus(vec![
         Expr::Real(value),
-        make_times(vec![Expr::Real(0.0), Expr::Identifier("I".to_string())]),
+        make_times(vec![Expr::Real(0.0), id_expr("I")]),
       ]));
     }
     // Integer w branch: produce symbolic value.

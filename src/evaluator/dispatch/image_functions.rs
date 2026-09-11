@@ -99,9 +99,7 @@ fn indexed_color_function(n: i128) -> Expr {
     args: vec![
       Expr::Integer(n),
       Expr::String("Indexed".to_string()),
-      Expr::List(
-        vec![Expr::Integer(1), Expr::Identifier("Infinity".to_string())].into(),
-      ),
+      Expr::List(vec![Expr::Integer(1), id_expr("Infinity")].into()),
       blend,
     ]
     .into(),
@@ -174,15 +172,8 @@ fn gradient_strip_image(controls: &[(f64, f64, f64)]) -> Expr {
       Expr::List(
         vec![
           option("ImageSize", Expr::Integer(250)),
-          option("ContentSelectable", Expr::Identifier("False".to_string())),
-          option(
-            "AspectRatio",
-            Expr::BinaryOp {
-              op: BinaryOperator::Divide,
-              left: Box::new(Expr::Integer(1)),
-              right: Box::new(Expr::Integer(8)),
-            },
-          ),
+          option("ContentSelectable", bool_expr(false)),
+          option("AspectRatio", div2(Expr::Integer(1), Expr::Integer(8))),
           option(
             "PlotRange",
             Expr::List(vec![unit_corner(0, 1), unit_corner(0, 1)].into()),
@@ -336,7 +327,7 @@ fn import_svg(path: &str, is_url: bool) -> Result<Expr, InterpreterError> {
     crate::emit_message(&format!(
       "Import::nffil: File {path} not found during Import."
     ));
-    return Ok(Expr::Identifier("$Failed".to_string()));
+    return Ok(fail_expr());
   }
   let svg = import_read_text(path, is_url)?;
   Ok(crate::graphics_result(svg))
@@ -353,7 +344,7 @@ fn import_pdf_element(
     crate::emit_message(&format!(
       "Import::nffil: File {path} not found during Import."
     ));
-    return Ok(Expr::Identifier("$Failed".to_string()));
+    return Ok(fail_expr());
   }
   use crate::functions::pdf_import;
   let pages =
@@ -377,7 +368,7 @@ fn import_pdf_element(
         crate::emit_message(&format!(
           "Import::noelem: The Import element \"{e}\" is not present when importing as PDF."
         ));
-        Ok(Expr::Identifier("$Failed".to_string()))
+        Ok(fail_expr())
       }
     },
     // {"Pages", n} — one page, counted from 1.
@@ -397,14 +388,14 @@ fn import_pdf_element(
       crate::emit_message(&format!(
         "Import::noelem: The Import element {{\"Pages\", {n}}} is not present when importing as PDF."
       ));
-      Ok(Expr::Identifier("$Failed".to_string()))
+      Ok(fail_expr())
     }
     Some(other) => {
       crate::emit_message(&format!(
         "Import::noelem: The Import element {} is not present when importing as PDF.",
         crate::syntax::expr_to_string(other)
       ));
-      Ok(Expr::Identifier("$Failed".to_string()))
+      Ok(fail_expr())
     }
   }
 }
@@ -439,7 +430,7 @@ fn import_json(
   let content = import_read_text(path, is_url)?;
   Ok(match serde_json::from_str::<serde_json::Value>(&content) {
     Ok(value) => json_value_to_expr(&value, raw),
-    Err(_) => Expr::Identifier("$Failed".to_string()),
+    Err(_) => fail_expr(),
   })
 }
 
@@ -459,10 +450,10 @@ fn import_netpbm(path: &str) -> Expr {
     crate::emit_message_to_stdout(&format!(
       "Import::nffil: File {path} not found during Import."
     ));
-    return Expr::Identifier("$Failed".to_string());
+    return fail_expr();
   }
   let Ok(bytes) = std::fs::read(crate::vfs::resolve(path)) else {
-    return Expr::Identifier("$Failed".to_string());
+    return fail_expr();
   };
   // A valid Netpbm stream starts with `P1`..`P6` followed by whitespace.
   let valid_magic = bytes.len() >= 3
@@ -474,12 +465,12 @@ fn import_netpbm(path: &str) -> Expr {
     crate::emit_message_to_stdout(
       "Import::fmterr: Cannot import data as PPM format.",
     );
-    return Expr::Identifier("$Failed".to_string());
+    return fail_expr();
   }
   // Magic looks plausible but Woxi doesn't yet parse Netpbm pixel data.
   // Return $Failed silently — matches wolframscript on a valid file when
   // parsing succeeds (no message; wolframscript returns `Image[…]`).
-  Expr::Identifier("$Failed".to_string())
+  fail_expr()
 }
 
 /// Import a host-registered virtual file (WASM). The browser host registers
@@ -523,7 +514,7 @@ fn import_virtual(
     let raw = matches!(element, Some("RawJSON"));
     return Ok(match serde_json::from_str::<serde_json::Value>(&content) {
       Ok(value) => json_value_to_expr(&value, raw),
-      Err(_) => Expr::Identifier("$Failed".to_string()),
+      Err(_) => fail_expr(),
     });
   }
 
@@ -671,7 +662,7 @@ fn exact_json_numbers(
 fn json_value_to_expr(value: &serde_json::Value, raw: bool) -> Expr {
   use serde_json::Value;
   match value {
-    Value::Null => Expr::Identifier("Null".to_string()),
+    Value::Null => null_expr(),
     Value::Bool(true) => bool_expr(true),
     Value::Bool(false) => bool_expr(false),
     Value::Number(n) => {
@@ -1186,12 +1177,12 @@ pub fn dispatch_image_functions(
           "Import::general: A format must be specified when importing \
            from a pipe.",
         );
-        return Some(Ok(Expr::Identifier("$Failed".to_string())));
+        return Some(Ok(fail_expr()));
       }
       let command = command_file_spec(&path).unwrap_or_default();
       let failed = || {
         crate::emit_message(&format!("Import::nffil: Cannot open {path}."));
-        Some(Ok(Expr::Identifier("$Failed".to_string())))
+        Some(Ok(fail_expr()))
       };
       let Some(bytes) = run_command_capture_bytes(command) else {
         return failed();
@@ -1404,7 +1395,7 @@ pub fn dispatch_image_functions(
                            string."
                         ),
                       });
-                      Expr::Identifier("$Failed".to_string())
+                      fail_expr()
                     }
                   }
                 }),
@@ -1820,7 +1811,7 @@ pub fn dispatch_image_functions(
           "Import::noelem: The Import element \"{element}\" is not present \
            when importing as {format}."
         ));
-        Some(Ok(Expr::Identifier("$Failed".to_string())))
+        Some(Ok(fail_expr()))
       };
 
       // `"Numeric" -> False` keeps every field as the string it was written
@@ -1933,7 +1924,7 @@ pub fn dispatch_image_functions(
                    {line} character: {character} in input string."
                 ),
               });
-              Expr::Identifier("$Failed".to_string())
+              fail_expr()
             }
           },
         ));
@@ -1945,7 +1936,7 @@ pub fn dispatch_image_functions(
       if format == "JSON" || format == "RawJSON" {
         if content.trim().is_empty() {
           crate::emit_message("Import::jsonnullinput: Data in input is null.");
-          return Some(Ok(Expr::Identifier("$Failed".to_string())));
+          return Some(Ok(fail_expr()));
         }
         let raw = format == "RawJSON";
         return Some(Ok(
@@ -1959,7 +1950,7 @@ pub fn dispatch_image_functions(
                 _ => parsed,
               }
             }
-            Err(_) => Expr::Identifier("$Failed".to_string()),
+            Err(_) => fail_expr(),
           },
         ));
       }
@@ -2000,7 +1991,7 @@ pub fn dispatch_image_functions(
           crate::emit_message(
             "Import::fmterr: Cannot import data as TSV format.",
           );
-          return Some(Ok(Expr::Identifier("$Failed".to_string())));
+          return Some(Ok(fail_expr()));
         }
         let trimmed = content.strip_suffix('\n').unwrap_or(&content);
         let rows: Vec<Vec<String>> = if trimmed.is_empty() {
@@ -2045,7 +2036,7 @@ pub fn dispatch_image_functions(
         crate::emit_message(
           "Import::fmterr: Cannot import data as CSV format.",
         );
-        return Some(Ok(Expr::Identifier("$Failed".to_string())));
+        return Some(Ok(fail_expr()));
       }
       if let Some(element) = &requested_element
         && !crate::functions::csv_ast::is_csv_element(element)

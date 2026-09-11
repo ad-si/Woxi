@@ -9,14 +9,10 @@ fn delete_missing_type(type_expr: &Expr) -> Expr {
     && name == "TypeSystem`Vector"
     && args.len() == 2
   {
-    return Expr::FunctionCall {
-      name: "TypeSystem`Vector".to_string(),
-      args: vec![
-        args[0].clone(),
-        Expr::Identifier("TypeSystem`AnyLength".to_string()),
-      ]
-      .into(),
-    };
+    return call(
+      "TypeSystem`Vector",
+      vec![args[0].clone(), id_expr("TypeSystem`AnyLength")],
+    );
   }
   type_expr.clone()
 }
@@ -1747,9 +1743,8 @@ fn evaluate_function_call_ast_inner(
     && matches!(&args[position], Expr::Identifier(s) | Expr::Constant(s) if s == "All")
   {
     let mut rewritten = args.to_vec();
-    rewritten[position] = Expr::List(
-      vec![Expr::Integer(0), Expr::Identifier("Infinity".to_string())].into(),
-    );
+    rewritten[position] =
+      Expr::List(vec![Expr::Integer(0), id_expr("Infinity")].into());
     return evaluate_function_call_ast(name, &rewritten);
   }
 
@@ -2199,7 +2194,7 @@ fn evaluate_function_call_ast_inner(
   if name == "EndPackage" && args.is_empty() {
     if !crate::has_package_context() {
       crate::emit_message("EndPackage::noctx: No previous context defined.");
-      return Ok(Expr::Identifier("Null".to_string()));
+      return Ok(null_expr());
     }
     crate::pop_context();
     if let Some(active) = crate::pop_context_path() {
@@ -2225,7 +2220,7 @@ fn evaluate_function_call_ast_inner(
       }
       crate::push_context_path(merged);
     }
-    return Ok(Expr::Identifier("Null".to_string()));
+    return Ok(null_expr());
   }
 
   // Needs["pkg`"] loads the file providing the context — from a paclet in a
@@ -2327,11 +2322,11 @@ fn evaluate_function_call_ast_inner(
     }
     if crate::utils::is_standard_distribution_context(ctx) {
       register_standard_context_symbols(ctx);
-      return Ok(Expr::Identifier("Null".to_string()));
+      return Ok(null_expr());
     }
     // An already-loaded context is not read a second time.
     if crate::packages_list().iter().any(|pkg| pkg == ctx) {
-      return Ok(Expr::Identifier("Null".to_string()));
+      return Ok(null_expr());
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
@@ -2364,7 +2359,7 @@ fn evaluate_function_call_ast_inner(
           "Get::noopen: Cannot open {requested}."
         ));
         crate::emit_message_to_stdout(&nocont);
-        return Ok(Expr::Identifier("$Failed".to_string()));
+        return Ok(fail_expr());
       };
       restore_path();
       result?;
@@ -2374,10 +2369,10 @@ fn evaluate_function_call_ast_inner(
         forget_alias();
         crate::emit_message_to_stdout(&nocont);
       }
-      return Ok(Expr::Identifier("Null".to_string()));
+      return Ok(null_expr());
     }
     #[cfg(target_arch = "wasm32")]
-    return Ok(Expr::Identifier("$Failed".to_string()));
+    return Ok(fail_expr());
   }
 
   // Package/message/system functions - no-op in Woxi, returns Null
@@ -2386,7 +2381,7 @@ fn evaluate_function_call_ast_inner(
     || name == "BeginPackage"
     || name == "ClearAttributes"
   {
-    return Ok(Expr::Identifier("Null".to_string()));
+    return Ok(null_expr());
   }
 
   // Off[Head::tag, ...] / On[Head::tag, ...] — toggle message suppression.
@@ -2411,7 +2406,7 @@ fn evaluate_function_call_ast_inner(
         }
       }
     }
-    return Ok(Expr::Identifier("Null".to_string()));
+    return Ok(null_expr());
   }
   // Remove[syms...] - fully remove the named symbols (drop env, defs,
   // attrs, options). Unlike Clear, a Removed symbol is gone from Names.
@@ -2431,7 +2426,7 @@ fn evaluate_function_call_ast_inner(
         crate::evaluator::assignment::remove_messages_of(sym);
       }
     }
-    return Ok(Expr::Identifier("Null".to_string()));
+    return Ok(null_expr());
   }
 
   // SetOptions[f] (no rules) returns the current options of `f`, matching
@@ -2683,7 +2678,7 @@ fn evaluate_function_call_ast_inner(
             .into(),
         ),
         Expr::List(vec![Expr::Integer(0)].into()),
-        Expr::Identifier("MachinePrecision".to_string()),
+        id_expr("MachinePrecision"),
         Expr::String("Unevaluated".to_string()),
       ]
       .into(),
@@ -4621,7 +4616,7 @@ fn evaluate_function_call_ast_inner(
           if let Expr::Rule { pattern, .. } = opt
             && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Method")
           {
-            **pattern = Expr::Identifier("GraphLayout".to_string());
+            **pattern = id_expr("GraphLayout");
           }
         }
       }
@@ -4635,7 +4630,7 @@ fn evaluate_function_call_ast_inner(
           });
         }
         forwarded.push(Expr::Rule {
-          pattern: Box::new(Expr::Identifier("GraphLayout".to_string())),
+          pattern: Box::new(id_expr("GraphLayout")),
           replacement: Box::new(Expr::List(spec.into())),
         });
       }
@@ -4850,7 +4845,7 @@ fn evaluate_function_call_ast_inner(
     {
       ga.push(Expr::List(
         vec![Expr::Rule {
-          pattern: Box::new(Expr::Identifier("GraphLayout".to_string())),
+          pattern: Box::new(id_expr("GraphLayout")),
           replacement: Box::new(Expr::String("TutteEmbedding".to_string())),
         }]
         .into(),
@@ -6248,7 +6243,7 @@ fn evaluate_function_call_ast_inner(
       };
       let wdist_to_expr = |d: f64| -> Expr {
         if d.is_infinite() {
-          Expr::Identifier("Infinity".to_string())
+          id_expr("Infinity")
         } else {
           Expr::Real(d)
         }
@@ -6286,7 +6281,7 @@ fn evaluate_function_call_ast_inner(
 
     let dist_to_expr = |d: i128| -> Expr {
       if d < 0 {
-        Expr::Identifier("Infinity".to_string())
+        id_expr("Infinity")
       } else {
         Expr::Integer(d)
       }
@@ -6374,7 +6369,7 @@ fn evaluate_function_call_ast_inner(
 
     let dist_to_expr = |d: i128| -> Expr {
       if d < 0 {
-        Expr::Identifier("Infinity".to_string())
+        id_expr("Infinity")
       } else {
         Expr::Integer(d)
       }
@@ -6538,7 +6533,7 @@ fn evaluate_function_call_ast_inner(
       // graph is strongly connected (every vertex reaches every other).
       let strongly_connected =
         all_dists.iter().all(|d| d.iter().all(|&x| x >= 0));
-      let infinity = || Expr::Identifier("Infinity".to_string());
+      let infinity = || id_expr("Infinity");
 
       match name {
         "GraphDiameter" => {
@@ -9633,10 +9628,10 @@ fn evaluate_function_call_ast_inner(
           crate::emit_message(&format!(
             "DeleteFile::fdnfnd: Directory or file \"{path}\" not found."
           ));
-          return Ok(Expr::Identifier("$Failed".to_string()));
+          return Ok(fail_expr());
         }
       }
-      return Ok(Expr::Identifier("Null".to_string()));
+      return Ok(null_expr());
     }
     // Non-string / non-list-of-strings argument: emit the
     // wolframscript-style type-error message and leave the call
@@ -9667,7 +9662,7 @@ fn evaluate_function_call_ast_inner(
         crate::emit_message(&format!(
           "RenameFile::fdnfnd: Directory or file \"{abs}\" not found."
         ));
-        return Ok(Expr::Identifier("$Failed".to_string()));
+        return Ok(fail_expr());
       }
     }
   }
@@ -9686,20 +9681,20 @@ fn evaluate_function_call_ast_inner(
           "RenameDirectory::fdnfnd: Directory or file \"{}\" not found.",
           to_abs(source)
         ));
-        return Ok(Expr::Identifier("$Failed".to_string()));
+        return Ok(fail_expr());
       }
       if crate::vfs::exists(dest) {
         crate::emit_message(&format!(
           "RenameDirectory::eexist: {dest} already exists."
         ));
-        return Ok(Expr::Identifier("$Failed".to_string()));
+        return Ok(fail_expr());
       }
       match std::fs::rename(
         crate::vfs::resolve(source),
         crate::vfs::resolve(dest),
       ) {
         Ok(()) => return Ok(Expr::String(to_abs(dest))),
-        Err(_) => return Ok(Expr::Identifier("$Failed".to_string())),
+        Err(_) => return Ok(fail_expr()),
       }
     }
     return Ok(unevaluated("RenameDirectory", args));
@@ -9723,12 +9718,12 @@ fn evaluate_function_call_ast_inner(
       crate::emit_message(&format!(
         "DeleteDirectory::dirnf: Directory {path} not found."
       ));
-      return Ok(Expr::Identifier("$Failed".to_string()));
+      return Ok(fail_expr());
     }
     match std::fs::remove_dir(&resolved) {
-      Ok(()) => return Ok(Expr::Identifier("Null".to_string())),
+      Ok(()) => return Ok(null_expr()),
       Err(_) => {
-        return Ok(Expr::Identifier("$Failed".to_string()));
+        return Ok(fail_expr());
       }
     }
   }
@@ -9744,18 +9739,18 @@ fn evaluate_function_call_ast_inner(
       crate::emit_message(&format!(
         "CopyFile::fdnfnd: Directory or file \"{abs}\" not found."
       ));
-      return Ok(Expr::Identifier("$Failed".to_string()));
+      return Ok(fail_expr());
     }
     if crate::vfs::exists(dest) {
       crate::emit_message(&format!("CopyFile::eexist: {dest} already exists."));
-      return Ok(Expr::Identifier("$Failed".to_string()));
+      return Ok(fail_expr());
     }
     match std::fs::copy(crate::vfs::resolve(source), crate::vfs::resolve(dest))
     {
       Ok(_) => return Ok(Expr::String(dest.clone())),
       Err(e) => {
         crate::emit_message(&format!("CopyFile::failed: {e}"));
-        return Ok(Expr::Identifier("$Failed".to_string()));
+        return Ok(fail_expr());
       }
     }
   }
@@ -9797,7 +9792,7 @@ fn evaluate_function_call_ast_inner(
         |e| e.to_string(),
       );
       crate::emit_message(&format!("CreateDirectory::failed: {message}"));
-      return Ok(Expr::Identifier("$Failed".to_string()));
+      return Ok(fail_expr());
     }
     if args.len() == 1 {
       if let Expr::String(path) = &args[0] {
@@ -9805,18 +9800,18 @@ fn evaluate_function_call_ast_inner(
           crate::emit_message(&format!(
             "CreateDirectory::eexist: {path} already exists."
           ));
-          return Ok(Expr::Identifier("$Failed".to_string()));
+          return Ok(fail_expr());
         }
         match std::fs::create_dir_all(crate::vfs::resolve(path)) {
           Ok(()) => return Ok(Expr::String(path.clone())),
           Err(e) => {
             crate::emit_message(&format!("CreateDirectory::failed: {e}"));
-            return Ok(Expr::Identifier("$Failed".to_string()));
+            return Ok(fail_expr());
           }
         }
       }
       // Non-string argument
-      return Ok(Expr::Identifier("$Failed".to_string()));
+      return Ok(fail_expr());
     }
   }
 
@@ -10856,7 +10851,7 @@ fn evaluate_function_call_ast_inner(
       _ => return unevaluated(),
     };
     // Base angle theta0: explicit, or the default Pi/2 - (n-1)*Pi/n.
-    let pi = || Expr::Identifier("Pi".to_string());
+    let pi = || id_expr("Pi");
     let base = theta.unwrap_or_else(|| {
       minus2(
         div2(pi(), Expr::Integer(2)),
@@ -10951,7 +10946,7 @@ fn evaluate_function_call_ast_inner(
         print!("{contents}");
       }
       crate::capture_stdout(contents.trim_end_matches('\n'));
-      return Ok(Expr::Identifier("Null".to_string()));
+      return Ok(null_expr());
     }
     crate::emit_message(&format!("General::noopen: Cannot open {path}."));
     return Ok(unevaluated("FilePrint", args));
@@ -10994,7 +10989,7 @@ fn evaluate_function_call_ast_inner(
 
   // Neural network layer/model functions return $Failed for invalid arguments
   if matches!(name, "TotalLayer" | "NetEncoder") {
-    return Ok(Expr::Identifier("$Failed".to_string()));
+    return Ok(fail_expr());
   }
 
   // Morphological operations: Opening, Closing, Erosion, Dilation —
@@ -11131,7 +11126,7 @@ fn evaluate_function_call_ast_inner(
 
   // ClearSystemCache[] - no-op, returns Null
   if name == "ClearSystemCache" {
-    return Ok(Expr::Identifier("Null".to_string()));
+    return Ok(null_expr());
   }
 
   // XML`Parser`XMLGetString[xml] — minimal stub: return an expression
@@ -11144,7 +11139,7 @@ fn evaluate_function_call_ast_inner(
     if let Expr::String(s) = &args[0]
       && !is_well_formed_xml(s)
     {
-      return Ok(Expr::Identifier("$Failed".to_string()));
+      return Ok(fail_expr());
     }
     return Ok(Expr::CurriedCall {
       func: Box::new(call1("XMLObject", Expr::String("Document".to_string()))),
@@ -13545,7 +13540,7 @@ fn bspline_structured(
     Expr::List(degrees.iter().map(|&d| Expr::Integer(d as i128)).collect());
   let closed: Expr = Expr::List((0..dim).map(|_| bool_expr(false)).collect());
   let mut net_slot: Vec<Expr> = net.to_vec();
-  net_slot.push(Expr::Identifier("Automatic".to_string()));
+  net_slot.push(id_expr("Automatic"));
   let knot_lists: Expr =
     Expr::List(knots.iter().map(|k| bspline_real_list(k)).collect());
   let zeros: Expr = Expr::List((0..dim).map(|_| Expr::Integer(0)).collect());
@@ -13559,7 +13554,7 @@ fn bspline_structured(
       Expr::List(net_slot.into()),
       knot_lists,
       zeros,
-      Expr::Identifier("MachinePrecision".to_string()),
+      id_expr("MachinePrecision"),
       Expr::String("Unevaluated".to_string()),
     ]
     .into(),

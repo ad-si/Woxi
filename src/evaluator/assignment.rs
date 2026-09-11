@@ -495,10 +495,7 @@ fn structural_subsumes(a: &[Expr], b: &[Expr]) -> Option<bool> {
   }
   let frozen_a = freeze_patterns(a)?;
   let frozen_b = freeze_patterns(b)?;
-  let as_call = |args: &[Expr]| Expr::FunctionCall {
-    name: "Woxi`RuleShape".to_string(),
-    args: args.to_vec().into(),
-  };
+  let as_call = |args: &[Expr]| call("Woxi`RuleShape", args.to_vec());
   let b_covers_a = crate::evaluator::pattern_matching::match_pattern(
     &as_call(&frozen_a),
     &as_call(b),
@@ -1461,7 +1458,7 @@ fn set_attributes_from_value(sym_name: &str, rhs_value: &Expr) -> Expr {
   }
 
   let Some(valid_attrs) = get_attributes(rhs_value) else {
-    return Expr::Identifier("$Failed".to_string());
+    return fail_expr();
   };
 
   // Replace all user-defined attributes for this symbol
@@ -1524,10 +1521,7 @@ fn set_extended_full_definition(
         if !matches!(&**pattern, Expr::Identifier(n) if n == head) {
           continue;
         }
-        let section_lhs = Expr::FunctionCall {
-          name: (*head).to_string(),
-          args: vec![Expr::Identifier(target.clone())].into(),
-        };
+        let section_lhs = call1(head, Expr::Identifier(target.clone()));
         set_ast(&section_lhs, replacement)?;
       }
     }
@@ -1611,7 +1605,7 @@ fn set_upvalues_from_rules(
     };
     tag_set_delayed_ast(&tag, &pattern_lhs, &body, false)?;
   }
-  Ok(Expr::Identifier("Null".to_string()))
+  Ok(null_expr())
 }
 
 /// Install `rules` as the own value of `sym` — the single
@@ -1635,7 +1629,7 @@ fn set_ownvalues_from_rules(
     };
     set_ast(&Expr::Identifier(sym.to_string()), &replacement)?;
   }
-  Ok(Expr::Identifier("Null".to_string()))
+  Ok(null_expr())
 }
 
 /// Helper for `DownValues[f] = rules` / `DownValues[f] := rules` (and the
@@ -1997,10 +1991,7 @@ fn try_assignment_upvalue(
   if tags.is_empty() {
     return None;
   }
-  let actual = Expr::FunctionCall {
-    name: head.to_string(),
-    args: vec![lhs.clone(), rhs.clone()].into(),
-  };
+  let actual = call(head, vec![lhs.clone(), rhs.clone()]);
   for tag in tags {
     let Some(entries) = crate::UPVALUES.with(|m| m.borrow().get(&tag).cloned())
     else {
@@ -2448,9 +2439,7 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
         _ => None,
       };
       if let Some(prec_real) = as_real {
-        Expr::List(
-          vec![prec_real, Expr::Identifier("Infinity".to_string())].into(),
-        )
+        Expr::List(vec![prec_real, id_expr("Infinity")].into())
       } else {
         // Non-numeric precision (`N[a, p_?test] := …` style) — keep
         // the user's spec verbatim, mirroring Wolfram's HoldPattern
@@ -2459,11 +2448,7 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
       }
     } else {
       Expr::List(
-        vec![
-          Expr::Identifier("MachinePrecision".to_string()),
-          Expr::Identifier("MachinePrecision".to_string()),
-        ]
-        .into(),
+        vec![id_expr("MachinePrecision"), id_expr("MachinePrecision")].into(),
       )
     };
     let canonical_lhs =
@@ -3173,7 +3158,7 @@ pub fn set_delayed_ast(
           }
         }
       });
-      return Ok(Expr::Identifier("Null".to_string()));
+      return Ok(null_expr());
     }
   }
 
@@ -3199,7 +3184,7 @@ pub fn set_delayed_ast(
         t,
         expr_to_string(lhs)
       ));
-      return Ok(Expr::Identifier("$Failed".to_string()));
+      return Ok(fail_expr());
     }
   }
 
@@ -3264,7 +3249,7 @@ pub fn set_delayed_ast(
     if matches!(&result, Expr::Identifier(s) if s == "$Failed") {
       return Ok(result);
     }
-    return Ok(Expr::Identifier("Null".to_string()));
+    return Ok(null_expr());
   }
 
   // Handle `NValues[sym] := rules` — same store as the Set form,
@@ -3310,7 +3295,7 @@ pub fn set_delayed_ast(
       let mut map = m.borrow_mut();
       map.insert(sym_name.clone(), entries);
     });
-    return Ok(Expr::Identifier("Null".to_string()));
+    return Ok(null_expr());
   }
 
   // `Format[expr, FORM] := …` (or its UpSet/UpSetDelayed cousins) registers
@@ -3348,7 +3333,7 @@ pub fn set_delayed_ast(
           ));
         });
       }
-      return Ok(Expr::Identifier("Null".to_string()));
+      return Ok(null_expr());
     }
   }
 
@@ -3365,7 +3350,7 @@ pub fn set_delayed_ast(
     let rhs_value = evaluate_expr_to_expr(body)?;
     let clear_head = clear_replaced_values(func_name, sym_name);
     set_downvalues_from_rules(&rhs_value, clear_head)?;
-    return Ok(Expr::Identifier("Null".to_string()));
+    return Ok(null_expr());
   }
 
   // Handle Options[f] := rules — same as Options[f] = rules (SetDelayed
@@ -3384,7 +3369,7 @@ pub fn set_delayed_ast(
     crate::FUNC_OPTIONS_DELAYED.with(|m| {
       m.borrow_mut().insert(sym_name.clone());
     });
-    return Ok(Expr::Identifier("Null".to_string()));
+    return Ok(null_expr());
   }
 
   // Handle UpValues[sym] := rules — same as `UpValues[sym] = rules`.
@@ -3432,7 +3417,7 @@ pub fn set_delayed_ast(
       crate::emit_message(&format!(
         "SetDelayed::write: Tag {func_name} in {lhs_str} is Protected."
       ));
-      return Ok(Expr::Identifier("$Failed".to_string()));
+      return Ok(fail_expr());
     }
 
     let mut params = Vec::new();
@@ -3928,7 +3913,7 @@ pub fn set_delayed_ast(
       });
     });
 
-    return Ok(Expr::Identifier("Null".to_string()));
+    return Ok(null_expr());
   }
 
   // Handle simple identifier assignment: a := expr (OwnValues)
@@ -3941,7 +3926,7 @@ pub fn set_delayed_ast(
       ));
       // wolframscript returns `$Failed` (not `Null`) from a rejected
       // `SetDelayed`, unlike `Set`, which returns its right-hand side.
-      return Ok(Expr::Identifier("$Failed".to_string()));
+      return Ok(fail_expr());
     }
     // If a `/; cond` clause was stripped from the LHS (or RHS), wrap the
     // body in `Condition[body, cond]` so the lookup can re-check the
@@ -3956,7 +3941,7 @@ pub fn set_delayed_ast(
       e.borrow_mut()
         .insert(var_name.clone(), StoredValue::ExprVal(stored_body))
     });
-    return Ok(Expr::Identifier("Null".to_string()));
+    return Ok(null_expr());
   }
 
   // SubValue form: f[a][b] := rhs (also deeper nestings like f[a][b][c])
@@ -3997,7 +3982,7 @@ pub fn set_delayed_ast(
           None => rules.push((evaluated_lhs, body.clone())),
         }
       });
-      return Ok(Expr::Identifier("Null".to_string()));
+      return Ok(null_expr());
     }
   }
 
@@ -4030,7 +4015,7 @@ fn list_element_accessor(
     Expr::FunctionCall {
       name: "Apply".to_string(),
       args: vec![
-        Expr::Identifier("Sequence".to_string()),
+        id_expr("Sequence"),
         call("Drop", vec![base.clone(), Expr::Integer(idx as i128)]),
       ]
       .into(),
@@ -4151,7 +4136,7 @@ fn collect_element_bindings(
                   Expr::FunctionCall {
                     name: "Apply".to_string(),
                     args: vec![
-                      Expr::Identifier("Sequence".to_string()),
+                      id_expr("Sequence"),
                       call(
                         "Drop",
                         vec![accessor.clone(), Expr::Integer(k as i128)],
@@ -4584,7 +4569,7 @@ pub fn downvalue_param_pattern(
   if name.starts_with("__opts") {
     return call(
       "Pattern",
-      vec![Expr::Identifier(name), call("OptionsPattern", Vec::new())],
+      vec![Expr::Identifier(name), call0("OptionsPattern")],
     );
   }
   Expr::Pattern {
@@ -4895,11 +4880,7 @@ pub fn tag_set_delayed_ast(
       },
       expr_to_string(lhs)
     ));
-    return Ok(if evaluate_rhs {
-      body
-    } else {
-      Expr::Identifier("$Failed".to_string())
-    });
+    return Ok(if evaluate_rhs { body } else { fail_expr() });
   }
 
   // Extract Condition from body: Condition[actual_body, test] → (actual_body, Some(test))
@@ -5275,7 +5256,7 @@ pub fn tag_set_delayed_ast(
   if evaluate_rhs {
     Ok(body)
   } else {
-    Ok(Expr::Identifier("Null".to_string()))
+    Ok(null_expr())
   }
 }
 
@@ -5297,10 +5278,10 @@ pub fn tag_unset_ast(tag: &Expr, lhs: &Expr) -> Result<Expr, InterpreterError> {
       if let Expr::FunctionCall { name, .. } = func.as_ref() {
         name.clone()
       } else {
-        return Ok(Expr::Identifier("Null".to_string()));
+        return Ok(null_expr());
       }
     }
-    _ => return Ok(Expr::Identifier("Null".to_string())),
+    _ => return Ok(null_expr()),
   };
 
   let lhs_str = expr_to_string(lhs);
@@ -5350,7 +5331,7 @@ pub fn tag_unset_ast(tag: &Expr, lhs: &Expr) -> Result<Expr, InterpreterError> {
     });
   }
 
-  Ok(Expr::Identifier("Null".to_string()))
+  Ok(null_expr())
 }
 
 /// Convert parser-level BinaryOp/UnaryOp/Comparison nodes that may appear on
@@ -5429,19 +5410,13 @@ pub fn upset_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
         _ => None,
       };
       if let Some(prec_real) = as_real {
-        Expr::List(
-          vec![prec_real, Expr::Identifier("Infinity".to_string())].into(),
-        )
+        Expr::List(vec![prec_real, id_expr("Infinity")].into())
       } else {
         prec_eval
       }
     } else {
       Expr::List(
-        vec![
-          Expr::Identifier("MachinePrecision".to_string()),
-          Expr::Identifier("MachinePrecision".to_string()),
-        ]
-        .into(),
+        vec![id_expr("MachinePrecision"), id_expr("MachinePrecision")].into(),
       )
     };
     let canonical_lhs =
@@ -5537,7 +5512,7 @@ pub fn upset_delayed_ast(
   }
 
   // UpSetDelayed returns Null
-  Ok(Expr::Identifier("Null".to_string()))
+  Ok(null_expr())
 }
 
 /// Drop every message (`sym::tag = "…"`) declared on `sym`. Messages live as

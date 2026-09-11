@@ -420,8 +420,7 @@ fn try_ast_pattern_replace_impl(
       }
       // The `List` head is itself a subexpression: `{a} /. x_Symbol :> f[x]`
       // becomes `f[List][f[a]]`. Keep the `List` node when the head is intact.
-      let new_head =
-        recurse(&Expr::Identifier("List".to_string()), &mut any_matched)?;
+      let new_head = recurse(&id_expr("List"), &mut any_matched)?;
       if any_matched {
         Ok(Some(match new_head {
           Expr::Identifier(ref h) if h == "List" => Expr::List(results.into()),
@@ -588,7 +587,7 @@ fn try_ast_pattern_replace_impl(
       let mut any = false;
       let np = recurse(sub_pat, &mut any)?;
       let nr = recurse(sub_rep, &mut any)?;
-      let new_head = recurse(&Expr::Identifier("Rule".to_string()), &mut any)?;
+      let new_head = recurse(&id_expr("Rule"), &mut any)?;
       if any {
         Ok(Some(match new_head {
           Expr::Identifier(ref h) if h == "Rule" => Expr::Rule {
@@ -608,8 +607,7 @@ fn try_ast_pattern_replace_impl(
       let mut any = false;
       let np = recurse(sub_pat, &mut any)?;
       let nr = recurse(sub_rep, &mut any)?;
-      let new_head =
-        recurse(&Expr::Identifier("RuleDelayed".to_string()), &mut any)?;
+      let new_head = recurse(&id_expr("RuleDelayed"), &mut any)?;
       if any {
         Ok(Some(match new_head {
           Expr::Identifier(ref h) if h == "RuleDelayed" => Expr::RuleDelayed {
@@ -1980,10 +1978,7 @@ fn try_symbol_replace_all(
           .unwrap_or_else(|| left.as_ref().clone());
         let new_right = try_symbol_replace_all(right, pattern_sym, replacement)
           .unwrap_or_else(|| right.as_ref().clone());
-        let power = |head: Expr| Expr::FunctionCall {
-          name: "Power".to_string(),
-          args: vec![head, Expr::Integer(-1)].into(),
-        };
+        let power = |head: Expr| call("Power", vec![head, Expr::Integer(-1)]);
         return Some(if pattern_sym == "Times" {
           build_with_head(vec![new_left, power(new_right)], replacement)
         } else {
@@ -3359,9 +3354,7 @@ fn full_form_head_args(expr: &Expr) -> Option<(Expr, Vec<Expr>)> {
     Expr::FunctionCall { name, args } => {
       Some((Expr::Identifier(name.clone()), args.to_vec()))
     }
-    Expr::List(items) => {
-      Some((Expr::Identifier("List".to_string()), items.to_vec()))
-    }
+    Expr::List(items) => Some((id_expr("List"), items.to_vec())),
     // `h[a][b]`: the head is the compound `h[a]`.
     Expr::CurriedCall { func, args } => Some(((**func).clone(), args.clone())),
     // Patterns and everything else go through the canonical decomposition,
@@ -4001,11 +3994,9 @@ fn head_and_args(expr: &Expr) -> Option<(Expr, Vec<Expr>)> {
     {
       Some(((**func).clone(), args.clone()))
     }
-    Expr::List(items) => {
-      Some((Expr::Identifier("List".to_string()), items.to_vec()))
-    }
+    Expr::List(items) => Some((id_expr("List"), items.to_vec())),
     Expr::Association(pairs) => Some((
-      Expr::Identifier("Association".to_string()),
+      id_expr("Association"),
       pairs
         .iter()
         .map(|(key, value)| Expr::Rule {

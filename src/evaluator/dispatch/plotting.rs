@@ -325,10 +325,7 @@ pub fn dispatch_plotting(
       // Substitute z -> x + I*y in f.
       let xy_expr = plus2(
         Expr::Identifier(xv.clone()),
-        times2(
-          Expr::Identifier("I".to_string()),
-          Expr::Identifier(yv.clone()),
-        ),
+        times2(id_expr("I"), Expr::Identifier(yv.clone())),
       );
       let body = crate::syntax::substitute_variable(&args[0], &zvar, &xy_expr);
       let modulus = call1("Abs", body);
@@ -401,12 +398,9 @@ pub fn dispatch_plotting(
               // {z, r} → corners (-r - r·I, r + r·I)
               let r = items[1].clone();
               let neg_r = call1("Minus", r.clone());
-              let corner_lo = plus2(
-                neg_r.clone(),
-                times2(neg_r.clone(), Expr::Identifier("I".to_string())),
-              );
-              let corner_hi =
-                plus2(r.clone(), times2(r, Expr::Identifier("I".to_string())));
+              let corner_lo =
+                plus2(neg_r.clone(), times2(neg_r.clone(), id_expr("I")));
+              let corner_hi = plus2(r.clone(), times2(r, id_expr("I")));
               (name.clone(), corner_lo, corner_hi)
             }
           }
@@ -418,10 +412,7 @@ pub fn dispatch_plotting(
       let yv = "y".to_string();
       let xy_expr = plus2(
         Expr::Identifier(xv.clone()),
-        times2(
-          Expr::Identifier("I".to_string()),
-          Expr::Identifier(yv.clone()),
-        ),
+        times2(id_expr("I"), Expr::Identifier(yv.clone())),
       );
       let pred = crate::syntax::substitute_variable(&args[0], &zvar, &xy_expr);
       let eval_part = |e: &Expr, part: &str| -> Expr {
@@ -577,7 +568,7 @@ pub fn dispatch_plotting(
           println!();
         }
         crate::capture_stdout("");
-        return Some(Ok(Expr::Identifier("Null".to_string())));
+        return Some(Ok(null_expr()));
       }
       // Printing consumes its arguments, so an `Unevaluated[…]` wrapper
       // comes off first: `Print[Unevaluated[Symbol]]` writes `Symbol`.
@@ -589,7 +580,7 @@ pub fn dispatch_plotting(
         println!("{display_str}");
       }
       crate::capture_stdout(&display_str);
-      Some(Ok(Expr::Identifier("Null".to_string())))
+      Some(Ok(null_expr()))
     }
     _ => None,
   }

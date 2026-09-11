@@ -1128,7 +1128,7 @@ pub fn for_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  Ok(Expr::Identifier("Null".to_string()))
+  Ok(null_expr())
 }
 
 /// AST-based With implementation - substitutes bindings into body before evaluation.
@@ -1161,7 +1161,7 @@ pub fn with_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let mut vars = Vec::new();
       for var in locals {
         // `With[{x := v}, …]` substitutes `v` unevaluated.
-        let init = var.init.unwrap_or(Expr::Identifier("Null".to_string()));
+        let init = var.init.unwrap_or(null_expr());
         let val = if var.delayed {
           init
         } else {

@@ -68,7 +68,7 @@ pub fn dispatch_boolean_functions(
     }
     "Return" => {
       let val = if args.is_empty() {
-        Expr::Identifier("Null".to_string())
+        null_expr()
       } else {
         args[0].clone()
       };

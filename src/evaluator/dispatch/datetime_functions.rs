@@ -226,7 +226,7 @@ pub fn dispatch_datetime_functions(
               Expr::List(vec![Expr::List(vec![start, end].into())].into()),
               Expr::String("Day".to_string()),
               Expr::String("Gregorian".to_string()),
-              Expr::Identifier("None".to_string()),
+              id_expr("None"),
             ]
             .into(),
           }));
@@ -273,9 +273,7 @@ pub fn dispatch_datetime_functions(
     "DateObject" => {
       // DateObject[] → current instant (same shape as `Now`)
       if args.is_empty() {
-        return Some(crate::evaluator::evaluate_expr_to_expr(
-          &Expr::Identifier("Now".to_string()),
-        ));
+        return Some(crate::evaluator::evaluate_expr_to_expr(&id_expr("Now")));
       }
       // `DateObject[date, granularity]` re-tags a date that is already a
       // `DateObject`: `DateObject[Now, "Hour"]` is the hour `Now` falls in,
@@ -323,7 +321,7 @@ pub fn dispatch_datetime_functions(
               inner_args
                 .get(3)
                 .cloned()
-                .unwrap_or_else(|| Expr::Identifier("None".to_string())),
+                .unwrap_or_else(|| id_expr("None")),
             );
           }
           return Some(Ok(call("DateObject", new_args)));

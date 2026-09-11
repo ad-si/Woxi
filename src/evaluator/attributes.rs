@@ -990,7 +990,7 @@ pub fn dispatch_attributes(
         _ => symbol_name(&args[0]).map(|n| vec![n]).unwrap_or_default(),
       };
       let Some(attr) = get_attributes(&args[1]) else {
-        return Some(Ok(Expr::Identifier("Null".to_string())));
+        return Some(Ok(null_expr()));
       };
 
       if !func_names.is_empty() {
@@ -1026,9 +1026,9 @@ pub fn dispatch_attributes(
           }
         });
         if locked {
-          return Some(Ok(Expr::Identifier("Null".to_string())));
+          return Some(Ok(null_expr()));
         }
-        return Some(Ok(Expr::Identifier("Null".to_string())));
+        return Some(Ok(null_expr()));
       }
     }
     "ClearAttributes" if args.len() == 2 => {
@@ -1085,7 +1085,7 @@ pub fn dispatch_attributes(
             }
           }
         });
-        return Some(Ok(Expr::Identifier("Null".to_string())));
+        return Some(Ok(null_expr()));
       }
     }
     "Protect" => {
@@ -1201,7 +1201,7 @@ pub fn dispatch_attributes(
           _ => {}
         }
       }
-      return Some(Ok(Expr::Identifier("Null".to_string())));
+      return Some(Ok(null_expr()));
     }
     "ClearAll" => {
       // `ClearAll` is `Block`'s localization without the putting-back: take
@@ -1230,7 +1230,7 @@ pub fn dispatch_attributes(
           _ => {}
         }
       }
-      return Some(Ok(Expr::Identifier("Null".to_string())));
+      return Some(Ok(null_expr()));
     }
     _ => {}
   }

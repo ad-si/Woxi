@@ -267,7 +267,7 @@ fn run_process_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "RunProcess::pbad: {} is not a valid RunProcess property.",
         crate::syntax::expr_to_string(other)
       ));
-      return Ok(Expr::Identifier("$Failed".to_string()));
+      return Ok(fail_expr());
     }
   };
   let input: Option<String> = match positional.get(2) {
@@ -340,7 +340,7 @@ fn run_process_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     crate::emit_message(&format!(
       "RunProcess::pnfd: Program {program} not found. Check Environment[\"PATH\"]."
     ));
-    Ok(Expr::Identifier("$Failed".to_string()))
+    Ok(fail_expr())
   };
   // A replaced environment also replaces the search path: the program name
   // is looked up in *its* `PATH`, not the interpreter's, which is the only
@@ -420,11 +420,10 @@ fn run_process_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // A process that was killed by a signal has no exit code.
   let exit_code = match status {
-    Ok(s) => s.code().map_or_else(
-      || Expr::Identifier("None".to_string()),
-      |c| Expr::Integer(i128::from(c)),
-    ),
-    Err(_) => Expr::Identifier("None".to_string()),
+    Ok(s) => s
+      .code()
+      .map_or_else(|| id_expr("None"), |c| Expr::Integer(i128::from(c))),
+    Err(_) => id_expr("None"),
   };
   let stdout =
     Expr::String(String::from_utf8_lossy(&stdout_bytes).into_owned());
@@ -725,7 +724,7 @@ fn write_string_to_channel(
     return Ok(unevaluated(caller, args));
   };
   write_targets_bytes(&targets, text.as_bytes(), caller)?;
-  Ok(Expr::Identifier("Null".to_string()))
+  Ok(null_expr())
 }
 
 /// Send `bytes` to a write target, appending for files. `caller` only names
@@ -1034,7 +1033,7 @@ pub(crate) fn evaluate_file(
         error,
         path.display()
       ));
-      Ok(Expr::Identifier("$Failed".to_string()))
+      Ok(fail_expr())
     }
     other => other,
   })
@@ -1050,7 +1049,7 @@ pub(crate) fn evaluate_source(content: &str) -> Result<Expr, InterpreterError> {
   // `interpret` reports a `Null` result as the "\0" display-suppression
   // sentinel; as the value of `Get` it is the symbol `Null` again.
   if result_str == "\0" {
-    return Ok(Expr::Identifier("Null".to_string()));
+    return Ok(null_expr());
   }
   // Take the value itself where the evaluation recorded one: reading its
   // display text back both loses whatever `OutputForm` does not spell out
@@ -1156,7 +1155,7 @@ pub fn dispatch_io_functions(
         // General::stop suppression, and reaches the same stream as
         // built-in messages.
         crate::emit_message(&format!("{sym_name}::{tag}: {filled}"));
-        return Some(Ok(Expr::Identifier("Null".to_string())));
+        return Some(Ok(null_expr()));
       }
     }
     // HTTPRequest[url] / HTTPRequest[url, assoc] / HTTPRequest[assoc] —
@@ -1178,7 +1177,7 @@ pub fn dispatch_io_functions(
     // CLI/snapshot test loop, so any other URL also returns $Failed.
     "URLFetch" if args.len() == 1 || args.len() == 2 => {
       if let Expr::String(_) = &args[0] {
-        return Some(Ok(Expr::Identifier("$Failed".to_string())));
+        return Some(Ok(fail_expr()));
       }
     }
     // Environment["name"] — return the named environment variable value
@@ -1186,7 +1185,7 @@ pub fn dispatch_io_functions(
       if let Expr::String(var_name) = &args[0] {
         return Some(Ok(match std::env::var(var_name) {
           Ok(val) => Expr::String(val),
-          Err(_) => Expr::Identifier("$Failed".to_string()),
+          Err(_) => fail_expr(),
         }));
       }
       return Some(Ok(unevaluated("Environment", args)));
@@ -1233,7 +1232,7 @@ pub fn dispatch_io_functions(
           pattern: Box::new(Expr::String(var.to_string())),
           replacement: Box::new(match std::env::var(var) {
             Ok(val) => Expr::String(val),
-            Err(_) => Expr::Identifier("None".to_string()),
+            Err(_) => id_expr("None"),
           }),
         }
       };
@@ -1306,11 +1305,7 @@ pub fn dispatch_io_functions(
         }
         other => matches!(apply_rule(other), Some(true)),
       };
-      return Some(Ok(if ok {
-        Expr::Identifier("Null".to_string())
-      } else {
-        Expr::Identifier("$Failed".to_string())
-      }));
+      return Some(Ok(if ok { null_expr() } else { fail_expr() }));
     }
     // Streams[] — return list of open streams (stdout and stderr)
     "Streams" if args.is_empty() => {
@@ -1350,7 +1345,7 @@ pub fn dispatch_io_functions(
           "ReadString::noopen: Cannot open {}.",
           filename
         ));
-        return Some(Ok(Expr::Identifier("$Failed".to_string())));
+        return Some(Ok(fail_expr()));
       };
       return Some(match String::from_utf8(bytes) {
         Ok(content) => Ok(Expr::String(content)),
@@ -1390,7 +1385,7 @@ pub fn dispatch_io_functions(
             crate::emit_message(&format!(
               "ReadString::noopen: Cannot open {path}."
             ));
-            return Some(Ok(Expr::Identifier("$Failed".to_string())));
+            return Some(Ok(fail_expr()));
           }
         }
         Expr::FunctionCall {
@@ -1403,7 +1398,7 @@ pub fn dispatch_io_functions(
           match get_stream_content(*id as usize) {
             Some((c, pos)) => (c, pos, Some(*id as usize)),
             None => {
-              return Some(Ok(Expr::Identifier("EndOfFile".to_string())));
+              return Some(Ok(id_expr("EndOfFile")));
             }
           }
         }
@@ -1414,7 +1409,7 @@ pub fn dispatch_io_functions(
       let Some((text, consumed)) =
         read_string_chunk(rest, terminator.as_deref())
       else {
-        return Some(Ok(Expr::Identifier("EndOfFile".to_string())));
+        return Some(Ok(id_expr("EndOfFile")));
       };
       if let Some(id) = stream_id {
         set_stream_position(id, position + consumed);
@@ -1451,7 +1446,7 @@ pub fn dispatch_io_functions(
         crate::emit_message_to_stdout(&format!(
           "StringTemplate::fnfnd: File \"{filename}\" not found."
         ));
-        return Some(Ok(Expr::Identifier("$Failed".to_string())));
+        return Some(Ok(fail_expr()));
       };
       let bound_args = if args.len() == 2 {
         Some(args[1].clone())
@@ -1488,7 +1483,7 @@ pub fn dispatch_io_functions(
             crate::emit_message_to_stdout(&format!(
               "XMLTemplate::fnfnd: File \"{filename}\" not found."
             ));
-            return Some(Ok(Expr::Identifier("$Failed".to_string())));
+            return Some(Ok(fail_expr()));
           }
         }
         // URL[…] / CloudObject[…] and other specifications are left
@@ -1532,7 +1527,7 @@ pub fn dispatch_io_functions(
           "Get::noopen: Cannot open {}.",
           path.display()
         ));
-        return Some(Ok(Expr::Identifier("$Failed".to_string())));
+        return Some(Ok(fail_expr()));
       };
       return Some(result);
     }
@@ -1558,7 +1553,7 @@ pub fn dispatch_io_functions(
       // Woxi keeps every built-in in one namespace, so there is nothing to
       // read and nothing to define.
       if crate::utils::is_standard_distribution_context(&filename) {
-        return Some(Ok(Expr::Identifier("Null".to_string())));
+        return Some(Ok(null_expr()));
       }
       // `"!command"` evaluates the code the command writes to its standard
       // output, the read counterpart of `Put["!command"]`.
@@ -1567,7 +1562,7 @@ pub fn dispatch_io_functions(
           crate::emit_message_to_stdout(&format!(
             "Get::noopen: Cannot open {filename}."
           ));
-          return Some(Ok(Expr::Identifier("$Failed".to_string())));
+          return Some(Ok(fail_expr()));
         };
         return Some(evaluate_source(&content));
       }
@@ -1580,7 +1575,7 @@ pub fn dispatch_io_functions(
         crate::emit_message_to_stdout(&format!(
           "Get::noopen: Cannot open {filename}."
         ));
-        return Some(Ok(Expr::Identifier("$Failed".to_string())));
+        return Some(Ok(fail_expr()));
       };
       return Some(result);
     }
@@ -1650,16 +1645,16 @@ pub fn dispatch_io_functions(
       // `"!command"` feeds the expressions to a command instead of a file.
       if let Some(command) = command_file_spec(&filename) {
         if run_command_with_input(command, to_write.as_bytes()) {
-          return Some(Ok(Expr::Identifier("Null".to_string())));
+          return Some(Ok(null_expr()));
         }
         crate::emit_message(&format!("Put::noopen: Cannot open {filename}."));
-        return Some(Ok(Expr::Identifier("$Failed".to_string())));
+        return Some(Ok(fail_expr()));
       }
       match std::fs::write(crate::vfs::resolve(&filename), to_write) {
-        Ok(()) => return Some(Ok(Expr::Identifier("Null".to_string()))),
+        Ok(()) => return Some(Ok(null_expr())),
         Err(_e) => {
           crate::emit_message(&format!("Put::noopen: Cannot open {filename}."));
-          return Some(Ok(Expr::Identifier("$Failed".to_string())));
+          return Some(Ok(fail_expr()));
         }
       }
     }
@@ -1684,12 +1679,12 @@ pub fn dispatch_io_functions(
         // A pipe has nothing to append to, so `"!command"` just runs.
         if let Some(command) = command_file_spec(&filename) {
           if run_command_with_input(command, to_write.as_bytes()) {
-            return Some(Ok(Expr::Identifier("Null".to_string())));
+            return Some(Ok(null_expr()));
           }
           crate::emit_message(&format!(
             "PutAppend::noopen: Cannot open {filename}."
           ));
-          return Some(Ok(Expr::Identifier("$Failed".to_string())));
+          return Some(Ok(fail_expr()));
         }
         if let Ok(mut file) = std::fs::OpenOptions::new()
           .create(true)
@@ -1700,16 +1695,16 @@ pub fn dispatch_io_functions(
             crate::emit_message(&format!(
               "PutAppend::noopen: Cannot open {filename}."
             ));
-            return Some(Ok(Expr::Identifier("$Failed".to_string())));
+            return Some(Ok(fail_expr()));
           }
         } else {
           crate::emit_message(&format!(
             "PutAppend::noopen: Cannot open {filename}."
           ));
-          return Some(Ok(Expr::Identifier("$Failed".to_string())));
+          return Some(Ok(fail_expr()));
         }
       }
-      return Some(Ok(Expr::Identifier("Null".to_string())));
+      return Some(Ok(null_expr()));
     }
     #[cfg(not(target_arch = "wasm32"))]
     "Export" if args.len() >= 2 => {
@@ -2212,7 +2207,7 @@ pub fn dispatch_io_functions(
         return Some(Ok(
           match crate::functions::xml_ast::xml_to_string(&args[0]) {
             Some(text) => Expr::String(text),
-            None => Expr::Identifier("$Failed".to_string()),
+            None => fail_expr(),
           },
         ));
       }
@@ -2229,7 +2224,7 @@ pub fn dispatch_io_functions(
         // back unevaluated.
         return Some(Ok(match export_string_json(&args[0], 0, compact) {
           Some(json) => Expr::String(json),
-          None => Expr::Identifier("$Failed".to_string()),
+          None => fail_expr(),
         }));
       }
       // "String" is the expression's own text: ExportString[{{1, 2}}, "String"]
@@ -2327,10 +2322,10 @@ pub fn dispatch_io_functions(
             let id_usize = *id as usize;
             match get_stream_content(id_usize) {
               Some((c, p)) => (c, p, Some(id_usize)),
-              None => return Some(Ok(Expr::Identifier("$Failed".to_string()))),
+              None => return Some(Ok(fail_expr())),
             }
           } else {
-            return Some(Ok(Expr::Identifier("$Failed".to_string())));
+            return Some(Ok(fail_expr()));
           }
         }
         _ => {
@@ -2338,7 +2333,7 @@ pub fn dispatch_io_functions(
           crate::emit_message(&format!(
             "Find::stream: {arg_str} is not a string, SocketObject, InputStream[ ] or OutputStream[ ]."
           ));
-          return Some(Ok(Expr::Identifier("$Failed".to_string())));
+          return Some(Ok(fail_expr()));
         }
       };
 
@@ -2360,7 +2355,7 @@ pub fn dispatch_io_functions(
       if let Some(id) = stream_id {
         set_stream_position(id, content.len());
       }
-      return Some(Ok(Expr::Identifier("EndOfFile".to_string())));
+      return Some(Ok(id_expr("EndOfFile")));
     }
     #[cfg(not(target_arch = "wasm32"))]
     "FindList" => {
@@ -2368,7 +2363,7 @@ pub fn dispatch_io_functions(
       // search strings (literal, case-sensitive substrings). Errors return
       // $Failed with the matching wolframscript message; a failed file in
       // a file LIST contributes a $Failed element instead.
-      let failed = || Some(Ok(Expr::Identifier("$Failed".to_string())));
+      let failed = || Some(Ok(fail_expr()));
       let call_display = || expr_to_output(&unevaluated("FindList", args));
       if args.len() < 2 {
         let (tag, noun) = if args.len() == 1 {
@@ -2455,7 +2450,7 @@ pub fn dispatch_io_functions(
           if !is_list {
             return failed();
           }
-          out.push(Expr::Identifier("$Failed".to_string()));
+          out.push(fail_expr());
           continue;
         };
         // A `"!command"` entry searches that command's output.
@@ -2473,7 +2468,7 @@ pub fn dispatch_io_functions(
             if !is_list {
               return failed();
             }
-            out.push(Expr::Identifier("$Failed".to_string()));
+            out.push(fail_expr());
           }
           Ok(content) => {
             for line in content.lines() {
@@ -2839,7 +2834,7 @@ pub fn dispatch_io_functions(
           crate::emit_message_to_stdout(&format!(
             "OpenRead::noopen: Cannot open {filename}."
           ));
-          return Some(Ok(Expr::Identifier("$Failed".to_string())));
+          return Some(Ok(fail_expr()));
         };
         StreamKind::Command(std::rc::Rc::new(RefCell::new(state)))
       } else {
@@ -2847,7 +2842,7 @@ pub fn dispatch_io_functions(
           crate::emit_message_to_stdout(&format!(
             "OpenRead::noopen: Cannot open {filename}."
           ));
-          return Some(Ok(Expr::Identifier("$Failed".to_string())));
+          return Some(Ok(fail_expr()));
         }
         // The stream is bound to the file the name resolves to now, so a
         // later `SetDirectory` cannot redirect reads from it.
@@ -2886,7 +2881,7 @@ pub fn dispatch_io_functions(
           crate::emit_message_to_stdout(&format!(
             "OpenWrite::noopen: Cannot open {filename}."
           ));
-          return Some(Ok(Expr::Identifier("$Failed".to_string())));
+          return Some(Ok(fail_expr()));
         };
         StreamKind::CommandSink(std::rc::Rc::new(RefCell::new(state)))
       } else {
@@ -3047,7 +3042,7 @@ pub fn dispatch_io_functions(
             if offset < bytes.len() {
               Some(Expr::Integer(bytes[offset] as i128))
             } else {
-              Some(Expr::Identifier("EndOfFile".to_string()))
+              Some(id_expr("EndOfFile"))
             }
           }
           Expr::String(s) if s == "Character8" => {
@@ -3057,7 +3052,7 @@ pub fn dispatch_io_functions(
               let c = bytes[offset] as char;
               Some(Expr::String(c.to_string()))
             } else {
-              Some(Expr::Identifier("EndOfFile".to_string()))
+              Some(id_expr("EndOfFile"))
             }
           }
           _ => None,
@@ -3168,7 +3163,7 @@ pub fn dispatch_io_functions(
           crate::emit_message_to_stdout(&format!(
             "OpenAppend::noopen: Cannot open {filename}."
           ));
-          return Some(Ok(Expr::Identifier("$Failed".to_string())));
+          return Some(Ok(fail_expr()));
         };
         StreamKind::CommandSink(std::rc::Rc::new(RefCell::new(state)))
       } else {
@@ -3207,14 +3202,10 @@ pub fn dispatch_io_functions(
       let id = register_stream("String".to_string(), StreamKind::Text(text));
       // Use Symbol `String` (not the string literal "String") so the
       // formatted form matches wolframscript: `InputStream[String, id]`.
-      return Some(Ok(Expr::FunctionCall {
-        name: "InputStream".to_string(),
-        args: vec![
-          Expr::Identifier("String".to_string()),
-          Expr::Integer(id as i128),
-        ]
-        .into(),
-      }));
+      return Some(Ok(call(
+        "InputStream",
+        vec![id_expr("String"), Expr::Integer(id as i128)],
+      )));
     }
     // Close[stream] — close an open stream
     "Close" if args.len() == 1 => {
@@ -3237,7 +3228,7 @@ pub fn dispatch_io_functions(
             // Close[FileStream] returns the file path as a String;
             // Close[StringToStream[…]] returns the symbol `String`.
             Some((_, StreamKind::Text(_))) => {
-              return Some(Ok(Expr::Identifier("String".to_string())));
+              return Some(Ok(id_expr("String")));
             }
             #[cfg(not(target_arch = "wasm32"))]
             Some((name, StreamKind::File(_))) => {
@@ -3389,7 +3380,7 @@ pub fn dispatch_io_functions(
             crate::emit_message(&format!(
               "OpenRead::noopen: Cannot open {path}."
             ));
-            return Some(Ok(Expr::Identifier("$Failed".to_string())));
+            return Some(Ok(fail_expr()));
           }
         }
         Expr::FunctionCall {
@@ -3401,7 +3392,7 @@ pub fn dispatch_io_functions(
             match get_stream_line_content(id) {
               Some((content, pos)) => (content, pos, Some(id)),
               None => {
-                return Some(Ok(Expr::Identifier("EndOfFile".to_string())));
+                return Some(Ok(id_expr("EndOfFile")));
               }
             }
           } else {
@@ -3415,7 +3406,7 @@ pub fn dispatch_io_functions(
 
       let remaining = &content[position.min(content.len())..];
       if remaining.is_empty() {
-        return Some(Ok(Expr::Identifier("EndOfFile".to_string())));
+        return Some(Ok(id_expr("EndOfFile")));
       }
 
       // Find end of line
@@ -3521,7 +3512,7 @@ pub fn dispatch_io_functions(
         let read_type = if args.len() == 2 {
           &args[1]
         } else {
-          &Expr::Identifier("Expression".to_string())
+          &id_expr("Expression")
         };
 
         // Handle list of types: Read[stream, {type1, type2, ...}]
@@ -3560,7 +3551,7 @@ pub fn dispatch_io_functions(
       {
         return Some(Err(e));
       }
-      return Some(Ok(Expr::Identifier("Null".to_string())));
+      return Some(Ok(null_expr()));
     }
     // WriteString[stream, "text1", "text2", ...] — write strings to a stream
     #[cfg(not(target_arch = "wasm32"))]
@@ -3758,12 +3749,12 @@ pub fn dispatch_io_functions(
             crate::emit_message(&format!(
               "Save::noopen: Cannot open {filename}."
             ));
-            return Some(Ok(Expr::Identifier("$Failed".to_string())));
+            return Some(Ok(fail_expr()));
           }
         }
       }
 
-      return Some(Ok(Expr::Identifier("Null".to_string())));
+      return Some(Ok(null_expr()));
     }
     // FileNames[] — list all files in current directory
     // FileNames["pattern"] — list files matching pattern
@@ -3920,7 +3911,7 @@ pub fn dispatch_io_functions(
         crate::emit_message(&format!(
           "FileFormat::nffil: File not found during FileFormat[{name}]."
         ));
-        return Some(Ok(Expr::Identifier("$Failed".to_string())));
+        return Some(Ok(fail_expr()));
       }
       return Some(Ok(unevaluated("FileFormat", args)));
     }
@@ -3977,7 +3968,7 @@ pub fn dispatch_io_functions(
       let Ok(data) = std::fs::read(&path) else {
         let abs = path.to_string_lossy();
         crate::emit_message(&format!("FileHash::noopen: Cannot open {abs}."));
-        return Some(Ok(Expr::Identifier("$Failed".to_string())));
+        return Some(Ok(fail_expr()));
       };
       let Some(hex) =
         crate::functions::string_ast::hash_bytes(&data, &hash_type)
@@ -3985,7 +3976,7 @@ pub fn dispatch_io_functions(
         crate::emit_message(&format!(
           "Hash::invhash: {hash_type} is not a valid Hash specification."
         ));
-        return Some(Ok(Expr::Identifier("$Failed".to_string())));
+        return Some(Ok(fail_expr()));
       };
       return Some(Ok(
         if let Some(result) =
@@ -4067,7 +4058,7 @@ pub fn dispatch_io_functions(
           crate::emit_message(&format!(
             "FileByteCount::fdnfnd: Directory or file \"{name}\" not found."
           ));
-          return Some(Ok(Expr::Identifier("$Failed".to_string())));
+          return Some(Ok(fail_expr()));
         }
       }
     }
@@ -4085,7 +4076,7 @@ pub fn dispatch_io_functions(
       crate::emit_message(&format!(
         "AbsoluteFileName::fdnfnd: Directory or file \"{name}\" not found."
       ));
-      return Some(Ok(Expr::Identifier("$Failed".to_string())));
+      return Some(Ok(fail_expr()));
     }
     // FindFile["name"] — return the absolute path if the file exists,
     // else `$Failed`. A context string like "MyPaclet`" resolves through
@@ -4101,18 +4092,18 @@ pub fn dispatch_io_functions(
             Some(path) => {
               Expr::String(crate::utils::wolfram_path_string(&path))
             }
-            None => Expr::Identifier("$Failed".to_string()),
+            None => fail_expr(),
           },
         ));
       }
       // Any other context-ish name can't be resolved to a file on disk.
       // Match wolframscript's `$Failed` return.
       if name.contains('`') {
-        return Some(Ok(Expr::Identifier("$Failed".to_string())));
+        return Some(Ok(fail_expr()));
       }
       return Some(Ok(match crate::utils::canonicalize(name) {
         Ok(p) => Expr::String(crate::utils::wolfram_path_string(&p)),
-        Err(_) => Expr::Identifier("$Failed".to_string()),
+        Err(_) => fail_expr(),
       }));
     }
     // FileNameDrop["path", n] — drop n path components
@@ -4220,7 +4211,7 @@ pub fn dispatch_io_functions(
         crate::capture_stdout_raw(&prompt);
       }
       let Some(line) = crate::read_stdin_line() else {
-        return Some(Ok(Expr::Identifier("EndOfFile".to_string())));
+        return Some(Ok(id_expr("EndOfFile")));
       };
       if name == "InputString" {
         return Some(Ok(Expr::String(line)));
@@ -4244,7 +4235,7 @@ fn read_single_type(remaining: &str, read_type: &Expr) -> (Expr, usize) {
   };
 
   if remaining.is_empty() {
-    return (Expr::Identifier("EndOfFile".to_string()), 0);
+    return (id_expr("EndOfFile"), 0);
   }
 
   match type_name {
@@ -4253,7 +4244,7 @@ fn read_single_type(remaining: &str, read_type: &Expr) -> (Expr, usize) {
       let trimmed = remaining.trim_start();
       let skipped = remaining.len() - trimmed.len();
       if trimmed.is_empty() {
-        return (Expr::Identifier("EndOfFile".to_string()), remaining.len());
+        return (id_expr("EndOfFile"), remaining.len());
       }
       // Read until whitespace
       let end = trimmed
@@ -4267,7 +4258,7 @@ fn read_single_type(remaining: &str, read_type: &Expr) -> (Expr, usize) {
       let trimmed = remaining.trim_start();
       let skipped = remaining.len() - trimmed.len();
       if trimmed.is_empty() {
-        return (Expr::Identifier("EndOfFile".to_string()), remaining.len());
+        return (id_expr("EndOfFile"), remaining.len());
       }
       // Try to parse a number
       let mut end = 0;
@@ -4292,7 +4283,7 @@ fn read_single_type(remaining: &str, read_type: &Expr) -> (Expr, usize) {
         }
       }
       if end == 0 || (!has_int_part && !is_real) {
-        return (Expr::Identifier("$Failed".to_string()), skipped);
+        return (fail_expr(), skipped);
       }
       let num_str = &trimmed[..end];
       if is_real {
@@ -4302,7 +4293,7 @@ fn read_single_type(remaining: &str, read_type: &Expr) -> (Expr, usize) {
       } else if let Ok(n) = num_str.parse::<i128>() {
         return (Expr::Integer(n), skipped + end);
       }
-      (Expr::Identifier("$Failed".to_string()), skipped)
+      (fail_expr(), skipped)
     }
     "String" => {
       // Read until newline
@@ -4325,7 +4316,7 @@ fn read_single_type(remaining: &str, read_type: &Expr) -> (Expr, usize) {
       let trimmed = remaining.trim_start();
       let skipped = remaining.len() - trimmed.len();
       if trimmed.is_empty() {
-        return (Expr::Identifier("EndOfFile".to_string()), remaining.len());
+        return (id_expr("EndOfFile"), remaining.len());
       }
       let bytes = trimmed.as_bytes();
       let mut i = 0;
@@ -4369,7 +4360,7 @@ fn read_single_type(remaining: &str, read_type: &Expr) -> (Expr, usize) {
         .and_then(|parsed| crate::evaluator::evaluate_expr_to_expr(&parsed));
       match value {
         Ok(expr) => (expr, advance),
-        Err(_) => (Expr::Identifier("$Failed".to_string()), advance),
+        Err(_) => (fail_expr(), advance),
       }
     }
   }
@@ -5248,13 +5239,13 @@ fn with_epilog(name: &str, args: &[Expr], markers: &Expr) -> Expr {
         _ => markers.clone(),
       };
       new_args[pos] = Expr::Rule {
-        pattern: Box::new(Expr::Identifier("Epilog".to_string())),
+        pattern: Box::new(id_expr("Epilog")),
         replacement: Box::new(merged),
       };
     }
     None => {
       new_args.push(Expr::Rule {
-        pattern: Box::new(Expr::Identifier("Epilog".to_string())),
+        pattern: Box::new(id_expr("Epilog")),
         replacement: Box::new(markers.clone()),
       });
     }

@@ -70,7 +70,7 @@ pub fn dispatch_complex_and_special(
       }
       // If real part is 0 and imaginary is 1, return I
       if matches!(real, Expr::Integer(0)) && matches!(imag, Expr::Integer(1)) {
-        return Some(Ok(Expr::Identifier("I".to_string())));
+        return Some(Ok(id_expr("I")));
       }
       // If either component is inexact (Real/BigFloat) and the other is an
       // exact Integer/Rational, coerce the exact one to Real so the formed
@@ -116,17 +116,11 @@ pub fn dispatch_complex_and_special(
       if !imag_has_i {
         // If real part is 0, return b*I
         if matches!(real, Expr::Integer(0)) {
-          return Some(Ok(times2(
-            imag.clone(),
-            Expr::Identifier("I".to_string()),
-          )));
+          return Some(Ok(times2(imag.clone(), id_expr("I"))));
         }
         // If imaginary is 1, return a + I
         if matches!(imag, Expr::Integer(1)) {
-          return Some(Ok(plus2(
-            real.clone(),
-            Expr::Identifier("I".to_string()),
-          )));
+          return Some(Ok(plus2(real.clone(), id_expr("I"))));
         }
         // General case without I in imag. For concrete numeric components,
         // build a + b*I and EVALUATE it so the result lands in the canonical
@@ -145,7 +139,7 @@ pub fn dispatch_complex_and_special(
         if numeric_part(real) && numeric_part(imag) {
           let bi = match evaluate_function_call_ast(
             "Times",
-            &[imag.clone(), Expr::Identifier("I".to_string())],
+            &[imag.clone(), id_expr("I")],
           ) {
             Ok(v) => v,
             Err(e) => return Some(Err(e)),
@@ -157,7 +151,7 @@ pub fn dispatch_complex_and_special(
         // Plus/Times complex trees still works.
         return Some(Ok(plus2(
           real.clone(),
-          times2(imag.clone(), Expr::Identifier("I".to_string())),
+          times2(imag.clone(), id_expr("I")),
         )));
       }
       // Imaginary part contains I (iterated Complex), evaluate algebraically
@@ -191,7 +185,7 @@ pub fn dispatch_complex_and_special(
       // Fallback: build a + b*I expression and evaluate
       let bi = match evaluate_function_call_ast(
         "Times",
-        &[imag.clone(), Expr::Identifier("I".to_string())],
+        &[imag.clone(), id_expr("I")],
       ) {
         Ok(v) => v,
         Err(e) => return Some(Err(e)),
@@ -203,7 +197,7 @@ pub fn dispatch_complex_and_special(
         return Some(Ok(args[0].clone()));
       }
       Expr::Identifier(name) if name == "False" => {
-        return Some(Ok(Expr::Identifier("Undefined".to_string())));
+        return Some(Ok(id_expr("Undefined")));
       }
       _ => {
         return Some(Ok(unevaluated("ConditionalExpression", args)));
@@ -212,17 +206,17 @@ pub fn dispatch_complex_and_special(
     "DirectedInfinity" if args.len() <= 1 => {
       if args.is_empty() {
         // DirectedInfinity[] = ComplexInfinity
-        return Some(Ok(Expr::Identifier("ComplexInfinity".to_string())));
+        return Some(Ok(id_expr("ComplexInfinity")));
       }
       match &args[0] {
         Expr::Integer(1) => {
-          return Some(Ok(Expr::Identifier("Infinity".to_string())));
+          return Some(Ok(id_expr("Infinity")));
         }
         Expr::Integer(-1) => {
-          return Some(Ok(neg1(Expr::Identifier("Infinity".to_string()))));
+          return Some(Ok(neg1(id_expr("Infinity"))));
         }
         Expr::Integer(0) => {
-          return Some(Ok(Expr::Identifier("ComplexInfinity".to_string())));
+          return Some(Ok(id_expr("ComplexInfinity")));
         }
         _ => {
           // Real numeric arguments collapse to ±Infinity by sign.
@@ -232,12 +226,12 @@ pub fn dispatch_complex_and_special(
             && v.is_finite()
           {
             if v > 0.0 {
-              return Some(Ok(Expr::Identifier("Infinity".to_string())));
+              return Some(Ok(id_expr("Infinity")));
             }
             if v < 0.0 {
-              return Some(Ok(neg1(Expr::Identifier("Infinity".to_string()))));
+              return Some(Ok(neg1(id_expr("Infinity"))));
             }
-            return Some(Ok(Expr::Identifier("ComplexInfinity".to_string())));
+            return Some(Ok(id_expr("ComplexInfinity")));
           }
           // Try to normalize: DirectedInfinity[z] -> DirectedInfinity[z/Abs[z]]
           if let Some(((re_n, re_d), (im_n, im_d))) =
@@ -246,13 +240,13 @@ pub fn dispatch_complex_and_special(
             if im_n == 0 {
               // Pure real: just check sign
               if re_n > 0 {
-                return Some(Ok(Expr::Identifier("Infinity".to_string())));
+                return Some(Ok(id_expr("Infinity")));
               } else if re_n < 0 {
                 return Some(Ok(neg1(Expr::Identifier(
                   "Infinity".to_string(),
                 ))));
               }
-              return Some(Ok(Expr::Identifier("ComplexInfinity".to_string())));
+              return Some(Ok(id_expr("ComplexInfinity")));
             }
             // Compute magnitude squared: (re_n/re_d)^2 + (im_n/im_d)^2
             let mag_sq_num = re_n
@@ -286,7 +280,7 @@ pub fn dispatch_complex_and_special(
               };
               // Check if normalized reduced to 1 or -1
               if matches!(&normalized, Expr::Integer(1)) {
-                return Some(Ok(Expr::Identifier("Infinity".to_string())));
+                return Some(Ok(id_expr("Infinity")));
               }
               if matches!(&normalized, Expr::Integer(-1)) {
                 return Some(Ok(neg1(Expr::Identifier(
@@ -338,7 +332,7 @@ pub fn dispatch_complex_and_special(
               let nim = im / mag;
               if nim == 0.0 {
                 if nre > 0.0 {
-                  return Some(Ok(Expr::Identifier("Infinity".to_string())));
+                  return Some(Ok(id_expr("Infinity")));
                 }
                 if nre < 0.0 {
                   return Some(Ok(neg1(Expr::Identifier(
@@ -348,8 +342,7 @@ pub fn dispatch_complex_and_special(
               }
               // Build `re + im*I` so the regular Times printer handles
               // sign placement and `0. + r*I` Re/Im split.
-              let im_term =
-                times2(Expr::Real(nim), Expr::Identifier("I".to_string()));
+              let im_term = times2(Expr::Real(nim), id_expr("I"));
               let direction = plus2(Expr::Real(nre), im_term);
               let direction = match evaluate_expr_to_expr(&direction) {
                 Ok(v) => v,
@@ -448,7 +441,7 @@ pub fn dispatch_complex_and_special(
         if args.len() == 3 {
           return Some(crate::evaluator::evaluate_expr_to_expr(&args[2]));
         }
-        return Some(Ok(Expr::Identifier("$Aborted".to_string())));
+        return Some(Ok(id_expr("$Aborted")));
       }
       return Some(result);
     }
@@ -484,7 +477,7 @@ pub fn dispatch_complex_and_special(
         if args.len() == 3 {
           return Some(crate::evaluator::evaluate_expr_to_expr(&args[2]));
         }
-        return Some(Ok(Expr::Identifier("$Aborted".to_string())));
+        return Some(Ok(id_expr("$Aborted")));
       }
       return Some(result);
     }
@@ -649,14 +642,10 @@ pub fn dispatch_complex_and_special(
             name: "InformationDataGrid".to_string(),
             args: vec![
               Expr::List(
-                vec![Expr::FunctionCall {
-                  name: "Rule".to_string(),
-                  args: vec![
-                    Expr::Identifier("System`".to_string()),
-                    Expr::List(matching.into()),
-                  ]
-                  .into(),
-                }]
+                vec![call(
+                  "Rule",
+                  vec![id_expr("System`"), Expr::List(matching.into())],
+                )]
                 .into(),
               ),
               bool_expr(is_full),
@@ -691,7 +680,7 @@ pub fn dispatch_complex_and_special(
       let tags: Vec<Expr> = match args.get(1) {
         Some(Expr::List(items)) => items.to_vec(),
         Some(t) => vec![t.clone()],
-        None => vec![Expr::Identifier("None".to_string())],
+        None => vec![id_expr("None")],
       };
       crate::SOW_STACK.with(|stack| {
         let mut stack = stack.borrow_mut();
@@ -1269,7 +1258,7 @@ pub fn dispatch_complex_and_special(
               crate::functions::mesh_region::mesh_measure(&mesh)
                 .unwrap_or_else(|| unevaluated(name, args))
             } else if (*d as usize) < mesh.dimension() {
-              Expr::Identifier("Infinity".to_string())
+              id_expr("Infinity")
             } else {
               Expr::Integer(0)
             }
@@ -1630,13 +1619,11 @@ pub fn dispatch_complex_and_special(
     // formula over a temporary variable and rewrite it to a `#1`-slot
     // function so it composes with Map etc.
     "FindSequenceFunction" if args.len() == 1 => {
-      let formula = match find_sequence_function(
-        &args[0],
-        &Expr::Identifier("\u{f3a7}fsfvar".to_string()),
-      ) {
-        Ok(f) => f,
-        Err(e) => return Some(Err(e)),
-      };
+      let formula =
+        match find_sequence_function(&args[0], &id_expr("\u{f3a7}fsfvar")) {
+          Ok(f) => f,
+          Err(e) => return Some(Err(e)),
+        };
       // If the formula couldn't be found it comes back as the unevaluated
       // 2-arg call; keep the operator form unevaluated in that case.
       if let Expr::FunctionCall {
@@ -2969,10 +2956,8 @@ fn box_subexpr_via_user_rules(expr: &Expr) -> Expr {
     let has_format_rule = crate::evaluator::assignment::FORMAT_VALUES
       .with(|m| m.borrow().contains_key(head));
     if has_format_rule {
-      let format_call = call(
-        "Format",
-        vec![expr.clone(), Expr::Identifier("StandardForm".to_string())],
-      );
+      let format_call =
+        call("Format", vec![expr.clone(), id_expr("StandardForm")]);
       if let Ok(formatted) =
         crate::evaluator::evaluate_expr_to_expr(&format_call)
       {
@@ -2999,10 +2984,7 @@ fn box_subexpr_via_user_rules(expr: &Expr) -> Expr {
   if !has_user_rule {
     return expr_to_box_form(expr);
   }
-  let call = call(
-    "MakeBoxes",
-    vec![expr.clone(), Expr::Identifier("StandardForm".to_string())],
-  );
+  let call = call("MakeBoxes", vec![expr.clone(), id_expr("StandardForm")]);
   match crate::evaluator::evaluate_expr_to_expr(&call) {
     Ok(result) => result,
     Err(_) => expr_to_box_form(expr),
@@ -3929,13 +3911,13 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
                 replacement: Box::new(bool_expr(true)),
               },
               Expr::Rule {
-                pattern: Box::new(Expr::Identifier("NumberMarks".to_string())),
+                pattern: Box::new(id_expr("NumberMarks")),
                 replacement: Box::new(bool_expr(true)),
               },
             ]
             .into(),
           },
-          Expr::Identifier("FullForm".to_string()),
+          id_expr("FullForm"),
         ]
         .into(),
       }
@@ -3971,7 +3953,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
           call("FormBox", vec![inner_box, Expr::Identifier(name.clone())]),
           Expr::Identifier(name.clone()),
           Expr::Rule {
-            pattern: Box::new(Expr::Identifier("Editable".to_string())),
+            pattern: Box::new(id_expr("Editable")),
             replacement: Box::new(bool_expr(true)),
           },
         ]
@@ -4009,7 +3991,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       let form_box =
         call("FormBox", vec![inner_box, Expr::Identifier(form_name)]);
       let tag = if args.len() == 1 {
-        Expr::Identifier("Format".to_string())
+        id_expr("Format")
       } else {
         // `#1 &` — an anonymous Function with body Slot(1).
         Expr::Function {
@@ -4049,11 +4031,11 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
             args: vec![args[0].clone()].into(),
           },
           Expr::Rule {
-            pattern: Box::new(Expr::Identifier("Editable".to_string())),
+            pattern: Box::new(id_expr("Editable")),
             replacement: Box::new(bool_expr(true)),
           },
           Expr::Rule {
-            pattern: Box::new(Expr::Identifier("AutoDelete".to_string())),
+            pattern: Box::new(id_expr("AutoDelete")),
             replacement: Box::new(bool_expr(true)),
           },
         ]
@@ -4153,7 +4135,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
                 pattern: Box::new(Expr::Identifier(
                   "BaselinePosition".to_string(),
                 )),
-                replacement: Box::new(Expr::Identifier("Baseline".to_string())),
+                replacement: Box::new(id_expr("Baseline")),
               },
             ]
             .into(),
@@ -4165,7 +4147,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
           // substitution we used for the PaneBox text.
           call1("OutputForm", replace_graphics_with_placeholder(&args[0])),
           Expr::Rule {
-            pattern: Box::new(Expr::Identifier("Editable".to_string())),
+            pattern: Box::new(id_expr("Editable")),
             replacement: Box::new(bool_expr(false)),
           },
         ]
@@ -4201,7 +4183,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
                 replacement: Box::new(bool_expr(true)),
               },
               Expr::Rule {
-                pattern: Box::new(Expr::Identifier("NumberMarks".to_string())),
+                pattern: Box::new(id_expr("NumberMarks")),
                 replacement: Box::new(bool_expr(true)),
               },
             ]
@@ -4209,11 +4191,11 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
           },
           call1("InputForm", args[0].clone()),
           Expr::Rule {
-            pattern: Box::new(Expr::Identifier("Editable".to_string())),
+            pattern: Box::new(id_expr("Editable")),
             replacement: Box::new(bool_expr(true)),
           },
           Expr::Rule {
-            pattern: Box::new(Expr::Identifier("AutoDelete".to_string())),
+            pattern: Box::new(id_expr("AutoDelete")),
             replacement: Box::new(bool_expr(true)),
           },
         ]
@@ -5116,10 +5098,9 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
   match name {
     // `HoldForm` leaves a mark on the box tree — a `TagBox` naming it — so
     // the boxes still say the expression was held; it draws as its content.
-    "HoldForm" if args.len() == 1 => call(
-      "TagBox",
-      vec![tf(&args[0]), Expr::Identifier("HoldForm".into())],
-    ),
+    "HoldForm" if args.len() == 1 => {
+      call("TagBox", vec![tf(&args[0]), id_expr("HoldForm")])
+    }
     // Wrappers that only hold or re-label their content: typeset what is
     // inside them.
     "HoldComplete" | "HoldCompleteForm" | "Defer" | "Identity"
@@ -5135,8 +5116,8 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
       let mut style_args = vec![tf_display(&args[0])];
       style_args.extend(args[1..].iter().cloned());
       style_args.push(Expr::Rule {
-        pattern: Box::new(Expr::Identifier("StripOnInput".into())),
-        replacement: Box::new(Expr::Identifier("False".into())),
+        pattern: Box::new(id_expr("StripOnInput")),
+        replacement: Box::new(bool_expr(false)),
       });
       call("StyleBox", style_args)
     }
@@ -7622,7 +7603,7 @@ fn compute_region_measure(expr: &Expr) -> Result<Expr, InterpreterError> {
       // Unbounded regions have infinite measure in their intrinsic dimension.
       "HalfPlane" | "InfinitePlane" | "HalfLine" | "InfiniteLine"
       | "HalfSpace" | "ConicHullRegion" => {
-        return Ok(Expr::Identifier("Infinity".to_string()));
+        return Ok(id_expr("Infinity"));
       }
       // Parallelogram[p, {v1, v2}] — the area spanned by v1 and v2 is
       // Sqrt[Det of the Gram matrix] = Sqrt[(v1.v1)(v2.v2) - (v1.v2)^2],
@@ -7970,8 +7951,8 @@ fn compute_region_bounds(expr: &Expr) -> Expr {
     && let (Expr::List(p1), Expr::List(p2)) = (&points[0], &points[1])
     && p1.len() == p2.len()
   {
-    let inf = || Expr::Identifier("Infinity".to_string());
-    let neg_inf = || neg1(Expr::Identifier("Infinity".to_string()));
+    let inf = || id_expr("Infinity");
+    let neg_inf = || neg1(id_expr("Infinity"));
     let mut bounds = Vec::with_capacity(p1.len());
     for (a, b) in p1.iter().zip(p2.iter()) {
       let diff = call("Subtract", vec![b.clone(), a.clone()]);
@@ -9624,7 +9605,7 @@ fn platonic_scaled_metric(
 /// Sphere, Disk, Triangle, and 2-D Cuboid/Ball).
 fn compute_surface_area(expr: &Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = || Ok(call1("SurfaceArea", expr.clone()));
-  let undefined = || Ok(Expr::Identifier("Undefined".to_string()));
+  let undefined = || Ok(id_expr("Undefined"));
   let Expr::FunctionCall { name, args } = expr else {
     return unevaluated();
   };
@@ -10032,7 +10013,7 @@ fn compute_volume(expr: &Expr) -> Result<Expr, InterpreterError> {
         if p.len() == 3 {
           Ok(Expr::Integer(1))
         } else {
-          Ok(Expr::Identifier("Undefined".to_string()))
+          Ok(id_expr("Undefined"))
         }
       }
       2 => {
@@ -10043,7 +10024,7 @@ fn compute_volume(expr: &Expr) -> Result<Expr, InterpreterError> {
           return Ok(call1("Volume", expr.clone()));
         }
         if p1.len() != 3 {
-          return Ok(Expr::Identifier("Undefined".to_string()));
+          return Ok(id_expr("Undefined"));
         }
         // Build (p2_i - p1_i) for each dimension and take Abs of the product.
         let diffs: Vec<Expr> = p1
@@ -10073,7 +10054,7 @@ fn compute_volume(expr: &Expr) -> Result<Expr, InterpreterError> {
   // Volume is the 3-dimensional measure, so it is only defined for solids of
   // intrinsic dimension 3. Lower-dimensional regions (and surfaces) return
   // Undefined; 3-D balls and ellipsoids get their closed-form volume.
-  let undefined = || Ok(Expr::Identifier("Undefined".to_string()));
+  let undefined = || Ok(id_expr("Undefined"));
   if let Expr::FunctionCall { name, args } = expr {
     match name.as_str() {
       // Ball[c, r] — the solid n-ball. Volume is defined only in 3-D, where
@@ -10198,7 +10179,7 @@ fn compute_volume(expr: &Expr) -> Result<Expr, InterpreterError> {
               factorial_small(3),
             ))
           } else {
-            Ok(Expr::Identifier("Undefined".to_string()))
+            Ok(id_expr("Undefined"))
           };
         }
         if let Expr::List(pts) = &args[0]
@@ -10370,7 +10351,7 @@ fn compute_area(expr: &Expr) -> Result<Expr, InterpreterError> {
           && matches!((&args[0], &args[1]),
             (Expr::List(c), Expr::List(r)) if c.len() == r.len() && c.len() != 2) =>
       {
-        Ok(Expr::Identifier("Undefined".to_string()))
+        Ok(id_expr("Undefined"))
       }
       // Rectangle[] = 1, Rectangle[{x1,y1}] = 1, Rectangle[{x1,y1}, {x2,y2}] = |x2-x1| * |y2-y1|
       "Rectangle" => {
@@ -10571,7 +10552,7 @@ fn compute_area(expr: &Expr) -> Result<Expr, InterpreterError> {
           if matches!(&filled, Expr::Integer(0))
             || matches!(&filled, Expr::Real(v) if *v == 0.0)
           {
-            return Ok(Expr::Identifier("Undefined".to_string()));
+            return Ok(id_expr("Undefined"));
           }
           // Holes that degenerate the same way simply cut nothing out.
           let mut terms = vec![filled];
@@ -10607,7 +10588,7 @@ fn compute_area(expr: &Expr) -> Result<Expr, InterpreterError> {
           return Ok(call1("Area", expr.clone()));
         };
         if d < 0.0 {
-          return Ok(Expr::Identifier("Undefined".to_string()));
+          return Ok(id_expr("Undefined"));
         }
         let factor = call("Times", vec![rx, ry]);
         const TWO_PI: f64 = std::f64::consts::TAU;
@@ -10647,11 +10628,11 @@ fn compute_area(expr: &Expr) -> Result<Expr, InterpreterError> {
         crate::evaluator::evaluate_expr_to_expr(&area)
       }
       // Circle has no area (it's 1D)
-      "Circle" => Ok(Expr::Identifier("Undefined".to_string())),
+      "Circle" => Ok(id_expr("Undefined")),
       // A Tetrahedron is a 3-D solid, so its 2-area is Undefined.
-      "Tetrahedron" => Ok(Expr::Identifier("Undefined".to_string())),
+      "Tetrahedron" => Ok(id_expr("Undefined")),
       // Prism and Pyramid are 3-D solids: their 2-area is Undefined.
-      "Prism" | "Pyramid" => Ok(Expr::Identifier("Undefined".to_string())),
+      "Prism" | "Pyramid" => Ok(id_expr("Undefined")),
       // A Parallelogram is always a planar (2-D) region, so its Area equals
       // its RegionMeasure. Delegate to keep the two in sync. A two-vector
       // Parallelepiped is likewise planar; any other Parallelepiped is a
@@ -10666,7 +10647,7 @@ fn compute_area(expr: &Expr) -> Result<Expr, InterpreterError> {
           expr.clone(),
         ))
       }
-      "Parallelepiped" => Ok(Expr::Identifier("Undefined".to_string())),
+      "Parallelepiped" => Ok(id_expr("Undefined")),
       // Simplex[{p0, p1, p2}] in the plane — the triangle area |Det[edges]|/2.
       // A higher-dimensional simplex has Undefined 2-area.
       "Simplex" if args.len() == 1 => {
@@ -10678,7 +10659,7 @@ fn compute_area(expr: &Expr) -> Result<Expr, InterpreterError> {
           return if *n == 2 {
             Ok(crate::functions::math_ast::make_rational(1, 2))
           } else {
-            Ok(Expr::Identifier("Undefined".to_string()))
+            Ok(id_expr("Undefined"))
           };
         }
         if let Expr::List(pts) = &args[0]
@@ -10687,7 +10668,7 @@ fn compute_area(expr: &Expr) -> Result<Expr, InterpreterError> {
         {
           det_measure(edges, 2)
         } else if matches!(&args[0], Expr::List(pts) if pts.len() != 3) {
-          Ok(Expr::Identifier("Undefined".to_string()))
+          Ok(id_expr("Undefined"))
         } else {
           Ok(call1("Area", expr.clone()))
         }
@@ -11168,8 +11149,7 @@ fn compute_region_centroid(expr: &Expr) -> Result<Expr, InterpreterError> {
       "HalfSpace" if half_space_parts(args).is_some() => {
         let (normal, _) = half_space_parts(args).unwrap();
         Ok(Expr::List(
-          vec![Expr::Identifier("Indeterminate".to_string()); normal.len()]
-            .into(),
+          vec![id_expr("Indeterminate"); normal.len()].into(),
         ))
       }
       // DiskSegment — the segment centroid lies on the angular bisector
@@ -12054,7 +12034,7 @@ fn compute_arc_length(expr: &Expr) -> Result<Expr, InterpreterError> {
       }
       // Unbounded 1-D regions have infinite arc length.
       "HalfLine" | "InfiniteLine" if !args.is_empty() => {
-        Ok(Expr::Identifier("Infinity".to_string()))
+        Ok(id_expr("Infinity"))
       }
       // Line[{{x1,y1},{x2,y2},...}] -> sum of segment lengths
       "Line" => {
@@ -12069,7 +12049,7 @@ fn compute_arc_length(expr: &Expr) -> Result<Expr, InterpreterError> {
       // Other filled regions (Disk, Polygon, Triangle, Rectangle, Ball,
       // Ellipsoid) are not curves, so their arc length is Undefined.
       "Disk" | "Polygon" | "Triangle" | "Rectangle" | "Ball" | "Ellipsoid" => {
-        Ok(Expr::Identifier("Undefined".to_string()))
+        Ok(id_expr("Undefined"))
       }
       // Simplex[n]: only the 1-simplex is a curve, with arc length 1; every
       // other standard simplex is a filled region, so its arc length is
@@ -12084,7 +12064,7 @@ fn compute_arc_length(expr: &Expr) -> Result<Expr, InterpreterError> {
         if *n == 1 {
           Ok(Expr::Integer(1))
         } else {
-          Ok(Expr::Identifier("Undefined".to_string()))
+          Ok(id_expr("Undefined"))
         }
       }
       _ => unevaluated(),
@@ -12176,7 +12156,7 @@ fn compute_perimeter(expr: &Expr) -> Result<Expr, InterpreterError> {
         crate::evaluator::evaluate_expr_to_expr(&perimeter)
       }
       // Circle is a 1D curve, not a 2D region – Perimeter is Undefined
-      "Circle" => Ok(Expr::Identifier("Undefined".to_string())),
+      "Circle" => Ok(id_expr("Undefined")),
       // Rectangle[{x1,y1},{x2,y2}] -> 2*(|x2-x1| + |y2-y1|)
       "Rectangle" => {
         if args.is_empty() {
@@ -12251,7 +12231,7 @@ fn compute_perimeter(expr: &Expr) -> Result<Expr, InterpreterError> {
         unevaluated()
       }
       // Line is a 1D curve, Perimeter is Undefined
-      "Line" => Ok(Expr::Identifier("Undefined".to_string())),
+      "Line" => Ok(id_expr("Undefined")),
       _ => unevaluated(),
     },
     _ => unevaluated(),
@@ -12567,7 +12547,7 @@ fn compute_planar_angle(
     })
   };
   if is_zero(v1_comps) || is_zero(v2_comps) {
-    return Ok(Expr::Identifier("Indeterminate".to_string()));
+    return Ok(id_expr("Indeterminate"));
   }
 
   // Build dot product: v1.v2
@@ -13528,10 +13508,7 @@ fn compute_circular_arc_through(
   for point in &coords {
     let delta =
       |i: usize| call("Subtract", vec![point[i].clone(), centre[i].clone()]);
-    let turn = call(
-      "Times",
-      vec![Expr::Integer(2), Expr::Identifier("Pi".to_string())],
-    );
+    let turn = call("Times", vec![Expr::Integer(2), id_expr("Pi")]);
     angles.push(eval_call(
       "Mod",
       vec![eval_call("ArcTan", vec![delta(0), delta(1)])?, turn],
