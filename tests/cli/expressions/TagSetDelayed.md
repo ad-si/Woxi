@@ -66,3 +66,11 @@ symbol can give `sym := f[…]` a meaning of its own:
 $ wo 'wrapper /: SetDelayed[s_, wrapper[a_]] := (s := held[a]); tpl := wrapper["x"]; tpl'
 held[x]
 ```
+
+An upvalue on `Set` sees the right-hand side's *value*, which `Set` works out
+once. Here the constructor runs once however many times the body names it:
+
+```scrut
+$ wo 'n = 0; T[o___Rule] := (n++; T[Unique["t$"]]); T /: Set[name_Symbol, object_T] := (object; object; object; name); p = T["x" -> 1]; n'
+1
+```

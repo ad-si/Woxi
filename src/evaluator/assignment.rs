@@ -1977,7 +1977,7 @@ fn try_assignment_upvalue(
   head: &str,
   lhs: &Expr,
   rhs: &Expr,
-) -> Option<Result<Expr, InterpreterError>> {
+) -> UpvalueOutcome {
   // Both sides of the assignment are level-1 parts of it, so both carry
   // tags: WLX writes `ImportComponent /: SetDelayed[symbol_,
   // ImportComponent[args_, opts___]] := …` to give `tpl := ImportComponent[…]`
@@ -1988,8 +1988,37 @@ fn try_assignment_upvalue(
       tags.push(tag);
     }
   }
-  if tags.is_empty() {
-    return None;
+  let has_candidate = tags.iter().any(|tag| {
+    crate::UPVALUES.with(|m| {
+      m.borrow()
+        .get(tag)
+        .is_some_and(|entries| entries.iter().any(|(f, ..)| f == head))
+    })
+  });
+  if !has_candidate {
+    return UpvalueOutcome::NotClaimed(None);
+  }
+  // `Set` evaluates its right-hand side before anything else sees it, so the
+  // upvalue matches — and binds — the value rather than the expression. Bound
+  // to the expression, every use of the pattern variable in the body would
+  // evaluate it again: `T /: Set[n_Symbol, o_T] := (o; o; o)` would build
+  // three objects where wolframscript builds one, and the one it stored would
+  // not be the one it went on to write into.
+  let evaluated = if head == "Set" {
+    match evaluate_expr_to_expr(rhs) {
+      Ok(value) => Some(value),
+      Err(e) => return UpvalueOutcome::Claimed(Err(e)),
+    }
+  } else {
+    None
+  };
+  let rhs = evaluated.as_ref().unwrap_or(rhs);
+  if let Some(evaluated) = &evaluated {
+    for tag in assignment_upvalue_tags(evaluated) {
+      if !tags.contains(&tag) {
+        tags.push(tag);
+      }
+    }
   }
   let actual = call(head, vec![lhs.clone(), rhs.clone()]);
   for tag in tags {
@@ -2004,14 +2033,26 @@ fn try_assignment_upvalue(
       if let Some(bindings) =
         crate::evaluator::pattern_matching::match_pattern(&actual, original_lhs)
       {
-        return Some(crate::evaluator::pattern_matching::apply_bindings(
-          original_body,
-          &bindings,
-        ));
+        return UpvalueOutcome::Claimed(
+          crate::evaluator::pattern_matching::apply_bindings(
+            original_body,
+            &bindings,
+          ),
+        );
       }
     }
   }
-  None
+  UpvalueOutcome::NotClaimed(evaluated)
+}
+
+/// What [`try_assignment_upvalue`] found.
+enum UpvalueOutcome {
+  /// An upvalue claimed the assignment; this is its result.
+  Claimed(Result<Expr, InterpreterError>),
+  /// No upvalue matched. Carries the right-hand side's value when it had to
+  /// be worked out, so that the assignment does not evaluate it a second
+  /// time — a right-hand side with a side effect would run twice.
+  NotClaimed(Option<Expr>),
 }
 
 /// Report a Part assignment that could not be carried out, the way
@@ -2068,9 +2109,11 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
   );
 
   // An upvalue on `Set` claims the assignment before it is carried out.
-  if let Some(result) = try_assignment_upvalue("Set", lhs, rhs) {
-    return result;
-  }
+  let evaluated_rhs = match try_assignment_upvalue("Set", lhs, rhs) {
+    UpvalueOutcome::Claimed(result) => return result,
+    UpvalueOutcome::NotClaimed(value) => value,
+  };
+  let rhs = evaluated_rhs.as_ref().unwrap_or(rhs);
 
   // Handle Entity property mutation: Entity["type", "name"]["property"] = value
   if let Expr::CurriedCall { func, args } = lhs
@@ -3104,7 +3147,9 @@ pub fn set_delayed_ast(
   let lhs = &normalize_symbol_lhs(lhs);
   // An upvalue on `SetDelayed` claims the definition before it is stored —
   // the delayed counterpart of the `Set` check in `set_ast`.
-  if let Some(result) = try_assignment_upvalue("SetDelayed", lhs, body) {
+  if let UpvalueOutcome::Claimed(result) =
+    try_assignment_upvalue("SetDelayed", lhs, body)
+  {
     return result;
   }
 

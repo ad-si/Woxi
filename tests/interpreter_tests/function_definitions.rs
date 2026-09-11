@@ -5152,6 +5152,50 @@ mod assignment_upvalues {
     );
   }
 
+  // `Set` evaluates its right-hand side once, before anything else sees it,
+  // so an upvalue on `Set` binds the *value*. Bound to the expression, every
+  // use of the pattern variable evaluated it again — which in WLJS Notebook
+  // meant a fresh object per use, so a field written on one was read back
+  // from another and the object's head collected a SubValue per write (#603).
+  #[test]
+  fn a_set_upvalue_binds_the_evaluated_right_hand_side() {
+    clear_state();
+    interpret("n = 0").unwrap();
+    interpret("T[o___Rule] := (n++; T[Unique[\"t$\"]])").unwrap();
+    interpret(
+      "T /: Set[name_Symbol, object_T] := (object; object; object; name)",
+    )
+    .unwrap();
+    interpret("p = T[\"x\" -> 1]").unwrap();
+    assert_eq!(interpret("n").unwrap(), "1");
+
+    // And what the body stores is the object, not the constructor call.
+    clear_state();
+    interpret("SetAttributes[U, HoldFirst]").unwrap();
+    interpret("U[o___Rule] := With[{s = Unique[\"u$\"]}, U[s]]").unwrap();
+    interpret(
+      "U /: Set[name_Symbol, object_U] := \
+       (ClearAll[name]; Block[{U}, SetAttributes[U, HoldFirst]; \
+        name = object]; name)",
+    )
+    .unwrap();
+    interpret("q = U[\"x\" -> 1]").unwrap();
+    let own = interpret("OwnValues[q]").unwrap();
+    assert!(
+      own.contains("U[u$"),
+      "q should hold the constructed object, got {own}"
+    );
+
+    // A right-hand side with a side effect still runs exactly once when no
+    // upvalue matches but one is on the books for the tag.
+    clear_state();
+    interpret("m = 0").unwrap();
+    interpret("V /: Set[V[k_], v_] := 1").unwrap();
+    interpret("w = (m++; V[2])").unwrap();
+    assert_eq!(interpret("m").unwrap(), "1");
+    assert_eq!(interpret("w").unwrap(), "V[2]");
+  }
+
   // What still counts as close enough: the head of the left-hand side, an
   // argument, an argument's own head however many calls deep the head chain
   // runs, and the head a blank restricts to.
