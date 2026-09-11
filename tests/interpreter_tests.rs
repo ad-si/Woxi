@@ -2141,6 +2141,39 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_text_offset_follows_rotated_direction() {
+    // `Text[expr, coords, offset, direction]` measures `offset` along the
+    // label's own (rotated) baseline, not along the fixed screen axes:
+    // Wolfram's docs describe the offset as relative to that rotated
+    // baseline, and demonstrations that fan labels out radially (e.g.
+    // `Table[Text[…, {Cos[a], Sin[a]}], {a, 0, 2 Pi, …}]`) rely on this to
+    // push each label outward along its own direction rather than by a
+    // fixed amount in x. Regression: the offset used to be applied purely
+    // along the unrotated x/y screen axes, so every label in such a table
+    // landed at the exact same on-screen position regardless of direction.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Graphics[{Text[\"Q\", {0, 0}, {-1, 0}, {1, 0}], Text[\"Q\", {0, 0}, {-1, 0}, {0, 1}]}, ImageSize -> {100, 100}, PlotRange -> {{-1, 1}, {-1, 1}}], \"SVG\"]",
+    )
+    .unwrap();
+    // Direction {1, 0} (pointing right, unrotated baseline): offset -1
+    // shifts the label along x only, landing right of the anchor.
+    assert!(
+      svg.contains("<text x=\"54.20\" y=\"50.00\""),
+      "unrotated offset in the wrong place: {svg}"
+    );
+    // Direction {0, 1} (baseline rotated 90 degrees to point up): the same
+    // offset -1 now shifts the label along the rotated baseline, i.e.
+    // vertically, landing above the anchor instead of to its right.
+    assert!(
+      svg.contains(
+        "<text x=\"50.00\" y=\"45.80\" fill=\"rgb(0,0,0)\" font-size=\"14\" font-weight=\"normal\" font-style=\"normal\" text-anchor=\"middle\" dominant-baseline=\"central\" transform=\"rotate(-90.000 50.00 45.80)\""
+      ),
+      "offset was not rotated along with direction: {svg}"
+    );
+  }
+
+  #[test]
   fn test_invisible_text_label_paints_nothing() {
     // `Text[Invisible[Style["e", …]], pos]` — a Demonstration hides one
     // item's label (e.g. an edge whose name shouldn't show) by wrapping it
