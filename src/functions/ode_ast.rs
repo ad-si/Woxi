@@ -5579,10 +5579,49 @@ pub fn interpolation_ast(
   // equivalent built with `Join`) produces — is 2-D scattered data. It
   // interpolates like `ListInterpolation`'s grid once the distinct x/y
   // coordinates recover the grid structure; see `try_2d_scattered_interpolation`.
-  if head != "ListInterpolation"
-    && matches!(&data_list[0], Expr::List(items) if items.len() == 3)
+  //
+  // The documented multidimensional form `{{{x1, y1}, f1}, {{x2, y2}, f2},
+  // ...}` — a list of `{coords, value}` pairs — carries the same grid, just
+  // nested rather than flattened; normalize it to the flat triple shape so
+  // both reach `try_2d_scattered_interpolation`.
+  let flattened_2d_pairs: Option<Vec<Expr>> = if head != "ListInterpolation"
+    && matches!(&data_list[0], Expr::List(items)
+      if items.len() == 2
+        && matches!(&items[0], Expr::List(coords) if coords.len() == 2)
+        && !matches!(&items[1], Expr::List(_)))
+  {
+    data_list
+      .iter()
+      .map(|item| {
+        let Expr::List(parts) = item else {
+          return None;
+        };
+        if parts.len() != 2 {
+          return None;
+        }
+        let Expr::List(coords) = &parts[0] else {
+          return None;
+        };
+        if coords.len() != 2 {
+          return None;
+        }
+        Some(Expr::List(
+          vec![coords[0].clone(), coords[1].clone(), parts[1].clone()].into(),
+        ))
+      })
+      .collect::<Option<Vec<Expr>>>()
+  } else {
+    None
+  };
+  let triples_2d: Option<&[Expr]> =
+    flattened_2d_pairs.as_deref().or_else(|| {
+      (head != "ListInterpolation"
+        && matches!(&data_list[0], Expr::List(items) if items.len() == 3))
+      .then_some(data_list.as_slice())
+    });
+  if let Some(triples) = triples_2d
     && let Some(result) = try_2d_scattered_interpolation(
-      data_list,
+      triples,
       interp_order_xy.map_or(interp_order, |(a, _)| a),
       interp_order_xy.map_or(interp_order, |(_, b)| b),
       head,

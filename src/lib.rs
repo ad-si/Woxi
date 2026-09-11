@@ -6245,9 +6245,17 @@ fn store_function_definition(
     )
   };
 
-  FUNC_DEFS.with(|m| {
+  // `rule_dominates` below may evaluate a candidate rule's default/condition
+  // expressions (e.g. to compare `x_:f[]` against another optional default)
+  // and that evaluation can reach `get_defined_names`, which reads
+  // `FUNC_DEFS` itself. Holding this thread local's `borrow_mut` across that
+  // call would panic on the reentrant borrow, so the retain — the only step
+  // that actually mutates `entry` — runs under its own short borrow, and the
+  // rule-ordering comparison runs against a snapshot taken after it, with no
+  // borrow of `FUNC_DEFS` live.
+  let snapshot: Vec<_> = FUNC_DEFS.with(|m| {
     let mut defs = m.borrow_mut();
-    let entry = defs.entry(func_name).or_insert_with(Vec::new);
+    let entry = defs.entry(func_name.clone()).or_insert_with(Vec::new);
     let arity = params.len();
     if has_any_condition {
       // Conditional definition: only remove existing definitions with same arity
@@ -6288,31 +6296,39 @@ fn store_function_definition(
           || evaluator::assignment::body_is_conditional(body)
       });
     }
-    // Add the new definition with parsed AST, conditions, defaults, and head constraints.
-    // Insert by the rule partial order: place the new rule before the first
-    // existing rule it strictly dominates (is more specific than). Rules it does
-    // not dominate — including incomparable ones, such as a guarded but
-    // structurally looser rule vs an unguarded tighter one — keep definition
-    // order, matching Wolfram.
-    let pos = entry
-      .iter()
-      .position(|(p, c, d, h, bt, b)| {
-        crate::evaluator::assignment::rule_dominates(
-          &params,
-          &heads,
-          &blank_types,
-          &conditions,
-          &defaults,
-          &body_expr,
-          p,
-          h,
-          bt,
-          c,
-          d,
-          b,
-        )
-      })
-      .unwrap_or(entry.len());
+    entry.clone()
+  });
+  // Add the new definition with parsed AST, conditions, defaults, and head constraints.
+  // Insert by the rule partial order: place the new rule before the first
+  // existing rule it strictly dominates (is more specific than). Rules it does
+  // not dominate — including incomparable ones, such as a guarded but
+  // structurally looser rule vs an unguarded tighter one — keep definition
+  // order, matching Wolfram.
+  let pos = snapshot
+    .iter()
+    .position(|(p, c, d, h, bt, b)| {
+      crate::evaluator::assignment::rule_dominates(
+        &params,
+        &heads,
+        &blank_types,
+        &conditions,
+        &defaults,
+        &body_expr,
+        p,
+        h,
+        bt,
+        c,
+        d,
+        b,
+      )
+    })
+    .unwrap_or(snapshot.len());
+  FUNC_DEFS.with(|m| {
+    let mut defs = m.borrow_mut();
+    let entry = defs.entry(func_name).or_insert_with(Vec::new);
+    // `entry` may have grown or shrunk since the snapshot if `rule_dominates`
+    // reentrantly stored another definition; clamp rather than panic.
+    let pos = pos.min(entry.len());
     entry.insert(
       pos,
       (params, conditions, defaults, heads, blank_types, body_expr),

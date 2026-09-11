@@ -22452,6 +22452,35 @@ SaveDefinitions -> True]";
     );
   }
 
+  /// Regression test for a `RefCell` reentrancy panic in
+  /// `store_function_definition` (`src/lib.rs`): comparing a newly stored
+  /// rule against the function's existing overloads (to place it by
+  /// specificity) can itself evaluate a guard expression, which can define
+  /// a qualified symbol and read `FUNC_DEFS` back — while the outer scan
+  /// still held it mutably borrowed. `set_delayed_ast` (the AST-evaluation
+  /// path `Initialization :> (...)` runs through) already released its
+  /// borrow before each comparison for exactly this reason;
+  /// `store_function_definition` (the fresh-source-text path a top-level
+  /// `f[x_] := body` line parses through) had drifted from it and still
+  /// held the borrow across `rule_dominates`. Two same-arity guarded
+  /// overloads of one helper are enough to trigger the comparison.
+  #[test]
+  fn guarded_helper_overloads_in_manipulate_initialization_do_not_panic() {
+    let code = "Manipulate[\
+      r1 + r2, \
+      {{r1, 6, \"left radius\"}, 2, 9, 1, Appearance -> \"Labeled\"}, \
+      {{r2, 4, \"right radius\"}, 2, 9, 1, Appearance -> \"Labeled\"}, \
+      Initialization :> (\
+        smallerRadius[r1_, r2_ /; r1 <= r2] := r1; \
+        smallerRadius[r1_, r2_ /; r1 > r2] := r2; \
+      )]";
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("minimal guarded-Initialization helper should build a state");
+    assert!(state.error.is_none(), "error: {:?}", state.error);
+  }
+
   /// Checked a randomly-sampled Wolfram Demonstrations Project notebook
   /// showing two externally tangent semicircles resting on a line, with a
   /// chain of progressively smaller circles inscribed between them.
