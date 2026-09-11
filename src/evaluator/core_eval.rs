@@ -2689,8 +2689,30 @@ pub fn evaluate_expr_to_expr_inner(
           // Pass unevaluated args to the function dispatcher
           return evaluate_function_call_ast(name, &args);
         }
-        // Check if name is a variable holding a callable value (Function, FunctionCall like Composition)
-        let var_val = ENV.with(|e| e.borrow().get(name).cloned());
+        // Check if name is a variable holding a callable value (Function,
+        // FunctionCall like Composition) or an association. Only those two
+        // shapes are wanted here, and this runs for every call whose head is
+        // a symbol, so the store is asked what it holds before anything is
+        // copied out of it — an association can be very large.
+        let head_is_association = ENV.with(|e| {
+          matches!(
+            e.borrow().get(name),
+            Some(
+              StoredValue::Association(_)
+                | StoredValue::ExprVal(Expr::Association(_))
+            )
+          )
+        });
+        let var_val = ENV.with(|e| match e.borrow().get(name) {
+          Some(
+            value @ StoredValue::ExprVal(
+              Expr::Function { .. }
+              | Expr::NamedFunction { .. }
+              | Expr::FunctionCall { .. },
+            ),
+          ) => Some(value.clone()),
+          _ => None,
+        });
         if let Some(StoredValue::ExprVal(stored_expr)) = &var_val {
           match stored_expr {
             Expr::Function { .. }
@@ -2757,15 +2779,7 @@ pub fn evaluate_expr_to_expr_inner(
         // ordinary expression values, so `Block[{o = <|…|>}, o["k"]]` has to
         // reach the association through that representation too — it is how
         // WLX hands a component its `$Options`.
-        let scoped_assoc = match &var_val {
-          Some(StoredValue::ExprVal(Expr::Association(pairs))) => {
-            Some(pairs.clone())
-          }
-          _ => None,
-        };
-        if matches!(var_val, Some(StoredValue::Association(_)))
-          || scoped_assoc.is_some()
-        {
+        if head_is_association {
           // Evaluate arguments and perform nested access. A `Sequence[…]`
           // among them splices first, the way it does for any other head —
           // `f[k_, rest__] := assoc[k, rest]` reaches here with the
@@ -2793,15 +2807,7 @@ pub fn evaluate_expr_to_expr_inner(
               return Ok(dispatched);
             }
           }
-          return match scoped_assoc {
-            Some(pairs) => Ok(
-              crate::evaluator::pattern_matching::association_lookup_chain(
-                &pairs,
-                &evaluated_args,
-              ),
-            ),
-            None => association_nested_access(name, &evaluated_args),
-          };
+          return association_nested_access(name, &evaluated_args);
         }
 
         // Try early dispatch for held functions

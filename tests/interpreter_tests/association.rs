@@ -326,6 +326,53 @@ mod association_part_assignment {
     );
   }
 
+  // Reading one key must not cost the size of the whole association.
+  // `a[key]` used to copy the association three times over on the way to the
+  // value, so a lookup next to a large entry took milliseconds: 1000 reads
+  // beside a 200 000-element list took 34 seconds. WLJS Notebook reads a
+  // cell's keys beside the cell's whole text, over and over.
+  #[test]
+  fn reading_one_key_does_not_copy_the_whole_association() {
+    clear_state();
+    interpret(r#"big = <|"k" -> 1, "rest" -> Range[200000]|>"#).unwrap();
+    let start = std::time::Instant::now();
+    assert_eq!(interpret(r#"Do[big["k"], {2000}]; big["k"]"#).unwrap(), "1");
+    let elapsed = start.elapsed();
+    assert!(
+      elapsed.as_secs() < 2,
+      "2000 lookups beside a 200000-element entry took {elapsed:?}"
+    );
+    // The same holds for a chained lookup and for a localised association.
+    clear_state();
+    interpret(r#"deep = <|"a" -> <|"b" -> 2, "rest" -> Range[200000]|>|>"#)
+      .unwrap();
+    let start = std::time::Instant::now();
+    assert_eq!(
+      interpret(r#"Do[deep["a", "b"], {2000}]; deep["a", "b"]"#).unwrap(),
+      "2"
+    );
+    assert!(
+      start.elapsed().as_secs() < 2,
+      "2000 chained lookups took {:?}",
+      start.elapsed()
+    );
+    clear_state();
+    let start = std::time::Instant::now();
+    assert_eq!(
+      interpret(
+        r#"Module[{a = <|"k" -> 1, "rest" -> Range[200000]|>}, \
+             Do[a["k"], {2000}]; a["k"]]"#
+      )
+      .unwrap(),
+      "1"
+    );
+    assert!(
+      start.elapsed().as_secs() < 2,
+      "2000 lookups on a local took {:?}",
+      start.elapsed()
+    );
+  }
+
   #[test]
   fn association_assign_nested_in_list() {
     // Regression for the `deepcopy` Rosetta task: Part assignment that

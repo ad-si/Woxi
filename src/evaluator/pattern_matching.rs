@@ -152,7 +152,11 @@ pub(crate) fn merge_bindings(
 /// to it the way `f[a][b]` does, which is where the Wolfram Language leaves
 /// them: `<|"a" -> {1, 2}|>["a", 3]` is `{1, 2}[3]`.
 pub fn association_lookup_chain(pairs: &[(Expr, Expr)], keys: &[Expr]) -> Expr {
-  let mut current = Expr::Association(pairs.to_vec());
+  lookup_chain_from(Expr::Association(pairs.to_vec()), keys)
+}
+
+/// [`association_lookup_chain`] continued from a value already in hand.
+fn lookup_chain_from(mut current: Expr, keys: &[Expr]) -> Expr {
   for (i, key) in keys.iter().enumerate() {
     let Expr::Association(items) = &current else {
       return keys[i..].iter().fold(current, |acc, k| Expr::CurriedCall {
@@ -177,30 +181,121 @@ pub fn association_lookup_chain(pairs: &[(Expr, Expr)], keys: &[Expr]) -> Expr {
   current
 }
 
+/// How far [`association_nested_access`] got while the store was borrowed.
+enum ChainStep {
+  /// The symbol holds no association.
+  NotAnAssociation,
+  /// A key was absent; the index is the key that was missing.
+  Missing(usize),
+  /// A value was reached. `next` is the first key still to apply — the end
+  /// of the chain normally, or where it stopped being an association.
+  Value { value: Expr, next: usize },
+  /// A delayed entry was reached. It has to be evaluated outside the
+  /// borrow, then the keys from `next` on applied to what it yields.
+  Delayed { key: Expr, value: Expr, next: usize },
+}
+
 /// Perform nested access on an association held by a symbol:
 /// `assoc["a", "b"]` -> `assoc["a"]["b"]`.
+///
+/// The whole chain is walked inside the store, so only the value it ends on
+/// is copied. A symbol's value is read on every call whose head is that
+/// symbol, and an association can be large — a WLJS Notebook cell holds its
+/// whole text, a `UObject` its icon image — so copying it to read one key
+/// made every lookup cost the size of the whole thing.
 pub fn association_nested_access(
   var_name: &str,
   keys: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let assoc = ENV.with(|e| e.borrow().get(var_name).cloned());
-  let Some(StoredValue::Association(pairs)) = assoc else {
-    return Err(InterpreterError::EvaluationError(format!(
-      "{var_name} is not an association"
-    )));
-  };
-  // Keys are stored in input form (strings keep their quotes), so parse them
-  // back instead of wrapping in an Identifier.
-  let pairs: Vec<(Expr, Expr)> = pairs
-    .iter()
-    .map(|(k, v)| {
-      (
-        string_to_expr(k).unwrap_or(Expr::Identifier(k.clone())),
-        v.clone(),
-      )
-    })
-    .collect();
-  Ok(association_lookup_chain(&pairs, keys))
+  let key_strs: Vec<String> = keys.iter().map(expr_to_string).collect();
+  let step = ENV.with(|e| {
+    let env = e.borrow();
+    let Some(stored) = env.get(var_name) else {
+      return ChainStep::NotAnAssociation;
+    };
+    // The first key is resolved against whichever of the two shapes the
+    // store holds; from there on it is an ordinary expression walk. Keys of
+    // the string-keyed shape are in input form (strings keep their quotes),
+    // so they are parsed back rather than wrapped in an Identifier.
+    let mut current: &Expr = match stored {
+      StoredValue::Association(pairs) => {
+        let Some(first) = key_strs.first() else {
+          return ChainStep::NotAnAssociation;
+        };
+        match pairs.iter().find(|(k, _)| k == first) {
+          Some((k, value)) => {
+            let key = string_to_expr(k).unwrap_or(Expr::Identifier(k.clone()));
+            if is_delayed_entry(&key, value) {
+              return ChainStep::Delayed {
+                key,
+                value: value.clone(),
+                next: 1,
+              };
+            }
+            value
+          }
+          None => return ChainStep::Missing(0),
+        }
+      }
+      StoredValue::ExprVal(value @ Expr::Association(_)) => value,
+      _ => return ChainStep::NotAnAssociation,
+    };
+    // `StoredValue::Association` already consumed the first key.
+    let start = usize::from(matches!(stored, StoredValue::Association(_)));
+    let mut next = start;
+    for (i, key_str) in key_strs.iter().enumerate().skip(start) {
+      let Expr::Association(items) = current else {
+        break;
+      };
+      match items.iter().find(|(k, _)| expr_to_string(k) == *key_str) {
+        Some((k, value)) => {
+          if is_delayed_entry(k, value) {
+            return ChainStep::Delayed {
+              key: k.clone(),
+              value: value.clone(),
+              next: i + 1,
+            };
+          }
+          current = value;
+          next = i + 1;
+        }
+        None => return ChainStep::Missing(i),
+      }
+    }
+    ChainStep::Value {
+      value: current.clone(),
+      next,
+    }
+  });
+  // The borrow is released before anything is evaluated: a delayed entry
+  // (`a["k"] := …`) runs arbitrary code, which reads the store again.
+  match step {
+    ChainStep::NotAnAssociation => Err(InterpreterError::EvaluationError(
+      format!("{var_name} is not an association"),
+    )),
+    ChainStep::Missing(i) => Ok(call(
+      "Missing",
+      vec![Expr::String("KeyAbsent".to_string()), keys[i].clone()],
+    )),
+    ChainStep::Value { value, next } => {
+      Ok(lookup_chain_from(value, &keys[next..]))
+    }
+    ChainStep::Delayed { key, value, next } => {
+      let current =
+        crate::functions::association_ast::assoc_entry_value(&key, &value);
+      Ok(lookup_chain_from(current, &keys[next..]))
+    }
+  }
+}
+
+/// Does reading this entry mean evaluating it? `a["k"] := …` stores its
+/// right-hand side behind a `key :> value` marker, and every lookup runs it.
+fn is_delayed_entry(key: &Expr, value: &Expr) -> bool {
+  matches!(
+    value,
+    Expr::RuleDelayed { pattern, .. }
+      if crate::syntax::assoc_marker_matches(key, pattern)
+  )
 }
 
 /// Check if a pattern Expr contains any Expr::Pattern nodes (named blanks like n_).
