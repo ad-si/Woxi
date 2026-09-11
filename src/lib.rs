@@ -1637,6 +1637,61 @@ pub fn variable_value(name: &str) -> Option<syntax::Expr> {
   }
 }
 
+/// Is the symbol `name` bound to an Association?
+///
+/// One reaches `ENV` in either of two shapes: the key-string
+/// [`StoredValue::Association`] a top-level `a = <||>` builds, or a plain
+/// `Expr::Association` inside [`StoredValue::ExprVal`] — which is what
+/// `Module[{a = <||>}, …]` leaves, since localisation stores the evaluated
+/// initial value as an expression. Both must count, or `a[key] = value`
+/// installs a DownValue on the local instead of adding a key.
+pub fn symbol_holds_association(name: &str) -> bool {
+  ENV.with(|e| {
+    e.try_borrow().is_ok_and(|env| {
+      matches!(
+        env.get(name),
+        Some(
+          StoredValue::Association(_)
+            | StoredValue::ExprVal(syntax::Expr::Association(_))
+        )
+      )
+    })
+  })
+}
+
+/// Set one entry of the Association bound to `name`, appending it when the
+/// key is new. Returns false when `name` holds no Association.
+pub fn set_association_entry(
+  name: &str,
+  key: &syntax::Expr,
+  value: syntax::Expr,
+) -> bool {
+  let key_string = syntax::expr_to_string(key);
+  ENV.with(|e| {
+    let mut env = e.borrow_mut();
+    match env.get_mut(name) {
+      Some(StoredValue::Association(pairs)) => {
+        match pairs.iter_mut().find(|(k, _)| *k == key_string) {
+          Some(pair) => pair.1 = value,
+          None => pairs.push((key_string, value)),
+        }
+        true
+      }
+      Some(StoredValue::ExprVal(syntax::Expr::Association(pairs))) => {
+        match pairs
+          .iter_mut()
+          .find(|(k, _)| syntax::expr_to_string(k) == key_string)
+        {
+          Some(pair) => pair.1 = value,
+          None => pairs.push((key.clone(), value)),
+        }
+        true
+      }
+      _ => false,
+    }
+  })
+}
+
 /// Whether any context alias is in force. Kept to a single lookup: this sits
 /// on the path every symbol resolution takes, while [`context_aliases`] has
 /// to decode the association.

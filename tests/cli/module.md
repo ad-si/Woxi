@@ -209,3 +209,18 @@ With[{x}, x]
 $ wo 'Module[{x := 1 + 1}, x]'
 2
 ```
+
+
+## An Association in a Local
+
+A local holding an association gains a key the same way a global one does:
+
+```scrut
+$ wo 'Module[{a = <||>}, a["k"] = 1; a]'
+<|k -> 1|>
+```
+
+```scrut
+$ wo 'Module[{a = <||>, i = 1}, While[i <= 3, a["k" <> ToString[i]] = i; i++]; a]'
+<|k1 -> 1, k2 -> 2, k3 -> 3|>
+```

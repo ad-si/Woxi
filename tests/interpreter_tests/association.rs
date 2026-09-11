@@ -281,6 +281,51 @@ mod association_part_assignment {
     assert_eq!(result, "<|x -> <|n -> 7|>|>");
   }
 
+  // `a[key] = value` on an association that a `Module` or `Block` localised
+  // has to add the key, not install a DownValue on the local. The two stores
+  // hold an association in different shapes and only one of them was
+  // recognised, so `Module[{a = <||>}, a["k"] = 1; a]` was `<||>` — which is
+  // what made WLJS Notebook's `parseMiniYAML` return an empty header.
+  #[test]
+  fn association_key_assignment_reaches_a_localised_association() {
+    assert_eq!(
+      interpret(r#"Module[{a = <||>}, a["k"] = 1; a]"#).unwrap(),
+      "<|k -> 1|>"
+    );
+    assert_eq!(
+      interpret(r#"Block[{a = <||>}, a["k"] = 1; a]"#).unwrap(),
+      "<|k -> 1|>"
+    );
+    // The key may be a variable, and of any type.
+    assert_eq!(
+      interpret(r#"Module[{a = <||>, k = "k"}, a[k] = 1; a]"#).unwrap(),
+      "<|k -> 1|>"
+    );
+    assert_eq!(
+      interpret(r#"Module[{a = <||>, k = 5}, a[k] = 1; a]"#).unwrap(),
+      "<|5 -> 1|>"
+    );
+    // An existing key is replaced rather than duplicated.
+    assert_eq!(
+      interpret(r#"Module[{a = <|"x" -> 0|>}, a["x"] = 1; a]"#).unwrap(),
+      "<|x -> 1|>"
+    );
+    // The delayed form stores an entry that is evaluated on lookup.
+    assert_eq!(
+      interpret(r#"Module[{a = <||>}, a["k"] := 2 + 3; a["k"]]"#).unwrap(),
+      "5"
+    );
+    // Through a function, and repeatedly, as `parseMiniYAML` does it.
+    assert_eq!(
+      interpret(
+        r#"g[] := Module[{a = <||>, i = 1}, \
+             While[i <= 3, a["k" <> ToString[i]] = i; i++]; a]; g[]"#
+      )
+      .unwrap(),
+      "<|k1 -> 1, k2 -> 2, k3 -> 3|>"
+    );
+  }
+
   #[test]
   fn association_assign_nested_in_list() {
     // Regression for the `deepcopy` Rosetta task: Part assignment that

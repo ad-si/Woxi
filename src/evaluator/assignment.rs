@@ -2100,24 +2100,10 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
     && head_args.len() == 1
   {
     seed_system_variable(head_name);
-    let is_assoc = crate::ENV.with(|e| {
-      let env = e.borrow();
-      matches!(env.get(head_name), Some(StoredValue::Association(_)))
-    });
-    if is_assoc {
+    if crate::symbol_holds_association(head_name) {
       let key_expr = evaluate_expr_to_expr(&head_args[0])?;
       let rhs_value = evaluate_expr_to_expr(rhs)?;
-      let key = expr_to_string(&key_expr);
-      crate::ENV.with(|e| {
-        let mut env = e.borrow_mut();
-        if let Some(StoredValue::Association(pairs)) = env.get_mut(head_name) {
-          if let Some(pair) = pairs.iter_mut().find(|(k, _)| k == &key) {
-            pair.1 = rhs_value.clone();
-          } else {
-            pairs.push((key, rhs_value.clone()));
-          }
-        }
-      });
+      crate::set_association_entry(head_name, &key_expr, rhs_value.clone());
       return Ok(rhs_value);
     }
   }
@@ -3135,29 +3121,15 @@ pub fn set_delayed_ast(
     && head_args.len() == 1
   {
     seed_system_variable(head_name);
-    let is_assoc = crate::ENV.with(|e| {
-      let env = e.borrow();
-      matches!(env.get(head_name), Some(StoredValue::Association(_)))
-    });
-    if is_assoc {
+    if crate::symbol_holds_association(head_name) {
       let key_expr = evaluate_expr_to_expr(&head_args[0])?;
-      let key = expr_to_string(&key_expr);
       // The value carries the `key :> value` marker so every lookup
       // evaluates it afresh, the way a delayed entry is meant to.
       let entry = Expr::RuleDelayed {
-        pattern: Box::new(key_expr),
+        pattern: Box::new(key_expr.clone()),
         replacement: Box::new(body.clone()),
       };
-      crate::ENV.with(|e| {
-        let mut env = e.borrow_mut();
-        if let Some(StoredValue::Association(pairs)) = env.get_mut(head_name) {
-          if let Some(pair) = pairs.iter_mut().find(|(k, _)| k == &key) {
-            pair.1 = entry;
-          } else {
-            pairs.push((key, entry));
-          }
-        }
-      });
+      crate::set_association_entry(head_name, &key_expr, entry);
       return Ok(null_expr());
     }
   }
