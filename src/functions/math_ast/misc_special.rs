@@ -1030,7 +1030,7 @@ fn struve_half_integer_closed_form(
 ) -> Option<Result<Expr, InterpreterError>> {
   let int = Expr::Integer;
   let neg = |a: Expr| times2(int(-1), a);
-  let pi = || Expr::Constant("Pi".to_string());
+  let pi = || const_expr("Pi");
   let sqrt = |e: Expr| call1("Sqrt", e);
   let z = || z.clone();
   let sqrt_z = || sqrt(z());
@@ -1704,7 +1704,7 @@ fn weber_e_integer_closed_form(
   z: &Expr,
 ) -> Result<Expr, InterpreterError> {
   let m = n.unsigned_abs() as i128; // |n|
-  let pi = Expr::Constant("Pi".to_string());
+  let pi = const_expr("Pi");
   let pi_inv = pow2(pi, Expr::Integer(-1));
 
   // Polynomial terms: c_k * z^(m-2k-1) / Pi with
@@ -1742,7 +1742,7 @@ fn weber_e_integer_closed_form(
 
 /// AngerJ[ν, 0] closed form: Sin[ν*Pi] / (ν*Pi).
 fn anger_j_at_zero_symbolic(nu: &Expr) -> Expr {
-  let pi = Expr::Constant("Pi".to_string());
+  let pi = const_expr("Pi");
   let nu_pi = times2(nu.clone(), pi.clone());
   let sin_nu_pi = call1("Sin", nu_pi.clone());
   div2(sin_nu_pi, nu_pi)
@@ -1750,7 +1750,7 @@ fn anger_j_at_zero_symbolic(nu: &Expr) -> Expr {
 
 /// WeberE[ν, 0] closed form: (1 - Cos[ν*Pi]) / (ν*Pi).
 fn weber_e_at_zero_symbolic(nu: &Expr) -> Expr {
-  let pi = Expr::Constant("Pi".to_string());
+  let pi = const_expr("Pi");
   let nu_pi = times2(nu.clone(), pi.clone());
   let cos_nu_pi = call1("Cos", nu_pi.clone());
   let one_minus_cos = minus2(Expr::Integer(1), cos_nu_pi);
@@ -1915,10 +1915,7 @@ fn wigner_d_symbolic(
       "Times",
       vec![Expr::Identifier("I".to_string()), coef_expr, ang.clone()],
     );
-    Some(call(
-      "Power",
-      vec![Expr::Constant("E".to_string()), exponent],
-    ))
+    Some(call("Power", vec![const_expr("E"), exponent]))
   };
   let e1 = exp_factor(m1, phi)?;
   let e2 = exp_factor(m2, psi)?;

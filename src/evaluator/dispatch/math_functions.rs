@@ -1473,7 +1473,7 @@ pub fn dispatch_math_functions(
         let exp_neg = |z: &Expr| Expr::FunctionCall {
           name: "Power".to_string(),
           args: vec![
-            Expr::Constant("E".to_string()),
+            const_expr("E"),
             call("Times", vec![Expr::Integer(-1), z.clone()]),
           ]
           .into(),
@@ -6572,7 +6572,7 @@ fn trig_to_exp_recursive(expr: &Expr) -> Expr {
     Expr::FunctionCall { name, args } if args.len() == 1 => {
       let arg = trig_to_exp_recursive(&args[0]);
       let i = Expr::Identifier("I".to_string());
-      let e = Expr::Constant("E".to_string());
+      let e = const_expr("E");
       let half = call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]);
       match name.as_str() {
         // Cos[x] = E^(I*x)/2 + E^(-I*x)/2
@@ -6723,7 +6723,7 @@ fn trig_to_exp_recursive(expr: &Expr) -> Expr {
             times(&[i.clone(), power(arg.clone(), Expr::Integer(-1))]),
           ]);
           plus(&[
-            times(&[Expr::Constant("Pi".to_string()), half.clone()]),
+            times(&[const_expr("Pi"), half.clone()]),
             times(&[i.clone(), log_of(inner)]),
           ])
         }

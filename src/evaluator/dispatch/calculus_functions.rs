@@ -1044,7 +1044,7 @@ fn laplace_unit_step(arg: &Expr, t: &str, s: &Expr) -> Option<Expr> {
   // Exp[-t0*s] / s.
   Some(make_times(vec![
     make_power(
-      Expr::Constant("E".to_string()),
+      const_expr("E"),
       make_times(vec![Expr::Integer(-1), t0, s.clone()]),
     ),
     inv_s,
@@ -1717,10 +1717,7 @@ fn inverse_laplace_2d(
     };
     let cosh_arg = call("Times", vec![Expr::Integer(2), call1("Sqrt", neg_xy)]);
     let cosh = call1("Cosh", cosh_arg);
-    let pi_sqrt_xy = call(
-      "Times",
-      vec![Expr::Constant("Pi".to_string()), sqrt_x(), sqrt_y()],
-    );
+    let pi_sqrt_xy = call("Times", vec![const_expr("Pi"), sqrt_x(), sqrt_y()]);
     return Some(div2(cosh, pi_sqrt_xy));
   }
 
@@ -1855,10 +1852,7 @@ fn inverse_laplace_inner(expr: &Expr, s: &str, t: &str) -> Option<Expr> {
             ]
             .into(),
           };
-          return Some(call(
-            "Power",
-            vec![Expr::Constant("E".to_string()), exponent],
-          ));
+          return Some(call("Power", vec![const_expr("E"), exponent]));
         }
       }
     }
@@ -2123,10 +2117,7 @@ fn inverse_laplace_exact_term(term: &Expr, s: &str, t: &str) -> Option<Expr> {
         ),
         call(
           "Power",
-          vec![
-            Expr::Constant("E".to_string()),
-            call("Times", vec![root, t_id.clone()]),
-          ],
+          vec![const_expr("E"), call("Times", vec![root, t_id.clone()])],
         ),
       ];
       if k > 1 {
@@ -2202,13 +2193,7 @@ fn inverse_laplace_exact_term(term: &Expr, s: &str, t: &str) -> Option<Expr> {
         vec![
           coeff,
           inv_c2,
-          call(
-            "Power",
-            vec![
-              Expr::Constant("E".to_string()),
-              call("Times", vec![a, t_id]),
-            ],
-          ),
+          call("Power", vec![const_expr("E"), call("Times", vec![a, t_id])]),
           oscillation,
         ],
       ))
@@ -2334,7 +2319,7 @@ fn inverse_laplace_partial_fractions(
     .map(|k| den_coeffs[k] * k as f64)
     .collect();
 
-  let e_const = || Expr::Constant("E".to_string());
+  let e_const = || const_expr("E");
   let t_id = || Expr::Identifier(t.to_string());
 
   let mut terms: Vec<Expr> = quotient
@@ -3111,10 +3096,10 @@ fn inverse_mellin_inner(
     {
       let result = Expr::BinaryOp {
         op: BinaryOperator::Divide,
-        left: Box::new(Expr::Constant("Pi".to_string())),
+        left: Box::new(const_expr("Pi")),
         right: Box::new(make_plus(vec![
-          Expr::Constant("Pi".to_string()),
-          make_times(vec![Expr::Constant("Pi".to_string()), x.clone()]),
+          const_expr("Pi"),
+          make_times(vec![const_expr("Pi"), x.clone()]),
         ])),
       };
       return Some((result, false));
@@ -3836,7 +3821,7 @@ fn fourier_lorentzian(expr: &Expr, var: &str, out: &Expr) -> Option<Expr> {
   }
   let (p, q) = match_inv_quadratic(args[0], var)?;
   let sqrt_pi_2 = make_sqrt(make_times(vec![
-    Expr::Constant("Pi".to_string()),
+    const_expr("Pi"),
     make_power(Expr::Integer(2), Expr::Integer(-1)),
   ]));
   let inv_sqrt_pq = make_power(
@@ -3845,7 +3830,7 @@ fn fourier_lorentzian(expr: &Expr, var: &str, out: &Expr) -> Option<Expr> {
   );
   let b = make_sqrt(make_times(vec![p, make_power(q, Expr::Integer(-1))]));
   let exp_part = make_power(
-    Expr::Constant("E".to_string()),
+    const_expr("E"),
     make_times(vec![Expr::Integer(-1), b, call1("Abs", out.clone())]),
   );
   Some(make_times(vec![sqrt_pi_2, inv_sqrt_pq, exp_part]))
@@ -3861,10 +3846,7 @@ fn fourier_transform_inner(expr: &Expr, t: &str, w: &Expr) -> Option<Expr> {
   if !depends_on(expr, t) {
     return Some(make_times(vec![
       expr.clone(),
-      make_sqrt(make_times(vec![
-        Expr::Integer(2),
-        Expr::Constant("Pi".to_string()),
-      ])),
+      make_sqrt(make_times(vec![Expr::Integer(2), const_expr("Pi")])),
       make_dirac_delta(w.clone()),
     ]));
   }
@@ -3878,7 +3860,7 @@ fn fourier_transform_inner(expr: &Expr, t: &str, w: &Expr) -> Option<Expr> {
       && v == t
     {
       return Some(make_power(
-        make_times(vec![Expr::Integer(2), Expr::Constant("Pi".to_string())]),
+        make_times(vec![Expr::Integer(2), const_expr("Pi")]),
         call("Rational", vec![Expr::Integer(-1), Expr::Integer(2)]),
       ));
     }
@@ -3888,15 +3870,15 @@ fn fourier_transform_inner(expr: &Expr, t: &str, w: &Expr) -> Option<Expr> {
       // F = E^(i*(-neg_a)*w) / Sqrt[2*Pi]
       return Some(make_times(vec![
         make_power(
-          Expr::Constant("E".to_string()),
+          const_expr("E"),
           make_times(vec![
-            Expr::Constant("I".to_string()),
+            const_expr("I"),
             make_times(vec![Expr::Integer(-1), neg_a]),
             w.clone(),
           ]),
         ),
         make_power(
-          make_times(vec![Expr::Integer(2), Expr::Constant("Pi".to_string())]),
+          make_times(vec![Expr::Integer(2), const_expr("Pi")]),
           call("Rational", vec![Expr::Integer(-1), Expr::Integer(2)]),
         ),
       ]));
@@ -3955,7 +3937,7 @@ fn fourier_transform_inner(expr: &Expr, t: &str, w: &Expr) -> Option<Expr> {
         let k = av / 2;
         let sqrt_two_over_pi = make_sqrt(make_times(vec![
           Expr::Integer(2),
-          make_power(Expr::Constant("Pi".to_string()), Expr::Integer(-1)),
+          make_power(const_expr("Pi"), Expr::Integer(-1)),
         ]));
         if k == 1 {
           sqrt_two_over_pi
@@ -3964,10 +3946,8 @@ fn fourier_transform_inner(expr: &Expr, t: &str, w: &Expr) -> Option<Expr> {
         }
       } else {
         // av/Sqrt[2π]
-        let sqrt_2pi = make_sqrt(make_times(vec![
-          Expr::Integer(2),
-          Expr::Constant("Pi".to_string()),
-        ]));
+        let sqrt_2pi =
+          make_sqrt(make_times(vec![Expr::Integer(2), const_expr("Pi")]));
         let inv_sqrt = make_power(sqrt_2pi, Expr::Integer(-1));
         if av == 1 {
           inv_sqrt
@@ -3993,10 +3973,8 @@ fn fourier_transform_inner(expr: &Expr, t: &str, w: &Expr) -> Option<Expr> {
         ])
       };
       let sinc = call1("Sinc", arg);
-      let sqrt_2pi = make_sqrt(make_times(vec![
-        Expr::Integer(2),
-        Expr::Constant("Pi".to_string()),
-      ]));
+      let sqrt_2pi =
+        make_sqrt(make_times(vec![Expr::Integer(2), const_expr("Pi")]));
       let inv_sqrt = make_power(sqrt_2pi, Expr::Integer(-1));
       let prefactor = if c_val == 1 {
         inv_sqrt
@@ -4020,7 +3998,7 @@ fn fourier_transform_inner(expr: &Expr, t: &str, w: &Expr) -> Option<Expr> {
           // F[E^(-a*t^2)] = E^(-w^2/(4a)) / Sqrt[2a]
           return Some(make_times(vec![
             make_power(
-              Expr::Constant("E".to_string()),
+              const_expr("E"),
               make_times(vec![
                 Expr::Integer(-1),
                 make_power(w.clone(), Expr::Integer(2)),
@@ -4041,7 +4019,7 @@ fn fourier_transform_inner(expr: &Expr, t: &str, w: &Expr) -> Option<Expr> {
           return Some(make_times(vec![
             make_sqrt(make_times(vec![
               Expr::Integer(2),
-              make_power(Expr::Constant("Pi".to_string()), Expr::Integer(-1)),
+              make_power(const_expr("Pi"), Expr::Integer(-1)),
             ])),
             a.clone(),
             make_power(
@@ -4063,9 +4041,9 @@ fn fourier_transform_inner(expr: &Expr, t: &str, w: &Expr) -> Option<Expr> {
       && let Some(a) = extract_linear_coeff(fargs[0], t)
     {
       let coeff = make_times(vec![
-        Expr::Constant("I".to_string()),
+        const_expr("I"),
         make_sqrt(make_times(vec![
-          Expr::Constant("Pi".to_string()),
+          const_expr("Pi"),
           make_power(Expr::Integer(2), Expr::Integer(-1)),
         ])),
       ]);
@@ -4091,7 +4069,7 @@ fn fourier_transform_inner(expr: &Expr, t: &str, w: &Expr) -> Option<Expr> {
       && let Some(a) = extract_linear_coeff(fargs[0], t)
     {
       let coeff = make_sqrt(make_times(vec![
-        Expr::Constant("Pi".to_string()),
+        const_expr("Pi"),
         make_power(Expr::Integer(2), Expr::Integer(-1)),
       ]));
       return Some(make_plus(vec![
@@ -4118,11 +4096,11 @@ fn fourier_transform_inner(expr: &Expr, t: &str, w: &Expr) -> Option<Expr> {
       && matches!(fargs[1], Expr::Integer(-1))
     {
       return Some(make_times(vec![
-        Expr::Constant("I".to_string()),
-        Expr::Constant("Pi".to_string()),
+        const_expr("I"),
+        const_expr("Pi"),
         call1("Sign", w.clone()),
         make_power(
-          make_times(vec![Expr::Integer(2), Expr::Constant("Pi".to_string())]),
+          make_times(vec![Expr::Integer(2), const_expr("Pi")]),
           call("Rational", vec![Expr::Integer(-1), Expr::Integer(2)]),
         ),
       ]));
@@ -4306,10 +4284,7 @@ fn inverse_fourier_inner(expr: &Expr, w: &str, t: &Expr) -> Option<Expr> {
   if !depends_on(expr, w) {
     return Some(make_times(vec![
       expr.clone(),
-      make_sqrt(make_times(vec![
-        Expr::Integer(2),
-        Expr::Constant("Pi".to_string()),
-      ])),
+      make_sqrt(make_times(vec![Expr::Integer(2), const_expr("Pi")])),
       make_dirac_delta(t.clone()),
     ]));
   }
@@ -4322,7 +4297,7 @@ fn inverse_fourier_inner(expr: &Expr, w: &str, t: &Expr) -> Option<Expr> {
     && v == w
   {
     return Some(make_power(
-      make_times(vec![Expr::Integer(2), Expr::Constant("Pi".to_string())]),
+      make_times(vec![Expr::Integer(2), const_expr("Pi")]),
       call("Rational", vec![Expr::Integer(-1), Expr::Integer(2)]),
     ));
   }
@@ -4337,7 +4312,7 @@ fn inverse_fourier_inner(expr: &Expr, w: &str, t: &Expr) -> Option<Expr> {
       && v == w
     {
       let sqrt_pi_half = make_sqrt(make_times(vec![
-        Expr::Constant("Pi".to_string()),
+        const_expr("Pi"),
         make_power(Expr::Integer(2), Expr::Integer(-1)),
       ]));
       let sign_1_minus_t = Expr::FunctionCall {
@@ -4366,7 +4341,7 @@ fn inverse_fourier_inner(expr: &Expr, w: &str, t: &Expr) -> Option<Expr> {
         // F^-1[E^(-a*w^2)] = E^(-t^2/(4a)) / Sqrt[2a]
         return Some(make_times(vec![
           make_power(
-            Expr::Constant("E".to_string()),
+            const_expr("E"),
             make_times(vec![
               Expr::Integer(-1),
               make_power(t.clone(), Expr::Integer(2)),
@@ -5321,7 +5296,7 @@ fn gf_power(
     && args.len() == 1
     && matches!(&args[0], Expr::Identifier(var) if var == n)
   {
-    return Some(pow2(Expr::Constant("E".to_string()), x.clone()));
+    return Some(pow2(const_expr("E"), x.clone()));
   }
 
   // Case: Power[Factorial[n], -2] => 1/(n!)^2 => BesselI[0, 2*Sqrt[x]]
@@ -5656,7 +5631,7 @@ fn gf_divide(
       && args.len() == 1
       && matches!(&args[0], Expr::Identifier(var) if var == n)
     {
-      return Ok(Some(pow2(Expr::Constant("E".to_string()), x.clone())));
+      return Ok(Some(pow2(const_expr("E"), x.clone())));
     }
   }
 
@@ -5853,10 +5828,7 @@ fn egf_inner(
   // First try the polynomial approach: EGF = E^x * P(x)
   // This produces properly factored results like E^x*(1+x) instead of E^x + E^x*x
   if let Some(poly) = egf_poly_part(expr, n, x)? {
-    return Ok(Some(times2(
-      pow2(Expr::Constant("E".to_string()), x.clone()),
-      poly,
-    )));
+    return Ok(Some(times2(pow2(const_expr("E"), x.clone()), poly)));
   }
 
   // Handle Minus: a - b => a + (-b)
@@ -6038,10 +6010,7 @@ fn egf_power(
   // Case: c^n where c doesn't depend on n => e^(c*x)
   if !depends_on(base, n) && matches!(exp, Expr::Identifier(name) if name == n)
   {
-    return Some(pow2(
-      Expr::Constant("E".to_string()),
-      times2(base.clone(), x.clone()),
-    ));
+    return Some(pow2(const_expr("E"), times2(base.clone(), x.clone())));
   }
 
   // Case: n^k where k is a non-negative integer
@@ -6050,10 +6019,7 @@ fn egf_power(
     && let Some(k) = egf_expr_to_nonneg_int(exp)
   {
     let poly = egf_stirling_polynomial(k, x);
-    return Some(times2(
-      pow2(Expr::Constant("E".to_string()), x.clone()),
-      poly,
-    ));
+    return Some(times2(pow2(const_expr("E"), x.clone()), poly));
   }
 
   None
@@ -6298,7 +6264,7 @@ fn fourier_sin_cos_transform_inner(
   // sqrt(2/Pi) prefactor
   let prefactor = make_sqrt(make_times(vec![
     Expr::Integer(2),
-    make_power(Expr::Constant("Pi".to_string()), Expr::Integer(-1)),
+    make_power(const_expr("Pi"), Expr::Integer(-1)),
   ]));
 
   // Handle linearity: c * f(t) where c doesn't depend on t
@@ -6413,7 +6379,7 @@ fn fourier_sin_cos_transform_inner(
   {
     return Some(make_times(vec![
       make_sqrt(make_times(vec![
-        Expr::Constant("Pi".to_string()),
+        const_expr("Pi"),
         call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
       ])),
       call1("Sign", w.clone()),
@@ -6470,14 +6436,11 @@ fn fourier_sin_cos_transform_inner(
       if (cv - wv).abs() < 1e-15 * cv.abs().max(1.0) {
         // Pi/(2*Sqrt[2*Pi])
         return Some(make_times(vec![
-          Expr::Constant("Pi".to_string()),
+          const_expr("Pi"),
           make_power(
             make_times(vec![
               Expr::Integer(2),
-              make_sqrt(make_times(vec![
-                Expr::Integer(2),
-                Expr::Constant("Pi".to_string()),
-              ])),
+              make_sqrt(make_times(vec![Expr::Integer(2), const_expr("Pi")])),
             ]),
             Expr::Integer(-1),
           ),
@@ -6485,12 +6448,9 @@ fn fourier_sin_cos_transform_inner(
       } else if wv > cv {
         // Pi/Sqrt[2*Pi]
         return Some(make_times(vec![
-          Expr::Constant("Pi".to_string()),
+          const_expr("Pi"),
           make_power(
-            make_sqrt(make_times(vec![
-              Expr::Integer(2),
-              Expr::Constant("Pi".to_string()),
-            ])),
+            make_sqrt(make_times(vec![Expr::Integer(2), const_expr("Pi")])),
             Expr::Integer(-1),
           ),
         ]));
@@ -6500,19 +6460,12 @@ fn fourier_sin_cos_transform_inner(
     // Symbolic path: (Pi - Pi*Sign[c-w]) / (2*Sqrt[2*Pi]).
     let sign = call1("Sign", c_minus_w);
     let numer = make_plus(vec![
-      Expr::Constant("Pi".to_string()),
-      make_times(vec![
-        Expr::Integer(-1),
-        Expr::Constant("Pi".to_string()),
-        sign,
-      ]),
+      const_expr("Pi"),
+      make_times(vec![Expr::Integer(-1), const_expr("Pi"), sign]),
     ]);
     let denom = make_times(vec![
       Expr::Integer(2),
-      make_sqrt(make_times(vec![
-        Expr::Integer(2),
-        Expr::Constant("Pi".to_string()),
-      ])),
+      make_sqrt(make_times(vec![Expr::Integer(2), const_expr("Pi")])),
     ]);
     return Some(make_times(vec![
       numer,
@@ -6564,7 +6517,7 @@ fn fourier_sin_cos_transform_inner(
       if tsq_ok && !depends_on(c, t) {
         let inv_amp = make_sqrt(make_power((*c).clone(), Expr::Integer(-1)));
         let decay = make_power(
-          Expr::Constant("E".to_string()),
+          const_expr("E"),
           make_times(vec![
             Expr::Integer(-1),
             w.clone(),
@@ -6572,7 +6525,7 @@ fn fourier_sin_cos_transform_inner(
           ]),
         );
         let sqrt_pi_half = make_sqrt(make_times(vec![
-          Expr::Constant("Pi".to_string()),
+          const_expr("Pi"),
           call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
         ]));
         let mut factors = vec![sqrt_pi_half, decay];
@@ -6603,7 +6556,7 @@ fn fourier_sin_cos_transform_inner(
       && let Some(a) = extract_neg_quadratic_coeff(exp_arg, t)
     {
       let decay = make_power(
-        Expr::Constant("E".to_string()),
+        const_expr("E"),
         make_times(vec![
           Expr::Integer(-1),
           make_power(w.clone(), Expr::Integer(2)),
@@ -6642,8 +6595,7 @@ fn fourier_sin_cos_transform_inner(
       w_sq,
       make_power(four_a, Expr::Integer(-1)),
     ]);
-    let numerator =
-      make_power(Expr::Constant("E".to_string()), neg_w_sq_over_4a);
+    let numerator = make_power(const_expr("E"), neg_w_sq_over_4a);
     let two_a = make_times(vec![Expr::Integer(2), a]);
     let denom = make_sqrt(two_a);
     return Some(make_times(vec![

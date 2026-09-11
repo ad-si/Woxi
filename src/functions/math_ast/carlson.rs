@@ -297,7 +297,7 @@ fn sqrt_of(x: &Expr) -> Expr {
 }
 
 fn pi() -> Expr {
-  Expr::Constant("Pi".to_string())
+  const_expr("Pi")
 }
 
 fn cinf() -> Expr {

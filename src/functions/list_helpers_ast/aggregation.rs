@@ -515,7 +515,7 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
     }
     "LogNormalDistribution" if dargs.len() == 2 => {
       // Median[LogNormalDistribution[mu, sigma]] = E^mu
-      let med = pow2(Expr::Constant("E".to_string()), dargs[0].clone());
+      let med = pow2(const_expr("E"), dargs[0].clone());
       crate::evaluator::evaluate_expr_to_expr(&med).ok()
     }
     "ExponentialDistribution" if dargs.len() == 1 => {

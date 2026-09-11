@@ -15,11 +15,11 @@ fn gamma(z: Expr) -> Expr {
 }
 
 fn e() -> Expr {
-  Expr::Constant("E".to_string())
+  const_expr("E")
 }
 
 fn pi() -> Expr {
-  Expr::Constant("Pi".to_string())
+  const_expr("Pi")
 }
 
 fn infinity() -> Expr {
@@ -5362,10 +5362,7 @@ pub fn distribution_mean_variance(
         }
       };
       // Mean = a + b * EulerGamma
-      let mean = plus2(
-        a,
-        times2(b.clone(), Expr::Constant("EulerGamma".to_string())),
-      );
+      let mean = plus2(a, times2(b.clone(), const_expr("EulerGamma")));
       // Variance = b^2 * Pi^2 / 6
       let var = div2(times2(pow2(b, int(2)), pow2(pi(), int(2))), int(6));
       Ok((mean, var))

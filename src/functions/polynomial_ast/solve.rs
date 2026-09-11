@@ -4472,7 +4472,7 @@ fn try_solve_trig_eq(eq: &Expr, var: &str) -> Option<Expr> {
   }
 
   let var_expr = Expr::Identifier(var.to_string());
-  let pi = Expr::Constant("Pi".to_string());
+  let pi = const_expr("Pi");
   let c1 = call1("C", Expr::Integer(1));
   let element_c1_integers = call(
     "Element",
@@ -4758,7 +4758,7 @@ fn try_solve_inverse_function(
     let inverse_rhs = match name.as_str() {
       "Log" => {
         // Log[inner] == val → inner == E^val
-        pow2(Expr::Constant("E".to_string()), val.clone())
+        pow2(const_expr("E"), val.clone())
       }
       "Sqrt" => {
         // Sqrt[inner] == val → inner == val^2
@@ -4794,7 +4794,7 @@ fn try_solve_inverse_function(
           "ArcCscDegrees" => "Csc",
           _ => unreachable!(),
         };
-        let val_deg = times2(val.clone(), Expr::Constant("Degree".to_string()));
+        let val_deg = times2(val.clone(), const_expr("Degree"));
         call1(inverse_name, val_deg)
       }
       "Log10" => {

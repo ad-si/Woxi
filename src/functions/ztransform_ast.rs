@@ -1052,7 +1052,7 @@ pub fn fourier_coefficient_ast(
   let times = |fs: Vec<Expr>| call("Times", fs);
   let pow = |b: Expr, e: i128| pow2(b, Expr::Integer(e));
   let i_unit = || Expr::Identifier("I".to_string());
-  let pi = || Expr::Constant("Pi".to_string());
+  let pi = || const_expr("Pi");
 
   let (c0, c1, c2, c3) = (coeff(0), coeff(1), coeff(2), coeff(3));
 
@@ -1210,7 +1210,7 @@ pub fn fourier_sin_cos_coefficient_ast(
   let times = |fs: Vec<Expr>| call("Times", fs);
   let plus = |ts: Vec<Expr>| call("Plus", ts);
   let pow = |b: Expr, e: i128| pow2(b, Expr::Integer(e));
-  let pi = || Expr::Constant("Pi".to_string());
+  let pi = || const_expr("Pi");
   let n_e = || n_arg.clone();
   let m1 = || pow2(Expr::Integer(-1), n_arg.clone());
   let scaled = |base: i128| -> Expr {

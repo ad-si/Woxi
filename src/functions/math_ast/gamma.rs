@@ -393,7 +393,7 @@ fn gamma_half_expr(numer: &BigInt, denom: &BigInt, is_neg: bool) -> Expr {
       // `Constant`, not `Identifier`: only the former counts as numeric-like
       // when `Times` merges radicals, so `Gamma[-1/2] Sqrt[2]` folds to
       // `-2 Sqrt[2 Pi]` the way wolframscript prints it.
-      Expr::Constant("Pi".to_string()),
+      const_expr("Pi"),
       call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
     ]
     .into(),
@@ -1601,7 +1601,7 @@ pub fn gamma_regularized_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
       name: "Power".to_string(),
       args: vec![
-        Expr::Constant("E".to_string()),
+        const_expr("E"),
         call("Times", vec![Expr::Integer(-1), z_expr.clone()]),
       ]
       .into(),
@@ -1635,7 +1635,7 @@ pub fn gamma_regularized_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let e_pow = Expr::FunctionCall {
       name: "Power".to_string(),
       args: vec![
-        Expr::Constant("E".to_string()),
+        const_expr("E"),
         call("Times", vec![Expr::Integer(-1), z_expr.clone()]),
       ]
       .into(),
@@ -1713,7 +1713,7 @@ pub fn marcum_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               Expr::FunctionCall {
                 name: "Power".to_string(),
                 args: vec![
-                  Expr::Constant("E".to_string()),
+                  const_expr("E"),
                   Expr::FunctionCall {
                     name: "Times".to_string(),
                     args: vec![

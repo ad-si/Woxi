@@ -1023,14 +1023,7 @@ pub fn arg_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           name: "Plus".to_string(),
           args: vec![
             imz,
-            Expr::FunctionCall {
-              name: "Times".to_string(),
-              args: vec![
-                Expr::Integer(-2 * k),
-                Expr::Constant("Pi".to_string()),
-              ]
-              .into(),
-            },
+            call("Times", vec![Expr::Integer(-2 * k), const_expr("Pi")]),
           ]
           .into(),
         };

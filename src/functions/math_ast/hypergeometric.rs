@@ -1105,7 +1105,7 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if is_half(&args[0]) && matches!(&args[1], Expr::Integer(1)) {
     let z = &args[2];
     let half_z = div2(z.clone(), Expr::Integer(2));
-    let exp_part = pow2(Expr::Constant("E".to_string()), half_z.clone());
+    let exp_part = pow2(const_expr("E"), half_z.clone());
     let bessel = call("BesselI", vec![Expr::Integer(0), half_z]);
     return crate::evaluator::evaluate_function_call_ast(
       "Times",
@@ -1121,8 +1121,8 @@ pub fn hypergeometric1f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && !matches!(&args[2], Expr::Real(_) | Expr::BigFloat(_, _))
   {
     let z = &args[2];
-    let exp_z = pow2(Expr::Constant("E".to_string()), z.clone());
-    let sqrt_pi = call1("Sqrt", Expr::Constant("Pi".to_string()));
+    let exp_z = pow2(const_expr("E"), z.clone());
+    let sqrt_pi = call1("Sqrt", const_expr("Pi"));
     let sqrt_z = call1("Sqrt", z.clone());
     let erf = call1("Erf", sqrt_z.clone());
     let product = crate::evaluator::evaluate_function_call_ast(

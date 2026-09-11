@@ -78,10 +78,7 @@ pub fn convolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   ) {
     let s = frac(a.0 * b.1 + b.0 * a.1, a.1 * b.1); // a + b
     let q = frac(a.0 * b.0 * s.1, a.1 * b.1 * s.0); // a*b/(a + b)
-    let sqrt_part = call1(
-      "Sqrt",
-      div2(Expr::Constant("Pi".to_string()), frac_to_expr(s)),
-    );
+    let sqrt_part = call1("Sqrt", div2(const_expr("Pi"), frac_to_expr(s)));
     let y_sq = pow2(y.clone(), Expr::Integer(2));
     let exponent = match q {
       (1, 1) => y_sq,

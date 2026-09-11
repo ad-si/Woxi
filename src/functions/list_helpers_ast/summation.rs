@@ -1329,10 +1329,7 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             && matches!(max_expr, Expr::Identifier(s) if s == "Infinity")
             && body_is_one_plus_one_over_var_squared(body, &var_name)
           {
-            return Ok(div2(
-              call1("Sinh", Expr::Constant("Pi".to_string())),
-              Expr::Constant("Pi".to_string()),
-            ));
+            return Ok(div2(call1("Sinh", const_expr("Pi")), const_expr("Pi")));
           }
 
           // Closed form for ∏_{k=2}^∞ (1 - 1/k⁴) = Sinh[π] / (4 π).
@@ -1345,8 +1342,8 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             && body_is_one_minus_one_over_var_quartic(body, &var_name)
           {
             return Ok(div2(
-              call1("Sinh", Expr::Constant("Pi".to_string())),
-              times2(Expr::Integer(4), Expr::Constant("Pi".to_string())),
+              call1("Sinh", const_expr("Pi")),
+              times2(Expr::Integer(4), const_expr("Pi")),
             ));
           }
 
@@ -4361,7 +4358,7 @@ fn try_infinite_sum(
   // wolframscript canonicalizes those results to a different (though
   // equivalent) form.
   if let Some((coeff, base)) = match_exponential_base(body, var_name) {
-    let e_to_base = call("Power", vec![Expr::Constant("E".to_string()), base]);
+    let e_to_base = call("Power", vec![const_expr("E"), base]);
     if min == 0 {
       let result = call("Times", vec![coeff, e_to_base]);
       return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&result)?));
@@ -4536,10 +4533,7 @@ fn try_infinite_sum(
 
   // Try Leibniz formula: Sum[(-1)^k / (2k+1), {k, 0, Infinity}] = Pi/4
   if min == 0 && is_leibniz_body(body, var_name) {
-    return Ok(Some(div2(
-      Expr::Constant("Pi".to_string()),
-      Expr::Integer(4),
-    )));
+    return Ok(Some(div2(const_expr("Pi"), Expr::Integer(4))));
   }
 
   // Sums over the odd positive integers 1, 3, 5, …:

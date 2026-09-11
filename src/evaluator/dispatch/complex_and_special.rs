@@ -7296,13 +7296,7 @@ fn compute_find_shortest_curve(
         // larger angle and end at the smaller one shifted by a full turn.
         let shifted = evaluate_expr_to_expr(&call(
           "Plus",
-          vec![
-            lo,
-            call(
-              "Times",
-              vec![Expr::Integer(2), Expr::Constant("Pi".to_string())],
-            ),
-          ],
+          vec![lo, call("Times", vec![Expr::Integer(2), const_expr("Pi")])],
         ))?;
         vec![hi, shifted]
       };
@@ -7574,15 +7568,10 @@ fn compute_region_measure(expr: &Expr) -> Result<Expr, InterpreterError> {
   {
     match radii.len() {
       2 => {
-        let area = Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![
-            Expr::Constant("Pi".to_string()),
-            radii[0].clone(),
-            radii[1].clone(),
-          ]
-          .into(),
-        };
+        let area = call(
+          "Times",
+          vec![const_expr("Pi"), radii[0].clone(), radii[1].clone()],
+        );
         return crate::evaluator::evaluate_expr_to_expr(&area);
       }
       3 => {
@@ -7590,7 +7579,7 @@ fn compute_region_measure(expr: &Expr) -> Result<Expr, InterpreterError> {
           name: "Times".to_string(),
           args: vec![
             Expr::Integer(4),
-            Expr::Constant("Pi".to_string()),
+            const_expr("Pi"),
             radii[0].clone(),
             radii[1].clone(),
             radii[2].clone(),
@@ -7684,10 +7673,7 @@ fn compute_region_measure(expr: &Expr) -> Result<Expr, InterpreterError> {
         let half = |e: Expr| div2(e, Expr::Integer(2));
         let tube = half(call("Subtract", vec![r2.clone(), r1.clone()]));
         let ring = half(call("Plus", vec![r1, r2]));
-        let pi_sq = call(
-          "Power",
-          vec![Expr::Constant("Pi".to_string()), Expr::Integer(2)],
-        );
+        let pi_sq = call("Power", vec![const_expr("Pi"), Expr::Integer(2)]);
         let measure = if name == "Torus" {
           call("Times", vec![Expr::Integer(4), pi_sq, tube, ring])
         } else {
@@ -7788,10 +7774,7 @@ fn compute_region_measure(expr: &Expr) -> Result<Expr, InterpreterError> {
           _ => return unevaluated(),
         };
         let half_n = div2(Expr::Integer(n as i128), Expr::Integer(2));
-        let pi_pow = call(
-          "Power",
-          vec![Expr::Constant("Pi".to_string()), half_n.clone()],
-        );
+        let pi_pow = call("Power", vec![const_expr("Pi"), half_n.clone()]);
         let r_pow = call("Power", vec![radius, Expr::Integer(n as i128)]);
         let gamma =
           call("Gamma", vec![call("Plus", vec![half_n, Expr::Integer(1)])]);
@@ -9471,22 +9454,15 @@ fn stadium_area(
       name: "Times".to_string(),
       args: vec![
         Expr::Integer(*b),
-        call(
-          "Plus",
-          vec![Expr::Integer(*a / *b), Expr::Constant("Pi".to_string())],
-        ),
+        call("Plus", vec![Expr::Integer(*a / *b), const_expr("Pi")]),
       ]
       .into(),
     });
   }
-  ev(&Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: vec![
-      rect,
-      call("Times", vec![Expr::Constant("Pi".to_string()), cap_coeff]),
-    ]
-    .into(),
-  })
+  ev(&call(
+    "Plus",
+    vec![rect, call("Times", vec![const_expr("Pi"), cap_coeff])],
+  ))
 }
 
 fn capsule_height_sq_radius(args: &[Expr]) -> Option<(Expr, Expr)> {
@@ -9542,10 +9518,7 @@ fn spherical_shell_measure(
     ]
     .into(),
   };
-  let product = call(
-    "Times",
-    vec![Expr::Integer(4), Expr::Constant("Pi".to_string()), diff],
-  );
+  let product = call("Times", vec![Expr::Integer(4), const_expr("Pi"), diff]);
   let measure = if den == 1 {
     product
   } else {
@@ -9562,23 +9535,14 @@ fn capsule_volume(
   let pow =
     |b: &Expr, e: i128| call("Power", vec![b.clone(), Expr::Integer(e)]);
   let height = call1("Sqrt", height_sq.clone());
-  let cylinder = call(
-    "Times",
-    vec![Expr::Constant("Pi".to_string()), pow(radius, 2), height],
+  let cylinder = call("Times", vec![const_expr("Pi"), pow(radius, 2), height]);
+  let sphere = div2(
+    call(
+      "Times",
+      vec![Expr::Integer(4), const_expr("Pi"), pow(radius, 3)],
+    ),
+    Expr::Integer(3),
   );
-  let sphere = Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![
-        Expr::Integer(4),
-        Expr::Constant("Pi".to_string()),
-        pow(radius, 3),
-      ]
-      .into(),
-    }),
-    right: Box::new(Expr::Integer(3)),
-  };
   crate::evaluator::evaluate_expr_to_expr(&call("Plus", vec![cylinder, sphere]))
 }
 
@@ -9766,7 +9730,7 @@ fn compute_surface_area(expr: &Expr) -> Result<Expr, InterpreterError> {
         name: "Times".to_string(),
         args: vec![
           Expr::Integer(4),
-          Expr::Constant("Pi".to_string()),
+          const_expr("Pi"),
           call("Power", vec![radius, Expr::Integer(2)]),
         ]
         .into(),
@@ -9850,7 +9814,7 @@ fn compute_surface_area(expr: &Expr) -> Result<Expr, InterpreterError> {
       if name == "Cylinder" {
         factors.push(Expr::Integer(2));
       }
-      factors.push(Expr::Constant("Pi".to_string()));
+      factors.push(const_expr("Pi"));
       factors.push(radius);
       factors.push(r_plus);
       crate::evaluator::evaluate_expr_to_expr(&call("Times", factors))
@@ -9871,7 +9835,7 @@ fn compute_surface_area(expr: &Expr) -> Result<Expr, InterpreterError> {
         name: "Times".to_string(),
         args: vec![
           Expr::Integer(4),
-          Expr::Constant("Pi".to_string()),
+          const_expr("Pi"),
           call("Plus", vec![sq(&r1), sq(&r2)]),
         ]
         .into(),
@@ -9891,7 +9855,7 @@ fn compute_surface_area(expr: &Expr) -> Result<Expr, InterpreterError> {
         name: "Times".to_string(),
         args: vec![
           Expr::Integer(2),
-          Expr::Constant("Pi".to_string()),
+          const_expr("Pi"),
           r.clone(),
           call1("Sqrt", h_sq),
         ]
@@ -9901,7 +9865,7 @@ fn compute_surface_area(expr: &Expr) -> Result<Expr, InterpreterError> {
         name: "Times".to_string(),
         args: vec![
           Expr::Integer(4),
-          Expr::Constant("Pi".to_string()),
+          const_expr("Pi"),
           call("Power", vec![r, Expr::Integer(2)]),
         ]
         .into(),
@@ -10043,10 +10007,7 @@ fn compute_volume(expr: &Expr) -> Result<Expr, InterpreterError> {
     };
     let length = call1("Sqrt", sum_sq);
     let r_squared = call("Power", vec![radius, Expr::Integer(2)]);
-    let mut volume = call(
-      "Times",
-      vec![Expr::Constant("Pi".to_string()), r_squared, length],
-    );
+    let mut volume = call("Times", vec![const_expr("Pi"), r_squared, length]);
     if name == "Cone" {
       volume = div2(volume, Expr::Integer(3));
     }
@@ -10148,7 +10109,7 @@ fn compute_volume(expr: &Expr) -> Result<Expr, InterpreterError> {
             name: "Times".to_string(),
             args: vec![
               Expr::Integer(4),
-              Expr::Constant("Pi".to_string()),
+              const_expr("Pi"),
               call("Power", vec![radius, Expr::Integer(3)]),
             ]
             .into(),
@@ -10176,7 +10137,7 @@ fn compute_volume(expr: &Expr) -> Result<Expr, InterpreterError> {
             name: "Times".to_string(),
             args: vec![
               Expr::Integer(4),
-              Expr::Constant("Pi".to_string()),
+              const_expr("Pi"),
               radii[0].clone(),
               radii[1].clone(),
               radii[2].clone(),
@@ -10304,7 +10265,7 @@ fn compute_area(expr: &Expr) -> Result<Expr, InterpreterError> {
       "Disk" => {
         if args.is_empty() || (args.len() == 1) {
           // Unit disk
-          Ok(Expr::Constant("Pi".to_string()))
+          Ok(const_expr("Pi"))
         } else if args.len() == 2 {
           match &args[1] {
             Expr::List(radii) if radii.len() == 2 => {
@@ -10312,7 +10273,7 @@ fn compute_area(expr: &Expr) -> Result<Expr, InterpreterError> {
               let area = Expr::FunctionCall {
                 name: "Times".to_string(),
                 args: vec![
-                  Expr::Constant("Pi".to_string()),
+                  const_expr("Pi"),
                   radii[0].clone(),
                   radii[1].clone(),
                 ]
@@ -10325,7 +10286,7 @@ fn compute_area(expr: &Expr) -> Result<Expr, InterpreterError> {
               let area = Expr::FunctionCall {
                 name: "Times".to_string(),
                 args: vec![
-                  Expr::Constant("Pi".to_string()),
+                  const_expr("Pi"),
                   call("Power", vec![r.clone(), Expr::Integer(2)]),
                 ]
                 .into(),
@@ -10374,7 +10335,7 @@ fn compute_area(expr: &Expr) -> Result<Expr, InterpreterError> {
         let radial = call("Subtract", vec![sq(r2), sq(r1)]);
         // Angular factor: Pi for the full ring, (t2 - t1)/2 for a sector.
         let angular = match angles {
-          None => Expr::Constant("Pi".to_string()),
+          None => const_expr("Pi"),
           Some((t1, t2)) => Expr::FunctionCall {
             name: "Times".to_string(),
             args: vec![
@@ -10398,15 +10359,10 @@ fn compute_area(expr: &Expr) -> Result<Expr, InterpreterError> {
         let Expr::List(radii) = &args[1] else {
           unreachable!()
         };
-        let area = Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![
-            Expr::Constant("Pi".to_string()),
-            radii[0].clone(),
-            radii[1].clone(),
-          ]
-          .into(),
-        };
+        let area = call(
+          "Times",
+          vec![const_expr("Pi"), radii[0].clone(), radii[1].clone()],
+        );
         crate::evaluator::evaluate_expr_to_expr(&area)
       }
       "Ellipsoid"
@@ -10656,17 +10612,9 @@ fn compute_area(expr: &Expr) -> Result<Expr, InterpreterError> {
         let factor = call("Times", vec![rx, ry]);
         const TWO_PI: f64 = std::f64::consts::TAU;
         let area = if (d - TWO_PI).abs() < 1e-12 {
-          Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![
-              Expr::Integer(2),
-              Expr::Constant("Pi".to_string()),
-              factor,
-            ]
-            .into(),
-          }
+          call("Times", vec![Expr::Integer(2), const_expr("Pi"), factor])
         } else if d > TWO_PI {
-          call("Times", vec![Expr::Constant("Pi".to_string()), factor])
+          call("Times", vec![const_expr("Pi"), factor])
         } else {
           let dt = disk_segment_dtheta(&th1, &th2)?;
           // Together hoists the rational content of Δθ - Sin[Δθ] so the
@@ -10777,7 +10725,7 @@ fn compute_area(expr: &Expr) -> Result<Expr, InterpreterError> {
           name: "Times".to_string(),
           args: vec![
             Expr::Integer(4),
-            Expr::Constant("Pi".to_string()),
+            const_expr("Pi"),
             call("Power", vec![radius, Expr::Integer(2)]),
           ]
           .into(),
@@ -10825,7 +10773,7 @@ fn compute_area(expr: &Expr) -> Result<Expr, InterpreterError> {
           name: "Times".to_string(),
           args: vec![
             Expr::Integer(2),
-            Expr::Constant("Pi".to_string()),
+            const_expr("Pi"),
             call("Power", vec![n_expr, Expr::Integer(-1)]),
           ]
           .into(),
@@ -12069,22 +12017,14 @@ fn compute_arc_length(expr: &Expr) -> Result<Expr, InterpreterError> {
       "Circle" => {
         if args.is_empty() || args.len() == 1 {
           // Unit circle: 2*Pi
-          let result = call(
-            "Times",
-            vec![Expr::Integer(2), Expr::Constant("Pi".to_string())],
-          );
+          let result = call("Times", vec![Expr::Integer(2), const_expr("Pi")]);
           crate::evaluator::evaluate_expr_to_expr(&result)
         } else if args.len() == 2 {
           // Circle[center, r] -> 2*Pi*r
-          let result = Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![
-              Expr::Integer(2),
-              Expr::Constant("Pi".to_string()),
-              args[1].clone(),
-            ]
-            .into(),
-          };
+          let result = call(
+            "Times",
+            vec![Expr::Integer(2), const_expr("Pi"), args[1].clone()],
+          );
           crate::evaluator::evaluate_expr_to_expr(&result)
         } else if args.len() == 3
           && !matches!(&args[1], Expr::List(_))
@@ -12167,10 +12107,7 @@ fn compute_perimeter(expr: &Expr) -> Result<Expr, InterpreterError> {
           name: "Plus".to_string(),
           args: vec![
             call("Times", vec![Expr::Integer(2), length]),
-            call(
-              "Times",
-              vec![Expr::Integer(2), Expr::Constant("Pi".to_string()), r],
-            ),
+            call("Times", vec![Expr::Integer(2), const_expr("Pi"), r]),
           ]
           .into(),
         })
@@ -12198,21 +12135,13 @@ fn compute_perimeter(expr: &Expr) -> Result<Expr, InterpreterError> {
       // Disk[{x, y}, r] -> 2*Pi*r, Disk[] -> 2*Pi
       "Disk" => {
         if args.is_empty() || args.len() == 1 {
-          let result = call(
-            "Times",
-            vec![Expr::Integer(2), Expr::Constant("Pi".to_string())],
-          );
+          let result = call("Times", vec![Expr::Integer(2), const_expr("Pi")]);
           crate::evaluator::evaluate_expr_to_expr(&result)
         } else if args.len() == 2 {
-          let result = Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![
-              Expr::Integer(2),
-              Expr::Constant("Pi".to_string()),
-              args[1].clone(),
-            ]
-            .into(),
-          };
+          let result = call(
+            "Times",
+            vec![Expr::Integer(2), const_expr("Pi"), args[1].clone()],
+          );
           crate::evaluator::evaluate_expr_to_expr(&result)
         } else {
           unevaluated()
@@ -12753,10 +12682,7 @@ fn compute_polygon_angle(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let reflex = Expr::FunctionCall {
           name: "Plus".to_string(),
           args: vec![
-            call(
-              "Times",
-              vec![Expr::Integer(2), Expr::Constant("Pi".to_string())],
-            ),
+            call("Times", vec![Expr::Integer(2), const_expr("Pi")]),
             call("Times", vec![Expr::Integer(-1), base]),
           ]
           .into(),
