@@ -6574,15 +6574,12 @@ fn discrete_asymptotic_leading(expr: &Expr, var: &str) -> Option<Expr> {
             .into(),
           },
           // Sqrt[2*Pi]
-          make_sqrt(call(
-            "Times",
-            vec![Expr::Integer(2), Expr::Constant("Pi".to_string())],
-          )),
+          make_sqrt(call("Times", vec![Expr::Integer(2), const_expr("Pi")])),
           // E^(-n)
           Expr::FunctionCall {
             name: "Power".to_string(),
             args: vec![
-              Expr::Constant("E".to_string()),
+              const_expr("E"),
               call("Times", vec![Expr::Integer(-1), n]),
             ]
             .into(),
@@ -6752,19 +6749,12 @@ fn stirling_approx(var: &str) -> Expr {
         .into(),
       },
       // Sqrt[2*Pi]
-      make_sqrt(call(
-        "Times",
-        vec![Expr::Integer(2), Expr::Constant("Pi".to_string())],
-      )),
+      make_sqrt(call("Times", vec![Expr::Integer(2), const_expr("Pi")])),
       // E^(-n)
-      Expr::FunctionCall {
-        name: "Power".to_string(),
-        args: vec![
-          Expr::Constant("E".to_string()),
-          call("Times", vec![Expr::Integer(-1), n]),
-        ]
-        .into(),
-      },
+      call(
+        "Power",
+        vec![const_expr("E"), call("Times", vec![Expr::Integer(-1), n])],
+      ),
     ]
     .into(),
   }
@@ -6928,14 +6918,7 @@ fn asymptotic_binomial(
       Expr::FunctionCall {
         name: "Power".to_string(),
         args: vec![
-          Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![
-              make_sqrt(n),
-              make_sqrt(Expr::Constant("Pi".to_string())),
-            ]
-            .into(),
-          },
+          call("Times", vec![make_sqrt(n), make_sqrt(const_expr("Pi"))]),
           Expr::Integer(-1),
         ]
         .into(),
@@ -7130,7 +7113,7 @@ fn process_covariance(proc: &Expr, t1: &Expr, t2: &Expr) -> Option<Expr> {
     // Stationary Ornstein-Uhlenbeck: s^2 E^(-th |t1 - t2|) / (2 th).
     ("OrnsteinUhlenbeckProcess", [_, sp, th]) => {
       let decay = pow2(
-        Expr::Constant("E".to_string()),
+        const_expr("E"),
         times2(th.clone(), call1("Abs", plus2(t1.clone(), neg(t2.clone())))),
       );
       Some(div2(
@@ -7155,12 +7138,12 @@ fn process_covariance(proc: &Expr, t1: &Expr, t2: &Expr) -> Option<Expr> {
     // x0^2 E^(m (t1 + t2)) (E^(s^2 Min) - 1).
     ("GeometricBrownianMotionProcess", [m, sp, x0]) => {
       let growth = pow2(
-        Expr::Constant("E".to_string()),
+        const_expr("E"),
         times2(m.clone(), plus2(t1.clone(), t2.clone())),
       );
       let bump = plus2(
         Expr::Integer(-1),
-        pow2(Expr::Constant("E".to_string()), times2(sq(sp), min)),
+        pow2(const_expr("E"), times2(sq(sp), min)),
       );
       Some(times2(times2(growth, bump), sq(x0)))
     }
@@ -7252,7 +7235,7 @@ pub fn process_correlation(proc: &Expr, t1: &Expr, t2: &Expr) -> Option<Expr> {
       Some(div2(min, call1("Sqrt", times2(t1.clone(), t2.clone()))))
     }
     ("OrnsteinUhlenbeckProcess", [_, _, th]) => Some(pow2(
-      Expr::Constant("E".to_string()),
+      const_expr("E"),
       neg(times2(
         th.clone(),
         call1("Abs", plus2(t1.clone(), neg(t2.clone()))),
@@ -7296,7 +7279,7 @@ pub fn process_correlation(proc: &Expr, t1: &Expr, t2: &Expr) -> Option<Expr> {
       let bump = |arg: Expr| {
         plus2(
           Expr::Integer(-1),
-          pow2(Expr::Constant("E".to_string()), times2(sq(sp), arg)),
+          pow2(const_expr("E"), times2(sq(sp), arg)),
         )
       };
       Some(div2(
@@ -7342,7 +7325,7 @@ pub fn process_absolute_correlation(
     )),
     ("OrnsteinUhlenbeckProcess", [m, sp, th]) => {
       let decay = pow2(
-        Expr::Constant("E".to_string()),
+        const_expr("E"),
         times2(th.clone(), call1("Abs", plus2(t1.clone(), neg(t2.clone())))),
       );
       Some(plus2(
@@ -7387,7 +7370,7 @@ pub fn process_absolute_correlation(
     }
     ("GeometricBrownianMotionProcess", [m, sp, x0]) => Some(times2(
       pow2(
-        Expr::Constant("E".to_string()),
+        const_expr("E"),
         plus2(
           times2(m.clone(), plus2(t1.clone(), t2.clone())),
           times2(sq(sp), min),
@@ -9482,7 +9465,7 @@ fn erlang_b_symbolic(
       call(
         "Power",
         vec![
-          Expr::Constant("E".to_string()),
+          const_expr("E"),
           call("Times", vec![Expr::Integer(-1), a.clone()]),
         ],
       ),

@@ -430,7 +430,7 @@ pub fn dirichlet_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               "Rational",
               vec![Expr::Integer(a as i128 + 1), Expr::Integer(k)],
             ),
-            Expr::Constant("Pi".to_string()),
+            const_expr("Pi"),
           ]
           .into(),
         }]
@@ -447,7 +447,7 @@ pub fn dirichlet_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: "Times".to_string(),
       args: vec![
         call("Rational", vec![Expr::Integer(1), Expr::Integer(2 * k)]),
-        Expr::Constant("Pi".to_string()),
+        const_expr("Pi"),
         sum,
       ]
       .into(),

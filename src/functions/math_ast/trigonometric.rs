@@ -2298,7 +2298,7 @@ pub fn exp_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   match &args[0] {
     Expr::Integer(0) => Ok(Expr::Integer(1)),
-    Expr::Integer(1) => Ok(Expr::Constant("E".to_string())),
+    Expr::Integer(1) => Ok(const_expr("E")),
     Expr::Real(f) => {
       // Wolfram only emits General::ovfl + Overflow[] for *truly* huge
       // arguments (around |x| >= 10^15) — its big-exponent reals can
@@ -2318,9 +2318,9 @@ pub fn exp_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if let Some(result) = bigfloat_exp(digits, *prec) {
         return result;
       }
-      power_two(&Expr::Constant("E".to_string()), &args[0])
+      power_two(&const_expr("E"), &args[0])
     }
-    _ => power_two(&Expr::Constant("E".to_string()), &args[0]),
+    _ => power_two(&const_expr("E"), &args[0]),
   }
 }
 
@@ -2896,7 +2896,7 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               name: "Times".to_string(),
               args: vec![
                 Expr::Integer(-2 * k),
-                Expr::Constant("Pi".to_string()),
+                const_expr("Pi"),
                 Expr::Identifier("I".to_string()),
               ]
               .into(),
@@ -2956,7 +2956,7 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           &[
             Expr::Identifier("I".to_string()),
             make_rational(1, 2),
-            Expr::Constant("Pi".to_string()),
+            const_expr("Pi"),
           ],
         );
       }
@@ -2995,7 +2995,7 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               Expr::Integer(-1),
               Expr::Identifier("I".to_string()),
               make_rational(1, 2),
-              Expr::Constant("Pi".to_string()),
+              const_expr("Pi"),
             ],
           );
         }
@@ -3021,7 +3021,7 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                   call1("Sign", coeff.clone()),
                   make_rational(1, 2),
                   Expr::Identifier("I".to_string()),
-                  Expr::Constant("Pi".to_string()),
+                  const_expr("Pi"),
                 ]
                 .into(),
               },
@@ -3041,10 +3041,7 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let result = Expr::FunctionCall {
           name: "Plus".to_string(),
           args: vec![
-            times2(
-              Expr::Identifier("I".to_string()),
-              Expr::Constant("Pi".to_string()),
-            ),
+            times2(Expr::Identifier("I".to_string()), const_expr("Pi")),
             call1("Log", make_rational(p.abs(), q.abs())),
           ]
           .into(),
@@ -3057,10 +3054,7 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       {
         let abs_n = -*n;
         // I*Pi
-        let i_pi = times2(
-          Expr::Identifier("I".to_string()),
-          Expr::Constant("Pi".to_string()),
-        );
+        let i_pi = times2(Expr::Identifier("I".to_string()), const_expr("Pi"));
         if abs_n == 1 {
           return Ok(i_pi);
         }
@@ -3102,10 +3096,8 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             )
         });
         if let Some(inner_expr) = inner {
-          let i_pi = times2(
-            Expr::Identifier("I".to_string()),
-            Expr::Constant("Pi".to_string()),
-          );
+          let i_pi =
+            times2(Expr::Identifier("I".to_string()), const_expr("Pi"));
           let log_x =
             crate::evaluator::evaluate_function_call_ast("Log", &[inner_expr])?;
           return crate::evaluator::evaluate_function_call_ast(
@@ -3414,7 +3406,7 @@ fn fold_inverse_of_forward(name: &str, arg: &Expr) -> Option<Expr> {
     return None;
   }
 
-  let pi = || Expr::Constant("Pi".to_string());
+  let pi = || const_expr("Pi");
   let half = || call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]);
   // How many half turns to take off `u`, as an exact integer. Each range
   // wants its own half-open period:
@@ -3514,13 +3506,13 @@ pub fn arcsin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match &args[0] {
     Expr::Integer(0) => return Ok(Expr::Integer(0)),
     Expr::Integer(1) => {
-      return Ok(div2(Expr::Constant("Pi".to_string()), Expr::Integer(2)));
+      return Ok(div2(const_expr("Pi"), Expr::Integer(2)));
     }
     Expr::Integer(-1) => {
       // -1/2*Pi = Times[Rational[-1, 2], Pi]
       return Ok(times2(
         call("Rational", vec![Expr::Integer(-1), Expr::Integer(2)]),
-        Expr::Constant("Pi".to_string()),
+        const_expr("Pi"),
       ));
     }
     Expr::Real(f) if (-1.0..=1.0).contains(f) => {
@@ -3652,9 +3644,9 @@ pub fn arccos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match &args[0] {
     Expr::Integer(1) => return Ok(Expr::Integer(0)),
     Expr::Integer(0) => {
-      return Ok(div2(Expr::Constant("Pi".to_string()), Expr::Integer(2)));
+      return Ok(div2(const_expr("Pi"), Expr::Integer(2)));
     }
-    Expr::Integer(-1) => return Ok(Expr::Constant("Pi".to_string())),
+    Expr::Integer(-1) => return Ok(const_expr("Pi")),
     Expr::Real(f) if (-1.0..=1.0).contains(f) => {
       return Ok(Expr::Real(f.acos()));
     }
@@ -3698,15 +3690,15 @@ fn arccos_special_value(v: f64) -> Option<Expr> {
   let pi_frac = |num: i128, den: i128| -> Expr {
     if den == 1 {
       if num == 1 {
-        Expr::Constant("Pi".to_string())
+        const_expr("Pi")
       } else {
-        times2(Expr::Integer(num), Expr::Constant("Pi".to_string()))
+        times2(Expr::Integer(num), const_expr("Pi"))
       }
     } else {
       let numerator = if num == 1 {
-        Expr::Constant("Pi".to_string())
+        const_expr("Pi")
       } else {
-        times2(Expr::Integer(num), Expr::Constant("Pi".to_string()))
+        times2(Expr::Integer(num), const_expr("Pi"))
       };
       div2(numerator, Expr::Integer(den))
     }
@@ -3749,12 +3741,12 @@ fn arcsin_special_value(v: f64) -> Option<Expr> {
         // Negative: build Times[Rational[-1, den], Pi] to display as -1/den*Pi
         return Some(times2(
           call("Rational", vec![Expr::Integer(-1), Expr::Integer(den)]),
-          Expr::Constant("Pi".to_string()),
+          const_expr("Pi"),
         ));
       } else if den == 1 {
-        return Some(Expr::Constant("Pi".to_string()));
+        return Some(const_expr("Pi"));
       }
-      return Some(div2(Expr::Constant("Pi".to_string()), Expr::Integer(den)));
+      return Some(div2(const_expr("Pi"), Expr::Integer(den)));
     }
   }
   None
@@ -3801,18 +3793,18 @@ pub fn arctan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match &args[0] {
     Expr::Integer(0) => return Ok(Expr::Integer(0)),
     Expr::Integer(1) => {
-      return Ok(div2(Expr::Constant("Pi".to_string()), Expr::Integer(4)));
+      return Ok(div2(const_expr("Pi"), Expr::Integer(4)));
     }
     Expr::Integer(-1) => {
       // -1/4*Pi = Times[Rational[-1, 4], Pi]
       return Ok(times2(
         call("Rational", vec![Expr::Integer(-1), Expr::Integer(4)]),
-        Expr::Constant("Pi".to_string()),
+        const_expr("Pi"),
       ));
     }
     Expr::Identifier(s) if s == "Infinity" => {
       // ArcTan[Infinity] = Pi/2
-      return Ok(div2(Expr::Constant("Pi".to_string()), Expr::Integer(2)));
+      return Ok(div2(const_expr("Pi"), Expr::Integer(2)));
     }
     Expr::Real(f) => return Ok(Expr::Real(f.atan())),
     _ => {}
@@ -3823,7 +3815,7 @@ pub fn arctan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: "Times".to_string(),
       args: vec![
         call("Rational", vec![Expr::Integer(-1), Expr::Integer(2)]),
-        Expr::Constant("Pi".to_string()),
+        const_expr("Pi"),
       ]
       .into(),
     });
@@ -3836,7 +3828,7 @@ pub fn arctan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let eps = 1e-12;
     if (val - sqrt3).abs() < eps {
       // ArcTan[Sqrt[3]] = Pi/3
-      return Ok(div2(Expr::Constant("Pi".to_string()), Expr::Integer(3)));
+      return Ok(div2(const_expr("Pi"), Expr::Integer(3)));
     }
     if (val + sqrt3).abs() < eps {
       // ArcTan[-Sqrt[3]] = -Pi/3
@@ -3844,7 +3836,7 @@ pub fn arctan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         name: "Times".to_string(),
         args: vec![
           call("Rational", vec![Expr::Integer(-1), Expr::Integer(3)]),
-          Expr::Constant("Pi".to_string()),
+          const_expr("Pi"),
         ]
         .into(),
       });
@@ -3852,7 +3844,7 @@ pub fn arctan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let inv_sqrt3 = 1.0 / sqrt3;
     if (val - inv_sqrt3).abs() < eps {
       // ArcTan[1/Sqrt[3]] = Pi/6
-      return Ok(div2(Expr::Constant("Pi".to_string()), Expr::Integer(6)));
+      return Ok(div2(const_expr("Pi"), Expr::Integer(6)));
     }
     if (val + inv_sqrt3).abs() < eps {
       // ArcTan[-1/Sqrt[3]] = -Pi/6
@@ -3860,7 +3852,7 @@ pub fn arctan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         name: "Times".to_string(),
         args: vec![
           call("Rational", vec![Expr::Integer(-1), Expr::Integer(6)]),
-          Expr::Constant("Pi".to_string()),
+          const_expr("Pi"),
         ]
         .into(),
       });
@@ -3869,13 +3861,13 @@ pub fn arctan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Tan[5 Pi/12] = 2 + Sqrt[3]). `k_over_12_pi(k)` builds k*Pi/12.
     let k_over_12_pi = |k: i128| -> Expr {
       if k == 1 {
-        div2(Expr::Constant("Pi".to_string()), Expr::Integer(12))
+        div2(const_expr("Pi"), Expr::Integer(12))
       } else {
         Expr::FunctionCall {
           name: "Times".to_string(),
           args: vec![
             call("Rational", vec![Expr::Integer(k), Expr::Integer(12)]),
-            Expr::Constant("Pi".to_string()),
+            const_expr("Pi"),
           ]
           .into(),
         }
@@ -3943,14 +3935,14 @@ pub fn arctan2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let rational_pi = |num: i128, den: i128| -> Expr {
     if den == 1 {
       if num == 1 {
-        Expr::Constant("Pi".to_string())
+        const_expr("Pi")
       } else {
-        times2(Expr::Integer(num), Expr::Constant("Pi".to_string()))
+        times2(Expr::Integer(num), const_expr("Pi"))
       }
     } else {
       times2(
         call("Rational", vec![Expr::Integer(num), Expr::Integer(den)]),
-        Expr::Constant("Pi".to_string()),
+        const_expr("Pi"),
       )
     }
   };
@@ -3999,9 +3991,9 @@ pub fn arctan2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     // x < 0: shift by +Pi (y >= 0) or -Pi (y < 0).
     let pi_term = if yf >= 0.0 {
-      Expr::Constant("Pi".to_string())
+      const_expr("Pi")
     } else {
-      times2(Expr::Integer(-1), Expr::Constant("Pi".to_string()))
+      times2(Expr::Integer(-1), const_expr("Pi"))
     };
     return crate::evaluator::evaluate_function_call_ast(
       "Plus",
@@ -4738,7 +4730,7 @@ pub fn arccosh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         &[
           call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
           Expr::Identifier("I".to_string()),
-          Expr::Constant("Pi".to_string()),
+          const_expr("Pi"),
         ],
       );
     }
@@ -4763,7 +4755,7 @@ pub fn arccosh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             name: "Times".to_string(),
             args: vec![
               call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
-              Expr::Constant("Pi".to_string()),
+              const_expr("Pi"),
             ]
             .into(),
           },
@@ -4881,7 +4873,7 @@ pub fn arccoth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         &[
           call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
           Expr::Identifier("I".to_string()),
-          Expr::Constant("Pi".to_string()),
+          const_expr("Pi"),
         ],
       );
     }
@@ -4930,7 +4922,7 @@ pub fn arccoth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             name: "Times".to_string(),
             args: vec![
               call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
-              Expr::Constant("Pi".to_string()),
+              const_expr("Pi"),
             ]
             .into(),
           },
@@ -5169,14 +5161,11 @@ pub fn arccsch_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Helper to construct -Pi/2 matching wolframscript output format
 /// Construct Pi/n as an AST expression
 fn pi_over_n(n: i128) -> Expr {
-  div2(Expr::Constant("Pi".to_string()), Expr::Integer(n))
+  div2(const_expr("Pi"), Expr::Integer(n))
 }
 
 fn negative_pi_over_2() -> Expr {
-  times2(
-    div2(Expr::Integer(-1), Expr::Integer(2)),
-    Expr::Constant("Pi".to_string()),
-  )
+  times2(div2(Expr::Integer(-1), Expr::Integer(2)), const_expr("Pi"))
 }
 
 /// Gudermannian[x] - the Gudermannian function: 2 ArcTan[Tanh[x/2]]
@@ -5341,7 +5330,7 @@ pub fn gudermannian_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     Expr::Identifier(name) if name == "Infinity" => {
       // Gudermannian[Infinity] = Pi/2
-      return Ok(div2(Expr::Constant("Pi".to_string()), Expr::Integer(2)));
+      return Ok(div2(const_expr("Pi"), Expr::Integer(2)));
     }
     Expr::Identifier(name) if name == "ComplexInfinity" => {
       // Gudermannian[ComplexInfinity] is unevaluated in Wolfram
@@ -5505,7 +5494,7 @@ fn trig_degrees_ast(
   // Convert degrees to radians: x * Degree
   let radians = crate::evaluator::evaluate_function_call_ast(
     "Times",
-    &[args[0].clone(), Expr::Constant("Degree".to_string())],
+    &[args[0].clone(), const_expr("Degree")],
   )?;
   let result =
     crate::evaluator::evaluate_function_call_ast(func_name, &[radians])?;
@@ -5549,10 +5538,7 @@ fn arc_trig_degrees_ast(
     &[
       radians,
       call("Rational", vec![Expr::Integer(180), Expr::Integer(1)]),
-      call(
-        "Power",
-        vec![Expr::Constant("Pi".to_string()), Expr::Integer(-1)],
-      ),
+      call("Power", vec![const_expr("Pi"), Expr::Integer(-1)]),
     ],
   )
 }

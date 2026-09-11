@@ -99,14 +99,10 @@ pub fn cos_integral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     other => {
       if is_neg_infinity(other) {
         // CosIntegral[-Infinity] = I*Pi
-        return Ok(Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![
-            Expr::Identifier("I".to_string()),
-            Expr::Constant("Pi".to_string()),
-          ]
-          .into(),
-        });
+        return Ok(call(
+          "Times",
+          vec![Expr::Identifier("I".to_string()), const_expr("Pi")],
+        ));
       }
       // Unevaluated
       Ok(unevaluated("CosIntegral", args))
@@ -575,20 +571,16 @@ pub fn sin_integral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // SinIntegral[0] = 0
     Expr::Integer(0) => Ok(Expr::Integer(0)),
     // SinIntegral[Infinity] = Pi/2
-    Expr::Identifier(s) if s == "Infinity" => Ok(call(
-      "Times",
-      vec![make_rational(1, 2), Expr::Constant("Pi".to_string())],
-    )),
+    Expr::Identifier(s) if s == "Infinity" => {
+      Ok(call("Times", vec![make_rational(1, 2), const_expr("Pi")]))
+    }
     // Numeric evaluation
     Expr::Real(x) => Ok(Expr::Real(sin_integral_numeric(*x))),
     // Check for -Infinity
     other => {
       if is_neg_infinity(other) {
         // SinIntegral[-Infinity] = -Pi/2
-        return Ok(call(
-          "Times",
-          vec![make_rational(-1, 2), Expr::Constant("Pi".to_string())],
-        ));
+        return Ok(call("Times", vec![make_rational(-1, 2), const_expr("Pi")]));
       }
       // Unevaluated
       Ok(unevaluated("SinIntegral", args))

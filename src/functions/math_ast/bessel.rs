@@ -796,7 +796,7 @@ fn wrap_bessel_k_factor(
       call(
         "Power",
         vec![
-          Expr::Constant("E".to_string()),
+          const_expr("E"),
           call("Times", vec![Expr::Integer(-1), z_expr.clone()]),
         ],
       ),
@@ -1256,7 +1256,7 @@ fn coulomb_hplus_expr(l: i128, eta: &Expr, rho: &Expr) -> Expr {
       "Times",
       vec![
         call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
-        Expr::Constant("Pi".to_string()),
+        const_expr("Pi"),
         eta.clone(),
       ],
     ),
@@ -1322,7 +1322,7 @@ fn coulomb_f_numeric(
       "Times",
       vec![
         call("Rational", vec![Expr::Integer(-1), Expr::Integer(2)]),
-        Expr::Constant("Pi".to_string()),
+        const_expr("Pi"),
         eta.clone(),
       ],
     ),

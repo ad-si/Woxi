@@ -55,7 +55,7 @@ fn sqrt2() -> Expr {
 }
 
 fn pi_quarter() -> Expr {
-  div(Expr::Constant("Pi".to_string()), 4)
+  div(const_expr("Pi"), 4)
 }
 
 /// First symbol of `v` in canonical term order, lowercased; decides

@@ -111,11 +111,8 @@ pub fn elliptic_nome_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           return Ok(call(
             "Power",
             vec![
-              Expr::Constant("E".to_string()),
-              call(
-                "Times",
-                vec![Expr::Integer(-1), Expr::Constant("Pi".to_string())],
-              ),
+              const_expr("E"),
+              call("Times", vec![Expr::Integer(-1), const_expr("Pi")]),
             ],
           ));
         }

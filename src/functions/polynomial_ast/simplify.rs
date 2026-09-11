@@ -1242,7 +1242,7 @@ fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
           return Expr::Integer(0);
         }
         if info.negative_vars.contains(var_name) {
-          return Expr::Constant("Pi".to_string());
+          return const_expr("Pi");
         }
       }
       let refined_arg = refine_expr(&args[0], info, assumption);
@@ -2649,14 +2649,10 @@ fn refine_log(
     return Some(Expr::FunctionCall {
       name: "Plus".to_string(),
       args: vec![
-        Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![
-            Expr::Identifier("I".to_string()),
-            Expr::Constant("Pi".to_string()),
-          ]
-          .into(),
-        },
+        call(
+          "Times",
+          vec![Expr::Identifier("I".to_string()), const_expr("Pi")],
+        ),
         call1("Log", neg1(arg.clone())),
       ]
       .into(),
@@ -5605,7 +5601,7 @@ pub(crate) fn factor_exponential_sum(expr: &Expr) -> Option<Expr> {
   // Substitute x back and multiply the pulled-out E^(k_min u) in.
   let step_rate = make_ratio(step, common_den);
   let x_value = pow2(
-    Expr::Constant("E".to_string()),
+    const_expr("E"),
     match &step_rate {
       Expr::Integer(1) => var.clone(),
       other => times2(other.clone(), var.clone()),
@@ -5622,7 +5618,7 @@ pub(crate) fn factor_exponential_sum(expr: &Expr) -> Option<Expr> {
   } else {
     times2(
       pow2(
-        Expr::Constant("E".to_string()),
+        const_expr("E"),
         crate::evaluator::evaluate_expr_to_expr(&times2(min_rate, var)).ok()?,
       ),
       substituted,
@@ -6100,10 +6096,8 @@ fn try_complementary_inverse_trig(expr: &Expr) -> Option<Expr> {
     return None;
   }
   // c * Pi / 2
-  let result = div2(
-    call("Times", vec![c0, Expr::Constant("Pi".to_string())]),
-    Expr::Integer(2),
-  );
+  let result =
+    div2(call("Times", vec![c0, const_expr("Pi")]), Expr::Integer(2));
   crate::evaluator::evaluate_expr_to_expr(&result).ok()
 }
 

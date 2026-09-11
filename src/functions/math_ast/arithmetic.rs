@@ -10518,10 +10518,7 @@ fn try_power_overflow(base: &Expr, exp: &Expr) -> Option<Expr> {
     )
   };
   crate::emit_message(message);
-  Some(Expr::FunctionCall {
-    name: head.to_string(),
-    args: Vec::new().into(),
-  })
+  Some(call0(head))
 }
 
 /// Helper for Power of two arguments
@@ -10844,7 +10841,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     if let Some(terms) = terms
       && terms.iter().any(|t| term_has_log(t))
     {
-      let e = Expr::Constant("E".to_string());
+      let e = const_expr("E");
       let mut factors: Vec<Expr> = Vec::new();
       let mut rest: Vec<Expr> = Vec::new();
       for t in &terms {

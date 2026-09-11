@@ -1154,8 +1154,8 @@ fn try_definite_integral(
     && let Some(coeff) = match_gaussian(integrand, var)
   {
     let result = match coeff {
-      Expr::Integer(1) => make_sqrt(Expr::Constant("Pi".to_string())),
-      _ => make_sqrt(div2(Expr::Constant("Pi".to_string()), coeff)),
+      Expr::Integer(1) => make_sqrt(const_expr("Pi")),
+      _ => make_sqrt(div2(const_expr("Pi"), coeff)),
     };
     // Re-evaluate so e.g. `Sqrt[Pi/(1/4)]` collapses to `2*Sqrt[Pi]`.
     return Some(
@@ -1183,8 +1183,8 @@ fn try_definite_integral(
     && let Some(coeff) = match_gaussian(integrand, var)
   {
     let sqrt_part = match coeff {
-      Expr::Integer(1) => make_sqrt(Expr::Constant("Pi".to_string())),
-      _ => make_sqrt(div2(Expr::Constant("Pi".to_string()), coeff)),
+      Expr::Integer(1) => make_sqrt(const_expr("Pi")),
+      _ => make_sqrt(div2(const_expr("Pi"), coeff)),
     };
     let result = div2(sqrt_part, Expr::Integer(2));
     return Some(
@@ -1223,7 +1223,7 @@ fn try_definite_integral(
     && !expr_depends_on_var(&n, var)
   {
     let bessel = call("BesselJ", vec![Expr::Integer(0), n]);
-    return Some(times2(Expr::Constant("Pi".to_string()), bessel));
+    return Some(times2(const_expr("Pi"), bessel));
   }
 
   // Euler's log-trig integrals:
@@ -1244,14 +1244,10 @@ fn try_definite_integral(
     && trig_args.len() == 1
     && matches!(&trig_args[0], Expr::Identifier(n) if n == var)
   {
-    let pi_log2 = Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![
-        Expr::Constant("Pi".to_string()),
-        call1("Log", Expr::Integer(2)),
-      ]
-      .into(),
-    };
+    let pi_log2 = call(
+      "Times",
+      vec![const_expr("Pi"), call1("Log", Expr::Integer(2))],
+    );
     if is_pi_over_two(hi) {
       match trig_name.as_str() {
         "Sin" | "Cos" => {
@@ -1611,8 +1607,8 @@ fn gaussian_moment_result(
     |base: Expr, exp: i128| call("Power", vec![base, Expr::Integer(exp)]);
   let half = || call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]);
   let sqrt_pi_over_a = || match coeff {
-    Expr::Integer(1) => make_sqrt(Expr::Constant("Pi".to_string())),
-    _ => make_sqrt(div2(Expr::Constant("Pi".to_string()), coeff.clone())),
+    Expr::Integer(1) => make_sqrt(const_expr("Pi")),
+    _ => make_sqrt(div2(const_expr("Pi"), coeff.clone())),
   };
 
   let mut factors: Vec<Expr> = Vec::new();
@@ -3177,7 +3173,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           if matches!(dz, Expr::Integer(0)) {
             return Ok(Expr::Integer(0));
           }
-          let exp_z = pow2(Expr::Constant("E".to_string()), args[0].clone());
+          let exp_z = pow2(const_expr("E"), args[0].clone());
           let result = simplify(div2(exp_z, args[0].clone()));
           if matches!(dz, Expr::Integer(1)) {
             Ok(result)
@@ -3348,10 +3344,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           }
           // (Pi * z^2) / 2, evaluated so a compound argument's square expands.
           let inner = crate::evaluator::evaluate_expr_to_expr(&div2(
-            times2(
-              Expr::Constant("Pi".to_string()),
-              pow2(args[0].clone(), Expr::Integer(2)),
-            ),
+            times2(const_expr("Pi"), pow2(args[0].clone(), Expr::Integer(2))),
             Expr::Integer(2),
           ))
           .unwrap_or_else(|_| args[0].clone());
@@ -3570,8 +3563,8 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             left: Box::new(Expr::FunctionCall {
               name: "Times".to_string(),
               args: vec![
-                pow2(Expr::Constant("E".to_string()), f_sq),
-                call1("Sqrt", Expr::Constant("Pi".to_string())),
+                pow2(const_expr("E"), f_sq),
+                call1("Sqrt", const_expr("Pi")),
               ]
               .into(),
             }),
@@ -3650,8 +3643,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           // z^(a-1)
           let z_pow = pow2(z.clone(), minus2(a.clone(), Expr::Integer(1)));
           // E^(-z)
-          let exp_neg_z =
-            pow2(Expr::Constant("E".to_string()), neg1(z.clone()));
+          let exp_neg_z = pow2(const_expr("E"), neg1(z.clone()));
           // -z^(a-1) E^(-z), times z' (chain rule).
           let core = neg1(times2(z_pow, exp_neg_z));
           let full = if matches!(dz, Expr::Integer(1)) {
@@ -3851,11 +3843,9 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             return Ok(Expr::Integer(0));
           }
           let z_sq = pow2(args[0].clone(), Expr::Integer(2));
-          let exp_neg_z2 = pow2(Expr::Constant("E".to_string()), neg1(z_sq));
-          let two_over_sqrt_pi = div2(
-            Expr::Integer(2),
-            make_sqrt(Expr::Constant("Pi".to_string())),
-          );
+          let exp_neg_z2 = pow2(const_expr("E"), neg1(z_sq));
+          let two_over_sqrt_pi =
+            div2(Expr::Integer(2), make_sqrt(const_expr("Pi")));
           let result = simplify(times2(two_over_sqrt_pi, exp_neg_z2));
           if matches!(dz, Expr::Integer(1)) {
             Ok(result)
@@ -3870,12 +3860,9 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             return Ok(Expr::Integer(0));
           }
           let z_sq = pow2(args[0].clone(), Expr::Integer(2));
-          let neg_exp_neg_z2 =
-            neg1(pow2(Expr::Constant("E".to_string()), neg1(z_sq)));
-          let two_over_sqrt_pi = div2(
-            Expr::Integer(2),
-            make_sqrt(Expr::Constant("Pi".to_string())),
-          );
+          let neg_exp_neg_z2 = neg1(pow2(const_expr("E"), neg1(z_sq)));
+          let two_over_sqrt_pi =
+            div2(Expr::Integer(2), make_sqrt(const_expr("Pi")));
           let result = simplify(times2(two_over_sqrt_pi, neg_exp_neg_z2));
           if matches!(dz, Expr::Integer(1)) {
             Ok(result)
@@ -3890,11 +3877,9 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             return Ok(Expr::Integer(0));
           }
           let z_sq = pow2(args[0].clone(), Expr::Integer(2));
-          let exp_z2 = pow2(Expr::Constant("E".to_string()), z_sq);
-          let two_over_sqrt_pi = div2(
-            Expr::Integer(2),
-            make_sqrt(Expr::Constant("Pi".to_string())),
-          );
+          let exp_z2 = pow2(const_expr("E"), z_sq);
+          let two_over_sqrt_pi =
+            div2(Expr::Integer(2), make_sqrt(const_expr("Pi")));
           let result = simplify(times2(two_over_sqrt_pi, exp_z2));
           if matches!(dz, Expr::Integer(1)) {
             Ok(result)
@@ -4905,21 +4890,20 @@ fn make_gaussian_antiderivative(
   let (erf_arg, prefix) = match coeff {
     Expr::Integer(1) => {
       // a=1: Erf[x], prefix = Sqrt[Pi]
-      (var_expr, make_sqrt(Expr::Constant("Pi".to_string())))
+      (var_expr, make_sqrt(const_expr("Pi")))
     }
     Expr::Integer(n) if *n != 1 => {
       // concrete integer a: (Sqrt[Pi/a]*Erf[Sqrt[a]*x])/2 — matches Wolfram output
       let sqrt_a = make_sqrt(coeff.clone());
       let erf_arg = times2(sqrt_a, var_expr);
-      let prefix =
-        make_sqrt(div2(Expr::Constant("Pi".to_string()), coeff.clone()));
+      let prefix = make_sqrt(div2(const_expr("Pi"), coeff.clone()));
       (erf_arg, prefix)
     }
     _ => {
       // symbolic a: (Sqrt[Pi]*Erf[Sqrt[a]*x])/(2*Sqrt[a]) — matches Wolfram output
       let sqrt_a = make_sqrt(coeff.clone());
       let erf_arg = times2(sqrt_a.clone(), var_expr);
-      let prefix = make_sqrt(Expr::Constant("Pi".to_string()));
+      let prefix = make_sqrt(const_expr("Pi"));
       let erf_expr = call(erf_name, vec![erf_arg]);
       // (Sqrt[Pi] * Erf[Sqrt[a]*x]) / (2 * Sqrt[a])
       return div2(times2(prefix, erf_expr), times2(Expr::Integer(2), sqrt_a));
@@ -4955,7 +4939,7 @@ fn make_fresnel_antiderivative(
   fresnel_name: &str,
 ) -> Expr {
   let x = Expr::Identifier(var.to_string());
-  let pi = Expr::Constant("Pi".to_string());
+  let pi = const_expr("Pi");
   let sqrt_pi_2 = make_sqrt(div2(pi.clone(), Expr::Integer(2)));
   let sqrt_2_pi = make_sqrt(div2(Expr::Integer(2), pi));
   let sqrt_a = make_sqrt(coeff.clone());
@@ -7958,10 +7942,8 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
               let var_expr = Expr::Identifier(var.to_string());
               let inv_x = pow2(var_expr.clone(), Expr::Integer(-1));
               let term1 = times2(var_expr, expr.clone());
-              let term2 = times2(
-                make_sqrt(Expr::Constant("Pi".to_string())),
-                call("Erf", vec![inv_x]),
-              );
+              let term2 =
+                times2(make_sqrt(const_expr("Pi")), call("Erf", vec![inv_x]));
               return Some(plus2(term1, term2));
             }
           }
@@ -8248,7 +8230,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
               "CosIntegral" => neg(call1("Sin", x.clone())),
               "SinhIntegral" => neg(call1("Cosh", x.clone())),
               "CoshIntegral" => neg(call1("Sinh", x.clone())),
-              _ => neg(pow2(Expr::Constant("E".to_string()), x.clone())),
+              _ => neg(pow2(const_expr("E"), x.clone())),
             };
             let x_f = Expr::BinaryOp {
               op: BinaryOperator::Times,
@@ -8322,40 +8304,26 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
           {
             let x = Expr::Identifier(var.to_string());
             let x_sq = pow2(x.clone(), Expr::Integer(2));
-            let sqrt_pi = call1("Sqrt", Expr::Constant("Pi".to_string()));
+            let sqrt_pi = call1("Sqrt", const_expr("Pi"));
             let neg = |e: Expr| times2(Expr::Integer(-1), e);
             // exp(-x^2)/Sqrt[Pi] used by Erf/Erfc.
             let gauss = || {
               div2(
                 Expr::Integer(1),
-                times2(
-                  pow2(Expr::Constant("E".to_string()), x_sq.clone()),
-                  sqrt_pi.clone(),
-                ),
+                times2(pow2(const_expr("E"), x_sq.clone()), sqrt_pi.clone()),
               )
             };
             // (Pi x^2)/2 argument for the Fresnel corrections.
-            let fresnel_arg = || {
-              div2(
-                times2(Expr::Constant("Pi".to_string()), x_sq.clone()),
-                Expr::Integer(2),
-              )
-            };
+            let fresnel_arg =
+              || div2(times2(const_expr("Pi"), x_sq.clone()), Expr::Integer(2));
             let correction = match name.as_str() {
               "Erf" => gauss(),
               "Erfc" => neg(gauss()),
-              "Erfi" => neg(div2(
-                pow2(Expr::Constant("E".to_string()), x_sq.clone()),
-                sqrt_pi.clone(),
-              )),
-              "FresnelS" => div2(
-                call1("Cos", fresnel_arg()),
-                Expr::Constant("Pi".to_string()),
-              ),
-              _ => neg(div2(
-                call1("Sin", fresnel_arg()),
-                Expr::Constant("Pi".to_string()),
-              )),
+              "Erfi" => {
+                neg(div2(pow2(const_expr("E"), x_sq.clone()), sqrt_pi.clone()))
+              }
+              "FresnelS" => div2(call1("Cos", fresnel_arg()), const_expr("Pi")),
+              _ => neg(div2(call1("Sin", fresnel_arg()), const_expr("Pi"))),
             };
             let x_f = times2(
               x,
@@ -9016,10 +8984,8 @@ pub fn simplify(mut expr: Expr) -> Expr {
       // Convert Exp[x] → E^x
       if name == "Exp"
         && args.len() == 1
-        && let Ok(result) = crate::functions::math_ast::power_two(
-          &Expr::Constant("E".to_string()),
-          &args[0],
-        )
+        && let Ok(result) =
+          crate::functions::math_ast::power_two(&const_expr("E"), &args[0])
       {
         return result;
       }
@@ -10203,8 +10169,7 @@ fn limit_at_infinity(
         Expr::FunctionCall { name, .. } if name == "Limit")
         && is_constant_wrt(&exponent_limit, var_name);
       if is_clean_value(&exponent_limit) || resolved {
-        let result =
-          simplify(pow2(Expr::Constant("E".to_string()), exponent_limit));
+        let result = simplify(pow2(const_expr("E"), exponent_limit));
         return crate::evaluator::evaluate_expr_to_expr(&result);
       }
     }
@@ -10301,10 +10266,10 @@ fn limit_at_infinity(
       }
       // Check for known constants
       if (f2 - std::f64::consts::E).abs() < 1e-3 {
-        return Ok(Expr::Constant("E".to_string()));
+        return Ok(const_expr("E"));
       }
       if (f2 - std::f64::consts::PI).abs() < 1e-3 {
-        return Ok(Expr::Constant("Pi".to_string()));
+        return Ok(const_expr("Pi"));
       }
       // Check for common multiples/fractions of Pi
       let pi = std::f64::consts::PI;
@@ -10331,12 +10296,9 @@ fn limit_at_infinity(
         if (f2 - val).abs() < 1e-3 {
           if denom == 1 {
             if numer == -1 {
-              return Ok(neg1(Expr::Constant("Pi".to_string())));
+              return Ok(neg1(const_expr("Pi")));
             }
-            return Ok(times2(
-              Expr::Integer(numer),
-              Expr::Constant("Pi".to_string()),
-            ));
+            return Ok(times2(Expr::Integer(numer), const_expr("Pi")));
           }
           return Ok(Expr::FunctionCall {
             name: "Times".to_string(),
@@ -10345,7 +10307,7 @@ fn limit_at_infinity(
                 "Rational",
                 vec![Expr::Integer(numer), Expr::Integer(denom)],
               ),
-              Expr::Constant("Pi".to_string()),
+              const_expr("Pi"),
             ]
             .into(),
           });
@@ -11334,10 +11296,10 @@ fn numerical_one_sided_limit(
     }
     // Check for known constants
     if (last - std::f64::consts::E).abs() < 1e-4 {
-      return Some(Expr::Constant("E".to_string()));
+      return Some(const_expr("E"));
     }
     if (last - std::f64::consts::PI).abs() < 1e-4 {
-      return Some(Expr::Constant("Pi".to_string()));
+      return Some(const_expr("Pi"));
     }
     return Some(Expr::Real(last));
   }
@@ -14912,14 +14874,10 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       exp_terms.reverse();
 
       // E^x * (sum of terms)
-      let exp_x = Expr::FunctionCall {
-        name: "Power".to_string(),
-        args: vec![
-          Expr::Constant("E".to_string()),
-          Expr::Identifier(var_name.clone()),
-        ]
-        .into(),
-      };
+      let exp_x = call(
+        "Power",
+        vec![const_expr("E"), Expr::Identifier(var_name.clone())],
+      );
       let exp_part = Expr::FunctionCall {
         name: "Times".to_string(),
         args: {
@@ -15256,8 +15214,7 @@ fn gaussian_closed_form_integral(
   let neg_alpha = call("Times", vec![Expr::Integer(-1), alpha.clone()]);
   let neg_alpha_eval = crate::evaluator::evaluate_expr_to_expr(&neg_alpha)?;
   let sqrt_neg_alpha = call1("Sqrt", neg_alpha_eval.clone());
-  let pi_over_neg_alpha =
-    div2(Expr::Constant("Pi".to_string()), neg_alpha_eval.clone());
+  let pi_over_neg_alpha = div2(const_expr("Pi"), neg_alpha_eval.clone());
   let sqrt_pi_over = call1("Sqrt", pi_over_neg_alpha);
 
   let bound_expr = |v: f64| -> Expr {
@@ -17966,7 +17923,7 @@ fn try_trig_delta(expr: &Expr, var: &str, step: &Expr) -> Option<Expr> {
   let const_part = div2(
     plus2(
       times2(Expr::Integer(2), half_delta.clone()),
-      Expr::Constant("Pi".to_string()),
+      const_expr("Pi"),
     ),
     Expr::Integer(2),
   );
@@ -18879,11 +18836,7 @@ fn limit_resolved(e: &Expr) -> bool {
 /// (`Sqrt[x]/x` resolves only once it has folded to `1/Sqrt[x]`), so the
 /// division is put through the evaluator before the limit is taken.
 fn ratio(f: &Expr, g: &Expr) -> Expr {
-  let quotient = Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(f.clone()),
-    right: Box::new(g.clone()),
-  };
+  let quotient = div2(f.clone(), g.clone());
   crate::evaluator::evaluate_expr_to_expr(&quotient).unwrap_or(quotient)
 }
 

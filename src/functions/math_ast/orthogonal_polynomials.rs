@@ -991,10 +991,7 @@ pub fn spherical_harmonic_y_ast(
     name: "Times".to_string(),
     args: vec![
       norm_inner,
-      call(
-        "Power",
-        vec![Expr::Constant("Pi".to_string()), Expr::Integer(-1)],
-      ),
+      call("Power", vec![const_expr("Pi"), Expr::Integer(-1)]),
     ]
     .into(),
   };
@@ -1030,7 +1027,7 @@ pub fn spherical_harmonic_y_ast(
     Expr::FunctionCall {
       name: "Power".to_string(),
       args: vec![
-        Expr::Constant("E".to_string()),
+        const_expr("E"),
         Expr::FunctionCall {
           name: "Times".to_string(),
           args: vec![
@@ -1194,10 +1191,7 @@ fn simplify_spherical_harmonic_form(expr: &Expr) -> Expr {
       name: "Times".to_string(),
       args: vec![
         new_radicand_rat,
-        call(
-          "Power",
-          vec![Expr::Constant("Pi".to_string()), Expr::Integer(-1)],
-        ),
+        call("Power", vec![const_expr("Pi"), Expr::Integer(-1)]),
       ]
       .into(),
     };

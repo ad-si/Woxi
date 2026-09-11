@@ -1013,27 +1013,16 @@ fn try_solve_pde_system(
       if is_zero_literal(&e) {
         return e;
       }
-      Expr::UnaryOp {
-        op: UnaryOperator::Minus,
-        operand: Box::new(e),
-      }
+      neg1(e)
     }
     fn add_expr(a: Expr, b: Expr) -> Expr {
-      Expr::BinaryOp {
-        op: BinaryOperator::Plus,
-        left: Box::new(a),
-        right: Box::new(b),
-      }
+      plus2(a, b)
     }
     fn mul_expr(coeff: Expr, e: Expr) -> Expr {
       if is_one_literal(&coeff) {
         return e;
       }
-      Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(coeff),
-        right: Box::new(e),
-      }
+      times2(coeff, e)
     }
     fn flatten_additive_signed(
       expr: &Expr,
@@ -1098,10 +1087,7 @@ fn try_solve_pde_system(
       let coeff = match coeff_factors.len() {
         0 => Expr::Integer(1),
         1 => coeff_factors.into_iter().next().unwrap(),
-        _ => Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: coeff_factors.into(),
-        },
+        _ => call("Times", coeff_factors),
       };
       Some((coeff, t_arg, x_arg))
     }
@@ -1168,11 +1154,7 @@ fn try_solve_pde_system(
     let derived = if is_one_literal(&self_coeff) {
       negated
     } else {
-      Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(negated),
-        right: Box::new(self_coeff),
-      }
+      div2(negated, self_coeff)
     };
     Some(PdeBc::Neumann(derived))
   }
@@ -2657,10 +2639,7 @@ fn ndsolve_system(
     // Mirrors the parser's own shape for `Derivative[k][f]` (nested
     // `CurriedCall`s) so `/.` matches the same expression the user wrote.
     let deriv_pattern = Expr::CurriedCall {
-      func: Box::new(Expr::FunctionCall {
-        name: "Derivative".to_string(),
-        args: vec![Expr::Integer(*order as i128)].into(),
-      }),
+      func: Box::new(call("Derivative", vec![Expr::Integer(*order as i128)])),
       args: vec![Expr::Identifier(name.clone())],
     };
     rules.push(if *function_form {
@@ -4770,7 +4749,7 @@ fn make_exp_term(r: f64, x_name: &str) -> Expr {
   } else {
     times2(r_expr, x)
   };
-  pow2(Expr::Constant("E".to_string()), exponent)
+  pow2(const_expr("E"), exponent)
 }
 
 /// Create Cos[β*x] or Sin[β*x] expression
@@ -4897,7 +4876,7 @@ fn solve_first_order_linear(
     Expr::Identifier(x_name.to_string()),
   ])?;
 
-  let mu = pow2(Expr::Constant("E".to_string()), p_integral.clone());
+  let mu = pow2(const_expr("E"), p_integral.clone());
 
   let mu_q =
     crate::functions::calculus_ast::simplify(times2(mu.clone(), q_expr));
@@ -4909,7 +4888,7 @@ fn solve_first_order_linear(
 
   // y = E^(-∫P dx) * (∫(μ*Q)dx + C[1])
   let neg_p_integral = negate_expr(&p_integral);
-  let inv_mu = pow2(Expr::Constant("E".to_string()), neg_p_integral);
+  let inv_mu = pow2(const_expr("E"), neg_p_integral);
 
   // Distribute the integrating factor over the particular part and the
   // constant separately, matching wolframscript's form, e.g.
@@ -5167,7 +5146,7 @@ fn make_exp_term_expr(coeff: &Expr, x_name: &str) -> Expr {
     Expr::Integer(-1) => neg1(x),
     _ => times2(coeff.clone(), x),
   };
-  pow2(Expr::Constant("E".to_string()), exponent)
+  pow2(const_expr("E"), exponent)
 }
 
 // ─── Particular Solution (Undetermined Coefficients) ───────────────────
@@ -6779,11 +6758,7 @@ fn lagrange_polynomial(
     let mut factors: Vec<Expr> = vec![ys[i].clone()];
     for j in 0..m {
       if j != i {
-        factors.push(Expr::BinaryOp {
-          op: BinaryOperator::Divide,
-          left: Box::new(minus(var, &xs[j])),
-          right: Box::new(minus(&xs[i], &xs[j])),
-        });
+        factors.push(div2(minus(var, &xs[j]), minus(&xs[i], &xs[j])));
       }
     }
     factors.retain(|f| !matches!(f, Expr::Integer(1)));
@@ -6996,7 +6971,7 @@ fn try_linear_first_order_pde_body(
     } else {
       times2(Expr::Integer(c_eff), n_var(xn))
     };
-    pow2(Expr::Constant("E".to_string()), exponent)
+    pow2(const_expr("E"), exponent)
   };
   // Argument to C[1]: y - b*x  (or just y when b == 0).
   let c1_arg = if b == 0 {

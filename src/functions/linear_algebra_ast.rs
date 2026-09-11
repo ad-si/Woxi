@@ -404,10 +404,7 @@ fn eval_add_many(terms: Vec<Expr>) -> Expr {
     1 => terms.into_iter().next().unwrap(),
     _ => match crate::functions::math_ast::plus_ast(&terms) {
       Ok(r) => r,
-      Err(_) => Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: terms.into(),
-      },
+      Err(_) => call("Plus", terms),
     },
   }
 }
@@ -3145,7 +3142,7 @@ fn quadratic_eigenvalues(b_coeff: i128, c_coeff: i128) -> Vec<Expr> {
       if coeff != 1 {
         factors.push(Expr::Integer(coeff));
       }
-      factors.push(Expr::Constant("I".to_string()));
+      factors.push(const_expr("I"));
       if inner != 1 {
         factors.push(call1("Sqrt", Expr::Integer(inner as i128)));
       }

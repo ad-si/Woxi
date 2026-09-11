@@ -62,3 +62,7 @@ pub fn unevaluated(name: &str, args: &[Expr]) -> Expr {
 pub fn bool_expr(b: bool) -> Expr {
   Expr::Identifier(if b { "True" } else { "False" }.to_string())
 }
+
+pub fn const_expr(name: &str) -> Expr {
+  Expr::Constant(name.to_string())
+}
