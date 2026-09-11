@@ -18,7 +18,7 @@ fn cell_to_expr(cell: &Data) -> Expr {
     Data::DateTime(dt) => Expr::Real(dt.as_f64()),
     Data::DateTimeIso(s) => Expr::String(s.clone()),
     Data::DurationIso(s) => Expr::String(s.clone()),
-    Data::Error(_) => Expr::Identifier("$Failed".to_string()),
+    Data::Error(_) => fail_expr(),
     Data::Empty => Expr::String(String::new()),
   }
 }

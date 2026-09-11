@@ -593,12 +593,12 @@ fn parametric_region_ast(
   // caller's own options come last so they win.
   let mut graphics_args = vec![Expr::List(items.into())];
   graphics_args.push(Expr::Rule {
-    pattern: Box::new(Expr::Identifier("Axes".to_string())),
-    replacement: Box::new(Expr::Identifier("True".to_string())),
+    pattern: Box::new(id_expr("Axes")),
+    replacement: Box::new(bool_expr(true)),
   });
   graphics_args.push(Expr::Rule {
-    pattern: Box::new(Expr::Identifier("AspectRatio".to_string())),
-    replacement: Box::new(Expr::Identifier("Automatic".to_string())),
+    pattern: Box::new(id_expr("AspectRatio")),
+    replacement: Box::new(id_expr("Automatic")),
   });
   graphics_args.extend(opt_args.iter().cloned());
   let mut result = crate::functions::graphics::graphics_ast(&graphics_args)?;

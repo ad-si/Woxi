@@ -124,11 +124,11 @@ fn convex_hull_mesh_2d(pts: &[Expr], args: &[Expr]) -> Expr {
   // Options. Method -> {"SeparateBoundaries" -> False} always; exact inputs also
   // carry WorkingPrecision -> Infinity.
   let method = Expr::Rule {
-    pattern: Box::new(Expr::Identifier("Method".to_string())),
+    pattern: Box::new(id_expr("Method")),
     replacement: Box::new(Expr::List(
       vec![Expr::Rule {
         pattern: Box::new(Expr::String("SeparateBoundaries".to_string())),
-        replacement: Box::new(Expr::Identifier("False".to_string())),
+        replacement: Box::new(bool_expr(false)),
       }]
       .into(),
     )),
@@ -141,8 +141,8 @@ fn convex_hull_mesh_2d(pts: &[Expr], args: &[Expr]) -> Expr {
   ];
   if all_exact {
     mesh_args.push(Expr::Rule {
-      pattern: Box::new(Expr::Identifier("WorkingPrecision".to_string())),
-      replacement: Box::new(Expr::Identifier("Infinity".to_string())),
+      pattern: Box::new(id_expr("WorkingPrecision")),
+      replacement: Box::new(id_expr("Infinity")),
     });
   }
 

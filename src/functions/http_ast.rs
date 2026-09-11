@@ -104,7 +104,7 @@ pub fn http_request_extract(func_args: &[Expr], arg: &Expr) -> Option<Expr> {
         .map(|item| {
           let value = resolve(item).unwrap_or_else(|| {
             emit_notprop(item, func_args.len());
-            Expr::Identifier("$Failed".to_string())
+            fail_expr()
           });
           (item.clone(), value)
         })
@@ -166,9 +166,9 @@ fn http_request_property(func_args: &[Expr], prop: &str) -> Option<Expr> {
 
   let opt_str = |v: &Option<String>| match v {
     Some(s) => Expr::String(s.clone()),
-    None => Expr::Identifier("None".to_string()),
+    None => id_expr("None"),
   };
-  let none = || Expr::Identifier("None".to_string());
+  let none = || id_expr("None");
   match prop {
     "URL" => Some(Expr::String(build_url(&parts))),
     "Scheme" => Some(opt_str(&parts.scheme)),
@@ -264,13 +264,13 @@ fn http_request_property(func_args: &[Expr], prop: &str) -> Option<Expr> {
         .into(),
       })
     }
-    "Cookies" => Some(Expr::Identifier("Automatic".to_string())),
+    "Cookies" => Some(id_expr("Automatic")),
     "FormRules" => Some(none()),
     "Properties" => Some(Expr::List(
       PROPERTY_NAMES
         .iter()
         .map(|name| Expr::String(name.to_string()))
-        .chain(std::iter::once(Expr::Identifier("Method".to_string())))
+        .chain(std::iter::once(id_expr("Method")))
         .collect(),
     )),
     _ => None,
@@ -687,8 +687,8 @@ pub fn url_read_ast(arg: &Expr) -> Result<Expr, InterpreterError> {
         ),
       ]),
       Expr::Rule {
-        pattern: Box::new(Expr::Identifier("CharacterEncoding".to_string())),
-        replacement: Box::new(Expr::Identifier("Automatic".to_string())),
+        pattern: Box::new(id_expr("CharacterEncoding")),
+        replacement: Box::new(id_expr("Automatic")),
       },
     ]
     .into(),
@@ -735,14 +735,10 @@ fn connection_failure(url: &str, func_args: &[Expr]) -> Expr {
           // value as the full RuleDelayed.
           Expr::RuleDelayed {
             pattern: Box::new(template_key),
-            replacement: Box::new(Expr::FunctionCall {
-              name: "MessageName".to_string(),
-              args: vec![
-                Expr::Identifier("URLRead".to_string()),
-                Expr::String("iurl".to_string()),
-              ]
-              .into(),
-            }),
+            replacement: Box::new(call(
+              "MessageName",
+              vec![id_expr("URLRead"), Expr::String("iurl".to_string())],
+            )),
           },
         ),
         (
@@ -909,11 +905,11 @@ pub fn url_parse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       crate::emit_message(&format!(
         "URLParse::nvldval: {port} is not a valid value"
       ));
-      return Ok(Expr::Identifier("$Failed".to_string()));
+      return Ok(fail_expr());
     }
   };
 
-  let none = || Expr::Identifier("None".to_string());
+  let none = || id_expr("None");
   let opt_str = |v: &Option<String>| match v {
     Some(s) => Expr::String(s.clone()),
     None => none(),

@@ -1078,7 +1078,7 @@ fn date_object_interval_bounds(obj_args: &[Expr]) -> Option<Expr> {
     out
   };
   let time_zone = if matches!(granularity, "Year" | "Month" | "Day") {
-    Expr::Identifier("None".to_string())
+    id_expr("None")
   } else {
     Expr::Real(0.0)
   };

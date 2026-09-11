@@ -303,7 +303,7 @@ fn distance_matrix(
 
   // Automatic: strings, compared by edit distance.
   if evaluated.iter().all(|e| matches!(e, Expr::String(_))) {
-    let edit = Expr::Identifier("EditDistance".to_string());
+    let edit = id_expr("EditDistance");
     let ok = fill(&|i, j| {
       apply_func_to_two_args(&edit, &evaluated[i], &evaluated[j])
         .ok()

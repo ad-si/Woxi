@@ -696,7 +696,7 @@ pub fn delete_elements_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
     let rhs = match mult_expr {
       Some(m) => m.clone(),
-      None => Expr::Identifier("Infinity".to_string()),
+      None => id_expr("Infinity"),
     };
     return Ok(Expr::FunctionCall {
       name: "DeleteElements".to_string(),

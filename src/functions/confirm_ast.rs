@@ -433,5 +433,5 @@ pub fn exception_types_ast(_args: &[Expr]) -> Result<Expr, InterpreterError> {
 pub fn exception_type_registered_q_ast(
   _args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  Ok(Expr::Identifier("False".to_string()))
+  Ok(bool_expr(false))
 }

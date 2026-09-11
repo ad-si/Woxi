@@ -620,7 +620,7 @@ pub fn binary_deserialize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "BinaryDeserialize::corrupt: Serialized data ByteArray[<{}>] is corrupt and does not represent an expression.",
       bytes.len()
     ));
-    Ok(Expr::Identifier("$Failed".to_string()))
+    Ok(fail_expr())
   };
   if bytes.len() < 2 || bytes[0] != b'8' || bytes[1] != b':' {
     return corrupt();

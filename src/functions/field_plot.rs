@@ -1383,11 +1383,7 @@ pub(crate) fn equation_zero_body(e: &Expr) -> Option<Expr> {
     }
     _ => return None,
   };
-  Some(Expr::BinaryOp {
-    op: BinaryOperator::Minus,
-    left: Box::new(lhs.clone()),
-    right: Box::new(rhs.clone()),
-  })
+  Some(minus2(lhs.clone(), rhs.clone()))
 }
 
 pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -1583,8 +1579,8 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       == Some("Frame")
   }) {
     structure_args.push(Expr::Rule {
-      pattern: Box::new(Expr::Identifier("Frame".to_string())),
-      replacement: Box::new(Expr::Identifier("True".to_string())),
+      pattern: Box::new(id_expr("Frame")),
+      replacement: Box::new(bool_expr(true)),
     });
   }
   structure_args.extend(explicit);

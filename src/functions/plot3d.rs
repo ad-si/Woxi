@@ -686,13 +686,13 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let (names_axes, names_ratios) = (names("Axes"), names("BoxRatios"));
     if !names_axes {
       structure_args.push(Expr::Rule {
-        pattern: Box::new(Expr::Identifier("Axes".to_string())),
-        replacement: Box::new(Expr::Identifier("True".to_string())),
+        pattern: Box::new(id_expr("Axes")),
+        replacement: Box::new(bool_expr(true)),
       });
     }
     if !names_ratios {
       structure_args.push(Expr::Rule {
-        pattern: Box::new(Expr::Identifier("BoxRatios".to_string())),
+        pattern: Box::new(id_expr("BoxRatios")),
         replacement: Box::new(Expr::List(
           vec![Expr::Integer(1), Expr::Integer(1), Expr::Real(Z_SCALE)].into(),
         )),
@@ -7612,11 +7612,10 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let svg = with_plot_label(svg, args, svg_width, svg_height);
 
   let structure = {
-    let complex = Expr::FunctionCall {
-      name: "GraphicsComplex".to_string(),
-      args: vec![Expr::List(point_exprs.into()), Expr::List(content.into())]
-        .into(),
-    };
+    let complex = call(
+      "GraphicsComplex",
+      vec![Expr::List(point_exprs.into()), Expr::List(content.into())],
+    );
     let mut structure_args = vec![complex];
     structure_args.extend(args[4..].iter().cloned());
     let names = |opt: &str| {
@@ -7628,13 +7627,13 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let (names_axes, names_ratios) = (names("Axes"), names("BoxRatios"));
     if !names_axes {
       structure_args.push(Expr::Rule {
-        pattern: Box::new(Expr::Identifier("Axes".to_string())),
-        replacement: Box::new(Expr::Identifier("True".to_string())),
+        pattern: Box::new(id_expr("Axes")),
+        replacement: Box::new(bool_expr(true)),
       });
     }
     if !names_ratios {
       structure_args.push(Expr::Rule {
-        pattern: Box::new(Expr::Identifier("BoxRatios".to_string())),
+        pattern: Box::new(id_expr("BoxRatios")),
         replacement: Box::new(Expr::List(
           vec![Expr::Integer(1), Expr::Integer(1), Expr::Real(Z_SCALE)].into(),
         )),
@@ -9804,13 +9803,13 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let (names_axes, names_ratios) = (names("Axes"), names("BoxRatios"));
     if !names_axes {
       structure_args.push(Expr::Rule {
-        pattern: Box::new(Expr::Identifier("Axes".to_string())),
-        replacement: Box::new(Expr::Identifier("True".to_string())),
+        pattern: Box::new(id_expr("Axes")),
+        replacement: Box::new(bool_expr(true)),
       });
     }
     if !names_ratios {
       structure_args.push(Expr::Rule {
-        pattern: Box::new(Expr::Identifier("BoxRatios".to_string())),
+        pattern: Box::new(id_expr("BoxRatios")),
         replacement: Box::new(Expr::List(
           vec![Expr::Integer(1), Expr::Integer(1), Expr::Real(Z_SCALE)].into(),
         )),

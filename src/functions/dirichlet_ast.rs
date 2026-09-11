@@ -279,9 +279,9 @@ fn assemble_value(quarter: i128, num: i128, den: i128) -> Expr {
   if num == 0 {
     return match quarter {
       0 => Expr::Integer(1),
-      1 => Expr::Identifier("I".to_string()),
+      1 => id_expr("I"),
       2 => Expr::Integer(-1),
-      _ => neg1(Expr::Identifier("I".to_string())),
+      _ => neg1(id_expr("I")),
     };
   }
   // Principal branch: the printed multiple of Pi is m = a/b = 2*num/den
@@ -554,14 +554,10 @@ pub fn dirichlet_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(re_expr);
   }
   let im_expr = crate::functions::make_rational_expr(&im.0, &im.1);
-  crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: vec![
-      re_expr,
-      call("Times", vec![im_expr, Expr::Identifier("I".to_string())]),
-    ]
-    .into(),
-  })
+  crate::evaluator::evaluate_expr_to_expr(&call(
+    "Plus",
+    vec![re_expr, call("Times", vec![im_expr, id_expr("I")])],
+  ))
 }
 
 // ---------------------------------------------------------------------------

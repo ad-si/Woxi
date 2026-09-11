@@ -274,7 +274,7 @@ pub fn csv_import_element(rows: &[Vec<String>], element: Option<&str>) -> Expr {
       if labelled {
         Expr::List(header.iter().map(|s| Expr::String(s.clone())).collect())
       } else {
-        Expr::Identifier("None".to_string())
+        id_expr("None")
       }
     }
 
@@ -460,7 +460,7 @@ pub fn csv_import_data_spec(
     crate::emit_message(
       "Import::noelem: The Import element is not present when importing as CSV.",
     );
-    Expr::Identifier("$Failed".to_string())
+    fail_expr()
   };
   let Some(row_idx) = resolve_position_spec(row_spec, rows.len()) else {
     return Ok(noelem());

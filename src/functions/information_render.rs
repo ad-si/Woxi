@@ -10,14 +10,10 @@ use super::*;
 
 /// Build a `Style[content, Bold]` Expr.
 fn bold_style(text: &str) -> Expr {
-  Expr::FunctionCall {
-    name: "Style".to_string(),
-    args: vec![
-      Expr::String(text.to_string()),
-      Expr::Identifier("Bold".to_string()),
-    ]
-    .into(),
-  }
+  call(
+    "Style",
+    vec![Expr::String(text.to_string()), id_expr("Bold")],
+  )
 }
 
 /// Build a `Style[content, color]` Expr where `color` is a named color identifier.
@@ -96,15 +92,8 @@ pub fn render_information_card_svg(
       name: "Style".to_string(),
       args: vec![
         Expr::String(title.to_string()),
-        Expr::Identifier("Bold".to_string()),
-        Expr::FunctionCall {
-          name: "Rule".to_string(),
-          args: vec![
-            Expr::Identifier("FontSize".to_string()),
-            Expr::Integer(16),
-          ]
-          .into(),
-        },
+        id_expr("Bold"),
+        call("Rule", vec![id_expr("FontSize"), Expr::Integer(16)]),
       ]
       .into(),
     },
@@ -130,26 +119,20 @@ pub fn render_information_card_svg(
 
   // Grid options: outer frame, left-aligned both columns with right-aligned
   // labels, modest spacing, alternating row backgrounds for readability.
-  let frame_opt = rule(Expr::Identifier("Frame".to_string()), bool_expr(true));
+  let frame_opt = rule(id_expr("Frame"), bool_expr(true));
   let alignment_opt = rule(
-    Expr::Identifier("Alignment".to_string()),
-    list(vec![list(vec![
-      Expr::Identifier("Right".to_string()),
-      Expr::Identifier("Left".to_string()),
-    ])]),
+    id_expr("Alignment"),
+    list(vec![list(vec![id_expr("Right"), id_expr("Left")])]),
   );
   let spacings_opt = rule(
-    Expr::Identifier("Spacings".to_string()),
+    id_expr("Spacings"),
     list(vec![Expr::Integer(2), Expr::Real(0.6)]),
   );
   let dividers_opt = rule(
-    Expr::Identifier("Dividers".to_string()),
+    id_expr("Dividers"),
     list(vec![
-      Expr::Identifier("None".to_string()),
-      list(vec![
-        Expr::Integer(2),
-        Expr::Identifier("LightGray".to_string()),
-      ]),
+      id_expr("None"),
+      list(vec![Expr::Integer(2), id_expr("LightGray")]),
     ]),
   );
 
@@ -196,13 +179,10 @@ pub fn render_information_grid_svg(
 
   let grid_data = list(rows);
 
-  let frame_opt = rule(Expr::Identifier("Frame".to_string()), bool_expr(true));
-  let alignment_opt = rule(
-    Expr::Identifier("Alignment".to_string()),
-    Expr::Identifier("Left".to_string()),
-  );
+  let frame_opt = rule(id_expr("Frame"), bool_expr(true));
+  let alignment_opt = rule(id_expr("Alignment"), id_expr("Left"));
   let spacings_opt = rule(
-    Expr::Identifier("Spacings".to_string()),
+    id_expr("Spacings"),
     list(vec![Expr::Integer(2), Expr::Real(0.6)]),
   );
 

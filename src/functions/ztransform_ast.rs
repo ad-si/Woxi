@@ -103,10 +103,7 @@ pub fn z_transform_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       div2(Expr::Integer(p), z.clone())
     };
-    return Ok(call(
-      "Power",
-      vec![Expr::Identifier("E".to_string()), exponent],
-    ));
+    return Ok(call("Power", vec![id_expr("E"), exponent]));
   }
 
   // Symbolic base: fixed templates for k = 0, 1, 2 (c must be 1)
@@ -1051,7 +1048,7 @@ pub fn fourier_coefficient_ast(
   };
   let times = |fs: Vec<Expr>| call("Times", fs);
   let pow = |b: Expr, e: i128| pow2(b, Expr::Integer(e));
-  let i_unit = || Expr::Identifier("I".to_string());
+  let i_unit = || id_expr("I");
   let pi = || const_expr("Pi");
 
   let (c0, c1, c2, c3) = (coeff(0), coeff(1), coeff(2), coeff(3));

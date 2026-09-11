@@ -986,11 +986,11 @@ pub fn image_color_space_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Expr::Image { color_space, .. } = &args[0] {
     return Ok(match color_space {
       Some(cs) => Expr::String((*cs).to_string()),
-      None => Expr::Identifier("Automatic".to_string()),
+      None => id_expr("Automatic"),
     });
   }
   if is_valid_image3d(&args[0]) {
-    return Ok(Expr::Identifier("Automatic".to_string()));
+    return Ok(id_expr("Automatic"));
   }
   // Matches wolframscript: emit ImageColorSpace::imginv and return
   // unevaluated instead of erroring out.
@@ -8293,11 +8293,11 @@ pub fn import_image(path: &str) -> Result<Expr, InterpreterError> {
     crate::emit_message(&format!(
       "Import::nffil: File {path} not found during Import."
     ));
-    return Ok(Expr::Identifier("$Failed".to_string()));
+    return Ok(fail_expr());
   }
   let Ok(img) = image::open(crate::vfs::resolve(path)) else {
     // Wolfram returns $Failed when the file cannot be opened
-    return Ok(Expr::Identifier("$Failed".to_string()));
+    return Ok(fail_expr());
   };
   Ok(dynamic_image_to_expr(&img))
 }
@@ -9553,9 +9553,9 @@ fn image_measurement(
     // A single sample has no sample deviation. wolframscript reports that as
     // a one-element list for the plain measure and bare for the intensity
     // one, which is its own inconsistency rather than a rule.
-    "StandardDeviation" if data.len() / ch.max(1) < 2 => Some(Expr::List(
-      vec![Expr::Identifier("Indeterminate".to_string()); ch].into(),
-    )),
+    "StandardDeviation" if data.len() / ch.max(1) < 2 => {
+      Some(Expr::List(vec![id_expr("Indeterminate"); ch].into()))
+    }
     "StandardDeviation" => Some(per_channel(data, ch, |s| {
       real(samples_standard_deviation(s))
     })),
@@ -9629,7 +9629,7 @@ fn image_measurement(
     "Channels" => Some(Expr::Integer(ch as i128)),
     "ColorSpace" => Some(match color_space {
       Some(name) => Expr::String(name.to_string()),
-      None => Expr::Identifier("Automatic".to_string()),
+      None => id_expr("Automatic"),
     }),
     "ImageDimensions" => Some(Expr::List(
       vec![Expr::Integer(w as i128), Expr::Integer(h as i128)].into(),
