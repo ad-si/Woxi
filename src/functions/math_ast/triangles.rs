@@ -203,7 +203,7 @@ fn two_angle_triangle(
   let gamma = call(
     "Plus",
     vec![
-      Expr::Identifier("Pi".to_string()),
+      id_expr("Pi"),
       call("Times", vec![Expr::Integer(-1), alpha.clone()]),
       call("Times", vec![Expr::Integer(-1), beta.clone()]),
     ],

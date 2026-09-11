@@ -328,15 +328,10 @@ fn split_random_options(args: &[Expr]) -> (Vec<Expr>, Option<Expr>) {
 /// `None` when there is no such definition, or it did not produce a list of
 /// the length asked for.
 fn distribution_vector_draw(dist: &Expr, n: i128) -> Option<Expr> {
-  let call = Expr::FunctionCall {
-    name: "Random`DistributionVector".to_string(),
-    args: vec![
-      dist.clone(),
-      Expr::Integer(n),
-      Expr::Identifier("MachinePrecision".to_string()),
-    ]
-    .into(),
-  };
+  let call = call(
+    "Random`DistributionVector",
+    vec![dist.clone(), Expr::Integer(n), id_expr("MachinePrecision")],
+  );
   match crate::evaluator::evaluate_expr_to_expr(&call) {
     Ok(result) => match &result {
       Expr::List(items) if items.len() == n as usize => Some(result),
@@ -418,10 +413,7 @@ pub fn random_complex_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   fn make_complex(re: f64, im: f64) -> Expr {
-    plus2(
-      Expr::Real(re),
-      times2(Expr::Real(im), Expr::Identifier("I".to_string())),
-    )
+    plus2(Expr::Real(re), times2(Expr::Real(im), id_expr("I")))
   }
 
   // Parse the range from the first argument (default: 0 to 1+I).
@@ -468,10 +460,7 @@ pub fn random_complex_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       rng.gen_range(im_lo..im_hi)
     };
-    plus2(
-      Expr::Real(re),
-      times2(Expr::Real(im), Expr::Identifier("I".to_string())),
-    )
+    plus2(Expr::Real(re), times2(Expr::Real(im), id_expr("I")))
   }
 
   let _ = make_complex; // silence unused warning if code paths change
@@ -1835,18 +1824,18 @@ pub fn seed_random_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match args.len() {
     0 => {
       crate::unseed_rng();
-      Ok(Expr::Identifier("Null".to_string()))
+      Ok(null_expr())
     }
     1 => match &args[0] {
       Expr::Integer(seed) => {
         crate::seed_rng(*seed as u64);
-        Ok(Expr::Identifier("Null".to_string()))
+        Ok(null_expr())
       }
       Expr::String(s) => {
         // Wolfram accepts string seeds; hash the string deterministically
         // so the same string always produces the same sequence.
         crate::seed_rng(hash_string_to_u64(s));
-        Ok(Expr::Identifier("Null".to_string()))
+        Ok(null_expr())
       }
       _ => Err(InterpreterError::EvaluationError(
         "SeedRandom: seed must be an integer or string".into(),

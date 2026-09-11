@@ -433,10 +433,7 @@ fn quantifier_names(expr: &Expr) -> Option<Vec<String>> {
 #[cfg(test)]
 mod tests {
   use super::*;
-
-  fn id(name: &str) -> Expr {
-    Expr::Identifier(name.to_string())
-  }
+  use crate::helpers::{call, div2, id_expr as id, plus2, times2};
 
   fn relation(left: Expr, operator: ComparisonOp, right: Expr) -> Expr {
     Expr::Comparison {
@@ -445,36 +442,17 @@ mod tests {
     }
   }
 
-  fn call(name: &str, args: Vec<Expr>) -> Expr {
-    Expr::FunctionCall {
-      name: name.to_string(),
-      args: args.into(),
-    }
-  }
-
   #[test]
   fn affine_lowering_accepts_constants_and_rejects_nonlinearity() {
     let linear = relation(
-      Expr::BinaryOp {
-        op: BinaryOperator::Plus,
-        left: Box::new(Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(Expr::Integer(3)),
-          right: Box::new(id("x")),
-        }),
-        right: Box::new(Expr::Integer(2)),
-      },
+      plus2(times2(Expr::Integer(3), id("x")), Expr::Integer(2)),
       ComparisonOp::LessEqual,
       Expr::Integer(7),
     );
     assert!(formula_from_expr(&linear).is_some());
 
     let nonlinear = relation(
-      Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(id("x")),
-        right: Box::new(id("y")),
-      },
+      times2(id("x"), id("y")),
       ComparisonOp::Equal,
       Expr::Integer(0),
     );
@@ -560,11 +538,7 @@ mod tests {
     assert!(formula_from_expr(&duplicate).is_none());
 
     let variable_denominator = relation(
-      Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(id("x")),
-        right: Box::new(id("y")),
-      },
+      div2(id("x"), id("y")),
       ComparisonOp::Equal,
       Expr::Integer(1),
     );

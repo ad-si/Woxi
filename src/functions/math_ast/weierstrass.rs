@@ -40,7 +40,7 @@ pub fn weierstrass_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // for the 0⁻² that arises along the way.
   if is_expr_zero(u) {
     crate::emit_message(&format_power_infy_2d("0", "-2"));
-    return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+    return Ok(id_expr("ComplexInfinity"));
   }
 
   // Numeric evaluation only when an argument is inexact; exact arguments stay
@@ -80,7 +80,7 @@ pub fn weierstrass_p_prime_ast(
   // matching `Power::infy` warning.
   if is_expr_zero(u) {
     crate::emit_message(&format_power_infy_2d("0", "-3"));
-    return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+    return Ok(id_expr("ComplexInfinity"));
   }
 
   // Numeric evaluation only when an argument is inexact; exact arguments stay

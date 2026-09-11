@@ -741,7 +741,7 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if let Some(mean) = reliability_distribution_mean_exponential(dargs)? {
         return Ok(mean);
       }
-      let t = Expr::Identifier("$WoxiReliabilityT$".to_string());
+      let t = id_expr("$WoxiReliabilityT$");
       match reliability_distribution_survival(dargs, &t)? {
         Some(s) => {
           let s = strip_nonneg_piecewise(&s, "$WoxiReliabilityT$");
@@ -750,14 +750,7 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           } else {
             crate::functions::calculus_ast::integrate_ast(&[
               s,
-              Expr::List(
-                vec![
-                  t,
-                  Expr::Integer(0),
-                  Expr::Identifier("Infinity".to_string()),
-                ]
-                .into(),
-              ),
+              Expr::List(vec![t, Expr::Integer(0), id_expr("Infinity")].into()),
             ])
           }
         }
@@ -2561,7 +2554,7 @@ pub fn kendall_tau_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     crate::emit_message(
       "KendallTau::zrvr: The input data has zero variance. The statistic cannot be computed.",
     );
-    return Ok(Expr::Identifier("Indeterminate".to_string()));
+    return Ok(id_expr("Indeterminate"));
   }
   // Machine-real inputs give a machine-real result; otherwise stay exact.
   let is_real = x
@@ -2867,7 +2860,7 @@ pub fn goodman_kruskal_gamma_ast(
       crate::emit_message(
         "GoodmanKruskalGamma::zrvr: The input data has zero variance. The statistic cannot be computed.",
       );
-      return Ok(Expr::Identifier("Indeterminate".to_string()));
+      return Ok(id_expr("Indeterminate"));
     }
     if exact {
       crate::evaluator::evaluate_expr_to_expr(&call(
@@ -3359,7 +3352,7 @@ fn distribution_moment(
     return Ok(Some(if n == 0 {
       Expr::Integer(1)
     } else {
-      Expr::Identifier("Indeterminate".to_string())
+      id_expr("Indeterminate")
     }));
   }
 
@@ -3387,7 +3380,7 @@ fn distribution_moment(
             .into(),
           },
           call1("BernoulliB", Expr::Integer(n)),
-          pow2(Expr::Identifier("Pi".to_string()), Expr::Integer(n)),
+          pow2(id_expr("Pi"), Expr::Integer(n)),
           pow2(b, Expr::Integer(n)),
         ]
         .into(),
@@ -4787,21 +4780,15 @@ fn format_location_test_result(
           Expr::FunctionCall {
             name: "Rule".to_string(),
             args: vec![
-              Expr::Identifier("Alignment".to_string()),
-              Expr::List(
-                vec![
-                  Expr::Identifier("Left".to_string()),
-                  Expr::Identifier("Automatic".to_string()),
-                ]
-                .into(),
-              ),
+              id_expr("Alignment"),
+              Expr::List(vec![id_expr("Left"), id_expr("Automatic")].into()),
             ]
             .into(),
           },
           Expr::FunctionCall {
             name: "Rule".to_string(),
             args: vec![
-              Expr::Identifier("Dividers".to_string()),
+              id_expr("Dividers"),
               Expr::List(
                 vec![
                   call(
@@ -4818,14 +4805,7 @@ fn format_location_test_result(
             ]
             .into(),
           },
-          Expr::FunctionCall {
-            name: "Rule".to_string(),
-            args: vec![
-              Expr::Identifier("Spacings".to_string()),
-              Expr::Identifier("Automatic".to_string()),
-            ]
-            .into(),
-          },
+          call("Rule", vec![id_expr("Spacings"), id_expr("Automatic")]),
         ]
         .into(),
       }
@@ -4978,7 +4958,7 @@ fn legacy_rule(head: &str, value: Expr) -> Expr {
 fn legacy_p_value_expr(p: Option<f64>, two_sided: bool) -> Expr {
   match p {
     Some(p) => Expr::Real(if two_sided { 2.0 * p } else { p }),
-    None => Expr::Identifier("Indeterminate".to_string()),
+    None => id_expr("Indeterminate"),
   }
 }
 
@@ -5001,7 +4981,7 @@ fn legacy_full_report_rule(
   };
   let headings = Expr::List(
     vec![
-      Expr::Identifier("None".to_string()),
+      id_expr("None"),
       Expr::List(
         vec![
           Expr::String(location_heading.to_string()),
@@ -5097,7 +5077,7 @@ pub fn hypothesis_testing_mean_test_ast(
     let statistic = legacy_statistic(mean - mu0[j], (variances[j] / n).sqrt());
     means.push(Expr::Real(mean));
     statistics.push(if statistic.is_nan() {
-      Expr::Identifier("Indeterminate".to_string())
+      id_expr("Indeterminate")
     } else {
       Expr::Real(statistic)
     });
@@ -5218,7 +5198,7 @@ pub fn hypothesis_testing_mean_difference_test_ast(
   let report = legacy_full_report_rule(
     Expr::Real(sample_mean(data1) - sample_mean(data2)),
     if statistic.is_nan() {
-      Expr::Identifier("Indeterminate".to_string())
+      id_expr("Indeterminate")
     } else {
       Expr::Real(statistic)
     },
@@ -7184,7 +7164,7 @@ pub fn biweight_midvariance_ast(
   let mad = ev(&call1("Median", Expr::List(deviations.into())))?;
   match try_eval_to_f64(&mad) {
     Some(v) if v != 0.0 => {}
-    Some(_) => return Ok(Expr::Identifier("Indeterminate".to_string())),
+    Some(_) => return Ok(id_expr("Indeterminate")),
     None => return unevaluated(),
   }
   let scale = times2(c, mad);
@@ -7211,7 +7191,7 @@ pub fn biweight_midvariance_ast(
     ));
   }
   if den_terms.is_empty() {
-    return Ok(Expr::Identifier("Indeterminate".to_string()));
+    return Ok(id_expr("Indeterminate"));
   }
   let total = |ts: Vec<Expr>| call("Plus", ts);
   ev(&div2(
@@ -7625,8 +7605,8 @@ pub fn characteristic_function_ast(
 
   // Identifier (not Constant): the output formatter's imaginary-unit
   // special cases match Identifier("I")
-  let i_unit = || Expr::Identifier("I".to_string());
-  let e_sym = || Expr::Identifier("E".to_string());
+  let i_unit = || id_expr("I");
+  let e_sym = || id_expr("E");
   // E^(I*t) and E^(I*c*t)
   let e_it = |factors: Vec<Expr>| {
     let mut f = vec![i_unit()];
@@ -7809,14 +7789,11 @@ pub fn characteristic_function_ast(
         vec![
           b.clone(),
           e_it(vec![m.clone()]),
-          Expr::Identifier("Pi".to_string()),
+          id_expr("Pi"),
           t.clone(),
-          call(
+          call1(
             "Csch",
-            vec![call(
-              "Times",
-              vec![b.clone(), Expr::Identifier("Pi".to_string()), t.clone()],
-            )],
+            call("Times", vec![b.clone(), id_expr("Pi"), t.clone()]),
           ),
         ],
       ),
@@ -7828,15 +7805,15 @@ pub fn characteristic_function_ast(
         "Times",
         vec![
           e_it(vec![a.clone()]),
-          call(
+          call1(
             "Gamma",
-            vec![call(
+            call(
               "Plus",
               vec![
                 Expr::Integer(1),
                 call("Times", vec![i_unit(), b.clone(), t.clone()]),
               ],
-            )],
+            ),
           ),
         ],
       ),
@@ -8058,7 +8035,7 @@ pub fn moment_generating_function_ast(
   }
   let t = args[1].clone();
 
-  let e_sym = || Expr::Identifier("E".to_string());
+  let e_sym = || id_expr("E");
   // E^t and E^(c*t)
   let e_t = |factors: Vec<Expr>| {
     if factors.is_empty() {
@@ -8221,12 +8198,9 @@ pub fn moment_generating_function_ast(
     ("LogisticDistribution", [m, b]) => Some((
       div2(
         e_t(vec![m.clone()]),
-        call(
+        call1(
           "Sinc",
-          vec![call(
-            "Times",
-            vec![b.clone(), Expr::Identifier("Pi".to_string()), t.clone()],
-          )],
+          call("Times", vec![b.clone(), id_expr("Pi"), t.clone()]),
         ),
       ),
       true,
@@ -8251,12 +8225,12 @@ pub fn moment_generating_function_ast(
         "Times",
         vec![
           e_t(vec![a.clone()]),
-          call(
+          call1(
             "Gamma",
-            vec![call(
+            call(
               "Plus",
               vec![Expr::Integer(1), call("Times", vec![b.clone(), t.clone()])],
-            )],
+            ),
           ),
         ],
       ),
@@ -8339,7 +8313,7 @@ pub fn moment_generating_function_ast(
     // Student-t and Cauchy have no moment-generating function (the defining
     // integral diverges), so Wolfram returns Indeterminate for every t.
     ("StudentTDistribution", [_]) | ("CauchyDistribution", [_, _]) => {
-      Some((Expr::Identifier("Indeterminate".to_string()), false))
+      Some((id_expr("Indeterminate"), false))
     }
     // E^(m*t)/(1 - b^2*t^2)
     ("LaplaceDistribution", [m, b]) => Some((
@@ -8459,7 +8433,7 @@ pub fn cumulant_generating_function_ast(
   }
   let t = args[1].clone();
 
-  let e_sym = || Expr::Identifier("E".to_string());
+  let e_sym = || id_expr("E");
   let log = |e: Expr| call1("Log", e);
 
   let (dist_name, dargs) = match &args[0] {
@@ -8537,7 +8511,7 @@ pub fn cumulant_generating_function_ast(
   // A distribution with no MGF (e.g. Cauchy, Student-t) also has no CGF:
   // Log[Indeterminate] is Indeterminate.
   if matches!(&mgf, Expr::Identifier(s) if s == "Indeterminate") {
-    return Ok(Expr::Identifier("Indeterminate".to_string()));
+    return Ok(id_expr("Indeterminate"));
   }
   // Split an E^X / den quotient the way Wolfram does, so the exponential
   // prefactor becomes a linear term: Log[E^(m t)/(1 - b^2 t^2)] ->
@@ -8590,7 +8564,7 @@ pub fn factorial_moment_generating_function_ast(
     let times = |f: Vec<Expr>| call("Times", f);
     let sq = |e: Expr| pow2(e, Expr::Integer(2));
     return Ok(pow2(
-      Expr::Identifier("E".to_string()),
+      id_expr("E"),
       Expr::FunctionCall {
         name: "Plus".to_string(),
         args: vec![
@@ -8648,7 +8622,7 @@ pub fn central_moment_generating_function_ast(
     let symbolic = matches!(&args[1], Expr::Identifier(_))
       && minmax.iter().all(|d| matches!(d, Expr::Identifier(_)));
     let times = |f: Vec<Expr>| call("Times", f);
-    let e_pow = |e: Expr| pow2(Expr::Identifier("E".to_string()), e);
+    let e_pow = |e: Expr| pow2(id_expr("E"), e);
     let half = call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]);
     let t = args[1].clone();
     let expr = div2(
@@ -8726,9 +8700,9 @@ pub fn central_moment_generating_function_ast(
     } else {
       raw
     };
-    return Ok(pow2(Expr::Identifier("E".to_string()), exponent));
+    return Ok(pow2(id_expr("E"), exponent));
   }
-  let damp = pow2(Expr::Identifier("E".to_string()), damp_exponent);
+  let damp = pow2(id_expr("E"), damp_exponent);
   crate::evaluator::evaluate_expr_to_expr(&call("Times", vec![damp, mgf]))
 }
 
@@ -8800,7 +8774,7 @@ pub fn correlation_function_ast(
   let is_zero = matches!(&denominator, Expr::Integer(0))
     || matches!(&denominator, Expr::Real(v) if *v == 0.0);
   if is_zero {
-    return Ok(Expr::Identifier("Indeterminate".to_string()));
+    return Ok(id_expr("Indeterminate"));
   }
 
   crate::evaluator::evaluate_expr_to_expr(&div2(numerator, denominator))
@@ -9487,8 +9461,8 @@ fn erlang_b_symbolic(
   };
   // Domain conditions in wolframscript's order: Element[c, Integers],
   // Element[a, Reals], a > 0, c > 0 (each only for the symbolic slot).
-  let integers = || Expr::Identifier("Integers".to_string());
-  let reals = || Expr::Identifier("Reals".to_string());
+  let integers = || id_expr("Integers");
+  let reals = || id_expr("Reals");
   let positive = |e: &Expr| Expr::Comparison {
     operands: vec![e.clone(), Expr::Integer(0)],
     operators: vec![ComparisonOp::Greater],
@@ -9513,7 +9487,7 @@ fn erlang_b_symbolic(
     "Piecewise",
     vec![
       Expr::List(vec![Expr::List(vec![body, cond].into())].into()),
-      Expr::Identifier("Indeterminate".to_string()),
+      id_expr("Indeterminate"),
     ],
   )))
 }

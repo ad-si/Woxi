@@ -30,15 +30,15 @@ pub fn elliptic_k_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match &args[0] {
     Expr::Integer(0) => {
       // EllipticK[0] = Pi/2
-      Ok(div2(Expr::Identifier("Pi".to_string()), Expr::Integer(2)))
+      Ok(div2(id_expr("Pi"), Expr::Integer(2)))
     }
     Expr::Integer(1) => {
       // EllipticK[1] = ComplexInfinity (pole)
-      Ok(Expr::Identifier("ComplexInfinity".to_string()))
+      Ok(id_expr("ComplexInfinity"))
     }
     Expr::Real(f) => {
       if *f == 1.0 {
-        Ok(Expr::Identifier("ComplexInfinity".to_string()))
+        Ok(id_expr("ComplexInfinity"))
       } else if *f < 1.0 {
         // Compute via arithmetic-geometric mean: K(m) = pi / (2 * AGM(1, sqrt(1 - m)))
         Ok(Expr::Real(elliptic_k(*f)))
@@ -237,7 +237,7 @@ pub fn elliptic_e_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match &args[0] {
     Expr::Integer(0) => {
       // EllipticE[0] = Pi/2
-      Ok(div2(Expr::Identifier("Pi".to_string()), Expr::Integer(2)))
+      Ok(div2(id_expr("Pi"), Expr::Integer(2)))
     }
     Expr::Integer(1) => {
       // EllipticE[1] = 1
@@ -782,7 +782,7 @@ pub fn dedekind_eta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let pi_three_quarters = call(
       "Power",
       vec![
-        Expr::Identifier("Pi".to_string()),
+        id_expr("Pi"),
         call("Rational", vec![Expr::Integer(3), Expr::Integer(4)]),
       ],
     );
@@ -1031,7 +1031,7 @@ fn weierstrass_cm_invariants(
       call("Rational", vec![Expr::Integer(num), Expr::Integer(den)]),
     )
   };
-  let pi = Expr::Identifier("Pi".to_string());
+  let pi = id_expr("Pi");
   let build = |gamma_arg_den: i128,
                gamma_pow: i128,
                coeff: i128,
@@ -1263,11 +1263,7 @@ pub fn elliptic_exp_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   if u == 0.0 {
     return Ok(Expr::List(
-      vec![
-        Expr::Identifier("ComplexInfinity".to_string()),
-        Expr::Identifier("ComplexInfinity".to_string()),
-      ]
-      .into(),
+      vec![id_expr("ComplexInfinity"), id_expr("ComplexInfinity")].into(),
     ));
   }
   // Only numericize when an argument is inexact; exact arguments stay symbolic.

@@ -131,7 +131,7 @@ pub fn exponent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Exponent[0, x] -> -Infinity
   if matches!(&args[0], Expr::Integer(0)) {
-    return Ok(neg1(Expr::Identifier("Infinity".to_string())));
+    return Ok(neg1(id_expr("Infinity")));
   }
 
   // Expand and combine like terms first to handle things like (x^2+1)^3-1

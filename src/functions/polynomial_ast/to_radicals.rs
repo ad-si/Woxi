@@ -410,10 +410,7 @@ fn solve_cubic(coeffs: &[Expr]) -> std::vec::Vec<Expr> {
     mk_ratio(1, 2),
     mk_plus(vec![
       mk_int(-1),
-      mk_times(
-        Expr::Identifier("I".to_string()),
-        mk_power(mk_int(3), mk_ratio(1, 2)),
-      ),
+      mk_times(id_expr("I"), mk_power(mk_int(3), mk_ratio(1, 2))),
     ]),
   );
 
@@ -478,7 +475,7 @@ fn solve_pure_nth(
   let root_base = mk_power(base, mk_ratio(1, n));
 
   // Build explicit roots of unity omega_k = exp(2*pi*i*k/n)
-  let i_val = Expr::Identifier("I".to_string());
+  let i_val = id_expr("I");
   let sqrt3 = mk_power(mk_int(3), mk_ratio(1, 2));
 
   let mut roots = Vec::new();
@@ -515,9 +512,9 @@ fn nth_root_of_unity(
   {
     // General case: use cos + i*sin form which Wolfram can simplify
     let angle = if den == 1 {
-      mk_times(mk_int(num), Expr::Identifier("Pi".to_string()))
+      mk_times(mk_int(num), id_expr("Pi"))
     } else {
-      mk_times(mk_ratio(num, den), Expr::Identifier("Pi".to_string()))
+      mk_times(mk_ratio(num, den), id_expr("Pi"))
     };
     Some(mk_plus(vec![
       call1("Cos", angle.clone()),

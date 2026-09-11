@@ -621,7 +621,7 @@ fn exact_tan(k: i64, n: i64) -> Option<Expr> {
   // Normalize to [0, Pi/2) i.e., k_mod/n in [0, 1/2)
   // Check for Pi/2: k_mod*2 == n means angle is Pi/2 → ComplexInfinity
   if k_mod * 2 == n {
-    return Some(Expr::Identifier("ComplexInfinity".to_string()));
+    return Some(id_expr("ComplexInfinity"));
   }
   let (k_ref, n_ref, sign) = if k_mod * 2 < n {
     // First half [0, Pi/2): positive
@@ -684,7 +684,7 @@ fn exact_sec(k: i64, n: i64) -> Option<Expr> {
   };
   // Check for Pi/2: k_ref*2 == n means Sec(Pi/2) = ComplexInfinity
   if k_ref * 2 == n {
-    return Some(Expr::Identifier("ComplexInfinity".to_string()));
+    return Some(id_expr("ComplexInfinity"));
   }
   let g = gcd_i128(k_ref as i128, n as i128) as i64;
   let (kr, nr) = (k_ref / g, n / g);
@@ -727,7 +727,7 @@ fn exact_csc(k: i64, n: i64) -> Option<Expr> {
   let k_mod = ((k % (2 * n)) + 2 * n) % (2 * n);
   // Csc(0) and Csc(Pi) are ComplexInfinity
   if k_mod == 0 || k_mod == n {
-    return Some(Expr::Identifier("ComplexInfinity".to_string()));
+    return Some(id_expr("ComplexInfinity"));
   }
   // Use Csc(2*Pi - x) = -Csc(x) to reduce to [0, Pi]
   let (k2, sign1) = if k_mod > n {
@@ -780,7 +780,7 @@ fn exact_cot(k: i64, n: i64) -> Option<Expr> {
   let k_mod = ((k % n) + n) % n;
   // Cot(0) = ComplexInfinity
   if k_mod == 0 {
-    return Some(Expr::Identifier("ComplexInfinity".to_string()));
+    return Some(id_expr("ComplexInfinity"));
   }
   // Cot(Pi/2) = 0
   if k_mod * 2 == n {
@@ -1248,16 +1248,8 @@ fn hyperbolic_imaginary_period(
   let with_phase = match phase {
     0 => reduced,
     1 => negate_expr(reduced),
-    2 => call("Times", vec![Expr::Identifier("I".to_string()), reduced]),
-    _ => Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![
-        Expr::Integer(-1),
-        Expr::Identifier("I".to_string()),
-        reduced,
-      ]
-      .into(),
-    },
+    2 => call("Times", vec![id_expr("I"), reduced]),
+    _ => call("Times", vec![Expr::Integer(-1), id_expr("I"), reduced]),
   };
   Some(crate::evaluator::evaluate_expr_to_expr(&with_phase))
 }
@@ -1287,15 +1279,8 @@ fn hyperbolic_rational_pi_shift(
   if (num * 2) % den == 0 {
     return None;
   }
-  let c_pi = mk_times(vec![
-    mk_rational(num, den),
-    Expr::Identifier("Pi".to_string()),
-  ]);
-  let minus_i_rest = mk_times(vec![
-    Expr::Integer(-1),
-    Expr::Identifier("I".to_string()),
-    rest,
-  ]);
+  let c_pi = mk_times(vec![mk_rational(num, den), id_expr("Pi")]);
+  let minus_i_rest = mk_times(vec![Expr::Integer(-1), id_expr("I"), rest]);
   let inner = call("Plus", vec![c_pi, minus_i_rest]);
   let inner = match crate::evaluator::evaluate_expr_to_expr(&inner) {
     Ok(v) => v,
@@ -1308,12 +1293,8 @@ fn hyperbolic_rational_pi_shift(
     };
   let with_factor = match factor {
     0 => reduced,
-    1 => mk_times(vec![Expr::Identifier("I".to_string()), reduced]),
-    _ => mk_times(vec![
-      Expr::Integer(-1),
-      Expr::Identifier("I".to_string()),
-      reduced,
-    ]),
+    1 => mk_times(vec![id_expr("I"), reduced]),
+    _ => mk_times(vec![Expr::Integer(-1), id_expr("I"), reduced]),
   };
   Some(crate::evaluator::evaluate_expr_to_expr(&with_factor))
 }
@@ -1396,11 +1377,8 @@ fn imaginary_arg_reduction(
   };
   let result = match factor {
     0 => inner,
-    1 => call("Times", vec![Expr::Identifier("I".to_string()), inner]),
-    _ => call(
-      "Times",
-      vec![Expr::Integer(-1), Expr::Identifier("I".to_string()), inner],
-    ),
+    1 => call("Times", vec![id_expr("I"), inner]),
+    _ => call("Times", vec![Expr::Integer(-1), id_expr("I"), inner]),
   };
   Some(crate::evaluator::evaluate_expr_to_expr(&result))
 }
@@ -1560,7 +1538,7 @@ pub fn sin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(divide(ia[0].clone(), sqrt_one_plus_sq(&ia[0])));
   }
   if is_indeterminate_or_complex_infinity(&args[0]) {
-    return Ok(Expr::Identifier("Indeterminate".to_string()));
+    return Ok(id_expr("Indeterminate"));
   }
   // Real args: evaluate numerically
   if let Expr::Real(f) = &args[0] {
@@ -1606,7 +1584,7 @@ pub fn sin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // I * sinh_val
       return crate::evaluator::evaluate_function_call_ast(
         "Times",
-        &[Expr::Identifier("I".to_string()), sinh_val],
+        &[id_expr("I"), sinh_val],
       );
     }
     // General complex with exact Pi-fraction real part:
@@ -1635,7 +1613,7 @@ pub fn sin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // I * im_coeff
       let im_term = crate::evaluator::evaluate_function_call_ast(
         "Times",
-        &[Expr::Identifier("I".to_string()), im_coeff],
+        &[id_expr("I"), im_coeff],
       )?;
       // real_term + im_term
       return crate::evaluator::evaluate_function_call_ast(
@@ -1659,7 +1637,7 @@ pub fn sin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         crate::evaluator::evaluate_function_call_ast("Sinh", &[im_expr])?;
       return crate::evaluator::evaluate_function_call_ast(
         "Times",
-        &[Expr::Identifier("I".to_string()), sinh_val],
+        &[id_expr("I"), sinh_val],
       );
     }
     // Check if the real part is a Pi-fraction
@@ -1683,7 +1661,7 @@ pub fn sin_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       )?;
       let im_term = crate::evaluator::evaluate_function_call_ast(
         "Times",
-        &[Expr::Identifier("I".to_string()), im_coeff],
+        &[id_expr("I"), im_coeff],
       )?;
       return crate::evaluator::evaluate_function_call_ast(
         "Plus",
@@ -1762,7 +1740,7 @@ pub fn cos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(divide(Expr::Integer(1), sqrt_one_plus_sq(&ia[0])));
   }
   if is_indeterminate_or_complex_infinity(&args[0]) {
-    return Ok(Expr::Identifier("Indeterminate".to_string()));
+    return Ok(id_expr("Indeterminate"));
   }
   if let Expr::Real(f) = &args[0] {
     // An inexact argument gives an inexact result: Cos[0.] is 1., not 1.
@@ -1824,7 +1802,7 @@ pub fn cos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // I * im_coeff
       let im_term = crate::evaluator::evaluate_function_call_ast(
         "Times",
-        &[Expr::Identifier("I".to_string()), im_coeff],
+        &[id_expr("I"), im_coeff],
       )?;
       // real_term + im_term
       return crate::evaluator::evaluate_function_call_ast(
@@ -1865,7 +1843,7 @@ pub fn cos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       )?;
       let im_term = crate::evaluator::evaluate_function_call_ast(
         "Times",
-        &[Expr::Identifier("I".to_string()), im_coeff],
+        &[id_expr("I"), im_coeff],
       )?;
       return crate::evaluator::evaluate_function_call_ast(
         "Plus",
@@ -2064,7 +2042,7 @@ pub fn tan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(divide(sqrt_one_minus_sq(&ia[0]), ia[0].clone()));
   }
   if is_indeterminate_or_complex_infinity(&args[0]) {
-    return Ok(Expr::Identifier("Indeterminate".to_string()));
+    return Ok(id_expr("Indeterminate"));
   }
   if let Expr::Real(f) = &args[0] {
     // Tan of a Real always returns a Real, even if the numeric value
@@ -2089,7 +2067,7 @@ pub fn tan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         crate::evaluator::evaluate_function_call_ast("Tanh", &[im_expr])?;
       return crate::evaluator::evaluate_function_call_ast(
         "Times",
-        &[Expr::Identifier("I".to_string()), tanh_val],
+        &[id_expr("I"), tanh_val],
       );
     }
     // Non-zero real part: leave unevaluated (matches Wolfram)
@@ -2151,12 +2129,12 @@ pub fn sec_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(r);
   }
   if is_indeterminate_or_complex_infinity(&args[0]) {
-    return Ok(Expr::Identifier("Indeterminate".to_string()));
+    return Ok(id_expr("Indeterminate"));
   }
   if let Expr::Real(f) = &args[0] {
     let c = f.cos();
     if c == 0.0 {
-      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+      return Ok(id_expr("ComplexInfinity"));
     }
     return Ok(Expr::Real(1.0 / c));
   }
@@ -2204,12 +2182,12 @@ pub fn csc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(r);
   }
   if is_indeterminate_or_complex_infinity(&args[0]) {
-    return Ok(Expr::Identifier("Indeterminate".to_string()));
+    return Ok(id_expr("Indeterminate"));
   }
   if let Expr::Real(f) = &args[0] {
     let s = f.sin();
     if s == 0.0 {
-      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+      return Ok(id_expr("ComplexInfinity"));
     }
     return Ok(Expr::Real(1.0 / s));
   }
@@ -2257,12 +2235,12 @@ pub fn cot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(r);
   }
   if is_indeterminate_or_complex_infinity(&args[0]) {
-    return Ok(Expr::Identifier("Indeterminate".to_string()));
+    return Ok(id_expr("Indeterminate"));
   }
   if let Expr::Real(f) = &args[0] {
     let s = f.sin();
     if s == 0.0 {
-      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+      return Ok(id_expr("ComplexInfinity"));
     }
     return Ok(Expr::Real(f.cos() / s));
   }
@@ -2294,7 +2272,7 @@ pub fn exp_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(r);
   }
   if matches!(&args[0], Expr::Identifier(s) if s == "Indeterminate") {
-    return Ok(Expr::Identifier("Indeterminate".to_string()));
+    return Ok(id_expr("Indeterminate"));
   }
   match &args[0] {
     Expr::Integer(0) => Ok(Expr::Integer(1)),
@@ -2523,9 +2501,7 @@ pub fn erfi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Erfi[0] = 0
     Expr::Integer(0) => Ok(Expr::Integer(0)),
     // Erfi[Infinity] = Infinity
-    Expr::Identifier(s) if s == "Infinity" => {
-      Ok(Expr::Identifier("Infinity".to_string()))
-    }
+    Expr::Identifier(s) if s == "Infinity" => Ok(id_expr("Infinity")),
     // Erfi[-x] = -Erfi[x] (UnaryOp form)
     Expr::UnaryOp {
       op: UnaryOperator::Minus,
@@ -2668,17 +2644,17 @@ pub fn inverse_erf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // InverseErf[0] = 0
     Expr::Integer(0) => Ok(Expr::Integer(0)),
     // InverseErf[1] = Infinity
-    Expr::Integer(1) => Ok(Expr::Identifier("Infinity".to_string())),
+    Expr::Integer(1) => Ok(id_expr("Infinity")),
     // InverseErf[-1] = -Infinity
-    Expr::Integer(-1) => Ok(neg1(Expr::Identifier("Infinity".to_string()))),
+    Expr::Integer(-1) => Ok(neg1(id_expr("Infinity"))),
     // Numeric evaluation for Real arguments
     Expr::Real(f) => {
       if *f > -1.0 && *f < 1.0 {
         Ok(Expr::Real(inverse_erf_f64(*f)))
       } else if *f == 1.0 {
-        Ok(Expr::Identifier("Infinity".to_string()))
+        Ok(id_expr("Infinity"))
       } else if *f == -1.0 {
-        Ok(neg1(Expr::Identifier("Infinity".to_string())))
+        Ok(neg1(id_expr("Infinity")))
       } else {
         Ok(unevaluated("InverseErf", args))
       }
@@ -2698,11 +2674,11 @@ pub fn inverse_erfc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   match &args[0] {
     // InverseErfc[0] = Infinity
-    Expr::Integer(0) => Ok(Expr::Identifier("Infinity".to_string())),
+    Expr::Integer(0) => Ok(id_expr("Infinity")),
     // InverseErfc[1] = 0
     Expr::Integer(1) => Ok(Expr::Integer(0)),
     // InverseErfc[2] = -Infinity
-    Expr::Integer(2) => Ok(neg1(Expr::Identifier("Infinity".to_string()))),
+    Expr::Integer(2) => Ok(neg1(id_expr("Infinity"))),
     // Reflection for an exact rational z with 1 < z < 2:
     // InverseErfc[z] = -InverseErfc[2 - z]  (keeps the argument in (0, 1)).
     Expr::FunctionCall { name, args: rargs }
@@ -2724,9 +2700,9 @@ pub fn inverse_erfc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // InverseErfc[x] = InverseErf[1 - x]
         Ok(Expr::Real(inverse_erf_f64(1.0 - *f)))
       } else if *f == 0.0 {
-        Ok(Expr::Identifier("Infinity".to_string()))
+        Ok(id_expr("Infinity"))
       } else if *f == 2.0 {
-        Ok(neg1(Expr::Identifier("Infinity".to_string())))
+        Ok(neg1(id_expr("Infinity")))
       } else {
         Ok(unevaluated("InverseErfc", args))
       }
@@ -2782,7 +2758,7 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if !args.is_empty()
     && matches!(&args[0], Expr::Identifier(s) if s == "Indeterminate")
   {
-    return Ok(Expr::Identifier("Indeterminate".to_string()));
+    return Ok(id_expr("Indeterminate"));
   }
   // Log is monotonic increasing on (0, ∞): map it over each interval span.
   if args.len() == 1
@@ -2801,7 +2777,7 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     1 => {
       // Log[0] = -Infinity
       if matches!(&args[0], Expr::Integer(0)) {
-        return Ok(neg1(Expr::Identifier("Infinity".to_string())));
+        return Ok(neg1(id_expr("Infinity")));
       }
       // Log[1] = 0
       if matches!(&args[0], Expr::Integer(1)) {
@@ -2892,15 +2868,10 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             if k == 0 {
               return Ok(z.clone());
             }
-            let correction = Expr::FunctionCall {
-              name: "Times".to_string(),
-              args: vec![
-                Expr::Integer(-2 * k),
-                const_expr("Pi"),
-                Expr::Identifier("I".to_string()),
-              ]
-              .into(),
-            };
+            let correction = call(
+              "Times",
+              vec![Expr::Integer(-2 * k), const_expr("Pi"), id_expr("I")],
+            );
             let result = call("Plus", vec![z.clone(), correction]);
             return crate::evaluator::evaluate_expr_to_expr(&result);
           }
@@ -2953,11 +2924,7 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if matches!(&args[0], Expr::Identifier(s) if s == "I") {
         return crate::evaluator::evaluate_function_call_ast(
           "Times",
-          &[
-            Expr::Identifier("I".to_string()),
-            make_rational(1, 2),
-            const_expr("Pi"),
-          ],
+          &[id_expr("I"), make_rational(1, 2), const_expr("Pi")],
         );
       }
       // Log[-I] = -I*Pi/2
@@ -2993,7 +2960,7 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             "Times",
             &[
               Expr::Integer(-1),
-              Expr::Identifier("I".to_string()),
+              id_expr("I"),
               make_rational(1, 2),
               const_expr("Pi"),
             ],
@@ -3020,7 +2987,7 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 args: vec![
                   call1("Sign", coeff.clone()),
                   make_rational(1, 2),
-                  Expr::Identifier("I".to_string()),
+                  id_expr("I"),
                   const_expr("Pi"),
                 ]
                 .into(),
@@ -3041,7 +3008,7 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let result = Expr::FunctionCall {
           name: "Plus".to_string(),
           args: vec![
-            times2(Expr::Identifier("I".to_string()), const_expr("Pi")),
+            times2(id_expr("I"), const_expr("Pi")),
             call1("Log", make_rational(p.abs(), q.abs())),
           ]
           .into(),
@@ -3054,7 +3021,7 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       {
         let abs_n = -*n;
         // I*Pi
-        let i_pi = times2(Expr::Identifier("I".to_string()), const_expr("Pi"));
+        let i_pi = times2(id_expr("I"), const_expr("Pi"));
         if abs_n == 1 {
           return Ok(i_pi);
         }
@@ -3096,8 +3063,7 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             )
         });
         if let Some(inner_expr) = inner {
-          let i_pi =
-            times2(Expr::Identifier("I".to_string()), const_expr("Pi"));
+          let i_pi = times2(id_expr("I"), const_expr("Pi"));
           let log_x =
             crate::evaluator::evaluate_function_call_ast("Log", &[inner_expr])?;
           return crate::evaluator::evaluate_function_call_ast(
@@ -3108,15 +3074,15 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       // Log[Infinity] = Infinity
       if matches!(&args[0], Expr::Identifier(s) if s == "Infinity") {
-        return Ok(Expr::Identifier("Infinity".to_string()));
+        return Ok(id_expr("Infinity"));
       }
       // Log[ComplexInfinity] = Infinity
       if matches!(&args[0], Expr::Identifier(s) if s == "ComplexInfinity") {
-        return Ok(Expr::Identifier("Infinity".to_string()));
+        return Ok(id_expr("Infinity"));
       }
       // Log[-Infinity] = Infinity (principal value)
       if is_neg_infinity(&args[0]) {
-        return Ok(Expr::Identifier("Infinity".to_string()));
+        return Ok(id_expr("Infinity"));
       }
       // Log[p/q] where 0 < p < q: return -Log[q/p]
       if let Expr::FunctionCall {
@@ -3144,7 +3110,7 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if *f > 0.0 {
           return Ok(Expr::Real(f.ln()));
         } else if *f == 0.0 {
-          return Ok(Expr::Identifier("Indeterminate".to_string()));
+          return Ok(id_expr("Indeterminate"));
         }
         // Log of negative real: return complex result
         let re = f.abs().ln();
@@ -3361,7 +3327,7 @@ fn try_complex_inverse_trig(
   // A non-finite component means the argument hit a pole (e.g. ArcTan[±I]);
   // wolframscript returns Indeterminate there.
   if !rr.is_finite() || !ri.is_finite() {
-    return Some(Ok(Expr::Identifier("Indeterminate".to_string())));
+    return Some(Ok(id_expr("Indeterminate")));
   }
   Some(build_complex_float_result(rr, ri))
 }
@@ -3667,9 +3633,9 @@ pub fn arccos_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(sign) = imaginary_infinity_sign(&args[0]) {
     let direction = if sign > 0 {
       // Negate I: Times[-1, I]
-      times2(Expr::Integer(-1), Expr::Identifier("I".to_string()))
+      times2(Expr::Integer(-1), id_expr("I"))
     } else {
-      Expr::Identifier("I".to_string())
+      id_expr("I")
     };
     return Ok(call1("DirectedInfinity", direction));
   }
@@ -3774,7 +3740,7 @@ pub fn arctan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // ArcTan[ComplexInfinity] = Indeterminate; ArcTan[Indeterminate] = Indeterminate
   if matches!(&args[0], Expr::Identifier(s) if s == "ComplexInfinity" || s == "Indeterminate")
   {
-    return Ok(Expr::Identifier("Indeterminate".to_string()));
+    return Ok(id_expr("Indeterminate"));
   }
   // ArcTan[-x] → -ArcTan[x] (odd function). Reals/BigFloats are excluded —
   // they evaluate to a numeric atan directly below — but negative integers
@@ -3928,7 +3894,7 @@ pub fn arctan2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     crate::emit_message(
       "ArcTan::indet: Indeterminate expression ArcTan[0, 0] encountered.",
     );
-    return Ok(Expr::Identifier("Indeterminate".to_string()));
+    return Ok(id_expr("Indeterminate"));
   }
 
   // Helper to build rational * Pi
@@ -3977,7 +3943,7 @@ pub fn arctan2_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else if yf < 0.0 {
         rational_pi(-1, 2)
       } else {
-        Expr::Identifier("Indeterminate".to_string())
+        id_expr("Indeterminate")
       });
     }
     let y_over_x = crate::evaluator::evaluate_function_call_ast(
@@ -4263,12 +4229,12 @@ fn hyperbolic_at_infinity(name: &str, arg: &Expr) -> Option<Expr> {
   };
   match id.as_str() {
     "Infinity" => match name {
-      "Sinh" | "Cosh" => Some(Expr::Identifier("Infinity".to_string())),
+      "Sinh" | "Cosh" => Some(id_expr("Infinity")),
       "Tanh" | "Coth" => Some(Expr::Integer(1)),
       "Sech" | "Csch" => Some(Expr::Integer(0)),
       _ => None,
     },
-    "ComplexInfinity" => Some(Expr::Identifier("Indeterminate".to_string())),
+    "ComplexInfinity" => Some(id_expr("Indeterminate")),
     _ => None,
   }
 }
@@ -4294,9 +4260,8 @@ fn circular_at_infinity(
   if !is_real_infinity {
     return None;
   }
-  let inf = || Expr::Identifier("Infinity".to_string());
-  let neg_inf =
-    || times2(Expr::Integer(-1), Expr::Identifier("Infinity".to_string()));
+  let inf = || id_expr("Infinity");
+  let neg_inf = || times2(Expr::Integer(-1), id_expr("Infinity"));
   let span = |lo: Expr, hi: Expr| Expr::List(vec![lo, hi].into());
   let interval = |spans: Vec<Expr>| call("Interval", spans);
   let result = match name {
@@ -4344,7 +4309,7 @@ pub fn sinh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(r);
   }
   if matches!(&args[0], Expr::Identifier(s) if s == "Indeterminate") {
-    return Ok(Expr::Identifier("Indeterminate".to_string()));
+    return Ok(id_expr("Indeterminate"));
   }
   if let Some(r) = hyperbolic_at_infinity("Sinh", &args[0]) {
     return Ok(r);
@@ -4408,7 +4373,7 @@ pub fn cosh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(r);
   }
   if matches!(&args[0], Expr::Identifier(s) if s == "Indeterminate") {
-    return Ok(Expr::Identifier("Indeterminate".to_string()));
+    return Ok(id_expr("Indeterminate"));
   }
   if let Some(r) = hyperbolic_at_infinity("Cosh", &args[0]) {
     return Ok(r);
@@ -4472,7 +4437,7 @@ pub fn tanh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(r);
   }
   if matches!(&args[0], Expr::Identifier(s) if s == "Indeterminate") {
-    return Ok(Expr::Identifier("Indeterminate".to_string()));
+    return Ok(id_expr("Indeterminate"));
   }
   if let Some(r) = hyperbolic_at_infinity("Tanh", &args[0]) {
     return Ok(r);
@@ -4517,7 +4482,7 @@ pub fn coth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(r);
   }
   if matches!(&args[0], Expr::Identifier(s) if s == "Indeterminate") {
-    return Ok(Expr::Identifier("Indeterminate".to_string()));
+    return Ok(id_expr("Indeterminate"));
   }
   if let Some(r) = hyperbolic_at_infinity("Coth", &args[0]) {
     return Ok(r);
@@ -4531,12 +4496,12 @@ pub fn coth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   match &args[0] {
     Expr::Integer(0) => {
-      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+      return Ok(id_expr("ComplexInfinity"));
     }
     Expr::Real(f) => {
       let t = f.tanh();
       if t == 0.0 {
-        return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+        return Ok(id_expr("ComplexInfinity"));
       }
       return Ok(Expr::Real(1.0 / t));
     }
@@ -4575,7 +4540,7 @@ pub fn sech_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(r);
   }
   if matches!(&args[0], Expr::Identifier(s) if s == "Indeterminate") {
-    return Ok(Expr::Identifier("Indeterminate".to_string()));
+    return Ok(id_expr("Indeterminate"));
   }
   if let Some(r) = hyperbolic_at_infinity("Sech", &args[0]) {
     return Ok(r);
@@ -4612,7 +4577,7 @@ pub fn csch_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Csch[0] = ComplexInfinity (Sinh[0] = 0, so 1/Sinh[0] diverges).
   if matches!(&args[0], Expr::Integer(0)) {
-    return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+    return Ok(id_expr("ComplexInfinity"));
   }
   if let Some(r) = imaginary_arg_reduction("Csch", &args[0]) {
     return r;
@@ -4630,7 +4595,7 @@ pub fn csch_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(r);
   }
   if matches!(&args[0], Expr::Identifier(s) if s == "Indeterminate") {
-    return Ok(Expr::Identifier("Indeterminate".to_string()));
+    return Ok(id_expr("Indeterminate"));
   }
   if let Some(r) = hyperbolic_at_infinity("Csch", &args[0]) {
     return Ok(r);
@@ -4647,7 +4612,7 @@ pub fn csch_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if s == 0.0 {
       // Csch has a pole at 0 (Sinh[0] = 0): Csch[0.] = ComplexInfinity, like
       // the exact Csch[0], rather than raising an error.
-      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+      return Ok(id_expr("ComplexInfinity"));
     }
     return Ok(Expr::Real(1.0 / s));
   }
@@ -4685,16 +4650,16 @@ pub fn arcsinh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // ArcSinh is odd and unbounded: ArcSinh[±Infinity] = ±Infinity. An
     // undirected ComplexInfinity maps to ComplexInfinity.
     Expr::Identifier(s) if s == "Infinity" => {
-      return Ok(Expr::Identifier("Infinity".to_string()));
+      return Ok(id_expr("Infinity"));
     }
     Expr::Identifier(s) if s == "ComplexInfinity" => {
-      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+      return Ok(id_expr("ComplexInfinity"));
     }
     Expr::UnaryOp {
       op: UnaryOperator::Minus,
       operand,
     } if matches!(operand.as_ref(), Expr::Identifier(s) if s == "Infinity") => {
-      return Ok(neg1(Expr::Identifier("Infinity".to_string())));
+      return Ok(neg1(id_expr("Infinity")));
     }
     _ => {}
   }
@@ -4729,7 +4694,7 @@ pub fn arccosh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "Times",
         &[
           call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
-          Expr::Identifier("I".to_string()),
+          id_expr("I"),
           const_expr("Pi"),
         ],
       );
@@ -4764,20 +4729,20 @@ pub fn arccosh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       )?;
       return crate::evaluator::evaluate_function_call_ast(
         "Times",
-        &[pi_half, Expr::Identifier("I".to_string())],
+        &[pi_half, id_expr("I")],
       );
     }
     // ArcCosh grows without bound in magnitude, so every infinite argument —
     // Infinity, -Infinity, and the undirected ComplexInfinity — maps to
     // Infinity (matching wolframscript).
     Expr::Identifier(s) if s == "Infinity" || s == "ComplexInfinity" => {
-      return Ok(Expr::Identifier("Infinity".to_string()));
+      return Ok(id_expr("Infinity"));
     }
     Expr::UnaryOp {
       op: UnaryOperator::Minus,
       operand,
     } if matches!(operand.as_ref(), Expr::Identifier(s) if s == "Infinity") => {
-      return Ok(Expr::Identifier("Infinity".to_string()));
+      return Ok(id_expr("Infinity"));
     }
     _ => {}
   }
@@ -4799,9 +4764,9 @@ pub fn arctanh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   match &args[0] {
     Expr::Integer(0) => return Ok(Expr::Integer(0)),
-    Expr::Integer(1) => return Ok(Expr::Identifier("Infinity".to_string())),
+    Expr::Integer(1) => return Ok(id_expr("Infinity")),
     Expr::Integer(-1) => {
-      return Ok(neg1(Expr::Identifier("Infinity".to_string())));
+      return Ok(neg1(id_expr("Infinity")));
     }
     Expr::Real(f) if f.abs() < 1.0 => return Ok(Expr::Real(f.atanh())),
     // Outside (-1, 1) the (inexact) real argument gives a complex result:
@@ -4832,10 +4797,7 @@ pub fn arctanh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: "Plus".to_string(),
       args: vec![
         Expr::Real(result_re),
-        call(
-          "Times",
-          vec![Expr::Real(result_im), Expr::Identifier("I".to_string())],
-        ),
+        call("Times", vec![Expr::Real(result_im), id_expr("I")]),
       ]
       .into(),
     });
@@ -4872,14 +4834,14 @@ pub fn arccoth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "Times",
         &[
           call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
-          Expr::Identifier("I".to_string()),
+          id_expr("I"),
           const_expr("Pi"),
         ],
       );
     }
-    Expr::Integer(1) => return Ok(Expr::Identifier("Infinity".to_string())),
+    Expr::Integer(1) => return Ok(id_expr("Infinity")),
     Expr::Integer(-1) => {
-      return Ok(neg1(Expr::Identifier("Infinity".to_string())));
+      return Ok(neg1(id_expr("Infinity")));
     }
     Expr::Real(f) => {
       // ArcCoth[x] = ArcTanh[1/x]
@@ -4889,7 +4851,7 @@ pub fn arccoth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // For x == ±1: a singularity — Indeterminate.
       let x = *f;
       if x.abs() == 1.0 {
-        return Ok(Expr::Identifier("Indeterminate".to_string()));
+        return Ok(id_expr("Indeterminate"));
       }
       if x.abs() > 1.0 {
         return Ok(Expr::Real((1.0 / x).atanh()));
@@ -4931,7 +4893,7 @@ pub fn arccoth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       )?;
       return crate::evaluator::evaluate_function_call_ast(
         "Times",
-        &[pi_half, Expr::Identifier("I".to_string())],
+        &[pi_half, id_expr("I")],
       );
     }
     _ => {}
@@ -4957,7 +4919,7 @@ pub fn arcsech_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   match &args[0] {
-    Expr::Integer(0) => return Ok(Expr::Identifier("Infinity".to_string())),
+    Expr::Integer(0) => return Ok(id_expr("Infinity")),
     Expr::Integer(1) => return Ok(Expr::Integer(0)),
     Expr::Real(f) => {
       // ArcSech[x] = ArcCosh[1/x].
@@ -4965,7 +4927,7 @@ pub fn arcsech_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if x == 0.0 {
         // 1/0. is indeterminate for an inexact zero (ArcSech[0] exact stays
         // Infinity, handled above).
-        return Ok(Expr::Identifier("Indeterminate".to_string()));
+        return Ok(id_expr("Indeterminate"));
       }
       if x > 0.0 && x <= 1.0 {
         return Ok(Expr::Real((1.0 / x).acosh()));
@@ -5041,7 +5003,7 @@ pub fn arccsc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match &args[0] {
     // ArcCsc[0] = ArcSin[1/0] = ComplexInfinity.
     Expr::Integer(0) => {
-      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+      return Ok(id_expr("ComplexInfinity"));
     }
     Expr::Integer(1) => return Ok(pi_over_n(2)), // Pi/2
     Expr::Integer(-1) => return Ok(negative_pi_over_2()), // -Pi/2
@@ -5066,7 +5028,7 @@ pub fn arccsc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // numericized), matching wolframscript.
   if let Expr::Real(f) = &args[0] {
     if *f == 0.0 {
-      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+      return Ok(id_expr("ComplexInfinity"));
     }
     return crate::evaluator::evaluate_function_call_ast(
       "ArcSin",
@@ -5088,10 +5050,10 @@ pub fn arcsec_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match &args[0] {
     // ArcSec[0] = ArcCos[1/0] = ComplexInfinity.
     Expr::Integer(0) => {
-      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+      return Ok(id_expr("ComplexInfinity"));
     }
     Expr::Integer(1) => return Ok(Expr::Integer(0)),
-    Expr::Integer(-1) => return Ok(Expr::Identifier("Pi".to_string())),
+    Expr::Integer(-1) => return Ok(id_expr("Pi")),
     _ => {}
   }
   // For exact (non-Real) numeric args, compute ArcCos[1/x]
@@ -5113,7 +5075,7 @@ pub fn arcsec_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // numericized), matching wolframscript.
   if let Expr::Real(f) = &args[0] {
     if *f == 0.0 {
-      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+      return Ok(id_expr("ComplexInfinity"));
     }
     return crate::evaluator::evaluate_function_call_ast(
       "ArcCos",
@@ -5131,7 +5093,7 @@ pub fn arccsch_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let x = &args[0];
   if let Expr::Integer(0) = x {
-    return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+    return Ok(id_expr("ComplexInfinity"));
   }
   // ArcCsch[±Infinity] = 0.
   if matches!(x, Expr::Identifier(s) if s == "Infinity") || is_neg_infinity(x) {
@@ -5142,7 +5104,7 @@ pub fn arccsch_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Expr::Real(f) = x {
     if *f == 0.0 {
       // ArcCsch[0.] = ArcSinh[1/0.] diverges (like the exact ArcCsch[0]).
-      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+      return Ok(id_expr("ComplexInfinity"));
     }
     return Ok(Expr::Real((1.0 / f).asinh()));
   }
@@ -5314,9 +5276,9 @@ pub fn gudermannian_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // -I for k ≡ -1 (mod 4).
     let m = ((k % 4) + 4) % 4;
     let direction = if m == 1 {
-      Expr::Identifier("I".to_string())
+      id_expr("I")
     } else {
-      neg1(Expr::Identifier("I".to_string()))
+      neg1(id_expr("I"))
     };
     return Ok(call1("DirectedInfinity", direction));
   }
@@ -5337,10 +5299,10 @@ pub fn gudermannian_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(unevaluated("Gudermannian", args));
     }
     Expr::Identifier(name) if name == "Undefined" => {
-      return Ok(Expr::Identifier("Undefined".to_string()));
+      return Ok(id_expr("Undefined"));
     }
     Expr::Identifier(name) if name == "Indeterminate" => {
-      return Ok(Expr::Identifier("Indeterminate".to_string()));
+      return Ok(id_expr("Indeterminate"));
     }
     // -Infinity (as UnaryOp)
     Expr::UnaryOp {
@@ -5467,10 +5429,7 @@ pub fn logistic_sigmoid_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: "Plus".to_string(),
       args: vec![
         Expr::Real(result_re),
-        call(
-          "Times",
-          vec![Expr::Real(result_im), Expr::Identifier("I".to_string())],
-        ),
+        call("Times", vec![Expr::Real(result_im), id_expr("I")]),
       ]
       .into(),
     });

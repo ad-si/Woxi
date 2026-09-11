@@ -176,20 +176,11 @@ fn wrap_with_sqrt_factor_rationalised(
 ) -> Result<Expr, InterpreterError> {
   // Build Distribute[2*p, Plus] / (Sqrt[2*Pi] * Sqrt[z]).
   let two_p = call("Times", vec![Expr::Integer(2), p.clone()]);
-  let distributed = call(
-    "Distribute",
-    vec![two_p, Expr::Identifier("Plus".to_string())],
-  );
+  let distributed = call("Distribute", vec![two_p, id_expr("Plus")]);
   let denom = call(
     "Times",
     vec![
-      call1(
-        "Sqrt",
-        call(
-          "Times",
-          vec![Expr::Integer(2), Expr::Identifier("Pi".to_string())],
-        ),
-      ),
+      call1("Sqrt", call("Times", vec![Expr::Integer(2), id_expr("Pi")])),
       call1("Sqrt", z_expr.clone()),
     ],
   );
@@ -311,10 +302,7 @@ fn wrap_with_sqrt_factor(
           "Times",
           vec![
             Expr::Integer(2),
-            call(
-              "Power",
-              vec![Expr::Identifier("Pi".to_string()), Expr::Integer(-1)],
-            ),
+            call("Power", vec![id_expr("Pi"), Expr::Integer(-1)]),
           ],
         ),
       ),
@@ -668,9 +656,9 @@ pub fn bessel_k_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && let Expr::Integer(n) = n_expr
   {
     return if *n == 0 {
-      Ok(Expr::Identifier("Infinity".to_string()))
+      Ok(id_expr("Infinity"))
     } else {
-      Ok(Expr::Identifier("ComplexInfinity".to_string()))
+      Ok(id_expr("ComplexInfinity"))
     };
   }
 
@@ -688,7 +676,7 @@ pub fn bessel_k_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // ComplexInfinity (the numeric series would give NaN/0 there). The n = 0
     // case falls through to bessel_k, which returns Infinity.
     if z == 0.0 && n != 0.0 {
-      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+      return Ok(id_expr("ComplexInfinity"));
     }
     let result = bessel_k(n, z);
     return Ok(Expr::Real(result));
@@ -786,7 +774,7 @@ fn wrap_bessel_k_factor(
         call(
           "Times",
           vec![
-            Expr::Identifier("Pi".to_string()),
+            id_expr("Pi"),
             call("Power", vec![Expr::Integer(2), Expr::Integer(-1)]),
           ],
         ),
@@ -941,12 +929,9 @@ pub fn bessel_y_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && let Expr::Integer(n) = n_expr
   {
     return if *n == 0 {
-      Ok(call(
-        "Times",
-        vec![Expr::Integer(-1), Expr::Identifier("Infinity".to_string())],
-      ))
+      Ok(call("Times", vec![Expr::Integer(-1), id_expr("Infinity")]))
     } else {
-      Ok(Expr::Identifier("ComplexInfinity".to_string()))
+      Ok(id_expr("ComplexInfinity"))
     };
   }
 
@@ -964,7 +949,7 @@ pub fn bessel_y_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // ComplexInfinity (the numeric series would give NaN/0 there). The n = 0
     // case falls through to bessel_y, which returns -Infinity.
     if z == 0.0 && n != 0.0 {
-      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+      return Ok(id_expr("ComplexInfinity"));
     }
     let result = bessel_y(n, z);
     return Ok(Expr::Real(result));
@@ -1198,7 +1183,7 @@ fn coulomb_wave_reduce(
     }
     return uneval();
   }
-  let i_unit = || Expr::Identifier("I".to_string());
+  let i_unit = || id_expr("I");
   // L == 0: the spherical functions collapse to elementary form.
   if matches!(l, Expr::Integer(0)) {
     let elem = match kind {
@@ -1240,7 +1225,7 @@ fn coulomb_wave_reduce(
 /// with sigma_L = Arg[Gamma[L+1+i eta]] the Coulomb phase shift. G = Re(H+),
 /// H1 = H+, H2 = Conjugate(H+). Uses the evaluator's complex WhittakerW/Gamma.
 fn coulomb_hplus_expr(l: i128, eta: &Expr, rho: &Expr) -> Expr {
-  let i_unit = Expr::Identifier("I".to_string());
+  let i_unit = id_expr("I");
   // (-i)^L
   let neg_i_pow = call(
     "Power",
@@ -1309,7 +1294,7 @@ fn coulomb_f_numeric(
   eta: &Expr,
   rho: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  let i_unit = Expr::Identifier("I".to_string());
+  let i_unit = id_expr("I");
   let l1 = Expr::Integer(l + 1);
   let two_l2 = Expr::Integer(2 * l + 2);
 

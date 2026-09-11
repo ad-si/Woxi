@@ -161,7 +161,7 @@ pub fn factorial_power_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       result *= BigInt::from(n + i * h);
     }
     if result == BigInt::from(0) {
-      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+      return Ok(id_expr("ComplexInfinity"));
     }
     if let Ok(den) = i128::try_from(result) {
       return Ok(make_rational(1, den));
@@ -195,7 +195,7 @@ pub fn factorial_power_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(product);
     }
     if matches!(&product, Expr::Integer(0)) {
-      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+      return Ok(id_expr("ComplexInfinity"));
     }
     return crate::evaluator::evaluate_expr_to_expr(&call(
       "Power",
@@ -259,16 +259,16 @@ pub fn gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Indeterminate (the poles at the negative integers accumulate there).
   match &args[0] {
     Expr::Identifier(s) if s == "Infinity" => {
-      return Ok(Expr::Identifier("Infinity".to_string()));
+      return Ok(id_expr("Infinity"));
     }
     Expr::Identifier(s) if s == "ComplexInfinity" => {
-      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+      return Ok(id_expr("ComplexInfinity"));
     }
     Expr::UnaryOp {
       op: UnaryOperator::Minus,
       operand,
     } if matches!(operand.as_ref(), Expr::Identifier(s) if s == "Infinity") => {
-      return Ok(Expr::Identifier("Indeterminate".to_string()));
+      return Ok(id_expr("Indeterminate"));
     }
     _ => {}
   }
@@ -277,7 +277,7 @@ pub fn gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Some(n) => {
       if n <= 0 {
         // Gamma has poles at non-positive integers
-        return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+        return Ok(id_expr("ComplexInfinity"));
       }
       // Gamma[n] = (n-1)! for positive integers
       let mut result = BigInt::from(1);
@@ -294,7 +294,7 @@ pub fn gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       };
       if f <= 0.0 && f.fract() == 0.0 {
         // Poles at non-positive integers
-        return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+        return Ok(id_expr("ComplexInfinity"));
       }
       // An integer-valued real gives the exact factorial Gamma[n] = (n-1)!,
       // rounded to a machine real: Gamma[5.0] -> 24., not the float-Lanczos
@@ -321,7 +321,7 @@ pub fn gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Rust doesn't have tgamma in std, but we can compute via the Lanczos approximation
       let result = gamma_fn(f);
       if result.is_infinite() {
-        Ok(Expr::Identifier("ComplexInfinity".to_string()))
+        Ok(id_expr("ComplexInfinity"))
       } else {
         Ok(Expr::Real(result))
       }
@@ -426,9 +426,9 @@ fn gamma_incomplete_upper(
     if a_val > 0.0 {
       return gamma_ast(std::slice::from_ref(a));
     } else if a_val == 0.0 {
-      return Ok(Expr::Identifier("Infinity".to_string()));
+      return Ok(id_expr("Infinity"));
     }
-    return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+    return Ok(id_expr("ComplexInfinity"));
   }
   // Same divergences for an inexact zero z: Gamma[0, 0.] = Infinity and
   // Gamma[a, 0.] = ComplexInfinity for a < 0. (a > 0 falls through to the
@@ -439,9 +439,9 @@ fn gamma_incomplete_upper(
     && a_val <= 0.0
   {
     return Ok(if a_val == 0.0 {
-      Expr::Identifier("Infinity".to_string())
+      id_expr("Infinity")
     } else {
-      Expr::Identifier("ComplexInfinity".to_string())
+      id_expr("ComplexInfinity")
     });
   }
 
@@ -450,7 +450,7 @@ fn gamma_incomplete_upper(
     return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
       name: "Power".to_string(),
       args: vec![
-        Expr::Identifier("E".to_string()),
+        id_expr("E"),
         call("Times", vec![Expr::Integer(-1), z.clone()]),
       ]
       .into(),
@@ -530,7 +530,7 @@ fn gamma_incomplete_upper_int_a(
   let exp_neg_z = Expr::FunctionCall {
     name: "Power".to_string(),
     args: vec![
-      Expr::Identifier("E".to_string()),
+      id_expr("E"),
       call("Times", vec![Expr::Integer(-1), z.clone()]),
     ]
     .into(),
@@ -751,7 +751,7 @@ pub fn beta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if num_poles > 0 {
       let den_pole = (a + b <= 0) as i32;
       if num_poles - den_pole >= 1 {
-        return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+        return Ok(id_expr("ComplexInfinity"));
       }
       // Poles cancel (exactly one argument non-positive and a+b <= 0): the
       // finite limit is (-1)^pos * (pos-1)! * (m - pos)! / m!, where `pos` is
@@ -856,11 +856,11 @@ pub fn beta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               } else if total_pi_pow == 2 {
                 // Two sqrt(Pi) factors = Pi → result is (num/den) * Pi.
                 if matches!(&coeff, Expr::Integer(1)) {
-                  return Ok(Expr::Identifier("Pi".to_string()));
+                  return Ok(id_expr("Pi"));
                 }
                 return crate::evaluator::evaluate_expr_to_expr(&times2(
                   coeff,
-                  Expr::Identifier("Pi".to_string()),
+                  id_expr("Pi"),
                 ));
               }
             }
@@ -887,7 +887,7 @@ pub fn beta_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let net = num_poles - den_pole;
     if net > 0 {
       // A surviving numerator pole → ComplexInfinity.
-      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+      return Ok(id_expr("ComplexInfinity"));
     }
     if net < 0 {
       // The denominator pole dominates → 0.
@@ -1117,7 +1117,7 @@ pub fn log_gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(n) = expr_to_i128(z) {
     if n <= 0 {
       // LogGamma[0] = LogGamma[-n] = Infinity
-      return Ok(Expr::Identifier("Infinity".to_string()));
+      return Ok(id_expr("Infinity"));
     }
     if n == 1 || n == 2 {
       return Ok(Expr::Integer(0)); // Log[0!] = Log[1!] = 0
@@ -1146,7 +1146,7 @@ pub fn log_gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     if *n <= 0 && *d > 0 && *n % *d == 0 {
       // Non-positive integer
-      return Ok(Expr::Identifier("Infinity".to_string()));
+      return Ok(id_expr("Infinity"));
     }
   }
 
@@ -1157,7 +1157,7 @@ pub fn log_gamma_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         && try_eval_to_f64(z).is_some())
   {
     if f <= 0.0 && f == f.floor() {
-      return Ok(Expr::Identifier("Infinity".to_string()));
+      return Ok(id_expr("Infinity"));
     }
     if matches!(z, Expr::Real(_)) {
       // Compute log(|gamma(f)|) directly to avoid overflow for large f.
@@ -1698,7 +1698,7 @@ pub fn marcum_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(Expr::Integer(1));
     }
     if matches!(m, Expr::Integer(v) if *v < 0) {
-      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+      return Ok(id_expr("ComplexInfinity"));
     }
     if matches!(m, Expr::Integer(0)) {
       // 1 - E^(-a^2/2)
@@ -1838,10 +1838,7 @@ pub fn owen_t_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if matches!(h, Expr::Integer(0)) && !has_real {
     return Ok(div2(
       call1("ArcTan", a.clone()),
-      call(
-        "Times",
-        vec![Expr::Integer(2), Expr::Identifier("Pi".to_string())],
-      ),
+      call("Times", vec![Expr::Integer(2), id_expr("Pi")]),
     ));
   }
   // Numeric evaluation requires an inexact argument.
@@ -1986,7 +1983,7 @@ pub fn inverse_gamma_regularized_ast(
   {
     let inexact = matches!(a, Expr::Real(_)) || matches!(q, Expr::Real(_));
     if qv == 0.0 {
-      return Ok(Expr::Identifier("Infinity".to_string()));
+      return Ok(id_expr("Infinity"));
     }
     if qv == 1.0 {
       return Ok(if inexact {
@@ -2130,7 +2127,7 @@ pub fn log_barnes_g_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Ok(unevaluated(args));
   }
-  let neg_infinity = || neg1(Expr::Identifier("Infinity".to_string()));
+  let neg_infinity = || neg1(id_expr("Infinity"));
   match &args[0] {
     Expr::Integer(n) => {
       if *n <= 0 {

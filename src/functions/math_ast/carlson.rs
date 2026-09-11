@@ -301,7 +301,7 @@ fn pi() -> Expr {
 }
 
 fn cinf() -> Expr {
-  Expr::Identifier("ComplexInfinity".to_string())
+  id_expr("ComplexInfinity")
 }
 
 /// `1 / Sqrt[x]`.

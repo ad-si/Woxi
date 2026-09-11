@@ -782,9 +782,7 @@ fn split_numeric_complex_minus(e: &Expr) -> Option<(Expr, Expr)> {
         right: i.clone(),
       }
     }
-    i if is_i(i) => {
-      times2(Expr::Integer(-1), Expr::Identifier("I".to_string()))
-    }
+    i if is_i(i) => times2(Expr::Integer(-1), id_expr("I")),
     _ => return None,
   };
   Some(((**left).clone(), neg_imag))
@@ -991,7 +989,7 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         && cargs.iter().all(is_numeric_literal_part) =>
       {
         flat_args.push(cargs[0].clone());
-        stack.push(times2(cargs[1].clone(), Expr::Identifier("I".to_string())));
+        stack.push(times2(cargs[1].clone(), id_expr("I")));
       }
       other => {
         if let Some((re, imag)) = split_numeric_complex_minus(&other) {
@@ -1007,7 +1005,7 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Propagate Indeterminate through addition.
   for arg in &flat_args {
     if matches!(arg, Expr::Identifier(n) if n == "Indeterminate") {
-      return Ok(Expr::Identifier("Indeterminate".to_string()));
+      return Ok(id_expr("Indeterminate"));
     }
   }
 
@@ -1030,7 +1028,7 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       // ComplexInfinity alone (with finite terms) keeps its direction.
       if complex_inf && directions.is_empty() && infinite.len() == 1 {
-        return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+        return Ok(id_expr("ComplexInfinity"));
       }
       let opposite = directions.len() == 2
         && matches!(
@@ -1045,7 +1043,7 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           "Infinity::indet: Indeterminate expression -Infinity + Infinity \
            encountered.",
         );
-        return Ok(Expr::Identifier("Indeterminate".to_string()));
+        return Ok(id_expr("Indeterminate"));
       }
       if directions.len() == 1 {
         return crate::evaluator::evaluate_expr_to_expr(&call1(
@@ -1465,10 +1463,7 @@ fn promote_integer_times_i_to_real(e: Expr) -> Expr {
     }
   };
   if matches!(&e, Expr::Identifier(s) if s == "I") {
-    return call(
-      "Times",
-      vec![Expr::Real(1.0), Expr::Identifier("I".to_string())],
-    );
+    return call("Times", vec![Expr::Real(1.0), id_expr("I")]);
   }
   if let Expr::FunctionCall { name, args } = &e
     && name == "Times"
@@ -1525,16 +1520,9 @@ fn promote_integer_times_i_to_real(e: Expr) -> Expr {
     let zero_re = matches!(&re, Expr::Real(f) if *f == 0.0)
       || matches!(&re, Expr::Integer(0));
     if zero_re {
-      return call("Times", vec![im, Expr::Identifier("I".to_string())]);
+      return call("Times", vec![im, id_expr("I")]);
     }
-    return Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: vec![
-        re,
-        call("Times", vec![im, Expr::Identifier("I".to_string())]),
-      ]
-      .into(),
-    };
+    return call("Plus", vec![re, call("Times", vec![im, id_expr("I")])]);
   }
   e
 }
@@ -6992,7 +6980,7 @@ fn combine_like_bases(args: Vec<Expr>) -> Result<Vec<Expr>, InterpreterError> {
         // But Infinity^0 and ComplexInfinity^0 are Indeterminate
         let is_inf = matches!(&base, Expr::Identifier(s) if s == "Infinity" || s == "ComplexInfinity");
         if is_inf {
-          return Ok(vec![Expr::Identifier("Indeterminate".to_string())]);
+          return Ok(vec![id_expr("Indeterminate")]);
         }
         continue;
       }
@@ -7866,7 +7854,7 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Propagate Indeterminate and ComplexInfinity through multiplication
   for arg in &flat_args {
     if matches!(arg, Expr::Identifier(n) if n == "Indeterminate") {
-      return Ok(Expr::Identifier("Indeterminate".to_string()));
+      return Ok(id_expr("Indeterminate"));
     }
   }
 
@@ -7918,9 +7906,9 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "Infinity::indet: Indeterminate expression 0 ComplexInfinity \
          encountered.",
       );
-      return Ok(Expr::Identifier("Indeterminate".to_string()));
+      return Ok(id_expr("Indeterminate"));
     }
-    return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+    return Ok(id_expr("ComplexInfinity"));
   }
 
   // Times[…, complex_number, Infinity-like, …] → fold the complex factor
@@ -8103,7 +8091,7 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if sign == 0 {
           sign = 1; // defensive; real_factor_sign never yields 0
         }
-        let inf = Expr::Identifier("Infinity".to_string());
+        let inf = id_expr("Infinity");
         return Ok(if sign > 0 { inf } else { neg1(inf) });
       }
     }
@@ -8761,7 +8749,7 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // 0.0 * I → 0. + 0.*I (Complex form)
         return Ok(plus2(
           Expr::Real(0.0),
-          times2(Expr::Real(0.0), Expr::Identifier("I".to_string())),
+          times2(Expr::Real(0.0), id_expr("I")),
         ));
       }
       // 0.0 * x → 0. (approximate zero, not exact)
@@ -8832,7 +8820,7 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     crate::emit_message(
       "Infinity::indet: Indeterminate expression 0 Infinity encountered.",
     );
-    return Ok(Expr::Identifier("Indeterminate".to_string()));
+    return Ok(id_expr("Indeterminate"));
   }
 
   // 0 * anything = 0
@@ -8857,9 +8845,9 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Negative * Infinity or Positive * (-Infinity) → -Infinity
       let result_positive = coeff_positive == is_pos_inf;
       if result_positive {
-        return Ok(Expr::Identifier("Infinity".to_string()));
+        return Ok(id_expr("Infinity"));
       }
-      return Ok(neg1(Expr::Identifier("Infinity".to_string())));
+      return Ok(neg1(id_expr("Infinity")));
     }
   }
 
@@ -9277,14 +9265,14 @@ pub fn divide_head_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           &num_lines,
           &denom,
         ));
-        return Ok(Expr::Identifier("Indeterminate".to_string()));
+        return Ok(id_expr("Indeterminate"));
       }
       crate::emit_message(&format_infy_fraction_2d_block(
         "Divide::infy: Infinite expression ",
         &num_lines,
         &denom,
       ));
-      return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+      return Ok(id_expr("ComplexInfinity"));
     }
   }
   // wolframscript compiles the explicit `Divide[a, b]` head over machine
@@ -9347,7 +9335,7 @@ fn direct_real_divide(a: &Expr, b: &Expr) -> Option<Expr> {
   {
     return Some(plus2(
       Expr::Real(re / y),
-      times2(Expr::Real(im / y), Expr::Identifier("I".to_string())),
+      times2(Expr::Real(im / y), id_expr("I")),
     ));
   }
   let Expr::Real(y) = b else { return None };
@@ -9556,9 +9544,9 @@ fn divide_by_zero_result(a: &Expr) -> Expr {
       "Infinity::indet: Indeterminate expression {zero} ComplexInfinity \
        encountered."
     ));
-    return Expr::Identifier("Indeterminate".to_string());
+    return id_expr("Indeterminate");
   }
-  Expr::Identifier("ComplexInfinity".to_string())
+  id_expr("ComplexInfinity")
 }
 
 /// Helper for division of two arguments
@@ -9650,7 +9638,7 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
     crate::emit_message(
       "Infinity::indet: Indeterminate expression 0 Infinity encountered.",
     );
-    return Ok(Expr::Identifier("Indeterminate".to_string()));
+    return Ok(id_expr("Indeterminate"));
   }
 
   // finite / Infinity or finite / DirectedInfinity[z] → 0
@@ -10076,7 +10064,7 @@ pub fn divide_two(a: &Expr, b: &Expr) -> Result<Expr, InterpreterError> {
     if matches!(a, Expr::Identifier(s) if s == "Indeterminate")
       || matches!(b, Expr::Identifier(s) if s == "Indeterminate")
     {
-      return Ok(Expr::Identifier("Indeterminate".to_string()));
+      return Ok(id_expr("Indeterminate"));
     }
 
     // x / x → 1 for identical symbolic expressions
@@ -10352,8 +10340,8 @@ fn infinity_direction(expr: &Expr) -> Option<Option<Expr>> {
 /// * both infinite gives `ComplexInfinity` for a positive and `0` for a
 ///   negative exponent direction.
 fn infinite_power(base: &Expr, exp: &Expr) -> Option<Expr> {
-  let complex_inf = || Expr::Identifier("ComplexInfinity".to_string());
-  let indet = || Expr::Identifier("Indeterminate".to_string());
+  let complex_inf = || id_expr("ComplexInfinity");
+  let indet = || id_expr("Indeterminate");
   let directed = |dir: Expr| {
     crate::evaluator::evaluate_expr_to_expr(&call1("DirectedInfinity", dir))
       .ok()
@@ -10434,7 +10422,7 @@ fn infinite_power(base: &Expr, exp: &Expr) -> Option<Expr> {
   Some(if !diverges {
     Expr::Integer(0)
   } else if positive_real {
-    Expr::Identifier("Infinity".to_string())
+    id_expr("Infinity")
   } else {
     complex_inf()
   })
@@ -10983,7 +10971,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     && (base_is_pos_inf || base_is_neg_inf || base_is_complex_inf)
   {
     emit_power_indet("Infinity", &expr_to_string(base), "0");
-    return Ok(Expr::Identifier("Indeterminate".to_string()));
+    return Ok(id_expr("Indeterminate"));
   }
 
   // Any Indeterminate operand makes the whole power Indeterminate — including
@@ -10991,7 +10979,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
   if matches!(base, Expr::Identifier(s) if s == "Indeterminate")
     || matches!(exp, Expr::Identifier(s) if s == "Indeterminate")
   {
-    return Ok(Expr::Identifier("Indeterminate".to_string()));
+    return Ok(id_expr("Indeterminate"));
   }
 
   // The general rules for an infinite base or exponent.
@@ -11004,7 +10992,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     || matches!(base, Expr::Identifier(s) if s == "E");
   if base_is_e {
     if exp_is_pos_inf {
-      return Ok(Expr::Identifier("Infinity".to_string()));
+      return Ok(id_expr("Infinity"));
     }
     if exp_is_neg_inf {
       return Ok(Expr::Integer(0));
@@ -11019,7 +11007,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
 
   // n^ComplexInfinity → Indeterminate for most cases
   if exp_is_complex_inf {
-    return Ok(Expr::Identifier("Indeterminate".to_string()));
+    return Ok(id_expr("Indeterminate"));
   }
 
   // (-x)^n → (-1)^n * x^n for integer n. A `UnaryOp` minus base (e.g. the
@@ -11463,9 +11451,9 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     let r = ((*n % 4) + 4) % 4; // always non-negative mod
     return Ok(match r {
       0 => Expr::Integer(1),
-      1 => Expr::Identifier("I".to_string()),
+      1 => id_expr("I"),
       2 => Expr::Integer(-1),
-      3 => negate_expr(Expr::Identifier("I".to_string())),
+      3 => negate_expr(id_expr("I")),
       _ => unreachable!(),
     });
   }
@@ -11541,7 +11529,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     // BigInt result: build expression for integer denominators
     if final_re_d == BigInt::from(1) && final_im_d == BigInt::from(1) {
       let re_expr = bigint_to_expr(final_re_n);
-      let i_expr = Expr::Identifier("I".to_string());
+      let i_expr = id_expr("I");
       if result_im.is_zero() {
         return Ok(re_expr);
       }
@@ -11579,7 +11567,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     if sin_is_zero {
       return Ok(cos_val);
     }
-    let i_expr = Expr::Identifier("I".to_string());
+    let i_expr = id_expr("I");
     let imag_term = if matches!(&sin_val, Expr::Integer(1)) {
       i_expr
     } else if matches!(&sin_val, Expr::Integer(-1)) {
@@ -11669,14 +11657,11 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
         return Ok(Expr::Real(real_part));
       }
       if real_part == 0.0 {
-        return Ok(times2(
-          Expr::Real(imag_part),
-          Expr::Identifier("I".to_string()),
-        ));
+        return Ok(times2(Expr::Real(imag_part), id_expr("I")));
       }
       return Ok(plus2(
         Expr::Real(real_part),
-        times2(Expr::Real(imag_part), Expr::Identifier("I".to_string())),
+        times2(Expr::Real(imag_part), id_expr("I")),
       ));
     }
   }
@@ -11688,7 +11673,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     || matches!(exp, Expr::Real(f) if *f == 0.0);
   if base_is_zero && exp_is_zero {
     emit_power_indet("Power", &expr_to_string(base), &expr_to_string(exp));
-    return Ok(Expr::Identifier("Indeterminate".to_string()));
+    return Ok(id_expr("Indeterminate"));
   }
 
   // Special case: 0^(negative) = ComplexInfinity (with warning).
@@ -11711,7 +11696,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
       let exp_str = expr_to_string(exp);
       crate::emit_message(&format_power_infy_2d(&base_str, &exp_str));
     }
-    return Ok(Expr::Identifier("ComplexInfinity".to_string()));
+    return Ok(id_expr("ComplexInfinity"));
   }
 
   // Special case: integer base with negative integer exponent -> Rational
@@ -12183,17 +12168,11 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
       } else {
         // Return re + im*I as a complex expression
         let im_part = if im == 1.0 {
-          Expr::Identifier("I".to_string())
+          id_expr("I")
         } else if im == -1.0 {
-          call(
-            "Times",
-            vec![Expr::Integer(-1), Expr::Identifier("I".to_string())],
-          )
+          call("Times", vec![Expr::Integer(-1), id_expr("I")])
         } else {
-          call(
-            "Times",
-            vec![Expr::Real(im), Expr::Identifier("I".to_string())],
-          )
+          call("Times", vec![Expr::Real(im), id_expr("I")])
         };
         if re == 0.0 {
           Ok(im_part)
@@ -12241,7 +12220,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
         return if c > 0.0 {
           Ok(Expr::Integer(0))
         } else {
-          Ok(Expr::Identifier("Indeterminate".to_string()))
+          Ok(id_expr("Indeterminate"))
         };
       }
       let ln_abs = abs_z.ln();
@@ -12679,7 +12658,7 @@ fn simplify_neg1_rational_power(
   }
   // (-1)^(1/2) = I
   if p == 1 && q == 2 {
-    return Ok(Expr::Identifier("I".to_string()));
+    return Ok(id_expr("I"));
   }
   // 0 < p < q: return (-1)^(p/q)
   Ok(call("Power", vec![Expr::Integer(-1), make_rational(p, q)]))
@@ -12777,7 +12756,7 @@ fn negative_base_rational_power(
   if rp != 0 {
     if rq == 2 {
       // (-1)^(1/2) is I, which never merges into a radicand.
-      factors.push(Expr::Identifier("I".to_string()));
+      factors.push(id_expr("I"));
     } else {
       let root_exp = make_rational(rp, rq);
       let root_key = expr_to_string(&root_exp);
@@ -12937,10 +12916,10 @@ pub fn max_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // An Indeterminate argument (at any depth, since lists are flattened)
   // makes the extremum Indeterminate: it cannot be ordered against anything.
   if args.iter().any(contains_indeterminate) {
-    return Ok(Expr::Identifier("Indeterminate".to_string()));
+    return Ok(id_expr("Indeterminate"));
   }
   if args.is_empty() {
-    return Ok(Expr::Identifier("-Infinity".to_string()));
+    return Ok(id_expr("-Infinity"));
   }
 
   // Any SparseArray argument is compared over its dense elements.
@@ -12956,7 +12935,7 @@ pub fn max_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Flatten all nested lists
   let items = flatten_lists(args);
   if items.is_empty() {
-    return Ok(Expr::Identifier("-Infinity".to_string()));
+    return Ok(id_expr("-Infinity"));
   }
 
   // All-Quantity case: compare magnitudes after unit conversion and return the
@@ -13022,10 +13001,10 @@ pub fn min_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // An Indeterminate argument (at any depth, since lists are flattened)
   // makes the extremum Indeterminate: it cannot be ordered against anything.
   if args.iter().any(contains_indeterminate) {
-    return Ok(Expr::Identifier("Indeterminate".to_string()));
+    return Ok(id_expr("Indeterminate"));
   }
   if args.is_empty() {
-    return Ok(Expr::Identifier("Infinity".to_string()));
+    return Ok(id_expr("Infinity"));
   }
 
   // Any SparseArray argument is compared over its dense elements.
@@ -13041,7 +13020,7 @@ pub fn min_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Flatten all nested lists
   let items = flatten_lists(args);
   if items.is_empty() {
-    return Ok(Expr::Identifier("Infinity".to_string()));
+    return Ok(id_expr("Infinity"));
   }
 
   // All-Quantity case: compare magnitudes after unit conversion and return the
