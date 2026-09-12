@@ -90,7 +90,7 @@ pub fn d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       })
       .collect();
     let rule = Expr::Rule {
-      pattern: Box::new(Expr::Identifier("NonConstants".to_string())),
+      pattern: Box::new(id_expr("NonConstants")),
       replacement: Box::new(Expr::List(non_constants.into())),
     };
     let mut new_args = vec![expr.clone()];
@@ -515,7 +515,7 @@ pub fn integrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       };
       match &args[0] {
         Expr::Identifier(s) if s == "Infinity" && lo_ne_hi => {
-          return Ok(Expr::Identifier("Infinity".to_string()));
+          return Ok(id_expr("Infinity"));
         }
         Expr::UnaryOp {
           op: UnaryOperator::Minus,
@@ -1074,16 +1074,10 @@ fn try_dirac_delta_integral(
     }
     // Symbolic root over the whole real line: the delta always fires for a
     // real root → ConditionalExpression[g(x0)/|c|, x0 ∈ Reals].
-    None if is_negative_infinity(lo) && is_infinity(hi) => {
-      Some(Expr::FunctionCall {
-        name: "ConditionalExpression".to_string(),
-        args: vec![
-          sifted,
-          call("Element", vec![root, Expr::Identifier("Reals".to_string())]),
-        ]
-        .into(),
-      })
-    }
+    None if is_negative_infinity(lo) && is_infinity(hi) => Some(call(
+      "ConditionalExpression",
+      vec![sifted, call("Element", vec![root, id_expr("Reals")])],
+    )),
     // Symbolic root with finite bounds: position is undetermined — leave it
     // unevaluated (Wolfram returns a Piecewise/HeavisideTheta form).
     None => None,
@@ -2381,7 +2375,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
               name: "Piecewise".to_string(),
               args: vec![
                 Expr::List(diffed_pieces.into()),
-                Expr::Identifier("Indeterminate".to_string()),
+                id_expr("Indeterminate"),
               ]
               .into(),
             })
@@ -3058,7 +3052,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           let deriv_expr = Expr::CurriedCall {
             func: Box::new(Expr::CurriedCall {
               func: Box::new(call("Derivative", vec![Expr::Integer(1)])),
-              args: vec![Expr::Identifier("Abs".to_string())],
+              args: vec![id_expr("Abs")],
             }),
             args: args.to_vec(),
           };
@@ -3093,7 +3087,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           let deriv_expr = Expr::CurriedCall {
             func: Box::new(Expr::CurriedCall {
               func: Box::new(call("Derivative", vec![Expr::Integer(1)])),
-              args: vec![Expr::Identifier("Sign".to_string())],
+              args: vec![id_expr("Sign")],
             }),
             args: args.to_vec(),
           };
@@ -3692,7 +3686,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
                 )]
                 .into(),
               ),
-              Expr::Identifier("Indeterminate".to_string()),
+              id_expr("Indeterminate"),
             ]
             .into(),
           };
@@ -3733,7 +3727,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
               Expr::List(
                 vec![Expr::List(vec![Expr::Integer(0), cond].into())].into(),
               ),
-              Expr::Identifier("Indeterminate".to_string()),
+              id_expr("Indeterminate"),
             ]
             .into(),
           };
@@ -3768,7 +3762,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
               Expr::List(
                 vec![Expr::List(
                   vec![
-                    Expr::Identifier("Indeterminate".to_string()),
+                    id_expr("Indeterminate"),
                     Expr::Comparison {
                       operands: vec![args[0].clone(), Expr::Integer(0)],
                       operators: vec![ComparisonOp::Equal],
@@ -3817,7 +3811,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
                 ]
                 .into(),
               ),
-              Expr::Identifier("Indeterminate".to_string()),
+              id_expr("Indeterminate"),
             ]
             .into(),
           };
@@ -9106,7 +9100,7 @@ fn harmonic_asymptotic(g: &Expr) -> Expr {
     name: "Plus".to_string(),
     args: vec![
       call1("Log", g.clone()),
-      Expr::Identifier("EulerGamma".to_string()),
+      id_expr("EulerGamma"),
       term(1, 2, -1),
       term(-1, 12, -2),
       term(1, 120, -4),
@@ -9193,11 +9187,8 @@ fn eval_at_infinity_is_one(expr: &Expr, var: &str) -> bool {
   }
   // Symbolic fallback for a base with free parameters (e.g. 1 + a/n): with
   // var -> Infinity the var-dependent terms vanish and the base is exactly 1.
-  let subst_inf = crate::syntax::substitute_variable(
-    expr,
-    var,
-    &Expr::Identifier("Infinity".to_string()),
-  );
+  let subst_inf =
+    crate::syntax::substitute_variable(expr, var, &id_expr("Infinity"));
   matches!(
     crate::evaluator::evaluate_expr_to_expr(&subst_inf),
     Ok(Expr::Integer(1))
@@ -9287,7 +9278,7 @@ fn limit_bounded_oscillating_sum(expr: &Expr, var_name: &str) -> Option<Expr> {
   // All same degree → Indeterminate. Otherwise → Interval[{-bound, bound}].
   let all_same_degree = degrees.windows(2).all(|w| w[0] == w[1]);
   if all_same_degree {
-    return Some(Expr::Identifier("Indeterminate".to_string()));
+    return Some(id_expr("Indeterminate"));
   }
   let bound: i128 = coeffs_abs.iter().sum();
   Some(Expr::FunctionCall {
@@ -10056,7 +10047,7 @@ fn limit_at_infinity(
       // and keeps wolframscript's `a Infinity` for a symbolic one.
       return crate::evaluator::evaluate_expr_to_expr(&times2(
         coeff,
-        Expr::Identifier("Infinity".to_string()),
+        id_expr("Infinity"),
       ));
     } else if order < -ORDER_EPS {
       return Ok(Expr::Integer(0));
@@ -10113,7 +10104,7 @@ fn limit_at_infinity(
     && let Expr::Identifier(arg_name) = &targs[0]
     && arg_name == var_name
   {
-    return Ok(Expr::Identifier("Indeterminate".to_string()));
+    return Ok(id_expr("Indeterminate"));
   }
 
   // Bounded oscillating sum at infinity: a sum of Sin/Cos terms with
@@ -10180,9 +10171,9 @@ fn limit_at_infinity(
   // grow slowly: Log[x], Sqrt[x], x^(1/3), Log[2 x], Log[Log[x]], Log[x]^2, …
   if let Some(s) = diverges_to_infinity(expr, var_name, point) {
     return Ok(if s >= 0 {
-      Expr::Identifier("Infinity".to_string())
+      id_expr("Infinity")
     } else {
-      neg1(Expr::Identifier("Infinity".to_string()))
+      neg1(id_expr("Infinity"))
     });
   }
 
@@ -10230,11 +10221,11 @@ fn limit_at_infinity(
   if let (Some(f1), Some(f2)) = (val1, val2) {
     // Both diverging to +infinity
     if f1 > 1e5 && f2 > f1 {
-      return Ok(Expr::Identifier("Infinity".to_string()));
+      return Ok(id_expr("Infinity"));
     }
     // Both diverging to -infinity
     if f1 < -1e5 && f2 < f1 {
-      return Ok(neg1(Expr::Identifier("Infinity".to_string())));
+      return Ok(neg1(id_expr("Infinity")));
     }
     // Approaching zero: both values small and getting smaller
     if f2.abs() < 1e-4 && f2.abs() < f1.abs() {
@@ -10420,9 +10411,9 @@ fn exp_growth_limit_at_infinity(
   // Divergence to ±Infinity.
   if f1.abs() > 1e5 && f2.abs() > f1.abs() {
     return Some(if f2 > 0.0 {
-      Expr::Identifier("Infinity".to_string())
+      id_expr("Infinity")
     } else {
-      neg1(Expr::Identifier("Infinity".to_string()))
+      neg1(id_expr("Infinity"))
     });
   }
   // Approaching zero — both probes tiny and shrinking (the relative-agreement
@@ -10552,7 +10543,7 @@ fn one_sided_limit_ast(
     LimitDirection::TwoSided => "FromAbove",
   };
   let direction_opt = Expr::Rule {
-    pattern: Box::new(Expr::Identifier("Direction".to_string())),
+    pattern: Box::new(id_expr("Direction")),
     replacement: Box::new(Expr::String(dir_str.to_string())),
   };
 
@@ -10605,7 +10596,7 @@ fn bounded_trig_extremum(
     && bounded_trig_extremum(&iargs[0], rule, "MaxLimit")?.is_some()
   {
     return Ok(Some(if fn_name == "MaxLimit" {
-      Expr::Identifier("Infinity".to_string())
+      id_expr("Infinity")
     } else {
       Expr::Integer(1)
     }));
@@ -10626,7 +10617,7 @@ fn bounded_trig_extremum(
       let base = call1(partner, iargs[0].clone());
       return Ok(bounded_trig_extremum(&base, rule, "MaxLimit")?.map(|_| {
         if fn_name == "MaxLimit" {
-          Expr::Identifier("Infinity".to_string())
+          id_expr("Infinity")
         } else {
           Expr::Integer(1)
         }
@@ -10643,9 +10634,9 @@ fn bounded_trig_extremum(
     let base = call1(partner, fargs[0].clone());
     return Ok(bounded_trig_extremum(&base, rule, "MaxLimit")?.map(|_| {
       if fn_name == "MaxLimit" {
-        Expr::Identifier("Infinity".to_string())
+        id_expr("Infinity")
       } else {
-        neg1(Expr::Identifier("Infinity".to_string()))
+        neg1(id_expr("Infinity"))
       }
     }));
   }
@@ -11208,7 +11199,7 @@ fn reconcile_one_sided_direct(
       && hi.is_finite()
       && (lo - hi).abs() > 1e-6 * (1.0 + lo.abs().max(hi.abs()))
     {
-      return Expr::Identifier("Indeterminate".to_string());
+      return id_expr("Indeterminate");
     }
     return direct;
   }
@@ -11263,9 +11254,9 @@ fn numerical_one_sided_limit(
       .find(|v| !v.is_infinite())
       .map_or_else(|| vals[0].is_sign_positive(), |v| *v > 0.0);
     if sign_positive {
-      return Some(Expr::Identifier("Infinity".to_string()));
+      return Some(id_expr("Infinity"));
     }
-    return Some(neg1(Expr::Identifier("Infinity".to_string())));
+    return Some(neg1(id_expr("Infinity")));
   }
 
   // Check if the values are monotonically diverging (sign consistent, magnitude increasing)
@@ -11277,9 +11268,9 @@ fn numerical_one_sided_limit(
     // Check that the growth is unbounded (magnitude at least doubles over the range)
     if vals.last().unwrap().abs() > 2.0 * vals.first().unwrap().abs() {
       if all_positive {
-        return Some(Expr::Identifier("Infinity".to_string()));
+        return Some(id_expr("Infinity"));
       }
-      return Some(neg1(Expr::Identifier("Infinity".to_string())));
+      return Some(neg1(id_expr("Infinity")));
     }
   }
 
@@ -11331,7 +11322,7 @@ fn numerical_two_sided_limit(
           return Some(a);
         }
         // Sides disagree — indeterminate
-        Some(Expr::Identifier("Indeterminate".to_string()))
+        Some(id_expr("Indeterminate"))
       } else {
         // At least one side is infinite — check if they match symbolically
         let a_str = expr_to_string(&a);
@@ -11340,7 +11331,7 @@ fn numerical_two_sided_limit(
           return Some(a);
         }
         // Different infinities — indeterminate
-        Some(Expr::Identifier("Indeterminate".to_string()))
+        Some(id_expr("Indeterminate"))
       }
     }
     _ => None,
@@ -12100,13 +12091,13 @@ fn limit_strategies(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let even_integer =
       (k - k.round()).abs() <= ORDER_EPS && (k.round() as i64) % 2 == 0;
     if !even_integer {
-      return Ok(Expr::Identifier("Indeterminate".to_string()));
+      return Ok(id_expr("Indeterminate"));
     }
     if let Some(c) = crate::functions::math_ast::try_eval_to_f64(&coeff) {
       return Ok(if c > 0.0 {
-        Expr::Identifier("Infinity".to_string())
+        id_expr("Infinity")
       } else {
-        neg1(Expr::Identifier("Infinity".to_string()))
+        neg1(id_expr("Infinity"))
       });
     }
   }
@@ -12617,7 +12608,7 @@ fn rewrite_pole_models(
       let um1 = plus(vec![u.clone(), Expr::Integer(-1)]);
       return plus(vec![
         pow(um1.clone(), -1),
-        Expr::Identifier("EulerGamma".to_string()),
+        id_expr("EulerGamma"),
         times(vec![
           Expr::Integer(-1),
           call("StieltjesGamma", vec![Expr::Integer(1)]),
@@ -12830,7 +12821,7 @@ pub fn residue_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let simplify_full = |e: Expr| -> Expr {
     let e = crate::evaluator::evaluate_expr_to_expr(&e).unwrap_or(e);
     crate::evaluator::evaluate_expr_to_expr(&call("Simplify", vec![e]))
-      .unwrap_or_else(|_| Expr::Identifier("Indeterminate".to_string()))
+      .unwrap_or_else(|_| id_expr("Indeterminate"))
   };
 
   // The internal pole-order probes evaluate at the singularity and would
@@ -14497,7 +14488,7 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       let mut new_sd = sd.to_vec();
       new_sd[0] = Expr::Identifier(var_name.clone());
-      new_sd[1] = Expr::Identifier("Infinity".to_string());
+      new_sd[1] = id_expr("Infinity");
       return Ok(call("SeriesData", new_sd));
     }
     // Could not produce a clean expansion — leave the call symbolic instead of
@@ -14798,14 +14789,7 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // Log[x]
         Expr::Identifier(var_name.clone())
       };
-      let c0 = Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: vec![
-          Expr::Identifier("EulerGamma".to_string()),
-          call1("Log", log_arg),
-        ]
-        .into(),
-      };
+      let c0 = call("Plus", vec![id_expr("EulerGamma"), call1("Log", log_arg)]);
       let mut coefficients = vec![c0];
       let mut factorial: i128 = 1;
       for k in 1..=order {
@@ -17035,7 +17019,7 @@ pub fn asymptotic_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // and solve this polynomial for t using Solve
 
   // Build the polynomial expression in a temporary variable
-  let t_var = Expr::Identifier("AsymptoticSolve$t".to_string());
+  let t_var = id_expr("AsymptoticSolve$t");
 
   let mut poly_terms: Vec<Expr> = Vec::new();
   for (i, coeff) in coeffs.iter().enumerate() {
@@ -17083,7 +17067,7 @@ pub fn asymptotic_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         operands: vec![poly_expr, Expr::Integer(0)],
         operators: vec![ComparisonOp::Equal],
       },
-      Expr::Identifier("AsymptoticSolve$t".to_string()),
+      id_expr("AsymptoticSolve$t"),
     ]
     .into(),
   };
@@ -17300,15 +17284,8 @@ pub fn discrete_convolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::List(
         vec![
           k_expr,
-          Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![
-              Expr::Integer(-1),
-              Expr::Identifier("Infinity".to_string()),
-            ]
-            .into(),
-          },
-          Expr::Identifier("Infinity".to_string()),
+          call("Times", vec![Expr::Integer(-1), id_expr("Infinity")]),
+          id_expr("Infinity"),
         ]
         .into(),
       ),
@@ -18783,7 +18760,7 @@ fn series_at_infinity(
   };
   let mut rebased = series_args;
   rebased[0] = Expr::Identifier(var.to_string());
-  rebased[1] = Expr::Identifier("Infinity".to_string());
+  rebased[1] = id_expr("Infinity");
   Ok(Some(call("SeriesData", rebased)))
 }
 
@@ -18814,8 +18791,8 @@ impl Verdict {
 
   fn into_expr(self) -> Option<Expr> {
     match self {
-      Self::True => Some(Expr::Identifier("True".to_string())),
-      Self::False => Some(Expr::Identifier("False".to_string())),
+      Self::True => Some(bool_expr(true)),
+      Self::False => Some(bool_expr(false)),
       Self::Unknown => None,
     }
   }

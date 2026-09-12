@@ -5403,10 +5403,8 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // MakeBoxes only fires on `Format[…, TeXForm]` rules. User
         // MakeBoxes patterns use `fmt_` and match any form, so they
         // still apply.
-        let mb_call = call(
-          "MakeBoxes",
-          vec![inner.clone(), Expr::Identifier("TeXForm".to_string())],
-        );
+        let mb_call =
+          call("MakeBoxes", vec![inner.clone(), id_expr("TeXForm")]);
         if let Ok(box_ast) = crate::evaluator::evaluate_expr_to_expr(&mb_call) {
           return Ok(Expr::String(box_ast_to_tex(&box_ast)));
         }
@@ -5556,14 +5554,8 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // box-syntax escape characters (`\!\(\*…\)`). The resulting
         // String displays as `DisplayForm[…]` in OutputForm — matching
         // what wolframscript prints for `ToString[expr, StandardForm]`.
-        let make_boxes_call = Expr::FunctionCall {
-          name: "MakeBoxes".to_string(),
-          args: vec![
-            args[0].clone(),
-            Expr::Identifier("StandardForm".to_string()),
-          ]
-          .into(),
-        };
+        let make_boxes_call =
+          call("MakeBoxes", vec![args[0].clone(), id_expr("StandardForm")]);
         let box_ast = crate::evaluator::evaluate_expr_to_expr(&make_boxes_call)
           .unwrap_or_else(|_| args[0].clone());
         let box_inner_text = linear_syntax_box_text(&box_ast);
@@ -9604,13 +9596,13 @@ pub fn to_expression_ast_as(
   let s = expr_to_str(&args[0]);
   // Empty (or whitespace-only) input is Null, not a value.
   if s.trim().is_empty() {
-    return Ok(Expr::Identifier("Null".to_string()));
+    return Ok(null_expr());
   }
   // Syntactically invalid input yields $Failed with a Wolfram syntax message
   // (sntxi/sntx), rather than leaking the internal parser error.
   if let Some(msg) = to_expression_syntax_error(&s, message_symbol) {
     crate::emit_message(&msg);
-    return Ok(Expr::Identifier("$Failed".to_string()));
+    return Ok(fail_expr());
   }
   // Three-argument form ToExpression[str, form, h]: wrap the *parsed but
   // unevaluated* expression with head `h`, then evaluate `h[parsed]`. This
@@ -9666,7 +9658,7 @@ pub(crate) fn parse_program_to_expr(
     // reads a `.wlx` file statement by statement this way and matches on the
     // trailing `Null` to find the names to localise.
     if normalized.trim_end().ends_with(';') && !exprs.is_empty() {
-      exprs.push(Expr::Identifier("Null".to_string()));
+      exprs.push(null_expr());
     }
     match exprs.len() {
       0 => {}
@@ -13350,7 +13342,7 @@ pub fn read_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let read_type = if args.len() >= 2 {
     &args[1]
   } else {
-    &Expr::Identifier("Expression".to_string())
+    &id_expr("Expression")
   };
 
   // Optional max count: must be a non-negative machine integer when
@@ -14400,10 +14392,7 @@ pub fn build_template_object(
     pattern: Box::new(Expr::Identifier(name.to_string())),
     replacement: Box::new(value),
   };
-  object_args.push(option(
-    "CombinerFunction",
-    Expr::Identifier("StringJoin".to_string()),
-  ));
+  object_args.push(option("CombinerFunction", id_expr("StringJoin")));
   // XMLTemplate reports its insertion function as the string "HTMLFragment";
   // plain string templates use the TextString symbol.
   let insertion_value = if insertion_function == "HTMLFragment" {
@@ -16638,7 +16627,7 @@ pub fn snippet_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "Snippet::invcnt: Content should be string, File, URL, or valid \
        ContentObject.",
     );
-    return Ok(Expr::Identifier("$Failed".to_string()));
+    return Ok(fail_expr());
   };
   let lines: Vec<&str> = text.split('\n').collect();
   let count = lines.len() as i128;
@@ -16679,7 +16668,7 @@ pub fn snippet_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           "Snippet::invspec: Specification {} should be an integer or Span.",
           expr_to_output(spec)
         ));
-        return Ok(Expr::Identifier("$Failed".to_string()));
+        return Ok(fail_expr());
       }
     }
   };

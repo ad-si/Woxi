@@ -1061,11 +1061,7 @@ pub fn apply_dwd(func: &Expr, args: &[Expr]) -> Result<Expr, InterpreterError> {
           threshold_values: None,
           dims: dwd.dims.clone(),
         };
-        let iargs = vec![
-          sub.to_expr(),
-          Expr::Identifier("Automatic".into()),
-          wind_to_expr(w),
-        ];
+        let iargs = vec![sub.to_expr(), id_expr("Automatic"), wind_to_expr(w)];
         inverse_wavelet_transform_ast(&iargs)?
       }
       _ => coef.clone(),

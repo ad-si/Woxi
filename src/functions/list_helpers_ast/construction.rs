@@ -1146,7 +1146,7 @@ pub fn do_ast(body: &Expr, iter_spec: &Expr) -> Result<Expr, InterpreterError> {
           Err(e) => return Err(e),
         }
       }
-      Ok(Expr::Identifier("Null".to_string()))
+      Ok(null_expr())
     }
     Expr::List(items) if items.len() == 1 => {
       // Do[body, {n}] — repeat n times without iterator variable
@@ -1165,7 +1165,7 @@ pub fn do_ast(body: &Expr, iter_spec: &Expr) -> Result<Expr, InterpreterError> {
           Err(e) => return Err(e),
         }
       }
-      Ok(Expr::Identifier("Null".to_string()))
+      Ok(null_expr())
     }
     Expr::List(items) if items.len() >= 2 => {
       let var_name = match &items[0] {
@@ -1228,7 +1228,7 @@ pub fn do_ast(body: &Expr, iter_spec: &Expr) -> Result<Expr, InterpreterError> {
             if let Some(v) = early_return {
               return Ok(v);
             }
-            return Ok(Expr::Identifier("Null".to_string()));
+            return Ok(null_expr());
           }
           // Fall through to the generic path if Characters[s] didn't
           // produce a String (e.g. threaded over a list).
@@ -1270,7 +1270,7 @@ pub fn do_ast(body: &Expr, iter_spec: &Expr) -> Result<Expr, InterpreterError> {
             if let Some(v) = early_return {
               return Ok(v);
             }
-            return Ok(Expr::Identifier("Null".to_string()));
+            return Ok(null_expr());
           }
           // Fall back to substitute when body uses var as a function head.
           for item in list_items {
@@ -1284,7 +1284,7 @@ pub fn do_ast(body: &Expr, iter_spec: &Expr) -> Result<Expr, InterpreterError> {
               Err(e) => return Err(e),
             }
           }
-          return Ok(Expr::Identifier("Null".to_string()));
+          return Ok(null_expr());
         }
       }
 
@@ -1371,7 +1371,7 @@ pub fn do_ast(body: &Expr, iter_spec: &Expr) -> Result<Expr, InterpreterError> {
             i += step;
           }
         }
-        return Ok(Expr::Identifier("Null".to_string()));
+        return Ok(null_expr());
       }
       // ENV-binding fast path.
       let prev = crate::ENV.with(|e| e.borrow_mut().remove(&var_name));
@@ -1439,7 +1439,7 @@ pub fn do_ast(body: &Expr, iter_spec: &Expr) -> Result<Expr, InterpreterError> {
       if let Some(v) = early_return {
         return Ok(v);
       }
-      Ok(Expr::Identifier("Null".to_string()))
+      Ok(null_expr())
     }
     _ => Err(InterpreterError::EvaluationError(
       "Do: invalid iterator specification".into(),
@@ -1480,10 +1480,8 @@ pub fn do_multi_ast(
     }
   }
   match do_multi_inner(body, iter_specs) {
-    Ok(()) => Ok(Expr::Identifier("Null".to_string())),
-    Err(InterpreterError::BreakSignal) => {
-      Ok(Expr::Identifier("Null".to_string()))
-    }
+    Ok(()) => Ok(null_expr()),
+    Err(InterpreterError::BreakSignal) => Ok(null_expr()),
     Err(InterpreterError::ReturnValue(val)) => Ok(*val),
     Err(e) => Err(e),
   }
@@ -2512,13 +2510,7 @@ pub fn sparse_array_normalize_ast(
 
   Ok(Expr::FunctionCall {
     name: "SparseArray".to_string(),
-    args: vec![
-      Expr::Identifier("Automatic".to_string()),
-      dims_expr,
-      default,
-      structure,
-    ]
-    .into(),
+    args: vec![id_expr("Automatic"), dims_expr, default, structure].into(),
   })
 }
 
@@ -3054,7 +3046,7 @@ pub fn distance_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Determine the distance function: default EuclideanDistance, or the
   // replacement of an optional `DistanceFunction -> f` rule.
-  let mut dist_fn = Expr::Identifier("EuclideanDistance".to_string());
+  let mut dist_fn = id_expr("EuclideanDistance");
   if let Some(opt) = args.get(1) {
     match opt {
       Expr::Rule {
@@ -3183,7 +3175,7 @@ pub fn sparse_array_property(sa_args: &[Expr], prop: &str) -> Option<Expr> {
             vec![
               structure[0].clone(),
               structure[1].clone(),
-              Expr::Identifier("Pattern".to_string()),
+              id_expr("Pattern"),
             ]
             .into(),
           ),

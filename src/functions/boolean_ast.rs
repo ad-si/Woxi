@@ -431,7 +431,7 @@ pub fn which_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  Ok(Expr::Identifier("Null".to_string()))
+  Ok(null_expr())
 }
 
 /// While[test, body] or While[test] - While loop
@@ -486,7 +486,7 @@ pub fn while_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  Ok(Expr::Identifier("Null".to_string()))
+  Ok(null_expr())
 }
 
 /// Equal[a, b] or a == b - Tests for equality

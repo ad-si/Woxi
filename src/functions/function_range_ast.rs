@@ -99,9 +99,9 @@ pub fn function_range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         name: "Inequality".to_string(),
         args: vec![
           Expr::Integer(0),
-          Expr::Identifier("Less".to_string()),
+          id_expr("Less"),
           y.clone(),
-          Expr::Identifier("LessEqual".to_string()),
+          id_expr("LessEqual"),
           Expr::Integer(1),
         ]
         .into(),

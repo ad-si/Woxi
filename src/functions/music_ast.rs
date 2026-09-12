@@ -2471,7 +2471,7 @@ mod tests {
     expect_midi_pitch(
       music_pitch(&[call(
         "Quantity",
-        vec![Expr::Real(440.0), Expr::Identifier("Hertz".into())],
+        vec![Expr::Real(440.0), id_expr("Hertz")],
       )])
       .as_ref(),
       69,

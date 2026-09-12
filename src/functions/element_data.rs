@@ -2537,14 +2537,10 @@ fn format_electron_configuration_row(elem: &Element) -> Expr {
     parts.push(Expr::FunctionCall {
       name: "Superscript".to_string(),
       args: vec![
-        Expr::FunctionCall {
-          name: "Style".to_string(),
-          args: vec![
-            Expr::String(letter.to_string()),
-            Expr::Identifier("Italic".to_string()),
-          ]
-          .into(),
-        },
+        call(
+          "Style",
+          vec![Expr::String(letter.to_string()), id_expr("Italic")],
+        ),
         Expr::Integer(count),
       ]
       .into(),

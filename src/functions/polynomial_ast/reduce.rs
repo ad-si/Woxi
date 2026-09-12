@@ -7,6 +7,7 @@ use super::reduce_backend::{
 };
 use crate::functions::calculus_ast::{is_constant_wrt, simplify};
 use crate::functions::math_ast::try_eval_to_f64;
+use crate::functions::polynomial_ast::helpers::compare_exprs;
 
 // ─── Reduce ──────────────────────────────────────────────────────────
 

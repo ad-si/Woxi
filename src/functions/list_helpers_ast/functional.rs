@@ -586,7 +586,7 @@ pub fn scan_ast(func: &Expr, list: &Expr) -> Result<Expr, InterpreterError> {
     }
   }
 
-  Ok(Expr::Identifier("Null".to_string()))
+  Ok(null_expr())
 }
 
 /// Scan[f, expr, levelspec] — apply `func` (for side effects) to each part of
@@ -605,7 +605,7 @@ pub fn scan_levelspec_ast(
       for item in items {
         apply_func_ast(func, item)?;
       }
-      Ok(Expr::Identifier("Null".to_string()))
+      Ok(null_expr())
     }
     // Level could not interpret the spec — keep the call unevaluated.
     _ => Ok(call(
@@ -1279,7 +1279,7 @@ pub fn tensor_product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(flat.into_iter().next().unwrap());
   }
 
-  let times = Expr::Identifier("Times".to_string());
+  let times = id_expr("Times");
   let is_scalar = |e: &Expr| -> bool {
     !matches!(e, Expr::List(_))
       && crate::functions::predicate_ast::is_numeric_q(e)

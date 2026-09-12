@@ -64,7 +64,7 @@ pub fn convolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let unit_step_y = || call1("UnitStep", y.clone());
   let times = |factors: Vec<Expr>| call("Times", factors);
-  let e_sym = || Expr::Identifier("E".to_string());
+  let e_sym = || id_expr("E");
 
   // UnitStep[x] ⊛ UnitStep[x] → y*UnitStep[y]
   if is_call_on_x(&args[0], "UnitStep") && is_call_on_x(&args[1], "UnitStep") {

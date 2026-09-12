@@ -844,10 +844,9 @@ fn position_visit(
   let (head, kids): (Option<Expr>, Kids) = match expr {
     // Rational / Complex are atoms: do not descend into their parts.
     _ if is_atomic_number(expr) => (None, Kids::None),
-    Expr::Association(pairs) => (
-      Some(Expr::Identifier("Association".to_string())),
-      Kids::Keyed(pairs.clone()),
-    ),
+    Expr::Association(pairs) => {
+      (Some(id_expr("Association")), Kids::Keyed(pairs.clone()))
+    }
     Expr::CurriedCall { func, args } => {
       (Some((**func).clone()), Kids::Indexed(args.clone()))
     }
@@ -928,7 +927,7 @@ fn cases_visit(
     // Rational / Complex are atoms: do not descend into their parts.
     _ if is_atomic_number(expr) => (None, Vec::new()),
     Expr::Association(pairs) => (
-      Some(Expr::Identifier("Association".to_string())),
+      Some(id_expr("Association")),
       pairs.iter().map(|(_, v)| v.clone()).collect(),
     ),
     Expr::CurriedCall { func, args } => (Some((**func).clone()), args.clone()),
