@@ -1205,18 +1205,47 @@ a *particular* solution with `C[1] … C[8]` after `DSolve::lpdeprtclr`. With
 `a == 0` or `c == 0` WL also writes the characteristics unnormalised
 (`C[1][x - y] + C[2][x]`) rather than as `λ x + y`.
 
-### `NDSolve` covers ODEs only
+### `NDSolve`'s PDE branch is 1-D, first-order-in-time only
+
+This entry used to say "`NDSolve` covers ODEs only" — no longer accurate.
+1-D parabolic PDEs (single or coupled reaction-diffusion-convection systems,
+Dirichlet or Neumann boundaries) now solve via the method of lines:
 
 ```wolfram
 NDSolve[{D[u[x,t],t] == D[u[x,t],x,x], u[x,0] == Sin[Pi x],
          u[0,t] == 0, u[1,t] == 0}, u, {x,0,1}, {t,0,1}]
 ```
 
-returns unevaluated. `NeumannValue` is out of scope, `DirichletCondition`
-exists only as a symbol, and `Method -> {"MethodOfLines", …}` has nothing
-behind it. On the symbolic side `DSolve` recognises three first-order
-two-variable PDE shapes; Laplace, which WL solves as
-`C[1][I x + y] + C[2][-I x + y]`, is not among them.
+returns a real `InterpolatingFunction`. What's still missing:
+
+- The evolution equation must be first-order in time (`D[u,t] == …`); a
+  second-order-in-time (hyperbolic/wave) PDE such as
+  `D[u[t,x],t,t] == D[u[t,x],x,x]` is left unevaluated — unlike the ODE
+  branch, it is not order-reduced to a first-order system.
+- The right-hand side may not itself contain a time derivative of the
+  unknown (an implicit/mixed term like `D[u[t,x],x,x,t]`); only the unknown
+  and its pure space derivatives are recognised there.
+- `NeumannValue` and `DirichletCondition` exist only as symbols; boundary
+  conditions must be written as plain equalities.
+
+A concrete example needing both missing pieces: the Wolfram Demonstration
+[*A Passive Cochlear Model*](https://demonstrations.wolfram.com/APassiveCochlearModel/)
+models the cochlea with an equation of the shape
+
+```wolfram
+D[u[t, x], t, t] ==
+  Exp[-2 (x + x0)/c1] (D[u[t, x], x, x] - D[u[t, x], x]/c1) +
+  c2 Exp[-(x + x0)/c1] (D[u[t, x], x, x, t] - D[u[t, x], x, t]/c1) +
+  c3 (D[u[t, x], x, x, t, t] - D[u[t, x], x, t, t]/c1)
+```
+
+— second-order in time, with mixed space/time derivatives on the right —
+so `NDSolve` stays unevaluated in Woxi, and Woxi Studio cannot render this
+Demonstration's `Manipulate` correctly.
+
+On the symbolic side `DSolve` recognises three first-order two-variable PDE
+shapes; Laplace, which WL solves as `C[1][I x + y] + C[2][-I x + y]`, is not
+among them.
 
 `NDSolve`'s DAE support handles an index-1 constraint that solves explicitly
 for one unknown; quadratic, coupled or index ≥ 2 constraints, and constraints
