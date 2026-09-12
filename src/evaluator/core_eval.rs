@@ -3608,6 +3608,15 @@ pub fn evaluate_expr_to_expr_inner(
                 // Same head and arity with every leaf determinably equal,
                 // e.g. `RGBColor[0., 0., 1.] == RGBColor[0, 0, 1]`.
                 true
+              } else if crate::functions::boolean_ast::structurally_unequal(
+                left, right,
+              ) {
+                // A structural shape mismatch (different list lengths, or a
+                // `List` lined up against a `Rule`) decides `Equal` no
+                // matter what free symbol is nested inside — e.g.
+                // `{{x -> 1}} == {{}}` is `False` even though `x` is
+                // unbound.
+                false
               } else if has_free_symbols(left) || has_free_symbols(right) {
                 // Symbolic: return unevaluated
                 return Ok(Expr::Comparison {
@@ -3649,6 +3658,12 @@ pub fn evaluate_expr_to_expr_inner(
             ) {
               // Determinably equal component-wise → `!=` is False.
               false
+            } else if crate::functions::boolean_ast::structurally_unequal(
+              left, right,
+            ) {
+              // A structural shape mismatch decides `!=` regardless of any
+              // free symbol nested inside, mirroring the `Equal` rule above.
+              true
             } else if has_free_symbols(left) || has_free_symbols(right) {
               // Symbolic: return unevaluated
               return Ok(Expr::Comparison {

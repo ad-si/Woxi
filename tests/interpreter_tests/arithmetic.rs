@@ -11611,6 +11611,72 @@ mod equal_needs_comparable_operands {
   }
 }
 
+/// `Equal`/`Unequal` can decide a structural shape mismatch — different
+/// list lengths, or a `List` lined up against a `Rule` — without knowing
+/// what any free symbol nested inside is bound to. `Which[sol == {{}} ||
+/// sol == {}, …]` from the "A Geometrical Theorem of Leibniz" Demonstration
+/// relies on this: `sol` is a `Module`-local `NSolve` result like
+/// `{{x$1 -> -0.36}}`, and comparing it against `{{}}`/`{}` must resolve to
+/// `False` even though `x$1` is never bound, so `Which` can pick a branch.
+mod equal_decides_structural_shape_mismatches {
+  use super::*;
+
+  #[test]
+  fn a_list_of_rules_never_equals_a_list_of_empty_lists() {
+    clear_state();
+    assert_eq!(interpret("{{x -> 1}} == {{}}").unwrap(), "False");
+    assert_eq!(interpret("{{x -> 1}} != {{}}").unwrap(), "True");
+    assert_eq!(
+      interpret("sol = {{x -> -0.36}}; sol == {}").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("sol = {{x -> -0.36}}; sol == {{}} || sol == {}").unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn different_list_lengths_never_equal_however_deeply_nested() {
+    clear_state();
+    assert_eq!(interpret("{1, 2} == {1, 2, 3}").unwrap(), "False");
+    assert_eq!(interpret("{x, {}} == {x, {1}}").unwrap(), "False");
+    assert_eq!(interpret("{x, {}} != {x, {1}}").unwrap(), "True");
+  }
+
+  #[test]
+  fn a_which_branch_selects_once_the_guard_resolves() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "sol = {{x -> -0.36}}; \
+         Which[sol == {{}} || sol == {}, \"empty\", True, \"full\"]"
+      )
+      .unwrap(),
+      "full"
+    );
+  }
+
+  #[test]
+  fn genuinely_undecidable_comparisons_still_stay_symbolic() {
+    clear_state();
+    // A bare symbol could still be bound to anything, so nothing here is
+    // decided structurally.
+    assert_eq!(interpret("x == y").unwrap(), "x == y");
+    assert_eq!(interpret("{x} == {y}").unwrap(), "{x} == {y}");
+    assert_eq!(interpret("f[x] == g[x]").unwrap(), "f[x] == g[x]");
+    // `Rule[…]` and the `->` operator are the same expression, not a
+    // structural mismatch.
+    assert_eq!(interpret("Rule[1, 2] == (1 -> 2)").unwrap(), "True");
+    // Solve relies on a scalar-vs-list comparison staying unevaluated so it
+    // can thread the scalar across the list itself.
+    assert_eq!(
+      interpret("Solve[{x^2 - 1} == 0, x]").unwrap(),
+      "{{x -> -1}, {x -> 1}}"
+    );
+  }
+}
+
 mod integer_to_a_negative_power_stays_exact {
   use super::*;
 
