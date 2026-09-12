@@ -8616,6 +8616,27 @@ mod ndsolve {
     );
   }
 
+  /// The domain declared as `{x, ...}, {t, ...}` (space before time) forces
+  /// the solver to retry the space/time roles swapped. Before matching the
+  /// swapped roles, it first tries the unswapped ones and calls the initial
+  /// condition matcher on `Sin[Pi x]` — a one-argument call — as a candidate
+  /// `u[t0, x]` shape. The matcher used to index that call's second argument
+  /// before checking its arity, panicking instead of rejecting the shape and
+  /// falling through to the swapped attempt that actually matches.
+  #[test]
+  fn pde_initial_condition_matcher_rejects_a_one_argument_call_without_panicking()
+   {
+    let result = interpret(
+      "NDSolve[{D[u[x, t], t] == D[u[x, t], {x, 2}], u[x, 0] == Sin[Pi x], \
+       u[0, t] == 0, u[1, t] == 0}, u, {x, 0, 1}, {t, 0, 1}]",
+    )
+    .unwrap();
+    assert!(
+      result.starts_with("{{u -> InterpolatingFunction["),
+      "Got: {result}"
+    );
+  }
+
   /// The PDE branch's `InterpolatingFunction` must be usable exactly like
   /// any other two-argument one — in particular as the function
   /// `ContourPlot` samples over its `{t, x}` grid, the shape a
