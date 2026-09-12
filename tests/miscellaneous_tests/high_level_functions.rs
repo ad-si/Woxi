@@ -3873,13 +3873,15 @@ mod high_level_functions {
   mod graphics_translate_scale_tests {
     use super::*;
 
-    // Extract (x, y, width, height) for every <rect> element.
+    // Extract (x, y, width, height) for every drawn <rect> element —
+    // skipping `<defs>`, which holds the drawing-area clip-path's own.
     fn rects(svg: &str) -> Vec<(f64, f64, f64, f64)> {
       fn attr(seg: &str, name: &str) -> f64 {
         let key = format!("{name}=\"");
         let start = seg.find(&key).expect("missing attr") + key.len();
         seg[start..].split('"').next().unwrap().parse().unwrap()
       }
+      let svg = svg.rsplit_once("</defs>").map_or(svg, |(_, tail)| tail);
       svg
         .match_indices("<rect ")
         .map(|(i, _)| {

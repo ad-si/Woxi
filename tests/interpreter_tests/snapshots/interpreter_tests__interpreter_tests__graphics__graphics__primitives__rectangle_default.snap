@@ -3,5 +3,10 @@ source: tests/interpreter_tests/graphics.rs
 expression: "export_svg(\"Graphics[{Rectangle[]}]\")"
 ---
 <svg width="360" height="360" viewBox="0 0 360 360" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<clipPath id="plotClip_360x360"><rect x="0" y="0" width="360.00" height="360.00"/></clipPath>
+</defs>
+<g clip-path="url(#plotClip_360x360)">
 <rect x="13.33" y="13.33" width="333.33" height="333.33" fill="rgb(0,0,0)"/>
+</g>
 </svg>

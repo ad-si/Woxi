@@ -248,9 +248,8 @@ pub fn coth_csch_interval(head: &str, expr: &Expr) -> Option<Expr> {
   if head != "Coth" && head != "Csch" {
     return None;
   }
-  let inf = || Expr::Identifier("Infinity".to_string());
-  let neg_inf =
-    || times2(Expr::Integer(-1), Expr::Identifier("Infinity".to_string()));
+  let inf = || id_expr("Infinity");
+  let neg_inf = || times2(Expr::Integer(-1), id_expr("Infinity"));
   let eps = 1e-9;
   let spans = is_interval(expr)?;
   let mut out: Vec<(Expr, Expr)> = Vec::with_capacity(spans.len());
@@ -325,9 +324,8 @@ pub fn tan_cot_interval(head: &str, expr: &Expr) -> Option<Expr> {
     _ => return None,
   };
   let period = std::f64::consts::PI;
-  let inf = || Expr::Identifier("Infinity".to_string());
-  let neg_inf =
-    || times2(Expr::Integer(-1), Expr::Identifier("Infinity".to_string()));
+  let inf = || id_expr("Infinity");
+  let neg_inf = || times2(Expr::Integer(-1), id_expr("Infinity"));
 
   let spans = is_interval(expr)?;
   let mut out: Vec<(Expr, Expr)> = Vec::with_capacity(spans.len());
@@ -385,9 +383,8 @@ pub fn sec_csc_interval(head: &str, expr: &Expr) -> Option<Expr> {
     "Csc" => (0.0, FRAC_PI_2),
     _ => return None,
   };
-  let inf = || Expr::Identifier("Infinity".to_string());
-  let neg_inf =
-    || times2(Expr::Integer(-1), Expr::Identifier("Infinity".to_string()));
+  let inf = || id_expr("Infinity");
+  let neg_inf = || times2(Expr::Integer(-1), id_expr("Infinity"));
   let fold_min =
     |v: &[Expr]| v.iter().cloned().reduce(|a, b| numeric_min(&a, &b));
   let fold_max =
@@ -766,10 +763,7 @@ pub fn interval_member_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// is `Interval[{1 + Pi, 2 + Pi}]`, but `Interval[{1, 2}] + z` stays a sum.
 fn is_numeric_scalar(a: &Expr) -> bool {
   matches!(
-    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "NumericQ".to_string(),
-      args: vec![a.clone()].into(),
-    }),
+    crate::evaluator::evaluate_expr_to_expr(&call1("NumericQ", a.clone())),
     Ok(Expr::Identifier(ref t)) if t == "True"
   )
 }
@@ -954,7 +948,7 @@ pub fn try_interval_divide(
   //   1/[lo, 0]  (lo < 0)          -> [-Inf, 1/lo]
   // A same-sign span reciprocates as usual (and reverses orientation).
   let recip_spans = if let Some(spans) = &b_int {
-    let pos_inf = Expr::Identifier("Infinity".to_string());
+    let pos_inf = id_expr("Infinity");
     let neg_inf = call("Times", vec![Expr::Integer(-1), pos_inf.clone()]);
     let recip_one = |x: &Expr| eval_binop(&Expr::Integer(1), x, "Divide").ok();
     let mut recip = Vec::new();
@@ -1300,7 +1294,7 @@ fn centered_interval_box_op(args: &[Expr], op: BoxOp) -> Expr {
 fn extremum(xs: &[Expr], maximum: bool) -> Expr {
   let mut iter = xs.iter().cloned();
   let Some(mut best) = iter.next() else {
-    return Expr::Identifier("Indeterminate".to_string());
+    return id_expr("Indeterminate");
   };
   for x in iter {
     let ord = compare_numeric(&x, &best);
@@ -1321,7 +1315,7 @@ fn combine_complex(re: &Expr, im: &Expr) -> Expr {
   if is_zero {
     return re.clone();
   }
-  let im_term = eval_mul(im, &Expr::Identifier("I".to_string()));
+  let im_term = eval_mul(im, &id_expr("I"));
   eval_add(re, &im_term)
 }
 

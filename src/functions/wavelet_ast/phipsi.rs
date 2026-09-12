@@ -31,7 +31,7 @@ fn formula(template: &str, x: &Expr) -> Expr {
   let code = template.replace("#x#", &format!("({})", expr_to_string(x)));
   match crate::syntax::string_to_expr(&code) {
     Ok(e) => eval(e),
-    Err(_) => Expr::Identifier("$Failed".to_string()),
+    Err(_) => fail_expr(),
   }
 }
 

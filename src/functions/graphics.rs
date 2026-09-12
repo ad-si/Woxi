@@ -6621,23 +6621,41 @@ fn render_primitive(
       let text_w = longest as f64 * fs * 0.6;
       let text_h = text.split('\n').count() as f64 * fs;
       let (ax, ay) = resolve_anchor(*x, *y, *scaled, bb);
-      let sx = coord_x(ax, bb, svg_w) - offset.0 * text_w / 2.0;
-      let sy = coord_y(ay, bb, svg_h) + offset.1 * text_h / 2.0;
+      let anchor_x = coord_x(ax, bb, svg_w);
+      let anchor_y = coord_y(ay, bb, svg_h);
       // A fourth `direction` argument tilts the label's baseline to match
       // that vector — carried in data coordinates, so it has to go through
       // the same x/y pixel-per-unit scaling `coord_x`/`coord_y` apply (and
-      // the same y-flip) before it becomes a screen-space angle for SVG's
-      // `rotate()`.
-      let rotate_attr = match direction {
-        Some((dx, dy)) if *dx != 0.0 || *dy != 0.0 => {
-          let px = dx * svg_w / bb.width();
-          let py = -dy * svg_h / bb.height();
-          format!(
-            " transform=\"rotate({:.3} {sx:.2} {sy:.2})\"",
-            py.atan2(px).to_degrees()
-          )
-        }
-        _ => String::new(),
+      // the same y-flip) before it becomes a screen-space angle. The offset
+      // is measured along that same tilted baseline (its local x-axis) and
+      // perpendicular to it (its local y-axis), not along the fixed screen
+      // axes — so a label offset "backward" along a rotated direction is
+      // pushed out along the direction it points, which is what fans the
+      // labels in `Table[Text[…, dir], {dir, …}]` out radially instead of
+      // stacking them all at the same offset.
+      let has_direction =
+        matches!(direction, Some((dx, dy)) if *dx != 0.0 || *dy != 0.0);
+      let angle = if has_direction {
+        let (dx, dy) = direction.unwrap();
+        let px = dx * svg_w / bb.width();
+        let py = -dy * svg_h / bb.height();
+        py.atan2(px)
+      } else {
+        0.0
+      };
+      let (ux, uy) = (angle.cos(), angle.sin());
+      let (vx, vy) = (-angle.sin(), angle.cos());
+      let sx =
+        anchor_x - offset.0 * text_w / 2.0 * ux + offset.1 * text_h / 2.0 * vx;
+      let sy =
+        anchor_y - offset.0 * text_w / 2.0 * uy + offset.1 * text_h / 2.0 * vy;
+      let rotate_attr = if has_direction {
+        format!(
+          " transform=\"rotate({:.3} {sx:.2} {sy:.2})\"",
+          angle.to_degrees()
+        )
+      } else {
+        String::new()
       };
       // `Background -> colour` paints a panel behind the label, which is
       // what keeps a value readable over whatever it is placed on; a
@@ -7747,14 +7765,26 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     seen
   };
-  if !shadow_defs.is_empty() {
-    svg.push_str("<defs>\n");
-    for ds in &shadow_defs {
-      svg.push_str(&ds.filter_def(1.0));
-      svg.push('\n');
-    }
-    svg.push_str("</defs>\n");
+  // Clip primitives to the drawing area (`PlotRangeClipping -> Automatic`,
+  // Wolfram's default): a primitive whose coordinates fall outside the
+  // plot range — an explicit `PlotRange` narrower than the data, an
+  // Epilog/Prolog point placed past the frame, `ListPlot`'s automatic
+  // outlier-cropping range — must be cut off at the frame edge rather than
+  // drawn past it into the picture's margins or off the canvas entirely.
+  // The id is derived from the drawing area's own size (like
+  // `DropShadow::filter_id`) so two differently-sized pictures merged into
+  // one document (`GraphicsRow`, `Inset`) never collide, while pictures
+  // that happen to share a size safely share one identical definition.
+  let clip_id = format!("plotClip_{svg_w:.0}x{svg_h:.0}");
+  svg.push_str("<defs>\n");
+  svg.push_str(&format!(
+    "<clipPath id=\"{clip_id}\"><rect x=\"0\" y=\"0\" width=\"{svg_w:.2}\" height=\"{svg_h:.2}\"/></clipPath>\n"
+  ));
+  for ds in &shadow_defs {
+    svg.push_str(&ds.filter_def(1.0));
+    svg.push('\n');
   }
+  svg.push_str("</defs>\n");
 
   // Background (covers the full SVG including margins)
   if let Some(bg) = background {
@@ -7840,7 +7870,11 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Render primitives. A primitive with a drop shadow is wrapped in a
   // <g> that applies the shadow filter, so each primitive casts its own
-  // shadow (overlapping shadows stack, giving the depth effect).
+  // shadow (overlapping shadows stack, giving the depth effect). The whole
+  // group is clipped to the drawing area so a primitive that falls outside
+  // the plot range is cut off at the frame edge instead of spilling into
+  // the margins or off the canvas.
+  svg.push_str(&format!("<g clip-path=\"url(#{clip_id})\">\n"));
   for (prim_index, prim) in primitives.iter().enumerate() {
     let shadow = prim.style().and_then(|s| s.drop_shadow.as_ref());
     if let Some(ds) = shadow {
@@ -7851,6 +7885,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       svg.push_str("</g>\n");
     }
   }
+  svg.push_str("</g>\n");
 
   if frame {
     render_frame(&mut svg, &bb, svg_w, svg_h, frame_ticks);
@@ -11098,7 +11133,7 @@ fn merge_option(opts: &mut Vec<Expr>, opt: &Expr) {
     {
       let merged = merge_plot_ranges(&existing_repl, &replacement);
       opts[pos] = Expr::Rule {
-        pattern: Box::new(Expr::Identifier("PlotRange".to_string())),
+        pattern: Box::new(id_expr("PlotRange")),
         replacement: Box::new(merged),
       };
       return;
@@ -11133,7 +11168,7 @@ fn merge_plot_ranges(a: &Expr, b: &Expr) -> Expr {
   let range_to_expr = |r: Option<(f64, f64)>| -> Expr {
     match r {
       Some((lo, hi)) => Expr::List(vec![Expr::Real(lo), Expr::Real(hi)].into()),
-      None => Expr::Identifier("All".to_string()),
+      None => id_expr("All"),
     }
   };
 
@@ -11691,7 +11726,7 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       });
       if !has_option(&merged_options, "Axes") && !framed {
         merged_options.push(Expr::Rule {
-          pattern: Box::new(Expr::Identifier("Axes".to_string())),
+          pattern: Box::new(id_expr("Axes")),
           replacement: Box::new(bool_expr(true)),
         });
       }
@@ -11714,7 +11749,7 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .filter(|r| r.is_finite() && *r > 0.0)
           .unwrap_or(1.0 / 1.618_033_988_749_895);
         merged_options.push(Expr::Rule {
-          pattern: Box::new(Expr::Identifier("AspectRatio".to_string())),
+          pattern: Box::new(id_expr("AspectRatio")),
           replacement: Box::new(Expr::Real(aspect)),
         });
       }
@@ -14254,7 +14289,7 @@ pub fn graphics_options(expr: &Expr) -> Option<Vec<Expr>> {
     }
   };
   Some(vec![Expr::Rule {
-    pattern: Box::new(Expr::Identifier("ImageSize".to_string())),
+    pattern: Box::new(id_expr("ImageSize")),
     replacement: Box::new(Expr::List(vec![size(w), size(h)].into())),
   }])
 }
@@ -15263,7 +15298,7 @@ fn with_default_image_size(expr: &Expr, size: i128) -> Expr {
   }
   let mut new_args = args.clone();
   new_args.push(Expr::Rule {
-    pattern: Box::new(Expr::Identifier("ImageSize".to_string())),
+    pattern: Box::new(id_expr("ImageSize")),
     replacement: Box::new(Expr::Integer(size)),
   });
   Expr::FunctionCall {
@@ -17327,7 +17362,7 @@ pub fn drop_shadowing_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         name: "Opacity".to_string(),
         args: vec![
           crate::functions::make_rational(1, 3),
-          call1("ThemeColor", Expr::Identifier("Foreground".to_string())),
+          call1("ThemeColor", id_expr("Foreground")),
         ]
         .into(),
       }),
@@ -17945,6 +17980,16 @@ pub enum ManipulateControl {
     /// parallel to `values`. `None` for plain text labels.
     value_label_svgs: Vec<Option<String>>,
     initial_index: usize,
+    /// The initial value's InputForm, kept only when it is *not* one of
+    /// `values` — e.g. a shared variable with several disjoint SetterBar
+    /// rows (a Demonstration's aberration picker splits 22 choices across
+    /// four rows; the shared default only appears in one of them). Every
+    /// other row's `initial_index` falls back to `0` for display, which is
+    /// fine for a button that isn't lit up — but the *bound* value must stay
+    /// the true default, not silently become that row's first choice.
+    /// `current_code`/`set_current_from_code` prefer this over
+    /// `values[initial_index]` whenever it is set.
+    initial_overflow: Option<String>,
     label: String,
     label_runs: Vec<LabelRun>,
     /// `ControlType -> PopupMenu`: always render a dropdown, even when the
@@ -18860,7 +18905,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
             .iter()
             .filter(|it| !is_control_type_marker(it))
             .cloned()
-            .chain(std::iter::once(Expr::Identifier("Locator".to_string())))
+            .chain(std::iter::once(id_expr("Locator")))
             .collect();
           if let Some(ParsedControl::Visible {
             control: mut c,
@@ -18899,7 +18944,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
               Expr::List(vec![Expr::Identifier(name.clone()), default].into()),
               choices,
               Expr::Rule {
-                pattern: Box::new(Expr::Identifier("ControlType".to_string())),
+                pattern: Box::new(id_expr("ControlType")),
                 replacement: Box::new(Expr::Identifier(
                   "PopupMenu".to_string(),
                 )),
@@ -19184,7 +19229,7 @@ fn apply_global_control_type(items: Vec<Expr>) -> Vec<Expr> {
         .iter()
         .cloned()
         .chain(std::iter::once(Expr::Rule {
-          pattern: Box::new(Expr::Identifier("ControlType".to_string())),
+          pattern: Box::new(id_expr("ControlType")),
           replacement: Box::new(control_type),
         }))
         .collect();
@@ -19363,10 +19408,9 @@ enum PopupScope<'a> {
 fn rewrap_in_popup_scopes(mut code: Expr, scopes: &[PopupScope]) -> Expr {
   for scope in scopes.iter().rev() {
     code = match scope {
-      PopupScope::Localize(head, binds) => Expr::FunctionCall {
-        name: (*head).to_string(),
-        args: vec![(*binds).clone(), code].into(),
-      },
+      PopupScope::Localize(head, binds) => {
+        call(head, vec![(*binds).clone(), code])
+      }
       PopupScope::Prefix([]) => code,
       PopupScope::Prefix(stmts) => {
         let mut items = stmts.to_vec();
@@ -19476,7 +19520,7 @@ fn strip_body_popup_menus(expr: &Expr, promoted: &[String]) -> Expr {
               )
         ) =>
     {
-      Expr::Identifier("Nothing".to_string())
+      id_expr("Nothing")
     }
     Expr::FunctionCall { name, args } => Expr::FunctionCall {
       name: name.clone(),
@@ -19503,13 +19547,14 @@ fn strip_body_popup_menus(expr: &Expr, promoted: &[String]) -> Expr {
   }
 }
 
-/// Replace every `TogglerBar[Dynamic[var], …]` in a Manipulate body with
-/// `Nothing`, pushing each one's InputForm onto `displays` so the front-end
-/// renders it as a live widget instead of a static picture.
+/// Replace every `TogglerBar[Dynamic[var], …]` or bare `Checkbox[Dynamic[var],
+/// …]` in a Manipulate body with `Nothing`, pushing each one's InputForm onto
+/// `displays` so the front-end renders it as a live widget instead of a
+/// static picture.
 fn extract_body_togglerbars(expr: &Expr, displays: &mut Vec<String>) -> Expr {
   match expr {
     Expr::FunctionCall { name, args }
-      if name == "TogglerBar"
+      if (name == "TogglerBar" || name == "Checkbox")
         && matches!(
           args.first(),
           Some(Expr::FunctionCall { name: dname, args: dargs })
@@ -19518,7 +19563,7 @@ fn extract_body_togglerbars(expr: &Expr, displays: &mut Vec<String>) -> Expr {
         ) =>
     {
       displays.push(crate::syntax::expr_to_input_form(expr));
-      Expr::Identifier("Nothing".to_string())
+      id_expr("Nothing")
     }
     // A bare `Button[label, action, opts…]` drawn directly by the body (a
     // Demonstration's "throw"/"step" action mixed into a `Column` of
@@ -19530,7 +19575,7 @@ fn extract_body_togglerbars(expr: &Expr, displays: &mut Vec<String>) -> Expr {
       if name == "Button" && args.len() >= 2 =>
     {
       displays.push(crate::syntax::expr_to_input_form(expr));
-      Expr::Identifier("Nothing".to_string())
+      id_expr("Nothing")
     }
     Expr::FunctionCall { name, args } => Expr::FunctionCall {
       name: name.clone(),
@@ -21894,7 +21939,7 @@ fn parse_manipulate_control(
     let value_expr = explicit_initial
       .clone()
       .or_else(|| items.get(1).cloned())
-      .unwrap_or(Expr::Identifier("Null".to_string()));
+      .unwrap_or(null_expr());
     if is_hidden {
       // A `ControlType -> None` variable stays a live, mutable binding so
       // an interactive display can rewrite it. Without an explicit initial
@@ -22327,9 +22372,14 @@ fn parse_manipulate_control(
       if values.is_empty() {
         return None;
       }
+      // `resolved_init_code` is the initial value's InputForm once evaluated
+      // (falling back to its held form), used below to keep it as
+      // `initial_overflow` when it matches none of this row's own choices.
+      let mut resolved_init_code: Option<String> = None;
       let initial_index = match explicit_initial {
         Some(init) => {
           let init_code = crate::syntax::expr_to_input_form(&init);
+          resolved_init_code = Some(init_code.clone());
           values
             .iter()
             .position(|v| *v == init_code)
@@ -22341,12 +22391,19 @@ fn parse_manipulate_control(
               let evaluated =
                 crate::evaluator::evaluate_expr_to_expr(&init).ok()?;
               let code = crate::syntax::expr_to_input_form(&evaluated);
+              resolved_init_code = Some(code.clone());
               values.iter().position(|v| *v == code)
             })
             .unwrap_or(0)
         }
         None => 0,
       };
+      // Several disjoint SetterBar rows can share one variable (see
+      // `initial_overflow`'s doc comment); when this row's own choices don't
+      // include the true initial value, keep it so the bound value stays
+      // correct even though this particular row shows no button lit up.
+      let initial_overflow =
+        resolved_init_code.filter(|code| !values.iter().any(|v| v == code));
       // A choice list built from another control's variable (`Range[1,
       // If[flat, 3, 6], 1]`) only holds for that variable's current value;
       // keep its code so the frontend can rebuild the choices whenever the
@@ -22364,6 +22421,7 @@ fn parse_manipulate_control(
           value_labels,
           value_label_svgs,
           initial_index,
+          initial_overflow,
           label,
           label_runs,
           popup: control_type.as_deref() == Some("PopupMenu"),
@@ -22469,6 +22527,7 @@ fn parse_manipulate_control(
           value_labels,
           value_label_svgs,
           initial_index: 0,
+          initial_overflow: None,
           label,
           label_runs,
           popup: false,
@@ -22857,13 +22916,16 @@ pub fn manipulate_initial_bindings(
         name,
         values,
         initial_index,
+        initial_overflow,
         ..
       } => Some((
         name.clone(),
-        values
-          .get(*initial_index)
-          .cloned()
-          .unwrap_or_else(|| "Null".to_string()),
+        initial_overflow.clone().unwrap_or_else(|| {
+          values
+            .get(*initial_index)
+            .cloned()
+            .unwrap_or_else(|| "Null".to_string())
+        }),
       )),
       ManipulateControl::Slider2D {
         name,
@@ -23362,6 +23424,7 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
         value_labels,
         value_label_svgs,
         initial_index,
+        initial_overflow: _,
         label,
         label_runs,
         popup,
@@ -24746,10 +24809,8 @@ mod manipulate_label_tests {
 
   #[test]
   fn style_italic_string_is_one_italic_run() {
-    let label = call(
-      "Style",
-      vec![Expr::String("t".into()), Expr::Identifier("Italic".into())],
-    );
+    let label =
+      call("Style", vec![Expr::String("t".into()), id_expr("Italic")]);
     assert_eq!(runs(&label), vec![run("t", true)]);
   }
 
@@ -24760,7 +24821,7 @@ mod manipulate_label_tests {
       vec![
         Expr::String("t".into()),
         Expr::Rule {
-          pattern: Box::new(Expr::Identifier("FontSlant".into())),
+          pattern: Box::new(id_expr("FontSlant")),
           replacement: Box::new(Expr::String("Italic".into())),
         },
       ],
@@ -24771,10 +24832,8 @@ mod manipulate_label_tests {
   #[test]
   fn text_subscript_style_renders_italic_base_and_upright_subscript() {
     // Text[Subscript[Style["m", Italic], 1]]  ->  italic "m", upright "₁"
-    let styled = call(
-      "Style",
-      vec![Expr::String("m".into()), Expr::Identifier("Italic".into())],
-    );
+    let styled =
+      call("Style", vec![Expr::String("m".into()), id_expr("Italic")]);
     let subscript = call("Subscript", vec![styled, Expr::Integer(1)]);
     let label = call1("Text", subscript);
     assert_eq!(runs(&label), vec![run("m", true), run("\u{2081}", false)]);
@@ -24782,26 +24841,21 @@ mod manipulate_label_tests {
 
   #[test]
   fn plain_identifier_passthrough() {
-    let label = Expr::Identifier("\u{03B8}".into());
+    let label = id_expr("\u{03B8}");
     assert_eq!(runs(&label), vec![run("\u{03B8}", false)]);
     assert_eq!(flatten_label_runs(&runs(&label)), "\u{03B8}");
   }
 
   #[test]
   fn superscript_renders_unicode() {
-    let label = call(
-      "Superscript",
-      vec![Expr::Identifier("x".into()), Expr::Integer(2)],
-    );
+    let label = call("Superscript", vec![id_expr("x"), Expr::Integer(2)]);
     assert_eq!(runs(&label), vec![run("x", false), run("\u{00B2}", false)]);
   }
 
   #[test]
   fn row_concatenates_parts_preserving_style() {
-    let italic_a = call(
-      "Style",
-      vec![Expr::String("a".into()), Expr::Identifier("Italic".into())],
-    );
+    let italic_a =
+      call("Style", vec![Expr::String("a".into()), id_expr("Italic")]);
     let row = call1(
       "Row",
       Expr::List(vec![italic_a, Expr::String("b".into())].into()),
@@ -24820,10 +24874,8 @@ mod manipulate_label_tests {
 
   #[test]
   fn derivative_of_an_italic_style_primes_an_italic_base() {
-    let italic_y = call(
-      "Style",
-      vec![Expr::String("y".into()), Expr::Identifier("Italic".into())],
-    );
+    let italic_y =
+      call("Style", vec![Expr::String("y".into()), id_expr("Italic")]);
     let label = call1(
       "Text",
       call1(
@@ -24842,7 +24894,7 @@ mod manipulate_label_tests {
 
   #[test]
   fn higher_derivative_orders_get_their_own_marks() {
-    let y = || Expr::Identifier("y".into());
+    let y = || id_expr("y");
     let marks = |order| flatten_label_runs(&runs(&derivative(order, y())));
     assert_eq!(marks(2), "y\u{2033}");
     assert_eq!(marks(3), "y\u{2034}");
@@ -24854,10 +24906,7 @@ mod manipulate_label_tests {
   /// `Derivative[n, f]`; both shapes must label the same.
   #[test]
   fn flattened_derivative_labels_like_the_curried_one() {
-    let flat = call(
-      "Derivative",
-      vec![Expr::Integer(1), Expr::Identifier("y".into())],
-    );
+    let flat = call("Derivative", vec![Expr::Integer(1), id_expr("y")]);
     assert_eq!(flatten_label_runs(&runs(&flat)), "y\u{2032}");
   }
 
@@ -24869,10 +24918,7 @@ mod manipulate_label_tests {
   fn subscript_of_directed_infinity_renders_the_infinity_glyph() {
     let label = call(
       "Subscript",
-      vec![
-        Expr::Identifier("N".into()),
-        call1("DirectedInfinity", Expr::Integer(1)),
-      ],
+      vec![id_expr("N"), call1("DirectedInfinity", Expr::Integer(1))],
     );
     assert_eq!(flatten_label_runs(&runs(&label)), "N\u{221E}");
   }
@@ -24885,10 +24931,7 @@ mod manipulate_label_tests {
   fn superscript_of_negative_infinity_renders_the_signed_glyph() {
     let label = call(
       "Superscript",
-      vec![
-        Expr::Identifier("x".into()),
-        call1("DirectedInfinity", Expr::Integer(-1)),
-      ],
+      vec![id_expr("x"), call1("DirectedInfinity", Expr::Integer(-1))],
     );
     assert_eq!(flatten_label_runs(&runs(&label)), "x\u{207B}\u{221E}");
   }
@@ -24897,7 +24940,7 @@ mod manipulate_label_tests {
   /// choice text) also renders as the glyph rather than the word.
   #[test]
   fn bare_infinity_symbol_renders_the_glyph() {
-    let label = Expr::Identifier("Infinity".into());
+    let label = id_expr("Infinity");
     assert_eq!(flatten_label_runs(&runs(&label)), "\u{221E}");
   }
 }

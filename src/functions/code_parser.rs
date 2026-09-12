@@ -91,7 +91,7 @@ impl Token {
         Expr::Identifier(self.kind.clone()),
         Expr::String(self.text.clone()),
         Expr::Association(vec![(
-          Expr::Identifier("CodeParser`Source".to_string()),
+          id_expr("CodeParser`Source"),
           self.source(convention),
         )]),
       ]
@@ -998,7 +998,7 @@ fn group_tokens(
           Expr::Identifier(kind.to_string()),
           Expr::List(children.into()),
           Expr::Association(vec![(
-            Expr::Identifier("CodeParser`Source".to_string()),
+            id_expr("CodeParser`Source"),
             group.source(convention),
           )]),
         ]
@@ -1027,7 +1027,7 @@ pub fn code_concrete_parse(source: &str, convention: Convention) -> Expr {
   Expr::FunctionCall {
     name: "CodeParser`ContainerNode".to_string(),
     args: vec![
-      Expr::Identifier("String".to_string()),
+      id_expr("String"),
       Expr::List(children.into()),
       Expr::Association(vec![]),
     ]
@@ -1047,9 +1047,11 @@ pub fn code_parse(source: &str, convention: Convention) -> Expr {
   let children = match crate::parse(&prepared) {
     Ok(pairs) => pairs
       .filter(|pair| !matches!(pair.as_rule(), crate::Rule::EOI))
-      .map(|pair| Expr::FunctionCall {
-        name: "CodeParser`Abstract`Node".to_string(),
-        args: vec![crate::syntax::pair_to_expr(pair)].into(),
+      .map(|pair| {
+        call1(
+          "CodeParser`Abstract`Node",
+          crate::syntax::pair_to_expr(pair),
+        )
       })
       .collect::<Vec<_>>(),
     Err(error) => vec![error_node(source, &error.to_string(), convention)],
@@ -1057,7 +1059,7 @@ pub fn code_parse(source: &str, convention: Convention) -> Expr {
   Expr::FunctionCall {
     name: "CodeParser`ContainerNode".to_string(),
     args: vec![
-      Expr::Identifier("String".to_string()),
+      id_expr("String"),
       Expr::List(children.into()),
       Expr::Association(vec![]),
     ]
@@ -1085,12 +1087,9 @@ fn error_node(source: &str, message: &str, convention: Convention) -> Expr {
   Expr::FunctionCall {
     name: "CodeParser`ErrorNode".to_string(),
     args: vec![
-      Expr::Identifier("Token`Error`UnexpectedCharacter".to_string()),
+      id_expr("Token`Error`UnexpectedCharacter"),
       Expr::String(message.to_string()),
-      Expr::Association(vec![(
-        Expr::Identifier("CodeParser`Source".to_string()),
-        span,
-      )]),
+      Expr::Association(vec![(id_expr("CodeParser`Source"), span)]),
     ]
     .into(),
   }

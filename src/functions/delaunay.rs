@@ -186,8 +186,8 @@ pub fn delaunay_mesh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   if exact {
     mesh_args.push(Expr::Rule {
-      pattern: Box::new(Expr::Identifier("WorkingPrecision".to_string())),
-      replacement: Box::new(Expr::Identifier("Infinity".to_string())),
+      pattern: Box::new(id_expr("WorkingPrecision")),
+      replacement: Box::new(id_expr("Infinity")),
     });
   }
   Ok(call("MeshRegion", mesh_args))

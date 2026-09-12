@@ -9,10 +9,7 @@ fn infer_type(expr: &Expr) -> Expr {
     Expr::String(_) => ts_atom("String"),
     Expr::Identifier(name) if name == "True" || name == "False" => {
       // TypeSystem`Atom[TypeSystem`Boolean]
-      call1(
-        "TypeSystem`Atom",
-        Expr::Identifier("TypeSystem`Boolean".to_string()),
-      )
+      call1("TypeSystem`Atom", id_expr("TypeSystem`Boolean"))
     }
     Expr::Identifier(name) if name == "Null" => ts_atom("Null"),
     Expr::Identifier(_) => ts_atom("String"),

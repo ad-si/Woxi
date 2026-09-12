@@ -331,7 +331,7 @@ pub fn lowpass_filter_audio_ast(
       Expr::Real(omega),
       Expr::Integer(taps as i128),
       Expr::Rule {
-        pattern: Box::new(Expr::Identifier("SampleRate".to_string())),
+        pattern: Box::new(id_expr("SampleRate")),
         replacement: Box::new(Expr::Real(audio.rate)),
       },
     ]);

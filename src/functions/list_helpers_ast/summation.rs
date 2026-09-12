@@ -5323,9 +5323,9 @@ fn zeta_even(s: i64) -> Result<Expr, InterpreterError> {
 
   // Build the expression: (final_num / final_den) * Pi^s
   let pi_power = if s == 1 {
-    Expr::Identifier("Pi".to_string())
+    id_expr("Pi")
   } else {
-    pow2(Expr::Identifier("Pi".to_string()), Expr::Integer(s as i128))
+    pow2(id_expr("Pi"), Expr::Integer(s as i128))
   };
 
   if final_num == 1 && final_den == 1 {

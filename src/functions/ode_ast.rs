@@ -6832,7 +6832,7 @@ fn interpolating_derivative_value_exact(
   end: usize,
   derivative_order: usize,
 ) -> Result<Option<Expr>, InterpreterError> {
-  let var = Expr::Identifier("\u{2620}ifderiv\u{2620}".to_string());
+  let var = id_expr("\u{2620}ifderiv\u{2620}");
   let Some(poly) = lagrange_polynomial(data_points, &var, start, end, true)
   else {
     return Ok(None);

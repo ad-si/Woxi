@@ -426,8 +426,7 @@ fn map_with_heads(func: &Expr, expr: &Expr) -> Result<Expr, InterpreterError> {
         .map(|item| apply_func_ast(func, item))
         .collect();
       // Apply f to the head (List)
-      let new_head =
-        apply_func_ast(func, &Expr::Identifier("List".to_string()))?;
+      let new_head = apply_func_ast(func, &id_expr("List"))?;
       Ok(Expr::CurriedCall {
         func: Box::new(new_head),
         args: mapped?,
@@ -609,8 +608,8 @@ fn map_at_rebuilt(
   fn head_expr(expr: &Expr) -> Expr {
     match expr {
       Expr::CurriedCall { func, .. } => (**func).clone(),
-      Expr::Rule { .. } => Expr::Identifier("Rule".to_string()),
-      Expr::RuleDelayed { .. } => Expr::Identifier("RuleDelayed".to_string()),
+      Expr::Rule { .. } => id_expr("Rule"),
+      Expr::RuleDelayed { .. } => id_expr("RuleDelayed"),
       other => Expr::Identifier(
         super::element_access::parts_and_head(other)
           .and_then(|(_, h)| h)

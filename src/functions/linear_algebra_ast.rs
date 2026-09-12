@@ -6524,7 +6524,7 @@ pub fn vector_angle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if matches!(norm_u_expr, Expr::Integer(0))
     || matches!(norm_v_expr, Expr::Integer(0))
   {
-    return Ok(Expr::Identifier("Indeterminate".to_string()));
+    return Ok(id_expr("Indeterminate"));
   }
 
   // Build ArcCos[u.Conjugate[v] / (Norm[u] * Norm[v])] and evaluate. The
@@ -6964,10 +6964,7 @@ pub fn linear_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Build FittedModel association
   let assoc = Expr::Association(vec![
-    (
-      Expr::String("Type".to_string()),
-      Expr::Identifier("Linear".to_string()),
-    ),
+    (Expr::String("Type".to_string()), id_expr("Linear")),
     (Expr::String("FittedExpression".to_string()), fitted_expr),
     (
       Expr::String("BestFitParameters".to_string()),
@@ -7080,10 +7077,7 @@ pub fn nonlinear_model_fit_ast(
   ))?;
 
   let assoc = Expr::Association(vec![
-    (
-      Expr::String("Type".to_string()),
-      Expr::Identifier("Nonlinear".to_string()),
-    ),
+    (Expr::String("Type".to_string()), id_expr("Nonlinear")),
     (
       Expr::String("FittedExpression".to_string()),
       fitted_expr.clone(),
@@ -7264,10 +7258,7 @@ fn linear_model_fit_design_matrix_form(
     Expr::List(vec![design_matrix.clone(), response_vec.clone()].into());
 
   let assoc = Expr::Association(vec![
-    (
-      Expr::String("Type".to_string()),
-      Expr::Identifier("Linear".to_string()),
-    ),
+    (Expr::String("Type".to_string()), id_expr("Linear")),
     (Expr::String("FittedExpression".to_string()), fitted_expr),
     (
       Expr::String("BestFitParameters".to_string()),
@@ -7483,10 +7474,7 @@ pub fn logit_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   );
 
   let assoc = Expr::Association(vec![
-    (
-      Expr::String("Type".to_string()),
-      Expr::Identifier("Logit".to_string()),
-    ),
+    (Expr::String("Type".to_string()), id_expr("Logit")),
     (Expr::String("FittedExpression".to_string()), fitted_expr),
     (
       Expr::String("BestFitParameters".to_string()),
@@ -10345,7 +10333,7 @@ fn sparse_array_literal(n: usize, nonzeros: &[(usize, usize, Expr)]) -> Expr {
   Expr::FunctionCall {
     name: "SparseArray".to_string(),
     args: vec![
-      Expr::Identifier("Automatic".to_string()),
+      id_expr("Automatic"),
       Expr::List(
         vec![Expr::Integer(n as i128), Expr::Integer(n as i128)].into(),
       ),

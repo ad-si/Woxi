@@ -502,7 +502,7 @@ fn socket_open(args: &[Expr]) -> Expr {
       Ok(listener) => listener,
       Err(err) => {
         failed_operation_message(&err);
-        return Expr::Identifier("$Failed".to_string());
+        return fail_expr();
       }
     };
   let local = listener.local_addr().ok();
@@ -731,11 +731,11 @@ fn socket_listen(args: &[Expr]) -> Expr {
   });
   let Some((closed, role, listener, stream)) = listener_state else {
     invalid_socket_message(&uuid);
-    return Expr::Identifier("$Failed".to_string());
+    return fail_expr();
   };
   if closed {
     invalid_socket_message(&uuid);
-    return Expr::Identifier("$Failed".to_string());
+    return fail_expr();
   }
   // Listening twice on one socket would leave two accept threads fighting
   // over it, so the second call replaces the first.
@@ -1451,7 +1451,7 @@ fn socket_close(uuid: &str) -> Expr {
   let known = with_registry(|reg| reg.entries.contains_key(uuid));
   if !known {
     invalid_socket_message(uuid);
-    return Expr::Identifier("$Failed".to_string());
+    return fail_expr();
   }
   // Closing the socket a listener was set up on ends the listener; closing
   // one connection it accepted only ends that connection, which is what an
@@ -1486,10 +1486,9 @@ fn socket_close(uuid: &str) -> Expr {
   // wolframscript answers with the endpoint that was closed, spelled
   // `"host:port"`, not with the socket object.
   with_registry(|reg| {
-    reg.entries.get(uuid).map_or_else(
-      || Expr::Identifier("$Failed".to_string()),
-      |entry| Expr::String(format!("{}:{}", entry.dest_host, entry.dest_port)),
-    )
+    reg.entries.get(uuid).map_or_else(fail_expr, |entry| {
+      Expr::String(format!("{}:{}", entry.dest_host, entry.dest_port))
+    })
   })
 }
 
@@ -1565,7 +1564,7 @@ fn string_list(items: &[&str]) -> Expr {
 #[cfg(not(target_arch = "wasm32"))]
 pub fn socket_property(uuid: &str, property: &str) -> Option<Expr> {
   if is_closed(uuid) {
-    return Some(Expr::Identifier("$Failed".to_string()));
+    return Some(fail_expr());
   }
   if property == "Properties" {
     return Some(string_list(&SOCKET_PROPERTIES));
@@ -1602,7 +1601,7 @@ pub fn socket_property(uuid: &str, property: &str) -> Option<Expr> {
       // A socket nobody is listening on reports `None`, not the empty list
       // an unknown property gives.
       "SocketListener" => entry.listener_id.map_or_else(
-        || Expr::Identifier("None".to_string()),
+        || id_expr("None"),
         |id| call1("SocketListener", Expr::Integer(id)),
       ),
       "Type" => Expr::String("ZMQ_STREAM".to_string()),
@@ -1662,7 +1661,7 @@ fn byte_array(bytes: &[u8]) -> Expr {
 
 #[cfg(not(target_arch = "wasm32"))]
 fn end_of_file() -> Expr {
-  Expr::Identifier("EndOfFile".to_string())
+  id_expr("EndOfFile")
 }
 
 /// Read one line, waiting for as much of it as the peer still owes.
@@ -1739,7 +1738,7 @@ fn dispatch_native(
     "SocketReadMessage" if args.len() == 1 => {
       let uuid = socket_arg?;
       Some(Ok(match read_available(&uuid) {
-        Err(SocketUnusable) => Expr::Identifier("$Failed".to_string()),
+        Err(SocketUnusable) => fail_expr(),
         Ok(bytes) if bytes.is_empty() => end_of_file(),
         Ok(bytes) => byte_array(&bytes),
       }))
@@ -1753,7 +1752,7 @@ fn dispatch_native(
       if buffered_len(&uuid) == 0
         && let Err(SocketUnusable) = fill_buffer(&uuid, false)
       {
-        return Some(Ok(Expr::Identifier("$Failed".to_string())));
+        return Some(Ok(fail_expr()));
       }
       let bytes = take_buffered(&uuid, Some(limit));
       Some(Ok(if bytes.is_empty() {
@@ -1827,9 +1826,9 @@ fn dispatch_native(
             "The socket listener {} is invalid or not open.",
             expr_to_string(&args[0])
           ));
-          return Some(Ok(Expr::Identifier("$Failed".to_string())));
+          return Some(Ok(fail_expr()));
         }
-        return Some(Ok(Expr::Identifier("Null".to_string())));
+        return Some(Ok(null_expr()));
       }
       // On a socket `DeleteObject` *is* `Close`, down to the endpoint string
       // it answers with.
@@ -1840,7 +1839,7 @@ fn dispatch_native(
     "ReadString" if args.len() == 1 && socket_arg.is_some() => {
       let uuid = socket_arg?;
       Some(Ok(match read_to_close(&uuid) {
-        Err(SocketUnusable) => Expr::Identifier("$Failed".to_string()),
+        Err(SocketUnusable) => fail_expr(),
         Ok(bytes) if bytes.is_empty() => end_of_file(),
         Ok(bytes) => Expr::String(String::from_utf8_lossy(&bytes).into_owned()),
       }))
@@ -1848,7 +1847,7 @@ fn dispatch_native(
     "ReadLine" if args.len() == 1 && socket_arg.is_some() => {
       let uuid = socket_arg?;
       Some(Ok(match read_line(&uuid) {
-        Err(SocketUnusable) => Expr::Identifier("$Failed".to_string()),
+        Err(SocketUnusable) => fail_expr(),
         Ok(None) => end_of_file(),
         Ok(Some(line)) => Expr::String(line),
       }))
@@ -1856,7 +1855,7 @@ fn dispatch_native(
     "BinaryReadList" if args.len() == 1 && socket_arg.is_some() => {
       let uuid = socket_arg?;
       Some(Ok(match read_to_close(&uuid) {
-        Err(SocketUnusable) => Expr::Identifier("$Failed".to_string()),
+        Err(SocketUnusable) => fail_expr(),
         Ok(bytes) => Expr::List(
           bytes
             .iter()
@@ -1877,19 +1876,19 @@ fn dispatch_native(
       };
       Some(Ok(match element.as_str() {
         "Byte" => match read_one_byte(&uuid) {
-          Err(SocketUnusable) => Expr::Identifier("$Failed".to_string()),
+          Err(SocketUnusable) => fail_expr(),
           Ok(None) => end_of_file(),
           Ok(Some(byte)) => Expr::Integer(i128::from(byte)),
         },
         "Character" => match read_one_byte(&uuid) {
-          Err(SocketUnusable) => Expr::Identifier("$Failed".to_string()),
+          Err(SocketUnusable) => fail_expr(),
           Ok(None) => end_of_file(),
           Ok(Some(byte)) => {
             Expr::String(String::from_utf8_lossy(&[byte]).into_owned())
           }
         },
         "String" | "Record" => match read_line(&uuid) {
-          Err(SocketUnusable) => Expr::Identifier("$Failed".to_string()),
+          Err(SocketUnusable) => fail_expr(),
           Ok(None) => end_of_file(),
           Ok(Some(line)) => Expr::String(line),
         },

@@ -391,7 +391,7 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
     "HalfNormalDistribution" if dargs.len() == 1 => {
       let theta = dargs[0].clone();
       // Median = Sqrt[Pi] * InverseErf[1/2] / theta
-      let sqrt_pi = call1("Sqrt", Expr::Identifier("Pi".to_string()));
+      let sqrt_pi = call1("Sqrt", id_expr("Pi"));
       let half = call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]);
       let inverse_erf_half = call1("InverseErf", half);
       let numer = call("Times", vec![sqrt_pi, inverse_erf_half]);
@@ -1115,11 +1115,7 @@ pub fn min_max_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   if items.is_empty() {
     return Ok(Expr::List(
-      vec![
-        Expr::Identifier("Infinity".to_string()),
-        neg1(Expr::Identifier("Infinity".to_string())),
-      ]
-      .into(),
+      vec![id_expr("Infinity"), neg1(id_expr("Infinity"))].into(),
     ));
   }
 

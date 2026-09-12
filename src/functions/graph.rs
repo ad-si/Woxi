@@ -802,7 +802,7 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         vec![
           Expr::String(expr_to_output(&label_expr)),
           Expr::Integer(16),
-          Expr::Identifier("Bold".to_string()),
+          id_expr("Bold"),
         ],
       ),
     };
@@ -822,7 +822,7 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // sized it — `LayeredGraphPlot[…, ImageSize -> {200, 50}]` asks for a
   // wide, short strip and has to get one.
   let image_size_opt = Expr::Rule {
-    pattern: Box::new(Expr::Identifier("ImageSize".to_string())),
+    pattern: Box::new(id_expr("ImageSize")),
     replacement: Box::new(image_size.unwrap_or(Expr::Integer(360))),
   };
 
@@ -870,7 +870,7 @@ fn flat_axis_plot_range(
   let pair =
     |a: f64, b: f64| Expr::List(vec![Expr::Real(a), Expr::Real(b)].into());
   Some(Expr::Rule {
-    pattern: Box::new(Expr::Identifier("PlotRange".to_string())),
+    pattern: Box::new(id_expr("PlotRange")),
     replacement: Box::new(Expr::List(vec![pair(x0, x1), pair(y0, y1)].into())),
   })
 }
@@ -4261,7 +4261,7 @@ pub fn weighted_adjacency_graph_ast(
       Expr::List(vertices.into()),
       Expr::List(edges.into()),
       Expr::Rule {
-        pattern: Box::new(Expr::Identifier("EdgeWeight".to_string())),
+        pattern: Box::new(id_expr("EdgeWeight")),
         replacement: Box::new(Expr::List(weights.into())),
       },
     ]
@@ -4335,10 +4335,10 @@ pub fn adjacency_matrix_to_graph(
       }
     }
   }
-  Some(Expr::FunctionCall {
-    name: "Graph".to_string(),
-    args: vec![Expr::List(verts.into()), Expr::List(edges.into())].into(),
-  })
+  Some(call(
+    "Graph",
+    vec![Expr::List(verts.into()), Expr::List(edges.into())],
+  ))
 }
 
 /// FindMinimumCostFlow[cmat, s, t] - minimum total cost of a maximum
@@ -5307,7 +5307,7 @@ pub fn highlight_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated());
   };
 
-  let default_style = Expr::Identifier("Red".to_string());
+  let default_style = id_expr("Red");
   let mut items: Vec<(Expr, Expr)> = Vec::new();
   collect_highlight_items(&args[1], &default_style, &mut items);
 
@@ -5353,7 +5353,7 @@ pub fn highlight_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     });
   }
   merged.push(Expr::Rule {
-    pattern: Box::new(Expr::Identifier("GraphHighlight".to_string())),
+    pattern: Box::new(id_expr("GraphHighlight")),
     replacement: Box::new(Expr::List(highlighted.into())),
   });
 
@@ -6546,7 +6546,7 @@ fn directed_mean_graph_distance(expr: &Expr) -> Option<Expr> {
       }
     }
     if reached != n {
-      return Some(Expr::Identifier("Infinity".to_string()));
+      return Some(id_expr("Infinity"));
     }
     total += dist.iter().map(|&d| d as i128).sum::<i128>();
   }
@@ -6993,7 +6993,7 @@ pub fn graph_metric_ast(
           }
         }
         if reached != n {
-          return Ok(Expr::Identifier("Infinity".to_string()));
+          return Ok(id_expr("Infinity"));
         }
         total += dist.iter().map(|&d| d as i128).sum::<i128>();
       }
@@ -7394,8 +7394,8 @@ fn property_scope(property: &str) -> Option<Scope> {
 fn annotation_default(property: &str) -> Expr {
   match property {
     "GraphHighlight" => Expr::List(vec![].into()),
-    "VertexLabels" | "EdgeLabels" => Expr::Identifier("None".to_string()),
-    _ => Expr::Identifier("Automatic".to_string()),
+    "VertexLabels" | "EdgeLabels" => id_expr("None"),
+    _ => id_expr("Automatic"),
   }
 }
 
@@ -7589,10 +7589,7 @@ pub fn graph_annotation_ast(
   if graph_parts(graph).is_none() {
     return Ok(original());
   }
-  Ok(
-    annotation_value(graph, item, property)
-      .unwrap_or_else(|| Expr::Identifier("$Failed".to_string())),
-  )
+  Ok(annotation_value(graph, item, property).unwrap_or_else(fail_expr))
 }
 
 /// The annotations one vertex or edge offers: the ones every item of its kind
@@ -7859,8 +7856,8 @@ pub fn graph_set_property_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Some(Expr::List(items)) => items
         .get(i)
         .cloned()
-        .unwrap_or_else(|| Expr::Identifier("Automatic".to_string())),
-      _ => Expr::Identifier("Automatic".to_string()),
+        .unwrap_or_else(|| id_expr("Automatic")),
+      _ => id_expr("Automatic"),
     })
     .collect();
   if let Some(item) = item {

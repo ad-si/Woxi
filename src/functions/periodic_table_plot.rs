@@ -499,7 +499,7 @@ fn phase_legended(graphics: Expr) -> Expr {
     vec![
       colors,
       labels,
-      rule("LegendLayout", Expr::Identifier("Row".to_string())),
+      rule("LegendLayout", id_expr("Row")),
       rule(
         "LegendLabel",
         call(
@@ -514,12 +514,6 @@ fn phase_legended(graphics: Expr) -> Expr {
   );
   call(
     "Legended",
-    vec![
-      graphics,
-      call(
-        "Placed",
-        vec![legend, Expr::Identifier("Below".to_string())],
-      ),
-    ],
+    vec![graphics, call("Placed", vec![legend, id_expr("Below")])],
   )
 }

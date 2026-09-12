@@ -298,7 +298,7 @@ pub fn entity_unregister_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           stores.remove(idx);
         }
       });
-      Ok(Expr::Identifier("Null".to_string()))
+      Ok(null_expr())
     }
     _ => Ok(unevaluated("EntityUnregister", args)),
   }

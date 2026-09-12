@@ -1560,8 +1560,8 @@ fn split_heads_option(args: &[Expr]) -> (&[Expr], bool) {
 fn head_part(expr: &Expr) -> Option<Expr> {
   match expr {
     Expr::FunctionCall { name, .. } => Some(Expr::Identifier(name.clone())),
-    Expr::List(_) => Some(Expr::Identifier("List".to_string())),
-    Expr::Association(_) => Some(Expr::Identifier("Association".to_string())),
+    Expr::List(_) => Some(id_expr("List")),
+    Expr::Association(_) => Some(id_expr("Association")),
     _ => None,
   }
 }
@@ -1726,7 +1726,7 @@ pub fn free_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // itself matches the pattern (e.g. _Symbol matches "List" since
         // Head[List] is Symbol).
         if use_pattern {
-          let head_expr = Expr::Identifier("List".to_string());
+          let head_expr = id_expr("List");
           if crate::functions::list_helpers_ast::matches_pattern_ast(
             &head_expr, form,
           ) {
@@ -2222,12 +2222,12 @@ pub fn head_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let args = &[crate::evaluator::strip_unevaluated(&args[0])];
   // Check for complex number patterns before the general match
   if is_complex_number(&args[0]) {
-    return Ok(Expr::Identifier("Complex".to_string()));
+    return Ok(id_expr("Complex"));
   }
   // Infinity, -Infinity and ComplexInfinity are DirectedInfinity[…] objects,
   // not symbols/products, so their Head is DirectedInfinity.
   if is_directed_infinity(&args[0]) {
-    return Ok(Expr::Identifier("DirectedInfinity".to_string()));
+    return Ok(id_expr("DirectedInfinity"));
   }
   let head = match &args[0] {
     Expr::Integer(_) | Expr::BigInteger(_) => "Integer",

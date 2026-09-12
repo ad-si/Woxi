@@ -2574,8 +2574,11 @@ fn inject_epilog(
     y_max,
     scale,
   };
-  let epilog_svg =
-    crate::functions::plot_epilog::render_epilog_svg(&opts.epilog, &area);
+  let epilog_svg = crate::functions::plot_epilog::render_epilog_svg(
+    &opts.epilog,
+    &area,
+    "epilog",
+  );
   if let Some(pos) = buf.rfind("</svg>") {
     buf.insert_str(pos, &epilog_svg);
   }
@@ -2609,8 +2612,11 @@ fn inject_prolog(
     y_max,
     scale,
   };
-  let prolog_svg =
-    crate::functions::plot_epilog::render_epilog_svg(&opts.prolog, &area);
+  let prolog_svg = crate::functions::plot_epilog::render_epilog_svg(
+    &opts.prolog,
+    &area,
+    "prolog",
+  );
   if let Some(tag_start) = buf.find("<svg")
     && let Some(tag_end) = buf[tag_start..].find('>')
   {
@@ -8473,13 +8479,7 @@ pub(crate) fn apply_common_plot_option(
 /// Build the compactifying substitution `Tan[Pi*inner/2]`, the bijection
 /// used to fold an infinite plot range into a finite display coordinate.
 fn tan_compactify(inner: Expr) -> Expr {
-  call1(
-    "Tan",
-    div2(
-      times2(Expr::Identifier("Pi".to_string()), inner),
-      Expr::Integer(2),
-    ),
-  )
+  call1("Tan", div2(times2(id_expr("Pi"), inner), Expr::Integer(2)))
 }
 
 /// Given the (possibly infinite) raw endpoints of a `Plot` range, return the
@@ -8534,7 +8534,7 @@ pub(crate) fn expr_mentions_var(expr: &Expr, var: &str) -> bool {
   // Substituting the variable with a sentinel changes the tree iff the
   // variable actually occurs; comparing structurally avoids hand-writing a
   // walker over every Expr variant.
-  let sentinel = Expr::Identifier("$WoxiPlotVarProbe$".to_string());
+  let sentinel = id_expr("$WoxiPlotVarProbe$");
   let replaced = crate::syntax::substitute_variable(expr, var, &sentinel);
   !crate::evaluator::pattern_matching::expr_equal(&replaced, expr)
 }

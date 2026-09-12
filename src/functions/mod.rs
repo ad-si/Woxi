@@ -1,7 +1,7 @@
 use crate::InterpreterError;
 use crate::helpers::{
-  binop, bool_expr, call, call0, call1, const_expr, div2, minus2, neg1, plus2,
-  pow2, times2, unevaluated,
+  binop, bool_expr, call, call0, call1, const_expr, div2, fail_expr, id_expr,
+  minus2, neg1, null_expr, plus2, pow2, times2, unevaluated,
 };
 use crate::syntax::{
   BinaryOperator, ComparisonOp, Expr, UnaryOperator, expr_to_output,
