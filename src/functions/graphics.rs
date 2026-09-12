@@ -17980,6 +17980,16 @@ pub enum ManipulateControl {
     /// parallel to `values`. `None` for plain text labels.
     value_label_svgs: Vec<Option<String>>,
     initial_index: usize,
+    /// The initial value's InputForm, kept only when it is *not* one of
+    /// `values` — e.g. a shared variable with several disjoint SetterBar
+    /// rows (a Demonstration's aberration picker splits 22 choices across
+    /// four rows; the shared default only appears in one of them). Every
+    /// other row's `initial_index` falls back to `0` for display, which is
+    /// fine for a button that isn't lit up — but the *bound* value must stay
+    /// the true default, not silently become that row's first choice.
+    /// `current_code`/`set_current_from_code` prefer this over
+    /// `values[initial_index]` whenever it is set.
+    initial_overflow: Option<String>,
     label: String,
     label_runs: Vec<LabelRun>,
     /// `ControlType -> PopupMenu`: always render a dropdown, even when the
@@ -22362,9 +22372,14 @@ fn parse_manipulate_control(
       if values.is_empty() {
         return None;
       }
+      // `resolved_init_code` is the initial value's InputForm once evaluated
+      // (falling back to its held form), used below to keep it as
+      // `initial_overflow` when it matches none of this row's own choices.
+      let mut resolved_init_code: Option<String> = None;
       let initial_index = match explicit_initial {
         Some(init) => {
           let init_code = crate::syntax::expr_to_input_form(&init);
+          resolved_init_code = Some(init_code.clone());
           values
             .iter()
             .position(|v| *v == init_code)
@@ -22376,12 +22391,19 @@ fn parse_manipulate_control(
               let evaluated =
                 crate::evaluator::evaluate_expr_to_expr(&init).ok()?;
               let code = crate::syntax::expr_to_input_form(&evaluated);
+              resolved_init_code = Some(code.clone());
               values.iter().position(|v| *v == code)
             })
             .unwrap_or(0)
         }
         None => 0,
       };
+      // Several disjoint SetterBar rows can share one variable (see
+      // `initial_overflow`'s doc comment); when this row's own choices don't
+      // include the true initial value, keep it so the bound value stays
+      // correct even though this particular row shows no button lit up.
+      let initial_overflow =
+        resolved_init_code.filter(|code| !values.iter().any(|v| v == code));
       // A choice list built from another control's variable (`Range[1,
       // If[flat, 3, 6], 1]`) only holds for that variable's current value;
       // keep its code so the frontend can rebuild the choices whenever the
@@ -22399,6 +22421,7 @@ fn parse_manipulate_control(
           value_labels,
           value_label_svgs,
           initial_index,
+          initial_overflow,
           label,
           label_runs,
           popup: control_type.as_deref() == Some("PopupMenu"),
@@ -22504,6 +22527,7 @@ fn parse_manipulate_control(
           value_labels,
           value_label_svgs,
           initial_index: 0,
+          initial_overflow: None,
           label,
           label_runs,
           popup: false,
@@ -22892,13 +22916,16 @@ pub fn manipulate_initial_bindings(
         name,
         values,
         initial_index,
+        initial_overflow,
         ..
       } => Some((
         name.clone(),
-        values
-          .get(*initial_index)
-          .cloned()
-          .unwrap_or_else(|| "Null".to_string()),
+        initial_overflow.clone().unwrap_or_else(|| {
+          values
+            .get(*initial_index)
+            .cloned()
+            .unwrap_or_else(|| "Null".to_string())
+        }),
       )),
       ManipulateControl::Slider2D {
         name,
@@ -23397,6 +23424,7 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
         value_labels,
         value_label_svgs,
         initial_index,
+        initial_overflow: _,
         label,
         label_runs,
         popup,

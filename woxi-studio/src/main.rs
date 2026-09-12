@@ -3996,11 +3996,17 @@ fn render_manipulate_widget<'a>(
         value_labels,
         value_label_svgs,
         current_index,
+        overflow,
         popup,
         setter_bar: force_setter_bar,
         slider: as_slider,
         vertical: is_vertical,
       } => {
+        // A shared variable can have several disjoint SetterBar rows (see
+        // `ControlState::Discrete::overflow`'s doc comment); while the true
+        // value is one none of *this* row's own choices represent, no
+        // button/checkbox/dropdown entry here should show as selected.
+        let has_overflow = overflow.is_some();
         let label_widget =
           manipulate_label_widget(label_runs, label, label_col_width, enabled);
         // `ControlType -> Slider` over a discrete domain: a slider that
@@ -4039,8 +4045,8 @@ fn render_manipulate_widget<'a>(
           && bool_values.iter().any(|v| v == "True")
           && bool_values.iter().any(|v| v == "False");
         if is_bool_domain {
-          let checked =
-            bool_values.get(*current_index).is_some_and(|v| v == "True");
+          let checked = !has_overflow
+            && bool_values.get(*current_index).is_some_and(|v| v == "True");
           // Toggling selects the other entry; the update handler maps the
           // sent display label back to its index.
           let other_label = value_labels
@@ -4079,7 +4085,7 @@ fn render_manipulate_widget<'a>(
           let is_vertical = *is_vertical;
           let mut buttons = Vec::with_capacity(value_labels.len());
           for (i, choice_label) in value_labels.iter().enumerate() {
-            let is_selected = i == *current_index;
+            let is_selected = !has_overflow && i == *current_index;
             let choice = choice_label.clone();
             // A choice whose rule label is a graphic (`"+" -> myIcon[2]`)
             // shows the rendered icon; text choices show their label.
@@ -4122,7 +4128,11 @@ fn render_manipulate_widget<'a>(
               .into()
           }
         } else {
-          let selected = value_labels.get(*current_index).cloned();
+          let selected = if has_overflow {
+            None
+          } else {
+            value_labels.get(*current_index).cloned()
+          };
           let on_select = move |choice: String| {
             if enabled {
               Message::ManipulateDiscreteChanged(cell_idx, ctrl_idx, choice)
@@ -6983,6 +6993,84 @@ fn strip_svg_wrapper(svg: &str) -> &str {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  /// A picker offering more choices than fit in one row splits them across
+  /// several `SetterBar`s that all share one control variable — the shape a
+  /// Wolfram Demonstrations Project notebook's aberration/category picker
+  /// takes when it has, say, twenty-two choices (independently written, not
+  /// copied from any specific one). Regression: only the row whose own
+  /// choices happened to include the shared default reported the right
+  /// value; every other row silently fell back to its own first choice, and
+  /// because bindings are applied in row order the *last* row in the
+  /// specification always won outright — so the widget opened showing
+  /// whichever row came last, not the declared default, and clicking a
+  /// choice in an earlier row changed nothing unless the last row happened
+  /// to share that exact value too.
+  #[test]
+  fn manipulate_disjoint_setter_bar_siblings_share_the_true_default_value() {
+    let code = "Manipulate[\
+      Which[kind == 1, \"circle\", kind == 2, \"square\", kind == 3, \"triangle\", \
+        kind == 4, \"pentagon\", kind == 5, \"hexagon\"], \
+      {{kind, 2, \"\"}, {1 -> \"circle\", 2 -> \"square\", 3 -> \"triangle\"}, \
+        ControlType -> SetterBar}, \
+      {{kind, 2, \"\"}, {4 -> \"pentagon\", 5 -> \"hexagon\"}, ControlType -> SetterBar}\
+      ]";
+    let state = instantiate_stored_manipulate(code, "")
+      .expect("the shared-variable SetterBar Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert_eq!(
+      state.text_output.as_deref(),
+      Some("square"),
+      "the declared default (kind -> 2, \"square\") must win, not whichever \
+       SetterBar row happens to come last"
+    );
+
+    let kind_rows: Vec<usize> = state
+      .controls
+      .iter()
+      .enumerate()
+      .filter(|(_, c)| c.name() == "kind")
+      .map(|(i, _)| i)
+      .collect();
+    assert_eq!(
+      kind_rows.len(),
+      2,
+      "expected two SetterBar rows sharing `kind`: {:?}",
+      state.controls
+    );
+
+    // The second row has no button for `2` at all; picking one of its own
+    // choices must still change the rendered output — pre-fix, the second
+    // row's own (wrong) fallback value silently overrode whatever the first
+    // row held, every time, because it came last in `self.controls`.
+    let mut state = state;
+    let second_idx = kind_rows[1];
+    if let manipulate::ControlState::Discrete {
+      values,
+      current_index,
+      overflow,
+      ..
+    } = &mut state.controls[second_idx]
+    {
+      *current_index = values
+        .iter()
+        .position(|v| v == "5")
+        .expect("the hexagon choice");
+      *overflow = None;
+    }
+    state.apply_tracking(second_idx);
+    state.reevaluate();
+    assert!(
+      state.error.is_none(),
+      "re-render after picking a SetterBar choice failed: {:?}",
+      state.error
+    );
+    assert_eq!(state.text_output.as_deref(), Some("hexagon"));
+  }
 
   /// A Manipulate whose body calls a `Compile`d helper with bare
   /// (undeclared-type) parameters that are only ever used as repetition
