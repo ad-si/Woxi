@@ -2238,11 +2238,13 @@ pub fn cot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(id_expr("Indeterminate"));
   }
   if let Expr::Real(f) = &args[0] {
-    let s = f.sin();
-    if s == 0.0 {
+    if f.sin() == 0.0 {
       return Ok(id_expr("ComplexInfinity"));
     }
-    return Ok(Expr::Real(f.cos() / s));
+    // `1/Tan[x]`, not `Cos[x]/Sin[x]`: the two differ in the last bit for
+    // some arguments (`Cot[0.8]`, `Cot[0.3]`) and wolframscript takes the
+    // reciprocal of the tangent. Csc, Sec, Coth, Csch and Sech already do.
+    return Ok(Expr::Real(1.0 / f.tan()));
   }
   // Cot of a BigFloat: Cos[x]/Sin[x] at arbitrary precision.
   if matches!(&args[0], Expr::BigFloat(_, _)) {

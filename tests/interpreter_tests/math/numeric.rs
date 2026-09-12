@@ -2175,3 +2175,40 @@ mod find_divisions {
     );
   }
 }
+
+mod reciprocal_trig_last_bit {
+  use super::*;
+
+  /// `Cot[x]` is the reciprocal of the tangent, not the cosine over the
+  /// sine. The two formulas differ in the last bit at some arguments, and
+  /// wolframscript takes the reciprocal. Found by the differential fuzzer
+  /// on `Cot[0.8]`, which came out as `...44` instead of `...43`.
+  #[test]
+  fn cot_takes_the_reciprocal_of_tan() {
+    for (code, expected) in [
+      ("Cot[0.8]", "0.9712146006504743"),
+      ("Cot[0.3]", "3.232728143765828"),
+      ("Cot[1.5]", "0.07091484430265245"),
+      ("Cot[2.0]", "-0.45765755436028577"),
+      ("Cot[-0.7]", "-1.1872418321266796"),
+      ("Cot[5.5]", "-1.0044355348765333"),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "for {code}");
+    }
+  }
+
+  /// The rest of the reciprocal family already matched; keep them pinned so
+  /// a shared refactor cannot move them.
+  #[test]
+  fn the_other_reciprocals_are_unchanged() {
+    for (code, expected) in [
+      ("Csc[0.8]", "1.394007819388636"),
+      ("Sec[0.8]", "1.43532419967224"),
+      ("Coth[0.8]", "1.5059407020437066"),
+      ("Csch[0.8]", "1.1259917397884818"),
+      ("Sech[0.8]", "0.7476999182374195"),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "for {code}");
+    }
+  }
+}
