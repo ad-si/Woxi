@@ -319,8 +319,10 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         // `EdgeShapeFunction -> f` hands the drawing of each edge to `f`,
         // which is applied as `f[{pt, …}, edge]` and returns the graphics
-        // to use in place of the default line or arrow.
-        "EdgeShapeFunction" => {
+        // to use in place of the default line or arrow. `EdgeRenderingFunction`
+        // is `GraphPlot`'s older name for the same option (predating `Graph`),
+        // kept alive by Demonstrations authored before `Graph` existed.
+        "EdgeShapeFunction" | "EdgeRenderingFunction" => {
           let (shape, rules) = parse_edge_shape(replacement);
           if let Some(shape) = shape {
             edge_shape = Some(shape);
