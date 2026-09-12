@@ -1350,14 +1350,19 @@ pub fn factor_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  // First, factor the polynomial
-  let factored = factor_ast(args)?;
+  factored_expr_to_list(&factor_ast(args)?)
+}
 
+/// Turn a factored expression into wolframscript's `{{factor, exponent}, …}`
+/// form. Shared by `FactorList` and `FactorSquareFreeList`, which differ only
+/// in which factoriser produced the input.
+fn factored_expr_to_list(factored: &Expr) -> Result<Expr, InterpreterError> {
   // Decompose the factored form into {factor, exponent} pairs
   let mut pairs: Vec<Expr> = Vec::new();
   let mut numeric_coeff = Expr::Integer(1);
 
-  decompose_product(&factored, &mut pairs, &mut numeric_coeff);
+  decompose_product(factored, &mut pairs, &mut numeric_coeff);
+  normalize_factor_signs(&mut pairs, &mut numeric_coeff)?;
 
   // Numeric content comes first, split into numerator/denominator entries,
   // matching wolframscript (e.g. `FactorList[3/4]` → `{{3, 1}, {4, -1}}`).
@@ -1373,6 +1378,60 @@ pub fn factor_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   result.extend(neg);
 
   Ok(Expr::List(result.into()))
+}
+
+/// Give every polynomial factor a positive leading coefficient, moving the
+/// sign into the numeric content.
+///
+/// wolframscript's `FactorList` normalises factors this way: `1 - x` is
+/// `{{-1, 1}, {-1 + x, 1}}`, not `{{1, 1}, {1 - x, 1}}`. `decompose_product`
+/// only pulls out a numeric *content*, so a factor whose content is ±1 —
+/// `Factor[-(1 + x)]` is the bare sum `-1 - x` — reaches here with the sign
+/// still inside it. A factor raised to an even power absorbs the sign, which
+/// is why the unit picks up `(-1)^exponent` rather than `-1`.
+fn normalize_factor_signs(
+  pairs: &mut [Expr],
+  numeric_coeff: &mut Expr,
+) -> Result<(), InterpreterError> {
+  let mut sign_flips = 0u32;
+  for pair in pairs.iter_mut() {
+    let Expr::List(items) = pair else { continue };
+    if items.len() != 2 || !has_negative_leading_coeff(&items[0]) {
+      continue;
+    }
+    let negated = crate::evaluator::evaluate_function_call_ast(
+      "Times",
+      &[Expr::Integer(-1), items[0].clone()],
+    )?;
+    // An even exponent squares the sign away.
+    if matches!(&items[1], Expr::Integer(e) if e.unsigned_abs() % 2 == 1) {
+      sign_flips += 1;
+    }
+    let mut items = items.to_vec();
+    items[0] = negated;
+    *pair = Expr::List(items.into());
+  }
+  if sign_flips % 2 == 1 {
+    *numeric_coeff = crate::evaluator::evaluate_function_call_ast(
+      "Times",
+      &[Expr::Integer(-1), numeric_coeff.clone()],
+    )?;
+  }
+  Ok(())
+}
+
+/// Whether a polynomial factor's leading term carries a negative coefficient.
+/// woxi's canonical `Plus` order is lowest-degree-first, so the leading term
+/// is the last summand; `strip_negation` then decides the sign the same way
+/// the odd/even function reductions do.
+fn has_negative_leading_coeff(factor: &Expr) -> bool {
+  let leading = match factor {
+    Expr::FunctionCall { name, args } if name == "Plus" && !args.is_empty() => {
+      args.last().unwrap()
+    }
+    other => other,
+  };
+  crate::functions::math_ast::strip_negation(leading).is_some()
 }
 
 /// The leading numeric-content entries of a `FactorList` result. An integer
@@ -2844,17 +2903,19 @@ pub fn factor_square_free_list_ast(
     ));
   }
 
+  // Anything the univariate integer path below cannot represent —
+  // several variables, or coefficients outside i128 — goes through
+  // `FactorSquareFree`, which already matches wolframscript there,
+  // decomposed the same way `FactorList` decomposes `Factor`. Returning
+  // `{{expr, 1}}` here used to drop even the unit entry, so
+  // `FactorSquareFreeList[-x - y]` came back as `{{-x - y, 1}}` instead of
+  // `{{-1, 1}, {x + y, 1}}`.
   let Some(var) = find_single_variable(&expanded) else {
-    // Constant expression
-    return Ok(Expr::List(
-      vec![Expr::List(vec![expanded, Expr::Integer(1)].into())].into(),
-    ));
+    return factored_expr_to_list(&factor_square_free_ast(args)?);
   };
 
   let Some(coeffs) = extract_poly_coeffs(&expanded, &var) else {
-    return Ok(Expr::List(
-      vec![Expr::List(vec![expanded, Expr::Integer(1)].into())].into(),
-    ));
+    return factored_expr_to_list(&factor_square_free_ast(args)?);
   };
 
   // Factor out GCD of coefficients (content)

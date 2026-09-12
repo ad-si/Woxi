@@ -2066,6 +2066,71 @@ mod factor_list {
     );
   }
 
+  /// wolframscript normalises every factor to a positive leading
+  /// coefficient and moves the sign into the unit entry. A factor whose
+  /// numeric content is ±1 — `Factor[-(1 + x)]` is the bare sum `-1 - x` —
+  /// used to keep the sign, giving `{{1, 1}, {-1 - x, 1}}`. Found by the
+  /// differential fuzzer.
+  #[test]
+  fn unit_content_moves_into_the_unit_entry() {
+    assert_eq!(
+      interpret("FactorList[-(1 + x)]").unwrap(),
+      "{{-1, 1}, {1 + x, 1}}"
+    );
+    assert_eq!(
+      interpret("FactorList[1 - x]").unwrap(),
+      "{{-1, 1}, {-1 + x, 1}}"
+    );
+    assert_eq!(
+      interpret("FactorList[2 - x]").unwrap(),
+      "{{-1, 1}, {-2 + x, 1}}"
+    );
+    assert_eq!(
+      interpret("FactorList[-x - y]").unwrap(),
+      "{{-1, 1}, {x + y, 1}}"
+    );
+    assert_eq!(
+      interpret("FactorList[-x^2 - x - 1]").unwrap(),
+      "{{-1, 1}, {1 + x + x^2, 1}}"
+    );
+    assert_eq!(
+      interpret("FactorList[-1/2 - x/2]").unwrap(),
+      "{{-1, 1}, {2, -1}, {1 + x, 1}}"
+    );
+  }
+
+  /// An even exponent absorbs the sign, so only odd multiplicities flip
+  /// the unit: `-(1 + x)^2` keeps its `-1`, `(-(1 + x))^2` has none.
+  #[test]
+  fn even_exponents_absorb_the_sign() {
+    assert_eq!(
+      interpret("FactorList[-(1 + x)^2]").unwrap(),
+      "{{-1, 1}, {1 + x, 2}}"
+    );
+    assert_eq!(
+      interpret("FactorList[(-(1 + x))^2]").unwrap(),
+      "{{1, 1}, {1 + x, 2}}"
+    );
+    assert_eq!(
+      interpret("FactorList[-(1 + x)^3]").unwrap(),
+      "{{-1, 1}, {1 + x, 3}}"
+    );
+  }
+
+  /// A denominator factor is normalised too, and its negative exponent is
+  /// odd, so it flips the unit as well.
+  #[test]
+  fn denominator_factors_are_normalised() {
+    assert_eq!(
+      interpret("FactorList[-(1 + x)/(2 + x)]").unwrap(),
+      "{{-1, 1}, {1 + x, 1}, {2 + x, -1}}"
+    );
+    assert_eq!(
+      interpret("FactorList[(1 + x)/(-2 - x)]").unwrap(),
+      "{{-1, 1}, {1 + x, 1}, {2 + x, -1}}"
+    );
+  }
+
   #[test]
   fn modulus_option_factors_over_gf_p() {
     for (input, expected) in [

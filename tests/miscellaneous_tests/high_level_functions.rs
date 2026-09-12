@@ -2253,6 +2253,51 @@ mod high_level_functions {
       );
     }
 
+    /// The univariate integer path cannot represent several variables, and
+    /// the fallback used to return `{{expr, 1}}` — dropping the unit entry
+    /// and leaving the sign inside the factor.
+    #[test]
+    fn multivariate_goes_through_factor_square_free() {
+      assert_eq!(
+        interpret("FactorSquareFreeList[x + y]").unwrap(),
+        "{{1, 1}, {x + y, 1}}"
+      );
+      assert_eq!(
+        interpret("FactorSquareFreeList[-x - y]").unwrap(),
+        "{{-1, 1}, {x + y, 1}}"
+      );
+      assert_eq!(
+        interpret("FactorSquareFreeList[2*x + 2*y]").unwrap(),
+        "{{2, 1}, {x + y, 1}}"
+      );
+      assert_eq!(
+        interpret("FactorSquareFreeList[(x + y)^2]").unwrap(),
+        "{{1, 1}, {x + y, 2}}"
+      );
+      assert_eq!(
+        interpret("FactorSquareFreeList[x*y]").unwrap(),
+        "{{1, 1}, {x, 1}, {y, 1}}"
+      );
+      assert_eq!(
+        interpret("FactorSquareFreeList[x^2 + y^2]").unwrap(),
+        "{{1, 1}, {x^2 + y^2, 1}}"
+      );
+    }
+
+    /// A factor whose content is ±1 keeps its sign inside the polynomial
+    /// unless it is normalised out — the same gap `FactorList` had.
+    #[test]
+    fn unit_content_moves_into_the_unit_entry() {
+      assert_eq!(
+        interpret("FactorSquareFreeList[-(1 + x)]").unwrap(),
+        "{{-1, 1}, {1 + x, 1}}"
+      );
+      assert_eq!(
+        interpret("FactorSquareFreeList[1 - x]").unwrap(),
+        "{{-1, 1}, {-1 + x, 1}}"
+      );
+    }
+
     #[test]
     fn test_linear_polynomial() {
       assert_eq!(
