@@ -71,11 +71,60 @@ fn integer_coeff_of_term(t: &Expr) -> Option<BigInt> {
 /// distributing the monomial argument; this reduces it to the wolframscript
 /// form (3 - 18 x + 18 x^2 - 4 x^3)/3. A no-op for non-fraction results or when
 /// any term carries a non-integer coefficient.
-fn reduce_poly_over_integer(expr: Expr) -> Result<Expr, InterpreterError> {
-  // Extract (polynomial, integer denominator d) from either the `poly / d`
-  // (BinaryOp Divide) form or the post-evaluation `(1/d) * poly` form
-  // (Times of a Rational[1, d] coefficient and a Plus). Returns None otherwise.
-  // The denominator can be an `Integer` or, for large `n!`, a `BigInteger`.
+/// Put a `LegendreP` result into the shape wolframscript returns.
+///
+/// With a free symbol in the argument the polynomial is collected over its
+/// common denominator, numerator expanded: `LegendreP[2, x + 1]` is
+/// `(2 + 6*x + 3*x^2)/2`, not `(-1 + 3*(1 + x)^2)/2`. Without one it is a
+/// plain sum of rational-coefficient terms instead: `LegendreP[2, E]` is
+/// `-1/2 + (3*E^2)/2`, not `(-1 + 3*E^2)/2`. Both shapes are stable in
+/// wolframscript — neither `Plus` nor `Times` rewrites into the other — so
+/// the split has to be made here, where the result is built.
+fn collect_or_distribute(
+  expr: Expr,
+  argument: &Expr,
+) -> Result<Expr, InterpreterError> {
+  if mentions_a_variable(argument) {
+    return expand_numerator(expr);
+  }
+  crate::evaluator::evaluate_function_call_ast("Expand", &[expr])
+}
+
+/// Expand the numerator of a `poly / d` result, leaving the denominator
+/// alone; anything else is expanded whole.
+///
+/// `Together[Expand[…]]` would produce the same shape, but it mis-reduces
+/// once the denominator exceeds `i128` — and the denominators here are
+/// factorials, which reach that at `35!`. `LaguerreL[35, x] /. x -> 2` came
+/// out as a large positive rational instead of `LaguerreL[35, 2]`.
+fn expand_numerator(expr: Expr) -> Result<Expr, InterpreterError> {
+  let Some((poly, d)) = split_poly_over_integer(&expr) else {
+    return crate::evaluator::evaluate_function_call_ast("Expand", &[expr]);
+  };
+  let expanded =
+    crate::evaluator::evaluate_function_call_ast("Expand", &[poly])?;
+  Ok(div2(expanded, bigint_to_expr(d)))
+}
+
+/// Whether `expr` mentions a symbol the result could be a polynomial *in*.
+///
+/// Unlike `has_free_symbols`, a function head does not count: `Log[2]` is as
+/// constant as `Pi` here, and wolframscript distributes `LegendreP[2, …]`
+/// for both.
+fn mentions_a_variable(expr: &Expr) -> bool {
+  if matches!(expr, Expr::Identifier(_)) {
+    return crate::evaluator::has_free_symbols(expr);
+  }
+  crate::syntax::expr_children(expr)
+    .into_iter()
+    .any(mentions_a_variable)
+}
+
+/// Split `poly / d` into its parts, from either the `poly / d` (BinaryOp
+/// Divide) form or the post-evaluation `(1/d) * poly` form (Times of a
+/// `Rational[1, d]` coefficient and a Plus). Returns None otherwise. The
+/// denominator can be an `Integer` or, for large `n!`, a `BigInteger`.
+fn split_poly_over_integer(expr: &Expr) -> Option<(Expr, BigInt)> {
   let as_int_denom = |e: &Expr| -> Option<BigInt> {
     match e {
       Expr::Integer(d) if *d != 0 => Some(BigInt::from(*d)),
@@ -83,7 +132,7 @@ fn reduce_poly_over_integer(expr: Expr) -> Result<Expr, InterpreterError> {
       _ => None,
     }
   };
-  let parts: Option<(Expr, BigInt)> = match &expr {
+  match expr {
     Expr::BinaryOp {
       op: BinaryOperator::Divide,
       left,
@@ -118,8 +167,11 @@ fn reduce_poly_over_integer(expr: Expr) -> Result<Expr, InterpreterError> {
       }
     }
     _ => None,
-  };
-  let Some((poly, d)) = parts else {
+  }
+}
+
+fn reduce_poly_over_integer(expr: Expr) -> Result<Expr, InterpreterError> {
+  let Some((poly, d)) = split_poly_over_integer(&expr) else {
     return Ok(expr);
   };
   let mut content = BigInt::from(0);
@@ -559,7 +611,8 @@ pub fn legendre_p_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // to `2^k x^k` (matching wolframscript); sum arguments stay factored.
         // Then reduce the polynomial-over-factorial fraction to lowest terms.
         let evaluated = crate::evaluator::evaluate_expr_to_expr(&expr)?;
-        reduce_poly_over_integer(evaluated)
+        let reduced = reduce_poly_over_integer(evaluated)?;
+        collect_or_distribute(reduced, &args[1])
       } else {
         Ok(unevaluated("LegendreP", args))
       }
@@ -2941,7 +2994,12 @@ pub fn laguerre_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // to `2^k x^k` (matching wolframscript); sum arguments stay factored.
       // Then reduce the polynomial-over-factorial fraction to lowest terms.
       let evaluated = crate::evaluator::evaluate_expr_to_expr(&expr)?;
-      reduce_poly_over_integer(evaluated)
+      let reduced = reduce_poly_over_integer(evaluated)?;
+      // Unlike `LegendreP`, wolframscript collects `LaguerreL` over its
+      // common denominator whatever the argument — `LaguerreL[2, Pi]` is
+      // `(2 - 4*Pi + Pi^2)/2`, not the distributed sum — but it does expand
+      // the numerator: `LaguerreL[2, x + 1]` is `(-1 - 2*x + x^2)/2`.
+      expand_numerator(reduced)
     }
   }
 }

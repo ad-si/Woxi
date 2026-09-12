@@ -1784,6 +1784,57 @@ mod legendre_p {
     );
   }
 
+  /// wolframscript collects the polynomial over its common denominator only
+  /// when the argument mentions a symbol; otherwise it returns a plain sum
+  /// of rational-coefficient terms. Both shapes are stable there — neither
+  /// `Plus` nor `Times` rewrites into the other — so the split is made when
+  /// the result is built. Found by the differential fuzzer on
+  /// `LegendreP[4, E]`.
+  #[test]
+  fn symbol_free_argument_distributes() {
+    assert_eq!(interpret("LegendreP[2, E]").unwrap(), "-1/2 + (3*E^2)/2");
+    assert_eq!(interpret("LegendreP[2, Pi]").unwrap(), "-1/2 + (3*Pi^2)/2");
+    assert_eq!(
+      interpret("LegendreP[3, E]").unwrap(),
+      "(-3*E)/2 + (5*E^3)/2"
+    );
+    assert_eq!(
+      interpret("LegendreP[4, E]").unwrap(),
+      "3/8 - (15*E^2)/4 + (35*E^4)/8"
+    );
+    // A function head is not a variable: `Log[2]` is as constant as `Pi`.
+    assert_eq!(
+      interpret("LegendreP[2, Log[2]]").unwrap(),
+      "-1/2 + (3*Log[2]^2)/2"
+    );
+  }
+
+  /// An argument with a symbol keeps the collected form, and its numerator
+  /// is expanded: `(-1 + 3*(1 + x)^2)/2` was left unexpanded before.
+  #[test]
+  fn symbolic_argument_collects_and_expands() {
+    assert_eq!(interpret("LegendreP[2, a]").unwrap(), "(-1 + 3*a^2)/2");
+    assert_eq!(
+      interpret("LegendreP[2, x + 1]").unwrap(),
+      "(2 + 6*x + 3*x^2)/2"
+    );
+    assert_eq!(
+      interpret("LegendreP[3, x + 1]").unwrap(),
+      "(2 + 12*x + 15*x^2 + 5*x^3)/2"
+    );
+    assert_eq!(interpret("LegendreP[2, 2*x]").unwrap(), "(-1 + 12*x^2)/2");
+    assert_eq!(interpret("LegendreP[2, Sqrt[x]]").unwrap(), "(-1 + 3*x)/2");
+  }
+
+  /// A fully numeric argument still collapses to a number.
+  #[test]
+  fn numeric_arguments_collapse() {
+    assert_eq!(interpret("LegendreP[2, Sqrt[2]]").unwrap(), "5/2");
+    assert_eq!(interpret("LegendreP[2, 2/3]").unwrap(), "1/6");
+    assert_eq!(interpret("LegendreP[2, I]").unwrap(), "-2");
+    assert_eq!(interpret("LegendreP[2, 1.5]").unwrap(), "2.875");
+  }
+
   #[test]
   fn at_zero() {
     assert_eq!(interpret("LegendreP[2, 0]").unwrap(), "-1/2");
@@ -3661,6 +3712,21 @@ mod laguerre_l {
       interpret("LaguerreL[3, x]").unwrap(),
       "(6 - 18*x + 9*x^2 - x^3)/6"
     );
+  }
+
+  /// Unlike `LegendreP`, wolframscript collects `LaguerreL` over its common
+  /// denominator whatever the argument — but it expands the numerator.
+  #[test]
+  fn compound_argument_expands_the_numerator() {
+    assert_eq!(
+      interpret("LaguerreL[2, x + 1]").unwrap(),
+      "(-1 - 2*x + x^2)/2"
+    );
+    assert_eq!(
+      interpret("LaguerreL[2, Pi]").unwrap(),
+      "(2 - 4*Pi + Pi^2)/2"
+    );
+    assert_eq!(interpret("LaguerreL[2, E]").unwrap(), "(2 - 4*E + E^2)/2");
   }
 
   #[test]
