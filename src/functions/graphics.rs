@@ -858,6 +858,16 @@ enum Primitive {
     full: bool,
     style: StyleState,
   },
+  /// `InfiniteLine[{p1, p2}]`/`InfiniteLine[p, v]` (the whole line through
+  /// `p` along `v`) or, with `half`, `HalfLine[…]` (only the ray from `p` in
+  /// the `v` direction). Extended past the visible plot range at render
+  /// time, the same way `HalfPlanePrim` is.
+  InfiniteLinePrim {
+    p: (f64, f64),
+    v: (f64, f64),
+    half: bool,
+    style: StyleState,
+  },
   /// A fixed-pixel-size marker (e.g. a `Locator`'s appearance graphic)
   /// centered on a data-space point. The pre-rendered SVG is embedded at
   /// `w`×`h` screen pixels regardless of the plot's coordinate scale.
@@ -886,7 +896,8 @@ impl Primitive {
       | Self::ArrowPrim { style, .. }
       | Self::TextPrim { style, .. }
       | Self::BezierCurvePrim { style, .. }
-      | Self::HalfPlanePrim { style, .. } => Some(style),
+      | Self::HalfPlanePrim { style, .. }
+      | Self::InfiniteLinePrim { style, .. } => Some(style),
       Self::RasterPrim { .. }
       | Self::MarkerPrim { .. }
       | Self::InsetGraphic { .. } => None,
@@ -2062,6 +2073,12 @@ fn collect_primitives(
         "InfinitePlane" => {
           parse_infinite_plane(args, style, prims);
         }
+        "InfiniteLine" if !args.is_empty() => {
+          parse_infinite_line(args, style, prims, false);
+        }
+        "HalfLine" if !args.is_empty() => {
+          parse_infinite_line(args, style, prims, true);
+        }
         // Rotate[g, θ] rotates g by θ radians counterclockwise about the
         // center of its bounding box; Rotate[g, θ, {x, y}] about the point
         // {x, y}. Collect the inner primitives, then rotate their coordinates.
@@ -2825,6 +2842,44 @@ fn parse_infinite_plane(
     v: (1.0, 0.0),
     w: (0.0, 1.0),
     full: true,
+    style: style.clone(),
+  });
+}
+
+/// `InfiniteLine[{p1, p2}]` (the line through two points) or
+/// `InfiniteLine[p, v]` (through `p` along direction `v`); `HalfLine` takes
+/// the same two forms but only draws from `p` onward.
+fn parse_infinite_line(
+  args: &[Expr],
+  style: &StyleState,
+  prims: &mut Vec<Primitive>,
+  half: bool,
+) {
+  let (p, v) = if args.len() >= 2
+    && let (Some(p), Some(v)) =
+      (expr_to_point(&args[0]), expr_to_point(&args[1]))
+  {
+    (p, v)
+  } else {
+    let Expr::List(pts) = &args[0] else {
+      return;
+    };
+    if pts.len() != 2 {
+      return;
+    }
+    let (Some(p1), Some(p2)) = (expr_to_point(&pts[0]), expr_to_point(&pts[1]))
+    else {
+      return;
+    };
+    (p1, (p2.0 - p1.0, p2.1 - p1.1))
+  };
+  if v.0 == 0.0 && v.1 == 0.0 {
+    return;
+  }
+  prims.push(Primitive::InfiniteLinePrim {
+    p,
+    v,
+    half,
     style: style.clone(),
   });
 }
@@ -4163,6 +4218,12 @@ fn primitive_bbox(prim: &Primitive) -> BBox {
       bb.include_point(p.0 + v.0, p.1 + v.1);
       bb.include_point(p.0 + w.0, p.1 + w.1);
     }
+    // Likewise an unbounded line only anchors the range at its own point
+    // and one step along its direction.
+    Primitive::InfiniteLinePrim { p, v, .. } => {
+      bb.include_point(p.0, p.1);
+      bb.include_point(p.0 + v.0, p.1 + v.1);
+    }
   }
   bb
 }
@@ -4497,6 +4558,14 @@ fn rotate_primitive(
       full: *full,
       style: style.clone(),
     },
+    Primitive::InfiniteLinePrim { p, v, half, style } => {
+      Primitive::InfiniteLinePrim {
+        p: rp(p.0, p.1),
+        v: rv(v.0, v.1),
+        half: *half,
+        style: style.clone(),
+      }
+    }
     // A marker is a screen-space icon anchored on a data point: transforms
     // move the anchor and leave the icon itself untouched.
     Primitive::MarkerPrim { x, y, w, h, svg } => {
@@ -4688,6 +4757,14 @@ fn translate_primitive(prim: &Primitive, dx: f64, dy: f64) -> Primitive {
       full: *full,
       style: style.clone(),
     },
+    Primitive::InfiniteLinePrim { p, v, half, style } => {
+      Primitive::InfiniteLinePrim {
+        p: tp(p.0, p.1),
+        v: *v,
+        half: *half,
+        style: style.clone(),
+      }
+    }
     Primitive::MarkerPrim { x, y, w, h, svg } => Primitive::MarkerPrim {
       x: x + dx,
       y: y + dy,
@@ -4937,6 +5014,15 @@ fn scale_primitive(
       full: *full,
       style: style.clone(),
     },
+    Primitive::InfiniteLinePrim { p, v, half, style } => {
+      let (nx, ny) = sp(p.0, p.1);
+      Primitive::InfiniteLinePrim {
+        p: (nx, ny),
+        v: (v.0 * sx, v.1 * sy),
+        half: *half,
+        style: style.clone(),
+      }
+    }
     Primitive::MarkerPrim { x, y, w, h, svg } => {
       let (nx, ny) = sp(*x, *y);
       Primitive::MarkerPrim {
@@ -6452,6 +6538,32 @@ fn render_primitive(
         fill_opacity,
       ));
     }
+    Primitive::InfiniteLinePrim { p, v, half, style } => {
+      // Extend far past the visible plot range in the drawn direction(s);
+      // the SVG viewport clips it. A `HalfLine` only extends forward.
+      let ext = 10.0 * (bb.width() + bb.height());
+      let len = (v.0 * v.0 + v.1 * v.1).sqrt();
+      let (ux, uy) = (v.0 / len * ext, v.1 / len * ext);
+      let (sx, sy) = if *half {
+        (p.0, p.1)
+      } else {
+        (p.0 - ux, p.1 - uy)
+      };
+      let (ex, ey) = (p.0 + ux, p.1 + uy);
+      let color = style.effective_color();
+      let sw = thickness_px(style.thickness, bb, svg_w).max(0.5);
+      let dash = dash_attr(style.dashing.as_ref(), bb, svg_w);
+      let cap = stroke_linecap_attr(style.cap_form);
+      out.push_str(&format!(
+        "<line x1=\"{:.2}\" y1=\"{:.2}\" x2=\"{:.2}\" y2=\"{:.2}\" stroke=\"{}\" stroke-width=\"{sw:.2}\" stroke-linecap=\"{cap}\"{dash}{}/>\n",
+        coord_x(sx, bb, svg_w),
+        coord_y(sy, bb, svg_h),
+        coord_x(ex, bb, svg_w),
+        coord_y(ey, bb, svg_h),
+        color.to_svg_rgb(),
+        color.opacity_attr(),
+      ));
+    }
     Primitive::ArrowPrim {
       points,
       setback,
@@ -7204,6 +7316,9 @@ fn primitives_to_box_elements(primitives: &[Primitive]) -> Vec<String> {
       }
       Primitive::HalfPlanePrim { .. } => {
         // Unbounded fills have no fixed-coordinate box form; skip
+      }
+      Primitive::InfiniteLinePrim { .. } => {
+        // Unbounded lines have no fixed-coordinate box form; skip
       }
       Primitive::MarkerPrim { .. } => {
         // Screen-space marker icons have no box form; skip

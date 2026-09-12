@@ -7211,6 +7211,53 @@ mod tests {
     );
   }
 
+  /// A triangle-center Manipulate with three `Locator`-draggable vertices
+  /// and a small helper drawing the (extended) edge lines through each pair
+  /// of vertices with `InfiniteLine`, alongside the filled triangle and its
+  /// centroid — the general shape a triangle-geometry Wolfram Demonstrations
+  /// Project notebook uses to show a center against the extended sides
+  /// (independently written here, not copied from any specific one).
+  /// Regression: `InfiniteLine`/`HalfLine` were only drawn inside
+  /// `Graphics3D`; ordinary 2D `Graphics` silently dropped them, so a
+  /// Manipulate like this rendered its triangle and centroid but left the
+  /// extended edge lines entirely missing from the widget's picture.
+  #[test]
+  fn manipulate_locator_triangle_with_infinite_edge_lines() {
+    let code = r#"Manipulate[
+      Graphics[{
+        {Gray, InfiniteLine[{pA, pB}], InfiniteLine[{pB, pC}], InfiniteLine[{pC, pA}]},
+        {LightBlue, EdgeForm[Blue], Polygon[{pA, pB, pC}]},
+        {Red, PointSize[0.02], Point[Mean[{pA, pB, pC}]]}
+      }, PlotRange -> {{-5, 5}, {-5, 5}}],
+      {{pA, {0, 3}}, {-5, -5}, {5, 5}, Locator},
+      {{pB, {-3, -2}}, {-5, -5}, {5, 5}, Locator},
+      {{pC, {3, -2}}, {-5, -5}, {5, 5}, Locator}
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("a Locator triangle with InfiniteLine edges should build a ManipulateState");
+    assert_eq!(state.error, None, "the body must evaluate cleanly");
+    assert!(state.graphics_handle.is_some(), "the triangle must render");
+
+    let bindings: Vec<(String, String)> = state
+      .controls
+      .iter()
+      .filter(|c| c.binds_variable())
+      .map(|c| (c.name().to_string(), c.current_code()))
+      .collect();
+    let svg = woxi::with_scoped_globals(&bindings, || {
+      woxi::interpret_with_stdout(&state.body)
+    })
+    .expect("the body must evaluate")
+    .graphics
+    .expect("the body must render a graphic");
+    assert!(
+      svg.matches("<line ").count() >= 3,
+      "the three extended edge lines must be drawn: {svg}"
+    );
+  }
+
   /// A dissection Manipulate assembling colored polygon pieces with
   /// `Translate`/`Rotate`, a boolean checkbox control (`{False, True}`
   /// domain) toggling a hint overlay, and several `Tiny` step sliders with
