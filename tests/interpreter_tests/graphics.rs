@@ -20761,6 +20761,40 @@ mod manipulate {
     assert!(json.contains("MemberQ[picks, psin]"), "{json}");
   }
 
+  /// A bare `Checkbox[Dynamic[var], …]` drawn directly by the body — as
+  /// opposed to one given as a Manipulate control spec, or as part of a
+  /// `Grid`/`Table` of checkboxes passed as a trailing display argument —
+  /// used to stay embedded in the body as an inert picture: only
+  /// `TogglerBar` and `Button` were lifted out of the body into a live
+  /// display. Toggling the checkbox's backing `ControlType -> None`
+  /// variable therefore left the rendered picture unchanged.
+  #[test]
+  fn spec_body_checkbox_lifts_into_a_live_display() {
+    let expr = interpret_to_expr(
+      "Manipulate[Row[{\"n = \", n, Checkbox[Dynamic[flag], {False, \
+       True}]}], {{n, 1}, 0, 10}, {{flag, True}, {True, False}, \
+       ControlType -> None}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("a checkbox-in-body spec");
+    assert_eq!(
+      spec.state,
+      vec![("flag".to_string(), "True".to_string())],
+      "flag is hidden state, not a visible control"
+    );
+    assert_eq!(spec.displays.len(), 1);
+    assert!(
+      spec.displays[0].starts_with("Checkbox[Dynamic[flag]"),
+      "{}",
+      spec.displays[0]
+    );
+    assert!(
+      !spec.body_code.contains("Checkbox"),
+      "the checkbox must be lifted out of the body, replaced by Nothing: {}",
+      spec.body_code
+    );
+  }
+
   /// `Appearance -> "Vertical"` on a `CheckboxBar` stacks its toggle buttons
   /// in a column instead of Wolfram's default horizontal bar: the generated
   /// `TogglerBar[…]` display carries the option through, and
