@@ -461,6 +461,7 @@ fn push_field_plot_overlays(
     svg.push_str(&crate::functions::plot_epilog::render_epilog_svg(
       &opts.epilog,
       &epilog_area,
+      "epilog",
     ));
   }
   if opts.frame_labels.bottom.is_empty()
@@ -2068,6 +2069,7 @@ pub fn vector_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     svg.push_str(&crate::functions::plot_epilog::render_epilog_svg(
       &epilog,
       &epilog_area,
+      "epilog",
     ));
   }
 

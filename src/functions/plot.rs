@@ -2574,8 +2574,11 @@ fn inject_epilog(
     y_max,
     scale,
   };
-  let epilog_svg =
-    crate::functions::plot_epilog::render_epilog_svg(&opts.epilog, &area);
+  let epilog_svg = crate::functions::plot_epilog::render_epilog_svg(
+    &opts.epilog,
+    &area,
+    "epilog",
+  );
   if let Some(pos) = buf.rfind("</svg>") {
     buf.insert_str(pos, &epilog_svg);
   }
@@ -2609,8 +2612,11 @@ fn inject_prolog(
     y_max,
     scale,
   };
-  let prolog_svg =
-    crate::functions::plot_epilog::render_epilog_svg(&opts.prolog, &area);
+  let prolog_svg = crate::functions::plot_epilog::render_epilog_svg(
+    &opts.prolog,
+    &area,
+    "prolog",
+  );
   if let Some(tag_start) = buf.find("<svg")
     && let Some(tag_end) = buf[tag_start..].find('>')
   {

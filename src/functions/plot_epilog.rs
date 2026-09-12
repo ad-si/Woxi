@@ -115,7 +115,26 @@ impl EpilogStyle {
 
 /// Render a list of Epilog primitives as an SVG fragment positioned over
 /// the plotting area described by `area`.
-pub(crate) fn render_epilog_svg(prims: &[Expr], area: &PlotArea) -> String {
+///
+/// The fragment is wrapped in a clip-path matching the plotting rectangle
+/// (`PlotRangeClipping -> Automatic`, Wolfram's default): a primitive whose
+/// data coordinates fall outside `[x_min, x_max] x [y_min, y_max]` — a
+/// caption anchored just past the frame, a marker at a value the current
+/// control settings pushed off the visible range — must be cut off at the
+/// frame edge rather than drawn into the plot's margins or off the canvas.
+/// `kind` (`"prolog"` or `"epilog"`) distinguishes the two fragments'
+/// clip ids: a single plot injects both, one right after the other, and
+/// SVG requires every `id` in a document to be unique — reusing one id for
+/// both would leave the second `<clipPath>` a duplicate that a renderer is
+/// free to ignore, silently un-clipping whichever fragment lost out. The
+/// rest of the id is derived from the plotting rectangle itself, so two
+/// differently-placed/-sized plots merged into one document still never
+/// collide.
+pub(crate) fn render_epilog_svg(
+  prims: &[Expr],
+  area: &PlotArea,
+  kind: &str,
+) -> String {
   if (area.x_max - area.x_min).abs() < 1e-12
     || (area.y_max - area.y_min).abs() < 1e-12
   {
@@ -126,7 +145,14 @@ pub(crate) fn render_epilog_svg(prims: &[Expr], area: &PlotArea) -> String {
   for prim in prims {
     render_item(prim, &mut style, area, &mut out);
   }
-  out
+  let clip_id = format!(
+    "{kind}Clip_{:.0}_{:.0}_{:.0}_{:.0}",
+    area.x0, area.y0, area.w, area.h
+  );
+  format!(
+    "<defs><clipPath id=\"{clip_id}\"><rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\"/></clipPath></defs><g clip-path=\"url(#{clip_id})\">{out}</g>",
+    area.x0, area.y0, area.w, area.h
+  )
 }
 
 /// A position written either as `{x, y}` or as `Scaled[{sx, sy}]` — the
