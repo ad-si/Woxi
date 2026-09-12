@@ -14914,6 +14914,29 @@ mod ratios_tests {
     assert_eq!(interpret("Ratios[{}]").unwrap(), "{}");
   }
 
+  /// A zero denominator must report the `Divide` messages wolframscript's
+  /// `Ratios` emits, not the `Power::infy` + `Infinity::indet` pair the
+  /// `a * b^-1` route produces. Found by the differential fuzzer on
+  /// `Ratios[{0, 0}]`.
+  #[test]
+  fn ratios_zero_denominator_reports_divide_messages() {
+    for (code, value, message) in [
+      ("Ratios[{0, 0}]", "{Indeterminate}", "Divide::indet"),
+      ("Ratios[{0, 1}]", "{ComplexInfinity}", "Divide::infy"),
+      ("Ratios[{1, 0, 1}]", "{0, ComplexInfinity}", "Divide::infy"),
+    ] {
+      let result = interpret_with_stdout(code).unwrap();
+      assert_eq!(result.result, value, "value for {code}");
+      // The message text is laid out as a 2D fraction, so the tag is not
+      // at the start of the line.
+      assert!(
+        result.warnings.iter().any(|m| m.contains(message)),
+        "expected {message} for {code}, got {:?}",
+        result.warnings
+      );
+    }
+  }
+
   #[test]
   fn ratios_single_element() {
     assert_eq!(interpret("Ratios[{5}]").unwrap(), "{}");

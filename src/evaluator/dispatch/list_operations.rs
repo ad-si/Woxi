@@ -3627,10 +3627,14 @@ pub fn dispatch_list_operations(
           }
           let mut next = Vec::with_capacity(current.len() - 1);
           for i in 1..current.len() {
-            let ratio = match evaluate_expr_to_expr(&div2(
-              current[i].clone(),
-              current[i - 1].clone(),
-            )) {
+            // Through the `Divide` head, not `a * b^-1`: a zero denominator
+            // has to report `Divide::infy` / `Divide::indet`, which is what
+            // wolframscript's `Ratios` emits. The `Times`/`Power` route
+            // reports `Power::infy` plus `Infinity::indet` instead.
+            let ratio = match evaluate_function_call_ast(
+              "Divide",
+              &[current[i].clone(), current[i - 1].clone()],
+            ) {
               Ok(v) => v,
               Err(e) => return Some(Err(e)),
             };
