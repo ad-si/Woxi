@@ -111,6 +111,11 @@ How it works:
   `--print-cases` shows the generated programs without evaluating them.
 - A woxi crash, non-zero exit, or hang on generated input is always
   reported, independent of the oracle's answer.
+- A snippet starting with `-` is parenthesised before it reaches either
+  CLI. `wolframscript -code -2` exits 255 with "-code called with no
+  argument", and the shrinker reaches bare negative literals routinely by
+  hoisting an argument out of its call, so without the guard shrinking
+  walks off towards a "reproducer" that is only a transport failure.
 - Exit code: 0 = no divergences, 1 = divergences found (with shrunk
   reproducers in the report), 2 = setup error.
 

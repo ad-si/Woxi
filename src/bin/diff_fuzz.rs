@@ -770,6 +770,23 @@ enum Oracle {
   },
 }
 
+/// Make a snippet safe to pass as a CLI argument.
+///
+/// `wolframscript -code -2` exits 255 with "-code called with no argument":
+/// its argument parser takes anything starting with `-` for another flag.
+/// The shrinker reaches such snippets routinely — hoisting an argument out
+/// of a call leaves bare negative literals — and the resulting transport
+/// failure looks exactly like a divergence, so shrinking would then run off
+/// towards a reproducer that is not one. Parenthesising changes nothing
+/// semantically, and both tools get the identical string.
+fn cli_safe(code: &str) -> String {
+  if code.starts_with('-') {
+    format!("({code})")
+  } else {
+    code.to_string()
+  }
+}
+
 impl Oracle {
   fn describe(&self) -> String {
     match self {
@@ -782,12 +799,12 @@ impl Oracle {
     match self {
       Oracle::Wolframscript { path } => {
         let mut cmd = Command::new(path);
-        cmd.arg("-code").arg(code);
+        cmd.arg("-code").arg(cli_safe(code));
         run_with_timeout(cmd, timeout)
       }
       Oracle::Woxi { path } => {
         let mut cmd = Command::new(path);
-        cmd.arg("eval").arg(code);
+        cmd.arg("eval").arg(cli_safe(code));
         run_with_timeout(cmd, timeout)
       }
     }
@@ -800,7 +817,7 @@ fn woxi_eval(
   timeout: Duration,
 ) -> std::io::Result<RunOutput> {
   let mut cmd = Command::new(woxi);
-  cmd.arg("eval").arg(code);
+  cmd.arg("eval").arg(cli_safe(code));
   run_with_timeout(cmd, timeout)
 }
 
@@ -1424,6 +1441,18 @@ mod tests {
       "unterminated segment must stay suspicious"
     );
     assert_eq!(segments[2], None);
+  }
+
+  /// A snippet starting with `-` must be parenthesised before it reaches
+  /// either CLI: `wolframscript -code -2` takes the snippet for a flag and
+  /// fails, which the harness would otherwise report as a divergence.
+  /// Shrinking produces such snippets routinely.
+  #[test]
+  fn leading_minus_is_parenthesised() {
+    assert_eq!(cli_safe("-2"), "(-2)");
+    assert_eq!(cli_safe("-Sqrt[2]"), "(-Sqrt[2])");
+    assert_eq!(cli_safe("Plus[1, 2]"), "Plus[1, 2]");
+    assert_eq!(cli_safe("{-1, -2}"), "{-1, -2}");
   }
 
   /// The bag comparator must tolerate messages landing on different
