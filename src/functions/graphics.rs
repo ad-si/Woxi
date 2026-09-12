@@ -1495,6 +1495,36 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
         }
         true
       }
+      "AbsoluteDashing" if !args.is_empty() => {
+        // AbsoluteDashing[{d1, d2, ...}] is Dashing's absolute counterpart —
+        // every length is literal pixels (printer's points) rather than a
+        // fraction of the image width, the same relationship
+        // AbsoluteThickness has to Thickness. Stored negative so dash_attr
+        // treats it as literal px.
+        match &args[0] {
+          Expr::Identifier(s) if s == "None" => style.dashing = None,
+          Expr::List(items) if items.is_empty() => style.dashing = None,
+          Expr::List(items) => {
+            let dashes: Vec<f64> = items
+              .iter()
+              .filter_map(|e| {
+                dash_size_to_f64(e).or_else(|| expr_to_f64(e).map(|d| -d.abs()))
+              })
+              .collect();
+            if !dashes.is_empty() {
+              style.dashing = Some(dashes);
+            }
+          }
+          _ => {
+            if let Some(d) = dash_size_to_f64(&args[0])
+              .or_else(|| expr_to_f64(&args[0]).map(|d| -d.abs()))
+            {
+              style.dashing = Some(vec![d, d]);
+            }
+          }
+        }
+        true
+      }
       "EdgeForm" => {
         if args.is_empty() {
           style.edge_form = Some(EdgeForm {

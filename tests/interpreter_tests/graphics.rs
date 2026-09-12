@@ -1163,6 +1163,38 @@ mod graphics {
       assert_eq!(width("AbsoluteThickness[1]"), "1.00");
     }
 
+    /// `AbsoluteDashing` is `Dashing`'s absolute counterpart — every length
+    /// is literal pixels, the same relationship `AbsoluteThickness` has to
+    /// `Thickness` — so it must reach the SVG as a `stroke-dasharray` too,
+    /// rather than silently drawing a solid line. `Dashing[{0.05, 0.05}]` on
+    /// the 360px-wide default image is `18,18`; `AbsoluteDashing[{4, 6}]` is
+    /// `4,6` at any image width.
+    #[test]
+    fn absolute_dashing_produces_dasharray() {
+      let dasharray = |directive: &str| {
+        let svg = export_svg(&format!(
+          "Graphics[{{{directive}, Line[{{{{0,0}},{{1,1}}}}]}}]"
+        ));
+        let i = svg.find("stroke-dasharray=\"")?;
+        let rest = &svg[i + "stroke-dasharray=\"".len()..];
+        Some(rest.split('"').next().unwrap().to_string())
+      };
+      assert_eq!(dasharray("Dashing[{0.05, 0.05}]"), Some("18.0,18.0".into()));
+      assert_eq!(dasharray("AbsoluteDashing[{4, 6}]"), Some("4.0,6.0".into()));
+      // A one-element list is left as-is (SVG auto-doubles an odd-length
+      // dasharray), matching how the plain `Dashing[{2}]` list branch works.
+      assert_eq!(dasharray("AbsoluteDashing[{2}]"), Some("2.0".into()));
+      assert_eq!(dasharray("AbsoluteDashing[{}]"), None);
+      // A negative user-supplied length must still land as literal pixels,
+      // not get flipped into dash_attr's "fraction of image width" branch
+      // (a naive `-d` on an already-negative `d` would produce +4.0, read
+      // as 4x the image width instead of ~4 pixels).
+      assert_eq!(
+        dasharray("AbsoluteDashing[{-4, 6}]"),
+        Some("4.0,6.0".into())
+      );
+    }
+
     #[test]
     fn multiple_colors() {
       insta::assert_snapshot!(export_svg(
