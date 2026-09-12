@@ -275,6 +275,38 @@ mod bessel_j {
       "(Sqrt[2/Pi]*Cos[x])/Sqrt[x]"
     );
   }
+
+  /// `J_n(-z) = (-1)^n J_n(z)` at integer order — the parity in the
+  /// *argument*, which only the parity in the *order* had covered. Found by
+  /// the differential fuzzer.
+  #[test]
+  fn negative_argument_parity() {
+    assert_eq!(interpret("BesselJ[0, -2]").unwrap(), "BesselJ[0, 2]");
+    assert_eq!(interpret("BesselJ[1, -2]").unwrap(), "-BesselJ[1, 2]");
+    assert_eq!(interpret("BesselJ[2, -2]").unwrap(), "BesselJ[2, 2]");
+    assert_eq!(interpret("BesselJ[3, -2]").unwrap(), "-BesselJ[3, 2]");
+    assert_eq!(interpret("BesselJ[1, -2/3]").unwrap(), "-BesselJ[1, 2/3]");
+    assert_eq!(interpret("BesselJ[1, -Pi]").unwrap(), "-BesselJ[1, Pi]");
+    assert_eq!(interpret("BesselJ[1, -x]").unwrap(), "-BesselJ[1, x]");
+    assert_eq!(interpret("BesselJ[2, -x]").unwrap(), "BesselJ[2, x]");
+  }
+
+  /// Both parities at once compose: `J_{-1}(-2) = -J_1(-2) = J_1(2)`.
+  #[test]
+  fn negative_order_and_argument_compose() {
+    assert_eq!(interpret("BesselJ[-1, -2]").unwrap(), "BesselJ[1, 2]");
+    assert_eq!(interpret("BesselJ[-2, -2]").unwrap(), "BesselJ[2, 2]");
+  }
+
+  /// The half-integer closed forms must still win over the parity rule,
+  /// which does not hold at non-integer order.
+  #[test]
+  fn half_order_keeps_closed_form_for_negative_argument() {
+    assert_eq!(
+      interpret("BesselJ[1/2, -x]").unwrap(),
+      "-((Sqrt[2/Pi]*Sin[x])/Sqrt[-x])"
+    );
+  }
 }
 
 mod bessel_i {
@@ -317,6 +349,18 @@ mod bessel_i {
   fn n_evaluates_order_two() {
     let result: f64 = interpret("N[BesselI[2, 1]]").unwrap().parse().unwrap();
     assert!((result - 0.13574766976703828).abs() < 1e-10);
+  }
+
+  /// `I_n(-z) = (-1)^n I_n(z)` at integer order, the same argument parity
+  /// `BesselJ` has. `BesselY` and `BesselK` have no such rule — a negative
+  /// argument crosses their branch cut.
+  #[test]
+  fn negative_argument_parity() {
+    assert_eq!(interpret("BesselI[0, -2]").unwrap(), "BesselI[0, 2]");
+    assert_eq!(interpret("BesselI[1, -2]").unwrap(), "-BesselI[1, 2]");
+    assert_eq!(interpret("BesselI[2, -2]").unwrap(), "BesselI[2, 2]");
+    assert_eq!(interpret("BesselY[1, -2]").unwrap(), "BesselY[1, -2]");
+    assert_eq!(interpret("BesselK[1, -2]").unwrap(), "BesselK[1, -2]");
   }
 }
 
@@ -3148,6 +3192,17 @@ mod sin_integral {
   #[test]
   fn symbolic_unevaluated() {
     assert_eq!(interpret("SinIntegral[x]").unwrap(), "SinIntegral[x]");
+  }
+
+  /// Si is odd. Regression: exact negative arguments fell through to the
+  /// unevaluated arm, where wolframscript pulls the sign out. Found by the
+  /// differential fuzzer.
+  #[test]
+  fn odd_in_its_argument() {
+    assert_eq!(interpret("SinIntegral[-2]").unwrap(), "-SinIntegral[2]");
+    assert_eq!(interpret("SinIntegral[-2/3]").unwrap(), "-SinIntegral[2/3]");
+    assert_eq!(interpret("SinIntegral[-x]").unwrap(), "-SinIntegral[x]");
+    assert_eq!(interpret("SinIntegral[-Pi]").unwrap(), "-SinIntegral[Pi]");
   }
 
   #[test]
@@ -9188,6 +9243,15 @@ mod sinh_integral {
   #[test]
   fn integer_unevaluated() {
     assert_eq!(interpret("SinhIntegral[1]").unwrap(), "SinhIntegral[1]");
+  }
+
+  /// Shi is odd — the same gap `SinIntegral` had. Found by the
+  /// differential fuzzer on `SinhIntegral[-8]`.
+  #[test]
+  fn odd_in_its_argument() {
+    assert_eq!(interpret("SinhIntegral[-2]").unwrap(), "-SinhIntegral[2]");
+    assert_eq!(interpret("SinhIntegral[-8]").unwrap(), "-SinhIntegral[8]");
+    assert_eq!(interpret("SinhIntegral[-x]").unwrap(), "-SinhIntegral[x]");
   }
 
   #[test]

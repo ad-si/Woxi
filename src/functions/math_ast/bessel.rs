@@ -1,6 +1,37 @@
 #[allow(unused_imports)]
 use super::*;
 
+/// `J_n(-z) = (-1)^n J_n(z)`, and the same for `I_n` — the parity both have
+/// in their *argument* at integer order, which is separate from the parity
+/// in their order. `BesselY` and `BesselK` have no such rule: a negative
+/// argument puts them on the other side of their branch cut, and
+/// wolframscript leaves those unevaluated.
+///
+/// Returns `None` when the rule does not apply (non-integer order, or an
+/// argument that is not a negation). Machine reals never reach here —
+/// `strip_negation` skips them, and their numeric kernels are already
+/// sign-correct.
+fn negated_argument_parity(
+  n_expr: &Expr,
+  z_expr: &Expr,
+  reduce: fn(&[Expr]) -> Result<Expr, InterpreterError>,
+) -> Result<Option<Expr>, InterpreterError> {
+  let Expr::Integer(n) = n_expr else {
+    return Ok(None);
+  };
+  let Some(positive_z) = strip_negation(z_expr) else {
+    return Ok(None);
+  };
+  let reduced = reduce(&[n_expr.clone(), positive_z])?;
+  if n.unsigned_abs() & 1 == 0 {
+    return Ok(Some(reduced));
+  }
+  Ok(Some(crate::evaluator::evaluate_function_call_ast(
+    "Times",
+    &[Expr::Integer(-1), reduced],
+  )?))
+}
+
 /// True if `z_expr` is `<zero_name>[order, k, ...]` whose first argument equals
 /// `n_expr` AND both `order` and `k` are concrete positive integers — the only
 /// case where wolframscript simplifies `BesselJ[n, BesselJZero[n, k, ...]]` to
@@ -96,6 +127,13 @@ pub fn bessel_j_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && let Some(result) = half_int_bessel_j(n_num, z_expr)?
   {
     return Ok(result);
+  }
+
+  // Negative argument at integer order: J_n(-z) = (-1)^n * J_n(z). Runs
+  // after the half-integer rules so `BesselJ[1/2, -x]` still expands.
+  if let Some(reduced) = negated_argument_parity(n_expr, z_expr, bessel_j_ast)?
+  {
+    return Ok(reduced);
   }
 
   // Negative integer order: J_{-n}(z) = (-1)^n * J_n(z).
@@ -610,6 +648,12 @@ pub fn bessel_i_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && let Some(result) = half_int_bessel_i(n_num, z_expr)?
   {
     return Ok(result);
+  }
+
+  // Negative argument at integer order: I_n(-z) = (-1)^n * I_n(z).
+  if let Some(reduced) = negated_argument_parity(n_expr, z_expr, bessel_i_ast)?
+  {
+    return Ok(reduced);
   }
 
   Ok(unevaluated("BesselI", args))

@@ -554,6 +554,19 @@ pub fn sin_integral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // Si is odd: SinIntegral[-x] = -SinIntegral[x]. Fold every negated
+  // argument form via the shared helper, as Erf, Erfi and the Fresnel
+  // integrals do; recursion then evaluates special values such as
+  // SinIntegral[-Infinity] = -Pi/2. `strip_negation` deliberately leaves
+  // machine reals alone — the numeric kernel below is already sign-correct.
+  if let Some(pos) = strip_negation(&args[0]) {
+    let inner = sin_integral_ast(&[pos])?;
+    return crate::evaluator::evaluate_function_call_ast(
+      "Times",
+      &[Expr::Integer(-1), inner],
+    );
+  }
+
   match &args[0] {
     // SinIntegral[0] = 0
     Expr::Integer(0) => Ok(Expr::Integer(0)),
@@ -829,6 +842,15 @@ pub fn sinh_integral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "SinhIntegral expects exactly 1 argument".into(),
     ));
+  }
+
+  // Shi is odd, exactly as Si is above.
+  if let Some(pos) = strip_negation(&args[0]) {
+    let inner = sinh_integral_ast(&[pos])?;
+    return crate::evaluator::evaluate_function_call_ast(
+      "Times",
+      &[Expr::Integer(-1), inner],
+    );
   }
 
   match &args[0] {
