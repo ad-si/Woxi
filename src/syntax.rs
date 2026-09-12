@@ -7704,6 +7704,22 @@ fn prints_as_not(e: &Expr) -> bool {
     if name == "Not" && args.len() == 1)
 }
 
+/// Whether `e` prints with a leading `-`, in either spelling. A held
+/// `Minus[x]` keeps the call form until the recursion reaches it, so the
+/// parenthesisation checks above the recursion have to recognise both:
+/// `Power[Minus[a], 2]` is `(-a)^2`, not `-a^2`, and `Minus[Minus[a]]` is
+/// `-(-a)`, not the unparsable `--a`.
+fn prints_as_negation(e: &Expr) -> bool {
+  matches!(
+    e,
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      ..
+    }
+  ) || matches!(e, Expr::FunctionCall { name, args }
+    if name == "Minus" && args.len() == 1)
+}
+
 /// Parse-side precedence (the `operator_precedence` scale) of the operator an
 /// expression prints with at top level, or `None` for forms that print
 /// self-delimiting (atoms, `f[…]`, `{…}`). Used to decide whether an operand
@@ -7991,21 +8007,27 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
   };
   let is_output = form == ExprForm::Output;
 
-  // `Not[x]` is the same node the `!` operator builds, and wolframscript
-  // writes both with the operator. Held expressions keep the call form, so
-  // route it through the operator branch below.
-  if let Expr::FunctionCall { name, args } = expr
-    && name == "Not"
-    && args.len() == 1
-  {
-    return format_expr(
-      &Expr::UnaryOp {
-        op: UnaryOperator::Not,
-        operand: Box::new(args[0].clone()),
-      },
-      form,
-    );
+  if let Some(rewritten) = operator_call_node(expr) {
+    return format_expr(&rewritten, form);
   }
+  // Parenthesisation is decided by inspecting the direct children — a
+  // `Power`'s base, a `Times` factor — so those checks have to see the
+  // operator node rather than the call spelling. Without this,
+  // `Hold[Divide[Subtract[a, b], c]]` prints as `a - b/c`, which re-parses
+  // as something else entirely. One level is enough: each child normalises
+  // its own children when the recursion reaches it.
+  let with_normalized_children;
+  let expr = if expr_children(expr)
+    .iter()
+    .any(|c| operator_call_child(c).is_some())
+  {
+    with_normalized_children = map_children(expr, &|child| {
+      operator_call_child(child).unwrap_or_else(|| child.clone())
+    });
+    &with_normalized_children
+  } else {
+    expr
+  };
 
   match expr {
     Expr::Integer(n) => n.to_string(),
@@ -10235,6 +10257,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             }
           )
           || matches!(&args[0], Expr::Integer(n) if *n < 0)
+          || prints_as_negation(&args[0])
           || matches!(
             &args[0],
             Expr::Pattern { .. }
@@ -10256,13 +10279,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           )
           || matches!(&args[1], Expr::Integer(n) if *n < 0)
           || matches!(&args[1], Expr::Real(f) if *f < 0.0)
-          || matches!(
-            &args[1],
-            Expr::UnaryOp {
-              op: UnaryOperator::Minus,
-              ..
-            }
-          )
+          || prints_as_negation(&args[1])
           || matches!(&args[1], Expr::FunctionCall { name: tname, .. } if tname == "Times")
           || matches!(&args[1], Expr::FunctionCall { name: rname, .. } if rname == "Rational")
           || matches!(
@@ -11048,14 +11065,10 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
               | BinaryOperator::Divide,
             ..
           }
-        ) || matches!(
+        ) ||
           // `-(-a)`: a second minus needs them or the two run together.
-          operand.as_ref(),
-          Expr::UnaryOp {
-            op: UnaryOperator::Minus,
-            ..
-          }
-        ) || matches!(
+          prints_as_negation(operand.as_ref())
+        || matches!(
           operand.as_ref(),
           Expr::FunctionCall { name, args } if (name == "Times" || name == "Plus") && args.len() >= 2
         ) || matches!(
@@ -15833,6 +15846,59 @@ fn is_looser_than_times_infix(e: &Expr) -> bool {
 /// A call that prints as an infix operator (`a ⋆ b`, `a ⊗ b`, `a ∧ b`, …),
 /// every one of which binds looser than `Power`: as a Power base it is
 /// parenthesised, `(a ⋆ b)^2`.
+/// `operator_call_node` restricted to the heads that are safe to rewrite in
+/// a parent's argument list.
+///
+/// `Minus` and `Not` are excluded. Both fold into their parent: `Plus`
+/// rewrites a `UnaryOp` minus into a subtraction and `Times` into a `-1`
+/// factor, which is right for an evaluated `Plus[a, Times[-1, b]]` but not
+/// for a held `Plus[a, Minus[b]]` — wolframscript prints that one as
+/// `a + -b`. Left in call form they are rendered by the recursion instead,
+/// which reaches `operator_call_node` and prints the operator anyway.
+fn operator_call_child(expr: &Expr) -> Option<Expr> {
+  match expr {
+    Expr::FunctionCall { name, .. } if name == "Minus" || name == "Not" => None,
+    _ => operator_call_node(expr),
+  }
+}
+
+/// The operator node a call spelling stands for, if it is one.
+///
+/// `Divide[a, b]`, `Subtract[a, b]`, `Minus[x]`, `Not[x]` and `List[…]` are
+/// the long forms of `/`, `-`, unary `-`, `!` and `{…}`. Evaluation rewrites
+/// them away, so they only survive inside `Hold`, `Unevaluated` and function
+/// bodies — where wolframscript still prints the operator: `Hold[Divide[a,
+/// b]]` is `Hold[a/b]`. Mapping them onto the operator nodes reuses this
+/// renderer's precedence and parenthesisation rules instead of restating
+/// them per head.
+///
+/// The arities are the ones wolframscript itself treats as the operator:
+/// `Divide[a, b, c]` and `Subtract[a, b, c]` stay in call form there, so
+/// they stay in call form here. `Minus[a, b]` is deliberately absent — it
+/// prints with a Unicode minus sign and has its own arm.
+fn operator_call_node(expr: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  let binary = |op: BinaryOperator| Expr::BinaryOp {
+    op,
+    left: Box::new(args[0].clone()),
+    right: Box::new(args[1].clone()),
+  };
+  let unary = |op: UnaryOperator| Expr::UnaryOp {
+    op,
+    operand: Box::new(args[0].clone()),
+  };
+  match (name.as_str(), args.len()) {
+    ("Not", 1) => Some(unary(UnaryOperator::Not)),
+    ("Minus", 1) => Some(unary(UnaryOperator::Minus)),
+    ("Divide", 2) => Some(binary(BinaryOperator::Divide)),
+    ("Subtract", 2) => Some(binary(BinaryOperator::Minus)),
+    ("List", _) => Some(Expr::List(args.clone())),
+    _ => None,
+  }
+}
+
 fn is_infix_display_call(e: &Expr) -> bool {
   matches!(e, Expr::FunctionCall { name, args }
   if args.len() >= 2

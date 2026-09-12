@@ -302,6 +302,93 @@ mod trailing_semicolon {
     );
   }
 
+  /// `Divide`, `Subtract`, `Minus` and `List` are the call spellings of
+  /// `/`, `-`, unary `-` and `{…}`. Evaluation rewrites them away, so they
+  /// only survive under `Hold` — where wolframscript still prints the
+  /// operator. Found by the differential fuzzer on `Hold[Divide[0, 0]]`.
+  #[test]
+  fn held_operator_call_spellings_print_as_operators() {
+    assert_eq!(interpret("Hold[Divide[0, 0]]").unwrap(), "Hold[0/0]");
+    assert_eq!(interpret("Hold[Divide[a, b]]").unwrap(), "Hold[a/b]");
+    assert_eq!(interpret("Hold[Subtract[5, 2]]").unwrap(), "Hold[5 - 2]");
+    assert_eq!(interpret("Hold[Minus[a]]").unwrap(), "Hold[-a]");
+    assert_eq!(interpret("Hold[List[1, 2]]").unwrap(), "Hold[{1, 2}]");
+    assert_eq!(interpret("Hold[List[]]").unwrap(), "Hold[{}]");
+  }
+
+  /// Only the arities wolframscript itself treats as the operator are
+  /// rewritten — `Divide` and `Subtract` are binary there, so a third
+  /// argument keeps the call form on both engines.
+  #[test]
+  fn held_operator_call_spellings_keep_other_arities() {
+    assert_eq!(
+      interpret("Hold[Divide[a, b, c]]").unwrap(),
+      "Hold[Divide[a, b, c]]"
+    );
+    assert_eq!(
+      interpret("Hold[Subtract[a, b, c]]").unwrap(),
+      "Hold[Subtract[a, b, c]]"
+    );
+  }
+
+  /// Printing the operator is only correct with the operator's
+  /// parenthesisation: `Divide[Subtract[a, b], c]` as `a - b/c` would
+  /// re-parse as something else entirely.
+  #[test]
+  fn held_operator_call_spellings_parenthesise() {
+    assert_eq!(
+      interpret("Hold[Power[Divide[a, b], 2]]").unwrap(),
+      "Hold[(a/b)^2]"
+    );
+    assert_eq!(
+      interpret("Hold[Power[Subtract[a, b], 2]]").unwrap(),
+      "Hold[(a - b)^2]"
+    );
+    assert_eq!(
+      interpret("Hold[Power[Minus[a], 2]]").unwrap(),
+      "Hold[(-a)^2]"
+    );
+    assert_eq!(
+      interpret("Hold[Power[a, Minus[b]]]").unwrap(),
+      "Hold[a^(-b)]"
+    );
+    assert_eq!(
+      interpret("Hold[Divide[Subtract[a, b], c]]").unwrap(),
+      "Hold[(a - b)/c]"
+    );
+    assert_eq!(
+      interpret("Hold[Divide[a, Subtract[b, c]]]").unwrap(),
+      "Hold[a/(b - c)]"
+    );
+    assert_eq!(
+      interpret("Hold[Divide[a, Divide[b, c]]]").unwrap(),
+      "Hold[a/(b/c)]"
+    );
+    assert_eq!(
+      interpret("Hold[Times[Subtract[a, b], c]]").unwrap(),
+      "Hold[(a - b)*c]"
+    );
+    assert_eq!(
+      interpret("Hold[Subtract[a, Subtract[b, c]]]").unwrap(),
+      "Hold[a - (b - c)]"
+    );
+    // `--a` would not parse back.
+    assert_eq!(interpret("Hold[Minus[Minus[a]]]").unwrap(), "Hold[-(-a)]");
+  }
+
+  /// `Minus` is left in call form inside a parent's argument list: `Plus`
+  /// folds a unary minus into a subtraction and `Times` into a `-1` factor,
+  /// which is right for an evaluated `Plus[a, Times[-1, b]]` but not for a
+  /// held `Plus[a, Minus[b]]`.
+  #[test]
+  fn held_minus_is_not_folded_into_its_parent() {
+    assert_eq!(
+      interpret("Hold[Plus[a, Minus[b]]]").unwrap(),
+      "Hold[a + -b]"
+    );
+    assert_eq!(interpret("Hold[Times[a, Minus[b]]]").unwrap(), "Hold[a*-b]");
+  }
+
   #[test]
   fn null_symbol_uses_sentinel() {
     // The Null symbol should use the "\0" sentinel so visual contexts
