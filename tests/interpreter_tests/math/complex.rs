@@ -1257,6 +1257,37 @@ mod complex_power_tests {
   fn complex_power_rational_base() {
     assert_eq!(interpret("(1/2 + I/3)^4").unwrap(), "-119/1296 + (5*I)/54");
   }
+
+  /// Regression: the exact-complex power path was gated on `n >= 2`, so a
+  /// negative exponent fell through unevaluated even though `1/(1 + I)`
+  /// and `1/(1 + I)^2` — the same value via the Divide path — worked.
+  /// Found by the differential fuzzer.
+  #[test]
+  fn complex_power_negative_exponent() {
+    assert_eq!(interpret("(1 + I)^(-1)").unwrap(), "1/2 - I/2");
+    assert_eq!(interpret("(1 + I)^(-2)").unwrap(), "-1/2*I");
+    assert_eq!(interpret("(1 + I)^(-3)").unwrap(), "-1/4 - I/4");
+    assert_eq!(interpret("(2 + 3I)^(-2)").unwrap(), "-5/169 - (12*I)/169");
+    assert_eq!(interpret("(4 - 3I)^(-2)").unwrap(), "7/625 + (24*I)/625");
+    assert_eq!(interpret("(1 + 2I)^(-5)").unwrap(), "41/3125 + (38*I)/3125");
+    assert_eq!(interpret("(3I)^(-2)").unwrap(), "-1/9");
+  }
+
+  #[test]
+  fn complex_power_negative_exponent_rational_base() {
+    assert_eq!(
+      interpret("(1/2 + I/3)^(-2)").unwrap(),
+      "180/169 - (432*I)/169"
+    );
+  }
+
+  /// `z^-n * z^n` must come back to 1, which it cannot if either side is
+  /// left unevaluated.
+  #[test]
+  fn complex_power_negative_exponent_cancels() {
+    assert_eq!(interpret("(1 + I)^(-1) * (1 + I)").unwrap(), "1");
+    assert_eq!(interpret("(2 + 3I)^(-3) * (2 + 3I)^3").unwrap(), "1");
+  }
 }
 
 mod complex_power_numeric {

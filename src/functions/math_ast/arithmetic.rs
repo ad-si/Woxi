@@ -11458,9 +11458,12 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     });
   }
 
-  // (a + b*I)^n for exact complex base with positive integer exponent
+  // (a + b*I)^n for an exact complex base and an integer exponent. A
+  // negative exponent raises |n| here and hands the reciprocal to
+  // `divide_two`, which owns the exact complex division — the reason
+  // `1/(1 + I)` evaluated long before `(1 + I)^(-1)` did.
   if let Expr::Integer(n) = exp
-    && *n >= 2
+    && (*n >= 2 || *n <= -1)
     && let Some(((re_n, re_d), (im_n, im_d))) = try_extract_complex_exact(base)
     && im_n != 0
   {
@@ -11491,7 +11494,8 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     let mut result_im = BigInt::from(0);
     let mut sq_re = a_big.clone();
     let mut sq_im = b_big.clone();
-    let mut remaining = *n as u64;
+    let magnitude = n.unsigned_abs();
+    let mut remaining = magnitude;
     while remaining > 0 {
       if remaining & 1 == 1 {
         let new_re = &result_re * &sq_re - &result_im * &sq_im;
@@ -11508,43 +11512,53 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
       }
     }
 
-    // Result = result_re / k^n + (result_im / k^n) * I
+    // Result = result_re / k^|n| + (result_im / k^|n|) * I
     let k_big = BigInt::from(k_val);
-    let k_n = num_traits::pow::pow(k_big, *n as usize);
+    let k_n = num_traits::pow::pow(k_big, magnitude as usize);
 
     // Reduce fractions
     let (final_re_n, final_re_d) = rat_reduce_bigint(&result_re, &k_n);
     let (final_im_n, final_im_d) = rat_reduce_bigint(&result_im, &k_n);
 
     // Try to convert back to i128
-    if let (Some(rn), Some(rd), Some(imn), Some(imd)) = (
+    let raised = if let (Some(rn), Some(rd), Some(imn), Some(imd)) = (
       final_re_n.to_i128(),
       final_re_d.to_i128(),
       final_im_n.to_i128(),
       final_im_d.to_i128(),
     ) {
-      return Ok(complex_rational_to_expr(rn, rd, imn, imd));
-    }
-
-    // BigInt result: build expression for integer denominators
-    if final_re_d == BigInt::from(1) && final_im_d == BigInt::from(1) {
+      Some(complex_rational_to_expr(rn, rd, imn, imd))
+    } else if final_re_d == BigInt::from(1) && final_im_d == BigInt::from(1) {
+      // BigInt result: build expression for integer denominators
       let re_expr = bigint_to_expr(final_re_n);
       let i_expr = id_expr("I");
       if result_im.is_zero() {
-        return Ok(re_expr);
-      }
-      let im_expr = bigint_to_expr(final_im_n);
-      let imag_term = if matches!(&im_expr, Expr::Integer(1)) {
-        i_expr.clone()
-      } else if matches!(&im_expr, Expr::Integer(-1)) {
-        negate_expr(i_expr.clone())
+        Some(re_expr)
       } else {
-        times2(im_expr, i_expr)
-      };
-      if result_re.is_zero() {
-        return Ok(imag_term);
+        let im_expr = bigint_to_expr(final_im_n);
+        let imag_term = if matches!(&im_expr, Expr::Integer(1)) {
+          i_expr.clone()
+        } else if matches!(&im_expr, Expr::Integer(-1)) {
+          negate_expr(i_expr.clone())
+        } else {
+          times2(im_expr, i_expr)
+        };
+        if result_re.is_zero() {
+          Some(imag_term)
+        } else {
+          Some(plus2(re_expr, imag_term))
+        }
       }
-      return Ok(plus2(re_expr, imag_term));
+    } else {
+      None
+    };
+
+    if let Some(raised) = raised {
+      return if *n < 0 {
+        divide_two(&Expr::Integer(1), &raised)
+      } else {
+        Ok(raised)
+      };
     }
   }
 
