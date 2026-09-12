@@ -2909,6 +2909,34 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_curried_call_over_infix_operator_head_keeps_parens() {
+    // A CurriedCall's head (`(head)[args]`) that is itself an infix
+    // operator expression must print with parens, or the reconstructed
+    // text re-parses with `[args]` attached to the wrong operand.
+    // Regression: a Wolfram Demonstration's Manipulate body used
+    // `(r /. sol[[1, 1]])["Domain"]`; Woxi Studio reconstructs a
+    // Manipulate body's InputForm text from the held (unevaluated) AST to
+    // re-evaluate it with slider bindings, and previously printed this as
+    // `r /. sol[[1, 1]]["Domain"]`, which reparses as `r /. (sol[[1,
+    // 1]]["Domain"])` instead — a different computation entirely.
+    // `:>` holds its RHS unevaluated, so printing the constructed Rule
+    // exercises the same InputForm printer without needing a widget.
+    clear_state();
+    assert_eq!(
+      interpret("x :> (a /. b -> c)[d]").unwrap(),
+      "x :> (a /. b -> c)[d]",
+    );
+    assert_eq!(
+      interpret("x :> (a //. b -> c)[d]").unwrap(),
+      "x :> (a //. b -> c)[d]",
+    );
+    assert_eq!(interpret("x :> (a /@ b)[d]").unwrap(), "x :> (a /@ b)[d]",);
+    assert_eq!(interpret("x :> (a @@ b)[d]").unwrap(), "x :> (a @@ b)[d]",);
+    assert_eq!(interpret("x :> (a @@@ b)[d]").unwrap(), "x :> (a @@@ b)[d]",);
+    assert_eq!(interpret("x :> (a; b)[d]").unwrap(), "x :> (a; b)[d]",);
+  }
+
+  #[test]
   fn test_replace_all_head_prefilter_keeps_every_match() {
     // ReplaceAll skips a rule list outright at nodes whose head no rule
     // names. The shapes it must still reach:
