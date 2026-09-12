@@ -56,6 +56,15 @@ pub enum ControlState {
     /// (`"+" -> myIcon[2]`), parallel to `values`. `None` = text label.
     value_label_svgs: Vec<Option<svg::Handle>>,
     current_index: usize,
+    /// The true current value's InputForm, kept only while it matches none
+    /// of `values` (mirrors `ManipulateControl::Discrete::initial_overflow`
+    /// in `woxi::functions::graphics`): several disjoint SetterBar rows can
+    /// share one variable, and this row's own choices needn't include
+    /// whatever value another row just picked. `current_code` and
+    /// `set_current_from_code` prefer this over `values[current_index]`
+    /// whenever it is set, so the row still hands back the right value even
+    /// though none of its own buttons apply.
+    overflow: Option<String>,
     /// `ControlType -> PopupMenu`: always render a dropdown, even when the
     /// choice count is small enough for a SetterBar.
     popup: bool,
@@ -203,11 +212,14 @@ impl ControlState {
       ControlState::Discrete {
         values,
         current_index,
+        overflow,
         ..
-      } => values
-        .get(*current_index)
-        .cloned()
-        .unwrap_or_else(|| "Null".to_string()),
+      } => overflow.clone().unwrap_or_else(|| {
+        values
+          .get(*current_index)
+          .cloned()
+          .unwrap_or_else(|| "Null".to_string())
+      }),
       ControlState::Slider2D { x, y, .. } => {
         format!("{{{}, {}}}", format_f64(*x), format_f64(*y))
       }
@@ -260,11 +272,15 @@ impl ControlState {
       ControlState::Discrete {
         values,
         current_index,
+        overflow,
         ..
       } => {
         let form = woxi::syntax::expr_to_input_form(&expr);
         if let Some(i) = values.iter().position(|v| *v == form) {
           *current_index = i;
+          *overflow = None;
+        } else {
+          *overflow = Some(form);
         }
       }
       ControlState::Slider2D { x, y, .. } => {
@@ -1088,6 +1104,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         value_labels,
         value_label_svgs,
         initial_index,
+        initial_overflow,
         popup,
         setter_bar,
         slider,
@@ -1106,6 +1123,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
           })
           .collect(),
         current_index: *initial_index,
+        overflow: initial_overflow.clone(),
         popup: *popup,
         setter_bar: *setter_bar,
         slider: *slider,
