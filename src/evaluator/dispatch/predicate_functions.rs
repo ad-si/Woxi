@@ -256,17 +256,15 @@ pub fn dispatch_predicate_functions(
       );
     }
     "MachineNumberQ" if args.len() == 1 => {
-      fn contains_real(e: &Expr) -> bool {
-        match e {
-          Expr::Real(_) => true,
-          Expr::FunctionCall { args, .. } => args.iter().any(contains_real),
-          Expr::BinaryOp { left, right, .. } => {
-            contains_real(left) || contains_real(right)
-          }
-          Expr::UnaryOp { operand, .. } => contains_real(operand),
-          _ => false,
-        }
+      // Machine reals only — `contains_inexact` would also count a
+      // `BigFloat`, and an arbitrary-precision number is not a machine one.
+      fn contains_machine_real(e: &Expr) -> bool {
+        matches!(e, Expr::Real(_))
+          || crate::syntax::expr_children(e)
+            .into_iter()
+            .any(contains_machine_real)
       }
+      let contains_real = contains_machine_real;
       let is_machine = match &args[0] {
         Expr::Real(_) => true,
         Expr::FunctionCall { name, args: ca }

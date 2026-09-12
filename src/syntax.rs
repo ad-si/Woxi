@@ -1173,6 +1173,87 @@ pub enum UnaryOperator {
   Not,
 }
 
+/// Immutable children of an expression node, for generic traversals.
+pub(crate) fn expr_children(expr: &Expr) -> Vec<&Expr> {
+  match expr {
+    Expr::List(items) => items.iter().collect(),
+    Expr::FunctionCall { args, .. } => args.iter().collect(),
+    Expr::BinaryOp { left, right, .. } => vec![left, right],
+    Expr::UnaryOp { operand, .. } => vec![operand],
+    Expr::Comparison { operands, .. } => operands.iter().collect(),
+    Expr::CurriedCall { func, args } => {
+      let mut v: Vec<&Expr> = vec![func];
+      v.extend(args.iter());
+      v
+    }
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => vec![pattern, replacement],
+    _ => Vec::new(),
+  }
+}
+
+/// Whether `expr` contains a machine-precision number anywhere — a `Real`
+/// or a `BigFloat`. Exact input (integers, rationals, `Pi`, `E`, radicals)
+/// must keep its closed form; inexact input is what licenses a numeric
+/// answer.
+pub(crate) fn contains_inexact(expr: &Expr) -> bool {
+  matches!(expr, Expr::Real(_) | Expr::BigFloat(_, _))
+    || expr_children(expr).into_iter().any(contains_inexact)
+}
+
+/// Rebuild an expression with `f` applied to each direct child. Nodes
+/// whose children aren't covered by [`expr_children`] are returned as-is.
+pub(crate) fn map_children(expr: &Expr, f: &dyn Fn(&Expr) -> Expr) -> Expr {
+  match expr {
+    Expr::List(items) => Expr::List(items.iter().map(f).collect()),
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args.iter().map(f).collect(),
+    },
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(f(left)),
+      right: Box::new(f(right)),
+    },
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(f(operand)),
+    },
+    Expr::Comparison {
+      operands,
+      operators,
+    } => Expr::Comparison {
+      operands: operands.iter().map(f).collect(),
+      operators: operators.clone(),
+    },
+    Expr::CurriedCall { func, args } => Expr::CurriedCall {
+      func: Box::new(f(func)),
+      args: args.iter().map(f).collect(),
+    },
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => Expr::Rule {
+      pattern: Box::new(f(pattern)),
+      replacement: Box::new(f(replacement)),
+    },
+    Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => Expr::RuleDelayed {
+      pattern: Box::new(f(pattern)),
+      replacement: Box::new(f(replacement)),
+    },
+    other => other.clone(),
+  }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ComparisonOp {
   Equal,        // ==

@@ -6,6 +6,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::functions::math_ast::{make_sqrt, rat_reduce};
+use crate::syntax::{expr_children, map_children};
 
 // ─── DSolve ────────────────────────────────────────────────────────────
 
@@ -3300,78 +3301,6 @@ fn substitute_function_values(
   map_children(expr, &|child| {
     substitute_function_values(child, funcs, x_name)
   })
-}
-
-/// Immutable children of an expression node, for the traversals above.
-fn expr_children(expr: &Expr) -> Vec<&Expr> {
-  match expr {
-    Expr::List(items) => items.iter().collect(),
-    Expr::FunctionCall { args, .. } => args.iter().collect(),
-    Expr::BinaryOp { left, right, .. } => vec![left, right],
-    Expr::UnaryOp { operand, .. } => vec![operand],
-    Expr::Comparison { operands, .. } => operands.iter().collect(),
-    Expr::CurriedCall { func, args } => {
-      let mut v: Vec<&Expr> = vec![func];
-      v.extend(args.iter());
-      v
-    }
-    Expr::Rule {
-      pattern,
-      replacement,
-    }
-    | Expr::RuleDelayed {
-      pattern,
-      replacement,
-    } => vec![pattern, replacement],
-    _ => Vec::new(),
-  }
-}
-
-/// Rebuild an expression with `f` applied to each direct child. Nodes
-/// whose children aren't covered by `expr_children` are returned as-is.
-fn map_children(expr: &Expr, f: &dyn Fn(&Expr) -> Expr) -> Expr {
-  match expr {
-    Expr::List(items) => Expr::List(items.iter().map(f).collect()),
-    Expr::FunctionCall { name, args } => Expr::FunctionCall {
-      name: name.clone(),
-      args: args.iter().map(f).collect(),
-    },
-    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-      op: *op,
-      left: Box::new(f(left)),
-      right: Box::new(f(right)),
-    },
-    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
-      op: *op,
-      operand: Box::new(f(operand)),
-    },
-    Expr::Comparison {
-      operands,
-      operators,
-    } => Expr::Comparison {
-      operands: operands.iter().map(f).collect(),
-      operators: operators.clone(),
-    },
-    Expr::CurriedCall { func, args } => Expr::CurriedCall {
-      func: Box::new(f(func)),
-      args: args.iter().map(f).collect(),
-    },
-    Expr::Rule {
-      pattern,
-      replacement,
-    } => Expr::Rule {
-      pattern: Box::new(f(pattern)),
-      replacement: Box::new(f(replacement)),
-    },
-    Expr::RuleDelayed {
-      pattern,
-      replacement,
-    } => Expr::RuleDelayed {
-      pattern: Box::new(f(pattern)),
-      replacement: Box::new(f(replacement)),
-    },
-    other => other.clone(),
-  }
 }
 
 // ─── Compiled numeric expressions ─────────────────────────────────────

@@ -2077,17 +2077,7 @@ pub fn dispatch_math_functions(
       // For numeric args (containing a Real literal), compute Sin[x/2]^2 —
       // numerically more stable than (1 - Cos[x])/2 and produces the same
       // f64 value as wolframscript.
-      fn contains_real(e: &Expr) -> bool {
-        match e {
-          Expr::Real(_) | Expr::BigFloat(_, _) => true,
-          Expr::BinaryOp { left, right, .. } => {
-            contains_real(left) || contains_real(right)
-          }
-          Expr::UnaryOp { operand, .. } => contains_real(operand),
-          Expr::FunctionCall { args, .. } => args.iter().any(contains_real),
-          _ => false,
-        }
-      }
+      use crate::syntax::contains_inexact as contains_real;
       if contains_real(&args[0]) {
         let half = div2(args[0].clone(), Expr::Integer(2));
         let sin_expr = call1("Sin", half);
