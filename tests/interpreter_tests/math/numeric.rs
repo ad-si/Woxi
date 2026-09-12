@@ -2183,32 +2183,58 @@ mod reciprocal_trig_last_bit {
   /// sine. The two formulas differ in the last bit at some arguments, and
   /// wolframscript takes the reciprocal. Found by the differential fuzzer
   /// on `Cot[0.8]`, which came out as `...44` instead of `...43`.
+  ///
+  /// The last bit itself cannot be pinned as a literal: libm's `tan` and
+  /// `tanh` round differently on macOS and on the Linux of CI, so
+  /// `Cot[0.3]` prints `3.232728143765828` on one and
+  /// `3.2327281437658275` on the other. Asserting the reciprocal identity
+  /// instead pins exactly the property that was wrong — which formula is
+  /// used — on every platform, and a scaled integer pins the magnitude.
   #[test]
   fn cot_takes_the_reciprocal_of_tan() {
-    for (code, expected) in [
-      ("Cot[0.8]", "0.9712146006504743"),
-      ("Cot[0.3]", "3.232728143765828"),
-      ("Cot[1.5]", "0.07091484430265245"),
-      ("Cot[2.0]", "-0.45765755436028577"),
-      ("Cot[-0.7]", "-1.1872418321266796"),
-      ("Cot[5.5]", "-1.0044355348765333"),
+    for (x, scaled) in [
+      ("0.8", "971"),
+      ("0.3", "3233"),
+      ("1.5", "71"),
+      ("2.0", "-458"),
+      ("-0.7", "-1187"),
+      ("5.5", "-1004"),
     ] {
-      assert_eq!(interpret(code).unwrap(), expected, "for {code}");
+      assert_eq!(
+        interpret(&format!("Cot[{x}]")).unwrap(),
+        interpret(&format!("1/Tan[{x}]")).unwrap(),
+        "Cot[{x}] must be 1/Tan[{x}], bit for bit"
+      );
+      assert_eq!(
+        interpret(&format!("Round[1000*Cot[{x}]]")).unwrap(),
+        scaled,
+        "for Cot[{x}]"
+      );
     }
   }
 
-  /// The rest of the reciprocal family already matched; keep them pinned so
-  /// a shared refactor cannot move them.
+  /// The rest of the reciprocal family already took the reciprocal; keep
+  /// them pinned so a shared refactor cannot move them to a quotient of two
+  /// libm calls.
   #[test]
   fn the_other_reciprocals_are_unchanged() {
-    for (code, expected) in [
-      ("Csc[0.8]", "1.394007819388636"),
-      ("Sec[0.8]", "1.43532419967224"),
-      ("Coth[0.8]", "1.5059407020437066"),
-      ("Csch[0.8]", "1.1259917397884818"),
-      ("Sech[0.8]", "0.7476999182374195"),
+    for (head, base, scaled) in [
+      ("Csc", "Sin", "1394"),
+      ("Sec", "Cos", "1435"),
+      ("Coth", "Tanh", "1506"),
+      ("Csch", "Sinh", "1126"),
+      ("Sech", "Cosh", "748"),
     ] {
-      assert_eq!(interpret(code).unwrap(), expected, "for {code}");
+      assert_eq!(
+        interpret(&format!("{head}[0.8]")).unwrap(),
+        interpret(&format!("1/{base}[0.8]")).unwrap(),
+        "{head}[0.8] must be 1/{base}[0.8], bit for bit"
+      );
+      assert_eq!(
+        interpret(&format!("Round[1000*{head}[0.8]]")).unwrap(),
+        scaled,
+        "for {head}[0.8]"
+      );
     }
   }
 }
