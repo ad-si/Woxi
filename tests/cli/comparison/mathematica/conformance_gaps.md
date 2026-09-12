@@ -873,10 +873,19 @@ arbitrary-precision number here.
 
 ### Cross-platform libm differences
 
-The last ULP of `atanh`, `acos`, `asinh` and friends differs between macOS and
-Linux, so a full-precision string assertion is platform-dependent. The same
-1-ULP FMA difference flips a single 8-bit colour channel in `ComplexPlot`
-domain-colouring output at an exact `x.5` boundary.
+The last ULP of `atanh`, `acos`, `asinh`, `tan`, `tanh` and friends differs
+between macOS and Linux, so a full-precision string assertion is
+platform-dependent: `Cot[0.3]` is `3.232728143765828` on macOS and
+`3.2327281437658275` on the Linux of CI, and `Coth[0.8]` ends in `66` versus
+`63`. The same 1-ULP FMA difference flips a single 8-bit colour channel in
+`ComplexPlot` domain-colouring output at an exact `x.5` boundary.
+
+A test that cares about the last bit therefore has to assert the *property*
+rather than the digits: compare the reciprocal against the reciprocal
+expression (`Cot[x]` vs `1/Tan[x]`, both evaluated by Woxi, so both carry the
+same platform rounding) and pin the magnitude with a scaled integer
+(`Round[1000*Cot[x]]`). See `reciprocal_trig_last_bit` in
+`tests/interpreter_tests/math/numeric.rs`.
 
 
 ## Algebra and calculus
