@@ -650,6 +650,13 @@ function buildWolframScript(
       wBlock = "Quiet[ToString[(" + expr + "), InputForm]]";
     }
 
+    // Astronomy: evaluate with the network switched off, which is both what
+    // Woxi does and the only way these cases finish in reasonable time (see
+    // OFFLINE_EVAL_PATTERNS).
+    if (evaluateOffline(expr)) {
+      wBlock = "Block[{$AllowInternet = False}, " + wBlock + "]";
+    }
+
     const wExpected = '"' + expectedEscaped + '"';
     const wLabel = '"FAIL #' + (idx + 1) + ": " + exprEscaped + '"';
     // Approx cases compare within a numeric tolerance; all others by exact
@@ -732,6 +739,44 @@ const APPROX_MATCH = new Set([
   // correctly rounded double, in opposite directions.
   "FindRoot[D[BesselJ[0, r], r] == 0, {r, 3}]",
 ]);
+
+/**
+ * Astronomy heads that wolframscript evaluates inside `Block[{$AllowInternet =
+ * False}, …]` (see buildWolframScript).
+ *
+ * Every one of them consults `$GeoLocation` — even when the call carries an
+ * explicit `GeoPosition` — and `$GeoLocation` is a GeoIP lookup that stalls for
+ * ~75 s before giving up with `Missing["NotAvailable"]` (measured 2026-09-12;
+ * the failure is not cached, so *every* access pays it again). A single
+ * `Sunrise[…]` therefore costs ~150 s and `DaylightQ[…]; DaylightQ[…]` ~300 s,
+ * which overruns even the 240 s a one-case batch gets and aborts the whole run
+ * as a "hang" — which it is not.
+ *
+ * Telling the kernel it is offline skips the doomed lookup and returns the
+ * identical value in milliseconds: `Sunrise[GeoPosition[{52.52, 13.405}],
+ * DateObject[{2024, 6, 21}]]` answers `DateObject[{2024, 6, 21, 2, 42,
+ * 45.50856828689575}, …]` either way, in 0.17 s instead of 152 s, and
+ * MoonPhase/SolarEclipse/SiderealTime likewise agree to the last digit. That
+ * is also the fairer comparison: Woxi computes these from bundled ephemerides
+ * with no network at all.
+ *
+ * Deliberately *not* listed: `LunarEclipse`, the one head with no offline
+ * fallback — it answers `LunarEclipse::conopen` and stays unevaluated without
+ * internet, so it keeps paying the $GeoLocation stall instead.
+ *
+ * Caveat: Wolfram downloads its ephemeris data (~5 MB) on first use. On a
+ * kernel that has never run an astronomy expression the download has to happen
+ * with internet allowed, so warm the cache once (any `Sunrise[…]` call) before
+ * a first run on a new machine.
+ */
+const OFFLINE_EVAL_PATTERNS = [
+  /\b(Sunrise|Sunset|DaylightQ|SunPosition|MoonPosition|MoonPhase|MoonPhaseDate|NewMoon|FullMoon|SiderealTime|SolarEclipse)\[/,
+];
+
+/** Whether a case is evaluated with internet access disabled. */
+function evaluateOffline(expr: string): boolean {
+  return OFFLINE_EVAL_PATTERNS.some((p) => p.test(expr));
+}
 
 /**
  * stderr of the most recent wolframscript batch. Kept so a failing batch can
