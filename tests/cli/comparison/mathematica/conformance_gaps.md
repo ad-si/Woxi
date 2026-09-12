@@ -881,6 +881,46 @@ domain-colouring output at an exact `x.5` boundary.
 
 ## Algebra and calculus
 
+### An antiderivative's common denominator is collected, not distributed
+
+```sh
+wolframscript -code 'ToString[Integrate[x^2/(2*x^2 + 1), x], InputForm]'
+# x/2 - ArcTan[Sqrt[2]*x]/(2*Sqrt[2])
+woxi eval 'Integrate[x^2/(2*x^2 + 1), x]'
+# (x - ArcTan[Sqrt[2]*x]/Sqrt[2])/2
+```
+
+Same value, different common-denominator convention. wolframscript divides
+over the rationals from the start; Woxi pseudo-divides over the integers and
+takes the factor back out at the end, and `integrate_ast`'s simplify pass
+re-collects it even when the rule distributes it. wolframscript is not
+consistent about this either — it collects `Integrate[x^4/(3*x^2 + 1), x]`
+into `(-3*x + 3*x^3 + Sqrt[3]*ArcTan[Sqrt[3]*x])/27` and distributes the
+neighbouring cases — so there is no rule here to copy.
+
+The same convention shows up whenever the result is a `Plus` with a shared
+numeric content: `Integrate[(2 + 2*x)/(-3 + 3*x - 5*x^2), x]` is
+`-2*((13*ArcTan[…])/(5*Sqrt[51]) + Log[3 - 3*x + 5*x^2]/10)` there and
+`(-26*ArcTan[…])/(5*Sqrt[51]) - Log[3 - 3*x + 5*x^2]/5` here.
+
+### `Integrate[f[a*x + b], x]` is not angle-expanded for Sin and Cos
+
+```sh
+wolframscript -code 'ToString[Integrate[Sin[x + y], x], InputForm]'
+# -(Cos[x]*Cos[y]) + Sin[x]*Sin[y]
+woxi eval 'Integrate[Sin[x + y], x]'
+# -Cos[x + y]
+```
+
+Woxi integrates a shifted argument by substitution, so the antiderivative
+keeps the argument it was given. wolframscript applies the angle-sum identity
+to the `Sin`/`Cos` results — but not to `Tan`, `Cot` or `Sec`, which agree,
+and not to `Integrate[Sin[2*x + 1], x]`, which it leaves as
+`-1/2*Cos[1 + 2*x]` while expanding `Integrate[Sin[x + 1], x]`. The same
+applies to `Integrate[Log[2*x + 3], x]` and `Integrate[ArcTan[2*x + 1], x]`,
+where wolframscript expands the product and drops the resulting constant.
+
+
 ### `Integrate[Log[Sin[x]], …]` is unimplemented
 
 ```sh
@@ -1424,6 +1464,30 @@ follows WL's internal BDD structure and differs per expression —
 
 
 ## Special functions
+
+### `TrigToExp[Sin[x]^3]` keeps the power unexpanded
+
+```sh
+wolframscript -code 'ToString[TrigToExp[Sin[x]^3], InputForm]'
+# (-1/8*I)*(E^(-I*x) - E^(I*x))^3
+woxi eval 'TrigToExp[Sin[x]^3]'
+# (I/2/E^(I*x) - I/2*E^(I*x))^3
+```
+
+Same value. wolframscript pulls the `(-I/2)^3` coefficient out of the cubed
+difference; Woxi rewrites each `Sin` in place and leaves the coefficient
+inside. Found by the differential fuzzer.
+
+### `LegendreP` distributes but `LaguerreL` collects
+
+Resolved for both (see `collect_or_distribute` in
+`src/functions/math_ast/orthogonal_polynomials.rs`), noted here because the
+split is wolframscript's and not derivable: `LegendreP[2, E]` is
+`-1/2 + (3*E^2)/2` there but `LaguerreL[2, E]` is `(2 - 4*E + E^2)/2`, and
+`LegendreP[2, x]` goes back to the collected `(-1 + 3*x^2)/2`. The rule Woxi
+implements is "collect when the argument mentions a symbol" for `LegendreP`
+and "always collect" for `LaguerreL`.
+
 
 ### `HypergeometricPFQ` residues
 
