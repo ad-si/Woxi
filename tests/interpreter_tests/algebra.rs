@@ -17979,7 +17979,7 @@ mod constrained_numeric_optimization {
         "FindMinimum[{x^2 + y^2, x + y == 1 && x >= 0.7}, {{x, 0}, {y, 0}}]"
       )
       .unwrap(),
-      "{0.5800000000000001, {x -> 0.7000000000000001, y -> 0.30000000000000004}}"
+      "{0.58, {x -> 0.7, y -> 0.30000000000000004}}"
     );
     // wolframscript lands on 0.580000011263976 for the same problem; the
     // rounded projection is what both engines agree on.
