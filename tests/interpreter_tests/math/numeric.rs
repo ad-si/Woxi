@@ -2212,3 +2212,44 @@ mod reciprocal_trig_last_bit {
     }
   }
 }
+
+mod exact_roots {
+  use super::*;
+
+  /// `CubeRoot` and `Surd` numericised anything their exactness test did not
+  /// recognise as an integer or a rational, so a symbolic constant or a
+  /// rational came back as a machine real. Only machine-precision input
+  /// licenses a numeric answer. Found by the differential fuzzer on
+  /// `CubeRoot[E]`.
+  #[test]
+  fn exact_bases_keep_their_closed_form() {
+    for (code, expected) in [
+      ("CubeRoot[E]", "E^(1/3)"),
+      ("CubeRoot[Pi]", "Pi^(1/3)"),
+      ("CubeRoot[1/8]", "1/2"),
+      ("CubeRoot[-1/8]", "-1/2"),
+      ("CubeRoot[Sqrt[2]]", "2^(1/6)"),
+      ("Surd[E, 3]", "E^(1/3)"),
+      ("Surd[Pi, 3]", "Pi^(1/3)"),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "for {code}");
+    }
+  }
+
+  #[test]
+  fn inexact_and_integer_bases_are_unchanged() {
+    for (code, expected) in [
+      ("CubeRoot[8]", "2"),
+      ("CubeRoot[2]", "2^(1/3)"),
+      ("CubeRoot[-8]", "-2"),
+      ("CubeRoot[-2]", "-2^(1/3)"),
+      ("CubeRoot[x]", "Surd[x, 3]"),
+      ("CubeRoot[2.0]", "1.2599210498948732"),
+      ("Surd[2.0, 3]", "1.2599210498948732"),
+      ("Surd[2, 5]", "2^(1/5)"),
+      ("Surd[-8, 3]", "-2"),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "for {code}");
+    }
+  }
+}

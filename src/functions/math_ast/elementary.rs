@@ -1480,11 +1480,16 @@ pub fn surd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // symbolic form (Surd[2, 2] = Sqrt[2], Surd[8, -3] = 1/2, Surd[12, 2] =
   // 2 Sqrt[3], ...). A negative base with an odd n uses the real negative
   // root -(|b|^(1/n)); with an even n it is undefined.
-  let base_is_exact = matches!(base, Expr::Integer(_) | Expr::BigInteger(_))
-    || matches!(base, Expr::FunctionCall { name, .. } if name == "Rational");
+  // Exact means "no machine-precision number anywhere", not just "an integer
+  // or a rational": `Surd[E, 3]` is `E^(1/3)` and `Surd[Sqrt[2], 2]` is
+  // `2^(1/6)`, both of which the numeric fallback below would flatten.
+  let base_is_exact = !crate::syntax::contains_inexact(base);
   if let Expr::Integer(n) = degree
     && base_is_exact
-    && let Some(x) = expr_to_num(base)
+    // `try_eval_to_f64` rather than `expr_to_num`: the sign of an exact
+    // base is all that is needed here, and `E`, `Pi`, `1/8` and `Sqrt[2]`
+    // have one even though they are not plain numbers.
+    && let Some(x) = try_eval_to_f64(base)
   {
     let n = *n;
     let power = |b: Expr| -> Result<Expr, InterpreterError> {
@@ -3327,11 +3332,17 @@ pub fn cube_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     Expr::Real(f) => Ok(Expr::Real(f.signum() * f.abs().cbrt())),
     _ => {
-      if let Some(f) = try_eval_to_f64(&args[0]) {
+      // Only machine-precision input licenses a numeric answer: `CubeRoot[E]`
+      // is `E^(1/3)` and `CubeRoot[1/8]` is `1/2`, not `1.3956…` and `0.5`.
+      // Everything exact goes to `Surd[x, 3]`, which returns the closed form.
+      if crate::syntax::contains_inexact(&args[0])
+        && let Some(f) = try_eval_to_f64(&args[0])
+      {
         Ok(Expr::Real(f.signum() * f.abs().cbrt()))
       } else {
-        // Canonicalize CubeRoot[x] → Surd[x, 3]
-        Ok(call("Surd", vec![args[0].clone(), Expr::Integer(3)]))
+        // Canonicalize CubeRoot[x] → Surd[x, 3], evaluated so an exact
+        // base comes back in closed form rather than as the call.
+        surd_ast(&[args[0].clone(), Expr::Integer(3)])
       }
     }
   }
