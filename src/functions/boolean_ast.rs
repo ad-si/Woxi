@@ -627,6 +627,60 @@ pub fn infinity_equal_verdict(a: &Expr, b: &Expr) -> Option<Option<bool>> {
   }
 }
 
+/// Whether `a` and `b` can be proven to never be equal, no matter what any
+/// bare symbol nested inside either one is later bound to — e.g. comparing
+/// a `List` and a `Rule[…]`, or two `List`s of different lengths, is decided
+/// this way regardless of what values their elements hold: `{{x -> 1}} ==
+/// {{}}` is `False` even though `x` is unbound, since the outer lengths (1
+/// vs. 1) match but the inner ones (1 vs. 0) never can. Returns `false`
+/// whenever it cannot decide, so the caller falls back to leaving the
+/// comparison symbolic rather than concluding `False` outright.
+pub fn structurally_unequal(a: &Expr, b: &Expr) -> bool {
+  // A bare symbol is still an open variable — it could be bound to
+  // anything, so nothing touching it can be decided this way.
+  if matches!(a, Expr::Identifier(_)) || matches!(b, Expr::Identifier(_)) {
+    return false;
+  }
+  fn parts(e: &Expr) -> Option<(&'static str, Vec<&Expr>)> {
+    match e {
+      Expr::List(items) => Some(("List", items.iter().collect())),
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => Some(("Rule", vec![pattern.as_ref(), replacement.as_ref()])),
+      Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } => Some(("RuleDelayed", vec![pattern.as_ref(), replacement.as_ref()])),
+      _ => None,
+    }
+  }
+  match (parts(a), parts(b)) {
+    (Some((h1, a1)), Some((h2, a2))) => {
+      h1 != h2
+        || a1.len() != a2.len()
+        || a1
+          .iter()
+          .zip(a2.iter())
+          .any(|(x, y)| structurally_unequal(x, y))
+    }
+    (None, None) => {
+      use crate::functions::math_ast::try_eval_to_f64;
+      match (try_eval_to_f64(a), try_eval_to_f64(b)) {
+        (Some(x), Some(y)) => x != y,
+        _ => matches!((a, b), (Expr::String(x), Expr::String(y)) if x != y),
+      }
+    }
+    // A bare `List`/`Rule`/`RuleDelayed` lined up against a plain number or
+    // an opaque expression (e.g. a `FunctionCall`) is left undecided: Solve
+    // relies on `{e1, e2, …} == 0` staying unevaluated so it can thread the
+    // scalar across the list itself (see `solve_broadcasts_scalar_across_
+    // list_equation`), and a generic `FunctionCall`'s value could still be
+    // data-dependent.
+    (Some(_), None) | (None, Some(_)) => false,
+  }
+}
+
 pub fn equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Equal[] and Equal[x] return True (like wolframscript)
   if args.len() < 2 {
@@ -797,6 +851,14 @@ pub fn equal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(bool_expr(true));
   }
 
+  // A structural shape mismatch (different list lengths, or a `List` lined
+  // up against a `Rule`) decides `Equal` regardless of any free symbol
+  // nested inside — e.g. `{{x -> 1}} == {{}}` is `False` even though `x` is
+  // never bound, because no value of `x` changes the outer shapes involved.
+  if args.windows(2).any(|w| structurally_unequal(&w[0], &w[1])) {
+    return Ok(bool_expr(false));
+  }
+
   // Only stay symbolic if at least one arg has free symbols
   if args.iter().any(crate::evaluator::has_free_symbols) {
     Ok(symbolic_comparison_chain(args, ComparisonOp::Equal))
@@ -898,6 +960,14 @@ pub fn unequal_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let nums: Vec<Option<f64>> = args.iter().map(try_eval_to_f64).collect();
   if nums.iter().all(std::option::Option::is_some) {
     // All numeric and pairwise different (checked above via strings)
+    return Ok(bool_expr(true));
+  }
+
+  // For the common 2-argument form, a structural shape mismatch (different
+  // list lengths, or a `List` lined up against a `Rule`) decides `Unequal`
+  // regardless of any free symbol nested inside, mirroring the analogous
+  // `Equal` rule above.
+  if args.len() == 2 && structurally_unequal(&args[0], &args[1]) {
     return Ok(bool_expr(true));
   }
 
