@@ -4662,6 +4662,64 @@ mod plot3d {
     }
   }
 
+  mod unbounded_primitives_2d {
+    use super::*;
+
+    /// `InfiniteLine`/`HalfLine` used to draw nothing at all in a 2D
+    /// `Graphics` (only the `Graphics3D` case was handled), which left a
+    /// scene built around one of Wolfram's own `TriangleLine`-style helpers
+    /// (three infinite lines through a triangle's edges — independently
+    /// written here, not copied from any specific Demonstration) with its
+    /// extended edge lines entirely missing.
+    #[test]
+    fn infinite_line_and_half_line_draw_in_2d_graphics() {
+      for code in [
+        "Graphics[{Gray, InfiniteLine[{{0, 0}, {1, 1}}]}, \
+         PlotRange -> {{-5, 5}, {-5, 5}}]",
+        "Graphics[{Gray, InfiniteLine[{0, 0}, {1, 1}]}, \
+         PlotRange -> {{-5, 5}, {-5, 5}}]",
+        "Graphics[{Red, HalfLine[{0, 0}, {1, 1}]}, \
+         PlotRange -> {{-5, 5}, {-5, 5}}]",
+        "Graphics[{Red, HalfLine[{{2, 0}, {3, 0}}]}, \
+         PlotRange -> {{-5, 5}, {-5, 5}}]",
+      ] {
+        let svg = export_svg(code);
+        assert!(svg.contains("<line "), "{code} drew nothing: {svg}");
+      }
+    }
+
+    /// A `HalfLine` only extends forward from its starting point, so it
+    /// covers half the area a full `InfiniteLine` through the same points
+    /// does — checked by clipping each to a box that only the full line
+    /// reaches on both sides.
+    #[test]
+    fn half_line_only_extends_forward() {
+      let full = export_svg(
+        "Graphics[{InfiniteLine[{{0, 0}, {1, 0}}]}, \
+         PlotRange -> {{-5, 5}, {-1, 1}}]",
+      );
+      let half = export_svg(
+        "Graphics[{HalfLine[{{0, 0}, {1, 0}}]}, \
+         PlotRange -> {{-5, 5}, {-1, 1}}]",
+      );
+      assert_ne!(
+        full, half,
+        "a HalfLine must not draw the same as the InfiniteLine through the \
+         same two points"
+      );
+    }
+
+    /// A degenerate `InfiniteLine`/`HalfLine` (both defining points equal,
+    /// so no direction exists) draws nothing rather than erroring out.
+    #[test]
+    fn degenerate_infinite_line_draws_nothing() {
+      assert_eq!(
+        export_svg("Graphics[{InfiniteLine[{{1, 1}, {1, 1}}]}]"),
+        export_svg("Graphics[{}]")
+      );
+    }
+  }
+
   mod view_angle {
     use super::*;
 
