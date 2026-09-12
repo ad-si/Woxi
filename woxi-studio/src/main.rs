@@ -24019,7 +24019,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 30, $CellContext`s$$ = 5}, \"
       .1;
     assert_eq!(
       trail_after_move,
-      "{{}, {Point[{2.9994000199997335, 0.05999600007999923}]}}",
+      "{{}, {Point[{2.9994000199997335, 0.05999600007999924}]}}",
       "moving alpha to a new value must append the previous intersection \
        point to the trail"
     );
@@ -25263,6 +25263,229 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`count$$ = 3, $CellContext`offset$$ 
     assert!(
       svg.contains("<rect"),
       "the dynamic strip's Rectangle should be present in the overlay: {svg}"
+    );
+  }
+
+  /// Checked a randomly-sampled Wolfram Demonstrations Project notebook (a
+  /// conic-section-by-polar-equation visualizer) against Woxi Studio's
+  /// Manipulate pipeline. Its shape: eccentricity/semi-latus-rectum/rotation
+  /// sliders (two of them `VerticalSlider`s placed to one side) feed a
+  /// `Module`-local classification (`Which[e<1, "ellipse", e==1, "parabola",
+  /// True, "hyperbola"]`) and a polar radius helper `r[t_] := ...`; the body
+  /// `Deploy`s a `Column` whose first row shows a `TraditionalForm`/
+  /// `HoldForm` formula alongside a body-level `Checkbox[Dynamic[...]]`
+  /// toggling a hidden `ControlType -> None` boolean, followed by a
+  /// classification label built from `Round`ed slider values, and a `Show`
+  /// combining a `ParametricPlot` (its `MaxRecursion` gated by
+  /// `ControlActive`) with conditionally shown, `Rotate`d asymptote `Line`s
+  /// and a `{value, style}`-pair `GridLines` spec.
+  ///
+  /// This is a self-authored, construct-equivalent example (invented
+  /// variable names and values) — not the notebook's own code, data, or
+  /// wording, which is copyrighted.
+  ///
+  /// Regression: a bare `Checkbox[Dynamic[var], …]` drawn directly by the
+  /// body (as opposed to one given as a Manipulate control spec, or as part
+  /// of a `Grid`/`Table` of checkboxes passed as a trailing display
+  /// argument) was never extracted into a live widget — only `TogglerBar`
+  /// and `Button` were pulled out of the body this way — so the checkbox
+  /// rendered as an inert picture and clicking it did nothing; toggling its
+  /// backing `showAsym` state left the rendered picture unchanged.
+  /// `extract_body_togglerbars` (`src/functions/graphics.rs`) now also lifts
+  /// a body-level `Checkbox[Dynamic[identifier], …]` into the display list.
+  #[test]
+  fn demonstration_conic_by_polar_equation_toggles_asymptotes() {
+    let code = r#"Manipulate[
+      Module[{a, b, c, cx, cy, radius},
+        Which[
+          ecc > 1,
+          a = semiLatus (ecc/(ecc^2 - 1));
+          b = semiLatus (ecc/Sqrt[ecc^2 - 1]);
+          c = semiLatus (ecc^2/(ecc^2 - 1));
+          cx = c Cos[rot]; cy = c Sin[rot],
+          True,
+          a = 0; b = 0; cx = 0; cy = 0
+        ];
+        radius[t_] := ecc (semiLatus/(1 + ecc Cos[t]));
+        Deploy[
+          Column[{
+            Row[{
+              Style[TraditionalForm[HoldForm[
+                Row[{Style["r", Italic], "(", Style["t", Italic], ")"}] ==
+                Style["ecc", Italic] (Style["semiLatus", Italic]/
+                  Row[{"1 + ", Style["ecc", Italic], " cos(", Style["t", Italic], " - phi)"}])
+              ]], 18, Darker[Blue, 0.2]],
+              If[ecc > 1,
+                Row[{"  ", Checkbox[Dynamic[showAsym], {False, True}], Style[" asymptotes", "Label"]}],
+                ""]
+            }],
+            Style[
+              Row[{
+                Which[ecc < 1, "ellipse", ecc == 1, "parabola", True, "hyperbola"],
+                ":  e = ", Round[ecc, 0.01], ",  l = ", Round[semiLatus, 0.01]
+              }], Gray, 12
+            ],
+            Show[
+              ParametricPlot[
+                {radius[t - rot] Cos[t], radius[t - rot] Sin[t]},
+                {t, 0, 2 Pi}, MaxRecursion -> ControlActive[0, 2]
+              ],
+              If[ecc > 1,
+                ControlActive[{}, Graphics[{LightGray,
+                  Rotate[Line[{{cx - 1000 a, cy - 1000 b}, {cx + 1000 a, cy + 1000 b}}], rot, {cx, cy}],
+                  Rotate[Line[{{cx - 1000 a, cy + 1000 b}, {cx + 1000 a, cy - 1000 b}}], rot, {cx, cy}]
+                }]],
+                {}
+              ],
+              If[ecc > 1 && showAsym,
+                ControlActive[{}, Graphics[{Orange, Dashed,
+                  Rotate[Line[{{cx - 1000 a, cy - 1000 b}, {cx + 1000 a, cy + 1000 b}}], rot, {cx, cy}]
+                }]],
+                {}
+              ],
+              Graphics[{Purple, PointSize[0.02], Point[{0, 0}]}],
+              PlotRange -> 2.5, ImageSize -> 300,
+              GridLines -> {
+                Table[{n, Lighter[Gray, 0.7]}, {n, -3, 3, 0.5}],
+                Table[{n, Lighter[Gray, 0.7]}, {n, -3, 3, 0.5}]
+              }
+            ]
+          }, Alignment -> Center]
+        ]
+      ],
+      {{ecc, 1.5, "eccentricity"}, 0, 3},
+      {{semiLatus, 0.4}, -1, 1, ControlType -> VerticalSlider, ControlPlacement -> Left},
+      {{rot, Pi/3, "rotation"}, 0, 2 Pi, ControlType -> VerticalSlider, ControlPlacement -> Left},
+      {{showAsym, True}, {True, False}, ControlType -> None},
+      TrackedSymbols :> {ecc, semiLatus, rot, showAsym},
+      AutorunSequencing -> {1, 2, 3}
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let mut state = manipulate::ManipulateState::from_expr(&expr).expect(
+      "the eccentricity/rotation sliders and hidden checkbox state should \
+       build a widget",
+    );
+    assert_eq!(
+      state.error, None,
+      "the conic classification and polar plot must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the polar curve overlaid with its asymptotes should render"
+    );
+    let names: Vec<&str> = state.controls.iter().map(|c| c.name()).collect();
+    assert_eq!(
+      names,
+      ["ecc", "semiLatus", "rot"],
+      "the eccentricity/semiLatus/rotation sliders, with showAsym hidden"
+    );
+    assert_eq!(
+      state
+        .state
+        .iter()
+        .find(|(n, _)| n == "showAsym")
+        .map(|(_, v)| v.as_str()),
+      Some("True"),
+      "showAsym must live in the hidden state, initialized from its spec"
+    );
+
+    let render = |w: &manipulate::ManipulateState| {
+      let mut bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      bindings.extend(w.state.iter().cloned());
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&w.body)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the conic's picture must render")
+    };
+
+    // Default eccentricity (1.5) exercises the `hyperbola` branch of the
+    // `Which` classification, with its asymptotes shown.
+    let with_asymptotes = render(&state);
+    assert!(
+      with_asymptotes.contains("hyperbola"),
+      "the default eccentricity should classify as a hyperbola: {with_asymptotes}"
+    );
+
+    // Toggle the body-level `Checkbox[Dynamic[showAsym]]` off — exactly the
+    // `apply_display_mutation` path a real click drives — and confirm the
+    // hidden state flips and the rendered picture actually changes (the
+    // asymptote lines disappear).
+    fn find_checkbox_target(
+      trees: &[woxi::functions::graphics::DisplayNode],
+    ) -> Option<String> {
+      use woxi::functions::graphics::DisplayNode;
+      for t in trees {
+        match t {
+          DisplayNode::Checkbox {
+            target: Some(target),
+            ..
+          } => return Some(target.clone()),
+          DisplayNode::Row(children) | DisplayNode::Column(children) => {
+            if let Some(found) = find_checkbox_target(children) {
+              return Some(found);
+            }
+          }
+          DisplayNode::Panel(child) => {
+            if let Some(found) =
+              find_checkbox_target(std::slice::from_ref(child))
+            {
+              return Some(found);
+            }
+          }
+          _ => {}
+        }
+      }
+      None
+    }
+    let target = find_checkbox_target(&state.display_trees)
+      .expect("the asymptotes Checkbox should appear in the display tree");
+    assert_eq!(target, "showAsym");
+    state.apply_display_mutation(&format!("{target} = False"));
+    assert_eq!(
+      state.error, None,
+      "unchecking the asymptotes box must re-render cleanly: {:?}",
+      state.error
+    );
+    assert_eq!(
+      state
+        .state
+        .iter()
+        .find(|(n, _)| n == "showAsym")
+        .map(|(_, v)| v.as_str()),
+      Some("False"),
+      "the checkbox write-back must flip the hidden showAsym state"
+    );
+    let without_asymptotes = render(&state);
+    assert_ne!(
+      with_asymptotes, without_asymptotes,
+      "unchecking the asymptotes box must actually remove them from the picture"
+    );
+
+    // Dropping the eccentricity below 1 switches the classification to the
+    // `ellipse` branch.
+    match &mut state.controls[0] {
+      manipulate::ControlState::Continuous { current, .. } => *current = 0.5,
+      other => panic!("expected ecc as a Continuous control, got {other:?}"),
+    }
+    state.reevaluate();
+    assert_eq!(
+      state.error, None,
+      "re-render at ecc = 0.5 must evaluate cleanly: {:?}",
+      state.error
+    );
+    let as_ellipse = render(&state);
+    assert!(
+      as_ellipse.contains("ellipse"),
+      "ecc = 0.5 should classify as an ellipse: {as_ellipse}"
     );
   }
 }

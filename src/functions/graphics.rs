@@ -19537,13 +19537,14 @@ fn strip_body_popup_menus(expr: &Expr, promoted: &[String]) -> Expr {
   }
 }
 
-/// Replace every `TogglerBar[Dynamic[var], …]` in a Manipulate body with
-/// `Nothing`, pushing each one's InputForm onto `displays` so the front-end
-/// renders it as a live widget instead of a static picture.
+/// Replace every `TogglerBar[Dynamic[var], …]` or bare `Checkbox[Dynamic[var],
+/// …]` in a Manipulate body with `Nothing`, pushing each one's InputForm onto
+/// `displays` so the front-end renders it as a live widget instead of a
+/// static picture.
 fn extract_body_togglerbars(expr: &Expr, displays: &mut Vec<String>) -> Expr {
   match expr {
     Expr::FunctionCall { name, args }
-      if name == "TogglerBar"
+      if (name == "TogglerBar" || name == "Checkbox")
         && matches!(
           args.first(),
           Some(Expr::FunctionCall { name: dname, args: dargs })
