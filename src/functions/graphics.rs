@@ -6621,23 +6621,41 @@ fn render_primitive(
       let text_w = longest as f64 * fs * 0.6;
       let text_h = text.split('\n').count() as f64 * fs;
       let (ax, ay) = resolve_anchor(*x, *y, *scaled, bb);
-      let sx = coord_x(ax, bb, svg_w) - offset.0 * text_w / 2.0;
-      let sy = coord_y(ay, bb, svg_h) + offset.1 * text_h / 2.0;
+      let anchor_x = coord_x(ax, bb, svg_w);
+      let anchor_y = coord_y(ay, bb, svg_h);
       // A fourth `direction` argument tilts the label's baseline to match
       // that vector — carried in data coordinates, so it has to go through
       // the same x/y pixel-per-unit scaling `coord_x`/`coord_y` apply (and
-      // the same y-flip) before it becomes a screen-space angle for SVG's
-      // `rotate()`.
-      let rotate_attr = match direction {
-        Some((dx, dy)) if *dx != 0.0 || *dy != 0.0 => {
-          let px = dx * svg_w / bb.width();
-          let py = -dy * svg_h / bb.height();
-          format!(
-            " transform=\"rotate({:.3} {sx:.2} {sy:.2})\"",
-            py.atan2(px).to_degrees()
-          )
-        }
-        _ => String::new(),
+      // the same y-flip) before it becomes a screen-space angle. The offset
+      // is measured along that same tilted baseline (its local x-axis) and
+      // perpendicular to it (its local y-axis), not along the fixed screen
+      // axes — so a label offset "backward" along a rotated direction is
+      // pushed out along the direction it points, which is what fans the
+      // labels in `Table[Text[…, dir], {dir, …}]` out radially instead of
+      // stacking them all at the same offset.
+      let has_direction =
+        matches!(direction, Some((dx, dy)) if *dx != 0.0 || *dy != 0.0);
+      let angle = if has_direction {
+        let (dx, dy) = direction.unwrap();
+        let px = dx * svg_w / bb.width();
+        let py = -dy * svg_h / bb.height();
+        py.atan2(px)
+      } else {
+        0.0
+      };
+      let (ux, uy) = (angle.cos(), angle.sin());
+      let (vx, vy) = (-angle.sin(), angle.cos());
+      let sx =
+        anchor_x - offset.0 * text_w / 2.0 * ux + offset.1 * text_h / 2.0 * vx;
+      let sy =
+        anchor_y - offset.0 * text_w / 2.0 * uy + offset.1 * text_h / 2.0 * vy;
+      let rotate_attr = if has_direction {
+        format!(
+          " transform=\"rotate({:.3} {sx:.2} {sy:.2})\"",
+          angle.to_degrees()
+        )
+      } else {
+        String::new()
       };
       // `Background -> colour` paints a panel behind the label, which is
       // what keeps a value readable over whatever it is placed on; a
