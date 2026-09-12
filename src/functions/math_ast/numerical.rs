@@ -2776,28 +2776,23 @@ pub fn normalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let norm = norm_sq.sqrt();
 
     if all_int {
-      // Try to keep exact: each element / Sqrt[sum_sq]
+      // Exact: each element / Sqrt[sum_sq], handed to the evaluator rather
+      // than built literally. It owns both reductions this needs — a
+      // perfect-square norm (`{3, 4}` → `{3/5, 4/5}`) and the radical
+      // canonicalisation wolframscript applies component-wise
+      // (`3/Sqrt[18]` → `1/Sqrt[2]`, `5/Sqrt[70]` → `Sqrt[5/14]`). Built
+      // literally the components came out as `3/Sqrt[18]`.
       let sum_sq: i128 = int_vals.iter().map(|x| x * x).sum();
-      // Check if sum_sq is a perfect square
-      let root = (sum_sq as f64).sqrt() as i128;
-      if root * root == sum_sq && root > 0 {
-        // Exact: each element / root
-        let result: Vec<Expr> =
-          int_vals.iter().map(|x| make_rational(*x, root)).collect();
-        return Ok(Expr::List(result.into()));
-      }
-      // Return as xi / Sqrt[sum_sq]
+      let norm_expr = make_sqrt(Expr::Integer(sum_sq));
       let result: Vec<Expr> = int_vals
         .iter()
         .map(|x| {
-          if *x == 0 {
-            Expr::Integer(0)
-          } else {
-            // x / Sqrt[sum_sq] = x * Power[sum_sq, -1/2]
-            div2(Expr::Integer(*x), make_sqrt(Expr::Integer(sum_sq)))
-          }
+          crate::evaluator::evaluate_expr_to_expr(&div2(
+            Expr::Integer(*x),
+            norm_expr.clone(),
+          ))
         })
-        .collect();
+        .collect::<Result<Vec<_>, _>>()?;
       return Ok(Expr::List(result.into()));
     }
 

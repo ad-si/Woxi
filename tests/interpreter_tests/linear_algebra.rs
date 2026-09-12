@@ -9680,3 +9680,62 @@ mod schur_decomposition {
     }
   }
 }
+
+mod normalize {
+  use super::*;
+
+  /// The exact integer path built `x/Sqrt[sum]` literally instead of
+  /// evaluating it, so the components kept an unreduced radical:
+  /// `Normalize[{3, 3}]` came out as `{3/Sqrt[18], 3/Sqrt[18]}` where
+  /// wolframscript gives `{1/Sqrt[2], 1/Sqrt[2]}`. The canonicalisation
+  /// itself was already right — `3/Sqrt[18]` on its own evaluated to
+  /// `1/Sqrt[2]`. Found by the differential fuzzer on `Normalize[{3, -5, 6}]`.
+  #[test]
+  fn integer_vector_components_are_reduced() {
+    assert_eq!(
+      interpret("Normalize[{3, 3}]").unwrap(),
+      "{1/Sqrt[2], 1/Sqrt[2]}"
+    );
+    assert_eq!(
+      interpret("Normalize[{3, -5, 6}]").unwrap(),
+      "{3/Sqrt[70], -Sqrt[5/14], 3*Sqrt[2/35]}"
+    );
+    assert_eq!(
+      interpret("Normalize[{1, 2, 3}]").unwrap(),
+      "{1/Sqrt[14], Sqrt[2/7], 3/Sqrt[14]}"
+    );
+  }
+
+  /// A perfect-square norm still collapses to plain rationals, which the
+  /// removed hand-rolled `root * root == sum_sq` branch used to cover.
+  #[test]
+  fn perfect_square_norm_gives_rationals() {
+    assert_eq!(interpret("Normalize[{3, 4}]").unwrap(), "{3/5, 4/5}");
+    assert_eq!(interpret("Normalize[{-3, -4}]").unwrap(), "{-3/5, -4/5}");
+    assert_eq!(interpret("Normalize[{5}]").unwrap(), "{1}");
+    assert_eq!(interpret("Normalize[{2, 0, 0}]").unwrap(), "{1, 0, 0}");
+    assert_eq!(interpret("Normalize[{0, 0, 7}]").unwrap(), "{0, 0, 1}");
+  }
+
+  #[test]
+  fn zero_vector_is_returned_unchanged() {
+    assert_eq!(interpret("Normalize[{0, 0}]").unwrap(), "{0, 0}");
+  }
+
+  /// The float and symbolic paths are untouched by the exact-path fix.
+  #[test]
+  fn float_and_symbolic_paths() {
+    assert_eq!(
+      interpret("Normalize[{3., 4.}]").unwrap(),
+      "{0.6000000000000001, 0.8}"
+    );
+    assert_eq!(
+      interpret("Normalize[{1, I}]").unwrap(),
+      "{1/Sqrt[2], I/Sqrt[2]}"
+    );
+    assert_eq!(
+      interpret("Normalize[{a, b}]").unwrap(),
+      "{a/Sqrt[Abs[a]^2 + Abs[b]^2], b/Sqrt[Abs[a]^2 + Abs[b]^2]}"
+    );
+  }
+}
