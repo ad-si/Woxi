@@ -24019,7 +24019,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 30, $CellContext`s$$ = 5}, \"
       .1;
     assert_eq!(
       trail_after_move,
-      "{{}, {Point[{2.9994000199997335, 0.05999600007999923}]}}",
+      "{{}, {Point[{2.9994000199997335, 0.05999600007999924}]}}",
       "moving alpha to a new value must append the previous intersection \
        point to the trail"
     );
@@ -25263,6 +25263,114 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`count$$ = 3, $CellContext`offset$$ 
     assert!(
       svg.contains("<rect"),
       "the dynamic strip's Rectangle should be present in the overlay: {svg}"
+    );
+  }
+
+  /// Checked a randomly-sampled Wolfram Demonstrations Project notebook (a
+  /// conic-section-by-polar-equation visualizer) against Woxi Studio's
+  /// Manipulate pipeline. Its shape: eccentricity/semi-latus-rectum/rotation
+  /// sliders (two of them `VerticalSlider`s placed to one side) feed a
+  /// `Module`-local classification (`Which[e<1, "ellipse", e==1, "parabola",
+  /// True, "hyperbola"]`) and a polar radius helper `r[t_] := ...`; the body
+  /// `Deploy`s a `Column` whose first row shows a `TraditionalForm`/
+  /// `HoldForm` formula alongside a body-level `Checkbox[Dynamic[...]]`
+  /// toggling a hidden `ControlType -> None` boolean, followed by a
+  /// classification label built from `Round`ed slider values, and a `Show`
+  /// combining a `ParametricPlot` (its `MaxRecursion` gated by
+  /// `ControlActive`) with conditionally shown, `Rotate`d asymptote `Line`s
+  /// and a `{value, style}`-pair `GridLines` spec.
+  ///
+  /// This is a self-authored, construct-equivalent example (invented
+  /// variable names and values) — not the notebook's own code, data, or
+  /// wording, which is copyrighted. Woxi Studio already renders and
+  /// interacts with this correctly; this pins it down as a regression test.
+  #[test]
+  fn demonstration_conic_by_polar_equation_toggles_asymptotes() {
+    let code = r#"Manipulate[
+      Module[{a, b, c, cx, cy, radius},
+        Which[
+          ecc > 1,
+          a = semiLatus (ecc/(ecc^2 - 1));
+          b = semiLatus (ecc/Sqrt[ecc^2 - 1]);
+          c = semiLatus (ecc^2/(ecc^2 - 1));
+          cx = c Cos[rot]; cy = c Sin[rot],
+          True,
+          a = 0; b = 0; cx = 0; cy = 0
+        ];
+        radius[t_] := ecc (semiLatus/(1 + ecc Cos[t]));
+        Deploy[
+          Column[{
+            Row[{
+              Style[TraditionalForm[HoldForm[
+                Row[{Style["r", Italic], "(", Style["t", Italic], ")"}] ==
+                Style["ecc", Italic] (Style["semiLatus", Italic]/
+                  Row[{"1 + ", Style["ecc", Italic], " cos(", Style["t", Italic], " - phi)"}])
+              ]], 18, Darker[Blue, 0.2]],
+              If[ecc > 1,
+                Row[{"  ", Checkbox[Dynamic[showAsym], {False, True}], Style[" asymptotes", "Label"]}],
+                ""]
+            }],
+            Style[
+              Row[{
+                Which[ecc < 1, "ellipse", ecc == 1, "parabola", True, "hyperbola"],
+                ":  e = ", Round[ecc, 0.01], ",  l = ", Round[semiLatus, 0.01]
+              }], Gray, 12
+            ],
+            Show[
+              ParametricPlot[
+                {radius[t - rot] Cos[t], radius[t - rot] Sin[t]},
+                {t, 0, 2 Pi}, MaxRecursion -> ControlActive[0, 2]
+              ],
+              If[ecc > 1,
+                ControlActive[{}, Graphics[{LightGray,
+                  Rotate[Line[{{cx, cy}, {cx + 1000 a, cy + 1000 b}}], rot],
+                  Rotate[Line[{{cx, cy}, {cx - 1000 a, cy + 1000 b}}], rot]
+                }]],
+                {}
+              ],
+              If[ecc > 1 && showAsym,
+                ControlActive[{}, Graphics[{Orange, Dashed,
+                  Rotate[Line[{{cx, cy}, {cx + 1000 a, cy - 1000 b}}], rot]
+                }]],
+                {}
+              ],
+              Graphics[{Purple, PointSize[0.02], Point[{0, 0}]}],
+              PlotRange -> 2.5, ImageSize -> 300,
+              GridLines -> {
+                Table[{n, Lighter[Gray, 0.7]}, {n, -3, 3, 0.5}],
+                Table[{n, Lighter[Gray, 0.7]}, {n, -3, 3, 0.5}]
+              }
+            ]
+          }, Alignment -> Center]
+        ]
+      ],
+      {{ecc, 1.5, "eccentricity"}, 0, 3},
+      {{semiLatus, 0.4}, -1, 1, ControlType -> VerticalSlider, ControlPlacement -> Left},
+      {{rot, Pi/3, "rotation"}, 0, 2 Pi, ControlType -> VerticalSlider, ControlPlacement -> Left},
+      {{showAsym, True}, {True, False}, ControlType -> None},
+      TrackedSymbols :> {ecc, semiLatus, rot, showAsym},
+      AutorunSequencing -> {1, 2, 3}
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr).expect(
+      "the eccentricity/rotation sliders and hidden checkbox state should \
+       build a widget",
+    );
+    assert_eq!(
+      state.error, None,
+      "the conic classification and polar plot must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the polar curve overlaid with its asymptotes should render"
+    );
+    let names: Vec<&str> = state.controls.iter().map(|c| c.name()).collect();
+    assert_eq!(
+      names,
+      ["ecc", "semiLatus", "rot"],
+      "the eccentricity/semiLatus/rotation sliders, with showAsym hidden"
     );
   }
 }
