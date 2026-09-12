@@ -6550,6 +6550,91 @@ mod high_level_functions {
         assert!((v - 1.0).abs() < 1e-2, "var {v}");
       }
     }
+
+    #[test]
+    fn test_indexed_variables() {
+      // NMinimize accepts an indexed variable like `n[1]` for its variable
+      // list, matching Minimize/Maximize: `Minimize[{n[1]^2 + n[2]^2,
+      // n[1] + n[2] == 1}, {n[1], n[2]}]` already returns
+      // `{1/2, {n[1] -> 1/2, n[2] -> 1/2}}`. Regression: NMinimize used to
+      // hard-reject any non-`Identifier` entry in the variable list with
+      // "variables must be symbols".
+      let out = interpret(
+        "NMinimize[{n[1]^2 + n[2]^2, n[1] + n[2] == 1}, {n[1], n[2]}]",
+      )
+      .unwrap();
+      let (value, vals) = parse_result(&out);
+      assert!((value - 0.5).abs() < 1e-3, "value {value}");
+      for v in &vals {
+        assert!((v - 0.5).abs() < 1e-2, "var {v}");
+      }
+    }
+
+    #[test]
+    fn test_linear_objective_vertex_optimum_with_coupled_equalities() {
+      // A linear objective under linear equality constraints has its optimum
+      // at a vertex of the feasible polytope, which the penalty/Nelder-Mead
+      // search below can't reliably land on (the equality manifold is
+      // measure-zero in the search box). Regression: this used to report
+      // "NMinimize::nsol: There are no points that satisfy the constraints"
+      // even though {n[1], n[2], n[3]} = {0, 1, 1} plainly satisfies them.
+      //
+      // Analytically: n[1] + n[2] == 1 and 4 n[1] + 2 n[2] + 2 n[3] == 4
+      // reduce (eliminating n[1], n[2] in terms of n[3]) to n[1] = 1 - n[3],
+      // n[2] = n[3], so the objective becomes -1000 - 4000 n[3] over
+      // n[3] in [0, 1] (from n[1], n[2] >= 0), minimized at n[3] = 1.
+      let out = interpret(
+        "NMinimize[{-1000 n[1] - 2000 n[2] - 3000 n[3], n[1] >= 0, \
+         n[2] >= 0, n[3] >= 0, n[1] + n[2] == 1, \
+         4 n[1] + 2 n[2] + 2 n[3] == 4}, {n[1], n[2], n[3]}]",
+      )
+      .unwrap();
+      let (value, vals) = parse_result(&out);
+      assert!((value - (-5000.0)).abs() < 1e-2, "value {value}");
+      assert!((vals[0] - 0.0).abs() < 1e-3, "n[1] {}", vals[0]);
+      assert!((vals[1] - 1.0).abs() < 1e-3, "n[2] {}", vals[1]);
+      assert!((vals[2] - 1.0).abs() < 1e-3, "n[3] {}", vals[2]);
+    }
+
+    #[test]
+    fn test_maximize_vertex_optimum_with_coupled_equalities() {
+      // NMaximize variant of the vertex-optimum regression above: maximizing
+      // n[1] + 2 n[2] + 3 n[3] over the same feasible set reduces to
+      // maximizing 1 + 4 n[3] over n[3] in [0, 1], at n[3] = 1.
+      let out = interpret(
+        "NMaximize[{n[1] + 2 n[2] + 3 n[3], n[1] >= 0, n[2] >= 0, \
+         n[3] >= 0, n[1] + n[2] == 1, 4 n[1] + 2 n[2] + 2 n[3] == 4}, \
+         {n[1], n[2], n[3]}]",
+      )
+      .unwrap();
+      let (value, vals) = parse_result(&out);
+      assert!((value - 5.0).abs() < 1e-2, "value {value}");
+      assert!((vals[0] - 0.0).abs() < 1e-3, "n[1] {}", vals[0]);
+      assert!((vals[1] - 1.0).abs() < 1e-3, "n[2] {}", vals[1]);
+      assert!((vals[2] - 1.0).abs() < 1e-3, "n[3] {}", vals[2]);
+    }
+
+    #[test]
+    fn test_fully_determined_linear_equalities() {
+      // Two linear equalities in two unknowns leave no free variable after
+      // elimination; the unique point should be evaluated directly rather
+      // than recursing into NMinimize with an empty variable list.
+      let out = interpret("NMinimize[{x + y, x + y == 3, x - y == 1}, {x, y}]")
+        .unwrap();
+      let (value, vals) = parse_result(&out);
+      assert!((value - 3.0).abs() < 1e-6, "value {value}");
+      assert!((vals[0] - 2.0).abs() < 1e-6, "x {}", vals[0]);
+      assert!((vals[1] - 1.0).abs() < 1e-6, "y {}", vals[1]);
+    }
+
+    #[test]
+    fn test_inconsistent_linear_equalities() {
+      // Mutually inconsistent linear equalities (x + y can't be both 3 and
+      // 5) have no feasible point at all.
+      let out = interpret("NMinimize[{x + y, x + y == 3, x + y == 5}, {x, y}]")
+        .unwrap();
+      assert_eq!(out, "{Infinity, {x -> Indeterminate, y -> Indeterminate}}");
+    }
   }
 
   mod geographics_tests {

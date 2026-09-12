@@ -11113,7 +11113,110 @@ pub fn nminimize_ast(
   // monitor's `noopmon` report, ignored) rather than rejected on arity.
   let (positional, opts) = args.split_at(args.len().min(2));
   let step_monitor = monitor_after_noopmon(func_name, opts);
+
+  // An indexed variable like `n[1]` (a FunctionCall, not a plain Identifier)
+  // is a valid variable for Minimize/Maximize's symbolic solver; NMinimize
+  // should accept the same shape. Rename each such variable to a fresh
+  // plain identifier throughout the objective/constraints so the rest of
+  // the (identifier-only) numeric pipeline below can stay unchanged, then
+  // substitute the original expressions back into the result's rules.
+  if positional.len() == 2
+    && let Ok((_, var_exprs)) =
+      minimize_parse_vars_full(&positional[1], func_name)
+    && var_exprs
+      .iter()
+      .any(|e| matches!(e, Expr::FunctionCall { .. }))
+  {
+    let fresh_names: Vec<String> =
+      (0..var_exprs.len()).map(|i| format!("__ilp_{i}")).collect();
+    let mut renamed_objective_arg = positional[0].clone();
+    for (orig, fresh) in var_exprs.iter().zip(fresh_names.iter()) {
+      if matches!(orig, Expr::FunctionCall { .. }) {
+        renamed_objective_arg = substitute_expr(
+          &renamed_objective_arg,
+          orig,
+          &Expr::Identifier(fresh.clone()),
+        );
+      }
+    }
+    let renamed_vars_arg =
+      Expr::List(fresh_names.iter().cloned().map(Expr::Identifier).collect());
+    let renamed_args = [renamed_objective_arg, renamed_vars_arg];
+
+    let result = nminimize_ast_impl(&renamed_args, maximize, step_monitor)?;
+    let result = fresh_names.iter().zip(var_exprs.iter()).fold(
+      result,
+      |acc, (fresh, orig)| {
+        substitute_expr(&acc, &Expr::Identifier(fresh.clone()), orig)
+      },
+    );
+    return Ok(result);
+  }
+
   nminimize_ast_impl(positional, maximize, step_monitor)
+}
+
+/// Rewrite a linear, single-free-variable inequality/equality like
+/// `1 - n3 >= 0` into the canonical `var op value` shape that
+/// `extract_bound_from_comparison` understands (it only recognizes a bare
+/// variable on one side and a literal on the other). This matters after
+/// eliminating equality constraints below: substituting `n1 -> 1 - n3` into
+/// `n1 >= 0` produces exactly this un-normalized shape. Constraints that
+/// touch more than one of `free_vars`, or aren't linear, are returned
+/// unchanged (the fallback that was already in place).
+fn normalize_bound_constraint(c: &Expr, free_vars: &[String]) -> Expr {
+  let Expr::Comparison {
+    operands,
+    operators,
+  } = c
+  else {
+    return c.clone();
+  };
+  if operators.len() != 1 || operands.len() != 2 {
+    return c.clone();
+  }
+  let touched: Vec<String> = free_vars
+    .iter()
+    .filter(|v| crate::functions::polynomial_ast::contains_var(c, v))
+    .cloned()
+    .collect();
+  let [var] = touched.as_slice() else {
+    return c.clone();
+  };
+  if matches!(&operands[0], Expr::Identifier(n) if n == var)
+    || matches!(&operands[1], Expr::Identifier(n) if n == var)
+  {
+    // Already canonical.
+    return c.clone();
+  }
+  let diff = minus2(operands[0].clone(), operands[1].clone());
+  let Some((coeffs, constant)) =
+    minimize_extract_linear_expr(&diff, std::slice::from_ref(var))
+  else {
+    return c.clone();
+  };
+  let coeff = coeffs[0];
+  if coeff == 0.0 {
+    return c.clone();
+  }
+  // `coeff * var + constant op 0` ⇒ `var op' (-constant / coeff)`, flipping
+  // the comparator when dividing by a negative coefficient.
+  let bound = -constant / coeff;
+  let op = if coeff < 0.0 {
+    match operators[0] {
+      ComparisonOp::Less => ComparisonOp::Greater,
+      ComparisonOp::LessEqual => ComparisonOp::GreaterEqual,
+      ComparisonOp::Greater => ComparisonOp::Less,
+      ComparisonOp::GreaterEqual => ComparisonOp::LessEqual,
+      other => other,
+    }
+  } else {
+    operators[0]
+  };
+  Expr::Comparison {
+    operands: vec![Expr::Identifier(var.clone()), Expr::Real(bound)],
+    operators: vec![op],
+  }
 }
 
 fn nminimize_ast_impl(
@@ -11165,6 +11268,180 @@ fn nminimize_ast_impl(
     .any(|c| matches!(c, Expr::Identifier(s) if s == "False"))
   {
     return Ok(nminimize_infeasible_result(&constraints, &vars, maximize));
+  }
+
+  // Equality constraints that are linear in the optimization variables
+  // (e.g. `n[1] + n[2] == 1`) define an equality manifold that the sampler
+  // and penalty search below struggle to land on exactly, especially once
+  // the true optimum sits at a vertex of the feasible region (as any linear
+  // objective's does). Eliminate them symbolically first — solving for as
+  // many variables as possible in terms of the rest — so the search below
+  // only ever has to explore the remaining free variables (typically with
+  // plain box bounds once the equalities are gone), regardless of how
+  // nonlinear the objective itself is.
+  let equalities: Vec<Expr> = flat_constraints
+    .iter()
+    .filter(|c| {
+      matches!(c, Expr::Comparison { operators, .. } if operators.len() == 1 && operators[0] == ComparisonOp::Equal)
+    })
+    .map(|c| (**c).clone())
+    .collect();
+  if !equalities.is_empty()
+    && let Some(Expr::List(ref solutions)) =
+      solve_linear_symbolic(&equalities, &vars)
+  {
+    if solutions.is_empty() {
+      // The equalities are mutually inconsistent: no point can satisfy them.
+      return Ok(nminimize_infeasible_result(&constraints, &vars, maximize));
+    }
+    if let Some(Expr::List(rules)) = solutions.first() {
+      let eliminated: Vec<&String> = rules
+        .iter()
+        .filter_map(|r| match r {
+          Expr::Rule { pattern, .. } => match pattern.as_ref() {
+            Expr::Identifier(n) => Some(n),
+            _ => None,
+          },
+          _ => None,
+        })
+        .collect();
+      if !eliminated.is_empty() {
+        let substitute_rules = |e: &Expr| -> Expr {
+          let mut e = e.clone();
+          for r in rules {
+            if let Expr::Rule {
+              pattern,
+              replacement,
+            } = r
+              && let Expr::Identifier(name) = pattern.as_ref()
+            {
+              e = crate::syntax::substitute_variable(&e, name, replacement);
+            }
+          }
+          e
+        };
+        let free_vars: Vec<String> = vars
+          .iter()
+          .filter(|v| !eliminated.contains(v))
+          .cloned()
+          .collect();
+        let reduced_objective = substitute_rules(&objective);
+        let non_equality_constraints: Vec<Expr> = flat_constraints
+          .iter()
+          .filter(|c| {
+            !matches!(c, Expr::Comparison { operators, .. } if operators.len() == 1 && operators[0] == ComparisonOp::Equal)
+          })
+          .map(|c| substitute_rules(c))
+          .map(|c| normalize_bound_constraint(&c, &free_vars))
+          .collect();
+
+        // Fully determined (no free variables left): evaluate the unique
+        // point directly instead of recursing with an empty variable list.
+        if free_vars.is_empty() {
+          let feasible = non_equality_constraints.iter().all(|c| {
+            matches!(
+              crate::evaluator::evaluate_expr_to_expr(c),
+              Ok(Expr::Identifier(ref s)) if s == "True"
+            )
+          });
+          if !feasible {
+            return Ok(nminimize_infeasible_result(
+              &constraints,
+              &vars,
+              maximize,
+            ));
+          }
+          let val = crate::evaluator::evaluate_expr_to_expr(&call1(
+            "N",
+            reduced_objective,
+          ))?;
+          let full_rules: Vec<Expr> = rules
+            .iter()
+            .filter_map(|r| match r {
+              Expr::Rule {
+                pattern,
+                replacement,
+              } => {
+                let v = crate::evaluator::evaluate_expr_to_expr(&call1(
+                  "N",
+                  (**replacement).clone(),
+                ))
+                .unwrap_or_else(|_| (**replacement).clone());
+                Some(Expr::Rule {
+                  pattern: pattern.clone(),
+                  replacement: Box::new(v),
+                })
+              }
+              _ => None,
+            })
+            .collect();
+          return Ok(Expr::List(
+            vec![val, Expr::List(full_rules.into())].into(),
+          ));
+        }
+
+        let reduced_args_obj = if non_equality_constraints.is_empty() {
+          reduced_objective
+        } else {
+          let mut items = vec![reduced_objective];
+          items.extend(non_equality_constraints);
+          Expr::List(items.into())
+        };
+        let reduced_vars_arg =
+          Expr::List(free_vars.iter().cloned().map(Expr::Identifier).collect());
+        let reduced_args = [reduced_args_obj, reduced_vars_arg];
+        let reduced_result =
+          nminimize_ast_impl(&reduced_args, maximize, step_monitor)?;
+
+        // Reconstruct the full rule list: the free variables come straight
+        // from the reduced result; the eliminated ones are recovered by
+        // evaluating their elimination rule at that point.
+        if let Expr::List(items) = &reduced_result
+          && items.len() == 2
+          && let Expr::List(free_rules) = &items[1]
+        {
+          let mut full_rules = free_rules.clone();
+          for r in rules {
+            if let Expr::Rule {
+              pattern,
+              replacement,
+            } = r
+            {
+              let mut val = (**replacement).clone();
+              for fr in free_rules {
+                if let Expr::Rule {
+                  pattern: fp,
+                  replacement: fv,
+                } = fr
+                  && let Expr::Identifier(fname) = fp.as_ref()
+                {
+                  val = crate::syntax::substitute_variable(&val, fname, fv);
+                }
+              }
+              let val =
+                crate::evaluator::evaluate_expr_to_expr(&val).unwrap_or(val);
+              full_rules.push(Expr::Rule {
+                pattern: pattern.clone(),
+                replacement: Box::new(val),
+              });
+            }
+          }
+          full_rules.sort_by_key(|r| match r {
+            Expr::Rule { pattern, .. } => match pattern.as_ref() {
+              Expr::Identifier(n) => {
+                vars.iter().position(|v| v == n).unwrap_or(usize::MAX)
+              }
+              _ => usize::MAX,
+            },
+            _ => usize::MAX,
+          });
+          return Ok(Expr::List(
+            vec![items[0].clone(), Expr::List(full_rules)].into(),
+          ));
+        }
+        return Ok(reduced_result);
+      }
+    }
   }
 
   // A constraint coupling two or more of the optimization variables (e.g.
