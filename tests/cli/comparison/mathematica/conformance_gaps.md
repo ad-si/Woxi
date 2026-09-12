@@ -878,6 +878,19 @@ Linux, so a full-precision string assertion is platform-dependent. The same
 1-ULP FMA difference flips a single 8-bit colour channel in `ComplexPlot`
 domain-colouring output at an exact `x.5` boundary.
 
+`tan` and `tanh` are in the same group, and it reaches the reciprocals Woxi
+derives from them. With the macOS libm that wolframscript runs on, `Cot[0.3]`
+is `3.232728143765828`, `Cot[-0.7]` is `-1.1872418321266796` and `Coth[0.8]`
+is `1.5059407020437066`; glibc gives `3.2327281437658275`,
+`-1.1872418321266793` and `1.5059407020437063`.
+
+Neither library is the accurate one throughout — against the correctly
+rounded value, glibc wins at `Cot[0.3]` and macOS at `Cot[-0.7]` and
+`Coth[0.8]` — so this is the libm's last bit and not a formula to correct.
+Tests over these heads pin the formula exactly instead, since that is the
+distinction that matters (`Cot[x]` must be bit-for-bit `1/Tan[x]`, never
+`Cos[x]/Sin[x]`), and pin the value only to within a last bit.
+
 
 ## Algebra and calculus
 

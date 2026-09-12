@@ -2179,21 +2179,44 @@ mod find_divisions {
 mod reciprocal_trig_last_bit {
   use super::*;
 
+  /// Assert that `code` is computed as `reciprocal` — bit for bit, since the
+  /// choice of formula is exactly what is under test — and that the result is
+  /// the pinned wolframscript value to within a last bit.
+  ///
+  /// The value cannot be pinned any tighter than that: it is only as accurate
+  /// as the libm that produced it, and the platforms disagree in the last bit
+  /// on `Tan[0.3]`, `Tan[-0.7]` and `Tanh[0.8]` (macOS, where the expected
+  /// values were recorded from wolframscript, against the glibc of Linux CI).
+  /// Hard-coding one platform's digits only moves the failure to the other.
+  fn reciprocal_value(code: &str, reciprocal: &str, expected: f64) {
+    let value = interpret(code).unwrap();
+    assert_eq!(
+      value,
+      interpret(reciprocal).unwrap(),
+      "{code} must be computed as {reciprocal}"
+    );
+    let actual: f64 = value.parse().unwrap();
+    assert!(
+      (actual - expected).abs() <= f64::EPSILON * expected.abs(),
+      "for {code}: {actual} is more than a last bit away from {expected}"
+    );
+  }
+
   /// `Cot[x]` is the reciprocal of the tangent, not the cosine over the
   /// sine. The two formulas differ in the last bit at some arguments, and
   /// wolframscript takes the reciprocal. Found by the differential fuzzer
   /// on `Cot[0.8]`, which came out as `...44` instead of `...43`.
   #[test]
   fn cot_takes_the_reciprocal_of_tan() {
-    for (code, expected) in [
-      ("Cot[0.8]", "0.9712146006504743"),
-      ("Cot[0.3]", "3.232728143765828"),
-      ("Cot[1.5]", "0.07091484430265245"),
-      ("Cot[2.0]", "-0.45765755436028577"),
-      ("Cot[-0.7]", "-1.1872418321266796"),
-      ("Cot[5.5]", "-1.0044355348765333"),
+    for (code, reciprocal, expected) in [
+      ("Cot[0.8]", "1/Tan[0.8]", 0.9712146006504743),
+      ("Cot[0.3]", "1/Tan[0.3]", 3.232728143765828),
+      ("Cot[1.5]", "1/Tan[1.5]", 0.07091484430265245),
+      ("Cot[2.0]", "1/Tan[2.0]", -0.45765755436028577),
+      ("Cot[-0.7]", "1/Tan[-0.7]", -1.1872418321266796),
+      ("Cot[5.5]", "1/Tan[5.5]", -1.0044355348765333),
     ] {
-      assert_eq!(interpret(code).unwrap(), expected, "for {code}");
+      reciprocal_value(code, reciprocal, expected);
     }
   }
 
@@ -2201,14 +2224,14 @@ mod reciprocal_trig_last_bit {
   /// a shared refactor cannot move them.
   #[test]
   fn the_other_reciprocals_are_unchanged() {
-    for (code, expected) in [
-      ("Csc[0.8]", "1.394007819388636"),
-      ("Sec[0.8]", "1.43532419967224"),
-      ("Coth[0.8]", "1.5059407020437066"),
-      ("Csch[0.8]", "1.1259917397884818"),
-      ("Sech[0.8]", "0.7476999182374195"),
+    for (code, reciprocal, expected) in [
+      ("Csc[0.8]", "1/Sin[0.8]", 1.394007819388636),
+      ("Sec[0.8]", "1/Cos[0.8]", 1.43532419967224),
+      ("Coth[0.8]", "1/Tanh[0.8]", 1.5059407020437066),
+      ("Csch[0.8]", "1/Sinh[0.8]", 1.1259917397884818),
+      ("Sech[0.8]", "1/Cosh[0.8]", 0.7476999182374195),
     ] {
-      assert_eq!(interpret(code).unwrap(), expected, "for {code}");
+      reciprocal_value(code, reciprocal, expected);
     }
   }
 }
