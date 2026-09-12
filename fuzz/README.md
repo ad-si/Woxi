@@ -94,6 +94,26 @@ the `PATH`. Override with `--oracle wolframscript|woxi` or
 woxi as its own oracle — useful for validating the harness itself (it
 must report zero divergences).
 
+Coverage: the table holds ~480 entries over ~410 distinct heads, spanning
+elementary and special functions, number theory, list and string surface,
+associations, linear algebra, polynomial algebra, calculus, the
+simplifiers and descriptive statistics. Adding a head means adding one
+`f("Name", &[shape, …])` line; the shapes are the `Arg` enum, and a new
+one needs a match arm in `gen_arg` plus its generator. Two rules keep the
+table honest:
+
+- Argument shapes are deliberately narrow. `Arg::TrigArg` is weighted
+  towards rational multiples of Pi and `Arg::ExactNum` excludes machine
+  reals, because a float argument collapses every special function to a
+  last-digit comparison instead of a comparison of closed forms. Matrices
+  stay 2×2/3×3 with small integer entries so exact eigenvalues and
+  inverses remain short enough to diff. Bounds like `Arg::Frac(3, 8)`
+  exist because Quantile and TrimmedMean reject anything outside them.
+- `curated_table_matches_functions_csv` fails if a head is not marked
+  implemented in `functions.csv`, and `every_spec_generates_parsable_code`
+  builds every entry 20 times and parses the result — a broken argument
+  shape cannot hide between random samples.
+
 How it works:
 
 - Cases are pre-filtered in batches (`Print[InputForm[…]]` statements

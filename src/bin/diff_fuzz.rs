@@ -228,6 +228,92 @@ enum Arg {
   PredFn,
   /// The symbol x (differentiation variable)
   VarX,
+  /// The symbol y (second variable, for multivariate forms)
+  VarY,
+
+  // --- Numeric shapes -------------------------------------------------
+  /// Exact numeric leaf: integer, rational, Pi or E — never a machine
+  /// real, so the special functions below compare symbolic results
+  /// instead of the last digit of a float.
+  ExactNum,
+  /// Rational number (ContinuedFraction, Rationalize, …)
+  RatNum,
+  /// Argument for the trigonometric family: mostly rational multiples of
+  /// Pi, whose exact values the CAS is expected to know.
+  TrigNum,
+  /// Numeric value in [-1, 1] (ArcSin, ArcTanh, InverseErf, …)
+  UnitNum,
+  /// Strictly positive numeric (Log, Gamma, GeometricMean, …)
+  PosNum,
+  /// Complex number `a + b I`
+  ComplexNum,
+  /// Odd integer in 1..=max (JacobiSymbol's modulus, …)
+  OddNat(i64),
+  /// Fraction `k/den` with k in 0..=max_k — a bounded ratio for Quantile,
+  /// TrimmedMean and friends, which reject anything outside their range.
+  Frac(i64, i64),
+
+  // --- List shapes ----------------------------------------------------
+  /// List of small integers (possibly empty)
+  ListInt,
+  /// Non-empty list of small integers
+  ListInt1,
+  /// List of at least two small integers (Variance, Skewness, …)
+  ListInt2,
+  /// Non-empty list of strictly positive small integers
+  ListPosInt1,
+  /// Non-empty list of decimal digits (FromDigits, …)
+  ListDigit,
+  /// Non-empty list of character codes (FromCharacterCode)
+  ListCharCode,
+  /// List of short strings
+  ListStr,
+  /// Two distinct short strings (AssociationThread keys)
+  StrPair,
+  /// Square integer matrix, 2×2 or 3×3
+  Matrix,
+  /// Square integer matrix, always 2×2 — keeps Inverse/Eigenvalues short
+  Matrix2,
+  /// Vector of exactly two small integers
+  Vec2,
+  /// Vector of exactly three small integers
+  Vec3,
+  /// Two equal-length vectors, as `{{…}, {…}}` (MapThread)
+  VecPair,
+  /// Pair of positive dimensions, as `{m, n}` (ArrayReshape)
+  DimPair,
+  /// Association from short string keys to small integers
+  Assoc,
+
+  // --- Pattern / rule / operator shapes -------------------------------
+  /// Blank pattern, possibly head-constrained (`_`, `_Integer`, …)
+  TypePat,
+  /// Rule between two small integers (Replace, ReplacePart, …)
+  IntRule,
+  /// Rule between two one-character strings (StringReplace)
+  StrRule,
+  /// Rule `x -> value` (Limit, ReplaceAll on polynomials)
+  VarRule,
+  /// A bare builtin usable as an operator head (Apply, Fold, Outer, …)
+  OpFn,
+  /// One-character string, so string searches actually hit
+  CharStr,
+
+  // --- Symbolic shapes ------------------------------------------------
+  /// Expression built from Sin/Cos/Tan of x and y
+  TrigExpr,
+  /// Expression built from Exp/Log/Sqrt of x and y
+  ExpExpr,
+  /// Polynomial in x of degree at most two, with a non-zero leading term
+  LowPoly,
+  /// Equation `LowPoly == 0` (Solve, NSolve, SolveValues)
+  PolyEq,
+  /// Series specification `{x, 0, n}`
+  SeriesSpec,
+  /// Iterator `{i, 1, n}` — pairs with `IterBody`, which uses the same `i`
+  Iter,
+  /// Summand/product term in `i`, for the `Iter` shapes
+  IterBody,
 }
 
 struct FnSpec {
@@ -440,11 +526,385 @@ const FN_SPECS: &[FnSpec] = &[
   f("Abs", &[Arg::RadNum]),
   f("Sign", &[Arg::RadNum]),
   f("Numerator", &[Arg::RadNum]),
+  // Trigonometric and hyperbolic. The arguments are rational multiples of
+  // Pi far more often than not, so these compare closed forms rather than
+  // float digits.
+  f("Sin", &[Arg::TrigNum]),
+  f("Cos", &[Arg::TrigNum]),
+  f("Tan", &[Arg::TrigNum]),
+  f("Cot", &[Arg::TrigNum]),
+  f("Sec", &[Arg::TrigNum]),
+  f("Csc", &[Arg::TrigNum]),
+  f("Sinh", &[Arg::TrigNum]),
+  f("Cosh", &[Arg::TrigNum]),
+  f("Tanh", &[Arg::TrigNum]),
+  f("Coth", &[Arg::TrigNum]),
+  f("Sech", &[Arg::TrigNum]),
+  f("Csch", &[Arg::TrigNum]),
+  f("Haversine", &[Arg::TrigNum]),
+  f("Sinc", &[Arg::TrigNum]),
+  f("ArcSin", &[Arg::UnitNum]),
+  f("ArcCos", &[Arg::UnitNum]),
+  f("ArcTanh", &[Arg::UnitNum]),
+  f("ArcTan", &[Arg::ExactNum]),
+  f("ArcTan", &[Arg::IntIn(-4, 4), Arg::IntIn(-4, 4)]),
+  f("ArcCot", &[Arg::ExactNum]),
+  f("ArcSec", &[Arg::ExactNum]),
+  f("ArcCsc", &[Arg::ExactNum]),
+  f("ArcSinh", &[Arg::ExactNum]),
+  f("ArcCosh", &[Arg::ExactNum]),
+  f("ArcCoth", &[Arg::ExactNum]),
+  f("Gudermannian", &[Arg::ExactNum]),
+  // Exponentials, logarithms and roots
+  f("Exp", &[Arg::ExactNum]),
+  f("Log", &[Arg::IntIn(2, 12), Arg::PosNum]),
+  f("Log2", &[Arg::PosNum]),
+  f("Log10", &[Arg::PosNum]),
+  f("Sqrt", &[Arg::ExactNum]),
+  f("CubeRoot", &[Arg::ExactNum]),
+  f("Surd", &[Arg::IntIn(-40, 40), Arg::IntIn(2, 5)]),
+  f("Power", &[Arg::RadNum, Arg::IntIn(-2, 3)]),
+  f("N", &[Arg::ExactNum]),
+  f("N", &[Arg::ExactNum, Arg::IntIn(3, 25)]),
+  // Special functions. Integer/rational arguments keep the results exact,
+  // which is where the interesting reductions (and disagreements) live.
+  f("Gamma", &[Arg::ExactNum]),
+  f("Gamma", &[Arg::IntIn(1, 6), Arg::IntIn(0, 6)]),
+  f("LogGamma", &[Arg::PosNum]),
+  f("Beta", &[Arg::IntIn(1, 8), Arg::IntIn(1, 8)]),
+  f("PolyGamma", &[Arg::PosNum]),
+  f("PolyGamma", &[Arg::Nat(3), Arg::IntIn(1, 6)]),
+  f("Erf", &[Arg::ExactNum]),
+  f("Erfc", &[Arg::ExactNum]),
+  f("Erfi", &[Arg::ExactNum]),
+  f("InverseErf", &[Arg::UnitNum]),
+  f("Zeta", &[Arg::IntIn(-6, 8)]),
+  f("PolyLog", &[Arg::IntIn(-2, 4), Arg::UnitNum]),
+  f("ExpIntegralE", &[Arg::Nat(4), Arg::PosNum]),
+  f("ExpIntegralEi", &[Arg::ExactNum]),
+  f("LogIntegral", &[Arg::PosNum]),
+  f("SinIntegral", &[Arg::ExactNum]),
+  f("CosIntegral", &[Arg::PosNum]),
+  f("SinhIntegral", &[Arg::ExactNum]),
+  f("CoshIntegral", &[Arg::PosNum]),
+  f("FresnelS", &[Arg::ExactNum]),
+  f("FresnelC", &[Arg::ExactNum]),
+  f("AiryAi", &[Arg::ExactNum]),
+  f("AiryBi", &[Arg::ExactNum]),
+  f("BesselJ", &[Arg::IntIn(0, 4), Arg::ExactNum]),
+  f("BesselY", &[Arg::IntIn(0, 4), Arg::PosNum]),
+  f("BesselI", &[Arg::IntIn(0, 4), Arg::ExactNum]),
+  f("BesselK", &[Arg::IntIn(0, 4), Arg::PosNum]),
+  f("ArithmeticGeometricMean", &[Arg::PosNum, Arg::PosNum]),
+  f(
+    "Hypergeometric2F1",
+    &[
+      Arg::IntIn(-3, 3),
+      Arg::IntIn(-3, 3),
+      Arg::IntIn(1, 4),
+      Arg::UnitNum,
+    ],
+  ),
+  f(
+    "Hypergeometric1F1",
+    &[Arg::IntIn(-3, 3), Arg::IntIn(1, 4), Arg::ExactNum],
+  ),
+  // Orthogonal polynomials — symbolic in x as well as evaluated at a
+  // point, since the two paths are usually separate code.
+  f("LegendreP", &[Arg::Nat(5), Arg::ExactNum]),
+  f("LegendreP", &[Arg::Nat(4), Arg::VarX]),
+  f("ChebyshevT", &[Arg::Nat(6), Arg::ExactNum]),
+  f("ChebyshevT", &[Arg::Nat(4), Arg::VarX]),
+  f("ChebyshevU", &[Arg::Nat(6), Arg::ExactNum]),
+  f("HermiteH", &[Arg::Nat(6), Arg::ExactNum]),
+  f("HermiteH", &[Arg::Nat(4), Arg::VarX]),
+  f("LaguerreL", &[Arg::Nat(6), Arg::ExactNum]),
+  f(
+    "GegenbauerC",
+    &[Arg::Nat(5), Arg::IntIn(1, 3), Arg::ExactNum],
+  ),
+  f(
+    "JacobiP",
+    &[
+      Arg::Nat(4),
+      Arg::IntIn(0, 3),
+      Arg::IntIn(0, 3),
+      Arg::ExactNum,
+    ],
+  ),
+  // Combinatorial sequences
+  f("BernoulliB", &[Arg::Nat(12)]),
+  f("EulerE", &[Arg::Nat(10)]),
+  f("StirlingS1", &[Arg::Nat(8), Arg::Nat(8)]),
+  f("Subfactorial", &[Arg::Nat(10)]),
+  f("Hyperfactorial", &[Arg::Nat(5)]),
+  f("BarnesG", &[Arg::IntIn(1, 8)]),
+  f("Factorial2", &[Arg::IntIn(-1, 12)]),
+  f("PartitionsP", &[Arg::Nat(30)]),
+  f("PartitionsQ", &[Arg::Nat(30)]),
+  // Number theory
+  f(
+    "PowerMod",
+    &[Arg::IntIn(-20, 20), Arg::Nat(10), Arg::IntIn(1, 30)],
+  ),
+  f("ModularInverse", &[Arg::IntIn(1, 30), Arg::IntIn(2, 30)]),
+  f(
+    "MultiplicativeOrder",
+    &[Arg::IntIn(2, 20), Arg::IntIn(3, 30)],
+  ),
+  f("JacobiSymbol", &[Arg::IntIn(-30, 30), Arg::OddNat(31)]),
+  f(
+    "KroneckerSymbol",
+    &[Arg::IntIn(-30, 30), Arg::IntIn(-30, 30)],
+  ),
+  f("PrimeOmega", &[Arg::IntIn(1, 500)]),
+  f("PrimeNu", &[Arg::IntIn(1, 500)]),
+  f("DivisorSum", &[Arg::IntIn(1, 60), Arg::PureFn]),
+  f("PrimePowerQ", &[Arg::IntIn(-20, 200)]),
+  f("CompositeQ", &[Arg::IntIn(-20, 200)]),
+  f(
+    "IntegerExponent",
+    &[Arg::IntIn(-1000, 1000), Arg::IntIn(2, 10)],
+  ),
+  f("IntegerLength", &[Arg::IntIn(-100_000, 100_000)]),
+  f("IntegerReverse", &[Arg::IntIn(-100_000, 100_000)]),
+  f("DigitSum", &[Arg::Nat(100_000)]),
+  f("FromDigits", &[Arg::ListDigit]),
+  f("FromDigits", &[Arg::ListDigit, Arg::IntIn(2, 16)]),
+  f("RealDigits", &[Arg::PosNum]),
+  f("ContinuedFraction", &[Arg::RatNum]),
+  f("FromContinuedFraction", &[Arg::ListPosInt1]),
+  f("Convergents", &[Arg::ListPosInt1]),
+  f("ExtendedGCD", &[Arg::IntIn(-60, 60), Arg::IntIn(-60, 60)]),
+  f("Cyclotomic", &[Arg::IntIn(1, 12), Arg::VarX]),
+  f("CarmichaelLambda", &[Arg::IntIn(1, 200)]),
+  f("SquaresR", &[Arg::IntIn(1, 4), Arg::Nat(60)]),
+  // Complex numbers
+  f("Re", &[Arg::ComplexNum]),
+  f("Im", &[Arg::ComplexNum]),
+  f("Abs", &[Arg::ComplexNum]),
+  f("Arg", &[Arg::ComplexNum]),
+  f("Conjugate", &[Arg::ComplexNum]),
+  f("AbsArg", &[Arg::ComplexNum]),
+  f("ReIm", &[Arg::ComplexNum]),
+  f("Sqrt", &[Arg::ComplexNum]),
+  f("Exp", &[Arg::ComplexNum]),
+  f("Power", &[Arg::ComplexNum, Arg::IntIn(-2, 3)]),
+  // List surface: structural edits, pattern-driven queries and the
+  // higher-order functions
+  f("Drop", &[Arg::ListInt, Arg::IntIn(-3, 3)]),
+  f("Delete", &[Arg::ListInt1, Arg::IntIn(-3, 3)]),
+  f(
+    "Insert",
+    &[Arg::ListInt, Arg::IntIn(-9, 9), Arg::IntIn(1, 3)],
+  ),
+  f("ReplacePart", &[Arg::ListInt1, Arg::IntRule]),
+  f("Replace", &[Arg::ListInt, Arg::IntRule]),
+  f("ReplaceAll", &[Arg::ListInt, Arg::IntRule]),
+  f("ReplaceAll", &[Arg::Poly, Arg::VarRule]),
+  f("Cases", &[Arg::ListAny, Arg::TypePat]),
+  f("DeleteCases", &[Arg::ListAny, Arg::TypePat]),
+  f("Count", &[Arg::ListAny, Arg::TypePat]),
+  f("Position", &[Arg::ListAny, Arg::TypePat]),
+  f("FreeQ", &[Arg::ListAny, Arg::TypePat]),
+  f("MemberQ", &[Arg::ListAny, Arg::TypePat]),
+  f("Subsets", &[Arg::ListInt]),
+  f("Subsets", &[Arg::ListInt, Arg::IntIn(0, 2)]),
+  f("Permutations", &[Arg::ListInt]),
+  f("SortBy", &[Arg::ListInt, Arg::PureFn]),
+  f("MinimalBy", &[Arg::ListInt1, Arg::PureFn]),
+  f("MaximalBy", &[Arg::ListInt1, Arg::PureFn]),
+  f("TakeLargest", &[Arg::ListInt1, Arg::IntIn(1, 3)]),
+  f("TakeSmallest", &[Arg::ListInt1, Arg::IntIn(1, 3)]),
+  f("Counts", &[Arg::ListInt]),
+  f("GatherBy", &[Arg::ListInt, Arg::PureFn]),
+  f("SplitBy", &[Arg::ListInt, Arg::PureFn]),
+  f("Select", &[Arg::ListInt, Arg::PredFn]),
+  f("SubsetQ", &[Arg::ListInt, Arg::ListInt]),
+  f("ContainsAll", &[Arg::ListInt, Arg::ListInt]),
+  f("ContainsAny", &[Arg::ListInt, Arg::ListInt]),
+  f("ContainsOnly", &[Arg::ListInt, Arg::ListInt]),
+  f("ContainsExactly", &[Arg::ListInt, Arg::ListInt]),
+  f("Apply", &[Arg::OpFn, Arg::ListNum]),
+  f("Fold", &[Arg::OpFn, Arg::IntIn(-5, 5), Arg::ListInt]),
+  f("FoldList", &[Arg::OpFn, Arg::IntIn(-5, 5), Arg::ListInt]),
+  f("NestList", &[Arg::PureFn, Arg::Num, Arg::Nat(4)]),
+  f("MapIndexed", &[Arg::PureFn, Arg::ListInt]),
+  f("MapThread", &[Arg::OpFn, Arg::VecPair]),
+  f("Outer", &[Arg::OpFn, Arg::Vec2, Arg::Vec2]),
+  f("Array", &[Arg::PureFn, Arg::IntIn(1, 4)]),
+  f("Ratios", &[Arg::ListInt1]),
+  f("RotateRight", &[Arg::ListAny, Arg::IntIn(-3, 3)]),
+  f("ArrayReshape", &[Arg::ListInt, Arg::DimPair]),
+  f("ArrayPad", &[Arg::ListInt, Arg::IntIn(0, 3)]),
+  f("Depth", &[Arg::ListAny]),
+  f("Level", &[Arg::ListAny, Arg::IntIn(1, 2)]),
+  f("Identity", &[Arg::Any]),
+  f("Hold", &[Arg::Num]),
+  f("AllTrue", &[Arg::ListInt, Arg::PredFn]),
+  f("AnyTrue", &[Arg::ListInt, Arg::PredFn]),
+  f("NoneTrue", &[Arg::ListInt, Arg::PredFn]),
+  // Associations
+  f("Keys", &[Arg::Assoc]),
+  f("Values", &[Arg::Assoc]),
+  f("KeySort", &[Arg::Assoc]),
+  f("KeyDrop", &[Arg::Assoc, Arg::CharStr]),
+  f("KeyTake", &[Arg::Assoc, Arg::CharStr]),
+  f("Lookup", &[Arg::Assoc, Arg::CharStr]),
+  f("Normal", &[Arg::Assoc]),
+  f("Length", &[Arg::Assoc]),
+  f("Map", &[Arg::PureFn, Arg::Assoc]),
+  f("AssociationThread", &[Arg::StrPair, Arg::Vec2]),
+  // Strings
+  f("StringTake", &[Arg::Str, Arg::IntIn(-3, 3)]),
+  f("StringDrop", &[Arg::Str, Arg::IntIn(-3, 3)]),
+  f("StringPosition", &[Arg::Str, Arg::CharStr]),
+  f("StringReplace", &[Arg::Str, Arg::StrRule]),
+  f("StringInsert", &[Arg::Str, Arg::CharStr, Arg::IntIn(1, 3)]),
+  f("StringDelete", &[Arg::Str, Arg::CharStr]),
+  f("StringPadRight", &[Arg::Str, Arg::Nat(12)]),
+  f("StringRiffle", &[Arg::ListStr]),
+  f("StringRiffle", &[Arg::ListStr, Arg::CharStr]),
+  f("StringPartition", &[Arg::Str, Arg::IntIn(1, 3)]),
+  f("StringCases", &[Arg::Str, Arg::CharStr]),
+  f("StringSplit", &[Arg::Str, Arg::CharStr]),
+  f("StringMatchQ", &[Arg::Str, Arg::Str]),
+  f("StringStartsQ", &[Arg::Str, Arg::CharStr]),
+  f("StringEndsQ", &[Arg::Str, Arg::CharStr]),
+  f("StringFreeQ", &[Arg::Str, Arg::CharStr]),
+  f("StringRotateLeft", &[Arg::Str, Arg::IntIn(-3, 3)]),
+  f("Capitalize", &[Arg::Str]),
+  f("Decapitalize", &[Arg::Str]),
+  f("ToCharacterCode", &[Arg::Str]),
+  f("FromCharacterCode", &[Arg::ListCharCode]),
+  f("LetterQ", &[Arg::CharStr]),
+  f("DigitQ", &[Arg::CharStr]),
+  f("UpperCaseQ", &[Arg::Str]),
+  f("LowerCaseQ", &[Arg::Str]),
+  f("EditDistance", &[Arg::Str, Arg::Str]),
+  f("LongestCommonSubsequence", &[Arg::Str, Arg::Str]),
+  f("HammingDistance", &[Arg::Vec3, Arg::Vec3]),
+  // Linear algebra. Matrices stay 2×2/3×3 with small integer entries, so
+  // exact results (including eigenvalue radicals) remain short enough to
+  // diff.
+  f("Det", &[Arg::Matrix]),
+  f("Tr", &[Arg::Matrix]),
+  f("Transpose", &[Arg::Matrix]),
+  f("Dimensions", &[Arg::Matrix]),
+  f("ArrayDepth", &[Arg::Matrix]),
+  f("Diagonal", &[Arg::Matrix]),
+  f("MatrixRank", &[Arg::Matrix]),
+  f("NullSpace", &[Arg::Matrix]),
+  f("RowReduce", &[Arg::Matrix]),
+  f("Minors", &[Arg::Matrix]),
+  f("Permanent", &[Arg::Matrix]),
+  f("Total", &[Arg::Matrix]),
+  f("Total", &[Arg::Matrix, Arg::IntIn(1, 2)]),
+  f("Flatten", &[Arg::Matrix, Arg::IntIn(1, 2)]),
+  f("Inverse", &[Arg::Matrix2]),
+  f("Adjugate", &[Arg::Matrix2]),
+  f("Eigenvalues", &[Arg::Matrix2]),
+  f("MatrixPower", &[Arg::Matrix2, Arg::IntIn(0, 4)]),
+  f("CharacteristicPolynomial", &[Arg::Matrix2, Arg::VarX]),
+  f("LinearSolve", &[Arg::Matrix2, Arg::Vec2]),
+  f("KroneckerProduct", &[Arg::Matrix2, Arg::Matrix2]),
+  f("Dot", &[Arg::Matrix2, Arg::Matrix2]),
+  f("Dot", &[Arg::Vec3, Arg::Vec3]),
+  f("Norm", &[Arg::Matrix2]),
+  f("Cross", &[Arg::Vec3, Arg::Vec3]),
+  f("Normalize", &[Arg::Vec3]),
+  f("DiagonalMatrix", &[Arg::Vec3]),
+  f("HankelMatrix", &[Arg::Vec3]),
+  f("ToeplitzMatrix", &[Arg::Vec3]),
+  f("IdentityMatrix", &[Arg::IntIn(1, 3)]),
+  f("HilbertMatrix", &[Arg::IntIn(1, 4)]),
+  // Polynomial algebra
+  f("Solve", &[Arg::PolyEq, Arg::VarX]),
+  f("SolveValues", &[Arg::PolyEq, Arg::VarX]),
+  f("NSolve", &[Arg::PolyEq, Arg::VarX]),
+  f("PolynomialQuotient", &[Arg::Poly, Arg::LowPoly, Arg::VarX]),
+  f("PolynomialRemainder", &[Arg::Poly, Arg::LowPoly, Arg::VarX]),
+  f("PolynomialGCD", &[Arg::PolyProd, Arg::PolyProd]),
+  f("PolynomialLCM", &[Arg::LowPoly, Arg::LowPoly]),
+  f("Resultant", &[Arg::LowPoly, Arg::LowPoly, Arg::VarX]),
+  f("PolynomialQ", &[Arg::RatFn, Arg::VarX]),
+  f("Collect", &[Arg::PolyXY, Arg::VarX]),
+  f("CoefficientList", &[Arg::Poly, Arg::VarX]),
+  f("Variables", &[Arg::PolyXY]),
+  f("HornerForm", &[Arg::Poly]),
+  f("Decompose", &[Arg::PolyProd, Arg::VarX]),
+  f("MonomialList", &[Arg::PolyXY]),
+  f("FactorList", &[Arg::PolyProd]),
+  f("FactorSquareFreeList", &[Arg::PolyProd]),
+  f("ExpandAll", &[Arg::PolyProd]),
+  f("MinimalPolynomial", &[Arg::RadNum, Arg::VarX]),
+  // Calculus
+  f("Integrate", &[Arg::Poly, Arg::VarX]),
+  f("Integrate", &[Arg::RatFn, Arg::VarX]),
+  f("Integrate", &[Arg::TrigExpr, Arg::VarX]),
+  f("D", &[Arg::TrigExpr, Arg::VarX]),
+  f("D", &[Arg::ExpExpr, Arg::VarX]),
+  f("D", &[Arg::PolyXY, Arg::VarX, Arg::VarY]),
+  f("Limit", &[Arg::RatFn, Arg::VarRule]),
+  f("Series", &[Arg::RatFn, Arg::SeriesSpec]),
+  f("Sum", &[Arg::IterBody, Arg::Iter]),
+  f("Product", &[Arg::IterBody, Arg::Iter]),
+  f("Table", &[Arg::IterBody, Arg::Iter]),
+  // Rewriters
+  f("FullSimplify", &[Arg::RadNum]),
+  f("FullSimplify", &[Arg::RatFn]),
+  f("Simplify", &[Arg::TrigExpr]),
+  f("TrigExpand", &[Arg::TrigExpr]),
+  f("TrigReduce", &[Arg::TrigExpr]),
+  f("TrigToExp", &[Arg::TrigExpr]),
+  f("ExpToTrig", &[Arg::ExpExpr]),
+  f("PowerExpand", &[Arg::ExpExpr]),
+  f("ComplexExpand", &[Arg::TrigExpr]),
+  // Logic
+  f("Implies", &[Arg::Bool, Arg::Bool]),
+  f("Nand", &[Arg::Bool, Arg::Bool]),
+  f("Nor", &[Arg::Bool, Arg::Bool]),
+  f("Xnor", &[Arg::Bool, Arg::Bool]),
+  f("Equivalent", &[Arg::Bool, Arg::Bool]),
+  f("TrueQ", &[Arg::Any]),
+  // Descriptive statistics
+  f("Variance", &[Arg::ListInt2]),
+  f("StandardDeviation", &[Arg::ListInt2]),
+  f("Kurtosis", &[Arg::ListInt2]),
+  f("Skewness", &[Arg::ListInt2]),
+  f("Standardize", &[Arg::ListInt2]),
+  f("Quantile", &[Arg::ListInt1, Arg::Frac(4, 4)]),
+  f("RootMeanSquare", &[Arg::ListInt1]),
+  f("MeanDeviation", &[Arg::ListInt1]),
+  f("MedianDeviation", &[Arg::ListInt1]),
+  f("InterquartileRange", &[Arg::ListInt1]),
+  f("Quartiles", &[Arg::ListInt1]),
+  f("Rescale", &[Arg::ListInt1]),
+  f("CentralMoment", &[Arg::ListInt1, Arg::IntIn(1, 4)]),
+  f("Moment", &[Arg::ListInt1, Arg::IntIn(1, 4)]),
+  f("TrimmedMean", &[Arg::ListInt1, Arg::Frac(3, 8)]),
+  f("WinsorizedMean", &[Arg::ListInt1, Arg::Frac(3, 8)]),
+  f("HarmonicMean", &[Arg::ListPosInt1]),
+  f("GeometricMean", &[Arg::ListPosInt1]),
+  f("Covariance", &[Arg::Vec3, Arg::Vec3]),
+  // Rounding with an explicit granularity
+  f("Round", &[Arg::Num, Arg::IntIn(1, 5)]),
+  f("Floor", &[Arg::Num, Arg::IntIn(1, 5)]),
+  f("Ceiling", &[Arg::Num, Arg::IntIn(1, 5)]),
+  f("Mod", &[Arg::Num, Arg::IntIn(1, 9)]),
 ];
 
 const PURE_FNS: &[&str] = &["#^2 &", "# + 1 &", "2*# &", "-# &", "Abs[#] &"];
 const PRED_FNS: &[&str] = &["EvenQ", "OddQ", "PrimeQ", "# > 0 &", "# < 2 &"];
 const STR_CHARS: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCXYZ0123456789 ";
+/// Blank patterns for Cases/Count/Position/DeleteCases. `Expr::Raw`
+/// parenthesises what it prints, which is harmless around a pattern.
+const TYPE_PATS: &[&str] =
+  &["_", "_Integer", "_Real", "_String", "_Rational", "_List"];
+/// Builtins passed as a bare operator head (Apply, Fold, Outer, …).
+const OP_FNS: &[&str] = &["Plus", "Times", "Max", "Min", "List", "Subtract"];
+/// Association keys, used prefix-wise so generated keys stay distinct.
+const ASSOC_KEYS: &[&str] = &["a", "b", "c", "d"];
 
 struct Generator {
   specs: Vec<&'static FnSpec>,
@@ -469,7 +929,9 @@ impl Generator {
   fn gen_case(&self, rng: &mut Rng) -> Expr {
     // Mostly spec-driven calls; occasionally bare data or a bounded
     // Part/Take (which need index/list coupling a static spec can't say).
-    match rng.below(10) {
+    // The special cases stay rare: they are three shapes competing with
+    // several hundred table entries for the same budget.
+    match rng.below(20) {
       0 => self.gen_part(rng),
       1 => self.gen_take(rng),
       2 => self.gen_num(rng, self.max_depth),
@@ -510,14 +972,93 @@ impl Generator {
       #[allow(clippy::explicit_auto_deref)]
       Arg::PredFn => Expr::Raw(*rng.pick(PRED_FNS)),
       Arg::VarX => Expr::Sym("x"),
+      Arg::VarY => Expr::Sym("y"),
+
+      Arg::ExactNum => gen_exact_num(rng),
+      Arg::RatNum => Expr::Rational(rng.range(-60, 60), rng.range(1, 20)),
+      Arg::TrigNum => gen_trig_arg(rng),
+      Arg::UnitNum => gen_unit_num(rng),
+      Arg::PosNum => gen_pos_num(rng),
+      Arg::ComplexNum => gen_complex(rng),
+      Arg::OddNat(max) => Expr::Int(2 * rng.range(0, (max - 1) / 2) + 1),
+      Arg::Frac(max_k, den) => Expr::Call(
+        "Divide",
+        vec![Expr::Int(rng.range(0, max_k)), Expr::Int(den)],
+      ),
+
+      Arg::ListInt => gen_int_list(rng, 0, 4, -5, 5),
+      Arg::ListInt1 => gen_int_list(rng, 1, 4, -5, 5),
+      Arg::ListInt2 => gen_int_list(rng, 2, 5, -5, 5),
+      Arg::ListPosInt1 => gen_int_list(rng, 1, 4, 1, 9),
+      Arg::ListDigit => gen_int_list(rng, 1, 5, 0, 9),
+      Arg::ListCharCode => gen_int_list(rng, 1, 4, 65, 122),
+      Arg::ListStr => {
+        Expr::List((0..rng.below(4)).map(|_| gen_str(rng)).collect::<Vec<_>>())
+      }
+      Arg::StrPair => {
+        Expr::List(vec![Expr::Str("a".into()), Expr::Str("b".into())])
+      }
+      Arg::Matrix => {
+        let n = 2 + rng.below(2);
+        gen_matrix(rng, n)
+      }
+      Arg::Matrix2 => gen_matrix(rng, 2),
+      Arg::Vec2 => gen_int_list(rng, 2, 2, -6, 6),
+      Arg::Vec3 => gen_int_list(rng, 3, 3, -6, 6),
+      Arg::VecPair => Expr::List(vec![
+        gen_int_list(rng, 3, 3, -6, 6),
+        gen_int_list(rng, 3, 3, -6, 6),
+      ]),
+      Arg::DimPair => {
+        Expr::List(vec![Expr::Int(rng.range(1, 3)), Expr::Int(rng.range(1, 3))])
+      }
+      Arg::Assoc => gen_assoc(rng),
+
+      #[allow(clippy::explicit_auto_deref)]
+      Arg::TypePat => Expr::Raw(*rng.pick(TYPE_PATS)),
+      Arg::IntRule => Expr::Call(
+        "Rule",
+        vec![Expr::Int(rng.range(-5, 5)), Expr::Int(rng.range(-5, 5))],
+      ),
+      Arg::StrRule => {
+        Expr::Call("Rule", vec![gen_char_str(rng), gen_char_str(rng)])
+      }
+      Arg::VarRule => {
+        Expr::Call("Rule", vec![Expr::Sym("x"), gen_exact_num(rng)])
+      }
+      #[allow(clippy::explicit_auto_deref)]
+      Arg::OpFn => Expr::Sym(*rng.pick(OP_FNS)),
+      Arg::CharStr => gen_char_str(rng),
+
+      Arg::TrigExpr => gen_trig_expr(rng, 2),
+      Arg::ExpExpr => gen_exp_expr(rng),
+      Arg::LowPoly => gen_low_poly(rng),
+      Arg::PolyEq => Expr::Call("Equal", vec![gen_low_poly(rng), Expr::Int(0)]),
+      Arg::SeriesSpec => Expr::List(vec![
+        Expr::Sym("x"),
+        Expr::Int(0),
+        Expr::Int(rng.range(1, 4)),
+      ]),
+      Arg::Iter => Expr::List(vec![
+        Expr::Sym("i"),
+        Expr::Int(1),
+        Expr::Int(rng.range(1, 6)),
+      ]),
+      Arg::IterBody => gen_iter_body(rng),
     }
   }
 
   fn gen_any(&self, rng: &mut Rng, depth: u32) -> Expr {
-    match rng.below(6) {
+    match rng.below(9) {
       0 => gen_str(rng),
       1 => self.gen_bool(rng, depth),
       2 => self.gen_list_num(rng, depth, 0),
+      // The generic heads (Head, Depth, ToString, SameQ, …) are the ones
+      // most likely to mishandle an unusual argument, so feed them
+      // associations, matrices and complex numbers too.
+      3 => gen_assoc(rng),
+      4 => gen_matrix(rng, 2),
+      5 => gen_complex(rng),
       _ if depth > 0 && rng.chance(1, 3) => self.gen_spec_call(rng, depth),
       _ => self.gen_num(rng, depth),
     }
@@ -608,6 +1149,211 @@ fn gen_str(rng: &mut Rng) -> Expr {
     .map(|_| STR_CHARS[rng.below(STR_CHARS.len() as u64) as usize] as char)
     .collect();
   Expr::Str(s)
+}
+
+/// One-character string. String searches against a random 0..6-character
+/// haystack would almost never hit; a single character does, so
+/// StringCases/StringReplace/StringPosition exercise their match paths
+/// instead of always returning the empty answer.
+fn gen_char_str(rng: &mut Rng) -> Expr {
+  let c = STR_CHARS[rng.below(STR_CHARS.len() as u64) as usize] as char;
+  Expr::Str(c.to_string())
+}
+
+/// Exact numeric leaf — integer, rational or a symbolic constant. Machine
+/// reals are deliberately excluded: the special-function specs are there
+/// to compare closed forms, and a float argument collapses every one of
+/// them to a last-digit comparison instead.
+fn gen_exact_num(rng: &mut Rng) -> Expr {
+  match rng.below(8) {
+    0..=4 => Expr::Int(rng.range(-12, 12)),
+    5 | 6 => Expr::Rational(rng.range(-8, 8), rng.range(1, 6)),
+    _ => Expr::Sym(if rng.chance(1, 2) { "Pi" } else { "E" }),
+  }
+}
+
+/// Argument for the trigonometric family, weighted towards rational
+/// multiples of Pi — the values with closed forms, and therefore the ones
+/// where a CAS can disagree with another CAS.
+fn gen_trig_arg(rng: &mut Rng) -> Expr {
+  match rng.below(10) {
+    0..=4 => {
+      let num = rng.range(-4, 4);
+      let den = *rng.pick(&[1i64, 2, 3, 4, 6, 8, 12]);
+      let scaled = if num == 1 {
+        Expr::Sym("Pi")
+      } else {
+        Expr::Call("Times", vec![Expr::Int(num), Expr::Sym("Pi")])
+      };
+      if den == 1 {
+        scaled
+      } else {
+        Expr::Call("Divide", vec![scaled, Expr::Int(den)])
+      }
+    }
+    5..=7 => Expr::Int(rng.range(-6, 6)),
+    8 => Expr::Rational(rng.range(-6, 6), rng.range(1, 5)),
+    _ => Expr::RealTenths(rng.range(-30, 30)),
+  }
+}
+
+/// Numeric value in [-1, 1], the domain of ArcSin, ArcTanh, InverseErf
+/// and the Quantile-style options.
+fn gen_unit_num(rng: &mut Rng) -> Expr {
+  match rng.below(6) {
+    0 | 1 => Expr::Int(rng.range(-1, 1)),
+    2..=4 => {
+      let den = rng.range(2, 6);
+      Expr::Rational(rng.range(-den, den), den)
+    }
+    _ => Expr::RealTenths(rng.range(-10, 10)),
+  }
+}
+
+/// Strictly positive numeric value (Log, Gamma, GeometricMean, …).
+fn gen_pos_num(rng: &mut Rng) -> Expr {
+  match rng.below(8) {
+    0..=3 => Expr::Int(rng.range(1, 12)),
+    4 | 5 => Expr::Rational(rng.range(1, 10), rng.range(1, 6)),
+    6 => Expr::RealTenths(rng.range(1, 60)),
+    _ => Expr::Sym("Pi"),
+  }
+}
+
+/// Complex number `a + b I`, printed in full form.
+fn gen_complex(rng: &mut Rng) -> Expr {
+  Expr::Call(
+    "Plus",
+    vec![
+      Expr::Int(rng.range(-6, 6)),
+      Expr::Call("Times", vec![Expr::Int(rng.range(-6, 6)), Expr::Sym("I")]),
+    ],
+  )
+}
+
+/// List of `min_len..=max_len` integers drawn from `lo..=hi`.
+fn gen_int_list(
+  rng: &mut Rng,
+  min_len: u64,
+  max_len: u64,
+  lo: i64,
+  hi: i64,
+) -> Expr {
+  let len = min_len + rng.below(max_len - min_len + 1);
+  Expr::List((0..len).map(|_| Expr::Int(rng.range(lo, hi))).collect())
+}
+
+/// Square `n × n` integer matrix.
+fn gen_matrix(rng: &mut Rng, n: u64) -> Expr {
+  Expr::List(
+    (0..n)
+      .map(|_| {
+        Expr::List((0..n).map(|_| Expr::Int(rng.range(-4, 4))).collect())
+      })
+      .collect(),
+  )
+}
+
+/// Association with distinct short-string keys and integer values.
+fn gen_assoc(rng: &mut Rng) -> Expr {
+  let len = 1 + rng.below(ASSOC_KEYS.len() as u64);
+  Expr::Call(
+    "Association",
+    (0..len)
+      .map(|i| {
+        Expr::Call(
+          "Rule",
+          vec![
+            Expr::Str(ASSOC_KEYS[i as usize].to_string()),
+            Expr::Int(rng.range(-9, 9)),
+          ],
+        )
+      })
+      .collect(),
+  )
+}
+
+/// Expression over Sin/Cos/Tan of `x` (and sometimes `y`) — the input
+/// shape the trig rewriters (TrigExpand, TrigReduce, TrigToExp) are for.
+fn gen_trig_expr(rng: &mut Rng, depth: u32) -> Expr {
+  if depth == 0 || rng.chance(1, 2) {
+    let head = *rng.pick(&["Sin", "Cos", "Tan"]);
+    let arg = match rng.below(4) {
+      0 => Expr::Sym("x"),
+      1 => {
+        Expr::Call("Times", vec![Expr::Int(rng.range(2, 3)), Expr::Sym("x")])
+      }
+      2 => Expr::Call("Plus", vec![Expr::Sym("x"), Expr::Sym("y")]),
+      _ => Expr::Call("Times", vec![Expr::Sym("x"), Expr::Sym("y")]),
+    };
+    let call = Expr::Call(head, vec![arg]);
+    return if rng.chance(1, 3) {
+      Expr::Call("Power", vec![call, Expr::Int(rng.range(2, 3))])
+    } else {
+      call
+    };
+  }
+  let a = gen_trig_expr(rng, depth - 1);
+  let b = gen_trig_expr(rng, depth - 1);
+  #[allow(clippy::explicit_auto_deref)]
+  let head = *rng.pick(&["Plus", "Times", "Subtract"]);
+  Expr::Call(head, vec![a, b])
+}
+
+/// Expression over Exp/Log/Sqrt of `x` and `y` — what PowerExpand,
+/// ExpToTrig and the log/radical simplifiers act on.
+fn gen_exp_expr(rng: &mut Rng) -> Expr {
+  let x = Expr::Sym("x");
+  let y = Expr::Sym("y");
+  match rng.below(6) {
+    0 => Expr::Call(
+      "Exp",
+      vec![Expr::Call("Times", vec![Expr::Int(rng.range(1, 3)), x])],
+    ),
+    1 => Expr::Call("Log", vec![Expr::Call("Times", vec![x, y])]),
+    2 => Expr::Call(
+      "Log",
+      vec![Expr::Call("Power", vec![x, Expr::Int(rng.range(2, 4))])],
+    ),
+    3 => Expr::Call("Sqrt", vec![Expr::Call("Times", vec![x, y])]),
+    4 => Expr::Call("Exp", vec![Expr::Call("Plus", vec![x, y])]),
+    _ => Expr::Call("Sqrt", vec![Expr::Call("Power", vec![x, Expr::Int(2)])]),
+  }
+}
+
+/// Polynomial in x of degree 1 or 2 with a non-zero leading coefficient —
+/// Solve, Resultant and PolynomialQuotient all want a known degree.
+fn gen_low_poly(rng: &mut Rng) -> Expr {
+  let degree = rng.range(1, 2);
+  let mut terms = vec![Expr::Int(rng.range(-6, 6))];
+  for k in 1..=degree {
+    let coeff = if k == degree {
+      let c = rng.range(1, 4);
+      if rng.chance(1, 2) { -c } else { c }
+    } else {
+      rng.range(-4, 4)
+    };
+    let power = if k == 1 {
+      Expr::Sym("x")
+    } else {
+      Expr::Call("Power", vec![Expr::Sym("x"), Expr::Int(k)])
+    };
+    terms.push(Expr::Call("Times", vec![Expr::Int(coeff), power]));
+  }
+  Expr::Call("Plus", terms)
+}
+
+/// Term in the iteration variable `i`, for Sum/Product/Table.
+fn gen_iter_body(rng: &mut Rng) -> Expr {
+  let i = Expr::Sym("i");
+  match rng.below(6) {
+    0 => i,
+    1 => Expr::Call("Power", vec![i, Expr::Int(rng.range(2, 3))]),
+    2 => Expr::Call("Times", vec![Expr::Int(rng.range(-4, 4)), i]),
+    3 => Expr::Call("Divide", vec![Expr::Int(1), i]),
+    4 => Expr::Call("Plus", vec![i, Expr::Int(rng.range(-4, 4))]),
+    _ => Expr::Call("Power", vec![Expr::Int(rng.range(2, 3)), i]),
+  }
 }
 
 /// Polynomial in x: sum of c * x^k terms, small everything.
@@ -1385,6 +2131,35 @@ mod tests {
         woxi::parse(&code).is_ok(),
         "seed {seed} generated unparsable code: {code}"
       );
+    }
+  }
+
+  /// `generated_cases_parse` samples the table; with several hundred
+  /// entries a broken argument shape can hide between samples. Exercise
+  /// every spec directly instead, several times each.
+  #[test]
+  fn every_spec_generates_parsable_code() {
+    let generator = test_generator();
+    assert_eq!(
+      generator.specs.len(),
+      FN_SPECS.len(),
+      "test generator dropped specs"
+    );
+    for spec in &generator.specs {
+      for seed in 0..20u64 {
+        let mut rng = Rng::new(seed);
+        let args = spec
+          .args
+          .iter()
+          .map(|arg| generator.gen_arg(&mut rng, *arg, 2))
+          .collect();
+        let code = Expr::Call(spec.name, args).to_code();
+        assert!(
+          woxi::parse(&code).is_ok(),
+          "{} (seed {seed}) generated unparsable code: {code}",
+          spec.name
+        );
+      }
     }
   }
 
