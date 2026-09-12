@@ -24016,11 +24016,52 @@ fn spacer_width(arg: &Expr) -> f64 {
 /// value. Falls back to the generic leaf when the fragment does not
 /// evaluate (e.g. it is really a graphic).
 fn styled_text_node(expr: &Expr, bindings: &[(String, String)]) -> DisplayNode {
-  match eval_display_in_scope(expr, bindings) {
+  // `Dynamic` is `HoldFirst`, so evaluating `Style[Dynamic[t], Bold]` as a
+  // whole never reduces the `Dynamic[t]` argument — Style itself isn't
+  // held, but that just evaluates each argument in place, and evaluating
+  // `Dynamic[t]` leaves `t` unevaluated by design. Resolve any `Dynamic[…]`
+  // wrapped inside this caption fragment against the live bindings first,
+  // mirroring what the Wolfram front end does when it redraws a `Dynamic`,
+  // so `Style[Dynamic[t]]` shows t's current value rather than the literal
+  // symbol name.
+  let resolved = resolve_display_dynamics(expr, bindings);
+  match eval_display_in_scope(&resolved, bindings) {
     Some(evaluated) => DisplayNode::Text {
       runs: manipulate_label_runs(&evaluated, false),
     },
     None => static_leaf_node(expr, bindings),
+  }
+}
+
+/// Replace every `Dynamic[inner]` found anywhere inside `expr` with `inner`
+/// evaluated against `bindings` (falling back to the untouched `Dynamic[…]`
+/// wrapper when that fails), leaving everything else — style directives,
+/// wrapper structure — untouched. Used to release captions like
+/// `Style[Dynamic[t], Bold]` before formatting them for display.
+fn resolve_display_dynamics(
+  expr: &Expr,
+  bindings: &[(String, String)],
+) -> Expr {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if name == "Dynamic" && !args.is_empty() =>
+    {
+      eval_display_in_scope(&args[0], bindings).unwrap_or_else(|| expr.clone())
+    }
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args
+        .iter()
+        .map(|a| resolve_display_dynamics(a, bindings))
+        .collect(),
+    },
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(|i| resolve_display_dynamics(i, bindings))
+        .collect(),
+    ),
+    other => other.clone(),
   }
 }
 
