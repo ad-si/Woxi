@@ -1185,6 +1185,14 @@ mod graphics {
       // dasharray), matching how the plain `Dashing[{2}]` list branch works.
       assert_eq!(dasharray("AbsoluteDashing[{2}]"), Some("2.0".into()));
       assert_eq!(dasharray("AbsoluteDashing[{}]"), None);
+      // A negative user-supplied length must still land as literal pixels,
+      // not get flipped into dash_attr's "fraction of image width" branch
+      // (a naive `-d` on an already-negative `d` would produce +4.0, read
+      // as 4x the image width instead of ~4 pixels).
+      assert_eq!(
+        dasharray("AbsoluteDashing[{-4, 6}]"),
+        Some("4.0,6.0".into())
+      );
     }
 
     #[test]

@@ -1508,7 +1508,7 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
             let dashes: Vec<f64> = items
               .iter()
               .filter_map(|e| {
-                dash_size_to_f64(e).or_else(|| expr_to_f64(e).map(|d| -d))
+                dash_size_to_f64(e).or_else(|| expr_to_f64(e).map(|d| -d.abs()))
               })
               .collect();
             if !dashes.is_empty() {
@@ -1517,7 +1517,7 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
           }
           _ => {
             if let Some(d) = dash_size_to_f64(&args[0])
-              .or_else(|| expr_to_f64(&args[0]).map(|d| -d))
+              .or_else(|| expr_to_f64(&args[0]).map(|d| -d.abs()))
             {
               style.dashing = Some(vec![d, d]);
             }
