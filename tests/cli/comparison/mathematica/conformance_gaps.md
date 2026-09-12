@@ -2601,6 +2601,27 @@ answer. These do not:
 
 ## Messages and error handling
 
+### `Partition` reports `ilsmp` where the padded forms allow a zero block
+
+With three or more arguments a block size of `0` is legal — the offset says
+how many empty blocks come out — so wolframscript rejects a bad size there
+with `ilsmn` ("non-negative"), keeping `ilsmp` ("positive") for the
+two-argument form. Woxi says `ilsmp` for every arity, and rejects a literal
+`0` outright once an alignment/padding argument follows:
+
+```sh
+wolframscript -code 'Partition[{a,b,c}, n, n, {1,1}, {}]'
+# Partition::ilsmn: Single or list of non-negative machine-sized integers …
+woxi eval 'Partition[{a,b,c}, n, n, {1,1}, {}]'
+# Partition::ilsmp: Single or list of positive machine-sized integers …
+
+wolframscript -code 'Partition[{a,b,c}, 0, 1, {1,1}, {}]'  # {{}, {}, {}}
+woxi eval 'Partition[{a,b,c}, 0, 1, {1,1}, {}]'            # Partition::ilsmp
+```
+
+The unpadded `Partition[{a,b,c}, 0, 1]` agrees (`{{}, {}, {}, {}}`) — note
+that the padded form yields one block *fewer*, so the two count differently.
+
 ### Expressions inside message text print in InputForm
 
 WL formats a message's substituted expressions the way the front end shows
@@ -3683,6 +3704,23 @@ needs `Rc`/`Arc`-backed lists or a different allocator.
 The error goes to stderr but the exit code stays 0, so a shell check like
 `woxi eval '…' >/dev/null 2>&1 && echo OK` reports OK even when the expression
 failed. (`wolframscript -file` has the same property.)
+
+### `woxi run` does not echo the value an aborted script ended on
+
+`wolframscript -file` prints the terminal value of a script that stopped early
+— `$Aborted` for `Abort[]`, `TerminatedEvaluation[RecursionLimit]` for a
+recursion past `$RecursionLimit` — even though a script otherwise prints only
+what `Print` sends:
+
+```sh
+printf 'Print["a"]\nAbort[]\nPrint["b"]\n' > /tmp/ab.wls
+wolframscript -file /tmp/ab.wls  # a  + $Aborted
+woxi run /tmp/ab.wls             # a
+```
+
+Both stop before `Print["b"]`, so only the echo is missing. `woxi eval` and
+`wolframscript -code` agree (both print `$Aborted` /
+`TerminatedEvaluation[RecursionLimit]`).
 
 ### `woxi repl` does not tag the output prompt with the result's form
 

@@ -766,9 +766,16 @@ pub fn evaluate_expr_to_expr(expr: &Expr) -> Result<Expr, InterpreterError> {
 }
 
 fn evaluate_expr_to_expr_impl(expr: &Expr) -> Result<Expr, InterpreterError> {
+  // A terminated evaluation stays terminated: nothing new is evaluated until
+  // the top level clears the latch (see `crate::start_termination`).
+  if let Some(tag) = crate::termination_in_flight() {
+    return Err(InterpreterError::Terminated(tag));
+  }
+
   // $RecursionLimit enforcement: prevent infinite recursion from
-  // user-defined functions.  When the limit is exceeded, return the
-  // expression unevaluated (matching Wolfram behavior).
+  // user-defined functions. Exceeding the limit terminates the whole
+  // evaluation, which the top level reports as
+  // `TerminatedEvaluation[RecursionLimit]`.
   let depth = crate::RECURSION_DEPTH.with(|d| {
     let cur = d.get();
     d.set(cur + 1);
@@ -786,8 +793,11 @@ fn evaluate_expr_to_expr_impl(expr: &Expr) -> Result<Expr, InterpreterError> {
   // it only happens once the depth passes the smallest limit Wolfram accepts
   // for the variable (20); shallower evaluations can never exceed any limit.
   const MIN_SETTABLE_RECURSION_LIMIT: usize = 20;
-  if depth > MIN_SETTABLE_RECURSION_LIMIT && depth > crate::recursion_limit() {
-    return Ok(expr.clone());
+  if depth > MIN_SETTABLE_RECURSION_LIMIT {
+    let limit = crate::recursion_limit();
+    if depth > limit {
+      return Err(crate::recursion_limit_exceeded(limit));
+    }
   }
 
   // Trampoline loop: tail-recursive calls return TailCall instead of
@@ -2426,6 +2436,7 @@ pub fn evaluate_expr_to_expr_inner(
               | InterpreterError::ContinueSignal
               | InterpreterError::ThrowValue(_, _)
               | InterpreterError::Abort
+              | InterpreterError::Terminated(_)
               | InterpreterError::TailCall(_)
               | InterpreterError::GotoSignal(_)),
             ) => return Err(signal),

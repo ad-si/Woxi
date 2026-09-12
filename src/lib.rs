@@ -66,6 +66,9 @@ thread_local! {
     static PART_DEPTH: RefCell<usize> = const { RefCell::new(0) };
     // Track evaluation recursion depth for $RecursionLimit enforcement
     pub static RECURSION_DEPTH: Cell<usize> = const { Cell::new(0) };
+    // Set to the `TerminatedEvaluation` tag while a resource-limit overrun
+    // unwinds. See `recursion_limit_exceeded`.
+    static TERMINATION_IN_FLIGHT: Cell<Option<&'static str>> = const { Cell::new(None) };
     // Reap/Sow stack: each Reap call pushes a Vec to collect (value, tag) pairs
     pub static SOW_STACK: RefCell<Vec<Vec<(syntax::Expr, syntax::Expr)>>> = const { RefCell::new(Vec::new()) };
     // Context stack for Begin/End: stores the context strings pushed by Begin[]
@@ -115,6 +118,11 @@ pub enum InterpreterError {
   ThrowValue(Box<syntax::Expr>, Option<Box<syntax::Expr>>),
   #[error("$Aborted")]
   Abort,
+  /// A resource limit — so far only `$RecursionLimit` — was exceeded. Like
+  /// `Abort`, this unwinds the whole evaluation; the top level reports it
+  /// as `TerminatedEvaluation[<tag>]`.
+  #[error("TerminatedEvaluation")]
+  Terminated(&'static str),
   /// Internal signal for tail-call optimization (never user-visible)
   #[error("TailCall")]
   TailCall(Box<syntax::Expr>),
@@ -1448,6 +1456,67 @@ pub(crate) fn recursion_limit() -> usize {
   text.parse::<usize>().unwrap_or(DEFAULT_RECURSION_LIMIT)
 }
 
+/// Report a `$RecursionLimit` overrun the way wolframscript does and raise
+/// the signal that unwinds the evaluation.
+///
+/// Returning the over-deep call *unevaluated* instead — what Woxi used to do
+/// — is not a cheaper approximation but a hang: a recursion that branches
+/// keeps exploring its siblings once the deep one is capped, so a bounded
+/// depth still costs an unbounded number of evaluations. The nightly fuzzer
+/// timed out on exactly that (a `MergeSort` whose `Partition` never
+/// evaluated, so `Map` recursed over its arguments), where wolframscript
+/// terminates in seconds.
+pub(crate) fn recursion_limit_exceeded(limit: usize) -> InterpreterError {
+  emit_message(&format!(
+    "$RecursionLimit::reclim: Recursion depth of {limit} exceeded."
+  ));
+  start_termination("RecursionLimit")
+}
+
+/// Begin unwinding the current evaluation with a `TerminatedEvaluation[tag]`.
+///
+/// The signal is latched rather than merely returned: plenty of evaluation
+/// sites read a sub-evaluation's `Err` as "this did not work out" and go on
+/// to try something else — a `/;` condition that fails to produce `True` is
+/// simply not met, for one — which would restart the very recursion that hit
+/// the limit and report the overrun again. While the latch is set, every
+/// evaluation refuses to start, so the unwind reaches the top level whatever
+/// it passes through. [`take_termination`] clears it there.
+pub(crate) fn start_termination(tag: &'static str) -> InterpreterError {
+  TERMINATION_IN_FLIGHT.with(|t| t.set(Some(tag)));
+  InterpreterError::Terminated(tag)
+}
+
+/// The tag of the termination currently unwinding, if any.
+pub(crate) fn termination_in_flight() -> Option<&'static str> {
+  TERMINATION_IN_FLIGHT.with(Cell::get)
+}
+
+/// Clear the latch and report which termination, if any, was in flight.
+pub(crate) fn take_termination() -> Option<&'static str> {
+  TERMINATION_IN_FLIGHT.with(std::cell::Cell::take)
+}
+
+/// The value a terminated evaluation reports.
+fn terminated_evaluation_expr(tag: &'static str) -> syntax::Expr {
+  syntax::Expr::FunctionCall {
+    name: "TerminatedEvaluation".to_string(),
+    args: vec![syntax::Expr::Identifier(tag.to_string())].into(),
+  }
+}
+
+/// Resolve an evaluation's outcome against a pending termination, clearing
+/// the latch. A termination outranks both the `Err` it raised and whatever
+/// value a call site that swallowed that `Err` came back with.
+fn settle_termination(
+  result: Result<syntax::Expr, InterpreterError>,
+) -> Result<syntax::Expr, InterpreterError> {
+  match take_termination() {
+    Some(tag) => Ok(terminated_evaluation_expr(tag)),
+    None => result,
+  }
+}
+
 pub fn set_system_variable(name: &str, value: &str) {
   ENV.with(|e| {
     e.borrow_mut()
@@ -2004,6 +2073,13 @@ fn real_literal_output(n: f64) -> String {
 }
 
 pub fn interpret(input: &str) -> Result<String, InterpreterError> {
+  // A fresh input starts from a clean slate: a termination latch that some
+  // display-time evaluation left behind would otherwise refuse every later
+  // evaluation on this thread. Only at the outermost call — `interpret` is
+  // re-entrant, and a nested one must let the unwind through.
+  if RECURSION_DEPTH.get() == 0 {
+    take_termination();
+  }
   // Normalize CRLF to LF so line continuation and newline handling work
   // consistently regardless of line ending style.
   let input = if input.contains('\r') {
@@ -2558,6 +2634,10 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
             Err(InterpreterError::Abort) => {
               return Ok("$Aborted".to_string());
             }
+            Err(InterpreterError::Terminated(tag)) => {
+              take_termination();
+              return Ok(format!("TerminatedEvaluation[{tag}]"));
+            }
             Err(InterpreterError::GotoSignal(tag)) => {
               // Search for matching Label in the top-level expression list
               if let Some(label_idx) =
@@ -2604,6 +2684,12 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
             }
             other => other?,
           };
+        // A termination whose `Err` was swallowed on the way up still
+        // terminates the statement: the latch outlives the signal, so the
+        // value that came back instead is not one wolframscript would give.
+        if let Some(tag) = take_termination() {
+          return Ok(format!("TerminatedEvaluation[{tag}]"));
+        }
         // Multi-statement input behaves like CompoundExpression: a
         // trailing `Sequence[…]` splices, so we keep just its last
         // element. A lone `Sequence[1, 2]` (single-statement program)
@@ -5813,7 +5899,7 @@ pub fn interpret_to_expr(
   // whose left side carries a pattern (`f[x_] := …`) on the floor.
   let mut last: Option<syntax::Expr> = None;
   for expr in parse_statements(input)? {
-    last = Some(evaluator::evaluate_expr_to_expr(&expr)?);
+    last = Some(settle_termination(evaluator::evaluate_expr_to_expr(&expr))?);
   }
   last.ok_or(InterpreterError::EmptyInput)
 }
@@ -5902,7 +5988,7 @@ pub fn interpret_expr_with_stdout(
   expr: &syntax::Expr,
 ) -> Result<InterpretResult, InterpreterError> {
   with_capture(|| {
-    let evaluated = evaluator::evaluate_expr_to_expr(expr)?;
+    let evaluated = settle_termination(evaluator::evaluate_expr_to_expr(expr))?;
     Ok(format_top_level_result(evaluated, 0))
   })
 }

@@ -5056,8 +5056,14 @@ pub fn arcsec_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::Integer(-1) => return Ok(id_expr("Pi")),
     _ => {}
   }
-  // For exact (non-Real) numeric args, compute ArcCos[1/x]
-  if !matches!(&args[0], Expr::Real(_)) {
+  // For exact (non-Real) numeric args, compute ArcCos[1/x]. A symbolic
+  // argument is *not* routed through `ArcCos`: wolframscript leaves
+  // `ArcSec[y]` alone, and consulting `ArcCos` for it would apply whatever
+  // rules that symbol carries — `ArcCos[1/u_] := ArcSec[u]` then turns the
+  // detour into an endless `ArcSec[y]` ⇄ `ArcCos[1/y]` cycle (issue #99).
+  if !matches!(&args[0], Expr::Real(_))
+    && crate::functions::predicate_ast::is_numeric_q(&args[0])
+  {
     let reciprocal = crate::evaluator::evaluate_function_call_ast(
       "Power",
       &[args[0].clone(), Expr::Integer(-1)],

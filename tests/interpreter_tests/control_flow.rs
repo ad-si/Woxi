@@ -4522,15 +4522,85 @@ mod recursion_limit {
     );
   }
 
+  // Passing the limit terminates the whole evaluation, message and all —
+  // it does not leave the over-deep call unevaluated and carry on. A
+  // recursion that branches would otherwise keep exploring its siblings
+  // after the deep one was capped, which is how the nightly fuzzer found a
+  // `MergeSort` that ran for its whole 300 s budget where wolframscript
+  // stops in seconds.
   #[test]
-  fn lowering_the_limit_cuts_the_recursion_short() {
+  fn lowering_the_limit_terminates_the_evaluation() {
     clear_state();
-    let deep =
-      interpret(&format!("$RecursionLimit = 20; {DEEP} h[600]")).unwrap();
-    assert!(
-      deep.contains("h["),
-      "a recursion past the limit must stay unevaluated, got {deep}"
+    assert_eq!(
+      interpret(&format!("$RecursionLimit = 20; {DEEP} h[600]")).unwrap(),
+      "TerminatedEvaluation[RecursionLimit]"
     );
+    let msgs = woxi::get_captured_messages_raw();
+    assert_eq!(
+      msgs
+        .iter()
+        .filter(|m| m.contains("$RecursionLimit::reclim"))
+        .count(),
+      1,
+      "the overrun is reported exactly once: {msgs:?}"
+    );
+    assert!(
+      msgs
+        .iter()
+        .any(|m| m.contains("Recursion depth of 20 exceeded")),
+      "the message names the limit that was passed: {msgs:?}"
+    );
+  }
+
+  // A recursion that branches used to cost an unbounded number of
+  // evaluations once capped, because each sibling restarted below the
+  // limit. Terminating the evaluation makes it finish immediately.
+  #[test]
+  fn a_branching_runaway_recursion_stops_instead_of_spreading() {
+    clear_state();
+    let started = std::time::Instant::now();
+    assert_eq!(
+      interpret(
+        "$RecursionLimit = 40; b[n_] := b[n - 1] + b[n - 2] + b[n - 3]; b[1]"
+      )
+      .unwrap(),
+      "TerminatedEvaluation[RecursionLimit]"
+    );
+    assert!(
+      started.elapsed() < std::time::Duration::from_secs(10),
+      "the terminated evaluation must not keep exploring siblings"
+    );
+  }
+
+  // The termination unwinds through everything in its way — the `/;`
+  // conditions of the rules it passes, and the `Catch`, `Check` and
+  // `CheckAbort` boundaries that ordinarily absorb a failed sub-evaluation
+  // — and it does not leak into the next input. All four forms below were
+  // checked against wolframscript.
+  #[test]
+  fn termination_is_not_absorbed_and_does_not_leak() {
+    for wrapper in [
+      "Catch[h[600]] + 1",
+      "Check[h[600], \"failed\"]",
+      "CheckAbort[h[600], \"caught\"]",
+      "Length[{h[600], 5}]",
+    ] {
+      clear_state();
+      assert_eq!(
+        interpret(&format!("$RecursionLimit = 20; {DEEP} {wrapper}")).unwrap(),
+        "TerminatedEvaluation[RecursionLimit]",
+        "{wrapper} must not absorb the termination"
+      );
+    }
+    // A `Block`-scoped limit terminates the same way, and the next
+    // evaluation starts from a clean slate.
+    clear_state();
+    assert_eq!(
+      interpret(&format!("{DEEP} Block[{{$RecursionLimit = 20}}, h[600]]"))
+        .unwrap(),
+      "TerminatedEvaluation[RecursionLimit]"
+    );
+    assert_eq!(interpret("2 + 2").unwrap(), "4");
   }
 }
 

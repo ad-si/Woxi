@@ -918,6 +918,16 @@ pub fn dirichlet_convolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       parts.push(scale_by_coeffs(core, at, bt));
     }
   }
+  // A split that reproduces the very call it started from has nothing left
+  // to reduce. Handing it back to the evaluator would re-enter this function
+  // on the same arguments and recurse until `$RecursionLimit` — harmless
+  // only as long as passing the limit quietly returned the call unevaluated,
+  // which is no longer what it does.
+  if let [only] = parts.as_slice()
+    && crate::evaluator::pattern_matching::expr_equal(only, &unevaluated())
+  {
+    return Ok(unevaluated());
+  }
   crate::evaluator::evaluate_expr_to_expr(&call("Plus", parts))
 }
 

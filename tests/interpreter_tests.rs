@@ -2662,21 +2662,23 @@ mod interpreter_tests {
   fn test_file_name_join_collapses_separators_inside_components() {
     // A component may carry its own separators; the join must not leave a
     // run of them behind, or `StringTake[…, -3]` on the result diverges.
+    // The separator is the host's unless one is named, so every case below
+    // names `"Unix"` — otherwise the expectations only hold off Windows.
     clear_state();
-    assert_eq!(
-      interpret("FileNameJoin[{\"/a\", \"b/\", \"c.wlx\"}]").unwrap(),
-      "/a/b/c.wlx"
-    );
-    assert_eq!(
-      interpret("FileNameJoin[{\"a//b\", \"c\"}]").unwrap(),
-      "a/b/c"
-    );
-    assert_eq!(interpret("FileNameJoin[{\"/a\", \"/b\"}]").unwrap(), "/a/b");
-    assert_eq!(interpret("FileNameJoin[{\"//a\", \"b\"}]").unwrap(), "/a/b");
-    assert_eq!(interpret("FileNameJoin[{\"/\"}]").unwrap(), "/");
-    assert_eq!(interpret("FileNameJoin[{\"/\", \"a\"}]").unwrap(), "/a");
-    assert_eq!(interpret("FileNameJoin[{\"/a/b/\"}]").unwrap(), "/a/b");
-    assert_eq!(interpret("FileNameJoin[{}]").unwrap(), "");
+    let unix = |components: &str| {
+      interpret(&format!(
+        "FileNameJoin[{components}, OperatingSystem -> \"Unix\"]"
+      ))
+      .unwrap()
+    };
+    assert_eq!(unix("{\"/a\", \"b/\", \"c.wlx\"}"), "/a/b/c.wlx");
+    assert_eq!(unix("{\"a//b\", \"c\"}"), "a/b/c");
+    assert_eq!(unix("{\"/a\", \"/b\"}"), "/a/b");
+    assert_eq!(unix("{\"//a\", \"b\"}"), "/a/b");
+    assert_eq!(unix("{\"/\"}"), "/");
+    assert_eq!(unix("{\"/\", \"a\"}"), "/a");
+    assert_eq!(unix("{\"/a/b/\"}"), "/a/b");
+    assert_eq!(unix("{}"), "");
     assert_eq!(
       interpret(
         "FileNameJoin[{\"a/\", \"b\"}, OperatingSystem -> \"Windows\"]"

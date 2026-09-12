@@ -4918,7 +4918,19 @@ fn collect_files_recursive(
         } else {
           std::path::Path::new(base_dir).join(relative)
         };
-        results.push(named.to_string_lossy().into_owned());
+        let named = named.to_string_lossy().into_owned();
+        // Windows reads either separator but spells a path with only one,
+        // and `base_dir` is echoed back as the caller wrote it — so a
+        // directory given as `"C:/dir"` would otherwise come back as
+        // `"C:/dir\file.txt"`, a spelling no other `FileName*` function
+        // produces. On Unix a backslash is an ordinary character in a file
+        // name and must survive untouched.
+        let named = if std::path::MAIN_SEPARATOR == '\\' {
+          named.replace('/', "\\")
+        } else {
+          named
+        };
+        results.push(named);
       }
       if ft.is_dir() && depth < levels.max {
         collect_files_recursive(

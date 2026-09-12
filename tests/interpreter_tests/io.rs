@@ -6344,10 +6344,13 @@ mod file_names {
       r#"SetDirectory["{dir}/sub/deep"]; r = FileNames["*.txt", "{dir}/sub"]; ResetDirectory[]; r"#
     ))
     .unwrap();
+    // The reported name is spelled in the host's separator throughout, so
+    // the `/` the directory was given with becomes `\` on Windows.
     let sep = std::path::MAIN_SEPARATOR_STR;
+    let base = format!("{dir}/sub").replace('/', sep);
     assert_eq!(
       result,
-      format!("{{{dir}/sub{sep}one.txt, {dir}/sub{sep}two.txt}}")
+      format!("{{{base}{sep}one.txt, {base}{sep}two.txt}}")
     );
     std::fs::remove_dir_all(&dir).ok();
   }
@@ -6388,6 +6391,23 @@ mod file_names {
     let root = nested_tree("default_depth");
     let names = interpret(&format!(
       r#"FileNames["target.txt", "{root}"] === {{FileNameJoin[{{"{root}", "target.txt"}}]}}"#
+    ))
+    .unwrap();
+    assert_eq!(names, "True");
+    std::fs::remove_dir_all(&root).ok();
+  }
+
+  // Every reported name is spelled in the host's separator throughout, so
+  // it survives a round trip through `FileNameSplit`/`FileNameJoin`. The
+  // directory is given with `/`, which on Windows used to be kept verbatim
+  // and only the last separator taken from the host — leaving names like
+  // `C:/dir\target.txt` that no other `FileName*` function would produce.
+  #[test]
+  fn reported_names_use_the_host_separator_throughout() {
+    let root = nested_tree("host_separator");
+    let names = interpret(&format!(
+      r#"With[{{n = FileNames["target.txt", "{root}", Infinity]}},
+        n === (FileNameJoin[FileNameSplit[#]] & /@ n)]"#
     ))
     .unwrap();
     assert_eq!(names, "True");

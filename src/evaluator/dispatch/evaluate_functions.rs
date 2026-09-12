@@ -180,6 +180,11 @@ pub(crate) fn evaluate_function_call_ast(
   name: &str,
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
+  // A terminated evaluation stays terminated (see `crate::start_termination`).
+  if let Some(tag) = crate::termination_in_flight() {
+    return Err(InterpreterError::Terminated(tag));
+  }
+
   // Track recursion depth to prevent stack overflow from mutually-recursive
   // rules (e.g. ArcSec ↔ ArcCos cycles through built-in + user rules).
   // This catches cycles that bypass the depth guard in evaluate_expr_to_expr_impl
@@ -201,8 +206,11 @@ pub(crate) fn evaluate_function_call_ast(
   // the environment only once the depth passes the smallest limit Wolfram
   // accepts for the variable (20).
   const MIN_SETTABLE_RECURSION_LIMIT: usize = 20;
-  if depth > MIN_SETTABLE_RECURSION_LIMIT && depth > crate::recursion_limit() {
-    return Ok(unevaluated(name, args));
+  if depth > MIN_SETTABLE_RECURSION_LIMIT {
+    let limit = crate::recursion_limit();
+    if depth > limit {
+      return Err(crate::recursion_limit_exceeded(limit));
+    }
   }
 
   stacker::maybe_grow(2 * 1024 * 1024, 4 * 1024 * 1024, || {
