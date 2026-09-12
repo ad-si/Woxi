@@ -10334,6 +10334,75 @@ Cell[BoxData[
     );
   }
 
+  #[test]
+  fn sequence_graph_manipulate_honors_edge_rendering_function() {
+    // The shape the "Collatz Conjecture on a Circle" Demonstration
+    // shares with other sequence-graph Demonstrations authored before
+    // `Graph` existed: a `Setter` choosing how many terms to plot, a
+    // hidden `ControlType -> None` cache of the computed edges, and a
+    // `GraphPlot` colored edge by edge via the legacy `GraphPlot` option
+    // `EdgeRenderingFunction` (not `Graph`'s `EdgeShapeFunction`), which
+    // Woxi silently dropped, always drawing the default grey arrows.
+    let code = "Manipulate[\
+      edges = Table[i -> Mod[3 i + 1, n], {i, 1, n}]; \
+      Pane[GraphPlot[edges, Method -> \"CircularEmbedding\", \
+        EdgeRenderingFunction -> (If[PrimeQ[First[#2]], \
+          {Red, Arrow[#1]}, {Gray, Arrow[#1]}] &)], 300], \
+      {{n, 12, \"terms\"}, {8, 12, 16}, Setter}, \
+      {{edges, {}}, ControlType -> None}, \
+      TrackedSymbols :> {n}, \
+      SaveDefinitions -> True]";
+    let state = instantiate_stored_manipulate(code, "")
+      .expect("the sequence-graph Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(state.graphics_handle.is_some(), "the graph must render");
+
+    match &state.controls[0] {
+      manipulate::ControlState::Discrete { values, .. } => {
+        assert_eq!(values, &["8", "12", "16"]);
+      }
+      other => panic!("expected a Setter control, got {other:?}"),
+    }
+
+    // Without the option, PrimeQ can never split the edges into two
+    // colors, so the plot carries only one arrow color.
+    let without_option = woxi::interpret(
+      "ExportString[GraphPlot[Table[i -> Mod[3 i + 1, 12], {i, 1, 12}], \
+       Method -> \"CircularEmbedding\"], \"SVG\"]",
+    )
+    .expect("the plain plot must export");
+    fn colors(svg: &str) -> std::collections::HashSet<&'_ str> {
+      svg
+        .lines()
+        .filter(|l| l.starts_with("<polyline"))
+        .filter_map(|l| l.split("stroke=\"").nth(1))
+        .filter_map(|l| l.split('"').next())
+        .collect()
+    }
+    assert_eq!(
+      colors(&without_option).len(),
+      1,
+      "the default rendering has one arrow color"
+    );
+
+    let with_option = woxi::interpret(
+      "ExportString[GraphPlot[Table[i -> Mod[3 i + 1, 12], {i, 1, 12}], \
+       Method -> \"CircularEmbedding\", \
+       EdgeRenderingFunction -> (If[PrimeQ[First[#2]], \
+         {Red, Arrow[#1]}, {Gray, Arrow[#1]}] &)], \"SVG\"]",
+    )
+    .expect("the colored plot must export");
+    assert_eq!(
+      colors(&with_option),
+      std::collections::HashSet::from(["rgb(255,0,0)", "rgb(128,128,128)"]),
+      "PrimeQ must split the edges into red and grey arrows: {with_option}"
+    );
+  }
+
   /// End-to-end regression for the shape the "Recursive Exercises"
   /// Demonstrations share: a recursive family of nested `Disk`s whose
   /// level setter offers fewer levels once the 3D view is on, a colour
@@ -24105,12 +24174,33 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 30, $CellContext`s$$ = 5}, \"
       .find(|(n, _)| n == "trail")
       .expect("trail should still be tracked")
       .1;
+    // The intersection's coordinates come out of `NSolve`, whose last bit
+    // can differ by one ULP across CPUs/libm builds (the `Tan` calls that
+    // feed it are not required to round identically everywhere); pull the
+    // two numbers out and compare them with a tolerance instead of pinning
+    // the exact decimal string.
+    let numbers = |s: &str| -> Vec<f64> {
+      s.split(|c: char| !c.is_ascii_digit() && c != '.' && c != '-')
+        .filter(|t| !t.is_empty())
+        .filter_map(|t| t.parse().ok())
+        .collect()
+    };
+    let expected = "{{}, {Point[{2.9994000199997335, 0.05999600007999923}]}}";
+    let (got, want) = (numbers(trail_after_move), numbers(expected));
     assert_eq!(
-      trail_after_move,
-      "{{}, {Point[{2.9994000199997335, 0.05999600007999924}]}}",
+      got.len(),
+      want.len(),
       "moving alpha to a new value must append the previous intersection \
-       point to the trail"
+       point to the trail: got {trail_after_move}"
     );
+    for (g, w) in got.iter().zip(&want) {
+      assert!(
+        (g - w).abs() <= w.abs() * 1e-9 + 1e-9,
+        "moving alpha to a new value must append (approximately) the \
+         previous intersection point to the trail: got {trail_after_move}, \
+         expected {expected}"
+      );
+    }
     let after = render(&state);
     assert_ne!(
       before, after,

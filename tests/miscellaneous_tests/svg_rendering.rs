@@ -3667,6 +3667,32 @@ mod tests {
       );
     }
 
+    /// `EdgeRenderingFunction` is `GraphPlot`'s older name for the same
+    /// option, predating `Graph` and `EdgeShapeFunction` — Demonstrations
+    /// authored before `Graph` existed still use it, and it was previously
+    /// silently ignored, always drawing the default grey arrows.
+    #[test]
+    fn edge_rendering_function_replaces_the_drawn_edge() {
+      let svg = svg_of(
+        r#"GraphPlot[{1 -> 2, 2 -> 3},
+           EdgeRenderingFunction -> ({Blue, Dashed, Line[#1]} &)]"#,
+      );
+      assert!(
+        !svg.contains("<polygon"),
+        "the arrow heads are gone once the shape is ours: {svg}"
+      );
+      assert_eq!(
+        svg.matches(r#"stroke="rgb(0,0,255)""#).count(),
+        2,
+        "both edges are drawn blue: {svg}"
+      );
+      assert_eq!(
+        svg.matches("stroke-dasharray").count(),
+        2,
+        "both edges are dashed: {svg}"
+      );
+    }
+
     /// The second argument is the edge itself, as a `DirectedEdge` — which
     /// is what a test like `MemberQ[…, #2]` in a Demonstration matches on.
     #[test]
