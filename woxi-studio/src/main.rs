@@ -12953,6 +12953,51 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
     );
   }
 
+  /// A Demonstration built the way the Wolfram Demonstrations Project
+  /// writes a slider-with-live-readout row: `Row[{Control[…], " ",
+  /// Style[Dynamic[var]]}]` puts the current value of the slider's own
+  /// variable right next to it, and a separate `Style[Dynamic[msg], Bold,
+  /// Red]` caption reports a status message computed from the body.
+  /// Independently written (a made-up "reach the target" puzzle with its
+  /// own variable names) — not the notebook's own code or wording, which
+  /// is copyrighted.
+  ///
+  /// Regression: `Style[Dynamic[var]]` nests the `Dynamic` *inside* the
+  /// `Style` wrapper (unlike a caption where `Dynamic` is the outermost
+  /// call, already handled elsewhere). Evaluating the whole `Style[…]`
+  /// fragment at once never releases that inner `Dynamic` — `Dynamic` is
+  /// `HoldFirst`, so `Dynamic[var]` evaluates to itself regardless of what
+  /// wraps it — so the caption fell back to the literal formatting of the
+  /// held expression and displayed the bare symbol name (`"target"`,
+  /// `"status"`) instead of the variable's current value on every render.
+  #[test]
+  fn manipulate_style_wrapped_dynamic_caption_shows_the_live_value() {
+    let code = r#"Manipulate[
+      status = If[target >= 8, "reached", "not yet"];
+      target,
+      Row[{Control[{{target, 1, "target"}, 0, 10, ImageSize -> Small}],
+        Style[" "], Style[Dynamic[target]]}],
+      Style[Dynamic[status], Bold, Red],
+      {{status, "", ""}, ControlType -> None}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("must parse");
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("the Manipulate must build a widget");
+    assert!(state.error.is_none(), "render failed: {:?}", state.error);
+
+    let caption = display_text(&state.display_trees);
+    assert!(
+      caption.contains('1') && !caption.contains("target"),
+      "Style[Dynamic[target]] must show target's current value (1), not \
+       the literal symbol name: {caption:?}"
+    );
+    assert!(
+      caption.contains("not yet") && !caption.contains("status"),
+      "Style[Dynamic[status], Bold, Red] must show status's current value \
+       (\"not yet\"), not the literal symbol name: {caption:?}"
+    );
+  }
+
   /// Collect `(mutation, selected)` of every Toggler in a display tree.
   fn collect_togglers(
     trees: &[woxi::functions::graphics::DisplayNode],
