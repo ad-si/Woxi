@@ -7096,12 +7096,130 @@ mod integrate_reciprocal_quadratic {
     );
   }
 
-  // Numeric x^2 - c stays in partial-fraction Log form (not ArcTanh).
+  // A rational-root difference stays in partial-fraction Log form; only the
+  // irrational-root case becomes ArcTanh (see `quadratic_denominator` below).
   #[test]
   fn numeric_difference_stays_log() {
     assert_eq!(
       interpret("Integrate[1/(x^2 - 4), x]").unwrap(),
       "Log[2 - x]/4 - Log[2 + x]/4"
+    );
+  }
+}
+
+/// ∫(B x + C)/(a x² + b x + c) dx, which has one closed form per
+/// discriminant sign. Before this, only monic denominators with a
+/// negative discriminant worked; the irrational-root case answered with
+/// `Log`s where wolframscript uses `ArcTanh`, and several rational-root
+/// cases *silently dropped a term*. Found by the differential fuzzer on
+/// `Integrate[1/(3 - 5*x^2), x]`.
+mod quadratic_denominator {
+  use super::*;
+
+  /// disc < 0 — ArcTan, now for any leading coefficient.
+  #[test]
+  fn negative_discriminant_gives_arctan() {
+    for (code, expected) in [
+      (
+        "Integrate[1/(2*x^2 + 3*x + 5), x]",
+        "(2*ArcTan[(3 + 4*x)/Sqrt[31]])/Sqrt[31]",
+      ),
+      ("Integrate[1/(-x^2 - 1), x]", "-ArcTan[x]"),
+      (
+        "Integrate[(x + 1)/(2*x^2 + 3*x + 5), x]",
+        "ArcTan[(3 + 4*x)/Sqrt[31]]/(2*Sqrt[31]) + Log[5 + 3*x + 2*x^2]/4",
+      ),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "for {code}");
+    }
+  }
+
+  /// disc > 0 and not a perfect square — irrational roots, so ArcTanh.
+  #[test]
+  fn irrational_roots_give_arctanh() {
+    for (code, expected) in [
+      ("Integrate[1/(x^2 - 2), x]", "-(ArcTanh[x/Sqrt[2]]/Sqrt[2])"),
+      (
+        "Integrate[1/(x^2 - 4*x + 1), x]",
+        "-(ArcTanh[(-2 + x)/Sqrt[3]]/Sqrt[3])",
+      ),
+      (
+        "Integrate[1/(x^2 + x - 1), x]",
+        "(-2*ArcTanh[(1 + 2*x)/Sqrt[5]])/Sqrt[5]",
+      ),
+      // With no linear term the coefficient folds into one radical.
+      (
+        "Integrate[1/(3 - 5*x^2), x]",
+        "ArcTanh[Sqrt[5/3]*x]/Sqrt[15]",
+      ),
+      (
+        "Integrate[1/(5*x^2 - 3), x]",
+        "-(ArcTanh[Sqrt[5/3]*x]/Sqrt[15])",
+      ),
+      (
+        "Integrate[1/(3 + 3*x - 5*x^2), x]",
+        "(2*ArcTanh[(-3 + 10*x)/Sqrt[69]])/Sqrt[69]",
+      ),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "for {code}");
+    }
+  }
+
+  /// disc > 0 and a perfect square — rational roots, so partial fractions.
+  /// The non-integer-root cases used to lose a term entirely.
+  #[test]
+  fn rational_roots_give_partial_fraction_logs() {
+    for (code, expected) in [
+      (
+        "Integrate[1/(6*x^2 + 5*x + 1), x]",
+        "-Log[1 + 2*x] + Log[1 + 3*x]",
+      ),
+      (
+        "Integrate[1/(2*x^2 - x - 1), x]",
+        "Log[1 - x]/3 - Log[1 + 2*x]/3",
+      ),
+      (
+        "Integrate[1/(2*x^2 + 3*x + 1), x]",
+        "-Log[1 + x] + Log[1 + 2*x]",
+      ),
+      (
+        "Integrate[1/(3*x^2 + 4*x + 1), x]",
+        "-1/2*Log[1 + x] + Log[1 + 3*x]/2",
+      ),
+      (
+        "Integrate[1/(9*x^2 - 4), x]",
+        "Log[2 - 3*x]/12 - Log[2 + 3*x]/12",
+      ),
+      ("Integrate[1/(2*x^2 - 8), x]", "Log[2 - x]/8 - Log[2 + x]/8"),
+      (
+        "Integrate[(x + 1)/(6*x^2 + 5*x + 1), x]",
+        "-1/2*Log[1 + 2*x] + (2*Log[1 + 3*x])/3",
+      ),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "for {code}");
+    }
+  }
+
+  /// disc == 0 — a repeated root, so a rational function rather than a
+  /// transcendental one. The content of the linear factor comes out front.
+  #[test]
+  fn repeated_root_gives_a_rational_function() {
+    assert_eq!(
+      interpret("Integrate[1/(x^2 + 2*x + 1), x]").unwrap(),
+      "-(1 + x)^(-1)"
+    );
+    assert_eq!(
+      interpret("Integrate[1/(2*x^2 + 4*x + 2), x]").unwrap(),
+      "-1/2*1/(1 + x)"
+    );
+  }
+
+  /// A numerator proportional to the derivative stays a pure Log.
+  #[test]
+  fn derivative_numerator_stays_log() {
+    assert_eq!(
+      interpret("Integrate[(3*x)/(2*x^2 - 5), x]").unwrap(),
+      "(3*Log[-5 + 2*x^2])/4"
     );
   }
 }
@@ -14588,7 +14706,9 @@ mod cases {
   fn integrate_9() {
     assert_case(
       r#"Integrate[6 x ^ 2 + 3 x ^ 2 - 4 x + 10, x]; Integrate[Sin[x] ^ 5, x]; Integrate[x ^ 2 + x, {x, 1, 3}]; Integrate[Sin[x], {x, 0, Pi/2}]; Integrate[1 / (1 - 4 x + x^2), x]"#,
-      r#"(Log[2 + Sqrt[3] - x] - Log[-2 + Sqrt[3] + x])/(2*Sqrt[3])"#,
+      // wolframscript answers the irrational-real-root case with ArcTanh,
+      // not with the two-Log form this used to assert.
+      r#"-(ArcTanh[(-2 + x)/Sqrt[3]]/Sqrt[3])"#,
     );
   }
   #[test]
@@ -18337,5 +18457,152 @@ mod differential_notation {
   fn the_differential_character_is_not_part_of_the_name() {
     assert_eq!(interpret("\u{2146}area").unwrap(), "DifferentialD[area]");
     assert_eq!(interpret("\u{F74C}x").unwrap(), "DifferentialD[x]");
+  }
+}
+
+/// ∫f(a·x + b) dx = F(a·x + b)/a. The per-function rules only ever covered a
+/// zero offset, so a shifted argument did not integrate at all — not even
+/// `Exp[x + y]`. Found by the differential fuzzer on `Integrate[Tan[x + y], x]`.
+mod integrate_shifted_argument {
+  use super::*;
+
+  #[test]
+  fn shifted_trig() {
+    for (code, expected) in [
+      ("Integrate[Tan[x + y], x]", "-Log[Cos[x + y]]"),
+      ("Integrate[Tan[x + 1], x]", "-Log[Cos[1 + x]]"),
+      ("Integrate[Tan[2*x + y], x]", "-1/2*Log[Cos[2*x + y]]"),
+      ("Integrate[Cot[x + y], x]", "Log[Sin[x + y]]"),
+      ("Integrate[Sec[x + y], x]", "ArcCoth[Sin[x + y]]"),
+      ("Integrate[Sin[2*x + 1], x]", "-1/2*Cos[1 + 2*x]"),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "for {code}");
+    }
+  }
+
+  #[test]
+  fn shifted_exponential() {
+    assert_eq!(interpret("Integrate[Exp[x + y], x]").unwrap(), "E^(x + y)");
+    assert_eq!(
+      interpret("Integrate[E^(2*x + 1), x]").unwrap(),
+      "E^(1 + 2*x)/2"
+    );
+  }
+
+  /// A zero offset must stay with the per-function rules, which have their
+  /// own output shapes: substituting instead gave `x*(-1 + Log[2*x])` where
+  /// wolframscript writes `-x + x*Log[2*x]`.
+  #[test]
+  fn unshifted_arguments_keep_their_own_shape() {
+    assert_eq!(
+      interpret("Integrate[Log[2*x], x]").unwrap(),
+      "-x + x*Log[2*x]"
+    );
+    assert_eq!(
+      interpret("Integrate[ArcSin[2*x], x]").unwrap(),
+      "Sqrt[1 - 4*x^2]/2 + x*ArcSin[2*x]"
+    );
+    assert_eq!(interpret("Integrate[E^(2*x), x]").unwrap(), "E^(2*x)/2");
+    assert_eq!(interpret("Integrate[Tan[x], x]").unwrap(), "-Log[Cos[x]]");
+  }
+}
+
+/// Integer polynomial long division needs a leading divisor coefficient of
+/// ±1, so an improper fraction over a non-monic denominator did not
+/// integrate at all. Pseudo-division scales the numerator first.
+mod integrate_improper_non_monic {
+  use super::*;
+
+  #[test]
+  fn improper_fractions_over_non_monic_denominators() {
+    for (code, expected) in [
+      (
+        "Integrate[x^2/(2*x^2 + 1), x]",
+        "(x - ArcTan[Sqrt[2]*x]/Sqrt[2])/2",
+      ),
+      (
+        "Integrate[(x^2 + 1)/(2*x^2 + 1), x]",
+        "(x + ArcTan[Sqrt[2]*x]/Sqrt[2])/2",
+      ),
+      (
+        "Integrate[(1 + x^3)/(2*x^2 + 1), x]",
+        "(x^2 + 2*Sqrt[2]*ArcTan[Sqrt[2]*x] - Log[1 + 2*x^2]/2)/4",
+      ),
+      (
+        "Integrate[x^2/(2*x^2 - 8), x]",
+        "(x + Log[2 - x] - Log[2 + x])/2",
+      ),
+      (
+        "Integrate[x^4/(3*x^2 + 1), x]",
+        "(-3*x + 3*x^3 + Sqrt[3]*ArcTan[Sqrt[3]*x])/27",
+      ),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "for {code}");
+    }
+  }
+
+  /// Monic denominators keep the shape they already had.
+  #[test]
+  fn monic_denominators_are_unchanged() {
+    assert_eq!(
+      interpret("Integrate[(1 + x^3)/(1 + x^2), x]").unwrap(),
+      "x^2/2 + ArcTan[x] - Log[1 + x^2]/2"
+    );
+    assert_eq!(
+      interpret("Integrate[(5*x^3)/(1 + x^2), x]").unwrap(),
+      "5*(x^2/2 - Log[1 + x^2]/2)"
+    );
+  }
+}
+
+/// ∫Tan[u]^n and ∫Cot[u]^n for n ≥ 3, which did not evaluate at all — only
+/// the squared case was covered. wolframscript answers even powers in the
+/// Tan/Cot basis with an `ArcTan[Tan[u]]` linear term and odd powers in the
+/// Sec/Csc basis with a `Log`, which is what the `s = Sec[u]` substitution
+/// produces. Found by the differential fuzzer.
+mod integrate_tangent_powers {
+  use super::*;
+
+  #[test]
+  fn odd_powers_use_the_secant_basis() {
+    for (code, expected) in [
+      ("Integrate[Tan[x]^3, x]", "Log[Cos[x]] + Sec[x]^2/2"),
+      (
+        "Integrate[Tan[x]^5, x]",
+        "-Log[Cos[x]] - Sec[x]^2 + Sec[x]^4/4",
+      ),
+      ("Integrate[Cot[x]^3, x]", "-1/2*Csc[x]^2 - Log[Sin[x]]"),
+      ("Integrate[Tan[2*x]^3, x]", "Log[Cos[2*x]]/2 + Sec[2*x]^2/4"),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "for {code}");
+    }
+  }
+
+  #[test]
+  fn even_powers_use_the_tangent_basis() {
+    for (code, expected) in [
+      ("Integrate[Tan[x]^2, x]", "-ArcTan[Tan[x]] + Tan[x]"),
+      (
+        "Integrate[Tan[x]^4, x]",
+        "ArcTan[Tan[x]] - Tan[x] + Tan[x]^3/3",
+      ),
+      ("Integrate[Cot[x]^2, x]", "-ArcTan[Tan[x]] - Cot[x]"),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "for {code}");
+    }
+  }
+
+  /// A power of a shifted argument reaches the same rules through the
+  /// linear substitution.
+  #[test]
+  fn powers_of_a_shifted_argument() {
+    assert_eq!(
+      interpret("Integrate[Tan[x + y]^3, x]").unwrap(),
+      "Log[Cos[x + y]] + Sec[x + y]^2/2"
+    );
+    assert_eq!(
+      interpret("Integrate[Sin[x + y]^2, x]").unwrap(),
+      "(x + y)/2 - Sin[2*(x + y)]/4"
+    );
   }
 }

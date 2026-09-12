@@ -5333,6 +5333,109 @@ fn try_integrate_trig_squared(base: &Expr, var: &str) -> Option<Expr> {
 /// For even n = 2m, m = n/2:
 ///   sin^n(x) = (1/2^n) * [C(n,m) + 2 * Sum_{k=0}^{m-1} (-1)^(m-k) * C(n,k) * cos((n-2k)*x)]
 ///   cos^n(x) = (1/2^n) * [C(n,m) + 2 * Sum_{k=0}^{m-1} C(n,k) * cos((n-2k)*x)]
+/// ∫ Tan[u]^n dx and ∫ Cot[u]^n dx for `n >= 3` and `u = a*x`, in the two
+/// bases wolframscript uses. With `m = n/2`:
+///
+///   even n:  Σ_{j=1..m} (-1)^(m-j) Tan[u]^(2j-1)/(2j-1)  +  (-1)^m ArcTan[Tan[u]]
+///   odd  n:  Σ_{j=1..m} C(m,j)(-1)^(m-j) Sec[u]^(2j)/(2j) + (-1)^(m+1) Log[Cos[u]]
+///
+/// The odd form comes out of the substitution `s = Sec[u]`, which is why it
+/// is in `Sec` powers rather than `Tan` powers. `Cot` mirrors both with
+/// `Csc`/`Log[Sin]` and the opposite sign on the summation.
+///
+/// Only `n == 2` was covered before; `Integrate[Tan[x]^3, x]` did not
+/// evaluate. Found by the differential fuzzer.
+fn try_integrate_tan_cot_power(
+  base: &Expr,
+  n: i128,
+  var: &str,
+) -> Option<Expr> {
+  if !(3..=40).contains(&n) {
+    return None;
+  }
+  let Expr::FunctionCall { name, args } = base else {
+    return None;
+  };
+  if args.len() != 1 || !matches!(name.as_str(), "Tan" | "Cot") {
+    return None;
+  }
+  let is_tan = name == "Tan";
+  let u = &args[0];
+  let coeff = try_match_linear_arg(u, var)?;
+  let m = n / 2;
+
+  // `c * f[u]^p / d`, with the 1/a from the linear argument folded in.
+  let term = |c: i128, head: &str, power: i128, d: i128| -> Expr {
+    let base_call = call1(head, u.clone());
+    let raised = if power == 1 {
+      base_call
+    } else {
+      pow2(base_call, Expr::Integer(power))
+    };
+    let scaled = if c == 1 {
+      raised
+    } else {
+      times2(Expr::Integer(c), raised)
+    };
+    make_divided(
+      if d == 1 {
+        scaled
+      } else {
+        div2(scaled, Expr::Integer(d))
+      },
+      coeff.clone(),
+    )
+  };
+
+  let mut terms: Vec<Expr> = Vec::new();
+  if n % 2 == 0 {
+    for j in 1..=m {
+      let sign = if (m - j) % 2 == 0 { 1 } else { -1 };
+      let head = if is_tan { "Tan" } else { "Cot" };
+      // Cot's summation carries the opposite sign.
+      let sign = if is_tan { sign } else { -sign };
+      terms.push(term(sign, head, 2 * j - 1, 2 * j - 1));
+    }
+    // wolframscript keeps the linear term as ArcTan[Tan[u]] rather than u.
+    let linear = call1("ArcTan", call1("Tan", u.clone()));
+    let sign = if m % 2 == 0 { 1 } else { -1 };
+    terms.push(make_divided(
+      if sign == 1 {
+        linear
+      } else {
+        times2(Expr::Integer(-1), linear)
+      },
+      coeff.clone(),
+    ));
+  } else {
+    let head = if is_tan { "Sec" } else { "Csc" };
+    for j in 1..=m {
+      let binom = crate::functions::binomial_coeff(m, j);
+      let sign = if (m - j) % 2 == 0 { 1 } else { -1 };
+      let sign = if is_tan { sign } else { -sign };
+      terms.push(term(sign * binom, head, 2 * j, 2 * j));
+    }
+    let log_head = if is_tan { "Cos" } else { "Sin" };
+    let log_term = call1("Log", call1(log_head, u.clone()));
+    // Tan: (-1)^(m+1); Cot: (-1)^m.
+    let positive = if is_tan { m % 2 == 1 } else { m % 2 == 0 };
+    terms.push(make_divided(
+      if positive {
+        log_term
+      } else {
+        times2(Expr::Integer(-1), log_term)
+      },
+      coeff.clone(),
+    ));
+  }
+
+  let mut acc = terms.pop()?;
+  while let Some(t) = terms.pop() {
+    acc = plus2(t, acc);
+  }
+  Some(acc)
+}
+
 fn try_integrate_trig_power(base: &Expr, n: i128, var: &str) -> Option<Expr> {
   if n < 3 {
     return None;
@@ -5834,9 +5937,384 @@ fn expr_contains_imaginary(expr: &Expr) -> bool {
   }
 }
 
+/// ∫ f(a·x + b) dx = F(a·x + b)/a, for a non-zero constant `a` and a `b`
+/// that is constant with respect to `x`.
+///
+/// Only a single-argument call, or `E^u`, whose argument is that linear form
+/// qualifies. A zero offset is left alone — `Sin[2x]` and friends have their
+/// own rules, with their own output shapes — so this only adds the shifted
+/// cases, which did not integrate at all before: `Tan[x + y]`, `Cot[x + y]`,
+/// `Exp[x + y]`, `Sec[2x + y]`, …
+fn try_integrate_linear_shift(expr: &Expr, var: &str) -> Option<Expr> {
+  // `f[u]` and `f[u]^n` both qualify; the substitution below rewrites the
+  // whole expression, so a power needs no separate handling beyond finding
+  // the argument.
+  fn single_argument_call(e: &Expr) -> Option<&Expr> {
+    match e {
+      Expr::FunctionCall { name, args }
+        if args.len() == 1 && name != "Power" =>
+      {
+        Some(&args[0])
+      }
+      _ => None,
+    }
+  }
+  let arg = match expr {
+    Expr::FunctionCall { args, .. } if args.len() == 1 => &args[0],
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } if matches!(right.as_ref(), Expr::Integer(_))
+      && single_argument_call(left).is_some() =>
+    {
+      single_argument_call(left)?
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Power"
+        && args.len() == 2
+        && matches!(&args[1], Expr::Integer(_))
+        && single_argument_call(&args[0]).is_some() =>
+    {
+      single_argument_call(&args[0])?
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } if matches!(left.as_ref(), Expr::Identifier(e) | Expr::Constant(e) if e == "E") => {
+      right.as_ref()
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Power"
+        && args.len() == 2
+        && matches!(&args[0], Expr::Identifier(e) | Expr::Constant(e) if e == "E") =>
+    {
+      &args[1]
+    }
+    _ => return None,
+  };
+  let a = extract_linear_coefficient(arg, var)?;
+  if matches!(a, Expr::Integer(0)) {
+    return None;
+  }
+  let var_expr = Expr::Identifier(var.to_string());
+  // A zero offset means `f[a*x]`, which the per-function rules below own —
+  // taking it over here would change their output shape.
+  let offset = crate::evaluator::evaluate_expr_to_expr(&minus2(
+    arg.clone(),
+    times2(a.clone(), var_expr.clone()),
+  ))
+  .ok()?;
+  if matches!(offset, Expr::Integer(0) | Expr::Real(0.0)) {
+    return None;
+  }
+
+  use crate::functions::polynomial_ast::substitute_expr;
+  // `f[a*x + b]` → `f[x]`, integrate that, then put the argument back. The
+  // inner integrand has a zero offset, so the recursion cannot come back
+  // here.
+  let plain = substitute_expr(expr, arg, &var_expr);
+  if expr_to_string(&plain) == expr_to_string(expr) {
+    return None;
+  }
+  let antiderivative = integrate(&plain, var)?;
+  Some(div2(substitute_expr(&antiderivative, &var_expr, arg), a))
+}
+
+/// Split `n > 0` into `(k, m)` with `n == k*k*m` and `m` square-free, so
+/// that `Sqrt[n]` is `k*Sqrt[m]`.
+fn square_free_split(n: i128) -> (i128, i128) {
+  let mut outside = 1i128;
+  let mut inside = n;
+  let mut factor = 2i128;
+  while factor * factor <= inside {
+    while inside % (factor * factor) == 0 {
+      outside *= factor;
+      inside /= factor * factor;
+    }
+    factor += 1;
+  }
+  (outside, inside)
+}
+
+/// ∫ (B x + C)/(a x² + b x + c) dx for integer coefficients, in the shape
+/// wolframscript returns, for every discriminant sign:
+///
+///   (B/(2a))·Log[a x² + b x + c] + K·∫dx/(a x² + b x + c),  K = C - B·b/(2a)
+///
+/// with, for `disc = b² - 4ac`,
+///
+///   disc < 0:  (2/Sqrt[-disc])·ArcTan[(2a x + b)/Sqrt[-disc]]
+///   disc > 0:  (-2/Sqrt[disc])·ArcTanh[(2a x + b)/Sqrt[disc]]
+///   disc = 0:  -2/(2a x + b)
+///
+/// A perfect-square discriminant is the one case left out: the roots are
+/// rational there, and wolframscript answers with partial-fraction `Log`s,
+/// which the caller's root-extraction path already produces.
+///
+/// `num` and `den` are coefficient vectors, lowest power first.
+fn integrate_linear_over_quadratic(
+  num: &[i128],
+  den: &[i128],
+  var: &str,
+) -> Option<Expr> {
+  if den.len() != 3 || num.len() > 2 {
+    return None;
+  }
+  let (mut c, mut b, mut a) = (den[0], den[1], den[2]);
+  if a == 0 {
+    return None;
+  }
+  let mut big_b = if num.len() == 2 { num[1] } else { 0 };
+  let mut big_c = num[0];
+
+  // Multiplying numerator and denominator by -1 leaves the quotient alone
+  // and gives the `Log` argument the positive leading coefficient
+  // wolframscript prints. The discriminant is unchanged by it.
+  if a < 0 {
+    a = -a;
+    b = -b;
+    c = -c;
+    big_b = -big_b;
+    big_c = -big_c;
+  }
+  let disc = b
+    .checked_mul(b)?
+    .checked_sub(4i128.checked_mul(a)?.checked_mul(c)?)?;
+  let two_a = a.checked_mul(2)?;
+  let var_expr = Expr::Identifier(var.to_string());
+
+  // A perfect-square discriminant means rational roots, and wolframscript
+  // splits into partial fractions there rather than using ArcTanh.
+  if disc > 0 {
+    let k = (disc as f64).sqrt().round() as i128;
+    if k.checked_mul(k) == Some(disc) {
+      return rational_root_partial_fractions(
+        big_b, big_c, a, b, k, two_a, &var_expr,
+      );
+    }
+  }
+
+  // `p + q*x`, or just `q*x` when p is zero.
+  let linear_expr = |p: i128, q: i128| -> Expr {
+    let q_term = if q == 1 {
+      var_expr.clone()
+    } else {
+      times2(Expr::Integer(q), var_expr.clone())
+    };
+    if p == 0 {
+      q_term
+    } else {
+      plus2(Expr::Integer(p), q_term)
+    }
+  };
+
+  // K = C - B*b/(2a), kept as the fraction (2a*C - B*b)/(2a).
+  let k_num = two_a
+    .checked_mul(big_c)?
+    .checked_sub(big_b.checked_mul(b)?)?;
+  let inverse = if disc == 0 {
+    // Repeated root: ∫dx/(a x² + b x + c) = -2/(2a x + b). Pulling the
+    // content out of the linear factor is what turns `-2/(4 + 4x)` into
+    // wolframscript's `-1/2*1/(1 + x)`.
+    let content = gcd_i128(b, two_a);
+    div2(
+      div2(Expr::Integer(-2), Expr::Integer(content)),
+      linear_expr(b / content, two_a / content),
+    )
+  } else {
+    let s = disc.abs();
+    // s = k^2 * m with m square-free, so Sqrt[s] is k*Sqrt[m]. Dividing the
+    // argument's numerator and that k by their common factor is what
+    // wolframscript prints: `(-2 + x)/Sqrt[3]`, not `(-4 + 2x)/(2*Sqrt[3])`.
+    let (k, m) = square_free_split(s);
+    let g = gcd_i128(gcd_i128(b, two_a), k);
+    let (b_g, two_a_g, k_g) = (b / g, two_a / g, k / g);
+    let inner_denom = if k_g == 1 {
+      make_sqrt(Expr::Integer(m))
+    } else {
+      times2(Expr::Integer(k_g), make_sqrt(Expr::Integer(m)))
+    };
+    // With no linear term the argument is a pure coefficient times x, and
+    // wolframscript folds that coefficient into one radical
+    // (`Sqrt[5/3]*x`, not `(5*x)/Sqrt[15]`), which evaluating it on its own
+    // reproduces.
+    let argument = if b_g == 0 {
+      let coeff = crate::evaluator::evaluate_expr_to_expr(&div2(
+        Expr::Integer(two_a_g),
+        inner_denom,
+      ))
+      .ok()?;
+      times2(coeff, var_expr.clone())
+    } else {
+      div2(linear_expr(b_g, two_a_g), inner_denom)
+    };
+    let sqrt_s = make_sqrt(Expr::Integer(s));
+    let (head, sign) = if disc < 0 {
+      ("ArcTan", 2)
+    } else {
+      ("ArcTanh", -2)
+    };
+    times2(Expr::Integer(sign), div2(call1(head, argument), sqrt_s))
+  };
+  let inverse_term = if k_num == 0 {
+    None
+  } else {
+    Some(times2(
+      div2(Expr::Integer(k_num), Expr::Integer(two_a)),
+      inverse,
+    ))
+  };
+
+  let log_term = if big_b == 0 {
+    None
+  } else {
+    let quad =
+      crate::functions::polynomial_ast::coeffs_to_expr(&[c, b, a], var);
+    Some(times2(
+      div2(Expr::Integer(big_b), Expr::Integer(two_a)),
+      call1("Log", quad),
+    ))
+  };
+
+  Some(match (log_term, inverse_term) {
+    (Some(l), Some(i)) => plus2(l, i),
+    (Some(l), None) => l,
+    (None, Some(i)) => i,
+    (None, None) => Expr::Integer(0),
+  })
+}
+
+/// ∫ (B x + C)/(a x² + b x + c) dx when the discriminant is a perfect square
+/// `k²`, so the roots `(-b ± k)/(2a)` are rational and the answer is a sum of
+/// two `Log`s.
+///
+/// Writing each root as `n/d` in lowest terms, the factorisation is
+/// `content·(d₁x - n₁)(d₂x - n₂)`, and
+///
+///   ∫ = Σ (B·nᵢ + C·dᵢ) / (content·dᵢ·(d_j·nᵢ - n_j·dᵢ)) · Log[…]
+///
+/// wolframscript writes each `Log` argument with a positive constant term —
+/// `Log[2 - x]`, not `Log[x - 2]` — which only shifts the answer by a
+/// constant.
+fn rational_root_partial_fractions(
+  big_b: i128,
+  big_c: i128,
+  a: i128,
+  b: i128,
+  k: i128,
+  two_a: i128,
+  var_expr: &Expr,
+) -> Option<Expr> {
+  let root = |sign: i128| -> Option<(i128, i128)> {
+    let numer = (-b).checked_add(sign.checked_mul(k)?)?;
+    let g = gcd_i128(numer, two_a);
+    if g == 0 {
+      return None;
+    }
+    let (mut n, mut d) = (numer / g, two_a / g);
+    if d < 0 {
+      n = -n;
+      d = -d;
+    }
+    Some((n, d))
+  };
+  let (n1, d1) = root(1)?;
+  let (n2, d2) = root(-1)?;
+  // a = content * d1 * d2; a non-integer content means the quadratic was not
+  // primitive in a way this factorisation covers.
+  let d_product = d1.checked_mul(d2)?;
+  if d_product == 0 || a % d_product != 0 {
+    return None;
+  }
+  let content = a / d_product;
+
+  let mut terms: Vec<Expr> = Vec::new();
+  for (n, d, other_n, other_d) in [(n1, d1, n2, d2), (n2, d2, n1, d1)] {
+    // coefficient = (B*n + C*d) / (content * d * (other_d*n - other_n*d))
+    let numer = big_b.checked_mul(n)?.checked_add(big_c.checked_mul(d)?)?;
+    if numer == 0 {
+      continue;
+    }
+    let cross = other_d
+      .checked_mul(n)?
+      .checked_sub(other_n.checked_mul(d)?)?;
+    let denom = content.checked_mul(d)?.checked_mul(cross)?;
+    if denom == 0 {
+      return None;
+    }
+    // Log argument, written with a positive constant term.
+    let (q, p) = if n > 0 { (n, -d) } else { (-n, d) };
+    let p_term = if p == 1 {
+      var_expr.clone()
+    } else {
+      times2(Expr::Integer(p), var_expr.clone())
+    };
+    let argument = if q == 0 {
+      p_term
+    } else {
+      plus2(Expr::Integer(q), p_term)
+    };
+    terms.push(times2(
+      div2(Expr::Integer(numer), Expr::Integer(denom)),
+      call1("Log", argument),
+    ));
+  }
+  match terms.len() {
+    0 => Some(Expr::Integer(0)),
+    1 => terms.pop(),
+    _ => {
+      let second = terms.pop()?;
+      let first = terms.pop()?;
+      Some(plus2(first, second))
+    }
+  }
+}
+
 /// Try to integrate a rational function (numerator/denominator where both are polynomials).
 /// Uses polynomial long division + partial fraction decomposition.
+///
+/// Integer long division needs a leading divisor coefficient of ±1, so an
+/// improper fraction over a non-monic denominator is pseudo-divided first:
+/// scaling the numerator by `a^(degree difference + 1)` makes every step
+/// exact, and the factor comes straight back out because the antiderivative
+/// is linear in the numerator. Without it `(1 + x^3)/(1 + 2*x^2)` did not
+/// integrate at all.
 fn try_integrate_rational(
+  num_expr: &Expr,
+  den_expr: &Expr,
+  var: &str,
+) -> Option<Expr> {
+  use crate::functions::polynomial_ast::{
+    coeffs_to_expr, expand_and_combine, extract_poly_coeffs,
+  };
+  let num_coeffs = extract_poly_coeffs(&expand_and_combine(num_expr), var)?;
+  let den_coeffs = extract_poly_coeffs(&expand_and_combine(den_expr), var)?;
+  let den_lead = *den_coeffs.last()?;
+  if num_coeffs.len() >= den_coeffs.len() && den_lead.abs() != 1 {
+    let power = (num_coeffs.len() - den_coeffs.len() + 1) as u32;
+    let scale = den_lead.checked_pow(power)?;
+    let scaled = num_coeffs
+      .iter()
+      .map(|c| c.checked_mul(scale))
+      .collect::<Option<Vec<i128>>>()?;
+    let inner = try_integrate_rational_impl(
+      &coeffs_to_expr(&scaled, var),
+      den_expr,
+      var,
+    )?;
+    // The factor stays as an outer denominator. wolframscript divides over
+    // rationals from the start, so it prints `x/2 - ArcTan[Sqrt[2]*x]/(2*
+    // Sqrt[2])` where this gives `(x - ArcTan[Sqrt[2]*x]/Sqrt[2])/2` — the
+    // same value under a different common-denominator convention, which
+    // `integrate_ast`'s simplify pass re-collects anyway.
+    return Some(div2(inner, Expr::Integer(scale)));
+  }
+  try_integrate_rational_impl(num_expr, den_expr, var)
+}
+
+fn try_integrate_rational_impl(
   num_expr: &Expr,
   den_expr: &Expr,
   var: &str,
@@ -5880,6 +6358,26 @@ fn try_integrate_rational(
   // If proper numerator is all zeros, return just quotient integral
   if proper_num.iter().all(|&c| c == 0) {
     return quotient_integral;
+  }
+
+  // A degree-2 denominator has one closed form covering every discriminant
+  // sign and any leading coefficient. The partial-fraction machinery below
+  // only reaches the monic ones, and answers the irrational-root case with
+  // `Log`s where wolframscript uses `ArcTanh`.
+  // Long division leaves trailing zero coefficients on the remainder, which
+  // would make a degree-0 numerator look like a degree-2 one.
+  let mut trimmed_num = proper_num.clone();
+  while trimmed_num.len() > 1 && trimmed_num.last() == Some(&0) {
+    trimmed_num.pop();
+  }
+  if den_coeffs.len() == 3
+    && let Some(result) =
+      integrate_linear_over_quadratic(&trimmed_num, &den_coeffs, var)
+  {
+    return Some(match quotient_integral {
+      Some(qi) => plus2(qi, result),
+      None => result,
+    });
   }
 
   // Step 3: Factor denominator
@@ -7626,6 +8124,12 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
     return Some(result);
   }
 
+  // ∫ f(a·x + b) dx = F(a·x + b)/a — the shifted-argument cases, which the
+  // per-function rules below only cover for a zero offset.
+  if let Some(result) = try_integrate_linear_shift(expr, var) {
+    return Some(result);
+  }
+
   match expr {
     // Constant: ∫ c dx = c*x
     Expr::Integer(n) => {
@@ -7965,6 +8469,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
               try_integrate_trig_squared(left, var)
             } else {
               try_integrate_trig_power(left, *n, var)
+                .or_else(|| try_integrate_tan_cot_power(left, *n, var))
             }
           {
             return Some(result);
