@@ -1456,6 +1456,26 @@ fn try_sqrt_gaussian(expr: &Expr) -> Option<Expr> {
   Some(build_complex_expr(p, 1, q, 1))
 }
 
+/// wolframscript refuses a non-real base for both spellings of the real root
+/// and reports it under the head it was called by, leaving the call
+/// unevaluated in that spelling: `CubeRoot[I]` stays `CubeRoot[I]` with
+/// `CubeRoot::preal`, where the merely symbolic `CubeRoot[x]` canonicalizes to
+/// `Surd[x, 3]`. Returns the unevaluated call once the message is emitted.
+fn reject_non_real_base(head: &str, args: &[Expr]) -> Option<Expr> {
+  let (_, im) = try_extract_complex_f64(&args[0])?;
+  // A zero imaginary part is still a complex number when it survived as one:
+  // `2. + 0. I` extracts as complex but not as a real, because Woxi spells it
+  // `Plus[2., Times[0., I]]` rather than giving it a `Complex` head.
+  if im == 0.0 && try_eval_to_f64(&args[0]).is_some() {
+    return None;
+  }
+  crate::emit_message(&format!(
+    "{head}::preal: The parameter {} should be real valued.",
+    crate::syntax::format_expr(&args[0], crate::syntax::ExprForm::Output)
+  ));
+  Some(unevaluated(head, args))
+}
+
 /// Surd[x, n] - Real-valued nth root
 pub fn surd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
@@ -1475,61 +1495,63 @@ pub fn surd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(id_expr("Indeterminate"));
   }
 
-  // Exact path: an integer degree n with an exact (non-machine-Real) base.
-  // Surd is the real n-th root, so delegate to Power, which returns the exact
-  // symbolic form (Surd[2, 2] = Sqrt[2], Surd[8, -3] = 1/2, Surd[12, 2] =
-  // 2 Sqrt[3], ...). A negative base with an odd n uses the real negative
-  // root -(|b|^(1/n)); with an even n it is undefined.
-  // Exact means "no machine-precision number anywhere", not just "an integer
-  // or a rational": `Surd[E, 3]` is `E^(1/3)` and `Surd[Sqrt[2], 2]` is
-  // `2^(1/6)`, both of which the numeric fallback below would flatten.
-  let base_is_exact = !crate::syntax::contains_inexact(base);
-  if let Expr::Integer(n) = degree
-    && base_is_exact
-    // `try_eval_to_f64` rather than `expr_to_num`: the sign of an exact
-    // base is all that is needed here, and `E`, `Pi`, `1/8` and `Sqrt[2]`
-    // have one even though they are not plain numbers.
-    && let Some(x) = try_eval_to_f64(base)
-  {
-    let n = *n;
-    let power = |b: Expr| -> Result<Expr, InterpreterError> {
-      let expr = call("Power", vec![b, make_rational(1, n)]);
-      crate::evaluator::evaluate_expr_to_expr(&expr)
-    };
-    let negate = |e: Expr| -> Result<Expr, InterpreterError> {
-      let expr = call("Times", vec![Expr::Integer(-1), e]);
-      crate::evaluator::evaluate_expr_to_expr(&expr)
-    };
-    if x < 0.0 {
-      if n.rem_euclid(2) == 0 {
-        crate::emit_message(
-          "Surd::noneg: Surd is not defined for even roots of negative values.",
-        );
-        return Ok(id_expr("Indeterminate"));
-      }
-      // Odd root of a negative value: -(|b|^(1/n)).
-      return negate(power(negate(base.clone())?)?);
+  // The degree has to be an explicit integer. wolframscript leaves
+  // `Surd[8, 1/2]` and `Surd[8, 2.]` unevaluated with `Surd::int` rather than
+  // reading them as `8^2` and `8^(1/2.)`; a degree that is merely not a
+  // number yet (`Surd[8, n]`) is not an error, so it stays quiet.
+  let Expr::Integer(n) = degree else {
+    if expr_to_num(degree).is_some() {
+      crate::emit_message(&format!(
+        "Surd::int: Integer expected at position 2 in {}.",
+        crate::syntax::format_expr(
+          &unevaluated("Surd", args),
+          crate::syntax::ExprForm::Output
+        )
+      ));
     }
-    return power(base.clone());
+    return Ok(unevaluated("Surd", args));
+  };
+  let n = *n;
+
+  // Checked after the degree, matching wolframscript: `Surd[I, 1/2]` reports
+  // `Surd::int`, not `Surd::preal`.
+  if let Some(rejected) = reject_non_real_base("Surd", args) {
+    return Ok(rejected);
   }
 
-  // Numeric fallback: a machine-Real base (or non-integer degree).
-  match (expr_to_num(base), expr_to_num(degree)) {
-    (Some(x), Some(n)) => {
-      // Real-valued nth root: sign(x) * |x|^(1/n)
-      let result = if x < 0.0 && n.fract() == 0.0 && (n as i128) % 2 != 0 {
-        // Odd integer root of negative number
-        -((-x).powf(1.0 / n))
-      } else if x < 0.0 {
-        // Even root of negative number - return symbolic
-        return Ok(unevaluated("Surd", args));
-      } else {
-        x.powf(1.0 / n)
-      };
-      Ok(num_to_expr(result))
+  // Surd is the real n-th root, so delegate to Power for *every* base, exact
+  // or machine-precision. Power already returns the exact symbolic form
+  // (Surd[2, 2] = Sqrt[2], Surd[8, -3] = 1/2, Surd[12, 2] = 2 Sqrt[3], ...),
+  // keeps a machine-precision base inexact (Surd[1., 3] = 1., not 1) and
+  // raises Power::infy for Surd[0., -3]; a second numeric path here only ever
+  // drifted away from it. A negative base with an odd n uses the real
+  // negative root -(|b|^(1/n)); with an even n it is undefined.
+  //
+  // `try_eval_to_f64` rather than `expr_to_num`: only the sign of the base is
+  // needed, and `E`, `Pi`, `1/8` and `Sqrt[2]` have one even though they are
+  // not plain numbers.
+  let Some(x) = try_eval_to_f64(base) else {
+    return Ok(unevaluated("Surd", args));
+  };
+  let power = |b: Expr| -> Result<Expr, InterpreterError> {
+    let expr = call("Power", vec![b, make_rational(1, n)]);
+    crate::evaluator::evaluate_expr_to_expr(&expr)
+  };
+  let negate = |e: Expr| -> Result<Expr, InterpreterError> {
+    let expr = call("Times", vec![Expr::Integer(-1), e]);
+    crate::evaluator::evaluate_expr_to_expr(&expr)
+  };
+  if x < 0.0 {
+    if n.rem_euclid(2) == 0 {
+      crate::emit_message(
+        "Surd::noneg: Surd is not defined for even roots of negative values.",
+      );
+      return Ok(id_expr("Indeterminate"));
     }
-    _ => Ok(unevaluated("Surd", args)),
+    // Odd root of a negative value: -(|b|^(1/n)).
+    return negate(power(negate(base.clone())?)?);
   }
+  power(base.clone())
 }
 
 /// Compute Floor or Ceiling via arbitrary-precision BigFloat when the value
@@ -3251,101 +3273,29 @@ fn chop_expr(expr: &Expr, tolerance: f64) -> Result<Expr, InterpreterError> {
 
 // ─── CubeRoot ──────────────────────────────────────────────────────
 
-/// CubeRoot[x] - Real-valued cube root
-/// Extract the largest perfect cube factor from n.
-/// Returns (cube_root_of_cube_part, remainder) such that n = cube_part^3 * remainder.
-fn extract_cube_factor(mut n: u128) -> (u128, u128) {
-  let mut cube_root = 1u128;
-  // Trial division by small primes
-  let mut p = 2u128;
-  while p * p * p <= n {
-    let mut count = 0u32;
-    while n.is_multiple_of(p) {
-      n /= p;
-      count += 1;
-    }
-    let cube_groups = count / 3;
-    let leftover = count % 3;
-    for _ in 0..cube_groups {
-      cube_root *= p;
-    }
-    for _ in 0..leftover {
-      n *= p; // put non-cube parts back into remainder
-    }
-    p += if p == 2 { 1 } else { 2 };
-  }
-  (cube_root, n)
-}
-
+/// CubeRoot[x] — the real-valued cube root, i.e. `Surd[x, 3]`.
+///
+/// This is *only* a spelling of `Surd[x, 3]`: wolframscript formats
+/// `CubeRoot[x]` as `Surd[x, 3]` and the two agree on every input, exact or
+/// machine-precision. Keeping a second cube-root path here is what made the
+/// two drift apart — it evaluated the inexact case with `f64::cbrt` while
+/// `Surd` used `x^(1/n)`, and those disagree in the last bit for ~7% of
+/// inputs (`CubeRoot[7.]` gave `1.9129311827723892` where wolframscript and
+/// `Surd[7., 3]` give `1.912931182772389`). `cbrt` is also the one place the
+/// MSVC libm returned a different last bit from macOS and glibc, which broke
+/// `CubeRoot[2.]` on the Windows nightly.
 pub fn cube_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
       "CubeRoot expects exactly 1 argument".into(),
     ));
   }
-  match &args[0] {
-    Expr::Integer(n) => {
-      if *n == 0 {
-        return Ok(Expr::Integer(0));
-      }
-      let sign = n.signum();
-      let abs_n = n.unsigned_abs();
-      // Check for perfect cube
-      let root = (abs_n as f64).cbrt().round() as u128;
-      if root * root * root == abs_n {
-        return Ok(Expr::Integer(sign * root as i128));
-      }
-      // Factor out the largest perfect cube
-      // Find prime factorization and extract cube parts
-      let (cube_part, remainder) = extract_cube_factor(abs_n);
-      if cube_part > 1 {
-        // CubeRoot[n] = cube_part * CubeRoot[remainder]
-        let cube_root_remainder = Expr::BinaryOp {
-          op: BinaryOperator::Power,
-          left: Box::new(Expr::Integer(remainder as i128)),
-          right: Box::new(call(
-            "Rational",
-            vec![Expr::Integer(1), Expr::Integer(3)],
-          )),
-        };
-        let result =
-          times2(Expr::Integer(sign * cube_part as i128), cube_root_remainder);
-        crate::evaluator::evaluate_expr_to_expr(&result)
-      } else {
-        // No cube factor — CubeRoot is the real cube root, so return
-        // Sign[n] * abs[n]^(1/3) (matching wolframscript: CubeRoot[-5]
-        // -> -5^(1/3), i.e. -(5^(1/3)), not the complex (-5)^(1/3)).
-        let pow = Expr::BinaryOp {
-          op: BinaryOperator::Power,
-          left: Box::new(Expr::Integer(abs_n as i128)),
-          right: Box::new(call(
-            "Rational",
-            vec![Expr::Integer(1), Expr::Integer(3)],
-          )),
-        };
-        if sign < 0 {
-          Ok(times2(Expr::Integer(-1), pow))
-        } else {
-          Ok(pow)
-        }
-      }
-    }
-    Expr::Real(f) => Ok(Expr::Real(f.signum() * f.abs().cbrt())),
-    _ => {
-      // Only machine-precision input licenses a numeric answer: `CubeRoot[E]`
-      // is `E^(1/3)` and `CubeRoot[1/8]` is `1/2`, not `1.3956…` and `0.5`.
-      // Everything exact goes to `Surd[x, 3]`, which returns the closed form.
-      if crate::syntax::contains_inexact(&args[0])
-        && let Some(f) = try_eval_to_f64(&args[0])
-      {
-        Ok(Expr::Real(f.signum() * f.abs().cbrt()))
-      } else {
-        // Canonicalize CubeRoot[x] → Surd[x, 3], evaluated so an exact
-        // base comes back in closed form rather than as the call.
-        surd_ast(&[args[0].clone(), Expr::Integer(3)])
-      }
-    }
+  // Only the non-real case has to be caught before delegating: it is reported
+  // and left unevaluated under the head it was called by.
+  if let Some(rejected) = reject_non_real_base("CubeRoot", args) {
+    return Ok(rejected);
   }
+  surd_ast(&[args[0].clone(), Expr::Integer(3)])
 }
 
 // ─── Subdivide ─────────────────────────────────────────────────────

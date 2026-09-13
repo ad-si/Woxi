@@ -657,6 +657,16 @@ Woxi has no dedicated `Complex` expression variant, so a real-real complex is
 rewritten to `Plus[Real, Times[Real, I]]` during evaluation. The printed string
 matches; the head does not.
 
+Code that has to tell a complex with a zero imaginary part from a real must
+therefore go by "extracts as complex but not as a real" rather than by the
+head — see `reject_non_real_base` in `math_ast/elementary.rs`. Such a value
+also renders with an explicit `*` where WL's messages use a space:
+
+```sh
+wolframscript -code 'CubeRoot[2. + 0. I]'   # …The parameter 2. + 0. I should be…
+woxi eval 'CubeRoot[2. + 0. I]'             # …The parameter 2. + 0.*I should be…
+```
+
 ### `Binomial[n, real]` carries Gamma-error noise
 
 `Binomial[10, 3.]` is `119.99999999999987` in Woxi and `120.` in WL;
@@ -1470,6 +1480,17 @@ unsatisfiable problem gives `{}`. The **multi-instance and `All` ordering**
 follows WL's internal BDD structure and differs per expression —
 `a||b||c` orders 7,3,1,5,2,6,4 while `Majority[a,b,c]` orders 7,6,5,3.
 **Not reproducible.**
+
+
+### `Surd` with a degree past `i128`
+
+```sh
+wolframscript -code 'ToString[Surd[8, 10^40], InputForm]'   # 8^(1/10000000000000000000000000000000000000000)
+woxi eval 'Surd[8, 10^40]'                                  # Surd[8, 10000000000000000000000000000000000000000]
+```
+
+`Surd` builds the exponent with `make_rational`, which is `i128`-only, so a
+`BigInteger` degree leaves the call unevaluated. Degrees up to `10^38` work.
 
 
 ## Special functions
