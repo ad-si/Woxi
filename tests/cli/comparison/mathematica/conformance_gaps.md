@@ -1040,6 +1040,20 @@ echo. The coefficients are easy; WL's output form is unpredictably factored —
 factored as `Pi^2/3 + 4*(-Cos[x] + Cos[2*x]/4)`, and the same expression
 factors differently across the Sin/Cos/Trig variants.
 
+### `Simplify` expands a numerator WL keeps factored per coefficient
+
+```sh
+# Simplify[InterpolatingPolynomial[{{0,1},…,{5,q},…,{10,321}}, x]]
+wolframscript   # (14400 + 5760*(-10831 + 126*q)*x - … - (-86 + q)*x^10)/14400
+woxi eval       # (14400 - 62386560*x + 725760*q*x + … - q*x^10)/14400
+```
+
+Same value and same common denominator, but WL pulls the repeated linear
+factor `(-86 + q)` out of each coefficient where Woxi leaves the numerator
+expanded. `Factor` on the same input returns the expanded form too, so the
+missing step is recognizing a shared factor across coefficients rather than
+anything about `Simplify` itself.
+
 ### `Factor` with `GaussianIntegers`, `Extension` or `Trig`
 
 Recognized as valid options but the call stays unevaluated; WL factors

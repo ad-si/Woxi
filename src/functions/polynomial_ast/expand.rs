@@ -592,6 +592,33 @@ pub fn expand_and_combine(expr: &Expr) -> Expr {
   combine_and_build(&terms)
 }
 
+/// Build a sum from distributed terms, collapsing like ones first — but only
+/// once there are enough of them for that to pay for itself.
+///
+/// `distribute_product` multiplies out a product of sums, so a *nested*
+/// product multiplies the term count at every level. Combining only at the
+/// top (in `expand_and_combine`) therefore materializes the product of every
+/// level's term count even when almost all of it cancels immediately after.
+/// Expanding the Newton form `a0 + (x-x0)(a1 + (x-x1)(a2 + …))` that
+/// `InterpolatingPolynomial` returns is the worst case: at degree 10, with a
+/// single symbolic ordinate, it built ~130000 terms for a result with 21 —
+/// 68s, against 11s at degree 9 and 0.8s at 8. Combining after each
+/// multiplication bounds the intermediate by the number of *distinct
+/// monomials* instead, which takes the same expansion to 0.2s.
+///
+/// The threshold keeps small products on the old path verbatim. Combining is
+/// idempotent with the `combine_and_build` the caller already ends with, so
+/// it cannot change the final form, but it does canonically reorder an
+/// intermediate — and for a handful of terms that costs more than the blowup
+/// it avoids.
+fn combine_like_terms(terms: Vec<Expr>) -> Expr {
+  const COMBINE_THRESHOLD: usize = 16;
+  if terms.len() < COMBINE_THRESHOLD {
+    return build_sum(terms);
+  }
+  combine_and_build(&terms)
+}
+
 /// Recursively expand an expression.
 pub fn expand_expr(expr: &Expr) -> Expr {
   match expr {
@@ -877,7 +904,7 @@ fn distribute_product(left: &Expr, right: &Expr) -> Expr {
       result_terms.push(multiply_terms(l, r));
     }
   }
-  build_sum(result_terms)
+  combine_like_terms(result_terms)
 }
 
 /// Multiply two non-sum terms (individual monomials).
