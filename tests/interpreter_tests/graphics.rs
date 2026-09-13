@@ -4911,6 +4911,47 @@ mod plot3d {
       );
     }
 
+    /// Exactly *three* `{fx, fy, fz} /. soln` curves are the ambiguous case:
+    /// a three-element first argument reads either as one curve's three
+    /// components or as three whole curves, and only evaluating the items
+    /// tells them apart. The shape is the one a Demonstration uses to draw
+    /// an `NDSolve` trajectory beside its two coordinate projections; it
+    /// used to be taken for a single triple whose "components" were lists,
+    /// so every sample came out non-numeric and the plot failed with
+    /// "parametric function produced no finite values". Each curve keeps its
+    /// own `PlotStyle` colour, which is what says all three were drawn.
+    #[test]
+    fn three_curves_from_ndsolve_shaped_replace_all() {
+      let svg = export_svg(
+        "soln = {{fx -> Function[t, Cos[t]], fy -> Function[t, Sin[t]]}}; \
+         ParametricPlot3D[{{0, fx[t], fy[t]} /. soln, \
+           {t, fx[t], 0} /. soln, {t, 2, fy[t]} /. soln}, {t, 0, 2 Pi}, \
+         PlotStyle -> {Red, Blue, Darker[Green]}]",
+      );
+      for (color, which) in [
+        ("rgb(255,0,0)", "the Red trajectory"),
+        ("rgb(0,0,255)", "the Blue x-projection"),
+        ("rgb(0,170,0)", "the Darker[Green] y-projection"),
+      ] {
+        assert!(
+          svg.contains(color),
+          "expected {which} to be drawn in {color}"
+        );
+      }
+    }
+
+    /// The three-curve reading must not swallow an ordinary single curve
+    /// whose three components merely *look* resolvable: `{t, t, t}` is one
+    /// straight line, not three curves.
+    #[test]
+    fn three_scalar_components_stay_a_single_curve() {
+      let single = export_svg("ParametricPlot3D[{t, t, t}, {t, 0, 1}]");
+      assert!(
+        single.contains("<polyline") || single.contains("<line"),
+        "the diagonal must still be drawn as one curve"
+      );
+    }
+
     /// `PlotStyle -> {color1, color2}` on a multi-curve `ParametricPlot3D`
     /// colors each curve individually instead of applying the whole list
     /// as one blended directive to every curve.

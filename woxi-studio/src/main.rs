@@ -25758,4 +25758,275 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`count$$ = 3, $CellContext`offset$$ 
       "ecc = 0.5 should classify as an ellipse: {as_ellipse}"
     );
   }
+
+  /// End-to-end regression for a random Wolfram Demonstrations Project
+  /// notebook sampled from the Quantum Mechanics category (a de
+  /// Broglie–Bohm two-particle trajectory visualizer) against Woxi Studio's
+  /// Manipulate pipeline. Its shape: a `ControlPlacement -> Left` panel of
+  /// `Appearance -> "Labeled"` sliders interleaved with bare-string
+  /// headings and `Delimiter` separators, a `ControlType -> SetterBar`
+  /// picking between two views and a second setter acting as an
+  /// "initialize" button that the body writes back to; the body calls one
+  /// `Initialization :> (…)`-defined helper taking a trailing `opts___`
+  /// sequence, which `Quiet[Module[…]]`s a guiding velocity field assigned
+  /// with `Set` onto a pattern (`fu[u_, w_, t_] = …`), integrates the
+  /// coupled system with `NDSolve[…, {u[t], w[t]}, …]`, draws the
+  /// trajectory and its two coordinate projections with a three-curve
+  /// `ParametricPlot3D[{… /. sol, … /. sol, … /. sol}, …]` (styled per
+  /// curve, `Axes`/`AxesLabel`/`TicksStyle`/`ViewPoint`/`BoxRatios`
+  /// annotated, with `opts` spliced in among the options), marks the
+  /// current and initial positions with `AbsolutePointSize` `Graphics3D`
+  /// `Point`s built by `Flatten[{…, u[t] /. sol /. t -> …, …}]`, and
+  /// `Show`s the list of them under an explicit `PlotRange`.
+  ///
+  /// This is a self-authored, construct-equivalent example (invented
+  /// variable names, velocity field and values) — not the notebook's own
+  /// code, data, or wording, which is copyrighted.
+  ///
+  /// Regression: `ParametricPlot3D` read a three-element first argument as
+  /// one curve's three components whenever the first element was not
+  /// already a literal list. Three `{…} /. sol` curves — the shape used to
+  /// draw an `NDSolve` trajectory beside its projections — therefore made
+  /// every sample a list rather than a number, and the whole widget failed
+  /// with "ParametricPlot3D: parametric function produced no finite
+  /// values". `resolve_parametric_triples` (`src/functions/plot3d.rs`) now
+  /// resolves the three items first and only falls back to the
+  /// single-triple reading when they are not all curves themselves.
+  #[test]
+  fn demonstration_guided_pair_manipulate_traces_its_ndsolve_trajectory() {
+    let code = r#"Manipulate[
+      If[reset, reset = False; frame = 20; phase = 0.8; ent = 0.6;
+        uStart = 1.3; wStart = 0.9; panel = "space"];
+      GuidedPair[frame, phase, ent, uStart, wStart, panel,
+        ImageSize -> 1.2 {260, 260}],
+      {{frame, 20, "time steps"}, 1, 20, 1, Appearance -> "Labeled",
+        ImageSize -> Tiny},
+      "",
+      "phase offset",
+      {{phase, 0.8, ""}, 0, 3, 0.1, Appearance -> "Labeled",
+        ImageSize -> Tiny},
+      "",
+      "entanglement factor",
+      {{ent, 0.6, ""}, 0, 1, 0.1, Appearance -> "Labeled",
+        ImageSize -> Tiny},
+      Delimiter,
+      "initial starting position",
+      {{uStart, 1.3, "particle 1"}, 1, 2, 0.1, Appearance -> "Labeled",
+        ImageSize -> Tiny},
+      {{wStart, 0.9, "particle 2"}, 0.5, 2, 0.1, Appearance -> "Labeled",
+        ImageSize -> Tiny},
+      Delimiter,
+      "configuration space or rate space",
+      {{panel, "space", ""}, {"space", "rate"},
+        ControlType -> SetterBar, ImageSize -> Tiny},
+      Delimiter,
+      {{reset, False, "initialize"}, {False, True}, ImageSize -> Tiny},
+      SynchronousUpdating -> False,
+      SynchronousInitialization -> False,
+      TrackedSymbols :> {frame, phase, ent, uStart, wStart, panel, reset},
+      ControlPlacement -> Left,
+      Initialization :> (
+        GuidedPair[n_, ph_, c_, a0_, b0_, mode_, opts___] := Quiet[Module[
+          {span, slots, dt, sol, tracks, rates, now, seed},
+          span = 2; slots = 20; dt = span/slots;
+          fu[u_, w_, t_] = u (Sin[ph] + c w Sin[2 t + ph]);
+          fw[u_, w_, t_] = -w (Cos[ph] + c u Cos[2 t + ph]);
+          sol = NDSolve[
+            {u'[t] == fu[u[t], w[t], t], w'[t] == fw[u[t], w[t], t],
+             u[0] == a0, w[0] == b0}, {u[t], w[t]}, {t, 0, span}];
+          tracks = ParametricPlot3D[
+            {{0, u[t], w[t]} /. sol,
+             {t, u[t], 0} /. sol,
+             {t, 2, w[t]} /. sol},
+            {t, 0, dt n}, PlotPoints -> 60,
+            PlotStyle -> {{Thick, Red}, {Thick, Blue}, {Thick, Darker@Green}},
+            BoxRatios -> 1, opts,
+            TicksStyle -> {Directive[12, Red], Directive[12, Blue],
+              Directive[12, Darker@Green]},
+            AxesLabel -> {Style["t", 14, Italic, Red],
+              Style["u", 14, Italic, Blue],
+              Style["w", 14, Italic, Darker@Green]},
+            ViewPoint -> {-2, -3, 1}];
+          rates = ParametricPlot3D[
+            {{0, fu[u[t], w[t], t], fw[u[t], w[t], t]} /. sol,
+             {u[t], fu[u[t], w[t], t], 0} /. sol,
+             {w[t], 0., fw[u[t], w[t], t]} /. sol},
+            {t, 0, span}, PlotPoints -> 60,
+            PlotStyle -> {{Thick, Red}, {Thick, Blue}, {Thick, Darker@Green}},
+            Axes -> {False, True, True}, BoxRatios -> 1, opts,
+            AxesLabel -> {None,
+              Style[Subscript["f", "u"], 14, Italic, Blue],
+              Style[Subscript["f", "w"], 14, Italic, Darker@Green]},
+            ViewPoint -> {-2, -3, 1}];
+          now = Graphics3D[{AbsolutePointSize[11], Red,
+            Point[Flatten[{0, u[t] /. sol /. t -> dt n,
+              w[t] /. sol /. t -> dt n}]]}];
+          seed = Graphics3D[{AbsolutePointSize[8], Darker@Green,
+            Point[Flatten[{0, u[t] /. sol /. t -> 0,
+              w[t] /. sol /. t -> 0}]]}];
+          If[mode == "space",
+            Show[{tracks, now, seed},
+              PlotRange -> {{0, span}, {0, 3}, {0, 3}}, opts],
+            Show[{rates, now, seed},
+              PlotRange -> {{0, 3}, All, All}, opts]]
+        ]];
+      )]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let mut state = manipulate::ManipulateState::from_expr(&expr).expect(
+      "five labeled sliders plus two setter bars should build a \
+       ManipulateState",
+    );
+    assert_eq!(
+      state.error, None,
+      "the NDSolve/ParametricPlot3D body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the guided-pair trajectory must render as a picture"
+    );
+    assert_eq!(
+      state.control_placement,
+      manipulate::ControlPlacement::Left,
+      "ControlPlacement -> Left must put the panel beside the output"
+    );
+
+    // The bare-string headings and `Delimiter`s keep their places between
+    // the variable-binding rows.
+    let names: Vec<&str> = state
+      .controls
+      .iter()
+      .filter(|c| c.binds_variable())
+      .map(|c| c.name())
+      .collect();
+    assert_eq!(
+      names,
+      [
+        "frame", "phase", "ent", "uStart", "wStart", "panel", "reset"
+      ]
+    );
+    assert!(
+      state
+        .controls
+        .iter()
+        .filter(|c| matches!(c, manipulate::ControlState::Divider))
+        .count()
+        == 3,
+      "the three Delimiters must each become a separator row: {:?}",
+      state.controls
+    );
+    assert!(
+      state.controls.iter().any(
+        |c| matches!(c, manipulate::ControlState::Heading { label, .. }
+          if label == "initial starting position")
+      ),
+      "the bare-string arguments must become heading rows: {:?}",
+      state.controls
+    );
+    match &state.controls.iter().find(|c| c.name() == "panel") {
+      Some(manipulate::ControlState::Discrete {
+        values,
+        current_index,
+        ..
+      }) => {
+        assert_eq!(values, &["\"space\"", "\"rate\""]);
+        assert_eq!(*current_index, 0, "panel starts on the trajectory view");
+      }
+      other => panic!("panel should be a discrete SetterBar: {other:?}"),
+    }
+
+    let render = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&w.body)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the guided pair's picture must render")
+    };
+
+    // All three curves of the `ParametricPlot3D` must actually be drawn —
+    // the trajectory and its two coordinate projections each keep their own
+    // `PlotStyle` colour, which is what says the three-element curve list
+    // was not mistaken for a single curve's three components.
+    let trajectory_view = render(&state);
+    for (color, which) in [
+      ("rgb(255,0,0)", "the Red joint trajectory"),
+      ("rgb(0,0,255)", "the Blue particle-1 projection"),
+      ("rgb(0,170,0)", "the Darker@Green particle-2 projection"),
+    ] {
+      assert!(
+        trajectory_view.contains(color),
+        "expected {which} in the rendered picture"
+      );
+    }
+
+    // Winding the time-steps slider back shortens the drawn trajectory, so
+    // the picture has to change.
+    match state
+      .controls
+      .iter_mut()
+      .find(|c| c.name() == "frame")
+      .expect("frame slider")
+    {
+      manipulate::ControlState::Continuous { current, .. } => *current = 5.0,
+      other => panic!("frame should be a Continuous slider: {other:?}"),
+    }
+    state.reevaluate();
+    assert_eq!(
+      state.error, None,
+      "re-running the integration for five steps must be clean: {:?}",
+      state.error
+    );
+    let short_trajectory = render(&state);
+    assert_ne!(
+      trajectory_view, short_trajectory,
+      "fewer time steps must actually shorten the drawn trajectory"
+    );
+
+    // The SetterBar switches to the rate-space view, which plots the
+    // velocity field along the same solution instead of the positions.
+    match state
+      .controls
+      .iter_mut()
+      .find(|c| c.name() == "panel")
+      .expect("panel setter")
+    {
+      manipulate::ControlState::Discrete { current_index, .. } => {
+        *current_index = 1;
+      }
+      other => panic!("panel should be a Discrete setter: {other:?}"),
+    }
+    state.reevaluate();
+    assert_eq!(
+      state.error, None,
+      "the rate-space view must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the rate-space view must render too"
+    );
+    let rate_view = render(&state);
+    assert_ne!(
+      short_trajectory, rate_view,
+      "the SetterBar must actually switch the rendered view"
+    );
+    for (color, which) in [
+      ("rgb(255,0,0)", "the Red joint rate curve"),
+      ("rgb(0,0,255)", "the Blue particle-1 rate curve"),
+      ("rgb(0,170,0)", "the Darker@Green particle-2 rate curve"),
+    ] {
+      assert!(
+        rate_view.contains(color),
+        "expected {which} in the rate-space picture"
+      );
+    }
+  }
 }
