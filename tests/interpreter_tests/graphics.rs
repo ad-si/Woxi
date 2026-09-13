@@ -20163,6 +20163,25 @@ mod manipulate {
     assert!(result.result.starts_with("Manipulate["));
   }
 
+  #[test]
+  fn action_menu_arg_is_not_vsform() {
+    // A bare `ActionMenu[label, {item :> action, …}]` argument fires its
+    // own action on selection rather than binding a variable — the same
+    // pattern as a bare `Button[…]` argument — so wolframscript shows it in
+    // the control area with no Manipulate::vsform message. This is the
+    // "choose a motif" menu idiom from the Border Patterns Demonstration.
+    let result = woxi::interpret_with_stdout(
+      "Manipulate[x, {x, 0, 1}, ActionMenu[\"choose\", {\"a\" :> (x = 0), \"b\" :> (x = 1)}]]",
+    )
+    .unwrap();
+    assert!(
+      !result.warnings.iter().any(|w| w.contains("vsform")),
+      "no vsform expected, got {:?}",
+      result.warnings
+    );
+    assert!(result.result.starts_with("Manipulate["));
+  }
+
   /// Controls wrapped in a `Row[…]` layout (with loose labels, `Spacer`
   /// padding, and `Dynamic[Control[…]]` wrappers — the Doyle-spirals
   /// Demonstration idiom) extract in display order: the loose string

@@ -17677,7 +17677,12 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // is the same pattern for a custom control (often a `DynamicModule`
       // wrapping its own `Manipulator`/`EventHandler`) that shows a hover
       // hint instead of a label — a Demonstration's zoom-point selector is
-      // commonly written this way.
+      // commonly written this way. `ActionMenu[label, {item :> action, …}]`
+      // is the same action-on-interaction pattern as `Button[…]`, just with
+      // a menu of choices instead of a single click — it fires its own
+      // action rather than binding a variable, so it is not a variable spec
+      // either (a Demonstration's "choose a motif" menu is commonly written
+      // this way).
       Expr::FunctionCall { name, .. }
         if matches!(
           name.as_str(),
@@ -17687,6 +17692,7 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             | "Control"
             | "Button"
             | "ButtonBar"
+            | "ActionMenu"
             | "Spacer"
             | "PaneSelector"
             | "TabView"
