@@ -1310,13 +1310,10 @@ fn push_juxtaposed(result: &mut String, piece: &str) {
 fn merge_double_bracket_parts(parts: &[&str]) -> Vec<String> {
   let mut out: Vec<String> =
     parts.iter().map(|p| p.trim().to_string()).collect();
-  loop {
-    let Some(k) = (1..out.len().saturating_sub(2)).find(|&k| {
-      is_bare_named_char(&out[k], "LeftDoubleBracket")
-        && is_bare_named_char(&out[k + 2], "RightDoubleBracket")
-    }) else {
-      break;
-    };
+  while let Some(k) = (1..out.len().saturating_sub(2)).find(|&k| {
+    is_bare_named_char(&out[k], "LeftDoubleBracket")
+      && is_bare_named_char(&out[k + 2], "RightDoubleBracket")
+  }) {
     let base = box_part_source(&out[k - 1]);
     let spec = box_part_source(&out[k + 1]);
     out.splice(k - 1..=k + 2, [format_part_access(&base, &spec)]);
