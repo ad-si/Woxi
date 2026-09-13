@@ -2306,10 +2306,14 @@ fn ndsolve_system(
   let mut eq_items: Vec<Expr> = Vec::new();
   flatten_eq_list(&args[0], &mut eq_items);
   let mut odes: Vec<Expr> = Vec::new();
-  let mut x0: Option<f64> = None;
-  // (function name, derivative order, value) — by name, not index: an
-  // eliminated constraint variable shifts the positions in `funcs`.
-  let mut ics: Vec<(String, usize, f64)> = Vec::new();
+  // (function name, derivative order, evaluation point, value) — by name,
+  // not index: an eliminated constraint variable shifts the positions in
+  // `funcs`. Conditions are no longer required to share one point here —
+  // a two-point boundary value problem states one condition at each end
+  // of the domain — so the point travels with each condition and the
+  // shape (one shared point vs. exactly two) is decided once every
+  // condition has been collected, below.
+  let mut raw_ics: Vec<(String, usize, f64, f64)> = Vec::new();
   for eq in &eq_items {
     let mut is_ic = false;
     for f in &funcs {
@@ -2319,13 +2323,7 @@ fn ndsolve_system(
         else {
           return Ok(None);
         };
-        match x0 {
-          None => x0 = Some(x_val),
-          // All ICs must be given at the same point.
-          Some(prev) if (prev - x_val).abs() > 1e-12 => return Ok(None),
-          Some(_) => {}
-        }
-        ics.push((f.name.clone(), order, y_val));
+        raw_ics.push((f.name.clone(), order, x_val, y_val));
         is_ic = true;
         break;
       }
@@ -2370,35 +2368,9 @@ fn ndsolve_system(
   if odes.len() != funcs.len() {
     return Ok(None);
   }
-  let Some(x0) = x0 else { return Ok(None) };
-  // The range that was *asked* for, before the integration range below is
-  // widened to reach the initial condition. The solution is reported over
-  // this range (see the clipping step after the integration).
-  let requested_range = x_min_given.map(|min| (min, x_max));
-  let (x_min, x_max) = if let Some(min) = x_min_given {
-    // The initial condition may sit just outside the requested output
-    // range — a Demonstration commonly states `y[0] == n0` at the natural
-    // reference point but plots from a tiny epsilon (`{t, 0.00001, 200}`)
-    // to dodge a singularity (a fractional power of `y`, a `LogPlot`, …)
-    // exactly at that point. The integrator still has to start at the
-    // initial condition, so the solved range extends to include it rather
-    // than rejecting the system outright — matching the `{x, xmax}`
-    // shorthand below, which already integrates from x0 unconditionally.
-    (min.min(x0), x_max.max(x0))
-  } else {
-    // {x, xmax} shorthand: integrate from x0 to xmax, in whichever
-    // direction that is — x0 always lands on one edge of the range. An
-    // absolute epsilon here would wrongly reject ranges that are tiny by
-    // scale (e.g. femtosecond time constants) rather than degenerate, so
-    // only bit-identical endpoints count as degenerate.
-    let target = x_max;
-    if target == x0 {
-      return Ok(None);
-    }
-    (x0.min(target), x0.max(target))
-  };
 
-  // Determine each function's order from the equations.
+  // Determine each function's order from the equations — needed both to
+  // classify the conditions below and to lay out the state vector.
   for ode in &odes {
     for f in &mut funcs {
       let order = max_derivative_order(ode, &f.name);
@@ -2420,26 +2392,142 @@ fn ndsolve_system(
     }
   }
 
-  // Validate and store the initial conditions.
+  // Classify the conditions by the distinct points they're given at. One
+  // shared point is an initial value problem (the ordinary case, handled
+  // exactly as before); a single second-order equation with one condition
+  // at each of two distinct points — matching the solved domain's own
+  // endpoints — is a two-point boundary value problem, solved below by
+  // shooting: integrating the very same IVP stepper from a guessed value
+  // at one end and adjusting that guess until the far condition is met.
+  // Anything else (three or more distinct points, a coupled system, …)
+  // isn't a shape this solver understands.
+  let mut distinct_points: Vec<f64> = Vec::new();
+  for (_, _, x_val, _) in &raw_ics {
+    if !distinct_points.iter().any(|p| (p - x_val).abs() <= 1e-9) {
+      distinct_points.push(*x_val);
+    }
+  }
+  #[derive(Clone, Copy)]
+  enum ProblemKind {
+    Initial {
+      x0: f64,
+    },
+    Boundary {
+      x_lo: f64,
+      order_lo: usize,
+      val_lo: f64,
+      x_hi: f64,
+      order_hi: usize,
+      val_hi: f64,
+    },
+  }
+  let kind = match distinct_points.len() {
+    1 => ProblemKind::Initial {
+      x0: distinct_points[0],
+    },
+    2 if funcs.len() == 1
+      && eliminated.is_empty()
+      && raw_ics.len() == 2
+      && raw_ics.iter().all(|(_, order, _, _)| *order <= 1)
+      && funcs[0].order == 2 =>
+    {
+      let (mut p0, mut p1) = (distinct_points[0], distinct_points[1]);
+      if p0 > p1 {
+        std::mem::swap(&mut p0, &mut p1);
+      }
+      let Some(x_min_given) = x_min_given else {
+        return Ok(None);
+      };
+      // A two-point boundary value problem states its conditions at the
+      // domain's own endpoints; anything else isn't a shape this solver
+      // understands.
+      if (p0 - x_min_given).abs() > 1e-9 || (p1 - x_max).abs() > 1e-9 {
+        return Ok(None);
+      }
+      let (_, order_lo, _, val_lo) = *raw_ics
+        .iter()
+        .find(|(_, _, x, _)| (x - p0).abs() <= 1e-9)
+        .unwrap();
+      let (_, order_hi, _, val_hi) = *raw_ics
+        .iter()
+        .find(|(_, _, x, _)| (x - p1).abs() <= 1e-9)
+        .unwrap();
+      ProblemKind::Boundary {
+        x_lo: p0,
+        order_lo,
+        val_lo,
+        x_hi: p1,
+        order_hi,
+        val_hi,
+      }
+    }
+    _ => return Ok(None),
+  };
+
+  // For an initial value problem: the range that was *asked* for, before
+  // the integration range below is widened to reach the initial
+  // condition. The solution is reported over this range (see the
+  // clipping step after the integration/shooting).
+  let mut requested_range: Option<(f64, f64)> = None;
+  let mut x_min = 0.0;
+  let mut x_max_resolved = 0.0;
+  let mut x0 = 0.0;
+  if let ProblemKind::Initial { x0: x0_val } = kind {
+    x0 = x0_val;
+    requested_range = x_min_given.map(|min| (min, x_max));
+    let (lo, hi) = if let Some(min) = x_min_given {
+      // The initial condition may sit just outside the requested output
+      // range — a Demonstration commonly states `y[0] == n0` at the
+      // natural reference point but plots from a tiny epsilon
+      // (`{t, 0.00001, 200}`) to dodge a singularity (a fractional power
+      // of `y`, a `LogPlot`, …) exactly at that point. The integrator
+      // still has to start at the initial condition, so the solved range
+      // extends to include it rather than rejecting the system outright —
+      // matching the `{x, xmax}` shorthand below, which already
+      // integrates from x0 unconditionally.
+      (min.min(x0), x_max.max(x0))
+    } else {
+      // {x, xmax} shorthand: integrate from x0 to xmax, in whichever
+      // direction that is — x0 always lands on one edge of the range. An
+      // absolute epsilon here would wrongly reject ranges that are tiny
+      // by scale (e.g. femtosecond time constants) rather than
+      // degenerate, so only bit-identical endpoints count as degenerate.
+      let target = x_max;
+      if target == x0 {
+        return Ok(None);
+      }
+      (x0.min(target), x0.max(target))
+    };
+    x_min = lo;
+    x_max_resolved = hi;
+  } else if let ProblemKind::Boundary { x_lo, x_hi, .. } = kind {
+    requested_range = Some((x_lo, x_hi));
+  }
+
+  // Validate and store the initial conditions (initial value problems
+  // only — a boundary value problem's two conditions are consumed
+  // directly by the shooting solver below instead of seeding `f.ics`).
   for f in &mut funcs {
     f.ics = vec![None; f.order];
   }
-  for (name, order, val) in ics {
-    // An initial condition for a function the constraint eliminated is
-    // redundant — its value follows from the others — so it is dropped.
-    let Some(f) = funcs.iter_mut().find(|f| f.name == name) else {
-      continue;
-    };
-    if order >= f.order || f.ics[order].is_some() {
+  if matches!(kind, ProblemKind::Initial { .. }) {
+    for (name, order, _, val) in &raw_ics {
+      // An initial condition for a function the constraint eliminated is
+      // redundant — its value follows from the others — so it is dropped.
+      let Some(f) = funcs.iter_mut().find(|f| &f.name == name) else {
+        continue;
+      };
+      if *order >= f.order || f.ics[*order].is_some() {
+        return Ok(None);
+      }
+      f.ics[*order] = Some(*val);
+    }
+    if funcs
+      .iter()
+      .any(|f| f.ics.iter().any(std::option::Option::is_none))
+    {
       return Ok(None);
     }
-    f.ics[order] = Some(val);
-  }
-  if funcs
-    .iter()
-    .any(|f| f.ics.iter().any(std::option::Option::is_none))
-  {
-    return Ok(None);
   }
 
   // Variable vector layout: [x, state…, h…] where `state` holds
@@ -2477,78 +2565,112 @@ fn ndsolve_system(
     None => None,
   };
 
-  // Initial state.
-  let mut init_state: Vec<f64> = vec![0.0; n_state];
-  for (fi, f) in funcs.iter().enumerate() {
-    for (k, ic) in f.ics.iter().enumerate() {
-      init_state[state_offset[fi] + k] = ic.unwrap_or(0.0);
-    }
-  }
-
   let n_steps = 1000usize;
-  let h = (x_max - x_min) / n_steps as f64;
+  let mut points: Vec<(f64, Vec<f64>)> = match kind {
+    ProblemKind::Initial { .. } => {
+      // Initial state.
+      let mut init_state: Vec<f64> = vec![0.0; n_state];
+      for (fi, f) in funcs.iter().enumerate() {
+        for (k, ic) in f.ics.iter().enumerate() {
+          init_state[state_offset[fi] + k] = ic.unwrap_or(0.0);
+        }
+      }
 
-  // When the mass matrix (the highest-derivative coefficients) turns out
-  // not to depend on `x` or the state — common for a holdup/mass-balance
-  // system, whose coefficients are plain numerals — building it once here
-  // instead of at every one of the run's stage evaluations is a large
-  // constant-factor speedup with no change to the result: the linear
-  // solve at each stage is unaffected, only where its matrix comes from.
-  let cached_mass_matrix = probe_constant_mass_matrix(
-    &residuals,
-    funcs.len(),
-    x0,
-    &init_state,
-    x_min,
-    x_max,
-  );
-  // Integrate forward from x0 to x_max, then (if x0 is interior)
-  // backward from x0 to x_min; events are only located on the forward
-  // leg, matching the direction NDSolve integrates first.
-  let forward = integrate_leg(
-    &residuals,
-    &funcs,
-    &state_offset,
-    init_state.clone(),
-    x0,
-    x_max,
-    h,
-    event_fn.as_ref(),
-    event.and_then(|e| e.action.as_ref()),
-    x_name,
-    cached_mass_matrix.as_deref(),
-  )?;
-  let Some(forward) = forward else {
-    return Ok(None);
-  };
-  let backward = if x0 - x_min > 1e-12 {
-    let leg = integrate_leg(
-      &residuals,
-      &funcs,
-      &state_offset,
-      init_state,
-      x0,
-      x_min,
-      -h,
-      None,
-      None,
-      x_name,
-      cached_mass_matrix.as_deref(),
-    )?;
-    let Some(leg) = leg else {
-      return Ok(None);
-    };
-    leg
-  } else {
-    Vec::new()
-  };
+      let h = (x_max_resolved - x_min) / n_steps as f64;
 
-  // Combined, ascending in x. The backward leg is (x0, x0-h, …); reverse
-  // it and drop its first point (x0, present in the forward leg too).
-  let mut points: Vec<(f64, Vec<f64>)> = backward;
-  points.reverse();
-  points.pop();
-  points.extend(forward);
+      // When the mass matrix (the highest-derivative coefficients) turns
+      // out not to depend on `x` or the state — common for a
+      // holdup/mass-balance system, whose coefficients are plain
+      // numerals — building it once here instead of at every one of the
+      // run's stage evaluations is a large constant-factor speedup with
+      // no change to the result: the linear solve at each stage is
+      // unaffected, only where its matrix comes from.
+      let cached_mass_matrix = probe_constant_mass_matrix(
+        &residuals,
+        funcs.len(),
+        x0,
+        &init_state,
+        x_min,
+        x_max_resolved,
+      );
+      // Integrate forward from x0 to x_max, then (if x0 is interior)
+      // backward from x0 to x_min; events are only located on the
+      // forward leg, matching the direction NDSolve integrates first.
+      let forward = integrate_leg(
+        &residuals,
+        &funcs,
+        &state_offset,
+        init_state.clone(),
+        x0,
+        x_max_resolved,
+        h,
+        event_fn.as_ref(),
+        event.and_then(|e| e.action.as_ref()),
+        x_name,
+        cached_mass_matrix.as_deref(),
+      )?;
+      let Some(forward) = forward else {
+        return Ok(None);
+      };
+      let backward = if x0 - x_min > 1e-12 {
+        let leg = integrate_leg(
+          &residuals,
+          &funcs,
+          &state_offset,
+          init_state,
+          x0,
+          x_min,
+          -h,
+          None,
+          None,
+          x_name,
+          cached_mass_matrix.as_deref(),
+        )?;
+        let Some(leg) = leg else {
+          return Ok(None);
+        };
+        leg
+      } else {
+        Vec::new()
+      };
+
+      // Combined, ascending in x. The backward leg is (x0, x0-h, …);
+      // reverse it and drop its first point (x0, present in the forward
+      // leg too).
+      let mut points: Vec<(f64, Vec<f64>)> = backward;
+      points.reverse();
+      points.pop();
+      points.extend(forward);
+      points
+    }
+    ProblemKind::Boundary {
+      x_lo,
+      order_lo,
+      val_lo,
+      x_hi,
+      order_hi,
+      val_hi,
+    } => {
+      let Some(points) = solve_bvp_shooting(
+        &residuals,
+        &funcs,
+        &state_offset,
+        n_state,
+        x_lo,
+        order_lo,
+        val_lo,
+        x_hi,
+        order_hi,
+        val_hi,
+        n_steps,
+        x_name,
+      )?
+      else {
+        return Ok(None);
+      };
+      points
+    }
+  };
   if points.len() < 2 {
     return Ok(None);
   }
@@ -2727,6 +2849,110 @@ fn ndsolve_system(
   }
   ordered.append(&mut rules);
   Ok(Some(Expr::List(vec![Expr::List(ordered.into())].into())))
+}
+
+/// Solve a two-point boundary value problem for a single second-order
+/// equation by shooting: at `x_lo`, one state component is fixed at
+/// `val_lo` (`order_lo == 0` fixes the value, `1` fixes the derivative)
+/// while the other is repeatedly guessed and the *same* IVP stepper
+/// (`integrate_leg`) integrates out to `x_hi`; the guess is refined by the
+/// secant method until the far condition (`val_hi`, likewise a value or a
+/// derivative depending on `order_hi`) is met there. This works for any
+/// well-posed equation — linear or not — since it never inspects the
+/// equation's coefficients directly, only the trajectories the existing
+/// integrator already knows how to produce.
+#[allow(clippy::too_many_arguments)]
+fn solve_bvp_shooting(
+  residuals: &[NumFn],
+  funcs: &[SysFunc],
+  state_offset: &[usize],
+  n_state: usize,
+  x_lo: f64,
+  order_lo: usize,
+  val_lo: f64,
+  x_hi: f64,
+  order_hi: usize,
+  val_hi: f64,
+  n_steps: usize,
+  x_name: &str,
+) -> Result<Option<Vec<(f64, Vec<f64>)>>, InterpreterError> {
+  // The other state component at `x_lo` — the one shooting guesses.
+  let unknown_lo = 1 - order_lo;
+  let h = (x_hi - x_lo) / n_steps as f64;
+
+  let mut probe_state = vec![0.0; n_state];
+  probe_state[order_lo] = val_lo;
+  let cached_mass_matrix = probe_constant_mass_matrix(
+    residuals,
+    funcs.len(),
+    x_lo,
+    &probe_state,
+    x_lo,
+    x_hi,
+  );
+
+  let shoot =
+    |guess: f64| -> Result<Option<Vec<(f64, Vec<f64>)>>, InterpreterError> {
+      let mut init_state = vec![0.0; n_state];
+      init_state[order_lo] = val_lo;
+      init_state[unknown_lo] = guess;
+      integrate_leg(
+        residuals,
+        funcs,
+        state_offset,
+        init_state,
+        x_lo,
+        x_hi,
+        h,
+        None,
+        None,
+        x_name,
+        cached_mass_matrix.as_deref(),
+      )
+    };
+  let reached_end = |pts: &[(f64, Vec<f64>)]| {
+    pts
+      .last()
+      .is_some_and(|(x, _)| (x - x_hi).abs() <= 1e-6 * (1.0 + x_hi.abs()))
+  };
+  // The shooting residual: how far the far end misses its target, as a
+  // function of the guessed unknown at `x_lo`.
+  let residual = |guess: f64| -> Result<
+    Option<(f64, Vec<(f64, Vec<f64>)>)>,
+    InterpreterError,
+  > {
+    match shoot(guess)? {
+      Some(pts) if reached_end(&pts) => {
+        let end = pts.last().unwrap().1[order_hi];
+        Ok(Some((end - val_hi, pts)))
+      }
+      _ => Ok(None),
+    }
+  };
+
+  let mut s0 = 0.0;
+  let mut s1 = 1.0;
+  let Some((mut f0, _)) = residual(s0)? else {
+    return Ok(None);
+  };
+  let tol = 1e-7 * (1.0 + val_hi.abs());
+  for _ in 0..60 {
+    let Some((f1, pts1)) = residual(s1)? else {
+      return Ok(None);
+    };
+    if f1.abs() <= tol {
+      return Ok(Some(pts1));
+    }
+    let denom = f1 - f0;
+    if denom.abs() < 1e-300 {
+      return Ok(None);
+    }
+    let s2 = s1 - f1 * (s1 - s0) / denom;
+    s0 = s1;
+    f0 = f1;
+    s1 = s2;
+  }
+  Ok(None)
 }
 
 /// Integrate one leg with RK4. Returns the points in integration order

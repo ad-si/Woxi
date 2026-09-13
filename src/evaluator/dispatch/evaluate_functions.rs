@@ -11137,6 +11137,13 @@ fn evaluate_function_call_ast_inner(
     return Ok(null_expr());
   }
 
+  // FinishDynamic[] - forces a front-end redraw of pending Dynamic
+  // content; outside a live notebook front end there is nothing pending,
+  // so it's a no-op that returns Null.
+  if name == "FinishDynamic" && args.is_empty() {
+    return Ok(null_expr());
+  }
+
   // XML`Parser`XMLGetString[xml] — minimal stub: return an expression
   // whose head is `XMLObject["Document"]`, so `Head[XML`Parser`XMLGetString[…]]`
   // matches the documented `XMLObject["Document"]`. The inner XML is

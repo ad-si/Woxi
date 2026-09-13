@@ -7974,6 +7974,71 @@ mod ndsolve {
   }
 
   #[test]
+  fn ndsolve_two_point_boundary_value_problem() {
+    // A two-point (Dirichlet-Dirichlet) boundary value problem: the two
+    // conditions are given at the domain's own endpoints rather than at a
+    // shared point, so `NDSolve` can't integrate this as a plain initial
+    // value problem — it has to shoot for the initial slope that lands on
+    // the far condition. y'' + y == 0, y(0) = 0, y(Pi/2) = 1 → y = Sin[x].
+    let result = interpret(
+      "sol = NDSolve[{y''[x] + y[x] == 0, y[0] == 0, y[Pi/2] == 1}, y, \
+       {x, 0, Pi/2}]; y[Pi/4] /. sol[[1]]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    let expected = std::f64::consts::FRAC_PI_4.sin();
+    assert!(
+      (val - expected).abs() < 1e-4,
+      "Expected {expected}, got {val}"
+    );
+  }
+
+  #[test]
+  fn ndsolve_boundary_value_problem_with_variable_coefficient_forcing() {
+    // A non-homogeneous boundary value problem with an x-dependent forcing
+    // term, matching the shape of a 1D Helmholtz finite-difference
+    // Demonstration: -k^2 y - y'' == f(x), y(0) == 0, y(1) == 0. With
+    // k == 0 the equation reduces to -y'' == f(x) == 6x, whose solution
+    // satisfying both endpoint conditions is y(x) = x - x^3 (y(0) = 0,
+    // y(1) = 0, y'' = -6x).
+    let result = interpret(
+      "sol = NDSolve[{-y''[x] == 6*x, y[0] == 0, y[1] == 0}, y, {x, 0, 1}]; \
+       y[0.5] /. sol[[1]]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    let expected = 0.5 - 0.5_f64.powi(3);
+    assert!(
+      (val - expected).abs() < 1e-4,
+      "Expected {expected}, got {val}"
+    );
+  }
+
+  #[test]
+  fn ndsolve_boundary_value_problem_requires_conditions_at_the_domain_ends() {
+    // Regression guard: conditions at two points that *aren't* the solved
+    // domain's own endpoints aren't a boundary value problem this solver
+    // understands, and NDSolve should stay unevaluated rather than guess.
+    let result = interpret(
+      "NDSolve[{y''[x] + y[x] == 0, y[0] == 0, y[1] == 1}, y, {x, 0, N[Pi]/2}]",
+    )
+    .unwrap();
+    assert!(
+      result.starts_with("NDSolve["),
+      "Expected an unevaluated NDSolve, got {result}"
+    );
+  }
+
+  #[test]
+  fn finish_dynamic_is_a_no_op() {
+    // `FinishDynamic[]` forces a front-end redraw of pending `Dynamic`
+    // content; outside a live notebook front end (as in every Woxi
+    // evaluation) there's nothing pending, so it's simply `Null`.
+    let result = interpret("FinishDynamic[]").unwrap();
+    assert_eq!(result, "\0");
+  }
+
+  #[test]
   fn coupled_first_order_system() {
     // x' = y, y' = -x with x(0)=1, y(0)=0 → x = cos t.
     let result = interpret(
