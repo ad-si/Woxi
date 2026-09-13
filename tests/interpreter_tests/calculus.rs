@@ -8330,6 +8330,62 @@ mod ndsolve {
   }
 
   #[test]
+  fn interpolating_function_domain_matches_domain_property() {
+    // `InterpolatingFunctionDomain[if]`, from the
+    // `DifferentialEquations`InterpolatingFunctionAnatomy`` package, reports
+    // the same domain as `if["Domain"]`.
+    let sol = "s = NDSolve[{y'[t] == -y[t], y[0] == 1}, y, {t, 0, 3}]; \
+       if = y /. s[[1]];";
+    assert_eq!(
+      interpret(&format!("{sol} InterpolatingFunctionDomain[if]")).unwrap(),
+      interpret(&format!("{sol} if[\"Domain\"]")).unwrap()
+    );
+    assert_eq!(
+      interpret(&format!("{sol} InterpolatingFunctionDomain[if]")).unwrap(),
+      "{{0., 3.}}"
+    );
+  }
+
+  #[test]
+  fn interpolating_function_domain_reports_event_stop_time() {
+    // Chained with an `EventLocator` stop (as the Demonstrations-project
+    // "stroboscopic bounce" pattern does): the reported domain's upper end
+    // is the time the event fired at, not the requested integration limit.
+    let result = interpret(
+      "s = NDSolve[{y'[t] == -y[t], y[0] == 1}, y, {t, 0, 10}, \
+       Method -> {\"EventLocator\", \"Event\" -> y[t] - 0.5}]; \
+       InterpolatingFunctionDomain[y /. s[[1]]][[1, -1]]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    assert!(
+      (val - std::f64::consts::LN_2).abs() < 0.001,
+      "Expected the event time ln 2 ≈ 0.6931, got {val}"
+    );
+  }
+
+  #[test]
+  fn interpolating_function_domain_of_plain_interpolation() {
+    // Also works on an `Interpolation`/`ListInterpolation` result, not just
+    // one produced by `NDSolve`.
+    assert_eq!(
+      interpret("InterpolatingFunctionDomain[Interpolation[{1, 4, 9, 16}]]")
+        .unwrap(),
+      "{{1, 4}}"
+    );
+  }
+
+  #[test]
+  fn interpolating_function_domain_of_non_interpolating_function() {
+    // An argument that isn't an `InterpolatingFunction` is left unevaluated,
+    // like a pattern-mismatched built-in.
+    assert_eq!(
+      interpret("InterpolatingFunctionDomain[foo]").unwrap(),
+      "InterpolatingFunctionDomain[foo]"
+    );
+  }
+
+  #[test]
   fn symbolic_initial_condition_value() {
     // An exact symbolic IC value (like the trebuchet's
     // `θ[0] == -ArcCos[(143 - L4)/L1]`) must numericise.
