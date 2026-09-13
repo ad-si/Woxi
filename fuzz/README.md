@@ -63,12 +63,17 @@ Details:
 - Hangs elsewhere do count as findings: libFuzzer's `-timeout` flag (set
   in the make targets) turns a rewrite that never reaches a fixed point,
   or any other runaway evaluation outside an explicit loop, into a
-  reported crash. For `interpret` that flag is the campaign's whole
-  budget, so only an input that never finishes trips it. Being *slow* is
-  not what this target tests, and a tighter bound only buys false
-  positives: the fuzzer mutates a seed's data as readily as its shape,
-  and raising the `n` in `Permutations[Range[n]]` turns a millisecond
-  program into a minute-long one that terminates perfectly well.
+  reported crash. For `interpret` that flag is 1200 s — four times the
+  campaign's own budget, so an input still running when the campaign ends
+  is allowed to finish rather than reported. Being *slow* is not what this
+  target tests, and a tighter bound only buys false positives: the fuzzer
+  mutates a seed's data as readily as its shape, and raising the `n` in
+  `Permutations[Range[n]]` turns a millisecond program into a minute-long
+  one that terminates perfectly well. Three nightly runs were lost that
+  way, the last to a `Fold` whose accumulator nests the whole previous
+  list each step: 21 s natively and 367 s under ASan — it finishes, but CI
+  killed it at 319 s. Exponential growth outruns any bound, so if this
+  happens again prefer denylisting the head over raising the flag further.
 - The nightly CI workflow (`.github/workflows/nightly.yml`) runs each
   target for 5 minutes per night and uploads crashing inputs as
   artifacts.
