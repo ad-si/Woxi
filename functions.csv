@@ -2094,7 +2094,7 @@ SemanticImport,Import with semantic interpretation,🚫,,10.0,2100
 AudioPlot,Plot the waveform of an Audio or Sound object,✅,pure,11.0,2102
 FlipView,Flippable view control (stays symbolic in script mode),✅,unevaluated,6.0,2102
 EmptyRegion,Empty geometric region of a given embedding dimension,✅,pure,10.0,2108
-HorizontalGauge,Horizontal gauge display,🚫,,9.0,2108
+HorizontalGauge,Display one or more values on a horizontal scale as a Graphics gauge,✅,pure,9.0,2108
 InverseGudermannian,Returns the inverse Gudermannian function value,✅,pure,7.0,2108
 Periodogram,Plot the power spectrum of data or audio in decibels,✅,pure,9.0,2108
 TensorReduce,Reduce tensor expressions,🚫,,9.0,2108
