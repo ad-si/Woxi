@@ -7674,6 +7674,64 @@ mod tests {
     );
   }
 
+  /// A `1D`/`2D`/`3D` view-switch body (`If[…]; Which[…]` choosing between
+  /// `Plot`/`DensityPlot`/`ParametricPlot3D`) paired with three
+  /// `Appearance -> "Labeled"` sliders and a boolean checkbox whose
+  /// `Enabled` option only applies while the view is `"1D"` — the general
+  /// construct category a Wolfram Demonstrations Project notebook uses for
+  /// a dimensionality picker with a display option that only makes sense in
+  /// one of its modes (independently written, not copied from any specific
+  /// one). Regression: no existing test paired a string-valued `Discrete`
+  /// control with an `Enabled :>` option gated on that same control, so a
+  /// reconstruction bug dropping the quotes around a discrete choice's
+  /// string values (turning `"1D"` into the bare token `1D`, which
+  /// re-parses as `Times[1, D]`) could have gone unnoticed here even though
+  /// it always kept the `values` list correctly quoted for substitution.
+  #[test]
+  fn manipulate_view_switch_body_with_string_choices_and_gated_checkbox() {
+    let code = r#"Manipulate[
+      If[lo == hi, lo == hi];
+      Which[
+        mode == "1D", Plot[Sin[k x], {x, Min[lo, hi], Max[lo, hi]}],
+        mode == "2D", DensityPlot[Sin[k x] Cos[k y], {x, Min[lo, hi], Max[lo, hi]}, {y, Min[lo, hi], Max[lo, hi]}],
+        mode == "3D", ParametricPlot3D[{x, Sin[k x], Cos[k x]}, {x, Min[lo, hi], Max[lo, hi]}]
+      ],
+      {{k, 3, k}, 1, 10, 1, Appearance -> "Labeled", ImageSize -> Tiny},
+      {{lo, -1., Subscript[x, 1]}, -1, 0.999, Appearance -> "Labeled", ImageSize -> Tiny},
+      {{hi, 1., Subscript[x, 2]}, -0.999, 1, Appearance -> "Labeled", ImageSize -> Tiny},
+      {{mode, "1D"}, {"1D", "2D", "3D"}},
+      {{shade, False}, {True, False}, Enabled :> Dynamic[mode == "1D"]},
+      Spacer[175],
+      ControlPlacement -> Left
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr).expect(
+      "view switch + 3 labeled sliders + gated checkbox should build a ManipulateState",
+    );
+    assert_eq!(state.controls.len(), 5, "k, lo, hi, mode, shade");
+    assert!(
+      matches!(
+        &state.controls[3],
+        manipulate::ControlState::Discrete { name, values, value_labels, .. }
+          if name == "mode"
+            && values == &["\"1D\"", "\"2D\"", "\"3D\""]
+            && value_labels == &["1D", "2D", "3D"]
+      ),
+      "the mode spec should build a three-choice discrete control with string values intact: {:?}",
+      state.controls[3]
+    );
+    assert!(
+      state.error.is_none(),
+      "body should evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the 1D Plot branch should render a graphic"
+    );
+  }
+
   /// A discrete `SetterBar`-style term-count picker (`{{n, 2, "terms"},
   /// {2, 3, 4}}`) that `Take`s that many sliders and folds them through a
   /// recursive, pattern-matched, `Module`-based extended-GCD helper (mixing
