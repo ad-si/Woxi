@@ -77,6 +77,15 @@ slow-timeout = { period = "120s", terminate-after = 1 }
 filter = 'test(formatting_every_script_keeps_it_the_same_code)'
 slow-timeout = { period = "120s", terminate-after = 1 }
 
+# `unsolved_search_stays_unevaluated` runs `FindInstance` over a five-variable
+# fifth-power Diophantine system that has no solution inside the search radius,
+# so it always exhausts the bounded search rather than returning early: ~5s
+# standalone on fast hardware, but past the 20s default on the slower Windows
+# runner of the nightly job under full parallel load. Give it a wider window.
+[[profile.default.overrides]]
+filter = 'test(unsolved_search_stays_unevaluated)'
+slow-timeout = { period = "120s", terminate-after = 1 }
+
 # The remaining (non-`#[ignore]`d) RosettaCode script snapshots run a few
 # seconds in debug builds; under full parallel load they can brush past the
 # default 20s timeout. Give them a safety ceiling. The genuinely heavy
