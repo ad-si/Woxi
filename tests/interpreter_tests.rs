@@ -3176,6 +3176,40 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_condition_guard_calling_curried_function_does_not_recurse() {
+    // A `/;` guard that calls a curried function (`f[p][x, y]`, i.e. two
+    // chained applications) used to blow $RecursionLimit: evaluating the
+    // guard's own nested pattern match for `f`'s curried DownValue was
+    // still seeing the *outer* Condition's LHS-guard stack entry (pushed
+    // for backtracking through sequence splits), so it kept re-applying
+    // the outer guard to the inner match's unrelated bindings forever.
+    // Found via a real Wolfram Demonstration notebook while testing Woxi
+    // Studio's notebook support.
+    clear_state();
+    interpret("cond[p_][a_, b_] := a < b").unwrap();
+    assert_eq!(
+      interpret("Cases[{{1, 2}, {3, 1}, {2, 3}}, {x_, y_} /; cond[0][x, y]]")
+        .unwrap(),
+      "{{1, 2}, {2, 3}}",
+    );
+    assert_eq!(
+      interpret(
+        "Select[{{1, 2}, {3, 1}, {2, 3}}, MatchQ[#, {x_, y_} /; cond[0][x, y]] &]"
+      )
+      .unwrap(),
+      "{{1, 2}, {2, 3}}",
+    );
+    clear_state();
+    interpret("cond2[p_][a_, b_] := a < b").unwrap();
+    assert_eq!(
+      interpret("{{1, 2}, {3, 1}} /. {x_, y_} /; cond2[0][x, y] :> f[x, y]")
+        .unwrap(),
+      "{f[1, 2], {3, 1}}",
+    );
+    clear_state();
+  }
+
+  #[test]
   fn condition_binds_tighter_than_rule() {
     // Wolfram gives Condition precedence 130 and Rule/RuleDelayed 120, so a
     // guard written left of the arrow belongs to the *pattern*:
