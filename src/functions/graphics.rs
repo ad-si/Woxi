@@ -2599,14 +2599,9 @@ fn parse_sphere(
     }
     return;
   }
-  let Some(radius) = (match args.get(1) {
-    Some(r) => expr_to_f64(r),
-    None => Some(1.0),
-  }) else {
-    return;
-  };
   // One centre, or a list of them — `Sphere[{p1, p2}, r]` draws one sphere
-  // of radius `r` around each point.
+  // of radius `r` around each point. `Sphere[{p1, p2}, {r1, r2}]` instead
+  // gives each centre its own radius.
   let centers: Vec<(f64, f64)> = match args.first() {
     Some(Expr::List(items))
       if !items.is_empty()
@@ -2617,7 +2612,15 @@ fn parse_sphere(
     Some(single) => expr_to_point(single).into_iter().collect(),
     None => Vec::new(),
   };
-  for center in centers {
+  let radii: Vec<f64> = match args.get(1) {
+    Some(Expr::List(items)) if items.len() == centers.len() => items
+      .iter()
+      .map(|i| expr_to_f64(i).unwrap_or(1.0))
+      .collect(),
+    Some(r) => vec![expr_to_f64(r).unwrap_or(1.0); centers.len()],
+    None => vec![1.0; centers.len()],
+  };
+  for (center, radius) in centers.into_iter().zip(radii) {
     emit_sphere(filled, center, radius, style, prims);
   }
 }
