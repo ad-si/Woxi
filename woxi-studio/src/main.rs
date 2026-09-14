@@ -8073,6 +8073,44 @@ mod tests {
     assert_eq!(state.control_is_visible, vec![true, false, true]);
   }
 
+  /// A Demonstration whose `Manipulate` body picks between two analogies
+  /// via a string-keyed `PaneSelector` — each pane a `Row` of one or more
+  /// `Control`s, the body a `Pane[If[…], size]` that nests a `With` block
+  /// building a `GraphicsGrid` from `ArrayReshape[ConstantArray[…], …]`
+  /// (the shape a Wolfram Demonstrations Project notebook mixing several
+  /// object counts into a grid of icons takes; independently written, not
+  /// copied from any specific one). Regression coverage for the
+  /// combination as a whole, since each piece is tested alone elsewhere.
+  #[test]
+  fn manipulate_pane_selector_with_multi_control_panes_and_nested_with() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[Pane[If[view==\"tens\", \
+       GraphicsGrid[ArrayReshape[ConstantArray[Graphics[{Blue,Disk[]}],n],{2,2},Graphics[{White,Disk[]}]]], \
+       With[{amount=Min[{n,m}]}, GraphicsGrid[ArrayReshape[ConstantArray[Graphics[{Red,Disk[]}],amount],{2,2},Graphics[{White,Disk[]}]]]]], \
+       {300,200}], \
+       {{view,\"tens\"},{\"tens\",\"units\"}}, \
+       PaneSelector[{\"tens\"->Row[{Control[{{n,3,\"n\"},1,8,1}]}], \
+       \"units\"->Row[{Control[{{n,3,\"n\"},1,8,1}],Control[{{m,2,\"m\"},1,8,1}]}]}, Dynamic[view]]]",
+    )
+    .unwrap();
+    let mut state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    assert!(state.error.is_none(), "unexpected error: {:?}", state.error);
+    let names: Vec<&str> = state.controls.iter().map(|c| c.name()).collect();
+    assert_eq!(names, vec!["view", "n", "m"]);
+    // "tens" is the default pane: only `n` shows alongside the selector.
+    assert_eq!(state.control_is_visible, vec![true, true, false]);
+
+    // Switching to "units" reveals `m`'s row too.
+    if let manipulate::ControlState::Discrete { current_index, .. } =
+      &mut state.controls[0]
+    {
+      *current_index = 1;
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "unexpected error: {:?}", state.error);
+    assert_eq!(state.control_is_visible, vec![true, true, true]);
+  }
+
   #[test]
   fn manipulate_untracked_control_does_not_reeval() {
     // `TrackedSymbols :> {b}`: moving `a` changes its value but must not
