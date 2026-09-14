@@ -4276,6 +4276,27 @@ Cell["Chapter 2", "Chapter"]
     assert_eq!(extract_cell_content(s), "f(x)");
   }
 
+  /// A parenthesised group (literal `"("`/`")"` box tokens, as the FrontEnd
+  /// writes them to force grouping) that is itself followed by a property
+  /// call — `(expr)["Prop"]` — must keep its parens when reconstructed as
+  /// InputForm text, or the trailing `[...]` rebinds to the group's last
+  /// operand instead of the whole group, changing precedence (`a /.
+  /// sol[[1,1]]["Domain"]` applies `/.` to a *different* expression than
+  /// `(a /. sol[[1,1]])["Domain"]`). Regression found via a Wolfram
+  /// Demonstration whose `NDSolve` result was queried with `(r /.
+  /// sol[[1,1]])["Domain"]`.
+  #[test]
+  fn test_parenthesised_group_before_property_call_keeps_parens() {
+    let s = r#"BoxData[RowBox[{
+      RowBox[{"(",
+        RowBox[{"a", "/.",
+          RowBox[{"sol", "[", RowBox[{"[", RowBox[{"1", ",", "1"}], "]"}], "]"}]}],
+      ")"}],
+      "[", "\"\<Domain\>\"", "]"
+    }]]"#;
+    assert_eq!(extract_cell_content(s), "(a/.sol[[1,1]])[\"Domain\"]");
+  }
+
   /// A named character inside a *string literal* is content, so it stays
   /// Unicode; only a bare operator token between operands collapses to its
   /// ASCII form. Regression: a Demonstrations label
