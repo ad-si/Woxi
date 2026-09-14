@@ -20917,6 +20917,108 @@ mod manipulate {
     assert!(json.contains("MemberQ[picks, psin]"), "{json}");
   }
 
+  /// A `SetterBar[Dynamic[var], choices]` written directly as (part of) an
+  /// extra display argument — not through a formal `{var, …}` control spec
+  /// — is the Wolfram Demonstrations idiom for a control whose variable is
+  /// otherwise undeclared (e.g. `Row[{"n sites ", SetterBar[Dynamic[n],
+  /// Range[2, 5]]}]`). Wolfram auto-initializes such a "bare" control's
+  /// variable to its first choice the moment it is drawn; without that, `n`
+  /// stays a free symbol and everything downstream that uses it (a `Table`
+  /// iterator, a `Take` length, …) fails.
+  #[test]
+  fn spec_bare_setterbar_auto_initializes_its_variable() {
+    let expr = interpret_to_expr(
+      "Manipulate[n, Row[{\"n sites \", SetterBar[Dynamic[n], Range[2, 5]]}]]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    assert_eq!(
+      spec.state,
+      vec![("n".to_string(), "2".to_string())],
+      "a bare SetterBar auto-initializes its variable to the first choice"
+    );
+    assert!(
+      spec.controls.is_empty(),
+      "the bar is a display, not a formal control row: {:?}",
+      spec.controls
+    );
+    assert_eq!(spec.displays.len(), 1);
+  }
+
+  /// The `SetterBar` (and `RadioButtonBar`) display itself renders as a row
+  /// of buttons, each writing a single value back into the bound variable —
+  /// unlike `TogglerBar`'s list-membership toggle, exactly one is ever
+  /// selected.
+  #[test]
+  fn spec_bare_setterbar_renders_single_select_buttons() {
+    let expr = interpret_to_expr(
+      "Manipulate[n, Row[{\"n sites \", SetterBar[Dynamic[n], Range[2, 5]]}]]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    let bindings = manipulate_initial_bindings(&spec);
+    let json = woxi::with_scoped_globals(&bindings, || {
+      woxi::functions::graphics::render_manipulate_display(
+        &spec.displays[0],
+        &[],
+      )
+    });
+    assert_eq!(json.matches("\"kind\":\"toggler\"").count(), 4, "{json}");
+    assert_eq!(json.matches("\"selected\":true").count(), 1, "{json}");
+    assert!(json.contains("\"mutation\":\"n = 2\""), "{json}");
+    assert!(json.contains("\"mutation\":\"n = 3\""), "{json}");
+  }
+
+  /// `RadioButtonBar[Dynamic[var], choices]` used the same way (bound to an
+  /// otherwise-undeclared variable, as part of an extra display argument)
+  /// gets the same auto-initialization and single-value write-back as
+  /// `SetterBar` — matching the Demonstrations pattern of a boundary
+  /// condition or mode picker written directly into a `Row[…]` caption.
+  #[test]
+  fn spec_bare_radiobuttonbar_auto_initializes_and_sets_a_single_value() {
+    let expr = interpret_to_expr(
+      "Manipulate[bc, \
+       Row[{\"boundary conditions \", \
+         RadioButtonBar[Dynamic[bc], {0 -> \"open\", 1 -> \"closed\"}]}]]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    assert_eq!(
+      spec.state,
+      vec![("bc".to_string(), "0".to_string())],
+      "a bare RadioButtonBar auto-initializes its variable to the first choice's value"
+    );
+    let bindings = manipulate_initial_bindings(&spec);
+    let json = woxi::with_scoped_globals(&bindings, || {
+      woxi::functions::graphics::render_manipulate_display(
+        &spec.displays[0],
+        &[],
+      )
+    });
+    assert_eq!(json.matches("\"kind\":\"toggler\"").count(), 2, "{json}");
+    assert_eq!(json.matches("\"selected\":true").count(), 1, "{json}");
+    assert!(json.contains("\"mutation\":\"bc = 1\""), "{json}");
+  }
+
+  /// A `SetterBar`/`RadioButtonBar` variable that *is* declared by a formal
+  /// `{var, …}` control spec elsewhere in the Manipulate must keep that
+  /// control's own initial value — the bare-display auto-initialization
+  /// must not clobber it.
+  #[test]
+  fn spec_bare_setterbar_does_not_override_a_declared_controls_value() {
+    let expr = interpret_to_expr(
+      "Manipulate[n, {n, 4, ControlType -> None}, \
+       Row[{\"n sites \", SetterBar[Dynamic[n], Range[2, 5]]}]]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    assert_eq!(
+      spec.state,
+      vec![("n".to_string(), "4".to_string())],
+      "the declared control's own initial value wins"
+    );
+  }
+
   /// A bare `Checkbox[Dynamic[var], …]` drawn directly by the body — as
   /// opposed to one given as a Manipulate control spec, or as part of a
   /// `Grid`/`Table` of checkboxes passed as a trailing display argument —
