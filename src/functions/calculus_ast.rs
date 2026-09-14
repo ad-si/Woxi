@@ -695,18 +695,15 @@ pub fn integrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .unwrap_or(Expr::Integer(0));
         new_coeffs.push(simplify(term));
       }
-      let result = Expr::FunctionCall {
-        name: "SeriesData".to_string(),
-        args: vec![
-          sd[0].clone(),
-          sd[1].clone(),
-          Expr::List(new_coeffs.into()),
-          Expr::Integer(nmin + den),
-          Expr::Integer(nmax + den),
-          Expr::Integer(den),
-        ]
-        .into(),
-      };
+      let data = vec![
+        sd[0].clone(),
+        sd[1].clone(),
+        Expr::List(new_coeffs.into()),
+        Expr::Integer(nmin + den),
+        Expr::Integer(nmax + den),
+        Expr::Integer(den),
+      ];
+      let result = call("SeriesData", data);
       return crate::evaluator::evaluate_expr_to_expr(&result);
     }
   }
@@ -2466,18 +2463,15 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             } else {
               (new_nmin, dcoeffs)
             };
-            return Ok(Expr::FunctionCall {
-              name: "SeriesData".to_string(),
-              args: vec![
-                args[0].clone(),
-                args[1].clone(),
-                Expr::List(out_coeffs.into()),
-                Expr::Integer(out_nmin),
-                Expr::Integer(new_nmax),
-                Expr::Integer(den_val),
-              ]
-              .into(),
-            });
+            let data = vec![
+              args[0].clone(),
+              args[1].clone(),
+              Expr::List(out_coeffs.into()),
+              Expr::Integer(out_nmin),
+              Expr::Integer(new_nmax),
+              Expr::Integer(den_val),
+            ];
+            return Ok(call("SeriesData", data));
           }
 
           // First, the element-wise contribution from differentiating
@@ -2568,33 +2562,27 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           }
           if new_coeffs.is_empty() {
             if center_depends {
-              return Ok(Expr::FunctionCall {
-                name: "SeriesData".to_string(),
-                args: vec![
-                  args[0].clone(),
-                  args[1].clone(),
-                  Expr::List(vec![].into()),
-                  Expr::Integer(new_nmax),
-                  Expr::Integer(new_nmax),
-                  Expr::Integer(den_val),
-                ]
-                .into(),
-              });
+              let data = vec![
+                args[0].clone(),
+                args[1].clone(),
+                Expr::List(vec![].into()),
+                Expr::Integer(new_nmax),
+                Expr::Integer(new_nmax),
+                Expr::Integer(den_val),
+              ];
+              return Ok(call("SeriesData", data));
             }
             return Ok(Expr::Integer(0));
           }
-          Ok(Expr::FunctionCall {
-            name: "SeriesData".to_string(),
-            args: vec![
-              args[0].clone(),
-              args[1].clone(),
-              Expr::List(new_coeffs.into()),
-              Expr::Integer(new_nmin),
-              Expr::Integer(new_nmax),
-              Expr::Integer(den_val),
-            ]
-            .into(),
-          })
+          let data = vec![
+            args[0].clone(),
+            args[1].clone(),
+            Expr::List(new_coeffs.into()),
+            Expr::Integer(new_nmin),
+            Expr::Integer(new_nmax),
+            Expr::Integer(den_val),
+          ];
+          Ok(call("SeriesData", data))
         }
         "Sin" if args.len() == 1 => {
           // d/dx[sin(f(x))] = cos(f(x)) * f'(x)
@@ -13766,18 +13754,15 @@ pub fn inverse_series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     var
   };
-  Ok(Expr::FunctionCall {
-    name: "SeriesData".to_string(),
-    args: vec![
-      out_var,
-      x0,
-      Expr::List(out_coeffs.into()),
-      Expr::Integer(1),
-      Expr::Integer(nmax),
-      Expr::Integer(1),
-    ]
-    .into(),
-  })
+  let data = vec![
+    out_var,
+    x0,
+    Expr::List(out_coeffs.into()),
+    Expr::Integer(1),
+    Expr::Integer(nmax),
+    Expr::Integer(1),
+  ];
+  Ok(call("SeriesData", data))
 }
 
 /// Parsed integer-power SeriesData: variable, center, coefficients (lowest to
@@ -13998,19 +13983,15 @@ fn try_series_quotient(
   {
     coefficients.pop();
   }
-
-  Some(Expr::FunctionCall {
-    name: "SeriesData".to_string(),
-    args: vec![
-      Expr::Identifier(var_name.to_string()),
-      x0.clone(),
-      Expr::List(coefficients.into()),
-      Expr::Integer(nmin),
-      Expr::Integer(order + 1),
-      Expr::Integer(1),
-    ]
-    .into(),
-  })
+  let data = vec![
+    Expr::Identifier(var_name.to_string()),
+    x0.clone(),
+    Expr::List(coefficients.into()),
+    Expr::Integer(nmin),
+    Expr::Integer(order + 1),
+    Expr::Integer(1),
+  ];
+  Some(call("SeriesData", data))
 }
 
 /// Truncated product of two power→coefficient maps, dropping terms at power
@@ -14133,19 +14114,15 @@ fn compose_series_pair(outer: &Expr, inner: &Expr) -> Option<Expr> {
   } else {
     nmin_r = big_m;
   }
-
-  Some(Expr::FunctionCall {
-    name: "SeriesData".to_string(),
-    args: vec![
-      s2.var.clone(),
-      s2.center.clone(),
-      Expr::List(dense.into()),
-      Expr::Integer(nmin_r),
-      Expr::Integer(big_m),
-      Expr::Integer(1),
-    ]
-    .into(),
-  })
+  let data = vec![
+    s2.var.clone(),
+    s2.center.clone(),
+    Expr::List(dense.into()),
+    Expr::Integer(nmin_r),
+    Expr::Integer(big_m),
+    Expr::Integer(1),
+  ];
+  Some(call("SeriesData", data))
 }
 
 /// ComposeSeries[s1, s2, ...] — substitute each series into the previous one,
@@ -14442,18 +14419,15 @@ pub fn normalize_series_data(args: &[Expr]) -> Option<Expr> {
   if out_nmin == nmin && coeffs.len() == items.len() {
     return None;
   }
-  Some(Expr::FunctionCall {
-    name: "SeriesData".to_string(),
-    args: vec![
-      args[0].clone(),
-      args[1].clone(),
-      Expr::List(coeffs.into()),
-      Expr::Integer(out_nmin),
-      args[4].clone(),
-      args[5].clone(),
-    ]
-    .into(),
-  })
+  let data = vec![
+    args[0].clone(),
+    args[1].clone(),
+    Expr::List(coeffs.into()),
+    Expr::Integer(out_nmin),
+    args[4].clone(),
+    args[5].clone(),
+  ];
+  Some(call("SeriesData", data))
 }
 
 /// Flatten an expression into its additive summands, descending through
@@ -14713,18 +14687,15 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       };
       coeffs.push(crate::evaluator::evaluate_expr_to_expr(&coeff)?);
     }
-    return Ok(Expr::FunctionCall {
-      name: "SeriesData".to_string(),
-      args: vec![
-        Expr::Identifier(var_name.clone()),
-        Expr::Integer(1),
-        Expr::List(coeffs.into()),
-        Expr::Integer(-1),
-        Expr::Integer(order + 1),
-        Expr::Integer(1),
-      ]
-      .into(),
-    });
+    let data = vec![
+      Expr::Identifier(var_name.clone()),
+      Expr::Integer(1),
+      Expr::List(coeffs.into()),
+      Expr::Integer(-1),
+      Expr::Integer(order + 1),
+      Expr::Integer(1),
+    ];
+    return Ok(call("SeriesData", data));
   }
 
   // If the expression does not depend on the expansion variable, its series
@@ -14761,18 +14732,15 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       && let Expr::Integer(nmax) = &sd[4]
       && let Expr::Integer(den) = &sd[5]
     {
-      return Ok(Expr::FunctionCall {
-        name: "SeriesData".to_string(),
-        args: vec![
-          sd[0].clone(),
-          sd[1].clone(),
-          sd[2].clone(),
-          Expr::Integer(nmin - den),
-          Expr::Integer(nmax - den),
-          sd[5].clone(),
-        ]
-        .into(),
-      });
+      let data = vec![
+        sd[0].clone(),
+        sd[1].clone(),
+        sd[2].clone(),
+        Expr::Integer(nmin - den),
+        Expr::Integer(nmax - den),
+        sd[5].clone(),
+      ];
+      return Ok(call("SeriesData", data));
     }
   }
 
@@ -14878,18 +14846,15 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       coeffs.pop();
     }
     let nmax = (order * q).max(p) + 1;
-    return Ok(Expr::FunctionCall {
-      name: "SeriesData".to_string(),
-      args: vec![
-        Expr::Identifier(var_name.clone()),
-        x0.clone(),
-        Expr::List(coeffs.into()),
-        Expr::Integer(p),
-        Expr::Integer(nmax),
-        Expr::Integer(q),
-      ]
-      .into(),
-    });
+    let data = vec![
+      Expr::Identifier(var_name.clone()),
+      x0.clone(),
+      Expr::List(coeffs.into()),
+      Expr::Integer(p),
+      Expr::Integer(nmax),
+      Expr::Integer(q),
+    ];
+    return Ok(call("SeriesData", data));
   }
 
   // Series expansion at Infinity: substitute x -> 1/t, simplify, expand at
@@ -15217,19 +15182,15 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if coefficients.is_empty() {
       return Ok(Expr::Integer(0));
     }
-
-    return Ok(Expr::FunctionCall {
-      name: "SeriesData".to_string(),
-      args: vec![
-        Expr::Identifier(var_name),
-        x0,
-        Expr::List(coefficients.into()),
-        Expr::Integer(actual_nmin),
-        Expr::Integer(order + 1),
-        Expr::Integer(1),
-      ]
-      .into(),
-    });
+    let data = vec![
+      Expr::Identifier(var_name),
+      x0,
+      Expr::List(coefficients.into()),
+      Expr::Integer(actual_nmin),
+      Expr::Integer(order + 1),
+      Expr::Integer(1),
+    ];
+    return Ok(call("SeriesData", data));
   }
 
   // Fast path for ExpIntegralEi series
@@ -15289,19 +15250,15 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // c_k = 1 / (k * k!)
         coefficients.push(rat_to_expr((1, k * factorial)));
       }
-
-      return Ok(Expr::FunctionCall {
-        name: "SeriesData".to_string(),
-        args: vec![
-          Expr::Identifier(var_name),
-          x0,
-          Expr::List(coefficients.into()),
-          Expr::Integer(0),
-          Expr::Integer(order + 1),
-          Expr::Integer(1),
-        ]
-        .into(),
-      });
+      let data = vec![
+        Expr::Identifier(var_name),
+        x0,
+        Expr::List(coefficients.into()),
+        Expr::Integer(0),
+        Expr::Integer(order + 1),
+        Expr::Integer(1),
+      ];
+      return Ok(call("SeriesData", data));
     }
 
     if matches!(&x0, Expr::Identifier(s) if s == "Infinity" || s == "DirectedInfinity")
@@ -15544,18 +15501,15 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Build SeriesData[x, x0, {c0, c1, ...}, nmin, nmax, 1]
-  Ok(Expr::FunctionCall {
-    name: "SeriesData".to_string(),
-    args: vec![
-      Expr::Identifier(var_name),
-      x0,
-      Expr::List(coefficients.into()),
-      Expr::Integer(nmin),
-      Expr::Integer(order + 1),
-      Expr::Integer(1),
-    ]
-    .into(),
-  })
+  let data = vec![
+    Expr::Identifier(var_name),
+    x0,
+    Expr::List(coefficients.into()),
+    Expr::Integer(nmin),
+    Expr::Integer(order + 1),
+    Expr::Integer(1),
+  ];
+  Ok(call("SeriesData", data))
 }
 
 /// Expand each coefficient of a SeriesData in a new variable.
@@ -15576,18 +15530,15 @@ fn expand_series_data_coefficients(
       let expanded = series_ast(&[c.clone(), spec.clone()])?;
       new_coeffs.push(expanded);
     }
-    return Ok(Expr::FunctionCall {
-      name: "SeriesData".to_string(),
-      args: vec![
-        args[0].clone(), // var
-        args[1].clone(), // x0
-        Expr::List(new_coeffs.into()),
-        args[3].clone(), // nmin
-        args[4].clone(), // nmax
-        args[5].clone(), // den
-      ]
-      .into(),
-    });
+    let data = vec![
+      args[0].clone(), // var
+      args[1].clone(), // x0
+      Expr::List(new_coeffs.into()),
+      args[3].clone(), // nmin
+      args[4].clone(), // nmax
+      args[5].clone(), // den
+    ];
+    return Ok(call("SeriesData", data));
   }
   // If not a SeriesData, just expand the expression
   series_ast(&[series.clone(), spec.clone()])
@@ -18793,18 +18744,15 @@ fn qfactorial_series_at_zero(var_name: &str, n: usize, order: i128) -> Expr {
   // Ensure the coefficient list has exactly limit+1 entries.
   coeffs.resize(limit + 1, 0);
   let coeff_exprs: Vec<Expr> = coeffs.into_iter().map(Expr::Integer).collect();
-  Expr::FunctionCall {
-    name: "SeriesData".to_string(),
-    args: vec![
-      Expr::Identifier(var_name.to_string()),
-      Expr::Integer(0),
-      Expr::List(coeff_exprs.into()),
-      Expr::Integer(0),
-      Expr::Integer(order + 1),
-      Expr::Integer(1),
-    ]
-    .into(),
-  }
+  let data = vec![
+    Expr::Identifier(var_name.to_string()),
+    Expr::Integer(0),
+    Expr::List(coeff_exprs.into()),
+    Expr::Integer(0),
+    Expr::Integer(order + 1),
+    Expr::Integer(1),
+  ];
+  call("SeriesData", data)
 }
 
 /// Build SeriesData[var, 0, {...}, 1, order+1, 1] for `Series[BarnesG[var], {var, 0, order}]`.
@@ -18813,18 +18761,15 @@ fn barnes_g_series_at_zero(var_name: &str, order: i128) -> Expr {
   for k in 1..=order {
     coeffs.push(barnes_g_series_coefficient(k));
   }
-  Expr::FunctionCall {
-    name: "SeriesData".to_string(),
-    args: vec![
-      Expr::Identifier(var_name.to_string()),
-      Expr::Integer(0),
-      Expr::List(coeffs.into()),
-      Expr::Integer(1),
-      Expr::Integer(order + 1),
-      Expr::Integer(1),
-    ]
-    .into(),
-  }
+  let data = vec![
+    Expr::Identifier(var_name.to_string()),
+    Expr::Integer(0),
+    Expr::List(coeffs.into()),
+    Expr::Integer(1),
+    Expr::Integer(order + 1),
+    Expr::Integer(1),
+  ];
+  call("SeriesData", data)
 }
 
 /// Coefficient `a_k` in the expansion BarnesG[z] = sum_{k≥1} a_k z^k around 0.
@@ -18883,18 +18828,15 @@ fn factorial_series_at_zero(var_name: &str, order: i128) -> Expr {
     };
     coeffs.push(crate::evaluator::evaluate_expr_to_expr(&raw).unwrap_or(raw));
   }
-  Expr::FunctionCall {
-    name: "SeriesData".to_string(),
-    args: vec![
-      Expr::Identifier(var_name.to_string()),
-      Expr::Integer(0),
-      Expr::List(coeffs.into()),
-      Expr::Integer(0),
-      Expr::Integer(order + 1),
-      Expr::Integer(1),
-    ]
-    .into(),
-  }
+  let data = vec![
+    Expr::Identifier(var_name.to_string()),
+    Expr::Integer(0),
+    Expr::List(coeffs.into()),
+    Expr::Integer(0),
+    Expr::Integer(order + 1),
+    Expr::Integer(1),
+  ];
+  call("SeriesData", data)
 }
 
 /// `Series[WeberE[v, z], {z, 0, order}]` (`is_weber == true`) or
@@ -18979,18 +18921,15 @@ fn weber_anger_series_at_zero(
     let raw = div2(num, denom);
     coeffs.push(crate::evaluator::evaluate_expr_to_expr(&raw).unwrap_or(raw));
   }
-  Expr::FunctionCall {
-    name: "SeriesData".to_string(),
-    args: vec![
-      Expr::Identifier(var_name.to_string()),
-      Expr::Integer(0),
-      Expr::List(coeffs.into()),
-      Expr::Integer(0),
-      Expr::Integer(order + 1),
-      Expr::Integer(1),
-    ]
-    .into(),
-  }
+  let data = vec![
+    Expr::Identifier(var_name.to_string()),
+    Expr::Integer(0),
+    Expr::List(coeffs.into()),
+    Expr::Integer(0),
+    Expr::Integer(order + 1),
+    Expr::Integer(1),
+  ];
+  call("SeriesData", data)
 }
 
 /// `Series[x!!, {x, 0, order}]` — Taylor expansion of `Factorial2[x]` at 0.
@@ -19035,18 +18974,15 @@ fn factorial2_series_at_zero(var_name: &str, order: i128) -> Expr {
     };
     coeffs.push(crate::evaluator::evaluate_expr_to_expr(&raw).unwrap_or(raw));
   }
-  Expr::FunctionCall {
-    name: "SeriesData".to_string(),
-    args: vec![
-      Expr::Identifier(var_name.to_string()),
-      Expr::Integer(0),
-      Expr::List(coeffs.into()),
-      Expr::Integer(0),
-      Expr::Integer(order + 1),
-      Expr::Integer(1),
-    ]
-    .into(),
-  }
+  let data = vec![
+    Expr::Identifier(var_name.to_string()),
+    Expr::Integer(0),
+    Expr::List(coeffs.into()),
+    Expr::Integer(0),
+    Expr::Integer(order + 1),
+    Expr::Integer(1),
+  ];
+  call("SeriesData", data)
 }
 
 /// `Series[FactorialPower[x, n], {x, 0, order}]` for non-negative integer n.
@@ -19071,18 +19007,15 @@ fn factorial_power_series_at_zero(
   let coeffs: Vec<Expr> = (min_idx..=upper)
     .map(|k| Expr::Integer(stirling.get(k).copied().unwrap_or(0)))
     .collect();
-  Expr::FunctionCall {
-    name: "SeriesData".to_string(),
-    args: vec![
-      Expr::Identifier(var_name.to_string()),
-      Expr::Integer(0),
-      Expr::List(coeffs.into()),
-      Expr::Integer(min_idx as i128),
-      Expr::Integer(order + 1),
-      Expr::Integer(1),
-    ]
-    .into(),
-  }
+  let data = vec![
+    Expr::Identifier(var_name.to_string()),
+    Expr::Integer(0),
+    Expr::List(coeffs.into()),
+    Expr::Integer(min_idx as i128),
+    Expr::Integer(order + 1),
+    Expr::Integer(1),
+  ];
+  call("SeriesData", data)
 }
 
 /// `Series[Hyperfactorial[x], {x, 0, order}]` — closed-form low-order
@@ -19106,18 +19039,15 @@ fn pochhammer_half_series_at_zero(var_name: &str, order: i128) -> Expr {
     };
     coeffs.push(crate::evaluator::evaluate_expr_to_expr(&raw).unwrap_or(raw));
   }
-  Expr::FunctionCall {
-    name: "SeriesData".to_string(),
-    args: vec![
-      Expr::Identifier(var_name.to_string()),
-      Expr::Integer(0),
-      Expr::List(coeffs.into()),
-      Expr::Integer(1),
-      Expr::Integer(order + 1),
-      Expr::Integer(1),
-    ]
-    .into(),
-  }
+  let data = vec![
+    Expr::Identifier(var_name.to_string()),
+    Expr::Integer(0),
+    Expr::List(coeffs.into()),
+    Expr::Integer(1),
+    Expr::Integer(order + 1),
+    Expr::Integer(1),
+  ];
+  call("SeriesData", data)
 }
 
 fn hyperfactorial_series_at_zero(var_name: &str, order: i128) -> Expr {
@@ -19159,18 +19089,15 @@ fn hyperfactorial_series_at_zero(var_name: &str, order: i128) -> Expr {
     };
     coeffs.push(crate::evaluator::evaluate_expr_to_expr(&raw).unwrap_or(raw));
   }
-  Expr::FunctionCall {
-    name: "SeriesData".to_string(),
-    args: vec![
-      Expr::Identifier(var_name.to_string()),
-      Expr::Integer(0),
-      Expr::List(coeffs.into()),
-      Expr::Integer(0),
-      Expr::Integer(order + 1),
-      Expr::Integer(1),
-    ]
-    .into(),
-  }
+  let data = vec![
+    Expr::Identifier(var_name.to_string()),
+    Expr::Integer(0),
+    Expr::List(coeffs.into()),
+    Expr::Integer(0),
+    Expr::Integer(order + 1),
+    Expr::Integer(1),
+  ];
+  call("SeriesData", data)
 }
 
 /// Row `n` of the signed Stirling numbers of the first kind.
