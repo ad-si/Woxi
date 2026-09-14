@@ -140,6 +140,22 @@ mod dot {
     assert_eq!(interpret("Dot[a, b]").unwrap(), "a . b");
   }
 
+  // Regression: Dot binds looser than Power (Precedence[Dot] = 490 <
+  // Precedence[Power] = 590), so `Dot[a, b]^2` printed without parens
+  // around the Dot as `a . b^2` reparses as `a . (b^2)` — a different
+  // expression, since Power binds tighter than Dot. Woxi's printer must
+  // wrap a Dot base in parens the same way it already does for Plus and
+  // Times, matching wolframscript's `(a . b)^2`.
+  #[test]
+  fn dot_as_power_base_is_parenthesized() {
+    assert_eq!(interpret("Dot[a, b]^2").unwrap(), "(a . b)^2");
+    assert_eq!(interpret("Dot[a, b, c]^2").unwrap(), "(a . b . c)^2");
+    // Power binds tighter than Dot, so unparenthesized `a . b^2` is a
+    // *different* expression, `Dot[a, Power[b, 2]]` — it must round-trip
+    // without gaining parens around `b^2`.
+    assert_eq!(interpret("a . b ^ 2").unwrap(), "a . b^2");
+  }
+
   #[test]
   fn identity_matrix_dot_symbolic_vector() {
     assert_eq!(
