@@ -6994,6 +6994,57 @@ fn strip_svg_wrapper(svg: &str) -> &str {
 mod tests {
   use super::*;
 
+  /// A Manipulate whose control panel is a custom `Grid` mixing an embedded
+  /// `Control[…]` cell with a `Dynamic[…]` caption cell that assembles a
+  /// subscripted symbol (e.g. an atomic-orbital or isotope-style label) via
+  /// `Subscript[base, tag]` — the shape a Wolfram Demonstrations Project
+  /// notebook uses to show a live "name of the current choice" readout next
+  /// to its picker (independently written, not copied from any specific
+  /// one). Regression: `display_expr_to_node` had no case for a bare
+  /// `Subscript[…]`/`Superscript[…]` leaf reached through a `Dynamic[…]`
+  /// caption, so it fell through to the generic leaf fallback and rendered
+  /// the literal `Subscript[…]` source text instead of a typeset subscript
+  /// — the caption next to the picker read like unevaluated code.
+  #[test]
+  fn manipulate_grid_panel_dynamic_caption_with_subscript_symbol() {
+    let code = r#"Manipulate[
+      Graphics[Text[isotope]],
+      Grid[{
+        {Control[{{isotope, 14, "isotope"}, {12, 13, 14}, ControlType -> SetterBar}], SpanFromLeft},
+        {"current: ", Dynamic[Subscript["C", isotope]]}
+      }]
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr).expect(
+      "Grid-panel Manipulate with an embedded Control should build a ManipulateState",
+    );
+    assert_eq!(state.error, None, "the body must evaluate cleanly");
+    assert_eq!(
+      state.display_trees.len(),
+      1,
+      "the Dynamic caption cell must become one display tree: {:?}",
+      state.display_trees
+    );
+    let woxi::functions::graphics::DisplayNode::Text { runs } =
+      &state.display_trees[0]
+    else {
+      panic!(
+        "the Subscript caption must typeset as rich text, not a raw leaf: {:?}",
+        state.display_trees[0]
+      );
+    };
+    let flattened: String = runs.iter().map(|r| r.text.as_str()).collect();
+    assert!(
+      !flattened.contains("Subscript["),
+      "the caption must not show the raw `Subscript[…]` source: {flattened:?}"
+    );
+    assert!(
+      flattened.contains('C'),
+      "the caption must still show the base symbol: {flattened:?}"
+    );
+  }
+
   /// A picker offering more choices than fit in one row splits them across
   /// several `SetterBar`s that all share one control variable — the shape a
   /// Wolfram Demonstrations Project notebook's aberration/category picker
