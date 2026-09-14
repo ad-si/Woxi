@@ -657,14 +657,15 @@ fn try_pde_initial_condition(
     let Expr::FunctionCall { name, args } = e else {
       return false;
     };
+    if name != u_name || args.len() != 2 {
+      return false;
+    }
     let (t_arg, x_arg) = if swap {
       (&args[1], &args[0])
     } else {
       (&args[0], &args[1])
     };
-    name == u_name
-      && args.len() == 2
-      && matches!(x_arg, Expr::Identifier(n) if n == x_name)
+    matches!(x_arg, Expr::Identifier(n) if n == x_name)
       && nval_to_f64(t_arg)
         .is_some_and(|v| (v - t0).abs() <= 1e-9 * t0.abs().max(1.0))
   };
