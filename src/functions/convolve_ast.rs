@@ -5,7 +5,7 @@
 //! - UnitBox[x] ⊛ UnitBox[x]  →  UnitTriangle[y]
 //! - UnitStep[x] ⊛ UnitStep[x]  →  y*UnitStep[y]
 //! - K·E^(-a(x-p)²) ⊛ K'·E^(-a'(x-p')²)
-//!     →  K K' Sqrt[Pi/(a + a')] · E^(-(a a'/(a + a')) (y-p-p')²)
+//!   →  K K' Sqrt[Pi/(a + a')] · E^(-(a a'/(a + a')) (y-p-p')²)
 //!   Recognized via `Log`/`PowerExpand`/`Expand`, so any algebraic packaging
 //!   of a (possibly shifted, possibly scaled) Gaussian matches — a bare
 //!   `E^(-a x^2)`, `PDF[NormalDistribution[mu, sigma], x]`, etc.
