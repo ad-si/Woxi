@@ -3054,7 +3054,18 @@ mod tests {
       let svg = tf_svg("TraditionalForm @ HoldForm[Pi + Infinity + Exp[x]]");
       assert!(svg.contains('\u{03C0}'), "Pi → π: {svg}");
       assert!(svg.contains('\u{221E}'), "Infinity → ∞: {svg}");
-      assert!(svg.contains('\u{2147}'), "Exp base → ⅇ: {svg}");
+      // `Exp`'s base glyph is `\[ExponentialE]` (U+2147, "ⅇ") — a
+      // Letterlike Symbols codepoint most non-Mathematica fonts (this
+      // renderer's included) have no glyph for, so it typesets as an
+      // italicized plain "e" instead of the raw codepoint.
+      assert!(
+        !svg.contains('\u{2147}'),
+        "must not contain the raw U+2147 glyph: {svg}"
+      );
+      assert!(
+        svg.contains(">e<"),
+        "Exp base → italicized plain \"e\": {svg}"
+      );
     }
 
     #[test]

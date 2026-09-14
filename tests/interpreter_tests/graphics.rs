@@ -12366,11 +12366,21 @@ ParametricPlot[f[t], {t, 0, 1}]]",
          Text[Row[{\"(\", Infinity, \")\"}], {1, 0}]}, \
          PlotRange -> 4, ImageSize -> 200]",
       );
-      for glyph in
-        ["\u{03C0}", "\u{221E}", "\u{2147}", "\u{00B0}", "(\u{221E})"]
-      {
+      for glyph in ["\u{03C0}", "\u{221E}", "\u{00B0}", "(\u{221E})"] {
         assert!(svg.contains(glyph), "{glyph} must be typeset: {svg}");
       }
+      // `E`'s glyph is `\[ExponentialE]` (U+2147, "ⅇ") — a Letterlike
+      // Symbols codepoint most non-Mathematica fonts have no glyph for
+      // (this renderer's fonts included), so it renders as an italicized
+      // plain "e" instead of the raw codepoint.
+      assert!(
+        !svg.contains('\u{2147}'),
+        "must not contain the raw U+2147 glyph: {svg}"
+      );
+      assert!(
+        svg.contains("<tspan font-style=\"italic\">e</tspan>"),
+        "E must typeset as an italicized plain \"e\": {svg}"
+      );
       assert!(!svg.contains(">Infinity<"), "not the name: {svg}");
       // Script-mode text output is unchanged.
       assert_eq!(
@@ -28353,9 +28363,12 @@ fn manipulate_module_which_affine_prolog_checkbox_and_traditional_plot_label() {
     "Epilog should draw the \"A\" label when labels is True: {with_label}"
   );
   assert!(
-    with_label.contains("\u{222b}") && with_label.contains("\u{2146}"),
-    "PlotLabel should typeset the held integral (\u{222b} \u{2026} \u{2146}x), not raw \
-     TraditionalForm/HoldForm source: {with_label}"
+    with_label.contains("\u{222b}")
+      && with_label.contains("<tspan font-style=\"italic\">d</tspan>"),
+    "PlotLabel should typeset the held integral (\u{222b} \u{2026} dx, the \
+     differential as a plain italicized \"d\" rather than the raw U+2146 \
+     glyph most fonts have no glyph for), not raw TraditionalForm/HoldForm \
+     source: {with_label}"
   );
 
   let without_label = render("1.2", "False");

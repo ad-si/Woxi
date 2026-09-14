@@ -6079,10 +6079,35 @@ pub(crate) fn machine_real_display_parts(f: f64) -> BigFloatDisplay {
 
 pub(crate) fn svg_escape(s: &str) -> String {
   let s = crate::syntax::substitute_private_use_glyphs(s);
-  s.replace('&', "&amp;")
+  let escaped = s
+    .replace('&', "&amp;")
     .replace('<', "&lt;")
     .replace('>', "&gt;")
-    .replace('"', "&quot;")
+    .replace('"', "&quot;");
+  render_math_letterlike_glyphs(&escaped)
+}
+
+/// Substitute any differential/exponential/imaginary-unit Letterlike
+/// Symbols glyph (see [`italic_letter_for_math_glyph`]) with an italicized
+/// plain-ASCII letter in a `<tspan>`. Safe to run after XML-escaping,
+/// since none of the substituted codepoints are XML metacharacters — the
+/// injected `<tspan>` markup is the only angle-bracket content this adds.
+fn render_math_letterlike_glyphs(s: &str) -> String {
+  if !s.chars().any(|c| italic_letter_for_math_glyph(c).is_some()) {
+    return s.to_string();
+  }
+  let mut out = String::with_capacity(s.len());
+  for c in s.chars() {
+    match italic_letter_for_math_glyph(c) {
+      Some(letter) => {
+        out.push_str("<tspan font-style=\"italic\">");
+        out.push(letter);
+        out.push_str("</tspan>");
+      }
+      None => out.push(c),
+    }
+  }
+  out
 }
 
 fn render_primitive(
@@ -8202,6 +8227,25 @@ fn is_math_italic_atom(s: &str) -> bool {
   }
 }
 
+/// The plain-ASCII letter TraditionalForm's differential/exponential/
+/// imaginary-unit Letterlike Symbols glyphs stand in for: `ⅆ` (U+2146,
+/// `∫ … ⅆx`), `ⅇ` (U+2147, `ⅇ^x`), `ⅈ`/`ⅉ` (U+2148/2149, `a + b ⅈ`). Most
+/// non-Mathematica fonts — including the ones this renderer embeds — have
+/// no glyph for these, and the font-fallback substitute comes out as an
+/// unrelated glyph (an "L" shape for `ⅆ`, roman numerals for `ⅇ`/`ⅈ`) at a
+/// different advance width than plain ASCII. Callers render the returned
+/// letter italicized, matching Mathematica's own typeset look without
+/// depending on the codepoint's glyph coverage.
+pub(crate) fn italic_letter_for_math_glyph(c: char) -> Option<char> {
+  match c {
+    '\u{2146}' => Some('d'), // \[DifferentialD]
+    '\u{2147}' => Some('e'), // \[ExponentialE]
+    '\u{2148}' => Some('i'), // \[ImaginaryI]
+    '\u{2149}' => Some('j'), // \[ImaginaryJ]
+    _ => None,
+  }
+}
+
 /// The set of single-character bracket/bar glyphs that can be vertically
 /// stretched to enclose tall content.
 fn stretchy_delim_kind(s: &str) -> Option<char> {
@@ -8442,20 +8486,21 @@ impl BoxLayout {
     // missing-glyph box (▢). Substitute the public Unicode arrows so the
     // SVG output displays correctly everywhere. Each maps one char to one
     // char, so the width estimate below is unaffected.
-    // `\[DifferentialD]` (U+2146, the italic "ⅆ" used in `∫ … ⅆx`) is a rare
-    // Mathematical Alphanumeric Symbols codepoint most non-Mathematica fonts
-    // don't carry either — the SVG viewer's font-fallback glyph for it comes
-    // out a different width than the plain-ASCII advance computed below, so
-    // it overlaps the following variable (`ⅆx` renders as if it read "ddx").
-    // Map it to plain "d"; `is_math_italic_atom` below then italicizes the
-    // lone letter, giving the same look without depending on that glyph.
+    // `\[DifferentialD]`/`\[ExponentialE]`/`\[ImaginaryI]`/`\[ImaginaryJ]`
+    // (U+2146/2147/2148/2149, used in `∫ … ⅆx`, `ⅇ^x`, `a + b ⅈ`) are rare
+    // Letterlike Symbols codepoints most non-Mathematica fonts don't carry
+    // either — the SVG viewer's font-fallback glyph for them comes out a
+    // different width than the plain-ASCII advance computed below (and can
+    // be a completely unrelated glyph), so it overlaps the following
+    // variable (`ⅆx` renders as if it read "ddx"). Map each to its plain
+    // letter; `is_math_italic_atom` below then italicizes the lone letter,
+    // giving the same look without depending on that glyph.
     let mapped: String = s
       .chars()
       .map(|c| match c {
         '\u{f522}' => '\u{2192}', // \[Rule] → →
         '\u{f51f}' => '\u{29f4}', // \[RuleDelayed] → ⧴
-        '\u{2146}' => 'd',        // \[DifferentialD] → d (italicized below)
-        other => other,
+        other => italic_letter_for_math_glyph(other).unwrap_or(other),
       })
       .collect();
     let s = mapped.as_str();
