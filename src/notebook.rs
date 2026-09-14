@@ -1293,6 +1293,34 @@ fn push_juxtaposed(result: &mut String, piece: &str) {
   result.push_str(piece);
 }
 
+/// Collapse a `\[LeftDoubleBracket] … \[RightDoubleBracket]` pair back into
+/// `Part` syntax before the row is joined.
+///
+/// `a[[i]]` typesets as a *flat* row — `RowBox[{"a", "\[LeftDoubleBracket]",
+/// i, "\[RightDoubleBracket]"}]` — not as a `SubscriptBox` (that form exists
+/// too, and is handled separately in `extract_typeset_box`, but is the rarer
+/// one in practice). Left unhandled, the bracket names would fall through
+/// to their literal Unicode glyphs (`⟦`/`⟧`), which Woxi's parser does not
+/// accept as `Part` syntax, breaking every cell that indexes a list this
+/// way — extremely common in Demonstrations-style code.
+///
+/// Runs before the main row-scanning loop so chained accesses (`a[[i]][[j]]`,
+/// itself a flat run of two such pairs) fold left-to-right: each merge's
+/// plain-text result becomes the `base` of the next pair to its right.
+fn merge_double_bracket_parts(parts: &[&str]) -> Vec<String> {
+  let mut out: Vec<String> =
+    parts.iter().map(|p| p.trim().to_string()).collect();
+  while let Some(k) = (1..out.len().saturating_sub(2)).find(|&k| {
+    is_bare_named_char(&out[k], "LeftDoubleBracket")
+      && is_bare_named_char(&out[k + 2], "RightDoubleBracket")
+  }) {
+    let base = box_part_source(&out[k - 1]);
+    let spec = box_part_source(&out[k + 1]);
+    out.splice(k - 1..=k + 2, [format_part_access(&base, &spec)]);
+  }
+  out
+}
+
 /// Extract text from a RowBox expression by concatenating string
 /// elements.
 fn extract_rowbox_content(s: &str) -> String {
@@ -1300,7 +1328,7 @@ fn extract_rowbox_content(s: &str) -> String {
   let s = s.strip_prefix('{').unwrap_or(s);
   let s = s.strip_suffix('}').unwrap_or(s);
 
-  let parts = split_top_level_commas(s);
+  let parts = merge_double_bracket_parts(&split_top_level_commas(s));
   let mut result = String::new();
   let mut i = 0;
   while i < parts.len() {
@@ -1320,7 +1348,12 @@ fn extract_rowbox_content(s: &str) -> String {
     // `SubsuperscriptBox` sign carries the limits of a definite integral.
     if i + 1 < parts.len()
       && let Some(limits) = integral_limits(part)
-      && let Some((integrand, var)) = split_integral_body(&parts[i + 1..])
+      && let Some((integrand, var)) = split_integral_body(
+        &parts[i + 1..]
+          .iter()
+          .map(String::as_str)
+          .collect::<Vec<_>>(),
+      )
     {
       let iterator = match limits {
         Some((lo, hi)) => {
@@ -4177,6 +4210,32 @@ Cell["Chapter 2", "Chapter"]
     // An ordinary subscript is still `Subscript`.
     let s = r#"BoxData[SubscriptBox["c", "1"]]"#;
     assert_eq!(extract_cell_content(s), "Subscript[c, 1]");
+  }
+
+  /// `a[[i]]` normally typesets as a *flat* row — `"a"`,
+  /// `"\[LeftDoubleBracket]"`, `i`, `"\[RightDoubleBracket]"` — not as the
+  /// `SubscriptBox` form above (that one is rarer in practice, though the
+  /// FrontEnd accepts it too). Regression: the bracket names fell through to
+  /// their raw Unicode glyphs (`⟦`/`⟧`), which Woxi's parser does not accept
+  /// as `Part` syntax, so a downloaded Demonstration notebook's Input cells
+  /// — which lean on this typesetting heavily — failed to evaluate.
+  #[test]
+  fn test_flat_row_double_brackets_is_part() {
+    let s = r#"BoxData[RowBox[{"c", "\[LeftDoubleBracket]", "1", "\[RightDoubleBracket]"}]]"#;
+    assert_eq!(extract_cell_content(s), "c[[1]]");
+    // A compound index expression, wrapped in its own RowBox.
+    let s = r#"BoxData[RowBox[{"list", "\[LeftDoubleBracket]", RowBox[{"i", "+", "1"}], "\[RightDoubleBracket]"}]]"#;
+    assert_eq!(extract_cell_content(s), "list[[i+1]]");
+    // A non-token base still needs the function form.
+    let s = r#"BoxData[RowBox[{RowBox[{"a", "+", "b"}], "\[LeftDoubleBracket]", "1", "\[RightDoubleBracket]"}]]"#;
+    assert_eq!(extract_cell_content(s), "Part[a+b, 1]");
+    // Chained accesses fold left-to-right: `a[[i]][[j]]`.
+    let s = r#"BoxData[RowBox[{"a", "\[LeftDoubleBracket]", "i", "\[RightDoubleBracket]", "\[LeftDoubleBracket]", "j", "\[RightDoubleBracket]"}]]"#;
+    assert_eq!(extract_cell_content(s), "Part[a[[i]], j]");
+    // The pair sits inside a larger row (an assignment), as it does in real
+    // Demonstrations code (`list = listi[[RandomInteger[{1, n}]]]`).
+    let s = r#"BoxData[RowBox[{"list", "=", RowBox[{"listi", "\[LeftDoubleBracket]", RowBox[{"RandomInteger", "[", "n", "]"}], "\[RightDoubleBracket]"}]}]]"#;
+    assert_eq!(extract_cell_content(s), "list=listi[[RandomInteger[n]]]");
   }
 
   /// A subscript can also be a bare display glyph rather than a real index
