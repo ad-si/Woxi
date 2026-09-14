@@ -3245,6 +3245,111 @@ fn parse_raw_array_u8(raw: &[u8]) -> Option<(u32, u32, u8, &[u8])> {
   Some((height, width, channels, pixels))
 }
 
+/// Decode a bare packed array of bytes: `!boR` + `b` + rank + dims + raw
+/// `UnsignedInteger8` samples, with no `RawArray["UnsignedInteger8", …]`
+/// function-call wrapper. This is the shape a Demonstration's
+/// Initialization Code cell embeds for an inline bitmap assigned straight
+/// to a symbol (`icon = Graphics[RasterBox[CompressedData["…"], …]]`), as
+/// opposed to `parse_raw_array_u8`'s wrapped shape for a stored Output
+/// snapshot. Demands the samples account for every remaining byte, so a
+/// payload that merely starts the same way as this format is rejected
+/// instead of silently truncated.
+fn parse_packed_byte_array(raw: &[u8]) -> Option<(u32, u32, u8, &[u8])> {
+  let mut pos = 0usize;
+  let take = |pos: &mut usize, n: usize| -> Option<&[u8]> {
+    let s = raw.get(*pos..*pos + n)?;
+    *pos += n;
+    Some(s)
+  };
+  let read_u32 = |pos: &mut usize| -> Option<u32> {
+    take(pos, 4).map(|b| u32::from_le_bytes(b.try_into().unwrap()))
+  };
+
+  if take(&mut pos, 4)? != b"!boR" {
+    return None;
+  }
+  if take(&mut pos, 1)? != b"b" {
+    return None;
+  }
+  let rank = read_u32(&mut pos)? as usize;
+  if !(2..=3).contains(&rank) {
+    return None;
+  }
+  let mut dims = [0u32; 3];
+  for d in dims.iter_mut().take(rank) {
+    *d = read_u32(&mut pos)?;
+  }
+  let (height, width, channels) = if rank == 2 {
+    (dims[0], dims[1], 1u8)
+  } else {
+    (dims[0], dims[1], u8::try_from(dims[2]).ok()?)
+  };
+  let expected = height as usize * width as usize * channels as usize;
+  let pixels = raw.get(pos..pos + expected)?;
+  if pos + expected != raw.len() {
+    return None;
+  }
+  Some((height, width, channels, pixels))
+}
+
+/// Decode a `CompressedData["1:…"]` payload as pixel data — either the
+/// `RawArray["UnsignedInteger8", …]` shape `parse_raw_array_u8` reads or
+/// the bare packed-byte-array shape `parse_packed_byte_array` reads — and
+/// format it as the nested Wolfram Language list literal `Raster`/
+/// `RasterBox` expects: one list of rows, each a list of per-pixel
+/// grayscale values or `{r, g, b}`/`{r, g, b, a}` lists. Returns `None`
+/// when the payload decodes to something else (e.g. the packed-real-array
+/// coordinate format `decode_compressed_real_array` reads instead).
+fn decode_compressed_raster_as_wl_list(payload: &str) -> Option<String> {
+  let b64: String = payload.chars().filter(|c| !c.is_whitespace()).collect();
+  let b64 = b64.strip_prefix("1:")?;
+
+  use base64::Engine;
+  let compressed =
+    base64::engine::general_purpose::STANDARD.decode(b64).ok()?;
+  let mut raw = Vec::new();
+  std::io::Read::read_to_end(
+    &mut flate2::read::ZlibDecoder::new(&compressed[..]),
+    &mut raw,
+  )
+  .ok()?;
+
+  let (height, width, channels, pixels) =
+    parse_raw_array_u8(&raw).or_else(|| parse_packed_byte_array(&raw))?;
+  Some(packed_raster_array_to_wl_list(
+    height, width, channels, pixels,
+  ))
+}
+
+/// Format a decoded pixel array (see `parse_raw_array_u8`) as the nested
+/// Wolfram Language list literal it represents.
+fn packed_raster_array_to_wl_list(
+  height: u32,
+  width: u32,
+  channels: u8,
+  pixels: &[u8],
+) -> String {
+  let channels = channels as usize;
+  let width = width as usize;
+  let mut rows = Vec::with_capacity(height as usize);
+  for r in 0..height as usize {
+    let mut cols = Vec::with_capacity(width);
+    for c in 0..width {
+      let base = (r * width + c) * channels;
+      let px = &pixels[base..base + channels];
+      if channels == 1 {
+        cols.push(px[0].to_string());
+      } else {
+        let joined =
+          px.iter().map(u8::to_string).collect::<Vec<_>>().join(", ");
+        cols.push(format!("{{{joined}}}"));
+      }
+    }
+    rows.push(format!("{{{}}}", cols.join(", ")));
+  }
+  format!("{{{}}}", rows.join(", "))
+}
+
 /// Collect the checkbox entries of an already-extracted grid, i.e. the
 /// nested list of `☐ label` / `☑ label` strings `extract_cell_content`
 /// leaves behind for a `GridBox` of checkboxes. Entries are appended in
@@ -3434,13 +3539,23 @@ fn box_source_to_graphics_expr(s: &str) -> String {
   let s = s.trim();
 
   if let Some(rest) = s.strip_prefix("CompressedData[\"") {
-    return rest
-      .find('"')
-      .and_then(|end| decode_compressed_real_array(&rest[..end]))
-      .map_or_else(
-        || "Null".to_string(),
-        |(dims, values)| packed_real_array_to_wl_list(&dims, &values),
-      );
+    let Some(end) = rest.find('"') else {
+      return "Null".to_string();
+    };
+    let payload = &rest[..end];
+    // A `RasterBox`'s CompressedData carries pixel bytes
+    // (`RawArray["UnsignedInteger8", …]`), not the packed-real-array
+    // format `decode_compressed_real_array` reads; try that shape first
+    // so an Initialization Code cell that assigns a bitmap to a symbol
+    // (a common Demonstrations pattern for custom icons) reconstructs a
+    // real pixel grid instead of losing the picture to `Null`.
+    if let Some(list) = decode_compressed_raster_as_wl_list(payload) {
+      return list;
+    }
+    return decode_compressed_real_array(payload).map_or_else(
+      || "Null".to_string(),
+      |(dims, values)| packed_real_array_to_wl_list(&dims, &values),
+    );
   }
 
   if let Some(inner) = s.strip_prefix('{').and_then(|r| r.strip_suffix('}')) {
@@ -4830,6 +4945,149 @@ Cell["Chapter 2", "Chapter"]
     assert_eq!(
       box_source_to_graphics_expr(&source),
       "Polygon[{{{0, 0}, {1, 1}}}]"
+    );
+  }
+
+  /// Build the exact serialization Mathematica writes for a `RasterBox`'s
+  /// pixel data (`!boR`, then `f`/`RawArray`/`S`/`UnsignedInteger8`, then
+  /// `b`, rank, dims and the raw byte samples), zlib-compressed and
+  /// base64-encoded behind a `1:` prefix (the format
+  /// `test_stored_output_raster_snapshot_decodes_to_svg` also builds).
+  fn make_compressed_raster_array(
+    height: u32,
+    width: u32,
+    channels: u32,
+    pixels: &[u8],
+  ) -> String {
+    let mut raw: Vec<u8> = Vec::new();
+    raw.extend_from_slice(b"!boR");
+    raw.push(b'f');
+    raw.extend_from_slice(&2u32.to_le_bytes());
+    raw.push(b's');
+    raw.extend_from_slice(&8u32.to_le_bytes());
+    raw.extend_from_slice(b"RawArray");
+    raw.push(b'S');
+    raw.extend_from_slice(&16u32.to_le_bytes());
+    raw.extend_from_slice(b"UnsignedInteger8");
+    raw.push(b'b');
+    let rank = if channels == 1 { 2u32 } else { 3u32 };
+    raw.extend_from_slice(&rank.to_le_bytes());
+    raw.extend_from_slice(&height.to_le_bytes());
+    raw.extend_from_slice(&width.to_le_bytes());
+    if channels != 1 {
+      raw.extend_from_slice(&channels.to_le_bytes());
+    }
+    raw.extend_from_slice(pixels);
+
+    use base64::Engine;
+    use std::io::Write;
+    let mut enc = flate2::write::ZlibEncoder::new(
+      Vec::new(),
+      flate2::Compression::default(),
+    );
+    enc.write_all(&raw).unwrap();
+    let b64 =
+      base64::engine::general_purpose::STANDARD.encode(enc.finish().unwrap());
+    format!("1:{b64}")
+  }
+
+  #[test]
+  fn test_decode_compressed_raster_as_wl_list_decodes_grayscale_and_rgb() {
+    // A 1x2 grayscale image.
+    let gray_payload = make_compressed_raster_array(1, 2, 1, &[10, 200]);
+    assert_eq!(
+      decode_compressed_raster_as_wl_list(&gray_payload),
+      Some("{{10, 200}}".to_string())
+    );
+
+    // A 2x1 RGB image: one red pixel row, one green pixel row.
+    let rgb_payload =
+      make_compressed_raster_array(2, 1, 3, &[255, 0, 0, 0, 255, 0]);
+    assert_eq!(
+      decode_compressed_raster_as_wl_list(&rgb_payload),
+      Some("{{{255, 0, 0}}, {{0, 255, 0}}}".to_string())
+    );
+
+    // The packed-real-array format is not the raster format.
+    let real_payload = make_compressed_real_array(&[2], &[1.0, 2.0]);
+    assert_eq!(decode_compressed_raster_as_wl_list(&real_payload), None);
+  }
+
+  /// A `RasterBox`'s `CompressedData` carries pixel bytes, not the
+  /// packed-real-array coordinate format — an Initialization Code cell
+  /// that assigns a bitmap icon to a symbol (a common Demonstrations
+  /// pattern for custom pictures used inside a `Manipulate`) must
+  /// reconstruct the actual pixel grid rather than losing the picture to
+  /// `Null`, which previously left every use of that symbol blank.
+  #[test]
+  fn test_box_source_to_graphics_expr_inlines_raster_pixel_data() {
+    let payload = make_compressed_raster_array(1, 2, 3, &[1, 2, 3, 4, 5, 6]);
+    let source = format!(
+      "RasterBox[CompressedData[\"{payload}\"], {{{{0, 0}}, {{2, 1}}}}, \
+       {{0, 255}}]"
+    );
+    assert_eq!(
+      box_source_to_graphics_expr(&source),
+      "RasterBox[{{{1, 2, 3}, {4, 5, 6}}}, {{0, 0}, {2, 1}}, {0, 255}]"
+    );
+  }
+
+  /// Build the serialization Mathematica writes for a *bare* packed byte
+  /// array — `!boR` + `b` + rank + dims + raw samples, with no
+  /// `RawArray["UnsignedInteger8", …]` function-call wrapper — the shape
+  /// a Demonstration's Initialization Code cell embeds for an inline
+  /// bitmap assigned straight to a symbol, as opposed to
+  /// `make_compressed_raster_array`'s wrapped shape for a stored Output
+  /// snapshot.
+  fn make_compressed_packed_byte_array(
+    height: u32,
+    width: u32,
+    channels: u32,
+    pixels: &[u8],
+  ) -> String {
+    let mut raw: Vec<u8> = Vec::new();
+    raw.extend_from_slice(b"!boR");
+    raw.push(b'b');
+    let rank = if channels == 1 { 2u32 } else { 3u32 };
+    raw.extend_from_slice(&rank.to_le_bytes());
+    raw.extend_from_slice(&height.to_le_bytes());
+    raw.extend_from_slice(&width.to_le_bytes());
+    if channels != 1 {
+      raw.extend_from_slice(&channels.to_le_bytes());
+    }
+    raw.extend_from_slice(pixels);
+
+    use base64::Engine;
+    use std::io::Write;
+    let mut enc = flate2::write::ZlibEncoder::new(
+      Vec::new(),
+      flate2::Compression::default(),
+    );
+    enc.write_all(&raw).unwrap();
+    let b64 =
+      base64::engine::general_purpose::STANDARD.encode(enc.finish().unwrap());
+    format!("1:{b64}")
+  }
+
+  /// The bare packed-byte-array format (no `RawArray` wrapper) is the one
+  /// Wolfram actually writes for a picture assigned inline in a
+  /// Demonstration's Initialization Code cell — verified by decoding the
+  /// real `CompressedData` payload from a downloaded Wolfram
+  /// Demonstrations Project notebook and finding it used this shape
+  /// rather than `parse_raw_array_u8`'s `RawArray`-wrapped one.
+  #[test]
+  fn test_decode_compressed_raster_as_wl_list_decodes_bare_packed_bytes() {
+    let payload =
+      make_compressed_packed_byte_array(1, 2, 3, &[7, 8, 9, 10, 11, 12]);
+    assert_eq!(
+      decode_compressed_raster_as_wl_list(&payload),
+      Some("{{{7, 8, 9}, {10, 11, 12}}}".to_string())
+    );
+
+    let gray_payload = make_compressed_packed_byte_array(2, 1, 1, &[3, 250]);
+    assert_eq!(
+      decode_compressed_raster_as_wl_list(&gray_payload),
+      Some("{{3}, {250}}".to_string())
     );
   }
 
