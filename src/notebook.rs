@@ -4739,8 +4739,8 @@ Cell["Chapter 2", "Chapter"]
   }
 
   /// Build the exact serialization Mathematica writes for a `RasterBox`'s
-  /// pixel data — `!boR` + `f`/`RawArray`/`S`/`UnsignedInteger8` + `b`
-  /// + rank + dims + raw byte samples, zlib-compressed and
+  /// pixel data (`!boR`, then `f`/`RawArray`/`S`/`UnsignedInteger8`, then
+  /// `b`, rank, dims and the raw byte samples), zlib-compressed and
   /// base64-encoded behind a `1:` prefix (the format
   /// `test_stored_output_raster_snapshot_decodes_to_svg` also builds).
   fn make_compressed_raster_array(
