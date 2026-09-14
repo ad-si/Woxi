@@ -995,6 +995,46 @@ mod compile {
     );
   }
 
+  // Regression: a `{name, _Type, rank}` (array-typed) Compile parameter was
+  // exempted entirely from Listable threading — a list argument there was
+  // passed straight through as one opaque value regardless of its actual
+  // rank, unlike a scalar (rank 0) parameter (see the test above). Real
+  // Mathematica's Listable attribute threads over ANY excess leading
+  // dimensions beyond a parameter's declared rank, not just rank 0: a
+  // Wolfram Demonstrations Project fractal-perimeter notebook declares a
+  // `{line, _Real, 2}` parameter (one line segment) and calls the compiled
+  // kernel on a rank-3 batch of segments in one shot — collapsing to a
+  // single scalar instead of a per-segment result, exactly like the
+  // `NestWhileList` case above but one rank up.
+  #[test]
+  fn compile_listable_array_typed_parameter_threads_over_extra_rank() {
+    clear_state();
+    let r = woxi::interpret_with_stdout(
+      r#"f = Compile[{{line, _Real, 2}}, Length[line], RuntimeAttributes -> {Listable}];
+         f[{{{1., 1.}, {2., 2.}}, {{3., 3.}, {4., 4.}}, {{5., 5.}, {6., 6.}}}]"#,
+    )
+    .unwrap();
+    assert_eq!(r.result, "{2., 2., 2.}");
+    assert!(
+      r.warnings.is_empty(),
+      "unexpected messages: {:?}",
+      r.warnings
+    );
+
+    // An argument more than one rank above the declared type (e.g. a list
+    // of lists of matrices, as `Nest` reapplying the same Listable kernel
+    // to its own growing result produces) must thread recursively, one
+    // excess dimension at a time, rather than only once.
+    assert_eq!(
+      interpret(
+        r#"g = Compile[{{m, _Real, 2}}, Total[Flatten[m]], RuntimeAttributes -> {Listable}];
+           g[{{{{1., 2.}, {3., 4.}}}, {{{5., 6.}, {7., 8.}}}}]"#
+      )
+      .unwrap(),
+      "{{10.}, {26.}}"
+    );
+  }
+
   // Regression: a `.nb` notebook's `SaveDefinitions -> True` dump can embed a
   // helper as Mathematica's fully serialized `CompiledFunction[…]` — an id
   // tuple, argument patterns, type/constant tables, raw bytecode, the

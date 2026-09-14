@@ -148,16 +148,27 @@ fn compile_arg_spec(spec: &Expr, body: &Expr) -> Option<(String, bool)> {
   }
 }
 
-/// Whether a `Compile` argument spec is a scalar (rank-0) parameter — a
-/// bare name, or `{name}`/`{name, _Type}` — as opposed to a declared array
-/// (`{name, _Type, rank}`). Only a scalar position threads when the
-/// enclosing `CompiledFunction` is `RuntimeAttributes -> {Listable}`; an
-/// array-typed position is meant to receive a list itself, so a list
-/// argument there is passed through unchanged.
-fn compile_spec_is_scalar(spec: &Expr) -> bool {
+/// The declared array rank of a `Compile` argument spec: 0 for a scalar
+/// position (a bare name, or `{name}`/`{name, _Type}`), or the explicit
+/// rank in `{name, _Type, rank}`.
+fn compile_spec_rank(spec: &Expr) -> usize {
   match spec {
-    Expr::List(items) => items.len() <= 2,
-    _ => true,
+    Expr::List(items) if items.len() >= 3 => match &items[2] {
+      Expr::Integer(n) if *n >= 0 => *n as usize,
+      _ => 0,
+    },
+    _ => 0,
+  }
+}
+
+/// The nesting depth of a rectangular list expression: 0 for a non-list
+/// value, otherwise 1 + the depth of its first element. `Compile`'s
+/// arguments are always rectangular arrays in practice, so checking just
+/// the first element (rather than every element) is enough.
+fn expr_array_depth(expr: &Expr) -> usize {
+  match expr {
+    Expr::List(items) => 1 + items.first().map_or(0, expr_array_depth),
+    _ => 0,
   }
 }
 
@@ -1991,45 +2002,55 @@ pub fn apply_curried_call(
       && matches!(&func_args[2], Expr::Identifier(s) if s == "Listable") =>
     {
       // `Compile[…, RuntimeAttributes -> {Listable}]` makes the resulting
-      // CompiledFunction itself Listable: a call with a list at one of its
-      // scalar-typed argument positions (e.g. `f[{1+I, 2+I}, y]` where `x`
-      // is declared `_Complex`, not `_Complex, 1`) threads element-wise,
-      // broadcasting the other arguments — the idiom Wolfram Demonstrations
-      // Project notebooks lean on to evaluate a `Compile`d kernel over an
-      // `ArrayPlot`/`Table` grid in one call. Without this, the list was
-      // passed straight into the body as one opaque value, so a body using
-      // it as a scalar (e.g. `NestWhileList[…, x, …]`) silently computed
-      // the wrong thing instead of a per-element result.
+      // CompiledFunction itself Listable: a call with an array deeper than
+      // a parameter's declared rank (e.g. `f[{1+I, 2+I}, y]` where `x` is
+      // declared `_Complex`, i.e. rank 0; or an `{x,_Real,2}` parameter
+      // called with a list of matrices) threads element-wise over the
+      // outermost excess dimension, broadcasting the other arguments — the
+      // idiom Wolfram Demonstrations Project notebooks lean on to evaluate
+      // a `Compile`d kernel over a batch of inputs in one call. Without
+      // this, the list was passed straight into the body as one opaque
+      // value, so a body using it at its declared rank (e.g.
+      // `NestWhileList[…, x, …]`, or `Partition[line, 2, 1]` expecting one
+      // point list) silently computed the wrong thing instead of a
+      // per-element result. When the excess is more than one dimension
+      // (e.g. a `{name,_Real,2}` parameter fed a rank-4 array), peeling
+      // off one dimension here and recursing through `apply_curried_call`
+      // below threads over the remaining excess dimensions in turn, just
+      // as real Mathematica's Listable does.
       let specs: Vec<&Expr> = match &func_args[0] {
         Expr::List(items) => items.iter().collect(),
         other => vec![other],
       };
-      let scalar_positions: Vec<bool> =
-        specs.iter().map(|s| compile_spec_is_scalar(s)).collect();
+      let ranks: Vec<usize> =
+        specs.iter().map(|s| compile_spec_rank(s)).collect();
+      let threads: Vec<bool> = args
+        .iter()
+        .zip(ranks.iter())
+        .map(|(a, &r)| expr_array_depth(a) > r)
+        .collect();
       let list_len =
         args
           .iter()
-          .zip(scalar_positions.iter())
-          .find_map(|(a, &is_scalar)| match a {
-            Expr::List(items) if is_scalar => Some(items.len()),
+          .zip(threads.iter())
+          .find_map(|(a, &thread)| match a {
+            Expr::List(items) if thread => Some(items.len()),
             _ => None,
           });
       match list_len {
         Some(len)
-          if args.iter().zip(scalar_positions.iter()).all(
-            |(a, &is_scalar)| match a {
-              Expr::List(items) if is_scalar => items.len() == len,
-              _ => true,
-            },
-          ) =>
+          if args.iter().zip(threads.iter()).all(|(a, &thread)| match a {
+            Expr::List(items) if thread => items.len() == len,
+            _ => true,
+          }) =>
         {
           let mut results = Vec::with_capacity(len);
           for i in 0..len {
             let threaded_args: Vec<Expr> = args
               .iter()
-              .zip(scalar_positions.iter())
-              .map(|(a, &is_scalar)| match a {
-                Expr::List(items) if is_scalar => items[i].clone(),
+              .zip(threads.iter())
+              .map(|(a, &thread)| match a {
+                Expr::List(items) if thread => items[i].clone(),
                 _ => a.clone(),
               })
               .collect();
@@ -2037,8 +2058,8 @@ pub fn apply_curried_call(
           }
           Ok(Expr::List(results.into()))
         }
-        // No listed scalar-position argument (or mismatched lengths) —
-        // behave exactly like the plain 2-argument CompiledFunction.
+        // No listed threading argument (or mismatched lengths) — behave
+        // exactly like the plain 2-argument CompiledFunction.
         _ => apply_curried_call(
           &call(
             "CompiledFunction",
