@@ -1268,6 +1268,75 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_manipulate_style_text_differential_svg_uses_plain_d() {
+    // Regression: a `Column[{Graphics[…], Style[Text[Row[{…}]], size]}]`
+    // body — the shape Woxi Studio's Manipulate widgets render for a
+    // Demonstration's "graphic beside its formula" layout (e.g. Wolfram
+    // Demonstrations Project's "A Geometric Limit Problem") — renders its
+    // `Style[Text[…]]` half through a different SVG writer
+    // (`boxes_to_svg`/`expr_to_svg_markup`) than the one the previous test
+    // covers (`layout_box`/`layout_to_svg`, used for a bare top-level
+    // result). That second writer had its own, unfixed copy of the same
+    // U+2146 DifferentialD bug: the raw glyph reached the SVG untouched,
+    // where common font fallback renders it as an unrelated glyph (an "L"
+    // shape) instead of "d". It must also come out as a plain, italicized
+    // "d".
+    clear_state();
+    let r = interpret_with_stdout(
+      "Column[{Graphics[{Circle[{0, 0}, 1]}], \
+       Style[Text[Row[{TraditionalForm[ \
+         HoldForm[Integrate[Sqrt[1 - x^2], {x, 0, 1}]]]}]], 18]}]",
+    )
+    .unwrap();
+    let svg = r
+      .graphics
+      .expect("expected combined Column graphics output");
+    assert!(
+      !svg.contains('\u{2146}'),
+      "Manipulate-style Column SVG must not contain the raw U+2146 glyph:\n{svg}"
+    );
+    assert!(
+      svg.contains("<tspan font-style=\"italic\">d</tspan>"),
+      "Manipulate-style Column SVG must render the differential as an \
+       italicized plain \"d\":\n{svg}"
+    );
+  }
+
+  #[test]
+  fn test_manipulate_style_text_exponential_e_and_imaginary_i_svg() {
+    // Same bug, other two Letterlike Symbols glyphs TraditionalForm
+    // typesets from this renderer: `Exp[x]` as `\[ExponentialE]^x` (ⅇ,
+    // U+2147) and `I` as `\[ImaginaryI]` (ⅈ, U+2148). Both must come out
+    // as plain, italicized ASCII letters through the same SVG writer as
+    // the DifferentialD case above.
+    clear_state();
+    let r = interpret_with_stdout(
+      "Column[{Graphics[{Circle[{0, 0}, 1]}], \
+       Style[Text[Row[{TraditionalForm[HoldForm[Exp[x]]], \" \", \
+         TraditionalForm[HoldForm[2 + 3 I]]}]], 18]}]",
+    )
+    .unwrap();
+    let svg = r
+      .graphics
+      .expect("expected combined Column graphics output");
+    assert!(
+      !svg.contains('\u{2147}') && !svg.contains('\u{2148}'),
+      "Manipulate-style Column SVG must not contain the raw U+2147/U+2148 \
+       glyphs:\n{svg}"
+    );
+    assert!(
+      svg.contains("<tspan font-style=\"italic\">e</tspan>"),
+      "Manipulate-style Column SVG must render Exp's base as an \
+       italicized plain \"e\":\n{svg}"
+    );
+    assert!(
+      svg.contains("<tspan font-style=\"italic\">i</tspan>"),
+      "Manipulate-style Column SVG must render the imaginary unit as an \
+       italicized plain \"i\":\n{svg}"
+    );
+  }
+
+  #[test]
   fn test_scientific_real_output_svg_uses_superscript() {
     // Regression: a machine Real in scientific notation (`10.^10` → `1.*^10`)
     // must be typeset as `1. × 10^10` in the Playground/Studio SVG — a `×`
