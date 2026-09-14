@@ -15924,6 +15924,44 @@ mod convolve {
   }
 
   #[test]
+  fn gaussian_pairs_shifted() {
+    // A translated Gaussian still matches: the shift carries straight
+    // through to the result's argument (regression test for the
+    // "Convolutions of Shifted Densities" Demonstration, whose whole point
+    // is convolving densities translated by arbitrary amounts).
+    assert_eq!(
+      interpret("Convolve[E^(-(x-2)^2), E^(-(x-1)^2), x, y]").unwrap(),
+      "Sqrt[Pi/2]/E^((-3 + y)^2/2)"
+    );
+    assert_eq!(
+      interpret("Convolve[E^(-(x-2)^2), E^(-2*(x-1)^2), x, y]").unwrap(),
+      "Sqrt[Pi/3]/E^((2*(-3 + y)^2)/3)"
+    );
+  }
+
+  #[test]
+  fn gaussian_pairs_from_pdf() {
+    // PDF[NormalDistribution[...], x] expands to a reciprocal-of-product
+    // form (1/(E^(...)*Sqrt[2 Pi])), not the bare `E^(-a x^2)` shape — this
+    // is the form Manipulate demonstrations actually produce, so it must be
+    // recognized too, with or without an added shift.
+    assert_eq!(
+      interpret("Convolve[PDF[NormalDistribution[0, 1], x], PDF[NormalDistribution[0, 1], x], x, y]").unwrap(),
+      "Sqrt[Pi]/(2*E^(y^2/4)*Pi)"
+    );
+    assert_eq!(
+      interpret("Convolve[PDF[NormalDistribution[0, 1], x - 2], PDF[NormalDistribution[0, 1], x - 1], x, y]").unwrap(),
+      "Sqrt[Pi]/(2*E^((-3 + y)^2/4)*Pi)"
+    );
+    // Symbolic shifts (the actual shape used by the Demonstration, where the
+    // shift is a Manipulate slider variable rather than a literal number).
+    assert_eq!(
+      interpret("Convolve[PDF[NormalDistribution[0, 1], x - t], PDF[NormalDistribution[0, 1], x - s], x, y]").unwrap(),
+      "Sqrt[Pi]/(2*E^((-s - t + y)^2/4)*Pi)"
+    );
+  }
+
+  #[test]
   fn arity_is_four_or_more() {
     use woxi::interpret_with_stdout;
     // Convolve takes 4 or more arguments. Fewer than 4 emits the `argm`
