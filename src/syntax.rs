@@ -246,7 +246,10 @@ pub fn substitute_private_use_glyphs(s: &str) -> std::borrow::Cow<'_, str> {
       Some(sub) => out.push_str(sub),
       None => match script_letter_glyph(c) {
         Some(letter) => out.push(letter),
-        None => out.push(c),
+        None => match double_struck_letter_glyph(c) {
+          Some(letter) => out.push(letter),
+          None => out.push(c),
+        },
       },
     }
   }
@@ -311,6 +314,35 @@ fn script_letter_glyph(c: char) -> Option<char> {
   let (offset, gaps, block) = match c {
     '\u{F770}'..='\u{F789}' => (c as u32 - 0xF770, &CAPITAL_GAPS[..], 0x1D49C),
     '\u{F6B2}'..='\u{F6CB}' => (c as u32 - 0xF6B2, &SMALL_GAPS[..], 0x1D4B6),
+    _ => return None,
+  };
+  match gaps.iter().find(|(gap, _)| *gap == offset) {
+    Some((_, letter)) => Some(*letter),
+    None => char::from_u32(block + offset),
+  }
+}
+
+/// The Mathematical Double-Struck letter/digit for one of Wolfram's
+/// private-use double-struck characters (`\[DoubleStruckCapitalR]` is
+/// U+F7B5, not U+211D). Mirrors [`script_letter_glyph`]: the alphabet is
+/// contiguous, except that Unicode leaves the slots of the capital letters
+/// that already exist as letterlike symbols (ℂ, ℍ, ℕ, ℙ, ℚ, ℝ, ℤ)
+/// unassigned in the Mathematical Alphanumeric Symbols block.
+fn double_struck_letter_glyph(c: char) -> Option<char> {
+  const CAPITAL_GAPS: [(u32, char); 7] = [
+    (2, 'ℂ'),
+    (7, 'ℍ'),
+    (13, 'ℕ'),
+    (15, 'ℙ'),
+    (16, 'ℚ'),
+    (17, 'ℝ'),
+    (25, 'ℤ'),
+  ];
+  const NO_GAPS: [(u32, char); 0] = [];
+  let (offset, gaps, block) = match c {
+    '\u{F7A4}'..='\u{F7BD}' => (c as u32 - 0xF7A4, &CAPITAL_GAPS[..], 0x1D538),
+    '\u{F6E6}'..='\u{F6FF}' => (c as u32 - 0xF6E6, &NO_GAPS[..], 0x1D552),
+    '\u{F7DB}'..='\u{F7E4}' => (c as u32 - 0xF7DB, &NO_GAPS[..], 0x1D7D8),
     _ => return None,
   };
   match gaps.iter().find(|(gap, _)| *gap == offset) {

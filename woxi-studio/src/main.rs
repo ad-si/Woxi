@@ -25758,4 +25758,42 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`count$$ = 3, $CellContext`offset$$ 
       "ecc = 0.5 should classify as an ellipse: {as_ellipse}"
     );
   }
+
+  /// A Demonstration's "Contributed By" section is plain prose text, and
+  /// authors' names occasionally carry a Latin-1 letter that has no
+  /// `\[Name]` in Wolfram's named-character table (e.g. the Spanish
+  /// ordinal indicator "ª" in "Mª"), so the FrontEnd falls back to the
+  /// narrower `\.HH` two-hex-digit escape instead of `\:HHHH`. Regression:
+  /// `\.HH` fell through notebook.rs's unescape as an unrecognized escape
+  /// and printed literally (`M\.aa Sáez` instead of `Mª Sáez`).
+  #[test]
+  fn text_cell_decodes_two_hex_digit_escape() {
+    let nb_src = "Notebook[{\nCell[\"Jos\\.e9 Mu\\[NTilde]oz\", \"Text\"]\n}]";
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    assert_eq!(editors.len(), 1);
+    assert_eq!(editors[0].content.text().trim_end(), "José Muñoz");
+  }
+
+  /// A caption's inline math (`TraditionalForm[...]`) routinely states set
+  /// membership in one of the double-struck letter sets (`\[Element]`,
+  /// `\[DoubleStruckCapitalR]`/`N`/`Z`/…). Regression: unlike the sibling
+  /// private-use *script* letters (`\[ScriptCapitalD]`), the private-use
+  /// *double-struck* letters had no glyph substitution at all, so they
+  /// printed as an empty/unrenderable box instead of the Unicode
+  /// double-struck (or, for C/H/N/P/Q/R/Z, Letterlike Symbols) character.
+  #[test]
+  fn text_cell_decodes_double_struck_letters() {
+    let nb_src = "Notebook[{\nCell[\"x\\[Element]\\[DoubleStruckCapitalR], \
+      n\\[Element]\\[DoubleStruckCapitalN], a\\[Element]\\[DoubleStruckA]\", \
+      \"Text\"]\n}]";
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    assert_eq!(editors.len(), 1);
+    // R and N are two of the seven capitals Unicode gives their own
+    // Letterlike Symbols code point instead of a Mathematical
+    // Alphanumeric Symbols slot; `a` exercises the plain contiguous
+    // lowercase block.
+    assert_eq!(editors[0].content.text().trim_end(), "x∈ℝ, n∈ℕ, a∈𝕒");
+  }
 }
