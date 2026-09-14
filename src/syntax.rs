@@ -13458,6 +13458,21 @@ fn curried_head_needs_parens(func: &Expr) -> bool {
         | Expr::Comparison { .. }
         | Expr::Rule { .. }
         | Expr::RuleDelayed { .. }
+        // Infix/low-precedence operator forms: `u /. v`, `u //. v`, `u /@
+        // v`, `u @@ v`, `u @@@ v` and `u; v` all bind looser than the
+        // trailing `[args]`, so without parens the printed text re-parses
+        // with `[args]` swallowed into (or splitting off from) the wrong
+        // operand — e.g. `(r /. sol)[x]` printed as `r /. sol[x]` reads
+        // back as `r /. (sol[x])`. Regression: a Wolfram Demonstration's
+        // `(r /. sol[[1, 1]])["Domain"]` lost its parens when Woxi Studio
+        // reconstructed a `Manipulate` body's InputForm text for
+        // re-evaluation, silently changing what the code computed.
+        | Expr::ReplaceAll { .. }
+        | Expr::ReplaceRepeated { .. }
+        | Expr::Map { .. }
+        | Expr::Apply { .. }
+        | Expr::MapApply { .. }
+        | Expr::CompoundExpr(_)
     )
     || matches!(
       // A named pattern would re-parse as a pattern with a head (`u_[x]` is

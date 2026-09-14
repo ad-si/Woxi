@@ -7974,6 +7974,71 @@ mod ndsolve {
   }
 
   #[test]
+  fn ndsolve_two_point_boundary_value_problem() {
+    // A two-point (Dirichlet-Dirichlet) boundary value problem: the two
+    // conditions are given at the domain's own endpoints rather than at a
+    // shared point, so `NDSolve` can't integrate this as a plain initial
+    // value problem — it has to shoot for the initial slope that lands on
+    // the far condition. y'' + y == 0, y(0) = 0, y(Pi/2) = 1 → y = Sin[x].
+    let result = interpret(
+      "sol = NDSolve[{y''[x] + y[x] == 0, y[0] == 0, y[Pi/2] == 1}, y, \
+       {x, 0, Pi/2}]; y[Pi/4] /. sol[[1]]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    let expected = std::f64::consts::FRAC_PI_4.sin();
+    assert!(
+      (val - expected).abs() < 1e-4,
+      "Expected {expected}, got {val}"
+    );
+  }
+
+  #[test]
+  fn ndsolve_boundary_value_problem_with_variable_coefficient_forcing() {
+    // A non-homogeneous boundary value problem with an x-dependent forcing
+    // term, matching the shape of a 1D Helmholtz finite-difference
+    // Demonstration: -k^2 y - y'' == f(x), y(0) == 0, y(1) == 0. With
+    // k == 0 the equation reduces to -y'' == f(x) == 6x, whose solution
+    // satisfying both endpoint conditions is y(x) = x - x^3 (y(0) = 0,
+    // y(1) = 0, y'' = -6x).
+    let result = interpret(
+      "sol = NDSolve[{-y''[x] == 6*x, y[0] == 0, y[1] == 0}, y, {x, 0, 1}]; \
+       y[0.5] /. sol[[1]]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    let expected = 0.5 - 0.5_f64.powi(3);
+    assert!(
+      (val - expected).abs() < 1e-4,
+      "Expected {expected}, got {val}"
+    );
+  }
+
+  #[test]
+  fn ndsolve_boundary_value_problem_requires_conditions_at_the_domain_ends() {
+    // Regression guard: conditions at two points that *aren't* the solved
+    // domain's own endpoints aren't a boundary value problem this solver
+    // understands, and NDSolve should stay unevaluated rather than guess.
+    let result = interpret(
+      "NDSolve[{y''[x] + y[x] == 0, y[0] == 0, y[1] == 1}, y, {x, 0, N[Pi]/2}]",
+    )
+    .unwrap();
+    assert!(
+      result.starts_with("NDSolve["),
+      "Expected an unevaluated NDSolve, got {result}"
+    );
+  }
+
+  #[test]
+  fn finish_dynamic_is_a_no_op() {
+    // `FinishDynamic[]` forces a front-end redraw of pending `Dynamic`
+    // content; outside a live notebook front end (as in every Woxi
+    // evaluation) there's nothing pending, so it's simply `Null`.
+    let result = interpret("FinishDynamic[]").unwrap();
+    assert_eq!(result, "\0");
+  }
+
+  #[test]
   fn coupled_first_order_system() {
     // x' = y, y' = -x with x(0)=1, y(0)=0 → x = cos t.
     let result = interpret(
@@ -8613,6 +8678,27 @@ mod ndsolve {
     assert!(
       result.starts_with("NDSolve["),
       "Expected an unevaluated NDSolve, got: {result}"
+    );
+  }
+
+  /// The domain declared as `{x, ...}, {t, ...}` (space before time) forces
+  /// the solver to retry the space/time roles swapped. Before matching the
+  /// swapped roles, it first tries the unswapped ones and calls the initial
+  /// condition matcher on `Sin[Pi x]` — a one-argument call — as a candidate
+  /// `u[t0, x]` shape. The matcher used to index that call's second argument
+  /// before checking its arity, panicking instead of rejecting the shape and
+  /// falling through to the swapped attempt that actually matches.
+  #[test]
+  fn pde_initial_condition_matcher_rejects_a_one_argument_call_without_panicking()
+   {
+    let result = interpret(
+      "NDSolve[{D[u[x, t], t] == D[u[x, t], {x, 2}], u[x, 0] == Sin[Pi x], \
+       u[0, t] == 0, u[1, t] == 0}, u, {x, 0, 1}, {t, 0, 1}]",
+    )
+    .unwrap();
+    assert!(
+      result.starts_with("{{u -> InterpolatingFunction["),
+      "Got: {result}"
     );
   }
 
@@ -15834,6 +15920,44 @@ mod convolve {
     assert_eq!(
       interpret("Convolve[E^(-x^2), E^(-2*x^2), x, y]").unwrap(),
       "Sqrt[Pi/3]/E^((2*y^2)/3)"
+    );
+  }
+
+  #[test]
+  fn gaussian_pairs_shifted() {
+    // A translated Gaussian still matches: the shift carries straight
+    // through to the result's argument (regression test for the
+    // "Convolutions of Shifted Densities" Demonstration, whose whole point
+    // is convolving densities translated by arbitrary amounts).
+    assert_eq!(
+      interpret("Convolve[E^(-(x-2)^2), E^(-(x-1)^2), x, y]").unwrap(),
+      "Sqrt[Pi/2]/E^((-3 + y)^2/2)"
+    );
+    assert_eq!(
+      interpret("Convolve[E^(-(x-2)^2), E^(-2*(x-1)^2), x, y]").unwrap(),
+      "Sqrt[Pi/3]/E^((2*(-3 + y)^2)/3)"
+    );
+  }
+
+  #[test]
+  fn gaussian_pairs_from_pdf() {
+    // PDF[NormalDistribution[...], x] expands to a reciprocal-of-product
+    // form (1/(E^(...)*Sqrt[2 Pi])), not the bare `E^(-a x^2)` shape — this
+    // is the form Manipulate demonstrations actually produce, so it must be
+    // recognized too, with or without an added shift.
+    assert_eq!(
+      interpret("Convolve[PDF[NormalDistribution[0, 1], x], PDF[NormalDistribution[0, 1], x], x, y]").unwrap(),
+      "Sqrt[Pi]/(2*E^(y^2/4)*Pi)"
+    );
+    assert_eq!(
+      interpret("Convolve[PDF[NormalDistribution[0, 1], x - 2], PDF[NormalDistribution[0, 1], x - 1], x, y]").unwrap(),
+      "Sqrt[Pi]/(2*E^((-3 + y)^2/4)*Pi)"
+    );
+    // Symbolic shifts (the actual shape used by the Demonstration, where the
+    // shift is a Manipulate slider variable rather than a literal number).
+    assert_eq!(
+      interpret("Convolve[PDF[NormalDistribution[0, 1], x - t], PDF[NormalDistribution[0, 1], x - s], x, y]").unwrap(),
+      "Sqrt[Pi]/(2*E^((-s - t + y)^2/4)*Pi)"
     );
   }
 

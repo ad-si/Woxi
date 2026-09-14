@@ -3006,6 +3006,43 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
   #[test]
+  fn horizontal_gauge_without_range_stays_symbolic() {
+    assert_eq!(
+      interpret("HorizontalGauge[x]").unwrap(),
+      "HorizontalGauge[x]"
+    );
+  }
+  #[test]
+  fn horizontal_gauge_with_range_renders_graphics() {
+    assert_eq!(
+      interpret("HorizontalGauge[5.5, {0, 10}]").unwrap(),
+      "-Graphics-"
+    );
+    assert_eq!(
+      interpret("Head[HorizontalGauge[5.5, {0, 10}]]").unwrap(),
+      "Graphics"
+    );
+  }
+  #[test]
+  fn horizontal_gauge_accepts_multiple_values() {
+    // Multiple values (e.g. potential/total/kinetic energy) each render as
+    // their own marker on the same scale.
+    assert_eq!(
+      interpret("HorizontalGauge[{1, 5, 9}, {0, 10}]").unwrap(),
+      "-Graphics-"
+    );
+  }
+  #[test]
+  fn horizontal_gauge_accepts_options() {
+    assert_eq!(
+      interpret(
+        "HorizontalGauge[5.5, {0, 10}, GaugeMarkers -> \"BarMarker\", ScaleDivisions -> {10, 10}]"
+      )
+      .unwrap(),
+      "-Graphics-"
+    );
+  }
+  #[test]
   fn color_replace() {
     assert_eq!(interpret("ColorReplace[x]").unwrap(), "ColorReplace[x]");
   }

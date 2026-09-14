@@ -2094,7 +2094,7 @@ SemanticImport,Import with semantic interpretation,🚫,,10.0,2100
 AudioPlot,Plot the waveform of an Audio or Sound object,✅,pure,11.0,2102
 FlipView,Flippable view control (stays symbolic in script mode),✅,unevaluated,6.0,2102
 EmptyRegion,Empty geometric region of a given embedding dimension,✅,pure,10.0,2108
-HorizontalGauge,Horizontal gauge display,🚫,,9.0,2108
+HorizontalGauge,Display one or more values on a horizontal scale as a Graphics gauge,✅,pure,9.0,2108
 InverseGudermannian,Returns the inverse Gudermannian function value,✅,pure,7.0,2108
 Periodogram,Plot the power spectrum of data or audio in decibels,✅,pure,9.0,2108
 TensorReduce,Reduce tensor expressions,🚫,,9.0,2108
@@ -2701,7 +2701,7 @@ LatitudeLongitude,extract latitude and longitude from a geo position,✅,none,7.
 QHypergeometricPFQ,q-analogue of the generalized hypergeometric function,🚫,,7.0,2729
 ScrollPosition,,🚫,,7.0,2729
 TraceDepth,Option controlling depth of tracing in Trace,✅,pure,2.0,2729
-FinishDynamic,,🚫,,6.0,2734
+FinishDynamic,Force pending Dynamic updates to complete (a no-op outside a live front end),✅,pure,6.0,2734
 GeoRangePadding,,🚫,,10.0,2734
 NumberMarks,option for number marks,✅,Symbolic,3.0,2734
 PearsonChiSquareTest,perform a Pearson chi-square goodness-of-fit test,✅,none,8.0,2734

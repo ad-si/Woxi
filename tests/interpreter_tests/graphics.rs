@@ -312,6 +312,22 @@ mod graphics {
       );
     }
 
+    // `Sphere[{p1, p2, …}, {r1, r2, …}]` gives each centre its own radius
+    // instead of one shared radius for the whole set.
+    #[test]
+    fn sphere_accepts_a_list_of_radii() {
+      assert_eq!(
+        export_svg(
+          "Graphics[{Sphere[{{0, 0}, {3, 0}}, {1, 2}]}, PlotRange -> 10]"
+        ),
+        export_svg(
+          "Graphics[{Sphere[{0, 0}, 1], Sphere[{3, 0}, 2]}, \
+           PlotRange -> 10]"
+        ),
+        "a radius list draws each sphere at its own radius"
+      );
+    }
+
     // `Ball[n]` / `Sphere[n]` is the unit ball/sphere at the origin in `n`
     // dimensions; only the planar one has anything to draw here.
     #[test]
@@ -1161,6 +1177,38 @@ mod graphics {
       assert_eq!(width("Thickness[Large]"), "2.00");
       assert_eq!(width("Thickness[Medium]"), "1.00");
       assert_eq!(width("AbsoluteThickness[1]"), "1.00");
+    }
+
+    /// `AbsoluteDashing` is `Dashing`'s absolute counterpart — every length
+    /// is literal pixels, the same relationship `AbsoluteThickness` has to
+    /// `Thickness` — so it must reach the SVG as a `stroke-dasharray` too,
+    /// rather than silently drawing a solid line. `Dashing[{0.05, 0.05}]` on
+    /// the 360px-wide default image is `18,18`; `AbsoluteDashing[{4, 6}]` is
+    /// `4,6` at any image width.
+    #[test]
+    fn absolute_dashing_produces_dasharray() {
+      let dasharray = |directive: &str| {
+        let svg = export_svg(&format!(
+          "Graphics[{{{directive}, Line[{{{{0,0}},{{1,1}}}}]}}]"
+        ));
+        let i = svg.find("stroke-dasharray=\"")?;
+        let rest = &svg[i + "stroke-dasharray=\"".len()..];
+        Some(rest.split('"').next().unwrap().to_string())
+      };
+      assert_eq!(dasharray("Dashing[{0.05, 0.05}]"), Some("18.0,18.0".into()));
+      assert_eq!(dasharray("AbsoluteDashing[{4, 6}]"), Some("4.0,6.0".into()));
+      // A one-element list is left as-is (SVG auto-doubles an odd-length
+      // dasharray), matching how the plain `Dashing[{2}]` list branch works.
+      assert_eq!(dasharray("AbsoluteDashing[{2}]"), Some("2.0".into()));
+      assert_eq!(dasharray("AbsoluteDashing[{}]"), None);
+      // A negative user-supplied length must still land as literal pixels,
+      // not get flipped into dash_attr's "fraction of image width" branch
+      // (a naive `-d` on an already-negative `d` would produce +4.0, read
+      // as 4x the image width instead of ~4 pixels).
+      assert_eq!(
+        dasharray("AbsoluteDashing[{-4, 6}]"),
+        Some("4.0,6.0".into())
+      );
     }
 
     #[test]
@@ -3963,6 +4011,43 @@ mod plot3d {
       );
     }
 
+    /// `Sphere[{p1, p2, …}, {r1, r2, …}]` gives each centre its own radius,
+    /// rather than one shared radius for the whole set — how a particle
+    /// system with varying particle sizes is drawn in one call. A radius
+    /// list used to fail to parse as a number and fall back to radius 1
+    /// for every sphere, however small the intended radii were.
+    #[test]
+    fn sphere_accepts_a_list_of_radii() {
+      for head in ["Sphere", "Ball"] {
+        assert_eq!(
+          export_svg(&format!(
+            "Graphics3D[{{{head}[{{{{1, 0, 0}}, {{-1, 0, 0}}}}, \
+             {{0.25, 0.75}}]}}, PlotRange -> 3]"
+          )),
+          export_svg(&format!(
+            "Graphics3D[{{{head}[{{1, 0, 0}}, 0.25], \
+             {head}[{{-1, 0, 0}}, 0.75]}}, PlotRange -> 3]"
+          )),
+          "{head} with a list of radii draws each sphere at its own radius"
+        );
+      }
+      // A radius list must match the centres one-for-one to be used this
+      // way; a mismatched length falls back to reading it as one shared
+      // (if non-numeric, unit) radius rather than panicking on the zip.
+      assert_eq!(
+        export_svg(
+          "Graphics3D[{Sphere[{{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}}, \
+           {0.25, 0.75}]}, PlotRange -> 3]"
+        ),
+        export_svg(
+          "Graphics3D[{Sphere[{{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}}, 1]}, \
+           PlotRange -> 3]"
+        ),
+        "a radius list whose length doesn't match the centres falls back \
+         to a unit radius per sphere"
+      );
+    }
+
     /// `Text[expr, {x, y, z}]` labels a point of a 3D scene, drawn flat at
     /// the projection of its point. It used to be dropped entirely, so a
     /// labelled schematic arrived with no lettering at all.
@@ -4908,6 +4993,47 @@ mod plot3d {
       assert!(
         svg.contains("<polyline") || svg.contains("<line"),
         "expected line segments for the two NDSolve-shaped curves"
+      );
+    }
+
+    /// Exactly *three* `{fx, fy, fz} /. soln` curves are the ambiguous case:
+    /// a three-element first argument reads either as one curve's three
+    /// components or as three whole curves, and only evaluating the items
+    /// tells them apart. The shape is the one a Demonstration uses to draw
+    /// an `NDSolve` trajectory beside its two coordinate projections; it
+    /// used to be taken for a single triple whose "components" were lists,
+    /// so every sample came out non-numeric and the plot failed with
+    /// "parametric function produced no finite values". Each curve keeps its
+    /// own `PlotStyle` colour, which is what says all three were drawn.
+    #[test]
+    fn three_curves_from_ndsolve_shaped_replace_all() {
+      let svg = export_svg(
+        "soln = {{fx -> Function[t, Cos[t]], fy -> Function[t, Sin[t]]}}; \
+         ParametricPlot3D[{{0, fx[t], fy[t]} /. soln, \
+           {t, fx[t], 0} /. soln, {t, 2, fy[t]} /. soln}, {t, 0, 2 Pi}, \
+         PlotStyle -> {Red, Blue, Darker[Green]}]",
+      );
+      for (color, which) in [
+        ("rgb(255,0,0)", "the Red trajectory"),
+        ("rgb(0,0,255)", "the Blue x-projection"),
+        ("rgb(0,170,0)", "the Darker[Green] y-projection"),
+      ] {
+        assert!(
+          svg.contains(color),
+          "expected {which} to be drawn in {color}"
+        );
+      }
+    }
+
+    /// The three-curve reading must not swallow an ordinary single curve
+    /// whose three components merely *look* resolvable: `{t, t, t}` is one
+    /// straight line, not three curves.
+    #[test]
+    fn three_scalar_components_stay_a_single_curve() {
+      let single = export_svg("ParametricPlot3D[{t, t, t}, {t, 0, 1}]");
+      assert!(
+        single.contains("<polyline") || single.contains("<line"),
+        "the diagonal must still be drawn as one curve"
       );
     }
 
@@ -12293,11 +12419,21 @@ ParametricPlot[f[t], {t, 0, 1}]]",
          Text[Row[{\"(\", Infinity, \")\"}], {1, 0}]}, \
          PlotRange -> 4, ImageSize -> 200]",
       );
-      for glyph in
-        ["\u{03C0}", "\u{221E}", "\u{2147}", "\u{00B0}", "(\u{221E})"]
-      {
+      for glyph in ["\u{03C0}", "\u{221E}", "\u{00B0}", "(\u{221E})"] {
         assert!(svg.contains(glyph), "{glyph} must be typeset: {svg}");
       }
+      // `E`'s glyph is `\[ExponentialE]` (U+2147, "ⅇ") — a Letterlike
+      // Symbols codepoint most non-Mathematica fonts have no glyph for
+      // (this renderer's fonts included), so it renders as an italicized
+      // plain "e" instead of the raw codepoint.
+      assert!(
+        !svg.contains('\u{2147}'),
+        "must not contain the raw U+2147 glyph: {svg}"
+      );
+      assert!(
+        svg.contains("<tspan font-style=\"italic\">e</tspan>"),
+        "E must typeset as an italicized plain \"e\": {svg}"
+      );
       assert!(!svg.contains(">Infinity<"), "not the name: {svg}");
       // Script-mode text output is unchanged.
       assert_eq!(
@@ -20163,6 +20299,25 @@ mod manipulate {
     assert!(result.result.starts_with("Manipulate["));
   }
 
+  #[test]
+  fn action_menu_arg_is_not_vsform() {
+    // A bare `ActionMenu[label, {item :> action, …}]` argument fires its
+    // own action on selection rather than binding a variable — the same
+    // pattern as a bare `Button[…]` argument — so wolframscript shows it in
+    // the control area with no Manipulate::vsform message. This is the
+    // "choose a motif" menu idiom from the Border Patterns Demonstration.
+    let result = woxi::interpret_with_stdout(
+      "Manipulate[x, {x, 0, 1}, ActionMenu[\"choose\", {\"a\" :> (x = 0), \"b\" :> (x = 1)}]]",
+    )
+    .unwrap();
+    assert!(
+      !result.warnings.iter().any(|w| w.contains("vsform")),
+      "no vsform expected, got {:?}",
+      result.warnings
+    );
+    assert!(result.result.starts_with("Manipulate["));
+  }
+
   /// Controls wrapped in a `Row[…]` layout (with loose labels, `Spacer`
   /// padding, and `Dynamic[Control[…]]` wrappers — the Doyle-spirals
   /// Demonstration idiom) extract in display order: the loose string
@@ -20915,6 +21070,108 @@ mod manipulate {
     assert_eq!(json.matches("\"selected\":true").count(), 2, "{json}");
     assert_eq!(json.matches("\"selected\":false").count(), 1, "{json}");
     assert!(json.contains("MemberQ[picks, psin]"), "{json}");
+  }
+
+  /// A `SetterBar[Dynamic[var], choices]` written directly as (part of) an
+  /// extra display argument — not through a formal `{var, …}` control spec
+  /// — is the Wolfram Demonstrations idiom for a control whose variable is
+  /// otherwise undeclared (e.g. `Row[{"n sites ", SetterBar[Dynamic[n],
+  /// Range[2, 5]]}]`). Wolfram auto-initializes such a "bare" control's
+  /// variable to its first choice the moment it is drawn; without that, `n`
+  /// stays a free symbol and everything downstream that uses it (a `Table`
+  /// iterator, a `Take` length, …) fails.
+  #[test]
+  fn spec_bare_setterbar_auto_initializes_its_variable() {
+    let expr = interpret_to_expr(
+      "Manipulate[n, Row[{\"n sites \", SetterBar[Dynamic[n], Range[2, 5]]}]]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    assert_eq!(
+      spec.state,
+      vec![("n".to_string(), "2".to_string())],
+      "a bare SetterBar auto-initializes its variable to the first choice"
+    );
+    assert!(
+      spec.controls.is_empty(),
+      "the bar is a display, not a formal control row: {:?}",
+      spec.controls
+    );
+    assert_eq!(spec.displays.len(), 1);
+  }
+
+  /// The `SetterBar` (and `RadioButtonBar`) display itself renders as a row
+  /// of buttons, each writing a single value back into the bound variable —
+  /// unlike `TogglerBar`'s list-membership toggle, exactly one is ever
+  /// selected.
+  #[test]
+  fn spec_bare_setterbar_renders_single_select_buttons() {
+    let expr = interpret_to_expr(
+      "Manipulate[n, Row[{\"n sites \", SetterBar[Dynamic[n], Range[2, 5]]}]]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    let bindings = manipulate_initial_bindings(&spec);
+    let json = woxi::with_scoped_globals(&bindings, || {
+      woxi::functions::graphics::render_manipulate_display(
+        &spec.displays[0],
+        &[],
+      )
+    });
+    assert_eq!(json.matches("\"kind\":\"toggler\"").count(), 4, "{json}");
+    assert_eq!(json.matches("\"selected\":true").count(), 1, "{json}");
+    assert!(json.contains("\"mutation\":\"n = 2\""), "{json}");
+    assert!(json.contains("\"mutation\":\"n = 3\""), "{json}");
+  }
+
+  /// `RadioButtonBar[Dynamic[var], choices]` used the same way (bound to an
+  /// otherwise-undeclared variable, as part of an extra display argument)
+  /// gets the same auto-initialization and single-value write-back as
+  /// `SetterBar` — matching the Demonstrations pattern of a boundary
+  /// condition or mode picker written directly into a `Row[…]` caption.
+  #[test]
+  fn spec_bare_radiobuttonbar_auto_initializes_and_sets_a_single_value() {
+    let expr = interpret_to_expr(
+      "Manipulate[bc, \
+       Row[{\"boundary conditions \", \
+         RadioButtonBar[Dynamic[bc], {0 -> \"open\", 1 -> \"closed\"}]}]]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    assert_eq!(
+      spec.state,
+      vec![("bc".to_string(), "0".to_string())],
+      "a bare RadioButtonBar auto-initializes its variable to the first choice's value"
+    );
+    let bindings = manipulate_initial_bindings(&spec);
+    let json = woxi::with_scoped_globals(&bindings, || {
+      woxi::functions::graphics::render_manipulate_display(
+        &spec.displays[0],
+        &[],
+      )
+    });
+    assert_eq!(json.matches("\"kind\":\"toggler\"").count(), 2, "{json}");
+    assert_eq!(json.matches("\"selected\":true").count(), 1, "{json}");
+    assert!(json.contains("\"mutation\":\"bc = 1\""), "{json}");
+  }
+
+  /// A `SetterBar`/`RadioButtonBar` variable that *is* declared by a formal
+  /// `{var, …}` control spec elsewhere in the Manipulate must keep that
+  /// control's own initial value — the bare-display auto-initialization
+  /// must not clobber it.
+  #[test]
+  fn spec_bare_setterbar_does_not_override_a_declared_controls_value() {
+    let expr = interpret_to_expr(
+      "Manipulate[n, {n, 4, ControlType -> None}, \
+       Row[{\"n sites \", SetterBar[Dynamic[n], Range[2, 5]]}]]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    assert_eq!(
+      spec.state,
+      vec![("n".to_string(), "4".to_string())],
+      "the declared control's own initial value wins"
+    );
   }
 
   /// A bare `Checkbox[Dynamic[var], …]` drawn directly by the body — as
@@ -28261,9 +28518,12 @@ fn manipulate_module_which_affine_prolog_checkbox_and_traditional_plot_label() {
     "Epilog should draw the \"A\" label when labels is True: {with_label}"
   );
   assert!(
-    with_label.contains("\u{222b}") && with_label.contains("\u{2146}"),
-    "PlotLabel should typeset the held integral (\u{222b} \u{2026} \u{2146}x), not raw \
-     TraditionalForm/HoldForm source: {with_label}"
+    with_label.contains("\u{222b}")
+      && with_label.contains("<tspan font-style=\"italic\">d</tspan>"),
+    "PlotLabel should typeset the held integral (\u{222b} \u{2026} dx, the \
+     differential as a plain italicized \"d\" rather than the raw U+2146 \
+     glyph most fonts have no glyph for), not raw TraditionalForm/HoldForm \
+     source: {with_label}"
   );
 
   let without_label = render("1.2", "False");

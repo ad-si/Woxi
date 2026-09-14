@@ -34,18 +34,15 @@ fn polynomial_term_to_series_data(
     for _ in 1..span {
       coeffs.push(Expr::Integer(0));
     }
-    Expr::FunctionCall {
-      name: "SeriesData".to_string(),
-      args: vec![
-        sd_var.clone(),
-        sd_x0.clone(),
-        Expr::List(coeffs.into()),
-        Expr::Integer(n),
-        Expr::Integer(nmax_int),
-        Expr::Integer(1),
-      ]
-      .into(),
-    }
+    let data = vec![
+      sd_var.clone(),
+      sd_x0.clone(),
+      Expr::List(coeffs.into()),
+      Expr::Integer(n),
+      Expr::Integer(nmax_int),
+      Expr::Integer(1),
+    ];
+    call("SeriesData", data)
   };
   // Constant w.r.t. var → coeff at order 0
   if !crate::functions::polynomial_ast::contains_var(e, var_name) {
@@ -103,18 +100,15 @@ fn polynomial_term_to_series_data(
           other => neg1(other.clone()),
         })
         .collect();
-      return Some(Expr::FunctionCall {
-        name: "SeriesData".to_string(),
-        args: vec![
-          sa[0].clone(),
-          sa[1].clone(),
-          Expr::List(negated.into()),
-          sa[3].clone(),
-          sa[4].clone(),
-          sa[5].clone(),
-        ]
-        .into(),
-      });
+      let data = vec![
+        sa[0].clone(),
+        sa[1].clone(),
+        Expr::List(negated.into()),
+        sa[3].clone(),
+        sa[4].clone(),
+        sa[5].clone(),
+      ];
+      return Some(call("SeriesData", data));
     }
     return None;
   }
@@ -367,18 +361,15 @@ fn try_series_data_plus(
     .filter(|(i, _)| !series_idx_set.contains(i))
     .map(|(_, a)| a.clone())
     .collect();
-  let merged = Expr::FunctionCall {
-    name: "SeriesData".to_string(),
-    args: vec![
-      var0,
-      x0_0,
-      Expr::List(new_coeffs.into()),
-      Expr::Integer(adjusted_nmin),
-      Expr::Integer(new_nmax),
-      Expr::Integer(common_denom),
-    ]
-    .into(),
-  };
+  let data = vec![
+    var0,
+    x0_0,
+    Expr::List(new_coeffs.into()),
+    Expr::Integer(adjusted_nmin),
+    Expr::Integer(new_nmax),
+    Expr::Integer(common_denom),
+  ];
+  let merged = call("SeriesData", data);
   if other.is_empty() {
     Ok(Some(merged))
   } else {
@@ -528,19 +519,15 @@ fn try_series_data_times(
   {
     coeffs_f.pop();
   }
-
-  let merged = Expr::FunctionCall {
-    name: "SeriesData".to_string(),
-    args: vec![
-      var0,
-      x0_0,
-      Expr::List(coeffs_f.into()),
-      Expr::Integer(nmin_f),
-      Expr::Integer(nmax_f),
-      Expr::Integer(common_denom),
-    ]
-    .into(),
-  };
+  let data = vec![
+    var0,
+    x0_0,
+    Expr::List(coeffs_f.into()),
+    Expr::Integer(nmin_f),
+    Expr::Integer(nmax_f),
+    Expr::Integer(common_denom),
+  ];
+  let merged = call("SeriesData", data);
 
   let series_idx_set: std::collections::HashSet<usize> =
     series_indices.iter().copied().collect();
@@ -7403,19 +7390,15 @@ fn try_series_data_times_var_power(
     }
     (trunc_nmax, out)
   };
-
-  Some(Expr::FunctionCall {
-    name: "SeriesData".to_string(),
-    args: vec![
-      var,
-      x0,
-      Expr::List(new_coeffs.into()),
-      Expr::Integer(new_nmin),
-      Expr::Integer(new_nmax),
-      Expr::Integer(d),
-    ]
-    .into(),
-  })
+  let data = vec![
+    var,
+    x0,
+    Expr::List(new_coeffs.into()),
+    Expr::Integer(new_nmin),
+    Expr::Integer(new_nmax),
+    Expr::Integer(d),
+  ];
+  Some(call("SeriesData", data))
 }
 
 /// Times[args...] - Product of arguments, with list threading
@@ -7741,18 +7724,15 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
             .map(|c| times_ast(&[product.clone(), c.clone()]))
             .collect();
           let new_coeffs = new_coeffs?;
-          return Ok(Expr::FunctionCall {
-            name: "SeriesData".to_string(),
-            args: vec![
-              sd_args[0].clone(),
-              sd_args[1].clone(),
-              Expr::List(new_coeffs.into()),
-              sd_args[3].clone(),
-              sd_args[4].clone(),
-              sd_args[5].clone(),
-            ]
-            .into(),
-          });
+          let data = vec![
+            sd_args[0].clone(),
+            sd_args[1].clone(),
+            Expr::List(new_coeffs.into()),
+            sd_args[3].clone(),
+            sd_args[4].clone(),
+            sd_args[5].clone(),
+          ];
+          return Ok(call("SeriesData", data));
         }
       }
     }
@@ -10630,18 +10610,15 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
       (&sa[2], &sa[3], &sa[4])
       && coeffs.is_empty()
     {
-      return Ok(Expr::FunctionCall {
-        name: "SeriesData".to_string(),
-        args: vec![
-          sa[0].clone(),
-          sa[1].clone(),
-          Expr::List(vec![].into()),
-          Expr::Integer(nmin * n),
-          Expr::Integer(nmax * n),
-          sa[5].clone(),
-        ]
-        .into(),
-      });
+      let data = vec![
+        sa[0].clone(),
+        sa[1].clone(),
+        Expr::List(vec![].into()),
+        Expr::Integer(nmin * n),
+        Expr::Integer(nmax * n),
+        sa[5].clone(),
+      ];
+      return Ok(call("SeriesData", data));
     }
     let copies: Vec<Expr> =
       std::iter::repeat_n(base.clone(), *n as usize).collect();
