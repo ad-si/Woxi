@@ -424,18 +424,15 @@ pub fn dispatch_predicate_functions(
       } else {
         Expr::Integer(0)
       };
-      return Some(Ok(Expr::FunctionCall {
-        name: "SeriesData".to_string(),
-        args: vec![
-          var,
-          center,
-          Expr::List(vec![].into()),
-          Expr::Integer(1),
-          Expr::Integer(1),
-          Expr::Integer(1),
-        ]
-        .into(),
-      }));
+      let data = vec![
+        var,
+        center,
+        Expr::List(vec![].into()),
+        Expr::Integer(1),
+        Expr::Integer(1),
+        Expr::Integer(1),
+      ];
+      return Some(Ok(call("SeriesData", data)));
     }
     "EvenQ" if args.len() == 1 => {
       return Some(crate::functions::predicate_ast::even_q_ast(args));
