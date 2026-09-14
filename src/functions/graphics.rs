@@ -24147,6 +24147,13 @@ fn display_expr_to_node(
       "Style" | "StyleForm" if !args.is_empty() => {
         styled_text_node(expr, bindings)
       }
+      // A sub-/superscript leaf (e.g. a Dynamic caption assembling an
+      // orbital symbol like `Subscript[2p, x]`): typeset through the same
+      // label machinery a control's caption uses, rather than falling
+      // through to the raw `Subscript[…]` source text.
+      "Subscript" | "Superscript" | "Subsuperscript" if args.len() >= 2 => {
+        styled_text_node(expr, bindings)
+      }
       // `TogglerBar[Dynamic[var], {v1 -> label1, …}]`: a row of toggle
       // buttons; clicking one adds/removes its value from the list `var`.
       "TogglerBar" if args.len() >= 2 => {
