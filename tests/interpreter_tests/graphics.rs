@@ -312,6 +312,22 @@ mod graphics {
       );
     }
 
+    // `Sphere[{p1, p2, …}, {r1, r2, …}]` gives each centre its own radius
+    // instead of one shared radius for the whole set.
+    #[test]
+    fn sphere_accepts_a_list_of_radii() {
+      assert_eq!(
+        export_svg(
+          "Graphics[{Sphere[{{0, 0}, {3, 0}}, {1, 2}]}, PlotRange -> 10]"
+        ),
+        export_svg(
+          "Graphics[{Sphere[{0, 0}, 1], Sphere[{3, 0}, 2]}, \
+           PlotRange -> 10]"
+        ),
+        "a radius list draws each sphere at its own radius"
+      );
+    }
+
     // `Ball[n]` / `Sphere[n]` is the unit ball/sphere at the origin in `n`
     // dimensions; only the planar one has anything to draw here.
     #[test]
@@ -3960,6 +3976,43 @@ mod plot3d {
       assert_eq!(
         export_svg("Graphics3D[{Sphere[]}, PlotRange -> 3]"),
         export_svg("Graphics3D[{Sphere[{0, 0, 0}, 1]}, PlotRange -> 3]")
+      );
+    }
+
+    /// `Sphere[{p1, p2, …}, {r1, r2, …}]` gives each centre its own radius,
+    /// rather than one shared radius for the whole set — how a particle
+    /// system with varying particle sizes is drawn in one call. A radius
+    /// list used to fail to parse as a number and fall back to radius 1
+    /// for every sphere, however small the intended radii were.
+    #[test]
+    fn sphere_accepts_a_list_of_radii() {
+      for head in ["Sphere", "Ball"] {
+        assert_eq!(
+          export_svg(&format!(
+            "Graphics3D[{{{head}[{{{{1, 0, 0}}, {{-1, 0, 0}}}}, \
+             {{0.25, 0.75}}]}}, PlotRange -> 3]"
+          )),
+          export_svg(&format!(
+            "Graphics3D[{{{head}[{{1, 0, 0}}, 0.25], \
+             {head}[{{-1, 0, 0}}, 0.75]}}, PlotRange -> 3]"
+          )),
+          "{head} with a list of radii draws each sphere at its own radius"
+        );
+      }
+      // A radius list must match the centres one-for-one to be used this
+      // way; a mismatched length falls back to reading it as one shared
+      // (if non-numeric, unit) radius rather than panicking on the zip.
+      assert_eq!(
+        export_svg(
+          "Graphics3D[{Sphere[{{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}}, \
+           {0.25, 0.75}]}, PlotRange -> 3]"
+        ),
+        export_svg(
+          "Graphics3D[{Sphere[{{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}}, 1]}, \
+           PlotRange -> 3]"
+        ),
+        "a radius list whose length doesn't match the centres falls back \
+         to a unit radius per sphere"
       );
     }
 
