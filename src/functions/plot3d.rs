@@ -9474,15 +9474,27 @@ fn resolve_parametric_triples(
   // call or a `{fx, fy, fz} /. rules` substitution).
   let resolve_items =
     |items: &[Expr]| -> Result<Vec<(Expr, Expr, Expr)>, InterpreterError> {
-      if items.len() == 3 && !matches!(&items[0], Expr::List(_)) {
-        return Ok(vec![(
-          items[0].clone(),
-          items[1].clone(),
-          items[2].clone(),
-        )]);
-      }
       if items.is_empty() {
         return Err(err());
+      }
+      // Exactly three items whose first is not already a literal list are
+      // ambiguous: either the three components of one curve/surface, or
+      // three whole curves that only take triple shape once each item is
+      // evaluated — the `{{0, x[t], y[t]} /. sol, {t, x[t], 0} /. sol,
+      // {t, c, y[t]} /. sol}` shape a Demonstration uses to draw an
+      // `NDSolve` trajectory beside its two coordinate projections. Only
+      // the latter has *every* item resolve to a triple of its own
+      // (a scalar component like `Sin[t]` or `0` never does), so try that
+      // reading first and fall back to the single-triple one. Wolfram
+      // disambiguates the same way, by the depth of the evaluated body.
+      if items.len() == 3 && !matches!(&items[0], Expr::List(_)) {
+        let as_three_curves: Option<Vec<(Expr, Expr, Expr)>> = items
+          .iter()
+          .map(|item| resolve_one_parametric_triple(item, shadow_vars))
+          .collect();
+        return Ok(as_three_curves.unwrap_or_else(|| {
+          vec![(items[0].clone(), items[1].clone(), items[2].clone())]
+        }));
       }
       items
         .iter()
