@@ -1633,6 +1633,95 @@ fn group_fraction_part(s: &str) -> String {
   }
 }
 
+/// Convert one `\(…\)` linear-syntax group's inner text (delimiters already
+/// stripped) into ordinary box source. A leading `\*` marks the group as box
+/// code in its own right (`\*SuperscriptBox[…]`) — drop the marker and keep
+/// converting; anything else is a plain display atom, which box source
+/// spells as a quoted string.
+fn linear_syntax_group_to_box_source(inner: &str) -> String {
+  match inner.strip_prefix("\\*") {
+    Some(rest) => linear_syntax_code_to_box_source(rest),
+    None => format!(
+      "\"{}\"",
+      linear_syntax_code_to_box_source(inner).replace('"', "\\\"")
+    ),
+  }
+}
+
+/// Replace every `\(…\)` linear-syntax group inside box code with its box
+/// source spelling (see [`linear_syntax_group_to_box_source`]), leaving real
+/// box syntax (`Head[`, `,`, `]`, bare digits, …) untouched.
+fn linear_syntax_code_to_box_source(s: &str) -> String {
+  let chars: Vec<char> = s.chars().collect();
+  let mut out = String::new();
+  let mut i = 0;
+  while i < chars.len() {
+    if chars[i] == '\\' && chars.get(i + 1) == Some(&'(') {
+      let mut depth = 1;
+      let mut j = i + 2;
+      while j < chars.len() && depth > 0 {
+        if chars[j] == '\\' && chars.get(j + 1) == Some(&'(') {
+          depth += 1;
+          j += 2;
+        } else if chars[j] == '\\' && chars.get(j + 1) == Some(&')') {
+          depth -= 1;
+          j += 2;
+        } else {
+          j += 1;
+        }
+      }
+      let inner: String = chars[i + 2..j.saturating_sub(2)].iter().collect();
+      out.push_str(&linear_syntax_group_to_box_source(&inner));
+      i = j;
+    } else {
+      out.push(chars[i]);
+      i += 1;
+    }
+  }
+  out
+}
+
+/// Render the FrontEnd's "linear syntax" box escapes — `\!\(\*SuperscriptBox[
+/// \(X\), \(2\)]\)` — embedded in ordinary prose text as the same display
+/// text a real box tree would produce, leaving surrounding plain characters
+/// untouched. A computed `Row[…]` built from `ToString[…, StandardForm]`
+/// pieces (a Wolfram Demonstrations template pattern) stores its typeset
+/// arguments this way.
+fn render_linear_syntax_escapes(s: &str) -> String {
+  let chars: Vec<char> = s.chars().collect();
+  let mut out = String::new();
+  let mut i = 0;
+  while i < chars.len() {
+    if chars[i] == '\\'
+      && chars.get(i + 1) == Some(&'!')
+      && chars.get(i + 2) == Some(&'\\')
+      && chars.get(i + 3) == Some(&'(')
+    {
+      let mut depth = 1;
+      let mut j = i + 4;
+      while j < chars.len() && depth > 0 {
+        if chars[j] == '\\' && chars.get(j + 1) == Some(&'(') {
+          depth += 1;
+          j += 2;
+        } else if chars[j] == '\\' && chars.get(j + 1) == Some(&')') {
+          depth -= 1;
+          j += 2;
+        } else {
+          j += 1;
+        }
+      }
+      let inner: String = chars[i + 4..j.saturating_sub(2)].iter().collect();
+      let box_source = linear_syntax_group_to_box_source(&inner);
+      out.push_str(&render_boxes_text(&box_source));
+      i = j;
+    } else {
+      out.push(chars[i]);
+      i += 1;
+    }
+  }
+  out
+}
+
 /// Render a box expression as *display* text for a prose (Text) cell —
 /// the inline-formula counterpart of `extract_typeset_box`, preferring
 /// readable notation over evaluable InputForm: `SubscriptBox["D", "U"]` →
@@ -1644,7 +1733,7 @@ fn render_boxes_text(s: &str) -> String {
 
   // Plain string literal.
   if s.starts_with('"') && s.ends_with('"') && s.len() >= 2 {
-    return unescape_string(&s[1..s.len() - 1]);
+    return render_linear_syntax_escapes(&unescape_string(&s[1..s.len() - 1]));
   }
 
   // A bare `{…}` list of inline items.
@@ -1857,6 +1946,47 @@ fn render_boxes_text(s: &str) -> String {
       })
       .collect::<Vec<_>>()
       .join("\n");
+  }
+  // `TemplateBox[{…}, "RowDefault"]` (and its separator variants) is the box
+  // form of a typeset `Row[…]` — the FrontEnd lays the parts out side by
+  // side. Unlike `extract_typeset_box`'s handling of the same tag (which
+  // rebuilds evaluable `Row[…]` source), prose wants the parts' *display*
+  // text joined directly, so a computed `Row[…]` of typeset pieces (e.g. a
+  // Wolfram Demonstrations caption built from `ToString[…, StandardForm]`
+  // strings) reads the same as any other inline formula.
+  if let Some(args) = positional_box_args("TemplateBox", s)
+    && args.len() >= 2
+  {
+    let tag = args.last().unwrap().trim().trim_matches('"');
+    if matches!(tag, "RowDefault" | "RowWithSeparator" | "RowWithSeparators") {
+      // A string-typed slot is written doubly quoted (the FrontEnd's usual
+      // convention for a `Row[…]` element that is itself a string, e.g.
+      // `"\"2 \""` for the string `"2 "`) — `display_text` peels off both
+      // layers. A slot holding a real box tree (`SuperscriptBox[…]`, …)
+      // isn't a string at all, so it renders directly instead.
+      let render_part = |p: &str| {
+        let p = p.trim();
+        match display_text(p) {
+          Some(text) => render_linear_syntax_escapes(&text),
+          None => render_boxes_text(p),
+        }
+      };
+      let parts = template_box_parts(&args[0]);
+      let mut iter = parts.iter();
+      let separator = match tag {
+        "RowWithSeparators" => {
+          iter.next();
+          iter.next()
+        }
+        "RowWithSeparator" => iter.next(),
+        _ => None,
+      };
+      let sep_text = separator.map_or_else(String::new, |p| render_part(p));
+      return iter
+        .map(|p| render_part(p))
+        .collect::<Vec<_>>()
+        .join(&sep_text);
+    }
   }
 
   // Anything else falls back to the evaluable-InputForm extractor.
@@ -5540,6 +5670,35 @@ Cell[TextData[Cell[BoxData[
     match &parsed.cells[0] {
       CellEntry::Single(cell) => {
         assert_eq!(cell.content, "{U \u{2192} P\nV \u{2192} Q");
+      }
+      CellEntry::Group(_) => panic!("Expected single cell"),
+    }
+  }
+
+  #[test]
+  fn test_inline_math_template_box_row_with_linear_syntax_strings() {
+    // A computed `Row[…]` built from `ToString[…, StandardForm]` pieces (a
+    // Wolfram Demonstrations caption pattern) is stored as
+    // `TemplateBox[{…}, "RowDefault"]` whose string slots carry the
+    // FrontEnd's "linear syntax" box escapes (`\!\(\*SuperscriptBox[\(A\),
+    // \(2\)]\)`) instead of real nested boxes. Both the template row and the
+    // embedded escapes must render as ordinary display text, not leak as
+    // literal `Row[...]` source or raw backslash-escape sequences.
+    let nb = r#"Notebook[{
+Cell[TextData[Cell[BoxData[
+ FormBox[
+  TemplateBox[{
+    "\"2 \"", "\"(\"",
+     "\"\\!\\(\\*SuperscriptBox[\\(A\\), \\(2\\)]\\)\"", "\"+\"",
+     "\"\\!\\(\\*SuperscriptBox[\\(B\\), \\(2\\)]\\)\"", "\")\"", "\" = \"",
+     SuperscriptBox["C", "2"]},
+    "RowDefault"], TraditionalForm]], "InlineMath",ExpressionUUID->
+  "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"]], "Text"]
+}]"#;
+    let parsed = parse_notebook(nb).unwrap();
+    match &parsed.cells[0] {
+      CellEntry::Single(cell) => {
+        assert_eq!(cell.content, "2 (A\u{00b2}+B\u{00b2}) = C\u{00b2}");
       }
       CellEntry::Group(_) => panic!("Expected single cell"),
     }
