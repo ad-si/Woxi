@@ -4206,6 +4206,35 @@ mod plot3d {
       );
     }
 
+    // Length/Depth/LeafCount descend into the same symbolic form Part
+    // already reaches into, instead of treating a rendered Graphics3D as
+    // a zero-length/depth-1 atom.
+    #[test]
+    fn graphics3d_length_depth_leaf_count_match_symbolic_form() {
+      assert_eq!(
+        interpret(
+          "Length[Graphics3D[{Red, Sphere[]}, Axes -> True, Boxed -> False]]"
+        )
+        .unwrap(),
+        "3"
+      );
+      assert_eq!(
+        interpret(
+          "Depth[Graphics3D[{Red, Sphere[]}, Axes -> True, Boxed -> False]]"
+        )
+        .unwrap(),
+        "4"
+      );
+      assert_eq!(
+        interpret(
+          "LeafCount[Graphics3D[{Red, Sphere[]}, Axes -> True, \
+           Boxed -> False]] > 1"
+        )
+        .unwrap(),
+        "True"
+      );
+    }
+
     // GraphicsComplex primitives resolve their 1-based vertex indices,
     // for both single- and multi-polygon/line forms.
     #[test]
