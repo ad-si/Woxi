@@ -185,18 +185,159 @@ pub(crate) fn expr_to_i128(expr: &Expr) -> Option<i128> {
   }
 }
 
-/// Like `expr_to_i128`, but also floors fractional Reals and Rationals so
-/// iterator bounds like `Do[..., {i, 1, 7/2}]` or `Do[..., {i, 1, 3.5}]`
-/// behave the same as wolframscript (which iterates up to `Floor[bound]`).
-pub(crate) fn expr_to_i128_floor(expr: &Expr) -> Option<i128> {
-  if let Some(n) = expr_to_i128(expr) {
-    return Some(n);
+/// One resolved `Do`/`Table`-style `{min, max, step}` numeric iterator spec.
+pub(crate) enum NumericSteps {
+  /// All three bounds are exact integers — iterate `i128` directly.
+  Int { min: i128, max: i128, step: i128 },
+  /// Anything else (a Real/Rational bound, or a fractional step). Each
+  /// term is computed as `min + k*step` (`k` an exact integer counter)
+  /// rather than by repeatedly adding `step` — repeated addition would
+  /// accumulate float rounding, e.g. eighteen additions of `0.1` land a
+  /// bit off exact `1.8`, breaking a later `f[1.8] = …` lookup keyed on
+  /// the loop variable. `min`/`step` staying exact (e.g. `Integer`) is
+  /// also what makes `{i, 2, 3.5}` still visit the *exact* integers
+  /// `2, 3` instead of `2., 3.`. `min_num`/`max_num`/`step_num` decide,
+  /// via `f64`, when to stop.
+  Real {
+    min_expr: Expr,
+    step_expr: Expr,
+    min_num: f64,
+    max_num: f64,
+    step_num: f64,
+  },
+}
+
+/// Resolves a `Do`/`Table` iterator's `{min, max, step}` triple (already
+/// evaluated) into a [`NumericSteps`] plan. Shared by `Do`'s single- and
+/// multi-iterator forms so both walk the exact same sequence of values —
+/// notably, so a fractional `step` (e.g. `{condInit, 0.1, 3.1, 0.1}`) is
+/// iterated as real numbers instead of being floored to zero.
+pub(crate) fn resolve_numeric_steps(
+  min_expr: Expr,
+  max_expr: Expr,
+  step_expr: Expr,
+) -> Result<NumericSteps, InterpreterError> {
+  if let (Some(min_val), Some(max_val), Some(step_val)) = (
+    expr_to_i128(&min_expr),
+    expr_to_i128(&max_expr),
+    expr_to_i128(&step_expr),
+  ) {
+    if step_val == 0 {
+      return Err(InterpreterError::EvaluationError(
+        "Do: step cannot be zero".into(),
+      ));
+    }
+    return Ok(NumericSteps::Int {
+      min: min_val,
+      max: max_val,
+      step: step_val,
+    });
   }
-  let f = crate::functions::math_ast::try_eval_to_f64_with_infinity(expr)?;
-  if f.is_infinite() || f.is_nan() {
-    return None;
+
+  let min_num = crate::functions::math_ast::try_eval_to_f64(&min_expr)
+    .ok_or_else(|| {
+      InterpreterError::EvaluationError(
+        "Do: iterator bound must be an integer".into(),
+      )
+    })?;
+  let max_num = crate::functions::math_ast::try_eval_to_f64(&max_expr)
+    .ok_or_else(|| {
+      InterpreterError::EvaluationError(
+        "Do: iterator bound must be an integer".into(),
+      )
+    })?;
+  let step_num =
+    crate::functions::math_ast::try_eval_to_f64_with_infinity(&step_expr)
+      .ok_or_else(|| {
+        InterpreterError::EvaluationError("Do: step must be an integer".into())
+      })?;
+  if step_num.abs() <= f64::EPSILON {
+    return Err(InterpreterError::EvaluationError(
+      "Do: step cannot be zero".into(),
+    ));
   }
-  Some(f.floor() as i128)
+
+  Ok(NumericSteps::Real {
+    min_expr,
+    step_expr,
+    min_num,
+    max_num,
+    step_num,
+  })
+}
+
+/// Walks the numeric sequence implied by a `{min, max, step}` spec,
+/// calling `visit` once per value in order. `visit` returns `Ok(true)` to
+/// keep going or `Ok(false)` to stop early (e.g. on `Break[]`); a genuine
+/// evaluation error propagates as `Err`.
+pub(crate) fn for_each_numeric_step(
+  min_expr: Expr,
+  max_expr: Expr,
+  step_expr: Expr,
+  mut visit: impl FnMut(Expr) -> Result<bool, InterpreterError>,
+) -> Result<(), InterpreterError> {
+  match resolve_numeric_steps(min_expr, max_expr, step_expr)? {
+    NumericSteps::Int { min, max, step } => {
+      let mut i = min;
+      if step > 0 {
+        while i <= max {
+          if !visit(Expr::Integer(i))? {
+            return Ok(());
+          }
+          i += step;
+        }
+      } else {
+        while i >= max {
+          if !visit(Expr::Integer(i))? {
+            return Ok(());
+          }
+          i += step;
+        }
+      }
+    }
+    NumericSteps::Real {
+      min_expr,
+      step_expr,
+      min_num,
+      max_num,
+      step_num,
+    } => {
+      let positive = step_num > 0.0;
+      let mut k: i128 = 0;
+      loop {
+        let current_num = min_num + (k as f64) * step_num;
+        if positive {
+          if current_num > max_num + f64::EPSILON {
+            break;
+          }
+        } else if current_num < max_num - f64::EPSILON {
+          break;
+        }
+        let current_expr = if k == 0 {
+          min_expr.clone()
+        } else {
+          let k_step = crate::evaluator::evaluate_function_call_ast(
+            "Times",
+            &[Expr::Integer(k), step_expr.clone()],
+          )?;
+          crate::evaluator::evaluate_function_call_ast(
+            "Plus",
+            &[min_expr.clone(), k_step],
+          )?
+        };
+        if !visit(current_expr)? {
+          return Ok(());
+        }
+        k += 1;
+        if k > 1_000_000 {
+          return Err(InterpreterError::EvaluationError(
+            "Do: iterator exceeded maximum iterations".into(),
+          ));
+        }
+      }
+    }
+  }
+  Ok(())
 }
 
 /// Apply a function to n arguments.

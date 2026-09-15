@@ -1288,143 +1288,75 @@ pub fn do_ast(body: &Expr, iter_spec: &Expr) -> Result<Expr, InterpreterError> {
         }
       }
 
-      let (min, max, step) = if items.len() == 2 {
+      let (min_expr, max_expr, step_expr) = if items.len() == 2 {
         let max_expr = crate::evaluator::evaluate_expr_to_expr(&items[1])?;
-        let max_val = super::utilities::expr_to_i128_floor(&max_expr)
-          .ok_or_else(|| {
-            InterpreterError::EvaluationError(
-              "Do: iterator bound must be an integer".into(),
-            )
-          })?;
-        (1i128, max_val, 1i128)
+        (Expr::Integer(1), max_expr, Expr::Integer(1))
       } else if items.len() >= 3 {
         let min_expr = crate::evaluator::evaluate_expr_to_expr(&items[1])?;
         let max_expr = crate::evaluator::evaluate_expr_to_expr(&items[2])?;
-        let min_val = super::utilities::expr_to_i128_floor(&min_expr)
-          .ok_or_else(|| {
-            InterpreterError::EvaluationError(
-              "Do: iterator bound must be an integer".into(),
-            )
-          })?;
-        let max_val = super::utilities::expr_to_i128_floor(&max_expr)
-          .ok_or_else(|| {
-            InterpreterError::EvaluationError(
-              "Do: iterator bound must be an integer".into(),
-            )
-          })?;
-        let step_val = if items.len() >= 4 {
-          let step_expr = crate::evaluator::evaluate_expr_to_expr(&items[3])?;
-          super::utilities::expr_to_i128_floor(&step_expr).ok_or_else(|| {
-            InterpreterError::EvaluationError(
-              "Do: step must be an integer".into(),
-            )
-          })?
+        let step_expr = if items.len() >= 4 {
+          crate::evaluator::evaluate_expr_to_expr(&items[3])?
         } else {
-          1i128
+          Expr::Integer(1)
         };
-        (min_val, max_val, step_val)
+        (min_expr, max_expr, step_expr)
       } else {
         return Err(InterpreterError::EvaluationError(
           "Do: invalid iterator specification".into(),
         ));
       };
 
-      if step == 0 {
-        return Err(InterpreterError::EvaluationError(
-          "Do: step cannot be zero".into(),
-        ));
-      }
-
       let needs_substitute = body_uses_var_as_function_head(body, &var_name);
       if needs_substitute {
-        let mut i = min;
-        if step > 0 {
-          while i <= max {
-            let substituted = crate::syntax::substitute_variable(
-              body,
-              &var_name,
-              &Expr::Integer(i),
-            );
+        let mut early_return: Option<Expr> = None;
+        super::utilities::for_each_numeric_step(
+          min_expr,
+          max_expr,
+          step_expr,
+          |current| {
+            let substituted =
+              crate::syntax::substitute_variable(body, &var_name, &current);
             match crate::evaluator::evaluate_expr_to_expr(&substituted) {
-              Ok(_) => {}
-              Err(InterpreterError::BreakSignal) => break,
-              Err(InterpreterError::ContinueSignal) => {}
-              Err(InterpreterError::ReturnValue(val)) => return Ok(*val),
-              Err(e) => return Err(e),
+              Ok(_) => Ok(true),
+              Err(InterpreterError::BreakSignal) => Ok(false),
+              Err(InterpreterError::ContinueSignal) => Ok(true),
+              Err(InterpreterError::ReturnValue(val)) => {
+                early_return = Some(*val);
+                Ok(false)
+              }
+              Err(e) => Err(e),
             }
-            i += step;
-          }
-        } else {
-          while i >= max {
-            let substituted = crate::syntax::substitute_variable(
-              body,
-              &var_name,
-              &Expr::Integer(i),
-            );
-            match crate::evaluator::evaluate_expr_to_expr(&substituted) {
-              Ok(_) => {}
-              Err(InterpreterError::BreakSignal) => break,
-              Err(InterpreterError::ContinueSignal) => {}
-              Err(InterpreterError::ReturnValue(val)) => return Ok(*val),
-              Err(e) => return Err(e),
-            }
-            i += step;
-          }
+          },
+        )?;
+        if let Some(v) = early_return {
+          return Ok(v);
         }
         return Ok(null_expr());
       }
       // ENV-binding fast path.
       let prev = crate::ENV.with(|e| e.borrow_mut().remove(&var_name));
       let mut early_return: Option<Expr> = None;
-      let mut error: Option<InterpreterError> = None;
-      let mut i = min;
-      if step > 0 {
-        while i <= max {
+      let result = super::utilities::for_each_numeric_step(
+        min_expr,
+        max_expr,
+        step_expr,
+        |current| {
           crate::ENV.with(|e| {
-            e.borrow_mut().insert(
-              var_name.clone(),
-              crate::StoredValue::ExprVal(Expr::Integer(i)),
-            );
+            e.borrow_mut()
+              .insert(var_name.clone(), crate::StoredValue::ExprVal(current));
           });
           match crate::evaluator::evaluate_expr_to_expr(body) {
-            Ok(_) => {}
-            Err(InterpreterError::BreakSignal) => break,
-            Err(InterpreterError::ContinueSignal) => {}
+            Ok(_) => Ok(true),
+            Err(InterpreterError::BreakSignal) => Ok(false),
+            Err(InterpreterError::ContinueSignal) => Ok(true),
             Err(InterpreterError::ReturnValue(val)) => {
               early_return = Some(*val);
-              break;
+              Ok(false)
             }
-            Err(e) => {
-              error = Some(e);
-              break;
-            }
+            Err(e) => Err(e),
           }
-          i += step;
-        }
-      } else {
-        while i >= max {
-          crate::ENV.with(|e| {
-            e.borrow_mut().insert(
-              var_name.clone(),
-              crate::StoredValue::ExprVal(Expr::Integer(i)),
-            );
-          });
-          match crate::evaluator::evaluate_expr_to_expr(body) {
-            Ok(_) => {}
-            Err(InterpreterError::BreakSignal) => break,
-            Err(InterpreterError::ContinueSignal) => {}
-            Err(InterpreterError::ReturnValue(val)) => {
-              early_return = Some(*val);
-              break;
-            }
-            Err(e) => {
-              error = Some(e);
-              break;
-            }
-          }
-          i += step;
-        }
-      }
+        },
+      );
       crate::ENV.with(|e| {
         let mut env = e.borrow_mut();
         if let Some(v) = prev {
@@ -1433,9 +1365,7 @@ pub fn do_ast(body: &Expr, iter_spec: &Expr) -> Result<Expr, InterpreterError> {
           env.remove(&var_name);
         }
       });
-      if let Some(e) = error {
-        return Err(e);
-      }
+      result?;
       if let Some(v) = early_return {
         return Ok(v);
       }
@@ -1571,94 +1501,48 @@ where
       }
 
       // Numeric range iterator: {v, max} or {v, min, max} or {v, min, max, step}.
-      let (min, max, step_val) = if items.len() == 2 {
+      let (min_expr, max_expr, step_expr) = if items.len() == 2 {
         let max_expr = crate::evaluator::evaluate_expr_to_expr(&items[1])?;
-        let max_val = super::utilities::expr_to_i128_floor(&max_expr)
-          .ok_or_else(|| {
-            InterpreterError::EvaluationError(
-              "Do: iterator bound must be an integer".into(),
-            )
-          })?;
-        (1i128, max_val, 1i128)
+        (Expr::Integer(1), max_expr, Expr::Integer(1))
       } else {
         let min_expr = crate::evaluator::evaluate_expr_to_expr(&items[1])?;
         let max_expr = crate::evaluator::evaluate_expr_to_expr(&items[2])?;
-        let min_val = super::utilities::expr_to_i128_floor(&min_expr)
-          .ok_or_else(|| {
-            InterpreterError::EvaluationError(
-              "Do: iterator bound must be an integer".into(),
-            )
-          })?;
-        let max_val = super::utilities::expr_to_i128_floor(&max_expr)
-          .ok_or_else(|| {
-            InterpreterError::EvaluationError(
-              "Do: iterator bound must be an integer".into(),
-            )
-          })?;
-        let s = if items.len() >= 4 {
-          let s_expr = crate::evaluator::evaluate_expr_to_expr(&items[3])?;
-          super::utilities::expr_to_i128_floor(&s_expr).ok_or_else(|| {
-            InterpreterError::EvaluationError(
-              "Do: step must be an integer".into(),
-            )
-          })?
+        let step_expr = if items.len() >= 4 {
+          crate::evaluator::evaluate_expr_to_expr(&items[3])?
         } else {
-          1i128
+          Expr::Integer(1)
         };
-        (min_val, max_val, s)
+        (min_expr, max_expr, step_expr)
       };
-
-      if step_val == 0 {
-        return Err(InterpreterError::EvaluationError(
-          "Do: step cannot be zero".into(),
-        ));
-      }
 
       let prev = crate::ENV.with(|e| e.borrow_mut().remove(&var_name));
       let mut err: Option<InterpreterError> = None;
-      let mut i = min;
       let mut idx = 0usize;
-      if step_val > 0 {
-        while i <= max {
+      let result = super::utilities::for_each_numeric_step(
+        min_expr,
+        max_expr,
+        step_expr,
+        |current| {
           crate::ENV.with(|e| {
-            e.borrow_mut().insert(
-              var_name.clone(),
-              crate::StoredValue::ExprVal(Expr::Integer(i)),
-            );
+            e.borrow_mut()
+              .insert(var_name.clone(), crate::StoredValue::ExprVal(current));
           });
-          match step(idx) {
-            Ok(()) => {}
+          let r = step(idx);
+          idx += 1;
+          match r {
+            Ok(()) => Ok(true),
             Err(e) => {
               err = Some(e);
-              break;
+              Ok(false)
             }
           }
-          i += step_val;
-          idx += 1;
-        }
-      } else {
-        while i >= max {
-          crate::ENV.with(|e| {
-            e.borrow_mut().insert(
-              var_name.clone(),
-              crate::StoredValue::ExprVal(Expr::Integer(i)),
-            );
-          });
-          match step(idx) {
-            Ok(()) => {}
-            Err(e) => {
-              err = Some(e);
-              break;
-            }
-          }
-          i += step_val;
-          idx += 1;
-        }
-      }
+        },
+      );
       restore_loop_var(&var_name, prev);
       if let Some(e) = err {
         return Err(e);
       }
+      result?;
       Ok(())
     }
     _ => Err(InterpreterError::EvaluationError(
