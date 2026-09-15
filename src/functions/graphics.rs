@@ -8413,6 +8413,35 @@ impl BoxLayout {
     let ascent = font_size * 0.8; // approximate ascent
     let descent = font_size * 0.25; // approximate descent
     let height = ascent + descent;
+    // A string atom carrying embedded newlines — `ToString[1/3,
+    // FormatType -> TraditionalForm]` renders a Rational as a stacked
+    // "1\n-\n3" (matching wolframscript's OutputForm text rendering) —
+    // has to be laid out as one line per row, or the lines run together
+    // into a single garbled `<text>` (SVG collapses a literal newline to
+    // whitespace rather than a line break). Stack them top to bottom,
+    // widest line setting the box width, and report the vertical center
+    // line's baseline so the block registers reasonably against
+    // single-line siblings in the same row.
+    if s.contains('\n') {
+      let lines: Vec<&str> = s.split('\n').collect();
+      let longest = lines.iter().map(|l| l.chars().count()).max().unwrap_or(0);
+      let w = longest as f64 * ch;
+      let mut elements = String::new();
+      for (i, line) in lines.iter().enumerate() {
+        let y = ascent + i as f64 * height;
+        elements.push_str(&format!(
+          "<text x=\"0\" y=\"{y:.1}\" font-family=\"monospace\" font-size=\"{font_size:.1}\" stroke=\"none\" xml:space=\"preserve\">{}</text>",
+          svg_escape(line)
+        ));
+      }
+      let mid = (lines.len() - 1) as f64 / 2.0;
+      return Self {
+        width: w,
+        height: lines.len() as f64 * height,
+        baseline: ascent + mid * height,
+        elements,
+      };
+    }
     // Large (n-ary) operators — ∑ ∏ ∫ … — are drawn oversized and vertically
     // centered on the math axis so they read as display-size operators with
     // limits stacked above/below (Sum, Product) or as scripts (Integrate),
@@ -10252,6 +10281,12 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
     // comes out several times too wide.
     Expr::String(s) if s.contains(crate::functions::string_ast::BOX_START) => {
       box_string_visible_len(s) as f64
+    }
+    // `ToString[1/3, FormatType -> TraditionalForm]` returns a stacked
+    // "1\n-\n3" — the string reads as several display lines, not one
+    // `len()`-long line, so measure the widest line instead.
+    Expr::String(s) if s.contains('\n') => {
+      s.split('\n').map(str::len).max().unwrap_or(0) as f64
     }
     Expr::String(s) => s.len() as f64,
     Expr::Identifier(s) => s.len() as f64,
@@ -16769,10 +16804,16 @@ pub fn row_to_svg(args: &[Expr]) -> Option<String> {
       }
     }
     let scale = st.font_size / font_size;
+    let markup = expr_to_svg_markup(item);
+    // A markup string carrying its own `\n` (e.g. `ToString[1/3,
+    // FormatType -> TraditionalForm]`'s stacked "1\n-\n3") needs one
+    // line's worth of height per line, or the cell is sized for a single
+    // line and the rest overflows/overlaps its neighbours.
+    let line_count = markup.matches('\n').count() + 1;
     Cell::Text {
-      markup: expr_to_svg_markup(item),
+      markup,
       width: estimate_display_width(item) * char_width * scale,
-      height: st.font_size + pad_y,
+      height: line_count as f64 * st.font_size + pad_y,
       fill: if hidden {
         "none".to_string()
       } else {
@@ -16937,10 +16978,33 @@ pub fn row_to_svg(args: &[Expr]) -> Option<String> {
         } else {
           family.as_str()
         };
-        svg.push_str(&format!(
-          "<text x=\"{cx:.1}\" y=\"{cy:.1}\" font-family=\"{ff}\" font-size=\"{size}\" fill=\"{fill}\"{weight_attr}{slant_attr} text-anchor=\"middle\" dominant-baseline=\"central\">{markup}</text>\n",
-          ff = svg_escape(ff),
-        ));
+        let ff = svg_escape(ff);
+        // A markup string can itself carry `\n` (a stacked-fraction
+        // `ToString[…, TraditionalForm]` embedded in a `Row`/`StringJoin`
+        // label) — split it into one `<tspan>` per line, centered on the
+        // cell like the single-line case, or SVG collapses the literal
+        // newline to whitespace and runs every line together.
+        if markup.contains('\n') {
+          let lines: Vec<&str> = markup.split('\n').collect();
+          let start_y = cy - (lines.len() as f64 - 1.0) / 2.0 * size;
+          svg.push_str(&format!(
+            "<text x=\"{cx:.1}\" y=\"{start_y:.1}\" font-family=\"{ff}\" font-size=\"{size}\" fill=\"{fill}\"{weight_attr}{slant_attr} text-anchor=\"middle\" dominant-baseline=\"central\">"
+          ));
+          for (i, line) in lines.iter().enumerate() {
+            if i == 0 {
+              svg.push_str(line);
+            } else {
+              svg.push_str(&format!(
+                "<tspan x=\"{cx:.1}\" dy=\"{size}\">{line}</tspan>"
+              ));
+            }
+          }
+          svg.push_str("</text>\n");
+        } else {
+          svg.push_str(&format!(
+            "<text x=\"{cx:.1}\" y=\"{cy:.1}\" font-family=\"{ff}\" font-size=\"{size}\" fill=\"{fill}\"{weight_attr}{slant_attr} text-anchor=\"middle\" dominant-baseline=\"central\">{markup}</text>\n"
+          ));
+        }
         x += width;
       }
       Cell::Svg {
