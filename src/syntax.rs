@@ -5518,6 +5518,7 @@ fn operator_precedence(op: &str) -> u8 {
     "<->" => 21, // TwoWayRule (same level as comparisons, tighter than Rule)
     "\\[Distributed]" | "\u{F3D2}" => 21, // Distributed (same level as comparisons)
     "\\[Conditioned]" | "\u{F3D3}" => 10, // Conditioned (looser than Rule)
+    "\\[TildeTilde]" | "\u{2248}" => 21, // TildeTilde (same level as comparisons)
     // Cross and TensorProduct bind tighter than Dot in Wolfram
     // (Precedence 500 and 495 vs Dot's 490): a.b\[Cross]c is a.(b\[Cross]c).
     "\\[Cross]" | "\u{F4A0}" | "\u{F3C4}" | "\u{2A2F}" => 42, // Cross (above TensorProduct)
@@ -6053,6 +6054,10 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
     },
     "\\[Conditioned]" | "\u{F3D3}" => Expr::FunctionCall {
       name: "Conditioned".to_string(),
+      args: vec![left.clone(), right.clone()].into(),
+    },
+    "\\[TildeTilde]" | "\u{2248}" => Expr::FunctionCall {
+      name: "TildeTilde".to_string(),
       args: vec![left.clone(), right.clone()].into(),
     },
     "\\[Function]" | "\u{F4A1}" | "|->" => Expr::FunctionCall {
@@ -9080,6 +9085,11 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       if name == "Tilde" && args.len() >= 2 {
         let parts: Vec<String> = args.iter().map(&fmt).collect();
         return parts.join(" \u{223C} ");
+      }
+      // TildeTilde[a, b, ...] displays as a ≈ b ≈ ...
+      if name == "TildeTilde" && args.len() >= 2 {
+        let parts: Vec<String> = args.iter().map(&fmt).collect();
+        return parts.join(" \u{2248} ");
       }
       // Del[f] displays as ∇f
       if name == "Del" && args.len() == 1 {
@@ -12659,6 +12669,12 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
     Expr::FunctionCall { name, args } if name == "Tilde" && args.len() >= 2 => {
       let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
       parts.join(" \u{223C} ")
+    }
+    Expr::FunctionCall { name, args }
+      if name == "TildeTilde" && args.len() >= 2 =>
+    {
+      let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
+      parts.join(" \u{2248} ")
     }
     Expr::FunctionCall { name, args } if name == "Del" && args.len() == 1 => {
       format!("\u{2207}{}", expr_to_input_form(&args[0]))
