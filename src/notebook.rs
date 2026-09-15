@@ -2173,6 +2173,24 @@ fn unescape_string_inner(s: &str, code: bool) -> String {
         Some('>') => {
           // \> is a Wolfram string delimiter in box expressions – skip
         }
+        Some('.') => {
+          // `\.HH` is Wolfram's 2-hex-digit escape for a Latin-1 code
+          // point (e.g. `\.aa` is "ª", FEMININE ORDINAL INDICATOR) — the
+          // same family as `\:XXXX` below, just narrower. Authors' names
+          // in a Demonstration's "Contributed By" section are a common
+          // source: accented/special Latin-1 letters outside the
+          // `\[Name]` table get written this way.
+          let hex: String = chars.by_ref().take(2).collect();
+          if let Ok(code) = u32::from_str_radix(&hex, 16)
+            && let Some(ch) = char::from_u32(code)
+          {
+            result.push(ch);
+          } else {
+            result.push('\\');
+            result.push('.');
+            result.push_str(&hex);
+          }
+        }
         Some(':') => {
           // `\:XXXX` is Wolfram's ASCII-safe hex escape for an arbitrary
           // character. Box source uses it for characters that have no
@@ -4401,6 +4419,17 @@ Cell["Chapter 2", "Chapter"]
   }
 
   #[test]
+  fn test_unescape_two_hex_digit_escape() {
+    // `\.HH` is Wolfram's 2-hex-digit Latin-1 escape, e.g. in a
+    // Demonstration author's name written as `M\.aa` for "Mª".
+    assert_eq!(unescape_string("M\\.aa"), "M\u{AA}");
+    assert_eq!(unescape_code_string("caf\\.e9"), "caf\u{E9}");
+    // An incomplete/invalid escape is left untouched rather than eating
+    // following characters.
+    assert_eq!(unescape_string("a\\.zzb"), "a\\.zzb");
+  }
+
+  #[test]
   fn test_extract_cell_content_boxdata_list() {
     // Multi-statement Input cells use BoxData[{ RowBox, "\n", RowBox, ... }].
     let s = r#"BoxData[{
@@ -4638,6 +4667,23 @@ Cell["Chapter 2", "Chapter"]
     let s =
       r#"BoxData[RowBox[{"f", "[", "\"\<\[ReverseUpEquilibrium]\>\"", "]"}]]"#;
     assert_eq!(extract_cell_content(s), "f[\"\u{296F}\"]");
+  }
+
+  /// A caption's inline math routinely states set membership
+  /// (`\[Element] \[DoubleStruckCapitalR]`, `…N`, `…Z`, …). Unlike the
+  /// sibling private-use *script* letters (`\[ScriptCapitalD]` → 𝒟), the
+  /// private-use *double-struck* letters had no glyph substitution at all,
+  /// so a Text cell printed nothing visible for them. `R`, `N` and `Z` are
+  /// three of the seven capitals Unicode gives their own Letterlike
+  /// Symbols code point rather than a Mathematical Alphanumeric Symbols
+  /// slot; `a` exercises the plain contiguous lowercase block.
+  #[test]
+  fn test_double_struck_named_characters_render_as_unicode() {
+    let s = r#"TextData["\[DoubleStruckCapitalR] \[DoubleStruckCapitalN] \[DoubleStruckCapitalZ] \[DoubleStruckA]"]"#;
+    assert_eq!(
+      extract_cell_content(s),
+      "\u{211D} \u{2115} \u{2124} \u{1D552}"
+    );
   }
 
   #[test]
