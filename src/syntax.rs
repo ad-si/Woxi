@@ -15579,7 +15579,8 @@ fn expr_to_textbox_base(expr: &Expr) -> TextBox {
     || matches!(expr, Expr::Real(f) if *f < 0.0)
     || matches!(expr, Expr::FunctionCall { name, .. } if name == "Plus")
     || complex_neg_im
-    || times_neg_leading;
+    || times_neg_leading
+    || is_infix_display_call(expr);
 
   if needs_parens {
     let inner = expr_to_textbox(expr);
@@ -15969,7 +15970,7 @@ fn is_infix_display_call(e: &Expr) -> bool {
       name.as_str(),
       "Star" | "CircleTimes" | "CenterDot" | "CircleDot" | "Wedge" | "Diamond"
         | "Backslash" | "SmallCircle" | "Vee" | "Tilde" | "CirclePlus"
-        | "CircleMinus" | "Subset" | "LeftArrow" | "DotEqual"
+        | "CircleMinus" | "Subset" | "LeftArrow" | "DotEqual" | "Dot"
     ))
 }
 
