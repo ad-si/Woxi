@@ -2412,6 +2412,54 @@ pub fn reconstruct_manipulate_from_box_dump(box_dump: &str) -> Option<String> {
   Some(format!("Manipulate[{body}, {specs_inner}]"))
 }
 
+/// The live session values a saved FrontEnd dynamic-widget dump's
+/// `"Variables" :> { $CellContext\`var$$ = value, … }` clause records, as
+/// `(name, value)` pairs with the `` $CellContext` `` prefix and the
+/// DynamicModule's own `$$` uniquification suffix stripped from each name —
+/// so `"ctrl"`, not `` $CellContext`ctrl$$ `` — and any `\[Name]` character
+/// escape decoded to Unicode in both name and value, matching how a
+/// notebook's own Input-cell source is decoded, so the name is ready to
+/// match a control by its plain source-level variable name.
+///
+/// A notebook saved from the desktop FrontEnd keeps both the original
+/// `Manipulate[…]` source (in its Input cell) and this dump (in the
+/// following Output cell) — and the two can disagree: the source's own
+/// spec still carries whatever default the author *wrote*, while this dump
+/// carries whatever the widget's sliders were actually sitting at the
+/// moment the file was last saved. Wolfram's FrontEnd opens the notebook
+/// showing that saved state, not the source's default, so a caller
+/// rebuilding the widget from the Input cell (see
+/// `instantiate_stored_manipulate` in woxi-studio) needs this to match.
+pub fn extract_saved_manipulate_variables(
+  box_dump: &str,
+) -> Vec<(String, String)> {
+  let Some(raw) = extract_arrow_value(box_dump, "Variables") else {
+    return Vec::new();
+  };
+  let Some(inner) = raw
+    .trim()
+    .strip_prefix('{')
+    .and_then(|s| s.strip_suffix('}'))
+  else {
+    return Vec::new();
+  };
+  split_top_level_commas(inner)
+    .into_iter()
+    .filter_map(|part| {
+      let part = part.trim();
+      let eq = part.find('=')?;
+      let (lhs, rhs) = (part[..eq].trim(), part[eq + 1..].trim());
+      let name = lhs.replace("$CellContext`", "");
+      let name = name.strip_suffix("$$").unwrap_or(&name);
+      let name = unescape_code_string(name);
+      if name.is_empty() || rhs.is_empty() {
+        return None;
+      }
+      Some((name, unescape_code_string(rhs)))
+    })
+    .collect()
+}
+
 /// The prefix of `s` up to (excluding) the `)` matching an already-consumed
 /// `(`. Skips over string literals, where parentheses are just text.
 fn matching_paren_prefix(s: &str) -> Option<&str> {
