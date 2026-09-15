@@ -1023,26 +1023,35 @@ fn try_ast_pattern_replace_single(
       }
     }
   }
-  let _guard = CondGuard {
-    pushed: combined_cond.is_some(),
-  };
-  if let Some(ref c) = combined_cond {
-    OUTER_LHS_CONDITION.with(|s| s.borrow_mut().push(c.clone()));
-  }
 
-  // First try normal structural match
-  let bindings_opt = match match_pattern(value, pattern) {
-    Some(bindings) => Some(bindings),
-    None => {
-      // Try OneIdentity matching as fallback
-      if let Expr::FunctionCall {
-        name: pat_name,
-        args: pat_args,
-      } = pattern
-      {
-        try_one_identity_match(value, pat_name, pat_args)
-      } else {
-        None
+  // First try normal structural match. `combined_cond` is only pushed onto
+  // OUTER_LHS_CONDITION for the duration of this match (dropped right
+  // after) — it must not still be on the stack once we evaluate the
+  // condition below: if the condition calls a curried function (`f[a][b]`),
+  // evaluating it triggers its own, unrelated pattern matching, which must
+  // not see this condition still active — otherwise it reapplies our guard
+  // to its own (differently bound) candidate and recurses into evaluating
+  // the condition forever.
+  let bindings_opt = {
+    let _guard = CondGuard {
+      pushed: combined_cond.is_some(),
+    };
+    if let Some(ref c) = combined_cond {
+      OUTER_LHS_CONDITION.with(|s| s.borrow_mut().push(c.clone()));
+    }
+    match match_pattern(value, pattern) {
+      Some(bindings) => Some(bindings),
+      None => {
+        // Try OneIdentity matching as fallback
+        if let Expr::FunctionCall {
+          name: pat_name,
+          args: pat_args,
+        } = pattern
+        {
+          try_one_identity_match(value, pat_name, pat_args)
+        } else {
+          None
+        }
       }
     }
   };
@@ -4719,20 +4728,29 @@ fn match_pattern_impl(
       // `match_args_with_sequences` can backtrack through sequence
       // splits whose bindings make the test False (e.g. matching
       // `{a___, b_, c_, d___} /; b > c` against `{1, 2, 1}` must reject
-      // the first split `b=1, c=2` and retry with `b=2, c=1`).
-      OUTER_LHS_CONDITION.with(|s| s.borrow_mut().push(pat_args[1].clone()));
-      struct G;
-      impl Drop for G {
-        fn drop(&mut self) {
-          OUTER_LHS_CONDITION.with(|s| {
-            s.borrow_mut().pop();
-          });
+      // the first split `b=1, c=2` and retry with `b=2, c=1`). This
+      // must be popped again before the test itself is evaluated below:
+      // if the test calls a curried function (`f[a][b]`), evaluating it
+      // triggers its own, unrelated pattern matching, which must not see
+      // this condition still on the stack — otherwise it reapplies our
+      // guard to its own (differently bound) candidate and recurses into
+      // evaluating the test forever.
+      let bindings = {
+        OUTER_LHS_CONDITION.with(|s| s.borrow_mut().push(pat_args[1].clone()));
+        struct G;
+        impl Drop for G {
+          fn drop(&mut self) {
+            OUTER_LHS_CONDITION.with(|s| {
+              s.borrow_mut().pop();
+            });
+          }
         }
-      }
-      let _g = G;
+        let _g = G;
+        // First match the pattern part
+        match_pattern(expr, &pat_args[0])
+      };
 
-      // First match the pattern part
-      if let Some(bindings) = match_pattern(expr, &pat_args[0]) {
+      if let Some(bindings) = bindings {
         // Final outer check: paths that don't go through
         // `match_args_with_sequences` still need a top-level validation.
         let test_expr = apply_bindings(&pat_args[1], &bindings)

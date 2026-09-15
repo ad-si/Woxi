@@ -1268,6 +1268,75 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_manipulate_style_text_differential_svg_uses_plain_d() {
+    // Regression: a `Column[{Graphics[…], Style[Text[Row[{…}]], size]}]`
+    // body — the shape Woxi Studio's Manipulate widgets render for a
+    // Demonstration's "graphic beside its formula" layout (e.g. Wolfram
+    // Demonstrations Project's "A Geometric Limit Problem") — renders its
+    // `Style[Text[…]]` half through a different SVG writer
+    // (`boxes_to_svg`/`expr_to_svg_markup`) than the one the previous test
+    // covers (`layout_box`/`layout_to_svg`, used for a bare top-level
+    // result). That second writer had its own, unfixed copy of the same
+    // U+2146 DifferentialD bug: the raw glyph reached the SVG untouched,
+    // where common font fallback renders it as an unrelated glyph (an "L"
+    // shape) instead of "d". It must also come out as a plain, italicized
+    // "d".
+    clear_state();
+    let r = interpret_with_stdout(
+      "Column[{Graphics[{Circle[{0, 0}, 1]}], \
+       Style[Text[Row[{TraditionalForm[ \
+         HoldForm[Integrate[Sqrt[1 - x^2], {x, 0, 1}]]]}]], 18]}]",
+    )
+    .unwrap();
+    let svg = r
+      .graphics
+      .expect("expected combined Column graphics output");
+    assert!(
+      !svg.contains('\u{2146}'),
+      "Manipulate-style Column SVG must not contain the raw U+2146 glyph:\n{svg}"
+    );
+    assert!(
+      svg.contains("<tspan font-style=\"italic\">d</tspan>"),
+      "Manipulate-style Column SVG must render the differential as an \
+       italicized plain \"d\":\n{svg}"
+    );
+  }
+
+  #[test]
+  fn test_manipulate_style_text_exponential_e_and_imaginary_i_svg() {
+    // Same bug, other two Letterlike Symbols glyphs TraditionalForm
+    // typesets from this renderer: `Exp[x]` as `\[ExponentialE]^x` (ⅇ,
+    // U+2147) and `I` as `\[ImaginaryI]` (ⅈ, U+2148). Both must come out
+    // as plain, italicized ASCII letters through the same SVG writer as
+    // the DifferentialD case above.
+    clear_state();
+    let r = interpret_with_stdout(
+      "Column[{Graphics[{Circle[{0, 0}, 1]}], \
+       Style[Text[Row[{TraditionalForm[HoldForm[Exp[x]]], \" \", \
+         TraditionalForm[HoldForm[2 + 3 I]]}]], 18]}]",
+    )
+    .unwrap();
+    let svg = r
+      .graphics
+      .expect("expected combined Column graphics output");
+    assert!(
+      !svg.contains('\u{2147}') && !svg.contains('\u{2148}'),
+      "Manipulate-style Column SVG must not contain the raw U+2147/U+2148 \
+       glyphs:\n{svg}"
+    );
+    assert!(
+      svg.contains("<tspan font-style=\"italic\">e</tspan>"),
+      "Manipulate-style Column SVG must render Exp's base as an \
+       italicized plain \"e\":\n{svg}"
+    );
+    assert!(
+      svg.contains("<tspan font-style=\"italic\">i</tspan>"),
+      "Manipulate-style Column SVG must render the imaginary unit as an \
+       italicized plain \"i\":\n{svg}"
+    );
+  }
+
+  #[test]
   fn test_scientific_real_output_svg_uses_superscript() {
     // Regression: a machine Real in scientific notation (`10.^10` → `1.*^10`)
     // must be typeset as `1. × 10^10` in the Playground/Studio SVG — a `×`
@@ -2909,6 +2978,34 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_curried_call_over_infix_operator_head_keeps_parens() {
+    // A CurriedCall's head (`(head)[args]`) that is itself an infix
+    // operator expression must print with parens, or the reconstructed
+    // text re-parses with `[args]` attached to the wrong operand.
+    // Regression: a Wolfram Demonstration's Manipulate body used
+    // `(r /. sol[[1, 1]])["Domain"]`; Woxi Studio reconstructs a
+    // Manipulate body's InputForm text from the held (unevaluated) AST to
+    // re-evaluate it with slider bindings, and previously printed this as
+    // `r /. sol[[1, 1]]["Domain"]`, which reparses as `r /. (sol[[1,
+    // 1]]["Domain"])` instead — a different computation entirely.
+    // `:>` holds its RHS unevaluated, so printing the constructed Rule
+    // exercises the same InputForm printer without needing a widget.
+    clear_state();
+    assert_eq!(
+      interpret("x :> (a /. b -> c)[d]").unwrap(),
+      "x :> (a /. b -> c)[d]",
+    );
+    assert_eq!(
+      interpret("x :> (a //. b -> c)[d]").unwrap(),
+      "x :> (a //. b -> c)[d]",
+    );
+    assert_eq!(interpret("x :> (a /@ b)[d]").unwrap(), "x :> (a /@ b)[d]",);
+    assert_eq!(interpret("x :> (a @@ b)[d]").unwrap(), "x :> (a @@ b)[d]",);
+    assert_eq!(interpret("x :> (a @@@ b)[d]").unwrap(), "x :> (a @@@ b)[d]",);
+    assert_eq!(interpret("x :> (a; b)[d]").unwrap(), "x :> (a; b)[d]",);
+  }
+
+  #[test]
   fn test_replace_all_head_prefilter_keeps_every_match() {
     // ReplaceAll skips a rule list outright at nodes whose head no rule
     // names. The shapes it must still reach:
@@ -3076,6 +3173,40 @@ mod interpreter_tests {
       interpret("MatchQ[{1, 2, 3}, {a___, b_, c_, d___} /; b > c]").unwrap(),
       "False",
     );
+  }
+
+  #[test]
+  fn test_condition_guard_calling_curried_function_does_not_recurse() {
+    // A `/;` guard that calls a curried function (`f[p][x, y]`, i.e. two
+    // chained applications) used to blow $RecursionLimit: evaluating the
+    // guard's own nested pattern match for `f`'s curried DownValue was
+    // still seeing the *outer* Condition's LHS-guard stack entry (pushed
+    // for backtracking through sequence splits), so it kept re-applying
+    // the outer guard to the inner match's unrelated bindings forever.
+    // Found via a real Wolfram Demonstration notebook while testing Woxi
+    // Studio's notebook support.
+    clear_state();
+    interpret("cond[p_][a_, b_] := a < b").unwrap();
+    assert_eq!(
+      interpret("Cases[{{1, 2}, {3, 1}, {2, 3}}, {x_, y_} /; cond[0][x, y]]")
+        .unwrap(),
+      "{{1, 2}, {2, 3}}",
+    );
+    assert_eq!(
+      interpret(
+        "Select[{{1, 2}, {3, 1}, {2, 3}}, MatchQ[#, {x_, y_} /; cond[0][x, y]] &]"
+      )
+      .unwrap(),
+      "{{1, 2}, {2, 3}}",
+    );
+    clear_state();
+    interpret("cond2[p_][a_, b_] := a < b").unwrap();
+    assert_eq!(
+      interpret("{{1, 2}, {3, 1}} /. {x_, y_} /; cond2[0][x, y] :> f[x, y]")
+        .unwrap(),
+      "{f[1, 2], {3, 1}}",
+    );
+    clear_state();
   }
 
   #[test]

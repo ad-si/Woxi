@@ -1506,6 +1506,36 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
         }
         true
       }
+      "AbsoluteDashing" if !args.is_empty() => {
+        // AbsoluteDashing[{d1, d2, ...}] is Dashing's absolute counterpart —
+        // every length is literal pixels (printer's points) rather than a
+        // fraction of the image width, the same relationship
+        // AbsoluteThickness has to Thickness. Stored negative so dash_attr
+        // treats it as literal px.
+        match &args[0] {
+          Expr::Identifier(s) if s == "None" => style.dashing = None,
+          Expr::List(items) if items.is_empty() => style.dashing = None,
+          Expr::List(items) => {
+            let dashes: Vec<f64> = items
+              .iter()
+              .filter_map(|e| {
+                dash_size_to_f64(e).or_else(|| expr_to_f64(e).map(|d| -d.abs()))
+              })
+              .collect();
+            if !dashes.is_empty() {
+              style.dashing = Some(dashes);
+            }
+          }
+          _ => {
+            if let Some(d) = dash_size_to_f64(&args[0])
+              .or_else(|| expr_to_f64(&args[0]).map(|d| -d.abs()))
+            {
+              style.dashing = Some(vec![d, d]);
+            }
+          }
+        }
+        true
+      }
       "EdgeForm" => {
         if args.is_empty() {
           style.edge_form = Some(EdgeForm {
@@ -2569,14 +2599,9 @@ fn parse_sphere(
     }
     return;
   }
-  let Some(radius) = (match args.get(1) {
-    Some(r) => expr_to_f64(r),
-    None => Some(1.0),
-  }) else {
-    return;
-  };
   // One centre, or a list of them — `Sphere[{p1, p2}, r]` draws one sphere
-  // of radius `r` around each point.
+  // of radius `r` around each point. `Sphere[{p1, p2}, {r1, r2}]` instead
+  // gives each centre its own radius.
   let centers: Vec<(f64, f64)> = match args.first() {
     Some(Expr::List(items))
       if !items.is_empty()
@@ -2587,7 +2612,15 @@ fn parse_sphere(
     Some(single) => expr_to_point(single).into_iter().collect(),
     None => Vec::new(),
   };
-  for center in centers {
+  let radii: Vec<f64> = match args.get(1) {
+    Some(Expr::List(items)) if items.len() == centers.len() => items
+      .iter()
+      .map(|i| expr_to_f64(i).unwrap_or(1.0))
+      .collect(),
+    Some(r) => vec![expr_to_f64(r).unwrap_or(1.0); centers.len()],
+    None => vec![1.0; centers.len()],
+  };
+  for (center, radius) in centers.into_iter().zip(radii) {
     emit_sphere(filled, center, radius, style, prims);
   }
 }
@@ -6049,10 +6082,35 @@ pub(crate) fn machine_real_display_parts(f: f64) -> BigFloatDisplay {
 
 pub(crate) fn svg_escape(s: &str) -> String {
   let s = crate::syntax::substitute_private_use_glyphs(s);
-  s.replace('&', "&amp;")
+  let escaped = s
+    .replace('&', "&amp;")
     .replace('<', "&lt;")
     .replace('>', "&gt;")
-    .replace('"', "&quot;")
+    .replace('"', "&quot;");
+  render_math_letterlike_glyphs(&escaped)
+}
+
+/// Substitute any differential/exponential/imaginary-unit Letterlike
+/// Symbols glyph (see [`italic_letter_for_math_glyph`]) with an italicized
+/// plain-ASCII letter in a `<tspan>`. Safe to run after XML-escaping,
+/// since none of the substituted codepoints are XML metacharacters — the
+/// injected `<tspan>` markup is the only angle-bracket content this adds.
+fn render_math_letterlike_glyphs(s: &str) -> String {
+  if !s.chars().any(|c| italic_letter_for_math_glyph(c).is_some()) {
+    return s.to_string();
+  }
+  let mut out = String::with_capacity(s.len());
+  for c in s.chars() {
+    match italic_letter_for_math_glyph(c) {
+      Some(letter) => {
+        out.push_str("<tspan font-style=\"italic\">");
+        out.push(letter);
+        out.push_str("</tspan>");
+      }
+      None => out.push(c),
+    }
+  }
+  out
 }
 
 fn render_primitive(
@@ -8172,6 +8230,25 @@ fn is_math_italic_atom(s: &str) -> bool {
   }
 }
 
+/// The plain-ASCII letter TraditionalForm's differential/exponential/
+/// imaginary-unit Letterlike Symbols glyphs stand in for: `ⅆ` (U+2146,
+/// `∫ … ⅆx`), `ⅇ` (U+2147, `ⅇ^x`), `ⅈ`/`ⅉ` (U+2148/2149, `a + b ⅈ`). Most
+/// non-Mathematica fonts — including the ones this renderer embeds — have
+/// no glyph for these, and the font-fallback substitute comes out as an
+/// unrelated glyph (an "L" shape for `ⅆ`, roman numerals for `ⅇ`/`ⅈ`) at a
+/// different advance width than plain ASCII. Callers render the returned
+/// letter italicized, matching Mathematica's own typeset look without
+/// depending on the codepoint's glyph coverage.
+pub(crate) fn italic_letter_for_math_glyph(c: char) -> Option<char> {
+  match c {
+    '\u{2146}' => Some('d'), // \[DifferentialD]
+    '\u{2147}' => Some('e'), // \[ExponentialE]
+    '\u{2148}' => Some('i'), // \[ImaginaryI]
+    '\u{2149}' => Some('j'), // \[ImaginaryJ]
+    _ => None,
+  }
+}
+
 /// The set of single-character bracket/bar glyphs that can be vertically
 /// stretched to enclose tall content.
 fn stretchy_delim_kind(s: &str) -> Option<char> {
@@ -8412,20 +8489,21 @@ impl BoxLayout {
     // missing-glyph box (▢). Substitute the public Unicode arrows so the
     // SVG output displays correctly everywhere. Each maps one char to one
     // char, so the width estimate below is unaffected.
-    // `\[DifferentialD]` (U+2146, the italic "ⅆ" used in `∫ … ⅆx`) is a rare
-    // Mathematical Alphanumeric Symbols codepoint most non-Mathematica fonts
-    // don't carry either — the SVG viewer's font-fallback glyph for it comes
-    // out a different width than the plain-ASCII advance computed below, so
-    // it overlaps the following variable (`ⅆx` renders as if it read "ddx").
-    // Map it to plain "d"; `is_math_italic_atom` below then italicizes the
-    // lone letter, giving the same look without depending on that glyph.
+    // `\[DifferentialD]`/`\[ExponentialE]`/`\[ImaginaryI]`/`\[ImaginaryJ]`
+    // (U+2146/2147/2148/2149, used in `∫ … ⅆx`, `ⅇ^x`, `a + b ⅈ`) are rare
+    // Letterlike Symbols codepoints most non-Mathematica fonts don't carry
+    // either — the SVG viewer's font-fallback glyph for them comes out a
+    // different width than the plain-ASCII advance computed below (and can
+    // be a completely unrelated glyph), so it overlaps the following
+    // variable (`ⅆx` renders as if it read "ddx"). Map each to its plain
+    // letter; `is_math_italic_atom` below then italicizes the lone letter,
+    // giving the same look without depending on that glyph.
     let mapped: String = s
       .chars()
       .map(|c| match c {
         '\u{f522}' => '\u{2192}', // \[Rule] → →
         '\u{f51f}' => '\u{29f4}', // \[RuleDelayed] → ⧴
-        '\u{2146}' => 'd',        // \[DifferentialD] → d (italicized below)
-        other => other,
+        other => italic_letter_for_math_glyph(other).unwrap_or(other),
       })
       .collect();
     let s = mapped.as_str();
@@ -17677,7 +17755,12 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // is the same pattern for a custom control (often a `DynamicModule`
       // wrapping its own `Manipulator`/`EventHandler`) that shows a hover
       // hint instead of a label — a Demonstration's zoom-point selector is
-      // commonly written this way.
+      // commonly written this way. `ActionMenu[label, {item :> action, …}]`
+      // is the same action-on-interaction pattern as `Button[…]`, just with
+      // a menu of choices instead of a single click — it fires its own
+      // action rather than binding a variable, so it is not a variable spec
+      // either (a Demonstration's "choose a motif" menu is commonly written
+      // this way).
       Expr::FunctionCall { name, .. }
         if matches!(
           name.as_str(),
@@ -17687,6 +17770,7 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             | "Control"
             | "Button"
             | "ButtonBar"
+            | "ActionMenu"
             | "Spacer"
             | "PaneSelector"
             | "TabView"
@@ -18636,6 +18720,18 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   // to tell a static list from one that follows another control.
   let sibling_names: Vec<String> =
     initial_bindings.iter().map(|(n, _)| n.clone()).collect();
+  // A `SetterBar[Dynamic[var], choices]` / `RadioButtonBar[Dynamic[var],
+  // choices]` written directly as (part of) an extra display argument —
+  // e.g. `Row[{"n sites ", SetterBar[Dynamic[inputsites], Range[2, 10]]}]`
+  // — is not a formal `{var, …}` control spec, so `var` never gets an
+  // initial value from `initial_bindings` above. Wolfram auto-initializes
+  // such a "bare" dynamic control's variable to its first choice the
+  // moment it is drawn; mirror that by seeding `state` the same way a
+  // `ControlType -> None` control would, so the variable already has a
+  // value before the body or any display reads it.
+  for spec in &arg_items {
+    collect_bare_setterbar_state(spec, &sibling_names, &mut state);
+  }
   // Filled in on demand by the spec loop below, when a spec only parses
   // once the body has run (see the retry there).
   let mut post_body_bindings: Option<Vec<(String, String)>> = None;
@@ -19616,6 +19712,63 @@ fn collect_body_popup_menus(expr: &Expr) -> Vec<BodyPopupMenu> {
   let mut found = Vec::new();
   walk(expr, &mut Vec::new(), &mut found);
   found
+}
+
+/// Scan an extra-display Manipulate argument for a `SetterBar[Dynamic[var],
+/// choices]` / `RadioButtonBar[Dynamic[var], choices]` widget (found
+/// anywhere inside it, e.g. nested in a `Row[…]` alongside a plain label)
+/// whose `var` is not one of the Manipulate's formally declared control
+/// variables (`known`) and does not already have a `state` entry. Seeds
+/// `state` with `(var, firstChoice)` — a plain choice's own value, or a
+/// rule-form choice's left-hand side — the same auto-initialization
+/// Wolfram gives a "bare" dynamic control the moment it is first drawn.
+fn collect_bare_setterbar_state(
+  spec: &Expr,
+  known: &[String],
+  state: &mut Vec<(String, String)>,
+) {
+  if let Expr::FunctionCall { name, args } = spec
+    && (name == "SetterBar" || name == "RadioButtonBar")
+    && args.len() >= 2
+  {
+    if let Some(Expr::FunctionCall {
+      name: dname,
+      args: dargs,
+    }) = args.first()
+      && dname == "Dynamic"
+      && let Some(Expr::Identifier(var)) = dargs.first()
+      && !known.contains(var)
+      && !state.iter().any(|(n, _)| n == var)
+      && let Ok(Expr::List(ref choices)) =
+        crate::evaluator::evaluate_expr_to_expr(&args[1])
+      && let Some(first) = choices.first()
+    {
+      let value = match first {
+        Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } => {
+          pattern.as_ref()
+        }
+        other => other,
+      };
+      state.push((var.clone(), crate::syntax::expr_to_input_form(value)));
+    }
+    for a in args {
+      collect_bare_setterbar_state(a, known, state);
+    }
+    return;
+  }
+  match spec {
+    Expr::FunctionCall { args, .. } => {
+      for a in args {
+        collect_bare_setterbar_state(a, known, state);
+      }
+    }
+    Expr::List(items) => {
+      for it in items {
+        collect_bare_setterbar_state(it, known, state);
+      }
+    }
+    _ => {}
+  }
 }
 
 /// Replace each `PopupMenu[Dynamic[var], …]` whose `var` is listed in
@@ -24063,10 +24216,30 @@ fn display_expr_to_node(
       "Style" | "StyleForm" if !args.is_empty() => {
         styled_text_node(expr, bindings)
       }
+      // A sub-/superscript leaf (e.g. a Dynamic caption assembling an
+      // orbital symbol like `Subscript[2p, x]`): typeset through the same
+      // label machinery a control's caption uses, rather than falling
+      // through to the raw `Subscript[…]` source text.
+      "Subscript" | "Superscript" | "Subsuperscript" if args.len() >= 2 => {
+        styled_text_node(expr, bindings)
+      }
       // `TogglerBar[Dynamic[var], {v1 -> label1, …}]`: a row of toggle
       // buttons; clicking one adds/removes its value from the list `var`.
       "TogglerBar" if args.len() >= 2 => {
         match togglerbar_node(args, bindings, probes, ons) {
+          Some(node) => node,
+          None => static_leaf_node(expr, bindings),
+        }
+      }
+      // `SetterBar[Dynamic[var], {v1 -> label1, …}]` / `RadioButtonBar[…]`
+      // written directly as (part of) an extra display argument — e.g.
+      // `Row[{"n sites ", SetterBar[Dynamic[inputsites], Range[2, 10]]}]`
+      // — rather than through a formal `{var, …}` control spec: a row of
+      // buttons: clicking one sets `var` to that choice's value. `var`'s
+      // initial value comes from `collect_bare_setterbar_state`, run once
+      // when the Manipulate spec is built.
+      "SetterBar" | "RadioButtonBar" if args.len() >= 2 => {
+        match setterbar_node(args, bindings, probes, ons) {
           Some(node) => node,
           None => static_leaf_node(expr, bindings),
         }
@@ -24351,6 +24524,89 @@ fn togglerbar_node(
   // A trailing `Appearance -> "Vertical"` (added by the CheckboxBar/TogglerBar
   // branch of `parse_manipulate_control`) stacks the toggles in a column
   // instead of Wolfram's default horizontal bar.
+  let vertical = args[2..].iter().any(|it| {
+    let (Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    }) = it
+    else {
+      return false;
+    };
+    matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Appearance")
+      && (matches!(replacement.as_ref(), Expr::Identifier(s) if s == "Vertical")
+        || matches!(replacement.as_ref(), Expr::String(s) if s == "Vertical"))
+  });
+  Some(if vertical {
+    DisplayNode::Column(buttons)
+  } else {
+    DisplayNode::Row(buttons)
+  })
+}
+
+/// Build a `SetterBar[Dynamic[var], choices]` / `RadioButtonBar[…]` display:
+/// a Row of Toggler-style buttons. Each choice is `value -> label` (or a
+/// plain value, labelled by itself); clicking a button *sets* `var` to that
+/// value — unlike `togglerbar_node`'s list-membership toggle, exactly one
+/// button is ever selected. Returns `None` when the arguments don't have
+/// that shape (the caller falls back to a static rendering).
+fn setterbar_node(
+  args: &[Expr],
+  bindings: &[(String, String)],
+  probes: &mut Vec<String>,
+  ons: &mut Vec<String>,
+) -> Option<DisplayNode> {
+  let var = match args.first() {
+    Some(Expr::FunctionCall { name, args: dargs })
+      if name == "Dynamic" && !dargs.is_empty() =>
+    {
+      match &dargs[0] {
+        Expr::Identifier(v) => v.clone(),
+        _ => return None,
+      }
+    }
+    _ => return None,
+  };
+  // The choice list may be held (e.g. `Range[2, 10]`).
+  let choices_expr = match &args[1] {
+    l @ Expr::List(_) => l.clone(),
+    other => crate::evaluator::evaluate_expr_to_expr(other).ok()?,
+  };
+  let Expr::List(choices) = &choices_expr else {
+    return None;
+  };
+  // The current selection, for the per-choice `selected` state.
+  let current =
+    crate::evaluator::evaluate_expr_to_expr(&Expr::Identifier(var.clone()))
+      .ok()
+      .map(|e| crate::syntax::expr_to_input_form(&e));
+  let mut buttons = Vec::with_capacity(choices.len());
+  for choice in choices {
+    let (value, label) = match choice {
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } => (pattern.as_ref(), replacement.as_ref()),
+      other => (other, other),
+    };
+    let value_code = crate::syntax::expr_to_input_form(value);
+    let selected = current.as_deref() == Some(value_code.as_str());
+    let mutation = format!("{var} = {value_code}");
+    buttons.push(DisplayNode::Toggler {
+      label: Box::new(display_expr_to_node(label, bindings, probes, ons)),
+      mutation,
+      selected,
+    });
+  }
+  // A trailing `Appearance -> "Vertical"` stacks the buttons in a column
+  // instead of the default horizontal bar, matching `togglerbar_node`.
   let vertical = args[2..].iter().any(|it| {
     let (Expr::Rule {
       pattern,

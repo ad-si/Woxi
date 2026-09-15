@@ -4,7 +4,11 @@
 //! - DiracDelta[x] ⊛ g  →  g with x → y
 //! - UnitBox[x] ⊛ UnitBox[x]  →  UnitTriangle[y]
 //! - UnitStep[x] ⊛ UnitStep[x]  →  y*UnitStep[y]
-//! - E^(-a x²) ⊛ E^(-b x²)  →  Sqrt[Pi/(a + b)] · E^(-(a b/(a + b)) y²)
+//! - K·E^(-a(x-p)²) ⊛ K'·E^(-a'(x-p')²)
+//!   →  K K' Sqrt[Pi/(a + a')] · E^(-(a a'/(a + a')) (y-p-p')²)
+//!   Recognized via `Log`/`PowerExpand`/`Expand`, so any algebraic packaging
+//!   of a (possibly shifted, possibly scaled) Gaussian matches — a bare
+//!   `E^(-a x^2)`, `PDF[NormalDistribution[mu, sigma], x]`, etc.
 //! - E^(-a x) UnitStep[x] ⊛ E^(-a x) UnitStep[x]  →  y E^(-a y) UnitStep[y]
 //!
 //! Results are constructed to match wolframscript's printed forms
@@ -71,22 +75,25 @@ pub fn convolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(times(vec![y.clone(), unit_step_y()]));
   }
 
-  // E^(-a x²) ⊛ E^(-b x²) → Sqrt[Pi/(a + b)]/E^((a b/(a + b)) y²)
-  if let (Some(a), Some(b)) = (
-    gaussian_rate(&args[0], &x_var),
-    gaussian_rate(&args[1], &x_var),
+  // K·E^(-a(x-p)²) ⊛ K'·E^(-a'(x-p')²) → see `gaussian_shape` doc comment.
+  if let (Some((a, shift_f, k_f)), Some((b, shift_g, k_g))) = (
+    gaussian_shape(&args[0], &x_var),
+    gaussian_shape(&args[1], &x_var),
   ) {
     let s = frac(a.0 * b.1 + b.0 * a.1, a.1 * b.1); // a + b
     let q = frac(a.0 * b.0 * s.1, a.1 * b.1 * s.0); // a*b/(a + b)
     let sqrt_part = call1("Sqrt", div2(const_expr("Pi"), frac_to_expr(s)));
-    let y_sq = pow2(y.clone(), Expr::Integer(2));
+    let y_shifted = minus2(y.clone(), call("Plus", vec![shift_f, shift_g]));
+    let y_sq = pow2(y_shifted, Expr::Integer(2));
     let exponent = match q {
       (1, 1) => y_sq,
       (1, r) => div2(y_sq, Expr::Integer(r)),
       (p, 1) => times(vec![Expr::Integer(p), y_sq]),
       (p, r) => div2(times(vec![Expr::Integer(p), y_sq]), Expr::Integer(r)),
     };
-    return Ok(div2(sqrt_part, pow2(e_sym(), exponent)));
+    let gaussian_part = div2(sqrt_part, pow2(e_sym(), exponent));
+    let result = times(vec![k_f, k_g, gaussian_part]);
+    return crate::evaluator::evaluate_expr_to_expr(&result);
   }
 
   // E^(-a x) UnitStep[x] ⊛ (same a) → (y*UnitStep[y])/E^(a y)
@@ -111,10 +118,66 @@ pub fn convolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(unevaluated(args))
 }
 
-/// Match E^(-a·x²) and return the positive rational rate a.
-fn gaussian_rate(expr: &Expr, x_var: &str) -> Option<Frac> {
-  let exponent = exp_exponent(expr)?;
-  neg_coeff_of(&exponent, x_var, 2)
+/// Recognize `expr` (a function of `x_var`) as `K·E^(-a·(x_var-shift)²)` for
+/// a literal positive rational `a`, returning `(a, shift, K)`.
+///
+/// Works by expanding `Log[expr]` into a polynomial in `x_var` (via
+/// `PowerExpand` then `Expand`) and reading off its quadratic, linear and
+/// constant coefficients: `Log[K·E^(-a(x-p)²)] = -a·x² + 2ap·x + (Log[K] -
+/// a·p²)`. This is agnostic to how the Gaussian is algebraically packaged
+/// (a bare `E^(-a x^2)`, a reciprocal product such as
+/// `PDF[NormalDistribution[mu, sigma], x]`, shifted or not), unlike matching
+/// the `Power[E, …]` shape directly.
+fn gaussian_shape(expr: &Expr, x_var: &str) -> Option<(Frac, Expr, Expr)> {
+  let log_expr = call1("PowerExpand", call1("Log", expr.clone()));
+  let expanded =
+    crate::evaluator::evaluate_expr_to_expr(&call1("Expand", log_expr)).ok()?;
+
+  let mut coeff2_terms = Vec::new();
+  let mut coeff1_terms = Vec::new();
+  let mut coeff0_terms = Vec::new();
+  for term in collect_additive_terms(&expanded) {
+    let (power, coeff) = term_var_power_and_coeff(&term, x_var);
+    match power {
+      2 => coeff2_terms.push(coeff),
+      1 => coeff1_terms.push(coeff),
+      0 => coeff0_terms.push(coeff),
+      _ => return None,
+    }
+  }
+  if coeff2_terms.is_empty() {
+    return None;
+  }
+  let coeff2 =
+    crate::evaluator::evaluate_expr_to_expr(&call("Plus", coeff2_terms))
+      .ok()?;
+  let a = negative_frac(&coeff2)?;
+
+  let coeff1 = if coeff1_terms.is_empty() {
+    Expr::Integer(0)
+  } else {
+    call("Plus", coeff1_terms)
+  };
+  let coeff0 = if coeff0_terms.is_empty() {
+    Expr::Integer(0)
+  } else {
+    call("Plus", coeff0_terms)
+  };
+
+  // shift = coeff1 / (2a)
+  let two_a = frac_to_expr(frac(2 * a.0, a.1));
+  let shift =
+    crate::evaluator::evaluate_expr_to_expr(&div2(coeff1, two_a)).ok()?;
+
+  // K = E^(coeff0 + a·shift²) — the x-independent remainder of Log[expr],
+  // with the shift's own quadratic contribution (-a·shift²) added back in.
+  let correction =
+    times2(frac_to_expr(a), pow2(shift.clone(), Expr::Integer(2)));
+  let log_k = call("Plus", vec![coeff0, correction]);
+  let k =
+    crate::evaluator::evaluate_expr_to_expr(&pow2(id_expr("E"), log_k)).ok()?;
+
+  Some((a, shift, k))
 }
 
 /// Match E^(-a·x)·UnitStep[x] (factors in any order) and return a.

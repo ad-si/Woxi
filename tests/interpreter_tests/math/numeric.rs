@@ -2278,4 +2278,134 @@ mod exact_roots {
       assert_eq!(interpret(code).unwrap(), expected, "for {code}");
     }
   }
+
+  /// `CubeRoot` is only a spelling of `Surd[x, 3]`, but it used to evaluate a
+  /// machine-precision base with `f64::cbrt` where `Surd` used `x^(1/n)`.
+  /// Those disagree in the last bit for roughly 7% of inputs, so the two
+  /// spellings printed different numbers (`CubeRoot[7.]` gave
+  /// `1.9129311827723892` against wolframscript's `1.912931182772389`), and
+  /// `cbrt` was also the one place the MSVC libm's last bit differed from
+  /// macOS and glibc, which broke `CubeRoot[2.]` on the Windows nightly.
+  #[test]
+  fn cube_root_agrees_with_surd_on_machine_reals() {
+    for base in [
+      "2.",
+      "7.",
+      "3.",
+      "10.",
+      "0.5",
+      "1.5",
+      "123.456",
+      "1.",
+      "0.",
+      "-7.",
+      "-2.",
+      "-0.5",
+      "10000000000.",
+      "0.0000000001",
+    ] {
+      let cube_root = interpret(&format!("CubeRoot[{base}]")).unwrap();
+      let surd = interpret(&format!("Surd[{base}, 3]")).unwrap();
+      assert_eq!(cube_root, surd, "CubeRoot[{base}] vs Surd[{base}, 3]");
+      // For a non-negative base the real root is the principal one, so both
+      // spellings must also agree with the plain power — which is what
+      // wolframscript prints for all three.
+      if !base.starts_with('-') {
+        let power = interpret(&format!("({base})^(1/3)")).unwrap();
+        assert_eq!(cube_root, power, "CubeRoot[{base}] vs ({base})^(1/3)");
+      }
+    }
+    assert_eq!(interpret("CubeRoot[7.]").unwrap(), "1.912931182772389");
+    assert_eq!(interpret("CubeRoot[-7.]").unwrap(), "-1.912931182772389");
+  }
+
+  /// A machine-precision base keeps its inexactness: `Surd[1., 3]` is `1.`,
+  /// not `1`. The numeric fallback rounded whole results back to integers.
+  #[test]
+  fn machine_precision_bases_stay_inexact() {
+    for (code, expected) in [
+      ("Surd[1., 3]", "1."),
+      ("Surd[0., 3]", "0."),
+      ("Surd[-0., 3]", "0."),
+      ("Surd[16., 4]", "2."),
+      ("Surd[2., 1]", "2."),
+      ("Surd[2., -1]", "0.5"),
+      ("Surd[-8., -3]", "-0.5"),
+      ("CubeRoot[0.]", "0."),
+      ("CubeRoot[8.]", "2."),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "for {code}");
+    }
+  }
+
+  /// The inexact cases go through `Power` like the exact ones, so they share
+  /// its `Surd::noneg`/`Power::infy` behaviour instead of silently returning
+  /// an unevaluated call or a real `Infinity`.
+  #[test]
+  fn inexact_bases_share_the_exact_error_behaviour() {
+    assert_eq!(interpret("Surd[-8., 2]").unwrap(), "Indeterminate");
+    assert_eq!(interpret("Surd[-8., -2]").unwrap(), "Indeterminate");
+    assert_eq!(interpret("Surd[0., -3]").unwrap(), "ComplexInfinity");
+    let r = interpret_with_stdout("Surd[-8., 2]").unwrap();
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "Surd::noneg: Surd is not defined for even roots of negative values."
+    )));
+  }
+
+  /// `Surd` needs a literal integer degree; wolframscript reports anything
+  /// else numeric with `Surd::int` and leaves the call unevaluated rather
+  /// than reading `Surd[8, 1/2]` as `8^2`. A degree that is merely symbolic
+  /// is not an error.
+  #[test]
+  fn non_integer_degrees_are_rejected() {
+    for code in ["Surd[8, 1/2]", "Surd[8, 2.]", "Surd[2, 2.]"] {
+      let r = interpret_with_stdout(code).unwrap();
+      assert_eq!(r.result, code, "for {code}");
+      assert!(
+        r.warnings.iter().any(|w| w.contains(&format!(
+          "Surd::int: Integer expected at position 2 in {code}."
+        ))),
+        "for {code}: {:?}",
+        r.warnings
+      );
+    }
+    let r = interpret_with_stdout("Surd[8, n]").unwrap();
+    assert_eq!(r.result, "Surd[8, n]");
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+  }
+
+  /// A non-real base is reported under the head it was called by and stays
+  /// unevaluated in that spelling — `CubeRoot[I]` does not canonicalize to
+  /// `Surd[I, 3]` the way the symbolic `CubeRoot[x]` does.
+  #[test]
+  fn non_real_bases_are_rejected_under_their_own_head() {
+    for (code, head, param) in [
+      ("Surd[I, 3]", "Surd", "I"),
+      ("Surd[1 + I, 3]", "Surd", "1 + I"),
+      ("CubeRoot[I]", "CubeRoot", "I"),
+      ("CubeRoot[1 + I]", "CubeRoot", "1 + I"),
+    ] {
+      let r = interpret_with_stdout(code).unwrap();
+      assert_eq!(r.result, code, "for {code}");
+      assert!(
+        r.warnings.iter().any(|w| w.contains(&format!(
+          "{head}::preal: The parameter {param} should be real valued."
+        ))),
+        "for {code}: {:?}",
+        r.warnings
+      );
+    }
+    // The degree is checked first: a non-integer degree wins over the base.
+    let r = interpret_with_stdout("Surd[I, 1/2]").unwrap();
+    assert_eq!(r.result, "Surd[I, 1/2]");
+    assert!(r.warnings.iter().any(|w| w.contains("Surd::int")));
+    assert!(!r.warnings.iter().any(|w| w.contains("preal")));
+    // A symbolic base that merely mentions I is still canonicalized.
+    assert_eq!(interpret("CubeRoot[x + I]").unwrap(), "Surd[I + x, 3]");
+    // A zero imaginary part still makes it complex. Woxi has no `Complex`
+    // head, so this is the one case that cannot go by the head.
+    let r = interpret_with_stdout("CubeRoot[2. + 0. I]").unwrap();
+    assert_eq!(r.result, "CubeRoot[2. + 0.*I]");
+    assert!(r.warnings.iter().any(|w| w.contains("CubeRoot::preal")));
+  }
 }

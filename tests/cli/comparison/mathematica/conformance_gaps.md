@@ -657,6 +657,16 @@ Woxi has no dedicated `Complex` expression variant, so a real-real complex is
 rewritten to `Plus[Real, Times[Real, I]]` during evaluation. The printed string
 matches; the head does not.
 
+Code that has to tell a complex with a zero imaginary part from a real must
+therefore go by "extracts as complex but not as a real" rather than by the
+head — see `reject_non_real_base` in `math_ast/elementary.rs`. Such a value
+also renders with an explicit `*` where WL's messages use a space:
+
+```sh
+wolframscript -code 'CubeRoot[2. + 0. I]'   # …The parameter 2. + 0. I should be…
+woxi eval 'CubeRoot[2. + 0. I]'             # …The parameter 2. + 0.*I should be…
+```
+
 ### `Binomial[n, real]` carries Gamma-error noise
 
 `Binomial[10, 3.]` is `119.99999999999987` in Woxi and `120.` in WL;
@@ -1030,6 +1040,20 @@ echo. The coefficients are easy; WL's output form is unpredictably factored —
 factored as `Pi^2/3 + 4*(-Cos[x] + Cos[2*x]/4)`, and the same expression
 factors differently across the Sin/Cos/Trig variants.
 
+### `Simplify` expands a numerator WL keeps factored per coefficient
+
+```sh
+# Simplify[InterpolatingPolynomial[{{0,1},…,{5,q},…,{10,321}}, x]]
+wolframscript   # (14400 + 5760*(-10831 + 126*q)*x - … - (-86 + q)*x^10)/14400
+woxi eval       # (14400 - 62386560*x + 725760*q*x + … - q*x^10)/14400
+```
+
+Same value and same common denominator, but WL pulls the repeated linear
+factor `(-86 + q)` out of each coefficient where Woxi leaves the numerator
+expanded. `Factor` on the same input returns the expanded form too, so the
+missing step is recognizing a shared factor across coefficients rather than
+anything about `Simplify` itself.
+
 ### `Factor` with `GaussianIntegers`, `Extension` or `Trig`
 
 Recognized as valid options but the call stays unevaluated; WL factors
@@ -1214,18 +1238,47 @@ a *particular* solution with `C[1] … C[8]` after `DSolve::lpdeprtclr`. With
 `a == 0` or `c == 0` WL also writes the characteristics unnormalised
 (`C[1][x - y] + C[2][x]`) rather than as `λ x + y`.
 
-### `NDSolve` covers ODEs only
+### `NDSolve`'s PDE branch is 1-D, first-order-in-time only
+
+This entry used to say "`NDSolve` covers ODEs only" — no longer accurate.
+1-D parabolic PDEs (single or coupled reaction-diffusion-convection systems,
+Dirichlet or Neumann boundaries) now solve via the method of lines:
 
 ```wolfram
 NDSolve[{D[u[x,t],t] == D[u[x,t],x,x], u[x,0] == Sin[Pi x],
          u[0,t] == 0, u[1,t] == 0}, u, {x,0,1}, {t,0,1}]
 ```
 
-returns unevaluated. `NeumannValue` is out of scope, `DirichletCondition`
-exists only as a symbol, and `Method -> {"MethodOfLines", …}` has nothing
-behind it. On the symbolic side `DSolve` recognises three first-order
-two-variable PDE shapes; Laplace, which WL solves as
-`C[1][I x + y] + C[2][-I x + y]`, is not among them.
+returns a real `InterpolatingFunction`. What's still missing:
+
+- The evolution equation must be first-order in time (`D[u,t] == …`); a
+  second-order-in-time (hyperbolic/wave) PDE such as
+  `D[u[t,x],t,t] == D[u[t,x],x,x]` is left unevaluated — unlike the ODE
+  branch, it is not order-reduced to a first-order system.
+- The right-hand side may not itself contain a time derivative of the
+  unknown (an implicit/mixed term like `D[u[t,x],x,x,t]`); only the unknown
+  and its pure space derivatives are recognised there.
+- `NeumannValue` and `DirichletCondition` exist only as symbols; boundary
+  conditions must be written as plain equalities.
+
+A concrete example needing both missing pieces: the Wolfram Demonstration
+[*A Passive Cochlear Model*](https://demonstrations.wolfram.com/APassiveCochlearModel/)
+models the cochlea with an equation of the shape
+
+```wolfram
+D[u[t, x], t, t] ==
+  Exp[-2 (x + x0)/c1] (D[u[t, x], x, x] - D[u[t, x], x]/c1) +
+  c2 Exp[-(x + x0)/c1] (D[u[t, x], x, x, t] - D[u[t, x], x, t]/c1) +
+  c3 (D[u[t, x], x, x, t, t] - D[u[t, x], x, t, t]/c1)
+```
+
+— second-order in time, with mixed space/time derivatives on the right —
+so `NDSolve` stays unevaluated in Woxi, and Woxi Studio cannot render this
+Demonstration's `Manipulate` correctly.
+
+On the symbolic side `DSolve` recognises three first-order two-variable PDE
+shapes; Laplace, which WL solves as `C[1][I x + y] + C[2][-I x + y]`, is not
+among them.
 
 `NDSolve`'s DAE support handles an index-1 constraint that solves explicitly
 for one unknown; quadratic, coupled or index ≥ 2 constraints, and constraints
@@ -1470,6 +1523,17 @@ unsatisfiable problem gives `{}`. The **multi-instance and `All` ordering**
 follows WL's internal BDD structure and differs per expression —
 `a||b||c` orders 7,3,1,5,2,6,4 while `Majority[a,b,c]` orders 7,6,5,3.
 **Not reproducible.**
+
+
+### `Surd` with a degree past `i128`
+
+```sh
+wolframscript -code 'ToString[Surd[8, 10^40], InputForm]'   # 8^(1/10000000000000000000000000000000000000000)
+woxi eval 'Surd[8, 10^40]'                                  # Surd[8, 10000000000000000000000000000000000000000]
+```
+
+`Surd` builds the exponent with `make_rational`, which is `i128`-only, so a
+`BigInteger` degree leaves the call unevaluated. Degrees up to `10^38` work.
 
 
 ## Special functions

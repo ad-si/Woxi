@@ -4756,6 +4756,69 @@ fn evaluate_function_call_ast_inner(
     return Ok(call("Graphics", graphics_args));
   }
 
+  // HorizontalGauge[value, {min, max}, opts...] or
+  // HorizontalGauge[{value1, value2, …}, {min, max}, opts...] → Graphics bar
+  // showing one or more values on a horizontal scale from `min` to `max`.
+  // Each value is drawn as a vertical marker bar at its position along the
+  // track, like AngularGauge's needle but on a linear rather than angular
+  // scale. Options are kept on the resulting Graphics so wolframscript's
+  // `-Graphics-` placeholder is produced for callers that just check the
+  // head.
+  if name == "HorizontalGauge" && args.len() >= 2 {
+    let values: Vec<f64> = match &args[0] {
+      Expr::List(items) => items
+        .iter()
+        .filter_map(crate::functions::math_ast::try_eval_to_f64)
+        .collect(),
+      other => crate::functions::math_ast::try_eval_to_f64(other)
+        .into_iter()
+        .collect(),
+    };
+    let (lo, hi) = match &args[1] {
+      Expr::List(items) if items.len() == 2 => (
+        crate::functions::math_ast::try_eval_to_f64(&items[0]),
+        crate::functions::math_ast::try_eval_to_f64(&items[1]),
+      ),
+      _ => (None, None),
+    };
+    let mut primitives: Vec<Expr> = Vec::new();
+    // Track: a shallow rectangle spanning the full scale.
+    primitives.push(Expr::FunctionCall {
+      name: "Rectangle".to_string(),
+      args: vec![
+        Expr::List(vec![Expr::Integer(0), Expr::Integer(0)].into()),
+        Expr::List(vec![Expr::Integer(1), Expr::Real(0.2)].into()),
+      ]
+      .into(),
+    });
+    // One marker bar per value, at its normalized position along the track.
+    if let (Some(lo), Some(hi)) = (lo, hi)
+      && hi != lo
+    {
+      for v in values {
+        let t = ((v - lo) / (hi - lo)).clamp(0.0, 1.0);
+        primitives.push(Expr::FunctionCall {
+          name: "Line".to_string(),
+          args: vec![Expr::List(
+            vec![
+              Expr::List(vec![Expr::Real(t), Expr::Integer(0)].into()),
+              Expr::List(vec![Expr::Real(t), Expr::Real(0.2)].into()),
+            ]
+            .into(),
+          )]
+          .into(),
+        });
+      }
+    }
+    let mut graphics_args = vec![Expr::List(primitives.into())];
+    for opt in &args[2..] {
+      if matches!(opt, Expr::Rule { .. }) {
+        graphics_args.push(opt.clone());
+      }
+    }
+    return Ok(call("Graphics", graphics_args));
+  }
+
   // VoronoiMesh[{{x1,y1},{x2,y2},...}] → Voronoi tessellation as MeshRegion
   if name == "DelaunayMesh" && args.len() == 1 {
     return crate::functions::delaunay::delaunay_mesh_ast(args);
@@ -11134,6 +11197,13 @@ fn evaluate_function_call_ast_inner(
 
   // ClearSystemCache[] - no-op, returns Null
   if name == "ClearSystemCache" {
+    return Ok(null_expr());
+  }
+
+  // FinishDynamic[] - forces a front-end redraw of pending Dynamic
+  // content; outside a live notebook front end there is nothing pending,
+  // so it's a no-op that returns Null.
+  if name == "FinishDynamic" && args.is_empty() {
     return Ok(null_expr());
   }
 

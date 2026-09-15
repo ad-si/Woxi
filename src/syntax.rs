@@ -246,7 +246,10 @@ pub fn substitute_private_use_glyphs(s: &str) -> std::borrow::Cow<'_, str> {
       Some(sub) => out.push_str(sub),
       None => match script_letter_glyph(c) {
         Some(letter) => out.push(letter),
-        None => out.push(c),
+        None => match double_struck_letter_glyph(c) {
+          Some(letter) => out.push(letter),
+          None => out.push(c),
+        },
       },
     }
   }
@@ -311,6 +314,35 @@ fn script_letter_glyph(c: char) -> Option<char> {
   let (offset, gaps, block) = match c {
     '\u{F770}'..='\u{F789}' => (c as u32 - 0xF770, &CAPITAL_GAPS[..], 0x1D49C),
     '\u{F6B2}'..='\u{F6CB}' => (c as u32 - 0xF6B2, &SMALL_GAPS[..], 0x1D4B6),
+    _ => return None,
+  };
+  match gaps.iter().find(|(gap, _)| *gap == offset) {
+    Some((_, letter)) => Some(*letter),
+    None => char::from_u32(block + offset),
+  }
+}
+
+/// The Mathematical Double-Struck letter/digit for one of Wolfram's
+/// private-use double-struck characters (`\[DoubleStruckCapitalR]` is
+/// U+F7B5, not U+211D). Mirrors [`script_letter_glyph`]: the alphabet is
+/// contiguous, except that Unicode leaves the slots of the capital letters
+/// that already exist as letterlike symbols (ℂ, ℍ, ℕ, ℙ, ℚ, ℝ, ℤ)
+/// unassigned in the Mathematical Alphanumeric Symbols block.
+fn double_struck_letter_glyph(c: char) -> Option<char> {
+  const CAPITAL_GAPS: [(u32, char); 7] = [
+    (2, 'ℂ'),
+    (7, 'ℍ'),
+    (13, 'ℕ'),
+    (15, 'ℙ'),
+    (16, 'ℚ'),
+    (17, 'ℝ'),
+    (25, 'ℤ'),
+  ];
+  const NO_GAPS: [(u32, char); 0] = [];
+  let (offset, gaps, block) = match c {
+    '\u{F7A4}'..='\u{F7BD}' => (c as u32 - 0xF7A4, &CAPITAL_GAPS[..], 0x1D538),
+    '\u{F6E6}'..='\u{F6FF}' => (c as u32 - 0xF6E6, &NO_GAPS[..], 0x1D552),
+    '\u{F7DB}'..='\u{F7E4}' => (c as u32 - 0xF7DB, &NO_GAPS[..], 0x1D7D8),
     _ => return None,
   };
   match gaps.iter().find(|(gap, _)| *gap == offset) {
@@ -13426,6 +13458,21 @@ fn curried_head_needs_parens(func: &Expr) -> bool {
         | Expr::Comparison { .. }
         | Expr::Rule { .. }
         | Expr::RuleDelayed { .. }
+        // Infix/low-precedence operator forms: `u /. v`, `u //. v`, `u /@
+        // v`, `u @@ v`, `u @@@ v` and `u; v` all bind looser than the
+        // trailing `[args]`, so without parens the printed text re-parses
+        // with `[args]` swallowed into (or splitting off from) the wrong
+        // operand — e.g. `(r /. sol)[x]` printed as `r /. sol[x]` reads
+        // back as `r /. (sol[x])`. Regression: a Wolfram Demonstration's
+        // `(r /. sol[[1, 1]])["Domain"]` lost its parens when Woxi Studio
+        // reconstructed a `Manipulate` body's InputForm text for
+        // re-evaluation, silently changing what the code computed.
+        | Expr::ReplaceAll { .. }
+        | Expr::ReplaceRepeated { .. }
+        | Expr::Map { .. }
+        | Expr::Apply { .. }
+        | Expr::MapApply { .. }
+        | Expr::CompoundExpr(_)
     )
     || matches!(
       // A named pattern would re-parse as a pattern with a head (`u_[x]` is
