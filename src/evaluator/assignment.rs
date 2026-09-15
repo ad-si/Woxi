@@ -2088,6 +2088,420 @@ fn emit_part_set_failure(
   false
 }
 
+/// Per-argument pattern analysis shared by `Set` (`f[patt…] = rhs`) and
+/// `SetDelayed` (`f[patt…] := body`) when installing a DownValue: for each
+/// argument of the left-hand side, the dispatch parameter name, the
+/// condition (if any) a call must satisfy to match, the head/blank
+/// constraint used for specificity ordering and default value, and — for a
+/// `{…}` list pattern — the leaf pattern variable's `Part[…]` accessor into
+/// the bound list parameter. `SetDelayed` applies those substitutions to the
+/// unevaluated body before storing it; `Set` applies them to the right-hand
+/// side before evaluating it once (see `set_ast`), so a variable nested
+/// inside a list pattern (`f[z_, {{b1_, t1_}, …}] = …`) is destructured the
+/// same way under either assignment form.
+///
+/// `exempt_default_slot0` controls one historical divergence between the
+/// two forms that predates this shared helper and is kept as-is rather than
+/// unified: under `SetDelayed`, slot 0 of `Default[sym, …] := …` is stored
+/// as a bare, condition-free parameter named `sym` (not a `_dv0`/SameQ
+/// pair), so `Block`'s save/restore and `Definition`/`ClearAll` — which
+/// find a symbol's definitions by literal `params.first() == sym` — see it.
+/// `DefaultValues[sym]`'s own lookup instead scans for a `SameQ` *condition*
+/// naming the slot, which only the `_dv0`/SameQ form provides — the form
+/// `Set`'s `Default[sym, n] = v` has always stored slot 0 as. Pass `true`
+/// from `set_delayed_ast`, `false` from `set_ast`, to keep each form's
+/// existing consumers working.
+#[allow(clippy::type_complexity)]
+fn downvalue_arg_info(
+  func_name: &String,
+  lhs_args: &[Expr],
+  exempt_default_slot0: bool,
+) -> Result<
+  (
+    Vec<String>,
+    Vec<Option<Expr>>,
+    Vec<Option<Expr>>,
+    Vec<Option<String>>,
+    Vec<u8>,
+    Vec<(String, Expr)>,
+    Option<Vec<Expr>>,
+  ),
+  InterpreterError,
+> {
+  let mut params: Vec<String> = Vec::new();
+  let mut conditions: Vec<Option<Expr>> = Vec::new();
+  let mut defaults: Vec<Option<Expr>> = Vec::new();
+  let mut heads: Vec<Option<String>> = Vec::new();
+  let mut blank_types: Vec<u8> = Vec::new();
+  // List-pattern destructuring substitutions: each leaf pattern variable maps
+  // to the `Part[…]` / `Sequence@@Drop[…]` expression that extracts its value
+  // from the bound list parameter. Nested list patterns contribute deeper
+  // `Part` paths (see `collect_list_pattern_bindings`).
+  let mut body_substitutions: Vec<(String, Expr)> = Vec::new();
+  let mut inline_opts_defaults: Option<Vec<Expr>> = None;
+
+  for (i, arg) in lhs_args.iter().enumerate() {
+    let arg = unwrap_longest_shortest(arg);
+    // `Optional[p, d]` in call form — the shape a default written on
+    // anything richer than a named blank parses to (`x_?NumericQ : 2`,
+    // `x : _Symbol | _Integer : 2`, …). The slot itself is described by
+    // `p`, so describe that and attach the default afterwards; the
+    // `PatternOptional` node (`x_ : 2`) keeps its own handling below.
+    let (arg, optional_default) =
+      match crate::evaluator::pattern_matching::optional_call_parts(arg) {
+        Some((inner, default)) => {
+          (unwrap_longest_shortest(inner), default.cloned())
+        }
+        None => (arg, None),
+      };
+    let slot_start = params.len();
+    match arg {
+      // OptionsPattern[] or OptionsPattern[{defaults...}] — matches zero or more Rule arguments
+      Expr::FunctionCall {
+        name: fn_name,
+        args: op_args,
+      } if fn_name == "OptionsPattern" => {
+        let param_name = format!("__opts{i}");
+        params.push(param_name);
+        conditions.push(None);
+        defaults.push(None);
+        heads.push(None);
+        blank_types.push(3); // BlankNullSequence - matches 0 or more args
+        // Extract inline defaults from OptionsPattern[{a -> a0, ...}]
+        if op_args.len() == 1
+          && let Expr::List(rules) = &op_args[0]
+        {
+          inline_opts_defaults = Some(rules.to_vec());
+        }
+      }
+      // List pattern: {x_Integer, y_Integer} — destructure a list argument.
+      // Supports a trailing BlankSequence (`__`) or BlankNullSequence (`___`)
+      // element, which relaxes the length check and (for named sequence
+      // elements) binds the sequence variable to the matching tail.
+      Expr::List(patterns) if patterns.iter().any(contains_mutating_head) => {
+        // An element like `x_ = expr_` (the `HoldFirst` "let"-binding
+        // idiom, e.g. `myLet[{x_ = expr_}, x_] := expr`) must never be
+        // decomposed via `build_list_pattern_match`'s Part accessors:
+        // reconstructing `Part[{x = expr}, 1]` and evaluating it like
+        // ordinary code would actually perform the assignment. Route it
+        // through the structural-pattern matcher instead — it binds `x`
+        // and `expr` by walking the held argument's structure, never
+        // evaluating it.
+        let param_name = format!("__sp{i}");
+        conditions.push(Some(call(
+          "__StructuralPattern__",
+          vec![
+            Expr::Identifier(param_name.clone()),
+            Expr::List(patterns.clone()),
+          ],
+        )));
+        params.push(param_name);
+        defaults.push(None);
+        heads.push(None);
+        blank_types.push(1);
+      }
+      Expr::List(patterns) => {
+        let param_name = format!("_lp{i}");
+        // The combined condition checks the list length and that each
+        // constrained element (literal, head-constrained, or nested) matches
+        // its sub-pattern; the bindings extract each leaf variable.
+        let (combined_cond, bindings) =
+          build_list_pattern_match(patterns, &param_name);
+        conditions.push(Some(combined_cond));
+        body_substitutions.extend(bindings);
+        params.push(param_name);
+        defaults.push(None);
+        heads.push(Some("List".to_string()));
+        blank_types.push(1);
+      }
+      // PatternTest: x_?test or x_Head?test — store as structural pattern
+      // to preserve the test condition during dispatch.
+      // Use the original PatternTest expression directly: round-tripping
+      // it through normalize_structural_pattern drops the `?test` part
+      // (collect_pattern_vars only records name/head/optional, not tests).
+      Expr::PatternTest {
+        name,
+        head,
+        blank_type,
+        ..
+      } => {
+        let param_name = if name.is_empty() {
+          format!("__sp{i}")
+        } else {
+          name.clone()
+        };
+        conditions.push(Some(call(
+          "__StructuralPattern__",
+          vec![Expr::Identifier(param_name.clone()), arg.clone()],
+        )));
+        params.push(param_name);
+        defaults.push(None);
+        heads.push(head.clone());
+        blank_types.push(*blank_type);
+      }
+      // `Pattern[name, body]` (long-form named pattern, e.g.
+      // `Pattern[levelspec, _?LevelQ]` ≡ `levelspec_?LevelQ`). Re-attach
+      // the name onto the inner pattern body so PatternTest/Blank handling
+      // sees it as a named pattern rather than an anonymous structural one.
+      Expr::FunctionCall {
+        name: pat_fn,
+        args: pat_args,
+      } if pat_fn == "Pattern"
+        && pat_args.len() == 2
+        && matches!(&pat_args[0], Expr::Identifier(_)) =>
+      {
+        let pname = match &pat_args[0] {
+          Expr::Identifier(s) => s.clone(),
+          _ => unreachable!(),
+        };
+        match &pat_args[1] {
+          Expr::PatternTest {
+            head,
+            blank_type,
+            test,
+            ..
+          } => {
+            let normalized = Expr::PatternTest {
+              name: pname.clone(),
+              head: head.clone(),
+              blank_type: *blank_type,
+              test: test.clone(),
+            };
+            conditions.push(Some(call(
+              "__StructuralPattern__",
+              vec![Expr::Identifier(pname.clone()), normalized],
+            )));
+            params.push(pname);
+            defaults.push(None);
+            heads.push(head.clone());
+            blank_types.push(*blank_type);
+          }
+          // `Pattern[name, OptionsPattern[…]]` — named OptionsPattern
+          // (e.g. `opt:OptionsPattern[]`) matches zero or more Rule
+          // arguments. The slot keeps the `__opts{i}` synthetic name so
+          // the option-bindings collector recognises it, and the
+          // user-visible name is rewritten to that slot in the body, so
+          // `f[opts : OptionsPattern[]] := {opts}` splices the options
+          // it matched — the idiom for passing them on whole.
+          Expr::FunctionCall {
+            name: opn,
+            args: op_args,
+          } if opn == "OptionsPattern" => {
+            let param_name = format!("__opts{i}");
+            body_substitutions
+              .push((pname, Expr::Identifier(param_name.clone())));
+            params.push(param_name);
+            conditions.push(None);
+            defaults.push(None);
+            heads.push(None);
+            blank_types.push(3); // BlankNullSequence — 0 or more
+            if op_args.len() == 1
+              && let Expr::List(rules) = &op_args[0]
+            {
+              inline_opts_defaults = Some(rules.to_vec());
+            }
+          }
+          // `Pattern[name, {p1, p2, ...}]` — named list pattern.
+          // Bind `name` to the entire list (via the param itself) AND
+          // destructure inner elements. An element containing a mutating
+          // head (`x_ = expr_`) skips the Part-accessor decomposition for
+          // the same reason as the unnamed list-pattern case above.
+          Expr::List(patterns)
+            if patterns.iter().any(contains_mutating_head) =>
+          {
+            conditions.push(Some(call(
+              "__StructuralPattern__",
+              vec![
+                Expr::Identifier(pname.clone()),
+                Expr::List(patterns.clone()),
+              ],
+            )));
+            params.push(pname);
+            defaults.push(None);
+            heads.push(None);
+            blank_types.push(1);
+          }
+          Expr::List(patterns) => {
+            let (combined_cond, bindings) =
+              build_list_pattern_match(patterns, &pname);
+            conditions.push(Some(combined_cond));
+            body_substitutions.extend(bindings);
+            params.push(pname);
+            defaults.push(None);
+            heads.push(Some("List".to_string()));
+            blank_types.push(1);
+          }
+          // `Pattern[name, _]` / `Pattern[name, _Head]` — plain named
+          // blank, fast path.
+          Expr::Identifier(n) if n.starts_with('_') => {
+            let (_, head, blank_type) = extract_pattern_info(arg);
+            params.push(pname);
+            conditions.push(None);
+            defaults.push(None);
+            heads.push(head);
+            blank_types.push(blank_type);
+          }
+          Expr::FunctionCall { name: bn, .. }
+            if bn == "Blank"
+              || bn == "BlankSequence"
+              || bn == "BlankNullSequence" =>
+          {
+            let (_, head, blank_type) = extract_pattern_info(arg);
+            params.push(pname);
+            conditions.push(None);
+            defaults.push(None);
+            heads.push(head);
+            blank_types.push(blank_type);
+          }
+          // Any other body (Alternatives, Except, nested patterns, …)
+          // must keep its constraint: store the whole Pattern[name,
+          // body] as a structural pattern matched at dispatch time —
+          // previously the constraint was silently dropped, so
+          // s[x : (_Integer | _Real)] matched any argument at all.
+          // A sequence body (`r : (_Rule)..`) spans as many arguments
+          // as its run takes, so the slot is recorded as a sequence.
+          _ => {
+            conditions.push(Some(call(
+              "__StructuralPattern__",
+              vec![Expr::Identifier(pname.clone()), arg.clone()],
+            )));
+            params.push(pname);
+            defaults.push(None);
+            heads.push(None);
+            blank_types.push(pattern_blank_type(arg));
+          }
+        }
+      }
+      // A bare symbol with no `_` in this slot (e.g. `f[j_, Np]` where
+      // `Np` already holds a value, from `Np = Npp - 1` inside a Module)
+      // is not a pattern at all — WL requires an explicit `_` to
+      // introduce a pattern variable, so a plain symbol here is evaluated
+      // to its current value and matched literally, the same as a
+      // numeric literal (`f[j_, 5]`). Without this, the symbol became an
+      // unconstrained second wildcard slot indistinguishable in
+      // specificity from a fully generic `f[j_, k_]` overload, so the
+      // wrong rule could fire and return `Null` instead of the intended
+      // literal-argument overload.
+      //
+      // Exempt slot 0 of `Default[sym, …] := …`: that's the redirected
+      // storage for `sym`'s DefaultValues (see `belongs_to` in
+      // symbol_values.rs and `definition_text` in
+      // dispatch/complex_and_special.rs), both of which identify "this
+      // Default entry is sym's" by literal name — `params.first() ==
+      // sym` — rather than by evaluating a condition. Turning that slot
+      // into a `_dv0`/SameQ pair would hide the entry from
+      // `Definition[sym]`, `ClearAll[sym]`, and `Block`'s save/restore.
+      Expr::Identifier(name)
+        if !(name.contains('_')
+          || (exempt_default_slot0 && func_name == "Default" && i == 0)) =>
+      {
+        let param_name = format!("_dv{i}");
+        let eval_arg = if lhs_slot_is_held(func_name, i) {
+          arg.clone()
+        } else {
+          evaluate_expr_to_expr(arg)?
+        };
+        conditions.push(Some(Expr::Comparison {
+          operands: vec![Expr::Identifier(param_name.clone()), eval_arg],
+          operators: vec![ComparisonOp::SameQ],
+        }));
+        params.push(param_name);
+        blank_types.push(1);
+        defaults.push(None);
+        heads.push(None);
+      }
+      // Simple pattern: x_ or x_Head
+      _ => {
+        let (pat_name, head, blank_type) = extract_pattern_info(arg);
+        // Check for anonymous pattern identifiers (_, __, ___)
+        let is_anonymous_pattern = pat_name.is_empty()
+          && head.is_none()
+          && matches!(arg, Expr::Identifier(name) if name.starts_with('_'));
+        if is_anonymous_pattern {
+          let param_name = format!("_dv{i}");
+          params.push(param_name);
+          conditions.push(None);
+          blank_types.push(blank_type);
+        } else if pat_name.is_empty() && head.is_none() {
+          if crate::evaluator::pattern_matching::contains_pattern(arg) {
+            // Structural pattern (e.g., 1/x_, a_ + b_) — normalize and store
+            // the pattern AST in a __StructuralPattern__ marker for dispatch-time matching.
+            // A held slot keeps the pattern exactly as written.
+            let param_name = format!("__sp{i}");
+            let normalized = if lhs_slot_is_held(func_name, i) {
+              arg.clone()
+            } else {
+              normalize_structural_pattern(arg)
+            };
+            conditions.push(Some(call(
+              "__StructuralPattern__",
+              vec![Expr::Identifier(param_name.clone()), normalized],
+            )));
+            params.push(param_name);
+            blank_types.push(1);
+          } else {
+            // Literal value (not a pattern) — create a SameQ condition
+            // e.g., f[1] := ... should only match when arg === 1
+            let param_name = format!("_dv{i}");
+            let eval_arg = if lhs_slot_is_held(func_name, i) {
+              arg.clone()
+            } else {
+              evaluate_expr_to_expr(arg)?
+            };
+            conditions.push(Some(Expr::Comparison {
+              operands: vec![Expr::Identifier(param_name.clone()), eval_arg],
+              operators: vec![ComparisonOp::SameQ],
+            }));
+            params.push(param_name);
+            blank_types.push(1);
+          }
+        } else {
+          params.push(pat_name);
+          conditions.push(None);
+          blank_types.push(blank_type);
+        }
+        // Carry inline default through; if `arg` is `x_.` (PatternOptional
+        // with no inline default), store `Default[func]` as a deferred
+        // placeholder so dispatch can pull a user-set Default[f] at call
+        // time (matching Wolfram's `f[x_.] := ...` + `Default[f] = c`).
+        let default_for_slot = match arg {
+          Expr::PatternOptional {
+            default: Some(d), ..
+          } => Some((**d).clone()),
+          Expr::PatternOptional { default: None, .. } => {
+            Some(Expr::FunctionCall {
+              name: "Default".to_string(),
+              args: vec![
+                Expr::Identifier(func_name.clone()),
+                Expr::Integer((i + 1) as i128),
+              ]
+              .into(),
+            })
+          }
+          _ => None,
+        };
+        defaults.push(default_for_slot);
+        heads.push(head);
+      }
+    }
+    if let Some(d) = optional_default {
+      for slot in defaults.iter_mut().skip(slot_start) {
+        *slot = Some(d.clone());
+      }
+    }
+  }
+
+  Ok((
+    params,
+    conditions,
+    defaults,
+    heads,
+    blank_types,
+    body_substitutions,
+    inline_opts_defaults,
+  ))
+}
+
 pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
   let lhs = &normalize_symbol_lhs(lhs);
   // Unwrap Condition on LHS: f[x_] /; test = body is parsed as
@@ -2719,12 +3133,12 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
   {
     // Resolve Module-scoped unique symbols (e.g. f → f$1)
     let func_name = &resolve_func_name(func_name);
-    let rhs_value = evaluate_expr_to_expr(rhs)?;
 
     // A DownValue may not be attached to a Protected head — wolframscript
     // emits `Set::write` (naming the tag and the whole left-hand side) and
     // returns the right-hand side without storing anything.
     if is_downvalue_head_protected(func_name) {
+      let rhs_value = evaluate_expr_to_expr(rhs)?;
       crate::emit_message(&format!(
         "Set::write: Tag {} in {} is Protected.",
         func_name,
@@ -2733,77 +3147,41 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
       return Ok(rhs_value);
     }
 
-    // Build param names and conditions for each argument
-    let mut params = Vec::new();
-    let mut conditions: Vec<Option<Expr>> = Vec::new();
-    let mut defaults = Vec::new();
-    let mut heads = Vec::new();
-    let mut blank_types: Vec<u8> = Vec::new();
+    // Build param names, dispatch conditions, and (for a `{…}` list-pattern
+    // argument) body substitutions — the same per-argument analysis
+    // `set_delayed_ast` uses, so a pattern variable nested inside a list
+    // argument (`f[z_, {{b1_, t1_}, …}] = …`) is destructured here too,
+    // rather than being swallowed whole into one unmatched synthetic
+    // parameter (which left it unbound in the stored rule).
+    let (
+      mut params,
+      mut conditions,
+      defaults,
+      heads,
+      blank_types,
+      body_substitutions,
+      _inline_opts_defaults,
+    ) = downvalue_arg_info(func_name, lhs_args, false)?;
 
-    for (i, arg) in lhs_args.iter().enumerate() {
-      let arg = unwrap_longest_shortest(arg);
-      let param_name = format!("_dv{i}");
-
-      // Check if arg is a pattern (Blank, BlankSequence, named pattern, etc.)
-      let is_pattern = match arg {
-        Expr::Pattern { .. }
-        | Expr::PatternOptional { .. }
-        | Expr::PatternTest { .. } => true,
-        Expr::Identifier(name) => name.contains('_'),
-        _ => crate::evaluator::pattern_matching::contains_pattern(arg),
-      };
-
-      if is_pattern {
-        let (pat_name, head, blank_type) = extract_pattern_info(arg);
-        // `Pattern[name, body]` with a body beyond a blank (`r : _Rule..`,
-        // `x : (_Integer | _Real)`): keep the body as a structural pattern
-        // so the constraint holds at dispatch, and let a sequence body
-        // claim its whole run of arguments.
-        if pat_name.is_empty()
-          && let Expr::FunctionCall {
-            name: pat_head,
-            args: pat_args,
-          } = arg
-          && pat_head == "Pattern"
-          && pat_args.len() == 2
-          && let Expr::Identifier(bound) = &pat_args[0]
-        {
-          conditions.push(Some(call(
-            "__StructuralPattern__",
-            vec![Expr::Identifier(bound.clone()), arg.clone()],
-          )));
-          params.push(bound.clone());
-          heads.push(None);
-          blank_types.push(pattern_blank_type(arg));
-        } else {
-          let final_name = if pat_name.is_empty() {
-            param_name
-          } else {
-            pat_name
-          };
-          params.push(final_name);
-          conditions.push(None);
-          heads.push(head);
-          blank_types.push(blank_type);
-        }
-      } else {
-        // Evaluate the literal argument value — unless the head holds it.
-        let eval_arg = if lhs_slot_is_held(func_name, i) {
-          arg.clone()
-        } else {
-          evaluate_expr_to_expr(arg)?
-        };
-        // Condition: _dvN === eval_arg (using SameQ for exact matching)
-        conditions.push(Some(Expr::Comparison {
-          operands: vec![Expr::Identifier(param_name.clone()), eval_arg],
-          operators: vec![ComparisonOp::SameQ],
-        }));
-        params.push(param_name);
-        heads.push(None);
-        blank_types.push(1);
-      }
-      defaults.push(None);
-    }
+    // Evaluate the right-hand side once, exactly as written — the pattern
+    // variables nested inside a list argument (`b1`, `t1`, …) are still
+    // free, unbound symbols at this point (the same as a top-level pattern
+    // variable would be), so this must run *before* the list-destructuring
+    // substitutions below: substituting first would evaluate `Part[…]` on
+    // the synthetic list parameter while it is still unbound, which is not
+    // a valid Part (it has no list to index yet) and would raise a spurious
+    // `Part::partd` message. Apply the substitutions to the already
+    // *evaluated* result instead — the `Set` counterpart of how
+    // `set_delayed_ast` applies them to its (unevaluated) body — so a
+    // destructured leaf variable reads back as the `Part[…]` accessor into
+    // the bound list parameter rather than a bare, never-substituted symbol.
+    let rhs_value_raw = evaluate_expr_to_expr(rhs)?;
+    let rhs_value = body_substitutions.iter().fold(
+      rhs_value_raw,
+      |acc, (name, replacement)| {
+        crate::syntax::substitute_variable(&acc, name, replacement)
+      },
+    );
 
     constrain_repeated_params(
       &mut params,
@@ -2832,12 +3210,20 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
     // idiom (`f[x_] := f[x] = …`) only ever applies to user functions.
     let is_builtin_head =
       !get_builtin_attributes(func_name.as_str()).is_empty();
+    // Every condition must be a literal-argument SameQ (`_dvN === value`) —
+    // not just any `===` comparison shape. A `{…}` list-pattern argument
+    // (including the trivial no-variables case, `f[{}] = …`) also lowers to
+    // a `SameQ` comparison here (`Length[_lpN] === 0`), but that condition
+    // names a derived expression, not the parameter slot itself, so
+    // `condition_is_literal_arg`'s stricter check (operand 0 is exactly
+    // `Identifier(params[i])`) is required to tell the two apart; the
+    // looser check previously here treated `Length[_lpN] === 0` as if `0`
+    // were the call's actual argument, corrupting the memoized key.
     let all_literal_sameq = !is_builtin_head
       && !conditions.is_empty()
       && conditions.iter().all(|c| {
-        matches!(c, Some(Expr::Comparison { operators, .. })
-          if operators.len() == 1
-            && operators[0] == ComparisonOp::SameQ)
+        c.as_ref()
+          .is_some_and(|c| condition_is_literal_arg(&params, c))
       });
     if all_literal_sameq {
       let mut arg_exprs = Vec::with_capacity(conditions.len());
@@ -3437,367 +3823,15 @@ pub fn set_delayed_ast(
       return Ok(fail_expr());
     }
 
-    let mut params = Vec::new();
-    let mut conditions: Vec<Option<Expr>> = Vec::new();
-    let mut defaults: Vec<Option<Expr>> = Vec::new();
-    let mut heads: Vec<Option<String>> = Vec::new();
-    let mut blank_types: Vec<u8> = Vec::new();
-    // List-pattern destructuring substitutions: each leaf pattern variable maps
-    // to the `Part[…]` / `Sequence@@Drop[…]` expression that extracts its value
-    // from the bound list parameter. Nested list patterns contribute deeper
-    // `Part` paths (see `collect_list_pattern_bindings`).
-    let mut body_substitutions: Vec<(String, Expr)> = Vec::new();
-    let mut inline_opts_defaults: Option<Vec<Expr>> = None;
-
-    for (i, arg) in lhs_args.iter().enumerate() {
-      let arg = unwrap_longest_shortest(arg);
-      // `Optional[p, d]` in call form — the shape a default written on
-      // anything richer than a named blank parses to (`x_?NumericQ : 2`,
-      // `x : _Symbol | _Integer : 2`, …). The slot itself is described by
-      // `p`, so describe that and attach the default afterwards; the
-      // `PatternOptional` node (`x_ : 2`) keeps its own handling below.
-      let (arg, optional_default) =
-        match crate::evaluator::pattern_matching::optional_call_parts(arg) {
-          Some((inner, default)) => {
-            (unwrap_longest_shortest(inner), default.cloned())
-          }
-          None => (arg, None),
-        };
-      let slot_start = params.len();
-      match arg {
-        // OptionsPattern[] or OptionsPattern[{defaults...}] — matches zero or more Rule arguments
-        Expr::FunctionCall {
-          name: fn_name,
-          args: op_args,
-        } if fn_name == "OptionsPattern" => {
-          let param_name = format!("__opts{i}");
-          params.push(param_name);
-          conditions.push(None);
-          defaults.push(None);
-          heads.push(None);
-          blank_types.push(3); // BlankNullSequence - matches 0 or more args
-          // Extract inline defaults from OptionsPattern[{a -> a0, ...}]
-          if op_args.len() == 1
-            && let Expr::List(rules) = &op_args[0]
-          {
-            inline_opts_defaults = Some(rules.to_vec());
-          }
-        }
-        // List pattern: {x_Integer, y_Integer} — destructure a list argument.
-        // Supports a trailing BlankSequence (`__`) or BlankNullSequence (`___`)
-        // element, which relaxes the length check and (for named sequence
-        // elements) binds the sequence variable to the matching tail.
-        Expr::List(patterns) if patterns.iter().any(contains_mutating_head) => {
-          // An element like `x_ = expr_` (the `HoldFirst` "let"-binding
-          // idiom, e.g. `myLet[{x_ = expr_}, x_] := expr`) must never be
-          // decomposed via `build_list_pattern_match`'s Part accessors:
-          // reconstructing `Part[{x = expr}, 1]` and evaluating it like
-          // ordinary code would actually perform the assignment. Route it
-          // through the structural-pattern matcher instead — it binds `x`
-          // and `expr` by walking the held argument's structure, never
-          // evaluating it.
-          let param_name = format!("__sp{i}");
-          conditions.push(Some(call(
-            "__StructuralPattern__",
-            vec![
-              Expr::Identifier(param_name.clone()),
-              Expr::List(patterns.clone()),
-            ],
-          )));
-          params.push(param_name);
-          defaults.push(None);
-          heads.push(None);
-          blank_types.push(1);
-        }
-        Expr::List(patterns) => {
-          let param_name = format!("_lp{i}");
-          // The combined condition checks the list length and that each
-          // constrained element (literal, head-constrained, or nested) matches
-          // its sub-pattern; the bindings extract each leaf variable.
-          let (combined_cond, bindings) =
-            build_list_pattern_match(patterns, &param_name);
-          conditions.push(Some(combined_cond));
-          body_substitutions.extend(bindings);
-          params.push(param_name);
-          defaults.push(None);
-          heads.push(Some("List".to_string()));
-          blank_types.push(1);
-        }
-        // PatternTest: x_?test or x_Head?test — store as structural pattern
-        // to preserve the test condition during dispatch.
-        // Use the original PatternTest expression directly: round-tripping
-        // it through normalize_structural_pattern drops the `?test` part
-        // (collect_pattern_vars only records name/head/optional, not tests).
-        Expr::PatternTest {
-          name,
-          head,
-          blank_type,
-          ..
-        } => {
-          let param_name = if name.is_empty() {
-            format!("__sp{i}")
-          } else {
-            name.clone()
-          };
-          conditions.push(Some(call(
-            "__StructuralPattern__",
-            vec![Expr::Identifier(param_name.clone()), arg.clone()],
-          )));
-          params.push(param_name);
-          defaults.push(None);
-          heads.push(head.clone());
-          blank_types.push(*blank_type);
-        }
-        // `Pattern[name, body]` (long-form named pattern, e.g.
-        // `Pattern[levelspec, _?LevelQ]` ≡ `levelspec_?LevelQ`). Re-attach
-        // the name onto the inner pattern body so PatternTest/Blank handling
-        // sees it as a named pattern rather than an anonymous structural one.
-        Expr::FunctionCall {
-          name: pat_fn,
-          args: pat_args,
-        } if pat_fn == "Pattern"
-          && pat_args.len() == 2
-          && matches!(&pat_args[0], Expr::Identifier(_)) =>
-        {
-          let pname = match &pat_args[0] {
-            Expr::Identifier(s) => s.clone(),
-            _ => unreachable!(),
-          };
-          match &pat_args[1] {
-            Expr::PatternTest {
-              head,
-              blank_type,
-              test,
-              ..
-            } => {
-              let normalized = Expr::PatternTest {
-                name: pname.clone(),
-                head: head.clone(),
-                blank_type: *blank_type,
-                test: test.clone(),
-              };
-              conditions.push(Some(call(
-                "__StructuralPattern__",
-                vec![Expr::Identifier(pname.clone()), normalized],
-              )));
-              params.push(pname);
-              defaults.push(None);
-              heads.push(head.clone());
-              blank_types.push(*blank_type);
-            }
-            // `Pattern[name, OptionsPattern[…]]` — named OptionsPattern
-            // (e.g. `opt:OptionsPattern[]`) matches zero or more Rule
-            // arguments. The slot keeps the `__opts{i}` synthetic name so
-            // the option-bindings collector recognises it, and the
-            // user-visible name is rewritten to that slot in the body, so
-            // `f[opts : OptionsPattern[]] := {opts}` splices the options
-            // it matched — the idiom for passing them on whole.
-            Expr::FunctionCall {
-              name: opn,
-              args: op_args,
-            } if opn == "OptionsPattern" => {
-              let param_name = format!("__opts{i}");
-              body_substitutions
-                .push((pname, Expr::Identifier(param_name.clone())));
-              params.push(param_name);
-              conditions.push(None);
-              defaults.push(None);
-              heads.push(None);
-              blank_types.push(3); // BlankNullSequence — 0 or more
-              if op_args.len() == 1
-                && let Expr::List(rules) = &op_args[0]
-              {
-                inline_opts_defaults = Some(rules.to_vec());
-              }
-            }
-            // `Pattern[name, {p1, p2, ...}]` — named list pattern.
-            // Bind `name` to the entire list (via the param itself) AND
-            // destructure inner elements. An element containing a mutating
-            // head (`x_ = expr_`) skips the Part-accessor decomposition for
-            // the same reason as the unnamed list-pattern case above.
-            Expr::List(patterns)
-              if patterns.iter().any(contains_mutating_head) =>
-            {
-              conditions.push(Some(call(
-                "__StructuralPattern__",
-                vec![
-                  Expr::Identifier(pname.clone()),
-                  Expr::List(patterns.clone()),
-                ],
-              )));
-              params.push(pname);
-              defaults.push(None);
-              heads.push(None);
-              blank_types.push(1);
-            }
-            Expr::List(patterns) => {
-              let (combined_cond, bindings) =
-                build_list_pattern_match(patterns, &pname);
-              conditions.push(Some(combined_cond));
-              body_substitutions.extend(bindings);
-              params.push(pname);
-              defaults.push(None);
-              heads.push(Some("List".to_string()));
-              blank_types.push(1);
-            }
-            // `Pattern[name, _]` / `Pattern[name, _Head]` — plain named
-            // blank, fast path.
-            Expr::Identifier(n) if n.starts_with('_') => {
-              let (_, head, blank_type) = extract_pattern_info(arg);
-              params.push(pname);
-              conditions.push(None);
-              defaults.push(None);
-              heads.push(head);
-              blank_types.push(blank_type);
-            }
-            Expr::FunctionCall { name: bn, .. }
-              if bn == "Blank"
-                || bn == "BlankSequence"
-                || bn == "BlankNullSequence" =>
-            {
-              let (_, head, blank_type) = extract_pattern_info(arg);
-              params.push(pname);
-              conditions.push(None);
-              defaults.push(None);
-              heads.push(head);
-              blank_types.push(blank_type);
-            }
-            // Any other body (Alternatives, Except, nested patterns, …)
-            // must keep its constraint: store the whole Pattern[name,
-            // body] as a structural pattern matched at dispatch time —
-            // previously the constraint was silently dropped, so
-            // s[x : (_Integer | _Real)] matched any argument at all.
-            // A sequence body (`r : (_Rule)..`) spans as many arguments
-            // as its run takes, so the slot is recorded as a sequence.
-            _ => {
-              conditions.push(Some(call(
-                "__StructuralPattern__",
-                vec![Expr::Identifier(pname.clone()), arg.clone()],
-              )));
-              params.push(pname);
-              defaults.push(None);
-              heads.push(None);
-              blank_types.push(pattern_blank_type(arg));
-            }
-          }
-        }
-        // A bare symbol with no `_` in this slot (e.g. `f[j_, Np]` where
-        // `Np` already holds a value, from `Np = Npp - 1` inside a Module)
-        // is not a pattern at all — WL requires an explicit `_` to
-        // introduce a pattern variable, so a plain symbol here is evaluated
-        // to its current value and matched literally, the same as a
-        // numeric literal (`f[j_, 5]`). Without this, the symbol became an
-        // unconstrained second wildcard slot indistinguishable in
-        // specificity from a fully generic `f[j_, k_]` overload, so the
-        // wrong rule could fire and return `Null` instead of the intended
-        // literal-argument overload.
-        //
-        // Exempt slot 0 of `Default[sym, …] := …`: that's the redirected
-        // storage for `sym`'s DefaultValues (see `belongs_to` in
-        // symbol_values.rs and `definition_text` in
-        // dispatch/complex_and_special.rs), both of which identify "this
-        // Default entry is sym's" by literal name — `params.first() ==
-        // sym` — rather than by evaluating a condition. Turning that slot
-        // into a `_dv0`/SameQ pair would hide the entry from
-        // `Definition[sym]`, `ClearAll[sym]`, and `Block`'s save/restore.
-        Expr::Identifier(name)
-          if !(name.contains('_') || (func_name == "Default" && i == 0)) =>
-        {
-          let param_name = format!("_dv{i}");
-          let eval_arg = if lhs_slot_is_held(func_name, i) {
-            arg.clone()
-          } else {
-            evaluate_expr_to_expr(arg)?
-          };
-          conditions.push(Some(Expr::Comparison {
-            operands: vec![Expr::Identifier(param_name.clone()), eval_arg],
-            operators: vec![ComparisonOp::SameQ],
-          }));
-          params.push(param_name);
-          blank_types.push(1);
-          defaults.push(None);
-          heads.push(None);
-        }
-        // Simple pattern: x_ or x_Head
-        _ => {
-          let (pat_name, head, blank_type) = extract_pattern_info(arg);
-          // Check for anonymous pattern identifiers (_, __, ___)
-          let is_anonymous_pattern = pat_name.is_empty()
-            && head.is_none()
-            && matches!(arg, Expr::Identifier(name) if name.starts_with('_'));
-          if is_anonymous_pattern {
-            let param_name = format!("_dv{i}");
-            params.push(param_name);
-            conditions.push(None);
-            blank_types.push(blank_type);
-          } else if pat_name.is_empty() && head.is_none() {
-            if crate::evaluator::pattern_matching::contains_pattern(arg) {
-              // Structural pattern (e.g., 1/x_, a_ + b_) — normalize and store
-              // the pattern AST in a __StructuralPattern__ marker for dispatch-time matching.
-              // A held slot keeps the pattern exactly as written.
-              let param_name = format!("__sp{i}");
-              let normalized = if lhs_slot_is_held(func_name, i) {
-                arg.clone()
-              } else {
-                normalize_structural_pattern(arg)
-              };
-              conditions.push(Some(call(
-                "__StructuralPattern__",
-                vec![Expr::Identifier(param_name.clone()), normalized],
-              )));
-              params.push(param_name);
-              blank_types.push(1);
-            } else {
-              // Literal value (not a pattern) — create a SameQ condition
-              // e.g., f[1] := ... should only match when arg === 1
-              let param_name = format!("_dv{i}");
-              let eval_arg = if lhs_slot_is_held(func_name, i) {
-                arg.clone()
-              } else {
-                evaluate_expr_to_expr(arg)?
-              };
-              conditions.push(Some(Expr::Comparison {
-                operands: vec![Expr::Identifier(param_name.clone()), eval_arg],
-                operators: vec![ComparisonOp::SameQ],
-              }));
-              params.push(param_name);
-              blank_types.push(1);
-            }
-          } else {
-            params.push(pat_name);
-            conditions.push(None);
-            blank_types.push(blank_type);
-          }
-          // Carry inline default through; if `arg` is `x_.` (PatternOptional
-          // with no inline default), store `Default[func]` as a deferred
-          // placeholder so dispatch can pull a user-set Default[f] at call
-          // time (matching Wolfram's `f[x_.] := ...` + `Default[f] = c`).
-          let default_for_slot = match arg {
-            Expr::PatternOptional {
-              default: Some(d), ..
-            } => Some((**d).clone()),
-            Expr::PatternOptional { default: None, .. } => {
-              Some(Expr::FunctionCall {
-                name: "Default".to_string(),
-                args: vec![
-                  Expr::Identifier(func_name.clone()),
-                  Expr::Integer((i + 1) as i128),
-                ]
-                .into(),
-              })
-            }
-            _ => None,
-          };
-          defaults.push(default_for_slot);
-          heads.push(head);
-        }
-      }
-      if let Some(d) = optional_default {
-        for slot in defaults.iter_mut().skip(slot_start) {
-          *slot = Some(d.clone());
-        }
-      }
-    }
+    let (
+      mut params,
+      mut conditions,
+      defaults,
+      heads,
+      blank_types,
+      body_substitutions,
+      inline_opts_defaults,
+    ) = downvalue_arg_info(func_name, lhs_args, true)?;
 
     // Apply all list-destructuring substitutions to an expression: each
     // element name is replaced with `Part[param, idx+1]`, except a named

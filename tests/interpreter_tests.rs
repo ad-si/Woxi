@@ -487,6 +487,26 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_nested_list_pattern_binding_with_immediate_set() {
+    // A pattern nested inside a list argument must bind under immediate
+    // `Set` (`=`) exactly as it does under `SetDelayed` (`:=`) above —
+    // `f[z_, {{b1_, t1_}, {b2_, t2_}}] = …` previously stored the whole list
+    // argument as one unmatched synthetic parameter, so `b1`/`t1`/`b2`/`t2`
+    // never got substituted and the call returned the RHS with those names
+    // still bare (only `z` bound). Found while making Woxi Studio evaluate a
+    // Wolfram Demonstration whose `totalTax` piecewise function is defined
+    // this way.
+    clear_state();
+    interpret("f[z_, {{b1_, t1_}, {b2_, t2_}}] = b1*t1 + b2*t2 + z").unwrap();
+    assert_eq!(interpret("f[10, {{1, 2}, {3, 4}}]").unwrap(), "24");
+    clear_state();
+    // Single-argument nested list pattern.
+    interpret("g[{a_, b_}] = a + b").unwrap();
+    assert_eq!(interpret("g[{5, 6}]").unwrap(), "11");
+    clear_state();
+  }
+
+  #[test]
   fn test_list_pattern_downvalues_reconstruction() {
     // Issue #119 follow-up: DownValues/Definition reconstruct the surface
     // `{…}` list pattern (with element names, body, and `/;` guard) rather than
