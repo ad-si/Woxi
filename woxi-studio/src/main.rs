@@ -16940,6 +16940,71 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`m$$ = 8}, \"\\[Ellipsis]\"]"], "Out
     assert_ne!(points, render(8, 5, "False"), "the multiplier must matter");
   }
 
+  /// End-to-end regression for the shape a "Filling a Regular Icosahedron
+  /// with Infinitely Many Golden Octahedra"-style Demonstration has: a
+  /// `Module` body that builds a base `Polygon`, replicates it with
+  /// `Translate`/`Scale`/`Rotate`/`Table`, gates an extra shell behind an
+  /// `If` nested inside a list literal, and renders the result with
+  /// `Graphics3D` (`SphericalRegion`, `Boxed -> False`, `ViewAngle`,
+  /// `ViewPoint`, `PlotRange`, `ImageSize`). The two controls mirror the
+  /// original's shape: a Boolean picklist and a continuous slider gated by
+  /// `Enabled -> Dynamic[…]` on that Boolean, plus `TrackedSymbols`.
+  ///
+  /// The Manipulate is written here rather than lifted from the published
+  /// notebook.
+  #[test]
+  fn golden_octahedra_shell_notebook_builds_its_widget() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[\nModule[{r, a, base, arm, shell1, shell2, shell3, grown, rings, cap},\nr = 1/Sqrt[2];\na = ArcTan[r];\nbase = Polygon[{{r, 1, 0}, {-r, 1, 0}, {0, 0, 0}}];\narm = Translate[base, {0, r, 1}];\nshell1 = {base, arm};\nshell2 = Translate[shell1, 2 {r, 1, 0}];\nshell3 = Translate[shell1, 2 {-r, 1, 0}];\ngrown = Scale[shell3, 2 {1, 1, 1}, {0, 0, 0}];\nrings = Table[\nRotate[Translate[Rotate[{If[showCap, grown, {}]}, a, {1, 0, 0}], {0, 0, level}], k 2 Pi/5, {0, 0, 1}],\n{k, 5}];\ncap = Rotate[rings, Pi, {1, 0, 0}];\nGraphics3D[{rings, cap, Yellow, shell2, RGBColor[0, 1, 1], shell1},\nSphericalRegion -> True, Boxed -> False, ViewAngle -> 0.3,\nViewPoint -> {3, -2, 2}, PlotRange -> {{-4, 4}, {-4, 4}, {-6, 6}},\nImageSize -> 300]\n],\n{{showCap, False, \"show cap\"}, {False, True}},\n{{level, 0, \"open\"}, 0, 3, Enabled -> Dynamic[showCap]},\nTrackedSymbols :> {level, showCap}\n]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`showCap$$ = False}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "the shells must build: {:?}",
+      widget.error
+    );
+    assert!(widget.graphics_handle.is_some(), "the shell must draw");
+
+    let names: Vec<&str> = widget
+      .controls
+      .iter()
+      .map(|c| match c {
+        manipulate::ControlState::Discrete { name, .. } => name.as_str(),
+        manipulate::ControlState::Continuous { name, .. } => name.as_str(),
+        other => panic!("unexpected control: {other:?}"),
+      })
+      .collect();
+    assert_eq!(names, ["showCap", "level"]);
+
+    let render = |show_cap: &str, level: u32| {
+      woxi::interpret_with_stdout(&format!(
+        "showCap = {show_cap}; level = {level};\n{}",
+        widget.body
+      ))
+      .expect("the body must render")
+      .graphics
+      .expect("the body must produce a graphic")
+    };
+    // The gated shell only appears once `showCap` is turned on.
+    let capped_off = render("False", 1);
+    let capped_on = render("True", 1);
+    assert_ne!(capped_off, capped_on, "the show-cap toggle must matter");
+    // Moving the slider only matters once the shell it moves is shown.
+    assert_ne!(
+      render("True", 1),
+      render("True", 2),
+      "the slider must matter once enabled"
+    );
+  }
+
   /// End-to-end regression for the "Chaos and Order in the Damped Forced
   /// Pendulum in a Plane" Demonstration: it integrates the damped driven
   /// pendulum `θ'' == -(g/l) Sin[θ] - γ θ' + a Cos[ω t]` from a grid of
