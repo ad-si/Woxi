@@ -1311,7 +1311,7 @@ pub fn do_ast(body: &Expr, iter_spec: &Expr) -> Result<Expr, InterpreterError> {
         let mut early_return: Option<Expr> = None;
         super::utilities::for_each_numeric_step(
           min_expr,
-          max_expr,
+          &max_expr,
           step_expr,
           |current| {
             let substituted =
@@ -1338,7 +1338,7 @@ pub fn do_ast(body: &Expr, iter_spec: &Expr) -> Result<Expr, InterpreterError> {
       let mut early_return: Option<Expr> = None;
       let result = super::utilities::for_each_numeric_step(
         min_expr,
-        max_expr,
+        &max_expr,
         step_expr,
         |current| {
           crate::ENV.with(|e| {
@@ -1520,7 +1520,7 @@ where
       let mut idx = 0usize;
       let result = super::utilities::for_each_numeric_step(
         min_expr,
-        max_expr,
+        &max_expr,
         step_expr,
         |current| {
           crate::ENV.with(|e| {

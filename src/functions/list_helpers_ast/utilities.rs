@@ -214,12 +214,12 @@ pub(crate) enum NumericSteps {
 /// iterated as real numbers instead of being floored to zero.
 pub(crate) fn resolve_numeric_steps(
   min_expr: Expr,
-  max_expr: Expr,
+  max_expr: &Expr,
   step_expr: Expr,
 ) -> Result<NumericSteps, InterpreterError> {
   if let (Some(min_val), Some(max_val), Some(step_val)) = (
     expr_to_i128(&min_expr),
-    expr_to_i128(&max_expr),
+    expr_to_i128(max_expr),
     expr_to_i128(&step_expr),
   ) {
     if step_val == 0 {
@@ -240,7 +240,7 @@ pub(crate) fn resolve_numeric_steps(
         "Do: iterator bound must be an integer".into(),
       )
     })?;
-  let max_num = crate::functions::math_ast::try_eval_to_f64(&max_expr)
+  let max_num = crate::functions::math_ast::try_eval_to_f64(max_expr)
     .ok_or_else(|| {
       InterpreterError::EvaluationError(
         "Do: iterator bound must be an integer".into(),
@@ -272,7 +272,7 @@ pub(crate) fn resolve_numeric_steps(
 /// evaluation error propagates as `Err`.
 pub(crate) fn for_each_numeric_step(
   min_expr: Expr,
-  max_expr: Expr,
+  max_expr: &Expr,
   step_expr: Expr,
   mut visit: impl FnMut(Expr) -> Result<bool, InterpreterError>,
 ) -> Result<(), InterpreterError> {
