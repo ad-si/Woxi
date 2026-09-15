@@ -1861,6 +1861,69 @@ mod graphics {
       ));
     }
 
+    // `PlotRange -> {min, max}` — a flat pair of plain numbers, not the
+    // nested per-axis `{{xmin, xmax}, {ymin, ymax}}` form — applies the
+    // *same* range to every axis, matching Wolfram. It used to be
+    // misparsed as `{xSpec, ySpec}` (treating each bare number as a whole
+    // axis's own spec), which fed each one through the "a lone number n
+    // means {-n, n}" fallback and turned `{0, 100}` into x ∈ {0, 0} (a
+    // degenerate, zero-width range) and y ∈ {-100, 100} — found via a
+    // Demonstration whose `Show` combined an invisible `Plot[0, {x, a,
+    // b}, PlotRange -> {a, b}]` (a common idiom to force wide axis
+    // labels) with a `ContourPlot`, which blew up the merged picture's
+    // scale into a single sliver of a curve.
+    #[test]
+    fn plot_range_bare_pair_applies_to_both_axes() {
+      let svg = export_svg(
+        "Graphics[{Point[{50, 100}]}, PlotRange -> {0, 100}, \
+         Axes -> False, ImageSize -> {100, 100}]",
+      );
+      let tag = svg.split("<circle ").nth(1).expect("a circle");
+      let attr = |name: &str| -> f64 {
+        tag
+          .split(&format!("{name}=\""))
+          .nth(1)
+          .and_then(|s| s.split('"').next())
+          .unwrap_or_else(|| panic!("circle {name} in {tag}"))
+          .parse()
+          .unwrap_or_else(|_| panic!("numeric circle {name} in {tag}"))
+      };
+      let (cx, cy) = (attr("cx"), attr("cy"));
+      // x = 50 is the midpoint of a 0..100 range applied to the x axis.
+      assert!(
+        (cx - 50.0).abs() < 2.0,
+        "expected cx near mid-width, cx={cx}"
+      );
+      // y = 100 is the top of a 0..100 range applied to the y axis (SVG y
+      // grows downward).
+      assert!(cy < 2.0, "expected cy flush at the top, cy={cy}");
+    }
+
+    // The per-axis form still works once either element unambiguously
+    // looks like an axis spec (a nested list, or `Automatic`/`All`) rather
+    // than a bare number: only a pair of two bare numbers means "uniform
+    // range for every axis".
+    #[test]
+    fn plot_range_per_axis_form_with_automatic_still_works() {
+      let svg = export_svg(
+        "Graphics[{Point[{50, 5}]}, PlotRange -> {Automatic, {0, 10}}, \
+         Axes -> False, ImageSize -> {100, 100}]",
+      );
+      let tag = svg.split("<circle ").nth(1).expect("a circle");
+      let cy: f64 = tag
+        .split("cy=\"")
+        .nth(1)
+        .and_then(|s| s.split('"').next())
+        .unwrap()
+        .parse()
+        .unwrap();
+      // y = 5 is the midpoint of the explicit {0, 10} y range.
+      assert!(
+        (cy - 50.0).abs() < 2.0,
+        "expected cy near mid-height, cy={cy}"
+      );
+    }
+
     // A primitive that falls outside an explicit `PlotRange` used to be
     // drawn in full — spilling past the frame and, for a large enough
     // excursion, off the canvas entirely — instead of being cut off at the

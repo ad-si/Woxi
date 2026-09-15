@@ -2,6 +2,19 @@
 
 # Unreleased
 
+- `Graphics`/`Show`'s `PlotRange -> {min, max}` (a flat pair of plain
+    numbers) applies that range to every axis, matching Wolfram, instead
+    of being misread as `{xSpec, ySpec}` — one axis spec per number. Each
+    bare number then fell through the "a lone number `n` means `{-n, n}`"
+    rule, turning `PlotRange -> {0, 100}` into x ∈ `{0, 0}` (a
+    degenerate, zero-width range) and y ∈ `{-100, 100}`. Found while
+    checking Woxi Studio against a Wolfram Demonstrations Project
+    notebook whose `Manipulate` used `Show` to combine an invisible
+    `Plot[0, {x, a, b}, PlotRange -> {a, b}]` — a common idiom for
+    forcing wide axis labels — with a `ContourPlot`; the misread range
+    collapsed the merged picture into a sliver with a solid gray fill in
+    place of the unshaded contour lines.
+
 - `FindMinimum`/`FindMaximum` accept the bounded variable spec `{x, x0,
     xmin, xmax}` (and its multivariable form `{{x, x0, xmin, xmax}, …}`),
     constraining the search to `[xmin, xmax]` throughout instead of

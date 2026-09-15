@@ -7086,6 +7086,17 @@ fn render_primitive(
 
 // ── Options parsing ──────────────────────────────────────────────────────
 
+/// Whether a `PlotRange` list element reads as a *per-axis* spec (`All`,
+/// `Automatic`, or a nested `{min, max}`) rather than a bare number: only
+/// then does `{elem1, elem2}` mean "one spec per axis". A plain `{min,
+/// max}` pair of numbers — e.g. `PlotRange -> {-3, 103}` — has neither
+/// element look like that, and means the *same* range for every axis
+/// instead (matching Wolfram's documented behavior for `Graphics`/`Show`).
+fn is_axis_range_spec(expr: &Expr) -> bool {
+  matches!(expr, Expr::List(_))
+    || matches!(expr, Expr::Identifier(s) if s == "All" || s == "Automatic")
+}
+
 fn parse_plot_range(
   expr: &Expr,
 ) -> (
@@ -7094,7 +7105,10 @@ fn parse_plot_range(
 ) {
   match expr {
     Expr::Identifier(s) if s == "All" || s == "Automatic" => (None, None),
-    Expr::List(items) if items.len() == 2 => {
+    Expr::List(items)
+      if items.len() == 2
+        && (is_axis_range_spec(&items[0]) || is_axis_range_spec(&items[1])) =>
+    {
       let x_range = parse_range_spec(&items[0]);
       let y_range = parse_range_spec(&items[1]);
       (x_range, y_range)
