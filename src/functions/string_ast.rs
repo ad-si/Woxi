@@ -7948,7 +7948,7 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
       .join("\\cdot "),
     // Other binary infix operators with dedicated LaTeX symbols.
     "CircleTimes" | "CirclePlus" | "CircleDot" | "Wedge" | "Vee"
-    | "SmallCircle" | "Diamond" | "Tilde" | "Proportional"
+    | "SmallCircle" | "Diamond" | "Tilde" | "TildeTilde" | "Proportional"
       if args.len() >= 2 =>
     {
       let sep = match name {
@@ -7960,6 +7960,7 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
         "SmallCircle" => "\\circ ",
         "Diamond" => "\\diamond ",
         "Tilde" => "\\sim ",
+        "TildeTilde" => "\\approx ",
         _ => "\\propto ",
       };
       args.iter().map(expr_to_tex).collect::<Vec<_>>().join(sep)
