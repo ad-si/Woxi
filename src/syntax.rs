@@ -11996,6 +11996,29 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
 
 fn expr_to_input_form_impl(expr: &Expr) -> String {
   let _guard = TrueInputFormGuard(IN_TRUE_INPUT_FORM.with(|c| c.replace(true)));
+
+  // The call spellings of the operators (`Divide`, `Subtract`, `List`, …)
+  // print as the operator here too — `ToString[Hold[Divide[a, b]], InputForm]`
+  // is `Hold[a/b]`. Mirrors the same rewrite in `format_expr_impl`; without
+  // it the two InputForm renderers disagree.
+  if let Some(rewritten) = operator_call_node(expr) {
+    return expr_to_input_form(&rewritten);
+  }
+  // Parenthesisation is decided by inspecting the direct children, so those
+  // checks have to see the operator node rather than the call spelling.
+  let with_normalized_children;
+  let expr = if expr_children(expr)
+    .iter()
+    .any(|c| operator_call_child(c).is_some())
+  {
+    with_normalized_children = map_children(expr, &|child| {
+      operator_call_child(child).unwrap_or_else(|| child.clone())
+    });
+    &with_normalized_children
+  } else {
+    expr
+  };
+
   match expr {
     // `CompoundExpression[a, b]` written out prints as `a; b`, the same as
     // the `;` the parser reads.

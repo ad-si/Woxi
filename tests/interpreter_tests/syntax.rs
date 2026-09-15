@@ -389,6 +389,34 @@ mod trailing_semicolon {
     assert_eq!(interpret("Hold[Times[a, Minus[b]]]").unwrap(), "Hold[a*-b]");
   }
 
+  /// `ToString[_, InputForm]` is a *second* renderer, and it used to print
+  /// the call spellings verbatim while the bare echo printed the operator —
+  /// `Hold[Divide[0, 0]]` echoed as `Hold[0/0]` but stringified as
+  /// `Hold[Divide[0, 0]]`. Both say the operator, as wolframscript does.
+  #[test]
+  fn held_operator_call_spellings_print_as_operators_in_input_form() {
+    let to_string =
+      |src: &str| interpret(&format!("ToString[{src}, InputForm]")).unwrap();
+    assert_eq!(to_string("Hold[Divide[0, 0]]"), "Hold[0/0]");
+    assert_eq!(to_string("Hold[Subtract[5, 2]]"), "Hold[5 - 2]");
+    assert_eq!(to_string("Hold[Minus[a]]"), "Hold[-a]");
+    assert_eq!(to_string("Hold[List[1, 2]]"), "Hold[{1, 2}]");
+    assert_eq!(to_string("Hold[List[]]"), "Hold[{}]");
+    // The parenthesisation comes from the operator nodes too.
+    assert_eq!(to_string("Hold[Power[Divide[a, b], 2]]"), "Hold[(a/b)^2]");
+    assert_eq!(
+      to_string("Hold[Divide[Subtract[a, b], c]]"),
+      "Hold[(a - b)/c]"
+    );
+    assert_eq!(to_string("Hold[Divide[a, Divide[b, c]]]"), "Hold[a/(b/c)]");
+    assert_eq!(
+      to_string("Hold[Subtract[a, Subtract[b, c]]]"),
+      "Hold[a - (b - c)]"
+    );
+    // Arities wolframscript does not treat as the operator keep the call.
+    assert_eq!(to_string("Hold[Divide[a, b, c]]"), "Hold[Divide[a, b, c]]");
+  }
+
   #[test]
   fn null_symbol_uses_sentinel() {
     // The Null symbol should use the "\0" sentinel so visual contexts

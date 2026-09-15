@@ -1536,6 +1536,30 @@ woxi eval 'Surd[8, 10^40]'                                  # Surd[8, 1000000000
 `BigInteger` degree leaves the call unevaluated. Degrees up to `10^38` work.
 
 
+### `Convolve` of two Gaussians picks the other sign for the squared shift
+
+```sh
+wolframscript -code 'ToString[Convolve[PDF[NormalDistribution[0, 1], x - t],
+                     PDF[NormalDistribution[0, 1], x - s], x, y], InputForm]'
+# 1/(2*E^((s + t - y)^2/4)*Sqrt[Pi])
+woxi eval 'Convolve[PDF[NormalDistribution[0, 1], x - t],
+           PDF[NormalDistribution[0, 1], x - s], x, y]'
+# 1/(2*E^((-s - t + y)^2/4)*Sqrt[Pi])
+```
+
+`(s + t - y)^2` and `(-s - t + y)^2` are equal but not the same expression —
+WL keeps whichever of `±z` was constructed (`(y - s - t)^2` typed in echoes as
+`(-s - t + y)^2` there too). Woxi always builds `y - mu` for the total shift
+`mu`, which is **also what WL's own `PDF[NormalDistribution[s + t, Sqrt[2]], y]`
+gives** for the very same distribution — WL's `Convolve` goes through
+`Integrate` instead and its sign choice follows no rule visible from outside.
+Measured over 11 shift shapes it flips to `mu - y` exactly when every term of
+`mu` is a positive number or a bare symbol with coefficient 1 (`s`, `s + t`,
+`1 + s`, `a + b`, `Pi`), and keeps `y - mu` otherwise (`3`, `2 s`, `2 s + 3 t`,
+`u v`, `s - t`, `-s - t`) — a fit with no mechanism behind it, so it is not
+implemented. Numeric and zero shifts agree.
+
+
 ## Special functions
 
 ### `TrigToExp[Sin[x]^3]` keeps the power unexpanded

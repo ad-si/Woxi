@@ -2701,7 +2701,7 @@ LatitudeLongitude,extract latitude and longitude from a geo position,✅,none,7.
 QHypergeometricPFQ,q-analogue of the generalized hypergeometric function,🚫,,7.0,2729
 ScrollPosition,,🚫,,7.0,2729
 TraceDepth,Option controlling depth of tracing in Trace,✅,pure,2.0,2729
-FinishDynamic,Force pending Dynamic updates to complete (a no-op outside a live front end),✅,pure,6.0,2734
+FinishDynamic,Force pending Dynamic updates to complete (a front-end operation with no kernel value),✅,pure,6.0,2734
 GeoRangePadding,,🚫,,10.0,2734
 NumberMarks,option for number marks,✅,Symbolic,3.0,2734
 PearsonChiSquareTest,perform a Pearson chi-square goodness-of-fit test,✅,none,8.0,2734

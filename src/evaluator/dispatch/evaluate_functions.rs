@@ -4702,15 +4702,12 @@ fn evaluate_function_call_ast_inner(
   // clockwise from -135° at `min` to 135° at `max`. Options are kept on
   // the resulting Graphics so wolframscript's `-Graphics-` placeholder
   // is produced for callers that just check the head.
-  if name == "AngularGauge" && args.len() >= 2 {
+  //
+  // The range is optional — `AngularGauge[value]` gauges against `{0, 1}`,
+  // as wolframscript does.
+  if name == "AngularGauge" && !args.is_empty() {
     let value = crate::functions::math_ast::try_eval_to_f64(&args[0]);
-    let (lo, hi) = match &args[1] {
-      Expr::List(items) if items.len() == 2 => (
-        crate::functions::math_ast::try_eval_to_f64(&items[0]),
-        crate::functions::math_ast::try_eval_to_f64(&items[1]),
-      ),
-      _ => (None, None),
-    };
+    let (lo, hi) = gauge_range(args.get(1));
     let mut primitives: Vec<Expr> = Vec::new();
     // Outer dial.
     primitives.push(Expr::FunctionCall {
@@ -4748,11 +4745,7 @@ fn evaluate_function_call_ast_inner(
       });
     }
     let mut graphics_args = vec![Expr::List(primitives.into())];
-    for opt in &args[2..] {
-      if matches!(opt, Expr::Rule { .. }) {
-        graphics_args.push(opt.clone());
-      }
-    }
+    graphics_args.extend(gauge_options(args));
     return Ok(call("Graphics", graphics_args));
   }
 
@@ -4764,7 +4757,10 @@ fn evaluate_function_call_ast_inner(
   // scale. Options are kept on the resulting Graphics so wolframscript's
   // `-Graphics-` placeholder is produced for callers that just check the
   // head.
-  if name == "HorizontalGauge" && args.len() >= 2 {
+  //
+  // The range is optional — `HorizontalGauge[value]` gauges against
+  // `{0, 1}`, as wolframscript does.
+  if name == "HorizontalGauge" && !args.is_empty() {
     let values: Vec<f64> = match &args[0] {
       Expr::List(items) => items
         .iter()
@@ -4774,13 +4770,7 @@ fn evaluate_function_call_ast_inner(
         .into_iter()
         .collect(),
     };
-    let (lo, hi) = match &args[1] {
-      Expr::List(items) if items.len() == 2 => (
-        crate::functions::math_ast::try_eval_to_f64(&items[0]),
-        crate::functions::math_ast::try_eval_to_f64(&items[1]),
-      ),
-      _ => (None, None),
-    };
+    let (lo, hi) = gauge_range(args.get(1));
     let mut primitives: Vec<Expr> = Vec::new();
     // Track: a shallow rectangle spanning the full scale.
     primitives.push(Expr::FunctionCall {
@@ -4811,11 +4801,7 @@ fn evaluate_function_call_ast_inner(
       }
     }
     let mut graphics_args = vec![Expr::List(primitives.into())];
-    for opt in &args[2..] {
-      if matches!(opt, Expr::Rule { .. }) {
-        graphics_args.push(opt.clone());
-      }
-    }
+    graphics_args.extend(gauge_options(args));
     return Ok(call("Graphics", graphics_args));
   }
 
@@ -11200,13 +11186,6 @@ fn evaluate_function_call_ast_inner(
     return Ok(null_expr());
   }
 
-  // FinishDynamic[] - forces a front-end redraw of pending Dynamic
-  // content; outside a live notebook front end there is nothing pending,
-  // so it's a no-op that returns Null.
-  if name == "FinishDynamic" && args.is_empty() {
-    return Ok(null_expr());
-  }
-
   // XML`Parser`XMLGetString[xml] — minimal stub: return an expression
   // whose head is `XMLObject["Document"]`, so `Head[XML`Parser`XMLGetString[…]]`
   // matches the documented `XMLObject["Document"]`. The inner XML is
@@ -11501,6 +11480,37 @@ fn evaluate_function_call_ast_inner(
 /// Accepts a single root element with balanced nested tags. Rejects
 /// inputs with text outside the root element (such as trailing junk
 /// after the closing tag), unbalanced tags, or empty content. Comments,
+/// The `{min, max}` scale of a gauge, from its optional second argument.
+///
+/// Every gauge takes the range optionally — `AngularGauge[0.7]` gauges
+/// against `{0, 1}` in wolframscript, and the argument that would hold the
+/// range may instead be the first option rule. A range that is not a pair of
+/// numbers (a symbolic one, say) yields `None`s, which leaves the marker off
+/// the track.
+fn gauge_range(range_arg: Option<&Expr>) -> (Option<f64>, Option<f64>) {
+  match range_arg {
+    None | Some(Expr::Rule { .. } | Expr::RuleDelayed { .. }) => {
+      (Some(0.0), Some(1.0))
+    }
+    Some(Expr::List(items)) if items.len() == 2 => (
+      crate::functions::math_ast::try_eval_to_f64(&items[0]),
+      crate::functions::math_ast::try_eval_to_f64(&items[1]),
+    ),
+    _ => (None, None),
+  }
+}
+
+/// The option rules of a gauge call — everything after the value that is a
+/// rule, so the optional `{min, max}` argument is skipped either way.
+fn gauge_options(args: &[Expr]) -> Vec<Expr> {
+  args
+    .iter()
+    .skip(1)
+    .filter(|a| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+    .cloned()
+    .collect()
+}
+
 /// CDATA sections, processing instructions, and XML declarations are
 /// recognized only at the document level. Not a conformant XML parser —
 /// just enough to flag the obviously broken cases that should yield

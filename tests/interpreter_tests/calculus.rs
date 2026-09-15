@@ -8076,12 +8076,12 @@ mod ndsolve {
   }
 
   #[test]
-  fn finish_dynamic_is_a_no_op() {
+  fn finish_dynamic_stays_unevaluated() {
     // `FinishDynamic[]` forces a front-end redraw of pending `Dynamic`
-    // content; outside a live notebook front end (as in every Woxi
-    // evaluation) there's nothing pending, so it's simply `Null`.
-    let result = interpret("FinishDynamic[]").unwrap();
-    assert_eq!(result, "\0");
+    // content. It is a front-end operation with no kernel-side value:
+    // wolframscript's kernel returns it unevaluated (it carries no
+    // attributes at all), rather than `Null`.
+    assert_eq!(interpret("FinishDynamic[]").unwrap(), "FinishDynamic[]");
   }
 
   #[test]
@@ -16047,19 +16047,27 @@ mod convolve {
     // form (1/(E^(...)*Sqrt[2 Pi])), not the bare `E^(-a x^2)` shape — this
     // is the form Manipulate demonstrations actually produce, so it must be
     // recognized too, with or without an added shift.
+    // The constant folds all the way to 1/(2 Sqrt[Pi]): the two
+    // `(2 Pi)^(-1/2)` factors merge into `(2 Pi)^-1`, whose `Pi^-1` then
+    // cancels against the `Sqrt[Pi]` of the combined width. The
+    // unrationalized `Sqrt[Pi]/(2 Pi)` is what an n-ary `Times` produced
+    // before it regrouped after that split.
     assert_eq!(
       interpret("Convolve[PDF[NormalDistribution[0, 1], x], PDF[NormalDistribution[0, 1], x], x, y]").unwrap(),
-      "Sqrt[Pi]/(2*E^(y^2/4)*Pi)"
+      "1/(2*E^(y^2/4)*Sqrt[Pi])"
     );
     assert_eq!(
       interpret("Convolve[PDF[NormalDistribution[0, 1], x - 2], PDF[NormalDistribution[0, 1], x - 1], x, y]").unwrap(),
-      "Sqrt[Pi]/(2*E^((-3 + y)^2/4)*Pi)"
+      "1/(2*E^((-3 + y)^2/4)*Sqrt[Pi])"
     );
     // Symbolic shifts (the actual shape used by the Demonstration, where the
     // shift is a Manipulate slider variable rather than a literal number).
+    // wolframscript squares `s + t - y` here rather than `y - s - t`; the
+    // two are equal but not the same expression, and its choice follows no
+    // rule visible from outside — catalogued in conformance_gaps.md.
     assert_eq!(
       interpret("Convolve[PDF[NormalDistribution[0, 1], x - t], PDF[NormalDistribution[0, 1], x - s], x, y]").unwrap(),
-      "Sqrt[Pi]/(2*E^((-s - t + y)^2/4)*Pi)"
+      "1/(2*E^((-s - t + y)^2/4)*Sqrt[Pi])"
     );
   }
 

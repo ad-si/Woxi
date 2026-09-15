@@ -2978,7 +2978,9 @@ mod batch_unevaluated_wrappers_2 {
   }
   #[test]
   fn angular_gauge() {
-    assert_eq!(interpret("AngularGauge[x]").unwrap(), "AngularGauge[x]");
+    // The `{min, max}` argument is optional — a bare value gauges against
+    // `{0, 1}` and renders, symbolic or not (see the HorizontalGauge test).
+    assert_eq!(interpret("AngularGauge[x]").unwrap(), "-Graphics-");
   }
   #[test]
   fn angular_gauge_with_range_renders_graphics() {
@@ -3006,10 +3008,18 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
   #[test]
-  fn horizontal_gauge_without_range_stays_symbolic() {
+  fn horizontal_gauge_without_range_gauges_against_zero_to_one() {
+    // The `{min, max}` argument is optional: wolframscript gauges a bare
+    // value against `{0, 1}` and still returns a Graphics, even when the
+    // value is symbolic (the track is drawn, the marker is not).
+    assert_eq!(interpret("HorizontalGauge[x]").unwrap(), "-Graphics-");
+    assert_eq!(interpret("HorizontalGauge[0.5]").unwrap(), "-Graphics-");
+    assert_eq!(interpret("AngularGauge[x]").unwrap(), "-Graphics-");
+    assert_eq!(interpret("AngularGauge[0.5]").unwrap(), "-Graphics-");
+    // An option may take the range argument's place.
     assert_eq!(
-      interpret("HorizontalGauge[x]").unwrap(),
-      "HorizontalGauge[x]"
+      interpret("HorizontalGauge[0.5, GaugeMarkers -> \"BarMarker\"]").unwrap(),
+      "-Graphics-"
     );
   }
   #[test]

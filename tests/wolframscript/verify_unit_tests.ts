@@ -564,11 +564,16 @@ function buildWolframScript(
   // this batch unprotects, remember its definitions once up front, and put
   // them back before each case. Restoring — rather than clearing — is what
   // keeps `Red` the colour it was born as.
+  // `Unprotect` names the symbol either bare (`Unprotect[Red]`) or as a
+  // string (`Unprotect["Style"]`) — both have to be restored, or a later
+  // `Unprotect["Style"]` case answers `{}` where a fresh kernel answers
+  // `{"Style"}`. A string that is a wildcard or carries a context mark
+  // (`"Global`a*"`) names no single symbol and is left alone.
   const unprotected = new Set<string>();
   for (const { expr } of cases) {
     for (const m of expr.matchAll(/\bUnprotect\[([^\]]*)\]/g)) {
       for (const name of m[1].split(",")) {
-        const trimmed = name.trim();
+        const trimmed = name.trim().replace(/^"(.*)"$/, "$1");
         if (/^[A-Za-z$][A-Za-z0-9$]*$/.test(trimmed)) unprotected.add(trimmed);
       }
     }
@@ -1066,6 +1071,7 @@ function main() {
     /\bParallelSubmit\[/,   // Returns EvaluationObject with internal state
     /\bTimelinePlot\[/,     // Complex Graphics output, implementation-specific rendering
     /\bAngularGauge\[/,     // Complex Graphics output, implementation-specific rendering
+    /\bHorizontalGauge\[/,  // Same gauge family as AngularGauge — full tick/label Graphics
     /\bSmoothDensityHistogram\[/, // Complex Graphics output, implementation-specific rendering
     /\bServiceConnect\[/,   // Network-dependent Failure result
     /\bNetGraph\[/,         // Neural network internals differ between implementations
@@ -2331,6 +2337,23 @@ function main() {
     // definitions have to stay in the global scope after the Manipulate
     // returns. wolframscript keeps them inside the module.
     "Manipulate[myhelper[a], {a, 0, 10}, Initialization :> (myhelper[x_] := x^2 + 1)]; myhelper[3]",
+
+    // A branching runaway recursion: both engines answer
+    // `TerminatedEvaluation[RecursionLimit]`, but wolframscript's
+    // termination unwinds through every boundary in its way — `CheckAbort`
+    // included, verified in tests/interpreter_tests/control_flow.rs — so it
+    // also tears down the rest of the batch script, which then never
+    // reaches its DONE sentinel. The harness reads that as a flake and
+    // bisects the whole batch down to this one case, ten kernel starts
+    // deep, before writing it off.
+    "$RecursionLimit = 40; b[n_] := b[n - 1] + b[n - 2] + b[n - 3]; b[1]",
+
+    // Socket failure model: wolframscript answers every operation on an
+    // unusable socket with a Failure["SocketsLink", …] carrying the live
+    // SocketObject (and so its random UUID); Woxi returns a bare $Failed by
+    // design. Documented in conformance_gaps.md — the UUID alone makes the
+    // comparison unrepeatable.
+    'srv = SocketOpen[0]; p = srv["DestinationPort"]; Close[srv]; {IntegerQ[p], srv["DestinationPort"], srv["UUID"], srv["Properties"]}',
   ]);
 
   /** Names whose meaning depends on where one input unit ends and the next
@@ -2419,15 +2442,38 @@ function main() {
   // Step 2: Run wolframscript in batches to avoid server timeout/buffer limits.
   // Each batch runs independently; we accumulate failures across all batches.
   const BATCH_SIZE = 50;
-  const totalBatches = Math.ceil(woxiResultsFiltered.length / BATCH_SIZE);
+
+  // A case whose answer is "which symbols exist" cannot share a batch. The
+  // whole batch is one CompoundExpression, so wolframscript creates every
+  // Global` symbol any case in it mentions at read time — `Protect["Global`a*"]`
+  // then finds the `a` and `a$` of its batch-mates on top of its own `aa`
+  // and `ab`, where Woxi's fresh process sees only the latter. Clearing
+  // cannot undo that (the symbols exist without definitions, and `Remove`
+  // would poison the already-parsed rest of the script), so these run alone.
+  const SYMBOL_TABLE_SENSITIVE = /\bNames\[|\b(Un)?Protect\["[^"]*[`*]/;
+  const batches: typeof woxiResultsFiltered[] = [];
+  for (const entry of woxiResultsFiltered) {
+    const alone = SYMBOL_TABLE_SENSITIVE.test(entry.expr);
+    const last = batches[batches.length - 1];
+    if (
+      alone ||
+      last === undefined ||
+      last.length >= BATCH_SIZE ||
+      SYMBOL_TABLE_SENSITIVE.test(last[0].expr)
+    ) {
+      batches.push([entry]);
+    } else {
+      last.push(entry);
+    }
+  }
+  const totalBatches = batches.length;
   console.log(`Running wolframscript in ${totalBatches} batches of up to ${BATCH_SIZE}...`);
 
   const failures: string[] = [];
   let failCount = 0;
 
   for (let b = 0; b < totalBatches; b++) {
-    const batchStart = b * BATCH_SIZE;
-    const batch = woxiResultsFiltered.slice(batchStart, batchStart + BATCH_SIZE);
+    const batch = batches[b];
 
     let outputLines: string[];
     try {

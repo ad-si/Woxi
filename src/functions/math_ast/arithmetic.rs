@@ -6884,7 +6884,45 @@ pub fn is_pos_numeric(e: &Expr) -> bool {
   }
 }
 
+/// The factors of a product, flattened; a non-product is its own only factor.
+fn product_factors_of(expr: &Expr) -> Vec<Expr> {
+  let mut out = Vec::new();
+  fn walk(e: &Expr, out: &mut Vec<Expr>) {
+    match e {
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        for a in args {
+          walk(a, out);
+        }
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left,
+        right,
+      } => {
+        walk(left, out);
+        walk(right, out);
+      }
+      _ => out.push(e.clone()),
+    }
+  }
+  walk(expr, &mut out);
+  out
+}
+
 fn combine_like_bases(args: Vec<Expr>) -> Result<Vec<Expr>, InterpreterError> {
+  combine_like_bases_depth(args, 0)
+}
+
+/// How often the grouping may re-run after a merged power splits back into
+/// factors. Each round strictly simplifies a product base into its parts, so
+/// a handful of rounds is plenty; the cap only guards against a `power_two`
+/// that hands back a product the grouping would rebuild.
+const COMBINE_LIKE_BASES_MAX_ROUNDS: usize = 4;
+
+fn combine_like_bases_depth(
+  args: Vec<Expr>,
+  depth: usize,
+) -> Result<Vec<Expr>, InterpreterError> {
   if args.len() <= 1 {
     return Ok(args);
   }
@@ -6951,6 +6989,13 @@ fn combine_like_bases(args: Vec<Expr>) -> Result<Vec<Expr>, InterpreterError> {
   }
 
   let mut result: Vec<Expr> = Vec::new();
+  // Merging a power of a PRODUCT base can hand back a product of its own:
+  // `(2 Pi)^(-1/2) (2 Pi)^(-1/2)` merges to `(2 Pi)^-1`, which distributes
+  // into `1/2 · Pi^-1`. Those new factors have bases of their own that may
+  // merge with groups already formed (here `Pi^(1/2)`), so the grouping has
+  // to run again over the spliced factors — otherwise
+  // `Sqrt[Pi]/(2 Pi)` and even the unreduced `Pi/(2 Pi)` survive.
+  let mut split_into_factors = false;
   for (_key, base, exponents) in groups {
     if exponents.len() == 1 {
       // Single occurrence — no combining needed, reconstruct original form
@@ -6971,10 +7016,27 @@ fn combine_like_bases(args: Vec<Expr>) -> Result<Vec<Expr>, InterpreterError> {
         }
         continue;
       }
-      result.push(power_two(&base, &combined_exp)?);
+      let merged = power_two(&base, &combined_exp)?;
+      // Only a PRODUCT base can split into factors with bases the grouping
+      // has not already seen. A plain base must not be spliced: `2^(3/2)`
+      // comes back as `2 Sqrt[2]`, which would regroup straight back into
+      // `2^(3/2)` and spin forever.
+      let merged_factors = product_factors_of(&merged);
+      if merged_factors.len() > 1
+        && product_factors_of(&base).len() > 1
+        && depth < COMBINE_LIKE_BASES_MAX_ROUNDS
+      {
+        split_into_factors = true;
+        result.extend(merged_factors);
+      } else {
+        result.push(merged);
+      }
     }
   }
   result.extend(non_combinable);
+  if split_into_factors {
+    return combine_like_bases_depth(result, depth + 1);
+  }
 
   // Second pass: combine bases with the same fractional exponent
   // e.g. Sqrt[2] * Sqrt[3] = 2^(1/2) * 3^(1/2) → 6^(1/2) = Sqrt[6]
