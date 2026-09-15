@@ -504,6 +504,33 @@ impl ManipulateState {
     Some(state)
   }
 
+  /// Apply saved session values — e.g. a Wolfram Demonstration's cached
+  /// `"Variables" :> {…}` dump, see
+  /// [`woxi::notebook::extract_saved_manipulate_variables`] — onto the
+  /// matching controls by name, then re-render.
+  ///
+  /// A notebook saved from the desktop FrontEnd keeps both the original
+  /// `Manipulate[…]` source and this dump, and the two can disagree: the
+  /// source's own spec still carries whatever default the author *wrote*,
+  /// while the dump carries whatever the widget's sliders were actually
+  /// sitting at when the file was last saved. Without this, a widget
+  /// rebuilt straight from the source (as `from_expr` does) would always
+  /// open showing the authored default instead of Wolfram's own saved
+  /// state. A name with no matching control (FrontEnd-only bookkeeping, or
+  /// a control this build doesn't recognize) is silently skipped.
+  pub fn apply_saved_variables(&mut self, saved: &[(String, String)]) {
+    if saved.is_empty() {
+      return;
+    }
+    for (name, code) in saved {
+      if let Some(control) = self.controls.iter_mut().find(|c| c.name() == name)
+      {
+        control.set_current_from_code(code);
+      }
+    }
+    self.reevaluate();
+  }
+
   /// Whether any control row is a `Trigger` (which carries its own
   /// play/pause toggle, replacing the widget-level one).
   pub fn has_trigger(&self) -> bool {

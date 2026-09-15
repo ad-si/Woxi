@@ -5235,7 +5235,14 @@ fn instantiate_stored_manipulate(
     }
     let _ = woxi::interpret(&init);
   }
-  manipulate::ManipulateState::from_expr(&expr)
+  let mut state = manipulate::ManipulateState::from_expr(&expr)?;
+  // The live source's own spec defaults may be stale — the dump's
+  // "Variables" clause is whatever the widget's controls actually sat at
+  // when the file was last saved (see `apply_saved_variables`).
+  let saved_vars =
+    woxi::notebook::extract_saved_manipulate_variables(stored_output);
+  state.apply_saved_variables(&saved_vars);
+  Some(state)
 }
 
 /// Rebuild the interactive widget for a standalone stored Output cell that
@@ -26259,6 +26266,65 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`count$$ = 3, $CellContext`offset$$ 
         rate_view.contains(color),
         "expected {which} in the rate-space picture"
       );
+    }
+  }
+
+  /// A notebook saved from the desktop FrontEnd keeps both the original
+  /// `Manipulate[…]` source (Input cell) *and* a cached
+  /// `Manipulate\`ManipulateBoxes[…]` dump of it (the following Output
+  /// cell) — and the two can disagree: the source's own spec still carries
+  /// whatever default the author *wrote* (`{ctrl, "a", ""}`), while the
+  /// dump's `"Variables"` clause carries whatever the widget's controls
+  /// were actually sitting at when the file was last saved (`ctrl$$ =
+  /// "b"`). A real download from the Wolfram Demonstrations Project has
+  /// this shape whenever the author's last edit left a control away from
+  /// its own authored default — a very common case, since the author was
+  /// presumably playing with the widget right before saving. Wolfram's own
+  /// FrontEnd opens the notebook showing that saved state, not the
+  /// source's stale default; before `apply_saved_variables` existed,
+  /// `instantiate_stored_manipulate` rebuilt the widget from the Input
+  /// cell alone and always reset every control to its authored default.
+  #[test]
+  fn stored_dump_variables_override_the_sources_stale_defaults() {
+    let code = r#"Manipulate[
+      {count, mode},
+      {{count, 2, "count"}, 1, 10},
+      {{mode, "a", ""}, {"a", "b", "c"}}
+    ]"#;
+    let dump = "DynamicModuleBox[{}, DynamicBox[Manipulate`ManipulateBoxes[\n\
+      1, StandardForm, \n\
+      \"Variables\" :> {$CellContext`count$$ = 7, \
+        $CellContext`mode$$ = \"b\"}, \n\
+      \"Body\" :> {$CellContext`count$$, $CellContext`mode$$}, \n\
+      \"Specifications\" :> {{{$CellContext`count$$, 2, \"count\"}, 1, 10}, \
+        {{$CellContext`mode$$, \"a\", \"\"}, {\"a\", \"b\", \"c\"}}}, \n\
+      \"Options\" :> {}],\n\
+      DynamicModuleValues:>{}]]";
+    let state =
+      instantiate_stored_manipulate(code, dump).expect("should build a widget");
+    assert!(state.error.is_none(), "body failed: {:?}", state.error);
+    match &state.controls[..] {
+      [
+        manipulate::ControlState::Continuous { current, .. },
+        manipulate::ControlState::Discrete {
+          current_index,
+          values,
+          ..
+        },
+      ] => {
+        assert_eq!(
+          *current, 7.0,
+          "the continuous control must load at the dump's saved value \
+           (7), not the source's authored default (2)"
+        );
+        assert_eq!(
+          values.get(*current_index).map(String::as_str),
+          Some("\"b\""),
+          "the discrete control must load at the dump's saved choice \
+           (\"b\"), not the source's authored default (\"a\")"
+        );
+      }
+      other => panic!("unexpected controls: {other:?}"),
     }
   }
 }
