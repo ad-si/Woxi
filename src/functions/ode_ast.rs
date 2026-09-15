@@ -2241,8 +2241,20 @@ fn ndsolve_system(
       let Some(min) = nval_to_f64(&domain_items[1]) else {
         return Ok(None);
       };
-      let Some(max) = nval_to_f64(&domain_items[2]) else {
-        return Ok(None);
+      // `{t, t0, Infinity}` is only solvable when an event is present to
+      // stop the integration — nothing else would ever tell a fixed-step
+      // method when to quit, so without one it's left unevaluated like
+      // any other pattern this solver doesn't cover.
+      let max = if is_infinity(&domain_items[2]) {
+        if event.is_none() {
+          return Ok(None);
+        }
+        f64::INFINITY
+      } else {
+        let Some(max) = nval_to_f64(&domain_items[2]) else {
+          return Ok(None);
+        };
+        max
       };
       // NaN bounds must bail out too, so compare via partial_cmp rather
       // than a negated float comparison.
@@ -2577,8 +2589,6 @@ fn ndsolve_system(
         }
       }
 
-      let h = (x_max_resolved - x_min) / n_steps as f64;
-
       // When the mass matrix (the highest-derivative coefficients) turns
       // out not to depend on `x` or the state — common for a
       // holdup/mass-balance system, whose coefficients are plain
@@ -2597,23 +2607,55 @@ fn ndsolve_system(
       // Integrate forward from x0 to x_max, then (if x0 is interior)
       // backward from x0 to x_min; events are only located on the
       // forward leg, matching the direction NDSolve integrates first.
-      let forward = integrate_leg(
-        &residuals,
-        &funcs,
-        &state_offset,
-        init_state.clone(),
-        x0,
-        x_max_resolved,
-        h,
-        event_fn.as_ref(),
-        event.and_then(|e| e.action.as_ref()),
-        x_name,
-        cached_mass_matrix.as_deref(),
-      )?;
+      //
+      // An infinite `x_max_resolved` (`{t, t0, Infinity}`) only reaches
+      // here with an event present (the domain parsing above rejects it
+      // otherwise), so there's always something to stop on; a fixed step
+      // size sized to the whole domain, the way the finite case picks
+      // one, has no domain length to size itself from, so it's searched
+      // for instead.
+      let forward = if x_max_resolved.is_finite() {
+        let h = (x_max_resolved - x_min) / n_steps as f64;
+        integrate_leg(
+          &residuals,
+          &funcs,
+          &state_offset,
+          init_state.clone(),
+          x0,
+          x_max_resolved,
+          h,
+          event_fn.as_ref(),
+          event.and_then(|e| e.action.as_ref()),
+          x_name,
+          cached_mass_matrix.as_deref(),
+        )?
+      } else {
+        integrate_leg_until_event(
+          &residuals,
+          &funcs,
+          &state_offset,
+          &init_state,
+          x0,
+          event_fn.as_ref(),
+          event.and_then(|e| e.action.as_ref()),
+          x_name,
+          cached_mass_matrix.as_deref(),
+        )?
+      };
       let Some(forward) = forward else {
         return Ok(None);
       };
       let backward = if x0 - x_min > 1e-12 {
+        // An infinite `x_max_resolved` leaves no whole-domain length to
+        // size a step from (unlike the finite case, which reuses the
+        // forward leg's own step); the backward leg's own span, from
+        // `x0` down to `x_min`, is always finite, so it's sized off that
+        // instead.
+        let h_back = if x_max_resolved.is_finite() {
+          (x_max_resolved - x_min) / n_steps as f64
+        } else {
+          (x0 - x_min) / n_steps as f64
+        };
         let leg = integrate_leg(
           &residuals,
           &funcs,
@@ -2621,7 +2663,7 @@ fn ndsolve_system(
           init_state,
           x0,
           x_min,
-          -h,
+          -h_back,
           None,
           None,
           x_name,
@@ -2850,6 +2892,73 @@ fn ndsolve_system(
   }
   ordered.append(&mut rules);
   Ok(Some(Expr::List(vec![Expr::List(ordered.into())].into())))
+}
+
+/// How many times [`integrate_leg_until_event`] doubles its search window
+/// before giving up. `2^40` units past `x0` is far past any plausible
+/// event time for a problem whose own scale is of order 1 — the common
+/// case, since a Demonstration's controls are themselves usually of that
+/// order — while still costing only `MAX_UNBOUNDED_DOUBLINGS * 1000` RK4
+/// evaluations in the worst case.
+const MAX_UNBOUNDED_DOUBLINGS: u32 = 40;
+
+/// Forward-integrate from `x0` with no fixed upper bound, for
+/// `NDSolve[…, {t, t0, Infinity}, Method -> {"EventLocator", …}]`. There's
+/// no domain length to size a step from, so the unknown span is searched
+/// geometrically — windows of 1, 2, 4, … units past `x0`, each with its
+/// own 1000-step grid — until `event_fn` fires inside one of them. Gives
+/// up after [`MAX_UNBOUNDED_DOUBLINGS`] windows and reports the last
+/// (event-less) one, the way wolframscript's `NDSolve::mxst` reports a
+/// truncated solution after an ordinary step-count overrun.
+#[allow(clippy::too_many_arguments)]
+fn integrate_leg_until_event(
+  residuals: &[NumFn],
+  funcs: &[SysFunc],
+  state_offset: &[usize],
+  init_state: &[f64],
+  x0: f64,
+  event_fn: Option<&NumFn>,
+  event_action: Option<&Expr>,
+  x_name: &str,
+  cached_m: Option<&[Vec<f64>]>,
+) -> Result<Option<Vec<(f64, Vec<f64>)>>, InterpreterError> {
+  let mut window = 1.0f64;
+  for attempt in 0..MAX_UNBOUNDED_DOUBLINGS {
+    let x_to = x0 + window;
+    let h = window / 1000.0;
+    let Some(leg) = integrate_leg(
+      residuals,
+      funcs,
+      state_offset,
+      init_state.to_vec(),
+      x0,
+      x_to,
+      h,
+      event_fn,
+      event_action,
+      x_name,
+      cached_m,
+    )?
+    else {
+      return Ok(None);
+    };
+    // The leg stops short of `x_to` exactly when the event fired (or a
+    // step failed) before the window's end; a leg that reaches it ran
+    // clean to the requested window with no event, so the search widens.
+    let reached_end =
+      leg.last().is_some_and(|(x, _)| (x_to - x).abs() < h * 0.5);
+    if !reached_end || attempt + 1 == MAX_UNBOUNDED_DOUBLINGS {
+      if reached_end {
+        crate::emit_message(
+          "NDSolve::mxst: Maximum number of 40000 steps reached before the \
+           event was located; returning the solution found so far.",
+        );
+      }
+      return Ok(Some(leg));
+    }
+    window *= 2.0;
+  }
+  Ok(None)
 }
 
 /// Solve a two-point boundary value problem for a single second-order
@@ -4038,6 +4147,11 @@ fn extract_derivative_order_and_point(
 /// so this loses nothing.
 fn nval_to_f64(expr: &Expr) -> Option<f64> {
   interp_value_to_f64(expr).ok()
+}
+
+/// Is `expr` the `Infinity` symbol (as opposed to a finite numeric bound)?
+fn is_infinity(expr: &Expr) -> bool {
+  matches!(expr, Expr::Identifier(s) | Expr::Constant(s) if s == "Infinity")
 }
 
 /// Parse a numeric initial condition: y[x0] == y0 or y'[x0] == y0
@@ -6707,6 +6821,29 @@ pub fn evaluate_interpolating_function(
     let y_val = lagrange_interpolate(data_points, x_val, n, idx, eff_order)?;
     Ok(real_or_integer(y_val))
   }
+}
+
+/// `InterpolatingFunctionDomain[interp]`, from the
+/// `DifferentialEquations`InterpolatingFunctionAnatomy`` package. Reports the
+/// same domain as `interp["Domain"]` (a list of `{min, max}` pairs, one per
+/// independent variable), so it delegates to `evaluate_interpolating_function`
+/// rather than re-deriving the domain.
+pub fn interpolating_function_domain_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let interp = crate::evaluator::evaluate_expr_to_expr(&args[0])?;
+  if let Expr::FunctionCall {
+    name,
+    args: func_args,
+  } = &interp
+    && name == "InterpolatingFunction"
+  {
+    return evaluate_interpolating_function(
+      func_args,
+      &[Expr::String("Domain".to_string())],
+    );
+  }
+  Ok(unevaluated("InterpolatingFunctionDomain", &[interp]))
 }
 
 /// Evaluate a 2-D grid InterpolatingFunction at `[x, y]` via tensor-product

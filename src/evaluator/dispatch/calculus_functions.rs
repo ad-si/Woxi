@@ -761,6 +761,11 @@ pub fn dispatch_calculus_functions(
     "Interpolation" | "ListInterpolation" if !args.is_empty() => {
       return Some(crate::functions::ode_ast::interpolation_ast(args, name));
     }
+    "InterpolatingFunctionDomain" if args.len() == 1 => {
+      return Some(
+        crate::functions::ode_ast::interpolating_function_domain_ast(args),
+      );
+    }
     "NDSolve" if args.len() >= 3 => {
       return Some(crate::functions::ode_ast::ndsolve_ast(args));
     }
