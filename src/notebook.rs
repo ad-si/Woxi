@@ -2011,6 +2011,26 @@ fn render_boxes_text(s: &str) -> String {
     }
   }
 
+  // A `GraphicsBox[…]` embedded directly in prose — e.g. a diagram inside
+  // a Demonstration's Details text (`Cell[TextData[Cell[BoxData[FormBox[
+  // GraphicsBox[…], TraditionalForm]], "InlineMath"]], "Text"]`) — is
+  // display-only, not code: falling back to the evaluable-InputForm
+  // extractor would flood the paragraph with the reconstructed `Graphics[
+  // …]` source (hundreds to thousands of characters of box coordinates).
+  // Wolfram's own plain-text form of a graphic is `-Graphics-`
+  // (`-Image-` for a raster); use the same placeholder here rather than
+  // rendering nothing, so the surrounding sentence still reads.
+  if let Some(args) = positional_box_args("GraphicsBox", s) {
+    return if args
+      .first()
+      .is_some_and(|a| extract_image_from_boxes(a).is_some())
+    {
+      "-Image-".to_string()
+    } else {
+      "-Graphics-".to_string()
+    };
+  }
+
   // Anything else falls back to the evaluable-InputForm extractor.
   extract_cell_content(s)
 }
@@ -5205,6 +5225,42 @@ Cell["Chapter 2", "Chapter"]
       decode_compressed_raster_as_wl_list(&gray_payload),
       Some("{{3}, {250}}".to_string())
     );
+  }
+
+  #[test]
+  fn test_text_cell_inline_diagram_renders_as_graphics_placeholder() {
+    // A Demonstration's Details text sometimes embeds a small illustrative
+    // diagram inline in a sentence via `Cell[BoxData[FormBox[GraphicsBox[
+    // …], TraditionalForm]], "InlineMath"]` (e.g. arrows and labels
+    // sketching a setup) rather than a formula. Left unconverted, the Text
+    // cell would show the reconstructed `Graphics[…]` source — hundreds of
+    // characters of box coordinates — inline in the prose. It must instead
+    // fall back to Wolfram's own plain-text placeholder for a graphic,
+    // `-Graphics-`, the same way `Print[Graphics[…]]` renders as text.
+    let text_data = r#"{"setup: ", Cell[BoxData[
+ FormBox[
+  GraphicsBox[{RGBColor[1, 0, 0], PointBox[{0, 0}],
+    InsetBox["label", {1, 1}]}], TraditionalForm]], "InlineMath",
+  ExpressionUUID->"00000000-0000-0000-0000-000000000000"], "."}"#;
+    let rendered = extract_textdata(text_data);
+    assert_eq!(rendered, "setup: -Graphics-.");
+  }
+
+  #[test]
+  fn test_text_cell_inline_raster_renders_as_image_placeholder() {
+    // Same idea, but the inline box is a raster (`RasterBox` with an
+    // `ImageTag`) rather than vector primitives — Wolfram's plain-text
+    // placeholder for that case is `-Image-`, not `-Graphics-`.
+    let payload = make_compressed_packed_byte_array(1, 1, 1, &[128]);
+    let raster = format!(
+      "RasterBox[CompressedData[\"{payload}\"], {{{{0, 1}}, {{1, 0}}}}, {{0, 255}}]"
+    );
+    let tag_box = format!("TagBox[{raster}, BoxForm`ImageTag[\"Byte\"]]");
+    let graphics_box = format!("GraphicsBox[{tag_box}]");
+    let cell = format!("Cell[BoxData[{graphics_box}], \"InlineMath\"]");
+    let text_data = format!("{{\"photo: \", {cell}}}");
+    let rendered = extract_textdata(&text_data);
+    assert_eq!(rendered, "photo: -Image-");
   }
 
   #[test]
