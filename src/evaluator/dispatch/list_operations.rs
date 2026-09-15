@@ -1528,11 +1528,12 @@ fn weighted_data_stat(
 ) -> Result<Expr, InterpreterError> {
   let total_w = eval_plus(weights.to_vec())?;
   // Weighted mean μ = Σ(wᵢ xᵢ) / Σwᵢ.
+  let times = |a: Expr, b: Expr| call("Times", vec![a, b]);
   let weighted_sum = eval_plus(
     data
       .iter()
       .zip(weights)
-      .map(|(x, w)| call("Times", vec![w.clone(), x.clone()]))
+      .map(|(x, w)| times(w.clone(), x.clone()))
       .collect(),
   )?;
   let mean = evaluate_expr_to_expr(&call(
@@ -1543,25 +1544,13 @@ fn weighted_data_stat(
     "Mean" => Ok(mean),
     "Variance" | "StandardDeviation" => {
       // Σ wᵢ (xᵢ − μ)².
+      let diff = |x| call("Subtract", vec![x, mean.clone()]);
+      let sq = |x| call("Power", vec![x, Expr::Integer(2)]);
       let sq_sum = eval_plus(
         data
           .iter()
           .zip(weights)
-          .map(|(x, w)| Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![
-              w.clone(),
-              Expr::FunctionCall {
-                name: "Power".to_string(),
-                args: vec![
-                  call("Subtract", vec![x.clone(), mean.clone()]),
-                  Expr::Integer(2),
-                ]
-                .into(),
-              },
-            ]
-            .into(),
-          })
+          .map(|(x, w)| times(w.clone(), sq(diff(x.clone()))))
           .collect(),
       )?;
       let variance =
@@ -3941,14 +3930,9 @@ pub fn dispatch_list_operations(
         && d.len() == w.len()
         && !d.is_empty()
       {
-        return Some(Ok(Expr::FunctionCall {
-          name: "WeightedData".to_string(),
-          args: vec![
-            id_expr("Automatic"),
-            Expr::List(vec![args[0].clone(), args[1].clone()].into()),
-          ]
-          .into(),
-        }));
+        let vals = vec![args[0].clone(), args[1].clone()];
+        let data = vec![id_expr("Automatic"), Expr::List(vals.into())];
+        return Some(Ok(call("WeightedData", data)));
       }
       return None;
     }
@@ -9547,16 +9531,15 @@ fn build_sparse_array_csr(
     Expr::List(dims.iter().map(|&d| Expr::Integer(d as i128)).collect());
   let k = dims.len();
   let n = dims[0];
-  let make_outer = |inner: Expr| Expr::FunctionCall {
-    name: "SparseArray".to_string(),
-    args: vec![
+  let make_array = |inner: Expr| {
+    vec![
       id_expr("Automatic"),
       dims_list.clone(),
       default.clone(),
       inner,
     ]
-    .into(),
   };
+  let make_outer = |inner: Expr| call("SparseArray", make_array(inner));
   if entries.is_empty() {
     let row_ptr = if k == 1 {
       Expr::List(vec![Expr::Integer(0), Expr::Integer(0)].into())
