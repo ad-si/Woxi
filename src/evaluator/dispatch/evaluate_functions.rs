@@ -3447,24 +3447,14 @@ fn evaluate_function_call_ast_inner(
         let col = ((v - 1) % m) + 1;
         let row = ((v - 1) / m) + 1;
         if col < m {
-          edges.push(Expr::FunctionCall {
-            name: "UndirectedEdge".to_string(),
-            args: vec![
-              Expr::Integer(v as i128),
-              Expr::Integer((v + 1) as i128),
-            ]
-            .into(),
-          });
+          let edge =
+            vec![Expr::Integer(v as i128), Expr::Integer((v + 1) as i128)];
+          edges.push(call("UndirectedEdge", edge));
         }
         if row < n {
-          edges.push(Expr::FunctionCall {
-            name: "UndirectedEdge".to_string(),
-            args: vec![
-              Expr::Integer(v as i128),
-              Expr::Integer((v + m) as i128),
-            ]
-            .into(),
-          });
+          let edge =
+            vec![Expr::Integer(v as i128), Expr::Integer((v + m) as i128)];
+          edges.push(call("UndirectedEdge", edge));
         }
       }
       return Ok(call(
@@ -3514,14 +3504,11 @@ fn evaluate_function_call_ast_inner(
         } else {
           idx0 - coord_d * strides[d]
         };
-        edges.push(Expr::FunctionCall {
-          name: "UndirectedEdge".to_string(),
-          args: vec![
-            Expr::Integer(v as i128),
-            Expr::Integer((neighbor0 + 1) as i128),
-          ]
-          .into(),
-        });
+        let edge = vec![
+          Expr::Integer(v as i128),
+          Expr::Integer((neighbor0 + 1) as i128),
+        ];
+        edges.push(call("UndirectedEdge", edge));
       }
     }
     return Ok(call(
@@ -3801,14 +3788,9 @@ fn evaluate_function_call_ast_inner(
         for c in 0..k {
           let child = k * (i - 1) + c + 2;
           if child <= n {
-            edges.push(Expr::FunctionCall {
-              name: "UndirectedEdge".to_string(),
-              args: vec![
-                Expr::Integer(i as i128),
-                Expr::Integer(child as i128),
-              ]
-              .into(),
-            });
+            let edge =
+              vec![Expr::Integer(i as i128), Expr::Integer(child as i128)];
+            edges.push(call("UndirectedEdge", edge));
           }
         }
       }
@@ -3860,14 +3842,9 @@ fn evaluate_function_call_ast_inner(
         for c in 0..k {
           let child = k * (i - 1) + c + 2;
           if child <= num_vertices {
-            edges.push(Expr::FunctionCall {
-              name: "UndirectedEdge".to_string(),
-              args: vec![
-                Expr::Integer(i as i128),
-                Expr::Integer(child as i128),
-              ]
-              .into(),
-            });
+            let edge =
+              vec![Expr::Integer(i as i128), Expr::Integer(child as i128)];
+            edges.push(call("UndirectedEdge", edge));
           }
         }
       }
@@ -3893,14 +3870,11 @@ fn evaluate_function_call_ast_inner(
       for bit in 0..n {
         let j = i ^ (1 << bit);
         if i < j {
-          edges.push(Expr::FunctionCall {
-            name: "UndirectedEdge".to_string(),
-            args: vec![
-              Expr::Integer((i + 1) as i128),
-              Expr::Integer((j + 1) as i128),
-            ]
-            .into(),
-          });
+          let edge = vec![
+            Expr::Integer((i + 1) as i128),
+            Expr::Integer((j + 1) as i128),
+          ];
+          edges.push(call("UndirectedEdge", edge));
         }
       }
     }
@@ -3942,14 +3916,11 @@ fn evaluate_function_call_ast_inner(
     for i in 0..n {
       for j in (i + 1)..n {
         if partition[i] != partition[j] {
-          edges.push(Expr::FunctionCall {
-            name: "UndirectedEdge".to_string(),
-            args: vec![
-              Expr::Integer((i + 1) as i128),
-              Expr::Integer((j + 1) as i128),
-            ]
-            .into(),
-          });
+          let edge = vec![
+            Expr::Integer((i + 1) as i128),
+            Expr::Integer((j + 1) as i128),
+          ];
+          edges.push(call("UndirectedEdge", edge));
         }
       }
     }
@@ -3980,14 +3951,11 @@ fn evaluate_function_call_ast_inner(
       let base = (v % shift) * m;
       for c in 0..m {
         let w = base + c;
-        edges.push(Expr::FunctionCall {
-          name: "DirectedEdge".to_string(),
-          args: vec![
-            Expr::Integer((v + 1) as i128),
-            Expr::Integer((w + 1) as i128),
-          ]
-          .into(),
-        });
+        let edge = vec![
+          Expr::Integer((v + 1) as i128),
+          Expr::Integer((w + 1) as i128),
+        ];
+        edges.push(call("DirectedEdge", edge));
       }
     }
 
@@ -4845,36 +4813,25 @@ fn evaluate_function_call_ast_inner(
       if let Some(kids) = children {
         for child in kids {
           let child_id = *counter + 1;
-          edges.push(Expr::FunctionCall {
-            name: "UndirectedEdge".to_string(),
-            args: vec![
-              Expr::Integer(my_id as i128),
-              Expr::Integer(child_id as i128),
-            ]
-            .into(),
-          });
+          let edge = vec![
+            Expr::Integer(my_id as i128),
+            Expr::Integer(child_id as i128),
+          ];
+          edges.push(call("UndirectedEdge", edge));
           walk_expr(child, counter, vertices, edges);
         }
       } else if let Expr::BinaryOp { left, right, .. } = expr {
         let left_id = *counter + 1;
-        edges.push(Expr::FunctionCall {
-          name: "UndirectedEdge".to_string(),
-          args: vec![
-            Expr::Integer(my_id as i128),
-            Expr::Integer(left_id as i128),
-          ]
-          .into(),
-        });
+        let edge =
+          vec![Expr::Integer(my_id as i128), Expr::Integer(left_id as i128)];
+        edges.push(call("UndirectedEdge", edge));
         walk_expr(left, counter, vertices, edges);
         let right_id = *counter + 1;
-        edges.push(Expr::FunctionCall {
-          name: "UndirectedEdge".to_string(),
-          args: vec![
-            Expr::Integer(my_id as i128),
-            Expr::Integer(right_id as i128),
-          ]
-          .into(),
-        });
+        let edge = vec![
+          Expr::Integer(my_id as i128),
+          Expr::Integer(right_id as i128),
+        ];
+        edges.push(call("UndirectedEdge", edge));
         walk_expr(right, counter, vertices, edges);
       }
       // Atoms (Integer, Real, Identifier, String, etc.) have no children
@@ -7503,14 +7460,9 @@ fn evaluate_function_call_ast_inner(
           if nr >= 0 && nr < m as i32 && nc >= 0 && nc < n as i32 {
             let to = nr as usize * n + nc as usize + 1;
             if from < to {
-              edges.push(Expr::FunctionCall {
-                name: "UndirectedEdge".to_string(),
-                args: vec![
-                  Expr::Integer(from as i128),
-                  Expr::Integer(to as i128),
-                ]
-                .into(),
-              });
+              let edge =
+                vec![Expr::Integer(from as i128), Expr::Integer(to as i128)];
+              edges.push(call("UndirectedEdge", edge));
             }
           }
         }
@@ -8179,18 +8131,17 @@ fn evaluate_function_call_ast_inner(
   // Triangle[] defaults to Triangle[{{0,0},{1,0},{0,1}}]
   if name == "Triangle" {
     if args.is_empty() {
-      return Ok(Expr::FunctionCall {
-        name: "Triangle".to_string(),
-        args: vec![Expr::List(
+      return Ok(call1(
+        "Triangle",
+        Expr::List(
           vec![
             Expr::List(vec![Expr::Integer(0), Expr::Integer(0)].into()),
             Expr::List(vec![Expr::Integer(1), Expr::Integer(0)].into()),
             Expr::List(vec![Expr::Integer(0), Expr::Integer(1)].into()),
           ]
           .into(),
-        )]
-        .into(),
-      });
+        ),
+      ));
     }
     return Ok(unevaluated(name, args));
   }
@@ -10299,14 +10250,10 @@ fn evaluate_function_call_ast_inner(
       let due = Expr::FunctionCall {
         name: "Times".to_string(),
         args: vec![
-          Expr::FunctionCall {
-            name: "Power".to_string(),
-            args: vec![
-              call("Plus", vec![Expr::Integer(1), args[1].clone()]),
-              q,
-            ]
-            .into(),
-          },
+          call(
+            "Power",
+            vec![call("Plus", vec![Expr::Integer(1), args[1].clone()]), q],
+          ),
           ordinary,
         ]
         .into(),
@@ -10397,14 +10344,13 @@ fn evaluate_function_call_ast_inner(
         name: "Times".to_string(),
         args: vec![
           s.clone(),
-          Expr::FunctionCall {
-            name: "Power".to_string(),
-            args: vec![
+          call(
+            "Power",
+            vec![
               call("Plus", vec![Expr::Integer(1), i.clone()]),
               t_for_formula.clone(),
-            ]
-            .into(),
-          },
+            ],
+          ),
         ]
         .into(),
       };
@@ -10438,13 +10384,14 @@ fn evaluate_function_call_ast_inner(
       let q = ann_args.get(2).cloned().unwrap_or(Expr::Integer(1));
       let one_plus_i = || call("Plus", vec![Expr::Integer(1), i.clone()]);
       // (1+i)^-tspan
-      let pow_neg_tspan = || Expr::FunctionCall {
-        name: "Power".to_string(),
-        args: vec![
-          one_plus_i(),
-          call("Times", vec![Expr::Integer(-1), tspan.clone()]),
-        ]
-        .into(),
+      let pow_neg_tspan = || {
+        call(
+          "Power",
+          vec![
+            one_plus_i(),
+            call("Times", vec![Expr::Integer(-1), tspan.clone()]),
+          ],
+        )
       };
       // i_eff = (1+i)^q - 1
       let i_eff = call(
@@ -10456,14 +10403,13 @@ fn evaluate_function_call_ast_inner(
         name: "Times".to_string(),
         args: vec![
           p,
-          Expr::FunctionCall {
-            name: "Plus".to_string(),
-            args: vec![
+          call(
+            "Plus",
+            vec![
               Expr::Integer(1),
               call("Times", vec![Expr::Integer(-1), pow_neg_tspan()]),
-            ]
-            .into(),
-          },
+            ],
+          ),
           call("Power", vec![i_eff, Expr::Integer(-1)]),
         ]
         .into(),
@@ -10530,14 +10476,10 @@ fn evaluate_function_call_ast_inner(
         name: "Times".to_string(),
         args: vec![
           pv,
-          Expr::FunctionCall {
-            name: "Power".to_string(),
-            args: vec![
-              call("Plus", vec![Expr::Integer(1), i.clone()]),
-              t.clone(),
-            ]
-            .into(),
-          },
+          call(
+            "Power",
+            vec![call("Plus", vec![Expr::Integer(1), i.clone()]), t.clone()],
+          ),
         ]
         .into(),
       };
@@ -10791,14 +10733,13 @@ fn evaluate_function_call_ast_inner(
           name: "Times".to_string(),
           args: vec![
             s.clone(),
-            Expr::FunctionCall {
-              name: "Power".to_string(),
-              args: vec![
+            call(
+              "Power",
+              vec![
                 call("Plus", vec![Expr::Integer(1), Expr::Real(rate)]),
                 Expr::Real(-maturity),
-              ]
-              .into(),
-            },
+              ],
+            ),
           ]
           .into(),
         };
@@ -12013,15 +11954,14 @@ fn evaluate_darker_lighter(args: &[Expr], is_darker: bool) -> Option<Expr> {
     }
   }
 
-  Some(Expr::FunctionCall {
-    name: "RGBColor".to_string(),
-    args: vec![
+  Some(call(
+    "RGBColor",
+    vec![
       result_rgb[0].clone(),
       result_rgb[1].clone(),
       result_rgb[2].clone(),
-    ]
-    .into(),
-  })
+    ],
+  ))
 }
 
 /// Check if an expression is a GrayLevel color.

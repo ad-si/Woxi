@@ -2468,16 +2468,13 @@ fn downvalue_arg_info(
           Expr::PatternOptional {
             default: Some(d), ..
           } => Some((**d).clone()),
-          Expr::PatternOptional { default: None, .. } => {
-            Some(Expr::FunctionCall {
-              name: "Default".to_string(),
-              args: vec![
-                Expr::Identifier(func_name.clone()),
-                Expr::Integer((i + 1) as i128),
-              ]
-              .into(),
-            })
-          }
+          Expr::PatternOptional { default: None, .. } => Some(call(
+            "Default",
+            vec![
+              Expr::Identifier(func_name.clone()),
+              Expr::Integer((i + 1) as i128),
+            ],
+          )),
           _ => None,
         };
         defaults.push(default_for_slot);
@@ -4063,14 +4060,13 @@ fn list_element_accessor(
   is_trailing_seq: bool,
 ) -> Expr {
   if is_trailing_seq {
-    Expr::FunctionCall {
-      name: "Apply".to_string(),
-      args: vec![
+    call(
+      "Apply",
+      vec![
         id_expr("Sequence"),
         call("Drop", vec![base.clone(), Expr::Integer(idx as i128)]),
-      ]
-      .into(),
-    }
+      ],
+    )
   } else {
     call("Part", vec![base.clone(), Expr::Integer((idx + 1) as i128)])
   }
@@ -4184,17 +4180,16 @@ fn collect_element_bindings(
               if !seq_name.is_empty() {
                 out.push((
                   seq_name,
-                  Expr::FunctionCall {
-                    name: "Apply".to_string(),
-                    args: vec![
+                  call(
+                    "Apply",
+                    vec![
                       id_expr("Sequence"),
                       call(
                         "Drop",
                         vec![accessor.clone(), Expr::Integer(k as i128)],
                       ),
-                    ]
-                    .into(),
-                  },
+                    ],
+                  ),
                 ));
               }
             }
@@ -4538,14 +4533,13 @@ fn reconstruct_list_param(
 
   let mut part_names = Vec::new();
   for (idx, pat) in &elem_pats {
-    let path = Expr::FunctionCall {
-      name: "Part".to_string(),
-      args: vec![
+    let path = call(
+      "Part",
+      vec![
         Expr::Identifier(param.to_string()),
         Expr::Integer(*idx as i128),
-      ]
-      .into(),
-    };
+      ],
+    );
     map_part_names(pat, &path, &mut part_names);
   }
 
@@ -4964,18 +4958,13 @@ pub fn tag_set_delayed_ast(
     Expr::FunctionCall { name, args } => (name.clone(), args.to_vec()),
     Expr::BinaryOp { op, left, right } => {
       let (name, args) = match op {
-        BinaryOperator::Plus => {
-          ("Plus".to_string(), collect_binary_children(lhs, *op))
+        BinaryOperator::Plus => ("Plus", collect_binary_children(lhs, *op)),
+        BinaryOperator::Times => ("Times", collect_binary_children(lhs, *op)),
+        BinaryOperator::Alternatives => {
+          ("Alternatives", collect_binary_children(lhs, *op))
         }
-        BinaryOperator::Times => {
-          ("Times".to_string(), collect_binary_children(lhs, *op))
-        }
-        BinaryOperator::Alternatives => (
-          "Alternatives".to_string(),
-          collect_binary_children(lhs, *op),
-        ),
         BinaryOperator::Minus => (
-          "Plus".to_string(),
+          "Plus",
           vec![
             left.as_ref().clone(),
             Expr::BinaryOp {
@@ -4986,7 +4975,7 @@ pub fn tag_set_delayed_ast(
           ],
         ),
         BinaryOperator::Divide => (
-          "Times".to_string(),
+          "Times",
           vec![
             left.as_ref().clone(),
             Expr::BinaryOp {
@@ -4996,24 +4985,21 @@ pub fn tag_set_delayed_ast(
             },
           ],
         ),
-        BinaryOperator::Power => (
-          "Power".to_string(),
-          vec![left.as_ref().clone(), right.as_ref().clone()],
-        ),
-        BinaryOperator::And => (
-          "And".to_string(),
-          vec![left.as_ref().clone(), right.as_ref().clone()],
-        ),
-        BinaryOperator::Or => (
-          "Or".to_string(),
-          vec![left.as_ref().clone(), right.as_ref().clone()],
-        ),
+        BinaryOperator::Power => {
+          ("Power", vec![left.as_ref().clone(), right.as_ref().clone()])
+        }
+        BinaryOperator::And => {
+          ("And", vec![left.as_ref().clone(), right.as_ref().clone()])
+        }
+        BinaryOperator::Or => {
+          ("Or", vec![left.as_ref().clone(), right.as_ref().clone()])
+        }
         BinaryOperator::StringJoin => (
-          "StringJoin".to_string(),
+          "StringJoin",
           vec![left.as_ref().clone(), right.as_ref().clone()],
         ),
       };
-      (name, args)
+      (name.to_string(), args)
     }
     // A list is a call of `List`, so `obj /: {obj, x_} = 3` hangs its rule
     // on `List` the way `obj /: f[obj, x_] = 3` hangs one on `f`. A
@@ -5025,15 +5011,12 @@ pub fn tag_set_delayed_ast(
     } => crate::syntax::comparison_head_and_args(operands, operators),
     Expr::UnaryOp { op, operand } => {
       let (name, args) = match op {
-        UnaryOperator::Minus => (
-          "Times".to_string(),
-          vec![Expr::Integer(-1), operand.as_ref().clone()],
-        ),
-        UnaryOperator::Not => {
-          ("Not".to_string(), vec![operand.as_ref().clone()])
+        UnaryOperator::Minus => {
+          ("Times", vec![Expr::Integer(-1), operand.as_ref().clone()])
         }
+        UnaryOperator::Not => ("Not", vec![operand.as_ref().clone()]),
       };
-      (name, args)
+      (name.to_string(), args)
     }
     _ => {
       return Err(InterpreterError::EvaluationError(
@@ -5093,14 +5076,13 @@ pub fn tag_set_delayed_ast(
         let (pat_name, _pat_head, _blank_type) =
           extract_pattern_info(inner_arg);
         if !pat_name.is_empty() {
-          let part_expr = Expr::FunctionCall {
-            name: "Part".to_string(),
-            args: vec![
+          let part_expr = call(
+            "Part",
+            vec![
               Expr::Identifier(param_name.clone()),
               Expr::Integer((j + 1) as i128),
-            ]
-            .into(),
-          };
+            ],
+          );
           // If this pattern variable was already seen, add a SameQ
           // condition to ensure both occurrences match the same value.
           if let Some(prev_expr) = seen_pattern_vars.get(&pat_name) {
