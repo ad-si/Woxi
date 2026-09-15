@@ -2,6 +2,16 @@
 
 # Unreleased
 
+- `FindMinimum`/`FindMaximum` accept the bounded variable spec `{x, x0,
+    xmin, xmax}` (and its multivariable form `{{x, x0, xmin, xmax}, …}`),
+    constraining the search to `[xmin, xmax]` throughout instead of
+    reporting `"second argument must be {var, start} or {{x, x0}, {y,
+    y0}}"`. Found while checking Woxi Studio against a Wolfram
+    Demonstrations Project notebook (a `Manipulate` bracketing a
+    `FindMinimum`/`FindMaximum` search between two multiples of a
+    time-scale variable) — the shape a Demonstration commonly uses to
+    stay within a plot's domain.
+
 - The WLJS Notebook backend gets past module loading. Its adapter branch
     surfaced six language gaps, all of them fixed here and all verified
     against `wolframscript`:

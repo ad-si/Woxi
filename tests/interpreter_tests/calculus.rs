@@ -6343,6 +6343,52 @@ mod find_minimum {
     .unwrap();
     assert_eq!(result, "{2443/2500, 5}");
   }
+
+  #[test]
+  fn bounded_spec_leaves_an_interior_optimum_untouched() {
+    // FindMinimum[f, {x, x0, xmin, xmax}] constrains x to [xmin, xmax]
+    // throughout the search, but when the unconstrained optimum already
+    // lies inside that range it must be found exactly, same as the plain
+    // {x, x0} form.
+    clear_state();
+    let result =
+      interpret("FindMinimum[(x - 3)^2 + 2., {x, 0, -10, 10}]").unwrap();
+    assert_eq!(result, "{2., {x -> 3.}}");
+  }
+
+  #[test]
+  fn bounded_spec_clamps_an_optimum_outside_the_range() {
+    // The unconstrained minimum of (x-3)^2 is at x = 3, outside [0, 2];
+    // the constrained search must stop at the boundary x = 2 instead.
+    clear_state();
+    let result = interpret("FindMinimum[(x - 3)^2, {x, 1, 0, 2}]").unwrap();
+    assert_eq!(result, "{1., {x -> 2.}}");
+  }
+
+  #[test]
+  fn bounded_spec_clamps_a_maximum_outside_the_range() {
+    // FindMaximum with the same bounded spec: the unconstrained maximum
+    // of -(x-3)^2 is at x = 3, outside [-5, 1], so the search must stop
+    // at the boundary x = 1.
+    clear_state();
+    let result = interpret("FindMaximum[-(x - 3)^2, {x, 0, -5, 1}]").unwrap();
+    assert_eq!(result, "{-4., {x -> 1.}}");
+  }
+
+  #[test]
+  fn bounded_spec_multivariable_clamps_each_variable_independently() {
+    // Each {var, x0, xmin, xmax} triple in the multivariable form bounds
+    // only its own variable. The unconstrained minimum of
+    // (x-3)^2+(y-2)^2 is at {3, 2}; with x bounded to [0, 1] and y left
+    // free (still inside its own wide bounds), only x should clamp, to
+    // x = 1, leaving y = 2 and a value of (1-3)^2 + (2-2)^2 = 4.
+    clear_state();
+    let result = interpret(
+      "FindMinimum[(x - 3)^2 + (y - 2)^2, {{x, 0, 0, 1}, {y, 0, -10, 10}}]",
+    )
+    .unwrap();
+    assert_eq!(result, "{4., {x -> 1., y -> 2.}}");
+  }
 }
 
 mod dt {

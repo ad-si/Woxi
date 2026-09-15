@@ -10297,11 +10297,35 @@ pub fn find_minimum_ast(
   // Only the first two positional arguments drive the optimisation.
   let f = &args[0];
 
-  // Parse variables and starting points: x, {x, y}, {x, x0} or
-  // {{x, x0}, {y, y0}}. Bare symbols get Wolfram's automatic starting
+  // A single variable spec: {x, x0} (unconstrained) or {x, x0, xmin, xmax}
+  // (`x` constrained to stay within [xmin, xmax] throughout the search).
+  // Returns `None` when `pair` doesn't have that shape.
+  let parse_bounded_var_spec = |pair: &[Expr]| -> Option<
+    Result<(String, f64, Option<(f64, f64)>), InterpreterError>,
+  > {
+    let Expr::Identifier(name) = &pair[0] else {
+      return None;
+    };
+    match pair.len() {
+      2 => {
+        Some(find_root_eval_number(&pair[1]).map(|x0| (name.clone(), x0, None)))
+      }
+      4 => Some((|| {
+        let x0 = find_root_eval_number(&pair[1])?;
+        let xmin = find_root_eval_number(&pair[2])?;
+        let xmax = find_root_eval_number(&pair[3])?;
+        Ok((name.clone(), x0, Some((xmin.min(xmax), xmin.max(xmax)))))
+      })()),
+      _ => None,
+    }
+  };
+
+  // Parse variables and starting points: x, {x, y}, {x, x0}, {x, x0, xmin,
+  // xmax} or {{x, x0}, {y, y0}} (each pair optionally carrying its own
+  // xmin/xmax bounds too). Bare symbols get Wolfram's automatic starting
   // point of 1 (FindMinimum[f, x] == FindMinimum[f, {x, 1}]).
   let var_specs = match &args[1] {
-    Expr::Identifier(name) => vec![(name.clone(), 1.0)],
+    Expr::Identifier(name) => vec![(name.clone(), 1.0, None)],
     Expr::List(items)
       if !items.is_empty() && matches!(&items[0], Expr::List(_)) =>
     {
@@ -10309,11 +10333,9 @@ pub fn find_minimum_ast(
       let mut specs = Vec::new();
       for item in items {
         if let Expr::List(pair) = item
-          && pair.len() == 2
-          && let Expr::Identifier(name) = &pair[0]
+          && let Some(spec) = parse_bounded_var_spec(pair)
         {
-          let x0 = find_root_eval_number(&pair[1])?;
-          specs.push((name.clone(), x0));
+          specs.push(spec?);
         } else {
           return Err(InterpreterError::EvaluationError(format!(
             "{func_name}: variable spec must be {{var, start}}"
@@ -10333,20 +10355,20 @@ pub fn find_minimum_ast(
       items
         .iter()
         .map(|i| match i {
-          Expr::Identifier(name) => (name.clone(), 1.0),
+          Expr::Identifier(name) => (name.clone(), 1.0, None),
           _ => unreachable!(),
         })
         .collect()
     }
-    Expr::List(items) if items.len() == 2 => {
-      // Single variable: {x, x0}
-      if let Expr::Identifier(name) = &items[0] {
-        let x0 = find_root_eval_number(&items[1])?;
-        vec![(name.clone(), x0)]
-      } else {
-        return Err(InterpreterError::EvaluationError(format!(
-          "{func_name}: variable spec must be {{var, start}}"
-        )));
+    // Single variable: {x, x0} or {x, x0, xmin, xmax}
+    Expr::List(items) if items.len() == 2 || items.len() == 4 => {
+      match parse_bounded_var_spec(items) {
+        Some(spec) => vec![spec?],
+        None => {
+          return Err(InterpreterError::EvaluationError(format!(
+            "{func_name}: variable spec must be {{var, start}}"
+          )));
+        }
       }
     }
     _ => {
@@ -10356,8 +10378,18 @@ pub fn find_minimum_ast(
     }
   };
 
-  let vars: Vec<String> = var_specs.iter().map(|(v, _)| v.clone()).collect();
-  let mut x: Vec<f64> = var_specs.iter().map(|(_, x0)| *x0).collect();
+  let vars: Vec<String> = var_specs.iter().map(|(v, ..)| v.clone()).collect();
+  let mut x: Vec<f64> = var_specs.iter().map(|(_, x0, _)| *x0).collect();
+  let bounds: Vec<Option<(f64, f64)>> =
+    var_specs.iter().map(|(_, _, b)| *b).collect();
+  let clamp = |point: &mut [f64]| {
+    for (xi, b) in point.iter_mut().zip(bounds.iter()) {
+      if let Some((lo, hi)) = b {
+        *xi = xi.clamp(*lo, *hi);
+      }
+    }
+  };
+  clamp(&mut x);
   let n = vars.len();
 
   // Compute symbolic gradients (partial derivatives)
@@ -10463,6 +10495,7 @@ pub fn find_minimum_ast(
       let current_f = eval_at(f, &x)? * sign;
       let mut alpha = 1.0;
       let mut best_x = x[0] - step;
+      clamp(std::slice::from_mut(&mut best_x));
       let mut best_f = eval_at(f, &[best_x])? * sign;
 
       // Backtracking: reduce step only if it strictly worsens the value.
@@ -10472,6 +10505,7 @@ pub fn find_minimum_ast(
         }
         alpha *= 0.5;
         best_x = x[0] - alpha * step;
+        clamp(std::slice::from_mut(&mut best_x));
         best_f = eval_at(f, &[best_x])? * sign;
       }
       x[0] = best_x;
@@ -10527,11 +10561,12 @@ pub fn find_minimum_ast(
       let mut alpha = 1.0;
 
       for _ in 0..50 {
-        let x_new: Vec<f64> = x
+        let mut x_new: Vec<f64> = x
           .iter()
           .zip(dir.iter())
           .map(|(xi, di)| xi + alpha * di)
           .collect();
+        clamp(&mut x_new);
         let new_f = eval_at(f, &x_new)? * sign;
         if new_f <= current_f + c * alpha * decrease || alpha < 1e-15 {
           x = x_new;
