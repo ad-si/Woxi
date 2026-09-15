@@ -2735,6 +2735,24 @@ answer. These do not:
   (`OptionValue[Plot, Axes, Hold]` reports it, `OptionValue[Plot, 5, Frame]`
   does not).
 
+### `N[head[patt_]] = body` installs a DownValue on `N`, not an NValue
+
+`N[F[x_]] = x^2` should evaluate its LHS immediately (with `F[x_]` resolved
+through any existing `F[x_] = …` rule already in effect) and install the
+result as an `NValues` entry on the resolved head — a subsequent `N[<that
+head>[n]]` call then runs through `N`'s own numericization, so an exact
+result still comes back as a machine real. Woxi resolves the head through
+the existing rule correctly, but stores the rule as an ordinary DownValue on
+`N` itself, so the body's result is returned exactly as written rather than
+coerced to a real:
+
+```sh
+wolframscript -code 'F[x_]=G[x]; N[F[x_]]=x^2; ClearAll[F]; {N[F[2]], N[G[2]]}'
+# {F[2.], 4.}
+woxi eval 'F[x_]=G[x]; N[F[x_]]=x^2; ClearAll[F]; {N[F[2]], N[G[2]]}'
+# {F[2.], 4}
+```
+
 
 ## Messages and error handling
 

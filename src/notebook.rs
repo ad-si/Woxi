@@ -1107,6 +1107,15 @@ fn piecewise_from_grid(rows_text: &str) -> Option<String> {
   if brace.trim().trim_matches('"').trim() != r"\[Piecewise]" {
     return None;
   }
+  piecewise_from_grid_box(grid)
+}
+
+/// `Piecewise[{{v1, c1}, …}]` from a `GridBox[{{v1, c1}, …}, …]` of
+/// value/condition rows — the piece of a typeset `Piecewise` that sits
+/// beside the `\[Piecewise]` brace, whether that pair is wrapped in an
+/// outer `GridBox` row (`piecewise_from_grid`, above) or written directly
+/// in a `RowBox` alongside the brace character.
+fn piecewise_from_grid_box(grid: &str) -> Option<String> {
   let inner = positional_box_args("GridBox", grid)?;
   let mut pieces = Vec::new();
   let mut default = None;
@@ -1378,6 +1387,19 @@ fn extract_rowbox_content(s: &str) -> String {
       // symbol named `uD` rather than a product.
       result.push_str(&format!("(D[{body}, {vars}])"));
       break;
+    }
+    // A `\[Piecewise]` brace immediately followed by a `GridBox` of
+    // value/condition rows is the typeset form of `Piecewise[…]` written
+    // directly in a row (`f[z_] = \[Piecewise]GridBox[{…}]`), rather than
+    // wrapped in an outer `GridBox` as `piecewise_from_grid` expects.
+    if i + 1 < parts.len()
+      && is_bare_named_char(part, "Piecewise")
+      && parts[i + 1].trim().starts_with("GridBox")
+      && let Some(piecewise) = piecewise_from_grid_box(parts[i + 1].trim())
+    {
+      push_juxtaposed(&mut result, &piecewise);
+      i += 2;
+      continue;
     }
     // `\[LeftBracketingBar] body \[RightBracketingBar]` is the typeset form
     // of `Abs[body]` — the only thing that pair of glyphs ever brackets.
@@ -5704,6 +5726,31 @@ Cell[BoxData[
       cell.content,
       "RevolutionPlot3D[Piecewise[{{f[x+6], -6<=x<=-2}}],{x,-6,6}]"
     );
+  }
+
+  /// A `Piecewise` typeset directly in a `RowBox` — the `\[Piecewise]`
+  /// brace immediately followed by its `GridBox` of value/condition rows,
+  /// with no outer wrapping `GridBox`/`TagBox` (the shape produced by an
+  /// immediate `=` assignment, e.g. Wolfram's "Tax Rates and Tax Revenue"
+  /// Demonstration's `totalTax[…] = \[Piecewise]…`) — must also come back
+  /// as a `Piecewise[…]` call, not the raw grid rows as a bare nested list.
+  #[test]
+  fn piecewise_brace_in_a_bare_rowbox_becomes_a_piecewise_call() {
+    let nb = r#"Notebook[{
+Cell[BoxData[
+ RowBox[{
+  RowBox[{
+   RowBox[{"f", "[", "z_", "]"}], "=",
+   RowBox[{"\[Piecewise]", GridBox[{
+      {"a", RowBox[{"z", ">", "0"}]},
+      {"b", TagBox["True", "PiecewiseDefault", AutoDelete->True]}
+     }]}]}], ";"}]], "Input"]
+}]"#;
+    let parsed = parse_notebook(nb).unwrap();
+    let CellEntry::Single(cell) = &parsed.cells[0] else {
+      panic!("expected a single cell");
+    };
+    assert_eq!(cell.content, "f[z_]=Piecewise[{{a, z>0}}, b];");
   }
 
   /// A `Plot` legend written as an inline cell carries quotes inside its

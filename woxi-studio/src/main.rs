@@ -11872,6 +11872,53 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
   }
 
   #[test]
+  fn piecewise_bracket_function_manipulate_with_locators_and_vector_slider() {
+    // End-to-end regression modeled on the Wolfram Demonstrations Project's
+    // "Tax Rates and Tax Revenue": three draggable bracket boundaries
+    // (`Locator`s) plus a two-component slider drive a piecewise step
+    // function defined with an *immediate* `Set` (`=`) whose second
+    // argument is a list of nested `{boundary_, rate_}` pairs — the exact
+    // shape that used to lose the inner pattern bindings under `=` (only
+    // the first, top-level pattern variable bound; `boundary`/`rate`
+    // stayed as bare, unsubstituted symbols in the stored rule) and, before
+    // that, a notebook whose `\[Piecewise]` brace was typeset directly in
+    // a `RowBox` (no wrapping `GridBox`) converted to a bare nested list
+    // instead of a `Piecewise[…]` call. Both were fixed in the interpreter
+    // and notebook-box conversion respectively; this checks the whole
+    // Manipulate still builds and renders once they are.
+    let code = "Manipulate[\
+      bracket[x_, {{b1_, r1_}, {b2_, r2_}}] = \
+        Piecewise[{{r1, x < b1}, {r2, x >= b1}}]; \
+      Graphics[{Point[{x, bracket[x, {{p1, 0.1}, {p2, 0.3}}]}]}, \
+        PlotRange -> {{0, 1}, {0, 1}}], \
+      {{p1, {0.3, 0.1}}, {0, 0}, {1, 1}, Locator}, \
+      {{p2, {0.7, 0.3}}, {0, 0}, {1, 1}, Locator}, \
+      {{p3, {0.5, 0.5}}, {0, 0}, {1, 1}, Locator}, \
+      {{s, {0.2, 0.4}}, {0, 0}, {1, 1}}]";
+    let state = instantiate_stored_manipulate(code, "")
+      .expect("the bracket-function Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the initial render must draw the point"
+    );
+    // Three Locators plus the two-component `s` slider, all Slider2D-backed.
+    assert!(
+      state
+        .controls
+        .iter()
+        .all(|c| matches!(c, manipulate::ControlState::Slider2D { .. })),
+      "expected every control to be a 2D point: {:?}",
+      state.controls
+    );
+    assert_eq!(state.controls.len(), 4);
+  }
+
+  #[test]
   fn polypath_iterations_manipulate_folds_its_quadrilateral() {
     // End-to-end regression for "Polypath Iterations": two draggable
     // vertices seed a quadrilateral that gets iteratively reflected via
