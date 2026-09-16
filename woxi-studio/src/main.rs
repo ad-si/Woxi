@@ -26436,4 +26436,119 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`count$$ = 3, $CellContext`offset$$ 
       other => panic!("unexpected controls: {other:?}"),
     }
   }
+
+  /// End-to-end regression for the shape of Demonstration that combines two
+  /// curves built from complex-exponential terms: a `With` names each curve
+  /// as a sum of `toComplex[point] E^(I t k)` terms, a `TogglerBar` bound to
+  /// a *list*-valued variable (`{{which, {1, 2}, "curve"}, {1 -> "f", 2 ->
+  /// "g"}, TogglerBar}`) picks which curves a `MemberQ` filter draws, and
+  /// each point coefficient is a `Slider2D` control created with the
+  /// explicit `Control[…]` wrapper rather than a plain range spec. The
+  /// helper that turns a `{re, im}` pair into a complex number is supplied
+  /// through `Initialization :> (…)`.
+  ///
+  /// A multi-select `TogglerBar` like this one is carried as a display
+  /// element (`ParsedControl::StateWithDisplay`), not a `widget.controls`
+  /// entry — the same as an in-body `TogglerBar[Dynamic[v], …]` — so it
+  /// must show up in `display_trees` as one `DisplayNode::Toggler` per
+  /// choice, each one's `mutation` flipping membership in the `which` list.
+  #[test]
+  fn combined_exponential_curves_notebook_opens_with_its_widget() {
+    let nb_src = r#"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[\n  With[{\n    curve1 = toComplex[p1] E^(I t k1) + toComplex[p2] E^(I t k2),\n    curve2 = toComplex[p3] E^(I t k1) + toComplex[p4] E^(I t k2)},\n   ParametricPlot[\n    {\n     If[MemberQ[which, 1], {Re[curve1], Im[curve1]}, {}],\n     If[MemberQ[which, 2], {Re[curve2], Im[curve2]}, {}]\n    },\n    {t, 0, 2 Pi},\n    PlotRange -> 3,\n    Axes -> showAxes,\n    PlotStyle -> {Red, Blue}\n   ]\n  ],\n  {{k1, 1, Style[\"m\", Italic]}, Range[-5, 5]},\n  {{k2, 6, Style[\"n\", Italic]}, Range[-7, 7]},\n  {{which, {1, 2}, \"curve\"}, {1 -> \"f\", 2 -> \"g\"}, TogglerBar},\n  Control[{{p1, {-0.1, 1}, Style[\"a\", Italic]}, {-1, -1}, {1, 1}, Slider2D, ImageSize -> Small}],\n  Control[{{p2, {-0.5, 0}, Style[\"b\", Italic]}, {-1, -1}, {1, 1}, Slider2D, ImageSize -> Small}],\n  Control[{{p3, {-0.1, 0}, Style[\"c\", Italic]}, {-1, -1}, {1, 1}, Slider2D, ImageSize -> Small}],\n  Control[{{p4, {-0.5, 0.3}, Style[\"d\", Italic]}, {-1, -1}, {1, 1}, Slider2D, ImageSize -> Small}],\n  {{showAxes, False, \"axes\"}, {True, False}},\n  Initialization :> (toComplex[p_] := p[[1]] + I p[[2]])\n]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`k1$$ = 1}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"#;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let mut widget = editors
+      .into_iter()
+      .find_map(|e| e.manipulate_state)
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(widget.graphics_handle.is_some(), "the curves must draw");
+
+    let names: Vec<&str> = widget
+      .controls
+      .iter()
+      .map(|c| match c {
+        manipulate::ControlState::Continuous { name, .. } => name.as_str(),
+        manipulate::ControlState::Discrete { name, .. } => name.as_str(),
+        manipulate::ControlState::Slider2D { name, .. } => name.as_str(),
+        other => panic!("unexpected control: {other:?}"),
+      })
+      .collect();
+    assert_eq!(names, ["k1", "k2", "p1", "p2", "p3", "p4", "showAxes"]);
+
+    // The multi-select `which` TogglerBar has no slider/pick-list control of
+    // its own; it is hidden state (seeded from its authored default, `{1,
+    // 2}`) that draws as two toggle buttons in the display panel, one per
+    // choice.
+    assert_eq!(widget.state.len(), 1);
+    assert_eq!(widget.state[0], ("which".to_string(), "{1, 2}".to_string()));
+    let togglers = collect_togglers(&widget.display_trees);
+    assert_eq!(
+      togglers.len(),
+      2,
+      "the two-choice TogglerBar must draw one Toggler per choice: {togglers:?}"
+    );
+    assert!(
+      togglers.iter().all(|(_, selected)| *selected),
+      "both choices start selected ({{1, 2}} is the authored default): {togglers:?}"
+    );
+
+    // The `Initialization :> (…)` helper must be in scope when the body
+    // re-renders, and the `TogglerBar`-driven `MemberQ` filter must
+    // actually gate which curve is drawn.
+    let render = |which: &str| {
+      let mut bindings: Vec<(String, String)> = widget
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      bindings.push(("which".to_string(), which.to_string()));
+      let code = format!(
+        "{}; {}",
+        widget.initialization.as_deref().unwrap_or(""),
+        widget.body
+      );
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&code)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the selected curves must render")
+    };
+    let both = render("{1, 2}");
+    assert_ne!(
+      render("{1}"),
+      render("{2}"),
+      "toggling which curve is selected must change the rendered geometry"
+    );
+    assert_ne!(
+      render("{}"),
+      both,
+      "drawing neither curve must differ from drawing both"
+    );
+
+    // Clicking the first toggle button (as a real press would) must
+    // deselect its choice and actually change what the widget renders —
+    // not just a value fabricated for the `render` helper above.
+    let mutation = togglers[0].0.clone();
+    widget.apply_display_mutation(&mutation);
+    assert!(widget.error.is_none());
+    assert_eq!(widget.state[0].1, "{2}");
+    let togglers = collect_togglers(&widget.display_trees);
+    assert_eq!(
+      togglers.iter().map(|(_, s)| *s).collect::<Vec<_>>(),
+      vec![false, true],
+      "only the second choice stays selected after deselecting the first"
+    );
+  }
 }

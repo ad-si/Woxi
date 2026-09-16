@@ -2,6 +2,19 @@
 
 # Unreleased
 
+- `ParametricPlot` draws every curve of a multi-curve list again when one
+    entry conditionally resolves to `{}` — the idiom
+    `{If[cond1, {fx1, fy1}, {}], If[cond2, {fx2, fy2}, {}], …}` a
+    Demonstration uses to let a `TogglerBar`/checkbox show or hide each
+    curve. The list's elements are `If[…]` calls, not literal curve
+    lists, so the syntactic shape check couldn't tell them apart from a
+    plain `{fx, fy}` single-curve pair and silently misread the whole
+    list as one degenerate curve, drawing nothing at all regardless of
+    which curves were selected. Found while checking Woxi Studio against
+    a Wolfram Demonstrations Project notebook that combines two curves
+    built from complex-exponential terms and lets a `TogglerBar`
+    (bound to a list-valued variable) pick which ones to draw.
+
 - `Graphics`/`Show`'s `PlotRange -> {min, max}` (a flat pair of plain
     numbers) applies that range to every axis, matching Wolfram, instead
     of being misread as `{xSpec, ySpec}` — one axis spec per number. Each
