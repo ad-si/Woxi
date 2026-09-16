@@ -497,7 +497,7 @@ fn try_nsolve_pure_power(
 }
 
 /// Principal-branch complex power: (a+bi)^(c+di) = exp((c+di) * Log[a+bi]).
-fn complex_pow(a: f64, b: f64, c: f64, d: f64) -> (f64, f64) {
+pub(crate) fn complex_pow(a: f64, b: f64, c: f64, d: f64) -> (f64, f64) {
   let abs_z = (a * a + b * b).sqrt();
   if abs_z == 0.0 {
     return (0.0, 0.0);

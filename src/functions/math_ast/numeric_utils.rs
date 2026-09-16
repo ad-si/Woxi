@@ -1355,47 +1355,25 @@ pub fn try_extract_complex_float(expr: &Expr) -> Option<(f64, f64)> {
       Some((try_eval_to_f64(&args[0])?, try_eval_to_f64(&args[1])?))
     }
     Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
-      let base = try_extract_complex_float(&args[0])?;
-      let exp = try_extract_complex_float(&args[1])?;
-      Some(complex_pow_float(base, exp))
+      let (br, bi) = try_extract_complex_float(&args[0])?;
+      let (er, ei) = try_extract_complex_float(&args[1])?;
+      Some(crate::functions::polynomial_ast::solve::complex_pow(
+        br, bi, er, ei,
+      ))
     }
     Expr::BinaryOp {
       op: BinaryOperator::Power,
       left,
       right,
     } => {
-      let base = try_extract_complex_float(left)?;
-      let exp = try_extract_complex_float(right)?;
-      Some(complex_pow_float(base, exp))
+      let (br, bi) = try_extract_complex_float(left)?;
+      let (er, ei) = try_extract_complex_float(right)?;
+      Some(crate::functions::polynomial_ast::solve::complex_pow(
+        br, bi, er, ei,
+      ))
     }
     _ => None,
   }
-}
-
-/// Principal-branch complex power `base^exp`, both given as `(re, im)`
-/// pairs — the same convention Wolfram's `Power` uses. Lets
-/// [`try_extract_complex_float`] numericize an exact irrational factor
-/// like `Sqrt[2]` (a `Power[2, 1/2]` with a real base) alongside an
-/// inexact `Complex[…]` factor in the same product, e.g.
-/// `Sqrt[2] * (1. + 2. I)`.
-fn complex_pow_float(base: (f64, f64), exp: (f64, f64)) -> (f64, f64) {
-  let (br, bi) = base;
-  let (er, ei) = exp;
-  if br == 0.0 && bi == 0.0 {
-    return if er > 0.0 {
-      (0.0, 0.0)
-    } else {
-      (f64::NAN, f64::NAN)
-    };
-  }
-  let mag = br.hypot(bi);
-  let arg = bi.atan2(br);
-  let log_re = mag.ln();
-  let log_im = arg;
-  let t_re = er * log_re - ei * log_im;
-  let t_im = er * log_im + ei * log_re;
-  let scale = t_re.exp();
-  (scale * t_im.cos(), scale * t_im.sin())
 }
 
 /// Build a complex number expression from float parts.
