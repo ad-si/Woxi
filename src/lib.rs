@@ -3031,6 +3031,151 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
         expr
       }
     }
+    // `Labeled[content, label, position?, opts?]` — and its multi-caption
+    // form `Labeled[content, {label…}, {position…}, opts?]`, which places
+    // one caption per side of the content — where `content` renders as a
+    // table through this same function (a plain `Grid`, or another
+    // wrapper handled below). This is the shape a Demonstration uses to
+    // caption a data table rather than a `Graphics` picture (which the
+    // separate `Labeled`-composition pipeline in `expr_to_svg` already
+    // handles for an actual graphic). Each label is itself rendered
+    // through the one-cell `Grid` pipeline so its font matches the table
+    // it labels; `RotateLabel` is not honored — a `Left`/`Right` caption
+    // renders upright rather than rotated.
+    syntax::Expr::FunctionCall { name, args }
+      if name == "Labeled" && args.len() >= 2 =>
+    {
+      let rendered_content = render_grid_if_needed(args[0].clone());
+      let content_svg = match &rendered_content {
+        syntax::Expr::Graphics { svg, .. } => svg.clone(),
+        _ => return expr,
+      };
+      let placements: Vec<(syntax::Expr, String)> =
+        match (&args[1], args.get(2)) {
+          (syntax::Expr::List(labels), Some(syntax::Expr::List(positions)))
+            if labels.len() == positions.len() =>
+          {
+            labels
+              .iter()
+              .cloned()
+              .zip(positions.iter().map(|p| match p {
+                syntax::Expr::Identifier(s) => s.clone(),
+                _ => "Bottom".to_string(),
+              }))
+              .collect()
+          }
+          _ => {
+            let position = match args.get(2) {
+              Some(syntax::Expr::Identifier(p)) => p.clone(),
+              _ => "Bottom".to_string(),
+            };
+            vec![(args[1].clone(), position)]
+          }
+        };
+      let mut top = Vec::new();
+      let mut bottom = Vec::new();
+      let mut left = Vec::new();
+      let mut right = Vec::new();
+      for (label, position) in &placements {
+        let label_grid = syntax::Expr::FunctionCall {
+          name: "Grid".to_string(),
+          args: vec![syntax::Expr::List(
+            vec![syntax::Expr::List(vec![label.clone()].into())].into(),
+          )]
+          .into(),
+        };
+        let rendered_label = render_grid_if_needed(label_grid);
+        let syntax::Expr::Graphics { svg: label_svg, .. } = &rendered_label
+        else {
+          return expr;
+        };
+        match position.as_str() {
+          "Top" => top.push(label_svg.clone()),
+          "Left" => left.push(label_svg.clone()),
+          "Right" => right.push(label_svg.clone()),
+          _ => bottom.push(label_svg.clone()),
+        }
+      }
+      // Stack same-side labels into one cell (rows of a mini grid), an
+      // empty side becoming an empty cell so the 3x3 layout below stays
+      // rectangular.
+      let side_cell = |svgs: &[String]| -> String {
+        match svgs.len() {
+          0 => String::new(),
+          1 => svgs[0].clone(),
+          _ => functions::graphics::combine_graphics_svgs(
+            &svgs.iter().map(|s| vec![s.clone()]).collect::<Vec<_>>(),
+          )
+          .unwrap_or_default(),
+        }
+      };
+      let rows = vec![
+        vec![String::new(), side_cell(&top), String::new()],
+        vec![side_cell(&left), content_svg, side_cell(&right)],
+        vec![String::new(), side_cell(&bottom), String::new()],
+      ];
+      match functions::graphics::combine_graphics_svgs(&rows) {
+        Some(svg) => graphics_result(svg),
+        None => expr,
+      }
+    }
+    // `Pane`/`Panel`/`Framed` wrapping the multi-table compositions this
+    // function builds above (`Labeled`, or the `Times`-as-`Row` idiom
+    // below) — pass through to what they wrap, the way a notebook shows
+    // it. Deliberately narrower than "any content this function can
+    // render": a `Pane`/`Panel`/`Framed` directly around a *plain* table
+    // (`Pane[Grid[{{1, 2}, {3, 4}}]]`, no `Labeled`/`Times` in between) is
+    // left to the text renderer — composing it as a picture would be a
+    // regression (`a_pane_without_pictures_is_not_composed` in
+    // svg_rendering.rs), since a plain data table is more useful as
+    // selectable text than as a picture.
+    syntax::Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Pane" | "Panel" | "Framed")
+        && !args.is_empty()
+        && matches!(
+          &args[0],
+          syntax::Expr::FunctionCall { name: inner, .. }
+          if inner == "Labeled" || inner == "Times"
+        ) =>
+    {
+      match render_grid_if_needed(args[0].clone()) {
+        graphics @ syntax::Expr::Graphics { .. } => graphics,
+        _ => expr,
+      }
+    }
+    // `Times[a, b, …]` — Wolfram's box form for a `Times` of non-numeric
+    // factors lays them out side by side with an invisible multiplication
+    // glyph between them, visually identical to `Row[{a, b, …}]`. A
+    // Demonstration exploits this (two labeled tables written one after
+    // another with no comma, inside a `Pane`) to lay them out side by
+    // side without an explicit `Row`. Only taken when every factor
+    // renders as a table on its own — a genuine numeric product was
+    // already reduced by the evaluator before this pass ever runs, so
+    // reaching here unevaluated means the factors could not combine.
+    syntax::Expr::FunctionCall { name, args }
+      if name == "Times" && args.len() >= 2 =>
+    {
+      let rendered: Vec<syntax::Expr> =
+        args.iter().cloned().map(render_grid_if_needed).collect();
+      if rendered
+        .iter()
+        .all(|e| matches!(e, syntax::Expr::Graphics { .. }))
+      {
+        let cells: Vec<String> = rendered
+          .iter()
+          .map(|e| match e {
+            syntax::Expr::Graphics { svg, .. } => svg.clone(),
+            _ => unreachable!(),
+          })
+          .collect();
+        match functions::graphics::combine_graphics_svgs(&[cells]) {
+          Some(svg) => graphics_result(svg),
+          None => expr,
+        }
+      } else {
+        expr
+      }
+    }
     syntax::Expr::List(items) => {
       let new_items: Vec<syntax::Expr> =
         items.iter().cloned().map(render_grid_if_needed).collect();

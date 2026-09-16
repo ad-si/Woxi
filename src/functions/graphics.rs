@@ -12686,6 +12686,15 @@ fn parse_bg_color(expr: &Expr) -> Option<Color> {
   parse_color(expr)
 }
 
+/// A 1-indexed row/column position from a `Background -> {…, {{i, j} ->
+/// color, ...}}` explicit cell rule.
+fn grid_bg_index(expr: &Expr) -> Option<usize> {
+  match expr {
+    Expr::Integer(n) if *n >= 1 => Some(*n as usize),
+    _ => None,
+  }
+}
+
 fn grid_svg_internal(
   args: &[Expr],
   group_gaps: &[usize],
@@ -12779,6 +12788,9 @@ fn grid_svg_styled_internal(
   let mut background_color: Option<Color> = None; // uniform background
   let mut col_backgrounds: Vec<Option<Color>> = Vec::new(); // per-column bg
   let mut row_backgrounds: Vec<Option<Color>> = Vec::new(); // per-row bg
+  // `Background -> {cols, rows, {{i, j} -> color, ...}}` — explicit
+  // per-cell overrides (1-indexed, matching the source), highest priority.
+  let mut cell_backgrounds: Vec<((usize, usize), Color)> = Vec::new();
   // For WL repeating-list patterns like {first, {repeat1, repeat2}, last}
   let mut row_bg_explicit_start: Vec<Option<Color>> = Vec::new();
   let mut row_bg_repeating: Vec<Option<Color>> = Vec::new();
@@ -12935,6 +12947,27 @@ fn grid_svg_styled_internal(
                 }
               } else {
                 row_backgrounds = row_cols.iter().map(parse_bg_color).collect();
+              }
+            }
+            // `{cols, rows, {{i, j} -> color, ...}}` — explicit per-cell
+            // overrides, e.g. a Demonstration highlighting specific
+            // genotype/phenotype combinations in a Punnett-square table.
+            if items.len() >= 3
+              && let Expr::List(cell_rules) = &items[2]
+            {
+              for rule in cell_rules {
+                if let Expr::Rule {
+                  pattern,
+                  replacement: color_expr,
+                } = rule
+                  && let Expr::List(pos) = pattern.as_ref()
+                  && pos.len() == 2
+                  && let (Some(i), Some(j)) =
+                    (grid_bg_index(&pos[0]), grid_bg_index(&pos[1]))
+                  && let Some(color) = parse_bg_color(color_expr)
+                {
+                  cell_backgrounds.push(((i, j), color));
+                }
               }
             }
           }
@@ -13492,16 +13525,24 @@ fn grid_svg_styled_internal(
     // painted as one rectangle — abutting rectangles antialias against the
     // page along their shared edge, which shows as a seam on a dark
     // background.
-    let colour_at = |j: usize| {
-      row_backgrounds
-        .get(i % row_backgrounds.len().max(1))
-        .and_then(|c| c.as_ref())
+    let colour_at = |j: usize| -> Option<Color> {
+      cell_backgrounds
+        .iter()
+        .find(|&&((ci, cj), _)| ci == i + 1 && cj == j + 1)
+        .map(|&(_, color)| color)
+        .or_else(|| {
+          row_backgrounds
+            .get(i % row_backgrounds.len().max(1))
+            .copied()
+            .flatten()
+        })
         .or_else(|| {
           col_backgrounds
             .get(j % col_backgrounds.len().max(1))
-            .and_then(|c| c.as_ref())
+            .copied()
+            .flatten()
         })
-        .or(background_color.as_ref())
+        .or(background_color)
     };
     let mut x_offset: f64 = paren_margin;
     let mut j = 0;
@@ -13510,7 +13551,7 @@ fn grid_svg_styled_internal(
       let mut run_w = col_widths[j];
       let mut k = j + 1;
       while k < num_cols
-        && colour_at(k).map(|c| c.to_svg_rgb()) == bg.map(|c| c.to_svg_rgb())
+        && colour_at(k).map(Color::to_svg_rgb) == bg.map(Color::to_svg_rgb)
       {
         run_w += col_widths[k];
         k += 1;

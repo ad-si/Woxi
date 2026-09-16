@@ -1435,6 +1435,35 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_grid_background_explicit_cell_rules_take_priority() {
+    // Regression: `Background -> {cols, rows, {{i, j} -> color, …}}` — the
+    // three-argument form a Demonstration uses to highlight specific
+    // cells of a table (e.g. a Punnett square marking which
+    // genotype/phenotype combinations share a category) — was silently
+    // ignored: only the two-argument `{cols, rows}` form was parsed, so a
+    // table like this rendered with no cell coloring at all.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Grid[{{1, 2}, {3, 4}}, \
+       Background -> {{Yellow, Yellow}, {Yellow, Yellow}, \
+       {{1, 1} -> Red, {2, 2} -> Blue}}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      svg.contains("<rect"),
+      "an explicit per-cell Background rule must paint a rect:\n{svg}"
+    );
+    assert!(
+      svg.contains("rgb(255,0,0)"),
+      "cell {{1,1}} must use its explicit Red override, not the column/row default:\n{svg}"
+    );
+    assert!(
+      svg.contains("rgb(0,0,255)"),
+      "cell {{2,2}} must use its explicit Blue override, not the column/row default:\n{svg}"
+    );
+  }
+
+  #[test]
   fn test_large_number_output_svg_groups_digits() {
     // The Wolfram notebook groups the integer part of large numbers into
     // 3-digit blocks (`10^10` → `10 000 000 000`). In the Playground/Studio SVG
