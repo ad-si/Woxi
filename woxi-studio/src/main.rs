@@ -26627,4 +26627,74 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k1$$ = 1}, \"\\[Ellipsis]\"]"], "Ou
       "only the second choice stays selected after deselecting the first"
     );
   }
+
+  /// A `Manipulate` body that ends in `Labeled[Grid[…], caption]` — a
+  /// Demonstration captioning a data table rather than a `Graphics`
+  /// picture (independently written, not copied from any specific one).
+  /// Regression: `render_grid_if_needed` only rendered a bare `Grid[…]`
+  /// (or `Style`/`TraditionalForm` wrapping one) to a picture; a `Labeled`
+  /// wrapper around the same table fell through to the text renderer,
+  /// leaving the widget showing the table's raw source text instead of
+  /// the table itself.
+  #[test]
+  fn manipulate_body_labeled_grid_renders_as_picture() {
+    let code = r#"Manipulate[
+      Labeled[Grid[{{n, n^2}, {n^2, n}}], "square table"],
+      {n, 1, 5, 1}
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let mut state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("a Labeled[Grid[…]] body must build a ManipulateState");
+    state.reevaluate();
+    assert_eq!(state.error, None, "the body must evaluate cleanly");
+    assert!(
+      state.graphics_handle.is_some(),
+      "a Labeled[Grid[…]] result must render as a picture, not fall back \
+       to text"
+    );
+    assert_eq!(
+      state.text_output, None,
+      "a picture result must not also carry a text fallback"
+    );
+  }
+
+  /// A `Manipulate` body of the form `Labeled[Grid[…], label1] *
+  /// Labeled[Grid[…], label2]` — two captioned tables written one after
+  /// another with no comma between them, which Wolfram's box grammar
+  /// parses as an implicit `Times` (the same rule that makes `2 x` mean
+  /// `Times[2, x]`). A Demonstration exploits this, inside a `Pane`, to
+  /// lay two tables out side by side without an explicit `Row`
+  /// (independently written, not copied from any specific one).
+  /// Regression: a top-level `Times[…]` of non-numeric factors fell
+  /// through to the text renderer, showing the tables' source joined by a
+  /// literal `*` instead of laying them out as pictures side by side.
+  #[test]
+  fn manipulate_body_pane_of_multiplied_labeled_grids_renders_as_picture() {
+    let code = r#"Manipulate[
+      Pane[
+        Labeled[Grid[{{n, n + 1}}], "first"]
+        Labeled[Grid[{{n * 2, n * 2 + 1}}], "second"],
+        {300, 100}
+      ],
+      {n, 1, 5, 1}
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let mut state = manipulate::ManipulateState::from_expr(&expr).expect(
+      "a Pane of implicitly-multiplied Labeled[Grid[…]] factors must \
+       build a ManipulateState",
+    );
+    state.reevaluate();
+    assert_eq!(state.error, None, "the body must evaluate cleanly");
+    assert!(
+      state.graphics_handle.is_some(),
+      "two side-by-side captioned tables must render as one picture, not \
+       fall back to text"
+    );
+    assert_eq!(
+      state.text_output, None,
+      "a picture result must not also carry a text fallback"
+    );
+  }
 }
