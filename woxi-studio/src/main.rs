@@ -13115,6 +13115,50 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
     );
   }
 
+  #[test]
+  fn control_spec_custom_builder_togglerbar_with_setter() {
+    // A control-spec row's second element may be a user-defined "custom
+    // control" function — the "Playing with Stellations of the Icosahedron"
+    // Demonstration idiom `FacetsControl[Dynamic[var_], …] := ClickPane[…]`
+    // uses to draw a bespoke widget for a shared variable — which only
+    // becomes a recognizable widget once that delayed definition actually
+    // fires. Here it resolves to a `TogglerBar[Dynamic[getter, setter],
+    // choices]` whose getter (`Sort[var]`) is a *transform* of the bound
+    // variable rather than the variable itself, so the write-back target
+    // has to be recovered from the setter's own assignment.
+    let code = "Manipulate[cells, \
+      {{cells, {1, 2}, \"picker\"}, CellsControl[##] &}, \
+      Initialization :> (CellsControl[Dynamic[var_]] := \
+        TogglerBar[Dynamic[Sort[var], (var = #) &], \
+          {1 -> \"a\", 2 -> \"b\", 3 -> \"c\"}])]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("custom-builder TogglerBar Manipulate must build a widget");
+    assert!(state.error.is_none(), "body must render: {:?}", state.error);
+
+    // The variable is live state, seeded from its explicit initial value —
+    // not an ordinary slider/discrete widget, since its only control row is
+    // the custom TogglerBar builder.
+    assert_eq!(state.state.len(), 1);
+    assert_eq!(state.state[0], ("cells".to_string(), "{1, 2}".to_string()));
+
+    // The TogglerBar shows the getter's view, with the two initial values
+    // selected.
+    let togglers = collect_togglers(&state.display_trees);
+    assert_eq!(togglers.len(), 3);
+    assert_eq!(
+      togglers.iter().map(|(_, s)| *s).collect::<Vec<_>>(),
+      vec![true, true, false]
+    );
+
+    // Clicking the third button runs the setter, which writes back through
+    // the outer `cells` variable rather than the getter's `Sort[…]` view.
+    let mutation = togglers[2].0.clone();
+    state.apply_display_mutation(&mutation);
+    assert_eq!(state.state[0].1, "{1, 2, 3}");
+    let togglers = collect_togglers(&state.display_trees);
+    assert!(togglers.iter().all(|(_, s)| *s));
+  }
+
   /// Collect `(action, label)` of every Button in a display tree.
   fn collect_display_buttons(
     trees: &[woxi::functions::graphics::DisplayNode],
