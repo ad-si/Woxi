@@ -5842,20 +5842,26 @@ fn f64_to_nice_expr(f: f64) -> Expr {
       return div2(Expr::Integer(nn), Expr::Integer(dd));
     }
   }
-  // Try sqrt expressions: check if f^2 is a nice rational
+  // Try sqrt expressions: check if f^2 is a nice rational. A negative f is
+  // the negated square root of the same rational (-Sqrt[3], not the raw
+  // -1.7320508075688772).
   let f2 = f * f;
-  if f > 0.0 {
-    for denom in 1..=12 {
-      let numer = f2 * denom as f64;
-      if (numer - numer.round()).abs() < 1e-10 {
-        let n = numer.round() as i128;
-        let d = denom as i128;
-        // f = Sqrt[n/d]
-        if d == 1 {
-          return make_sqrt(Expr::Integer(n));
-        }
-        return div2(make_sqrt(Expr::Integer(n)), make_sqrt(Expr::Integer(d)));
-      }
+  for denom in 1..=12 {
+    let numer = f2 * denom as f64;
+    if (numer - numer.round()).abs() < 1e-10 {
+      let n = numer.round() as i128;
+      let d = denom as i128;
+      // |f| = Sqrt[n/d]
+      let magnitude = if d == 1 {
+        make_sqrt(Expr::Integer(n))
+      } else {
+        div2(make_sqrt(Expr::Integer(n)), make_sqrt(Expr::Integer(d)))
+      };
+      return if f < 0.0 {
+        times2(Expr::Integer(-1), magnitude)
+      } else {
+        magnitude
+      };
     }
   }
   Expr::Real(f)
@@ -9277,31 +9283,35 @@ fn eval_matrix_at(m: &[Vec<OpPoly>], lambda: Cplx) -> Vec<Vec<Cplx>> {
     .collect()
 }
 
-/// A null vector of a (numerically) singular `n×n` complex matrix, via
-/// Gaussian elimination with partial pivoting to reduced row-echelon form.
-/// Returns `None` unless the nullity is exactly 1 — a simple root of the
-/// system's characteristic polynomial gives a rank-`n−1` matrix, so a
-/// nullity other than 1 means either a repeated root (handled by the
-/// caller rejecting `mult > 1` beforehand) or numerical trouble.
-fn null_vector(mut mat: Vec<Vec<Cplx>>) -> Option<Vec<Cplx>> {
-  let n = mat.len();
+/// A basis of the null space of a (numerically) rank-deficient complex
+/// matrix with `cols` columns, via Gauss-Jordan elimination with partial
+/// pivoting to reduced row-echelon form. One basis vector per free column,
+/// each setting its own free column to 1 and the other free columns to 0,
+/// so the basis follows the column order of the unknowns.
+fn null_space(mut mat: Vec<Vec<Cplx>>, cols: usize) -> Vec<Vec<Cplx>> {
+  let rows = mat.len();
+  let scale = mat
+    .iter()
+    .flat_map(|r| r.iter())
+    .fold(1.0_f64, |acc, c| acc.max(cabs(*c)));
+  let tol = 1e-7 * scale;
   let mut pivot_cols: Vec<usize> = Vec::new();
   let mut row = 0usize;
 
-  for col in 0..n {
-    if row >= n {
+  for col in 0..cols {
+    if row >= rows {
       break;
     }
     let mut best_row = row;
     let mut best_val = cabs(mat[row][col]);
-    for r in (row + 1)..n {
+    for r in (row + 1)..rows {
       let v = cabs(mat[r][col]);
       if v > best_val {
         best_val = v;
         best_row = r;
       }
     }
-    if best_val < 1e-7 {
+    if best_val < tol {
       continue;
     }
     mat.swap(row, best_row);
@@ -9309,13 +9319,13 @@ fn null_vector(mut mat: Vec<Vec<Cplx>>) -> Option<Vec<Cplx>> {
     for cell in mat[row].iter_mut().skip(col) {
       *cell = cdiv(*cell, piv);
     }
-    for r in 0..n {
+    for r in 0..rows {
       if r == row {
         continue;
       }
       let factor = mat[r][col];
       if cabs(factor) > 0.0 {
-        for c in col..n {
+        for c in col..cols {
           let sub = cmul(factor, mat[row][c]);
           mat[r][c] = csub(mat[r][c], sub);
         }
@@ -9326,18 +9336,288 @@ fn null_vector(mut mat: Vec<Vec<Cplx>>) -> Option<Vec<Cplx>> {
   }
 
   let free_cols: Vec<usize> =
-    (0..n).filter(|c| !pivot_cols.contains(c)).collect();
-  if free_cols.len() != 1 {
+    (0..cols).filter(|c| !pivot_cols.contains(c)).collect();
+  free_cols
+    .iter()
+    .map(|&free_col| {
+      let mut v = vec![(0.0, 0.0); cols];
+      v[free_col] = (1.0, 0.0);
+      for (i, &pc) in pivot_cols.iter().enumerate() {
+        v[pc] = (-mat[i][free_col].0, -mat[i][free_col].1);
+      }
+      v
+    })
+    .collect()
+}
+
+/// One term of a basis solution of a homogeneous linear system:
+/// `coeff · x^power · E^(rate·x) · Cos[freq·x]`, or the same with `Sin`
+/// when `sine` is set. A zero `freq` always uses the cosine form, whose
+/// trigonometric factor is 1.
+#[derive(Clone, Copy, Debug)]
+struct SolTerm {
+  rate: f64,
+  freq: f64,
+  power: usize,
+  sine: bool,
+  coeff: f64,
+}
+
+/// `P^(order)(λ)` — an operator polynomial's `order`-th derivative
+/// evaluated at a (possibly complex) root.
+fn poly_deriv_at(p: &OpPoly, order: usize, lambda: Cplx) -> Cplx {
+  if order >= p.len() {
+    return (0.0, 0.0);
+  }
+  let derived: OpPoly = p
+    .iter()
+    .enumerate()
+    .skip(order)
+    .map(|(k, c)| c * (0..order).map(|s| (k - s) as f64).product::<f64>())
+    .collect();
+  eval_poly_c(&derived, lambda)
+}
+
+/// Add a term to a solution, merging it into an existing term with the same
+/// shape rather than repeating that shape.
+fn add_sol_term(terms: &mut Vec<SolTerm>, term: SolTerm) {
+  if let Some(existing) = terms.iter_mut().find(|t| {
+    t.power == term.power
+      && t.sine == term.sine
+      && (t.rate - term.rate).abs() < 1e-9
+      && (t.freq - term.freq).abs() < 1e-9
+  }) {
+    existing.coeff += term.coeff;
+  } else {
+    terms.push(term);
+  }
+}
+
+/// The solutions of `M(D)·Y = 0` belonging to one root λ of multiplicity
+/// `m` of `Det M(D)`. They have the form `Y_i = Σ_j a_ij·x^j·E^(λx)` with
+/// `j < m`, and since `P(D)[x^j·E^(λx)] = E^(λx)·P(D+λ)[x^j]`, row `r` of
+/// the system becomes one linear constraint per power of `x`:
+///
+/// `Σ_ij a_ij · P_ri^(j−p)(λ)/(j−p)! · j!/p! = 0` for every `p < m`.
+///
+/// The null space of that `n·m × n·m` matrix is `m`-dimensional — that is
+/// what multiplicity `m` means — and each of its vectors is one solution,
+/// or two real ones (the real and imaginary parts) when λ is complex.
+fn root_solutions(
+  poly_matrix: &[Vec<OpPoly>],
+  lambda: Cplx,
+  m: usize,
+  n: usize,
+) -> Option<Vec<Vec<Vec<SolTerm>>>> {
+  let cols = n * m;
+  let mut rows: Vec<Vec<Cplx>> = Vec::with_capacity(cols);
+  for r in 0..n {
+    for p in 0..m {
+      let mut row = vec![(0.0, 0.0); cols];
+      for i in 0..n {
+        for j in p..m {
+          let s = j - p;
+          // j!/p! / s!, all of them tiny factorials (m ≤ 4).
+          let factor = ((p + 1)..=j).map(|v| v as f64).product::<f64>()
+            / (1..=s).map(|v| v as f64).product::<f64>();
+          let value = poly_deriv_at(&poly_matrix[r][i], s, lambda);
+          row[i * m + j] = (value.0 * factor, value.1 * factor);
+        }
+      }
+      rows.push(row);
+    }
+  }
+
+  let space = null_space(rows, cols);
+  if space.len() != m {
     return None;
   }
-  let free_col = free_cols[0];
 
-  let mut v = vec![(0.0, 0.0); n];
-  v[free_col] = (1.0, 0.0);
-  for (i, &pc) in pivot_cols.iter().enumerate() {
-    v[pc] = (-mat[i][free_col].0, -mat[i][free_col].1);
+  let mut solutions: Vec<Vec<Vec<SolTerm>>> = Vec::new();
+  for v in &space {
+    if lambda.1.abs() < 1e-9 {
+      let mut solution: Vec<Vec<SolTerm>> = vec![Vec::new(); n];
+      for (i, terms) in solution.iter_mut().enumerate() {
+        for j in 0..m {
+          let coeff = v[i * m + j].0;
+          if coeff.abs() > 1e-12 {
+            add_sol_term(
+              terms,
+              SolTerm {
+                rate: lambda.0,
+                freq: 0.0,
+                power: j,
+                sine: false,
+                coeff,
+              },
+            );
+          }
+        }
+      }
+      solutions.push(solution);
+    } else {
+      // `a·x^j·E^((α+iβ)x)` contributes the real solution
+      // `x^j·E^(αx)·(Re a·Cos[βx] − Im a·Sin[βx])` and the imaginary one
+      // `x^j·E^(αx)·(Im a·Cos[βx] + Re a·Sin[βx])`.
+      let mut real_part: Vec<Vec<SolTerm>> = vec![Vec::new(); n];
+      let mut imag_part: Vec<Vec<SolTerm>> = vec![Vec::new(); n];
+      for i in 0..n {
+        for j in 0..m {
+          let (p, q) = v[i * m + j];
+          for (terms, cos_coeff, sin_coeff) in
+            [(&mut real_part[i], p, -q), (&mut imag_part[i], q, p)]
+          {
+            for (sine, coeff) in [(false, cos_coeff), (true, sin_coeff)] {
+              if coeff.abs() > 1e-12 {
+                add_sol_term(
+                  terms,
+                  SolTerm {
+                    rate: lambda.0,
+                    freq: lambda.1,
+                    power: j,
+                    sine,
+                    coeff,
+                  },
+                );
+              }
+            }
+          }
+        }
+      }
+      solutions.push(real_part);
+      solutions.push(imag_part);
+    }
   }
-  Some(v)
+  Some(solutions)
+}
+
+/// A fundamental basis of the homogeneous system's solution space: the
+/// solutions of every characteristic root, in root order.
+fn solution_basis(
+  poly_matrix: &[Vec<OpPoly>],
+  roots: &[(f64, f64, usize)],
+  n: usize,
+) -> Option<Vec<Vec<Vec<SolTerm>>>> {
+  let mut basis: Vec<Vec<Vec<SolTerm>>> = Vec::new();
+  for (re, im, mult) in roots {
+    basis.extend(root_solutions(poly_matrix, (*re, *im), *mult, n)?);
+  }
+  Some(basis)
+}
+
+/// Re-parametrize a basis of a *first-order* system so that its `k`-th
+/// solution is the one starting at the `k`-th unit vector — i.e. so the
+/// fundamental matrix is the identity at the origin and the arbitrary
+/// constants are the initial values, `Y(x) = MatrixExp[A·x]·Y(0)`. That is
+/// the basis wolframscript reports, and unlike the eigenvector basis it is
+/// unique.
+fn normalize_basis_at_origin(
+  basis: &[Vec<Vec<SolTerm>>],
+  n: usize,
+) -> Option<Vec<Vec<Vec<SolTerm>>>> {
+  // Φ(0): only a constant term (no `x` factor, no sine) survives at x = 0.
+  let phi0: Vec<Vec<f64>> = (0..n)
+    .map(|i| {
+      (0..n)
+        .map(|j| {
+          basis[j][i]
+            .iter()
+            .filter(|t| t.power == 0 && !t.sine)
+            .map(|t| t.coeff)
+            .sum()
+        })
+        .collect()
+    })
+    .collect();
+
+  // Column k of Φ(0)⁻¹ solves Φ(0)·b = e_k.
+  let mut inverse: Vec<Vec<f64>> = Vec::with_capacity(n);
+  for k in 0..n {
+    let mut unit = vec![0.0; n];
+    unit[k] = 1.0;
+    let column = solve_real_linear_system(&phi0, &unit)?;
+    if column.iter().any(|v| !v.is_finite()) {
+      return None;
+    }
+    inverse.push(column);
+  }
+  // Guard against a near-singular Φ(0) that Gaussian elimination solved
+  // with nonsense instead of failing outright.
+  for i in 0..n {
+    for k in 0..n {
+      let entry: f64 = (0..n).map(|j| phi0[i][j] * inverse[k][j]).sum();
+      let expected = if i == k { 1.0 } else { 0.0 };
+      if (entry - expected).abs() > 1e-6 {
+        return None;
+      }
+    }
+  }
+
+  let mut normalized: Vec<Vec<Vec<SolTerm>>> = Vec::with_capacity(n);
+  for k in 0..n {
+    let mut solution: Vec<Vec<SolTerm>> = vec![Vec::new(); n];
+    for j in 0..n {
+      let weight = inverse[k][j];
+      if weight.abs() <= 1e-12 {
+        continue;
+      }
+      for (i, terms) in solution.iter_mut().enumerate() {
+        for term in &basis[j][i] {
+          add_sol_term(
+            terms,
+            SolTerm {
+              coeff: term.coeff * weight,
+              ..*term
+            },
+          );
+        }
+      }
+    }
+    for terms in &mut solution {
+      terms.retain(|t| t.coeff.abs() > 1e-12);
+    }
+    normalized.push(solution);
+  }
+  Some(normalized)
+}
+
+/// One basis solution's terms for a single variable, as an expression.
+fn sol_terms_expr(terms: &[SolTerm], x_name: &str) -> Expr {
+  let mut sum: Option<Expr> = None;
+  for term in terms {
+    let mut factors: Vec<Expr> = Vec::new();
+    let coeff = f64_to_nice_expr(term.coeff);
+    if !matches!(&coeff, Expr::Integer(1)) {
+      factors.push(coeff);
+    }
+    if term.power > 0 {
+      let x = Expr::Identifier(x_name.to_string());
+      factors.push(if term.power == 1 {
+        x
+      } else {
+        pow2(x, Expr::Integer(term.power as i128))
+      });
+    }
+    if term.rate.abs() > 1e-10 {
+      factors.push(make_exp_term(term.rate, x_name));
+    }
+    if term.freq.abs() > 1e-10 {
+      factors.push(make_trig_term(
+        if term.sine { "Sin" } else { "Cos" },
+        term.freq,
+        x_name,
+      ));
+    }
+    let product = factors
+      .into_iter()
+      .reduce(times2)
+      .unwrap_or(Expr::Integer(1));
+    sum = Some(match sum {
+      Some(acc) => plus2(acc, product),
+      None => product,
+    });
+  }
+  sum.unwrap_or(Expr::Integer(0))
 }
 
 /// Solve a real `n×n` linear system by Gaussian elimination with partial
@@ -9484,11 +9764,6 @@ fn dsolve_linear_system(
   }
 
   let roots = find_characteristic_roots(&delta, degree)?;
-  if roots.iter().any(|(_, _, mult)| *mult > 1) {
-    // Repeated roots need secular t^k*E^(λt) terms this solver doesn't
-    // build yet — leave DSolve unevaluated rather than a wrong answer.
-    return Err(bail());
-  }
 
   // Constant particular solution for nonzero constant forcing: M(0) Yp = f.
   let particular: Vec<f64> = if f_vec.iter().any(|v| v.abs() > 1e-12) {
@@ -9500,6 +9775,25 @@ fn dsolve_linear_system(
     vec![0.0; n]
   };
 
+  // A fundamental basis of the homogeneous solution space: one entry per
+  // degree of freedom, each listing every variable's terms.
+  let mut basis = solution_basis(&poly_matrix, &roots, n).ok_or_else(bail)?;
+  if basis.len() != degree {
+    return Err(bail());
+  }
+  let total_dof = basis.len();
+
+  // For a first-order homogeneous system, wolframscript's constants are the
+  // initial values themselves — its solution is `Y(x) = MatrixExp[A·x]·C`,
+  // i.e. the fundamental matrix normalized to the identity at the origin.
+  // Re-parametrize to that basis, which is unique (unlike the eigenvector
+  // basis above, whose scaling and ordering are arbitrary).
+  let is_first_order_homogeneous =
+    total_dof == n && f_vec.iter().all(|v| v.abs() <= 1e-12);
+  if is_first_order_homogeneous {
+    basis = normalize_basis_at_origin(&basis, n).ok_or_else(bail)?;
+  }
+
   let mut y_exprs: Vec<Expr> = (0..n)
     .map(|i| {
       if particular[i].abs() > 1e-12 {
@@ -9510,56 +9804,25 @@ fn dsolve_linear_system(
     })
     .collect();
 
-  let mut c_idx = 1usize;
-  for (re, im, _mult) in &roots {
-    if im.abs() < 1e-9 {
-      let v = null_vector(eval_matrix_at(&poly_matrix, (*re, 0.0)))
-        .ok_or_else(bail)?;
-      let c = sys_const(c_idx);
-      c_idx += 1;
-      for k in 0..n {
-        let amp = v[k].0;
-        if amp.abs() < 1e-12 {
-          continue;
-        }
-        let mut term = times2(f64_to_nice_expr(amp), c.clone());
-        if re.abs() > 1e-10 {
-          term = times2(make_exp_term(*re, x_name), term);
-        }
-        y_exprs[k] = plus2(y_exprs[k].clone(), term);
+  for (j, solution) in basis.iter().enumerate() {
+    let c = sys_const(j + 1);
+    for k in 0..n {
+      let mut coefficient = sol_terms_expr(&solution[k], x_name);
+      if matches!(&coefficient, Expr::Integer(0)) {
+        continue;
       }
-    } else {
-      let v = null_vector(eval_matrix_at(&poly_matrix, (*re, *im)))
-        .ok_or_else(bail)?;
-      let ca = sys_const(c_idx);
-      c_idx += 1;
-      let cb = sys_const(c_idx);
-      c_idx += 1;
-      for k in 0..n {
-        let (p, q) = v[k];
-        if p.abs() < 1e-12 && q.abs() < 1e-12 {
-          continue;
-        }
-        // e^{re t} [ (Ca*p + Cb*q) Cos[im t] + (Cb*p - Ca*q) Sin[im t] ]
-        let cos_coeff = plus2(
-          times2(f64_to_nice_expr(p), ca.clone()),
-          times2(f64_to_nice_expr(q), cb.clone()),
-        );
-        let sin_coeff = plus2(
-          times2(f64_to_nice_expr(p), cb.clone()),
-          times2(f64_to_nice_expr(-q), ca.clone()),
-        );
-        let cos_term = times2(cos_coeff, make_trig_term("Cos", *im, x_name));
-        let sin_term = times2(sin_coeff, make_trig_term("Sin", *im, x_name));
-        let mut term = plus2(cos_term, sin_term);
-        if re.abs() > 1e-10 {
-          term = times2(make_exp_term(*re, x_name), term);
-        }
-        y_exprs[k] = plus2(y_exprs[k].clone(), term);
+      coefficient = crate::evaluator::evaluate_expr_to_expr(&coefficient)
+        .unwrap_or(coefficient);
+      if is_first_order_homogeneous {
+        // wolframscript presents each constant's coefficient over a common
+        // denominator: `(1 + E^(2*x))/(2*E^x)`, not `1/(2*E^x) + E^x/2`.
+        coefficient = crate::functions::polynomial_ast::together::together_ast(
+          std::slice::from_ref(&coefficient),
+        )?;
       }
+      y_exprs[k] = plus2(y_exprs[k].clone(), times2(coefficient, c.clone()));
     }
   }
-  let total_dof = c_idx - 1;
 
   // Apply initial conditions (if a full set was given) by evaluating each
   // y_i and its derivatives at the IC point and solving for the shared

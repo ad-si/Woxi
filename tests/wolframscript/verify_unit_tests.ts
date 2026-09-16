@@ -1770,6 +1770,12 @@ function main() {
     // kept unevaluated like the existing bare-y^2 skips above.
     "DSolve[y'[x] == x y[x]^2, y[x], x]",
     "DSolve[y'[x] == x^2 y[x]^2, y[x], x]",
+    // An inexact-coefficient linear ODE: both engines find the same two
+    // frequencies (the companion assertion in the same unit test checks
+    // exactly that, and does conform), but which arbitrary constant pairs
+    // with which frequency is not canonical, and Wolfram's inexact
+    // arithmetic prefixes every term with a `1.*` factor.
+    "DSolve[y''''[t] + 2.04*y''[t] + y[t] == 0, y[t], t]",
     // InverseSurvivalFunction[BetaDistribution[...]]: Wolfram returns a Root
     // object (Head -> Root); Woxi keeps the call symbolic (Head ->
     // InverseSurvivalFunction).

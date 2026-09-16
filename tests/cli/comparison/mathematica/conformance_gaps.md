@@ -1269,6 +1269,28 @@ Scalar in 3D, vector in 4D and rank-2 tensor in 3D — the valid higher-rank
 antisymmetric forms — stay unevaluated. WL returns them as `SymmetrizedArray`
 (or a collapsed 0). Needs exterior derivative plus Hodge dual.
 
+### A coupled ODE system is solved numerically, so its constants are inexact
+
+`DSolve[{eq1, …}, {y1[t], …}, t]` eliminates the system with an operator
+determinant and finds the characteristic roots in machine floating point,
+recovering exact-looking coefficients (`1/2`, `Sqrt[3]`) from them at the
+end. For a *first-order homogeneous* system the answer is re-parametrized
+to `Y(t) = MatrixExp[A·t]·C` — wolframscript's basis, in which `C[k]` is the
+initial value of the k-th variable — and matches it term for term, secular
+`t·E^(λt)` terms for defective systems included. Three shapes still differ:
+
+- Coefficients that are not a small rational or the square root of one stay
+  as machine reals, and a radical that both a numerator and a denominator
+  carry is not cancelled (`(Sqrt[3]*E^(2*t) − …)/(3*Sqrt[3]*E^t)` where WL
+  writes `(E^((3*t)/2) − …)/(3*E^(t/2))`).
+- A system with inexact coefficients (a Foucault-pendulum-style rotational
+  coupling with a `0.1` rate) gets a clean trigonometric answer here. WL's
+  own is an unsimplified tangle of `4.4*^-17`-scale complex noise, so there
+  is no form to match.
+- A system with nonzero constant forcing gets its constant particular
+  solution plus the eigenvector basis, where WL emits an unsimplified
+  variation-of-parameters expression in its `MatrixExp` basis.
+
 ### Second-order PDEs with a lower-order term
 
 `DSolve[u_xx + u_y == 0]` (the heat equation) is unevaluated; WL falls back to

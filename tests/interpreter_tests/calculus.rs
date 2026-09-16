@@ -7427,6 +7427,23 @@ mod dsolve {
 C[3]*Cos[1.104987562112089*t] + C[2]*Sin[0.9049875621120891*t] + \
 C[4]*Sin[1.104987562112089*t]}}"
     );
+    // The same assertion in a form wolframscript agrees with term for term.
+    // Which arbitrary constant pairs with which frequency is not canonical
+    // (wolframscript labels the 1.105 pair C[1]/C[2] and multiplies every
+    // term by an inexact `1.`), but the two frequencies and the absence of
+    // any real exponential are — a real root would produce `E^(r*t)` terms
+    // and no oscillation at all.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "sol = y[t] /. First[DSolve[y''''[t] + 2.04*y''[t] + y[t] == 0, \
+y[t], t]]; \
+{Union[Cases[sol, (Cos[a_] | Sin[a_]) :> Coefficient[a, t], Infinity]], \
+FreeQ[sol, E]}"
+      )
+      .unwrap(),
+      "{{0.9049875621120891, 1.104987562112089}, True}"
+    );
   }
 
   // `DSolve[{eq1, eq2, ic1, …}, {y1[t], y2[t], …}, t]` — a linear,
@@ -7442,7 +7459,7 @@ C[4]*Sin[1.104987562112089*t]}}"
     use super::*;
 
     // x' == y, y' == x has real characteristic roots ±1: x = Cosh[t],
-    // y = Sinh[t] written out as raw exponentials.
+    // y = Sinh[t], written out as exponentials over a common denominator.
     #[test]
     fn real_roots_with_initial_conditions() {
       assert_eq!(
@@ -7451,7 +7468,22 @@ C[4]*Sin[1.104987562112089*t]}}"
 {x[t], y[t]}, t]"
         )
         .unwrap(),
-        "{{x[t] -> 1/(2*E^t) + E^t/2, y[t] -> -1/2*1/E^t + E^t/2}}"
+        "{{x[t] -> (1 + E^(2*t))/(2*E^t), y[t] -> (-1 + E^(2*t))/(2*E^t)}}"
+      );
+    }
+
+    // Without initial conditions the same system's constants are the
+    // initial values themselves: the solution is MatrixExp[A*t] . C, which
+    // is the basis wolframscript reports (and the only canonical one — an
+    // eigenvector basis is arbitrary up to scaling and ordering).
+    #[test]
+    fn real_roots_general_solution_uses_initial_value_constants() {
+      assert_eq!(
+        interpret("DSolve[{x'[t] == y[t], y'[t] == x[t]}, {x[t], y[t]}, t]")
+          .unwrap(),
+        "{{x[t] -> ((1 + E^(2*t))*C[1])/(2*E^t) + \
+((-1 + E^(2*t))*C[2])/(2*E^t), y[t] -> ((-1 + E^(2*t))*C[1])/(2*E^t) + \
+((1 + E^(2*t))*C[2])/(2*E^t)}}"
       );
     }
 
@@ -7463,8 +7495,8 @@ C[4]*Sin[1.104987562112089*t]}}"
       assert_eq!(
         interpret("DSolve[{x'[t] == y[t], y'[t] == -x[t]}, {x[t], y[t]}, t]")
           .unwrap(),
-        "{{x[t] -> -(C[2]*Cos[t]) + C[1]*Sin[t], y[t] -> C[1]*Cos[t] + \
-C[2]*Sin[t]}}"
+        "{{x[t] -> C[1]*Cos[t] + C[2]*Sin[t], y[t] -> C[2]*Cos[t] - \
+C[1]*Sin[t]}}"
       );
     }
 
@@ -7496,18 +7528,35 @@ Round[N[closed] - N[numeric], 10^-6]"
     }
 
     // A defective system (repeated eigenvalue 1, only one independent
-    // eigenvector) needs a `t*E^t` secular term this solver doesn't build;
-    // it must stay unevaluated rather than silently drop a degree of
-    // freedom.
+    // eigenvector) needs the secular `t*E^t` term of the second solution;
+    // dropping it would lose a degree of freedom.
     #[test]
-    fn repeated_root_stays_unevaluated() {
+    fn repeated_root_gets_a_secular_term() {
       assert_eq!(
         interpret(
           "DSolve[{x'[t] == x[t], y'[t] == x[t] + y[t]}, {x[t], y[t]}, t]"
         )
         .unwrap(),
-        "DSolve[{Derivative[1][x][t] == x[t], Derivative[1][y][t] == x[t] + \
-y[t]}, {x[t], y[t]}, t]"
+        "{{x[t] -> E^t*C[1], y[t] -> E^t*t*C[1] + E^t*C[2]}}"
+      );
+      assert_eq!(
+        interpret(
+          "DSolve[{x'[t] == 2*x[t] + y[t], y'[t] == 2*y[t]}, {x[t], y[t]}, t]"
+        )
+        .unwrap(),
+        "{{x[t] -> E^(2*t)*C[1] + E^(2*t)*t*C[2], y[t] -> E^(2*t)*C[2]}}"
+      );
+    }
+
+    // A repeated root that is *not* defective (the identity matrix has a
+    // double eigenvalue with two independent eigenvectors) must not grow a
+    // secular term.
+    #[test]
+    fn repeated_root_without_defect_has_no_secular_term() {
+      assert_eq!(
+        interpret("DSolve[{x'[t] == x[t], y'[t] == y[t]}, {x[t], y[t]}, t]")
+          .unwrap(),
+        "{{x[t] -> E^t*C[1], y[t] -> E^t*C[2]}}"
       );
     }
   }
