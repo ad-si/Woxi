@@ -33,3 +33,4 @@ pub use set_operations::*;
 pub use sorting::*;
 pub use summation::*;
 pub use utilities::*;
+pub(crate) use utilities::expr_to_i128;
