@@ -2996,6 +2996,14 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut color_rules: Vec<(f64, GfxColor)> = Vec::new();
   let mut mesh = false;
   let mut color_function: Option<String> = None;
+  // `ColorFunction -> f` for an `f` that isn't a recognized named gradient
+  // (a pure function, a user-defined symbol, …): applied per-cell via the
+  // evaluator, same as `RegionFunction` in `region_allows` above.
+  let mut color_function_expr: Option<Expr> = None;
+  // `ColorFunctionScaling -> False` passes each cell's raw value to
+  // `color_function_expr`; the default (`True`) passes the value rescaled
+  // to the 0..1 range of the matrix, matching `Options[ArrayPlot]`.
+  let mut color_function_scaling = true;
   let mut frame_labels = crate::functions::plot::FrameLabels::default();
 
   for opt in &args[1..] {
@@ -3034,6 +3042,16 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "ColorFunction" => {
           if let Some(s) = color_function_scheme_name(replacement.as_ref()) {
             color_function = Some(s);
+          } else if !matches!(replacement.as_ref(), Expr::Identifier(v) if v == "Automatic" || v == "None")
+          {
+            color_function_expr = Some(replacement.as_ref().clone());
+          }
+        }
+        "ColorFunctionScaling" => {
+          if let Expr::Identifier(v) = replacement.as_ref()
+            && v == "False"
+          {
+            color_function_scaling = false;
           }
         }
         // An array plot is drawn inside a frame, so it takes the same
@@ -3143,6 +3161,40 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               };
               if let Some(ref cf_name) = color_function {
                 apply_named_color_function(cf_name, t)
+              } else if let Some(ref cf_expr) = color_function_expr {
+                // Raw (unscaled) values commonly come from exact integer
+                // literals (e.g. packed 24-bit colors); passing them back
+                // as a `Real` would strip that integer-ness and make
+                // functions like `IntegerDigits` inside the color function
+                // stay unevaluated. The scaled value has no such origin,
+                // so it always becomes a `Real`.
+                let arg_expr = if color_function_scaling {
+                  Expr::Real(t)
+                } else if val.fract() == 0.0 && val.abs() < 1e15 {
+                  Expr::Integer(*val as i128)
+                } else {
+                  Expr::Real(*val)
+                };
+                let call = Expr::CurriedCall {
+                  func: Box::new(cf_expr.clone()),
+                  args: vec![arg_expr],
+                };
+                evaluate_expr_to_expr(&call)
+                  .ok()
+                  .and_then(|r| parse_color(&r))
+                  .map_or_else(
+                    || {
+                      let gray = ((1.0 - t) * 255.0).round() as u8;
+                      (gray, gray, gray)
+                    },
+                    |c| {
+                      (
+                        (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+                        (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+                        (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+                      )
+                    },
+                  )
               } else {
                 let gray = ((1.0 - t) * 255.0).round() as u8;
                 (gray, gray, gray)
