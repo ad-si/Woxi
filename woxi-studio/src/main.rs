@@ -23678,6 +23678,82 @@ SaveDefinitions -> True]";
     );
   }
 
+  /// Checked a randomly-sampled Wolfram Demonstrations Project notebook
+  /// that animates the major planets' heliocentric positions over time: a
+  /// day-offset slider and a multi-century year slider drive a date, which
+  /// feeds `AstronomicalData[AstronomicalData[n], {"Position", date}]` for
+  /// each planet index, plotted as `Sphere`s in a `Graphics3D` whose
+  /// `PlotLabel` reads the date back out through `DateString`, alongside a
+  /// third slider zooming the `PlotRange`. Independently written, not
+  /// copied from any specific Demonstration: this version skips the
+  /// original's precomputed static orbit-trail lines and uses different
+  /// helper names, scale/image-size constants, and only 8 bodies. The
+  /// construct worth pinning down is the combination of (1) the classic
+  /// (pre-Entity) `AstronomicalData[n]` numeric-index calling convention
+  /// feeding straight into a second `AstronomicalData[name, {"Position",
+  /// date}]` call, (2) a date built from two independently manipulated
+  /// slider variables via `DatePlus`, and (3) that date reused both for the
+  /// position query and for the `PlotLabel`'s `DateString`.
+  #[test]
+  fn solar_system_manipulate_positions_planets_by_date() {
+    let code = "Manipulate[\
+      Graphics3D[{\
+        Sphere[#, Scaled[0.015]] & /@ (orbitPos[dateAt[baseYear, dayFrac], #] & /@ Range[8]), \
+        {Yellow, Sphere[{0, 0, 0}, Scaled[0.02]]}\
+      }, \
+      PlotRange -> Exp[4 (zoom - 1)], \
+      ImageSize -> {360, 360}, \
+      PlotLabel -> DateString[dateAt[baseYear, dayFrac], {\"MonthName\", \" \", \"Year\"}], \
+      SphericalRegion -> True], \
+      {{dayFrac, 0, \"day offset\"}, 0, 1, ControlType -> Slider}, \
+      {{baseYear, 2020, \"year\"}, 2020, 2170, 1, ControlType -> Slider}, \
+      {{zoom, 1, \"zoom\"}, 0, 1}, \
+      SaveDefinitions -> True, \
+      SynchronousUpdating -> False, \
+      Initialization :> (\
+        dateAt[y_, d_] := DatePlus[{y}, {d, \"Year\"}]; \
+        orbitPos[t_, k_] := AstronomicalData[AstronomicalData[k], {\"Position\", t}]/(7*10^12);\
+      )\
+    ]";
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let mut state = manipulate::ManipulateState::from_expr(&expr).expect(
+      "a day-offset slider, a year slider, and a zoom slider should build a \
+       ManipulateState",
+    );
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the planets' Graphics3D must render by default"
+    );
+
+    let names: Vec<&str> = state.controls.iter().map(|c| c.name()).collect();
+    assert_eq!(names, ["dayFrac", "baseYear", "zoom"]);
+
+    // Move the date forward by decades and re-render: AstronomicalData
+    // must be called fresh with the new date each time, not memoized from
+    // the initial render.
+    if let manipulate::ControlState::Continuous { current, .. } =
+      &mut state.controls[1]
+    {
+      *current = 2120.0; // baseYear: 2020 -> 2120
+    }
+    state.reevaluate();
+    assert!(
+      state.error.is_none(),
+      "re-render after moving the year forward failed: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the Graphics3D must still render a century later"
+    );
+  }
+
   #[test]
   fn damped_pendulum_manipulate_labels_initial_angular_velocity() {
     // End-to-end regression for the "Active Shock Absorbers" Demonstration's

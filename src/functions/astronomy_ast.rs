@@ -1543,11 +1543,264 @@ pub fn lunar_eclipse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 }
 
+// ─── AstronomicalData ───────────────────────────────────────────────
+//
+// Heliocentric planet positions come from E. M. Standish's "Keplerian
+// Elements for Approximate Positions of the Major Planets" (JPL/Caltech,
+// 1800 AD–2050 AD table): each element is a J2000.0 value plus a rate
+// per Julian century, solved through the usual two-body Kepler equation.
+// This is a two-body approximation (arcminute-level accuracy) — real
+// AstronomicalData draws on JPL's numerically integrated DE ephemerides,
+// so positions here diverge from wolframscript's beyond a handful of
+// significant digits, same as the Meeus-based Sun/Moon functions above.
+
+/// One planet's mean orbital elements at J2000.0 and their rate of
+/// change per Julian century: semi-major axis (AU), eccentricity,
+/// inclination, mean longitude, longitude of perihelion, longitude of
+/// the ascending node (angles in degrees).
+struct PlanetElements {
+  name: &'static str,
+  a: (f64, f64),
+  e: (f64, f64),
+  i: (f64, f64),
+  l: (f64, f64),
+  long_peri: (f64, f64),
+  long_node: (f64, f64),
+}
+
+const PLANET_ELEMENTS: [PlanetElements; 9] = [
+  PlanetElements {
+    name: "Mercury",
+    a: (0.387_098_93, 0.000_000_66),
+    e: (0.205_630_69, 0.000_002_527),
+    i: (7.004_986_5, -0.005_951_6),
+    l: (252.250_906_0, 149_474.072_215_9),
+    long_peri: (77.457_796_1, 0.159_705_2),
+    long_node: (48.330_961_1, -0.125_609_3),
+  },
+  PlanetElements {
+    name: "Venus",
+    a: (0.723_329_82, 0.000_000_92),
+    e: (0.006_771_92, -0.000_047_65),
+    i: (3.394_662_0, -0.000_857_1),
+    l: (181.979_801_0, 58_519.213_030_0),
+    long_peri: (131.602_467_0, 0.004_768_8),
+    long_node: (76.679_920_0, -0.278_007_1),
+  },
+  PlanetElements {
+    name: "Earth",
+    a: (1.000_001_02, 0.000_001_86),
+    e: (0.016_710_22, -0.000_042_04),
+    i: (0.0, -0.013_502_9),
+    l: (100.464_442_0, 35_999.372_851_0),
+    long_peri: (102.937_348_0, 0.322_539_0),
+    long_node: (0.0, 0.0),
+  },
+  PlanetElements {
+    name: "Mars",
+    a: (1.523_679_35, 0.000_001_47),
+    e: (0.093_400_65, 0.000_090_484),
+    i: (1.849_726_0, -0.008_147_9),
+    l: (355.433_275_0, 19_141.696_402_1),
+    long_peri: (336.060_234_0, 0.443_897_0),
+    long_node: (49.559_539_0, -0.292_566_9),
+  },
+  PlanetElements {
+    name: "Jupiter",
+    a: (5.202_602_9, -0.000_004_88),
+    e: (0.048_497_85, 0.000_163_244),
+    i: (1.303_270_0, -0.001_965_3),
+    l: (34.351_484_0, 3_036.302_776_0),
+    long_peri: (14.331_309_0, 0.213_766_0),
+    long_node: (100.464_441_0, 0.176_682_1),
+  },
+  PlanetElements {
+    name: "Saturn",
+    a: (9.554_909_0, -0.000_552_41),
+    e: (0.055_508_62, -0.000_346_818),
+    i: (2.488_878_0, 0.002_509_5),
+    l: (50.077_471_0, 1_223.509_884_0),
+    long_peri: (93.056_787_0, -0.301_919_5),
+    long_node: (113.665_524_0, -0.259_302_2),
+  },
+  PlanetElements {
+    name: "Uranus",
+    a: (19.218_446_0, -0.000_195_71),
+    e: (0.046_294_36, -0.000_026_75),
+    i: (0.773_196_0, -0.001_618_5),
+    l: (314.055_005_0, 429.864_048_0),
+    long_peri: (173.005_159_0, 0.406_320_0),
+    long_node: (74.005_947_0, 0.041_112_9),
+  },
+  PlanetElements {
+    name: "Neptune",
+    a: (30.110_386_9, -0.000_170_35),
+    e: (0.008_997_04, 0.000_006_33),
+    i: (1.769_952_0, -0.009_509_1),
+    l: (304.348_665_0, 219.884_636_0),
+    long_peri: (48.123_691_0, -0.019_824_4),
+    long_node: (131.784_057_0, -0.006_177_4),
+  },
+  PlanetElements {
+    name: "Pluto",
+    a: (39.481_686_9, -0.000_313_82),
+    e: (0.248_807_66, 0.000_051_70),
+    i: (17.141_75, 0.000_004_82),
+    l: (238.928_803_0, 145.207_729_2),
+    long_peri: (224.134_861_0, -0.041_811_9),
+    long_node: (110.303_809_0, -0.011_213_5),
+  },
+];
+
+/// The eccentric anomaly `E` (degrees) solving Kepler's equation
+/// `E - e_deg sin E = M` for a mean anomaly `M` (degrees).
+fn solve_kepler(m_deg: f64, e: f64) -> f64 {
+  let m = ((m_deg + 180.0).rem_euclid(360.0)) - 180.0;
+  let e_deg = e.to_degrees();
+  let mut ecc = m + e_deg * sin_d(m);
+  for _ in 0..20 {
+    let delta_m = m - (ecc - e_deg * sin_d(ecc));
+    let delta_e = delta_m / (1.0 - e * cos_d(ecc));
+    ecc += delta_e;
+    if delta_e.abs() < 1e-9 {
+      break;
+    }
+  }
+  ecc
+}
+
+/// Heliocentric ecliptic (J2000 mean equinox) position of a planet, in
+/// metres, at the given TT-ish Julian ephemeris day.
+fn planet_heliocentric_position_m(
+  planet: &PlanetElements,
+  jde: f64,
+) -> (f64, f64, f64) {
+  let t = (jde - 2_451_545.0) / 36_525.0;
+  let a = planet.a.0 + planet.a.1 * t;
+  let e = planet.e.0 + planet.e.1 * t;
+  let i = planet.i.0 + planet.i.1 * t;
+  let l = planet.l.0 + planet.l.1 * t;
+  let long_peri = planet.long_peri.0 + planet.long_peri.1 * t;
+  let long_node = planet.long_node.0 + planet.long_node.1 * t;
+
+  let m = l - long_peri;
+  let ecc = solve_kepler(m, e);
+
+  // Position in the orbital plane.
+  let x_orb = a * (cos_d(ecc) - e);
+  let y_orb = a * (1.0 - e * e).sqrt() * sin_d(ecc);
+
+  let arg_peri = long_peri - long_node;
+  let (sw, cw) = (sin_d(arg_peri), cos_d(arg_peri));
+  let (so, co) = (sin_d(long_node), cos_d(long_node));
+  let (si, ci) = (sin_d(i), cos_d(i));
+
+  let x = (cw * co - sw * so * ci) * x_orb + (-sw * co - cw * so * ci) * y_orb;
+  let y = (cw * so + sw * co * ci) * x_orb + (-sw * so + cw * co * ci) * y_orb;
+  let z = (sw * si) * x_orb + (cw * si) * y_orb;
+
+  let au_m = AU_KM * 1000.0;
+  (x * au_m, y * au_m, z * au_m)
+}
+
+fn planet_by_name(name: &str) -> Option<&'static PlanetElements> {
+  PLANET_ELEMENTS.iter().find(|p| p.name == name)
+}
+
+/// A property spec `{"Position", date?}`: the date defaults to now.
+fn position_property_date(spec: &[Expr]) -> Option<f64> {
+  match spec {
+    [Expr::String(p)] if p == "Position" => Some(now_jd()),
+    [Expr::String(p), date] if p == "Position" => parse_date_arg(date),
+    _ => None,
+  }
+}
+
+/// AstronomicalData[n] / AstronomicalData[name] / AstronomicalData[name,
+/// {"Position", date?}] — with the classic (pre-Entity) calling
+/// convention this Demonstration-era code relies on: an integer
+/// `1`–`9` names the nth major solar-system body counting outward from
+/// the Sun (Mercury … Pluto), and `{"Position", date}` gives its
+/// heliocentric ecliptic position in metres at that date.
+pub fn astronomical_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  match args {
+    [Expr::Integer(n)] if (1..=9).contains(n) => Ok(Expr::String(
+      PLANET_ELEMENTS[(*n - 1) as usize].name.to_string(),
+    )),
+    [Expr::String(name)] if planet_by_name(name).is_some() => {
+      Ok(Expr::String(name.clone()))
+    }
+    [Expr::String(name), Expr::List(spec)] => {
+      let Some(planet) = planet_by_name(name) else {
+        return Ok(unevaluated("AstronomicalData", args));
+      };
+      let Some(jd) = position_property_date(spec) else {
+        return Ok(unevaluated("AstronomicalData", args));
+      };
+      let (x, y, z) = planet_heliocentric_position_m(planet, jd_utc_to_jde(jd));
+      Ok(Expr::List(
+        vec![Expr::Real(x), Expr::Real(y), Expr::Real(z)].into(),
+      ))
+    }
+    _ => Ok(unevaluated("AstronomicalData", args)),
+  }
+}
+
 // ─── Reference tests against Meeus's worked examples ────────────────
 
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  /// Known heliocentric distances (AU) at well-documented epochs,
+  /// independent of wolframscript: Earth is a touch past perihelion on
+  /// 2000-01-01 (perihelion is early January), so its Sun distance is
+  /// close to its minimum (~0.9833 AU); every planet's distance must
+  /// also stay within its published perihelion/aphelion bounds at any
+  /// date, which is a property of the ellipse rather than of the date.
+  #[test]
+  fn earth_distance_near_2000_perihelion() {
+    let jde = 2_451_545.0; // 2000-01-01 12:00 TT
+    let earth = planet_by_name("Earth").unwrap();
+    let (x, y, z) = planet_heliocentric_position_m(earth, jde);
+    let au_m = AU_KM * 1000.0;
+    let dist_au = (x * x + y * y + z * z).sqrt() / au_m;
+    assert!(
+      (dist_au - 0.9833).abs() < 0.005,
+      "Earth-Sun distance = {dist_au} AU"
+    );
+  }
+
+  #[test]
+  fn planet_distances_stay_within_orbital_bounds() {
+    // (perihelion, aphelion) in AU, from published orbital elements.
+    let bounds = [
+      ("Mercury", 0.307, 0.467),
+      ("Venus", 0.718, 0.728),
+      ("Earth", 0.983, 1.017),
+      ("Mars", 1.381, 1.666),
+      ("Jupiter", 4.950, 5.457),
+      ("Saturn", 9.041, 10.124),
+      ("Uranus", 18.286, 20.096),
+      ("Neptune", 29.81, 30.33),
+      ("Pluto", 29.658, 49.305),
+    ];
+    let au_m = AU_KM * 1000.0;
+    for (name, peri, apo) in bounds {
+      let planet = planet_by_name(name).unwrap();
+      // Sample across two centuries; the ellipse's bounds don't depend
+      // on the date, only on where along it the planet currently sits.
+      for year_offset in [0.0, 25.0, 50.0, 100.0, 150.0, 200.0] {
+        let jde = 2_451_545.0 + year_offset * 365.25;
+        let (x, y, z) = planet_heliocentric_position_m(planet, jde);
+        let dist_au = (x * x + y * y + z * z).sqrt() / au_m;
+        assert!(
+          dist_au > peri - 0.01 && dist_au < apo + 0.01,
+          "{name} at +{year_offset}y: {dist_au} AU outside [{peri}, {apo}]"
+        );
+      }
+    }
+  }
 
   /// Meeus example 25.a: the Sun on 1992 October 13.0 TD.
   #[test]
