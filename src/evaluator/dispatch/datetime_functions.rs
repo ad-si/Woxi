@@ -115,6 +115,11 @@ pub fn dispatch_datetime_functions(
     "SiderealTime" if args.len() <= 2 => {
       return Some(crate::functions::astronomy_ast::sidereal_time_ast(args));
     }
+    "AstronomicalData" if args.len() == 1 || args.len() == 2 => {
+      return Some(crate::functions::astronomy_ast::astronomical_data_ast(
+        args,
+      ));
+    }
     "Sunrise" if args.len() <= 2 => {
       return Some(crate::functions::astronomy_ast::sunrise_ast(args));
     }
