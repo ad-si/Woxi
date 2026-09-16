@@ -15525,6 +15525,21 @@ pub(crate) fn is_graphics_producing_head(name: &str) -> bool {
 /// are returned unchanged so we never override user options or break
 /// unrelated calls.
 fn with_default_image_size(expr: &Expr, size: i128) -> Expr {
+  // An already-evaluated `Graphics[…]` keeps the expression it was built
+  // from in `structure`, so it can still be re-rendered at a different
+  // size — the whole point of collecting it into a `GraphicsRow`/`Column`/
+  // `Grid` in the first place (`g1 = Graphics[…]; GraphicsGrid[{{g1, …}}]`
+  // is exactly how a Demonstration builds one panel and reuses it). A
+  // `Plot`-family picture carries no such structure (its own default
+  // sizing already accounts for this), so those keep whatever size they
+  // were originally built at.
+  let expr = match expr {
+    Expr::Graphics {
+      structure: Some(inner),
+      ..
+    } => inner.as_ref(),
+    other => other,
+  };
   let Expr::FunctionCall { name, args } = expr else {
     return expr.clone();
   };
@@ -15543,6 +15558,26 @@ fn with_default_image_size(expr: &Expr, size: i128) -> Expr {
     pattern: Box::new(id_expr("ImageSize")),
     replacement: Box::new(Expr::Integer(size)),
   });
+  // A bare `Graphics[…]` with no `AspectRatio` of its own defaults to
+  // fitting the shape of its own data, which can be wildly elongated (a
+  // tall stack of primitives, say) — fine standing alone, but it would
+  // blow out the shared row/column/grid size when every other cell is a
+  // modestly-proportioned plot. Laying out a grid of panels is exactly
+  // when Wolfram normalizes every cell to the layout's own proportions, so
+  // pin the classic 1/GoldenRatio default here unless the picture already
+  // asked for a specific shape.
+  if name == "Graphics" {
+    let has_aspect_ratio = new_args.iter().any(|a| {
+      matches!(a, Expr::Rule { pattern, .. }
+        if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "AspectRatio"))
+    });
+    if !has_aspect_ratio {
+      new_args.push(Expr::Rule {
+        pattern: Box::new(id_expr("AspectRatio")),
+        replacement: Box::new(Expr::Real(1.0 / 1.618_033_988_749_895)),
+      });
+    }
+  }
   Expr::FunctionCall {
     name: name.clone(),
     args: new_args,
@@ -15637,7 +15672,32 @@ fn render_items_at_size(items: &[Expr], per_cell_w: i128) -> Vec<String> {
   items
     .iter()
     .filter_map(|item| {
-      let rewritten = with_default_image_size(item, per_cell_w);
+      // `SpanFromLeft`/`SpanFromAbove`/`SpanFromBoth` mark a cell that only
+      // continues one merged in `Grid` — they hold no content of their own.
+      // `GraphicsGrid`/`Row`/`Column` don't merge spans the way `Grid` does,
+      // but the placeholder should still draw as nothing rather than fall
+      // through to the text renderer and print its own name.
+      if is_span_placeholder(item) {
+        // A near-zero height keeps this cell from inflating its row: the
+        // placeholder holds no content of its own, so the row's height
+        // should follow whatever real content sits beside it.
+        return Some(format!(
+          "<svg width=\"{per_cell_w}\" height=\"1\" viewBox=\"0 0 {per_cell_w} 1\"></svg>"
+        ));
+      }
+      // An inline call (`GraphicsGrid[{{Plot[…], Plot[…]}}]`) gets its
+      // `ImageSize` injected before it ever evaluates. A bare variable
+      // holding an already-rendered picture (`g1 = Graphics[…];
+      // GraphicsGrid[{{g1, …}}]`, how a Demonstration typically builds one
+      // panel and reuses it) is not itself rewritable, so resolve it to its
+      // value first — a `Graphics[…]` value keeps its built expression in
+      // `structure` for exactly this.
+      let target = if matches!(item, Expr::FunctionCall { .. }) {
+        item.clone()
+      } else {
+        evaluate_expr_to_expr(item).unwrap_or_else(|_| item.clone())
+      };
+      let rewritten = with_default_image_size(&target, per_cell_w);
       let evaluated = evaluate_expr_to_expr(&rewritten).ok()?;
       let svg = crate::evaluator::expr_to_svg(&evaluated);
       (!svg.is_empty()).then_some(svg)

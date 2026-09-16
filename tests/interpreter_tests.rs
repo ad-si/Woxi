@@ -2415,6 +2415,91 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_plot_small_image_size_keeps_positive_plot_area() {
+    // Regression: a small explicit `ImageSize` (an 80x80 panel in a
+    // Manipulate's GraphicsGrid, a common real-world case in a Wolfram
+    // Demonstration) used to leave the fixed-pixel frame/tick-label margins
+    // summing to more than the whole canvas, collapsing the plot area to
+    // zero width. Every data point then mapped to the same pixel, so the
+    // curve drew as a single vertical line and the tick labels stacked on
+    // top of each other instead of spreading down the frame.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Plot[Sin[x], {x, -Pi, Pi}, Frame -> True, ImageSize -> {80, 80}], \"SVG\"]",
+    )
+    .unwrap();
+    let mut min_x = f64::MAX;
+    let mut max_x = f64::MIN;
+    for points in svg.split("points=\"").skip(1) {
+      let Some(points) = points.split('"').next() else {
+        continue;
+      };
+      for pair in points.split_whitespace() {
+        if let Some(x) =
+          pair.split(',').next().and_then(|s| s.parse::<f64>().ok())
+        {
+          min_x = min_x.min(x);
+          max_x = max_x.max(x);
+        }
+      }
+    }
+    assert!(
+      max_x - min_x > 100.0,
+      "the plot collapsed to a single x position: {min_x}..{max_x}"
+    );
+  }
+
+  #[test]
+  fn test_graphics_grid_uses_golden_ratio_default_for_bare_graphics_cell() {
+    // Regression: `g1 = Graphics[...]` with an elongated bounding box (a
+    // vertical stack of shapes, say) rendered standalone at whatever tall,
+    // thin aspect its own data implied. Once dropped into a `GraphicsGrid`
+    // next to normally-proportioned panels, `GraphicsGrid` re-rendered it at
+    // the shared per-cell width but kept that same data-driven aspect
+    // instead of the classic 1/GoldenRatio a bare `Graphics[...]` panel
+    // defaults to — the resulting composite's height blew out to many times
+    // its width. A Wolfram Demonstration commonly builds one such panel as
+    // a variable and reuses it exactly this way.
+    clear_state();
+    let svg = interpret(
+      "g1 = Graphics[{Yellow, Table[Disk[{0, n}, 0.4], {n, 0, 3, 1}]}]; \
+       ExportString[GraphicsGrid[{{g1, g1}}, ImageSize -> {400, 200}], \"SVG\"]",
+    )
+    .unwrap();
+    let grab = |attr: &str| -> f64 {
+      let key = format!("{attr}=\"");
+      let start = svg.find(&key).expect("attr present") + key.len();
+      let end = svg[start..].find('"').unwrap() + start;
+      svg[start..end].parse().unwrap()
+    };
+    let (w, h) = (grab("width"), grab("height"));
+    assert!(
+      h < w,
+      "a bare Graphics cell kept its own elongated data aspect inside GraphicsGrid: {w}x{h}"
+    );
+  }
+
+  #[test]
+  fn test_graphics_grid_span_from_above_draws_nothing() {
+    // Regression: `SpanFromAbove` in a `GraphicsGrid` cell (the same
+    // spanning marker `Grid` accepts, used by a Demonstration to lay a
+    // small plot beside a picture that spans two rows) fell through to the
+    // text renderer and printed the literal word "SpanFromAbove" in that
+    // cell instead of drawing nothing.
+    clear_state();
+    let svg = interpret(
+      "p1 = Graphics[{Red, Disk[]}]; g1 = Graphics[{Blue, Rectangle[]}]; \
+       p2 = Graphics[{Green, Disk[]}]; \
+       ExportString[GraphicsGrid[{{p1, g1}, {p2, SpanFromAbove}}, ImageSize -> 400], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      !svg.contains("SpanFromAbove"),
+      "SpanFromAbove leaked into the rendered SVG as literal text: {svg}"
+    );
+  }
+
+  #[test]
   fn test_list_line_plot_accepts_whole_series_tooltip_wrapper() {
     // `ListLinePlot[Tooltip[data, label], ...]` wraps the *entire* data
     // series in a Tooltip (as opposed to `Tooltip` wrapping individual
