@@ -10257,6 +10257,117 @@ pub fn optimization_variable_names(spec: &Expr) -> Option<Vec<String>> {
   }
 }
 
+/// Derivative-free Nelder–Mead simplex search for a local minimum of
+/// `eval` (already signed for maximize, and never returning an error —
+/// callers score a failed trial point as `f64::INFINITY`). Used by
+/// [`find_minimum_ast`] whenever `f` isn't symbolically differentiable.
+fn nelder_mead_minimize(
+  eval: &impl Fn(&[f64]) -> f64,
+  clamp: &impl Fn(&mut [f64]),
+  x0: &[f64],
+  max_iter: usize,
+) -> Vec<f64> {
+  let n = x0.len();
+  if n == 0 {
+    return x0.to_vec();
+  }
+  // Initial simplex: x0 plus one vertex per axis, offset by 5% of that
+  // coordinate's own scale (or a fixed 0.05 at/near the origin).
+  let mut simplex: Vec<Vec<f64>> = vec![x0.to_vec()];
+  for i in 0..n {
+    let mut p = x0.to_vec();
+    p[i] += if p[i].abs() > 1e-8 {
+      p[i].abs() * 0.05
+    } else {
+      0.05
+    };
+    clamp(&mut p);
+    simplex.push(p);
+  }
+  let mut fvals: Vec<f64> = simplex.iter().map(|p| eval(p)).collect();
+
+  for _ in 0..max_iter {
+    let mut order: Vec<usize> = (0..=n).collect();
+    order.sort_by(|&a, &b| {
+      fvals[a]
+        .partial_cmp(&fvals[b])
+        .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    simplex = order.iter().map(|&i| simplex[i].clone()).collect();
+    fvals = order.iter().map(|&i| fvals[i]).collect();
+
+    if (fvals[n] - fvals[0]).abs() < 1e-14 * (1.0 + fvals[0].abs()) {
+      break;
+    }
+
+    // Centroid of every vertex but the worst.
+    let mut centroid = vec![0.0; n];
+    for p in simplex.iter().take(n) {
+      for (c, pj) in centroid.iter_mut().zip(p.iter()) {
+        *c += pj;
+      }
+    }
+    for c in &mut centroid {
+      *c /= n as f64;
+    }
+
+    let worst = simplex[n].clone();
+    let reflect = |scale: f64| -> Vec<f64> {
+      centroid
+        .iter()
+        .zip(worst.iter())
+        .map(|(c, w)| c + scale * (c - w))
+        .collect()
+    };
+
+    let mut xr = reflect(1.0);
+    clamp(&mut xr);
+    let fr = eval(&xr);
+    if fr < fvals[0] {
+      let mut xe = reflect(2.0);
+      clamp(&mut xe);
+      let fe = eval(&xe);
+      if fe < fr {
+        simplex[n] = xe;
+        fvals[n] = fe;
+      } else {
+        simplex[n] = xr;
+        fvals[n] = fr;
+      }
+    } else if fr < fvals[n - 1] {
+      simplex[n] = xr;
+      fvals[n] = fr;
+    } else {
+      let mut xc = reflect(-0.5);
+      clamp(&mut xc);
+      let fc = eval(&xc);
+      if fc < fvals[n] {
+        simplex[n] = xc;
+        fvals[n] = fc;
+      } else {
+        // Shrink every vertex but the best toward the best.
+        let best = simplex[0].clone();
+        for k in 1..=n {
+          for (sk, bk) in simplex[k].iter_mut().zip(best.iter()) {
+            *sk = bk + 0.5 * (*sk - bk);
+          }
+          clamp(&mut simplex[k]);
+          fvals[k] = eval(&simplex[k]);
+        }
+      }
+    }
+  }
+
+  let best_i = (0..=n)
+    .min_by(|&a, &b| {
+      fvals[a]
+        .partial_cmp(&fvals[b])
+        .unwrap_or(std::cmp::Ordering::Equal)
+    })
+    .unwrap_or(0);
+  simplex[best_i].clone()
+}
+
 pub fn find_minimum_ast(
   args: &[Expr],
   maximize: bool,
@@ -10320,11 +10431,37 @@ pub fn find_minimum_ast(
     }
   };
 
+  // Wolfram also accepts each variable spec as its own trailing positional
+  // argument: `FindMinimum[f, {x, x0}, {y, y0}]` means the same as
+  // `FindMinimum[f, {{x, x0}, {y, y0}}]`. Detect that shape — args[1] itself
+  // a bare `{var, start}`/`{var, start, min, max}` pair — and fold any
+  // further same-shaped trailing arguments into one combined multivariable
+  // spec before the parser below runs, so both forms share one code path.
+  // Stops at the first argument that isn't shaped like a variable spec
+  // (the start of options such as `MaxIterations -> n`).
+  let is_var_spec_shape = |e: &Expr| -> bool {
+    matches!(e, Expr::List(items) if (items.len() == 2 || items.len() == 4)
+      && matches!(items.first(), Some(Expr::Identifier(_))))
+  };
+  let mut var_spec_end = 2;
+  if is_var_spec_shape(&args[1]) {
+    while var_spec_end < args.len() && is_var_spec_shape(&args[var_spec_end]) {
+      var_spec_end += 1;
+    }
+  }
+  let combined_spec: Expr = if var_spec_end > 2 {
+    let mut items = vec![args[1].clone()];
+    items.extend(args[2..var_spec_end].iter().cloned());
+    Expr::List(items.into())
+  } else {
+    args[1].clone()
+  };
+
   // Parse variables and starting points: x, {x, y}, {x, x0}, {x, x0, xmin,
   // xmax} or {{x, x0}, {y, y0}} (each pair optionally carrying its own
   // xmin/xmax bounds too). Bare symbols get Wolfram's automatic starting
   // point of 1 (FindMinimum[f, x] == FindMinimum[f, {x, 1}]).
-  let var_specs = match &args[1] {
+  let var_specs = match &combined_spec {
     Expr::Identifier(name) => vec![(name.clone(), 1.0, None)],
     Expr::List(items)
       if !items.is_empty() && matches!(&items[0], Expr::List(_)) =>
@@ -10423,6 +10560,19 @@ pub fn find_minimum_ast(
     expr_to_f64(&evaled)
   };
 
+  // `f` may be a call to a plain (non-symbolic) function — most commonly
+  // one guarded by `_?NumericQ` patterns, the standard idiom for a
+  // least-squares objective built from `NDSolve`/`ReplaceAll` that
+  // intentionally blocks symbolic differentiation. `differentiate_expr`
+  // then falls back to an unevaluated `Derivative[…][…]` form, which
+  // doesn't reduce to a real number at any point. Detect that once at the
+  // starting point, and fall back to a derivative-free search below
+  // instead of failing outright — matching Wolfram, which switches
+  // methods automatically whenever the objective isn't symbolically
+  // differentiable.
+  let symbolic_works = (0..n).all(|i| eval_at(&grad_exprs[i], &x).is_ok())
+    && (0..n).all(|i| (0..n).all(|j| eval_at(&hess_exprs[i][j], &x).is_ok()));
+
   // Pre-flight: if f doesn't reduce to a real number at the starting
   // point (e.g. contains an unbound symbol like phi[x]), emit
   // {func_name}::nrnum and return the call unevaluated. Matches
@@ -10459,7 +10609,27 @@ pub fn find_minimum_ast(
   let max_iter = 200;
   let tol = 1e-15;
 
-  if n == 1 {
+  if !symbolic_works {
+    // `f` isn't symbolically differentiable — most commonly a call to a
+    // `_?NumericQ`-guarded user function, the standard idiom for a
+    // least-squares objective built from `NDSolve`/`ReplaceAll` that
+    // intentionally blocks symbolic differentiation (`differentiate_expr`
+    // then falls back to an unevaluated `Derivative[…][…]` form, which
+    // never reduces to a real number). A finite-difference gradient would
+    // amplify whatever numerical noise a black-box objective like that
+    // carries (e.g. `NDSolve`'s own fixed-step accuracy) into a wild
+    // Newton step; Nelder–Mead's derivative-free simplex search is the
+    // same fallback Wolfram itself uses once symbolic differentiation
+    // isn't available, and is far more robust to that noise. A failed
+    // trial evaluation (`f` erroring at some wild point) is scored as
+    // +infinity rather than aborting the search.
+    let signed_eval_clamped = |point: &[f64]| -> f64 {
+      let mut p = point.to_vec();
+      clamp(&mut p);
+      eval_at(f, &p).map_or(f64::INFINITY, |v| v * sign)
+    };
+    x = nelder_mead_minimize(&signed_eval_clamped, &clamp, &x, max_iter);
+  } else if n == 1 {
     // Single variable: damped Newton's method on the derivative
     // Uses line search to ensure we actually decrease/increase the function
     for _ in 0..max_iter {

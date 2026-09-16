@@ -6389,6 +6389,72 @@ mod find_minimum {
     .unwrap();
     assert_eq!(result, "{4., {x -> 1., y -> 2.}}");
   }
+
+  #[test]
+  fn each_variable_spec_as_its_own_trailing_argument() {
+    // Wolfram accepts `FindMinimum[f, {x, x0}, {y, y0}]` as an alternate
+    // spelling of the combined-list form `FindMinimum[f, {{x, x0}, {y,
+    // y0}}]`; each variable spec is its own positional argument instead
+    // of being wrapped together. Previously only `args[1]` was read for
+    // variable specs, so `y` stayed completely unbound here and the
+    // trailing spec was silently treated as an (unrecognised) option.
+    clear_state();
+    let result =
+      interpret("FindMinimum[(x - 1)^2 + (y - 2)^2, {x, 0}, {y, 0}]").unwrap();
+    assert_eq!(result, "{0., {x -> 1., y -> 2.}}");
+  }
+
+  #[test]
+  fn each_variable_spec_as_its_own_trailing_argument_with_options() {
+    // Trailing options after every variable spec argument still parse
+    // as options rather than being mistaken for one more variable spec.
+    clear_state();
+    let result = interpret(
+      "FindMinimum[(x - 1)^2 + (y - 2)^2, {x, 0}, {y, 0}, MaxIterations -> 50]",
+    )
+    .unwrap();
+    assert_eq!(result, "{0., {x -> 1., y -> 2.}}");
+  }
+
+  #[test]
+  fn maximize_with_each_variable_spec_as_its_own_trailing_argument() {
+    clear_state();
+    let result =
+      interpret("FindMaximum[-((x - 1)^2 + (y - 2)^2), {x, 0}, {y, 0}]")
+        .unwrap();
+    assert_eq!(result, "{0., {x -> 1., y -> 2.}}");
+  }
+
+  #[test]
+  fn numeric_only_objective_falls_back_to_derivative_free_search() {
+    // `f[k_?NumericQ, a_?NumericQ] := …` is the standard idiom for an
+    // objective that must not be differentiated symbolically (e.g. one
+    // built from `NDSolve`/`ReplaceAll`, as in a least-squares fit).
+    // `differentiate_expr` then falls back to an unevaluated
+    // `Derivative[…][…]` form that never reduces to a real number, which
+    // used to make the whole search abort with
+    // "Cannot evaluate expression numerically" instead of falling back to
+    // a derivative-free method the way Wolfram does.
+    clear_state();
+    let result = interpret(
+      "myFindMinObjective[k_?NumericQ, a_?NumericQ] := (k - 2)^2 + (a - 3)^2; \
+       Round[{#[[1]], {k, a} /. #[[2]]} &[\
+         FindMinimum[myFindMinObjective[k, a], {k, 0}, {a, 0}]], 10^-6]",
+    )
+    .unwrap();
+    assert_eq!(result, "{0, {2, 3}}");
+  }
+
+  #[test]
+  fn numeric_only_objective_single_variable_falls_back_too() {
+    clear_state();
+    let result = interpret(
+      "myFindMaxObjective[k_?NumericQ] := -((k - 4)^2); \
+       FindMaximum[myFindMaxObjective[k], {k, 0}]",
+    )
+    .unwrap();
+    assert_eq!(result, "{0., {k -> 4.}}");
+  }
 }
 
 mod dt {
