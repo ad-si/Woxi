@@ -26697,4 +26697,45 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k1$$ = 1}, \"\\[Ellipsis]\"]"], "Ou
       "a picture result must not also carry a text fallback"
     );
   }
+
+  #[test]
+  fn setter_control_type_forces_the_bar_regardless_of_choice_count() {
+    // Regression: the `ControlType` reference page documents "Setter or
+    // SetterBar" (and "RadioButton or RadioButtonBar") as interchangeable
+    // settings, but only the "…Bar" spelling forced the full row of
+    // buttons here — the bare `Setter`/`RadioButton` spelling fell through
+    // to the automatic SetterBar/PopupMenu choice-count-and-width heuristic
+    // (`renders_as_setter_bar`), which a many-choice, long-label spec like
+    // this one (independently written here, not copied from any specific
+    // Demonstration) flips to a dropdown even though the author explicitly
+    // asked for a bar of buttons.
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[mood, \
+       {{mood, \"curious\", \"mood\"}, \
+        {\"curious\", \"delighted\", \"skeptical\", \"astonished\", \
+         \"nostalgic\", \"triumphant\", \"wistful\"}, \
+        ControlType -> Setter}]",
+    )
+    .unwrap();
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("the many-choice Setter Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    match &state.controls[0] {
+      manipulate::ControlState::Discrete {
+        setter_bar, popup, ..
+      } => {
+        assert!(
+          *setter_bar,
+          "an explicit ControlType -> Setter must force the button row \
+           just like SetterBar does, however many choices there are"
+        );
+        assert!(!*popup, "Setter must never render as a dropdown");
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+  }
 }
