@@ -478,22 +478,31 @@ fn parse_dms_string(s: &str) -> Option<AngleVal> {
 /// DMSString[angle] — format an angle in degrees as a `d°m's"` string.
 /// A `{lat, lon}` pair (or GeoPosition) formats both with N/S / E/W
 /// suffixes joined by two spaces; a `{d, m, s}` triple is a DMS value;
-/// DMS strings parse and re-format. The optional second argument is the
-/// number of decimals on the seconds (default 3).
+/// DMS strings parse and re-format. The optional second argument is
+/// either the number of decimals on the seconds (default 3) or a
+/// two-character direction spec (e.g. `"NS"`, `"EW"`) that appends a
+/// hemisphere letter to a scalar angle instead of dropping its sign.
 pub fn dms_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || Ok(unevaluated("DMSString", args));
   if args.is_empty() || args.len() > 2 {
     return unevaluated();
   }
 
-  let prec: u32 = match args.get(1) {
-    None => 3,
-    Some(Expr::Integer(n)) if (0..=27).contains(n) => *n as u32,
+  let mut prec: u32 = 3;
+  let mut hemi: Option<(char, char)> = None;
+  match args.get(1) {
+    None => {}
+    Some(Expr::Integer(n)) if (0..=27).contains(n) => prec = *n as u32,
     Some(Expr::String(s)) => {
-      crate::emit_message(&format!(
-        "DMSString::form: Invalid formatting specification {s}."
-      ));
-      return unevaluated();
+      let chars: Vec<char> = s.chars().collect();
+      if let [pos, neg] = chars[..] {
+        hemi = Some((pos, neg));
+      } else {
+        crate::emit_message(&format!(
+          "DMSString::form: Invalid formatting specification {s}."
+        ));
+        return unevaluated();
+      }
     }
     Some(_) => {
       crate::emit_message(&format!(
@@ -501,6 +510,20 @@ pub fn dms_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         expr_to_output(&args[0])
       ));
       return unevaluated();
+    }
+  }
+
+  // A scalar angle: normally just the absolute value (Wolfram drops the
+  // sign entirely rather than showing a leading minus), or, when a
+  // direction spec was given, the absolute value plus a hemisphere
+  // letter chosen by sign (positive/zero -> pos, negative -> neg).
+  let format_scalar = |v: &AngleVal| -> String {
+    match hemi {
+      Some((pos, neg)) => {
+        let c = if v.is_negative() { neg } else { pos };
+        format!("{}{}", format_dms(&v.abs(), prec), c)
+      }
+      None => format_dms(&v.abs(), prec),
     }
   };
 
@@ -517,7 +540,7 @@ pub fn dms_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match &args[0] {
     Expr::String(s) => {
       if let Some(v) = parse_dms_string(s) {
-        Ok(Expr::String(format_dms(&v.abs(), prec)))
+        Ok(Expr::String(format_scalar(&v)))
       } else {
         crate::emit_message(&format!(
           "DMSString::str: {s} cannot be interpreted as a degree-minute-second string specification."
@@ -529,10 +552,9 @@ pub fn dms_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let vals: Option<Vec<AngleVal>> = items.iter().map(to_angle).collect();
       match vals.as_deref() {
         Some([lat, lon]) => Ok(Expr::String(format_pair(lat, lon))),
-        Some([d, m, s]) => Ok(Expr::String(format_dms(
-          &AngleVal::from_dms(d, m, s).abs(),
-          prec,
-        ))),
+        Some([d, m, s]) => {
+          Ok(Expr::String(format_scalar(&AngleVal::from_dms(d, m, s))))
+        }
         _ => {
           crate::emit_message(&format!(
             "DMSString::dms: {} cannot be interpreted as a degree-minute-second list specification.",
@@ -560,7 +582,7 @@ pub fn dms_string_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     other => {
       if let Some(v) = to_angle(other) {
-        Ok(Expr::String(format_dms(&v.abs(), prec)))
+        Ok(Expr::String(format_scalar(&v)))
       } else {
         crate::emit_message(&format!(
           "DMSString::ang: {} cannot be interpreted as a degree-minute-second angle specification.",

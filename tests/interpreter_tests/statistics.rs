@@ -8778,6 +8778,41 @@ mod dms_string_tests {
     );
   }
 
+  // A two-character direction spec (e.g. "NS", "EW") appends a
+  // hemisphere letter chosen by sign instead of dropping the sign, for a
+  // scalar angle, a {d, m, s} triple or a DMS string.
+  #[test]
+  fn direction_spec_argument() {
+    assert_eq!(
+      interpret(r#"DMSString[30.264, "NS"]"#).unwrap(),
+      "30°15'50.400\"N"
+    );
+    assert_eq!(
+      interpret(r#"DMSString[-30.264, "NS"]"#).unwrap(),
+      "30°15'50.400\"S"
+    );
+    assert_eq!(
+      interpret(r#"DMSString[6.5, "EW"]"#).unwrap(),
+      "6°30'0.000\"E"
+    );
+    assert_eq!(
+      interpret(r#"DMSString[-6.5, "EW"]"#).unwrap(),
+      "6°30'0.000\"W"
+    );
+    assert_eq!(
+      interpret(r#"DMSString[{30, 15, 50.5}, "NS"]"#).unwrap(),
+      "30°15'50.500\"N"
+    );
+    assert_eq!(
+      interpret(r#"DMSString["30°15'50\"", "NS"]"#).unwrap(),
+      "30°15'50\"N"
+    );
+    assert_eq!(
+      interpret(r#"DMSString["-30°15'50\"", "EW"]"#).unwrap(),
+      "30°15'50\"W"
+    );
+  }
+
   // Invalid inputs echo the call (each with its own message tag).
   #[test]
   fn invalid_inputs() {
