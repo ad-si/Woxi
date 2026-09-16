@@ -6453,6 +6453,16 @@ fn evaluate_at_t_theta(
   let sub1 = substitute_var(body, tvar, &Expr::Real(tval));
   let sub2 = substitute_var(&sub1, theta_var, &Expr::Real(theta_val));
   let result = evaluate_expr_to_expr(&sub2).ok()?;
+  if let Some(v) = try_eval_to_f64(&result) {
+    return Some(v);
+  }
+  // The body may reference a variable (e.g. `r` holding a `SphericalHarmonicY`
+  // combination) that only resolved to a function of tvar/theta_var during
+  // evaluation — after the substitution above already ran. Substitute into
+  // the evaluated form and evaluate once more.
+  let sub1 = substitute_var(&result, tvar, &Expr::Real(tval));
+  let sub2 = substitute_var(&sub1, theta_var, &Expr::Real(theta_val));
+  let result = evaluate_expr_to_expr(&sub2).ok()?;
   try_eval_to_f64(&result)
 }
 
@@ -8486,6 +8496,12 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let body = &args[0];
+  // One or more radial functions: `SphericalPlot3D[{r1, r2, …}, …]` draws
+  // each as its own surface, styled in turn by `PlotStyle`.
+  let bodies: Vec<&Expr> = match body {
+    Expr::List(items) => items.iter().collect(),
+    _ => vec![body],
+  };
 
   // Parse theta iterator {theta, t0, t1}
   let (theta_var, theta_min, theta_max) =
@@ -8511,6 +8527,7 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `BoundaryStyle -> style`: draw the boundary edges of the (possibly
   // region-clipped) surface with this color.
   let mut boundary_color: Option<(u8, u8, u8)> = None;
+  let mut plot_style_expr: Option<&Expr> = None;
 
   for opt in &args[3..] {
     if let Expr::Rule {
@@ -8519,6 +8536,9 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } = opt
     {
       match pattern.as_ref() {
+        Expr::Identifier(name) if name == "PlotStyle" => {
+          plot_style_expr = Some(replacement.as_ref());
+        }
         Expr::Identifier(name) if name == "ImageSize" => {
           if let Some((w, h, fw)) =
             parse_image_size(replacement, DEFAULT_SIZE, DEFAULT_SIZE)
@@ -8584,51 +8604,11 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let theta_range = theta_max - theta_min;
   let phi_range = phi_max - phi_min;
 
-  // Evaluate the surface point at arbitrary (theta, phi) parameters.
-  let surface_at = |theta: f64, phi: f64| -> Option<(Point3D, f64)> {
-    let r = evaluate_at_t_theta(body, &theta_var, theta, &phi_var, phi)?;
-    if !r.is_finite() {
-      return None;
-    }
-    let p = Point3D {
-      x: r * theta.sin() * phi.cos(),
-      y: r * theta.sin() * phi.sin(),
-      z: r * theta.cos(),
-    };
-    (p.x.is_finite() && p.y.is_finite() && p.z.is_finite()).then_some((p, r))
-  };
-
-  // Whether the surface point at (theta, phi) exists and satisfies the
-  // region function (which receives x, y, z, theta, phi, r as in Wolfram).
-  let inside_at = |theta: f64, phi: f64| -> bool {
-    let Some((p, r)) = surface_at(theta, phi) else {
-      return false;
-    };
-    let Some(region) = &region_fn else {
-      return true;
-    };
-    let call = Expr::CurriedCall {
-      func: Box::new(region.clone()),
-      args: vec![
-        Expr::Real(p.x),
-        Expr::Real(p.y),
-        Expr::Real(p.z),
-        Expr::Real(theta),
-        Expr::Real(phi),
-        Expr::Real(r),
-      ],
-    };
-    matches!(
-      evaluate_expr_to_expr(&call),
-      Ok(Expr::Identifier(ref s)) if s == "True"
-    )
-  };
-
-  // Sample the function on a theta x phi grid
-  let mut grid_pts: Vec<Vec<Option<Point3D>>> =
-    vec![vec![None; n_phi + 1]; n_theta + 1];
-  let mut grid_inside: Vec<Vec<bool>> =
-    vec![vec![false; n_phi + 1]; n_theta + 1];
+  // `PlotStyle`, one style per surface (cycling); empty means it was not
+  // given, so the height-based default colouring is used unchanged.
+  let plot_styles: Vec<StyleState3D> = plot_style_expr
+    .map(|e| parse_plot_style_3d(e, bodies.len()))
+    .unwrap_or_default();
 
   let param_at = |i: usize, j: usize| -> (f64, f64) {
     (
@@ -8637,232 +8617,328 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     )
   };
 
-  for i in 0..=n_theta {
-    for j in 0..=n_phi {
-      let (theta, phi) = param_at(i, j);
-      if let Some((p, _)) = surface_at(theta, phi) {
-        grid_pts[i][j] = Some(p);
-        grid_inside[i][j] = if region_fn.is_some() {
-          inside_at(theta, phi)
-        } else {
-          true
-        };
+  // Build each surface's world-space triangles independently, clipping
+  // cells that cross the region boundary.
+  let mut surface_tris: Vec<Vec<[Point3D; 3]>> = Vec::with_capacity(bodies.len());
+  for &surface_body in &bodies {
+    // Evaluate the surface point at arbitrary (theta, phi) parameters.
+    let surface_at = |theta: f64, phi: f64| -> Option<(Point3D, f64)> {
+      let r =
+        evaluate_at_t_theta(surface_body, &theta_var, theta, &phi_var, phi)?;
+      if !r.is_finite() {
+        return None;
       }
-    }
-  }
-
-  // Clip a triangle (given in parameter space with per-vertex inside
-  // flags) against the region boundary, bisecting crossing edges so cut
-  // points land on the boundary. Returns the surviving polygon.
-  let clip_triangle = |verts: [((f64, f64), bool); 3]| -> Vec<(f64, f64)> {
-    if verts.iter().all(|(_, inside)| *inside) {
-      return verts.iter().map(|(p, _)| *p).collect();
-    }
-    if verts.iter().all(|(_, inside)| !inside) {
-      return Vec::new();
-    }
-    let bisect = |a: (f64, f64), b: (f64, f64)| -> (f64, f64) {
-      // `a` inside, `b` outside; converge onto the boundary.
-      let (mut lo, mut hi) = (a, b);
-      for _ in 0..24 {
-        let mid = (f64::midpoint(lo.0, hi.0), f64::midpoint(lo.1, hi.1));
-        if inside_at(mid.0, mid.1) {
-          lo = mid;
-        } else {
-          hi = mid;
-        }
-      }
-      (f64::midpoint(lo.0, hi.0), f64::midpoint(lo.1, hi.1))
+      let p = Point3D {
+        x: r * theta.sin() * phi.cos(),
+        y: r * theta.sin() * phi.sin(),
+        z: r * theta.cos(),
+      };
+      (p.x.is_finite() && p.y.is_finite() && p.z.is_finite()).then_some((p, r))
     };
-    let mut out = Vec::new();
-    for k in 0..3 {
-      let (a, a_in) = verts[k];
-      let (b, b_in) = verts[(k + 1) % 3];
-      if a_in {
-        out.push(a);
-      }
-      if a_in != b_in {
-        out.push(if a_in { bisect(a, b) } else { bisect(b, a) });
+
+    // Whether the surface point at (theta, phi) exists and satisfies the
+    // region function (which receives x, y, z, theta, phi, r as in Wolfram).
+    let inside_at = |theta: f64, phi: f64| -> bool {
+      let Some((p, r)) = surface_at(theta, phi) else {
+        return false;
+      };
+      let Some(region) = &region_fn else {
+        return true;
+      };
+      let call = Expr::CurriedCall {
+        func: Box::new(region.clone()),
+        args: vec![
+          Expr::Real(p.x),
+          Expr::Real(p.y),
+          Expr::Real(p.z),
+          Expr::Real(theta),
+          Expr::Real(phi),
+          Expr::Real(r),
+        ],
+      };
+      matches!(
+        evaluate_expr_to_expr(&call),
+        Ok(Expr::Identifier(ref s)) if s == "True"
+      )
+    };
+
+    // Sample the function on a theta x phi grid
+    let mut grid_pts: Vec<Vec<Option<Point3D>>> =
+      vec![vec![None; n_phi + 1]; n_theta + 1];
+    let mut grid_inside: Vec<Vec<bool>> =
+      vec![vec![false; n_phi + 1]; n_theta + 1];
+
+    for i in 0..=n_theta {
+      for j in 0..=n_phi {
+        let (theta, phi) = param_at(i, j);
+        if let Some((p, _)) = surface_at(theta, phi) {
+          grid_pts[i][j] = Some(p);
+          grid_inside[i][j] = if region_fn.is_some() {
+            inside_at(theta, phi)
+          } else {
+            true
+          };
+        }
       }
     }
-    out
-  };
 
-  // Build the world-space triangles, clipping cells that cross the
-  // region boundary.
-  let mut world_tris: Vec<[Point3D; 3]> = Vec::new();
-  for i in 0..n_theta {
-    for j in 0..n_phi {
-      // The cell's two triangles in grid corners:
-      // (i,j), (i+1,j), (i,j+1) and (i+1,j+1), (i,j+1), (i+1,j).
-      for corner_set in [
-        [(i, j), (i + 1, j), (i, j + 1)],
-        [(i + 1, j + 1), (i, j + 1), (i + 1, j)],
-      ] {
-        if corner_set
-          .iter()
-          .any(|&(ci, cj)| grid_pts[ci][cj].is_none())
-        {
-          continue;
+    // Clip a triangle (given in parameter space with per-vertex inside
+    // flags) against the region boundary, bisecting crossing edges so cut
+    // points land on the boundary. Returns the surviving polygon.
+    let clip_triangle = |verts: [((f64, f64), bool); 3]| -> Vec<(f64, f64)> {
+      if verts.iter().all(|(_, inside)| *inside) {
+        return verts.iter().map(|(p, _)| *p).collect();
+      }
+      if verts.iter().all(|(_, inside)| !inside) {
+        return Vec::new();
+      }
+      let bisect = |a: (f64, f64), b: (f64, f64)| -> (f64, f64) {
+        // `a` inside, `b` outside; converge onto the boundary.
+        let (mut lo, mut hi) = (a, b);
+        for _ in 0..24 {
+          let mid = (f64::midpoint(lo.0, hi.0), f64::midpoint(lo.1, hi.1));
+          if inside_at(mid.0, mid.1) {
+            lo = mid;
+          } else {
+            hi = mid;
+          }
         }
-        let verts =
-          corner_set.map(|(ci, cj)| (param_at(ci, cj), grid_inside[ci][cj]));
-        let polygon = if region_fn.is_some() {
-          clip_triangle(verts)
-        } else {
-          verts.iter().map(|(p, _)| *p).collect()
-        };
-        if polygon.len() < 3 {
-          continue;
+        (f64::midpoint(lo.0, hi.0), f64::midpoint(lo.1, hi.1))
+      };
+      let mut out = Vec::new();
+      for k in 0..3 {
+        let (a, a_in) = verts[k];
+        let (b, b_in) = verts[(k + 1) % 3];
+        if a_in {
+          out.push(a);
         }
-        // Fan-triangulate the clipped polygon back into world space.
-        let points: Vec<Point3D> = polygon
-          .iter()
-          .filter_map(|&(th, ph)| surface_at(th, ph).map(|(p, _)| p))
-          .collect();
-        if points.len() < 3 {
-          continue;
+        if a_in != b_in {
+          out.push(if a_in { bisect(a, b) } else { bisect(b, a) });
         }
-        for k in 1..points.len() - 1 {
-          let (a, b, c) = (points[0], points[k], points[k + 1]);
-          // Skip degenerate slivers (e.g. the collapsed pole edge).
-          let n = triangle_normal(a, b, c);
-          let ab =
-            ((b.x - a.x).powi(2) + (b.y - a.y).powi(2) + (b.z - a.z).powi(2))
-              .sqrt();
-          let ac =
-            ((c.x - a.x).powi(2) + (c.y - a.y).powi(2) + (c.z - a.z).powi(2))
-              .sqrt();
-          let area2 = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
-          if area2 < 1e-12 * (ab * ac).max(1e-300) {
+      }
+      out
+    };
+
+    let mut tris: Vec<[Point3D; 3]> = Vec::new();
+    for i in 0..n_theta {
+      for j in 0..n_phi {
+        // The cell's two triangles in grid corners:
+        // (i,j), (i+1,j), (i,j+1) and (i+1,j+1), (i,j+1), (i+1,j).
+        for corner_set in [
+          [(i, j), (i + 1, j), (i, j + 1)],
+          [(i + 1, j + 1), (i, j + 1), (i + 1, j)],
+        ] {
+          if corner_set
+            .iter()
+            .any(|&(ci, cj)| grid_pts[ci][cj].is_none())
+          {
             continue;
           }
-          world_tris.push([a, b, c]);
+          let verts =
+            corner_set.map(|(ci, cj)| (param_at(ci, cj), grid_inside[ci][cj]));
+          let polygon = if region_fn.is_some() {
+            clip_triangle(verts)
+          } else {
+            verts.iter().map(|(p, _)| *p).collect()
+          };
+          if polygon.len() < 3 {
+            continue;
+          }
+          // Fan-triangulate the clipped polygon back into world space.
+          let points: Vec<Point3D> = polygon
+            .iter()
+            .filter_map(|&(th, ph)| surface_at(th, ph).map(|(p, _)| p))
+            .collect();
+          if points.len() < 3 {
+            continue;
+          }
+          for k in 1..points.len() - 1 {
+            let (a, b, c) = (points[0], points[k], points[k + 1]);
+            // Skip degenerate slivers (e.g. the collapsed pole edge).
+            let n = triangle_normal(a, b, c);
+            let ab = ((b.x - a.x).powi(2)
+              + (b.y - a.y).powi(2)
+              + (b.z - a.z).powi(2))
+            .sqrt();
+            let ac = ((c.x - a.x).powi(2)
+              + (c.y - a.y).powi(2)
+              + (c.z - a.z).powi(2))
+            .sqrt();
+            let area2 = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
+            if area2 < 1e-12 * (ab * ac).max(1e-300) {
+              continue;
+            }
+            tris.push([a, b, c]);
+          }
         }
       }
     }
+    surface_tris.push(tris);
   }
 
-  if world_tris.is_empty() {
+  if surface_tris.iter().all(|tris| tris.is_empty()) {
     return Err(InterpreterError::EvaluationError(
       "SphericalPlot3D: no renderable triangles".into(),
     ));
   }
 
-  // ── Symbolic structure: GraphicsComplex[points, {Polygon[…], …}] ──
-  // Deduplicate shared vertices into an indexed coordinate list.
-  let mut point_index: std::collections::HashMap<(i64, i64, i64), usize> =
-    std::collections::HashMap::new();
-  let mut points: Vec<Point3D> = Vec::new();
-  let mut index_of = |p: Point3D| -> usize {
-    let key = (
-      (p.x * 1e9).round() as i64,
-      (p.y * 1e9).round() as i64,
-      (p.z * 1e9).round() as i64,
-    );
-    *point_index.entry(key).or_insert_with(|| {
-      points.push(p);
-      points.len() - 1
-    })
-  };
-  let mut tri_indices: Vec<[usize; 3]> = Vec::new();
-  for tri in &world_tris {
-    tri_indices.push([index_of(tri[0]), index_of(tri[1]), index_of(tri[2])]);
-  }
-
-  // Boundary edges (used by BoundaryStyle): edges belonging to exactly
-  // one triangle of the mesh.
-  let mut edge_count: std::collections::HashMap<(usize, usize), usize> =
-    std::collections::HashMap::new();
-  for tri in &tri_indices {
-    for k in 0..3 {
-      let (a, b) = (tri[k], tri[(k + 1) % 3]);
-      if a != b {
-        *edge_count.entry((a.min(b), a.max(b))).or_insert(0) += 1;
+  // ── Symbolic structure: one GraphicsComplex[points, {Polygon[…], …}]
+  // per surface ──
+  let complexes: Vec<Expr> = surface_tris
+    .iter()
+    .enumerate()
+    .filter(|(_, tris)| !tris.is_empty())
+    .map(|(surface_idx, tris)| {
+      // Deduplicate shared vertices into an indexed coordinate list.
+      let mut point_index: std::collections::HashMap<(i64, i64, i64), usize> =
+        std::collections::HashMap::new();
+      let mut points: Vec<Point3D> = Vec::new();
+      let mut index_of = |p: Point3D| -> usize {
+        let key = (
+          (p.x * 1e9).round() as i64,
+          (p.y * 1e9).round() as i64,
+          (p.z * 1e9).round() as i64,
+        );
+        *point_index.entry(key).or_insert_with(|| {
+          points.push(p);
+          points.len() - 1
+        })
+      };
+      let mut tri_indices: Vec<[usize; 3]> = Vec::new();
+      for tri in tris {
+        tri_indices
+          .push([index_of(tri[0]), index_of(tri[1]), index_of(tri[2])]);
       }
-    }
-  }
-  let mut boundary_edges: Vec<(usize, usize)> = edge_count
-    .iter()
-    .filter(|&(_, &count)| count == 1)
-    .map(|(&edge, _)| edge)
-    .collect();
-  boundary_edges.sort_unstable();
 
-  let point_exprs: Vec<Expr> = points
-    .iter()
-    .map(|p| {
-      Expr::List(vec![Expr::Real(p.x), Expr::Real(p.y), Expr::Real(p.z)].into())
-    })
-    .collect();
-  let polygon_expr = Expr::FunctionCall {
-    name: "Polygon".to_string(),
-    args: vec![Expr::List(
-      tri_indices
+      // Boundary edges (used by BoundaryStyle): edges belonging to exactly
+      // one triangle of the mesh.
+      let mut edge_count: std::collections::HashMap<(usize, usize), usize> =
+        std::collections::HashMap::new();
+      for tri in &tri_indices {
+        for k in 0..3 {
+          let (a, b) = (tri[k], tri[(k + 1) % 3]);
+          if a != b {
+            *edge_count.entry((a.min(b), a.max(b))).or_insert(0) += 1;
+          }
+        }
+      }
+      let mut boundary_edges: Vec<(usize, usize)> = edge_count
         .iter()
-        .map(|tri| {
+        .filter(|&(_, &count)| count == 1)
+        .map(|(&edge, _)| edge)
+        .collect();
+      boundary_edges.sort_unstable();
+
+      let point_exprs: Vec<Expr> = points
+        .iter()
+        .map(|p| {
           Expr::List(
-            tri
-              .iter()
-              .map(|&idx| Expr::Integer(idx as i128 + 1))
-              .collect::<Vec<_>>()
-              .into(),
+            vec![Expr::Real(p.x), Expr::Real(p.y), Expr::Real(p.z)].into(),
           )
         })
-        .collect::<Vec<_>>()
+        .collect();
+      let polygon_expr = Expr::FunctionCall {
+        name: "Polygon".to_string(),
+        args: vec![Expr::List(
+          tri_indices
+            .iter()
+            .map(|tri| {
+              Expr::List(
+                tri
+                  .iter()
+                  .map(|&idx| Expr::Integer(idx as i128 + 1))
+                  .collect::<Vec<_>>()
+                  .into(),
+              )
+            })
+            .collect::<Vec<_>>()
+            .into(),
+        )]
         .into(),
-    )]
-    .into(),
-  };
-  let mut gc_content = vec![polygon_expr];
-  if let Some((r, g, b)) = boundary_color
-    && !boundary_edges.is_empty()
-  {
-    let line_expr = Expr::FunctionCall {
-      name: "Line".to_string(),
-      args: vec![Expr::List(
-        boundary_edges
-          .iter()
-          .map(|&(a, b)| {
-            Expr::List(
-              vec![Expr::Integer(a as i128 + 1), Expr::Integer(b as i128 + 1)]
+      };
+      // A `PlotStyle` colour wraps the whole surface's polygons; with no
+      // style given this is the bare polygon list, unchanged from before
+      // multi-surface support existed.
+      let mut gc_content =
+        match plot_style_for_surface(&plot_styles, surface_idx)
+          .and_then(|s| s.color)
+        {
+          Some((r, g, b)) => vec![Expr::List(
+            vec![
+              Expr::FunctionCall {
+                name: "RGBColor".to_string(),
+                args: vec![
+                  Expr::Real(r as f64 / 255.0),
+                  Expr::Real(g as f64 / 255.0),
+                  Expr::Real(b as f64 / 255.0),
+                ]
                 .into(),
-            )
-          })
-          .collect::<Vec<_>>()
+              },
+              polygon_expr,
+            ]
+            .into(),
+          )],
+          None => vec![polygon_expr],
+        };
+      if let Some((r, g, b)) = boundary_color
+        && !boundary_edges.is_empty()
+      {
+        let line_expr = Expr::FunctionCall {
+          name: "Line".to_string(),
+          args: vec![Expr::List(
+            boundary_edges
+              .iter()
+              .map(|&(a, b)| {
+                Expr::List(
+                  vec![
+                    Expr::Integer(a as i128 + 1),
+                    Expr::Integer(b as i128 + 1),
+                  ]
+                  .into(),
+                )
+              })
+              .collect::<Vec<_>>()
+              .into(),
+          )]
           .into(),
-      )]
-      .into(),
-    };
-    let color_expr = Expr::FunctionCall {
-      name: "RGBColor".to_string(),
-      args: vec![
-        Expr::Real(r as f64 / 255.0),
-        Expr::Real(g as f64 / 255.0),
-        Expr::Real(b as f64 / 255.0),
-      ]
-      .into(),
-    };
-    gc_content.push(Expr::List(vec![color_expr, line_expr].into()));
-  }
-  let graphics_complex = Expr::FunctionCall {
-    name: "GraphicsComplex".to_string(),
-    args: vec![
-      Expr::List(point_exprs.into()),
-      Expr::List(gc_content.into()),
-    ]
-    .into(),
+        };
+        let color_expr = Expr::FunctionCall {
+          name: "RGBColor".to_string(),
+          args: vec![
+            Expr::Real(r as f64 / 255.0),
+            Expr::Real(g as f64 / 255.0),
+            Expr::Real(b as f64 / 255.0),
+          ]
+          .into(),
+        };
+        gc_content.push(Expr::List(vec![color_expr, line_expr].into()));
+      }
+      Expr::FunctionCall {
+        name: "GraphicsComplex".to_string(),
+        args: vec![
+          Expr::List(point_exprs.into()),
+          Expr::List(gc_content.into()),
+        ]
+        .into(),
+      }
+    })
+    .collect();
+
+  let content = if complexes.len() == 1 {
+    complexes.into_iter().next().expect("one complex")
+  } else {
+    Expr::List(complexes.into())
   };
   let structure = Expr::FunctionCall {
     name: "Graphics3D".to_string(),
-    args: std::iter::once(graphics_complex)
+    args: std::iter::once(content)
       .chain(args[3..].iter().cloned())
       .collect::<Vec<_>>()
       .into(),
   };
 
   // ── Standalone rendering (the plot's own SVG) ──
-  // Find coordinate ranges
+  // Find coordinate ranges across every surface
   let mut x_min = f64::INFINITY;
   let mut x_max = f64::NEG_INFINITY;
   let mut y_min = f64::INFINITY;
@@ -8870,14 +8946,16 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut z_min = f64::INFINITY;
   let mut z_max = f64::NEG_INFINITY;
 
-  for tri in &world_tris {
-    for p in tri {
-      x_min = x_min.min(p.x);
-      x_max = x_max.max(p.x);
-      y_min = y_min.min(p.y);
-      y_max = y_max.max(p.y);
-      z_min = z_min.min(p.z);
-      z_max = z_max.max(p.z);
+  for tris in &surface_tris {
+    for tri in tris {
+      for p in tri {
+        x_min = x_min.min(p.x);
+        x_max = x_max.max(p.x);
+        y_min = y_min.min(p.y);
+        y_max = y_max.max(p.y);
+        z_min = z_min.min(p.z);
+        z_max = z_max.max(p.z);
+      }
     }
   }
 
@@ -8892,6 +8970,13 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let z_range_v = (z_max - z_min).max(1e-15);
 
   let camera = Camera::default();
+  // Direction from the scene towards the viewer, used to place a
+  // `Specularity` highlight from `PlotStyle`.
+  let view_dir = {
+    let (sa, ca) = camera.azimuth.sin_cos();
+    let (se, ce) = camera.elevation.sin_cos();
+    [ce * ca, ce * sa, se]
+  };
   let mut all_triangles: Vec<Triangle> = Vec::new();
 
   // Normalize a point to [-1,1] box
@@ -8903,37 +8988,40 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  for tri in &world_tris {
-    let [a, b, c] = *tri;
-    let na = normalize(a);
-    let nb = normalize(b);
-    let nc = normalize(c);
+  for (surface_idx, tris) in surface_tris.iter().enumerate() {
+    let style = plot_style_for_surface(&plot_styles, surface_idx);
+    for tri in tris {
+      let [a, b, c] = *tri;
+      let na = normalize(a);
+      let nb = normalize(b);
+      let nc = normalize(c);
 
-    let avg_z = ((a.z - z_min) / z_range_v
-      + (b.z - z_min) / z_range_v
-      + (c.z - z_min) / z_range_v)
-      / 3.0;
-    let base_color = height_color(avg_z);
-    let normal = triangle_normal(na, nb, nc);
-    let color = apply_lighting(base_color, normal);
+      let avg_z = ((a.z - z_min) / z_range_v
+        + (b.z - z_min) / z_range_v
+        + (c.z - z_min) / z_range_v)
+        / 3.0;
+      let default_color = height_color(avg_z);
+      let normal = triangle_normal(na, nb, nc);
+      let (color, opacity) = shade_facet(default_color, style, normal, view_dir);
 
-    let pa = project(na, &camera);
-    let pb = project(nb, &camera);
-    let pc = project(nc, &camera);
-    let center = Point3D {
-      x: (na.x + nb.x + nc.x) / 3.0,
-      y: (na.y + nb.y + nc.y) / 3.0,
-      z: (na.z + nb.z + nc.z) / 3.0,
-    };
+      let pa = project(na, &camera);
+      let pb = project(nb, &camera);
+      let pc = project(nc, &camera);
+      let center = Point3D {
+        x: (na.x + nb.x + nc.x) / 3.0,
+        y: (na.y + nb.y + nc.y) / 3.0,
+        z: (na.z + nb.z + nc.z) / 3.0,
+      };
 
-    all_triangles.push(Triangle {
-      boundary: [true; 3],
-      edge_color: None,
-      projected: [pa, pb, pc],
-      depth: depth(center, &camera),
-      color,
-      opacity: 1.0,
-    });
+      all_triangles.push(Triangle {
+        boundary: [true; 3],
+        edge_color: None,
+        projected: [pa, pb, pc],
+        depth: depth(center, &camera),
+        color,
+        opacity,
+      });
+    }
   }
 
   all_triangles.sort_by(|a, b| {

@@ -429,6 +429,19 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
       }
     }
     Expr::FunctionCall { name, args } => match name.as_str() {
+      // A machine `Complex[re, im]` whose imaginary part is exactly zero
+      // (the kind numeric cancellation leaves behind, e.g. from a Times of
+      // conjugate-paired terms) is a real number: samplers like `Plot3D`'s
+      // that call this to test a point's realness should accept it rather
+      // than reject every point because the arithmetic passed through C.
+      "Complex" if args.len() == 2 => {
+        let im = try_eval_to_f64(&args[1])?;
+        if im == 0.0 {
+          try_eval_to_f64(&args[0])
+        } else {
+          None
+        }
+      }
       "Rational" if args.len() == 2 => {
         // Prefer a bignum-aware ratio so huge exact rationals whose numerator
         // and denominator overflow f64 individually still convert correctly.
@@ -1321,8 +1334,47 @@ pub fn try_extract_complex_float(expr: &Expr) -> Option<(f64, f64)> {
       }
       Some(result)
     }
+    Expr::FunctionCall { name, args } if name == "Complex" && args.len() == 2 => {
+      Some((try_eval_to_f64(&args[0])?, try_eval_to_f64(&args[1])?))
+    }
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      let base = try_extract_complex_float(&args[0])?;
+      let exp = try_extract_complex_float(&args[1])?;
+      Some(complex_pow_float(base, exp))
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => {
+      let base = try_extract_complex_float(left)?;
+      let exp = try_extract_complex_float(right)?;
+      Some(complex_pow_float(base, exp))
+    }
     _ => None,
   }
+}
+
+/// Principal-branch complex power `base^exp`, both given as `(re, im)`
+/// pairs — the same convention Wolfram's `Power` uses. Lets
+/// [`try_extract_complex_float`] numericize an exact irrational factor
+/// like `Sqrt[2]` (a `Power[2, 1/2]` with a real base) alongside an
+/// inexact `Complex[…]` factor in the same product, e.g.
+/// `Sqrt[2] * (1. + 2. I)`.
+fn complex_pow_float(base: (f64, f64), exp: (f64, f64)) -> (f64, f64) {
+  let (br, bi) = base;
+  let (er, ei) = exp;
+  if br == 0.0 && bi == 0.0 {
+    return if er > 0.0 { (0.0, 0.0) } else { (f64::NAN, f64::NAN) };
+  }
+  let mag = br.hypot(bi);
+  let arg = bi.atan2(br);
+  let log_re = mag.ln();
+  let log_im = arg;
+  let t_re = er * log_re - ei * log_im;
+  let t_im = er * log_im + ei * log_re;
+  let scale = t_re.exp();
+  (scale * t_im.cos(), scale * t_im.sin())
 }
 
 /// Build a complex number expression from float parts.
