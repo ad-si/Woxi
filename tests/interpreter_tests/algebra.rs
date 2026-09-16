@@ -2806,6 +2806,22 @@ mod together {
     );
   }
 
+  // A denominator whose symbolic exponent is Times[Rational, symbol] (not
+  // a bare symbol) exercises split_exponent_coefficient's Times[Rational,
+  // ...] branch — a match-arm guard there once used the unstable
+  // `if_let_guard` feature and failed to build on current stable rustc.
+  #[test]
+  fn together_symbolic_rational_coefficient_exponent() {
+    assert_eq!(
+      interpret("Together[E^(-3*t/2) + E^(t/2)]").unwrap(),
+      "(1 + E^(2*t))/E^((3*t)/2)"
+    );
+    assert_eq!(
+      interpret("Together[x^(-3*t/2) + x^(t/2)]").unwrap(),
+      "(1 + x^(2*t))/x^((3*t)/2)"
+    );
+  }
+
   // Together divides out the polynomial GCD even when the denominator is
   // held in factored/content-extracted form, where string-level factor
   // matching can't see the shared factor ((1+x) divides -1+x^2). A

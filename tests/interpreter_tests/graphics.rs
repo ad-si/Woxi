@@ -3454,6 +3454,70 @@ mod plot3d {
       .unwrap();
       assert_eq!(result, "Graphics3D");
     }
+
+    // A list of radial functions used to error with "no renderable
+    // triangles" (the sampler only ever read the first function) and
+    // ignore PlotStyle entirely. Found via the "Visualizing Atomic
+    // Orbitals" Wolfram Demonstration, whose orbital lobes are drawn as
+    // SphericalPlot3D[{r, -r}, …, PlotStyle -> {colorA, colorB}].
+    mod multi_surface {
+      use super::*;
+
+      #[test]
+      fn list_of_functions_renders() {
+        assert_eq!(
+          interpret(
+            "Head[SphericalPlot3D[{Sin[theta], -Sin[theta]}, \
+             {theta, 0, Pi}, {phi, 0, 2 Pi}]]"
+          )
+          .unwrap(),
+          "Graphics3D"
+        );
+      }
+
+      // Each list item gets its own GraphicsComplex.
+      #[test]
+      fn list_of_functions_has_one_complex_per_surface() {
+        assert_eq!(
+          interpret(
+            "Length[SphericalPlot3D[{Sin[theta], -Sin[theta]}, \
+             {theta, 0, Pi}, {phi, 0, 2 Pi}]]"
+          )
+          .unwrap(),
+          "2"
+        );
+      }
+
+      #[test]
+      fn plotstyle_changes_the_rendered_fill() {
+        let baseline = export_svg(
+          "SphericalPlot3D[{Sin[theta], -Sin[theta]}, {theta, 0, Pi}, \
+           {phi, 0, 2 Pi}]",
+        );
+        let styled = export_svg(
+          "SphericalPlot3D[{Sin[theta], -Sin[theta]}, {theta, 0, Pi}, \
+           {phi, 0, 2 Pi}, PlotStyle -> {Red, Blue}]",
+        );
+        assert_ne!(baseline, styled, "PlotStyle must change the rendered SVG");
+      }
+
+      // A radial function that only resolves to a number after `θ`/`φ`
+      // are substituted through a *bound variable* — the shape
+      // SphericalHarmonicY-based orbitals take — used to sample as
+      // symbolic everywhere and error with "no renderable triangles"
+      // (the per-point substitution never reached inside the variable's
+      // stored value).
+      #[test]
+      fn body_referencing_a_bound_variable_renders() {
+        clear_state();
+        let result = interpret(
+          "r = Sin[theta]*Cos[phi]; \
+           Head[SphericalPlot3D[r, {theta, 0, Pi}, {phi, 0, 2 Pi}]]",
+        )
+        .unwrap();
+        assert_eq!(result, "Graphics3D");
+      }
+    }
   }
 
   mod list_point_plot3d {
