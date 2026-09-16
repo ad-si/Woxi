@@ -897,6 +897,12 @@ same platform rounding) and pin the magnitude with a scaled integer
 (`Round[1000*Cot[x]]`). See `reciprocal_trig_last_bit` in
 `tests/interpreter_tests/math/numeric.rs`.
 
+`Cot[-0.7]` is the third argument of that group: `-1.1872418321266796` on
+macOS against `-1.1872418321266793` here. Neither library is the accurate one
+throughout — against the correctly rounded value glibc wins at `Cot[0.3]`,
+macOS at `Cot[-0.7]` and `Coth[0.8]` — so a divergence here is the libm's
+last bit and never a formula to correct.
+
 
 ## Algebra and calculus
 
