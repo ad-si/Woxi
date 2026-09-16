@@ -9127,6 +9127,53 @@ ParametricPlot[f[t], {t, 0, 1}]",
       assert!(!svg.contains("NaN"));
     }
 
+    // Regression: a `{fx, fy}` curve whose component is a bare assigned
+    // symbol, or a `Part` extraction off a held result (e.g. a `DSolve`
+    // solution accessed as `sol[[1, 1, 2]]`), reached the sampler
+    // unevaluated and textually free of the plot variable — ParametricPlot
+    // holds its first argument. Substituting the plot variable into such a
+    // component is then a no-op, so every sample evaluated back to a still
+    // -symbolic expression and the curve rendered empty. `Plot` already
+    // resolved the equivalent one-function-body case by evaluating with the
+    // plot variable kept symbolic first (revealing it inside the symbol's
+    // definition); ParametricPlot needed the same fix per curve component.
+    // Found while checking a real Demonstration whose Manipulate plots a
+    // `DSolve` result this way.
+    #[test]
+    fn parametric_plot_curve_component_is_assigned_symbol() {
+      let svg =
+        export_svg("mySol = t^2; ParametricPlot[{mySol, t}, {t, 0, 5}]");
+      let longest = svg
+        .split("points=\"")
+        .skip(1)
+        .map(|s| s.split('"').next().unwrap_or("").len())
+        .max()
+        .unwrap_or(0);
+      assert!(
+        longest > 200,
+        "Expected a sampled curve polyline, longest was {longest}"
+      );
+    }
+
+    #[test]
+    fn parametric_plot_curve_component_is_part_extraction() {
+      let svg = export_svg(
+        "sol = DSolve[{x'[t] == y[t], y'[t] == -x[t], x[0] == 1, y[0] == 0}, \
+{x[t], y[t]}, t]; \
+ParametricPlot[{sol[[1, 1, 2]], sol[[1, 2, 2]]}, {t, 0, 6}]",
+      );
+      let longest = svg
+        .split("points=\"")
+        .skip(1)
+        .map(|s| s.split('"').next().unwrap_or("").len())
+        .max()
+        .unwrap_or(0);
+      assert!(
+        longest > 200,
+        "Expected a sampled curve polyline, longest was {longest}"
+      );
+    }
+
     // Regression: `Show[Graphics[…], ParametricPlot[…]]` must keep the
     // parametric curve when merged with other graphics primitives. The plot
     // previously had no PlotSource, so Show treated it as opaque and dropped

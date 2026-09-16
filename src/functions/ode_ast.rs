@@ -132,6 +132,14 @@ fn dsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
+  // `DSolve[{…}, {y1[t], y2[t], …}, t]` — a coupled system of dependent
+  // functions, handled by the operator-elimination solver above instead of
+  // the single-variable machinery below.
+  if let Expr::List(dep_items) = dep_arg {
+    let items: Vec<Expr> = dep_items.iter().cloned().collect();
+    return dsolve_linear_system(eqns_arg, &items, &x_name);
+  }
+
   // Determine dependent function name and whether Function form is requested
   let (y_name, function_form) = match dep_arg {
     // y[x] form → return y[x] -> expr
@@ -4851,6 +4859,63 @@ fn solve_cubic_characteristic(
 }
 
 /// Solve quartic characteristic polynomial
+/// Roots of the depressed biquadratic `y^4 + p*y^2 + r = 0` (`x = y +
+/// shift`), via the quadratic `u^2 + p*u + r = 0` in `u = y^2` followed by
+/// a complex square root of each `u` root. See the comment at its call
+/// site in [`solve_quartic_characteristic`] for why this is needed instead
+/// of always going through the general resolvent-cubic method.
+fn solve_biquadratic(
+  p: f64,
+  r: f64,
+  shift: f64,
+) -> std::vec::Vec<(f64, f64, usize)> {
+  let disc = p * p - 4.0 * r;
+  let u_roots: [(f64, f64); 2] = if disc >= 0.0 {
+    let s = disc.sqrt();
+    [(f64::midpoint(-p, s), 0.0), ((-p - s) / 2.0, 0.0)]
+  } else {
+    let s = (-disc).sqrt();
+    [(-p / 2.0, s / 2.0), (-p / 2.0, -s / 2.0)]
+  };
+
+  let mut roots = Vec::with_capacity(4);
+  for &(ure, uim) in &u_roots {
+    if uim.abs() < 1e-12 {
+      // Real u: y = ±sqrt(u), real if u >= 0, else a conjugate pair on the
+      // imaginary axis.
+      if ure >= 0.0 {
+        let s = ure.sqrt();
+        roots.push((s + shift, 0.0, 1));
+        roots.push((-s + shift, 0.0, 1));
+      } else {
+        let s = (-ure).sqrt();
+        roots.push((shift, s, 1));
+      }
+    } else if uim > 0.0 {
+      // Complex-conjugate u pair: y = ±sqrt(u) for the positive-imaginary
+      // twin gives the two conjugate-pair representatives directly (see
+      // the call site comment for the derivation).
+      let (sre, sim) = complex_sqrt(ure, uim);
+      roots.push((sre + shift, sim, 1));
+      roots.push((-sre + shift, sim, 1));
+    }
+    // uim < 0 is the conjugate of the pair already handled above; skip.
+  }
+  roots
+}
+
+/// Principal square root of a complex number, matching the sign of `im` in
+/// the result (so `im < 0` gives a result with negative imaginary part).
+fn complex_sqrt(re: f64, im: f64) -> (f64, f64) {
+  let modulus = re.hypot(im);
+  let sre = f64::midpoint(modulus, re).max(0.0).sqrt();
+  let mut sim = ((modulus - re) / 2.0).max(0.0).sqrt();
+  if im < 0.0 {
+    sim = -sim;
+  }
+  (sre, sim)
+}
+
 fn solve_quartic_characteristic(
   coeffs: &[f64],
 ) -> std::vec::Vec<(f64, f64, usize)> {
@@ -4864,6 +4929,21 @@ fn solve_quartic_characteristic(
   let p = c - 3.0 * b * b / 8.0;
   let q = b * b * b / 8.0 - b * c / 2.0 + d;
   let r = -3.0 * b * b * b * b / 256.0 + b * b * c / 16.0 - b * d / 4.0 + e;
+  let quartic_shift = -b / 4.0;
+
+  // Biquadratic special case (q == 0, e.g. any quartic with no odd-power
+  // terms — the common shape a real coupled linear ODE system's
+  // characteristic polynomial takes): the general resolvent-cubic method
+  // below is numerically fragile right where it matters most here, because
+  // a biquadratic's resolvent cubic is itself degenerate (a repeated or
+  // near-repeated root), which the cubic solver's branch selection can
+  // land on the wrong side of by a hair — turning what should be a purely
+  // imaginary conjugate quadruple into a spuriously real one. Solving
+  // y^4 + py^2 + r = 0 directly as a quadratic in u = y^2 sidesteps that
+  // entirely and is exact.
+  if q.abs() < 1e-9 * (p.abs() + r.abs() + 1.0) {
+    return solve_biquadratic(p, r, quartic_shift);
+  }
 
   // Solve resolvent cubic: m^3 - p/2 * m^2 - r*m + (p*r/2 - q^2/8) = 0
   let resolvent_coeffs = vec![p * r / 2.0 - q * q / 8.0, -r, -p / 2.0, 1.0];
@@ -8094,4 +8174,787 @@ fn is_f_at_xy(expr: &Expr, fname: &str, xn: &str, yn: &str) -> bool {
         && matches!(&args[0], Expr::Identifier(s) if s == xn)
         && matches!(&args[1], Expr::Identifier(s) if s == yn)
   )
+}
+
+// ─── Coupled Linear Constant-Coefficient ODE Systems ───────────────────
+//
+// `DSolve[{eq1, eq2, …, ic1, ic2, …}, {y1[t], y2[t], …}, t]` for a linear,
+// constant-coefficient system (the classic "two coupled oscillators" shape
+// a Demonstrations-Project notebook tends to use, e.g. a Foucault pendulum
+// or coupled pendulums). The single-variable branch above only recognises
+// one dependent function; this extends the same closed-form machinery to a
+// small system via operator-determinant elimination:
+//
+//   1. Each equation is linear in the y_i and their t-derivatives with
+//      constant coefficients, so it can be written as a row of the
+//      differential-operator matrix M(D), D = d/dt.
+//   2. Every y_i solves the SAME scalar ODE Δ(D) y_i = (cofactor terms),
+//      Δ = det(M(D)) — Cramer's rule for a linear operator system. Only a
+//      constant forcing term is supported (enough for a homogeneous
+//      physical system in equilibrium coordinates); Δ has degree ≤ 4 to
+//      reuse the existing closed-form quadratic/cubic/quartic root finder.
+//   3. For each simple root λ of Δ, the amplitude ratios between the y_i
+//      at that mode are the null vector of M(λ) (found by Gaussian
+//      elimination in complex arithmetic — n is small, typically 2–4).
+//   4. The shared arbitrary constants C[k] are pinned down by evaluating
+//      the symbolic general solution (and its derivatives) at the initial
+//      conditions and calling the existing linear `Solve`.
+//
+// Repeated roots (defective systems needing a `t*E^(λt)` secular term) and
+// non-constant forcing are out of scope and fall back to unevaluated,
+// exactly like the single-variable solver's own unsupported cases.
+
+/// One classified additive term of a coupled system's equation: which
+/// dependent variable (by index into the system's `y_names`) and
+/// derivative order it belongs to, or `None` for a term free of every
+/// dependent variable (the forcing side).
+struct MultiOdeTerm {
+  var_index: Option<usize>,
+  order: i32,
+  coefficient: Expr,
+}
+
+/// Is `expr` free of every name in `y_names` (as `Identifier` uses and as
+/// `Derivative[…, name, …]` heads)? Delegates to the single-variable
+/// [`is_free_of_y`] once per name.
+fn is_free_of_any_y(expr: &Expr, y_names: &[String]) -> bool {
+  y_names.iter().all(|yn| is_free_of_y(expr, yn))
+}
+
+/// Like [`extract_derivative_order`], but against a whole set of dependent
+/// variable names. Returns `(index into y_names, order)`.
+fn extract_multivar_derivative(
+  expr: &Expr,
+  y_names: &[String],
+) -> Option<(usize, usize)> {
+  for (i, yn) in y_names.iter().enumerate() {
+    if let Some(order) = extract_derivative_order(expr, yn) {
+      return Some((i, order));
+    }
+  }
+  None
+}
+
+/// Multi-variable counterpart of [`collect_ode_terms`]: collect the
+/// additive terms of a normalized (lhs − rhs) equation, classifying each
+/// by which dependent variable (if any) it involves.
+fn collect_multivar_terms(
+  expr: &Expr,
+  y_names: &[String],
+  x_name: &str,
+) -> Result<Vec<MultiOdeTerm>, InterpreterError> {
+  let mut terms = Vec::new();
+  collect_multivar_additive(expr, y_names, x_name, false, &mut terms)?;
+  Ok(terms)
+}
+
+fn collect_multivar_additive(
+  expr: &Expr,
+  y_names: &[String],
+  x_name: &str,
+  negated: bool,
+  terms: &mut Vec<MultiOdeTerm>,
+) -> Result<(), InterpreterError> {
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => {
+      collect_multivar_additive(left, y_names, x_name, negated, terms)?;
+      collect_multivar_additive(right, y_names, x_name, negated, terms)?;
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Minus,
+      left,
+      right,
+    } => {
+      collect_multivar_additive(left, y_names, x_name, negated, terms)?;
+      collect_multivar_additive(right, y_names, x_name, !negated, terms)?;
+    }
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => {
+      collect_multivar_additive(operand, y_names, x_name, !negated, terms)?;
+    }
+    Expr::FunctionCall { name, args } if name == "Plus" && args.len() >= 2 => {
+      for arg in args {
+        collect_multivar_additive(arg, y_names, x_name, negated, terms)?;
+      }
+    }
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 2 => {
+      classify_multivar_product(args, y_names, negated, terms)?;
+    }
+    _ => {
+      let term = classify_multivar_single(expr, y_names)?;
+      let coeff = if negated {
+        negate_expr(&term.coefficient)
+      } else {
+        term.coefficient
+      };
+      terms.push(MultiOdeTerm {
+        var_index: term.var_index,
+        order: term.order,
+        coefficient: coeff,
+      });
+    }
+  }
+  Ok(())
+}
+
+fn classify_multivar_product(
+  factors: &[Expr],
+  y_names: &[String],
+  negated: bool,
+  terms: &mut Vec<MultiOdeTerm>,
+) -> Result<(), InterpreterError> {
+  let mut y_factor_idx = None;
+  let mut y_var = 0usize;
+  let mut y_order = -1i32;
+
+  for (i, factor) in factors.iter().enumerate() {
+    if let Some((vi, order)) = extract_multivar_derivative(factor, y_names) {
+      y_factor_idx = Some(i);
+      y_var = vi;
+      y_order = order as i32;
+      break;
+    }
+    if let Expr::FunctionCall { name, args } = factor
+      && args.len() == 1
+      && let Some(vi) = y_names.iter().position(|n| n == name)
+    {
+      y_factor_idx = Some(i);
+      y_var = vi;
+      y_order = 0;
+      break;
+    }
+  }
+
+  let (order, var_index, coefficient) = if let Some(idx) = y_factor_idx {
+    let other_factors: Vec<&Expr> = factors
+      .iter()
+      .enumerate()
+      .filter(|(i, _)| *i != idx)
+      .map(|(_, f)| f)
+      .collect();
+    let coeff = if other_factors.is_empty() {
+      Expr::Integer(1)
+    } else if other_factors.len() == 1 {
+      other_factors[0].clone()
+    } else {
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: other_factors.into_iter().cloned().collect(),
+      }
+    };
+    (y_order, Some(y_var), coeff)
+  } else {
+    let product = if factors.len() == 1 {
+      factors[0].clone()
+    } else {
+      unevaluated("Times", factors)
+    };
+    if !is_free_of_any_y(&product, y_names) {
+      return Err(InterpreterError::EvaluationError(
+        "DSolve: cannot classify term in coupled system".into(),
+      ));
+    }
+    (-1, None, product)
+  };
+
+  let coeff = if negated {
+    negate_expr(&coefficient)
+  } else {
+    coefficient
+  };
+  terms.push(MultiOdeTerm {
+    var_index,
+    order,
+    coefficient: coeff,
+  });
+  Ok(())
+}
+
+fn classify_multivar_single(
+  expr: &Expr,
+  y_names: &[String],
+) -> Result<MultiOdeTerm, InterpreterError> {
+  if let Expr::FunctionCall { name, args } = expr
+    && args.len() == 1
+    && let Some(i) = y_names.iter().position(|n| n == name)
+  {
+    return Ok(MultiOdeTerm {
+      var_index: Some(i),
+      order: 0,
+      coefficient: Expr::Integer(1),
+    });
+  }
+  if let Some((i, order)) = extract_multivar_derivative(expr, y_names) {
+    return Ok(MultiOdeTerm {
+      var_index: Some(i),
+      order: order as i32,
+      coefficient: Expr::Integer(1),
+    });
+  }
+  if let Expr::BinaryOp {
+    op: BinaryOperator::Times,
+    left,
+    right,
+  } = expr
+  {
+    if let Some((i, order)) = extract_multivar_derivative(right, y_names) {
+      return Ok(MultiOdeTerm {
+        var_index: Some(i),
+        order: order as i32,
+        coefficient: *left.clone(),
+      });
+    }
+    if let Expr::FunctionCall { name, args } = right.as_ref()
+      && args.len() == 1
+      && let Some(i) = y_names.iter().position(|n| n == name)
+    {
+      return Ok(MultiOdeTerm {
+        var_index: Some(i),
+        order: 0,
+        coefficient: *left.clone(),
+      });
+    }
+    if let Some((i, order)) = extract_multivar_derivative(left, y_names) {
+      return Ok(MultiOdeTerm {
+        var_index: Some(i),
+        order: order as i32,
+        coefficient: *right.clone(),
+      });
+    }
+    if let Expr::FunctionCall { name, args } = left.as_ref()
+      && args.len() == 1
+      && let Some(i) = y_names.iter().position(|n| n == name)
+    {
+      return Ok(MultiOdeTerm {
+        var_index: Some(i),
+        order: 0,
+        coefficient: *right.clone(),
+      });
+    }
+  }
+  if is_free_of_any_y(expr, y_names) {
+    return Ok(MultiOdeTerm {
+      var_index: None,
+      order: -1,
+      coefficient: expr.clone(),
+    });
+  }
+  Err(InterpreterError::EvaluationError(
+    "DSolve: cannot classify term in coupled system".into(),
+  ))
+}
+
+// ─── Small numeric linear algebra for the companion system ─────────────
+
+/// A complex number as a plain `(re, im)` pair — the system's dimension is
+/// always tiny (a handful of coupled equations), so a dependency on a
+/// complex-number crate isn't worth it for this one local computation.
+type Cplx = (f64, f64);
+
+fn cadd(a: Cplx, b: Cplx) -> Cplx {
+  (a.0 + b.0, a.1 + b.1)
+}
+fn csub(a: Cplx, b: Cplx) -> Cplx {
+  (a.0 - b.0, a.1 - b.1)
+}
+fn cmul(a: Cplx, b: Cplx) -> Cplx {
+  (a.0 * b.0 - a.1 * b.1, a.0 * b.1 + a.1 * b.0)
+}
+fn cdiv(a: Cplx, b: Cplx) -> Cplx {
+  let d = b.0 * b.0 + b.1 * b.1;
+  ((a.0 * b.0 + a.1 * b.1) / d, (a.1 * b.0 - a.0 * b.1) / d)
+}
+fn cabs(a: Cplx) -> f64 {
+  a.0.hypot(a.1)
+}
+
+/// A polynomial in the differential operator `D`, `coeffs[k]` is the
+/// coefficient of `D^k` (constant, since the ODE system has constant
+/// coefficients).
+type OpPoly = Vec<f64>;
+
+fn poly_add(a: &[f64], b: &[f64]) -> OpPoly {
+  let n = a.len().max(b.len());
+  let mut out = vec![0.0; n];
+  for (i, v) in a.iter().enumerate() {
+    out[i] += v;
+  }
+  for (i, v) in b.iter().enumerate() {
+    out[i] += v;
+  }
+  out
+}
+
+fn poly_scale(a: &[f64], s: f64) -> OpPoly {
+  a.iter().map(|v| v * s).collect()
+}
+
+fn poly_mul(a: &[f64], b: &[f64]) -> OpPoly {
+  if a.is_empty() || b.is_empty() {
+    return Vec::new();
+  }
+  let mut out = vec![0.0; a.len() + b.len() - 1];
+  for (i, &av) in a.iter().enumerate() {
+    if av == 0.0 {
+      continue;
+    }
+    for (j, &bv) in b.iter().enumerate() {
+      out[i + j] += av * bv;
+    }
+  }
+  out
+}
+
+/// Determinant of an `n×n` matrix of operator polynomials, via cofactor
+/// expansion along the first row. `n` is always small (the number of
+/// coupled dependent variables), so the `O(n!)` recursion is fine.
+fn poly_det(m: &[Vec<OpPoly>]) -> OpPoly {
+  let n = m.len();
+  if n == 1 {
+    return m[0][0].clone();
+  }
+  let mut result: OpPoly = vec![0.0];
+  let mut sign = 1.0;
+  for col in 0..n {
+    let minor: Vec<Vec<OpPoly>> = (1..n)
+      .map(|r| {
+        (0..n)
+          .filter(|&c| c != col)
+          .map(|c| m[r][c].clone())
+          .collect()
+      })
+      .collect();
+    let cofactor = poly_det(&minor);
+    let term = poly_scale(&poly_mul(&m[0][col], &cofactor), sign);
+    result = poly_add(&result, &term);
+    sign = -sign;
+  }
+  result
+}
+
+/// Drop numerically-negligible trailing high-order coefficients so the
+/// polynomial's true degree can be read off from its length.
+fn poly_trim(p: OpPoly) -> OpPoly {
+  let mut p = p;
+  let scale = p.iter().fold(1.0_f64, |acc, v| acc.max(v.abs()));
+  while p.len() > 1 && p.last().is_some_and(|v| v.abs() < scale * 1e-9) {
+    p.pop();
+  }
+  if p.is_empty() {
+    p.push(0.0);
+  }
+  p
+}
+
+fn eval_poly_c(p: &[f64], x: Cplx) -> Cplx {
+  let mut acc: Cplx = (0.0, 0.0);
+  let mut xp: Cplx = (1.0, 0.0);
+  for &c in p {
+    acc = cadd(acc, (c * xp.0, c * xp.1));
+    xp = cmul(xp, x);
+  }
+  acc
+}
+
+fn eval_matrix_at(m: &[Vec<OpPoly>], lambda: Cplx) -> Vec<Vec<Cplx>> {
+  m.iter()
+    .map(|row| row.iter().map(|cell| eval_poly_c(cell, lambda)).collect())
+    .collect()
+}
+
+/// A null vector of a (numerically) singular `n×n` complex matrix, via
+/// Gaussian elimination with partial pivoting to reduced row-echelon form.
+/// Returns `None` unless the nullity is exactly 1 — a simple root of the
+/// system's characteristic polynomial gives a rank-`n−1` matrix, so a
+/// nullity other than 1 means either a repeated root (handled by the
+/// caller rejecting `mult > 1` beforehand) or numerical trouble.
+fn null_vector(mut mat: Vec<Vec<Cplx>>) -> Option<Vec<Cplx>> {
+  let n = mat.len();
+  let mut pivot_cols: Vec<usize> = Vec::new();
+  let mut row = 0usize;
+
+  for col in 0..n {
+    if row >= n {
+      break;
+    }
+    let mut best_row = row;
+    let mut best_val = cabs(mat[row][col]);
+    for r in (row + 1)..n {
+      let v = cabs(mat[r][col]);
+      if v > best_val {
+        best_val = v;
+        best_row = r;
+      }
+    }
+    if best_val < 1e-7 {
+      continue;
+    }
+    mat.swap(row, best_row);
+    let piv = mat[row][col];
+    for cell in mat[row].iter_mut().skip(col) {
+      *cell = cdiv(*cell, piv);
+    }
+    for r in 0..n {
+      if r == row {
+        continue;
+      }
+      let factor = mat[r][col];
+      if cabs(factor) > 0.0 {
+        for c in col..n {
+          let sub = cmul(factor, mat[row][c]);
+          mat[r][c] = csub(mat[r][c], sub);
+        }
+      }
+    }
+    pivot_cols.push(col);
+    row += 1;
+  }
+
+  let free_cols: Vec<usize> =
+    (0..n).filter(|c| !pivot_cols.contains(c)).collect();
+  if free_cols.len() != 1 {
+    return None;
+  }
+  let free_col = free_cols[0];
+
+  let mut v = vec![(0.0, 0.0); n];
+  v[free_col] = (1.0, 0.0);
+  for (i, &pc) in pivot_cols.iter().enumerate() {
+    v[pc] = (-mat[i][free_col].0, -mat[i][free_col].1);
+  }
+  Some(v)
+}
+
+/// Solve a real `n×n` linear system by Gaussian elimination with partial
+/// pivoting. Used only for the constant particular solution of a system
+/// with nonzero (constant) forcing.
+fn solve_real_linear_system(a: &[Vec<f64>], b: &[f64]) -> Option<Vec<f64>> {
+  let n = a.len();
+  let mut aug: Vec<Vec<f64>> = a
+    .iter()
+    .zip(b)
+    .map(|(row, &bi)| {
+      let mut r = row.clone();
+      r.push(bi);
+      r
+    })
+    .collect();
+
+  for col in 0..n {
+    let mut best_row = col;
+    let mut best_val = aug[col][col].abs();
+    for r in (col + 1)..n {
+      if aug[r][col].abs() > best_val {
+        best_val = aug[r][col].abs();
+        best_row = r;
+      }
+    }
+    if best_val < 1e-12 {
+      return None;
+    }
+    aug.swap(col, best_row);
+    let pivot = aug[col][col];
+    for r in (col + 1)..n {
+      let factor = aug[r][col] / pivot;
+      for c in col..=n {
+        aug[r][c] -= factor * aug[col][c];
+      }
+    }
+  }
+
+  let mut x = vec![0.0; n];
+  for i in (0..n).rev() {
+    let mut s = aug[i][n];
+    for j in (i + 1)..n {
+      s -= aug[i][j] * x[j];
+    }
+    x[i] = s / aug[i][i];
+  }
+  Some(x)
+}
+
+/// Placeholder identifier standing in for the shared arbitrary constant
+/// `C[k]` while the general solution is still being solved against the
+/// initial conditions (mirrors [`apply_initial_conditions`]'s own `__Ci`
+/// placeholders, generalized to the whole system rather than one `y`).
+fn sys_const(k: usize) -> Expr {
+  Expr::Identifier(format!("$DSolveSystemC{k}"))
+}
+
+/// `DSolve[{eq1, …, ic1, …}, {y1[t], y2[t], …}, t]` for a linear,
+/// constant-coefficient system — see the module-level comment above this
+/// section for the method. Returns an `Err` with a `"DSolve:"`-prefixed
+/// message for any shape outside this scope, which
+/// [`dsolve_ast_with_head`] turns into an unevaluated `DSolve[…]` rather
+/// than leaking the internal error.
+fn dsolve_linear_system(
+  eqns_arg: &Expr,
+  dep_items: &[Expr],
+  x_name: &str,
+) -> Result<Expr, InterpreterError> {
+  let bail = || {
+    InterpreterError::EvaluationError(
+      "DSolve: coupled system not supported".to_string(),
+    )
+  };
+
+  let mut y_names: Vec<String> = Vec::with_capacity(dep_items.len());
+  for item in dep_items {
+    match item {
+      Expr::FunctionCall { name, args }
+        if args.len() == 1
+          && matches!(&args[0], Expr::Identifier(s) if s == x_name) =>
+      {
+        y_names.push(name.clone());
+      }
+      _ => return Err(bail()),
+    }
+  }
+  let n = y_names.len();
+  if n < 2 {
+    return Err(bail());
+  }
+
+  let items: Vec<Expr> = match eqns_arg {
+    Expr::List(items) => items.iter().cloned().collect(),
+    other => vec![other.clone()],
+  };
+
+  let mut odes: Vec<Expr> = Vec::new();
+  let mut ics: Vec<(usize, Expr)> = Vec::new();
+  for item in &items {
+    let matched_var = y_names
+      .iter()
+      .position(|yn| is_initial_condition(item, yn, x_name));
+    match matched_var {
+      Some(vi) => ics.push((vi, item.clone())),
+      None => odes.push(item.clone()),
+    }
+  }
+  if odes.len() != n {
+    return Err(bail());
+  }
+
+  // Build the n×n matrix of operator polynomials and the constant forcing
+  // vector from each normalized (lhs − rhs) equation.
+  let mut poly_matrix: Vec<Vec<OpPoly>> = vec![vec![Vec::new(); n]; n];
+  let mut forcing_sum: Vec<f64> = vec![0.0; n];
+
+  for (row, ode) in odes.iter().enumerate() {
+    let normalized = normalize_equation(ode)?;
+    let terms = collect_multivar_terms(&normalized, &y_names, x_name)?;
+    for term in terms {
+      match term.var_index {
+        Some(col) => {
+          let coeff = eval_to_f64(&term.coefficient)?;
+          let order = usize::try_from(term.order).map_err(|_| bail())?;
+          let cell = &mut poly_matrix[row][col];
+          if cell.len() <= order {
+            cell.resize(order + 1, 0.0);
+          }
+          cell[order] += coeff;
+        }
+        None => {
+          forcing_sum[row] += eval_to_f64(&term.coefficient)?;
+        }
+      }
+    }
+  }
+  let f_vec: Vec<f64> = forcing_sum.iter().map(|v| -v).collect();
+
+  let delta = poly_trim(poly_det(&poly_matrix));
+  let degree = delta.len() - 1;
+  if degree == 0 || delta.iter().all(|c| c.abs() < 1e-9) || degree > 4 {
+    return Err(bail());
+  }
+
+  let roots = find_characteristic_roots(&delta, degree)?;
+  if roots.iter().any(|(_, _, mult)| *mult > 1) {
+    // Repeated roots need secular t^k*E^(λt) terms this solver doesn't
+    // build yet — leave DSolve unevaluated rather than a wrong answer.
+    return Err(bail());
+  }
+
+  // Constant particular solution for nonzero constant forcing: M(0) Yp = f.
+  let particular: Vec<f64> = if f_vec.iter().any(|v| v.abs() > 1e-12) {
+    let m0 = eval_matrix_at(&poly_matrix, (0.0, 0.0));
+    let m0_real: Vec<Vec<f64>> =
+      m0.iter().map(|r| r.iter().map(|c| c.0).collect()).collect();
+    solve_real_linear_system(&m0_real, &f_vec).ok_or_else(bail)?
+  } else {
+    vec![0.0; n]
+  };
+
+  let mut y_exprs: Vec<Expr> = (0..n)
+    .map(|i| {
+      if particular[i].abs() > 1e-12 {
+        f64_to_nice_expr(particular[i])
+      } else {
+        Expr::Integer(0)
+      }
+    })
+    .collect();
+
+  let mut c_idx = 1usize;
+  for (re, im, _mult) in &roots {
+    if im.abs() < 1e-9 {
+      let v = null_vector(eval_matrix_at(&poly_matrix, (*re, 0.0)))
+        .ok_or_else(bail)?;
+      let c = sys_const(c_idx);
+      c_idx += 1;
+      for k in 0..n {
+        let amp = v[k].0;
+        if amp.abs() < 1e-12 {
+          continue;
+        }
+        let mut term = times2(f64_to_nice_expr(amp), c.clone());
+        if re.abs() > 1e-10 {
+          term = times2(make_exp_term(*re, x_name), term);
+        }
+        y_exprs[k] = plus2(y_exprs[k].clone(), term);
+      }
+    } else {
+      let v = null_vector(eval_matrix_at(&poly_matrix, (*re, *im)))
+        .ok_or_else(bail)?;
+      let ca = sys_const(c_idx);
+      c_idx += 1;
+      let cb = sys_const(c_idx);
+      c_idx += 1;
+      for k in 0..n {
+        let (p, q) = v[k];
+        if p.abs() < 1e-12 && q.abs() < 1e-12 {
+          continue;
+        }
+        // e^{re t} [ (Ca*p + Cb*q) Cos[im t] + (Cb*p - Ca*q) Sin[im t] ]
+        let cos_coeff = plus2(
+          times2(f64_to_nice_expr(p), ca.clone()),
+          times2(f64_to_nice_expr(q), cb.clone()),
+        );
+        let sin_coeff = plus2(
+          times2(f64_to_nice_expr(p), cb.clone()),
+          times2(f64_to_nice_expr(-q), ca.clone()),
+        );
+        let cos_term = times2(cos_coeff, make_trig_term("Cos", *im, x_name));
+        let sin_term = times2(sin_coeff, make_trig_term("Sin", *im, x_name));
+        let mut term = plus2(cos_term, sin_term);
+        if re.abs() > 1e-10 {
+          term = times2(make_exp_term(*re, x_name), term);
+        }
+        y_exprs[k] = plus2(y_exprs[k].clone(), term);
+      }
+    }
+  }
+  let total_dof = c_idx - 1;
+
+  // Apply initial conditions (if a full set was given) by evaluating each
+  // y_i and its derivatives at the IC point and solving for the shared
+  // constants — the same technique as the single-variable
+  // `apply_initial_conditions`, generalized across variables.
+  let mut equations: Vec<Expr> = Vec::new();
+  for (vi, ic) in &ics {
+    let Expr::Comparison {
+      operands,
+      operators,
+    } = ic
+    else {
+      continue;
+    };
+    if operands.len() != 2
+      || operators.len() != 1
+      || operators[0] != ComparisonOp::Equal
+    {
+      continue;
+    }
+    let lhs = &operands[0];
+    let rhs = &operands[1];
+    let yn = &y_names[*vi];
+    let point_order = if let Expr::FunctionCall { name, args } = lhs
+      && name == yn
+      && args.len() == 1
+    {
+      Some((0usize, args[0].clone()))
+    } else {
+      extract_derivative_order_and_point(lhs, yn)
+    };
+    let Some((order, point)) = point_order else {
+      continue;
+    };
+
+    let mut deriv = y_exprs[*vi].clone();
+    for _ in 0..order {
+      deriv =
+        crate::functions::calculus_ast::differentiate_expr(&deriv, x_name)?;
+      deriv = crate::functions::calculus_ast::simplify(deriv);
+      deriv = crate::evaluator::evaluate_expr_to_expr(&deriv).unwrap_or(deriv);
+    }
+    let substituted =
+      crate::syntax::substitute_variable(&deriv, x_name, &point);
+    let evaluated = crate::evaluator::evaluate_expr_to_expr(&substituted)
+      .unwrap_or(substituted);
+    equations.push(Expr::Comparison {
+      operands: vec![evaluated, rhs.clone()],
+      operators: vec![ComparisonOp::Equal],
+    });
+  }
+
+  if equations.len() == total_dof {
+    let var_exprs: Vec<Expr> = (1..=total_dof).map(sys_const).collect();
+    let solve_result = crate::functions::solve_ast(&[
+      Expr::List(equations.into()),
+      Expr::List(var_exprs.into()),
+    ])?;
+    if let Expr::List(outer) = &solve_result
+      && let Some(Expr::List(rules)) = outer.first()
+    {
+      for y_expr in &mut y_exprs {
+        for rule in rules {
+          if let Expr::Rule {
+            pattern,
+            replacement,
+          } = rule
+            && let Expr::Identifier(var_name) = pattern.as_ref()
+          {
+            *y_expr =
+              crate::syntax::substitute_variable(y_expr, var_name, replacement);
+          }
+        }
+        *y_expr = crate::evaluator::evaluate_expr_to_expr(y_expr)
+          .unwrap_or_else(|_| y_expr.clone());
+      }
+    }
+  } else {
+    // Not enough initial conditions: present the general solution with
+    // Wolfram's `C[k]` constants instead of the internal placeholders.
+    for y_expr in &mut y_exprs {
+      for k in 1..=total_dof {
+        *y_expr = crate::syntax::substitute_variable(
+          y_expr,
+          &format!("$DSolveSystemC{k}"),
+          &make_c(k),
+        );
+      }
+      *y_expr = crate::evaluator::evaluate_expr_to_expr(y_expr)
+        .unwrap_or_else(|_| y_expr.clone());
+    }
+  }
+
+  let rules: Vec<Expr> = y_names
+    .iter()
+    .zip(y_exprs)
+    .map(|(yn, sol)| Expr::Rule {
+      pattern: Box::new(Expr::FunctionCall {
+        name: yn.clone(),
+        args: vec![Expr::Identifier(x_name.to_string())].into(),
+      }),
+      replacement: Box::new(sol),
+    })
+    .collect();
+
+  Ok(Expr::List(vec![Expr::List(rules.into())].into()))
 }
