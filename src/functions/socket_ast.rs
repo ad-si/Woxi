@@ -413,14 +413,13 @@ fn parse_endpoint(
 /// The `Failure` wolframscript answers with for an unsupported protocol.
 #[cfg(not(target_arch = "wasm32"))]
 fn bad_protocol_failure(head: &str, protocol: &str) -> Expr {
-  let template = Expr::FunctionCall {
-    name: "MessageName".to_string(),
-    args: vec![
+  let template = call(
+    "MessageName",
+    vec![
       Expr::Identifier(head.to_string()),
       Expr::String("noproto".to_string()),
-    ]
-    .into(),
-  };
+    ],
+  );
   let key = Expr::String("MessageTemplate".to_string());
   Expr::FunctionCall {
     name: "Failure".to_string(),

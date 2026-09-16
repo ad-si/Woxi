@@ -1496,14 +1496,13 @@ fn face_indices(info: &PolyhedronInfo) -> Result<Expr, InterpreterError> {
 /// as `GraphicsComplex[coords, Polygon[indices]]` — the form Wolfram
 /// returns, so `data[[1]]` are the vertices and `data[[2, 1]]` the faces.
 fn faces_complex(info: &PolyhedronInfo) -> Result<Expr, InterpreterError> {
-  Ok(Expr::FunctionCall {
-    name: "GraphicsComplex".to_string(),
-    args: vec![
+  Ok(call(
+    "GraphicsComplex",
+    vec![
       eval_wl(info.vertices_src)?,
       call1("Polygon", face_indices(info)?),
-    ]
-    .into(),
-  })
+    ],
+  ))
 }
 
 /// The face index lists as plain `usize` rows, for rendering.

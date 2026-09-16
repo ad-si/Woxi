@@ -307,14 +307,10 @@ pub(super) fn coeffs_to_poly(coeffs: &[i128], var: &str, p: i128) -> Expr {
       let pow = if i == 1 {
         Expr::Identifier(var.to_string())
       } else {
-        Expr::FunctionCall {
-          name: "Power".to_string(),
-          args: vec![
-            Expr::Identifier(var.to_string()),
-            Expr::Integer(i as i128),
-          ]
-          .into(),
-        }
+        call(
+          "Power",
+          vec![Expr::Identifier(var.to_string()), Expr::Integer(i as i128)],
+        )
       };
       if c == 1 {
         pow
@@ -485,14 +481,13 @@ fn poly_divide_by_constant(
     return Ok(poly.clone());
   }
 
-  let div = Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: vec![
+  let div = call(
+    "Times",
+    vec![
       call("Power", vec![constant.clone(), Expr::Integer(-1)]),
       poly.clone(),
-    ]
-    .into(),
-  };
+    ],
+  );
   let result = crate::evaluator::evaluate_expr_to_expr(&div)?;
   crate::evaluator::evaluate_expr_to_expr(&expand_and_combine(&result))
 }

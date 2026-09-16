@@ -1555,14 +1555,13 @@ fn eliminate_connectives(expr: &Expr) -> Expr {
           if elim_args.len() == 2 {
             let a = &elim_args[0];
             let b = &elim_args[1];
-            Expr::FunctionCall {
-              name: "Or".to_string(),
-              args: vec![
+            call(
+              "Or",
+              vec![
                 call("And", vec![a.clone(), call1("Not", b.clone())]),
                 call("And", vec![b.clone(), call1("Not", a.clone())]),
-              ]
-              .into(),
-            }
+              ],
+            )
           } else {
             // Reduce: Xor[a, b, c, ...] → Xor[Xor[a, b], c, ...]
             let mut result = elim_args[0].clone();
@@ -2177,15 +2176,14 @@ fn bc_decision_tree(variables: &[String], table: &[bool]) -> Expr {
   if low == high {
     return bc_decision_tree(rest, low);
   }
-  Expr::FunctionCall {
-    name: "If".to_string(),
-    args: vec![
+  call(
+    "If",
+    vec![
       Expr::Identifier(first.clone()),
       bc_decision_tree(rest, high),
       bc_decision_tree(rest, low),
-    ]
-    .into(),
-  }
+    ],
+  )
 }
 
 /// Drop the clauses a normal form does not need. Distributing a DNF into a

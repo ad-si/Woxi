@@ -369,14 +369,13 @@ fn untagged_exception(spec: &Expr) -> Expr {
     (string("ExceptionValidated"), symbol("True")),
     (string("ExceptionSystemVersion"), string("1")),
   ];
-  Expr::FunctionCall {
-    name: "Exception".to_string(),
-    args: vec![
+  call(
+    "Exception",
+    vec![
       Expr::List(vec![string("ErrorHandlingException")].into()),
       Expr::Association(pairs),
-    ]
-    .into(),
-  }
+    ],
+  )
 }
 
 /// `Exception[spec]` / `Exception[spec, payload]` — canonicalize to

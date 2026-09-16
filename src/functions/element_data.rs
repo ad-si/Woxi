@@ -2308,13 +2308,14 @@ pub fn element_property(name: &str, property: &str) -> Option<Expr> {
 pub fn element_entities() -> Vec<Expr> {
   ELEMENTS
     .iter()
-    .map(|elem| Expr::FunctionCall {
-      name: "Entity".to_string(),
-      args: vec![
-        Expr::String("Element".to_string()),
-        Expr::String(elem.standard_name.to_string()),
-      ]
-      .into(),
+    .map(|elem| {
+      call(
+        "Entity",
+        vec![
+          Expr::String("Element".to_string()),
+          Expr::String(elem.standard_name.to_string()),
+        ],
+      )
     })
     .collect()
 }
@@ -2430,14 +2431,13 @@ fn get_property(elem: &Element, property: &str) -> Expr {
     }
     "ElectronConfigurationString" => format_electron_configuration_row(elem),
     "Phase" => match element_phase(elem.atomic_number) {
-      Some(phase) => Expr::FunctionCall {
-        name: "Entity".to_string(),
-        args: vec![
+      Some(phase) => call(
+        "Entity",
+        vec![
           Expr::String("MatterPhase".to_string()),
           Expr::String(phase.to_string()),
-        ]
-        .into(),
-      },
+        ],
+      ),
       None => missing_not_available(),
     },
     // Properties we recognise by name but don't yet have tabulated data for —
@@ -2728,13 +2728,14 @@ pub fn element_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // ElementData[] — return list of all elements as Entity expressions
       let entities: Vec<Expr> = ELEMENTS
         .iter()
-        .map(|elem| Expr::FunctionCall {
-          name: "Entity".to_string(),
-          args: vec![
-            Expr::String("Element".to_string()),
-            Expr::String(elem.standard_name.to_string()),
-          ]
-          .into(),
+        .map(|elem| {
+          call(
+            "Entity",
+            vec![
+              Expr::String("Element".to_string()),
+              Expr::String(elem.standard_name.to_string()),
+            ],
+          )
         })
         .collect();
       Ok(Expr::List(entities.into()))
@@ -2752,13 +2753,14 @@ pub fn element_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Expr::Identifier(s) if s == "All" => {
           let entities: Vec<Expr> = ELEMENTS
             .iter()
-            .map(|elem| Expr::FunctionCall {
-              name: "Entity".to_string(),
-              args: vec![
-                Expr::String("Element".to_string()),
-                Expr::String(elem.standard_name.to_string()),
-              ]
-              .into(),
+            .map(|elem| {
+              call(
+                "Entity",
+                vec![
+                  Expr::String("Element".to_string()),
+                  Expr::String(elem.standard_name.to_string()),
+                ],
+              )
             })
             .collect();
           Ok(Expr::List(entities.into()))
@@ -2766,14 +2768,13 @@ pub fn element_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         identifier => {
           // ElementData[element] returns Entity[Element, name]
           match find_element(identifier) {
-            Some(elem) => Ok(Expr::FunctionCall {
-              name: "Entity".to_string(),
-              args: vec![
+            Some(elem) => Ok(call(
+              "Entity",
+              vec![
                 Expr::String("Element".to_string()),
                 Expr::String(elem.standard_name.to_string()),
-              ]
-              .into(),
-            }),
+              ],
+            )),
             None => Ok(missing_not_found()),
           }
         }

@@ -3007,14 +3007,13 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         && let (Expr::Integer(p), Expr::Integer(q)) = (&ra[0], &ra[1])
         && (*p < 0) ^ (*q < 0)
       {
-        let result = Expr::FunctionCall {
-          name: "Plus".to_string(),
-          args: vec![
+        let result = call(
+          "Plus",
+          vec![
             times2(id_expr("I"), const_expr("Pi")),
             call1("Log", make_rational(p.abs(), q.abs())),
-          ]
-          .into(),
-        };
+          ],
+        );
         return crate::evaluator::evaluate_expr_to_expr(&result);
       }
       // Log[-n] for negative integers: Log[-1] = I*Pi, Log[-n] = I*Pi + Log[n]
@@ -3779,14 +3778,13 @@ pub fn arctan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // ArcTan[-Infinity] = -Pi/2
   if is_neg_infinity(&args[0]) {
-    return Ok(Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![
+    return Ok(call(
+      "Times",
+      vec![
         call("Rational", vec![Expr::Integer(-1), Expr::Integer(2)]),
         const_expr("Pi"),
-      ]
-      .into(),
-    });
+      ],
+    ));
   }
 
   // Additional exact values: ArcTan[Sqrt[3]] = Pi/3, ArcTan[1/Sqrt[3]] = Pi/6
@@ -3800,14 +3798,13 @@ pub fn arctan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     if (val + sqrt3).abs() < eps {
       // ArcTan[-Sqrt[3]] = -Pi/3
-      return Ok(Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![
+      return Ok(call(
+        "Times",
+        vec![
           call("Rational", vec![Expr::Integer(-1), Expr::Integer(3)]),
           const_expr("Pi"),
-        ]
-        .into(),
-      });
+        ],
+      ));
     }
     let inv_sqrt3 = 1.0 / sqrt3;
     if (val - inv_sqrt3).abs() < eps {
@@ -3816,14 +3813,13 @@ pub fn arctan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     if (val + inv_sqrt3).abs() < eps {
       // ArcTan[-1/Sqrt[3]] = -Pi/6
-      return Ok(Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![
+      return Ok(call(
+        "Times",
+        vec![
           call("Rational", vec![Expr::Integer(-1), Expr::Integer(6)]),
           const_expr("Pi"),
-        ]
-        .into(),
-      });
+        ],
+      ));
     }
     // Twelfth-angle values (inverse of Tan[Pi/12] = 2 - Sqrt[3] and
     // Tan[5 Pi/12] = 2 + Sqrt[3]). `k_over_12_pi(k)` builds k*Pi/12.
@@ -3831,14 +3827,13 @@ pub fn arctan_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if k == 1 {
         div2(const_expr("Pi"), Expr::Integer(12))
       } else {
-        Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![
+        call(
+          "Times",
+          vec![
             call("Rational", vec![Expr::Integer(k), Expr::Integer(12)]),
             const_expr("Pi"),
-          ]
-          .into(),
-        }
+          ],
+        )
       }
     };
     let two_minus = 2.0 - sqrt3;
@@ -4718,14 +4713,13 @@ pub fn arccosh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let pi_half = crate::evaluator::evaluate_function_call_ast(
         "N",
         &[
-          Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![
+          call(
+            "Times",
+            vec![
               call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
               const_expr("Pi"),
-            ]
-            .into(),
-          },
+            ],
+          ),
           Expr::Real(*prec),
         ],
       )?;
@@ -4795,14 +4789,13 @@ pub fn arctanh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let denom = one_minus_re_sq + im * im;
     let result_re = 0.25 * (4.0 * re / denom).ln_1p();
     let result_im = 0.5 * (2.0 * im).atan2((1.0 - re) * (1.0 + re) - im * im);
-    return Ok(Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: vec![
+    return Ok(call(
+      "Plus",
+      vec![
         Expr::Real(result_re),
         call("Times", vec![Expr::Real(result_im), id_expr("I")]),
-      ]
-      .into(),
-    });
+      ],
+    ));
   }
   // Odd function: ArcTanh[-x] → -ArcTanh[x] (negative integers/rationals and
   // negated symbolic arguments; reals are handled numerically above).
@@ -4882,14 +4875,13 @@ pub fn arccoth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let pi_half = crate::evaluator::evaluate_function_call_ast(
         "N",
         &[
-          Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![
+          call(
+            "Times",
+            vec![
               call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
               const_expr("Pi"),
-            ]
-            .into(),
-          },
+            ],
+          ),
           Expr::Real(*prec),
         ],
       )?;
@@ -5433,14 +5425,13 @@ pub fn logistic_sigmoid_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mag2 = denom_re * denom_re + denom_im * denom_im;
     let result_re = denom_re / mag2;
     let result_im = -denom_im / mag2;
-    return Ok(Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: vec![
+    return Ok(call(
+      "Plus",
+      vec![
         Expr::Real(result_re),
         call("Times", vec![Expr::Real(result_im), id_expr("I")]),
-      ]
-      .into(),
-    });
+      ],
+    ));
   }
   Ok(unevaluated("LogisticSigmoid", args))
 }

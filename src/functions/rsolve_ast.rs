@@ -578,14 +578,13 @@ fn wrap_rsolve_result(
   let replacement = if return_as_func_call {
     solution
   } else {
-    Expr::FunctionCall {
-      name: "Function".to_string(),
-      args: vec![
+    call(
+      "Function",
+      vec![
         Expr::List(vec![Expr::Identifier(var_name.to_string())].into()),
         solution,
-      ]
-      .into(),
-    }
+      ],
+    )
   };
   let rule = Expr::Rule {
     pattern: Box::new(pattern),

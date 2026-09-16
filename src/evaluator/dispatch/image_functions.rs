@@ -153,14 +153,13 @@ fn gradient_strip_image(controls: &[(f64, f64, f64)]) -> Expr {
   let unit_corner = |a: i128, b: i128| {
     Expr::List(vec![Expr::Integer(a), Expr::Integer(b)].into())
   };
-  let raster = Expr::FunctionCall {
-    name: "Raster".to_string(),
-    args: vec![
+  let raster = call(
+    "Raster",
+    vec![
       Expr::List(vec![Expr::List(row.into())].into()),
       Expr::List(vec![unit_corner(0, 0), unit_corner(1, 1)].into()),
-    ]
-    .into(),
-  };
+    ],
+  );
   let option = |name: &str, value: Expr| Expr::Rule {
     pattern: Box::new(Expr::Identifier(name.to_string())),
     replacement: Box::new(value),
