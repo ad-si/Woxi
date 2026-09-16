@@ -2518,6 +2518,18 @@ fn canonical_name(iso: &Isotope) -> String {
   format!("{}{}", iso.element_name, iso.mass_number)
 }
 
+/// `EntityProperty["Isotope", name]` — how Wolfram names an isotope
+/// property in `IsotopeData["Properties"]`.
+fn isotope_entity_property(property: &str) -> Expr {
+  call(
+    "EntityProperty",
+    vec![
+      Expr::String("Isotope".to_string()),
+      Expr::String(property.to_string()),
+    ],
+  )
+}
+
 fn isotope_entity(iso: &'static Isotope) -> Expr {
   call(
     "Entity",
@@ -2533,7 +2545,11 @@ fn find_isotope_by_name(name: &str) -> Option<&'static Isotope> {
 }
 
 /// Resolves an isotope specifier: `Entity["Isotope", name]`, a bare
-/// canonical name string, or `{element, massNumber}`.
+/// canonical name string, or `{atomicNumber, massNumber}`.
+///
+/// The pair form is numeric only, as in wolframscript: `IsotopeData[{6, 12}]`
+/// is carbon-12, while `IsotopeData[{"Carbon", 12}]` is not a known entity
+/// and stays unevaluated.
 fn find_isotope(identifier: &Expr) -> Option<&'static Isotope> {
   match identifier {
     Expr::FunctionCall { name, args }
@@ -2548,13 +2564,13 @@ fn find_isotope(identifier: &Expr) -> Option<&'static Isotope> {
     }
     Expr::String(s) => find_isotope_by_name(s),
     Expr::List(items) if items.len() == 2 => {
-      let (atomic_number, _) = resolve_element(&items[0])?;
-      let mass_number = match &items[1] {
-        Expr::Integer(n) => *n,
-        _ => return None,
+      let (Expr::Integer(atomic_number), Expr::Integer(mass_number)) =
+        (&items[0], &items[1])
+      else {
+        return None;
       };
       ISOTOPES.iter().find(|iso| {
-        iso.atomic_number == atomic_number && iso.mass_number == mass_number
+        iso.atomic_number == *atomic_number && iso.mass_number == *mass_number
       })
     }
     _ => None,
@@ -2570,11 +2586,19 @@ fn isotopes_for_element(atomic_number: i128) -> Vec<&'static Isotope> {
   isos
 }
 
-/// Total nuclear binding energy in MeV, from the mass-excess formula
-/// `BE = (Z·m(¹H) + N·m(n) − M(A,Z))·c²`. Electron binding-energy
-/// differences between the `Z` free ¹H atoms and the neutral isotope are of
-/// order eV and are dropped at this MeV-scale precision.
+/// Nuclear binding energy **per nucleon** in MeV — what wolframscript's
+/// `"BindingEnergy"` property reports (carbon-12: 7.68 MeV, not the 92.16 MeV
+/// total). The total comes from the mass-excess formula
+/// `BE = (Z·m(¹H) + N·m(n) − M(A,Z))·c²` and is divided by the mass number.
+/// Electron binding-energy differences between the `Z` free ¹H atoms and the
+/// neutral isotope are of order eV and are dropped at this MeV-scale
+/// precision.
 fn binding_energy_mev(iso: &Isotope) -> f64 {
+  total_binding_energy_mev(iso) / iso.mass_number as f64
+}
+
+/// Total nuclear binding energy in MeV (all `A` nucleons together).
+fn total_binding_energy_mev(iso: &Isotope) -> f64 {
   let hydrogen1_mass = ISOTOPES
     .iter()
     .find(|h| h.atomic_number == 1 && h.mass_number == 1)
@@ -2596,6 +2620,21 @@ static SUPPORTED_PROPERTIES: &[&str] = &[
   "StandardName",
 ];
 
+/// A NIST isotopic composition (a fraction of 1) as a percentage, without
+/// the binary noise a bare `×100` leaves behind (`0.9893 × 100` is
+/// `98.92999999999999` in binary floating point, where the table's own
+/// precision only justifies `98.93`). Rounds to 12 significant digits, two
+/// more than the widest composition NIST tabulates.
+fn percent_of_fraction(fraction: f64) -> f64 {
+  let scaled = fraction * 100.0;
+  if scaled == 0.0 || !scaled.is_finite() {
+    return scaled;
+  }
+  let magnitude = scaled.abs().log10().floor();
+  let factor = 10f64.powf(11.0 - magnitude);
+  (scaled * factor).round() / factor
+}
+
 fn get_isotope_property(iso: &Isotope, property: &str) -> Expr {
   match property {
     "MassNumber" => Expr::Integer(iso.mass_number),
@@ -2603,11 +2642,20 @@ fn get_isotope_property(iso: &Isotope, property: &str) -> Expr {
     "NeutronNumber" => Expr::Integer(iso.mass_number - iso.atomic_number),
     "AtomicMass" => crate::functions::element_data::make_quantity(
       Expr::Real(iso.atomic_mass),
-      "Daltons",
+      "AtomicMassUnit",
     ),
+    // wolframscript reports the natural abundance as a percentage, and as an
+    // exact `0 Percent` — not a `Missing` — for an isotope that does not
+    // occur naturally.
     "IsotopeAbundance" => match iso.abundance {
-      Some(a) => Expr::Real(a),
-      None => missing_not_available(),
+      Some(a) => crate::functions::element_data::make_quantity(
+        Expr::Real(percent_of_fraction(a)),
+        "Percent",
+      ),
+      None => crate::functions::element_data::make_quantity(
+        Expr::Integer(0),
+        "Percent",
+      ),
     },
     "BindingEnergy" => crate::functions::element_data::make_quantity(
       Expr::Real(binding_energy_mev(iso)),
@@ -2626,14 +2674,31 @@ fn all_isotope_entities() -> Vec<Expr> {
   isos.into_iter().map(isotope_entity).collect()
 }
 
+/// `IsotopeData::notent`, the message wolframscript prints before echoing
+/// back an unrecognized isotope specifier. Strings are reported bare
+/// (`Carbon24`), everything else in its printed form (`{Carbon, 12}`).
+fn notent(spec: &Expr) {
+  crate::emit_message(&format!(
+    "IsotopeData::notent: {} is not a known entity, class or tag for \
+     IsotopeData. Use IsotopeData[] for a list of entities.",
+    match spec {
+      Expr::String(s) => s.clone(),
+      other => crate::syntax::expr_to_output(other),
+    }
+  ));
+}
+
 pub fn isotope_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match args.len() {
     0 => Ok(Expr::List(all_isotope_entities().into())),
     1 => match &args[0] {
+      // Wolfram answers a property query with `EntityProperty["Isotope", …]`
+      // objects rather than bare names. It lists every property of its own
+      // curated chart; Woxi lists the ones it answers.
       Expr::String(s) if s == "Properties" => {
         let props: Vec<Expr> = SUPPORTED_PROPERTIES
           .iter()
-          .map(|p| Expr::String(p.to_string()))
+          .map(|p| isotope_entity_property(p))
           .collect();
         Ok(Expr::List(props.into()))
       }
@@ -2648,10 +2713,14 @@ pub fn isotope_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             .collect();
           Ok(Expr::List(entities.into()))
         }
-        None => match find_isotope(identifier) {
-          Some(iso) => Ok(isotope_entity(iso)),
-          None => Ok(unevaluated("IsotopeData", args)),
-        },
+        None => {
+          if let Some(iso) = find_isotope(identifier) {
+            Ok(isotope_entity(iso))
+          } else {
+            notent(identifier);
+            Ok(unevaluated("IsotopeData", args))
+          }
+        }
       },
     },
     2 => {
@@ -2665,10 +2734,31 @@ pub fn isotope_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let Expr::String(property) = &args[1] else {
         return Ok(unevaluated("IsotopeData", args));
       };
-      match find_isotope(&args[0]) {
-        Some(iso) => Ok(get_isotope_property(iso, property)),
-        None => Ok(unevaluated("IsotopeData", args)),
+      if let Some(iso) = find_isotope(&args[0]) {
+        return Ok(get_isotope_property(iso, property));
       }
+      // `IsotopeData[All, property]` maps the property over every isotope,
+      // in the same order `IsotopeData[All]` lists them.
+      if matches!(&args[0], Expr::Identifier(s) if s == "All") {
+        let mut isos: Vec<&'static Isotope> = ISOTOPES.iter().collect();
+        isos.sort_by_key(|iso| (iso.atomic_number, iso.mass_number));
+        let values: Vec<Expr> = isos
+          .into_iter()
+          .map(|iso| get_isotope_property(iso, property))
+          .collect();
+        return Ok(Expr::List(values.into()));
+      }
+      // An element (`IsotopeData[6, "MassNumber"]`) is a *class* of
+      // isotopes: the property is mapped over its isotopes.
+      if let Some((atomic_number, _)) = resolve_element(&args[0]) {
+        let values: Vec<Expr> = isotopes_for_element(atomic_number)
+          .into_iter()
+          .map(|iso| get_isotope_property(iso, property))
+          .collect();
+        return Ok(Expr::List(values.into()));
+      }
+      notent(&args[0]);
+      Ok(unevaluated("IsotopeData", args))
     }
     _ => Ok(unevaluated("IsotopeData", args)),
   }

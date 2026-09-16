@@ -1467,8 +1467,10 @@ function main() {
     // intentionally, so the wolframscript divergence is by design.
     "ElementData[\"Helium\", \"IonizationEnergies\"]",
     // Properties list differs — Woxi exposes the subset it implements,
-    // Wolfram exposes its full superset.
+    // Wolfram exposes its full superset. (The companion unit test asserts
+    // the subset relation, which both engines do agree on.)
     "ElementData[\"Properties\"]",
+    "IsotopeData[\"Properties\"]",
     // Equivalent[a, False]: Woxi renders as `Not[a]`, Wolfram as prefix `!a`.
     // Semantically identical.
     "Equivalent[a, False]",

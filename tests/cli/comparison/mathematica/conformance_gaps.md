@@ -3681,11 +3681,30 @@ references, but diverging from a strict "does it decay" reading.
 `IsotopeData[…, "BindingEnergy"]` is not looked up — it is computed from
 NIST's atomic mass for the isotope via the standard mass-excess formula
 `BE = (Z·m(¹H) + N·m(n) − M(A,Z))·c²`, using CODATA 2018 constants for the
-neutron mass and the u→MeV conversion factor. This reproduces textbook
-values exactly (carbon-12's 92.16 MeV, for instance) but has not been
-checked digit-for-digit against wolframscript's own tabulated value for
-every bundled isotope, so its last few significant figures may not always
-match.
+neutron mass and the u→MeV conversion factor, then divided by the mass
+number (wolframscript reports the binding energy *per nucleon*). This
+reproduces textbook values (carbon-12's 92.16 MeV total, 7.68 MeV per
+nucleon) but agrees with wolframscript's own tabulated value only to about
+seven significant figures — `7.6801447` against WL's `7.6801446` for
+carbon-12.
+
+`IsotopeData[…, "AtomicMass"]` and `…, "IsotopeAbundance"` carry the same
+units as wolframscript (`"AtomicMassUnit"`, `"Percent"`) but as machine
+reals. WL tags its own values with the precision its measurement uncertainty
+justifies, which is not reconstructible from NIST's published digits:
+
+    Quantity[12.`9., "AtomicMassUnit"]
+    Quantity[98.9399999999999946176`3.2172206556445184, "Percent"]
+
+The abundances themselves are NIST's, which are not always Wolfram's: NIST
+puts carbon-12 at 98.93 %, WL at 98.94 % (the difference between the
+tabulated representative composition and the best-measurement range it sits
+in).
+
+`IsotopeData["Properties"]` lists the `EntityProperty["Isotope", …]` objects
+Woxi answers — seven, against the roughly sixty of Wolfram's curated chart
+(decay modes, half-lives, magnetic moments, medical applications, …). Same
+story as `ElementData["Properties"]`.
 
 ## Geometry and regions
 

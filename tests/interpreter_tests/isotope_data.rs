@@ -4,13 +4,27 @@ mod isotope_data_tests {
   use super::super::case_helpers::assert_case;
   use super::*;
 
+  // Woxi's bundled table is NIST's, narrower than Wolfram's full nuclide
+  // chart (see conformance_gaps.md), so the assertion is that every
+  // bundled isotope of the element is in the answer, in mass-number order
+  // — a statement both engines agree on, unlike the raw list.
   #[test]
   fn isotope_data_by_atomic_number_lists_isotopes() {
     clear_state();
     assert_eq!(
-      interpret("IsotopeData[6]").unwrap(),
-      "{Entity[Isotope, Carbon12], Entity[Isotope, Carbon13], \
-       Entity[Isotope, Carbon14]}"
+      interpret(
+        "SubsetQ[IsotopeData[6], {Entity[\"Isotope\", \"Carbon12\"], \
+Entity[\"Isotope\", \"Carbon13\"], Entity[\"Isotope\", \"Carbon14\"]}]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        r#"IsotopeData[6, "MassNumber"] == Sort[IsotopeData[6, "MassNumber"]]"#
+      )
+      .unwrap(),
+      "True"
     );
   }
 
@@ -18,18 +32,34 @@ mod isotope_data_tests {
   fn isotope_data_by_element_name_lists_isotopes() {
     clear_state();
     assert_eq!(
-      interpret(r#"IsotopeData["Hydrogen"]"#).unwrap(),
-      "{Entity[Isotope, Hydrogen1], Entity[Isotope, Hydrogen2], \
-       Entity[Isotope, Hydrogen3]}"
+      interpret(
+        "SubsetQ[IsotopeData[\"Hydrogen\"], \
+{Entity[\"Isotope\", \"Hydrogen1\"], Entity[\"Isotope\", \"Hydrogen2\"], \
+Entity[\"Isotope\", \"Hydrogen3\"]}]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  // The pair form is `{atomicNumber, massNumber}`; an element *name* paired
+  // with a mass number is not a known entity and stays unevaluated, exactly
+  // as in wolframscript.
+  #[test]
+  fn isotope_data_atomic_number_massnumber_pair() {
+    clear_state();
+    assert_eq!(
+      interpret("IsotopeData[{6, 12}]").unwrap(),
+      "Entity[Isotope, Carbon12]"
     );
   }
 
   #[test]
-  fn isotope_data_element_massnumber_pair() {
+  fn isotope_data_element_name_pair_is_not_an_entity() {
     clear_state();
     assert_eq!(
-      interpret(r#"IsotopeData[{"Carbon", 12}]"#).unwrap(),
-      "Entity[Isotope, Carbon12]"
+      interpret(r#"Quiet[IsotopeData[{"Carbon", 12}]]"#).unwrap(),
+      "IsotopeData[{Carbon, 12}]"
     );
   }
 
@@ -47,24 +77,27 @@ mod isotope_data_tests {
     );
   }
 
+  // "BindingEnergy" is the binding energy *per nucleon*, as in
+  // wolframscript: carbon-12's textbook 92.16 MeV total over 12 nucleons is
+  // 7.68 MeV, and helium-4's 28.30 MeV total is 7.07 MeV.
   #[test]
-  fn isotope_data_binding_energy_carbon12() {
+  fn isotope_data_binding_energy_is_per_nucleon() {
     clear_state();
-    // Textbook value: the total nuclear binding energy of carbon-12 is
-    // 92.16 MeV.
     assert_eq!(
       interpret(
         r#"Round[QuantityMagnitude[
-             IsotopeData[Entity["Isotope", "Carbon12"], "BindingEnergy"]],
-           0.01]"#
+             IsotopeData[#, "BindingEnergy"]], 0.01] & /@
+           {Entity["Isotope", "Carbon12"], Entity["Isotope", "Helium4"]}"#
       )
       .unwrap(),
-      "92.16"
+      "{7.68, 7.07}"
     );
   }
 
+  // A natural abundance is a percentage, and an isotope that does not occur
+  // naturally has an exact `0 Percent` abundance rather than a `Missing`.
   #[test]
-  fn isotope_data_abundance_known_and_missing() {
+  fn isotope_data_abundance_is_a_percentage() {
     clear_state();
     assert_eq!(
       interpret(
@@ -72,17 +105,22 @@ mod isotope_data_tests {
             IsotopeData[Entity["Isotope", "Carbon14"], "IsotopeAbundance"]}"#
       )
       .unwrap(),
-      "{0.9893, Missing[NotAvailable]}"
+      "{Quantity[98.93, Percent], Quantity[0, Percent]}"
     );
   }
 
   #[test]
-  fn isotope_data_atomic_mass_is_a_dalton_quantity() {
+  fn isotope_data_atomic_mass_is_an_atomic_mass_unit_quantity() {
     clear_state();
     assert_eq!(
-      interpret(r#"IsotopeData[Entity["Isotope", "Carbon12"], "AtomicMass"]"#)
-        .unwrap(),
-      "Quantity[12., Daltons]"
+      interpret(
+        r#"{QuantityMagnitude[
+              IsotopeData[Entity["Isotope", "Carbon12"], "AtomicMass"]],
+            QuantityUnit[
+              IsotopeData[Entity["Isotope", "Carbon12"], "AtomicMass"]]}"#
+      )
+      .unwrap(),
+      "{12., AtomicMassUnit}"
     );
   }
 
@@ -98,13 +136,36 @@ mod isotope_data_tests {
     );
   }
 
+  // Properties are named by `EntityProperty["Isotope", …]` objects. Wolfram
+  // lists every property of its curated chart; Woxi lists the ones it
+  // answers, so the shared assertion is that its list is a subset.
   #[test]
   fn isotope_data_properties_list() {
     clear_state();
     assert_eq!(
       interpret("IsotopeData[\"Properties\"]").unwrap(),
-      "{AtomicMass, AtomicNumber, BindingEnergy, IsotopeAbundance, \
-       MassNumber, NeutronNumber, StandardName}"
+      "{EntityProperty[Isotope, AtomicMass], \
+       EntityProperty[Isotope, AtomicNumber], \
+       EntityProperty[Isotope, BindingEnergy], \
+       EntityProperty[Isotope, IsotopeAbundance], \
+       EntityProperty[Isotope, MassNumber], \
+       EntityProperty[Isotope, NeutronNumber], \
+       EntityProperty[Isotope, StandardName]}"
+    );
+  }
+
+  #[test]
+  fn isotope_data_properties_are_entity_properties_of_isotope() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "SubsetQ[IsotopeData[\"Properties\"], \
+{EntityProperty[\"Isotope\", \"AtomicMass\"], \
+EntityProperty[\"Isotope\", \"BindingEnergy\"], \
+EntityProperty[\"Isotope\", \"MassNumber\"]}]"
+      )
+      .unwrap(),
+      "True"
     );
   }
 
@@ -118,6 +179,27 @@ mod isotope_data_tests {
     clear_state();
     assert_eq!(
       interpret("Length[IsotopeData[All]] == Length[IsotopeData[]]").unwrap(),
+      "True"
+    );
+  }
+
+  // An element or `All` names a *class* of isotopes: the property is mapped
+  // over its members, in the order the class lists them.
+  #[test]
+  fn isotope_data_property_maps_over_a_class() {
+    clear_state();
+    // Woxi's carbon isotopes are the NIST subset {12, 13, 14} of Wolfram's
+    // full {8, …, 23} chart, so the shared assertion is the subset.
+    assert_eq!(
+      interpret(r#"SubsetQ[IsotopeData[6, "MassNumber"], {12, 13, 14}]"#)
+        .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        r#"Length[IsotopeData[All, "MassNumber"]] == Length[IsotopeData[All]]"#
+      )
+      .unwrap(),
       "True"
     );
   }
