@@ -1435,6 +1435,36 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_grid_frame_and_unquoted_text_with_graphics_cell() {
+    // Regression: a Grid row mixing a plain string cell with a Graphics
+    // cell (a Demonstration's idiom for a labeled row of pictures, e.g.
+    // `Grid[{Join[{"encryption"}, pictures]}, Frame -> All]`) took a
+    // different, simpler renderer than a plain Grid of strings because
+    // `lays_out_a_graphic` was true — the cell-by-cell composition path
+    // used for `Grid`/`Column`/`Row` holding a picture ignored `Frame`
+    // entirely and printed a string cell as quoted InputForm text instead
+    // of the plain label a pure-text Grid already renders unquoted.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Grid[{{\"row1\", Graphics[Circle[], ImageSize -> 20], \
+       Graphics[Disk[], ImageSize -> 20]}}, Frame -> All], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      svg.contains(">row1<"),
+      "a plain string cell next to a picture must stay unquoted, matching a text-only grid:\n{svg}"
+    );
+    assert!(
+      !svg.contains("&quot;row1&quot;"),
+      "a plain string cell next to a picture must not print as quoted InputForm text:\n{svg}"
+    );
+    assert!(
+      svg.contains("<line"),
+      "Frame -> All must still draw gridlines when a row holds a picture:\n{svg}"
+    );
+  }
+
+  #[test]
   fn test_grid_background_explicit_cell_rules_take_priority() {
     // Regression: `Background -> {cols, rows, {{i, j} -> color, …}}` — the
     // three-argument form a Demonstration uses to highlight specific
