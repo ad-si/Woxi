@@ -83,7 +83,8 @@ pub fn convolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let s = frac(a.0 * b.1 + b.0 * a.1, a.1 * b.1); // a + b
     let q = frac(a.0 * b.0 * s.1, a.1 * b.1 * s.0); // a*b/(a + b)
     let sqrt_part = call1("Sqrt", div2(const_expr("Pi"), frac_to_expr(s)));
-    let y_shifted = minus2(y.clone(), call("Plus", vec![shift_f, shift_g]));
+    let shift = call("Plus", vec![shift_f, shift_g]);
+    let y_shifted = simplest_signed_difference(&y, &shift);
     let y_sq = pow2(y_shifted, Expr::Integer(2));
     let exponent = match q {
       (1, 1) => y_sq,
@@ -116,6 +117,49 @@ pub fn convolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   Ok(unevaluated(args))
+}
+
+/// `a - b` in whichever of its two signs wolframscript prints where the sign
+/// cannot matter — as under the even power this builds.
+///
+/// `(y - p)^2` and `(p - y)^2` are the same number, and wolframscript reports
+/// the one whose base has the smaller `LeafCount`, because its result has been
+/// through `Simplify`: `Simplify[(-s - t + y)^2]` answers `(s + t - y)^2`
+/// (base 6 nodes against 8, each negated term costing a `Times[-1, …]`),
+/// while `(-3 + y)^2` stays as written (base 3 nodes against the 5 of
+/// `3 - y`).
+///
+/// Equal counts — `(-t + y)^2` against `(t - y)^2`, five nodes either way —
+/// are broken in favour of the form that does not open with a minus sign,
+/// which is the one wolframscript prints (`Simplify[(-t + y)^2]` answers
+/// `(t - y)^2`).
+fn simplest_signed_difference(a: &Expr, b: &Expr) -> Expr {
+  let evaluate =
+    |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e).unwrap_or(e);
+  let leaves = |e: &Expr| match crate::evaluator::evaluate_expr_to_expr(&call1(
+    "LeafCount",
+    e.clone(),
+  )) {
+    Ok(Expr::Integer(n)) => Some(n),
+    _ => None,
+  };
+  let opens_with_minus = |e: &Expr| {
+    crate::syntax::format_expr(e, crate::syntax::ExprForm::Input)
+      .starts_with('-')
+  };
+  let forward = evaluate(minus2(a.clone(), b.clone()));
+  let reversed = evaluate(minus2(b.clone(), a.clone()));
+  match (leaves(&forward), leaves(&reversed)) {
+    (Some(f), Some(r)) if r < f => reversed,
+    (Some(f), Some(r))
+      if r == f
+        && opens_with_minus(&forward)
+        && !opens_with_minus(&reversed) =>
+    {
+      reversed
+    }
+    _ => forward,
+  }
 }
 
 /// Recognize `expr` (a function of `x_var`) as `K·E^(-a·(x_var-shift)²)` for
@@ -171,9 +215,18 @@ fn gaussian_shape(expr: &Expr, x_var: &str) -> Option<(Frac, Expr, Expr)> {
 
   // K = E^(coeff0 + a·shift²) — the x-independent remainder of Log[expr],
   // with the shift's own quadratic contribution (-a·shift²) added back in.
+  // `Expand` first: `coeff0` was read off an expanded polynomial, so its
+  // share of `-a·shift²` arrives term by term (`-2 s^2 - 6 s t - 9 t^2/2`)
+  // while `correction` is still the folded `(2 s + 3 t)^2/2`. Unexpanded the
+  // two never meet and a compound shift leaves its whole square behind in
+  // the exponent instead of cancelling to the plain normalization constant.
   let correction =
     times2(frac_to_expr(a), pow2(shift.clone(), Expr::Integer(2)));
-  let log_k = call("Plus", vec![coeff0, correction]);
+  let log_k = crate::evaluator::evaluate_expr_to_expr(&call1(
+    "Expand",
+    call("Plus", vec![coeff0, correction]),
+  ))
+  .ok()?;
   let k =
     crate::evaluator::evaluate_expr_to_expr(&pow2(id_expr("E"), log_k)).ok()?;
 

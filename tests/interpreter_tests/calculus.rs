@@ -16379,12 +16379,41 @@ mod convolve {
     );
     // Symbolic shifts (the actual shape used by the Demonstration, where the
     // shift is a Manipulate slider variable rather than a literal number).
-    // wolframscript squares `s + t - y` here rather than `y - s - t`; the
-    // two are equal but not the same expression, and its choice follows no
-    // rule visible from outside — catalogued in conformance_gaps.md.
+    // The square is sign-blind, and wolframscript prints whichever sign of
+    // its base is the simpler expression: `s + t - y` (6 nodes) rather than
+    // `-s - t + y` (8, each negated term costing a `Times[-1, …]`).
     assert_eq!(
       interpret("Convolve[PDF[NormalDistribution[0, 1], x - t], PDF[NormalDistribution[0, 1], x - s], x, y]").unwrap(),
-      "1/(2*E^((-s - t + y)^2/4)*Sqrt[Pi])"
+      "1/(2*E^((s + t - y)^2/4)*Sqrt[Pi])"
+    );
+    // One symbolic shift: the two signs cost the same five nodes, and the
+    // one that does not open with a minus wins.
+    assert_eq!(
+      interpret("Convolve[PDF[NormalDistribution[0, 1], x - t], PDF[NormalDistribution[0, 1], x], x, y]").unwrap(),
+      "1/(2*E^((t - y)^2/4)*Sqrt[Pi])"
+    );
+    // A shift that is already negative needs no flip — `t + y` is cheaper
+    // than `-t - y` either way.
+    assert_eq!(
+      interpret("Convolve[PDF[NormalDistribution[0, 1], x + t], PDF[NormalDistribution[0, 1], x], x, y]").unwrap(),
+      "1/(2*E^((t + y)^2/4)*Sqrt[Pi])"
+    );
+    // Shifts of opposite sign: `-s + t + y` (6 nodes) beats `s - t - y` (8),
+    // so the leading minus stays.
+    assert_eq!(
+      interpret("Convolve[PDF[NormalDistribution[0, 1], x + t], PDF[NormalDistribution[0, 1], x - s], x, y]").unwrap(),
+      "1/(2*E^((-s + t + y)^2/4)*Sqrt[Pi])"
+    );
+    // The same rule reached through the distribution's mean rather than a
+    // shifted argument.
+    assert_eq!(
+      interpret("Convolve[PDF[NormalDistribution[a, 1], x], PDF[NormalDistribution[b, 1], x], x, y]").unwrap(),
+      "1/(2*E^((a + b - y)^2/4)*Sqrt[Pi])"
+    );
+    // A numeric shift keeps `-1 + y`: its flip `1 - y` costs two nodes more.
+    assert_eq!(
+      interpret("Convolve[PDF[NormalDistribution[1, 1], x], PDF[NormalDistribution[0, 1], x], x, y]").unwrap(),
+      "1/(2*E^((-1 + y)^2/4)*Sqrt[Pi])"
     );
   }
 

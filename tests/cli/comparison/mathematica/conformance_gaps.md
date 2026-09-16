@@ -1535,28 +1535,45 @@ woxi eval 'Surd[8, 10^40]'                                  # Surd[8, 1000000000
 `BigInteger` degree leaves the call unevaluated. Degrees up to `10^38` work.
 
 
-### `Convolve` of two Gaussians picks the other sign for the squared shift
+### `Convolve` of two Gaussians leaves the constant as an unrationalized root
 
 ```sh
-wolframscript -code 'ToString[Convolve[PDF[NormalDistribution[0, 1], x - t],
-                     PDF[NormalDistribution[0, 1], x - s], x, y], InputForm]'
-# 1/(2*E^((s + t - y)^2/4)*Sqrt[Pi])
-woxi eval 'Convolve[PDF[NormalDistribution[0, 1], x - t],
-           PDF[NormalDistribution[0, 1], x - s], x, y]'
-# 1/(2*E^((-s - t + y)^2/4)*Sqrt[Pi])
+wolframscript -code 'ToString[Convolve[PDF[NormalDistribution[0, 1], x],
+                     PDF[NormalDistribution[0, 2], x], x, y], InputForm]'
+# 1/(E^(y^2/10)*Sqrt[10*Pi])
+woxi eval 'Convolve[PDF[NormalDistribution[0, 1], x],
+           PDF[NormalDistribution[0, 2], x], x, y]'
+# Sqrt[(2*Pi)/5]/(2*E^(y^2/10)*Pi)
 ```
 
-`(s + t - y)^2` and `(-s - t + y)^2` are equal but not the same expression —
-WL keeps whichever of `±z` was constructed (`(y - s - t)^2` typed in echoes as
-`(-s - t + y)^2` there too). Woxi always builds `y - mu` for the total shift
-`mu`, which is **also what WL's own `PDF[NormalDistribution[s + t, Sqrt[2]], y]`
-gives** for the very same distribution — WL's `Convolve` goes through
-`Integrate` instead and its sign choice follows no rule visible from outside.
-Measured over 11 shift shapes it flips to `mu - y` exactly when every term of
-`mu` is a positive number or a bare symbol with coefficient 1 (`s`, `s + t`,
-`1 + s`, `a + b`, `Pi`), and keeps `y - mu` otherwise (`3`, `2 s`, `2 s + 3 t`,
-`u v`, `s - t`, `-s - t`) — a fit with no mechanism behind it, so it is not
-implemented. Numeric and zero shifts agree.
+Same value — `Sqrt[2 Pi/5]/(2 Pi)` squared is `1/(10 Pi)` — but Woxi does not
+pull the leftover `Pi` under the root and rationalize the result. This is the
+general `Sqrt[q Pi]/Pi` folding, not anything `Convolve` does; it only shows up
+here when the two widths do not divide out (equal widths, the common case,
+cancel exactly and agree). See also the `Sqrt` product-split note.
+
+The **sign of the squared shift** used to diverge here too and no longer does:
+wolframscript prints whichever of `(y - mu)^2` / `(mu - y)^2` has the smaller
+`LeafCount` — its result has been through `Simplify` — with a tie going to the
+form that does not open with a minus. That reproduces all 11 measured shift
+shapes (`3`, `s`, `s + t`, `1 + s`, `Pi`, `2 s`, `2 s + 3 t`, `u v`, `s - t`,
+`-s - t`, `a + b`).
+
+
+### `Convolve` of two Gaussians needs a literal width
+
+```sh
+wolframscript -code 'ToString[Convolve[PDF[NormalDistribution[m, s], x],
+                     PDF[NormalDistribution[n, s], x], x, y], InputForm]'
+# Sqrt[s^(-2)]/(2*E^((m + n - y)^2/(4*s^2))*Sqrt[Pi])
+woxi eval 'Convolve[PDF[NormalDistribution[m, s], x],
+           PDF[NormalDistribution[n, s], x], x, y]'
+# Convolve[1/(E^((-m + x)^2/(2*s^2))*Sqrt[2*Pi]*s), …]
+```
+
+`gaussian_shape` reads the quadratic coefficient as a literal rational, so a
+symbolic standard deviation is not recognized and the call stays unevaluated.
+Symbolic *means* are recognized; only the width has to be a number.
 
 
 ## Special functions
