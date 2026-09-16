@@ -22814,19 +22814,23 @@ fn parse_manipulate_control(
     }
     _ => None,
   };
-  if bounds.len() == 1
+  // Substitute the slot rather than applying the function: `Button` holds
+  // its action, and evaluating here would *run* the reset instead of
+  // storing it.
+  let built = if bounds.len() == 1
     && let Some(Expr::Function { body }) = custom_builder
-    // Substitute the slot rather than applying the function: `Button` holds
-    // its action, and evaluating here would *run* the reset instead of
-    // storing it.
-    && let built = crate::syntax::substitute_slots(
+  {
+    Some(crate::syntax::substitute_slots(
       body,
       &[call1("Dynamic", Expr::Identifier(name.clone()))],
-    )
-    && let Expr::FunctionCall {
-      name: built_name,
-      args: built_args,
-    } = &built
+    ))
+  } else {
+    None
+  };
+  if let Some(Expr::FunctionCall {
+    name: built_name,
+    args: built_args,
+  }) = &built
     && built_name == "Button"
     && built_args.len() >= 2
   {
@@ -22842,6 +22846,29 @@ fn parse_manipulate_control(
         label_runs: button_runs,
         action: crate::syntax::expr_to_input_form(&built_args[1]),
       },
+    });
+  }
+  // A custom builder may instead call a *user-defined* control function
+  // (`FacetsControl[Dynamic[var_], colorBy_] := ClickPane[…]`), which only
+  // becomes a recognizable widget once that delayed definition actually
+  // fires — unlike the literal `Button[…]` case above, this needs a real
+  // evaluation. A `TogglerBar[Dynamic[getter, setter], choices]` result
+  // renders the same way a body-embedded raw `TogglerBar` does (see
+  // `togglerbar_node`), just promoted into a labeled row of its own so the
+  // outer variable (`facets`, say) gets a slot in the control panel next to
+  // whatever other views the Demonstration offers onto it.
+  if let Some(built) = &built
+    && let Ok(evaluated) = evaluate_expr_to_expr(built)
+    && let Expr::FunctionCall { name: ev_name, .. } = &evaluated
+    && ev_name == "TogglerBar"
+  {
+    let value = explicit_initial
+      .as_ref()
+      .map_or_else(|| "Null".to_string(), crate::syntax::expr_to_input_form);
+    return Some(ParsedControl::StateWithDisplay {
+      name,
+      value,
+      display: crate::syntax::expr_to_input_form(&evaluated),
     });
   }
 
@@ -24534,28 +24561,101 @@ fn checkbox_node(
   }
 }
 
-/// Build a `TogglerBar[Dynamic[var], choices]` display: a Row of Toggler
+/// The variable(s) a setter function's body assigns, collected from every
+/// `Set`/`SetDelayed` found anywhere inside it (so an `If`-branching setter
+/// like `(If[# == 0, var = {}, var = f[#]])&` is covered, not just a bare
+/// top-level assignment). Used by `togglerbar_node` to recover the
+/// write-back target of a getter/setter `Dynamic[getter, setter]` binding,
+/// whose `setter` doesn't otherwise name the variable it drives. Returns
+/// `None` when no assignment is found, or when more than one distinct
+/// symbol is assigned — too ambiguous to trust.
+fn find_unique_assignment_target(expr: &Expr) -> Option<String> {
+  fn collect(expr: &Expr, targets: &mut Vec<String>) {
+    if let Expr::FunctionCall { name, args } = expr
+      && (name == "Set" || name == "SetDelayed")
+      && args.len() == 2
+    {
+      if let Expr::Identifier(v) = &args[0]
+        && !targets.contains(v)
+      {
+        targets.push(v.clone());
+      }
+      collect(&args[1], targets);
+      return;
+    }
+    match expr {
+      Expr::FunctionCall { args, .. } => {
+        for a in args {
+          collect(a, targets);
+        }
+      }
+      Expr::List(items) => {
+        for it in items {
+          collect(it, targets);
+        }
+      }
+      Expr::CompoundExpr(items) => {
+        for it in items {
+          collect(it, targets);
+        }
+      }
+      Expr::Function { body } => collect(body, targets),
+      _ => {}
+    }
+  }
+  let mut targets = Vec::new();
+  collect(expr, &mut targets);
+  match targets.as_slice() {
+    [only] => Some(only.clone()),
+    _ => None,
+  }
+}
+
+/// Build a `TogglerBar[Dynamic[…], choices]` display: a Row of Toggler
 /// buttons. Each choice is `value -> label` (or a plain value, labelled by
-/// itself); clicking a button toggles the value's membership in the list
-/// `var`. Returns `None` when the arguments don't have that shape (the
-/// caller falls back to a static rendering).
+/// itself); clicking a button toggles the value's membership in the bound
+/// list.
+///
+/// `Dynamic[…]`'s first argument is either a bare `var` — read and written
+/// directly — or a getter/setter pair `Dynamic[getter, setter]`, the
+/// Demonstrations idiom for a widget that shows a *transform* of the state
+/// it drives (`Dynamic[CoxeterToDuVal[facets], (facets =
+/// DuValToCoxeter[#])&]` displays composite cells while actually toggling
+/// `facets`). The write-back target for that second form is recovered from
+/// `setter`'s own assignment(s) via `find_unique_assignment_target`; when
+/// that can't be resolved to a single symbol, the caller falls back to a
+/// static rendering (as it does for any other shape it doesn't recognize).
 fn togglerbar_node(
   args: &[Expr],
   bindings: &[(String, String)],
   probes: &mut Vec<String>,
   ons: &mut Vec<String>,
 ) -> Option<DisplayNode> {
-  let var = match args.first() {
-    Some(Expr::FunctionCall { name, args: dargs })
-      if name == "Dynamic" && !dargs.is_empty() =>
-    {
-      match &dargs[0] {
-        Expr::Identifier(v) => v.clone(),
-        _ => return None,
-      }
+  let Some(Expr::FunctionCall {
+    name: dname,
+    args: dargs,
+  }) = args.first()
+  else {
+    return None;
+  };
+  if dname != "Dynamic" {
+    return None;
+  }
+  let (getter, setter) = match dargs.len() {
+    1 => match &dargs[0] {
+      Expr::Identifier(_) => (dargs[0].clone(), None),
+      _ => return None,
+    },
+    2 => {
+      let target = find_unique_assignment_target(&dargs[1])?;
+      (
+        dargs[0].clone(),
+        Some((crate::syntax::expr_to_input_form(&dargs[1]), target)),
+      )
     }
     _ => return None,
   };
+  let getter_code = crate::syntax::expr_to_input_form(&getter);
   // The choice list may be held (e.g. `Thread[Range[1, 4] -> {…}]`).
   let choices_expr = match &args[1] {
     l @ Expr::List(_) => l.clone(),
@@ -24565,9 +24665,7 @@ fn togglerbar_node(
     return None;
   };
   // The current selection, for the per-choice `selected` state.
-  let current =
-    crate::evaluator::evaluate_expr_to_expr(&Expr::Identifier(var.clone()))
-      .ok();
+  let current = crate::evaluator::evaluate_expr_to_expr(&getter).ok();
   let mut buttons = Vec::with_capacity(choices.len());
   for choice in choices {
     let (value, label) = match choice {
@@ -24589,10 +24687,16 @@ fn togglerbar_node(
       Some(single) => crate::syntax::expr_to_input_form(single) == value_code,
       None => false,
     };
-    let mutation = format!(
-      "{var} = If[MemberQ[{var}, {value_code}], DeleteCases[{var}, \
-       {value_code}], Append[{var}, {value_code}]]"
+    let toggled = format!(
+      "If[MemberQ[{getter_code}, {value_code}], DeleteCases[{getter_code}, \
+       {value_code}], Append[{getter_code}, {value_code}]]"
     );
+    let mutation = match &setter {
+      None => format!("{getter_code} = {toggled}"),
+      Some((setter_code, target)) => {
+        format!("{target} = ({setter_code})[{toggled}]")
+      }
+    };
     buttons.push(DisplayNode::Toggler {
       label: Box::new(display_expr_to_node(label, bindings, probes, ons)),
       mutation,
