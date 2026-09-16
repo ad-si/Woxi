@@ -505,16 +505,15 @@ pub fn dispatch_evaluation_control(
         vec![args[0].clone(), Expr::Integer(0)],
       )));
     }
-    // SphericalShell normalizes to its full form
-    // SphericalShell[center, {rinner, router}]: the default shell is
-    // {1/2, 1}, a single radius r means {r/2, r}, and a bare radius pair
-    // gets the origin center. (wolframscript-verified.)
-    "SphericalShell" if args.len() <= 2 => {
-      let origin = || {
-        Expr::List(
-          vec![Expr::Integer(0), Expr::Integer(0), Expr::Integer(0)].into(),
-        )
-      };
+    // The three centre-plus-radius-pair regions normalize to their full form
+    // `head[center, {rinner, router}]`: the default shell is {1/2, 1}, a bare
+    // radius pair gets the origin as its centre, and a single radius r means
+    // {r/2, r} — except for `Torus`, where wolframscript leaves `Torus[r]`
+    // alone. `Annulus` is the 2-D member, so its origin has two coordinates.
+    // (wolframscript-verified, symbolic radii included.)
+    "SphericalShell" | "Annulus" | "Torus" if args.len() <= 2 => {
+      let dimension = if name == "Annulus" { 2 } else { 3 };
+      let origin = || Expr::List(vec![Expr::Integer(0); dimension].into());
       let normalized = match args {
         [] => Some((
           origin(),
@@ -529,7 +528,7 @@ pub fn dispatch_evaluation_control(
         [Expr::List(radii)] if radii.len() == 2 => {
           Some((origin(), args[0].clone()))
         }
-        [r] if !matches!(r, Expr::List(_)) => {
+        [r] if name != "Torus" && !matches!(r, Expr::List(_)) => {
           let half = crate::evaluator::evaluate_expr_to_expr(&div2(
             r.clone(),
             Expr::Integer(2),
@@ -544,9 +543,65 @@ pub fn dispatch_evaluation_control(
         _ => None,
       };
       return Some(Ok(match normalized {
-        Some((center, radii)) => call("SphericalShell", vec![center, radii]),
-        None => unevaluated("SphericalShell", args),
+        Some((center, radii)) => call(name, vec![center, radii]),
+        None => unevaluated(name, args),
       }));
+    }
+    // A region primitive called with no arguments is not left as written:
+    // wolframscript fills in the default its documentation names, so
+    // `Sphere[]` *evaluates to* `Sphere[{0, 0, 0}]` and is one level deeper
+    // than the bare call. (wolframscript-verified for every head listed.)
+    "Sphere" | "Ball" | "Cuboid" | "Cylinder" | "Cone" | "Tube"
+    | "Parallelepiped" | "Pyramid" | "Prism" | "Hexahedron"
+      if args.is_empty() =>
+    {
+      let point = |coords: [i128; 3]| {
+        Expr::List(coords.map(Expr::Integer).to_vec().into())
+      };
+      let points = |coords: &[[i128; 3]]| {
+        Expr::List(coords.iter().map(|c| point(*c)).collect::<Vec<_>>().into())
+      };
+      let defaults = match name {
+        // A single corner/centre at the origin; the size stays implicit.
+        "Sphere" | "Ball" | "Cuboid" => vec![point([0, 0, 0])],
+        // The unit-radius z-axis segment from -1 to 1.
+        "Cylinder" | "Cone" | "Tube" => {
+          vec![points(&[[0, 0, -1], [0, 0, 1]])]
+        }
+        // A corner plus the three edge vectors spanning it.
+        "Parallelepiped" => {
+          vec![point([0, 0, 0]), points(&[[1, 0, 0], [1, 1, 0], [1, 1, 1]])]
+        }
+        // A square base of side 2 centred on the origin, apex at z = 1.
+        "Pyramid" => vec![points(&[
+          [-1, -1, 0],
+          [1, -1, 0],
+          [1, 1, 0],
+          [-1, 1, 0],
+          [0, 0, 1],
+        ])],
+        // The unit triangular prism: two right triangles, base then top.
+        "Prism" => vec![points(&[
+          [0, 0, 0],
+          [1, 0, 0],
+          [0, 1, 0],
+          [0, 0, 1],
+          [1, 0, 1],
+          [0, 1, 1],
+        ])],
+        // The unit cube's eight vertices, base face then top face.
+        _ => vec![points(&[
+          [0, 0, 0],
+          [1, 0, 0],
+          [1, 1, 0],
+          [0, 1, 0],
+          [0, 0, 1],
+          [1, 0, 1],
+          [1, 1, 1],
+          [0, 1, 1],
+        ])],
+      };
+      return Some(Ok(call(name, defaults)));
     }
     // StadiumShape[] / StadiumShape[r] normalize to the full form with the
     // default endpoints {{-1, 0}, {1, 0}} (the 2-D capsule analog).

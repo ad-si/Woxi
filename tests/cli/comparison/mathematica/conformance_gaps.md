@@ -3570,6 +3570,26 @@ internal hash order. Woxi keeps input order.
 
 ## Geometry and regions
 
+### Three region measures are missing for heads whose siblings have them
+
+```sh
+wolframscript -code 'ToString[{RegionDimension[Tube[{{0,0,0},{0,0,2}}]],
+                     Area[Torus[{0,0,0},{1,3}]], SurfaceArea[Torus[{0,0,0},{1,3}]],
+                     Volume[Hexahedron[]]}, InputForm]'
+# {2, 8*Pi^2, Undefined, 1}
+woxi eval '{RegionDimension[Tube[{{0,0,0},{0,0,2}}]], …}'
+# each one echoed back unevaluated
+```
+
+`Tube` is absent from the intrinsic-dimension table (`Cylinder` and `Cone`
+are there). `Torus` has `RegionMeasure` — `RegionMeasure[Torus[{0,0,0},{1,3}]]`
+is `8*Pi^2`, correct — but `Area`/`SurfaceArea` do not route a 2-dimensional
+region to it the way they do for `Sphere`. `Hexahedron`'s volume is only
+computed from the centre-and-edge Platonic form, not from the eight-vertex
+form its default expands to, which needs a general decomposition rather than
+a table entry. Independent of how the region was written: the zero-argument
+default forms diverge for the same reason the explicit ones do.
+
 ### `TriangleCenter` accepts a triangle embedded in 3D
 
 `TriangleCenter[Triangle[{{0,0,0},{4,0,0},{0,3,0}}], "Circumcenter"]` is

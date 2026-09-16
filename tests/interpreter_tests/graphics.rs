@@ -4281,12 +4281,15 @@ mod plot3d {
         .unwrap(),
         "3"
       );
+      // Five, not four: `Sphere[]` has evaluated to `Sphere[{0, 0, 0}]`, so
+      // the deepest path runs Graphics3D → list → Sphere → the centre → a
+      // coordinate.
       assert_eq!(
         interpret(
           "Depth[Graphics3D[{Red, Sphere[]}, Axes -> True, Boxed -> False]]"
         )
         .unwrap(),
-        "4"
+        "5"
       );
       assert_eq!(
         interpret(

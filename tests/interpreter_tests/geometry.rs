@@ -4810,7 +4810,7 @@ mod find_shortest_curve {
   fn unsupported_region_unevaluated() {
     assert_eq!(
       interpret("FindShortestCurve[Annulus[], {1, 0}, {-0.8, 0.4}]").unwrap(),
-      "FindShortestCurve[Annulus[], {1, 0}, {-0.8, 0.4}]"
+      "FindShortestCurve[Annulus[{0, 0}, {1/2, 1}], {1, 0}, {-0.8, 0.4}]"
     );
   }
 }
@@ -5285,7 +5285,8 @@ mod graphics_object_regions {
 
   #[test]
   fn torus_stays_symbolic() {
-    assert_eq!(interpret("Torus[]").unwrap(), "Torus[]");
+    // `Torus[]` fills in its default centre and radii, like `SphericalShell`.
+    assert_eq!(interpret("Torus[]").unwrap(), "Torus[{0, 0, 0}, {1/2, 1}]");
     assert_eq!(
       interpret("FilledTorus[{0, 0, 0}, {1, 2}]").unwrap(),
       "FilledTorus[{0, 0, 0}, {1, 2}]"
@@ -8235,5 +8236,105 @@ mod convex_polyhedron_q {
         result.warnings
       );
     }
+  }
+}
+
+// A region primitive called with no arguments fills in its documented
+// default rather than staying as written, so `Sphere[]` is one level deeper
+// than the bare call (`Depth[Graphics3D[{Red, Sphere[]}]]` counts it). All
+// outputs verified against wolframscript.
+mod zero_argument_region_defaults {
+  use super::*;
+
+  #[test]
+  fn centre_only_solids_sit_at_the_origin() {
+    assert_eq!(interpret("Sphere[]").unwrap(), "Sphere[{0, 0, 0}]");
+    assert_eq!(interpret("Ball[]").unwrap(), "Ball[{0, 0, 0}]");
+    assert_eq!(interpret("Cuboid[]").unwrap(), "Cuboid[{0, 0, 0}]");
+    // A centre that was given stays untouched, radius or not.
+    assert_eq!(interpret("Sphere[{1, 2, 3}]").unwrap(), "Sphere[{1, 2, 3}]");
+    assert_eq!(
+      interpret("Sphere[{1, 2, 3}, 2]").unwrap(),
+      "Sphere[{1, 2, 3}, 2]"
+    );
+  }
+
+  #[test]
+  fn axis_segment_solids_span_the_z_axis() {
+    for head in ["Cylinder", "Cone", "Tube"] {
+      assert_eq!(
+        interpret(&format!("{head}[]")).unwrap(),
+        format!("{head}[{{{{0, 0, -1}}, {{0, 0, 1}}}}]"),
+        "{head}[]"
+      );
+    }
+    assert_eq!(
+      interpret("Cylinder[{{0, 0, 0}, {0, 0, 2}}]").unwrap(),
+      "Cylinder[{{0, 0, 0}, {0, 0, 2}}]"
+    );
+  }
+
+  #[test]
+  fn vertex_list_solids_get_their_unit_shape() {
+    assert_eq!(
+      interpret("Parallelepiped[]").unwrap(),
+      "Parallelepiped[{0, 0, 0}, {{1, 0, 0}, {1, 1, 0}, {1, 1, 1}}]"
+    );
+    assert_eq!(
+      interpret("Pyramid[]").unwrap(),
+      "Pyramid[{{-1, -1, 0}, {1, -1, 0}, {1, 1, 0}, {-1, 1, 0}, {0, 0, 1}}]"
+    );
+    assert_eq!(
+      interpret("Prism[]").unwrap(),
+      "Prism[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, 0, 1}, {1, 0, 1}, \
+       {0, 1, 1}}]"
+    );
+    assert_eq!(
+      interpret("Hexahedron[]").unwrap(),
+      "Hexahedron[{{0, 0, 0}, {1, 0, 0}, {1, 1, 0}, {0, 1, 0}, {0, 0, 1}, \
+       {1, 0, 1}, {1, 1, 1}, {0, 1, 1}}]"
+    );
+  }
+
+  #[test]
+  fn annulus_and_torus_normalize_like_spherical_shell() {
+    // `Annulus` is the 2-D member, so its centre has two coordinates.
+    assert_eq!(interpret("Annulus[]").unwrap(), "Annulus[{0, 0}, {1/2, 1}]");
+    assert_eq!(
+      interpret("Annulus[{1, 3}]").unwrap(),
+      "Annulus[{0, 0}, {1, 3}]"
+    );
+    // A bare radius r means inner radius r/2, symbolic or not.
+    assert_eq!(
+      interpret("Annulus[3]").unwrap(),
+      "Annulus[{0, 0}, {3/2, 3}]"
+    );
+    assert_eq!(
+      interpret("Annulus[a]").unwrap(),
+      "Annulus[{0, 0}, {a/2, a}]"
+    );
+    assert_eq!(interpret("Torus[]").unwrap(), "Torus[{0, 0, 0}, {1/2, 1}]");
+    assert_eq!(
+      interpret("Torus[{1, 3}]").unwrap(),
+      "Torus[{0, 0, 0}, {1, 3}]"
+    );
+    // `Torus[r]` is the one exception wolframscript leaves alone.
+    assert_eq!(interpret("Torus[3]").unwrap(), "Torus[3]");
+    assert_eq!(interpret("Torus[a]").unwrap(), "Torus[a]");
+  }
+
+  #[test]
+  fn the_filled_in_default_shows_up_in_the_expression_tree() {
+    // The reason this matters beyond printing: the defaults add a level.
+    assert_eq!(
+      interpret(
+        "Depth[Graphics3D[{Red, Sphere[]}, Axes -> True, \
+                 Boxed -> False]]"
+      )
+      .unwrap(),
+      "5"
+    );
+    assert_eq!(interpret("Depth[Sphere[]]").unwrap(), "3");
+    assert_eq!(interpret("Length[Cylinder[]]").unwrap(), "1");
   }
 }
