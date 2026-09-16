@@ -5,6 +5,7 @@
 
 #[allow(unused_imports)]
 use super::*;
+use crate::functions::calculus_ast::differentiate_expr;
 use crate::functions::math_ast::{make_sqrt, rat_reduce};
 use crate::syntax::{expr_children, map_children};
 
@@ -393,7 +394,11 @@ fn ndsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     return match ndsolve_pde(&positional) {
       Ok(Some(result)) => Ok(restore_compound_heads(&result, &renames)),
-      Ok(None) => Ok(unevaluated("NDSolve", args)),
+      Ok(None) => match ndsolve_pde_hyperbolic(&positional) {
+        Ok(Some(result)) => Ok(restore_compound_heads(&result, &renames)),
+        Ok(None) => Ok(unevaluated("NDSolve", args)),
+        Err(e) => Err(e),
+      },
       Err(e) => Err(e),
     };
   }
@@ -643,6 +648,35 @@ fn try_pde_evolution_term(
   try_side(lhs, rhs).or_else(|| try_side(rhs, lhs))
 }
 
+/// Recognise `Derivative[2, 0][u][t, x] == rhs` (or the reverse) — the
+/// evolution equation of a hyperbolic (second-order-in-time) PDE. Unlike
+/// [`try_pde_evolution_term`], no coefficient scaling on the
+/// time-derivative term is recognised.
+fn try_pde_evolution_term_order2(
+  eq: &Expr,
+  u_name: &str,
+  t_name: &str,
+  x_name: &str,
+  swap: bool,
+) -> Option<Expr> {
+  let (lhs, rhs) = as_equal_pair(eq)?;
+  let is_d2udt2 = |e: &Expr| {
+    matches!(
+      match_pde_term_roles(e, u_name, swap),
+      Some((2, 0, t_arg, x_arg))
+        if matches!(&t_arg, Expr::Identifier(n) if n == t_name)
+          && matches!(&x_arg, Expr::Identifier(n) if n == x_name)
+    )
+  };
+  if is_d2udt2(lhs) {
+    return Some(rhs.clone());
+  }
+  if is_d2udt2(rhs) {
+    return Some(lhs.clone());
+  }
+  None
+}
+
 /// Recognise `u[t0, x] == rhs(x)` (or `u[x, t0]` when `swap` is set, or
 /// either reversed) — the initial condition at `t == t0`. Returns the RHS.
 fn try_pde_initial_condition(
@@ -652,21 +686,32 @@ fn try_pde_initial_condition(
   t0: f64,
   swap: bool,
 ) -> Option<Expr> {
+  try_pde_initial_condition_ord(eq, u_name, x_name, t0, 0, swap)
+}
+
+/// Like [`try_pde_initial_condition`], but for the `time_order`-th time
+/// derivative's initial value: `time_order == 1` recognises
+/// `Derivative[1, 0][u][t0, x] == rhs(x)` — the initial *velocity*
+/// condition a second-order-in-time (hyperbolic) PDE needs in addition to
+/// the ordinary initial value.
+fn try_pde_initial_condition_ord(
+  eq: &Expr,
+  u_name: &str,
+  x_name: &str,
+  t0: f64,
+  time_order: usize,
+  swap: bool,
+) -> Option<Expr> {
   let (lhs, rhs) = as_equal_pair(eq)?;
   let is_ic = |e: &Expr| {
-    let Expr::FunctionCall { name, args } = e else {
+    let Some((dt, dx, t_arg, x_arg)) = match_pde_term_roles(e, u_name, swap)
+    else {
       return false;
     };
-    if name != u_name || args.len() != 2 {
-      return false;
-    }
-    let (t_arg, x_arg) = if swap {
-      (&args[1], &args[0])
-    } else {
-      (&args[0], &args[1])
-    };
-    matches!(x_arg, Expr::Identifier(n) if n == x_name)
-      && nval_to_f64(t_arg)
+    dt == time_order
+      && dx == 0
+      && matches!(&x_arg, Expr::Identifier(n) if n == x_name)
+      && nval_to_f64(&t_arg)
         .is_some_and(|v| (v - t0).abs() <= 1e-9 * t0.abs().max(1.0))
   };
   if is_ic(lhs) {
@@ -1620,6 +1665,673 @@ fn transpose_grid(grid: &[Vec<f64>]) -> Vec<Vec<f64>> {
   (0..cols)
     .map(|c| grid.iter().map(|row| row[c]).collect())
     .collect()
+}
+
+// ─── Hyperbolic PDE NDSolve (order reduction + implicit method of lines) ──
+
+/// `NDSolve[eqns, u, {t domain}, {x domain}]` for a single hyperbolic
+/// (second-order-in-time) 1-D PDE `Derivative[2, 0][u][t, x] == rhs`,
+/// where `rhs` may reference `u` and its pure space derivatives (up to
+/// second order), the velocity field `Derivative[1, 0][u]` and its own
+/// pure space derivatives, and even the acceleration field itself —
+/// `Derivative[2, 0][u]` — and *its* space derivatives, so long as the
+/// dependence on the acceleration field is linear. That last shape is
+/// what a wave-type equation with mixed space/time derivatives on the
+/// right looks like once it's written out, e.g. the Wolfram Demonstration
+/// "A Passive Cochlear Model"'s
+/// `D[u[t,x],t,t] == a(x) (D[u,x,x]-…) + b(x) (D[u,x,x,t]-…) + c (D[u,x,x,t,t]-…)`.
+///
+/// The equation is reduced to the first-order system `D[u,t] == v`,
+/// `D[v,t] == w`; substituting these into `rhs` turns every mixed
+/// derivative with one time derivative into a pure space derivative of
+/// `v`, and every one with two into a pure space derivative of `w`
+/// itself — the very quantity being solved for. At each method-of-lines
+/// step, `w`'s grid values are eliminated by solving the tridiagonal
+/// linear relation the (linear-in-`w`) equation implies, via
+/// [`solve_tridiagonal`], rather than by evaluating an explicit formula
+/// as the first-order-in-time branch (`try_solve_pde_system`) does.
+///
+/// Needs exactly five equations: the evolution equation, an initial value
+/// `u(t0, x) == f(x)`, an initial velocity `D[u, t](t0, x) == g(x)`, and a
+/// Dirichlet or Neumann boundary condition at each end of the space
+/// domain. Only a single dependent function is supported (no coupled
+/// hyperbolic systems). Returns `Ok(None)` when the equations aren't in
+/// that shape, or the right-hand side isn't linear in the acceleration
+/// field, so the caller leaves the call unevaluated.
+fn ndsolve_pde_hyperbolic(
+  args: &[Expr],
+) -> Result<Option<Expr>, InterpreterError> {
+  let Expr::Identifier(u_name) = &args[1] else {
+    return Ok(None);
+  };
+  let Some(dom_a) = parse_pde_domain(&args[2]) else {
+    return Ok(None);
+  };
+  let Some(dom_b) = parse_pde_domain(&args[3]) else {
+    return Ok(None);
+  };
+
+  let eq_items: Vec<Expr> = match &args[0] {
+    Expr::List(items) => items.to_vec(),
+    other => vec![other.clone()],
+  };
+  let eq_items = flatten_chained_pde_equalities(&eq_items);
+  if eq_items.len() != 5 {
+    return Ok(None);
+  }
+
+  for (t_dom, x_dom) in [(&dom_a, &dom_b), (&dom_b, &dom_a)] {
+    for swap in [false, true] {
+      if let Some(result) =
+        try_solve_hyperbolic_pde(&eq_items, u_name, t_dom, x_dom, &dom_a, swap)?
+      {
+        return Ok(Some(result));
+      }
+    }
+  }
+  Ok(None)
+}
+
+/// Rewrite a hyperbolic PDE's right-hand side into the placeholder
+/// identifiers `try_solve_hyperbolic_pde` compiles numeric values into:
+/// `u`'s own value and its first/second space derivative become
+/// `NDSolve$U`/`NDSolve$UX`/`NDSolve$UXX`; the velocity field
+/// `Derivative[1, 0][u]` and its space derivatives become
+/// `NDSolve$V`/`NDSolve$VX`/`NDSolve$VXX`; and the acceleration field
+/// `Derivative[2, 0][u]` and its space derivatives become
+/// `NDSolve$W`/`NDSolve$WX`/`NDSolve$WXX`. Returns `None` for any other
+/// derivative shape (a third time derivative, a derivative at a point
+/// other than `(t, x)`, …) this solver doesn't attempt.
+fn rewrite_pde_rhs_hyperbolic(
+  expr: &Expr,
+  u_name: &str,
+  t_name: &str,
+  x_name: &str,
+  swap: bool,
+) -> Option<Expr> {
+  if let Some((dt, dx, t_arg, x_arg)) = match_pde_term_roles(expr, u_name, swap)
+  {
+    if !matches!(&t_arg, Expr::Identifier(n) if n == t_name)
+      || !matches!(&x_arg, Expr::Identifier(n) if n == x_name)
+    {
+      return None;
+    }
+    let placeholder = match (dt, dx) {
+      (0, 0) => "NDSolve$U",
+      (0, 1) => "NDSolve$UX",
+      (0, 2) => "NDSolve$UXX",
+      (1, 0) => "NDSolve$V",
+      (1, 1) => "NDSolve$VX",
+      (1, 2) => "NDSolve$VXX",
+      (2, 0) => "NDSolve$W",
+      (2, 1) => "NDSolve$WX",
+      (2, 2) => "NDSolve$WXX",
+      _ => return None,
+    };
+    return Some(Expr::Identifier(placeholder.to_string()));
+  }
+  let failed = std::cell::Cell::new(false);
+  let mapped = map_children(expr, &|c| {
+    if failed.get() {
+      return c.clone();
+    }
+    if let Some(r) = rewrite_pde_rhs_hyperbolic(c, u_name, t_name, x_name, swap)
+    {
+      r
+    } else {
+      failed.set(true);
+      c.clone()
+    }
+  });
+  if failed.get() { None } else { Some(mapped) }
+}
+
+/// Whether `expr` contains the bare identifier `name` anywhere in its
+/// tree — used to confirm a coefficient extracted by differentiating a
+/// linear expression really did lose all dependence on the variable
+/// differentiated against (see `try_solve_hyperbolic_pde`'s linearity
+/// check).
+fn expr_contains_ident(expr: &Expr, name: &str) -> bool {
+  if matches!(expr, Expr::Identifier(n) if n == name) {
+    return true;
+  }
+  expr_children(expr)
+    .iter()
+    .any(|c| expr_contains_ident(c, name))
+}
+
+/// Solve the tridiagonal system with sub-diagonal `a` (`a[0]` unused),
+/// diagonal `b`, super-diagonal `c` (`c[last]` unused), and right-hand
+/// side `d` — all the same length — via the Thomas algorithm.
+fn solve_tridiagonal(a: &[f64], b: &[f64], c: &[f64], d: &[f64]) -> Vec<f64> {
+  let n = b.len();
+  if n == 0 {
+    return Vec::new();
+  }
+  let mut cp = vec![0.0; n];
+  let mut dp = vec![0.0; n];
+  cp[0] = c[0] / b[0];
+  dp[0] = d[0] / b[0];
+  for i in 1..n {
+    let m = b[i] - a[i] * cp[i - 1];
+    cp[i] = if i + 1 < n { c[i] / m } else { 0.0 };
+    dp[i] = (d[i] - a[i] * dp[i - 1]) / m;
+  }
+  let mut x = vec![0.0; n];
+  x[n - 1] = dp[n - 1];
+  for i in (0..n - 1).rev() {
+    x[i] = dp[i] - cp[i] * x[i + 1];
+  }
+  x
+}
+
+/// One field's (`u`, `v`, or `w`) compiled boundary condition at one end
+/// of the space domain, mirroring `u`'s own condition kind: `v = D[u,t]`'s
+/// right-hand side is `u`'s own boundary value differentiated once with
+/// respect to time, and `w = D[u,t,t]`'s is differentiated twice — a
+/// Dirichlet boundary stays Dirichlet, a Neumann flux stays Neumann.
+struct HyperbolicBoundary {
+  u: PdeBoundaryFn,
+  v: PdeBoundaryFn,
+  w: PdeBoundaryFn,
+  /// Whether this end's grid index is part of the integrated/solved
+  /// state (`true`, a Neumann boundary) or fixed each step from its own
+  /// `NumFn` (`false`, Dirichlet) — mirrors `ndsolve_pde`'s `free_lo`.
+  free: bool,
+}
+
+fn compile_hyperbolic_boundary(
+  bc: PdeBc,
+  u_name: &str,
+  t_name: &str,
+) -> Result<Option<HyperbolicBoundary>, InterpreterError> {
+  let t_vars = vec![t_name.to_string()];
+  match bc {
+    PdeBc::Dirichlet(rhs) => {
+      let d1 = differentiate_expr(&rhs, t_name)?;
+      let d2 = differentiate_expr(&d1, t_name)?;
+      Ok(Some(HyperbolicBoundary {
+        u: PdeBoundaryFn::Dirichlet(NumFn::new(rhs, &t_vars)),
+        v: PdeBoundaryFn::Dirichlet(NumFn::new(d1, &t_vars)),
+        w: PdeBoundaryFn::Dirichlet(NumFn::new(d2, &t_vars)),
+        free: false,
+      }))
+    }
+    PdeBc::Neumann(rhs) => {
+      // Single dependent function: a flux depending on the unknown itself
+      // (a Robin-type condition) is outside this solver's scope.
+      let u_names_single = [u_name.to_string()];
+      if expr_references_any(&rhs, &u_names_single) {
+        return Ok(None);
+      }
+      let d1 = differentiate_expr(&rhs, t_name)?;
+      let d2 = differentiate_expr(&d1, t_name)?;
+      Ok(Some(HyperbolicBoundary {
+        u: PdeBoundaryFn::Neumann(NumFn::new(rhs, &t_vars)),
+        v: PdeBoundaryFn::Neumann(NumFn::new(d1, &t_vars)),
+        w: PdeBoundaryFn::Neumann(NumFn::new(d2, &t_vars)),
+        free: true,
+      }))
+    }
+  }
+}
+
+/// Reconstruct a field's full `N_X`-point profile from its combined
+/// integrated free values, filling a Dirichlet boundary from its own
+/// `NumFn`. Mirrors `try_solve_pde_system`'s `full_of` closure, adapted
+/// to a single field/domain pair.
+fn reconstruct_pde_profile(
+  free_vals: &[f64],
+  free_lo: usize,
+  free_hi: usize,
+  n_x: usize,
+  bc_lo: &PdeBoundaryFn,
+  bc_hi: &PdeBoundaryFn,
+  t: f64,
+) -> Result<Vec<f64>, InterpreterError> {
+  let mut full = vec![0.0; n_x];
+  for (k, gi) in (free_lo..=free_hi).enumerate() {
+    full[gi] = free_vals[k];
+  }
+  if let PdeBoundaryFn::Dirichlet(f) = bc_lo {
+    full[0] = f.eval(&[t])?;
+  }
+  if let PdeBoundaryFn::Dirichlet(f) = bc_hi {
+    full[n_x - 1] = f.eval(&[t])?;
+  }
+  Ok(full)
+}
+
+/// First and second space-derivative of a field at grid index `gi`, via
+/// central differences at an interior point or, at a boundary carrying a
+/// Neumann condition, a ghost point built from the boundary's own flux
+/// value — mirrors `try_solve_pde_system`'s `derivative` closure's own
+/// boundary handling. `bc_lo`/`bc_hi` are never `Dirichlet` when `gi` is
+/// `0`/`n_x - 1` respectively (those indices are excluded from the
+/// free/solved range in that case).
+fn pde_space_derivs(
+  full: &[f64],
+  gi: usize,
+  dx: f64,
+  bc_lo: &PdeBoundaryFn,
+  bc_hi: &PdeBoundaryFn,
+  t: f64,
+) -> Result<(f64, f64), InterpreterError> {
+  let n_x = full.len();
+  if gi == 0 {
+    let PdeBoundaryFn::Neumann(f) = bc_lo else {
+      unreachable!("a Dirichlet lo boundary is never a free index")
+    };
+    let flux = f.eval(&[t])?;
+    let ghost = full[1] - 2.0 * dx * flux;
+    Ok((flux, (full[1] - 2.0 * full[0] + ghost) / (dx * dx)))
+  } else if gi == n_x - 1 {
+    let PdeBoundaryFn::Neumann(f) = bc_hi else {
+      unreachable!("a Dirichlet hi boundary is never a free index")
+    };
+    let flux = f.eval(&[t])?;
+    let ghost = full[n_x - 2] + 2.0 * dx * flux;
+    Ok((
+      flux,
+      (ghost - 2.0 * full[n_x - 1] + full[n_x - 2]) / (dx * dx),
+    ))
+  } else {
+    Ok((
+      (full[gi + 1] - full[gi - 1]) / (2.0 * dx),
+      (full[gi + 1] - 2.0 * full[gi] + full[gi - 1]) / (dx * dx),
+    ))
+  }
+}
+
+/// Attempt to match and solve the hyperbolic PDE with `t_dom` as the
+/// time-like (integrated) domain and `x_dom` as the space-like (gridded)
+/// one — see [`ndsolve_pde_hyperbolic`]. Returns `Ok(None)` when the
+/// equations don't fit this role assignment.
+fn try_solve_hyperbolic_pde(
+  eq_items: &[Expr],
+  u_name: &str,
+  t_dom: &PdeDomain,
+  x_dom: &PdeDomain,
+  dim0_dom: &PdeDomain,
+  swap: bool,
+) -> Result<Option<Expr>, InterpreterError> {
+  let mut evolution_rhs: Option<Expr> = None;
+  let mut ic_pos: Option<Expr> = None;
+  let mut ic_vel: Option<Expr> = None;
+  let mut bc_lo: Option<PdeBc> = None;
+  let mut bc_hi: Option<PdeBc> = None;
+
+  for eq in eq_items {
+    if evolution_rhs.is_none()
+      && let Some(rhs) = try_pde_evolution_term_order2(
+        eq,
+        u_name,
+        &t_dom.name,
+        &x_dom.name,
+        swap,
+      )
+    {
+      evolution_rhs = Some(rhs);
+      continue;
+    }
+    if ic_pos.is_none()
+      && let Some(rhs) =
+        try_pde_initial_condition(eq, u_name, &x_dom.name, t_dom.min, swap)
+    {
+      ic_pos = Some(rhs);
+      continue;
+    }
+    if ic_vel.is_none()
+      && let Some(rhs) = try_pde_initial_condition_ord(
+        eq,
+        u_name,
+        &x_dom.name,
+        t_dom.min,
+        1,
+        swap,
+      )
+    {
+      ic_vel = Some(rhs);
+      continue;
+    }
+    if bc_lo.is_none()
+      && let Some(bc) =
+        try_pde_boundary_condition(eq, u_name, &t_dom.name, x_dom.min, swap)
+    {
+      bc_lo = Some(bc);
+      continue;
+    }
+    if bc_hi.is_none()
+      && let Some(bc) =
+        try_pde_boundary_condition(eq, u_name, &t_dom.name, x_dom.max, swap)
+    {
+      bc_hi = Some(bc);
+      continue;
+    }
+  }
+  let (Some(rhs), Some(ic_pos), Some(ic_vel), Some(bc_lo), Some(bc_hi)) =
+    (evolution_rhs, ic_pos, ic_vel, bc_lo, bc_hi)
+  else {
+    return Ok(None);
+  };
+
+  let Some(rewritten) =
+    rewrite_pde_rhs_hyperbolic(&rhs, u_name, &t_dom.name, &x_dom.name, swap)
+  else {
+    return Ok(None);
+  };
+
+  // Extract the acceleration field's linear coefficients (`c0` multiplies
+  // `w` itself, `c1` its first space derivative, `c2` its second) via
+  // symbolic differentiation, and verify the right-hand side really is
+  // linear in them: a coefficient that still references one of the three
+  // placeholders after differentiating it away means the dependence
+  // wasn't linear, a shape this solver doesn't attempt.
+  const W_VARS: [&str; 3] = ["NDSolve$W", "NDSolve$WX", "NDSolve$WXX"];
+  let mut coeffs = Vec::with_capacity(3);
+  for wv in W_VARS {
+    let c = differentiate_expr(&rewritten, wv)?;
+    if W_VARS.iter().any(|wv2| expr_contains_ident(&c, wv2)) {
+      return Ok(None);
+    }
+    coeffs.push(c);
+  }
+  let explicit_expr = crate::syntax::substitute_variables(
+    &rewritten,
+    &[
+      ("NDSolve$W", &Expr::Integer(0)),
+      ("NDSolve$WX", &Expr::Integer(0)),
+      ("NDSolve$WXX", &Expr::Integer(0)),
+    ],
+  );
+
+  let full_vars: Vec<String> = [
+    "NDSolve$U",
+    "NDSolve$UX",
+    "NDSolve$UXX",
+    "NDSolve$V",
+    "NDSolve$VX",
+    "NDSolve$VXX",
+  ]
+  .into_iter()
+  .map(String::from)
+  .chain([t_dom.name.clone(), x_dom.name.clone()])
+  .collect();
+
+  let explicit_fn = NumFn::new(explicit_expr, &full_vars);
+  let coeff0_fn = NumFn::new(coeffs[0].clone(), &full_vars);
+  let coeff1_fn = NumFn::new(coeffs[1].clone(), &full_vars);
+  let coeff2_fn = NumFn::new(coeffs[2].clone(), &full_vars);
+
+  let x_vars = vec![x_dom.name.clone()];
+  let ic_pos_fn = NumFn::new(ic_pos, &x_vars);
+  let ic_vel_fn = NumFn::new(ic_vel, &x_vars);
+
+  let Some(bnd_lo) = compile_hyperbolic_boundary(bc_lo, u_name, &t_dom.name)?
+  else {
+    return Ok(None);
+  };
+  let Some(bnd_hi) = compile_hyperbolic_boundary(bc_hi, u_name, &t_dom.name)?
+  else {
+    return Ok(None);
+  };
+
+  const N_X: usize = 41;
+  let dx = (x_dom.max - x_dom.min) / (N_X - 1) as f64;
+  let xs: Vec<f64> = (0..N_X).map(|i| x_dom.min + i as f64 * dx).collect();
+
+  let free_lo = usize::from(!bnd_lo.free);
+  let free_hi = if bnd_hi.free { N_X - 1 } else { N_X - 2 };
+  let free_len = free_hi + 1 - free_lo;
+  let total_len = 2 * free_len;
+
+  let derivative = |t: f64,
+                    state: &[f64]|
+   -> Result<Vec<f64>, InterpreterError> {
+    let u_full = reconstruct_pde_profile(
+      &state[..free_len],
+      free_lo,
+      free_hi,
+      N_X,
+      &bnd_lo.u,
+      &bnd_hi.u,
+      t,
+    )?;
+    let v_full = reconstruct_pde_profile(
+      &state[free_len..],
+      free_lo,
+      free_hi,
+      N_X,
+      &bnd_lo.v,
+      &bnd_hi.v,
+      t,
+    )?;
+
+    // Only the free/solved indices ever feed into the tridiagonal system
+    // below — a Dirichlet boundary's own index is fixed directly from its
+    // `NumFn` each step and never appears as a row or a neighbor there —
+    // so `pde_space_derivs` (which assumes index `0`/`N_X - 1` means a
+    // *Neumann* boundary) is never asked to differentiate at one.
+    let mut explicit = vec![0.0; N_X];
+    let mut c0 = vec![0.0; N_X];
+    let mut c1 = vec![0.0; N_X];
+    let mut c2 = vec![0.0; N_X];
+    for gi in free_lo..=free_hi {
+      let (ux, uxx) =
+        pde_space_derivs(&u_full, gi, dx, &bnd_lo.u, &bnd_hi.u, t)?;
+      let (vx, vxx) =
+        pde_space_derivs(&v_full, gi, dx, &bnd_lo.v, &bnd_hi.v, t)?;
+      let vars = [u_full[gi], ux, uxx, v_full[gi], vx, vxx, t, xs[gi]];
+      explicit[gi] = explicit_fn.eval(&vars)?;
+      c0[gi] = coeff0_fn.eval(&vars)?;
+      c1[gi] = coeff1_fn.eval(&vars)?;
+      c2[gi] = coeff2_fn.eval(&vars)?;
+    }
+
+    // Eliminate `w`'s free grid values from the linear relation
+    // `w == c0 w + c1 D[w,x] + c2 D[w,x,x] + explicit`, i.e.
+    // `(1 - c0) w - c1 D[w,x] - c2 D[w,x,x] == explicit`, via a
+    // tridiagonal solve.
+    let mut a = vec![0.0; free_len];
+    let mut b = vec![0.0; free_len];
+    let mut c = vec![0.0; free_len];
+    let mut d = vec![0.0; free_len];
+    for (k, gi) in (free_lo..=free_hi).enumerate() {
+      if gi == 0 {
+        let PdeBoundaryFn::Neumann(f) = &bnd_lo.w else {
+          unreachable!("a Dirichlet lo boundary is never a free index")
+        };
+        let flux = f.eval(&[t])?;
+        b[k] = (1.0 - c0[gi]) + 2.0 * c2[gi] / (dx * dx);
+        c[k] = -2.0 * c2[gi] / (dx * dx);
+        d[k] = explicit[gi] + c1[gi] * flux - 2.0 * c2[gi] * flux / dx;
+      } else if gi == N_X - 1 {
+        let PdeBoundaryFn::Neumann(f) = &bnd_hi.w else {
+          unreachable!("a Dirichlet hi boundary is never a free index")
+        };
+        let flux = f.eval(&[t])?;
+        a[k] = -2.0 * c2[gi] / (dx * dx);
+        b[k] = (1.0 - c0[gi]) + 2.0 * c2[gi] / (dx * dx);
+        d[k] = explicit[gi] + c1[gi] * flux + 2.0 * c2[gi] * flux / dx;
+      } else {
+        let ai = c1[gi] / (2.0 * dx) - c2[gi] / (dx * dx);
+        let bi = (1.0 - c0[gi]) + 2.0 * c2[gi] / (dx * dx);
+        let ci = -c1[gi] / (2.0 * dx) - c2[gi] / (dx * dx);
+        let mut di = explicit[gi];
+        if gi == free_lo && free_lo > 0 {
+          let PdeBoundaryFn::Dirichlet(f) = &bnd_lo.w else {
+            unreachable!("gi == free_lo > 0 means the lo boundary is Dirichlet")
+          };
+          di -= ai * f.eval(&[t])?;
+        } else {
+          a[k] = ai;
+        }
+        if gi == free_hi && free_hi < N_X - 1 {
+          let PdeBoundaryFn::Dirichlet(f) = &bnd_hi.w else {
+            unreachable!(
+              "gi == free_hi < N_X - 1 means the hi boundary is Dirichlet"
+            )
+          };
+          di -= ci * f.eval(&[t])?;
+        } else {
+          c[k] = ci;
+        }
+        b[k] = bi;
+        d[k] = di;
+      }
+    }
+    let w_free = solve_tridiagonal(&a, &b, &c, &d);
+
+    let mut out = vec![0.0; total_len];
+    for (k, gi) in (free_lo..=free_hi).enumerate() {
+      out[k] = v_full[gi];
+      out[free_len + k] = w_free[k];
+    }
+    Ok(out)
+  };
+
+  let mut u0_full = vec![0.0; N_X];
+  let mut v0_full = vec![0.0; N_X];
+  for (gi, &x) in xs.iter().enumerate() {
+    u0_full[gi] = ic_pos_fn.eval(&[x])?;
+    v0_full[gi] = ic_vel_fn.eval(&[x])?;
+  }
+  if let PdeBoundaryFn::Dirichlet(f) = &bnd_lo.u {
+    u0_full[0] = f.eval(&[t_dom.min])?;
+  }
+  if let PdeBoundaryFn::Dirichlet(f) = &bnd_hi.u {
+    u0_full[N_X - 1] = f.eval(&[t_dom.min])?;
+  }
+  if let PdeBoundaryFn::Dirichlet(f) = &bnd_lo.v {
+    v0_full[0] = f.eval(&[t_dom.min])?;
+  }
+  if let PdeBoundaryFn::Dirichlet(f) = &bnd_hi.v {
+    v0_full[N_X - 1] = f.eval(&[t_dom.min])?;
+  }
+
+  let mut state0: Vec<f64> = Vec::with_capacity(total_len);
+  state0.extend(u0_full[free_lo..=free_hi].iter().copied());
+  state0.extend(v0_full[free_lo..=free_hi].iter().copied());
+
+  // Effective diffusivity-like bound, read off the explicit right-hand
+  // side's sensitivity to `u`'s and `v`'s own second space derivative —
+  // mirrors `try_solve_pde_system`'s own CFL-type probe. The acceleration
+  // field's *implicit* dependence (`c0`/`c1`/`c2`) is excluded: an
+  // implicit elliptic solve relaxes the stability bound rather than
+  // tightening it, so the explicit terms' own diffusivity remains the
+  // binding constraint.
+  let mut dt_stable = f64::INFINITY;
+  for &x in &xs {
+    let base =
+      explicit_fn.eval(&[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, t_dom.min, x])?;
+    let du =
+      (explicit_fn.eval(&[0.0, 0.0, 1.0, 0.0, 0.0, 0.0, t_dom.min, x])? - base)
+        .abs();
+    let dv =
+      (explicit_fn.eval(&[0.0, 0.0, 0.0, 0.0, 0.0, 1.0, t_dom.min, x])? - base)
+        .abs();
+    let c_eff = du.max(dv).max(1e-9);
+    dt_stable = dt_stable.min(0.4 * dx * dx / c_eff);
+  }
+  const MIN_STEPS: usize = 200;
+  let n_steps = (((t_dom.max - t_dom.min) / dt_stable).ceil() as usize)
+    .clamp(MIN_STEPS, 200_000);
+  let dt = (t_dom.max - t_dom.min) / n_steps as f64;
+
+  const OUTPUT_ROWS: usize = 60;
+  let stride = (n_steps / OUTPUT_ROWS).max(1);
+  let mut ts: Vec<f64> = Vec::with_capacity(n_steps / stride + 2);
+  ts.push(t_dom.min);
+  let mut grid: Vec<Vec<f64>> = vec![reconstruct_pde_profile(
+    &state0[..free_len],
+    free_lo,
+    free_hi,
+    N_X,
+    &bnd_lo.u,
+    &bnd_hi.u,
+    t_dom.min,
+  )?];
+  let mut state = state0;
+  let mut t = t_dom.min;
+  for step in 0..n_steps {
+    let k1 = derivative(t, &state)?;
+    let s2: Vec<f64> = state
+      .iter()
+      .zip(&k1)
+      .map(|(y, k)| y + 0.5 * dt * k)
+      .collect();
+    let k2 = derivative(t + 0.5 * dt, &s2)?;
+    let s3: Vec<f64> = state
+      .iter()
+      .zip(&k2)
+      .map(|(y, k)| y + 0.5 * dt * k)
+      .collect();
+    let k3 = derivative(t + 0.5 * dt, &s3)?;
+    let s4: Vec<f64> = state.iter().zip(&k3).map(|(y, k)| y + dt * k).collect();
+    let k4 = derivative(t + dt, &s4)?;
+    for idx in 0..state.len() {
+      state[idx] +=
+        dt / 6.0 * (k1[idx] + 2.0 * k2[idx] + 2.0 * k3[idx] + k4[idx]);
+    }
+    t += dt;
+    let is_last = step + 1 == n_steps;
+    if (step + 1) % stride == 0 || is_last {
+      grid.push(reconstruct_pde_profile(
+        &state[..free_len],
+        free_lo,
+        free_hi,
+        N_X,
+        &bnd_lo.u,
+        &bnd_hi.u,
+        t,
+      )?);
+      ts.push(t);
+    }
+  }
+
+  let t_is_dim0 = t_dom.name == dim0_dom.name;
+  let (dim0, dim1) = if t_is_dim0 {
+    (t_dom, x_dom)
+  } else {
+    (x_dom, t_dom)
+  };
+  let (dim0_coords, dim1_coords) =
+    if t_is_dim0 { (&ts, &xs) } else { (&xs, &ts) };
+  let domain = Expr::List(
+    vec![
+      Expr::List(vec![Expr::Real(dim0.min), Expr::Real(dim0.max)].into()),
+      Expr::List(vec![Expr::Real(dim1.min), Expr::Real(dim1.max)].into()),
+    ]
+    .into(),
+  );
+  let orders = Expr::List(vec![Expr::Integer(1), Expr::Integer(1)].into());
+  let coords = Expr::List(
+    vec![
+      Expr::List(dim0_coords.iter().map(|v| Expr::Real(*v)).collect()),
+      Expr::List(dim1_coords.iter().map(|v| Expr::Real(*v)).collect()),
+    ]
+    .into(),
+  );
+  let grid = if t_is_dim0 {
+    grid
+  } else {
+    transpose_grid(&grid)
+  };
+  let grid_expr = Expr::List(
+    grid
+      .iter()
+      .map(|row| Expr::List(row.iter().map(|v| Expr::Real(*v)).collect()))
+      .collect(),
+  );
+  let interp = call(
+    "InterpolatingFunction",
+    vec![domain, grid_expr, orders, coords],
+  );
+  let rule = Expr::Rule {
+    pattern: Box::new(Expr::Identifier(u_name.to_string())),
+    replacement: Box::new(interp),
+  };
+  Ok(Some(Expr::List(vec![Expr::List(vec![rule].into())].into())))
 }
 
 /// Dependent functions of an `NDSolve` system need not be bare symbols:

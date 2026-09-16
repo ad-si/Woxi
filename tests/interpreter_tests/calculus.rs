@@ -8766,6 +8766,27 @@ mod ndsolve {
     );
   }
 
+  /// The domain declared as `{x, ...}, {t, ...}` (space before time) forces
+  /// the solver to retry the space/time roles swapped. Before matching the
+  /// swapped roles, it first tries the unswapped ones and calls the initial
+  /// condition matcher on `Sin[Pi x]` — a one-argument call — as a candidate
+  /// `u[t0, x]` shape. The matcher used to index that call's second argument
+  /// before checking its arity, panicking instead of rejecting the shape and
+  /// falling through to the swapped attempt that actually matches.
+  #[test]
+  fn pde_initial_condition_matcher_rejects_a_one_argument_call_without_panicking()
+   {
+    let result = interpret(
+      "NDSolve[{D[u[x, t], t] == D[u[x, t], {x, 2}], u[x, 0] == Sin[Pi x], \
+       u[0, t] == 0, u[1, t] == 0}, u, {x, 0, 1}, {t, 0, 1}]",
+    )
+    .unwrap();
+    assert!(
+      result.starts_with("{{u -> InterpolatingFunction["),
+      "Got: {result}"
+    );
+  }
+
   /// A PDE missing one of its two Dirichlet boundary conditions doesn't
   /// match the one recognised shape, so the call is left unevaluated —
   /// the same fallback NDSolve gives any equation system it can't classify
@@ -9049,6 +9070,152 @@ mod ndsolve {
     assert!(
       (p_mid + q_mid - 1.0).abs() < 1e-6,
       "p + q must stay conserved away from the wall too: p={p_mid}, q={q_mid}"
+    );
+  }
+
+  /// `NDSolve[eqns, u, {t, …}, {x, …}]` where the evolution equation is
+  /// *second*-order in time, `Derivative[2, 0][u][t, x] == rhs` — a
+  /// hyperbolic (wave-type) PDE — needs an extra initial condition (the
+  /// initial velocity `Derivative[1, 0][u][t0, x] == g[x]`, alongside the
+  /// ordinary initial value) and is solved by reducing to the first-order
+  /// system `D[u, t] == v`, `D[v, t] == w` (see
+  /// `ndsolve_pde_hyperbolic`/`try_solve_hyperbolic_pde` in
+  /// `ode_ast.rs`). `Sin[Pi x] Cos[Pi t]` is the textbook standing-wave
+  /// solution of `u_tt == u_xx` with `u(0, x) = Sin[Pi x]`, zero initial
+  /// velocity, and Dirichlet zero at both ends — a check independent of
+  /// the solver's own discretization.
+  #[test]
+  fn pde_hyperbolic_wave_equation_matches_dalembert_standing_wave() {
+    let result = interpret(
+      "sol = NDSolve[{D[u[t, x], t, t] == D[u[t, x], {x, 2}], \
+       u[0, x] == Sin[Pi x], Derivative[1, 0][u][0, x] == 0, \
+       u[t, 0] == 0, u[t, 1] == 0}, u, {t, 0, 1}, {x, 0, 1}]; \
+       (u[t, x] /. sol[[1]]) /. {t -> 0.3, x -> 0.5}",
+    )
+    .unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    let expected =
+      (std::f64::consts::PI / 2.0).sin() * (0.3 * std::f64::consts::PI).cos();
+    assert!(
+      (val - expected).abs() < 3e-3,
+      "Expected about {expected}, got {val}"
+    );
+  }
+
+  /// The same standing wave, but with insulated (Neumann zero) ends
+  /// instead of Dirichlet: `Cos[Pi x] Cos[Pi t]` satisfies `u_tt == u_xx`
+  /// with `D[u, x] == 0` at both `x == 0` and `x == 1` (its space
+  /// derivative is `-Pi Sin[Pi x]`, zero at both integer multiples of
+  /// `1`), exercising the ghost-point boundary handling
+  /// `try_solve_hyperbolic_pde` shares with the parabolic branch.
+  #[test]
+  fn pde_hyperbolic_wave_equation_with_neumann_boundaries_matches_standing_wave()
+   {
+    let result = interpret(
+      "sol = NDSolve[{D[u[t, x], t, t] == D[u[t, x], {x, 2}], \
+       u[0, x] == Cos[Pi x], Derivative[1, 0][u][0, x] == 0, \
+       Derivative[0, 1][u][t, 0] == 0, Derivative[0, 1][u][t, 1] == 0}, \
+       u, {t, 0, 1}, {x, 0, 1}]; \
+       (u[t, x] /. sol[[1]]) /. {t -> 0.3, x -> 0.7}",
+    )
+    .unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    let expected =
+      (0.7 * std::f64::consts::PI).cos() * (0.3 * std::f64::consts::PI).cos();
+    assert!(
+      (val - expected).abs() < 3e-3,
+      "Expected about {expected}, got {val}"
+    );
+  }
+
+  /// The right-hand side may itself carry the acceleration field's own
+  /// space derivatives — `Derivative[2, 0][u]`'s second `x`-derivative,
+  /// via the mixed term `D[u[t, x], {x, 2}, t, t]` — the shape a
+  /// second-order-in-time PDE with mixed space/time derivatives on the
+  /// right takes (e.g. a Wolfram Demonstration modeling a physical medium
+  /// whose restoring force has both an elastic and a "regularizing"
+  /// term). `try_solve_hyperbolic_pde` eliminates the implicit
+  /// acceleration field via a tridiagonal solve each step rather than
+  /// evaluating an explicit formula. For
+  /// `u_tt == u_xx + c u_xxtt` on `[0, 1]` with Dirichlet zero ends,
+  /// `Sin[Pi x] Cos[omega t]` (`omega = Pi / Sqrt[1 + c Pi^2]`) is an
+  /// exact separated solution — substituting it turns the PDE into the
+  /// ODE `omega^2 = Pi^2 / (1 + c Pi^2)` for `omega`, independent of the
+  /// solver's own discretization.
+  #[test]
+  fn pde_hyperbolic_implicit_acceleration_term_matches_regularized_wave_solution()
+   {
+    let result = interpret(
+      "sol = NDSolve[{D[u[t, x], t, t] == \
+       D[u[t, x], {x, 2}] + (1/10) D[u[t, x], {x, 2}, t, t], \
+       u[0, x] == Sin[Pi x], Derivative[1, 0][u][0, x] == 0, \
+       u[t, 0] == 0, u[t, 1] == 0}, u, {t, 0, 1}, {x, 0, 1}]; \
+       (u[t, x] /. sol[[1]]) /. {t -> 0.4, x -> 0.5}",
+    )
+    .unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    let omega =
+      std::f64::consts::PI / (1.0 + 0.1 * std::f64::consts::PI.powi(2)).sqrt();
+    let expected = (std::f64::consts::PI / 2.0).sin() * (omega * 0.4).cos();
+    assert!(
+      (val - expected).abs() < 3e-3,
+      "Expected about {expected}, got {val}"
+    );
+  }
+
+  #[test]
+  fn pde_hyperbolic_returns_named_interpolating_function() {
+    let result = interpret(
+      "NDSolve[{D[u[t, x], t, t] == D[u[t, x], {x, 2}], \
+       u[0, x] == Sin[Pi x], Derivative[1, 0][u][0, x] == 0, \
+       u[t, 0] == 0, u[t, 1] == 0}, u, {t, 0, 1}, {x, 0, 1}]",
+    )
+    .unwrap();
+    assert!(
+      result.starts_with("{{u -> InterpolatingFunction[")
+        && result.contains("{1, 1}"),
+      "Got: {result}"
+    );
+  }
+
+  /// A second-order-in-time evolution equation without its extra initial
+  /// *velocity* condition is only four equations, the parabolic branch's
+  /// own exact count — but that branch's `Derivative[1, 0]` evolution
+  /// matcher doesn't match a bare `Derivative[2, 0]` term, so neither
+  /// branch recognises the shape and the call is left unevaluated rather
+  /// than panicking or guessing a velocity.
+  #[test]
+  fn pde_hyperbolic_missing_velocity_initial_condition_stays_unevaluated() {
+    let result = interpret(
+      "NDSolve[{D[u[t, x], t, t] == D[u[t, x], {x, 2}], \
+       u[0, x] == Sin[Pi x], u[t, 0] == 0, u[t, 1] == 0}, \
+       u, {t, 0, 1}, {x, 0, 1}]",
+    )
+    .unwrap();
+    assert!(
+      result.starts_with("NDSolve["),
+      "Expected an unevaluated NDSolve, got: {result}"
+    );
+  }
+
+  /// The acceleration field must appear *linearly* on the right-hand
+  /// side — `try_solve_hyperbolic_pde` extracts its coefficients by
+  /// symbolically differentiating the (placeholder-substituted) right
+  /// side and rejects the match unless the result has lost every trace of
+  /// the placeholder differentiated against. Squaring
+  /// `Derivative[2, 0][u]` breaks that, so the call stays unevaluated
+  /// instead of silently solving the wrong (linearized) equation.
+  #[test]
+  fn pde_hyperbolic_nonlinear_in_acceleration_stays_unevaluated() {
+    let result = interpret(
+      "NDSolve[{D[u[t, x], t, t] == D[u[t, x], t, t]^2 + D[u[t, x], {x, 2}], \
+       u[0, x] == Sin[Pi x], Derivative[1, 0][u][0, x] == 0, \
+       u[t, 0] == 0, u[t, 1] == 0}, u, {t, 0, 1}, {x, 0, 1}]",
+    )
+    .unwrap();
+    assert!(
+      result.starts_with("NDSolve["),
+      "Expected an unevaluated NDSolve, got: {result}"
     );
   }
 }
