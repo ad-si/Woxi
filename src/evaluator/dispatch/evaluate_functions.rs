@@ -1954,6 +1954,11 @@ fn evaluate_function_call_ast_inner(
     return crate::functions::element_data::element_data_ast(args);
   }
 
+  // Isotope data function
+  if name == "IsotopeData" {
+    return crate::functions::isotope_data::isotope_data_ast(args);
+  }
+
   // Polyhedron data function
   if name == "PolyhedronData" && !args.is_empty() {
     return crate::functions::polyhedron_data::polyhedron_data_ast(args);

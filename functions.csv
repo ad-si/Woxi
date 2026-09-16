@@ -823,7 +823,7 @@ PopupMenu,Interactive popup menu control,✅,none,6.0,792
 CharacteristicPolynomial,Compute the characteristic polynomial of a matrix,✅,pure,5.0,793
 MatrixMinimalPolynomial,Monic polynomial of least degree that annihilates a matrix,✅,pure,14.3,
 NMaximize,Numerical global maximization with constraints using sampling and gradient refinement,✅,pure,5.0,794
-IsotopeData,,🚫,,6.0,795
+IsotopeData,Self-contained slice of NIST's isotope table backing IsotopeData[] (bundled isotopes) IsotopeData[element] (its isotopes) and IsotopeData[isotope property] (MassNumber/AtomicNumber/NeutronNumber/AtomicMass/IsotopeAbundance/BindingEnergy/StandardName) -- one or two naturally occurring isotopes per element plus the longest-lived known isotope where there are none not the full ~3000-nuclide chart Wolfram answers for,✅,pure,6.0,795
 CharacterRange,Returns a list of characters in a range given by single-character strings or by integer character codes (both endpoints must be the same kind),✅,pure,3.0,796
 TensorProduct,Tensor product of arrays and symbolic factors,✅,pure,9.0,797
 Sinc,Sinc function (Sin[x]/x with Sinc[0]=1),✅,pure,6.0,798

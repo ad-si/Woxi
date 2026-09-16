@@ -2261,6 +2261,16 @@ pub fn abbreviation_for_atomic_number(z: i128) -> Option<&'static str> {
   }
 }
 
+/// Resolves an element specifier — atomic number, name, abbreviation, or
+/// `Entity["Element", name]` — to its atomic number and standard name.
+/// `isotope_data` uses this to find an element's bundled isotopes without
+/// reaching into `Element`'s private fields.
+pub(crate) fn resolve_element(
+  identifier: &Expr,
+) -> Option<(i128, &'static str)> {
+  find_element(identifier).map(|elem| (elem.atomic_number, elem.standard_name))
+}
+
 /// Look up an element by name (case-insensitive), abbreviation, atomic
 /// number, or `Entity["Element", name]`.
 fn find_element(identifier: &Expr) -> Option<&'static Element> {
@@ -2454,6 +2464,17 @@ fn get_property(elem: &Element, property: &str) -> Expr {
     | "VickersHardness"
     | "YoungModulus" => missing_not_available(),
     "IonizationEnergies" => ionization_energies_for(elem.atomic_number),
+    // Answers directly (e.g. from the Wolfram Demonstration
+    // "BindingEnergiesOfIsotopes", which calls it) but is deliberately left
+    // out of `SUPPORTED_PROPERTIES`: wolframscript's own
+    // `ElementData["Properties"]` doesn't list it either, so keeping it out
+    // is what keeps that enumeration test verified.
+    "StableIsotopes" => Expr::List(
+      crate::functions::isotope_data::stable_isotope_entities(
+        elem.atomic_number,
+      )
+      .into(),
+    ),
     _ => missing_not_found(),
   }
 }
