@@ -98,14 +98,25 @@ enum CurveSrc<'a> {
 /// `{{{fx, fy}, …}}` both denote the same set of curves.
 fn is_curve_or_group(expr: &Expr) -> bool {
   match expr {
+    // `{}` is a curve slot that draws nothing — how a conditionally hidden
+    // curve is written (`If[cond, {fx, fy}, {}]`) once `cond` resolves to
+    // `False`.
+    Expr::List(items) if items.is_empty() => true,
     // A pair is either a curve `{fx, fy}` or a group of two curves;
     // `collect_curves` decides which when it descends.
     Expr::List(items) if items.len() == 2 => true,
-    Expr::List(items) if !items.is_empty() => {
-      items.iter().all(is_curve_or_group)
-    }
+    Expr::List(items) => items.iter().all(is_curve_or_group),
     _ => false,
   }
+}
+
+/// Whether `expr` is unambiguously a (possibly nested) group of curves —
+/// every element is itself curve-shaped, including an empty `{}` slot. This
+/// is the same test `collect_curves` uses to pick its grouping branch,
+/// exposed separately so a caller can tell that branch apart from the
+/// ambiguous `{fx, fy}` single-curve fallback *before* descending.
+fn is_curve_group(expr: &Expr) -> bool {
+  matches!(expr, Expr::List(items) if !items.is_empty() && items.iter().all(is_curve_or_group))
 }
 
 /// Flatten a (possibly nested) curve specification into individual curves,
@@ -114,8 +125,10 @@ fn collect_curves<'a>(expr: &'a Expr, out: &mut Vec<CurveSrc<'a>>) -> bool {
   let Expr::List(items) = expr else {
     return false;
   };
+  // An empty curve slot (`{}`) contributes no curves but is a valid,
+  // understood shape — not a parse failure.
   if items.is_empty() {
-    return false;
+    return true;
   }
   // Every element being curve-shaped makes this a grouping level — which
   // is how the ambiguous `{{a, b}, {c, d}}` resolves to two curves.
@@ -340,19 +353,43 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut syntactic = Vec::new();
   let is_list_body = matches!(body, Expr::List(_));
   let syntactic_ok = is_list_body && collect_curves(body, &mut syntactic);
+  // Whether the syntactic body is *unambiguously* a group of curves (every
+  // element itself curve-shaped) rather than a `{fx, fy}` pair resolved
+  // only through `collect_curves`'s ambiguous 2-item fallback. A body like
+  // `{If[cond1, {fx1, fy1}, {}], If[cond2, {fx2, fy2}, {}]}` — the common
+  // "conditionally hidden curve" idiom — has two non-list elements at the
+  // syntactic level (the `If[…]` calls), so it fails this test and falls
+  // through the same fallback as a genuine `{fx, fy}` pair; only evaluating
+  // it (below) reveals the two `If`s actually resolve to a curve and an
+  // empty slot.
+  let body_is_group = is_curve_group(body);
 
-  // The first argument is held, so a generated specification such as
-  // `{Table[{fx, fy}, {i, …}]}` only takes curve shape once evaluated.
-  // Evaluate it (the plot variable stays symbolic) and retry, matching
-  // Wolfram, which samples the held body rather than requiring
-  // `Evaluate[…]` around it.
-  let evaluated_body: Option<Expr> = if is_list_body && !syntactic_ok {
+  // The first argument is held, so a generated or conditionally-selected
+  // curve list (`{Table[{fx, fy}, {i, …}]}`, `{If[cond, {fx, fy}, {}], …}`)
+  // only reveals its true shape once evaluated. Evaluate it (the plot
+  // variable stays symbolic) and retry, matching Wolfram, which samples the
+  // held body rather than requiring `Evaluate[…]` around it. Attempted
+  // whenever the syntactic body didn't already resolve unambiguously, since
+  // an ambiguous `{fx, fy}`-shaped syntactic parse may really be a group of
+  // curves that only evaluation can reveal.
+  let evaluated_body: Option<Expr> = if is_list_body && !body_is_group {
     evaluate_expr_to_expr(body).ok()
   } else {
     None
   };
+  // Prefer the evaluated structure once it turns out to unambiguously be a
+  // curve group — the syntactic Pair fallback above cannot distinguish a
+  // real `{fx, fy}` pair from two conditionally-hidden curves, but a group
+  // that only appears after evaluation is exactly that ambiguous case
+  // resolving.
+  let mut evaluated_group = Vec::new();
+  let evaluated_group_ok = evaluated_body.as_ref().is_some_and(|ev| {
+    is_curve_group(ev) && collect_curves(ev, &mut evaluated_group)
+  });
 
-  let curves: Vec<CurveSrc> = if syntactic_ok {
+  let curves: Vec<CurveSrc> = if evaluated_group_ok {
+    evaluated_group
+  } else if syntactic_ok {
     syntactic
   } else if is_list_body {
     let mut collected = Vec::new();

@@ -9620,6 +9620,52 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    /// A common Demonstrations idiom conditionally hides one curve of a
+    /// multi-curve list by writing `{If[cond1, {fx1, fy1}, {}], If[cond2,
+    /// {fx2, fy2}, {}]}`. Syntactically both list elements are `If[…]`
+    /// calls (not literal curve lists), which is indistinguishable from a
+    /// plain `{fx, fy}` single-curve pair until evaluated; only evaluating
+    /// (with `cond1`/`cond2` already bound but `t` left symbolic) reveals
+    /// that one branch collapses to `{}` and the other to a real curve.
+    #[test]
+    fn parametric_plot_conditionally_hidden_curve() {
+      // Only the second curve is selected: the first must draw nothing.
+      let one_hidden = export_svg(
+        "which = {2}; \
+         ParametricPlot[{If[MemberQ[which, 1], {Sin[t], Cos[t]}, {}], \
+         If[MemberQ[which, 2], {2 Sin[t], 2 Cos[t]}, {}]}, {t, 0, 2 Pi}]",
+      );
+      assert_eq!(
+        sampled_curve_count(&one_hidden),
+        1,
+        "only the selected curve should draw, not zero and not both"
+      );
+
+      // Both selected: both curves draw, matching the plain two-curve form.
+      let both_shown = export_svg(
+        "which = {1, 2}; \
+         ParametricPlot[{If[MemberQ[which, 1], {Sin[t], Cos[t]}, {}], \
+         If[MemberQ[which, 2], {2 Sin[t], 2 Cos[t]}, {}]}, {t, 0, 2 Pi}]",
+      );
+      assert_eq!(
+        sampled_curve_count(&both_shown),
+        2,
+        "expected both curves once both are selected"
+      );
+
+      // Neither selected: the plot has no sampled curve at all.
+      let none_shown = export_svg(
+        "which = {}; \
+         ParametricPlot[{If[MemberQ[which, 1], {Sin[t], Cos[t]}, {}], \
+         If[MemberQ[which, 2], {2 Sin[t], 2 Cos[t]}, {}]}, {t, 0, 2 Pi}]",
+      );
+      assert_eq!(
+        sampled_curve_count(&none_shown),
+        0,
+        "expected no curve once neither branch is selected"
+      );
+    }
+
     /// The curve specification is held, so a generated one only takes curve
     /// shape once evaluated. Wolfram samples the held body, so `Table` in
     /// the first argument must not need an explicit `Evaluate`.
