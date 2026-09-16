@@ -2006,7 +2006,6 @@ fn try_solve_hyperbolic_pde(
         try_pde_boundary_condition(eq, u_name, &t_dom.name, x_dom.max, swap)
     {
       bc_hi = Some(bc);
-      continue;
     }
   }
   let (Some(rhs), Some(ic_pos), Some(ic_vel), Some(bc_lo), Some(bc_hi)) =
