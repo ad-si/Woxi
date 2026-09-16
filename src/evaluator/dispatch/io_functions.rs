@@ -5662,12 +5662,11 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
         // panel written `Grid[{…pictures…}, Frame -> All]` lost its
         // border. `Row`/`Column` (not `GraphicsRow`/`GraphicsColumn`) take
         // no such options, so they keep the plain default layout.
-        let option_args: &[Expr] =
-          if name == "Grid" || name == "TextGrid" {
-            &args[1..]
-          } else {
-            &[]
-          };
+        let option_args: &[Expr] = if name == "Grid" || name == "TextGrid" {
+          &args[1..]
+        } else {
+          &[]
+        };
         crate::functions::graphics::combine_graphics_svgs_with_options(
           &rows,
           option_args,
