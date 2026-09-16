@@ -1295,6 +1295,28 @@ mod alternatives {
     );
   }
 
+  // An Alternatives in *head* position: `(Cos | Sin)[a_]` matches a call
+  // whose head is either one, the same way a symbol head pattern
+  // (`h_[a_]`) does.
+  #[test]
+  fn alternatives_as_a_head_pattern() {
+    assert_eq!(interpret("MatchQ[Cos[x], (Cos | Sin)[_]]").unwrap(), "True");
+    assert_eq!(
+      interpret("MatchQ[Tan[x], (Cos | Sin)[_]]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret("Cases[{Cos[x], Sin[y], Tan[z]}, (Cos | Sin)[a_] :> a]")
+        .unwrap(),
+      "{x, y}"
+    );
+    assert_eq!(
+      interpret("Cases[{f[Cos[x]], Sin[y]}, (Cos | Sin)[_], Infinity]")
+        .unwrap(),
+      "{Cos[x], Sin[y]}"
+    );
+  }
+
   #[test]
   fn alternatives_string_replace() {
     assert_eq!(

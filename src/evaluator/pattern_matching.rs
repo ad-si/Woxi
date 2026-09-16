@@ -4994,6 +4994,20 @@ fn match_pattern_impl(
           return None;
         }
         Some(bindings)
+      } else if let Some((expr_head, expr_args)) = head_and_args(expr) {
+        // A non-symbol head that is itself a pattern — `(Cos | Sin)[a_]`,
+        // `Except[List][__]` — matches any expression whose head matches
+        // it. (A head pattern spelled as a symbol, `h_[a_]`, is a
+        // `FunctionCall` pattern and handled with the calls above.)
+        let mut bindings = match_pattern(&expr_head, pat_func)?;
+        push_match_context(&bindings);
+        let result = match_args_with_sequences(&expr_args, pat_args);
+        pop_match_context();
+        let b = result?;
+        if !merge_bindings(&mut bindings, b) {
+          return None;
+        }
+        Some(bindings)
       } else {
         None
       }
