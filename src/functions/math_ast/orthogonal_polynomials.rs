@@ -644,7 +644,7 @@ fn associated_legendre_p_ast(
     && m_is_neg_int
     && let (Expr::Integer(n), Expr::Integer(m)) = (n_expr, m_expr)
   {
-    let m_abs = (-*m);
+    let m_abs = -*m;
     if m_abs > *n {
       return Ok(Expr::Integer(0));
     }
