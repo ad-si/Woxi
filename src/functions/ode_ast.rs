@@ -8241,17 +8241,15 @@ fn extract_multivar_derivative(
 fn collect_multivar_terms(
   expr: &Expr,
   y_names: &[String],
-  x_name: &str,
 ) -> Result<Vec<MultiOdeTerm>, InterpreterError> {
   let mut terms = Vec::new();
-  collect_multivar_additive(expr, y_names, x_name, false, &mut terms)?;
+  collect_multivar_additive(expr, y_names, false, &mut terms)?;
   Ok(terms)
 }
 
 fn collect_multivar_additive(
   expr: &Expr,
   y_names: &[String],
-  x_name: &str,
   negated: bool,
   terms: &mut Vec<MultiOdeTerm>,
 ) -> Result<(), InterpreterError> {
@@ -8261,26 +8259,26 @@ fn collect_multivar_additive(
       left,
       right,
     } => {
-      collect_multivar_additive(left, y_names, x_name, negated, terms)?;
-      collect_multivar_additive(right, y_names, x_name, negated, terms)?;
+      collect_multivar_additive(left, y_names, negated, terms)?;
+      collect_multivar_additive(right, y_names, negated, terms)?;
     }
     Expr::BinaryOp {
       op: BinaryOperator::Minus,
       left,
       right,
     } => {
-      collect_multivar_additive(left, y_names, x_name, negated, terms)?;
-      collect_multivar_additive(right, y_names, x_name, !negated, terms)?;
+      collect_multivar_additive(left, y_names, negated, terms)?;
+      collect_multivar_additive(right, y_names, !negated, terms)?;
     }
     Expr::UnaryOp {
       op: UnaryOperator::Minus,
       operand,
     } => {
-      collect_multivar_additive(operand, y_names, x_name, !negated, terms)?;
+      collect_multivar_additive(operand, y_names, !negated, terms)?;
     }
     Expr::FunctionCall { name, args } if name == "Plus" && args.len() >= 2 => {
       for arg in args {
-        collect_multivar_additive(arg, y_names, x_name, negated, terms)?;
+        collect_multivar_additive(arg, y_names, negated, terms)?;
       }
     }
     Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 2 => {
@@ -8748,7 +8746,7 @@ fn dsolve_linear_system(
 
   for (row, ode) in odes.iter().enumerate() {
     let normalized = normalize_equation(ode)?;
-    let terms = collect_multivar_terms(&normalized, &y_names, x_name)?;
+    let terms = collect_multivar_terms(&normalized, &y_names)?;
     for term in terms {
       match term.var_index {
         Some(col) => {
