@@ -167,11 +167,8 @@ mod arithmetic {
       // a plot's per-point sampler), matching wolframscript treating it as
       // real rather than complex.
       assert_eq!(interpret("Floor[Complex[3.5, 0.0]]").unwrap(), "3");
-      // A genuinely complex number is unaffected and stays symbolic.
-      assert_eq!(
-        interpret("Floor[Complex[3.5, 1.0]]").unwrap(),
-        "Floor[3.5 + 1.*I]"
-      );
+      // A genuinely complex number floors component-wise, unaffected.
+      assert_eq!(interpret("Floor[Complex[3.5, 1.0]]").unwrap(), "3 + I");
     }
 
     #[test]

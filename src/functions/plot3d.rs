@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use super::*;
 use crate::evaluator::evaluate_expr_to_expr;
-use crate::functions::math_ast::try_eval_to_f64;
+use crate::functions::math_ast::{try_eval_to_f64, try_eval_to_f64_lenient};
 use crate::functions::plot::{
   PLOT_COLORS, evaluate_at_xy, format_tick, nice_step, parse_image_size,
   substitute_var,
@@ -6439,7 +6439,14 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 fn evaluate_at_t(body: &Expr, tvar: &str, tval: f64) -> Option<f64> {
   let sub = substitute_var(body, tvar, &Expr::Real(tval));
   let result = evaluate_expr_to_expr(&sub).ok()?;
-  try_eval_to_f64(&result)
+  if let Some(v) = try_eval_to_f64_lenient(&result) {
+    return Some(v);
+  }
+  // See evaluate_at_t_theta: body may be a bound variable that only
+  // resolved to a function of tvar during evaluation.
+  let sub = substitute_var(&result, tvar, &Expr::Real(tval));
+  let result = evaluate_expr_to_expr(&sub).ok()?;
+  try_eval_to_f64_lenient(&result)
 }
 
 /// Evaluate a two-variable expression (t, theta) at given values.
@@ -6453,7 +6460,7 @@ fn evaluate_at_t_theta(
   let sub1 = substitute_var(body, tvar, &Expr::Real(tval));
   let sub2 = substitute_var(&sub1, theta_var, &Expr::Real(theta_val));
   let result = evaluate_expr_to_expr(&sub2).ok()?;
-  if let Some(v) = try_eval_to_f64(&result) {
+  if let Some(v) = try_eval_to_f64_lenient(&result) {
     return Some(v);
   }
   // The body may reference a variable (e.g. `r` holding a `SphericalHarmonicY`
@@ -6463,7 +6470,7 @@ fn evaluate_at_t_theta(
   let sub1 = substitute_var(&result, tvar, &Expr::Real(tval));
   let sub2 = substitute_var(&sub1, theta_var, &Expr::Real(theta_val));
   let result = evaluate_expr_to_expr(&sub2).ok()?;
-  try_eval_to_f64(&result)
+  try_eval_to_f64_lenient(&result)
 }
 
 /// RevolutionPlot3D[f, {t, tmin, tmax}]

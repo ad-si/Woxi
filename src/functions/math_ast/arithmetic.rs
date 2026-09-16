@@ -8318,23 +8318,19 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Float complex multiplication: when every factor extracts as a machine
-  // complex number and at least one factor is inexact (Real/BigFloat), fold
-  // into a single machine number. The exact path above handles purely exact
-  // complex products; this covers the inexact case wolframscript also
-  // collapses:
-  //   2.*(3 + 4 I) → 6. + 8. I,  Pi*(2. + I) → 6.283… + 3.141…*I,
-  //   Sqrt[2]*(1. + 2. I) → 1.414… + 2.828…*I.
+  // complex number, at least one factor is inexact (Real/BigFloat), and at
+  // least one factor has a nonzero imaginary part, fold into a single machine
+  // complex number. The exact path above handles purely exact complex
+  // products; this covers the inexact case wolframscript also collapses:
+  //   2.*(3 + 4 I) → 6. + 8. I,  Pi*(2. + I) → 6.283… + 3.141…*I.
   // Symbolic factors (e.g. `x`) make try_extract_complex_float return None, so
   // `x*(2. + I)` is left untouched; an all-exact product like `Pi*(2 + I)`
-  // lacks an inexact factor and stays symbolic. Every factor's imaginary
-  // part can be exactly zero here too — e.g. a `Complex[re, 0.]` left behind
-  // by earlier numeric cancellation, times `Sqrt[2]` — in which case the
-  // result below comes back as a plain Real rather than requiring a
-  // nonzero-imaginary factor to trigger at all.
+  // lacks an inexact factor and stays symbolic.
   if args.len() >= 2 {
     let float_parts: Vec<Option<(f64, f64)>> =
       args.iter().map(try_extract_complex_float).collect();
     if float_parts.iter().all(std::option::Option::is_some) {
+      let any_imag = float_parts.iter().any(|c| c.unwrap().1 != 0.0);
       // Trigger on a machine Real (so the product is genuinely machine
       // precision), but bail if any factor carries a precision-tagged
       // BigFloat — collapsing those to f64 would silently drop precision
@@ -8363,19 +8359,13 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       let any_machine_real = args.iter().any(has_machine_real);
       let any_bigfloat = args.iter().any(has_bigfloat);
-      if any_machine_real && !any_bigfloat {
+      if any_imag && any_machine_real && !any_bigfloat {
         let (mut re, mut im) = float_parts[0].unwrap();
         for cp in &float_parts[1..] {
           let (c, d) = cp.unwrap();
           let (a, b) = (re, im);
           re = a * c - b * d;
           im = a * d + b * c;
-        }
-        if im == 0.0 {
-          // A purely real product — including one where a factor was a
-          // `Complex[re, 0.]` rather than a bare Real — comes back as a
-          // plain machine Real, not `re + 0.*I`.
-          return Ok(Expr::Real(re));
         }
         // Only collapse when the product has a nonzero real part. A pure
         // imaginary product (re == 0) is left as the `c*I` monomial so it

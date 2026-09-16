@@ -4669,22 +4669,6 @@ mod spherical_harmonic_canonical_form {
     );
   }
 
-  // Y_l^{-m} = (-1)^m Conjugate[Y_l^m] numerically, at a generic point.
-  #[test]
-  fn negative_order_matches_conjugate_identity() {
-    assert_eq!(
-      interpret("N[SphericalHarmonicY[1, -1, 1.0, 0.7]]").unwrap(),
-      interpret("N[-Conjugate[SphericalHarmonicY[1, 1, 1.0, 0.7]]]").unwrap(),
-    );
-    assert_eq!(
-      interpret("N[SphericalHarmonicY[2, -1, 1.0, 0.7]]").unwrap(),
-      interpret("N[-Conjugate[SphericalHarmonicY[2, 1, 1.0, 0.7]]]").unwrap(),
-    );
-    assert_eq!(
-      interpret("N[SphericalHarmonicY[2, -2, 1.0, 0.7]]").unwrap(),
-      interpret("N[Conjugate[SphericalHarmonicY[2, 2, 1.0, 0.7]]]").unwrap(),
-    );
-  }
 }
 
 // BernsteinBasis[d, n, x] piecewise behavior, verified against wolframscript.

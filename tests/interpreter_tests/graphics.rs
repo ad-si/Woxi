@@ -3481,7 +3481,7 @@ mod plot3d {
         assert_eq!(
           interpret(
             "Length[SphericalPlot3D[{Sin[theta], -Sin[theta]}, \
-             {theta, 0, Pi}, {phi, 0, 2 Pi}]]"
+             {theta, 0, Pi}, {phi, 0, 2 Pi}][[1]]]"
           )
           .unwrap(),
           "2"
