@@ -2292,11 +2292,13 @@ fn split_exponent_coefficient(exp: &Expr) -> (Rat, Expr) {
       match &args[0] {
         Expr::Integer(n) => ((*n, 1), rest(&args[1..])),
         Expr::FunctionCall { name: rn, args: ra }
-          if rn == "Rational"
-            && ra.len() == 2
-            && let (Expr::Integer(n), Expr::Integer(d)) = (&ra[0], &ra[1]) =>
+          if rn == "Rational" && ra.len() == 2 =>
         {
-          ((*n, *d), rest(&args[1..]))
+          if let (Expr::Integer(n), Expr::Integer(d)) = (&ra[0], &ra[1]) {
+            ((*n, *d), rest(&args[1..]))
+          } else {
+            ((1, 1), exp.clone())
+          }
         }
         _ => ((1, 1), exp.clone()),
       }
