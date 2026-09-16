@@ -3604,6 +3604,35 @@ WL scrambles the order of a multi-entry rule list inside an option
 internal hash order. Woxi keeps input order.
 
 
+## Chemistry data
+
+### `IsotopeData` carries NIST's isotope table, not the full ~3000-nuclide chart
+
+Like `GraphData`'s atlas slice above, Woxi bundles the isotopes from NIST's
+"Atomic Weights and Isotopic Compositions for All Elements" (the same table
+`ElementData["…", "AtomicWeight"]` is built from): one or two naturally
+occurring isotopes for every element that has any, plus the longest-lived
+known isotope for every element that has none — 354 isotopes total, against
+Wolfram's own curated chart of roughly 3000. An isotope outside that set is
+unrecognized where WL answers it.
+
+`ElementData[…, "StableIsotopes"]` draws from the same table and applies the
+same coarser cut: an isotope counts as "stable" when NIST reports a measured
+natural abundance for it, not by true nuclear-decay stability. Long-lived
+primordial radionuclides that still occur naturally (potassium-40,
+rubidium-87, thorium-232, the natural uranium isotopes, …) are included,
+matching how these elements are conventionally described in chemistry
+references, but diverging from a strict "does it decay" reading.
+
+`IsotopeData[…, "BindingEnergy"]` is not looked up — it is computed from
+NIST's atomic mass for the isotope via the standard mass-excess formula
+`BE = (Z·m(¹H) + N·m(n) − M(A,Z))·c²`, using CODATA 2018 constants for the
+neutron mass and the u→MeV conversion factor. This reproduces textbook
+values exactly (carbon-12's 92.16 MeV, for instance) but has not been
+checked digit-for-digit against wolframscript's own tabulated value for
+every bundled isotope, so its last few significant figures may not always
+match.
+
 ## Geometry and regions
 
 ### Three region measures are missing for heads whose siblings have them

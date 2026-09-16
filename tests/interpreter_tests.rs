@@ -3995,6 +3995,7 @@ mod interpreter_tests {
   mod interpret_to_expr_api;
   mod interval;
   mod io;
+  mod isotope_data;
   mod large_number_and_memoization;
   mod linear_algebra;
   mod list;

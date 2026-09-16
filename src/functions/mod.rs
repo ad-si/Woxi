@@ -51,6 +51,7 @@ pub mod http_ast;
 pub mod image_ast;
 pub mod information_render;
 pub mod interval_ast;
+pub mod isotope_data;
 pub mod linear_algebra_ast;
 pub mod list_helpers_ast;
 pub mod list_plot;

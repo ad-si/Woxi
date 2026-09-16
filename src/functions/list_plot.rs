@@ -38,11 +38,27 @@ impl ErrPoint {
   }
 }
 
+/// Strips a `Quantity[magnitude, unit]` wrapper down to its magnitude, like
+/// wolframscript's plot functions do when handed dimensioned data (the axis
+/// then just carries the bare number). Any other expression passes through
+/// unchanged.
+fn strip_quantity(expr: &Expr) -> &Expr {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if name == "Quantity" && args.len() == 2 =>
+    {
+      &args[0]
+    }
+    _ => expr,
+  }
+}
+
 /// Evaluate an expression to a plottable value with uncertainty: a plain
 /// number carries zero uncertainty, `Around[v, u]` / `Around[v, {m, p}]`
 /// carry (minus, plus) error-bar half-widths.
 fn eval_to_value_err(expr: &Expr) -> Option<(f64, (f64, f64))> {
   let e = evaluate_expr_to_expr(expr).unwrap_or_else(|_| expr.clone());
+  let e = strip_quantity(&e).clone();
   if let Expr::FunctionCall { name, args } = &e
     && name == "Around"
     && args.len() == 2

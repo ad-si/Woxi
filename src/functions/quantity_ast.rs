@@ -127,6 +127,11 @@ fn get_unit_info(name: &str) -> Option<UnitInfo> {
       dimensions: dims(&[(Mass, 1)]),
       to_si: (45359237, 1600000000),
     },
+    // 1 Da = 1.66053906660×10⁻²⁷ kg (CODATA 2018).
+    "Daltons" | "AtomicMassUnit" => UnitInfo {
+      dimensions: dims(&[(Mass, 1)]),
+      to_si: (166053906660, 100000000000000000000000000000000000000),
+    },
 
     // ── Time → Seconds ───────────────────────────────────────────────
     "Seconds" => UnitInfo {
@@ -277,6 +282,10 @@ fn get_unit_info(name: &str) -> Option<UnitInfo> {
     "ElectronVolts" | "Electronvolts" => UnitInfo {
       dimensions: dims(&[(Mass, 1), (Length, 2), (Time, -2)]),
       to_si: (1602176634, 10000000000000000000000000000),
+    },
+    "Megaelectronvolts" => UnitInfo {
+      dimensions: dims(&[(Mass, 1), (Length, 2), (Time, -2)]),
+      to_si: (1602176634, 10000000000000000000000),
     },
 
     // ── Power: Watts = kg⋅m²/s³ ──────────────────────────────────────
@@ -744,6 +753,8 @@ fn resolve_unit_abbreviation(s: &str) -> Option<Expr> {
     "cal" => "ThermochemicalCalories",
     "kcal" => "ThermochemicalKilocalories",
     "eV" => "Electronvolts",
+    "MeV" => "Megaelectronvolts",
+    "Da" => "Daltons",
     "W" => "Watts",
     "mW" => "Milliwatts",
     "kW" => "Kilowatts",
@@ -1214,6 +1225,8 @@ pub fn unit_to_abbreviation(name: &str) -> Option<&'static str> {
     "ThermochemicalCalories" => "cal",
     "ThermochemicalKilocalories" => "kcal",
     "Electronvolts" => "eV",
+    "Megaelectronvolts" => "MeV",
+    "Daltons" => "Da",
     "Watts" => "W",
     "Milliwatts" => "mW",
     "Kilowatts" => "kW",
@@ -2707,6 +2720,8 @@ fn unit_abbreviation(name: &str) -> Option<&'static str> {
     "Millijoules" => "mJ",
     "Kilojoules" => "kJ",
     "Electronvolts" => "eV",
+    "Megaelectronvolts" => "MeV",
+    "Daltons" => "Da",
     "Watts" => "W",
     "Milliwatts" => "mW",
     "Kilowatts" => "kW",
