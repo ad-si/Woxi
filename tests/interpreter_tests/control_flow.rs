@@ -836,6 +836,55 @@ mod do_single_iter {
       "2\n3\n"
     );
   }
+
+  // Regression: a non-integer min/step (e.g. `{i, 0.1, 0.5, 0.1}`) used to
+  // floor to 0 and raise "Do: step cannot be zero" instead of iterating
+  // over the real values, breaking any Demonstration-style code that seeds
+  // a lookup table with `Do[f[i] = …, {i, 0.1, 3.1, 0.1}]`.
+  #[test]
+  fn do_fractional_min_and_step() {
+    clear_state();
+    assert_eq!(
+      interpret_with_stdout("Do[Print[i], {i, 0.1, 0.5, 0.1}]")
+        .unwrap()
+        .stdout,
+      "0.1\n0.2\n0.30000000000000004\n0.4\n0.5\n"
+    );
+  }
+
+  #[test]
+  fn do_fractional_step_downvalue_assignment() {
+    // The `needs_substitute` path (iterator var used as a function head's
+    // argument in an assignment) must also accept a fractional step.
+    clear_state();
+    assert_eq!(
+      interpret("Do[f[i] = i^2, {i, 0.1, 0.3, 0.1}]; f[0.2]").unwrap(),
+      "0.04000000000000001"
+    );
+  }
+
+  #[test]
+  fn do_fractional_step_negative() {
+    clear_state();
+    assert_eq!(
+      interpret_with_stdout("Do[Print[i], {i, 0.5, 0.1, -0.1}]")
+        .unwrap()
+        .stdout,
+      "0.5\n0.4\n0.3\n0.19999999999999996\n0.09999999999999998\n"
+    );
+  }
+
+  #[test]
+  fn do_fractional_step_multi_iterator() {
+    // The multi-iterator form (`iterate_spec`) shares the same fix.
+    clear_state();
+    assert_eq!(
+      interpret_with_stdout("Do[Print[{i, j}], {i, 0.1, 0.2, 0.1}, {j, 1, 2}]")
+        .unwrap()
+        .stdout,
+      "{0.1, 1}\n{0.1, 2}\n{0.2, 1}\n{0.2, 2}\n"
+    );
+  }
 }
 
 mod while_single_arg {

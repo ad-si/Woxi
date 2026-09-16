@@ -995,6 +995,46 @@ mod compile {
     );
   }
 
+  // Regression: a `{name, _Type, rank}` (array-typed) Compile parameter was
+  // exempted entirely from Listable threading — a list argument there was
+  // passed straight through as one opaque value regardless of its actual
+  // rank, unlike a scalar (rank 0) parameter (see the test above). Real
+  // Mathematica's Listable attribute threads over ANY excess leading
+  // dimensions beyond a parameter's declared rank, not just rank 0: a
+  // Wolfram Demonstrations Project fractal-perimeter notebook declares a
+  // `{line, _Real, 2}` parameter (one line segment) and calls the compiled
+  // kernel on a rank-3 batch of segments in one shot — collapsing to a
+  // single scalar instead of a per-segment result, exactly like the
+  // `NestWhileList` case above but one rank up.
+  #[test]
+  fn compile_listable_array_typed_parameter_threads_over_extra_rank() {
+    clear_state();
+    let r = woxi::interpret_with_stdout(
+      r#"f = Compile[{{line, _Real, 2}}, Length[line], RuntimeAttributes -> {Listable}];
+         f[{{{1., 1.}, {2., 2.}}, {{3., 3.}, {4., 4.}}, {{5., 5.}, {6., 6.}}}]"#,
+    )
+    .unwrap();
+    assert_eq!(r.result, "{2., 2., 2.}");
+    assert!(
+      r.warnings.is_empty(),
+      "unexpected messages: {:?}",
+      r.warnings
+    );
+
+    // An argument more than one rank above the declared type (e.g. a list
+    // of lists of matrices, as `Nest` reapplying the same Listable kernel
+    // to its own growing result produces) must thread recursively, one
+    // excess dimension at a time, rather than only once.
+    assert_eq!(
+      interpret(
+        r#"g = Compile[{{m, _Real, 2}}, Total[Flatten[m]], RuntimeAttributes -> {Listable}];
+           g[{{{{1., 2.}, {3., 4.}}}, {{{5., 6.}, {7., 8.}}}}]"#
+      )
+      .unwrap(),
+      "{{10.}, {26.}}"
+    );
+  }
+
   // Regression: a `.nb` notebook's `SaveDefinitions -> True` dump can embed a
   // helper as Mathematica's fully serialized `CompiledFunction[…]` — an id
   // tuple, argument patterns, type/constant tables, raw bytecode, the
@@ -4000,34 +4040,36 @@ f[x_] := x^2"#,
   }
   #[test]
   fn list_literal_50() {
-    // Long ClearAll/UpValues/DownValues cascade. wolframscript's third
-    // element is `H[F[5]]` because, after `H[A[y_]] = Q[y]` evaluates
-    // its LHS at Set time, only the resolved-form rule (with the
-    // chained A→B→F→G substitution) is stored, and then `ClearAll[F]`
-    // breaks that chain. Woxi's third element is `Q[y]`: the
-    // cumulative DownValues from earlier steps still contain a
-    // matching `H[F[y_]] :> Q[y]` rule, but a downstream Set side
-    // effect from the chained `H[A[y_]] = Q[y]` step partially
-    // shadows the binding so `y` doesn't resolve to `5`.
+    // Long ClearAll/UpValues/DownValues cascade. The third element is
+    // `H[F[5]]`: after `H[A[y_]] = Q[y]` evaluates its LHS at Set time,
+    // `A[y_]` resolves through the existing `A[x_] = B[x]`, `B[x_] = F[x]`
+    // chain to `F[y_]`, so only that resolved-form rule is stored, and the
+    // later `ClearAll[F]` breaks it — matching wolframscript. (Woxi used to
+    // drop this Set-time resolution for a nested pattern argument that
+    // wasn't a plain blank, named pattern, or list pattern, leaving the
+    // slot unconstrained and giving `Q[y]` instead; fixed alongside nested
+    // list-pattern destructuring under `=`, which needed the same
+    // per-argument analysis `:=` already had.)
     assert_case(
       r#"a=b; a=4; {a, b}; a=b; b=4;  {a,b}; a=b; b=4; Clear[a]; {a,b}; a=b; b=4; Clear[b]; {a, b}; F[x_]:=x^2; G[x_]:=F[x]; ClearAll[F]; G[u]; F[x_]:=G[x]; G[x_]:=x^2; ClearAll[G]; F[u]; F[x_]:=G[x]; H[F[y_]]:=Q[y]; ClearAll[F]; {H[G[5]],H[F[5]]}; F[x_]:=G[x]; H[F[y_]]^:=Q[y]; ClearAll[F]; {H[G[5]],H[F[5]]}; F[x_]:=G[x]; H[F[y_]]:=Q[y]; ClearAll[G]; {H[G[5]],H[F[5]]}; F[x_]=G[x]; H[F[y_]]^=Q[y]; ClearAll[G]; {H[G[5]],H[F[5]]}; A[x_]=B[x];B[x_]=F[x];F[x_]=G[x];H[A[y_]]=Q[y]; ClearAll[F];{H[A[5]],H[B[5]],H[F[5]],H[G[5]]}"#,
-      r#"{Q[5], Q[5], Q[y], Q[5]}"#,
+      r#"{Q[5], Q[5], H[F[5]], Q[5]}"#,
     );
   }
   #[test]
   fn list_literal_51() {
-    // Same family as case 4652. wolframscript's `N[F[x_]] = x^2`
-    // evaluates the LHS at Set time: with `F[x_] = G[x]` in effect,
-    // F[x_] resolves to G[x_], so the rule is stored as `NValues[G]`
-    // (`N[G[x_], {MachinePrecision, MachinePrecision}] :> x^2`).
-    // ClearAll[F] doesn't touch it, so `N[G[2]]` matches and yields
-    // `4.` while `N[F[2]]` (no NValue on F) just produces `F[2.]`.
-    // Woxi stores the rule under the original head N as a DownValue
-    // and the pattern variable `x` doesn't bind through this Set
-    // path, so both elements come out as the unevaluated body `x^2`.
+    // Same family as case 4652. `N[F[x_]] = x^2` evaluates its LHS at Set
+    // time: with `F[x_] = G[x]` in effect, `F[x_]` resolves to `G[x_]`
+    // (the same Set-time resolution as `list_literal_50`'s `H[A[y_]]`, now
+    // shared between `=` and `:=`). `ClearAll[F]` doesn't touch the
+    // resolved rule, so `N[F[2]]` (no rule on `F`) falls back to plain
+    // numericization, `F[2.]`, while `N[G[2]]` matches and gives `4`.
+    // wolframscript instead installs the resolved rule as an `NValues[G]`
+    // entry, so `N[G[2]]` returns the machine-real `4.` — Woxi's version
+    // stores it as an ordinary DownValue on `N` itself, so the body's
+    // exact result comes back uncoerced; see conformance_gaps.md.
     assert_case(
       r#"a=b; a=4; {a, b}; a=b; b=4;  {a,b}; a=b; b=4; Clear[a]; {a,b}; a=b; b=4; Clear[b]; {a, b}; F[x_]:=x^2; G[x_]:=F[x]; ClearAll[F]; G[u]; F[x_]:=G[x]; G[x_]:=x^2; ClearAll[G]; F[u]; F[x_]:=G[x]; H[F[y_]]:=Q[y]; ClearAll[F]; {H[G[5]],H[F[5]]}; F[x_]:=G[x]; H[F[y_]]^:=Q[y]; ClearAll[F]; {H[G[5]],H[F[5]]}; F[x_]:=G[x]; H[F[y_]]:=Q[y]; ClearAll[G]; {H[G[5]],H[F[5]]}; F[x_]=G[x]; H[F[y_]]^=Q[y]; ClearAll[G]; {H[G[5]],H[F[5]]}; A[x_]=B[x];B[x_]=F[x];F[x_]=G[x];H[A[y_]]=Q[y]; ClearAll[F];{H[A[5]],H[B[5]],H[F[5]],H[G[5]]}; F[x_]=G[x];N[F[x_]]=x^2;ClearAll[F];{N[F[2]],N[G[2]]}"#,
-      r#"{x^2, x^2}"#,
+      r#"{F[2.], 4}"#,
     );
   }
   #[test]

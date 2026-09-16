@@ -751,14 +751,13 @@ pub fn dispatch_linear_algebra_functions(
         }
         // Build the Hermitian part: (m + ConjugateTranspose[m]) / 2.
         let conj_t = call1("ConjugateTranspose", args[0].clone());
-        let herm = Expr::FunctionCall {
-          name: "Divide".to_string(),
-          args: vec![
+        let herm = call(
+          "Divide",
+          vec![
             call("Plus", vec![args[0].clone(), conj_t]),
             Expr::Integer(2),
-          ]
-          .into(),
-        };
+          ],
+        );
         let herm_eval =
           evaluate_expr_to_expr(&herm).unwrap_or_else(|_| herm.clone());
         if let Ok(Expr::List(ref eigenvals)) =
@@ -931,14 +930,13 @@ pub fn dispatch_linear_algebra_functions(
               for (j, elem) in cols.iter().enumerate() {
                 if i == j {
                   // a_ij - x
-                  let entry = Expr::FunctionCall {
-                    name: "Plus".to_string(),
-                    args: vec![
+                  let entry = call(
+                    "Plus",
+                    vec![
                       elem.clone(),
                       call("Times", vec![Expr::Integer(-1), x.clone()]),
-                    ]
-                    .into(),
-                  };
+                    ],
+                  );
                   new_cols.push(entry);
                 } else {
                   new_cols.push(elem.clone());
@@ -1861,7 +1859,7 @@ pub fn dispatch_linear_algebra_functions(
         Some(_) => return uneval(),
       };
       let power = |b: Expr, e: i128| call("Power", vec![b, Expr::Integer(e)]);
-      let times = |factors: Vec<Expr>| call("Times", factors);
+      let times = |terms: Vec<Expr>| call("Times", terms);
       let plus = |terms: Vec<Expr>| call("Plus", terms);
       let vv = plus(v.iter().map(|vi| power(vi.clone(), 2)).collect());
       let s_minus_1 = plus(vec![args[0].clone(), Expr::Integer(-1)]);
@@ -1927,7 +1925,7 @@ pub fn dispatch_linear_algebra_functions(
         return unevaluated();
       }
       let power = |b: Expr, e: i128| call("Power", vec![b, Expr::Integer(e)]);
-      let times = |factors: Vec<Expr>| call("Times", factors);
+      let times = |terms: Vec<Expr>| call("Times", terms);
       let plus = |terms: Vec<Expr>| call("Plus", terms);
       // v·v
       let vv = plus(v.iter().map(|vi| power(vi.clone(), 2)).collect());
@@ -2002,7 +2000,7 @@ pub fn dispatch_linear_algebra_functions(
             .collect();
           call1("Sqrt", call("Plus", squares))
         };
-        let times = |factors: Vec<Expr>| call("Times", factors);
+        let times = |terms: Vec<Expr>| call("Times", terms);
         let recip = |x: Expr| call("Power", vec![x, Expr::Integer(-1)]);
         // nhat = n / Norm[n]
         let norm_n = norm(n);
@@ -2011,26 +2009,25 @@ pub fn dispatch_linear_algebra_functions(
           .map(|c| times(vec![c.clone(), recip(norm_n.clone())]))
           .collect();
         // e·nhat
-        let e_dot_nhat = Expr::FunctionCall {
-          name: "Plus".to_string(),
-          args: e
-            .iter()
+        let e_dot_nhat = call(
+          "Plus",
+          e.iter()
             .zip(nhat.iter())
             .map(|(ei, ni)| times(vec![ei.clone(), ni.clone()]))
-            .collect::<Vec<_>>()
-            .into(),
-        };
+            .collect::<Vec<_>>(),
+        );
         // eperp = e - (e·nhat) nhat ; ep = eperp / Norm[eperp]
         let eperp: Vec<Expr> = e
           .iter()
           .zip(nhat.iter())
-          .map(|(ei, ni)| Expr::FunctionCall {
-            name: "Plus".to_string(),
-            args: vec![
-              ei.clone(),
-              times(vec![Expr::Integer(-1), e_dot_nhat.clone(), ni.clone()]),
-            ]
-            .into(),
+          .map(|(ei, ni)| {
+            call(
+              "Plus",
+              vec![
+                ei.clone(),
+                times(vec![Expr::Integer(-1), e_dot_nhat.clone(), ni.clone()]),
+              ],
+            )
           })
           .collect();
         let norm_eperp = norm(&eperp);
@@ -2050,29 +2047,25 @@ pub fn dispatch_linear_algebra_functions(
             off
           }
         };
+        let simplify = |e: Expr| call1("Simplify", e);
         let mut rows = Vec::with_capacity(d + 1);
         for i in 0..d {
           let mut row = Vec::with_capacity(d + 1);
           for j in 0..d {
             // Simplify so that e.g. 1 + (-1/2) collapses to 1/2 (matching
             // Wolfram), while symbolic forms like Sqrt[3/5] are preserved.
-            row.push(call1("Simplify", m_entry(i, j)));
+            row.push(simplify(m_entry(i, j)));
           }
           // Translation column p - M·p, zero when there is no centre.
           row.push(match &center {
-            Some(c) => Expr::FunctionCall {
-              name: "Simplify".to_string(),
-              args: vec![Expr::FunctionCall {
-                name: "Plus".to_string(),
-                args: std::iter::once(c[i].clone())
-                  .chain(c.iter().enumerate().map(|(j, cj)| {
-                    times(vec![Expr::Integer(-1), m_entry(i, j), cj.clone()])
-                  }))
-                  .collect::<Vec<_>>()
-                  .into(),
-              }]
-              .into(),
-            },
+            Some(c) => simplify(call(
+              "Plus",
+              std::iter::once(c[i].clone())
+                .chain(c.iter().enumerate().map(|(j, cj)| {
+                  times(vec![Expr::Integer(-1), m_entry(i, j), cj.clone()])
+                }))
+                .collect::<Vec<_>>(),
+            )),
             None => Expr::Integer(0),
           });
           rows.push(Expr::List(row.into()));
@@ -2809,8 +2802,8 @@ pub fn dispatch_linear_algebra_functions(
       if let Expr::List(v) = &args[1]
         && !v.is_empty()
       {
-        let times = |xs: Vec<Expr>| call("Times", xs);
-        let plus = |xs: Vec<Expr>| call("Plus", xs);
+        let times = |terms: Vec<Expr>| call("Times", terms);
+        let plus = |terms: Vec<Expr>| call("Plus", terms);
         let sq = |a: Expr| call("Power", vec![a, Expr::Integer(2)]);
         let vdotv = plus(v.iter().cloned().map(sq).collect());
         let s_minus_1 = plus(vec![args[0].clone(), Expr::Integer(-1)]);
@@ -2948,14 +2941,9 @@ pub fn dispatch_linear_algebra_functions(
           return Some(Ok(unevaluated("FourierMatrix", args)));
         }
         let n = n as usize;
-        let inv_sqrt_n = Expr::FunctionCall {
-          name: "Power".to_string(),
-          args: vec![
-            Expr::Integer(n as i128),
-            call("Rational", vec![Expr::Integer(-1), Expr::Integer(2)]),
-          ]
-          .into(),
-        };
+        let int = Expr::Integer;
+        let m_one_half = call("Rational", vec![int(-1), int(2)]);
+        let inv_sqrt_n = call("Power", vec![int(n as i128), m_one_half]);
         let mut rows = Vec::with_capacity(n);
         for j in 0..n {
           let mut row = Vec::with_capacity(n);
@@ -2969,19 +2957,10 @@ pub fn dispatch_linear_algebra_functions(
               // Simplify the fraction 2*exp/n
               let (snum, sden) = rat_reduce(2 * exp, n as i128);
               let angle = if sden == 1 {
-                call("Times", vec![Expr::Integer(snum), id_expr("Pi")])
+                call("Times", vec![int(snum), id_expr("Pi")])
               } else {
-                Expr::FunctionCall {
-                  name: "Times".to_string(),
-                  args: vec![
-                    call(
-                      "Rational",
-                      vec![Expr::Integer(snum), Expr::Integer(sden)],
-                    ),
-                    id_expr("Pi"),
-                  ]
-                  .into(),
-                }
+                let frac = call("Rational", vec![int(snum), int(sden)]);
+                call("Times", vec![frac, id_expr("Pi")])
               };
               // Build (Cos[angle] + I*Sin[angle]) / Sqrt[n]
               let cos_part = call1("Cos", angle.clone());
@@ -3302,14 +3281,13 @@ fn lu_decomposition_ast(mat: &Expr) -> Result<Expr, InterpreterError> {
 
     for i in (k + 1)..n {
       // L[i][k] = A[i][k] / A[k][k]
-      let l_ik = evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![
+      let l_ik = evaluate_expr_to_expr(&call(
+        "Times",
+        vec![
           matrix[i][k].clone(),
           call("Power", vec![pivot_val.clone(), Expr::Integer(-1)]),
-        ]
-        .into(),
-      })
+        ],
+      ))
       .unwrap_or(matrix[i][k].clone());
 
       // Update row i: A[i][j] -= L[i][k] * A[k][j] for j > k
@@ -3320,14 +3298,13 @@ fn lu_decomposition_ast(mat: &Expr) -> Result<Expr, InterpreterError> {
         ))
         .unwrap_or(call("Times", vec![l_ik.clone(), matrix[k][j].clone()]));
 
-        let new_val = evaluate_expr_to_expr(&Expr::FunctionCall {
-          name: "Plus".to_string(),
-          args: vec![
+        let new_val = evaluate_expr_to_expr(&call(
+          "Plus",
+          vec![
             matrix[i][j].clone(),
             call("Times", vec![Expr::Integer(-1), product]),
-          ]
-          .into(),
-        })
+          ],
+        ))
         .unwrap_or(matrix[i][j].clone());
 
         matrix[i][j] = new_val;

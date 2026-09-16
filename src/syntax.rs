@@ -246,7 +246,10 @@ pub fn substitute_private_use_glyphs(s: &str) -> std::borrow::Cow<'_, str> {
       Some(sub) => out.push_str(sub),
       None => match script_letter_glyph(c) {
         Some(letter) => out.push(letter),
-        None => out.push(c),
+        None => match double_struck_letter_glyph(c) {
+          Some(letter) => out.push(letter),
+          None => out.push(c),
+        },
       },
     }
   }
@@ -311,6 +314,35 @@ fn script_letter_glyph(c: char) -> Option<char> {
   let (offset, gaps, block) = match c {
     '\u{F770}'..='\u{F789}' => (c as u32 - 0xF770, &CAPITAL_GAPS[..], 0x1D49C),
     '\u{F6B2}'..='\u{F6CB}' => (c as u32 - 0xF6B2, &SMALL_GAPS[..], 0x1D4B6),
+    _ => return None,
+  };
+  match gaps.iter().find(|(gap, _)| *gap == offset) {
+    Some((_, letter)) => Some(*letter),
+    None => char::from_u32(block + offset),
+  }
+}
+
+/// The Mathematical Double-Struck letter/digit for one of Wolfram's
+/// private-use double-struck characters (`\[DoubleStruckCapitalR]` is
+/// U+F7B5, not U+211D). Mirrors [`script_letter_glyph`]: the alphabet is
+/// contiguous, except that Unicode leaves the slots of the capital letters
+/// that already exist as letterlike symbols (ℂ, ℍ, ℕ, ℙ, ℚ, ℝ, ℤ)
+/// unassigned in the Mathematical Alphanumeric Symbols block.
+fn double_struck_letter_glyph(c: char) -> Option<char> {
+  const CAPITAL_GAPS: [(u32, char); 7] = [
+    (2, 'ℂ'),
+    (7, 'ℍ'),
+    (13, 'ℕ'),
+    (15, 'ℙ'),
+    (16, 'ℚ'),
+    (17, 'ℝ'),
+    (25, 'ℤ'),
+  ];
+  const NO_GAPS: [(u32, char); 0] = [];
+  let (offset, gaps, block) = match c {
+    '\u{F7A4}'..='\u{F7BD}' => (c as u32 - 0xF7A4, &CAPITAL_GAPS[..], 0x1D538),
+    '\u{F6E6}'..='\u{F6FF}' => (c as u32 - 0xF6E6, &NO_GAPS[..], 0x1D552),
+    '\u{F7DB}'..='\u{F7E4}' => (c as u32 - 0xF7DB, &NO_GAPS[..], 0x1D7D8),
     _ => return None,
   };
   match gaps.iter().find(|(gap, _)| *gap == offset) {
@@ -5486,6 +5518,7 @@ fn operator_precedence(op: &str) -> u8 {
     "<->" => 21, // TwoWayRule (same level as comparisons, tighter than Rule)
     "\\[Distributed]" | "\u{F3D2}" => 21, // Distributed (same level as comparisons)
     "\\[Conditioned]" | "\u{F3D3}" => 10, // Conditioned (looser than Rule)
+    "\\[TildeTilde]" | "\u{2248}" => 21, // TildeTilde (same level as comparisons)
     // Cross and TensorProduct bind tighter than Dot in Wolfram
     // (Precedence 500 and 495 vs Dot's 490): a.b\[Cross]c is a.(b\[Cross]c).
     "\\[Cross]" | "\u{F4A0}" | "\u{F3C4}" | "\u{2A2F}" => 42, // Cross (above TensorProduct)
@@ -6021,6 +6054,10 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
     },
     "\\[Conditioned]" | "\u{F3D3}" => Expr::FunctionCall {
       name: "Conditioned".to_string(),
+      args: vec![left.clone(), right.clone()].into(),
+    },
+    "\\[TildeTilde]" | "\u{2248}" => Expr::FunctionCall {
+      name: "TildeTilde".to_string(),
       args: vec![left.clone(), right.clone()].into(),
     },
     "\\[Function]" | "\u{F4A1}" | "|->" => Expr::FunctionCall {
@@ -9049,6 +9086,11 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         let parts: Vec<String> = args.iter().map(&fmt).collect();
         return parts.join(" \u{223C} ");
       }
+      // TildeTilde[a, b, ...] displays as a ≈ b ≈ ...
+      if name == "TildeTilde" && args.len() >= 2 {
+        let parts: Vec<String> = args.iter().map(&fmt).collect();
+        return parts.join(" \u{2248} ");
+      }
       // Del[f] displays as ∇f
       if name == "Del" && args.len() == 1 {
         return format!("\u{2207}{}", fmt(&args[0]));
@@ -11954,6 +11996,29 @@ pub fn expr_to_input_form(expr: &Expr) -> String {
 
 fn expr_to_input_form_impl(expr: &Expr) -> String {
   let _guard = TrueInputFormGuard(IN_TRUE_INPUT_FORM.with(|c| c.replace(true)));
+
+  // The call spellings of the operators (`Divide`, `Subtract`, `List`, …)
+  // print as the operator here too — `ToString[Hold[Divide[a, b]], InputForm]`
+  // is `Hold[a/b]`. Mirrors the same rewrite in `format_expr_impl`; without
+  // it the two InputForm renderers disagree.
+  if let Some(rewritten) = operator_call_node(expr) {
+    return expr_to_input_form(&rewritten);
+  }
+  // Parenthesisation is decided by inspecting the direct children, so those
+  // checks have to see the operator node rather than the call spelling.
+  let with_normalized_children;
+  let expr = if expr_children(expr)
+    .iter()
+    .any(|c| operator_call_child(c).is_some())
+  {
+    with_normalized_children = map_children(expr, &|child| {
+      operator_call_child(child).unwrap_or_else(|| child.clone())
+    });
+    &with_normalized_children
+  } else {
+    expr
+  };
+
   match expr {
     // `CompoundExpression[a, b]` written out prints as `a; b`, the same as
     // the `;` the parser reads.
@@ -12627,6 +12692,12 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
     Expr::FunctionCall { name, args } if name == "Tilde" && args.len() >= 2 => {
       let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
       parts.join(" \u{223C} ")
+    }
+    Expr::FunctionCall { name, args }
+      if name == "TildeTilde" && args.len() >= 2 =>
+    {
+      let parts: Vec<String> = args.iter().map(expr_to_input_form).collect();
+      parts.join(" \u{2248} ")
     }
     Expr::FunctionCall { name, args } if name == "Del" && args.len() == 1 => {
       format!("\u{2207}{}", expr_to_input_form(&args[0]))
@@ -13426,6 +13497,21 @@ fn curried_head_needs_parens(func: &Expr) -> bool {
         | Expr::Comparison { .. }
         | Expr::Rule { .. }
         | Expr::RuleDelayed { .. }
+        // Infix/low-precedence operator forms: `u /. v`, `u //. v`, `u /@
+        // v`, `u @@ v`, `u @@@ v` and `u; v` all bind looser than the
+        // trailing `[args]`, so without parens the printed text re-parses
+        // with `[args]` swallowed into (or splitting off from) the wrong
+        // operand — e.g. `(r /. sol)[x]` printed as `r /. sol[x]` reads
+        // back as `r /. (sol[x])`. Regression: a Wolfram Demonstration's
+        // `(r /. sol[[1, 1]])["Domain"]` lost its parens when Woxi Studio
+        // reconstructed a `Manipulate` body's InputForm text for
+        // re-evaluation, silently changing what the code computed.
+        | Expr::ReplaceAll { .. }
+        | Expr::ReplaceRepeated { .. }
+        | Expr::Map { .. }
+        | Expr::Apply { .. }
+        | Expr::MapApply { .. }
+        | Expr::CompoundExpr(_)
     )
     || matches!(
       // A named pattern would re-parse as a pattern with a head (`u_[x]` is
@@ -15516,7 +15602,8 @@ fn expr_to_textbox_base(expr: &Expr) -> TextBox {
     || matches!(expr, Expr::Real(f) if *f < 0.0)
     || matches!(expr, Expr::FunctionCall { name, .. } if name == "Plus")
     || complex_neg_im
-    || times_neg_leading;
+    || times_neg_leading
+    || is_infix_display_call(expr);
 
   if needs_parens {
     let inner = expr_to_textbox(expr);
@@ -15906,7 +15993,7 @@ fn is_infix_display_call(e: &Expr) -> bool {
       name.as_str(),
       "Star" | "CircleTimes" | "CenterDot" | "CircleDot" | "Wedge" | "Diamond"
         | "Backslash" | "SmallCircle" | "Vee" | "Tilde" | "CirclePlus"
-        | "CircleMinus" | "Subset" | "LeftArrow" | "DotEqual"
+        | "CircleMinus" | "Subset" | "LeftArrow" | "DotEqual" | "Dot"
     ))
 }
 

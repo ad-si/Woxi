@@ -1107,6 +1107,15 @@ fn piecewise_from_grid(rows_text: &str) -> Option<String> {
   if brace.trim().trim_matches('"').trim() != r"\[Piecewise]" {
     return None;
   }
+  piecewise_from_grid_box(grid)
+}
+
+/// `Piecewise[{{v1, c1}, …}]` from a `GridBox[{{v1, c1}, …}, …]` of
+/// value/condition rows — the piece of a typeset `Piecewise` that sits
+/// beside the `\[Piecewise]` brace, whether that pair is wrapped in an
+/// outer `GridBox` row (`piecewise_from_grid`, above) or written directly
+/// in a `RowBox` alongside the brace character.
+fn piecewise_from_grid_box(grid: &str) -> Option<String> {
   let inner = positional_box_args("GridBox", grid)?;
   let mut pieces = Vec::new();
   let mut default = None;
@@ -1293,6 +1302,34 @@ fn push_juxtaposed(result: &mut String, piece: &str) {
   result.push_str(piece);
 }
 
+/// Collapse a `\[LeftDoubleBracket] … \[RightDoubleBracket]` pair back into
+/// `Part` syntax before the row is joined.
+///
+/// `a[[i]]` typesets as a *flat* row — `RowBox[{"a", "\[LeftDoubleBracket]",
+/// i, "\[RightDoubleBracket]"}]` — not as a `SubscriptBox` (that form exists
+/// too, and is handled separately in `extract_typeset_box`, but is the rarer
+/// one in practice). Left unhandled, the bracket names would fall through
+/// to their literal Unicode glyphs (`⟦`/`⟧`), which Woxi's parser does not
+/// accept as `Part` syntax, breaking every cell that indexes a list this
+/// way — extremely common in Demonstrations-style code.
+///
+/// Runs before the main row-scanning loop so chained accesses (`a[[i]][[j]]`,
+/// itself a flat run of two such pairs) fold left-to-right: each merge's
+/// plain-text result becomes the `base` of the next pair to its right.
+fn merge_double_bracket_parts(parts: &[&str]) -> Vec<String> {
+  let mut out: Vec<String> =
+    parts.iter().map(|p| p.trim().to_string()).collect();
+  while let Some(k) = (1..out.len().saturating_sub(2)).find(|&k| {
+    is_bare_named_char(&out[k], "LeftDoubleBracket")
+      && is_bare_named_char(&out[k + 2], "RightDoubleBracket")
+  }) {
+    let base = box_part_source(&out[k - 1]);
+    let spec = box_part_source(&out[k + 1]);
+    out.splice(k - 1..=k + 2, [format_part_access(&base, &spec)]);
+  }
+  out
+}
+
 /// Extract text from a RowBox expression by concatenating string
 /// elements.
 fn extract_rowbox_content(s: &str) -> String {
@@ -1300,7 +1337,7 @@ fn extract_rowbox_content(s: &str) -> String {
   let s = s.strip_prefix('{').unwrap_or(s);
   let s = s.strip_suffix('}').unwrap_or(s);
 
-  let parts = split_top_level_commas(s);
+  let parts = merge_double_bracket_parts(&split_top_level_commas(s));
   let mut result = String::new();
   let mut i = 0;
   while i < parts.len() {
@@ -1320,7 +1357,12 @@ fn extract_rowbox_content(s: &str) -> String {
     // `SubsuperscriptBox` sign carries the limits of a definite integral.
     if i + 1 < parts.len()
       && let Some(limits) = integral_limits(part)
-      && let Some((integrand, var)) = split_integral_body(&parts[i + 1..])
+      && let Some((integrand, var)) = split_integral_body(
+        &parts[i + 1..]
+          .iter()
+          .map(String::as_str)
+          .collect::<Vec<_>>(),
+      )
     {
       let iterator = match limits {
         Some((lo, hi)) => {
@@ -1345,6 +1387,19 @@ fn extract_rowbox_content(s: &str) -> String {
       // symbol named `uD` rather than a product.
       result.push_str(&format!("(D[{body}, {vars}])"));
       break;
+    }
+    // A `\[Piecewise]` brace immediately followed by a `GridBox` of
+    // value/condition rows is the typeset form of `Piecewise[…]` written
+    // directly in a row (`f[z_] = \[Piecewise]GridBox[{…}]`), rather than
+    // wrapped in an outer `GridBox` as `piecewise_from_grid` expects.
+    if i + 1 < parts.len()
+      && is_bare_named_char(part, "Piecewise")
+      && parts[i + 1].trim().starts_with("GridBox")
+      && let Some(piecewise) = piecewise_from_grid_box(parts[i + 1].trim())
+    {
+      push_juxtaposed(&mut result, &piecewise);
+      i += 2;
+      continue;
     }
     // `\[LeftBracketingBar] body \[RightBracketingBar]` is the typeset form
     // of `Abs[body]` — the only thing that pair of glyphs ever brackets.
@@ -1600,6 +1655,95 @@ fn group_fraction_part(s: &str) -> String {
   }
 }
 
+/// Convert one `\(…\)` linear-syntax group's inner text (delimiters already
+/// stripped) into ordinary box source. A leading `\*` marks the group as box
+/// code in its own right (`\*SuperscriptBox[…]`) — drop the marker and keep
+/// converting; anything else is a plain display atom, which box source
+/// spells as a quoted string.
+fn linear_syntax_group_to_box_source(inner: &str) -> String {
+  match inner.strip_prefix("\\*") {
+    Some(rest) => linear_syntax_code_to_box_source(rest),
+    None => format!(
+      "\"{}\"",
+      linear_syntax_code_to_box_source(inner).replace('"', "\\\"")
+    ),
+  }
+}
+
+/// Replace every `\(…\)` linear-syntax group inside box code with its box
+/// source spelling (see [`linear_syntax_group_to_box_source`]), leaving real
+/// box syntax (`Head[`, `,`, `]`, bare digits, …) untouched.
+fn linear_syntax_code_to_box_source(s: &str) -> String {
+  let chars: Vec<char> = s.chars().collect();
+  let mut out = String::new();
+  let mut i = 0;
+  while i < chars.len() {
+    if chars[i] == '\\' && chars.get(i + 1) == Some(&'(') {
+      let mut depth = 1;
+      let mut j = i + 2;
+      while j < chars.len() && depth > 0 {
+        if chars[j] == '\\' && chars.get(j + 1) == Some(&'(') {
+          depth += 1;
+          j += 2;
+        } else if chars[j] == '\\' && chars.get(j + 1) == Some(&')') {
+          depth -= 1;
+          j += 2;
+        } else {
+          j += 1;
+        }
+      }
+      let inner: String = chars[i + 2..j.saturating_sub(2)].iter().collect();
+      out.push_str(&linear_syntax_group_to_box_source(&inner));
+      i = j;
+    } else {
+      out.push(chars[i]);
+      i += 1;
+    }
+  }
+  out
+}
+
+/// Render the FrontEnd's "linear syntax" box escapes — `\!\(\*SuperscriptBox[
+/// \(X\), \(2\)]\)` — embedded in ordinary prose text as the same display
+/// text a real box tree would produce, leaving surrounding plain characters
+/// untouched. A computed `Row[…]` built from `ToString[…, StandardForm]`
+/// pieces (a Wolfram Demonstrations template pattern) stores its typeset
+/// arguments this way.
+fn render_linear_syntax_escapes(s: &str) -> String {
+  let chars: Vec<char> = s.chars().collect();
+  let mut out = String::new();
+  let mut i = 0;
+  while i < chars.len() {
+    if chars[i] == '\\'
+      && chars.get(i + 1) == Some(&'!')
+      && chars.get(i + 2) == Some(&'\\')
+      && chars.get(i + 3) == Some(&'(')
+    {
+      let mut depth = 1;
+      let mut j = i + 4;
+      while j < chars.len() && depth > 0 {
+        if chars[j] == '\\' && chars.get(j + 1) == Some(&'(') {
+          depth += 1;
+          j += 2;
+        } else if chars[j] == '\\' && chars.get(j + 1) == Some(&')') {
+          depth -= 1;
+          j += 2;
+        } else {
+          j += 1;
+        }
+      }
+      let inner: String = chars[i + 4..j.saturating_sub(2)].iter().collect();
+      let box_source = linear_syntax_group_to_box_source(&inner);
+      out.push_str(&render_boxes_text(&box_source));
+      i = j;
+    } else {
+      out.push(chars[i]);
+      i += 1;
+    }
+  }
+  out
+}
+
 /// Render a box expression as *display* text for a prose (Text) cell —
 /// the inline-formula counterpart of `extract_typeset_box`, preferring
 /// readable notation over evaluable InputForm: `SubscriptBox["D", "U"]` →
@@ -1611,7 +1755,7 @@ fn render_boxes_text(s: &str) -> String {
 
   // Plain string literal.
   if s.starts_with('"') && s.ends_with('"') && s.len() >= 2 {
-    return unescape_string(&s[1..s.len() - 1]);
+    return render_linear_syntax_escapes(&unescape_string(&s[1..s.len() - 1]));
   }
 
   // A bare `{…}` list of inline items.
@@ -1825,6 +1969,67 @@ fn render_boxes_text(s: &str) -> String {
       .collect::<Vec<_>>()
       .join("\n");
   }
+  // `TemplateBox[{…}, "RowDefault"]` (and its separator variants) is the box
+  // form of a typeset `Row[…]` — the FrontEnd lays the parts out side by
+  // side. Unlike `extract_typeset_box`'s handling of the same tag (which
+  // rebuilds evaluable `Row[…]` source), prose wants the parts' *display*
+  // text joined directly, so a computed `Row[…]` of typeset pieces (e.g. a
+  // Wolfram Demonstrations caption built from `ToString[…, StandardForm]`
+  // strings) reads the same as any other inline formula.
+  if let Some(args) = positional_box_args("TemplateBox", s)
+    && args.len() >= 2
+  {
+    let tag = args.last().unwrap().trim().trim_matches('"');
+    if matches!(tag, "RowDefault" | "RowWithSeparator" | "RowWithSeparators") {
+      // A string-typed slot is written doubly quoted (the FrontEnd's usual
+      // convention for a `Row[…]` element that is itself a string, e.g.
+      // `"\"2 \""` for the string `"2 "`) — `display_text` peels off both
+      // layers. A slot holding a real box tree (`SuperscriptBox[…]`, …)
+      // isn't a string at all, so it renders directly instead.
+      let render_part = |p: &str| {
+        let p = p.trim();
+        match display_text(p) {
+          Some(text) => render_linear_syntax_escapes(&text),
+          None => render_boxes_text(p),
+        }
+      };
+      let parts = template_box_parts(&args[0]);
+      let mut iter = parts.iter();
+      let separator = match tag {
+        "RowWithSeparators" => {
+          iter.next();
+          iter.next()
+        }
+        "RowWithSeparator" => iter.next(),
+        _ => None,
+      };
+      let sep_text = separator.map_or_else(String::new, |p| render_part(p));
+      return iter
+        .map(|p| render_part(p))
+        .collect::<Vec<_>>()
+        .join(&sep_text);
+    }
+  }
+
+  // A `GraphicsBox[…]` embedded directly in prose — e.g. a diagram inside
+  // a Demonstration's Details text (`Cell[TextData[Cell[BoxData[FormBox[
+  // GraphicsBox[…], TraditionalForm]], "InlineMath"]], "Text"]`) — is
+  // display-only, not code: falling back to the evaluable-InputForm
+  // extractor would flood the paragraph with the reconstructed `Graphics[
+  // …]` source (hundreds to thousands of characters of box coordinates).
+  // Wolfram's own plain-text form of a graphic is `-Graphics-`
+  // (`-Image-` for a raster); use the same placeholder here rather than
+  // rendering nothing, so the surrounding sentence still reads.
+  if let Some(args) = positional_box_args("GraphicsBox", s) {
+    return if args
+      .first()
+      .is_some_and(|a| extract_image_from_boxes(a).is_some())
+    {
+      "-Image-".to_string()
+    } else {
+      "-Graphics-".to_string()
+    };
+  }
 
   // Anything else falls back to the evaluable-InputForm extractor.
   extract_cell_content(s)
@@ -2009,6 +2214,24 @@ fn unescape_string_inner(s: &str, code: bool) -> String {
         }
         Some('>') => {
           // \> is a Wolfram string delimiter in box expressions – skip
+        }
+        Some('.') => {
+          // `\.HH` is Wolfram's 2-hex-digit escape for a Latin-1 code
+          // point (e.g. `\.aa` is "ª", FEMININE ORDINAL INDICATOR) — the
+          // same family as `\:XXXX` below, just narrower. Authors' names
+          // in a Demonstration's "Contributed By" section are a common
+          // source: accented/special Latin-1 letters outside the
+          // `\[Name]` table get written this way.
+          let hex: String = chars.by_ref().take(2).collect();
+          if let Ok(code) = u32::from_str_radix(&hex, 16)
+            && let Some(ch) = char::from_u32(code)
+          {
+            result.push(ch);
+          } else {
+            result.push('\\');
+            result.push('.');
+            result.push_str(&hex);
+          }
         }
         Some(':') => {
           // `\:XXXX` is Wolfram's ASCII-safe hex escape for an arbitrary
@@ -2229,6 +2452,54 @@ pub fn reconstruct_manipulate_from_box_dump(box_dump: &str) -> Option<String> {
     return Some(format!("Manipulate[{body}]"));
   }
   Some(format!("Manipulate[{body}, {specs_inner}]"))
+}
+
+/// The live session values a saved FrontEnd dynamic-widget dump's
+/// `"Variables" :> { $CellContext\`var$$ = value, … }` clause records, as
+/// `(name, value)` pairs with the `` $CellContext` `` prefix and the
+/// DynamicModule's own `$$` uniquification suffix stripped from each name —
+/// so `"ctrl"`, not `` $CellContext`ctrl$$ `` — and any `\[Name]` character
+/// escape decoded to Unicode in both name and value, matching how a
+/// notebook's own Input-cell source is decoded, so the name is ready to
+/// match a control by its plain source-level variable name.
+///
+/// A notebook saved from the desktop FrontEnd keeps both the original
+/// `Manipulate[…]` source (in its Input cell) and this dump (in the
+/// following Output cell) — and the two can disagree: the source's own
+/// spec still carries whatever default the author *wrote*, while this dump
+/// carries whatever the widget's sliders were actually sitting at the
+/// moment the file was last saved. Wolfram's FrontEnd opens the notebook
+/// showing that saved state, not the source's default, so a caller
+/// rebuilding the widget from the Input cell (see
+/// `instantiate_stored_manipulate` in woxi-studio) needs this to match.
+pub fn extract_saved_manipulate_variables(
+  box_dump: &str,
+) -> Vec<(String, String)> {
+  let Some(raw) = extract_arrow_value(box_dump, "Variables") else {
+    return Vec::new();
+  };
+  let Some(inner) = raw
+    .trim()
+    .strip_prefix('{')
+    .and_then(|s| s.strip_suffix('}'))
+  else {
+    return Vec::new();
+  };
+  split_top_level_commas(inner)
+    .into_iter()
+    .filter_map(|part| {
+      let part = part.trim();
+      let eq = part.find('=')?;
+      let (lhs, rhs) = (part[..eq].trim(), part[eq + 1..].trim());
+      let name = lhs.replace("$CellContext`", "");
+      let name = name.strip_suffix("$$").unwrap_or(&name);
+      let name = unescape_code_string(name);
+      if name.is_empty() || rhs.is_empty() {
+        return None;
+      }
+      Some((name, unescape_code_string(rhs)))
+    })
+    .collect()
 }
 
 /// The prefix of `s` up to (excluding) the `)` matching an already-consumed
@@ -3082,6 +3353,111 @@ fn parse_raw_array_u8(raw: &[u8]) -> Option<(u32, u32, u8, &[u8])> {
   Some((height, width, channels, pixels))
 }
 
+/// Decode a bare packed array of bytes: `!boR` + `b` + rank + dims + raw
+/// `UnsignedInteger8` samples, with no `RawArray["UnsignedInteger8", …]`
+/// function-call wrapper. This is the shape a Demonstration's
+/// Initialization Code cell embeds for an inline bitmap assigned straight
+/// to a symbol (`icon = Graphics[RasterBox[CompressedData["…"], …]]`), as
+/// opposed to `parse_raw_array_u8`'s wrapped shape for a stored Output
+/// snapshot. Demands the samples account for every remaining byte, so a
+/// payload that merely starts the same way as this format is rejected
+/// instead of silently truncated.
+fn parse_packed_byte_array(raw: &[u8]) -> Option<(u32, u32, u8, &[u8])> {
+  let mut pos = 0usize;
+  let take = |pos: &mut usize, n: usize| -> Option<&[u8]> {
+    let s = raw.get(*pos..*pos + n)?;
+    *pos += n;
+    Some(s)
+  };
+  let read_u32 = |pos: &mut usize| -> Option<u32> {
+    take(pos, 4).map(|b| u32::from_le_bytes(b.try_into().unwrap()))
+  };
+
+  if take(&mut pos, 4)? != b"!boR" {
+    return None;
+  }
+  if take(&mut pos, 1)? != b"b" {
+    return None;
+  }
+  let rank = read_u32(&mut pos)? as usize;
+  if !(2..=3).contains(&rank) {
+    return None;
+  }
+  let mut dims = [0u32; 3];
+  for d in dims.iter_mut().take(rank) {
+    *d = read_u32(&mut pos)?;
+  }
+  let (height, width, channels) = if rank == 2 {
+    (dims[0], dims[1], 1u8)
+  } else {
+    (dims[0], dims[1], u8::try_from(dims[2]).ok()?)
+  };
+  let expected = height as usize * width as usize * channels as usize;
+  let pixels = raw.get(pos..pos + expected)?;
+  if pos + expected != raw.len() {
+    return None;
+  }
+  Some((height, width, channels, pixels))
+}
+
+/// Decode a `CompressedData["1:…"]` payload as pixel data — either the
+/// `RawArray["UnsignedInteger8", …]` shape `parse_raw_array_u8` reads or
+/// the bare packed-byte-array shape `parse_packed_byte_array` reads — and
+/// format it as the nested Wolfram Language list literal `Raster`/
+/// `RasterBox` expects: one list of rows, each a list of per-pixel
+/// grayscale values or `{r, g, b}`/`{r, g, b, a}` lists. Returns `None`
+/// when the payload decodes to something else (e.g. the packed-real-array
+/// coordinate format `decode_compressed_real_array` reads instead).
+fn decode_compressed_raster_as_wl_list(payload: &str) -> Option<String> {
+  let b64: String = payload.chars().filter(|c| !c.is_whitespace()).collect();
+  let b64 = b64.strip_prefix("1:")?;
+
+  use base64::Engine;
+  let compressed =
+    base64::engine::general_purpose::STANDARD.decode(b64).ok()?;
+  let mut raw = Vec::new();
+  std::io::Read::read_to_end(
+    &mut flate2::read::ZlibDecoder::new(&compressed[..]),
+    &mut raw,
+  )
+  .ok()?;
+
+  let (height, width, channels, pixels) =
+    parse_raw_array_u8(&raw).or_else(|| parse_packed_byte_array(&raw))?;
+  Some(packed_raster_array_to_wl_list(
+    height, width, channels, pixels,
+  ))
+}
+
+/// Format a decoded pixel array (see `parse_raw_array_u8`) as the nested
+/// Wolfram Language list literal it represents.
+fn packed_raster_array_to_wl_list(
+  height: u32,
+  width: u32,
+  channels: u8,
+  pixels: &[u8],
+) -> String {
+  let channels = channels as usize;
+  let width = width as usize;
+  let mut rows = Vec::with_capacity(height as usize);
+  for r in 0..height as usize {
+    let mut cols = Vec::with_capacity(width);
+    for c in 0..width {
+      let base = (r * width + c) * channels;
+      let px = &pixels[base..base + channels];
+      if channels == 1 {
+        cols.push(px[0].to_string());
+      } else {
+        let joined =
+          px.iter().map(u8::to_string).collect::<Vec<_>>().join(", ");
+        cols.push(format!("{{{joined}}}"));
+      }
+    }
+    rows.push(format!("{{{}}}", cols.join(", ")));
+  }
+  format!("{{{}}}", rows.join(", "))
+}
+
 /// Collect the checkbox entries of an already-extracted grid, i.e. the
 /// nested list of `☐ label` / `☑ label` strings `extract_cell_content`
 /// leaves behind for a `GridBox` of checkboxes. Entries are appended in
@@ -3271,13 +3647,23 @@ fn box_source_to_graphics_expr(s: &str) -> String {
   let s = s.trim();
 
   if let Some(rest) = s.strip_prefix("CompressedData[\"") {
-    return rest
-      .find('"')
-      .and_then(|end| decode_compressed_real_array(&rest[..end]))
-      .map_or_else(
-        || "Null".to_string(),
-        |(dims, values)| packed_real_array_to_wl_list(&dims, &values),
-      );
+    let Some(end) = rest.find('"') else {
+      return "Null".to_string();
+    };
+    let payload = &rest[..end];
+    // A `RasterBox`'s CompressedData carries pixel bytes
+    // (`RawArray["UnsignedInteger8", …]`), not the packed-real-array
+    // format `decode_compressed_real_array` reads; try that shape first
+    // so an Initialization Code cell that assigns a bitmap to a symbol
+    // (a common Demonstrations pattern for custom icons) reconstructs a
+    // real pixel grid instead of losing the picture to `Null`.
+    if let Some(list) = decode_compressed_raster_as_wl_list(payload) {
+      return list;
+    }
+    return decode_compressed_real_array(payload).map_or_else(
+      || "Null".to_string(),
+      |(dims, values)| packed_real_array_to_wl_list(&dims, &values),
+    );
   }
 
   if let Some(inner) = s.strip_prefix('{').and_then(|r| r.strip_suffix('}')) {
@@ -4123,6 +4509,17 @@ Cell["Chapter 2", "Chapter"]
   }
 
   #[test]
+  fn test_unescape_two_hex_digit_escape() {
+    // `\.HH` is Wolfram's 2-hex-digit Latin-1 escape, e.g. in a
+    // Demonstration author's name written as `M\.aa` for "Mª".
+    assert_eq!(unescape_string("M\\.aa"), "M\u{AA}");
+    assert_eq!(unescape_code_string("caf\\.e9"), "caf\u{E9}");
+    // An incomplete/invalid escape is left untouched rather than eating
+    // following characters.
+    assert_eq!(unescape_string("a\\.zzb"), "a\\.zzb");
+  }
+
+  #[test]
   fn test_extract_cell_content_boxdata_list() {
     // Multi-statement Input cells use BoxData[{ RowBox, "\n", RowBox, ... }].
     let s = r#"BoxData[{
@@ -4177,6 +4574,32 @@ Cell["Chapter 2", "Chapter"]
     // An ordinary subscript is still `Subscript`.
     let s = r#"BoxData[SubscriptBox["c", "1"]]"#;
     assert_eq!(extract_cell_content(s), "Subscript[c, 1]");
+  }
+
+  /// `a[[i]]` normally typesets as a *flat* row — `"a"`,
+  /// `"\[LeftDoubleBracket]"`, `i`, `"\[RightDoubleBracket]"` — not as the
+  /// `SubscriptBox` form above (that one is rarer in practice, though the
+  /// FrontEnd accepts it too). Regression: the bracket names fell through to
+  /// their raw Unicode glyphs (`⟦`/`⟧`), which Woxi's parser does not accept
+  /// as `Part` syntax, so a downloaded Demonstration notebook's Input cells
+  /// — which lean on this typesetting heavily — failed to evaluate.
+  #[test]
+  fn test_flat_row_double_brackets_is_part() {
+    let s = r#"BoxData[RowBox[{"c", "\[LeftDoubleBracket]", "1", "\[RightDoubleBracket]"}]]"#;
+    assert_eq!(extract_cell_content(s), "c[[1]]");
+    // A compound index expression, wrapped in its own RowBox.
+    let s = r#"BoxData[RowBox[{"list", "\[LeftDoubleBracket]", RowBox[{"i", "+", "1"}], "\[RightDoubleBracket]"}]]"#;
+    assert_eq!(extract_cell_content(s), "list[[i+1]]");
+    // A non-token base still needs the function form.
+    let s = r#"BoxData[RowBox[{RowBox[{"a", "+", "b"}], "\[LeftDoubleBracket]", "1", "\[RightDoubleBracket]"}]]"#;
+    assert_eq!(extract_cell_content(s), "Part[a+b, 1]");
+    // Chained accesses fold left-to-right: `a[[i]][[j]]`.
+    let s = r#"BoxData[RowBox[{"a", "\[LeftDoubleBracket]", "i", "\[RightDoubleBracket]", "\[LeftDoubleBracket]", "j", "\[RightDoubleBracket]"}]]"#;
+    assert_eq!(extract_cell_content(s), "Part[a[[i]], j]");
+    // The pair sits inside a larger row (an assignment), as it does in real
+    // Demonstrations code (`list = listi[[RandomInteger[{1, n}]]]`).
+    let s = r#"BoxData[RowBox[{"list", "=", RowBox[{"listi", "\[LeftDoubleBracket]", RowBox[{"RandomInteger", "[", "n", "]"}], "\[RightDoubleBracket]"}]}]]"#;
+    assert_eq!(extract_cell_content(s), "list=listi[[RandomInteger[n]]]");
   }
 
   /// A subscript can also be a bare display glyph rather than a real index
@@ -4276,6 +4699,27 @@ Cell["Chapter 2", "Chapter"]
     assert_eq!(extract_cell_content(s), "f(x)");
   }
 
+  /// A parenthesised group (literal `"("`/`")"` box tokens, as the FrontEnd
+  /// writes them to force grouping) that is itself followed by a property
+  /// call — `(expr)["Prop"]` — must keep its parens when reconstructed as
+  /// InputForm text, or the trailing `[...]` rebinds to the group's last
+  /// operand instead of the whole group, changing precedence (`a /.
+  /// sol[[1,1]]["Domain"]` applies `/.` to a *different* expression than
+  /// `(a /. sol[[1,1]])["Domain"]`). Regression found via a Wolfram
+  /// Demonstration whose `NDSolve` result was queried with `(r /.
+  /// sol[[1,1]])["Domain"]`.
+  #[test]
+  fn test_parenthesised_group_before_property_call_keeps_parens() {
+    let s = r#"BoxData[RowBox[{
+      RowBox[{"(",
+        RowBox[{"a", "/.",
+          RowBox[{"sol", "[", RowBox[{"[", RowBox[{"1", ",", "1"}], "]"}], "]"}]}],
+      ")"}],
+      "[", "\"\<Domain\>\"", "]"
+    }]]"#;
+    assert_eq!(extract_cell_content(s), "(a/.sol[[1,1]])[\"Domain\"]");
+  }
+
   /// A named character inside a *string literal* is content, so it stays
   /// Unicode; only a bare operator token between operands collapses to its
   /// ASCII form. Regression: a Demonstrations label
@@ -4313,6 +4757,23 @@ Cell["Chapter 2", "Chapter"]
     let s =
       r#"BoxData[RowBox[{"f", "[", "\"\<\[ReverseUpEquilibrium]\>\"", "]"}]]"#;
     assert_eq!(extract_cell_content(s), "f[\"\u{296F}\"]");
+  }
+
+  /// A caption's inline math routinely states set membership
+  /// (`\[Element] \[DoubleStruckCapitalR]`, `…N`, `…Z`, …). Unlike the
+  /// sibling private-use *script* letters (`\[ScriptCapitalD]` → 𝒟), the
+  /// private-use *double-struck* letters had no glyph substitution at all,
+  /// so a Text cell printed nothing visible for them. `R`, `N` and `Z` are
+  /// three of the seven capitals Unicode gives their own Letterlike
+  /// Symbols code point rather than a Mathematical Alphanumeric Symbols
+  /// slot; `a` exercises the plain contiguous lowercase block.
+  #[test]
+  fn test_double_struck_named_characters_render_as_unicode() {
+    let s = r#"TextData["\[DoubleStruckCapitalR] \[DoubleStruckCapitalN] \[DoubleStruckCapitalZ] \[DoubleStruckA]"]"#;
+    assert_eq!(
+      extract_cell_content(s),
+      "\u{211D} \u{2115} \u{2124} \u{1D552}"
+    );
   }
 
   #[test]
@@ -4621,6 +5082,185 @@ Cell["Chapter 2", "Chapter"]
       box_source_to_graphics_expr(&source),
       "Polygon[{{{0, 0}, {1, 1}}}]"
     );
+  }
+
+  /// Build the exact serialization Mathematica writes for a `RasterBox`'s
+  /// pixel data (`!boR`, then `f`/`RawArray`/`S`/`UnsignedInteger8`, then
+  /// `b`, rank, dims and the raw byte samples), zlib-compressed and
+  /// base64-encoded behind a `1:` prefix (the format
+  /// `test_stored_output_raster_snapshot_decodes_to_svg` also builds).
+  fn make_compressed_raster_array(
+    height: u32,
+    width: u32,
+    channels: u32,
+    pixels: &[u8],
+  ) -> String {
+    let mut raw: Vec<u8> = Vec::new();
+    raw.extend_from_slice(b"!boR");
+    raw.push(b'f');
+    raw.extend_from_slice(&2u32.to_le_bytes());
+    raw.push(b's');
+    raw.extend_from_slice(&8u32.to_le_bytes());
+    raw.extend_from_slice(b"RawArray");
+    raw.push(b'S');
+    raw.extend_from_slice(&16u32.to_le_bytes());
+    raw.extend_from_slice(b"UnsignedInteger8");
+    raw.push(b'b');
+    let rank = if channels == 1 { 2u32 } else { 3u32 };
+    raw.extend_from_slice(&rank.to_le_bytes());
+    raw.extend_from_slice(&height.to_le_bytes());
+    raw.extend_from_slice(&width.to_le_bytes());
+    if channels != 1 {
+      raw.extend_from_slice(&channels.to_le_bytes());
+    }
+    raw.extend_from_slice(pixels);
+
+    use base64::Engine;
+    use std::io::Write;
+    let mut enc = flate2::write::ZlibEncoder::new(
+      Vec::new(),
+      flate2::Compression::default(),
+    );
+    enc.write_all(&raw).unwrap();
+    let b64 =
+      base64::engine::general_purpose::STANDARD.encode(enc.finish().unwrap());
+    format!("1:{b64}")
+  }
+
+  #[test]
+  fn test_decode_compressed_raster_as_wl_list_decodes_grayscale_and_rgb() {
+    // A 1x2 grayscale image.
+    let gray_payload = make_compressed_raster_array(1, 2, 1, &[10, 200]);
+    assert_eq!(
+      decode_compressed_raster_as_wl_list(&gray_payload),
+      Some("{{10, 200}}".to_string())
+    );
+
+    // A 2x1 RGB image: one red pixel row, one green pixel row.
+    let rgb_payload =
+      make_compressed_raster_array(2, 1, 3, &[255, 0, 0, 0, 255, 0]);
+    assert_eq!(
+      decode_compressed_raster_as_wl_list(&rgb_payload),
+      Some("{{{255, 0, 0}}, {{0, 255, 0}}}".to_string())
+    );
+
+    // The packed-real-array format is not the raster format.
+    let real_payload = make_compressed_real_array(&[2], &[1.0, 2.0]);
+    assert_eq!(decode_compressed_raster_as_wl_list(&real_payload), None);
+  }
+
+  /// A `RasterBox`'s `CompressedData` carries pixel bytes, not the
+  /// packed-real-array coordinate format — an Initialization Code cell
+  /// that assigns a bitmap icon to a symbol (a common Demonstrations
+  /// pattern for custom pictures used inside a `Manipulate`) must
+  /// reconstruct the actual pixel grid rather than losing the picture to
+  /// `Null`, which previously left every use of that symbol blank.
+  #[test]
+  fn test_box_source_to_graphics_expr_inlines_raster_pixel_data() {
+    let payload = make_compressed_raster_array(1, 2, 3, &[1, 2, 3, 4, 5, 6]);
+    let source = format!(
+      "RasterBox[CompressedData[\"{payload}\"], {{{{0, 0}}, {{2, 1}}}}, \
+       {{0, 255}}]"
+    );
+    assert_eq!(
+      box_source_to_graphics_expr(&source),
+      "RasterBox[{{{1, 2, 3}, {4, 5, 6}}}, {{0, 0}, {2, 1}}, {0, 255}]"
+    );
+  }
+
+  /// Build the serialization Mathematica writes for a *bare* packed byte
+  /// array — `!boR` + `b` + rank + dims + raw samples, with no
+  /// `RawArray["UnsignedInteger8", …]` function-call wrapper — the shape
+  /// a Demonstration's Initialization Code cell embeds for an inline
+  /// bitmap assigned straight to a symbol, as opposed to
+  /// `make_compressed_raster_array`'s wrapped shape for a stored Output
+  /// snapshot.
+  fn make_compressed_packed_byte_array(
+    height: u32,
+    width: u32,
+    channels: u32,
+    pixels: &[u8],
+  ) -> String {
+    let mut raw: Vec<u8> = Vec::new();
+    raw.extend_from_slice(b"!boR");
+    raw.push(b'b');
+    let rank = if channels == 1 { 2u32 } else { 3u32 };
+    raw.extend_from_slice(&rank.to_le_bytes());
+    raw.extend_from_slice(&height.to_le_bytes());
+    raw.extend_from_slice(&width.to_le_bytes());
+    if channels != 1 {
+      raw.extend_from_slice(&channels.to_le_bytes());
+    }
+    raw.extend_from_slice(pixels);
+
+    use base64::Engine;
+    use std::io::Write;
+    let mut enc = flate2::write::ZlibEncoder::new(
+      Vec::new(),
+      flate2::Compression::default(),
+    );
+    enc.write_all(&raw).unwrap();
+    let b64 =
+      base64::engine::general_purpose::STANDARD.encode(enc.finish().unwrap());
+    format!("1:{b64}")
+  }
+
+  /// The bare packed-byte-array format (no `RawArray` wrapper) is the one
+  /// Wolfram actually writes for a picture assigned inline in a
+  /// Demonstration's Initialization Code cell — verified by decoding the
+  /// real `CompressedData` payload from a downloaded Wolfram
+  /// Demonstrations Project notebook and finding it used this shape
+  /// rather than `parse_raw_array_u8`'s `RawArray`-wrapped one.
+  #[test]
+  fn test_decode_compressed_raster_as_wl_list_decodes_bare_packed_bytes() {
+    let payload =
+      make_compressed_packed_byte_array(1, 2, 3, &[7, 8, 9, 10, 11, 12]);
+    assert_eq!(
+      decode_compressed_raster_as_wl_list(&payload),
+      Some("{{{7, 8, 9}, {10, 11, 12}}}".to_string())
+    );
+
+    let gray_payload = make_compressed_packed_byte_array(2, 1, 1, &[3, 250]);
+    assert_eq!(
+      decode_compressed_raster_as_wl_list(&gray_payload),
+      Some("{{3}, {250}}".to_string())
+    );
+  }
+
+  #[test]
+  fn test_text_cell_inline_diagram_renders_as_graphics_placeholder() {
+    // A Demonstration's Details text sometimes embeds a small illustrative
+    // diagram inline in a sentence via `Cell[BoxData[FormBox[GraphicsBox[
+    // …], TraditionalForm]], "InlineMath"]` (e.g. arrows and labels
+    // sketching a setup) rather than a formula. Left unconverted, the Text
+    // cell would show the reconstructed `Graphics[…]` source — hundreds of
+    // characters of box coordinates — inline in the prose. It must instead
+    // fall back to Wolfram's own plain-text placeholder for a graphic,
+    // `-Graphics-`, the same way `Print[Graphics[…]]` renders as text.
+    let text_data = r#"{"setup: ", Cell[BoxData[
+ FormBox[
+  GraphicsBox[{RGBColor[1, 0, 0], PointBox[{0, 0}],
+    InsetBox["label", {1, 1}]}], TraditionalForm]], "InlineMath",
+  ExpressionUUID->"00000000-0000-0000-0000-000000000000"], "."}"#;
+    let rendered = extract_textdata(text_data);
+    assert_eq!(rendered, "setup: -Graphics-.");
+  }
+
+  #[test]
+  fn test_text_cell_inline_raster_renders_as_image_placeholder() {
+    // Same idea, but the inline box is a raster (`RasterBox` with an
+    // `ImageTag`) rather than vector primitives — Wolfram's plain-text
+    // placeholder for that case is `-Image-`, not `-Graphics-`.
+    let payload = make_compressed_packed_byte_array(1, 1, 1, &[128]);
+    let raster = format!(
+      "RasterBox[CompressedData[\"{payload}\"], {{{{0, 1}}, {{1, 0}}}}, {{0, 255}}]"
+    );
+    let tag_box = format!("TagBox[{raster}, BoxForm`ImageTag[\"Byte\"]]");
+    let graphics_box = format!("GraphicsBox[{tag_box}]");
+    let cell = format!("Cell[BoxData[{graphics_box}], \"InlineMath\"]");
+    let text_data = format!("{{\"photo: \", {cell}}}");
+    let rendered = extract_textdata(&text_data);
+    assert_eq!(rendered, "photo: -Image-");
   }
 
   #[test]
@@ -5192,6 +5832,31 @@ Cell[BoxData[
     );
   }
 
+  /// A `Piecewise` typeset directly in a `RowBox` — the `\[Piecewise]`
+  /// brace immediately followed by its `GridBox` of value/condition rows,
+  /// with no outer wrapping `GridBox`/`TagBox` (the shape produced by an
+  /// immediate `=` assignment, e.g. Wolfram's "Tax Rates and Tax Revenue"
+  /// Demonstration's `totalTax[…] = \[Piecewise]…`) — must also come back
+  /// as a `Piecewise[…]` call, not the raw grid rows as a bare nested list.
+  #[test]
+  fn piecewise_brace_in_a_bare_rowbox_becomes_a_piecewise_call() {
+    let nb = r#"Notebook[{
+Cell[BoxData[
+ RowBox[{
+  RowBox[{
+   RowBox[{"f", "[", "z_", "]"}], "=",
+   RowBox[{"\[Piecewise]", GridBox[{
+      {"a", RowBox[{"z", ">", "0"}]},
+      {"b", TagBox["True", "PiecewiseDefault", AutoDelete->True]}
+     }]}]}], ";"}]], "Input"]
+}]"#;
+    let parsed = parse_notebook(nb).unwrap();
+    let CellEntry::Single(cell) = &parsed.cells[0] else {
+      panic!("expected a single cell");
+    };
+    assert_eq!(cell.content, "f[z_]=Piecewise[{{a, z>0}}, b];");
+  }
+
   /// A `Plot` legend written as an inline cell carries quotes inside its
   /// string; they have to stay escaped or the option reads as stray tokens.
   #[test]
@@ -5460,6 +6125,35 @@ Cell[TextData[Cell[BoxData[
     match &parsed.cells[0] {
       CellEntry::Single(cell) => {
         assert_eq!(cell.content, "{U \u{2192} P\nV \u{2192} Q");
+      }
+      CellEntry::Group(_) => panic!("Expected single cell"),
+    }
+  }
+
+  #[test]
+  fn test_inline_math_template_box_row_with_linear_syntax_strings() {
+    // A computed `Row[…]` built from `ToString[…, StandardForm]` pieces (a
+    // Wolfram Demonstrations caption pattern) is stored as
+    // `TemplateBox[{…}, "RowDefault"]` whose string slots carry the
+    // FrontEnd's "linear syntax" box escapes (`\!\(\*SuperscriptBox[\(A\),
+    // \(2\)]\)`) instead of real nested boxes. Both the template row and the
+    // embedded escapes must render as ordinary display text, not leak as
+    // literal `Row[...]` source or raw backslash-escape sequences.
+    let nb = r#"Notebook[{
+Cell[TextData[Cell[BoxData[
+ FormBox[
+  TemplateBox[{
+    "\"2 \"", "\"(\"",
+     "\"\\!\\(\\*SuperscriptBox[\\(A\\), \\(2\\)]\\)\"", "\"+\"",
+     "\"\\!\\(\\*SuperscriptBox[\\(B\\), \\(2\\)]\\)\"", "\")\"", "\" = \"",
+     SuperscriptBox["C", "2"]},
+    "RowDefault"], TraditionalForm]], "InlineMath",ExpressionUUID->
+  "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"]], "Text"]
+}]"#;
+    let parsed = parse_notebook(nb).unwrap();
+    match &parsed.cells[0] {
+      CellEntry::Single(cell) => {
+        assert_eq!(cell.content, "2 (A\u{00b2}+B\u{00b2}) = C\u{00b2}");
       }
       CellEntry::Group(_) => panic!("Expected single cell"),
     }

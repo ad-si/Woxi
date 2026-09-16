@@ -2335,6 +2335,18 @@ pub fn length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     return Ok(Expr::Integer(0));
   }
+  // A rendered graphic (`Graphics3D[…]`, a plot's `Graphics[…]`) counts the
+  // parts of the symbolic expression it was built from, the same structure
+  // `Part`/`First`/`Last` already reach into — so `Length[gr]` matches
+  // `Length` of the `Graphics3D[primitives, opts…]` it displays as.
+  if let Expr::Graphics { .. } = &stripped {
+    return match crate::evaluator::part_extraction::graphics_symbolic_form(
+      &stripped,
+    ) {
+      Some(symbolic) => length_ast(std::slice::from_ref(&symbolic)),
+      None => Ok(Expr::Integer(0)),
+    };
+  }
   // SparseArray[Automatic, dims, default, rules]: Length is its first
   // dimension, like a dense array (not the count of canonical-form parts).
   if let Expr::FunctionCall { name, args: sa } = &stripped
@@ -2429,6 +2441,16 @@ pub fn depth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       return 1;
     }
+    // A rendered graphic descends into the symbolic expression it displays
+    // as, matching `Part`'s reach into `Graphics3D[primitives, opts…]`.
+    if let Expr::Graphics { .. } = expr {
+      return match crate::evaluator::part_extraction::graphics_symbolic_form(
+        expr,
+      ) {
+        Some(symbolic) => calc_depth(&symbolic),
+        None => 1,
+      };
+    }
     // A SparseArray is an atom, but wolframscript reports its Depth as that of
     // the dense array it represents: 1 + rank (e.g. 2 for a vector, 3 for a
     // matrix). Do not descend into its stored {Automatic, dims, default, data}.
@@ -2492,6 +2514,17 @@ pub fn leaf_count_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // A packed array object, a tree or a dataset is a single leaf.
     if is_atomic_traversal_object(expr) {
       return 1;
+    }
+    // A rendered graphic counts the leaves of the symbolic expression it
+    // displays as, matching `Part`'s reach into `Graphics3D[primitives,
+    // opts…]`.
+    if let Expr::Graphics { .. } = expr {
+      return match crate::evaluator::part_extraction::graphics_symbolic_form(
+        expr,
+      ) {
+        Some(symbolic) => count_leaves(&symbolic),
+        None => 1,
+      };
     }
     match expr {
       // Atoms: count as 1

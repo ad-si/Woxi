@@ -3150,6 +3150,9 @@ fn collect_3d_primitives(
           // `Sphere[{p1, p2, …}, r]` is a whole set of spheres of the same
           // radius, one per centre — how a scene marks several points at
           // once. A single `{x, y, z}` is the one-centre case of that.
+          // `Sphere[{p1, p2, …}, {r1, r2, …}]` instead gives each centre
+          // its own radius (a common way to plot a particle system whose
+          // particles vary in size).
           let origin = Point3D {
             x: 0.0,
             y: 0.0,
@@ -3162,15 +3165,20 @@ fn collect_3d_primitives(
               None => parse_point3d_list_strict(arg).unwrap_or(vec![origin]),
             },
           };
-          let radius = if args.len() >= 2 {
-            try_eval_to_f64(
-              &evaluate_expr_to_expr(&args[1]).unwrap_or(args[1].clone()),
-            )
-            .unwrap_or(1.0)
-          } else {
-            1.0
+          let radius_arg = args
+            .get(1)
+            .map(|a| evaluate_expr_to_expr(a).unwrap_or_else(|_| a.clone()));
+          let radii: Vec<f64> = match &radius_arg {
+            Some(Expr::List(items)) if items.len() == centers.len() => items
+              .iter()
+              .map(|i| try_eval_to_f64(i).unwrap_or(1.0))
+              .collect(),
+            Some(other) => {
+              vec![try_eval_to_f64(other).unwrap_or(1.0); centers.len()]
+            }
+            None => vec![1.0; centers.len()],
           };
-          for center in centers {
+          for (center, radius) in centers.into_iter().zip(radii) {
             prims.push(Primitive3D::Sphere {
               center,
               radius,
@@ -9474,15 +9482,27 @@ fn resolve_parametric_triples(
   // call or a `{fx, fy, fz} /. rules` substitution).
   let resolve_items =
     |items: &[Expr]| -> Result<Vec<(Expr, Expr, Expr)>, InterpreterError> {
-      if items.len() == 3 && !matches!(&items[0], Expr::List(_)) {
-        return Ok(vec![(
-          items[0].clone(),
-          items[1].clone(),
-          items[2].clone(),
-        )]);
-      }
       if items.is_empty() {
         return Err(err());
+      }
+      // Exactly three items whose first is not already a literal list are
+      // ambiguous: either the three components of one curve/surface, or
+      // three whole curves that only take triple shape once each item is
+      // evaluated — the `{{0, x[t], y[t]} /. sol, {t, x[t], 0} /. sol,
+      // {t, c, y[t]} /. sol}` shape a Demonstration uses to draw an
+      // `NDSolve` trajectory beside its two coordinate projections. Only
+      // the latter has *every* item resolve to a triple of its own
+      // (a scalar component like `Sin[t]` or `0` never does), so try that
+      // reading first and fall back to the single-triple one. Wolfram
+      // disambiguates the same way, by the depth of the evaluated body.
+      if items.len() == 3 && !matches!(&items[0], Expr::List(_)) {
+        let as_three_curves: Option<Vec<(Expr, Expr, Expr)>> = items
+          .iter()
+          .map(|item| resolve_one_parametric_triple(item, shadow_vars))
+          .collect();
+        return Ok(as_three_curves.unwrap_or_else(|| {
+          vec![(items[0].clone(), items[1].clone(), items[2].clone())]
+        }));
       }
       items
         .iter()

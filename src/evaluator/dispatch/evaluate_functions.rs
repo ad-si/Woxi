@@ -3447,24 +3447,14 @@ fn evaluate_function_call_ast_inner(
         let col = ((v - 1) % m) + 1;
         let row = ((v - 1) / m) + 1;
         if col < m {
-          edges.push(Expr::FunctionCall {
-            name: "UndirectedEdge".to_string(),
-            args: vec![
-              Expr::Integer(v as i128),
-              Expr::Integer((v + 1) as i128),
-            ]
-            .into(),
-          });
+          let edge =
+            vec![Expr::Integer(v as i128), Expr::Integer((v + 1) as i128)];
+          edges.push(call("UndirectedEdge", edge));
         }
         if row < n {
-          edges.push(Expr::FunctionCall {
-            name: "UndirectedEdge".to_string(),
-            args: vec![
-              Expr::Integer(v as i128),
-              Expr::Integer((v + m) as i128),
-            ]
-            .into(),
-          });
+          let edge =
+            vec![Expr::Integer(v as i128), Expr::Integer((v + m) as i128)];
+          edges.push(call("UndirectedEdge", edge));
         }
       }
       return Ok(call(
@@ -3514,14 +3504,11 @@ fn evaluate_function_call_ast_inner(
         } else {
           idx0 - coord_d * strides[d]
         };
-        edges.push(Expr::FunctionCall {
-          name: "UndirectedEdge".to_string(),
-          args: vec![
-            Expr::Integer(v as i128),
-            Expr::Integer((neighbor0 + 1) as i128),
-          ]
-          .into(),
-        });
+        let edge = vec![
+          Expr::Integer(v as i128),
+          Expr::Integer((neighbor0 + 1) as i128),
+        ];
+        edges.push(call("UndirectedEdge", edge));
       }
     }
     return Ok(call(
@@ -3801,14 +3788,9 @@ fn evaluate_function_call_ast_inner(
         for c in 0..k {
           let child = k * (i - 1) + c + 2;
           if child <= n {
-            edges.push(Expr::FunctionCall {
-              name: "UndirectedEdge".to_string(),
-              args: vec![
-                Expr::Integer(i as i128),
-                Expr::Integer(child as i128),
-              ]
-              .into(),
-            });
+            let edge =
+              vec![Expr::Integer(i as i128), Expr::Integer(child as i128)];
+            edges.push(call("UndirectedEdge", edge));
           }
         }
       }
@@ -3860,14 +3842,9 @@ fn evaluate_function_call_ast_inner(
         for c in 0..k {
           let child = k * (i - 1) + c + 2;
           if child <= num_vertices {
-            edges.push(Expr::FunctionCall {
-              name: "UndirectedEdge".to_string(),
-              args: vec![
-                Expr::Integer(i as i128),
-                Expr::Integer(child as i128),
-              ]
-              .into(),
-            });
+            let edge =
+              vec![Expr::Integer(i as i128), Expr::Integer(child as i128)];
+            edges.push(call("UndirectedEdge", edge));
           }
         }
       }
@@ -3893,14 +3870,11 @@ fn evaluate_function_call_ast_inner(
       for bit in 0..n {
         let j = i ^ (1 << bit);
         if i < j {
-          edges.push(Expr::FunctionCall {
-            name: "UndirectedEdge".to_string(),
-            args: vec![
-              Expr::Integer((i + 1) as i128),
-              Expr::Integer((j + 1) as i128),
-            ]
-            .into(),
-          });
+          let edge = vec![
+            Expr::Integer((i + 1) as i128),
+            Expr::Integer((j + 1) as i128),
+          ];
+          edges.push(call("UndirectedEdge", edge));
         }
       }
     }
@@ -3942,14 +3916,11 @@ fn evaluate_function_call_ast_inner(
     for i in 0..n {
       for j in (i + 1)..n {
         if partition[i] != partition[j] {
-          edges.push(Expr::FunctionCall {
-            name: "UndirectedEdge".to_string(),
-            args: vec![
-              Expr::Integer((i + 1) as i128),
-              Expr::Integer((j + 1) as i128),
-            ]
-            .into(),
-          });
+          let edge = vec![
+            Expr::Integer((i + 1) as i128),
+            Expr::Integer((j + 1) as i128),
+          ];
+          edges.push(call("UndirectedEdge", edge));
         }
       }
     }
@@ -3980,14 +3951,11 @@ fn evaluate_function_call_ast_inner(
       let base = (v % shift) * m;
       for c in 0..m {
         let w = base + c;
-        edges.push(Expr::FunctionCall {
-          name: "DirectedEdge".to_string(),
-          args: vec![
-            Expr::Integer((v + 1) as i128),
-            Expr::Integer((w + 1) as i128),
-          ]
-          .into(),
-        });
+        let edge = vec![
+          Expr::Integer((v + 1) as i128),
+          Expr::Integer((w + 1) as i128),
+        ];
+        edges.push(call("DirectedEdge", edge));
       }
     }
 
@@ -4702,15 +4670,12 @@ fn evaluate_function_call_ast_inner(
   // clockwise from -135° at `min` to 135° at `max`. Options are kept on
   // the resulting Graphics so wolframscript's `-Graphics-` placeholder
   // is produced for callers that just check the head.
-  if name == "AngularGauge" && args.len() >= 2 {
+  //
+  // The range is optional — `AngularGauge[value]` gauges against `{0, 1}`,
+  // as wolframscript does.
+  if name == "AngularGauge" && !args.is_empty() {
     let value = crate::functions::math_ast::try_eval_to_f64(&args[0]);
-    let (lo, hi) = match &args[1] {
-      Expr::List(items) if items.len() == 2 => (
-        crate::functions::math_ast::try_eval_to_f64(&items[0]),
-        crate::functions::math_ast::try_eval_to_f64(&items[1]),
-      ),
-      _ => (None, None),
-    };
+    let (lo, hi) = gauge_range(args.get(1));
     let mut primitives: Vec<Expr> = Vec::new();
     // Outer dial.
     primitives.push(Expr::FunctionCall {
@@ -4748,11 +4713,63 @@ fn evaluate_function_call_ast_inner(
       });
     }
     let mut graphics_args = vec![Expr::List(primitives.into())];
-    for opt in &args[2..] {
-      if matches!(opt, Expr::Rule { .. }) {
-        graphics_args.push(opt.clone());
+    graphics_args.extend(gauge_options(args));
+    return Ok(call("Graphics", graphics_args));
+  }
+
+  // HorizontalGauge[value, {min, max}, opts...] or
+  // HorizontalGauge[{value1, value2, …}, {min, max}, opts...] → Graphics bar
+  // showing one or more values on a horizontal scale from `min` to `max`.
+  // Each value is drawn as a vertical marker bar at its position along the
+  // track, like AngularGauge's needle but on a linear rather than angular
+  // scale. Options are kept on the resulting Graphics so wolframscript's
+  // `-Graphics-` placeholder is produced for callers that just check the
+  // head.
+  //
+  // The range is optional — `HorizontalGauge[value]` gauges against
+  // `{0, 1}`, as wolframscript does.
+  if name == "HorizontalGauge" && !args.is_empty() {
+    let values: Vec<f64> = match &args[0] {
+      Expr::List(items) => items
+        .iter()
+        .filter_map(crate::functions::math_ast::try_eval_to_f64)
+        .collect(),
+      other => crate::functions::math_ast::try_eval_to_f64(other)
+        .into_iter()
+        .collect(),
+    };
+    let (lo, hi) = gauge_range(args.get(1));
+    let mut primitives: Vec<Expr> = Vec::new();
+    // Track: a shallow rectangle spanning the full scale.
+    primitives.push(Expr::FunctionCall {
+      name: "Rectangle".to_string(),
+      args: vec![
+        Expr::List(vec![Expr::Integer(0), Expr::Integer(0)].into()),
+        Expr::List(vec![Expr::Integer(1), Expr::Real(0.2)].into()),
+      ]
+      .into(),
+    });
+    // One marker bar per value, at its normalized position along the track.
+    if let (Some(lo), Some(hi)) = (lo, hi)
+      && hi != lo
+    {
+      for v in values {
+        let t = ((v - lo) / (hi - lo)).clamp(0.0, 1.0);
+        primitives.push(Expr::FunctionCall {
+          name: "Line".to_string(),
+          args: vec![Expr::List(
+            vec![
+              Expr::List(vec![Expr::Real(t), Expr::Integer(0)].into()),
+              Expr::List(vec![Expr::Real(t), Expr::Real(0.2)].into()),
+            ]
+            .into(),
+          )]
+          .into(),
+        });
       }
     }
+    let mut graphics_args = vec![Expr::List(primitives.into())];
+    graphics_args.extend(gauge_options(args));
     return Ok(call("Graphics", graphics_args));
   }
 
@@ -4796,36 +4813,25 @@ fn evaluate_function_call_ast_inner(
       if let Some(kids) = children {
         for child in kids {
           let child_id = *counter + 1;
-          edges.push(Expr::FunctionCall {
-            name: "UndirectedEdge".to_string(),
-            args: vec![
-              Expr::Integer(my_id as i128),
-              Expr::Integer(child_id as i128),
-            ]
-            .into(),
-          });
+          let edge = vec![
+            Expr::Integer(my_id as i128),
+            Expr::Integer(child_id as i128),
+          ];
+          edges.push(call("UndirectedEdge", edge));
           walk_expr(child, counter, vertices, edges);
         }
       } else if let Expr::BinaryOp { left, right, .. } = expr {
         let left_id = *counter + 1;
-        edges.push(Expr::FunctionCall {
-          name: "UndirectedEdge".to_string(),
-          args: vec![
-            Expr::Integer(my_id as i128),
-            Expr::Integer(left_id as i128),
-          ]
-          .into(),
-        });
+        let edge =
+          vec![Expr::Integer(my_id as i128), Expr::Integer(left_id as i128)];
+        edges.push(call("UndirectedEdge", edge));
         walk_expr(left, counter, vertices, edges);
         let right_id = *counter + 1;
-        edges.push(Expr::FunctionCall {
-          name: "UndirectedEdge".to_string(),
-          args: vec![
-            Expr::Integer(my_id as i128),
-            Expr::Integer(right_id as i128),
-          ]
-          .into(),
-        });
+        let edge = vec![
+          Expr::Integer(my_id as i128),
+          Expr::Integer(right_id as i128),
+        ];
+        edges.push(call("UndirectedEdge", edge));
         walk_expr(right, counter, vertices, edges);
       }
       // Atoms (Integer, Real, Identifier, String, etc.) have no children
@@ -7454,14 +7460,9 @@ fn evaluate_function_call_ast_inner(
           if nr >= 0 && nr < m as i32 && nc >= 0 && nc < n as i32 {
             let to = nr as usize * n + nc as usize + 1;
             if from < to {
-              edges.push(Expr::FunctionCall {
-                name: "UndirectedEdge".to_string(),
-                args: vec![
-                  Expr::Integer(from as i128),
-                  Expr::Integer(to as i128),
-                ]
-                .into(),
-              });
+              let edge =
+                vec![Expr::Integer(from as i128), Expr::Integer(to as i128)];
+              edges.push(call("UndirectedEdge", edge));
             }
           }
         }
@@ -8130,18 +8131,17 @@ fn evaluate_function_call_ast_inner(
   // Triangle[] defaults to Triangle[{{0,0},{1,0},{0,1}}]
   if name == "Triangle" {
     if args.is_empty() {
-      return Ok(Expr::FunctionCall {
-        name: "Triangle".to_string(),
-        args: vec![Expr::List(
+      return Ok(call1(
+        "Triangle",
+        Expr::List(
           vec![
             Expr::List(vec![Expr::Integer(0), Expr::Integer(0)].into()),
             Expr::List(vec![Expr::Integer(1), Expr::Integer(0)].into()),
             Expr::List(vec![Expr::Integer(0), Expr::Integer(1)].into()),
           ]
           .into(),
-        )]
-        .into(),
-      });
+        ),
+      ));
     }
     return Ok(unevaluated(name, args));
   }
@@ -10250,14 +10250,10 @@ fn evaluate_function_call_ast_inner(
       let due = Expr::FunctionCall {
         name: "Times".to_string(),
         args: vec![
-          Expr::FunctionCall {
-            name: "Power".to_string(),
-            args: vec![
-              call("Plus", vec![Expr::Integer(1), args[1].clone()]),
-              q,
-            ]
-            .into(),
-          },
+          call(
+            "Power",
+            vec![call("Plus", vec![Expr::Integer(1), args[1].clone()]), q],
+          ),
           ordinary,
         ]
         .into(),
@@ -10348,14 +10344,13 @@ fn evaluate_function_call_ast_inner(
         name: "Times".to_string(),
         args: vec![
           s.clone(),
-          Expr::FunctionCall {
-            name: "Power".to_string(),
-            args: vec![
+          call(
+            "Power",
+            vec![
               call("Plus", vec![Expr::Integer(1), i.clone()]),
               t_for_formula.clone(),
-            ]
-            .into(),
-          },
+            ],
+          ),
         ]
         .into(),
       };
@@ -10389,13 +10384,14 @@ fn evaluate_function_call_ast_inner(
       let q = ann_args.get(2).cloned().unwrap_or(Expr::Integer(1));
       let one_plus_i = || call("Plus", vec![Expr::Integer(1), i.clone()]);
       // (1+i)^-tspan
-      let pow_neg_tspan = || Expr::FunctionCall {
-        name: "Power".to_string(),
-        args: vec![
-          one_plus_i(),
-          call("Times", vec![Expr::Integer(-1), tspan.clone()]),
-        ]
-        .into(),
+      let pow_neg_tspan = || {
+        call(
+          "Power",
+          vec![
+            one_plus_i(),
+            call("Times", vec![Expr::Integer(-1), tspan.clone()]),
+          ],
+        )
       };
       // i_eff = (1+i)^q - 1
       let i_eff = call(
@@ -10407,14 +10403,13 @@ fn evaluate_function_call_ast_inner(
         name: "Times".to_string(),
         args: vec![
           p,
-          Expr::FunctionCall {
-            name: "Plus".to_string(),
-            args: vec![
+          call(
+            "Plus",
+            vec![
               Expr::Integer(1),
               call("Times", vec![Expr::Integer(-1), pow_neg_tspan()]),
-            ]
-            .into(),
-          },
+            ],
+          ),
           call("Power", vec![i_eff, Expr::Integer(-1)]),
         ]
         .into(),
@@ -10481,14 +10476,10 @@ fn evaluate_function_call_ast_inner(
         name: "Times".to_string(),
         args: vec![
           pv,
-          Expr::FunctionCall {
-            name: "Power".to_string(),
-            args: vec![
-              call("Plus", vec![Expr::Integer(1), i.clone()]),
-              t.clone(),
-            ]
-            .into(),
-          },
+          call(
+            "Power",
+            vec![call("Plus", vec![Expr::Integer(1), i.clone()]), t.clone()],
+          ),
         ]
         .into(),
       };
@@ -10742,14 +10733,13 @@ fn evaluate_function_call_ast_inner(
           name: "Times".to_string(),
           args: vec![
             s.clone(),
-            Expr::FunctionCall {
-              name: "Power".to_string(),
-              args: vec![
+            call(
+              "Power",
+              vec![
                 call("Plus", vec![Expr::Integer(1), Expr::Real(rate)]),
                 Expr::Real(-maturity),
-              ]
-              .into(),
-            },
+              ],
+            ),
           ]
           .into(),
         };
@@ -11431,6 +11421,37 @@ fn evaluate_function_call_ast_inner(
 /// Accepts a single root element with balanced nested tags. Rejects
 /// inputs with text outside the root element (such as trailing junk
 /// after the closing tag), unbalanced tags, or empty content. Comments,
+/// The `{min, max}` scale of a gauge, from its optional second argument.
+///
+/// Every gauge takes the range optionally — `AngularGauge[0.7]` gauges
+/// against `{0, 1}` in wolframscript, and the argument that would hold the
+/// range may instead be the first option rule. A range that is not a pair of
+/// numbers (a symbolic one, say) yields `None`s, which leaves the marker off
+/// the track.
+fn gauge_range(range_arg: Option<&Expr>) -> (Option<f64>, Option<f64>) {
+  match range_arg {
+    None | Some(Expr::Rule { .. } | Expr::RuleDelayed { .. }) => {
+      (Some(0.0), Some(1.0))
+    }
+    Some(Expr::List(items)) if items.len() == 2 => (
+      crate::functions::math_ast::try_eval_to_f64(&items[0]),
+      crate::functions::math_ast::try_eval_to_f64(&items[1]),
+    ),
+    _ => (None, None),
+  }
+}
+
+/// The option rules of a gauge call — everything after the value that is a
+/// rule, so the optional `{min, max}` argument is skipped either way.
+fn gauge_options(args: &[Expr]) -> Vec<Expr> {
+  args
+    .iter()
+    .skip(1)
+    .filter(|a| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+    .cloned()
+    .collect()
+}
+
 /// CDATA sections, processing instructions, and XML declarations are
 /// recognized only at the document level. Not a conformant XML parser —
 /// just enough to flag the obviously broken cases that should yield
@@ -11933,15 +11954,14 @@ fn evaluate_darker_lighter(args: &[Expr], is_darker: bool) -> Option<Expr> {
     }
   }
 
-  Some(Expr::FunctionCall {
-    name: "RGBColor".to_string(),
-    args: vec![
+  Some(call(
+    "RGBColor",
+    vec![
       result_rgb[0].clone(),
       result_rgb[1].clone(),
       result_rgb[2].clone(),
-    ]
-    .into(),
-  })
+    ],
+  ))
 }
 
 /// Check if an expression is a GrayLevel color.

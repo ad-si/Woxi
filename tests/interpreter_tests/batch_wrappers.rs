@@ -2978,7 +2978,9 @@ mod batch_unevaluated_wrappers_2 {
   }
   #[test]
   fn angular_gauge() {
-    assert_eq!(interpret("AngularGauge[x]").unwrap(), "AngularGauge[x]");
+    // The `{min, max}` argument is optional — a bare value gauges against
+    // `{0, 1}` and renders, symbolic or not (see the HorizontalGauge test).
+    assert_eq!(interpret("AngularGauge[x]").unwrap(), "-Graphics-");
   }
   #[test]
   fn angular_gauge_with_range_renders_graphics() {
@@ -3002,6 +3004,51 @@ mod batch_unevaluated_wrappers_2 {
     assert_eq!(
       interpret("AngularGauge[5.5, {0, 10}, ScaleDivisions -> {10, 2}]")
         .unwrap(),
+      "-Graphics-"
+    );
+  }
+  #[test]
+  fn horizontal_gauge_without_range_gauges_against_zero_to_one() {
+    // The `{min, max}` argument is optional: wolframscript gauges a bare
+    // value against `{0, 1}` and still returns a Graphics, even when the
+    // value is symbolic (the track is drawn, the marker is not).
+    assert_eq!(interpret("HorizontalGauge[x]").unwrap(), "-Graphics-");
+    assert_eq!(interpret("HorizontalGauge[0.5]").unwrap(), "-Graphics-");
+    assert_eq!(interpret("AngularGauge[x]").unwrap(), "-Graphics-");
+    assert_eq!(interpret("AngularGauge[0.5]").unwrap(), "-Graphics-");
+    // An option may take the range argument's place.
+    assert_eq!(
+      interpret("HorizontalGauge[0.5, GaugeMarkers -> \"BarMarker\"]").unwrap(),
+      "-Graphics-"
+    );
+  }
+  #[test]
+  fn horizontal_gauge_with_range_renders_graphics() {
+    assert_eq!(
+      interpret("HorizontalGauge[5.5, {0, 10}]").unwrap(),
+      "-Graphics-"
+    );
+    assert_eq!(
+      interpret("Head[HorizontalGauge[5.5, {0, 10}]]").unwrap(),
+      "Graphics"
+    );
+  }
+  #[test]
+  fn horizontal_gauge_accepts_multiple_values() {
+    // Multiple values (e.g. potential/total/kinetic energy) each render as
+    // their own marker on the same scale.
+    assert_eq!(
+      interpret("HorizontalGauge[{1, 5, 9}, {0, 10}]").unwrap(),
+      "-Graphics-"
+    );
+  }
+  #[test]
+  fn horizontal_gauge_accepts_options() {
+    assert_eq!(
+      interpret(
+        "HorizontalGauge[5.5, {0, 10}, GaugeMarkers -> \"BarMarker\", ScaleDivisions -> {10, 10}]"
+      )
+      .unwrap(),
       "-Graphics-"
     );
   }

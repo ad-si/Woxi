@@ -2,7 +2,7 @@ use woxi::evaluator::dispatch::complex_and_special::expr_to_box_form;
 use woxi::functions::graphics::{
   box_has_fraction, box_string_to_svg, box_string_visible_len, boxes_to_svg,
   estimate_box_display_width, estimate_display_width, expr_to_svg_markup,
-  layout_box, layout_to_svg,
+  layout_box, layout_to_svg, row_to_svg,
 };
 use woxi::syntax::{BinaryOperator, ComparisonOp, Expr, UnaryOperator};
 
@@ -1455,6 +1455,71 @@ mod tests {
         !svg.contains('\u{f51f}'),
         "RuleDelayed SVG must not contain private-use U+F51F: got '{svg}'"
       );
+    }
+
+    #[test]
+    fn string_atom_with_embedded_newline_renders_one_line_per_row() {
+      // Regression: a Demonstration's Manipulate label built with
+      // `ToString[1/3, FormatType -> TraditionalForm]` embeds
+      // wolframscript's stacked-fraction OutputForm text ("1\n-\n3")
+      // straight into a plain string. Laid out through the generic
+      // (non-Graphics) text/box renderer, that string used to become one
+      // `<text>` element carrying the raw newlines — SVG collapses those
+      // to whitespace, running every line together instead of stacking
+      // them like the Graphics `Text[]` renderer already does.
+      let boxes = Expr::String("1\n-\n3".to_string());
+      let layout = layout_box(&boxes, 14.0);
+      let svg = layout_to_svg(&layout, "currentColor");
+      let text_count = svg.matches("<text").count();
+      assert_eq!(
+        text_count, 3,
+        "expected one <text> element per line, got '{svg}'"
+      );
+      assert!(
+        !svg.contains('\n'),
+        "SVG must not embed a literal newline inside a <text> element: got '{svg}'"
+      );
+      for line in ["1", "-", "3"] {
+        assert!(
+          svg.contains(&format!(">{line}</text>")),
+          "missing line '{line}': got '{svg}'"
+        );
+      }
+    }
+
+    #[test]
+    fn row_of_string_with_embedded_newline_renders_as_tspans() {
+      // Regression: the same "1\n-\n3" stacked-fraction text, when it is a
+      // `Row[…]` item — how a Demonstration's Manipulate builds its plot
+      // label out of `ToString[…, FormatType -> TraditionalForm]` pieces —
+      // went through a different renderer (`row_to_svg`) that dropped the
+      // embedded newlines into a single `<text>` element untouched.
+      let row_args =
+        vec![Expr::List(vec![Expr::String("1\n-\n3".to_string())].into())];
+      let svg = row_to_svg(&row_args).expect("Row of one string renders");
+      // Formatting newlines between elements (`<svg ...>\n<text ...`) are
+      // fine; only a literal newline inside the `<text>...</text>` content
+      // itself would be the bug (SVG collapses it to whitespace).
+      let text_content = svg
+        .split_once("central\">")
+        .and_then(|(_, rest)| rest.split_once("</text>"))
+        .map(|(content, _)| content)
+        .expect("a <text> element with the expected attributes");
+      assert!(
+        !text_content.contains('\n'),
+        "SVG must not embed a literal newline inside a <text> element: got '{svg}'"
+      );
+      assert_eq!(
+        svg.matches("<tspan").count(),
+        2,
+        "expected 2 continuation lines as <tspan>: got '{svg}'"
+      );
+      for line in ["1", "-", "3"] {
+        assert!(
+          svg.contains(&format!(">{line}<")),
+          "missing line '{line}': got '{svg}'"
+        );
+      }
     }
 
     #[test]
@@ -3054,7 +3119,18 @@ mod tests {
       let svg = tf_svg("TraditionalForm @ HoldForm[Pi + Infinity + Exp[x]]");
       assert!(svg.contains('\u{03C0}'), "Pi → π: {svg}");
       assert!(svg.contains('\u{221E}'), "Infinity → ∞: {svg}");
-      assert!(svg.contains('\u{2147}'), "Exp base → ⅇ: {svg}");
+      // `Exp`'s base glyph is `\[ExponentialE]` (U+2147, "ⅇ") — a
+      // Letterlike Symbols codepoint most non-Mathematica fonts (this
+      // renderer's included) have no glyph for, so it typesets as an
+      // italicized plain "e" instead of the raw codepoint.
+      assert!(
+        !svg.contains('\u{2147}'),
+        "must not contain the raw U+2147 glyph: {svg}"
+      );
+      assert!(
+        svg.contains(">e<"),
+        "Exp base → italicized plain \"e\": {svg}"
+      );
     }
 
     #[test]

@@ -4258,11 +4258,12 @@ pub fn binomial_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         numer_factors.push(factor);
       }
       let numer = times_ast(&numer_factors)?;
-      let mut denom_val: i128 = 1;
+      // k! can exceed i128 (34! already overflows), so accumulate in BigInt.
+      let mut denom_val = BigInt::from(1);
       for i in 1..=(k as i128) {
-        denom_val *= i;
+        denom_val *= BigInt::from(i);
       }
-      let denom = Expr::Integer(denom_val);
+      let denom = bigint_to_expr(denom_val);
       divide_ast(&[numer, denom])
     }
     _ => {

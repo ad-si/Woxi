@@ -18357,3 +18357,89 @@ mod power_denominators_survive_simplify {
     );
   }
 }
+
+mod nested_product_expansion_stays_bounded {
+  use super::*;
+
+  /// `distribute_product` multiplies out one product of sums, so a *nested*
+  /// product multiplied the term count at every level and only collapsed
+  /// them at the very top. The Newton form `InterpolatingPolynomial`
+  /// returns is the worst case: one symbolic ordinate among ten numeric ones
+  /// made degree 10 build ~130000 intermediate terms for a 21-term answer,
+  /// which took 68s (11s at degree 9, 0.8s at 8 — it grew ~4x per degree).
+  /// Combining after each multiplication bounds the intermediate by the
+  /// number of distinct monomials; the same expansion now takes 0.2s.
+  ///
+  /// Found by the nightly fuzzer, which reported it as an interpreter hang.
+  /// These cases are the regression guard: the assertions are cheap, but a
+  /// return to the old behaviour makes them take minutes.
+  #[test]
+  fn a_symbolic_ordinate_does_not_blow_up_the_intermediate() {
+    let pts = "{{0,1},{1,6},{2,17},{3,34},{4,57},{5,q},{6,121},{7,162},\
+               {8,209},{9,262},{10,321}}";
+    assert_eq!(
+      interpret(&format!("Expand[InterpolatingPolynomial[{pts}, x]]")).unwrap(),
+      "1 - (21662*x)/5 + (252*q*x)/5 + (295786*x^2)/25 - (6877*q*x^2)/50 \
+       - (51471*x^3)/4 + (1197*q*x^3)/8 + (2689607*x^4)/360 \
+       - (62549*q*x^4)/720 - (1862717*x^5)/720 + (43319*q*x^5)/1440 \
+       + (4032239*x^6)/7200 - (93773*q*x^6)/14400 - (688*x^7)/9 \
+       + (8*q*x^7)/9 + (4601*x^8)/720 - (107*q*x^8)/1440 - (43*x^9)/144 \
+       + (q*x^9)/288 + (43*x^10)/7200 - (q*x^10)/14400"
+    );
+    // The all-numeric interpolation has to keep reducing to the exact
+    // quadratic it came from — combining early must not lose a term.
+    assert_eq!(
+      interpret(
+        "Expand[InterpolatingPolynomial[{{0,1},{1,6},{2,17},{3,34},{4,57},\
+         {5,86},{6,121},{7,162},{8,209},{9,262},{10,321}}, x]]"
+      )
+      .unwrap(),
+      "1 + 2*x + 3*x^2"
+    );
+  }
+
+  /// The same expansion reached through `Simplify`, which runs it twice.
+  /// Asserted by value rather than by form: Woxi expands the numerator where
+  /// wolframscript keeps `(-86 + q)` factored out of each coefficient, and
+  /// that difference is not what this test is about.
+  #[test]
+  fn simplify_over_a_symbolic_interpolation_terminates() {
+    let pts = "{{0,1},{1,6},{2,17},{3,34},{4,57},{5,q},{6,121},{7,162},\
+               {8,209},{9,262},{10,321}}";
+    assert_eq!(
+      interpret(&format!(
+        "Expand[Simplify[InterpolatingPolynomial[{pts}, x]] \
+         - Expand[InterpolatingPolynomial[{pts}, x]]]"
+      ))
+      .unwrap(),
+      "0"
+    );
+    // It still interpolates: substituting the symbolic ordinate back gives
+    // every sample point.
+    assert_eq!(
+      interpret(&format!(
+        "Table[Simplify[InterpolatingPolynomial[{pts}, x]] \
+         /. {{q -> 86, x -> k}}, {{k, 0, 10}}]"
+      ))
+      .unwrap(),
+      "{1, 6, 17, 34, 57, 86, 121, 162, 209, 262, 321}"
+    );
+  }
+
+  /// Expanding a deeply nested product of binomials is the same shape
+  /// without the rational coefficients: 2^12 products collapse to 13 terms.
+  #[test]
+  fn a_deep_product_of_binomials_collapses() {
+    let prod = (0..12)
+      .map(|i| format!("(x + {i})"))
+      .collect::<Vec<_>>()
+      .join("*");
+    let out = interpret(&format!("Expand[{prod}]")).unwrap();
+    assert!(out.starts_with("39916800*x"), "got {out}");
+    assert!(out.ends_with("+ x^12"), "got {out}");
+    // Every power from 1 to 12 is present exactly once.
+    for k in 2..=12 {
+      assert!(out.contains(&format!("x^{k}")), "missing x^{k} in {out}");
+    }
+  }
+}

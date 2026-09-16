@@ -657,6 +657,16 @@ Woxi has no dedicated `Complex` expression variant, so a real-real complex is
 rewritten to `Plus[Real, Times[Real, I]]` during evaluation. The printed string
 matches; the head does not.
 
+Code that has to tell a complex with a zero imaginary part from a real must
+therefore go by "extracts as complex but not as a real" rather than by the
+head — see `reject_non_real_base` in `math_ast/elementary.rs`. Such a value
+also renders with an explicit `*` where WL's messages use a space:
+
+```sh
+wolframscript -code 'CubeRoot[2. + 0. I]'   # …The parameter 2. + 0. I should be…
+woxi eval 'CubeRoot[2. + 0. I]'             # …The parameter 2. + 0.*I should be…
+```
+
 ### `Binomial[n, real]` carries Gamma-error noise
 
 `Binomial[10, 3.]` is `119.99999999999987` in Woxi and `120.` in WL;
@@ -873,23 +883,25 @@ arbitrary-precision number here.
 
 ### Cross-platform libm differences
 
-The last ULP of `atanh`, `acos`, `asinh` and friends differs between macOS and
-Linux, so a full-precision string assertion is platform-dependent. The same
-1-ULP FMA difference flips a single 8-bit colour channel in `ComplexPlot`
-domain-colouring output at an exact `x.5` boundary.
+The last ULP of `atanh`, `acos`, `asinh`, `tan`, `tanh` and friends differs
+between macOS and Linux, so a full-precision string assertion is
+platform-dependent: `Cot[0.3]` is `3.232728143765828` on macOS and
+`3.2327281437658275` on the Linux of CI, and `Coth[0.8]` ends in `66` versus
+`63`. The same 1-ULP FMA difference flips a single 8-bit colour channel in
+`ComplexPlot` domain-colouring output at an exact `x.5` boundary.
 
-`tan` and `tanh` are in the same group, and it reaches the reciprocals Woxi
-derives from them. With the macOS libm that wolframscript runs on, `Cot[0.3]`
-is `3.232728143765828`, `Cot[-0.7]` is `-1.1872418321266796` and `Coth[0.8]`
-is `1.5059407020437066`; glibc gives `3.2327281437658275`,
-`-1.1872418321266793` and `1.5059407020437063`.
+A test that cares about the last bit therefore has to assert the *property*
+rather than the digits: compare the reciprocal against the reciprocal
+expression (`Cot[x]` vs `1/Tan[x]`, both evaluated by Woxi, so both carry the
+same platform rounding) and pin the magnitude with a scaled integer
+(`Round[1000*Cot[x]]`). See `reciprocal_trig_last_bit` in
+`tests/interpreter_tests/math/numeric.rs`.
 
-Neither library is the accurate one throughout — against the correctly
-rounded value, glibc wins at `Cot[0.3]` and macOS at `Cot[-0.7]` and
-`Coth[0.8]` — so this is the libm's last bit and not a formula to correct.
-Tests over these heads pin the formula exactly instead, since that is the
-distinction that matters (`Cot[x]` must be bit-for-bit `1/Tan[x]`, never
-`Cos[x]/Sin[x]`), and pin the value only to within a last bit.
+`Cot[-0.7]` is the third argument of that group: `-1.1872418321266796` on
+macOS against `-1.1872418321266793` here. Neither library is the accurate one
+throughout — against the correctly rounded value glibc wins at `Cot[0.3]`,
+macOS at `Cot[-0.7]` and `Coth[0.8]` — so a divergence here is the libm's
+last bit and never a formula to correct.
 
 
 ## Algebra and calculus
@@ -1033,6 +1045,20 @@ echo. The coefficients are easy; WL's output form is unpredictably factored —
 `FourierTrigSeries[x, x, 3]` is expanded, `FourierTrigSeries[x^2, x, 2]` is
 factored as `Pi^2/3 + 4*(-Cos[x] + Cos[2*x]/4)`, and the same expression
 factors differently across the Sin/Cos/Trig variants.
+
+### `Simplify` expands a numerator WL keeps factored per coefficient
+
+```sh
+# Simplify[InterpolatingPolynomial[{{0,1},…,{5,q},…,{10,321}}, x]]
+wolframscript   # (14400 + 5760*(-10831 + 126*q)*x - … - (-86 + q)*x^10)/14400
+woxi eval       # (14400 - 62386560*x + 725760*q*x + … - q*x^10)/14400
+```
+
+Same value and same common denominator, but WL pulls the repeated linear
+factor `(-86 + q)` out of each coefficient where Woxi leaves the numerator
+expanded. `Factor` on the same input returns the expanded form too, so the
+missing step is recognizing a shared factor across coefficients rather than
+anything about `Simplify` itself.
 
 ### `Factor` with `GaussianIntegers`, `Extension` or `Trig`
 
@@ -1218,18 +1244,40 @@ a *particular* solution with `C[1] … C[8]` after `DSolve::lpdeprtclr`. With
 `a == 0` or `c == 0` WL also writes the characteristics unnormalised
 (`C[1][x - y] + C[2][x]`) rather than as `λ x + y`.
 
-### `NDSolve` covers ODEs only
+### `NDSolve`'s PDE branch is 1-D
+
+This entry used to say "`NDSolve` covers ODEs only" — no longer accurate.
+1-D parabolic PDEs (single or coupled reaction-diffusion-convection systems,
+Dirichlet or Neumann boundaries) solve via the method of lines:
 
 ```wolfram
 NDSolve[{D[u[x,t],t] == D[u[x,t],x,x], u[x,0] == Sin[Pi x],
          u[0,t] == 0, u[1,t] == 0}, u, {x,0,1}, {t,0,1}]
 ```
 
-returns unevaluated. `NeumannValue` is out of scope, `DirichletCondition`
-exists only as a symbol, and `Method -> {"MethodOfLines", …}` has nothing
-behind it. On the symbolic side `DSolve` recognises three first-order
-two-variable PDE shapes; Laplace, which WL solves as
-`C[1][I x + y] + C[2][-I x + y]`, is not among them.
+returns a real `InterpolatingFunction`. A second-order-in-time
+(hyperbolic/wave) evolution equation — `D[u[t,x],t,t] == …`, needing an
+extra initial *velocity* condition `D[u,t][t0,x] == g[x]` alongside the
+ordinary initial value — is order-reduced to the first-order system
+`D[u,t] == v`, `D[v,t] == w` and solved the same way, even when the
+right-hand side itself contains an implicit/mixed derivative of the unknown
+(e.g. `D[u[t,x],x,x,t,t]`): the acceleration field `w` is eliminated by a
+tridiagonal solve each method-of-lines step rather than an explicit
+formula, so long as the right-hand side is linear in it. This is what a
+Wolfram Demonstration like
+[*A Passive Cochlear Model*](https://demonstrations.wolfram.com/APassiveCochlearModel/)
+needs, and Woxi Studio can now render its `Manipulate`. What's still
+missing:
+
+- The hyperbolic branch only supports a single dependent function — no
+  coupled hyperbolic systems (the parabolic branch supports coupled
+  systems).
+- `NeumannValue` and `DirichletCondition` exist only as symbols; boundary
+  conditions must be written as plain equalities.
+
+On the symbolic side `DSolve` recognises three first-order two-variable PDE
+shapes; Laplace, which WL solves as `C[1][I x + y] + C[2][-I x + y]`, is not
+among them.
 
 `NDSolve`'s DAE support handles an index-1 constraint that solves explicitly
 for one unknown; quadratic, coupled or index ≥ 2 constraints, and constraints
@@ -1474,6 +1522,41 @@ unsatisfiable problem gives `{}`. The **multi-instance and `All` ordering**
 follows WL's internal BDD structure and differs per expression —
 `a||b||c` orders 7,3,1,5,2,6,4 while `Majority[a,b,c]` orders 7,6,5,3.
 **Not reproducible.**
+
+
+### `Surd` with a degree past `i128`
+
+```sh
+wolframscript -code 'ToString[Surd[8, 10^40], InputForm]'   # 8^(1/10000000000000000000000000000000000000000)
+woxi eval 'Surd[8, 10^40]'                                  # Surd[8, 10000000000000000000000000000000000000000]
+```
+
+`Surd` builds the exponent with `make_rational`, which is `i128`-only, so a
+`BigInteger` degree leaves the call unevaluated. Degrees up to `10^38` work.
+
+
+### `Convolve` of two Gaussians picks the other sign for the squared shift
+
+```sh
+wolframscript -code 'ToString[Convolve[PDF[NormalDistribution[0, 1], x - t],
+                     PDF[NormalDistribution[0, 1], x - s], x, y], InputForm]'
+# 1/(2*E^((s + t - y)^2/4)*Sqrt[Pi])
+woxi eval 'Convolve[PDF[NormalDistribution[0, 1], x - t],
+           PDF[NormalDistribution[0, 1], x - s], x, y]'
+# 1/(2*E^((-s - t + y)^2/4)*Sqrt[Pi])
+```
+
+`(s + t - y)^2` and `(-s - t + y)^2` are equal but not the same expression —
+WL keeps whichever of `±z` was constructed (`(y - s - t)^2` typed in echoes as
+`(-s - t + y)^2` there too). Woxi always builds `y - mu` for the total shift
+`mu`, which is **also what WL's own `PDF[NormalDistribution[s + t, Sqrt[2]], y]`
+gives** for the very same distribution — WL's `Convolve` goes through
+`Integrate` instead and its sign choice follows no rule visible from outside.
+Measured over 11 shift shapes it flips to `mu - y` exactly when every term of
+`mu` is a positive number or a bare symbol with coefficient 1 (`s`, `s + t`,
+`1 + s`, `a + b`, `Pi`), and keeps `y - mu` otherwise (`3`, `2 s`, `2 s + 3 t`,
+`u v`, `s - t`, `-s - t`) — a fit with no mechanism behind it, so it is not
+implemented. Numeric and zero shifts agree.
 
 
 ## Special functions
@@ -2674,6 +2757,24 @@ answer. These do not:
   list is not emitted, and WL's own rule for when it fires is unclear
   (`OptionValue[Plot, Axes, Hold]` reports it, `OptionValue[Plot, 5, Frame]`
   does not).
+
+### `N[head[patt_]] = body` installs a DownValue on `N`, not an NValue
+
+`N[F[x_]] = x^2` should evaluate its LHS immediately (with `F[x_]` resolved
+through any existing `F[x_] = …` rule already in effect) and install the
+result as an `NValues` entry on the resolved head — a subsequent `N[<that
+head>[n]]` call then runs through `N`'s own numericization, so an exact
+result still comes back as a machine real. Woxi resolves the head through
+the existing rule correctly, but stores the rule as an ordinary DownValue on
+`N` itself, so the body's result is returned exactly as written rather than
+coerced to a real:
+
+```sh
+wolframscript -code 'F[x_]=G[x]; N[F[x_]]=x^2; ClearAll[F]; {N[F[2]], N[G[2]]}'
+# {F[2.], 4.}
+woxi eval 'F[x_]=G[x]; N[F[x_]]=x^2; ClearAll[F]; {N[F[2]], N[G[2]]}'
+# {F[2.], 4}
+```
 
 
 ## Messages and error handling

@@ -8567,7 +8567,7 @@ fn peel_plot_wrappers(mut e: &Expr) -> &Expr {
 /// Evaluate a plot body once with `var` kept symbolic, so assigned symbols
 /// (e.g. `f = Sin[x]`) expand to their definitions without the plot variable
 /// being replaced by any global value it might carry.
-fn eval_body_var_symbolic(body: &Expr, var: &str) -> Expr {
+pub(crate) fn eval_body_var_symbolic(body: &Expr, var: &str) -> Expr {
   eval_body_vars_symbolic(body, &[var])
 }
 

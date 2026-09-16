@@ -312,6 +312,22 @@ mod graphics {
       );
     }
 
+    // `Sphere[{p1, p2, …}, {r1, r2, …}]` gives each centre its own radius
+    // instead of one shared radius for the whole set.
+    #[test]
+    fn sphere_accepts_a_list_of_radii() {
+      assert_eq!(
+        export_svg(
+          "Graphics[{Sphere[{{0, 0}, {3, 0}}, {1, 2}]}, PlotRange -> 10]"
+        ),
+        export_svg(
+          "Graphics[{Sphere[{0, 0}, 1], Sphere[{3, 0}, 2]}, \
+           PlotRange -> 10]"
+        ),
+        "a radius list draws each sphere at its own radius"
+      );
+    }
+
     // `Ball[n]` / `Sphere[n]` is the unit ball/sphere at the origin in `n`
     // dimensions; only the planar one has anything to draw here.
     #[test]
@@ -1163,6 +1179,38 @@ mod graphics {
       assert_eq!(width("AbsoluteThickness[1]"), "1.00");
     }
 
+    /// `AbsoluteDashing` is `Dashing`'s absolute counterpart — every length
+    /// is literal pixels, the same relationship `AbsoluteThickness` has to
+    /// `Thickness` — so it must reach the SVG as a `stroke-dasharray` too,
+    /// rather than silently drawing a solid line. `Dashing[{0.05, 0.05}]` on
+    /// the 360px-wide default image is `18,18`; `AbsoluteDashing[{4, 6}]` is
+    /// `4,6` at any image width.
+    #[test]
+    fn absolute_dashing_produces_dasharray() {
+      let dasharray = |directive: &str| {
+        let svg = export_svg(&format!(
+          "Graphics[{{{directive}, Line[{{{{0,0}},{{1,1}}}}]}}]"
+        ));
+        let i = svg.find("stroke-dasharray=\"")?;
+        let rest = &svg[i + "stroke-dasharray=\"".len()..];
+        Some(rest.split('"').next().unwrap().to_string())
+      };
+      assert_eq!(dasharray("Dashing[{0.05, 0.05}]"), Some("18.0,18.0".into()));
+      assert_eq!(dasharray("AbsoluteDashing[{4, 6}]"), Some("4.0,6.0".into()));
+      // A one-element list is left as-is (SVG auto-doubles an odd-length
+      // dasharray), matching how the plain `Dashing[{2}]` list branch works.
+      assert_eq!(dasharray("AbsoluteDashing[{2}]"), Some("2.0".into()));
+      assert_eq!(dasharray("AbsoluteDashing[{}]"), None);
+      // A negative user-supplied length must still land as literal pixels,
+      // not get flipped into dash_attr's "fraction of image width" branch
+      // (a naive `-d` on an already-negative `d` would produce +4.0, read
+      // as 4x the image width instead of ~4 pixels).
+      assert_eq!(
+        dasharray("AbsoluteDashing[{-4, 6}]"),
+        Some("4.0,6.0".into())
+      );
+    }
+
     #[test]
     fn multiple_colors() {
       insta::assert_snapshot!(export_svg(
@@ -1811,6 +1859,69 @@ mod graphics {
       insta::assert_snapshot!(export_svg(
         "Graphics[{Circle[]}, PlotRange -> {{-2, 2}, {-2, 2}}]"
       ));
+    }
+
+    // `PlotRange -> {min, max}` — a flat pair of plain numbers, not the
+    // nested per-axis `{{xmin, xmax}, {ymin, ymax}}` form — applies the
+    // *same* range to every axis, matching Wolfram. It used to be
+    // misparsed as `{xSpec, ySpec}` (treating each bare number as a whole
+    // axis's own spec), which fed each one through the "a lone number n
+    // means {-n, n}" fallback and turned `{0, 100}` into x ∈ {0, 0} (a
+    // degenerate, zero-width range) and y ∈ {-100, 100} — found via a
+    // Demonstration whose `Show` combined an invisible `Plot[0, {x, a,
+    // b}, PlotRange -> {a, b}]` (a common idiom to force wide axis
+    // labels) with a `ContourPlot`, which blew up the merged picture's
+    // scale into a single sliver of a curve.
+    #[test]
+    fn plot_range_bare_pair_applies_to_both_axes() {
+      let svg = export_svg(
+        "Graphics[{Point[{50, 100}]}, PlotRange -> {0, 100}, \
+         Axes -> False, ImageSize -> {100, 100}]",
+      );
+      let tag = svg.split("<circle ").nth(1).expect("a circle");
+      let attr = |name: &str| -> f64 {
+        tag
+          .split(&format!("{name}=\""))
+          .nth(1)
+          .and_then(|s| s.split('"').next())
+          .unwrap_or_else(|| panic!("circle {name} in {tag}"))
+          .parse()
+          .unwrap_or_else(|_| panic!("numeric circle {name} in {tag}"))
+      };
+      let (cx, cy) = (attr("cx"), attr("cy"));
+      // x = 50 is the midpoint of a 0..100 range applied to the x axis.
+      assert!(
+        (cx - 50.0).abs() < 2.0,
+        "expected cx near mid-width, cx={cx}"
+      );
+      // y = 100 is the top of a 0..100 range applied to the y axis (SVG y
+      // grows downward).
+      assert!(cy < 2.0, "expected cy flush at the top, cy={cy}");
+    }
+
+    // The per-axis form still works once either element unambiguously
+    // looks like an axis spec (a nested list, or `Automatic`/`All`) rather
+    // than a bare number: only a pair of two bare numbers means "uniform
+    // range for every axis".
+    #[test]
+    fn plot_range_per_axis_form_with_automatic_still_works() {
+      let svg = export_svg(
+        "Graphics[{Point[{50, 5}]}, PlotRange -> {Automatic, {0, 10}}, \
+         Axes -> False, ImageSize -> {100, 100}]",
+      );
+      let tag = svg.split("<circle ").nth(1).expect("a circle");
+      let cy: f64 = tag
+        .split("cy=\"")
+        .nth(1)
+        .and_then(|s| s.split('"').next())
+        .unwrap()
+        .parse()
+        .unwrap();
+      // y = 5 is the midpoint of the explicit {0, 10} y range.
+      assert!(
+        (cy - 50.0).abs() < 2.0,
+        "expected cy near mid-height, cy={cy}"
+      );
     }
 
     // A primitive that falls outside an explicit `PlotRange` used to be
@@ -3963,6 +4074,43 @@ mod plot3d {
       );
     }
 
+    /// `Sphere[{p1, p2, …}, {r1, r2, …}]` gives each centre its own radius,
+    /// rather than one shared radius for the whole set — how a particle
+    /// system with varying particle sizes is drawn in one call. A radius
+    /// list used to fail to parse as a number and fall back to radius 1
+    /// for every sphere, however small the intended radii were.
+    #[test]
+    fn sphere_accepts_a_list_of_radii() {
+      for head in ["Sphere", "Ball"] {
+        assert_eq!(
+          export_svg(&format!(
+            "Graphics3D[{{{head}[{{{{1, 0, 0}}, {{-1, 0, 0}}}}, \
+             {{0.25, 0.75}}]}}, PlotRange -> 3]"
+          )),
+          export_svg(&format!(
+            "Graphics3D[{{{head}[{{1, 0, 0}}, 0.25], \
+             {head}[{{-1, 0, 0}}, 0.75]}}, PlotRange -> 3]"
+          )),
+          "{head} with a list of radii draws each sphere at its own radius"
+        );
+      }
+      // A radius list must match the centres one-for-one to be used this
+      // way; a mismatched length falls back to reading it as one shared
+      // (if non-numeric, unit) radius rather than panicking on the zip.
+      assert_eq!(
+        export_svg(
+          "Graphics3D[{Sphere[{{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}}, \
+           {0.25, 0.75}]}, PlotRange -> 3]"
+        ),
+        export_svg(
+          "Graphics3D[{Sphere[{{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}}, 1]}, \
+           PlotRange -> 3]"
+        ),
+        "a radius list whose length doesn't match the centres falls back \
+         to a unit radius per sphere"
+      );
+    }
+
     /// `Text[expr, {x, y, z}]` labels a point of a 3D scene, drawn flat at
     /// the projection of its point. It used to be dropped entirely, so a
     /// labelled schematic arrived with no lettering at all.
@@ -4118,6 +4266,35 @@ mod plot3d {
         .unwrap(),
         "GraphicsComplex[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}}, \
          Polygon[{{1, 2, 3}}]]"
+      );
+    }
+
+    // Length/Depth/LeafCount descend into the same symbolic form Part
+    // already reaches into, instead of treating a rendered Graphics3D as
+    // a zero-length/depth-1 atom.
+    #[test]
+    fn graphics3d_length_depth_leaf_count_match_symbolic_form() {
+      assert_eq!(
+        interpret(
+          "Length[Graphics3D[{Red, Sphere[]}, Axes -> True, Boxed -> False]]"
+        )
+        .unwrap(),
+        "3"
+      );
+      assert_eq!(
+        interpret(
+          "Depth[Graphics3D[{Red, Sphere[]}, Axes -> True, Boxed -> False]]"
+        )
+        .unwrap(),
+        "4"
+      );
+      assert_eq!(
+        interpret(
+          "LeafCount[Graphics3D[{Red, Sphere[]}, Axes -> True, \
+           Boxed -> False]] > 1"
+        )
+        .unwrap(),
+        "True"
       );
     }
 
@@ -4662,6 +4839,64 @@ mod plot3d {
     }
   }
 
+  mod unbounded_primitives_2d {
+    use super::*;
+
+    /// `InfiniteLine`/`HalfLine` used to draw nothing at all in a 2D
+    /// `Graphics` (only the `Graphics3D` case was handled), which left a
+    /// scene built around one of Wolfram's own `TriangleLine`-style helpers
+    /// (three infinite lines through a triangle's edges — independently
+    /// written here, not copied from any specific Demonstration) with its
+    /// extended edge lines entirely missing.
+    #[test]
+    fn infinite_line_and_half_line_draw_in_2d_graphics() {
+      for code in [
+        "Graphics[{Gray, InfiniteLine[{{0, 0}, {1, 1}}]}, \
+         PlotRange -> {{-5, 5}, {-5, 5}}]",
+        "Graphics[{Gray, InfiniteLine[{0, 0}, {1, 1}]}, \
+         PlotRange -> {{-5, 5}, {-5, 5}}]",
+        "Graphics[{Red, HalfLine[{0, 0}, {1, 1}]}, \
+         PlotRange -> {{-5, 5}, {-5, 5}}]",
+        "Graphics[{Red, HalfLine[{{2, 0}, {3, 0}}]}, \
+         PlotRange -> {{-5, 5}, {-5, 5}}]",
+      ] {
+        let svg = export_svg(code);
+        assert!(svg.contains("<line "), "{code} drew nothing: {svg}");
+      }
+    }
+
+    /// A `HalfLine` only extends forward from its starting point, so it
+    /// covers half the area a full `InfiniteLine` through the same points
+    /// does — checked by clipping each to a box that only the full line
+    /// reaches on both sides.
+    #[test]
+    fn half_line_only_extends_forward() {
+      let full = export_svg(
+        "Graphics[{InfiniteLine[{{0, 0}, {1, 0}}]}, \
+         PlotRange -> {{-5, 5}, {-1, 1}}]",
+      );
+      let half = export_svg(
+        "Graphics[{HalfLine[{{0, 0}, {1, 0}}]}, \
+         PlotRange -> {{-5, 5}, {-1, 1}}]",
+      );
+      assert_ne!(
+        full, half,
+        "a HalfLine must not draw the same as the InfiniteLine through the \
+         same two points"
+      );
+    }
+
+    /// A degenerate `InfiniteLine`/`HalfLine` (both defining points equal,
+    /// so no direction exists) draws nothing rather than erroring out.
+    #[test]
+    fn degenerate_infinite_line_draws_nothing() {
+      assert_eq!(
+        export_svg("Graphics[{InfiniteLine[{{1, 1}, {1, 1}}]}]"),
+        export_svg("Graphics[{}]")
+      );
+    }
+  }
+
   mod view_angle {
     use super::*;
 
@@ -4850,6 +5085,47 @@ mod plot3d {
       assert!(
         svg.contains("<polyline") || svg.contains("<line"),
         "expected line segments for the two NDSolve-shaped curves"
+      );
+    }
+
+    /// Exactly *three* `{fx, fy, fz} /. soln` curves are the ambiguous case:
+    /// a three-element first argument reads either as one curve's three
+    /// components or as three whole curves, and only evaluating the items
+    /// tells them apart. The shape is the one a Demonstration uses to draw
+    /// an `NDSolve` trajectory beside its two coordinate projections; it
+    /// used to be taken for a single triple whose "components" were lists,
+    /// so every sample came out non-numeric and the plot failed with
+    /// "parametric function produced no finite values". Each curve keeps its
+    /// own `PlotStyle` colour, which is what says all three were drawn.
+    #[test]
+    fn three_curves_from_ndsolve_shaped_replace_all() {
+      let svg = export_svg(
+        "soln = {{fx -> Function[t, Cos[t]], fy -> Function[t, Sin[t]]}}; \
+         ParametricPlot3D[{{0, fx[t], fy[t]} /. soln, \
+           {t, fx[t], 0} /. soln, {t, 2, fy[t]} /. soln}, {t, 0, 2 Pi}, \
+         PlotStyle -> {Red, Blue, Darker[Green]}]",
+      );
+      for (color, which) in [
+        ("rgb(255,0,0)", "the Red trajectory"),
+        ("rgb(0,0,255)", "the Blue x-projection"),
+        ("rgb(0,170,0)", "the Darker[Green] y-projection"),
+      ] {
+        assert!(
+          svg.contains(color),
+          "expected {which} to be drawn in {color}"
+        );
+      }
+    }
+
+    /// The three-curve reading must not swallow an ordinary single curve
+    /// whose three components merely *look* resolvable: `{t, t, t}` is one
+    /// straight line, not three curves.
+    #[test]
+    fn three_scalar_components_stay_a_single_curve() {
+      let single = export_svg("ParametricPlot3D[{t, t, t}, {t, 0, 1}]");
+      assert!(
+        single.contains("<polyline") || single.contains("<line"),
+        "the diagonal must still be drawn as one curve"
       );
     }
 
@@ -8851,6 +9127,53 @@ ParametricPlot[f[t], {t, 0, 1}]",
       assert!(!svg.contains("NaN"));
     }
 
+    // Regression: a `{fx, fy}` curve whose component is a bare assigned
+    // symbol, or a `Part` extraction off a held result (e.g. a `DSolve`
+    // solution accessed as `sol[[1, 1, 2]]`), reached the sampler
+    // unevaluated and textually free of the plot variable — ParametricPlot
+    // holds its first argument. Substituting the plot variable into such a
+    // component is then a no-op, so every sample evaluated back to a still
+    // -symbolic expression and the curve rendered empty. `Plot` already
+    // resolved the equivalent one-function-body case by evaluating with the
+    // plot variable kept symbolic first (revealing it inside the symbol's
+    // definition); ParametricPlot needed the same fix per curve component.
+    // Found while checking a real Demonstration whose Manipulate plots a
+    // `DSolve` result this way.
+    #[test]
+    fn parametric_plot_curve_component_is_assigned_symbol() {
+      let svg =
+        export_svg("mySol = t^2; ParametricPlot[{mySol, t}, {t, 0, 5}]");
+      let longest = svg
+        .split("points=\"")
+        .skip(1)
+        .map(|s| s.split('"').next().unwrap_or("").len())
+        .max()
+        .unwrap_or(0);
+      assert!(
+        longest > 200,
+        "Expected a sampled curve polyline, longest was {longest}"
+      );
+    }
+
+    #[test]
+    fn parametric_plot_curve_component_is_part_extraction() {
+      let svg = export_svg(
+        "sol = DSolve[{x'[t] == y[t], y'[t] == -x[t], x[0] == 1, y[0] == 0}, \
+{x[t], y[t]}, t]; \
+ParametricPlot[{sol[[1, 1, 2]], sol[[1, 2, 2]]}, {t, 0, 6}]",
+      );
+      let longest = svg
+        .split("points=\"")
+        .skip(1)
+        .map(|s| s.split('"').next().unwrap_or("").len())
+        .max()
+        .unwrap_or(0);
+      assert!(
+        longest > 200,
+        "Expected a sampled curve polyline, longest was {longest}"
+      );
+    }
+
     // Regression: `Show[Graphics[…], ParametricPlot[…]]` must keep the
     // parametric curve when merged with other graphics primitives. The plot
     // previously had no PlotSource, so Show treated it as opaque and dropped
@@ -11885,6 +12208,34 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn array_plot_color_function_pure_function_scaled() {
+      // A custom `ColorFunction` (not just a named gradient) receives the
+      // value rescaled to [0, 1] by default and can return any color
+      // directive (here GrayLevel, inverted from the built-in default).
+      let svg = export_svg(
+        "ArrayPlot[{{0, 1}, {1, 0}}, ColorFunction -> (GrayLevel[#] &)]",
+      );
+      assert!(svg.contains("fill=\"#000000\""), "{svg}");
+      assert!(svg.contains("fill=\"#FFFFFF\""), "{svg}");
+    }
+
+    #[test]
+    fn array_plot_color_function_scaling_false() {
+      // Regression: `ColorFunctionScaling -> False` must pass each cell's
+      // raw (unscaled) value to `ColorFunction`, preserving its integer-ness
+      // so functions like `IntegerDigits` inside it don't stay unevaluated
+      // (previously every cell rendered as a shade of gray instead of the
+      // color the function actually computed).
+      let svg = export_svg(
+        "ArrayPlot[{{16711680, 65280, 255}}, ColorFunctionScaling -> False, \
+         ColorFunction -> (RGBColor @@ (IntegerDigits[#, 256, 3]/255.) &)]",
+      );
+      assert!(svg.contains("fill=\"#FF0000\""), "{svg}");
+      assert!(svg.contains("fill=\"#00FF00\""), "{svg}");
+      assert!(svg.contains("fill=\"#0000FF\""), "{svg}");
+    }
+
+    #[test]
     fn array_plot_sparse_array() {
       // Regression: SparseArray's canonical internal form isn't a plain
       // nested List, so ArrayPlot used to reject it with "first argument
@@ -12235,11 +12586,21 @@ ParametricPlot[f[t], {t, 0, 1}]]",
          Text[Row[{\"(\", Infinity, \")\"}], {1, 0}]}, \
          PlotRange -> 4, ImageSize -> 200]",
       );
-      for glyph in
-        ["\u{03C0}", "\u{221E}", "\u{2147}", "\u{00B0}", "(\u{221E})"]
-      {
+      for glyph in ["\u{03C0}", "\u{221E}", "\u{00B0}", "(\u{221E})"] {
         assert!(svg.contains(glyph), "{glyph} must be typeset: {svg}");
       }
+      // `E`'s glyph is `\[ExponentialE]` (U+2147, "ⅇ") — a Letterlike
+      // Symbols codepoint most non-Mathematica fonts have no glyph for
+      // (this renderer's fonts included), so it renders as an italicized
+      // plain "e" instead of the raw codepoint.
+      assert!(
+        !svg.contains('\u{2147}'),
+        "must not contain the raw U+2147 glyph: {svg}"
+      );
+      assert!(
+        svg.contains("<tspan font-style=\"italic\">e</tspan>"),
+        "E must typeset as an italicized plain \"e\": {svg}"
+      );
       assert!(!svg.contains(">Infinity<"), "not the name: {svg}");
       // Script-mode text output is unchanged.
       assert_eq!(
@@ -20105,6 +20466,25 @@ mod manipulate {
     assert!(result.result.starts_with("Manipulate["));
   }
 
+  #[test]
+  fn action_menu_arg_is_not_vsform() {
+    // A bare `ActionMenu[label, {item :> action, …}]` argument fires its
+    // own action on selection rather than binding a variable — the same
+    // pattern as a bare `Button[…]` argument — so wolframscript shows it in
+    // the control area with no Manipulate::vsform message. This is the
+    // "choose a motif" menu idiom from the Border Patterns Demonstration.
+    let result = woxi::interpret_with_stdout(
+      "Manipulate[x, {x, 0, 1}, ActionMenu[\"choose\", {\"a\" :> (x = 0), \"b\" :> (x = 1)}]]",
+    )
+    .unwrap();
+    assert!(
+      !result.warnings.iter().any(|w| w.contains("vsform")),
+      "no vsform expected, got {:?}",
+      result.warnings
+    );
+    assert!(result.result.starts_with("Manipulate["));
+  }
+
   /// Controls wrapped in a `Row[…]` layout (with loose labels, `Spacer`
   /// padding, and `Dynamic[Control[…]]` wrappers — the Doyle-spirals
   /// Demonstration idiom) extract in display order: the loose string
@@ -20857,6 +21237,108 @@ mod manipulate {
     assert_eq!(json.matches("\"selected\":true").count(), 2, "{json}");
     assert_eq!(json.matches("\"selected\":false").count(), 1, "{json}");
     assert!(json.contains("MemberQ[picks, psin]"), "{json}");
+  }
+
+  /// A `SetterBar[Dynamic[var], choices]` written directly as (part of) an
+  /// extra display argument — not through a formal `{var, …}` control spec
+  /// — is the Wolfram Demonstrations idiom for a control whose variable is
+  /// otherwise undeclared (e.g. `Row[{"n sites ", SetterBar[Dynamic[n],
+  /// Range[2, 5]]}]`). Wolfram auto-initializes such a "bare" control's
+  /// variable to its first choice the moment it is drawn; without that, `n`
+  /// stays a free symbol and everything downstream that uses it (a `Table`
+  /// iterator, a `Take` length, …) fails.
+  #[test]
+  fn spec_bare_setterbar_auto_initializes_its_variable() {
+    let expr = interpret_to_expr(
+      "Manipulate[n, Row[{\"n sites \", SetterBar[Dynamic[n], Range[2, 5]]}]]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    assert_eq!(
+      spec.state,
+      vec![("n".to_string(), "2".to_string())],
+      "a bare SetterBar auto-initializes its variable to the first choice"
+    );
+    assert!(
+      spec.controls.is_empty(),
+      "the bar is a display, not a formal control row: {:?}",
+      spec.controls
+    );
+    assert_eq!(spec.displays.len(), 1);
+  }
+
+  /// The `SetterBar` (and `RadioButtonBar`) display itself renders as a row
+  /// of buttons, each writing a single value back into the bound variable —
+  /// unlike `TogglerBar`'s list-membership toggle, exactly one is ever
+  /// selected.
+  #[test]
+  fn spec_bare_setterbar_renders_single_select_buttons() {
+    let expr = interpret_to_expr(
+      "Manipulate[n, Row[{\"n sites \", SetterBar[Dynamic[n], Range[2, 5]]}]]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    let bindings = manipulate_initial_bindings(&spec);
+    let json = woxi::with_scoped_globals(&bindings, || {
+      woxi::functions::graphics::render_manipulate_display(
+        &spec.displays[0],
+        &[],
+      )
+    });
+    assert_eq!(json.matches("\"kind\":\"toggler\"").count(), 4, "{json}");
+    assert_eq!(json.matches("\"selected\":true").count(), 1, "{json}");
+    assert!(json.contains("\"mutation\":\"n = 2\""), "{json}");
+    assert!(json.contains("\"mutation\":\"n = 3\""), "{json}");
+  }
+
+  /// `RadioButtonBar[Dynamic[var], choices]` used the same way (bound to an
+  /// otherwise-undeclared variable, as part of an extra display argument)
+  /// gets the same auto-initialization and single-value write-back as
+  /// `SetterBar` — matching the Demonstrations pattern of a boundary
+  /// condition or mode picker written directly into a `Row[…]` caption.
+  #[test]
+  fn spec_bare_radiobuttonbar_auto_initializes_and_sets_a_single_value() {
+    let expr = interpret_to_expr(
+      "Manipulate[bc, \
+       Row[{\"boundary conditions \", \
+         RadioButtonBar[Dynamic[bc], {0 -> \"open\", 1 -> \"closed\"}]}]]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    assert_eq!(
+      spec.state,
+      vec![("bc".to_string(), "0".to_string())],
+      "a bare RadioButtonBar auto-initializes its variable to the first choice's value"
+    );
+    let bindings = manipulate_initial_bindings(&spec);
+    let json = woxi::with_scoped_globals(&bindings, || {
+      woxi::functions::graphics::render_manipulate_display(
+        &spec.displays[0],
+        &[],
+      )
+    });
+    assert_eq!(json.matches("\"kind\":\"toggler\"").count(), 2, "{json}");
+    assert_eq!(json.matches("\"selected\":true").count(), 1, "{json}");
+    assert!(json.contains("\"mutation\":\"bc = 1\""), "{json}");
+  }
+
+  /// A `SetterBar`/`RadioButtonBar` variable that *is* declared by a formal
+  /// `{var, …}` control spec elsewhere in the Manipulate must keep that
+  /// control's own initial value — the bare-display auto-initialization
+  /// must not clobber it.
+  #[test]
+  fn spec_bare_setterbar_does_not_override_a_declared_controls_value() {
+    let expr = interpret_to_expr(
+      "Manipulate[n, {n, 4, ControlType -> None}, \
+       Row[{\"n sites \", SetterBar[Dynamic[n], Range[2, 5]]}]]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    assert_eq!(
+      spec.state,
+      vec![("n".to_string(), "4".to_string())],
+      "the declared control's own initial value wins"
+    );
   }
 
   /// A bare `Checkbox[Dynamic[var], …]` drawn directly by the body — as
@@ -28203,9 +28685,12 @@ fn manipulate_module_which_affine_prolog_checkbox_and_traditional_plot_label() {
     "Epilog should draw the \"A\" label when labels is True: {with_label}"
   );
   assert!(
-    with_label.contains("\u{222b}") && with_label.contains("\u{2146}"),
-    "PlotLabel should typeset the held integral (\u{222b} \u{2026} \u{2146}x), not raw \
-     TraditionalForm/HoldForm source: {with_label}"
+    with_label.contains("\u{222b}")
+      && with_label.contains("<tspan font-style=\"italic\">d</tspan>"),
+    "PlotLabel should typeset the held integral (\u{222b} \u{2026} dx, the \
+     differential as a plain italicized \"d\" rather than the raw U+2146 \
+     glyph most fonts have no glyph for), not raw TraditionalForm/HoldForm \
+     source: {with_label}"
   );
 
   let without_label = render("1.2", "False");

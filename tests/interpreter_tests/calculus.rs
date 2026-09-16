@@ -6343,6 +6343,118 @@ mod find_minimum {
     .unwrap();
     assert_eq!(result, "{2443/2500, 5}");
   }
+
+  #[test]
+  fn bounded_spec_leaves_an_interior_optimum_untouched() {
+    // FindMinimum[f, {x, x0, xmin, xmax}] constrains x to [xmin, xmax]
+    // throughout the search, but when the unconstrained optimum already
+    // lies inside that range it must be found exactly, same as the plain
+    // {x, x0} form.
+    clear_state();
+    let result =
+      interpret("FindMinimum[(x - 3)^2 + 2., {x, 0, -10, 10}]").unwrap();
+    assert_eq!(result, "{2., {x -> 3.}}");
+  }
+
+  #[test]
+  fn bounded_spec_clamps_an_optimum_outside_the_range() {
+    // The unconstrained minimum of (x-3)^2 is at x = 3, outside [0, 2];
+    // the constrained search must stop at the boundary x = 2 instead.
+    clear_state();
+    let result = interpret("FindMinimum[(x - 3)^2, {x, 1, 0, 2}]").unwrap();
+    assert_eq!(result, "{1., {x -> 2.}}");
+  }
+
+  #[test]
+  fn bounded_spec_clamps_a_maximum_outside_the_range() {
+    // FindMaximum with the same bounded spec: the unconstrained maximum
+    // of -(x-3)^2 is at x = 3, outside [-5, 1], so the search must stop
+    // at the boundary x = 1.
+    clear_state();
+    let result = interpret("FindMaximum[-(x - 3)^2, {x, 0, -5, 1}]").unwrap();
+    assert_eq!(result, "{-4., {x -> 1.}}");
+  }
+
+  #[test]
+  fn bounded_spec_multivariable_clamps_each_variable_independently() {
+    // Each {var, x0, xmin, xmax} triple in the multivariable form bounds
+    // only its own variable. The unconstrained minimum of
+    // (x-3)^2+(y-2)^2 is at {3, 2}; with x bounded to [0, 1] and y left
+    // free (still inside its own wide bounds), only x should clamp, to
+    // x = 1, leaving y = 2 and a value of (1-3)^2 + (2-2)^2 = 4.
+    clear_state();
+    let result = interpret(
+      "FindMinimum[(x - 3)^2 + (y - 2)^2, {{x, 0, 0, 1}, {y, 0, -10, 10}}]",
+    )
+    .unwrap();
+    assert_eq!(result, "{4., {x -> 1., y -> 2.}}");
+  }
+
+  #[test]
+  fn each_variable_spec_as_its_own_trailing_argument() {
+    // Wolfram accepts `FindMinimum[f, {x, x0}, {y, y0}]` as an alternate
+    // spelling of the combined-list form `FindMinimum[f, {{x, x0}, {y,
+    // y0}}]`; each variable spec is its own positional argument instead
+    // of being wrapped together. Previously only `args[1]` was read for
+    // variable specs, so `y` stayed completely unbound here and the
+    // trailing spec was silently treated as an (unrecognised) option.
+    clear_state();
+    let result =
+      interpret("FindMinimum[(x - 1)^2 + (y - 2)^2, {x, 0}, {y, 0}]").unwrap();
+    assert_eq!(result, "{0., {x -> 1., y -> 2.}}");
+  }
+
+  #[test]
+  fn each_variable_spec_as_its_own_trailing_argument_with_options() {
+    // Trailing options after every variable spec argument still parse
+    // as options rather than being mistaken for one more variable spec.
+    clear_state();
+    let result = interpret(
+      "FindMinimum[(x - 1)^2 + (y - 2)^2, {x, 0}, {y, 0}, MaxIterations -> 50]",
+    )
+    .unwrap();
+    assert_eq!(result, "{0., {x -> 1., y -> 2.}}");
+  }
+
+  #[test]
+  fn maximize_with_each_variable_spec_as_its_own_trailing_argument() {
+    clear_state();
+    let result =
+      interpret("FindMaximum[-((x - 1)^2 + (y - 2)^2), {x, 0}, {y, 0}]")
+        .unwrap();
+    assert_eq!(result, "{0., {x -> 1., y -> 2.}}");
+  }
+
+  #[test]
+  fn numeric_only_objective_falls_back_to_derivative_free_search() {
+    // `f[k_?NumericQ, a_?NumericQ] := …` is the standard idiom for an
+    // objective that must not be differentiated symbolically (e.g. one
+    // built from `NDSolve`/`ReplaceAll`, as in a least-squares fit).
+    // `differentiate_expr` then falls back to an unevaluated
+    // `Derivative[…][…]` form that never reduces to a real number, which
+    // used to make the whole search abort with
+    // "Cannot evaluate expression numerically" instead of falling back to
+    // a derivative-free method the way Wolfram does.
+    clear_state();
+    let result = interpret(
+      "myFindMinObjective[k_?NumericQ, a_?NumericQ] := (k - 2)^2 + (a - 3)^2; \
+       Round[{#[[1]], {k, a} /. #[[2]]} &[\
+         FindMinimum[myFindMinObjective[k, a], {k, 0}, {a, 0}]], 10^-6]",
+    )
+    .unwrap();
+    assert_eq!(result, "{0, {2, 3}}");
+  }
+
+  #[test]
+  fn numeric_only_objective_single_variable_falls_back_too() {
+    clear_state();
+    let result = interpret(
+      "myFindMaxObjective[k_?NumericQ] := -((k - 4)^2); \
+       FindMaximum[myFindMaxObjective[k], {k, 0}]",
+    )
+    .unwrap();
+    assert_eq!(result, "{0., {k -> 4.}}");
+  }
 }
 
 mod dt {
@@ -7295,6 +7407,111 @@ mod dsolve {
     );
   }
 
+  // Regression: a purely-biquadratic characteristic quartic (no cubic or
+  // linear term — the common shape for a real coupled linear ODE system,
+  // and for any fourth-order ODE symmetric enough to have one) sent the
+  // general resolvent-cubic quartic solver through a numerically
+  // degenerate resolvent cubic (itself repeated-root, since the quartic
+  // has no odd-power terms), which then picked the wrong real/complex
+  // branch and returned four spuriously *real* roots instead of two
+  // purely-imaginary conjugate pairs. `y'''' + 2.04 y'' + y == 0`'s
+  // characteristic polynomial is `r^4 + 2.04 r^2 + 1`, whose roots by the
+  // quadratic formula on `u = r^2` are both negative (`u = -0.819,
+  // -1.221`), so `r` must be purely imaginary (`±0.905 I`, `±1.105 I`) —
+  // not the real `±0.905`, `±1.105` the buggy path produced.
+  #[test]
+  fn fourth_order_biquadratic_has_purely_imaginary_roots() {
+    assert_eq!(
+      interpret("DSolve[y''''[t] + 2.04*y''[t] + y[t] == 0, y[t], t]").unwrap(),
+      "{{y[t] -> C[1]*Cos[0.9049875621120891*t] + \
+C[3]*Cos[1.104987562112089*t] + C[2]*Sin[0.9049875621120891*t] + \
+C[4]*Sin[1.104987562112089*t]}}"
+    );
+  }
+
+  // `DSolve[{eq1, eq2, ic1, …}, {y1[t], y2[t], …}, t]` — a linear,
+  // constant-coefficient *coupled* system, solved via operator-determinant
+  // elimination (each y_i satisfies the same characteristic polynomial;
+  // the amplitude ratio between variables at each root comes from the
+  // null space of the system evaluated there). Found while checking
+  // whether Woxi Studio could open a real Wolfram Demonstration whose
+  // Manipulate solves a Foucault-pendulum-style coupled ODE system —
+  // previously DSolve only recognised one dependent function and left any
+  // `{y1[t], y2[t], …}` system unevaluated.
+  mod coupled_linear_ode_system {
+    use super::*;
+
+    // x' == y, y' == x has real characteristic roots ±1: x = Cosh[t],
+    // y = Sinh[t] written out as raw exponentials.
+    #[test]
+    fn real_roots_with_initial_conditions() {
+      assert_eq!(
+        interpret(
+          "DSolve[{x'[t] == y[t], y'[t] == x[t], x[0] == 1, y[0] == 0}, \
+{x[t], y[t]}, t]"
+        )
+        .unwrap(),
+        "{{x[t] -> 1/(2*E^t) + E^t/2, y[t] -> -1/2*1/E^t + E^t/2}}"
+      );
+    }
+
+    // x' == y, y' == -x is a pure rotation (eigenvalues ±I): the general
+    // solution (no initial conditions given) comes back in terms of the
+    // two shared arbitrary constants, not decoupled per-variable ones.
+    #[test]
+    fn complex_roots_general_solution_shares_constants() {
+      assert_eq!(
+        interpret("DSolve[{x'[t] == y[t], y'[t] == -x[t]}, {x[t], y[t]}, t]")
+          .unwrap(),
+        "{{x[t] -> -(C[2]*Cos[t]) + C[1]*Sin[t], y[t] -> C[1]*Cos[t] + \
+C[2]*Sin[t]}}"
+      );
+    }
+
+    // Two coupled second-order equations (rotational coupling, as a
+    // Foucault pendulum's x/y equations of motion have) — the shape that
+    // motivated this solver. The closed form must match independent
+    // numeric integration (`NDSolve` on the same system) to high
+    // precision, since there is no simpler exact form to compare against
+    // directly.
+    #[test]
+    fn coupled_second_order_matches_ndsolve() {
+      // Independent numeric integration and the closed form agree to
+      // 10^-6 at t = 6 — they can't be expected to agree bit-for-bit,
+      // since one is exact trig evaluation and the other an interpolated
+      // numeric integration.
+      assert_eq!(
+        interpret(
+          "closed = ({x[t], y[t]} /. First[DSolve[{x''[t] - 2*0.1*y'[t] + \
+x[t] == 0, y''[t] + 2*0.1*x'[t] + y[t] == 0, x[0] == 1, x'[0] == 0, \
+y[0] == 0, y'[0] == 1}, {x[t], y[t]}, t]]) /. t -> 6; \
+numeric = {x[6], y[6]} /. First[NDSolve[{x''[t] - 2*0.1*y'[t] + x[t] == 0, \
+y''[t] + 2*0.1*x'[t] + y[t] == 0, x[0] == 1, x'[0] == 0, y[0] == 0, \
+y'[0] == 1}, {x, y}, {t, 0, 10}]]; \
+Round[N[closed] - N[numeric], 10^-6]"
+        )
+        .unwrap(),
+        "{0, 0}"
+      );
+    }
+
+    // A defective system (repeated eigenvalue 1, only one independent
+    // eigenvector) needs a `t*E^t` secular term this solver doesn't build;
+    // it must stay unevaluated rather than silently drop a degree of
+    // freedom.
+    #[test]
+    fn repeated_root_stays_unevaluated() {
+      assert_eq!(
+        interpret(
+          "DSolve[{x'[t] == x[t], y'[t] == x[t] + y[t]}, {x[t], y[t]}, t]"
+        )
+        .unwrap(),
+        "DSolve[{Derivative[1][x][t] == x[t], Derivative[1][y][t] == x[t] + \
+y[t]}, {x[t], y[t]}, t]"
+      );
+    }
+  }
+
   #[test]
   fn unsolvable_ode_stays_unevaluated() {
     // A nonlinear ODE Woxi can't classify must return the unevaluated DSolve
@@ -7974,6 +8191,71 @@ mod ndsolve {
   }
 
   #[test]
+  fn ndsolve_two_point_boundary_value_problem() {
+    // A two-point (Dirichlet-Dirichlet) boundary value problem: the two
+    // conditions are given at the domain's own endpoints rather than at a
+    // shared point, so `NDSolve` can't integrate this as a plain initial
+    // value problem — it has to shoot for the initial slope that lands on
+    // the far condition. y'' + y == 0, y(0) = 0, y(Pi/2) = 1 → y = Sin[x].
+    let result = interpret(
+      "sol = NDSolve[{y''[x] + y[x] == 0, y[0] == 0, y[Pi/2] == 1}, y, \
+       {x, 0, Pi/2}]; y[Pi/4] /. sol[[1]]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    let expected = std::f64::consts::FRAC_PI_4.sin();
+    assert!(
+      (val - expected).abs() < 1e-4,
+      "Expected {expected}, got {val}"
+    );
+  }
+
+  #[test]
+  fn ndsolve_boundary_value_problem_with_variable_coefficient_forcing() {
+    // A non-homogeneous boundary value problem with an x-dependent forcing
+    // term, matching the shape of a 1D Helmholtz finite-difference
+    // Demonstration: -k^2 y - y'' == f(x), y(0) == 0, y(1) == 0. With
+    // k == 0 the equation reduces to -y'' == f(x) == 6x, whose solution
+    // satisfying both endpoint conditions is y(x) = x - x^3 (y(0) = 0,
+    // y(1) = 0, y'' = -6x).
+    let result = interpret(
+      "sol = NDSolve[{-y''[x] == 6*x, y[0] == 0, y[1] == 0}, y, {x, 0, 1}]; \
+       y[0.5] /. sol[[1]]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    let expected = 0.5 - 0.5_f64.powi(3);
+    assert!(
+      (val - expected).abs() < 1e-4,
+      "Expected {expected}, got {val}"
+    );
+  }
+
+  #[test]
+  fn ndsolve_boundary_value_problem_requires_conditions_at_the_domain_ends() {
+    // Regression guard: conditions at two points that *aren't* the solved
+    // domain's own endpoints aren't a boundary value problem this solver
+    // understands, and NDSolve should stay unevaluated rather than guess.
+    let result = interpret(
+      "NDSolve[{y''[x] + y[x] == 0, y[0] == 0, y[1] == 1}, y, {x, 0, N[Pi]/2}]",
+    )
+    .unwrap();
+    assert!(
+      result.starts_with("NDSolve["),
+      "Expected an unevaluated NDSolve, got {result}"
+    );
+  }
+
+  #[test]
+  fn finish_dynamic_stays_unevaluated() {
+    // `FinishDynamic[]` forces a front-end redraw of pending `Dynamic`
+    // content. It is a front-end operation with no kernel-side value:
+    // wolframscript's kernel returns it unevaluated (it carries no
+    // attributes at all), rather than `Null`.
+    assert_eq!(interpret("FinishDynamic[]").unwrap(), "FinishDynamic[]");
+  }
+
+  #[test]
   fn coupled_first_order_system() {
     // x' = y, y' = -x with x(0)=1, y(0)=0 → x = cos t.
     let result = interpret(
@@ -8330,6 +8612,62 @@ mod ndsolve {
   }
 
   #[test]
+  fn interpolating_function_domain_matches_domain_property() {
+    // `InterpolatingFunctionDomain[if]`, from the
+    // `DifferentialEquations`InterpolatingFunctionAnatomy`` package, reports
+    // the same domain as `if["Domain"]`.
+    let sol = "s = NDSolve[{y'[t] == -y[t], y[0] == 1}, y, {t, 0, 3}]; \
+       if = y /. s[[1]];";
+    assert_eq!(
+      interpret(&format!("{sol} InterpolatingFunctionDomain[if]")).unwrap(),
+      interpret(&format!("{sol} if[\"Domain\"]")).unwrap()
+    );
+    assert_eq!(
+      interpret(&format!("{sol} InterpolatingFunctionDomain[if]")).unwrap(),
+      "{{0., 3.}}"
+    );
+  }
+
+  #[test]
+  fn interpolating_function_domain_reports_event_stop_time() {
+    // Chained with an `EventLocator` stop (as the Demonstrations-project
+    // "stroboscopic bounce" pattern does): the reported domain's upper end
+    // is the time the event fired at, not the requested integration limit.
+    let result = interpret(
+      "s = NDSolve[{y'[t] == -y[t], y[0] == 1}, y, {t, 0, 10}, \
+       Method -> {\"EventLocator\", \"Event\" -> y[t] - 0.5}]; \
+       InterpolatingFunctionDomain[y /. s[[1]]][[1, -1]]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    assert!(
+      (val - std::f64::consts::LN_2).abs() < 0.001,
+      "Expected the event time ln 2 ≈ 0.6931, got {val}"
+    );
+  }
+
+  #[test]
+  fn interpolating_function_domain_of_plain_interpolation() {
+    // Also works on an `Interpolation`/`ListInterpolation` result, not just
+    // one produced by `NDSolve`.
+    assert_eq!(
+      interpret("InterpolatingFunctionDomain[Interpolation[{1, 4, 9, 16}]]")
+        .unwrap(),
+      "{{1, 4}}"
+    );
+  }
+
+  #[test]
+  fn interpolating_function_domain_of_non_interpolating_function() {
+    // An argument that isn't an `InterpolatingFunction` is left unevaluated,
+    // like a pattern-mismatched built-in.
+    assert_eq!(
+      interpret("InterpolatingFunctionDomain[foo]").unwrap(),
+      "InterpolatingFunctionDomain[foo]"
+    );
+  }
+
+  #[test]
   fn symbolic_initial_condition_value() {
     // An exact symbolic IC value (like the trebuchet's
     // `θ[0] == -ArcCos[(143 - L4)/L1]`) must numericise.
@@ -8599,6 +8937,27 @@ mod ndsolve {
     );
   }
 
+  /// The domain declared as `{x, ...}, {t, ...}` (space before time) forces
+  /// the solver to retry the space/time roles swapped. Before matching the
+  /// swapped roles, it first tries the unswapped ones and calls the initial
+  /// condition matcher on `Sin[Pi x]` — a one-argument call — as a candidate
+  /// `u[t0, x]` shape. The matcher used to index that call's second argument
+  /// before checking its arity, panicking instead of rejecting the shape and
+  /// falling through to the swapped attempt that actually matches.
+  #[test]
+  fn pde_initial_condition_matcher_rejects_a_one_argument_call_without_panicking()
+   {
+    let result = interpret(
+      "NDSolve[{D[u[x, t], t] == D[u[x, t], {x, 2}], u[x, 0] == Sin[Pi x], \
+       u[0, t] == 0, u[1, t] == 0}, u, {x, 0, 1}, {t, 0, 1}]",
+    )
+    .unwrap();
+    assert!(
+      result.starts_with("{{u -> InterpolatingFunction["),
+      "Got: {result}"
+    );
+  }
+
   /// A PDE missing one of its two Dirichlet boundary conditions doesn't
   /// match the one recognised shape, so the call is left unevaluated —
   /// the same fallback NDSolve gives any equation system it can't classify
@@ -8861,6 +9220,152 @@ mod ndsolve {
     assert!(
       (p_mid + q_mid - 1.0).abs() < 1e-6,
       "p + q must stay conserved away from the wall too: p={p_mid}, q={q_mid}"
+    );
+  }
+
+  /// `NDSolve[eqns, u, {t, …}, {x, …}]` where the evolution equation is
+  /// *second*-order in time, `Derivative[2, 0][u][t, x] == rhs` — a
+  /// hyperbolic (wave-type) PDE — needs an extra initial condition (the
+  /// initial velocity `Derivative[1, 0][u][t0, x] == g[x]`, alongside the
+  /// ordinary initial value) and is solved by reducing to the first-order
+  /// system `D[u, t] == v`, `D[v, t] == w` (see
+  /// `ndsolve_pde_hyperbolic`/`try_solve_hyperbolic_pde` in
+  /// `ode_ast.rs`). `Sin[Pi x] Cos[Pi t]` is the textbook standing-wave
+  /// solution of `u_tt == u_xx` with `u(0, x) = Sin[Pi x]`, zero initial
+  /// velocity, and Dirichlet zero at both ends — a check independent of
+  /// the solver's own discretization.
+  #[test]
+  fn pde_hyperbolic_wave_equation_matches_dalembert_standing_wave() {
+    let result = interpret(
+      "sol = NDSolve[{D[u[t, x], t, t] == D[u[t, x], {x, 2}], \
+       u[0, x] == Sin[Pi x], Derivative[1, 0][u][0, x] == 0, \
+       u[t, 0] == 0, u[t, 1] == 0}, u, {t, 0, 1}, {x, 0, 1}]; \
+       (u[t, x] /. sol[[1]]) /. {t -> 0.3, x -> 0.5}",
+    )
+    .unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    let expected =
+      (std::f64::consts::PI / 2.0).sin() * (0.3 * std::f64::consts::PI).cos();
+    assert!(
+      (val - expected).abs() < 3e-3,
+      "Expected about {expected}, got {val}"
+    );
+  }
+
+  /// The same standing wave, but with insulated (Neumann zero) ends
+  /// instead of Dirichlet: `Cos[Pi x] Cos[Pi t]` satisfies `u_tt == u_xx`
+  /// with `D[u, x] == 0` at both `x == 0` and `x == 1` (its space
+  /// derivative is `-Pi Sin[Pi x]`, zero at both integer multiples of
+  /// `1`), exercising the ghost-point boundary handling
+  /// `try_solve_hyperbolic_pde` shares with the parabolic branch.
+  #[test]
+  fn pde_hyperbolic_wave_equation_with_neumann_boundaries_matches_standing_wave()
+   {
+    let result = interpret(
+      "sol = NDSolve[{D[u[t, x], t, t] == D[u[t, x], {x, 2}], \
+       u[0, x] == Cos[Pi x], Derivative[1, 0][u][0, x] == 0, \
+       Derivative[0, 1][u][t, 0] == 0, Derivative[0, 1][u][t, 1] == 0}, \
+       u, {t, 0, 1}, {x, 0, 1}]; \
+       (u[t, x] /. sol[[1]]) /. {t -> 0.3, x -> 0.7}",
+    )
+    .unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    let expected =
+      (0.7 * std::f64::consts::PI).cos() * (0.3 * std::f64::consts::PI).cos();
+    assert!(
+      (val - expected).abs() < 3e-3,
+      "Expected about {expected}, got {val}"
+    );
+  }
+
+  /// The right-hand side may itself carry the acceleration field's own
+  /// space derivatives — `Derivative[2, 0][u]`'s second `x`-derivative,
+  /// via the mixed term `D[u[t, x], {x, 2}, t, t]` — the shape a
+  /// second-order-in-time PDE with mixed space/time derivatives on the
+  /// right takes (e.g. a Wolfram Demonstration modeling a physical medium
+  /// whose restoring force has both an elastic and a "regularizing"
+  /// term). `try_solve_hyperbolic_pde` eliminates the implicit
+  /// acceleration field via a tridiagonal solve each step rather than
+  /// evaluating an explicit formula. For
+  /// `u_tt == u_xx + c u_xxtt` on `[0, 1]` with Dirichlet zero ends,
+  /// `Sin[Pi x] Cos[omega t]` (`omega = Pi / Sqrt[1 + c Pi^2]`) is an
+  /// exact separated solution — substituting it turns the PDE into the
+  /// ODE `omega^2 = Pi^2 / (1 + c Pi^2)` for `omega`, independent of the
+  /// solver's own discretization.
+  #[test]
+  fn pde_hyperbolic_implicit_acceleration_term_matches_regularized_wave_solution()
+   {
+    let result = interpret(
+      "sol = NDSolve[{D[u[t, x], t, t] == \
+       D[u[t, x], {x, 2}] + (1/10) D[u[t, x], {x, 2}, t, t], \
+       u[0, x] == Sin[Pi x], Derivative[1, 0][u][0, x] == 0, \
+       u[t, 0] == 0, u[t, 1] == 0}, u, {t, 0, 1}, {x, 0, 1}]; \
+       (u[t, x] /. sol[[1]]) /. {t -> 0.4, x -> 0.5}",
+    )
+    .unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    let omega =
+      std::f64::consts::PI / (1.0 + 0.1 * std::f64::consts::PI.powi(2)).sqrt();
+    let expected = (std::f64::consts::PI / 2.0).sin() * (omega * 0.4).cos();
+    assert!(
+      (val - expected).abs() < 3e-3,
+      "Expected about {expected}, got {val}"
+    );
+  }
+
+  #[test]
+  fn pde_hyperbolic_returns_named_interpolating_function() {
+    let result = interpret(
+      "NDSolve[{D[u[t, x], t, t] == D[u[t, x], {x, 2}], \
+       u[0, x] == Sin[Pi x], Derivative[1, 0][u][0, x] == 0, \
+       u[t, 0] == 0, u[t, 1] == 0}, u, {t, 0, 1}, {x, 0, 1}]",
+    )
+    .unwrap();
+    assert!(
+      result.starts_with("{{u -> InterpolatingFunction[")
+        && result.contains("{1, 1}"),
+      "Got: {result}"
+    );
+  }
+
+  /// A second-order-in-time evolution equation without its extra initial
+  /// *velocity* condition is only four equations, the parabolic branch's
+  /// own exact count — but that branch's `Derivative[1, 0]` evolution
+  /// matcher doesn't match a bare `Derivative[2, 0]` term, so neither
+  /// branch recognises the shape and the call is left unevaluated rather
+  /// than panicking or guessing a velocity.
+  #[test]
+  fn pde_hyperbolic_missing_velocity_initial_condition_stays_unevaluated() {
+    let result = interpret(
+      "NDSolve[{D[u[t, x], t, t] == D[u[t, x], {x, 2}], \
+       u[0, x] == Sin[Pi x], u[t, 0] == 0, u[t, 1] == 0}, \
+       u, {t, 0, 1}, {x, 0, 1}]",
+    )
+    .unwrap();
+    assert!(
+      result.starts_with("NDSolve["),
+      "Expected an unevaluated NDSolve, got: {result}"
+    );
+  }
+
+  /// The acceleration field must appear *linearly* on the right-hand
+  /// side — `try_solve_hyperbolic_pde` extracts its coefficients by
+  /// symbolically differentiating the (placeholder-substituted) right
+  /// side and rejects the match unless the result has lost every trace of
+  /// the placeholder differentiated against. Squaring
+  /// `Derivative[2, 0][u]` breaks that, so the call stays unevaluated
+  /// instead of silently solving the wrong (linearized) equation.
+  #[test]
+  fn pde_hyperbolic_nonlinear_in_acceleration_stays_unevaluated() {
+    let result = interpret(
+      "NDSolve[{D[u[t, x], t, t] == D[u[t, x], t, t]^2 + D[u[t, x], {x, 2}], \
+       u[0, x] == Sin[Pi x], Derivative[1, 0][u][0, x] == 0, \
+       u[t, 0] == 0, u[t, 1] == 0}, u, {t, 0, 1}, {x, 0, 1}]",
+    )
+    .unwrap();
+    assert!(
+      result.starts_with("NDSolve["),
+      "Expected an unevaluated NDSolve, got: {result}"
     );
   }
 }
@@ -15834,6 +16339,52 @@ mod convolve {
     assert_eq!(
       interpret("Convolve[E^(-x^2), E^(-2*x^2), x, y]").unwrap(),
       "Sqrt[Pi/3]/E^((2*y^2)/3)"
+    );
+  }
+
+  #[test]
+  fn gaussian_pairs_shifted() {
+    // A translated Gaussian still matches: the shift carries straight
+    // through to the result's argument (regression test for the
+    // "Convolutions of Shifted Densities" Demonstration, whose whole point
+    // is convolving densities translated by arbitrary amounts).
+    assert_eq!(
+      interpret("Convolve[E^(-(x-2)^2), E^(-(x-1)^2), x, y]").unwrap(),
+      "Sqrt[Pi/2]/E^((-3 + y)^2/2)"
+    );
+    assert_eq!(
+      interpret("Convolve[E^(-(x-2)^2), E^(-2*(x-1)^2), x, y]").unwrap(),
+      "Sqrt[Pi/3]/E^((2*(-3 + y)^2)/3)"
+    );
+  }
+
+  #[test]
+  fn gaussian_pairs_from_pdf() {
+    // PDF[NormalDistribution[...], x] expands to a reciprocal-of-product
+    // form (1/(E^(...)*Sqrt[2 Pi])), not the bare `E^(-a x^2)` shape — this
+    // is the form Manipulate demonstrations actually produce, so it must be
+    // recognized too, with or without an added shift.
+    // The constant folds all the way to 1/(2 Sqrt[Pi]): the two
+    // `(2 Pi)^(-1/2)` factors merge into `(2 Pi)^-1`, whose `Pi^-1` then
+    // cancels against the `Sqrt[Pi]` of the combined width. The
+    // unrationalized `Sqrt[Pi]/(2 Pi)` is what an n-ary `Times` produced
+    // before it regrouped after that split.
+    assert_eq!(
+      interpret("Convolve[PDF[NormalDistribution[0, 1], x], PDF[NormalDistribution[0, 1], x], x, y]").unwrap(),
+      "1/(2*E^(y^2/4)*Sqrt[Pi])"
+    );
+    assert_eq!(
+      interpret("Convolve[PDF[NormalDistribution[0, 1], x - 2], PDF[NormalDistribution[0, 1], x - 1], x, y]").unwrap(),
+      "1/(2*E^((-3 + y)^2/4)*Sqrt[Pi])"
+    );
+    // Symbolic shifts (the actual shape used by the Demonstration, where the
+    // shift is a Manipulate slider variable rather than a literal number).
+    // wolframscript squares `s + t - y` here rather than `y - s - t`; the
+    // two are equal but not the same expression, and its choice follows no
+    // rule visible from outside — catalogued in conformance_gaps.md.
+    assert_eq!(
+      interpret("Convolve[PDF[NormalDistribution[0, 1], x - t], PDF[NormalDistribution[0, 1], x - s], x, y]").unwrap(),
+      "1/(2*E^((-s - t + y)^2/4)*Sqrt[Pi])"
     );
   }
 

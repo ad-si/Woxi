@@ -408,6 +408,35 @@ fn run_notebook_manipulate_epilog_label_has_no_precision_marker() {
 }
 
 #[test]
+fn run_notebook_cases_guard_with_curried_function_does_not_recurse() {
+  // Regression for a Wolfram Demonstrations Project notebook pattern: a
+  // notebook's Initialization Code defines a curried helper (`f[p_][a_,
+  // b_] := ...`) and then filters pairs with `Cases[list, {x_, y_} /;
+  // f[p][x, y]]`. Evaluating the `/;` guard used to leave a stale
+  // LHS-Condition marker active on the pattern-matcher's backtracking
+  // stack, so the guard's own curried call recursed into itself and hit
+  // `$RecursionLimit` instead of producing a result.
+  let nb = concat!(
+    "Notebook[{\n",
+    "Cell[BoxData[\"lessThan[p_][a_, b_] := a < b\"], \"Input\"],\n",
+    "Cell[BoxData[\"Print[Cases[{{1, 2}, {3, 1}, {2, 3}}, \
+     {x_, y_} /; lessThan[0][x, y]]]\"], \"Input\"]\n",
+    "}]\n"
+  );
+  let dir = std::env::temp_dir();
+  let path = dir.join("woxi_cli_test_curried_condition.nb");
+  std::fs::write(&path, nb).expect("write temp notebook");
+  let (stdout, stderr, ok) = run_file(&path);
+  let _ = std::fs::remove_file(&path);
+  assert!(ok, "woxi run notebook failed: stderr={stderr}");
+  assert!(
+    !stderr.contains("RecursionLimit"),
+    "guard with curried function call hit RecursionLimit: stderr={stderr}"
+  );
+  assert_eq!(stdout.trim(), "{{1, 2}, {2, 3}}");
+}
+
+#[test]
 fn run_notebook_notebook_directory_resolves_to_file_dir() {
   // Regression: `NotebookDirectory[]` must resolve to the `.nb` file's
   // own directory when run via `woxi run` (so Export paths etc. work),

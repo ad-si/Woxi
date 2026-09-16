@@ -2532,6 +2532,56 @@ mod circle_times {
   }
 }
 
+mod tilde_tilde {
+  use super::*;
+
+  // Regression: `\[TildeTilde]` (and the bare ≈ character) parsed as infix
+  // fell through to the generic named-character-identifier rule instead of
+  // the operator table, so `a \[TildeTilde] b` misparsed as implicit
+  // multiplication `a*b*TildeTilde` — encountered via a real Wolfram
+  // Demonstrations notebook whose Manipulate body wrote its caption as
+  // `Pi/4 \[TildeTilde] Sum[…]`.
+  #[test]
+  fn infix_parses_to_function_call() {
+    assert_eq!(
+      interpret("a \\[TildeTilde] b").unwrap(),
+      interpret("TildeTilde[a, b]").unwrap()
+    );
+    assert_eq!(
+      interpret("a \u{2248} b").unwrap(),
+      interpret("TildeTilde[a, b]").unwrap()
+    );
+    assert_eq!(
+      interpret("a \\[TildeTilde] b // FullForm").unwrap(),
+      interpret("TildeTilde[a, b] // FullForm").unwrap()
+    );
+  }
+
+  #[test]
+  fn displays_as_infix_operator() {
+    assert_eq!(interpret("TildeTilde[a, b]").unwrap(), "a \u{2248} b");
+    assert_eq!(
+      interpret("TildeTilde[a, b, c]").unwrap(),
+      "a \u{2248} b \u{2248} c"
+    );
+    // InputForm renders the same infix operator (not the function call).
+    assert_eq!(
+      interpret("ToString[TildeTilde[a, b], InputForm]").unwrap(),
+      "a \u{2248} b"
+    );
+  }
+
+  #[test]
+  fn stays_symbolic_inside_hold_form() {
+    // Matches the shape found in the source notebook: a relation used
+    // purely for display inside HoldForm, never evaluated.
+    assert_eq!(
+      interpret("HoldForm[Pi/4 \\[TildeTilde] Sum[k, {k, 1, 3}]]").unwrap(),
+      "HoldForm[Pi/4 \u{2248} Sum[k, {k, 1, 3}]]"
+    );
+  }
+}
+
 mod circle_dot {
   use super::*;
 

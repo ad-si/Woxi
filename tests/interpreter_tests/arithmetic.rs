@@ -11814,3 +11814,86 @@ mod coefficient_reads_a_quotient_node {
     );
   }
 }
+
+/// Merging like bases inside an n-ary `Times` can hand back a product:
+/// `(2 Pi)^(-1/2) (2 Pi)^(-1/2)` merges to `(2 Pi)^-1`, which distributes
+/// into `1/2 · Pi^-1`. Those new factors have bases the grouping has already
+/// seen, so it has to run again — otherwise a third factor sharing one of
+/// them is left unmerged and the product stays unreduced.
+///
+/// Only the flat `Times[…]` spelling reached this: `a*b*c` parses as nested
+/// binary products and so folds pairwise, which re-enters the grouping for
+/// free. `Convolve` of two normal PDFs builds the flat form, which is how
+/// this was found.
+mod an_n_ary_times_regroups_after_a_product_base_splits {
+  use super::*;
+
+  #[test]
+  fn a_third_factor_merges_with_the_split_parts() {
+    clear_state();
+    assert_eq!(
+      interpret("Times[1/Sqrt[2*Pi], 1/Sqrt[2*Pi], Sqrt[Pi]]").unwrap(),
+      "1/(2*Sqrt[Pi])"
+    );
+    // The pairwise spelling always agreed; the two must not drift apart.
+    assert_eq!(
+      interpret("1/Sqrt[2*Pi]*1/Sqrt[2*Pi]*Sqrt[Pi]").unwrap(),
+      "1/(2*Sqrt[Pi])"
+    );
+  }
+
+  #[test]
+  fn the_leftover_base_cancels_completely() {
+    clear_state();
+    // Left unregrouped this printed the unreduced `Pi/(2*Pi)`.
+    assert_eq!(
+      interpret(
+        "Times[Power[2*Pi, -1/2], Power[2*Pi, -1/2], Power[Pi, 1/2], \
+         Power[Pi, 1/2]]"
+      )
+      .unwrap(),
+      "1/2"
+    );
+    assert_eq!(
+      interpret("Times[(x*y)^(1/2), (x*y)^(1/2), x]").unwrap(),
+      "x^2*y"
+    );
+  }
+
+  #[test]
+  fn a_plain_base_is_not_split_apart() {
+    clear_state();
+    // `2^(3/2)` comes back as `2 Sqrt[2]`. Splicing that back in would
+    // regroup straight into `2^(3/2)` again and never terminate, so only a
+    // product base is spliced.
+    assert_eq!(
+      interpret("Times[Sqrt[2], Sqrt[2], Sqrt[2]]").unwrap(),
+      "2*Sqrt[2]"
+    );
+    assert_eq!(interpret("Times[Sqrt[2], Sqrt[2]]").unwrap(), "2");
+  }
+
+  #[test]
+  fn convolving_two_normal_pdfs_rationalizes_the_denominator() {
+    clear_state();
+    // The convolution is the PDF of NormalDistribution[0, Sqrt[2]], whose
+    // constant is 1/(2 Sqrt[Pi]) — not the unrationalized Sqrt[Pi]/(2 Pi).
+    assert_eq!(
+      interpret(
+        "Convolve[PDF[NormalDistribution[0, 1], x], \
+         PDF[NormalDistribution[0, 1], x], x, y]"
+      )
+      .unwrap(),
+      "1/(2*E^(y^2/4)*Sqrt[Pi])"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Convolve[PDF[NormalDistribution[0, 1], x - 2], \
+         PDF[NormalDistribution[0, 1], x - 1], x, y]"
+      )
+      .unwrap(),
+      "1/(2*E^((-3 + y)^2/4)*Sqrt[Pi])"
+    );
+  }
+}

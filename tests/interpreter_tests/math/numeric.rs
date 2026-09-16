@@ -2179,59 +2179,62 @@ mod find_divisions {
 mod reciprocal_trig_last_bit {
   use super::*;
 
-  /// Assert that `code` is computed as `reciprocal` — bit for bit, since the
-  /// choice of formula is exactly what is under test — and that the result is
-  /// the pinned wolframscript value to within a last bit.
-  ///
-  /// The value cannot be pinned any tighter than that: it is only as accurate
-  /// as the libm that produced it, and the platforms disagree in the last bit
-  /// on `Tan[0.3]`, `Tan[-0.7]` and `Tanh[0.8]` (macOS, where the expected
-  /// values were recorded from wolframscript, against the glibc of Linux CI).
-  /// Hard-coding one platform's digits only moves the failure to the other.
-  fn reciprocal_value(code: &str, reciprocal: &str, expected: f64) {
-    let value = interpret(code).unwrap();
-    assert_eq!(
-      value,
-      interpret(reciprocal).unwrap(),
-      "{code} must be computed as {reciprocal}"
-    );
-    let actual: f64 = value.parse().unwrap();
-    assert!(
-      (actual - expected).abs() <= f64::EPSILON * expected.abs(),
-      "for {code}: {actual} is more than a last bit away from {expected}"
-    );
-  }
-
   /// `Cot[x]` is the reciprocal of the tangent, not the cosine over the
   /// sine. The two formulas differ in the last bit at some arguments, and
   /// wolframscript takes the reciprocal. Found by the differential fuzzer
   /// on `Cot[0.8]`, which came out as `...44` instead of `...43`.
+  ///
+  /// The last bit itself cannot be pinned as a literal: libm's `tan` and
+  /// `tanh` round differently on macOS and on the Linux of CI, so
+  /// `Cot[0.3]` prints `3.232728143765828` on one and
+  /// `3.2327281437658275` on the other. Asserting the reciprocal identity
+  /// instead pins exactly the property that was wrong — which formula is
+  /// used — on every platform, and a scaled integer pins the magnitude.
   #[test]
   fn cot_takes_the_reciprocal_of_tan() {
-    for (code, reciprocal, expected) in [
-      ("Cot[0.8]", "1/Tan[0.8]", 0.9712146006504743),
-      ("Cot[0.3]", "1/Tan[0.3]", 3.232728143765828),
-      ("Cot[1.5]", "1/Tan[1.5]", 0.07091484430265245),
-      ("Cot[2.0]", "1/Tan[2.0]", -0.45765755436028577),
-      ("Cot[-0.7]", "1/Tan[-0.7]", -1.1872418321266796),
-      ("Cot[5.5]", "1/Tan[5.5]", -1.0044355348765333),
+    for (x, scaled) in [
+      ("0.8", "971"),
+      ("0.3", "3233"),
+      ("1.5", "71"),
+      ("2.0", "-458"),
+      ("-0.7", "-1187"),
+      ("5.5", "-1004"),
     ] {
-      reciprocal_value(code, reciprocal, expected);
+      assert_eq!(
+        interpret(&format!("Cot[{x}]")).unwrap(),
+        interpret(&format!("1/Tan[{x}]")).unwrap(),
+        "Cot[{x}] must be 1/Tan[{x}], bit for bit"
+      );
+      assert_eq!(
+        interpret(&format!("Round[1000*Cot[{x}]]")).unwrap(),
+        scaled,
+        "for Cot[{x}]"
+      );
     }
   }
 
-  /// The rest of the reciprocal family already matched; keep them pinned so
-  /// a shared refactor cannot move them.
+  /// The rest of the reciprocal family already took the reciprocal; keep
+  /// them pinned so a shared refactor cannot move them to a quotient of two
+  /// libm calls.
   #[test]
   fn the_other_reciprocals_are_unchanged() {
-    for (code, reciprocal, expected) in [
-      ("Csc[0.8]", "1/Sin[0.8]", 1.394007819388636),
-      ("Sec[0.8]", "1/Cos[0.8]", 1.43532419967224),
-      ("Coth[0.8]", "1/Tanh[0.8]", 1.5059407020437066),
-      ("Csch[0.8]", "1/Sinh[0.8]", 1.1259917397884818),
-      ("Sech[0.8]", "1/Cosh[0.8]", 0.7476999182374195),
+    for (head, base, scaled) in [
+      ("Csc", "Sin", "1394"),
+      ("Sec", "Cos", "1435"),
+      ("Coth", "Tanh", "1506"),
+      ("Csch", "Sinh", "1126"),
+      ("Sech", "Cosh", "748"),
     ] {
-      reciprocal_value(code, reciprocal, expected);
+      assert_eq!(
+        interpret(&format!("{head}[0.8]")).unwrap(),
+        interpret(&format!("1/{base}[0.8]")).unwrap(),
+        "{head}[0.8] must be 1/{base}[0.8], bit for bit"
+      );
+      assert_eq!(
+        interpret(&format!("Round[1000*{head}[0.8]]")).unwrap(),
+        scaled,
+        "for {head}[0.8]"
+      );
     }
   }
 }
@@ -2274,5 +2277,135 @@ mod exact_roots {
     ] {
       assert_eq!(interpret(code).unwrap(), expected, "for {code}");
     }
+  }
+
+  /// `CubeRoot` is only a spelling of `Surd[x, 3]`, but it used to evaluate a
+  /// machine-precision base with `f64::cbrt` where `Surd` used `x^(1/n)`.
+  /// Those disagree in the last bit for roughly 7% of inputs, so the two
+  /// spellings printed different numbers (`CubeRoot[7.]` gave
+  /// `1.9129311827723892` against wolframscript's `1.912931182772389`), and
+  /// `cbrt` was also the one place the MSVC libm's last bit differed from
+  /// macOS and glibc, which broke `CubeRoot[2.]` on the Windows nightly.
+  #[test]
+  fn cube_root_agrees_with_surd_on_machine_reals() {
+    for base in [
+      "2.",
+      "7.",
+      "3.",
+      "10.",
+      "0.5",
+      "1.5",
+      "123.456",
+      "1.",
+      "0.",
+      "-7.",
+      "-2.",
+      "-0.5",
+      "10000000000.",
+      "0.0000000001",
+    ] {
+      let cube_root = interpret(&format!("CubeRoot[{base}]")).unwrap();
+      let surd = interpret(&format!("Surd[{base}, 3]")).unwrap();
+      assert_eq!(cube_root, surd, "CubeRoot[{base}] vs Surd[{base}, 3]");
+      // For a non-negative base the real root is the principal one, so both
+      // spellings must also agree with the plain power — which is what
+      // wolframscript prints for all three.
+      if !base.starts_with('-') {
+        let power = interpret(&format!("({base})^(1/3)")).unwrap();
+        assert_eq!(cube_root, power, "CubeRoot[{base}] vs ({base})^(1/3)");
+      }
+    }
+    assert_eq!(interpret("CubeRoot[7.]").unwrap(), "1.912931182772389");
+    assert_eq!(interpret("CubeRoot[-7.]").unwrap(), "-1.912931182772389");
+  }
+
+  /// A machine-precision base keeps its inexactness: `Surd[1., 3]` is `1.`,
+  /// not `1`. The numeric fallback rounded whole results back to integers.
+  #[test]
+  fn machine_precision_bases_stay_inexact() {
+    for (code, expected) in [
+      ("Surd[1., 3]", "1."),
+      ("Surd[0., 3]", "0."),
+      ("Surd[-0., 3]", "0."),
+      ("Surd[16., 4]", "2."),
+      ("Surd[2., 1]", "2."),
+      ("Surd[2., -1]", "0.5"),
+      ("Surd[-8., -3]", "-0.5"),
+      ("CubeRoot[0.]", "0."),
+      ("CubeRoot[8.]", "2."),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "for {code}");
+    }
+  }
+
+  /// The inexact cases go through `Power` like the exact ones, so they share
+  /// its `Surd::noneg`/`Power::infy` behaviour instead of silently returning
+  /// an unevaluated call or a real `Infinity`.
+  #[test]
+  fn inexact_bases_share_the_exact_error_behaviour() {
+    assert_eq!(interpret("Surd[-8., 2]").unwrap(), "Indeterminate");
+    assert_eq!(interpret("Surd[-8., -2]").unwrap(), "Indeterminate");
+    assert_eq!(interpret("Surd[0., -3]").unwrap(), "ComplexInfinity");
+    let r = interpret_with_stdout("Surd[-8., 2]").unwrap();
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "Surd::noneg: Surd is not defined for even roots of negative values."
+    )));
+  }
+
+  /// `Surd` needs a literal integer degree; wolframscript reports anything
+  /// else numeric with `Surd::int` and leaves the call unevaluated rather
+  /// than reading `Surd[8, 1/2]` as `8^2`. A degree that is merely symbolic
+  /// is not an error.
+  #[test]
+  fn non_integer_degrees_are_rejected() {
+    for code in ["Surd[8, 1/2]", "Surd[8, 2.]", "Surd[2, 2.]"] {
+      let r = interpret_with_stdout(code).unwrap();
+      assert_eq!(r.result, code, "for {code}");
+      assert!(
+        r.warnings.iter().any(|w| w.contains(&format!(
+          "Surd::int: Integer expected at position 2 in {code}."
+        ))),
+        "for {code}: {:?}",
+        r.warnings
+      );
+    }
+    let r = interpret_with_stdout("Surd[8, n]").unwrap();
+    assert_eq!(r.result, "Surd[8, n]");
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+  }
+
+  /// A non-real base is reported under the head it was called by and stays
+  /// unevaluated in that spelling — `CubeRoot[I]` does not canonicalize to
+  /// `Surd[I, 3]` the way the symbolic `CubeRoot[x]` does.
+  #[test]
+  fn non_real_bases_are_rejected_under_their_own_head() {
+    for (code, head, param) in [
+      ("Surd[I, 3]", "Surd", "I"),
+      ("Surd[1 + I, 3]", "Surd", "1 + I"),
+      ("CubeRoot[I]", "CubeRoot", "I"),
+      ("CubeRoot[1 + I]", "CubeRoot", "1 + I"),
+    ] {
+      let r = interpret_with_stdout(code).unwrap();
+      assert_eq!(r.result, code, "for {code}");
+      assert!(
+        r.warnings.iter().any(|w| w.contains(&format!(
+          "{head}::preal: The parameter {param} should be real valued."
+        ))),
+        "for {code}: {:?}",
+        r.warnings
+      );
+    }
+    // The degree is checked first: a non-integer degree wins over the base.
+    let r = interpret_with_stdout("Surd[I, 1/2]").unwrap();
+    assert_eq!(r.result, "Surd[I, 1/2]");
+    assert!(r.warnings.iter().any(|w| w.contains("Surd::int")));
+    assert!(!r.warnings.iter().any(|w| w.contains("preal")));
+    // A symbolic base that merely mentions I is still canonicalized.
+    assert_eq!(interpret("CubeRoot[x + I]").unwrap(), "Surd[I + x, 3]");
+    // A zero imaginary part still makes it complex. Woxi has no `Complex`
+    // head, so this is the one case that cannot go by the head.
+    let r = interpret_with_stdout("CubeRoot[2. + 0. I]").unwrap();
+    assert_eq!(r.result, "CubeRoot[2. + 0.*I]");
+    assert!(r.warnings.iter().any(|w| w.contains("CubeRoot::preal")));
   }
 }

@@ -34,18 +34,15 @@ fn polynomial_term_to_series_data(
     for _ in 1..span {
       coeffs.push(Expr::Integer(0));
     }
-    Expr::FunctionCall {
-      name: "SeriesData".to_string(),
-      args: vec![
-        sd_var.clone(),
-        sd_x0.clone(),
-        Expr::List(coeffs.into()),
-        Expr::Integer(n),
-        Expr::Integer(nmax_int),
-        Expr::Integer(1),
-      ]
-      .into(),
-    }
+    let data = vec![
+      sd_var.clone(),
+      sd_x0.clone(),
+      Expr::List(coeffs.into()),
+      Expr::Integer(n),
+      Expr::Integer(nmax_int),
+      Expr::Integer(1),
+    ];
+    call("SeriesData", data)
   };
   // Constant w.r.t. var → coeff at order 0
   if !crate::functions::polynomial_ast::contains_var(e, var_name) {
@@ -103,18 +100,15 @@ fn polynomial_term_to_series_data(
           other => neg1(other.clone()),
         })
         .collect();
-      return Some(Expr::FunctionCall {
-        name: "SeriesData".to_string(),
-        args: vec![
-          sa[0].clone(),
-          sa[1].clone(),
-          Expr::List(negated.into()),
-          sa[3].clone(),
-          sa[4].clone(),
-          sa[5].clone(),
-        ]
-        .into(),
-      });
+      let data = vec![
+        sa[0].clone(),
+        sa[1].clone(),
+        Expr::List(negated.into()),
+        sa[3].clone(),
+        sa[4].clone(),
+        sa[5].clone(),
+      ];
+      return Some(call("SeriesData", data));
     }
     return None;
   }
@@ -367,18 +361,15 @@ fn try_series_data_plus(
     .filter(|(i, _)| !series_idx_set.contains(i))
     .map(|(_, a)| a.clone())
     .collect();
-  let merged = Expr::FunctionCall {
-    name: "SeriesData".to_string(),
-    args: vec![
-      var0,
-      x0_0,
-      Expr::List(new_coeffs.into()),
-      Expr::Integer(adjusted_nmin),
-      Expr::Integer(new_nmax),
-      Expr::Integer(common_denom),
-    ]
-    .into(),
-  };
+  let data = vec![
+    var0,
+    x0_0,
+    Expr::List(new_coeffs.into()),
+    Expr::Integer(adjusted_nmin),
+    Expr::Integer(new_nmax),
+    Expr::Integer(common_denom),
+  ];
+  let merged = call("SeriesData", data);
   if other.is_empty() {
     Ok(Some(merged))
   } else {
@@ -528,19 +519,15 @@ fn try_series_data_times(
   {
     coeffs_f.pop();
   }
-
-  let merged = Expr::FunctionCall {
-    name: "SeriesData".to_string(),
-    args: vec![
-      var0,
-      x0_0,
-      Expr::List(coeffs_f.into()),
-      Expr::Integer(nmin_f),
-      Expr::Integer(nmax_f),
-      Expr::Integer(common_denom),
-    ]
-    .into(),
-  };
+  let data = vec![
+    var0,
+    x0_0,
+    Expr::List(coeffs_f.into()),
+    Expr::Integer(nmin_f),
+    Expr::Integer(nmax_f),
+    Expr::Integer(common_denom),
+  ];
+  let merged = call("SeriesData", data);
 
   let series_idx_set: std::collections::HashSet<usize> =
     series_indices.iter().copied().collect();
@@ -6897,7 +6884,45 @@ pub fn is_pos_numeric(e: &Expr) -> bool {
   }
 }
 
+/// The factors of a product, flattened; a non-product is its own only factor.
+fn product_factors_of(expr: &Expr) -> Vec<Expr> {
+  let mut out = Vec::new();
+  fn walk(e: &Expr, out: &mut Vec<Expr>) {
+    match e {
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        for a in args {
+          walk(a, out);
+        }
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left,
+        right,
+      } => {
+        walk(left, out);
+        walk(right, out);
+      }
+      _ => out.push(e.clone()),
+    }
+  }
+  walk(expr, &mut out);
+  out
+}
+
 fn combine_like_bases(args: Vec<Expr>) -> Result<Vec<Expr>, InterpreterError> {
+  combine_like_bases_depth(args, 0)
+}
+
+/// How often the grouping may re-run after a merged power splits back into
+/// factors. Each round strictly simplifies a product base into its parts, so
+/// a handful of rounds is plenty; the cap only guards against a `power_two`
+/// that hands back a product the grouping would rebuild.
+const COMBINE_LIKE_BASES_MAX_ROUNDS: usize = 4;
+
+fn combine_like_bases_depth(
+  args: Vec<Expr>,
+  depth: usize,
+) -> Result<Vec<Expr>, InterpreterError> {
   if args.len() <= 1 {
     return Ok(args);
   }
@@ -6964,6 +6989,13 @@ fn combine_like_bases(args: Vec<Expr>) -> Result<Vec<Expr>, InterpreterError> {
   }
 
   let mut result: Vec<Expr> = Vec::new();
+  // Merging a power of a PRODUCT base can hand back a product of its own:
+  // `(2 Pi)^(-1/2) (2 Pi)^(-1/2)` merges to `(2 Pi)^-1`, which distributes
+  // into `1/2 · Pi^-1`. Those new factors have bases of their own that may
+  // merge with groups already formed (here `Pi^(1/2)`), so the grouping has
+  // to run again over the spliced factors — otherwise
+  // `Sqrt[Pi]/(2 Pi)` and even the unreduced `Pi/(2 Pi)` survive.
+  let mut split_into_factors = false;
   for (_key, base, exponents) in groups {
     if exponents.len() == 1 {
       // Single occurrence — no combining needed, reconstruct original form
@@ -6984,10 +7016,27 @@ fn combine_like_bases(args: Vec<Expr>) -> Result<Vec<Expr>, InterpreterError> {
         }
         continue;
       }
-      result.push(power_two(&base, &combined_exp)?);
+      let merged = power_two(&base, &combined_exp)?;
+      // Only a PRODUCT base can split into factors with bases the grouping
+      // has not already seen. A plain base must not be spliced: `2^(3/2)`
+      // comes back as `2 Sqrt[2]`, which would regroup straight back into
+      // `2^(3/2)` and spin forever.
+      let merged_factors = product_factors_of(&merged);
+      if merged_factors.len() > 1
+        && product_factors_of(&base).len() > 1
+        && depth < COMBINE_LIKE_BASES_MAX_ROUNDS
+      {
+        split_into_factors = true;
+        result.extend(merged_factors);
+      } else {
+        result.push(merged);
+      }
     }
   }
   result.extend(non_combinable);
+  if split_into_factors {
+    return combine_like_bases_depth(result, depth + 1);
+  }
 
   // Second pass: combine bases with the same fractional exponent
   // e.g. Sqrt[2] * Sqrt[3] = 2^(1/2) * 3^(1/2) → 6^(1/2) = Sqrt[6]
@@ -7403,19 +7452,15 @@ fn try_series_data_times_var_power(
     }
     (trunc_nmax, out)
   };
-
-  Some(Expr::FunctionCall {
-    name: "SeriesData".to_string(),
-    args: vec![
-      var,
-      x0,
-      Expr::List(new_coeffs.into()),
-      Expr::Integer(new_nmin),
-      Expr::Integer(new_nmax),
-      Expr::Integer(d),
-    ]
-    .into(),
-  })
+  let data = vec![
+    var,
+    x0,
+    Expr::List(new_coeffs.into()),
+    Expr::Integer(new_nmin),
+    Expr::Integer(new_nmax),
+    Expr::Integer(d),
+  ];
+  Some(call("SeriesData", data))
 }
 
 /// Times[args...] - Product of arguments, with list threading
@@ -7741,18 +7786,15 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
             .map(|c| times_ast(&[product.clone(), c.clone()]))
             .collect();
           let new_coeffs = new_coeffs?;
-          return Ok(Expr::FunctionCall {
-            name: "SeriesData".to_string(),
-            args: vec![
-              sd_args[0].clone(),
-              sd_args[1].clone(),
-              Expr::List(new_coeffs.into()),
-              sd_args[3].clone(),
-              sd_args[4].clone(),
-              sd_args[5].clone(),
-            ]
-            .into(),
-          });
+          let data = vec![
+            sd_args[0].clone(),
+            sd_args[1].clone(),
+            Expr::List(new_coeffs.into()),
+            sd_args[3].clone(),
+            sd_args[4].clone(),
+            sd_args[5].clone(),
+          ];
+          return Ok(call("SeriesData", data));
         }
       }
     }
@@ -10630,18 +10672,15 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
       (&sa[2], &sa[3], &sa[4])
       && coeffs.is_empty()
     {
-      return Ok(Expr::FunctionCall {
-        name: "SeriesData".to_string(),
-        args: vec![
-          sa[0].clone(),
-          sa[1].clone(),
-          Expr::List(vec![].into()),
-          Expr::Integer(nmin * n),
-          Expr::Integer(nmax * n),
-          sa[5].clone(),
-        ]
-        .into(),
-      });
+      let data = vec![
+        sa[0].clone(),
+        sa[1].clone(),
+        Expr::List(vec![].into()),
+        Expr::Integer(nmin * n),
+        Expr::Integer(nmax * n),
+        sa[5].clone(),
+      ];
+      return Ok(call("SeriesData", data));
     }
     let copies: Vec<Expr> =
       std::iter::repeat_n(base.clone(), *n as usize).collect();

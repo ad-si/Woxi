@@ -60,6 +60,17 @@ slow-timeout = { period = "120s", terminate-after = 1 }
 filter = 'test(demonstration_sphere_torus_segments_manipulate_reshapes_and_spreads)'
 slow-timeout = { period = "60s", terminate-after = 1 }
 
+# `demonstration_guided_pair_manipulate_traces_its_ndsolve_trajectory`
+# integrates a coupled two-equation system with `NDSolve` and samples three
+# `ParametricPlot3D` curves off the solution, twice over per view (once to
+# build/refresh the widget, once to re-render for the picture comparison),
+# for three views in all: ~18s standalone in debug builds, right at the
+# default 20s timeout and well past it under parallel load. Give it a wider
+# window.
+[[profile.default.overrides]]
+filter = 'test(demonstration_guided_pair_manipulate_traces_its_ndsolve_trajectory)'
+slow-timeout = { period = "120s", terminate-after = 1 }
+
 # `rolling_polygon_on_catenary_notebook_rolls_its_polygon` re-solves the
 # rolling polygon's contact geometry and rasterizes the traced curve for every
 # animation step: ~12s standalone in debug builds, which the 20s default does
@@ -75,6 +86,15 @@ slow-timeout = { period = "120s", terminate-after = 1 }
 # parallel load. Give it a wider window.
 [[profile.default.overrides]]
 filter = 'test(formatting_every_script_keeps_it_the_same_code)'
+slow-timeout = { period = "120s", terminate-after = 1 }
+
+# `unsolved_search_stays_unevaluated` runs `FindInstance` over a five-variable
+# fifth-power Diophantine system that has no solution inside the search radius,
+# so it always exhausts the bounded search rather than returning early: ~5s
+# standalone on fast hardware, but past the 20s default on the slower Windows
+# runner of the nightly job under full parallel load. Give it a wider window.
+[[profile.default.overrides]]
+filter = 'test(unsolved_search_stays_unevaluated)'
 slow-timeout = { period = "120s", terminate-after = 1 }
 
 # The remaining (non-`#[ignore]`d) RosettaCode script snapshots run a few

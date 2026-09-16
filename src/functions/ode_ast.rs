@@ -5,6 +5,7 @@
 
 #[allow(unused_imports)]
 use super::*;
+use crate::functions::calculus_ast::differentiate_expr;
 use crate::functions::math_ast::{make_sqrt, rat_reduce};
 use crate::syntax::{expr_children, map_children};
 
@@ -131,6 +132,14 @@ fn dsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(unevaluated("DSolve", args));
     }
   };
+
+  // `DSolve[{…}, {y1[t], y2[t], …}, t]` — a coupled system of dependent
+  // functions, handled by the operator-elimination solver above instead of
+  // the single-variable machinery below.
+  if let Expr::List(dep_items) = dep_arg {
+    let items: Vec<Expr> = dep_items.iter().cloned().collect();
+    return dsolve_linear_system(eqns_arg, &items, &x_name);
+  }
 
   // Determine dependent function name and whether Function form is requested
   let (y_name, function_form) = match dep_arg {
@@ -393,7 +402,11 @@ fn ndsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     return match ndsolve_pde(&positional) {
       Ok(Some(result)) => Ok(restore_compound_heads(&result, &renames)),
-      Ok(None) => Ok(unevaluated("NDSolve", args)),
+      Ok(None) => match ndsolve_pde_hyperbolic(&positional) {
+        Ok(Some(result)) => Ok(restore_compound_heads(&result, &renames)),
+        Ok(None) => Ok(unevaluated("NDSolve", args)),
+        Err(e) => Err(e),
+      },
       Err(e) => Err(e),
     };
   }
@@ -643,6 +656,35 @@ fn try_pde_evolution_term(
   try_side(lhs, rhs).or_else(|| try_side(rhs, lhs))
 }
 
+/// Recognise `Derivative[2, 0][u][t, x] == rhs` (or the reverse) — the
+/// evolution equation of a hyperbolic (second-order-in-time) PDE. Unlike
+/// [`try_pde_evolution_term`], no coefficient scaling on the
+/// time-derivative term is recognised.
+fn try_pde_evolution_term_order2(
+  eq: &Expr,
+  u_name: &str,
+  t_name: &str,
+  x_name: &str,
+  swap: bool,
+) -> Option<Expr> {
+  let (lhs, rhs) = as_equal_pair(eq)?;
+  let is_d2udt2 = |e: &Expr| {
+    matches!(
+      match_pde_term_roles(e, u_name, swap),
+      Some((2, 0, t_arg, x_arg))
+        if matches!(&t_arg, Expr::Identifier(n) if n == t_name)
+          && matches!(&x_arg, Expr::Identifier(n) if n == x_name)
+    )
+  };
+  if is_d2udt2(lhs) {
+    return Some(rhs.clone());
+  }
+  if is_d2udt2(rhs) {
+    return Some(lhs.clone());
+  }
+  None
+}
+
 /// Recognise `u[t0, x] == rhs(x)` (or `u[x, t0]` when `swap` is set, or
 /// either reversed) — the initial condition at `t == t0`. Returns the RHS.
 fn try_pde_initial_condition(
@@ -652,20 +694,32 @@ fn try_pde_initial_condition(
   t0: f64,
   swap: bool,
 ) -> Option<Expr> {
+  try_pde_initial_condition_ord(eq, u_name, x_name, t0, 0, swap)
+}
+
+/// Like [`try_pde_initial_condition`], but for the `time_order`-th time
+/// derivative's initial value: `time_order == 1` recognises
+/// `Derivative[1, 0][u][t0, x] == rhs(x)` — the initial *velocity*
+/// condition a second-order-in-time (hyperbolic) PDE needs in addition to
+/// the ordinary initial value.
+fn try_pde_initial_condition_ord(
+  eq: &Expr,
+  u_name: &str,
+  x_name: &str,
+  t0: f64,
+  time_order: usize,
+  swap: bool,
+) -> Option<Expr> {
   let (lhs, rhs) = as_equal_pair(eq)?;
   let is_ic = |e: &Expr| {
-    let Expr::FunctionCall { name, args } = e else {
+    let Some((dt, dx, t_arg, x_arg)) = match_pde_term_roles(e, u_name, swap)
+    else {
       return false;
     };
-    let (t_arg, x_arg) = if swap {
-      (&args[1], &args[0])
-    } else {
-      (&args[0], &args[1])
-    };
-    name == u_name
-      && args.len() == 2
-      && matches!(x_arg, Expr::Identifier(n) if n == x_name)
-      && nval_to_f64(t_arg)
+    dt == time_order
+      && dx == 0
+      && matches!(&x_arg, Expr::Identifier(n) if n == x_name)
+      && nval_to_f64(&t_arg)
         .is_some_and(|v| (v - t0).abs() <= 1e-9 * t0.abs().max(1.0))
   };
   if is_ic(lhs) {
@@ -1621,6 +1675,672 @@ fn transpose_grid(grid: &[Vec<f64>]) -> Vec<Vec<f64>> {
     .collect()
 }
 
+// ─── Hyperbolic PDE NDSolve (order reduction + implicit method of lines) ──
+
+/// `NDSolve[eqns, u, {t domain}, {x domain}]` for a single hyperbolic
+/// (second-order-in-time) 1-D PDE `Derivative[2, 0][u][t, x] == rhs`,
+/// where `rhs` may reference `u` and its pure space derivatives (up to
+/// second order), the velocity field `Derivative[1, 0][u]` and its own
+/// pure space derivatives, and even the acceleration field itself —
+/// `Derivative[2, 0][u]` — and *its* space derivatives, so long as the
+/// dependence on the acceleration field is linear. That last shape is
+/// what a wave-type equation with mixed space/time derivatives on the
+/// right looks like once it's written out, e.g. the Wolfram Demonstration
+/// "A Passive Cochlear Model"'s
+/// `D[u[t,x],t,t] == a(x) (D[u,x,x]-…) + b(x) (D[u,x,x,t]-…) + c (D[u,x,x,t,t]-…)`.
+///
+/// The equation is reduced to the first-order system `D[u,t] == v`,
+/// `D[v,t] == w`; substituting these into `rhs` turns every mixed
+/// derivative with one time derivative into a pure space derivative of
+/// `v`, and every one with two into a pure space derivative of `w`
+/// itself — the very quantity being solved for. At each method-of-lines
+/// step, `w`'s grid values are eliminated by solving the tridiagonal
+/// linear relation the (linear-in-`w`) equation implies, via
+/// [`solve_tridiagonal`], rather than by evaluating an explicit formula
+/// as the first-order-in-time branch (`try_solve_pde_system`) does.
+///
+/// Needs exactly five equations: the evolution equation, an initial value
+/// `u(t0, x) == f(x)`, an initial velocity `D[u, t](t0, x) == g(x)`, and a
+/// Dirichlet or Neumann boundary condition at each end of the space
+/// domain. Only a single dependent function is supported (no coupled
+/// hyperbolic systems). Returns `Ok(None)` when the equations aren't in
+/// that shape, or the right-hand side isn't linear in the acceleration
+/// field, so the caller leaves the call unevaluated.
+fn ndsolve_pde_hyperbolic(
+  args: &[Expr],
+) -> Result<Option<Expr>, InterpreterError> {
+  let Expr::Identifier(u_name) = &args[1] else {
+    return Ok(None);
+  };
+  let Some(dom_a) = parse_pde_domain(&args[2]) else {
+    return Ok(None);
+  };
+  let Some(dom_b) = parse_pde_domain(&args[3]) else {
+    return Ok(None);
+  };
+
+  let eq_items: Vec<Expr> = match &args[0] {
+    Expr::List(items) => items.to_vec(),
+    other => vec![other.clone()],
+  };
+  let eq_items = flatten_chained_pde_equalities(&eq_items);
+  if eq_items.len() != 5 {
+    return Ok(None);
+  }
+
+  for (t_dom, x_dom) in [(&dom_a, &dom_b), (&dom_b, &dom_a)] {
+    for swap in [false, true] {
+      if let Some(result) =
+        try_solve_hyperbolic_pde(&eq_items, u_name, t_dom, x_dom, &dom_a, swap)?
+      {
+        return Ok(Some(result));
+      }
+    }
+  }
+  Ok(None)
+}
+
+/// Rewrite a hyperbolic PDE's right-hand side into the placeholder
+/// identifiers `try_solve_hyperbolic_pde` compiles numeric values into:
+/// `u`'s own value and its first/second space derivative become
+/// `NDSolve$U`/`NDSolve$UX`/`NDSolve$UXX`; the velocity field
+/// `Derivative[1, 0][u]` and its space derivatives become
+/// `NDSolve$V`/`NDSolve$VX`/`NDSolve$VXX`; and the acceleration field
+/// `Derivative[2, 0][u]` and its space derivatives become
+/// `NDSolve$W`/`NDSolve$WX`/`NDSolve$WXX`. Returns `None` for any other
+/// derivative shape (a third time derivative, a derivative at a point
+/// other than `(t, x)`, …) this solver doesn't attempt.
+fn rewrite_pde_rhs_hyperbolic(
+  expr: &Expr,
+  u_name: &str,
+  t_name: &str,
+  x_name: &str,
+  swap: bool,
+) -> Option<Expr> {
+  if let Some((dt, dx, t_arg, x_arg)) = match_pde_term_roles(expr, u_name, swap)
+  {
+    if !matches!(&t_arg, Expr::Identifier(n) if n == t_name)
+      || !matches!(&x_arg, Expr::Identifier(n) if n == x_name)
+    {
+      return None;
+    }
+    let placeholder = match (dt, dx) {
+      (0, 0) => "NDSolve$U",
+      (0, 1) => "NDSolve$UX",
+      (0, 2) => "NDSolve$UXX",
+      (1, 0) => "NDSolve$V",
+      (1, 1) => "NDSolve$VX",
+      (1, 2) => "NDSolve$VXX",
+      (2, 0) => "NDSolve$W",
+      (2, 1) => "NDSolve$WX",
+      (2, 2) => "NDSolve$WXX",
+      _ => return None,
+    };
+    return Some(Expr::Identifier(placeholder.to_string()));
+  }
+  let failed = std::cell::Cell::new(false);
+  let mapped = map_children(expr, &|c| {
+    if failed.get() {
+      return c.clone();
+    }
+    if let Some(r) = rewrite_pde_rhs_hyperbolic(c, u_name, t_name, x_name, swap)
+    {
+      r
+    } else {
+      failed.set(true);
+      c.clone()
+    }
+  });
+  if failed.get() { None } else { Some(mapped) }
+}
+
+/// Whether `expr` contains the bare identifier `name` anywhere in its
+/// tree — used to confirm a coefficient extracted by differentiating a
+/// linear expression really did lose all dependence on the variable
+/// differentiated against (see `try_solve_hyperbolic_pde`'s linearity
+/// check).
+fn expr_contains_ident(expr: &Expr, name: &str) -> bool {
+  if matches!(expr, Expr::Identifier(n) if n == name) {
+    return true;
+  }
+  expr_children(expr)
+    .iter()
+    .any(|c| expr_contains_ident(c, name))
+}
+
+/// Solve the tridiagonal system with sub-diagonal `a` (`a[0]` unused),
+/// diagonal `b`, super-diagonal `c` (`c[last]` unused), and right-hand
+/// side `d` — all the same length — via the Thomas algorithm.
+fn solve_tridiagonal(a: &[f64], b: &[f64], c: &[f64], d: &[f64]) -> Vec<f64> {
+  let n = b.len();
+  if n == 0 {
+    return Vec::new();
+  }
+  let mut cp = vec![0.0; n];
+  let mut dp = vec![0.0; n];
+  cp[0] = c[0] / b[0];
+  dp[0] = d[0] / b[0];
+  for i in 1..n {
+    let m = b[i] - a[i] * cp[i - 1];
+    cp[i] = if i + 1 < n { c[i] / m } else { 0.0 };
+    dp[i] = (d[i] - a[i] * dp[i - 1]) / m;
+  }
+  let mut x = vec![0.0; n];
+  x[n - 1] = dp[n - 1];
+  for i in (0..n - 1).rev() {
+    x[i] = dp[i] - cp[i] * x[i + 1];
+  }
+  x
+}
+
+/// One field's (`u`, `v`, or `w`) compiled boundary condition at one end
+/// of the space domain, mirroring `u`'s own condition kind: `v = D[u,t]`'s
+/// right-hand side is `u`'s own boundary value differentiated once with
+/// respect to time, and `w = D[u,t,t]`'s is differentiated twice — a
+/// Dirichlet boundary stays Dirichlet, a Neumann flux stays Neumann.
+struct HyperbolicBoundary {
+  u: PdeBoundaryFn,
+  v: PdeBoundaryFn,
+  w: PdeBoundaryFn,
+  /// Whether this end's grid index is part of the integrated/solved
+  /// state (`true`, a Neumann boundary) or fixed each step from its own
+  /// `NumFn` (`false`, Dirichlet) — mirrors `ndsolve_pde`'s `free_lo`.
+  free: bool,
+}
+
+fn compile_hyperbolic_boundary(
+  bc: PdeBc,
+  u_name: &str,
+  t_name: &str,
+) -> Result<Option<HyperbolicBoundary>, InterpreterError> {
+  let t_vars = vec![t_name.to_string()];
+  match bc {
+    PdeBc::Dirichlet(rhs) => {
+      let d1 = differentiate_expr(&rhs, t_name)?;
+      let d2 = differentiate_expr(&d1, t_name)?;
+      Ok(Some(HyperbolicBoundary {
+        u: PdeBoundaryFn::Dirichlet(NumFn::new(rhs, &t_vars)),
+        v: PdeBoundaryFn::Dirichlet(NumFn::new(d1, &t_vars)),
+        w: PdeBoundaryFn::Dirichlet(NumFn::new(d2, &t_vars)),
+        free: false,
+      }))
+    }
+    PdeBc::Neumann(rhs) => {
+      // Single dependent function: a flux depending on the unknown itself
+      // (a Robin-type condition) is outside this solver's scope.
+      let u_names_single = [u_name.to_string()];
+      if expr_references_any(&rhs, &u_names_single) {
+        return Ok(None);
+      }
+      let d1 = differentiate_expr(&rhs, t_name)?;
+      let d2 = differentiate_expr(&d1, t_name)?;
+      Ok(Some(HyperbolicBoundary {
+        u: PdeBoundaryFn::Neumann(NumFn::new(rhs, &t_vars)),
+        v: PdeBoundaryFn::Neumann(NumFn::new(d1, &t_vars)),
+        w: PdeBoundaryFn::Neumann(NumFn::new(d2, &t_vars)),
+        free: true,
+      }))
+    }
+  }
+}
+
+/// Reconstruct a field's full `N_X`-point profile from its combined
+/// integrated free values, filling a Dirichlet boundary from its own
+/// `NumFn`. Mirrors `try_solve_pde_system`'s `full_of` closure, adapted
+/// to a single field/domain pair.
+fn reconstruct_pde_profile(
+  free_vals: &[f64],
+  free_lo: usize,
+  free_hi: usize,
+  n_x: usize,
+  bc_lo: &PdeBoundaryFn,
+  bc_hi: &PdeBoundaryFn,
+  t: f64,
+) -> Result<Vec<f64>, InterpreterError> {
+  let mut full = vec![0.0; n_x];
+  for (k, gi) in (free_lo..=free_hi).enumerate() {
+    full[gi] = free_vals[k];
+  }
+  if let PdeBoundaryFn::Dirichlet(f) = bc_lo {
+    full[0] = f.eval(&[t])?;
+  }
+  if let PdeBoundaryFn::Dirichlet(f) = bc_hi {
+    full[n_x - 1] = f.eval(&[t])?;
+  }
+  Ok(full)
+}
+
+/// First and second space-derivative of a field at grid index `gi`, via
+/// central differences at an interior point or, at a boundary carrying a
+/// Neumann condition, a ghost point built from the boundary's own flux
+/// value — mirrors `try_solve_pde_system`'s `derivative` closure's own
+/// boundary handling. `bc_lo`/`bc_hi` are never `Dirichlet` when `gi` is
+/// `0`/`n_x - 1` respectively (those indices are excluded from the
+/// free/solved range in that case).
+fn pde_space_derivs(
+  full: &[f64],
+  gi: usize,
+  dx: f64,
+  bc_lo: &PdeBoundaryFn,
+  bc_hi: &PdeBoundaryFn,
+  t: f64,
+) -> Result<(f64, f64), InterpreterError> {
+  let n_x = full.len();
+  if gi == 0 {
+    let PdeBoundaryFn::Neumann(f) = bc_lo else {
+      unreachable!("a Dirichlet lo boundary is never a free index")
+    };
+    let flux = f.eval(&[t])?;
+    let ghost = full[1] - 2.0 * dx * flux;
+    Ok((flux, (full[1] - 2.0 * full[0] + ghost) / (dx * dx)))
+  } else if gi == n_x - 1 {
+    let PdeBoundaryFn::Neumann(f) = bc_hi else {
+      unreachable!("a Dirichlet hi boundary is never a free index")
+    };
+    let flux = f.eval(&[t])?;
+    let ghost = full[n_x - 2] + 2.0 * dx * flux;
+    Ok((
+      flux,
+      (ghost - 2.0 * full[n_x - 1] + full[n_x - 2]) / (dx * dx),
+    ))
+  } else {
+    Ok((
+      (full[gi + 1] - full[gi - 1]) / (2.0 * dx),
+      (full[gi + 1] - 2.0 * full[gi] + full[gi - 1]) / (dx * dx),
+    ))
+  }
+}
+
+/// Attempt to match and solve the hyperbolic PDE with `t_dom` as the
+/// time-like (integrated) domain and `x_dom` as the space-like (gridded)
+/// one — see [`ndsolve_pde_hyperbolic`]. Returns `Ok(None)` when the
+/// equations don't fit this role assignment.
+fn try_solve_hyperbolic_pde(
+  eq_items: &[Expr],
+  u_name: &str,
+  t_dom: &PdeDomain,
+  x_dom: &PdeDomain,
+  dim0_dom: &PdeDomain,
+  swap: bool,
+) -> Result<Option<Expr>, InterpreterError> {
+  let mut evolution_rhs: Option<Expr> = None;
+  let mut ic_pos: Option<Expr> = None;
+  let mut ic_vel: Option<Expr> = None;
+  let mut bc_lo: Option<PdeBc> = None;
+  let mut bc_hi: Option<PdeBc> = None;
+
+  for eq in eq_items {
+    if evolution_rhs.is_none()
+      && let Some(rhs) = try_pde_evolution_term_order2(
+        eq,
+        u_name,
+        &t_dom.name,
+        &x_dom.name,
+        swap,
+      )
+    {
+      evolution_rhs = Some(rhs);
+      continue;
+    }
+    if ic_pos.is_none()
+      && let Some(rhs) =
+        try_pde_initial_condition(eq, u_name, &x_dom.name, t_dom.min, swap)
+    {
+      ic_pos = Some(rhs);
+      continue;
+    }
+    if ic_vel.is_none()
+      && let Some(rhs) = try_pde_initial_condition_ord(
+        eq,
+        u_name,
+        &x_dom.name,
+        t_dom.min,
+        1,
+        swap,
+      )
+    {
+      ic_vel = Some(rhs);
+      continue;
+    }
+    if bc_lo.is_none()
+      && let Some(bc) =
+        try_pde_boundary_condition(eq, u_name, &t_dom.name, x_dom.min, swap)
+    {
+      bc_lo = Some(bc);
+      continue;
+    }
+    if bc_hi.is_none()
+      && let Some(bc) =
+        try_pde_boundary_condition(eq, u_name, &t_dom.name, x_dom.max, swap)
+    {
+      bc_hi = Some(bc);
+    }
+  }
+  let (Some(rhs), Some(ic_pos), Some(ic_vel), Some(bc_lo), Some(bc_hi)) =
+    (evolution_rhs, ic_pos, ic_vel, bc_lo, bc_hi)
+  else {
+    return Ok(None);
+  };
+
+  let Some(rewritten) =
+    rewrite_pde_rhs_hyperbolic(&rhs, u_name, &t_dom.name, &x_dom.name, swap)
+  else {
+    return Ok(None);
+  };
+
+  // Extract the acceleration field's linear coefficients (`c0` multiplies
+  // `w` itself, `c1` its first space derivative, `c2` its second) via
+  // symbolic differentiation, and verify the right-hand side really is
+  // linear in them: a coefficient that still references one of the three
+  // placeholders after differentiating it away means the dependence
+  // wasn't linear, a shape this solver doesn't attempt.
+  const W_VARS: [&str; 3] = ["NDSolve$W", "NDSolve$WX", "NDSolve$WXX"];
+  let mut coeffs = Vec::with_capacity(3);
+  for wv in W_VARS {
+    let c = differentiate_expr(&rewritten, wv)?;
+    if W_VARS.iter().any(|wv2| expr_contains_ident(&c, wv2)) {
+      return Ok(None);
+    }
+    coeffs.push(c);
+  }
+  let explicit_expr = crate::syntax::substitute_variables(
+    &rewritten,
+    &[
+      ("NDSolve$W", &Expr::Integer(0)),
+      ("NDSolve$WX", &Expr::Integer(0)),
+      ("NDSolve$WXX", &Expr::Integer(0)),
+    ],
+  );
+
+  let full_vars: Vec<String> = [
+    "NDSolve$U",
+    "NDSolve$UX",
+    "NDSolve$UXX",
+    "NDSolve$V",
+    "NDSolve$VX",
+    "NDSolve$VXX",
+  ]
+  .into_iter()
+  .map(String::from)
+  .chain([t_dom.name.clone(), x_dom.name.clone()])
+  .collect();
+
+  let explicit_fn = NumFn::new(explicit_expr, &full_vars);
+  let coeff0_fn = NumFn::new(coeffs[0].clone(), &full_vars);
+  let coeff1_fn = NumFn::new(coeffs[1].clone(), &full_vars);
+  let coeff2_fn = NumFn::new(coeffs[2].clone(), &full_vars);
+
+  let x_vars = vec![x_dom.name.clone()];
+  let ic_pos_fn = NumFn::new(ic_pos, &x_vars);
+  let ic_vel_fn = NumFn::new(ic_vel, &x_vars);
+
+  let Some(bnd_lo) = compile_hyperbolic_boundary(bc_lo, u_name, &t_dom.name)?
+  else {
+    return Ok(None);
+  };
+  let Some(bnd_hi) = compile_hyperbolic_boundary(bc_hi, u_name, &t_dom.name)?
+  else {
+    return Ok(None);
+  };
+
+  const N_X: usize = 41;
+  let dx = (x_dom.max - x_dom.min) / (N_X - 1) as f64;
+  let xs: Vec<f64> = (0..N_X).map(|i| x_dom.min + i as f64 * dx).collect();
+
+  let free_lo = usize::from(!bnd_lo.free);
+  let free_hi = if bnd_hi.free { N_X - 1 } else { N_X - 2 };
+  let free_len = free_hi + 1 - free_lo;
+  let total_len = 2 * free_len;
+
+  let derivative = |t: f64,
+                    state: &[f64]|
+   -> Result<Vec<f64>, InterpreterError> {
+    let u_full = reconstruct_pde_profile(
+      &state[..free_len],
+      free_lo,
+      free_hi,
+      N_X,
+      &bnd_lo.u,
+      &bnd_hi.u,
+      t,
+    )?;
+    let v_full = reconstruct_pde_profile(
+      &state[free_len..],
+      free_lo,
+      free_hi,
+      N_X,
+      &bnd_lo.v,
+      &bnd_hi.v,
+      t,
+    )?;
+
+    // Only the free/solved indices ever feed into the tridiagonal system
+    // below — a Dirichlet boundary's own index is fixed directly from its
+    // `NumFn` each step and never appears as a row or a neighbor there —
+    // so `pde_space_derivs` (which assumes index `0`/`N_X - 1` means a
+    // *Neumann* boundary) is never asked to differentiate at one.
+    let mut explicit = vec![0.0; N_X];
+    let mut c0 = vec![0.0; N_X];
+    let mut c1 = vec![0.0; N_X];
+    let mut c2 = vec![0.0; N_X];
+    for gi in free_lo..=free_hi {
+      let (ux, uxx) =
+        pde_space_derivs(&u_full, gi, dx, &bnd_lo.u, &bnd_hi.u, t)?;
+      let (vx, vxx) =
+        pde_space_derivs(&v_full, gi, dx, &bnd_lo.v, &bnd_hi.v, t)?;
+      let vars = [u_full[gi], ux, uxx, v_full[gi], vx, vxx, t, xs[gi]];
+      explicit[gi] = explicit_fn.eval(&vars)?;
+      c0[gi] = coeff0_fn.eval(&vars)?;
+      c1[gi] = coeff1_fn.eval(&vars)?;
+      c2[gi] = coeff2_fn.eval(&vars)?;
+    }
+
+    // Eliminate `w`'s free grid values from the linear relation
+    // `w == c0 w + c1 D[w,x] + c2 D[w,x,x] + explicit`, i.e.
+    // `(1 - c0) w - c1 D[w,x] - c2 D[w,x,x] == explicit`, via a
+    // tridiagonal solve.
+    let mut a = vec![0.0; free_len];
+    let mut b = vec![0.0; free_len];
+    let mut c = vec![0.0; free_len];
+    let mut d = vec![0.0; free_len];
+    for (k, gi) in (free_lo..=free_hi).enumerate() {
+      if gi == 0 {
+        let PdeBoundaryFn::Neumann(f) = &bnd_lo.w else {
+          unreachable!("a Dirichlet lo boundary is never a free index")
+        };
+        let flux = f.eval(&[t])?;
+        b[k] = (1.0 - c0[gi]) + 2.0 * c2[gi] / (dx * dx);
+        c[k] = -2.0 * c2[gi] / (dx * dx);
+        d[k] = explicit[gi] + c1[gi] * flux - 2.0 * c2[gi] * flux / dx;
+      } else if gi == N_X - 1 {
+        let PdeBoundaryFn::Neumann(f) = &bnd_hi.w else {
+          unreachable!("a Dirichlet hi boundary is never a free index")
+        };
+        let flux = f.eval(&[t])?;
+        a[k] = -2.0 * c2[gi] / (dx * dx);
+        b[k] = (1.0 - c0[gi]) + 2.0 * c2[gi] / (dx * dx);
+        d[k] = explicit[gi] + c1[gi] * flux + 2.0 * c2[gi] * flux / dx;
+      } else {
+        let ai = c1[gi] / (2.0 * dx) - c2[gi] / (dx * dx);
+        let bi = (1.0 - c0[gi]) + 2.0 * c2[gi] / (dx * dx);
+        let ci = -c1[gi] / (2.0 * dx) - c2[gi] / (dx * dx);
+        let mut di = explicit[gi];
+        if gi == free_lo && free_lo > 0 {
+          let PdeBoundaryFn::Dirichlet(f) = &bnd_lo.w else {
+            unreachable!("gi == free_lo > 0 means the lo boundary is Dirichlet")
+          };
+          di -= ai * f.eval(&[t])?;
+        } else {
+          a[k] = ai;
+        }
+        if gi == free_hi && free_hi < N_X - 1 {
+          let PdeBoundaryFn::Dirichlet(f) = &bnd_hi.w else {
+            unreachable!(
+              "gi == free_hi < N_X - 1 means the hi boundary is Dirichlet"
+            )
+          };
+          di -= ci * f.eval(&[t])?;
+        } else {
+          c[k] = ci;
+        }
+        b[k] = bi;
+        d[k] = di;
+      }
+    }
+    let w_free = solve_tridiagonal(&a, &b, &c, &d);
+
+    let mut out = vec![0.0; total_len];
+    for (k, gi) in (free_lo..=free_hi).enumerate() {
+      out[k] = v_full[gi];
+      out[free_len + k] = w_free[k];
+    }
+    Ok(out)
+  };
+
+  let mut u0_full = vec![0.0; N_X];
+  let mut v0_full = vec![0.0; N_X];
+  for (gi, &x) in xs.iter().enumerate() {
+    u0_full[gi] = ic_pos_fn.eval(&[x])?;
+    v0_full[gi] = ic_vel_fn.eval(&[x])?;
+  }
+  if let PdeBoundaryFn::Dirichlet(f) = &bnd_lo.u {
+    u0_full[0] = f.eval(&[t_dom.min])?;
+  }
+  if let PdeBoundaryFn::Dirichlet(f) = &bnd_hi.u {
+    u0_full[N_X - 1] = f.eval(&[t_dom.min])?;
+  }
+  if let PdeBoundaryFn::Dirichlet(f) = &bnd_lo.v {
+    v0_full[0] = f.eval(&[t_dom.min])?;
+  }
+  if let PdeBoundaryFn::Dirichlet(f) = &bnd_hi.v {
+    v0_full[N_X - 1] = f.eval(&[t_dom.min])?;
+  }
+
+  let mut state0: Vec<f64> = Vec::with_capacity(total_len);
+  state0.extend(u0_full[free_lo..=free_hi].iter().copied());
+  state0.extend(v0_full[free_lo..=free_hi].iter().copied());
+
+  // Effective diffusivity-like bound, read off the explicit right-hand
+  // side's sensitivity to `u`'s and `v`'s own second space derivative —
+  // mirrors `try_solve_pde_system`'s own CFL-type probe. The acceleration
+  // field's *implicit* dependence (`c0`/`c1`/`c2`) is excluded: an
+  // implicit elliptic solve relaxes the stability bound rather than
+  // tightening it, so the explicit terms' own diffusivity remains the
+  // binding constraint.
+  let mut dt_stable = f64::INFINITY;
+  for &x in &xs {
+    let base =
+      explicit_fn.eval(&[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, t_dom.min, x])?;
+    let du =
+      (explicit_fn.eval(&[0.0, 0.0, 1.0, 0.0, 0.0, 0.0, t_dom.min, x])? - base)
+        .abs();
+    let dv =
+      (explicit_fn.eval(&[0.0, 0.0, 0.0, 0.0, 0.0, 1.0, t_dom.min, x])? - base)
+        .abs();
+    let c_eff = du.max(dv).max(1e-9);
+    dt_stable = dt_stable.min(0.4 * dx * dx / c_eff);
+  }
+  const MIN_STEPS: usize = 200;
+  let n_steps = (((t_dom.max - t_dom.min) / dt_stable).ceil() as usize)
+    .clamp(MIN_STEPS, 200_000);
+  let dt = (t_dom.max - t_dom.min) / n_steps as f64;
+
+  const OUTPUT_ROWS: usize = 60;
+  let stride = (n_steps / OUTPUT_ROWS).max(1);
+  let mut ts: Vec<f64> = Vec::with_capacity(n_steps / stride + 2);
+  ts.push(t_dom.min);
+  let mut grid: Vec<Vec<f64>> = vec![reconstruct_pde_profile(
+    &state0[..free_len],
+    free_lo,
+    free_hi,
+    N_X,
+    &bnd_lo.u,
+    &bnd_hi.u,
+    t_dom.min,
+  )?];
+  let mut state = state0;
+  let mut t = t_dom.min;
+  for step in 0..n_steps {
+    let k1 = derivative(t, &state)?;
+    let s2: Vec<f64> = state
+      .iter()
+      .zip(&k1)
+      .map(|(y, k)| y + 0.5 * dt * k)
+      .collect();
+    let k2 = derivative(t + 0.5 * dt, &s2)?;
+    let s3: Vec<f64> = state
+      .iter()
+      .zip(&k2)
+      .map(|(y, k)| y + 0.5 * dt * k)
+      .collect();
+    let k3 = derivative(t + 0.5 * dt, &s3)?;
+    let s4: Vec<f64> = state.iter().zip(&k3).map(|(y, k)| y + dt * k).collect();
+    let k4 = derivative(t + dt, &s4)?;
+    for idx in 0..state.len() {
+      state[idx] +=
+        dt / 6.0 * (k1[idx] + 2.0 * k2[idx] + 2.0 * k3[idx] + k4[idx]);
+    }
+    t += dt;
+    let is_last = step + 1 == n_steps;
+    if (step + 1) % stride == 0 || is_last {
+      grid.push(reconstruct_pde_profile(
+        &state[..free_len],
+        free_lo,
+        free_hi,
+        N_X,
+        &bnd_lo.u,
+        &bnd_hi.u,
+        t,
+      )?);
+      ts.push(t);
+    }
+  }
+
+  let t_is_dim0 = t_dom.name == dim0_dom.name;
+  let (dim0, dim1) = if t_is_dim0 {
+    (t_dom, x_dom)
+  } else {
+    (x_dom, t_dom)
+  };
+  let (dim0_coords, dim1_coords) =
+    if t_is_dim0 { (&ts, &xs) } else { (&xs, &ts) };
+  let domain = Expr::List(
+    vec![
+      Expr::List(vec![Expr::Real(dim0.min), Expr::Real(dim0.max)].into()),
+      Expr::List(vec![Expr::Real(dim1.min), Expr::Real(dim1.max)].into()),
+    ]
+    .into(),
+  );
+  let orders = Expr::List(vec![Expr::Integer(1), Expr::Integer(1)].into());
+  let coords = Expr::List(
+    vec![
+      Expr::List(dim0_coords.iter().map(|v| Expr::Real(*v)).collect()),
+      Expr::List(dim1_coords.iter().map(|v| Expr::Real(*v)).collect()),
+    ]
+    .into(),
+  );
+  let grid = if t_is_dim0 {
+    grid
+  } else {
+    transpose_grid(&grid)
+  };
+  let grid_expr = Expr::List(
+    grid
+      .iter()
+      .map(|row| Expr::List(row.iter().map(|v| Expr::Real(*v)).collect()))
+      .collect(),
+  );
+  let interp = call(
+    "InterpolatingFunction",
+    vec![domain, grid_expr, orders, coords],
+  );
+  let rule = Expr::Rule {
+    pattern: Box::new(Expr::Identifier(u_name.to_string())),
+    replacement: Box::new(interp),
+  };
+  Ok(Some(Expr::List(vec![Expr::List(vec![rule].into())].into())))
+}
+
 /// Dependent functions of an `NDSolve` system need not be bare symbols:
 /// a spatially discretized transport equation is normally written
 /// `NDSolve[…, Table[Subscript[c, i], {i, 1, n}], {t, 0, tmax}]`, where every
@@ -2240,8 +2960,20 @@ fn ndsolve_system(
       let Some(min) = nval_to_f64(&domain_items[1]) else {
         return Ok(None);
       };
-      let Some(max) = nval_to_f64(&domain_items[2]) else {
-        return Ok(None);
+      // `{t, t0, Infinity}` is only solvable when an event is present to
+      // stop the integration — nothing else would ever tell a fixed-step
+      // method when to quit, so without one it's left unevaluated like
+      // any other pattern this solver doesn't cover.
+      let max = if is_infinity(&domain_items[2]) {
+        if event.is_none() {
+          return Ok(None);
+        }
+        f64::INFINITY
+      } else {
+        let Some(max) = nval_to_f64(&domain_items[2]) else {
+          return Ok(None);
+        };
+        max
       };
       // NaN bounds must bail out too, so compare via partial_cmp rather
       // than a negated float comparison.
@@ -2306,10 +3038,14 @@ fn ndsolve_system(
   let mut eq_items: Vec<Expr> = Vec::new();
   flatten_eq_list(&args[0], &mut eq_items);
   let mut odes: Vec<Expr> = Vec::new();
-  let mut x0: Option<f64> = None;
-  // (function name, derivative order, value) — by name, not index: an
-  // eliminated constraint variable shifts the positions in `funcs`.
-  let mut ics: Vec<(String, usize, f64)> = Vec::new();
+  // (function name, derivative order, evaluation point, value) — by name,
+  // not index: an eliminated constraint variable shifts the positions in
+  // `funcs`. Conditions are no longer required to share one point here —
+  // a two-point boundary value problem states one condition at each end
+  // of the domain — so the point travels with each condition and the
+  // shape (one shared point vs. exactly two) is decided once every
+  // condition has been collected, below.
+  let mut raw_ics: Vec<(String, usize, f64, f64)> = Vec::new();
   for eq in &eq_items {
     let mut is_ic = false;
     for f in &funcs {
@@ -2319,13 +3055,7 @@ fn ndsolve_system(
         else {
           return Ok(None);
         };
-        match x0 {
-          None => x0 = Some(x_val),
-          // All ICs must be given at the same point.
-          Some(prev) if (prev - x_val).abs() > 1e-12 => return Ok(None),
-          Some(_) => {}
-        }
-        ics.push((f.name.clone(), order, y_val));
+        raw_ics.push((f.name.clone(), order, x_val, y_val));
         is_ic = true;
         break;
       }
@@ -2370,35 +3100,9 @@ fn ndsolve_system(
   if odes.len() != funcs.len() {
     return Ok(None);
   }
-  let Some(x0) = x0 else { return Ok(None) };
-  // The range that was *asked* for, before the integration range below is
-  // widened to reach the initial condition. The solution is reported over
-  // this range (see the clipping step after the integration).
-  let requested_range = x_min_given.map(|min| (min, x_max));
-  let (x_min, x_max) = if let Some(min) = x_min_given {
-    // The initial condition may sit just outside the requested output
-    // range — a Demonstration commonly states `y[0] == n0` at the natural
-    // reference point but plots from a tiny epsilon (`{t, 0.00001, 200}`)
-    // to dodge a singularity (a fractional power of `y`, a `LogPlot`, …)
-    // exactly at that point. The integrator still has to start at the
-    // initial condition, so the solved range extends to include it rather
-    // than rejecting the system outright — matching the `{x, xmax}`
-    // shorthand below, which already integrates from x0 unconditionally.
-    (min.min(x0), x_max.max(x0))
-  } else {
-    // {x, xmax} shorthand: integrate from x0 to xmax, in whichever
-    // direction that is — x0 always lands on one edge of the range. An
-    // absolute epsilon here would wrongly reject ranges that are tiny by
-    // scale (e.g. femtosecond time constants) rather than degenerate, so
-    // only bit-identical endpoints count as degenerate.
-    let target = x_max;
-    if target == x0 {
-      return Ok(None);
-    }
-    (x0.min(target), x0.max(target))
-  };
 
-  // Determine each function's order from the equations.
+  // Determine each function's order from the equations — needed both to
+  // classify the conditions below and to lay out the state vector.
   for ode in &odes {
     for f in &mut funcs {
       let order = max_derivative_order(ode, &f.name);
@@ -2420,26 +3124,142 @@ fn ndsolve_system(
     }
   }
 
-  // Validate and store the initial conditions.
+  // Classify the conditions by the distinct points they're given at. One
+  // shared point is an initial value problem (the ordinary case, handled
+  // exactly as before); a single second-order equation with one condition
+  // at each of two distinct points — matching the solved domain's own
+  // endpoints — is a two-point boundary value problem, solved below by
+  // shooting: integrating the very same IVP stepper from a guessed value
+  // at one end and adjusting that guess until the far condition is met.
+  // Anything else (three or more distinct points, a coupled system, …)
+  // isn't a shape this solver understands.
+  let mut distinct_points: Vec<f64> = Vec::new();
+  for (_, _, x_val, _) in &raw_ics {
+    if !distinct_points.iter().any(|p| (p - x_val).abs() <= 1e-9) {
+      distinct_points.push(*x_val);
+    }
+  }
+  #[derive(Clone, Copy)]
+  enum ProblemKind {
+    Initial {
+      x0: f64,
+    },
+    Boundary {
+      x_lo: f64,
+      order_lo: usize,
+      val_lo: f64,
+      x_hi: f64,
+      order_hi: usize,
+      val_hi: f64,
+    },
+  }
+  let kind = match distinct_points.len() {
+    1 => ProblemKind::Initial {
+      x0: distinct_points[0],
+    },
+    2 if funcs.len() == 1
+      && eliminated.is_empty()
+      && raw_ics.len() == 2
+      && raw_ics.iter().all(|(_, order, _, _)| *order <= 1)
+      && funcs[0].order == 2 =>
+    {
+      let (mut p0, mut p1) = (distinct_points[0], distinct_points[1]);
+      if p0 > p1 {
+        std::mem::swap(&mut p0, &mut p1);
+      }
+      let Some(x_min_given) = x_min_given else {
+        return Ok(None);
+      };
+      // A two-point boundary value problem states its conditions at the
+      // domain's own endpoints; anything else isn't a shape this solver
+      // understands.
+      if (p0 - x_min_given).abs() > 1e-9 || (p1 - x_max).abs() > 1e-9 {
+        return Ok(None);
+      }
+      let (_, order_lo, _, val_lo) = *raw_ics
+        .iter()
+        .find(|(_, _, x, _)| (x - p0).abs() <= 1e-9)
+        .unwrap();
+      let (_, order_hi, _, val_hi) = *raw_ics
+        .iter()
+        .find(|(_, _, x, _)| (x - p1).abs() <= 1e-9)
+        .unwrap();
+      ProblemKind::Boundary {
+        x_lo: p0,
+        order_lo,
+        val_lo,
+        x_hi: p1,
+        order_hi,
+        val_hi,
+      }
+    }
+    _ => return Ok(None),
+  };
+
+  // For an initial value problem: the range that was *asked* for, before
+  // the integration range below is widened to reach the initial
+  // condition. The solution is reported over this range (see the
+  // clipping step after the integration/shooting).
+  let mut requested_range: Option<(f64, f64)> = None;
+  let mut x_min = 0.0;
+  let mut x_max_resolved = 0.0;
+  let mut x0 = 0.0;
+  if let ProblemKind::Initial { x0: x0_val } = kind {
+    x0 = x0_val;
+    requested_range = x_min_given.map(|min| (min, x_max));
+    let (lo, hi) = if let Some(min) = x_min_given {
+      // The initial condition may sit just outside the requested output
+      // range — a Demonstration commonly states `y[0] == n0` at the
+      // natural reference point but plots from a tiny epsilon
+      // (`{t, 0.00001, 200}`) to dodge a singularity (a fractional power
+      // of `y`, a `LogPlot`, …) exactly at that point. The integrator
+      // still has to start at the initial condition, so the solved range
+      // extends to include it rather than rejecting the system outright —
+      // matching the `{x, xmax}` shorthand below, which already
+      // integrates from x0 unconditionally.
+      (min.min(x0), x_max.max(x0))
+    } else {
+      // {x, xmax} shorthand: integrate from x0 to xmax, in whichever
+      // direction that is — x0 always lands on one edge of the range. An
+      // absolute epsilon here would wrongly reject ranges that are tiny
+      // by scale (e.g. femtosecond time constants) rather than
+      // degenerate, so only bit-identical endpoints count as degenerate.
+      let target = x_max;
+      if target == x0 {
+        return Ok(None);
+      }
+      (x0.min(target), x0.max(target))
+    };
+    x_min = lo;
+    x_max_resolved = hi;
+  } else if let ProblemKind::Boundary { x_lo, x_hi, .. } = kind {
+    requested_range = Some((x_lo, x_hi));
+  }
+
+  // Validate and store the initial conditions (initial value problems
+  // only — a boundary value problem's two conditions are consumed
+  // directly by the shooting solver below instead of seeding `f.ics`).
   for f in &mut funcs {
     f.ics = vec![None; f.order];
   }
-  for (name, order, val) in ics {
-    // An initial condition for a function the constraint eliminated is
-    // redundant — its value follows from the others — so it is dropped.
-    let Some(f) = funcs.iter_mut().find(|f| f.name == name) else {
-      continue;
-    };
-    if order >= f.order || f.ics[order].is_some() {
+  if matches!(kind, ProblemKind::Initial { .. }) {
+    for (name, order, _, val) in &raw_ics {
+      // An initial condition for a function the constraint eliminated is
+      // redundant — its value follows from the others — so it is dropped.
+      let Some(f) = funcs.iter_mut().find(|f| &f.name == name) else {
+        continue;
+      };
+      if *order >= f.order || f.ics[*order].is_some() {
+        return Ok(None);
+      }
+      f.ics[*order] = Some(*val);
+    }
+    if funcs
+      .iter()
+      .any(|f| f.ics.iter().any(std::option::Option::is_none))
+    {
       return Ok(None);
     }
-    f.ics[order] = Some(val);
-  }
-  if funcs
-    .iter()
-    .any(|f| f.ics.iter().any(std::option::Option::is_none))
-  {
-    return Ok(None);
   }
 
   // Variable vector layout: [x, state…, h…] where `state` holds
@@ -2477,78 +3297,142 @@ fn ndsolve_system(
     None => None,
   };
 
-  // Initial state.
-  let mut init_state: Vec<f64> = vec![0.0; n_state];
-  for (fi, f) in funcs.iter().enumerate() {
-    for (k, ic) in f.ics.iter().enumerate() {
-      init_state[state_offset[fi] + k] = ic.unwrap_or(0.0);
-    }
-  }
-
   let n_steps = 1000usize;
-  let h = (x_max - x_min) / n_steps as f64;
+  let mut points: Vec<(f64, Vec<f64>)> = match kind {
+    ProblemKind::Initial { .. } => {
+      // Initial state.
+      let mut init_state: Vec<f64> = vec![0.0; n_state];
+      for (fi, f) in funcs.iter().enumerate() {
+        for (k, ic) in f.ics.iter().enumerate() {
+          init_state[state_offset[fi] + k] = ic.unwrap_or(0.0);
+        }
+      }
 
-  // When the mass matrix (the highest-derivative coefficients) turns out
-  // not to depend on `x` or the state — common for a holdup/mass-balance
-  // system, whose coefficients are plain numerals — building it once here
-  // instead of at every one of the run's stage evaluations is a large
-  // constant-factor speedup with no change to the result: the linear
-  // solve at each stage is unaffected, only where its matrix comes from.
-  let cached_mass_matrix = probe_constant_mass_matrix(
-    &residuals,
-    funcs.len(),
-    x0,
-    &init_state,
-    x_min,
-    x_max,
-  );
-  // Integrate forward from x0 to x_max, then (if x0 is interior)
-  // backward from x0 to x_min; events are only located on the forward
-  // leg, matching the direction NDSolve integrates first.
-  let forward = integrate_leg(
-    &residuals,
-    &funcs,
-    &state_offset,
-    init_state.clone(),
-    x0,
-    x_max,
-    h,
-    event_fn.as_ref(),
-    event.and_then(|e| e.action.as_ref()),
-    x_name,
-    cached_mass_matrix.as_deref(),
-  )?;
-  let Some(forward) = forward else {
-    return Ok(None);
-  };
-  let backward = if x0 - x_min > 1e-12 {
-    let leg = integrate_leg(
-      &residuals,
-      &funcs,
-      &state_offset,
-      init_state,
-      x0,
-      x_min,
-      -h,
-      None,
-      None,
-      x_name,
-      cached_mass_matrix.as_deref(),
-    )?;
-    let Some(leg) = leg else {
-      return Ok(None);
-    };
-    leg
-  } else {
-    Vec::new()
-  };
+      // When the mass matrix (the highest-derivative coefficients) turns
+      // out not to depend on `x` or the state — common for a
+      // holdup/mass-balance system, whose coefficients are plain
+      // numerals — building it once here instead of at every one of the
+      // run's stage evaluations is a large constant-factor speedup with
+      // no change to the result: the linear solve at each stage is
+      // unaffected, only where its matrix comes from.
+      let cached_mass_matrix = probe_constant_mass_matrix(
+        &residuals,
+        funcs.len(),
+        x0,
+        &init_state,
+        x_min,
+        x_max_resolved,
+      );
+      // Integrate forward from x0 to x_max, then (if x0 is interior)
+      // backward from x0 to x_min; events are only located on the
+      // forward leg, matching the direction NDSolve integrates first.
+      //
+      // An infinite `x_max_resolved` (`{t, t0, Infinity}`) only reaches
+      // here with an event present (the domain parsing above rejects it
+      // otherwise), so there's always something to stop on; a fixed step
+      // size sized to the whole domain, the way the finite case picks
+      // one, has no domain length to size itself from, so it's searched
+      // for instead.
+      let forward = if x_max_resolved.is_finite() {
+        let h = (x_max_resolved - x_min) / n_steps as f64;
+        integrate_leg(
+          &residuals,
+          &funcs,
+          &state_offset,
+          init_state.clone(),
+          x0,
+          x_max_resolved,
+          h,
+          event_fn.as_ref(),
+          event.and_then(|e| e.action.as_ref()),
+          x_name,
+          cached_mass_matrix.as_deref(),
+        )?
+      } else {
+        integrate_leg_until_event(
+          &residuals,
+          &funcs,
+          &state_offset,
+          &init_state,
+          x0,
+          event_fn.as_ref(),
+          event.and_then(|e| e.action.as_ref()),
+          x_name,
+          cached_mass_matrix.as_deref(),
+        )?
+      };
+      let Some(forward) = forward else {
+        return Ok(None);
+      };
+      let backward = if x0 - x_min > 1e-12 {
+        // An infinite `x_max_resolved` leaves no whole-domain length to
+        // size a step from (unlike the finite case, which reuses the
+        // forward leg's own step); the backward leg's own span, from
+        // `x0` down to `x_min`, is always finite, so it's sized off that
+        // instead.
+        let h_back = if x_max_resolved.is_finite() {
+          (x_max_resolved - x_min) / n_steps as f64
+        } else {
+          (x0 - x_min) / n_steps as f64
+        };
+        let leg = integrate_leg(
+          &residuals,
+          &funcs,
+          &state_offset,
+          init_state,
+          x0,
+          x_min,
+          -h_back,
+          None,
+          None,
+          x_name,
+          cached_mass_matrix.as_deref(),
+        )?;
+        let Some(leg) = leg else {
+          return Ok(None);
+        };
+        leg
+      } else {
+        Vec::new()
+      };
 
-  // Combined, ascending in x. The backward leg is (x0, x0-h, …); reverse
-  // it and drop its first point (x0, present in the forward leg too).
-  let mut points: Vec<(f64, Vec<f64>)> = backward;
-  points.reverse();
-  points.pop();
-  points.extend(forward);
+      // Combined, ascending in x. The backward leg is (x0, x0-h, …);
+      // reverse it and drop its first point (x0, present in the forward
+      // leg too).
+      let mut points: Vec<(f64, Vec<f64>)> = backward;
+      points.reverse();
+      points.pop();
+      points.extend(forward);
+      points
+    }
+    ProblemKind::Boundary {
+      x_lo,
+      order_lo,
+      val_lo,
+      x_hi,
+      order_hi,
+      val_hi,
+    } => {
+      let Some(points) = solve_bvp_shooting(
+        &residuals,
+        &funcs,
+        &state_offset,
+        n_state,
+        x_lo,
+        order_lo,
+        val_lo,
+        x_hi,
+        order_hi,
+        val_hi,
+        n_steps,
+        x_name,
+      )?
+      else {
+        return Ok(None);
+      };
+      points
+    }
+  };
   if points.len() < 2 {
     return Ok(None);
   }
@@ -2727,6 +3611,177 @@ fn ndsolve_system(
   }
   ordered.append(&mut rules);
   Ok(Some(Expr::List(vec![Expr::List(ordered.into())].into())))
+}
+
+/// How many times [`integrate_leg_until_event`] doubles its search window
+/// before giving up. `2^40` units past `x0` is far past any plausible
+/// event time for a problem whose own scale is of order 1 — the common
+/// case, since a Demonstration's controls are themselves usually of that
+/// order — while still costing only `MAX_UNBOUNDED_DOUBLINGS * 1000` RK4
+/// evaluations in the worst case.
+const MAX_UNBOUNDED_DOUBLINGS: u32 = 40;
+
+/// Forward-integrate from `x0` with no fixed upper bound, for
+/// `NDSolve[…, {t, t0, Infinity}, Method -> {"EventLocator", …}]`. There's
+/// no domain length to size a step from, so the unknown span is searched
+/// geometrically — windows of 1, 2, 4, … units past `x0`, each with its
+/// own 1000-step grid — until `event_fn` fires inside one of them. Gives
+/// up after [`MAX_UNBOUNDED_DOUBLINGS`] windows and reports the last
+/// (event-less) one, the way wolframscript's `NDSolve::mxst` reports a
+/// truncated solution after an ordinary step-count overrun.
+#[allow(clippy::too_many_arguments)]
+fn integrate_leg_until_event(
+  residuals: &[NumFn],
+  funcs: &[SysFunc],
+  state_offset: &[usize],
+  init_state: &[f64],
+  x0: f64,
+  event_fn: Option<&NumFn>,
+  event_action: Option<&Expr>,
+  x_name: &str,
+  cached_m: Option<&[Vec<f64>]>,
+) -> Result<Option<Vec<(f64, Vec<f64>)>>, InterpreterError> {
+  let mut window = 1.0f64;
+  for attempt in 0..MAX_UNBOUNDED_DOUBLINGS {
+    let x_to = x0 + window;
+    let h = window / 1000.0;
+    let Some(leg) = integrate_leg(
+      residuals,
+      funcs,
+      state_offset,
+      init_state.to_vec(),
+      x0,
+      x_to,
+      h,
+      event_fn,
+      event_action,
+      x_name,
+      cached_m,
+    )?
+    else {
+      return Ok(None);
+    };
+    // The leg stops short of `x_to` exactly when the event fired (or a
+    // step failed) before the window's end; a leg that reaches it ran
+    // clean to the requested window with no event, so the search widens.
+    let reached_end =
+      leg.last().is_some_and(|(x, _)| (x_to - x).abs() < h * 0.5);
+    if !reached_end || attempt + 1 == MAX_UNBOUNDED_DOUBLINGS {
+      if reached_end {
+        crate::emit_message(
+          "NDSolve::mxst: Maximum number of 40000 steps reached before the \
+           event was located; returning the solution found so far.",
+        );
+      }
+      return Ok(Some(leg));
+    }
+    window *= 2.0;
+  }
+  Ok(None)
+}
+
+/// Solve a two-point boundary value problem for a single second-order
+/// equation by shooting: at `x_lo`, one state component is fixed at
+/// `val_lo` (`order_lo == 0` fixes the value, `1` fixes the derivative)
+/// while the other is repeatedly guessed and the *same* IVP stepper
+/// (`integrate_leg`) integrates out to `x_hi`; the guess is refined by the
+/// secant method until the far condition (`val_hi`, likewise a value or a
+/// derivative depending on `order_hi`) is met there. This works for any
+/// well-posed equation — linear or not — since it never inspects the
+/// equation's coefficients directly, only the trajectories the existing
+/// integrator already knows how to produce.
+#[allow(clippy::too_many_arguments)]
+fn solve_bvp_shooting(
+  residuals: &[NumFn],
+  funcs: &[SysFunc],
+  state_offset: &[usize],
+  n_state: usize,
+  x_lo: f64,
+  order_lo: usize,
+  val_lo: f64,
+  x_hi: f64,
+  order_hi: usize,
+  val_hi: f64,
+  n_steps: usize,
+  x_name: &str,
+) -> Result<Option<Vec<(f64, Vec<f64>)>>, InterpreterError> {
+  // The other state component at `x_lo` — the one shooting guesses.
+  let unknown_lo = 1 - order_lo;
+  let h = (x_hi - x_lo) / n_steps as f64;
+
+  let mut probe_state = vec![0.0; n_state];
+  probe_state[order_lo] = val_lo;
+  let cached_mass_matrix = probe_constant_mass_matrix(
+    residuals,
+    funcs.len(),
+    x_lo,
+    &probe_state,
+    x_lo,
+    x_hi,
+  );
+
+  let shoot =
+    |guess: f64| -> Result<Option<Vec<(f64, Vec<f64>)>>, InterpreterError> {
+      let mut init_state = vec![0.0; n_state];
+      init_state[order_lo] = val_lo;
+      init_state[unknown_lo] = guess;
+      integrate_leg(
+        residuals,
+        funcs,
+        state_offset,
+        init_state,
+        x_lo,
+        x_hi,
+        h,
+        None,
+        None,
+        x_name,
+        cached_mass_matrix.as_deref(),
+      )
+    };
+  let reached_end = |pts: &[(f64, Vec<f64>)]| {
+    pts
+      .last()
+      .is_some_and(|(x, _)| (x - x_hi).abs() <= 1e-6 * (1.0 + x_hi.abs()))
+  };
+  // The shooting residual: how far the far end misses its target, as a
+  // function of the guessed unknown at `x_lo`.
+  let residual = |guess: f64| -> Result<
+    Option<(f64, Vec<(f64, Vec<f64>)>)>,
+    InterpreterError,
+  > {
+    match shoot(guess)? {
+      Some(pts) if reached_end(&pts) => {
+        let end = pts.last().unwrap().1[order_hi];
+        Ok(Some((end - val_hi, pts)))
+      }
+      _ => Ok(None),
+    }
+  };
+
+  let mut s0 = 0.0;
+  let mut s1 = 1.0;
+  let Some((mut f0, _)) = residual(s0)? else {
+    return Ok(None);
+  };
+  let tol = 1e-7 * (1.0 + val_hi.abs());
+  for _ in 0..60 {
+    let Some((f1, pts1)) = residual(s1)? else {
+      return Ok(None);
+    };
+    if f1.abs() <= tol {
+      return Ok(Some(pts1));
+    }
+    let denom = f1 - f0;
+    if denom.abs() < 1e-300 {
+      return Ok(None);
+    }
+    let s2 = s1 - f1 * (s1 - s0) / denom;
+    s0 = s1;
+    f0 = f1;
+    s1 = s2;
+  }
+  Ok(None)
 }
 
 /// Integrate one leg with RK4. Returns the points in integration order
@@ -3813,6 +4868,11 @@ fn nval_to_f64(expr: &Expr) -> Option<f64> {
   interp_value_to_f64(expr).ok()
 }
 
+/// Is `expr` the `Infinity` symbol (as opposed to a finite numeric bound)?
+fn is_infinity(expr: &Expr) -> bool {
+  matches!(expr, Expr::Identifier(s) | Expr::Constant(s) if s == "Infinity")
+}
+
 /// Parse a numeric initial condition: y[x0] == y0 or y'[x0] == y0
 /// Returns (derivative_order, x_val, y_val)
 fn parse_numeric_initial_condition(
@@ -4510,6 +5570,63 @@ fn solve_cubic_characteristic(
 }
 
 /// Solve quartic characteristic polynomial
+/// Roots of the depressed biquadratic `y^4 + p*y^2 + r = 0` (`x = y +
+/// shift`), via the quadratic `u^2 + p*u + r = 0` in `u = y^2` followed by
+/// a complex square root of each `u` root. See the comment at its call
+/// site in [`solve_quartic_characteristic`] for why this is needed instead
+/// of always going through the general resolvent-cubic method.
+fn solve_biquadratic(
+  p: f64,
+  r: f64,
+  shift: f64,
+) -> std::vec::Vec<(f64, f64, usize)> {
+  let disc = p * p - 4.0 * r;
+  let u_roots: [(f64, f64); 2] = if disc >= 0.0 {
+    let s = disc.sqrt();
+    [(f64::midpoint(-p, s), 0.0), ((-p - s) / 2.0, 0.0)]
+  } else {
+    let s = (-disc).sqrt();
+    [(-p / 2.0, s / 2.0), (-p / 2.0, -s / 2.0)]
+  };
+
+  let mut roots = Vec::with_capacity(4);
+  for &(ure, uim) in &u_roots {
+    if uim.abs() < 1e-12 {
+      // Real u: y = ±sqrt(u), real if u >= 0, else a conjugate pair on the
+      // imaginary axis.
+      if ure >= 0.0 {
+        let s = ure.sqrt();
+        roots.push((s + shift, 0.0, 1));
+        roots.push((-s + shift, 0.0, 1));
+      } else {
+        let s = (-ure).sqrt();
+        roots.push((shift, s, 1));
+      }
+    } else if uim > 0.0 {
+      // Complex-conjugate u pair: y = ±sqrt(u) for the positive-imaginary
+      // twin gives the two conjugate-pair representatives directly (see
+      // the call site comment for the derivation).
+      let (sre, sim) = complex_sqrt(ure, uim);
+      roots.push((sre + shift, sim, 1));
+      roots.push((-sre + shift, sim, 1));
+    }
+    // uim < 0 is the conjugate of the pair already handled above; skip.
+  }
+  roots
+}
+
+/// Principal square root of a complex number, matching the sign of `im` in
+/// the result (so `im < 0` gives a result with negative imaginary part).
+fn complex_sqrt(re: f64, im: f64) -> (f64, f64) {
+  let modulus = re.hypot(im);
+  let sre = f64::midpoint(modulus, re).max(0.0).sqrt();
+  let mut sim = ((modulus - re) / 2.0).max(0.0).sqrt();
+  if im < 0.0 {
+    sim = -sim;
+  }
+  (sre, sim)
+}
+
 fn solve_quartic_characteristic(
   coeffs: &[f64],
 ) -> std::vec::Vec<(f64, f64, usize)> {
@@ -4523,6 +5640,21 @@ fn solve_quartic_characteristic(
   let p = c - 3.0 * b * b / 8.0;
   let q = b * b * b / 8.0 - b * c / 2.0 + d;
   let r = -3.0 * b * b * b * b / 256.0 + b * b * c / 16.0 - b * d / 4.0 + e;
+  let quartic_shift = -b / 4.0;
+
+  // Biquadratic special case (q == 0, e.g. any quartic with no odd-power
+  // terms — the common shape a real coupled linear ODE system's
+  // characteristic polynomial takes): the general resolvent-cubic method
+  // below is numerically fragile right where it matters most here, because
+  // a biquadratic's resolvent cubic is itself degenerate (a repeated or
+  // near-repeated root), which the cubic solver's branch selection can
+  // land on the wrong side of by a hair — turning what should be a purely
+  // imaginary conjugate quadruple into a spuriously real one. Solving
+  // y^4 + py^2 + r = 0 directly as a quadratic in u = y^2 sidesteps that
+  // entirely and is exact.
+  if q.abs() < 1e-9 * (p.abs() + r.abs() + 1.0) {
+    return solve_biquadratic(p, r, quartic_shift);
+  }
 
   // Solve resolvent cubic: m^3 - p/2 * m^2 - r*m + (p*r/2 - q^2/8) = 0
   let resolvent_coeffs = vec![p * r / 2.0 - q * q / 8.0, -r, -p / 2.0, 1.0];
@@ -6482,6 +7614,29 @@ pub fn evaluate_interpolating_function(
   }
 }
 
+/// `InterpolatingFunctionDomain[interp]`, from the
+/// `DifferentialEquations`InterpolatingFunctionAnatomy`` package. Reports the
+/// same domain as `interp["Domain"]` (a list of `{min, max}` pairs, one per
+/// independent variable), so it delegates to `evaluate_interpolating_function`
+/// rather than re-deriving the domain.
+pub fn interpolating_function_domain_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let interp = crate::evaluator::evaluate_expr_to_expr(&args[0])?;
+  if let Expr::FunctionCall {
+    name,
+    args: func_args,
+  } = &interp
+    && name == "InterpolatingFunction"
+  {
+    return evaluate_interpolating_function(
+      func_args,
+      &[Expr::String("Domain".to_string())],
+    );
+  }
+  Ok(unevaluated("InterpolatingFunctionDomain", &[interp]))
+}
+
 /// Evaluate a 2-D grid InterpolatingFunction at `[x, y]` via tensor-product
 /// local Lagrange interpolation: interpolate each row along the column
 /// direction at `y`, then interpolate those values along the row direction at
@@ -7730,4 +8885,785 @@ fn is_f_at_xy(expr: &Expr, fname: &str, xn: &str, yn: &str) -> bool {
         && matches!(&args[0], Expr::Identifier(s) if s == xn)
         && matches!(&args[1], Expr::Identifier(s) if s == yn)
   )
+}
+
+// ─── Coupled Linear Constant-Coefficient ODE Systems ───────────────────
+//
+// `DSolve[{eq1, eq2, …, ic1, ic2, …}, {y1[t], y2[t], …}, t]` for a linear,
+// constant-coefficient system (the classic "two coupled oscillators" shape
+// a Demonstrations-Project notebook tends to use, e.g. a Foucault pendulum
+// or coupled pendulums). The single-variable branch above only recognises
+// one dependent function; this extends the same closed-form machinery to a
+// small system via operator-determinant elimination:
+//
+//   1. Each equation is linear in the y_i and their t-derivatives with
+//      constant coefficients, so it can be written as a row of the
+//      differential-operator matrix M(D), D = d/dt.
+//   2. Every y_i solves the SAME scalar ODE Δ(D) y_i = (cofactor terms),
+//      Δ = det(M(D)) — Cramer's rule for a linear operator system. Only a
+//      constant forcing term is supported (enough for a homogeneous
+//      physical system in equilibrium coordinates); Δ has degree ≤ 4 to
+//      reuse the existing closed-form quadratic/cubic/quartic root finder.
+//   3. For each simple root λ of Δ, the amplitude ratios between the y_i
+//      at that mode are the null vector of M(λ) (found by Gaussian
+//      elimination in complex arithmetic — n is small, typically 2–4).
+//   4. The shared arbitrary constants C[k] are pinned down by evaluating
+//      the symbolic general solution (and its derivatives) at the initial
+//      conditions and calling the existing linear `Solve`.
+//
+// Repeated roots (defective systems needing a `t*E^(λt)` secular term) and
+// non-constant forcing are out of scope and fall back to unevaluated,
+// exactly like the single-variable solver's own unsupported cases.
+
+/// One classified additive term of a coupled system's equation: which
+/// dependent variable (by index into the system's `y_names`) and
+/// derivative order it belongs to, or `None` for a term free of every
+/// dependent variable (the forcing side).
+struct MultiOdeTerm {
+  var_index: Option<usize>,
+  order: i32,
+  coefficient: Expr,
+}
+
+/// Is `expr` free of every name in `y_names` (as `Identifier` uses and as
+/// `Derivative[…, name, …]` heads)? Delegates to the single-variable
+/// [`is_free_of_y`] once per name.
+fn is_free_of_any_y(expr: &Expr, y_names: &[String]) -> bool {
+  y_names.iter().all(|yn| is_free_of_y(expr, yn))
+}
+
+/// Like [`extract_derivative_order`], but against a whole set of dependent
+/// variable names. Returns `(index into y_names, order)`.
+fn extract_multivar_derivative(
+  expr: &Expr,
+  y_names: &[String],
+) -> Option<(usize, usize)> {
+  for (i, yn) in y_names.iter().enumerate() {
+    if let Some(order) = extract_derivative_order(expr, yn) {
+      return Some((i, order));
+    }
+  }
+  None
+}
+
+/// Multi-variable counterpart of [`collect_ode_terms`]: collect the
+/// additive terms of a normalized (lhs − rhs) equation, classifying each
+/// by which dependent variable (if any) it involves.
+fn collect_multivar_terms(
+  expr: &Expr,
+  y_names: &[String],
+) -> Result<Vec<MultiOdeTerm>, InterpreterError> {
+  let mut terms = Vec::new();
+  collect_multivar_additive(expr, y_names, false, &mut terms)?;
+  Ok(terms)
+}
+
+fn collect_multivar_additive(
+  expr: &Expr,
+  y_names: &[String],
+  negated: bool,
+  terms: &mut Vec<MultiOdeTerm>,
+) -> Result<(), InterpreterError> {
+  match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus,
+      left,
+      right,
+    } => {
+      collect_multivar_additive(left, y_names, negated, terms)?;
+      collect_multivar_additive(right, y_names, negated, terms)?;
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Minus,
+      left,
+      right,
+    } => {
+      collect_multivar_additive(left, y_names, negated, terms)?;
+      collect_multivar_additive(right, y_names, !negated, terms)?;
+    }
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => {
+      collect_multivar_additive(operand, y_names, !negated, terms)?;
+    }
+    Expr::FunctionCall { name, args } if name == "Plus" && args.len() >= 2 => {
+      for arg in args {
+        collect_multivar_additive(arg, y_names, negated, terms)?;
+      }
+    }
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 2 => {
+      classify_multivar_product(args, y_names, negated, terms)?;
+    }
+    _ => {
+      let term = classify_multivar_single(expr, y_names)?;
+      let coeff = if negated {
+        negate_expr(&term.coefficient)
+      } else {
+        term.coefficient
+      };
+      terms.push(MultiOdeTerm {
+        var_index: term.var_index,
+        order: term.order,
+        coefficient: coeff,
+      });
+    }
+  }
+  Ok(())
+}
+
+fn classify_multivar_product(
+  factors: &[Expr],
+  y_names: &[String],
+  negated: bool,
+  terms: &mut Vec<MultiOdeTerm>,
+) -> Result<(), InterpreterError> {
+  let mut y_factor_idx = None;
+  let mut y_var = 0usize;
+  let mut y_order = -1i32;
+
+  for (i, factor) in factors.iter().enumerate() {
+    if let Some((vi, order)) = extract_multivar_derivative(factor, y_names) {
+      y_factor_idx = Some(i);
+      y_var = vi;
+      y_order = order as i32;
+      break;
+    }
+    if let Expr::FunctionCall { name, args } = factor
+      && args.len() == 1
+      && let Some(vi) = y_names.iter().position(|n| n == name)
+    {
+      y_factor_idx = Some(i);
+      y_var = vi;
+      y_order = 0;
+      break;
+    }
+  }
+
+  let (order, var_index, coefficient) = if let Some(idx) = y_factor_idx {
+    let other_factors: Vec<&Expr> = factors
+      .iter()
+      .enumerate()
+      .filter(|(i, _)| *i != idx)
+      .map(|(_, f)| f)
+      .collect();
+    let coeff = if other_factors.is_empty() {
+      Expr::Integer(1)
+    } else if other_factors.len() == 1 {
+      other_factors[0].clone()
+    } else {
+      Expr::FunctionCall {
+        name: "Times".to_string(),
+        args: other_factors.into_iter().cloned().collect(),
+      }
+    };
+    (y_order, Some(y_var), coeff)
+  } else {
+    let product = if factors.len() == 1 {
+      factors[0].clone()
+    } else {
+      unevaluated("Times", factors)
+    };
+    if !is_free_of_any_y(&product, y_names) {
+      return Err(InterpreterError::EvaluationError(
+        "DSolve: cannot classify term in coupled system".into(),
+      ));
+    }
+    (-1, None, product)
+  };
+
+  let coeff = if negated {
+    negate_expr(&coefficient)
+  } else {
+    coefficient
+  };
+  terms.push(MultiOdeTerm {
+    var_index,
+    order,
+    coefficient: coeff,
+  });
+  Ok(())
+}
+
+fn classify_multivar_single(
+  expr: &Expr,
+  y_names: &[String],
+) -> Result<MultiOdeTerm, InterpreterError> {
+  if let Expr::FunctionCall { name, args } = expr
+    && args.len() == 1
+    && let Some(i) = y_names.iter().position(|n| n == name)
+  {
+    return Ok(MultiOdeTerm {
+      var_index: Some(i),
+      order: 0,
+      coefficient: Expr::Integer(1),
+    });
+  }
+  if let Some((i, order)) = extract_multivar_derivative(expr, y_names) {
+    return Ok(MultiOdeTerm {
+      var_index: Some(i),
+      order: order as i32,
+      coefficient: Expr::Integer(1),
+    });
+  }
+  if let Expr::BinaryOp {
+    op: BinaryOperator::Times,
+    left,
+    right,
+  } = expr
+  {
+    if let Some((i, order)) = extract_multivar_derivative(right, y_names) {
+      return Ok(MultiOdeTerm {
+        var_index: Some(i),
+        order: order as i32,
+        coefficient: *left.clone(),
+      });
+    }
+    if let Expr::FunctionCall { name, args } = right.as_ref()
+      && args.len() == 1
+      && let Some(i) = y_names.iter().position(|n| n == name)
+    {
+      return Ok(MultiOdeTerm {
+        var_index: Some(i),
+        order: 0,
+        coefficient: *left.clone(),
+      });
+    }
+    if let Some((i, order)) = extract_multivar_derivative(left, y_names) {
+      return Ok(MultiOdeTerm {
+        var_index: Some(i),
+        order: order as i32,
+        coefficient: *right.clone(),
+      });
+    }
+    if let Expr::FunctionCall { name, args } = left.as_ref()
+      && args.len() == 1
+      && let Some(i) = y_names.iter().position(|n| n == name)
+    {
+      return Ok(MultiOdeTerm {
+        var_index: Some(i),
+        order: 0,
+        coefficient: *right.clone(),
+      });
+    }
+  }
+  if is_free_of_any_y(expr, y_names) {
+    return Ok(MultiOdeTerm {
+      var_index: None,
+      order: -1,
+      coefficient: expr.clone(),
+    });
+  }
+  Err(InterpreterError::EvaluationError(
+    "DSolve: cannot classify term in coupled system".into(),
+  ))
+}
+
+// ─── Small numeric linear algebra for the companion system ─────────────
+
+/// A complex number as a plain `(re, im)` pair — the system's dimension is
+/// always tiny (a handful of coupled equations), so a dependency on a
+/// complex-number crate isn't worth it for this one local computation.
+type Cplx = (f64, f64);
+
+fn cadd(a: Cplx, b: Cplx) -> Cplx {
+  (a.0 + b.0, a.1 + b.1)
+}
+fn csub(a: Cplx, b: Cplx) -> Cplx {
+  (a.0 - b.0, a.1 - b.1)
+}
+fn cmul(a: Cplx, b: Cplx) -> Cplx {
+  (a.0 * b.0 - a.1 * b.1, a.0 * b.1 + a.1 * b.0)
+}
+fn cdiv(a: Cplx, b: Cplx) -> Cplx {
+  let d = b.0 * b.0 + b.1 * b.1;
+  ((a.0 * b.0 + a.1 * b.1) / d, (a.1 * b.0 - a.0 * b.1) / d)
+}
+fn cabs(a: Cplx) -> f64 {
+  a.0.hypot(a.1)
+}
+
+/// A polynomial in the differential operator `D`, `coeffs[k]` is the
+/// coefficient of `D^k` (constant, since the ODE system has constant
+/// coefficients).
+type OpPoly = Vec<f64>;
+
+fn poly_add(a: &[f64], b: &[f64]) -> OpPoly {
+  let n = a.len().max(b.len());
+  let mut out = vec![0.0; n];
+  for (i, v) in a.iter().enumerate() {
+    out[i] += v;
+  }
+  for (i, v) in b.iter().enumerate() {
+    out[i] += v;
+  }
+  out
+}
+
+fn poly_scale(a: &[f64], s: f64) -> OpPoly {
+  a.iter().map(|v| v * s).collect()
+}
+
+fn poly_mul(a: &[f64], b: &[f64]) -> OpPoly {
+  if a.is_empty() || b.is_empty() {
+    return Vec::new();
+  }
+  let mut out = vec![0.0; a.len() + b.len() - 1];
+  for (i, &av) in a.iter().enumerate() {
+    if av == 0.0 {
+      continue;
+    }
+    for (j, &bv) in b.iter().enumerate() {
+      out[i + j] += av * bv;
+    }
+  }
+  out
+}
+
+/// Determinant of an `n×n` matrix of operator polynomials, via cofactor
+/// expansion along the first row. `n` is always small (the number of
+/// coupled dependent variables), so the `O(n!)` recursion is fine.
+fn poly_det(m: &[Vec<OpPoly>]) -> OpPoly {
+  let n = m.len();
+  if n == 1 {
+    return m[0][0].clone();
+  }
+  let mut result: OpPoly = vec![0.0];
+  let mut sign = 1.0;
+  for col in 0..n {
+    let minor: Vec<Vec<OpPoly>> = (1..n)
+      .map(|r| {
+        (0..n)
+          .filter(|&c| c != col)
+          .map(|c| m[r][c].clone())
+          .collect()
+      })
+      .collect();
+    let cofactor = poly_det(&minor);
+    let term = poly_scale(&poly_mul(&m[0][col], &cofactor), sign);
+    result = poly_add(&result, &term);
+    sign = -sign;
+  }
+  result
+}
+
+/// Drop numerically-negligible trailing high-order coefficients so the
+/// polynomial's true degree can be read off from its length.
+fn poly_trim(p: OpPoly) -> OpPoly {
+  let mut p = p;
+  let scale = p.iter().fold(1.0_f64, |acc, v| acc.max(v.abs()));
+  while p.len() > 1 && p.last().is_some_and(|v| v.abs() < scale * 1e-9) {
+    p.pop();
+  }
+  if p.is_empty() {
+    p.push(0.0);
+  }
+  p
+}
+
+fn eval_poly_c(p: &[f64], x: Cplx) -> Cplx {
+  let mut acc: Cplx = (0.0, 0.0);
+  let mut xp: Cplx = (1.0, 0.0);
+  for &c in p {
+    acc = cadd(acc, (c * xp.0, c * xp.1));
+    xp = cmul(xp, x);
+  }
+  acc
+}
+
+fn eval_matrix_at(m: &[Vec<OpPoly>], lambda: Cplx) -> Vec<Vec<Cplx>> {
+  m.iter()
+    .map(|row| row.iter().map(|cell| eval_poly_c(cell, lambda)).collect())
+    .collect()
+}
+
+/// A null vector of a (numerically) singular `n×n` complex matrix, via
+/// Gaussian elimination with partial pivoting to reduced row-echelon form.
+/// Returns `None` unless the nullity is exactly 1 — a simple root of the
+/// system's characteristic polynomial gives a rank-`n−1` matrix, so a
+/// nullity other than 1 means either a repeated root (handled by the
+/// caller rejecting `mult > 1` beforehand) or numerical trouble.
+fn null_vector(mut mat: Vec<Vec<Cplx>>) -> Option<Vec<Cplx>> {
+  let n = mat.len();
+  let mut pivot_cols: Vec<usize> = Vec::new();
+  let mut row = 0usize;
+
+  for col in 0..n {
+    if row >= n {
+      break;
+    }
+    let mut best_row = row;
+    let mut best_val = cabs(mat[row][col]);
+    for r in (row + 1)..n {
+      let v = cabs(mat[r][col]);
+      if v > best_val {
+        best_val = v;
+        best_row = r;
+      }
+    }
+    if best_val < 1e-7 {
+      continue;
+    }
+    mat.swap(row, best_row);
+    let piv = mat[row][col];
+    for cell in mat[row].iter_mut().skip(col) {
+      *cell = cdiv(*cell, piv);
+    }
+    for r in 0..n {
+      if r == row {
+        continue;
+      }
+      let factor = mat[r][col];
+      if cabs(factor) > 0.0 {
+        for c in col..n {
+          let sub = cmul(factor, mat[row][c]);
+          mat[r][c] = csub(mat[r][c], sub);
+        }
+      }
+    }
+    pivot_cols.push(col);
+    row += 1;
+  }
+
+  let free_cols: Vec<usize> =
+    (0..n).filter(|c| !pivot_cols.contains(c)).collect();
+  if free_cols.len() != 1 {
+    return None;
+  }
+  let free_col = free_cols[0];
+
+  let mut v = vec![(0.0, 0.0); n];
+  v[free_col] = (1.0, 0.0);
+  for (i, &pc) in pivot_cols.iter().enumerate() {
+    v[pc] = (-mat[i][free_col].0, -mat[i][free_col].1);
+  }
+  Some(v)
+}
+
+/// Solve a real `n×n` linear system by Gaussian elimination with partial
+/// pivoting. Used only for the constant particular solution of a system
+/// with nonzero (constant) forcing.
+fn solve_real_linear_system(a: &[Vec<f64>], b: &[f64]) -> Option<Vec<f64>> {
+  let n = a.len();
+  let mut aug: Vec<Vec<f64>> = a
+    .iter()
+    .zip(b)
+    .map(|(row, &bi)| {
+      let mut r = row.clone();
+      r.push(bi);
+      r
+    })
+    .collect();
+
+  for col in 0..n {
+    let mut best_row = col;
+    let mut best_val = aug[col][col].abs();
+    for r in (col + 1)..n {
+      if aug[r][col].abs() > best_val {
+        best_val = aug[r][col].abs();
+        best_row = r;
+      }
+    }
+    if best_val < 1e-12 {
+      return None;
+    }
+    aug.swap(col, best_row);
+    let pivot = aug[col][col];
+    for r in (col + 1)..n {
+      let factor = aug[r][col] / pivot;
+      for c in col..=n {
+        aug[r][c] -= factor * aug[col][c];
+      }
+    }
+  }
+
+  let mut x = vec![0.0; n];
+  for i in (0..n).rev() {
+    let mut s = aug[i][n];
+    for j in (i + 1)..n {
+      s -= aug[i][j] * x[j];
+    }
+    x[i] = s / aug[i][i];
+  }
+  Some(x)
+}
+
+/// Placeholder identifier standing in for the shared arbitrary constant
+/// `C[k]` while the general solution is still being solved against the
+/// initial conditions (mirrors [`apply_initial_conditions`]'s own `__Ci`
+/// placeholders, generalized to the whole system rather than one `y`).
+fn sys_const(k: usize) -> Expr {
+  Expr::Identifier(format!("$DSolveSystemC{k}"))
+}
+
+/// `DSolve[{eq1, …, ic1, …}, {y1[t], y2[t], …}, t]` for a linear,
+/// constant-coefficient system — see the module-level comment above this
+/// section for the method. Returns an `Err` with a `"DSolve:"`-prefixed
+/// message for any shape outside this scope, which
+/// [`dsolve_ast_with_head`] turns into an unevaluated `DSolve[…]` rather
+/// than leaking the internal error.
+fn dsolve_linear_system(
+  eqns_arg: &Expr,
+  dep_items: &[Expr],
+  x_name: &str,
+) -> Result<Expr, InterpreterError> {
+  let bail = || {
+    InterpreterError::EvaluationError(
+      "DSolve: coupled system not supported".to_string(),
+    )
+  };
+
+  let mut y_names: Vec<String> = Vec::with_capacity(dep_items.len());
+  for item in dep_items {
+    match item {
+      Expr::FunctionCall { name, args }
+        if args.len() == 1
+          && matches!(&args[0], Expr::Identifier(s) if s == x_name) =>
+      {
+        y_names.push(name.clone());
+      }
+      _ => return Err(bail()),
+    }
+  }
+  let n = y_names.len();
+  if n < 2 {
+    return Err(bail());
+  }
+
+  let items: Vec<Expr> = match eqns_arg {
+    Expr::List(items) => items.iter().cloned().collect(),
+    other => vec![other.clone()],
+  };
+
+  let mut odes: Vec<Expr> = Vec::new();
+  let mut ics: Vec<(usize, Expr)> = Vec::new();
+  for item in &items {
+    let matched_var = y_names
+      .iter()
+      .position(|yn| is_initial_condition(item, yn, x_name));
+    match matched_var {
+      Some(vi) => ics.push((vi, item.clone())),
+      None => odes.push(item.clone()),
+    }
+  }
+  if odes.len() != n {
+    return Err(bail());
+  }
+
+  // Build the n×n matrix of operator polynomials and the constant forcing
+  // vector from each normalized (lhs − rhs) equation.
+  let mut poly_matrix: Vec<Vec<OpPoly>> = vec![vec![Vec::new(); n]; n];
+  let mut forcing_sum: Vec<f64> = vec![0.0; n];
+
+  for (row, ode) in odes.iter().enumerate() {
+    let normalized = normalize_equation(ode)?;
+    let terms = collect_multivar_terms(&normalized, &y_names)?;
+    for term in terms {
+      match term.var_index {
+        Some(col) => {
+          let coeff = eval_to_f64(&term.coefficient)?;
+          let order = usize::try_from(term.order).map_err(|_| bail())?;
+          let cell = &mut poly_matrix[row][col];
+          if cell.len() <= order {
+            cell.resize(order + 1, 0.0);
+          }
+          cell[order] += coeff;
+        }
+        None => {
+          forcing_sum[row] += eval_to_f64(&term.coefficient)?;
+        }
+      }
+    }
+  }
+  let f_vec: Vec<f64> = forcing_sum.iter().map(|v| -v).collect();
+
+  let delta = poly_trim(poly_det(&poly_matrix));
+  let degree = delta.len() - 1;
+  if degree == 0 || delta.iter().all(|c| c.abs() < 1e-9) || degree > 4 {
+    return Err(bail());
+  }
+
+  let roots = find_characteristic_roots(&delta, degree)?;
+  if roots.iter().any(|(_, _, mult)| *mult > 1) {
+    // Repeated roots need secular t^k*E^(λt) terms this solver doesn't
+    // build yet — leave DSolve unevaluated rather than a wrong answer.
+    return Err(bail());
+  }
+
+  // Constant particular solution for nonzero constant forcing: M(0) Yp = f.
+  let particular: Vec<f64> = if f_vec.iter().any(|v| v.abs() > 1e-12) {
+    let m0 = eval_matrix_at(&poly_matrix, (0.0, 0.0));
+    let m0_real: Vec<Vec<f64>> =
+      m0.iter().map(|r| r.iter().map(|c| c.0).collect()).collect();
+    solve_real_linear_system(&m0_real, &f_vec).ok_or_else(bail)?
+  } else {
+    vec![0.0; n]
+  };
+
+  let mut y_exprs: Vec<Expr> = (0..n)
+    .map(|i| {
+      if particular[i].abs() > 1e-12 {
+        f64_to_nice_expr(particular[i])
+      } else {
+        Expr::Integer(0)
+      }
+    })
+    .collect();
+
+  let mut c_idx = 1usize;
+  for (re, im, _mult) in &roots {
+    if im.abs() < 1e-9 {
+      let v = null_vector(eval_matrix_at(&poly_matrix, (*re, 0.0)))
+        .ok_or_else(bail)?;
+      let c = sys_const(c_idx);
+      c_idx += 1;
+      for k in 0..n {
+        let amp = v[k].0;
+        if amp.abs() < 1e-12 {
+          continue;
+        }
+        let mut term = times2(f64_to_nice_expr(amp), c.clone());
+        if re.abs() > 1e-10 {
+          term = times2(make_exp_term(*re, x_name), term);
+        }
+        y_exprs[k] = plus2(y_exprs[k].clone(), term);
+      }
+    } else {
+      let v = null_vector(eval_matrix_at(&poly_matrix, (*re, *im)))
+        .ok_or_else(bail)?;
+      let ca = sys_const(c_idx);
+      c_idx += 1;
+      let cb = sys_const(c_idx);
+      c_idx += 1;
+      for k in 0..n {
+        let (p, q) = v[k];
+        if p.abs() < 1e-12 && q.abs() < 1e-12 {
+          continue;
+        }
+        // e^{re t} [ (Ca*p + Cb*q) Cos[im t] + (Cb*p - Ca*q) Sin[im t] ]
+        let cos_coeff = plus2(
+          times2(f64_to_nice_expr(p), ca.clone()),
+          times2(f64_to_nice_expr(q), cb.clone()),
+        );
+        let sin_coeff = plus2(
+          times2(f64_to_nice_expr(p), cb.clone()),
+          times2(f64_to_nice_expr(-q), ca.clone()),
+        );
+        let cos_term = times2(cos_coeff, make_trig_term("Cos", *im, x_name));
+        let sin_term = times2(sin_coeff, make_trig_term("Sin", *im, x_name));
+        let mut term = plus2(cos_term, sin_term);
+        if re.abs() > 1e-10 {
+          term = times2(make_exp_term(*re, x_name), term);
+        }
+        y_exprs[k] = plus2(y_exprs[k].clone(), term);
+      }
+    }
+  }
+  let total_dof = c_idx - 1;
+
+  // Apply initial conditions (if a full set was given) by evaluating each
+  // y_i and its derivatives at the IC point and solving for the shared
+  // constants — the same technique as the single-variable
+  // `apply_initial_conditions`, generalized across variables.
+  let mut equations: Vec<Expr> = Vec::new();
+  for (vi, ic) in &ics {
+    let Expr::Comparison {
+      operands,
+      operators,
+    } = ic
+    else {
+      continue;
+    };
+    if operands.len() != 2
+      || operators.len() != 1
+      || operators[0] != ComparisonOp::Equal
+    {
+      continue;
+    }
+    let lhs = &operands[0];
+    let rhs = &operands[1];
+    let yn = &y_names[*vi];
+    let point_order = if let Expr::FunctionCall { name, args } = lhs
+      && name == yn
+      && args.len() == 1
+    {
+      Some((0usize, args[0].clone()))
+    } else {
+      extract_derivative_order_and_point(lhs, yn)
+    };
+    let Some((order, point)) = point_order else {
+      continue;
+    };
+
+    let mut deriv = y_exprs[*vi].clone();
+    for _ in 0..order {
+      deriv =
+        crate::functions::calculus_ast::differentiate_expr(&deriv, x_name)?;
+      deriv = crate::functions::calculus_ast::simplify(deriv);
+      deriv = crate::evaluator::evaluate_expr_to_expr(&deriv).unwrap_or(deriv);
+    }
+    let substituted =
+      crate::syntax::substitute_variable(&deriv, x_name, &point);
+    let evaluated = crate::evaluator::evaluate_expr_to_expr(&substituted)
+      .unwrap_or(substituted);
+    equations.push(Expr::Comparison {
+      operands: vec![evaluated, rhs.clone()],
+      operators: vec![ComparisonOp::Equal],
+    });
+  }
+
+  if equations.len() == total_dof {
+    let var_exprs: Vec<Expr> = (1..=total_dof).map(sys_const).collect();
+    let solve_result = crate::functions::solve_ast(&[
+      Expr::List(equations.into()),
+      Expr::List(var_exprs.into()),
+    ])?;
+    if let Expr::List(outer) = &solve_result
+      && let Some(Expr::List(rules)) = outer.first()
+    {
+      for y_expr in &mut y_exprs {
+        for rule in rules {
+          if let Expr::Rule {
+            pattern,
+            replacement,
+          } = rule
+            && let Expr::Identifier(var_name) = pattern.as_ref()
+          {
+            *y_expr =
+              crate::syntax::substitute_variable(y_expr, var_name, replacement);
+          }
+        }
+        *y_expr = crate::evaluator::evaluate_expr_to_expr(y_expr)
+          .unwrap_or_else(|_| y_expr.clone());
+      }
+    }
+  } else {
+    // Not enough initial conditions: present the general solution with
+    // Wolfram's `C[k]` constants instead of the internal placeholders.
+    for y_expr in &mut y_exprs {
+      for k in 1..=total_dof {
+        *y_expr = crate::syntax::substitute_variable(
+          y_expr,
+          &format!("$DSolveSystemC{k}"),
+          &make_c(k),
+        );
+      }
+      *y_expr = crate::evaluator::evaluate_expr_to_expr(y_expr)
+        .unwrap_or_else(|_| y_expr.clone());
+    }
+  }
+
+  let rules: Vec<Expr> = y_names
+    .iter()
+    .zip(y_exprs)
+    .map(|(yn, sol)| Expr::Rule {
+      pattern: Box::new(Expr::FunctionCall {
+        name: yn.clone(),
+        args: vec![Expr::Identifier(x_name.to_string())].into(),
+      }),
+      replacement: Box::new(sol),
+    })
+    .collect();
+
+  Ok(Expr::List(vec![Expr::List(rules.into())].into()))
 }

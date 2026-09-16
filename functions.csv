@@ -212,7 +212,7 @@ Total,Sums the elements of a list down to a level spec — AllowedHeads -> All d
 ColorFunction,Option specifying the color function for visualization,✅,none,2.0,152
 ContourPlot,Creates a contour plot of a function,✅,pure,1.0,155
 RandomInteger,Generate random integers — RandomInteger[n] draws from 0 through n so a negative n draws downwards,✅,contextual,6.0,156
-NDSolve,Solves ordinary differential equations numerically (including coupled systems compound unknowns and EventLocator events) and 1-D parabolic PDEs (single or coupled reaction-diffusion-convection systems with Dirichlet or Neumann boundaries) via the method of lines,✅,contextual,2.0,157
+NDSolve,Solves ordinary differential equations numerically (including coupled systems compound unknowns and EventLocator events) and 1-D PDEs via the method of lines: parabolic (single or coupled reaction-diffusion-convection systems) and hyperbolic (single second-order-in-time wave-type equations even with an implicit mixed space/time derivative on the right) with Dirichlet or Neumann boundaries,✅,contextual,2.0,157
 Integers,Domain symbol representing the set of integers,✅,pure,4.0,158
 Large,Named size symbol used as option value for ImageSize and Style,✅,pure,6.0,159
 Limit,Computes the limit of an expression,✅,pure,1.0,160
@@ -915,7 +915,7 @@ GraphLayout,,🚫,,8.0,888
 Names,Lists symbol names matching a string pattern whose context part selects the context,✅,pure,1.0,889
 RotateLabel,,🚫,,2.0,890
 TimeZone,,🚫,,2.0,892
-InfiniteLine,Geometric primitive representing an infinite line; drawn in Graphics3D clipped to the plot range,✅,none,10.0,893
+InfiniteLine,Geometric primitive representing an infinite line; drawn in Graphics and Graphics3D clipped to the plot range,✅,none,10.0,893
 GegenbauerC,Gegenbauer (ultraspherical) polynomial C_n^lambda(x); two-arg form GegenbauerC[n;x] is the renormalized (2/n) ChebyshevT[n;x],✅,pure,1.0,894
 SetterBar,Setter bar control (stays symbolic in script mode),✅,unevaluated,6.0,895
 StyleBox,Low-level box construct for styled content display,✅,pure,3.0,896
@@ -2094,7 +2094,7 @@ SemanticImport,Import with semantic interpretation,🚫,,10.0,2100
 AudioPlot,Plot the waveform of an Audio or Sound object,✅,pure,11.0,2102
 FlipView,Flippable view control (stays symbolic in script mode),✅,unevaluated,6.0,2102
 EmptyRegion,Empty geometric region of a given embedding dimension,✅,pure,10.0,2108
-HorizontalGauge,Horizontal gauge display,🚫,,9.0,2108
+HorizontalGauge,Display one or more values on a horizontal scale as a Graphics gauge,✅,pure,9.0,2108
 InverseGudermannian,Returns the inverse Gudermannian function value,✅,pure,7.0,2108
 Periodogram,Plot the power spectrum of data or audio in decibels,✅,pure,9.0,2108
 TensorReduce,Reduce tensor expressions,🚫,,9.0,2108
@@ -2280,7 +2280,7 @@ DateListLogPlot,Plots date-valued data with a logarithmic y-axis,✅,pure,7.0,22
 AbsoluteCurrentValue,dynamic content,🚫,None,6.0,2299
 BatchSize,machine learning option,🚫,None,11.0,2299
 DaubechiesWavelet,Daubechies wavelet family of order n,✅,pure,8.0,2299
-HalfLine,Geometric half-line primitive; drawn in Graphics3D clipped to the plot range,✅,pure,10.0,2299
+HalfLine,Geometric half-line primitive; drawn in Graphics and Graphics3D clipped to the plot range,✅,pure,10.0,2299
 PalindromeQ,Tests if a string or list is a palindrome,✅,pure,10.3,2299
 GraphQ,Test whether an expression is a valid Graph object,✅,1,8.0,2305
 ListStreamPlot,stream visualization,🚫,None,7.0,2305
@@ -2701,7 +2701,7 @@ LatitudeLongitude,extract latitude and longitude from a geo position,✅,none,7.
 QHypergeometricPFQ,q-analogue of the generalized hypergeometric function,🚫,,7.0,2729
 ScrollPosition,,🚫,,7.0,2729
 TraceDepth,Option controlling depth of tracing in Trace,✅,pure,2.0,2729
-FinishDynamic,,🚫,,6.0,2734
+FinishDynamic,Force pending Dynamic updates to complete (a front-end operation with no kernel value),✅,pure,6.0,2734
 GeoRangePadding,,🚫,,10.0,2734
 NumberMarks,option for number marks,✅,Symbolic,3.0,2734
 PearsonChiSquareTest,perform a Pearson chi-square goodness-of-fit test,✅,none,8.0,2734
@@ -6344,3 +6344,4 @@ $Urgent,,🚫,stateful,1.0,
 $Version,The version of the Woxi kernel,✅,pure,1.0,
 $VersionNumber,The version number of the Woxi kernel,✅,pure,2.0,
 EdgeRenderingFunction,Option giving the function that draws each edge of a GraphPlot (GraphPlot's older name for EdgeShapeFunction),✅,none,6.0,
+InterpolatingFunctionDomain,Gives the domain over which an InterpolatingFunction is defined (same as its "Domain" property),✅,pure,12.0,
