@@ -753,6 +753,17 @@ const APPROX_MATCH = new Set([
   // 3.831705970207511 — one and three units in the last place off the
   // correctly rounded double, in opposite directions.
   "FindRoot[D[BesselJ[0, r], r] == 0, {r, 3}]",
+  // Same story for the bounded `{var, x0, xmin, xmax}` form of
+  // FindMinimum/FindMaximum: a bound switches Wolfram to a method that stops
+  // a few units in the eighth decimal short of the optimum
+  // (`x -> 2.9999999975704634` where the minimum is at 3, `x ->
+  // 1.9999999970699096` where it is clamped to the boundary 2). Woxi's search
+  // lands on the exact value. Both are well inside either solver's tolerance,
+  // and a structural change or a genuinely different optimum still fails.
+  "FindMinimum[(x - 3)^2 + 2., {x, 0, -10, 10}]",
+  "FindMinimum[(x - 3)^2, {x, 1, 0, 2}]",
+  "FindMaximum[-(x - 3)^2, {x, 0, -5, 1}]",
+  "FindMinimum[(x - 3)^2 + (y - 2)^2, {{x, 0, 0, 1}, {y, 0, -10, 10}}]",
 ]);
 
 /**
