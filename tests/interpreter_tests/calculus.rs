@@ -7407,6 +7407,111 @@ mod dsolve {
     );
   }
 
+  // Regression: a purely-biquadratic characteristic quartic (no cubic or
+  // linear term — the common shape for a real coupled linear ODE system,
+  // and for any fourth-order ODE symmetric enough to have one) sent the
+  // general resolvent-cubic quartic solver through a numerically
+  // degenerate resolvent cubic (itself repeated-root, since the quartic
+  // has no odd-power terms), which then picked the wrong real/complex
+  // branch and returned four spuriously *real* roots instead of two
+  // purely-imaginary conjugate pairs. `y'''' + 2.04 y'' + y == 0`'s
+  // characteristic polynomial is `r^4 + 2.04 r^2 + 1`, whose roots by the
+  // quadratic formula on `u = r^2` are both negative (`u = -0.819,
+  // -1.221`), so `r` must be purely imaginary (`±0.905 I`, `±1.105 I`) —
+  // not the real `±0.905`, `±1.105` the buggy path produced.
+  #[test]
+  fn fourth_order_biquadratic_has_purely_imaginary_roots() {
+    assert_eq!(
+      interpret("DSolve[y''''[t] + 2.04*y''[t] + y[t] == 0, y[t], t]").unwrap(),
+      "{{y[t] -> C[1]*Cos[0.9049875621120891*t] + \
+C[3]*Cos[1.104987562112089*t] + C[2]*Sin[0.9049875621120891*t] + \
+C[4]*Sin[1.104987562112089*t]}}"
+    );
+  }
+
+  // `DSolve[{eq1, eq2, ic1, …}, {y1[t], y2[t], …}, t]` — a linear,
+  // constant-coefficient *coupled* system, solved via operator-determinant
+  // elimination (each y_i satisfies the same characteristic polynomial;
+  // the amplitude ratio between variables at each root comes from the
+  // null space of the system evaluated there). Found while checking
+  // whether Woxi Studio could open a real Wolfram Demonstration whose
+  // Manipulate solves a Foucault-pendulum-style coupled ODE system —
+  // previously DSolve only recognised one dependent function and left any
+  // `{y1[t], y2[t], …}` system unevaluated.
+  mod coupled_linear_ode_system {
+    use super::*;
+
+    // x' == y, y' == x has real characteristic roots ±1: x = Cosh[t],
+    // y = Sinh[t] written out as raw exponentials.
+    #[test]
+    fn real_roots_with_initial_conditions() {
+      assert_eq!(
+        interpret(
+          "DSolve[{x'[t] == y[t], y'[t] == x[t], x[0] == 1, y[0] == 0}, \
+{x[t], y[t]}, t]"
+        )
+        .unwrap(),
+        "{{x[t] -> 1/(2*E^t) + E^t/2, y[t] -> -1/2*1/E^t + E^t/2}}"
+      );
+    }
+
+    // x' == y, y' == -x is a pure rotation (eigenvalues ±I): the general
+    // solution (no initial conditions given) comes back in terms of the
+    // two shared arbitrary constants, not decoupled per-variable ones.
+    #[test]
+    fn complex_roots_general_solution_shares_constants() {
+      assert_eq!(
+        interpret("DSolve[{x'[t] == y[t], y'[t] == -x[t]}, {x[t], y[t]}, t]")
+          .unwrap(),
+        "{{x[t] -> -(C[2]*Cos[t]) + C[1]*Sin[t], y[t] -> C[1]*Cos[t] + \
+C[2]*Sin[t]}}"
+      );
+    }
+
+    // Two coupled second-order equations (rotational coupling, as a
+    // Foucault pendulum's x/y equations of motion have) — the shape that
+    // motivated this solver. The closed form must match independent
+    // numeric integration (`NDSolve` on the same system) to high
+    // precision, since there is no simpler exact form to compare against
+    // directly.
+    #[test]
+    fn coupled_second_order_matches_ndsolve() {
+      // Independent numeric integration and the closed form agree to
+      // 10^-6 at t = 6 — they can't be expected to agree bit-for-bit,
+      // since one is exact trig evaluation and the other an interpolated
+      // numeric integration.
+      assert_eq!(
+        interpret(
+          "closed = ({x[t], y[t]} /. First[DSolve[{x''[t] - 2*0.1*y'[t] + \
+x[t] == 0, y''[t] + 2*0.1*x'[t] + y[t] == 0, x[0] == 1, x'[0] == 0, \
+y[0] == 0, y'[0] == 1}, {x[t], y[t]}, t]]) /. t -> 6; \
+numeric = {x[6], y[6]} /. First[NDSolve[{x''[t] - 2*0.1*y'[t] + x[t] == 0, \
+y''[t] + 2*0.1*x'[t] + y[t] == 0, x[0] == 1, x'[0] == 0, y[0] == 0, \
+y'[0] == 1}, {x, y}, {t, 0, 10}]]; \
+Round[N[closed] - N[numeric], 10^-6]"
+        )
+        .unwrap(),
+        "{0, 0}"
+      );
+    }
+
+    // A defective system (repeated eigenvalue 1, only one independent
+    // eigenvector) needs a `t*E^t` secular term this solver doesn't build;
+    // it must stay unevaluated rather than silently drop a degree of
+    // freedom.
+    #[test]
+    fn repeated_root_stays_unevaluated() {
+      assert_eq!(
+        interpret(
+          "DSolve[{x'[t] == x[t], y'[t] == x[t] + y[t]}, {x[t], y[t]}, t]"
+        )
+        .unwrap(),
+        "DSolve[{Derivative[1][x][t] == x[t], Derivative[1][y][t] == x[t] + \
+y[t]}, {x[t], y[t]}, t]"
+      );
+    }
+  }
+
   #[test]
   fn unsolvable_ode_stays_unevaluated() {
     // A nonlinear ODE Woxi can't classify must return the unevaluated DSolve

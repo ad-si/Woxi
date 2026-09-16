@@ -385,19 +385,53 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Each sample yields one coordinate pair, or one pair per curve when
     // the whole body is sampled (e.g. `ReIm[{c1, c2, c3}]`).
     let samples = match curve {
-      CurveSrc::Pair(fx, fy) => adaptive_samples(
-        |t| match (
-          evaluate_at_point(fx, &var_name, t),
-          evaluate_at_point(fy, &var_name, t),
-        ) {
-          (Some(x), Some(y)) => Some(vec![(x, y)]),
-          _ => None,
-        },
-        t_min,
-        t_max,
-        num_samples,
-        max_total,
-      ),
+      CurveSrc::Pair(fx, fy) => {
+        // ParametricPlot is HoldFirst-like, so a curve component passed as
+        // a bare symbol or a `Part` extraction (e.g. `s[[1, 1, 2]]` off a
+        // `DSolve` result) reaches here unevaluated and textually free of
+        // the plot variable. Sampling substitutes the variable into the
+        // component and evaluates, but a held reference like that contains
+        // no occurrence of the variable to substitute — evaluating it just
+        // looks the reference up again with the variable still symbolic,
+        // never producing a number, so every sample is dropped and the
+        // curve renders empty. When a component does not textually mention
+        // the plot variable, evaluate it once with that variable kept
+        // symbolic first, so an assigned symbol or a part extraction
+        // expands to its definition (and reveals the variable) before
+        // per-sample substitution — mirroring `Plot`'s own fix for the
+        // same shape of body.
+        let fx_storage;
+        let fx: &Expr =
+          if crate::functions::plot::expr_mentions_var(fx, &var_name) {
+            fx
+          } else {
+            fx_storage =
+              crate::functions::plot::eval_body_var_symbolic(fx, &var_name);
+            &fx_storage
+          };
+        let fy_storage;
+        let fy: &Expr =
+          if crate::functions::plot::expr_mentions_var(fy, &var_name) {
+            fy
+          } else {
+            fy_storage =
+              crate::functions::plot::eval_body_var_symbolic(fy, &var_name);
+            &fy_storage
+          };
+        adaptive_samples(
+          |t| match (
+            evaluate_at_point(fx, &var_name, t),
+            evaluate_at_point(fy, &var_name, t),
+          ) {
+            (Some(x), Some(y)) => Some(vec![(x, y)]),
+            _ => None,
+          },
+          t_min,
+          t_max,
+          num_samples,
+          max_total,
+        )
+      }
       CurveSrc::Whole(b) => adaptive_samples(
         |t| sample_whole_rows(b, &var_name, t),
         t_min,
