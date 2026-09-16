@@ -1070,15 +1070,14 @@ pub fn color_negate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
       match cargs.len() {
-        3 => Ok(Expr::FunctionCall {
-          name: "RGBColor".to_string(),
-          args: vec![
+        3 => Ok(call(
+          "RGBColor",
+          vec![
             negate_component(&cargs[0])?,
             negate_component(&cargs[1])?,
             negate_component(&cargs[2])?,
-          ]
-          .into(),
-        }),
+          ],
+        )),
         4 => Ok(Expr::FunctionCall {
           name: "RGBColor".to_string(),
           args: vec![

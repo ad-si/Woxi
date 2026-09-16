@@ -494,14 +494,15 @@ pub fn graphics_symbolic_form(expr: &Expr) -> Option<Expr> {
             })
             .collect(),
         );
-        let rgb_expr = |(r, g, b): (u8, u8, u8)| Expr::FunctionCall {
-          name: "RGBColor".to_string(),
-          args: vec![
-            Expr::Real(f64::from(r) / 255.0),
-            Expr::Real(f64::from(g) / 255.0),
-            Expr::Real(f64::from(b) / 255.0),
-          ]
-          .into(),
+        let rgb_expr = |(r, g, b): (u8, u8, u8)| {
+          call(
+            "RGBColor",
+            vec![
+              Expr::Real(f64::from(r) / 255.0),
+              Expr::Real(f64::from(g) / 255.0),
+              Expr::Real(f64::from(b) / 255.0),
+            ],
+          )
         };
         let draw = Expr::FunctionCall {
           name: if s.is_scatter { "Point" } else { "Line" }.to_string(),

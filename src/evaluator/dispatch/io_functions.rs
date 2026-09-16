@@ -4069,14 +4069,13 @@ pub fn dispatch_io_functions(
       };
       match std::fs::metadata(crate::vfs::resolve(&name)) {
         Ok(meta) if meta.is_file() => {
-          return Some(Ok(Expr::FunctionCall {
-            name: "Quantity".to_string(),
-            args: vec![
+          return Some(Ok(call(
+            "Quantity",
+            vec![
               Expr::Real(meta.len() as f64),
               Expr::String("Bytes".to_string()),
-            ]
-            .into(),
-          }));
+            ],
+          )));
         }
         Ok(meta) if meta.is_dir() => {
           crate::emit_message(&format!(

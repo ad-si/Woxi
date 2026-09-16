@@ -154,14 +154,13 @@ fn network_graph_expr(g: &NetworkGraph) -> Expr {
       )
     })
     .collect();
-  Expr::FunctionCall {
-    name: "Graph".to_string(),
-    args: vec![
+  call(
+    "Graph",
+    vec![
       Expr::List(g.vertices.clone().into()),
       Expr::List(edges.into()),
-    ]
-    .into(),
-  }
+    ],
+  )
 }
 
 /// One property of a bundled network, or `None` when the property is not

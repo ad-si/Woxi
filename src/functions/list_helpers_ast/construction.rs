@@ -703,14 +703,13 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let ratio_expr = Expr::FunctionCall {
         name: "Times".to_string(),
         args: vec![
-          Expr::FunctionCall {
-            name: "Plus".to_string(),
-            args: vec![
+          call(
+            "Plus",
+            vec![
               max_expr.clone(),
               call("Times", vec![Expr::Integer(-1), min_expr.clone()]),
-            ]
-            .into(),
-          },
+            ],
+          ),
           call("Power", vec![step_expr.clone(), Expr::Integer(-1)]),
         ]
         .into(),
@@ -2392,10 +2391,10 @@ pub fn sparse_array_normalize_ast(
     .into(),
   );
 
-  Ok(Expr::FunctionCall {
-    name: "SparseArray".to_string(),
-    args: vec![id_expr("Automatic"), dims_expr, default, structure].into(),
-  })
+  Ok(call(
+    "SparseArray",
+    vec![id_expr("Automatic"), dims_expr, default, structure],
+  ))
 }
 
 /// Extract (position, value) pairs from the fourth argument of a canonical

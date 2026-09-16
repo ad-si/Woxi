@@ -988,15 +988,14 @@ fn contour_band_primitives(
   for region in contour_band_regions(grid, levels) {
     let color = band_color(region.band, levels, v_min, v_max, color_function);
     if last_color != Some(color) {
-      let rgb = Expr::FunctionCall {
-        name: "RGBColor".to_string(),
-        args: vec![
+      let rgb = call(
+        "RGBColor",
+        vec![
           Expr::Real(color.0 as f64 / 255.0),
           Expr::Real(color.1 as f64 / 255.0),
           Expr::Real(color.2 as f64 / 255.0),
-        ]
-        .into(),
-      };
+        ],
+      );
       // Edged in its own colour, so neighbouring bands meet without an
       // antialiasing seam — the same trick the SVG renderer plays with a
       // stroke in the fill colour.
@@ -2334,15 +2333,14 @@ fn styled_line(coords: Vec<(f64, f64)>, color: (u8, u8, u8)) -> Expr {
 
 /// `RGBColor[r, g, b]` from 8-bit channel values.
 fn rgb_color((r, g, b): (u8, u8, u8)) -> Expr {
-  Expr::FunctionCall {
-    name: "RGBColor".to_string(),
-    args: vec![
+  call(
+    "RGBColor",
+    vec![
       Expr::Real(r as f64 / 255.0),
       Expr::Real(g as f64 / 255.0),
       Expr::Real(b as f64 / 255.0),
-    ]
-    .into(),
-  }
+    ],
+  )
 }
 
 /// StreamDensityPlot: StreamPlot overlaid on DensityPlot background

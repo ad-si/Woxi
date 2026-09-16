@@ -1021,14 +1021,13 @@ fn country_entity(c: &Country) -> Expr {
   let name =
     crate::functions::country_data::canonical_name(fixup_ne_name(&c.name))
       .unwrap_or(c.name.as_str());
-  Expr::FunctionCall {
-    name: "Entity".to_string(),
-    args: vec![
+  call(
+    "Entity",
+    vec![
       Expr::String("Country".to_string()),
       Expr::String(name.to_string()),
-    ]
-    .into(),
-  }
+    ],
+  )
 }
 
 /// `GeoNearest["Country", pos]` — the country containing `pos` (or, for a point

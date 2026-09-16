@@ -3371,14 +3371,10 @@ fn distribution_moment(
           // (-1)^(n/2 - 1)
           pow2(Expr::Integer(-1), Expr::Integer(n / 2 - 1)),
           // 2^n - 2 (kept symbolic so large n does not overflow)
-          Expr::FunctionCall {
-            name: "Plus".to_string(),
-            args: vec![
-              pow2(Expr::Integer(2), Expr::Integer(n)),
-              Expr::Integer(-2),
-            ]
-            .into(),
-          },
+          call(
+            "Plus",
+            vec![pow2(Expr::Integer(2), Expr::Integer(n)), Expr::Integer(-2)],
+          ),
           call1("BernoulliB", Expr::Integer(n)),
           pow2(id_expr("Pi"), Expr::Integer(n)),
           pow2(b, Expr::Integer(n)),
@@ -3408,14 +3404,13 @@ fn distribution_moment(
         call("Plus", vec![b, call("Times", vec![Expr::Integer(-1), a])]);
       let num = pow2(diff, Expr::Integer(n));
       // 2^n * (n + 1), kept symbolic so large n does not overflow.
-      let denom = Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![
+      let denom = call(
+        "Times",
+        vec![
           pow2(Expr::Integer(2), Expr::Integer(n)),
           Expr::Integer(n + 1),
-        ]
-        .into(),
-      };
+        ],
+      );
       div2(num, denom)
     };
     return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&result)?));
@@ -3429,15 +3424,14 @@ fn distribution_moment(
     let result = if n.rem_euclid(2) == 1 {
       Expr::Integer(0)
     } else {
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![
+      call(
+        "Times",
+        vec![
           pow2(Expr::Integer(-1), Expr::Integer(n / 2)),
           call1("EulerE", Expr::Integer(n)),
           pow2(s, Expr::Integer(n)),
-        ]
-        .into(),
-      }
+        ],
+      )
     };
     return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&result)?));
   }
@@ -4156,25 +4150,23 @@ fn quantile_single(sorted: &[&Expr], q: &Expr) -> Expr {
       if let (Expr::Integer(num), Expr::Integer(den)) = (&rargs[0], &rargs[1]) {
         *num as f64 / *den as f64
       } else {
-        return Expr::FunctionCall {
-          name: "Quantile".to_string(),
-          args: vec![
+        return call(
+          "Quantile",
+          vec![
             Expr::List(sorted.iter().copied().cloned().collect()),
             q.clone(),
-          ]
-          .into(),
-        };
+          ],
+        );
       }
     }
     _ => {
-      return Expr::FunctionCall {
-        name: "Quantile".to_string(),
-        args: vec![
+      return call(
+        "Quantile",
+        vec![
           Expr::List(sorted.iter().copied().cloned().collect()),
           q.clone(),
-        ]
-        .into(),
-      };
+        ],
+      );
     }
   };
 
@@ -4346,14 +4338,10 @@ fn factorial_moment_of_distribution(
       let mut factors: Vec<Expr> = Vec::new();
       // (1 - n)*(2 - n)*...*((r-1) - n)
       for i in 1..r {
-        factors.push(Expr::FunctionCall {
-          name: "Plus".to_string(),
-          args: vec![
-            Expr::Integer(i),
-            times(vec![Expr::Integer(-1), n.clone()]),
-          ]
-          .into(),
-        });
+        factors.push(call(
+          "Plus",
+          vec![Expr::Integer(i), times(vec![Expr::Integer(-1), n.clone()])],
+        ));
       }
       factors.push(n.clone());
       factors.push(pow2(p.clone(), Expr::Integer(r)));
@@ -4777,14 +4765,13 @@ fn format_location_test_result(
         name: "Grid".to_string(),
         args: vec![
           Expr::List(vec![header, row].into()),
-          Expr::FunctionCall {
-            name: "Rule".to_string(),
-            args: vec![
+          call(
+            "Rule",
+            vec![
               id_expr("Alignment"),
               Expr::List(vec![id_expr("Left"), id_expr("Automatic")].into()),
-            ]
-            .into(),
-          },
+            ],
+          ),
           Expr::FunctionCall {
             name: "Rule".to_string(),
             args: vec![
@@ -6542,28 +6529,23 @@ fn discrete_asymptotic_leading(expr: &Expr, var: &str) -> Option<Expr> {
             name: "Power".to_string(),
             args: vec![
               n.clone(),
-              Expr::FunctionCall {
-                name: "Plus".to_string(),
-                args: vec![
+              call(
+                "Plus",
+                vec![
                   n.clone(),
                   call("Rational", vec![Expr::Integer(-1), Expr::Integer(2)]),
-                ]
-                .into(),
-              },
+                ],
+              ),
             ]
             .into(),
           },
           // Sqrt[2*Pi]
           make_sqrt(call("Times", vec![Expr::Integer(2), const_expr("Pi")])),
           // E^(-n)
-          Expr::FunctionCall {
-            name: "Power".to_string(),
-            args: vec![
-              const_expr("E"),
-              call("Times", vec![Expr::Integer(-1), n]),
-            ]
-            .into(),
-          },
+          call(
+            "Power",
+            vec![const_expr("E"), call("Times", vec![Expr::Integer(-1), n])],
+          ),
         ]
         .into(),
       })
@@ -6717,14 +6699,13 @@ fn stirling_approx(var: &str) -> Expr {
         name: "Power".to_string(),
         args: vec![
           n.clone(),
-          Expr::FunctionCall {
-            name: "Plus".to_string(),
-            args: vec![
+          call(
+            "Plus",
+            vec![
               n.clone(),
               call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
-            ]
-            .into(),
-          },
+            ],
+          ),
         ]
         .into(),
       },
@@ -6883,26 +6864,24 @@ fn asymptotic_binomial(
         name: "Power".to_string(),
         args: vec![
           Expr::Integer(2),
-          Expr::FunctionCall {
-            name: "Plus".to_string(),
-            args: vec![
+          call(
+            "Plus",
+            vec![
               call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
               n.clone(),
-            ]
-            .into(),
-          },
+            ],
+          ),
         ]
         .into(),
       },
       // 1 / (Sqrt[n] * Sqrt[Pi])
-      Expr::FunctionCall {
-        name: "Power".to_string(),
-        args: vec![
+      call(
+        "Power",
+        vec![
           call("Times", vec![make_sqrt(n), make_sqrt(const_expr("Pi"))]),
           Expr::Integer(-1),
-        ]
-        .into(),
-      },
+        ],
+      ),
     ]
     .into(),
   })
@@ -8565,14 +8544,13 @@ pub fn factorial_moment_generating_function_ast(
     let sq = |e: Expr| pow2(e, Expr::Integer(2));
     return Ok(pow2(
       id_expr("E"),
-      Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: vec![
+      call(
+        "Plus",
+        vec![
           times(vec![m, log_t.clone()]),
           div2(times(vec![sq(sd), sq(log_t)]), Expr::Integer(2)),
-        ]
-        .into(),
-      },
+        ],
+      ),
     ));
   }
   let mgf = moment_generating_function_ast(&[args[0].clone(), log_t])?;
@@ -8746,13 +8724,14 @@ pub fn correlation_function_ast(
   let lag = k.unsigned_abs() as usize;
 
   let mean = mean_ast(&[args[0].clone()])?;
-  let dev = |x: &Expr| Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: vec![
-      x.clone(),
-      call("Times", vec![Expr::Integer(-1), mean.clone()]),
-    ]
-    .into(),
+  let dev = |x: &Expr| {
+    call(
+      "Plus",
+      vec![
+        x.clone(),
+        call("Times", vec![Expr::Integer(-1), mean.clone()]),
+      ],
+    )
   };
   let sum = |terms: Vec<Expr>| -> Result<Expr, InterpreterError> {
     crate::evaluator::evaluate_expr_to_expr(&call("Plus", terms))
