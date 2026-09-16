@@ -6084,6 +6084,46 @@ fn store_function_definition(
   let mut body_pair = None;
   let mut has_any_condition = false;
 
+  // The dispatch condition for a `?test` slot. A plain Blank (`bt == 1`)
+  // binds `param` to a single expression, so `test[param]` checks it
+  // directly. A BlankSequence/BlankNullSequence (`bt >= 2`) binds `param`
+  // to a `Sequence[...]` of zero or more matched arguments instead —
+  // applying `test` to that directly would splice it into `test`'s own
+  // argument list at evaluation time (`test[Sequence[a, b]]` becomes the
+  // two-argument call `test[a, b]`, and `test[Sequence[]]` becomes
+  // `test[]`), rather than testing each element the way `x___?test`
+  // matches in real Wolfram (vacuously true when the sequence is empty).
+  // A `__StructuralPattern__` marker routes such a slot through
+  // `structural_slot_match` in `evaluate_functions.rs`, which checks the
+  // test against each element individually.
+  fn pattern_test_condition(
+    param_name: &str,
+    head: Option<String>,
+    bt: u8,
+    test_expr: syntax::Expr,
+  ) -> syntax::Expr {
+    if bt >= 2 {
+      syntax::Expr::FunctionCall {
+        name: "__StructuralPattern__".to_string(),
+        args: vec![
+          syntax::Expr::Identifier(param_name.to_string()),
+          syntax::Expr::PatternTest {
+            name: param_name.to_string(),
+            head,
+            blank_type: bt,
+            test: Box::new(test_expr),
+          },
+        ]
+        .into(),
+      }
+    } else {
+      syntax::Expr::FunctionCall {
+        name: syntax::expr_to_string(&test_expr),
+        args: vec![syntax::Expr::Identifier(param_name.to_string())].into(),
+      }
+    }
+  }
+
   for item in inner {
     match item.as_rule() {
       Rule::PatternCondition => {
@@ -6201,10 +6241,12 @@ fn store_function_definition(
           } else {
             param_name
           };
-          conditions.push(Some(syntax::Expr::FunctionCall {
-            name: syntax::expr_to_string(&test_expr),
-            args: vec![syntax::Expr::Identifier(param_name.clone())].into(),
-          }));
+          conditions.push(Some(pattern_test_condition(
+            &param_name,
+            head.clone(),
+            bt,
+            test_expr,
+          )));
           params.push(param_name);
           defaults.push(None);
           heads.push(head);
@@ -6241,11 +6283,11 @@ fn store_function_definition(
           .count()
           .min(3) as u8;
         let test_expr = syntax::pair_to_expr(test_pair);
-        // Build condition: testFunc[paramName]
-        let cond_expr = syntax::Expr::FunctionCall {
-          name: syntax::expr_to_string(&test_expr),
-          args: vec![syntax::Expr::Identifier(param_name.clone())].into(),
-        };
+        // Build condition: testFunc[paramName] for a plain Blank, or a
+        // per-element structural check for a BlankSequence/BlankNullSequence
+        // (see `pattern_test_condition`).
+        let cond_expr =
+          pattern_test_condition(&param_name, head.clone(), bt, test_expr);
         params.push(param_name);
         conditions.push(Some(cond_expr));
         defaults.push(None);
