@@ -2047,8 +2047,11 @@ pub fn get_negative_power_exponent(expr: &Expr) -> Option<(Expr, Expr)> {
 }
 
 /// Return the negation of `exp` if it is recognisably negative (a negative
-/// integer literal, a unary-minus expression, or a `Times[-1, ...]` form).
-fn negate_if_negative(exp: &Expr) -> Option<Expr> {
+/// integer or rational literal, a unary-minus expression, or a product with
+/// a negative exact leading coefficient — `-t`, `-2*t`, `-t/2`). An
+/// *inexact* negative coefficient is not a denominator to wolframscript
+/// (`Denominator[x^-1.5]` is 1), so those are left alone.
+pub(crate) fn negate_if_negative(exp: &Expr) -> Option<Expr> {
   match exp {
     Expr::Integer(n) if *n < 0 => Some(Expr::Integer(-n)),
     // A negative rational exponent (e.g. Power[x, -1/2] = 1/Sqrt[x]) is also a
@@ -2068,18 +2071,61 @@ fn negate_if_negative(exp: &Expr) -> Option<Expr> {
       op: UnaryOperator::Minus,
       operand,
     } => Some(operand.as_ref().clone()),
-    Expr::FunctionCall { name, args }
-      if name == "Times" && !args.is_empty() =>
-    {
-      // Match Times[-1, rest...] as a negative form.
-      if matches!(args[0], Expr::Integer(-1)) {
-        Some(if args.len() == 2 {
+    // The same shapes as parsed operators rather than evaluated calls:
+    // `-t/2` reaches an unevaluated exponent as Divide[Times[-1, t], 2].
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } => negate_if_negative(left).map(|positive| Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left: Box::new(positive),
+      right: right.clone(),
+    }),
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => negate_if_negative(left).map(|positive| {
+      if matches!(&positive, Expr::Integer(1)) {
+        right.as_ref().clone()
+      } else {
+        Expr::BinaryOp {
+          op: BinaryOperator::Times,
+          left: Box::new(positive),
+          right: right.clone(),
+        }
+      }
+    }),
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 2 => {
+      // Match Times[negative, rest...] as a negative form: the leading
+      // coefficient flips sign, and a leading -1 disappears entirely.
+      let rest = || {
+        if args.len() == 2 {
           args[1].clone()
         } else {
           call("Times", args[1..].to_vec())
-        })
-      } else {
-        None
+        }
+      };
+      match &args[0] {
+        Expr::Integer(-1) => Some(rest()),
+        Expr::Integer(n) if *n < 0 => Some(call(
+          "Times",
+          [vec![Expr::Integer(-n)], args[1..].to_vec()].concat(),
+        )),
+        Expr::FunctionCall { name: rn, args: ra }
+          if rn == "Rational"
+            && ra.len() == 2
+            && matches!(&ra[0], Expr::Integer(n) if *n < 0) =>
+        {
+          let Expr::Integer(n) = &ra[0] else {
+            return None;
+          };
+          let positive =
+            call("Rational", vec![Expr::Integer(-n), ra[1].clone()]);
+          Some(call("Times", [vec![positive], args[1..].to_vec()].concat()))
+        }
+        _ => None,
       }
     }
     _ => None,

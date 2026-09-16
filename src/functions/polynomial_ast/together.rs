@@ -493,6 +493,9 @@ pub fn extract_num_den(expr: &Expr) -> (Expr, Expr) {
     }
     // Power[base, -n] => 1/base^n (FunctionCall form) — handles integer and rational exponents
     Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      if let Some(flipped) = quotient_base_flip(&args[0], &args[1]) {
+        return flipped;
+      }
       if let Some(pos_exp) = get_negative_exponent(&args[1]) {
         if matches!(&pos_exp, Expr::Integer(1)) {
           (Expr::Integer(1), args[0].clone())
@@ -518,7 +521,11 @@ pub fn extract_num_den(expr: &Expr) -> (Expr, Expr) {
             name: pname,
             args: pargs,
           } if pname == "Power" && pargs.len() == 2 => {
-            if let Some(pos_exp) = get_negative_exponent(&pargs[1]) {
+            if let Some((fnum, fden)) = quotient_base_flip(&pargs[0], &pargs[1])
+            {
+              num_factors.push(fnum);
+              den_factors.push(fden);
+            } else if let Some(pos_exp) = get_negative_exponent(&pargs[1]) {
               if matches!(&pos_exp, Expr::Integer(1)) {
                 den_factors.push(pargs[0].clone());
               } else {
@@ -543,7 +550,10 @@ pub fn extract_num_den(expr: &Expr) -> (Expr, Expr) {
             left,
             right,
           } => {
-            if let Some(pos_exp) = get_negative_exponent(right) {
+            if let Some((fnum, fden)) = quotient_base_flip(left, right) {
+              num_factors.push(fnum);
+              den_factors.push(fden);
+            } else if let Some(pos_exp) = get_negative_exponent(right) {
               if matches!(&pos_exp, Expr::Integer(1)) {
                 den_factors.push(*left.clone());
               } else {
@@ -603,6 +613,9 @@ pub fn extract_num_den(expr: &Expr) -> (Expr, Expr) {
       left,
       right,
     } => {
+      if let Some(flipped) = quotient_base_flip(left, right) {
+        return flipped;
+      }
       if let Some(pos_exp) = get_negative_exponent(right) {
         if matches!(&pos_exp, Expr::Integer(1)) {
           (Expr::Integer(1), *left.clone())
@@ -723,7 +736,43 @@ fn get_negative_exponent(expr: &Expr) -> Option<Expr> {
   {
     return Some(call("Rational", vec![Expr::Integer(*n), ra[1].clone()]));
   }
-  None
+  // A *symbolic* negative exponent is a denominator too, exactly as for
+  // Denominator: `E^(-t)` is `1/E^t`, so Together[E^(-t) + E^t] combines to
+  // `(1 + E^(2*t))/E^t` (wolframscript-verified).
+  symbolic_negative_exponent(expr)
+}
+
+/// The positive counterpart of a *symbolic* negative exponent — `-t` → `t`,
+/// `-2*t` → `2*t`. Kept apart from the numeric cases above because a
+/// symbolic exponent over a quotient base flips the quotient (see
+/// [`quotient_base_flip`]) where a numeric one keeps its older, narrower
+/// handling.
+fn symbolic_negative_exponent(expr: &Expr) -> Option<Expr> {
+  if matches!(expr, Expr::Integer(_) | Expr::Real(_))
+    || matches!(expr, Expr::FunctionCall { name, .. } if name == "Rational")
+  {
+    return None;
+  }
+  crate::functions::math_ast::complex::negate_if_negative(expr)
+}
+
+/// `(p/q)^(-a)` as the quotient `q^a/p^a`. Only a symbolic negative
+/// exponent is flipped: a numeric one keeps the narrower handling the
+/// surrounding code has always had (`(1/2)^-2` stays `1/(1/2)^2`).
+fn quotient_base_flip(base: &Expr, exp: &Expr) -> Option<(Expr, Expr)> {
+  let positive = symbolic_negative_exponent(exp)?;
+  let (base_num, base_den) = extract_num_den(base);
+  if matches!(&base_den, Expr::Integer(1)) {
+    return None;
+  }
+  let raise = |b: &Expr| {
+    if matches!(b, Expr::Integer(1)) {
+      Expr::Integer(1)
+    } else {
+      call("Power", vec![b.clone(), positive.clone()])
+    }
+  };
+  Some((raise(&base_den), raise(&base_num)))
 }
 
 /// Negate an expression
@@ -1746,14 +1795,7 @@ pub fn together_expr(expr: &Expr) -> Expr {
   let combined_den = {
     let mut canonical_dens: Vec<Expr> = base_exp_map
       .iter()
-      .map(|(_, base, exp)| {
-        if *exp == (1, 1) {
-          expand_and_combine(base)
-        } else {
-          let canonical_base = expand_and_combine(base);
-          pow2(canonical_base, rat_exp_to_expr(*exp))
-        }
-      })
+      .map(|(_, base, exp)| rebuild_power(&expand_and_combine(base), *exp))
       .collect();
     // Fold integer factors together so the numeric part of the common
     // denominator is a single number: Together[x/2 + y/3] → (3x + 2y)/6,
@@ -2195,6 +2237,104 @@ fn rat_sub(a: Rat, b: Rat) -> Rat {
   rat_reduce(a.0 * b.1 - b.0 * a.1, a.1 * b.1)
 }
 
+/// Split a denominator power into the (base, rational exponent) pair the
+/// common-denominator arithmetic works with. A *symbolic* exponent has its
+/// rational coefficient peeled off and the rest folded into the base, so
+/// denominators that share a symbolic exponent still combine by LCM rather
+/// than by product: `x^t` is `(x^t)^1` and `x^(2*t)` is `(x^t)^2`, whose
+/// common denominator is `x^(2*t)`, not `x^(3*t)`.
+fn split_power_exponent(base: &Expr, exp: &Expr) -> (Expr, Rat) {
+  match exp {
+    Expr::Integer(_) => (base.clone(), rat_exp_from_expr(exp)),
+    Expr::FunctionCall { name, args }
+      if name == "Rational"
+        && args.len() == 2
+        && matches!(
+          (&args[0], &args[1]),
+          (Expr::Integer(_), Expr::Integer(_))
+        ) =>
+    {
+      (base.clone(), rat_exp_from_expr(exp))
+    }
+    _ => {
+      let (coefficient, core) = split_exponent_coefficient(exp);
+      (pow2(base.clone(), core), coefficient)
+    }
+  }
+}
+
+/// A symbolic exponent as `rational × rest`: `2*t` → `(2, t)`, `-t/2` →
+/// `(-1/2, t)`, `a + b` → `(1, a + b)`. The exponent is canonicalized
+/// first, since an exponent reaching here can still carry the parser's
+/// operator shapes (`t/2` as `Divide[t, 2]`).
+fn split_exponent_coefficient(exp: &Expr) -> (Rat, Expr) {
+  let evaluated;
+  let exp = match crate::evaluator::evaluate_expr_to_expr(exp) {
+    Ok(e) => {
+      evaluated = e;
+      &evaluated
+    }
+    Err(_) => exp,
+  };
+  let rest = |args: &[Expr]| {
+    if args.len() == 1 {
+      args[0].clone()
+    } else {
+      call("Times", args.to_vec())
+    }
+  };
+  match exp {
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => ((-1, 1), operand.as_ref().clone()),
+    Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 2 => {
+      match &args[0] {
+        Expr::Integer(n) => ((*n, 1), rest(&args[1..])),
+        Expr::FunctionCall { name: rn, args: ra }
+          if rn == "Rational"
+            && ra.len() == 2
+            && let (Expr::Integer(n), Expr::Integer(d)) = (&ra[0], &ra[1]) =>
+        {
+          ((*n, *d), rest(&args[1..]))
+        }
+        _ => ((1, 1), exp.clone()),
+      }
+    }
+    _ => ((1, 1), exp.clone()),
+  }
+}
+
+/// Rebuild `base^exp` from a (base, rational exponent) pair, folding the
+/// exponent back into a symbolic one where [`split_power_exponent`] peeled
+/// it off: the base `x^t` with exponent 2 is `x^(2*t)`, not `(x^t)^2`.
+fn rebuild_power(base: &Expr, exp: Rat) -> Expr {
+  if exp == (1, 1) {
+    return base.clone();
+  }
+  let (inner_base, inner_exp) = match base {
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => (Some(left.as_ref()), Some(right.as_ref())),
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      (Some(&args[0]), Some(&args[1]))
+    }
+    _ => (None, None),
+  };
+  if let (Some(inner_base), Some(inner_exp)) = (inner_base, inner_exp)
+    && !matches!(inner_exp, Expr::Integer(_) | Expr::Real(_))
+    && !matches!(inner_exp, Expr::FunctionCall { name, .. } if name == "Rational")
+  {
+    let folded = call("Times", vec![rat_exp_to_expr(exp), inner_exp.clone()]);
+    let folded = crate::evaluator::evaluate_expr_to_expr(&folded)
+      .unwrap_or_else(|_| folded.clone());
+    return pow2(inner_base.clone(), folded);
+  }
+  pow2(base.clone(), rat_exp_to_expr(exp))
+}
+
 /// Extract base and exponent from a denominator expression.
 /// Returns (base, exponent) pairs with rational exponents.
 fn extract_den_factors(den: &Expr) -> Vec<(Expr, Rat)> {
@@ -2205,10 +2345,10 @@ fn extract_den_factors(den: &Expr) -> Vec<(Expr, Rat)> {
       left,
       right,
     } => {
-      vec![(*left.clone(), rat_exp_from_expr(right))]
+      vec![split_power_exponent(left, right)]
     }
     Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
-      vec![(args[0].clone(), rat_exp_from_expr(&args[1]))]
+      vec![split_power_exponent(&args[0], &args[1])]
     }
     // Times[a, b, ...] in denominator — split into factors
     Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 2 => {
@@ -2281,11 +2421,7 @@ fn compute_missing_factor(
       .map_or((0, 1), |(_, e)| *e);
     let diff = rat_sub(*lcm_exp, den_exp);
     if rat_gt(diff, (0, 1)) {
-      if diff == (1, 1) {
-        missing_factors.push(base.clone());
-      } else {
-        missing_factors.push(pow2(base.clone(), rat_exp_to_expr(diff)));
-      }
+      missing_factors.push(rebuild_power(base, diff));
     }
   }
 

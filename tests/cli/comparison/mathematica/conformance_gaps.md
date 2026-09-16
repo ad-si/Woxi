@@ -906,6 +906,38 @@ last bit and never a formula to correct.
 
 ## Algebra and calculus
 
+### `Together` ignores an inexact exponent's sign
+
+```sh
+wolframscript -code 'ToString[{Together[E^(-0.5*t) + 1], Together[x^(-1.5) + 1]}, InputForm]'
+# {(1 + E^(0.5*t))/E^(0.5*t), (1 + x^1.5)/x^1.5}
+woxi eval '{Together[E^(-0.5*t) + 1], Together[x^(-1.5) + 1]}'
+# {1 + E^(-0.5*t), 1 + x^(-1.5)}
+```
+
+An *exact* negative exponent is a denominator on both sides
+(`Together[E^(-t) + E^t]` is `(1 + E^(2*t))/E^t` in each), and Woxi's
+common-denominator arithmetic keeps the LCM of exponents that are rational
+multiples of one symbol (`E^(-t) + E^(-2*t)` needs `E^(2*t)`, never
+`E^(3*t)`). An inexact one is where they part: Woxi leaves it in the
+numerator, since its exponent arithmetic is exact-rational. wolframscript
+itself is not consistent about this — `Denominator[x^(-1.5)]` is `1` there
+even though `Together[x^(-1.5) + 1]` puts `x^1.5` underneath.
+
+### A quotient with a symbolic negative exponent is split, not held
+
+```sh
+wolframscript -code 'ToString[{Cancel[(k/x)^(-a)], Simplify[(a*k^a*x^(-1 - a))/(k/x)^a]}, InputForm]'
+# {(k/x)^(-a), (a*k^a*x^(-1 - a))/(k/x)^a}
+woxi eval '{Cancel[(k/x)^(-a)], Simplify[(a*k^a*x^(-1 - a))/(k/x)^a]}'
+# {x^a/k^a, a/x}
+```
+
+Woxi reads `(p/q)^(-a)` as `q^a/p^a`, which lets its cancellation see
+through the power — the reason `HazardFunction[ParetoDistribution[k, a], x]`
+reduces to `a/x` here and stays a ratio of powers there. Both forms are
+correct; Woxi's is the simplified one.
+
 ### An antiderivative's common denominator is collected, not distributed
 
 ```sh

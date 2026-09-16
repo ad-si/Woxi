@@ -2772,6 +2772,40 @@ mod together {
     assert_eq!(interpret("Together[1/x + 1/y]").unwrap(), "(x + y)/(x*y)");
   }
 
+  // A *symbolic* negative exponent is a denominator too — `E^(-t)` is
+  // `1/E^t` — so it takes part in the common denominator, and exponents
+  // that are rational multiples of the same symbol combine by LCM rather
+  // than by product (`E^(-t) + E^(-2*t)` needs `E^(2*t)`, not `E^(3*t)`).
+  // All wolframscript-verified.
+  #[test]
+  fn together_symbolic_negative_exponents() {
+    assert_eq!(
+      interpret("Together[E^(-t) + E^t]").unwrap(),
+      "(1 + E^(2*t))/E^t"
+    );
+    assert_eq!(
+      interpret("Together[1/(2*E^t) + E^t/2]").unwrap(),
+      "(1 + E^(2*t))/(2*E^t)"
+    );
+    assert_eq!(
+      interpret("Together[E^(-t) + E^(-2*t)]").unwrap(),
+      "(1 + E^t)/E^(2*t)"
+    );
+    assert_eq!(
+      interpret("Together[E^(-t/2) + E^(t/2)]").unwrap(),
+      "(1 + E^t)/E^(t/2)"
+    );
+    assert_eq!(interpret("Together[x^(-t) + 1]").unwrap(), "(1 + x^t)/x^t");
+    assert_eq!(
+      interpret("Together[2^(-t) + 3]").unwrap(),
+      "(1 + 3*2^t)/2^t"
+    );
+    assert_eq!(
+      interpret("Together[E^(-2*t)*C[1] + E^(3*t)*C[2]]").unwrap(),
+      "(C[1] + E^(5*t)*C[2])/E^(2*t)"
+    );
+  }
+
   // Together divides out the polynomial GCD even when the denominator is
   // held in factored/content-extracted form, where string-level factor
   // matching can't see the shared factor ((1+x) divides -1+x^2). A
