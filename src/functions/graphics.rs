@@ -17730,13 +17730,14 @@ pub fn drop_shadowing_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Expr::List(vec![Expr::Integer(-3), Expr::Integer(-3)].into())
       }),
       radius.unwrap_or(Expr::Integer(2)),
-      color.unwrap_or_else(|| Expr::FunctionCall {
-        name: "Opacity".to_string(),
-        args: vec![
-          crate::functions::make_rational(1, 3),
-          call1("ThemeColor", id_expr("Foreground")),
-        ]
-        .into(),
+      color.unwrap_or_else(|| {
+        call(
+          "Opacity",
+          vec![
+            crate::functions::make_rational(1, 3),
+            call1("ThemeColor", id_expr("Foreground")),
+          ],
+        )
       }),
     ]
     .into(),

@@ -527,14 +527,13 @@ fn build_mesh_region(all_verts: &[(f64, f64)], cells: &[Vec<usize>]) -> Expr {
 
   let polygon = call1("Polygon", Expr::List(faces.into()));
 
-  Expr::FunctionCall {
-    name: "MeshRegion".to_string(),
-    args: vec![
+  call(
+    "MeshRegion",
+    vec![
       Expr::List(verts_expr.into()),
       Expr::List(vec![polygon].into()),
-    ]
-    .into(),
-  }
+    ],
+  )
 }
 
 fn point_key(x: f64, y: f64) -> u128 {

@@ -176,13 +176,14 @@ pub fn factorial_power_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if k == 0 {
       return Ok(Expr::Integer(1));
     }
-    let term = |i: i128| Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: vec![
-        args[0].clone(),
-        call("Times", vec![Expr::Integer(i), h_expr.clone()]),
-      ]
-      .into(),
+    let term = |i: i128| {
+      call(
+        "Plus",
+        vec![
+          args[0].clone(),
+          call("Times", vec![Expr::Integer(i), h_expr.clone()]),
+        ],
+      )
     };
     let factors: Vec<Expr> = if k > 0 {
       (0..k).map(|i| term(-i)).collect()
@@ -447,14 +448,13 @@ fn gamma_incomplete_upper(
 
   // Special case: Gamma[1, z] = E^(-z)
   if matches!(a, Expr::Integer(1)) {
-    return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "Power".to_string(),
-      args: vec![
+    return crate::evaluator::evaluate_expr_to_expr(&call(
+      "Power",
+      vec![
         id_expr("E"),
         call("Times", vec![Expr::Integer(-1), z.clone()]),
-      ]
-      .into(),
-    });
+      ],
+    ));
   }
 
   // For positive integer a with numeric z, prefer the exact closed form
@@ -511,14 +511,13 @@ fn gamma_incomplete_upper_int_a(
     let term = if factorial == 1 {
       z_power
     } else {
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![
+      call(
+        "Times",
+        vec![
           call("Rational", vec![Expr::Integer(1), Expr::Integer(factorial)]),
           z_power,
-        ]
-        .into(),
-      }
+        ],
+      )
     };
     terms.push(term);
   }
@@ -527,14 +526,13 @@ fn gamma_incomplete_upper_int_a(
   } else {
     call("Plus", terms)
   };
-  let exp_neg_z = Expr::FunctionCall {
-    name: "Power".to_string(),
-    args: vec![
+  let exp_neg_z = call(
+    "Power",
+    vec![
       id_expr("E"),
       call("Times", vec![Expr::Integer(-1), z.clone()]),
-    ]
-    .into(),
-  };
+    ],
+  );
   let result = if factorial == 1 {
     call("Times", vec![exp_neg_z, sum])
   } else {
@@ -1304,23 +1302,23 @@ pub fn beta_regularized_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       || matches!(z_expr, Expr::FunctionCall { name, .. } if name == "Rational"))
   {
     let n = *a + *b - 1;
-    let one_minus_z = Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: vec![
+    let one_minus_z = call(
+      "Plus",
+      vec![
         Expr::Integer(1),
         call("Times", vec![Expr::Integer(-1), z_expr.clone()]),
-      ]
-      .into(),
-    };
+      ],
+    );
     let terms: Vec<Expr> = (*a..=n)
-      .map(|j| Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![
-          Expr::Integer(crate::functions::binomial_coeff(n, j)),
-          call("Power", vec![z_expr.clone(), Expr::Integer(j)]),
-          call("Power", vec![one_minus_z.clone(), Expr::Integer(n - j)]),
-        ]
-        .into(),
+      .map(|j| {
+        call(
+          "Times",
+          vec![
+            Expr::Integer(crate::functions::binomial_coeff(n, j)),
+            call("Power", vec![z_expr.clone(), Expr::Integer(j)]),
+            call("Power", vec![one_minus_z.clone(), Expr::Integer(n - j)]),
+          ],
+        )
       })
       .collect();
     return crate::evaluator::evaluate_expr_to_expr(&call("Plus", terms));
@@ -1598,14 +1596,13 @@ pub fn gamma_regularized_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // GammaRegularized[1, z] = E^(-z) for any z (Wolfram auto-evaluates
   // this case even symbolically)
   if matches!(a_expr, Expr::Integer(1)) {
-    return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "Power".to_string(),
-      args: vec![
+    return crate::evaluator::evaluate_expr_to_expr(&call(
+      "Power",
+      vec![
         const_expr("E"),
         call("Times", vec![Expr::Integer(-1), z_expr.clone()]),
-      ]
-      .into(),
-    });
+      ],
+    ));
   }
 
   // Exact evaluation for positive integer a with exact numeric z:
@@ -1623,23 +1620,21 @@ pub fn gamma_regularized_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         k_fact *= k;
       }
       let z_pow = call("Power", vec![z_expr.clone(), Expr::Integer(k)]);
-      terms.push(Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![
+      terms.push(call(
+        "Times",
+        vec![
           call("Rational", vec![Expr::Integer(1), Expr::Integer(k_fact)]),
           z_pow,
-        ]
-        .into(),
-      });
+        ],
+      ));
     }
-    let e_pow = Expr::FunctionCall {
-      name: "Power".to_string(),
-      args: vec![
+    let e_pow = call(
+      "Power",
+      vec![
         const_expr("E"),
         call("Times", vec![Expr::Integer(-1), z_expr.clone()]),
-      ]
-      .into(),
-    };
+      ],
+    );
     return crate::evaluator::evaluate_expr_to_expr(&call(
       "Times",
       vec![e_pow, call("Plus", terms)],
@@ -1743,14 +1738,13 @@ pub fn marcum_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: "GammaRegularized".to_string(),
       args: vec![
         m.clone(),
-        Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![
+        call(
+          "Times",
+          vec![
             call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
             call("Power", vec![b.clone(), Expr::Integer(2)]),
-          ]
-          .into(),
-        },
+          ],
+        ),
       ]
       .into(),
     });

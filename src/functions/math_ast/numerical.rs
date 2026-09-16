@@ -2358,15 +2358,14 @@ pub fn rescale_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let x_minus_min = sub(&args[0], &range[0]);
   let y_span = sub(ymax, ymin);
   let x_span = sub(&range[1], &range[0]);
-  let fraction = Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: vec![
+  let fraction = call(
+    "Times",
+    vec![
       x_minus_min,
       y_span,
       call("Power", vec![x_span, Expr::Integer(-1)]),
-    ]
-    .into(),
-  };
+    ],
+  );
   let result = call("Plus", vec![ymin.clone(), fraction]);
   crate::evaluator::evaluate_expr_to_expr(&result)
 }
@@ -5553,15 +5552,14 @@ pub fn tukey_window_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Exact: build (1 + Cos[Pi (2 Abs[x] - 1 + alpha)/alpha]) / 2 and evaluate
   // symbolically so Cos simplifies (matching wolframscript's radical forms).
   let abs_x = call1("Abs", x.clone());
-  let theta_num = Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: vec![
+  let theta_num = call(
+    "Plus",
+    vec![
       call("Times", vec![Expr::Integer(2), abs_x]),
       Expr::Integer(-1),
       alpha.clone(),
-    ]
-    .into(),
-  };
+    ],
+  );
   let theta = div2(theta_num, alpha);
   let cos = call("Cos", vec![times2(id_expr("Pi"), theta)]);
   crate::evaluator::evaluate_expr_to_expr(&div2(
@@ -5605,14 +5603,13 @@ pub fn kaiser_window_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Build BesselI[0, alpha Sqrt[1 - 4 x^2]] / BesselI[0, alpha] and evaluate.
   // Real arguments numericize; exact arguments stay symbolic.
   let x_sq = call("Power", vec![x.clone(), Expr::Integer(2)]);
-  let one_minus = Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: vec![
+  let one_minus = call(
+    "Plus",
+    vec![
       Expr::Integer(1),
       call("Times", vec![Expr::Integer(-4), x_sq]),
-    ]
-    .into(),
-  };
+    ],
+  );
   let sqrt = call1("Sqrt", one_minus);
   let bessel_arg = call("Times", vec![alpha.clone(), sqrt]);
   let numer = call("BesselI", vec![Expr::Integer(0), bessel_arg]);
@@ -5673,15 +5670,14 @@ pub fn parzen_window_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let times = |c: i128, e: Expr| call("Times", vec![Expr::Integer(c), e]);
   let expr = if ax <= 0.25 {
     // 1 - 24 x^2 + 48 Abs[x]^3
-    Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: vec![
+    call(
+      "Plus",
+      vec![
         Expr::Integer(1),
         times(-24, pow(x.clone(), 2)),
         times(48, pow(abs_x, 3)),
-      ]
-      .into(),
-    }
+      ],
+    )
   } else {
     // 2 (1 - 2 Abs[x])^3
     times(
@@ -5759,14 +5755,13 @@ pub fn bohman_window_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "Times",
     vec![Expr::Integer(2), id_expr("Pi"), abs_x.clone()],
   );
-  let one_minus_2ax = Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: vec![
+  let one_minus_2ax = call(
+    "Plus",
+    vec![
       Expr::Integer(1),
       call("Times", vec![Expr::Integer(-2), abs_x]),
-    ]
-    .into(),
-  };
+    ],
+  );
   let cos = call1("Cos", two_pi_absx.clone());
   let sin = call1("Sin", two_pi_absx);
   let term1 = call("Times", vec![one_minus_2ax, cos]);
@@ -6458,14 +6453,13 @@ fn root_sum_n_eval(poly_arg: &Expr, fn_arg: &Expr) -> Option<Expr> {
   } else {
     // Build Real + Real*I as Plus[..., Times[..., I]] so subsequent
     // Chop can drop the imaginary tail.
-    Some(Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: vec![
+    Some(call(
+      "Plus",
+      vec![
         Expr::Real(sum_re),
         call("Times", vec![Expr::Real(sum_im), id_expr("I")]),
-      ]
-      .into(),
-    })
+      ],
+    ))
   }
 }
 
@@ -6549,14 +6543,13 @@ pub(crate) fn root_n_eval(poly_arg: &Expr, k_arg: &Expr) -> Option<Expr> {
   if is_real {
     Some(Expr::Real(re))
   } else {
-    Some(Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: vec![
+    Some(call(
+      "Plus",
+      vec![
         Expr::Real(re),
         call("Times", vec![Expr::Real(im), id_expr("I")]),
-      ]
-      .into(),
-    })
+      ],
+    ))
   }
 }
 
@@ -7106,15 +7099,14 @@ pub fn cosine_sum_window_ast(
             rational(n, denom),
             Expr::FunctionCall {
               name: "Cos".to_string(),
-              args: vec![Expr::FunctionCall {
-                name: "Times".to_string(),
-                args: vec![
+              args: vec![call(
+                "Times",
+                vec![
                   Expr::Integer(2 * k as i128),
                   id_expr("Pi"),
                   args[0].clone(),
-                ]
-                .into(),
-              }]
+                ],
+              )]
               .into(),
             },
           ]
@@ -7250,14 +7242,13 @@ pub fn discrete_hadamard_transform_ast(
         name: "Times".to_string(),
         args: vec![
           call("Plus", terms),
-          Expr::FunctionCall {
-            name: "Power".to_string(),
-            args: vec![
+          call(
+            "Power",
+            vec![
               Expr::Integer(n as i128),
               call("Rational", vec![Expr::Integer(-1), Expr::Integer(2)]),
-            ]
-            .into(),
-          },
+            ],
+          ),
         ]
         .into(),
       };

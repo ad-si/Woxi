@@ -2643,14 +2643,13 @@ fn refine_log(
     && info.negative_vars.contains(var_name)
   {
     // Return I*Pi + Log[-x] as a FunctionCall to avoid evaluation issues
-    return Some(Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: vec![
+    return Some(call(
+      "Plus",
+      vec![
         call("Times", vec![id_expr("I"), const_expr("Pi")]),
         call1("Log", neg1(arg.clone())),
-      ]
-      .into(),
-    });
+      ],
+    ));
   }
 
   // Log[x^p] with -1 < p < 1 → p*Log[x]
@@ -5154,15 +5153,14 @@ fn simplify_expr_with_together(expr: &Expr) -> Expr {
                 div2(num, den)
               } else if g_den > 1 {
                 // a unit-negative rational shows as a prefactor
-                Expr::FunctionCall {
-                  name: "Times".to_string(),
-                  args: vec![
+                call(
+                  "Times",
+                  vec![
                     make_rational(-1, g_den),
                     inner,
                     pow2(mono, Expr::Integer(-1)),
-                  ]
-                  .into(),
-                }
+                  ],
+                )
               } else {
                 neg1(div2(inner, mono))
               };
@@ -6226,13 +6224,14 @@ fn denest_one_sqrt(e: &Expr) -> Option<Expr> {
   if e_val < 0 {
     return None;
   }
-  let sqrt_of = |n: i128| Expr::FunctionCall {
-    name: "Power".to_string(),
-    args: vec![
-      Expr::Integer(n),
-      call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
-    ]
-    .into(),
+  let sqrt_of = |n: i128| {
+    call(
+      "Power",
+      vec![
+        Expr::Integer(n),
+        call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
+      ],
+    )
   };
   let sqrt_d = sqrt_of(d);
   let sqrt_e = sqrt_of(e_val);
@@ -8799,15 +8798,14 @@ fn simplify_quotient_select(
         pow2(Expr::Identifier(var.clone()), Expr::Integer(den_mono_exp))
       };
       return Some((
-        Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![
+        call(
+          "Times",
+          vec![
             make_rational(-1, den_mono_coeff),
             num_expr,
             pow2(var_pow, Expr::Integer(-1)),
-          ]
-          .into(),
-        },
+          ],
+        ),
         true,
       ));
     }

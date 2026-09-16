@@ -18,14 +18,13 @@ fn bold_style(text: &str) -> Expr {
 
 /// Build a `Style[content, color]` Expr where `color` is a named color identifier.
 fn colored_style(text: &str, color: &str) -> Expr {
-  Expr::FunctionCall {
-    name: "Style".to_string(),
-    args: vec![
+  call(
+    "Style",
+    vec![
       Expr::String(text.to_string()),
       Expr::Identifier(color.to_string()),
-    ]
-    .into(),
-  }
+    ],
+  )
 }
 
 /// Build a `Rule[lhs, rhs]` Expr.
@@ -88,28 +87,23 @@ pub fn render_information_card_svg(
 
   // Header row: bold title (left) + a muted "Symbol" tag (right).
   rows.push(list(vec![
-    Expr::FunctionCall {
-      name: "Style".to_string(),
-      args: vec![
+    call(
+      "Style",
+      vec![
         Expr::String(title.to_string()),
         id_expr("Bold"),
         call("Rule", vec![id_expr("FontSize"), Expr::Integer(16)]),
-      ]
-      .into(),
-    },
+      ],
+    ),
     colored_style("Symbol", "Gray"),
   ]));
 
   for field in fields {
     let value_cell = match &field.url {
-      Some(url) => Expr::FunctionCall {
-        name: "Hyperlink".to_string(),
-        args: vec![
-          Expr::String(field.value.clone()),
-          Expr::String(url.clone()),
-        ]
-        .into(),
-      },
+      Some(url) => call(
+        "Hyperlink",
+        vec![Expr::String(field.value.clone()), Expr::String(url.clone())],
+      ),
       None => Expr::String(field.value.clone()),
     };
     rows.push(list(vec![bold_style(&field.label), value_cell]));

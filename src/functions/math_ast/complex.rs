@@ -1016,14 +1016,13 @@ pub fn arg_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if k == 0 {
           return Ok(imz);
         }
-        let result = Expr::FunctionCall {
-          name: "Plus".to_string(),
-          args: vec![
+        let result = call(
+          "Plus",
+          vec![
             imz,
             call("Times", vec![Expr::Integer(-2 * k), const_expr("Pi")]),
-          ]
-          .into(),
-        };
+          ],
+        );
         return crate::evaluator::evaluate_expr_to_expr(&result);
       }
     }
@@ -1698,14 +1697,13 @@ fn exact_complex_rational_numden(expr: &Expr) -> Option<(Expr, Expr)> {
   } else {
     // Build re + im*I so Woxi's Plus/Times simplification formats it as
     // `33 + 7*I` instead of `Complex[33, 7]`.
-    Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: vec![
+    call(
+      "Plus",
+      vec![
         Expr::Integer(re_num),
         call("Times", vec![Expr::Integer(im_num), id_expr("I")]),
-      ]
-      .into(),
-    }
+      ],
+    )
   };
   let num_evaluated =
     crate::evaluator::evaluate_expr_to_expr(&num_expr).ok()?;

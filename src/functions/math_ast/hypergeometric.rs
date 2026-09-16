@@ -198,14 +198,13 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // HypergeometricPFQ[{a}, {}, z] = (1 - z)^(-a). Closed form via the
   // generalised binomial series. Lets z = 1 yield 0^(-a) → ComplexInfinity.
   if a_list.len() == 1 && b_list.is_empty() {
-    let one_minus_z = Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: vec![
+    let one_minus_z = call(
+      "Plus",
+      vec![
         Expr::Integer(1),
         call("Times", vec![Expr::Integer(-1), z.clone()]),
-      ]
-      .into(),
-    };
+      ],
+    );
     let neg_a = call("Times", vec![Expr::Integer(-1), a_list[0].clone()]);
     let pow = call("Power", vec![one_minus_z, neg_a]);
     return crate::evaluator::evaluate_expr_to_expr(&pow);
@@ -423,15 +422,14 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         call("Times", factors)
       };
       let lower = crate::evaluator::evaluate_expr_to_expr(&lower_unevaluated)?;
-      let factor = Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![
+      let factor = call(
+        "Times",
+        vec![
           upper,
           z.clone(),
           call("Power", vec![lower, Expr::Integer(-1)]),
-        ]
-        .into(),
-      };
+        ],
+      );
       term = crate::evaluator::evaluate_expr_to_expr(&call(
         "Times",
         vec![term, factor],
@@ -496,14 +494,13 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     let log_one_minus_z = Expr::FunctionCall {
       name: "Log".to_string(),
-      args: vec![Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: vec![
+      args: vec![call(
+        "Plus",
+        vec![
           Expr::Integer(1),
           call("Times", vec![Expr::Integer(-1), z.clone()]),
-        ]
-        .into(),
-      }]
+        ],
+      )]
       .into(),
     };
     let polylog = call("PolyLog", vec![Expr::Integer(2), z.clone()]);
@@ -523,14 +520,13 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return times_ast(&[
       Expr::Integer(-4),
       inner_neg,
-      Expr::FunctionCall {
-        name: "Power".to_string(),
-        args: vec![
+      call(
+        "Power",
+        vec![
           call("Power", vec![z.clone(), Expr::Integer(2)]),
           Expr::Integer(-1),
-        ]
-        .into(),
-      },
+        ],
+      ),
     ]);
   }
   // 3F2[{1, 1, 3}, {2, 2}, z] closed form. Derivation: collapsing the
@@ -553,14 +549,13 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             call("Times", vec![Expr::Integer(-1), z.clone()]),
             Expr::FunctionCall {
               name: "Log".to_string(),
-              args: vec![Expr::FunctionCall {
-                name: "Plus".to_string(),
-                args: vec![
+              args: vec![call(
+                "Plus",
+                vec![
                   Expr::Integer(1),
                   call("Times", vec![Expr::Integer(-1), z.clone()]),
-                ]
-                .into(),
-              }]
+                ],
+              )]
               .into(),
             },
             Expr::FunctionCall {
@@ -587,15 +582,14 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Expr::FunctionCall {
           name: "Power".to_string(),
           args: vec![
-            Expr::FunctionCall {
-              name: "Times".to_string(),
-              args: vec![
+            call(
+              "Times",
+              vec![
                 Expr::Integer(2),
                 call("Plus", vec![Expr::Integer(-1), z.clone()]),
                 z.clone(),
-              ]
-              .into(),
-            },
+              ],
+            ),
             Expr::Integer(-1),
           ]
           .into(),
@@ -1802,15 +1796,13 @@ pub fn hypergeometric_u_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // are handled by the fast path above.
   if crate::evaluator::pattern_matching::expr_equal(&args[0], &args[1]) {
     let z = args[2].clone();
-    let one_minus_a =
-      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: vec![
-          Expr::Integer(1),
-          call("Times", vec![Expr::Integer(-1), args[0].clone()]),
-        ]
-        .into(),
-      })?;
+    let one_minus_a = crate::evaluator::evaluate_expr_to_expr(&call(
+      "Plus",
+      vec![
+        Expr::Integer(1),
+        call("Times", vec![Expr::Integer(-1), args[0].clone()]),
+      ],
+    ))?;
     let exp_z = call("Power", vec![id_expr("E"), z.clone()]);
     let gamma = call("Gamma", vec![one_minus_a, z]);
     return crate::evaluator::evaluate_expr_to_expr(&call(
@@ -1869,15 +1861,14 @@ pub fn hypergeometric_u_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         name: "Plus".to_string(),
         args: vec![
           call("Power", vec![z.clone(), Expr::Integer(-1)]),
-          Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![
+          call(
+            "Times",
+            vec![
               Expr::Integer(-1),
               exp_z,
               call("Gamma", vec![Expr::Integer(0), z.clone()]),
-            ]
-            .into(),
-          },
+            ],
+          ),
         ]
         .into(),
       })?;
@@ -1892,14 +1883,13 @@ pub fn hypergeometric_u_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             "Rational",
             vec![Expr::Integer(1), Expr::Integer(k * (k - 1))],
           ),
-          Expr::FunctionCall {
-            name: "Plus".to_string(),
-            args: vec![
+          call(
+            "Plus",
+            vec![
               call("Times", vec![coeff_curr, u_curr.clone()]),
               call("Times", vec![Expr::Integer(-1), u_prev.clone()]),
-            ]
-            .into(),
-          },
+            ],
+          ),
         ]
         .into(),
       };
@@ -2015,14 +2005,13 @@ pub fn hypergeometric2f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
       name: "Power".to_string(),
       args: vec![
-        Expr::FunctionCall {
-          name: "Plus".to_string(),
-          args: vec![
+        call(
+          "Plus",
+          vec![
             Expr::Integer(1),
             call("Times", vec![Expr::Integer(-1), z.clone()]),
-          ]
-          .into(),
-        },
+          ],
+        ),
         neg_a,
       ]
       .into(),
@@ -2038,14 +2027,13 @@ pub fn hypergeometric2f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
       name: "Power".to_string(),
       args: vec![
-        Expr::FunctionCall {
-          name: "Plus".to_string(),
-          args: vec![
+        call(
+          "Plus",
+          vec![
             Expr::Integer(1),
             call("Times", vec![Expr::Integer(-1), z.clone()]),
-          ]
-          .into(),
-        },
+          ],
+        ),
         neg_b,
       ]
       .into(),
@@ -2137,14 +2125,13 @@ pub fn hypergeometric2f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let negated_inner = negate_leading_integer_coefficient(&inner);
       (z_minus_one, negated_inner)
     } else {
-      let one_minus_z = Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: vec![
+      let one_minus_z = call(
+        "Plus",
+        vec![
           Expr::Integer(1),
           call("Times", vec![Expr::Integer(-1), z.clone()]),
-        ]
-        .into(),
-      };
+        ],
+      );
       (one_minus_z, inner)
     };
     let prefactor =
@@ -2374,14 +2361,13 @@ fn hypergeometric2f1_1_n_np1(
   z: &Expr,
 ) -> Result<Expr, InterpreterError> {
   // Build: -(n/z^n) * (sum_{k=1}^{n-1} z^k/k + Log[1-z])
-  let one_minus_z = Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: vec![
+  let one_minus_z = call(
+    "Plus",
+    vec![
       Expr::Integer(1),
       call("Times", vec![Expr::Integer(-1), z.clone()]),
-    ]
-    .into(),
-  };
+    ],
+  );
   let log_1mz = call1("Log", one_minus_z);
 
   // Build the polynomial sum: sum_{k=1}^{n-1} z^k / k
@@ -2395,14 +2381,13 @@ fn hypergeometric2f1_1_n_np1(
     if k == 1 {
       inner_terms.push(zk);
     } else {
-      inner_terms.push(Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![
+      inner_terms.push(call(
+        "Times",
+        vec![
           call("Rational", vec![Expr::Integer(1), Expr::Integer(k)]),
           zk,
-        ]
-        .into(),
-      });
+        ],
+      ));
     }
   }
   inner_terms.push(log_1mz);
@@ -2410,15 +2395,14 @@ fn hypergeometric2f1_1_n_np1(
   let inner = call("Plus", inner_terms);
 
   // -(n/z^n) * inner = Times[-n, Power[z, -n], inner]
-  let result = Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: vec![
+  let result = call(
+    "Times",
+    vec![
       Expr::Integer(-n),
       call("Power", vec![z.clone(), Expr::Integer(-n)]),
       inner,
-    ]
-    .into(),
-  };
+    ],
+  );
 
   crate::evaluator::evaluate_expr_to_expr(&result)
 }
@@ -2533,14 +2517,13 @@ fn hypergeometric2f1_1_b_c(
   let (factor_n, factor_d) = rat_reduce(factor_num, factor_den);
 
   // Build Log[1-z]
-  let one_minus_z = Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: vec![
+  let one_minus_z = call(
+    "Plus",
+    vec![
       Expr::Integer(1),
       call("Times", vec![Expr::Integer(-1), z.clone()]),
-    ]
-    .into(),
-  };
+    ],
+  );
   let log_1mz = call1("Log", one_minus_z);
 
   // Build the Plus terms with factored coefficients

@@ -379,15 +379,14 @@ fn snak_to_expr(
           ));
         }
       }
-      Ok(Expr::FunctionCall {
-        name: "ExternalIdentifier".to_string(),
-        args: vec![
+      Ok(call(
+        "ExternalIdentifier",
+        vec![
           Expr::String("WikidataID".to_string()),
           Expr::String(id),
           Expr::Association(meta),
-        ]
-        .into(),
-      })
+        ],
+      ))
     }
     Some("time") => time_to_date_object(
       value["time"].as_str().unwrap_or_default(),
@@ -689,15 +688,14 @@ mod tests {
 
   #[test]
   fn specs_resolve_from_all_supported_forms() {
-    let ext_id = Expr::FunctionCall {
-      name: "ExternalIdentifier".to_string(),
-      args: vec![
+    let ext_id = call(
+      "ExternalIdentifier",
+      vec![
         Expr::String("WikidataID".to_string()),
         Expr::String("Q405".to_string()),
         Expr::Association(vec![]),
-      ]
-      .into(),
-    };
+      ],
+    );
     assert_eq!(resolve_id(&ext_id, 'Q'), Some("Q405".to_string()));
     // The identifier kind is enforced: an item is not a property.
     assert_eq!(resolve_id(&ext_id, 'P'), None);

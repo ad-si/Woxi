@@ -16390,14 +16390,13 @@ pub fn string_extract_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if idx >= 0 && idx < len {
       Ok(fields[idx as usize].clone())
     } else {
-      Err(Expr::FunctionCall {
-        name: "Missing".to_string(),
-        args: vec![
+      Err(call(
+        "Missing",
+        vec![
           Expr::String("PartAbsent".to_string()),
           Expr::Integer(n as i128),
-        ]
-        .into(),
-      })
+        ],
+      ))
     }
   };
 

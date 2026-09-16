@@ -754,38 +754,35 @@ fn associated_legendre_p_ast(
   let factor = if m % 2 == 0 {
     // (1 - x^2)^(m/2) — integer power
     let half_m = m / 2;
-    Expr::FunctionCall {
-      name: "Power".to_string(),
-      args: vec![
+    call(
+      "Power",
+      vec![
         minus2(Expr::Integer(1), pow2(x_expr.clone(), Expr::Integer(2))),
         Expr::Integer(half_m as i128),
-      ]
-      .into(),
-    }
+      ],
+    )
   } else {
     // (1 - x^2)^(m/2) with m odd → (1 - x^2)^((m-1)/2) * Sqrt[1 - x^2]
     let half_m = (m - 1) / 2;
-    let sqrt_part = Expr::FunctionCall {
-      name: "Power".to_string(),
-      args: vec![
+    let sqrt_part = call(
+      "Power",
+      vec![
         minus2(Expr::Integer(1), pow2(x_expr.clone(), Expr::Integer(2))),
         call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
-      ]
-      .into(),
-    };
+      ],
+    );
     if half_m == 0 {
       sqrt_part
     } else {
       Expr::BinaryOp {
         op: BinaryOperator::Times,
-        left: Box::new(Expr::FunctionCall {
-          name: "Power".to_string(),
-          args: vec![
+        left: Box::new(call(
+          "Power",
+          vec![
             minus2(Expr::Integer(1), pow2(x_expr.clone(), Expr::Integer(2))),
             Expr::Integer(half_m as i128),
-          ]
-          .into(),
-        }),
+          ],
+        )),
         right: Box::new(sqrt_part),
       }
     }
@@ -1088,30 +1085,27 @@ pub fn spherical_harmonic_y_ast(
     )
   };
   // Sqrt[Rational[2l+1, fact_ratio_den] / Pi] = Sqrt[arg]
-  let sqrt_arg = Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: vec![
+  let sqrt_arg = call(
+    "Times",
+    vec![
       norm_inner,
       call("Power", vec![const_expr("Pi"), Expr::Integer(-1)]),
-    ]
-    .into(),
-  };
-  let sqrt_part = Expr::FunctionCall {
-    name: "Power".to_string(),
-    args: vec![
+    ],
+  );
+  let sqrt_part = call(
+    "Power",
+    vec![
       sqrt_arg,
       call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
-    ]
-    .into(),
-  };
-  let norm_expr = Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: vec![
+    ],
+  );
+  let norm_expr = call(
+    "Times",
+    vec![
       call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
       sqrt_part,
-    ]
-    .into(),
-  };
+    ],
+  );
   let cos_theta = call1("Cos", args[2].clone());
   let plm_raw = associated_legendre_p_ast(
     &Expr::Integer(l),
@@ -1283,22 +1277,20 @@ fn simplify_spherical_harmonic_form(expr: &Expr) -> Expr {
         vec![Expr::Integer(residual_n), Expr::Integer(residual_d)],
       )
     };
-    let new_sqrt_arg = Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![
+    let new_sqrt_arg = call(
+      "Times",
+      vec![
         new_radicand_rat,
         call("Power", vec![const_expr("Pi"), Expr::Integer(-1)]),
-      ]
-      .into(),
-    };
-    let new_sqrt = Expr::FunctionCall {
-      name: "Power".to_string(),
-      args: vec![
+      ],
+    );
+    let new_sqrt = call(
+      "Power",
+      vec![
         new_sqrt_arg,
         call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
-      ]
-      .into(),
-    };
+      ],
+    );
     (Some(new_coeff), Some(new_sqrt))
   } else {
     (None, None)
@@ -1651,25 +1643,23 @@ fn legendre_q_symbolic_ast(
   let neg_half = call("Rational", vec![Expr::Integer(-1), Expr::Integer(2)]);
   let log_1mx = Expr::FunctionCall {
     name: "Log".to_string(),
-    args: vec![Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: vec![
+    args: vec![call(
+      "Plus",
+      vec![
         Expr::Integer(1),
         call("Times", vec![Expr::Integer(-1), x.clone()]),
-      ]
-      .into(),
-    }]
+      ],
+    )]
     .into(),
   };
   let log_1px = call1("Log", call("Plus", vec![Expr::Integer(1), x.clone()]));
-  let q0 = Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: vec![
+  let q0 = call(
+    "Plus",
+    vec![
       call("Times", vec![neg_half, log_1mx]),
       call("Times", vec![half, log_1px]),
-    ]
-    .into(),
-  };
+    ],
+  );
 
   if n == 0 {
     return crate::evaluator::evaluate_expr_to_expr(&q0);
@@ -1698,14 +1688,13 @@ fn legendre_q_symbolic_ast(
   }
   let w = call("Plus", w_terms);
 
-  let result = Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: vec![
+  let result = call(
+    "Plus",
+    vec![
       call("Times", vec![Expr::Integer(-1), w]),
       call("Times", vec![p_n, q0]),
-    ]
-    .into(),
-  };
+    ],
+  );
   crate::evaluator::evaluate_expr_to_expr(&result)
 }
 
@@ -3397,15 +3386,14 @@ pub fn hermite_h_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           "Hypergeometric1F1",
           vec![Expr::Real(-nu / 2.0), Expr::Real(0.5), Expr::Real(x2)],
         ));
-        let h2 = eval_real(Expr::FunctionCall {
-          name: "Hypergeometric1F1".to_string(),
-          args: vec![
+        let h2 = eval_real(call(
+          "Hypergeometric1F1",
+          vec![
             Expr::Real((1.0 - nu) / 2.0),
             Expr::Real(1.5),
             Expr::Real(x2),
-          ]
-          .into(),
-        });
+          ],
+        ));
         let g1 = eval_real(call1("Gamma", Expr::Real((1.0 - nu) / 2.0)));
         let g2 = eval_real(call1("Gamma", Expr::Real(-nu / 2.0)));
         if let (Some(h1v), Some(h2v), Some(g1v), Some(g2v)) = (h1, h2, g1, g2) {

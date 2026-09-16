@@ -1654,14 +1654,13 @@ pub fn harmonic_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // recognises; FunctionCall Power[k, j] would be left unevaluated.
       pow2(k.clone(), Expr::Integer(j))
     };
-    let sum = Expr::FunctionCall {
-      name: "Sum".to_string(),
-      args: vec![
+    let sum = call(
+      "Sum",
+      vec![
         summand,
         Expr::List(vec![k, Expr::Integer(1), args[0].clone()].into()),
-      ]
-      .into(),
-    };
+      ],
+    );
     let expanded = call1("Expand", sum);
     return crate::evaluator::evaluate_expr_to_expr(&expanded);
   }
@@ -1915,15 +1914,14 @@ pub fn alternating_harmonic_number_ast(
         }
         // Eta[r] in wolframscript's form: ((-2 + 2^r) Zeta[r])/2^r
         let two_pow_r = |exp: Expr| pow2(Expr::Integer(2), exp);
-        let eta = Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![
+        let eta = call(
+          "Times",
+          vec![
             call("Plus", vec![Expr::Integer(-2), two_pow_r(r.clone())]),
             call1("Zeta", r.clone()),
             two_pow_r(call("Times", vec![Expr::Integer(-1), r.clone()])),
-          ]
-          .into(),
-        };
+          ],
+        );
         return crate::evaluator::evaluate_expr_to_expr(&eta);
       }
       _ => {
@@ -1932,14 +1930,13 @@ pub fn alternating_harmonic_number_ast(
           name: "Times".to_string(),
           args: vec![
             Expr::Integer(-1),
-            Expr::FunctionCall {
-              name: "PolyLog".to_string(),
-              args: vec![
+            call(
+              "PolyLog",
+              vec![
                 args[1].clone(),
                 call("Times", vec![Expr::Integer(-1), args[2].clone()]),
-              ]
-              .into(),
-            },
+              ],
+            ),
           ]
           .into(),
         };

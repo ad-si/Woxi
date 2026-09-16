@@ -593,15 +593,14 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             // not leak onto the quads drawn after it.
             content.push(Expr::List(
               vec![
-                Expr::FunctionCall {
-                  name: "RGBColor".to_string(),
-                  args: vec![
+                call(
+                  "RGBColor",
+                  vec![
                     Expr::Real(cr as f64 / 255.0),
                     Expr::Real(cg as f64 / 255.0),
                     Expr::Real(cb as f64 / 255.0),
-                  ]
-                  .into(),
-                },
+                  ],
+                ),
                 Expr::FunctionCall {
                   name: "Polygon".to_string(),
                   args: vec![Expr::List(
@@ -657,14 +656,10 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             ));
           }
         }
-        Expr::FunctionCall {
-          name: "GraphicsComplex".to_string(),
-          args: vec![
-            Expr::List(point_exprs.into()),
-            Expr::List(content.into()),
-          ]
-          .into(),
-        }
+        call(
+          "GraphicsComplex",
+          vec![Expr::List(point_exprs.into()), Expr::List(content.into())],
+        )
       })
       .collect();
     let content = if complexes.len() == 1 {
@@ -8874,15 +8869,14 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         {
           Some((r, g, b)) => vec![Expr::List(
             vec![
-              Expr::FunctionCall {
-                name: "RGBColor".to_string(),
-                args: vec![
+              call(
+                "RGBColor",
+                vec![
                   Expr::Real(r as f64 / 255.0),
                   Expr::Real(g as f64 / 255.0),
                   Expr::Real(b as f64 / 255.0),
-                ]
-                .into(),
-              },
+                ],
+              ),
               polygon_expr,
             ]
             .into(),
@@ -8911,25 +8905,23 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           )]
           .into(),
         };
-        let color_expr = Expr::FunctionCall {
-          name: "RGBColor".to_string(),
-          args: vec![
+        let color_expr = call(
+          "RGBColor",
+          vec![
             Expr::Real(r as f64 / 255.0),
             Expr::Real(g as f64 / 255.0),
             Expr::Real(b as f64 / 255.0),
-          ]
-          .into(),
-        };
+          ],
+        );
         gc_content.push(Expr::List(vec![color_expr, line_expr].into()));
       }
-      Expr::FunctionCall {
-        name: "GraphicsComplex".to_string(),
-        args: vec![
+      call(
+        "GraphicsComplex",
+        vec![
           Expr::List(point_exprs.into()),
           Expr::List(gc_content.into()),
-        ]
-        .into(),
-      }
+        ],
+      )
     })
     .collect();
 
@@ -9890,14 +9882,10 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             ));
           }
         }
-        Expr::FunctionCall {
-          name: "GraphicsComplex".to_string(),
-          args: vec![
-            Expr::List(point_exprs.into()),
-            Expr::List(content.into()),
-          ]
-          .into(),
-        }
+        call(
+          "GraphicsComplex",
+          vec![Expr::List(point_exprs.into()), Expr::List(content.into())],
+        )
       })
       .collect();
     let content = if complexes.len() == 1 {

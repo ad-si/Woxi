@@ -1404,11 +1404,10 @@ fn build_sparse_array_for_coefficients(
       ]
       .into(),
     );
-    return Expr::FunctionCall {
-      name: "SparseArray".to_string(),
-      args: vec![id_expr("Automatic"), dims_list, Expr::Integer(0), inner]
-        .into(),
-    };
+    return call(
+      "SparseArray",
+      vec![id_expr("Automatic"), dims_list, Expr::Integer(0), inner],
+    );
   }
   // Sort entries by index for deterministic CSR layout.
   let mut sorted_entries: Vec<(Vec<usize>, Expr)> = entries.to_vec();
@@ -1438,11 +1437,10 @@ fn build_sparse_array_for_coefficients(
       ]
       .into(),
     );
-    return Expr::FunctionCall {
-      name: "SparseArray".to_string(),
-      args: vec![id_expr("Automatic"), dims_list, Expr::Integer(0), inner]
-        .into(),
-    };
+    return call(
+      "SparseArray",
+      vec![id_expr("Automatic"), dims_list, Expr::Integer(0), inner],
+    );
   }
   // k ≥ 2: rowPtr length n+1, colIndices are (k-1)-tuples.
   let mut row_counts = vec![0i128; n];
@@ -1477,10 +1475,10 @@ fn build_sparse_array_for_coefficients(
     ]
     .into(),
   );
-  Expr::FunctionCall {
-    name: "SparseArray".to_string(),
-    args: vec![id_expr("Automatic"), dims_list, Expr::Integer(0), inner].into(),
-  }
+  call(
+    "SparseArray",
+    vec![id_expr("Automatic"), dims_list, Expr::Integer(0), inner],
+  )
 }
 
 /// Multi-polynomial CoefficientArrays. Returns a list of SparseArrays

@@ -443,15 +443,14 @@ pub fn dirichlet_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       });
     }
     let sum = call("Plus", terms);
-    let product = Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![
+    let product = call(
+      "Times",
+      vec![
         call("Rational", vec![Expr::Integer(1), Expr::Integer(2 * k)]),
         const_expr("Pi"),
         sum,
-      ]
-      .into(),
-    };
+      ],
+    );
     return crate::evaluator::evaluate_expr_to_expr(&call1(
       "Simplify", product,
     ));
@@ -720,14 +719,13 @@ fn convolve_pair(
     }
     (Mu, Power(0)) | (Power(0), Mu) => Some(Expr::FunctionCall {
       name: "KroneckerDelta".to_string(),
-      args: vec![Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: vec![
+      args: vec![call(
+        "Plus",
+        vec![
           Expr::Integer(1),
           call("Times", vec![Expr::Integer(-1), m.clone()]),
-        ]
-        .into(),
-      }]
+        ],
+      )]
       .into(),
     }),
     (Mu, Power(1)) | (Power(1), Mu) => Some(call1("EulerPhi", m.clone())),

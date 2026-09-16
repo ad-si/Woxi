@@ -17875,15 +17875,13 @@ pub fn truncated_mean_variance(
       "Times",
       vec![call("Power", vec![x.clone(), Expr::Integer(k)]), density],
     );
-    let integral =
-      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: "Integrate".to_string(),
-        args: vec![
-          integrand,
-          Expr::List(vec![x.clone(), lo.clone(), hi.clone()].into()),
-        ]
-        .into(),
-      })?;
+    let integral = crate::evaluator::evaluate_expr_to_expr(&call(
+      "Integrate",
+      vec![
+        integrand,
+        Expr::List(vec![x.clone(), lo.clone(), hi.clone()].into()),
+      ],
+    ))?;
     if matches!(&integral, Expr::FunctionCall { name, .. } if name == "Integrate")
     {
       return Ok(None);
