@@ -5452,6 +5452,25 @@ mod cases {
   fn binomial_5() {
     assert_case(r#"Binomial[-10, -3.5]"#, r#"ComplexInfinity"#);
   }
+  // Regression: the generalized-binomial branch (non-integer/symbolic n with
+  // a non-negative integer k) used to accumulate k! in an i128, which
+  // overflows and panics once k >= 34. It now accumulates in a BigInt.
+  #[test]
+  fn binomial_6_large_k_no_overflow() {
+    assert_case(
+      r#"Binomial[1/2, 40]"#,
+      r#"-340212685864987900195 / 302231454903657293676544"#,
+    );
+  }
+  #[test]
+  fn binomial_7_large_k_negative_integer_real_no_overflow() {
+    // Binomial[r, rr] with r a whole-number machine real (so it stays in the
+    // generalized branch instead of the exact-integer one) and rr >= 34 is
+    // exactly what a `Sum[Binomial[r, rr] x^rr, {rr, 1, 39}]` with r = -1.
+    // evaluates, as seen in the "Convergence of the Binomial Series"
+    // Demonstration.
+    assert_case(r#"Binomial[-1., 34]"#, r#"0.9999999999999999"#);
+  }
 }
 
 mod farey_sequence {
