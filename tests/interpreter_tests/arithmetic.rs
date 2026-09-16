@@ -157,7 +157,10 @@ mod arithmetic {
         "1.414213562373095 + 2.82842712474619*I"
       );
       // An all-exact product is unaffected and stays symbolic.
-      assert_eq!(interpret("Sqrt[2] * (1 + 2*I)").unwrap(), "Sqrt[2]*(1 + 2*I)");
+      assert_eq!(
+        interpret("Sqrt[2] * (1 + 2*I)").unwrap(),
+        "Sqrt[2]*(1 + 2*I)"
+      );
     }
 
     #[test]

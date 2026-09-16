@@ -8626,7 +8626,8 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Build each surface's world-space triangles independently, clipping
   // cells that cross the region boundary.
-  let mut surface_tris: Vec<Vec<[Point3D; 3]>> = Vec::with_capacity(bodies.len());
+  let mut surface_tris: Vec<Vec<[Point3D; 3]>> =
+    Vec::with_capacity(bodies.len());
   for &surface_body in &bodies {
     // Evaluate the surface point at arbitrary (theta, phi) parameters.
     let surface_at = |theta: f64, phi: f64| -> Option<(Point3D, f64)> {
@@ -8763,14 +8764,12 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             let (a, b, c) = (points[0], points[k], points[k + 1]);
             // Skip degenerate slivers (e.g. the collapsed pole edge).
             let n = triangle_normal(a, b, c);
-            let ab = ((b.x - a.x).powi(2)
-              + (b.y - a.y).powi(2)
-              + (b.z - a.z).powi(2))
-            .sqrt();
-            let ac = ((c.x - a.x).powi(2)
-              + (c.y - a.y).powi(2)
-              + (c.z - a.z).powi(2))
-            .sqrt();
+            let ab =
+              ((b.x - a.x).powi(2) + (b.y - a.y).powi(2) + (b.z - a.z).powi(2))
+                .sqrt();
+            let ac =
+              ((c.x - a.x).powi(2) + (c.y - a.y).powi(2) + (c.z - a.z).powi(2))
+                .sqrt();
             let area2 = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
             if area2 < 1e-12 * (ab * ac).max(1e-300) {
               continue;
@@ -8783,7 +8782,7 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     surface_tris.push(tris);
   }
 
-  if surface_tris.iter().all(|tris| tris.is_empty()) {
+  if surface_tris.iter().all(std::vec::Vec::is_empty) {
     return Err(InterpreterError::EvaluationError(
       "SphericalPlot3D: no renderable triangles".into(),
     ));
@@ -8813,8 +8812,11 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       };
       let mut tri_indices: Vec<[usize; 3]> = Vec::new();
       for tri in tris {
-        tri_indices
-          .push([index_of(tri[0]), index_of(tri[1]), index_of(tri[2])]);
+        tri_indices.push([
+          index_of(tri[0]),
+          index_of(tri[1]),
+          index_of(tri[2]),
+        ]);
       }
 
       // Boundary edges (used by BoundaryStyle): edges belonging to exactly
@@ -9009,7 +9011,8 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         / 3.0;
       let default_color = height_color(avg_z);
       let normal = triangle_normal(na, nb, nc);
-      let (color, opacity) = shade_facet(default_color, style, normal, view_dir);
+      let (color, opacity) =
+        shade_facet(default_color, style, normal, view_dir);
 
       let pa = project(na, &camera);
       let pb = project(nb, &camera);

@@ -644,11 +644,12 @@ fn associated_legendre_p_ast(
     && m_is_neg_int
     && let (Expr::Integer(n), Expr::Integer(m)) = (n_expr, m_expr)
   {
-    let m_abs = (-*m) as i128;
+    let m_abs = (-*m);
     if m_abs > *n {
       return Ok(Expr::Integer(0));
     }
-    let base = associated_legendre_p_ast(n_expr, &Expr::Integer(m_abs), x_expr)?;
+    let base =
+      associated_legendre_p_ast(n_expr, &Expr::Integer(m_abs), x_expr)?;
     let sign: i128 = if m_abs % 2 == 0 { 1 } else { -1 };
     let mut ratio_den: i128 = 1;
     for i in (*n - m_abs + 1)..=(*n + m_abs) {
@@ -1075,7 +1076,10 @@ pub fn spherical_harmonic_y_ast(
   let norm_inner = if m < 0 {
     call(
       "Rational",
-      vec![Expr::Integer(two_l_plus_1 * fact_ratio_den), Expr::Integer(1)],
+      vec![
+        Expr::Integer(two_l_plus_1 * fact_ratio_den),
+        Expr::Integer(1),
+      ],
     )
   } else {
     call(

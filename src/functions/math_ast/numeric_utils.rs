@@ -1349,7 +1349,9 @@ pub fn try_extract_complex_float(expr: &Expr) -> Option<(f64, f64)> {
       }
       Some(result)
     }
-    Expr::FunctionCall { name, args } if name == "Complex" && args.len() == 2 => {
+    Expr::FunctionCall { name, args }
+      if name == "Complex" && args.len() == 2 =>
+    {
       Some((try_eval_to_f64(&args[0])?, try_eval_to_f64(&args[1])?))
     }
     Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
@@ -1380,7 +1382,11 @@ fn complex_pow_float(base: (f64, f64), exp: (f64, f64)) -> (f64, f64) {
   let (br, bi) = base;
   let (er, ei) = exp;
   if br == 0.0 && bi == 0.0 {
-    return if er > 0.0 { (0.0, 0.0) } else { (f64::NAN, f64::NAN) };
+    return if er > 0.0 {
+      (0.0, 0.0)
+    } else {
+      (f64::NAN, f64::NAN)
+    };
   }
   let mag = br.hypot(bi);
   let arg = bi.atan2(br);

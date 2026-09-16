@@ -4668,7 +4668,6 @@ mod spherical_harmonic_canonical_form {
       "(Sqrt[30/Pi]*Sin[t]^2)/(8*E^((2*I)*p))"
     );
   }
-
 }
 
 // BernsteinBasis[d, n, x] piecewise behavior, verified against wolframscript.
