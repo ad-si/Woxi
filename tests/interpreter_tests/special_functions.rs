@@ -3023,8 +3023,24 @@ mod cases {
     assert_case(r#"LegendreP[2, -1, x]"#, r#"(x*Sqrt[1 - x^2])/2"#);
     assert_case(r#"LegendreP[2, -2, x]"#, r#"(1 - x^2)/8"#);
     assert_case(r#"LegendreP[3, -2, x]"#, r#"(x*(1 - x^2))/8"#);
-    // |m| > n is still zero for a negative order too.
-    assert_case(r#"LegendreP[2, -3, x]"#, r#"0"#);
+    // |m| > n is an indeterminate 0·∞ for the reflection formula, not 0
+    // (e.g. LegendreP[2, -3, 0] = 1/15) — same pre-existing gap
+    // LegendreP[2, 3, 0] has for positive m > n (also unevaluated for
+    // exact input rather than 0), so this stays unevaluated rather than
+    // forcing a wrong answer.
+    assert_case(r#"LegendreP[2, -3, x]"#, r#"LegendreP[2, -3, x]"#);
+    // A numeric x, including |x| > 1, still goes through the existing
+    // complex/inexact path unaffected by the reflection formula above
+    // (rounded: the real part is a ~1e-17 floating-point residual).
+    assert_eq!(interpret("Head[LegendreP[2, -1, 1.5]]").unwrap(), "Complex");
+    assert_eq!(
+      interpret("Round[Re[LegendreP[2, -1, 1.5]], 0.0001]").unwrap(),
+      "0."
+    );
+    assert_eq!(
+      interpret("Round[Im[LegendreP[2, -1, 1.5]], 0.0001]").unwrap(),
+      "0.8385"
+    );
   }
   #[test]
   fn d_keeps_integer_content_inside_sum() {

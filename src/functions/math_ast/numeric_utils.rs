@@ -429,19 +429,6 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
       }
     }
     Expr::FunctionCall { name, args } => match name.as_str() {
-      // A machine `Complex[re, im]` whose imaginary part is exactly zero
-      // (the kind numeric cancellation leaves behind, e.g. from a Times of
-      // conjugate-paired terms) is a real number: samplers like `Plot3D`'s
-      // that call this to test a point's realness should accept it rather
-      // than reject every point because the arithmetic passed through C.
-      "Complex" if args.len() == 2 => {
-        let im = try_eval_to_f64(&args[1])?;
-        if im == 0.0 {
-          try_eval_to_f64(&args[0])
-        } else {
-          None
-        }
-      }
       "Rational" if args.len() == 2 => {
         // Prefer a bignum-aware ratio so huge exact rationals whose numerator
         // and denominator overflow f64 individually still convert correctly.

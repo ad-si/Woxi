@@ -634,31 +634,35 @@ fn associated_legendre_p_ast(
   let n_is_nonneg_int = matches!(n_expr, Expr::Integer(k) if *k >= 0);
   let m_is_neg_int = matches!(m_expr, Expr::Integer(k) if *k < 0);
 
-  // Negative integer order, non-negative integer degree: reflect onto the
-  // m >= 0 formula below via
+  // Negative integer order, non-negative integer degree, within the
+  // standard finite range (|m| <= n), and a non-numeric x: reflect onto
+  // the m >= 0 formula below via
   //   P_n^{-m}(x) = (-1)^m * (n-m)!/(n+m)! * P_n^m(x),
-  // which holds for any x (symbolic or numeric) — so a symbolic `Cos[θ]`
-  // simplifies the same way a positive order does, instead of falling
-  // back to an unevaluated `LegendreP[n, -m, x]`.
+  // so a symbolic `Cos[θ]` simplifies the same way a positive order does,
+  // instead of falling back to an unevaluated `LegendreP[n, -m, x]`.
+  // Outside that range (|m| > n, an indeterminate 0·∞ rather than 0 —
+  // e.g. `LegendreP[2, -3, 0] = 1/15`) or for a numeric x (where `|x| > 1`
+  // needs the complex-valued continuation), this falls through to the
+  // general hypergeometric path below unchanged.
   if n_is_nonneg_int
     && m_is_neg_int
+    && try_eval_to_f64(x_expr).is_none()
     && let (Expr::Integer(n), Expr::Integer(m)) = (n_expr, m_expr)
+    && (-*m) <= *n
   {
     let m_abs = -*m;
-    if m_abs > *n {
-      return Ok(Expr::Integer(0));
-    }
     let base =
       associated_legendre_p_ast(n_expr, &Expr::Integer(m_abs), x_expr)?;
-    let sign: i128 = if m_abs % 2 == 0 { 1 } else { -1 };
-    let mut ratio_den: i128 = 1;
+    let sign = if m_abs % 2 == 0 {
+      BigInt::from(1)
+    } else {
+      BigInt::from(-1)
+    };
+    let mut ratio_den = BigInt::from(1);
     for i in (*n - m_abs + 1)..=(*n + m_abs) {
-      ratio_den *= i;
+      ratio_den *= BigInt::from(i);
     }
-    let factor = call(
-      "Rational",
-      vec![Expr::Integer(sign), Expr::Integer(ratio_den)],
-    );
+    let factor = make_rational_expr(&sign, &ratio_den);
     return crate::evaluator::evaluate_expr_to_expr(&times2(factor, base));
   }
 
