@@ -230,14 +230,13 @@ pub fn tensor_rank_ast(expr: &Expr) -> Result<Expr, InterpreterError> {
   {
     let inner_rank = call1("TensorRank", args[0].clone());
     let reduction = Expr::Integer(2 * pairs.len() as i128);
-    let result = Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: vec![
+    let result = call(
+      "Plus",
+      vec![
         call("Times", vec![Expr::Integer(-1), reduction]),
         inner_rank,
-      ]
-      .into(),
-    };
+      ],
+    );
     return crate::evaluator::evaluate_expr_to_expr(&result);
   }
 

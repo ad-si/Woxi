@@ -737,24 +737,22 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       Some("Square") => {
         let r = vertex_radius * 0.9;
-        primitives.push(Expr::FunctionCall {
-          name: "Rectangle".to_string(),
-          args: vec![
+        primitives.push(call(
+          "Rectangle",
+          vec![
             Expr::List(vec![Expr::Real(x - r), Expr::Real(y - r)].into()),
             Expr::List(vec![Expr::Real(x + r), Expr::Real(y + r)].into()),
-          ]
-          .into(),
-        });
+          ],
+        ));
       }
       _ => {
-        primitives.push(Expr::FunctionCall {
-          name: "Disk".to_string(),
-          args: vec![
+        primitives.push(call(
+          "Disk",
+          vec![
             Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()),
             Expr::Real(vertex_radius),
-          ]
-          .into(),
-        });
+          ],
+        ));
       }
     }
 
@@ -1910,14 +1908,13 @@ pub fn graph_disjoint_union(graphs: &[(&[Expr], &[Expr])]) -> Expr {
     }
     offset += verts.len();
   }
-  Expr::FunctionCall {
-    name: "Graph".to_string(),
-    args: vec![
+  call(
+    "Graph",
+    vec![
       Expr::List(new_vertices.into()),
       Expr::List(new_edges.into()),
-    ]
-    .into(),
-  }
+    ],
+  )
 }
 
 /// Merge the given vertices of a graph into the first one (`to_contract[0]`),
@@ -5448,14 +5445,13 @@ pub fn subgraph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
   edges.sort_by_key(|(k, _)| *k);
-  Ok(Expr::FunctionCall {
-    name: "Graph".to_string(),
-    args: vec![
+  Ok(call(
+    "Graph",
+    vec![
       Expr::List(sub_vertices.into()),
       Expr::List(edges.into_iter().map(|(_, e)| e).collect::<Vec<_>>().into()),
-    ]
-    .into(),
-  })
+    ],
+  ))
 }
 
 /// KirchhoffGraph[m] / KirchhoffGraph[vertices, m] — build the graph whose
@@ -5708,14 +5704,13 @@ pub fn line_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let (a1, b1) = &endpoints[i];
       let (a2, b2) = &endpoints[j];
       if a1 == a2 || a1 == b2 || b1 == a2 || b1 == b2 {
-        edges.push(Expr::FunctionCall {
-          name: "UndirectedEdge".to_string(),
-          args: vec![
+        edges.push(call(
+          "UndirectedEdge",
+          vec![
             Expr::Integer((i + 1) as i128),
             Expr::Integer((j + 1) as i128),
-          ]
-          .into(),
-        });
+          ],
+        ));
       }
     }
   }

@@ -54,15 +54,13 @@ pub fn q_pochhammer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       vec![a.clone(), qk],
     ))?;
     // Compute 1 - a*q^k
-    let factor =
-      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: vec![
-          Expr::Integer(1),
-          call("Times", vec![Expr::Integer(-1), aqk]),
-        ]
-        .into(),
-      })?;
+    let factor = crate::evaluator::evaluate_expr_to_expr(&call(
+      "Plus",
+      vec![
+        Expr::Integer(1),
+        call("Times", vec![Expr::Integer(-1), aqk]),
+      ],
+    ))?;
     // Multiply into result
     result = crate::evaluator::evaluate_expr_to_expr(&call(
       "Times",
@@ -205,14 +203,13 @@ fn mittag_leffler_two_arg(
     match a {
       0 => {
         // 1/(1 - z)
-        let one_minus_z = Expr::FunctionCall {
-          name: "Plus".to_string(),
-          args: vec![
+        let one_minus_z = call(
+          "Plus",
+          vec![
             Expr::Integer(1),
             call("Times", vec![Expr::Integer(-1), z.clone()]),
-          ]
-          .into(),
-        };
+          ],
+        );
         return crate::evaluator::evaluate_expr_to_expr(&call(
           "Power",
           vec![one_minus_z, Expr::Integer(-1)],
@@ -656,15 +653,14 @@ pub fn meijer_g_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: "Plus".to_string(),
       args: vec![
         Expr::Integer(2),
-        Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![
+        call(
+          "Times",
+          vec![
             Expr::Integer(3),
             id_expr("E"),
             call1("ExpIntegralEi", Expr::Integer(-1)),
-          ]
-          .into(),
-        },
+          ],
+        ),
       ]
       .into(),
     };
@@ -1856,14 +1852,13 @@ pub fn wigner_d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Ok(Expr::Real(re))
     } else {
       // Return Complex form
-      Ok(Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: vec![
+      Ok(call(
+        "Plus",
+        vec![
           Expr::Real(re),
           call("Times", vec![Expr::Real(im), id_expr("I")]),
-        ]
-        .into(),
-      })
+        ],
+      ))
     }
   }
 }
@@ -1949,14 +1944,13 @@ fn wigner_d_small_symbolic(
   let prefactor = call1("Sqrt", Expr::Integer(pref_under));
 
   // Build half-angle expressions Cos[theta/2], Sin[theta/2].
-  let half_theta = Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: vec![
+  let half_theta = call(
+    "Times",
+    vec![
       call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
       theta.clone(),
-    ]
-    .into(),
-  };
+    ],
+  );
   let cos_ht = call1("Cos", half_theta.clone());
   let sin_ht = call1("Sin", half_theta);
 

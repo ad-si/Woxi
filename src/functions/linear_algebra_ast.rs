@@ -11836,14 +11836,13 @@ fn linear_to_pos(mut lin: usize, dims: &[usize]) -> Vec<usize> {
 /// `SymmetrizedArray[StructuredArray`StructuredData[…]]` form wolframscript
 /// prints.
 fn symmetrized_array(dims: &[usize], rules: Vec<Expr>, tag: Expr) -> Expr {
-  let structured_data = Expr::FunctionCall {
-    name: "StructuredArray`StructuredData".to_string(),
-    args: vec![
+  let structured_data = call(
+    "StructuredArray`StructuredData",
+    vec![
       Expr::List(dims.iter().map(|&d| Expr::Integer(d as i128)).collect()),
       Expr::List(vec![Expr::List(rules.into()), tag].into()),
-    ]
-    .into(),
-  };
+    ],
+  );
   call("SymmetrizedArray", vec![structured_data])
 }
 

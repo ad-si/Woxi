@@ -348,14 +348,13 @@ pub fn airy_bi_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // AiryBiPrime[0] = 3^(1/6) / Gamma[1/3]
   if matches!(&args[0], Expr::Integer(0)) {
     // 3^(1/6) / Gamma[1/3] — no factor of 3 in denominator
-    let power_3 = Expr::FunctionCall {
-      name: "Power".to_string(),
-      args: vec![
+    let power_3 = call(
+      "Power",
+      vec![
         Expr::Integer(3),
         call("Rational", vec![Expr::Integer(1), Expr::Integer(6)]),
-      ]
-      .into(),
-    };
+      ],
+    );
     let gamma = call1(
       "Gamma",
       call("Rational", vec![Expr::Integer(1), Expr::Integer(3)]),

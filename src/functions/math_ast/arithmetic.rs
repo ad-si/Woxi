@@ -8561,14 +8561,13 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let coeff_expr = if coeff_is_int {
       bigint_to_expr(big_numer.clone())
     } else {
-      Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![
+      call(
+        "Rational",
+        vec![
           bigint_to_expr(big_numer.clone()),
           bigint_to_expr(big_denom.clone()),
-        ]
-        .into(),
-      }
+        ],
+      )
     };
 
     // If any Real factor is present, collapse the exact coefficient × Real to a
@@ -10263,14 +10262,13 @@ pub fn make_divide(a: Expr, b: Expr) -> Expr {
         };
         let rest_inv = call("Power", vec![rest_expr, Expr::Integer(-1)]);
         // Sign is carried on the rational's numerator (Rational[-1, |c|]).
-        let coeff = Expr::FunctionCall {
-          name: "Rational".to_string(),
-          args: vec![
+        let coeff = call(
+          "Rational",
+          vec![
             Expr::Integer(int_prod.signum()),
             Expr::Integer(int_prod.abs()),
-          ]
-          .into(),
-        };
+          ],
+        );
         return call("Times", vec![coeff, rest_inv]);
       }
     }
@@ -12375,14 +12373,13 @@ fn make_around_general(value: f64, minus: f64, plus: f64, asym: bool) -> Expr {
   if minus == 0.0 && plus == 0.0 {
     return Expr::Real(value);
   }
-  Expr::FunctionCall {
-    name: "Around".to_string(),
-    args: vec![
+  call(
+    "Around",
+    vec![
       Expr::Real(value),
       Expr::List(vec![Expr::Real(minus), Expr::Real(plus)].into()),
-    ]
-    .into(),
-  }
+    ],
+  )
 }
 
 /// Contribution of one argument to the (minus, plus) sides of a result,
@@ -13667,15 +13664,14 @@ fn try_time_object_plus_quantity(
       )
     }
   };
-  Some(Ok(Expr::FunctionCall {
-    name: "TimeObject".to_string(),
-    args: vec![
+  Some(Ok(call(
+    "TimeObject",
+    vec![
       Expr::List(comps.into()),
       Expr::String(granularity.to_string()),
       Expr::Real(0.0),
-    ]
-    .into(),
-  }))
+    ],
+  )))
 }
 
 /// `DateObject`: e.g. `DateObject[{2024, 7, 4}] + Quantity[1, "Days"]` shifts

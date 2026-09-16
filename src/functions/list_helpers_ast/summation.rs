@@ -2100,14 +2100,13 @@ fn harmonic_antidifference_as_polygamma(expr: &Expr, var_name: &str) -> Expr {
       _ => return None,
     };
     let factorial: i128 = (1..order).product();
-    let coefficient = Expr::FunctionCall {
-      name: "Rational".to_string(),
-      args: vec![
+    let coefficient = call(
+      "Rational",
+      vec![
         Expr::Integer(if order % 2 == 0 { -1 } else { 1 }),
         Expr::Integer(factorial),
-      ]
-      .into(),
-    };
+      ],
+    );
     let polygamma = crate::helpers::call(
       "PolyGamma",
       vec![

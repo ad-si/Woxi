@@ -340,14 +340,13 @@ pub fn tree_form_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       primitives.push(Expr::FunctionCall {
         name: "Text".to_string(),
         args: vec![
-          Expr::FunctionCall {
-            name: "Style".to_string(),
-            args: vec![
+          call(
+            "Style",
+            vec![
               Expr::String(node.label.clone()),
               Expr::Integer(font_size_int),
-            ]
-            .into(),
-          },
+            ],
+          ),
           Expr::List(vec![Expr::Real(node.x), Expr::Real(node.y)].into()),
         ]
         .into(),
@@ -363,14 +362,13 @@ pub fn tree_form_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)],
     ));
     for node in &layout {
-      primitives.push(Expr::FunctionCall {
-        name: "Disk".to_string(),
-        args: vec![
+      primitives.push(call(
+        "Disk",
+        vec![
           Expr::List(vec![Expr::Real(node.x), Expr::Real(node.y)].into()),
           Expr::Real(dot_radius),
-        ]
-        .into(),
-      });
+        ],
+      ));
     }
   }
 
@@ -640,14 +638,13 @@ fn tree_to_graphics(tree: &TreeNode) -> Result<Expr, InterpreterError> {
     primitives.push(Expr::FunctionCall {
       name: "Text".to_string(),
       args: vec![
-        Expr::FunctionCall {
-          name: "Style".to_string(),
-          args: vec![
+        call(
+          "Style",
+          vec![
             Expr::String(node.label.clone()),
             Expr::Integer(font_size_int),
-          ]
-          .into(),
-        },
+          ],
+        ),
         Expr::List(vec![Expr::Real(node.x), Expr::Real(node.y)].into()),
       ]
       .into(),

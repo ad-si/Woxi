@@ -2125,14 +2125,13 @@ fn date_difference_multi_unit(c1: &[f64], c2: &[f64], units: &Expr) -> Expr {
       magnitudes.push(Expr::Integer(count as i128));
     }
   }
-  Expr::FunctionCall {
-    name: "Quantity".to_string(),
-    args: vec![
+  call(
+    "Quantity",
+    vec![
       call1("MixedMagnitude", Expr::List(magnitudes.into())),
       call1("MixedUnit", Expr::List(plurals.into())),
-    ]
-    .into(),
-  }
+    ],
+  )
 }
 
 fn unevaluated_date_difference(c1: &[f64], c2: &[f64], units: &Expr) -> Expr {
@@ -3398,14 +3397,13 @@ pub fn time_object_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  Ok(Expr::FunctionCall {
-    name: "TimeObject".to_string(),
-    args: vec![
+  Ok(call(
+    "TimeObject",
+    vec![
       Expr::List(fields.into()),
       Expr::String(granularity.to_string()),
-    ]
-    .into(),
-  })
+    ],
+  ))
 }
 
 /// DateRange[start, end] / DateRange[start, end, increment]

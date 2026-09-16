@@ -1117,14 +1117,13 @@ fn angle_quantity(deg: f64) -> Expr {
 /// Right ascension is reported in hours, not degrees — the same unit
 /// `SiderealTime` uses.
 fn right_ascension_quantity(hours: f64) -> Expr {
-  Expr::FunctionCall {
-    name: "Quantity".to_string(),
-    args: vec![
+  call(
+    "Quantity",
+    vec![
       Expr::Real(hours),
       Expr::String("HoursOfRightAscension".to_string()),
-    ]
-    .into(),
-  }
+    ],
+  )
 }
 
 // ─── MoonPhase ──────────────────────────────────────────────────────
@@ -1170,14 +1169,13 @@ pub fn moon_phase_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (fraction, elongation) = moon_illumination(jd_utc_to_jde(jd));
   match property {
     "Fraction" => Ok(Expr::Real(fraction)),
-    "Name" => Ok(Expr::FunctionCall {
-      name: "Entity".to_string(),
-      args: vec![
+    "Name" => Ok(call(
+      "Entity",
+      vec![
         Expr::String("MoonPhase".to_string()),
         Expr::String(phase_entity_name(elongation).to_string()),
-      ]
-      .into(),
-    }),
+      ],
+    )),
     _ => Ok(unevaluated("MoonPhase", args)),
   }
 }
@@ -1507,14 +1505,13 @@ pub fn solar_eclipse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// The eclipse "Type" property as an `Entity["EclipseType", …]`, matching
 /// Wolfram's classification value.
 fn eclipse_type_entity(kind: &str) -> Expr {
-  Expr::FunctionCall {
-    name: "Entity".to_string(),
-    args: vec![
+  call(
+    "Entity",
+    vec![
       Expr::String("EclipseType".to_string()),
       Expr::String(kind.to_string()),
-    ]
-    .into(),
-  }
+    ],
+  )
 }
 
 /// LunarEclipse[date?, property?] — the next lunar eclipse after the

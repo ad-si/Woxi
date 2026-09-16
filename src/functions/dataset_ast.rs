@@ -115,15 +115,14 @@ fn infer_assoc_type(pairs: &[(Expr, Expr)], top_level: bool) -> Expr {
       }
     };
 
-    Expr::FunctionCall {
-      name: "TypeSystem`Assoc".to_string(),
-      args: vec![
+    call(
+      "TypeSystem`Assoc",
+      vec![
         key_type,
         value_types[0].clone(),
         Expr::Integer(pairs.len() as i128),
-      ]
-      .into(),
-    }
+      ],
+    )
   } else {
     // Struct[{key1, key2, ...}, {type1, type2, ...}]
     let key_names: Vec<Expr> = keys

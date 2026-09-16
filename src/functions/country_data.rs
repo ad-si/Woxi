@@ -262,13 +262,14 @@ pub fn canonical_name(name: &str) -> Option<&'static str> {
 pub fn country_entities() -> Vec<Expr> {
   COUNTRIES
     .iter()
-    .map(|c| Expr::FunctionCall {
-      name: "Entity".to_string(),
-      args: vec![
-        Expr::String("Country".to_string()),
-        Expr::String(c.canonical.to_string()),
-      ]
-      .into(),
+    .map(|c| {
+      call(
+        "Entity",
+        vec![
+          Expr::String("Country".to_string()),
+          Expr::String(c.canonical.to_string()),
+        ],
+      )
     })
     .collect()
 }
@@ -288,14 +289,13 @@ fn lookup(name: &str) -> Option<&'static Country> {
 use crate::functions::element_data::make_quantity;
 
 fn missing(reason: &str, name: &str) -> Expr {
-  Expr::FunctionCall {
-    name: "Missing".to_string(),
-    args: vec![
+  call(
+    "Missing",
+    vec![
       Expr::String(reason.to_string()),
       Expr::String(name.to_string()),
-    ]
-    .into(),
-  }
+    ],
+  )
 }
 
 /// Look up a property of a country given by canonical name (or alias), for the
@@ -330,14 +330,13 @@ pub fn country_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 fn entity(canonical: &str) -> Expr {
-  Expr::FunctionCall {
-    name: "Entity".to_string(),
-    args: vec![
+  call(
+    "Entity",
+    vec![
       Expr::String("Country".to_string()),
       Expr::String(canonical.to_string()),
-    ]
-    .into(),
-  }
+    ],
+  )
 }
 
 /// Parse `val` according to a scalar Interpreter type. Returns `None` when the

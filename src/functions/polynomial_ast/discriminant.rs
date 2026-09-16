@@ -93,14 +93,13 @@ pub fn discriminant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     res
   };
 
-  let result = Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: vec![
+  let result = call(
+    "Times",
+    vec![
       signed_res,
       call("Power", vec![leading_coeff, Expr::Integer(-1)]),
-    ]
-    .into(),
-  };
+    ],
+  );
 
   // Simplify the result
   let simplified = crate::evaluator::evaluate_expr_to_expr(&result)?;

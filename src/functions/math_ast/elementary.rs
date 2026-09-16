@@ -653,14 +653,13 @@ pub fn sign_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     let abs = (re * re + im * im).sqrt();
     if abs > 0.0 {
-      return Ok(Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: vec![
+      return Ok(call(
+        "Plus",
+        vec![
           Expr::Real(re / abs),
           call("Times", vec![Expr::Real(im / abs), id_expr("I")]),
-        ]
-        .into(),
-      });
+        ],
+      ));
     }
   }
   // Sign[Sign[x]] = Sign[x] (idempotent).
