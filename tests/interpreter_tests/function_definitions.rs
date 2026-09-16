@@ -40,6 +40,43 @@ mod pattern_test_conditions {
     );
   }
 
+  // A `?test` on a BlankSequence/BlankNullSequence (`x__?test`,
+  // `x___?test`) checks `test` against each matched argument individually,
+  // vacuously passing when a BlankNullSequence matches zero arguments —
+  // not by handing `test` the whole matched `Sequence[...]` as its
+  // argument, which splices at call time into the wrong argument count
+  // (`test[]` for zero elements, `test[a, b]` for two). Regression test
+  // for a Wolfram Demonstration (`ArrowHead[pt1_, pt2_,
+  // opts___?OptionQ]`) that Woxi Studio failed to render because of this.
+  #[test]
+  fn sequence_pattern_test_checks_each_element() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "sq1[x___?OptionQ] := {matched, x}; \
+         {sq1[], sq1[a -> 1], sq1[a -> 1, b -> 2], sq1[a -> 1, 2]}"
+      )
+      .unwrap(),
+      "{{matched}, {matched, a -> 1}, {matched, a -> 1, b -> 2}, sq1[a -> 1, 2]}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        "sq2[x__?OptionQ] := {matched, x}; {sq2[], sq2[a -> 1, b -> 2]}"
+      )
+      .unwrap(),
+      "{sq2[], {matched, a -> 1, b -> 2}}"
+    );
+    clear_state();
+    assert_eq!(
+      interpret(
+        "sq3[x___?IntegerQ] := {matched, x}; {sq3[], sq3[1, 2, 3], sq3[1, a]}"
+      )
+      .unwrap(),
+      "{{matched}, {matched, 1, 2, 3}, sq3[1, a]}"
+    );
+  }
+
   #[test]
   fn pure_function_test_in_definition_fires() {
     // A definition pattern `x_?(purefn)` must fire during dispatch (the test
