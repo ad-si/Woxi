@@ -2759,12 +2759,12 @@ fn generate_svg_with_options(
   // becomes the tick label areas (the axis labels are drawn inside them) and
   // the right/top padding the corresponding margins.
   let (
-    top_margin,
-    x_label_area,
-    y_label_area,
-    margin_left,
-    margin_right,
-    margin_bottom,
+    mut top_margin,
+    mut x_label_area,
+    mut y_label_area,
+    mut margin_left,
+    mut margin_right,
+    mut margin_bottom,
   ) = match opts.image_padding {
     Some(padding) => {
       let m = padded_margins(
@@ -2784,6 +2784,33 @@ fn generate_svg_with_options(
       margin_bottom,
     ),
   };
+
+  // The automatic margins above are fixed pixel sizes tuned for a
+  // normal-sized plot; a small explicit `ImageSize` (an 80x80 panel in a
+  // Manipulate's GraphicsGrid, say) can ask for less canvas than they add up
+  // to, leaving zero or negative room for the plot area. `plotters` then
+  // collapses every point and tick onto the same pixel instead of drawing
+  // anything. Scale every margin on an axis down together so the drawing
+  // area always keeps at least half the canvas along that axis. This only
+  // applies to the automatic margins: an explicit `ImagePadding` is what the
+  // user asked for and is left exactly as computed above, however little
+  // room it leaves.
+  let h_budget = margin_left as f64 + margin_right as f64 + y_label_area as f64;
+  let max_h_budget = render_width as f64 * 0.5;
+  if opts.image_padding.is_none() && h_budget > 0.0 && h_budget > max_h_budget {
+    let f = max_h_budget / h_budget;
+    margin_left = (margin_left as f64 * f).round() as u32;
+    margin_right = (margin_right as f64 * f).round() as u32;
+    y_label_area = (y_label_area as f64 * f).round() as u32;
+  }
+  let v_budget = top_margin as f64 + margin_bottom as f64 + x_label_area as f64;
+  let max_v_budget = render_height as f64 * 0.5;
+  if opts.image_padding.is_none() && v_budget > 0.0 && v_budget > max_v_budget {
+    let f = max_v_budget / v_budget;
+    top_margin = (top_margin as f64 * f).round() as i32;
+    margin_bottom = (margin_bottom as f64 * f).round() as u32;
+    x_label_area = (x_label_area as f64 * f).round() as u32;
+  }
 
   // AspectRatio sizes the plotting *area* (the data frame), not the whole
   // image. Derive the total height so that
