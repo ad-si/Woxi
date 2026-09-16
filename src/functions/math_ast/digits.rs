@@ -1373,14 +1373,13 @@ fn periodic_continued_fraction(
   let value = if q == 1 {
     numer
   } else {
-    Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![
+    call(
+      "Times",
+      vec![
         numer,
         call("Power", vec![Expr::Integer(q), Expr::Integer(-1)]),
-      ]
-      .into(),
-    }
+      ],
+    )
   };
   crate::evaluator::evaluate_expr_to_expr(&value).ok()
 }
@@ -2580,14 +2579,10 @@ pub fn from_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut result = items[0].clone();
     for item in &items[1..] {
       // result = result * base + item
-      result = Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: vec![
-          call("Times", vec![base_expr.clone(), result]),
-          item.clone(),
-        ]
-        .into(),
-      };
+      result = call(
+        "Plus",
+        vec![call("Times", vec![base_expr.clone(), result]), item.clone()],
+      );
       result = crate::evaluator::evaluate_expr_to_expr(&result)?;
     }
     Ok(result)

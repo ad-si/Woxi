@@ -9,14 +9,13 @@ fn make_tabular_failure(
   data: &Expr,
 ) -> Expr {
   let msg_template_key = Expr::String("MessageTemplate".to_string());
-  let msg_name_call = Expr::FunctionCall {
-    name: "MessageName".to_string(),
-    args: vec![
+  let msg_name_call = call(
+    "MessageName",
+    vec![
       Expr::Identifier(func_name.to_string()),
       Expr::String(msg_tag.to_string()),
-    ]
-    .into(),
-  };
+    ],
+  );
   // Encode the `MessageTemplate :> MessageName[...]` (RuleDelayed) entry
   // using the Association formatter convention: a value of
   // `RuleDelayed { pattern == key, replacement }` renders as `key :> replacement`.

@@ -1024,15 +1024,14 @@ pub fn code_concrete_parse(source: &str, convention: Convention) -> Expr {
   let tokens = tokenize(source);
   let mut index = 0;
   let children = group_tokens(&tokens, &mut index, None, convention);
-  Expr::FunctionCall {
-    name: "CodeParser`ContainerNode".to_string(),
-    args: vec![
+  call(
+    "CodeParser`ContainerNode",
+    vec![
       id_expr("String"),
       Expr::List(children.into()),
       Expr::Association(vec![]),
-    ]
-    .into(),
-  }
+    ],
+  )
 }
 
 /// `CodeParser`CodeParse[source]` — the abstract tree.
@@ -1056,15 +1055,14 @@ pub fn code_parse(source: &str, convention: Convention) -> Expr {
       .collect::<Vec<_>>(),
     Err(error) => vec![error_node(source, &error.to_string(), convention)],
   };
-  Expr::FunctionCall {
-    name: "CodeParser`ContainerNode".to_string(),
-    args: vec![
+  call(
+    "CodeParser`ContainerNode",
+    vec![
       id_expr("String"),
       Expr::List(children.into()),
       Expr::Association(vec![]),
-    ]
-    .into(),
-  }
+    ],
+  )
 }
 
 /// An `ErrorNode` describing why `source` would not read.
@@ -1084,15 +1082,14 @@ fn error_node(source: &str, message: &str, convention: Convention) -> Expr {
       vec![line_column((line, column)), line_column((line, column))].into(),
     ),
   };
-  Expr::FunctionCall {
-    name: "CodeParser`ErrorNode".to_string(),
-    args: vec![
+  call(
+    "CodeParser`ErrorNode",
+    vec![
       id_expr("Token`Error`UnexpectedCharacter"),
       Expr::String(message.to_string()),
       Expr::Association(vec![(id_expr("CodeParser`Source"), span)]),
-    ]
-    .into(),
-  }
+    ],
+  )
 }
 
 /// The `line:column` a pest parse error names, when it names one.

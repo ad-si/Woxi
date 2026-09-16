@@ -4601,15 +4601,14 @@ fn scatter_overlay_primitives(
   if finite.is_empty() {
     return Vec::new();
   }
-  let color = Expr::FunctionCall {
-    name: "RGBColor".to_string(),
-    args: vec![
+  let color = call(
+    "RGBColor",
+    vec![
       Expr::Real(series.color.0 as f64 / 255.0),
       Expr::Real(series.color.1 as f64 / 255.0),
       Expr::Real(series.color.2 as f64 / 255.0),
-    ]
-    .into(),
-  };
+    ],
+  );
   let mut prims = vec![color];
   // Stems of a filled scatter series, drawn to the same reference level the
   // standalone scatter plot would use.
@@ -4628,15 +4627,14 @@ fn scatter_overlay_primitives(
   if let Some(marker) = &series.marker {
     let mut styled = vec![Expr::String(marker.glyph.clone())];
     if let Some((r, g, b)) = marker.color {
-      styled.push(Expr::FunctionCall {
-        name: "RGBColor".to_string(),
-        args: vec![
+      styled.push(call(
+        "RGBColor",
+        vec![
           Expr::Real(r as f64 / 255.0),
           Expr::Real(g as f64 / 255.0),
           Expr::Real(b as f64 / 255.0),
-        ]
-        .into(),
-      });
+        ],
+      ));
     }
     styled.push(Expr::Real(marker.size));
     let content = call("Style", styled);

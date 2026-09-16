@@ -214,10 +214,10 @@ fn tighten_integer_one_sided(result: &Expr, var: &str) -> Option<Expr> {
     ComparisonOp::LessEqual => (c.floor() as i64, ComparisonOp::LessEqual),
     _ => return None,
   };
-  let element = Expr::FunctionCall {
-    name: "Element".to_string(),
-    args: vec![Expr::Identifier(var.to_string()), id_expr("Integers")].into(),
-  };
+  let element = call(
+    "Element",
+    vec![Expr::Identifier(var.to_string()), id_expr("Integers")],
+  );
   let comp = Expr::Comparison {
     operands: vec![
       Expr::Identifier(var.to_string()),
@@ -1314,15 +1314,14 @@ fn try_reduce_arc_degrees(
     "ArcSecDegrees" => "Sec",
     _ => return Ok(None),
   };
-  let radians = Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: vec![
+  let radians = call(
+    "Times",
+    vec![
       rhs.clone(),
       id_expr("Pi"),
       call("Rational", vec![Expr::Integer(1), Expr::Integer(180)]),
-    ]
-    .into(),
-  };
+    ],
+  );
   let threshold_expr = call1(trig_name, radians);
   let threshold = crate::evaluator::evaluate_expr_to_expr(&threshold_expr)?;
 
@@ -1370,14 +1369,13 @@ fn try_reduce_arc_degrees(
     }
     // ArcSecDegrees: arcsec(x) > k iff x > sec(k°) || x ≤ -1
     // (the second branch covers arcsec on (-∞, -1] mapping to (90, 180]).
-    "ArcSecDegrees" => Expr::FunctionCall {
-      name: "Or".to_string(),
-      args: vec![
+    "ArcSecDegrees" => call(
+      "Or",
+      vec![
         simple(CompOp::Greater, threshold),
         simple(CompOp::LessEqual, Expr::Integer(-1)),
-      ]
-      .into(),
-    },
+      ],
+    ),
     _ => return Ok(None),
   };
   Ok(Some(result))
@@ -1435,14 +1433,13 @@ fn reduce_inequality(
         return Ok(result);
       }
       // Return unevaluated
-      Ok(Expr::FunctionCall {
-        name: "Reduce".to_string(),
-        args: vec![
+      Ok(call(
+        "Reduce",
+        vec![
           make_comparison(lhs, rhs, op),
           Expr::Identifier(var.to_string()),
-        ]
-        .into(),
-      })
+        ],
+      ))
     }
   }
 }
@@ -1792,11 +1789,10 @@ fn reduce_quadratic_inequality(
         if domain == Some("Reals") {
           bool_expr(true)
         } else {
-          Expr::FunctionCall {
-            name: "Element".to_string(),
-            args: vec![Expr::Identifier(var.to_string()), id_expr("Reals")]
-              .into(),
-          }
+          call(
+            "Element",
+            vec![Expr::Identifier(var.to_string()), id_expr("Reals")],
+          )
         }
       } else {
         bool_expr(false)
@@ -1816,11 +1812,10 @@ fn reduce_quadratic_inequality(
           if domain == Some("Reals") {
             bool_expr(true)
           } else {
-            Expr::FunctionCall {
-              name: "Element".to_string(),
-              args: vec![Expr::Identifier(var.to_string()), id_expr("Reals")]
-                .into(),
-            }
+            call(
+              "Element",
+              vec![Expr::Identifier(var.to_string()), id_expr("Reals")],
+            )
           }
         }
         CompOp::Greater if ai > 0 => Expr::Comparison {
@@ -1835,11 +1830,10 @@ fn reduce_quadratic_inequality(
           if domain == Some("Reals") {
             bool_expr(true)
           } else {
-            Expr::FunctionCall {
-              name: "Element".to_string(),
-              args: vec![Expr::Identifier(var.to_string()), id_expr("Reals")]
-                .into(),
-            }
+            call(
+              "Element",
+              vec![Expr::Identifier(var.to_string()), id_expr("Reals")],
+            )
           }
         }
         CompOp::Less if ai < 0 => Expr::Comparison {
@@ -1925,14 +1919,13 @@ fn reduce_quadratic_inequality(
     }
   } else {
     // Non-integer coefficients — return unevaluated
-    Expr::FunctionCall {
-      name: "Reduce".to_string(),
-      args: vec![
+    call(
+      "Reduce",
+      vec![
         minus2(poly.clone(), Expr::Integer(0)),
         Expr::Identifier(var.to_string()),
-      ]
-      .into(),
-    }
+      ],
+    )
   }
 }
 

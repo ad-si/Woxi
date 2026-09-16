@@ -397,14 +397,10 @@ pub fn decompose_expr(expr: &Expr) -> ExprForm {
       let blank_part = if name.is_empty() {
         call(blank_name, blank_args)
       } else {
-        Expr::FunctionCall {
-          name: "Pattern".to_string(),
-          args: vec![
-            Expr::Identifier(name.clone()),
-            call(blank_name, blank_args),
-          ]
-          .into(),
-        }
+        call(
+          "Pattern",
+          vec![Expr::Identifier(name.clone()), call(blank_name, blank_args)],
+        )
       };
       ExprForm::Composite {
         head: "PatternTest".to_string(),

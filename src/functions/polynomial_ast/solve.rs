@@ -3036,14 +3036,13 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
             Some(v) if v < 0.0
           );
           let root_of = |value: &Expr| -> Expr {
-            let raw = Expr::FunctionCall {
-              name: "Power".to_string(),
-              args: vec![
+            let raw = call(
+              "Power",
+              vec![
                 value.clone(),
                 call("Rational", vec![Expr::Integer(1), Expr::Integer(n)]),
-              ]
-              .into(),
-            };
+              ],
+            );
             crate::evaluator::evaluate_expr_to_expr(&raw).unwrap_or(raw)
           };
           let val_root = if n % 2 == 1 && negative_val {
@@ -3071,14 +3070,13 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 let g = gcd_i128(j, n);
                 let p = j / g;
                 let q = n / g;
-                let multiplier = Expr::FunctionCall {
-                  name: "Power".to_string(),
-                  args: vec![
+                let multiplier = call(
+                  "Power",
+                  vec![
                     Expr::Integer(-1),
                     call("Rational", vec![Expr::Integer(p), Expr::Integer(q)]),
-                  ]
-                  .into(),
-                };
+                  ],
+                );
                 let product = times2(multiplier, val_root.clone());
                 if j % 2 == 1 {
                   // Negative: -((-1)^(j/n) * val^(1/n))
@@ -4711,11 +4709,10 @@ fn try_solve_inverse_function(
         } else {
           call("Plus", vec![periodic, principal])
         };
-        let cond = Expr::FunctionCall {
-          name: "ConditionalExpression".to_string(),
-          args: vec![general, call("Element", vec![c1, id_expr("Integers")])]
-            .into(),
-        };
+        let cond = call(
+          "ConditionalExpression",
+          vec![general, call("Element", vec![c1, id_expr("Integers")])],
+        );
         return Some(Ok(Expr::List(
           vec![Expr::List(
             vec![Expr::Rule {
@@ -7653,10 +7650,10 @@ fn minimize_ast_inner(
       matches!(&args[2], Expr::Identifier(d) if d == "Integers");
     if domain_is_integers {
       for var in &vars {
-        constraints.push(Expr::FunctionCall {
-          name: "Element".to_string(),
-          args: vec![Expr::Identifier(var.clone()), id_expr("Integers")].into(),
-        });
+        constraints.push(call(
+          "Element",
+          vec![Expr::Identifier(var.clone()), id_expr("Integers")],
+        ));
       }
     }
   }
@@ -8801,14 +8798,13 @@ fn minimize_multi_var(
     .unwrap_or(f64::NAN);
 
   if !fval.is_finite() {
-    return Ok(Expr::FunctionCall {
-      name: func_name.to_string(),
-      args: vec![
+    return Ok(call(
+      func_name,
+      vec![
         f.clone(),
         Expr::List(vars.iter().map(|v| Expr::Identifier(v.clone())).collect()),
-      ]
-      .into(),
-    });
+      ],
+    ));
   }
 
   let result_val = if maximize {
@@ -9188,14 +9184,13 @@ fn minimize_try_ilp(
 
   if dp[shifted_target] == INF {
     // Infeasible
-    return Some(Expr::FunctionCall {
-      name: func_name.to_string(),
-      args: vec![
+    return Some(call(
+      func_name,
+      vec![
         f.clone(),
         Expr::List(vars.iter().map(|v| Expr::Identifier(v.clone())).collect()),
-      ]
-      .into(),
-    });
+      ],
+    ));
   }
 
   // Recover variable assignments (add back lower bounds)
@@ -9634,14 +9629,13 @@ fn minimize_constrained_nd(
       .chain(constraints.iter().cloned())
       .collect(),
   );
-  Expr::FunctionCall {
-    name: func_name.to_string(),
-    args: vec![
+  call(
+    func_name,
+    vec![
       obj_with_cons,
       Expr::List(vars.iter().map(|v| Expr::Identifier(v.clone())).collect()),
-    ]
-    .into(),
-  }
+    ],
+  )
 }
 
 /// Check if a point (given as var→val map) satisfies all constraints numerically.
