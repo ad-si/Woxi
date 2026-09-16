@@ -2375,6 +2375,17 @@ function main() {
     // design. Documented in conformance_gaps.md — the UUID alone makes the
     // comparison unrepeatable.
     'srv = SocketOpen[0]; p = srv["DestinationPort"]; Close[srv]; {IntegerQ[p], srv["DestinationPort"], srv["UUID"], srv["Properties"]}',
+
+    // `Needs` takes effect for the *next* input unit, and a batch is one
+    // CompoundExpression — so wolframscript has already read
+    // `InterpolatingFunctionDomain` into `Global`` by the time the `Needs`
+    // on its left evaluates, and answers with the shadowed `Global`` symbol
+    // instead of the package one. Run as two lines of a file (which is what
+    // the unit test's own two statements amount to) it gives `{{1, 4}}`,
+    // matching Woxi. Same reason the CONTEXT_SENSITIVE filter below drops
+    // cases whose *setup* is a context construct; here the construct is in
+    // the expression itself.
+    'Needs["DifferentialEquations`InterpolatingFunctionAnatomy`"]; InterpolatingFunctionDomain[Interpolation[{1, 4, 9, 16}]]',
   ]);
 
   /** Names whose meaning depends on where one input unit ends and the next

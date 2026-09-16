@@ -8650,9 +8650,19 @@ mod ndsolve {
   fn interpolating_function_domain_of_plain_interpolation() {
     // Also works on an `Interpolation`/`ListInterpolation` result, not just
     // one produced by `NDSolve`.
+    //
+    // Spelled the way wolframscript needs it: the head lives in the
+    // `DifferentialEquations`InterpolatingFunctionAnatomy`` package, which a
+    // fresh kernel does not autoload, so without the `Needs` it answers with
+    // the whole `InterpolatingFunction` echoed back unevaluated. Woxi keeps
+    // every built-in in one namespace and so does not need the load — the
+    // `Needs` is a no-op there — but writing it makes the two agree.
     assert_eq!(
-      interpret("InterpolatingFunctionDomain[Interpolation[{1, 4, 9, 16}]]")
-        .unwrap(),
+      interpret(
+        "Needs[\"DifferentialEquations`InterpolatingFunctionAnatomy`\"]; \
+         InterpolatingFunctionDomain[Interpolation[{1, 4, 9, 16}]]"
+      )
+      .unwrap(),
       "{{1, 4}}"
     );
   }

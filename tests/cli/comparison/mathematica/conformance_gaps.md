@@ -1982,6 +1982,25 @@ conductor/Round-2 computation), as are non-monic minimal polynomials of degree
 
 ## Expression structure and evaluation
 
+### A package symbol answers before its package has been loaded
+
+```sh
+wolframscript -code 'ToString[InterpolatingFunctionDomain[
+                     Interpolation[{1, 4, 9, 16}]], InputForm]'
+# InterpolatingFunctionDomain[InterpolatingFunction[{{1, 4}}, …]]
+woxi eval 'InterpolatingFunctionDomain[Interpolation[{1, 4, 9, 16}]]'
+# {{1, 4}}
+```
+
+`InterpolatingFunctionDomain` and its `InterpolatingFunctionAnatomy` siblings
+live in a package a fresh kernel does not autoload, so without
+`Needs["DifferentialEquations`InterpolatingFunctionAnatomy`"]` wolframscript
+reads the name into `Global`` and echoes the call back. Woxi keeps every
+built-in in one namespace — `Needs` on a context that ships with the language
+is a no-op — so the name works either way, which makes Woxi a superset here
+rather than a mismatch. Writing the `Needs` makes the two agree; there is no
+way to make Woxi *withhold* the symbol without giving up the flat namespace.
+
 ### `Unevaluated` comes off for some heads and not others
 
 The wrapper is stripped where it was verified to matter — the arithmetic and
