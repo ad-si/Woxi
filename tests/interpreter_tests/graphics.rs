@@ -12161,6 +12161,34 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn array_plot_color_function_pure_function_scaled() {
+      // A custom `ColorFunction` (not just a named gradient) receives the
+      // value rescaled to [0, 1] by default and can return any color
+      // directive (here GrayLevel, inverted from the built-in default).
+      let svg = export_svg(
+        "ArrayPlot[{{0, 1}, {1, 0}}, ColorFunction -> (GrayLevel[#] &)]",
+      );
+      assert!(svg.contains("fill=\"#000000\""), "{svg}");
+      assert!(svg.contains("fill=\"#FFFFFF\""), "{svg}");
+    }
+
+    #[test]
+    fn array_plot_color_function_scaling_false() {
+      // Regression: `ColorFunctionScaling -> False` must pass each cell's
+      // raw (unscaled) value to `ColorFunction`, preserving its integer-ness
+      // so functions like `IntegerDigits` inside it don't stay unevaluated
+      // (previously every cell rendered as a shade of gray instead of the
+      // color the function actually computed).
+      let svg = export_svg(
+        "ArrayPlot[{{16711680, 65280, 255}}, ColorFunctionScaling -> False, \
+         ColorFunction -> (RGBColor @@ (IntegerDigits[#, 256, 3]/255.) &)]",
+      );
+      assert!(svg.contains("fill=\"#FF0000\""), "{svg}");
+      assert!(svg.contains("fill=\"#00FF00\""), "{svg}");
+      assert!(svg.contains("fill=\"#0000FF\""), "{svg}");
+    }
+
+    #[test]
     fn array_plot_sparse_array() {
       // Regression: SparseArray's canonical internal form isn't a plain
       // nested List, so ArrayPlot used to reject it with "first argument
