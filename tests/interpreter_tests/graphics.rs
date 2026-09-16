@@ -12414,6 +12414,31 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(svg.contains(">1.0</text>"), "axis ticks expected: {svg}");
     }
 
+    /// A ContourPlot's own `PlotRange` clips the plotted function values,
+    /// not the x/y axes — those stay fixed by the `{x,xmin,xmax}`/
+    /// `{y,ymin,ymax}` iterators regardless of it. `Show` merging the plot
+    /// with other graphics must not let that value leak in as an
+    /// axis-range spec and crop the domain down to it (a Wolfram
+    /// Demonstrations Project notebook, "Rankine Vortex: A Simple
+    /// Hurricane Model", hit exactly this: its `Manipulate` body is
+    /// `Show[ContourPlot[…, {x,-100,100}, {y,-100,100}, PlotRange->{0,100},
+    /// …], Graphics[…]]`, which rendered only the top-right quadrant
+    /// instead of the full square).
+    #[test]
+    fn show_keeps_contour_plot_domain_despite_its_plot_range() {
+      let merged = export_svg(
+        "Show[ContourPlot[x + y, {x, -10, 10}, {y, -10, 10}, \
+         PlotRange -> {-5, 5}], Graphics[{}]]",
+      );
+      for tick in [">-10<", ">10<"] {
+        assert!(
+          merged.contains(tick),
+          "expected the full -10..10 domain, not cropped to PlotRange \
+           -> {{-5, 5}}: missing {tick} in {merged}"
+        );
+      }
+    }
+
     /// A shaded contour plot keeps its shading when `Show` merges it with
     /// other graphics — the bands travel with the plot's symbolic form, so
     /// the merged picture is not reduced to bare contour lines. A

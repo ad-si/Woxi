@@ -1574,7 +1574,18 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // default, so the merged picture has to be framed as well unless the
   // call turned it off.
   let mut structure_args = vec![Expr::List(structure_items.into())];
-  let explicit = crate::functions::plot::explicit_options(args);
+  let mut explicit = crate::functions::plot::explicit_options(args);
+  // A ContourPlot's own `PlotRange` clips the *function values* being
+  // contoured — its x/y axes are already fixed by the `{x,xmin,xmax}`/
+  // `{y,ymin,ymax}` iterators and stay put regardless of it. But
+  // `Graphics`/`Show` read a `PlotRange` rule as an axis-range spec, so
+  // forwarding the call's value verbatim would let it crop the axes of
+  // the merged picture. Drop it instead: the primitives below already
+  // span the sampled domain, which is the range `Show` should use.
+  explicit.retain(|o| {
+    crate::functions::graphics::option_name_value(o).map(|(n, _)| n)
+      != Some("PlotRange")
+  });
   if !explicit.iter().any(|o| {
     crate::functions::graphics::option_name_value(o).map(|(n, _)| n)
       == Some("Frame")
