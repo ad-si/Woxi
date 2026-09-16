@@ -515,31 +515,41 @@ function buildWolframScript(
   // relative/absolute tolerance.
   // The helpers live in their own context: every case starts with
   // `ClearAll["Global`*"]`, which would take them with it.
+  //
+  // Their pattern variables and `Module` locals are context-qualified too
+  // (`WX`s$` rather than `s$`). Reading a definition *creates* the symbols it
+  // names, in whatever context is current — so an unqualified `Module[{a$,
+  // b$}, …]` here put `Global`a$` and `Global`b$` in the symbol table before
+  // the first case ever ran, and a case whose answer is "which symbols exist"
+  // then saw them: `Protect["Global`a*"]` answered `{"aa", "ab", "a$"}` where
+  // Woxi's fresh process says `{"aa", "ab"}`. `ClearAll` cannot undo that (it
+  // empties symbols, it does not remove them), so the harness creates no
+  // `Global`` symbol at all.
   lines.push("WX`DateTol = 90");
   lines.push("WX`RelTol = 0.02");
   lines.push("WX`AbsTol = 0.01");
   lines.push(
-    "WX`Nums[s$_] := ToExpression /@ StringCases[s$, NumberString]"
+    "WX`Nums[WX`s$_] := ToExpression /@ StringCases[WX`s$, NumberString]"
   );
   lines.push(
-    'WX`Skeleton[s$_] := StringReplace[s$, NumberString -> "#"]'
+    'WX`Skeleton[WX`s$_] := StringReplace[WX`s$, NumberString -> "#"]'
   );
   lines.push(
-    'WX`DateTime[s$_] := AbsoluteTime[ToExpression /@ StringCases[' +
-      'StringTake[s$, First[StringPosition[s$, "{"]][[1]] ;; ' +
-      'First[StringPosition[s$, "}"]][[1]]], NumberString]]'
+    'WX`DateTime[WX`s$_] := AbsoluteTime[ToExpression /@ StringCases[' +
+      'StringTake[WX`s$, First[StringPosition[WX`s$, "{"]][[1]] ;; ' +
+      'First[StringPosition[WX`s$, "}"]][[1]]], NumberString]]'
   );
   lines.push(
-    "WX`ApproxQ[woxi$_, ws$_] := Module[{a$, b$}," +
-      ' If[StringContainsQ[woxi$, "DateObject"] && StringContainsQ[ws$, "DateObject"],' +
+    "WX`ApproxQ[WX`woxi$_, WX`ws$_] := Module[{WX`a$, WX`b$}," +
+      ' If[StringContainsQ[WX`woxi$, "DateObject"] && StringContainsQ[WX`ws$, "DateObject"],' +
       " Return[TrueQ[Quiet[Check[" +
-      "Abs[WX`DateTime[woxi$] - WX`DateTime[ws$]] <= WX`DateTol, False]]]]];" +
-      " If[WX`Skeleton[woxi$] =!= WX`Skeleton[ws$], Return[False]];" +
-      " a$ = WX`Nums[woxi$]; b$ = WX`Nums[ws$];" +
-      " If[Length[a$] =!= Length[b$] || Length[a$] == 0, Return[False]];" +
+      "Abs[WX`DateTime[WX`woxi$] - WX`DateTime[WX`ws$]] <= WX`DateTol, False]]]]];" +
+      " If[WX`Skeleton[WX`woxi$] =!= WX`Skeleton[WX`ws$], Return[False]];" +
+      " WX`a$ = WX`Nums[WX`woxi$]; WX`b$ = WX`Nums[WX`ws$];" +
+      " If[Length[WX`a$] =!= Length[WX`b$] || Length[WX`a$] == 0, Return[False]];" +
       " TrueQ[And @@ MapThread[" +
       "Abs[#1 - #2] <= Max[WX`AbsTol, WX`RelTol*Max[Abs[#1], Abs[#2]]] &," +
-      " {a$, b$}]]]"
+      " {WX`a$, WX`b$}]]]"
   );
 
   // A mismatch report is read by a human, so an oversized wolframscript result
@@ -552,10 +562,10 @@ function buildWolframScript(
   // mismatch is hidden.
   lines.push("WX`MaxReport = 2000");
   lines.push(
-    "WX`Report[s$_String] := If[StringLength[s$] > WX`MaxReport," +
-      ' StringTake[s$, WX`MaxReport] <> "... (" <>' +
-      " ToString[StringLength[s$] - WX`MaxReport] <>" +
-      ' " more characters omitted)", s$]'
+    "WX`Report[WX`s$_String] := If[StringLength[WX`s$] > WX`MaxReport," +
+      ' StringTake[WX`s$, WX`MaxReport] <> "... (" <>' +
+      " ToString[StringLength[WX`s$] - WX`MaxReport] <>" +
+      ' " more characters omitted)", WX`s$]'
   );
 
   // Cases that unprotect a symbol and then define it (`Unprotect[Red];
@@ -667,22 +677,22 @@ function buildWolframScript(
     // Approx cases compare within a numeric tolerance; all others by exact
     // string equality.
     const mismatchTest = APPROX_MATCH.has(expr)
-      ? "!WX`ApproxQ[ee$$, rr$$]"
-      : "rr$$ =!= ee$$";
+      ? "!WX`ApproxQ[WX`ee$$, WX`rr$$]"
+      : "WX`rr$$ =!= WX`ee$$";
     // Wrap in CheckAbort so Abort[]/Interrupt[] calls inside test cases
     // don't kill the entire script run.
     // Strip trailing newlines from both sides before comparison,
     // because runWoxi strips trailing newlines from CLI output which
     // removes content newlines too (e.g. MathMLForm output ends with \n).
     lines.push(
-      "Module[{res$$ = CheckAbort[(" + wBlock + '), "$Aborted"], rr$$, ee$$},' +
-        " If[!StringQ[res$$], res$$ = ToString[res$$, InputForm]];" +
-        ' rr$$ = StringReplace[res$$, RegularExpression["[\\\\r\\\\n]+$"] -> ""];' +
-        " ee$$ = " + wExpected + ";" +
+      "Module[{WX`res$$ = CheckAbort[(" + wBlock + '), "$Aborted"], WX`rr$$, WX`ee$$},' +
+        " If[!StringQ[WX`res$$], WX`res$$ = ToString[WX`res$$, InputForm]];" +
+        ' WX`rr$$ = StringReplace[WX`res$$, RegularExpression["[\\\\r\\\\n]+$"] -> ""];' +
+        " WX`ee$$ = " + wExpected + ";" +
         " If[" + mismatchTest + "," +
         " Print[" + wLabel + "];" +
         ' Print["  Woxi:    ' + expectedEscaped + '"];' +
-        ' Print["  Wolfram: " <> WX`Report[rr$$]]]]'
+        ' Print["  Wolfram: " <> WX`Report[WX`rr$$]]]]'
     );
   }
 
@@ -2446,10 +2456,12 @@ function main() {
   // A case whose answer is "which symbols exist" cannot share a batch. The
   // whole batch is one CompoundExpression, so wolframscript creates every
   // Global` symbol any case in it mentions at read time — `Protect["Global`a*"]`
-  // then finds the `a` and `a$` of its batch-mates on top of its own `aa`
+  // then finds the `a` and `abc` of its batch-mates on top of its own `aa`
   // and `ab`, where Woxi's fresh process sees only the latter. Clearing
   // cannot undo that (the symbols exist without definitions, and `Remove`
   // would poison the already-parsed rest of the script), so these run alone.
+  // The batch preamble's own helpers are context-qualified for the same
+  // reason (see buildWolframScript).
   const SYMBOL_TABLE_SENSITIVE = /\bNames\[|\b(Un)?Protect\["[^"]*[`*]/;
   const batches: typeof woxiResultsFiltered[] = [];
   for (const entry of woxiResultsFiltered) {
