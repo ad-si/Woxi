@@ -2279,6 +2279,11 @@ struct StyleState3D {
   /// is literal pixels (a named size), positive is a fraction of the image
   /// width. `None` draws a solid stroke.
   dashing: Option<Vec<f64>>,
+  /// `PointSize[…]`/`AbsolutePointSize[…]` for `Point3D` primitives, in the
+  /// same units the 2D renderer's `point_size` uses: positive is a fraction
+  /// of the image width, negative (stored) is an absolute size in printer's
+  /// points. `None` draws the default 3px dot.
+  point_size: Option<f64>,
 }
 
 impl Default for StyleState3D {
@@ -2293,6 +2298,7 @@ impl Default for StyleState3D {
       edge_color: None,
       specular: None,
       dashing: None,
+      point_size: None,
     }
   }
 }
@@ -2453,6 +2459,26 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
             let b = (color.b.clamp(0.0, 1.0) * 255.0).round() as u8;
             style.color = Some((r, g, b));
           }
+        }
+        return true;
+      }
+      "PointSize" if args.len() == 1 => {
+        if let Some(s) =
+          crate::functions::graphics::symbolic_point_size(&args[0])
+        {
+          style.point_size = Some(s);
+        } else if let Some(s) = expr_to_f64(&args[0]) {
+          style.point_size = Some(s);
+        }
+        return true;
+      }
+      "AbsolutePointSize" if args.len() == 1 => {
+        if let Some(s) =
+          crate::functions::graphics::symbolic_point_size(&args[0])
+        {
+          style.point_size = Some(s);
+        } else if let Some(s) = expr_to_f64(&args[0]) {
+          style.point_size = Some(-s);
         }
         return true;
       }
@@ -5333,6 +5359,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             edge_color: None,
             specular: None,
             dashing: None,
+            point_size: None,
           },
         ),
       };
@@ -5924,11 +5951,14 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         } else {
           String::new()
         };
+        let radius = style.point_size.map_or(3.0, |ps| {
+          crate::functions::graphics::point_radius(ps, svg_width as f64)
+        });
         for pt in points {
           let (sx, sy) =
             to_svg(project(*pt, &camera).0, project(*pt, &camera).1);
           svg.push_str(&format!(
-            "<circle cx=\"{sx:.1}\" cy=\"{sy:.1}\" r=\"3\" fill=\"{fill_color}\"{opacity_attr}/>\n"
+            "<circle cx=\"{sx:.1}\" cy=\"{sy:.1}\" r=\"{radius:.2}\" fill=\"{fill_color}\"{opacity_attr}/>\n"
           ));
         }
       }
@@ -8020,7 +8050,91 @@ pub fn list_point_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // A `PlotLabel` sets a title above the finished picture.
   let svg = with_plot_label(svg, args, svg_width, svg_height);
 
-  Ok(crate::graphics3d_result(svg))
+  // A symbolic `Graphics3D[…]` structure recorded alongside the pre-rendered
+  // scatter SVG above, so `Show[ListPointPlot3D[…], opts]` can recompose the
+  // scene through the ordinary Graphics3D pipeline — honoring
+  // Axes/Boxed/BoxRatios/PlotRange/SphericalRegion/ViewAngle and merging
+  // properly with other Graphics3D content, none of which the standalone
+  // scatter camera above understands.
+  let structure = {
+    // `PlotStyle -> style` (or a list of per-dataset styles) prepends its
+    // directives — e.g. `PointSize[…]` or a colour — to each dataset's
+    // points, same as the surface plots' `plot_style_items` already does.
+    let plot_style_per_dataset: Option<Vec<Expr>> =
+      args[1..].iter().find_map(|opt| match opt {
+        Expr::Rule {
+          pattern,
+          replacement,
+        }
+        | Expr::RuleDelayed {
+          pattern,
+          replacement,
+        } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "PlotStyle") =>
+        {
+          Some(plot_style_items(replacement, datasets.len()))
+        }
+        _ => None,
+      });
+
+    let mut content: Vec<Expr> = Vec::new();
+    for (di, ds) in datasets.iter().enumerate() {
+      let base_color = palette[di % palette.len()];
+      let mut group = vec![call(
+        "RGBColor",
+        vec![
+          Expr::Real(base_color.0 as f64 / 255.0),
+          Expr::Real(base_color.1 as f64 / 255.0),
+          Expr::Real(base_color.2 as f64 / 255.0),
+        ],
+      )];
+      if let Some(style_items) = &plot_style_per_dataset
+        && !style_items.is_empty()
+      {
+        group.push(style_items[di % style_items.len()].clone());
+      }
+      let point_exprs: Vec<Expr> = ds
+        .iter()
+        .map(|&(x, y, z)| {
+          Expr::List(vec![Expr::Real(x), Expr::Real(y), Expr::Real(z)].into())
+        })
+        .collect();
+      group.push(call("Point", vec![Expr::List(point_exprs.into())]));
+      content.push(Expr::List(group.into()));
+    }
+
+    let mut structure_args = vec![Expr::List(content.into())];
+    structure_args.extend(args[1..].iter().filter(|opt| {
+      !matches!(opt, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+        if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "PlotStyle"))
+    }).cloned());
+    let names = |args: &[Expr], opt: &str| {
+      args.iter().any(|o| {
+        matches!(o, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+          if matches!(pattern.as_ref(), Expr::Identifier(n) if n == opt))
+      })
+    };
+    let (names_axes, names_ratios) = (
+      names(&structure_args, "Axes"),
+      names(&structure_args, "BoxRatios"),
+    );
+    if !names_axes {
+      structure_args.push(Expr::Rule {
+        pattern: Box::new(id_expr("Axes")),
+        replacement: Box::new(bool_expr(true)),
+      });
+    }
+    if !names_ratios {
+      structure_args.push(Expr::Rule {
+        pattern: Box::new(id_expr("BoxRatios")),
+        replacement: Box::new(Expr::List(
+          vec![Expr::Integer(1), Expr::Integer(1), Expr::Real(Z_SCALE)].into(),
+        )),
+      });
+    }
+    call("Graphics3D", structure_args)
+  };
+
+  Ok(crate::graphics3d_result_with_structure(svg, structure))
 }
 
 fn parse_xyz_points(items: &[Expr]) -> Vec<(f64, f64, f64)> {

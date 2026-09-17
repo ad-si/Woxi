@@ -4936,6 +4936,120 @@ mod plot3d {
         "-Graphics3D-"
       );
     }
+
+    /// Regression: `Point[…]` inside `Graphics3D` ignored `PointSize`/
+    /// `AbsolutePointSize` entirely and always drew a fixed 3px dot, unlike
+    /// the 2D `Graphics` renderer (which already honors it). Spotted in the
+    /// "Thomson Problem with Central Forces" Demonstration, whose particles
+    /// are drawn with `ListPointPlot3D[…, PlotStyle -> PointSize[0.017]]`.
+    #[test]
+    fn point_size_widens_the_dot() {
+      let default_svg =
+        export_svg("Graphics3D[{Point[{0, 0, 0}], Point[{1, 1, 1}]}]");
+      let sized_svg = export_svg(
+        "Graphics3D[{PointSize[0.05], Point[{0, 0, 0}], Point[{1, 1, 1}]}]",
+      );
+      let radius = |svg: &str| -> f64 {
+        let after = svg.split("r=\"").nth(1).expect("a circle radius");
+        after[..after.find('"').unwrap()].parse().unwrap()
+      };
+      assert!(
+        radius(&sized_svg) > radius(&default_svg) * 2.0,
+        "PointSize[0.05] should draw a visibly larger dot than the default: \
+         default r={}, sized r={}",
+        radius(&default_svg),
+        radius(&sized_svg)
+      );
+    }
+
+    #[test]
+    fn absolute_point_size_is_pixels_at_any_image_size() {
+      let small = export_svg(
+        "Graphics3D[{AbsolutePointSize[10], Point[{0, 0, 0}], \
+        Point[{1, 1, 1}]}, ImageSize -> 200]",
+      );
+      let large = export_svg(
+        "Graphics3D[{AbsolutePointSize[10], Point[{0, 0, 0}], \
+        Point[{1, 1, 1}]}, ImageSize -> 800]",
+      );
+      let radius = |svg: &str| -> f64 {
+        let after = svg.split("r=\"").nth(1).expect("a circle radius");
+        after[..after.find('"').unwrap()].parse().unwrap()
+      };
+      assert_eq!(
+        radius(&small),
+        radius(&large),
+        "AbsolutePointSize must draw the same pixel radius regardless of \
+         ImageSize"
+      );
+    }
+  }
+
+  /// Regression: `ListPointPlot3D[…]` rendered through its own standalone
+  /// scatter camera and never carried a symbolic `structure`, so
+  /// `Show[ListPointPlot3D[…], opts]` silently ignored every option it was
+  /// given (`Axes`, `Boxed`, `BoxRatios`, `PlotRange`, `SphericalRegion`,
+  /// `ViewAngle`, …) and could not merge with other `Graphics3D` content —
+  /// exactly the pattern the "Thomson Problem with Central Forces"
+  /// Demonstration's Manipulate uses to overlay its particles on a
+  /// translucent sphere.
+  mod list_point_plot3d_show_compositing {
+    use super::*;
+
+    #[test]
+    fn honors_axes_and_boxed_false() {
+      let svg = export_svg(
+        "Show[ListPointPlot3D[{{0.3, 0.2, 0.1}, {-0.2, 0.3, -0.1}, \
+        {0.1, -0.3, 0.2}}], Axes -> False, Boxed -> False]",
+      );
+      assert!(
+        !svg.contains("<text"),
+        "Axes -> False, Boxed -> False must draw no tick labels:\n{svg}"
+      );
+    }
+
+    #[test]
+    fn merges_with_a_graphics3d_sphere() {
+      let svg = export_svg(
+        "Show[ListPointPlot3D[{{0.3, 0.2, 0.1}, {-0.2, 0.3, -0.1}, \
+        {0.1, -0.3, 0.2}}], Graphics3D[{Opacity[0.25], Blue, \
+        Sphere[{0, 0, 0}]}]]",
+      );
+      // A rendered Sphere is a mesh of many small filled polygons; the
+      // scatter points alone (no Show) draw only a handful of circles and
+      // no polygons at all.
+      assert!(
+        svg.matches("<polygon").count() > 50,
+        "merging with a Sphere should draw its polygon mesh:\n{svg}"
+      );
+      assert!(
+        svg.contains("<circle"),
+        "the scatter points should still be drawn on top:\n{svg}"
+      );
+    }
+
+    #[test]
+    fn plot_style_point_size_survives_the_merge() {
+      let plain = export_svg(
+        "Show[ListPointPlot3D[{{0.3, 0.2, 0.1}, {-0.2, 0.3, -0.1}}], \
+        Graphics3D[{}]]",
+      );
+      let sized = export_svg(
+        "Show[ListPointPlot3D[{{0.3, 0.2, 0.1}, {-0.2, 0.3, -0.1}}, \
+        PlotStyle -> PointSize[0.06]], Graphics3D[{}]]",
+      );
+      let radius = |svg: &str| -> f64 {
+        let after = svg.split("r=\"").nth(1).expect("a circle radius");
+        after[..after.find('"').unwrap()].parse().unwrap()
+      };
+      assert!(
+        radius(&sized) > radius(&plain) * 2.0,
+        "PlotStyle -> PointSize[…] must still widen the dots once Show \
+         re-renders the merged scene: plain r={}, sized r={}",
+        radius(&plain),
+        radius(&sized)
+      );
+    }
   }
 
   mod unbounded_primitives_2d {

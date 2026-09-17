@@ -4241,10 +4241,20 @@ fn render_graphics_fc_if_needed(expr: syntax::Expr) -> syntax::Expr {
       }
     }
     syntax::Expr::FunctionCall { name, args }
-      if name == "MeshRegion" && args.len() == 2 =>
+      if (name == "MeshRegion" || name == "BoundaryMeshRegion")
+        && args.len() >= 2 =>
     {
-      // Render MeshRegion as SVG (e.g. from VoronoiMesh)
-      if let Some(svg) =
+      // Render the mesh as a picture (e.g. from VoronoiMesh, or a
+      // ConvexHullMesh's BoundaryMeshRegion, which also carries a Method
+      // option and so has more than 2 args). A 3D mesh goes through the
+      // ordinary Graphics3D pipeline for its lighting and Show/Part support;
+      // a 2D one uses the flat mesh renderer.
+      let is_3d_mesh = matches!(&args[0], syntax::Expr::List(items)
+        if items.first().is_some_and(|v| matches!(v, syntax::Expr::List(c) if c.len() == 3)));
+      if is_3d_mesh {
+        functions::graphics::mesh_region_to_graphics3d(&args[0], &args[1])
+          .unwrap_or(expr)
+      } else if let Some(svg) =
         functions::voronoi::mesh_region_to_svg(&args[0], &args[1])
       {
         capture_graphics(&svg);
