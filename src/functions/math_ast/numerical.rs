@@ -3903,7 +3903,7 @@ pub fn squared_euclidean_distance_ast(
 /// Core DFT computation shared by Fourier and InverseFourier.
 /// `sign` is +1 for Fourier, -1 for InverseFourier (before applying `b`).
 /// FourierParameters {a, b}: F_s = n^((a-1)/2) * sum_{r=0}^{n-1} u_r * exp(2*pi*i*b*(r*s)/n)
-fn dft_core(
+pub(crate) fn dft_core(
   data: &[(f64, f64)],
   param_a: f64,
   param_b: f64,
