@@ -26738,4 +26738,81 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k1$$ = 1}, \"\\[Ellipsis]\"]"], "Ou
       other => panic!("expected a discrete control, got {other:?}"),
     }
   }
+
+  /// End-to-end regression for the shape a "Polaritons in Semiconducting
+  /// Organic Films"-style Demonstration has: a `Module` defines a chain of
+  /// mutually referencing helper functions with `SetDelayed` (one function's
+  /// body reads a variable that is only assigned, via plain `Set`, right
+  /// before the function is invoked), derives a physical parameter through
+  /// `D`/`ReplaceAll` on a symbolic 2×2 `Eigenvalues` result, and switches
+  /// between a `Plot` and a `Text[TableForm[…]]` summary via `Switch` on a
+  /// discrete control. Both a continuous slider and the discrete mode picker
+  /// drive the body.
+  ///
+  /// The Manipulate is written here rather than lifted from the published
+  /// notebook.
+  #[test]
+  fn polariton_dispersion_notebook_switches_between_plot_and_table() {
+    let code = r#"Manipulate[
+      Module[{disp, tdat, tabtxt, hfun, exfun, epfun, meff, gap, leff, mmix},
+        mmix = dc^(1/2);
+        gap = 2*Pi*hbar*cc/(len*mmix);
+        meff = 2*Pi*mmix/(cc*len);
+        exfun[k_] := Ex + hbar^2/(2*me)*k^2;
+        epfun[k_] := gap + hbar^2/(2*meff)*k^2;
+        hfun[k_] := Eigenvalues[{{exfun[k], rabi/2}, {rabi/2, epfun[k]}}];
+        leff = First[1/ReplaceAll[D[hfun[k], {k, 2}], k -> 0]];
+        tabtxt = {{"Rabi frequency", rabi, "eV"}, {"binding energy", 0.012, "eV"}};
+        tdat = Text[TableForm[tabtxt, TableHeadings -> {None, {"var", "value", "unit"}}]];
+        disp = Plot[{exfun[k/1000]/eV, epfun[k/1000]/eV}, {k, -10, 10}];
+        Switch[mode, 1, disp, 2, tdat]
+      ],
+      {{mode, 1, ""}, {1 -> "plot", 2 -> "table"}},
+      {{len, 2500, "L"}, 1800, 3000, 0.01},
+      {{dc, 2.99, "dielectric"}, 1, 10, 0.01},
+      {{rabi, 0.15, "rabi"}, 0.1, 0.3, 0.01},
+      Initialization :> (hbar = 1; cc = 137; me = 6.82; eV = 1/27.2; Ex = 3.1/27.2)
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let mut state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("the module chain must build a ManipulateState");
+    assert!(
+      state.error.is_none(),
+      "the mutually referencing helper functions must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the default Plot branch must render as a picture"
+    );
+
+    // Switch the discrete `mode` control to the table branch.
+    let mode_idx = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "mode")
+      .unwrap();
+    if let manipulate::ControlState::Discrete { current_index, .. } =
+      &mut state.controls[mode_idx]
+    {
+      *current_index = 1;
+    }
+    state.reevaluate();
+    assert!(
+      state.error.is_none(),
+      "the table branch must also evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "Text[TableForm[…]] must render as a typeset picture, not fall back \
+       to the raw text echo: text_output={:?}",
+      state.text_output
+    );
+    assert_eq!(
+      state.text_output, None,
+      "a picture result must not also carry a text fallback"
+    );
+  }
 }

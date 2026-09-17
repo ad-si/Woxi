@@ -4445,6 +4445,93 @@ mod plot3d {
       assert_eq!(plain.lines().filter(|l| l.starts_with("<line")).count(), 0);
     }
 
+    /// `Dashed`/`Dotted`/`DotDashed`/`Dashing`/`AbsoluteDashing` used to be
+    /// silently ignored inside `Graphics3D`: a `Line3D` primitive always
+    /// drew as a solid stroke regardless of the style directives in force,
+    /// even though the same directives dash a 2D `Graphics` line correctly.
+    /// A `Line` is depth-sorted into several subdivided `<line>` elements
+    /// (see `LINE_SUBDIVISIONS`) so occlusion against other geometry comes
+    /// out right; every one of them must carry the dash pattern.
+    #[test]
+    fn graphics3d_dashed_line_is_dashed() {
+      let dashed = export_svg(
+        "Graphics3D[{Gray, Dashed, Line[{{-5,0,0},{5,0,0}}]}, Boxed -> False]",
+      );
+      let lines: Vec<&str> =
+        dashed.lines().filter(|l| l.starts_with("<line")).collect();
+      assert!(!lines.is_empty(), "expected the line to be drawn: {dashed}");
+      assert!(
+        lines
+          .iter()
+          .all(|l| l.contains("stroke-dasharray=\"4.0,4.0\"")),
+        "every subdivided piece must stay dashed: {lines:?}"
+      );
+
+      // Without a dashing directive the line is solid, exactly as before.
+      let solid = export_svg(
+        "Graphics3D[{Gray, Line[{{-5,0,0},{5,0,0}}]}, Boxed -> False]",
+      );
+      assert!(
+        !solid.contains("stroke-dasharray"),
+        "a plain line must not gain a dash pattern: {solid}"
+      );
+    }
+
+    /// `Dotted`/`DotDashed` are shorthands for specific `Dashing` patterns
+    /// (mirroring 2D `Graphics`); `Dashing`/`AbsoluteDashing` set an
+    /// explicit pattern, fractional-of-width or literal pixels
+    /// respectively; and `Dashing[None]` switches a later `Line` back to a
+    /// solid stroke without affecting an earlier dashed one.
+    #[test]
+    fn graphics3d_dashing_variants_match_2d_conventions() {
+      let dotted = export_svg(
+        "Graphics3D[{Dotted, Line[{{-5,0,0},{5,0,0}}]}, Boxed -> False]",
+      );
+      assert!(dotted.contains("stroke-dasharray=\"1.0,4.0\""), "{dotted}");
+
+      let dot_dashed = export_svg(
+        "Graphics3D[{DotDashed, Line[{{-5,0,0},{5,0,0}}]}, Boxed -> False]",
+      );
+      assert!(
+        dot_dashed.contains("stroke-dasharray=\"1.0,4.0,4.0,4.0\""),
+        "{dot_dashed}"
+      );
+
+      // `Dashing[{0.05, 0.05}]` is a fraction of the (default 360px)
+      // image width: 0.05 * 360 = 18px.
+      let fractional = export_svg(
+        "Graphics3D[{Dashing[{0.05,0.05}], Line[{{-5,0,0},{5,0,0}}]}, \
+         Boxed -> False]",
+      );
+      assert!(
+        fractional.contains("stroke-dasharray=\"18.0,18.0\""),
+        "{fractional}"
+      );
+
+      let absolute = export_svg(
+        "Graphics3D[{AbsoluteDashing[{10,3}], Line[{{-5,0,0},{5,0,0}}]}, \
+         Boxed -> False]",
+      );
+      assert!(
+        absolute.contains("stroke-dasharray=\"10.0,3.0\""),
+        "{absolute}"
+      );
+
+      // Turning dashing back off partway through a primitive list leaves
+      // the earlier line dashed and the later one solid.
+      let mixed = export_svg(
+        "Graphics3D[{Dashed, Line[{{-5,0,0},{0,0,0}}], Dashing[None], \
+         Line[{{0,0,0},{5,0,0}}]}, Boxed -> False]",
+      );
+      let dashed_count = mixed
+        .lines()
+        .filter(|l| l.contains("stroke-dasharray"))
+        .count();
+      let total_lines =
+        mixed.lines().filter(|l| l.starts_with("<line")).count();
+      assert!(dashed_count > 0 && dashed_count < total_lines, "{mixed}");
+    }
+
     /// `Opacity` tints a face without touching the outline the default
     /// `EdgeForm` draws around it, so `{Opacity[0], Cuboid[…]}` is the
     /// wireframe idiom. Regression: the outline inherited the face's
