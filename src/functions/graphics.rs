@@ -7,7 +7,7 @@ use crate::functions::plot::{DEFAULT_HEIGHT, DEFAULT_WIDTH, parse_image_size};
 /// Dash length for the "Small" named size in Dashing directives.
 /// This is the default dash segment length used by Dashed, Dotted, etc.
 /// `Small`, the default dash length, in pixels (`Dashed` is `4,4`).
-const SMALL_DASH_PX: f64 = 4.0;
+pub(crate) const SMALL_DASH_PX: f64 = 4.0;
 
 /// Convert a named size (Tiny, Small, Medium, Large) to a dash length.
 /// A named dash size. Wolfram's named sizes are *absolute* lengths — a
@@ -42,7 +42,7 @@ pub(crate) fn symbolic_point_size(expr: &Expr) -> Option<f64> {
   }
 }
 
-fn dash_size_to_f64(expr: &Expr) -> Option<f64> {
+pub(crate) fn dash_size_to_f64(expr: &Expr) -> Option<f64> {
   if let Expr::Identifier(s) = expr {
     match s.as_str() {
       "Tiny" => Some(-2.0),
@@ -14807,6 +14807,19 @@ fn overlay_rendered_graphics_svgs(graphics: &[Expr]) -> Option<String> {
 /// into fixed 80-pixel squares that make plots illegible).
 pub fn combine_graphics_svgs(rows: &[Vec<String>]) -> Option<String> {
   combine_svgs_grid(rows, &default_layout_options())
+}
+
+/// Like [`combine_graphics_svgs`] but honoring a `Grid`'s own option
+/// arguments (`Frame`, `Spacings`, `ImageSize`) — the same options
+/// `GraphicsGrid` already respects — instead of always laying the cells
+/// out with the bare defaults. Used for a `Grid` that holds a picture
+/// somewhere, whose `Frame -> All` would otherwise be silently dropped by
+/// the generic per-cell composition.
+pub fn combine_graphics_svgs_with_options(
+  rows: &[Vec<String>],
+  option_args: &[Expr],
+) -> Option<String> {
+  combine_svgs_grid(rows, &parse_layout_options(option_args))
 }
 
 /// Render a 1-D list of SVGs as `{ svg₁, svg₂, … }` with brace/comma text

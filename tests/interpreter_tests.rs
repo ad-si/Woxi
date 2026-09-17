@@ -1435,6 +1435,36 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_grid_frame_and_unquoted_text_with_graphics_cell() {
+    // Regression: a Grid row mixing a plain string cell with a Graphics
+    // cell (a Demonstration's idiom for a labeled row of pictures, e.g.
+    // `Grid[{Join[{"encryption"}, pictures]}, Frame -> All]`) took a
+    // different, simpler renderer than a plain Grid of strings because
+    // `lays_out_a_graphic` was true — the cell-by-cell composition path
+    // used for `Grid`/`Column`/`Row` holding a picture ignored `Frame`
+    // entirely and printed a string cell as quoted InputForm text instead
+    // of the plain label a pure-text Grid already renders unquoted.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Grid[{{\"row1\", Graphics[Circle[], ImageSize -> 20], \
+       Graphics[Disk[], ImageSize -> 20]}}, Frame -> All], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      svg.contains(">row1<"),
+      "a plain string cell next to a picture must stay unquoted, matching a text-only grid:\n{svg}"
+    );
+    assert!(
+      !svg.contains("&quot;row1&quot;"),
+      "a plain string cell next to a picture must not print as quoted InputForm text:\n{svg}"
+    );
+    assert!(
+      svg.contains("<line"),
+      "Frame -> All must still draw gridlines when a row holds a picture:\n{svg}"
+    );
+  }
+
+  #[test]
   fn test_grid_background_explicit_cell_rules_take_priority() {
     // Regression: `Background -> {cols, rows, {{i, j} -> color, …}}` — the
     // three-argument form a Demonstration uses to highlight specific
@@ -2626,6 +2656,56 @@ mod interpreter_tests {
       via_show.contains("font-size=\"200\"")
         && via_show.contains("fill=\"rgb(255,0,0)\""),
       "LabelStyle applied via Show must still restyle the frame label: {via_show}"
+    );
+  }
+
+  #[test]
+  fn test_axes_label_none_suppresses_that_axis_label() {
+    // `AxesLabel -> {label, None}` (or `{None, label}`) must omit the axis
+    // whose entry is the bare symbol `None`, not print the literal text
+    // "None" — it used to leak through because `expr_to_label` returned
+    // `Some("None".to_string())` for any identifier, including `None`.
+    clear_state();
+    let y_none = interpret(
+      "ExportString[Plot[Sin[x], {x, 0, 2 Pi}, \
+         AxesLabel -> {\"t\", None}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      !y_none.contains(">None<"),
+      "AxesLabel -> {{\"t\", None}} must not render the text None: {y_none}"
+    );
+    assert!(
+      y_none.contains(">t<"),
+      "AxesLabel -> {{\"t\", None}} must still render the x label: {y_none}"
+    );
+
+    clear_state();
+    let x_none = interpret(
+      "ExportString[Plot[Sin[x], {x, 0, 2 Pi}, \
+         AxesLabel -> {None, \"y\"}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      !x_none.contains(">None<"),
+      "AxesLabel -> {{None, \"y\"}} must not render the text None: {x_none}"
+    );
+    assert!(
+      x_none.contains(">y<"),
+      "AxesLabel -> {{None, \"y\"}} must still render the y label: {x_none}"
+    );
+
+    // The same option reaches a Plot wrapped in Show, as in the widget's
+    // `AxesLabel -> {Style["t", Italic], None}` from the source Demonstration.
+    clear_state();
+    let via_show = interpret(
+      "ExportString[Show[Plot[Sin[x], {x, 0, 2 Pi}], \
+         AxesLabel -> {Style[\"t\", Italic], None}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      !via_show.contains(">None<"),
+      "AxesLabel -> {{.., None}} applied via Show must not render None: {via_show}"
     );
   }
 

@@ -5196,14 +5196,25 @@ fn instantiate_stored_manipulate(
   if statements.len() != 1 {
     return None;
   }
-  let expr = woxi::interpret_to_expr(&statements[0]).ok()?;
   // `Manipulate[…, SaveDefinitions -> True]` embeds the definitions its
   // body depends on in the stored output's Initialization, because the
   // Manipulate's own `Initialization` option is absent — the helper
   // definitions live in a separate "Initialization Code" cell instead. Run
-  // the recovered copy once (Wolfram's SynchronousInitialization) before
-  // instantiating, so the widget works right when the notebook opens —
-  // before any of the notebook's definition cells have been evaluated.
+  // the recovered copy once (Wolfram's SynchronousInitialization) *before*
+  // evaluating the Manipulate call itself, so the widget works right when
+  // the notebook opens — before any of the notebook's definition cells
+  // have been evaluated. This must happen first: a variable spec bound
+  // that reads one of those helpers (`{{n, 4}, 1, Length[helperList], 1}`)
+  // is resolved speculatively while the Manipulate call is evaluated
+  // (see `manipulate_ast`), so evaluating it while `helperList` is still
+  // undefined bakes a wrong literal (`Length[helperList]` on an undefined
+  // symbol is `0`) permanently into the returned expression — too late
+  // for a same-name definition made a moment later to fix.
+  //
+  // Check for the Manipulate's own `Initialization :> …` option against
+  // the *unevaluated* parse tree — parsing alone doesn't evaluate the
+  // held Manipulate call, so it can't trigger that same premature bound
+  // resolution.
   //
   // Wolfram embeds this very same `Initialization:>(…)` shape in the box
   // dump for *any* Manipulate that carries its own `Initialization :> …`
@@ -5214,8 +5225,11 @@ fn instantiate_stored_manipulate(
   // duplicate rule (its Module locals shadow differently in FullForm).
   // Only fall back to the stored copy when the live source truly has none
   // of its own.
-  let has_own_initialization =
-    woxi::functions::graphics::manipulate_has_own_initialization(&expr);
+  let has_own_initialization = woxi::parse_to_expr(&statements[0])
+    .ok()
+    .is_some_and(|parsed| {
+      woxi::functions::graphics::manipulate_has_own_initialization(&parsed)
+    });
   if !has_own_initialization
     && let Some(init) =
       woxi::notebook::extract_saved_initialization(stored_output)
@@ -5235,6 +5249,7 @@ fn instantiate_stored_manipulate(
     }
     let _ = woxi::interpret(&init);
   }
+  let expr = woxi::interpret_to_expr(&statements[0]).ok()?;
   let mut state = manipulate::ManipulateState::from_expr(&expr)?;
   // The live source's own spec defaults may be stale — the dump's
   // "Variables" clause is whatever the widget's controls actually sat at
@@ -7000,6 +7015,47 @@ fn strip_svg_wrapper(svg: &str) -> &str {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  /// A `SaveDefinitions -> True` Manipulate (the shape a Wolfram
+  /// Demonstrations Project notebook downloaded straight from a share link
+  /// carries: an Input cell holding the live `Manipulate[…]` source, and an
+  /// Output cell holding the evaluated `DynamicModuleBox[…]` dump, whose
+  /// `Initialization :> (…)` embeds the helper definitions the body and
+  /// control panel depend on because the Manipulate's own `Initialization`
+  /// option is absent) whose control-panel bound reads one of those helpers
+  /// (`{{n, 2}, 1, Length[helperList], 1}`), independently written here to
+  /// mirror that shape rather than copied from any specific Demonstration.
+  /// Regression: `instantiate_stored_manipulate` evaluated the Manipulate
+  /// call (which resolves such a bound immediately) *before* running the
+  /// recovered initialization, so `Length[helperList]` was resolved against
+  /// the still-undefined `helperList` — `0`, since `Length` of an
+  /// undefined symbol has no parts — and that wrong bound was baked into
+  /// the returned expression, permanently collapsing the slider's range
+  /// no matter what the initialization defined a moment later.
+  #[test]
+  fn instantiate_stored_manipulate_resolves_save_definitions_bound() {
+    let code = "Manipulate[helperList[[n]], \
+      {{n, 2}, 1, Length[helperList], 1}, SaveDefinitions -> True]";
+    let stored = "DynamicModuleBox[{$CellContext`n$$ = 2}, \
+      DynamicBox[…],\n\
+      Initialization:>($CellContext`helperList = {10, 20, 30, 40, 50}; \
+      Typeset`initDone$$ = True)]";
+    let state = instantiate_stored_manipulate(code, stored)
+      .expect("instantiate_stored_manipulate should build a widget");
+    assert_eq!(state.error, None);
+    match &state.controls[0] {
+      manipulate::ControlState::Continuous { min, max, .. } => {
+        assert_eq!(
+          (*min, *max),
+          (1.0, 5.0),
+          "the slider's max must be the helper list's real length (5), \
+           not a stale 0 from resolving Length[helperList] before the \
+           recovered initialization ran"
+        );
+      }
+      other => panic!("expected a continuous control, got {other:?}"),
+    }
+  }
 
   /// A Manipulate whose control panel is a custom `Grid` mixing an embedded
   /// `Control[…]` cell with a `Dynamic[…]` caption cell that assembles a
@@ -21909,6 +21965,32 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`nmax$$ = 10}, DynamicBox[\[Ellipsis
     assert_eq!(state.text_output.as_deref(), Some("9"));
   }
 
+  /// A `RevolutionPlot3D` curve given as `{fx, fy, fz}` — three components,
+  /// not the plain `{r, z}` pair — is the Demonstrations idiom for a curve
+  /// built from `Sqrt`/trig pieces that the author never bothered to reduce
+  /// to a single radius expression. Before the fix, `revolution_plot3d_ast`
+  /// only recognized a 2-item list as parametric and silently fell through
+  /// to its scalar-function branch for anything else, which then failed to
+  /// evaluate the 3-item list to a single number and reported "no finite
+  /// values" for every sample — so a Manipulate body built around such a
+  /// curve raised an evaluation error instead of rendering.
+  #[test]
+  fn revolution_plot3d_accepts_a_three_coordinate_curve() {
+    let code = r#"Manipulate[
+      Graphics3D[RevolutionPlot3D[
+        {Sqrt[2] scale/2, 0, i/12}, {i, 1, 13}, {v, 0.2, 2.8}][[1]]],
+      {scale, 0.5, 1}]"#;
+    let expr = woxi::interpret_to_expr(code).unwrap();
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("must build a widget");
+    assert!(
+      state.error.is_none(),
+      "the 3-coordinate curve must evaluate: {:?}",
+      state.error
+    );
+    assert!(state.graphics_handle.is_some());
+  }
+
   /// A synthetic "throw a dart at a target" Manipulate in the shape the
   /// "Dart Practice" Demonstration uses: the interactive picture lives in a
   /// `DynamicModule` wrapping the Manipulate body, and a `Button` embedded
@@ -26691,6 +26773,83 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k1$$ = 1}, \"\\[Ellipsis]\"]"], "Ou
       state.graphics_handle.is_some(),
       "two side-by-side captioned tables must render as one picture, not \
        fall back to text"
+    );
+    assert_eq!(
+      state.text_output, None,
+      "a picture result must not also carry a text fallback"
+    );
+  }
+
+  /// End-to-end regression for the shape a "Polaritons in Semiconducting
+  /// Organic Films"-style Demonstration has: a `Module` defines a chain of
+  /// mutually referencing helper functions with `SetDelayed` (one function's
+  /// body reads a variable that is only assigned, via plain `Set`, right
+  /// before the function is invoked), derives a physical parameter through
+  /// `D`/`ReplaceAll` on a symbolic 2×2 `Eigenvalues` result, and switches
+  /// between a `Plot` and a `Text[TableForm[…]]` summary via `Switch` on a
+  /// discrete control. Both a continuous slider and the discrete mode picker
+  /// drive the body.
+  ///
+  /// The Manipulate is written here rather than lifted from the published
+  /// notebook.
+  #[test]
+  fn polariton_dispersion_notebook_switches_between_plot_and_table() {
+    let code = r#"Manipulate[
+      Module[{disp, tdat, tabtxt, hfun, exfun, epfun, meff, gap, leff, mmix},
+        mmix = dc^(1/2);
+        gap = 2*Pi*hbar*cc/(len*mmix);
+        meff = 2*Pi*mmix/(cc*len);
+        exfun[k_] := Ex + hbar^2/(2*me)*k^2;
+        epfun[k_] := gap + hbar^2/(2*meff)*k^2;
+        hfun[k_] := Eigenvalues[{{exfun[k], rabi/2}, {rabi/2, epfun[k]}}];
+        leff = First[1/ReplaceAll[D[hfun[k], {k, 2}], k -> 0]];
+        tabtxt = {{"Rabi frequency", rabi, "eV"}, {"binding energy", 0.012, "eV"}};
+        tdat = Text[TableForm[tabtxt, TableHeadings -> {None, {"var", "value", "unit"}}]];
+        disp = Plot[{exfun[k/1000]/eV, epfun[k/1000]/eV}, {k, -10, 10}];
+        Switch[mode, 1, disp, 2, tdat]
+      ],
+      {{mode, 1, ""}, {1 -> "plot", 2 -> "table"}},
+      {{len, 2500, "L"}, 1800, 3000, 0.01},
+      {{dc, 2.99, "dielectric"}, 1, 10, 0.01},
+      {{rabi, 0.15, "rabi"}, 0.1, 0.3, 0.01},
+      Initialization :> (hbar = 1; cc = 137; me = 6.82; eV = 1/27.2; Ex = 3.1/27.2)
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let mut state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("the module chain must build a ManipulateState");
+    assert!(
+      state.error.is_none(),
+      "the mutually referencing helper functions must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the default Plot branch must render as a picture"
+    );
+
+    // Switch the discrete `mode` control to the table branch.
+    let mode_idx = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "mode")
+      .unwrap();
+    if let manipulate::ControlState::Discrete { current_index, .. } =
+      &mut state.controls[mode_idx]
+    {
+      *current_index = 1;
+    }
+    state.reevaluate();
+    assert!(
+      state.error.is_none(),
+      "the table branch must also evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "Text[TableForm[…]] must render as a typeset picture, not fall back \
+       to the raw text echo: text_output={:?}",
+      state.text_output
     );
     assert_eq!(
       state.text_output, None,

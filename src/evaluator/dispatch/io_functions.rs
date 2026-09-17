@@ -5639,15 +5639,39 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       {
         return svg;
       }
+      // A plain-string cell is text, not source: a `Row`/`Column`/`Grid`
+      // cell that is just `"label"` prints unquoted, the same as the
+      // `Text[…]` arm above — without this, a Demonstration's labeled row
+      // of pictures (`Grid[{Join[{"encryption"}, pictures]}]`) showed the
+      // label as quoted InputForm text (`"encryption"`) instead of a
+      // caption.
       let rows: Vec<Vec<String>> = layout_rows(name, args)
         .iter()
-        .map(|cells| cells.iter().map(expr_to_svg).collect())
+        .map(|cells| {
+          cells
+            .iter()
+            .map(|c| expr_to_svg(&unquoted_display_string(c)))
+            .collect()
+        })
         .collect();
       if rows.is_empty() {
         expr_text_svg(expr)
       } else {
-        crate::functions::graphics::combine_graphics_svgs(&rows)
-          .unwrap_or_else(|| expr_text_svg(expr))
+        // `Grid`'s own option arguments (`Frame`, `Spacings`, `ImageSize`)
+        // are otherwise silently dropped here — a Demonstration's control
+        // panel written `Grid[{…pictures…}, Frame -> All]` lost its
+        // border. `Row`/`Column` (not `GraphicsRow`/`GraphicsColumn`) take
+        // no such options, so they keep the plain default layout.
+        let option_args: &[Expr] = if name == "Grid" || name == "TextGrid" {
+          &args[1..]
+        } else {
+          &[]
+        };
+        crate::functions::graphics::combine_graphics_svgs_with_options(
+          &rows,
+          option_args,
+        )
+        .unwrap_or_else(|| expr_text_svg(expr))
       }
     }
     // A list of graphics renders as `{g1, g2, …}` with the plots drawn
