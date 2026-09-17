@@ -391,6 +391,14 @@ pub struct ManipulateState {
   /// screen only while the selector holds that pane's value. `None` means
   /// the control belongs to no pane and is always shown.
   control_visible: Vec<Option<String>>,
+  /// `(control name, parent variable, 1-based index)` for every control
+  /// that drives one `Part` of a shared list variable rather than the
+  /// whole variable — the widgets `Evaluate[Sequence @@ Table[…]]`
+  /// generates for a bank of per-element sliders (see
+  /// `woxi::functions::graphics::ParsedControl::ListElement`). `bindings`
+  /// groups these by `parent` and reassembles them into one list binding
+  /// instead of colliding same-named ones.
+  list_elements: Vec<(String, String, usize)>,
   /// Whether each control is currently on screen, recomputed on every
   /// re-evaluation from `control_visible` against the live bindings.
   pub control_is_visible: Vec<bool>,
@@ -472,6 +480,7 @@ impl ManipulateState {
       control_enabled,
       control_is_enabled,
       control_visible,
+      list_elements: spec.list_elements,
       control_is_visible,
       reeval_pending: 0,
       reeval_applied: 0,
@@ -623,13 +632,45 @@ impl ManipulateState {
 
   /// The full binding set (visible controls + mutable state) used to
   /// re-evaluate the body and render the display elements.
+  ///
+  /// A control that drives one `Part` of a shared list variable (see
+  /// `list_elements`) is reported under a synthesized, internal-only name
+  /// — several such controls sharing the real variable's name would
+  /// collide as duplicate bindings. Those are grouped by parent variable
+  /// here and reassembled into one list literal, with each control's
+  /// current value substituted at its own (1-based) index; an index no
+  /// control covers keeps `0` as a placeholder.
   fn bindings(&self) -> Vec<(String, String)> {
-    let mut b: Vec<(String, String)> = self
-      .controls
-      .iter()
-      .filter(|c| c.binds_variable())
-      .map(|c| (c.name().to_string(), c.current_code()))
-      .collect();
+    let mut b: Vec<(String, String)> = Vec::new();
+    let mut list_groups: Vec<(String, Vec<(usize, String)>)> = Vec::new();
+    for c in self.controls.iter().filter(|c| c.binds_variable()) {
+      match self
+        .list_elements
+        .iter()
+        .find(|(synth, ..)| synth == c.name())
+      {
+        Some((_, parent, index)) => {
+          let group = match list_groups.iter_mut().find(|(p, _)| p == parent) {
+            Some(g) => g,
+            None => {
+              list_groups.push((parent.clone(), Vec::new()));
+              list_groups.last_mut().unwrap()
+            }
+          };
+          group.1.push((*index, c.current_code()));
+        }
+        None => b.push((c.name().to_string(), c.current_code())),
+      }
+    }
+    for (parent, mut items) in list_groups {
+      items.sort_by_key(|(index, _)| *index);
+      let len = items.iter().map(|(index, _)| *index).max().unwrap_or(0);
+      let mut parts = vec!["0".to_string(); len];
+      for (index, value) in items {
+        parts[index - 1] = value;
+      }
+      b.push((parent, format!("{{{}}}", parts.join(", "))));
+    }
     b.extend(self.state.iter().cloned());
     b
   }
