@@ -21909,6 +21909,32 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`nmax$$ = 10}, DynamicBox[\[Ellipsis
     assert_eq!(state.text_output.as_deref(), Some("9"));
   }
 
+  /// A `RevolutionPlot3D` curve given as `{fx, fy, fz}` — three components,
+  /// not the plain `{r, z}` pair — is the Demonstrations idiom for a curve
+  /// built from `Sqrt`/trig pieces that the author never bothered to reduce
+  /// to a single radius expression. Before the fix, `revolution_plot3d_ast`
+  /// only recognized a 2-item list as parametric and silently fell through
+  /// to its scalar-function branch for anything else, which then failed to
+  /// evaluate the 3-item list to a single number and reported "no finite
+  /// values" for every sample — so a Manipulate body built around such a
+  /// curve raised an evaluation error instead of rendering.
+  #[test]
+  fn revolution_plot3d_accepts_a_three_coordinate_curve() {
+    let code = r#"Manipulate[
+      Graphics3D[RevolutionPlot3D[
+        {Sqrt[2] scale/2, 0, i/12}, {i, 1, 13}, {v, 0.2, 2.8}][[1]]],
+      {scale, 0.5, 1}]"#;
+    let expr = woxi::interpret_to_expr(code).unwrap();
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("must build a widget");
+    assert!(
+      state.error.is_none(),
+      "the 3-coordinate curve must evaluate: {:?}",
+      state.error
+    );
+    assert!(state.graphics_handle.is_some());
+  }
+
   /// A synthetic "throw a dart at a target" Manipulate in the shape the
   /// "Dart Practice" Demonstration uses: the interactive picture lives in a
   /// `DynamicModule` wrapping the Manipulate body, and a `Button` embedded

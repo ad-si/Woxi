@@ -3202,6 +3202,15 @@ mod plot3d {
           "RevolutionPlot3D[{1 + Sin[t]/4, t}, {t, 0, 2 Pi}]"
         ));
       }
+
+      #[test]
+      fn three_coordinate_curve() {
+        // A curve given as {fx, fy, fz} rather than the plain {r, z} pair —
+        // the fy component sweeps along with fx instead of being ignored.
+        insta::assert_snapshot!(export_svg(
+          "RevolutionPlot3D[{t, t/2, t^2}, {t, 0.5, 2}]"
+        ));
+      }
     }
 
     mod options {
@@ -27878,6 +27887,37 @@ mod graphics3d_painters_algorithm_face_subdivision {
 
 mod revolution_plot3d_part_extraction {
   use super::*;
+
+  /// A 3-coordinate curve `{fx, fy, fz}` sweeps the `(fx, fy)` vector around
+  /// the z axis by theta, rather than assuming `fy = 0` the way the plain
+  /// `{r, z}` form does. Regression: only a 2-item list was ever recognized
+  /// as parametric, so a 3-item curve fell into the scalar-function branch,
+  /// failed to reduce a list to a number for every sample, and raised
+  /// "function produced no finite values" instead of rendering.
+  #[test]
+  fn three_coordinate_curve_sweeps_the_fy_component() {
+    clear_state();
+    // At theta = 0 the sweep rotation is the identity, so the point is the
+    // curve's own (fx, fy, fz) unchanged.
+    assert_eq!(
+      interpret(
+        "First[RevolutionPlot3D[{1, 2, 3}, {t, 0, 1}, \
+         {theta, 0, 0}]][[1, 1]]"
+      )
+      .unwrap(),
+      "{1., 2., 3.}"
+    );
+    // At theta = Pi, the rotation negates both fx and fy while leaving fz
+    // untouched: (cos Pi, sin Pi; -sin Pi, cos Pi) = (-1, 0; 0, -1).
+    assert_eq!(
+      interpret(
+        "Round[First[RevolutionPlot3D[{1, 2, 3}, {t, 0, 1}, \
+         {theta, Pi, Pi}]][[1, 1]], 0.001]"
+      )
+      .unwrap(),
+      "{-1., -2., 3.}"
+    );
+  }
 
   /// `First[RevolutionPlot3D[…]]` is the surface itself — a
   /// `GraphicsComplex` in world coordinates — so it can be placed inside
