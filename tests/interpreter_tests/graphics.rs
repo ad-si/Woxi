@@ -5608,6 +5608,38 @@ mod plot3d {
       );
     }
 
+    /// An Epilog `Text` label may be a `Column` that nests another
+    /// `Column`/`Framed` inside one of its own items — a Demonstration's
+    /// boxed summary of several computed values under a heading, say. Every
+    /// line used to render (each item became its own line via
+    /// `Column`/`Grid` stacking), but a nested stacking construct collapsed
+    /// to one line of its own literal source text, and everything after a
+    /// label's first line was then silently dropped entirely by the Epilog
+    /// `Text` renderer (which only read a `StyledLabel`'s first line).
+    #[test]
+    fn plot_epilog_nested_column_label_stacks_every_line() {
+      let svg = export_svg(
+        "Plot[Sin[x], {x, 0, 2 Pi}, Epilog -> {Text[Style[Column[{\"heading\", \
+         Framed[Column[{Style[\"first\", Blue], Style[\"second\", Red]}]]}], \
+         Center], {Pi, 0}]}]",
+      );
+      assert!(
+        !svg.contains("Column[") && !svg.contains("Framed["),
+        "no label may print its own source: {svg}"
+      );
+      for line in ["heading", "first", "second"] {
+        assert!(
+          svg.contains(line),
+          "every line of the nested Column must render, missing {line:?}: {svg}"
+        );
+      }
+      assert!(
+        svg.contains("fill=\"rgb(0,0,255)\"")
+          && svg.contains("fill=\"rgb(255,0,0)\""),
+        "each nested item keeps its own Style color: {svg}"
+      );
+    }
+
     /// An Epilog may pin its overlay with `Scaled[{sx, sy}]` — a fraction
     /// of the plot range — and may inset a whole other picture, which
     /// keeps its own size. Neither used to draw anything.
