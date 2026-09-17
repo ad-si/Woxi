@@ -6541,8 +6541,17 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  // Determine if body is {r_expr, z_expr} (parametric) or scalar f(t)
-  let is_parametric = matches!(body, Expr::List(items) if items.len() == 2);
+  // Determine if body is {r_expr, z_expr} (parametric), {fx_expr, fy_expr,
+  // fz_expr} (a 3D curve swept around the z axis), or scalar f(t). The
+  // 3-coordinate form is the Demonstrations idiom for a curve built with
+  // `Sqrt`/trig components that already sits off the xz-plane; sweeping it
+  // rotates the (fx, fy) vector by theta instead of assuming fy = 0.
+  let parametric_len: Option<usize> = match body {
+    Expr::List(items) if items.len() == 2 || items.len() == 3 => {
+      Some(items.len())
+    }
+    _ => None,
+  };
 
   let has_theta = theta_var.is_some();
 
@@ -6564,16 +6573,25 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     for j in 0..=n_theta {
       let theta = theta_min + j as f64 * theta_step;
 
-      let (r, z) = if has_theta {
+      let (fx, fy, z) = if has_theta {
         let theta_v = theta_var.as_ref().unwrap();
-        if is_parametric {
+        if let Some(n) = parametric_len {
           if let Expr::List(items) = body {
-            let r_val =
+            let fx_val =
               evaluate_at_t_theta(&items[0], &tvar, tval, theta_v, theta);
-            let z_val =
-              evaluate_at_t_theta(&items[1], &tvar, tval, theta_v, theta);
-            match (r_val, z_val) {
-              (Some(r), Some(z)) if r.is_finite() && z.is_finite() => (r, z),
+            let fy_val = if n == 3 {
+              evaluate_at_t_theta(&items[1], &tvar, tval, theta_v, theta)
+            } else {
+              Some(0.0)
+            };
+            let fz_val =
+              evaluate_at_t_theta(&items[n - 1], &tvar, tval, theta_v, theta);
+            match (fx_val, fy_val, fz_val) {
+              (Some(fx), Some(fy), Some(fz))
+                if fx.is_finite() && fy.is_finite() && fz.is_finite() =>
+              {
+                (fx, fy, fz)
+              }
               _ => continue,
             }
           } else {
@@ -6582,16 +6600,25 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         } else {
           // Scalar: r = f(t, θ), z = t
           match evaluate_at_t_theta(body, &tvar, tval, theta_v, theta) {
-            Some(r) if r.is_finite() => (r, tval),
+            Some(r) if r.is_finite() => (r, 0.0, tval),
             _ => continue,
           }
         }
-      } else if is_parametric {
+      } else if let Some(n) = parametric_len {
         if let Expr::List(items) = body {
-          let r_val = evaluate_at_t(&items[0], &tvar, tval);
-          let z_val = evaluate_at_t(&items[1], &tvar, tval);
-          match (r_val, z_val) {
-            (Some(r), Some(z)) if r.is_finite() && z.is_finite() => (r, z),
+          let fx_val = evaluate_at_t(&items[0], &tvar, tval);
+          let fy_val = if n == 3 {
+            evaluate_at_t(&items[1], &tvar, tval)
+          } else {
+            Some(0.0)
+          };
+          let fz_val = evaluate_at_t(&items[n - 1], &tvar, tval);
+          match (fx_val, fy_val, fz_val) {
+            (Some(fx), Some(fy), Some(fz))
+              if fx.is_finite() && fy.is_finite() && fz.is_finite() =>
+            {
+              (fx, fy, fz)
+            }
             _ => continue,
           }
         } else {
@@ -6600,19 +6627,22 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         // Scalar f(t): revolve (t, f(t)) → r = t, z = f(t)
         match evaluate_at_t(body, &tvar, tval) {
-          Some(z) if z.is_finite() => (tval, z),
+          Some(z) if z.is_finite() => (tval, 0.0, z),
           _ => continue,
         }
       };
 
-      let x = r * theta.cos();
-      let y = r * theta.sin();
+      // Rotate the (fx, fy) vector by theta around the z axis; fy = 0
+      // reduces to the plain r·cos/r·sin sweep the 2-coordinate and scalar
+      // forms already used.
+      let x = fx * theta.cos() - fy * theta.sin();
+      let y = fx * theta.sin() + fy * theta.cos();
 
       grid[i][j] = Some(Point3D { x, y, z });
 
       global_z_min = global_z_min.min(z);
       global_z_max = global_z_max.max(z);
-      global_r_max = global_r_max.max(r.abs());
+      global_r_max = global_r_max.max((x * x + y * y).sqrt());
     }
   }
 
