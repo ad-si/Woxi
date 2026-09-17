@@ -651,11 +651,19 @@ fn render_item(
             |s| s.svg_scaled_stacked(area.scale, px, line_height),
           );
           if is_framed {
-            let text_w = styled.as_ref().map_or(0, |s| s.text.chars().count())
+            let text_w = styled
+              .as_ref()
+              .map_or(0, super::chart::StyledLabel::max_line_chars)
               as f64
               * font_size
               * 0.6;
-            let box_h = (1.0 + extra_lines) * font_size;
+            // `py` is the first line's own center (shifted up above), so
+            // the box starts half a line above it and grows by one more
+            // `line_height` per extra line — not `py`'s center outward,
+            // which would leave it too short and too high once the label
+            // stacks below `py`.
+            let box_h = extra_lines * line_height + font_size;
+            let box_y = py - font_size / 2.0;
             let background = option_value(frame_opts, "Background")
               .and_then(parse_color)
               .map_or_else(
@@ -675,9 +683,8 @@ fn render_item(
               None => " stroke=\"rgb(0,0,0)\"".to_string(),
             };
             out.push_str(&format!(
-              "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{text_w:.1}\" height=\"{box_h:.1}\" fill=\"{background}\"{stroke}/>\n",
+              "<rect x=\"{:.1}\" y=\"{box_y:.1}\" width=\"{text_w:.1}\" height=\"{box_h:.1}\" fill=\"{background}\"{stroke}/>\n",
               px - text_w / 2.0,
-              py - box_h / 2.0,
             ));
           }
           out.push_str(&format!(
