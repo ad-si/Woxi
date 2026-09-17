@@ -2274,6 +2274,11 @@ struct StyleState3D {
   /// back at the viewer, as `(colour, exponent)`. `None` is the default
   /// matte surface. A larger exponent tightens the highlight.
   specular: Option<((u8, u8, u8), f64)>,
+  /// `Dashing[{d1, d2, ...}]`/`Dashed`/`Dotted`/`DotDashed` for `Line3D`
+  /// primitives, in the same units `dash_size_to_f64` uses for 2D: negative
+  /// is literal pixels (a named size), positive is a fraction of the image
+  /// width. `None` draws a solid stroke.
+  dashing: Option<Vec<f64>>,
 }
 
 impl Default for StyleState3D {
@@ -2287,6 +2292,7 @@ impl Default for StyleState3D {
       edges: true,
       edge_color: None,
       specular: None,
+      dashing: None,
     }
   }
 }
@@ -2412,6 +2418,27 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
         style.thickness = Some(0.5);
         return true;
       }
+      "Dashed" => {
+        style.dashing = Some(vec![
+          -crate::functions::graphics::SMALL_DASH_PX,
+          -crate::functions::graphics::SMALL_DASH_PX,
+        ]);
+        return true;
+      }
+      "Dotted" => {
+        style.dashing =
+          Some(vec![0.0, -crate::functions::graphics::SMALL_DASH_PX]);
+        return true;
+      }
+      "DotDashed" => {
+        style.dashing = Some(vec![
+          0.0,
+          -crate::functions::graphics::SMALL_DASH_PX,
+          -crate::functions::graphics::SMALL_DASH_PX,
+          -crate::functions::graphics::SMALL_DASH_PX,
+        ]);
+        return true;
+      }
       _ => {}
     },
     Expr::FunctionCall { name, args } => match name.as_str() {
@@ -2500,6 +2527,18 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
         }
         return true;
       }
+      "Dashing" if !args.is_empty() => {
+        if let Some(d) = parse_3d_dashing(&args[0], false) {
+          style.dashing = d;
+        }
+        return true;
+      }
+      "AbsoluteDashing" if !args.is_empty() => {
+        if let Some(d) = parse_3d_dashing(&args[0], true) {
+          style.dashing = d;
+        }
+        return true;
+      }
       _ => {}
     },
     Expr::List(items) => {
@@ -2513,6 +2552,70 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
   }
 
   false
+}
+
+/// Parse a `Dashing[…]`/`AbsoluteDashing[…]` first argument into the dash
+/// pattern to install, mirroring 2D's `apply_directive` handling of the
+/// same directives. `absolute` marks a plain number as literal pixels
+/// (`AbsoluteDashing`) rather than a fraction of the image width
+/// (`Dashing`), matching `AbsoluteThickness`'s relationship to
+/// `Thickness`. Returns `None` when the argument names no update at all
+/// (so the caller leaves the current dashing alone), `Some(None)` for
+/// `None`/`{}` (back to a solid stroke), and `Some(Some(pattern))`
+/// otherwise.
+fn parse_3d_dashing(arg: &Expr, absolute: bool) -> Option<Option<Vec<f64>>> {
+  use crate::functions::graphics::dash_size_to_f64;
+  use crate::functions::math_ast::expr_to_f64;
+  match arg {
+    Expr::Identifier(s) if s == "None" => Some(None),
+    Expr::List(items) if items.is_empty() => Some(None),
+    Expr::List(items) => {
+      let dashes: Vec<f64> = items
+        .iter()
+        .filter_map(|e| {
+          dash_size_to_f64(e).or_else(|| {
+            expr_to_f64(e).map(|d| if absolute { -d.abs() } else { d })
+          })
+        })
+        .collect();
+      if dashes.is_empty() {
+        None
+      } else {
+        Some(Some(dashes))
+      }
+    }
+    _ => dash_size_to_f64(arg)
+      .or_else(|| expr_to_f64(arg).map(|d| if absolute { -d.abs() } else { d }))
+      .map(|d| Some(vec![d, d])),
+  }
+}
+
+/// `stroke-dasharray`/`stroke-dashoffset` for a `Line3D` edge. Mirrors 2D
+/// graphics' dash-length convention (negative = literal pixels, positive =
+/// a fraction of the image width, zero = a one-pixel dot) and adds a
+/// `stroke-dashoffset` so the pattern stays continuous across a line's
+/// depth-sorted subdivisions (see `LINE_SUBDIVISIONS` above) instead of
+/// restarting at each one.
+fn dash3d_attr(
+  dashing: Option<&Vec<f64>>,
+  svg_w: f64,
+  offset_px: f64,
+) -> String {
+  let Some(dashes) = dashing else {
+    return String::new();
+  };
+  let px: Vec<String> = dashes
+    .iter()
+    .map(|d| {
+      let px = if *d < 0.0 { -*d } else { *d * svg_w };
+      format!("{:.1}", if px <= 0.0 { 1.0 } else { px })
+    })
+    .collect();
+  format!(
+    " stroke-dasharray=\"{}\" stroke-dashoffset=\"{:.1}\"",
+    px.join(","),
+    offset_px
+  )
 }
 
 /// Read a `Specularity[…]` argument list into `(highlight colour, exponent)`.
@@ -5229,6 +5332,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             edges: true,
             edge_color: None,
             specular: None,
+            dashing: None,
           },
         ),
       };
@@ -5566,6 +5670,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     color: String,
     width: f64,
     opacity: f64,
+    dashing: Option<Vec<f64>>,
+    dash_offset: f64,
   }
 
   // Build depth-sorted segments: the bounding-box edges plus all Line
@@ -5606,6 +5712,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           color: axis_color.clone(),
           width: 0.5,
           opacity: 0.4,
+          dashing: None,
+          dash_offset: 0.0,
         });
       }
     }
@@ -5632,6 +5740,13 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       for seg in segments {
         for pair in seg.windows(2) {
           let (a, b) = (pair[0], pair[1]);
+          // Total on-screen length of the *undivided* segment, so a dash
+          // pattern's offset can be measured continuously across the
+          // depth-sorting subdivisions below instead of restarting at
+          // each one.
+          let (apx, apy) = to_svg(project(a, &camera).0, project(a, &camera).1);
+          let (bpx, bpy) = to_svg(project(b, &camera).0, project(b, &camera).1);
+          let total_px = ((bpx - apx).powi(2) + (bpy - apy).powi(2)).sqrt();
           for s in 0..LINE_SUBDIVISIONS {
             let t0 = s as f64 / LINE_SUBDIVISIONS as f64;
             let t1 = (s + 1) as f64 / LINE_SUBDIVISIONS as f64;
@@ -5647,6 +5762,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               color: color.clone(),
               width,
               opacity: style.opacity,
+              dashing: style.dashing.clone(),
+              dash_offset: t0 * total_px,
             });
           }
         }
@@ -5694,9 +5811,11 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         String::new()
       };
+      let dash_attr =
+        dash3d_attr(edge.dashing.as_ref(), svg_width as f64, edge.dash_offset);
       svg.push_str(&format!(
-        "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"{}\" stroke-width=\"{:.1}\" stroke-linecap=\"round\"{}/>\n",
-        ex0, ey0, ex1, ey1, edge.color, edge.width, opacity_attr
+        "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"{}\" stroke-width=\"{:.1}\" stroke-linecap=\"round\"{}{}/>\n",
+        ex0, ey0, ex1, ey1, edge.color, edge.width, opacity_attr, dash_attr
       ));
     };
     let mut ei = 0;
