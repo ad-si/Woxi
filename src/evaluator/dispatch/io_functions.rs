@@ -5023,6 +5023,24 @@ pub(crate) fn lays_out_a_graphic(expr: &Expr) -> bool {
   if matches!(expr, Expr::FunctionCall { name, .. } if name == "LineLegend") {
     return true;
   }
+  // `TableForm[data, …]` / `MatrixForm[data, …]`, and either wrapped in a
+  // `Style[…]` that sets its font, are drawn as an aligned grid picture by
+  // `expr_to_svg` — a Demonstration's Manipulate body composing one into a
+  // `Column`/`Item` layout must be drawn there too, not printed as the
+  // literal `TableForm[…]` source.
+  if matches!(expr, Expr::FunctionCall { name, args }
+    if (name == "TableForm" || name == "MatrixForm") && !args.is_empty())
+  {
+    return true;
+  }
+  if matches!(expr, Expr::FunctionCall { name, args }
+    if name == "Style"
+      && args.len() >= 2
+      && matches!(&args[0], Expr::FunctionCall { name: inner, args: inner_args }
+        if (inner == "TableForm" || inner == "MatrixForm") && !inner_args.is_empty()))
+  {
+    return true;
+  }
   match expr {
     Expr::List(items) => items.iter().any(lays_out_a_graphic),
     // `Pane` and `Deploy` are transparent here: their own arms export what
@@ -5571,14 +5589,16 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     // falls through to the text renderer, which prints the call's own
     // source instead of the row it wraps. A `Style` is inherited by what
     // it wraps, so its directives are pushed into the layout's items and
-    // the item renderer applies them there. A styled `Grid` is left to the
-    // arm below, which hands the directives to the grid renderer whole —
-    // they colour its frame and dividers, not only its cells.
+    // the item renderer applies them there. A styled `Grid`/`TableForm`/
+    // `MatrixForm` is left to the arm below, which hands the directives to
+    // the table renderer whole — they colour its frame and dividers (or set
+    // its cells' font), not only what pushing them cell-by-cell would reach.
     Expr::FunctionCall { name, args }
       if name == "Style"
         && !args.is_empty()
         && !matches!(&args[0], Expr::FunctionCall { name, args }
-          if (name == "Grid" || name == "TextGrid") && !args.is_empty()) =>
+          if matches!(name.as_str(), "Grid" | "TextGrid" | "TableForm" | "MatrixForm")
+            && !args.is_empty()) =>
     {
       let inner = crate::functions::graphics::style_pushed_into_layout(
         &args[0],

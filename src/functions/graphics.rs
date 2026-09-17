@@ -16568,9 +16568,22 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
       // by what it wraps. Pushing the directives inwards is what lets the
       // row renderer, which reads each item's own style, apply them.
       "Style" | "StyleForm" => {
-        let inner = style_pushed_into_layout(&args[0], &args[1..])
-          .unwrap_or_else(|| args[0].clone());
-        return nested_layout_svg(&inner);
+        if let Some(inner) = style_pushed_into_layout(&args[0], &args[1..]) {
+          return nested_layout_svg(&inner);
+        }
+        // Not a Row/Column/Grid/TextGrid to push the style into — a
+        // picture wrapped in its own `Style[…]` (e.g. `Style[TableForm[…],
+        // 18]`) still needs the style honored, which `expr_to_svg` already
+        // does for a styled `TableForm`/`MatrixForm`, so run the same
+        // generic check the `_` arm below runs, on the whole `Style[…]`
+        // expression, rather than discarding it and recursing on the
+        // unstyled content.
+        if crate::evaluator::lays_out_a_graphic(expr) {
+          let svg = crate::evaluator::expr_to_svg(expr);
+          if svg.starts_with("<svg") {
+            return Some(svg);
+          }
+        }
       }
       // A display wrapper that resolves to a picture (`Labeled[…]`,
       // `LocatorPane[…]`, `Dynamic[…]`) is drawn through the export path,
