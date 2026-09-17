@@ -630,11 +630,24 @@ fn extract_typeset_box(s: &str) -> Option<String> {
       // First positional element is a list `{number, displayed_unit, unit_name, unit_id_string}`.
       if parts.len() >= 4 {
         let number = extract_cell_content(parts[0].trim());
+        let unit_arg = parts[3].trim();
+        // A compound unit (e.g. `Newtons Meters^2 / Kilograms^2`) is encoded
+        // as nested typeset boxes (`FractionBox`, `RowBox`, `SuperscriptBox`,
+        // …) rather than a single string literal — recognisable by the
+        // presence of a box head's `[`. Recursing through the general
+        // box-to-InputForm converter rebuilds it as a proper string-arithmetic
+        // unit expression (`"Newtons" ("Meters"^2/"Kilograms"^2)`); treating
+        // it as a bare string (the simple-unit path below) would instead
+        // stringify the box source itself.
+        if unit_arg.contains('[') {
+          let unit_expr = extract_cell_content(unit_arg);
+          return Some(format!("Quantity[{number}, {unit_expr}]"));
+        }
         // Element 4 is the canonical unit name string. It's written as
         // `"\"USDollars\""` in the box expression (an *inner* string literal),
         // so we strip every layer of surrounding quotes/backslashes to get
         // the bare name, then re-wrap in a single pair of quotes.
-        let mut unit_name = parts[3].trim().to_string();
+        let mut unit_name = unit_arg.to_string();
         while unit_name.len() >= 2
           && unit_name.starts_with('"')
           && unit_name.ends_with('"')
@@ -4783,6 +4796,21 @@ Cell["Chapter 2", "Chapter"]
     // these back to `Quantity[5000, "USDollars"]` so the cell stays evaluable.
     let s = r#"BoxData[TemplateBox[{"5000", RowBox[{FormBox["\"$\"", TraditionalForm], "\[VeryThinSpace]"}], "US dollars", "\"USDollars\""}, "QuantityPrefix"]]"#;
     assert_eq!(extract_cell_content(s), "Quantity[5000, \"USDollars\"]");
+  }
+
+  #[test]
+  fn test_extract_cell_content_template_box_compound_quantity() {
+    // A compound unit (e.g. `Quantity[9.8, "Meters"/"Seconds"^2]`) is
+    // typeset with the unit slot holding real boxes (`FractionBox`,
+    // `SuperscriptBox`) instead of a single string literal like the simple
+    // `"USDollars"` case above. Regression test for a bug where the boxes
+    // were stringified verbatim (`Quantity[9.8, "FractionBox[...]"]`)
+    // instead of being recursively converted back to InputForm text.
+    let s = r#"BoxData[TemplateBox[{"9.8", RowBox[{"\"m\"", "/", SuperscriptBox["\"s\"", "2"]}], "meters per second squared", FractionBox["\"Meters\"", SuperscriptBox["\"Seconds\"", "2"]]}, "Quantity"]]"#;
+    assert_eq!(
+      extract_cell_content(s),
+      "Quantity[9.8, (\"Meters\")/((\"Seconds\")^(2))]"
+    );
   }
 
   #[test]
