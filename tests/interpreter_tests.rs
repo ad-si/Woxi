@@ -3424,6 +3424,62 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_long_plus_times_chains_do_not_exceed_recursion_limit() {
+    // `w1*w2*...*wN` (e.g. a word-list literal like
+    // `besedeA = ability*abraham*...*zurich` from a real Wolfram
+    // Demonstration notebook) parses as an O(N)-deep nested `BinaryOp`
+    // chain. Evaluating it used to recurse once per term through
+    // `evaluate_expr_to_expr` (descending into the nested left/right
+    // operands), burning one `$RecursionLimit` slot per term and
+    // terminating the whole evaluation past ~1024 terms with
+    // `TerminatedEvaluation[RecursionLimit]` — even though `Times`/`Plus`
+    // are `Flat` and Wolfram evaluates a chain of any length without
+    // spending recursion budget on it. The same bug hit `Plus`/`Minus` and
+    // `Times`/`Divide` chains alike. Found via a real Wolfram
+    // Demonstration notebook while testing Woxi Studio's notebook support.
+    clear_state();
+    let n: i64 = 1500;
+
+    let times_chain = vec!["2"; n as usize].join("*");
+    assert_eq!(
+      interpret(&times_chain).unwrap(),
+      interpret(&format!("2^{n}")).unwrap(),
+    );
+
+    let plus_chain =
+      (1..=n).map(|i| i.to_string()).collect::<Vec<_>>().join("+");
+    assert_eq!(
+      interpret(&plus_chain).unwrap(),
+      (n * (n + 1) / 2).to_string()
+    );
+
+    // Alternating `+`/`-` of 1..n: simulate the same left-to-right fold in
+    // Rust to get the expected value, rather than a hand-derived formula.
+    let mut mixed = String::from("0");
+    let mut expected: i64 = 0;
+    for i in 1..=n {
+      if i % 2 == 1 {
+        mixed.push('+');
+        expected += i;
+      } else {
+        mixed.push('-');
+        expected -= i;
+      }
+      mixed.push_str(&i.to_string());
+    }
+    assert_eq!(interpret(&mixed).unwrap(), expected.to_string());
+
+    // A long `Divide` chain: `2/2/2/.../2` (n terms) == `2^(2-n)`.
+    let divide_chain = vec!["2"; n as usize].join("/");
+    assert_eq!(
+      interpret(&divide_chain).unwrap(),
+      interpret(&format!("2^(2-{n})")).unwrap(),
+    );
+
+    clear_state();
+  }
+
+  #[test]
   fn condition_binds_tighter_than_rule() {
     // Wolfram gives Condition precedence 130 and Rule/RuleDelayed 120, so a
     // guard written left of the arrow belongs to the *pattern*:
