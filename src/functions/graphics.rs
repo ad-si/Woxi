@@ -17881,10 +17881,23 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   });
 
+  // Every control variable this Manipulate declares, so a bound that names
+  // one of them (`{{triangle, 1}, 1, Length[Subsets[CirclePoints[nPolygon],
+  // {3}]], 1}`) can be told apart from one that merely mentions some
+  // ordinary global — see `process_manipulate_var_spec`.
+  let sibling_names: Vec<String> = args
+    .iter()
+    .skip(1)
+    .filter_map(|spec| match spec {
+      Expr::List(items) if !items.is_empty() => manipulate_spec_var_name(items),
+      _ => None,
+    })
+    .collect();
+
   for spec in args.iter().skip(1) {
     match spec {
       Expr::List(items) if !items.is_empty() => {
-        out_args.push(process_manipulate_var_spec(items));
+        out_args.push(process_manipulate_var_spec(items, &sibling_names));
       }
       Expr::List(_) => {
         // Empty list — echo as-is.
@@ -18039,7 +18052,21 @@ fn expr_is_symbolic(expr: &Expr) -> bool {
 /// (variable symbol or `{u, uinit, ulbl}`) intact. A 2-item spec
 /// `{var, range}` whose range is still symbolic is wrapped in `Dynamic[…]`
 /// to match wolframscript's echoed form.
-fn process_manipulate_var_spec(items: &[Expr]) -> Expr {
+/// The variable name a Manipulate spec list declares — `{u, ...}` or
+/// `{{u, ...}, ...}` — or `None` for something that isn't a variable spec
+/// (an option, an annotation row, ...).
+fn manipulate_spec_var_name(items: &[Expr]) -> Option<String> {
+  match &items[0] {
+    Expr::Identifier(name) => Some(name.clone()),
+    Expr::List(head) => match head.first()? {
+      Expr::Identifier(name) => Some(name.clone()),
+      _ => None,
+    },
+    _ => None,
+  }
+}
+
+fn process_manipulate_var_spec(items: &[Expr], siblings: &[String]) -> Expr {
   // Preserve the head as-is; evaluate any trailing bounds/step/values.
   let mut new_items: Vec<Expr> = Vec::with_capacity(items.len());
   new_items.push(items[0].clone());
@@ -18052,6 +18079,22 @@ fn process_manipulate_var_spec(items: &[Expr]) -> Expr {
     // `parse_manipulate_control` re-resolves on every frame.
     if let Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } = item
       && matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Enabled" || s == "TrackingFunction")
+    {
+      new_items.push(item.clone());
+      continue;
+    }
+    // A bound that names another control's variable (`{{triangle, 1}, 1,
+    // Length[Subsets[CirclePoints[nPolygon], {3}]], 1}`, "triangle"'s max
+    // bounded by "nPolygon") must also stay held: with nPolygon unbound
+    // here, evaluating the bound doesn't fail (Part/Length/etc. on an
+    // unevaluated CirclePoints[nPolygon] silently return some other
+    // concrete number, e.g. 0) — it just gets the WRONG number, baking a
+    // bogus literal into the echoed Manipulate form instead of leaving the
+    // reference for the frontend to re-resolve once nPolygon is bound (see
+    // `parse_manipulate_control`'s dynamic_bounds handling).
+    if siblings
+      .iter()
+      .any(|s| crate::functions::plot::expr_mentions_var(item, s))
     {
       new_items.push(item.clone());
       continue;
@@ -18136,7 +18179,7 @@ pub fn control_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(first) = args.first() {
     match first {
       Expr::List(items) if !items.is_empty() => {
-        out_args.push(process_manipulate_var_spec(items));
+        out_args.push(process_manipulate_var_spec(items, &[]));
       }
       other => out_args.push(other.clone()),
     }

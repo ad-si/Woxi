@@ -8487,6 +8487,54 @@ mod tests {
   }
 
   #[test]
+  fn manipulate_bare_sibling_bound_resolves_without_dynamic_wrapper() {
+    // A combinatorics-style Demonstration pattern (independently written,
+    // not copied from any specific one): a control's upper bound counts
+    // some combination of another control's value, written as a bare
+    // expression rather than `Dynamic[…]` — `{{pick, 1, "pick"}, 1,
+    // Length[Subsets[Range[n], {2}]], 1}`. With `n` unbound, evaluating
+    // that bound doesn't fail — `Subsets` on the unevaluated `Range[n]`
+    // treats it as a single-element set and returns `{}`, so `Length`
+    // silently comes back `0` — so the Manipulate's own held-echo pass
+    // (`process_manipulate_var_spec`) must recognize the bound still names
+    // a sibling control and leave it alone rather than baking in that wrong
+    // literal, exactly like a `Dynamic[…]`-wrapped bound already does.
+    let code = r#"Manipulate[pick,
+      {{n, 4, "count"}, 3, 8, 1},
+      {{pick, 1, "pick"}, 1, Length[Subsets[Range[n], {2}]], 1}]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let mut state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("two sliders should build a ManipulateState");
+
+    let bounds = |s: &manipulate::ManipulateState| match &s.controls[1] {
+      manipulate::ControlState::Continuous { min, max, .. } => (*min, *max),
+      other => panic!("pick should be a slider: {other:?}"),
+    };
+    // n starts at 4: C(4, 2) = 6 pairs.
+    assert_eq!(
+      bounds(&state),
+      (1.0, 6.0),
+      "the bare sibling-referencing bound must resolve against n's initial \
+       value, not silently collapse to 0..1"
+    );
+
+    // Raise n to 6: C(6, 2) = 15, and the bound must follow it live.
+    if let manipulate::ControlState::Continuous { current, .. } =
+      &mut state.controls[0]
+    {
+      *current = 6.0;
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert_eq!(
+      bounds(&state),
+      (1.0, 15.0),
+      "the bare sibling bound must track n after it changes"
+    );
+  }
+
+  #[test]
   fn trigger_dynamic_max_bound_resolves_and_follows_another_control() {
     // A projectile/shooting-range style Demonstration (independently
     // written, not copied from any specific one): a Trigger sweeps a

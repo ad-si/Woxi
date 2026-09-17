@@ -751,6 +751,32 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_manipulate_bare_sibling_bound_stays_symbolic_in_echo() {
+    // A combinatorics-style Demonstration pattern (independently written,
+    // not copied from any specific one): a control's bound is a bare
+    // expression (no `Dynamic[…]` wrapper) counting some combination of
+    // another control's value — `Length[Subsets[Range[n], {2}]]` bounding
+    // `pick` by how many pairs `Range[n]` has. Manipulate's held-echo pass
+    // speculatively evaluates each bound to fold constants (`2 Pi` ->
+    // `6.28...`), but with `n` unbound that speculative evaluation doesn't
+    // fail — `Subsets` on the unevaluated `Range[n]` silently returns `{}`,
+    // so `Length` comes back `0` — and previously got baked into the
+    // echoed `Manipulate[…]` as a wrong literal `0` instead of being left
+    // symbolic for Woxi Studio's widget builder to resolve against `n`'s
+    // live value (see `process_manipulate_var_spec` in
+    // `src/functions/graphics.rs`).
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"Manipulate[pick, {{n, 4, "count"}, 3, 8, 1}, {{pick, 1, "pick"}, 1, Length[Subsets[Range[n], {2}]], 1}]"#
+      )
+      .unwrap(),
+      "Manipulate[pick, {{n, 4, count}, 3, 8, 1}, {{pick, 1, pick}, 1, \
+       Length[Subsets[Range[n], {2}]], 1}]"
+    );
+  }
+
+  #[test]
   fn test_expression_then_comment() {
     // Expression followed by comment should evaluate the expression
     clear_state();
