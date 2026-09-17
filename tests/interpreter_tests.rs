@@ -2630,6 +2630,56 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_axes_label_none_suppresses_that_axis_label() {
+    // `AxesLabel -> {label, None}` (or `{None, label}`) must omit the axis
+    // whose entry is the bare symbol `None`, not print the literal text
+    // "None" — it used to leak through because `expr_to_label` returned
+    // `Some("None".to_string())` for any identifier, including `None`.
+    clear_state();
+    let y_none = interpret(
+      "ExportString[Plot[Sin[x], {x, 0, 2 Pi}, \
+         AxesLabel -> {\"t\", None}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      !y_none.contains(">None<"),
+      "AxesLabel -> {{\"t\", None}} must not render the text None: {y_none}"
+    );
+    assert!(
+      y_none.contains(">t<"),
+      "AxesLabel -> {{\"t\", None}} must still render the x label: {y_none}"
+    );
+
+    clear_state();
+    let x_none = interpret(
+      "ExportString[Plot[Sin[x], {x, 0, 2 Pi}, \
+         AxesLabel -> {None, \"y\"}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      !x_none.contains(">None<"),
+      "AxesLabel -> {{None, \"y\"}} must not render the text None: {x_none}"
+    );
+    assert!(
+      x_none.contains(">y<"),
+      "AxesLabel -> {{None, \"y\"}} must still render the y label: {x_none}"
+    );
+
+    // The same option reaches a Plot wrapped in Show, as in the widget's
+    // `AxesLabel -> {Style["t", Italic], None}` from the source Demonstration.
+    clear_state();
+    let via_show = interpret(
+      "ExportString[Show[Plot[Sin[x], {x, 0, 2 Pi}], \
+         AxesLabel -> {Style[\"t\", Italic], None}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      !via_show.contains(">None<"),
+      "AxesLabel -> {{.., None}} applied via Show must not render None: {via_show}"
+    );
+  }
+
+  #[test]
   fn test_audio_missing_file_still_renders_player_chrome() {
     // A file-backed Audio whose file cannot be read (missing here; any local
     // path in the browser playground) still renders the player chrome: the

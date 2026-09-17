@@ -496,6 +496,11 @@ impl ChartLabel {
 pub(crate) fn expr_to_label(e: &Expr) -> Option<String> {
   match e {
     Expr::String(s) => Some(s.clone()),
+    // The bare symbol `None` always means "no label" for a label option
+    // (`AxesLabel`, `FrameLabel`, `ChartLabels`, `PlotLegends`, …) — never
+    // the literal text "None". A quoted `"None"` still goes through the
+    // `Expr::String` arm above and prints as-is.
+    Expr::Identifier(s) if s == "None" => None,
     Expr::Identifier(s) => Some(s.clone()),
     Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_) => {
       Some(expr_to_string(e))
@@ -3964,6 +3969,18 @@ mod tests {
       (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
       (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
     )
+  }
+
+  #[test]
+  fn expr_to_label_treats_bare_none_as_no_label() {
+    // The bare symbol `None` in a label option (`AxesLabel -> {"t", None}`)
+    // must suppress the label, not print the literal text "None".
+    assert_eq!(expr_to_label(&Expr::Identifier("None".to_string())), None);
+    // A quoted string "None" is a real label and must still print as-is.
+    assert_eq!(
+      expr_to_label(&Expr::String("None".to_string())),
+      Some("None".to_string())
+    );
   }
 
   #[test]
