@@ -14809,6 +14809,19 @@ pub fn combine_graphics_svgs(rows: &[Vec<String>]) -> Option<String> {
   combine_svgs_grid(rows, &default_layout_options())
 }
 
+/// Like [`combine_graphics_svgs`] but honoring a `Grid`'s own option
+/// arguments (`Frame`, `Spacings`, `ImageSize`) — the same options
+/// `GraphicsGrid` already respects — instead of always laying the cells
+/// out with the bare defaults. Used for a `Grid` that holds a picture
+/// somewhere, whose `Frame -> All` would otherwise be silently dropped by
+/// the generic per-cell composition.
+pub fn combine_graphics_svgs_with_options(
+  rows: &[Vec<String>],
+  option_args: &[Expr],
+) -> Option<String> {
+  combine_svgs_grid(rows, &parse_layout_options(option_args))
+}
+
 /// Render a 1-D list of SVGs as `{ svg₁, svg₂, … }` with brace/comma text
 /// interleaved between the nested graphic cells.
 ///
