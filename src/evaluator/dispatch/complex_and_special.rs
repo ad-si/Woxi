@@ -10584,12 +10584,10 @@ fn boolean_region_area(combiner: &Expr, operands: &Expr) -> Option<f64> {
 /// since `Expr` has no structural equality.
 fn is_and_combiner(combiner: &Expr) -> bool {
   static AND_COMBINER: &str = "#1 && #2 &";
-  crate::syntax::string_to_expr(AND_COMBINER)
-    .map(|and_expr| {
-      crate::syntax::expr_to_string(combiner)
-        == crate::syntax::expr_to_string(&and_expr)
-    })
-    .unwrap_or(false)
+  crate::syntax::string_to_expr(AND_COMBINER).is_ok_and(|and_expr| {
+    crate::syntax::expr_to_string(combiner)
+      == crate::syntax::expr_to_string(&and_expr)
+  })
 }
 
 /// The axis-aligned bounds of a 3-D `Cube[center, edge]` or
