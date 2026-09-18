@@ -9516,6 +9516,42 @@ fn unit_fraction_root_index(exp: &Expr) -> Option<i128> {
   (num == 1 && (2..=9).contains(&den)).then_some(den)
 }
 
+/// The positive exponent to raise a base to in the denominator of a
+/// reciprocal fraction, when `exp` is a negative number — `x^-1` and `x^-2`
+/// are the *same* internal `Power` shape as `1/x` and `1/x^2` (Wolfram never
+/// distinguishes a literal negative exponent from a reciprocal), so both
+/// typeset as a fraction, never as a superscripted negative number.
+fn negative_exponent_abs(exp: &Expr) -> Option<Expr> {
+  match exp {
+    Expr::Integer(n) if *n < 0 => Some(Expr::Integer(-n)),
+    Expr::BigInteger(n) if n.sign() == num_bigint::Sign::Minus => {
+      Some(Expr::BigInteger(-n.clone()))
+    }
+    Expr::Real(f) if *f < 0.0 => Some(Expr::Real(-f)),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      match (&args[0], &args[1]) {
+        (Expr::Integer(n), Expr::Integer(d)) if *n < 0 && *d > 0 => Some(
+          unevaluated("Rational", &[Expr::Integer(-n), Expr::Integer(*d)]),
+        ),
+        _ => None,
+      }
+    }
+    _ => None,
+  }
+}
+
+/// `base` raised to the (already-positive) `exp` — `exp == 1` collapses to
+/// just `base`, matching how Wolfram drops a bare `^1`.
+fn pow_or_base(base: &Expr, exp: Expr) -> Expr {
+  if matches!(&exp, Expr::Integer(1)) {
+    base.clone()
+  } else {
+    unevaluated("Power", &[base.clone(), exp])
+  }
+}
+
 /// The markup for `-term` when a `Plus` term carries a negative *coefficient*
 /// other than -1 (`Times[-5, x]`), so the sum reads `-5 - 5 x` rather than
 /// `-5 + -5 x`. The -1 case is handled by the caller, which drops the
@@ -9620,6 +9656,26 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
         "<tspan baseline-shift=\"super\" font-size=\"70%\">{index}</tspan>\u{221A}<tspan text-decoration=\"overline\">{content}</tspan>"
       )
     };
+  }
+
+  // A negative power is a reciprocal fraction, not a superscripted negative
+  // number: `x^-1` → `1/x`, `x^-2` → `1/x^2`.
+  if let Some((base, exp)) = as_power(expr)
+    && let Some(abs_exp) = negative_exponent_abs(exp)
+  {
+    let denom = pow_or_base(base, abs_exp);
+    let denom_markup = expr_to_svg_markup(&denom);
+    let denom_fmt = if is_additive_expr(&denom) {
+      format!("({denom_markup})")
+    } else {
+      denom_markup
+    };
+    return stacked_fraction_svg(
+      "1",
+      &denom_fmt,
+      1.0,
+      estimate_display_width(&denom),
+    );
   }
 
   // Power → superscript (handles both BinaryOp and FunctionCall forms)
@@ -9883,6 +9939,64 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
               &den_markup,
               num_w,
               den_w,
+            );
+          }
+          // Times[…, base^-k, …] → a fraction: every reciprocal factor
+          // (a negative-exponent `Power`) moves to the denominator, and
+          // whatever is left (default `1`) is the numerator — `a*b^-1` is
+          // `a/b`, not `a b^-1`, and `a^-1*b^-1` is `1/(a b)`.
+          let mut num_factors: Vec<Expr> = Vec::new();
+          let mut den_factors: Vec<Expr> = Vec::new();
+          for a in args {
+            if let Some((base, exp)) = as_power(a)
+              && let Some(abs_exp) = negative_exponent_abs(exp)
+            {
+              den_factors.push(pow_or_base(base, abs_exp));
+            } else {
+              num_factors.push(a.clone());
+            }
+          }
+          if !den_factors.is_empty() {
+            // A leading `-1` numerator factor becomes a sign on the whole
+            // fraction rather than a literal `-1` multiplied into it.
+            let negate = matches!(num_factors.first(), Some(Expr::Integer(-1)))
+              && !num_factors.is_empty();
+            if negate {
+              num_factors.remove(0);
+            }
+            // A denominator combining several factors needs parens around
+            // them once flattened after the `/` — `a/(b c)`, never the
+            // ambiguous `a/b c` (misreadable as `(a/b) c`). A numerator
+            // reads fine unparenthesized either way (`a b/c` is `(a b)/c`
+            // unambiguously), so only its own additive terms get parens.
+            let to_markup = |factors: &[Expr], force_paren_multi: bool| -> String {
+              match factors.len() {
+                0 => "1".to_string(),
+                1 => {
+                  let s = expr_to_svg_markup(&factors[0]);
+                  if is_additive_expr(&factors[0]) {
+                    format!("({s})")
+                  } else {
+                    s
+                  }
+                }
+                _ => {
+                  let combined = unevaluated("Times", factors);
+                  let s = expr_to_svg_markup(&combined);
+                  if force_paren_multi {
+                    format!("({s})")
+                  } else {
+                    s
+                  }
+                }
+              }
+            };
+            let num_markup = to_markup(&num_factors, false);
+            let den_markup = to_markup(&den_factors, true);
+            let sign = if negate { "-" } else { "" };
+            return format!(
+              "{sign}{}",
+              stacked_fraction_svg(&num_markup, &den_markup, 0.0, 0.0)
             );
           }
           // Times[-1, x, ...] → -x...

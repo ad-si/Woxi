@@ -1383,6 +1383,56 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_manipulate_row_style_symbolic_divide_svg_renders_as_fraction() {
+    // Regression (Wolfram Demonstrations Project "Diagrammatic
+    // Representations of Scientific Formulas"): a `Manipulate`'s
+    // `PlotLabel -> Column[{..., Style[Row[{..., v/r, ...}], size]}]` idiom
+    // evaluates the division symbolically to `Times[v, Power[r, -1]]`
+    // (`FullForm` of `v/r`). The `Row`/`Style` SVG writer
+    // (`expr_to_svg_markup`, distinct from bare `Text[...]`'s writer) typeset
+    // a negative `Power` exponent as a literal superscripted `-1` — "R^-1 V"
+    // — instead of the fraction "V/R" every other engine and Woxi's own
+    // `Text[...]` renderer show.
+    clear_state();
+    let r = interpret_with_stdout(
+      "Graphics[{Circle[]}, PlotLabel -> Row[{Style[\"I\", Italic], \" = \", \
+       Style[\"V\", Italic]/Style[\"R\", Italic]}]]",
+    )
+    .unwrap();
+    let svg = r.graphics.expect("expected Graphics SVG output");
+    assert!(
+      !svg.contains("super"),
+      "PlotLabel SVG must not typeset the reciprocal as a superscripted \
+       negative exponent:\n{svg}"
+    );
+    assert!(
+      svg.contains(
+        "<tspan font-style=\"italic\">V</tspan>/<tspan font-style=\"italic\">R</tspan>"
+      ),
+      "PlotLabel SVG must render the symbolic division as the fraction \
+       \"V/R\":\n{svg}"
+    );
+  }
+
+  #[test]
+  fn test_manipulate_row_style_symbolic_reciprocal_product_svg() {
+    // Same renderer, a product of two reciprocals (`Times[a, Power[b, -1],
+    // Power[c, -1]]`, i.e. `a/(b c)`): every reciprocal factor must move
+    // into a single combined, parenthesized denominator — `a/(b c)`, not
+    // the ambiguous `a/b c` (misreadable as `(a/b) c`) or a superscripted
+    // negative exponent on each factor.
+    clear_state();
+    let r = interpret_with_stdout("Graphics[{Circle[]}, PlotLabel -> a/(b c)]")
+      .unwrap();
+    let svg = r.graphics.expect("expected Graphics SVG output");
+    assert!(
+      svg.contains(">a/(b c)<"),
+      "PlotLabel SVG must render a/(b c) as a single fraction with a \
+       parenthesized denominator:\n{svg}"
+    );
+  }
+
+  #[test]
   fn test_scientific_real_output_svg_uses_superscript() {
     // Regression: a machine Real in scientific notation (`10.^10` → `1.*^10`)
     // must be typeset as `1. × 10^10` in the Playground/Studio SVG — a `×`

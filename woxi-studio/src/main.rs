@@ -20319,7 +20319,14 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 1}, DynamicBox[\[Ellipsis]]]"
         assert_eq!(values.as_slice(), ["1", "2", "3", "4", "5", "6", "7"]);
         assert_eq!(*current_index, 0);
         assert!(!popup, "ControlType -> Setter must not force a dropdown");
-        assert!(!setter_bar, "an unforced Setter is not a SetterBar");
+        // The bare "Setter" spelling forces the same full button row as
+        // "SetterBar" (see `setter_control_type_forces_the_bar_regardless_of_choice_count`,
+        // fixed in #846) — it does not fall through to the automatic
+        // SetterBar/PopupMenu heuristic.
+        assert!(
+          setter_bar,
+          "ControlType -> Setter must force the button row"
+        );
       }
       other => panic!("expected a single Setter control, got {other:?}"),
     }
