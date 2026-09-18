@@ -751,6 +751,46 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_formal_symbol_private_use_glyph_parses_as_identifier() {
+    // `\[FormalX]`, `\[FormalCapitalX]`, `\[FormalAlpha]` and
+    // `\[FormalScriptX]` are private-use code points (like Wolfram's script
+    // alphabet), but a saved notebook cell stores the bare glyph rather than
+    // the `\[Name]` escape text. Before this was recognized as a letter, the
+    // parser silently swallowed the glyph as if it were skippable
+    // whitespace, so `f[\[FormalX]]` parsed as the nonsensical `f[]` and
+    // later broke the rest of the statement.
+    let formal_x = '\u{F817}'; // \[FormalX]
+    let formal_y = '\u{F818}'; // \[FormalY]
+    clear_state();
+    assert_eq!(interpret(&format!("Head[{formal_x}]")).unwrap(), "Symbol");
+    assert_eq!(
+      interpret(&format!("UnsameQ[{formal_x}, {formal_y}]")).unwrap(),
+      "True"
+    );
+    // As a list element, not just a bare argument.
+    assert_eq!(
+      interpret(&format!("Head /@ {{{formal_x}, {formal_y}}}")).unwrap(),
+      "{Symbol, Symbol}"
+    );
+    // The escaped and raw-glyph spellings must name the same symbol.
+    assert_eq!(
+      interpret(&format!("{formal_x} === \\[FormalX]")).unwrap(),
+      "True"
+    );
+    // Multi-statement code that keeps using the glyph after its first
+    // occurrence must not regress into a parse error either (the shape that
+    // triggered this in a real Demonstration notebook).
+    clear_state();
+    assert_eq!(
+      interpret(&format!(
+        "f[{formal_x}_] := {{{formal_x}, {formal_x}}};\nf[1]"
+      ))
+      .unwrap(),
+      "{1, 1}"
+    );
+  }
+
+  #[test]
   fn test_expression_then_comment() {
     // Expression followed by comment should evaluate the expression
     clear_state();

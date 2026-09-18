@@ -526,13 +526,18 @@ fn named_char_to_expr(s: &str) -> Expr {
 
 /// Can this character spell a symbol on its own? Unicode letters can, and so
 /// can the letters of Wolfram's own script alphabet, which live in the
-/// private use area and are therefore not `Alphabetic`.
+/// private use area and are therefore not `Alphabetic`. So can the
+/// `\[FormalX]` family (plain and script variants of the formal-variable
+/// alphabet used by `Reduce`, `Solve`, etc.), which lives in the private use
+/// area the same way. Mirrors `PrivateUseLetter` in wolfram.pest.
 fn is_symbol_letter(c: char) -> bool {
   c.is_alphabetic()
     || ('\u{F6B2}'..='\u{F6CB}').contains(&c)
     || ('\u{F770}'..='\u{F789}').contains(&c)
     || ('\u{F6E6}'..='\u{F6FF}').contains(&c)
     || ('\u{F7A4}'..='\u{F7BD}').contains(&c)
+    || ('\u{F800}'..='\u{F88A}').contains(&c)
+    || ('\u{FA000}'..='\u{FA033}').contains(&c)
     || is_letterlike_symbol_char(c)
 }
 
