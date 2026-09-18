@@ -4618,6 +4618,55 @@ mod plot3d {
       );
     }
 
+    /// `Rotate[Cuboid[...], angle, axis]` used to rotate just the box's two
+    /// corners and re-derive a new axis-aligned box from them — an
+    /// approximation that, for a box thin in two dimensions and long in
+    /// the third, erases the tilt outright at any angle that is not a
+    /// multiple of 90 degrees (at those special angles an axis-aligned box
+    /// rotates to another axis-aligned box, so the approximation happens
+    /// to still be exact — the bug only shows at a generic angle).
+    /// Regression: the "Forces Acting on a Ladder" Demonstration's ladder,
+    /// a `Cuboid` rotated to the ladder's angle, rendered as an upright
+    /// slab with no visible tilt.
+    #[test]
+    fn graphics3d_rotated_cuboid_lies_over() {
+      let pole = "Cuboid[{-0.05, -0.05, -2}, {0.05, 0.05, 2}]";
+      let scene = |body: &str| {
+        format!(
+          "Graphics3D[{body}, Boxed -> False, ViewPoint -> {{0, 0, 10}}, \
+           PlotRange -> {{{{-3, 3}}, {{-3, 3}}, {{-3, 3}}}}]"
+        )
+      };
+      // Looking straight down, a pole standing along z is a tiny dot...
+      let upright = export_svg(&scene(pole));
+      // ...but tipped about the x axis by a generic angle, it lies partway
+      // over into the x-y plane, reaching much further along y.
+      let tipped =
+        export_svg(&scene(&format!("Rotate[{pole}, 1., {{1,0,0}}]")));
+      let y_extent = |svg: &str| -> f64 {
+        let mut min = f64::INFINITY;
+        let mut max = f64::NEG_INFINITY;
+        for cap in svg.split("<polygon points=\"").skip(1) {
+          let coords = cap.split('"').next().unwrap_or("");
+          for pair in coords.split_whitespace() {
+            if let Some(y) = pair.split(',').nth(1)
+              && let Ok(y) = y.parse::<f64>()
+            {
+              min = min.min(y);
+              max = max.max(y);
+            }
+          }
+        }
+        max - min
+      };
+      let (up, tip) = (y_extent(&upright), y_extent(&tipped));
+      assert!(
+        tip > 3.0 * up,
+        "a rotated Cuboid must lie over, not stay an upright \
+         approximation: upright extent {up} vs tipped extent {tip}"
+      );
+    }
+
     /// `Polygon[outer -> holes]` cuts the hole boundaries out of the face.
     /// The square annulus below tessellates into eight triangles (two per
     /// side of the ring) instead of the two a solid square would give, and
