@@ -2586,9 +2586,10 @@ fn inject_epilog(
 
 /// Draw a `Prolog`'s primitives under a finished plot — the mirror of
 /// [`inject_epilog`]: same primitive-to-SVG rendering and the same `area`/
-/// `ranges`/`scale` meaning, but spliced in right after the opening `<svg
-/// …>` tag instead of before `</svg>`, so later-painted content (axes, the
-/// curve itself, any epilog) draws on top of it rather than the reverse.
+/// `ranges`/`scale` meaning, but spliced in right after the plot's own
+/// background rect instead of before `</svg>`, so later-painted content
+/// (axes, the curve itself, any epilog) draws on top of it rather than the
+/// reverse.
 fn inject_prolog(
   buf: &mut String,
   opts: &PlotOptions,
@@ -2617,11 +2618,30 @@ fn inject_prolog(
     &area,
     "prolog",
   );
-  if let Some(tag_start) = buf.find("<svg")
-    && let Some(tag_end) = buf[tag_start..].find('>')
-  {
-    buf.insert_str(tag_start + tag_end + 1, &prolog_svg);
-  }
+  // `root.fill(&bg_color)` (plotters) draws an opaque rect spanning the
+  // whole canvas as the very first thing after the opening `<svg …>` tag
+  // (and any embedded `<defs>` for fonts, which never paints anything
+  // itself). Splicing prolog in right after `<svg …>` would place it
+  // *before* that rect in document order, so the rect — opaque, painted
+  // later — would cover it entirely. Insert after the background rect's
+  // `/>` instead, so prolog paints on the blank canvas but still under
+  // the axes and curve that follow.
+  let Some(tag_start) = buf.find("<svg") else {
+    return;
+  };
+  let Some(tag_end) = buf[tag_start..].find('>') else {
+    return;
+  };
+  let after_svg_tag = tag_start + tag_end + 1;
+  let after_defs = match buf[after_svg_tag..].find("</defs>") {
+    Some(p) => after_svg_tag + p + "</defs>".len(),
+    None => after_svg_tag,
+  };
+  let insert_at = match buf[after_defs..].find("/>") {
+    Some(p) => after_defs + p + 2,
+    None => after_defs,
+  };
+  buf.insert_str(insert_at, &prolog_svg);
 }
 
 fn generate_svg_with_options(
