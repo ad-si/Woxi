@@ -22886,14 +22886,18 @@ fn parse_manipulate_control(
           label,
           label_runs,
           popup: control_type.as_deref() == Some("PopupMenu"),
-          // `SetterBar` and `RadioButtonBar` both always draw the full row
+          // Per the `ControlType` reference page, "Setter or SetterBar" and
+          // "RadioButton or RadioButtonBar" are each documented as
+          // interchangeable settings — the singular form is not a distinct
+          // per-choice widget, just an alias some Demonstrations use
+          // instead of the "Bar" form. All four always draw the full row
           // of buttons (a row of highlighted setters, or of radio dots)
           // regardless of choice count — unlike a spec that stays silent,
           // which the automatic SetterBar/PopupMenu split
           // (`renders_as_setter_bar`, in woxi-studio) only applies to.
           setter_bar: matches!(
             control_type.as_deref(),
-            Some("SetterBar" | "RadioButtonBar")
+            Some("Setter" | "SetterBar" | "RadioButton" | "RadioButtonBar")
           ),
           slider: matches!(
             control_type.as_deref(),
