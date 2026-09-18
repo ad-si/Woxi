@@ -2116,6 +2116,163 @@ fn clip_plane_to_box(
   Some(poly)
 }
 
+/// The convex polygon a plane through `point` with the given `normal` cuts
+/// out of the axis-aligned box `bounds`. Used by `Area[RegionIntersection[
+/// Cube[…]/Cuboid[…], ImplicitRegion[…]]]`, where the `ImplicitRegion` is a
+/// single linear equation (a plane) — Wolfram leaves that intersection as an
+/// unevaluated `BooleanRegion`, so its `Area` is computed geometrically
+/// instead of symbolically. Builds an arbitrary in-plane basis (`u`, `w`)
+/// from `normal` and delegates to [`clip_plane_to_box`], the same clipping
+/// [`InfinitePlane`](unbounded_3d_to_primitive) rendering uses.
+pub(crate) fn plane_polygon_in_box(
+  normal: [f64; 3],
+  point: [f64; 3],
+  bounds: [(f64, f64); 3],
+) -> Option<Vec<[f64; 3]>> {
+  if v_len(normal) < 1e-12 {
+    return None;
+  }
+  // Cross with whichever axis is least aligned with the normal, for a
+  // numerically stable in-plane basis.
+  let axis = if normal[0].abs() <= normal[1].abs()
+    && normal[0].abs() <= normal[2].abs()
+  {
+    [1.0, 0.0, 0.0]
+  } else if normal[1].abs() <= normal[2].abs() {
+    [0.0, 1.0, 0.0]
+  } else {
+    [0.0, 0.0, 1.0]
+  };
+  let u = v_cross(normal, axis);
+  let w = v_cross(normal, u);
+  // `clip_plane_to_box` returns `None` only because the plane misses the
+  // box (or clips down to a sliver) — a legitimate empty intersection, not
+  // a computation failure, now that `normal` is known non-degenerate.
+  Some(clip_plane_to_box(point, u, w, &bounds, None).unwrap_or_default())
+}
+
+/// The area of a simple planar polygon given as an ordered list of 3-D
+/// vertices, via Newell's method: summing `Vi × Vi+1` gives twice the area
+/// along the polygon's own normal direction, so its length halved is the
+/// area regardless of which way the polygon winds or which plane it lies in.
+pub(crate) fn polygon3d_area(poly: &[[f64; 3]]) -> f64 {
+  if poly.len() < 3 {
+    return 0.0;
+  }
+  let mut normal = [0.0; 3];
+  for i in 0..poly.len() {
+    let a = poly[i];
+    let b = poly[(i + 1) % poly.len()];
+    normal = v_add(normal, v_cross(a, b));
+  }
+  0.5 * v_len(normal)
+}
+
+/// The area of the intersection between a disk (`center`, `radius`) and a
+/// convex polygon, both given in the same 2-D coordinate system. Used by
+/// `Area[RegionIntersection[Ball[…], planar-region]]`: the planar region's
+/// polygon and the ball's cross-sectional disk are first projected into the
+/// plane's own 2-D basis (see callers), then this computes the disk clipped
+/// to the polygon by summing, over each polygon edge, the signed area the
+/// disk contributes to the triangle `(center, edge start, edge end)`.
+pub(crate) fn disk_convex_polygon_area(
+  center: [f64; 2],
+  radius: f64,
+  poly: &[[f64; 2]],
+) -> f64 {
+  if poly.len() < 3 || radius <= 0.0 {
+    return 0.0;
+  }
+  let mut total = 0.0;
+  for i in 0..poly.len() {
+    let a = [poly[i][0] - center[0], poly[i][1] - center[1]];
+    let b = [
+      poly[(i + 1) % poly.len()][0] - center[0],
+      poly[(i + 1) % poly.len()][1] - center[1],
+    ];
+    total += disk_triangle_signed_area(a, b, radius);
+  }
+  total.abs()
+}
+
+/// The signed area shared by the disk of `radius` centered at the origin and
+/// the triangle `(origin, a, b)`. Standard circle/polygon-clipping building
+/// block: handles both points inside the disk (plain triangle), both outside
+/// (either a miss, contributing nothing, or a chord, contributing the two
+/// circular-sector wedges either side of the chord plus the chord's own
+/// triangle), and one of each (the segment crosses the disk boundary once).
+fn disk_triangle_signed_area(a: [f64; 2], b: [f64; 2], radius: f64) -> f64 {
+  let cross = a[0] * b[1] - a[1] * b[0];
+  if cross.abs() < 1e-15 {
+    return 0.0;
+  }
+  let len = |p: [f64; 2]| (p[0] * p[0] + p[1] * p[1]).sqrt();
+  // The angle between `p` and `q` by direction alone — dividing by their own
+  // lengths rather than `radius^2` — so this also works for the far corners
+  // `a`/`b`, not just points already on the circle.
+  let sector_area = |p: [f64; 2], q: [f64; 2]| -> f64 {
+    let denom = len(p) * len(q);
+    if denom < 1e-15 {
+      return 0.0;
+    }
+    let angle = (p[0] * q[0] + p[1] * q[1]) / denom;
+    let angle = angle.clamp(-1.0, 1.0).acos();
+    let signed = if p[0] * q[1] - p[1] * q[0] < 0.0 {
+      -angle
+    } else {
+      angle
+    };
+    0.5 * radius * radius * signed
+  };
+  // The (up to two) points where the infinite line through a, b crosses the
+  // circle of `radius`, as parameters t along a + t*(b - a).
+  let circle_line_params = |a: [f64; 2], b: [f64; 2]| -> Vec<f64> {
+    let d = [b[0] - a[0], b[1] - a[1]];
+    let aa = d[0] * d[0] + d[1] * d[1];
+    let bb = 2.0 * (a[0] * d[0] + a[1] * d[1]);
+    let cc = a[0] * a[0] + a[1] * a[1] - radius * radius;
+    let disc = bb * bb - 4.0 * aa * cc;
+    if aa < 1e-15 || disc < 0.0 {
+      return Vec::new();
+    }
+    let sq = disc.sqrt();
+    vec![(-bb - sq) / (2.0 * aa), (-bb + sq) / (2.0 * aa)]
+  };
+  let da = len(a);
+  let db = len(b);
+  if da <= radius && db <= radius {
+    return 0.5 * cross;
+  }
+  if da >= radius && db >= radius {
+    let params: Vec<f64> = circle_line_params(a, b)
+      .into_iter()
+      .filter(|&t| t > 1e-12 && t < 1.0 - 1e-12)
+      .collect();
+    if params.len() < 2 {
+      // The chord (if any) falls outside the segment: the whole wedge is
+      // either entirely inside or entirely outside the disk.
+      return sector_area(a, b);
+    }
+    let (t1, t2) = (params[0].min(params[1]), params[0].max(params[1]));
+    let p1 = [a[0] + t1 * (b[0] - a[0]), a[1] + t1 * (b[1] - a[1])];
+    let p2 = [a[0] + t2 * (b[0] - a[0]), a[1] + t2 * (b[1] - a[1])];
+    return sector_area(a, p1)
+      + 0.5 * (p1[0] * p2[1] - p1[1] * p2[0])
+      + sector_area(p2, b);
+  }
+  // Exactly one endpoint inside: the segment crosses the boundary once.
+  let t = circle_line_params(a, b)
+    .into_iter()
+    .find(|&t| (0.0..=1.0).contains(&t))
+    .unwrap_or(0.0);
+  let p = [a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])];
+  if da < db {
+    0.5 * (a[0] * p[1] - a[1] * p[0]) + sector_area(p, b)
+  } else {
+    sector_area(a, p) + 0.5 * (p[0] * b[1] - p[1] * b[0])
+  }
+}
+
 /// A box the unbounded primitives can be clipped to. A scene made only of
 /// them has no bounds of its own, and one lying in a plane has an axis of
 /// no extent — neither can be cut against as it stands, so an empty axis is
@@ -10094,4 +10251,55 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let svg = with_plot_label(svg, args, svg_width, svg_height);
 
   Ok(crate::graphics3d_result_with_structure(svg, structure))
+}
+
+#[cfg(test)]
+mod area_geometry_debug_tests {
+  use super::*;
+
+  #[test]
+  fn disk_fully_inside_square() {
+    let square = vec![[-1.0, -1.0], [1.0, -1.0], [1.0, 1.0], [-1.0, 1.0]];
+    let area = disk_convex_polygon_area([0.0, 0.0], 0.5, &square);
+    assert!(
+      (area - std::f64::consts::PI * 0.25).abs() < 1e-9,
+      "got {area}"
+    );
+  }
+
+  #[test]
+  fn disk_tangent_to_square_edges() {
+    // half-height 0.5 == radius: circle touches top/bottom, full circle
+    // still counts.
+    let rect = vec![[-2.0, -0.5], [2.0, -0.5], [2.0, 0.5], [-2.0, 0.5]];
+    let area = disk_convex_polygon_area([0.0, 0.0], 0.5, &rect);
+    assert!(
+      (area - std::f64::consts::PI * 0.25).abs() < 1e-9,
+      "got {area}"
+    );
+  }
+
+  #[test]
+  fn polygon3d_area_unit_square_in_xy() {
+    let poly = vec![
+      [0.0, 0.0, 0.0],
+      [1.0, 0.0, 0.0],
+      [1.0, 1.0, 0.0],
+      [0.0, 1.0, 0.0],
+    ];
+    assert!((polygon3d_area(&poly) - 1.0).abs() < 1e-9);
+  }
+
+  #[test]
+  fn plane_polygon_in_diagonal_cube_cross_section() {
+    let normal = [1.0, 1.0, 0.0];
+    let point = [1.0, 0.0, 0.0];
+    let bounds = [(0.0, 1.0), (0.0, 1.0), (0.0, 1.0)];
+    let poly = plane_polygon_in_box(normal, point, bounds).expect("poly");
+    let area = polygon3d_area(&poly);
+    assert!(
+      (area - 2.0f64.sqrt()).abs() < 1e-9,
+      "got {area}, poly={poly:?}"
+    );
+  }
 }

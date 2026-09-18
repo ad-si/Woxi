@@ -10537,10 +10537,309 @@ fn compute_area(expr: &Expr) -> Result<Expr, InterpreterError> {
         let area = call("Times", vec![half_n, r_squared, sin_term]);
         crate::evaluator::evaluate_expr_to_expr(&area)
       }
+      // `BooleanRegion[#1 && #2 &, {a, b}]` — the form `RegionIntersection`
+      // leaves behind when it can't combine its operands concretely (e.g. a
+      // `Cube`/`Cuboid` intersected with a plane `ImplicitRegion`, or a
+      // `Ball` intersected with such a box-plane cross-section). Both shapes
+      // come up computing a crystal plane's areal density: the plane cuts a
+      // polygon out of the unit cell, and each atom's disk of influence
+      // clips to that polygon.
+      "BooleanRegion" if args.len() == 2 => {
+        if let Some(area) = boolean_region_area(&args[0], &args[1]) {
+          Ok(Expr::Real(area))
+        } else {
+          Ok(call1("Area", expr.clone()))
+        }
+      }
       _ => Ok(call1("Area", expr.clone())),
     },
     _ => Ok(call1("Area", expr.clone())),
   }
+}
+
+/// `Area` of a `BooleanRegion[combiner, {a, b}]` that is really an
+/// intersection (`#1 && #2 &`, in either operand order): a box (`Cube`/
+/// `Cuboid`) crossed with a plane, or a `Ball` crossed with such a
+/// box-plane cross-section. `None` for any other shape or combiner, so the
+/// caller falls back to leaving `Area` unevaluated.
+fn boolean_region_area(combiner: &Expr, operands: &Expr) -> Option<f64> {
+  if !is_and_combiner(combiner) {
+    return None;
+  }
+  let Expr::List(ops) = operands else {
+    return None;
+  };
+  let [a, b] = ops.as_ref() else { return None };
+
+  if let Some(poly) =
+    box_plane_polygon(a, b).or_else(|| box_plane_polygon(b, a))
+  {
+    return Some(crate::functions::plot3d::polygon3d_area(&poly));
+  }
+  ball_plane_region_area(a, b).or_else(|| ball_plane_region_area(b, a))
+}
+
+/// Whether `combiner` is the `#1 && #2 &` pure function `RegionIntersection`
+/// builds its `BooleanRegion` fallback from — compared by rendered form,
+/// since `Expr` has no structural equality.
+fn is_and_combiner(combiner: &Expr) -> bool {
+  static AND_COMBINER: &str = "#1 && #2 &";
+  crate::syntax::string_to_expr(AND_COMBINER)
+    .map(|and_expr| {
+      crate::syntax::expr_to_string(combiner)
+        == crate::syntax::expr_to_string(&and_expr)
+    })
+    .unwrap_or(false)
+}
+
+/// The axis-aligned bounds of a 3-D `Cube[center, edge]` or
+/// `Cuboid[min, max]`, evaluated numerically. `None` for any other shape,
+/// a non-3-D one, or one whose extent isn't a plain number.
+fn try_box_bounds_3d(expr: &Expr) -> Option<[(f64, f64); 3]> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  let to_f64 = |e: &Expr| -> Option<f64> {
+    crate::functions::math_ast::try_eval_to_f64(
+      &crate::evaluator::evaluate_expr_to_expr(e).ok()?,
+    )
+  };
+  match name.as_str() {
+    "Cube" => {
+      let (center, edge) = platonic_center_edge(args)?;
+      if center.len() != 3 {
+        return None;
+      }
+      let c = [
+        to_f64(&center[0])?,
+        to_f64(&center[1])?,
+        to_f64(&center[2])?,
+      ];
+      let half = to_f64(&edge)? / 2.0;
+      Some(std::array::from_fn(|i| (c[i] - half, c[i] + half)))
+    }
+    "Cuboid" => {
+      let p1: Vec<Expr> = match args.first() {
+        Some(Expr::List(c)) if c.len() == 3 => c.to_vec(),
+        None => vec![Expr::Integer(0); 3],
+        _ => return None,
+      };
+      let p2: Vec<Expr> = match args.get(1) {
+        Some(Expr::List(c)) if c.len() == 3 => c.to_vec(),
+        None => vec![Expr::Integer(1); 3],
+        _ => return None,
+      };
+      let a = [to_f64(&p1[0])?, to_f64(&p1[1])?, to_f64(&p1[2])?];
+      let b = [to_f64(&p2[0])?, to_f64(&p2[1])?, to_f64(&p2[2])?];
+      Some(std::array::from_fn(|i| (a[i].min(b[i]), a[i].max(b[i]))))
+    }
+    _ => None,
+  }
+}
+
+/// A 3-D `ImplicitRegion[lhs == rhs, {x, y, z}]` that is affine in its
+/// variables, as the plane's `(normal, point)`: `normal` from the
+/// coefficients of `lhs - rhs` (found by evaluating it at the origin and at
+/// each unit vector), `point` any solution of `normal . p = -c0`. Verified
+/// affine by checking a fourth point the coefficients alone predict;
+/// `None` for anything nonlinear, degenerate, or not a 3-variable equation.
+fn try_implicit_plane(expr: &Expr) -> Option<([f64; 3], [f64; 3])> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "ImplicitRegion" || args.len() != 2 {
+    return None;
+  }
+  let Expr::List(vars) = &args[1] else {
+    return None;
+  };
+  if vars.len() != 3 {
+    return None;
+  }
+  let var_names: Vec<String> = vars
+    .iter()
+    .map(|v| match v {
+      Expr::Identifier(s) => Some(s.clone()),
+      _ => None,
+    })
+    .collect::<Option<_>>()?;
+  let (lhs, rhs) = match &args[0] {
+    // `x + y == 1` parses as a comparison chain, not a plain `Equal[…]`
+    // call — `ImplicitRegion` holds its predicate unevaluated, so it never
+    // gets the chance to normalize into one.
+    Expr::Comparison {
+      operands,
+      operators,
+    } if operands.len() == 2
+      && operators.as_slice() == [crate::syntax::ComparisonOp::Equal] =>
+    {
+      (operands[0].clone(), operands[1].clone())
+    }
+    Expr::FunctionCall { name, args } if name == "Equal" && args.len() == 2 => {
+      (args[0].clone(), args[1].clone())
+    }
+    _ => return None,
+  };
+  let diff = call("Subtract", vec![lhs, rhs]);
+
+  let eval_at = |vals: [f64; 3]| -> Option<f64> {
+    let val_exprs: Vec<Expr> = vals.iter().map(|v| Expr::Real(*v)).collect();
+    let bindings: Vec<(&str, &Expr)> = var_names
+      .iter()
+      .map(String::as_str)
+      .zip(val_exprs.iter())
+      .collect();
+    let substituted = crate::syntax::substitute_variables(&diff, &bindings);
+    crate::functions::math_ast::try_eval_to_f64(
+      &crate::evaluator::evaluate_expr_to_expr(&substituted).ok()?,
+    )
+  };
+
+  let c0 = eval_at([0.0, 0.0, 0.0])?;
+  let normal = [
+    eval_at([1.0, 0.0, 0.0])? - c0,
+    eval_at([0.0, 1.0, 0.0])? - c0,
+    eval_at([0.0, 0.0, 1.0])? - c0,
+  ];
+  if normal.iter().all(|c| c.abs() < 1e-12) {
+    return None;
+  }
+  // Affine sanity check: a linear form at (1,1,1) equals the sum of its
+  // three axis samples (minus the doubly-counted constant); anything
+  // nonlinear will generally miss this.
+  let predicted = c0 + normal[0] + normal[1] + normal[2];
+  let actual = eval_at([1.0, 1.0, 1.0])?;
+  if (actual - predicted).abs() > 1e-9 * (1.0 + predicted.abs()) {
+    return None;
+  }
+
+  let point = if normal[0].abs() > 1e-9 {
+    [-c0 / normal[0], 0.0, 0.0]
+  } else if normal[1].abs() > 1e-9 {
+    [0.0, -c0 / normal[1], 0.0]
+  } else {
+    [0.0, 0.0, -c0 / normal[2]]
+  };
+  Some((normal, point))
+}
+
+/// The polygon a box (`a`) and a plane `ImplicitRegion` (`b`) cross-section
+/// each other into, if that's what the pair is. `None` when either operand
+/// isn't of the expected shape, or the plane misses the box entirely.
+fn box_plane_polygon(a: &Expr, b: &Expr) -> Option<Vec<[f64; 3]>> {
+  let bounds = try_box_bounds_3d(a)?;
+  let (normal, point) = try_implicit_plane(b)?;
+  crate::functions::plot3d::plane_polygon_in_box(normal, point, bounds)
+}
+
+/// `Area` of a `Ball` (`a`) crossed with a box-plane cross-section (`b`):
+/// the sphere meets the plane in a circle, which is then clipped to the
+/// cross-section's polygon. `None` when `a` isn't a `Ball`/`Sphere`, `b`
+/// isn't a box-plane pair, or the sphere misses the plane entirely.
+fn ball_plane_region_area(a: &Expr, b: &Expr) -> Option<f64> {
+  let Expr::FunctionCall { name, args } = a else {
+    return None;
+  };
+  if !matches!(name.as_str(), "Ball" | "Sphere") {
+    return None;
+  }
+  let to_f64 = |e: &Expr| -> Option<f64> {
+    crate::functions::math_ast::try_eval_to_f64(
+      &crate::evaluator::evaluate_expr_to_expr(e).ok()?,
+    )
+  };
+  let center = match args.first() {
+    Some(Expr::List(c)) if c.len() == 3 => {
+      [to_f64(&c[0])?, to_f64(&c[1])?, to_f64(&c[2])?]
+    }
+    None => [0.0, 0.0, 0.0],
+    _ => return None,
+  };
+  let radius = match args.get(1) {
+    Some(r) => to_f64(r)?,
+    None => 1.0,
+  };
+
+  let Expr::FunctionCall {
+    name: bname,
+    args: bargs,
+  } = b
+  else {
+    return None;
+  };
+  if bname != "BooleanRegion" || bargs.len() != 2 {
+    return None;
+  }
+  if !is_and_combiner(&bargs[0]) {
+    return None;
+  }
+  let Expr::List(inner) = &bargs[1] else {
+    return None;
+  };
+  let [ia, ib] = inner.as_ref() else {
+    return None;
+  };
+  let (poly, (normal, plane_point)) = box_plane_polygon(ia, ib)
+    .zip(try_implicit_plane(ib))
+    .or_else(|| box_plane_polygon(ib, ia).zip(try_implicit_plane(ia)))?;
+
+  // Project onto the plane's own 2-D basis (same construction
+  // `plane_polygon_in_box` uses, so the polygon and the disk share axes).
+  let unit_n = {
+    let len =
+      (normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2])
+        .sqrt();
+    [normal[0] / len, normal[1] / len, normal[2] / len]
+  };
+  let dot = |p: [f64; 3], q: [f64; 3]| p[0] * q[0] + p[1] * q[1] + p[2] * q[2];
+  let cross = |p: [f64; 3], q: [f64; 3]| {
+    [
+      p[1] * q[2] - p[2] * q[1],
+      p[2] * q[0] - p[0] * q[2],
+      p[0] * q[1] - p[1] * q[0],
+    ]
+  };
+  let axis = if unit_n[0].abs() <= unit_n[1].abs()
+    && unit_n[0].abs() <= unit_n[2].abs()
+  {
+    [1.0, 0.0, 0.0]
+  } else if unit_n[1].abs() <= unit_n[2].abs() {
+    [0.0, 1.0, 0.0]
+  } else {
+    [0.0, 0.0, 1.0]
+  };
+  let u_raw = cross(unit_n, axis);
+  let u_len = dot(u_raw, u_raw).sqrt();
+  let e1 = [u_raw[0] / u_len, u_raw[1] / u_len, u_raw[2] / u_len];
+  let e2 = cross(unit_n, e1);
+
+  // The sphere-plane cross-section: a circle centered at the projection of
+  // the sphere's center onto the plane, or no intersection at all.
+  let rel = [
+    center[0] - plane_point[0],
+    center[1] - plane_point[1],
+    center[2] - plane_point[2],
+  ];
+  let dist = dot(rel, unit_n);
+  if dist.abs() > radius {
+    return Some(0.0);
+  }
+  let circle_radius = (radius * radius - dist * dist).sqrt();
+  let foot = [
+    center[0] - dist * unit_n[0],
+    center[1] - dist * unit_n[1],
+    center[2] - dist * unit_n[2],
+  ];
+  let to_2d = |p: [f64; 3]| {
+    let rel = [p[0] - foot[0], p[1] - foot[1], p[2] - foot[2]];
+    [dot(rel, e1), dot(rel, e2)]
+  };
+  let poly_2d: Vec<[f64; 2]> = poly.iter().map(|&p| to_2d(p)).collect();
+  Some(crate::functions::plot3d::disk_convex_polygon_area(
+    [0.0, 0.0],
+    circle_radius,
+    &poly_2d,
+  ))
 }
 
 /// A point given as a coordinate list of 2 or 3 scalars. A nested list is
