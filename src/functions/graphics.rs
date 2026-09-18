@@ -19,7 +19,7 @@ pub(crate) const SMALL_DASH_PX: f64 = 4.0;
 /// image width, or — stored negative — an absolute size in printer's points
 /// (`AbsolutePointSize[6]` is a 6-pixel dot at every image size, measured
 /// from wolframscript's own SVG export).
-fn point_radius(point_size: f64, svg_w: f64) -> f64 {
+pub(crate) fn point_radius(point_size: f64, svg_w: f64) -> f64 {
   if point_size < 0.0 {
     -point_size * 0.5
   } else {
@@ -11482,6 +11482,87 @@ pub(crate) fn mesh_region_to_graphics_prims(
   Some(result)
 }
 
+/// Convert 3D `MeshRegion`/`BoundaryMeshRegion` vertex/polygon data (e.g. a
+/// 3D `ConvexHullMesh`) to `Graphics3D` primitives — the 3D twin of
+/// `mesh_region_to_graphics_prims`, used both for `Show` merging and for
+/// standalone display.
+pub(crate) fn mesh_region_to_graphics3d_prims(
+  vertices_expr: &Expr,
+  primitives_expr: &Expr,
+) -> Option<Vec<Expr>> {
+  let Expr::List(vertices_list) = vertices_expr else {
+    return None;
+  };
+  let mut vertices: Vec<(f64, f64, f64)> = Vec::new();
+  for v in vertices_list {
+    if let Expr::List(coords) = v
+      && coords.len() == 3
+      && let (Some(x), Some(y), Some(z)) = (
+        crate::functions::math_ast::try_eval_to_f64(&coords[0]),
+        crate::functions::math_ast::try_eval_to_f64(&coords[1]),
+        crate::functions::math_ast::try_eval_to_f64(&coords[2]),
+      )
+    {
+      vertices.push((x, y, z));
+      continue;
+    }
+    return None;
+  }
+
+  let Expr::List(prims) = primitives_expr else {
+    return None;
+  };
+
+  let mut result = Vec::new();
+  result.push(call1("EdgeForm", Color::gray(0.4).to_expr()));
+  result.push(call1("FaceForm", Color::new(0.626, 0.836, 0.919).to_expr()));
+
+  for prim in prims {
+    if let Expr::FunctionCall { name, args } = prim
+      && name == "Polygon"
+      && args.len() == 1
+      && let Expr::List(index_lists) = &args[0]
+    {
+      for idx_list in index_lists {
+        if let Expr::List(indices) = idx_list {
+          let points: Vec<Expr> = indices
+            .iter()
+            .filter_map(|idx| {
+              crate::functions::math_ast::try_eval_to_f64(idx).and_then(|i| {
+                let i = i as usize;
+                if i >= 1 && i <= vertices.len() {
+                  let (x, y, z) = vertices[i - 1];
+                  Some(Expr::List(
+                    vec![Expr::Real(x), Expr::Real(y), Expr::Real(z)].into(),
+                  ))
+                } else {
+                  None
+                }
+              })
+            })
+            .collect();
+          if points.len() >= 3 {
+            result.push(call1("Polygon", Expr::List(points.into())));
+          }
+        }
+      }
+    }
+  }
+  Some(result)
+}
+
+/// Render a 3D `MeshRegion`/`BoundaryMeshRegion` (e.g. a 3D `ConvexHullMesh`)
+/// standalone, by building a `Graphics3D[…]` from its faces and delegating to
+/// the ordinary Graphics3D pipeline — which also gives the result a
+/// `structure` for `Show` and `Part` to use.
+pub(crate) fn mesh_region_to_graphics3d(
+  vertices_expr: &Expr,
+  primitives_expr: &Expr,
+) -> Option<Expr> {
+  let prims = mesh_region_to_graphics3d_prims(vertices_expr, primitives_expr)?;
+  crate::functions::plot3d::graphics3d_ast(&[Expr::List(prims.into())]).ok()
+}
+
 /// Merges multiple Graphics[...] calls into a single Graphics[...] call,
 /// combining their primitives and options. Arguments are kept unevaluated
 /// (Show is in the held-args list) so Graphics[...] expressions arrive as
@@ -11751,11 +11832,25 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
       Expr::FunctionCall { name, args: gargs }
-        if name == "MeshRegion" && gargs.len() == 2 =>
+        if (name == "MeshRegion" || name == "BoundaryMeshRegion")
+          && gargs.len() >= 2 =>
       {
-        // Convert MeshRegion to Graphics primitives for Show merging
+        // Convert the mesh's vertices/cells to Graphics(3D) primitives for
+        // Show merging (e.g. a `ConvexHullMesh`'s `BoundaryMeshRegion`,
+        // which — unlike a bare `MeshRegion[verts, cells]` — also carries a
+        // `Method` option and so has more than 2 args).
         first_graphic_is_plot.get_or_insert(false);
-        if let Some(graphics_prims) =
+        let is_3d_mesh = matches!(&gargs[0], Expr::List(items)
+          if items.first().is_some_and(|v| matches!(v, Expr::List(c) if c.len() == 3)));
+        if is_3d_mesh {
+          is_3d = true;
+          if let Some(graphics_prims) =
+            mesh_region_to_graphics3d_prims(&gargs[0], &gargs[1])
+          {
+            layers.push(Layer::Prims(merged_primitives.len()));
+            merged_primitives.push(Expr::List(graphics_prims.into()));
+          }
+        } else if let Some(graphics_prims) =
           mesh_region_to_graphics_prims(&gargs[0], &gargs[1])
         {
           layers.push(Layer::Prims(merged_primitives.len()));

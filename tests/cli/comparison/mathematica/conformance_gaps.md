@@ -3734,26 +3734,36 @@ default forms diverge for the same reason the explicit ones do.
 `{2, 3/2, 0}` in Woxi; wolframscript handles only the planar case and leaves
 the call unevaluated. Deliberate — the 3D centre is well defined.
 
-### `ConvexHullMesh` is unevaluated for 3D point sets
+### `ConvexHullMesh`'s 3D facet order, rotation and coplanar merging is qhull's
+
+3D point sets now build a real triangulated hull (a standard incremental
+"beneath-beyond" algorithm, not qhull), and its facets are the *same
+triangles with the same outward orientation* as wolframscript's — verified by
+hand against the reference table below, canonicalizing each face to start at
+its lowest vertex index. What is not replicated is qhull's own bookkeeping:
 
 ```sh
 wolframscript -code 'ToString[ConvexHullMesh[{{0,0,0},{1,0,0},{0,1,0},{0,0,1}}], InputForm]'
 # BoundaryMeshRegion[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, 0, 1}},
 #   {Polygon[{{3, 2, 1}, {2, 4, 1}, {4, 3, 1}, {3, 4, 2}}]},
 #   Method -> {"SeparateBoundaries" -> False}, WorkingPrecision -> Infinity]
-woxi eval 'ConvexHullMesh[{{0,0,0},{1,0,0},{0,1,0},{0,0,1}}]'
-# ConvexHullMesh[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, 0, 1}}]
+woxi eval 'ToString[ConvexHullMesh[{{0,0,0},{1,0,0},{0,1,0},{0,0,1}}], InputForm]'
+# BoundaryMeshRegion[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, 0, 1}},
+#   {Polygon[{{1, 3, 2}, {1, 2, 4}, {1, 4, 3}, {2, 3, 4}}]},
+#   Method -> {"SeparateBoundaries" -> False}, WorkingPrecision -> Infinity]
 ```
 
-Computing the hull is the easy part; WL hands qhull's internal facet
-bookkeeping straight through, and three things would have to be replicated to
-match the printed `Polygon`:
+Each face above is a cyclic rotation of the matching wolframscript face
+(`{1,3,2}` rotates to `{3,2,1}`, `{1,2,4}` to `{2,4,1}`, and so on) — the same
+triangle, the same winding, just listed starting at a different vertex. Three
+things would have to be replicated to match the printed `Polygon` exactly:
 
 1. **Facet order.** No sort explains all three samples below.
 2. **Vertex rotation within a face.** Faces are outward-oriented, but the
    starting vertex varies.
 3. **Coplanar merging.** Triangles that share a plane come back as one polygon,
-   so the cube's six faces are quads, not twelve triangles.
+   so the cube's six faces are quads, not twelve triangles (Woxi's hull always
+   triangulates, even a cube's flat sides).
 
 Reference outputs (all carry `Method -> {"SeparateBoundaries" -> False},
 WorkingPrecision -> Infinity`):
