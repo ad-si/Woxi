@@ -1646,6 +1646,14 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
         Some(vec![0.0, -SMALL_DASH_PX, -SMALL_DASH_PX, -SMALL_DASH_PX]);
       true
     }
+    // A directive list nested one level down (`Directive[{Thick, Blue}]`,
+    // `Style[expr, {Thick, Blue}]`) is equivalent to its items given
+    // directly — recurse instead of falling through unrecognised, or the
+    // whole list silently applies no style at all.
+    Expr::List(items) => items
+      .iter()
+      .map(|item| apply_directive(item, style))
+      .fold(false, |acc, applied| acc || applied),
     _ => false,
   }
 }

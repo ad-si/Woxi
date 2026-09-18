@@ -1167,6 +1167,56 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_directive_with_single_list_argument_applies_its_styles() {
+    // Regression: `Directive[{a, b, …}]` (one List argument, as
+    // `ContourStyle -> Directive[{Thickness[...], RGBColor[...]}]` writes
+    // it) silently applied no style at all — only the flat spelling
+    // `Directive[a, b, …]` worked. `apply_directive` fell through its
+    // `Expr::List` argument to the `_ => false` arm instead of recursing
+    // into the list's items.
+    clear_state();
+    let svg = interpret_with_stdout(
+      "Graphics[{Directive[{Thickness[.02], RGBColor[.25, .43, .82]}], \
+       Circle[{0, 0}, 1]}]",
+    )
+    .unwrap()
+    .graphics
+    .expect("Graphics should produce a graphics SVG");
+    assert!(
+      svg.contains("rgb(64,110,209)"),
+      "Directive[{{…}}] must apply its RGBColor:\n{svg}"
+    );
+    assert!(
+      !svg.contains("rgb(0,0,0)"),
+      "Directive[{{…}}] must not leave the circle black:\n{svg}"
+    );
+  }
+
+  #[test]
+  fn test_show_contour_plot_with_directive_list_contour_style() {
+    // Regression: `Show[ContourPlot[…], Graphics[…]]` where the
+    // ContourPlot's `ContourStyle` is a `Directive[{…}]` (single List
+    // argument) lost its color once merged — the contour lines rendered
+    // black instead of the requested color. `ContourPlot`'s symbolic
+    // `structure` embeds the ContourStyle directive verbatim, so the same
+    // `Directive[{…}]` parsing gap dropped it there too.
+    clear_state();
+    let svg = interpret_with_stdout(
+      "Show[ContourPlot[x^2 + y^2, {x, -2, 2}, {y, -2, 2}, \
+       ContourStyle -> Directive[{Thickness[.01], RGBColor[.25, .43, .82]}], \
+       ContourShading -> None, Axes -> False, Frame -> False], \
+       Graphics[{Black, Circle[{0, 0}, .2]}]]",
+    )
+    .unwrap()
+    .graphics
+    .expect("Show should produce a graphics SVG");
+    assert!(
+      svg.contains("rgb(64,110,209)"),
+      "merged ContourPlot must keep its Directive[{{…}}] ContourStyle color:\n{svg}"
+    );
+  }
+
+  #[test]
   fn test_column_with_nested_tableform_renders_as_graphics() {
     // In visual mode (playground / woxi-studio), a Column containing a
     // TableForm must pre-render the table as a sub-SVG instead of falling
