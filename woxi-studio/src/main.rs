@@ -7186,6 +7186,77 @@ mod tests {
     assert_eq!(state.text_output.as_deref(), Some("hexagon"));
   }
 
+  /// A `Button[…]` action alongside two disjoint `SetterBar` rows that
+  /// share one control variable — a "reset" button next to a
+  /// coarse/fine (or split) picker for the same underlying setting, as a
+  /// Wolfram Demonstrations Project notebook's curve-fitting or
+  /// model-picker panel commonly pairs (independently written, not copied
+  /// from any specific one). Regression: `ManipulateState::bindings()` listed
+  /// the shared variable once per control row, so a button press built
+  /// `Block[{shape = …, shape = …, …}, action; {…}]` to run the action —
+  /// and Wolfram's `Block` rejects a local spec naming the same variable
+  /// twice (`Block::dup`), which made `apply_manipulate_button_action`
+  /// silently drop the update instead of running it. The button appeared to
+  /// do nothing.
+  #[test]
+  fn manipulate_button_action_with_disjoint_setter_bar_siblings() {
+    let code = "Manipulate[\
+      Which[shape == 1, \"circle\", shape == 2, \"square\", shape == 3, \"triangle\"], \
+      Button[\"reset\", shape = 1], \
+      {{shape, 2, \"\"}, {1 -> \"circle\", 2 -> \"square\"}, ControlType -> SetterBar}, \
+      {{shape, 2, \"\"}, {3 -> \"triangle\"}, ControlType -> SetterBar}\
+      ]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the shared-variable SetterBar Manipulate must build a widget");
+    assert_eq!(state.text_output.as_deref(), Some("square"));
+
+    // Move away from the button's target value first, via the row that has
+    // no button for it at all, so the button press is the only thing that
+    // can bring it back.
+    let shape_rows: Vec<usize> = state
+      .controls
+      .iter()
+      .enumerate()
+      .filter(|(_, c)| c.name() == "shape")
+      .map(|(i, _)| i)
+      .collect();
+    assert_eq!(
+      shape_rows.len(),
+      2,
+      "expected two SetterBar rows sharing `shape`: {:?}",
+      state.controls
+    );
+    let third_idx = shape_rows[1];
+    if let manipulate::ControlState::Discrete {
+      current_index,
+      overflow,
+      ..
+    } = &mut state.controls[third_idx]
+    {
+      *current_index = 0;
+      *overflow = None;
+    }
+    state.apply_tracking(third_idx);
+    state.reevaluate();
+    assert_eq!(state.text_output.as_deref(), Some("triangle"));
+
+    let action = state
+      .controls
+      .iter()
+      .find_map(|c| match c {
+        manipulate::ControlState::Button { action, .. } => Some(action.clone()),
+        _ => None,
+      })
+      .expect("the reset Button control");
+    state.apply_button_action(&action);
+    assert_eq!(
+      state.text_output.as_deref(),
+      Some("circle"),
+      "the Button's action must actually run even though `shape` has two \
+       control rows, not silently no-op"
+    );
+  }
+
   /// A Manipulate whose body calls a `Compile`d helper with bare
   /// (undeclared-type) parameters that are only ever used as repetition
   /// counts — `NestList[…, n]` and a `Do[…, {trials}]` iterator — mirroring
