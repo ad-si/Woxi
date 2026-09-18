@@ -17417,7 +17417,7 @@ pub fn highlighted_to_svg(args: &[Expr]) -> Option<String> {
 }
 
 /// Parse width and height from an SVG's root element attributes.
-fn parse_svg_wh(svg: &str) -> (f64, f64) {
+pub(crate) fn parse_svg_wh(svg: &str) -> (f64, f64) {
   let w = svg
     .find("width=\"")
     .and_then(|i| {
@@ -17438,10 +17438,33 @@ fn parse_svg_wh(svg: &str) -> (f64, f64) {
 }
 
 /// Strip the outer <svg ...> and </svg> tags, returning only the inner content.
-fn strip_svg_wrapper(svg: &str) -> &str {
+pub(crate) fn strip_svg_wrapper(svg: &str) -> &str {
   let start = svg.find('>').map_or(0, |i| i + 1);
   let end = svg.rfind("</svg>").unwrap_or(svg.len());
   &svg[start..end]
+}
+
+/// Clip an already-rendered SVG to a `Pane[content, {width, height}]` box.
+/// The FrontEnd never grows a `Pane`'s reserved area to fit oversized
+/// content — with no scrollbar in a static export, content past the
+/// declared edges is silently cut off rather than left to spill past them.
+/// Content that already fits inside `width`x`height` is returned
+/// unchanged, so a `Pane` around a small picture keeps its natural
+/// (smaller) canvas rather than being padded out to the declared size.
+pub(crate) fn clip_svg_to_pane_box(
+  svg: &str,
+  width: f64,
+  height: f64,
+) -> String {
+  let (natural_w, natural_h) = parse_svg_wh(svg);
+  if natural_w <= width && natural_h <= height {
+    return svg.to_string();
+  }
+  let inner = strip_svg_wrapper(svg);
+  let clip_id = format!("paneClip_{width:.0}x{height:.0}");
+  format!(
+    "<svg width=\"{width:.0}\" height=\"{height:.0}\" viewBox=\"0 0 {width:.0} {height:.0}\" xmlns=\"http://www.w3.org/2000/svg\">\n<defs><clipPath id=\"{clip_id}\"><rect x=\"0\" y=\"0\" width=\"{width:.0}\" height=\"{height:.0}\"/></clipPath></defs>\n<g clip-path=\"url(#{clip_id})\">\n{inner}\n</g>\n</svg>"
+  )
 }
 
 /// Render a list that contains Framed or Highlighted elements as a horizontal

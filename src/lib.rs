@@ -3889,6 +3889,16 @@ fn render_event_handler_if_needed(expr: syntax::Expr) -> syntax::Expr {
 /// Used for a cell's top-level result and, recursively, for the content an
 /// `EventHandler[…]` wraps once its event rules have been dropped.
 fn render_visual_display_pipeline(expr: &syntax::Expr) -> syntax::Expr {
+  // A `Pane[content, {width, height}]` reserves a fixed box in the
+  // FrontEnd; capture that now, before `unwrap_display_pass_through`
+  // discards the wrapper below, so the composed picture can be clipped to
+  // it once the passes below have built it. There is no scrollbar in a
+  // static rendering — content taller or wider than the box is silently
+  // cut off there, not drawn past it into a stray sliver of raw markup
+  // underneath (a Demonstration's fixed-size Pane rendered in Woxi
+  // Studio).
+  let pane_box = pane_fixed_size(expr);
+
   // Strip the wrappers that only say how to set what they hold, so the
   // passes below see the wrapped content (e.g. Pane[Column[{…,
   // Graphics[…]}]] renders the column with its embedded graphic). CLI
@@ -3909,7 +3919,59 @@ fn render_visual_display_pipeline(expr: &syntax::Expr) -> syntax::Expr {
   let expr = render_row_if_needed(expr);
   let expr = render_treeform_if_needed(expr);
   let expr = render_framed_if_needed(expr);
-  render_highlighted_if_needed(expr)
+  let result = render_highlighted_if_needed(expr);
+
+  match (pane_box, &result) {
+    (Some((w, h)), syntax::Expr::Graphics { svg, .. }) => {
+      let clipped = functions::graphics::clip_svg_to_pane_box(svg, w, h);
+      let mut clipped_result = result.clone();
+      if let syntax::Expr::Graphics { svg, .. } = &mut clipped_result {
+        *svg = clipped;
+      }
+      clipped_result
+    }
+    _ => result,
+  }
+}
+
+/// The `{width, height}` a top-level `Pane[content, {width, height}]`
+/// declares — looking through the same pass-through wrappers
+/// `unwrap_display_wrappers` peels (`Text`, `TraditionalForm`,
+/// `StandardForm`, `DisplayForm`, `Deploy`, `Item`) so a caption'd or
+/// wrapped fixed-size Pane is still found. `None` when the expression
+/// isn't such a Pane, or its size isn't two plain numbers — a single
+/// width, `Automatic`, or `Full` leave the box unconstrained here, the
+/// same as `unwrap_display_wrappers`' unconditional peel handles every
+/// other Pane shape.
+fn pane_fixed_size(expr: &syntax::Expr) -> Option<(f64, f64)> {
+  let mut current = expr;
+  loop {
+    let syntax::Expr::FunctionCall { name, args } = current else {
+      return None;
+    };
+    match name.as_str() {
+      "Text" | "TraditionalForm" | "StandardForm" | "DisplayForm"
+      | "Deploy" | "Item"
+        if !args.is_empty() =>
+      {
+        current = &args[0];
+      }
+      "Pane" if args.len() >= 2 => {
+        let syntax::Expr::List(size) = &args[1] else {
+          return None;
+        };
+        if size.len() != 2 {
+          return None;
+        }
+        let w =
+          evaluator::dispatch::io_functions::pane_size_component(&size[0])?;
+        let h =
+          evaluator::dispatch::io_functions::pane_size_component(&size[1])?;
+        return Some((w, h));
+      }
+      _ => return None,
+    }
+  }
 }
 
 /// If `expr` is `Overlay[{…}]`, composite its items into the one stacked
