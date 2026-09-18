@@ -6969,10 +6969,36 @@ fn find_root_multivariate(
     &eqns_owned
   };
 
-  // Every search variable — plain or indexed — is renamed to a fresh plain
-  // symbol before anything else. Collocation methods can name hundreds of
-  // `u[i]` variables for a dense system; treating them as plain symbols
-  // from here on lets the rest of the solve reuse the existing name-based
+  // Each equation is built (`Equal` rewritten to a `lhs - rhs` difference,
+  // then fully evaluated with the plain-symbol search variables' global
+  // bindings held free — the indexed ones were never bound under a literal
+  // name to begin with, see above) *before* renaming, not after. A
+  // stage-by-stage model typically writes its equations in terms of
+  // helper functions (`H[i]`, `h[i]`, ...) rather than the search
+  // variables directly — a literal `T[5]` only appears once such a
+  // function's Module-scoped `SetDelayed` body is expanded during
+  // evaluation, not in the pre-evaluation source `eqns_arg` a syntactic
+  // rename pass walks. Renaming first therefore missed every occurrence
+  // reached only through such a call: the built equation still carried an
+  // unrenamed, unbound `T[5]`, which could not be substituted with the
+  // search point's numeric value and made the residual fail to evaluate
+  // to a number at all (`FindRoot::nlnum`) instead of merely being
+  // differentiated incorrectly. Evaluating first and renaming the
+  // resulting closed form instead catches every occurrence, wherever it
+  // came from.
+  let raw_eq_list: Vec<Expr> = match eqns_arg {
+    Expr::List(es) => es.to_vec(),
+    other => vec![other.clone()],
+  };
+  let evaluated_eqns: Vec<Expr> = raw_eq_list
+    .iter()
+    .map(|e| build_find_root_func(e, &raw_var_refs))
+    .collect();
+
+  // Every search variable — plain or indexed — is then renamed to a fresh
+  // plain symbol. Collocation methods can name hundreds of `u[i]`
+  // variables for a dense system; treating them as plain symbols from here
+  // on lets the rest of the solve reuse the existing name-based
   // substitution (`substitute_variables`, one pass over the equation) and
   // symbolic differentiation (`differentiate_expr`) instead of a much
   // slower structural-match or finite-difference fallback per indexed
@@ -6981,16 +7007,10 @@ fn find_root_multivariate(
   let vars: Vec<String> = (0..n).map(|i| format!("$FindRootVar{i}$")).collect();
   let syn_idents: Vec<Expr> =
     vars.iter().map(|s| Expr::Identifier(s.clone())).collect();
-  let renamed_eqns_arg =
-    find_root_rename_vars(eqns_arg, &raw_vars, &syn_idents);
-  let var_refs: Vec<&str> = vars.iter().map(String::as_str).collect();
-  let eqns: Vec<Expr> = match &renamed_eqns_arg {
-    Expr::List(es) => es
-      .iter()
-      .map(|e| build_find_root_func(e, &var_refs))
-      .collect(),
-    other => vec![build_find_root_func(other, &var_refs)],
-  };
+  let eqns: Vec<Expr> = evaluated_eqns
+    .iter()
+    .map(|e| find_root_rename_vars(e, &raw_vars, &syn_idents))
+    .collect();
   if eqns.len() != n {
     return Err(InterpreterError::EvaluationError(
       "FindRoot: number of equations must match number of variables".into(),
@@ -7003,14 +7023,31 @@ fn find_root_multivariate(
   // (e.g. the equation still contains an opaque function call) is left
   // `None` and approximated by a central finite difference at each
   // iteration point.
+  //
+  // A large system built from per-index equations (a stage-by-stage
+  // process model, a PDE discretization, ...) has a Jacobian that is
+  // mostly zero: equation `i` typically only involves a handful of the
+  // `n` search variables. Actually differentiating (and then simplifying)
+  // every one of the n*n pairs costs time proportional to the equation's
+  // full expression size regardless of whether `v` appears in it, so for
+  // hundreds of variables that quadratic blowup dominates the runtime.
+  // `is_constant_wrt` proves the zero case with a plain structural
+  // presence check — no expression construction or simplification — so
+  // checking it first turns the dense n*n differentiate+simplify pass
+  // into one that costs full differentiation only for the (sparse) pairs
+  // that actually need it.
   let mut jac: Vec<Vec<Option<Expr>>> = Vec::with_capacity(n);
   for f in &eqns {
     let mut row = Vec::with_capacity(n);
     for v in &vars {
-      let d = crate::functions::calculus_ast::differentiate_expr(f, v)
-        .map(simplify)
-        .ok()
-        .filter(|d| !contains_unevaluated_d(d));
+      let d = if crate::functions::calculus_ast::is_constant_wrt(f, v) {
+        Some(Expr::Integer(0))
+      } else {
+        crate::functions::calculus_ast::differentiate_expr(f, v)
+          .map(simplify)
+          .ok()
+          .filter(|d| !contains_unevaluated_d(d))
+      };
       row.push(d);
     }
     jac.push(row);
