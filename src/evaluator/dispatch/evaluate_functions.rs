@@ -4569,10 +4569,29 @@ fn evaluate_function_call_ast_inner(
       // on. It is not an option, so it is taken off here and turned into
       // the layered embedding the renderer understands.
       let layered = matches!(name, "LayeredGraphPlot" | "TreePlot");
-      let root_pos = args[1..]
+      let literal_pos = args[1..]
         .iter()
-        .find(|a| !matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
-        .and_then(crate::functions::graph::layer_direction);
+        .find(|a| !matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }));
+      let root_pos =
+        literal_pos.and_then(crate::functions::graph::layer_direction);
+      // `TreePlot[rules, pos, …]`'s second positional argument must be one
+      // of Top/Bottom/Left/Right/Center — an older two-argument calling
+      // convention that passed a root vertex there instead (as several
+      // pre-Graph-object Demonstrations still do) now raises `TreePlot::rp`
+      // and leaves the call unevaluated rather than silently plotting.
+      if name == "TreePlot"
+        && let Some(pos_arg) = literal_pos
+        && root_pos.is_none()
+      {
+        let pos_str =
+          crate::syntax::format_expr(pos_arg, crate::syntax::ExprForm::Output);
+        crate::emit_message_with("TreePlot::rp", || {
+          format!(
+            "TreePlot::rp: The second argument {pos_str} of TreePlot must be one of Top, Bottom, Left, Right, or Center."
+          )
+        });
+        return Ok(unevaluated(name, args));
+      }
       let mut forwarded: Vec<Expr> = vec![args[0].clone()];
       forwarded.extend(
         args[1..]
