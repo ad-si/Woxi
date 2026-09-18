@@ -907,6 +907,54 @@ mod outer_extended {
     );
   }
 
+  // `Band[{i, j}] -> v` with `v` a *list* assigns one value per band
+  // position, in order — not the whole list at every position. Regression:
+  // `expand_band_rules` used to clone the entire replacement for each
+  // expanded position instead of indexing into it.
+  #[test]
+  fn sparse_array_band_list_value() {
+    assert_eq!(
+      interpret("Normal[SparseArray[{Band[{1, 2}] -> {10, 20, 30}}, {4, 4}]]")
+        .unwrap(),
+      "{{0, 10, 0, 0}, {0, 0, 20, 0}, {0, 0, 0, 30}, {0, 0, 0, 0}}"
+    );
+  }
+
+  // `SparseArray[rules]` with no explicit dimensions still infers them from
+  // a bare `Band[start] -> list` rule (the band's extent follows from its
+  // start position and the list's length). Regression: dimension inference
+  // only looked at explicit `{i, j} -> v` positions, leaving any
+  // Band-only rule list unevaluated.
+  #[test]
+  fn sparse_array_band_infers_dims_from_value_length() {
+    assert_eq!(
+      interpret(
+        "Normal[SparseArray[{Band[{1, 2}] -> {1, 1, 1}, \
+         Band[{1, 1}] -> {2, 2, 2, 2}, Band[{2, 1}] -> {1, 1, 1}}]]"
+      )
+      .unwrap(),
+      "{{2, 1, 0, 0}, {1, 2, 1, 0}, {0, 1, 2, 1}, {0, 0, 1, 2}}"
+    );
+    // LinearSolve on the inferred-dims SparseArray matches the dense case —
+    // this is the exact tridiagonal-system shape a Crank-Nicolson step
+    // (e.g. a Demonstration solving the time-dependent Schrödinger
+    // equation) builds every iteration via `SparseArray[{Band[...] -> ...}]`
+    // with no explicit dimensions.
+    assert_eq!(
+      interpret(
+        "LinearSolve[SparseArray[{Band[{1, 2}] -> {1, 1, 1}, \
+         Band[{1, 1}] -> {2, 2, 2, 2}, Band[{2, 1}] -> {1, 1, 1}}], \
+         {1, 2, 3, 4}]"
+      )
+      .unwrap(),
+      interpret(
+        "LinearSolve[{{2, 1, 0, 0}, {1, 2, 1, 0}, {0, 1, 2, 1}, \
+         {0, 0, 1, 2}}, {1, 2, 3, 4}]"
+      )
+      .unwrap()
+    );
+  }
+
   // A 1-D pattern rule `{i_} :> expr` fills each position with the value of
   // `expr` evaluated at the position index.
   #[test]
