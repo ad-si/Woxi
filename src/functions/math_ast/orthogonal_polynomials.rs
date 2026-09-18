@@ -632,6 +632,40 @@ fn associated_legendre_p_ast(
   // The integer paths below stick to the differentiation-based form
   // since it produces exact polynomial output for integer n.
   let n_is_nonneg_int = matches!(n_expr, Expr::Integer(k) if *k >= 0);
+  let m_is_neg_int = matches!(m_expr, Expr::Integer(k) if *k < 0);
+
+  // Negative integer order, non-negative integer degree, within the
+  // standard finite range (|m| <= n), and a non-numeric x: reflect onto
+  // the m >= 0 formula below via
+  //   P_n^{-m}(x) = (-1)^m * (n-m)!/(n+m)! * P_n^m(x),
+  // so a symbolic `Cos[θ]` simplifies the same way a positive order does,
+  // instead of falling back to an unevaluated `LegendreP[n, -m, x]`.
+  // Outside that range (|m| > n, an indeterminate 0·∞ rather than 0 —
+  // e.g. `LegendreP[2, -3, 0] = 1/15`) or for a numeric x (where `|x| > 1`
+  // needs the complex-valued continuation), this falls through to the
+  // general hypergeometric path below unchanged.
+  if n_is_nonneg_int
+    && m_is_neg_int
+    && try_eval_to_f64(x_expr).is_none()
+    && let (Expr::Integer(n), Expr::Integer(m)) = (n_expr, m_expr)
+    && (-*m) <= *n
+  {
+    let m_abs = -*m;
+    let base =
+      associated_legendre_p_ast(n_expr, &Expr::Integer(m_abs), x_expr)?;
+    let sign = if m_abs % 2 == 0 {
+      BigInt::from(1)
+    } else {
+      BigInt::from(-1)
+    };
+    let mut ratio_den = BigInt::from(1);
+    for i in (*n - m_abs + 1)..=(*n + m_abs) {
+      ratio_den *= BigInt::from(i);
+    }
+    let factor = make_rational_expr(&sign, &ratio_den);
+    return crate::evaluator::evaluate_expr_to_expr(&times2(factor, base));
+  }
+
   let m_is_nonneg_int = matches!(m_expr, Expr::Integer(k) if *k >= 0);
   if !n_is_nonneg_int || !m_is_nonneg_int {
     // Complex/inexact path: compute every factor in C, using principal-branch
@@ -992,14 +1026,20 @@ pub fn spherical_harmonic_y_ast(
     let m_abs = m.unsigned_abs() as usize;
     let l_u = l as usize;
 
-    // Normalization factor: sqrt((2l+1)/(4π) * (l-|m|)!/(l+|m|)!)
+    // Normalization factor: sqrt((2l+1)/(4π) * (l-m)!/(l+m)!) using the
+    // *signed* order m — for m < 0 that ratio is (l+|m|)!/(l-|m|)!, the
+    // reciprocal of what a |m|-based ratio would give, which is why the
+    // factor below is multiplied in rather than divided by when m < 0.
     let mut fact_ratio = 1.0_f64;
     for i in (l_u - m_abs + 1)..=(l_u + m_abs) {
       fact_ratio *= i as f64;
     }
-    let norm =
-      ((2.0 * l as f64 + 1.0) / (4.0 * std::f64::consts::PI) / fact_ratio)
-        .sqrt();
+    let base = (2.0 * l as f64 + 1.0) / (4.0 * std::f64::consts::PI);
+    let norm = if m < 0 {
+      (base * fact_ratio).sqrt()
+    } else {
+      (base / fact_ratio).sqrt()
+    };
 
     // Associated Legendre polynomial P_l^m(cos θ). Our P_l^m already
     // includes the Condon–Shortley (−1)^m phase, so no extra sign here.
@@ -1017,11 +1057,13 @@ pub fn spherical_harmonic_y_ast(
 
   // Symbolic evaluation: build
   //   norm * P_l^m(Cos[θ]) * E^(I*m*φ)
-  // where norm = Sqrt[(2l+1)/(4π) · (l-|m|)!/(l+|m|)!]. The Condon-Shortley
-  // phase is already absorbed into P_l^m.
+  // where norm = Sqrt[(2l+1)/(4π) · (l-m)!/(l+m)!] using the *signed* order
+  // m. The Condon-Shortley phase is already absorbed into P_l^m.
   let m_abs = m.unsigned_abs();
   // (l - |m|)! / (l + |m|)! as a Rational[1, prod] where prod runs from
-  // (l - |m| + 1) to (l + |m|).
+  // (l - |m| + 1) to (l + |m|). For m < 0, (l-m)!/(l+m)! is the reciprocal
+  // of this — (l+|m|)!/(l-|m|)! — so `prod` is multiplied in below instead
+  // of dividing.
   let mut fact_ratio_den: i128 = 1;
   let l_u = l.unsigned_abs() as i128;
   let m_u = m_abs as i128;
@@ -1032,10 +1074,20 @@ pub fn spherical_harmonic_y_ast(
   //      = Sqrt[(2l+1) / (Pi * fact_ratio_den)] / 2
   // Pulling out the 4 factor matches Wolfram's canonical Sqrt-based form.
   let two_l_plus_1 = 2 * l_u + 1;
-  let norm_inner = call(
-    "Rational",
-    vec![Expr::Integer(two_l_plus_1), Expr::Integer(fact_ratio_den)],
-  );
+  let norm_inner = if m < 0 {
+    call(
+      "Rational",
+      vec![
+        Expr::Integer(two_l_plus_1 * fact_ratio_den),
+        Expr::Integer(1),
+      ],
+    )
+  } else {
+    call(
+      "Rational",
+      vec![Expr::Integer(two_l_plus_1), Expr::Integer(fact_ratio_den)],
+    )
+  };
   // Sqrt[Rational[2l+1, fact_ratio_den] / Pi] = Sqrt[arg]
   let sqrt_arg = call(
     "Times",

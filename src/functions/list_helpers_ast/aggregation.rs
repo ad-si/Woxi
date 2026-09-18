@@ -1,3 +1,4 @@
+use super::utilities::expr_to_f64;
 #[allow(unused_imports)]
 use super::utilities::*;
 #[allow(unused_imports)]

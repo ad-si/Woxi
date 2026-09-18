@@ -7,7 +7,7 @@ use crate::functions::chart::{
   ChartLabel, ChartOptions, LabelPosition, StyledLabel, parse_label_style,
 };
 use crate::functions::graphics::{Color as WoxiColor, parse_color};
-use crate::functions::math_ast::try_eval_to_f64;
+use crate::functions::math_ast::{try_eval_to_f64, try_eval_to_f64_lenient};
 use crate::syntax::PlotMarker;
 
 /// How many lines below the first a stacked `PlotLabel` (a `Grid`/`Column`
@@ -231,7 +231,7 @@ pub(crate) fn evaluate_at_xy(
   let sub1 = substitute_var(body, xvar, &Expr::Real(xval));
   let sub2 = substitute_var(&sub1, yvar, &Expr::Real(yval));
   let result = evaluate_expr_to_expr(&sub2).ok()?;
-  if let Some(v) = try_eval_to_f64(&result) {
+  if let Some(v) = try_eval_to_f64_lenient(&result) {
     return Some(v);
   }
   // The body may reference a variable (e.g. `lineA` holding `-5 - 3 x + 2 y`)
@@ -241,7 +241,7 @@ pub(crate) fn evaluate_at_xy(
   let sub1 = substitute_var(&result, xvar, &Expr::Real(xval));
   let sub2 = substitute_var(&sub1, yvar, &Expr::Real(yval));
   let result = evaluate_expr_to_expr(&sub2).ok()?;
-  try_eval_to_f64(&result)
+  try_eval_to_f64_lenient(&result)
 }
 
 /// Simple SVG header for plots without plotters axes (ArrayPlot, charts).
@@ -264,7 +264,14 @@ pub(crate) fn svg_header(w: u32, h: u32, full_width: bool) -> String {
 pub(crate) fn evaluate_at_point(body: &Expr, var: &str, x: f64) -> Option<f64> {
   let substituted = substitute_var(body, var, &Expr::Real(x));
   let result = evaluate_expr_to_expr(&substituted).ok()?;
-  try_eval_to_f64(&result)
+  if let Some(v) = try_eval_to_f64_lenient(&result) {
+    return Some(v);
+  }
+  // See evaluate_at_xy: body may be a bound variable that only resolved to
+  // a function of var during evaluation.
+  let substituted = substitute_var(&result, var, &Expr::Real(x));
+  let result = evaluate_expr_to_expr(&substituted).ok()?;
+  try_eval_to_f64_lenient(&result)
 }
 
 /// Adaptively sample a function, adding more points where the function changes rapidly.
