@@ -2440,22 +2440,15 @@ can never work.
 
 ## Lists, associations and structured objects
 
-### ListCorrelate / ListConvolve have no multi-dimensional overhang
+### ListCorrelate / ListConvolve: the 7th argument (a level specification)
 
-```sh
-wolframscript -code 'ToString[ListCorrelate[{{1, 1}, {1, 1}}, {{a, b, c}, {d, e, f}, {g, h, i}}, 1], InputForm]'
-# {{a + b + d + e, b + c + e + f, a + c + d + f},
-#  {d + e + g + h, e + f + h + i, d + f + g + i},
-#  {a + b + g + h, b + c + h + i, a + c + g + i}}
-woxi eval 'ListCorrelate[{{1, 1}, {1, 1}}, {{a, b, c}, {d, e, f}, {g, h, i}}, 1]'
-# ListCorrelate[{{1, 1}, {1, 1}}, {{a, b, c}, {d, e, f}, {g, h, i}}, 1]
-```
-
-The two-argument multi-dimensional form is correct; only the overhang path
-(`k` / `{kL, kR}`, padding, generalized `g`/`h`) is one-dimensional, and it
-stays unevaluated for a rank-2 kernel rather than answering.
-
-The 7th argument, a level specification, is unimplemented for every rank:
+The overhang path (`k` / `{kL, kR}`, padding, generalized `g`/`h`) now
+matches wolframscript for a kernel and array of equal rank ≥ 2 too — one
+offset per dimension, each a scalar or `{kL, kR}` pair, with scalar padding
+or cyclic wraparound extending the edges per dimension. Only a per-dimension
+padding *array* and a rank mismatch between kernel and data still leave the
+call unevaluated. The 7th argument, a level specification, remains
+unimplemented for every rank:
 
 ```sh
 wolframscript -code 'ToString[ListCorrelate[{x, y}, {a, b, c}, 1, p, Times, Plus, 1], InputForm]'
