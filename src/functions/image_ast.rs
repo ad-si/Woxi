@@ -1327,6 +1327,8 @@ pub fn sharpen_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 ///   zero-mean Gaussian noise to every color channel. The result is *not*
 ///   clipped to [0, 1] — wolframscript lets a noisy real image run out of
 ///   the unit range, and clipping would bias the noise at both ends.
+/// - `"Noise"` (amplitude `a`, default 0.1): adds zero-mean uniform noise
+///   drawn from `[-a, a]` to every color channel, also unclipped.
 ///
 /// Other effects are not implemented and return the call unevaluated.
 pub fn image_effect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -1412,6 +1414,23 @@ pub fn image_effect_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         for pixel in out.chunks_mut(ch) {
           for channel in pixel.iter_mut().take(color_channels) {
             *channel += rng.sample(normal);
+          }
+        }
+      });
+      out
+    }
+    // `{"Noise", a}`: zero-mean uniform noise of amplitude `a`, i.e. each
+    // channel gets an independent draw from `[-a, a]` added to it. Not
+    // clipped to [0, 1], matching `"GaussianNoise"` above.
+    "Noise" => {
+      let Some(amplitude) = numeric_param(0, 0.1) else {
+        return Ok(unevaluated("ImageEffect", args));
+      };
+      let mut out = data.as_ref().clone();
+      crate::with_rng(|rng| {
+        for pixel in out.chunks_mut(ch) {
+          for channel in pixel.iter_mut().take(color_channels) {
+            *channel += rng.gen_range(-amplitude.abs()..=amplitude.abs());
           }
         }
       });
@@ -4927,6 +4946,252 @@ fn reverse_kernel(kernel: &Expr) -> Option<Expr> {
     out.push(Expr::List(items.iter().rev().cloned().collect()));
   }
   Some(Expr::List(out.into()))
+}
+
+/// Read a rectangular numeric matrix (nested list of lists of numbers)
+/// into row-major order, shared by `ImageConvolve`/`ImageCorrelate`'s
+/// kernel argument and `ImageDeconvolve`'s point-spread-function argument.
+/// `None` for anything that is not a non-empty rectangular matrix.
+fn parse_numeric_matrix(expr: &Expr) -> Option<(usize, usize, Vec<f64>)> {
+  let Expr::List(rows) = expr else {
+    return None;
+  };
+  if rows.is_empty() {
+    return None;
+  }
+  let krows = rows.len();
+  let Expr::List(first) = &rows[0] else {
+    return None;
+  };
+  let kcols = first.len();
+  if kcols == 0 {
+    return None;
+  }
+  let mut matrix = Vec::with_capacity(krows * kcols);
+  for row in rows {
+    let Expr::List(items) = row else {
+      return None;
+    };
+    if items.len() != kcols {
+      return None;
+    }
+    for v in items {
+      matrix.push(expr_to_f64(v).ok()?);
+    }
+  }
+  Some((krows, kcols, matrix))
+}
+
+/// The value bound to `key -> …` among a call's trailing option arguments,
+/// written as `Rule` or `RuleDelayed`.
+fn option_value<'a>(opts: &'a [Expr], key: &str) -> Option<&'a Expr> {
+  opts.iter().find_map(|o| match o {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(k) if k == key) => {
+      Some(replacement.as_ref())
+    }
+    _ => None,
+  })
+}
+
+/// Forward 2D DFT of a real `width × height` array (row-major), computed
+/// as separable 1D DFTs (rows, then columns) with `FourierParameters ->
+/// {1, 1}` (unscaled forward sum, `1/n` inverse) rather than `Fourier`'s
+/// own `{0, 1}` default — this is the convention under which pointwise
+/// multiplication in the transform domain is exactly circular convolution
+/// in the spatial domain, which the regularized inverse filter below
+/// relies on. `idft2d` is its exact inverse.
+fn dft2d(width: usize, height: usize, re: &[f64]) -> Vec<(f64, f64)> {
+  let mut data: Vec<(f64, f64)> = re.iter().map(|&v| (v, 0.0)).collect();
+  for y in 0..height {
+    let row = &data[y * width..(y + 1) * width];
+    let transformed =
+      crate::functions::math_ast::dft_core(row, 1.0, 1.0, false);
+    data[y * width..(y + 1) * width].copy_from_slice(&transformed);
+  }
+  let mut col = vec![(0.0, 0.0); height];
+  for x in 0..width {
+    for (y, slot) in col.iter_mut().enumerate() {
+      *slot = data[y * width + x];
+    }
+    let transformed =
+      crate::functions::math_ast::dft_core(&col, 1.0, 1.0, false);
+    for (y, value) in transformed.into_iter().enumerate() {
+      data[y * width + x] = value;
+    }
+  }
+  data
+}
+
+/// Inverse of [`dft2d`].
+fn idft2d(width: usize, height: usize, data: &[(f64, f64)]) -> Vec<(f64, f64)> {
+  let mut data = data.to_vec();
+  for y in 0..height {
+    let row = &data[y * width..(y + 1) * width];
+    let transformed = crate::functions::math_ast::dft_core(row, 1.0, 1.0, true);
+    data[y * width..(y + 1) * width].copy_from_slice(&transformed);
+  }
+  let mut col = vec![(0.0, 0.0); height];
+  for x in 0..width {
+    for (y, slot) in col.iter_mut().enumerate() {
+      *slot = data[y * width + x];
+    }
+    let transformed =
+      crate::functions::math_ast::dft_core(&col, 1.0, 1.0, true);
+    for (y, value) in transformed.into_iter().enumerate() {
+      data[y * width + x] = value;
+    }
+  }
+  data
+}
+
+/// ImageDeconvolve[image, ker] / ImageDeconvolve[image, ker, opts] —
+/// restores an image blurred by point-spread function `ker`, undoing what
+/// `ImageConvolve[image, ker]` would have done.
+///
+/// Woxi implements the spectral method family — `Method -> "DampedLS"`
+/// (the default), `"Tikhonov"` and `"Wiener"` — as one regularized inverse
+/// filter in the frequency domain: `Fhat = conj(K)·G / (|K|² + λ)`, where
+/// `G` and `K` are the 2D DFTs of the (padded) image and the
+/// zero-centered PSF. `λ` is either the method's own numeric parameter
+/// (`Method -> {"Tikhonov", λ}`) or, when that parameter is `Automatic`
+/// or omitted, a small multiple of the kernel's peak spectral energy —
+/// Woxi's own heuristic, since Mathematica's automatic-λ selection isn't
+/// published. The iterative methods (`"TSVD"`, `"Hybrid"`,
+/// `"RichardsonLucy"`, `"SteepestDescent"`, `"TotalVariation"`) are not
+/// implemented and echo the call unevaluated.
+///
+/// `Padding` (default `"Reversed"`) controls how the image is extended by
+/// half the kernel size before the transform, reusing the same
+/// `"Fixed"`/`"Periodic"`/reflected boundary modes as `ImagePad` (Woxi maps
+/// `"Reversed"` to the reflected mode); the result is cropped back to the
+/// original dimensions.
+pub fn image_deconvolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() < 2 {
+    return Err(InterpreterError::EvaluationError(
+      "ImageDeconvolve expects at least 2 arguments".into(),
+    ));
+  }
+  let Expr::Image {
+    color_space,
+    width,
+    height,
+    channels,
+    data,
+    image_type,
+  } = &args[0]
+  else {
+    crate::emit_message(&format!(
+      "ImageDeconvolve::imginv: Expecting an image or graphics instead of {}.",
+      expr_to_string(&args[0])
+    ));
+    return Ok(unevaluated("ImageDeconvolve", args));
+  };
+  let Some((krows, kcols, kernel)) = parse_numeric_matrix(&args[1]) else {
+    return Ok(unevaluated("ImageDeconvolve", args));
+  };
+
+  let opts = &args[2..];
+  let (method_name, method_param): (String, Option<f64>) =
+    match option_value(opts, "Method") {
+      Some(Expr::String(s)) => (s.clone(), None),
+      Some(Expr::List(items)) if !items.is_empty() => {
+        let name = match &items[0] {
+          Expr::String(s) => s.clone(),
+          _ => "DampedLS".to_string(),
+        };
+        let param = items
+          .get(1)
+          .and_then(crate::functions::math_ast::try_eval_to_f64)
+          .filter(|p| *p > 0.0);
+        (name, param)
+      }
+      _ => ("DampedLS".to_string(), None),
+    };
+  if !matches!(method_name.as_str(), "DampedLS" | "Tikhonov" | "Wiener") {
+    // Iterative methods aren't implemented; echo the call rather than
+    // fabricate a result.
+    return Ok(unevaluated("ImageDeconvolve", args));
+  }
+  let padding_mode = match option_value(opts, "Padding") {
+    Some(Expr::String(s)) if s == "Fixed" => "Fixed",
+    Some(Expr::String(s)) if s == "Periodic" => "Periodic",
+    _ => "Reflected", // "Reversed" (the default) and anything unrecognized.
+  };
+
+  let w = *width as usize;
+  let h = *height as usize;
+  let ch = *channels as usize;
+  let cy = krows / 2;
+  let cx = kcols / 2;
+  let pad_y = cy.min(h.saturating_sub(1));
+  let pad_x = cx.min(w.saturating_sub(1));
+  let pw = w + 2 * pad_x;
+  let ph = h + 2 * pad_y;
+
+  // Embed the PSF into a pw×ph array with its center at (0, 0), wrapping
+  // around — the standard placement for a circular-convolution kernel.
+  let mut kernel_full = vec![0.0_f64; pw * ph];
+  for ky in 0..krows {
+    for kx in 0..kcols {
+      let oy = (ky as isize - cy as isize).rem_euclid(ph as isize) as usize;
+      let ox = (kx as isize - cx as isize).rem_euclid(pw as isize) as usize;
+      kernel_full[oy * pw + ox] += kernel[ky * kcols + kx];
+    }
+  }
+  let kernel_fft = dft2d(pw, ph, &kernel_full);
+  let max_k2 = kernel_fft
+    .iter()
+    .map(|&(re, im)| re * re + im * im)
+    .fold(0.0_f64, f64::max);
+  let lambda = method_param.unwrap_or(max_k2 * 1e-3).max(1e-12);
+
+  let mut out_data = vec![0.0_f64; data.len()];
+  let mut padded = vec![0.0_f64; pw * ph];
+  for c in 0..ch {
+    for py in 0..ph {
+      let sy =
+        image_pad_source(padding_mode, py as i64 - pad_y as i64, h as i64)
+          .unwrap_or(0) as usize;
+      for px in 0..pw {
+        let sx =
+          image_pad_source(padding_mode, px as i64 - pad_x as i64, w as i64)
+            .unwrap_or(0) as usize;
+        padded[py * pw + px] = data[(sy * w + sx) * ch + c];
+      }
+    }
+    let img_fft = dft2d(pw, ph, &padded);
+    let mut restored_fft = vec![(0.0, 0.0); pw * ph];
+    for i in 0..pw * ph {
+      let (kr, ki) = kernel_fft[i];
+      let (gr, gi) = img_fft[i];
+      let denom = kr * kr + ki * ki + lambda;
+      restored_fft[i] =
+        ((kr * gr + ki * gi) / denom, (kr * gi - ki * gr) / denom);
+    }
+    let restored = idft2d(pw, ph, &restored_fft);
+    for y in 0..h {
+      for x in 0..w {
+        let (re, _im) = restored[(y + pad_y) * pw + (x + pad_x)];
+        out_data[(y * w + x) * ch + c] = re;
+      }
+    }
+  }
+
+  Ok(Expr::Image {
+    color_space: *color_space,
+    width: *width,
+    height: *height,
+    channels: *channels,
+    data: Arc::new(out_data),
+    image_type: *image_type,
+  })
 }
 
 /// The kernel filtering shared by `ImageCorrelate` and `ImageConvolve`:
