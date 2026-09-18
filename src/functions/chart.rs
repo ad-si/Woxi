@@ -563,6 +563,24 @@ pub(crate) fn expr_to_label(e: &Expr) -> Option<String> {
         .collect();
       Some(format!("{base}{scripts}"))
     }
+    // `Subsuperscript[base, sub, sup]` — both scripts in sequence, the same
+    // Unicode-digit approximation `Subscript`/`Superscript` use above (a
+    // Demonstration nesting it, e.g. `Nest[Subsuperscript[#, #, #] &, …]`,
+    // recurses back into this same arm for each level's base).
+    Expr::FunctionCall { name, args }
+      if name == "Subsuperscript" && args.len() == 3 =>
+    {
+      let base = expr_to_label(&args[0])?;
+      let sub = expr_to_label(&args[1])
+        .map(|s| {
+          crate::functions::graphics::to_unicode_script_digits(&s, false)
+        })
+        .unwrap_or_default();
+      let sup = expr_to_label(&args[2])
+        .map(|s| crate::functions::graphics::to_unicode_script_digits(&s, true))
+        .unwrap_or_default();
+      Some(format!("{base}{sub}{sup}"))
+    }
     // A number written through one of the formatting wrappers reads as
     // the text that wrapper produces — a Demonstration labels its plot
     // with `NumberForm[value, {16, 2}, DigitBlock -> 3]`, and dropping it

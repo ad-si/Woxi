@@ -3132,13 +3132,15 @@ fn graphics_text_content(expr: &Expr) -> String {
         None => parts.concat(),
       }
     }
-    // `Subscript`/`Superscript` typeset as scripts, not as the two-line
-    // OutputForm box `ToString` would give: a label reading `N` over ` D`
-    // is not what the picture is meant to show. `expr_to_label` already
-    // folds them into the Unicode script characters for plot labels, so a
-    // `Text` label written the same way reads the same way.
+    // `Subscript`/`Superscript`/`Subsuperscript` typeset as scripts, not as
+    // the two-line OutputForm box `ToString` would give: a label reading `N`
+    // over ` D` is not what the picture is meant to show. `expr_to_label`
+    // already folds them into the Unicode script characters for plot
+    // labels, so a `Text` label written the same way reads the same way.
     Expr::FunctionCall { name, args }
-      if (name == "Subscript" || name == "Superscript") && args.len() >= 2 =>
+      if (matches!(name.as_str(), "Subscript" | "Superscript")
+        && args.len() >= 2)
+        || (name == "Subsuperscript" && args.len() == 3) =>
     {
       crate::functions::chart::expr_to_label(expr)
         .unwrap_or_else(|| expr_to_string(expr))
@@ -10122,6 +10124,20 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
           )
         }
 
+        // Subsuperscript[base, sub, sup] — both scripts in sequence, the
+        // same shifted-tspan shape `SubsuperscriptBox` gets in `boxes_to_svg`
+        // below. A Demonstration nests this (`Nest[Subsuperscript[#, #, #]
+        // &, …]`), and each level's base recurses back into this same arm.
+        "Subsuperscript" if args.len() == 3 => {
+          format!(
+            "{}<tspan baseline-shift=\"sub\" font-size=\"70%\">{}</tspan>\
+             <tspan baseline-shift=\"super\" font-size=\"70%\">{}</tspan>",
+            expr_to_svg_markup(&args[0]),
+            expr_to_svg_markup(&args[1]),
+            expr_to_svg_markup(&args[2]),
+          )
+        }
+
         // `OverBar[x]` / `UnderBar[x]` — the named accent shorthands for a
         // horizontal line above/below the content (a Demonstration's sample
         // mean/estimate notation, x̄). `text-decoration` draws the line at
@@ -10521,6 +10537,14 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
         let scripts: f64 = args[1..].iter().map(estimate_display_width).sum();
         let seps = (args.len() - 2) as f64;
         estimate_display_width(&args[0]) + (scripts + seps) * 0.7
+      }
+      // Subsuperscript[base, sub, sup] — the sub and super tspans sit side
+      // by side (not stacked), so both add to the width at 70% size.
+      "Subsuperscript" if args.len() == 3 => {
+        estimate_display_width(&args[0])
+          + (estimate_display_width(&args[1])
+            + estimate_display_width(&args[2]))
+            * 0.7
       }
       // Row[{a, b, …}] concatenates its parts, joined by the separator.
       "Row" if !args.is_empty() => match &args[0] {

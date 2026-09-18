@@ -17207,6 +17207,79 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`showCap$$ = False}, \"\\[Ellipsis]\
     );
   }
 
+  /// End-to-end regression for the "Typeset Sierpinski Sieve" Demonstration's
+  /// shape: a `Graphics[Text[…], …]` whose label is `Nest[Subsuperscript[#,
+  /// #, #] &, symbol, depth]` — each recursion level wraps the *whole*
+  /// previous level in a fresh sub-/superscript pair, which is the
+  /// fractal-like typeset pattern the Demonstration is named for. The one
+  /// control is a discrete stepped slider (`{{var, init, "label"}, lo, hi,
+  /// step}` with `Appearance -> "Labeled"`).
+  ///
+  /// `graphics_text_content` (the flattener a `Text[…]` primitive's label
+  /// goes through before it is drawn) folded `Subscript`/`Superscript` into
+  /// their Unicode script form but had no arm for a bare `Subsuperscript`,
+  /// so `Nest` building one fell through to its literal `Subsuperscript[…]`
+  /// source text instead of typesetting. Fixed by adding `Subsuperscript`
+  /// to that arm (and to the sibling `expr_to_label`, `expr_to_svg_markup`
+  /// and `estimate_display_width` — the same head's label/markup/width
+  /// paths) rather than leaving it to print its own source.
+  ///
+  /// The Manipulate is written here rather than lifted from the published
+  /// notebook.
+  #[test]
+  fn nested_subsuperscript_notebook_builds_its_widget() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[\nGraphics[\nText[Nest[Subsuperscript[#, #, #] &, \"\\[CapitalPsi]\", depth], {0, 0}],\nImageSize -> 300\n],\n{{depth, 1, \"recursion depth\"}, 1, 4, 1, Appearance -> \"Labeled\"}\n]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`depth$$ = 1}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "the nested typeset label must build: {:?}",
+      widget.error
+    );
+    assert!(widget.graphics_handle.is_some(), "the label must draw");
+
+    let names: Vec<&str> = widget
+      .controls
+      .iter()
+      .map(|c| match c {
+        manipulate::ControlState::Discrete { name, .. } => name.as_str(),
+        manipulate::ControlState::Continuous { name, .. } => name.as_str(),
+        other => panic!("unexpected control: {other:?}"),
+      })
+      .collect();
+    assert_eq!(names, ["depth"]);
+
+    let render = |depth: u32| {
+      woxi::interpret_with_stdout(&format!("depth = {depth};\n{}", widget.body))
+        .expect("the body must render")
+        .graphics
+        .expect("the body must produce a graphic")
+    };
+    // Each recursion level must actually nest — not just repeat the same
+    // text unchanged — so the picture must differ as the depth control
+    // moves, and keep differing at the next level too.
+    let depth1 = render(1);
+    let depth2 = render(2);
+    let depth3 = render(3);
+    assert_ne!(depth1, depth2, "the recursion depth control must matter");
+    assert_ne!(depth2, depth3, "each extra level of nesting must matter");
+    // The bug this guards against: the literal `Subsuperscript[…]` source
+    // leaking into the picture instead of typesetting.
+    assert!(
+      !depth2.contains("Subsuperscript"),
+      "the nested scripts must typeset, not print their source: {depth2}"
+    );
+  }
+
   /// End-to-end regression for the "Chaos and Order in the Damped Forced
   /// Pendulum in a Plane" Demonstration: it integrates the damped driven
   /// pendulum `θ'' == -(g/l) Sin[θ] - γ θ' + a Cos[ω t]` from a grid of
@@ -20319,7 +20392,11 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 1}, DynamicBox[\[Ellipsis]]]"
         assert_eq!(values.as_slice(), ["1", "2", "3", "4", "5", "6", "7"]);
         assert_eq!(*current_index, 0);
         assert!(!popup, "ControlType -> Setter must not force a dropdown");
-        assert!(!setter_bar, "an unforced Setter is not a SetterBar");
+        assert!(
+          *setter_bar,
+          "ControlType -> Setter must force the button row just like \
+           SetterBar does, per setter_control_type_forces_the_bar_regardless_of_choice_count"
+        );
       }
       other => panic!("expected a single Setter control, got {other:?}"),
     }
