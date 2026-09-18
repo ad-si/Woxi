@@ -1317,11 +1317,34 @@ pub fn get_captured_graphics() -> Option<String> {
 /// `p1 = Plot[…]; p2 = ContourPlot[…]; Switch[which, 1, p1, 2, p2]`, drew
 /// `p2` last, so the chosen `p1` was displayed as `p2`. Re-capturing the
 /// result's SVG puts the picked picture back at the end of the buffer.
+///
+/// `TabView[{label1 -> pane1, label2 -> pane2, …}]` is the same problem in
+/// a different shape: unlike `Switch`, it has no "the value is exactly this
+/// one branch" reduction — a real front end keeps every pane's expression
+/// live and simply *displays* the first one until the user clicks another
+/// tab. Every pane's content is still evaluated eagerly here, though, so a
+/// pane with a picture still calls `capture_graphics` as a side effect —
+/// last pane in the list wins the buffer, not the first tab a notebook
+/// actually opens on. Recurse into the first pane and promote its picture
+/// the same way.
 fn promote_result_graphics(expr: &syntax::Expr) {
-  if let syntax::Expr::Graphics { svg, .. } = expr
-    && get_captured_graphics().as_deref() != Some(svg.as_str())
+  if let syntax::Expr::Graphics { svg, .. } = expr {
+    if get_captured_graphics().as_deref() != Some(svg.as_str()) {
+      capture_graphics(svg);
+    }
+    return;
+  }
+  if let syntax::Expr::FunctionCall { name, args } = expr
+    && name == "TabView"
+    && let Some(syntax::Expr::List(items)) = args.first()
+    && let Some(first) = items.first()
   {
-    capture_graphics(svg);
+    let pane = match first {
+      syntax::Expr::Rule { replacement, .. }
+      | syntax::Expr::RuleDelayed { replacement, .. } => replacement.as_ref(),
+      other => other,
+    };
+    promote_result_graphics(pane);
   }
 }
 

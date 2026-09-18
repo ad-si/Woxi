@@ -849,6 +849,29 @@ mod interpreter_tests {
     );
   }
 
+  /// `TabView[{"first" -> pane1, "second" -> pane2}]` has no single branch
+  /// the way `Switch` does — a real front end keeps every pane's expression
+  /// live and just *displays* the first one until the user clicks another
+  /// tab. Woxi still evaluates every pane eagerly, and a pane that draws a
+  /// picture calls `capture_graphics` as a side effect, so the same
+  /// last-drawn-wins bug applies: the second (last) pane used to win the
+  /// capture buffer no matter which tab a notebook actually opens on.
+  #[test]
+  fn test_tabview_shows_first_tab_not_last_evaluated() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "TabView[{\"first\" -> Plot[Sin[x], {x, 0, 4}, ImageSize -> 320], \
+       \"second\" -> Plot[Cos[x], {x, 0, 4}, ImageSize -> 480]}]",
+    )
+    .unwrap();
+    let svg = r.graphics.expect("expected graphics output");
+    assert!(
+      svg.starts_with("<svg width=\"320\""),
+      "expected the first tab's plot (320 wide), got: {}",
+      &svg[..svg.len().min(80)]
+    );
+  }
+
   /// The same holds across the statements of one cell: the value of the
   /// last statement is what gets displayed.
   #[test]
