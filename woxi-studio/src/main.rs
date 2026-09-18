@@ -7325,6 +7325,60 @@ mod tests {
     );
   }
 
+  /// A generator-matrix Manipulate: an `Initialization`-defined family of
+  /// small complex-valued matrices (`gen[k]`, built with `KroneckerProduct`
+  /// from `{{0, -I}, {I, 0}}`-style factors) is shown with `ArrayPlot`,
+  /// colored via `ColorRules` keyed on the matrices' actual `0`/`I`/`-I`/`1`/
+  /// `-1` entries, with `Mesh -> True` and a second slider whose upper bound
+  /// tracks the first (`Dynamic[size$$]`) plus `SaveDefinitions -> True` —
+  /// the general shape a higher-dimensional Clifford/Dirac-algebra Wolfram
+  /// Demonstrations Project notebook uses (independently written here, not
+  /// copied from any specific one). Regression: `ArrayPlot`'s `ColorRules`
+  /// resolved every rule key and matrix cell through `f64` before matching,
+  /// so non-real values like `I`/`-I` (which have no real `f64` form) all
+  /// collapsed to `0.0` and matched the `0 -> ...` rule instead of their
+  /// own — the rendered widget showed a single flat color instead of the
+  /// intended four-color matrix.
+  #[test]
+  fn manipulate_array_plot_color_rules_match_complex_matrix_entries() {
+    let code = r#"Manipulate[
+      If[k > size, k = size];
+      ArrayPlot[
+        gen[k, size],
+        ColorFunction -> Hue,
+        ColorRules -> {0 -> White, I -> Red, -I -> Green, 1 -> Blue, -1 -> Yellow},
+        Mesh -> True
+      ],
+      {{size, 4, "size"}, 2, 6, 1, Appearance -> "Labeled"},
+      {{k, 2, "index"}, 1, Dynamic[size], 1, Appearance -> "Labeled"},
+      SaveDefinitions -> True,
+      Initialization :> (
+        base[0] = {{1, 0}, {0, 1}};
+        base[1] = {{0, 1}, {1, 0}};
+        base[2] = {{0, -I}, {I, 0}};
+        gen[1, n_] := KroneckerProduct @@ Table[base[1], {n/2}];
+        gen[j_, n_] /; j > 1 := KroneckerProduct[
+          Sequence @@ Table[base[1], {n/2 - Ceiling[j/2]}],
+          base[Mod[j, 2] + 1],
+          Sequence @@ Table[base[0], {Ceiling[j/2] - 1}]
+        ];
+      )
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr).expect(
+      "a KroneckerProduct-built complex matrix fed to ArrayPlot should build a ManipulateState",
+    );
+    assert_eq!(
+      state.error, None,
+      "ArrayPlot must render the generator matrix"
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the ArrayPlot should render as a graphic"
+    );
+  }
+
   /// A triangle-center Manipulate with three `Locator`-draggable vertices
   /// and a small helper drawing the (extended) edge lines through each pair
   /// of vertices with `InfiniteLine`, alongside the filled triangle and its

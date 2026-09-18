@@ -12401,6 +12401,19 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn array_plot_color_rules_complex_values() {
+      // Regression: ColorRules resolved every cell value and rule key
+      // through `f64` before matching, so non-real values like `I`/`-I`
+      // (which have no real `f64` form) all collapsed to 0.0 and matched
+      // the wrong rule instead of their own.
+      let svg = export_svg(
+        "ArrayPlot[{{0, -I}, {I, 0}}, ColorRules -> {0 -> White, I -> Red, -I -> Green}]",
+      );
+      assert!(svg.contains("fill=\"#FF0000\""), "{svg}"); // I -> Red
+      assert!(svg.contains("fill=\"#00FF00\""), "{svg}"); // -I -> Green
+    }
+
+    #[test]
     fn array_plot_mesh() {
       // Mesh -> True draws grid lines between cells
       insta::assert_snapshot!(export_svg(
