@@ -2900,6 +2900,16 @@ pub fn evaluate_expr_to_expr_inner(
           }
           return crate::functions::string_ast::string_join_ast(&evaled);
         }
+        BinaryOperator::Plus | BinaryOperator::Minus => {
+          return evaluate_binary_op_chain(*op, left, right, |o| {
+            matches!(o, BinaryOperator::Plus | BinaryOperator::Minus)
+          });
+        }
+        BinaryOperator::Times | BinaryOperator::Divide => {
+          return evaluate_binary_op_chain(*op, left, right, |o| {
+            matches!(o, BinaryOperator::Times | BinaryOperator::Divide)
+          });
+        }
         _ => {}
       }
 
@@ -2908,214 +2918,7 @@ pub fn evaluate_expr_to_expr_inner(
       // run: `Unevaluated[1 + 1] + 3` is 5.
       let left_val = strip_unevaluated(&evaluate_expr_to_expr(left)?);
       let right_val = strip_unevaluated(&evaluate_expr_to_expr(right)?);
-
-      // Splice Sequence operands into the corresponding n-ary operation, e.g.
-      // `Sequence[1, 2] + Sequence[3, 4]` -> `Plus[1, 2, 3, 4]` = 10. Map
-      // subtraction and division onto Plus/Times (with a negated/reciprocal
-      // second operand) so the spliced arguments combine the same way Wolfram
-      // does (`Sequence[1, 2] - 3` -> `Plus[1, 2, -3]` = 0). Re-evaluating the
-      // function-call form runs `flatten_sequences`, which performs the splice.
-      {
-        let is_seq = |e: &Expr| matches!(e, Expr::FunctionCall { name, .. } if name == "Sequence");
-        if is_seq(&left_val) || is_seq(&right_val) {
-          let neg = |e: Expr| call("Times", vec![Expr::Integer(-1), e]);
-          let recip = |e: Expr| call("Power", vec![e, Expr::Integer(-1)]);
-          let spliced: Option<(&str, Expr, Expr)> = match op {
-            BinaryOperator::Plus => {
-              Some(("Plus", left_val.clone(), right_val.clone()))
-            }
-            BinaryOperator::Times => {
-              Some(("Times", left_val.clone(), right_val.clone()))
-            }
-            BinaryOperator::Power => {
-              Some(("Power", left_val.clone(), right_val.clone()))
-            }
-            BinaryOperator::StringJoin => {
-              Some(("StringJoin", left_val.clone(), right_val.clone()))
-            }
-            BinaryOperator::Minus => {
-              Some(("Plus", left_val.clone(), neg(right_val.clone())))
-            }
-            BinaryOperator::Divide => {
-              Some(("Times", left_val.clone(), recip(right_val.clone())))
-            }
-            _ => None,
-          };
-          if let Some((name, l, r)) = spliced {
-            return evaluate_expr_to_expr(&call(name, vec![l, r]));
-          }
-        }
-      }
-
-      // For operators with corresponding function names (Plus, Times, Power, etc.),
-      // check if there are user-defined rules (e.g. upvalues from TagSetDelayed).
-      // If so, route through evaluate_function_call_ast which checks FUNC_DEFS first.
-      let func_name = match op {
-        BinaryOperator::Plus => Some("Plus"),
-        BinaryOperator::Times => Some("Times"),
-        BinaryOperator::Power => Some("Power"),
-        BinaryOperator::StringJoin => Some("StringJoin"),
-        _ => None,
-      };
-      if let Some(name) = func_name {
-        if has_user_rules(name) {
-          return evaluate_function_call_ast(name, &[left_val, right_val]);
-        }
-        // If the head symbol has an OwnValue (e.g. `Unprotect[Plus]; Plus=Q`),
-        // substitute the head and re-evaluate as `Q[a, b]` rather than the
-        // built-in plus_ast path. Matches Wolfram: `Plus = Q; a + b` → `Q[a, b]`.
-        let own_value_head: Option<String> = ENV.with(|e| {
-          let env = e.borrow();
-          match env.get(name) {
-            Some(StoredValue::ExprVal(Expr::Identifier(s))) => Some(s.clone()),
-            // OwnValues set via `Sym = simple_identifier` are stored as Raw
-            // text (the assignment shortcut). Treat a single-identifier
-            // textual value the same as a head substitution.
-            Some(StoredValue::Raw(s))
-              if s.chars().all(|c| c.is_alphanumeric() || c == '$') =>
-            {
-              Some(s.clone())
-            }
-            _ => None,
-          }
-        });
-        if let Some(new_head) = own_value_head
-          && new_head != name
-        {
-          return evaluate_function_call_ast(&new_head, &[left_val, right_val]);
-        }
-      }
-
-      // `a - b` / `a / b` expand to Plus/Times/Power; let user-defined rules
-      // on those heads apply before the built-in arithmetic below.
-      let shorthand_head = match op {
-        BinaryOperator::Minus => Some("Subtract"),
-        BinaryOperator::Divide => Some("Divide"),
-        _ => None,
-      };
-      if let Some(head) = shorthand_head
-        && let Some(result) =
-          expand_arith_shorthand(head, &[left_val.clone(), right_val.clone()])
-      {
-        return result;
-      }
-
-      // Check for list threading (arithmetic operations thread over lists)
-      let has_list = matches!(&left_val, Expr::List(_))
-        || matches!(&right_val, Expr::List(_));
-
-      if has_list
-        && matches!(
-          op,
-          BinaryOperator::Plus
-            | BinaryOperator::Minus
-            | BinaryOperator::Times
-            | BinaryOperator::Divide
-            | BinaryOperator::Power
-        )
-      {
-        return thread_binary_op(&left_val, &right_val, *op);
-      }
-
-      // Try numeric evaluation
-      let left_num = expr_to_number(&left_val);
-      let right_num = expr_to_number(&right_val);
-
-      match op {
-        BinaryOperator::Plus => {
-          // Use plus_ast for proper symbolic handling and canonical ordering
-          crate::functions::math_ast::plus_ast(&[left_val, right_val])
-        }
-        BinaryOperator::Minus => {
-          // Handle BigInteger arithmetic
-          if let Some(result) =
-            bigint_binary_op(&left_val, &right_val, |a, b| a - b)
-          {
-            Ok(result)
-          } else if matches!(&left_val, Expr::BigFloat(_, _))
-            || matches!(&right_val, Expr::BigFloat(_, _))
-          {
-            // Arbitrary-precision operands: route through subtract_ast
-            // (a + (-1)*b) so precision is tracked, instead of collapsing to
-            // an f64 Real. Matches `Subtract[N[Pi,30], 3]`.
-            crate::functions::math_ast::subtract_ast(&[left_val, right_val])
-          } else if let (Some(l), Some(r)) = (left_num, right_num) {
-            if matches!(&left_val, Expr::Real(_))
-              || matches!(&right_val, Expr::Real(_))
-            {
-              Ok(Expr::Real(l - r))
-            } else {
-              Ok(num_to_expr(l - r))
-            }
-          } else if matches!(&left_val, Expr::Integer(0)) {
-            // 0 - x => -x via times_ast for proper distribution
-            crate::functions::math_ast::times_ast(&[
-              Expr::Integer(-1),
-              right_val,
-            ])
-          } else if crate::functions::quantity_ast::is_quantity(&left_val)
-            .is_some()
-            || crate::functions::quantity_ast::is_quantity(&right_val).is_some()
-          {
-            // Quantity subtraction: delegate to subtract_ast → Plus[a, Times[-1, b]]
-            crate::functions::math_ast::subtract_ast(&[left_val, right_val])
-          } else {
-            // Use subtract_ast for proper distribution of -1 over Plus
-            crate::functions::math_ast::subtract_ast(&[left_val, right_val])
-          }
-        }
-        BinaryOperator::Times => {
-          // Use times_ast for proper symbolic handling and canonical ordering
-          crate::functions::math_ast::times_ast(&[left_val, right_val])
-        }
-        BinaryOperator::Divide => {
-          // Delegate to divide_ast for proper handling of Rational, Real, etc.
-          crate::functions::math_ast::divide_ast(&[left_val, right_val])
-        }
-        BinaryOperator::Power => {
-          // Delegate to power_ast for proper handling of Rational, Real, etc.
-          crate::functions::math_ast::power_ast(&[left_val, right_val])
-        }
-        BinaryOperator::And | BinaryOperator::Or => {
-          // Handled above with short-circuit evaluation
-          unreachable!()
-        }
-        BinaryOperator::StringJoin => {
-          // Route through string_join_ast so that non-string arguments emit
-          // the StringJoin::string warning and return unevaluated (matching
-          // wolframscript), instead of silently coercing identifiers/integers.
-          crate::functions::string_ast::string_join_ast(&[left_val, right_val])
-        }
-        BinaryOperator::Alternatives => {
-          // `a | b | c` (the `|` operator) is a flat Alternatives head in WL:
-          // Length[a | b | c] == 3. The parser builds it as a nested BinaryOp
-          // chain, so canonicalize the evaluated chain into a flat
-          // Alternatives[...] FunctionCall. This makes structural operations
-          // (Part, Sort, MemberQ, Append, …) see all operands as siblings,
-          // matching wolframscript. Held patterns keep their BinaryOp form and
-          // are handled directly by the pattern matcher, which accepts both.
-          fn push_alt(e: &Expr, out: &mut Vec<Expr>) {
-            match e {
-              Expr::FunctionCall { name, args } if name == "Alternatives" => {
-                out.extend(args.iter().cloned());
-              }
-              Expr::BinaryOp {
-                op: BinaryOperator::Alternatives,
-                left,
-                right,
-              } => {
-                push_alt(left, out);
-                push_alt(right, out);
-              }
-              other => out.push(other.clone()),
-            }
-          }
-          let mut parts = Vec::new();
-          push_alt(&left_val, &mut parts);
-          push_alt(&right_val, &mut parts);
-          Ok(call("Alternatives", parts))
-        }
-      }
+      evaluate_binary_op_pair(*op, left_val, right_val)
     }
     Expr::UnaryOp { op, operand } => {
       let val = evaluate_expr_to_expr(operand)?;
@@ -4349,6 +4152,280 @@ pub fn evaluate_expr_to_expr_inner(
       let prepared =
         crate::evaluator::listable::flatten_sequences("Function", &prepared);
       apply_curried_call(&evaluated_func, &prepared)
+    }
+  }
+}
+
+/// Evaluate a chain of `Plus`/`Minus` or `Times`/`Divide` `BinaryOp` nodes
+/// iteratively instead of recursing into `evaluate_expr_to_expr` once per
+/// nesting level.
+///
+/// `a*b*c*...` (common in generated code, e.g. a word list built as
+/// `list = w1*w2*...*w1400`) parses as an O(n)-deep nested `BinaryOp` chain.
+/// Naively recursing into `evaluate_expr_to_expr(left)` for each level burns
+/// one `$RecursionLimit` slot per term and terminates the whole evaluation
+/// past ~1024 terms — even though Wolfram evaluates a flat Plus/Times chain
+/// of any length without spending any recursion budget at all (`Times` and
+/// `Plus` are `Flat`: the whole chain is one n-ary expression, not nested
+/// binary calls). Walking the chain with an explicit stack instead of Rust
+/// recursion evaluates each leaf/combine step at constant depth while
+/// reproducing the exact same left-to-right, depth-first evaluation order
+/// (and hence the exact same `evaluate_binary_op_pair` semantics) as the
+/// naive recursive version.
+fn evaluate_binary_op_chain(
+  root_op: BinaryOperator,
+  root_left: &Expr,
+  root_right: &Expr,
+  in_family: impl Fn(BinaryOperator) -> bool,
+) -> Result<Expr, InterpreterError> {
+  enum Work<'a> {
+    Node(&'a Expr),
+    Combine(BinaryOperator),
+  }
+  // `work` is a LIFO stack, so operands must be pushed in reverse of the
+  // order they should be popped/processed: `Combine` goes in first (popped
+  // last, once both operands are ready), then the right operand, then the
+  // left operand last (popped first) — giving the same left-to-right,
+  // depth-first evaluation order as the naive recursive version.
+  let mut work = vec![
+    Work::Combine(root_op),
+    Work::Node(root_right),
+    Work::Node(root_left),
+  ];
+  let mut values: Vec<Expr> = Vec::new();
+  while let Some(item) = work.pop() {
+    match item {
+      Work::Node(e) => {
+        if let Expr::BinaryOp { op, left, right } = e
+          && in_family(*op)
+        {
+          work.push(Work::Combine(*op));
+          work.push(Work::Node(right));
+          work.push(Work::Node(left));
+          continue;
+        }
+        values.push(strip_unevaluated(&evaluate_expr_to_expr(e)?));
+      }
+      Work::Combine(op) => {
+        let right_val = values.pop().expect("chain: missing right operand");
+        let left_val = values.pop().expect("chain: missing left operand");
+        values.push(strip_unevaluated(&evaluate_binary_op_pair(
+          op, left_val, right_val,
+        )?));
+      }
+    }
+  }
+  Ok(values.pop().expect("chain: missing result"))
+}
+
+/// Combine two already-evaluated operands of a `BinaryOp` (`Plus`, `Minus`,
+/// `Times`, `Divide`, `Power`, `Alternatives`).
+fn evaluate_binary_op_pair(
+  op: BinaryOperator,
+  left_val: Expr,
+  right_val: Expr,
+) -> Result<Expr, InterpreterError> {
+  // Splice Sequence operands into the corresponding n-ary operation, e.g.
+  // `Sequence[1, 2] + Sequence[3, 4]` -> `Plus[1, 2, 3, 4]` = 10. Map
+  // subtraction and division onto Plus/Times (with a negated/reciprocal
+  // second operand) so the spliced arguments combine the same way Wolfram
+  // does (`Sequence[1, 2] - 3` -> `Plus[1, 2, -3]` = 0). Re-evaluating the
+  // function-call form runs `flatten_sequences`, which performs the splice.
+  {
+    let is_seq = |e: &Expr| matches!(e, Expr::FunctionCall { name, .. } if name == "Sequence");
+    if is_seq(&left_val) || is_seq(&right_val) {
+      let neg = |e: Expr| call("Times", vec![Expr::Integer(-1), e]);
+      let recip = |e: Expr| call("Power", vec![e, Expr::Integer(-1)]);
+      let spliced: Option<(&str, Expr, Expr)> = match op {
+        BinaryOperator::Plus => {
+          Some(("Plus", left_val.clone(), right_val.clone()))
+        }
+        BinaryOperator::Times => {
+          Some(("Times", left_val.clone(), right_val.clone()))
+        }
+        BinaryOperator::Power => {
+          Some(("Power", left_val.clone(), right_val.clone()))
+        }
+        BinaryOperator::StringJoin => {
+          Some(("StringJoin", left_val.clone(), right_val.clone()))
+        }
+        BinaryOperator::Minus => {
+          Some(("Plus", left_val.clone(), neg(right_val.clone())))
+        }
+        BinaryOperator::Divide => {
+          Some(("Times", left_val.clone(), recip(right_val.clone())))
+        }
+        _ => None,
+      };
+      if let Some((name, l, r)) = spliced {
+        return evaluate_expr_to_expr(&call(name, vec![l, r]));
+      }
+    }
+  }
+
+  // For operators with corresponding function names (Plus, Times, Power, etc.),
+  // check if there are user-defined rules (e.g. upvalues from TagSetDelayed).
+  // If so, route through evaluate_function_call_ast which checks FUNC_DEFS first.
+  let func_name = match op {
+    BinaryOperator::Plus => Some("Plus"),
+    BinaryOperator::Times => Some("Times"),
+    BinaryOperator::Power => Some("Power"),
+    BinaryOperator::StringJoin => Some("StringJoin"),
+    _ => None,
+  };
+  if let Some(name) = func_name {
+    if has_user_rules(name) {
+      return evaluate_function_call_ast(name, &[left_val, right_val]);
+    }
+    // If the head symbol has an OwnValue (e.g. `Unprotect[Plus]; Plus=Q`),
+    // substitute the head and re-evaluate as `Q[a, b]` rather than the
+    // built-in plus_ast path. Matches Wolfram: `Plus = Q; a + b` → `Q[a, b]`.
+    let own_value_head: Option<String> = ENV.with(|e| {
+      let env = e.borrow();
+      match env.get(name) {
+        Some(StoredValue::ExprVal(Expr::Identifier(s))) => Some(s.clone()),
+        // OwnValues set via `Sym = simple_identifier` are stored as Raw
+        // text (the assignment shortcut). Treat a single-identifier
+        // textual value the same as a head substitution.
+        Some(StoredValue::Raw(s))
+          if s.chars().all(|c| c.is_alphanumeric() || c == '$') =>
+        {
+          Some(s.clone())
+        }
+        _ => None,
+      }
+    });
+    if let Some(new_head) = own_value_head
+      && new_head != name
+    {
+      return evaluate_function_call_ast(&new_head, &[left_val, right_val]);
+    }
+  }
+
+  // `a - b` / `a / b` expand to Plus/Times/Power; let user-defined rules
+  // on those heads apply before the built-in arithmetic below.
+  let shorthand_head = match op {
+    BinaryOperator::Minus => Some("Subtract"),
+    BinaryOperator::Divide => Some("Divide"),
+    _ => None,
+  };
+  if let Some(head) = shorthand_head
+    && let Some(result) =
+      expand_arith_shorthand(head, &[left_val.clone(), right_val.clone()])
+  {
+    return result;
+  }
+
+  // Check for list threading (arithmetic operations thread over lists)
+  let has_list =
+    matches!(&left_val, Expr::List(_)) || matches!(&right_val, Expr::List(_));
+
+  if has_list
+    && matches!(
+      op,
+      BinaryOperator::Plus
+        | BinaryOperator::Minus
+        | BinaryOperator::Times
+        | BinaryOperator::Divide
+        | BinaryOperator::Power
+    )
+  {
+    return thread_binary_op(&left_val, &right_val, op);
+  }
+
+  // Try numeric evaluation
+  let left_num = expr_to_number(&left_val);
+  let right_num = expr_to_number(&right_val);
+
+  match op {
+    BinaryOperator::Plus => {
+      // Use plus_ast for proper symbolic handling and canonical ordering
+      crate::functions::math_ast::plus_ast(&[left_val, right_val])
+    }
+    BinaryOperator::Minus => {
+      // Handle BigInteger arithmetic
+      if let Some(result) =
+        bigint_binary_op(&left_val, &right_val, |a, b| a - b)
+      {
+        Ok(result)
+      } else if matches!(&left_val, Expr::BigFloat(_, _))
+        || matches!(&right_val, Expr::BigFloat(_, _))
+      {
+        // Arbitrary-precision operands: route through subtract_ast
+        // (a + (-1)*b) so precision is tracked, instead of collapsing to
+        // an f64 Real. Matches `Subtract[N[Pi,30], 3]`.
+        crate::functions::math_ast::subtract_ast(&[left_val, right_val])
+      } else if let (Some(l), Some(r)) = (left_num, right_num) {
+        if matches!(&left_val, Expr::Real(_))
+          || matches!(&right_val, Expr::Real(_))
+        {
+          Ok(Expr::Real(l - r))
+        } else {
+          Ok(num_to_expr(l - r))
+        }
+      } else if matches!(&left_val, Expr::Integer(0)) {
+        // 0 - x => -x via times_ast for proper distribution
+        crate::functions::math_ast::times_ast(&[Expr::Integer(-1), right_val])
+      } else if crate::functions::quantity_ast::is_quantity(&left_val).is_some()
+        || crate::functions::quantity_ast::is_quantity(&right_val).is_some()
+      {
+        // Quantity subtraction: delegate to subtract_ast → Plus[a, Times[-1, b]]
+        crate::functions::math_ast::subtract_ast(&[left_val, right_val])
+      } else {
+        // Use subtract_ast for proper distribution of -1 over Plus
+        crate::functions::math_ast::subtract_ast(&[left_val, right_val])
+      }
+    }
+    BinaryOperator::Times => {
+      // Use times_ast for proper symbolic handling and canonical ordering
+      crate::functions::math_ast::times_ast(&[left_val, right_val])
+    }
+    BinaryOperator::Divide => {
+      // Delegate to divide_ast for proper handling of Rational, Real, etc.
+      crate::functions::math_ast::divide_ast(&[left_val, right_val])
+    }
+    BinaryOperator::Power => {
+      // Delegate to power_ast for proper handling of Rational, Real, etc.
+      crate::functions::math_ast::power_ast(&[left_val, right_val])
+    }
+    BinaryOperator::And | BinaryOperator::Or => {
+      // Handled above with short-circuit evaluation
+      unreachable!()
+    }
+    BinaryOperator::StringJoin => {
+      // Route through string_join_ast so that non-string arguments emit
+      // the StringJoin::string warning and return unevaluated (matching
+      // wolframscript), instead of silently coercing identifiers/integers.
+      crate::functions::string_ast::string_join_ast(&[left_val, right_val])
+    }
+    BinaryOperator::Alternatives => {
+      // `a | b | c` (the `|` operator) is a flat Alternatives head in WL:
+      // Length[a | b | c] == 3. The parser builds it as a nested BinaryOp
+      // chain, so canonicalize the evaluated chain into a flat
+      // Alternatives[...] FunctionCall. This makes structural operations
+      // (Part, Sort, MemberQ, Append, …) see all operands as siblings,
+      // matching wolframscript. Held patterns keep their BinaryOp form and
+      // are handled directly by the pattern matcher, which accepts both.
+      fn push_alt(e: &Expr, out: &mut Vec<Expr>) {
+        match e {
+          Expr::FunctionCall { name, args } if name == "Alternatives" => {
+            out.extend(args.iter().cloned());
+          }
+          Expr::BinaryOp {
+            op: BinaryOperator::Alternatives,
+            left,
+            right,
+          } => {
+            push_alt(left, out);
+            push_alt(right, out);
+          }
+          other => out.push(other.clone()),
+        }
+      }
+      let mut parts = Vec::new();
+      push_alt(&left_val, &mut parts);
+      push_alt(&right_val, &mut parts);
+      Ok(call("Alternatives", parts))
     }
   }
 }

@@ -7186,6 +7186,77 @@ mod tests {
     assert_eq!(state.text_output.as_deref(), Some("hexagon"));
   }
 
+  /// A `Button[…]` action alongside two disjoint `SetterBar` rows that
+  /// share one control variable — a "reset" button next to a
+  /// coarse/fine (or split) picker for the same underlying setting, as a
+  /// Wolfram Demonstrations Project notebook's curve-fitting or
+  /// model-picker panel commonly pairs (independently written, not copied
+  /// from any specific one). Regression: `ManipulateState::bindings()` listed
+  /// the shared variable once per control row, so a button press built
+  /// `Block[{shape = …, shape = …, …}, action; {…}]` to run the action —
+  /// and Wolfram's `Block` rejects a local spec naming the same variable
+  /// twice (`Block::dup`), which made `apply_manipulate_button_action`
+  /// silently drop the update instead of running it. The button appeared to
+  /// do nothing.
+  #[test]
+  fn manipulate_button_action_with_disjoint_setter_bar_siblings() {
+    let code = "Manipulate[\
+      Which[shape == 1, \"circle\", shape == 2, \"square\", shape == 3, \"triangle\"], \
+      Button[\"reset\", shape = 1], \
+      {{shape, 2, \"\"}, {1 -> \"circle\", 2 -> \"square\"}, ControlType -> SetterBar}, \
+      {{shape, 2, \"\"}, {3 -> \"triangle\"}, ControlType -> SetterBar}\
+      ]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the shared-variable SetterBar Manipulate must build a widget");
+    assert_eq!(state.text_output.as_deref(), Some("square"));
+
+    // Move away from the button's target value first, via the row that has
+    // no button for it at all, so the button press is the only thing that
+    // can bring it back.
+    let shape_rows: Vec<usize> = state
+      .controls
+      .iter()
+      .enumerate()
+      .filter(|(_, c)| c.name() == "shape")
+      .map(|(i, _)| i)
+      .collect();
+    assert_eq!(
+      shape_rows.len(),
+      2,
+      "expected two SetterBar rows sharing `shape`: {:?}",
+      state.controls
+    );
+    let third_idx = shape_rows[1];
+    if let manipulate::ControlState::Discrete {
+      current_index,
+      overflow,
+      ..
+    } = &mut state.controls[third_idx]
+    {
+      *current_index = 0;
+      *overflow = None;
+    }
+    state.apply_tracking(third_idx);
+    state.reevaluate();
+    assert_eq!(state.text_output.as_deref(), Some("triangle"));
+
+    let action = state
+      .controls
+      .iter()
+      .find_map(|c| match c {
+        manipulate::ControlState::Button { action, .. } => Some(action.clone()),
+        _ => None,
+      })
+      .expect("the reset Button control");
+    state.apply_button_action(&action);
+    assert_eq!(
+      state.text_output.as_deref(),
+      Some("circle"),
+      "the Button's action must actually run even though `shape` has two \
+       control rows, not silently no-op"
+    );
+  }
+
   /// A Manipulate whose body calls a `Compile`d helper with bare
   /// (undeclared-type) parameters that are only ever used as repetition
   /// counts — `NestList[…, n]` and a `Do[…, {trials}]` iterator — mirroring
@@ -17268,6 +17339,79 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`showCap$$ = False}, \"\\[Ellipsis]\
     );
   }
 
+  /// End-to-end regression for the "Typeset Sierpinski Sieve" Demonstration's
+  /// shape: a `Graphics[Text[…], …]` whose label is `Nest[Subsuperscript[#,
+  /// #, #] &, symbol, depth]` — each recursion level wraps the *whole*
+  /// previous level in a fresh sub-/superscript pair, which is the
+  /// fractal-like typeset pattern the Demonstration is named for. The one
+  /// control is a discrete stepped slider (`{{var, init, "label"}, lo, hi,
+  /// step}` with `Appearance -> "Labeled"`).
+  ///
+  /// `graphics_text_content` (the flattener a `Text[…]` primitive's label
+  /// goes through before it is drawn) folded `Subscript`/`Superscript` into
+  /// their Unicode script form but had no arm for a bare `Subsuperscript`,
+  /// so `Nest` building one fell through to its literal `Subsuperscript[…]`
+  /// source text instead of typesetting. Fixed by adding `Subsuperscript`
+  /// to that arm (and to the sibling `expr_to_label`, `expr_to_svg_markup`
+  /// and `estimate_display_width` — the same head's label/markup/width
+  /// paths) rather than leaving it to print its own source.
+  ///
+  /// The Manipulate is written here rather than lifted from the published
+  /// notebook.
+  #[test]
+  fn nested_subsuperscript_notebook_builds_its_widget() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[\nGraphics[\nText[Nest[Subsuperscript[#, #, #] &, \"\\[CapitalPsi]\", depth], {0, 0}],\nImageSize -> 300\n],\n{{depth, 1, \"recursion depth\"}, 1, 4, 1, Appearance -> \"Labeled\"}\n]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`depth$$ = 1}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "the nested typeset label must build: {:?}",
+      widget.error
+    );
+    assert!(widget.graphics_handle.is_some(), "the label must draw");
+
+    let names: Vec<&str> = widget
+      .controls
+      .iter()
+      .map(|c| match c {
+        manipulate::ControlState::Discrete { name, .. } => name.as_str(),
+        manipulate::ControlState::Continuous { name, .. } => name.as_str(),
+        other => panic!("unexpected control: {other:?}"),
+      })
+      .collect();
+    assert_eq!(names, ["depth"]);
+
+    let render = |depth: u32| {
+      woxi::interpret_with_stdout(&format!("depth = {depth};\n{}", widget.body))
+        .expect("the body must render")
+        .graphics
+        .expect("the body must produce a graphic")
+    };
+    // Each recursion level must actually nest — not just repeat the same
+    // text unchanged — so the picture must differ as the depth control
+    // moves, and keep differing at the next level too.
+    let depth1 = render(1);
+    let depth2 = render(2);
+    let depth3 = render(3);
+    assert_ne!(depth1, depth2, "the recursion depth control must matter");
+    assert_ne!(depth2, depth3, "each extra level of nesting must matter");
+    // The bug this guards against: the literal `Subsuperscript[…]` source
+    // leaking into the picture instead of typesetting.
+    assert!(
+      !depth2.contains("Subsuperscript"),
+      "the nested scripts must typeset, not print their source: {depth2}"
+    );
+  }
+
   /// End-to-end regression for the "Chaos and Order in the Damped Forced
   /// Pendulum in a Plane" Demonstration: it integrates the damped driven
   /// pendulum `θ'' == -(g/l) Sin[θ] - γ θ' + a Cos[ω t]` from a grid of
@@ -20380,13 +20524,10 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 1}, DynamicBox[\[Ellipsis]]]"
         assert_eq!(values.as_slice(), ["1", "2", "3", "4", "5", "6", "7"]);
         assert_eq!(*current_index, 0);
         assert!(!popup, "ControlType -> Setter must not force a dropdown");
-        // Per the `ControlType` reference page, "Setter or SetterBar" are
-        // documented as interchangeable settings: the bare `Setter` spelling
-        // must force the button row exactly like `SetterBar` does (see
-        // `setter_control_type_forces_the_bar_regardless_of_choice_count`).
         assert!(
-          setter_bar,
-          "ControlType -> Setter must force the button bar"
+          *setter_bar,
+          "ControlType -> Setter must force the button row just like \
+           SetterBar does, per setter_control_type_forces_the_bar_regardless_of_choice_count"
         );
       }
       other => panic!("expected a single Setter control, got {other:?}"),

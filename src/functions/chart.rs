@@ -122,6 +122,18 @@ impl StyledLabel {
   pub(crate) fn extra_line_count(&self) -> usize {
     self.extra_lines.len()
   }
+
+  /// The character count of this label's widest line — `text` is every
+  /// line joined together for a stacked label, so a box sized from it (a
+  /// `Framed` background behind the label, say) would come out far too
+  /// wide for anything but a single-line label.
+  pub(crate) fn max_line_chars(&self) -> usize {
+    std::iter::once(self.svg())
+      .chain(self.extra_lines.iter().cloned())
+      .map(|line| svg_markup_visible_text(&line).chars().count())
+      .max()
+      .unwrap_or(0)
+  }
 }
 
 /// Multiply the absolute lengths in SVG markup — `font-size="N"`, the
@@ -562,6 +574,24 @@ pub(crate) fn expr_to_label(e: &Expr) -> Option<String> {
         })
         .collect();
       Some(format!("{base}{scripts}"))
+    }
+    // `Subsuperscript[base, sub, sup]` — both scripts in sequence, the same
+    // Unicode-digit approximation `Subscript`/`Superscript` use above (a
+    // Demonstration nesting it, e.g. `Nest[Subsuperscript[#, #, #] &, …]`,
+    // recurses back into this same arm for each level's base).
+    Expr::FunctionCall { name, args }
+      if name == "Subsuperscript" && args.len() == 3 =>
+    {
+      let base = expr_to_label(&args[0])?;
+      let sub = expr_to_label(&args[1])
+        .map(|s| {
+          crate::functions::graphics::to_unicode_script_digits(&s, false)
+        })
+        .unwrap_or_default();
+      let sup = expr_to_label(&args[2])
+        .map(|s| crate::functions::graphics::to_unicode_script_digits(&s, true))
+        .unwrap_or_default();
+      Some(format!("{base}{sub}{sup}"))
     }
     // A number written through one of the formatting wrappers reads as
     // the text that wrapper produces — a Demonstration labels its plot
