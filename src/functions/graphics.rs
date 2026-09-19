@@ -11482,13 +11482,66 @@ pub(crate) fn mesh_region_to_graphics_prims(
   Some(result)
 }
 
+/// Reads a `MeshCellStyle` option (e.g. from a `ConvexHullMesh`'s
+/// `BoundaryMeshRegion` options) into face/edge style directives:
+/// `MeshCellStyle -> style` colors every cell, while
+/// `MeshCellStyle -> {{d, _} -> style, ...}` picks a style by cell
+/// dimension (2 = faces → `FaceForm`, 1 = edges → `EdgeForm`; the index
+/// component is not tracked per-cell, so `All` and a specific index behave
+/// the same). Absent or unrecognized specs leave both `None`.
+pub(crate) fn mesh_cell_style_overrides(
+  opts: &[Expr],
+) -> (Option<Expr>, Option<Expr>) {
+  let mut face_style = None;
+  let mut edge_style = None;
+  for opt in opts {
+    let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+    else {
+      continue;
+    };
+    if !matches!(&**pattern, Expr::Identifier(n) if n == "MeshCellStyle") {
+      continue;
+    }
+    match &**replacement {
+      Expr::List(rules) => {
+        for r in rules {
+          let Expr::Rule {
+            pattern: key,
+            replacement: style,
+          } = r
+          else {
+            continue;
+          };
+          let Expr::List(k) = &**key else { continue };
+          if k.len() != 2 {
+            continue;
+          }
+          match crate::functions::math_ast::try_eval_to_f64(&k[0]) {
+            Some(d) if d == 2.0 => face_style = Some((**style).clone()),
+            Some(d) if d == 1.0 => edge_style = Some((**style).clone()),
+            _ => {}
+          }
+        }
+      }
+      other => face_style = Some(other.clone()),
+    }
+  }
+  (face_style, edge_style)
+}
+
 /// Convert 3D `MeshRegion`/`BoundaryMeshRegion` vertex/polygon data (e.g. a
 /// 3D `ConvexHullMesh`) to `Graphics3D` primitives — the 3D twin of
 /// `mesh_region_to_graphics_prims`, used both for `Show` merging and for
-/// standalone display.
+/// standalone display. `face_style`/`edge_style` (from `MeshCellStyle`)
+/// override the default gray-edge/light-blue-face look when given.
 pub(crate) fn mesh_region_to_graphics3d_prims(
   vertices_expr: &Expr,
   primitives_expr: &Expr,
+  face_style: Option<&Expr>,
+  edge_style: Option<&Expr>,
 ) -> Option<Vec<Expr>> {
   let Expr::List(vertices_list) = vertices_expr else {
     return None;
@@ -11514,8 +11567,18 @@ pub(crate) fn mesh_region_to_graphics3d_prims(
   };
 
   let mut result = Vec::new();
-  result.push(call1("EdgeForm", Color::gray(0.4).to_expr()));
-  result.push(call1("FaceForm", Color::new(0.626, 0.836, 0.919).to_expr()));
+  result.push(call1(
+    "EdgeForm",
+    edge_style
+      .cloned()
+      .unwrap_or_else(|| Color::gray(0.4).to_expr()),
+  ));
+  result.push(call1(
+    "FaceForm",
+    face_style
+      .cloned()
+      .unwrap_or_else(|| Color::new(0.626, 0.836, 0.919).to_expr()),
+  ));
 
   for prim in prims {
     if let Expr::FunctionCall { name, args } = prim
@@ -11558,8 +11621,15 @@ pub(crate) fn mesh_region_to_graphics3d_prims(
 pub(crate) fn mesh_region_to_graphics3d(
   vertices_expr: &Expr,
   primitives_expr: &Expr,
+  opts: &[Expr],
 ) -> Option<Expr> {
-  let prims = mesh_region_to_graphics3d_prims(vertices_expr, primitives_expr)?;
+  let (face_style, edge_style) = mesh_cell_style_overrides(opts);
+  let prims = mesh_region_to_graphics3d_prims(
+    vertices_expr,
+    primitives_expr,
+    face_style.as_ref(),
+    edge_style.as_ref(),
+  )?;
   crate::functions::plot3d::graphics3d_ast(&[Expr::List(prims.into())]).ok()
 }
 
@@ -11844,9 +11914,13 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           if items.first().is_some_and(|v| matches!(v, Expr::List(c) if c.len() == 3)));
         if is_3d_mesh {
           is_3d = true;
-          if let Some(graphics_prims) =
-            mesh_region_to_graphics3d_prims(&gargs[0], &gargs[1])
-          {
+          let (face_style, edge_style) = mesh_cell_style_overrides(&gargs[2..]);
+          if let Some(graphics_prims) = mesh_region_to_graphics3d_prims(
+            &gargs[0],
+            &gargs[1],
+            face_style.as_ref(),
+            edge_style.as_ref(),
+          ) {
             layers.push(Layer::Prims(merged_primitives.len()));
             merged_primitives.push(Expr::List(graphics_prims.into()));
           }
