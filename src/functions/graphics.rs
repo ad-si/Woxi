@@ -9552,6 +9552,17 @@ fn negated_markup_term(arg: &Expr) -> Option<String> {
 /// newlines (the 2D text `ToString[…, TraditionalForm]` returns) splits
 /// further. Everything else is a single line.
 pub fn expr_to_svg_markup_lines(expr: &Expr) -> Vec<String> {
+  // `Framed[content]`/`Highlighted[content]` draws no box in a running
+  // line of text (see this function's own single-line sibling below) — but
+  // as a whole item inside a `Column`, the same reasoning that lets a
+  // nested `Column`/`Grid` flatten into several lines applies to what it
+  // wraps too, so peel it before recursing.
+  if let Expr::FunctionCall { name, args } = expr
+    && (name == "Framed" || name == "Highlighted")
+    && !args.is_empty()
+  {
+    return expr_to_svg_markup_lines(&args[0]);
+  }
   let rows: Vec<String> = match expr {
     Expr::FunctionCall { name, args } if name == "Grid" && !args.is_empty() => {
       match &args[0] {
@@ -9573,8 +9584,14 @@ pub fn expr_to_svg_markup_lines(expr: &Expr) -> Vec<String> {
       if name == "Column" && !args.is_empty() =>
     {
       match &args[0] {
-        Expr::List(items) => items.iter().map(expr_to_svg_markup).collect(),
-        other => vec![expr_to_svg_markup(other)],
+        // Each item becomes its own line; an item that is itself a
+        // `Column`/`Grid`/`Framed` (a Demonstration nesting a boxed summary
+        // inside its outer title Column, say) flattens into its own run of
+        // lines instead of collapsing to one line of literal source text.
+        Expr::List(items) => {
+          items.iter().flat_map(expr_to_svg_markup_lines).collect()
+        }
+        other => expr_to_svg_markup_lines(other),
       }
     }
     other => vec![expr_to_svg_markup(other)],
