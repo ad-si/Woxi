@@ -256,6 +256,71 @@ mod area {
     // Sphere[p] with a 3-D center defaults to unit radius.
     assert_eq!(interpret("Area[Sphere[{1, 2, 3}]]").unwrap(), "4*Pi");
   }
+
+  #[test]
+  fn cube_cross_sectioned_by_plane() {
+    // The unit cube [0,1]^3 cut by the diagonal plane x+y=1: a rectangle
+    // spanning the full z-extent (height 1) and the face diagonal (width
+    // Sqrt[2]). RegionIntersection can't combine a box with a plane
+    // concretely, so it leaves a BooleanRegion behind — Area must still
+    // find the cross-section polygon and measure it.
+    assert_eq!(
+      interpret(
+        "Area[RegionIntersection[Cube[{0.5, 0.5, 0.5}, 1], \
+         ImplicitRegion[x + y == 1, {x, y, z}]]]"
+      )
+      .unwrap(),
+      "1.4142135623730951"
+    );
+  }
+
+  #[test]
+  fn cube_cross_section_plane_misses_box() {
+    // A plane that doesn't pass through the box at all: empty intersection,
+    // area 0.
+    assert_eq!(
+      interpret(
+        "Area[RegionIntersection[Cube[{0.5, 0.5, 0.5}, 1], \
+         ImplicitRegion[x == 10, {x, y, z}]]]"
+      )
+      .unwrap(),
+      "0."
+    );
+  }
+
+  #[test]
+  fn ball_intersected_with_box_plane_cross_section() {
+    // The cube's inscribed sphere (same center, radius = half the edge)
+    // meets the same diagonal cross-section exactly at its great circle:
+    // the rectangle's half-height along z (0.5) equals the sphere's
+    // radius, so the disk of area Pi/4 fits inside the rectangle exactly
+    // and RegionIntersection[Ball, planar-region] measures the whole disk.
+    assert_eq!(
+      interpret(
+        "Area[RegionIntersection[Ball[{0.5, 0.5, 0.5}, 0.5], \
+         RegionIntersection[Cube[{0.5, 0.5, 0.5}, 1], \
+         ImplicitRegion[x + y == 1, {x, y, z}]]]]"
+      )
+      .unwrap(),
+      "0.7853981633974483"
+    );
+  }
+
+  #[test]
+  fn small_ball_fully_inside_box_plane_cross_section() {
+    // A tiny sphere centered on the cross-section, far from its edges:
+    // the whole great-circle disk lies inside the rectangle, so the area
+    // is just Pi*r^2.
+    assert_eq!(
+      interpret(
+        "Area[RegionIntersection[Ball[{0.5, 0.5, 0.5}, 0.1], \
+         RegionIntersection[Cube[{0.5, 0.5, 0.5}, 1], \
+         ImplicitRegion[x + y == 1, {x, y, z}]]]]"
+      )
+      .unwrap(),
+      "0.03141592653589794"
+    );
+  }
 }
 
 mod arc_length {
