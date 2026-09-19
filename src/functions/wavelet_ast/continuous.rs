@@ -11,7 +11,6 @@
 //! w(u, s) = 1/Sqrt[s] Sum_k x_k Conjugate[psi]((k - u)/s), the same length
 //! as the data.
 
-#[allow(unused_imports)]
 use super::*;
 
 /// A continuous wavelet family used by ContinuousWaveletTransform,
@@ -226,10 +225,8 @@ impl Cwd {
       ]
       .into(),
     );
-    call(
-      "ContinuousWaveletData",
-      vec![Expr::List(rules.into()), self.wavelet.clone(), opts],
-    )
+    let data = vec![Expr::List(rules.into()), self.wavelet.clone(), opts];
+    call("ContinuousWaveletData", data)
   }
 
   pub fn from_expr(e: &Expr) -> Option<Self> {

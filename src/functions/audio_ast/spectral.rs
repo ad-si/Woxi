@@ -4,7 +4,6 @@
 use base64::Engine;
 
 use super::data::parse_audio;
-#[allow(unused_imports)]
 use super::*;
 use crate::functions::math_ast::numerical::{
   fft_pow2_in_place, fourier_result_to_expr,
@@ -171,15 +170,13 @@ pub fn short_time_fourier_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     Expr::Real(rate)
   };
-  Ok(call(
-    "ShortTimeFourierData",
-    vec![
-      Expr::List(frames.into()),
-      rate_expr,
-      Expr::Integer(m as i128),
-      Expr::Integer(o as i128),
-    ],
-  ))
+  let data = vec![
+    Expr::List(frames.into()),
+    rate_expr,
+    Expr::Integer(m as i128),
+    Expr::Integer(o as i128),
+  ];
+  Ok(call("ShortTimeFourierData", data))
 }
 
 /// Property access on a ShortTimeFourierData object:
