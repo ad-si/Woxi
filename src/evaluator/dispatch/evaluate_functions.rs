@@ -11333,6 +11333,12 @@ fn evaluate_function_call_ast_inner(
         | "AssessmentFunction"
         | "QuestionObject"
         | "AssessmentResultObject"
+        // FittedModel[<|…|>] (from LinearModelFit/NonlinearModelFit) is a
+        // symbolic constructor object that stays unevaluated until queried
+        // for a property or applied at a point (handled by
+        // `evaluate_fitted_model` in `function_application.rs`), so it is
+        // not "unimplemented" — same pattern as AssessmentFunction above.
+        | "FittedModel"
         // More notation/display wrapper heads. Like Subscript/Framed, these
         // describe layout rather than a value to compute, so wolframscript
         // leaves them unevaluated as their canonical form.
