@@ -730,6 +730,42 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_formal_symbol_named_characters_parse_as_identifiers() {
+    // `\[FormalA]`..`\[FormalZ]` (and their Greek/capitalized variants) are
+    // Wolfram's private-use-area "formal symbol" glyphs, used as generic
+    // bound-variable names — e.g. a Demonstration's helper writes
+    // `Prepend[#, {\[FormalX], \[FormalY]}]` where a plain pattern would
+    // otherwise need a name. A notebook's box form stores these as the
+    // bare `\u{F817}`/`\u{F818}` characters, not the `\[FormalX]` escape,
+    // so both forms must lex as ordinary identifiers rather than failing
+    // to parse.
+    clear_state();
+    assert_eq!(interpret("Head[\\[FormalX]]").unwrap(), "Symbol");
+    assert_eq!(interpret("\\[FormalX] = 3; \\[FormalX] + 1").unwrap(), "4");
+    clear_state();
+    // The exact shape the notebook uses: a pure function prepending a
+    // generic-named pair ahead of `#`, with no pattern variable involved.
+    assert_eq!(
+      interpret("Prepend[#, {\\[FormalX], \\[FormalY]}] & [{1, 2}]").unwrap(),
+      "{{FormalX, FormalY}, 1, 2}"
+    );
+    clear_state();
+    // The bare glyph form (as a notebook's BoxData actually stores it).
+    assert_eq!(interpret("Head[\u{F817}]").unwrap(), "Symbol");
+    assert_eq!(
+      interpret("{\u{F817}, \u{F818}}").unwrap(),
+      "{\u{F817}, \u{F818}}"
+    );
+    clear_state();
+    // The extended "formal script" block a couple of the rarer variants
+    // (e.g. `\[FormalScriptCapitalA]`) live in.
+    assert_eq!(
+      interpret("Head[\\[FormalScriptCapitalA]]").unwrap(),
+      "Symbol"
+    );
+  }
+
+  #[test]
   fn test_named_character_identifier_keeps_trailing_dollar_signs() {
     // Wolfram's FrontEnd names a Manipulate-tracked variable built from a
     // named character with a trailing `$$` (e.g. `\[Delta]$$`); the whole
