@@ -354,81 +354,29 @@ fn differentiate_wrt_expr(
     ));
     return Ok(call("D", vec![expr.clone(), var_expr.clone()]));
   }
-  // If the expression is structurally equal to the variable, derivative is 1
-  if expr_to_string(expr) == expr_to_string(var_expr) {
-    return Ok(Expr::Integer(1));
-  }
-  // For products: use product rule
-  if let Expr::BinaryOp {
-    op: BinaryOperator::Times,
-    left,
-    right,
-  } = expr
-  {
-    let dl = differentiate_wrt_expr(left, var_expr)?;
-    let dr = differentiate_wrt_expr(right, var_expr)?;
-    let term1 = simplify(Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(dl),
-      right: right.clone(),
-    });
-    let term2 = simplify(Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: left.clone(),
-      right: Box::new(dr),
-    });
-    return Ok(simplify(plus2(term1, term2)));
-  }
-  // For sums
-  if let Expr::BinaryOp {
-    op: BinaryOperator::Plus,
-    left,
-    right,
-  } = expr
-  {
-    let dl = differentiate_wrt_expr(left, var_expr)?;
-    let dr = differentiate_wrt_expr(right, var_expr)?;
-    return Ok(simplify(plus2(dl, dr)));
-  }
-  // For FunctionCall with Plus/Times
-  if let Expr::FunctionCall { name, args } = expr {
-    if name == "Times" && args.len() >= 2 {
-      // Product of multiple terms
-      let mut result_terms = Vec::new();
-      for (i, arg) in args.iter().enumerate() {
-        let darg = differentiate_wrt_expr(arg, var_expr)?;
-        if !matches!(darg, Expr::Integer(0)) {
-          let mut factors = Vec::new();
-          for (j, a) in args.iter().enumerate() {
-            if i == j {
-              factors.push(darg.clone());
-            } else {
-              factors.push(a.clone());
-            }
-          }
-          result_terms.push(
-            crate::functions::math_ast::times_ast(&factors)
-              .unwrap_or(call("Times", factors)),
-          );
-        }
-      }
-      if result_terms.is_empty() {
-        return Ok(Expr::Integer(0));
-      }
-      return crate::functions::math_ast::plus_ast(&result_terms)
-        .or(Ok(call("Plus", result_terms)));
-    }
-    if name == "Plus" {
-      let derivs: Result<Vec<_>, _> = args
-        .iter()
-        .map(|a| differentiate_wrt_expr(a, var_expr))
-        .collect();
-      let d = derivs?;
-      return crate::functions::math_ast::plus_ast(&d).or(Ok(call("Plus", d)));
-    }
-  }
-  // Otherwise, treat as constant w.r.t. var_expr → 0
-  Ok(Expr::Integer(0))
+  // Replace every occurrence of `var_expr` (matched structurally, so a
+  // differently-indexed occurrence like `x[i]` inside `D[x[i], x[k]]` is left
+  // alone — it is not the same atomic unit as `x[k]` and stays constant with
+  // respect to it) with a fresh plain symbol, run it through the ordinary
+  // `differentiate`, then substitute the fresh symbol back. `differentiate`
+  // already implements every rule (power, quotient, chain rule through
+  // Sin/Log/Exp/..., etc.) — this is the same trick the `Slot[k]` case above
+  // uses, and it retires a second, partial rule set (previously just
+  // Plus/Times) that silently fell to "treat as constant → 0" for anything
+  // else, e.g. `D[(a x[k])^2, x[k]]` or `D[Log[x[k]], x[k]]`.
+  let fresh = "$__DIndexedVar__";
+  let body = replace_subexpr_simple(
+    expr,
+    var_expr,
+    &Expr::Identifier(fresh.to_string()),
+  );
+  let result = differentiate(&body, fresh)?;
+  let result = simplify(result);
+  Ok(replace_subexpr_simple(
+    &result,
+    &Expr::Identifier(fresh.to_string()),
+    var_expr,
+  ))
 }
 
 /// Integrate[expr, var] or Integrate[expr, {var, lo, hi}] - Symbolic integration

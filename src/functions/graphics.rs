@@ -1646,6 +1646,18 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
         Some(vec![0.0, -SMALL_DASH_PX, -SMALL_DASH_PX, -SMALL_DASH_PX]);
       true
     }
+    // A directive list nested one level down (`Directive[{Thick, Blue}]`,
+    // `Style[expr, {Thick, Blue}]`) is equivalent to its items given
+    // directly — recurse instead of falling through unrecognised, or the
+    // whole list silently applies no style at all. Every item must run:
+    // each one mutates `style` as a side effect (a color item and a
+    // thickness item both need to apply), so this can't be `Iterator::any`,
+    // which would stop at the first `true` and drop the rest.
+    #[allow(clippy::unnecessary_fold)]
+    Expr::List(items) => items
+      .iter()
+      .map(|item| apply_directive(item, style))
+      .fold(false, |acc, applied| acc || applied),
     _ => false,
   }
 }
@@ -3132,13 +3144,15 @@ fn graphics_text_content(expr: &Expr) -> String {
         None => parts.concat(),
       }
     }
-    // `Subscript`/`Superscript` typeset as scripts, not as the two-line
-    // OutputForm box `ToString` would give: a label reading `N` over ` D`
-    // is not what the picture is meant to show. `expr_to_label` already
-    // folds them into the Unicode script characters for plot labels, so a
-    // `Text` label written the same way reads the same way.
+    // `Subscript`/`Superscript`/`Subsuperscript` typeset as scripts, not as
+    // the two-line OutputForm box `ToString` would give: a label reading `N`
+    // over ` D` is not what the picture is meant to show. `expr_to_label`
+    // already folds them into the Unicode script characters for plot
+    // labels, so a `Text` label written the same way reads the same way.
     Expr::FunctionCall { name, args }
-      if (name == "Subscript" || name == "Superscript") && args.len() >= 2 =>
+      if (matches!(name.as_str(), "Subscript" | "Superscript")
+        && args.len() >= 2)
+        || (name == "Subsuperscript" && args.len() == 3) =>
     {
       crate::functions::chart::expr_to_label(expr)
         .unwrap_or_else(|| expr_to_string(expr))
@@ -10139,6 +10153,20 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
           )
         }
 
+        // Subsuperscript[base, sub, sup] — both scripts in sequence, the
+        // same shifted-tspan shape `SubsuperscriptBox` gets in `boxes_to_svg`
+        // below. A Demonstration nests this (`Nest[Subsuperscript[#, #, #]
+        // &, …]`), and each level's base recurses back into this same arm.
+        "Subsuperscript" if args.len() == 3 => {
+          format!(
+            "{}<tspan baseline-shift=\"sub\" font-size=\"70%\">{}</tspan>\
+             <tspan baseline-shift=\"super\" font-size=\"70%\">{}</tspan>",
+            expr_to_svg_markup(&args[0]),
+            expr_to_svg_markup(&args[1]),
+            expr_to_svg_markup(&args[2]),
+          )
+        }
+
         // `OverBar[x]` / `UnderBar[x]` — the named accent shorthands for a
         // horizontal line above/below the content (a Demonstration's sample
         // mean/estimate notation, x̄). `text-decoration` draws the line at
@@ -10538,6 +10566,14 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
         let scripts: f64 = args[1..].iter().map(estimate_display_width).sum();
         let seps = (args.len() - 2) as f64;
         estimate_display_width(&args[0]) + (scripts + seps) * 0.7
+      }
+      // Subsuperscript[base, sub, sup] — the sub and super tspans sit side
+      // by side (not stacked), so both add to the width at 70% size.
+      "Subsuperscript" if args.len() == 3 => {
+        estimate_display_width(&args[0])
+          + (estimate_display_width(&args[1])
+            + estimate_display_width(&args[2]))
+            * 0.7
       }
       // Row[{a, b, …}] concatenates its parts, joined by the separator.
       "Row" if !args.is_empty() => match &args[0] {
@@ -11106,6 +11142,30 @@ fn parse_explicit_box(cs: &[char], pos: usize) -> (Expr, usize) {
   )
 }
 
+/// Detect a nested box call written *without* its own `\*` marker, e.g. the
+/// `FractionBox[\(p\), \(q\)]` inside `\!\(\*SuperscriptBox[\(x\),
+/// FractionBox[\(p\), \(q\)]]\)`: once linear syntax is already inside an
+/// explicit box's argument list, a further box head needs no marker of its
+/// own to stay in "box mode" — only a `\(...\)` group re-enters ordinary
+/// text. Every box head conventionally ends in `Box`, so that suffix (on an
+/// identifier immediately followed by `[`) is what distinguishes this case
+/// from plain text that merely starts with a capital letter.
+fn bare_box_head_at(cs: &[char], i: usize) -> Option<(Expr, usize)> {
+  if !cs[i].is_ascii_uppercase() {
+    return None;
+  }
+  let mut j = i;
+  while j < cs.len() && (cs[j].is_alphanumeric() || cs[j] == '$') {
+    j += 1;
+  }
+  let name: String = cs[i..j].iter().collect();
+  if name.ends_with("Box") && cs.get(j) == Some(&'[') {
+    Some(parse_explicit_box(cs, i))
+  } else {
+    None
+  }
+}
+
 /// Parse a sequence of box-notation units (plain runs, `\(...\)` groups and
 /// `\*Head[...]` explicit boxes) into a list of box Exprs.
 fn parse_box_units(cs: &[char]) -> Vec<Expr> {
@@ -11165,6 +11225,14 @@ fn parse_box_units(cs: &[char]) -> Vec<Expr> {
         }
         _ => {}
       }
+    }
+    if let Some((e, ni)) = bare_box_head_at(cs, i) {
+      if !plain.is_empty() {
+        res.push(Expr::String(std::mem::take(&mut plain)));
+      }
+      res.push(e);
+      i = ni;
+      continue;
     }
     plain.push(cs[i]);
     i += 1;
@@ -11499,13 +11567,66 @@ pub(crate) fn mesh_region_to_graphics_prims(
   Some(result)
 }
 
+/// Reads a `MeshCellStyle` option (e.g. from a `ConvexHullMesh`'s
+/// `BoundaryMeshRegion` options) into face/edge style directives:
+/// `MeshCellStyle -> style` colors every cell, while
+/// `MeshCellStyle -> {{d, _} -> style, ...}` picks a style by cell
+/// dimension (2 = faces → `FaceForm`, 1 = edges → `EdgeForm`; the index
+/// component is not tracked per-cell, so `All` and a specific index behave
+/// the same). Absent or unrecognized specs leave both `None`.
+pub(crate) fn mesh_cell_style_overrides(
+  opts: &[Expr],
+) -> (Option<Expr>, Option<Expr>) {
+  let mut face_style = None;
+  let mut edge_style = None;
+  for opt in opts {
+    let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+    else {
+      continue;
+    };
+    if !matches!(&**pattern, Expr::Identifier(n) if n == "MeshCellStyle") {
+      continue;
+    }
+    match &**replacement {
+      Expr::List(rules) => {
+        for r in rules {
+          let Expr::Rule {
+            pattern: key,
+            replacement: style,
+          } = r
+          else {
+            continue;
+          };
+          let Expr::List(k) = &**key else { continue };
+          if k.len() != 2 {
+            continue;
+          }
+          match crate::functions::math_ast::try_eval_to_f64(&k[0]) {
+            Some(2.0) => face_style = Some((**style).clone()),
+            Some(1.0) => edge_style = Some((**style).clone()),
+            _ => {}
+          }
+        }
+      }
+      other => face_style = Some(other.clone()),
+    }
+  }
+  (face_style, edge_style)
+}
+
 /// Convert 3D `MeshRegion`/`BoundaryMeshRegion` vertex/polygon data (e.g. a
 /// 3D `ConvexHullMesh`) to `Graphics3D` primitives — the 3D twin of
 /// `mesh_region_to_graphics_prims`, used both for `Show` merging and for
-/// standalone display.
+/// standalone display. `face_style`/`edge_style` (from `MeshCellStyle`)
+/// override the default gray-edge/light-blue-face look when given.
 pub(crate) fn mesh_region_to_graphics3d_prims(
   vertices_expr: &Expr,
   primitives_expr: &Expr,
+  face_style: Option<&Expr>,
+  edge_style: Option<&Expr>,
 ) -> Option<Vec<Expr>> {
   let Expr::List(vertices_list) = vertices_expr else {
     return None;
@@ -11531,8 +11652,18 @@ pub(crate) fn mesh_region_to_graphics3d_prims(
   };
 
   let mut result = Vec::new();
-  result.push(call1("EdgeForm", Color::gray(0.4).to_expr()));
-  result.push(call1("FaceForm", Color::new(0.626, 0.836, 0.919).to_expr()));
+  result.push(call1(
+    "EdgeForm",
+    edge_style
+      .cloned()
+      .unwrap_or_else(|| Color::gray(0.4).to_expr()),
+  ));
+  result.push(call1(
+    "FaceForm",
+    face_style
+      .cloned()
+      .unwrap_or_else(|| Color::new(0.626, 0.836, 0.919).to_expr()),
+  ));
 
   for prim in prims {
     if let Expr::FunctionCall { name, args } = prim
@@ -11575,8 +11706,15 @@ pub(crate) fn mesh_region_to_graphics3d_prims(
 pub(crate) fn mesh_region_to_graphics3d(
   vertices_expr: &Expr,
   primitives_expr: &Expr,
+  opts: &[Expr],
 ) -> Option<Expr> {
-  let prims = mesh_region_to_graphics3d_prims(vertices_expr, primitives_expr)?;
+  let (face_style, edge_style) = mesh_cell_style_overrides(opts);
+  let prims = mesh_region_to_graphics3d_prims(
+    vertices_expr,
+    primitives_expr,
+    face_style.as_ref(),
+    edge_style.as_ref(),
+  )?;
   crate::functions::plot3d::graphics3d_ast(&[Expr::List(prims.into())]).ok()
 }
 
@@ -11861,9 +11999,13 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           if items.first().is_some_and(|v| matches!(v, Expr::List(c) if c.len() == 3)));
         if is_3d_mesh {
           is_3d = true;
-          if let Some(graphics_prims) =
-            mesh_region_to_graphics3d_prims(&gargs[0], &gargs[1])
-          {
+          let (face_style, edge_style) = mesh_cell_style_overrides(&gargs[2..]);
+          if let Some(graphics_prims) = mesh_region_to_graphics3d_prims(
+            &gargs[0],
+            &gargs[1],
+            face_style.as_ref(),
+            edge_style.as_ref(),
+          ) {
             layers.push(Layer::Prims(merged_primitives.len()));
             merged_primitives.push(Expr::List(graphics_prims.into()));
           }
@@ -16680,9 +16822,22 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
       // by what it wraps. Pushing the directives inwards is what lets the
       // row renderer, which reads each item's own style, apply them.
       "Style" | "StyleForm" => {
-        let inner = style_pushed_into_layout(&args[0], &args[1..])
-          .unwrap_or_else(|| args[0].clone());
-        return nested_layout_svg(&inner);
+        if let Some(inner) = style_pushed_into_layout(&args[0], &args[1..]) {
+          return nested_layout_svg(&inner);
+        }
+        // Not a Row/Column/Grid/TextGrid to push the style into — a
+        // picture wrapped in its own `Style[…]` (e.g. `Style[TableForm[…],
+        // 18]`) still needs the style honored, which `expr_to_svg` already
+        // does for a styled `TableForm`/`MatrixForm`, so run the same
+        // generic check the `_` arm below runs, on the whole `Style[…]`
+        // expression, rather than discarding it and recursing on the
+        // unstyled content.
+        if crate::evaluator::lays_out_a_graphic(expr) {
+          let svg = crate::evaluator::expr_to_svg(expr);
+          if svg.starts_with("<svg") {
+            return Some(svg);
+          }
+        }
       }
       // A display wrapper that resolves to a picture (`Labeled[…]`,
       // `LocatorPane[…]`, `Dynamic[…]`) is drawn through the export path,
@@ -17529,7 +17684,7 @@ pub fn highlighted_to_svg(args: &[Expr]) -> Option<String> {
 }
 
 /// Parse width and height from an SVG's root element attributes.
-fn parse_svg_wh(svg: &str) -> (f64, f64) {
+pub(crate) fn parse_svg_wh(svg: &str) -> (f64, f64) {
   let w = svg
     .find("width=\"")
     .and_then(|i| {
@@ -17550,10 +17705,33 @@ fn parse_svg_wh(svg: &str) -> (f64, f64) {
 }
 
 /// Strip the outer <svg ...> and </svg> tags, returning only the inner content.
-fn strip_svg_wrapper(svg: &str) -> &str {
+pub(crate) fn strip_svg_wrapper(svg: &str) -> &str {
   let start = svg.find('>').map_or(0, |i| i + 1);
   let end = svg.rfind("</svg>").unwrap_or(svg.len());
   &svg[start..end]
+}
+
+/// Clip an already-rendered SVG to a `Pane[content, {width, height}]` box.
+/// The FrontEnd never grows a `Pane`'s reserved area to fit oversized
+/// content — with no scrollbar in a static export, content past the
+/// declared edges is silently cut off rather than left to spill past them.
+/// Content that already fits inside `width`x`height` is returned
+/// unchanged, so a `Pane` around a small picture keeps its natural
+/// (smaller) canvas rather than being padded out to the declared size.
+pub(crate) fn clip_svg_to_pane_box(
+  svg: &str,
+  width: f64,
+  height: f64,
+) -> String {
+  let (natural_w, natural_h) = parse_svg_wh(svg);
+  if natural_w <= width && natural_h <= height {
+    return svg.to_string();
+  }
+  let inner = strip_svg_wrapper(svg);
+  let clip_id = format!("paneClip_{width:.0}x{height:.0}");
+  format!(
+    "<svg width=\"{width:.0}\" height=\"{height:.0}\" viewBox=\"0 0 {width:.0} {height:.0}\" xmlns=\"http://www.w3.org/2000/svg\">\n<defs><clipPath id=\"{clip_id}\"><rect x=\"0\" y=\"0\" width=\"{width:.0}\" height=\"{height:.0}\"/></clipPath></defs>\n<g clip-path=\"url(#{clip_id})\">\n{inner}\n</g>\n</svg>"
+  )
 }
 
 /// Render a list that contains Framed or Highlighted elements as a horizontal
