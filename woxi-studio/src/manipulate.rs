@@ -391,6 +391,14 @@ pub struct ManipulateState {
   /// screen only while the selector holds that pane's value. `None` means
   /// the control belongs to no pane and is always shown.
   control_visible: Vec<Option<String>>,
+  /// `(control name, parent variable, 1-based index)` for every control
+  /// that drives one `Part` of a shared list variable rather than the
+  /// whole variable — the widgets `Evaluate[Sequence @@ Table[…]]`
+  /// generates for a bank of per-element sliders (see
+  /// `woxi::functions::graphics::ParsedControl::ListElement`). `bindings`
+  /// groups these by `parent` and reassembles them into one list binding
+  /// instead of colliding same-named ones.
+  list_elements: Vec<(String, String, usize)>,
   /// Whether each control is currently on screen, recomputed on every
   /// re-evaluation from `control_visible` against the live bindings.
   pub control_is_visible: Vec<bool>,
@@ -472,6 +480,7 @@ impl ManipulateState {
       control_enabled,
       control_is_enabled,
       control_visible,
+      list_elements: spec.list_elements,
       control_is_visible,
       reeval_pending: 0,
       reeval_applied: 0,
@@ -624,29 +633,65 @@ impl ManipulateState {
   /// The full binding set (visible controls + mutable state) used to
   /// re-evaluate the body and render the display elements.
   ///
-  /// Two disjoint control rows may share one variable name (see
-  /// `sync_named_siblings`), and mutable state can track a name that also
-  /// has its own visible control; either way the name must appear at most
-  /// once here. `reevaluate_inner` installs these as globals, which
-  /// tolerates a repeated name by just taking the last write, but the
-  /// button/tracking/mutation paths splice this list straight into a
-  /// `Block[{…}, …]` local-variable specification, and Wolfram's `Block`
-  /// rejects a spec that names the same local twice (`Block::dup`) — so an
-  /// un-deduplicated list there silently drops the action instead of
-  /// running it.
+  /// A control that drives one `Part` of a shared list variable (see
+  /// `list_elements`) is reported under a synthesized, internal-only name
+  /// — several such controls sharing the real variable's name would
+  /// collide as duplicate bindings. Those are grouped by parent variable
+  /// here and reassembled into one list literal, with each control's
+  /// current value substituted at its own (1-based) index; an index no
+  /// control covers keeps `0` as a placeholder.
+  ///
+  /// Two disjoint ordinary control rows may also share one variable name
+  /// (see `sync_named_siblings`), and mutable state can track a name that
+  /// also has its own visible control; either way the name must appear at
+  /// most once in the result. `reevaluate_inner` installs these as
+  /// globals, which tolerates a repeated name by just taking the last
+  /// write, but the button/tracking/mutation paths splice this list
+  /// straight into a `Block[{…}, …]` local-variable specification, and
+  /// Wolfram's `Block` rejects a spec that names the same local twice
+  /// (`Block::dup`) — so an un-deduplicated list there silently drops the
+  /// action instead of running it.
   fn bindings(&self) -> Vec<(String, String)> {
-    let mut b: Vec<(String, String)> = Vec::new();
-    for (name, code) in self
-      .controls
-      .iter()
-      .filter(|c| c.binds_variable())
-      .map(|c| (c.name().to_string(), c.current_code()))
-      .chain(self.state.iter().cloned())
-    {
+    let push_or_update = |b: &mut Vec<(String, String)>,
+                          name: String,
+                          code: String| {
       match b.iter_mut().find(|(n, _)| *n == name) {
         Some(slot) => slot.1 = code,
         None => b.push((name, code)),
       }
+    };
+    let mut b: Vec<(String, String)> = Vec::new();
+    let mut list_groups: Vec<(String, Vec<(usize, String)>)> = Vec::new();
+    for c in self.controls.iter().filter(|c| c.binds_variable()) {
+      match self
+        .list_elements
+        .iter()
+        .find(|(synth, ..)| synth == c.name())
+      {
+        Some((_, parent, index)) => {
+          let group = match list_groups.iter_mut().find(|(p, _)| p == parent) {
+            Some(g) => g,
+            None => {
+              list_groups.push((parent.clone(), Vec::new()));
+              list_groups.last_mut().unwrap()
+            }
+          };
+          group.1.push((*index, c.current_code()));
+        }
+        None => push_or_update(&mut b, c.name().to_string(), c.current_code()),
+      }
+    }
+    for (parent, mut items) in list_groups {
+      items.sort_by_key(|(index, _)| *index);
+      let len = items.iter().map(|(index, _)| *index).max().unwrap_or(0);
+      let mut parts = vec!["0".to_string(); len];
+      for (index, value) in items {
+        parts[index - 1] = value;
+      }
+      push_or_update(&mut b, parent, format!("{{{}}}", parts.join(", ")));
+    }
+    for (name, code) in self.state.iter().cloned() {
+      push_or_update(&mut b, name, code);
     }
     b
   }
