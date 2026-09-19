@@ -4123,7 +4123,7 @@ fn render_manipulate_widget<'a>(
                 None => match value_label_runs.get(i) {
                   Some(runs) if !runs.is_empty() => {
                     let spans: Vec<text::Span<Message>> =
-                      label_run_spans(runs, Font::default());
+                      label_run_spans(runs, Font::MONOSPACE);
                     rich_text(spans).size(12).into()
                   }
                   _ => text(choice_label.clone()).size(12).into(),

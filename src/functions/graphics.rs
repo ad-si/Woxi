@@ -24335,10 +24335,9 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
         // multi-way selector's `1 -> Style["top", Blue]`) rides along as
         // styled runs, parallel to `values`; omitted when every choice is
         // plain text, matching `svg_json`'s all-or-nothing shape above.
-        let runs_json = if value_label_runs
-          .iter()
-          .any(|runs| runs.iter().any(|r| r.color.is_some() || r.bold))
-        {
+        let runs_json = if value_label_runs.iter().any(|runs| {
+          runs.iter().any(|r| r.color.is_some() || r.bold || r.italic)
+        }) {
           let parts: Vec<String> = value_label_runs
             .iter()
             .map(|r| label_runs_to_json(r))
@@ -26687,5 +26686,33 @@ mod manipulate_traditional_form_choice_svg_tests {
       }
       other => panic!("expected a discrete control, got {other:?}"),
     }
+  }
+
+  /// `manipulate_spec_to_json`'s `valueLabelRuns` export must trigger on an
+  /// italic-only choice label too, not just color/bold — and the exported
+  /// JSON must actually carry the italic flag through
+  /// `label_runs_to_json`. Regression: the emission guard originally
+  /// checked only `color.is_some() || bold`, so a choice styled with just
+  /// `Style["label", Italic]` (no color, no bold) silently dropped the
+  /// whole `valueLabelRuns` array from the JSON a frontend (e.g. the web
+  /// Playground) consumes.
+  #[test]
+  fn json_export_includes_italic_only_choice_runs() {
+    let expr = crate::parse_to_expr(
+      "Manipulate[side, \
+       {{side, 1, \"side\"}, \
+        {1 -> Style[\"top\", Italic], -1 -> \"bottom\"}}]",
+    )
+    .expect("parse");
+    let spec = extract_manipulate_spec(&expr).expect("extract spec");
+    let json = manipulate_spec_to_json(&spec);
+    assert!(
+      json.contains(r#""valueLabelRuns""#),
+      "an italic-only choice must still emit valueLabelRuns: {json}"
+    );
+    assert!(
+      json.contains(r#""italic":true"#),
+      "the italic flag itself must survive into the JSON: {json}"
+    );
   }
 }
