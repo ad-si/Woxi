@@ -6265,6 +6265,11 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut svg_height = DEFAULT_SIZE;
   let mut full_width = false;
   let mut mesh_mode = MeshMode::Default;
+  // `ColorFunction -> "SouthwestColors"` (or `ColorData["…"]`): colors the
+  // surface by height through the same named gradient `ColorFunction` uses
+  // for `Plot3D`-family density/contour plots, instead of the fixed
+  // blue-green-orange default.
+  let mut color_function: Option<String> = None;
 
   for opt in &args[1..] {
     if let Expr::Rule {
@@ -6289,10 +6294,29 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             _ => {}
           }
         }
+        Expr::Identifier(name) if name == "ColorFunction" => {
+          color_function =
+            crate::functions::field_plot::color_function_scheme_name(
+              replacement,
+            );
+        }
         _ => {}
       }
     }
   }
+
+  // The color a normalized height `t` (0 at the low end, 1 at the high end)
+  // is drawn in: a recognized `ColorFunction` scheme, or the surface's
+  // default height gradient when none was given (or it named a scheme Woxi
+  // does not have swatches for).
+  let color_at = |t: f64| -> (u8, u8, u8) {
+    match &color_function {
+      Some(name) => {
+        crate::functions::field_plot::apply_named_color_function(name, t)
+      }
+      None => height_color(t),
+    }
+  };
 
   // Evaluate the data argument
   let evaled_data = evaluate_expr_to_expr(data)?;
@@ -6501,7 +6525,7 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           + (z10 - z_min) / z_range
           + (z01 - z_min) / z_range)
           / 3.0;
-        let base_color = height_color(avg);
+        let base_color = color_at(avg);
         let normal = triangle_normal(v0, v1, v2);
         let color = apply_lighting(base_color, normal);
 
@@ -6546,7 +6570,7 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           + (z01 - z_min) / z_range
           + (z10 - z_min) / z_range)
           / 3.0;
-        let base_color = height_color(avg);
+        let base_color = color_at(avg);
         let normal = triangle_normal(v0, v1, v2);
         let color = apply_lighting(base_color, normal);
 
@@ -6605,7 +6629,141 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // A `PlotLabel` sets a title above the finished picture.
   let svg = with_plot_label(svg, args, svg_width, svg_height);
 
-  Ok(crate::graphics3d_result(svg))
+  // ── Symbolic structure: Graphics3D[GraphicsComplex[points, {…}]] ──
+  // Mirrors `plot3d_ast`'s own structure above: without one, `Show` cannot
+  // merge this surface with another graphic's primitives (a `Graphics3D`
+  // marker drawn alongside it, the Demonstrations "surface plus pointer"
+  // idiom) — the two would render as separately-projected flat pictures,
+  // so a `ViewPoint`/`BoxRatios` given to *this* call never turned the
+  // other layer with it, and one given to `Show` itself (or to that other
+  // layer) never turned this surface, whose own picture was already baked
+  // above at a fixed default camera. Emitting the grid in its own index
+  // coordinates — colored the way the standalone render colors it, with
+  // this call's options carried along so `Show` still sees them — lets it
+  // re-render everything together under one shared camera instead.
+  let mut index_of: Vec<Vec<Option<usize>>> = vec![vec![None; cols]; rows];
+  let mut point_exprs: Vec<Expr> = Vec::new();
+  for (i, row) in grid.iter().enumerate() {
+    for (j, &z) in row.iter().enumerate() {
+      if !z.is_finite() {
+        continue;
+      }
+      index_of[i][j] = Some(point_exprs.len());
+      point_exprs.push(Expr::List(
+        vec![
+          Expr::Real(i as f64),
+          Expr::Real(j as f64),
+          Expr::Real(z.clamp(z_min, z_max)),
+        ]
+        .into(),
+      ));
+    }
+  }
+  let mut complex_content: Vec<Expr> = Vec::new();
+  // The sampling quads are far finer than the mesh a surface shows, so
+  // their own outlines are suppressed and the mesh is drawn as lines below
+  // — otherwise a shown surface turns into a wireframe.
+  if !matches!(mesh_mode, MeshMode::All) {
+    complex_content.push(call0("EdgeForm"));
+  }
+  for i in 0..rows.saturating_sub(1) {
+    for j in 0..cols.saturating_sub(1) {
+      let (Some(a), Some(b), Some(c), Some(d)) = (
+        index_of[i][j],
+        index_of[i + 1][j],
+        index_of[i + 1][j + 1],
+        index_of[i][j + 1],
+      ) else {
+        continue;
+      };
+      let avg_z_norm = [
+        grid[i][j],
+        grid[i + 1][j],
+        grid[i + 1][j + 1],
+        grid[i][j + 1],
+      ]
+      .iter()
+      .map(|z| (z.clamp(z_min, z_max) - z_min) / z_range)
+      .sum::<f64>()
+        / 4.0;
+      let (cr, cg, cb) = color_at(avg_z_norm);
+      complex_content.push(Expr::List(
+        vec![
+          call(
+            "RGBColor",
+            vec![
+              Expr::Real(cr as f64 / 255.0),
+              Expr::Real(cg as f64 / 255.0),
+              Expr::Real(cb as f64 / 255.0),
+            ],
+          ),
+          Expr::FunctionCall {
+            name: "Polygon".to_string(),
+            args: vec![Expr::List(
+              [a, b, c, d]
+                .iter()
+                .map(|&k| Expr::Integer(k as i128 + 1))
+                .collect::<Vec<_>>()
+                .into(),
+            )]
+            .into(),
+          },
+        ]
+        .into(),
+      ));
+    }
+  }
+  // The mesh, at the spacing the standalone render rules it with.
+  if matches!(mesh_mode, MeshMode::Default) {
+    let mut segments: Vec<Expr> = Vec::new();
+    let mut push_segment = |a: Option<usize>, b: Option<usize>| {
+      if let (Some(a), Some(b)) = (a, b) {
+        segments.push(Expr::List(
+          vec![Expr::Integer(a as i128 + 1), Expr::Integer(b as i128 + 1)]
+            .into(),
+        ));
+      }
+    };
+    for j in (0..cols).step_by(MESH_STEP) {
+      for i in 0..rows.saturating_sub(1) {
+        push_segment(index_of[i][j], index_of[i + 1][j]);
+      }
+    }
+    for i in (0..rows).step_by(MESH_STEP) {
+      for j in 0..cols.saturating_sub(1) {
+        push_segment(index_of[i][j], index_of[i][j + 1]);
+      }
+    }
+    if !segments.is_empty() {
+      complex_content.push(Expr::List(
+        vec![
+          call1("Opacity", Expr::Real(0.63)),
+          call(
+            "RGBColor",
+            vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)],
+          ),
+          call1("AbsoluteThickness", Expr::Real(0.5)),
+          call1("Line", Expr::List(segments.into())),
+        ]
+        .into(),
+      ));
+    }
+  }
+  let complex = call(
+    "GraphicsComplex",
+    vec![
+      Expr::List(point_exprs.into()),
+      Expr::List(complex_content.into()),
+    ],
+  );
+  let mut structure_args = vec![complex];
+  structure_args.extend(args[1..].iter().cloned());
+  let structure = Expr::FunctionCall {
+    name: "Graphics3D".to_string(),
+    args: structure_args.into(),
+  };
+
+  Ok(crate::graphics3d_result_with_structure(svg, structure))
 }
 
 // ── RevolutionPlot3D implementation ──────────────────────────────────
