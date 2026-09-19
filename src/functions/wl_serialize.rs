@@ -231,6 +231,18 @@ fn try_read_integer_array(
   }
   let rank = read_i32(data, &mut pos)?;
   let dims = read_dims(data, &mut pos, rank)?;
+  // A zero dimension is a normal "empty along this axis" shape (e.g. dims
+  // `{3, 0}` for `{{}, {}, {}}`), but *more than one* zero dimension is a
+  // near-certain sign the rank/dims fields were misaligned: this attempt's
+  // `with_type_field` guess was wrong, so what should have been packed data
+  // (mostly zero for a mostly-zero matrix, like a Demonstration's potential
+  // barrier) got read as a run of bogus trailing dimensions. A real array
+  // essentially never has more than one degenerate axis, so reject here and
+  // let the caller fall back to the other layout instead of silently
+  // building a wrong-shaped nest of empty lists.
+  if dims.iter().filter(|&&d| d == 0).count() > 1 {
+    return None;
+  }
   let count: usize = dims_product(&dims)?;
   let values = if count == 0 {
     Vec::new()
@@ -373,6 +385,26 @@ mod tests {
     // never-verified-against-real-output version of this reader assumed).
     let data = b"!boRn\x02\x00\x00\x00\x02\x00\x00\x00\x03\x00\x00\x00\x01\x00\x00\x00\x02\x00\x00\x00\x03\x00\x00\x00\x04\x00\x00\x00\x05\x00\x00\x00\x06\x00\x00\x00";
     assert_eq!(render(data), "{{1, 2, 3}, {4, 5, 6}}");
+  }
+
+  // Regression: a real Wolfram Demonstrations notebook's `SaveDefinitions`
+  // dump embedded a mostly-zero integer matrix (a `Table[If[…, 10000, 0],
+  // …]` potential barrier). The `with_type_field = true` attempt misread
+  // this payload's real `<rank><dim1><dim2>` header as `<type><rank><dims>`,
+  // landing on a "rank" that happened to equal the real `dim1` and then
+  // reading the *data* that followed (mostly zero) as further dimensions —
+  // producing `dims = [3, 0, 0]`, whose product is 0, which the `count == 0`
+  // fast path accepted without checking any bytes at all. The result was a
+  // silently wrong `{{}, {}, {}}` instead of the real 3x3 matrix — every
+  // downstream `Part` on it then failed. This payload has no type field:
+  // rank=2, dims={3, 3}, nine i32s (mostly zero, like the real barrier).
+  #[test]
+  fn reads_integer_array_with_misleading_zero_padded_prefix() {
+    let data = b"!boRn\x02\x00\x00\x00\x03\x00\x00\x00\x03\x00\x00\x00\
+\x00\x00\x00\x00\x00\x00\x00\x00\x05\x00\x00\x00\
+\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\
+\x00\x00\x00\x00\x00\x00\x00\x00\x09\x00\x00\x00";
+    assert_eq!(render(data), "{{0, 0, 5}, {0, 0, 0}, {0, 0, 9}}");
   }
 
   #[test]
