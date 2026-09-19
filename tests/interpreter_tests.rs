@@ -745,9 +745,12 @@ mod interpreter_tests {
     clear_state();
     // The exact shape the notebook uses: a pure function prepending a
     // generic-named pair ahead of `#`, with no pattern variable involved.
+    // The escape text names the same symbol as the bare glyph (see
+    // `test_formal_symbol_escaped_and_raw_glyph_spellings_are_the_same_symbol`),
+    // so it prints back as the glyph, not the literal escape spelling.
     assert_eq!(
       interpret("Prepend[#, {\\[FormalX], \\[FormalY]}] & [{1, 2}]").unwrap(),
-      "{{FormalX, FormalY}, 1, 2}"
+      "{{\u{F817}, \u{F818}}, 1, 2}"
     );
     clear_state();
     // The bare glyph form (as a notebook's BoxData actually stores it).
@@ -783,6 +786,34 @@ mod interpreter_tests {
     assert_eq!(
       interpret("\\[Theta]$$[x_] := x^2; \\[Theta]$$[5]").unwrap(),
       "25"
+    );
+  }
+
+  #[test]
+  fn test_formal_symbol_escaped_and_raw_glyph_spellings_are_the_same_symbol() {
+    // `\[FormalX]` (the escape text) and the bare private-use glyph it
+    // stands for (`\u{F817}`, as a notebook's BoxData actually stores it)
+    // must name the *same* symbol, exactly like any other named character.
+    // `is_symbol_letter` in src/syntax.rs (which decides whether the
+    // escape text's `\[Name]` resolves to the Unicode glyph or falls back
+    // to the literal name string) needs the same private-use ranges as the
+    // `PrivateUseLetter` parser rule, or the two spellings silently name
+    // different symbols.
+    let formal_x = '\u{F817}'; // \[FormalX]
+    clear_state();
+    assert_eq!(
+      interpret(&format!("{formal_x} === \\[FormalX]")).unwrap(),
+      "True"
+    );
+    // The glyph also works as a pattern variable's name, not just a bare
+    // reference (the `PatternName` grammar rule shares `PrivateUseLetter`).
+    clear_state();
+    assert_eq!(
+      interpret(&format!(
+        "f[{formal_x}_] := {{{formal_x}, {formal_x}}};\nf[1]"
+      ))
+      .unwrap(),
+      "{1, 1}"
     );
   }
 
