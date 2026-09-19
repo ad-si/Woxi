@@ -18524,6 +18524,43 @@ mod contour_plot_3d {
     assert_eq!(result, "Graphics3D");
   }
 
+  #[test]
+  fn plot_points_changes_sampling_resolution() {
+    // Regression: `PlotPoints` was parsed for every other 3D plot
+    // (SphericalPlot3D, ParametricPlot3D, …) but ContourPlot3D always
+    // sampled a fixed grid, silently ignoring the option — a Demonstration
+    // toggling a "refine rendering" checkbox between two PlotPoints values
+    // would see no visual change at all.
+    let coarse = export_svg(
+      "ContourPlot3D[x^2 + y^2 + z^2 - 1, {x, -1.5, 1.5}, {y, -1.5, 1.5}, \
+       {z, -1.5, 1.5}, PlotPoints -> 4, Mesh -> None]",
+    );
+    let fine = export_svg(
+      "ContourPlot3D[x^2 + y^2 + z^2 - 1, {x, -1.5, 1.5}, {y, -1.5, 1.5}, \
+       {z, -1.5, 1.5}, PlotPoints -> 30, Mesh -> None]",
+    );
+    assert_ne!(
+      coarse, fine,
+      "PlotPoints must change the sampled grid resolution"
+    );
+  }
+
+  #[test]
+  fn plot_points_matches_default_grid() {
+    // The implicit default grid is 24 cells (25 samples per direction);
+    // asking for exactly that many PlotPoints must render identically to
+    // omitting the option.
+    let explicit = export_svg(
+      "ContourPlot3D[x^2 + y^2 + z^2 - 1, {x, -1.5, 1.5}, {y, -1.5, 1.5}, \
+       {z, -1.5, 1.5}, PlotPoints -> 25, Mesh -> None]",
+    );
+    let omitted = export_svg(
+      "ContourPlot3D[x^2 + y^2 + z^2 - 1, {x, -1.5, 1.5}, {y, -1.5, 1.5}, \
+       {z, -1.5, 1.5}, Mesh -> None]",
+    );
+    assert_eq!(explicit, omitted);
+  }
+
   mod basic {
     use super::*;
 
