@@ -16,15 +16,24 @@ use crate::functions::math_ast::try_eval_to_f64;
 /// `WorkingPrecision -> Infinity`; any machine real switches every
 /// coordinate to a real and drops that option.
 ///
+/// Trailing arguments after the point list are options (e.g.
+/// `MeshCellStyle -> …`), carried through unevaluated onto the resulting
+/// `BoundaryMeshRegion` the same way `Method`/`WorkingPrecision` already are,
+/// so a renderer can style the mesh's faces/edges.
+///
 /// Higher dimensions are left unevaluated.
 pub fn convex_hull_mesh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 1 {
+  if args.is_empty() {
     return Ok(unevaluated("ConvexHullMesh", args));
   }
   let Expr::List(pts) = &args[0] else {
     return Ok(unevaluated("ConvexHullMesh", args));
   };
   if pts.is_empty() {
+    return Ok(unevaluated("ConvexHullMesh", args));
+  }
+  let opts = &args[1..];
+  if !opts.iter().all(|o| matches!(o, Expr::Rule { .. })) {
     return Ok(unevaluated("ConvexHullMesh", args));
   }
 
@@ -34,13 +43,13 @@ pub fn convex_hull_mesh_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => return Ok(unevaluated("ConvexHullMesh", args)),
   };
   match dim {
-    2 => Ok(convex_hull_mesh_2d(pts, args)),
-    3 => Ok(convex_hull_mesh_3d(pts, args)),
+    2 => Ok(convex_hull_mesh_2d(pts, args, opts)),
+    3 => Ok(convex_hull_mesh_3d(pts, args, opts)),
     _ => Ok(unevaluated("ConvexHullMesh", args)),
   }
 }
 
-fn convex_hull_mesh_2d(pts: &[Expr], args: &[Expr]) -> Expr {
+fn convex_hull_mesh_2d(pts: &[Expr], args: &[Expr], opts: &[Expr]) -> Expr {
   // Parse points, keeping the original coordinate expressions (to preserve
   // exact display) and tracking whether every coordinate is exact.
   let mut coords: Vec<(f64, f64)> = Vec::new();
@@ -149,6 +158,7 @@ fn convex_hull_mesh_2d(pts: &[Expr], args: &[Expr]) -> Expr {
       replacement: Box::new(id_expr("Infinity")),
     });
   }
+  mesh_args.extend(opts.iter().cloned());
 
   call("BoundaryMeshRegion", mesh_args)
 }
@@ -201,7 +211,7 @@ fn convex_hull_ccw(pts: &[(f64, f64, usize)]) -> Vec<usize> {
   lower.into_iter().chain(upper).map(|t| t.2).collect()
 }
 
-fn convex_hull_mesh_3d(pts: &[Expr], args: &[Expr]) -> Expr {
+fn convex_hull_mesh_3d(pts: &[Expr], args: &[Expr], opts: &[Expr]) -> Expr {
   // Parse points, keeping the original coordinate expressions (to preserve
   // exact display) and tracking whether every coordinate is exact.
   let mut coords: Vec<(f64, f64, f64)> = Vec::new();
@@ -319,6 +329,7 @@ fn convex_hull_mesh_3d(pts: &[Expr], args: &[Expr]) -> Expr {
       replacement: Box::new(id_expr("Infinity")),
     });
   }
+  mesh_args.extend(opts.iter().cloned());
 
   call("BoundaryMeshRegion", mesh_args)
 }

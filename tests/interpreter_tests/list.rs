@@ -907,6 +907,54 @@ mod outer_extended {
     );
   }
 
+  // `Band[{i, j}] -> v` with `v` a *list* assigns one value per band
+  // position, in order — not the whole list at every position. Regression:
+  // `expand_band_rules` used to clone the entire replacement for each
+  // expanded position instead of indexing into it.
+  #[test]
+  fn sparse_array_band_list_value() {
+    assert_eq!(
+      interpret("Normal[SparseArray[{Band[{1, 2}] -> {10, 20, 30}}, {4, 4}]]")
+        .unwrap(),
+      "{{0, 10, 0, 0}, {0, 0, 20, 0}, {0, 0, 0, 30}, {0, 0, 0, 0}}"
+    );
+  }
+
+  // `SparseArray[rules]` with no explicit dimensions still infers them from
+  // a bare `Band[start] -> list` rule (the band's extent follows from its
+  // start position and the list's length). Regression: dimension inference
+  // only looked at explicit `{i, j} -> v` positions, leaving any
+  // Band-only rule list unevaluated.
+  #[test]
+  fn sparse_array_band_infers_dims_from_value_length() {
+    assert_eq!(
+      interpret(
+        "Normal[SparseArray[{Band[{1, 2}] -> {1, 1, 1}, \
+         Band[{1, 1}] -> {2, 2, 2, 2}, Band[{2, 1}] -> {1, 1, 1}}]]"
+      )
+      .unwrap(),
+      "{{2, 1, 0, 0}, {1, 2, 1, 0}, {0, 1, 2, 1}, {0, 0, 1, 2}}"
+    );
+    // LinearSolve on the inferred-dims SparseArray matches the dense case —
+    // this is the exact tridiagonal-system shape a Crank-Nicolson step
+    // (e.g. a Demonstration solving the time-dependent Schrödinger
+    // equation) builds every iteration via `SparseArray[{Band[...] -> ...}]`
+    // with no explicit dimensions.
+    assert_eq!(
+      interpret(
+        "LinearSolve[SparseArray[{Band[{1, 2}] -> {1, 1, 1}, \
+         Band[{1, 1}] -> {2, 2, 2, 2}, Band[{2, 1}] -> {1, 1, 1}}], \
+         {1, 2, 3, 4}]"
+      )
+      .unwrap(),
+      interpret(
+        "LinearSolve[{{2, 1, 0, 0}, {1, 2, 1, 0}, {0, 1, 2, 1}, \
+         {0, 0, 1, 2}}, {1, 2, 3, 4}]"
+      )
+      .unwrap()
+    );
+  }
+
   // A 1-D pattern rule `{i_} :> expr` fills each position with the value of
   // `expr` evaluated at the position index.
   #[test]
@@ -13863,13 +13911,64 @@ mod list_correlate {
     );
   }
 
-  // The overhang forms are one-dimensional. A multi-dimensional kernel used
-  // to be treated as a list of scalars, producing nonsense like
-  // `{1, 1}*{a, b, c} + {1, 1}*{d, e, f}`; it now stays unevaluated.
+  // A multi-dimensional kernel used to be treated as a list of scalars,
+  // producing nonsense like `{1, 1}*{a, b, c} + {1, 1}*{d, e, f}`; it then
+  // stayed unevaluated. It now cyclically correlates rank-for-rank, with one
+  // offset per dimension (`1` here broadcasts to `{1, 1}`) — matching
+  // wolframscript's `{{a + b + d + e, b + c + e + f, a + c + d + f},
+  // {d + e + g + h, e + f + h + i, d + f + g + i}, {a + b + g + h,
+  // b + c + h + i, a + c + g + i}}`.
   #[test]
-  fn multidimensional_overhang_stays_unevaluated() {
-    let input =
-      "ListCorrelate[{{1, 1}, {1, 1}}, {{a, b, c}, {d, e, f}, {g, h, i}}, 1]";
+  fn multidimensional_overhang_correlates_rank_for_rank() {
+    assert_eq!(
+      interpret(
+        "ListCorrelate[{{1, 1}, {1, 1}}, {{a, b, c}, {d, e, f}, {g, h, i}}, 1]"
+      )
+      .unwrap(),
+      "{{a + b + d + e, b + c + e + f, a + c + d + f}, \
+       {d + e + g + h, e + f + h + i, d + f + g + i}, \
+       {a + b + g + h, b + c + h + i, a + c + g + i}}"
+    );
+  }
+
+  // The periodic-boundary finite-difference idiom: a 2×2 kernel with a
+  // per-dimension offset list (not the scalar-broadcast form above), each
+  // entry aligning a different kernel row/column with the array's edge.
+  // Symmetric offsets (`{2, 2}`, kernel dimension 2) keep the output the
+  // same shape as the input, and out-of-range neighbors wrap cyclically —
+  // exactly the periodic boundary the stencil is meant to model.
+  #[test]
+  fn multidimensional_overhang_per_dimension_offsets() {
+    assert_eq!(
+      interpret("ListCorrelate[{{0, 1}, {0, -1}}, {{1, 2}, {3, 4}}, {2, 2}]")
+        .unwrap(),
+      "{{2, 2}, {-2, -2}}"
+    );
+    assert_eq!(
+      interpret("ListCorrelate[{{1, 0}, {-1, 0}}, {{1, 2}, {3, 4}}, {1, 1}]")
+        .unwrap(),
+      "{{-2, -2}, {2, 2}}"
+    );
+  }
+
+  // `ListConvolve` reverses the kernel in every dimension (unlike
+  // `ListCorrelate`), so the same per-dimension offset spec walks the data
+  // the other way. A unit-impulse kernel aligned at its offset reproduces
+  // the data exactly, which is a useful sanity check on the alignment math.
+  #[test]
+  fn multidimensional_convolve_overhang() {
+    assert_eq!(
+      interpret("ListConvolve[{{1, 0}, {0, 0}}, {{1, 2}, {3, 4}}, {1, 1}]")
+        .unwrap(),
+      "{{1, 2}, {3, 4}}"
+    );
+  }
+
+  // A rank mismatch between kernel and data still has no evaluation rule,
+  // and leaves the call unevaluated rather than guessing.
+  #[test]
+  fn multidimensional_overhang_rank_mismatch_stays_unevaluated() {
+    let input = "ListCorrelate[{{1, 1}, {1, 1}}, {a, b, c}, 1]";
     assert_eq!(interpret(input).unwrap(), input);
   }
 }
