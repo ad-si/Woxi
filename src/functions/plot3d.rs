@@ -9809,6 +9809,55 @@ fn resolve_one_parametric_triple(
   }
 }
 
+/// Read an already-evaluated shape as zero, one, or several `{fx, fy, fz}`
+/// triples: `{}` contributes no curve (a Demonstration idiom, `If[cond,
+/// Through[{f, g}][##]&][...], {}]`, picks between a fixed set of curves and
+/// "no curve" depending on a control's value), a literal 3-list is one
+/// curve, and a list whose every element is itself a 3-list is that many
+/// curves (e.g. `Through[{f, g}][t, ...]` producing two curves at once).
+fn parametric_curves_from_list(e: &Expr) -> Option<Vec<(Expr, Expr, Expr)>> {
+  let Expr::List(sub) = e else {
+    return None;
+  };
+  if sub.is_empty() {
+    return Some(vec![]);
+  }
+  let as_multi: Option<Vec<(Expr, Expr, Expr)>> = sub
+    .iter()
+    .map(|s| match unwrap_singleton_list(s) {
+      Expr::List(inner) if inner.len() == 3 => {
+        Some((inner[0].clone(), inner[1].clone(), inner[2].clone()))
+      }
+      _ => None,
+    })
+    .collect();
+  if let Some(curves) = as_multi {
+    return Some(curves);
+  }
+  (sub.len() == 3)
+    .then(|| vec![(sub[0].clone(), sub[1].clone(), sub[2].clone())])
+}
+
+/// Resolve one item of a `ParametricPlot3D` curve list into zero, one, or
+/// several `{fx, fy, fz}` triples (see `parametric_curves_from_list`),
+/// evaluating a held expression (with `shadow_vars` cleared) when it is not
+/// already a literal list, exactly as `resolve_one_parametric_triple` does
+/// for the single-curve case.
+fn resolve_one_parametric_item_to_curves(
+  item: &Expr,
+  shadow_vars: &[&str],
+) -> Option<Vec<(Expr, Expr, Expr)>> {
+  if let Expr::List(_) = unwrap_singleton_list(item)
+    && let Some(curves) =
+      parametric_curves_from_list(unwrap_singleton_list(item))
+  {
+    return Some(curves);
+  }
+  let resolved =
+    crate::functions::plot::eval_body_vars_symbolic(item, shadow_vars);
+  parametric_curves_from_list(unwrap_singleton_list(&resolved))
+}
+
 /// Resolve `body` into one or more `{fx, fy, fz}` triples for
 /// `ParametricPlot3D`. `body` normally is already a literal `{fx, fy, fz}`
 /// (or a list of such triples), but a Demonstration idiom passes a helper
@@ -9857,12 +9906,14 @@ fn resolve_parametric_triples(
           vec![(items[0].clone(), items[1].clone(), items[2].clone())]
         }));
       }
-      items
-        .iter()
-        .map(|item| {
-          resolve_one_parametric_triple(item, shadow_vars).ok_or_else(err)
-        })
-        .collect()
+      let mut curves = Vec::new();
+      for item in items {
+        match resolve_one_parametric_item_to_curves(item, shadow_vars) {
+          Some(item_curves) => curves.extend(item_curves),
+          None => return Err(err()),
+        }
+      }
+      Ok(curves)
     };
   match body {
     Expr::List(items) => resolve_items(items),
