@@ -3912,7 +3912,7 @@ sources, and exposes the properties that data supports — `"VertexList"`, `"Edg
 wolframscript knows (it answers `ExampleData::notpropx`). Its own list is
 `ByteCount, Description, EdgeCount, EdgeProperty, FullGraph, Graph,
 LongDescription, Name, Source, StandardName, VertexCount, VertexProperty`.
-`ExampleData[]` likewise names only the two collections Woxi serves, against
+`ExampleData[]` likewise names only the three collections Woxi serves, against
 wolframscript's nineteen, and the vertex *names* of a bundled network follow
 the original publication (`"MlleBaptistine"`) rather than Wolfram's spelling
 (`"Mlle Baptistine"`). Deliberate: the catalogue is Wolfram's. Write tests against shape and
@@ -3943,6 +3943,25 @@ returns the same `{"TestImage", name}` pairs and a script that builds an image
 picker from it (the "Histogram Equalization" Demonstration's popup, say) still
 gets the real entries. Asking for the data itself stays unevaluated rather than
 returning invented pixels.
+
+### `ExampleData[{"Geometry3D", name}]` ships no mesh
+
+```sh
+wolframscript -code 'ExampleData[{"Geometry3D", "Cow"}, "PolygonObjects"]'  # GraphicsComplex[…] — thousands of polygons
+woxi eval 'ExampleData[{"Geometry3D", "Cow"}, "PolygonObjects"]'            # ExampleData[{Geometry3D, Cow}, PolygonObjects]
+```
+
+Same shape of gap as `"TestImage"`: the digitized 3D models are not Woxi's to
+redistribute, so only a name catalogue is bundled
+(`Beethoven, Cone, Cow, Galleon, HammerheadShark, Horse, KleinBottle,
+MoebiusStrip, Seashell, SpaceShuttle, StanfordBunny, Torus, Triceratops`),
+known good from Wolfram's own reference-documentation examples and from the
+option list of the published "Cylindrical Anamorphosis of 3D Polygonal
+Meshes" Demonstration — not the whole of Wolfram's catalogue, which is not
+independently verifiable without a licensed Mathematica to query. A script
+that builds a picker from `ExampleData["Geometry3D"]` still gets real
+entries; asking for a catalogued shape's data, with or without a property,
+stays unevaluated rather than returning invented geometry.
 
 ### `ShortTimeFourier` partitions differently
 

@@ -20,11 +20,12 @@
 //! lists them under, so a script that asks for one of them by name gets the
 //! same data from either engine.
 //!
-//! `"TestImage"` is a partial exception: its name catalogue is bundled (see
-//! `TEST_IMAGE_NAMES`) so scripts that build UI from the catalogue — a
-//! `Control` popup, `Thread[...]` over the name list — see the real
-//! entries, but no photographic data is bundled, so
-//! `ExampleData[{"TestImage", name}]` stays unevaluated for every name.
+//! `"TestImage"` and `"Geometry3D"` are a partial exception each: their name
+//! catalogues are bundled (see `TEST_IMAGE_NAMES` and `GEOMETRY3D_NAMES`) so
+//! scripts that build UI from the catalogue — a `Control` popup,
+//! `Thread[...]` over the name list — see real entries, but no photographic
+//! or mesh data is bundled, so `ExampleData[{"TestImage", name}]` and
+//! `ExampleData[{"Geometry3D", name}]` stay unevaluated for every name.
 
 use std::sync::LazyLock;
 
@@ -457,7 +458,7 @@ const NETWORK_GRAPH_NAMES: &[&str] = &[
 ];
 
 /// The example-data types Woxi bundles.
-const TYPES: &[&str] = &["NetworkGraph", "TestImage"];
+const TYPES: &[&str] = &["NetworkGraph", "TestImage", "Geometry3D"];
 
 /// The `"TestImage"` catalogue of names. Woxi bundles no photographic data
 /// (there is no license to redistribute the actual pixels), so only the
@@ -514,6 +515,30 @@ const TEST_IMAGE_NAMES: &[&str] = &[
   "TruckAndAPC2",
   "U2",
   "Volubilis",
+];
+
+/// The `"Geometry3D"` catalogue of names. Woxi bundles no mesh data (the
+/// digitized 3D models are not Woxi's to redistribute), so only the name
+/// catalogue is exposed — a subset of Wolfram's, known good from published
+/// Wolfram Demonstrations and reference-documentation examples that build
+/// pickers from it, such as `ExampleData[{"Geometry3D", example}, \
+/// "PolygonObjects"]` in "Cylindrical Anamorphosis of 3D Polygonal Meshes".
+/// `ExampleData[{"Geometry3D", name}]` itself stays unevaluated for every
+/// name, same as an un-bundled `NetworkGraph` or `TestImage`.
+const GEOMETRY3D_NAMES: &[&str] = &[
+  "Beethoven",
+  "Cone",
+  "Cow",
+  "Galleon",
+  "HammerheadShark",
+  "Horse",
+  "KleinBottle",
+  "MoebiusStrip",
+  "Seashell",
+  "SpaceShuttle",
+  "StanfordBunny",
+  "Torus",
+  "Triceratops",
 ];
 
 /// `ExampleData[…]` — see the module documentation for the call forms.
@@ -609,6 +634,7 @@ fn collection_names(kind: &str) -> Option<&'static [&'static str]> {
   match kind {
     "NetworkGraph" => Some(NETWORK_GRAPH_NAMES),
     "TestImage" => Some(TEST_IMAGE_NAMES),
+    "Geometry3D" => Some(GEOMETRY3D_NAMES),
     _ => None,
   }
 }
