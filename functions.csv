@@ -604,7 +604,7 @@ ColorFunctionScaling,Option to scale color function input,✅,none,4.0,559
 Values,Returns the values of an association (optionally wrapping each with a head),✅,pure,10.0,560
 Cuboid,3D graphics primitive representing a cuboid,✅,none,2.0,561
 AbsoluteTime,Total seconds since January 1 1900,✅,contextual,2.0,562
-ExampleData,Serves the bundled example datasets by type and name: the list of types; the entries of one type; a dataset itself; or one of its properties (NetworkGraph data is bundled with the classic empirical networks; TestImage only bundles its name catalogue rather than pixel data),✅,pure,6.0,563
+ExampleData,Serves the bundled example datasets by type and name: the list of types; the entries of one type; a dataset itself; or one of its properties (NetworkGraph data is bundled with the classic empirical networks; TestImage and Geometry3D only bundle their name catalogues rather than pixel or mesh data),✅,pure,6.0,563
 TwoWayRule,Represent a two-way transformation rule,✅,none,11.2,564
 Initialization,Option for initialization code,✅,none,6.0,565
 StringCases,Returns substrings matching a pattern (threading over a list of strings; supports a count limit and the Overlaps and IgnoreCase options),✅,pure,5.1,566
@@ -3223,7 +3223,7 @@ CreateUUID,"Generates a random RFC 4122 version-4 UUID as a string; CreateUUID["
 DeviceWrite,,🚫,,10.0,3280
 EstimatorGains,,,,8.0,3280
 FeatureExtract,,🚫,,11.0,3280
-FittedModel,,,,7.0,3280
+FittedModel,"Symbolic fitted-model object returned by LinearModelFit/NonlinearModelFit; supports property access such as model[""RSquared""] and evaluation at a point",✅,pure,7.0,3280
 IncidenceList,Edges incident to a vertex in EdgeList order,✅,pure,9.0,3280
 NameQ,Test if a string is a defined symbol name,✅,pure,1.0,3280
 ParticleData,,🚫,,6.0,3280

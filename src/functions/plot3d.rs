@@ -2862,6 +2862,27 @@ impl Affine3 {
       && dot(c0, c2).abs() <= tol
   }
 
+  /// Is the linear part diagonal (no rotation/shear component)? Such a
+  /// transform — translation composed with a per-axis scale, including
+  /// axis flips — maps an axis-aligned box to another axis-aligned box, so
+  /// `Cuboid` can stay a `Cuboid` under it. Anything else (any rotation)
+  /// tilts the box's faces off the coordinate planes, which `Cuboid`'s
+  /// two-corner representation cannot express — see `transform_primitive3d`.
+  fn is_axis_aligned(&self) -> bool {
+    let tol = 1e-9
+      * self
+        .m
+        .iter()
+        .flatten()
+        .fold(1.0_f64, |acc, v| acc.max(v.abs()));
+    self.m[0][1].abs() <= tol
+      && self.m[0][2].abs() <= tol
+      && self.m[1][0].abs() <= tol
+      && self.m[1][2].abs() <= tol
+      && self.m[2][0].abs() <= tol
+      && self.m[2][1].abs() <= tol
+  }
+
   fn translation(v: [f64; 3]) -> Self {
     Self {
       m: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
@@ -3054,6 +3075,9 @@ fn tessellate_for_transform(
     Primitive3D::Cone { p1, p2, radius, .. } => {
       Some(tessellate_cone(p1, p2, *radius))
     }
+    Primitive3D::Cuboid { p_min, p_max, .. } => {
+      Some(tessellate_cuboid(p_min, p_max))
+    }
     _ => None,
   }
 }
@@ -3063,12 +3087,18 @@ fn transform_primitive3d(prim: &mut Primitive3D, xf: &Affine3) {
   let scale = xf.length_scale();
   // An anisotropic transform bends a sphere into an ellipsoid and a
   // cylinder/cone into an elliptic one — shapes the analytic primitives
-  // cannot express. Tessellate first, then transform the vertices, and
-  // keep the result marked `smooth` so it still shades as a curved
-  // surface rather than growing facet outlines.
-  if !xf.is_similarity()
-    && let Some(tris) = tessellate_for_transform(prim)
-  {
+  // cannot express; a rotation does the same to a `Cuboid`, tilting its
+  // faces off the coordinate planes, which its two-corner representation
+  // cannot express either (a pure rotation is a similarity, so it needs
+  // its own, stricter check). Tessellate first, then transform the
+  // vertices, and keep the result marked `smooth` so a curved surface still
+  // shades as one rather than growing facet outlines (a tessellated
+  // `Cuboid` is flat-faced regardless, so `smooth` is moot for it).
+  let needs_tessellation = match prim {
+    Primitive3D::Cuboid { .. } => !xf.is_axis_aligned(),
+    _ => !xf.is_similarity(),
+  };
+  if needs_tessellation && let Some(tris) = tessellate_for_transform(prim) {
     let style = primitive_style(prim).clone();
     *prim = Primitive3D::Surface3D {
       tris: tris
@@ -3086,8 +3116,9 @@ fn transform_primitive3d(prim: &mut Primitive3D, xf: &Affine3) {
       *radius *= scale;
     }
     Primitive3D::Cuboid { p_min, p_max, .. } => {
-      // Transform both corners and re-normalize; the box stays
-      // axis-aligned, so rotations are only approximated.
+      // Reached only when `xf` is axis-aligned (translation/per-axis
+      // scale): transforming both corners keeps the box axis-aligned, so
+      // it can stay a cheap `Cuboid` instead of a tessellated mesh.
       let a = xf.apply(*p_min);
       let b = xf.apply(*p_max);
       *p_min = Point3D {
@@ -10356,4 +10387,182 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let svg = with_plot_label(svg, args, svg_width, svg_height);
 
   Ok(crate::graphics3d_result_with_structure(svg, structure))
+}
+
+#[cfg(test)]
+mod cuboid_rotation_tests {
+  use super::*;
+
+  fn corner(p: Point3D) -> (f64, f64, f64) {
+    (
+      (p.x * 1e9).round() / 1e9,
+      (p.y * 1e9).round() / 1e9,
+      (p.z * 1e9).round() / 1e9,
+    )
+  }
+
+  #[test]
+  fn axis_aligned_transform_detects_translation_and_scaling_only() {
+    assert!(Affine3::translation([1.0, -2.0, 3.0]).is_axis_aligned());
+    assert!(
+      Affine3::scaling([2.0, 0.5, -1.0], [0.0, 0.0, 0.0]).is_axis_aligned()
+    );
+    // A 90-degree rotation about a coordinate axis happens to keep the
+    // linear part diagonal-free of off-axis coupling along that axis, but
+    // still mixes the other two — off-axis entries appear, so it is
+    // correctly *not* axis-aligned.
+    assert!(
+      !Affine3::rotation(
+        std::f64::consts::FRAC_PI_2,
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0]
+      )
+      .unwrap()
+      .is_axis_aligned()
+    );
+    assert!(
+      !Affine3::rotation(0.3, [0.0, 0.0, 1.0], [1.0, 1.0, 1.0])
+        .unwrap()
+        .is_axis_aligned()
+    );
+  }
+
+  /// A `Cuboid` under a genuine rotation cannot stay a `Cuboid` — its
+  /// two-corner form only ever describes an axis-aligned box. Regression:
+  /// `transform_primitive3d` used to rotate just the two corners and
+  /// re-derive a new axis-aligned box from them ("only approximated" per
+  /// its old comment), which for a thin box at a generic angle erases the
+  /// tilt entirely rather than producing a tilted box. It must instead
+  /// tessellate into a `Surface3D`, the same way `Sphere`/`Cylinder`/`Cone`
+  /// already do for a transform their analytic form cannot express.
+  #[test]
+  fn rotated_cuboid_tessellates_instead_of_approximating() {
+    let mut prim = Primitive3D::Cuboid {
+      p_min: Point3D {
+        x: -0.05,
+        y: -0.05,
+        z: 0.0,
+      },
+      p_max: Point3D {
+        x: 0.05,
+        y: 0.05,
+        z: 2.0,
+      },
+      style: StyleState3D::default(),
+    };
+    let xf = Affine3::rotation(0.7, [0.0, 1.0, 0.0], [0.0, 0.0, 0.0]).unwrap();
+    transform_primitive3d(&mut prim, &xf);
+    assert!(
+      matches!(prim, Primitive3D::Surface3D { .. }),
+      "a rotated Cuboid must tessellate, not stay an (approximated) Cuboid"
+    );
+    // The tessellated box's own vertices, rotated back by the inverse
+    // angle, must land exactly on the original axis-aligned corners —
+    // exact because both rotations act on the same fixed set of vertices,
+    // unlike the old corner-remap-then-re-normalize approach, whose second
+    // application starts from an already wrong, previously re-normalized
+    // box and does not undo the first.
+    let inverse =
+      Affine3::rotation(-0.7, [0.0, 1.0, 0.0], [0.0, 0.0, 0.0]).unwrap();
+    let Primitive3D::Surface3D { tris, .. } = &prim else {
+      unreachable!()
+    };
+    let mut restored: Vec<(f64, f64, f64)> = tris
+      .iter()
+      .flat_map(|(a, b, c)| [a, b, c])
+      .map(|p| corner(inverse.apply(*p)))
+      .collect();
+    restored.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    restored.dedup();
+    let mut expected = vec![
+      (-0.05, -0.05, 0.0),
+      (0.05, -0.05, 0.0),
+      (0.05, 0.05, 0.0),
+      (-0.05, 0.05, 0.0),
+      (-0.05, -0.05, 2.0),
+      (0.05, -0.05, 2.0),
+      (0.05, 0.05, 2.0),
+      (-0.05, 0.05, 2.0),
+    ];
+    expected.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    assert_eq!(restored, expected);
+  }
+
+  /// The same rotation, but through an off-origin anchor point — exercising
+  /// the `Rotate[g, angle, axis, point]` 4-argument form (the one the
+  /// ladder-climber–style Demonstrations use to swing a rung assembly about
+  /// a pivot partway up a wall) rather than the 3-argument origin-anchored
+  /// one above.
+  #[test]
+  fn rotated_cuboid_about_an_off_origin_axis_tessellates() {
+    let mut prim = Primitive3D::Cuboid {
+      p_min: Point3D {
+        x: -0.1,
+        y: 0.0,
+        z: -1.0,
+      },
+      p_max: Point3D {
+        x: 0.0,
+        y: 0.03,
+        z: 1.0,
+      },
+      style: StyleState3D::default(),
+    };
+    let xf = Affine3::rotation(1.1, [0.0, 1.0, 0.0], [0.0, 0.0, 3.0]).unwrap();
+    transform_primitive3d(&mut prim, &xf);
+    assert!(matches!(prim, Primitive3D::Surface3D { .. }));
+    let inverse =
+      Affine3::rotation(-1.1, [0.0, 1.0, 0.0], [0.0, 0.0, 3.0]).unwrap();
+    let Primitive3D::Surface3D { tris, .. } = &prim else {
+      unreachable!()
+    };
+    let mut restored: Vec<(f64, f64, f64)> = tris
+      .iter()
+      .flat_map(|(a, b, c)| [a, b, c])
+      .map(|p| corner(inverse.apply(*p)))
+      .collect();
+    restored.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    restored.dedup();
+    let mut expected = vec![
+      (-0.1, 0.0, -1.0),
+      (0.0, 0.0, -1.0),
+      (0.0, 0.03, -1.0),
+      (-0.1, 0.03, -1.0),
+      (-0.1, 0.0, 1.0),
+      (0.0, 0.0, 1.0),
+      (0.0, 0.03, 1.0),
+      (-0.1, 0.03, 1.0),
+    ];
+    expected.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    assert_eq!(restored, expected);
+  }
+
+  /// A `Cuboid` under a transform that keeps it axis-aligned (translation
+  /// composed with a per-axis scale) stays the cheap `Cuboid` form rather
+  /// than tessellating unnecessarily.
+  #[test]
+  fn axis_aligned_transform_keeps_cuboid_representation() {
+    let mut prim = Primitive3D::Cuboid {
+      p_min: Point3D {
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
+      },
+      p_max: Point3D {
+        x: 1.0,
+        y: 1.0,
+        z: 1.0,
+      },
+      style: StyleState3D::default(),
+    };
+    let xf = Affine3::translation([2.0, -1.0, 0.5]);
+    transform_primitive3d(&mut prim, &xf);
+    match prim {
+      Primitive3D::Cuboid { p_min, p_max, .. } => {
+        assert_eq!(corner(p_min), (2.0, -1.0, 0.5));
+        assert_eq!(corner(p_max), (3.0, 0.0, 1.5));
+      }
+      _ => panic!("an axis-aligned transform must not tessellate a Cuboid"),
+    }
+  }
 }
