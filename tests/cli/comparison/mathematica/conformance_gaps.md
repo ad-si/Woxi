@@ -2440,22 +2440,15 @@ can never work.
 
 ## Lists, associations and structured objects
 
-### ListCorrelate / ListConvolve have no multi-dimensional overhang
+### ListCorrelate / ListConvolve: the 7th argument (a level specification)
 
-```sh
-wolframscript -code 'ToString[ListCorrelate[{{1, 1}, {1, 1}}, {{a, b, c}, {d, e, f}, {g, h, i}}, 1], InputForm]'
-# {{a + b + d + e, b + c + e + f, a + c + d + f},
-#  {d + e + g + h, e + f + h + i, d + f + g + i},
-#  {a + b + g + h, b + c + h + i, a + c + g + i}}
-woxi eval 'ListCorrelate[{{1, 1}, {1, 1}}, {{a, b, c}, {d, e, f}, {g, h, i}}, 1]'
-# ListCorrelate[{{1, 1}, {1, 1}}, {{a, b, c}, {d, e, f}, {g, h, i}}, 1]
-```
-
-The two-argument multi-dimensional form is correct; only the overhang path
-(`k` / `{kL, kR}`, padding, generalized `g`/`h`) is one-dimensional, and it
-stays unevaluated for a rank-2 kernel rather than answering.
-
-The 7th argument, a level specification, is unimplemented for every rank:
+The overhang path (`k` / `{kL, kR}`, padding, generalized `g`/`h`) now
+matches wolframscript for a kernel and array of equal rank ≥ 2 too — one
+offset per dimension, each a scalar or `{kL, kR}` pair, with scalar padding
+or cyclic wraparound extending the edges per dimension. Only a per-dimension
+padding *array* and a rank mismatch between kernel and data still leave the
+call unevaluated. The 7th argument, a level specification, remains
+unimplemented for every rank:
 
 ```sh
 wolframscript -code 'ToString[ListCorrelate[{x, y}, {a, b, c}, 1, p, Times, Plus, 1], InputForm]'
@@ -3734,26 +3727,36 @@ default forms diverge for the same reason the explicit ones do.
 `{2, 3/2, 0}` in Woxi; wolframscript handles only the planar case and leaves
 the call unevaluated. Deliberate — the 3D centre is well defined.
 
-### `ConvexHullMesh` is unevaluated for 3D point sets
+### `ConvexHullMesh`'s 3D facet order, rotation and coplanar merging is qhull's
+
+3D point sets now build a real triangulated hull (a standard incremental
+"beneath-beyond" algorithm, not qhull), and its facets are the *same
+triangles with the same outward orientation* as wolframscript's — verified by
+hand against the reference table below, canonicalizing each face to start at
+its lowest vertex index. What is not replicated is qhull's own bookkeeping:
 
 ```sh
 wolframscript -code 'ToString[ConvexHullMesh[{{0,0,0},{1,0,0},{0,1,0},{0,0,1}}], InputForm]'
 # BoundaryMeshRegion[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, 0, 1}},
 #   {Polygon[{{3, 2, 1}, {2, 4, 1}, {4, 3, 1}, {3, 4, 2}}]},
 #   Method -> {"SeparateBoundaries" -> False}, WorkingPrecision -> Infinity]
-woxi eval 'ConvexHullMesh[{{0,0,0},{1,0,0},{0,1,0},{0,0,1}}]'
-# ConvexHullMesh[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, 0, 1}}]
+woxi eval 'ToString[ConvexHullMesh[{{0,0,0},{1,0,0},{0,1,0},{0,0,1}}], InputForm]'
+# BoundaryMeshRegion[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, 0, 1}},
+#   {Polygon[{{1, 3, 2}, {1, 2, 4}, {1, 4, 3}, {2, 3, 4}}]},
+#   Method -> {"SeparateBoundaries" -> False}, WorkingPrecision -> Infinity]
 ```
 
-Computing the hull is the easy part; WL hands qhull's internal facet
-bookkeeping straight through, and three things would have to be replicated to
-match the printed `Polygon`:
+Each face above is a cyclic rotation of the matching wolframscript face
+(`{1,3,2}` rotates to `{3,2,1}`, `{1,2,4}` to `{2,4,1}`, and so on) — the same
+triangle, the same winding, just listed starting at a different vertex. Three
+things would have to be replicated to match the printed `Polygon` exactly:
 
 1. **Facet order.** No sort explains all three samples below.
 2. **Vertex rotation within a face.** Faces are outward-oriented, but the
    starting vertex varies.
 3. **Coplanar merging.** Triangles that share a plane come back as one polygon,
-   so the cube's six faces are quads, not twelve triangles.
+   so the cube's six faces are quads, not twelve triangles (Woxi's hull always
+   triangulates, even a cube's flat sides).
 
 Reference outputs (all carry `Method -> {"SeparateBoundaries" -> False},
 WorkingPrecision -> Infinity`):
@@ -3909,7 +3912,7 @@ sources, and exposes the properties that data supports — `"VertexList"`, `"Edg
 wolframscript knows (it answers `ExampleData::notpropx`). Its own list is
 `ByteCount, Description, EdgeCount, EdgeProperty, FullGraph, Graph,
 LongDescription, Name, Source, StandardName, VertexCount, VertexProperty`.
-`ExampleData[]` likewise names only the two collections Woxi serves, against
+`ExampleData[]` likewise names only the three collections Woxi serves, against
 wolframscript's nineteen, and the vertex *names* of a bundled network follow
 the original publication (`"MlleBaptistine"`) rather than Wolfram's spelling
 (`"Mlle Baptistine"`). Deliberate: the catalogue is Wolfram's. Write tests against shape and
@@ -3940,6 +3943,25 @@ returns the same `{"TestImage", name}` pairs and a script that builds an image
 picker from it (the "Histogram Equalization" Demonstration's popup, say) still
 gets the real entries. Asking for the data itself stays unevaluated rather than
 returning invented pixels.
+
+### `ExampleData[{"Geometry3D", name}]` ships no mesh
+
+```sh
+wolframscript -code 'ExampleData[{"Geometry3D", "Cow"}, "PolygonObjects"]'  # GraphicsComplex[…] — thousands of polygons
+woxi eval 'ExampleData[{"Geometry3D", "Cow"}, "PolygonObjects"]'            # ExampleData[{Geometry3D, Cow}, PolygonObjects]
+```
+
+Same shape of gap as `"TestImage"`: the digitized 3D models are not Woxi's to
+redistribute, so only a name catalogue is bundled
+(`Beethoven, Cone, Cow, Galleon, HammerheadShark, Horse, KleinBottle,
+MoebiusStrip, Seashell, SpaceShuttle, StanfordBunny, Torus, Triceratops`),
+known good from Wolfram's own reference-documentation examples and from the
+option list of the published "Cylindrical Anamorphosis of 3D Polygonal
+Meshes" Demonstration — not the whole of Wolfram's catalogue, which is not
+independently verifiable without a licensed Mathematica to query. A script
+that builds a picker from `ExampleData["Geometry3D"]` still gets real
+entries; asking for a catalogued shape's data, with or without a property,
+stays unevaluated rather than returning invented geometry.
 
 ### `ShortTimeFourier` partitions differently
 

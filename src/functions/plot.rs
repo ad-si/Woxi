@@ -7,7 +7,7 @@ use crate::functions::chart::{
   ChartLabel, ChartOptions, LabelPosition, StyledLabel, parse_label_style,
 };
 use crate::functions::graphics::{Color as WoxiColor, parse_color};
-use crate::functions::math_ast::try_eval_to_f64;
+use crate::functions::math_ast::{try_eval_to_f64, try_eval_to_f64_lenient};
 use crate::syntax::PlotMarker;
 
 /// How many lines below the first a stacked `PlotLabel` (a `Grid`/`Column`
@@ -231,7 +231,7 @@ pub(crate) fn evaluate_at_xy(
   let sub1 = substitute_var(body, xvar, &Expr::Real(xval));
   let sub2 = substitute_var(&sub1, yvar, &Expr::Real(yval));
   let result = evaluate_expr_to_expr(&sub2).ok()?;
-  if let Some(v) = try_eval_to_f64(&result) {
+  if let Some(v) = try_eval_to_f64_lenient(&result) {
     return Some(v);
   }
   // The body may reference a variable (e.g. `lineA` holding `-5 - 3 x + 2 y`)
@@ -241,7 +241,7 @@ pub(crate) fn evaluate_at_xy(
   let sub1 = substitute_var(&result, xvar, &Expr::Real(xval));
   let sub2 = substitute_var(&sub1, yvar, &Expr::Real(yval));
   let result = evaluate_expr_to_expr(&sub2).ok()?;
-  try_eval_to_f64(&result)
+  try_eval_to_f64_lenient(&result)
 }
 
 /// Simple SVG header for plots without plotters axes (ArrayPlot, charts).
@@ -264,7 +264,14 @@ pub(crate) fn svg_header(w: u32, h: u32, full_width: bool) -> String {
 pub(crate) fn evaluate_at_point(body: &Expr, var: &str, x: f64) -> Option<f64> {
   let substituted = substitute_var(body, var, &Expr::Real(x));
   let result = evaluate_expr_to_expr(&substituted).ok()?;
-  try_eval_to_f64(&result)
+  if let Some(v) = try_eval_to_f64_lenient(&result) {
+    return Some(v);
+  }
+  // See evaluate_at_xy: body may be a bound variable that only resolved to
+  // a function of var during evaluation.
+  let substituted = substitute_var(&result, var, &Expr::Real(x));
+  let result = evaluate_expr_to_expr(&substituted).ok()?;
+  try_eval_to_f64_lenient(&result)
 }
 
 /// Adaptively sample a function, adding more points where the function changes rapidly.
@@ -2586,9 +2593,10 @@ fn inject_epilog(
 
 /// Draw a `Prolog`'s primitives under a finished plot — the mirror of
 /// [`inject_epilog`]: same primitive-to-SVG rendering and the same `area`/
-/// `ranges`/`scale` meaning, but spliced in right after the opening `<svg
-/// …>` tag instead of before `</svg>`, so later-painted content (axes, the
-/// curve itself, any epilog) draws on top of it rather than the reverse.
+/// `ranges`/`scale` meaning, but spliced in right after the plot's own
+/// background rect instead of before `</svg>`, so later-painted content
+/// (axes, the curve itself, any epilog) draws on top of it rather than the
+/// reverse.
 fn inject_prolog(
   buf: &mut String,
   opts: &PlotOptions,
@@ -2617,11 +2625,30 @@ fn inject_prolog(
     &area,
     "prolog",
   );
-  if let Some(tag_start) = buf.find("<svg")
-    && let Some(tag_end) = buf[tag_start..].find('>')
-  {
-    buf.insert_str(tag_start + tag_end + 1, &prolog_svg);
-  }
+  // `root.fill(&bg_color)` (plotters) draws an opaque rect spanning the
+  // whole canvas as the very first thing after the opening `<svg …>` tag
+  // (and any embedded `<defs>` for fonts, which never paints anything
+  // itself). Splicing prolog in right after `<svg …>` would place it
+  // *before* that rect in document order, so the rect — opaque, painted
+  // later — would cover it entirely. Insert after the background rect's
+  // `/>` instead, so prolog paints on the blank canvas but still under
+  // the axes and curve that follow.
+  let Some(tag_start) = buf.find("<svg") else {
+    return;
+  };
+  let Some(tag_end) = buf[tag_start..].find('>') else {
+    return;
+  };
+  let after_svg_tag = tag_start + tag_end + 1;
+  let after_defs = match buf[after_svg_tag..].find("</defs>") {
+    Some(p) => after_svg_tag + p + "</defs>".len(),
+    None => after_svg_tag,
+  };
+  let insert_at = match buf[after_defs..].find("/>") {
+    Some(p) => after_defs + p + 2,
+    None => after_defs,
+  };
+  buf.insert_str(insert_at, &prolog_svg);
 }
 
 fn generate_svg_with_options(

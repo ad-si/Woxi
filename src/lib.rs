@@ -1317,11 +1317,34 @@ pub fn get_captured_graphics() -> Option<String> {
 /// `p1 = Plot[…]; p2 = ContourPlot[…]; Switch[which, 1, p1, 2, p2]`, drew
 /// `p2` last, so the chosen `p1` was displayed as `p2`. Re-capturing the
 /// result's SVG puts the picked picture back at the end of the buffer.
+///
+/// `TabView[{label1 -> pane1, label2 -> pane2, …}]` is the same problem in
+/// a different shape: unlike `Switch`, it has no "the value is exactly this
+/// one branch" reduction — a real front end keeps every pane's expression
+/// live and simply *displays* the first one until the user clicks another
+/// tab. Every pane's content is still evaluated eagerly here, though, so a
+/// pane with a picture still calls `capture_graphics` as a side effect —
+/// last pane in the list wins the buffer, not the first tab a notebook
+/// actually opens on. Recurse into the first pane and promote its picture
+/// the same way.
 fn promote_result_graphics(expr: &syntax::Expr) {
-  if let syntax::Expr::Graphics { svg, .. } = expr
-    && get_captured_graphics().as_deref() != Some(svg.as_str())
+  if let syntax::Expr::Graphics { svg, .. } = expr {
+    if get_captured_graphics().as_deref() != Some(svg.as_str()) {
+      capture_graphics(svg);
+    }
+    return;
+  }
+  if let syntax::Expr::FunctionCall { name, args } = expr
+    && name == "TabView"
+    && let Some(syntax::Expr::List(items)) = args.first()
+    && let Some(first) = items.first()
   {
-    capture_graphics(svg);
+    let pane = match first {
+      syntax::Expr::Rule { replacement, .. }
+      | syntax::Expr::RuleDelayed { replacement, .. } => replacement.as_ref(),
+      other => other,
+    };
+    promote_result_graphics(pane);
   }
 }
 
@@ -3889,6 +3912,16 @@ fn render_event_handler_if_needed(expr: syntax::Expr) -> syntax::Expr {
 /// Used for a cell's top-level result and, recursively, for the content an
 /// `EventHandler[…]` wraps once its event rules have been dropped.
 fn render_visual_display_pipeline(expr: &syntax::Expr) -> syntax::Expr {
+  // A `Pane[content, {width, height}]` reserves a fixed box in the
+  // FrontEnd; capture that now, before `unwrap_display_pass_through`
+  // discards the wrapper below, so the composed picture can be clipped to
+  // it once the passes below have built it. There is no scrollbar in a
+  // static rendering — content taller or wider than the box is silently
+  // cut off there, not drawn past it into a stray sliver of raw markup
+  // underneath (a Demonstration's fixed-size Pane rendered in Woxi
+  // Studio).
+  let pane_box = pane_fixed_size(expr);
+
   // Strip the wrappers that only say how to set what they hold, so the
   // passes below see the wrapped content (e.g. Pane[Column[{…,
   // Graphics[…]}]] renders the column with its embedded graphic). CLI
@@ -3909,7 +3942,59 @@ fn render_visual_display_pipeline(expr: &syntax::Expr) -> syntax::Expr {
   let expr = render_row_if_needed(expr);
   let expr = render_treeform_if_needed(expr);
   let expr = render_framed_if_needed(expr);
-  render_highlighted_if_needed(expr)
+  let result = render_highlighted_if_needed(expr);
+
+  match (pane_box, &result) {
+    (Some((w, h)), syntax::Expr::Graphics { svg, .. }) => {
+      let clipped = functions::graphics::clip_svg_to_pane_box(svg, w, h);
+      let mut clipped_result = result.clone();
+      if let syntax::Expr::Graphics { svg, .. } = &mut clipped_result {
+        *svg = clipped;
+      }
+      clipped_result
+    }
+    _ => result,
+  }
+}
+
+/// The `{width, height}` a top-level `Pane[content, {width, height}]`
+/// declares — looking through the same pass-through wrappers
+/// `unwrap_display_wrappers` peels (`Text`, `TraditionalForm`,
+/// `StandardForm`, `DisplayForm`, `Deploy`, `Item`) so a caption'd or
+/// wrapped fixed-size Pane is still found. `None` when the expression
+/// isn't such a Pane, or its size isn't two plain numbers — a single
+/// width, `Automatic`, or `Full` leave the box unconstrained here, the
+/// same as `unwrap_display_wrappers`' unconditional peel handles every
+/// other Pane shape.
+fn pane_fixed_size(expr: &syntax::Expr) -> Option<(f64, f64)> {
+  let mut current = expr;
+  loop {
+    let syntax::Expr::FunctionCall { name, args } = current else {
+      return None;
+    };
+    match name.as_str() {
+      "Text" | "TraditionalForm" | "StandardForm" | "DisplayForm"
+      | "Deploy" | "Item"
+        if !args.is_empty() =>
+      {
+        current = &args[0];
+      }
+      "Pane" if args.len() >= 2 => {
+        let syntax::Expr::List(size) = &args[1] else {
+          return None;
+        };
+        if size.len() != 2 {
+          return None;
+        }
+        let w =
+          evaluator::dispatch::io_functions::pane_size_component(&size[0])?;
+        let h =
+          evaluator::dispatch::io_functions::pane_size_component(&size[1])?;
+        return Some((w, h));
+      }
+      _ => return None,
+    }
+  }
 }
 
 /// If `expr` is `Overlay[{…}]`, composite its items into the one stacked
@@ -4241,10 +4326,24 @@ fn render_graphics_fc_if_needed(expr: syntax::Expr) -> syntax::Expr {
       }
     }
     syntax::Expr::FunctionCall { name, args }
-      if name == "MeshRegion" && args.len() == 2 =>
+      if (name == "MeshRegion" || name == "BoundaryMeshRegion")
+        && args.len() >= 2 =>
     {
-      // Render MeshRegion as SVG (e.g. from VoronoiMesh)
-      if let Some(svg) =
+      // Render the mesh as a picture (e.g. from VoronoiMesh, or a
+      // ConvexHullMesh's BoundaryMeshRegion, which also carries a Method
+      // option and so has more than 2 args). A 3D mesh goes through the
+      // ordinary Graphics3D pipeline for its lighting and Show/Part support;
+      // a 2D one uses the flat mesh renderer.
+      let is_3d_mesh = matches!(&args[0], syntax::Expr::List(items)
+        if items.first().is_some_and(|v| matches!(v, syntax::Expr::List(c) if c.len() == 3)));
+      if is_3d_mesh {
+        functions::graphics::mesh_region_to_graphics3d(
+          &args[0],
+          &args[1],
+          &args[2..],
+        )
+        .unwrap_or(expr)
+      } else if let Some(svg) =
         functions::voronoi::mesh_region_to_svg(&args[0], &args[1])
       {
         capture_graphics(&svg);

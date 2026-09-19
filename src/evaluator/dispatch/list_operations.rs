@@ -2888,6 +2888,9 @@ pub fn dispatch_list_operations(
         args,
       ));
     }
+    "Combinatorica`Partitions" if args.len() == 1 => {
+      return Some(crate::functions::math_ast::integer_partitions_ast(args));
+    }
     "Signature" if args.len() == 1 => {
       use crate::functions::list_helpers_ast::sorting::canonical_cmp;
       // Signature operates on any non-atomic expression: it treats the
@@ -9131,13 +9134,253 @@ fn correlate_combine(
 }
 
 /// True when either operand has list elements, i.e. the correlation would be
-/// multi-dimensional. The overhang forms below are one-dimensional, so they
-/// leave those calls unevaluated rather than treating the rows as scalars.
+/// multi-dimensional. The overhang forms below are one-dimensional; a
+/// multi-dimensional pair falls through to `correlate_convolve_overhang_nd`
+/// instead (matching kernel/data rank, a per-dimension offset spec).
 fn correlate_is_multidimensional(ker: &[Expr], data: &[Expr]) -> bool {
   ker
     .iter()
     .chain(data.iter())
     .any(|e| matches!(e, Expr::List(_)))
+}
+
+/// Verify `expr` is a rectangular N-dimensional array of non-list leaves and
+/// return its shape together with its elements flattened in row-major
+/// order. `None` for anything ragged (rows of differing length at any
+/// level) or not a list at all.
+fn nd_shape_and_flatten(expr: &Expr) -> Option<(Vec<usize>, Vec<Expr>)> {
+  fn dims_of(expr: &Expr) -> Option<Vec<usize>> {
+    let Expr::List(items) = expr else { return None };
+    if items.is_empty() {
+      return Some(vec![0]);
+    }
+    let all_lists = items.iter().all(|e| matches!(e, Expr::List(_)));
+    let any_list = items.iter().any(|e| matches!(e, Expr::List(_)));
+    if any_list && !all_lists {
+      return None;
+    }
+    if !all_lists {
+      return Some(vec![items.len()]);
+    }
+    let mut sub: Option<Vec<usize>> = None;
+    for it in items {
+      let d = dims_of(it)?;
+      match &sub {
+        None => sub = Some(d),
+        Some(prev) if *prev == d => {}
+        _ => return None,
+      }
+    }
+    let mut dims = vec![items.len()];
+    dims.extend(sub.unwrap());
+    Some(dims)
+  }
+  fn flatten_into(expr: &Expr, out: &mut Vec<Expr>) {
+    if let Expr::List(items) = expr {
+      for it in items {
+        if matches!(it, Expr::List(_)) {
+          flatten_into(it, out);
+        } else {
+          out.push(it.clone());
+        }
+      }
+    }
+  }
+  let dims = dims_of(expr)?;
+  let mut flat = Vec::new();
+  flatten_into(expr, &mut flat);
+  Some((dims, flat))
+}
+
+/// Row-major strides for an array of the given shape (last dimension varies
+/// fastest).
+fn nd_strides(dims: &[usize]) -> Vec<usize> {
+  let mut strides = vec![1usize; dims.len()];
+  for d in (0..dims.len().saturating_sub(1)).rev() {
+    strides[d] = strides[d + 1] * dims[d + 1];
+  }
+  strides
+}
+
+/// Every 1-based multi-index into an array of the given shape, in row-major
+/// order.
+fn nd_multi_indices(dims: &[usize]) -> Vec<Vec<usize>> {
+  let mut result = vec![vec![]];
+  for &d in dims {
+    let mut next = Vec::with_capacity(result.len() * d);
+    for prefix in &result {
+      for v in 1..=d {
+        let mut p = prefix.clone();
+        p.push(v);
+        next.push(p);
+      }
+    }
+    result = next;
+  }
+  result
+}
+
+/// Rebuild a flat row-major buffer into nested `Expr::List`s of the given
+/// shape (the inverse of `nd_shape_and_flatten`).
+fn nd_nest(flat: &[Expr], dims: &[usize]) -> Expr {
+  if dims.len() <= 1 {
+    return Expr::List(flat.to_vec().into());
+  }
+  let chunk = dims[1..].iter().product::<usize>().max(1);
+  let rows: Vec<Expr> =
+    flat.chunks(chunk).map(|c| nd_nest(c, &dims[1..])).collect();
+  Expr::List(rows.into())
+}
+
+/// The data element at a (possibly out-of-range, per dimension) 1-based
+/// multi-index, extended past the edges: cyclically when `padding` is
+/// `None` (each out-of-range dimension wraps independently), or by
+/// broadcasting the padding value whenever any dimension is out of range.
+fn nd_correlate_element(
+  data_flat: &[Expr],
+  strides: &[usize],
+  dims: &[usize],
+  idx: &[i128],
+  padding: Option<&Expr>,
+) -> Expr {
+  let out_of_range =
+    idx.iter().zip(dims).any(|(&i, &n)| i < 1 || i > n as i128);
+  if out_of_range && let Some(p) = padding {
+    return p.clone();
+  }
+  let mut flat = 0usize;
+  for (d, &i) in idx.iter().enumerate() {
+    let n = dims[d] as i128;
+    let wrapped = (i - 1).rem_euclid(n) as usize;
+    flat += wrapped * strides[d];
+  }
+  data_flat[flat].clone()
+}
+
+/// General N-dimensional `ListCorrelate`/`ListConvolve` overhang form
+/// (`reverse = true` for convolve) — the rank ≥ 2 case the 1-D-only
+/// `list_correlate_overhang`/`list_convolve_overhang` above leave
+/// unevaluated. Matches the periodic-boundary Demonstrations idiom
+/// `ListCorrelate[{{0, 1}, {0, -1}}, matrix, {2, 2}]`: a kernel and array of
+/// equal rank, with one offset entry per dimension (each a scalar or a
+/// `{kL, kR}` pair, exactly like the 1-D spec but per axis). `None` when the
+/// inputs don't fit this form (mismatched rank, a spec that isn't a
+/// per-dimension list, a per-dimension padding array, an empty output
+/// dimension, …), so the caller falls back to leaving the call unevaluated.
+#[allow(clippy::too_many_arguments)]
+fn correlate_convolve_overhang_nd(
+  ker_dims: &[usize],
+  ker_flat: &[Expr],
+  data_dims: &[usize],
+  data_flat: &[Expr],
+  spec: &Expr,
+  padding: Option<&Expr>,
+  g: Option<&Expr>,
+  h: Option<&Expr>,
+  reverse: bool,
+) -> Option<Expr> {
+  let rank = ker_dims.len();
+  if rank < 2 || data_dims.len() != rank {
+    return None;
+  }
+  if let Some(Expr::List(_)) = padding {
+    return None;
+  }
+
+  let norm = |k: i128, m: usize| -> Option<usize> {
+    let pos = if k < 0 { m as i128 + 1 + k } else { k };
+    if (1..=m as i128).contains(&pos) {
+      Some(pos as usize)
+    } else {
+      None
+    }
+  };
+  let per_dim_spec: Vec<Expr> = match spec {
+    Expr::Integer(_) => vec![spec.clone(); rank],
+    Expr::List(items) if items.len() == rank => items.to_vec(),
+    _ => return None,
+  };
+  let mut kl = vec![0usize; rank];
+  let mut kr = vec![0usize; rank];
+  for d in 0..rank {
+    match &per_dim_spec[d] {
+      Expr::Integer(k) => {
+        let p = norm(*k, ker_dims[d])?;
+        kl[d] = p;
+        kr[d] = p;
+      }
+      Expr::List(items) if items.len() == 2 => {
+        let (Expr::Integer(a), Expr::Integer(b)) = (&items[0], &items[1])
+        else {
+          return None;
+        };
+        kl[d] = norm(*a, ker_dims[d])?;
+        kr[d] = norm(*b, ker_dims[d])?;
+      }
+      _ => return None,
+    }
+  }
+
+  let out_dims_i: Vec<i128> = (0..rank)
+    .map(|d| {
+      let n = data_dims[d] as i128;
+      if reverse {
+        n + kr[d] as i128 - kl[d] as i128
+      } else {
+        n + kl[d] as i128 - kr[d] as i128
+      }
+    })
+    .collect();
+  if out_dims_i.iter().any(|&d| d <= 0) {
+    return None;
+  }
+  let out_dims: Vec<usize> = out_dims_i.iter().map(|&d| d as usize).collect();
+
+  let ker_strides = nd_strides(ker_dims);
+  let data_strides = nd_strides(data_dims);
+  let out_strides = nd_strides(&out_dims);
+  let ker_multi_indices = nd_multi_indices(ker_dims);
+
+  let mut out_flat = vec![Expr::Integer(0); out_dims.iter().product()];
+  for t in nd_multi_indices(&out_dims) {
+    let mut terms: Vec<(Expr, Expr)> = Vec::with_capacity(ker_flat.len());
+    for i in &ker_multi_indices {
+      let mut data_idx = vec![0i128; rank];
+      for d in 0..rank {
+        data_idx[d] = if reverse {
+          t[d] as i128 + kl[d] as i128 - i[d] as i128
+        } else {
+          t[d] as i128 + i[d] as i128 - kl[d] as i128
+        };
+      }
+      let ker_flat_idx: usize = i
+        .iter()
+        .enumerate()
+        .map(|(d, &v)| (v - 1) * ker_strides[d])
+        .sum();
+      let data_val = nd_correlate_element(
+        data_flat,
+        &data_strides,
+        data_dims,
+        &data_idx,
+        padding,
+      );
+      terms.push((ker_flat[ker_flat_idx].clone(), data_val));
+    }
+    if reverse {
+      terms.reverse();
+    }
+    let sum = correlate_combine(terms, g, h);
+    let evaluated = evaluate_expr_to_expr(&sum).unwrap_or(sum);
+    let out_flat_idx: usize = t
+      .iter()
+      .enumerate()
+      .map(|(d, &v)| (v - 1) * out_strides[d])
+      .sum();
+    out_flat[out_flat_idx] = evaluated;
+  }
+
+  Some(nd_nest(&out_flat, &out_dims))
 }
 
 fn list_convolve_overhang(
@@ -9185,6 +9428,14 @@ fn list_convolve_overhang(
     _ => return unevaluated(),
   };
   if correlate_is_multidimensional(ker, data) {
+    if let (Some((kd, kf)), Some((dd, df))) =
+      (nd_shape_and_flatten(kernel), nd_shape_and_flatten(list))
+      && let Some(result) = correlate_convolve_overhang_nd(
+        &kd, &kf, &dd, &df, spec, padding, g, h, true,
+      )
+    {
+      return Ok(result);
+    }
     return unevaluated();
   }
 
@@ -9263,6 +9514,14 @@ fn list_correlate_overhang(
     _ => return unevaluated(),
   };
   if correlate_is_multidimensional(ker, data) {
+    if let (Some((kd, kf)), Some((dd, df))) =
+      (nd_shape_and_flatten(kernel), nd_shape_and_flatten(list))
+      && let Some(result) = correlate_convolve_overhang_nd(
+        &kd, &kf, &dd, &df, spec, padding, g, h, false,
+      )
+    {
+      return Ok(result);
+    }
     return unevaluated();
   }
 

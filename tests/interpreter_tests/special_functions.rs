@@ -3013,6 +3013,36 @@ mod cases {
     );
   }
   #[test]
+  fn legendre_p_negative_integer_order() {
+    // LegendreP[n, -m, x] used to fall back to unevaluated for a symbolic
+    // x (the differentiation-based m >= 0 formula only handled a
+    // non-negative order). Reflected onto P_n^m via
+    // P_n^{-m}(x) = (-1)^m (n-m)!/(n+m)! P_n^m(x), matching the standard
+    // identity: e.g. P_2^1(x) = -3 x Sqrt[1-x^2], so
+    // P_2^{-1}(x) = -1 * (1/6) * (-3 x Sqrt[1-x^2]) = x Sqrt[1-x^2]/2.
+    assert_case(r#"LegendreP[2, -1, x]"#, r#"(x*Sqrt[1 - x^2])/2"#);
+    assert_case(r#"LegendreP[2, -2, x]"#, r#"(1 - x^2)/8"#);
+    assert_case(r#"LegendreP[3, -2, x]"#, r#"(x*(1 - x^2))/8"#);
+    // |m| > n is an indeterminate 0·∞ for the reflection formula, not 0
+    // (e.g. LegendreP[2, -3, 0] = 1/15) — same pre-existing gap
+    // LegendreP[2, 3, 0] has for positive m > n (also unevaluated for
+    // exact input rather than 0), so this stays unevaluated rather than
+    // forcing a wrong answer.
+    assert_case(r#"LegendreP[2, -3, x]"#, r#"LegendreP[2, -3, x]"#);
+    // A numeric x, including |x| > 1, still goes through the existing
+    // complex/inexact path unaffected by the reflection formula above
+    // (rounded: the real part is a ~1e-17 floating-point residual).
+    assert_eq!(interpret("Head[LegendreP[2, -1, 1.5]]").unwrap(), "Complex");
+    assert_eq!(
+      interpret("Round[Re[LegendreP[2, -1, 1.5]], 0.0001]").unwrap(),
+      "0."
+    );
+    assert_eq!(
+      interpret("Round[Im[LegendreP[2, -1, 1.5]], 0.0001]").unwrap(),
+      "0.8385"
+    );
+  }
+  #[test]
   fn d_keeps_integer_content_inside_sum() {
     // Issue #299 fix side-effect: plain D leaves the integer content inside
     // the sum — wolframscript gives (-3 + 15*x^2)/2, not (3*(-1 + 5*x^2))/2.
@@ -4630,6 +4660,28 @@ mod spherical_harmonic_canonical_form {
     assert_eq!(
       interpret("SphericalHarmonicY[1, 1, t, p]").unwrap(),
       "-1/2*(E^(I*p)*Sqrt[3/(2*Pi)]*Sin[t])"
+    );
+  }
+
+  // Negative order m: the normalization used the |m|-based factorial ratio
+  // (l-|m|)!/(l+|m|)! regardless of the sign of m, giving a negative-order
+  // harmonic half the magnitude it should have (that ratio's reciprocal is
+  // the correct one for m < 0). Verified against the defining identity
+  // Y_l^{-m} = (-1)^m * Conjugate[Y_l^m] rather than wolframscript, which
+  // is unavailable in this sandbox.
+  #[test]
+  fn negative_order_normalization() {
+    assert_eq!(
+      interpret("SphericalHarmonicY[1, -1, t, p]").unwrap(),
+      "(Sqrt[6/Pi]*Sin[t])/(4*E^(I*p))"
+    );
+    assert_eq!(
+      interpret("SphericalHarmonicY[2, -1, t, p]").unwrap(),
+      "(Sqrt[30/Pi]*Cos[t]*Sin[t])/(4*E^(I*p))"
+    );
+    assert_eq!(
+      interpret("SphericalHarmonicY[2, -2, t, p]").unwrap(),
+      "(Sqrt[30/Pi]*Sin[t]^2)/(8*E^((2*I)*p))"
     );
   }
 }
