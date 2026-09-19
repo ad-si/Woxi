@@ -18704,6 +18704,12 @@ pub enum ManipulateControl {
     /// icon (e.g. the crosshair pickers of the Demonstrations site),
     /// parallel to `values`. `None` for plain text labels.
     value_label_svgs: Vec<Option<String>>,
+    /// Each choice's display label as styled runs, parallel to `values` —
+    /// a rule label's `Style[…, color]`/`Bold`/italic directive (e.g. a
+    /// multi-way selector's `1 -> Style["top", Blue]`) survives here rather
+    /// than being flattened into `value_labels`' plain text. Empty for a
+    /// choice whose label rendered as an icon into `value_label_svgs`.
+    value_label_runs: Vec<Vec<LabelRun>>,
     initial_index: usize,
     /// The initial value's InputForm, kept only when it is *not* one of
     /// `values` — e.g. a shared variable with several disjoint SetterBar
@@ -21039,12 +21045,18 @@ fn expr_references_any(expr: &Expr, names: &[String]) -> bool {
 /// spec `{True -> "Yin-Yang", False -> "alternate image"}`). In that case
 /// the left side is the value bound to the variable and the right side is
 /// only the display label, so the binding never sees the whole rule.
-fn discrete_choice_columns(
-  items: &[Expr],
-) -> (Vec<String>, Vec<String>, Vec<Option<String>>) {
+type DiscreteChoiceColumns = (
+  Vec<String>,
+  Vec<String>,
+  Vec<Option<String>>,
+  Vec<Vec<LabelRun>>,
+);
+
+fn discrete_choice_columns(items: &[Expr]) -> DiscreteChoiceColumns {
   let mut values = Vec::with_capacity(items.len());
   let mut labels = Vec::with_capacity(items.len());
   let mut svgs = Vec::with_capacity(items.len());
+  let mut label_runs = Vec::with_capacity(items.len());
   for item in items {
     if let Some((value, label)) = discrete_choice_rule(item) {
       values.push(crate::syntax::expr_to_input_form(value));
@@ -21053,36 +21065,46 @@ fn discrete_choice_columns(
       // falls back to the bound value so a non-graphical frontend still
       // shows something short and meaningful.
       let svg = discrete_choice_label_svg(label);
-      labels.push(if svg.is_some() {
-        discrete_choice_label(value)
+      let runs = if svg.is_some() {
+        discrete_choice_label_runs(value)
       } else {
-        discrete_choice_label(label)
-      });
+        // Keeps a `Style[…, color]`/`Bold` directive on the label (e.g. a
+        // multi-way selector's `1 -> Style["top", Blue]`) as styled runs
+        // rather than flattening it away — the icon slot above already
+        // covers the case where the label is a picture instead of text.
+        discrete_choice_label_runs(label)
+      };
+      labels.push(flatten_label_runs(&runs));
+      label_runs.push(runs);
       svgs.push(svg);
     } else if let Some(color) = crate::functions::graphics::parse_color(item) {
       // A plain colour choice (no Rule label) renders as a swatch icon —
       // the ColorSetter idiom — rather than its `RGBColor[…]` InputForm.
+      let runs = discrete_choice_label_runs(item);
       values.push(crate::syntax::expr_to_input_form(item));
-      labels.push(discrete_choice_label(item));
+      labels.push(flatten_label_runs(&runs));
+      label_runs.push(runs);
       svgs.push(Some(color_swatch_svg(&color)));
     } else {
+      let runs = discrete_choice_label_runs(item);
       values.push(crate::syntax::expr_to_input_form(item));
-      labels.push(discrete_choice_label(item));
+      labels.push(flatten_label_runs(&runs));
+      label_runs.push(runs);
       svgs.push(None);
     }
   }
-  (values, labels, svgs)
+  (values, labels, svgs, label_runs)
 }
 
 /// Re-resolve a discrete control's choice-list code against the
 /// interpreter's current globals (installed by the caller via
-/// `with_scoped_globals`), returning the same three columns
+/// `with_scoped_globals`), returning the same columns
 /// [`discrete_choice_columns`] builds. `None` when the code no longer
 /// evaluates to a non-empty list, in which case the control keeps the
 /// choices it already has.
 pub fn manipulate_eval_values_code(
   code: &str,
-) -> Option<(Vec<String>, Vec<String>, Vec<Option<String>>)> {
+) -> Option<DiscreteChoiceColumns> {
   let expr = crate::interpret_to_expr(code).ok()?;
   let evaluated = crate::evaluator::evaluate_expr_to_expr(&expr).ok()?;
   let Expr::List(items) = &evaluated else {
@@ -23161,7 +23183,7 @@ fn parse_manipulate_control(
       None
     };
     if let Some(value_items) = value_items {
-      let (values, value_labels, value_label_svgs) =
+      let (values, value_labels, value_label_svgs, value_label_runs) =
         discrete_choice_columns(&value_items);
       if values.is_empty() {
         return None;
@@ -23214,6 +23236,7 @@ fn parse_manipulate_control(
           values,
           value_labels,
           value_label_svgs,
+          value_label_runs,
           initial_index,
           initial_overflow,
           label,
@@ -23343,7 +23366,7 @@ fn parse_manipulate_control(
         && crate::syntax::expr_to_input_form(init) != alt_code
     }) {
       let value_items = vec![init.clone(), bounds[0].clone()];
-      let (values, value_labels, value_label_svgs) =
+      let (values, value_labels, value_label_svgs, value_label_runs) =
         discrete_choice_columns(&value_items);
       return Some(ParsedControl::Visible {
         control: ManipulateControl::Discrete {
@@ -23351,6 +23374,7 @@ fn parse_manipulate_control(
           values,
           value_labels,
           value_label_svgs,
+          value_label_runs,
           initial_index: 0,
           initial_overflow: None,
           label,
@@ -23592,11 +23616,17 @@ fn discrete_choice_rule(item: &Expr) -> Option<(&Expr, &Expr)> {
   }
 }
 
-/// Render a discrete-choice label. A string label is shown without its
-/// surrounding quotes; presentation wrappers (`Style["P", Italic]`,
-/// `Row[{…}]`) render as their display text via the label-run renderer;
-/// anything that renders empty falls back to its InputForm.
-fn discrete_choice_label(expr: &Expr) -> String {
+/// The styled runs behind a discrete-choice label. A string label is shown
+/// without its surrounding quotes; presentation wrappers (`Style["P",
+/// Italic]`, `Row[{…}]`) render as their display text via the label-run
+/// renderer; anything that renders empty falls back to its InputForm. A
+/// `Style[…, color]` (or `Bold`/italic) directive on a choice's rule label
+/// survives here as `LabelRun::color`/`bold`/`italic` instead of being
+/// flattened away, so a choice like `1 -> Style["top", Blue]` (a
+/// Demonstrations multi-way selector coloring each option, e.g. to match a
+/// diagram's own palette) can render in its given style rather than plain
+/// text.
+fn discrete_choice_label_runs(expr: &Expr) -> Vec<LabelRun> {
   match expr {
     // A string may carry inline typeset boxes the FrontEnd wrote as
     // `\!\(\*…\)` — an antiquark's `\!\(\*OverscriptBox[\(u\), \(_\)]\)`
@@ -23604,14 +23634,22 @@ fn discrete_choice_label(expr: &Expr) -> String {
     // A plain string just needs its remaining private-use code points
     // (e.g. `\[WarningSign]`) swapped for real glyphs.
     Expr::String(s) => match inline_box_label_runs(s, false) {
-      Some(runs) => {
-        crate::syntax::substitute_private_use_glyphs(&flatten_label_runs(&runs))
-          .into_owned()
-      }
-      None => crate::syntax::substitute_private_use_glyphs(s).into_owned(),
+      Some(runs) => runs
+        .into_iter()
+        .map(|mut r| {
+          r.text =
+            crate::syntax::substitute_private_use_glyphs(&r.text).into_owned();
+          r
+        })
+        .collect(),
+      None => vec![LabelRun {
+        text: crate::syntax::substitute_private_use_glyphs(s).into_owned(),
+        ..Default::default()
+      }],
     },
     other => {
-      let flat = flatten_label_runs(&manipulate_label_runs(other, false));
+      let runs = manipulate_label_runs(other, false);
+      let flat = flatten_label_runs(&runs);
       // A structural head (Grid/Row/Column/…) can legitimately typeset to
       // nothing — e.g. a Grid whose cells are all `""`, marking "no flag
       // set" among a family of choices that each flip one cell on. Only an
@@ -23619,9 +23657,12 @@ fn discrete_choice_label(expr: &Expr) -> String {
       // falls back to its source so the choice still shows something.
       let structural = matches!(other, Expr::FunctionCall { name, .. } if is_text_layout_head(name));
       if flat.is_empty() && !structural {
-        crate::syntax::expr_to_input_form(other)
+        vec![LabelRun {
+          text: crate::syntax::expr_to_input_form(other),
+          ..Default::default()
+        }]
       } else {
-        flat
+        runs
       }
     }
   }
@@ -24248,6 +24289,7 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
         values,
         value_labels,
         value_label_svgs,
+        value_label_runs,
         initial_index,
         initial_overflow: _,
         label,
@@ -24289,8 +24331,24 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
         } else {
           String::new()
         };
+        // A choice's `Style[…, color]`/`Bold`/italic directive (e.g. a
+        // multi-way selector's `1 -> Style["top", Blue]`) rides along as
+        // styled runs, parallel to `values`; omitted when every choice is
+        // plain text, matching `svg_json`'s all-or-nothing shape above.
+        let runs_json = if value_label_runs
+          .iter()
+          .any(|runs| runs.iter().any(|r| r.color.is_some() || r.bold))
+        {
+          let parts: Vec<String> = value_label_runs
+            .iter()
+            .map(|r| label_runs_to_json(r))
+            .collect();
+          format!(r#","valueLabelRuns":[{}]"#, parts.join(","))
+        } else {
+          String::new()
+        };
         ctrl_parts.push(format!(
-          r#"{{"kind":"discrete","name":"{}","label":"{}","labelRuns":{},"values":[{}],"valueLabels":[{}],"initialIndex":{}{}{}{}{}{}}}"#,
+          r#"{{"kind":"discrete","name":"{}","label":"{}","labelRuns":{},"values":[{}],"valueLabels":[{}],"initialIndex":{}{}{}{}{}{}{}}}"#,
           json_escape_manipulate(name),
           json_escape_manipulate(label),
           label_runs_to_json(label_runs),
@@ -24302,6 +24360,7 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
           slider_json,
           vertical_json,
           svg_json,
+          runs_json,
         ));
       }
       ManipulateControl::Slider2D {
@@ -25333,7 +25392,7 @@ fn popup_node(args: &[Expr]) -> Option<DisplayNode> {
   if items.is_empty() {
     return None;
   }
-  let (values, labels, _svgs) = discrete_choice_columns(items);
+  let (values, labels, _svgs, _label_runs) = discrete_choice_columns(items);
   // The value currently held at `lval`, to preselect its choice.
   let current = crate::evaluator::evaluate_expr_to_expr(lval).map_or_else(
     |_| target.clone(),
@@ -26583,6 +26642,47 @@ mod manipulate_traditional_form_choice_svg_tests {
         assert!(
           value_label_svgs.iter().all(Option::is_none),
           "plain string labels must not grow icons: {value_label_svgs:?}"
+        );
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+  }
+
+  /// A multi-way selector whose choices are `value -> Style["label", color]`
+  /// (a Demonstrations idiom for coloring each option, distinct from any
+  /// specific Demonstration) must keep each choice's color as a styled run
+  /// rather than flattening it into plain text — `value_labels` still holds
+  /// the plain text (for a frontend that ignores styling), but
+  /// `value_label_runs` must carry the color so a styling frontend can show
+  /// it, matching the Wolfram FrontEnd's colored SetterBar/PopupMenu text.
+  #[test]
+  fn styled_choice_labels_keep_their_color() {
+    let control = discrete_control(
+      "Manipulate[side, \
+       {{side, 1, \"side\"}, \
+        {1 -> Style[\"north\", Blue], -1 -> Style[\"south\", Brown]}}]",
+    );
+    match &control {
+      ManipulateControl::Discrete {
+        values,
+        value_labels,
+        value_label_runs,
+        ..
+      } => {
+        assert_eq!(values, &["1", "-1"]);
+        assert_eq!(value_labels, &["north", "south"]);
+        assert_eq!(value_label_runs.len(), 2);
+        assert!(
+          value_label_runs[0].iter().any(|r| r.color.is_some()),
+          "Style[…, Blue] must set a color: {value_label_runs:?}"
+        );
+        assert!(
+          value_label_runs[1].iter().any(|r| r.color.is_some()),
+          "Style[…, Brown] must set a color: {value_label_runs:?}"
+        );
+        assert_ne!(
+          value_label_runs[0][0].color, value_label_runs[1][0].color,
+          "Blue and Brown must not collapse to the same color"
         );
       }
       other => panic!("expected a discrete control, got {other:?}"),

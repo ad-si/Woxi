@@ -21595,7 +21595,7 @@ mod manipulate {
       other => panic!("expected a discrete control, got {other:?}"),
     }
     // Re-resolving against the 3D binding narrows it to three.
-    let (values, labels, svgs) = woxi::with_scoped_globals(
+    let (values, labels, svgs, _label_runs) = woxi::with_scoped_globals(
       &[("flat".to_string(), "True".to_string())],
       || {
         woxi::functions::graphics::manipulate_eval_values_code(
