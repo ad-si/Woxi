@@ -3688,6 +3688,36 @@ fn handle_event(
 /// as the label (Wolfram captions `{k, 0, 1}` with "k"), so an empty label is
 /// never a missing one: it is the explicit `""` a Demonstration writes to
 /// suppress the caption, and stays blank.
+/// Convert `LabelRun`s (a `Style[…]` label's bold/italic/color directives)
+/// into rich-text spans against `base_font`. Shared by every place a
+/// Manipulate label or annotation renders `LabelRun`s — control-row labels,
+/// `Heading` rows, and `Dynamic[…]` display captions — so a directive parsed
+/// once by `woxi::functions::graphics` is honored consistently everywhere it
+/// is shown, rather than each call site re-implementing (and potentially
+/// dropping) part of it.
+fn label_run_spans<'a, L>(
+  runs: &[woxi::functions::graphics::LabelRun],
+  base_font: Font,
+) -> Vec<text::Span<'a, L>> {
+  runs
+    .iter()
+    .map(|r| {
+      let mut font = base_font;
+      if r.italic {
+        font.style = iced::font::Style::Italic;
+      }
+      if r.bold {
+        font.weight = iced::font::Weight::Bold;
+      }
+      let mut span = iced::widget::span(r.text.clone()).font(font);
+      if let Some((red, green, blue)) = r.color {
+        span = span.color(Color::from_rgb(red, green, blue));
+      }
+      span
+    })
+    .collect()
+}
+
 fn manipulate_label_widget<'a>(
   runs: &[woxi::functions::graphics::LabelRun],
   label: &str,
@@ -3695,12 +3725,6 @@ fn manipulate_label_widget<'a>(
   enabled: bool,
 ) -> Element<'a, Message> {
   const SIZE: f32 = 12.0;
-  // Match the family the upright runs inherit (the app default is
-  // MONOSPACE) so an italic run doesn't jump to a different typeface.
-  let italic = Font {
-    style: iced::font::Style::Italic,
-    ..Font::MONOSPACE
-  };
   // A disabled control's label is dimmed to match the greyed-out widget.
   let color = move |theme: &Theme| {
     if enabled {
@@ -3721,15 +3745,13 @@ fn manipulate_label_widget<'a>(
   }
 
   // rich_text spans carry a fixed color, so a disabled label uses a muted grey
-  // (theme-agnostic) rather than the theme-derived color used above.
+  // (theme-agnostic) rather than the theme-derived color used above — that
+  // override takes priority over a `Style[…]`-given color so a disabled
+  // control still reads as disabled.
   let muted = Color::from_rgb(0.55, 0.55, 0.58);
-  let spans: Vec<text::Span<'a, ()>> = runs
-    .iter()
-    .map(|r| {
-      let mut s = iced::widget::span(r.text.clone());
-      if r.italic {
-        s = s.font(italic);
-      }
+  let spans: Vec<text::Span<'a, ()>> = label_run_spans(runs, Font::MONOSPACE)
+    .into_iter()
+    .map(|mut s| {
       if !enabled {
         s = s.color(muted);
       }
@@ -3995,6 +4017,7 @@ fn render_manipulate_widget<'a>(
         values,
         value_labels,
         value_label_svgs,
+        value_label_runs,
         current_index,
         overflow,
         popup,
@@ -4088,14 +4111,23 @@ fn render_manipulate_widget<'a>(
             let is_selected = !has_overflow && i == *current_index;
             let choice = choice_label.clone();
             // A choice whose rule label is a graphic (`"+" -> myIcon[2]`)
-            // shows the rendered icon; text choices show their label.
+            // shows the rendered icon; a text choice shows its label, honoring
+            // any `Style[…, color]`/`Bold` directive the rule label carried
+            // (e.g. a multi-way selector's `1 -> Style["top", Blue]`).
             let btn_content: Element<Message> =
               match value_label_svgs.get(i).and_then(|s| s.as_ref()) {
                 Some(icon) => svg::Svg::new(icon.clone())
                   .width(iced::Length::Fixed(24.0))
                   .height(iced::Length::Fixed(14.0))
                   .into(),
-                None => text(choice_label.clone()).size(12).into(),
+                None => match value_label_runs.get(i) {
+                  Some(runs) if !runs.is_empty() => {
+                    let spans: Vec<text::Span<Message>> =
+                      label_run_spans(runs, Font::MONOSPACE);
+                    rich_text(spans).size(12).into()
+                  }
+                  _ => text(choice_label.clone()).size(12).into(),
+                },
               };
             let mut btn = button(btn_content).padding([3, 10]).style(
               move |theme: &Theme, status| {
@@ -4458,18 +4490,14 @@ fn render_manipulate_widget<'a>(
       }
       manipulate::ControlState::Heading { label, label_runs } => {
         // A static heading row (a string or `Style[…]` Manipulate argument,
-        // e.g. "signal 1"). Rendered bold across the full row.
-        let spans: Vec<iced::widget::text::Span<Message>> = label_runs
-          .iter()
-          .map(|run| {
-            let mut font = Font::MONOSPACE;
-            font.weight = iced::font::Weight::Bold;
-            if run.italic {
-              font.style = iced::font::Style::Italic;
-            }
-            iced::widget::span(run.text.clone()).font(font)
-          })
-          .collect();
+        // e.g. "signal 1"). Rendered bold across the full row, plus any
+        // italic/color the source `Style[…]` directive gave it (e.g. a
+        // `Style["elsewhere", Red]` decorative item), matching the Wolfram
+        // FrontEnd's colored static text.
+        let mut base_font = Font::MONOSPACE;
+        base_font.weight = iced::font::Weight::Bold;
+        let spans: Vec<iced::widget::text::Span<Message>> =
+          label_run_spans(label_runs, base_font);
         let heading: Element<Message> = if spans.is_empty() {
           let mut font = Font::MONOSPACE;
           font.weight = iced::font::Weight::Bold;
@@ -4758,23 +4786,8 @@ fn render_display_node<'a>(
       space::Space::new().width(*width as f32).into()
     }
     DisplayNode::Text { runs } => {
-      let spans: Vec<iced::widget::text::Span<Message>> = runs
-        .iter()
-        .map(|run| {
-          let mut font = Font::MONOSPACE;
-          if run.italic {
-            font.style = iced::font::Style::Italic;
-          }
-          if run.bold {
-            font.weight = iced::font::Weight::Bold;
-          }
-          let mut span = iced::widget::span(run.text.clone()).font(font);
-          if let Some((r, g, b)) = run.color {
-            span = span.color(Color::from_rgb(r, g, b));
-          }
-          span
-        })
-        .collect();
+      let spans: Vec<iced::widget::text::Span<Message>> =
+        label_run_spans(runs, Font::MONOSPACE);
       if spans.is_empty() {
         text("").size(12).into()
       } else {
@@ -7015,6 +7028,96 @@ fn strip_svg_wrapper(svg: &str) -> &str {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  /// `label_run_spans` must carry a `Style[…]`-given color and bold weight
+  /// into the rendered spans, not just italic. Regression: every call site
+  /// that renders a Manipulate control's `LabelRun`s (a control-row label,
+  /// and a static `Heading` row from a bare `Style["…", color]` Manipulate
+  /// argument) applied italic only, silently dropping any color or bold
+  /// directive the label actually carried — so e.g. a Demonstration's
+  /// colored section heading (`Style["elsewhere", Red]` between controls)
+  /// rendered as plain black text in Woxi Studio while the Wolfram FrontEnd
+  /// shows it in the given color.
+  #[test]
+  fn label_run_spans_honor_style_color_and_bold() {
+    let runs = vec![woxi::functions::graphics::LabelRun {
+      text: "elsewhere".to_string(),
+      italic: false,
+      bold: true,
+      color: Some((1.0, 0.0, 0.0)),
+    }];
+    let spans: Vec<text::Span<'_, ()>> =
+      label_run_spans(&runs, Font::MONOSPACE);
+    assert_eq!(spans.len(), 1);
+    assert_eq!(spans[0].color, Some(Color::from_rgb(1.0, 0.0, 0.0)));
+    assert_eq!(
+      spans[0].font.map(|f| f.weight),
+      Some(iced::font::Weight::Bold)
+    );
+  }
+
+  /// A multi-way selector whose choices are `value -> Style["label", color]`
+  /// (a Demonstrations idiom for coloring each option, distinct from any
+  /// specific Demonstration) must carry each choice's color all the way into
+  /// the built `ControlState::Discrete`, so `label_run_spans` (used by the
+  /// SetterBar button rendering) has real data to color.
+  #[test]
+  fn manipulate_discrete_control_keeps_styled_choice_colors() {
+    let expr = woxi::interpret_to_expr(
+      r#"Manipulate[side, {{side, 1, "side"}, {1 -> Style["north", Blue], -1 -> Style["south", Brown]}}]"#,
+    )
+    .expect("parse Manipulate expr");
+    let state =
+      manipulate::ManipulateState::from_expr(&expr).expect("build widget");
+    let value_label_runs = state
+      .controls
+      .iter()
+      .find_map(|c| match c {
+        manipulate::ControlState::Discrete {
+          value_label_runs, ..
+        } => Some(value_label_runs.clone()),
+        _ => None,
+      })
+      .expect("a Discrete control");
+    assert_eq!(value_label_runs.len(), 2);
+    assert!(
+      value_label_runs[0].iter().any(|r| r.color.is_some()),
+      "Style[…, Blue] must survive into the built control"
+    );
+    assert!(
+      value_label_runs[1].iter().any(|r| r.color.is_some()),
+      "Style[…, Brown] must survive into the built control"
+    );
+  }
+
+  /// A Manipulate's bare `Style["…", color]` argument (Wolfram's
+  /// `ThisIsNotAControl`, a decorative label sitting between controls) must
+  /// keep its color once extracted into a `Heading` control's `label_runs`,
+  /// so the fix above has real data to render.
+  #[test]
+  fn manipulate_style_heading_keeps_its_color() {
+    let expr = woxi::interpret_to_expr(
+      r#"Manipulate[a, {a, 0, 1}, Style["note", Blue]]"#,
+    )
+    .expect("parse Manipulate expr");
+    let state =
+      manipulate::ManipulateState::from_expr(&expr).expect("build widget");
+    let heading = state
+      .controls
+      .iter()
+      .find_map(|c| match c {
+        manipulate::ControlState::Heading { label_runs, .. } => {
+          Some(label_runs.clone())
+        }
+        _ => None,
+      })
+      .expect("a Heading control from the bare Style[…] argument");
+    assert_eq!(heading.len(), 1);
+    assert!(
+      heading[0].color.is_some(),
+      "Style[…, Blue] must set a color"
+    );
+  }
 
   /// A Manipulate whose body picks between two `Compile[…]`d
   /// angle-to-3D-point functions with `Switch` on a `SetterBar`-controlled

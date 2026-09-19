@@ -55,6 +55,11 @@ pub enum ControlState {
     /// A rendered SVG icon per choice for rule labels that are graphics
     /// (`"+" -> myIcon[2]`), parallel to `values`. `None` = text label.
     value_label_svgs: Vec<Option<svg::Handle>>,
+    /// Each choice's display label as styled runs, parallel to `values` — a
+    /// rule label's `Style[…, color]`/`Bold`/italic directive (e.g. a
+    /// multi-way selector's `1 -> Style["top", Blue]`) rendered here instead
+    /// of only in `value_labels`' plain text.
+    value_label_runs: Vec<Vec<LabelRun>>,
     current_index: usize,
     /// The true current value's InputForm, kept only while it matches none
     /// of `values` (mirrors `ManipulateControl::Discrete::initial_overflow`
@@ -314,9 +319,16 @@ impl ControlState {
 }
 
 /// A discrete control's freshly resolved choice list, as
-/// `(control name, (values, labels, rendered labels))`.
-type ResolvedChoices =
-  (String, (Vec<String>, Vec<String>, Vec<Option<String>>));
+/// `(control name, (values, labels, rendered labels, styled-label runs))`.
+type ResolvedChoices = (
+  String,
+  (
+    Vec<String>,
+    Vec<String>,
+    Vec<Option<String>>,
+    Vec<Vec<LabelRun>>,
+  ),
+);
 
 /// Full state for a Manipulate cell: the held body plus its rendered
 /// output.
@@ -1123,11 +1135,12 @@ impl ManipulateState {
   /// what Wolfram shows when the current level falls off the end.
   fn apply_dynamic_values(&mut self, resolved: &[ResolvedChoices]) -> bool {
     let mut selection_moved = false;
-    for (name, (new_values, new_labels, new_svgs)) in resolved {
+    for (name, (new_values, new_labels, new_svgs, new_runs)) in resolved {
       let Some(ControlState::Discrete {
         values,
         value_labels,
         value_label_svgs,
+        value_label_runs,
         current_index,
         ..
       }) = self.controls.iter_mut().find(
@@ -1149,6 +1162,7 @@ impl ManipulateState {
             .map(|svg| svg::Handle::from_memory(svg.as_bytes().to_vec()))
         })
         .collect();
+      value_label_runs.clone_from(new_runs);
       let kept = selected.and_then(|v| values.iter().position(|nv| *nv == v));
       *current_index = kept.unwrap_or_else(|| values.len().saturating_sub(1));
       selection_moved |= kept.is_none();
@@ -1196,6 +1210,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         values,
         value_labels,
         value_label_svgs,
+        value_label_runs,
         initial_index,
         initial_overflow,
         popup,
@@ -1215,6 +1230,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
               .map(|svg| svg::Handle::from_memory(svg.as_bytes().to_vec()))
           })
           .collect(),
+        value_label_runs: value_label_runs.clone(),
         current_index: *initial_index,
         overflow: initial_overflow.clone(),
         popup: *popup,
