@@ -17,7 +17,6 @@ use super::transforms::{
   CoefArray, Padding, TransformKind, basis_index, default_refinement,
   forward_transform, inverse_transform, node_dims,
 };
-#[allow(unused_imports)]
 use super::*;
 
 /// A validated discrete wavelet family (one that has filter coefficients
@@ -156,15 +155,13 @@ impl Dwd {
       items.extend(extras);
       Expr::List(items.into())
     };
-    call(
-      "DiscreteWaveletData",
-      vec![
-        Expr::List(rules.into()),
-        self.wavelet.clone(),
-        wtrans,
-        dims_to_expr(&self.dims),
-      ],
-    )
+    let data = vec![
+      Expr::List(rules.into()),
+      self.wavelet.clone(),
+      wtrans,
+      dims_to_expr(&self.dims),
+    ];
+    call("DiscreteWaveletData", data)
   }
 
   /// Parse a DiscreteWaveletData[…] expression (3 or 4 args).

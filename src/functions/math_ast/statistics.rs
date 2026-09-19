@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 use crate::syntax::{ExprForm, format_expr};
 
@@ -3365,9 +3364,9 @@ fn distribution_moment(
     let result = if n.rem_euclid(2) == 1 {
       Expr::Integer(0)
     } else {
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![
+      call(
+        "Times",
+        vec![
           // (-1)^(n/2 - 1)
           pow2(Expr::Integer(-1), Expr::Integer(n / 2 - 1)),
           // 2^n - 2 (kept symbolic so large n does not overflow)
@@ -3378,9 +3377,8 @@ fn distribution_moment(
           call1("BernoulliB", Expr::Integer(n)),
           pow2(id_expr("Pi"), Expr::Integer(n)),
           pow2(b, Expr::Integer(n)),
-        ]
-        .into(),
-      }
+        ],
+      )
     };
     return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&result)?));
   }
@@ -4195,9 +4193,9 @@ fn quantile_parametric(
   let times = |x: Expr, y: Expr| call("Times", vec![x, y]);
   // q must be numeric (Integer, Rational, or Real); otherwise leave symbolic.
   if try_eval_to_f64(q).is_none() {
-    return Ok(Expr::FunctionCall {
-      name: "Quantile".to_string(),
-      args: vec![
+    return Ok(call(
+      "Quantile",
+      vec![
         Expr::List(sorted.iter().copied().cloned().collect()),
         q.clone(),
         Expr::List(
@@ -4207,16 +4205,15 @@ fn quantile_parametric(
           ]
           .into(),
         ),
-      ]
-      .into(),
-    });
+      ],
+    ));
   }
   let n = sorted.len() as i128;
   // x = a + (n + b) * q
   let nb = ev(&plus(Expr::Integer(n), b.clone()))?;
   let x = ev(&plus(a.clone(), times(nb, q.clone())))?;
   // k = Floor[x]
-  let k_expr = ev(&call("Floor", vec![x.clone()]))?;
+  let k_expr = ev(&call1("Floor", x.clone()))?;
   let k = match &k_expr {
     Expr::Integer(v) => *v,
     other => try_eval_to_f64(other).map_or(0, |f| f.floor() as i128),
@@ -4761,9 +4758,9 @@ fn format_location_test_result(
         ]
         .into(),
       );
-      Expr::FunctionCall {
-        name: "Grid".to_string(),
-        args: vec![
+      call(
+        "Grid",
+        vec![
           Expr::List(vec![header, row].into()),
           call(
             "Rule",
@@ -4772,9 +4769,9 @@ fn format_location_test_result(
               Expr::List(vec![id_expr("Left"), id_expr("Automatic")].into()),
             ],
           ),
-          Expr::FunctionCall {
-            name: "Rule".to_string(),
-            args: vec![
+          call(
+            "Rule",
+            vec![
               id_expr("Dividers"),
               Expr::List(
                 vec![
@@ -4789,13 +4786,11 @@ fn format_location_test_result(
                 ]
                 .into(),
               ),
-            ]
-            .into(),
-          },
+            ],
+          ),
           call("Rule", vec![id_expr("Spacings"), id_expr("Automatic")]),
-        ]
-        .into(),
-      }
+        ],
+      )
     }
     _ => {
       // Default to PValue for unknown properties
@@ -4960,7 +4955,7 @@ fn legacy_full_report_rule(
   location_heading: &str,
 ) -> Expr {
   let distribution = match df {
-    Some(df) => call("StudentTDistribution", vec![num_to_expr(df)]),
+    Some(df) => call1("StudentTDistribution", num_to_expr(df)),
     None => call(
       "NormalDistribution",
       vec![Expr::Integer(0), Expr::Integer(1)],
@@ -5636,20 +5631,21 @@ fn mathieu_generators_expr(name: &str) -> Option<Expr> {
   Some(Expr::List(
     gens
       .into_iter()
-      .map(|cycles| Expr::FunctionCall {
-        name: "Cycles".to_string(),
-        args: vec![Expr::List(
-          cycles
-            .into_iter()
-            .map(|c| {
-              Expr::List(
-                c.into_iter().map(Expr::Integer).collect::<Vec<_>>().into(),
-              )
-            })
-            .collect::<Vec<_>>()
-            .into(),
-        )]
-        .into(),
+      .map(|cycles| {
+        call1(
+          "Cycles",
+          Expr::List(
+            cycles
+              .into_iter()
+              .map(|c| {
+                Expr::List(
+                  c.into_iter().map(Expr::Integer).collect::<Vec<_>>().into(),
+                )
+              })
+              .collect::<Vec<_>>()
+              .into(),
+          ),
+        )
       })
       .collect::<Vec<_>>()
       .into(),
@@ -6356,26 +6352,24 @@ fn cyclic_power_cycles(slots: &[i128], k: usize) -> Vec<Vec<i128>> {
 }
 
 fn make_cycles(cycle: Vec<i128>) -> Expr {
-  Expr::FunctionCall {
-    name: "Cycles".to_string(),
-    args: vec![Expr::List(
+  call1(
+    "Cycles",
+    Expr::List(
       vec![Expr::List(cycle.into_iter().map(Expr::Integer).collect())].into(),
-    )]
-    .into(),
-  }
+    ),
+  )
 }
 
 fn make_cycles_multi(cycles: Vec<Vec<i128>>) -> Expr {
-  Expr::FunctionCall {
-    name: "Cycles".to_string(),
-    args: vec![Expr::List(
+  call1(
+    "Cycles",
+    Expr::List(
       cycles
         .into_iter()
         .map(|c| Expr::List(c.into_iter().map(Expr::Integer).collect()))
         .collect(),
-    )]
-    .into(),
-  }
+    ),
+  )
 }
 
 fn symmetric_group_generators(n: usize) -> Expr {
@@ -6521,24 +6515,16 @@ fn discrete_asymptotic_leading(expr: &Expr, var: &str) -> Option<Expr> {
     {
       // Gamma[n] = (n-1)! ~ n^(n-1/2) * Sqrt[2*Pi] / E^n
       let n = Expr::Identifier(var.to_string());
-      Some(Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![
+      let m_one_half =
+        call("Rational", vec![Expr::Integer(-1), Expr::Integer(2)]);
+      Some(call(
+        "Times",
+        vec![
           // n^(n - 1/2)
-          Expr::FunctionCall {
-            name: "Power".to_string(),
-            args: vec![
-              n.clone(),
-              call(
-                "Plus",
-                vec![
-                  n.clone(),
-                  call("Rational", vec![Expr::Integer(-1), Expr::Integer(2)]),
-                ],
-              ),
-            ]
-            .into(),
-          },
+          call(
+            "Power",
+            vec![n.clone(), call("Plus", vec![n.clone(), m_one_half])],
+          ),
           // Sqrt[2*Pi]
           make_sqrt(call("Times", vec![Expr::Integer(2), const_expr("Pi")])),
           // E^(-n)
@@ -6546,9 +6532,8 @@ fn discrete_asymptotic_leading(expr: &Expr, var: &str) -> Option<Expr> {
             "Power",
             vec![const_expr("E"), call("Times", vec![Expr::Integer(-1), n])],
           ),
-        ]
-        .into(),
-      })
+        ],
+      ))
     }
 
     // HarmonicNumber[var] → Log[var]
@@ -6691,24 +6676,15 @@ fn contains_var(expr: &Expr, var: &str) -> bool {
 /// Stirling's approximation: n! ~ n^(n+1/2) * Sqrt[2*Pi] / E^n
 fn stirling_approx(var: &str) -> Expr {
   let n = Expr::Identifier(var.to_string());
-  Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: vec![
+  let one_half = call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]);
+  call(
+    "Times",
+    vec![
       // n^(n + 1/2)
-      Expr::FunctionCall {
-        name: "Power".to_string(),
-        args: vec![
-          n.clone(),
-          call(
-            "Plus",
-            vec![
-              n.clone(),
-              call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
-            ],
-          ),
-        ]
-        .into(),
-      },
+      call(
+        "Power",
+        vec![n.clone(), call("Plus", vec![n.clone(), one_half])],
+      ),
       // Sqrt[2*Pi]
       make_sqrt(call("Times", vec![Expr::Integer(2), const_expr("Pi")])),
       // E^(-n)
@@ -6716,9 +6692,8 @@ fn stirling_approx(var: &str) -> Expr {
         "Power",
         vec![const_expr("E"), call("Times", vec![Expr::Integer(-1), n])],
       ),
-    ]
-    .into(),
-  }
+    ],
+  )
 }
 
 /// Determine growth rate class for comparison.
@@ -6855,25 +6830,16 @@ fn asymptotic_binomial(
   }
 
   let n = Expr::Identifier(var.to_string());
+  let one_half = call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]);
   // 2^(1/2 + n) / (Sqrt[n] * Sqrt[Pi])
-  Some(Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: vec![
+  Some(call(
+    "Times",
+    vec![
       // 2^(1/2 + n)
-      Expr::FunctionCall {
-        name: "Power".to_string(),
-        args: vec![
-          Expr::Integer(2),
-          call(
-            "Plus",
-            vec![
-              call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
-              n.clone(),
-            ],
-          ),
-        ]
-        .into(),
-      },
+      call(
+        "Power",
+        vec![Expr::Integer(2), call("Plus", vec![one_half, n.clone()])],
+      ),
       // 1 / (Sqrt[n] * Sqrt[Pi])
       call(
         "Power",
@@ -6882,9 +6848,8 @@ fn asymptotic_binomial(
           Expr::Integer(-1),
         ],
       ),
-    ]
-    .into(),
-  })
+    ],
+  ))
 }
 
 // ─── CovarianceFunction[ARMAProcess[...], s, t] ───────────────────────
@@ -8604,17 +8569,16 @@ pub fn central_moment_generating_function_ast(
     let half = call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]);
     let t = args[1].clone();
     let expr = div2(
-      Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: vec![
+      call(
+        "Plus",
+        vec![
           times(vec![
             Expr::Integer(-1),
             e_pow(times(vec![a.clone(), t.clone()])),
           ]),
           e_pow(times(vec![b.clone(), t.clone()])),
-        ]
-        .into(),
-      },
+        ],
+      ),
       times(vec![
         call(
           "Plus",
@@ -9285,7 +9249,7 @@ pub fn group_stabilizer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
   let permutation_group =
-    |gens: Vec<Expr>| call("PermutationGroup", vec![Expr::List(gens.into())]);
+    |gens: Vec<Expr>| call1("PermutationGroup", Expr::List(gens.into()));
   if let Expr::FunctionCall { name, args: gargs } = &args[0]
     && gargs.len() == 1
     && let Expr::Integer(n) = &gargs[0]
