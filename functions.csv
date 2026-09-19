@@ -3223,7 +3223,7 @@ CreateUUID,"Generates a random RFC 4122 version-4 UUID as a string; CreateUUID["
 DeviceWrite,,🚫,,10.0,3280
 EstimatorGains,,,,8.0,3280
 FeatureExtract,,🚫,,11.0,3280
-FittedModel,,,,7.0,3280
+FittedModel,"Symbolic fitted-model object returned by LinearModelFit/NonlinearModelFit; supports property access such as model[""RSquared""] and evaluation at a point",✅,pure,7.0,3280
 IncidenceList,Edges incident to a vertex in EdgeList order,✅,pure,9.0,3280
 NameQ,Test if a string is a defined symbol name,✅,pure,1.0,3280
 ParticleData,,🚫,,6.0,3280

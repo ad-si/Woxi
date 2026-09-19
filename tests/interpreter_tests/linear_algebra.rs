@@ -3908,6 +3908,22 @@ mod linear_model_fit {
       "error should be tagged with the calling function's name, got: {err}"
     );
   }
+
+  // FittedModel[<|…|>] is a symbolic constructor object like
+  // AssessmentFunction/QuestionObject — querying one of its properties must
+  // not be misread as calling an unimplemented builtin named "FittedModel".
+  #[test]
+  fn property_query_does_not_warn_unimplemented() {
+    let r = woxi::interpret_with_stdout(
+      "LinearModelFit[{{0, 1}, {1, 0}, {3, 2}, {5, 4}}, x, x][\"RSquared\"]",
+    )
+    .unwrap();
+    assert!(
+      !r.warnings.iter().any(|w| w.contains("not yet implemented")),
+      "unexpected 'not yet implemented' warning: {:?}",
+      r.warnings
+    );
+  }
 }
 
 // NonlinearModelFit fits parameters with FindFit and returns a FittedModel
@@ -4034,6 +4050,60 @@ mod nonlinear_model_fit {
     assert!(
       err.to_string().contains("NonlinearModelFit:"),
       "error should be tagged with the calling function's name, got: {err}"
+    );
+  }
+
+  // "RSquared"/"AdjustedRSquared" are the same goodness-of-fit properties
+  // LinearModelFit reports; NonlinearModelFit must answer them too (a
+  // Demonstrations pattern is displaying the fit quality next to a plot).
+  #[test]
+  fn r_squared_of_an_exact_fit_is_one() {
+    assert_eq!(
+      interpret(
+        "Round[NonlinearModelFit[{{1, 2}, {2, 5}, {3, 10}}, a x^2 + b, \
+         {a, b}, x][\"RSquared\"], 10^-6]"
+      )
+      .unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret(
+        "Round[NonlinearModelFit[{{1, 2}, {2, 5}, {3, 10}}, a x^2 + b, \
+         {a, b}, x][\"AdjustedRSquared\"], 10^-6]"
+      )
+      .unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn r_squared_of_a_noisy_fit_is_between_zero_and_one() {
+    let r = interpret(
+      "NonlinearModelFit[{{1, 2.1}, {2, 3.9}, {3, 6.2}, {4, 7.8}}, \
+       a x + b, {a, b}, x][\"RSquared\"]",
+    )
+    .unwrap();
+    let value: f64 = r.parse().unwrap();
+    assert!(
+      (0.0..=1.0).contains(&value),
+      "RSquared should be between 0 and 1, got {value}"
+    );
+  }
+
+  // FittedModel[<|…|>] is a symbolic constructor object like
+  // AssessmentFunction/QuestionObject — querying one of its properties must
+  // not be misread as calling an unimplemented builtin named "FittedModel".
+  #[test]
+  fn property_query_does_not_warn_unimplemented() {
+    let r = woxi::interpret_with_stdout(
+      "NonlinearModelFit[{{1, 2}, {2, 5}, {3, 10}}, a x^2 + b, {a, b}, x]\
+       [\"BestFitParameters\"]",
+    )
+    .unwrap();
+    assert!(
+      !r.warnings.iter().any(|w| w.contains("not yet implemented")),
+      "unexpected 'not yet implemented' warning: {:?}",
+      r.warnings
     );
   }
 }
