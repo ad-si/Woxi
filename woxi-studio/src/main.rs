@@ -9665,6 +9665,67 @@ Cell[BoxData[TagBox[GridBox[{{TagBox[GridBox[{{TemplateBox[{CheckboxBox[True, {F
     );
   }
 
+  /// End-to-end regression for the shape of Demonstration that lays out
+  /// points around a circle by repeatedly rotating by a tunable step angle:
+  /// an initialization cell defines a rotation helper and a `ring[step_,
+  /// count_]` graphic, and the Manipulate offers preset buttons (each
+  /// setting more than one variable via a doubly-nested-list action, as the
+  /// Wolfram Demonstrations Project's own button-template boilerplate
+  /// writes them), row-grouped buttons, and a `ControlPlacement` given as a
+  /// singleton list rather than a bare symbol.
+  #[test]
+  fn ring_of_points_notebook_opens_with_its_widget() {
+    let nb_src = r#"Notebook[{
+Cell[BoxData["rotStep[pt_, k_, step_:0.5] := RotationMatrix[2 Pi step k] . pt\nring[step_, count_] := Graphics[{Circle[], Line[NestList[rotStep[#1, 1, step] &, {0, 1}, count - 1]]}, ImageSize -> 250]"], "Input"],
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[\nring[step, count],\nStyle[\"presets\", Bold], Delimiter,\nRow[{\nButton[\"a\", {{step = 0.5; count = 6}}, ImageSize -> Large],\nButton[\"b\", {{step = 0.6; count = 8}}, ImageSize -> Large]\n}],\nDelimiter,\n{{count, 6, \"count\"}, 3, 12, 1, ImageSize -> Small, Appearance -> \"Labeled\"},\n{{step, 0.5, \"step\"}, 0.1, 0.9, 0.01, ImageSize -> Small, Appearance -> \"Labeled\"},\nControlPlacement -> {Left}, SaveDefinitions -> True\n]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`count$$ = 6, $CellContext`step$$ = 0.5}, \"…\"]"], "Output"]
+}, Open]]
+}]"#;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .into_iter()
+      .find_map(|e| e.manipulate_state)
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(widget.graphics_handle.is_some());
+
+    // The preset buttons and the two labelled sliders must all show up as
+    // controls; the `Style[...]`/`Delimiter` headings must not be dropped.
+    let button_labels: Vec<&str> = widget
+      .controls
+      .iter()
+      .filter_map(|c| match c {
+        manipulate::ControlState::Button { label, .. } => Some(label.as_str()),
+        _ => None,
+      })
+      .collect();
+    assert_eq!(button_labels, ["a", "b"]);
+
+    let slider_names: Vec<&str> = widget
+      .controls
+      .iter()
+      .filter_map(|c| match c {
+        manipulate::ControlState::Continuous { name, .. } => {
+          Some(name.as_str())
+        }
+        _ => None,
+      })
+      .collect();
+    assert_eq!(slider_names, ["count", "step"]);
+
+    // `ControlPlacement -> {Left}` is the widget-level option spelled as a
+    // singleton list (as the Wolfram Demonstrations Project template
+    // writes it) rather than the bare symbol `Left`; it must still place
+    // the panel on the left, not fall back to the default `Top`.
+    assert_eq!(widget.control_placement, manipulate::ControlPlacement::Left);
+  }
+
   #[test]
   fn hinged_dissection_notebook_opens_with_its_widget() {
     // End-to-end regression for the shape of Demonstration that animates a
@@ -20319,7 +20380,14 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 1}, DynamicBox[\[Ellipsis]]]"
         assert_eq!(values.as_slice(), ["1", "2", "3", "4", "5", "6", "7"]);
         assert_eq!(*current_index, 0);
         assert!(!popup, "ControlType -> Setter must not force a dropdown");
-        assert!(!setter_bar, "an unforced Setter is not a SetterBar");
+        // Per the `ControlType` reference page, "Setter or SetterBar" are
+        // documented as interchangeable settings: the bare `Setter` spelling
+        // must force the button row exactly like `SetterBar` does (see
+        // `setter_control_type_forces_the_bar_regardless_of_choice_count`).
+        assert!(
+          setter_bar,
+          "ControlType -> Setter must force the button bar"
+        );
       }
       other => panic!("expected a single Setter control, got {other:?}"),
     }
