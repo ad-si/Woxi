@@ -9725,10 +9725,8 @@ Cell[BoxData[
 }]"##;
     let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
     let editors = WoxiStudio::editors_from_notebook(&nb);
-    let mut widget = editors
-      .into_iter()
-      .find_map(|e| e.manipulate_state)
-      .expect(
+    let mut widget =
+      editors.into_iter().find_map(|e| e.manipulate_state).expect(
         "a SaveDefinitions Demonstration with a separate initialization \
          cell must instantiate on load",
       );
