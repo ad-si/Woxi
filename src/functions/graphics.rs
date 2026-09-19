@@ -18975,6 +18975,21 @@ impl ControlPlacement {
   }
 }
 
+/// `expr` as a bare symbol name, or as the name of the sole symbol in a
+/// singleton list (`Left` or `{Left}`). Used for `ControlPlacement`, which
+/// the Wolfram Demonstrations Project's own templates sometimes write in
+/// list form.
+fn bare_or_singleton_list_symbol(expr: &Expr) -> Option<&str> {
+  match expr {
+    Expr::Identifier(s) => Some(s),
+    Expr::List(items) => match items.as_slice() {
+      [Expr::Identifier(s)] => Some(s),
+      _ => None,
+    },
+    _ => None,
+  }
+}
+
 /// A continuous control's rail direction, from `ControlType -> Slider` (the
 /// default) vs `ControlType -> VerticalSlider`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -19335,9 +19350,12 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         appearance_none = true;
       }
       // `ControlPlacement -> Left` runs the control panel down the side of
-      // the output instead of above it.
+      // the output instead of above it. The Wolfram Demonstrations Project's
+      // own button-template boilerplate sometimes spells the placement as a
+      // singleton list (`ControlPlacement -> {Left}`) rather than the bare
+      // symbol; both mean the same thing at the widget level.
       if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "ControlPlacement")
-        && let Expr::Identifier(side) = replacement.as_ref()
+        && let Some(side) = bare_or_singleton_list_symbol(replacement)
         && let Some(placement) = ControlPlacement::from_symbol(side)
       {
         control_placement = placement;
@@ -26376,6 +26394,34 @@ mod manipulate_control_placement_tests {
       );
       assert_eq!(placement(&code), expected, "ControlPlacement -> {side}");
     }
+  }
+
+  /// The Wolfram Demonstrations Project's own button-template boilerplate
+  /// sometimes spells the placement as a singleton list rather than the
+  /// bare symbol (`ControlPlacement -> {Left}`); it must mean the same
+  /// thing as `ControlPlacement -> Left`.
+  #[test]
+  fn singleton_list_placement_is_recorded() {
+    assert_eq!(
+      placement(
+        "Manipulate[Plot[Sin[a x], {x, 0, 6}], {{a, 1}, 1, 5}, \
+         ControlPlacement -> {Left}]"
+      ),
+      ControlPlacement::Left
+    );
+  }
+
+  /// A list of more than one side is not a recognised form (there is only
+  /// one control panel to place), so it leaves the default standing.
+  #[test]
+  fn multi_element_list_placement_keeps_the_default() {
+    assert_eq!(
+      placement(
+        "Manipulate[Plot[Sin[a x], {x, 0, 6}], {{a, 1}, 1, 5}, \
+         ControlPlacement -> {Left, Right}]"
+      ),
+      ControlPlacement::Top
+    );
   }
 
   /// A `ControlPlacement` naming something Wolfram does not accept leaves
