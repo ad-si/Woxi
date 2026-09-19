@@ -8391,6 +8391,27 @@ mod ndsolve {
   }
 
   #[test]
+  fn ndsolve_flattens_a_chained_equality_across_several_functions() {
+    // Regression: a coupled system's initial conditions are commonly stated
+    // as one chained equality shared by every function — `x[0] == y[0] ==
+    // z[0] == 0` — rather than three separate equations. `Equal` with more
+    // than two operands parses to one `Comparison` node, which NDSolve's
+    // per-equation initial-condition matcher only ever recognized in its
+    // two-operand form, so the whole system was left as a single bogus
+    // equation and NDSolve bailed out unevaluated (already handled for a
+    // PDE's boundary conditions; this system's initial conditions took the
+    // separate ODE path, which never expanded the chain the same way).
+    // x' = 1, y' = 2, z' = 3, all starting at 0, so at t = 5: 5, 10, 15.
+    let result = interpret(
+      "sol = NDSolve[{x'[t] == 1, y'[t] == 2, z'[t] == 3, \
+       x[0] == y[0] == z[0] == 0}, {x, y, z}, {t, 0, 5}]; \
+       Round[{x[5], y[5], z[5]} /. sol[[1]], 10^-6]",
+    )
+    .unwrap();
+    assert_eq!(result, "{5, 10, 15}");
+  }
+
+  #[test]
   fn ndsolve_domain_extends_to_an_initial_condition_outside_it() {
     // Regression: a Demonstration commonly states its initial condition at
     // the natural reference point (`y[0] == n0`) but requests the solution
