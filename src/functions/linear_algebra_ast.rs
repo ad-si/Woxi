@@ -2,7 +2,6 @@
 //!
 //! Dot, Det, Inverse, Tr, IdentityMatrix, DiagonalMatrix, Cross, Eigenvalues, Fit.
 
-#[allow(unused_imports)]
 use super::*;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::math_ast::{
@@ -240,7 +239,7 @@ pub fn orthogonalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // 1/Sqrt[6] and Sqrt[2/3]) that plain evaluation leaves un-reduced; run the
   // Simplify builtin so they collapse to canonical radicals.
   let simplify_full = |e: Expr| -> Expr {
-    let s = call("Simplify", vec![e]);
+    let s = call1("Simplify", e);
     evaluate_expr_to_expr(&s).unwrap_or_else(|_| Expr::Integer(0))
   };
   let is_rational = |e: &Expr| {
@@ -660,17 +659,12 @@ pub fn block_diagonal_matrix_ast(
     ]
     .into(),
   );
-  let structured = Expr::FunctionCall {
-    name: "StructuredArray`StructuredData".to_string(),
-    args: vec![
-      Expr::List(
-        vec![Expr::Integer(n as i128), Expr::Integer(n as i128)].into(),
-      ),
-      payload,
-    ]
-    .into(),
-  };
-  Ok(call("BlockDiagonalMatrix", vec![structured]))
+  let data = vec![
+    Expr::List(vec![Expr::Integer(n as i128), Expr::Integer(n as i128)].into()),
+    payload,
+  ];
+  let structured = call("StructuredArray`StructuredData", data);
+  Ok(call1("BlockDiagonalMatrix", structured))
 }
 
 /// An explicit number: the only entries wolframscript accepts when recovering
@@ -908,21 +902,18 @@ pub fn cauchy_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if dense {
     return cauchy_dense(&x, &y);
   }
-  let structured = Expr::FunctionCall {
-    name: "StructuredArray`StructuredData".to_string(),
-    args: vec![
-      Expr::List(
-        vec![
-          Expr::Integer(x.len() as i128),
-          Expr::Integer(y.len() as i128),
-        ]
-        .into(),
-      ),
-      Expr::List(vec![Expr::List(x.into()), Expr::List(y.into())].into()),
-    ]
-    .into(),
-  };
-  Ok(call("CauchyMatrix", vec![structured]))
+  let data = vec![
+    Expr::List(
+      vec![
+        Expr::Integer(x.len() as i128),
+        Expr::Integer(y.len() as i128),
+      ]
+      .into(),
+    ),
+    Expr::List(vec![Expr::List(x.into()), Expr::List(y.into())].into()),
+  ];
+  let structured = call("StructuredArray`StructuredData", data);
+  Ok(call1("CauchyMatrix", structured))
 }
 
 /// The dense m x n matrix with entry (i, j) equal to 1/(x_i + y_j).
@@ -987,7 +978,7 @@ pub fn dot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   if let (Some(ma), Some(mb)) = (extract_tf(&args[0]), extract_tf(&args[1])) {
     let product = dot_ast(&[ma, mb])?;
-    return Ok(call("TransformationFunction", vec![product]));
+    return Ok(call1("TransformationFunction", product));
   }
 
   // Incompatible shapes emit ::dotsh and return the unevaluated form.
@@ -2200,8 +2191,7 @@ pub fn cross_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           Expr::List(row.into())
         })
         .collect();
-      let det =
-        evaluate_expr_to_expr(&call("Det", vec![Expr::List(minor.into())]))?;
+      let det = evaluate_expr_to_expr(&call1("Det", Expr::List(minor.into())))?;
       // Sign (-1)^(n + (i+1)).
       let component = if (n + i + 1).is_multiple_of(2) {
         det
@@ -4124,7 +4114,7 @@ fn integer_eigenvectors(
         vecs.into_iter().map(|v| Expr::List(v.into())).collect(),
       );
     }
-    return call("Eigenvectors", vec![matrix_to_expr(matrix.to_vec())]);
+    return call1("Eigenvectors", matrix_to_expr(matrix.to_vec()));
   }
 
   if !all_integer && n == 3 {
@@ -4134,12 +4124,12 @@ fn integer_eigenvectors(
         vecs.into_iter().map(|v| Expr::List(v.into())).collect(),
       );
     }
-    return call("Eigenvectors", vec![matrix_to_expr(matrix.to_vec())]);
+    return call1("Eigenvectors", matrix_to_expr(matrix.to_vec()));
   }
 
   if !all_integer {
     // Can't handle symbolic eigenvalues for n > 3
-    return call("Eigenvectors", vec![matrix_to_expr(matrix.to_vec())]);
+    return call1("Eigenvectors", matrix_to_expr(matrix.to_vec()));
   }
 
   // All integer eigenvalues: compute null spaces
@@ -4973,7 +4963,7 @@ pub fn drazin_inverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     evaluate_expr_to_expr(&call("Dot", vec![x.clone(), y.clone()]))
   };
   let unary =
-    |name: &str, m: &Expr| evaluate_expr_to_expr(&call(name, vec![m.clone()]));
+    |name: &str, m: &Expr| evaluate_expr_to_expr(&call1(name, m.clone()));
   let rank = |m: &Expr| -> Option<usize> {
     match unary("MatrixRank", m) {
       Ok(Expr::Integer(r)) if r >= 0 => Some(r as usize),
@@ -5085,12 +5075,10 @@ fn simplify_expr(e: &Expr) -> Expr {
     | Expr::Real(_)
     | Expr::BigInteger(_)
     | Expr::Identifier(_) => evaluated,
-    _ => {
-      match evaluate_expr_to_expr(&call("Simplify", vec![evaluated.clone()])) {
-        Ok(r) => r,
-        Err(_) => evaluated,
-      }
-    }
+    _ => match evaluate_expr_to_expr(&call1("Simplify", evaluated.clone())) {
+      Ok(r) => r,
+      Err(_) => evaluated,
+    },
   }
 }
 
@@ -6121,7 +6109,7 @@ fn build_root_from_coeffs(coeffs: &[i128], x: f64) -> Option<Expr> {
   let mut best_k = 0usize;
   let mut best_dist = f64::MAX;
   for k in 1..=degree {
-    let n_expr = call("N", vec![make_root(k)]);
+    let n_expr = call1("N", make_root(k));
     if let Ok(v) = crate::evaluator::evaluate_expr_to_expr(&n_expr)
       && let Some(rv) = try_eval_to_f64(&v)
     {
@@ -6517,10 +6505,8 @@ pub fn vector_angle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Check for zero vectors — Norm[{0,...}] = 0 → Indeterminate
-  let norm_u_expr =
-    evaluate_expr_to_expr(&call("Norm", vec![args[0].clone()]))?;
-  let norm_v_expr =
-    evaluate_expr_to_expr(&call("Norm", vec![args[1].clone()]))?;
+  let norm_u_expr = evaluate_expr_to_expr(&call1("Norm", args[0].clone()))?;
+  let norm_v_expr = evaluate_expr_to_expr(&call1("Norm", args[1].clone()))?;
   if matches!(norm_u_expr, Expr::Integer(0))
     || matches!(norm_v_expr, Expr::Integer(0))
   {
@@ -6540,8 +6526,8 @@ pub fn vector_angle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     args[1].clone()
   };
   let dot_expr = call("Dot", vec![args[0].clone(), second]);
-  let norm_u = call("Norm", vec![args[0].clone()]);
-  let norm_v = call("Norm", vec![args[1].clone()]);
+  let norm_u = call1("Norm", args[0].clone());
+  let norm_v = call1("Norm", args[1].clone());
   let denom = call("Times", vec![norm_u, norm_v]);
   let ratio = call(
     "Times",
@@ -6651,7 +6637,7 @@ pub fn solid_angle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Trihedral solid angle (Van Oosterom–Strackee).
     3 => {
       let dot = |a: &Expr, b: &Expr| call("Dot", vec![a.clone(), b.clone()]);
-      let norm = |a: &Expr| call("Norm", vec![a.clone()]);
+      let norm = |a: &Expr| call1("Norm", a.clone());
       let times = |factors: Vec<Expr>| call("Times", factors);
       let (v1, v2, v3) = (&vecs[0], &vecs[1], &vecs[2]);
       let matrix = Expr::List(vec![v1.clone(), v2.clone(), v3.clone()].into());
@@ -7006,7 +6992,7 @@ pub fn linear_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ),
   ]);
 
-  Ok(call("FittedModel", vec![assoc]))
+  Ok(call1("FittedModel", assoc))
 }
 
 /// NonlinearModelFit[data, model, params, var] — fits a (possibly nonlinear)
@@ -7097,7 +7083,7 @@ pub fn nonlinear_model_fit_ast(
     (Expr::String("BestFit".to_string()), fitted_expr),
   ]);
 
-  Ok(call("FittedModel", vec![assoc]))
+  Ok(call1("FittedModel", assoc))
 }
 
 /// `LinearModelFit[{X, y}]` — design-matrix form. Fits `y ≈ X · β` directly,
@@ -7295,7 +7281,7 @@ fn linear_model_fit_design_matrix_form(
     ),
   ]);
 
-  Ok(call("FittedModel", vec![assoc]))
+  Ok(call1("FittedModel", assoc))
 }
 
 /// LogitModelFit[data, {1, x, x^2, ...}, x] — logistic regression.
@@ -7503,7 +7489,7 @@ pub fn logit_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ),
   ]);
 
-  Ok(call("FittedModel", vec![assoc]))
+  Ok(call1("FittedModel", assoc))
 }
 
 /// Solve a linear system Ax = b using Gaussian elimination with partial pivoting.
@@ -8928,7 +8914,7 @@ pub fn singular_value_list_ast(
 
   // Eigenvalues of the smaller Gram matrix (m.m^H or m^H.m); both share
   // the nonzero spectrum
-  let ct = call("ConjugateTranspose", vec![args[0].clone()]);
+  let ct = call1("ConjugateTranspose", args[0].clone());
   let gram_args = if nrows <= ncols {
     vec![args[0].clone(), ct]
   } else {
@@ -9050,7 +9036,7 @@ pub fn matrix_function_ast(
               if func == "Log" && is_zero(c) {
                 return log_zero_bail(args);
               }
-              new_cs.push(evaluate_expr_to_expr(&call(func, vec![c.clone()]))?);
+              new_cs.push(evaluate_expr_to_expr(&call1(func, c.clone()))?);
             } else {
               new_cs.push(c.clone());
             }
@@ -9223,8 +9209,7 @@ pub fn jordan_decomposition_ast(
     return Ok(unevaluated(args));
   }
 
-  let eigen =
-    evaluate_expr_to_expr(&call("Eigenvalues", vec![args[0].clone()]))?;
+  let eigen = evaluate_expr_to_expr(&call1("Eigenvalues", args[0].clone()))?;
   let (l1, l2) = match &eigen {
     Expr::List(ls) if ls.len() == 2 => (ls[0].clone(), ls[1].clone()),
     _ => return Ok(unevaluated(args)),
@@ -9237,7 +9222,7 @@ pub fn jordan_decomposition_ast(
   // Times[-1, Times[I, ...]] flattens so the printer gives -I*Sqrt[2]
   // instead of -(I*Sqrt[2]).
   let ev = |e: Expr| -> Result<Expr, InterpreterError> {
-    let simplify = |x: Expr| evaluate_expr_to_expr(&call("Simplify", vec![x]));
+    let simplify = |x: Expr| evaluate_expr_to_expr(&call1("Simplify", x));
     let result = simplify(simplify(evaluate_expr_to_expr(&e)?)?)?;
     let inner = match &result {
       Expr::UnaryOp {
@@ -9511,7 +9496,7 @@ fn build_jordan_matrix(blocks: &[(Expr, usize)], n: usize) -> Expr {
 /// when either part does not evaluate to a number.
 fn numeric_re_im(e: &Expr) -> Option<(f64, f64)> {
   let component = |head: &str| -> Option<f64> {
-    let call = call(head, vec![e.clone()]);
+    let call = call1(head, e.clone());
     let value = crate::evaluator::evaluate_expr_to_expr(&call).ok()?;
     try_eval_to_f64(&value)
   };
@@ -9577,7 +9562,7 @@ fn replace_constant_i(e: &Expr) -> Expr {
 /// Rank of a matrix via the evaluator's MatrixRank (handles exact, radical
 /// and float entries alike), or None when it does not reduce to an integer.
 fn matrix_rank_of(matrix: &[Vec<Expr>]) -> Option<usize> {
-  let call = call("MatrixRank", vec![matrix_to_expr(matrix.to_vec())]);
+  let call = call1("MatrixRank", matrix_to_expr(matrix.to_vec()));
   match crate::evaluator::evaluate_expr_to_expr(&call).ok()? {
     Expr::Integer(r) if r >= 0 => Some(r as usize),
     _ => None,
@@ -10220,7 +10205,7 @@ pub fn frobenius_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Some(Expr::Integer(m)) if *m >= 1 => {
       let m = *m;
       let is_prime = matches!(
-        crate::evaluator::evaluate_expr_to_expr(&call("PrimeQ", vec![Expr::Integer(m)])),
+        crate::evaluator::evaluate_expr_to_expr(&call1("PrimeQ", Expr::Integer(m))),
         Ok(Expr::Identifier(ref t)) if t == "True"
       );
       if !is_prime {
@@ -11836,14 +11821,12 @@ fn linear_to_pos(mut lin: usize, dims: &[usize]) -> Vec<usize> {
 /// `SymmetrizedArray[StructuredArray`StructuredData[…]]` form wolframscript
 /// prints.
 fn symmetrized_array(dims: &[usize], rules: Vec<Expr>, tag: Expr) -> Expr {
-  let structured_data = call(
-    "StructuredArray`StructuredData",
-    vec![
-      Expr::List(dims.iter().map(|&d| Expr::Integer(d as i128)).collect()),
-      Expr::List(vec![Expr::List(rules.into()), tag].into()),
-    ],
-  );
-  call("SymmetrizedArray", vec![structured_data])
+  let data = vec![
+    Expr::List(dims.iter().map(|&d| Expr::Integer(d as i128)).collect()),
+    Expr::List(vec![Expr::List(rules.into()), tag].into()),
+  ];
+  let structured_data = call("StructuredArray`StructuredData", data);
+  call1("SymmetrizedArray", structured_data)
 }
 
 /// Symmetrize[t] / Symmetrize[t, sym] — project the array `t` onto a symmetry,
@@ -11963,19 +11946,16 @@ pub fn symmetrize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if matches!(&value, Expr::Integer(0)) {
       continue;
     }
-    rules.push(Expr::FunctionCall {
-      name: "Rule".to_string(),
-      args: vec![
-        Expr::List(
-          pos
-            .iter()
-            .map(|&p| Expr::Integer((p + 1) as i128))
-            .collect(),
-        ),
-        value,
-      ]
-      .into(),
-    });
+    let rule = vec![
+      Expr::List(
+        pos
+          .iter()
+          .map(|&p| Expr::Integer((p + 1) as i128))
+          .collect(),
+      ),
+      value,
+    ];
+    rules.push(call("Rule", rule));
   }
   Ok(symmetrized_array(&dims, rules, tag))
 }

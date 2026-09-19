@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::graphics::{Color, parse_color};
@@ -4093,11 +4092,8 @@ mod tests {
       Some("Pastel")
     );
     assert_eq!(
-      scheme_name(&Expr::FunctionCall {
-        name: "ColorData".into(),
-        args: vec![Expr::String("Pastel".into())].into(),
-      })
-      .as_deref(),
+      scheme_name(&call1("ColorData", Expr::String("Pastel".into())))
+        .as_deref(),
       Some("Pastel")
     );
   }

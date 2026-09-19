@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 use crate::functions::expr_form::{ExprForm, decompose_expr};
 use crate::functions::graphics::graphics_ast;
@@ -254,17 +253,14 @@ pub fn tree_form_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   for node in &layout {
     for &child_idx in &node.children_indices {
       let child = &layout[child_idx];
-      primitives.push(Expr::FunctionCall {
-        name: "Line".to_string(),
-        args: vec![Expr::List(
-          vec![
-            Expr::List(vec![Expr::Real(node.x), Expr::Real(node.y)].into()),
-            Expr::List(vec![Expr::Real(child.x), Expr::Real(child.y)].into()),
-          ]
-          .into(),
-        )]
+      let line = vec![Expr::List(
+        vec![
+          Expr::List(vec![Expr::Real(node.x), Expr::Real(node.y)].into()),
+          Expr::List(vec![Expr::Real(child.x), Expr::Real(child.y)].into()),
+        ]
         .into(),
-      });
+      )];
+      primitives.push(call("Line", line));
     }
   }
 
@@ -336,21 +332,15 @@ pub fn tree_form_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           vec![Expr::Real(0.84), Expr::Real(0.48), Expr::Real(0.0)],
         ));
       }
-
-      primitives.push(Expr::FunctionCall {
-        name: "Text".to_string(),
-        args: vec![
-          call(
-            "Style",
-            vec![
-              Expr::String(node.label.clone()),
-              Expr::Integer(font_size_int),
-            ],
-          ),
-          Expr::List(vec![Expr::Real(node.x), Expr::Real(node.y)].into()),
-        ]
-        .into(),
-      });
+      let style = call(
+        "Style",
+        vec![
+          Expr::String(node.label.clone()),
+          Expr::Integer(font_size_int),
+        ],
+      );
+      let xy = Expr::List(vec![Expr::Real(node.x), Expr::Real(node.y)].into());
+      primitives.push(call("Text", vec![style, xy]));
     }
   } else {
     // VertexLabeling -> False: display each vertex as a plain black point
@@ -558,17 +548,14 @@ fn tree_to_graphics(tree: &TreeNode) -> Result<Expr, InterpreterError> {
   for node in &layout {
     for &child_idx in &node.children_indices {
       let child = &layout[child_idx];
-      primitives.push(Expr::FunctionCall {
-        name: "Line".to_string(),
-        args: vec![Expr::List(
-          vec![
-            Expr::List(vec![Expr::Real(node.x), Expr::Real(node.y)].into()),
-            Expr::List(vec![Expr::Real(child.x), Expr::Real(child.y)].into()),
-          ]
-          .into(),
-        )]
+      let line = vec![Expr::List(
+        vec![
+          Expr::List(vec![Expr::Real(node.x), Expr::Real(node.y)].into()),
+          Expr::List(vec![Expr::Real(child.x), Expr::Real(child.y)].into()),
+        ]
         .into(),
-      });
+      )];
+      primitives.push(call("Line", line));
     }
   }
 
@@ -634,21 +621,15 @@ fn tree_to_graphics(tree: &TreeNode) -> Result<Expr, InterpreterError> {
         vec![Expr::Real(0.84), Expr::Real(0.48), Expr::Real(0.0)],
       ));
     }
-
-    primitives.push(Expr::FunctionCall {
-      name: "Text".to_string(),
-      args: vec![
-        call(
-          "Style",
-          vec![
-            Expr::String(node.label.clone()),
-            Expr::Integer(font_size_int),
-          ],
-        ),
-        Expr::List(vec![Expr::Real(node.x), Expr::Real(node.y)].into()),
-      ]
-      .into(),
-    });
+    let style = call(
+      "Style",
+      vec![
+        Expr::String(node.label.clone()),
+        Expr::Integer(font_size_int),
+      ],
+    );
+    let xy = Expr::List(vec![Expr::Real(node.x), Expr::Real(node.y)].into());
+    primitives.push(call("Text", vec![style, xy]));
   }
 
   let content = Expr::List(primitives.into());
