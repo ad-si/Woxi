@@ -11520,8 +11520,8 @@ pub(crate) fn mesh_cell_style_overrides(
             continue;
           }
           match crate::functions::math_ast::try_eval_to_f64(&k[0]) {
-            Some(d) if d == 2.0 => face_style = Some((**style).clone()),
-            Some(d) if d == 1.0 => edge_style = Some((**style).clone()),
+            Some(2.0) => face_style = Some((**style).clone()),
+            Some(1.0) => edge_style = Some((**style).clone()),
             _ => {}
           }
         }
