@@ -4146,6 +4146,57 @@ mod tests {
         result.graphics
       );
     }
+
+    /// `Pane[content, {width, height}]` reserves a fixed box in the
+    /// FrontEnd; content taller than it is clipped there rather than drawn
+    /// past it — there is no scrollbar in a static rendering. Without this,
+    /// a Demonstration-style fixed-size Pane around a tall Column (the
+    /// shape of many Manipulate bodies) left the overflow bleeding out
+    /// below the composed picture as a stray sliver of raw source text
+    /// instead of being cut off.
+    #[test]
+    fn a_pane_with_overflowing_content_is_clipped_to_its_declared_size() {
+      let result = woxi::interpret_with_stdout(
+        r#"Pane[Column[Table[Panel[Text[Style[n, 30]]], {n, 12}]], {120, 60}]"#,
+      )
+      .expect("interpret should succeed");
+      let svg = result.graphics.expect("the column is a graphic");
+      assert!(
+        svg.starts_with("<svg width=\"120\" height=\"60\""),
+        "clipped to the declared box: {svg}"
+      );
+    }
+
+    /// The same fixed-size clip applies to a plain `Export`/`ExportString`
+    /// (not only the Woxi Studio/Playground live-render path above) — both
+    /// go through the same picture composer.
+    #[test]
+    fn export_string_clips_an_overflowing_fixed_size_pane() {
+      let svg = woxi::interpret(
+        r#"ExportString[Pane[Column[Table[Panel[Text[Style[n, 30]]], {n, 12}]], {120, 60}], "SVG"]"#,
+      )
+      .expect("interpret should succeed");
+      assert!(
+        svg.starts_with("<svg width=\"120\" height=\"60\""),
+        "clipped to the declared box: {svg}"
+      );
+    }
+
+    /// Content that already fits inside the declared box is left alone —
+    /// a `Pane` around a small picture keeps its natural (smaller) canvas
+    /// rather than being padded out to the declared size.
+    #[test]
+    fn a_pane_with_content_that_already_fits_is_not_padded_out() {
+      let result = woxi::interpret_with_stdout(
+        r#"Pane[Column[{Panel[Text[Style[1, 20]]]}], {500, 500}]"#,
+      )
+      .expect("interpret should succeed");
+      let svg = result.graphics.expect("the column is a graphic");
+      assert!(
+        !svg.starts_with("<svg width=\"500\" height=\"500\""),
+        "small content keeps its natural canvas, unpadded: {svg}"
+      );
+    }
   }
 
   // ── Display-only wrappers in text markup ──

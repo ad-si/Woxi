@@ -1239,6 +1239,21 @@ pub fn try_extract_complex_exact(
   }
 }
 
+/// Like [`try_eval_to_f64`], but also accepts a machine `Complex[re, im]`
+/// whose imaginary part is exactly zero as the real number `re`. Scoped to
+/// samplers — a plot's per-point evaluator, say — where an expression that
+/// is mathematically real (e.g. a `SphericalHarmonicY` combination whose
+/// imaginary parts cancel) can still evaluate through complex
+/// intermediates and come out in that shape. `try_eval_to_f64` itself stays
+/// strict: many callers rely on it rejecting a genuine `Complex[…]`.
+pub fn try_eval_to_f64_lenient(expr: &Expr) -> Option<f64> {
+  if let Some(v) = try_eval_to_f64(expr) {
+    return Some(v);
+  }
+  let (re, im) = try_extract_complex_float(expr)?;
+  (im == 0.0).then_some(re)
+}
+
 /// Try to extract float complex parts (re, im) from an expression.
 /// Returns Some((re, im)) if the expression contains float components with I.
 pub fn try_extract_complex_float(expr: &Expr) -> Option<(f64, f64)> {
@@ -1320,6 +1335,29 @@ pub fn try_extract_complex_float(expr: &Expr) -> Option<(f64, f64)> {
         result = (result.0 + c, result.1 + d);
       }
       Some(result)
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Complex" && args.len() == 2 =>
+    {
+      Some((try_eval_to_f64(&args[0])?, try_eval_to_f64(&args[1])?))
+    }
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      let (br, bi) = try_extract_complex_float(&args[0])?;
+      let (er, ei) = try_extract_complex_float(&args[1])?;
+      Some(crate::functions::polynomial_ast::solve::complex_pow(
+        br, bi, er, ei,
+      ))
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => {
+      let (br, bi) = try_extract_complex_float(left)?;
+      let (er, ei) = try_extract_complex_float(right)?;
+      Some(crate::functions::polynomial_ast::solve::complex_pow(
+        br, bi, er, ei,
+      ))
     }
     _ => None,
   }

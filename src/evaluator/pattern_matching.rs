@@ -318,6 +318,20 @@ pub fn contains_pattern(expr: &Expr) -> bool {
     // necessarily holding a blank themselves — `Except[3]` and
     // `Except[0]?NumericQ` are patterns even though every argument is a
     // literal, so the head has to be recognized on its own.
+    //
+    // `Blank`/`Pattern`/`Optional` round out the FullForm a pattern
+    // survives as once it has been through Mathematica's own dump-and-reload
+    // (e.g. a `SaveDefinitions -> True` Manipulate's recovered
+    // initialization): `x_` becomes `Pattern[x, Blank[]]`, `x_Integer`
+    // becomes `Pattern[x, Blank[Integer]]`, and `x_Integer:1` becomes
+    // `Optional[Pattern[x, Blank[Integer]], 1]`. Without recognizing these
+    // names here, a compound custom-head pattern built entirely from them —
+    // `GeneralCARule[Pattern[rule, Blank[]], Optional[Pattern[r,
+    // Blank[Integer]], 1]]` — reports no pattern at all (every sub-call's
+    // own args are themselves plain, unrecognized identifiers/calls), so the
+    // caller treats the whole argument as a literal to `SameQ`-compare
+    // instead of routing it through the structural matcher. The definition
+    // then never matches anything and every call is left unevaluated.
     Expr::FunctionCall { name, .. }
       if matches!(
         name.as_str(),
@@ -328,6 +342,9 @@ pub fn contains_pattern(expr: &Expr) -> bool {
           | "OptionsPattern"
           | "Except"
           | "PatternTest"
+          | "Blank"
+          | "Pattern"
+          | "Optional"
       ) =>
     {
       true

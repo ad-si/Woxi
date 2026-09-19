@@ -5023,6 +5023,24 @@ pub(crate) fn lays_out_a_graphic(expr: &Expr) -> bool {
   if matches!(expr, Expr::FunctionCall { name, .. } if name == "LineLegend") {
     return true;
   }
+  // `TableForm[data, …]` / `MatrixForm[data, …]`, and either wrapped in a
+  // `Style[…]` that sets its font, are drawn as an aligned grid picture by
+  // `expr_to_svg` — a Demonstration's Manipulate body composing one into a
+  // `Column`/`Item` layout must be drawn there too, not printed as the
+  // literal `TableForm[…]` source.
+  if matches!(expr, Expr::FunctionCall { name, args }
+    if (name == "TableForm" || name == "MatrixForm") && !args.is_empty())
+  {
+    return true;
+  }
+  if matches!(expr, Expr::FunctionCall { name, args }
+    if name == "Style"
+      && args.len() >= 2
+      && matches!(&args[0], Expr::FunctionCall { name: inner, args: inner_args }
+        if (inner == "TableForm" || inner == "MatrixForm") && !inner_args.is_empty()))
+  {
+    return true;
+  }
   match expr {
     Expr::List(items) => items.iter().any(lays_out_a_graphic),
     // `Pane` and `Deploy` are transparent here: their own arms export what
@@ -5525,6 +5543,18 @@ fn evaluated_wrapper_svg(expr: &Expr) -> Option<String> {
   }
 }
 
+/// A numeric `Pane` size component (`Expr::Integer`/`Expr::Real`). `None`
+/// for `Automatic`, `Full`, or anything else that leaves that dimension
+/// unconstrained, so a size like `{400, Automatic}` is left for the
+/// unconstrained pass-through rather than clipped against a made-up bound.
+pub(crate) fn pane_size_component(expr: &Expr) -> Option<f64> {
+  match expr {
+    Expr::Integer(n) => Some(*n as f64),
+    Expr::Real(r) => Some(*r),
+    _ => None,
+  }
+}
+
 pub(crate) fn expr_to_svg(expr: &Expr) -> String {
   if let Some(svg) = evaluated_wrapper_svg(expr) {
     return svg;
@@ -5536,10 +5566,28 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     // wraps. (The notebook display pipeline already unwraps it — without
     // this, `Export[…, Pane[graphic]]` wrote the expression as text.)
     // `Deploy` is the same: it only makes its content non-selectable.
+    //
+    // A `Pane[content, {width, height}]` fixed-size box is the exception:
+    // the FrontEnd reserves exactly that area and clips content that
+    // doesn't fit (there is no scrollbar in a static export), so leaving
+    // the content at its natural size here would draw it past the box the
+    // rest of the layout already sized around — a Demonstration's guess
+    // panel overflowing into a sliver of raw markup below it.
     Expr::FunctionCall { name, args }
       if (name == "Pane" || name == "Deploy") && !args.is_empty() =>
     {
-      expr_to_svg(&args[0])
+      let inner_svg = expr_to_svg(&args[0]);
+      match (name.as_str(), args.get(1)) {
+        ("Pane", Some(Expr::List(size))) if size.len() == 2 => {
+          match (pane_size_component(&size[0]), pane_size_component(&size[1])) {
+            (Some(w), Some(h)) => {
+              crate::functions::graphics::clip_svg_to_pane_box(&inner_svg, w, h)
+            }
+            _ => inner_svg,
+          }
+        }
+        _ => inner_svg,
+      }
     }
     // `Item[expr, opts…]` is a layout cell; the options place it and what
     // it displays is `expr`.
@@ -5571,14 +5619,16 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     // falls through to the text renderer, which prints the call's own
     // source instead of the row it wraps. A `Style` is inherited by what
     // it wraps, so its directives are pushed into the layout's items and
-    // the item renderer applies them there. A styled `Grid` is left to the
-    // arm below, which hands the directives to the grid renderer whole —
-    // they colour its frame and dividers, not only its cells.
+    // the item renderer applies them there. A styled `Grid`/`TableForm`/
+    // `MatrixForm` is left to the arm below, which hands the directives to
+    // the table renderer whole — they colour its frame and dividers (or set
+    // its cells' font), not only what pushing them cell-by-cell would reach.
     Expr::FunctionCall { name, args }
       if name == "Style"
         && !args.is_empty()
         && !matches!(&args[0], Expr::FunctionCall { name, args }
-          if (name == "Grid" || name == "TextGrid") && !args.is_empty()) =>
+          if matches!(name.as_str(), "Grid" | "TextGrid" | "TableForm" | "MatrixForm")
+            && !args.is_empty()) =>
     {
       let inner = crate::functions::graphics::style_pushed_into_layout(
         &args[0],
@@ -5965,8 +6015,28 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     Expr::FunctionCall {
       name: mr_name,
       args: mr_args,
-    } if mr_name == "MeshRegion" && mr_args.len() == 2 => {
-      if let Some(svg) =
+    } if (mr_name == "MeshRegion" || mr_name == "BoundaryMeshRegion")
+      && mr_args.len() >= 2 =>
+    {
+      // A `BoundaryMeshRegion` (e.g. `ConvexHullMesh`'s result) carries a
+      // `Method` option and possibly `MeshCellStyle`/`WorkingPrecision`
+      // too, so it has more than 2 args; a 3D one renders through the
+      // ordinary Graphics3D pipeline instead of the flat mesh renderer.
+      let is_3d_mesh = matches!(&mr_args[0], Expr::List(items)
+        if items.first().is_some_and(|v| matches!(v, Expr::List(c) if c.len() == 3)));
+      if is_3d_mesh {
+        if let Some(Expr::Graphics { ref svg, .. }) =
+          crate::functions::graphics::mesh_region_to_graphics3d(
+            &mr_args[0],
+            &mr_args[1],
+            &mr_args[2..],
+          )
+        {
+          svg.clone()
+        } else {
+          expr_text_svg(expr)
+        }
+      } else if let Some(svg) =
         crate::functions::voronoi::mesh_region_to_svg(&mr_args[0], &mr_args[1])
       {
         svg

@@ -2740,9 +2740,9 @@ mod convex_hull_mesh {
     );
   }
 
-  // Fewer than three affinely independent points, all-collinear sets, 3D
-  // inputs, and symbolic arguments stay unevaluated (matching wolframscript,
-  // which issues a message and returns the input).
+  // Fewer than three affinely independent points, all-collinear sets, and
+  // symbolic arguments stay unevaluated (matching wolframscript, which
+  // issues a message and returns the input).
   #[test]
   fn two_points_unevaluated() {
     assert_eq!(
@@ -2760,15 +2760,6 @@ mod convex_hull_mesh {
   }
 
   #[test]
-  fn three_d_unevaluated() {
-    assert_eq!(
-      interpret("ConvexHullMesh[{{0,0,0},{1,0,0},{0,1,0},{0,0,1},{1,1,1}}]")
-        .unwrap(),
-      "ConvexHullMesh[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, 0, 1}, {1, 1, 1}}]"
-    );
-  }
-
-  #[test]
   fn symbolic_unevaluated() {
     assert_eq!(interpret("ConvexHullMesh[x]").unwrap(), "ConvexHullMesh[x]");
   }
@@ -2776,6 +2767,250 @@ mod convex_hull_mesh {
   #[test]
   fn head_symbol() {
     assert_eq!(interpret("Head[ConvexHullMesh]").unwrap(), "Symbol");
+  }
+
+  // Trailing options (e.g. `MeshCellStyle`, used by a Demonstration to
+  // style a mesh's faces) are carried through onto the resulting
+  // `BoundaryMeshRegion`, alongside the `Method`/`WorkingPrecision` it
+  // already always carries.
+  #[test]
+  fn options_carried_through() {
+    assert_eq!(
+      interpret(
+        "ToString[ConvexHullMesh[{{0,0},{2,0},{2,2},{0,2}}, \
+         MeshCellStyle -> {{1, All} -> Red}], InputForm]"
+      )
+      .unwrap(),
+      "BoundaryMeshRegion[{{0, 0}, {2, 0}, {2, 2}, {0, 2}}, \
+       {Line[{{1, 2}, {2, 3}, {3, 4}, {4, 1}}]}, \
+       Method -> {\"SeparateBoundaries\" -> False}, \
+       WorkingPrecision -> Infinity, \
+       MeshCellStyle -> {{1, All} -> RGBColor[1, 0, 0]}]"
+    );
+  }
+
+  // A trailing argument that is not a `Rule` (an invalid option) leaves the
+  // whole call unevaluated, the same way a degenerate point set does.
+  #[test]
+  fn non_rule_trailing_arg_unevaluated() {
+    assert_eq!(
+      interpret("ConvexHullMesh[{{0,0},{2,0},{2,2},{0,2}}, x]").unwrap(),
+      "ConvexHullMesh[{{0, 0}, {2, 0}, {2, 2}, {0, 2}}, x]"
+    );
+  }
+
+  /// 3D `ConvexHullMesh` builds a triangulated hull surface (a standard
+  /// incremental "beneath-beyond" hull, not qhull, so it does not merge
+  /// coplanar facets the way wolframscript's may — see
+  /// `tests/cli/comparison/mathematica/conformance_gaps.md`). Fewer than 4
+  /// affinely independent points (coplanar, collinear, too few, or
+  /// coincident) stay unevaluated, the 3D analogue of the 2D cases above.
+  mod three_d {
+    use super::*;
+
+    #[test]
+    fn coplanar_unevaluated() {
+      assert_eq!(
+        interpret("ConvexHullMesh[{{0,0,0},{1,0,0},{0,1,0},{1,1,0}}]").unwrap(),
+        "ConvexHullMesh[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {1, 1, 0}}]"
+      );
+    }
+
+    #[test]
+    fn too_few_unevaluated() {
+      assert_eq!(
+        interpret("ConvexHullMesh[{{0,0,0},{1,0,0},{0,1,0}}]").unwrap(),
+        "ConvexHullMesh[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}}]"
+      );
+    }
+
+    #[test]
+    fn head() {
+      assert_eq!(
+        interpret("Head[ConvexHullMesh[{{0,0,0},{1,0,0},{0,1,0},{0,0,1}}]]")
+          .unwrap(),
+        "BoundaryMeshRegion"
+      );
+    }
+
+    // `MeshCellStyle -> {{2, All} -> style}` (a Demonstration's way of
+    // coloring a 3D `ConvexHullMesh`'s faces, e.g. translucent light blue)
+    // is carried through onto the `BoundaryMeshRegion`, the same way the 2D
+    // case carries its own trailing options.
+    #[test]
+    fn mesh_cell_style_option_carried_through() {
+      assert_eq!(
+        interpret(
+          "ToString[ConvexHullMesh[{{0,0,0},{1,0,0},{0,1,0},{0,0,1}}, \
+           MeshCellStyle -> {{2, All} -> Opacity[0.5, LightBlue]}], \
+           InputForm]"
+        )
+        .unwrap(),
+        "BoundaryMeshRegion[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, 0, 1}}, \
+         {Polygon[{{1, 3, 2}, {1, 2, 4}, {1, 4, 3}, {2, 3, 4}}]}, \
+         Method -> {\"SeparateBoundaries\" -> False}, \
+         WorkingPrecision -> Infinity, \
+         MeshCellStyle -> {{2, All} -> Opacity[0.5, RGBColor[0.87, 0.94, 1]]}]"
+      );
+    }
+
+    // Both `Show[…]` (used to combine a mesh with other 3D graphics, as in
+    // a Demonstration) and a bare `ExportString[…, "SVG"]` must render the
+    // styled mesh as an actual picture, not fall back to echoing the
+    // unevaluated call as syntax-highlighted text — the resulting SVG must
+    // not literally contain the option's own source text, and it must
+    // carry the requested opacity through to the drawn faces.
+    #[test]
+    fn mesh_cell_style_renders_as_a_picture() {
+      const HULL: &str = "ConvexHullMesh[{{0,0,0},{1,0,0},{0,1,0},{0,0,1}}, \
+         MeshCellStyle -> {{2, All} -> Opacity[0.5, LightBlue]}]";
+
+      assert_eq!(
+        interpret(&format!("Head[Show[{HULL}]]")).unwrap(),
+        "Graphics3D"
+      );
+
+      for wrapped in [HULL.to_string(), format!("Show[{HULL}]")] {
+        let svg =
+          interpret(&format!("ExportString[{wrapped}, \"SVG\"]")).unwrap();
+        assert!(
+          !svg.contains("MeshCellStyle"),
+          "must render as a picture, not echo the unevaluated option as \
+           text: {svg}"
+        );
+        assert!(
+          svg.contains("opacity=\"0.5\""),
+          "the mesh's faces must carry the requested Opacity[0.5, …]: {svg}"
+        );
+      }
+    }
+
+    /// A point strictly inside the tetrahedron drops out of the vertex
+    /// list, the same way an interior 2D point does.
+    #[test]
+    fn interior_point_dropped() {
+      assert_eq!(
+        interpret(
+          "ToString[ConvexHullMesh[{{0,0,0},{1,0,0},{0,1,0},{0,0,1}, \
+           {0.1,0.1,0.1}}], InputForm]"
+        )
+        .unwrap(),
+        "BoundaryMeshRegion[{{0., 0., 0.}, {1., 0., 0.}, {0., 1., 0.}, \
+         {0., 0., 1.}}, {Polygon[{{1, 3, 2}, {1, 2, 4}, {1, 4, 3}, \
+         {2, 3, 4}}]}, Method -> {\"SeparateBoundaries\" -> False}]"
+      );
+    }
+
+    // Verified against wolframscript's own output for the same input (see
+    // `tests/cli/comparison/mathematica/conformance_gaps.md`, "ConvexHullMesh
+    // for 3D point sets"): its faces are the same 4 triangles with the same
+    // winding, `{{3,2,1},{2,4,1},{4,3,1},{3,4,2}}` — every one a cyclic
+    // rotation of the face listed here — just in a different facet order and
+    // starting vertex, which is qhull's own bookkeeping and not reproduced.
+    #[test]
+    fn tetrahedron_matches_wolfram_facets() {
+      assert_eq!(
+        interpret(
+          "ToString[ConvexHullMesh[{{0,0,0},{1,0,0},{0,1,0},{0,0,1}}], \
+           InputForm]"
+        )
+        .unwrap(),
+        "BoundaryMeshRegion[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, 0, 1}}, \
+         {Polygon[{{1, 3, 2}, {1, 2, 4}, {1, 4, 3}, {2, 3, 4}}]}, \
+         Method -> {\"SeparateBoundaries\" -> False}, \
+         WorkingPrecision -> Infinity]"
+      );
+    }
+
+    // Same reference comparison, for the tetrahedron plus a 5th point that
+    // extends the hull (rather than falling inside it): wolframscript gives
+    // `{{3,2,1},{2,4,1},{4,3,1},{3,5,2},{5,4,2},{4,5,3}}`, and every one of
+    // those 6 triangles is a cyclic rotation of a face listed here.
+    #[test]
+    fn tetrahedron_plus_apex_matches_wolfram_facets() {
+      assert_eq!(
+        interpret(
+          "ToString[ConvexHullMesh[{{0,0,0},{1,0,0},{0,1,0},{0,0,1}, \
+           {1,1,1}}], InputForm]"
+        )
+        .unwrap(),
+        "BoundaryMeshRegion[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, 0, 1}, \
+         {1, 1, 1}}, {Polygon[{{1, 3, 2}, {5, 2, 3}, {1, 2, 4}, {2, 5, 4}, \
+         {5, 3, 4}, {3, 1, 4}}]}, \
+         Method -> {\"SeparateBoundaries\" -> False}, \
+         WorkingPrecision -> Infinity]"
+      );
+    }
+
+    /// Every hull face's outward normal must point away from the solid's
+    /// own centroid — the geometric invariant a correct triangulated convex
+    /// hull satisfies regardless of qhull's particular facet order, checked
+    /// here on a less trivial (8-point, non-simplex) input than the
+    /// hand-verified tetrahedron cases above.
+    #[test]
+    fn cube_corners_faces_point_outward() {
+      let s = interpret(
+        "ToString[ConvexHullMesh[{{0,0,0},{1,0,0},{0,1,0},{0,0,1}, \
+         {1,1,0},{1,0,1},{0,1,1},{1,1,1}}], InputForm]",
+      )
+      .unwrap();
+      // Same order the points were typed in above: every corner is a hull
+      // vertex, so output vertex `i` is input point `i` unchanged.
+      let verts: Vec<[f64; 3]> = vec![
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 1.0, 0.0],
+        [1.0, 0.0, 1.0],
+        [0.0, 1.0, 1.0],
+        [1.0, 1.0, 1.0],
+      ];
+      // All 8 corners of a cube are hull vertices; parse out the triangle
+      // index triples from the printed `Polygon[{{...}}]`.
+      let faces_start = s.find("Polygon[{{").unwrap() + "Polygon[{".len();
+      let faces_end = s[faces_start..].find("}]").unwrap() + faces_start + 1;
+      let faces_str = &s[faces_start..faces_end];
+      let faces: Vec<[usize; 3]> = faces_str
+        .trim_start_matches('{')
+        .trim_end_matches('}')
+        .split("}, {")
+        .map(|tri| {
+          let idx: Vec<usize> =
+            tri.split(", ").map(|n| n.parse().unwrap()).collect();
+          [idx[0], idx[1], idx[2]]
+        })
+        .collect();
+      assert_eq!(
+        faces.len(),
+        12,
+        "a cube's hull triangulates to 12 faces (2 per square side): {s}"
+      );
+      let centroid = [0.5, 0.5, 0.5];
+      for [a, b, c] in &faces {
+        let (pa, pb, pc) = (verts[a - 1], verts[b - 1], verts[c - 1]);
+        let u = [pb[0] - pa[0], pb[1] - pa[1], pb[2] - pa[2]];
+        let v = [pc[0] - pa[0], pc[1] - pa[1], pc[2] - pa[2]];
+        let normal = [
+          u[1] * v[2] - u[2] * v[1],
+          u[2] * v[0] - u[0] * v[2],
+          u[0] * v[1] - u[1] * v[0],
+        ];
+        let to_centroid = [
+          centroid[0] - pa[0],
+          centroid[1] - pa[1],
+          centroid[2] - pa[2],
+        ];
+        let dot = normal[0] * to_centroid[0]
+          + normal[1] * to_centroid[1]
+          + normal[2] * to_centroid[2];
+        assert!(
+          dot < 0.0,
+          "face [{a}, {b}, {c}]'s normal must point away from the \
+           centroid, not toward it"
+        );
+      }
+    }
   }
 }
 

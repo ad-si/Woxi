@@ -7186,6 +7186,77 @@ mod tests {
     assert_eq!(state.text_output.as_deref(), Some("hexagon"));
   }
 
+  /// A `Button[…]` action alongside two disjoint `SetterBar` rows that
+  /// share one control variable — a "reset" button next to a
+  /// coarse/fine (or split) picker for the same underlying setting, as a
+  /// Wolfram Demonstrations Project notebook's curve-fitting or
+  /// model-picker panel commonly pairs (independently written, not copied
+  /// from any specific one). Regression: `ManipulateState::bindings()` listed
+  /// the shared variable once per control row, so a button press built
+  /// `Block[{shape = …, shape = …, …}, action; {…}]` to run the action —
+  /// and Wolfram's `Block` rejects a local spec naming the same variable
+  /// twice (`Block::dup`), which made `apply_manipulate_button_action`
+  /// silently drop the update instead of running it. The button appeared to
+  /// do nothing.
+  #[test]
+  fn manipulate_button_action_with_disjoint_setter_bar_siblings() {
+    let code = "Manipulate[\
+      Which[shape == 1, \"circle\", shape == 2, \"square\", shape == 3, \"triangle\"], \
+      Button[\"reset\", shape = 1], \
+      {{shape, 2, \"\"}, {1 -> \"circle\", 2 -> \"square\"}, ControlType -> SetterBar}, \
+      {{shape, 2, \"\"}, {3 -> \"triangle\"}, ControlType -> SetterBar}\
+      ]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the shared-variable SetterBar Manipulate must build a widget");
+    assert_eq!(state.text_output.as_deref(), Some("square"));
+
+    // Move away from the button's target value first, via the row that has
+    // no button for it at all, so the button press is the only thing that
+    // can bring it back.
+    let shape_rows: Vec<usize> = state
+      .controls
+      .iter()
+      .enumerate()
+      .filter(|(_, c)| c.name() == "shape")
+      .map(|(i, _)| i)
+      .collect();
+    assert_eq!(
+      shape_rows.len(),
+      2,
+      "expected two SetterBar rows sharing `shape`: {:?}",
+      state.controls
+    );
+    let third_idx = shape_rows[1];
+    if let manipulate::ControlState::Discrete {
+      current_index,
+      overflow,
+      ..
+    } = &mut state.controls[third_idx]
+    {
+      *current_index = 0;
+      *overflow = None;
+    }
+    state.apply_tracking(third_idx);
+    state.reevaluate();
+    assert_eq!(state.text_output.as_deref(), Some("triangle"));
+
+    let action = state
+      .controls
+      .iter()
+      .find_map(|c| match c {
+        manipulate::ControlState::Button { action, .. } => Some(action.clone()),
+        _ => None,
+      })
+      .expect("the reset Button control");
+    state.apply_button_action(&action);
+    assert_eq!(
+      state.text_output.as_deref(),
+      Some("circle"),
+      "the Button's action must actually run even though `shape` has two \
+       control rows, not silently no-op"
+    );
+  }
+
   /// A Manipulate whose body calls a `Compile`d helper with bare
   /// (undeclared-type) parameters that are only ever used as repetition
   /// counts — `NestList[…, n]` and a `Do[…, {trials}]` iterator — mirroring
@@ -7322,6 +7393,60 @@ mod tests {
     assert!(
       state.graphics_handle.is_some(),
       "the escape-time grid should render as a graphic"
+    );
+  }
+
+  /// A generator-matrix Manipulate: an `Initialization`-defined family of
+  /// small complex-valued matrices (`gen[k]`, built with `KroneckerProduct`
+  /// from `{{0, -I}, {I, 0}}`-style factors) is shown with `ArrayPlot`,
+  /// colored via `ColorRules` keyed on the matrices' actual `0`/`I`/`-I`/`1`/
+  /// `-1` entries, with `Mesh -> True` and a second slider whose upper bound
+  /// tracks the first (`Dynamic[size$$]`) plus `SaveDefinitions -> True` —
+  /// the general shape a higher-dimensional Clifford/Dirac-algebra Wolfram
+  /// Demonstrations Project notebook uses (independently written here, not
+  /// copied from any specific one). Regression: `ArrayPlot`'s `ColorRules`
+  /// resolved every rule key and matrix cell through `f64` before matching,
+  /// so non-real values like `I`/`-I` (which have no real `f64` form) all
+  /// collapsed to `0.0` and matched the `0 -> ...` rule instead of their
+  /// own — the rendered widget showed a single flat color instead of the
+  /// intended four-color matrix.
+  #[test]
+  fn manipulate_array_plot_color_rules_match_complex_matrix_entries() {
+    let code = r#"Manipulate[
+      If[k > size, k = size];
+      ArrayPlot[
+        gen[k, size],
+        ColorFunction -> Hue,
+        ColorRules -> {0 -> White, I -> Red, -I -> Green, 1 -> Blue, -1 -> Yellow},
+        Mesh -> True
+      ],
+      {{size, 4, "size"}, 2, 6, 1, Appearance -> "Labeled"},
+      {{k, 2, "index"}, 1, Dynamic[size], 1, Appearance -> "Labeled"},
+      SaveDefinitions -> True,
+      Initialization :> (
+        base[0] = {{1, 0}, {0, 1}};
+        base[1] = {{0, 1}, {1, 0}};
+        base[2] = {{0, -I}, {I, 0}};
+        gen[1, n_] := KroneckerProduct @@ Table[base[1], {n/2}];
+        gen[j_, n_] /; j > 1 := KroneckerProduct[
+          Sequence @@ Table[base[1], {n/2 - Ceiling[j/2]}],
+          base[Mod[j, 2] + 1],
+          Sequence @@ Table[base[0], {Ceiling[j/2] - 1}]
+        ];
+      )
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr).expect(
+      "a KroneckerProduct-built complex matrix fed to ArrayPlot should build a ManipulateState",
+    );
+    assert_eq!(
+      state.error, None,
+      "ArrayPlot must render the generator matrix"
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the ArrayPlot should render as a graphic"
     );
   }
 
@@ -8484,6 +8609,54 @@ mod tests {
     assert_eq!(current(&state), 3.0, "starts at its explicit initial value");
     state.advance_animation();
     assert_eq!(current(&state), 1.0, "steps past max wrap back to min");
+  }
+
+  #[test]
+  fn manipulate_bare_sibling_bound_resolves_without_dynamic_wrapper() {
+    // A combinatorics-style Demonstration pattern (independently written,
+    // not copied from any specific one): a control's upper bound counts
+    // some combination of another control's value, written as a bare
+    // expression rather than `Dynamic[…]` — `{{pick, 1, "pick"}, 1,
+    // Length[Subsets[Range[n], {2}]], 1}`. With `n` unbound, evaluating
+    // that bound doesn't fail — `Subsets` on the unevaluated `Range[n]`
+    // treats it as a single-element set and returns `{}`, so `Length`
+    // silently comes back `0` — so the Manipulate's own held-echo pass
+    // (`process_manipulate_var_spec`) must recognize the bound still names
+    // a sibling control and leave it alone rather than baking in that wrong
+    // literal, exactly like a `Dynamic[…]`-wrapped bound already does.
+    let code = r#"Manipulate[pick,
+      {{n, 4, "count"}, 3, 8, 1},
+      {{pick, 1, "pick"}, 1, Length[Subsets[Range[n], {2}]], 1}]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let mut state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("two sliders should build a ManipulateState");
+
+    let bounds = |s: &manipulate::ManipulateState| match &s.controls[1] {
+      manipulate::ControlState::Continuous { min, max, .. } => (*min, *max),
+      other => panic!("pick should be a slider: {other:?}"),
+    };
+    // n starts at 4: C(4, 2) = 6 pairs.
+    assert_eq!(
+      bounds(&state),
+      (1.0, 6.0),
+      "the bare sibling-referencing bound must resolve against n's initial \
+       value, not silently collapse to 0..1"
+    );
+
+    // Raise n to 6: C(6, 2) = 15, and the bound must follow it live.
+    if let manipulate::ControlState::Continuous { current, .. } =
+      &mut state.controls[0]
+    {
+      *current = 6.0;
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert_eq!(
+      bounds(&state),
+      (1.0, 15.0),
+      "the bare sibling bound must track n after it changes"
+    );
   }
 
   #[test]
@@ -17105,6 +17278,79 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`showCap$$ = False}, \"\\[Ellipsis]\
     );
   }
 
+  /// End-to-end regression for the "Typeset Sierpinski Sieve" Demonstration's
+  /// shape: a `Graphics[Text[…], …]` whose label is `Nest[Subsuperscript[#,
+  /// #, #] &, symbol, depth]` — each recursion level wraps the *whole*
+  /// previous level in a fresh sub-/superscript pair, which is the
+  /// fractal-like typeset pattern the Demonstration is named for. The one
+  /// control is a discrete stepped slider (`{{var, init, "label"}, lo, hi,
+  /// step}` with `Appearance -> "Labeled"`).
+  ///
+  /// `graphics_text_content` (the flattener a `Text[…]` primitive's label
+  /// goes through before it is drawn) folded `Subscript`/`Superscript` into
+  /// their Unicode script form but had no arm for a bare `Subsuperscript`,
+  /// so `Nest` building one fell through to its literal `Subsuperscript[…]`
+  /// source text instead of typesetting. Fixed by adding `Subsuperscript`
+  /// to that arm (and to the sibling `expr_to_label`, `expr_to_svg_markup`
+  /// and `estimate_display_width` — the same head's label/markup/width
+  /// paths) rather than leaving it to print its own source.
+  ///
+  /// The Manipulate is written here rather than lifted from the published
+  /// notebook.
+  #[test]
+  fn nested_subsuperscript_notebook_builds_its_widget() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[\nGraphics[\nText[Nest[Subsuperscript[#, #, #] &, \"\\[CapitalPsi]\", depth], {0, 0}],\nImageSize -> 300\n],\n{{depth, 1, \"recursion depth\"}, 1, 4, 1, Appearance -> \"Labeled\"}\n]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`depth$$ = 1}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "the nested typeset label must build: {:?}",
+      widget.error
+    );
+    assert!(widget.graphics_handle.is_some(), "the label must draw");
+
+    let names: Vec<&str> = widget
+      .controls
+      .iter()
+      .map(|c| match c {
+        manipulate::ControlState::Discrete { name, .. } => name.as_str(),
+        manipulate::ControlState::Continuous { name, .. } => name.as_str(),
+        other => panic!("unexpected control: {other:?}"),
+      })
+      .collect();
+    assert_eq!(names, ["depth"]);
+
+    let render = |depth: u32| {
+      woxi::interpret_with_stdout(&format!("depth = {depth};\n{}", widget.body))
+        .expect("the body must render")
+        .graphics
+        .expect("the body must produce a graphic")
+    };
+    // Each recursion level must actually nest — not just repeat the same
+    // text unchanged — so the picture must differ as the depth control
+    // moves, and keep differing at the next level too.
+    let depth1 = render(1);
+    let depth2 = render(2);
+    let depth3 = render(3);
+    assert_ne!(depth1, depth2, "the recursion depth control must matter");
+    assert_ne!(depth2, depth3, "each extra level of nesting must matter");
+    // The bug this guards against: the literal `Subsuperscript[…]` source
+    // leaking into the picture instead of typesetting.
+    assert!(
+      !depth2.contains("Subsuperscript"),
+      "the nested scripts must typeset, not print their source: {depth2}"
+    );
+  }
+
   /// End-to-end regression for the "Chaos and Order in the Damped Forced
   /// Pendulum in a Plane" Demonstration: it integrates the damped driven
   /// pendulum `θ'' == -(g/l) Sin[θ] - γ θ' + a Cos[ω t]` from a grid of
@@ -20217,7 +20463,11 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 1}, DynamicBox[\[Ellipsis]]]"
         assert_eq!(values.as_slice(), ["1", "2", "3", "4", "5", "6", "7"]);
         assert_eq!(*current_index, 0);
         assert!(!popup, "ControlType -> Setter must not force a dropdown");
-        assert!(!setter_bar, "an unforced Setter is not a SetterBar");
+        assert!(
+          *setter_bar,
+          "ControlType -> Setter must force the button row just like \
+           SetterBar does, per setter_control_type_forces_the_bar_regardless_of_choice_count"
+        );
       }
       other => panic!("expected a single Setter control, got {other:?}"),
     }
@@ -26778,6 +27028,47 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k1$$ = 1}, \"\\[Ellipsis]\"]"], "Ou
       state.text_output, None,
       "a picture result must not also carry a text fallback"
     );
+  }
+
+  #[test]
+  fn setter_control_type_forces_the_bar_regardless_of_choice_count() {
+    // Regression: the `ControlType` reference page documents "Setter or
+    // SetterBar" (and "RadioButton or RadioButtonBar") as interchangeable
+    // settings, but only the "…Bar" spelling forced the full row of
+    // buttons here — the bare `Setter`/`RadioButton` spelling fell through
+    // to the automatic SetterBar/PopupMenu choice-count-and-width heuristic
+    // (`renders_as_setter_bar`), which a many-choice, long-label spec like
+    // this one (independently written here, not copied from any specific
+    // Demonstration) flips to a dropdown even though the author explicitly
+    // asked for a bar of buttons.
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[mood, \
+       {{mood, \"curious\", \"mood\"}, \
+        {\"curious\", \"delighted\", \"skeptical\", \"astonished\", \
+         \"nostalgic\", \"triumphant\", \"wistful\"}, \
+        ControlType -> Setter}]",
+    )
+    .unwrap();
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("the many-choice Setter Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    match &state.controls[0] {
+      manipulate::ControlState::Discrete {
+        setter_bar, popup, ..
+      } => {
+        assert!(
+          *setter_bar,
+          "an explicit ControlType -> Setter must force the button row \
+           just like SetterBar does, however many choices there are"
+        );
+        assert!(!*popup, "Setter must never render as a dropdown");
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
   }
 
   /// End-to-end regression for the shape a "Polaritons in Semiconducting

@@ -2148,10 +2148,12 @@ function main() {
     // see the `undecided_forms_stay_unevaluated` test.
     "AsymptoticLess[x + y, x^2 + y^2, {x, y} -> {Infinity, Infinity}]",
     "AsymptoticLess[x^a, x^2, x -> Infinity]",
-    // 3D ConvexHullMesh: computing the hull is easy, but Wolfram delegates to
-    // qhull and prints its facet bookkeeping verbatim — facet creation order,
-    // in-face vertex rotation and coplanar-triangle merging would all have to
-    // be replicated. Woxi keeps the 3D form unevaluated.
+    // 3D ConvexHullMesh: Woxi now computes the hull itself (matching
+    // wolframscript's facet triangles and their winding exactly, verified by
+    // hand — see conformance_gaps.md), but Wolfram delegates to qhull and
+    // prints its facet bookkeeping verbatim: facet creation order, in-face
+    // vertex rotation and coplanar-triangle merging are qhull internals this
+    // does not replicate, so the printed form still differs.
     "ConvexHullMesh[{{0,0,0},{1,0,0},{0,1,0},{0,0,1},{1,1,1}}]",
     // PascalBinomial[6.0, -2]: Wolfram returns 0``15.954589770191005 — an
     // arbitrary-precision zero whose accuracy is $MachinePrecision — where

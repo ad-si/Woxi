@@ -137,10 +137,15 @@ UnsignedNumericValue = { BasePrefix | UnsignedPrecisionReal | UnsignedReal | Uns
 // the private use area, so Unicode files those characters under `Co` rather
 // than `L` — but they name symbols like any other letter, and a notebook
 // writes them as the bare character. The letters Unicode does have (ℬ, ℯ, ℓ,
-// …) are ordinary `LETTER`s and need no help. The `\[FormalX]` family (plain
-// and script variants of the formal-variable alphabet used by `Reduce`,
-// `Solve`, etc.) lives in the private use area the same way.
-PrivateUseLetter = _{ '\u{F6B2}'..'\u{F6CB}' | '\u{F770}'..'\u{F789}' | '\u{F6E6}'..'\u{F6FF}' | '\u{F7A4}'..'\u{F7BD}' | '\u{F800}'..'\u{F88A}' | '\u{FA000}'..'\u{FA033}' }
+// …) are ordinary `LETTER`s and need no help.
+// `\[FormalA]`..`\[FormalZ]`, their capitalized and Greek variants, and a
+// further "formal script" block live in `\u{F800}`..`\u{F8FF}` and
+// `\u{FA000}`..`\u{FA0FF}` (see the `"Formal…"` entries in
+// named_characters.rs) — Wolfram uses these as ordinary generic symbol
+// names (e.g. a pure function's own bound variable), so a notebook's box
+// form stores them as the bare character just like the other PUA letters
+// below.
+PrivateUseLetter = _{ '\u{F6B2}'..'\u{F6CB}' | '\u{F770}'..'\u{F789}' | '\u{F6E6}'..'\u{F6FF}' | '\u{F7A4}'..'\u{F7BD}' | '\u{F800}'..'\u{F8FF}' | '\u{FA000}'..'\u{FA0FF}' }
 
 // PatternName is an identifier that will be followed by _ in a Pattern
 // It must start with a letter and can contain letters, digits, but NOT trailing underscores

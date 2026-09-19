@@ -1670,6 +1670,43 @@ mod image_processing {
     );
   }
 
+  // "Noise" adds zero-mean uniform noise of amplitude `a`, unclipped —
+  // structurally the same as GaussianNoise above but with a bounded
+  // [-a, a] draw, so every value stays within `a` of the original.
+  #[test]
+  fn image_effect_noise_bounded_and_reproducible() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Max[Abs[ImageData[ImageEffect[Image[Table[0.5, {5}, {5}]], \
+         {\"Noise\", 0.2}]] - Table[0.5, {5}, {5}]]] <= 0.2"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "ImageDimensions[ImageEffect[Image[Table[0.5, {4}, {5}]], \
+         {\"Noise\", 0.3}]]"
+      )
+      .unwrap(),
+      "{5, 4}"
+    );
+    assert_eq!(
+      interpret(
+        "SeedRandom[42]; \
+         a = ImageData[ImageEffect[Image[Table[0.5, {4}, {4}]], \
+           {\"Noise\", 0.4}]]; \
+         SeedRandom[42]; \
+         b = ImageData[ImageEffect[Image[Table[0.5, {4}, {4}]], \
+           {\"Noise\", 0.4}]]; \
+         a === b"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
   #[test]
   fn image_effect_unknown_effect_unevaluated() {
     clear_state();
@@ -2465,6 +2502,123 @@ mod image_processing {
     );
     assert_eq!(
       interpret("ImageType[ImageConvolve[Image[{{0.1, 0.5}}], {{1}}]]")
+        .unwrap(),
+      "Real32"
+    );
+  }
+
+  // ImageDeconvolve inverts ImageConvolve in the frequency domain (a
+  // regularized inverse filter shared by the "DampedLS"/"Tikhonov"/
+  // "Wiener" methods). A 1×1 identity kernel is the cleanest correctness
+  // check: its DFT is exactly 1 everywhere, so deconvolving with it should
+  // recover the input, up to the tiny default regularization term.
+  #[test]
+  fn image_deconvolve_identity_kernel_recovers_input() {
+    clear_state();
+    assert_eq!(
+      interpret("ImageData[ImageDeconvolve[Image[{{0.1, 0.5, 0.9}}], {{1}}]]")
+        .unwrap(),
+      "{{0.09990009665489197, 0.4995005130767822, 0.8991008996963501}}"
+    );
+    assert_eq!(
+      interpret(
+        "ImageData[ImageDeconvolve[Image[{{0.1, 0.2}, {0.3, 0.4}}], {{1}}]]"
+      )
+      .unwrap(),
+      "{{0.09990009665489197, 0.19980019330978394}, \
+       {0.2997002899646759, 0.39960038661956787}}"
+    );
+  }
+
+  // With `Padding -> "Periodic"` on both sides, deconvolving a manually
+  // (circularly) box-blurred row with the same box kernel recovers the
+  // original row closely — the boundary convention that `ImageConvolve`
+  // itself doesn't expose an option for, so the forward blur here is
+  // computed by hand to match.
+  #[test]
+  fn image_deconvolve_recovers_periodic_box_blur() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImageDeconvolve[Image[{{0.36666666666666664, \
+         0.6333333333333334, 0.36666666666666664, 0.6333333333333334}}], \
+         {{1, 1, 1}}/3, Padding -> \"Periodic\"]]"
+      )
+      .unwrap(),
+      "{{0.8959326148033142, 0.10306838899850845, 0.8959326148033142, \
+       0.10306838899850845}}"
+    );
+  }
+
+  // Method -> {"Tikhonov", λ} takes an explicit regularization parameter
+  // instead of the automatic one; a larger λ damps the inverse filter
+  // more, moving the result further from an exact (unregularized) inverse.
+  #[test]
+  fn image_deconvolve_method_option() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImageDeconvolve[Image[{{0.1, 0.5, 0.9}}], {{1}}, \
+         Method -> {\"Tikhonov\", 0.01}]]"
+      )
+      .unwrap(),
+      "{{0.09900990128517151, 0.49504950642585754, 0.8910890817642212}}"
+    );
+    assert_eq!(
+      interpret(
+        "ImageData[ImageDeconvolve[Image[{{0.1, 0.5, 0.9}}], {{1}}, \
+         Method -> \"Wiener\"]]"
+      )
+      .unwrap(),
+      "{{0.09990009665489197, 0.4995005130767822, 0.8991008996963501}}"
+    );
+  }
+
+  // The iterative methods ("RichardsonLucy", "TSVD", "Hybrid",
+  // "SteepestDescent", "TotalVariation") aren't implemented, so the call
+  // echoes unevaluated rather than silently falling back to a different
+  // method.
+  #[test]
+  fn image_deconvolve_unimplemented_method_echoes_unevaluated() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageDeconvolve[Image[{{0.1, 0.5, 0.9}}], {{1}}, \
+         Method -> \"RichardsonLucy\"]"
+      )
+      .unwrap(),
+      "ImageDeconvolve[-Image-, {{1}}, Method -> RichardsonLucy]"
+    );
+  }
+
+  #[test]
+  fn image_deconvolve_non_image_first_arg() {
+    clear_state();
+    assert_eq!(
+      interpret("ImageDeconvolve[5, {{1}}]").unwrap(),
+      "ImageDeconvolve[5, {{1}}]"
+    );
+  }
+
+  #[test]
+  fn image_deconvolve_preserves_dimensions_channels_and_type() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageDimensions[ImageDeconvolve[Image[{{0.1, 0.5, 0.9}}], {{1}}]]"
+      )
+      .unwrap(),
+      "{3, 1}"
+    );
+    assert_eq!(
+      interpret(
+        "ImageChannels[ImageDeconvolve[Image[{{{1.0, 0.0, 0.0}}}], {{1}}]]"
+      )
+      .unwrap(),
+      "3"
+    );
+    assert_eq!(
+      interpret("ImageType[ImageDeconvolve[Image[{{0.1, 0.5}}], {{1}}]]")
         .unwrap(),
       "Real32"
     );
