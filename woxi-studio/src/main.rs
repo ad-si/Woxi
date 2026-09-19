@@ -7119,6 +7119,74 @@ mod tests {
     );
   }
 
+  /// A Manipulate whose body picks between two `Compile[…]`d
+  /// angle-to-3D-point functions with `Switch` on a `SetterBar`-controlled
+  /// mode, and — in the "combined" mode — plots both curves at once via
+  /// `Through[{f, g}][##]&` alongside a single-curve branch, the way a
+  /// Demonstrations "compare two related space curves" notebook is
+  /// commonly built. A `ButtonBar` loads a preset (radius, count) pair via
+  /// list-destructuring assignment from `Lookup` on an association-style
+  /// rule list built in `Initialization`, and a discrete `Control[…]`
+  /// picks the petal count from an explicit `Range[…]`. This is a
+  /// self-authored, construct-equivalent example (invented names, curve
+  /// formula and presets) — not any specific Demonstration's code, data or
+  /// wording, which is copyrighted.
+  #[test]
+  fn demonstration_guided_switch_manipulate_combines_two_compiled_curves() {
+    let code = r#"Manipulate[
+      Module[{fun, col},
+        fun = Switch[mode, 1, Through[{curveOuter, curveInner}[##]] & , 2,
+          curveOuter, 3, curveInner];
+        col = Switch[mode, 1, Green, 2, Red, 3, Blue];
+        ParametricPlot3D[
+          {If[mode > 1, (Through[{curveOuter, curveInner}[##]] & )[
+             t, radius, petals, offset], {}],
+           fun[t, radius, petals, offset]},
+          {t, -Pi, Pi}, PlotStyle -> col, PlotRange -> 6, Axes -> False]
+      ],
+      {{mode, 1, ""}, {1 -> "both", 2 -> "outer", 3 -> "inner"}, SetterBar},
+      Delimiter,
+      Row[{"preset", ButtonBar[{
+        "wide" :> ({radius, petals} = Lookup[presetTable, "wide"]),
+        "narrow" :> ({radius, petals} = Lookup[presetTable, "narrow"])}]}],
+      {{radius, 0.75, ""}, 0.25, 1.25, 0.0001, ImageSize -> Small,
+        Appearance -> "Labeled"},
+      Control[{{petals, 4, ""}, Range[2, 6]}],
+      {{offset, 0., "offset"}, -1.5, 1.5, 0.0001, Appearance -> "Labeled",
+        Enabled :> (mode > 1)},
+      ControlPlacement -> Left,
+      TrackedSymbols -> True,
+      SynchronousUpdating -> False,
+      SaveDefinitions -> True,
+      Initialization :> (
+        curveOuter[t_, r_, n_, a_] := {r Cos[t] (2 + Sin[n t + a]),
+          r Sin[t] (2 + Sin[n t + a]), Sqrt[Abs[r^2 - Sin[t]^2]]};
+        curveInner[t_, r_, n_, a_] := {r Cos[t] (2 + Sin[n t + a]),
+          r Sin[t] (2 + Sin[n t + a]), -Sqrt[Abs[r^2 - Sin[t]^2]]};
+        presetTable = {"wide" -> {0.9, 3}, "narrow" -> {0.5, 5}};
+      )]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr).expect(
+      "the SetterBar, ButtonBar, discrete Control and labeled sliders \
+       should build a ManipulateState",
+    );
+    assert_eq!(
+      state.error, None,
+      "the Switch/Through/ParametricPlot3D body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the combined-curve branch must render as a picture"
+    );
+    assert_eq!(
+      state.control_placement,
+      manipulate::ControlPlacement::Left,
+      "ControlPlacement -> Left must put the panel beside the output"
+    );
+  }
+
   /// A `SaveDefinitions -> True` Manipulate (the shape a Wolfram
   /// Demonstrations Project notebook downloaded straight from a share link
   /// carries: an Input cell holding the live `Manipulate[…]` source, and an
