@@ -24,6 +24,16 @@ slow-timeout = { period = "60s", terminate-after = 1 }
 filter = 'test(demonstration_three_phase_field_manipulate_opens_with_its_widget)'
 slow-timeout = { period = "60s", terminate-after = 1 }
 
+# `demonstration_gaussian_kernel_manipulate_renders_amplitude_and_phase_grid`
+# builds a `GraphicsGrid` mixing a schematic panel with two `DensityPlot`s of
+# a complex kernel (`Abs` and `Arg`), driven by three continuous sliders with
+# `SaveDefinitions -> True`: ~9.5s standalone in debug builds, close enough
+# to the default 20s timeout to time out under full parallel load. Give it a
+# wider window.
+[[profile.default.overrides]]
+filter = 'test(demonstration_gaussian_kernel_manipulate_renders_amplitude_and_phase_grid)'
+slow-timeout = { period = "60s", terminate-after = 1 }
+
 # `axial_dispersion_manipulate_builds_widget` integrates a ten-equation
 # finite-difference system twice (once to build the widget, once after moving
 # the slider), and the tracer pulse in its forcing term makes NDSolve bisect
