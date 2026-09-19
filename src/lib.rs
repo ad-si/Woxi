@@ -4337,8 +4337,12 @@ fn render_graphics_fc_if_needed(expr: syntax::Expr) -> syntax::Expr {
       let is_3d_mesh = matches!(&args[0], syntax::Expr::List(items)
         if items.first().is_some_and(|v| matches!(v, syntax::Expr::List(c) if c.len() == 3)));
       if is_3d_mesh {
-        functions::graphics::mesh_region_to_graphics3d(&args[0], &args[1])
-          .unwrap_or(expr)
+        functions::graphics::mesh_region_to_graphics3d(
+          &args[0],
+          &args[1],
+          &args[2..],
+        )
+        .unwrap_or(expr)
       } else if let Some(svg) =
         functions::voronoi::mesh_region_to_svg(&args[0], &args[1])
       {

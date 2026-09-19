@@ -6015,8 +6015,28 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     Expr::FunctionCall {
       name: mr_name,
       args: mr_args,
-    } if mr_name == "MeshRegion" && mr_args.len() == 2 => {
-      if let Some(svg) =
+    } if (mr_name == "MeshRegion" || mr_name == "BoundaryMeshRegion")
+      && mr_args.len() >= 2 =>
+    {
+      // A `BoundaryMeshRegion` (e.g. `ConvexHullMesh`'s result) carries a
+      // `Method` option and possibly `MeshCellStyle`/`WorkingPrecision`
+      // too, so it has more than 2 args; a 3D one renders through the
+      // ordinary Graphics3D pipeline instead of the flat mesh renderer.
+      let is_3d_mesh = matches!(&mr_args[0], Expr::List(items)
+        if items.first().is_some_and(|v| matches!(v, Expr::List(c) if c.len() == 3)));
+      if is_3d_mesh {
+        if let Some(Expr::Graphics { ref svg, .. }) =
+          crate::functions::graphics::mesh_region_to_graphics3d(
+            &mr_args[0],
+            &mr_args[1],
+            &mr_args[2..],
+          )
+        {
+          svg.clone()
+        } else {
+          expr_text_svg(expr)
+        }
+      } else if let Some(svg) =
         crate::functions::voronoi::mesh_region_to_svg(&mr_args[0], &mr_args[1])
       {
         svg

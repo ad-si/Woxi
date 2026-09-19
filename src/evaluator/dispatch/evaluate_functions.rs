@@ -4798,8 +4798,10 @@ fn evaluate_function_call_ast_inner(
     return crate::functions::voronoi::voronoi_mesh_ast(args);
   }
 
-  // ConvexHullMesh[{{x1,y1},...}] → convex hull as a BoundaryMeshRegion (2D)
-  if name == "ConvexHullMesh" && args.len() == 1 {
+  // ConvexHullMesh[{{x1,y1},...}, opts...] → convex hull as a
+  // BoundaryMeshRegion (2D or 3D), carrying any trailing options
+  // (e.g. MeshCellStyle) through to the result.
+  if name == "ConvexHullMesh" && !args.is_empty() {
     return crate::functions::convex_hull::convex_hull_mesh_ast(args);
   }
 
