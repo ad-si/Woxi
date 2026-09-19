@@ -6195,3 +6195,79 @@ mod a_wrapped_pattern_argument_still_dispatches {
     );
   }
 }
+
+/// A `SetDelayed` whose formal parameter is a custom head wrapping only
+/// FullForm pattern constructs — `Pattern[name, Blank[…]]`, `Optional[…]` —
+/// with no shorthand (`name_`) anywhere. This is the shape a definition
+/// takes after a round trip through Mathematica's own stored FullForm (e.g.
+/// a Wolfram Demonstrations Project notebook's `SaveDefinitions -> True`
+/// recovery, which reconstructs definitions from the saved expression dump
+/// rather than the original source text) — independently written here, not
+/// copied from any specific notebook.
+///
+/// Regression: `contains_pattern` (src/evaluator/pattern_matching.rs)
+/// recognized `BlankSequence`/`BlankNullSequence`/`Except`/`PatternTest`/
+/// `OptionsPattern`/`Alternatives` as pattern-bearing FunctionCall heads but
+/// not `Blank`, `Pattern`, or `Optional`. A compound custom-head argument
+/// built entirely from those three — `wrapHead[Pattern[a, Blank[]],
+/// Optional[Pattern[b, Blank[Integer]], 1]]` — therefore reported no
+/// pattern at all (every sub-call's own args are themselves plain,
+/// unrecognized identifiers/calls), so the caller treated the whole
+/// argument as a literal to `SameQ`-compare against instead of routing it
+/// through the structural matcher. The definition then matched nothing:
+/// every call was left unevaluated, and inside a `NestList`/`Fold`-style
+/// loop the unevaluated calls nested deeper on every iteration, turning a
+/// sub-second computation into one that never finished.
+mod fullform_only_pattern_in_a_custom_head {
+  use super::*;
+
+  #[test]
+  fn matches_and_binds_both_names() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "wrapCA[wrapHead[Pattern[a, Blank[]], \
+         Optional[Pattern[b, Blank[Integer]], 1]], Pattern[c, Blank[List]]] \
+         := {a, b, c}; \
+         wrapCA[wrapHead[{1, 2, 3}, 5], {9, 9, 9}]"
+      )
+      .unwrap(),
+      "{{1, 2, 3}, 5, {9, 9, 9}}"
+    );
+  }
+
+  /// The `Optional[…]` default still applies when the wrapped call omits
+  /// that argument entirely.
+  #[test]
+  fn the_optional_default_still_applies_when_omitted() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "wrapCA2[wrapHead2[Pattern[a, Blank[]], \
+         Optional[Pattern[b, Blank[Integer]], 1]], Pattern[c, Blank[List]]] \
+         := {a, b, c}; \
+         wrapCA2[wrapHead2[{1, 2, 3}], {9, 9, 9}]"
+      )
+      .unwrap(),
+      "{{1, 2, 3}, 1, {9, 9, 9}}"
+    );
+  }
+
+  /// Repeated application (the `NestList` shape that actually triggered the
+  /// slowdown) resolves to a concrete value at every step rather than
+  /// nesting ever-deeper unevaluated calls.
+  #[test]
+  fn repeated_application_stays_evaluated_at_every_step() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "wrapStep[wrapHead3[Pattern[a, Blank[]], \
+         Optional[Pattern[b, Blank[Integer]], 1]], Pattern[n, Blank[Integer]]] \
+         := n + a + b; \
+         NestList[wrapStep[wrapHead3[10, 2], #1] & , 0, 5]"
+      )
+      .unwrap(),
+      "{0, 12, 24, 36, 48, 60}"
+    );
+  }
+}

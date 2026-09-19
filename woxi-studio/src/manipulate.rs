@@ -623,14 +623,31 @@ impl ManipulateState {
 
   /// The full binding set (visible controls + mutable state) used to
   /// re-evaluate the body and render the display elements.
+  ///
+  /// Two disjoint control rows may share one variable name (see
+  /// `sync_named_siblings`), and mutable state can track a name that also
+  /// has its own visible control; either way the name must appear at most
+  /// once here. `reevaluate_inner` installs these as globals, which
+  /// tolerates a repeated name by just taking the last write, but the
+  /// button/tracking/mutation paths splice this list straight into a
+  /// `Block[{…}, …]` local-variable specification, and Wolfram's `Block`
+  /// rejects a spec that names the same local twice (`Block::dup`) — so an
+  /// un-deduplicated list there silently drops the action instead of
+  /// running it.
   fn bindings(&self) -> Vec<(String, String)> {
-    let mut b: Vec<(String, String)> = self
+    let mut b: Vec<(String, String)> = Vec::new();
+    for (name, code) in self
       .controls
       .iter()
       .filter(|c| c.binds_variable())
       .map(|c| (c.name().to_string(), c.current_code()))
-      .collect();
-    b.extend(self.state.iter().cloned());
+      .chain(self.state.iter().cloned())
+    {
+      match b.iter_mut().find(|(n, _)| *n == name) {
+        Some(slot) => slot.1 = code,
+        None => b.push((name, code)),
+      }
+    }
     b
   }
 

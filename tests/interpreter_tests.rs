@@ -730,6 +730,42 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_formal_symbol_named_characters_parse_as_identifiers() {
+    // `\[FormalA]`..`\[FormalZ]` (and their Greek/capitalized variants) are
+    // Wolfram's private-use-area "formal symbol" glyphs, used as generic
+    // bound-variable names — e.g. a Demonstration's helper writes
+    // `Prepend[#, {\[FormalX], \[FormalY]}]` where a plain pattern would
+    // otherwise need a name. A notebook's box form stores these as the
+    // bare `\u{F817}`/`\u{F818}` characters, not the `\[FormalX]` escape,
+    // so both forms must lex as ordinary identifiers rather than failing
+    // to parse.
+    clear_state();
+    assert_eq!(interpret("Head[\\[FormalX]]").unwrap(), "Symbol");
+    assert_eq!(interpret("\\[FormalX] = 3; \\[FormalX] + 1").unwrap(), "4");
+    clear_state();
+    // The exact shape the notebook uses: a pure function prepending a
+    // generic-named pair ahead of `#`, with no pattern variable involved.
+    assert_eq!(
+      interpret("Prepend[#, {\\[FormalX], \\[FormalY]}] & [{1, 2}]").unwrap(),
+      "{{FormalX, FormalY}, 1, 2}"
+    );
+    clear_state();
+    // The bare glyph form (as a notebook's BoxData actually stores it).
+    assert_eq!(interpret("Head[\u{F817}]").unwrap(), "Symbol");
+    assert_eq!(
+      interpret("{\u{F817}, \u{F818}}").unwrap(),
+      "{\u{F817}, \u{F818}}"
+    );
+    clear_state();
+    // The extended "formal script" block a couple of the rarer variants
+    // (e.g. `\[FormalScriptCapitalA]`) live in.
+    assert_eq!(
+      interpret("Head[\\[FormalScriptCapitalA]]").unwrap(),
+      "Symbol"
+    );
+  }
+
+  #[test]
   fn test_named_character_identifier_keeps_trailing_dollar_signs() {
     // Wolfram's FrontEnd names a Manipulate-tracked variable built from a
     // named character with a trailing `$$` (e.g. `\[Delta]$$`); the whole
@@ -845,6 +881,29 @@ mod interpreter_tests {
     assert!(
       svg.starts_with("<svg width=\"480\""),
       "expected the picked plot (480 wide), got: {}",
+      &svg[..svg.len().min(80)]
+    );
+  }
+
+  /// `TabView[{"first" -> pane1, "second" -> pane2}]` has no single branch
+  /// the way `Switch` does — a real front end keeps every pane's expression
+  /// live and just *displays* the first one until the user clicks another
+  /// tab. Woxi still evaluates every pane eagerly, and a pane that draws a
+  /// picture calls `capture_graphics` as a side effect, so the same
+  /// last-drawn-wins bug applies: the second (last) pane used to win the
+  /// capture buffer no matter which tab a notebook actually opens on.
+  #[test]
+  fn test_tabview_shows_first_tab_not_last_evaluated() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "TabView[{\"first\" -> Plot[Sin[x], {x, 0, 4}, ImageSize -> 320], \
+       \"second\" -> Plot[Cos[x], {x, 0, 4}, ImageSize -> 480]}]",
+    )
+    .unwrap();
+    let svg = r.graphics.expect("expected graphics output");
+    assert!(
+      svg.starts_with("<svg width=\"320\""),
+      "expected the first tab's plot (320 wide), got: {}",
       &svg[..svg.len().min(80)]
     );
   }
@@ -1189,6 +1248,56 @@ mod interpreter_tests {
     assert!(
       svg.contains("rgb(216,216,0)"),
       "the Yellow surface must keep its PlotStyle colour:\n{svg}"
+    );
+  }
+
+  #[test]
+  fn test_directive_with_single_list_argument_applies_its_styles() {
+    // Regression: `Directive[{a, b, …}]` (one List argument, as
+    // `ContourStyle -> Directive[{Thickness[...], RGBColor[...]}]` writes
+    // it) silently applied no style at all — only the flat spelling
+    // `Directive[a, b, …]` worked. `apply_directive` fell through its
+    // `Expr::List` argument to the `_ => false` arm instead of recursing
+    // into the list's items.
+    clear_state();
+    let svg = interpret_with_stdout(
+      "Graphics[{Directive[{Thickness[.02], RGBColor[.25, .43, .82]}], \
+       Circle[{0, 0}, 1]}]",
+    )
+    .unwrap()
+    .graphics
+    .expect("Graphics should produce a graphics SVG");
+    assert!(
+      svg.contains("rgb(64,110,209)"),
+      "Directive[{{…}}] must apply its RGBColor:\n{svg}"
+    );
+    assert!(
+      !svg.contains("rgb(0,0,0)"),
+      "Directive[{{…}}] must not leave the circle black:\n{svg}"
+    );
+  }
+
+  #[test]
+  fn test_show_contour_plot_with_directive_list_contour_style() {
+    // Regression: `Show[ContourPlot[…], Graphics[…]]` where the
+    // ContourPlot's `ContourStyle` is a `Directive[{…}]` (single List
+    // argument) lost its color once merged — the contour lines rendered
+    // black instead of the requested color. `ContourPlot`'s symbolic
+    // `structure` embeds the ContourStyle directive verbatim, so the same
+    // `Directive[{…}]` parsing gap dropped it there too.
+    clear_state();
+    let svg = interpret_with_stdout(
+      "Show[ContourPlot[x^2 + y^2, {x, -2, 2}, {y, -2, 2}, \
+       ContourStyle -> Directive[{Thickness[.01], RGBColor[.25, .43, .82]}], \
+       ContourShading -> None, Axes -> False, Frame -> False], \
+       Graphics[{Black, Circle[{0, 0}, .2]}]]",
+    )
+    .unwrap()
+    .graphics
+    .expect("Show should produce a graphics SVG");
+    assert!(
+      svg.contains("rgb(64,110,209)"),
+      "merged ContourPlot must keep its Directive[{{…}}] ContourStyle color:\n{svg}"
     );
   }
 
@@ -1939,6 +2048,54 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_plot_prolog_draws_under_background_not_behind_it() {
+    // Regression: `Plot`'s Prolog primitives were spliced in right after
+    // the opening `<svg …>` tag, landing *before* the plot's own opaque
+    // background rect (`root.fill(&bg_color)`, drawn by `plotters`) in
+    // document order. Since later SVG elements paint over earlier ones,
+    // that full-canvas rect ended up covering the Prolog entirely instead
+    // of the Prolog sitting on the blank canvas but under the axes/curve —
+    // e.g. a Demonstration's shaded Riemann-sum rectangles under a curve
+    // vanished completely.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Plot[x, {x, 0, 1}, Prolog -> {Red, Line[{{0, 0}, {1, 1}}]}], \"SVG\"]",
+    )
+    .unwrap();
+    let bg_pos = svg.find("<rect").expect("background rect not found");
+    let prolog_pos = svg.find("rgb(255,0,0)").expect("prolog line not drawn");
+    assert!(
+      prolog_pos > bg_pos,
+      "Prolog drawn before (and thus hidden under) the background rect: {svg}"
+    );
+  }
+
+  #[test]
+  fn test_plot_prolog_nested_box_without_marker() {
+    // Regression: a box head nested inside an explicit `\*Head[...]` box
+    // without its own `\*` marker — valid Wolfram linear syntax, since a
+    // further box call stays in "box mode" once already inside one — was
+    // left as literal box-source text instead of being parsed recursively.
+    // A Wolfram Demonstration's axis label
+    // `\!\(\*SuperscriptBox[\(x\), FractionBox[\(p\), \(q\)]]\)` rendered
+    // its superscript as the raw text "FractionBox[p, q]" instead of the
+    // fraction p/q.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Plot[x, {x, 0, 1}, Prolog -> {Text[\"\\!\\(\\*SuperscriptBox[\\(x\\), FractionBox[\\(p\\), \\(q\\)]]\\)\", {0.5, 0.5}]}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      !svg.contains("FractionBox"),
+      "raw box source leaked into SVG: {svg}"
+    );
+    assert!(
+      svg.contains("p/q"),
+      "expected the nested fraction to render as p/q: {svg}"
+    );
+  }
+
+  #[test]
   fn test_graphics_text_renders_inline_box_notation() {
     // A notebook `Text[…]` label can carry its typeset content as inline
     // `\!\(\*…\)` box notation — the front end's linear-syntax form for a
@@ -2344,6 +2501,48 @@ mod interpreter_tests {
       5,
       "expected one <image> per distinct vertex, got: {svg}"
     );
+  }
+
+  #[test]
+  fn test_treeplot_rejects_non_position_second_argument() {
+    // `TreePlot[rules, pos, …]`'s second positional argument must be one of
+    // Top/Bottom/Left/Right/Center. Several older Demonstrations instead
+    // pass a root vertex there (the pre-Graph-object two-argument calling
+    // convention), which wolframscript now rejects with `TreePlot::rp` and
+    // leaves the call unevaluated rather than silently plotting — see the
+    // "Combinatorics of Love from A Midsummer Night's Dream" Demonstration,
+    // whose stored notebook output shows exactly this message.
+    clear_state();
+    let result = interpret("TreePlot[{1 -> 2, 2 -> 3}, 1]").unwrap();
+    assert_eq!(result, "TreePlot[{1 -> 2, 2 -> 3}, 1]");
+    let messages = woxi::get_captured_messages_raw();
+    assert!(
+      messages.iter().any(|m| m
+        == "TreePlot::rp: The second argument 1 of TreePlot must be one of Top, Bottom, Left, Right, or Center."),
+      "expected TreePlot::rp message, got: {messages:?}"
+    );
+  }
+
+  #[test]
+  fn test_treeplot_accepts_valid_position_argument() {
+    clear_state();
+    assert_eq!(
+      interpret("TreePlot[{1 -> 2, 2 -> 3}, Top]").unwrap(),
+      "-Graphics-"
+    );
+    let messages = woxi::get_captured_messages_raw();
+    assert!(messages.is_empty(), "unexpected messages: {messages:?}");
+  }
+
+  #[test]
+  fn test_treeplot_without_position_argument_still_plots() {
+    clear_state();
+    assert_eq!(
+      interpret("TreePlot[{1 -> 2, 2 -> 3}]").unwrap(),
+      "-Graphics-"
+    );
+    let messages = woxi::get_captured_messages_raw();
+    assert!(messages.is_empty(), "unexpected messages: {messages:?}");
   }
 
   #[test]
