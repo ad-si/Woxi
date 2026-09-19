@@ -10635,6 +10635,51 @@ mod join_non_list {
   }
 
   #[test]
+  fn combinatorica_partitions_matches_integer_partitions() {
+    // Combinatorica`Partitions[n] is the legacy package's name for the
+    // same reverse-lexicographic partition enumeration IntegerPartitions[n]
+    // already implements, so it must delegate rather than reimplement it.
+    for n in 0..=6 {
+      assert_eq!(
+        interpret(&format!("Combinatorica`Partitions[{n}]")).unwrap(),
+        interpret(&format!("IntegerPartitions[{n}]")).unwrap()
+      );
+    }
+  }
+
+  #[test]
+  fn combinatorica_partitions_values() {
+    assert_eq!(interpret("Combinatorica`Partitions[0]").unwrap(), "{{}}");
+    assert_eq!(interpret("Combinatorica`Partitions[1]").unwrap(), "{{1}}");
+    assert_eq!(
+      interpret("Combinatorica`Partitions[4]").unwrap(),
+      "{{4}, {3, 1}, {2, 2}, {2, 1, 1}, {1, 1, 1, 1}}"
+    );
+  }
+
+  #[test]
+  fn combinatorica_partitions_indexing_matches_length() {
+    // Regression test: this is the exact usage pattern from the
+    // "Fundamental Theorem of Finite Abelian Groups" Demonstration, which
+    // indexes every element up to Length[Combinatorica`Partitions[n]].
+    // Before Combinatorica`Partitions was implemented it stayed symbolic,
+    // so Length returned 1 (the argument count of the unevaluated call)
+    // and Part 1 of it returned the bare integer n instead of a partition,
+    // silently corrupting the downstream computation.
+    assert_eq!(
+      interpret("Length[Combinatorica`Partitions[4]]").unwrap(),
+      "5"
+    );
+    assert_eq!(
+      interpret(
+        "Table[Combinatorica`Partitions[4][[i]], {i, Length[Combinatorica`Partitions[4]]}]"
+      )
+      .unwrap(),
+      "{{4}, {3, 1}, {2, 2}, {2, 1, 1}, {1, 1, 1, 1}}"
+    );
+  }
+
+  #[test]
   fn permutations_with_duplicates() {
     // Permutations of a multiset should return only distinct permutations.
     // Wolfram: Permutations[{1, 1, 2}] -> {{1, 1, 2}, {1, 2, 1}, {2, 1, 1}}

@@ -1491,6 +1491,38 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_column_item_styled_tableform_typesets() {
+    // Regression: a `Column` item holding `Item[Style[TableForm[…],
+    // size], opts…]` — the shape a Demonstration's Manipulate body uses to
+    // show a computed table below a caption line — printed as the literal
+    // `TableForm[{{…}}]` source instead of an actual grid. `lays_out_a_graphic`
+    // (which decides whether a Column/Item is composed as a picture or
+    // typeset as text) had no case for `TableForm`/`MatrixForm`, even
+    // though `expr_to_svg` already knew how to render one.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Column[{\"Header\", Item[Style[TableForm[{{1, 2}, \
+       {3, 4}}], 18], Alignment -> Center]}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      !svg.contains("TableForm"),
+      "a Column item's TableForm must not leak the head as literal text:\n{svg}"
+    );
+    assert!(
+      svg.contains(">1<")
+        && svg.contains(">2<")
+        && svg.contains(">3<")
+        && svg.contains(">4<"),
+      "the table's cells must render individually:\n{svg}"
+    );
+    assert!(
+      svg.contains("font-size=\"18\""),
+      "the Style[…, 18] wrapping the TableForm must still set its font size:\n{svg}"
+    );
+  }
+
+  #[test]
   fn test_grid_background_explicit_cell_rules_take_priority() {
     // Regression: `Background -> {cols, rows, {{i, j} -> color, …}}` — the
     // three-argument form a Demonstration uses to highlight specific
