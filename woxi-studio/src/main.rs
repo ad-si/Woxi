@@ -7981,6 +7981,63 @@ mod tests {
     );
   }
 
+  /// A coupled `NDSolve` system whose three equations relate the unknowns'
+  /// derivatives implicitly (no equation isolates a single derivative) and
+  /// whose initial conditions are stated as one chained equality shared by
+  /// every unknown (`p[0] == q[0] == r[0] == 0`) — the shape a circuit or
+  /// coupled-oscillator Wolfram Demonstrations Project notebook commonly
+  /// uses to say "everything starts at rest" in one equation rather than
+  /// three (independently written, not copied from any specific one).
+  /// Regression: `Equal` with more than two operands parses to one
+  /// `Comparison` node; the PDE branch of `NDSolve` already expanded such a
+  /// chain into pairwise equations, but the general ODE-system branch
+  /// didn't, so this counted as a single bogus initial-condition equation,
+  /// the equation/function count came up short, and `NDSolve` bailed out
+  /// unevaluated — silently, since the body's `Plot` of an unresolved
+  /// `NDSolve` call renders as a blank graphic rather than an error.
+  #[test]
+  fn manipulate_coupled_ndsolve_chained_initial_condition_renders_plot() {
+    let code = r#"Manipulate[
+      Plot[Evaluate[{p[t], q[t], r[t]} /. First[
+        NDSolve[{
+          p'[t] + q'[t] + r'[t] == rate,
+          p'[t] - q'[t] == 1,
+          q'[t] - r'[t] == 1,
+          p[0] == q[0] == r[0] == 0
+        }, {p, q, r}, {t, 0, 5}]
+      ]], {t, 0, 5}],
+      {{rate, 6}, 0, 12}
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr).expect(
+      "a coupled NDSolve system with a chained initial condition should build a ManipulateState",
+    );
+    assert!(
+      state.error.is_none(),
+      "body should evaluate cleanly: {:?}",
+      state.error
+    );
+    let handle = state
+      .graphics_handle
+      .as_ref()
+      .expect("Plot of the coupled NDSolve solution should render a graphic");
+    let iced::advanced::svg::Data::Bytes(bytes) = handle.data() else {
+      panic!("graphic should be in-memory SVG data, not a file path");
+    };
+    // A `NDSolve` call left unevaluated (because its chained initial
+    // condition wasn't recognized) makes `Plot` of an unresolved symbolic
+    // expression render as an empty `<svg .../>` stub rather than error out
+    // — so the regression this guards against is a suspiciously tiny
+    // graphic, not a missing one.
+    assert!(
+      bytes.len() > 200,
+      "expected an actual plotted curve, got a {}-byte stub: {}",
+      bytes.len(),
+      String::from_utf8_lossy(bytes)
+    );
+  }
+
   /// A `1D`/`2D`/`3D` view-switch body (`If[…]; Which[…]` choosing between
   /// `Plot`/`DensityPlot`/`ParametricPlot3D`) paired with three
   /// `Appearance -> "Labeled"` sliders and a boolean checkbox whose

@@ -931,7 +931,7 @@ fn ndsolve_pde(args: &[Expr]) -> Result<Option<Expr>, InterpreterError> {
     Expr::List(items) => items.to_vec(),
     other => vec![other.clone()],
   };
-  let eq_items = flatten_chained_pde_equalities(&eq_items);
+  let eq_items = flatten_chained_equalities(&eq_items);
   if eq_items.len() != 4 * u_names.len() {
     return Ok(None);
   }
@@ -951,14 +951,13 @@ fn ndsolve_pde(args: &[Expr]) -> Result<Option<Expr>, InterpreterError> {
 /// Expand a chained equality `e0 == e1 == ... == e_{k-1}` (`k > 2`
 /// operands, every operator `==`) into the `k - 1` pairwise equations
 /// `e_i == e_{k-1}` for `i` from `0` to `k - 2`. `NDSolve` demonstrations
-/// commonly use this shorthand to state an initial condition and a
-/// same-valued boundary condition in a single equation, e.g.
-/// `u[x, t0] == u[xmax, t] == c` for both `u[x, t0] == c` (the initial
-/// condition) and `u[xmax, t] == c` (a Dirichlet boundary condition).
-/// Transitivity makes every such pair a valid consequence of the chain, so
-/// this expansion is lossless. Equations that aren't a longer chain pass
-/// through unchanged.
-fn flatten_chained_pde_equalities(items: &[Expr]) -> Vec<Expr> {
+/// commonly use this shorthand — both for a PDE's initial/boundary
+/// conditions (e.g. `u[x, t0] == u[xmax, t] == c`) and for an ODE system's
+/// initial conditions (e.g. `x[0] == y[0] == z[0] == 0`). Transitivity
+/// makes every pairwise equation a valid consequence of the chain, so this
+/// expansion is lossless. Equations that aren't a longer chain pass through
+/// unchanged.
+fn flatten_chained_equalities(items: &[Expr]) -> Vec<Expr> {
   let mut out = Vec::with_capacity(items.len());
   for item in items {
     if let Expr::Comparison {
@@ -1723,7 +1722,7 @@ fn ndsolve_pde_hyperbolic(
     Expr::List(items) => items.to_vec(),
     other => vec![other.clone()],
   };
-  let eq_items = flatten_chained_pde_equalities(&eq_items);
+  let eq_items = flatten_chained_equalities(&eq_items);
   if eq_items.len() != 5 {
     return Ok(None);
   }
@@ -3037,6 +3036,7 @@ fn ndsolve_system(
   // so every level of `List` is flattened rather than just the outermost.
   let mut eq_items: Vec<Expr> = Vec::new();
   flatten_eq_list(&args[0], &mut eq_items);
+  let eq_items = flatten_chained_equalities(&eq_items);
   let mut odes: Vec<Expr> = Vec::new();
   // (function name, derivative order, evaluation point, value) — by name,
   // not index: an eliminated constraint variable shifts the positions in
