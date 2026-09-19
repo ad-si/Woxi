@@ -9612,31 +9612,11 @@ Cell[BoxData[
   fn deployed_demonstration_output_with_stylebox_wrapper_opens_live() {
     let nb_src = r##"Notebook[{
 Cell[CellGroupData[{
-Cell[BoxData[
- RowBox[{"Manipulate", "[",
-  RowBox[{
-   RowBox[{"ListPlot", "[",
-    RowBox[{
-     RowBox[{"Table", "[",
-      RowBox[{
-       RowBox[{
-        RowBox[{"Exp", "[",
-         RowBox[{
-          RowBox[{"-", "decay"}], " ", "k"}], "]"}], " ",
-        RowBox[{"Sin", "[",
-         RowBox[{"freq", " ", "k"}], "]"}]}], ",",
-       RowBox[{"{", RowBox[{"k", ",", "0", ",", "steps"}], "}"}]}], "]"}],
-     ",", RowBox[{"Joined", "\[Rule]", "True"}]}], "]"}], ",",
-   "\[IndentingNewLine]",
-   RowBox[{"{",
-    RowBox[{RowBox[{"{", RowBox[{"steps", ",", "40", ",", "\"\<steps\>\""}], "}"}],
-     ",", "10", ",", "80", ",", "1"}], "}"}], ",",
-   RowBox[{"{",
-    RowBox[{RowBox[{"{", RowBox[{"freq", ",", "0.5`", ",", "\"\<frequency\>\""}], "}"}],
-     ",", "0.1`", ",", "2"}], "}"}], ",",
-   RowBox[{"{",
-    RowBox[{RowBox[{"{", RowBox[{"decay", ",", "0.05`", ",", "\"\<decay\>\""}], "}"}],
-     ",", "0", ",", "0.2`"}], "}"}]}], "]"}]], "Input"],
+Cell[BoxData["Manipulate[
+ ListPlot[Table[Exp[-decay k] Sin[freq k], {k, 0, steps}], Joined -> True],
+ {{steps, 40, \"steps\"}, 10, 80, 1},
+ {{freq, 0.5, \"frequency\"}, 0.1, 2},
+ {{decay, 0.05, \"decay\"}, 0, 0.2}]"], "Input"],
 Cell[BoxData[
  TagBox[
   StyleBox[
@@ -9654,7 +9634,7 @@ Cell[BoxData[
         {{$CellContext`freq$$, 0.5, "frequency"}, 0.1, 2},
         {{$CellContext`decay$$, 0.05, "decay"}, 0, 0.2}},
       "Options" :> {},
-      "DefaultOptions" :> {}],
+      "DefaultOptions" :> {}]],
     DynamicModuleValues:>{}], "Manipulate",
    Deployed->True,
    StripOnInput->False],
