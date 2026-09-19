@@ -5543,6 +5543,18 @@ fn evaluated_wrapper_svg(expr: &Expr) -> Option<String> {
   }
 }
 
+/// A numeric `Pane` size component (`Expr::Integer`/`Expr::Real`). `None`
+/// for `Automatic`, `Full`, or anything else that leaves that dimension
+/// unconstrained, so a size like `{400, Automatic}` is left for the
+/// unconstrained pass-through rather than clipped against a made-up bound.
+pub(crate) fn pane_size_component(expr: &Expr) -> Option<f64> {
+  match expr {
+    Expr::Integer(n) => Some(*n as f64),
+    Expr::Real(r) => Some(*r),
+    _ => None,
+  }
+}
+
 pub(crate) fn expr_to_svg(expr: &Expr) -> String {
   if let Some(svg) = evaluated_wrapper_svg(expr) {
     return svg;
@@ -5554,10 +5566,28 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     // wraps. (The notebook display pipeline already unwraps it — without
     // this, `Export[…, Pane[graphic]]` wrote the expression as text.)
     // `Deploy` is the same: it only makes its content non-selectable.
+    //
+    // A `Pane[content, {width, height}]` fixed-size box is the exception:
+    // the FrontEnd reserves exactly that area and clips content that
+    // doesn't fit (there is no scrollbar in a static export), so leaving
+    // the content at its natural size here would draw it past the box the
+    // rest of the layout already sized around — a Demonstration's guess
+    // panel overflowing into a sliver of raw markup below it.
     Expr::FunctionCall { name, args }
       if (name == "Pane" || name == "Deploy") && !args.is_empty() =>
     {
-      expr_to_svg(&args[0])
+      let inner_svg = expr_to_svg(&args[0]);
+      match (name.as_str(), args.get(1)) {
+        ("Pane", Some(Expr::List(size))) if size.len() == 2 => {
+          match (pane_size_component(&size[0]), pane_size_component(&size[1])) {
+            (Some(w), Some(h)) => {
+              crate::functions::graphics::clip_svg_to_pane_box(&inner_svg, w, h)
+            }
+            _ => inner_svg,
+          }
+        }
+        _ => inner_svg,
+      }
     }
     // `Item[expr, opts…]` is a layout cell; the options place it and what
     // it displays is `expr`.
