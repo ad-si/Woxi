@@ -3202,6 +3202,15 @@ mod plot3d {
           "RevolutionPlot3D[{1 + Sin[t]/4, t}, {t, 0, 2 Pi}]"
         ));
       }
+
+      #[test]
+      fn three_coordinate_curve() {
+        // A curve given as {fx, fy, fz} rather than the plain {r, z} pair —
+        // the fy component sweeps along with fx instead of being ignored.
+        insta::assert_snapshot!(export_svg(
+          "RevolutionPlot3D[{t, t/2, t^2}, {t, 0.5, 2}]"
+        ));
+      }
     }
 
     mod options {
@@ -3453,6 +3462,70 @@ mod plot3d {
       )
       .unwrap();
       assert_eq!(result, "Graphics3D");
+    }
+
+    // A list of radial functions used to error with "no renderable
+    // triangles" (the sampler only ever read the first function) and
+    // ignore PlotStyle entirely. Found via the "Visualizing Atomic
+    // Orbitals" Wolfram Demonstration, whose orbital lobes are drawn as
+    // SphericalPlot3D[{r, -r}, …, PlotStyle -> {colorA, colorB}].
+    mod multi_surface {
+      use super::*;
+
+      #[test]
+      fn list_of_functions_renders() {
+        assert_eq!(
+          interpret(
+            "Head[SphericalPlot3D[{Sin[theta], -Sin[theta]}, \
+             {theta, 0, Pi}, {phi, 0, 2 Pi}]]"
+          )
+          .unwrap(),
+          "Graphics3D"
+        );
+      }
+
+      // Each list item gets its own GraphicsComplex.
+      #[test]
+      fn list_of_functions_has_one_complex_per_surface() {
+        assert_eq!(
+          interpret(
+            "Length[SphericalPlot3D[{Sin[theta], -Sin[theta]}, \
+             {theta, 0, Pi}, {phi, 0, 2 Pi}][[1]]]"
+          )
+          .unwrap(),
+          "2"
+        );
+      }
+
+      #[test]
+      fn plotstyle_changes_the_rendered_fill() {
+        let baseline = export_svg(
+          "SphericalPlot3D[{Sin[theta], -Sin[theta]}, {theta, 0, Pi}, \
+           {phi, 0, 2 Pi}]",
+        );
+        let styled = export_svg(
+          "SphericalPlot3D[{Sin[theta], -Sin[theta]}, {theta, 0, Pi}, \
+           {phi, 0, 2 Pi}, PlotStyle -> {Red, Blue}]",
+        );
+        assert_ne!(baseline, styled, "PlotStyle must change the rendered SVG");
+      }
+
+      // A radial function that only resolves to a number after `θ`/`φ`
+      // are substituted through a *bound variable* — the shape
+      // SphericalHarmonicY-based orbitals take — used to sample as
+      // symbolic everywhere and error with "no renderable triangles"
+      // (the per-point substitution never reached inside the variable's
+      // stored value).
+      #[test]
+      fn body_referencing_a_bound_variable_renders() {
+        clear_state();
+        let result = interpret(
+          "r = Sin[theta]*Cos[phi]; \
+           Head[SphericalPlot3D[r, {theta, 0, Pi}, {phi, 0, 2 Pi}]]",
+        )
+        .unwrap();
+        assert_eq!(result, "Graphics3D");
+      }
     }
   }
 
@@ -4445,6 +4518,93 @@ mod plot3d {
       assert_eq!(plain.lines().filter(|l| l.starts_with("<line")).count(), 0);
     }
 
+    /// `Dashed`/`Dotted`/`DotDashed`/`Dashing`/`AbsoluteDashing` used to be
+    /// silently ignored inside `Graphics3D`: a `Line3D` primitive always
+    /// drew as a solid stroke regardless of the style directives in force,
+    /// even though the same directives dash a 2D `Graphics` line correctly.
+    /// A `Line` is depth-sorted into several subdivided `<line>` elements
+    /// (see `LINE_SUBDIVISIONS`) so occlusion against other geometry comes
+    /// out right; every one of them must carry the dash pattern.
+    #[test]
+    fn graphics3d_dashed_line_is_dashed() {
+      let dashed = export_svg(
+        "Graphics3D[{Gray, Dashed, Line[{{-5,0,0},{5,0,0}}]}, Boxed -> False]",
+      );
+      let lines: Vec<&str> =
+        dashed.lines().filter(|l| l.starts_with("<line")).collect();
+      assert!(!lines.is_empty(), "expected the line to be drawn: {dashed}");
+      assert!(
+        lines
+          .iter()
+          .all(|l| l.contains("stroke-dasharray=\"4.0,4.0\"")),
+        "every subdivided piece must stay dashed: {lines:?}"
+      );
+
+      // Without a dashing directive the line is solid, exactly as before.
+      let solid = export_svg(
+        "Graphics3D[{Gray, Line[{{-5,0,0},{5,0,0}}]}, Boxed -> False]",
+      );
+      assert!(
+        !solid.contains("stroke-dasharray"),
+        "a plain line must not gain a dash pattern: {solid}"
+      );
+    }
+
+    /// `Dotted`/`DotDashed` are shorthands for specific `Dashing` patterns
+    /// (mirroring 2D `Graphics`); `Dashing`/`AbsoluteDashing` set an
+    /// explicit pattern, fractional-of-width or literal pixels
+    /// respectively; and `Dashing[None]` switches a later `Line` back to a
+    /// solid stroke without affecting an earlier dashed one.
+    #[test]
+    fn graphics3d_dashing_variants_match_2d_conventions() {
+      let dotted = export_svg(
+        "Graphics3D[{Dotted, Line[{{-5,0,0},{5,0,0}}]}, Boxed -> False]",
+      );
+      assert!(dotted.contains("stroke-dasharray=\"1.0,4.0\""), "{dotted}");
+
+      let dot_dashed = export_svg(
+        "Graphics3D[{DotDashed, Line[{{-5,0,0},{5,0,0}}]}, Boxed -> False]",
+      );
+      assert!(
+        dot_dashed.contains("stroke-dasharray=\"1.0,4.0,4.0,4.0\""),
+        "{dot_dashed}"
+      );
+
+      // `Dashing[{0.05, 0.05}]` is a fraction of the (default 360px)
+      // image width: 0.05 * 360 = 18px.
+      let fractional = export_svg(
+        "Graphics3D[{Dashing[{0.05,0.05}], Line[{{-5,0,0},{5,0,0}}]}, \
+         Boxed -> False]",
+      );
+      assert!(
+        fractional.contains("stroke-dasharray=\"18.0,18.0\""),
+        "{fractional}"
+      );
+
+      let absolute = export_svg(
+        "Graphics3D[{AbsoluteDashing[{10,3}], Line[{{-5,0,0},{5,0,0}}]}, \
+         Boxed -> False]",
+      );
+      assert!(
+        absolute.contains("stroke-dasharray=\"10.0,3.0\""),
+        "{absolute}"
+      );
+
+      // Turning dashing back off partway through a primitive list leaves
+      // the earlier line dashed and the later one solid.
+      let mixed = export_svg(
+        "Graphics3D[{Dashed, Line[{{-5,0,0},{0,0,0}}], Dashing[None], \
+         Line[{{0,0,0},{5,0,0}}]}, Boxed -> False]",
+      );
+      let dashed_count = mixed
+        .lines()
+        .filter(|l| l.contains("stroke-dasharray"))
+        .count();
+      let total_lines =
+        mixed.lines().filter(|l| l.starts_with("<line")).count();
+      assert!(dashed_count > 0 && dashed_count < total_lines, "{mixed}");
+    }
+
     /// `Opacity` tints a face without touching the outline the default
     /// `EdgeForm` draws around it, so `{Opacity[0], Cuboid[…]}` is the
     /// wireframe idiom. Regression: the outline inherited the face's
@@ -4519,6 +4679,55 @@ mod plot3d {
       assert_eq!(
         scene(&format!("Rotate[{square}, 0., {{0,1,0}}, {{1,0,0}}]")),
         scene(square)
+      );
+    }
+
+    /// `Rotate[Cuboid[...], angle, axis]` used to rotate just the box's two
+    /// corners and re-derive a new axis-aligned box from them — an
+    /// approximation that, for a box thin in two dimensions and long in
+    /// the third, erases the tilt outright at any angle that is not a
+    /// multiple of 90 degrees (at those special angles an axis-aligned box
+    /// rotates to another axis-aligned box, so the approximation happens
+    /// to still be exact — the bug only shows at a generic angle).
+    /// Regression: the "Forces Acting on a Ladder" Demonstration's ladder,
+    /// a `Cuboid` rotated to the ladder's angle, rendered as an upright
+    /// slab with no visible tilt.
+    #[test]
+    fn graphics3d_rotated_cuboid_lies_over() {
+      let pole = "Cuboid[{-0.05, -0.05, -2}, {0.05, 0.05, 2}]";
+      let scene = |body: &str| {
+        format!(
+          "Graphics3D[{body}, Boxed -> False, ViewPoint -> {{0, 0, 10}}, \
+           PlotRange -> {{{{-3, 3}}, {{-3, 3}}, {{-3, 3}}}}]"
+        )
+      };
+      // Looking straight down, a pole standing along z is a tiny dot...
+      let upright = export_svg(&scene(pole));
+      // ...but tipped about the x axis by a generic angle, it lies partway
+      // over into the x-y plane, reaching much further along y.
+      let tipped =
+        export_svg(&scene(&format!("Rotate[{pole}, 1., {{1,0,0}}]")));
+      let y_extent = |svg: &str| -> f64 {
+        let mut min = f64::INFINITY;
+        let mut max = f64::NEG_INFINITY;
+        for cap in svg.split("<polygon points=\"").skip(1) {
+          let coords = cap.split('"').next().unwrap_or("");
+          for pair in coords.split_whitespace() {
+            if let Some(y) = pair.split(',').nth(1)
+              && let Ok(y) = y.parse::<f64>()
+            {
+              min = min.min(y);
+              max = max.max(y);
+            }
+          }
+        }
+        max - min
+      };
+      let (up, tip) = (y_extent(&upright), y_extent(&tipped));
+      assert!(
+        tip > 3.0 * up,
+        "a rotated Cuboid must lie over, not stay an upright \
+         approximation: upright extent {up} vs tipped extent {tip}"
       );
     }
 
@@ -4838,6 +5047,120 @@ mod plot3d {
         )
         .unwrap(),
         "-Graphics3D-"
+      );
+    }
+
+    /// Regression: `Point[…]` inside `Graphics3D` ignored `PointSize`/
+    /// `AbsolutePointSize` entirely and always drew a fixed 3px dot, unlike
+    /// the 2D `Graphics` renderer (which already honors it). Spotted in the
+    /// "Thomson Problem with Central Forces" Demonstration, whose particles
+    /// are drawn with `ListPointPlot3D[…, PlotStyle -> PointSize[0.017]]`.
+    #[test]
+    fn point_size_widens_the_dot() {
+      let default_svg =
+        export_svg("Graphics3D[{Point[{0, 0, 0}], Point[{1, 1, 1}]}]");
+      let sized_svg = export_svg(
+        "Graphics3D[{PointSize[0.05], Point[{0, 0, 0}], Point[{1, 1, 1}]}]",
+      );
+      let radius = |svg: &str| -> f64 {
+        let after = svg.split("r=\"").nth(1).expect("a circle radius");
+        after[..after.find('"').unwrap()].parse().unwrap()
+      };
+      assert!(
+        radius(&sized_svg) > radius(&default_svg) * 2.0,
+        "PointSize[0.05] should draw a visibly larger dot than the default: \
+         default r={}, sized r={}",
+        radius(&default_svg),
+        radius(&sized_svg)
+      );
+    }
+
+    #[test]
+    fn absolute_point_size_is_pixels_at_any_image_size() {
+      let small = export_svg(
+        "Graphics3D[{AbsolutePointSize[10], Point[{0, 0, 0}], \
+        Point[{1, 1, 1}]}, ImageSize -> 200]",
+      );
+      let large = export_svg(
+        "Graphics3D[{AbsolutePointSize[10], Point[{0, 0, 0}], \
+        Point[{1, 1, 1}]}, ImageSize -> 800]",
+      );
+      let radius = |svg: &str| -> f64 {
+        let after = svg.split("r=\"").nth(1).expect("a circle radius");
+        after[..after.find('"').unwrap()].parse().unwrap()
+      };
+      assert_eq!(
+        radius(&small),
+        radius(&large),
+        "AbsolutePointSize must draw the same pixel radius regardless of \
+         ImageSize"
+      );
+    }
+  }
+
+  /// Regression: `ListPointPlot3D[…]` rendered through its own standalone
+  /// scatter camera and never carried a symbolic `structure`, so
+  /// `Show[ListPointPlot3D[…], opts]` silently ignored every option it was
+  /// given (`Axes`, `Boxed`, `BoxRatios`, `PlotRange`, `SphericalRegion`,
+  /// `ViewAngle`, …) and could not merge with other `Graphics3D` content —
+  /// exactly the pattern the "Thomson Problem with Central Forces"
+  /// Demonstration's Manipulate uses to overlay its particles on a
+  /// translucent sphere.
+  mod list_point_plot3d_show_compositing {
+    use super::*;
+
+    #[test]
+    fn honors_axes_and_boxed_false() {
+      let svg = export_svg(
+        "Show[ListPointPlot3D[{{0.3, 0.2, 0.1}, {-0.2, 0.3, -0.1}, \
+        {0.1, -0.3, 0.2}}], Axes -> False, Boxed -> False]",
+      );
+      assert!(
+        !svg.contains("<text"),
+        "Axes -> False, Boxed -> False must draw no tick labels:\n{svg}"
+      );
+    }
+
+    #[test]
+    fn merges_with_a_graphics3d_sphere() {
+      let svg = export_svg(
+        "Show[ListPointPlot3D[{{0.3, 0.2, 0.1}, {-0.2, 0.3, -0.1}, \
+        {0.1, -0.3, 0.2}}], Graphics3D[{Opacity[0.25], Blue, \
+        Sphere[{0, 0, 0}]}]]",
+      );
+      // A rendered Sphere is a mesh of many small filled polygons; the
+      // scatter points alone (no Show) draw only a handful of circles and
+      // no polygons at all.
+      assert!(
+        svg.matches("<polygon").count() > 50,
+        "merging with a Sphere should draw its polygon mesh:\n{svg}"
+      );
+      assert!(
+        svg.contains("<circle"),
+        "the scatter points should still be drawn on top:\n{svg}"
+      );
+    }
+
+    #[test]
+    fn plot_style_point_size_survives_the_merge() {
+      let plain = export_svg(
+        "Show[ListPointPlot3D[{{0.3, 0.2, 0.1}, {-0.2, 0.3, -0.1}}], \
+        Graphics3D[{}]]",
+      );
+      let sized = export_svg(
+        "Show[ListPointPlot3D[{{0.3, 0.2, 0.1}, {-0.2, 0.3, -0.1}}, \
+        PlotStyle -> PointSize[0.06]], Graphics3D[{}]]",
+      );
+      let radius = |svg: &str| -> f64 {
+        let after = svg.split("r=\"").nth(1).expect("a circle radius");
+        after[..after.find('"').unwrap()].parse().unwrap()
+      };
+      assert!(
+        radius(&sized) > radius(&plain) * 2.0,
+        "PlotStyle -> PointSize[…] must still widen the dots once Show \
+         re-renders the merged scene: plain r={}, sized r={}",
+        radius(&plain),
+        radius(&sized)
       );
     }
   }
@@ -5509,6 +5832,91 @@ mod plot3d {
       assert!(
         svg.contains("fill=\"rgb(255,255,255)\""),
         "the frame's Background paints a panel: {svg}"
+      );
+    }
+
+    /// `Text[Framed[Column[{...}]], pos]` boxes a *stacked* label — the
+    /// `Framed` background must grow to cover every line, not just the
+    /// first, and must not be centred on the anchor of the (already
+    /// shifted-up) first line, which would push it too high and leave it
+    /// too short for the lines below.
+    #[test]
+    fn plot_epilog_framed_column_label_box_covers_every_line() {
+      let svg = export_svg(
+        "Plot[Sin[x], {x, 0, 2 Pi}, Epilog -> \
+         Text[Framed[Column[{\"first\", \"second\", \"third\"}], \
+         Background -> White], {Pi, 0}]]",
+      );
+      let rect = svg
+        .split("<rect ")
+        .filter(|r| r.contains("fill=\"rgb(255,255,255)\""))
+        .last()
+        .expect("the Framed background rect");
+      let attr = |name: &str| -> f64 {
+        rect
+          .split_once(&format!("{name}=\""))
+          .and_then(|(_, r)| r.split_once('"'))
+          .and_then(|(v, _)| v.parse().ok())
+          .unwrap_or_else(|| panic!("missing {name} in rect: {rect}"))
+      };
+      let (rect_y, rect_h) = (attr("y"), attr("height"));
+      // Default epilog font size (13pt) at the plot renderer's
+      // RESOLUTION_SCALE (10), 3 lines (2 "extra" beyond the first)
+      // stacked at 1.2x line height each.
+      let (font_size, line_height) = (13.0 * 10.0, 13.0 * 10.0 * 1.2);
+      let expected_h = 2.0 * line_height + font_size;
+      assert!(
+        (rect_h - expected_h).abs() < 1.0,
+        "box must grow by one line_height per extra line, not font_size: \
+         got height {rect_h}, expected {expected_h}: {rect}"
+      );
+      let text = svg
+        .split("<text ")
+        .find(|t| t.contains("first"))
+        .expect("the stacked label");
+      let py: f64 = text
+        .split_once("y=\"")
+        .and_then(|(_, r)| r.split_once('"'))
+        .and_then(|(v, _)| v.parse().ok())
+        .expect("a positioned label");
+      let expected_y = py - font_size / 2.0;
+      assert!(
+        (rect_y - expected_y).abs() < 1.0,
+        "box must start half a line above the first line's own centre, \
+         not be centred on it: got y {rect_y}, expected {expected_y} \
+         (py={py}): {rect}"
+      );
+    }
+
+    /// An Epilog `Text` label may be a `Column` that nests another
+    /// `Column`/`Framed` inside one of its own items — a Demonstration's
+    /// boxed summary of several computed values under a heading, say. Every
+    /// line used to render (each item became its own line via
+    /// `Column`/`Grid` stacking), but a nested stacking construct collapsed
+    /// to one line of its own literal source text, and everything after a
+    /// label's first line was then silently dropped entirely by the Epilog
+    /// `Text` renderer (which only read a `StyledLabel`'s first line).
+    #[test]
+    fn plot_epilog_nested_column_label_stacks_every_line() {
+      let svg = export_svg(
+        "Plot[Sin[x], {x, 0, 2 Pi}, Epilog -> {Text[Style[Column[{\"heading\", \
+         Framed[Column[{Style[\"first\", Blue], Style[\"second\", Red]}]]}], \
+         Center], {Pi, 0}]}]",
+      );
+      assert!(
+        !svg.contains("Column[") && !svg.contains("Framed["),
+        "no label may print its own source: {svg}"
+      );
+      for line in ["heading", "first", "second"] {
+        assert!(
+          svg.contains(line),
+          "every line of the nested Column must render, missing {line:?}: {svg}"
+        );
+      }
+      assert!(
+        svg.contains("fill=\"rgb(0,0,255)\"")
+          && svg.contains("fill=\"rgb(255,0,0)\""),
+        "each nested item keeps its own Style color: {svg}"
       );
     }
 
@@ -12238,6 +12646,19 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       insta::assert_snapshot!(export_svg(
         "ArrayPlot[{{1, 0, 0, 0.3}, {1, 1, 0, 0.3}, {1, 0, 1, 0.7}}, ColorRules -> {1 -> Pink, 0 -> Yellow}]"
       ));
+    }
+
+    #[test]
+    fn array_plot_color_rules_complex_values() {
+      // Regression: ColorRules resolved every cell value and rule key
+      // through `f64` before matching, so non-real values like `I`/`-I`
+      // (which have no real `f64` form) all collapsed to 0.0 and matched
+      // the wrong rule instead of their own.
+      let svg = export_svg(
+        "ArrayPlot[{{0, -I}, {I, 0}}, ColorRules -> {0 -> White, I -> Red, -I -> Green}]",
+      );
+      assert!(svg.contains("fill=\"#FF0000\""), "{svg}"); // I -> Red
+      assert!(svg.contains("fill=\"#00FF00\""), "{svg}"); // -I -> Green
     }
 
     #[test]
@@ -27791,6 +28212,37 @@ mod graphics3d_painters_algorithm_face_subdivision {
 
 mod revolution_plot3d_part_extraction {
   use super::*;
+
+  /// A 3-coordinate curve `{fx, fy, fz}` sweeps the `(fx, fy)` vector around
+  /// the z axis by theta, rather than assuming `fy = 0` the way the plain
+  /// `{r, z}` form does. Regression: only a 2-item list was ever recognized
+  /// as parametric, so a 3-item curve fell into the scalar-function branch,
+  /// failed to reduce a list to a number for every sample, and raised
+  /// "function produced no finite values" instead of rendering.
+  #[test]
+  fn three_coordinate_curve_sweeps_the_fy_component() {
+    clear_state();
+    // At theta = 0 the sweep rotation is the identity, so the point is the
+    // curve's own (fx, fy, fz) unchanged.
+    assert_eq!(
+      interpret(
+        "First[RevolutionPlot3D[{1, 2, 3}, {t, 0, 1}, \
+         {theta, 0, 0}]][[1, 1]]"
+      )
+      .unwrap(),
+      "{1., 2., 3.}"
+    );
+    // At theta = Pi, the rotation negates both fx and fy while leaving fz
+    // untouched: (cos Pi, sin Pi; -sin Pi, cos Pi) = (-1, 0; 0, -1).
+    assert_eq!(
+      interpret(
+        "Round[First[RevolutionPlot3D[{1, 2, 3}, {t, 0, 1}, \
+         {theta, Pi, Pi}]][[1, 1]], 0.001]"
+      )
+      .unwrap(),
+      "{-1., -2., 3.}"
+    );
+  }
 
   /// `First[RevolutionPlot3D[…]]` is the surface itself — a
   /// `GraphicsComplex` in world coordinates — so it can be placed inside

@@ -122,6 +122,18 @@ impl StyledLabel {
   pub(crate) fn extra_line_count(&self) -> usize {
     self.extra_lines.len()
   }
+
+  /// The character count of this label's widest line — `text` is every
+  /// line joined together for a stacked label, so a box sized from it (a
+  /// `Framed` background behind the label, say) would come out far too
+  /// wide for anything but a single-line label.
+  pub(crate) fn max_line_chars(&self) -> usize {
+    std::iter::once(self.svg())
+      .chain(self.extra_lines.iter().cloned())
+      .map(|line| svg_markup_visible_text(&line).chars().count())
+      .max()
+      .unwrap_or(0)
+  }
 }
 
 /// Multiply the absolute lengths in SVG markup — `font-size="N"`, the
@@ -496,6 +508,11 @@ impl ChartLabel {
 pub(crate) fn expr_to_label(e: &Expr) -> Option<String> {
   match e {
     Expr::String(s) => Some(s.clone()),
+    // The bare symbol `None` always means "no label" for a label option
+    // (`AxesLabel`, `FrameLabel`, `ChartLabels`, `PlotLegends`, …) — never
+    // the literal text "None". A quoted `"None"` still goes through the
+    // `Expr::String` arm above and prints as-is.
+    Expr::Identifier(s) if s == "None" => None,
     Expr::Identifier(s) => Some(s.clone()),
     Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_) => {
       Some(expr_to_string(e))
@@ -557,6 +574,24 @@ pub(crate) fn expr_to_label(e: &Expr) -> Option<String> {
         })
         .collect();
       Some(format!("{base}{scripts}"))
+    }
+    // `Subsuperscript[base, sub, sup]` — both scripts in sequence, the same
+    // Unicode-digit approximation `Subscript`/`Superscript` use above (a
+    // Demonstration nesting it, e.g. `Nest[Subsuperscript[#, #, #] &, …]`,
+    // recurses back into this same arm for each level's base).
+    Expr::FunctionCall { name, args }
+      if name == "Subsuperscript" && args.len() == 3 =>
+    {
+      let base = expr_to_label(&args[0])?;
+      let sub = expr_to_label(&args[1])
+        .map(|s| {
+          crate::functions::graphics::to_unicode_script_digits(&s, false)
+        })
+        .unwrap_or_default();
+      let sup = expr_to_label(&args[2])
+        .map(|s| crate::functions::graphics::to_unicode_script_digits(&s, true))
+        .unwrap_or_default();
+      Some(format!("{base}{sub}{sup}"))
     }
     // A number written through one of the formatting wrappers reads as
     // the text that wrapper produces — a Demonstration labels its plot
@@ -3964,6 +3999,18 @@ mod tests {
       (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
       (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
     )
+  }
+
+  #[test]
+  fn expr_to_label_treats_bare_none_as_no_label() {
+    // The bare symbol `None` in a label option (`AxesLabel -> {"t", None}`)
+    // must suppress the label, not print the literal text "None".
+    assert_eq!(expr_to_label(&Expr::Identifier("None".to_string())), None);
+    // A quoted string "None" is a real label and must still print as-is.
+    assert_eq!(
+      expr_to_label(&Expr::String("None".to_string())),
+      Some("None".to_string())
+    );
   }
 
   #[test]

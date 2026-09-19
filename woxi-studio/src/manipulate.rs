@@ -640,7 +640,24 @@ impl ManipulateState {
   /// here and reassembled into one list literal, with each control's
   /// current value substituted at its own (1-based) index; an index no
   /// control covers keeps `0` as a placeholder.
+  ///
+  /// Two disjoint ordinary control rows may also share one variable name
+  /// (see `sync_named_siblings`), and mutable state can track a name that
+  /// also has its own visible control; either way the name must appear at
+  /// most once in the result. `reevaluate_inner` installs these as
+  /// globals, which tolerates a repeated name by just taking the last
+  /// write, but the button/tracking/mutation paths splice this list
+  /// straight into a `Block[{…}, …]` local-variable specification, and
+  /// Wolfram's `Block` rejects a spec that names the same local twice
+  /// (`Block::dup`) — so an un-deduplicated list there silently drops the
+  /// action instead of running it.
   fn bindings(&self) -> Vec<(String, String)> {
+    let mut push_or_update = |b: &mut Vec<(String, String)>, name: String, code: String| {
+      match b.iter_mut().find(|(n, _)| *n == name) {
+        Some(slot) => slot.1 = code,
+        None => b.push((name, code)),
+      }
+    };
     let mut b: Vec<(String, String)> = Vec::new();
     let mut list_groups: Vec<(String, Vec<(usize, String)>)> = Vec::new();
     for c in self.controls.iter().filter(|c| c.binds_variable()) {
@@ -659,7 +676,7 @@ impl ManipulateState {
           };
           group.1.push((*index, c.current_code()));
         }
-        None => b.push((c.name().to_string(), c.current_code())),
+        None => push_or_update(&mut b, c.name().to_string(), c.current_code()),
       }
     }
     for (parent, mut items) in list_groups {
@@ -669,9 +686,11 @@ impl ManipulateState {
       for (index, value) in items {
         parts[index - 1] = value;
       }
-      b.push((parent, format!("{{{}}}", parts.join(", "))));
+      push_or_update(&mut b, parent, format!("{{{}}}", parts.join(", ")));
     }
-    b.extend(self.state.iter().cloned());
+    for (name, code) in self.state.iter().cloned() {
+      push_or_update(&mut b, name, code);
+    }
     b
   }
 
@@ -972,12 +991,16 @@ impl ManipulateState {
     // hidden state or a visible control's own slider/picker.
     for (name, value) in updated_bindings {
       if let Some(slot) = self.state.iter_mut().find(|(n, _)| *n == name) {
-        slot.1 = value;
-        continue;
+        slot.1 = value.clone();
       }
       // Every row bound to this name (a body may reassign a variable that
       // has more than one widget row, e.g. a shared SetterBar pair) moves
-      // together — not just the first.
+      // together — not just the first. A variable can also be tracked in
+      // `self.state` at the same time it has its own visible control (a
+      // Demonstration redeclaring its default via a separate
+      // `{{var, default}, None}` spec alongside the row that already
+      // controls it) — sync both, so the widget's own selection never
+      // drifts from the value the body actually bound.
       for ctrl in &mut self.controls {
         if ctrl.name() == name {
           ctrl.set_current_from_code(&value);
@@ -1332,5 +1355,56 @@ fn format_f64_real(v: f64) -> String {
     format!("{}.", v as i64)
   } else {
     format!("{v}")
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  /// A Demonstrations idiom declares a control's own default
+  /// (`Control[{{n, 2, "n"}, …}]`) and then redeclares the same variable's
+  /// *actual* starting value via a separate, hidden `{{n, 3}, None}` spec —
+  /// so the variable ends up tracked both by its visible control and by
+  /// `ManipulateState::state`. The widget's own selection must still track
+  /// whatever the body actually binds `n` to (3, from the override spec, as
+  /// narrowed by `If[n < from, n = 3]`), not drift to the last entry of its
+  /// choice list the way a stale `current_index` did before the two tracks
+  /// were kept in sync.
+  #[test]
+  fn discrete_control_syncs_with_shadowing_state_override() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[
+        from = Switch[gr, 1, 2, 2, 3];
+        upto = Switch[gr, 1, 4, 2, 4];
+        If[n > upto, n = 2];
+        If[n < from, n = 3];
+        {n, gr},
+        Control[{{n, 2, \"n\"}, Dynamic[Range[from, upto]], Setter}],
+        {{from, 2}, None},
+        {{upto, 5}, None},
+        {{n, 3}, None},
+        {{gr, 2}, None}
+      ]",
+    )
+    .expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+
+    let n_ctrl = state
+      .controls
+      .iter()
+      .find(|c| c.name() == "n")
+      .expect("n control");
+    let n_state = state
+      .state
+      .iter()
+      .find(|(name, _)| name == "n")
+      .map(|(_, v)| v.as_str());
+
+    // The widget's own selection and the shadowing state entry must agree
+    // with each other, and both with the value the body actually bound.
+    assert_eq!(n_ctrl.current_code(), "3");
+    assert_eq!(n_state, Some("3"));
   }
 }

@@ -7076,7 +7076,55 @@ pub fn nonlinear_model_fit_ast(
     vec![model.clone(), param_rules.clone()],
   ))?;
 
-  let assoc = Expr::Association(vec![
+  // "RSquared"/"AdjustedRSquared"/"FitResiduals"/"PredictedResponse" — the
+  // same goodness-of-fit numbers `LinearModelFit` reports, computed here by
+  // evaluating the fitted expression at each data point (nonlinear fits have
+  // no design matrix to read residuals off directly).
+  let data_evaluated = evaluate_expr_to_expr(data)?;
+  let goodness_of_fit = match &data_evaluated {
+    Expr::List(data_list) => extract_fit_data(data_list, "NonlinearModelFit")
+      .ok()
+      .map(|(x_vals, y_vals)| {
+        let n = x_vals.len();
+        let predicted: Vec<f64> = x_vals
+          .iter()
+          .map(|x| {
+            let at_x = crate::syntax::substitute_variable(
+              &fitted_expr,
+              &var_name,
+              &Expr::Real(*x),
+            );
+            evaluate_expr_to_expr(&at_x)
+              .ok()
+              .and_then(|e| try_eval_to_f64(&e))
+              .unwrap_or(f64::NAN)
+          })
+          .collect();
+        let residuals: Vec<f64> = y_vals
+          .iter()
+          .zip(&predicted)
+          .map(|(y, y_hat)| y - y_hat)
+          .collect();
+        let y_mean: f64 = y_vals.iter().sum::<f64>() / n as f64;
+        let ss_tot: f64 = y_vals.iter().map(|y| (y - y_mean).powi(2)).sum();
+        let ss_res: f64 = residuals.iter().map(|r| r.powi(2)).sum();
+        let r_squared = if ss_tot.abs() < 1e-30 {
+          1.0
+        } else {
+          1.0 - ss_res / ss_tot
+        };
+        let n_params = rules.len();
+        let adjusted_r_squared = if n > n_params && ss_tot.abs() > 1e-30 {
+          1.0 - (ss_res / (n - n_params) as f64) / (ss_tot / (n - 1) as f64)
+        } else {
+          r_squared
+        };
+        (residuals, predicted, r_squared, adjusted_r_squared)
+      }),
+    _ => None,
+  };
+
+  let mut assoc = vec![
     (Expr::String("Type".to_string()), id_expr("Nonlinear")),
     (
       Expr::String("FittedExpression".to_string()),
@@ -7095,9 +7143,26 @@ pub fn nonlinear_model_fit_ast(
       Expr::String(var_name),
     ),
     (Expr::String("BestFit".to_string()), fitted_expr),
-  ]);
+  ];
+  if let Some((residuals, predicted, r_squared, adjusted_r_squared)) =
+    goodness_of_fit
+  {
+    assoc.push((
+      Expr::String("FitResiduals".to_string()),
+      Expr::List(residuals.into_iter().map(Expr::Real).collect()),
+    ));
+    assoc.push((
+      Expr::String("PredictedResponse".to_string()),
+      Expr::List(predicted.into_iter().map(Expr::Real).collect()),
+    ));
+    assoc.push((Expr::String("RSquared".to_string()), Expr::Real(r_squared)));
+    assoc.push((
+      Expr::String("AdjustedRSquared".to_string()),
+      Expr::Real(adjusted_r_squared),
+    ));
+  }
 
-  Ok(call("FittedModel", vec![assoc]))
+  Ok(call("FittedModel", vec![Expr::Association(assoc)]))
 }
 
 /// `LinearModelFit[{X, y}]` — design-matrix form. Fits `y ≈ X · β` directly,

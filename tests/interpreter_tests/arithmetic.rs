@@ -146,6 +146,35 @@ mod arithmetic {
     }
 
     #[test]
+    fn exact_irrational_times_inexact_complex_numericizes() {
+      // An exact irrational factor like Sqrt[2] (Power[2, 1/2]) combined
+      // with an inexact Complex[…] factor previously stayed symbolic:
+      // try_extract_complex_float had no case for Complex[re, im] or
+      // Power[base, exp], so the numeric-contagion check in Times (which
+      // requires every factor to extract as a float) silently gave up.
+      assert_eq!(
+        interpret("Sqrt[2] * (1.0 + 2.0*I)").unwrap(),
+        "1.414213562373095 + 2.82842712474619*I"
+      );
+      // An all-exact product is unaffected and stays symbolic.
+      assert_eq!(
+        interpret("Sqrt[2] * (1 + 2*I)").unwrap(),
+        "Sqrt[2]*(1 + 2*I)"
+      );
+    }
+
+    #[test]
+    fn complex_with_zero_imaginary_part_is_real_for_numeric_purposes() {
+      // Complex[re, 0.0] — the shape numeric cancellation leaves behind —
+      // counts as the real number `re` for callers of try_eval_to_f64 (e.g.
+      // a plot's per-point sampler), matching wolframscript treating it as
+      // real rather than complex.
+      assert_eq!(interpret("Floor[Complex[3.5, 0.0]]").unwrap(), "3");
+      // A genuinely complex number floors component-wise, unaffected.
+      assert_eq!(interpret("Floor[Complex[3.5, 1.0]]").unwrap(), "3 + I");
+    }
+
+    #[test]
     fn whole_number_real() {
       // Whole-number reals keep trailing dot
       assert_eq!(interpret("1.0").unwrap(), "1.");

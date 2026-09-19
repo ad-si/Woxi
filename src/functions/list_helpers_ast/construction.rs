@@ -1,3 +1,4 @@
+use super::utilities::expr_to_f64;
 #[allow(unused_imports)]
 use super::utilities::*;
 #[allow(unused_imports)]
@@ -1808,6 +1809,112 @@ fn parse_sparse_dims(expr: &Expr) -> Option<Vec<usize>> {
   }
 }
 
+/// When `SparseArray[rules]` is given with no explicit dimensions and some
+/// rule is a bare `Band[start] -> value`, infer the matrix dimensions that
+/// rule implies (and the dimensions any plain position rules imply) so the
+/// bands can be expanded before falling back to the normal dims-inference
+/// path. A band's extent is taken from `value`'s length when no explicit
+/// end (`Band[start, end] -> value`) is given. Returns `None` when `data`
+/// has no bare `Band` rule, so the caller keeps its previous behavior.
+fn infer_dims_from_band_rules(data: &Expr) -> Option<Vec<usize>> {
+  let items: Vec<Expr> = match data {
+    Expr::List(items) => items.to_vec(),
+    rule @ Expr::Rule { .. } => vec![rule.clone()],
+    _ => return None,
+  };
+  if items.is_empty() || !items.iter().all(|it| matches!(it, Expr::Rule { .. }))
+  {
+    return None;
+  }
+  let is_band_rule = |it: &Expr| {
+    matches!(it, Expr::Rule { pattern, .. }
+      if matches!(pattern.as_ref(), Expr::FunctionCall { name, .. } if name == "Band"))
+  };
+  if !items.iter().any(is_band_rule) {
+    return None;
+  }
+
+  let mut rank: Option<usize> = None;
+  let mut max_pos: Vec<usize> = Vec::new();
+  let bump_rank =
+    |r: usize, rank: &mut Option<usize>, max_pos: &mut Vec<usize>| -> bool {
+      match rank {
+        None => {
+          *rank = Some(r);
+          *max_pos = vec![0usize; r];
+          true
+        }
+        Some(rk) => *rk == r,
+      }
+    };
+
+  for item in &items {
+    let Expr::Rule {
+      pattern,
+      replacement,
+    } = item
+    else {
+      return None;
+    };
+    if let Expr::FunctionCall {
+      name,
+      args: band_args,
+    } = pattern.as_ref()
+      && name == "Band"
+      && !band_args.is_empty()
+    {
+      let start: Vec<i128> = match &band_args[0] {
+        Expr::List(pos) => {
+          pos.iter().map(expr_to_i128).collect::<Option<_>>()?
+        }
+        other => vec![expr_to_i128(other)?],
+      };
+      if start.is_empty() || start.iter().any(|&p| p < 1) {
+        return None;
+      }
+      if !bump_rank(start.len(), &mut rank, &mut max_pos) {
+        return None;
+      }
+      let end: Vec<i128> = if band_args.len() >= 2 {
+        match &band_args[1] {
+          Expr::List(pos) if pos.len() == start.len() => {
+            pos.iter().map(expr_to_i128).collect::<Option<_>>()?
+          }
+          _ => return None,
+        }
+      } else if let Expr::List(vals) = replacement.as_ref() {
+        let len = vals.len() as i128;
+        start.iter().map(|&s| s + len - 1).collect()
+      } else {
+        return None;
+      };
+      for (i, &e) in end.iter().enumerate() {
+        if e < 1 {
+          return None;
+        }
+        max_pos[i] = max_pos[i].max(e as usize);
+      }
+    } else {
+      let pos_vec: Vec<i128> = match pattern.as_ref() {
+        Expr::List(pos) => {
+          pos.iter().map(expr_to_i128).collect::<Option<_>>()?
+        }
+        other => vec![expr_to_i128(other)?],
+      };
+      if pos_vec.is_empty() || pos_vec.iter().any(|&p| p < 1) {
+        return None;
+      }
+      if !bump_rank(pos_vec.len(), &mut rank, &mut max_pos) {
+        return None;
+      }
+      for (i, &p) in pos_vec.iter().enumerate() {
+        max_pos[i] = max_pos[i].max(p as usize);
+      }
+    }
+  }
+  Some(max_pos)
+}
+
 /// Expand `Band[{i, j}, ...] -> v` rules into concrete `{i+k, j+k} -> v`
 /// rules using `dims`. Other rules pass through unchanged. Returns None
 /// when nothing in `data` references Band (so the caller can use the
@@ -1856,14 +1963,26 @@ fn expand_band_rules(data: &Expr, dims: &[usize]) -> Option<Expr> {
         })
         .min()
         .unwrap_or(0);
+      // `v` supplies one value per band position (in order) when it's a
+      // list of the right length; otherwise every position gets `v` itself
+      // (`Band[{i,j}] -> c` broadcasts the scalar `c` along the band).
+      let per_position_value: Option<&crate::ExprList> =
+        match replacement.as_ref() {
+          Expr::List(vals) if vals.len() == steps_possible => Some(vals),
+          _ => None,
+        };
       for k in 0..steps_possible {
         let pos: Vec<Expr> = start
           .iter()
           .map(|&s| Expr::Integer((s + k) as i128))
           .collect();
+        let value = match per_position_value {
+          Some(vals) => vals[k].clone(),
+          None => replacement.as_ref().clone(),
+        };
         expanded.push(Expr::Rule {
           pattern: Box::new(Expr::List(pos.into())),
-          replacement: replacement.clone(),
+          replacement: Box::new(value),
         });
       }
       continue;
@@ -2270,12 +2389,28 @@ pub fn sparse_array_normalize_ast(
   // explicit, pre-expand and substitute back into args[0].
   let explicit_dims: Option<Vec<usize>> =
     args.get(1).and_then(parse_sparse_dims);
+  // With no explicit dims, a bare `Band[start] -> list` rule still implies
+  // dimensions (from its start position and the value list's length) —
+  // infer them so the band can be expanded the same way an explicit-dims
+  // call would.
+  let band_inferred_dims: Option<Vec<usize>> = if explicit_dims.is_none() {
+    infer_dims_from_band_rules(&args[0])
+  } else {
+    None
+  };
   let expanded_data: Expr;
   let data: &Expr = if let Some(ref dims) = explicit_dims {
     if let Some(expanded) = expand_pattern_rule(&args[0], dims)
       .or_else(|| expand_band_rules(&args[0], dims))
       .or_else(|| expand_pattern_rule_list(&args[0], dims))
     {
+      expanded_data = expanded;
+      &expanded_data
+    } else {
+      &args[0]
+    }
+  } else if let Some(ref dims) = band_inferred_dims {
+    if let Some(expanded) = expand_band_rules(&args[0], dims) {
       expanded_data = expanded;
       &expanded_data
     } else {

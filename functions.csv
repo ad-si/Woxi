@@ -604,7 +604,7 @@ ColorFunctionScaling,Option to scale color function input,✅,none,4.0,559
 Values,Returns the values of an association (optionally wrapping each with a head),✅,pure,10.0,560
 Cuboid,3D graphics primitive representing a cuboid,✅,none,2.0,561
 AbsoluteTime,Total seconds since January 1 1900,✅,contextual,2.0,562
-ExampleData,Serves the bundled example datasets by type and name: the list of types; the entries of one type; a dataset itself; or one of its properties (NetworkGraph data is bundled with the classic empirical networks; TestImage only bundles its name catalogue rather than pixel data),✅,pure,6.0,563
+ExampleData,Serves the bundled example datasets by type and name: the list of types; the entries of one type; a dataset itself; or one of its properties (NetworkGraph data is bundled with the classic empirical networks; TestImage and Geometry3D only bundle their name catalogues rather than pixel or mesh data),✅,pure,6.0,563
 TwoWayRule,Represent a two-way transformation rule,✅,none,11.2,564
 Initialization,Option for initialization code,✅,none,6.0,565
 StringCases,Returns substrings matching a pattern (threading over a list of strings; supports a count limit and the Overlaps and IgnoreCase options),✅,pure,5.1,566
@@ -843,7 +843,7 @@ RandomGraph,Generate a random graph,✅,contextual,8.0,810
 SphericalHarmonicY,Spherical harmonic function Y_l^m(theta phi),✅,pure,1.0,811
 TagSet,Defines an evaluated upvalue assignment associated with a tag symbol,✅,stateful,1.0,812
 Interpreter,Interprets a string as a typed value (Integer/Real/Number/Boolean/String) or resolves a Country name to an Entity,✅,pure,10.0,813
-ConvexHullMesh,Convex hull of a 2D point set as a BoundaryMeshRegion,✅,pure,10.0,814
+ConvexHullMesh,Convex hull of a 2D or 3D point set as a BoundaryMeshRegion,✅,pure,10.0,814
 RevolutionAxis,Option for axis of revolution,✅,none,7.0,815
 Above,Placement symbol representing above position,✅,pure,1.0,816
 DifferentialD,Differential d notation symbol,✅,none,3.0,819
@@ -1932,7 +1932,7 @@ IsomorphicGraphQ,Test whether two graphs are isomorphic,✅,pure,8.0,1930
 Resampling,Signal processing option for resampling methods,🚫,,8.0,1930
 DumpSave,Serialization of definitions to a binary file,🚫,,3.0,1932
 RecordLists,Data import option for structuring records as lists,🚫,,2.0,1932
-ImageEffect,Applies an effect to an image (noise effects: SaltPepperNoise and GaussianNoise),✅,contextual,7.0,1935
+ImageEffect,Applies an effect to an image (noise effects: SaltPepperNoise, GaussianNoise and Noise),✅,contextual,7.0,1935
 VertexDelete,Delete one or more vertices from a graph along with their incident edges,✅,pure,8.0,1935
 FileNameSplit,Splits a file name into a list of path components,✅,pure,7.0,1938
 SmallCircle,Symbolic small-circle operator with Unicode display,✅,pure,3.0,1938
@@ -2351,7 +2351,7 @@ RegionEmbeddingDimension,Dimension of the space a region is embedded in,✅,pure
 TriangulateMesh,mesh generation,🚫,None,10.0,2367
 CloseKernels,parallel computing,🚫,None,7.0,2371
 DefaultBaseStyle,styling option,🚫,None,7.0,2371
-ImageDeconvolve,image processing,🚫,None,8.0,2371
+ImageDeconvolve,Restores an image blurred by a point spread function (spectral methods DampedLS/Tikhonov/Wiener; iterative methods TSVD/Hybrid/RichardsonLucy/SteepestDescent/TotalVariation not implemented),🚧,pure,8.0,2371
 WaveletPhi,Scaling function phi of a wavelet family evaluated at a point,✅,pure,8.0,2371
 FrameBox,Low-level box construct for framed content display,✅,pure,3.0,2374
 IrreduciblePolynomialQ,Tests whether a polynomial is irreducible over the rationals,✅,pure,1.0,2374
@@ -3223,7 +3223,7 @@ CreateUUID,"Generates a random RFC 4122 version-4 UUID as a string; CreateUUID["
 DeviceWrite,,🚫,,10.0,3280
 EstimatorGains,,,,8.0,3280
 FeatureExtract,,🚫,,11.0,3280
-FittedModel,,,,7.0,3280
+FittedModel,"Symbolic fitted-model object returned by LinearModelFit/NonlinearModelFit; supports property access such as model[""RSquared""] and evaluation at a point",✅,pure,7.0,3280
 IncidenceList,Edges incident to a vertex in EdgeList order,✅,pure,9.0,3280
 NameQ,Test if a string is a defined symbol name,✅,pure,1.0,3280
 ParticleData,,🚫,,6.0,3280
@@ -3479,7 +3479,7 @@ BooleanVariables,Boolean variables of an expression (canonically sorted; opaque 
 ChannelListen,,🚫,,11.0,3566
 CompleteGraphQ,Tests whether a graph is complete (every pair adjacent exactly once; a digraph needs both arcs of every pair),✅,pure,8.0,3566
 DGaussianWavelet,Derivative-of-Gaussian continuous wavelet of order n,✅,pure,8.0,3566
-DMSString,Formats an angle or lat/lon pair as a degrees-minutes-seconds string; accepts scalars and {d;m;s} triples and GeoPosition and DMS strings,✅,pure,7.0,3566
+DMSString,"Formats an angle or lat/lon pair as a degrees-minutes-seconds string; accepts scalars and {d;m;s} triples and GeoPosition and DMS strings; an optional ""NS""/""EW""-style direction spec appends a hemisphere letter to a scalar angle instead of dropping its sign",✅,pure,7.0,3566
 DefaultNewCellStyle,,🚫,,3.0,3566
 GenericCylindricalDecomposition,,,,6.0,3566
 IgnoringInactive,,,,10.0,3566

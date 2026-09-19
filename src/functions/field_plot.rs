@@ -2869,7 +2869,10 @@ pub fn list_contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// A cell in an ArrayPlot matrix: either a numeric value or an explicit color.
 #[derive(Clone)]
 enum ArrayCell {
-  Value(f64),
+  // The evaluated cell value, kept alongside its `f64` approximation so
+  // `ColorRules` can match it exactly (e.g. `I`/`-I`, which have no
+  // real-valued `f64` form and would otherwise collapse to `0.0`).
+  Value(f64, Expr),
   Color(GfxColor),
 }
 
@@ -3002,7 +3005,10 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   // Parse options
-  let mut color_rules: Vec<(f64, GfxColor)> = Vec::new();
+  // Kept as a rules list (rather than pre-resolved to `f64`) so a cell can
+  // be matched by `Replace` semantics — exact values like `I`/`-I` (which
+  // have no `f64` form) and patterns alike, not just real numbers.
+  let mut color_rules: Option<Expr> = None;
   let mut mesh = false;
   let mut color_function: Option<String> = None;
   // `ColorFunction -> f` for an `f` that isn't a recognized named gradient
@@ -3024,25 +3030,10 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       match name.as_str() {
         "ColorRules" => {
-          if let Expr::List(rules) = replacement.as_ref() {
-            for rule in rules {
-              if let Expr::Rule {
-                pattern: rp,
-                replacement: rr,
-              } = rule
-              {
-                let rp_eval =
-                  evaluate_expr_to_expr(rp).unwrap_or_else(|_| *rp.clone());
-                if let Some(val) = try_eval_to_f64(&rp_eval) {
-                  let rr_eval =
-                    evaluate_expr_to_expr(rr).unwrap_or_else(|_| *rr.clone());
-                  if let Some(color) = parse_color(&rr_eval) {
-                    color_rules.push((val, color));
-                  }
-                }
-              }
-            }
-          }
+          color_rules = Some(
+            evaluate_expr_to_expr(replacement)
+              .unwrap_or_else(|_| replacement.as_ref().clone()),
+          );
         }
         "Mesh" => match replacement.as_ref() {
           Expr::Identifier(v) if v == "True" || v == "All" => mesh = true,
@@ -3088,12 +3079,13 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           if let Some(color) = parse_color(&v) {
             ArrayCell::Color(color)
           } else {
-            ArrayCell::Value(try_eval_to_f64(&v).unwrap_or(0.0))
+            let f = try_eval_to_f64(&v).unwrap_or(0.0);
+            ArrayCell::Value(f, v)
           }
         })
         .collect();
       for cell in &cells {
-        if let ArrayCell::Value(v) = cell
+        if let ArrayCell::Value(v, _) = cell
           && v.is_finite()
         {
           v_min = v_min.min(*v);
@@ -3148,19 +3140,24 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             (color.g.clamp(0.0, 1.0) * 255.0).round() as u8,
             (color.b.clamp(0.0, 1.0) * 255.0).round() as u8,
           ),
-          ArrayCell::Value(val) => {
-            // Check ColorRules first
-            let mut found = None;
-            for (rule_val, rule_color) in &color_rules {
-              if (*val - *rule_val).abs() < f64::EPSILON {
-                found = Some((
+          ArrayCell::Value(val, cell_expr) => {
+            // Check ColorRules first — matched with the same `Replace`
+            // semantics as `/.` (exact value or pattern), not `f64`
+            // equality, so non-real cell values (`I`, `-I`, …) match too.
+            let found = color_rules.as_ref().and_then(|rules| {
+              crate::evaluator::pattern_matching::apply_replace_all_ast(
+                cell_expr, rules,
+              )
+              .ok()
+              .and_then(|replaced| parse_color(&replaced))
+              .map(|rule_color| {
+                (
                   (rule_color.r.clamp(0.0, 1.0) * 255.0).round() as u8,
                   (rule_color.g.clamp(0.0, 1.0) * 255.0).round() as u8,
                   (rule_color.b.clamp(0.0, 1.0) * 255.0).round() as u8,
-                ));
-                break;
-              }
-            }
+                )
+              })
+            });
             found.unwrap_or_else(|| {
               let range = v_max - v_min;
               let t = if range.abs() < f64::EPSILON {

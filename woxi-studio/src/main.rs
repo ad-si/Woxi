@@ -5196,14 +5196,25 @@ fn instantiate_stored_manipulate(
   if statements.len() != 1 {
     return None;
   }
-  let expr = woxi::interpret_to_expr(&statements[0]).ok()?;
   // `Manipulate[…, SaveDefinitions -> True]` embeds the definitions its
   // body depends on in the stored output's Initialization, because the
   // Manipulate's own `Initialization` option is absent — the helper
   // definitions live in a separate "Initialization Code" cell instead. Run
-  // the recovered copy once (Wolfram's SynchronousInitialization) before
-  // instantiating, so the widget works right when the notebook opens —
-  // before any of the notebook's definition cells have been evaluated.
+  // the recovered copy once (Wolfram's SynchronousInitialization) *before*
+  // evaluating the Manipulate call itself, so the widget works right when
+  // the notebook opens — before any of the notebook's definition cells
+  // have been evaluated. This must happen first: a variable spec bound
+  // that reads one of those helpers (`{{n, 4}, 1, Length[helperList], 1}`)
+  // is resolved speculatively while the Manipulate call is evaluated
+  // (see `manipulate_ast`), so evaluating it while `helperList` is still
+  // undefined bakes a wrong literal (`Length[helperList]` on an undefined
+  // symbol is `0`) permanently into the returned expression — too late
+  // for a same-name definition made a moment later to fix.
+  //
+  // Check for the Manipulate's own `Initialization :> …` option against
+  // the *unevaluated* parse tree — parsing alone doesn't evaluate the
+  // held Manipulate call, so it can't trigger that same premature bound
+  // resolution.
   //
   // Wolfram embeds this very same `Initialization:>(…)` shape in the box
   // dump for *any* Manipulate that carries its own `Initialization :> …`
@@ -5214,8 +5225,11 @@ fn instantiate_stored_manipulate(
   // duplicate rule (its Module locals shadow differently in FullForm).
   // Only fall back to the stored copy when the live source truly has none
   // of its own.
-  let has_own_initialization =
-    woxi::functions::graphics::manipulate_has_own_initialization(&expr);
+  let has_own_initialization = woxi::parse_to_expr(&statements[0])
+    .ok()
+    .is_some_and(|parsed| {
+      woxi::functions::graphics::manipulate_has_own_initialization(&parsed)
+    });
   if !has_own_initialization
     && let Some(init) =
       woxi::notebook::extract_saved_initialization(stored_output)
@@ -5235,6 +5249,7 @@ fn instantiate_stored_manipulate(
     }
     let _ = woxi::interpret(&init);
   }
+  let expr = woxi::interpret_to_expr(&statements[0]).ok()?;
   let mut state = manipulate::ManipulateState::from_expr(&expr)?;
   // The live source's own spec defaults may be stale — the dump's
   // "Variables" clause is whatever the widget's controls actually sat at
@@ -7001,6 +7016,47 @@ fn strip_svg_wrapper(svg: &str) -> &str {
 mod tests {
   use super::*;
 
+  /// A `SaveDefinitions -> True` Manipulate (the shape a Wolfram
+  /// Demonstrations Project notebook downloaded straight from a share link
+  /// carries: an Input cell holding the live `Manipulate[…]` source, and an
+  /// Output cell holding the evaluated `DynamicModuleBox[…]` dump, whose
+  /// `Initialization :> (…)` embeds the helper definitions the body and
+  /// control panel depend on because the Manipulate's own `Initialization`
+  /// option is absent) whose control-panel bound reads one of those helpers
+  /// (`{{n, 2}, 1, Length[helperList], 1}`), independently written here to
+  /// mirror that shape rather than copied from any specific Demonstration.
+  /// Regression: `instantiate_stored_manipulate` evaluated the Manipulate
+  /// call (which resolves such a bound immediately) *before* running the
+  /// recovered initialization, so `Length[helperList]` was resolved against
+  /// the still-undefined `helperList` — `0`, since `Length` of an
+  /// undefined symbol has no parts — and that wrong bound was baked into
+  /// the returned expression, permanently collapsing the slider's range
+  /// no matter what the initialization defined a moment later.
+  #[test]
+  fn instantiate_stored_manipulate_resolves_save_definitions_bound() {
+    let code = "Manipulate[helperList[[n]], \
+      {{n, 2}, 1, Length[helperList], 1}, SaveDefinitions -> True]";
+    let stored = "DynamicModuleBox[{$CellContext`n$$ = 2}, \
+      DynamicBox[…],\n\
+      Initialization:>($CellContext`helperList = {10, 20, 30, 40, 50}; \
+      Typeset`initDone$$ = True)]";
+    let state = instantiate_stored_manipulate(code, stored)
+      .expect("instantiate_stored_manipulate should build a widget");
+    assert_eq!(state.error, None);
+    match &state.controls[0] {
+      manipulate::ControlState::Continuous { min, max, .. } => {
+        assert_eq!(
+          (*min, *max),
+          (1.0, 5.0),
+          "the slider's max must be the helper list's real length (5), \
+           not a stale 0 from resolving Length[helperList] before the \
+           recovered initialization ran"
+        );
+      }
+      other => panic!("expected a continuous control, got {other:?}"),
+    }
+  }
+
   /// A Manipulate whose control panel is a custom `Grid` mixing an embedded
   /// `Control[…]` cell with a `Dynamic[…]` caption cell that assembles a
   /// subscripted symbol (e.g. an atomic-orbital or isotope-style label) via
@@ -7128,6 +7184,77 @@ mod tests {
       state.error
     );
     assert_eq!(state.text_output.as_deref(), Some("hexagon"));
+  }
+
+  /// A `Button[…]` action alongside two disjoint `SetterBar` rows that
+  /// share one control variable — a "reset" button next to a
+  /// coarse/fine (or split) picker for the same underlying setting, as a
+  /// Wolfram Demonstrations Project notebook's curve-fitting or
+  /// model-picker panel commonly pairs (independently written, not copied
+  /// from any specific one). Regression: `ManipulateState::bindings()` listed
+  /// the shared variable once per control row, so a button press built
+  /// `Block[{shape = …, shape = …, …}, action; {…}]` to run the action —
+  /// and Wolfram's `Block` rejects a local spec naming the same variable
+  /// twice (`Block::dup`), which made `apply_manipulate_button_action`
+  /// silently drop the update instead of running it. The button appeared to
+  /// do nothing.
+  #[test]
+  fn manipulate_button_action_with_disjoint_setter_bar_siblings() {
+    let code = "Manipulate[\
+      Which[shape == 1, \"circle\", shape == 2, \"square\", shape == 3, \"triangle\"], \
+      Button[\"reset\", shape = 1], \
+      {{shape, 2, \"\"}, {1 -> \"circle\", 2 -> \"square\"}, ControlType -> SetterBar}, \
+      {{shape, 2, \"\"}, {3 -> \"triangle\"}, ControlType -> SetterBar}\
+      ]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the shared-variable SetterBar Manipulate must build a widget");
+    assert_eq!(state.text_output.as_deref(), Some("square"));
+
+    // Move away from the button's target value first, via the row that has
+    // no button for it at all, so the button press is the only thing that
+    // can bring it back.
+    let shape_rows: Vec<usize> = state
+      .controls
+      .iter()
+      .enumerate()
+      .filter(|(_, c)| c.name() == "shape")
+      .map(|(i, _)| i)
+      .collect();
+    assert_eq!(
+      shape_rows.len(),
+      2,
+      "expected two SetterBar rows sharing `shape`: {:?}",
+      state.controls
+    );
+    let third_idx = shape_rows[1];
+    if let manipulate::ControlState::Discrete {
+      current_index,
+      overflow,
+      ..
+    } = &mut state.controls[third_idx]
+    {
+      *current_index = 0;
+      *overflow = None;
+    }
+    state.apply_tracking(third_idx);
+    state.reevaluate();
+    assert_eq!(state.text_output.as_deref(), Some("triangle"));
+
+    let action = state
+      .controls
+      .iter()
+      .find_map(|c| match c {
+        manipulate::ControlState::Button { action, .. } => Some(action.clone()),
+        _ => None,
+      })
+      .expect("the reset Button control");
+    state.apply_button_action(&action);
+    assert_eq!(
+      state.text_output.as_deref(),
+      Some("circle"),
+      "the Button's action must actually run even though `shape` has two \
+       control rows, not silently no-op"
+    );
   }
 
   /// A Manipulate whose body calls a `Compile`d helper with bare
@@ -7266,6 +7393,60 @@ mod tests {
     assert!(
       state.graphics_handle.is_some(),
       "the escape-time grid should render as a graphic"
+    );
+  }
+
+  /// A generator-matrix Manipulate: an `Initialization`-defined family of
+  /// small complex-valued matrices (`gen[k]`, built with `KroneckerProduct`
+  /// from `{{0, -I}, {I, 0}}`-style factors) is shown with `ArrayPlot`,
+  /// colored via `ColorRules` keyed on the matrices' actual `0`/`I`/`-I`/`1`/
+  /// `-1` entries, with `Mesh -> True` and a second slider whose upper bound
+  /// tracks the first (`Dynamic[size$$]`) plus `SaveDefinitions -> True` —
+  /// the general shape a higher-dimensional Clifford/Dirac-algebra Wolfram
+  /// Demonstrations Project notebook uses (independently written here, not
+  /// copied from any specific one). Regression: `ArrayPlot`'s `ColorRules`
+  /// resolved every rule key and matrix cell through `f64` before matching,
+  /// so non-real values like `I`/`-I` (which have no real `f64` form) all
+  /// collapsed to `0.0` and matched the `0 -> ...` rule instead of their
+  /// own — the rendered widget showed a single flat color instead of the
+  /// intended four-color matrix.
+  #[test]
+  fn manipulate_array_plot_color_rules_match_complex_matrix_entries() {
+    let code = r#"Manipulate[
+      If[k > size, k = size];
+      ArrayPlot[
+        gen[k, size],
+        ColorFunction -> Hue,
+        ColorRules -> {0 -> White, I -> Red, -I -> Green, 1 -> Blue, -1 -> Yellow},
+        Mesh -> True
+      ],
+      {{size, 4, "size"}, 2, 6, 1, Appearance -> "Labeled"},
+      {{k, 2, "index"}, 1, Dynamic[size], 1, Appearance -> "Labeled"},
+      SaveDefinitions -> True,
+      Initialization :> (
+        base[0] = {{1, 0}, {0, 1}};
+        base[1] = {{0, 1}, {1, 0}};
+        base[2] = {{0, -I}, {I, 0}};
+        gen[1, n_] := KroneckerProduct @@ Table[base[1], {n/2}];
+        gen[j_, n_] /; j > 1 := KroneckerProduct[
+          Sequence @@ Table[base[1], {n/2 - Ceiling[j/2]}],
+          base[Mod[j, 2] + 1],
+          Sequence @@ Table[base[0], {Ceiling[j/2] - 1}]
+        ];
+      )
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr).expect(
+      "a KroneckerProduct-built complex matrix fed to ArrayPlot should build a ManipulateState",
+    );
+    assert_eq!(
+      state.error, None,
+      "ArrayPlot must render the generator matrix"
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the ArrayPlot should render as a graphic"
     );
   }
 
@@ -8428,6 +8609,54 @@ mod tests {
     assert_eq!(current(&state), 3.0, "starts at its explicit initial value");
     state.advance_animation();
     assert_eq!(current(&state), 1.0, "steps past max wrap back to min");
+  }
+
+  #[test]
+  fn manipulate_bare_sibling_bound_resolves_without_dynamic_wrapper() {
+    // A combinatorics-style Demonstration pattern (independently written,
+    // not copied from any specific one): a control's upper bound counts
+    // some combination of another control's value, written as a bare
+    // expression rather than `Dynamic[…]` — `{{pick, 1, "pick"}, 1,
+    // Length[Subsets[Range[n], {2}]], 1}`. With `n` unbound, evaluating
+    // that bound doesn't fail — `Subsets` on the unevaluated `Range[n]`
+    // treats it as a single-element set and returns `{}`, so `Length`
+    // silently comes back `0` — so the Manipulate's own held-echo pass
+    // (`process_manipulate_var_spec`) must recognize the bound still names
+    // a sibling control and leave it alone rather than baking in that wrong
+    // literal, exactly like a `Dynamic[…]`-wrapped bound already does.
+    let code = r#"Manipulate[pick,
+      {{n, 4, "count"}, 3, 8, 1},
+      {{pick, 1, "pick"}, 1, Length[Subsets[Range[n], {2}]], 1}]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let mut state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("two sliders should build a ManipulateState");
+
+    let bounds = |s: &manipulate::ManipulateState| match &s.controls[1] {
+      manipulate::ControlState::Continuous { min, max, .. } => (*min, *max),
+      other => panic!("pick should be a slider: {other:?}"),
+    };
+    // n starts at 4: C(4, 2) = 6 pairs.
+    assert_eq!(
+      bounds(&state),
+      (1.0, 6.0),
+      "the bare sibling-referencing bound must resolve against n's initial \
+       value, not silently collapse to 0..1"
+    );
+
+    // Raise n to 6: C(6, 2) = 15, and the bound must follow it live.
+    if let manipulate::ControlState::Continuous { current, .. } =
+      &mut state.controls[0]
+    {
+      *current = 6.0;
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert_eq!(
+      bounds(&state),
+      (1.0, 15.0),
+      "the bare sibling bound must track n after it changes"
+    );
   }
 
   #[test]
@@ -17049,6 +17278,79 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`showCap$$ = False}, \"\\[Ellipsis]\
     );
   }
 
+  /// End-to-end regression for the "Typeset Sierpinski Sieve" Demonstration's
+  /// shape: a `Graphics[Text[…], …]` whose label is `Nest[Subsuperscript[#,
+  /// #, #] &, symbol, depth]` — each recursion level wraps the *whole*
+  /// previous level in a fresh sub-/superscript pair, which is the
+  /// fractal-like typeset pattern the Demonstration is named for. The one
+  /// control is a discrete stepped slider (`{{var, init, "label"}, lo, hi,
+  /// step}` with `Appearance -> "Labeled"`).
+  ///
+  /// `graphics_text_content` (the flattener a `Text[…]` primitive's label
+  /// goes through before it is drawn) folded `Subscript`/`Superscript` into
+  /// their Unicode script form but had no arm for a bare `Subsuperscript`,
+  /// so `Nest` building one fell through to its literal `Subsuperscript[…]`
+  /// source text instead of typesetting. Fixed by adding `Subsuperscript`
+  /// to that arm (and to the sibling `expr_to_label`, `expr_to_svg_markup`
+  /// and `estimate_display_width` — the same head's label/markup/width
+  /// paths) rather than leaving it to print its own source.
+  ///
+  /// The Manipulate is written here rather than lifted from the published
+  /// notebook.
+  #[test]
+  fn nested_subsuperscript_notebook_builds_its_widget() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[\nGraphics[\nText[Nest[Subsuperscript[#, #, #] &, \"\\[CapitalPsi]\", depth], {0, 0}],\nImageSize -> 300\n],\n{{depth, 1, \"recursion depth\"}, 1, 4, 1, Appearance -> \"Labeled\"}\n]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`depth$$ = 1}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "the nested typeset label must build: {:?}",
+      widget.error
+    );
+    assert!(widget.graphics_handle.is_some(), "the label must draw");
+
+    let names: Vec<&str> = widget
+      .controls
+      .iter()
+      .map(|c| match c {
+        manipulate::ControlState::Discrete { name, .. } => name.as_str(),
+        manipulate::ControlState::Continuous { name, .. } => name.as_str(),
+        other => panic!("unexpected control: {other:?}"),
+      })
+      .collect();
+    assert_eq!(names, ["depth"]);
+
+    let render = |depth: u32| {
+      woxi::interpret_with_stdout(&format!("depth = {depth};\n{}", widget.body))
+        .expect("the body must render")
+        .graphics
+        .expect("the body must produce a graphic")
+    };
+    // Each recursion level must actually nest — not just repeat the same
+    // text unchanged — so the picture must differ as the depth control
+    // moves, and keep differing at the next level too.
+    let depth1 = render(1);
+    let depth2 = render(2);
+    let depth3 = render(3);
+    assert_ne!(depth1, depth2, "the recursion depth control must matter");
+    assert_ne!(depth2, depth3, "each extra level of nesting must matter");
+    // The bug this guards against: the literal `Subsuperscript[…]` source
+    // leaking into the picture instead of typesetting.
+    assert!(
+      !depth2.contains("Subsuperscript"),
+      "the nested scripts must typeset, not print their source: {depth2}"
+    );
+  }
+
   /// End-to-end regression for the "Chaos and Order in the Damped Forced
   /// Pendulum in a Plane" Demonstration: it integrates the damped driven
   /// pendulum `θ'' == -(g/l) Sin[θ] - γ θ' + a Cos[ω t]` from a grid of
@@ -20161,7 +20463,11 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 1}, DynamicBox[\[Ellipsis]]]"
         assert_eq!(values.as_slice(), ["1", "2", "3", "4", "5", "6", "7"]);
         assert_eq!(*current_index, 0);
         assert!(!popup, "ControlType -> Setter must not force a dropdown");
-        assert!(!setter_bar, "an unforced Setter is not a SetterBar");
+        assert!(
+          *setter_bar,
+          "ControlType -> Setter must force the button row just like \
+           SetterBar does, per setter_control_type_forces_the_bar_regardless_of_choice_count"
+        );
       }
       other => panic!("expected a single Setter control, got {other:?}"),
     }
@@ -21907,6 +22213,32 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`nmax$$ = 10}, DynamicBox[\[Ellipsis
     // helper$$ falls back to the embedded uncompiled `Function[{x}, x^2]`
     // applied to n$$'s initial value 3.
     assert_eq!(state.text_output.as_deref(), Some("9"));
+  }
+
+  /// A `RevolutionPlot3D` curve given as `{fx, fy, fz}` — three components,
+  /// not the plain `{r, z}` pair — is the Demonstrations idiom for a curve
+  /// built from `Sqrt`/trig pieces that the author never bothered to reduce
+  /// to a single radius expression. Before the fix, `revolution_plot3d_ast`
+  /// only recognized a 2-item list as parametric and silently fell through
+  /// to its scalar-function branch for anything else, which then failed to
+  /// evaluate the 3-item list to a single number and reported "no finite
+  /// values" for every sample — so a Manipulate body built around such a
+  /// curve raised an evaluation error instead of rendering.
+  #[test]
+  fn revolution_plot3d_accepts_a_three_coordinate_curve() {
+    let code = r#"Manipulate[
+      Graphics3D[RevolutionPlot3D[
+        {Sqrt[2] scale/2, 0, i/12}, {i, 1, 13}, {v, 0.2, 2.8}][[1]]],
+      {scale, 0.5, 1}]"#;
+    let expr = woxi::interpret_to_expr(code).unwrap();
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("must build a widget");
+    assert!(
+      state.error.is_none(),
+      "the 3-coordinate curve must evaluate: {:?}",
+      state.error
+    );
+    assert!(state.graphics_handle.is_some());
   }
 
   /// A synthetic "throw a dart at a target" Manipulate in the shape the
@@ -26750,6 +27082,124 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k1$$ = 1}, \"\\[Ellipsis]\"]"], "Ou
       slider_count, 3,
       "each list element must get its own slider: {:?}",
       state.controls
+    );
+  }
+
+  #[test]
+  fn setter_control_type_forces_the_bar_regardless_of_choice_count() {
+    // Regression: the `ControlType` reference page documents "Setter or
+    // SetterBar" (and "RadioButton or RadioButtonBar") as interchangeable
+    // settings, but only the "…Bar" spelling forced the full row of
+    // buttons here — the bare `Setter`/`RadioButton` spelling fell through
+    // to the automatic SetterBar/PopupMenu choice-count-and-width heuristic
+    // (`renders_as_setter_bar`), which a many-choice, long-label spec like
+    // this one (independently written here, not copied from any specific
+    // Demonstration) flips to a dropdown even though the author explicitly
+    // asked for a bar of buttons.
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[mood, \
+       {{mood, \"curious\", \"mood\"}, \
+        {\"curious\", \"delighted\", \"skeptical\", \"astonished\", \
+         \"nostalgic\", \"triumphant\", \"wistful\"}, \
+        ControlType -> Setter}]",
+    )
+    .unwrap();
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("the many-choice Setter Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    match &state.controls[0] {
+      manipulate::ControlState::Discrete {
+        setter_bar, popup, ..
+      } => {
+        assert!(
+          *setter_bar,
+          "an explicit ControlType -> Setter must force the button row \
+           just like SetterBar does, however many choices there are"
+        );
+        assert!(!*popup, "Setter must never render as a dropdown");
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+  }
+
+  /// End-to-end regression for the shape a "Polaritons in Semiconducting
+  /// Organic Films"-style Demonstration has: a `Module` defines a chain of
+  /// mutually referencing helper functions with `SetDelayed` (one function's
+  /// body reads a variable that is only assigned, via plain `Set`, right
+  /// before the function is invoked), derives a physical parameter through
+  /// `D`/`ReplaceAll` on a symbolic 2×2 `Eigenvalues` result, and switches
+  /// between a `Plot` and a `Text[TableForm[…]]` summary via `Switch` on a
+  /// discrete control. Both a continuous slider and the discrete mode picker
+  /// drive the body.
+  ///
+  /// The Manipulate is written here rather than lifted from the published
+  /// notebook.
+  #[test]
+  fn polariton_dispersion_notebook_switches_between_plot_and_table() {
+    let code = r#"Manipulate[
+      Module[{disp, tdat, tabtxt, hfun, exfun, epfun, meff, gap, leff, mmix},
+        mmix = dc^(1/2);
+        gap = 2*Pi*hbar*cc/(len*mmix);
+        meff = 2*Pi*mmix/(cc*len);
+        exfun[k_] := Ex + hbar^2/(2*me)*k^2;
+        epfun[k_] := gap + hbar^2/(2*meff)*k^2;
+        hfun[k_] := Eigenvalues[{{exfun[k], rabi/2}, {rabi/2, epfun[k]}}];
+        leff = First[1/ReplaceAll[D[hfun[k], {k, 2}], k -> 0]];
+        tabtxt = {{"Rabi frequency", rabi, "eV"}, {"binding energy", 0.012, "eV"}};
+        tdat = Text[TableForm[tabtxt, TableHeadings -> {None, {"var", "value", "unit"}}]];
+        disp = Plot[{exfun[k/1000]/eV, epfun[k/1000]/eV}, {k, -10, 10}];
+        Switch[mode, 1, disp, 2, tdat]
+      ],
+      {{mode, 1, ""}, {1 -> "plot", 2 -> "table"}},
+      {{len, 2500, "L"}, 1800, 3000, 0.01},
+      {{dc, 2.99, "dielectric"}, 1, 10, 0.01},
+      {{rabi, 0.15, "rabi"}, 0.1, 0.3, 0.01},
+      Initialization :> (hbar = 1; cc = 137; me = 6.82; eV = 1/27.2; Ex = 3.1/27.2)
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let mut state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("the module chain must build a ManipulateState");
+    assert!(
+      state.error.is_none(),
+      "the mutually referencing helper functions must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the default Plot branch must render as a picture"
+    );
+
+    // Switch the discrete `mode` control to the table branch.
+    let mode_idx = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "mode")
+      .unwrap();
+    if let manipulate::ControlState::Discrete { current_index, .. } =
+      &mut state.controls[mode_idx]
+    {
+      *current_index = 1;
+    }
+    state.reevaluate();
+    assert!(
+      state.error.is_none(),
+      "the table branch must also evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "Text[TableForm[…]] must render as a typeset picture, not fall back \
+       to the raw text echo: text_output={:?}",
+      state.text_output
+    );
+    assert_eq!(
+      state.text_output, None,
+      "a picture result must not also carry a text fallback"
     );
   }
 }

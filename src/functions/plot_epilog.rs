@@ -624,13 +624,6 @@ fn render_item(
           // `Style[…]` around the content sets the text's own size and
           // colour; without one the epilog's directives still apply.
           let styled = crate::functions::chart::parse_styled_label(body);
-          // A label carrying structure (`Subscript[N, D]`) is typeset into
-          // SVG markup; a plain one goes through the same path, which
-          // escapes it.
-          let label = styled.as_ref().map_or_else(
-            || svg_escape_text(&expr_to_output(body)),
-            super::chart::StyledLabel::svg,
-          );
           let font_size =
             styled.as_ref().and_then(|s| s.font_size).unwrap_or(13.0)
               * area.scale;
@@ -638,12 +631,39 @@ fn render_item(
             Some(c) => format!("fill=\"{}\"", c.to_svg_rgb()),
             None => style.fill_attrs(),
           };
-          let (px, py) = (area.px(x), area.py(y));
+          let (px, mut py) = (area.px(x), area.py(y));
+          // A `Column`/`Grid` label (a Demonstration's boxed summary of
+          // several computed values, say) stacks below its first line; the
+          // whole block is centred on the anchor the way a single line
+          // would be, so the first line moves up by half the extra height.
+          let line_height = font_size * 1.2;
+          let extra_lines = styled
+            .as_ref()
+            .map_or(0, super::chart::StyledLabel::extra_line_count)
+            as f64;
+          py -= extra_lines * line_height / 2.0;
+          // A label carrying structure (`Subscript[N, D]`) is typeset into
+          // SVG markup; a plain one goes through the same path, which
+          // escapes it. Further lines (if any) become stacked tspans below
+          // the first instead of being silently dropped.
+          let label = styled.as_ref().map_or_else(
+            || svg_escape_text(&expr_to_output(body)),
+            |s| s.svg_scaled_stacked(area.scale, px, line_height),
+          );
           if is_framed {
-            let text_w = styled.as_ref().map_or(0, |s| s.text.chars().count())
+            let text_w = styled
+              .as_ref()
+              .map_or(0, super::chart::StyledLabel::max_line_chars)
               as f64
               * font_size
               * 0.6;
+            // `py` is the first line's own center (shifted up above), so
+            // the box starts half a line above it and grows by one more
+            // `line_height` per extra line — not `py`'s center outward,
+            // which would leave it too short and too high once the label
+            // stacks below `py`.
+            let box_h = extra_lines * line_height + font_size;
+            let box_y = py - font_size / 2.0;
             let background = option_value(frame_opts, "Background")
               .and_then(parse_color)
               .map_or_else(
@@ -663,9 +683,8 @@ fn render_item(
               None => " stroke=\"rgb(0,0,0)\"".to_string(),
             };
             out.push_str(&format!(
-              "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{text_w:.1}\" height=\"{font_size:.1}\" fill=\"{background}\"{stroke}/>\n",
+              "<rect x=\"{:.1}\" y=\"{box_y:.1}\" width=\"{text_w:.1}\" height=\"{box_h:.1}\" fill=\"{background}\"{stroke}/>\n",
               px - text_w / 2.0,
-              py - font_size / 2.0,
             ));
           }
           out.push_str(&format!(
