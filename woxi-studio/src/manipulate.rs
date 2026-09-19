@@ -652,7 +652,9 @@ impl ManipulateState {
   /// (`Block::dup`) — so an un-deduplicated list there silently drops the
   /// action instead of running it.
   fn bindings(&self) -> Vec<(String, String)> {
-    let mut push_or_update = |b: &mut Vec<(String, String)>, name: String, code: String| {
+    let push_or_update = |b: &mut Vec<(String, String)>,
+                          name: String,
+                          code: String| {
       match b.iter_mut().find(|(n, _)| *n == name) {
         Some(slot) => slot.1 = code,
         None => b.push((name, code)),
