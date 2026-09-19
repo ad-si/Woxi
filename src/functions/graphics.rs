@@ -11106,6 +11106,30 @@ fn parse_explicit_box(cs: &[char], pos: usize) -> (Expr, usize) {
   )
 }
 
+/// Detect a nested box call written *without* its own `\*` marker, e.g. the
+/// `FractionBox[\(p\), \(q\)]` inside `\!\(\*SuperscriptBox[\(x\),
+/// FractionBox[\(p\), \(q\)]]\)`: once linear syntax is already inside an
+/// explicit box's argument list, a further box head needs no marker of its
+/// own to stay in "box mode" — only a `\(...\)` group re-enters ordinary
+/// text. Every box head conventionally ends in `Box`, so that suffix (on an
+/// identifier immediately followed by `[`) is what distinguishes this case
+/// from plain text that merely starts with a capital letter.
+fn bare_box_head_at(cs: &[char], i: usize) -> Option<(Expr, usize)> {
+  if !cs[i].is_ascii_uppercase() {
+    return None;
+  }
+  let mut j = i;
+  while j < cs.len() && (cs[j].is_alphanumeric() || cs[j] == '$') {
+    j += 1;
+  }
+  let name: String = cs[i..j].iter().collect();
+  if name.ends_with("Box") && cs.get(j) == Some(&'[') {
+    Some(parse_explicit_box(cs, i))
+  } else {
+    None
+  }
+}
+
 /// Parse a sequence of box-notation units (plain runs, `\(...\)` groups and
 /// `\*Head[...]` explicit boxes) into a list of box Exprs.
 fn parse_box_units(cs: &[char]) -> Vec<Expr> {
@@ -11165,6 +11189,14 @@ fn parse_box_units(cs: &[char]) -> Vec<Expr> {
         }
         _ => {}
       }
+    }
+    if let Some((e, ni)) = bare_box_head_at(cs, i) {
+      if !plain.is_empty() {
+        res.push(Expr::String(std::mem::take(&mut plain)));
+      }
+      res.push(e);
+      i = ni;
+      continue;
     }
     plain.push(cs[i]);
     i += 1;

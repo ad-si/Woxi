@@ -1939,6 +1939,54 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_plot_prolog_draws_under_background_not_behind_it() {
+    // Regression: `Plot`'s Prolog primitives were spliced in right after
+    // the opening `<svg …>` tag, landing *before* the plot's own opaque
+    // background rect (`root.fill(&bg_color)`, drawn by `plotters`) in
+    // document order. Since later SVG elements paint over earlier ones,
+    // that full-canvas rect ended up covering the Prolog entirely instead
+    // of the Prolog sitting on the blank canvas but under the axes/curve —
+    // e.g. a Demonstration's shaded Riemann-sum rectangles under a curve
+    // vanished completely.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Plot[x, {x, 0, 1}, Prolog -> {Red, Line[{{0, 0}, {1, 1}}]}], \"SVG\"]",
+    )
+    .unwrap();
+    let bg_pos = svg.find("<rect").expect("background rect not found");
+    let prolog_pos = svg.find("rgb(255,0,0)").expect("prolog line not drawn");
+    assert!(
+      prolog_pos > bg_pos,
+      "Prolog drawn before (and thus hidden under) the background rect: {svg}"
+    );
+  }
+
+  #[test]
+  fn test_plot_prolog_nested_box_without_marker() {
+    // Regression: a box head nested inside an explicit `\*Head[...]` box
+    // without its own `\*` marker — valid Wolfram linear syntax, since a
+    // further box call stays in "box mode" once already inside one — was
+    // left as literal box-source text instead of being parsed recursively.
+    // A Wolfram Demonstration's axis label
+    // `\!\(\*SuperscriptBox[\(x\), FractionBox[\(p\), \(q\)]]\)` rendered
+    // its superscript as the raw text "FractionBox[p, q]" instead of the
+    // fraction p/q.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Plot[x, {x, 0, 1}, Prolog -> {Text[\"\\!\\(\\*SuperscriptBox[\\(x\\), FractionBox[\\(p\\), \\(q\\)]]\\)\", {0.5, 0.5}]}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      !svg.contains("FractionBox"),
+      "raw box source leaked into SVG: {svg}"
+    );
+    assert!(
+      svg.contains("p/q"),
+      "expected the nested fraction to render as p/q: {svg}"
+    );
+  }
+
+  #[test]
   fn test_graphics_text_renders_inline_box_notation() {
     // A notebook `Text[…]` label can carry its typeset content as inline
     // `\!\(\*…\)` box notation — the front end's linear-syntax form for a
