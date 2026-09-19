@@ -20023,6 +20023,17 @@ fn spec_marks_locator(items: &[Expr]) -> bool {
 /// the bare graphics primitive placed among ordinary primitives in a
 /// `Graphics[…]` list. Both drive their variable interactively the same
 /// way, so both promote it to a visible control below.
+///
+/// A `Locator[Dynamic[var[[i]]], …]` — the puzzle/jigsaw Demonstrations
+/// idiom for `Table[Locator[Dynamic[pieces[[i]]], …], {i, n}]`, one Locator
+/// per element of a hidden `ControlType -> None` list of points — drives
+/// the *whole* list `var`, not a single scalar, so it is recorded under
+/// `var`'s own name with no callback (the promoted control ends up a
+/// multi-point `Locator`, which has no write-back slot to carry one). Only
+/// the first such marker for a given base variable counts, exactly as for
+/// the bare-identifier form, so a second Table of Locators reusing the same
+/// indexed variable for another purpose (e.g. a rotation handle) does not
+/// override it.
 fn collect_body_locator_callbacks(
   expr: &Expr,
 ) -> Vec<(String, Option<String>)> {
@@ -20035,11 +20046,24 @@ fn collect_body_locator_callbacks(
             args: dargs,
           }) = args.first()
           && dname == "Dynamic"
-          && let Some(Expr::Identifier(var)) = dargs.first()
-          && !found.iter().any(|(n, _)| n == var)
         {
-          let callback = dargs.get(1).map(crate::syntax::expr_to_input_form);
-          found.push((var.clone(), callback));
+          match dargs.first() {
+            Some(Expr::Identifier(var))
+              if !found.iter().any(|(n, _)| n == var) =>
+            {
+              let callback =
+                dargs.get(1).map(crate::syntax::expr_to_input_form);
+              found.push((var.clone(), callback));
+            }
+            Some(Expr::Part { expr: base, .. }) => {
+              if let Expr::Identifier(var) = base.as_ref()
+                && !found.iter().any(|(n, _)| n == var)
+              {
+                found.push((var.clone(), None));
+              }
+            }
+            _ => {}
+          }
         }
         for a in args {
           walk(a, found);
