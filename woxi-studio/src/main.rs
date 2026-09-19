@@ -17537,6 +17537,130 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`depth$$ = 1}, \"\\[Ellipsis]\"]"], 
     );
   }
 
+  /// End-to-end regression for the "Tiling with Pentominos" Demonstration:
+  /// a jigsaw of draggable pieces, each with its own `Locator` inside a
+  /// `Table`, all sharing one hidden `ControlType -> None` list variable
+  /// (`Table[Locator[Dynamic[positions[[i]]], …], {i, n}]`).
+  ///
+  /// `collect_body_locator_callbacks` (the scan that promotes a hidden
+  /// `ControlType -> None` variable to a visible control when an in-body
+  /// `Locator[Dynamic[…]]` drives it) only matched a bare identifier as the
+  /// `Dynamic`'s first argument. A per-piece `Locator[Dynamic[positions[[i]]],
+  /// …]` binds a `Part` expression instead — one array element per Table
+  /// iteration — so the whole `positions` list never matched and stayed a
+  /// hidden, non-interactive binding: the pieces drew in their starting
+  /// spots but could not be dragged at all, silently dropping the
+  /// Demonstration's entire interaction model.
+  ///
+  /// Fixed by also recognizing `Dynamic[var[[i]]]` in that scan and
+  /// recording the base variable `var`, so it promotes through the
+  /// existing list-of-points `Locator` control exactly as an explicit
+  /// `{{positions, {...}}, Locator}` spec would.
+  ///
+  /// The Manipulate is written here rather than lifted from the published
+  /// notebook.
+  #[test]
+  fn pentomino_tiling_notebook_builds_its_widget() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[\nDynamic@Graphics[\n{Dynamic@Table[\nWith[{k = k},\n{EventHandler[\nTranslate[Rotate[pieceShapes[[k]], Dynamic[Round[pieceSpin[[k]], Pi/12]]], Dynamic[piecePos[[k]]]],\n{\"MouseClicked\" :> If[MemberQ[flippedSet, k], flippedSet = DeleteCases[flippedSet, k], AppendTo[flippedSet, k]]}\n],\nLocator[Dynamic[piecePos[[k]]], None, ImageSize -> 30]}\n],\n{k, 2}\n]},\nImageSize -> 200,\nPlotRange -> {{-4, 8}, {-4, 8}}\n],\n{{pieceSpin, {0., 0.}}, ControlType -> None},\n{{piecePos, {{0., 0.}, {3., 3.}}}, ControlType -> None},\n{{pieceShapes, {Polygon[{{0, 0}, {1, 0}, {1, 1}, {0, 1}}], Polygon[{{0, 0}, {2, 0}, {2, 1}, {0, 1}}]}}, ControlType -> None},\n{{flippedSet, {}}, ControlType -> None}\n]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`pieceSpin$$ = {0., 0.}}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "the puzzle body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "both pieces must draw at their starting positions"
+    );
+
+    // The bug this guards against: `piecePos` staying hidden
+    // (`ControlType -> None`, no widget) because the per-piece
+    // `Locator[Dynamic[piecePos[[k]]], …]` markers bind a `Part`
+    // expression rather than a bare identifier.
+    let locator = widget
+      .controls
+      .iter()
+      .find_map(|c| match c {
+        manipulate::ControlState::Locator { name, points, .. }
+          if name == "piecePos" =>
+        {
+          Some(points.clone())
+        }
+        _ => None,
+      })
+      .expect(
+        "the shared position list must promote to a visible, draggable \
+         Locator control",
+      );
+    assert_eq!(
+      locator,
+      [(0.0, 0.0), (3.0, 3.0)],
+      "each piece's starting point must become its own draggable handle"
+    );
+
+    // `pieceSpin` and `flippedSet` are driven only by the click handler and
+    // the rotation math, never by a bare- or Part-indexed body Locator, so
+    // they must stay hidden state rather than also becoming (wrongly)
+    // visible controls.
+    assert!(
+      widget.state.iter().any(|(n, _)| n == "pieceSpin"),
+      "pieceSpin must remain live hidden state: {:?}",
+      widget.state
+    );
+    assert!(
+      widget.state.iter().any(|(n, _)| n == "flippedSet"),
+      "flippedSet must remain live hidden state: {:?}",
+      widget.state
+    );
+    assert!(
+      !widget
+        .controls
+        .iter()
+        .any(|c| c.name() == "pieceSpin" || c.name() == "flippedSet"),
+      "only the Locator-driven variable should gain a visible control: {:?}",
+      widget.controls
+    );
+
+    // Dragging a piece's handle must actually move it and re-render
+    // cleanly, exactly as an explicitly-declared multi-point Locator does.
+    let locator_idx = widget
+      .controls
+      .iter()
+      .position(|c| c.name() == "piecePos")
+      .unwrap();
+    let mut widget = editors
+      .into_iter()
+      .find_map(|e| e.manipulate_state)
+      .unwrap();
+    if let manipulate::ControlState::Locator { points, .. } =
+      &mut widget.controls[locator_idx]
+    {
+      points[0] = (5.0, -1.0);
+    } else {
+      panic!("expected the promoted control to be a Locator");
+    }
+    widget.reevaluate();
+    assert!(
+      widget.error.is_none(),
+      "re-render after dragging a piece failed: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the pieces must still draw after a piece is dragged"
+    );
+  }
+
   /// End-to-end regression for the "Chaos and Order in the Damped Forced
   /// Pendulum in a Plane" Demonstration: it integrates the damped driven
   /// pendulum `θ'' == -(g/l) Sin[θ] - γ θ' + a Cos[ω t]` from a grid of
