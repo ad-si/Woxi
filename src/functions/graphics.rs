@@ -20752,6 +20752,38 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
       _ => false,
     }
   }
+  // Whether `e` contains an explicit `Control[…]` call anywhere, as opposed
+  // to `contains_control` above, which also counts a bare `Button[…]` used
+  // as a live-caption action. Distinguishes a `Dynamic[…]` wrapping a
+  // nested layout container that is itself a Demonstrations custom-layout
+  // control section (its Column holds one or more inline `Control[…]`
+  // specs, e.g. a color picker boxed up behind an `Enabled -> …`
+  // condition) from a `Dynamic[Column[{Button[…], …}]]` live caption,
+  // which must stay a display element rather than have its buttons and
+  // text torn out into fake control rows.
+  fn contains_explicit_control(e: &Expr) -> bool {
+    match e {
+      Expr::FunctionCall { name, args } => {
+        name == "Control" || args.iter().any(contains_explicit_control)
+      }
+      Expr::List(items) => items.iter().any(contains_explicit_control),
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } => {
+        contains_explicit_control(pattern)
+          || contains_explicit_control(replacement)
+      }
+      Expr::Apply { func, list } => {
+        contains_explicit_control(func) || contains_explicit_control(list)
+      }
+      _ => false,
+    }
+  }
   // `Item[content, opts…]` is a grid-alignment wrapper (the Demonstrations
   // idiom for lining up a whole control panel inside an outer `Grid`), not
   // a layout container in its own right — unwrap it to reach the container
@@ -20782,6 +20814,21 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
   }
   if !contains_control(spec) {
     return None;
+  }
+  // `Dynamic[Column[…]]`/`Dynamic[Row[…]]` boxing up an inline `Control[…]`
+  // section (a Demonstrations custom-layout idiom, e.g. a color picker
+  // boxed up so it can sit under an `Enabled -> …` condition) wraps a
+  // layout container rather than a bare list — `Dynamic` itself lays out
+  // nothing, so hand off to the container directly instead of requiring
+  // `args[0]` to already be the flat list. Gated on an *explicit*
+  // `Control[…]` rather than `contains_control`'s broader Button check, so
+  // a `Dynamic[Column[{Button[…], …}]]` live caption (no `Control[…]`
+  // anywhere in it) still falls through and stays a display element.
+  if name == "Dynamic"
+    && !matches!(&args[0], Expr::List(_))
+    && contains_explicit_control(&args[0])
+  {
+    return control_group_items(&args[0]);
   }
   let Expr::List(items) = &args[0] else {
     return None;
