@@ -3669,6 +3669,51 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_table_nested_iterator_bound_through_part() {
+    // Regression: a later iterator's bound can depend on an earlier
+    // iterator's variable through any syntactic wrapper, not just a bare
+    // identifier (`Table[{i, j}, {i, 1, 3}, {j, 1, i}]` already worked).
+    // `nl[[dn1]]` is a `Part` node, and the validity check that decides
+    // whether a bound "resolves" (used to reject the whole Table with
+    // `Table::iterb` and leave it unevaluated) failed to look inside `Part`,
+    // `f@x`, `f/@list`, etc., so it saw only the untouched symbol `dn1` and
+    // declared the bound unresolved — even though `dn1` is perfectly well
+    // bound by the time that iterator runs. Found via a real Wolfram
+    // Demonstration whose Manipulate draws `Table[Point[...], {dn1, ...},
+    // {dn2, ...}, {x, 0, nl[[dn1]] - 1}, {y, 0, ml[[dn2]] - 1}]`.
+    clear_state();
+    interpret("nl = {2, 1, 4};").unwrap();
+    assert_eq!(
+      interpret("Table[x, {dn1, 1, Length[nl]}, {x, 0, nl[[dn1]] - 1}]")
+        .unwrap(),
+      "{{0, 1}, {0}, {0, 1, 2, 3}}"
+    );
+    // Same shape through `@` (PrefixApply) instead of a bare identifier.
+    clear_state();
+    interpret("nl = {2, 1, 4};").unwrap();
+    assert_eq!(
+      interpret(
+        "Table[x, {dn1, 1, Length[nl]}, {x, 0, First@Take[nl, {dn1}] - 1}]"
+      )
+      .unwrap(),
+      "{{0, 1}, {0}, {0, 1, 2, 3}}"
+    );
+    // Four-level nesting where two later iterators each depend on a
+    // different earlier one, matching the Demonstration's shape.
+    clear_state();
+    interpret("nl = {2, 1}; ml = {1, 2};").unwrap();
+    assert_eq!(
+      interpret(
+        "Table[{x, y}, {dn1, 1, Length[nl]}, {dn2, 1, Length[ml]}, \
+         {x, 0, nl[[dn1]] - 1}, {y, 0, ml[[dn2]] - 1}]"
+      )
+      .unwrap(),
+      "{{{{{0, 0}}, {{1, 0}}}, {{{0, 0}, {0, 1}}, {{1, 0}, {1, 1}}}}, \
+       {{{{0, 0}}}, {{{0, 0}, {0, 1}}}}}"
+    );
+  }
+
+  #[test]
   fn test_replace_all_scales_to_a_demonstrations_sized_rule_list() {
     // Wolfram Demonstrations build one rewrite rule per lattice site and
     // hand the whole list to `/.` — thousands of `f[x_Integer, y_Integer]
