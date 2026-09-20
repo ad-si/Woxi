@@ -13264,6 +13264,49 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    // `Export`/`ExportString[…, "SVG"]` renders a `Row[…]` unconditionally
+    // (see the `row_svg_with_rendered_items` arm of `expr_to_svg`), but
+    // `Column[…]` only went through that path when one of its items was
+    // itself already a picture (`Graphics[…]`, `TableForm[…]`, …) — a
+    // `lays_out_a_graphic` check meant to let a column of plain text fall
+    // back to the ordinary text renderer. A `Grid` of plain numbers/strings
+    // isn't "a picture" by that check either, so `Column[{Grid[…]}]` fell
+    // all the way through to the same fallback and printed its own source
+    // instead of the table — e.g. a Wolfram Demonstration's Manipulate body
+    // ending in `Text@Column[{Grid[…], Grid[…]}]` (one table of inputs
+    // above one of results), exported via `ExportString[…, "SVG"]` rather
+    // than shown live (which already went through the always-on
+    // `render_column_if_needed` visual-mode pass and was unaffected).
+    #[test]
+    fn export_string_renders_a_column_of_plain_grids() {
+      let svg = export_svg("Column[{Grid[{{1, 2}, {3, 4}}], Grid[{{5, 6}}]}]");
+      assert!(
+        !svg.contains(">Column<") && !svg.contains(">Grid<"),
+        "must not dump the source: {svg}"
+      );
+      for part in ["1", "2", "3", "4", "5", "6"] {
+        assert!(
+          svg.contains(&format!(">{part}<")),
+          "missing cell `{part}`: {svg}"
+        );
+      }
+    }
+
+    // The same fallback gap without any `Grid` involved: a `Column` of
+    // plain numbers is not "a picture" either, so it used to dump its own
+    // `Column[{1, 2, 3}]` source through `ExportString`.
+    #[test]
+    fn export_string_renders_a_column_of_plain_values() {
+      let svg = export_svg("Column[{1, 2, 3}]");
+      assert!(!svg.contains(">Column<"), "must not dump the source: {svg}");
+      for part in ["1", "2", "3"] {
+        assert!(
+          svg.contains(&format!(">{part}<")),
+          "missing item `{part}`: {svg}"
+        );
+      }
+    }
+
     // A `Spacer[n]` *between* a row's items is blank horizontal space, the
     // same as one used as the separator — the typeset row used to print it
     // as the literal text "Spacer[50]".
