@@ -1522,6 +1522,111 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
     Expr::FunctionCall { name, args: dargs }
+      if name == "MultinormalDistribution" && dargs.len() == 2 =>
+    {
+      // MultinormalDistribution[mu, sigma]: a k-dimensional mean vector and
+      // a k x k covariance matrix. Sampled via the standard reparametrization
+      // `mu + L z`, where `z` is a vector of iid standard normals and `L` is
+      // the lower-triangular Cholesky factor of `sigma` (`L L^T = sigma`),
+      // computed numerically since (unlike PDF/CDF) a random draw has no
+      // exact/symbolic form to preserve.
+      let (Expr::List(mu_list), sigma_expr @ Expr::List(sigma_list)) =
+        (&dargs[0], &dargs[1])
+      else {
+        return Ok(unevaluated("RandomVariate", args));
+      };
+      let k = mu_list.len();
+      if k == 0 || sigma_list.len() != k {
+        return Ok(unevaluated("RandomVariate", args));
+      }
+      let mut mu = Vec::with_capacity(k);
+      for m in mu_list {
+        match expr_to_num(m) {
+          Some(v) => mu.push(v),
+          None => return Ok(unevaluated("RandomVariate", args)),
+        }
+      }
+      let mut sigma = vec![vec![0.0f64; k]; k];
+      for (i, row) in sigma_list.iter().enumerate() {
+        let Expr::List(cols) = row else {
+          return Ok(unevaluated("RandomVariate", args));
+        };
+        if cols.len() != k {
+          return Ok(unevaluated("RandomVariate", args));
+        }
+        for (j, c) in cols.iter().enumerate() {
+          match expr_to_num(c) {
+            Some(v) => sigma[i][j] = v,
+            None => return Ok(unevaluated("RandomVariate", args)),
+          }
+        }
+      }
+
+      let posdefprm = || {
+        crate::emit_message(&format!(
+          "MultinormalDistribution::posdefprm: The value {} at position 2 in {} is expected to be a symmetric positive definite matrix.",
+          expr_to_string(sigma_expr),
+          expr_to_string(&unevaluated("MultinormalDistribution", dargs))
+        ));
+        Ok(unevaluated("RandomVariate", args))
+      };
+
+      let scale = sigma
+        .iter()
+        .flatten()
+        .fold(1.0f64, |acc, v| acc.max(v.abs()));
+      let tol = 1e-9 * scale;
+      for i in 0..k {
+        for j in 0..i {
+          if (sigma[i][j] - sigma[j][i]).abs() > tol {
+            return posdefprm();
+          }
+        }
+      }
+
+      // Cholesky-Banachiewicz decomposition; a non-positive pivot means
+      // `sigma` is not positive definite, so the distribution does not exist.
+      let mut l = vec![vec![0.0f64; k]; k];
+      for i in 0..k {
+        for j in 0..=i {
+          let mut sum = sigma[i][j];
+          for p in 0..j {
+            sum -= l[i][p] * l[j][p];
+          }
+          if i == j {
+            if sum <= tol.max(1e-12) {
+              return posdefprm();
+            }
+            l[i][j] = sum.sqrt();
+          } else {
+            l[i][j] = sum / l[j][j];
+          }
+        }
+      }
+
+      let sample_vec = || -> Vec<f64> {
+        use rand_distr::StandardNormal;
+        let z: Vec<f64> = crate::with_rng(|rng| {
+          (0..k).map(|_| rng.sample(StandardNormal)).collect()
+        });
+        (0..k)
+          .map(|i| mu[i] + (0..=i).map(|j| l[i][j] * z[j]).sum::<f64>())
+          .collect()
+      };
+      let vec_to_list =
+        |v: Vec<f64>| Expr::List(v.into_iter().map(Expr::Real).collect());
+      match n {
+        None => Ok(vec_to_list(sample_vec())),
+        Some(count) => {
+          let mut out = Vec::with_capacity(count);
+          for _ in 0..count {
+            out.push(vec_to_list(sample_vec()));
+          }
+          Ok(Expr::List(out.into()))
+        }
+      }
+    }
+    Expr::FunctionCall { name, args: dargs }
       if name == "MultivariatePoissonDistribution" && dargs.len() == 2 =>
     {
       // MultivariatePoissonDistribution[mu0, {mu1, ..., muk}]:
