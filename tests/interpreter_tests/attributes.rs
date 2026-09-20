@@ -1114,6 +1114,38 @@ mod cases {
     );
   }
 
+  // SetSystemOptions[name -> value] / SetSystemOptions["cat" -> "sub" -> value]
+  // resets internal system options. Woxi has none of its own, so the call is
+  // a no-op beyond normalizing the given rule(s) into a flat list — but it
+  // must not report the function as unimplemented, which it did before a
+  // dedicated case existed (a Demonstrations notebook calling it with a
+  // nested category/subname rule triggered that "not yet implemented"
+  // warning even though the statement itself has no visible effect).
+  #[test]
+  fn set_system_options_normalizes_rules_without_warning() {
+    use woxi::interpret_with_stdout;
+
+    let r =
+      interpret_with_stdout(r#"SetSystemOptions["MungoLevel" -> 3]"#).unwrap();
+    assert_eq!(r.result, "{MungoLevel -> 3}");
+    assert!(r.warnings.is_empty(), "warnings: {:?}", r.warnings);
+
+    // A nested category -> subname -> value rule, as used to configure a
+    // suboption group.
+    let r = interpret_with_stdout(
+      r#"SetSystemOptions["DataOptions" -> "ReturnQuantities" -> False]"#,
+    )
+    .unwrap();
+    assert_eq!(r.result, "{DataOptions -> ReturnQuantities -> False}");
+    assert!(r.warnings.is_empty(), "warnings: {:?}", r.warnings);
+
+    // Several rules at once, gathered into a list.
+    let r = interpret_with_stdout(r#"SetSystemOptions[{"A" -> 1, "B" -> 2}]"#)
+      .unwrap();
+    assert_eq!(r.result, "{A -> 1, B -> 2}");
+    assert!(r.warnings.is_empty(), "warnings: {:?}", r.warnings);
+  }
+
   // A name that is not already an option of f refuses the whole call, so
   // nothing is changed even when other names in the same call are valid.
   #[test]
