@@ -1731,6 +1731,21 @@ mod graphics {
       assert!(!svg.contains("Spacer"), "{svg}");
     }
 
+    /// Regression: a `Row` mixing pictures with a `Spacer[n]` *item* (not
+    /// the separator position — e.g. `Row[{plot1, Spacer[20], plot2}]`, a
+    /// Demonstration's usual way to lay two plots side by side) took a
+    /// different code path than a plain `Row` of text — one that had no
+    /// `Spacer` handling at all — so the gap printed as the literal source
+    /// `Spacer[20]` instead of blank space.
+    #[test]
+    fn row_spacer_item_between_pictures_is_a_gap() {
+      let svg =
+        export_svg("Row[{Graphics[Circle[]], Spacer[20], Graphics[Disk[]]}]");
+      assert!(!svg.contains("Spacer"), "{svg}");
+      // Both pictures still rendered: one stroked circle, one filled disk.
+      assert_eq!(svg.matches("<ellipse").count(), 2, "{svg}");
+    }
+
     #[test]
     fn inset_row_of_styled_number_form_resolves_to_text() {
       // Regression: an Inset whose content is a Row of Styled text with a
@@ -12405,6 +12420,138 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       ));
     }
 
+    /// The arrow lines — as opposed to the box/axis lines, always drawn in
+    /// the fixed axis gray `rgb(102,102,102)` — in a rendered `VectorPlot3D`
+    /// SVG.
+    fn arrow_lines(svg: &str) -> Vec<String> {
+      svg
+        .split("<line ")
+        .skip(1)
+        .filter(|tag| !tag.contains("rgb(102,102,102)"))
+        .map(|tag| tag.split('/').next().unwrap().to_string())
+        .collect()
+    }
+
+    fn line_length(tag: &str) -> f64 {
+      let attr = |name: &str| -> f64 {
+        tag
+          .split(&format!("{name}=\""))
+          .nth(1)
+          .unwrap()
+          .split('"')
+          .next()
+          .unwrap()
+          .parse()
+          .unwrap()
+      };
+      let (x1, y1, x2, y2) = (attr("x1"), attr("y1"), attr("x2"), attr("y2"));
+      ((x2 - x1).powi(2) + (y2 - y1).powi(2)).sqrt()
+    }
+
+    /// Regression: `VectorPlot3D` always sampled its own uniform 7x7x7 grid
+    /// and drew every arrow at roughly one pixel long (an unrelated scale
+    /// heuristic), so a field's actual arrows were invisible dots regardless
+    /// of `VectorPoints`/`VectorScale`. `VectorPoints -> {...}` now samples
+    /// exactly the given points instead of the automatic grid.
+    #[test]
+    fn vector_plot3d_vector_points_uses_explicit_samples() {
+      let svg = export_svg(
+        "VectorPlot3D[{1, 0, 0}, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, \
+         VectorPoints -> {{0, 0, 0}, {0.5, 0.5, 0.5}}, VectorScale -> 0.5]",
+      );
+      // One arrowhead polygon per sample point — not the default grid's 512.
+      assert_eq!(
+        svg.matches("<polygon").count(),
+        2,
+        "expected exactly the 2 explicit VectorPoints samples, got: {svg}"
+      );
+    }
+
+    /// `VectorScale -> s` sets the longest arrow's length to `s` times the
+    /// plot's overall width; previously ignored entirely; every arrow was
+    /// ~1px long no matter the field or this option.
+    #[test]
+    fn vector_plot3d_vector_scale_widens_arrows() {
+      let base = "VectorPlot3D[{1, 0, 0}, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, \
+                   VectorPoints -> {{0, 0, 0}}";
+      let small = export_svg(&format!("{base}, VectorScale -> 0.02]"));
+      let large = export_svg(&format!("{base}, VectorScale -> 0.3]"));
+      let small_len = line_length(&arrow_lines(&small)[0]);
+      let large_len = line_length(&arrow_lines(&large)[0]);
+      assert!(
+        large_len > small_len * 3.0,
+        "expected VectorScale -> 0.3 to draw a much longer arrow than 0.02: \
+         {small_len:.1}px vs {large_len:.1}px"
+      );
+    }
+
+    /// `VectorStyle -> {color, Thickness[t], Arrowheads[a]}` was silently
+    /// dropped — every arrow used the automatic color/size regardless.
+    #[test]
+    fn vector_plot3d_vector_style_sets_color_and_thickness() {
+      let svg = export_svg(
+        "VectorPlot3D[{1, 0, 0}, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, \
+         VectorPoints -> {{0, 0, 0}}, VectorScale -> 0.3, \
+         VectorStyle -> {Orange, Thickness[0.01], Arrowheads[0.05]}, \
+         ImageSize -> 400]",
+      );
+      let lines = arrow_lines(&svg);
+      assert_eq!(lines.len(), 1, "{svg}");
+      assert!(
+        lines[0].contains("stroke=\"rgb(255,128,0)\""),
+        "expected the VectorStyle color (Woxi's Orange), got: {}",
+        lines[0]
+      );
+      // Thickness[0.01] on a 400px image is 4px, not the built-in default
+      // of 1.2px.
+      assert!(
+        lines[0].contains("stroke-width=\"4\""),
+        "expected a VectorStyle-derived stroke width, got: {}",
+        lines[0]
+      );
+    }
+
+    /// Regression: `VectorPlot3D` rendered straight to a flat, opaque SVG
+    /// with no symbolic content, so `Show[VectorPlot3D[…], VectorPlot3D[…],
+    /// Graphics3D[…]]` (a Demonstration overlaying several field arrows with
+    /// a scene, e.g. an antenna) could only stack each already-projected
+    /// picture — which silently dropped everything past the first opaque
+    /// layer instead of composing one shared 3D scene. `VectorPlot3D` now
+    /// also reports its arrows as `Graphics3D` `Arrow[…]` primitives (its
+    /// `structure`), so `Show` merges them like any other `Graphics3D`.
+    #[test]
+    fn vector_plot3d_show_merges_with_graphics3d() {
+      let svg = export_svg(
+        "Show[VectorPlot3D[{1, 0, 0}, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, \
+         VectorPoints -> {{0, 0, 0}}, VectorScale -> 0.3, VectorStyle -> Orange], \
+         Graphics3D[{Green, Cuboid[{-1, -1, -1}, {-0.5, -0.5, -0.5}]}]]",
+      );
+      // The merged scene draws the arrow through the general Graphics3D
+      // primitive renderer (a stroked polyline plus an arrowhead polygon),
+      // not VectorPlot3D's own standalone `<line>` shorthand.
+      assert!(
+        (svg.contains("<polyline") || svg.contains("<line"))
+          && svg.contains("rgb(255,128,0)"),
+        "expected the VectorPlot3D arrow to survive the merge: {svg}"
+      );
+      // The cuboid's faces are lit (each a different shade of green, not a
+      // flat "0,255,0"), so look for a fill that is green-dominant instead.
+      let has_green_face = svg
+        .split("fill=\"rgb(")
+        .skip(1)
+        .filter_map(|s| s.split(')').next())
+        .filter_map(|rgb| {
+          let mut it =
+            rgb.split(',').filter_map(|n| n.trim().parse::<u32>().ok());
+          Some((it.next()?, it.next()?, it.next()?))
+        })
+        .any(|(r, g, b)| g > 100 && r < 20 && b < 20);
+      assert!(
+        has_green_face,
+        "expected the Graphics3D cuboid to survive the merge: {svg}"
+      );
+    }
+
     #[test]
     fn list_vector_plot_basic() {
       insta::assert_snapshot!(export_svg(
@@ -12800,6 +12947,76 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(
         svg.matches("<rect").count() < 10,
         "no per-cell rect grid expected"
+      );
+    }
+
+    /// Regression: `ColorFunction -> f` for a pure function (or user-defined
+    /// symbol) was silently ignored — only named gradient strings like
+    /// `"Rainbow"` were recognized — so `DensityPlot[…, ColorFunction ->
+    /// (Hue[#]&)]` rendered with the default gradient instead of the
+    /// requested one, the same as `ColorFunctionScaling -> False`, also
+    /// ignored outright.
+    #[test]
+    fn density_plot_color_function_pure_function_applied() {
+      let svg = export_svg(
+        "DensityPlot[x, {x, 0, 1}, {y, 0, 1}, ColorFunctionScaling -> False, \
+         ColorFunction -> (Hue[0.75 (1 - #)]&)]",
+      );
+      let b64 = svg
+        .split("data:image/png;base64,")
+        .nth(1)
+        .expect("embedded image")
+        .split('"')
+        .next()
+        .unwrap();
+      use base64::Engine as _;
+      let bytes = base64::engine::general_purpose::STANDARD
+        .decode(b64)
+        .unwrap();
+      let img = ::image::load_from_memory(&bytes).unwrap().to_rgba8();
+      let (w, h) = img.dimensions();
+      // Hue[0.75] (x=0, left edge) is blue-violet; Hue[0] (x=1, right edge)
+      // is red. The default (unset) gradient is blue-to-yellow instead, so
+      // this also fails if the option is silently dropped.
+      let left = img.get_pixel(0, h / 2);
+      let right = img.get_pixel(w - 1, h / 2);
+      assert!(
+        right[0] > 200 && right[1] < 80 && right[2] < 80,
+        "expected a red pixel at the right edge, got {right:?}"
+      );
+      assert!(
+        left[2] > 150 && left[1] < 80,
+        "expected a blue/violet pixel at the left edge, got {left:?}"
+      );
+    }
+
+    /// A `ColorFunction` returning a list of graphics directives (`{Hue[h],
+    /// Opacity[o]}`, as a Demonstration commonly writes to fade a plot
+    /// toward the background) picks the color out of the list instead of
+    /// falling back to gray for not being a bare color expression.
+    #[test]
+    fn density_plot_color_function_directive_list_applied() {
+      let svg = export_svg(
+        "DensityPlot[x, {x, 0, 1}, {y, 0, 1}, ColorFunctionScaling -> False, \
+         ColorFunction -> ({Hue[0.75 (1 - #)], Opacity[0.6]}&)]",
+      );
+      let b64 = svg
+        .split("data:image/png;base64,")
+        .nth(1)
+        .expect("embedded image")
+        .split('"')
+        .next()
+        .unwrap();
+      use base64::Engine as _;
+      let bytes = base64::engine::general_purpose::STANDARD
+        .decode(b64)
+        .unwrap();
+      let img = ::image::load_from_memory(&bytes).unwrap().to_rgba8();
+      let (w, h) = img.dimensions();
+      let right = img.get_pixel(w - 1, h / 2);
+      assert!(
+        right[0] > 200 && right[1] < 80 && right[2] < 80,
+        "expected a red pixel at the right edge, got {right:?}"
       );
     }
 

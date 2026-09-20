@@ -5700,7 +5700,16 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
         .map(|cells| {
           cells
             .iter()
-            .map(|c| expr_to_svg(&unquoted_display_string(c)))
+            .map(|c| match crate::syntax::spacer_width_pts(c) {
+              // `Spacer[n]` between pictures is blank space, not a cell to
+              // typeset — without this, a Demonstration's `Row[{plot,
+              // Spacer[20], plot}]` printed the literal source `Spacer[20]`
+              // where the gap belongs.
+              Some(w) => format!(
+                "<svg width=\"{w}\" height=\"1\" viewBox=\"0 0 {w} 1\" xmlns=\"http://www.w3.org/2000/svg\"></svg>"
+              ),
+              None => expr_to_svg(&unquoted_display_string(c)),
+            })
             .collect()
         })
         .collect();

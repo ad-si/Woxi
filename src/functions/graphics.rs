@@ -1112,6 +1112,20 @@ fn system_color_pair(name: &str) -> Option<(&'static str, &'static str)> {
   })
 }
 
+/// A graphics directive that carries no color of its own — the only other
+/// member a color can share a directive list with (`{Hue[h], Opacity[o]}`)
+/// for `parse_color` to still see a single color, rather than "a list of
+/// colors". Deliberately narrow: unlike `Opacity`, a `Dashing`/`Thickness`/
+/// `EdgeForm`/… does change how the shape draws (a dash pattern, a line
+/// width, an edge color), so a caller using `parse_color` to tell "just a
+/// solid color" apart from "a color plus other style" — `PlotStyle ->
+/// {Blue, Dashed, Thick}`, i.e. `{RGBColor[…], Dashing[…], Thickness[…]}`,
+/// choosing a solid-line renderer over the dashed one — must still see
+/// `None` for those, not have the directive silently dropped.
+fn is_non_color_graphics_directive(expr: &Expr) -> bool {
+  matches!(expr, Expr::FunctionCall { name, .. } if name == "Opacity")
+}
+
 pub(crate) fn parse_color(expr: &Expr) -> Option<Color> {
   match expr {
     Expr::Identifier(name) => named_color(name),
@@ -1289,6 +1303,30 @@ pub(crate) fn parse_color(expr: &Expr) -> Option<Color> {
       }
       _ => None,
     },
+    // A list of graphics directives (`{Hue[h], Opacity[o]}`, as a custom
+    // `ColorFunction` commonly returns to fade a density plot toward the
+    // background) — the color is whichever directive parses as one; an
+    // `Opacity` doesn't apply to a solid raster fill and is ignored here,
+    // the same way `apply_directive` reads a style list one directive at a
+    // time. Only when every OTHER item is `Opacity`, and exactly one item
+    // is a color: a plain list of colors (`{White, Green}`, `Grid`'s
+    // alternating-row `Background` spec) is not a single color and must
+    // stay `None`, or a caller distinguishing the two (e.g. one color vs.
+    // a repeating pattern) would silently collapse it to its first entry.
+    Expr::List(items) if items.len() >= 2 => {
+      let mut found: Option<Color> = None;
+      for item in items {
+        if let Some(c) = parse_color(item) {
+          if found.is_some() {
+            return None;
+          }
+          found = Some(c);
+        } else if !is_non_color_graphics_directive(item) {
+          return None;
+        }
+      }
+      found
+    }
     _ => None,
   }
 }
