@@ -2575,7 +2575,7 @@ fn evaluate_function_call_ast_inner(
       for item in items {
         match item {
           Expr::Rule { .. } | Expr::RuleDelayed { .. } => {
-            rules.push(item.clone())
+            rules.push(item.clone());
           }
           _ => all_rules = false,
         }
