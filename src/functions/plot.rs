@@ -8358,41 +8358,38 @@ pub(crate) fn apply_frame_label_option(value: &Expr, opts: &mut PlotOptions) {
 pub(crate) fn parse_frame_label(value: &Expr) -> FrameLabels {
   let val = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
   let mut out = FrameLabels::default();
-  match &val {
-    Expr::List(items) => {
-      // 4-element nested form: both entries are themselves lists.
-      if items.len() == 2
-        && let (Expr::List(lr), Expr::List(bt)) = (&items[0], &items[1])
-      {
-        if let Some(e) = lr.first() {
-          out.left = frame_label_entry(e);
-        }
-        if let Some(e) = lr.get(1) {
-          out.right = frame_label_entry(e);
-        }
-        if let Some(e) = bt.first() {
-          out.bottom = frame_label_entry(e);
-          out.bottom_graphic = frame_label_graphic(e);
-        }
-        if let Some(e) = bt.get(1) {
-          out.top = frame_label_entry(e);
-        }
-        return out;
+  if let Expr::List(items) = &val {
+    // 4-element nested form: both entries are themselves lists.
+    if items.len() == 2
+      && let (Expr::List(lr), Expr::List(bt)) = (&items[0], &items[1])
+    {
+      if let Some(e) = lr.first() {
+        out.left = frame_label_entry(e);
       }
-      // 2-element form `{bottom, left}`.
-      if let Some(e) = items.first() {
+      if let Some(e) = lr.get(1) {
+        out.right = frame_label_entry(e);
+      }
+      if let Some(e) = bt.first() {
         out.bottom = frame_label_entry(e);
         out.bottom_graphic = frame_label_graphic(e);
       }
-      if let Some(e) = items.get(1) {
-        out.left = frame_label_entry(e);
+      if let Some(e) = bt.get(1) {
+        out.top = frame_label_entry(e);
       }
+      return out;
     }
+    // 2-element form `{bottom, left}`.
+    if let Some(e) = items.first() {
+      out.bottom = frame_label_entry(e);
+      out.bottom_graphic = frame_label_graphic(e);
+    }
+    if let Some(e) = items.get(1) {
+      out.left = frame_label_entry(e);
+    }
+  } else {
     // A bare label labels the bottom edge.
-    _ => {
-      out.bottom = frame_label_entry(&val);
-      out.bottom_graphic = frame_label_graphic(&val);
-    }
+    out.bottom = frame_label_entry(&val);
+    out.bottom_graphic = frame_label_graphic(&val);
   }
   out
 }
