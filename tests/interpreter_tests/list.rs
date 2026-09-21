@@ -9581,6 +9581,29 @@ mod part_multi_index {
     assert_eq!(interpret("Part[a :> b, 0]").unwrap(), "RuleDelayed");
   }
 
+  // Regression: `sym := call[...]` (SetDelayed) stores the call
+  // unevaluated — a plain reference to `sym` re-evaluates it, and
+  // `sym[[i]]`/`sym[[i, j]]` must match rather than reading the stored,
+  // still-unevaluated call as the object to index (misreading its argument
+  // count as the object's part depth).
+  #[test]
+  fn part_of_delayed_symbol_holding_a_call() {
+    assert_eq!(
+      interpret(
+        "bar[x_] := {{x, x + 1}, {x + 2, x + 3}}; foo := bar[10]; foo[[2]]"
+      )
+      .unwrap(),
+      "{12, 13}"
+    );
+    assert_eq!(
+      interpret(
+        "bar[x_] := {{x, x + 1}, {x + 2, x + 3}}; foo := bar[10]; foo[[2, 2]]"
+      )
+      .unwrap(),
+      "13"
+    );
+  }
+
   #[test]
   fn part_atom_head() {
     // Part[atom, 0] returns the Head of the atom (fixes #88)

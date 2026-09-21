@@ -132,6 +132,25 @@ fn columnwise_quartile_stat(
   Some(Ok(Expr::List(out.into())))
 }
 
+/// Flatten `expr` into the coordinate points `CoordinateBounds`/
+/// `CoordinateBoundingBox` measure. The argument need not be a flat list of
+/// points — e.g. `Cases[…, Polygon[x_] :> x, Infinity]` produces a list of
+/// polygons' vertex lists — so a "point" is taken to be the innermost list
+/// level: any `List` none of whose elements is itself a `List`. Everything
+/// above that level is recursed into regardless of depth.
+fn flatten_coordinate_points(expr: &Expr, out: &mut Vec<Vec<Expr>>) {
+  if let Expr::List(items) = expr {
+    if !items.is_empty() && items.iter().all(|it| !matches!(it, Expr::List(_)))
+    {
+      out.push(items.to_vec());
+    } else {
+      for it in items {
+        flatten_coordinate_points(it, out);
+      }
+    }
+  }
+}
+
 pub fn dispatch_math_functions(
   name: &str,
   args: &[Expr],
@@ -3582,17 +3601,19 @@ pub fn dispatch_math_functions(
       //   - {p1, p2, ...}  (one entry per dim; entries may be scalars,
       //     Scaled[s], or {pmin, pmax} pairs whose elements may be scaled)
       //   - {{p1min, p1max}, ...} pair-per-dim form
-      if let Expr::List(points) = &args[0]
-        && !points.is_empty()
-        && let Expr::List(first) = &points[0]
-      {
-        let dim = first.len();
-        let mut mins: Vec<Expr> = first.to_vec();
-        let mut maxs: Vec<Expr> = first.to_vec();
-        for pt in &points[1..] {
-          if let Expr::List(coords) = pt
-            && coords.len() == dim
-          {
+      //
+      // `coords` itself may be an arbitrarily nested list of points — e.g. a
+      // list of polygons' vertex lists, as `Cases[…, Polygon[x_] :> x, ∞]`
+      // produces — not just a flat list of points. A "point" is the
+      // innermost list level: one whose elements are themselves not lists.
+      let mut flat_points: Vec<Vec<Expr>> = Vec::new();
+      flatten_coordinate_points(&args[0], &mut flat_points);
+      if !flat_points.is_empty() {
+        let dim = flat_points[0].len();
+        let mut mins: Vec<Expr> = flat_points[0].clone();
+        let mut maxs: Vec<Expr> = flat_points[0].clone();
+        for coords in &flat_points[1..] {
+          if coords.len() == dim {
             for d in 0..dim {
               let less_than_min = evaluate_expr_to_expr(&call(
                 "Less",
