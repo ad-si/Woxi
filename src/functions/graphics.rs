@@ -11541,15 +11541,31 @@ pub(crate) fn option_name_value(
     Expr::Identifier(name) | Expr::Constant(name) => name.as_str(),
     _ => return None,
   };
-  if delayed {
+  let value: std::borrow::Cow<'_, Expr> = if delayed {
     // `:>` holds its right-hand side until the option is used — which is
     // now, so evaluate it against the current bindings.
-    let value = evaluate_expr_to_expr(replacement)
+    let evaluated = evaluate_expr_to_expr(replacement)
       .unwrap_or_else(|_| replacement.clone());
-    Some((name, std::borrow::Cow::Owned(value)))
+    std::borrow::Cow::Owned(evaluated)
   } else {
-    Some((name, std::borrow::Cow::Borrowed(replacement)))
+    std::borrow::Cow::Borrowed(replacement)
+  };
+  // `Dynamic[expr]` means "expr, tracked live for the front end" — outside
+  // an interactive session (a static SVG/PNG export, or a Manipulate
+  // widget's one-shot re-render) that's just expr's current value, the same
+  // way `collect_primitives` already unwraps a `Dynamic[…]` primitive.
+  if let Expr::FunctionCall {
+    name: fname,
+    args: dargs,
+  } = value.as_ref()
+    && fname == "Dynamic"
+    && !dargs.is_empty()
+  {
+    let inner =
+      evaluate_expr_to_expr(&dargs[0]).unwrap_or_else(|_| dargs[0].clone());
+    return Some((name, std::borrow::Cow::Owned(inner)));
   }
+  Some((name, value))
 }
 
 /// Extract the option name from a Rule pattern (e.g. Identifier("ImageSize") -> "ImageSize")
