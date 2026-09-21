@@ -1650,6 +1650,43 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
       None => Ok(unevaluated("Solve", args)),
     };
   }
+  // Two-argument form Solve[eqns, dom] (a domain, not a variable list —
+  // the Demonstrations idiom that restricts a system to real solutions
+  // without spelling out which symbols are the unknowns, e.g.
+  // `NSolve[{eqn1, eqn2, 0 < x < 1, 0 < y < 1}, Reals]`): auto-detect the
+  // variables exactly as the one-argument form does, then delegate to the
+  // three-argument form with the given domain. A domain name is a
+  // protected symbol in Wolfram and can never be an ordinary equation
+  // variable, so this never misfires against a genuine `Solve[eqns, x]`.
+  if args.len() == 2
+    && let Expr::Identifier(dom) = &args[1]
+    && matches!(
+      dom.as_str(),
+      "Reals"
+        | "Integers"
+        | "Complexes"
+        | "Rationals"
+        | "Algebraics"
+        | "Booleans"
+    )
+  {
+    let mut vars = Vec::new();
+    collect_solve_vars(&args[0], &mut vars);
+    let n_eqns = match &args[0] {
+      Expr::List(items) => items.len(),
+      _ => 1,
+    };
+    let var_arg = if vars.len() == 1 {
+      Some(Expr::Identifier(vars.remove(0)))
+    } else if vars.len() >= 2 && vars.len() <= n_eqns {
+      Some(Expr::List(vars.into_iter().map(Expr::Identifier).collect()))
+    } else {
+      None
+    };
+    if let Some(va) = var_arg {
+      return solve_ast(&[args[0].clone(), va, args[1].clone()]);
+    }
+  }
   if args.len() < 2 || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
       "Solve expects 2 or 3 arguments".into(),

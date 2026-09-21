@@ -5480,6 +5480,40 @@ mod solve {
     }
   }
 
+  // `Solve[eqns, dom]`/`NSolve[eqns, dom]` (a domain — Reals/Integers/…, no
+  // explicit variable list) auto-detects the unknowns from `eqns`, exactly
+  // as the bare one-argument form does; it must not treat the domain name
+  // itself as the sole variable. This is how the Wolfram Demonstrations
+  // Project idiom `NSolve[{eqn1, eqn2, 0 < x < 1, 0 < y < 1}, Reals]`
+  // restricts a system to its real solutions without spelling the unknowns
+  // out a second time.
+  #[test]
+  fn solve_domain_only_form_auto_detects_variables() {
+    assert_eq!(
+      interpret(
+        "NSolve[{x^2 + y == 1, x + y^2 == 1, 0 < x < 1, 0 < y < 1}, Reals]"
+      )
+      .unwrap(),
+      "{{x -> 0.6180339887498949, y -> 0.6180339887498948}}"
+    );
+    assert_eq!(
+      interpret("NSolve[{x^2 - 4 == 0, x > 0}, Reals]").unwrap(),
+      "{{x -> 2.}}"
+    );
+    // The symbolic form takes the same path through `solve_core`.
+    assert_eq!(
+      interpret("Solve[{x^2 - 4 == 0, x > 0}, Reals]").unwrap(),
+      "{{x -> 2}}"
+    );
+    // A domain name is a protected Wolfram symbol and can never be an
+    // ordinary equation variable, so the ordinary `Solve[eqns, x]` form
+    // (ordinary variable, no domain) is unaffected by this auto-detection.
+    assert_eq!(
+      interpret("Solve[x^2 - 4 == 0, x]").unwrap(),
+      "{{x -> -2}, {x -> 2}}"
+    );
+  }
+
   #[test]
   fn solve_log_equation() {
     assert_eq!(interpret("Solve[Log[x] == 2, x]").unwrap(), "{{x -> E^2}}");
