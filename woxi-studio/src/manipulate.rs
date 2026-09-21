@@ -411,6 +411,15 @@ pub struct ManipulateState {
   /// groups these by `parent` and reassembles them into one list binding
   /// instead of colliding same-named ones.
   list_elements: Vec<(String, String, usize)>,
+  /// `Bookmarks -> {"name" :> assignment, …}`: a menu of named presets,
+  /// `(label, assignment code)`. Selecting one runs [`apply_bookmark`],
+  /// which is [`apply_button_action`] under a different name — the
+  /// assignment code is arbitrary code run against the live bindings, same
+  /// as a `Button`'s action.
+  ///
+  /// [`apply_bookmark`]: Self::apply_bookmark
+  /// [`apply_button_action`]: Self::apply_button_action
+  pub bookmarks: Vec<(String, String)>,
   /// Whether each control is currently on screen, recomputed on every
   /// re-evaluation from `control_visible` against the live bindings.
   pub control_is_visible: Vec<bool>,
@@ -493,6 +502,7 @@ impl ManipulateState {
       control_is_enabled,
       control_visible,
       list_elements: spec.list_elements,
+      bookmarks: spec.bookmarks,
       control_is_visible,
       reeval_pending: 0,
       reeval_applied: 0,
@@ -550,6 +560,18 @@ impl ManipulateState {
       }
     }
     self.reevaluate();
+  }
+
+  /// Run the `idx`-th `Bookmarks` preset's assignment code — the same
+  /// mechanism as [`apply_button_action`], just addressed by position in
+  /// `bookmarks` instead of by an already-known action string. Does nothing
+  /// if `idx` is out of range.
+  ///
+  /// [`apply_button_action`]: Self::apply_button_action
+  pub fn apply_bookmark(&mut self, idx: usize) {
+    if let Some((_, action)) = self.bookmarks.get(idx) {
+      self.apply_button_action(&action.clone());
+    }
   }
 
   /// Whether any control row is a `Trigger` (which carries its own
