@@ -20319,7 +20319,14 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 1}, DynamicBox[\[Ellipsis]]]"
         assert_eq!(values.as_slice(), ["1", "2", "3", "4", "5", "6", "7"]);
         assert_eq!(*current_index, 0);
         assert!(!popup, "ControlType -> Setter must not force a dropdown");
-        assert!(!setter_bar, "an unforced Setter is not a SetterBar");
+        // The ControlType reference page documents "Setter or SetterBar" as
+        // interchangeable spellings of the same button-row widget (see
+        // `ManipulateControl::Discrete`'s `setter_bar` field), so the
+        // singular spelling still forces the full row of buttons.
+        assert!(
+          setter_bar,
+          "ControlType -> Setter forces the button-bar layout"
+        );
       }
       other => panic!("expected a single Setter control, got {other:?}"),
     }
@@ -22065,6 +22072,63 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`nmax$$ = 10}, DynamicBox[\[Ellipsis
     // helper$$ falls back to the embedded uncompiled `Function[{x}, x^2]`
     // applied to n$$'s initial value 3.
     assert_eq!(state.text_output.as_deref(), Some("9"));
+  }
+
+  /// A saved `ManipulateBoxes[…]` dump can carry Wolfram's explicit
+  /// control-layout idiom for a step-dependent widget: the same control
+  /// spec declared twice (at two different Specifications positions) so a
+  /// `PaneSelector` written as `Place[n]`/`Invisible[Place[n]]` — not a
+  /// literal control spec — can swap which declared position is on screen,
+  /// e.g. a Demonstrations "position of C" slider that only makes sense
+  /// once a later step has placed the point it moves. Before this fix,
+  /// `pane_control_variables` only recognized a `Control[…]`/bare-variable
+  /// pane, so neither the visibility condition nor the same-name dedup
+  /// applied: the duplicate spec became a second, always-visible row
+  /// instead of one row that shows only when the step condition holds.
+  #[test]
+  fn place_referenced_pane_selector_collapses_duplicate_spec() {
+    let dump = "DynamicModuleBox[{$CellContext`step$$ = 1, \
+      $CellContext`angle$$ = 0}, \
+      DynamicBox[Manipulate`ManipulateBoxes[\n\
+      1, StandardForm, \n\
+      \"Body\" :> $CellContext`angle$$, \n\
+      \"Specifications\" :> {\
+        {{$CellContext`step$$, 1, \"step\"}, {1, 2, 3}, ControlPlacement -> 1}, \
+        {{$CellContext`angle$$, 0, \"angle\"}, 0, 1, ControlPlacement -> 2}, \
+        {{$CellContext`angle$$, 0, \"angle\"}, 0, 1, ControlPlacement -> 3}, \
+        Row[{Manipulate`Place[1], Spacer[15], \
+          PaneSelector[{True -> Manipulate`Place[2], \
+            False -> Invisible[Manipulate`Place[3]]}, \
+           Dynamic[$CellContext`step$$ > 1]]}]}, \n\
+      \"Options\" :> {}],\n\
+      DynamicModuleValues:>{}]]";
+    let mut state = instantiate_manipulate_from_box_dump(dump)
+      .expect("the reconstructed Manipulate must build a widget");
+    assert!(state.error.is_none(), "unexpected error: {:?}", state.error);
+    assert_eq!(
+      state
+        .controls
+        .iter()
+        .map(|c| c.name().to_string())
+        .collect::<Vec<_>>(),
+      vec!["step$$", "angle$$"],
+      "the duplicate angle$$ spec must collapse into a single row: {:?}",
+      state.controls
+    );
+    assert_eq!(
+      state.control_is_visible,
+      vec![true, false],
+      "step$$ starts at 1, so the Place-referenced angle$$ row must start \
+       hidden: {:?}",
+      state.control_is_visible
+    );
+    state.apply_saved_variables(&[("step$$".to_string(), "2".to_string())]);
+    assert_eq!(
+      state.control_is_visible,
+      vec![true, true],
+      "moving step$$ past 1 must reveal the angle$$ row: {:?}",
+      state.control_is_visible
+    );
   }
 
   /// A `RevolutionPlot3D` curve given as `{fx, fy, fz}` — three components,
