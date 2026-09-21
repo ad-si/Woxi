@@ -27615,4 +27615,51 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k1$$ = 1}, \"\\[Ellipsis]\"]"], "Ou
       "a picture result must not also carry a text fallback"
     );
   }
+
+  /// A real Wolfram Demonstrations Project "source" notebook download
+  /// wraps its `Manipulate[…]` control specification in Mathematica's own
+  /// `"None" -> {controlSpec}` grouping syntax — the shape it serializes
+  /// whenever a Manipulate's compiled `"Specifications"` has just one,
+  /// otherwise-unnamed group of controls — rather than the bare
+  /// `{var, min, max}` form most hand-written code uses. That shape used
+  /// to make `extract_manipulate_spec` see zero controls and refuse to
+  /// build a widget at all, so a downloaded Demonstration's own Locator
+  /// control (dragging two points to place a bridge, say) silently failed
+  /// to open with no error shown anywhere — independently written, not
+  /// copied from any specific Demonstration.
+  #[test]
+  fn stored_manipulate_with_none_named_control_group_opens_live() {
+    let nb_src = r#"Notebook[{
+Cell[BoxData["mark={Disk[{0,0},.2]}"], "Input"],
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[Graphics[Translate[mark,pt]],\"None\"->{{pt,{{1,1},{4,4}}},{0,0},{5,5},Locator,Appearance->None},SaveDefinitions->True,TrackedSymbols:>{pt}]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`pt$$ = {{1, 1}, {4, 4}}}, \"…\"]"], "Output"]
+}, Open]]
+}]"#;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect(
+        "the stored Manipulate must instantiate on load even though its \
+         control is wrapped in \"None\" -> {…}",
+      );
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the translated mark should render"
+    );
+    match &widget.controls[..] {
+      [manipulate::ControlState::Locator { name, points, .. }] => {
+        assert_eq!(name, "pt");
+        assert_eq!(points.len(), 2);
+      }
+      other => panic!("expected a single Locator control, got {other:?}"),
+    }
+  }
 }
