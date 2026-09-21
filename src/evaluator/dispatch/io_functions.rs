@@ -5023,6 +5023,17 @@ pub(crate) fn lays_out_a_graphic(expr: &Expr) -> bool {
   if matches!(expr, Expr::FunctionCall { name, .. } if name == "LineLegend") {
     return true;
   }
+  // Likewise a bare `SwatchLegend[…]` — a color-swatch legend rather than
+  // a line-style one.
+  if matches!(expr, Expr::FunctionCall { name, .. } if name == "SwatchLegend") {
+    return true;
+  }
+  // `Animate[expr, spec, …]` nested in a display draws its first frame
+  // (see `animate_snapshot_svg`), so it counts as a picture too.
+  if matches!(expr, Expr::FunctionCall { name, args } if name == "Animate" && args.len() >= 2)
+  {
+    return true;
+  }
   // `TableForm[data, …]` / `MatrixForm[data, …]`, and either wrapped in a
   // `Style[…]` that sets its font, are drawn as an aligned grid picture by
   // `expr_to_svg` — a Demonstration's Manipulate body composing one into a
@@ -5776,6 +5787,21 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     // it — the front end typesets it as swatches either way.
     Expr::FunctionCall { name, args } if name == "LineLegend" => {
       crate::functions::graphics::line_legend_svg(args).unwrap_or_default()
+    }
+    // A bare `SwatchLegend[…]` (not wrapped in `Legended`) is how a
+    // Demonstration places a color-swatch legend beside its plot instead
+    // of attached to it — the front end typesets it as filled squares
+    // either way.
+    Expr::FunctionCall { name, args } if name == "SwatchLegend" => {
+      crate::functions::graphics::swatch_legend_svg(args).unwrap_or_default()
+    }
+    // `Animate[…]` composed into a static display (e.g. `Pane[Animate[…],
+    // …]` sitting in a `Grid` cell) rather than being the whole Manipulate
+    // output — draw its first frame instead of the unevaluated source.
+    Expr::FunctionCall { name, args }
+      if name == "Animate" && args.len() >= 2 =>
+    {
+      crate::functions::graphics::animate_snapshot_svg(args).unwrap_or_default()
     }
     // ComputationalMusic objects render as musical-staff notation.
     Expr::FunctionCall { name, .. }

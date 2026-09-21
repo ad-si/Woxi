@@ -16399,6 +16399,92 @@ mod line_legend {
   }
 }
 
+// A bare `SwatchLegend[…]` (not wrapped in `Legended`) is the color-swatch
+// counterpart of `LineLegend`: Wolfram's front end typesets it as a filled
+// square next to each label rather than printing the symbolic call.
+mod swatch_legend {
+  use super::*;
+
+  #[test]
+  fn bare_swatch_legend_renders_as_swatches() {
+    clear_state();
+    let svg = export_svg("SwatchLegend[{Red, Blue}, {\"A\", \"B\"}]");
+    assert!(
+      !svg.contains("SwatchLegend["),
+      "Should be drawn, not printed as source: {svg}"
+    );
+    assert_eq!(
+      svg.matches("<rect ").count(),
+      2,
+      "One filled square per entry: {svg}"
+    );
+    assert!(svg.contains('A') && svg.contains('B'));
+  }
+
+  #[test]
+  fn swatch_legend_nested_in_grid_cell_renders_inline() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Grid[{{Graphics[{Red, Disk[]}], SwatchLegend[{Red, Blue}, {\"x\", \"y\"}]}}]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(
+      !svg.contains("SwatchLegend["),
+      "Should be drawn inside the grid cell, not printed as source: {svg}"
+    );
+    // Each swatch is a black-stroked square; the neighboring `Graphics`
+    // cell also draws its own (unstroked) background `<rect>`, so count
+    // only the swatch style rather than every `<rect>` in the combined SVG.
+    assert_eq!(svg.matches("stroke=\"black\"").count(), 2);
+  }
+}
+
+// `Animate[expr, {var, min, max}, …]` composed into a static display — a
+// Demonstration's body building `Pane[Animate[…], …]` and placing it in a
+// `Grid` — is not the whole Manipulate/cell output, so it never reaches the
+// interactive-widget extraction; it still needs to draw its first frame
+// rather than dump the unevaluated `Animate[…]` source.
+mod animate_snapshot {
+  use super::*;
+
+  #[test]
+  fn animate_nested_in_pane_renders_first_frame() {
+    clear_state();
+    let svg = export_svg(
+      "Pane[Animate[Graphics[{Blue, Disk[{t, 0}, 1]}], {t, 0, 1}], {100, 100}]",
+    );
+    assert!(
+      !svg.contains("Animate[") && !svg.contains("Graphics[{"),
+      "Should be drawn, not printed as source: {svg}"
+    );
+    assert!(
+      svg.contains("<ellipse") || svg.contains("<circle"),
+      "The disk at the animation variable's initial value should be drawn: {svg}"
+    );
+  }
+
+  #[test]
+  fn animate_nested_in_grid_cell_renders_inline() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Grid[{{Graphics[{Red, Disk[]}], \
+       Pane[Animate[Graphics[{Green, Disk[{t, 0}, 1]}], {t, 0, 1}], {80, 80}]}}]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(
+      !svg.contains("Animate["),
+      "Should be drawn inside the grid cell, not printed as source: {svg}"
+    );
+    assert_eq!(
+      svg.matches("<ellipse").count() + svg.matches("<circle").count(),
+      2,
+      "Both the plain disk and the animated frame's disk should be drawn: {svg}"
+    );
+  }
+}
+
 mod plot_grid {
   use super::*;
 
