@@ -3688,6 +3688,36 @@ fn handle_event(
 /// as the label (Wolfram captions `{k, 0, 1}` with "k"), so an empty label is
 /// never a missing one: it is the explicit `""` a Demonstration writes to
 /// suppress the caption, and stays blank.
+/// Convert `LabelRun`s (a `Style[…]` label's bold/italic/color directives)
+/// into rich-text spans against `base_font`. Shared by every place a
+/// Manipulate label or annotation renders `LabelRun`s — control-row labels,
+/// `Heading` rows, and `Dynamic[…]` display captions — so a directive parsed
+/// once by `woxi::functions::graphics` is honored consistently everywhere it
+/// is shown, rather than each call site re-implementing (and potentially
+/// dropping) part of it.
+fn label_run_spans<'a, L>(
+  runs: &[woxi::functions::graphics::LabelRun],
+  base_font: Font,
+) -> Vec<text::Span<'a, L>> {
+  runs
+    .iter()
+    .map(|r| {
+      let mut font = base_font;
+      if r.italic {
+        font.style = iced::font::Style::Italic;
+      }
+      if r.bold {
+        font.weight = iced::font::Weight::Bold;
+      }
+      let mut span = iced::widget::span(r.text.clone()).font(font);
+      if let Some((red, green, blue)) = r.color {
+        span = span.color(Color::from_rgb(red, green, blue));
+      }
+      span
+    })
+    .collect()
+}
+
 fn manipulate_label_widget<'a>(
   runs: &[woxi::functions::graphics::LabelRun],
   label: &str,
@@ -3695,12 +3725,6 @@ fn manipulate_label_widget<'a>(
   enabled: bool,
 ) -> Element<'a, Message> {
   const SIZE: f32 = 12.0;
-  // Match the family the upright runs inherit (the app default is
-  // MONOSPACE) so an italic run doesn't jump to a different typeface.
-  let italic = Font {
-    style: iced::font::Style::Italic,
-    ..Font::MONOSPACE
-  };
   // A disabled control's label is dimmed to match the greyed-out widget.
   let color = move |theme: &Theme| {
     if enabled {
@@ -3721,15 +3745,13 @@ fn manipulate_label_widget<'a>(
   }
 
   // rich_text spans carry a fixed color, so a disabled label uses a muted grey
-  // (theme-agnostic) rather than the theme-derived color used above.
+  // (theme-agnostic) rather than the theme-derived color used above — that
+  // override takes priority over a `Style[…]`-given color so a disabled
+  // control still reads as disabled.
   let muted = Color::from_rgb(0.55, 0.55, 0.58);
-  let spans: Vec<text::Span<'a, ()>> = runs
-    .iter()
-    .map(|r| {
-      let mut s = iced::widget::span(r.text.clone());
-      if r.italic {
-        s = s.font(italic);
-      }
+  let spans: Vec<text::Span<'a, ()>> = label_run_spans(runs, Font::MONOSPACE)
+    .into_iter()
+    .map(|mut s| {
       if !enabled {
         s = s.color(muted);
       }
@@ -3995,6 +4017,7 @@ fn render_manipulate_widget<'a>(
         values,
         value_labels,
         value_label_svgs,
+        value_label_runs,
         current_index,
         overflow,
         popup,
@@ -4088,14 +4111,23 @@ fn render_manipulate_widget<'a>(
             let is_selected = !has_overflow && i == *current_index;
             let choice = choice_label.clone();
             // A choice whose rule label is a graphic (`"+" -> myIcon[2]`)
-            // shows the rendered icon; text choices show their label.
+            // shows the rendered icon; a text choice shows its label, honoring
+            // any `Style[…, color]`/`Bold` directive the rule label carried
+            // (e.g. a multi-way selector's `1 -> Style["top", Blue]`).
             let btn_content: Element<Message> =
               match value_label_svgs.get(i).and_then(|s| s.as_ref()) {
                 Some(icon) => svg::Svg::new(icon.clone())
                   .width(iced::Length::Fixed(24.0))
                   .height(iced::Length::Fixed(14.0))
                   .into(),
-                None => text(choice_label.clone()).size(12).into(),
+                None => match value_label_runs.get(i) {
+                  Some(runs) if !runs.is_empty() => {
+                    let spans: Vec<text::Span<Message>> =
+                      label_run_spans(runs, Font::MONOSPACE);
+                    rich_text(spans).size(12).into()
+                  }
+                  _ => text(choice_label.clone()).size(12).into(),
+                },
               };
             let mut btn = button(btn_content).padding([3, 10]).style(
               move |theme: &Theme, status| {
@@ -4458,18 +4490,14 @@ fn render_manipulate_widget<'a>(
       }
       manipulate::ControlState::Heading { label, label_runs } => {
         // A static heading row (a string or `Style[…]` Manipulate argument,
-        // e.g. "signal 1"). Rendered bold across the full row.
-        let spans: Vec<iced::widget::text::Span<Message>> = label_runs
-          .iter()
-          .map(|run| {
-            let mut font = Font::MONOSPACE;
-            font.weight = iced::font::Weight::Bold;
-            if run.italic {
-              font.style = iced::font::Style::Italic;
-            }
-            iced::widget::span(run.text.clone()).font(font)
-          })
-          .collect();
+        // e.g. "signal 1"). Rendered bold across the full row, plus any
+        // italic/color the source `Style[…]` directive gave it (e.g. a
+        // `Style["elsewhere", Red]` decorative item), matching the Wolfram
+        // FrontEnd's colored static text.
+        let mut base_font = Font::MONOSPACE;
+        base_font.weight = iced::font::Weight::Bold;
+        let spans: Vec<iced::widget::text::Span<Message>> =
+          label_run_spans(label_runs, base_font);
         let heading: Element<Message> = if spans.is_empty() {
           let mut font = Font::MONOSPACE;
           font.weight = iced::font::Weight::Bold;
@@ -4758,23 +4786,8 @@ fn render_display_node<'a>(
       space::Space::new().width(*width as f32).into()
     }
     DisplayNode::Text { runs } => {
-      let spans: Vec<iced::widget::text::Span<Message>> = runs
-        .iter()
-        .map(|run| {
-          let mut font = Font::MONOSPACE;
-          if run.italic {
-            font.style = iced::font::Style::Italic;
-          }
-          if run.bold {
-            font.weight = iced::font::Weight::Bold;
-          }
-          let mut span = iced::widget::span(run.text.clone()).font(font);
-          if let Some((r, g, b)) = run.color {
-            span = span.color(Color::from_rgb(r, g, b));
-          }
-          span
-        })
-        .collect();
+      let spans: Vec<iced::widget::text::Span<Message>> =
+        label_run_spans(runs, Font::MONOSPACE);
       if spans.is_empty() {
         text("").size(12).into()
       } else {
@@ -7016,6 +7029,164 @@ fn strip_svg_wrapper(svg: &str) -> &str {
 mod tests {
   use super::*;
 
+  /// `label_run_spans` must carry a `Style[…]`-given color and bold weight
+  /// into the rendered spans, not just italic. Regression: every call site
+  /// that renders a Manipulate control's `LabelRun`s (a control-row label,
+  /// and a static `Heading` row from a bare `Style["…", color]` Manipulate
+  /// argument) applied italic only, silently dropping any color or bold
+  /// directive the label actually carried — so e.g. a Demonstration's
+  /// colored section heading (`Style["elsewhere", Red]` between controls)
+  /// rendered as plain black text in Woxi Studio while the Wolfram FrontEnd
+  /// shows it in the given color.
+  #[test]
+  fn label_run_spans_honor_style_color_and_bold() {
+    let runs = vec![woxi::functions::graphics::LabelRun {
+      text: "elsewhere".to_string(),
+      italic: false,
+      bold: true,
+      color: Some((1.0, 0.0, 0.0)),
+    }];
+    let spans: Vec<text::Span<'_, ()>> =
+      label_run_spans(&runs, Font::MONOSPACE);
+    assert_eq!(spans.len(), 1);
+    assert_eq!(spans[0].color, Some(Color::from_rgb(1.0, 0.0, 0.0)));
+    assert_eq!(
+      spans[0].font.map(|f| f.weight),
+      Some(iced::font::Weight::Bold)
+    );
+  }
+
+  /// A multi-way selector whose choices are `value -> Style["label", color]`
+  /// (a Demonstrations idiom for coloring each option, distinct from any
+  /// specific Demonstration) must carry each choice's color all the way into
+  /// the built `ControlState::Discrete`, so `label_run_spans` (used by the
+  /// SetterBar button rendering) has real data to color.
+  #[test]
+  fn manipulate_discrete_control_keeps_styled_choice_colors() {
+    let expr = woxi::interpret_to_expr(
+      r#"Manipulate[side, {{side, 1, "side"}, {1 -> Style["north", Blue], -1 -> Style["south", Brown]}}]"#,
+    )
+    .expect("parse Manipulate expr");
+    let state =
+      manipulate::ManipulateState::from_expr(&expr).expect("build widget");
+    let value_label_runs = state
+      .controls
+      .iter()
+      .find_map(|c| match c {
+        manipulate::ControlState::Discrete {
+          value_label_runs, ..
+        } => Some(value_label_runs.clone()),
+        _ => None,
+      })
+      .expect("a Discrete control");
+    assert_eq!(value_label_runs.len(), 2);
+    assert!(
+      value_label_runs[0].iter().any(|r| r.color.is_some()),
+      "Style[…, Blue] must survive into the built control"
+    );
+    assert!(
+      value_label_runs[1].iter().any(|r| r.color.is_some()),
+      "Style[…, Brown] must survive into the built control"
+    );
+  }
+
+  /// A Manipulate's bare `Style["…", color]` argument (Wolfram's
+  /// `ThisIsNotAControl`, a decorative label sitting between controls) must
+  /// keep its color once extracted into a `Heading` control's `label_runs`,
+  /// so the fix above has real data to render.
+  #[test]
+  fn manipulate_style_heading_keeps_its_color() {
+    let expr = woxi::interpret_to_expr(
+      r#"Manipulate[a, {a, 0, 1}, Style["note", Blue]]"#,
+    )
+    .expect("parse Manipulate expr");
+    let state =
+      manipulate::ManipulateState::from_expr(&expr).expect("build widget");
+    let heading = state
+      .controls
+      .iter()
+      .find_map(|c| match c {
+        manipulate::ControlState::Heading { label_runs, .. } => {
+          Some(label_runs.clone())
+        }
+        _ => None,
+      })
+      .expect("a Heading control from the bare Style[…] argument");
+    assert_eq!(heading.len(), 1);
+    assert!(
+      heading[0].color.is_some(),
+      "Style[…, Blue] must set a color"
+    );
+  }
+
+  /// A Manipulate whose body picks between two `Compile[…]`d
+  /// angle-to-3D-point functions with `Switch` on a `SetterBar`-controlled
+  /// mode, and — in the "combined" mode — plots both curves at once via
+  /// `Through[{f, g}][##]&` alongside a single-curve branch, the way a
+  /// Demonstrations "compare two related space curves" notebook is
+  /// commonly built. A `ButtonBar` loads a preset (radius, count) pair via
+  /// list-destructuring assignment from `Lookup` on an association-style
+  /// rule list built in `Initialization`, and a discrete `Control[…]`
+  /// picks the petal count from an explicit `Range[…]`. This is a
+  /// self-authored, construct-equivalent example (invented names, curve
+  /// formula and presets) — not any specific Demonstration's code, data or
+  /// wording, which is copyrighted.
+  #[test]
+  fn demonstration_guided_switch_manipulate_combines_two_compiled_curves() {
+    let code = r#"Manipulate[
+      Module[{fun, col},
+        fun = Switch[mode, 1, Through[{curveOuter, curveInner}[##]] & , 2,
+          curveOuter, 3, curveInner];
+        col = Switch[mode, 1, Green, 2, Red, 3, Blue];
+        ParametricPlot3D[
+          {If[mode > 1, (Through[{curveOuter, curveInner}[##]] & )[
+             t, radius, petals, offset], {}],
+           fun[t, radius, petals, offset]},
+          {t, -Pi, Pi}, PlotStyle -> col, PlotRange -> 6, Axes -> False]
+      ],
+      {{mode, 1, ""}, {1 -> "both", 2 -> "outer", 3 -> "inner"}, SetterBar},
+      Delimiter,
+      Row[{"preset", ButtonBar[{
+        "wide" :> ({radius, petals} = Lookup[presetTable, "wide"]),
+        "narrow" :> ({radius, petals} = Lookup[presetTable, "narrow"])}]}],
+      {{radius, 0.75, ""}, 0.25, 1.25, 0.0001, ImageSize -> Small,
+        Appearance -> "Labeled"},
+      Control[{{petals, 4, ""}, Range[2, 6]}],
+      {{offset, 0., "offset"}, -1.5, 1.5, 0.0001, Appearance -> "Labeled",
+        Enabled :> (mode > 1)},
+      ControlPlacement -> Left,
+      TrackedSymbols -> True,
+      SynchronousUpdating -> False,
+      SaveDefinitions -> True,
+      Initialization :> (
+        curveOuter[t_, r_, n_, a_] := {r Cos[t] (2 + Sin[n t + a]),
+          r Sin[t] (2 + Sin[n t + a]), Sqrt[Abs[r^2 - Sin[t]^2]]};
+        curveInner[t_, r_, n_, a_] := {r Cos[t] (2 + Sin[n t + a]),
+          r Sin[t] (2 + Sin[n t + a]), -Sqrt[Abs[r^2 - Sin[t]^2]]};
+        presetTable = {"wide" -> {0.9, 3}, "narrow" -> {0.5, 5}};
+      )]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr).expect(
+      "the SetterBar, ButtonBar, discrete Control and labeled sliders \
+       should build a ManipulateState",
+    );
+    assert_eq!(
+      state.error, None,
+      "the Switch/Through/ParametricPlot3D body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the combined-curve branch must render as a picture"
+    );
+    assert_eq!(
+      state.control_placement,
+      manipulate::ControlPlacement::Left,
+      "ControlPlacement -> Left must put the panel beside the output"
+    );
+  }
+
   /// A `SaveDefinitions -> True` Manipulate (the shape a Wolfram
   /// Demonstrations Project notebook downloaded straight from a share link
   /// carries: an Input cell holding the live `Manipulate[…]` source, and an
@@ -7184,6 +7355,77 @@ mod tests {
       state.error
     );
     assert_eq!(state.text_output.as_deref(), Some("hexagon"));
+  }
+
+  /// A `Button[…]` action alongside two disjoint `SetterBar` rows that
+  /// share one control variable — a "reset" button next to a
+  /// coarse/fine (or split) picker for the same underlying setting, as a
+  /// Wolfram Demonstrations Project notebook's curve-fitting or
+  /// model-picker panel commonly pairs (independently written, not copied
+  /// from any specific one). Regression: `ManipulateState::bindings()` listed
+  /// the shared variable once per control row, so a button press built
+  /// `Block[{shape = …, shape = …, …}, action; {…}]` to run the action —
+  /// and Wolfram's `Block` rejects a local spec naming the same variable
+  /// twice (`Block::dup`), which made `apply_manipulate_button_action`
+  /// silently drop the update instead of running it. The button appeared to
+  /// do nothing.
+  #[test]
+  fn manipulate_button_action_with_disjoint_setter_bar_siblings() {
+    let code = "Manipulate[\
+      Which[shape == 1, \"circle\", shape == 2, \"square\", shape == 3, \"triangle\"], \
+      Button[\"reset\", shape = 1], \
+      {{shape, 2, \"\"}, {1 -> \"circle\", 2 -> \"square\"}, ControlType -> SetterBar}, \
+      {{shape, 2, \"\"}, {3 -> \"triangle\"}, ControlType -> SetterBar}\
+      ]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the shared-variable SetterBar Manipulate must build a widget");
+    assert_eq!(state.text_output.as_deref(), Some("square"));
+
+    // Move away from the button's target value first, via the row that has
+    // no button for it at all, so the button press is the only thing that
+    // can bring it back.
+    let shape_rows: Vec<usize> = state
+      .controls
+      .iter()
+      .enumerate()
+      .filter(|(_, c)| c.name() == "shape")
+      .map(|(i, _)| i)
+      .collect();
+    assert_eq!(
+      shape_rows.len(),
+      2,
+      "expected two SetterBar rows sharing `shape`: {:?}",
+      state.controls
+    );
+    let third_idx = shape_rows[1];
+    if let manipulate::ControlState::Discrete {
+      current_index,
+      overflow,
+      ..
+    } = &mut state.controls[third_idx]
+    {
+      *current_index = 0;
+      *overflow = None;
+    }
+    state.apply_tracking(third_idx);
+    state.reevaluate();
+    assert_eq!(state.text_output.as_deref(), Some("triangle"));
+
+    let action = state
+      .controls
+      .iter()
+      .find_map(|c| match c {
+        manipulate::ControlState::Button { action, .. } => Some(action.clone()),
+        _ => None,
+      })
+      .expect("the reset Button control");
+    state.apply_button_action(&action);
+    assert_eq!(
+      state.text_output.as_deref(),
+      Some("circle"),
+      "the Button's action must actually run even though `shape` has two \
+       control rows, not silently no-op"
+    );
   }
 
   /// A Manipulate whose body calls a `Compile`d helper with bare
@@ -7839,6 +8081,63 @@ mod tests {
     assert!(
       state.graphics_handle.is_some(),
       "Plot of the NDSolve lattice solution should render a graphic"
+    );
+  }
+
+  /// A coupled `NDSolve` system whose three equations relate the unknowns'
+  /// derivatives implicitly (no equation isolates a single derivative) and
+  /// whose initial conditions are stated as one chained equality shared by
+  /// every unknown (`p[0] == q[0] == r[0] == 0`) — the shape a circuit or
+  /// coupled-oscillator Wolfram Demonstrations Project notebook commonly
+  /// uses to say "everything starts at rest" in one equation rather than
+  /// three (independently written, not copied from any specific one).
+  /// Regression: `Equal` with more than two operands parses to one
+  /// `Comparison` node; the PDE branch of `NDSolve` already expanded such a
+  /// chain into pairwise equations, but the general ODE-system branch
+  /// didn't, so this counted as a single bogus initial-condition equation,
+  /// the equation/function count came up short, and `NDSolve` bailed out
+  /// unevaluated — silently, since the body's `Plot` of an unresolved
+  /// `NDSolve` call renders as a blank graphic rather than an error.
+  #[test]
+  fn manipulate_coupled_ndsolve_chained_initial_condition_renders_plot() {
+    let code = r#"Manipulate[
+      Plot[Evaluate[{p[t], q[t], r[t]} /. First[
+        NDSolve[{
+          p'[t] + q'[t] + r'[t] == rate,
+          p'[t] - q'[t] == 1,
+          q'[t] - r'[t] == 1,
+          p[0] == q[0] == r[0] == 0
+        }, {p, q, r}, {t, 0, 5}]
+      ]], {t, 0, 5}],
+      {{rate, 6}, 0, 12}
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr).expect(
+      "a coupled NDSolve system with a chained initial condition should build a ManipulateState",
+    );
+    assert!(
+      state.error.is_none(),
+      "body should evaluate cleanly: {:?}",
+      state.error
+    );
+    let handle = state
+      .graphics_handle
+      .as_ref()
+      .expect("Plot of the coupled NDSolve solution should render a graphic");
+    let iced::advanced::svg::Data::Bytes(bytes) = handle.data() else {
+      panic!("graphic should be in-memory SVG data, not a file path");
+    };
+    // A `NDSolve` call left unevaluated (because its chained initial
+    // condition wasn't recognized) makes `Plot` of an unresolved symbolic
+    // expression render as an empty `<svg .../>` stub rather than error out
+    // — so the regression this guards against is a suspiciously tiny
+    // graphic, not a missing one.
+    assert!(
+      bytes.len() > 200,
+      "expected an actual plotted curve, got a {}-byte stub: {}",
+      bytes.len(),
+      String::from_utf8_lossy(bytes)
     );
   }
 
@@ -9663,6 +9962,67 @@ Cell[BoxData[TagBox[GridBox[{{TagBox[GridBox[{{TemplateBox[{CheckboxBox[True, {F
       svg.contains("[x]"),
       "the checkbox must show as ticked: {svg}"
     );
+  }
+
+  /// End-to-end regression for the shape of Demonstration that lays out
+  /// points around a circle by repeatedly rotating by a tunable step angle:
+  /// an initialization cell defines a rotation helper and a `ring[step_,
+  /// count_]` graphic, and the Manipulate offers preset buttons (each
+  /// setting more than one variable via a doubly-nested-list action, as the
+  /// Wolfram Demonstrations Project's own button-template boilerplate
+  /// writes them), row-grouped buttons, and a `ControlPlacement` given as a
+  /// singleton list rather than a bare symbol.
+  #[test]
+  fn ring_of_points_notebook_opens_with_its_widget() {
+    let nb_src = r#"Notebook[{
+Cell[BoxData["rotStep[pt_, k_, step_:0.5] := RotationMatrix[2 Pi step k] . pt\nring[step_, count_] := Graphics[{Circle[], Line[NestList[rotStep[#1, 1, step] &, {0, 1}, count - 1]]}, ImageSize -> 250]"], "Input"],
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[\nring[step, count],\nStyle[\"presets\", Bold], Delimiter,\nRow[{\nButton[\"a\", {{step = 0.5; count = 6}}, ImageSize -> Large],\nButton[\"b\", {{step = 0.6; count = 8}}, ImageSize -> Large]\n}],\nDelimiter,\n{{count, 6, \"count\"}, 3, 12, 1, ImageSize -> Small, Appearance -> \"Labeled\"},\n{{step, 0.5, \"step\"}, 0.1, 0.9, 0.01, ImageSize -> Small, Appearance -> \"Labeled\"},\nControlPlacement -> {Left}, SaveDefinitions -> True\n]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`count$$ = 6, $CellContext`step$$ = 0.5}, \"…\"]"], "Output"]
+}, Open]]
+}]"#;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .into_iter()
+      .find_map(|e| e.manipulate_state)
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(widget.graphics_handle.is_some());
+
+    // The preset buttons and the two labelled sliders must all show up as
+    // controls; the `Style[...]`/`Delimiter` headings must not be dropped.
+    let button_labels: Vec<&str> = widget
+      .controls
+      .iter()
+      .filter_map(|c| match c {
+        manipulate::ControlState::Button { label, .. } => Some(label.as_str()),
+        _ => None,
+      })
+      .collect();
+    assert_eq!(button_labels, ["a", "b"]);
+
+    let slider_names: Vec<&str> = widget
+      .controls
+      .iter()
+      .filter_map(|c| match c {
+        manipulate::ControlState::Continuous { name, .. } => {
+          Some(name.as_str())
+        }
+        _ => None,
+      })
+      .collect();
+    assert_eq!(slider_names, ["count", "step"]);
+
+    // `ControlPlacement -> {Left}` is the widget-level option spelled as a
+    // singleton list (as the Wolfram Demonstrations Project template
+    // writes it) rather than the bare symbol `Left`; it must still place
+    // the panel on the left, not fall back to the default `Top`.
+    assert_eq!(widget.control_placement, manipulate::ControlPlacement::Left);
   }
 
   #[test]
@@ -17207,6 +17567,203 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`showCap$$ = False}, \"\\[Ellipsis]\
     );
   }
 
+  /// End-to-end regression for the "Typeset Sierpinski Sieve" Demonstration's
+  /// shape: a `Graphics[Text[…], …]` whose label is `Nest[Subsuperscript[#,
+  /// #, #] &, symbol, depth]` — each recursion level wraps the *whole*
+  /// previous level in a fresh sub-/superscript pair, which is the
+  /// fractal-like typeset pattern the Demonstration is named for. The one
+  /// control is a discrete stepped slider (`{{var, init, "label"}, lo, hi,
+  /// step}` with `Appearance -> "Labeled"`).
+  ///
+  /// `graphics_text_content` (the flattener a `Text[…]` primitive's label
+  /// goes through before it is drawn) folded `Subscript`/`Superscript` into
+  /// their Unicode script form but had no arm for a bare `Subsuperscript`,
+  /// so `Nest` building one fell through to its literal `Subsuperscript[…]`
+  /// source text instead of typesetting. Fixed by adding `Subsuperscript`
+  /// to that arm (and to the sibling `expr_to_label`, `expr_to_svg_markup`
+  /// and `estimate_display_width` — the same head's label/markup/width
+  /// paths) rather than leaving it to print its own source.
+  ///
+  /// The Manipulate is written here rather than lifted from the published
+  /// notebook.
+  #[test]
+  fn nested_subsuperscript_notebook_builds_its_widget() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[\nGraphics[\nText[Nest[Subsuperscript[#, #, #] &, \"\\[CapitalPsi]\", depth], {0, 0}],\nImageSize -> 300\n],\n{{depth, 1, \"recursion depth\"}, 1, 4, 1, Appearance -> \"Labeled\"}\n]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`depth$$ = 1}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "the nested typeset label must build: {:?}",
+      widget.error
+    );
+    assert!(widget.graphics_handle.is_some(), "the label must draw");
+
+    let names: Vec<&str> = widget
+      .controls
+      .iter()
+      .map(|c| match c {
+        manipulate::ControlState::Discrete { name, .. } => name.as_str(),
+        manipulate::ControlState::Continuous { name, .. } => name.as_str(),
+        other => panic!("unexpected control: {other:?}"),
+      })
+      .collect();
+    assert_eq!(names, ["depth"]);
+
+    let render = |depth: u32| {
+      woxi::interpret_with_stdout(&format!("depth = {depth};\n{}", widget.body))
+        .expect("the body must render")
+        .graphics
+        .expect("the body must produce a graphic")
+    };
+    // Each recursion level must actually nest — not just repeat the same
+    // text unchanged — so the picture must differ as the depth control
+    // moves, and keep differing at the next level too.
+    let depth1 = render(1);
+    let depth2 = render(2);
+    let depth3 = render(3);
+    assert_ne!(depth1, depth2, "the recursion depth control must matter");
+    assert_ne!(depth2, depth3, "each extra level of nesting must matter");
+    // The bug this guards against: the literal `Subsuperscript[…]` source
+    // leaking into the picture instead of typesetting.
+    assert!(
+      !depth2.contains("Subsuperscript"),
+      "the nested scripts must typeset, not print their source: {depth2}"
+    );
+  }
+
+  /// End-to-end regression for the "Tiling with Pentominos" Demonstration:
+  /// a jigsaw of draggable pieces, each with its own `Locator` inside a
+  /// `Table`, all sharing one hidden `ControlType -> None` list variable
+  /// (`Table[Locator[Dynamic[positions[[i]]], …], {i, n}]`).
+  ///
+  /// `collect_body_locator_callbacks` (the scan that promotes a hidden
+  /// `ControlType -> None` variable to a visible control when an in-body
+  /// `Locator[Dynamic[…]]` drives it) only matched a bare identifier as the
+  /// `Dynamic`'s first argument. A per-piece `Locator[Dynamic[positions[[i]]],
+  /// …]` binds a `Part` expression instead — one array element per Table
+  /// iteration — so the whole `positions` list never matched and stayed a
+  /// hidden, non-interactive binding: the pieces drew in their starting
+  /// spots but could not be dragged at all, silently dropping the
+  /// Demonstration's entire interaction model.
+  ///
+  /// Fixed by also recognizing `Dynamic[var[[i]]]` in that scan and
+  /// recording the base variable `var`, so it promotes through the
+  /// existing list-of-points `Locator` control exactly as an explicit
+  /// `{{positions, {...}}, Locator}` spec would.
+  ///
+  /// The Manipulate is written here rather than lifted from the published
+  /// notebook.
+  #[test]
+  fn pentomino_tiling_notebook_builds_its_widget() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[\nDynamic@Graphics[\n{Dynamic@Table[\nWith[{k = k},\n{EventHandler[\nTranslate[Rotate[pieceShapes[[k]], Dynamic[Round[pieceSpin[[k]], Pi/12]]], Dynamic[piecePos[[k]]]],\n{\"MouseClicked\" :> If[MemberQ[flippedSet, k], flippedSet = DeleteCases[flippedSet, k], AppendTo[flippedSet, k]]}\n],\nLocator[Dynamic[piecePos[[k]]], None, ImageSize -> 30]}\n],\n{k, 2}\n]},\nImageSize -> 200,\nPlotRange -> {{-4, 8}, {-4, 8}}\n],\n{{pieceSpin, {0., 0.}}, ControlType -> None},\n{{piecePos, {{0., 0.}, {3., 3.}}}, ControlType -> None},\n{{pieceShapes, {Polygon[{{0, 0}, {1, 0}, {1, 1}, {0, 1}}], Polygon[{{0, 0}, {2, 0}, {2, 1}, {0, 1}}]}}, ControlType -> None},\n{{flippedSet, {}}, ControlType -> None}\n]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`pieceSpin$$ = {0., 0.}}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "the puzzle body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "both pieces must draw at their starting positions"
+    );
+
+    // The bug this guards against: `piecePos` staying hidden
+    // (`ControlType -> None`, no widget) because the per-piece
+    // `Locator[Dynamic[piecePos[[k]]], …]` markers bind a `Part`
+    // expression rather than a bare identifier.
+    let locator = widget
+      .controls
+      .iter()
+      .find_map(|c| match c {
+        manipulate::ControlState::Locator { name, points, .. }
+          if name == "piecePos" =>
+        {
+          Some(points.clone())
+        }
+        _ => None,
+      })
+      .expect(
+        "the shared position list must promote to a visible, draggable \
+         Locator control",
+      );
+    assert_eq!(
+      locator,
+      [(0.0, 0.0), (3.0, 3.0)],
+      "each piece's starting point must become its own draggable handle"
+    );
+
+    // `pieceSpin` and `flippedSet` are driven only by the click handler and
+    // the rotation math, never by a bare- or Part-indexed body Locator, so
+    // they must stay hidden state rather than also becoming (wrongly)
+    // visible controls.
+    assert!(
+      widget.state.iter().any(|(n, _)| n == "pieceSpin"),
+      "pieceSpin must remain live hidden state: {:?}",
+      widget.state
+    );
+    assert!(
+      widget.state.iter().any(|(n, _)| n == "flippedSet"),
+      "flippedSet must remain live hidden state: {:?}",
+      widget.state
+    );
+    assert!(
+      !widget
+        .controls
+        .iter()
+        .any(|c| c.name() == "pieceSpin" || c.name() == "flippedSet"),
+      "only the Locator-driven variable should gain a visible control: {:?}",
+      widget.controls
+    );
+
+    // Dragging a piece's handle must actually move it and re-render
+    // cleanly, exactly as an explicitly-declared multi-point Locator does.
+    let locator_idx = widget
+      .controls
+      .iter()
+      .position(|c| c.name() == "piecePos")
+      .unwrap();
+    let mut widget = editors
+      .into_iter()
+      .find_map(|e| e.manipulate_state)
+      .unwrap();
+    if let manipulate::ControlState::Locator { points, .. } =
+      &mut widget.controls[locator_idx]
+    {
+      points[0] = (5.0, -1.0);
+    } else {
+      panic!("expected the promoted control to be a Locator");
+    }
+    widget.reevaluate();
+    assert!(
+      widget.error.is_none(),
+      "re-render after dragging a piece failed: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the pieces must still draw after a piece is dragged"
+    );
+  }
+
   /// End-to-end regression for the "Chaos and Order in the Damped Forced
   /// Pendulum in a Plane" Demonstration: it integrates the damped driven
   /// pendulum `θ'' == -(g/l) Sin[θ] - γ θ' + a Cos[ω t]` from a grid of
@@ -20319,13 +20876,10 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 1}, DynamicBox[\[Ellipsis]]]"
         assert_eq!(values.as_slice(), ["1", "2", "3", "4", "5", "6", "7"]);
         assert_eq!(*current_index, 0);
         assert!(!popup, "ControlType -> Setter must not force a dropdown");
-        // The ControlType reference page documents "Setter or SetterBar" as
-        // interchangeable spellings of the same button-row widget (see
-        // `ManipulateControl::Discrete`'s `setter_bar` field), so the
-        // singular spelling still forces the full row of buttons.
         assert!(
-          setter_bar,
-          "ControlType -> Setter forces the button-bar layout"
+          *setter_bar,
+          "ControlType -> Setter must force the button row just like \
+           SetterBar does, per setter_control_type_forces_the_bar_regardless_of_choice_count"
         );
       }
       other => panic!("expected a single Setter control, got {other:?}"),
@@ -26943,6 +27497,61 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k1$$ = 1}, \"\\[Ellipsis]\"]"], "Ou
     assert_eq!(
       state.text_output, None,
       "a picture result must not also carry a text fallback"
+    );
+  }
+
+  /// A bank of sliders generated by `Evaluate[Sequence @@ Table[…]]`, one
+  /// per element of a shared list variable, each written
+  /// `{{w, default, label}, Manipulator[Dynamic[w[[i]]], {min,max,step}]&}`
+  /// — the Demonstrations idiom for letting a user tune every element of a
+  /// list independently (independently written, not copied from any
+  /// specific Demonstration; e.g. a per-tetrahedron opacity bank in a
+  /// polytope-projection Demonstration takes this exact shape). Regression:
+  /// this custom-control shape wasn't recognized, so every sibling spec
+  /// fell through to the generic "bake in as a fixed constant" path and
+  /// contributed its own `w = value` binding — three identically-named
+  /// bindings baked into one `Block[{…}, body]`, which Wolfram's `Block`
+  /// rejects outright as a duplicate local variable. The body was left
+  /// completely unevaluated (raw `Block[…]` source as the "output") and no
+  /// sliders were built at all.
+  #[test]
+  fn manipulate_evaluate_table_generated_sliders_share_one_list_variable() {
+    let code = r#"Manipulate[
+      Text[Row[{"sum: ", Total[w]}]],
+      Evaluate[Sequence @@ Table[
+        With[{i = i},
+          {{w, ConstantArray[1, 3], "w" <> ToString[i]},
+           Dynamic[Manipulator[Dynamic[w[[i]]], {0, 5, 1}]] &}
+        ], {i, 3}]],
+      {{total, 0}, None}
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr).expect(
+      "a bank of per-element sliders sharing one list variable must build \
+       a ManipulateState",
+    );
+    assert_eq!(state.error, None, "the body must evaluate cleanly");
+    assert_eq!(
+      state.text_output.as_deref(),
+      None,
+      "the body must render as a picture (Text[…] output), not fall back \
+       to raw source"
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the body must render as a picture: {:?}",
+      state.text_output
+    );
+    let slider_count = state
+      .controls
+      .iter()
+      .filter(|c| matches!(c, manipulate::ControlState::Continuous { .. }))
+      .count();
+    assert_eq!(
+      slider_count, 3,
+      "each list element must get its own slider: {:?}",
+      state.controls
     );
   }
 

@@ -1646,6 +1646,18 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
         Some(vec![0.0, -SMALL_DASH_PX, -SMALL_DASH_PX, -SMALL_DASH_PX]);
       true
     }
+    // A directive list nested one level down (`Directive[{Thick, Blue}]`,
+    // `Style[expr, {Thick, Blue}]`) is equivalent to its items given
+    // directly — recurse instead of falling through unrecognised, or the
+    // whole list silently applies no style at all. Every item must run:
+    // each one mutates `style` as a side effect (a color item and a
+    // thickness item both need to apply), so this can't be `Iterator::any`,
+    // which would stop at the first `true` and drop the rest.
+    #[allow(clippy::unnecessary_fold)]
+    Expr::List(items) => items
+      .iter()
+      .map(|item| apply_directive(item, style))
+      .fold(false, |acc, applied| acc || applied),
     _ => false,
   }
 }
@@ -3132,13 +3144,15 @@ fn graphics_text_content(expr: &Expr) -> String {
         None => parts.concat(),
       }
     }
-    // `Subscript`/`Superscript` typeset as scripts, not as the two-line
-    // OutputForm box `ToString` would give: a label reading `N` over ` D`
-    // is not what the picture is meant to show. `expr_to_label` already
-    // folds them into the Unicode script characters for plot labels, so a
-    // `Text` label written the same way reads the same way.
+    // `Subscript`/`Superscript`/`Subsuperscript` typeset as scripts, not as
+    // the two-line OutputForm box `ToString` would give: a label reading `N`
+    // over ` D` is not what the picture is meant to show. `expr_to_label`
+    // already folds them into the Unicode script characters for plot
+    // labels, so a `Text` label written the same way reads the same way.
     Expr::FunctionCall { name, args }
-      if (name == "Subscript" || name == "Superscript") && args.len() >= 2 =>
+      if (matches!(name.as_str(), "Subscript" | "Superscript")
+        && args.len() >= 2)
+        || (name == "Subsuperscript" && args.len() == 3) =>
     {
       crate::functions::chart::expr_to_label(expr)
         .unwrap_or_else(|| expr_to_string(expr))
@@ -9516,6 +9530,42 @@ fn unit_fraction_root_index(exp: &Expr) -> Option<i128> {
   (num == 1 && (2..=9).contains(&den)).then_some(den)
 }
 
+/// The positive exponent to raise a base to in the denominator of a
+/// reciprocal fraction, when `exp` is a negative number — `x^-1` and `x^-2`
+/// are the *same* internal `Power` shape as `1/x` and `1/x^2` (Wolfram never
+/// distinguishes a literal negative exponent from a reciprocal), so both
+/// typeset as a fraction, never as a superscripted negative number.
+fn negative_exponent_abs(exp: &Expr) -> Option<Expr> {
+  match exp {
+    Expr::Integer(n) if *n < 0 => Some(Expr::Integer(-n)),
+    Expr::BigInteger(n) if n.sign() == num_bigint::Sign::Minus => {
+      Some(Expr::BigInteger(-n.clone()))
+    }
+    Expr::Real(f) if *f < 0.0 => Some(Expr::Real(-f)),
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      match (&args[0], &args[1]) {
+        (Expr::Integer(n), Expr::Integer(d)) if *n < 0 && *d > 0 => Some(
+          unevaluated("Rational", &[Expr::Integer(-n), Expr::Integer(*d)]),
+        ),
+        _ => None,
+      }
+    }
+    _ => None,
+  }
+}
+
+/// `base` raised to the (already-positive) `exp` — `exp == 1` collapses to
+/// just `base`, matching how Wolfram drops a bare `^1`.
+fn pow_or_base(base: &Expr, exp: Expr) -> Expr {
+  if matches!(&exp, Expr::Integer(1)) {
+    base.clone()
+  } else {
+    unevaluated("Power", &[base.clone(), exp])
+  }
+}
+
 /// The markup for `-term` when a `Plus` term carries a negative *coefficient*
 /// other than -1 (`Times[-5, x]`), so the sum reads `-5 - 5 x` rather than
 /// `-5 + -5 x`. The -1 case is handled by the caller, which drops the
@@ -9552,6 +9602,17 @@ fn negated_markup_term(arg: &Expr) -> Option<String> {
 /// newlines (the 2D text `ToString[…, TraditionalForm]` returns) splits
 /// further. Everything else is a single line.
 pub fn expr_to_svg_markup_lines(expr: &Expr) -> Vec<String> {
+  // `Framed[content]`/`Highlighted[content]` draws no box in a running
+  // line of text (see this function's own single-line sibling below) — but
+  // as a whole item inside a `Column`, the same reasoning that lets a
+  // nested `Column`/`Grid` flatten into several lines applies to what it
+  // wraps too, so peel it before recursing.
+  if let Expr::FunctionCall { name, args } = expr
+    && (name == "Framed" || name == "Highlighted")
+    && !args.is_empty()
+  {
+    return expr_to_svg_markup_lines(&args[0]);
+  }
   let rows: Vec<String> = match expr {
     Expr::FunctionCall { name, args } if name == "Grid" && !args.is_empty() => {
       match &args[0] {
@@ -9573,8 +9634,14 @@ pub fn expr_to_svg_markup_lines(expr: &Expr) -> Vec<String> {
       if name == "Column" && !args.is_empty() =>
     {
       match &args[0] {
-        Expr::List(items) => items.iter().map(expr_to_svg_markup).collect(),
-        other => vec![expr_to_svg_markup(other)],
+        // Each item becomes its own line; an item that is itself a
+        // `Column`/`Grid`/`Framed` (a Demonstration nesting a boxed summary
+        // inside its outer title Column, say) flattens into its own run of
+        // lines instead of collapsing to one line of literal source text.
+        Expr::List(items) => {
+          items.iter().flat_map(expr_to_svg_markup_lines).collect()
+        }
+        other => expr_to_svg_markup_lines(other),
       }
     }
     other => vec![expr_to_svg_markup(other)],
@@ -9620,6 +9687,26 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
         "<tspan baseline-shift=\"super\" font-size=\"70%\">{index}</tspan>\u{221A}<tspan text-decoration=\"overline\">{content}</tspan>"
       )
     };
+  }
+
+  // A negative power is a reciprocal fraction, not a superscripted negative
+  // number: `x^-1` → `1/x`, `x^-2` → `1/x^2`.
+  if let Some((base, exp)) = as_power(expr)
+    && let Some(abs_exp) = negative_exponent_abs(exp)
+  {
+    let denom = pow_or_base(base, abs_exp);
+    let denom_markup = expr_to_svg_markup(&denom);
+    let denom_fmt = if is_additive_expr(&denom) {
+      format!("({denom_markup})")
+    } else {
+      denom_markup
+    };
+    return stacked_fraction_svg(
+      "1",
+      &denom_fmt,
+      1.0,
+      estimate_display_width(&denom),
+    );
   }
 
   // Power → superscript (handles both BinaryOp and FunctionCall forms)
@@ -9885,6 +9972,64 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
               den_w,
             );
           }
+          // Times[…, base^-k, …] → a fraction: every reciprocal factor
+          // (a negative-exponent `Power`) moves to the denominator, and
+          // whatever is left (default `1`) is the numerator — `a*b^-1` is
+          // `a/b`, not `a b^-1`, and `a^-1*b^-1` is `1/(a b)`.
+          let mut num_factors: Vec<Expr> = Vec::new();
+          let mut den_factors: Vec<Expr> = Vec::new();
+          for a in args {
+            if let Some((base, exp)) = as_power(a)
+              && let Some(abs_exp) = negative_exponent_abs(exp)
+            {
+              den_factors.push(pow_or_base(base, abs_exp));
+            } else {
+              num_factors.push(a.clone());
+            }
+          }
+          if !den_factors.is_empty() {
+            // A leading `-1` numerator factor becomes a sign on the whole
+            // fraction rather than a literal `-1` multiplied into it.
+            let negate = matches!(num_factors.first(), Some(Expr::Integer(-1)))
+              && !num_factors.is_empty();
+            if negate {
+              num_factors.remove(0);
+            }
+            // A denominator combining several factors needs parens around
+            // them once flattened after the `/` — `a/(b c)`, never the
+            // ambiguous `a/b c` (misreadable as `(a/b) c`). A numerator
+            // reads fine unparenthesized either way (`a b/c` is `(a b)/c`
+            // unambiguously), so only its own additive terms get parens.
+            let to_markup = |factors: &[Expr], force_paren_multi: bool| -> String {
+              match factors.len() {
+                0 => "1".to_string(),
+                1 => {
+                  let s = expr_to_svg_markup(&factors[0]);
+                  if is_additive_expr(&factors[0]) {
+                    format!("({s})")
+                  } else {
+                    s
+                  }
+                }
+                _ => {
+                  let combined = unevaluated("Times", factors);
+                  let s = expr_to_svg_markup(&combined);
+                  if force_paren_multi {
+                    format!("({s})")
+                  } else {
+                    s
+                  }
+                }
+              }
+            };
+            let num_markup = to_markup(&num_factors, false);
+            let den_markup = to_markup(&den_factors, true);
+            let sign = if negate { "-" } else { "" };
+            return format!(
+              "{sign}{}",
+              stacked_fraction_svg(&num_markup, &den_markup, 0.0, 0.0)
+            );
+          }
           // Times[-1, x, ...] → -x...
           if matches!(&args[0], Expr::Integer(-1)) {
             let rest_args = &args[1..];
@@ -10119,6 +10264,20 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
             "{}<tspan baseline-shift=\"{shift}\" font-size=\"70%\">{}</tspan>",
             expr_to_svg_markup(&args[0]),
             scripts
+          )
+        }
+
+        // Subsuperscript[base, sub, sup] — both scripts in sequence, the
+        // same shifted-tspan shape `SubsuperscriptBox` gets in `boxes_to_svg`
+        // below. A Demonstration nests this (`Nest[Subsuperscript[#, #, #]
+        // &, …]`), and each level's base recurses back into this same arm.
+        "Subsuperscript" if args.len() == 3 => {
+          format!(
+            "{}<tspan baseline-shift=\"sub\" font-size=\"70%\">{}</tspan>\
+             <tspan baseline-shift=\"super\" font-size=\"70%\">{}</tspan>",
+            expr_to_svg_markup(&args[0]),
+            expr_to_svg_markup(&args[1]),
+            expr_to_svg_markup(&args[2]),
           )
         }
 
@@ -10521,6 +10680,14 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
         let scripts: f64 = args[1..].iter().map(estimate_display_width).sum();
         let seps = (args.len() - 2) as f64;
         estimate_display_width(&args[0]) + (scripts + seps) * 0.7
+      }
+      // Subsuperscript[base, sub, sup] — the sub and super tspans sit side
+      // by side (not stacked), so both add to the width at 70% size.
+      "Subsuperscript" if args.len() == 3 => {
+        estimate_display_width(&args[0])
+          + (estimate_display_width(&args[1])
+            + estimate_display_width(&args[2]))
+            * 0.7
       }
       // Row[{a, b, …}] concatenates its parts, joined by the separator.
       "Row" if !args.is_empty() => match &args[0] {
@@ -11089,6 +11256,30 @@ fn parse_explicit_box(cs: &[char], pos: usize) -> (Expr, usize) {
   )
 }
 
+/// Detect a nested box call written *without* its own `\*` marker, e.g. the
+/// `FractionBox[\(p\), \(q\)]` inside `\!\(\*SuperscriptBox[\(x\),
+/// FractionBox[\(p\), \(q\)]]\)`: once linear syntax is already inside an
+/// explicit box's argument list, a further box head needs no marker of its
+/// own to stay in "box mode" — only a `\(...\)` group re-enters ordinary
+/// text. Every box head conventionally ends in `Box`, so that suffix (on an
+/// identifier immediately followed by `[`) is what distinguishes this case
+/// from plain text that merely starts with a capital letter.
+fn bare_box_head_at(cs: &[char], i: usize) -> Option<(Expr, usize)> {
+  if !cs[i].is_ascii_uppercase() {
+    return None;
+  }
+  let mut j = i;
+  while j < cs.len() && (cs[j].is_alphanumeric() || cs[j] == '$') {
+    j += 1;
+  }
+  let name: String = cs[i..j].iter().collect();
+  if name.ends_with("Box") && cs.get(j) == Some(&'[') {
+    Some(parse_explicit_box(cs, i))
+  } else {
+    None
+  }
+}
+
 /// Parse a sequence of box-notation units (plain runs, `\(...\)` groups and
 /// `\*Head[...]` explicit boxes) into a list of box Exprs.
 fn parse_box_units(cs: &[char]) -> Vec<Expr> {
@@ -11148,6 +11339,14 @@ fn parse_box_units(cs: &[char]) -> Vec<Expr> {
         }
         _ => {}
       }
+    }
+    if let Some((e, ni)) = bare_box_head_at(cs, i) {
+      if !plain.is_empty() {
+        res.push(Expr::String(std::mem::take(&mut plain)));
+      }
+      res.push(e);
+      i = ni;
+      continue;
     }
     plain.push(cs[i]);
     i += 1;
@@ -11482,13 +11681,66 @@ pub(crate) fn mesh_region_to_graphics_prims(
   Some(result)
 }
 
+/// Reads a `MeshCellStyle` option (e.g. from a `ConvexHullMesh`'s
+/// `BoundaryMeshRegion` options) into face/edge style directives:
+/// `MeshCellStyle -> style` colors every cell, while
+/// `MeshCellStyle -> {{d, _} -> style, ...}` picks a style by cell
+/// dimension (2 = faces → `FaceForm`, 1 = edges → `EdgeForm`; the index
+/// component is not tracked per-cell, so `All` and a specific index behave
+/// the same). Absent or unrecognized specs leave both `None`.
+pub(crate) fn mesh_cell_style_overrides(
+  opts: &[Expr],
+) -> (Option<Expr>, Option<Expr>) {
+  let mut face_style = None;
+  let mut edge_style = None;
+  for opt in opts {
+    let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+    else {
+      continue;
+    };
+    if !matches!(&**pattern, Expr::Identifier(n) if n == "MeshCellStyle") {
+      continue;
+    }
+    match &**replacement {
+      Expr::List(rules) => {
+        for r in rules {
+          let Expr::Rule {
+            pattern: key,
+            replacement: style,
+          } = r
+          else {
+            continue;
+          };
+          let Expr::List(k) = &**key else { continue };
+          if k.len() != 2 {
+            continue;
+          }
+          match crate::functions::math_ast::try_eval_to_f64(&k[0]) {
+            Some(2.0) => face_style = Some((**style).clone()),
+            Some(1.0) => edge_style = Some((**style).clone()),
+            _ => {}
+          }
+        }
+      }
+      other => face_style = Some(other.clone()),
+    }
+  }
+  (face_style, edge_style)
+}
+
 /// Convert 3D `MeshRegion`/`BoundaryMeshRegion` vertex/polygon data (e.g. a
 /// 3D `ConvexHullMesh`) to `Graphics3D` primitives — the 3D twin of
 /// `mesh_region_to_graphics_prims`, used both for `Show` merging and for
-/// standalone display.
+/// standalone display. `face_style`/`edge_style` (from `MeshCellStyle`)
+/// override the default gray-edge/light-blue-face look when given.
 pub(crate) fn mesh_region_to_graphics3d_prims(
   vertices_expr: &Expr,
   primitives_expr: &Expr,
+  face_style: Option<&Expr>,
+  edge_style: Option<&Expr>,
 ) -> Option<Vec<Expr>> {
   let Expr::List(vertices_list) = vertices_expr else {
     return None;
@@ -11514,8 +11766,18 @@ pub(crate) fn mesh_region_to_graphics3d_prims(
   };
 
   let mut result = Vec::new();
-  result.push(call1("EdgeForm", Color::gray(0.4).to_expr()));
-  result.push(call1("FaceForm", Color::new(0.626, 0.836, 0.919).to_expr()));
+  result.push(call1(
+    "EdgeForm",
+    edge_style
+      .cloned()
+      .unwrap_or_else(|| Color::gray(0.4).to_expr()),
+  ));
+  result.push(call1(
+    "FaceForm",
+    face_style
+      .cloned()
+      .unwrap_or_else(|| Color::new(0.626, 0.836, 0.919).to_expr()),
+  ));
 
   for prim in prims {
     if let Expr::FunctionCall { name, args } = prim
@@ -11558,8 +11820,15 @@ pub(crate) fn mesh_region_to_graphics3d_prims(
 pub(crate) fn mesh_region_to_graphics3d(
   vertices_expr: &Expr,
   primitives_expr: &Expr,
+  opts: &[Expr],
 ) -> Option<Expr> {
-  let prims = mesh_region_to_graphics3d_prims(vertices_expr, primitives_expr)?;
+  let (face_style, edge_style) = mesh_cell_style_overrides(opts);
+  let prims = mesh_region_to_graphics3d_prims(
+    vertices_expr,
+    primitives_expr,
+    face_style.as_ref(),
+    edge_style.as_ref(),
+  )?;
   crate::functions::plot3d::graphics3d_ast(&[Expr::List(prims.into())]).ok()
 }
 
@@ -11844,9 +12113,13 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           if items.first().is_some_and(|v| matches!(v, Expr::List(c) if c.len() == 3)));
         if is_3d_mesh {
           is_3d = true;
-          if let Some(graphics_prims) =
-            mesh_region_to_graphics3d_prims(&gargs[0], &gargs[1])
-          {
+          let (face_style, edge_style) = mesh_cell_style_overrides(&gargs[2..]);
+          if let Some(graphics_prims) = mesh_region_to_graphics3d_prims(
+            &gargs[0],
+            &gargs[1],
+            face_style.as_ref(),
+            edge_style.as_ref(),
+          ) {
             layers.push(Layer::Prims(merged_primitives.len()));
             merged_primitives.push(Expr::List(graphics_prims.into()));
           }
@@ -16676,9 +16949,22 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
       // by what it wraps. Pushing the directives inwards is what lets the
       // row renderer, which reads each item's own style, apply them.
       "Style" | "StyleForm" => {
-        let inner = style_pushed_into_layout(&args[0], &args[1..])
-          .unwrap_or_else(|| args[0].clone());
-        return nested_layout_svg(&inner);
+        if let Some(inner) = style_pushed_into_layout(&args[0], &args[1..]) {
+          return nested_layout_svg(&inner);
+        }
+        // Not a Row/Column/Grid/TextGrid to push the style into — a
+        // picture wrapped in its own `Style[…]` (e.g. `Style[TableForm[…],
+        // 18]`) still needs the style honored, which `expr_to_svg` already
+        // does for a styled `TableForm`/`MatrixForm`, so run the same
+        // generic check the `_` arm below runs, on the whole `Style[…]`
+        // expression, rather than discarding it and recursing on the
+        // unstyled content.
+        if crate::evaluator::lays_out_a_graphic(expr) {
+          let svg = crate::evaluator::expr_to_svg(expr);
+          if svg.starts_with("<svg") {
+            return Some(svg);
+          }
+        }
       }
       // A display wrapper that resolves to a picture (`Labeled[…]`,
       // `LocatorPane[…]`, `Dynamic[…]`) is drawn through the export path,
@@ -17525,7 +17811,7 @@ pub fn highlighted_to_svg(args: &[Expr]) -> Option<String> {
 }
 
 /// Parse width and height from an SVG's root element attributes.
-fn parse_svg_wh(svg: &str) -> (f64, f64) {
+pub(crate) fn parse_svg_wh(svg: &str) -> (f64, f64) {
   let w = svg
     .find("width=\"")
     .and_then(|i| {
@@ -17546,10 +17832,33 @@ fn parse_svg_wh(svg: &str) -> (f64, f64) {
 }
 
 /// Strip the outer <svg ...> and </svg> tags, returning only the inner content.
-fn strip_svg_wrapper(svg: &str) -> &str {
+pub(crate) fn strip_svg_wrapper(svg: &str) -> &str {
   let start = svg.find('>').map_or(0, |i| i + 1);
   let end = svg.rfind("</svg>").unwrap_or(svg.len());
   &svg[start..end]
+}
+
+/// Clip an already-rendered SVG to a `Pane[content, {width, height}]` box.
+/// The FrontEnd never grows a `Pane`'s reserved area to fit oversized
+/// content — with no scrollbar in a static export, content past the
+/// declared edges is silently cut off rather than left to spill past them.
+/// Content that already fits inside `width`x`height` is returned
+/// unchanged, so a `Pane` around a small picture keeps its natural
+/// (smaller) canvas rather than being padded out to the declared size.
+pub(crate) fn clip_svg_to_pane_box(
+  svg: &str,
+  width: f64,
+  height: f64,
+) -> String {
+  let (natural_w, natural_h) = parse_svg_wh(svg);
+  if natural_w <= width && natural_h <= height {
+    return svg.to_string();
+  }
+  let inner = strip_svg_wrapper(svg);
+  let clip_id = format!("paneClip_{width:.0}x{height:.0}");
+  format!(
+    "<svg width=\"{width:.0}\" height=\"{height:.0}\" viewBox=\"0 0 {width:.0} {height:.0}\" xmlns=\"http://www.w3.org/2000/svg\">\n<defs><clipPath id=\"{clip_id}\"><rect x=\"0\" y=\"0\" width=\"{width:.0}\" height=\"{height:.0}\"/></clipPath></defs>\n<g clip-path=\"url(#{clip_id})\">\n{inner}\n</g>\n</svg>"
+  )
 }
 
 /// Render a list that contains Framed or Highlighted elements as a horizontal
@@ -18522,6 +18831,12 @@ pub enum ManipulateControl {
     /// icon (e.g. the crosshair pickers of the Demonstrations site),
     /// parallel to `values`. `None` for plain text labels.
     value_label_svgs: Vec<Option<String>>,
+    /// Each choice's display label as styled runs, parallel to `values` —
+    /// a rule label's `Style[…, color]`/`Bold`/italic directive (e.g. a
+    /// multi-way selector's `1 -> Style["top", Blue]`) survives here rather
+    /// than being flattened into `value_labels`' plain text. Empty for a
+    /// choice whose label rendered as an icon into `value_label_svgs`.
+    value_label_runs: Vec<Vec<LabelRun>>,
     initial_index: usize,
     /// The initial value's InputForm, kept only when it is *not* one of
     /// `values` — e.g. a shared variable with several disjoint SetterBar
@@ -18766,6 +19081,15 @@ pub struct ManipulateSpec {
   /// usually asks for `Left` so the controls run down beside the picture
   /// instead of pushing it off screen.
   pub control_placement: ControlPlacement,
+  /// `(synthesized control name, parent variable, 1-based index)` for every
+  /// `ParsedControl::ListElement` control — a slider generated by
+  /// `Evaluate[Sequence @@ Table[…]]` for one `Part` of a shared list
+  /// variable rather than the whole variable (see
+  /// `parse_list_element_manipulator`). Consumed by
+  /// `ManipulateState::bindings` (woxi-studio) to reassemble every
+  /// sibling's current value into one list bound to the parent, instead of
+  /// several same-named bindings colliding.
+  pub list_elements: Vec<(String, String, usize)>,
 }
 
 /// Where a Manipulate's control panel sits relative to its output, from the
@@ -18790,6 +19114,21 @@ impl ControlPlacement {
       "Right" => Some(Self::Right),
       _ => None,
     }
+  }
+}
+
+/// `expr` as a bare symbol name, or as the name of the sole symbol in a
+/// singleton list (`Left` or `{Left}`). Used for `ControlPlacement`, which
+/// the Wolfram Demonstrations Project's own templates sometimes write in
+/// list form.
+fn bare_or_singleton_list_symbol(expr: &Expr) -> Option<&str> {
+  match expr {
+    Expr::Identifier(s) => Some(s),
+    Expr::List(items) => match items.as_slice() {
+      [Expr::Identifier(s)] => Some(s),
+      _ => None,
+    },
+    _ => None,
   }
 }
 
@@ -18848,6 +19187,19 @@ enum ParsedControl {
   StateWithControl {
     name: String,
     value: String,
+    control: ManipulateControl,
+  },
+  /// A slider generated for one `Part` of a variable a Demonstration
+  /// declares once but drives with several sliders — one per list
+  /// element, each written `{{op, default, label_i}, Manipulator[
+  /// Dynamic[op[[i]]], {min, max, step?}, …]& }` (see
+  /// `parse_list_element_manipulator`). `control` carries a synthesized,
+  /// internal-only name so sibling sliders never collide as duplicate
+  /// bindings; the caller reassembles every sibling's current value into
+  /// one list bound to `parent`.
+  ListElement {
+    parent: String,
+    index: usize,
     control: ManipulateControl,
   },
 }
@@ -18940,6 +19292,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     mut dynamic_values,
     mut animation_var,
     mut tracking,
+    mut list_elements,
   ) = if let Some(inner) = inner {
     animated = true;
     animation_running = inner.animation_running;
@@ -18955,6 +19308,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       inner.dynamic_values,
       inner.animation_var,
       inner.tracking,
+      inner.list_elements,
     )
   } else {
     // `DynamicModule[{locals…}, …]` wrapping the body: unlike `Module`, a
@@ -18987,6 +19341,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       Vec::new(),
       Vec::new(),
       None,
+      Vec::new(),
       Vec::new(),
     )
   };
@@ -19160,9 +19515,12 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         appearance_none = true;
       }
       // `ControlPlacement -> Left` runs the control panel down the side of
-      // the output instead of above it.
+      // the output instead of above it. The Wolfram Demonstrations Project's
+      // own button-template boilerplate sometimes spells the placement as a
+      // singleton list (`ControlPlacement -> {Left}`) rather than the bare
+      // symbol; both mean the same thing at the widget level.
       if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "ControlPlacement")
-        && let Expr::Identifier(side) = replacement.as_ref()
+        && let Some(side) = bare_or_singleton_list_symbol(replacement)
         && let Some(placement) = ControlPlacement::from_symbol(side)
       {
         control_placement = placement;
@@ -19433,6 +19791,17 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         }
         controls.push(c);
       }
+      ParsedControl::ListElement {
+        parent,
+        index,
+        control: c,
+      } => {
+        if let Some((_, orig_form, synth)) = &rename {
+          renames.push((orig_form.clone(), synth.clone()));
+        }
+        list_elements.push((c.name().to_string(), parent, index));
+        controls.push(c);
+      }
       ParsedControl::Fixed { name, value } => {
         if let Some((_, orig_form, synth)) = &rename {
           renames.push((orig_form.clone(), synth.clone()));
@@ -19686,6 +20055,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     tracked_symbols,
     tracking,
     control_placement,
+    list_elements,
   })
 }
 
@@ -19848,6 +20218,17 @@ fn spec_marks_locator(items: &[Expr]) -> bool {
 /// the bare graphics primitive placed among ordinary primitives in a
 /// `Graphics[…]` list. Both drive their variable interactively the same
 /// way, so both promote it to a visible control below.
+///
+/// A `Locator[Dynamic[var[[i]]], …]` — the puzzle/jigsaw Demonstrations
+/// idiom for `Table[Locator[Dynamic[pieces[[i]]], …], {i, n}]`, one Locator
+/// per element of a hidden `ControlType -> None` list of points — drives
+/// the *whole* list `var`, not a single scalar, so it is recorded under
+/// `var`'s own name with no callback (the promoted control ends up a
+/// multi-point `Locator`, which has no write-back slot to carry one). Only
+/// the first such marker for a given base variable counts, exactly as for
+/// the bare-identifier form, so a second Table of Locators reusing the same
+/// indexed variable for another purpose (e.g. a rotation handle) does not
+/// override it.
 fn collect_body_locator_callbacks(
   expr: &Expr,
 ) -> Vec<(String, Option<String>)> {
@@ -19860,11 +20241,24 @@ fn collect_body_locator_callbacks(
             args: dargs,
           }) = args.first()
           && dname == "Dynamic"
-          && let Some(Expr::Identifier(var)) = dargs.first()
-          && !found.iter().any(|(n, _)| n == var)
         {
-          let callback = dargs.get(1).map(crate::syntax::expr_to_input_form);
-          found.push((var.clone(), callback));
+          match dargs.first() {
+            Some(Expr::Identifier(var))
+              if !found.iter().any(|(n, _)| n == var) =>
+            {
+              let callback =
+                dargs.get(1).map(crate::syntax::expr_to_input_form);
+              found.push((var.clone(), callback));
+            }
+            Some(Expr::Part { expr: base, .. }) => {
+              if let Expr::Identifier(var) = base.as_ref()
+                && !found.iter().any(|(n, _)| n == var)
+              {
+                found.push((var.clone(), None));
+              }
+            }
+            _ => {}
+          }
         }
         for a in args {
           walk(a, found);
@@ -20909,12 +21303,18 @@ fn expr_references_any(expr: &Expr, names: &[String]) -> bool {
 /// spec `{True -> "Yin-Yang", False -> "alternate image"}`). In that case
 /// the left side is the value bound to the variable and the right side is
 /// only the display label, so the binding never sees the whole rule.
-fn discrete_choice_columns(
-  items: &[Expr],
-) -> (Vec<String>, Vec<String>, Vec<Option<String>>) {
+type DiscreteChoiceColumns = (
+  Vec<String>,
+  Vec<String>,
+  Vec<Option<String>>,
+  Vec<Vec<LabelRun>>,
+);
+
+fn discrete_choice_columns(items: &[Expr]) -> DiscreteChoiceColumns {
   let mut values = Vec::with_capacity(items.len());
   let mut labels = Vec::with_capacity(items.len());
   let mut svgs = Vec::with_capacity(items.len());
+  let mut label_runs = Vec::with_capacity(items.len());
   for item in items {
     if let Some((value, label)) = discrete_choice_rule(item) {
       values.push(crate::syntax::expr_to_input_form(value));
@@ -20923,36 +21323,46 @@ fn discrete_choice_columns(
       // falls back to the bound value so a non-graphical frontend still
       // shows something short and meaningful.
       let svg = discrete_choice_label_svg(label);
-      labels.push(if svg.is_some() {
-        discrete_choice_label(value)
+      let runs = if svg.is_some() {
+        discrete_choice_label_runs(value)
       } else {
-        discrete_choice_label(label)
-      });
+        // Keeps a `Style[…, color]`/`Bold` directive on the label (e.g. a
+        // multi-way selector's `1 -> Style["top", Blue]`) as styled runs
+        // rather than flattening it away — the icon slot above already
+        // covers the case where the label is a picture instead of text.
+        discrete_choice_label_runs(label)
+      };
+      labels.push(flatten_label_runs(&runs));
+      label_runs.push(runs);
       svgs.push(svg);
     } else if let Some(color) = crate::functions::graphics::parse_color(item) {
       // A plain colour choice (no Rule label) renders as a swatch icon —
       // the ColorSetter idiom — rather than its `RGBColor[…]` InputForm.
+      let runs = discrete_choice_label_runs(item);
       values.push(crate::syntax::expr_to_input_form(item));
-      labels.push(discrete_choice_label(item));
+      labels.push(flatten_label_runs(&runs));
+      label_runs.push(runs);
       svgs.push(Some(color_swatch_svg(&color)));
     } else {
+      let runs = discrete_choice_label_runs(item);
       values.push(crate::syntax::expr_to_input_form(item));
-      labels.push(discrete_choice_label(item));
+      labels.push(flatten_label_runs(&runs));
+      label_runs.push(runs);
       svgs.push(None);
     }
   }
-  (values, labels, svgs)
+  (values, labels, svgs, label_runs)
 }
 
 /// Re-resolve a discrete control's choice-list code against the
 /// interpreter's current globals (installed by the caller via
-/// `with_scoped_globals`), returning the same three columns
+/// `with_scoped_globals`), returning the same columns
 /// [`discrete_choice_columns`] builds. `None` when the code no longer
 /// evaluates to a non-empty list, in which case the control keeps the
 /// choices it already has.
 pub fn manipulate_eval_values_code(
   code: &str,
-) -> Option<(Vec<String>, Vec<String>, Vec<Option<String>>)> {
+) -> Option<DiscreteChoiceColumns> {
   let expr = crate::interpret_to_expr(code).ok()?;
   let evaluated = crate::evaluator::evaluate_expr_to_expr(&expr).ok()?;
   let Expr::List(items) = &evaluated else {
@@ -21146,6 +21556,7 @@ pub fn extract_list_animate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     tracked_symbols: None,
     tracking: Vec::new(),
     control_placement: ControlPlacement::default(),
+    list_elements: Vec::new(),
   })
 }
 
@@ -21230,6 +21641,7 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
     tracked_symbols: None,
     tracking: Vec::new(),
     control_placement: ControlPlacement::default(),
+    list_elements: Vec::new(),
   })
 }
 
@@ -21356,6 +21768,7 @@ pub fn extract_locator_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     tracked_symbols: None,
     tracking: Vec::new(),
     control_placement: ControlPlacement::default(),
+    list_elements: Vec::new(),
   })
 }
 
@@ -21409,6 +21822,7 @@ pub fn extract_click_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     tracked_symbols: None,
     tracking: Vec::new(),
     control_placement: ControlPlacement::default(),
+    list_elements: Vec::new(),
   })
 }
 
@@ -21445,7 +21859,8 @@ pub fn extract_control_spec(expr: &Expr) -> Option<ManipulateSpec> {
       ParsedControl::Fixed { .. }
       | ParsedControl::State { .. }
       | ParsedControl::StateWithDisplay { .. }
-      | ParsedControl::StateWithControl { .. } => return None,
+      | ParsedControl::StateWithControl { .. }
+      | ParsedControl::ListElement { .. } => return None,
     };
   // Display the bound variable so the control's effect is visible.
   let body_code = control.name().to_string();
@@ -21473,6 +21888,7 @@ pub fn extract_control_spec(expr: &Expr) -> Option<ManipulateSpec> {
     tracked_symbols: None,
     tracking: Vec::new(),
     control_placement: ControlPlacement::default(),
+    list_elements: Vec::new(),
   })
 }
 
@@ -23031,7 +23447,7 @@ fn parse_manipulate_control(
       None
     };
     if let Some(value_items) = value_items {
-      let (values, value_labels, value_label_svgs) =
+      let (values, value_labels, value_label_svgs, value_label_runs) =
         discrete_choice_columns(&value_items);
       if values.is_empty() {
         return None;
@@ -23084,6 +23500,7 @@ fn parse_manipulate_control(
           values,
           value_labels,
           value_label_svgs,
+          value_label_runs,
           initial_index,
           initial_overflow,
           label,
@@ -23170,6 +23587,29 @@ fn parse_manipulate_control(
       },
     });
   }
+  // Per-element custom control: `{{op, default, label}, Manipulator[
+  // Dynamic[op[[i]]], {min, max, step?}, opts…]& }` (optionally wrapped in
+  // one more `Dynamic[…]`) — the Demonstrations idiom for a bank of
+  // sliders that each drive one element of a shared list variable
+  // (independently written, not copied from any specific Demonstration:
+  // `Evaluate[Sequence @@ Table[…]]` typically generates one such spec per
+  // list index, all declared under the same control variable name).
+  // Regression: falling through to the generic "Fixed" branch further
+  // below baked *every* sibling's identical default in as its own
+  // `name = value` binding, and `Block[{op = …, op = …, …}, body]` — the
+  // body's re-evaluation wrapper — rejected the duplicate name outright
+  // (`Block::dup`), leaving the whole Manipulate unevaluated.
+  if let Some(list_ctrl) = built.as_ref().and_then(|b| {
+    parse_list_element_manipulator(
+      b,
+      &name,
+      explicit_initial.as_ref(),
+      &label,
+      &label_runs,
+    )
+  }) {
+    return Some(list_ctrl);
+  }
   // A custom builder may instead call a *user-defined* control function
   // (`FacetsControl[Dynamic[var_], colorBy_] := ClickPane[…]`), which only
   // becomes a recognizable widget once that delayed definition actually
@@ -23213,7 +23653,7 @@ fn parse_manipulate_control(
         && crate::syntax::expr_to_input_form(init) != alt_code
     }) {
       let value_items = vec![init.clone(), bounds[0].clone()];
-      let (values, value_labels, value_label_svgs) =
+      let (values, value_labels, value_label_svgs, value_label_runs) =
         discrete_choice_columns(&value_items);
       return Some(ParsedControl::Visible {
         control: ManipulateControl::Discrete {
@@ -23221,6 +23661,7 @@ fn parse_manipulate_control(
           values,
           value_labels,
           value_label_svgs,
+          value_label_runs,
           initial_index: 0,
           initial_overflow: None,
           label,
@@ -23413,6 +23854,119 @@ fn parse_manipulate_control(
   })
 }
 
+/// Recognize `Manipulator[Dynamic[Part[var, idx]], {min, max, step?},
+/// opts…]` (optionally wrapped in one more `Dynamic[…]`) as a slider that
+/// writes into element `idx` of a shared list variable rather than the
+/// whole variable — the shape `parse_manipulate_control` builds for a
+/// custom control whose function is `Manipulator[Dynamic[var[[i]]], …]& `
+/// applied to `Dynamic[var]`. `var` must match the spec's own declared
+/// name: a custom control targeting a *different* variable's `Part` is
+/// left for the generic paths below. Returns a `ListElement` control with
+/// a synthesized, internal-only name (`var` alone would collide with its
+/// siblings); the caller reassembles every sibling's current value into
+/// one list bound to `var`.
+fn parse_list_element_manipulator(
+  built: &Expr,
+  name: &str,
+  explicit_initial: Option<&Expr>,
+  label: &str,
+  label_runs: &[LabelRun],
+) -> Option<ParsedControl> {
+  let inner = match built {
+    Expr::FunctionCall { name: n, args }
+      if n == "Dynamic" && args.len() == 1 =>
+    {
+      &args[0]
+    }
+    other => other,
+  };
+  let Expr::FunctionCall {
+    name: mn,
+    args: margs,
+  } = inner
+  else {
+    return None;
+  };
+  if mn != "Manipulator" || margs.is_empty() {
+    return None;
+  }
+  let Expr::FunctionCall {
+    name: dn,
+    args: dargs,
+  } = &margs[0]
+  else {
+    return None;
+  };
+  if dn != "Dynamic" || dargs.len() != 1 {
+    return None;
+  }
+  let Expr::Part {
+    expr: base,
+    index: part_index,
+  } = &dargs[0]
+  else {
+    return None;
+  };
+  let Expr::Identifier(base_name) = base.as_ref() else {
+    return None;
+  };
+  if base_name != name {
+    return None;
+  }
+  let idx = match crate::functions::math_ast::try_eval_to_f64(part_index) {
+    Some(v) if v.fract() == 0.0 && v >= 1.0 => v as usize,
+    _ => return None,
+  };
+  let bounds: Vec<&Expr> = match margs.get(1) {
+    Some(Expr::List(items)) => items.iter().collect(),
+    _ => return None,
+  };
+  if bounds.len() < 2 {
+    return None;
+  }
+  let (mut min, _) = eval_manipulate_bound(bounds[0])?;
+  let (mut max, _) = eval_manipulate_bound(bounds[1])?;
+  let step = bounds
+    .get(2)
+    .and_then(|e| eval_manipulate_bound(e))
+    .map(|(v, _)| v);
+  let is_real = manipulate_bound_is_inexact(bounds[0])
+    || manipulate_bound_is_inexact(bounds[1])
+    || bounds
+      .get(2)
+      .is_some_and(|e| manipulate_bound_is_inexact(e));
+  let initial = explicit_initial
+    .and_then(|init| {
+      crate::evaluator::evaluate_expr_to_expr(&Expr::Part {
+        expr: Box::new(init.clone()),
+        index: Box::new(Expr::Integer(idx as i128)),
+      })
+      .ok()
+    })
+    .as_ref()
+    .and_then(crate::functions::math_ast::try_eval_to_f64)
+    .unwrap_or(min);
+  if min > max {
+    std::mem::swap(&mut min, &mut max);
+  }
+  let synth_name = format!("{name}\u{2983}{idx}\u{2984}");
+  Some(ParsedControl::ListElement {
+    parent: name.to_string(),
+    index: idx,
+    control: ManipulateControl::Continuous {
+      name: synth_name,
+      min,
+      max,
+      step,
+      initial,
+      label: label.to_string(),
+      label_runs: label_runs.to_vec(),
+      is_real,
+      orientation: ControlOrientation::Horizontal,
+    },
+  })
+}
+
 /// The values a `{min, max}` / `{min, max, step}` control range covers,
 /// for the control types that offer one widget per value. `step` defaults
 /// to 1, as it does for an integer range in Wolfram. Returns `None` when
@@ -23462,11 +24016,17 @@ fn discrete_choice_rule(item: &Expr) -> Option<(&Expr, &Expr)> {
   }
 }
 
-/// Render a discrete-choice label. A string label is shown without its
-/// surrounding quotes; presentation wrappers (`Style["P", Italic]`,
-/// `Row[{…}]`) render as their display text via the label-run renderer;
-/// anything that renders empty falls back to its InputForm.
-fn discrete_choice_label(expr: &Expr) -> String {
+/// The styled runs behind a discrete-choice label. A string label is shown
+/// without its surrounding quotes; presentation wrappers (`Style["P",
+/// Italic]`, `Row[{…}]`) render as their display text via the label-run
+/// renderer; anything that renders empty falls back to its InputForm. A
+/// `Style[…, color]` (or `Bold`/italic) directive on a choice's rule label
+/// survives here as `LabelRun::color`/`bold`/`italic` instead of being
+/// flattened away, so a choice like `1 -> Style["top", Blue]` (a
+/// Demonstrations multi-way selector coloring each option, e.g. to match a
+/// diagram's own palette) can render in its given style rather than plain
+/// text.
+fn discrete_choice_label_runs(expr: &Expr) -> Vec<LabelRun> {
   match expr {
     // A string may carry inline typeset boxes the FrontEnd wrote as
     // `\!\(\*…\)` — an antiquark's `\!\(\*OverscriptBox[\(u\), \(_\)]\)`
@@ -23474,14 +24034,22 @@ fn discrete_choice_label(expr: &Expr) -> String {
     // A plain string just needs its remaining private-use code points
     // (e.g. `\[WarningSign]`) swapped for real glyphs.
     Expr::String(s) => match inline_box_label_runs(s, false) {
-      Some(runs) => {
-        crate::syntax::substitute_private_use_glyphs(&flatten_label_runs(&runs))
-          .into_owned()
-      }
-      None => crate::syntax::substitute_private_use_glyphs(s).into_owned(),
+      Some(runs) => runs
+        .into_iter()
+        .map(|mut r| {
+          r.text =
+            crate::syntax::substitute_private_use_glyphs(&r.text).into_owned();
+          r
+        })
+        .collect(),
+      None => vec![LabelRun {
+        text: crate::syntax::substitute_private_use_glyphs(s).into_owned(),
+        ..Default::default()
+      }],
     },
     other => {
-      let flat = flatten_label_runs(&manipulate_label_runs(other, false));
+      let runs = manipulate_label_runs(other, false);
+      let flat = flatten_label_runs(&runs);
       // A structural head (Grid/Row/Column/…) can legitimately typeset to
       // nothing — e.g. a Grid whose cells are all `""`, marking "no flag
       // set" among a family of choices that each flip one cell on. Only an
@@ -23489,9 +24057,12 @@ fn discrete_choice_label(expr: &Expr) -> String {
       // falls back to its source so the choice still shows something.
       let structural = matches!(other, Expr::FunctionCall { name, .. } if is_text_layout_head(name));
       if flat.is_empty() && !structural {
-        crate::syntax::expr_to_input_form(other)
+        vec![LabelRun {
+          text: crate::syntax::expr_to_input_form(other),
+          ..Default::default()
+        }]
       } else {
-        flat
+        runs
       }
     }
   }
@@ -24118,6 +24689,7 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
         values,
         value_labels,
         value_label_svgs,
+        value_label_runs,
         initial_index,
         initial_overflow: _,
         label,
@@ -24159,8 +24731,23 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
         } else {
           String::new()
         };
+        // A choice's `Style[…, color]`/`Bold`/italic directive (e.g. a
+        // multi-way selector's `1 -> Style["top", Blue]`) rides along as
+        // styled runs, parallel to `values`; omitted when every choice is
+        // plain text, matching `svg_json`'s all-or-nothing shape above.
+        let runs_json = if value_label_runs.iter().any(|runs| {
+          runs.iter().any(|r| r.color.is_some() || r.bold || r.italic)
+        }) {
+          let parts: Vec<String> = value_label_runs
+            .iter()
+            .map(|r| label_runs_to_json(r))
+            .collect();
+          format!(r#","valueLabelRuns":[{}]"#, parts.join(","))
+        } else {
+          String::new()
+        };
         ctrl_parts.push(format!(
-          r#"{{"kind":"discrete","name":"{}","label":"{}","labelRuns":{},"values":[{}],"valueLabels":[{}],"initialIndex":{}{}{}{}{}{}}}"#,
+          r#"{{"kind":"discrete","name":"{}","label":"{}","labelRuns":{},"values":[{}],"valueLabels":[{}],"initialIndex":{}{}{}{}{}{}{}}}"#,
           json_escape_manipulate(name),
           json_escape_manipulate(label),
           label_runs_to_json(label_runs),
@@ -24172,6 +24759,7 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
           slider_json,
           vertical_json,
           svg_json,
+          runs_json,
         ));
       }
       ManipulateControl::Slider2D {
@@ -25203,7 +25791,7 @@ fn popup_node(args: &[Expr]) -> Option<DisplayNode> {
   if items.is_empty() {
     return None;
   }
-  let (values, labels, _svgs) = discrete_choice_columns(items);
+  let (values, labels, _svgs, _label_runs) = discrete_choice_columns(items);
   // The value currently held at `lval`, to preselect its choice.
   let current = crate::evaluator::evaluate_expr_to_expr(lval).map_or_else(
     |_| target.clone(),
@@ -26248,6 +26836,34 @@ mod manipulate_control_placement_tests {
     }
   }
 
+  /// The Wolfram Demonstrations Project's own button-template boilerplate
+  /// sometimes spells the placement as a singleton list rather than the
+  /// bare symbol (`ControlPlacement -> {Left}`); it must mean the same
+  /// thing as `ControlPlacement -> Left`.
+  #[test]
+  fn singleton_list_placement_is_recorded() {
+    assert_eq!(
+      placement(
+        "Manipulate[Plot[Sin[a x], {x, 0, 6}], {{a, 1}, 1, 5}, \
+         ControlPlacement -> {Left}]"
+      ),
+      ControlPlacement::Left
+    );
+  }
+
+  /// A list of more than one side is not a recognised form (there is only
+  /// one control panel to place), so it leaves the default standing.
+  #[test]
+  fn multi_element_list_placement_keeps_the_default() {
+    assert_eq!(
+      placement(
+        "Manipulate[Plot[Sin[a x], {x, 0, 6}], {{a, 1}, 1, 5}, \
+         ControlPlacement -> {Left, Right}]"
+      ),
+      ControlPlacement::Top
+    );
+  }
+
   /// A `ControlPlacement` naming something Wolfram does not accept leaves
   /// the default standing rather than failing the whole extraction.
   #[test]
@@ -26457,5 +27073,74 @@ mod manipulate_traditional_form_choice_svg_tests {
       }
       other => panic!("expected a discrete control, got {other:?}"),
     }
+  }
+
+  /// A multi-way selector whose choices are `value -> Style["label", color]`
+  /// (a Demonstrations idiom for coloring each option, distinct from any
+  /// specific Demonstration) must keep each choice's color as a styled run
+  /// rather than flattening it into plain text — `value_labels` still holds
+  /// the plain text (for a frontend that ignores styling), but
+  /// `value_label_runs` must carry the color so a styling frontend can show
+  /// it, matching the Wolfram FrontEnd's colored SetterBar/PopupMenu text.
+  #[test]
+  fn styled_choice_labels_keep_their_color() {
+    let control = discrete_control(
+      "Manipulate[side, \
+       {{side, 1, \"side\"}, \
+        {1 -> Style[\"north\", Blue], -1 -> Style[\"south\", Brown]}}]",
+    );
+    match &control {
+      ManipulateControl::Discrete {
+        values,
+        value_labels,
+        value_label_runs,
+        ..
+      } => {
+        assert_eq!(values, &["1", "-1"]);
+        assert_eq!(value_labels, &["north", "south"]);
+        assert_eq!(value_label_runs.len(), 2);
+        assert!(
+          value_label_runs[0].iter().any(|r| r.color.is_some()),
+          "Style[…, Blue] must set a color: {value_label_runs:?}"
+        );
+        assert!(
+          value_label_runs[1].iter().any(|r| r.color.is_some()),
+          "Style[…, Brown] must set a color: {value_label_runs:?}"
+        );
+        assert_ne!(
+          value_label_runs[0][0].color, value_label_runs[1][0].color,
+          "Blue and Brown must not collapse to the same color"
+        );
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+  }
+
+  /// `manipulate_spec_to_json`'s `valueLabelRuns` export must trigger on an
+  /// italic-only choice label too, not just color/bold — and the exported
+  /// JSON must actually carry the italic flag through
+  /// `label_runs_to_json`. Regression: the emission guard originally
+  /// checked only `color.is_some() || bold`, so a choice styled with just
+  /// `Style["label", Italic]` (no color, no bold) silently dropped the
+  /// whole `valueLabelRuns` array from the JSON a frontend (e.g. the web
+  /// Playground) consumes.
+  #[test]
+  fn json_export_includes_italic_only_choice_runs() {
+    let expr = crate::parse_to_expr(
+      "Manipulate[side, \
+       {{side, 1, \"side\"}, \
+        {1 -> Style[\"top\", Italic], -1 -> \"bottom\"}}]",
+    )
+    .expect("parse");
+    let spec = extract_manipulate_spec(&expr).expect("extract spec");
+    let json = manipulate_spec_to_json(&spec);
+    assert!(
+      json.contains(r#""valueLabelRuns""#),
+      "an italic-only choice must still emit valueLabelRuns: {json}"
+    );
+    assert!(
+      json.contains(r#""italic":true"#),
+      "the italic flag itself must survive into the JSON: {json}"
+    );
   }
 }

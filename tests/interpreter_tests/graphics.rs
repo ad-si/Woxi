@@ -4682,6 +4682,55 @@ mod plot3d {
       );
     }
 
+    /// `Rotate[Cuboid[...], angle, axis]` used to rotate just the box's two
+    /// corners and re-derive a new axis-aligned box from them — an
+    /// approximation that, for a box thin in two dimensions and long in
+    /// the third, erases the tilt outright at any angle that is not a
+    /// multiple of 90 degrees (at those special angles an axis-aligned box
+    /// rotates to another axis-aligned box, so the approximation happens
+    /// to still be exact — the bug only shows at a generic angle).
+    /// Regression: the "Forces Acting on a Ladder" Demonstration's ladder,
+    /// a `Cuboid` rotated to the ladder's angle, rendered as an upright
+    /// slab with no visible tilt.
+    #[test]
+    fn graphics3d_rotated_cuboid_lies_over() {
+      let pole = "Cuboid[{-0.05, -0.05, -2}, {0.05, 0.05, 2}]";
+      let scene = |body: &str| {
+        format!(
+          "Graphics3D[{body}, Boxed -> False, ViewPoint -> {{0, 0, 10}}, \
+           PlotRange -> {{{{-3, 3}}, {{-3, 3}}, {{-3, 3}}}}]"
+        )
+      };
+      // Looking straight down, a pole standing along z is a tiny dot...
+      let upright = export_svg(&scene(pole));
+      // ...but tipped about the x axis by a generic angle, it lies partway
+      // over into the x-y plane, reaching much further along y.
+      let tipped =
+        export_svg(&scene(&format!("Rotate[{pole}, 1., {{1,0,0}}]")));
+      let y_extent = |svg: &str| -> f64 {
+        let mut min = f64::INFINITY;
+        let mut max = f64::NEG_INFINITY;
+        for cap in svg.split("<polygon points=\"").skip(1) {
+          let coords = cap.split('"').next().unwrap_or("");
+          for pair in coords.split_whitespace() {
+            if let Some(y) = pair.split(',').nth(1)
+              && let Ok(y) = y.parse::<f64>()
+            {
+              min = min.min(y);
+              max = max.max(y);
+            }
+          }
+        }
+        max - min
+      };
+      let (up, tip) = (y_extent(&upright), y_extent(&tipped));
+      assert!(
+        tip > 3.0 * up,
+        "a rotated Cuboid must lie over, not stay an upright \
+         approximation: upright extent {up} vs tipped extent {tip}"
+      );
+    }
+
     /// `Polygon[outer -> holes]` cuts the hole boundaries out of the face.
     /// The square annulus below tessellates into eight triangles (two per
     /// side of the ring) instead of the two a solid square would give, and
@@ -5783,6 +5832,91 @@ mod plot3d {
       assert!(
         svg.contains("fill=\"rgb(255,255,255)\""),
         "the frame's Background paints a panel: {svg}"
+      );
+    }
+
+    /// `Text[Framed[Column[{...}]], pos]` boxes a *stacked* label — the
+    /// `Framed` background must grow to cover every line, not just the
+    /// first, and must not be centred on the anchor of the (already
+    /// shifted-up) first line, which would push it too high and leave it
+    /// too short for the lines below.
+    #[test]
+    fn plot_epilog_framed_column_label_box_covers_every_line() {
+      let svg = export_svg(
+        "Plot[Sin[x], {x, 0, 2 Pi}, Epilog -> \
+         Text[Framed[Column[{\"first\", \"second\", \"third\"}], \
+         Background -> White], {Pi, 0}]]",
+      );
+      let rect = svg
+        .split("<rect ")
+        .filter(|r| r.contains("fill=\"rgb(255,255,255)\""))
+        .last()
+        .expect("the Framed background rect");
+      let attr = |name: &str| -> f64 {
+        rect
+          .split_once(&format!("{name}=\""))
+          .and_then(|(_, r)| r.split_once('"'))
+          .and_then(|(v, _)| v.parse().ok())
+          .unwrap_or_else(|| panic!("missing {name} in rect: {rect}"))
+      };
+      let (rect_y, rect_h) = (attr("y"), attr("height"));
+      // Default epilog font size (13pt) at the plot renderer's
+      // RESOLUTION_SCALE (10), 3 lines (2 "extra" beyond the first)
+      // stacked at 1.2x line height each.
+      let (font_size, line_height) = (13.0 * 10.0, 13.0 * 10.0 * 1.2);
+      let expected_h = 2.0 * line_height + font_size;
+      assert!(
+        (rect_h - expected_h).abs() < 1.0,
+        "box must grow by one line_height per extra line, not font_size: \
+         got height {rect_h}, expected {expected_h}: {rect}"
+      );
+      let text = svg
+        .split("<text ")
+        .find(|t| t.contains("first"))
+        .expect("the stacked label");
+      let py: f64 = text
+        .split_once("y=\"")
+        .and_then(|(_, r)| r.split_once('"'))
+        .and_then(|(v, _)| v.parse().ok())
+        .expect("a positioned label");
+      let expected_y = py - font_size / 2.0;
+      assert!(
+        (rect_y - expected_y).abs() < 1.0,
+        "box must start half a line above the first line's own centre, \
+         not be centred on it: got y {rect_y}, expected {expected_y} \
+         (py={py}): {rect}"
+      );
+    }
+
+    /// An Epilog `Text` label may be a `Column` that nests another
+    /// `Column`/`Framed` inside one of its own items — a Demonstration's
+    /// boxed summary of several computed values under a heading, say. Every
+    /// line used to render (each item became its own line via
+    /// `Column`/`Grid` stacking), but a nested stacking construct collapsed
+    /// to one line of its own literal source text, and everything after a
+    /// label's first line was then silently dropped entirely by the Epilog
+    /// `Text` renderer (which only read a `StyledLabel`'s first line).
+    #[test]
+    fn plot_epilog_nested_column_label_stacks_every_line() {
+      let svg = export_svg(
+        "Plot[Sin[x], {x, 0, 2 Pi}, Epilog -> {Text[Style[Column[{\"heading\", \
+         Framed[Column[{Style[\"first\", Blue], Style[\"second\", Red]}]]}], \
+         Center], {Pi, 0}]}]",
+      );
+      assert!(
+        !svg.contains("Column[") && !svg.contains("Framed["),
+        "no label may print its own source: {svg}"
+      );
+      for line in ["heading", "first", "second"] {
+        assert!(
+          svg.contains(line),
+          "every line of the nested Column must render, missing {line:?}: {svg}"
+        );
+      }
+      assert!(
+        svg.contains("fill=\"rgb(0,0,255)\"")
+          && svg.contains("fill=\"rgb(255,0,0)\""),
+        "each nested item keeps its own Style color: {svg}"
       );
     }
 
@@ -21461,7 +21595,7 @@ mod manipulate {
       other => panic!("expected a discrete control, got {other:?}"),
     }
     // Re-resolving against the 3D binding narrows it to three.
-    let (values, labels, svgs) = woxi::with_scoped_globals(
+    let (values, labels, svgs, _label_runs) = woxi::with_scoped_globals(
       &[("flat".to_string(), "True".to_string())],
       || {
         woxi::functions::graphics::manipulate_eval_values_code(

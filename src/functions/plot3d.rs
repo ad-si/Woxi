@@ -2116,6 +2116,163 @@ fn clip_plane_to_box(
   Some(poly)
 }
 
+/// The convex polygon a plane through `point` with the given `normal` cuts
+/// out of the axis-aligned box `bounds`. Used by `Area[RegionIntersection[
+/// Cube[…]/Cuboid[…], ImplicitRegion[…]]]`, where the `ImplicitRegion` is a
+/// single linear equation (a plane) — Wolfram leaves that intersection as an
+/// unevaluated `BooleanRegion`, so its `Area` is computed geometrically
+/// instead of symbolically. Builds an arbitrary in-plane basis (`u`, `w`)
+/// from `normal` and delegates to [`clip_plane_to_box`], the same clipping
+/// [`InfinitePlane`](unbounded_3d_to_primitive) rendering uses.
+pub(crate) fn plane_polygon_in_box(
+  normal: [f64; 3],
+  point: [f64; 3],
+  bounds: [(f64, f64); 3],
+) -> Option<Vec<[f64; 3]>> {
+  if v_len(normal) < 1e-12 {
+    return None;
+  }
+  // Cross with whichever axis is least aligned with the normal, for a
+  // numerically stable in-plane basis.
+  let axis = if normal[0].abs() <= normal[1].abs()
+    && normal[0].abs() <= normal[2].abs()
+  {
+    [1.0, 0.0, 0.0]
+  } else if normal[1].abs() <= normal[2].abs() {
+    [0.0, 1.0, 0.0]
+  } else {
+    [0.0, 0.0, 1.0]
+  };
+  let u = v_cross(normal, axis);
+  let w = v_cross(normal, u);
+  // `clip_plane_to_box` returns `None` only because the plane misses the
+  // box (or clips down to a sliver) — a legitimate empty intersection, not
+  // a computation failure, now that `normal` is known non-degenerate.
+  Some(clip_plane_to_box(point, u, w, &bounds, None).unwrap_or_default())
+}
+
+/// The area of a simple planar polygon given as an ordered list of 3-D
+/// vertices, via Newell's method: summing `Vi × Vi+1` gives twice the area
+/// along the polygon's own normal direction, so its length halved is the
+/// area regardless of which way the polygon winds or which plane it lies in.
+pub(crate) fn polygon3d_area(poly: &[[f64; 3]]) -> f64 {
+  if poly.len() < 3 {
+    return 0.0;
+  }
+  let mut normal = [0.0; 3];
+  for i in 0..poly.len() {
+    let a = poly[i];
+    let b = poly[(i + 1) % poly.len()];
+    normal = v_add(normal, v_cross(a, b));
+  }
+  0.5 * v_len(normal)
+}
+
+/// The area of the intersection between a disk (`center`, `radius`) and a
+/// convex polygon, both given in the same 2-D coordinate system. Used by
+/// `Area[RegionIntersection[Ball[…], planar-region]]`: the planar region's
+/// polygon and the ball's cross-sectional disk are first projected into the
+/// plane's own 2-D basis (see callers), then this computes the disk clipped
+/// to the polygon by summing, over each polygon edge, the signed area the
+/// disk contributes to the triangle `(center, edge start, edge end)`.
+pub(crate) fn disk_convex_polygon_area(
+  center: [f64; 2],
+  radius: f64,
+  poly: &[[f64; 2]],
+) -> f64 {
+  if poly.len() < 3 || radius <= 0.0 {
+    return 0.0;
+  }
+  let mut total = 0.0;
+  for i in 0..poly.len() {
+    let a = [poly[i][0] - center[0], poly[i][1] - center[1]];
+    let b = [
+      poly[(i + 1) % poly.len()][0] - center[0],
+      poly[(i + 1) % poly.len()][1] - center[1],
+    ];
+    total += disk_triangle_signed_area(a, b, radius);
+  }
+  total.abs()
+}
+
+/// The signed area shared by the disk of `radius` centered at the origin and
+/// the triangle `(origin, a, b)`. Standard circle/polygon-clipping building
+/// block: handles both points inside the disk (plain triangle), both outside
+/// (either a miss, contributing nothing, or a chord, contributing the two
+/// circular-sector wedges either side of the chord plus the chord's own
+/// triangle), and one of each (the segment crosses the disk boundary once).
+fn disk_triangle_signed_area(a: [f64; 2], b: [f64; 2], radius: f64) -> f64 {
+  let cross = a[0] * b[1] - a[1] * b[0];
+  if cross.abs() < 1e-15 {
+    return 0.0;
+  }
+  let len = |p: [f64; 2]| (p[0] * p[0] + p[1] * p[1]).sqrt();
+  // The angle between `p` and `q` by direction alone — dividing by their own
+  // lengths rather than `radius^2` — so this also works for the far corners
+  // `a`/`b`, not just points already on the circle.
+  let sector_area = |p: [f64; 2], q: [f64; 2]| -> f64 {
+    let denom = len(p) * len(q);
+    if denom < 1e-15 {
+      return 0.0;
+    }
+    let angle = (p[0] * q[0] + p[1] * q[1]) / denom;
+    let angle = angle.clamp(-1.0, 1.0).acos();
+    let signed = if p[0] * q[1] - p[1] * q[0] < 0.0 {
+      -angle
+    } else {
+      angle
+    };
+    0.5 * radius * radius * signed
+  };
+  // The (up to two) points where the infinite line through a, b crosses the
+  // circle of `radius`, as parameters t along a + t*(b - a).
+  let circle_line_params = |a: [f64; 2], b: [f64; 2]| -> Vec<f64> {
+    let d = [b[0] - a[0], b[1] - a[1]];
+    let aa = d[0] * d[0] + d[1] * d[1];
+    let bb = 2.0 * (a[0] * d[0] + a[1] * d[1]);
+    let cc = a[0] * a[0] + a[1] * a[1] - radius * radius;
+    let disc = bb * bb - 4.0 * aa * cc;
+    if aa < 1e-15 || disc < 0.0 {
+      return Vec::new();
+    }
+    let sq = disc.sqrt();
+    vec![(-bb - sq) / (2.0 * aa), (-bb + sq) / (2.0 * aa)]
+  };
+  let da = len(a);
+  let db = len(b);
+  if da <= radius && db <= radius {
+    return 0.5 * cross;
+  }
+  if da >= radius && db >= radius {
+    let params: Vec<f64> = circle_line_params(a, b)
+      .into_iter()
+      .filter(|&t| t > 1e-12 && t < 1.0 - 1e-12)
+      .collect();
+    if params.len() < 2 {
+      // The chord (if any) falls outside the segment: the whole wedge is
+      // either entirely inside or entirely outside the disk.
+      return sector_area(a, b);
+    }
+    let (t1, t2) = (params[0].min(params[1]), params[0].max(params[1]));
+    let p1 = [a[0] + t1 * (b[0] - a[0]), a[1] + t1 * (b[1] - a[1])];
+    let p2 = [a[0] + t2 * (b[0] - a[0]), a[1] + t2 * (b[1] - a[1])];
+    return sector_area(a, p1)
+      + 0.5 * (p1[0] * p2[1] - p1[1] * p2[0])
+      + sector_area(p2, b);
+  }
+  // Exactly one endpoint inside: the segment crosses the boundary once.
+  let t = circle_line_params(a, b)
+    .into_iter()
+    .find(|&t| (0.0..=1.0).contains(&t))
+    .unwrap_or(0.0);
+  let p = [a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])];
+  if da < db {
+    0.5 * (a[0] * p[1] - a[1] * p[0]) + sector_area(p, b)
+  } else {
+    sector_area(a, p) + 0.5 * (p[0] * b[1] - p[1] * b[0])
+  }
+}
+
 /// A box the unbounded primitives can be clipped to. A scene made only of
 /// them has no bounds of its own, and one lying in a plane has an axis of
 /// no extent — neither can be cut against as it stands, so an empty axis is
@@ -2862,6 +3019,27 @@ impl Affine3 {
       && dot(c0, c2).abs() <= tol
   }
 
+  /// Is the linear part diagonal (no rotation/shear component)? Such a
+  /// transform — translation composed with a per-axis scale, including
+  /// axis flips — maps an axis-aligned box to another axis-aligned box, so
+  /// `Cuboid` can stay a `Cuboid` under it. Anything else (any rotation)
+  /// tilts the box's faces off the coordinate planes, which `Cuboid`'s
+  /// two-corner representation cannot express — see `transform_primitive3d`.
+  fn is_axis_aligned(&self) -> bool {
+    let tol = 1e-9
+      * self
+        .m
+        .iter()
+        .flatten()
+        .fold(1.0_f64, |acc, v| acc.max(v.abs()));
+    self.m[0][1].abs() <= tol
+      && self.m[0][2].abs() <= tol
+      && self.m[1][0].abs() <= tol
+      && self.m[1][2].abs() <= tol
+      && self.m[2][0].abs() <= tol
+      && self.m[2][1].abs() <= tol
+  }
+
   fn translation(v: [f64; 3]) -> Self {
     Self {
       m: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
@@ -3054,6 +3232,9 @@ fn tessellate_for_transform(
     Primitive3D::Cone { p1, p2, radius, .. } => {
       Some(tessellate_cone(p1, p2, *radius))
     }
+    Primitive3D::Cuboid { p_min, p_max, .. } => {
+      Some(tessellate_cuboid(p_min, p_max))
+    }
     _ => None,
   }
 }
@@ -3063,12 +3244,18 @@ fn transform_primitive3d(prim: &mut Primitive3D, xf: &Affine3) {
   let scale = xf.length_scale();
   // An anisotropic transform bends a sphere into an ellipsoid and a
   // cylinder/cone into an elliptic one — shapes the analytic primitives
-  // cannot express. Tessellate first, then transform the vertices, and
-  // keep the result marked `smooth` so it still shades as a curved
-  // surface rather than growing facet outlines.
-  if !xf.is_similarity()
-    && let Some(tris) = tessellate_for_transform(prim)
-  {
+  // cannot express; a rotation does the same to a `Cuboid`, tilting its
+  // faces off the coordinate planes, which its two-corner representation
+  // cannot express either (a pure rotation is a similarity, so it needs
+  // its own, stricter check). Tessellate first, then transform the
+  // vertices, and keep the result marked `smooth` so a curved surface still
+  // shades as one rather than growing facet outlines (a tessellated
+  // `Cuboid` is flat-faced regardless, so `smooth` is moot for it).
+  let needs_tessellation = match prim {
+    Primitive3D::Cuboid { .. } => !xf.is_axis_aligned(),
+    _ => !xf.is_similarity(),
+  };
+  if needs_tessellation && let Some(tris) = tessellate_for_transform(prim) {
     let style = primitive_style(prim).clone();
     *prim = Primitive3D::Surface3D {
       tris: tris
@@ -3086,8 +3273,9 @@ fn transform_primitive3d(prim: &mut Primitive3D, xf: &Affine3) {
       *radius *= scale;
     }
     Primitive3D::Cuboid { p_min, p_max, .. } => {
-      // Transform both corners and re-normalize; the box stays
-      // axis-aligned, so rotations are only approximated.
+      // Reached only when `xf` is axis-aligned (translation/per-axis
+      // scale): transforming both corners keeps the box axis-aligned, so
+      // it can stay a cheap `Cuboid` instead of a tessellated mesh.
       let a = xf.apply(*p_min);
       let b = xf.apply(*p_max);
       *p_min = Point3D {
@@ -9809,6 +9997,55 @@ fn resolve_one_parametric_triple(
   }
 }
 
+/// Read an already-evaluated shape as zero, one, or several `{fx, fy, fz}`
+/// triples: `{}` contributes no curve (a Demonstration idiom, `If[cond,
+/// Through[{f, g}][##]&][...], {}]`, picks between a fixed set of curves and
+/// "no curve" depending on a control's value), a literal 3-list is one
+/// curve, and a list whose every element is itself a 3-list is that many
+/// curves (e.g. `Through[{f, g}][t, ...]` producing two curves at once).
+fn parametric_curves_from_list(e: &Expr) -> Option<Vec<(Expr, Expr, Expr)>> {
+  let Expr::List(sub) = e else {
+    return None;
+  };
+  if sub.is_empty() {
+    return Some(vec![]);
+  }
+  let as_multi: Option<Vec<(Expr, Expr, Expr)>> = sub
+    .iter()
+    .map(|s| match unwrap_singleton_list(s) {
+      Expr::List(inner) if inner.len() == 3 => {
+        Some((inner[0].clone(), inner[1].clone(), inner[2].clone()))
+      }
+      _ => None,
+    })
+    .collect();
+  if let Some(curves) = as_multi {
+    return Some(curves);
+  }
+  (sub.len() == 3)
+    .then(|| vec![(sub[0].clone(), sub[1].clone(), sub[2].clone())])
+}
+
+/// Resolve one item of a `ParametricPlot3D` curve list into zero, one, or
+/// several `{fx, fy, fz}` triples (see `parametric_curves_from_list`),
+/// evaluating a held expression (with `shadow_vars` cleared) when it is not
+/// already a literal list, exactly as `resolve_one_parametric_triple` does
+/// for the single-curve case.
+fn resolve_one_parametric_item_to_curves(
+  item: &Expr,
+  shadow_vars: &[&str],
+) -> Option<Vec<(Expr, Expr, Expr)>> {
+  if let Expr::List(_) = unwrap_singleton_list(item)
+    && let Some(curves) =
+      parametric_curves_from_list(unwrap_singleton_list(item))
+  {
+    return Some(curves);
+  }
+  let resolved =
+    crate::functions::plot::eval_body_vars_symbolic(item, shadow_vars);
+  parametric_curves_from_list(unwrap_singleton_list(&resolved))
+}
+
 /// Resolve `body` into one or more `{fx, fy, fz}` triples for
 /// `ParametricPlot3D`. `body` normally is already a literal `{fx, fy, fz}`
 /// (or a list of such triples), but a Demonstration idiom passes a helper
@@ -9857,12 +10094,14 @@ fn resolve_parametric_triples(
           vec![(items[0].clone(), items[1].clone(), items[2].clone())]
         }));
       }
-      items
-        .iter()
-        .map(|item| {
-          resolve_one_parametric_triple(item, shadow_vars).ok_or_else(err)
-        })
-        .collect()
+      let mut curves = Vec::new();
+      for item in items {
+        match resolve_one_parametric_item_to_curves(item, shadow_vars) {
+          Some(item_curves) => curves.extend(item_curves),
+          None => return Err(err()),
+        }
+      }
+      Ok(curves)
     };
   match body {
     Expr::List(items) => resolve_items(items),
@@ -10305,4 +10544,233 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let svg = with_plot_label(svg, args, svg_width, svg_height);
 
   Ok(crate::graphics3d_result_with_structure(svg, structure))
+}
+
+#[cfg(test)]
+mod area_geometry_debug_tests {
+  use super::*;
+
+  #[test]
+  fn disk_fully_inside_square() {
+    let square = vec![[-1.0, -1.0], [1.0, -1.0], [1.0, 1.0], [-1.0, 1.0]];
+    let area = disk_convex_polygon_area([0.0, 0.0], 0.5, &square);
+    assert!(
+      (area - std::f64::consts::PI * 0.25).abs() < 1e-9,
+      "got {area}"
+    );
+  }
+
+  #[test]
+  fn disk_tangent_to_square_edges() {
+    // half-height 0.5 == radius: circle touches top/bottom, full circle
+    // still counts.
+    let rect = vec![[-2.0, -0.5], [2.0, -0.5], [2.0, 0.5], [-2.0, 0.5]];
+    let area = disk_convex_polygon_area([0.0, 0.0], 0.5, &rect);
+    assert!(
+      (area - std::f64::consts::PI * 0.25).abs() < 1e-9,
+      "got {area}"
+    );
+  }
+
+  #[test]
+  fn polygon3d_area_unit_square_in_xy() {
+    let poly = vec![
+      [0.0, 0.0, 0.0],
+      [1.0, 0.0, 0.0],
+      [1.0, 1.0, 0.0],
+      [0.0, 1.0, 0.0],
+    ];
+    assert!((polygon3d_area(&poly) - 1.0).abs() < 1e-9);
+  }
+
+  #[test]
+  fn plane_polygon_in_diagonal_cube_cross_section() {
+    let normal = [1.0, 1.0, 0.0];
+    let point = [1.0, 0.0, 0.0];
+    let bounds = [(0.0, 1.0), (0.0, 1.0), (0.0, 1.0)];
+    let poly = plane_polygon_in_box(normal, point, bounds).expect("poly");
+    let area = polygon3d_area(&poly);
+    assert!(
+      (area - 2.0f64.sqrt()).abs() < 1e-9,
+      "got {area}, poly={poly:?}"
+    );
+  }
+}
+
+#[cfg(test)]
+mod cuboid_rotation_tests {
+  use super::*;
+
+  fn corner(p: Point3D) -> (f64, f64, f64) {
+    (
+      (p.x * 1e9).round() / 1e9,
+      (p.y * 1e9).round() / 1e9,
+      (p.z * 1e9).round() / 1e9,
+    )
+  }
+
+  #[test]
+  fn axis_aligned_transform_detects_translation_and_scaling_only() {
+    assert!(Affine3::translation([1.0, -2.0, 3.0]).is_axis_aligned());
+    assert!(
+      Affine3::scaling([2.0, 0.5, -1.0], [0.0, 0.0, 0.0]).is_axis_aligned()
+    );
+    // A 90-degree rotation about a coordinate axis happens to keep the
+    // linear part diagonal-free of off-axis coupling along that axis, but
+    // still mixes the other two — off-axis entries appear, so it is
+    // correctly *not* axis-aligned.
+    assert!(
+      !Affine3::rotation(
+        std::f64::consts::FRAC_PI_2,
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0]
+      )
+      .unwrap()
+      .is_axis_aligned()
+    );
+    assert!(
+      !Affine3::rotation(0.3, [0.0, 0.0, 1.0], [1.0, 1.0, 1.0])
+        .unwrap()
+        .is_axis_aligned()
+    );
+  }
+
+  /// A `Cuboid` under a genuine rotation cannot stay a `Cuboid` — its
+  /// two-corner form only ever describes an axis-aligned box. Regression:
+  /// `transform_primitive3d` used to rotate just the two corners and
+  /// re-derive a new axis-aligned box from them ("only approximated" per
+  /// its old comment), which for a thin box at a generic angle erases the
+  /// tilt entirely rather than producing a tilted box. It must instead
+  /// tessellate into a `Surface3D`, the same way `Sphere`/`Cylinder`/`Cone`
+  /// already do for a transform their analytic form cannot express.
+  #[test]
+  fn rotated_cuboid_tessellates_instead_of_approximating() {
+    let mut prim = Primitive3D::Cuboid {
+      p_min: Point3D {
+        x: -0.05,
+        y: -0.05,
+        z: 0.0,
+      },
+      p_max: Point3D {
+        x: 0.05,
+        y: 0.05,
+        z: 2.0,
+      },
+      style: StyleState3D::default(),
+    };
+    let xf = Affine3::rotation(0.7, [0.0, 1.0, 0.0], [0.0, 0.0, 0.0]).unwrap();
+    transform_primitive3d(&mut prim, &xf);
+    assert!(
+      matches!(prim, Primitive3D::Surface3D { .. }),
+      "a rotated Cuboid must tessellate, not stay an (approximated) Cuboid"
+    );
+    // The tessellated box's own vertices, rotated back by the inverse
+    // angle, must land exactly on the original axis-aligned corners —
+    // exact because both rotations act on the same fixed set of vertices,
+    // unlike the old corner-remap-then-re-normalize approach, whose second
+    // application starts from an already wrong, previously re-normalized
+    // box and does not undo the first.
+    let inverse =
+      Affine3::rotation(-0.7, [0.0, 1.0, 0.0], [0.0, 0.0, 0.0]).unwrap();
+    let Primitive3D::Surface3D { tris, .. } = &prim else {
+      unreachable!()
+    };
+    let mut restored: Vec<(f64, f64, f64)> = tris
+      .iter()
+      .flat_map(|(a, b, c)| [a, b, c])
+      .map(|p| corner(inverse.apply(*p)))
+      .collect();
+    restored.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    restored.dedup();
+    let mut expected = vec![
+      (-0.05, -0.05, 0.0),
+      (0.05, -0.05, 0.0),
+      (0.05, 0.05, 0.0),
+      (-0.05, 0.05, 0.0),
+      (-0.05, -0.05, 2.0),
+      (0.05, -0.05, 2.0),
+      (0.05, 0.05, 2.0),
+      (-0.05, 0.05, 2.0),
+    ];
+    expected.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    assert_eq!(restored, expected);
+  }
+
+  /// The same rotation, but through an off-origin anchor point — exercising
+  /// the `Rotate[g, angle, axis, point]` 4-argument form (the one the
+  /// ladder-climber–style Demonstrations use to swing a rung assembly about
+  /// a pivot partway up a wall) rather than the 3-argument origin-anchored
+  /// one above.
+  #[test]
+  fn rotated_cuboid_about_an_off_origin_axis_tessellates() {
+    let mut prim = Primitive3D::Cuboid {
+      p_min: Point3D {
+        x: -0.1,
+        y: 0.0,
+        z: -1.0,
+      },
+      p_max: Point3D {
+        x: 0.0,
+        y: 0.03,
+        z: 1.0,
+      },
+      style: StyleState3D::default(),
+    };
+    let xf = Affine3::rotation(1.1, [0.0, 1.0, 0.0], [0.0, 0.0, 3.0]).unwrap();
+    transform_primitive3d(&mut prim, &xf);
+    assert!(matches!(prim, Primitive3D::Surface3D { .. }));
+    let inverse =
+      Affine3::rotation(-1.1, [0.0, 1.0, 0.0], [0.0, 0.0, 3.0]).unwrap();
+    let Primitive3D::Surface3D { tris, .. } = &prim else {
+      unreachable!()
+    };
+    let mut restored: Vec<(f64, f64, f64)> = tris
+      .iter()
+      .flat_map(|(a, b, c)| [a, b, c])
+      .map(|p| corner(inverse.apply(*p)))
+      .collect();
+    restored.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    restored.dedup();
+    let mut expected = vec![
+      (-0.1, 0.0, -1.0),
+      (0.0, 0.0, -1.0),
+      (0.0, 0.03, -1.0),
+      (-0.1, 0.03, -1.0),
+      (-0.1, 0.0, 1.0),
+      (0.0, 0.0, 1.0),
+      (0.0, 0.03, 1.0),
+      (-0.1, 0.03, 1.0),
+    ];
+    expected.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    assert_eq!(restored, expected);
+  }
+
+  /// A `Cuboid` under a transform that keeps it axis-aligned (translation
+  /// composed with a per-axis scale) stays the cheap `Cuboid` form rather
+  /// than tessellating unnecessarily.
+  #[test]
+  fn axis_aligned_transform_keeps_cuboid_representation() {
+    let mut prim = Primitive3D::Cuboid {
+      p_min: Point3D {
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
+      },
+      p_max: Point3D {
+        x: 1.0,
+        y: 1.0,
+        z: 1.0,
+      },
+      style: StyleState3D::default(),
+    };
+    let xf = Affine3::translation([2.0, -1.0, 0.5]);
+    transform_primitive3d(&mut prim, &xf);
+    match prim {
+      Primitive3D::Cuboid { p_min, p_max, .. } => {
+        assert_eq!(corner(p_min), (2.0, -1.0, 0.5));
+        assert_eq!(corner(p_max), (3.0, 0.0, 1.5));
+      }
+      _ => panic!("an axis-aligned transform must not tessellate a Cuboid"),
+    }
+  }
 }

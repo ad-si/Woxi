@@ -1869,6 +1869,45 @@ mod differentiate_plus_times {
     assert_eq!(interpret("D[f[x[i]], x[k]]").unwrap(), "0");
     assert_eq!(interpret("D[y, Sin[x]]").unwrap(), "0");
   }
+
+  // Regression: differentiating with respect to a non-symbol target like
+  // `x[k]` used to go through a separate, partial rule set (only Plus and
+  // Times) that silently fell to "treat as constant → 0" for anything else
+  // — a power, a quotient, a unary minus, or a call to Log/Exp/Sqrt/...
+  // wrapped around the target. `D[(a*x[k])^2, x[k]]` was `0` instead of
+  // `2 a^2 x[k]`. Fixed by routing through the same fresh-symbol
+  // substitution the `Slot[k]` case already uses, so the ordinary
+  // `differentiate` (which has every rule) does the work.
+  #[test]
+  fn derivative_wrt_indexed_var_power_rule() {
+    assert_eq!(interpret("D[(a*x[k])^2, x[k]]").unwrap(), "2*x[k]*a^2");
+  }
+
+  #[test]
+  fn derivative_wrt_indexed_var_minus_and_divide() {
+    assert_eq!(
+      interpret("D[x[k]^3 - 2*x[k], x[k]]").unwrap(),
+      "-2 + 3*x[k]^2"
+    );
+    assert_eq!(interpret("D[1/x[k], x[k]]").unwrap(), "-x[k]^(-2)");
+  }
+
+  #[test]
+  fn derivative_wrt_indexed_var_transcendental_chain_rule() {
+    assert_eq!(
+      interpret("D[Log[x[k]], x[k]]").unwrap(),
+      interpret("D[Log[q], q] /. q -> x[k]").unwrap()
+    );
+    assert_eq!(
+      interpret("D[Exp[x[k]], x[k]]").unwrap(),
+      interpret("D[Exp[q], q] /. q -> x[k]").unwrap()
+    );
+  }
+
+  #[test]
+  fn derivative_wrt_indexed_var_higher_order() {
+    assert_eq!(interpret("D[x[k]^3, {x[k], 2}]").unwrap(), "6*x[k]");
+  }
 }
 
 mod differentiate_piecewise {
@@ -8391,6 +8430,27 @@ mod ndsolve {
   }
 
   #[test]
+  fn ndsolve_flattens_a_chained_equality_across_several_functions() {
+    // Regression: a coupled system's initial conditions are commonly stated
+    // as one chained equality shared by every function — `x[0] == y[0] ==
+    // z[0] == 0` — rather than three separate equations. `Equal` with more
+    // than two operands parses to one `Comparison` node, which NDSolve's
+    // per-equation initial-condition matcher only ever recognized in its
+    // two-operand form, so the whole system was left as a single bogus
+    // equation and NDSolve bailed out unevaluated (already handled for a
+    // PDE's boundary conditions; this system's initial conditions took the
+    // separate ODE path, which never expanded the chain the same way).
+    // x' = 1, y' = 2, z' = 3, all starting at 0, so at t = 5: 5, 10, 15.
+    let result = interpret(
+      "sol = NDSolve[{x'[t] == 1, y'[t] == 2, z'[t] == 3, \
+       x[0] == y[0] == z[0] == 0}, {x, y, z}, {t, 0, 5}]; \
+       Round[{x[5], y[5], z[5]} /. sol[[1]], 10^-6]",
+    )
+    .unwrap();
+    assert_eq!(result, "{5, 10, 15}");
+  }
+
+  #[test]
   fn ndsolve_domain_extends_to_an_initial_condition_outside_it() {
     // Regression: a Demonstration commonly states its initial condition at
     // the natural reference point (`y[0] == n0`) but requests the solution
@@ -10320,6 +10380,34 @@ mod findroot_symbolic_start {
     );
   }
 
+  // Regression: a search variable that never appears literally in the
+  // equations themselves — only inside a separately-defined helper
+  // function's own body, parameterized by an index substituted during
+  // evaluation (a common way to write a stage-by-stage/discretized model:
+  // `eqs = Table[stageBalance[i] == 0, {i, ...}]` where `stageBalance`
+  // internally references `x[i]`) — used to make the renaming pass that
+  // turns every indexed search variable into a plain symbol miss those
+  // occurrences entirely, because it walked the equation source *before*
+  // evaluation ever expanded `h[i]`'s body into one containing a literal
+  // `x[i]`. The built residual then still carried an unrenamed, unbound
+  // `x[0]`/`x[1]`, which could not be substituted with the search point's
+  // numeric value and failed with `FindRoot::nlnum` ("not a number at the
+  // starting point") rather than solving. Renaming after the equations are
+  // evaluated (so every occurrence, wherever it came from, is a literal
+  // indexed reference by then) fixes this.
+  #[test]
+  fn findroot_multivariate_var_only_inside_helper_function_body() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "h[n_] := x[n]^2; \
+         FindRoot[{h[0] - 1 == 0, h[1] - 4 == 0}, {{x[0], 0.9}, {x[1], 1.9}}]"
+      )
+      .unwrap(),
+      "{x[0] -> 1., x[1] -> 2.}"
+    );
+  }
+
   // Regression test: `MaxIterations` was accepted syntactically for the
   // multivariate form (it parses as an ordinary trailing option) but was
   // never actually threaded into the solver, which always ran up to a
@@ -10384,6 +10472,55 @@ mod findroot_symbolic_start {
         .any(|w| w.contains("FindRoot::ioppfa")),
       "expected an ioppfa message but got: {:?}",
       result.warnings
+    );
+  }
+
+  // Regression: a system built from per-index equations (a discretized
+  // process model, a PDE stencil, ...) has a Jacobian that is mostly zero —
+  // equation `i` only involves a handful of the `n` search variables. The
+  // symbolic Jacobian build used to call `differentiate` (which allocates
+  // and simplifies a new expression) for every one of the n*n pairs
+  // regardless of whether the variable actually appeared, so the runtime
+  // scaled with n² even though the true (non-zero) Jacobian is sparse. A
+  // cheap `is_constant_wrt` presence check before differentiating turns
+  // that into an effectively linear cost. With n = 200 (40 000 pairs, ~99%
+  // of them structurally zero) the unoptimized build was slow enough to be
+  // impractical in a Manipulate's initialization; this must now complete
+  // well within a normal test's budget.
+  //
+  // The system is constructed so `x[i] = 1` for every `i` is an exact root
+  // regardless of `n` (each interior equation reduces to 1+0+1+1-3 == 0 at
+  // that point), which both lets correctness be checked without a symbolic
+  // solve and keeps the residual well away from the fractional-power/Log
+  // domain edge (`x[i] > 0` throughout the search).
+  #[test]
+  fn findroot_multivariate_sparse_jacobian_scales_to_many_variables() {
+    clear_state();
+    let start = std::time::Instant::now();
+    let result = interpret(
+      "n = 200; \
+       x[0] = 1.0; x[n + 1] = 1.0; \
+       eqs = Table[\
+         x[i]^2 + Log[x[i - 1]] + Sqrt[x[i + 1]] + Exp[x[i] - 1] - 3 == 0, \
+         {i, 1, n}\
+       ]; \
+       vars = Table[{x[i], 1.3}, {i, 1, n}]; \
+       sol = FindRoot[eqs, vars]; \
+       Max[Abs[Table[x[i] /. sol, {i, 1, n}] - 1]]",
+    )
+    .unwrap();
+    assert!(
+      start.elapsed().as_secs() < 20,
+      "a sparse n=200 FindRoot system must not pay the old O(n²) \
+       symbolic-Jacobian cost"
+    );
+    let max_dev: f64 = result
+      .replace("*^", "e")
+      .parse()
+      .expect("should be a number");
+    assert!(
+      max_dev < 1e-6,
+      "expected every x[i] to converge to 1, max deviation {max_dev}"
     );
   }
 }

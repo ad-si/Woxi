@@ -314,7 +314,73 @@ mod example_data_tests {
     );
   }
 
-  // A name outside the catalogue is reported; one that is in the catalogue
+  /// Woxi bundles no mesh data, only the `"Geometry3D"` name catalogue —
+  /// enough for a script to build UI (a `PopupMenu`, as the Wolfram
+  /// Demonstration "Cylindrical Anamorphosis of 3D Polygonal Meshes" does)
+  /// from `ExampleData["Geometry3D"]` without the actual polygon data being
+  /// available.
+  #[test]
+  fn lists_the_geometry3d_catalogue() {
+    clear_state();
+    assert_eq!(
+      interpret("MemberQ[ExampleData[], \"Geometry3D\"]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "And @@ (MatchQ[#, {_String, _String}] & /@ \
+         ExampleData[\"Geometry3D\"])"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("Union[First /@ ExampleData[\"Geometry3D\"]]").unwrap(),
+      "{Geometry3D}"
+    );
+    for name in [
+      "Cone",
+      "Cow",
+      "Galleon",
+      "HammerheadShark",
+      "Horse",
+      "KleinBottle",
+      "MoebiusStrip",
+      "Seashell",
+      "SpaceShuttle",
+      "Torus",
+      "Triceratops",
+    ] {
+      assert_eq!(
+        interpret(&format!(
+          "MemberQ[ExampleData[\"Geometry3D\"], {{\"Geometry3D\", \"{name}\"}}]"
+        ))
+        .unwrap(),
+        "True",
+        "{name}"
+      );
+    }
+  }
+
+  /// The name catalogue is bundled, but no mesh data is: asking for one of
+  /// the catalogued shapes — directly or through one of its properties —
+  /// stays unevaluated rather than returning invented geometry.
+  #[test]
+  fn geometry3d_mesh_data_stays_unbundled() {
+    clear_state();
+    assert_eq!(
+      interpret("ExampleData[{\"Geometry3D\", \"Cow\"}]").unwrap(),
+      "ExampleData[{Geometry3D, Cow}]"
+    );
+    assert_eq!(
+      interpret("ExampleData[{\"Geometry3D\", \"Cow\"}, \"PolygonObjects\"]")
+        .unwrap(),
+      "ExampleData[{Geometry3D, Cow}, PolygonObjects]"
+    );
+    assert!(woxi::get_captured_messages_raw().is_empty());
+  }
+
+  /// A name outside the catalogue is reported; one that is in the catalogue
   // but whose data Woxi does not bundle stays quietly unevaluated.
   #[test]
   fn an_unknown_entity_is_reported() {

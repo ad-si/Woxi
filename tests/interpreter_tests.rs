@@ -730,6 +730,45 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_formal_symbol_named_characters_parse_as_identifiers() {
+    // `\[FormalA]`..`\[FormalZ]` (and their Greek/capitalized variants) are
+    // Wolfram's private-use-area "formal symbol" glyphs, used as generic
+    // bound-variable names — e.g. a Demonstration's helper writes
+    // `Prepend[#, {\[FormalX], \[FormalY]}]` where a plain pattern would
+    // otherwise need a name. A notebook's box form stores these as the
+    // bare `\u{F817}`/`\u{F818}` characters, not the `\[FormalX]` escape,
+    // so both forms must lex as ordinary identifiers rather than failing
+    // to parse.
+    clear_state();
+    assert_eq!(interpret("Head[\\[FormalX]]").unwrap(), "Symbol");
+    assert_eq!(interpret("\\[FormalX] = 3; \\[FormalX] + 1").unwrap(), "4");
+    clear_state();
+    // The exact shape the notebook uses: a pure function prepending a
+    // generic-named pair ahead of `#`, with no pattern variable involved.
+    // The escape text names the same symbol as the bare glyph (see
+    // `test_formal_symbol_escaped_and_raw_glyph_spellings_are_the_same_symbol`),
+    // so it prints back as the glyph, not the literal escape spelling.
+    assert_eq!(
+      interpret("Prepend[#, {\\[FormalX], \\[FormalY]}] & [{1, 2}]").unwrap(),
+      "{{\u{F817}, \u{F818}}, 1, 2}"
+    );
+    clear_state();
+    // The bare glyph form (as a notebook's BoxData actually stores it).
+    assert_eq!(interpret("Head[\u{F817}]").unwrap(), "Symbol");
+    assert_eq!(
+      interpret("{\u{F817}, \u{F818}}").unwrap(),
+      "{\u{F817}, \u{F818}}"
+    );
+    clear_state();
+    // The extended "formal script" block a couple of the rarer variants
+    // (e.g. `\[FormalScriptCapitalA]`) live in.
+    assert_eq!(
+      interpret("Head[\\[FormalScriptCapitalA]]").unwrap(),
+      "Symbol"
+    );
+  }
+
+  #[test]
   fn test_named_character_identifier_keeps_trailing_dollar_signs() {
     // Wolfram's FrontEnd names a Manipulate-tracked variable built from a
     // named character with a trailing `$$` (e.g. `\[Delta]$$`); the whole
@@ -747,6 +786,34 @@ mod interpreter_tests {
     assert_eq!(
       interpret("\\[Theta]$$[x_] := x^2; \\[Theta]$$[5]").unwrap(),
       "25"
+    );
+  }
+
+  #[test]
+  fn test_formal_symbol_escaped_and_raw_glyph_spellings_are_the_same_symbol() {
+    // `\[FormalX]` (the escape text) and the bare private-use glyph it
+    // stands for (`\u{F817}`, as a notebook's BoxData actually stores it)
+    // must name the *same* symbol, exactly like any other named character.
+    // `is_symbol_letter` in src/syntax.rs (which decides whether the
+    // escape text's `\[Name]` resolves to the Unicode glyph or falls back
+    // to the literal name string) needs the same private-use ranges as the
+    // `PrivateUseLetter` parser rule, or the two spellings silently name
+    // different symbols.
+    let formal_x = '\u{F817}'; // \[FormalX]
+    clear_state();
+    assert_eq!(
+      interpret(&format!("{formal_x} === \\[FormalX]")).unwrap(),
+      "True"
+    );
+    // The glyph also works as a pattern variable's name, not just a bare
+    // reference (the `PatternName` grammar rule shares `PrivateUseLetter`).
+    clear_state();
+    assert_eq!(
+      interpret(&format!(
+        "f[{formal_x}_] := {{{formal_x}, {formal_x}}};\nf[1]"
+      ))
+      .unwrap(),
+      "{1, 1}"
     );
   }
 
@@ -845,6 +912,29 @@ mod interpreter_tests {
     assert!(
       svg.starts_with("<svg width=\"480\""),
       "expected the picked plot (480 wide), got: {}",
+      &svg[..svg.len().min(80)]
+    );
+  }
+
+  /// `TabView[{"first" -> pane1, "second" -> pane2}]` has no single branch
+  /// the way `Switch` does — a real front end keeps every pane's expression
+  /// live and just *displays* the first one until the user clicks another
+  /// tab. Woxi still evaluates every pane eagerly, and a pane that draws a
+  /// picture calls `capture_graphics` as a side effect, so the same
+  /// last-drawn-wins bug applies: the second (last) pane used to win the
+  /// capture buffer no matter which tab a notebook actually opens on.
+  #[test]
+  fn test_tabview_shows_first_tab_not_last_evaluated() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "TabView[{\"first\" -> Plot[Sin[x], {x, 0, 4}, ImageSize -> 320], \
+       \"second\" -> Plot[Cos[x], {x, 0, 4}, ImageSize -> 480]}]",
+    )
+    .unwrap();
+    let svg = r.graphics.expect("expected graphics output");
+    assert!(
+      svg.starts_with("<svg width=\"320\""),
+      "expected the first tab's plot (320 wide), got: {}",
       &svg[..svg.len().min(80)]
     );
   }
@@ -1193,6 +1283,56 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_directive_with_single_list_argument_applies_its_styles() {
+    // Regression: `Directive[{a, b, …}]` (one List argument, as
+    // `ContourStyle -> Directive[{Thickness[...], RGBColor[...]}]` writes
+    // it) silently applied no style at all — only the flat spelling
+    // `Directive[a, b, …]` worked. `apply_directive` fell through its
+    // `Expr::List` argument to the `_ => false` arm instead of recursing
+    // into the list's items.
+    clear_state();
+    let svg = interpret_with_stdout(
+      "Graphics[{Directive[{Thickness[.02], RGBColor[.25, .43, .82]}], \
+       Circle[{0, 0}, 1]}]",
+    )
+    .unwrap()
+    .graphics
+    .expect("Graphics should produce a graphics SVG");
+    assert!(
+      svg.contains("rgb(64,110,209)"),
+      "Directive[{{…}}] must apply its RGBColor:\n{svg}"
+    );
+    assert!(
+      !svg.contains("rgb(0,0,0)"),
+      "Directive[{{…}}] must not leave the circle black:\n{svg}"
+    );
+  }
+
+  #[test]
+  fn test_show_contour_plot_with_directive_list_contour_style() {
+    // Regression: `Show[ContourPlot[…], Graphics[…]]` where the
+    // ContourPlot's `ContourStyle` is a `Directive[{…}]` (single List
+    // argument) lost its color once merged — the contour lines rendered
+    // black instead of the requested color. `ContourPlot`'s symbolic
+    // `structure` embeds the ContourStyle directive verbatim, so the same
+    // `Directive[{…}]` parsing gap dropped it there too.
+    clear_state();
+    let svg = interpret_with_stdout(
+      "Show[ContourPlot[x^2 + y^2, {x, -2, 2}, {y, -2, 2}, \
+       ContourStyle -> Directive[{Thickness[.01], RGBColor[.25, .43, .82]}], \
+       ContourShading -> None, Axes -> False, Frame -> False], \
+       Graphics[{Black, Circle[{0, 0}, .2]}]]",
+    )
+    .unwrap()
+    .graphics
+    .expect("Show should produce a graphics SVG");
+    assert!(
+      svg.contains("rgb(64,110,209)"),
+      "merged ContourPlot must keep its Directive[{{…}}] ContourStyle color:\n{svg}"
+    );
+  }
+
+  #[test]
   fn test_column_with_nested_tableform_renders_as_graphics() {
     // In visual mode (playground / woxi-studio), a Column containing a
     // TableForm must pre-render the table as a sub-SVG instead of falling
@@ -1383,6 +1523,56 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_manipulate_row_style_symbolic_divide_svg_renders_as_fraction() {
+    // Regression (Wolfram Demonstrations Project "Diagrammatic
+    // Representations of Scientific Formulas"): a `Manipulate`'s
+    // `PlotLabel -> Column[{..., Style[Row[{..., v/r, ...}], size]}]` idiom
+    // evaluates the division symbolically to `Times[v, Power[r, -1]]`
+    // (`FullForm` of `v/r`). The `Row`/`Style` SVG writer
+    // (`expr_to_svg_markup`, distinct from bare `Text[...]`'s writer) typeset
+    // a negative `Power` exponent as a literal superscripted `-1` — "R^-1 V"
+    // — instead of the fraction "V/R" every other engine and Woxi's own
+    // `Text[...]` renderer show.
+    clear_state();
+    let r = interpret_with_stdout(
+      "Graphics[{Circle[]}, PlotLabel -> Row[{Style[\"I\", Italic], \" = \", \
+       Style[\"V\", Italic]/Style[\"R\", Italic]}]]",
+    )
+    .unwrap();
+    let svg = r.graphics.expect("expected Graphics SVG output");
+    assert!(
+      !svg.contains("super"),
+      "PlotLabel SVG must not typeset the reciprocal as a superscripted \
+       negative exponent:\n{svg}"
+    );
+    assert!(
+      svg.contains(
+        "<tspan font-style=\"italic\">V</tspan>/<tspan font-style=\"italic\">R</tspan>"
+      ),
+      "PlotLabel SVG must render the symbolic division as the fraction \
+       \"V/R\":\n{svg}"
+    );
+  }
+
+  #[test]
+  fn test_manipulate_row_style_symbolic_reciprocal_product_svg() {
+    // Same renderer, a product of two reciprocals (`Times[a, Power[b, -1],
+    // Power[c, -1]]`, i.e. `a/(b c)`): every reciprocal factor must move
+    // into a single combined, parenthesized denominator — `a/(b c)`, not
+    // the ambiguous `a/b c` (misreadable as `(a/b) c`) or a superscripted
+    // negative exponent on each factor.
+    clear_state();
+    let r = interpret_with_stdout("Graphics[{Circle[]}, PlotLabel -> a/(b c)]")
+      .unwrap();
+    let svg = r.graphics.expect("expected Graphics SVG output");
+    assert!(
+      svg.contains(">a/(b c)<"),
+      "PlotLabel SVG must render a/(b c) as a single fraction with a \
+       parenthesized denominator:\n{svg}"
+    );
+  }
+
+  #[test]
   fn test_scientific_real_output_svg_uses_superscript() {
     // Regression: a machine Real in scientific notation (`10.^10` → `1.*^10`)
     // must be typeset as `1. × 10^10` in the Playground/Studio SVG — a `×`
@@ -1487,6 +1677,38 @@ mod interpreter_tests {
     assert!(
       svg.contains("<line"),
       "Frame -> All must still draw gridlines when a row holds a picture:\n{svg}"
+    );
+  }
+
+  #[test]
+  fn test_column_item_styled_tableform_typesets() {
+    // Regression: a `Column` item holding `Item[Style[TableForm[…],
+    // size], opts…]` — the shape a Demonstration's Manipulate body uses to
+    // show a computed table below a caption line — printed as the literal
+    // `TableForm[{{…}}]` source instead of an actual grid. `lays_out_a_graphic`
+    // (which decides whether a Column/Item is composed as a picture or
+    // typeset as text) had no case for `TableForm`/`MatrixForm`, even
+    // though `expr_to_svg` already knew how to render one.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Column[{\"Header\", Item[Style[TableForm[{{1, 2}, \
+       {3, 4}}], 18], Alignment -> Center]}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      !svg.contains("TableForm"),
+      "a Column item's TableForm must not leak the head as literal text:\n{svg}"
+    );
+    assert!(
+      svg.contains(">1<")
+        && svg.contains(">2<")
+        && svg.contains(">3<")
+        && svg.contains(">4<"),
+      "the table's cells must render individually:\n{svg}"
+    );
+    assert!(
+      svg.contains("font-size=\"18\""),
+      "the Style[…, 18] wrapping the TableForm must still set its font size:\n{svg}"
     );
   }
 
@@ -1907,6 +2129,54 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_plot_prolog_draws_under_background_not_behind_it() {
+    // Regression: `Plot`'s Prolog primitives were spliced in right after
+    // the opening `<svg …>` tag, landing *before* the plot's own opaque
+    // background rect (`root.fill(&bg_color)`, drawn by `plotters`) in
+    // document order. Since later SVG elements paint over earlier ones,
+    // that full-canvas rect ended up covering the Prolog entirely instead
+    // of the Prolog sitting on the blank canvas but under the axes/curve —
+    // e.g. a Demonstration's shaded Riemann-sum rectangles under a curve
+    // vanished completely.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Plot[x, {x, 0, 1}, Prolog -> {Red, Line[{{0, 0}, {1, 1}}]}], \"SVG\"]",
+    )
+    .unwrap();
+    let bg_pos = svg.find("<rect").expect("background rect not found");
+    let prolog_pos = svg.find("rgb(255,0,0)").expect("prolog line not drawn");
+    assert!(
+      prolog_pos > bg_pos,
+      "Prolog drawn before (and thus hidden under) the background rect: {svg}"
+    );
+  }
+
+  #[test]
+  fn test_plot_prolog_nested_box_without_marker() {
+    // Regression: a box head nested inside an explicit `\*Head[...]` box
+    // without its own `\*` marker — valid Wolfram linear syntax, since a
+    // further box call stays in "box mode" once already inside one — was
+    // left as literal box-source text instead of being parsed recursively.
+    // A Wolfram Demonstration's axis label
+    // `\!\(\*SuperscriptBox[\(x\), FractionBox[\(p\), \(q\)]]\)` rendered
+    // its superscript as the raw text "FractionBox[p, q]" instead of the
+    // fraction p/q.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Plot[x, {x, 0, 1}, Prolog -> {Text[\"\\!\\(\\*SuperscriptBox[\\(x\\), FractionBox[\\(p\\), \\(q\\)]]\\)\", {0.5, 0.5}]}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      !svg.contains("FractionBox"),
+      "raw box source leaked into SVG: {svg}"
+    );
+    assert!(
+      svg.contains("p/q"),
+      "expected the nested fraction to render as p/q: {svg}"
+    );
+  }
+
+  #[test]
   fn test_graphics_text_renders_inline_box_notation() {
     // A notebook `Text[…]` label can carry its typeset content as inline
     // `\!\(\*…\)` box notation — the front end's linear-syntax form for a
@@ -2312,6 +2582,48 @@ mod interpreter_tests {
       5,
       "expected one <image> per distinct vertex, got: {svg}"
     );
+  }
+
+  #[test]
+  fn test_treeplot_rejects_non_position_second_argument() {
+    // `TreePlot[rules, pos, …]`'s second positional argument must be one of
+    // Top/Bottom/Left/Right/Center. Several older Demonstrations instead
+    // pass a root vertex there (the pre-Graph-object two-argument calling
+    // convention), which wolframscript now rejects with `TreePlot::rp` and
+    // leaves the call unevaluated rather than silently plotting — see the
+    // "Combinatorics of Love from A Midsummer Night's Dream" Demonstration,
+    // whose stored notebook output shows exactly this message.
+    clear_state();
+    let result = interpret("TreePlot[{1 -> 2, 2 -> 3}, 1]").unwrap();
+    assert_eq!(result, "TreePlot[{1 -> 2, 2 -> 3}, 1]");
+    let messages = woxi::get_captured_messages_raw();
+    assert!(
+      messages.iter().any(|m| m
+        == "TreePlot::rp: The second argument 1 of TreePlot must be one of Top, Bottom, Left, Right, or Center."),
+      "expected TreePlot::rp message, got: {messages:?}"
+    );
+  }
+
+  #[test]
+  fn test_treeplot_accepts_valid_position_argument() {
+    clear_state();
+    assert_eq!(
+      interpret("TreePlot[{1 -> 2, 2 -> 3}, Top]").unwrap(),
+      "-Graphics-"
+    );
+    let messages = woxi::get_captured_messages_raw();
+    assert!(messages.is_empty(), "unexpected messages: {messages:?}");
+  }
+
+  #[test]
+  fn test_treeplot_without_position_argument_still_plots() {
+    clear_state();
+    assert_eq!(
+      interpret("TreePlot[{1 -> 2, 2 -> 3}]").unwrap(),
+      "-Graphics-"
+    );
+    let messages = woxi::get_captured_messages_raw();
+    assert!(messages.is_empty(), "unexpected messages: {messages:?}");
   }
 
   #[test]
@@ -3446,6 +3758,62 @@ mod interpreter_tests {
         .unwrap(),
       "{f[1, 2], {3, 1}}",
     );
+    clear_state();
+  }
+
+  #[test]
+  fn test_long_plus_times_chains_do_not_exceed_recursion_limit() {
+    // `w1*w2*...*wN` (e.g. a word-list literal like
+    // `besedeA = ability*abraham*...*zurich` from a real Wolfram
+    // Demonstration notebook) parses as an O(N)-deep nested `BinaryOp`
+    // chain. Evaluating it used to recurse once per term through
+    // `evaluate_expr_to_expr` (descending into the nested left/right
+    // operands), burning one `$RecursionLimit` slot per term and
+    // terminating the whole evaluation past ~1024 terms with
+    // `TerminatedEvaluation[RecursionLimit]` — even though `Times`/`Plus`
+    // are `Flat` and Wolfram evaluates a chain of any length without
+    // spending recursion budget on it. The same bug hit `Plus`/`Minus` and
+    // `Times`/`Divide` chains alike. Found via a real Wolfram
+    // Demonstration notebook while testing Woxi Studio's notebook support.
+    clear_state();
+    let n: i64 = 1500;
+
+    let times_chain = vec!["2"; n as usize].join("*");
+    assert_eq!(
+      interpret(&times_chain).unwrap(),
+      interpret(&format!("2^{n}")).unwrap(),
+    );
+
+    let plus_chain =
+      (1..=n).map(|i| i.to_string()).collect::<Vec<_>>().join("+");
+    assert_eq!(
+      interpret(&plus_chain).unwrap(),
+      (n * (n + 1) / 2).to_string()
+    );
+
+    // Alternating `+`/`-` of 1..n: simulate the same left-to-right fold in
+    // Rust to get the expected value, rather than a hand-derived formula.
+    let mut mixed = String::from("0");
+    let mut expected: i64 = 0;
+    for i in 1..=n {
+      if i % 2 == 1 {
+        mixed.push('+');
+        expected += i;
+      } else {
+        mixed.push('-');
+        expected -= i;
+      }
+      mixed.push_str(&i.to_string());
+    }
+    assert_eq!(interpret(&mixed).unwrap(), expected.to_string());
+
+    // A long `Divide` chain: `2/2/2/.../2` (n terms) == `2^(2-n)`.
+    let divide_chain = vec!["2"; n as usize].join("/");
+    assert_eq!(
+      interpret(&divide_chain).unwrap(),
+      interpret(&format!("2^(2-{n})")).unwrap(),
+    );
+
     clear_state();
   }
 

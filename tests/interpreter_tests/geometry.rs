@@ -256,6 +256,71 @@ mod area {
     // Sphere[p] with a 3-D center defaults to unit radius.
     assert_eq!(interpret("Area[Sphere[{1, 2, 3}]]").unwrap(), "4*Pi");
   }
+
+  #[test]
+  fn cube_cross_sectioned_by_plane() {
+    // The unit cube [0,1]^3 cut by the diagonal plane x+y=1: a rectangle
+    // spanning the full z-extent (height 1) and the face diagonal (width
+    // Sqrt[2]). RegionIntersection can't combine a box with a plane
+    // concretely, so it leaves a BooleanRegion behind — Area must still
+    // find the cross-section polygon and measure it.
+    assert_eq!(
+      interpret(
+        "Area[RegionIntersection[Cube[{0.5, 0.5, 0.5}, 1], \
+         ImplicitRegion[x + y == 1, {x, y, z}]]]"
+      )
+      .unwrap(),
+      "1.4142135623730951"
+    );
+  }
+
+  #[test]
+  fn cube_cross_section_plane_misses_box() {
+    // A plane that doesn't pass through the box at all: empty intersection,
+    // area 0.
+    assert_eq!(
+      interpret(
+        "Area[RegionIntersection[Cube[{0.5, 0.5, 0.5}, 1], \
+         ImplicitRegion[x == 10, {x, y, z}]]]"
+      )
+      .unwrap(),
+      "0."
+    );
+  }
+
+  #[test]
+  fn ball_intersected_with_box_plane_cross_section() {
+    // The cube's inscribed sphere (same center, radius = half the edge)
+    // meets the same diagonal cross-section exactly at its great circle:
+    // the rectangle's half-height along z (0.5) equals the sphere's
+    // radius, so the disk of area Pi/4 fits inside the rectangle exactly
+    // and RegionIntersection[Ball, planar-region] measures the whole disk.
+    assert_eq!(
+      interpret(
+        "Area[RegionIntersection[Ball[{0.5, 0.5, 0.5}, 0.5], \
+         RegionIntersection[Cube[{0.5, 0.5, 0.5}, 1], \
+         ImplicitRegion[x + y == 1, {x, y, z}]]]]"
+      )
+      .unwrap(),
+      "0.7853981633974483"
+    );
+  }
+
+  #[test]
+  fn small_ball_fully_inside_box_plane_cross_section() {
+    // A tiny sphere centered on the cross-section, far from its edges:
+    // the whole great-circle disk lies inside the rectangle, so the area
+    // is just Pi*r^2.
+    assert_eq!(
+      interpret(
+        "Area[RegionIntersection[Ball[{0.5, 0.5, 0.5}, 0.1], \
+         RegionIntersection[Cube[{0.5, 0.5, 0.5}, 1], \
+         ImplicitRegion[x + y == 1, {x, y, z}]]]]"
+      )
+      .unwrap(),
+      "0.03141592653589794"
+    );
+  }
 }
 
 mod arc_length {
@@ -2769,6 +2834,36 @@ mod convex_hull_mesh {
     assert_eq!(interpret("Head[ConvexHullMesh]").unwrap(), "Symbol");
   }
 
+  // Trailing options (e.g. `MeshCellStyle`, used by a Demonstration to
+  // style a mesh's faces) are carried through onto the resulting
+  // `BoundaryMeshRegion`, alongside the `Method`/`WorkingPrecision` it
+  // already always carries.
+  #[test]
+  fn options_carried_through() {
+    assert_eq!(
+      interpret(
+        "ToString[ConvexHullMesh[{{0,0},{2,0},{2,2},{0,2}}, \
+         MeshCellStyle -> {{1, All} -> Red}], InputForm]"
+      )
+      .unwrap(),
+      "BoundaryMeshRegion[{{0, 0}, {2, 0}, {2, 2}, {0, 2}}, \
+       {Line[{{1, 2}, {2, 3}, {3, 4}, {4, 1}}]}, \
+       Method -> {\"SeparateBoundaries\" -> False}, \
+       WorkingPrecision -> Infinity, \
+       MeshCellStyle -> {{1, All} -> RGBColor[1, 0, 0]}]"
+    );
+  }
+
+  // A trailing argument that is not a `Rule` (an invalid option) leaves the
+  // whole call unevaluated, the same way a degenerate point set does.
+  #[test]
+  fn non_rule_trailing_arg_unevaluated() {
+    assert_eq!(
+      interpret("ConvexHullMesh[{{0,0},{2,0},{2,2},{0,2}}, x]").unwrap(),
+      "ConvexHullMesh[{{0, 0}, {2, 0}, {2, 2}, {0, 2}}, x]"
+    );
+  }
+
   /// 3D `ConvexHullMesh` builds a triangulated hull surface (a standard
   /// incremental "beneath-beyond" hull, not qhull, so it does not merge
   /// coplanar facets the way wolframscript's may — see
@@ -2801,6 +2896,58 @@ mod convex_hull_mesh {
           .unwrap(),
         "BoundaryMeshRegion"
       );
+    }
+
+    // `MeshCellStyle -> {{2, All} -> style}` (a Demonstration's way of
+    // coloring a 3D `ConvexHullMesh`'s faces, e.g. translucent light blue)
+    // is carried through onto the `BoundaryMeshRegion`, the same way the 2D
+    // case carries its own trailing options.
+    #[test]
+    fn mesh_cell_style_option_carried_through() {
+      assert_eq!(
+        interpret(
+          "ToString[ConvexHullMesh[{{0,0,0},{1,0,0},{0,1,0},{0,0,1}}, \
+           MeshCellStyle -> {{2, All} -> Opacity[0.5, LightBlue]}], \
+           InputForm]"
+        )
+        .unwrap(),
+        "BoundaryMeshRegion[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, 0, 1}}, \
+         {Polygon[{{1, 3, 2}, {1, 2, 4}, {1, 4, 3}, {2, 3, 4}}]}, \
+         Method -> {\"SeparateBoundaries\" -> False}, \
+         WorkingPrecision -> Infinity, \
+         MeshCellStyle -> {{2, All} -> Opacity[0.5, RGBColor[0.87, 0.94, 1]]}]"
+      );
+    }
+
+    // Both `Show[…]` (used to combine a mesh with other 3D graphics, as in
+    // a Demonstration) and a bare `ExportString[…, "SVG"]` must render the
+    // styled mesh as an actual picture, not fall back to echoing the
+    // unevaluated call as syntax-highlighted text — the resulting SVG must
+    // not literally contain the option's own source text, and it must
+    // carry the requested opacity through to the drawn faces.
+    #[test]
+    fn mesh_cell_style_renders_as_a_picture() {
+      const HULL: &str = "ConvexHullMesh[{{0,0,0},{1,0,0},{0,1,0},{0,0,1}}, \
+         MeshCellStyle -> {{2, All} -> Opacity[0.5, LightBlue]}]";
+
+      assert_eq!(
+        interpret(&format!("Head[Show[{HULL}]]")).unwrap(),
+        "Graphics3D"
+      );
+
+      for wrapped in [HULL.to_string(), format!("Show[{HULL}]")] {
+        let svg =
+          interpret(&format!("ExportString[{wrapped}, \"SVG\"]")).unwrap();
+        assert!(
+          !svg.contains("MeshCellStyle"),
+          "must render as a picture, not echo the unevaluated option as \
+           text: {svg}"
+        );
+        assert!(
+          svg.contains("opacity=\"0.5\""),
+          "the mesh's faces must carry the requested Opacity[0.5, …]: {svg}"
+        );
+      }
     }
 
     /// A point strictly inside the tetrahedron drops out of the vertex
