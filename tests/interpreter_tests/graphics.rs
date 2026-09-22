@@ -1731,6 +1731,21 @@ mod graphics {
       assert!(!svg.contains("Spacer"), "{svg}");
     }
 
+    /// Regression: a `Row` mixing pictures with a `Spacer[n]` *item* (not
+    /// the separator position — e.g. `Row[{plot1, Spacer[20], plot2}]`, a
+    /// Demonstration's usual way to lay two plots side by side) took a
+    /// different code path than a plain `Row` of text — one that had no
+    /// `Spacer` handling at all — so the gap printed as the literal source
+    /// `Spacer[20]` instead of blank space.
+    #[test]
+    fn row_spacer_item_between_pictures_is_a_gap() {
+      let svg =
+        export_svg("Row[{Graphics[Circle[]], Spacer[20], Graphics[Disk[]]}]");
+      assert!(!svg.contains("Spacer"), "{svg}");
+      // Both pictures still rendered: one stroked circle, one filled disk.
+      assert_eq!(svg.matches("<ellipse").count(), 2, "{svg}");
+    }
+
     #[test]
     fn inset_row_of_styled_number_form_resolves_to_text() {
       // Regression: an Inset whose content is a Row of Styled text with a
@@ -12405,6 +12420,138 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       ));
     }
 
+    /// The arrow lines — as opposed to the box/axis lines, always drawn in
+    /// the fixed axis gray `rgb(102,102,102)` — in a rendered `VectorPlot3D`
+    /// SVG.
+    fn arrow_lines(svg: &str) -> Vec<String> {
+      svg
+        .split("<line ")
+        .skip(1)
+        .filter(|tag| !tag.contains("rgb(102,102,102)"))
+        .map(|tag| tag.split('/').next().unwrap().to_string())
+        .collect()
+    }
+
+    fn line_length(tag: &str) -> f64 {
+      let attr = |name: &str| -> f64 {
+        tag
+          .split(&format!("{name}=\""))
+          .nth(1)
+          .unwrap()
+          .split('"')
+          .next()
+          .unwrap()
+          .parse()
+          .unwrap()
+      };
+      let (x1, y1, x2, y2) = (attr("x1"), attr("y1"), attr("x2"), attr("y2"));
+      ((x2 - x1).powi(2) + (y2 - y1).powi(2)).sqrt()
+    }
+
+    /// Regression: `VectorPlot3D` always sampled its own uniform 7x7x7 grid
+    /// and drew every arrow at roughly one pixel long (an unrelated scale
+    /// heuristic), so a field's actual arrows were invisible dots regardless
+    /// of `VectorPoints`/`VectorScale`. `VectorPoints -> {...}` now samples
+    /// exactly the given points instead of the automatic grid.
+    #[test]
+    fn vector_plot3d_vector_points_uses_explicit_samples() {
+      let svg = export_svg(
+        "VectorPlot3D[{1, 0, 0}, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, \
+         VectorPoints -> {{0, 0, 0}, {0.5, 0.5, 0.5}}, VectorScale -> 0.5]",
+      );
+      // One arrowhead polygon per sample point — not the default grid's 512.
+      assert_eq!(
+        svg.matches("<polygon").count(),
+        2,
+        "expected exactly the 2 explicit VectorPoints samples, got: {svg}"
+      );
+    }
+
+    /// `VectorScale -> s` sets the longest arrow's length to `s` times the
+    /// plot's overall width; previously ignored entirely; every arrow was
+    /// ~1px long no matter the field or this option.
+    #[test]
+    fn vector_plot3d_vector_scale_widens_arrows() {
+      let base = "VectorPlot3D[{1, 0, 0}, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, \
+                   VectorPoints -> {{0, 0, 0}}";
+      let small = export_svg(&format!("{base}, VectorScale -> 0.02]"));
+      let large = export_svg(&format!("{base}, VectorScale -> 0.3]"));
+      let small_len = line_length(&arrow_lines(&small)[0]);
+      let large_len = line_length(&arrow_lines(&large)[0]);
+      assert!(
+        large_len > small_len * 3.0,
+        "expected VectorScale -> 0.3 to draw a much longer arrow than 0.02: \
+         {small_len:.1}px vs {large_len:.1}px"
+      );
+    }
+
+    /// `VectorStyle -> {color, Thickness[t], Arrowheads[a]}` was silently
+    /// dropped — every arrow used the automatic color/size regardless.
+    #[test]
+    fn vector_plot3d_vector_style_sets_color_and_thickness() {
+      let svg = export_svg(
+        "VectorPlot3D[{1, 0, 0}, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, \
+         VectorPoints -> {{0, 0, 0}}, VectorScale -> 0.3, \
+         VectorStyle -> {Orange, Thickness[0.01], Arrowheads[0.05]}, \
+         ImageSize -> 400]",
+      );
+      let lines = arrow_lines(&svg);
+      assert_eq!(lines.len(), 1, "{svg}");
+      assert!(
+        lines[0].contains("stroke=\"rgb(255,128,0)\""),
+        "expected the VectorStyle color (Woxi's Orange), got: {}",
+        lines[0]
+      );
+      // Thickness[0.01] on a 400px image is 4px, not the built-in default
+      // of 1.2px.
+      assert!(
+        lines[0].contains("stroke-width=\"4\""),
+        "expected a VectorStyle-derived stroke width, got: {}",
+        lines[0]
+      );
+    }
+
+    /// Regression: `VectorPlot3D` rendered straight to a flat, opaque SVG
+    /// with no symbolic content, so `Show[VectorPlot3D[…], VectorPlot3D[…],
+    /// Graphics3D[…]]` (a Demonstration overlaying several field arrows with
+    /// a scene, e.g. an antenna) could only stack each already-projected
+    /// picture — which silently dropped everything past the first opaque
+    /// layer instead of composing one shared 3D scene. `VectorPlot3D` now
+    /// also reports its arrows as `Graphics3D` `Arrow[…]` primitives (its
+    /// `structure`), so `Show` merges them like any other `Graphics3D`.
+    #[test]
+    fn vector_plot3d_show_merges_with_graphics3d() {
+      let svg = export_svg(
+        "Show[VectorPlot3D[{1, 0, 0}, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, \
+         VectorPoints -> {{0, 0, 0}}, VectorScale -> 0.3, VectorStyle -> Orange], \
+         Graphics3D[{Green, Cuboid[{-1, -1, -1}, {-0.5, -0.5, -0.5}]}]]",
+      );
+      // The merged scene draws the arrow through the general Graphics3D
+      // primitive renderer (a stroked polyline plus an arrowhead polygon),
+      // not VectorPlot3D's own standalone `<line>` shorthand.
+      assert!(
+        (svg.contains("<polyline") || svg.contains("<line"))
+          && svg.contains("rgb(255,128,0)"),
+        "expected the VectorPlot3D arrow to survive the merge: {svg}"
+      );
+      // The cuboid's faces are lit (each a different shade of green, not a
+      // flat "0,255,0"), so look for a fill that is green-dominant instead.
+      let has_green_face = svg
+        .split("fill=\"rgb(")
+        .skip(1)
+        .filter_map(|s| s.split(')').next())
+        .filter_map(|rgb| {
+          let mut it =
+            rgb.split(',').filter_map(|n| n.trim().parse::<u32>().ok());
+          Some((it.next()?, it.next()?, it.next()?))
+        })
+        .any(|(r, g, b)| g > 100 && r < 20 && b < 20);
+      assert!(
+        has_green_face,
+        "expected the Graphics3D cuboid to survive the merge: {svg}"
+      );
+    }
+
     #[test]
     fn list_vector_plot_basic() {
       insta::assert_snapshot!(export_svg(
@@ -12800,6 +12947,76 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(
         svg.matches("<rect").count() < 10,
         "no per-cell rect grid expected"
+      );
+    }
+
+    /// Regression: `ColorFunction -> f` for a pure function (or user-defined
+    /// symbol) was silently ignored — only named gradient strings like
+    /// `"Rainbow"` were recognized — so `DensityPlot[…, ColorFunction ->
+    /// (Hue[#]&)]` rendered with the default gradient instead of the
+    /// requested one, the same as `ColorFunctionScaling -> False`, also
+    /// ignored outright.
+    #[test]
+    fn density_plot_color_function_pure_function_applied() {
+      let svg = export_svg(
+        "DensityPlot[x, {x, 0, 1}, {y, 0, 1}, ColorFunctionScaling -> False, \
+         ColorFunction -> (Hue[0.75 (1 - #)]&)]",
+      );
+      let b64 = svg
+        .split("data:image/png;base64,")
+        .nth(1)
+        .expect("embedded image")
+        .split('"')
+        .next()
+        .unwrap();
+      use base64::Engine as _;
+      let bytes = base64::engine::general_purpose::STANDARD
+        .decode(b64)
+        .unwrap();
+      let img = ::image::load_from_memory(&bytes).unwrap().to_rgba8();
+      let (w, h) = img.dimensions();
+      // Hue[0.75] (x=0, left edge) is blue-violet; Hue[0] (x=1, right edge)
+      // is red. The default (unset) gradient is blue-to-yellow instead, so
+      // this also fails if the option is silently dropped.
+      let left = img.get_pixel(0, h / 2);
+      let right = img.get_pixel(w - 1, h / 2);
+      assert!(
+        right[0] > 200 && right[1] < 80 && right[2] < 80,
+        "expected a red pixel at the right edge, got {right:?}"
+      );
+      assert!(
+        left[2] > 150 && left[1] < 80,
+        "expected a blue/violet pixel at the left edge, got {left:?}"
+      );
+    }
+
+    /// A `ColorFunction` returning a list of graphics directives (`{Hue[h],
+    /// Opacity[o]}`, as a Demonstration commonly writes to fade a plot
+    /// toward the background) picks the color out of the list instead of
+    /// falling back to gray for not being a bare color expression.
+    #[test]
+    fn density_plot_color_function_directive_list_applied() {
+      let svg = export_svg(
+        "DensityPlot[x, {x, 0, 1}, {y, 0, 1}, ColorFunctionScaling -> False, \
+         ColorFunction -> ({Hue[0.75 (1 - #)], Opacity[0.6]}&)]",
+      );
+      let b64 = svg
+        .split("data:image/png;base64,")
+        .nth(1)
+        .expect("embedded image")
+        .split('"')
+        .next()
+        .unwrap();
+      use base64::Engine as _;
+      let bytes = base64::engine::general_purpose::STANDARD
+        .decode(b64)
+        .unwrap();
+      let img = ::image::load_from_memory(&bytes).unwrap().to_rgba8();
+      let (w, h) = img.dimensions();
+      let right = img.get_pixel(w - 1, h / 2);
+      assert!(
+        right[0] > 200 && right[1] < 80 && right[2] < 80,
+        "expected a red pixel at the right edge, got {right:?}"
       );
     }
 
@@ -13262,6 +13479,49 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         vec![0.0, 0.0],
         "the default packs to the left"
       );
+    }
+
+    // `Export`/`ExportString[…, "SVG"]` renders a `Row[…]` unconditionally
+    // (see the `row_svg_with_rendered_items` arm of `expr_to_svg`), but
+    // `Column[…]` only went through that path when one of its items was
+    // itself already a picture (`Graphics[…]`, `TableForm[…]`, …) — a
+    // `lays_out_a_graphic` check meant to let a column of plain text fall
+    // back to the ordinary text renderer. A `Grid` of plain numbers/strings
+    // isn't "a picture" by that check either, so `Column[{Grid[…]}]` fell
+    // all the way through to the same fallback and printed its own source
+    // instead of the table — e.g. a Wolfram Demonstration's Manipulate body
+    // ending in `Text@Column[{Grid[…], Grid[…]}]` (one table of inputs
+    // above one of results), exported via `ExportString[…, "SVG"]` rather
+    // than shown live (which already went through the always-on
+    // `render_column_if_needed` visual-mode pass and was unaffected).
+    #[test]
+    fn export_string_renders_a_column_of_plain_grids() {
+      let svg = export_svg("Column[{Grid[{{1, 2}, {3, 4}}], Grid[{{5, 6}}]}]");
+      assert!(
+        !svg.contains(">Column<") && !svg.contains(">Grid<"),
+        "must not dump the source: {svg}"
+      );
+      for part in ["1", "2", "3", "4", "5", "6"] {
+        assert!(
+          svg.contains(&format!(">{part}<")),
+          "missing cell `{part}`: {svg}"
+        );
+      }
+    }
+
+    // The same fallback gap without any `Grid` involved: a `Column` of
+    // plain numbers is not "a picture" either, so it used to dump its own
+    // `Column[{1, 2, 3}]` source through `ExportString`.
+    #[test]
+    fn export_string_renders_a_column_of_plain_values() {
+      let svg = export_svg("Column[{1, 2, 3}]");
+      assert!(!svg.contains(">Column<"), "must not dump the source: {svg}");
+      for part in ["1", "2", "3"] {
+        assert!(
+          svg.contains(&format!(">{part}<")),
+          "missing item `{part}`: {svg}"
+        );
+      }
     }
 
     // A `Spacer[n]` *between* a row's items is blank horizontal space, the
@@ -15269,6 +15529,96 @@ mod list_plot_3d {
       "-Graphics3D-"
     );
   }
+
+  // Regression (Wolfram Demonstrations Project: "Exploring the Grand
+  // Canyon"): that Demonstration's `Manipulate` shows a `ListPlot3D`
+  // terrain surface together with a `Graphics3D` marker line, both inside
+  // one `Show[{…}]`, and drives the terrain's `ViewPoint` from a "viewpoint"
+  // control. `ListPlot3D` never read `ViewPoint`/`BoxRatios`/`ColorFunction`
+  // at all — it always rendered itself with a fixed default camera and a
+  // fixed height gradient — so turning that control had no visible effect
+  // on the surface, and neither `ViewPoint` nor `BoxRatios` on an
+  // accompanying `Graphics3D` (or on `Show` itself) could turn/reshape it
+  // either, since it carried no symbolic structure for `Show` to merge and
+  // re-render together with the other layer under one shared camera.
+
+  #[test]
+  fn list_plot3d_view_point_turns_the_surface_when_shown_with_graphics3d() {
+    clear_state();
+    let default_view = export_svg(
+      "Show[{ListPlot3D[Table[x + y, {x, 5}, {y, 5}], \
+       ViewPoint -> {1.3, -2.4, 2}], Graphics3D[{Red, Line[{{0, 0, 0}, \
+       {4, 4, 0}}]}]}]",
+    );
+    clear_state();
+    let above_view = export_svg(
+      "Show[{ListPlot3D[Table[x + y, {x, 5}, {y, 5}], ViewPoint -> Above], \
+       Graphics3D[{Red, Line[{{0, 0, 0}, {4, 4, 0}}]}]}]",
+    );
+    assert_ne!(
+      default_view, above_view,
+      "ViewPoint on the ListPlot3D layer must turn the merged picture"
+    );
+  }
+
+  #[test]
+  fn list_plot3d_view_point_dynamic_wrapper_is_unwrapped_when_shown() {
+    // The Demonstration writes `ViewPoint -> Dynamic[vp]` (a Manipulate
+    // control's live value) rather than a bare vector.
+    clear_state();
+    let svg = export_svg(
+      "Block[{vp = {1.3, -2.4, 2}}, Show[{ListPlot3D[Table[x + y, {x, 5}, \
+       {y, 5}], ViewPoint -> Dynamic[vp]], Graphics3D[{}]}]]",
+    );
+    assert!(svg.contains("<polygon") || svg.contains("<path"));
+  }
+
+  #[test]
+  fn list_plot3d_box_ratios_reshapes_the_box_when_shown() {
+    clear_state();
+    let flat = export_svg(
+      "Show[{ListPlot3D[Table[x + y, {x, 5}, {y, 5}], \
+       BoxRatios -> {1, 1, 0.1}], Graphics3D[{}]}]",
+    );
+    clear_state();
+    let tall = export_svg(
+      "Show[{ListPlot3D[Table[x + y, {x, 5}, {y, 5}], BoxRatios -> {1, 1, 2}], \
+       Graphics3D[{}]}]",
+    );
+    assert_ne!(
+      flat, tall,
+      "BoxRatios on the ListPlot3D layer must reshape the merged picture"
+    );
+  }
+
+  #[test]
+  fn list_plot3d_color_function_changes_surface_colors_when_shown() {
+    clear_state();
+    let default_colors = export_svg(
+      "Show[{ListPlot3D[Table[x + y, {x, 5}, {y, 5}]], Graphics3D[{}]}]",
+    );
+    clear_state();
+    let southwest_colors = export_svg(
+      "Show[{ListPlot3D[Table[x + y, {x, 5}, {y, 5}], \
+       ColorFunction -> \"SouthwestColors\"], Graphics3D[{}]}]",
+    );
+    assert_ne!(
+      default_colors, southwest_colors,
+      "a named ColorFunction must recolor the surface"
+    );
+  }
+
+  #[test]
+  fn list_plot3d_color_function_standalone_matches_shown_colors() {
+    // `ColorFunction` also recolors ListPlot3D's own (non-Show) rendering,
+    // so a standalone export looks the same as one merged via Show.
+    clear_state();
+    let standalone = export_svg(
+      "ListPlot3D[Table[x + y, {x, 5}, {y, 5}], \
+       ColorFunction -> \"SouthwestColors\"]",
+    );
+    assert!(standalone.contains("<polygon"));
+  }
 }
 
 mod tree_form_graphics {
@@ -16399,6 +16749,92 @@ mod line_legend {
   }
 }
 
+// A bare `SwatchLegend[…]` (not wrapped in `Legended`) is the color-swatch
+// counterpart of `LineLegend`: Wolfram's front end typesets it as a filled
+// square next to each label rather than printing the symbolic call.
+mod swatch_legend {
+  use super::*;
+
+  #[test]
+  fn bare_swatch_legend_renders_as_swatches() {
+    clear_state();
+    let svg = export_svg("SwatchLegend[{Red, Blue}, {\"A\", \"B\"}]");
+    assert!(
+      !svg.contains("SwatchLegend["),
+      "Should be drawn, not printed as source: {svg}"
+    );
+    assert_eq!(
+      svg.matches("<rect ").count(),
+      2,
+      "One filled square per entry: {svg}"
+    );
+    assert!(svg.contains('A') && svg.contains('B'));
+  }
+
+  #[test]
+  fn swatch_legend_nested_in_grid_cell_renders_inline() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Grid[{{Graphics[{Red, Disk[]}], SwatchLegend[{Red, Blue}, {\"x\", \"y\"}]}}]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(
+      !svg.contains("SwatchLegend["),
+      "Should be drawn inside the grid cell, not printed as source: {svg}"
+    );
+    // Each swatch is a black-stroked square; the neighboring `Graphics`
+    // cell also draws its own (unstroked) background `<rect>`, so count
+    // only the swatch style rather than every `<rect>` in the combined SVG.
+    assert_eq!(svg.matches("stroke=\"black\"").count(), 2);
+  }
+}
+
+// `Animate[expr, {var, min, max}, …]` composed into a static display — a
+// Demonstration's body building `Pane[Animate[…], …]` and placing it in a
+// `Grid` — is not the whole Manipulate/cell output, so it never reaches the
+// interactive-widget extraction; it still needs to draw its first frame
+// rather than dump the unevaluated `Animate[…]` source.
+mod animate_snapshot {
+  use super::*;
+
+  #[test]
+  fn animate_nested_in_pane_renders_first_frame() {
+    clear_state();
+    let svg = export_svg(
+      "Pane[Animate[Graphics[{Blue, Disk[{t, 0}, 1]}], {t, 0, 1}], {100, 100}]",
+    );
+    assert!(
+      !svg.contains("Animate[") && !svg.contains("Graphics[{"),
+      "Should be drawn, not printed as source: {svg}"
+    );
+    assert!(
+      svg.contains("<ellipse") || svg.contains("<circle"),
+      "The disk at the animation variable's initial value should be drawn: {svg}"
+    );
+  }
+
+  #[test]
+  fn animate_nested_in_grid_cell_renders_inline() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Grid[{{Graphics[{Red, Disk[]}], \
+       Pane[Animate[Graphics[{Green, Disk[{t, 0}, 1]}], {t, 0, 1}], {80, 80}]}}]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(
+      !svg.contains("Animate["),
+      "Should be drawn inside the grid cell, not printed as source: {svg}"
+    );
+    assert_eq!(
+      svg.matches("<ellipse").count() + svg.matches("<circle").count(),
+      2,
+      "Both the plain disk and the animated frame's disk should be drawn: {svg}"
+    );
+  }
+}
+
 mod plot_grid {
   use super::*;
 
@@ -17330,11 +17766,49 @@ mod color_swatches {
   }
 
   #[test]
+  fn rgbcolor_packed_list_3_args() {
+    // `RGBColor[{r, g, b}]` is the same color as `RGBColor[r, g, b]` — the
+    // packed-list form `Table[RGBColor[RandomReal[1, 3]], …]` commonly
+    // produces. It used to fall through to `None` (rendering as black)
+    // because only the bare-args and single-scalar-gray shapes were parsed.
+    clear_state();
+    let result = interpret_with_stdout("RGBColor[{1, 0, 0}]").unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains("fill=\"rgb(255,0,0)\""));
+  }
+
+  #[test]
+  fn rgbcolor_packed_list_with_alpha() {
+    clear_state();
+    let result = interpret_with_stdout("RGBColor[{1, 0, 0, 0.5}]").unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains("fill=\"rgb(255,0,0)\""));
+    assert!(svg.contains("opacity=\"0.5\""));
+  }
+
+  #[test]
   fn hue_swatch() {
     clear_state();
     let result = interpret_with_stdout("Hue[0.5]").unwrap();
     assert_eq!(result.result, "-Graphics-");
     assert!(result.graphics.is_some());
+  }
+
+  #[test]
+  fn hue_packed_list() {
+    // `Hue[{h, s, b}]` is the packed-list form of `Hue[h, s, b]`.
+    clear_state();
+    let full_args = interpret_with_stdout("Hue[0.3, 1, 1]")
+      .unwrap()
+      .graphics
+      .unwrap();
+    let packed = interpret_with_stdout("Hue[{0.3, 1, 1}]")
+      .unwrap()
+      .graphics
+      .unwrap();
+    assert_eq!(full_args, packed);
   }
 
   #[test]
@@ -18290,6 +18764,86 @@ mod graphics_complex {
   }
 }
 
+// `Normal[GraphicsComplex[pts, data]]` substitutes point indices with
+// their (exact) coordinates and returns "an ordinary list of graphics
+// primitives and directives" — it does not split a multi-point primitive
+// into separate ones.
+mod graphics_complex_normal {
+  use super::*;
+
+  #[test]
+  fn point_and_line() {
+    // The documentation's own example for `Normal[GraphicsComplex[…]]`.
+    assert_eq!(
+      interpret(
+        "Normal[GraphicsComplex[{{0, 0}, {Sqrt[3], Sqrt[3]/2}}, \
+         {Point[1], Line[{1, 2}]}]]"
+      )
+      .unwrap(),
+      "{Point[{0, 0}], Line[{{0, 0}, {Sqrt[3], Sqrt[3]/2}}]}"
+    );
+  }
+
+  #[test]
+  fn single_primitive_is_wrapped_in_a_list() {
+    // `data` need not already be a list; Normal always returns one.
+    assert_eq!(
+      interpret(
+        "Normal[GraphicsComplex[{{0, 0}, {1, 0}, {1, 1}}, Polygon[{1, 2, 3}]]]"
+      )
+      .unwrap(),
+      "{Polygon[{{0, 0}, {1, 0}, {1, 1}}]}"
+    );
+  }
+
+  #[test]
+  fn multi_face_polygon_is_not_split() {
+    // A single `Polygon[{face1, face2}]` stays a single Polygon after
+    // substitution — Normal only replaces indices, it does not split
+    // multi-face primitives into one primitive per face.
+    assert_eq!(
+      interpret(
+        "Normal[GraphicsComplex[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, 0, 1}}, \
+         Polygon[{{1, 2, 3}, {1, 2, 4}}]]]"
+      )
+      .unwrap(),
+      "{Polygon[{{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}}, \
+       {{0, 0, 0}, {1, 0, 0}, {0, 0, 1}}}]}"
+    );
+  }
+
+  #[test]
+  fn directives_are_preserved() {
+    assert_eq!(
+      interpret(
+        "Normal[GraphicsComplex[{{0, 0}, {1, 0}, {0, 1}}, \
+         {Red, Polygon[{1, 2, 3}]}]]"
+      )
+      .unwrap(),
+      "{RGBColor[1, 0, 0], Polygon[{{0, 0}, {1, 0}, {0, 1}}]}"
+    );
+  }
+
+  #[test]
+  fn polyhedron_data_faces_normalizes_to_explicit_coordinates() {
+    // The cube's `"Faces"` GraphicsComplex (see
+    // `polyhedron_data_faces_is_a_graphics_complex`) normalizes to a
+    // single-element list holding the same faces with their vertex
+    // indices replaced by the actual corner coordinates.
+    assert_eq!(
+      interpret(r#"Normal[PolyhedronData["Cube", "Faces"]]"#).unwrap(),
+      "{Polygon[{{{1/2, 1/2, 1/2}, {-1/2, 1/2, 1/2}, {-1/2, -1/2, 1/2}, \
+       {1/2, -1/2, 1/2}}, {{1/2, 1/2, 1/2}, {1/2, -1/2, 1/2}, \
+       {1/2, -1/2, -1/2}, {1/2, 1/2, -1/2}}, {{1/2, 1/2, 1/2}, \
+       {1/2, 1/2, -1/2}, {-1/2, 1/2, -1/2}, {-1/2, 1/2, 1/2}}, \
+       {{-1/2, 1/2, 1/2}, {-1/2, 1/2, -1/2}, {-1/2, -1/2, -1/2}, \
+       {-1/2, -1/2, 1/2}}, {{-1/2, -1/2, -1/2}, {-1/2, 1/2, -1/2}, \
+       {1/2, 1/2, -1/2}, {1/2, -1/2, -1/2}}, {{-1/2, -1/2, 1/2}, \
+       {-1/2, -1/2, -1/2}, {1/2, -1/2, -1/2}, {1/2, -1/2, 1/2}}}]}"
+    );
+  }
+}
+
 mod regular_polygon {
   use super::*;
 
@@ -18522,6 +19076,43 @@ mod contour_plot_3d {
     )
     .unwrap();
     assert_eq!(result, "Graphics3D");
+  }
+
+  #[test]
+  fn plot_points_changes_sampling_resolution() {
+    // Regression: `PlotPoints` was parsed for every other 3D plot
+    // (SphericalPlot3D, ParametricPlot3D, …) but ContourPlot3D always
+    // sampled a fixed grid, silently ignoring the option — a Demonstration
+    // toggling a "refine rendering" checkbox between two PlotPoints values
+    // would see no visual change at all.
+    let coarse = export_svg(
+      "ContourPlot3D[x^2 + y^2 + z^2 - 1, {x, -1.5, 1.5}, {y, -1.5, 1.5}, \
+       {z, -1.5, 1.5}, PlotPoints -> 4, Mesh -> None]",
+    );
+    let fine = export_svg(
+      "ContourPlot3D[x^2 + y^2 + z^2 - 1, {x, -1.5, 1.5}, {y, -1.5, 1.5}, \
+       {z, -1.5, 1.5}, PlotPoints -> 30, Mesh -> None]",
+    );
+    assert_ne!(
+      coarse, fine,
+      "PlotPoints must change the sampled grid resolution"
+    );
+  }
+
+  #[test]
+  fn plot_points_matches_default_grid() {
+    // The implicit default grid is 24 cells (25 samples per direction);
+    // asking for exactly that many PlotPoints must render identically to
+    // omitting the option.
+    let explicit = export_svg(
+      "ContourPlot3D[x^2 + y^2 + z^2 - 1, {x, -1.5, 1.5}, {y, -1.5, 1.5}, \
+       {z, -1.5, 1.5}, PlotPoints -> 25, Mesh -> None]",
+    );
+    let omitted = export_svg(
+      "ContourPlot3D[x^2 + y^2 + z^2 - 1, {x, -1.5, 1.5}, {y, -1.5, 1.5}, \
+       {z, -1.5, 1.5}, Mesh -> None]",
+    );
+    assert_eq!(explicit, omitted);
   }
 
   mod basic {
@@ -25151,6 +25742,50 @@ mod manipulate {
       "Plot3D through a Part-indexed function list must still render: {:?}",
       result.result
     );
+  }
+
+  // Regression (Wolfram Demonstrations Project: "Exploring the Grand
+  // Canyon"): that Demonstration's control panel lays a slider out as
+  // `Row[{Control[…], Spacer[…]}]`, follows it with a `Row[{Dynamic[…], ,
+  // "°"}]` live-value readout (a skipped, implicit-Null list element
+  // between the dynamic value and the unit string), and gives a second
+  // control a `{value -> "label", …}` named-choice list instead of plain
+  // bounds. All three must extract into a working panel: the Row-wrapped
+  // slider becomes an ordinary control, the readout becomes a display
+  // element (not a failed control that takes the others down with it —
+  // see the "one unrecognised control spec" note above), and the choice
+  // list becomes a discrete control.
+  #[test]
+  fn spec_row_wrapped_slider_with_dynamic_readout_and_named_choices() {
+    let expr = interpret_to_expr(
+      "Manipulate[{pos, view}, \
+       Row[{Control[{{pos, 2, \"position\"}, 1, 5, 1}], Spacer[5]}], \
+       Row[{Dynamic[pos], , \"°\"}], \
+       Control[{{view, {1, 2, 3}, \"viewpoint\"}, \
+       {{1, 2, 3} -> \"default\", {0, 0, 5} -> \"above\"}}]]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr)
+      .expect("Row-wrapped slider plus named-choice control");
+    let names: Vec<&str> =
+      spec.controls.iter().map(ManipulateControl::name).collect();
+    assert_eq!(names, vec!["pos", "view"]);
+    match &spec.controls[0] {
+      ManipulateControl::Continuous { min, max, .. } => {
+        assert_eq!((*min, *max), (1.0, 5.0));
+      }
+      other => panic!("expected the Row-wrapped slider, got {other:?}"),
+    }
+    // The `Row[{Dynamic[pos], , "°"}]` readout is a live display, not a
+    // dropped or failed control.
+    assert_eq!(spec.displays.len(), 1);
+    assert!(spec.displays[0].contains("pos"));
+    match &spec.controls[1] {
+      ManipulateControl::Discrete { values, .. } => {
+        assert_eq!(values.len(), 2);
+      }
+      other => panic!("expected the named-choice control, got {other:?}"),
+    }
   }
 }
 

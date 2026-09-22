@@ -1941,6 +1941,39 @@ pub(crate) struct PlotOptions {
   /// `LabelStyle -> …`: font size / color applied to the `FrameLabel`,
   /// `AxesLabel`, and `PlotLabel` text. `None` keeps the theme default.
   pub label_style: Option<LabelStyleSpec>,
+  /// Set when the bottom `FrameLabel` is a `Grid[…]`/`TableForm[…]` — a
+  /// picture to embed under the frame instead of the plain-text
+  /// `frame_label_bottom` (which stays empty in that case).
+  pub frame_label_bottom_graphic: Option<GraphicLabel>,
+}
+
+/// A `FrameLabel` entry that renders as a picture (`Grid[…]`/`TableForm[…]`)
+/// rather than plain text, captured once at option-parsing time.
+#[derive(Clone)]
+pub(crate) struct GraphicLabel {
+  /// The rendered `<svg>…</svg>` markup, at its natural (1×) size.
+  pub svg: String,
+  /// Natural width/height in nominal pixels, as `svg_natural_size` reports.
+  pub width: f64,
+  pub height: f64,
+}
+
+/// Scale a [`GraphicLabel`]'s natural render-space size (`width`/`height` ×
+/// `sf`) down to fit within `max_w` render-space pixels, preserving its
+/// aspect ratio. Returns `(width, height)` in render-space pixels.
+pub(crate) fn scaled_graphic_label_size(
+  g: &GraphicLabel,
+  max_w: f64,
+  sf: f64,
+) -> (f64, f64) {
+  let natural_w = g.width * sf;
+  let natural_h = g.height * sf;
+  if natural_w > max_w && natural_w > 0.0 {
+    let scale = max_w / natural_w;
+    (max_w, natural_h * scale)
+  } else {
+    (natural_w, natural_h)
+  }
 }
 
 /// Font size / color parsed from a `LabelStyle -> …` option. Either field
@@ -1983,6 +2016,7 @@ impl Default for PlotOptions {
       frame_label_left: None,
       frame_label_top: None,
       frame_label_right: None,
+      frame_label_bottom_graphic: None,
       date_axis: false,
       callout_labels: Vec::new(),
       point_labels: Vec::new(),
@@ -2458,6 +2492,32 @@ pub(crate) fn plot_labels_svg(
       crate::functions::graphics::box_string_to_svg(x_label)
     ));
   }
+  // A `FrameLabel` that is a `Grid[…]`/`TableForm[…]` is embedded as a
+  // picture, scaled to the frame's width, instead of drawn as text.
+  if let Some(graphic) = &opts.frame_label_bottom_graphic {
+    let (gw, gh) = scaled_graphic_label_size(graphic, plot_w, sf);
+    let cx = plot_x0 + plot_w / 2.0;
+    // Stack below the plain-text bottom label when both are present;
+    // otherwise sit just below the x tick labels, as the text case does.
+    let text_gap = if opts
+      .frame_label_bottom
+      .as_ref()
+      .is_some_and(|t| !t.is_empty())
+    {
+      font_size * 1.6
+    } else {
+      0.0
+    };
+    let top_y = axis_y + sf * 13.0 + font_size * 0.4 + text_gap;
+    let cy = top_y + gh / 2.0;
+    labels_svg.push_str(&crate::functions::graphics::embed_svg_centered(
+      &graphic.svg,
+      cx,
+      cy,
+      gw,
+      gh,
+    ));
+  }
   if let Some(y_label) = &opts.frame_label_left
     && !y_label.is_empty()
   {
@@ -2689,7 +2749,8 @@ fn generate_svg_with_options(
   let has_x_axis_label = opts
     .frame_label_bottom
     .as_ref()
-    .is_some_and(|t| !t.is_empty());
+    .is_some_and(|t| !t.is_empty())
+    || opts.frame_label_bottom_graphic.is_some();
   let has_y_axis_label = opts
     .frame_label_left
     .as_ref()
@@ -2721,18 +2782,9 @@ fn generate_svg_with_options(
 
   // Label areas and margins computed per-axis.
   // Setting a label area to 0 suppresses that axis line in plotters.
-  let bottom_extra = if tick_axis_x && show_ticks && has_x_axis_label {
-    24.0 * sf
-  } else {
-    0.0
-  };
-  let x_label_area: u32 = if !tick_axis_x {
-    0
-  } else if !show_ticks {
-    5 * RESOLUTION_SCALE
-  } else {
-    40 * RESOLUTION_SCALE + bottom_extra as u32
-  };
+  // `margin_left`/`margin_right`/`y_label_area` are computed ahead of
+  // `bottom_extra` (rather than in their natural reading order below) so a
+  // `frame_label_bottom_graphic` can be scaled to the frame's actual width.
   let y_label_area: u32 = if !tick_axis_y {
     0
   } else if !show_ticks {
@@ -2759,6 +2811,31 @@ fn generate_svg_with_options(
       .round() as u32
   } else {
     10 * s as u32
+  };
+  // A rough estimate of the plot frame's width, used only to scale a
+  // `frame_label_bottom_graphic` (a `Grid[…]` FrameLabel) to fit under it;
+  // the exact frame width, known once labels are actually drawn, may differ
+  // slightly (e.g. under `ImagePadding` or the width-budget clamp below).
+  let plot_w_estimate = (render_width as f64
+    - margin_left as f64
+    - margin_right as f64
+    - y_label_area as f64)
+    .max(1.0);
+  let bottom_extra = if tick_axis_x && show_ticks && has_x_axis_label {
+    24.0 * sf
+      + opts
+        .frame_label_bottom_graphic
+        .as_ref()
+        .map_or(0.0, |g| scaled_graphic_label_size(g, plot_w_estimate, sf).1)
+  } else {
+    0.0
+  };
+  let x_label_area: u32 = if !tick_axis_x {
+    0
+  } else if !show_ticks {
+    5 * RESOLUTION_SCALE
+  } else {
+    40 * RESOLUTION_SCALE + bottom_extra as u32
   };
   let margin_bottom: u32 = if tick_axis_x {
     10 * s as u32
@@ -8063,6 +8140,10 @@ pub(crate) struct FrameLabels {
   pub left: String,
   pub top: String,
   pub right: String,
+  /// Set when `bottom`'s source expression is a `Grid[…]`/`TableForm[…]`
+  /// that renders as a picture — `bottom` itself is left empty in that
+  /// case.
+  pub bottom_graphic: Option<GraphicLabel>,
 }
 
 /// Convert a single FrameLabel entry to a label string. `None` (the symbol)
@@ -8072,6 +8153,24 @@ fn frame_label_entry(e: &Expr) -> String {
     return String::new();
   }
   crate::functions::chart::expr_to_label(e).unwrap_or_default()
+}
+
+/// A `FrameLabel` entry that is a `Grid[…]`/`TableForm[…]` — a table meant
+/// to be laid out as a picture, not read off as text (`expr_to_label`
+/// silently drops it since `Grid` is a known builtin, not an unrenderable
+/// applied form). Renders it through the same pipeline a standalone
+/// `Grid[…]` uses so the frame label shows the table instead of nothing.
+fn frame_label_graphic(e: &Expr) -> Option<GraphicLabel> {
+  let val = evaluate_expr_to_expr(e).unwrap_or_else(|_| e.clone());
+  let Expr::FunctionCall { name, args } = &val else {
+    return None;
+  };
+  if !matches!(name.as_str(), "Grid" | "TableForm") || args.is_empty() {
+    return None;
+  }
+  let svg = crate::functions::graphics::grid_svg_with_gaps(args, &[]).ok()?;
+  let (width, height) = crate::functions::graphics::svg_natural_size(&svg)?;
+  Some(GraphicLabel { svg, width, height })
 }
 
 /// One side of `Ticks -> {xspec, yspec}`: an explicit list of positions,
@@ -8239,6 +8338,9 @@ pub(crate) fn apply_frame_label_option(value: &Expr, opts: &mut PlotOptions) {
   if !fl.bottom.is_empty() {
     opts.frame_label_bottom = Some(fl.bottom);
   }
+  if fl.bottom_graphic.is_some() {
+    opts.frame_label_bottom_graphic = fl.bottom_graphic;
+  }
   if !fl.left.is_empty() {
     opts.frame_label_left = Some(fl.left);
   }
@@ -8256,36 +8358,38 @@ pub(crate) fn apply_frame_label_option(value: &Expr, opts: &mut PlotOptions) {
 pub(crate) fn parse_frame_label(value: &Expr) -> FrameLabels {
   let val = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
   let mut out = FrameLabels::default();
-  match &val {
-    Expr::List(items) => {
-      // 4-element nested form: both entries are themselves lists.
-      if items.len() == 2
-        && let (Expr::List(lr), Expr::List(bt)) = (&items[0], &items[1])
-      {
-        if let Some(e) = lr.first() {
-          out.left = frame_label_entry(e);
-        }
-        if let Some(e) = lr.get(1) {
-          out.right = frame_label_entry(e);
-        }
-        if let Some(e) = bt.first() {
-          out.bottom = frame_label_entry(e);
-        }
-        if let Some(e) = bt.get(1) {
-          out.top = frame_label_entry(e);
-        }
-        return out;
-      }
-      // 2-element form `{bottom, left}`.
-      if let Some(e) = items.first() {
-        out.bottom = frame_label_entry(e);
-      }
-      if let Some(e) = items.get(1) {
+  if let Expr::List(items) = &val {
+    // 4-element nested form: both entries are themselves lists.
+    if items.len() == 2
+      && let (Expr::List(lr), Expr::List(bt)) = (&items[0], &items[1])
+    {
+      if let Some(e) = lr.first() {
         out.left = frame_label_entry(e);
       }
+      if let Some(e) = lr.get(1) {
+        out.right = frame_label_entry(e);
+      }
+      if let Some(e) = bt.first() {
+        out.bottom = frame_label_entry(e);
+        out.bottom_graphic = frame_label_graphic(e);
+      }
+      if let Some(e) = bt.get(1) {
+        out.top = frame_label_entry(e);
+      }
+      return out;
     }
+    // 2-element form `{bottom, left}`.
+    if let Some(e) = items.first() {
+      out.bottom = frame_label_entry(e);
+      out.bottom_graphic = frame_label_graphic(e);
+    }
+    if let Some(e) = items.get(1) {
+      out.left = frame_label_entry(e);
+    }
+  } else {
     // A bare label labels the bottom edge.
-    _ => out.bottom = frame_label_entry(&val),
+    out.bottom = frame_label_entry(&val);
+    out.bottom_graphic = frame_label_graphic(&val);
   }
   out
 }

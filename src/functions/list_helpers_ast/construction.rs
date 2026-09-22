@@ -169,22 +169,76 @@ fn symbolic_count_definite(
   matches!(ratio, Expr::Integer(n) if n >= 0)
 }
 
-/// Whether `expr` references any identifier named in `vars`.
+/// Whether `expr` references any identifier named in `vars`, looking through
+/// every syntactic wrapper (`a[[i]]`, `f@x`, `f/@list`, `f@@list`, …) so a
+/// later iterator's bound is recognised as depending on an earlier iterator
+/// variable no matter how the reference is written — e.g. the inner
+/// `{x, 0, nl[[dn1]] - 1}` of `Table[…, {dn1, ...}, {x, 0, nl[[dn1]] - 1}]`
+/// depends on `dn1` through a `Part` node, not a bare identifier. Exhaustive
+/// (no wildcard arm) so a new `Expr` variant forces this to be updated too.
 fn expr_references_any(expr: &Expr, vars: &[String]) -> bool {
   if vars.is_empty() {
     return false;
   }
   match expr {
     Expr::Identifier(n) => vars.iter().any(|v| v == n),
-    Expr::BinaryOp { left, right, .. } => {
-      expr_references_any(left, vars) || expr_references_any(right, vars)
+    Expr::Integer(_)
+    | Expr::BigInteger(_)
+    | Expr::Real(_)
+    | Expr::BigFloat(_, _)
+    | Expr::String(_)
+    | Expr::Slot(_)
+    | Expr::SlotSequence(_)
+    | Expr::Pattern { .. }
+    | Expr::Constant(_)
+    | Expr::Raw(_)
+    | Expr::Image { .. }
+    | Expr::Graphics { .. } => false,
+    Expr::List(items) => items.iter().any(|a| expr_references_any(a, vars)),
+    Expr::CompoundExpr(items) => {
+      items.iter().any(|a| expr_references_any(a, vars))
     }
-    Expr::UnaryOp { operand, .. } => expr_references_any(operand, vars),
     Expr::FunctionCall { args, .. } => {
       args.iter().any(|a| expr_references_any(a, vars))
     }
-    Expr::List(items) => items.iter().any(|a| expr_references_any(a, vars)),
-    _ => false,
+    Expr::Comparison { operands, .. } => {
+      operands.iter().any(|a| expr_references_any(a, vars))
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      expr_references_any(left, vars) || expr_references_any(right, vars)
+    }
+    Expr::Rule {
+      pattern: a,
+      replacement: b,
+    }
+    | Expr::RuleDelayed {
+      pattern: a,
+      replacement: b,
+    }
+    | Expr::ReplaceAll { expr: a, rules: b }
+    | Expr::ReplaceRepeated { expr: a, rules: b }
+    | Expr::Map { func: a, list: b }
+    | Expr::Apply { func: a, list: b }
+    | Expr::MapApply { func: a, list: b }
+    | Expr::PrefixApply { func: a, arg: b }
+    | Expr::Postfix { expr: a, func: b }
+    | Expr::Part { expr: a, index: b } => {
+      expr_references_any(a, vars) || expr_references_any(b, vars)
+    }
+    Expr::UnaryOp { operand, .. } => expr_references_any(operand, vars),
+    Expr::Function { body } => expr_references_any(body, vars),
+    Expr::NamedFunction { body, .. } => expr_references_any(body, vars),
+    Expr::PatternOptional { default, .. } => default
+      .as_deref()
+      .is_some_and(|d| expr_references_any(d, vars)),
+    Expr::PatternTest { test, .. } => expr_references_any(test, vars),
+    Expr::CurriedCall { func, args } => {
+      expr_references_any(func, vars)
+        || args.iter().any(|a| expr_references_any(a, vars))
+    }
+    Expr::Association(pairs) => pairs.iter().any(|(k, v)| {
+      expr_references_any(k, vars) || expr_references_any(v, vars)
+    }),
   }
 }
 

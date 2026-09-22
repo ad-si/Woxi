@@ -254,14 +254,60 @@ mod polyhedron_data_tests {
     );
   }
 
+  // "FaceCountRules" gives `{n -> count, …}`: the number of faces with
+  // each number of sides, one rule per distinct side count.
+  #[test]
+  fn polyhedron_data_face_count_rules_uniform() {
+    // Every face of a cube is a quadrilateral.
+    assert_eq!(
+      interpret(r#"PolyhedronData["Cube", "FaceCountRules"]"#).unwrap(),
+      "{4 -> 6}"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData["Tetrahedron", "FaceCountRules"]"#).unwrap(),
+      "{3 -> 4}"
+    );
+  }
+
+  #[test]
+  fn polyhedron_data_face_count_rules_mixed() {
+    // A truncated icosahedron (soccer ball) has 12 pentagons and 20
+    // hexagons, reported in ascending order of side count.
+    assert_eq!(
+      interpret(r#"PolyhedronData["TruncatedIcosahedron", "FaceCountRules"]"#)
+        .unwrap(),
+      "{5 -> 12, 6 -> 20}"
+    );
+    // An icosidodecahedron has 20 triangles and 12 pentagons.
+    assert_eq!(
+      interpret(r#"PolyhedronData["Icosidodecahedron", "FaceCountRules"]"#)
+        .unwrap(),
+      "{3 -> 20, 5 -> 12}"
+    );
+  }
+
+  #[test]
+  fn polyhedron_data_face_count_rules_matches_face_count() {
+    // The rule counts always sum to the total face count.
+    assert_eq!(
+      interpret(
+        r#"Total[Last /@ PolyhedronData["TruncatedIcosahedron", \
+           "FaceCountRules"]] == PolyhedronData["TruncatedIcosahedron", \
+           "FaceCount"]"#
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
   // The new data properties appear in the sorted "Properties" list.
   #[test]
   fn polyhedron_data_properties_include_data_properties() {
     assert_eq!(
       interpret(r#"PolyhedronData["Properties"]"#).unwrap(),
       "{Circumradius, Classes, EdgeCount, EdgeIndices, FaceCount, \
-       FaceIndices, Faces, Inradius, Insphere, Midradius, SurfaceArea, \
-       VertexCoordinates, VertexCount, Volume}"
+       FaceCountRules, FaceIndices, Faces, Inradius, Insphere, Midradius, \
+       SurfaceArea, VertexCoordinates, VertexCount, Volume}"
     );
   }
 
