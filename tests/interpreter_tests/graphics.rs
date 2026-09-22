@@ -12817,6 +12817,49 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn array_plot_epilog_text_position() {
+      // Regression: Epilog was silently ignored, dropping any overlay
+      // (e.g. per-cell value labels) drawn on top of the grid. A 2x2
+      // matrix puts data coordinates in {0,2} x {0,2}: row 1 (top) spans
+      // y in [1,2], column 1 (left) spans x in [0,1], so a label at
+      // {0.5, 1.5} sits in the middle of the top-left cell.
+      let svg = export_svg(
+        r#"ArrayPlot[{{1, 0}, {0, 1}}, Epilog -> {Text["x", {0.5, 1.5}]}]"#,
+      );
+      assert!(svg.contains(">x<"), "{svg}");
+      // The cell center at data {0.5, 1.5} lands at the center of the
+      // 3600x3600 render canvas's top-left quadrant: (900, 900). The SVG
+      // is emitted as one long line, so isolate the `<text …>x</text>`
+      // element itself rather than splitting on newlines.
+      let end = svg.find(">x</text>").expect("epilog text element") + 1;
+      let start = svg[..end].rfind("<text").expect("<text start");
+      let text_tag = &svg[start..end];
+      let x: f64 = text_tag
+        .split("x=\"")
+        .nth(1)
+        .and_then(|s| s.split('"').next())
+        .and_then(|s| s.parse().ok())
+        .expect("x attribute");
+      let y: f64 = text_tag
+        .split("y=\"")
+        .nth(1)
+        .and_then(|s| s.split('"').next())
+        .and_then(|s| s.parse().ok())
+        .expect("y attribute");
+      assert!((x - 900.0).abs() < 1.0, "x={x}");
+      assert!((y - 900.0).abs() < 1.0, "y={y}");
+    }
+
+    #[test]
+    fn array_plot_epilog_none() {
+      // Epilog -> None draws nothing extra (matches the no-Epilog case).
+      let with_none =
+        export_svg(r#"ArrayPlot[{{1, 0}, {0, 1}}, Epilog -> None]"#);
+      let without = export_svg("ArrayPlot[{{1, 0}, {0, 1}}]");
+      assert_eq!(with_none, without);
+    }
+
+    #[test]
     fn array_plot_color_function_rainbow() {
       // ColorFunction -> "Rainbow" uses a rainbow gradient
       insta::assert_snapshot!(export_svg(

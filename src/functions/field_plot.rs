@@ -3087,7 +3087,8 @@ pub(crate) fn apply_named_color_function(name: &str, t: f64) -> (u8, u8, u8) {
 
 /// ArrayPlot[{{v11, ...}, ...}] - grayscale grid from matrix values
 /// 0 is always white; the maximum value is black.
-/// Supports options: ColorRules, Mesh, ColorFunction, ImageSize.
+/// Supports options: ColorRules, Mesh, ColorFunction, ImageSize, FrameLabel,
+/// Epilog.
 /// Cells can also be explicit color directives (e.g. Pink, Red).
 pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let data = evaluate_expr_to_expr(&args[0])?;
@@ -3115,6 +3116,11 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // to the 0..1 range of the matrix, matching `Options[ArrayPlot]`.
   let mut color_function_scaling = true;
   let mut frame_labels = crate::functions::plot::FrameLabels::default();
+  // `Epilog -> {…}`: graphics primitives drawn over the finished grid, in
+  // data coordinates where a cell at 1-indexed (row, col) spans
+  // `{col - 1, col} x {n_rows - row, n_rows - row + 1}` — row 1 at the top,
+  // column 1 at the left, matching `ArrayPlot`'s own `PlotRange`.
+  let mut epilog: Vec<Expr> = Vec::new();
 
   for opt in &args[1..] {
     if let Expr::Rule {
@@ -3153,6 +3159,15 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // `FrameLabel` a framed plot does — on any of the four edges.
         "FrameLabel" => {
           frame_labels = crate::functions::plot::parse_frame_label(replacement);
+        }
+        "Epilog" => {
+          let val = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| (**replacement).clone());
+          epilog = match val {
+            Expr::List(ref items) => items.to_vec(),
+            Expr::Identifier(ref s) if s == "None" => Vec::new(),
+            other => vec![other],
+          };
         }
         _ => {}
       }
@@ -3376,6 +3391,29 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     root.present().map_err(|e| {
       InterpreterError::EvaluationError(format!("ArrayPlot: {e}"))
     })?;
+  }
+
+  if !epilog.is_empty()
+    && let Some(pos) = buf.rfind("</svg>")
+  {
+    buf.truncate(pos);
+    let epilog_area = crate::functions::plot_epilog::PlotArea {
+      x0: 0.0,
+      y0: 0.0,
+      w: render_width as f64,
+      h: render_height as f64,
+      x_min: 0.0,
+      x_max: n_cols as f64,
+      y_min: 0.0,
+      y_max: n_rows as f64,
+      scale: RESOLUTION_SCALE as f64,
+    };
+    buf.push_str(&crate::functions::plot_epilog::render_epilog_svg(
+      &epilog,
+      &epilog_area,
+      "arrayplot",
+    ));
+    buf.push_str("</svg>");
   }
 
   rewrite_svg_header(
