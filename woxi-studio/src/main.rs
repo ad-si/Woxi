@@ -9560,6 +9560,51 @@ Cell[BoxData["standalone output"], "Output"]
     );
   }
 
+  /// A custom-layout `Manipulate` can box up a live section — new
+  /// controls (and their surrounding text) that should stay grouped and
+  /// only make sense together, e.g. under an `Enabled -> …` condition —
+  /// behind `Dynamic[Column[…]]` rather than a bare `Dynamic[{…}]` list.
+  /// `control_group_items` only recursed into a `Dynamic[…]` whose sole
+  /// argument was already the flat list; a `Dynamic[Column[…]]` (or
+  /// `Dynamic[Row[…]]`/`Dynamic[Grid[…]]`) fell through to the "not a
+  /// control layout" case, silently dropping every control — and every
+  /// plain-text label — that section declared, with no error at all.
+  #[test]
+  fn controls_boxed_in_dynamic_column_inside_custom_layout_are_not_dropped() {
+    let nb_src = r#"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[
+ If[hidden, y, x],
+ Column[{
+  Control[{{hidden, False, \"hide x\"}, {True, False}}],
+  \"below\",
+  Dynamic[Column[{Control[{{x, 1, \"x\"}, 0, 10}], \"label\", Control[{{y, 2, \"y\"}, 0, 10}]}]]
+ }]]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`hidden$$ = False}, \"…\"]"], "Output"]
+}, Open]]
+}]"#;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    let names: Vec<&str> = widget
+      .controls
+      .iter()
+      .map(manipulate::ControlState::name)
+      .collect();
+    assert!(
+      names.contains(&"x") && names.contains(&"y"),
+      "controls boxed inside Dynamic[Column[…]] must not be dropped: {names:?}"
+    );
+  }
+
   /// A published Demonstration lays its panel out itself — the controls
   /// arrive wrapped in `Control[…]` inside a `Column[…]` alongside a
   /// `Button[…]` — and writes every non-ASCII character as a `\:HHHH`
