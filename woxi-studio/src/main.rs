@@ -7042,6 +7042,51 @@ fn strip_svg_wrapper(svg: &str) -> &str {
 mod tests {
   use super::*;
 
+  /// A notebook saved from the desktop FrontEnd can have its compiled
+  /// `Manipulate\`ManipulateBoxes[…]`'s own `"Variables" :> {…}` clause
+  /// disagree with the outer `DynamicModuleBox[{…}, …]`'s live variable
+  /// list: moving a slider updates the outer list immediately, but the
+  /// inner compiled box structure is only whatever was true when it was
+  /// last recompiled, so a Demonstration whose control was moved off its
+  /// declared default (and never causes a recompile) saves a dump where
+  /// the two disagree. As part of a scheduled QA routine, Woxi Studio was
+  /// tested against a randomly sampled Wolfram Demonstration notebook
+  /// ("Dieterici Equation of State") whose saved dump was exactly such a
+  /// case: the outer list held the slider's real last position, 33, while
+  /// the inner clause still held the spec's declared default, 10.
+  /// Regression: `extract_saved_manipulate_variables` read only the inner
+  /// clause, so the widget reopened at the stale default instead of where
+  /// the slider was actually left.
+  #[test]
+  fn stored_manipulate_prefers_outer_module_state_over_stale_compiled_variables()
+   {
+    let dump = "DynamicModuleBox[{$CellContext`n$$ = 33., \
+      Typeset`show$$ = True, $CellContext`n$79129$$ = 0}, \
+      DynamicBox[Manipulate`ManipulateBoxes[\n\
+      1, StandardForm,\n\
+      \"Variables\" :> {$CellContext`n$$ = 10},\n\
+      \"ControllerVariables\" :> {\n\
+        Hold[$CellContext`n$$, $CellContext`n$79129$$, 0]},\n\
+      \"OtherVariables\" :> {Typeset`show$$},\n\
+      \"Body\" :> $CellContext`n$$,\n\
+      \"Specifications\" :> {{$CellContext`n$$, 1, 100}},\n\
+      \"Options\" :> {}],\n\
+      DynamicModuleValues:>{}]]";
+    let state =
+      instantiate_stored_manipulate("Manipulate[n, {n, 1, 100}]", dump)
+        .unwrap();
+    match &state.controls[..] {
+      [manipulate::ControlState::Continuous { current, .. }] => {
+        assert_eq!(
+          *current, 33.0,
+          "must recover the outer DynamicModuleBox's live value, not the \
+           inner compiled box's stale one"
+        );
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+  }
+
   /// `label_run_spans` must carry a `Style[…]`-given color and bold weight
   /// into the rendered spans, not just italic. Regression: every call site
   /// that renders a Manipulate control's `LabelRun`s (a control-row label,
