@@ -4584,6 +4584,7 @@ mod interpreter_tests {
   mod interval;
   mod io;
   mod isotope_data;
+  mod knot_data;
   mod large_number_and_memoization;
   mod linear_algebra;
   mod list;
