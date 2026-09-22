@@ -5,7 +5,6 @@
 //! The throw rides on the ordinary `Throw`/`Catch` machinery under a reserved
 //! tag, so an unrelated user `Catch` cannot intercept it.
 
-#[allow(unused_imports)]
 use super::*;
 use std::cell::Cell;
 
@@ -83,7 +82,7 @@ pub fn no_enclose_failure(name: &str, held_call: Expr) -> Expr {
         call("MessageName", vec![symbol(name), string("confirmnotag")]),
       ),
       ("MessageParameters", Expr::List(vec![symbol(name)].into())),
-      ("HeldInput", call("Hold", vec![held_call])),
+      ("HeldInput", call1("Hold", held_call)),
     ],
   )
 }
@@ -165,12 +164,12 @@ pub fn confirm_assert_failure(
   confirmation_failure(
     "ConfirmAssert",
     "Assertion `` failed.",
-    vec![call("HoldForm", vec![held.clone()])],
+    vec![call1("HoldForm", held.clone())],
     evaluated.clone(),
     information,
     vec![
       ("Test", evaluated.clone()),
-      ("HeldTest", call("Hold", vec![held.clone()])),
+      ("HeldTest", call1("Hold", held.clone())),
     ],
   )
 }

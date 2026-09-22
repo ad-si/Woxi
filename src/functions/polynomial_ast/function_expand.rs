@@ -594,7 +594,7 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
       {
         let coeff = mk_div(
           mk_power(mk_int(-1), mk_int(*m)),
-          call("Factorial", vec![mk_int(*m - 1)]),
+          call1("Factorial", mk_int(*m - 1)),
         );
         Some(mk_times(
           coeff,
@@ -811,13 +811,13 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
         }
         // Symbolic n (2-argument form only): the Gamma-function ratio.
         _ if h.is_none() => Some(mk_div(
-          call("Gamma", vec![mk_plus(mk_int(1), x.clone())]),
-          call(
+          call1("Gamma", mk_plus(mk_int(1), x.clone())),
+          call1(
             "Gamma",
-            vec![call(
+            call(
               "Plus",
               vec![mk_int(1), mk_times(mk_int(-1), n.clone()), x.clone()],
-            )],
+            ),
           ),
         )),
         _ => None,
@@ -830,13 +830,13 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
       let b = &args[1];
       Some(mk_div(
         mk_times(call1("Gamma", a.clone()), call1("Gamma", b.clone())),
-        call("Gamma", vec![mk_plus(a.clone(), b.clone())]),
+        call1("Gamma", mk_plus(a.clone(), b.clone())),
       ))
     }
 
     // Factorial[n] (i.e. n!) → Gamma[1 + n]
     "Factorial" if args.len() == 1 => {
-      Some(call("Gamma", vec![mk_plus(mk_int(1), args[0].clone())]))
+      Some(call1("Gamma", mk_plus(mk_int(1), args[0].clone())))
     }
 
     // Abs[z]^(2m) → (Re[z]^2 + Im[z]^2)^m (the squared-modulus identity). Only
@@ -881,10 +881,10 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
     //   Gamma[1 + a1 + … + ak] / (Gamma[1 + a1] ⋯ Gamma[1 + ak]).
     "Multinomial" if !args.is_empty() => {
       let sum = call("Plus", args.to_vec());
-      let numerator = call("Gamma", vec![mk_plus(mk_int(1), sum)]);
+      let numerator = call1("Gamma", mk_plus(mk_int(1), sum));
       let denominator = args
         .iter()
-        .map(|a| call("Gamma", vec![mk_plus(mk_int(1), a.clone())]))
+        .map(|a| call1("Gamma", mk_plus(mk_int(1), a.clone())))
         .reduce(mk_times)
         .unwrap_or_else(|| mk_int(1));
       Some(mk_div(numerator, denominator))
@@ -900,15 +900,15 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
         let n = &args[0];
         let k = &args[1];
         Some(mk_div(
-          call("Gamma", vec![mk_plus(mk_int(1), n.clone())]),
+          call1("Gamma", mk_plus(mk_int(1), n.clone())),
           mk_times(
-            call("Gamma", vec![mk_plus(mk_int(1), k.clone())]),
-            call(
+            call1("Gamma", mk_plus(mk_int(1), k.clone())),
+            call1(
               "Gamma",
-              vec![call(
+              call(
                 "Plus",
                 vec![mk_int(1), mk_times(mk_int(-1), k.clone()), n.clone()],
-              )],
+              ),
             ),
           ),
         ))

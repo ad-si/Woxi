@@ -3,7 +3,6 @@
 //! DSolve solves ordinary differential equations symbolically.
 //! NDSolve solves initial-value problems numerically using RK4.
 
-#[allow(unused_imports)]
 use super::*;
 use crate::functions::calculus_ast::differentiate_expr;
 use crate::functions::math_ast::{make_sqrt, rat_reduce};
@@ -2554,7 +2553,7 @@ fn rename_indexed_vars(expr: &Expr, renames: &[IndexedRename]) -> Expr {
       let other = rename_indexed_vars(&args[1], renames);
       return Expr::CurriedCall {
         func: Box::new(Expr::CurriedCall {
-          func: Box::new(call("Derivative", vec![orders[1].clone()])),
+          func: Box::new(call1("Derivative", orders[1].clone())),
           args: vec![Expr::Identifier(r.fresh.clone())],
         }),
         args: vec![other],

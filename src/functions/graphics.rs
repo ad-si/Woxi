@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::math_ast::try_eval_to_f64;
@@ -18971,7 +18970,7 @@ pub fn geometric_scene_graphics(
     .unwrap_or(Expr::List(Vec::new().into()));
   let substituted =
     crate::syntax::substitute_variables(&primitives, &binding_refs);
-  evaluate_expr_to_expr(&call("Graphics", vec![substituted]))
+  evaluate_expr_to_expr(&call1("Graphics", substituted))
 }
 
 /// The point-definition rules of a scene: the first element of the
