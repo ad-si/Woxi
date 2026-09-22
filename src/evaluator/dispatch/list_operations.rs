@@ -3240,6 +3240,25 @@ pub fn dispatch_list_operations(
       {
         return Some(Ok(Expr::List(assoc_args.clone())));
       }
+      // Normal[GraphicsComplex[pts, data]] substitutes point indices with
+      // their coordinates in `data`, returning "an ordinary list of
+      // graphics primitives and directives" per the documentation — it
+      // does not split a multi-face Polygon into one Polygon per face.
+      if let Expr::FunctionCall {
+        name,
+        args: gc_args,
+      } = &args[0]
+        && name == "GraphicsComplex"
+        && gc_args.len() >= 2
+        && let Expr::List(pts) = &gc_args[0]
+      {
+        return Some(Ok(
+          crate::functions::graphics::graphics_complex_to_normal_form(
+            pts,
+            &gc_args[1],
+          ),
+        ));
+      }
       // For other expressions, recursively densify Associations/SparseArrays
       // in the arguments, then re-evaluate so structural operations over the
       // densified pieces resolve — e.g. Normal[SparseArray[..] + SparseArray[..]]

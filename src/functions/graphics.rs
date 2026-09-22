@@ -1112,11 +1112,27 @@ fn system_color_pair(name: &str) -> Option<(&'static str, &'static str)> {
   })
 }
 
+/// `RGBColor`/`Hue` accept their channels either as separate arguments or
+/// packed into a single list (`RGBColor[{r, g, b}]`, as `Table[RGBColor[
+/// RandomReal[1, 3]], …]` produces) — unpack that form here so both call
+/// shapes share the same arity logic below.
+fn unpack_channels(args: &crate::ExprList) -> std::borrow::Cow<'_, [Expr]> {
+  if args.len() == 1
+    && let Expr::List(list) = &args[0]
+    && list.len() >= 2
+  {
+    std::borrow::Cow::Owned(list.to_vec())
+  } else {
+    std::borrow::Cow::Borrowed(args.as_slice())
+  }
+}
+
 pub(crate) fn parse_color(expr: &Expr) -> Option<Color> {
   match expr {
     Expr::Identifier(name) => named_color(name),
     Expr::FunctionCall { name, args } => match name.as_str() {
       "RGBColor" => {
+        let args = unpack_channels(args);
         if args.len() >= 3 {
           let r = expr_to_f64(&args[0])?;
           let g = expr_to_f64(&args[1])?;
@@ -1139,6 +1155,7 @@ pub(crate) fn parse_color(expr: &Expr) -> Option<Color> {
         }
       }
       "Hue" => {
+        let args = unpack_channels(args);
         if args.len() >= 3 {
           let h = expr_to_f64(&args[0])?;
           let s = expr_to_f64(&args[1])?;
@@ -2302,6 +2319,108 @@ fn collect_primitives(
       let _ = name;
     }
     _ => {}
+  }
+}
+
+/// Primitive heads whose (first) argument is a point/point-list, so their
+/// integer contents are `GraphicsComplex` indices rather than data to leave
+/// alone — the set `Normal[GraphicsComplex[…]]` and 3D `GraphicsComplex`
+/// rendering both need to recognize.
+const POINT_TAKING_PRIMITIVES: &[&str] = &[
+  "Point",
+  "Line",
+  "Polygon",
+  "Triangle",
+  "Arrow",
+  "BezierCurve",
+  "BSplineCurve",
+  "FilledCurve",
+  "JoinedCurve",
+  "Tube",
+  "Sphere",
+  "Simplex",
+];
+
+/// `Normal[GraphicsComplex[pts, data]]`: substitute each integer index in
+/// `data` with its (exact, symbolic) coordinate list from `pts`, keeping
+/// `data`'s own structure intact — Wolfram's `Normal` only "substitutes
+/// coordinates to give an ordinary list of graphics primitives and
+/// directives", it does not split a multi-face `Polygon[{face1, face2, …}]`
+/// into one `Polygon` per face. Unlike `resolve_graphics_complex_indices`,
+/// this keeps coordinates as exact `Expr`s (e.g. `Sqrt[5]`) instead of
+/// lowering to `f64`, and works for points of any dimension, not just 2D.
+pub(crate) fn graphics_complex_to_normal_form(
+  pts: &[Expr],
+  data: &Expr,
+) -> Expr {
+  let substituted = substitute_complex_indices(pts, data);
+  match substituted {
+    Expr::List(_) => substituted,
+    other => Expr::List(vec![other].into()),
+  }
+}
+
+/// Replace bare integer indices with their coordinates wherever a
+/// [`POINT_TAKING_PRIMITIVES`] primitive expects a point argument;
+/// recurse structurally everywhere else so directives and nested
+/// primitives elsewhere in the tree (e.g. inside `{RGBColor[…], Polygon[…]}`)
+/// are reached without treating unrelated integers as indices.
+fn substitute_complex_indices(pts: &[Expr], expr: &Expr) -> Expr {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if POINT_TAKING_PRIMITIVES.contains(&name.as_str()) =>
+    {
+      let new_args: Vec<Expr> = args
+        .iter()
+        .enumerate()
+        .map(|(i, a)| {
+          if i == 0 {
+            substitute_indices_in_points(pts, a)
+          } else {
+            substitute_complex_indices(pts, a)
+          }
+        })
+        .collect();
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args.into(),
+      }
+    }
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args
+        .iter()
+        .map(|a| substitute_complex_indices(pts, a))
+        .collect::<Vec<_>>()
+        .into(),
+    },
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(|a| substitute_complex_indices(pts, a))
+        .collect::<Vec<_>>()
+        .into(),
+    ),
+    _ => expr.clone(),
+  }
+}
+
+/// Replace every 1-based integer index in a (possibly nested) point
+/// argument with its coordinate list from `pts`; non-integer leaves
+/// (already-explicit coordinates) pass through unchanged.
+fn substitute_indices_in_points(pts: &[Expr], expr: &Expr) -> Expr {
+  match expr {
+    Expr::Integer(n) if *n >= 1 && (*n as usize) <= pts.len() => {
+      pts[*n as usize - 1].clone()
+    }
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(|e| substitute_indices_in_points(pts, e))
+        .collect::<Vec<_>>()
+        .into(),
+    ),
+    _ => expr.clone(),
   }
 }
 
@@ -20720,6 +20839,24 @@ fn unwrap_dynamic_module_locals(
   }
 }
 
+/// Whether `e` is a bare `Control[…]` call, optionally wrapped in a single
+/// `Dynamic[…]` (the per-item idiom `Dynamic@Control@{…}`). Used to tell a
+/// `Dynamic`-wrapped `Row`/`Column`/`Grid` that is purely a group of
+/// controls (flatten it) from one that lays out other display elements —
+/// buttons, spacers, styled text — alongside or instead of controls (keep
+/// it as a single display element).
+fn is_bare_control_call(e: &Expr) -> bool {
+  match e {
+    Expr::FunctionCall { name, args }
+      if name == "Dynamic" && args.len() == 1 =>
+    {
+      is_bare_control_call(&args[0])
+    }
+    Expr::FunctionCall { name, .. } => name == "Control",
+    _ => false,
+  }
+}
+
 /// The flattened control items of a `Row[…]`/`Column[…]`/`Grid[…]`
 /// Manipulate argument that lays several controls out in one row (the
 /// Wolfram Demonstrations pattern `Row[{Control[…], Spacer[20],
@@ -20782,6 +20919,31 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
   }
   if !contains_control(spec) {
     return None;
+  }
+  // `Dynamic[Column[{Control[…], Control[…], …}]]` (the Demonstrations
+  // idiom for a group of controls — e.g. one `ColorSetter` per face — that
+  // is wrapped in `Dynamic` for live layout updates but laid out via a
+  // nested `Row`/`Column`/`Grid` rather than a bare list) recurses into
+  // that container the same way `Dynamic[{…}]` does. This only fires when
+  // *every* item is a bare `Control[…]` (optionally itself `Dynamic`-
+  // wrapped) — a mixed layout such as `Dynamic[Column[{Row[{Button[…],
+  // Spacer[…], "label"}]}]]` (a Demonstrations caption with stepper
+  // buttons) is a display element, not a control panel, and must keep
+  // falling through to the display path below.
+  if name == "Dynamic"
+    && let Expr::FunctionCall {
+      name: inner_name,
+      args: inner_args,
+    } = &args[0]
+    && matches!(
+      inner_name.as_str(),
+      "Row" | "Column" | "Grid" | "TabView" | "PaneSelector"
+    )
+    && let Some(Expr::List(inner_items)) = inner_args.first()
+    && !inner_items.is_empty()
+    && inner_items.iter().all(is_bare_control_call)
+  {
+    return control_group_items(&args[0]);
   }
   let Expr::List(items) = &args[0] else {
     return None;
@@ -26406,6 +26568,38 @@ mod manipulate_dynamic_control_list_tests {
     let s = spec("Manipulate[x, Dynamic[{Control[{{x, 0}, -1, 1}]}]]");
     assert_eq!(names(&s), vec!["x"]);
     assert!(s.displays.is_empty());
+  }
+
+  /// `Dynamic[Column[{Control[…], …}]]` (the Demonstrations idiom for a
+  /// group of controls — e.g. one `ColorSetter` per face — laid out via a
+  /// nested `Column` rather than a bare list, wrapped in `Dynamic` for live
+  /// layout updates) flattens the same way `Dynamic[{…}]` does, instead of
+  /// the whole group falling through to a static, non-interactive display
+  /// of the literal `Control[…]` expressions.
+  #[test]
+  fn dynamic_wrapped_column_of_controls_flattens_to_controls() {
+    let s = spec(
+      "Manipulate[x + y, Dynamic[Column[{Control[{{x, 0}, -1, 1}], \
+       Control[{{y, 0}, -1, 1}]}]]]",
+    );
+    assert_eq!(names(&s), vec!["x", "y"]);
+    assert!(s.displays.is_empty());
+  }
+
+  /// The same flattening applies when the controls are colour pickers
+  /// (`{{col, Red, ""}, Red}` — a bare colour domain equal to the initial
+  /// colour draws a full `ColorSetter`), the exact shape the Wolfram
+  /// Demonstrations Project's "Toroidal Polyhedra" uses for its per-face
+  /// colour controls.
+  #[test]
+  fn dynamic_wrapped_column_of_color_controls_flattens_to_controls() {
+    let s = spec(
+      "Manipulate[col, Dynamic[Column[{Control[{{col, Red, \"\"}, Red, \
+       ImageSize -> Tiny}]}]]]",
+    );
+    assert_eq!(names(&s), vec!["col"]);
+    assert!(s.displays.is_empty());
+    assert!(matches!(&s.controls[0], ManipulateControl::Color { .. }));
   }
 
   /// `Sequence@@If[cond, ctrlSpec, {}]` inside a Dynamic control list

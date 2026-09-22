@@ -7042,6 +7042,51 @@ fn strip_svg_wrapper(svg: &str) -> &str {
 mod tests {
   use super::*;
 
+  /// A notebook saved from the desktop FrontEnd can have its compiled
+  /// `Manipulate\`ManipulateBoxes[…]`'s own `"Variables" :> {…}` clause
+  /// disagree with the outer `DynamicModuleBox[{…}, …]`'s live variable
+  /// list: moving a slider updates the outer list immediately, but the
+  /// inner compiled box structure is only whatever was true when it was
+  /// last recompiled, so a Demonstration whose control was moved off its
+  /// declared default (and never causes a recompile) saves a dump where
+  /// the two disagree. As part of a scheduled QA routine, Woxi Studio was
+  /// tested against a randomly sampled Wolfram Demonstration notebook
+  /// ("Dieterici Equation of State") whose saved dump was exactly such a
+  /// case: the outer list held the slider's real last position, 33, while
+  /// the inner clause still held the spec's declared default, 10.
+  /// Regression: `extract_saved_manipulate_variables` read only the inner
+  /// clause, so the widget reopened at the stale default instead of where
+  /// the slider was actually left.
+  #[test]
+  fn stored_manipulate_prefers_outer_module_state_over_stale_compiled_variables()
+   {
+    let dump = "DynamicModuleBox[{$CellContext`n$$ = 33., \
+      Typeset`show$$ = True, $CellContext`n$79129$$ = 0}, \
+      DynamicBox[Manipulate`ManipulateBoxes[\n\
+      1, StandardForm,\n\
+      \"Variables\" :> {$CellContext`n$$ = 10},\n\
+      \"ControllerVariables\" :> {\n\
+        Hold[$CellContext`n$$, $CellContext`n$79129$$, 0]},\n\
+      \"OtherVariables\" :> {Typeset`show$$},\n\
+      \"Body\" :> $CellContext`n$$,\n\
+      \"Specifications\" :> {{$CellContext`n$$, 1, 100}},\n\
+      \"Options\" :> {}],\n\
+      DynamicModuleValues:>{}]]";
+    let state =
+      instantiate_stored_manipulate("Manipulate[n, {n, 1, 100}]", dump)
+        .unwrap();
+    match &state.controls[..] {
+      [manipulate::ControlState::Continuous { current, .. }] => {
+        assert_eq!(
+          *current, 33.0,
+          "must recover the outer DynamicModuleBox's live value, not the \
+           inner compiled box's stale one"
+        );
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+  }
+
   /// `label_run_spans` must carry a `Style[…]`-given color and bold weight
   /// into the rendered spans, not just italic. Regression: every call site
   /// that renders a Manipulate control's `LabelRun`s (a control-row label,
@@ -27836,5 +27881,105 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k1$$ = 1}, \"\\[Ellipsis]\"]"], "Ou
       state.text_output, None,
       "a picture result must not also carry a text fallback"
     );
+  }
+
+  /// End-to-end regression for the shape of Demonstration that lets a
+  /// picker choose among several precomputed 3D solids: an
+  /// `Initialization :> (…)` block builds each solid as a `Show[…]` of
+  /// several `ParametricPlot3D[…]` pieces, and the body itself wraps a
+  /// `Switch[…]` over those precomputed solids in another `Show[…]` that
+  /// adds `PlotRange -> All` and `ImageSize -> {…}`. The discrete picker
+  /// spec pairs each numeric setting with a string label via `n -> "…"`
+  /// (`{{var, default}, {1 -> "…", 2 -> "…", …}}`), the same idiom as the
+  /// figure-picker test above but here choosing between whole `Graphics3D`
+  /// scenes rather than 2D `Polygon`s. Independently written here
+  /// (invented solids), not copied from any specific Demonstration, whose
+  /// code and text are copyrighted.
+  #[test]
+  fn solid_picker_notebook_opens_with_its_widget() {
+    let nb_src = r#"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[\nShow[Switch[solid, 1, discA, 2, discB, 3, discC], PlotRange -> All, ImageSize -> {300, 300}],\n{{solid, 1}, {1 -> \"cones\", 2 -> \"cylinders\", 3 -> \"prisms\"}},\nInitialization :> (\ndiscA = Show[ParametricPlot3D[{u, u^2, v}, {u, -1, 1}, {v, 0, 1}], ParametricPlot3D[{u, -u^2, v}, {u, -1, 1}, {v, 0, 1}], PlotRange -> All];\ndiscB = Show[ParametricPlot3D[{u, u^2, 0}, {u, -2, 2}], ParametricPlot3D[{Cos[t], Sin[t], 0}, {t, 0, 2 Pi}], PlotRange -> All];\ndiscC = Show[ParametricPlot3D[{u, v, u + v}, {u, -1, 1}, {v, -1, 1}], PlotRange -> All];\n),\nSaveDefinitions -> True\n]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`solid$$ = 1}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"#;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let mut widget = editors
+      .into_iter()
+      .find_map(|e| e.manipulate_state)
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the Show[Switch[…], PlotRange -> All, ImageSize -> …] body must render \
+       one of the precomputed Graphics3D solids"
+    );
+
+    let (values, value_labels) = match &widget.controls[..] {
+      [
+        manipulate::ControlState::Discrete {
+          name,
+          values,
+          value_labels,
+          current_index,
+          ..
+        },
+      ] => {
+        assert_eq!(name, "solid");
+        assert_eq!(*current_index, 0);
+        (values.clone(), value_labels.clone())
+      }
+      other => panic!("expected a single solid picker, got {other:?}"),
+    };
+    assert_eq!(values, ["1", "2", "3"]);
+    assert_eq!(value_labels, ["cones", "cylinders", "prisms"]);
+
+    // Each picker choice must render a distinct Graphics3D scene, and the
+    // `Initialization` helpers must stay in scope across re-renders.
+    let render = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      let code =
+        format!("{}; {}", w.initialization.as_deref().unwrap_or(""), w.body);
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&code)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the selected solid must render")
+    };
+    let mut renders = Vec::new();
+    for index in 0..3 {
+      match &mut widget.controls[0] {
+        manipulate::ControlState::Discrete { current_index, .. } => {
+          *current_index = index
+        }
+        other => panic!("expected the solid picker, got {other:?}"),
+      }
+      widget.reevaluate();
+      assert!(widget.error.is_none(), "solid {} errored", index + 1);
+      assert!(widget.graphics_handle.is_some());
+      renders.push(render(&widget));
+    }
+    for i in 0..3 {
+      for j in (i + 1)..3 {
+        assert_ne!(
+          renders[i],
+          renders[j],
+          "solids {} and {} must render differently",
+          i + 1,
+          j + 1
+        );
+      }
+    }
   }
 }
