@@ -27751,4 +27751,104 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k1$$ = 1}, \"\\[Ellipsis]\"]"], "Ou
       "a picture result must not also carry a text fallback"
     );
   }
+
+  /// End-to-end regression for the shape of Demonstration that lets a
+  /// picker choose among several precomputed 3D solids: an
+  /// `Initialization :> (…)` block builds each solid as a `Show[…]` of
+  /// several `ParametricPlot3D[…]` pieces, and the body itself wraps a
+  /// `Switch[…]` over those precomputed solids in another `Show[…]` that
+  /// adds `PlotRange -> All` and `ImageSize -> {…}`. The discrete picker
+  /// spec pairs each numeric setting with a string label via `n -> "…"`
+  /// (`{{var, default}, {1 -> "…", 2 -> "…", …}}`), the same idiom as the
+  /// figure-picker test above but here choosing between whole `Graphics3D`
+  /// scenes rather than 2D `Polygon`s. Independently written here
+  /// (invented solids), not copied from any specific Demonstration, whose
+  /// code and text are copyrighted.
+  #[test]
+  fn solid_picker_notebook_opens_with_its_widget() {
+    let nb_src = r#"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[\nShow[Switch[solid, 1, discA, 2, discB, 3, discC], PlotRange -> All, ImageSize -> {300, 300}],\n{{solid, 1}, {1 -> \"cones\", 2 -> \"cylinders\", 3 -> \"prisms\"}},\nInitialization :> (\ndiscA = Show[ParametricPlot3D[{u, u^2, v}, {u, -1, 1}, {v, 0, 1}], ParametricPlot3D[{u, -u^2, v}, {u, -1, 1}, {v, 0, 1}], PlotRange -> All];\ndiscB = Show[ParametricPlot3D[{u, u^2, 0}, {u, -2, 2}], ParametricPlot3D[{Cos[t], Sin[t], 0}, {t, 0, 2 Pi}], PlotRange -> All];\ndiscC = Show[ParametricPlot3D[{u, v, u + v}, {u, -1, 1}, {v, -1, 1}], PlotRange -> All];\n),\nSaveDefinitions -> True\n]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`solid$$ = 1}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"#;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let mut widget = editors
+      .into_iter()
+      .find_map(|e| e.manipulate_state)
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the Show[Switch[…], PlotRange -> All, ImageSize -> …] body must render \
+       one of the precomputed Graphics3D solids"
+    );
+
+    let (values, value_labels) = match &widget.controls[..] {
+      [
+        manipulate::ControlState::Discrete {
+          name,
+          values,
+          value_labels,
+          current_index,
+          ..
+        },
+      ] => {
+        assert_eq!(name, "solid");
+        assert_eq!(*current_index, 0);
+        (values.clone(), value_labels.clone())
+      }
+      other => panic!("expected a single solid picker, got {other:?}"),
+    };
+    assert_eq!(values, ["1", "2", "3"]);
+    assert_eq!(value_labels, ["cones", "cylinders", "prisms"]);
+
+    // Each picker choice must render a distinct Graphics3D scene, and the
+    // `Initialization` helpers must stay in scope across re-renders.
+    let render = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      let code =
+        format!("{}; {}", w.initialization.as_deref().unwrap_or(""), w.body);
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&code)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the selected solid must render")
+    };
+    let mut renders = Vec::new();
+    for index in 0..3 {
+      match &mut widget.controls[0] {
+        manipulate::ControlState::Discrete { current_index, .. } => {
+          *current_index = index
+        }
+        other => panic!("expected the solid picker, got {other:?}"),
+      }
+      widget.reevaluate();
+      assert!(widget.error.is_none(), "solid {} errored", index + 1);
+      assert!(widget.graphics_handle.is_some());
+      renders.push(render(&widget));
+    }
+    for i in 0..3 {
+      for j in (i + 1)..3 {
+        assert_ne!(
+          renders[i],
+          renders[j],
+          "solids {} and {} must render differently",
+          i + 1,
+          j + 1
+        );
+      }
+    }
+  }
 }
