@@ -4,6 +4,10 @@ use crate::functions::math_ast::{
   expr_to_rational, is_sqrt, make_sqrt, rat_reduce,
 };
 
+fn neg(x: Expr) -> Expr {
+  call("Times", vec![Expr::Integer(-1), x])
+}
+
 pub fn dispatch_complex_and_special(
   name: &str,
   args: &[Expr],
@@ -636,21 +640,17 @@ pub fn dispatch_complex_and_special(
           {
             crate::capture_graphics(&svg);
           }
-
-          return Some(Ok(Expr::FunctionCall {
-            name: "InformationDataGrid".to_string(),
-            args: vec![
-              Expr::List(
-                vec![call(
-                  "Rule",
-                  vec![id_expr("System`"), Expr::List(matching.into())],
-                )]
-                .into(),
-              ),
-              bool_expr(is_full),
-            ]
-            .into(),
-          }));
+          let grid = vec![
+            Expr::List(
+              vec![call(
+                "Rule",
+                vec![id_expr("System`"), Expr::List(matching.into())],
+              )]
+              .into(),
+            ),
+            bool_expr(is_full),
+          ];
+          return Some(Ok(call("InformationDataGrid", grid)));
         }
       }
 
@@ -1559,45 +1559,30 @@ pub fn dispatch_complex_and_special(
         // Product[(1 - q^(n-i)) / (1 - q^(i+1)), {i, 0, k-1}]
         let mut result = Expr::Integer(1);
         for i in 0..k {
-          let num = Expr::FunctionCall {
-            name: "Plus".to_string(),
-            args: vec![
+          let num = call(
+            "Plus",
+            vec![
               Expr::Integer(1),
-              call(
-                "Times",
-                vec![
-                  Expr::Integer(-1),
-                  call("Power", vec![q.clone(), Expr::Integer(n - i)]),
-                ],
-              ),
-            ]
-            .into(),
-          };
-          let den = Expr::FunctionCall {
-            name: "Plus".to_string(),
-            args: vec![
+              neg(call("Power", vec![q.clone(), Expr::Integer(n - i)])),
+            ],
+          );
+          let den = call(
+            "Plus",
+            vec![
               Expr::Integer(1),
-              call(
-                "Times",
-                vec![
-                  Expr::Integer(-1),
-                  call("Power", vec![q.clone(), Expr::Integer(i + 1)]),
-                ],
-              ),
-            ]
-            .into(),
-          };
-          result = Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![
+              neg(call("Power", vec![q.clone(), Expr::Integer(i + 1)])),
+            ],
+          );
+          result = call(
+            "Times",
+            vec![
               result,
               call(
                 "Times",
                 vec![num, call("Power", vec![den, Expr::Integer(-1)])],
               ),
-            ]
-            .into(),
-          };
+            ],
+          );
         }
         return Some(crate::evaluator::evaluate_expr_to_expr(&result));
       }
@@ -3981,9 +3966,9 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
           replacement: Box::new(id_expr("Baseline")),
         },
       ];
-      Expr::FunctionCall {
-        name: "InterpretationBox".to_string(),
-        args: vec![
+      call(
+        "InterpretationBox",
+        vec![
           call("PaneBox", pane),
           // wolframscript's second arg is the wrapped OutputForm
           // expression itself, not the plain text. Graphics/
@@ -3995,9 +3980,8 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
             pattern: Box::new(id_expr("Editable")),
             replacement: Box::new(bool_expr(false)),
           },
-        ]
-        .into(),
-      }
+        ],
+      )
     }
     // MakeBoxes[InputForm[expr], _]: wolframscript wraps the InputForm
     // string in `InterpretationBox[StyleBox[<input>, ShowStringCharacters
@@ -4027,9 +4011,9 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
           replacement: Box::new(bool_expr(true)),
         },
       ];
-      Expr::FunctionCall {
-        name: "InterpretationBox".to_string(),
-        args: vec![
+      call(
+        "InterpretationBox",
+        vec![
           call("StyleBox", style),
           call1("InputForm", args[0].clone()),
           Expr::Rule {
@@ -4040,9 +4024,8 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
             pattern: Box::new(id_expr("AutoDelete")),
             replacement: Box::new(bool_expr(true)),
           },
-        ]
-        .into(),
-      }
+        ],
+      )
     }
     // Hyperlink[uri] / Hyperlink[label, uri] →
     //   TemplateBox[{<box(label)>, "<uri>"}, "HyperlinkURL"]
@@ -6395,7 +6378,7 @@ fn compute_region_distance(
       // Signed excess n.x - c decides the side.
       let excess = crate::evaluator::evaluate_expr_to_expr(&call(
         "Plus",
-        vec![dot, call("Times", vec![Expr::Integer(-1), bound])],
+        vec![dot, neg(bound)],
       ))?;
       let Some(excess_f) = crate::functions::math_ast::try_eval_to_f64(&excess)
       else {
@@ -6986,9 +6969,9 @@ fn polyline_shortest_path(
 /// emitted at machine precision.
 fn polyline_path_to_line(path: &[Vec<f64>], s: &Expr, t: &Expr) -> Expr {
   let last = path.len().saturating_sub(1);
-  Expr::FunctionCall {
-    name: "Line".to_string(),
-    args: vec![Expr::List(
+  call1(
+    "Line",
+    Expr::List(
       path
         .iter()
         .enumerate()
@@ -7005,9 +6988,8 @@ fn polyline_path_to_line(path: &[Vec<f64>], s: &Expr, t: &Expr) -> Expr {
         })
         .collect::<Vec<_>>()
         .into(),
-    )]
-    .into(),
-  }
+    ),
+  )
 }
 
 /// FindShortestCurve[reg, s, t] — the shortest curve (minimizing geodesic)
@@ -7063,15 +7045,8 @@ fn compute_find_shortest_curve(
         return unevaluated();
       };
       let angle_of = |p: &crate::ExprList| -> Result<Expr, InterpreterError> {
-        let comp = |i: usize| {
-          call(
-            "Plus",
-            vec![
-              p[i].clone(),
-              call("Times", vec![Expr::Integer(-1), cc[i].clone()]),
-            ],
-          )
-        };
+        let comp =
+          |i: usize| call("Plus", vec![p[i].clone(), neg(cc[i].clone())]);
         evaluate_expr_to_expr(&call("ArcTan", vec![comp(0), comp(1)]))
       };
       let theta_s = angle_of(sc)?;
@@ -7156,12 +7131,7 @@ fn compute_shortest_curve_distance(
     return unevaluated();
   };
 
-  let sub = |a: &Expr, b: &Expr| {
-    call(
-      "Plus",
-      vec![a.clone(), call("Times", vec![Expr::Integer(-1), b.clone()])],
-    )
-  };
+  let sub = |a: &Expr, b: &Expr| call("Plus", vec![a.clone(), neg(b.clone())]);
 
   match name.as_str() {
     "Circle" | "Sphere" => {
@@ -7368,17 +7338,16 @@ fn compute_region_measure(expr: &Expr) -> Result<Expr, InterpreterError> {
         return crate::evaluator::evaluate_expr_to_expr(&area);
       }
       3 => {
-        let product = Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![
+        let product = call(
+          "Times",
+          vec![
             Expr::Integer(4),
             const_expr("Pi"),
             radii[0].clone(),
             radii[1].clone(),
             radii[2].clone(),
-          ]
-          .into(),
-        };
+          ],
+        );
         let volume = div2(product, Expr::Integer(3));
         return crate::evaluator::evaluate_expr_to_expr(&volume);
       }
@@ -7601,7 +7570,7 @@ fn compute_region_measure(expr: &Expr) -> Result<Expr, InterpreterError> {
 /// from the embedding dimension — a Circle in the plane has dimension 1, a
 /// Sphere in 3-space has dimension 2.
 fn compute_region_dimension(expr: &Expr) -> Result<Expr, InterpreterError> {
-  let unevaluated = || Ok(call("RegionDimension", vec![expr.clone()]));
+  let unevaluated = || Ok(call1("RegionDimension", expr.clone()));
   // Length of a coordinate-list argument (a single point {x, y, …}).
   let coord_len = |e: &Expr| -> Option<usize> {
     match e {
@@ -7739,14 +7708,14 @@ fn compute_region_embedding_dimension(expr: &Expr) -> Expr {
   }
   match compute_region_bounds(expr) {
     Expr::List(ref bounds) => Expr::Integer(bounds.len() as i128),
-    _ => call("RegionEmbeddingDimension", vec![expr.clone()]),
+    _ => call1("RegionEmbeddingDimension", expr.clone()),
   }
 }
 
 /// Compute the axis-aligned bounding box of a geometric region as a list of
 /// `{min, max}` pairs, one per dimension.
 fn compute_region_bounds(expr: &Expr) -> Expr {
-  let unevaluated = || call("RegionBounds", vec![expr.clone()]);
+  let unevaluated = || call1("RegionBounds", expr.clone());
   // HalfLine[{p1, p2}] — half-line from p1 toward p2. Each dimension's
   // bounds depend on the sign of (p2 - p1)[d]:
   //   positive  → [p1[d], Infinity]
@@ -8052,12 +8021,7 @@ fn coord_vec_sub(v: &[Expr], base: &[Expr]) -> Expr {
   Expr::List(
     v.iter()
       .zip(base.iter())
-      .map(|(a, b)| {
-        call(
-          "Plus",
-          vec![a.clone(), call("Times", vec![Expr::Integer(-1), b.clone()])],
-        )
-      })
+      .map(|(a, b)| call("Plus", vec![a.clone(), neg(b.clone())]))
       .collect::<Vec<_>>()
       .into(),
   )
@@ -8152,17 +8116,18 @@ fn pyramid_volume(pts: &[Expr]) -> Option<Result<Expr, InterpreterError>> {
   }
   let c: Vec<Vec<Expr>> = pts.iter().map(as_pt3).collect::<Option<_>>()?;
   let apex = &c[4];
-  let det_term = |i: usize, j: usize| Expr::FunctionCall {
-    name: "Det".to_string(),
-    args: vec![Expr::List(
-      vec![
-        coord_vec_sub(&c[i], &c[0]),
-        coord_vec_sub(&c[j], &c[0]),
-        coord_vec_sub(apex, &c[0]),
-      ]
-      .into(),
-    )]
-    .into(),
+  let det_term = |i: usize, j: usize| {
+    call1(
+      "Det",
+      Expr::List(
+        vec![
+          coord_vec_sub(&c[i], &c[0]),
+          coord_vec_sub(&c[j], &c[0]),
+          coord_vec_sub(apex, &c[0]),
+        ]
+        .into(),
+      ),
+    )
   };
   let sum = call("Plus", vec![det_term(1, 2), det_term(2, 3)]);
   let abs = call1("Abs", sum);
@@ -8233,12 +8198,7 @@ fn pyramid_centroid(pts: &[Expr]) -> Option<Result<Expr, InterpreterError>> {
 /// Sqrt[minor12^2 + minor20^2 + minor01^2] (the norm of the edge cross
 /// product), where c holds the vertex coordinate vectors.
 fn triangle_double_area(c: &[Vec<Expr>], i: usize, j: usize, k: usize) -> Expr {
-  let diff = |a: &Expr, b: &Expr| {
-    call(
-      "Plus",
-      vec![a.clone(), call("Times", vec![Expr::Integer(-1), b.clone()])],
-    )
-  };
+  let diff = |a: &Expr, b: &Expr| call("Plus", vec![a.clone(), neg(b.clone())]);
   let u: Vec<Expr> = (0..3).map(|d| diff(&c[j][d], &c[i][d])).collect();
   let v: Vec<Expr> = (0..3).map(|d| diff(&c[k][d], &c[i][d])).collect();
   let minor = |a: usize, b: usize| {
@@ -8251,14 +8211,13 @@ fn triangle_double_area(c: &[Vec<Expr>], i: usize, j: usize, k: usize) -> Expr {
     )
   };
   let sq = |e: Expr| call("Power", vec![e, Expr::Integer(2)]);
-  Expr::FunctionCall {
-    name: "Sqrt".to_string(),
-    args: vec![call(
+  call1(
+    "Sqrt",
+    call(
       "Plus",
       vec![sq(minor(1, 2)), sq(minor(2, 0)), sq(minor(0, 1))],
-    )]
-    .into(),
-  }
+    ),
+  )
 }
 
 /// Total surface area of a polyhedron whose faces are given as triangles into
@@ -8434,7 +8393,7 @@ fn compute_region_moment(
   let unevaluated =
     || Ok(call("RegionMoment", vec![region.clone(), spec.clone()]));
   let ev = |e: &Expr| crate::evaluator::evaluate_expr_to_expr(e);
-  let int_e = |n: i128| Expr::Integer(n);
+  let int = |n: i128| Expr::Integer(n);
   let times = |fs: Vec<Expr>| {
     let fs: Vec<Expr> = fs
       .into_iter()
@@ -8588,8 +8547,8 @@ fn compute_region_moment(
         .zip(lo.iter().zip(hi.iter()))
         .map(|(&p, (l, h))| {
           ratio(
-            plus(vec![pow(h, p + 1), times(vec![int_e(-1), pow(l, p + 1)])]),
-            int_e(p + 1),
+            plus(vec![pow(h, p + 1), times(vec![int(-1), pow(l, p + 1)])]),
+            int(p + 1),
           )
         })
         .collect();
@@ -8626,22 +8585,18 @@ fn compute_region_moment(
             let (pi, ki, ci) = (powers[i], k[i], &center[i]);
             let binom = binom_i128(pi, ki);
             if binom != 1 {
-              factors.push(int_e(binom));
+              factors.push(int(binom));
             }
             factors.push(pow(ci, pi - ki));
-            gamma_num.push(call1("Gamma", ratio(int_e(ki + 1), int_e(2))));
+            gamma_num.push(call1("Gamma", ratio(int(ki + 1), int(2))));
             half_sum_num += ki + 1;
           }
           let k_sum: i128 = k.iter().sum();
           factors.push(pow(&radius, k_sum + n as i128));
-          let gamma_den = Expr::FunctionCall {
-            name: "Gamma".to_string(),
-            args: vec![plus(vec![
-              ratio(int_e(half_sum_num), int_e(2)),
-              int_e(1),
-            ])]
-            .into(),
-          };
+          let gamma_den = call1(
+            "Gamma",
+            plus(vec![ratio(int(half_sum_num), int(2)), int(1)]),
+          );
           factors.push(ratio(times(gamma_num), gamma_den));
           terms.push(times(factors));
         }
@@ -8678,7 +8633,7 @@ fn triangle_moment_parts(
   j_pow: i128,
 ) -> Result<(Expr, Expr), InterpreterError> {
   let ev = |e: &Expr| crate::evaluator::evaluate_expr_to_expr(e);
-  let int_e = Expr::Integer;
+  let int = Expr::Integer;
   let times = |fs: Vec<Expr>| {
     let fs: Vec<Expr> = fs
       .into_iter()
@@ -8705,13 +8660,13 @@ fn triangle_moment_parts(
   let ratio = |num: Expr, den: Expr| div2(num, den);
   let is_zero = |e: &Expr| matches!(e, Expr::Integer(0));
   let sub = |a: &Expr, b: &Expr| -> Result<Expr, InterpreterError> {
-    ev(&plus(vec![a.clone(), times(vec![int_e(-1), b.clone()])]))
+    ev(&plus(vec![a.clone(), times(vec![int(-1), b.clone()])]))
   };
   let d1 = [sub(&v[1][0], &v[0][0])?, sub(&v[1][1], &v[0][1])?];
   let d2 = [sub(&v[2][0], &v[0][0])?, sub(&v[2][1], &v[0][1])?];
   let det = ev(&plus(vec![
     times(vec![d1[0].clone(), d2[1].clone()]),
-    times(vec![int_e(-1), d1[1].clone(), d2[0].clone()]),
+    times(vec![int(-1), d1[1].clone(), d2[0].clone()]),
   ]))?;
   let factorial = |m: i128| factorial_small(m as usize);
   let multinom = |m: i128, a: i128, b: i128| -> i128 {
@@ -8750,7 +8705,7 @@ fn triangle_moment_parts(
             x.max(1)
           };
           terms.push(times(vec![
-            ratio(int_e(num / g), int_e(den / g)),
+            ratio(int(num / g), int(den / g)),
             pow(&v[0][0], k1),
             pow(&d1[0], k2),
             pow(&d2[0], k3),
@@ -8836,10 +8791,7 @@ fn translate_region(region: &Expr, pt: &[Expr]) -> Option<Expr> {
   let shift = |coord: &Expr, delta: &Expr| -> Option<Expr> {
     crate::evaluator::evaluate_expr_to_expr(&call(
       "Plus",
-      vec![
-        coord.clone(),
-        call("Times", vec![Expr::Integer(-1), delta.clone()]),
-      ],
+      vec![coord.clone(), neg(delta.clone())],
     ))
     .ok()
   };
@@ -9034,7 +8986,7 @@ fn compute_moment_of_inertia(
         spec[a] = 1;
         spec[b] = 1;
         match raw(spec)? {
-          Some(m) => call("Times", vec![Expr::Integer(-1), m]),
+          Some(m) => neg(m),
           None => return unevaluated(),
         }
       };
@@ -9145,10 +9097,7 @@ fn disk_segment_dtheta(
 ) -> Result<Expr, InterpreterError> {
   crate::evaluator::evaluate_expr_to_expr(&call(
     "Plus",
-    vec![
-      th2.clone(),
-      call("Times", vec![Expr::Integer(-1), th1.clone()]),
-    ],
+    vec![th2.clone(), neg(th1.clone())],
   ))
 }
 
@@ -9195,16 +9144,14 @@ fn stadium_length(p1: &[Expr], p2: &[Expr]) -> Expr {
   let squares: Vec<Expr> = p1
     .iter()
     .zip(p2.iter())
-    .map(|(a, b)| Expr::FunctionCall {
-      name: "Power".to_string(),
-      args: vec![
-        call(
-          "Plus",
-          vec![a.clone(), call("Times", vec![Expr::Integer(-1), b.clone()])],
-        ),
-        Expr::Integer(2),
-      ]
-      .into(),
+    .map(|(a, b)| {
+      call(
+        "Power",
+        vec![
+          call("Plus", vec![a.clone(), neg(b.clone())]),
+          Expr::Integer(2),
+        ],
+      )
     })
     .collect();
   call1("Sqrt", call("Plus", squares))
@@ -9258,19 +9205,14 @@ fn capsule_height_sq_radius(args: &[Expr]) -> Option<(Expr, Expr)> {
       let squares: Vec<Expr> = p1
         .iter()
         .zip(p2.iter())
-        .map(|(a, b)| Expr::FunctionCall {
-          name: "Power".to_string(),
-          args: vec![
-            call(
-              "Plus",
-              vec![
-                a.clone(),
-                call("Times", vec![Expr::Integer(-1), b.clone()]),
-              ],
-            ),
-            Expr::Integer(2),
-          ]
-          .into(),
+        .map(|(a, b)| {
+          call(
+            "Power",
+            vec![
+              call("Plus", vec![a.clone(), neg(b.clone())]),
+              Expr::Integer(2),
+            ],
+          )
         })
         .collect();
       Some((call("Plus", squares), r.clone()))
@@ -9290,13 +9232,7 @@ fn spherical_shell_measure(
 ) -> Result<Expr, InterpreterError> {
   let pow =
     |b: &Expr, e: i128| call("Power", vec![b.clone(), Expr::Integer(e)]);
-  let diff = call(
-    "Plus",
-    vec![
-      call("Times", vec![Expr::Integer(-1), pow(r1, p)]),
-      pow(r2, p),
-    ],
-  );
+  let diff = call("Plus", vec![neg(pow(r1, p)), pow(r2, p)]);
   let product = call("Times", vec![Expr::Integer(4), const_expr("Pi"), diff]);
   let measure = if den == 1 {
     product
@@ -9438,36 +9374,30 @@ fn compute_surface_area(expr: &Expr) -> Result<Expr, InterpreterError> {
               unreachable!("verified 3-coordinate lists above");
             };
             let diff = |a: &Expr, b: &Expr| {
-              call(
-                "Plus",
-                vec![
-                  a.clone(),
-                  call("Times", vec![Expr::Integer(-1), b.clone()]),
-                ],
-              )
+              call("Plus", vec![a.clone(), neg(b.clone())])
             };
             let u: Vec<Expr> = (0..3).map(|d| diff(&p2[d], &p1[d])).collect();
             let v: Vec<Expr> = (0..3).map(|d| diff(&p3[d], &p1[d])).collect();
-            let minor = |i: usize, j: usize| Expr::FunctionCall {
-              name: "Plus".to_string(),
-              args: vec![
-                call("Times", vec![u[i].clone(), v[j].clone()]),
-                call(
-                  "Times",
-                  vec![Expr::Integer(-1), u[j].clone(), v[i].clone()],
-                ),
-              ]
-              .into(),
+            let minor = |i: usize, j: usize| {
+              call(
+                "Plus",
+                vec![
+                  call("Times", vec![u[i].clone(), v[j].clone()]),
+                  call(
+                    "Times",
+                    vec![Expr::Integer(-1), u[j].clone(), v[i].clone()],
+                  ),
+                ],
+              )
             };
             let sq = |e: Expr| call("Power", vec![e, Expr::Integer(2)]);
-            Expr::FunctionCall {
-              name: "Sqrt".to_string(),
-              args: vec![call(
+            call1(
+              "Sqrt",
+              call(
                 "Plus",
                 vec![sq(minor(1, 2)), sq(minor(2, 0)), sq(minor(0, 1))],
-              )]
-              .into(),
-            }
+              ),
+            )
           })
           .collect();
         return crate::evaluator::evaluate_expr_to_expr(&div2(
@@ -9531,15 +9461,7 @@ fn compute_surface_area(expr: &Expr) -> Result<Expr, InterpreterError> {
           }
           p1.iter()
             .zip(p2.iter())
-            .map(|(a, b)| {
-              call(
-                "Plus",
-                vec![
-                  b.clone(),
-                  call("Times", vec![Expr::Integer(-1), a.clone()]),
-                ],
-              )
-            })
+            .map(|(a, b)| call("Plus", vec![b.clone(), neg(a.clone())]))
             .collect()
         }
         _ => return unevaluated(),
@@ -9568,24 +9490,22 @@ fn compute_surface_area(expr: &Expr) -> Result<Expr, InterpreterError> {
         call("Plus", vec![radius.clone(), height])
       } else {
         // slant height Sqrt[r^2 + h^2]
-        Expr::FunctionCall {
-          name: "Plus".to_string(),
-          args: vec![
+        call(
+          "Plus",
+          vec![
             radius.clone(),
-            Expr::FunctionCall {
-              name: "Sqrt".to_string(),
-              args: vec![call(
+            call1(
+              "Sqrt",
+              call(
                 "Plus",
                 vec![
                   call("Power", vec![radius.clone(), Expr::Integer(2)]),
                   height_sq,
                 ],
-              )]
-              .into(),
-            },
-          ]
-          .into(),
-        }
+              ),
+            ),
+          ],
+        )
       };
       let mut factors = vec![];
       if name == "Cylinder" {
@@ -9627,16 +9547,15 @@ fn compute_surface_area(expr: &Expr) -> Result<Expr, InterpreterError> {
       {
         return unevaluated();
       }
-      let side = Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![
+      let side = call(
+        "Times",
+        vec![
           Expr::Integer(2),
           const_expr("Pi"),
           r.clone(),
           call1("Sqrt", h_sq),
-        ]
-        .into(),
-      };
+        ],
+      );
       let caps = call(
         "Times",
         vec![
@@ -9688,16 +9607,14 @@ fn cylinder_height_sq_radius(args: &[Expr]) -> Option<(Expr, Expr)> {
   let squares: Vec<Expr> = p1
     .iter()
     .zip(p2.iter())
-    .map(|(a, b)| Expr::FunctionCall {
-      name: "Power".to_string(),
-      args: vec![
-        call(
-          "Plus",
-          vec![a.clone(), call("Times", vec![Expr::Integer(-1), b.clone()])],
-        ),
-        Expr::Integer(2),
-      ]
-      .into(),
+    .map(|(a, b)| {
+      call(
+        "Power",
+        vec![
+          call("Plus", vec![a.clone(), neg(b.clone())]),
+          Expr::Integer(2),
+        ],
+      )
     })
     .collect();
   let sum_sq = if squares.len() == 1 {
@@ -9755,16 +9672,14 @@ fn compute_volume(expr: &Expr) -> Result<Expr, InterpreterError> {
     let squares: Vec<Expr> = p1_vec
       .iter()
       .zip(p2_vec.iter())
-      .map(|(a, b)| Expr::FunctionCall {
-        name: "Power".to_string(),
-        args: vec![
-          call(
-            "Plus",
-            vec![a.clone(), call("Times", vec![Expr::Integer(-1), b.clone()])],
-          ),
-          Expr::Integer(2),
-        ]
-        .into(),
+      .map(|(a, b)| {
+        call(
+          "Power",
+          vec![
+            call("Plus", vec![a.clone(), neg(b.clone())]),
+            Expr::Integer(2),
+          ],
+        )
       })
       .collect();
     let sum_sq = if squares.len() == 1 {
@@ -9816,15 +9731,7 @@ fn compute_volume(expr: &Expr) -> Result<Expr, InterpreterError> {
         let diffs: Vec<Expr> = p1
           .iter()
           .zip(p2.iter())
-          .map(|(a, b)| {
-            call(
-              "Plus",
-              vec![
-                b.clone(),
-                call("Times", vec![Expr::Integer(-1), a.clone()]),
-              ],
-            )
-          })
+          .map(|(a, b)| call("Plus", vec![b.clone(), neg(a.clone())]))
           .collect();
         let product = if diffs.len() == 1 {
           diffs.into_iter().next().unwrap()
@@ -9898,21 +9805,14 @@ fn compute_volume(expr: &Expr) -> Result<Expr, InterpreterError> {
         if radii.len() != 3 {
           return undefined();
         }
-        let vol = Expr::BinaryOp {
-          op: BinaryOperator::Divide,
-          left: Box::new(Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![
-              Expr::Integer(4),
-              const_expr("Pi"),
-              radii[0].clone(),
-              radii[1].clone(),
-              radii[2].clone(),
-            ]
-            .into(),
-          }),
-          right: Box::new(Expr::Integer(3)),
-        };
+        let terms = vec![
+          Expr::Integer(4),
+          const_expr("Pi"),
+          radii[0].clone(),
+          radii[1].clone(),
+          radii[2].clone(),
+        ];
+        let vol = div2(call("Times", terms), Expr::Integer(3));
         return crate::evaluator::evaluate_expr_to_expr(&vol);
       }
       // A 3-D half-space has infinite volume; other dimensions have no
@@ -10141,28 +10041,14 @@ fn compute_area(expr: &Expr) -> Result<Expr, InterpreterError> {
             && p1.len() == 2
             && p2.len() == 2
           {
-            let width = Expr::FunctionCall {
-              name: "Abs".to_string(),
-              args: vec![call(
-                "Plus",
-                vec![
-                  p2[0].clone(),
-                  call("Times", vec![Expr::Integer(-1), p1[0].clone()]),
-                ],
-              )]
-              .into(),
-            };
-            let height = Expr::FunctionCall {
-              name: "Abs".to_string(),
-              args: vec![call(
-                "Plus",
-                vec![
-                  p2[1].clone(),
-                  call("Times", vec![Expr::Integer(-1), p1[1].clone()]),
-                ],
-              )]
-              .into(),
-            };
+            let width = call1(
+              "Abs",
+              call("Plus", vec![p2[0].clone(), neg(p1[0].clone())]),
+            );
+            let height = call1(
+              "Abs",
+              call("Plus", vec![p2[1].clone(), neg(p1[1].clone())]),
+            );
             let area = call("Times", vec![width, height]);
             return crate::evaluator::evaluate_expr_to_expr(&area);
           }
@@ -10183,77 +10069,41 @@ fn compute_area(expr: &Expr) -> Result<Expr, InterpreterError> {
           && p3.len() == 2
         {
           // Area = |x1(y2-y3) + x2(y3-y1) + x3(y1-y2)| / 2
-          let area_expr = Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![
+          let area_expr = call(
+            "Times",
+            vec![
               call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
-              Expr::FunctionCall {
-                name: "Abs".to_string(),
-                args: vec![Expr::FunctionCall {
-                  name: "Plus".to_string(),
-                  args: vec![
-                    Expr::FunctionCall {
-                      name: "Times".to_string(),
-                      args: vec![
+              call1(
+                "Abs",
+                call(
+                  "Plus",
+                  vec![
+                    call(
+                      "Times",
+                      vec![
                         p1[0].clone(),
-                        Expr::FunctionCall {
-                          name: "Plus".to_string(),
-                          args: vec![
-                            p2[1].clone(),
-                            call(
-                              "Times",
-                              vec![Expr::Integer(-1), p3[1].clone()],
-                            ),
-                          ]
-                          .into(),
-                        },
-                      ]
-                      .into(),
-                    },
-                    Expr::FunctionCall {
-                      name: "Times".to_string(),
-                      args: vec![
+                        call("Plus", vec![p2[1].clone(), neg(p3[1].clone())]),
+                      ],
+                    ),
+                    call(
+                      "Times",
+                      vec![
                         p2[0].clone(),
-                        Expr::FunctionCall {
-                          name: "Plus".to_string(),
-                          args: vec![
-                            p3[1].clone(),
-                            call(
-                              "Times",
-                              vec![Expr::Integer(-1), p1[1].clone()],
-                            ),
-                          ]
-                          .into(),
-                        },
-                      ]
-                      .into(),
-                    },
-                    Expr::FunctionCall {
-                      name: "Times".to_string(),
-                      args: vec![
+                        call("Plus", vec![p3[1].clone(), neg(p1[1].clone())]),
+                      ],
+                    ),
+                    call(
+                      "Times",
+                      vec![
                         p3[0].clone(),
-                        Expr::FunctionCall {
-                          name: "Plus".to_string(),
-                          args: vec![
-                            p1[1].clone(),
-                            call(
-                              "Times",
-                              vec![Expr::Integer(-1), p2[1].clone()],
-                            ),
-                          ]
-                          .into(),
-                        },
-                      ]
-                      .into(),
-                    },
-                  ]
-                  .into(),
-                }]
-                .into(),
-              },
-            ]
-            .into(),
-          };
+                        call("Plus", vec![p1[1].clone(), neg(p2[1].clone())]),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          );
           return crate::evaluator::evaluate_expr_to_expr(&area_expr);
         }
         // Triangle embedded in 3-space: half the norm of the cross product
@@ -10267,47 +10117,39 @@ fn compute_area(expr: &Expr) -> Result<Expr, InterpreterError> {
           && p2.len() == 3
           && p3.len() == 3
         {
-          let diff = |a: &Expr, b: &Expr| {
+          let diff =
+            |a: &Expr, b: &Expr| call("Plus", vec![a.clone(), neg(b.clone())]);
+          let u: Vec<Expr> = (0..3).map(|d| diff(&p2[d], &p1[d])).collect();
+          let v: Vec<Expr> = (0..3).map(|d| diff(&p3[d], &p1[d])).collect();
+          let minor = |i: usize, j: usize| {
             call(
               "Plus",
               vec![
-                a.clone(),
-                call("Times", vec![Expr::Integer(-1), b.clone()]),
+                call("Times", vec![u[i].clone(), v[j].clone()]),
+                call(
+                  "Times",
+                  vec![Expr::Integer(-1), u[j].clone(), v[i].clone()],
+                ),
               ],
             )
-          };
-          let u: Vec<Expr> = (0..3).map(|d| diff(&p2[d], &p1[d])).collect();
-          let v: Vec<Expr> = (0..3).map(|d| diff(&p3[d], &p1[d])).collect();
-          let minor = |i: usize, j: usize| Expr::FunctionCall {
-            name: "Plus".to_string(),
-            args: vec![
-              call("Times", vec![u[i].clone(), v[j].clone()]),
-              call(
-                "Times",
-                vec![Expr::Integer(-1), u[j].clone(), v[i].clone()],
-              ),
-            ]
-            .into(),
           };
           let sq = |e: Expr| call("Power", vec![e, Expr::Integer(2)]);
           // Sqrt[(m1^2 + m2^2 + m3^2)/4] — the 1/4 inside the radical
           // reproduces wolframscript's canonical forms (Sqrt[23/2],
           // 1/Sqrt[2], Sqrt[3]/2, …).
-          let area_expr = Expr::FunctionCall {
-            name: "Sqrt".to_string(),
-            args: vec![Expr::FunctionCall {
-              name: "Times".to_string(),
-              args: vec![
+          let area_expr = call1(
+            "Sqrt",
+            call(
+              "Times",
+              vec![
                 call("Rational", vec![Expr::Integer(1), Expr::Integer(4)]),
                 call(
                   "Plus",
                   vec![sq(minor(1, 2)), sq(minor(2, 0)), sq(minor(0, 1))],
                 ),
-              ]
-              .into(),
-            }]
-            .into(),
-          };
+              ],
+            ),
+          );
           return crate::evaluator::evaluate_expr_to_expr(&area_expr);
         }
         Ok(call1("Area", expr.clone()))
@@ -10335,10 +10177,7 @@ fn compute_area(expr: &Expr) -> Result<Expr, InterpreterError> {
           // Holes that degenerate the same way simply cut nothing out.
           let mut terms = vec![filled];
           for path in &holes {
-            terms.push(call(
-              "Times",
-              vec![Expr::Integer(-1), polygon_path_area_expr(path)],
-            ));
+            terms.push(neg(polygon_path_area_expr(path)));
           }
           return sum(terms);
         }
@@ -10381,24 +10220,16 @@ fn compute_area(expr: &Expr) -> Result<Expr, InterpreterError> {
           // (-1 + Pi/2)/2).
           Expr::BinaryOp {
             op: BinaryOperator::Divide,
-            left: Box::new(Expr::FunctionCall {
-              name: "Times".to_string(),
-              args: vec![
+            left: Box::new(call(
+              "Times",
+              vec![
                 factor,
-                Expr::FunctionCall {
-                  name: "Together".to_string(),
-                  args: vec![call(
-                    "Plus",
-                    vec![
-                      dt.clone(),
-                      call("Times", vec![Expr::Integer(-1), call1("Sin", dt)]),
-                    ],
-                  )]
-                  .into(),
-                },
-              ]
-              .into(),
-            }),
+                call1(
+                  "Together",
+                  call("Plus", vec![dt.clone(), neg(call1("Sin", dt))]),
+                ),
+              ],
+            )),
             right: Box::new(Expr::Integer(2)),
           }
         };
@@ -10943,18 +10774,17 @@ fn polygon_path_area_expr(path: &[Expr]) -> Expr {
     call1("Abs", component(0, 1))
   } else {
     let square = |e: Expr| call("Power", vec![e, Expr::Integer(2)]);
-    Expr::FunctionCall {
-      name: "Sqrt".to_string(),
-      args: vec![call(
+    call1(
+      "Sqrt",
+      call(
         "Plus",
         vec![
           square(component(1, 2)),
           square(component(2, 0)),
           square(component(0, 1)),
         ],
-      )]
-      .into(),
-    }
+      ),
+    )
   };
   call("Times", vec![half, magnitude])
 }
@@ -11150,16 +10980,17 @@ fn compute_region_centroid(expr: &Expr) -> Result<Expr, InterpreterError> {
           return unevaluated();
         };
         let coords: Vec<Expr> = (0..p.len())
-          .map(|d| Expr::FunctionCall {
-            name: "Plus".to_string(),
-            args: vec![
-              p[d].clone(),
-              div2(
-                call("Plus", vec![v1[d].clone(), v2[d].clone()]),
-                Expr::Integer(2),
-              ),
-            ]
-            .into(),
+          .map(|d| {
+            call(
+              "Plus",
+              vec![
+                p[d].clone(),
+                div2(
+                  call("Plus", vec![v1[d].clone(), v2[d].clone()]),
+                  Expr::Integer(2),
+                ),
+              ],
+            )
           })
           .collect();
         crate::evaluator::evaluate_expr_to_expr(&Expr::List(coords.into()))
@@ -11234,33 +11065,26 @@ fn compute_region_centroid(expr: &Expr) -> Result<Expr, InterpreterError> {
               call("Power", vec![call1("Sin", half_dt), Expr::Integer(3)]),
             ],
           )),
-          right: Box::new(Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![
+          right: Box::new(call(
+            "Times",
+            vec![
               Expr::Integer(3),
-              call(
-                "Plus",
-                vec![
-                  dt.clone(),
-                  call("Times", vec![Expr::Integer(-1), call1("Sin", dt)]),
-                ],
-              ),
-            ]
-            .into(),
-          }),
+              call("Plus", vec![dt.clone(), neg(call1("Sin", dt))]),
+            ],
+          )),
         };
-        let component =
-          |center: &Expr, semi: &Expr, trig: &str| Expr::FunctionCall {
-            name: "Plus".to_string(),
-            args: vec![
+        let component = |center: &Expr, semi: &Expr, trig: &str| {
+          call(
+            "Plus",
+            vec![
               center.clone(),
               call(
                 "Times",
                 vec![semi.clone(), offset.clone(), call1(trig, mid.clone())],
               ),
-            ]
-            .into(),
-          };
+            ],
+          )
+        };
         crate::evaluator::evaluate_expr_to_expr(&Expr::List(
           vec![component(&c[0], &rx, "Cos"), component(&c[1], &ry, "Sin")]
             .into(),
@@ -11306,7 +11130,7 @@ fn compute_region_centroid(expr: &Expr) -> Result<Expr, InterpreterError> {
           && pts.len() >= 2
           && pts.iter().all(|p| matches!(p, Expr::List(_)))
         {
-          let mean = call("Mean", vec![args[0].clone()]);
+          let mean = call1("Mean", args[0].clone());
           return crate::evaluator::evaluate_expr_to_expr(&mean);
         }
         unevaluated()
@@ -11382,9 +11206,9 @@ fn compute_triangle_centroid(pts: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let mut result = Vec::new();
   for d in 0..dim {
-    let avg = Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![
+    let avg = call(
+      "Times",
+      vec![
         call("Rational", vec![Expr::Integer(1), Expr::Integer(3)]),
         call(
           "Plus",
@@ -11394,9 +11218,8 @@ fn compute_triangle_centroid(pts: &[Expr]) -> Result<Expr, InterpreterError> {
             coords[2][d].clone(),
           ],
         ),
-      ]
-      .into(),
-    };
+      ],
+    );
     result.push(avg);
   }
   crate::evaluator::evaluate_expr_to_expr(&Expr::List(result.into()))
@@ -11440,17 +11263,16 @@ fn compute_polygon_centroid(pts: &[Expr]) -> Result<Expr, InterpreterError> {
   for i in 0..n {
     let j = (i + 1) % n;
     // cross = xi*yj - xj*yi
-    let cross = Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: vec![
+    let cross = call(
+      "Plus",
+      vec![
         call("Times", vec![coords[i].0.clone(), coords[j].1.clone()]),
         call(
           "Times",
           vec![Expr::Integer(-1), coords[j].0.clone(), coords[i].1.clone()],
         ),
-      ]
-      .into(),
-    };
+      ],
+    );
 
     area_terms.push(cross.clone());
 
@@ -11546,20 +11368,16 @@ fn compute_line_centroid(pts: &[Expr]) -> Result<Expr, InterpreterError> {
     // length = Sqrt[sum of (xj_d - xi_d)^2]
     let mut sq_terms = Vec::new();
     for d in 0..dim {
-      sq_terms.push(Expr::FunctionCall {
-        name: "Power".to_string(),
-        args: vec![
+      sq_terms.push(call(
+        "Power",
+        vec![
           call(
             "Plus",
-            vec![
-              coords[j][d].clone(),
-              call("Times", vec![Expr::Integer(-1), coords[i][d].clone()]),
-            ],
+            vec![coords[j][d].clone(), neg(coords[i][d].clone())],
           ),
           Expr::Integer(2),
-        ]
-        .into(),
-      });
+        ],
+      ));
     }
     let seg_length = make_sqrt(call("Plus", sq_terms));
 
@@ -12020,7 +11838,7 @@ fn compute_arc_length_curve(
   // Simplify the speed first: Woxi's Integrate does not apply the Pythagorean
   // identity on its own, so e.g. Sqrt[Cos[t]^2 + Sin[t]^2] must collapse to 1
   // before integration.
-  let integrand = call("Simplify", vec![make_sqrt(sum_of_squares)]);
+  let integrand = call1("Simplify", make_sqrt(sum_of_squares));
   let integral = call("Integrate", vec![integrand, iter.clone()]);
   let result = evaluate_expr_to_expr(&integral)?;
   // If Integrate could not resolve it, keep ArcLength unevaluated rather than
@@ -12054,20 +11872,13 @@ fn compute_arc_length(expr: &Expr) -> Result<Expr, InterpreterError> {
           && spec.len() == 2
         {
           // Circle[center, r, {θ1, θ2}] (a circular arc) -> r*(θ2 - θ1)
-          let result = Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![
+          let result = call(
+            "Times",
+            vec![
               args[1].clone(),
-              call(
-                "Plus",
-                vec![
-                  spec[1].clone(),
-                  call("Times", vec![Expr::Integer(-1), spec[0].clone()]),
-                ],
-              ),
-            ]
-            .into(),
-          };
+              call("Plus", vec![spec[1].clone(), neg(spec[0].clone())]),
+            ],
+          );
           crate::evaluator::evaluate_expr_to_expr(&result)
         } else {
           unevaluated()
@@ -12183,13 +11994,7 @@ fn compute_perimeter(expr: &Expr) -> Result<Expr, InterpreterError> {
         // m = 1 - (r1/r2)^2
         let ratio_sq =
           call("Power", vec![div2(r1, r2.clone()), Expr::Integer(2)]);
-        let m = call(
-          "Plus",
-          vec![
-            Expr::Integer(1),
-            call("Times", vec![Expr::Integer(-1), ratio_sq]),
-          ],
-        );
+        let m = call("Plus", vec![Expr::Integer(1), neg(ratio_sq)]);
         let perimeter =
           call("Times", vec![Expr::Integer(4), r2, call1("EllipticE", m)]);
         crate::evaluator::evaluate_expr_to_expr(&perimeter)
@@ -12209,28 +12014,14 @@ fn compute_perimeter(expr: &Expr) -> Result<Expr, InterpreterError> {
             && p1.len() == 2
             && p2.len() == 2
           {
-            let width = Expr::FunctionCall {
-              name: "Abs".to_string(),
-              args: vec![call(
-                "Plus",
-                vec![
-                  p2[0].clone(),
-                  call("Times", vec![Expr::Integer(-1), p1[0].clone()]),
-                ],
-              )]
-              .into(),
-            };
-            let height = Expr::FunctionCall {
-              name: "Abs".to_string(),
-              args: vec![call(
-                "Plus",
-                vec![
-                  p2[1].clone(),
-                  call("Times", vec![Expr::Integer(-1), p1[1].clone()]),
-                ],
-              )]
-              .into(),
-            };
+            let width = call1(
+              "Abs",
+              call("Plus", vec![p2[0].clone(), neg(p1[0].clone())]),
+            );
+            let height = call1(
+              "Abs",
+              call("Plus", vec![p2[1].clone(), neg(p1[1].clone())]),
+            );
             let perimeter = call(
               "Times",
               vec![Expr::Integer(2), call("Plus", vec![width, height])],
@@ -12311,20 +12102,16 @@ fn compute_polyline_length(
     let j = i + 1;
     let mut sq_terms = Vec::new();
     for d in 0..dim {
-      sq_terms.push(Expr::FunctionCall {
-        name: "Power".to_string(),
-        args: vec![
+      sq_terms.push(call(
+        "Power",
+        vec![
           call(
             "Plus",
-            vec![
-              coords[j][d].clone(),
-              call("Times", vec![Expr::Integer(-1), coords[i][d].clone()]),
-            ],
+            vec![coords[j][d].clone(), neg(coords[i][d].clone())],
           ),
           Expr::Integer(2),
-        ]
-        .into(),
-      });
+        ],
+      ));
     }
     segment_lengths.push(make_sqrt(call("Plus", sq_terms)));
   }
@@ -12539,20 +12326,8 @@ fn compute_planar_angle(
   p2: &Expr,
 ) -> Result<Expr, InterpreterError> {
   // Build symbolic vectors v1 = p1 - vertex, v2 = p2 - vertex
-  let v1 = call(
-    "Plus",
-    vec![
-      p1.clone(),
-      call("Times", vec![Expr::Integer(-1), vertex.clone()]),
-    ],
-  );
-  let v2 = call(
-    "Plus",
-    vec![
-      p2.clone(),
-      call("Times", vec![Expr::Integer(-1), vertex.clone()]),
-    ],
-  );
+  let v1 = call("Plus", vec![p1.clone(), neg(vertex.clone())]);
+  let v2 = call("Plus", vec![p2.clone(), neg(vertex.clone())]);
 
   // Evaluate vectors
   let v1_eval = crate::evaluator::evaluate_expr_to_expr(&v1)?;
@@ -12562,13 +12337,10 @@ fn compute_planar_angle(
   let (v1_comps, v2_comps) = match (&v1_eval, &v2_eval) {
     (Expr::List(a), Expr::List(b)) if a.len() == b.len() => (a, b),
     _ => {
-      return Ok(Expr::FunctionCall {
-        name: "PlanarAngle".to_string(),
-        args: vec![Expr::List(
-          vec![p1.clone(), vertex.clone(), p2.clone()].into(),
-        )]
-        .into(),
-      });
+      return Ok(call1(
+        "PlanarAngle",
+        Expr::List(vec![p1.clone(), vertex.clone(), p2.clone()].into()),
+      ));
     }
   };
 
@@ -12606,17 +12378,16 @@ fn compute_planar_angle(
   let mag2 = make_sqrt(call("Plus", mag2_terms));
 
   // ArcCos[dot / (mag1 * mag2)]
-  let cos_angle = Expr::FunctionCall {
-    name: "Times".to_string(),
-    args: vec![
+  let cos_angle = call(
+    "Times",
+    vec![
       dot,
       call(
         "Power",
         vec![call("Times", vec![mag1, mag2]), Expr::Integer(-1)],
       ),
-    ]
-    .into(),
-  };
+    ],
+  );
   let angle = call1("ArcCos", cos_angle);
 
   crate::evaluator::evaluate_expr_to_expr(&angle)
@@ -12697,7 +12468,7 @@ fn compute_polygon_angle(args: &[Expr]) -> Result<Expr, InterpreterError> {
           "Plus",
           vec![
             call("Times", vec![Expr::Integer(2), const_expr("Pi")]),
-            call("Times", vec![Expr::Integer(-1), base]),
+            neg(base),
           ],
         );
         return crate::evaluator::evaluate_expr_to_expr(&reflex);
@@ -13829,11 +13600,6 @@ fn compute_insphere(expr: &Expr) -> Result<Expr, InterpreterError> {
   }
 }
 
-/// Helper: build Sqrt[expr]
-fn insphere_sqrt(e: Expr) -> Expr {
-  make_sqrt(e)
-}
-
 /// Helper: build a + b
 fn insphere_plus(a: Expr, b: Expr) -> Expr {
   call("Plus", vec![a, b])
@@ -13858,7 +13624,7 @@ fn insphere_power(base: Expr, exp: Expr) -> Expr {
 fn dist_2d(p1: &[Expr], p2: &[Expr]) -> Expr {
   let dx = insphere_minus(p2[0].clone(), p1[0].clone());
   let dy = insphere_minus(p2[1].clone(), p1[1].clone());
-  insphere_sqrt(insphere_plus(
+  make_sqrt(insphere_plus(
     insphere_power(dx, Expr::Integer(2)),
     insphere_power(dy, Expr::Integer(2)),
   ))
@@ -13910,11 +13676,11 @@ fn insphere_triangle_2d(
   );
 
   // Area via shoelace formula: |x1(y2-y3) + x2(y3-y1) + x3(y1-y2)| / 2
-  let area_2 = Expr::FunctionCall {
-    name: "Abs".to_string(),
-    args: vec![Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: vec![
+  let area_2 = call1(
+    "Abs",
+    call(
+      "Plus",
+      vec![
         insphere_times(
           p1[0].clone(),
           insphere_minus(p2[1].clone(), p3[1].clone()),
@@ -13927,11 +13693,9 @@ fn insphere_triangle_2d(
           p3[0].clone(),
           insphere_minus(p1[1].clone(), p2[1].clone()),
         ),
-      ]
-      .into(),
-    }]
-    .into(),
-  };
+      ],
+    ),
+  );
 
   // radius = area / semiperimeter = (area_2/2) / (perimeter/2) = area_2 / perimeter
   let radius =
@@ -13971,7 +13735,7 @@ fn triangle_cross_mag_3d(p1: &[Expr], p2: &[Expr], p3: &[Expr]) -> Expr {
     insphere_times(ab[1].clone(), ac[0].clone()),
   );
 
-  insphere_sqrt(call(
+  make_sqrt(call(
     "Plus",
     vec![
       insphere_power(cx, Expr::Integer(2)),
@@ -14006,16 +13770,15 @@ fn insphere_tetrahedron(
   // (Same as using actual areas since the 2x factor cancels)
   let mut center_coords = Vec::new();
   for dim in 0..3 {
-    let num = Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: vec![
+    let num = call(
+      "Plus",
+      vec![
         insphere_times(cm1.clone(), p1[dim].clone()),
         insphere_times(cm2.clone(), p2[dim].clone()),
         insphere_times(cm3.clone(), p3[dim].clone()),
         insphere_times(cm4.clone(), p4[dim].clone()),
-      ]
-      .into(),
-    };
+      ],
+    );
     center_coords.push(insphere_times(
       num,
       insphere_power(total_cross.clone(), Expr::Integer(-1)),
@@ -14144,7 +13907,6 @@ fn compute_triangle_center(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let c2 = dist2_nd(pts[0], pts[1]);
 
   let plus3 = |x: Expr, y: Expr, z: Expr| call("Plus", vec![x, y, z]);
-  let neg = |x: Expr| insphere_times(Expr::Integer(-1), x);
   // Law-of-cosines terms: b² + c² − a² = 2*b*c*Cos[A], and cyclic.
   let ca = plus3(b2.clone(), c2.clone(), neg(a2.clone()));
   let cb = plus3(c2.clone(), a2.clone(), neg(b2.clone()));
