@@ -28142,6 +28142,60 @@ mod tube_and_cap_form {
       capped
     );
   }
+
+  /// `Cylinder`/`Cone` are solid by default, exactly like `Tube`: `CapForm`
+  /// closes their flat ends. Regression: `tessellate_cylinder` never emitted
+  /// end-cap triangles at all (`tessellate_cone` never emitted a base cap),
+  /// so every cylinder and cone rendered as an open, hollow shell — a bare
+  /// side wall with nothing across either end. Most visible on a short,
+  /// wide cylinder (a Demonstration's trick for drawing a flat disk in
+  /// space, e.g. a saw cut through a solid): instead of a filled disk it
+  /// showed as a hollow ring with a hole straight through the middle.
+  #[test]
+  fn cylinder_default_is_capped_at_both_ends() {
+    clear_state();
+    let capped =
+      export_svg("Graphics3D[{Cylinder[{{0, 0, 0}, {0, 0, 1}}, 1]}]");
+    let open = export_svg(
+      "Graphics3D[{CapForm[None], Cylinder[{{0, 0, 0}, {0, 0, 1}}, 1]}]",
+    );
+    assert!(
+      open.contains("<polygon"),
+      "the open cylinder must still draw"
+    );
+    assert_ne!(capped, open, "CapForm[None] must drop the end disks");
+    // Each end's disk fans into 24 triangles (`CYLINDER_SIDES`), same as a
+    // `Tube`'s cap.
+    assert_eq!(
+      capped.matches("<polygon").count(),
+      open.matches("<polygon").count() + 2 * 24,
+      "both end disks must each add a 24-triangle fan"
+    );
+    // Naming a cap form puts them back.
+    assert_eq!(
+      export_svg(
+        "Graphics3D[{CapForm[\"Butt\"], Cylinder[{{0, 0, 0}, {0, 0, 1}}, \
+         1]}]"
+      ),
+      capped
+    );
+  }
+
+  #[test]
+  fn cone_default_is_capped_at_the_base() {
+    clear_state();
+    let capped = export_svg("Graphics3D[{Cone[{{0, 0, 0}, {0, 0, 1}}, 1]}]");
+    let open = export_svg(
+      "Graphics3D[{CapForm[None], Cone[{{0, 0, 0}, {0, 0, 1}}, 1]}]",
+    );
+    assert!(open.contains("<polygon"), "the open cone must still draw");
+    assert_ne!(capped, open, "CapForm[None] must drop the base disk");
+    assert_eq!(
+      capped.matches("<polygon").count(),
+      open.matches("<polygon").count() + 24,
+      "the base disk must add a 24-triangle fan"
+    );
+  }
 }
 
 mod graphics3d_painters_algorithm_face_subdivision {

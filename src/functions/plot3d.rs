@@ -3226,12 +3226,18 @@ fn tessellate_for_transform(
     Primitive3D::Sphere { center, radius, .. } => {
       Some(tessellate_sphere(center, *radius, (16, 24)))
     }
-    Primitive3D::Cylinder { p1, p2, radius, .. } => {
-      Some(tessellate_cylinder(p1, p2, *radius))
-    }
-    Primitive3D::Cone { p1, p2, radius, .. } => {
-      Some(tessellate_cone(p1, p2, *radius))
-    }
+    Primitive3D::Cylinder {
+      p1,
+      p2,
+      radius,
+      style,
+    } => Some(tessellate_cylinder(p1, p2, *radius, style.capped)),
+    Primitive3D::Cone {
+      p1,
+      p2,
+      radius,
+      style,
+    } => Some(tessellate_cone(p1, p2, *radius, style.capped)),
     Primitive3D::Cuboid { p_min, p_max, .. } => {
       Some(tessellate_cuboid(p_min, p_max))
     }
@@ -4561,6 +4567,9 @@ fn box_edge_flags(tri: &(Point3D, Point3D, Point3D)) -> [bool; 3] {
 /// face's centroid a good local depth estimate.
 const MAX_SIDE_FACE_ASPECT: f64 = 1.0;
 const MAX_SIDE_SUBDIVISIONS: usize = 200;
+/// Radial subdivision count for `Cylinder`/`Cone`, shared between the
+/// tessellators and the call site that rebuilds their rim-edge flags.
+const CYLINDER_SIDES: usize = 24;
 
 /// How many rings to place along a side of the given length and radius so
 /// that no single tessellated face is more elongated than
@@ -4574,13 +4583,18 @@ fn side_subdivision_steps(len: f64, radius: f64, sides: usize) -> usize {
     .clamp(1.0, MAX_SIDE_SUBDIVISIONS as f64) as usize
 }
 
-/// Tessellate a cylinder along its axis.
+/// Tessellate a cylinder along its axis. With `capped`, flat disks close
+/// both ends — Wolfram's default; `CapForm[None]` leaves it a hollow tube.
+/// A flat cylinder (its two ends nearly coincident) is how a Demonstration
+/// draws a filled disk in space, so the caps matter even when the side wall
+/// is too thin to see.
 fn tessellate_cylinder(
   p1: &Point3D,
   p2: &Point3D,
   radius: f64,
+  capped: bool,
 ) -> Vec<(Point3D, Point3D, Point3D)> {
-  let n = 24;
+  let n = CYLINDER_SIDES;
   let pi = std::f64::consts::PI;
   // Axis vector
   let dx = p2.x - p1.x;
@@ -4654,6 +4668,19 @@ fn tessellate_cylinder(
       // the winding — and therefore the face normal direction — matches.
       tris.push((ring1[i], ring2[i], ring2[i2]));
       tris.push((ring1[i], ring2[i2], ring1[i2]));
+    }
+  }
+  if capped {
+    // The `p1` disk's outward normal points against the axis, so its fan
+    // needs the opposite winding from `p2`'s (see `tessellate_cone` for the
+    // same reasoning): `(centre, ring[i+1], ring[i])` there vs.
+    // `(centre, ring[i], ring[i+1])` here.
+    for i in 0..n {
+      tris.push((*p1, rings[0][(i + 1) % n], rings[0][i]));
+    }
+    let last = &rings[rings.len() - 1];
+    for i in 0..n {
+      tris.push((*p2, last[i], last[(i + 1) % n]));
     }
   }
   tris
@@ -4819,13 +4846,15 @@ fn tessellate_tube(
   tris
 }
 
-/// Tessellate a cone.
+/// Tessellate a cone. With `capped`, a flat disk closes the base — Wolfram's
+/// default; `CapForm[None]` leaves it open.
 fn tessellate_cone(
   base: &Point3D,
   tip: &Point3D,
   radius: f64,
+  capped: bool,
 ) -> Vec<(Point3D, Point3D, Point3D)> {
-  let n = 24;
+  let n = CYLINDER_SIDES;
   let pi = std::f64::consts::PI;
   let dx = tip.x - base.x;
   let dy = tip.y - base.y;
@@ -4884,6 +4913,13 @@ fn tessellate_cone(
     };
 
     tris.push((*tip, b1, b2));
+    if capped {
+      // Reversed winding vs. the lateral triangle above: its outward
+      // normal points along the radius and the axis (away from the base
+      // plane), so the base disk's normal — pointing the other way along
+      // the axis, away from the cone — needs `b2, b1` instead of `b1, b2`.
+      tris.push((*base, b2, b1));
+    }
   }
   tris
 }
@@ -4892,23 +4928,40 @@ fn tessellate_cone(
 /// circles. `tessellate_cylinder` emits a quad per segment as the triangles
 /// `(a, b, c)` and `(a, c, d)`, with `a`/`d` on the first circle and `b`/`c`
 /// on the second — so the rim edges are `b→c` and `d→a`.
-fn cylinder_edge_flags(tri_count: usize) -> Vec<[bool; 3]> {
-  (0..tri_count)
-    .map(|i| {
-      if i % 2 == 0 {
-        [false, true, false]
-      } else {
-        [false, false, true]
-      }
-    })
-    .collect()
+/// `steps` is the number of longitudinal ring-pair segments and `n` the
+/// radial subdivision count `tessellate_cylinder` was built with; a
+/// subdivided cylinder's interior ring seams are not rims, only the first
+/// and last are. When `capped`, the `2 * n` fan triangles appended after
+/// the side triangles close both rims, each contributing its own rim edge.
+fn cylinder_edge_flags(steps: usize, n: usize, capped: bool) -> Vec<[bool; 3]> {
+  let mut flags =
+    Vec::with_capacity(steps * 2 * n + if capped { 2 * n } else { 0 });
+  for seg in 0..steps {
+    let is_first = seg == 0;
+    let is_last = seg == steps - 1;
+    for _ in 0..n {
+      flags.push([false, is_last, false]);
+      flags.push([false, false, is_first]);
+    }
+  }
+  if capped {
+    flags.extend(std::iter::repeat_n([false, true, false], 2 * n));
+  }
+  flags
 }
 
 /// Which triangle edges of a tessellated cone lie on its base circle.
-/// `tessellate_cone` emits one triangle `(tip, b1, b2)` per segment, so the
-/// rim edge is always `b1→b2`.
-fn cone_edge_flags(tri_count: usize) -> Vec<[bool; 3]> {
-  vec![[false, true, false]; tri_count]
+/// `tessellate_cone` emits one lateral triangle `(tip, b1, b2)` per segment,
+/// so the rim edge is always `b1→b2`; when `capped`, each is followed by a
+/// base-disk fan triangle whose own rim edge is `b2→b1`.
+fn cone_edge_flags(n: usize, capped: bool) -> Vec<[bool; 3]> {
+  if capped {
+    std::iter::repeat_n([[false, true, false], [false, true, false]], n)
+      .flatten()
+      .collect()
+  } else {
+    vec![[false, true, false]; n]
+  }
 }
 
 /// The world-coordinate bounding box of a set of 3D primitives, as
@@ -5474,9 +5527,15 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           radius,
           style,
         } => {
-          let tris = tessellate_cylinder(p1, p2, *radius);
+          let tris = tessellate_cylinder(p1, p2, *radius, style.capped);
           if style.edge_color.is_some() {
-            holed_boundaries = cylinder_edge_flags(tris.len());
+            let len = ((p2.x - p1.x).powi(2)
+              + (p2.y - p1.y).powi(2)
+              + (p2.z - p1.z).powi(2))
+            .sqrt();
+            let steps = side_subdivision_steps(len, *radius, CYLINDER_SIDES);
+            holed_boundaries =
+              cylinder_edge_flags(steps, CYLINDER_SIDES, style.capped);
           }
           (tris, style)
         }
@@ -5486,9 +5545,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           radius,
           style,
         } => {
-          let tris = tessellate_cone(p1, p2, *radius);
+          let tris = tessellate_cone(p1, p2, *radius, style.capped);
           if style.edge_color.is_some() {
-            holed_boundaries = cone_edge_flags(tris.len());
+            holed_boundaries = cone_edge_flags(CYLINDER_SIDES, style.capped);
           }
           (tris, style)
         }
