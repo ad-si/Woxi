@@ -1964,6 +1964,11 @@ fn evaluate_function_call_ast_inner(
     return crate::functions::polyhedron_data::polyhedron_data_ast(args);
   }
 
+  // Knot data function
+  if name == "KnotData" && !args.is_empty() {
+    return crate::functions::knot_data::knot_data_ast(args);
+  }
+
   // The legacy `PolyhedronOperations` package: Truncate/Stellate a
   // graphics expression's Polygon faces, corner-cutting or pyramiding
   // each one to a ratio (`Needs["PolyhedronOperations`"]` has nothing to
@@ -2556,6 +2561,34 @@ fn evaluate_function_call_ast_inner(
     crate::FUNC_OPTIONS
       .with(|m| m.borrow_mut().insert(head.clone(), current.clone()));
     return Ok(Expr::List(current.into()));
+  }
+
+  // SetSystemOptions[name -> value] / SetSystemOptions["cat" -> "sub" -> value]
+  // / SetSystemOptions[{rule, …}] resets internal system options. Woxi has no
+  // internal system options of its own for any of them to actually change, so
+  // the call is otherwise a no-op; it normalizes the given rule(s) into a flat
+  // list and returns that, matching how the function is documented and always
+  // used in practice (as a statement whose result is discarded with `;`).
+  if name == "SetSystemOptions" && !args.is_empty() {
+    let mut rules: Vec<Expr> = Vec::new();
+    let mut all_rules = true;
+    for arg in args {
+      let items: Vec<&Expr> = match arg {
+        Expr::List(items) => items.iter().collect(),
+        other => vec![other],
+      };
+      for item in items {
+        match item {
+          Expr::Rule { .. } | Expr::RuleDelayed { .. } => {
+            rules.push(item.clone());
+          }
+          _ => all_rules = false,
+        }
+      }
+    }
+    if all_rules {
+      return Ok(Expr::List(rules.into()));
+    }
   }
 
   // Circle[] defaults to Circle[{0, 0}]

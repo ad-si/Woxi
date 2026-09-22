@@ -411,6 +411,15 @@ pub struct ManipulateState {
   /// groups these by `parent` and reassembles them into one list binding
   /// instead of colliding same-named ones.
   list_elements: Vec<(String, String, usize)>,
+  /// `Bookmarks -> {"name" :> assignment, …}`: a menu of named presets,
+  /// `(label, assignment code)`. Selecting one runs [`apply_bookmark`],
+  /// which is [`apply_button_action`] under a different name — the
+  /// assignment code is arbitrary code run against the live bindings, same
+  /// as a `Button`'s action.
+  ///
+  /// [`apply_bookmark`]: Self::apply_bookmark
+  /// [`apply_button_action`]: Self::apply_button_action
+  pub bookmarks: Vec<(String, String)>,
   /// Whether each control is currently on screen, recomputed on every
   /// re-evaluation from `control_visible` against the live bindings.
   pub control_is_visible: Vec<bool>,
@@ -493,6 +502,7 @@ impl ManipulateState {
       control_is_enabled,
       control_visible,
       list_elements: spec.list_elements,
+      bookmarks: spec.bookmarks,
       control_is_visible,
       reeval_pending: 0,
       reeval_applied: 0,
@@ -550,6 +560,18 @@ impl ManipulateState {
       }
     }
     self.reevaluate();
+  }
+
+  /// Run the `idx`-th `Bookmarks` preset's assignment code — the same
+  /// mechanism as [`apply_button_action`], just addressed by position in
+  /// `bookmarks` instead of by an already-known action string. Does nothing
+  /// if `idx` is out of range.
+  ///
+  /// [`apply_button_action`]: Self::apply_button_action
+  pub fn apply_bookmark(&mut self, idx: usize) {
+    if let Some((_, action)) = self.bookmarks.get(idx) {
+      self.apply_button_action(&action.clone());
+    }
   }
 
   /// Whether any control row is a `Trigger` (which carries its own
@@ -1424,5 +1446,131 @@ mod tests {
     // with each other, and both with the value the body actually bound.
     assert_eq!(n_ctrl.current_code(), "3");
     assert_eq!(n_state, Some("3"));
+  }
+
+  /// Checked a randomly-sampled Wolfram Demonstrations Project notebook
+  /// ("Mixing and Infection in a Two-Group SIS Model") whose control panel
+  /// lays its two sliders out as `Row[{Style[…], Spacer[…],
+  /// Column[{Control[…], Control[…]}]}]` instead of bare top-level specs,
+  /// and whose `Initialization`-defined helper calls `NSolve[{eqns…, 0 <
+  /// v1 < 1, 0 < v2 < 1}, Reals]` — the domain-only, *no explicit variable
+  /// list* form of `NSolve`/`Solve` that auto-detects the unknowns from the
+  /// equations. Independently written, not copied from any specific
+  /// Demonstration: different helper name, equations and preset values
+  /// throughout.
+  ///
+  /// Regression coverage for the `NSolve`/`Solve` domain-only form itself
+  /// (see the focused core-level tests in
+  /// `tests/interpreter_tests/algebra.rs`), plus `LineLegend`/
+  /// `LegendFunction`, `Darker`, `Bookmarks`, and `ControlPlacement ->
+  /// Top`, exercised together the way the Demonstration combines them.
+  #[test]
+  fn nested_row_column_layout_with_domain_only_nsolve_helper() {
+    let code = r#"Manipulate[
+      Module[{p1s, p2s},
+        {p1s, p2s} = Transpose[
+          Table[
+            If[a b > 1 || frac < 1 - (1 - a b)/(a + b - 2 a b),
+              EquilibriumFractions[a, b, frac],
+              {0, 0}
+            ],
+            {frac, 2/100, 1, 2/100}
+          ]
+        ];
+        ListPlot[{p2s, (p1s + p2s)/2, p1s},
+          DataRange -> {2, 100},
+          PlotStyle -> {Red, Darker[Green], Blue},
+          PlotLegends -> LineLegend[{"p2", "avg", "p1"},
+            LegendFunction -> (Framed[#, RoundingRadius -> 5] &)],
+          FrameLabel -> {"mixing (%)", None},
+          Frame -> True,
+          PlotLabel -> "equilibrium fractions",
+          ImageSize -> {520, 400}
+        ]
+      ],
+      Row[{
+        Style["rate ", Bold],
+        Spacer[20],
+        Column[{
+          Control[{{a, 0.5, "a"}, 0.01, 5, Appearance -> "Labeled"}],
+          Control[{{b, 2, "b"}, 1.01, 5, Appearance -> "Labeled"}]
+        }]
+      }],
+      ControlPlacement -> Top,
+      SaveDefinitions -> True,
+      Bookmarks -> {
+        "preset1" :> {a = 0.25, b = 2},
+        "preset2" :> {a = 1, b = 4}
+      },
+      Initialization :> (
+        EquilibriumFractions[a_, b_, frac_] := Module[{v1, v2},
+          First[
+            {v1, v2} /. NSolve[
+              {
+                (1 - v1) a (frac v2 + (1 - frac) v1) - v1 == 0,
+                (1 - v2) b (frac v1 + (1 - frac) v2) - v2 == 0,
+                0 < v1 < 1, 0 < v2 < 1
+              },
+              Reals
+            ]
+          ]
+        ]
+      )
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = ManipulateState::from_expr(&expr)
+      .expect("the nested Row/Column layout should build a ManipulateState");
+
+    assert_eq!(
+      state.error, None,
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert_eq!(
+      state.control_placement,
+      ControlPlacement::Top,
+      "ControlPlacement -> Top must survive into the widget state"
+    );
+
+    // The Style["rate ", Bold] heading and the two sliders pulled out of
+    // the nested Row/Column layout must all show up as controls.
+    let names: Vec<&str> = state.controls.iter().map(|c| c.name()).collect();
+    assert_eq!(names, ["", "a", "b"]);
+
+    assert!(
+      state.graphics_handle.is_some(),
+      "the equilibrium-fraction plot should render"
+    );
+
+    // A `Solve`/`NSolve` call that failed to auto-detect its variables
+    // under the domain-only two-argument form prints Wolfram-style
+    // `Tag::name:` error messages instead of solving, and the body ends up
+    // unable to plot real numbers — re-run the body directly and check its
+    // SVG output carries none of those markers, nor a bare unevaluated
+    // `NSolve[…]`/`Solve[…]` call.
+    let bindings: Vec<(String, String)> = state
+      .controls
+      .iter()
+      .filter(|c| c.binds_variable())
+      .map(|c| (c.name().to_string(), c.current_code()))
+      .chain(state.state.iter().cloned())
+      .collect();
+    let svg = woxi::with_scoped_globals(&bindings, || {
+      woxi::interpret_with_stdout(&state.body)
+    })
+    .expect("body evaluates")
+    .graphics
+    .expect("the equilibrium-fraction plot should render");
+    for marker in [
+      "::svars", "::reps", "::nmtx", "::shape", "NSolve[", "Solve[",
+    ] {
+      assert!(
+        !svg.contains(marker),
+        "the domain-only NSolve inside the Manipulate must actually solve, \
+         not leak an error/unevaluated call into the plot ({marker:?} \
+         found): {svg}"
+      );
+    }
   }
 }

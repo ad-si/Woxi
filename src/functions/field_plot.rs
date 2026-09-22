@@ -210,6 +210,14 @@ struct DensityContourOptions {
   svg_height: u32,
   full_width: bool,
   color_function: Option<String>,
+  /// `ColorFunction -> f` for an `f` that isn't a recognized named gradient
+  /// (a pure function, a user-defined symbol, …): applied per-cell via the
+  /// evaluator, same as `ArrayPlot`'s `color_function_expr`.
+  color_function_expr: Option<Expr>,
+  /// `ColorFunctionScaling -> False` passes each cell's raw value to
+  /// `color_function_expr`; the default (`True`) passes the value rescaled
+  /// to the 0..1 range of the sampled data.
+  color_function_scaling: bool,
   contours: ContourSpec,
   contour_shading: bool,
   /// `Mesh -> n`: how many mesh lines each mesh function contributes.
@@ -234,6 +242,17 @@ struct DensityContourOptions {
   region_function: Option<Expr>,
 }
 
+impl DensityContourOptions {
+  /// `(expr, scaling)` for `scaled_color`/`band_color`, when `ColorFunction`
+  /// was given a pure function or symbol rather than a named gradient.
+  fn cf_expr(&self) -> Option<(&Expr, bool)> {
+    self
+      .color_function_expr
+      .as_ref()
+      .map(|e| (e, self.color_function_scaling))
+  }
+}
+
 /// Parse ImageSize, ColorFunction, Contours, ContourShading, Mesh,
 /// MeshFunctions, ContourStyle, FrameLabel and Epilog options.
 fn parse_density_contour_options(
@@ -250,6 +269,8 @@ fn parse_density_contour_options(
   let mut frame_labels = crate::functions::plot::FrameLabels::default();
   let mut epilog: Vec<Expr> = Vec::new();
   let mut region_function: Option<Expr> = None;
+  let mut color_function_expr: Option<Expr> = None;
+  let mut color_function_scaling = true;
   for opt in &args[start..] {
     if let Expr::Rule {
       pattern,
@@ -268,6 +289,16 @@ fn parse_density_contour_options(
         "ColorFunction" => {
           if let Some(s) = color_function_scheme_name(replacement) {
             color_function = Some(s);
+          } else if !matches!(replacement, Expr::Identifier(v) if v == "Automatic" || v == "None")
+          {
+            color_function_expr = Some(replacement.clone());
+          }
+        }
+        "ColorFunctionScaling" => {
+          if let Expr::Identifier(v) = replacement
+            && v == "False"
+          {
+            color_function_scaling = false;
           }
         }
         "Contours" => match replacement {
@@ -346,6 +377,8 @@ fn parse_density_contour_options(
     svg_height,
     full_width,
     color_function,
+    color_function_expr,
+    color_function_scaling,
     contours,
     contour_shading,
     mesh,
@@ -546,13 +579,40 @@ fn density_gradient(t: f64) -> (u8, u8, u8) {
 }
 
 /// Map a scaled value t in [0,1] through the plot's color function:
-/// a named gradient when ColorFunction -> "Name" was given, otherwise
-/// the default density gradient.
-fn scaled_color(t: f64, color_function: Option<&str>) -> (u8, u8, u8) {
-  match color_function {
-    Some(name) => apply_named_color_function(name, t),
-    None => density_gradient(t),
+/// a named gradient when ColorFunction -> "Name" was given, a pure function
+/// or user-defined symbol applied per-cell when `color_function_expr` was
+/// given instead, otherwise the default density gradient. `raw` is the
+/// cell's unscaled value, passed to `color_function_expr` in place of `t`
+/// when `ColorFunctionScaling -> False`.
+fn scaled_color(
+  t: f64,
+  raw: f64,
+  color_function: Option<&str>,
+  color_function_expr: Option<(&Expr, bool)>,
+) -> (u8, u8, u8) {
+  if let Some(name) = color_function {
+    return apply_named_color_function(name, t);
   }
+  if let Some((cf_expr, scaling)) = color_function_expr {
+    let arg = if scaling { t } else { raw };
+    let call = Expr::CurriedCall {
+      func: Box::new(cf_expr.clone()),
+      args: vec![Expr::Real(arg)],
+    };
+    if let Some(c) = evaluate_expr_to_expr(&call)
+      .ok()
+      .and_then(|r| parse_color(&r))
+    {
+      return (
+        (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+        (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+        (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+      );
+    }
+    let gray = ((1.0 - t) * 255.0).round() as u8;
+    return (gray, gray, gray);
+  }
+  density_gradient(t)
 }
 
 /// Robust value range over a set of function samples — an IQR fence
@@ -621,6 +681,7 @@ fn embed_grid_image(
   w: f64,
   h: f64,
   color_function: Option<&str>,
+  color_function_expr: Option<(&Expr, bool)>,
 ) {
   use base64::Engine as _;
   let cols = grid.len();
@@ -632,8 +693,12 @@ fn embed_grid_image(
   for (i, col) in grid.iter().enumerate() {
     for (j, &v) in col.iter().enumerate() {
       let px = if v.is_finite() {
-        let (r, g, b) =
-          scaled_color(scale_value(v, v_min, v_max), color_function);
+        let (r, g, b) = scaled_color(
+          scale_value(v, v_min, v_max),
+          v,
+          color_function,
+          color_function_expr,
+        );
         image::Rgba([r, g, b, 255])
       } else {
         image::Rgba([0, 0, 0, 0])
@@ -899,13 +964,19 @@ fn band_color(
   v_min: f64,
   v_max: f64,
   color_function: Option<&str>,
+  color_function_expr: Option<(&Expr, bool)>,
 ) -> (u8, u8, u8) {
   let mut bounds = Vec::with_capacity(levels.len() + 2);
   bounds.push(v_min);
   bounds.extend_from_slice(levels);
   bounds.push(v_max);
   let mid = f64::midpoint(bounds[band], bounds[band + 1]);
-  scaled_color(scale_value(mid, v_min, v_max), color_function)
+  scaled_color(
+    scale_value(mid, v_min, v_max),
+    mid,
+    color_function,
+    color_function_expr,
+  )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -920,6 +991,7 @@ fn render_contour_bands(
   cell_w: f64,
   cell_h: f64,
   color_function: Option<&str>,
+  color_function_expr: Option<(&Expr, bool)>,
 ) {
   let Some(rows) = grid.first().map(std::vec::Vec::len) else {
     return;
@@ -934,8 +1006,14 @@ fn render_contour_bands(
   let seam = RESOLUTION_SCALE as f64;
 
   for region in contour_band_regions(grid, levels) {
-    let (r, g, b) =
-      band_color(region.band, levels, v_min, v_max, color_function);
+    let (r, g, b) = band_color(
+      region.band,
+      levels,
+      v_min,
+      v_max,
+      color_function,
+      color_function_expr,
+    );
     let fill = format!("rgb({r},{g},{b})");
     let device = |(fx, fy): (f64, f64)| {
       (plot_x0 + fx * cell_w, plot_y0 + (n_cj - fy) * cell_h)
@@ -975,6 +1053,7 @@ fn contour_band_primitives(
   y_min: f64,
   y_max: f64,
   color_function: Option<&str>,
+  color_function_expr: Option<(&Expr, bool)>,
 ) -> Vec<Expr> {
   let cols = grid.len();
   let rows = grid.first().map_or(0, std::vec::Vec::len);
@@ -986,7 +1065,14 @@ fn contour_band_primitives(
   let mut items: Vec<Expr> = Vec::new();
   let mut last_color: Option<(u8, u8, u8)> = None;
   for region in contour_band_regions(grid, levels) {
-    let color = band_color(region.band, levels, v_min, v_max, color_function);
+    let color = band_color(
+      region.band,
+      levels,
+      v_min,
+      v_max,
+      color_function,
+      color_function_expr,
+    );
     if last_color != Some(color) {
       let rgb = call(
         "RGBColor",
@@ -1349,6 +1435,7 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     area.plot_w,
     area.plot_h,
     opts.color_function.as_deref(),
+    opts.cf_expr(),
   );
   push_frame(
     &mut svg,
@@ -1504,6 +1591,7 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       y_min,
       y_max,
       opts.color_function.as_deref(),
+      opts.cf_expr(),
     );
     if !bands.is_empty() {
       structure_items.push(Expr::List(bands.into()));
@@ -1622,6 +1710,7 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       cell_w,
       cell_h,
       opts.color_function.as_deref(),
+      opts.cf_expr(),
     );
   }
   // Mesh lines sit under the contours: they are the level curves of the
@@ -2420,6 +2509,7 @@ pub fn stream_density_plot_ast(
   // Density background
   embed_grid_image(
     &mut svg, &mag_grid, v_min, v_max, plot_x0, plot_y0, plot_w, plot_h, None,
+    None,
   );
 
   // Streamlines
@@ -2539,6 +2629,7 @@ pub fn list_density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     area.plot_w,
     area.plot_h,
     opts.color_function.as_deref(),
+    opts.cf_expr(),
   );
   push_frame(
     &mut svg,
@@ -2838,6 +2929,7 @@ pub fn list_contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       cell_w,
       cell_h,
       opts.color_function.as_deref(),
+      opts.cf_expr(),
     );
   }
   let (contour_color, contour_weight) = opts.contour_stroke();
@@ -2879,8 +2971,9 @@ enum ArrayCell {
 /// The gradient scheme name of a `ColorFunction` option value: a bare
 /// string (`"TemperatureMap"`), a `ColorData["TemperatureMap"]` call, or
 /// the structured `ColorDataFunction["TemperatureMap", …]` form the call
-/// evaluates to.
-fn color_function_scheme_name(val: &Expr) -> Option<String> {
+/// evaluates to. Shared with `ListPlot3D` (`plot3d.rs`), which resolves its
+/// own `ColorFunction` option the same way rather than re-parsing it.
+pub(crate) fn color_function_scheme_name(val: &Expr) -> Option<String> {
   match val {
     Expr::String(s) => Some(s.clone()),
     Expr::FunctionCall { name, args }
@@ -2900,7 +2993,9 @@ fn color_function_scheme_name(val: &Expr) -> Option<String> {
 /// Schemes with stored `ColorData` control points (see
 /// `chart::sample_named_gradient`) interpolate those — matching
 /// wolframscript exactly; the rest fall back to analytic approximations.
-fn apply_named_color_function(name: &str, t: f64) -> (u8, u8, u8) {
+/// Shared with `ListPlot3D` (`plot3d.rs`), which colors its surface by the
+/// same named gradients instead of duplicating this table.
+pub(crate) fn apply_named_color_function(name: &str, t: f64) -> (u8, u8, u8) {
   let t = t.clamp(0.0, 1.0);
   if let Some((r, g, b)) =
     crate::functions::chart::sample_named_gradient(name, t)

@@ -4583,6 +4583,33 @@ mod batch_unevaluated_wrappers_2 {
       "{{2, 3}, {2, 3}}"
     );
   }
+  // Regression: `coords` need not be a flat list of points — e.g.
+  // `Cases[graphics, Polygon[x_] :> x, Infinity]` (as a Wolfram
+  // Demonstrations definition notebook builds a texture's vertex list from)
+  // gives a list of polygons' vertex lists, one level deeper than a flat
+  // point list. Both functions must flatten through that extra nesting
+  // rather than misreading each polygon as a single "point" whose
+  // coordinates are its vertices.
+  #[test]
+  fn coordinate_bounding_box_nested_point_lists() {
+    assert_eq!(
+      interpret(
+        "CoordinateBoundingBox[{{{0, 0}, {1, 0}, {1, 1}}, {{2, 2}, {3, 2}, {3, 3}}}]"
+      )
+      .unwrap(),
+      "{{0, 0}, {3, 3}}"
+    );
+  }
+  #[test]
+  fn coordinate_bounds_nested_point_lists() {
+    assert_eq!(
+      interpret(
+        "CoordinateBounds[{{{0, 0}, {1, 0}, {1, 1}}, {{2, 2}, {3, 2}, {3, 3}}}]"
+      )
+      .unwrap(),
+      "{{0, 3}, {0, 3}}"
+    );
+  }
   #[test]
   fn glaisher_symbolic() {
     assert_eq!(interpret("Glaisher").unwrap(), "Glaisher");

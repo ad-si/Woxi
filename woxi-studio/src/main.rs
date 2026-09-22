@@ -342,6 +342,10 @@ enum Message {
   /// A `Button[…]` control row was pressed; run its action code.
   /// (cell_idx, ctrl_idx)
   ManipulateButtonPressed(usize, usize),
+  /// A `Bookmarks` preset was picked from the widget's bookmark menu; run
+  /// its assignment code. (cell_idx, bookmark_idx — indexes
+  /// `ManipulateState::bookmarks`, not `controls`)
+  ManipulateBookmarkSelected(usize, usize),
   /// Swallow an interaction with a disabled control (its `Enabled` condition
   /// is currently `False`) without changing any state.
   Noop,
@@ -1942,6 +1946,15 @@ impl WoxiStudio {
         {
           let action = action.clone();
           state.apply_button_action(&action);
+        }
+        Task::none()
+      }
+
+      Message::ManipulateBookmarkSelected(cell_idx, bookmark_idx) => {
+        if let Some(editor) = self.cell_editors.get_mut(cell_idx)
+          && let Some(state) = editor.manipulate_state.as_mut()
+        {
+          state.apply_bookmark(bookmark_idx);
         }
         Task::none()
       }
@@ -4515,6 +4528,29 @@ fn render_manipulate_widget<'a>(
     }
   }
 
+  // A `Bookmarks` menu: a dropdown of named presets that jump the controls
+  // to preset values when selected. Indexed by position (not label text) so
+  // two presets sharing a label stay individually reachable, the same
+  // reasoning as `PopupChoice` for a `PopupMenu` display element.
+  if !state.bookmarks.is_empty() {
+    let items: Vec<PopupChoice> = state
+      .bookmarks
+      .iter()
+      .enumerate()
+      .map(|(index, (label, _))| PopupChoice {
+        index,
+        label: label.clone(),
+      })
+      .collect();
+    let on_select = move |chosen: PopupChoice| {
+      Message::ManipulateBookmarkSelected(cell_idx, chosen.index)
+    };
+    let picker = pick_list(items, None::<PopupChoice>, on_select)
+      .placeholder("Bookmarks")
+      .width(iced::Length::Shrink);
+    controls_col = controls_col.push(row![picker].align_y(Center));
+  }
+
   // An animated widget (Animate / ListAnimate / Animator) gets a play/pause
   // toggle that starts in the playing state (Wolfram's default
   // AnimationRunning -> True). It stays visible under Appearance -> None so
@@ -5175,11 +5211,24 @@ fn play_audio(
 /// Whether a stored Output cell holds a FrontEnd dynamic-widget dump — the
 /// `DynamicModuleBox[…]` box form Mathematica saves for a live Manipulate.
 /// Such text is meaningless outside the Wolfram FrontEnd.
+///
+/// A deployed Demonstration (`Deployed->True`, as every published Wolfram
+/// Demonstrations Project notebook is saved) wraps the dump in an extra
+/// `StyleBox[…, "Manipulate", Deployed->True, …]` between the `TagBox` and
+/// the `DynamicModuleBox`, so the wrapper heads have to be peeled off
+/// rather than matched as one fixed prefix.
 fn is_dynamic_box_dump(output: &str) -> bool {
-  let t = output.trim_start();
-  t.starts_with("DynamicModuleBox[")
-    || t.starts_with("TagBox[DynamicModuleBox[")
-    || t.starts_with("DynamicBox[")
+  let mut t = output.trim_start();
+  loop {
+    let rest = t
+      .strip_prefix("TagBox[")
+      .or_else(|| t.strip_prefix("StyleBox["));
+    match rest {
+      Some(rest) => t = rest.trim_start(),
+      None => break,
+    }
+  }
+  t.starts_with("DynamicModuleBox[") || t.starts_with("DynamicBox[")
 }
 
 /// Evaluate (and drain) the Input-cell code accumulated ahead of a stored
@@ -7028,6 +7077,51 @@ fn strip_svg_wrapper(svg: &str) -> &str {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  /// A notebook saved from the desktop FrontEnd can have its compiled
+  /// `Manipulate\`ManipulateBoxes[…]`'s own `"Variables" :> {…}` clause
+  /// disagree with the outer `DynamicModuleBox[{…}, …]`'s live variable
+  /// list: moving a slider updates the outer list immediately, but the
+  /// inner compiled box structure is only whatever was true when it was
+  /// last recompiled, so a Demonstration whose control was moved off its
+  /// declared default (and never causes a recompile) saves a dump where
+  /// the two disagree. As part of a scheduled QA routine, Woxi Studio was
+  /// tested against a randomly sampled Wolfram Demonstration notebook
+  /// ("Dieterici Equation of State") whose saved dump was exactly such a
+  /// case: the outer list held the slider's real last position, 33, while
+  /// the inner clause still held the spec's declared default, 10.
+  /// Regression: `extract_saved_manipulate_variables` read only the inner
+  /// clause, so the widget reopened at the stale default instead of where
+  /// the slider was actually left.
+  #[test]
+  fn stored_manipulate_prefers_outer_module_state_over_stale_compiled_variables()
+   {
+    let dump = "DynamicModuleBox[{$CellContext`n$$ = 33., \
+      Typeset`show$$ = True, $CellContext`n$79129$$ = 0}, \
+      DynamicBox[Manipulate`ManipulateBoxes[\n\
+      1, StandardForm,\n\
+      \"Variables\" :> {$CellContext`n$$ = 10},\n\
+      \"ControllerVariables\" :> {\n\
+        Hold[$CellContext`n$$, $CellContext`n$79129$$, 0]},\n\
+      \"OtherVariables\" :> {Typeset`show$$},\n\
+      \"Body\" :> $CellContext`n$$,\n\
+      \"Specifications\" :> {{$CellContext`n$$, 1, 100}},\n\
+      \"Options\" :> {}],\n\
+      DynamicModuleValues:>{}]]";
+    let state =
+      instantiate_stored_manipulate("Manipulate[n, {n, 1, 100}]", dump)
+        .unwrap();
+    match &state.controls[..] {
+      [manipulate::ControlState::Continuous { current, .. }] => {
+        assert_eq!(
+          *current, 33.0,
+          "must recover the outer DynamicModuleBox's live value, not the \
+           inner compiled box's stale one"
+        );
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+  }
 
   /// `label_run_spans` must carry a `Style[…]`-given color and bold weight
   /// into the rendered spans, not just italic. Regression: every call site
@@ -9254,6 +9348,14 @@ Manipulate[
     ));
     assert!(is_dynamic_box_dump("TagBox[DynamicModuleBox[{…}, …], …]"));
     assert!(is_dynamic_box_dump("DynamicBox[…]"));
+    // A deployed Demonstration (every published Wolfram Demonstrations
+    // Project notebook) wraps the dump in an extra
+    // `StyleBox[…, "Manipulate", Deployed->True]` between the `TagBox`
+    // and the `DynamicModuleBox`.
+    assert!(is_dynamic_box_dump(
+      "TagBox[StyleBox[DynamicModuleBox[{…}, …], \"Manipulate\", \
+       Deployed->True, StripOnInput->False], Manipulate`InterpretManipulate[1]]"
+    ));
     // Ordinary outputs are untouched.
     assert!(!is_dynamic_box_dump("42"));
     assert!(!is_dynamic_box_dump("{1, 2, 3}"));
@@ -9577,6 +9679,207 @@ Cell[BoxData[
       }
       other => panic!("unexpected controls: {other:?}"),
     }
+  }
+
+  /// A notebook saved from a *published* Wolfram Demonstrations Project
+  /// entry (`Deployed->True`, which every published Demonstration is) has
+  /// an extra `StyleBox[…, "Manipulate", Deployed->True]` between the
+  /// Output cell's `TagBox` and its `DynamicModuleBox` dump, unlike a
+  /// notebook merely saved from the desktop FrontEnd. `is_dynamic_box_dump`
+  /// used to only strip a bare `TagBox[DynamicModuleBox[`, so this extra
+  /// layer made it treat the dump as ordinary text instead of hiding it and
+  /// re-instantiating the widget from the Input cell's source.
+  #[test]
+  fn deployed_demonstration_output_with_stylebox_wrapper_opens_live() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[
+ ListPlot[Table[Exp[-decay k] Sin[freq k], {k, 0, steps}], Joined -> True],
+ {{steps, 40, \"steps\"}, 10, 80, 1},
+ {{freq, 0.5, \"frequency\"}, 0.1, 2},
+ {{decay, 0.05, \"decay\"}, 0, 0.2}]"], "Input"],
+Cell[BoxData[
+ TagBox[
+  StyleBox[
+   DynamicModuleBox[{$CellContext`decay$$ = 0.05, $CellContext`freq$$ =
+    0.5, $CellContext`steps$$ = 40, Typeset`show$$ = True},
+    DynamicBox[Manipulate`ManipulateBoxes[
+     1, StandardForm,
+      "Variables" :> {$CellContext`decay$$ = 0.05, $CellContext`freq$$ =
+        0.5, $CellContext`steps$$ = 40},
+      "Body" :> ListPlot[
+        Table[Exp[-$CellContext`decay$$ k] Sin[$CellContext`freq$$ k], \
+{k, 0, $CellContext`steps$$}], Joined -> True],
+      "Specifications" :> {
+        {{$CellContext`steps$$, 40, "steps"}, 10, 80, 1},
+        {{$CellContext`freq$$, 0.5, "frequency"}, 0.1, 2},
+        {{$CellContext`decay$$, 0.05, "decay"}, 0, 0.2}},
+      "Options" :> {},
+      "DefaultOptions" :> {}]],
+    DynamicModuleValues:>{}], "Manipulate",
+   Deployed->True,
+   StripOnInput->False],
+  Manipulate`InterpretManipulate[1]]], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect(
+        "a Deployed->True Demonstration's stored widget must instantiate \
+         on load, not fall back to a broken dump echo",
+      );
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(widget.graphics_handle.is_some(), "the plot must draw");
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Continuous { name: steps, .. },
+        manipulate::ControlState::Continuous { name: freq, .. },
+        manipulate::ControlState::Continuous { name: decay, .. },
+      ] => {
+        assert_eq!(steps, "steps");
+        assert_eq!(freq, "freq");
+        assert_eq!(decay, "decay");
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+  }
+
+  // Checked a randomly-sampled Wolfram Demonstrations Project notebook (an
+  // implicit-surface explorer picking between two quartic families) against
+  // Woxi Studio's Manipulate pipeline. Self-authored, construct-equivalent
+  // body — its own surface equations and a `render` helper, not the
+  // notebook's own formula or wording, which is copyrighted — exercising
+  // the general shape: a separate `InitializationCell` defining the render
+  // helper, a `SaveDefinitions -> True` Manipulate whose Output cell is a
+  // `Deployed->True` `TagBox[StyleBox[DynamicModuleBox[…`, a canonicalizing
+  // `If[…, {a, b} = …, {b, a} = …]` swap before the body picks an equation
+  // with `Which`, a `ControlType -> PopupMenu` color choice, a boolean
+  // checkbox-shaped `{var, {True, False}}` row, a bold `Style[…]` heading
+  // and `Delimiter`s, and a `PaneSelector` control panel (keyed by a
+  // `Dynamic[…]`-driven mode variable) whose panes are `Column[…]`s mixing
+  // a heading with `Control[…]` rows — one pane offering a control the
+  // other doesn't, so that control's row must disappear when the panel
+  // switches away from it.
+  #[test]
+  fn demonstration_implicit_surface_pane_selector_control_panel_opens_live() {
+    let nb_src = r##"Notebook[{
+Cell[BoxData["render[eqn_, scale_, dense_, alpha_, hue_] := ContourPlot3D[eqn == 0, {x, -scale, scale}, {y, -scale, scale}, {z, -scale, scale}, PlotPoints -> If[dense, 12, 6], Mesh -> None, ContourStyle -> Directive[hue, Opacity[alpha]], ImageSize -> {80, 80}]"], "Input", InitializationCell->True],
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[
+ If[p^2 >= q^2, {r1, r2} = {p, q}, {r2, r1} = {p, q}];
+ eqA = (x^2 + y^2 + z^2 - t^2 + r1^2 - r2^2)^2 - 4 (r1 x - r2 t)^2 - 4 (r1^2 - r2^2) y^2;
+ eqB = (x^2 + y^2 + z^2 - 2 r2 z) (z - 2 r1) + 2 r1 y^2;
+ Which[mode == 1, render[eqA, scale, dense, alpha, hue], mode == 2, render[eqB, scale, dense, alpha, hue], True, Abort[]],
+ {{scale, 6, \"scale\"}, 1, 12, Appearance -> \"Labeled\"},
+ {{alpha, 0.7, \"opacity\"}, 0.3, 1, 0.1, Appearance -> \"Labeled\"},
+ {{hue, Green, \"hue\"}, {Red -> \"red\", Cyan -> \"blue\", Green -> \"green\"}, ControlType -> PopupMenu},
+ {{dense, False, \"refine\"}, {True, False}},
+ Delimiter,
+ Style[\"fix parameters\", Bold],
+ {{mode, 1, \"\"}, {1 -> \"standard\", 2 -> \"parabolic\"}},
+ Delimiter,
+ PaneSelector[{1 -> Column[{Style[\"standard\", Bold], Control[{{p, 3, \"p\"}, -5, 5, 0.1, Appearance -> \"Labeled\", ImageSize -> Tiny}], Control[{{q, 1, \"q\"}, -5, 5, 0.1, Appearance -> \"Labeled\", ImageSize -> Tiny}], Control[{{t, 2, \"t\"}, -5, 5, 0.1, Appearance -> \"Labeled\", ImageSize -> Tiny}]}], 2 -> Column[{Style[\"parabolic\", Bold], Control[{{p, 3, \"p\"}, -5, 5, 0.1, Appearance -> \"Labeled\", ImageSize -> Tiny}], Control[{{q, 1, \"q\"}, -5, 5, 0.1, Appearance -> \"Labeled\", ImageSize -> Tiny}]}]}, Dynamic[mode]],
+ ControlPlacement -> Left,
+ TrackedSymbols :> {p, q, t, scale, mode, dense, alpha, hue},
+ SaveDefinitions -> True
+]"], "Input"],
+Cell[BoxData[
+ TagBox[
+  StyleBox[
+   DynamicModuleBox[{$CellContext`p$$ = 3, $CellContext`q$$ = 1,
+     $CellContext`t$$ = 2, $CellContext`scale$$ = 6,
+     $CellContext`mode$$ = 1, $CellContext`hue$$ = RGBColor[0, 1, 0],
+     $CellContext`dense$$ = False, $CellContext`alpha$$ = 0.7},
+    DynamicBox[Manipulate`ManipulateBoxes[\[Ellipsis]]]],
+   "Manipulate",
+   Deployed->True,
+   StripOnInput->False],
+  Manipulate`InterpretManipulate[1]]], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let mut widget =
+      editors.into_iter().find_map(|e| e.manipulate_state).expect(
+        "a SaveDefinitions Demonstration with a separate initialization \
+         cell must instantiate on load",
+      );
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the render helper's ContourPlot3D must draw"
+    );
+
+    let names: Vec<&str> = widget
+      .controls
+      .iter()
+      .filter(|c| c.binds_variable())
+      .map(|c| c.name())
+      .collect();
+    assert_eq!(
+      names,
+      vec!["scale", "alpha", "hue", "dense", "mode", "p", "q", "t"],
+      "every top-level control and every PaneSelector-pane Control[…] must \
+       be built, in spec order"
+    );
+
+    // Pane 1 (mode == 1, the default) shows all three of its controls.
+    let t_idx = widget
+      .controls
+      .iter()
+      .position(|c| c.name() == "t")
+      .unwrap();
+    assert!(
+      widget.control_is_visible[t_idx],
+      "pane 1's `t` control must be on screen while mode == 1"
+    );
+
+    // Switching the mode Setter to pane 2 (which has no `t` control) must
+    // hide `t`'s row, even though `t` stays bound so the (now-unreachable)
+    // `eqA` branch would still evaluate if picked again.
+    let mode_idx = widget
+      .controls
+      .iter()
+      .position(|c| c.name() == "mode")
+      .unwrap();
+    match &mut widget.controls[mode_idx] {
+      manipulate::ControlState::Discrete {
+        values,
+        current_index,
+        ..
+      } => {
+        *current_index = values
+          .iter()
+          .position(|v| v == "2")
+          .expect("mode control must offer choice 2");
+      }
+      other => panic!("expected mode as a Discrete control, got {other:?}"),
+    }
+    widget.reevaluate();
+    assert!(
+      widget.error.is_none(),
+      "switching to the parabolic pane must still evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      !widget.control_is_visible[t_idx],
+      "pane 2 has no `t` control, so its row must disappear"
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the parabolic branch's ContourPlot3D must draw too"
+    );
   }
 
   /// A polar-curve viewer Demonstration downloaded the same way (a bare
@@ -22628,6 +22931,63 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`nmax$$ = 10}, DynamicBox[\[Ellipsis
     assert_eq!(state.text_output.as_deref(), Some("9"));
   }
 
+  /// A saved `ManipulateBoxes[…]` dump can carry Wolfram's explicit
+  /// control-layout idiom for a step-dependent widget: the same control
+  /// spec declared twice (at two different Specifications positions) so a
+  /// `PaneSelector` written as `Place[n]`/`Invisible[Place[n]]` — not a
+  /// literal control spec — can swap which declared position is on screen,
+  /// e.g. a Demonstrations "position of C" slider that only makes sense
+  /// once a later step has placed the point it moves. Before this fix,
+  /// `pane_control_variables` only recognized a `Control[…]`/bare-variable
+  /// pane, so neither the visibility condition nor the same-name dedup
+  /// applied: the duplicate spec became a second, always-visible row
+  /// instead of one row that shows only when the step condition holds.
+  #[test]
+  fn place_referenced_pane_selector_collapses_duplicate_spec() {
+    let dump = "DynamicModuleBox[{$CellContext`step$$ = 1, \
+      $CellContext`angle$$ = 0}, \
+      DynamicBox[Manipulate`ManipulateBoxes[\n\
+      1, StandardForm, \n\
+      \"Body\" :> $CellContext`angle$$, \n\
+      \"Specifications\" :> {\
+        {{$CellContext`step$$, 1, \"step\"}, {1, 2, 3}, ControlPlacement -> 1}, \
+        {{$CellContext`angle$$, 0, \"angle\"}, 0, 1, ControlPlacement -> 2}, \
+        {{$CellContext`angle$$, 0, \"angle\"}, 0, 1, ControlPlacement -> 3}, \
+        Row[{Manipulate`Place[1], Spacer[15], \
+          PaneSelector[{True -> Manipulate`Place[2], \
+            False -> Invisible[Manipulate`Place[3]]}, \
+           Dynamic[$CellContext`step$$ > 1]]}]}, \n\
+      \"Options\" :> {}],\n\
+      DynamicModuleValues:>{}]]";
+    let mut state = instantiate_manipulate_from_box_dump(dump)
+      .expect("the reconstructed Manipulate must build a widget");
+    assert!(state.error.is_none(), "unexpected error: {:?}", state.error);
+    assert_eq!(
+      state
+        .controls
+        .iter()
+        .map(|c| c.name().to_string())
+        .collect::<Vec<_>>(),
+      vec!["step$$", "angle$$"],
+      "the duplicate angle$$ spec must collapse into a single row: {:?}",
+      state.controls
+    );
+    assert_eq!(
+      state.control_is_visible,
+      vec![true, false],
+      "step$$ starts at 1, so the Place-referenced angle$$ row must start \
+       hidden: {:?}",
+      state.control_is_visible
+    );
+    state.apply_saved_variables(&[("step$$".to_string(), "2".to_string())]);
+    assert_eq!(
+      state.control_is_visible,
+      vec![true, true],
+      "moving step$$ past 1 must reveal the angle$$ row: {:?}",
+      state.control_is_visible
+    );
+  }
+
   /// A `RevolutionPlot3D` curve given as `{fx, fy, fz}` — three components,
   /// not the plain `{r, z}` pair — is the Demonstrations idiom for a curve
   /// built from `Sqrt`/trig pieces that the author never bothered to reduce
@@ -26667,6 +27027,99 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`count$$ = 3, $CellContext`offset$$ 
     );
   }
 
+  /// Checked a randomly-sampled Wolfram Demonstrations Project notebook
+  /// ("Ways to Lace Your Shoes") against Woxi Studio's Manipulate pipeline.
+  /// Its shape: a single slider drives a permutation-derived picture and a
+  /// `Bookmarks -> {"name" :> {var = val, …}, …}` menu jumps straight to
+  /// named presets (there: named lacing patterns). Independently written,
+  /// not copied from the Demonstration: a star-polygon body and different
+  /// preset names/values, exercising the same `Bookmarks` mechanism with
+  /// presets that write one or two variables at once.
+  ///
+  /// Regression coverage for `Bookmarks`, which was entirely unimplemented
+  /// before this (silently accepted as an unrecognized option, with no
+  /// menu and no way to reach a preset): the presets must survive into
+  /// `ManipulateState::bookmarks`, and selecting one must move every
+  /// control it assigns and re-render the body.
+  #[test]
+  fn manipulate_bookmarks_jump_to_named_star_polygon_presets() {
+    let code = r#"Manipulate[
+      Graphics[
+        Line[Table[
+          {Cos[2 Pi Mod[i k, n]/n], Sin[2 Pi Mod[i k, n]/n]},
+          {i, 0, n}
+        ]],
+        PlotRange -> {{-1.2, 1.2}, {-1.2, 1.2}}
+      ],
+      {{n, 5, "points"}, 3, 12, 1, Appearance -> "Labeled"},
+      {{k, 2, "step"}, 1, 6, 1},
+      Bookmarks -> {
+        "pentagram" :> {n = 5, k = 2},
+        "hexagram" :> {n = 6, k = 2},
+        "triangle" :> {n = 3, k = 1}
+      }
+    ]"#;
+    let expr = woxi::interpret_to_expr(code)
+      .expect("Manipulate with Bookmarks should parse and hold");
+    let mut state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("the star-polygon Manipulate should build a ManipulateState");
+
+    assert_eq!(
+      state.error, None,
+      "the Line/Table body must evaluate cleanly: {:?}",
+      state.error
+    );
+    let labels: Vec<&str> = state
+      .bookmarks
+      .iter()
+      .map(|(label, _)| label.as_str())
+      .collect();
+    assert_eq!(
+      labels,
+      ["pentagram", "hexagram", "triangle"],
+      "the three named presets must survive into ManipulateState::bookmarks, \
+       in source order"
+    );
+
+    fn current(state: &manipulate::ManipulateState, name: &str) -> String {
+      state
+        .controls
+        .iter()
+        .find(|c| c.name() == name)
+        .unwrap_or_else(|| panic!("no control named {name}"))
+        .current_code()
+    }
+
+    // Selecting "triangle" writes both `n` and `k` at once, away from
+    // their authored defaults (5 and 2).
+    state.apply_bookmark(2);
+    assert_eq!(
+      current(&state, "n"),
+      "3",
+      "the bookmark's n = 3 must move the slider"
+    );
+    assert_eq!(
+      current(&state, "k"),
+      "1",
+      "the bookmark's k = 1 must move the slider"
+    );
+    assert_eq!(
+      state.error, None,
+      "the body must re-evaluate cleanly after the bookmark jump: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the picture must re-render at the bookmarked preset"
+    );
+
+    // An out-of-range index is a no-op rather than a panic or a silent
+    // corruption of the current controls.
+    state.apply_bookmark(99);
+    assert_eq!(current(&state, "n"), "3");
+    assert_eq!(current(&state, "k"), "1");
+  }
+
   /// Checked a randomly-sampled Wolfram Demonstrations Project notebook (a
   /// conic-section-by-polar-equation visualizer) against Woxi Studio's
   /// Manipulate pipeline. Its shape: eccentricity/semi-latus-rectum/rotation
@@ -27706,5 +28159,105 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`mode$$ = 1, $CellContext`k$$ = 2}, 
        u[a, b]/v[a, b], with the free parameter k bound to 2 — rather than \
        stay unevaluated"
     );
+  }
+
+  /// End-to-end regression for the shape of Demonstration that lets a
+  /// picker choose among several precomputed 3D solids: an
+  /// `Initialization :> (…)` block builds each solid as a `Show[…]` of
+  /// several `ParametricPlot3D[…]` pieces, and the body itself wraps a
+  /// `Switch[…]` over those precomputed solids in another `Show[…]` that
+  /// adds `PlotRange -> All` and `ImageSize -> {…}`. The discrete picker
+  /// spec pairs each numeric setting with a string label via `n -> "…"`
+  /// (`{{var, default}, {1 -> "…", 2 -> "…", …}}`), the same idiom as the
+  /// figure-picker test above but here choosing between whole `Graphics3D`
+  /// scenes rather than 2D `Polygon`s. Independently written here
+  /// (invented solids), not copied from any specific Demonstration, whose
+  /// code and text are copyrighted.
+  #[test]
+  fn solid_picker_notebook_opens_with_its_widget() {
+    let nb_src = r#"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[\nShow[Switch[solid, 1, discA, 2, discB, 3, discC], PlotRange -> All, ImageSize -> {300, 300}],\n{{solid, 1}, {1 -> \"cones\", 2 -> \"cylinders\", 3 -> \"prisms\"}},\nInitialization :> (\ndiscA = Show[ParametricPlot3D[{u, u^2, v}, {u, -1, 1}, {v, 0, 1}], ParametricPlot3D[{u, -u^2, v}, {u, -1, 1}, {v, 0, 1}], PlotRange -> All];\ndiscB = Show[ParametricPlot3D[{u, u^2, 0}, {u, -2, 2}], ParametricPlot3D[{Cos[t], Sin[t], 0}, {t, 0, 2 Pi}], PlotRange -> All];\ndiscC = Show[ParametricPlot3D[{u, v, u + v}, {u, -1, 1}, {v, -1, 1}], PlotRange -> All];\n),\nSaveDefinitions -> True\n]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`solid$$ = 1}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"#;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let mut widget = editors
+      .into_iter()
+      .find_map(|e| e.manipulate_state)
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the Show[Switch[…], PlotRange -> All, ImageSize -> …] body must render \
+       one of the precomputed Graphics3D solids"
+    );
+
+    let (values, value_labels) = match &widget.controls[..] {
+      [
+        manipulate::ControlState::Discrete {
+          name,
+          values,
+          value_labels,
+          current_index,
+          ..
+        },
+      ] => {
+        assert_eq!(name, "solid");
+        assert_eq!(*current_index, 0);
+        (values.clone(), value_labels.clone())
+      }
+      other => panic!("expected a single solid picker, got {other:?}"),
+    };
+    assert_eq!(values, ["1", "2", "3"]);
+    assert_eq!(value_labels, ["cones", "cylinders", "prisms"]);
+
+    // Each picker choice must render a distinct Graphics3D scene, and the
+    // `Initialization` helpers must stay in scope across re-renders.
+    let render = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      let code =
+        format!("{}; {}", w.initialization.as_deref().unwrap_or(""), w.body);
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&code)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the selected solid must render")
+    };
+    let mut renders = Vec::new();
+    for index in 0..3 {
+      match &mut widget.controls[0] {
+        manipulate::ControlState::Discrete { current_index, .. } => {
+          *current_index = index
+        }
+        other => panic!("expected the solid picker, got {other:?}"),
+      }
+      widget.reevaluate();
+      assert!(widget.error.is_none(), "solid {} errored", index + 1);
+      assert!(widget.graphics_handle.is_some());
+      renders.push(render(&widget));
+    }
+    for i in 0..3 {
+      for j in (i + 1)..3 {
+        assert_ne!(
+          renders[i],
+          renders[j],
+          "solids {} and {} must render differently",
+          i + 1,
+          j + 1
+        );
+      }
+    }
   }
 }

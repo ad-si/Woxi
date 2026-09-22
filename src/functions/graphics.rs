@@ -1112,11 +1112,41 @@ fn system_color_pair(name: &str) -> Option<(&'static str, &'static str)> {
   })
 }
 
+/// A graphics directive that carries no color of its own — the only other
+/// member a color can share a directive list with (`{Hue[h], Opacity[o]}`)
+/// for `parse_color` to still see a single color, rather than "a list of
+/// colors". Deliberately narrow: unlike `Opacity`, a `Dashing`/`Thickness`/
+/// `EdgeForm`/… does change how the shape draws (a dash pattern, a line
+/// width, an edge color), so a caller using `parse_color` to tell "just a
+/// solid color" apart from "a color plus other style" — `PlotStyle ->
+/// {Blue, Dashed, Thick}`, i.e. `{RGBColor[…], Dashing[…], Thickness[…]}`,
+/// choosing a solid-line renderer over the dashed one — must still see
+/// `None` for those, not have the directive silently dropped.
+fn is_non_color_graphics_directive(expr: &Expr) -> bool {
+  matches!(expr, Expr::FunctionCall { name, .. } if name == "Opacity")
+}
+
+/// `RGBColor`/`Hue` accept their channels either as separate arguments or
+/// packed into a single list (`RGBColor[{r, g, b}]`, as `Table[RGBColor[
+/// RandomReal[1, 3]], …]` produces) — unpack that form here so both call
+/// shapes share the same arity logic below.
+fn unpack_channels(args: &crate::ExprList) -> std::borrow::Cow<'_, [Expr]> {
+  if args.len() == 1
+    && let Expr::List(list) = &args[0]
+    && list.len() >= 2
+  {
+    std::borrow::Cow::Owned(list.to_vec())
+  } else {
+    std::borrow::Cow::Borrowed(args.as_slice())
+  }
+}
+
 pub(crate) fn parse_color(expr: &Expr) -> Option<Color> {
   match expr {
     Expr::Identifier(name) => named_color(name),
     Expr::FunctionCall { name, args } => match name.as_str() {
       "RGBColor" => {
+        let args = unpack_channels(args);
         if args.len() >= 3 {
           let r = expr_to_f64(&args[0])?;
           let g = expr_to_f64(&args[1])?;
@@ -1139,6 +1169,7 @@ pub(crate) fn parse_color(expr: &Expr) -> Option<Color> {
         }
       }
       "Hue" => {
+        let args = unpack_channels(args);
         if args.len() >= 3 {
           let h = expr_to_f64(&args[0])?;
           let s = expr_to_f64(&args[1])?;
@@ -1289,6 +1320,30 @@ pub(crate) fn parse_color(expr: &Expr) -> Option<Color> {
       }
       _ => None,
     },
+    // A list of graphics directives (`{Hue[h], Opacity[o]}`, as a custom
+    // `ColorFunction` commonly returns to fade a density plot toward the
+    // background) — the color is whichever directive parses as one; an
+    // `Opacity` doesn't apply to a solid raster fill and is ignored here,
+    // the same way `apply_directive` reads a style list one directive at a
+    // time. Only when every OTHER item is `Opacity`, and exactly one item
+    // is a color: a plain list of colors (`{White, Green}`, `Grid`'s
+    // alternating-row `Background` spec) is not a single color and must
+    // stay `None`, or a caller distinguishing the two (e.g. one color vs.
+    // a repeating pattern) would silently collapse it to its first entry.
+    Expr::List(items) if items.len() >= 2 => {
+      let mut found: Option<Color> = None;
+      for item in items {
+        if let Some(c) = parse_color(item) {
+          if found.is_some() {
+            return None;
+          }
+          found = Some(c);
+        } else if !is_non_color_graphics_directive(item) {
+          return None;
+        }
+      }
+      found
+    }
     _ => None,
   }
 }
@@ -1382,6 +1437,53 @@ pub(crate) fn line_legend_svg(args: &[Expr]) -> Option<String> {
       "Row",
       vec![Expr::List(
         vec![line_item, Expr::String(" ".to_string()), label.clone()].into(),
+      )],
+    ));
+  }
+  if entries.is_empty() {
+    return None;
+  }
+  column_to_svg(&[Expr::List(entries.into())])
+}
+
+/// `SwatchLegend[colors, labels, opts…]` draws a colored square next to
+/// each label — the front end's typeset form of a legend keyed by fill
+/// color rather than by line style (see [`line_legend_svg`] for the
+/// `LineLegend` counterpart).
+pub(crate) fn swatch_legend_svg(args: &[Expr]) -> Option<String> {
+  if args.len() < 2 {
+    return None;
+  }
+  let Expr::List(colors) = &args[0] else {
+    return None;
+  };
+  let Expr::List(labels) = &args[1] else {
+    return None;
+  };
+  if colors.is_empty() || labels.is_empty() {
+    return None;
+  }
+
+  let swatch = 14.0_f64;
+  let mut entries: Vec<Expr> = Vec::new();
+  for (label, color_expr) in labels.iter().zip(colors.iter()) {
+    let color = parse_color(color_expr).unwrap_or(Color::new(0.0, 0.0, 0.0));
+    let swatch_svg = format!(
+      "<svg width=\"{swatch}\" height=\"{swatch}\" viewBox=\"0 0 {swatch} {swatch}\" xmlns=\"http://www.w3.org/2000/svg\"><rect x=\"0.5\" y=\"0.5\" width=\"{inner}\" height=\"{inner}\" fill=\"{color}\" stroke=\"black\" stroke-width=\"1\"/></svg>",
+      inner = swatch - 1.0,
+      color = color.to_svg_rgb(),
+    );
+    let swatch_item = Expr::Graphics {
+      svg: swatch_svg,
+      is_3d: false,
+      source: None,
+      head: None,
+      structure: None,
+    };
+    entries.push(call(
+      "Row",
+      vec![Expr::List(
+        vec![swatch_item, Expr::String(" ".to_string()), label.clone()].into(),
       )],
     ));
   }
@@ -2302,6 +2404,108 @@ fn collect_primitives(
       let _ = name;
     }
     _ => {}
+  }
+}
+
+/// Primitive heads whose (first) argument is a point/point-list, so their
+/// integer contents are `GraphicsComplex` indices rather than data to leave
+/// alone — the set `Normal[GraphicsComplex[…]]` and 3D `GraphicsComplex`
+/// rendering both need to recognize.
+const POINT_TAKING_PRIMITIVES: &[&str] = &[
+  "Point",
+  "Line",
+  "Polygon",
+  "Triangle",
+  "Arrow",
+  "BezierCurve",
+  "BSplineCurve",
+  "FilledCurve",
+  "JoinedCurve",
+  "Tube",
+  "Sphere",
+  "Simplex",
+];
+
+/// `Normal[GraphicsComplex[pts, data]]`: substitute each integer index in
+/// `data` with its (exact, symbolic) coordinate list from `pts`, keeping
+/// `data`'s own structure intact — Wolfram's `Normal` only "substitutes
+/// coordinates to give an ordinary list of graphics primitives and
+/// directives", it does not split a multi-face `Polygon[{face1, face2, …}]`
+/// into one `Polygon` per face. Unlike `resolve_graphics_complex_indices`,
+/// this keeps coordinates as exact `Expr`s (e.g. `Sqrt[5]`) instead of
+/// lowering to `f64`, and works for points of any dimension, not just 2D.
+pub(crate) fn graphics_complex_to_normal_form(
+  pts: &[Expr],
+  data: &Expr,
+) -> Expr {
+  let substituted = substitute_complex_indices(pts, data);
+  match substituted {
+    Expr::List(_) => substituted,
+    other => Expr::List(vec![other].into()),
+  }
+}
+
+/// Replace bare integer indices with their coordinates wherever a
+/// [`POINT_TAKING_PRIMITIVES`] primitive expects a point argument;
+/// recurse structurally everywhere else so directives and nested
+/// primitives elsewhere in the tree (e.g. inside `{RGBColor[…], Polygon[…]}`)
+/// are reached without treating unrelated integers as indices.
+fn substitute_complex_indices(pts: &[Expr], expr: &Expr) -> Expr {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if POINT_TAKING_PRIMITIVES.contains(&name.as_str()) =>
+    {
+      let new_args: Vec<Expr> = args
+        .iter()
+        .enumerate()
+        .map(|(i, a)| {
+          if i == 0 {
+            substitute_indices_in_points(pts, a)
+          } else {
+            substitute_complex_indices(pts, a)
+          }
+        })
+        .collect();
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args.into(),
+      }
+    }
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args
+        .iter()
+        .map(|a| substitute_complex_indices(pts, a))
+        .collect::<Vec<_>>()
+        .into(),
+    },
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(|a| substitute_complex_indices(pts, a))
+        .collect::<Vec<_>>()
+        .into(),
+    ),
+    _ => expr.clone(),
+  }
+}
+
+/// Replace every 1-based integer index in a (possibly nested) point
+/// argument with its coordinate list from `pts`; non-integer leaves
+/// (already-explicit coordinates) pass through unchanged.
+fn substitute_indices_in_points(pts: &[Expr], expr: &Expr) -> Expr {
+  match expr {
+    Expr::Integer(n) if *n >= 1 && (*n as usize) <= pts.len() => {
+      pts[*n as usize - 1].clone()
+    }
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(|e| substitute_indices_in_points(pts, e))
+        .collect::<Vec<_>>()
+        .into(),
+    ),
+    _ => expr.clone(),
   }
 }
 
@@ -11541,15 +11745,31 @@ pub(crate) fn option_name_value(
     Expr::Identifier(name) | Expr::Constant(name) => name.as_str(),
     _ => return None,
   };
-  if delayed {
+  let value: std::borrow::Cow<'_, Expr> = if delayed {
     // `:>` holds its right-hand side until the option is used — which is
     // now, so evaluate it against the current bindings.
-    let value = evaluate_expr_to_expr(replacement)
+    let evaluated = evaluate_expr_to_expr(replacement)
       .unwrap_or_else(|_| replacement.clone());
-    Some((name, std::borrow::Cow::Owned(value)))
+    std::borrow::Cow::Owned(evaluated)
   } else {
-    Some((name, std::borrow::Cow::Borrowed(replacement)))
+    std::borrow::Cow::Borrowed(replacement)
+  };
+  // `Dynamic[expr]` means "expr, tracked live for the front end" — outside
+  // an interactive session (a static SVG/PNG export, or a Manipulate
+  // widget's one-shot re-render) that's just expr's current value, the same
+  // way `collect_primitives` already unwraps a `Dynamic[…]` primitive.
+  if let Expr::FunctionCall {
+    name: fname,
+    args: dargs,
+  } = value.as_ref()
+    && fname == "Dynamic"
+    && !dargs.is_empty()
+  {
+    let inner =
+      evaluate_expr_to_expr(&dargs[0]).unwrap_or_else(|_| dargs[0].clone());
+    return Some((name, std::borrow::Cow::Owned(inner)));
   }
+  Some((name, value))
 }
 
 /// Extract the option name from a Rule pattern (e.g. Identifier("ImageSize") -> "ImageSize")
@@ -12647,11 +12867,24 @@ fn annotation_contains_dynamic(expr: &Expr) -> bool {
 fn annotation_contains_place(expr: &Expr) -> bool {
   match expr {
     Expr::FunctionCall { name, args } => {
-      name == "Place" || args.iter().any(annotation_contains_place)
+      is_place_head(name) || args.iter().any(annotation_contains_place)
     }
     Expr::List(items) => items.iter().any(annotation_contains_place),
     _ => false,
   }
+}
+
+/// Whether a `FunctionCall`'s head is Wolfram's explicit-layout `Place[n]`
+/// marker. A notebook's own Input-cell source and a recovered
+/// `"Specifications"` dump (see [`reconstruct_manipulate_from_box_dump`])
+/// spell it differently: hand-written source almost always gives the bare
+/// name, while a FrontEnd-saved dump keeps it fully qualified as
+/// `` Manipulate`Place ``. Both must be recognized — a check for only one
+/// spelling misses the other's `Place[n]` references entirely.
+///
+/// [`reconstruct_manipulate_from_box_dump`]: crate::notebook::reconstruct_manipulate_from_box_dump
+fn is_place_head(name: &str) -> bool {
+  name == "Place" || name == "Manipulate`Place"
 }
 
 /// Peel a display-only `Invisible[expr]` wrapper, returning the content it
@@ -12904,6 +13137,20 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
     // same as when it is Legended's second argument.
     Expr::FunctionCall { name, args } if name == "LineLegend" => {
       line_legend_svg(args)?
+    }
+    // A bare `SwatchLegend[…]` cell (not wrapped in `Legended`) is a
+    // color-swatch legend key a Demonstration placed beside its picture —
+    // drawn as filled squares, the same as when it is Legended's second
+    // argument.
+    Expr::FunctionCall { name, args } if name == "SwatchLegend" => {
+      swatch_legend_svg(args)?
+    }
+    // A bare `Animate[…]` cell draws its first frame (see
+    // `animate_snapshot_svg`), the same as when it sits inside a `Pane`.
+    Expr::FunctionCall { name, args }
+      if name == "Animate" && args.len() >= 2 =>
+    {
+      animate_snapshot_svg(args)?
     }
     // As above, a display wrapper that resolves to a picture is drawn
     // rather than printed as source.
@@ -19077,6 +19324,13 @@ pub struct ManipulateSpec {
   /// sibling's current value into one list bound to the parent, instead of
   /// several same-named bindings colliding.
   pub list_elements: Vec<(String, String, usize)>,
+  /// `Bookmarks -> {"name" :> assignment, …}`: a menu of named presets. Each
+  /// entry is `(label, assignment code)`, where the assignment code is
+  /// arbitrary code (typically `var = value` or a list of several such
+  /// assignments) that is run against the live bindings — the same
+  /// mechanism as a `Button`'s `action` — when the preset is selected, then
+  /// the body re-evaluates against whatever variables it changed.
+  pub bookmarks: Vec<(String, String)>,
 }
 
 /// Where a Manipulate's control panel sits relative to its output, from the
@@ -19354,6 +19608,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   let mut appearance_none = false;
   let mut tracked_symbols: Option<Vec<String>> = None;
   let mut control_placement = ControlPlacement::default();
+  let mut bookmarks: Vec<(String, String)> = Vec::new();
   // Compound (non-symbol) control variables such as `Subscript[signal, 1]`
   // cannot be bound by name; each is renamed to a synthesized plain symbol,
   // and every occurrence in the body (and related code fragments) is
@@ -19364,13 +19619,20 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   // flatten into their items so each inner control becomes its own row, and
   // a `Control[spec, opts…]` wrapper unwraps to its ordinary variable
   // specification so it parses through the standard path.
+  // `Place[n]` in a custom layout template refers to the control declared
+  // at the nth Specifications argument (1-indexed, matching `args[1..]`) —
+  // used below (via `pane_control_variables`) to resolve a `PaneSelector`
+  // pane written as `Place[n]`/`Invisible[Place[n]]` rather than a literal
+  // control spec.
+  let place_map: Vec<Option<String>> =
+    args[1..].iter().map(control_spec_variable).collect();
   let mut arg_items: Vec<Expr> =
     Vec::with_capacity(args.len().saturating_sub(1));
   for spec in &args[1..] {
     // A `PaneSelector` argument shows one pane's controls at a time; the
     // flattened list holds every pane's, so each pane's controls also pick
     // up the condition under which they are on screen.
-    collect_pane_visibility(spec, &mut control_visible);
+    collect_pane_visibility(spec, &place_map, &mut control_visible);
     match control_group_items(spec) {
       Some(items) => arg_items.extend(items),
       None => arg_items.push(spec.clone()),
@@ -19378,7 +19640,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   }
   let arg_items: Vec<Expr> =
     arg_items.into_iter().map(unwrap_control_wrapper).collect();
-  let pane_governed_names = pane_or_tab_governed_names(&args[1..]);
+  let pane_governed_names = pane_or_tab_governed_names(&args[1..], &place_map);
   // A `ControlType -> …` given to the Manipulate itself sets the type of every
   // control that does not choose one; push it into the specs now that they are
   // flattened, so they parse through the single per-spec path below.
@@ -19510,6 +19772,32 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "False")
       {
         animation_running = false;
+      }
+      // `Bookmarks -> {"name" :> assignment, …}`: a menu of named presets,
+      // each holding the code that jumps the controls to that preset (the
+      // same shape as a `ButtonBar` rule, just carried as an option instead
+      // of a control).
+      if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Bookmarks")
+        && let Expr::List(items) = replacement.as_ref()
+      {
+        for item in items {
+          let (Expr::Rule {
+            pattern: label_pat,
+            replacement: action,
+          }
+          | Expr::RuleDelayed {
+            pattern: label_pat,
+            replacement: action,
+          }) = item
+          else {
+            continue;
+          };
+          let label_runs = manipulate_label_runs(label_pat, false);
+          bookmarks.push((
+            flatten_label_runs(&label_runs),
+            crate::syntax::expr_to_input_form(action),
+          ));
+        }
       }
       // `TrackedSymbols :> {a, b}` narrows re-evaluation to those
       // variables; a single symbol may be given bare. `All` / `Full` /
@@ -20036,6 +20324,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     tracking,
     control_placement,
     list_elements,
+    bookmarks,
   })
 }
 
@@ -20720,6 +21009,24 @@ fn unwrap_dynamic_module_locals(
   }
 }
 
+/// Whether `e` is a bare `Control[…]` call, optionally wrapped in a single
+/// `Dynamic[…]` (the per-item idiom `Dynamic@Control@{…}`). Used to tell a
+/// `Dynamic`-wrapped `Row`/`Column`/`Grid` that is purely a group of
+/// controls (flatten it) from one that lays out other display elements —
+/// buttons, spacers, styled text — alongside or instead of controls (keep
+/// it as a single display element).
+fn is_bare_control_call(e: &Expr) -> bool {
+  match e {
+    Expr::FunctionCall { name, args }
+      if name == "Dynamic" && args.len() == 1 =>
+    {
+      is_bare_control_call(&args[0])
+    }
+    Expr::FunctionCall { name, .. } => name == "Control",
+    _ => false,
+  }
+}
+
 /// The flattened control items of a `Row[…]`/`Column[…]`/`Grid[…]`
 /// Manipulate argument that lays several controls out in one row (the
 /// Wolfram Demonstrations pattern `Row[{Control[…], Spacer[20],
@@ -20782,6 +21089,31 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
   }
   if !contains_control(spec) {
     return None;
+  }
+  // `Dynamic[Column[{Control[…], Control[…], …}]]` (the Demonstrations
+  // idiom for a group of controls — e.g. one `ColorSetter` per face — that
+  // is wrapped in `Dynamic` for live layout updates but laid out via a
+  // nested `Row`/`Column`/`Grid` rather than a bare list) recurses into
+  // that container the same way `Dynamic[{…}]` does. This only fires when
+  // *every* item is a bare `Control[…]` (optionally itself `Dynamic`-
+  // wrapped) — a mixed layout such as `Dynamic[Column[{Row[{Button[…],
+  // Spacer[…], "label"}]}]]` (a Demonstrations caption with stepper
+  // buttons) is a display element, not a control panel, and must keep
+  // falling through to the display path below.
+  if name == "Dynamic"
+    && let Expr::FunctionCall {
+      name: inner_name,
+      args: inner_args,
+    } = &args[0]
+    && matches!(
+      inner_name.as_str(),
+      "Row" | "Column" | "Grid" | "TabView" | "PaneSelector"
+    )
+    && let Some(Expr::List(inner_items)) = inner_args.first()
+    && !inner_items.is_empty()
+    && inner_items.iter().all(is_bare_control_call)
+  {
+    return control_group_items(&args[0]);
   }
   let Expr::List(items) = &args[0] else {
     return None;
@@ -20940,14 +21272,26 @@ fn expand_conditional_control_items(
 /// are or-ed together. Only the outermost `PaneSelector` of an argument is
 /// honoured — a pane nested inside another pane keeps its parent's
 /// condition rather than gaining its own.
-fn collect_pane_visibility(spec: &Expr, out: &mut Vec<(String, String)>) {
+///
+/// `place_map` resolves a pane written as `Manipulate\`Place[n]` (the
+/// explicit-layout idiom, e.g. a Demonstration whose slider only makes
+/// sense for some steps: `PaneSelector[{True -> Place[2], False ->
+/// Invisible[Place[3]]}, Dynamic[cond]]` swaps between two identical specs
+/// for the same variable declared at Specifications positions 2 and 3)
+/// back to the variable declared at that 1-indexed Specifications position
+/// — see `pane_control_variables`.
+fn collect_pane_visibility(
+  spec: &Expr,
+  place_map: &[Option<String>],
+  out: &mut Vec<(String, String)>,
+) {
   // A `PaneSelector` may sit inside a `Grid`'s row list (the Demonstrations
   // idiom of a custom Grid-based control panel) — descend into a bare list
   // of items the same way a layout container's args are walked below, or a
   // `PaneSelector` nested that way is never found.
   if let Expr::List(items) = spec {
     for item in items {
-      collect_pane_visibility(item, out);
+      collect_pane_visibility(item, place_map, out);
     }
     return;
   }
@@ -20957,7 +21301,7 @@ fn collect_pane_visibility(spec: &Expr, out: &mut Vec<(String, String)>) {
   if name != "PaneSelector" {
     // The `PaneSelector` may sit inside a layout container.
     for arg in args {
-      collect_pane_visibility(arg, out);
+      collect_pane_visibility(arg, place_map, out);
     }
     return;
   }
@@ -20984,7 +21328,7 @@ fn collect_pane_visibility(spec: &Expr, out: &mut Vec<(String, String)>) {
       selector,
       crate::syntax::expr_to_input_form(pattern)
     );
-    for var in pane_control_variables(replacement) {
+    for var in pane_control_variables(replacement, place_map) {
       match out.iter_mut().find(|(n, _)| *n == var) {
         Some((_, existing)) => *existing = format!("{existing} || {cond}"),
         None => out.push((var, cond.clone())),
@@ -21001,10 +21345,17 @@ fn collect_pane_visibility(spec: &Expr, out: &mut Vec<(String, String)>) {
 /// list) — must still collapse to a single row; see the merge check where
 /// this is used, alongside `collect_pane_visibility` which computes the
 /// same panes' *display* condition for the row that does get built.
+///
+/// `place_map` is as in `collect_pane_visibility`.
 fn pane_or_tab_governed_names(
   args: &[Expr],
+  place_map: &[Option<String>],
 ) -> std::collections::HashSet<String> {
-  fn walk(e: &Expr, out: &mut std::collections::HashSet<String>) {
+  fn walk(
+    e: &Expr,
+    place_map: &[Option<String>],
+    out: &mut std::collections::HashSet<String>,
+  ) {
     match e {
       Expr::FunctionCall { name, args } => {
         if (name == "PaneSelector" || name == "TabView")
@@ -21014,12 +21365,12 @@ fn pane_or_tab_governed_names(
             if let Expr::Rule { replacement, .. }
             | Expr::RuleDelayed { replacement, .. } = pane
             {
-              out.extend(pane_control_variables(replacement));
+              out.extend(pane_control_variables(replacement, place_map));
             }
           }
         }
         for a in args {
-          walk(a, out);
+          walk(a, place_map, out);
         }
       }
       // A `PaneSelector`/`TabView` may sit inside a `Row[{…}]`/`Column[{…}]`
@@ -21028,7 +21379,7 @@ fn pane_or_tab_governed_names(
       // function call's own arguments, or a pane nested that way is missed.
       Expr::List(items) => {
         for it in items {
-          walk(it, out);
+          walk(it, place_map, out);
         }
       }
       _ => {}
@@ -21036,18 +21387,44 @@ fn pane_or_tab_governed_names(
   }
   let mut out = std::collections::HashSet::new();
   for a in args {
-    walk(a, &mut out);
+    walk(a, place_map, &mut out);
   }
   out
 }
 
 /// The control variables a `PaneSelector` pane declares: the variable of
 /// every `Control[…]` in it, plus — when the pane *is* a bare variable
-/// specification — that spec's own variable.
-fn pane_control_variables(pane: &Expr) -> Vec<String> {
-  fn walk(e: &Expr, out: &mut Vec<String>) {
+/// specification — that spec's own variable, plus — when the pane is a
+/// `Manipulate\`Place[n]` reference — the variable declared at the nth
+/// Specifications position in `place_map` (`None` when that position
+/// declares no control, e.g. a layout template argument, in which case the
+/// reference contributes nothing).
+///
+/// Anything under an `Invisible[…]` wrapper contributes nothing at all —
+/// Wolfram's explicit-layout idiom pairs a real `Place[n]` in one pane with
+/// `Invisible[Place[n]]` in another to swap the same control's visibility
+/// (e.g. a Demonstrations slider that only makes sense once a later step
+/// has drawn what it moves), and `collect_pane_visibility` ORs together
+/// every pane that declares a variable to build the condition under which
+/// it is on screen — a pane that deliberately hides it must not contribute
+/// to that union, or the control would read as visible in every pane
+/// instead of hidden in this one.
+fn pane_control_variables(
+  pane: &Expr,
+  place_map: &[Option<String>],
+) -> Vec<String> {
+  fn walk(e: &Expr, place_map: &[Option<String>], out: &mut Vec<String>) {
     match e {
+      Expr::FunctionCall { name, .. } if name == "Invisible" => {}
       Expr::FunctionCall { name, args } => {
+        if is_place_head(name)
+          && let [Expr::Integer(n)] = args.as_slice()
+          && *n >= 1
+          && let Some(Some(var)) = place_map.get(*n as usize - 1)
+        {
+          out.push(var.clone());
+          return;
+        }
         if name == "Control"
           && let Some(spec) = args.first()
           && let Some(var) = control_spec_variable(spec)
@@ -21056,12 +21433,12 @@ fn pane_control_variables(pane: &Expr) -> Vec<String> {
           return;
         }
         for a in args {
-          walk(a, out);
+          walk(a, place_map, out);
         }
       }
       Expr::List(items) => {
         for it in items {
-          walk(it, out);
+          walk(it, place_map, out);
         }
       }
       _ => {}
@@ -21071,7 +21448,7 @@ fn pane_control_variables(pane: &Expr) -> Vec<String> {
   if let Some(var) = control_spec_variable(pane) {
     out.push(var);
   } else {
-    walk(pane, &mut out);
+    walk(pane, place_map, &mut out);
   }
   out
 }
@@ -21137,6 +21514,29 @@ fn manipulate_bound_expr(expr: &Expr) -> (&Expr, bool) {
     }
     other => (other, false),
   }
+}
+
+/// `Animate[expr, {var, min, max, …}, opts…]` nested inside a static
+/// display — a Demonstration's body composing one into a `Pane`/`Grid`
+/// rather than `Animate` being the whole Manipulate/cell output that
+/// [`extract_manipulate_spec`] turns into a live widget — renders as a
+/// snapshot of its first frame: `expr` evaluated with the animation
+/// variable bound to its initial value, the same picture Wolfram's front
+/// end shows before the embedded animator starts playing.
+pub(crate) fn animate_snapshot_svg(args: &[Expr]) -> Option<String> {
+  if args.len() < 2 {
+    return None;
+  }
+  let bindings =
+    manipulate_initial_value_bindings(std::slice::from_ref(&args[1]));
+  if bindings.is_empty() {
+    return None;
+  }
+  let rendered =
+    crate::with_scoped_globals(&bindings, || evaluate_expr_to_expr(&args[0]));
+  let evaluated = rendered.ok()?;
+  let svg = crate::evaluator::expr_to_svg(&evaluated);
+  (!svg.is_empty()).then_some(svg)
 }
 
 /// Re-read a Manipulate's control/state variables after evaluating its body
@@ -21492,6 +21892,7 @@ pub fn extract_list_animate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     tracking: Vec::new(),
     control_placement: ControlPlacement::default(),
     list_elements: Vec::new(),
+    bookmarks: Vec::new(),
   })
 }
 
@@ -21577,6 +21978,7 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
     tracking: Vec::new(),
     control_placement: ControlPlacement::default(),
     list_elements: Vec::new(),
+    bookmarks: Vec::new(),
   })
 }
 
@@ -21704,6 +22106,7 @@ pub fn extract_locator_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     tracking: Vec::new(),
     control_placement: ControlPlacement::default(),
     list_elements: Vec::new(),
+    bookmarks: Vec::new(),
   })
 }
 
@@ -21758,6 +22161,7 @@ pub fn extract_click_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     tracking: Vec::new(),
     control_placement: ControlPlacement::default(),
     list_elements: Vec::new(),
+    bookmarks: Vec::new(),
   })
 }
 
@@ -21824,6 +22228,7 @@ pub fn extract_control_spec(expr: &Expr) -> Option<ManipulateSpec> {
     tracking: Vec::new(),
     control_placement: ControlPlacement::default(),
     list_elements: Vec::new(),
+    bookmarks: Vec::new(),
   })
 }
 
@@ -26408,6 +26813,38 @@ mod manipulate_dynamic_control_list_tests {
     assert!(s.displays.is_empty());
   }
 
+  /// `Dynamic[Column[{Control[…], …}]]` (the Demonstrations idiom for a
+  /// group of controls — e.g. one `ColorSetter` per face — laid out via a
+  /// nested `Column` rather than a bare list, wrapped in `Dynamic` for live
+  /// layout updates) flattens the same way `Dynamic[{…}]` does, instead of
+  /// the whole group falling through to a static, non-interactive display
+  /// of the literal `Control[…]` expressions.
+  #[test]
+  fn dynamic_wrapped_column_of_controls_flattens_to_controls() {
+    let s = spec(
+      "Manipulate[x + y, Dynamic[Column[{Control[{{x, 0}, -1, 1}], \
+       Control[{{y, 0}, -1, 1}]}]]]",
+    );
+    assert_eq!(names(&s), vec!["x", "y"]);
+    assert!(s.displays.is_empty());
+  }
+
+  /// The same flattening applies when the controls are colour pickers
+  /// (`{{col, Red, ""}, Red}` — a bare colour domain equal to the initial
+  /// colour draws a full `ColorSetter`), the exact shape the Wolfram
+  /// Demonstrations Project's "Toroidal Polyhedra" uses for its per-face
+  /// colour controls.
+  #[test]
+  fn dynamic_wrapped_column_of_color_controls_flattens_to_controls() {
+    let s = spec(
+      "Manipulate[col, Dynamic[Column[{Control[{{col, Red, \"\"}, Red, \
+       ImageSize -> Tiny}]}]]]",
+    );
+    assert_eq!(names(&s), vec!["col"]);
+    assert!(s.displays.is_empty());
+    assert!(matches!(&s.controls[0], ManipulateControl::Color { .. }));
+  }
+
   /// `Sequence@@If[cond, ctrlSpec, {}]` inside a Dynamic control list
   /// splices in the extra control when the condition — evaluated against
   /// the other controls' initial values — holds.
@@ -26578,6 +27015,38 @@ mod manipulate_dynamic_control_list_tests {
       }
       other => panic!("expected a Color control, got {other:?}"),
     }
+  }
+
+  /// `Bookmarks -> {"name" :> assignment, …}` parses into `spec.bookmarks`
+  /// as `(label, assignment code)` pairs, in source order, leaving the
+  /// ordinary controls untouched. Each assignment may set more than one
+  /// variable at once.
+  #[test]
+  fn bookmarks_option_parses_into_named_presets() {
+    let s = spec(
+      r#"Manipulate[Graphics[{Circle[{cx, cy}, r]}], \
+         {cx, -5, 5}, {cy, -5, 5}, {r, 1, 5}, \
+         Bookmarks -> { \
+           "origin" :> {cx = 0, cy = 0}, \
+           "big" :> {r = 5} \
+         }]"#,
+    );
+    assert_eq!(names(&s), vec!["cx", "cy", "r"]);
+    assert_eq!(
+      s.bookmarks,
+      vec![
+        ("origin".to_string(), "{cx = 0, cy = 0}".to_string()),
+        ("big".to_string(), "{r = 5}".to_string()),
+      ]
+    );
+  }
+
+  /// A `Bookmarks` menu with no matching option is simply absent —
+  /// `spec.bookmarks` stays empty rather than fabricating an entry.
+  #[test]
+  fn no_bookmarks_option_leaves_bookmarks_empty() {
+    let s = spec("Manipulate[Graphics[{Circle[{0, 0}, r]}], {r, 1, 5}]");
+    assert!(s.bookmarks.is_empty());
   }
 }
 

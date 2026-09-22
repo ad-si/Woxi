@@ -10595,6 +10595,38 @@ mod mathieu_s {
       "MathieuCPrime[a, q, z]"
     );
   }
+
+  // Regression: `Manipulate[Plot[Re[MathieuC[4ε, 2, z/2]], ...], {ε, -1, 2}]`
+  // (Wolfram Demonstrations "Band Spectrum in a Periodic Potential") needs
+  // MathieuC/MathieuCPrime to stay numeric for negative `a`. Their boundary
+  // condition `y(0) = 1, y'(0) = 0` never involves `√a`, unlike MathieuS's,
+  // so — unlike MathieuS — there is no reason to bail out for negative `a`.
+  #[test]
+  fn mathieu_c_negative_a_matches_cosh() {
+    let val = parse_real(&interpret("MathieuC[-2, 0, 1.5]").unwrap());
+    let expected = (2.0_f64.sqrt() * 1.5).cosh();
+    assert!(
+      (val - expected).abs() < 1e-9,
+      "MathieuC(-2, 0, 1.5): got {val}, expected {expected}"
+    );
+  }
+
+  #[test]
+  fn mathieu_c_prime_negative_a_matches_sinh_derivative() {
+    let val = parse_real(&interpret("MathieuCPrime[-2, 0, 1.5]").unwrap());
+    let sa = 2.0_f64.sqrt();
+    let expected = sa * (sa * 1.5).sinh();
+    assert!(
+      (val - expected).abs() < 1e-9,
+      "MathieuCPrime(-2, 0, 1.5): got {val}, expected {expected}"
+    );
+  }
+
+  #[test]
+  fn mathieu_c_negative_a_finite_for_nonzero_q() {
+    let val = parse_real(&interpret("MathieuC[-2, 1, 3.2]").unwrap());
+    assert!(val.is_finite(), "expected a finite real, got {val}");
+  }
 }
 
 mod riemann_siegel_z {

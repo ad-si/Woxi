@@ -1492,6 +1492,31 @@ fn face_indices(info: &PolyhedronInfo) -> Result<Expr, InterpreterError> {
   eval_wl(info.faces_src)
 }
 
+/// `"FaceCountRules"`: `{n -> count, …}`, the number of faces with each
+/// number of sides, one rule per distinct side count in ascending order.
+fn face_count_rules(info: &PolyhedronInfo) -> Result<Expr, InterpreterError> {
+  let faces = numeric_faces(info)?;
+  let mut counts: Vec<(usize, i128)> = Vec::new();
+  for face in &faces {
+    let sides = face.len();
+    match counts.iter_mut().find(|(n, _)| *n == sides) {
+      Some((_, count)) => *count += 1,
+      None => counts.push((sides, 1)),
+    }
+  }
+  counts.sort_unstable_by_key(|(n, _)| *n);
+  Ok(Expr::List(
+    counts
+      .into_iter()
+      .map(|(n, count)| Expr::Rule {
+        pattern: Box::new(Expr::Integer(n as i128)),
+        replacement: Box::new(Expr::Integer(count)),
+      })
+      .collect::<Vec<_>>()
+      .into(),
+  ))
+}
+
 /// `"Faces"`: the exact vertex coordinates with the faces as index lists,
 /// as `GraphicsComplex[coords, Polygon[indices]]` — the form Wolfram
 /// returns, so `data[[1]]` are the vertices and `data[[2, 1]]` the faces.
@@ -1582,6 +1607,7 @@ static PROPERTIES: &[&str] = &[
   "EdgeCount",
   "EdgeIndices",
   "FaceCount",
+  "FaceCountRules",
   "FaceIndices",
   "Faces",
   "Inradius",
@@ -1687,6 +1713,7 @@ pub fn polyhedron_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "Midradius" => eval_wl(info.midradius),
         "VertexCoordinates" => eval_wl(info.vertices_src),
         "EdgeIndices" => edge_indices(info),
+        "FaceCountRules" => face_count_rules(info),
         "FaceIndices" => face_indices(info),
         "Faces" => faces_complex(info),
         "Insphere" => insphere(info),

@@ -1405,6 +1405,92 @@ fn tick_values(val_min: f64, val_max: f64) -> Vec<f64> {
 /// Grid resolution for VectorPlot3D (N x N x N sample points).
 const VECTOR3D_GRID: usize = 7;
 
+/// `VectorStyle`'s per-field directives: the color to draw that field's
+/// arrows in, and the `Thickness`/`Arrowheads` sizes (fractions of the
+/// image width, same convention 2D `Graphics` directives use), each `None`
+/// when the directive list doesn't set it (falling back to the automatic
+/// default).
+#[derive(Clone, Copy, Default)]
+struct VecStyleSpec {
+  color: Option<(u8, u8, u8)>,
+  thickness_frac: Option<f64>,
+  arrowhead_frac: Option<f64>,
+}
+
+fn parse_vector_style_spec3d(expr: &Expr) -> VecStyleSpec {
+  let mut spec = VecStyleSpec::default();
+  let directives: Vec<Expr> = match expr {
+    Expr::List(items) => items.to_vec(),
+    other => vec![other.clone()],
+  };
+  for d in &directives {
+    if let Some(c) = crate::functions::graphics::parse_color(d) {
+      spec.color = Some((
+        (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+        (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+        (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+      ));
+      continue;
+    }
+    if let Expr::FunctionCall { name, args } = d {
+      if name == "Thickness" && args.len() == 1 {
+        if let Some(t) = try_eval_to_f64(&args[0]) {
+          spec.thickness_frac = Some(t);
+        }
+      } else if name == "Arrowheads"
+        && args.len() == 1
+        && let Some(a) = try_eval_to_f64(&args[0])
+      {
+        spec.arrowhead_frac = Some(a.abs());
+      }
+    }
+  }
+  spec
+}
+
+/// `VectorStyle -> style` (one style shared by every field) or `VectorStyle
+/// -> {style1, style2, …}` (one per field, matching a
+/// `VectorPlot3D[{field1, field2, …}, …]` overlay's field order).
+fn parse_vector_style3d(
+  expr: &Expr,
+  num_fields: usize,
+) -> Vec<Option<VecStyleSpec>> {
+  if num_fields > 1
+    && let Expr::List(items) = expr
+    && items.len() == num_fields
+    && items.iter().all(|i| matches!(i, Expr::List(_)))
+  {
+    return items
+      .iter()
+      .map(|i| Some(parse_vector_style_spec3d(i)))
+      .collect();
+  }
+  vec![Some(parse_vector_style_spec3d(expr)); num_fields]
+}
+
+/// `VectorPoints -> {{x1,y1,z1}, …}`: explicit sample points in place of the
+/// automatic grid.
+fn parse_vector_points3d(expr: &Expr) -> Option<Vec<(f64, f64, f64)>> {
+  let evaluated = evaluate_expr_to_expr(expr).ok()?;
+  let Expr::List(items) = &evaluated else {
+    return None;
+  };
+  let mut pts = Vec::with_capacity(items.len());
+  for item in items {
+    let Expr::List(coords) = item else {
+      return None;
+    };
+    if coords.len() != 3 {
+      return None;
+    }
+    let x = try_eval_to_f64(&coords[0])?;
+    let y = try_eval_to_f64(&coords[1])?;
+    let z = try_eval_to_f64(&coords[2])?;
+    pts.push((x, y, z));
+  }
+  Some(pts)
+}
+
 /// Evaluate a 3-component vector field {vx, vy, vz} at (x, y, z).
 fn evaluate_vector3d(
   body: &Expr,
@@ -1460,6 +1546,9 @@ pub fn vector_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut full_width = false;
   let mut show_axes = true;
   let mut vector_markers = "Arrow"; // "Arrow" or "Tube"
+  let mut vector_points: Option<Vec<(f64, f64, f64)>> = None;
+  let mut vector_scale: Option<f64> = None;
+  let mut vector_styles: Vec<Option<VecStyleSpec>> = vec![None; bodies.len()];
 
   for opt in &args[4..] {
     if let Expr::Rule {
@@ -1492,6 +1581,41 @@ pub fn vector_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             vector_markers = "Tube";
           }
         }
+        // `VectorPoints -> {{x1,y1,z1}, …}`: sample the field at exactly
+        // these points instead of an automatic grid — a Demonstration
+        // commonly builds a custom (often non-uniform) sample set with
+        // `Table`/`Flatten` to concentrate arrows where the field is
+        // interesting.
+        "VectorPoints" => {
+          if let Some(pts) = parse_vector_points3d(replacement) {
+            vector_points = Some(pts);
+          }
+        }
+        // `VectorScale -> s` (or `{smax, …}`, of which only the leading
+        // `smax` is used here): the longest vector's length as a fraction
+        // of the plot's overall width, overriding the automatic
+        // one-grid-cell-relative sizing below.
+        "VectorScale" => {
+          let first = match replacement.as_ref() {
+            Expr::List(items) => items.first().cloned(),
+            other => Some(other.clone()),
+          };
+          if let Some(v) = first.and_then(|e| {
+            evaluate_expr_to_expr(&e)
+              .ok()
+              .and_then(|r| try_eval_to_f64(&r))
+          }) {
+            vector_scale = Some(v);
+          }
+        }
+        // `VectorStyle -> {color, Thickness[t], Arrowheads[a]}` (one style
+        // for every field) or `{style1, style2, …}` (one per field, for a
+        // `VectorPlot3D[{field1, field2, …}, …]` overlay) — a Demonstration
+        // color-codes several overlaid fields (e.g. E, H and Poynting
+        // vectors) this way.
+        "VectorStyle" => {
+          vector_styles = parse_vector_style3d(replacement, bodies.len());
+        }
         _ => {}
       }
     }
@@ -1519,28 +1643,41 @@ pub fn vector_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut samples: Vec<VecSample> = Vec::new();
   let mut max_mag = 0.0_f64;
 
-  for (field_idx, body) in bodies.iter().enumerate() {
-    for i in 0..=grid_n {
-      let x = x_min + i as f64 * x_step;
-      for j in 0..=grid_n {
-        let y = y_min + j as f64 * y_step;
-        for k in 0..=grid_n {
-          let z = z_min + k as f64 * z_step;
-          if let Some((vx, vy, vz)) =
-            evaluate_vector3d(body, &xvar, &yvar, &zvar, x, y, z)
-          {
-            let mag = (vx * vx + vy * vy + vz * vz).sqrt();
-            max_mag = max_mag.max(mag);
-            samples.push(VecSample {
-              px: x,
-              py: y,
-              pz: z,
-              vx,
-              vy,
-              vz,
-              mag,
-              field_idx,
-            });
+  let mut sample_at =
+    |field_idx: usize, body: &Expr, x: f64, y: f64, z: f64| {
+      if let Some((vx, vy, vz)) =
+        evaluate_vector3d(body, &xvar, &yvar, &zvar, x, y, z)
+      {
+        let mag = (vx * vx + vy * vy + vz * vz).sqrt();
+        max_mag = max_mag.max(mag);
+        samples.push(VecSample {
+          px: x,
+          py: y,
+          pz: z,
+          vx,
+          vy,
+          vz,
+          mag,
+          field_idx,
+        });
+      }
+    };
+
+  if let Some(pts) = &vector_points {
+    for (field_idx, body) in bodies.iter().enumerate() {
+      for &(x, y, z) in pts {
+        sample_at(field_idx, body, x, y, z);
+      }
+    }
+  } else {
+    for (field_idx, body) in bodies.iter().enumerate() {
+      for i in 0..=grid_n {
+        let x = x_min + i as f64 * x_step;
+        for j in 0..=grid_n {
+          let y = y_min + j as f64 * y_step;
+          for k in 0..=grid_n {
+            let z = z_min + k as f64 * z_step;
+            sample_at(field_idx, body, x, y, z);
           }
         }
       }
@@ -1581,11 +1718,17 @@ pub fn vector_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  // Arrow scale: normalize so that the longest arrow fits roughly half a grid cell
+  // Arrow scale: normalize so that the longest arrow fits roughly half a
+  // grid cell, or — when `VectorScale -> s` was given — so the longest
+  // vector's full length is `s` times the plot's overall (normalized)
+  // width, matching Wolfram's documented meaning of the option.
   let cell_size = (2.0 / grid_n as f64)
     .min(2.0 / grid_n as f64)
     .min(2.0 * Z_SCALE / grid_n as f64);
-  let arrow_scale = cell_size * 0.4 / max_mag;
+  let arrow_scale = match vector_scale {
+    Some(s) => s * 2.0 / max_mag,
+    None => cell_size * 0.4 / max_mag,
+  };
 
   // Scale factors to convert data-space vector to normalized-space vector
   let sx = 2.0 / x_range_d;
@@ -1598,12 +1741,25 @@ pub fn vector_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     end: Point3D,
     depth: f64,
     color: (u8, u8, u8),
+    /// Line stroke width in px; `None` keeps the built-in default.
+    thickness_px: Option<f64>,
+    /// Arrowhead length in px (absolute, not relative to the arrow's own
+    /// length); `None` keeps the built-in relative sizing.
+    arrowhead_px: Option<f64>,
   }
 
   let camera = Camera::default();
   let mut arrows: Vec<ArrowData> = Vec::with_capacity(samples.len());
+  // Each arrow as a data-space `{color, Thickness[…]?, Arrowheads[…]?,
+  // Arrow[{p0, p1}]}` primitive group, so a `Show[VectorPlot3D[…],
+  // VectorPlot3D[…], Graphics3D[…]]` (a Demonstration overlaying several
+  // field arrows on a shared scene) merges them as real Graphics3D
+  // primitives sharing one camera/lighting, instead of stacking each
+  // call's own independently-projected picture.
+  let mut structure_items: Vec<Expr> = Vec::with_capacity(samples.len());
 
   let num_fields = bodies.len();
+  let image_extent = svg_width.max(svg_height) as f64;
   for s in &samples {
     if s.mag < 1e-15 {
       continue;
@@ -1626,24 +1782,79 @@ pub fn vector_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       z: center.z + dvz,
     };
 
-    // Color: use PLOT_COLORS for multiple fields, magnitude gradient for single
-    let color = if num_fields > 1 {
-      PLOT_COLORS[s.field_idx % PLOT_COLORS.len()]
-    } else {
-      let t = (s.mag / max_mag).clamp(0.0, 1.0);
-      (
-        (t * 200.0) as u8 + 50,
-        ((1.0 - t) * 150.0) as u8 + 50,
-        100_u8,
-      )
-    };
+    let style = vector_styles.get(s.field_idx).copied().flatten();
+
+    // Color: an explicit `VectorStyle` color wins; otherwise PLOT_COLORS
+    // for multiple fields, a magnitude gradient for a single one.
+    let color = style.and_then(|st| st.color).unwrap_or_else(|| {
+      if num_fields > 1 {
+        PLOT_COLORS[s.field_idx % PLOT_COLORS.len()]
+      } else {
+        let t = (s.mag / max_mag).clamp(0.0, 1.0);
+        (
+          (t * 200.0) as u8 + 50,
+          ((1.0 - t) * 150.0) as u8 + 50,
+          100_u8,
+        )
+      }
+    });
+    let thickness_px = style
+      .and_then(|st| st.thickness_frac)
+      .map(|t| t * image_extent);
+    let arrowhead_px = style
+      .and_then(|st| st.arrowhead_frac)
+      .map(|a| a * image_extent);
 
     arrows.push(ArrowData {
       start,
       end,
       depth: depth(center, &camera),
       color,
+      thickness_px,
+      arrowhead_px,
     });
+
+    // Data-space half-delta: `arrow_scale` was chosen so that, once scaled
+    // into normalized space by `sx`/`sy`/`sz`, the arrow reads at the
+    // intended fraction of the plot's width — dividing back out those
+    // per-axis factors here (`dvx / sx == s.vx * arrow_scale * 0.5`, since
+    // `sx = 2 / x_range_d`) gives the same arrow length in data
+    // coordinates, for `Graphics3D` to project with its own camera.
+    let ddx = s.vx * arrow_scale * 0.5;
+    let ddy = s.vy * arrow_scale * 0.5;
+    let ddz = s.vz * arrow_scale * 0.5;
+    let p0 = Expr::List(
+      vec![
+        Expr::Real(s.px - ddx),
+        Expr::Real(s.py - ddy),
+        Expr::Real(s.pz - ddz),
+      ]
+      .into(),
+    );
+    let p1 = Expr::List(
+      vec![
+        Expr::Real(s.px + ddx),
+        Expr::Real(s.py + ddy),
+        Expr::Real(s.pz + ddz),
+      ]
+      .into(),
+    );
+    let mut group: Vec<Expr> = vec![call(
+      "RGBColor",
+      vec![
+        Expr::Real(color.0 as f64 / 255.0),
+        Expr::Real(color.1 as f64 / 255.0),
+        Expr::Real(color.2 as f64 / 255.0),
+      ],
+    )];
+    if let Some(t) = style.and_then(|st| st.thickness_frac) {
+      group.push(call1("Thickness", Expr::Real(t)));
+    }
+    if let Some(a) = style.and_then(|st| st.arrowhead_frac) {
+      group.push(call1("Arrowheads", Expr::Real(a)));
+    }
+    group.push(call1("Arrow", Expr::List(vec![p0, p1].into())));
+    structure_items.push(Expr::List(group.into()));
   }
 
   // Sort arrows back-to-front (painter's algorithm)
@@ -1795,13 +2006,15 @@ pub fn vector_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
       if vector_markers == "Tube" {
         // Tube: thicker stroke with rounded caps
+        let width = arrow.thickness_px.unwrap_or(3.0);
         svg.push_str(&format!(
-          "<line x1=\"{sx0:.1}\" y1=\"{sy0:.1}\" x2=\"{sx1:.1}\" y2=\"{sy1:.1}\" stroke=\"{color_str}\" stroke-width=\"3\" stroke-linecap=\"round\"/>\n"
+          "<line x1=\"{sx0:.1}\" y1=\"{sy0:.1}\" x2=\"{sx1:.1}\" y2=\"{sy1:.1}\" stroke=\"{color_str}\" stroke-width=\"{width}\" stroke-linecap=\"round\"/>\n"
         ));
       } else {
         // Arrow: line + arrowhead
+        let width = arrow.thickness_px.unwrap_or(1.2);
         svg.push_str(&format!(
-          "<line x1=\"{sx0:.1}\" y1=\"{sy0:.1}\" x2=\"{sx1:.1}\" y2=\"{sy1:.1}\" stroke=\"{color_str}\" stroke-width=\"1.2\"/>\n"
+          "<line x1=\"{sx0:.1}\" y1=\"{sy0:.1}\" x2=\"{sx1:.1}\" y2=\"{sy1:.1}\" stroke=\"{color_str}\" stroke-width=\"{width}\"/>\n"
         ));
 
         // Arrowhead
@@ -1811,7 +2024,9 @@ pub fn vector_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if len > 2.0 {
           let ux = dx / len;
           let uy = dy / len;
-          let hl = len * 0.3;
+          // An explicit `Arrowheads[a]` size is absolute (a fraction of the
+          // image width), not relative to this one arrow's own length.
+          let hl = arrow.arrowhead_px.unwrap_or(len * 0.3);
           let hw = hl * 0.4;
           let bx1 = sx1 - ux * hl + (-uy) * hw;
           let by1 = sy1 - uy * hl + ux * hw;
@@ -1857,7 +2072,8 @@ pub fn vector_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   svg.push_str("</svg>");
   // A `PlotLabel` sets a title above the finished picture.
   let svg = with_plot_label(svg, args, svg_width, svg_height);
-  Ok(crate::graphics3d_result(svg))
+  let structure = call1("Graphics3D", Expr::List(structure_items.into()));
+  Ok(crate::graphics3d_result_with_structure(svg, structure))
 }
 
 // ── Graphics3D implementation ────────────────────────────────────────
@@ -6422,6 +6638,11 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut svg_height = DEFAULT_SIZE;
   let mut full_width = false;
   let mut mesh_mode = MeshMode::Default;
+  // `ColorFunction -> "SouthwestColors"` (or `ColorData["…"]`): colors the
+  // surface by height through the same named gradient `ColorFunction` uses
+  // for `Plot3D`-family density/contour plots, instead of the fixed
+  // blue-green-orange default.
+  let mut color_function: Option<String> = None;
 
   for opt in &args[1..] {
     if let Expr::Rule {
@@ -6446,10 +6667,29 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             _ => {}
           }
         }
+        Expr::Identifier(name) if name == "ColorFunction" => {
+          color_function =
+            crate::functions::field_plot::color_function_scheme_name(
+              replacement,
+            );
+        }
         _ => {}
       }
     }
   }
+
+  // The color a normalized height `t` (0 at the low end, 1 at the high end)
+  // is drawn in: a recognized `ColorFunction` scheme, or the surface's
+  // default height gradient when none was given (or it named a scheme Woxi
+  // does not have swatches for).
+  let color_at = |t: f64| -> (u8, u8, u8) {
+    match &color_function {
+      Some(name) => {
+        crate::functions::field_plot::apply_named_color_function(name, t)
+      }
+      None => height_color(t),
+    }
+  };
 
   // Evaluate the data argument
   let evaled_data = evaluate_expr_to_expr(data)?;
@@ -6658,7 +6898,7 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           + (z10 - z_min) / z_range
           + (z01 - z_min) / z_range)
           / 3.0;
-        let base_color = height_color(avg);
+        let base_color = color_at(avg);
         let normal = triangle_normal(v0, v1, v2);
         let color = apply_lighting(base_color, normal);
 
@@ -6703,7 +6943,7 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           + (z01 - z_min) / z_range
           + (z10 - z_min) / z_range)
           / 3.0;
-        let base_color = height_color(avg);
+        let base_color = color_at(avg);
         let normal = triangle_normal(v0, v1, v2);
         let color = apply_lighting(base_color, normal);
 
@@ -6762,7 +7002,141 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // A `PlotLabel` sets a title above the finished picture.
   let svg = with_plot_label(svg, args, svg_width, svg_height);
 
-  Ok(crate::graphics3d_result(svg))
+  // ── Symbolic structure: Graphics3D[GraphicsComplex[points, {…}]] ──
+  // Mirrors `plot3d_ast`'s own structure above: without one, `Show` cannot
+  // merge this surface with another graphic's primitives (a `Graphics3D`
+  // marker drawn alongside it, the Demonstrations "surface plus pointer"
+  // idiom) — the two would render as separately-projected flat pictures,
+  // so a `ViewPoint`/`BoxRatios` given to *this* call never turned the
+  // other layer with it, and one given to `Show` itself (or to that other
+  // layer) never turned this surface, whose own picture was already baked
+  // above at a fixed default camera. Emitting the grid in its own index
+  // coordinates — colored the way the standalone render colors it, with
+  // this call's options carried along so `Show` still sees them — lets it
+  // re-render everything together under one shared camera instead.
+  let mut index_of: Vec<Vec<Option<usize>>> = vec![vec![None; cols]; rows];
+  let mut point_exprs: Vec<Expr> = Vec::new();
+  for (i, row) in grid.iter().enumerate() {
+    for (j, &z) in row.iter().enumerate() {
+      if !z.is_finite() {
+        continue;
+      }
+      index_of[i][j] = Some(point_exprs.len());
+      point_exprs.push(Expr::List(
+        vec![
+          Expr::Real(i as f64),
+          Expr::Real(j as f64),
+          Expr::Real(z.clamp(z_min, z_max)),
+        ]
+        .into(),
+      ));
+    }
+  }
+  let mut complex_content: Vec<Expr> = Vec::new();
+  // The sampling quads are far finer than the mesh a surface shows, so
+  // their own outlines are suppressed and the mesh is drawn as lines below
+  // — otherwise a shown surface turns into a wireframe.
+  if !matches!(mesh_mode, MeshMode::All) {
+    complex_content.push(call0("EdgeForm"));
+  }
+  for i in 0..rows.saturating_sub(1) {
+    for j in 0..cols.saturating_sub(1) {
+      let (Some(a), Some(b), Some(c), Some(d)) = (
+        index_of[i][j],
+        index_of[i + 1][j],
+        index_of[i + 1][j + 1],
+        index_of[i][j + 1],
+      ) else {
+        continue;
+      };
+      let avg_z_norm = [
+        grid[i][j],
+        grid[i + 1][j],
+        grid[i + 1][j + 1],
+        grid[i][j + 1],
+      ]
+      .iter()
+      .map(|z| (z.clamp(z_min, z_max) - z_min) / z_range)
+      .sum::<f64>()
+        / 4.0;
+      let (cr, cg, cb) = color_at(avg_z_norm);
+      complex_content.push(Expr::List(
+        vec![
+          call(
+            "RGBColor",
+            vec![
+              Expr::Real(cr as f64 / 255.0),
+              Expr::Real(cg as f64 / 255.0),
+              Expr::Real(cb as f64 / 255.0),
+            ],
+          ),
+          Expr::FunctionCall {
+            name: "Polygon".to_string(),
+            args: vec![Expr::List(
+              [a, b, c, d]
+                .iter()
+                .map(|&k| Expr::Integer(k as i128 + 1))
+                .collect::<Vec<_>>()
+                .into(),
+            )]
+            .into(),
+          },
+        ]
+        .into(),
+      ));
+    }
+  }
+  // The mesh, at the spacing the standalone render rules it with.
+  if matches!(mesh_mode, MeshMode::Default) {
+    let mut segments: Vec<Expr> = Vec::new();
+    let mut push_segment = |a: Option<usize>, b: Option<usize>| {
+      if let (Some(a), Some(b)) = (a, b) {
+        segments.push(Expr::List(
+          vec![Expr::Integer(a as i128 + 1), Expr::Integer(b as i128 + 1)]
+            .into(),
+        ));
+      }
+    };
+    for j in (0..cols).step_by(MESH_STEP) {
+      for i in 0..rows.saturating_sub(1) {
+        push_segment(index_of[i][j], index_of[i + 1][j]);
+      }
+    }
+    for i in (0..rows).step_by(MESH_STEP) {
+      for j in 0..cols.saturating_sub(1) {
+        push_segment(index_of[i][j], index_of[i][j + 1]);
+      }
+    }
+    if !segments.is_empty() {
+      complex_content.push(Expr::List(
+        vec![
+          call1("Opacity", Expr::Real(0.63)),
+          call(
+            "RGBColor",
+            vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)],
+          ),
+          call1("AbsoluteThickness", Expr::Real(0.5)),
+          call1("Line", Expr::List(segments.into())),
+        ]
+        .into(),
+      ));
+    }
+  }
+  let complex = call(
+    "GraphicsComplex",
+    vec![
+      Expr::List(point_exprs.into()),
+      Expr::List(complex_content.into()),
+    ],
+  );
+  let mut structure_args = vec![complex];
+  structure_args.extend(args[1..].iter().cloned());
+  let structure = Expr::FunctionCall {
+    name: "Graphics3D".to_string(),
+    args: structure_args.into(),
+  };
+
+  Ok(crate::graphics3d_result_with_structure(svg, structure))
 }
 
 // ── RevolutionPlot3D implementation ──────────────────────────────────
@@ -7764,6 +8138,11 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut full_width = false;
   let mut show_axes = true;
   let mut styles: Vec<StyleState3D> = Vec::new();
+  // `PlotPoints -> n`: number of samples per direction (n - 1 grid cells),
+  // matching the convention used elsewhere in this module (e.g.
+  // SphericalPlot3D). Demonstrations commonly toggle this between a coarse
+  // preview and a refined render.
+  let mut plot_points: Option<usize> = None;
 
   for opt in &args[4..] {
     if let Expr::Rule {
@@ -7790,12 +8169,27 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Expr::Identifier(name) if name == "ContourStyle" => {
           styles = parse_plot_style_3d(replacement, bodies.len());
         }
+        Expr::Identifier(name) if name == "PlotPoints" => {
+          let n = match evaluate_expr_to_expr(replacement) {
+            Ok(Expr::Integer(n)) => Some(n),
+            Ok(Expr::List(ref items)) => match items.first() {
+              Some(Expr::Integer(n)) => Some(*n),
+              _ => None,
+            },
+            _ => None,
+          };
+          if let Some(n) = n
+            && n >= 2
+          {
+            plot_points = Some(n as usize);
+          }
+        }
         _ => {}
       }
     }
   }
 
-  let n = CONTOUR3D_GRID;
+  let n = plot_points.map_or(CONTOUR3D_GRID, |p| p - 1);
   let x_step = (x_max - x_min) / n as f64;
   let y_step = (y_max - y_min) / n as f64;
   let z_step = (z_max - z_min) / n as f64;

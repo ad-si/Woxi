@@ -4033,16 +4033,7 @@ fn render_column_if_needed(expr: syntax::Expr) -> syntax::Expr {
     syntax::Expr::FunctionCall { name, args }
       if name == "Column" && !args.is_empty() =>
     {
-      // Pre-render display wrappers inside the column's items so e.g.
-      // `Column[{"hi", TableForm[{{1,2},{3,4}}]}]` shows an actual grid
-      // rather than the raw `TableForm[…]` text.
-      let mut new_args: Vec<syntax::Expr> = args.to_vec();
-      if let syntax::Expr::List(items) = &args[0] {
-        let new_items: Vec<syntax::Expr> =
-          items.iter().map(render_inline_display_wrapper).collect();
-        new_args[0] = syntax::Expr::List(new_items.into());
-      }
-      if let Some(svg) = functions::graphics::column_to_svg(&new_args) {
+      if let Some(svg) = column_svg_with_rendered_items(args) {
         graphics_result(svg)
       } else {
         expr
@@ -4050,6 +4041,22 @@ fn render_column_if_needed(expr: syntax::Expr) -> syntax::Expr {
     }
     _ => expr,
   }
+}
+
+/// Pre-render display wrappers inside a `Column[…]`'s items (so e.g.
+/// `Column[{"hi", TableForm[{{1,2},{3,4}}]}]` embeds actual graphics rather
+/// than their textual echoes) and render the whole column as a vertical
+/// SVG. `None` when the arguments don't form a renderable column.
+pub(crate) fn column_svg_with_rendered_items(
+  args: &[syntax::Expr],
+) -> Option<String> {
+  let mut new_args: Vec<syntax::Expr> = args.to_vec();
+  if let syntax::Expr::List(items) = &args[0] {
+    let new_items: Vec<syntax::Expr> =
+      items.iter().map(render_inline_display_wrapper).collect();
+    new_args[0] = syntax::Expr::List(new_items.into());
+  }
+  functions::graphics::column_to_svg(&new_args)
 }
 
 /// `Style[Column[{…}], directives…]` / `Style[Row[{…}], …]` displays the

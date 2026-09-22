@@ -929,7 +929,7 @@ ListContourPlot,Creates a contour plot from a list of values or {x y z} triples,
 StringFreeQ,Tests if a string is free of a pattern,✅,pure,5.1,903
 Log2,Returns the base-2 logarithm of a number,✅,pure,7.0,904
 ProductLog,Lambert W function; principal branch and the real branch k=-1 (two-argument form),✅,pure,3.0,905
-KnotData,,🚫,,6.0,906
+KnotData,Torus knots by name or by winding numbers {p q}: SpaceCurve (an independently-derived parametrization not Wolfram's own coefficients) / CrossingNumber / AlexanderBriggsNotation,🚧,pure,6.0,906
 Invisible,Displays as blank space with the same size as its content,✅,unevaluated,6.0,907
 StyleData,,🚫,,3.0,908
 NestWhile,Applies a function repeatedly while a condition holds,✅,pure,4.0,909
@@ -1058,7 +1058,7 @@ TimeSeries,Represents a time series of values paired with time stamps,✅,pure,1
 VectorPoints,,🚫,,7.0,1039
 NextPrime,Returns the smallest prime greater than n (Listable),✅,pure,6.0,1040
 PreDecrement,Decrements a variable by 1 and returns the new value,✅,stateful,1.0,1041
-MultinormalDistribution,Multivariate normal distribution (PDF for diagonal covariance plus numeric bivariate CDF Mean Covariance Variance),✅,pure,8.0,1042
+MultinormalDistribution,Multivariate normal distribution (PDF for diagonal covariance; numeric bivariate CDF; Mean/Covariance/Variance; RandomVariate sampling for any dimension via numeric Cholesky decomposition),✅,pure,8.0,1042
 UnitBox,Unit box function (1 for |x| <= 1/2),✅,pure,7.0,1043
 Today,Returns a DateObject representing the current date,✅,contextual,10.0,1044
 ClippingStyle,,🚫,,6.0,1046
@@ -1201,7 +1201,7 @@ ImagePad,Pads an image on each side with a constant fill or edge extension,✅,p
 ChiSquareDistribution,Represents a chi-square distribution,✅,1,6.0,1186
 ListInterpolation,Creates interpolation from uniformly spaced data (2-D coordinates may be given as separate arguments or as one list),✅,pure,3.0,1186
 FindShortestPath,Find a shortest weighted path between two vertices of a graph,✅,pure,8.0,1187
-SetSystemOptions,,🚫,,6.0,1189
+SetSystemOptions,Resets internal system options — Woxi has none of its own so this normalizes the given rule(s) into a flat list and returns it,✅,stateful,6.0,1189
 GeoRange,,🚫,,10.0,1190
 Orthogonalize,Orthonormalizes a set of vectors via Gram-Schmidt,✅,pure,6.0,1191
 AnatomyData,,🚫,,10.3,1192

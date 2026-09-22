@@ -2533,9 +2533,24 @@ pub fn reconstruct_manipulate_from_box_dump(box_dump: &str) -> Option<String> {
 /// showing that saved state, not the source's default, so a caller
 /// rebuilding the widget from the Input cell (see
 /// `instantiate_stored_manipulate` in woxi-studio) needs this to match.
+///
+/// The true live state is the outer `DynamicModuleBox[{ $CellContext\`var$$
+/// = value, … }, …]` initializer list, so that is tried first. The inner
+/// compiled `Manipulate\`ManipulateBoxes[…]`'s own `"Variables" :> {…}`
+/// clause is only a fallback for a dump with no `DynamicModuleBox` wrapper
+/// (e.g. one reconstructed for `reconstruct_manipulate_from_box_dump`):
+/// that clause records whatever the controls held when the box was last
+/// *compiled*, not necessarily the live value — a slider moved afterward
+/// updates the outer list without recompiling the inner boxes, so the two
+/// can disagree (regression: a Demonstration whose saved widget had a
+/// slider left off its default reopened at the default instead).
 pub fn extract_saved_manipulate_variables(
   box_dump: &str,
 ) -> Vec<(String, String)> {
+  let from_module = extract_dynamic_module_variables(box_dump);
+  if !from_module.is_empty() {
+    return from_module;
+  }
   let Some(raw) = extract_arrow_value(box_dump, "Variables") else {
     return Vec::new();
   };
@@ -2559,6 +2574,44 @@ pub fn extract_saved_manipulate_variables(
         return None;
       }
       Some((name, unescape_code_string(rhs)))
+    })
+    .collect()
+}
+
+/// The `(name, value)` pairs assigned directly in a `DynamicModuleBox[{…},
+/// …]` dump's own leading variable-initializer list — the DynamicModule's
+/// live state, as opposed to the inner compiled box structure's stale
+/// snapshot (see `extract_saved_manipulate_variables`). Skips `Typeset\`…`
+/// bookkeeping entries (no `$CellContext\`` prefix) and the linking/shadow
+/// variables a `ControllerVariables` control pairs with a real one (e.g.
+/// `` $CellContext`Gas$79129$$ ``): those keep a digit run between two
+/// single `$`s, so stripping the trailing `` $$ `` leaves a residual `$` in
+/// the name, which is the filter.
+fn extract_dynamic_module_variables(box_dump: &str) -> Vec<(String, String)> {
+  let Some(after) = box_dump
+    .find("DynamicModuleBox[")
+    .map(|i| &box_dump[i + "DynamicModuleBox[".len()..])
+  else {
+    return Vec::new();
+  };
+  let Some(after_brace) = after.trim_start().strip_prefix('{') else {
+    return Vec::new();
+  };
+  let Ok((inner, _rest)) = find_matching_brace(after_brace) else {
+    return Vec::new();
+  };
+  split_top_level_commas(inner)
+    .into_iter()
+    .filter_map(|part| {
+      let part = part.trim();
+      let eq = part.find('=')?;
+      let (lhs, rhs) = (part[..eq].trim(), part[eq + 1..].trim());
+      let name = lhs.strip_prefix("$CellContext`")?;
+      let name = name.strip_suffix("$$")?;
+      if name.is_empty() || name.contains('$') || rhs.is_empty() {
+        return None;
+      }
+      Some((unescape_code_string(name), unescape_code_string(rhs)))
     })
     .collect()
 }
@@ -3796,6 +3849,20 @@ fn box_source_to_graphics_expr(s: &str) -> String {
     // reasonable approximation of the filled curve.
     let points = box_source_to_graphics_expr(&args[1]);
     return format!("Polygon[{points}]");
+  }
+
+  // `JoinedCurveBox` is the unfilled counterpart of `FilledCurveBox`
+  // (an open or closed multi-segment curve, e.g. a Demonstration's
+  // toolbar/hint glyph icon): same `{tags}, {points}, CurveClosed -> …`
+  // shape, but stroked rather than filled. Reuse the same
+  // straight-line approximation and rename to the evaluable `JoinedCurve`
+  // primitive `graphics_ast` already understands, wrapping the point run
+  // in `Line[…]` the way `JoinedCurve[{Line[…], …}]` expects its pieces.
+  if let Some(args) = box_call("JoinedCurveBox")
+    && args.len() >= 2
+  {
+    let points = box_source_to_graphics_expr(&args[1]);
+    return format!("JoinedCurve[{{Line[{points}]}}]");
   }
 
   for (box_head, prim_head) in [
@@ -5149,6 +5216,41 @@ Cell["Chapter 2", "Chapter"]
   }
 
   #[test]
+  fn test_box_source_to_graphics_expr_joined_curve_to_joined_curve() {
+    // `JoinedCurveBox` is the stroked (unfilled) sibling of
+    // `FilledCurveBox`, saved for a Demonstration's cached curve/icon
+    // output; it must rename to the evaluable `JoinedCurve` primitive
+    // (approximating every segment as a straight line, the same
+    // simplification `FilledCurveBox` already makes) instead of being
+    // left as an unrecognized head that `graphics_ast` silently drops.
+    assert_eq!(
+      box_source_to_graphics_expr(
+        "JoinedCurveBox[{{{1, 2, 3}}}, {{{0, 0}, {1, 0}, {1, 1}}}, \
+         CurveClosed -> {1}]"
+      ),
+      "JoinedCurve[{Line[{{{0, 0}, {1, 0}, {1, 1}}}]}]"
+    );
+  }
+
+  #[test]
+  fn test_stored_output_vector_graphics_renders_joined_curve_box() {
+    // A stored `GraphicsBox[JoinedCurveBox[…]]` output (the box form the
+    // FrontEnd saves for a cached curve, distinct from the already-handled
+    // `FilledCurveBox`) must still render as an SVG picture rather than
+    // silently producing no primitives.
+    let content = r#"Cell[BoxData[
+ GraphicsBox[JoinedCurveBox[{{{1, 2, 3}}}, {{{0, 0}, {1, 0}, {1, 1}}}]],
+ "Output"]"#;
+    let svg = stored_output_vector_graphics_svg(content)
+      .expect("a JoinedCurveBox output must render as an SVG");
+    assert!(svg.contains("<svg"), "{svg}");
+    assert!(
+      svg.contains("<path") || svg.contains("<polyline"),
+      "expected a stroked path/polyline for the joined curve: {svg}"
+    );
+  }
+
+  #[test]
   fn test_box_source_to_graphics_expr_inlines_compressed_data() {
     let payload = make_compressed_real_array(&[2, 2], &[0.0, 0.0, 1.0, 1.0]);
     let source = format!(
@@ -6116,6 +6218,55 @@ yf4GL4DwC5VA4w
         "DynamicModuleBox[{}, DynamicBox[…]]"
       ),
       Vec::<String>::new()
+    );
+  }
+
+  #[test]
+  fn test_extract_saved_manipulate_variables_prefers_outer_module_state() {
+    // The outer `DynamicModuleBox[{…}, …]` initializer list is the
+    // DynamicModule's live state (updated the instant a slider moves); the
+    // inner compiled `ManipulateBoxes[…]`'s own `"Variables" :> {…}` clause
+    // is only whatever was true when the box structure was last compiled,
+    // and the two can disagree once a control moves without a recompile.
+    // Regression: only the (stale) inner clause was read, so a Demonstration
+    // saved with a control off its declared default reopened at the
+    // default instead of where it was actually left.
+    let dump = "DynamicModuleBox[{$CellContext`n$$ = 33.}, \
+      DynamicBox[Manipulate`ManipulateBoxes[\n\
+      1, StandardForm, \n\
+      \"Variables\" :> {$CellContext`n$$ = 10}, \n\
+      \"Body\" :> $CellContext`n$$, \n\
+      \"Specifications\" :> {{$CellContext`n$$, 1, 100}}]]]";
+    assert_eq!(
+      extract_saved_manipulate_variables(dump),
+      vec![("n".to_string(), "33.".to_string())]
+    );
+  }
+
+  #[test]
+  fn test_extract_saved_manipulate_variables_skips_controller_shadow_vars() {
+    // `ControllerVariables` pairs a real control with a hidden
+    // `$CellContext`name$digits$$` linking variable in the same outer
+    // initializer list; only the real `$CellContext`name$$` entry (no
+    // digit run before the closing `$$`) is a control's saved value.
+    let dump = "DynamicModuleBox[{$CellContext`n$$ = 5, \
+      Typeset`show$$ = True, $CellContext`n$79129$$ = 0}, \
+      DynamicBox[…]]";
+    assert_eq!(
+      extract_saved_manipulate_variables(dump),
+      vec![("n".to_string(), "5".to_string())]
+    );
+  }
+
+  #[test]
+  fn test_extract_saved_manipulate_variables_falls_back_without_module_box() {
+    // A dump with no `DynamicModuleBox` wrapper at all (e.g. a
+    // hand-assembled or otherwise unusual dump) still recovers values from
+    // the inner `"Variables" :> {…}` clause.
+    let dump = "\"Variables\" :> {$CellContext`a$$ = 7}";
+    assert_eq!(
+      extract_saved_manipulate_variables(dump),
+      vec![("a".to_string(), "7".to_string())]
     );
   }
 

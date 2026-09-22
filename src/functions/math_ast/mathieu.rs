@@ -131,9 +131,8 @@ pub fn mathieu_c_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   ) else {
     return Ok(unevaluated("MathieuC", args));
   };
-  if a < 0.0 {
-    return Ok(unevaluated("MathieuC", args));
-  }
+  // Unlike MathieuS, the y(0) = 1, y'(0) = 0 boundary condition is real for
+  // any real `a` (it never involves `√a`), so negative `a` is fine here.
   let (y, _) = integrate_mathieu(a, q, z, 1.0, 0.0);
   Ok(Expr::Real(y))
 }
@@ -150,9 +149,7 @@ pub fn mathieu_c_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   ) else {
     return Ok(unevaluated("MathieuCPrime", args));
   };
-  if a < 0.0 {
-    return Ok(unevaluated("MathieuCPrime", args));
-  }
+  // Same real boundary condition as MathieuC, so negative `a` is fine here.
   let (_, yp) = integrate_mathieu(a, q, z, 1.0, 0.0);
   Ok(Expr::Real(yp))
 }

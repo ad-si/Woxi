@@ -91,7 +91,7 @@ fn exact_integer_ord(a: &Expr, b: &Expr) -> Option<std::cmp::Ordering> {
   Some((an * bd).cmp(&(bn * ad)))
 }
 
-fn needs_reevaluation(expr: &Expr, self_name: &str) -> bool {
+pub(super) fn needs_reevaluation(expr: &Expr, self_name: &str) -> bool {
   match expr {
     Expr::Identifier(n) => {
       n != self_name && ENV.with(|e| e.borrow().contains_key(n))

@@ -2660,6 +2660,37 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_plot_range_dynamic_wrapper_is_unwrapped() {
+    // `PlotRange -> Dynamic[{{xmin, xmax}, {ymin, ymax}}]` is how a
+    // `Manipulate` body built from a Demonstration's saved definition
+    // spells an option value that depends on a control variable — outside
+    // an interactive front end, `Dynamic[expr]` just means expr's current
+    // value. Regression: `Dynamic[…]` options were left as an unrecognized
+    // expression by the option parser (which only handles a bare
+    // `{{...},{...}}` list), so the range silently fell back to Automatic
+    // instead of the asymmetric range actually requested.
+    clear_state();
+    let plain = interpret(
+      "ExportString[Graphics[{Red, Disk[{0, 0}, 10]}, PlotRange -> {{-5, 5}, {-2, 8}}], \"SVG\"]",
+    )
+    .unwrap();
+    let dynamic = interpret(
+      "ExportString[Graphics[{Red, Disk[{0, 0}, 10]}, PlotRange -> Dynamic[{{-5, 5}, {-2, 8}}]], \"SVG\"]",
+    )
+    .unwrap();
+    assert_eq!(
+      dynamic, plain,
+      "Dynamic-wrapped PlotRange should render identically to the bare range"
+    );
+    // Sanity: the shared range is genuinely asymmetric (off-center), so this
+    // is not vacuously true because both sides fell back to Automatic.
+    assert!(
+      plain.contains("cy=\"288.00\""),
+      "expected the asymmetric range to shift the circle's center: {plain}"
+    );
+  }
+
+  #[test]
   fn test_invisible_text_label_paints_nothing() {
     // `Text[Invisible[Style["e", …]], pos]` — a Demonstration hides one
     // item's label (e.g. an edge whose name shouldn't show) by wrapping it
@@ -2994,6 +3025,49 @@ mod interpreter_tests {
       via_show.contains("font-size=\"200\"")
         && via_show.contains("fill=\"rgb(255,0,0)\""),
       "LabelStyle applied via Show must still restyle the frame label: {via_show}"
+    );
+  }
+
+  #[test]
+  fn test_frame_label_grid_renders_as_embedded_table() {
+    // `FrameLabel -> Grid[…]` (a Demonstration frame-labeling a plot with a
+    // summary table, as the Wolfram Demonstrations Project's authoring
+    // template shows) used to vanish entirely: `expr_to_label` treats `Grid`
+    // as a known builtin application and returns `None` for it, so the
+    // label silently dropped instead of showing the table. It must now
+    // embed the table as a picture below the frame.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Plot[Sin[x], {x, 0, 2 Pi}, Frame -> True, \
+         FrameLabel -> Grid[{{\"a\", \"b\"}, {1, 2}}, Frame -> All]], \
+         \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      svg.matches("<svg").count() > 1,
+      "a Grid FrameLabel must embed a nested <svg> table, not just the \
+       outer plot: {svg}"
+    );
+    assert!(
+      svg.contains(">a<") && svg.contains(">b<"),
+      "the embedded table must carry the Grid's own cell text: {svg}"
+    );
+
+    // A bare (non-Grid) FrameLabel keeps rendering as plain text, unchanged.
+    clear_state();
+    let text_svg = interpret(
+      "ExportString[Plot[Sin[x], {x, 0, 2 Pi}, Frame -> True, \
+         FrameLabel -> \"t\"], \"SVG\"]",
+    )
+    .unwrap();
+    assert_eq!(
+      text_svg.matches("<svg").count(),
+      1,
+      "a plain-text FrameLabel must not embed any nested <svg>: {text_svg}"
+    );
+    assert!(
+      text_svg.contains(">t<"),
+      "the plain-text FrameLabel must still render as text: {text_svg}"
     );
   }
 
@@ -3666,6 +3740,51 @@ mod interpreter_tests {
     clear_state();
     assert_eq!(interpret("Table[i, {i, 2}]").unwrap(), "{1, 2}");
     assert_eq!(interpret("i").unwrap(), "i");
+  }
+
+  #[test]
+  fn test_table_nested_iterator_bound_through_part() {
+    // Regression: a later iterator's bound can depend on an earlier
+    // iterator's variable through any syntactic wrapper, not just a bare
+    // identifier (`Table[{i, j}, {i, 1, 3}, {j, 1, i}]` already worked).
+    // `nl[[dn1]]` is a `Part` node, and the validity check that decides
+    // whether a bound "resolves" (used to reject the whole Table with
+    // `Table::iterb` and leave it unevaluated) failed to look inside `Part`,
+    // `f@x`, `f/@list`, etc., so it saw only the untouched symbol `dn1` and
+    // declared the bound unresolved — even though `dn1` is perfectly well
+    // bound by the time that iterator runs. Found via a real Wolfram
+    // Demonstration whose Manipulate draws `Table[Point[...], {dn1, ...},
+    // {dn2, ...}, {x, 0, nl[[dn1]] - 1}, {y, 0, ml[[dn2]] - 1}]`.
+    clear_state();
+    interpret("nl = {2, 1, 4};").unwrap();
+    assert_eq!(
+      interpret("Table[x, {dn1, 1, Length[nl]}, {x, 0, nl[[dn1]] - 1}]")
+        .unwrap(),
+      "{{0, 1}, {0}, {0, 1, 2, 3}}"
+    );
+    // Same shape through `@` (PrefixApply) instead of a bare identifier.
+    clear_state();
+    interpret("nl = {2, 1, 4};").unwrap();
+    assert_eq!(
+      interpret(
+        "Table[x, {dn1, 1, Length[nl]}, {x, 0, First@Take[nl, {dn1}] - 1}]"
+      )
+      .unwrap(),
+      "{{0, 1}, {0}, {0, 1, 2, 3}}"
+    );
+    // Four-level nesting where two later iterators each depend on a
+    // different earlier one, matching the Demonstration's shape.
+    clear_state();
+    interpret("nl = {2, 1}; ml = {1, 2};").unwrap();
+    assert_eq!(
+      interpret(
+        "Table[{x, y}, {dn1, 1, Length[nl]}, {dn2, 1, Length[ml]}, \
+         {x, 0, nl[[dn1]] - 1}, {y, 0, ml[[dn2]] - 1}]"
+      )
+      .unwrap(),
+      "{{{{{0, 0}}, {{1, 0}}}, {{{0, 0}, {0, 1}}, {{1, 0}, {1, 1}}}}, \
+       {{{{0, 0}}}, {{{0, 0}, {0, 1}}}}}"
+    );
   }
 
   #[test]
@@ -4584,6 +4703,7 @@ mod interpreter_tests {
   mod interval;
   mod io;
   mod isotope_data;
+  mod knot_data;
   mod large_number_and_memoization;
   mod linear_algebra;
   mod list;
