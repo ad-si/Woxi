@@ -15269,6 +15269,96 @@ mod list_plot_3d {
       "-Graphics3D-"
     );
   }
+
+  // Regression (Wolfram Demonstrations Project: "Exploring the Grand
+  // Canyon"): that Demonstration's `Manipulate` shows a `ListPlot3D`
+  // terrain surface together with a `Graphics3D` marker line, both inside
+  // one `Show[{…}]`, and drives the terrain's `ViewPoint` from a "viewpoint"
+  // control. `ListPlot3D` never read `ViewPoint`/`BoxRatios`/`ColorFunction`
+  // at all — it always rendered itself with a fixed default camera and a
+  // fixed height gradient — so turning that control had no visible effect
+  // on the surface, and neither `ViewPoint` nor `BoxRatios` on an
+  // accompanying `Graphics3D` (or on `Show` itself) could turn/reshape it
+  // either, since it carried no symbolic structure for `Show` to merge and
+  // re-render together with the other layer under one shared camera.
+
+  #[test]
+  fn list_plot3d_view_point_turns_the_surface_when_shown_with_graphics3d() {
+    clear_state();
+    let default_view = export_svg(
+      "Show[{ListPlot3D[Table[x + y, {x, 5}, {y, 5}], \
+       ViewPoint -> {1.3, -2.4, 2}], Graphics3D[{Red, Line[{{0, 0, 0}, \
+       {4, 4, 0}}]}]}]",
+    );
+    clear_state();
+    let above_view = export_svg(
+      "Show[{ListPlot3D[Table[x + y, {x, 5}, {y, 5}], ViewPoint -> Above], \
+       Graphics3D[{Red, Line[{{0, 0, 0}, {4, 4, 0}}]}]}]",
+    );
+    assert_ne!(
+      default_view, above_view,
+      "ViewPoint on the ListPlot3D layer must turn the merged picture"
+    );
+  }
+
+  #[test]
+  fn list_plot3d_view_point_dynamic_wrapper_is_unwrapped_when_shown() {
+    // The Demonstration writes `ViewPoint -> Dynamic[vp]` (a Manipulate
+    // control's live value) rather than a bare vector.
+    clear_state();
+    let svg = export_svg(
+      "Block[{vp = {1.3, -2.4, 2}}, Show[{ListPlot3D[Table[x + y, {x, 5}, \
+       {y, 5}], ViewPoint -> Dynamic[vp]], Graphics3D[{}]}]]",
+    );
+    assert!(svg.contains("<polygon") || svg.contains("<path"));
+  }
+
+  #[test]
+  fn list_plot3d_box_ratios_reshapes_the_box_when_shown() {
+    clear_state();
+    let flat = export_svg(
+      "Show[{ListPlot3D[Table[x + y, {x, 5}, {y, 5}], \
+       BoxRatios -> {1, 1, 0.1}], Graphics3D[{}]}]",
+    );
+    clear_state();
+    let tall = export_svg(
+      "Show[{ListPlot3D[Table[x + y, {x, 5}, {y, 5}], BoxRatios -> {1, 1, 2}], \
+       Graphics3D[{}]}]",
+    );
+    assert_ne!(
+      flat, tall,
+      "BoxRatios on the ListPlot3D layer must reshape the merged picture"
+    );
+  }
+
+  #[test]
+  fn list_plot3d_color_function_changes_surface_colors_when_shown() {
+    clear_state();
+    let default_colors = export_svg(
+      "Show[{ListPlot3D[Table[x + y, {x, 5}, {y, 5}]], Graphics3D[{}]}]",
+    );
+    clear_state();
+    let southwest_colors = export_svg(
+      "Show[{ListPlot3D[Table[x + y, {x, 5}, {y, 5}], \
+       ColorFunction -> \"SouthwestColors\"], Graphics3D[{}]}]",
+    );
+    assert_ne!(
+      default_colors, southwest_colors,
+      "a named ColorFunction must recolor the surface"
+    );
+  }
+
+  #[test]
+  fn list_plot3d_color_function_standalone_matches_shown_colors() {
+    // `ColorFunction` also recolors ListPlot3D's own (non-Show) rendering,
+    // so a standalone export looks the same as one merged via Show.
+    clear_state();
+    let standalone = export_svg(
+      "ListPlot3D[Table[x + y, {x, 5}, {y, 5}], \
+       ColorFunction -> \"SouthwestColors\"]",
+    );
+    assert!(standalone.contains("<polygon"));
+  }
 }
 
 mod tree_form_graphics {
@@ -25151,6 +25241,50 @@ mod manipulate {
       "Plot3D through a Part-indexed function list must still render: {:?}",
       result.result
     );
+  }
+
+  // Regression (Wolfram Demonstrations Project: "Exploring the Grand
+  // Canyon"): that Demonstration's control panel lays a slider out as
+  // `Row[{Control[…], Spacer[…]}]`, follows it with a `Row[{Dynamic[…], ,
+  // "°"}]` live-value readout (a skipped, implicit-Null list element
+  // between the dynamic value and the unit string), and gives a second
+  // control a `{value -> "label", …}` named-choice list instead of plain
+  // bounds. All three must extract into a working panel: the Row-wrapped
+  // slider becomes an ordinary control, the readout becomes a display
+  // element (not a failed control that takes the others down with it —
+  // see the "one unrecognised control spec" note above), and the choice
+  // list becomes a discrete control.
+  #[test]
+  fn spec_row_wrapped_slider_with_dynamic_readout_and_named_choices() {
+    let expr = interpret_to_expr(
+      "Manipulate[{pos, view}, \
+       Row[{Control[{{pos, 2, \"position\"}, 1, 5, 1}], Spacer[5]}], \
+       Row[{Dynamic[pos], , \"°\"}], \
+       Control[{{view, {1, 2, 3}, \"viewpoint\"}, \
+       {{1, 2, 3} -> \"default\", {0, 0, 5} -> \"above\"}}]]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr)
+      .expect("Row-wrapped slider plus named-choice control");
+    let names: Vec<&str> =
+      spec.controls.iter().map(ManipulateControl::name).collect();
+    assert_eq!(names, vec!["pos", "view"]);
+    match &spec.controls[0] {
+      ManipulateControl::Continuous { min, max, .. } => {
+        assert_eq!((*min, *max), (1.0, 5.0));
+      }
+      other => panic!("expected the Row-wrapped slider, got {other:?}"),
+    }
+    // The `Row[{Dynamic[pos], , "°"}]` readout is a live display, not a
+    // dropped or failed control.
+    assert_eq!(spec.displays.len(), 1);
+    assert!(spec.displays[0].contains("pos"));
+    match &spec.controls[1] {
+      ManipulateControl::Discrete { values, .. } => {
+        assert_eq!(values.len(), 2);
+      }
+      other => panic!("expected the named-choice control, got {other:?}"),
+    }
   }
 }
 
