@@ -488,6 +488,40 @@ fn prime_marks(s: &str) -> Option<usize> {
   Some(count)
 }
 
+/// The order list `["n1", "n2", ...]` if `s` is `TagBox[order, Derivative]`
+/// — the FrontEnd's typeset form of a mixed or higher-order partial
+/// derivative's order tuple, used as a `SuperscriptBox`'s script whenever
+/// `Derivative[n1, n2, ...][f]` can't be shown with prime marks (more than
+/// one argument, or a single argument past the order primes are used for):
+/// `SuperscriptBox["p", TagBox[RowBox[{"(", RowBox[{"1", ",", "0"}], ")"}],
+/// Derivative]]` typesets `Derivative[1, 0][p]` as `p^(1,0)`. A
+/// single-argument high order has no top-level comma at all (`p^(4)` is
+/// `TagBox["(4)", Derivative]`). Returns `None` for any other superscript,
+/// so callers fall back to the ordinary `(base)^(script)` reading.
+fn derivative_tag_orders(s: &str) -> Option<Vec<String>> {
+  let args = positional_box_args("TagBox", s.trim())?;
+  let [content, tag] = &args[..] else {
+    return None;
+  };
+  if tag.trim() != "Derivative" {
+    return None;
+  }
+  let rendered = extract_cell_content(content);
+  let inner = rendered.trim().strip_prefix('(')?.strip_suffix(')')?.trim();
+  if inner.is_empty() {
+    return None;
+  }
+  let orders: Vec<String> = split_top_level_commas(inner)
+    .into_iter()
+    .map(|o| o.trim().to_string())
+    .collect();
+  if orders.iter().any(std::string::String::is_empty) {
+    None
+  } else {
+    Some(orders)
+  }
+}
+
 /// The elements of a `TemplateBox`'s first argument, which holds the
 /// template's slots. It is a list, written either as `{…}` (how a `.nb` file
 /// spells it) or as `List[…]` (how `InputForm` writes a box escape).
@@ -799,6 +833,20 @@ fn extract_typeset_box(s: &str) -> Option<String> {
       // stays unevaluated and keeps it.
       "SuperscriptBox" if args.len() == 2 && draws_nothing(&conv(&args[0])) => {
         format!("Superscript[\"\", {}]", conv(&args[1]))
+      }
+      // `SuperscriptBox[f, TagBox[order, Derivative]]` is the typeset form
+      // of a mixed or higher-order partial derivative — emit
+      // `Derivative[n1, n2, ...][f]`, not exponentiation. Must be checked
+      // before the generic "doesn't parse as an expression" fallback below,
+      // since the bare order tuple (`(1, 0)`) is not valid code on its own.
+      "SuperscriptBox"
+        if args.len() == 2 && derivative_tag_orders(&args[1]).is_some() =>
+      {
+        format!(
+          "Derivative[{}][{}]",
+          derivative_tag_orders(&args[1]).unwrap().join(", "),
+          conv(&args[0])
+        )
       }
       // A script that isn't a valid expression on its own — e.g. a bare
       // `-` used only to typeset an ion's charge, like the "H" of "H⁻"
@@ -5546,6 +5594,34 @@ Cell["Chapter 2", "Chapter"]
       SuperscriptBox["\[Phi]", "\[Prime]",
        MultilineFunction->None], "[", "0", "]"}]]"#;
     assert_eq!(extract_cell_content(s), "ϕ'[0]");
+  }
+
+  /// A mixed or higher-order partial derivative — more than one argument,
+  /// or a single argument past the order primes are used for — types as
+  /// `SuperscriptBox[f, TagBox[<parenthesized order tuple>, Derivative]]`,
+  /// not the plain-prime form the previous test covers. This must convert
+  /// to `Derivative[n1, n2, ...][f]`, not to `(f)^((1,0))`, which would
+  /// neither parse nor mean the same thing. Regression: a Picard-Fuchs
+  /// derivation whose helper functions pattern-match on
+  /// `Derivative[1, 0][p][a, t]`-shaped terms never matched anything,
+  /// because every occurrence typeset this way decoded to
+  /// `Superscript[p, "(1,0)"][a, t]` instead.
+  #[test]
+  fn test_extract_cell_content_mixed_partial_derivative() {
+    let s = r#"BoxData[RowBox[{
+      SuperscriptBox["p",
+       TagBox[RowBox[{"(", RowBox[{"1", ",", "0"}], ")"}], Derivative],
+       MultilineFunction->None], "[",
+      RowBox[{"a", ",", "t"}], "]"}]]"#;
+    assert_eq!(extract_cell_content(s), "Derivative[1, 0][p][a,t]");
+
+    // A single-argument function differentiated to an order past where
+    // primes are used still carries the same `TagBox[…, Derivative]`
+    // wrapper, just with one bare number instead of a comma list.
+    let s = r#"BoxData[RowBox[{
+      SuperscriptBox["f", TagBox["(4)", Derivative], MultilineFunction->None],
+      "[", "x", "]"}]]"#;
+    assert_eq!(extract_cell_content(s), "Derivative[4][f][x]");
   }
 
   /// `\[RawEscape]` names the ASCII escape character. It sets no type, so a
