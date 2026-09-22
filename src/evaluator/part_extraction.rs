@@ -328,11 +328,27 @@ pub fn eval_part_base(e: &Expr) -> Result<Expr, InterpreterError> {
       }
     });
     if let Some(stored) = stored {
-      return if matches!(stored, Expr::List(_)) || !was_part_assigned(var_name)
-      {
-        Ok(stored)
-      } else {
+      // `x := body` (SetDelayed) stores `body` unevaluated — plain
+      // identifier lookup re-evaluates it every access (see
+      // `needs_reevaluation` in core_eval), and Part must match that or a
+      // symbol whose delayed value is a function call (`getCoor := bar[p]`)
+      // hands the raw call to `extract_part_ast` and misreads its argument
+      // count as a part depth (`getCoor[[2, 2]]` reporting
+      // `Part::partw: Part 2 of bar[p] does not exist`). A stored `List` is
+      // exempt: `Set`/`SetDelayed` both evaluate a list literal's elements
+      // as they are built (`Table`, list assignment, …), so re-walking it
+      // here on every access would only pay an O(n) needs_reevaluation scan
+      // for no benefit — the table-filling cost this shortcut exists to
+      // avoid (see module docs above).
+      let needs_eval = was_part_assigned(var_name)
+        || (!matches!(stored, Expr::List(_))
+          && crate::evaluator::core_eval::needs_reevaluation(
+            &stored, var_name,
+          ));
+      return if needs_eval {
         evaluate_expr_to_expr(&stored)
+      } else {
+        Ok(stored)
       };
     }
   }
