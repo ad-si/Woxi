@@ -500,9 +500,8 @@ fn prime_marks(s: &str) -> Option<usize> {
 /// so callers fall back to the ordinary `(base)^(script)` reading.
 fn derivative_tag_orders(s: &str) -> Option<Vec<String>> {
   let args = positional_box_args("TagBox", s.trim())?;
-  let (content, tag) = match &args[..] {
-    [content, tag] => (content, tag),
-    _ => return None,
+  let [content, tag] = &args[..] else {
+    return None;
   };
   if tag.trim() != "Derivative" {
     return None;
