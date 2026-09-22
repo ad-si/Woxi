@@ -1964,6 +1964,11 @@ fn evaluate_function_call_ast_inner(
     return crate::functions::polyhedron_data::polyhedron_data_ast(args);
   }
 
+  // Knot data function
+  if name == "KnotData" && !args.is_empty() {
+    return crate::functions::knot_data::knot_data_ast(args);
+  }
+
   // The legacy `PolyhedronOperations` package: Truncate/Stellate a
   // graphics expression's Polygon faces, corner-cutting or pyramiding
   // each one to a ratio (`Needs["PolyhedronOperations`"]` has nothing to
