@@ -9715,6 +9715,137 @@ Cell[BoxData[
     }
   }
 
+  // Checked a randomly-sampled Wolfram Demonstrations Project notebook (an
+  // implicit-surface explorer picking between two quartic families) against
+  // Woxi Studio's Manipulate pipeline. Self-authored, construct-equivalent
+  // body — its own surface equations and a `render` helper, not the
+  // notebook's own formula or wording, which is copyrighted — exercising
+  // the general shape: a separate `InitializationCell` defining the render
+  // helper, a `SaveDefinitions -> True` Manipulate whose Output cell is a
+  // `Deployed->True` `TagBox[StyleBox[DynamicModuleBox[…`, a canonicalizing
+  // `If[…, {a, b} = …, {b, a} = …]` swap before the body picks an equation
+  // with `Which`, a `ControlType -> PopupMenu` color choice, a boolean
+  // checkbox-shaped `{var, {True, False}}` row, a bold `Style[…]` heading
+  // and `Delimiter`s, and a `PaneSelector` control panel (keyed by a
+  // `Dynamic[…]`-driven mode variable) whose panes are `Column[…]`s mixing
+  // a heading with `Control[…]` rows — one pane offering a control the
+  // other doesn't, so that control's row must disappear when the panel
+  // switches away from it.
+  #[test]
+  fn demonstration_implicit_surface_pane_selector_control_panel_opens_live() {
+    let nb_src = r##"Notebook[{
+Cell[BoxData["render[eqn_, scale_, dense_, alpha_, hue_] := ContourPlot3D[eqn == 0, {x, -scale, scale}, {y, -scale, scale}, {z, -scale, scale}, PlotPoints -> If[dense, 12, 6], Mesh -> None, ContourStyle -> Directive[hue, Opacity[alpha]], ImageSize -> {80, 80}]"], "Input", InitializationCell->True],
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[
+ If[p^2 >= q^2, {r1, r2} = {p, q}, {r2, r1} = {p, q}];
+ eqA = (x^2 + y^2 + z^2 - t^2 + r1^2 - r2^2)^2 - 4 (r1 x - r2 t)^2 - 4 (r1^2 - r2^2) y^2;
+ eqB = (x^2 + y^2 + z^2 - 2 r2 z) (z - 2 r1) + 2 r1 y^2;
+ Which[mode == 1, render[eqA, scale, dense, alpha, hue], mode == 2, render[eqB, scale, dense, alpha, hue], True, Abort[]],
+ {{scale, 6, \"scale\"}, 1, 12, Appearance -> \"Labeled\"},
+ {{alpha, 0.7, \"opacity\"}, 0.3, 1, 0.1, Appearance -> \"Labeled\"},
+ {{hue, Green, \"hue\"}, {Red -> \"red\", Cyan -> \"blue\", Green -> \"green\"}, ControlType -> PopupMenu},
+ {{dense, False, \"refine\"}, {True, False}},
+ Delimiter,
+ Style[\"fix parameters\", Bold],
+ {{mode, 1, \"\"}, {1 -> \"standard\", 2 -> \"parabolic\"}},
+ Delimiter,
+ PaneSelector[{1 -> Column[{Style[\"standard\", Bold], Control[{{p, 3, \"p\"}, -5, 5, 0.1, Appearance -> \"Labeled\", ImageSize -> Tiny}], Control[{{q, 1, \"q\"}, -5, 5, 0.1, Appearance -> \"Labeled\", ImageSize -> Tiny}], Control[{{t, 2, \"t\"}, -5, 5, 0.1, Appearance -> \"Labeled\", ImageSize -> Tiny}]}], 2 -> Column[{Style[\"parabolic\", Bold], Control[{{p, 3, \"p\"}, -5, 5, 0.1, Appearance -> \"Labeled\", ImageSize -> Tiny}], Control[{{q, 1, \"q\"}, -5, 5, 0.1, Appearance -> \"Labeled\", ImageSize -> Tiny}]}]}, Dynamic[mode]],
+ ControlPlacement -> Left,
+ TrackedSymbols :> {p, q, t, scale, mode, dense, alpha, hue},
+ SaveDefinitions -> True
+]"], "Input"],
+Cell[BoxData[
+ TagBox[
+  StyleBox[
+   DynamicModuleBox[{$CellContext`p$$ = 3, $CellContext`q$$ = 1,
+     $CellContext`t$$ = 2, $CellContext`scale$$ = 6,
+     $CellContext`mode$$ = 1, $CellContext`hue$$ = RGBColor[0, 1, 0],
+     $CellContext`dense$$ = False, $CellContext`alpha$$ = 0.7},
+    DynamicBox[Manipulate`ManipulateBoxes[\[Ellipsis]]]],
+   "Manipulate",
+   Deployed->True,
+   StripOnInput->False],
+  Manipulate`InterpretManipulate[1]]], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let mut widget =
+      editors.into_iter().find_map(|e| e.manipulate_state).expect(
+        "a SaveDefinitions Demonstration with a separate initialization \
+         cell must instantiate on load",
+      );
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the render helper's ContourPlot3D must draw"
+    );
+
+    let names: Vec<&str> = widget
+      .controls
+      .iter()
+      .filter(|c| c.binds_variable())
+      .map(|c| c.name())
+      .collect();
+    assert_eq!(
+      names,
+      vec!["scale", "alpha", "hue", "dense", "mode", "p", "q", "t"],
+      "every top-level control and every PaneSelector-pane Control[…] must \
+       be built, in spec order"
+    );
+
+    // Pane 1 (mode == 1, the default) shows all three of its controls.
+    let t_idx = widget
+      .controls
+      .iter()
+      .position(|c| c.name() == "t")
+      .unwrap();
+    assert!(
+      widget.control_is_visible[t_idx],
+      "pane 1's `t` control must be on screen while mode == 1"
+    );
+
+    // Switching the mode Setter to pane 2 (which has no `t` control) must
+    // hide `t`'s row, even though `t` stays bound so the (now-unreachable)
+    // `eqA` branch would still evaluate if picked again.
+    let mode_idx = widget
+      .controls
+      .iter()
+      .position(|c| c.name() == "mode")
+      .unwrap();
+    match &mut widget.controls[mode_idx] {
+      manipulate::ControlState::Discrete {
+        values,
+        current_index,
+        ..
+      } => {
+        *current_index = values
+          .iter()
+          .position(|v| v == "2")
+          .expect("mode control must offer choice 2");
+      }
+      other => panic!("expected mode as a Discrete control, got {other:?}"),
+    }
+    widget.reevaluate();
+    assert!(
+      widget.error.is_none(),
+      "switching to the parabolic pane must still evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      !widget.control_is_visible[t_idx],
+      "pane 2 has no `t` control, so its row must disappear"
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the parabolic branch's ContourPlot3D must draw too"
+    );
+  }
+
   /// A polar-curve viewer Demonstration downloaded the same way (a bare
   /// widget dump, no Input cell): its body reassigns a control variable
   /// with `If[…, var = …]` before the plot that reads it, and its "zoom"

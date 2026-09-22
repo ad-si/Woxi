@@ -8138,6 +8138,11 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut full_width = false;
   let mut show_axes = true;
   let mut styles: Vec<StyleState3D> = Vec::new();
+  // `PlotPoints -> n`: number of samples per direction (n - 1 grid cells),
+  // matching the convention used elsewhere in this module (e.g.
+  // SphericalPlot3D). Demonstrations commonly toggle this between a coarse
+  // preview and a refined render.
+  let mut plot_points: Option<usize> = None;
 
   for opt in &args[4..] {
     if let Expr::Rule {
@@ -8164,12 +8169,27 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Expr::Identifier(name) if name == "ContourStyle" => {
           styles = parse_plot_style_3d(replacement, bodies.len());
         }
+        Expr::Identifier(name) if name == "PlotPoints" => {
+          let n = match evaluate_expr_to_expr(replacement) {
+            Ok(Expr::Integer(n)) => Some(n),
+            Ok(Expr::List(ref items)) => match items.first() {
+              Some(Expr::Integer(n)) => Some(*n),
+              _ => None,
+            },
+            _ => None,
+          };
+          if let Some(n) = n
+            && n >= 2
+          {
+            plot_points = Some(n as usize);
+          }
+        }
         _ => {}
       }
     }
   }
 
-  let n = CONTOUR3D_GRID;
+  let n = plot_points.map_or(CONTOUR3D_GRID, |p| p - 1);
   let x_step = (x_max - x_min) / n as f64;
   let y_step = (y_max - y_min) / n as f64;
   let z_step = (z_max - z_min) / n as f64;
