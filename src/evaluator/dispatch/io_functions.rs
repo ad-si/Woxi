@@ -5909,6 +5909,23 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
         expr_text_svg(expr)
       }
     }
+    // `Column[{…}]` holding plain data (not caught by the `LAYOUT_HEADS`
+    // arm above, which only fires when a nested item is itself a picture)
+    // still stacks its items vertically rather than dumping its source —
+    // matching `Row`'s unconditional arm just above. Without this,
+    // `ExportString[Column[{Grid[…], Grid[…]}], "SVG"]` (a stack of data
+    // tables, no plot inside) rendered as literal `Column[{Grid[…]}]` text
+    // instead of the tables themselves.
+    Expr::FunctionCall {
+      name: column_name,
+      args: column_args,
+    } if column_name == "Column" && !column_args.is_empty() => {
+      if let Some(svg) = crate::column_svg_with_rendered_items(column_args) {
+        svg
+      } else {
+        expr_text_svg(expr)
+      }
+    }
     Expr::FunctionCall {
       name: fr_name,
       args: fr_args,
