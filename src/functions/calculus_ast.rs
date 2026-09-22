@@ -15313,34 +15313,32 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut coefficients = Vec::new();
   let mut current_expr = args[0].clone();
 
+  // k! computed incrementally as a BigInt: a fixed-width accumulator
+  // overflows once `order` climbs into the 30s (34! already exceeds
+  // i128::MAX), which a high-order `Series[…, {x, 0, 100}]` reaches easily.
+  let mut factorial = num_bigint::BigInt::from(1);
   for k in 0..=order {
     // Evaluate current derivative at x0
     let substituted =
       crate::syntax::substitute_variable(&current_expr, &var_name, &x0);
     let value = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
 
-    // Compute k!
-    let mut factorial = 1i128;
-    for i in 2..=k {
-      factorial *= i;
+    if k >= 1 {
+      factorial *= num_bigint::BigInt::from(k);
     }
 
     // Coefficient = value / k!
     let coeff = if matches!(&value, Expr::Integer(0)) {
       Expr::Integer(0)
-    } else if factorial == 1 {
+    } else if factorial == num_bigint::BigInt::from(1) {
       value
     } else {
       // value / factorial
       match &value {
-        Expr::Integer(n) => {
-          let (num, den) = rat_reduce(*n, factorial);
-          if den == 1 {
-            Expr::Integer(num)
-          } else {
-            crate::functions::math_ast::make_rational(num, den)
-          }
-        }
+        Expr::Integer(n) => crate::functions::math_ast::make_rational_expr(
+          &num_bigint::BigInt::from(*n),
+          &factorial,
+        ),
         // Handle Rational[n, d] / factorial → Rational[n, d*factorial] simplified
         Expr::FunctionCall { name, args: rargs }
           if name == "Rational"
@@ -15349,9 +15347,15 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             && matches!(&rargs[1], Expr::Integer(_)) =>
         {
           if let (Expr::Integer(n), Expr::Integer(d)) = (&rargs[0], &rargs[1]) {
-            crate::functions::math_ast::make_rational(*n, d * factorial)
+            crate::functions::math_ast::make_rational_expr(
+              &num_bigint::BigInt::from(*n),
+              &(num_bigint::BigInt::from(*d) * &factorial),
+            )
           } else {
-            div2(value, Expr::Integer(factorial))
+            div2(
+              value,
+              crate::functions::math_ast::bigint_to_expr(factorial.clone()),
+            )
           }
         }
         _ => {
@@ -15360,11 +15364,22 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           // `Times[Rational[1, 2], Derivative[…]] / 2` collapses to
           // `Times[Rational[1, 4], Derivative[…]]` rather than leaving a
           // `BinaryOp::Divide` outside.
-          let inv =
-            call("Rational", vec![Expr::Integer(1), Expr::Integer(factorial)]);
+          let inv = call(
+            "Rational",
+            vec![
+              Expr::Integer(1),
+              crate::functions::math_ast::bigint_to_expr(factorial.clone()),
+            ],
+          );
           let val_clone = value.clone();
-          crate::functions::math_ast::times_ast(&[value, inv])
-            .unwrap_or(div2(val_clone, Expr::Integer(factorial)))
+          crate::functions::math_ast::times_ast(&[value, inv]).unwrap_or_else(
+            |_| {
+              div2(
+                val_clone,
+                crate::functions::math_ast::bigint_to_expr(factorial.clone()),
+              )
+            },
+          )
         }
       }
     };

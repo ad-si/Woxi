@@ -2413,6 +2413,28 @@ mod series {
     );
   }
 
+  // Regression test: the Taylor-coefficient loop divided by k! computed with
+  // a fixed-width i128 accumulator, which overflows once k reaches the mid
+  // 30s (34! already exceeds i128::MAX). A high-order `Series` call used to
+  // panic with "attempt to multiply with overflow" instead of returning the
+  // (arbitrary-precision) rational coefficient.
+  #[test]
+  fn series_high_order_no_overflow_integer_value() {
+    assert_eq!(
+      interpret("SeriesCoefficient[Series[Exp[x], {x, 0, 40}], 40]").unwrap(),
+      "1/815915283247897734345611269596115894272000000000"
+    );
+  }
+
+  #[test]
+  fn series_high_order_no_overflow_rational_value() {
+    assert_eq!(
+      interpret("SeriesCoefficient[Series[Sqrt[1+x], {x, 0, 40}], 40]")
+        .unwrap(),
+      "-340212685864987900195/302231454903657293676544"
+    );
+  }
+
   // A sum containing a term with a pole at x0 (a Laurent series) is expanded
   // by linearity — each summand on its own, then added — so it no longer
   // chokes on the pole. (Series of a single `1/x` already worked.)
