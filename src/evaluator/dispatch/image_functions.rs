@@ -901,7 +901,7 @@ pub fn dispatch_image_functions(
       // Import has returned $Failed.
       return Some(crate::functions::image_ast::dominant_colors_ast(args));
     }
-    "ImageApply" if args.len() == 2 => {
+    "ImageApply" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::image_ast::image_apply_ast(
         args,
         &evaluate_expr_to_expr,

@@ -2208,7 +2208,7 @@ NotebookInformation,Notebook UI,🚫,None,5.0,2217
 SphericalHankelH1,Spherical Hankel function of the first kind,✅,pure,6.0,2219
 ToNumberField,Algebraic number theory,🚫,None,6.0,2219
 HarmonicMean,Returns the harmonic mean of a list or an association's values,✅,pure,6.0,2223
-Masking,Image processing masking option,🚫,None,8.0,2223
+Masking,Image processing masking option,✅,none,8.0,2223
 OverscriptBox,Low-level box construct for overscript display,✅,pure,3.0,2223
 PermutationList,Permutation list from cycle notation or a permutation list,✅,pure,8.0,2223
 EmbeddedHTML,Web embedding,🚫,None,10.0,2225
