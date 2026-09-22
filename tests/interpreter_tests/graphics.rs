@@ -17420,11 +17420,49 @@ mod color_swatches {
   }
 
   #[test]
+  fn rgbcolor_packed_list_3_args() {
+    // `RGBColor[{r, g, b}]` is the same color as `RGBColor[r, g, b]` — the
+    // packed-list form `Table[RGBColor[RandomReal[1, 3]], …]` commonly
+    // produces. It used to fall through to `None` (rendering as black)
+    // because only the bare-args and single-scalar-gray shapes were parsed.
+    clear_state();
+    let result = interpret_with_stdout("RGBColor[{1, 0, 0}]").unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains("fill=\"rgb(255,0,0)\""));
+  }
+
+  #[test]
+  fn rgbcolor_packed_list_with_alpha() {
+    clear_state();
+    let result = interpret_with_stdout("RGBColor[{1, 0, 0, 0.5}]").unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains("fill=\"rgb(255,0,0)\""));
+    assert!(svg.contains("opacity=\"0.5\""));
+  }
+
+  #[test]
   fn hue_swatch() {
     clear_state();
     let result = interpret_with_stdout("Hue[0.5]").unwrap();
     assert_eq!(result.result, "-Graphics-");
     assert!(result.graphics.is_some());
+  }
+
+  #[test]
+  fn hue_packed_list() {
+    // `Hue[{h, s, b}]` is the packed-list form of `Hue[h, s, b]`.
+    clear_state();
+    let full_args = interpret_with_stdout("Hue[0.3, 1, 1]")
+      .unwrap()
+      .graphics
+      .unwrap();
+    let packed = interpret_with_stdout("Hue[{0.3, 1, 1}]")
+      .unwrap()
+      .graphics
+      .unwrap();
+    assert_eq!(full_args, packed);
   }
 
   #[test]

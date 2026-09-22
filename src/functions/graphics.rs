@@ -1112,11 +1112,27 @@ fn system_color_pair(name: &str) -> Option<(&'static str, &'static str)> {
   })
 }
 
+/// `RGBColor`/`Hue` accept their channels either as separate arguments or
+/// packed into a single list (`RGBColor[{r, g, b}]`, as `Table[RGBColor[
+/// RandomReal[1, 3]], …]` produces) — unpack that form here so both call
+/// shapes share the same arity logic below.
+fn unpack_channels(args: &crate::ExprList) -> std::borrow::Cow<'_, [Expr]> {
+  if args.len() == 1
+    && let Expr::List(list) = &args[0]
+    && list.len() >= 2
+  {
+    std::borrow::Cow::Owned(list.to_vec())
+  } else {
+    std::borrow::Cow::Borrowed(args.as_slice())
+  }
+}
+
 pub(crate) fn parse_color(expr: &Expr) -> Option<Color> {
   match expr {
     Expr::Identifier(name) => named_color(name),
     Expr::FunctionCall { name, args } => match name.as_str() {
       "RGBColor" => {
+        let args = unpack_channels(args);
         if args.len() >= 3 {
           let r = expr_to_f64(&args[0])?;
           let g = expr_to_f64(&args[1])?;
@@ -1139,6 +1155,7 @@ pub(crate) fn parse_color(expr: &Expr) -> Option<Color> {
         }
       }
       "Hue" => {
+        let args = unpack_channels(args);
         if args.len() >= 3 {
           let h = expr_to_f64(&args[0])?;
           let s = expr_to_f64(&args[1])?;
