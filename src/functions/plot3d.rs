@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::math_ast::{try_eval_to_f64, try_eval_to_f64_lenient};
@@ -614,17 +613,16 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                     Expr::Real(cb as f64 / 255.0),
                   ],
                 ),
-                Expr::FunctionCall {
-                  name: "Polygon".to_string(),
-                  args: vec![Expr::List(
+                call1(
+                  "Polygon",
+                  Expr::List(
                     [a, b, c, d]
                       .iter()
                       .map(|&k| Expr::Integer(k as i128 + 1))
                       .collect::<Vec<_>>()
                       .into(),
-                  )]
-                  .into(),
-                },
+                  ),
+                ),
               ]
               .into(),
             ));
@@ -2552,17 +2550,16 @@ fn unbounded_3d_to_primitive(
         f64::NEG_INFINITY
       };
       let (lo, hi) = clip_line_to_box(p, v, bounds, t_min)?;
-      Some(Expr::FunctionCall {
-        name: "Line".to_string(),
-        args: vec![Expr::List(
+      Some(call1(
+        "Line",
+        Expr::List(
           vec![
             point3d_expr(v_add(p, v_scale(v, lo))),
             point3d_expr(v_add(p, v_scale(v, hi))),
           ]
           .into(),
-        )]
-        .into(),
-      })
+        ),
+      ))
     }
     // `InfinitePlane[{p1, p2, p3}]` — the plane through three points —
     // or `InfinitePlane[p, {v1, v2}]` — through `p`, spanned by `v1`, `v2`.
@@ -2621,17 +2618,16 @@ fn unbounded_3d_to_primitive(
 }
 
 fn polygon3d_expr(poly: &[[f64; 3]]) -> Expr {
-  Expr::FunctionCall {
-    name: "Polygon".to_string(),
-    args: vec![Expr::List(
+  call1(
+    "Polygon",
+    Expr::List(
       poly
         .iter()
         .map(|p| point3d_expr(*p))
         .collect::<Vec<_>>()
         .into(),
-    )]
-    .into(),
-  }
+    ),
+  )
 }
 
 /// A 3D primitive for Graphics3D
@@ -5628,13 +5624,12 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // The symbolic form carried on the rendered result so that Part can
   // index it (`Graphics3D[…][[1]]` → the content).
-  let structure = Expr::FunctionCall {
-    name: "Graphics3D".to_string(),
-    args: std::iter::once(content.clone())
+  let structure = call(
+    "Graphics3D",
+    std::iter::once(content.clone())
       .chain(args[1..].iter().cloned())
-      .collect::<Vec<_>>()
-      .into(),
-  };
+      .collect::<Vec<_>>(),
+  );
 
   if prims.is_empty() {
     // Even with no primitives, return the marker — with its title, since
@@ -7142,17 +7137,16 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               Expr::Real(cb as f64 / 255.0),
             ],
           ),
-          Expr::FunctionCall {
-            name: "Polygon".to_string(),
-            args: vec![Expr::List(
+          call1(
+            "Polygon",
+            Expr::List(
               [a, b, c, d]
                 .iter()
                 .map(|&k| Expr::Integer(k as i128 + 1))
                 .collect::<Vec<_>>()
                 .into(),
-            )]
-            .into(),
-          },
+            ),
+          ),
         ]
         .into(),
       ));
@@ -7203,10 +7197,7 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   );
   let mut structure_args = vec![complex];
   structure_args.extend(args[1..].iter().cloned());
-  let structure = Expr::FunctionCall {
-    name: "Graphics3D".to_string(),
-    args: structure_args.into(),
-  };
+  let structure = call("Graphics3D", structure_args);
 
   Ok(crate::graphics3d_result_with_structure(svg, structure))
 }
@@ -8415,18 +8406,17 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             content.push(Expr::List(
               vec![
                 color_directive.clone(),
-                Expr::FunctionCall {
-                  name: "Polygon".to_string(),
-                  args: vec![Expr::List(
+                call1(
+                  "Polygon",
+                  Expr::List(
                     vec![
                       Expr::Integer(base as i128 + 1),
                       Expr::Integer(base as i128 + 2),
                       Expr::Integer(base as i128 + 3),
                     ]
                     .into(),
-                  )]
-                  .into(),
-                },
+                  ),
+                ),
               ]
               .into(),
             ));
@@ -8769,7 +8759,7 @@ pub fn list_point_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           Expr::List(vec![Expr::Real(x), Expr::Real(y), Expr::Real(z)].into())
         })
         .collect();
-      group.push(call("Point", vec![Expr::List(point_exprs.into())]));
+      group.push(call1("Point", Expr::List(point_exprs.into())));
       content.push(Expr::List(group.into()));
     }
 
@@ -9758,9 +9748,9 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           )
         })
         .collect();
-      let polygon_expr = Expr::FunctionCall {
-        name: "Polygon".to_string(),
-        args: vec![Expr::List(
+      let polygon_expr = call1(
+        "Polygon",
+        Expr::List(
           tri_indices
             .iter()
             .map(|tri| {
@@ -9774,9 +9764,8 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             })
             .collect::<Vec<_>>()
             .into(),
-        )]
-        .into(),
-      };
+        ),
+      );
       // A `PlotStyle` colour wraps the whole surface's polygons; with no
       // style given this is the bare polygon list, unchanged from before
       // multi-surface support existed.
@@ -9803,9 +9792,9 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if let Some((r, g, b)) = boundary_color
         && !boundary_edges.is_empty()
       {
-        let line_expr = Expr::FunctionCall {
-          name: "Line".to_string(),
-          args: vec![Expr::List(
+        let line_expr = call1(
+          "Line",
+          Expr::List(
             boundary_edges
               .iter()
               .map(|&(a, b)| {
@@ -9819,9 +9808,8 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               })
               .collect::<Vec<_>>()
               .into(),
-          )]
-          .into(),
-        };
+          ),
+        );
         let color_expr = call(
           "RGBColor",
           vec![
@@ -9847,13 +9835,12 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     Expr::List(complexes.into())
   };
-  let structure = Expr::FunctionCall {
-    name: "Graphics3D".to_string(),
-    args: std::iter::once(content)
+  let structure = call(
+    "Graphics3D",
+    std::iter::once(content)
       .chain(args[3..].iter().cloned())
-      .collect::<Vec<_>>()
-      .into(),
-  };
+      .collect::<Vec<_>>(),
+  );
 
   // ── Standalone rendering (the plot's own SVG) ──
   // Find coordinate ranges across every surface
@@ -10349,13 +10336,12 @@ fn parametric_plot3d_curve_ast(
       if seg.len() >= 2 {
         let points = Expr::List(std::mem::take(seg).into());
         sink.push(match &tube_args {
-          Some(extra) => Expr::FunctionCall {
-            name: "Tube".to_string(),
-            args: std::iter::once(points)
+          Some(extra) => call(
+            "Tube",
+            std::iter::once(points)
               .chain(extra.iter().cloned())
-              .collect::<Vec<_>>()
-              .into(),
-          },
+              .collect::<Vec<_>>(),
+          ),
           None => call1("Line", points),
         });
       } else {

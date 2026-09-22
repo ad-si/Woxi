@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::element_data::{
@@ -477,7 +476,7 @@ fn phase_legended(graphics: Expr) -> Expr {
       rgb(0.493332, 0.733333, 0.866667),
       rgb(0.96666, 0.7513329, 0.4283329),
       rgb(0.636667, 0.799999, 0.473333),
-      call("GrayLevel", vec![Expr::Real(0.9)]),
+      call1("GrayLevel", Expr::Real(0.9)),
     ]
     .into(),
   );
@@ -486,7 +485,7 @@ fn phase_legended(graphics: Expr) -> Expr {
       Expr::String("gas".to_string()),
       Expr::String("solid".to_string()),
       Expr::String("liquid".to_string()),
-      call("Missing", vec![Expr::String("NotAvailable".to_string())]),
+      call1("Missing", Expr::String("NotAvailable".to_string())),
     ]
     .into(),
   );

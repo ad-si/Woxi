@@ -12,7 +12,6 @@
 //! (1 - 3*z)^2), and symbolic bases keep (a - z)^(k+1) with an overall
 //! minus sign for even k.
 
-#[allow(unused_imports)]
 use super::*;
 use crate::functions::calculus_ast::is_constant_wrt;
 use crate::functions::math_ast::{gcd_i128, rat_reduce};
@@ -614,7 +613,7 @@ pub fn inverse_z_transform_ast(
     _ => return Ok(unevaluated(args)),
   };
   let n = Expr::Identifier(n_var.clone());
-  let factorial_n = call("Factorial", vec![n.clone()]);
+  let factorial_n = call1("Factorial", n.clone());
 
   // E^(1/z) → 1/n!, E^(c/z) → c^n/n!
   if let Some((base, exp)) = as_power(&args[0])
@@ -661,7 +660,7 @@ pub fn inverse_z_transform_ast(
 
   // Constant with respect to z: c → c*DiscreteDelta[n]
   if is_constant_wrt(&args[0], &z_var) {
-    let delta = call("DiscreteDelta", vec![n.clone()]);
+    let delta = call1("DiscreteDelta", n.clone());
     return Ok(match &args[0] {
       Expr::Integer(1) => delta,
       c => times(vec![c.clone(), delta]),
@@ -1055,7 +1054,7 @@ pub fn fourier_coefficient_ast(
 
   // Pure constant: c*DiscreteDelta[n]
   if c1.0 == 0 && c2.0 == 0 && c3.0 == 0 {
-    let delta = call("DiscreteDelta", vec![n_arg.clone()]);
+    let delta = call1("DiscreteDelta", n_arg.clone());
     let result = if c0 == (1, 1) {
       delta
     } else {
@@ -1270,7 +1269,7 @@ pub fn fourier_sin_cos_coefficient_ast(
   } else {
     match k {
       // 2*DiscreteDelta[n]
-      0 => times(vec![scaled(2), call("DiscreteDelta", vec![n_e()])]),
+      0 => times(vec![scaled(2), call1("DiscreteDelta", n_e())]),
       // (2*(-1 + (-1)^n))/(n^2*Pi)
       1 => div2(
         times(vec![scaled(2), plus(vec![Expr::Integer(-1), m1()])]),

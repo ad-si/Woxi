@@ -7148,7 +7148,7 @@ pub fn nonlinear_model_fit_ast(
     ));
   }
 
-  Ok(call("FittedModel", vec![Expr::Association(assoc)]))
+  Ok(call1("FittedModel", Expr::Association(assoc)))
 }
 
 /// `LinearModelFit[{X, y}]` — design-matrix form. Fits `y ≈ X · β` directly,

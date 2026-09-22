@@ -1542,7 +1542,7 @@ fn gaussian_moment_result(
   let mut factors: Vec<Expr> = Vec::new();
   if n % 2 == 0 {
     let m = n / 2;
-    factors.push(call("Factorial2", vec![Expr::Integer(2 * m - 1)]));
+    factors.push(call1("Factorial2", Expr::Integer(2 * m - 1)));
     // (2 a)^(-m)
     factors.push(pow(
       call("Times", vec![Expr::Integer(2), coeff.clone()]),

@@ -1286,7 +1286,7 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 let base = if c_is_one {
                   call1("Factorial", max_expr.clone())
                 } else {
-                  call("Gamma", vec![plus2(Expr::Integer(1), max_expr.clone())])
+                  call1("Gamma", plus2(Expr::Integer(1), max_expr.clone()))
                 };
                 let pow_part = if p == 1 {
                   base

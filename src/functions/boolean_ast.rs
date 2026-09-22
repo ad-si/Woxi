@@ -2,7 +2,6 @@
 //!
 //! These functions work directly with `Expr` AST nodes.
 
-#[allow(unused_imports)]
 use super::*;
 use crate::evaluator::evaluate_expr_to_expr;
 use std::collections::{BTreeMap, BTreeSet};
@@ -1168,10 +1167,8 @@ pub fn equivalent_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(call("And", remaining));
   }
   if has_false {
-    let negated: Vec<Expr> = remaining
-      .into_iter()
-      .map(|e| call("Not", vec![e]))
-      .collect();
+    let negated: Vec<Expr> =
+      remaining.into_iter().map(|e| call1("Not", e)).collect();
     if negated.len() == 1 {
       return Ok(negated.into_iter().next().unwrap());
     }

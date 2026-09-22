@@ -1,6 +1,6 @@
-#[allow(unused_imports)]
 use super::*;
 use crate::functions::math_ast::is_sqrt;
+use crate::syntax::string_to_expr;
 
 /// Check if the result of differentiation contains a
 /// `Derivative[...][func_name][...]` pattern (as CurriedCall),
@@ -1096,16 +1096,13 @@ fn laplace_transform_inner(expr: &Expr, t: &str, s: &Expr) -> Option<Expr> {
       {
         // t^n → Gamma[n+1] * s^(-n-1)
         let n = fargs[1];
-        return Some(Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![
+        return Some(call(
+          "Times",
+          vec![
+            call1("Gamma", call("Plus", vec![n.clone(), Expr::Integer(1)])),
             call(
-              "Gamma",
-              vec![call("Plus", vec![n.clone(), Expr::Integer(1)])],
-            ),
-            Expr::FunctionCall {
-              name: "Power".to_string(),
-              args: vec![
+              "Power",
+              vec![
                 s.clone(),
                 call(
                   "Plus",
@@ -1114,28 +1111,25 @@ fn laplace_transform_inner(expr: &Expr, t: &str, s: &Expr) -> Option<Expr> {
                     call("Times", vec![Expr::Integer(-1), n.clone()]),
                   ],
                 ),
-              ]
-              .into(),
-            },
-          ]
-          .into(),
-        });
+              ],
+            ),
+          ],
+        ));
       }
       // L[E^(a*t), t, s] = 1/(s - a)  — E can be Identifier("E") or Constant("E")
       let is_e = matches!(fargs[0], Expr::Identifier(b) if b == "E")
         || matches!(fargs[0], Expr::Constant(b) if b == "E");
       if is_e && let Some(a) = extract_linear_coeff(fargs[1], t) {
-        return Some(Expr::FunctionCall {
-          name: "Power".to_string(),
-          args: vec![
+        return Some(call(
+          "Power",
+          vec![
             call(
               "Plus",
               vec![s.clone(), call("Times", vec![Expr::Integer(-1), a])],
             ),
             Expr::Integer(-1),
-          ]
-          .into(),
-        });
+          ],
+        ));
       }
     }
 
@@ -1144,13 +1138,13 @@ fn laplace_transform_inner(expr: &Expr, t: &str, s: &Expr) -> Option<Expr> {
       && fargs.len() == 1
       && let Some(a) = extract_linear_coeff(fargs[0], t)
     {
-      return Some(Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![
+      return Some(call(
+        "Times",
+        vec![
           a.clone(),
-          Expr::FunctionCall {
-            name: "Power".to_string(),
-            args: vec![
+          call(
+            "Power",
+            vec![
               call(
                 "Plus",
                 vec![
@@ -1159,12 +1153,10 @@ fn laplace_transform_inner(expr: &Expr, t: &str, s: &Expr) -> Option<Expr> {
                 ],
               ),
               Expr::Integer(-1),
-            ]
-            .into(),
-          },
-        ]
-        .into(),
-      });
+            ],
+          ),
+        ],
+      ));
     }
 
     // L[Cos[a*t], t, s] = s/(s^2 + a^2)
@@ -1172,13 +1164,13 @@ fn laplace_transform_inner(expr: &Expr, t: &str, s: &Expr) -> Option<Expr> {
       && fargs.len() == 1
       && let Some(a) = extract_linear_coeff(fargs[0], t)
     {
-      return Some(Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![
+      return Some(call(
+        "Times",
+        vec![
           s.clone(),
-          Expr::FunctionCall {
-            name: "Power".to_string(),
-            args: vec![
+          call(
+            "Power",
+            vec![
               call(
                 "Plus",
                 vec![
@@ -1187,12 +1179,10 @@ fn laplace_transform_inner(expr: &Expr, t: &str, s: &Expr) -> Option<Expr> {
                 ],
               ),
               Expr::Integer(-1),
-            ]
-            .into(),
-          },
-        ]
-        .into(),
-      });
+            ],
+          ),
+        ],
+      ));
     }
 
     // L[DiracDelta[t], t, s] = 1
@@ -1209,9 +1199,9 @@ fn laplace_transform_inner(expr: &Expr, t: &str, s: &Expr) -> Option<Expr> {
       && let Some(a) = extract_linear_coeff(fargs[0], t)
     {
       // denom = s^2 - a^2  (Wolfram prints this as `-a^2 + s^2`)
-      let denom = Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: vec![
+      let denom = call(
+        "Plus",
+        vec![
           call("Power", vec![s.clone(), Expr::Integer(2)]),
           call(
             "Times",
@@ -1220,9 +1210,8 @@ fn laplace_transform_inner(expr: &Expr, t: &str, s: &Expr) -> Option<Expr> {
               call("Power", vec![a.clone(), Expr::Integer(2)]),
             ],
           ),
-        ]
-        .into(),
-      };
+        ],
+      );
       let numerator = if fname == "Cosh" { s.clone() } else { a };
       return Some(call(
         "Times",
@@ -1238,9 +1227,9 @@ fn laplace_transform_inner(expr: &Expr, t: &str, s: &Expr) -> Option<Expr> {
     {
       let n = fargs[0];
       // sqrt_term = Sqrt[a^2 + s^2]
-      let sqrt_term = Expr::FunctionCall {
-        name: "Power".to_string(),
-        args: vec![
+      let sqrt_term = call(
+        "Power",
+        vec![
           call(
             "Plus",
             vec![
@@ -1249,14 +1238,13 @@ fn laplace_transform_inner(expr: &Expr, t: &str, s: &Expr) -> Option<Expr> {
             ],
           ),
           call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
-        ]
-        .into(),
-      };
+        ],
+      );
       // result = a^n / (sqrt_term * (s + sqrt_term)^n)
       //        = Times[Power[a, n], Power[sqrt_term, -1], Power[Plus[s, sqrt_term], Times[-1, n]]]
-      return Some(Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![
+      return Some(call(
+        "Times",
+        vec![
           call("Power", vec![a, n.clone()]),
           call("Power", vec![sqrt_term.clone(), Expr::Integer(-1)]),
           call(
@@ -1266,9 +1254,8 @@ fn laplace_transform_inner(expr: &Expr, t: &str, s: &Expr) -> Option<Expr> {
               call("Times", vec![Expr::Integer(-1), n.clone()]),
             ],
           ),
-        ]
-        .into(),
-      });
+        ],
+      ));
     }
 
     // Linearity: L[a + b, t, s] = L[a, t, s] + L[b, t, s]
@@ -1650,21 +1637,19 @@ fn inverse_laplace_2d(
 
   // Case 2: F = 1/(p + q) → DiracDelta[-x + y].
   if matches!(&num, Expr::Integer(1)) && is_sum_pq(&den) {
-    return Some(Expr::FunctionCall {
-      name: "DiracDelta".to_string(),
-      args: vec![Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: vec![
+    return Some(call1(
+      "DiracDelta",
+      call(
+        "Plus",
+        vec![
           call(
             "Times",
             vec![Expr::Integer(-1), Expr::Identifier(x.to_string())],
           ),
           Expr::Identifier(y.to_string()),
-        ]
-        .into(),
-      }]
-      .into(),
-    });
+        ],
+      ),
+    ));
   }
 
   // Case 3: F = 1/(1 + p*q) → BesselJ[0, 2*Sqrt[x]*Sqrt[y]].
@@ -1748,9 +1733,9 @@ fn inverse_laplace_inner(expr: &Expr, s: &str, t: &str) -> Option<Expr> {
             return Some(Expr::Integer(1));
           }
           // s^(-n) → t^(n-1) / (n-1)!
-          return Some(Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![
+          return Some(call(
+            "Times",
+            vec![
               call(
                 "Power",
                 vec![Expr::Identifier(t.to_string()), Expr::Integer(n - 1)],
@@ -1759,9 +1744,8 @@ fn inverse_laplace_inner(expr: &Expr, s: &str, t: &str) -> Option<Expr> {
                 "Power",
                 vec![call1("Gamma", Expr::Integer(n)), Expr::Integer(-1)],
               ),
-            ]
-            .into(),
-          });
+            ],
+          ));
         }
       }
 
@@ -1797,17 +1781,16 @@ fn inverse_laplace_inner(expr: &Expr, s: &str, t: &str) -> Option<Expr> {
           Some(c) => (sqrt_of_expr(&c), "Sinh"),
           None => (sqrt_of_expr(&a_squared), "Sin"),
         };
-        return Some(Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![
+        return Some(call(
+          "Times",
+          vec![
             call("Power", vec![a.clone(), Expr::Integer(-1)]),
             call(
               func,
               vec![call("Times", vec![a, Expr::Identifier(t.to_string())])],
             ),
-          ]
-          .into(),
-        });
+          ],
+        ));
       }
 
       // L^-1[(s^2 + a^2)^(-1/2)] = BesselJ[0, a*t], and the hyperbolic
@@ -1875,18 +1858,17 @@ fn inverse_laplace_inner(expr: &Expr, s: &str, t: &str) -> Option<Expr> {
           }
           // For numerator/(s^2 + a^2) → (numerator/a) * Sin[a*t]
           if !depends_on(numerator, s) {
-            return Some(Expr::FunctionCall {
-              name: "Times".to_string(),
-              args: vec![
+            return Some(call(
+              "Times",
+              vec![
                 numerator.clone(),
                 call("Power", vec![a.clone(), Expr::Integer(-1)]),
                 call(
                   sin_name,
                   vec![call("Times", vec![a, Expr::Identifier(t.to_string())])],
                 ),
-              ]
-              .into(),
-            });
+              ],
+            ));
           }
         }
       }
@@ -2197,7 +2179,7 @@ fn dirac_delta_derivative(k: i128, t: &str) -> Expr {
   }
   Expr::CurriedCall {
     func: Box::new(Expr::CurriedCall {
-      func: Box::new(call("Derivative", vec![Expr::Integer(k)])),
+      func: Box::new(call1("Derivative", Expr::Integer(k))),
       args: vec![id_expr("DiracDelta")],
     }),
     args: vec![t_id],
@@ -3175,14 +3157,13 @@ fn inverse_mellin_inner(
       && consts.len() == 1
       && is_pi(&consts[0])
     {
-      let result = Expr::FunctionCall {
-        name: "Log".to_string(),
-        args: vec![make_plus(vec![
+      let result = call1(
+        "Log",
+        make_plus(vec![
           Expr::Integer(1),
           make_power(x.clone(), Expr::Integer(-1)),
-        ])]
-        .into(),
-      };
+        ]),
+      );
       return Some((result, false));
     }
   }
@@ -4274,14 +4255,13 @@ fn inverse_fourier_inner(expr: &Expr, w: &str, t: &Expr) -> Option<Expr> {
         const_expr("Pi"),
         make_power(Expr::Integer(2), Expr::Integer(-1)),
       ]));
-      let sign_1_minus_t = Expr::FunctionCall {
-        name: "Sign".to_string(),
-        args: vec![make_plus(vec![
+      let sign_1_minus_t = call1(
+        "Sign",
+        make_plus(vec![
           Expr::Integer(1),
           make_times(vec![Expr::Integer(-1), t.clone()]),
-        ])]
-        .into(),
-      };
+        ]),
+      );
       let sign_1_plus_t =
         call("Sign", vec![make_plus(vec![Expr::Integer(1), t.clone()])]);
       let sum = make_plus(vec![sign_1_minus_t, sign_1_plus_t]);
@@ -4618,16 +4598,14 @@ fn simplify_domain_constraint(constraint: &Expr, var: &str) -> Expr {
 
             // Between consecutive roots: ri < x < r(i+1)
             for i in 0..indexed.len() - 1 {
-              intervals.push(Expr::FunctionCall {
-                name: "Inequality".to_string(),
-                args: vec![
-                  indexed[i].1.clone(),
-                  id_expr("Less"),
-                  var_expr.clone(),
-                  id_expr("Less"),
-                  indexed[i + 1].1.clone(),
-                ].into(),
-              });
+              let chain = vec![
+                indexed[i].1.clone(),
+                id_expr("Less"),
+                var_expr.clone(),
+                id_expr("Less"),
+                indexed[i + 1].1.clone(),
+              ];
+              intervals.push(call("Inequality", chain));
             }
 
             // x > last root
@@ -4648,9 +4626,9 @@ fn simplify_domain_constraint(constraint: &Expr, var: &str) -> Expr {
 
         // Fallback: simple x != value case
         if matches!(lhs, Expr::Identifier(name) if name == var) {
-          return Expr::FunctionCall {
-            name: "Or".to_string(),
-            args: vec![
+          return call(
+            "Or",
+            vec![
               Expr::Comparison {
                 operands: vec![lhs.clone(), rhs.clone()],
                 operators: vec![ComparisonOp::Less],
@@ -4659,8 +4637,8 @@ fn simplify_domain_constraint(constraint: &Expr, var: &str) -> Expr {
                 operands: vec![lhs.clone(), rhs.clone()],
                 operators: vec![ComparisonOp::Greater],
               },
-            ].into(),
-          };
+            ],
+          );
         }
       }
       ComparisonOp::GreaterEqual
@@ -4801,14 +4779,10 @@ fn symbolic_series_coefficient(f: &Expr, spec: &Expr) -> Option<Expr> {
       return None;
     }
     let a = coeff(arg, 1)?;
-    let residual = ev(Expr::FunctionCall {
-      name: "Expand".to_string(),
-      args: vec![minus2(
-        arg.clone(),
-        times2(a.clone(), Expr::Identifier(x.clone())),
-      )]
-      .into(),
-    })?;
+    let residual = ev(call1(
+      "Expand",
+      minus2(arg.clone(), times2(a.clone(), Expr::Identifier(x.clone()))),
+    ))?;
     is_int(&residual, 0).then_some(a)
   };
   // `(a)` string with parentheses so a negative `a` keeps its sign inside a power.
@@ -4817,7 +4791,7 @@ fn symbolic_series_coefficient(f: &Expr, spec: &Expr) -> Option<Expr> {
   // Build and parse `Piecewise[{{coeff, cond}}, 0]`.
   let build = |coeff_src: String, cond: &str| -> Option<Expr> {
     let src = format!("Piecewise[{{{{{coeff_src}, {cond}}}}}, 0]");
-    crate::syntax::string_to_expr(&src).ok()
+    string_to_expr(&src).ok()
   };
 
   match f {
@@ -4849,18 +4823,13 @@ fn symbolic_series_coefficient(f: &Expr, spec: &Expr) -> Option<Expr> {
       }
       let neg_a = coeff(base, 1)?; // = -a
       let a = ev(call("Times", vec![Expr::Integer(-1), neg_a]))?;
-      let residual = ev(Expr::FunctionCall {
-        name: "Expand".to_string(),
-        args: vec![Expr::BinaryOp {
-          op: BinaryOperator::Minus,
-          left: Box::new(base.as_ref().clone()),
-          right: Box::new(
-            crate::syntax::string_to_expr(&format!("1 - {}*{x}", paren(&a)))
-              .ok()?,
-          ),
-        }]
-        .into(),
-      })?;
+      let residual = ev(call1(
+        "Expand",
+        minus2(
+          base.as_ref().clone(),
+          string_to_expr(&format!("1 - {}*{x}", paren(&a))).ok()?,
+        ),
+      ))?;
       if !is_int(&residual, 0) {
         return None;
       }
@@ -4889,22 +4858,13 @@ fn symbolic_series_coefficient(f: &Expr, spec: &Expr) -> Option<Expr> {
         return None;
       }
       let b = coeff(base, 1)?;
-      let residual = ev(Expr::FunctionCall {
-        name: "Expand".to_string(),
-        args: vec![Expr::BinaryOp {
-          op: BinaryOperator::Minus,
-          left: Box::new(base.as_ref().clone()),
-          right: Box::new(
-            crate::syntax::string_to_expr(&format!(
-              "{} + {}*{x}",
-              paren(&a),
-              paren(&b)
-            ))
-            .ok()?,
-          ),
-        }]
-        .into(),
-      })?;
+      let residual = ev(call1(
+        "Expand",
+        minus2(
+          base.as_ref().clone(),
+          string_to_expr(&format!("{} + {}*{x}", paren(&a), paren(&b))).ok()?,
+        ),
+      ))?;
       if !is_int(&residual, 0) {
         return None;
       }
@@ -4930,18 +4890,13 @@ fn symbolic_series_coefficient(f: &Expr, spec: &Expr) -> Option<Expr> {
         return None;
       }
       let a = coeff(&fa[0], 1)?;
-      let residual = ev(Expr::FunctionCall {
-        name: "Expand".to_string(),
-        args: vec![Expr::BinaryOp {
-          op: BinaryOperator::Minus,
-          left: Box::new(fa[0].clone()),
-          right: Box::new(
-            crate::syntax::string_to_expr(&format!("1 + {}*{x}", paren(&a)))
-              .ok()?,
-          ),
-        }]
-        .into(),
-      })?;
+      let residual = ev(call1(
+        "Expand",
+        minus2(
+          fa[0].clone(),
+          string_to_expr(&format!("1 + {}*{x}", paren(&a))).ok()?,
+        ),
+      ))?;
       if !is_int(&residual, 0) {
         return None;
       }
@@ -5076,7 +5031,7 @@ fn gf_inner(
       _ => None,
     };
     if let Some(src) = src
-      && let Ok(parsed) = crate::syntax::string_to_expr(&src)
+      && let Ok(parsed) = string_to_expr(&src)
     {
       return Ok(Some(parsed));
     }
@@ -5264,17 +5219,16 @@ fn gf_power(
     && args.len() == 1
     && matches!(&args[0], Expr::Identifier(var) if var == n)
   {
-    return Some(Expr::FunctionCall {
-      name: "BesselI".to_string(),
-      args: vec![
+    return Some(call(
+      "BesselI",
+      vec![
         Expr::Integer(0),
         times2(
           Expr::Integer(2),
           crate::functions::math_ast::make_sqrt(x.clone()),
         ),
-      ]
-      .into(),
-    });
+      ],
+    ));
   }
 
   None
@@ -5577,7 +5531,7 @@ fn gf_divide(
         let src = format!(
           "(-Log[1 - {xs}]/{xs} - Sum[{xs}^(m - 1)/m, {{m, 1, {km1}}}])/{xs}^{km1}"
         );
-        if let Ok(parsed) = crate::syntax::string_to_expr(&src) {
+        if let Ok(parsed) = string_to_expr(&src) {
           return Ok(Some(parsed));
         }
       }

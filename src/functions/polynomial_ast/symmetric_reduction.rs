@@ -9,7 +9,6 @@
 //! `s_k`. Uses the classical reduction by elementary symmetric polynomials in
 //! lexicographic monomial order.
 
-#[allow(unused_imports)]
 use super::*;
 
 fn eval(e: &Expr) -> Result<Expr, InterpreterError> {
@@ -294,7 +293,7 @@ pub fn symmetric_reduction_ast(
     elem.clone()
   };
 
-  let mut g = eval(&call("Expand", vec![f.clone()]))?;
+  let mut g = eval(&call1("Expand", f.clone()))?;
   let mut p_terms: Vec<Expr> = Vec::new();
   let mut q_terms: Vec<Expr> = Vec::new();
 

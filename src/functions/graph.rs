@@ -5489,7 +5489,7 @@ pub fn kirchhoff_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     crate::emit_message(&format!(
       "KirchhoffGraph::inv: The argument {} in {} is not a valid Kirchhoff matrix.",
       expr_to_output(matrix_expr),
-      expr_to_string(&call("KirchhoffGraph", vec![matrix_expr.clone()]))
+      expr_to_string(&call1("KirchhoffGraph", matrix_expr.clone()))
     ));
     Ok(unevaluated())
   };
