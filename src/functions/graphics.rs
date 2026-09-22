@@ -21185,7 +21185,7 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
 /// all). The wrapper is only a FrontEnd update hint here, exactly as for
 /// `Dynamic[Control[…]]` in `unwrap_control_wrapper` below, so it is
 /// stripped before the selector is evaluated or compared.
-fn unwrap_pane_selector(selector: &Expr) -> &Expr {
+pub(crate) fn unwrap_pane_selector(selector: &Expr) -> &Expr {
   match selector {
     Expr::FunctionCall { name, args }
       if name == "Dynamic" && args.len() == 1 =>

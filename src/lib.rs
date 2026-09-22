@@ -1318,15 +1318,21 @@ pub fn get_captured_graphics() -> Option<String> {
 /// `p2` last, so the chosen `p1` was displayed as `p2`. Re-capturing the
 /// result's SVG puts the picked picture back at the end of the buffer.
 ///
-/// `TabView[{label1 -> pane1, label2 -> pane2, …}]` is the same problem in
-/// a different shape: unlike `Switch`, it has no "the value is exactly this
-/// one branch" reduction — a real front end keeps every pane's expression
-/// live and simply *displays* the first one until the user clicks another
-/// tab. Every pane's content is still evaluated eagerly here, though, so a
-/// pane with a picture still calls `capture_graphics` as a side effect —
-/// last pane in the list wins the buffer, not the first tab a notebook
-/// actually opens on. Recurse into the first pane and promote its picture
-/// the same way.
+/// `TabView[{label1 -> pane1, label2 -> pane2, …}, sel]` is the same problem
+/// in a different shape: unlike `Switch`, it has no "the value is exactly
+/// this one branch" reduction — every pane's content is still evaluated
+/// eagerly here, so a pane with a picture still calls `capture_graphics` as
+/// a side effect, and the last pane in the list wins the buffer, not the
+/// tab a live front end is actually showing. `sel` (usually a bare variable
+/// or a `Dynamic[var]` written by the FrontEnd, e.g. a hidden
+/// `ControlType -> None` tab-index control) names which pane that is:
+/// evaluated against whatever the Manipulate body already assigned that
+/// variable to, matched against each pane's explicit key (the 3-argument
+/// `key -> label -> content` form) or, for the plain `label -> content`
+/// form Demonstrations normally write, the pane's 1-based position — the
+/// same shorthand the Wolfram front end uses. Recurse into the selected
+/// pane (or the first one, absent a usable `sel` or a match) and promote
+/// its picture the same way.
 fn promote_result_graphics(expr: &syntax::Expr) {
   if let syntax::Expr::Graphics { svg, .. } = expr {
     if get_captured_graphics().as_deref() != Some(svg.as_str()) {
@@ -1337,15 +1343,70 @@ fn promote_result_graphics(expr: &syntax::Expr) {
   if let syntax::Expr::FunctionCall { name, args } = expr
     && name == "TabView"
     && let Some(syntax::Expr::List(items)) = args.first()
-    && let Some(first) = items.first()
+    && !items.is_empty()
   {
-    let pane = match first {
+    let selected = args
+      .get(1)
+      .and_then(|sel| selected_tabview_pane(items, sel))
+      .unwrap_or(&items[0]);
+    let pane = match selected {
       syntax::Expr::Rule { replacement, .. }
-      | syntax::Expr::RuleDelayed { replacement, .. } => replacement.as_ref(),
+      | syntax::Expr::RuleDelayed { replacement, .. } => match replacement
+        .as_ref()
+      {
+        // 3-argument `key -> label -> content` form: unwrap once more.
+        syntax::Expr::Rule { replacement, .. }
+        | syntax::Expr::RuleDelayed { replacement, .. } => replacement.as_ref(),
+        other => other,
+      },
       other => other,
     };
     promote_result_graphics(pane);
   }
+}
+
+/// Find the pane `TabView[{…}, sel]`'s selector currently names: `sel`
+/// (stripped of any `Dynamic[…]` wrapper) is evaluated against the live
+/// global state and compared, by `InputForm` text, against each pane's
+/// explicit key when the pane is given in the 3-argument `key -> label ->
+/// content` form; the plain 2-argument `label -> content` form has no
+/// separate key, so its pane is matched against its 1-based list position
+/// instead — the same shorthand the Wolfram front end applies. `None` when
+/// `sel` fails to evaluate or no pane matches.
+fn selected_tabview_pane<'a>(
+  items: &'a [syntax::Expr],
+  sel: &syntax::Expr,
+) -> Option<&'a syntax::Expr> {
+  let sel = functions::graphics::unwrap_pane_selector(sel);
+  let selector = interpret_to_expr(&syntax::expr_to_input_form(sel)).ok()?;
+  let selector = syntax::expr_to_input_form(&selector);
+  items
+    .iter()
+    .enumerate()
+    .find(|(idx, pane)| {
+      let key = match pane {
+        syntax::Expr::Rule {
+          pattern,
+          replacement,
+        }
+        | syntax::Expr::RuleDelayed {
+          pattern,
+          replacement,
+        } => {
+          match replacement.as_ref() {
+            // 3-argument form: the pane's own explicit key.
+            syntax::Expr::Rule { .. } | syntax::Expr::RuleDelayed { .. } => {
+              syntax::expr_to_input_form(pattern)
+            }
+            // 2-argument form: the implicit 1-based position.
+            _ => (idx + 1).to_string(),
+          }
+        }
+        _ => (idx + 1).to_string(),
+      };
+      key == selector
+    })
+    .map(|(_, pane)| pane)
 }
 
 /// Number of entries currently in the captured-graphics buffer. Paired with
