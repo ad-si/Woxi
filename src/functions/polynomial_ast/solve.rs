@@ -188,12 +188,17 @@ pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Fall back to symbolic solve + numerize
   let symbolic = solve_ast(args)?;
   let numerized = nsolve_numerize(&symbolic)?;
-  // A `Reals` domain (the optional third argument) keeps only the real
-  // solutions. solve_ast already filters the symbolically solvable cases, but a
+  // A `Reals` domain keeps only the real solutions. It is the optional
+  // third argument in the ordinary `NSolve[eqns, vars, Reals]` form, but
+  // the *last* argument either way — the domain-only two-argument form
+  // `NSolve[eqns, Reals]` (no explicit variable list) carries it in
+  // position 1 instead, so check `args.last()` rather than a fixed index.
+  // solve_ast already filters the symbolically solvable cases, but a
   // polynomial with no radical form falls back to numeric roots that arrive
   // unfiltered — drop the complex ones here so NSolve[quintic, x, Reals]
   // matches wolframscript.
-  let filtered = if matches!(args.get(2), Some(Expr::Identifier(d) | Expr::Constant(d)) if d == "Reals")
+  let filtered = if args.len() >= 2
+    && matches!(args.last(), Some(Expr::Identifier(d) | Expr::Constant(d)) if d == "Reals")
   {
     filter_real_nsolve_solutions(numerized)
   } else {
@@ -1178,7 +1183,40 @@ fn is_solve_constant(s: &str) -> bool {
       | "True"
       | "False"
       | "Null"
+      // Domain names: a protected Wolfram symbol appearing inside an
+      // `Element[x, Reals]` domain hint (a valid part of `eqns`) must
+      // never be picked up as a solve variable itself.
+      | "Reals"
+      | "Integers"
+      | "Complexes"
+      | "Rationals"
+      | "Algebraics"
+      | "Booleans"
   )
+}
+
+/// Auto-detect the variable argument for a Solve/NSolve call that gave no
+/// explicit variable list — the one-argument form `Solve[eqns]` and the
+/// two-argument domain-only form `Solve[eqns, dom]` both resolve to this.
+/// Only the unambiguous cases are handled — a single variable, or a
+/// determined/overdetermined system (variables <= equations). An
+/// underdetermined system (which wolframscript solves with a non-obvious
+/// variable-selection heuristic) returns `None`, leaving the call
+/// unevaluated.
+fn auto_detect_solve_vars(eqns: &Expr) -> Option<Expr> {
+  let mut vars = Vec::new();
+  collect_solve_vars(eqns, &mut vars);
+  let n_eqns = match eqns {
+    Expr::List(items) => items.len(),
+    _ => 1,
+  };
+  if vars.len() == 1 {
+    Some(Expr::Identifier(vars.remove(0)))
+  } else if vars.len() >= 2 && vars.len() <= n_eqns {
+    Some(Expr::List(vars.into_iter().map(Expr::Identifier).collect()))
+  } else {
+    None
+  }
 }
 
 /// Collect the free variable symbols of an equation (or list/And of
@@ -1577,7 +1615,12 @@ pub(super) fn thread_list_equation(eq: &Expr) -> Option<Vec<Expr>> {
 fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let _constrained = SuppressIfun::new(
     args.first().is_some_and(has_inequality)
-      || matches!(args.get(2), Some(Expr::Identifier(d)) if d == "Reals"),
+      // The `Reals` domain is the third argument in the ordinary
+      // `Solve[eqns, vars, Reals]` form, but the domain-only two-argument
+      // form `Solve[eqns, Reals]` carries it as the last argument instead
+      // — check `args.last()` so both are recognized alike.
+      || (args.len() >= 2
+        && matches!(args.last(), Some(Expr::Identifier(d)) if d == "Reals")),
   );
 
   // Pre-pass: thread equalities over equal-length lists, as Wolfram does
@@ -1632,21 +1675,37 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return Ok(Expr::List(vec![].into()));
       }
     }
-    let mut vars = Vec::new();
-    collect_solve_vars(&args[0], &mut vars);
-    let n_eqns = match &args[0] {
-      Expr::List(items) => items.len(),
-      _ => 1,
-    };
-    let var_arg = if vars.len() == 1 {
-      Some(Expr::Identifier(vars.remove(0)))
-    } else if vars.len() >= 2 && vars.len() <= n_eqns {
-      Some(Expr::List(vars.into_iter().map(Expr::Identifier).collect()))
-    } else {
-      None
-    };
-    return match var_arg {
+    return match auto_detect_solve_vars(&args[0]) {
       Some(va) => solve_ast(&[args[0].clone(), va]),
+      None => Ok(unevaluated("Solve", args)),
+    };
+  }
+  // Two-argument form Solve[eqns, dom] (a domain, not a variable list —
+  // the Demonstrations idiom that restricts a system to real solutions
+  // without spelling out which symbols are the unknowns, e.g.
+  // `NSolve[{eqn1, eqn2, 0 < x < 1, 0 < y < 1}, Reals]`): auto-detect the
+  // variables exactly as the one-argument form does, then delegate to the
+  // three-argument form with the given domain. A domain name is a
+  // protected symbol in Wolfram and can never be an ordinary equation
+  // variable, so this never misfires against a genuine `Solve[eqns, x]`.
+  if args.len() == 2
+    && let Expr::Identifier(dom) = &args[1]
+    && matches!(
+      dom.as_str(),
+      "Reals"
+        | "Integers"
+        | "Complexes"
+        | "Rationals"
+        | "Algebraics"
+        | "Booleans"
+    )
+  {
+    // Mirrors the one-argument form: an ambiguous (underdetermined) system
+    // is left unevaluated rather than falling through into the generic
+    // two-argument path below, which would otherwise treat the domain
+    // name itself as the solve variable.
+    return match auto_detect_solve_vars(&args[0]) {
+      Some(va) => solve_ast(&[args[0].clone(), va, args[1].clone()]),
       None => Ok(unevaluated("Solve", args)),
     };
   }
