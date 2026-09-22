@@ -28161,6 +28161,98 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k1$$ = 1}, \"\\[Ellipsis]\"]"], "Ou
     );
   }
 
+  /// End-to-end regression for the shape of Demonstration whose
+  /// "Initialization Code" section defines a replacement rule keyed on a
+  /// *typeset* mixed-partial-derivative superscript — pasted back from a
+  /// computed `Derivative[1, 0][u][a, b]`, which the FrontEnd renders as
+  /// `u^(1,0)[a, b]` and stores as `SuperscriptBox[u, TagBox[RowBox[{"(",
+  /// RowBox[{"1", ",", "0"}], ")"}], Derivative]]` (a common idiom for
+  /// eliminating a derivative via its own computed value), and whose
+  /// Manipulate's other branch reduces a polynomial in two function-call
+  /// "variables" (`u[a, b]`, `v[a, b]`) against a divisor carrying a free
+  /// parameter, the way a Picard–Fuchs-style derivation eliminates an
+  /// energy parameter. Both were silently mishandled: the derivative
+  /// superscript decoded to `Superscript[u, "(1,0)"][a, b]` (so the rule
+  /// never matched a real `Derivative[1, 0][u][a, b]` term), and
+  /// `PolynomialReduce` stayed unevaluated for non-identifier variables or
+  /// a coefficient outside the given variables.
+  #[test]
+  fn mixed_partial_derivative_notebook_opens_with_its_widget() {
+    let nb_src = r#"Notebook[{
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"posRule", "=",
+   RowBox[{"{",
+    RowBox[{
+     RowBox[{
+      SuperscriptBox["u",
+       TagBox[
+        RowBox[{"(",
+         RowBox[{"1", ",", "0"}], ")"}],
+        Derivative],
+       MultilineFunction->None], "[",
+      RowBox[{"a", ",", "b"}], "]"}], "\[Rule]",
+    RowBox[{"v", "[", RowBox[{"a", ",", "b"}], "]"}]}], "}"}]}], ";"}]],
+ "Input",
+ InitializationCell->True],
+Cell[BoxData["orbit[k_] := PolynomialReduce[u[a, b] v[a, b] - k, {u[a, b]^2 + v[a, b]^2 - 2 k}, {u[a, b], v[a, b]}];"], "Input",
+ InitializationCell->True],
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[\nIf[mode == 1, D[u[a, b], a] /. posRule, orbit[k]],\n{{mode, 1, \"mode\"}, {1 -> \"derivative\", 2 -> \"reduction\"}},\n{{k, 2, \"k\"}, 1, 5},\nSaveDefinitions -> True\n]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`mode$$ = 1, $CellContext`k$$ = 2}, \"…\"]"], "Output"]
+}, Open]]
+}]"#;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let mut widget = editors
+      .into_iter()
+      .find_map(|e| e.manipulate_state)
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+
+    // `mode == 1`: `D[u[a, b], a]` really does evaluate to
+    // `Derivative[1, 0][u][a, b]`, so `posRule` must actually catch it —
+    // giving `v[a, b]`, not the untouched derivative or a `Superscript[…]`.
+    assert_eq!(
+      widget.text_output.as_deref(),
+      Some("v[a, b]"),
+      "posRule must actually catch Derivative[1, 0][u][a, b], not leave it \
+       untouched or mangled into a Superscript[…]"
+    );
+
+    // Switch to the "reduction" branch and confirm `orbit[2]` — a
+    // `PolynomialReduce` over the two function-call variables `u[a, b]`,
+    // `v[a, b]` with the free parameter `k` bound to `2` — actually
+    // reduces instead of staying unevaluated.
+    let mode_idx = widget
+      .controls
+      .iter()
+      .position(|c| c.name() == "mode")
+      .unwrap();
+    if let manipulate::ControlState::Discrete { current_index, .. } =
+      &mut widget.controls[mode_idx]
+    {
+      *current_index = 1;
+    }
+    widget.reevaluate();
+    assert!(
+      widget.error.is_none(),
+      "the reduction branch must also evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert_eq!(
+      widget.text_output.as_deref(),
+      Some("{{0}, -2 + u[a, b]*v[a, b]}"),
+      "orbit[2] must actually reduce — over the function-call variables \
+       u[a, b]/v[a, b], with the free parameter k bound to 2 — rather than \
+       stay unevaluated"
+    );
+  }
+
   /// End-to-end regression for the shape of Demonstration that lets a
   /// picker choose among several precomputed 3D solids: an
   /// `Initialization :> (…)` block builds each solid as a `Show[…]` of

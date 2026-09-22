@@ -9,6 +9,7 @@
 
 #[allow(unused_imports)]
 use super::*;
+use crate::evaluator::pattern_matching::expr_equal;
 use crate::functions::math_ast::gcd_i128;
 use std::collections::BTreeMap;
 
@@ -158,7 +159,7 @@ fn reduce(p: &Poly, basis: &[Poly]) -> Option<Poly> {
 
 /// Render a `Poly` (lex order, leading term first) back to an `Expr`, then
 /// evaluate it so the result is canonicalized like wolframscript.
-fn poly_to_expr(p: &Poly, vars: &[String]) -> Expr {
+fn poly_to_expr(p: &Poly, vars: &[Expr]) -> Expr {
   if p.is_empty() {
     return Expr::Integer(0);
   }
@@ -168,12 +169,9 @@ fn poly_to_expr(p: &Poly, vars: &[String]) -> Expr {
     let mut factors: Vec<Expr> = Vec::new();
     for (j, &e) in mono.iter().enumerate() {
       if e == 1 {
-        factors.push(Expr::Identifier(vars[j].clone()));
+        factors.push(vars[j].clone());
       } else if e > 1 {
-        factors.push(pow2(
-          Expr::Identifier(vars[j].clone()),
-          Expr::Integer(e as i128),
-        ));
+        factors.push(pow2(vars[j].clone(), Expr::Integer(e as i128)));
       }
     }
     let coeff = if d == 1 {
@@ -197,15 +195,23 @@ fn poly_to_expr(p: &Poly, vars: &[String]) -> Expr {
   crate::evaluator::evaluate_expr_to_expr(&sum).unwrap_or(sum)
 }
 
-/// PolynomialReduce[poly, {g1, …, gk}, {x1, …, xn}] — multivariate division in
-/// lexicographic order. Returns `{{q1, …, qk}, r}` such that
-/// `poly = q1 g1 + … + qk gk + r`. Returns None (so the caller stays
-/// unevaluated) for non-polynomial input or coefficients that aren't rational
-/// in the given variables (e.g. a divisor free of all the variables).
+/// PolynomialReduce[poly, {g1, …, gk}, {x1, …, xn}] — the fast, exact
+/// path: multivariate division in lexicographic order, keeping every
+/// coefficient as an exact `i128` fraction. Returns `{{q1, …, qk}, r}`
+/// such that `poly = q1 g1 + … + qk gk + r`. Returns `None` (so the caller
+/// falls back to `polynomial_reduce_multivar_symbolic`'s slower,
+/// evaluator-driven arithmetic) for non-polynomial input or a coefficient
+/// that is not an exact rational number in the given variables — a free
+/// parameter, or an irrational constant like `Sqrt[3]`.
+///
+/// A "variable" need not be a bare identifier: as in real Mathematica, any
+/// expression not itself a sum/product/power (a function application like
+/// `p[a]`, say) can serve as an indeterminate, matched structurally against
+/// each polynomial's factors.
 pub fn polynomial_reduce_multivar(
   dividend: &Expr,
   divisors: &[Expr],
-  vars: &[String],
+  vars: &[Expr],
 ) -> Option<Expr> {
   if vars.is_empty() || vars.len() > 6 {
     return None;
@@ -323,19 +329,11 @@ pub fn groebner_basis_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::List(items) if !items.is_empty() => items.iter().cloned().collect(),
     single => vec![single.clone()],
   };
-  let vars: Vec<String> = match &args[1] {
-    Expr::List(items) => {
-      let mut out = Vec::with_capacity(items.len());
-      for v in items {
-        match v {
-          Expr::Identifier(name) => out.push(name.clone()),
-          _ => return Ok(uneval()),
-        }
-      }
-      out
-    }
-    Expr::Identifier(name) => vec![name.clone()],
-    _ => return Ok(uneval()),
+  // A "variable" need not be a bare identifier — `expr_to_poly` matches any
+  // non-arithmetic expression (e.g. `f[x]`) structurally.
+  let vars: Vec<Expr> = match &args[1] {
+    Expr::List(items) => items.to_vec(),
+    single => vec![single.clone()],
   };
   if vars.is_empty() || vars.len() > 6 {
     return Ok(uneval());
@@ -487,12 +485,9 @@ pub fn groebner_basis_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         for (vi, &e) in m.iter().enumerate() {
           if e == 1 {
-            factors.push(Expr::Identifier(vars[vi].clone()));
+            factors.push(vars[vi].clone());
           } else if e > 1 {
-            factors.push(pow2(
-              Expr::Identifier(vars[vi].clone()),
-              Expr::Integer(e as i128),
-            ));
+            factors.push(pow2(vars[vi].clone(), Expr::Integer(e as i128)));
           }
         }
         terms.push(match factors.len() {
@@ -517,7 +512,7 @@ pub fn groebner_basis_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Expanded expression -> sparse multivariate polynomial. None for
 /// anything outside c * v1^e1 * ... terms with rational c.
-fn expr_to_poly(expr: &Expr, vars: &[String]) -> Option<Poly> {
+fn expr_to_poly(expr: &Expr, vars: &[Expr]) -> Option<Poly> {
   fn split<'a>(e: &'a Expr, sign: i128, out: &mut Vec<(&'a Expr, i128)>) {
     match e {
       Expr::FunctionCall { name, args } if name == "Plus" => {
@@ -558,7 +553,7 @@ fn expr_to_poly(expr: &Expr, vars: &[String]) -> Option<Poly> {
   Some(poly)
 }
 
-fn term_to_mono(term: &Expr, vars: &[String]) -> Option<(Mono, Frac)> {
+fn term_to_mono(term: &Expr, vars: &[Expr]) -> Option<(Mono, Frac)> {
   let mut mono = vec![0u32; vars.len()];
   let mut coef: Frac = (1, 1);
   fn flatten<'a>(e: &'a Expr, out: &mut Vec<&'a Expr>) {
@@ -593,8 +588,11 @@ fn term_to_mono(term: &Expr, vars: &[String]) -> Option<(Mono, Frac)> {
           return None;
         }
       }
-      Expr::Identifier(v) => {
-        let i = vars.iter().position(|w| w == v)?;
+      // A bare variable — not necessarily an `Identifier`: as in real
+      // Mathematica, a function application like `p[a]` may itself be one
+      // of the given "variables", matched structurally.
+      _ if vars.iter().any(|w| expr_equal(f, w)) => {
+        let i = vars.iter().position(|w| expr_equal(f, w)).unwrap();
         mono[i] += 1;
       }
       _ => {
@@ -612,12 +610,11 @@ fn term_to_mono(term: &Expr, vars: &[String]) -> Option<(Mono, Frac)> {
           } => (&**left as &Expr, &**right as &Expr),
           _ => return None,
         };
-        let (base, exp) = (base, exp);
-        if let (Expr::Identifier(v), Expr::Integer(k)) = (base, exp)
+        if let Expr::Integer(k) = exp
           && *k >= 1
           && *k <= u32::MAX as i128
+          && let Some(i) = vars.iter().position(|w| expr_equal(base, w))
         {
-          let i = vars.iter().position(|w| w == v)?;
           mono[i] += *k as u32;
         } else {
           return None;
