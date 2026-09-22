@@ -8975,6 +8975,40 @@ mod rest_nonlist {
   fn first_rule_delayed() {
     assert_eq!(interpret("First[x :> a]").unwrap(), "x");
   }
+
+  #[test]
+  fn first_comparison() {
+    // Discovered via a random Wolfram Demonstration whose Manipulate body
+    // called First[deq] on a differential equation deq (an Equal
+    // expression) to pull out its left-hand side. Equal[a, b] is a normal
+    // 2-arg expression like any other, so First should return `a`.
+    assert_eq!(interpret("First[x + y == 3]").unwrap(), "x + y");
+  }
+
+  #[test]
+  fn last_comparison() {
+    assert_eq!(interpret("Last[x + y == 3]").unwrap(), "3");
+  }
+
+  #[test]
+  fn rest_comparison() {
+    // Rest[Equal[x, y]] is Equal[y], and a single-argument Equal
+    // auto-evaluates to True.
+    assert_eq!(interpret("Rest[x == y]").unwrap(), "True");
+  }
+
+  #[test]
+  fn most_comparison() {
+    // Same auto-evaluation as `rest_comparison`, from the other end.
+    assert_eq!(interpret("Most[x == y]").unwrap(), "True");
+  }
+
+  #[test]
+  fn first_mixed_inequality_chain() {
+    // A mixed chain `a < b <= c` is Inequality[a, Less, b, LessEqual, c],
+    // so its first element is still the leading operand.
+    assert_eq!(interpret("First[a < b <= c]").unwrap(), "a");
+  }
 }
 
 mod level {

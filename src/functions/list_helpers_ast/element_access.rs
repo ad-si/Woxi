@@ -102,6 +102,10 @@ pub fn expr_to_head_args(expr: &Expr) -> Option<(String, Vec<Expr>)> {
       "RuleDelayed".to_string(),
       vec![*pattern.clone(), *replacement.clone()],
     )),
+    Expr::Comparison {
+      operands,
+      operators,
+    } => Some(crate::syntax::comparison_head_and_args(operands, operators)),
     _ => None,
   }
 }
