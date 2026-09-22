@@ -2879,8 +2879,9 @@ enum ArrayCell {
 /// The gradient scheme name of a `ColorFunction` option value: a bare
 /// string (`"TemperatureMap"`), a `ColorData["TemperatureMap"]` call, or
 /// the structured `ColorDataFunction["TemperatureMap", …]` form the call
-/// evaluates to.
-fn color_function_scheme_name(val: &Expr) -> Option<String> {
+/// evaluates to. Shared with `ListPlot3D` (`plot3d.rs`), which resolves its
+/// own `ColorFunction` option the same way rather than re-parsing it.
+pub(crate) fn color_function_scheme_name(val: &Expr) -> Option<String> {
   match val {
     Expr::String(s) => Some(s.clone()),
     Expr::FunctionCall { name, args }
@@ -2900,7 +2901,9 @@ fn color_function_scheme_name(val: &Expr) -> Option<String> {
 /// Schemes with stored `ColorData` control points (see
 /// `chart::sample_named_gradient`) interpolate those — matching
 /// wolframscript exactly; the rest fall back to analytic approximations.
-fn apply_named_color_function(name: &str, t: f64) -> (u8, u8, u8) {
+/// Shared with `ListPlot3D` (`plot3d.rs`), which colors its surface by the
+/// same named gradients instead of duplicating this table.
+pub(crate) fn apply_named_color_function(name: &str, t: f64) -> (u8, u8, u8) {
   let t = t.clamp(0.0, 1.0);
   if let Some((r, g, b)) =
     crate::functions::chart::sample_named_gradient(name, t)

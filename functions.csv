@@ -1201,7 +1201,7 @@ ImagePad,Pads an image on each side with a constant fill or edge extension,✅,p
 ChiSquareDistribution,Represents a chi-square distribution,✅,1,6.0,1186
 ListInterpolation,Creates interpolation from uniformly spaced data (2-D coordinates may be given as separate arguments or as one list),✅,pure,3.0,1186
 FindShortestPath,Find a shortest weighted path between two vertices of a graph,✅,pure,8.0,1187
-SetSystemOptions,,🚫,,6.0,1189
+SetSystemOptions,Resets internal system options — Woxi has none of its own so this normalizes the given rule(s) into a flat list and returns it,✅,stateful,6.0,1189
 GeoRange,,🚫,,10.0,1190
 Orthogonalize,Orthonormalizes a set of vectors via Gram-Schmidt,✅,pure,6.0,1191
 AnatomyData,,🚫,,10.3,1192
