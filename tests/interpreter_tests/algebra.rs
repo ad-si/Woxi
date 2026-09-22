@@ -9570,6 +9570,49 @@ mod polynomial_reduce {
     );
   }
 
+  /// A "variable" need not be a bare identifier — a function application
+  /// like `f[a]` is just as valid an indeterminate to real Mathematica as
+  /// `x`. Regression: the multivariate path required every entry of the
+  /// variable list to be an `Identifier`, so a divisor/dividend written in
+  /// terms of `f[a]`, `g[a]` (a common shape once a derivation replaces a
+  /// derivative with its own function call) never reduced at all.
+  #[test]
+  fn multivariate_function_call_variables() {
+    assert_eq!(
+      interpret(
+        "PolynomialReduce[f[a]*g[a] + g[a]^2 - 1, {f[a] - 1}, {f[a], g[a]}]"
+      )
+      .unwrap(),
+      "{{g[a]}, -1 + g[a] + g[a]^2}"
+    );
+  }
+
+  /// A coefficient that is not one of the given variables — a free
+  /// parameter, or an irrational constant like `Sqrt[3]` — rides along
+  /// symbolically instead of being required to be an exact rational
+  /// number, exactly like the single-variable path above already allows.
+  /// Regression: the multivariate engine's internal polynomial
+  /// representation only stored exact `i128` fractions, so a bare free
+  /// symbol or `Sqrt[3]` anywhere in the input made the whole call stay
+  /// unevaluated — including a symbol that appears only additively (never
+  /// multiplied by one of the target variables), which is the common case
+  /// for a derivation parametrized by an external constant.
+  #[test]
+  fn multivariate_symbolic_coefficient() {
+    assert_eq!(
+      interpret("PolynomialReduce[a*x^2 + x*y - 1, {x - 1}, {x, y}]").unwrap(),
+      "{{a + a*x + y}, -1 + a + y}"
+    );
+    assert_eq!(
+      interpret(
+        "PolynomialReduce[x^2 - x*y/Sqrt[3] + y^2 - k, \
+         {x^2 + y^2 - k}, {x, y}]"
+      )
+      .unwrap(),
+      "{{1}, -((x*y)/Sqrt[3])}"
+    );
+  }
+
   /// A divisor with rational coefficients divides exactly (issue #766).
   /// The reduction only terminates once the running remainder collapses to
   /// the literal 0 — Expand used to leave `1/2 - 1/2 + x/2 - x/2 + …`
@@ -15710,6 +15753,19 @@ mod groebner_basis {
     assert_eq!(
       interpret("GroebnerBasis[{Sin[x]}, {x}]").unwrap(),
       "GroebnerBasis[{Sin[x]}, {x}]"
+    );
+  }
+
+  /// A "variable" need not be a bare identifier — `f[x]`, say, is just as
+  /// valid an indeterminate to real Mathematica as `x`. Regression: the
+  /// variable list was required to hold only `Identifier`s, so a system
+  /// written in terms of function applications never computed a basis.
+  #[test]
+  fn function_call_variables() {
+    assert_eq!(
+      interpret("GroebnerBasis[{f[x]^2 - f[x], f[x]*g[y] - 1}, {f[x], g[y]}]")
+        .unwrap(),
+      "{-1 + g[y], -1 + f[x]}"
     );
   }
 }
