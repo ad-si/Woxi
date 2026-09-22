@@ -5514,6 +5514,40 @@ mod solve {
     );
   }
 
+  // Regression for review findings on the domain-only form above: an
+  // underdetermined system must stay unevaluated rather than silently
+  // falling through to solving for the domain name itself, and a domain
+  // name occurring inside the equations (via `Element[x, Reals]`) must
+  // never be picked up as a spurious extra variable.
+  #[test]
+  fn solve_domain_only_form_stays_unevaluated_when_underdetermined() {
+    assert_eq!(
+      interpret("Solve[x + y == 2, Reals]").unwrap(),
+      "Solve[x + y == 2, Reals]"
+    );
+    assert_eq!(
+      interpret("Solve[{x + y == 3, Element[x, Reals]}, Reals]").unwrap(),
+      "{{y -> 3 - x}}"
+    );
+  }
+
+  // Regression: `NSolve[eqns, Reals]` (domain-only, no explicit variable
+  // list) must still drop the complex roots of a polynomial with no radical
+  // form, exactly as the explicit `NSolve[eqns, x, Reals]` form does — the
+  // real-root filter must not miss the domain because it moved from the
+  // third argument to the second.
+  #[test]
+  fn nsolve_domain_only_form_filters_to_real_roots() {
+    assert_eq!(
+      interpret("NSolve[x^5 - x - 1 == 0, Reals]").unwrap(),
+      interpret("NSolve[x^5 - x - 1 == 0, x, Reals]").unwrap()
+    );
+    assert_eq!(
+      interpret("NSolve[x^5 - x - 1 == 0, Reals]").unwrap(),
+      "{{x -> 1.1673039782614187}}"
+    );
+  }
+
   #[test]
   fn solve_log_equation() {
     assert_eq!(interpret("Solve[Log[x] == 2, x]").unwrap(), "{{x -> E^2}}");
