@@ -5175,11 +5175,24 @@ fn play_audio(
 /// Whether a stored Output cell holds a FrontEnd dynamic-widget dump — the
 /// `DynamicModuleBox[…]` box form Mathematica saves for a live Manipulate.
 /// Such text is meaningless outside the Wolfram FrontEnd.
+///
+/// A deployed Demonstration (`Deployed->True`, as every published Wolfram
+/// Demonstrations Project notebook is saved) wraps the dump in an extra
+/// `StyleBox[…, "Manipulate", Deployed->True, …]` between the `TagBox` and
+/// the `DynamicModuleBox`, so the wrapper heads have to be peeled off
+/// rather than matched as one fixed prefix.
 fn is_dynamic_box_dump(output: &str) -> bool {
-  let t = output.trim_start();
-  t.starts_with("DynamicModuleBox[")
-    || t.starts_with("TagBox[DynamicModuleBox[")
-    || t.starts_with("DynamicBox[")
+  let mut t = output.trim_start();
+  loop {
+    let rest = t
+      .strip_prefix("TagBox[")
+      .or_else(|| t.strip_prefix("StyleBox["));
+    match rest {
+      Some(rest) => t = rest.trim_start(),
+      None => break,
+    }
+  }
+  t.starts_with("DynamicModuleBox[") || t.starts_with("DynamicBox[")
 }
 
 /// Evaluate (and drain) the Input-cell code accumulated ahead of a stored
@@ -9254,6 +9267,14 @@ Manipulate[
     ));
     assert!(is_dynamic_box_dump("TagBox[DynamicModuleBox[{…}, …], …]"));
     assert!(is_dynamic_box_dump("DynamicBox[…]"));
+    // A deployed Demonstration (every published Wolfram Demonstrations
+    // Project notebook) wraps the dump in an extra
+    // `StyleBox[…, "Manipulate", Deployed->True]` between the `TagBox`
+    // and the `DynamicModuleBox`.
+    assert!(is_dynamic_box_dump(
+      "TagBox[StyleBox[DynamicModuleBox[{…}, …], \"Manipulate\", \
+       Deployed->True, StripOnInput->False], Manipulate`InterpretManipulate[1]]"
+    ));
     // Ordinary outputs are untouched.
     assert!(!is_dynamic_box_dump("42"));
     assert!(!is_dynamic_box_dump("{1, 2, 3}"));
@@ -9574,6 +9595,76 @@ Cell[BoxData[
           b_values,
           &["1".to_string(), "2".to_string(), "3".to_string()]
         );
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+  }
+
+  /// A notebook saved from a *published* Wolfram Demonstrations Project
+  /// entry (`Deployed->True`, which every published Demonstration is) has
+  /// an extra `StyleBox[…, "Manipulate", Deployed->True]` between the
+  /// Output cell's `TagBox` and its `DynamicModuleBox` dump, unlike a
+  /// notebook merely saved from the desktop FrontEnd. `is_dynamic_box_dump`
+  /// used to only strip a bare `TagBox[DynamicModuleBox[`, so this extra
+  /// layer made it treat the dump as ordinary text instead of hiding it and
+  /// re-instantiating the widget from the Input cell's source.
+  #[test]
+  fn deployed_demonstration_output_with_stylebox_wrapper_opens_live() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[
+ ListPlot[Table[Exp[-decay k] Sin[freq k], {k, 0, steps}], Joined -> True],
+ {{steps, 40, \"steps\"}, 10, 80, 1},
+ {{freq, 0.5, \"frequency\"}, 0.1, 2},
+ {{decay, 0.05, \"decay\"}, 0, 0.2}]"], "Input"],
+Cell[BoxData[
+ TagBox[
+  StyleBox[
+   DynamicModuleBox[{$CellContext`decay$$ = 0.05, $CellContext`freq$$ =
+    0.5, $CellContext`steps$$ = 40, Typeset`show$$ = True},
+    DynamicBox[Manipulate`ManipulateBoxes[
+     1, StandardForm,
+      "Variables" :> {$CellContext`decay$$ = 0.05, $CellContext`freq$$ =
+        0.5, $CellContext`steps$$ = 40},
+      "Body" :> ListPlot[
+        Table[Exp[-$CellContext`decay$$ k] Sin[$CellContext`freq$$ k], \
+{k, 0, $CellContext`steps$$}], Joined -> True],
+      "Specifications" :> {
+        {{$CellContext`steps$$, 40, "steps"}, 10, 80, 1},
+        {{$CellContext`freq$$, 0.5, "frequency"}, 0.1, 2},
+        {{$CellContext`decay$$, 0.05, "decay"}, 0, 0.2}},
+      "Options" :> {},
+      "DefaultOptions" :> {}]],
+    DynamicModuleValues:>{}], "Manipulate",
+   Deployed->True,
+   StripOnInput->False],
+  Manipulate`InterpretManipulate[1]]], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect(
+        "a Deployed->True Demonstration's stored widget must instantiate \
+         on load, not fall back to a broken dump echo",
+      );
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(widget.graphics_handle.is_some(), "the plot must draw");
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Continuous { name: steps, .. },
+        manipulate::ControlState::Continuous { name: freq, .. },
+        manipulate::ControlState::Continuous { name: decay, .. },
+      ] => {
+        assert_eq!(steps, "steps");
+        assert_eq!(freq, "freq");
+        assert_eq!(decay, "decay");
       }
       other => panic!("unexpected controls: {other:?}"),
     }
