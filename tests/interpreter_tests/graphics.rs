@@ -12853,9 +12853,8 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     #[test]
     fn array_plot_epilog_none() {
       // Epilog -> None draws nothing extra (matches the no-Epilog case).
-      let with_none = export_svg(
-        r#"ArrayPlot[{{1, 0}, {0, 1}}, Epilog -> None]"#,
-      );
+      let with_none =
+        export_svg(r#"ArrayPlot[{{1, 0}, {0, 1}}, Epilog -> None]"#);
       let without = export_svg("ArrayPlot[{{1, 0}, {0, 1}}]");
       assert_eq!(with_none, without);
     }
