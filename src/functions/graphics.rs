@@ -1446,6 +1446,53 @@ pub(crate) fn line_legend_svg(args: &[Expr]) -> Option<String> {
   column_to_svg(&[Expr::List(entries.into())])
 }
 
+/// `SwatchLegend[colors, labels, opts…]` draws a colored square next to
+/// each label — the front end's typeset form of a legend keyed by fill
+/// color rather than by line style (see [`line_legend_svg`] for the
+/// `LineLegend` counterpart).
+pub(crate) fn swatch_legend_svg(args: &[Expr]) -> Option<String> {
+  if args.len() < 2 {
+    return None;
+  }
+  let Expr::List(colors) = &args[0] else {
+    return None;
+  };
+  let Expr::List(labels) = &args[1] else {
+    return None;
+  };
+  if colors.is_empty() || labels.is_empty() {
+    return None;
+  }
+
+  let swatch = 14.0_f64;
+  let mut entries: Vec<Expr> = Vec::new();
+  for (label, color_expr) in labels.iter().zip(colors.iter()) {
+    let color = parse_color(color_expr).unwrap_or(Color::new(0.0, 0.0, 0.0));
+    let swatch_svg = format!(
+      "<svg width=\"{swatch}\" height=\"{swatch}\" viewBox=\"0 0 {swatch} {swatch}\" xmlns=\"http://www.w3.org/2000/svg\"><rect x=\"0.5\" y=\"0.5\" width=\"{inner}\" height=\"{inner}\" fill=\"{color}\" stroke=\"black\" stroke-width=\"1\"/></svg>",
+      inner = swatch - 1.0,
+      color = color.to_svg_rgb(),
+    );
+    let swatch_item = Expr::Graphics {
+      svg: swatch_svg,
+      is_3d: false,
+      source: None,
+      head: None,
+      structure: None,
+    };
+    entries.push(call(
+      "Row",
+      vec![Expr::List(
+        vec![swatch_item, Expr::String(" ".to_string()), label.clone()].into(),
+      )],
+    ));
+  }
+  if entries.is_empty() {
+    return None;
+  }
+  column_to_svg(&[Expr::List(entries.into())])
+}
+
 // ── Directive parsing ────────────────────────────────────────────────────
 
 fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
@@ -13075,6 +13122,20 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
     Expr::FunctionCall { name, args } if name == "LineLegend" => {
       line_legend_svg(args)?
     }
+    // A bare `SwatchLegend[…]` cell (not wrapped in `Legended`) is a
+    // color-swatch legend key a Demonstration placed beside its picture —
+    // drawn as filled squares, the same as when it is Legended's second
+    // argument.
+    Expr::FunctionCall { name, args } if name == "SwatchLegend" => {
+      swatch_legend_svg(args)?
+    }
+    // A bare `Animate[…]` cell draws its first frame (see
+    // `animate_snapshot_svg`), the same as when it sits inside a `Pane`.
+    Expr::FunctionCall { name, args }
+      if name == "Animate" && args.len() >= 2 =>
+    {
+      animate_snapshot_svg(args)?
+    }
     // As above, a display wrapper that resolves to a picture is drawn
     // rather than printed as source.
     Expr::FunctionCall { .. } if crate::evaluator::lays_out_a_graphic(cell) => {
@@ -21402,6 +21463,29 @@ fn manipulate_bound_expr(expr: &Expr) -> (&Expr, bool) {
     }
     other => (other, false),
   }
+}
+
+/// `Animate[expr, {var, min, max, …}, opts…]` nested inside a static
+/// display — a Demonstration's body composing one into a `Pane`/`Grid`
+/// rather than `Animate` being the whole Manipulate/cell output that
+/// [`extract_manipulate_spec`] turns into a live widget — renders as a
+/// snapshot of its first frame: `expr` evaluated with the animation
+/// variable bound to its initial value, the same picture Wolfram's front
+/// end shows before the embedded animator starts playing.
+pub(crate) fn animate_snapshot_svg(args: &[Expr]) -> Option<String> {
+  if args.len() < 2 {
+    return None;
+  }
+  let bindings =
+    manipulate_initial_value_bindings(std::slice::from_ref(&args[1]));
+  if bindings.is_empty() {
+    return None;
+  }
+  let rendered =
+    crate::with_scoped_globals(&bindings, || evaluate_expr_to_expr(&args[0]));
+  let evaluated = rendered.ok()?;
+  let svg = crate::evaluator::expr_to_svg(&evaluated);
+  (!svg.is_empty()).then_some(svg)
 }
 
 /// Re-read a Manipulate's control/state variables after evaluating its body
