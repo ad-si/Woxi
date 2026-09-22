@@ -2445,6 +2445,17 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
             Some(&'\n') => {
               chars.next();
             } // line continuation
+            Some(&' ') => {
+              // Linear-syntax escape for a literal space, part of the same
+              // family as `\(`/`\)`/`\!`/`\*`: inside `\!\(…\)` embedded box
+              // syntax, a bare space separates tokens (implicit
+              // multiplication) rather than standing for itself, so the
+              // FrontEnd escapes an actual space character as `\ ` — e.g. a
+              // Manipulate control label padding a subscript's digits with
+              // `\(2\(\ \ \ \)\)`. Unescapes to one plain space.
+              chars.next();
+              result.push(' ');
+            }
             Some(_) => {
               let other = chars.next().unwrap();
               result.push('\\');

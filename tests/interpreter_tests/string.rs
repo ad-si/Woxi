@@ -25,6 +25,41 @@ mod string_length_arg_errors {
   }
 }
 
+mod backslash_space_escape {
+  use super::*;
+
+  // `\ ` (a backslash immediately followed by a space) is part of the same
+  // linear-syntax escape family as `\(`, `\)`, `\!` and `\*`: inside
+  // `\!\(…\)` embedded box syntax a bare space separates tokens (implicit
+  // multiplication) rather than standing for itself, so the FrontEnd
+  // escapes an actual space character as `\ ` when it needs one preserved
+  // literally — e.g. a Manipulate control label that pads a subscript's
+  // digits with trailing spaces for visual alignment,
+  // `SubscriptBox["m", "2\(\ \ \)"]`. It unescapes to a single plain space.
+
+  #[test]
+  fn unescapes_to_a_plain_space() {
+    assert_eq!(interpret(r#"StringLength["a\ b"]"#).unwrap(), "3");
+    assert_eq!(
+      interpret(r#"ToCharacterCode["a\ b"]"#).unwrap(),
+      "{97, 32, 98}"
+    );
+  }
+
+  #[test]
+  fn repeated_escapes_each_become_one_space() {
+    assert_eq!(interpret(r#"StringLength["2\ \ \ "]"#).unwrap(), "4");
+    assert_eq!(interpret(r#""2\ \ \ " === "2   ""#).unwrap(), "True");
+  }
+
+  #[test]
+  fn bare_top_level_literal_echoes_the_unescaped_space() {
+    // The CLI's fast path for a lone string literal must not shortcut past
+    // this escape and echo the raw `\ ` bytes back verbatim.
+    assert_eq!(interpret(r#""a\ b""#).unwrap(), "a b");
+  }
+}
+
 mod string_join_arg_errors {
   use super::*;
 
