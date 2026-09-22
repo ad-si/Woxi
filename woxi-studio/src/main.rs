@@ -16782,11 +16782,81 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k2$$ = 0}, \"\\[Ellipsis]\"]"], "Ou
     assert_ne!(flat, folded, "the sliders must fold the net");
   }
 
-  /// End-to-end regression for "Deciding Rain-Affected Cricket Matches: The
-  /// Duckworth-Lewis Method". Its controls live inside a `TabView`, and its
-  /// scoreboard is a `Grid` of `StyleForm` cells with `SpanFromLeft` spans
-  /// on a dark background. (The notebook's 18 KB of resource tables are
-  /// trimmed here; the structure is its own.)
+  /// A `TabView` whose selector is a hidden `ControlType -> None` variable
+  /// (rather than the `TabView`'s own clickable tab strip) picks its
+  /// displayed pane by that variable's live value, matching each pane's
+  /// 1-based position for the plain `label -> content` form. Several
+  /// chemical-engineering Demonstrations use exactly this idiom — a
+  /// visible slider whose `Enabled` condition depends on which tab is
+  /// active, plus a same-named hidden control driving a `TabView[{...},
+  /// Dynamic[tab]]` that switches between a "trial and error" plot and an
+  /// "exact solution" plot computed with `FindRoot`.
+  ///
+  /// Regression: the widget always displayed the first pane's picture no
+  /// matter what the hidden selector was set to — `promote_result_graphics`
+  /// unconditionally promoted `TabView`'s first pane instead of resolving
+  /// the selector against the live state.
+  #[test]
+  fn hidden_selector_tab_view_switches_its_displayed_pane() {
+    let code = "Manipulate[\n\
+      Module[{f}, f[x_] := x^2;\n\
+       TabView[{\"trial\" -> Plot[f[k x], {x, 0, 1}], \
+                 \"exact\" -> Plot[f[x] /. FindRoot[f[x] - k, {x, 0.5}][[1]], \
+                                   {x, 0, 1}]}, Dynamic[tab]]],\n\
+      {{k, 1, \"k\"}, 0, 5, 0.1, Enabled -> tab === 1},\n\
+      {{tab, 2}, {1, 2}, ControlType -> None}]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the TabView Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the initial pane must draw"
+    );
+    // The hidden `tab` selector is tracked state, not a visible control.
+    assert_eq!(
+      state.controls.len(),
+      1,
+      "only the k slider is a visible control, got {:?}",
+      state.controls
+    );
+    assert_eq!(state.state, vec![("tab".to_string(), "2".to_string())]);
+
+    // Flip the hidden selector and re-render through the same widget
+    // machinery the UI drives on a control change.
+    for (name, value) in &mut state.state {
+      if name == "tab" {
+        *value = "1".to_string();
+      }
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert!(state.graphics_handle.is_some(), "the other pane must draw");
+
+    // `graphics_handle` is an opaque iced `svg::Handle`, so re-evaluate the
+    // body directly (independently of the widget) with each `tab` value to
+    // inspect the actual rendered SVG, the same way
+    // `dodecahedron_net_notebook_builds_its_widget` and others below do.
+    let render = |tab: i64| {
+      woxi::interpret_with_stdout(&format!(
+        "k = 1; tab = {tab};\n{}",
+        state.body
+      ))
+      .expect("the body must render")
+      .graphics
+      .expect("the body must produce a graphic")
+    };
+    let tab1 = render(1);
+    let tab2 = render(2);
+    assert_ne!(
+      tab1, tab2,
+      "switching the hidden selector must change which pane is drawn"
+    );
+  }
+
   #[test]
   fn duckworth_lewis_notebook_builds_its_widget() {
     let nb_src = r##"Notebook[{

@@ -23095,6 +23095,42 @@ mod manipulate {
     assert_eq!(names, ["a", "b", "c", "d", "e"]);
   }
 
+  /// `TabView[{label1 -> pane1, label2 -> pane2, …}, Dynamic[var]]` picks
+  /// its displayed pane by `var`'s live value, matching each pane's
+  /// 1-based position — the plain `label -> content` form has no separate
+  /// key, so position is the implicit one, the same shorthand the Wolfram
+  /// front end applies. Regression: the picture a visual host displayed
+  /// for a `TabView` result always came from the first pane, no matter
+  /// what a hidden selector variable (the `ControlType -> None` idiom
+  /// Demonstrations use to drive a `TabView` from outside its own tab
+  /// strip) was set to.
+  #[test]
+  fn tab_view_dynamic_selector_picks_matching_pane_graphics() {
+    let code = "TabView[{\"a\" -> Plot[Sin[x], {x, 0, 2 Pi}], \
+                 \"b\" -> Plot[Cos[x], {x, 0, 2 Pi}]}, Dynamic[tab]]";
+    // With no selector value bound at all, Wolfram (and the pre-fix
+    // behavior here) shows the first pane by default. Run before any
+    // assignment to `tab` below — the interpreter's global bindings
+    // persist across calls on the same thread.
+    let unbound = woxi::interpret_with_stdout(code)
+      .unwrap()
+      .graphics
+      .expect("must render a graphic");
+    let first = woxi::interpret_with_stdout(&format!("tab = 1; {code}"))
+      .unwrap()
+      .graphics
+      .expect("must render a graphic");
+    assert_eq!(unbound, first);
+    let second = woxi::interpret_with_stdout(&format!("tab = 2; {code}"))
+      .unwrap()
+      .graphics
+      .expect("must render a graphic");
+    assert_ne!(
+      first, second,
+      "the tab selector must change which pane's picture is shown"
+    );
+  }
+
   /// A `PaneSelector[{value -> content, …}, selector]` shows one pane at a
   /// time in Wolfram; its panes hold controls just as a `TabView`'s tabs
   /// do, so they are found the same way. A variable declared in more than
