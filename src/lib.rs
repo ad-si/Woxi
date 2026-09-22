@@ -3062,6 +3062,20 @@ fn format_top_level_result(result_expr: syntax::Expr, depth: usize) -> String {
 /// at the output stage.  Also unwraps TraditionalForm[Grid[…]] wrappers.
 fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
   match &expr {
+    // `Text[Grid[…]]`/`Text[TextGrid[…]]` — the Demonstrations idiom for a
+    // Manipulate body that should render as a plain (non-`Graphics`-framed)
+    // table, e.g. `Manipulate[Text@Grid[{…}], …]`. `Text[…]` otherwise
+    // passes through unrendered (a bare `Text["…"]` outside `Graphics[…]`
+    // has no picture to draw), so only replace it when the wrapped content
+    // actually resolves to one.
+    syntax::Expr::FunctionCall { name, args }
+      if name == "Text" && args.len() == 1 =>
+    {
+      match render_grid_if_needed(args[0].clone()) {
+        graphics @ syntax::Expr::Graphics { .. } => graphics,
+        _ => expr,
+      }
+    }
     syntax::Expr::FunctionCall { name, args }
       if (name == "Grid" || name == "TextGrid") && !args.is_empty() =>
     {
