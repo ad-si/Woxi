@@ -3200,13 +3200,16 @@ fn kmeans_colors(
 /// pass the channel list (as a List) as f's single argument; if f
 /// returns a list, the output keeps that channel count, otherwise the
 /// output is single-channel (grayscale).
+///
+/// ImageApply[f, img, Masking -> mask] restricts `f` to the pixels
+/// selected by `mask`; every other pixel passes through unchanged.
 pub fn image_apply_ast(
   args: &[Expr],
   eval_fn: &dyn Fn(&Expr) -> Result<Expr, InterpreterError>,
 ) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  if args.len() != 2 && args.len() != 3 {
     return Err(InterpreterError::EvaluationError(
-      "ImageApply expects exactly 2 arguments".into(),
+      "ImageApply expects 2 or 3 arguments".into(),
     ));
   }
 
@@ -3240,6 +3243,26 @@ pub fn image_apply_ast(
   let h = *height as usize;
   let num_pixels = w * h;
 
+  let mask: Option<Vec<bool>> = if args.len() == 3 {
+    let mask_expr = match &args[2] {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Masking") => {
+        replacement.as_ref()
+      }
+      _ => {
+        return Err(InterpreterError::EvaluationError(
+          "ImageApply: unsupported option".into(),
+        ));
+      }
+    };
+    resolve_mask(mask_expr, w, h)?
+  } else {
+    None
+  };
+  let included = |i: usize| -> bool { mask.as_ref().is_none_or(|m| m[i]) };
+
   // For Real32 images, snap pixel values to their f32 representation
   // before passing them to f. wolframscript's image arithmetic is done
   // in f32 throughout; without the snap, a function like `#^2 &` would
@@ -3251,6 +3274,10 @@ pub fn image_apply_ast(
   if ch == 1 {
     let mut new_data = Vec::with_capacity(data.len());
     for i in 0..num_pixels {
+      if !included(i) {
+        new_data.push(data[i]);
+        continue;
+      }
       let result = apply(Expr::Real(snap(data[i])))?;
       new_data.push(expr_to_f64(&result)?);
     }
@@ -3264,26 +3291,33 @@ pub fn image_apply_ast(
     });
   }
 
-  // Multi-channel: probe the first pixel to determine the output
-  // channel count.
-  let first_pixel = Expr::List(
-    (0..ch)
-      .map(|c| Expr::Real(snap(data[c])))
-      .collect::<Vec<_>>()
-      .into(),
-  );
-  let first_result = apply(first_pixel)?;
-  let out_ch = match &first_result {
-    Expr::List(vs) => vs.len(),
-    _ => 1,
+  let pixel_list = |i: usize| -> Expr {
+    let base = i * ch;
+    Expr::List(
+      (0..ch)
+        .map(|c| Expr::Real(snap(data[base + c])))
+        .collect::<Vec<_>>()
+        .into(),
+    )
   };
-  if out_ch == 0 {
+
+  // Probe the first *included* pixel (pixel 0 when there's no mask) to
+  // determine the output channel count. An image masked out everywhere
+  // has nothing to probe, so it keeps the source channel count.
+  let first_included = (0..num_pixels).find(|&i| included(i));
+  let first_result =
+    first_included.map(|i| apply(pixel_list(i))).transpose()?;
+  let out_ch = match &first_result {
+    Some(Expr::List(vs)) => vs.len(),
+    Some(_) => 1,
+    None => ch,
+  };
+  if first_result.is_some() && out_ch == 0 {
     return Err(InterpreterError::EvaluationError(
       "ImageApply: function returned an empty list".into(),
     ));
   }
 
-  let mut new_data: Vec<f64> = Vec::with_capacity(num_pixels * out_ch);
   let push_result =
     |result: &Expr, dst: &mut Vec<f64>| -> Result<(), InterpreterError> {
       match result {
@@ -3296,17 +3330,25 @@ pub fn image_apply_ast(
       }
       Ok(())
     };
-  push_result(&first_result, &mut new_data)?;
-  for i in 1..num_pixels {
-    let base = i * ch;
-    let pixel_list = Expr::List(
-      (0..ch)
-        .map(|c| Expr::Real(snap(data[base + c])))
-        .collect::<Vec<_>>()
-        .into(),
-    );
-    let result = apply(pixel_list)?;
-    push_result(&result, &mut new_data)?;
+
+  let mut new_data: Vec<f64> = Vec::with_capacity(num_pixels * out_ch);
+  for i in 0..num_pixels {
+    if !included(i) {
+      // Masked-out pixels pass through unchanged. If `f` changes the
+      // channel count for included pixels, reuse the last source
+      // channel to pad rather than fail on this rare combination.
+      let base = i * ch;
+      for c in 0..out_ch {
+        new_data.push(data[base + c.min(ch - 1)]);
+      }
+      continue;
+    }
+    if first_included == Some(i) {
+      push_result(first_result.as_ref().unwrap(), &mut new_data)?;
+    } else {
+      let result = apply(pixel_list(i))?;
+      push_result(&result, &mut new_data)?;
+    }
   }
 
   Ok(Expr::Image {
@@ -8787,6 +8829,142 @@ pub fn rasterize_svg(
     data: Arc::new(data),
     image_type: ImageType::Byte,
   })
+}
+
+/// Resolve a `Masking -> spec` option (as used by `ImageApply`) into a
+/// per-pixel inclusion mask matching an image of `target_w` x
+/// `target_h` pixels. Returns `None` for `All`/`None`/`Automatic`,
+/// meaning "no restriction — apply everywhere".
+///
+/// `Image` masks are centered on the target the way wolframscript
+/// centers an array/image region of interest; any channel with a
+/// positive value marks the pixel included. `Graphics` masks are
+/// rasterized directly to `target_w` x `target_h` and any pixel the
+/// drawing touches (non-zero alpha) is included.
+fn resolve_mask(
+  mask_expr: &Expr,
+  target_w: usize,
+  target_h: usize,
+) -> Result<Option<Vec<bool>>, InterpreterError> {
+  match mask_expr {
+    Expr::Identifier(s) if s == "All" || s == "None" || s == "Automatic" => {
+      Ok(None)
+    }
+    Expr::Image {
+      width,
+      height,
+      channels,
+      data,
+      ..
+    } => {
+      let mw = *width as usize;
+      let mh = *height as usize;
+      let mch = *channels as usize;
+      let off_x = (target_w as i64 - mw as i64) / 2;
+      let off_y = (target_h as i64 - mh as i64) / 2;
+      let mut mask = vec![false; target_w * target_h];
+      for my in 0..mh {
+        for mx in 0..mw {
+          let tx = mx as i64 + off_x;
+          let ty = my as i64 + off_y;
+          if tx < 0 || ty < 0 || tx >= target_w as i64 || ty >= target_h as i64
+          {
+            continue;
+          }
+          let base = (my * mw + mx) * mch;
+          let positive = data[base..base + mch].iter().any(|&v| v > 0.0);
+          if positive {
+            mask[ty as usize * target_w + tx as usize] = true;
+          }
+        }
+      }
+      Ok(Some(mask))
+    }
+    Expr::Graphics { svg, .. } => {
+      rasterize_mask_svg(svg, target_w as u32, target_h as u32).map(Some)
+    }
+    Expr::FunctionCall { name, .. }
+      if name == "Graphics" || name == "Graphics3D" =>
+    {
+      match graphics_svg(mask_expr) {
+        Some(svg) => {
+          rasterize_mask_svg(&svg, target_w as u32, target_h as u32).map(Some)
+        }
+        None => Err(InterpreterError::EvaluationError(
+          "ImageApply: could not render Masking graphics".into(),
+        )),
+      }
+    }
+    _ => Err(InterpreterError::EvaluationError(
+      "ImageApply: unsupported Masking specification".into(),
+    )),
+  }
+}
+
+/// Rasterize a Graphics SVG to exactly `w` x `h` pixels on a transparent
+/// canvas and report which pixels the drawing touched (alpha > 0),
+/// matching wolframscript's "use positive raster values" rule for a
+/// `Masking -> Graphics[...]` region of interest.
+#[cfg(not(target_arch = "wasm32"))]
+fn rasterize_mask_svg(
+  svg_str: &str,
+  w: u32,
+  h: u32,
+) -> Result<Vec<bool>, InterpreterError> {
+  use std::sync::Arc as StdArc;
+
+  let mut fontdb = resvg::usvg::fontdb::Database::new();
+  fontdb.load_system_fonts();
+  load_embedded_fonts(&mut fontdb);
+  let opt = resvg::usvg::Options {
+    fontdb: StdArc::new(fontdb),
+    ..Default::default()
+  };
+
+  let tree = resvg::usvg::Tree::from_str(svg_str, &opt).map_err(|e| {
+    InterpreterError::EvaluationError(format!(
+      "ImageApply: mask SVG parse error: {e}"
+    ))
+  })?;
+
+  let svg_size = tree.size();
+  if svg_size.width() <= 0.0 || svg_size.height() <= 0.0 || w == 0 || h == 0 {
+    return Err(InterpreterError::EvaluationError(
+      "ImageApply: mask has zero size".into(),
+    ));
+  }
+
+  let mut pixmap = resvg::tiny_skia::Pixmap::new(w, h).ok_or_else(|| {
+    InterpreterError::EvaluationError(
+      "ImageApply: failed to create mask pixel buffer".into(),
+    )
+  })?;
+  // Left transparent (not filled): painted (non-zero alpha) pixels are
+  // the mask region, unpainted pixels are excluded.
+  let scale_x = w as f32 / svg_size.width();
+  let scale_y = h as f32 / svg_size.height();
+  let transform = resvg::tiny_skia::Transform::from_scale(scale_x, scale_y);
+  resvg::render(&tree, transform, &mut pixmap.as_mut());
+
+  let rgba_data = pixmap.data();
+  let mut mask = vec![false; (w * h) as usize];
+  for i in 0..(w * h) as usize {
+    mask[i] = rgba_data[i * 4 + 3] > 0;
+  }
+  Ok(mask)
+}
+
+#[cfg(target_arch = "wasm32")]
+fn rasterize_mask_svg(
+  _svg_str: &str,
+  _w: u32,
+  _h: u32,
+) -> Result<Vec<bool>, InterpreterError> {
+  Err(InterpreterError::EvaluationError(
+    "ImageApply: Masking with a Graphics region is unavailable on this \
+     target"
+      .into(),
+  ))
 }
 
 /// Export an Expr::Image to a file
