@@ -170,6 +170,19 @@ fn height_color(z_norm: f64) -> (u8, u8, u8) {
   }
 }
 
+/// Evaluates a `MeshFunctions`/`RegionFunction`-style function at a
+/// facet's `(x, y, z)`, called positionally exactly like
+/// `Plot3D`/`ContourPlot3D`'s region function (see
+/// `field_plot::region_allows`), so it does not need the plot's own
+/// variable names substituted in first.
+fn eval_mesh_function(f: &Expr, x: f64, y: f64, z: f64) -> Option<f64> {
+  let call = Expr::CurriedCall {
+    func: Box::new(f.clone()),
+    args: vec![Expr::Real(x), Expr::Real(y), Expr::Real(z)],
+  };
+  try_eval_to_f64(&evaluate_expr_to_expr(&call).ok()?)
+}
+
 /// The scene's single light, pointing from the surface towards the lamp
 /// (upper-left-front), normalized.
 fn light_direction() -> [f64; 3] {
@@ -10179,6 +10192,19 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut mesh_mode = MeshMode::Default;
   let mut show_axes = true;
   let mut plot_style_expr: Option<&Expr> = None;
+  // `MeshFunctions -> {f}` / `Mesh -> {{v1, v2, ...}}` / `MeshShading ->
+  // {c1, c2, ...}`: colour each facet by which region of `f`'s range
+  // (partitioned at the sorted break values) its average point falls in,
+  // cycling through `MeshShading`'s colours in that same order. Only a
+  // single mesh function is supported; a nested `Mesh` value for more than
+  // one keeps just the first function's break list.
+  let mut mesh_function: Option<Expr> = None;
+  let mut mesh_breaks: Vec<f64> = Vec::new();
+  let mut mesh_shading: Vec<Option<(u8, u8, u8)>> = Vec::new();
+  // `MeshStyle -> None`: the facet grid drawn by `mesh_mode`'s default
+  // `EdgeForm[]` is suppressed, leaving flat colour with no outline —
+  // the usual way a mesh-shaded dissection hides its own seams.
+  let mut mesh_style_none = false;
 
   for opt in &args[3..] {
     if let Expr::Rule {
@@ -10203,7 +10229,64 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           match replacement.as_ref() {
             Expr::Identifier(n) if n == "None" => mesh_mode = MeshMode::None,
             Expr::Identifier(n) if n == "All" => mesh_mode = MeshMode::All,
+            Expr::List(items) => {
+              let level_items: &[Expr] =
+                if items.iter().all(|it| matches!(it, Expr::List(_))) {
+                  match items.first() {
+                    Some(Expr::List(first)) => first,
+                    _ => &[],
+                  }
+                } else {
+                  items
+                };
+              let mut breaks: Vec<f64> = level_items
+                .iter()
+                .filter_map(|item| {
+                  let v = evaluate_expr_to_expr(item)
+                    .unwrap_or_else(|_| item.clone());
+                  try_eval_to_f64(&v)
+                })
+                .collect();
+              breaks.sort_by(|a, b| a.partial_cmp(b).unwrap());
+              mesh_breaks = breaks;
+            }
             _ => {}
+          }
+        }
+        Expr::Identifier(name) if name == "MeshFunctions" => {
+          mesh_function = match replacement.as_ref() {
+            Expr::List(items) => items.first().cloned(),
+            other => Some(other.clone()),
+          };
+        }
+        Expr::Identifier(name) if name == "MeshShading" => {
+          // The value is often computed rather than written literally
+          // (`MeshShading -> Which[cond1, {c1, c2}, cond2, {c3, c4}, ...]`
+          // picking a colour list from the current mesh breaks), so it must
+          // be evaluated before checking its shape.
+          let resolved = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| replacement.as_ref().clone());
+          if let Expr::List(items) = &resolved {
+            mesh_shading = items
+              .iter()
+              .map(|item| {
+                let v =
+                  evaluate_expr_to_expr(item).unwrap_or_else(|_| item.clone());
+                crate::functions::graphics::parse_color(&v).map(|c| {
+                  (
+                    (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+                    (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+                    (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+                  )
+                })
+              })
+              .collect();
+          }
+        }
+        Expr::Identifier(name) if name == "MeshStyle" => {
+          if matches!(replacement.as_ref(), Expr::Identifier(s) if s == "None")
+          {
+            mesh_style_none = true;
           }
         }
         Expr::Identifier(name) if name == "Boxed" => {
@@ -10217,6 +10300,9 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   }
+  let mesh_shading_active = mesh_function.is_some()
+    && !mesh_breaks.is_empty()
+    && !mesh_shading.is_empty();
 
   // Parse parametric surfaces: body must be {fx, fy, fz} or {{fx1, fy1, fz1}, ...}
   struct ParametricSurface {
@@ -10333,7 +10419,13 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
         let mut content: Vec<Expr> = Vec::new();
-        if !matches!(mesh_mode, MeshMode::All) {
+        // Bare `EdgeForm[]` (no styling directive) asks for no facet
+        // outline at all (see `apply_3d_directive`'s "EdgeForm" arm), which
+        // is the plot's own default (`MeshMode::Default`/`::None`) as well
+        // as what an explicit `MeshStyle -> None` asks for even when
+        // `Mesh -> All` would otherwise leave edges at the struct's
+        // default-on.
+        if mesh_style_none || !matches!(mesh_mode, MeshMode::All) {
           content.push(call0("EdgeForm"));
         }
         for i in 0..GRID_N {
@@ -10346,18 +10438,46 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             ) else {
               continue;
             };
-            let avg_z =
-              [sg[i][j], sg[i + 1][j], sg[i + 1][j + 1], sg[i][j + 1]]
-                .iter()
-                .filter_map(|p| p.map(|(_, _, z)| z))
-                .sum::<f64>()
-                / 4.0;
+            let corners =
+              [sg[i][j], sg[i + 1][j], sg[i + 1][j + 1], sg[i][j + 1]];
+            let avg_z = corners
+              .iter()
+              .filter_map(|p| p.map(|(_, _, z)| z))
+              .sum::<f64>()
+              / 4.0;
             let avg_z_norm = (avg_z - gz_min) / rz;
             let default_color = height_color(avg_z_norm);
+            let mesh_color = mesh_shading_active.then(|| {
+              let avg_x = corners
+                .iter()
+                .filter_map(|p| p.map(|(x, _, _)| x))
+                .sum::<f64>()
+                / 4.0;
+              let avg_y = corners
+                .iter()
+                .filter_map(|p| p.map(|(_, y, _)| y))
+                .sum::<f64>()
+                / 4.0;
+              eval_mesh_function(
+                mesh_function.as_ref().expect("mesh_shading_active"),
+                avg_x,
+                avg_y,
+                avg_z,
+              )
+              .and_then(|val| {
+                let region = mesh_breaks.iter().filter(|&&b| b <= val).count();
+                // More regions than colours: cycle, the same convention
+                // `PlotStyle`'s per-surface colours already use.
+                mesh_shading
+                  .get(region % mesh_shading.len())
+                  .copied()
+                  .flatten()
+              })
+            });
             let (cr, cg, cb) =
               match plot_style_for_surface(&plot_styles, surface_idx) {
                 Some(style) => style.color.unwrap_or(default_color),
-                None => default_color,
+                None => mesh_color.flatten().unwrap_or(default_color),
               };
             content.push(Expr::List(
               vec![
@@ -10448,13 +10568,43 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
         let z_norm = |z: f64| -> f64 { (z - gz_min) / rz };
 
+        // `MeshFunctions`/`Mesh`/`MeshShading`: override a facet's default
+        // height-based colour with the region colour its average `(x, y,
+        // z)` falls in — only when there is no `PlotStyle` for this surface,
+        // matching Phase 1's `content` colouring above.
+        let mesh_facet_color = |a: (f64, f64, f64),
+                                b: (f64, f64, f64),
+                                c: (f64, f64, f64)|
+         -> Option<(u8, u8, u8)> {
+          if style.is_some() || !mesh_shading_active {
+            return None;
+          }
+          let avg_x = (a.0 + b.0 + c.0) / 3.0;
+          let avg_y = (a.1 + b.1 + c.1) / 3.0;
+          let avg_z = (a.2 + b.2 + c.2) / 3.0;
+          let val = eval_mesh_function(
+            mesh_function.as_ref().expect("mesh_shading_active"),
+            avg_x,
+            avg_y,
+            avg_z,
+          )?;
+          let region = mesh_breaks.iter().filter(|&&br| br <= val).count();
+          // More regions than colours: cycle, the same convention
+          // `PlotStyle`'s per-surface colours already use.
+          mesh_shading
+            .get(region % mesh_shading.len())
+            .copied()
+            .flatten()
+        };
+
         // Triangle 1
         if let (Some(a), Some(b), Some(c)) = (p00, p10, p01) {
           let v0 = normalize(a);
           let v1 = normalize(b);
           let v2 = normalize(c);
           let avg_z_norm = (z_norm(a.2) + z_norm(b.2) + z_norm(c.2)) / 3.0;
-          let default_color = height_color(avg_z_norm);
+          let default_color = mesh_facet_color(a, b, c)
+            .unwrap_or_else(|| height_color(avg_z_norm));
           let normal = triangle_normal(v0, v1, v2);
           let (color, opacity) =
             shade_facet(default_color, style, normal, view_dir);
@@ -10483,7 +10633,8 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let v1 = normalize(b);
           let v2 = normalize(c);
           let avg_z_norm = (z_norm(a.2) + z_norm(b.2) + z_norm(c.2)) / 3.0;
-          let default_color = height_color(avg_z_norm);
+          let default_color = mesh_facet_color(a, b, c)
+            .unwrap_or_else(|| height_color(avg_z_norm));
           let normal = triangle_normal(v0, v1, v2);
           let (color, opacity) =
             shade_facet(default_color, style, normal, view_dir);
