@@ -20720,6 +20720,24 @@ fn unwrap_dynamic_module_locals(
   }
 }
 
+/// Whether `e` is a bare `Control[…]` call, optionally wrapped in a single
+/// `Dynamic[…]` (the per-item idiom `Dynamic@Control@{…}`). Used to tell a
+/// `Dynamic`-wrapped `Row`/`Column`/`Grid` that is purely a group of
+/// controls (flatten it) from one that lays out other display elements —
+/// buttons, spacers, styled text — alongside or instead of controls (keep
+/// it as a single display element).
+fn is_bare_control_call(e: &Expr) -> bool {
+  match e {
+    Expr::FunctionCall { name, args }
+      if name == "Dynamic" && args.len() == 1 =>
+    {
+      is_bare_control_call(&args[0])
+    }
+    Expr::FunctionCall { name, .. } => name == "Control",
+    _ => false,
+  }
+}
+
 /// The flattened control items of a `Row[…]`/`Column[…]`/`Grid[…]`
 /// Manipulate argument that lays several controls out in one row (the
 /// Wolfram Demonstrations pattern `Row[{Control[…], Spacer[20],
@@ -20782,6 +20800,31 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
   }
   if !contains_control(spec) {
     return None;
+  }
+  // `Dynamic[Column[{Control[…], Control[…], …}]]` (the Demonstrations
+  // idiom for a group of controls — e.g. one `ColorSetter` per face — that
+  // is wrapped in `Dynamic` for live layout updates but laid out via a
+  // nested `Row`/`Column`/`Grid` rather than a bare list) recurses into
+  // that container the same way `Dynamic[{…}]` does. This only fires when
+  // *every* item is a bare `Control[…]` (optionally itself `Dynamic`-
+  // wrapped) — a mixed layout such as `Dynamic[Column[{Row[{Button[…],
+  // Spacer[…], "label"}]}]]` (a Demonstrations caption with stepper
+  // buttons) is a display element, not a control panel, and must keep
+  // falling through to the display path below.
+  if name == "Dynamic"
+    && let Expr::FunctionCall {
+      name: inner_name,
+      args: inner_args,
+    } = &args[0]
+    && matches!(
+      inner_name.as_str(),
+      "Row" | "Column" | "Grid" | "TabView" | "PaneSelector"
+    )
+    && let Some(Expr::List(inner_items)) = inner_args.first()
+    && !inner_items.is_empty()
+    && inner_items.iter().all(is_bare_control_call)
+  {
+    return control_group_items(&args[0]);
   }
   let Expr::List(items) = &args[0] else {
     return None;
@@ -26406,6 +26449,38 @@ mod manipulate_dynamic_control_list_tests {
     let s = spec("Manipulate[x, Dynamic[{Control[{{x, 0}, -1, 1}]}]]");
     assert_eq!(names(&s), vec!["x"]);
     assert!(s.displays.is_empty());
+  }
+
+  /// `Dynamic[Column[{Control[…], …}]]` (the Demonstrations idiom for a
+  /// group of controls — e.g. one `ColorSetter` per face — laid out via a
+  /// nested `Column` rather than a bare list, wrapped in `Dynamic` for live
+  /// layout updates) flattens the same way `Dynamic[{…}]` does, instead of
+  /// the whole group falling through to a static, non-interactive display
+  /// of the literal `Control[…]` expressions.
+  #[test]
+  fn dynamic_wrapped_column_of_controls_flattens_to_controls() {
+    let s = spec(
+      "Manipulate[x + y, Dynamic[Column[{Control[{{x, 0}, -1, 1}], \
+       Control[{{y, 0}, -1, 1}]}]]]",
+    );
+    assert_eq!(names(&s), vec!["x", "y"]);
+    assert!(s.displays.is_empty());
+  }
+
+  /// The same flattening applies when the controls are colour pickers
+  /// (`{{col, Red, ""}, Red}` — a bare colour domain equal to the initial
+  /// colour draws a full `ColorSetter`), the exact shape the Wolfram
+  /// Demonstrations Project's "Toroidal Polyhedra" uses for its per-face
+  /// colour controls.
+  #[test]
+  fn dynamic_wrapped_column_of_color_controls_flattens_to_controls() {
+    let s = spec(
+      "Manipulate[col, Dynamic[Column[{Control[{{col, Red, \"\"}, Red, \
+       ImageSize -> Tiny}]}]]]",
+    );
+    assert_eq!(names(&s), vec!["col"]);
+    assert!(s.displays.is_empty());
+    assert!(matches!(&s.controls[0], ManipulateControl::Color { .. }));
   }
 
   /// `Sequence@@If[cond, ctrlSpec, {}]` inside a Dynamic control list
