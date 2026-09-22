@@ -17550,6 +17550,104 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`acut$$ = 0.5}, \"\\[Ellipsis]\"]"],
     assert!(render("False", "True", 6).contains("fill=\"rgb(255,181,0)\""));
   }
 
+  /// End-to-end regression for the "Cross Product of Vectors" Demonstration:
+  /// two draggable 3D vectors drawn as cylinder-and-cone arrows over a
+  /// coordinate frame, with their cross product drawn as a third arrow and
+  /// all three read out as rounded coordinate triples.
+  ///
+  /// It already worked; this pins it. `Show` merging four separately built
+  /// `Graphics3D` objects (the axes plus three arrows, each a `Cylinder`
+  /// shaft with a `Cone` head) renders without error, and the six sliders
+  /// (three per vector, split by a `Delimiter`) come back with the
+  /// demonstration's own labels, ranges and defaults, placed left of the
+  /// output by `ControlPlacement -> Left`.
+  #[test]
+  fn cross_product_of_vectors_notebook_draws_its_arrows() {
+    let nb_src = r##"Notebook[{
+Cell[BoxData["arrow[base_, tip_, col_] := Graphics3D[{col, Cylinder[{base, tip}, 0.05], Cone[{tip, tip + 0.3 (tip - base)/Norm[tip - base]}, 0.15]}]"], "Input"],
+Cell[BoxData["axes3 = Graphics3D[{Line[{{-3, 0, 0}, {3, 0, 0}}], Line[{{0, -3, 0}, {0, 3, 0}}], Line[{{0, 0, -3}, {0, 0, 3}}]}]"], "Input"],
+Cell[BoxData["cross3[u_, v_] := {u[[2]] v[[3]] - u[[3]] v[[2]], u[[3]] v[[1]] - u[[1]] v[[3]], u[[1]] v[[2]] - u[[2]] v[[1]]}"], "Input"],
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[\nColumn[{\nRow[{Text[Style[Round[{ax, ay, az}, .01], 14, Red, Bold]], Text[Style[\" x \", 16, Bold]], Text[Style[Round[{bx, by, bz}, .01], 14, Blue, Bold]], Text[Style[\" = \", 16, Bold]], Text[Style[Round[cross3[{ax, ay, az}, {bx, by, bz}], .01], 14, Black, Bold]]}],\nShow[axes3, arrow[{0, 0, 0}, {ax, ay, az}, Red], arrow[{0, 0, 0}, {bx, by, bz}, Blue], arrow[{0, 0, 0}, cross3[{ax, ay, az}, {bx, by, bz}], Black], PlotRange -> 3, ImageSize -> {380, 380}]\n}, Alignment -> Center],\n{{ax, 1.53, Style[\"ax\", Red]}, -2, 2, .01, ImageSize -> Small},\n{{ay, 0.22, Style[\"ay\", Red]}, -2, 2, .01, ImageSize -> Small},\n{{az, 0.65, Style[\"az\", Red]}, -2, 2, .01, ImageSize -> Small},\nDelimiter,\n{{bx, -0.82, Style[\"bx\", Blue]}, -2, 2, .01, ImageSize -> Small},\n{{by, -1.88, Style[\"by\", Blue]}, -2, 2, .01, ImageSize -> Small},\n{{bz, -1.04, Style[\"bz\", Blue]}, -2, 2, .01, ImageSize -> Small},\nControlPlacement -> Left,\nSaveDefinitions -> True\n]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`ax$$ = 1.53, $CellContext`ay$$ = 0.22, $CellContext`az$$ = 0.65, $CellContext`bx$$ = -0.82, $CellContext`by$$ = -1.88, $CellContext`bz$$ = -1.04}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(widget.graphics_handle.is_some(), "the arrows must draw");
+    assert_eq!(widget.control_placement, manipulate::ControlPlacement::Left);
+
+    // Six labelled sliders in two groups of three, split by the
+    // `Delimiter`, each with its own default, range and step.
+    let expected = [
+      ("ax", 1.53),
+      ("ay", 0.22),
+      ("az", 0.65),
+      ("bx", -0.82),
+      ("by", -1.88),
+      ("bz", -1.04),
+    ];
+    let mut expected_iter = expected.iter();
+    let mut divider_seen = false;
+    for c in &widget.controls {
+      match c {
+        manipulate::ControlState::Continuous {
+          name,
+          min,
+          max,
+          step,
+          current,
+          ..
+        } => {
+          let (expected_name, expected_current) =
+            expected_iter.next().expect("more sliders than expected");
+          assert_eq!(name, expected_name);
+          assert_eq!((*min, *max, *step), (-2.0, 2.0, 0.01));
+          assert!(
+            (current - expected_current).abs() < 1e-9,
+            "{name}: expected {expected_current}, got {current}"
+          );
+        }
+        manipulate::ControlState::Divider => divider_seen = true,
+        other => panic!("unexpected control: {other:?}"),
+      }
+    }
+    assert!(expected_iter.next().is_none(), "missing expected sliders");
+    assert!(divider_seen, "the two vectors' sliders must be split");
+
+    let render = |a: [f64; 3], b: [f64; 3]| {
+      woxi::interpret_with_stdout(&format!(
+        "ax = {}; ay = {}; az = {}; bx = {}; by = {}; bz = {};\n{}",
+        a[0], a[1], a[2], b[0], b[1], b[2], widget.body
+      ))
+      .expect("the body must render")
+      .graphics
+      .expect("the body must produce a graphic")
+    };
+    let default = render([1.53, 0.22, 0.65], [-0.82, -1.88, -1.04]);
+    // Three solid arrows (each a tessellated cylinder + cone) over the
+    // axes: enough filled facets to be more than just the frame.
+    assert!(
+      default.matches("<polygon").count() > 100,
+      "arrows not drawn: {default}"
+    );
+    // Moving either vector changes the rendered scene.
+    assert_ne!(
+      default,
+      render([2.0, 0.0, 0.0], [-0.82, -1.88, -1.04]),
+      "the vector controls must matter"
+    );
+  }
+
   /// End-to-end regression for "Binomial Probability Distribution": a
   /// stem plot of the binomial PDF, titled and with both axes labelled.
   /// The unjoined `ListPlot` path drew no labels at all.
