@@ -2998,6 +2998,49 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_frame_label_grid_renders_as_embedded_table() {
+    // `FrameLabel -> Grid[…]` (a Demonstration frame-labeling a plot with a
+    // summary table, as the Wolfram Demonstrations Project's authoring
+    // template shows) used to vanish entirely: `expr_to_label` treats `Grid`
+    // as a known builtin application and returns `None` for it, so the
+    // label silently dropped instead of showing the table. It must now
+    // embed the table as a picture below the frame.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Plot[Sin[x], {x, 0, 2 Pi}, Frame -> True, \
+         FrameLabel -> Grid[{{\"a\", \"b\"}, {1, 2}}, Frame -> All]], \
+         \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      svg.matches("<svg").count() > 1,
+      "a Grid FrameLabel must embed a nested <svg> table, not just the \
+       outer plot: {svg}"
+    );
+    assert!(
+      svg.contains(">a<") && svg.contains(">b<"),
+      "the embedded table must carry the Grid's own cell text: {svg}"
+    );
+
+    // A bare (non-Grid) FrameLabel keeps rendering as plain text, unchanged.
+    clear_state();
+    let text_svg = interpret(
+      "ExportString[Plot[Sin[x], {x, 0, 2 Pi}, Frame -> True, \
+         FrameLabel -> \"t\"], \"SVG\"]",
+    )
+    .unwrap();
+    assert_eq!(
+      text_svg.matches("<svg").count(),
+      1,
+      "a plain-text FrameLabel must not embed any nested <svg>: {text_svg}"
+    );
+    assert!(
+      text_svg.contains(">t<"),
+      "the plain-text FrameLabel must still render as text: {text_svg}"
+    );
+  }
+
+  #[test]
   fn test_axes_label_none_suppresses_that_axis_label() {
     // `AxesLabel -> {label, None}` (or `{None, label}`) must omit the axis
     // whose entry is the bare symbol `None`, not print the literal text
