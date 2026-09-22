@@ -19633,6 +19633,10 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     // flattened list holds every pane's, so each pane's controls also pick
     // up the condition under which they are on screen.
     collect_pane_visibility(spec, &place_map, &mut control_visible);
+    if let Some(items) = named_control_group_items(spec) {
+      arg_items.extend(items);
+      continue;
+    }
     match control_group_items(spec) {
       Some(items) => arg_items.extend(items),
       None => arg_items.push(spec.clone()),
@@ -21007,6 +21011,73 @@ fn unwrap_dynamic_module_locals(
       _ => return cur.clone(),
     }
   }
+}
+
+/// `"Tab Name" -> {ctrl1, ctrl2, …}` is Manipulate's own control-grouping
+/// syntax: the Wolfram Language documentation for `Manipulate` says a row of
+/// tabs is added automatically once more than one such group is given.
+/// Mathematica also emits this shape for a single, otherwise-unnamed group —
+/// under the literal name `"None"` — whenever it serializes a Manipulate's
+/// compiled `"Specifications"` (the box dump a saved Wolfram Demonstrations
+/// Project notebook carries), so real-world files reach this path even when
+/// the author never grouped anything by hand.
+///
+/// Woxi's control panel is one flat list with no tab-switching UI (the same
+/// simplification already made for `TabView`/`PaneSelector` panes, see
+/// `control_group_items` below), so every group's controls are simply
+/// flattened into it; with more than one group they all show at once
+/// instead of behind separate tabs. Returns `None` when `spec` isn't this
+/// shape at all, so it falls through to the ordinary option/spec handling.
+fn named_control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
+  let (Expr::Rule {
+    pattern,
+    replacement,
+  }
+  | Expr::RuleDelayed {
+    pattern,
+    replacement,
+  }) = spec
+  else {
+    return None;
+  };
+  if !matches!(pattern.as_ref(), Expr::String(_)) {
+    return None;
+  }
+  let Expr::List(items) = replacement.as_ref() else {
+    return None;
+  };
+  if items.is_empty() {
+    return Some(Vec::new());
+  }
+  // A group's content is either one control spec directly — the shape
+  // Mathematica saves for an otherwise-unnamed single-control group,
+  // `"None" -> {{var, init}, min, max, Locator, …}`, whose *own* elements
+  // are the control's variable head, bounds, type marker and options — or
+  // a list of several full control specs, `"Tab" -> {ctrl1, ctrl2, …}`.
+  // Tell them apart by whether the *second* top-level element also looks
+  // like a control's variable head (a plain symbol, or a list starting
+  // with one): in the single-spec shape it is instead a bound, a bare
+  // type marker, or an option rule, never another variable head.
+  fn is_control_var_head(e: &Expr) -> bool {
+    match e {
+      Expr::Identifier(_) => true,
+      Expr::List(items) => matches!(items.first(), Some(Expr::Identifier(_))),
+      _ => false,
+    }
+  }
+  if is_control_var_head(&items[0])
+    && !items.get(1).is_some_and(is_control_var_head)
+  {
+    return Some(vec![replacement.as_ref().clone()]);
+  }
+  let mut out = Vec::new();
+  for item in items {
+    match control_group_items(item) {
+      Some(nested) => out.extend(nested),
+      None => out.push(item.clone()),
+    }
+  }
+  Some(out)
 }
 
 /// The flattened control items of a `Row[…]`/`Column[…]`/`Grid[…]`
@@ -27055,6 +27126,79 @@ mod manipulate_dynamic_control_list_tests {
   fn no_bookmarks_option_leaves_bookmarks_empty() {
     let s = spec("Manipulate[Graphics[{Circle[{0, 0}, r]}], {r, 1, 5}]");
     assert!(s.bookmarks.is_empty());
+  }
+}
+
+#[cfg(test)]
+mod manipulate_named_control_group_tests {
+  use super::*;
+
+  fn spec(code: &str) -> ManipulateSpec {
+    let expr = crate::parse_to_expr(code).expect("parse");
+    extract_manipulate_spec(&expr).expect("extract spec")
+  }
+
+  fn names(spec: &ManipulateSpec) -> Vec<&str> {
+    spec.controls.iter().map(ManipulateControl::name).collect()
+  }
+
+  /// `"None" -> {controlSpec}` is the shape Mathematica itself emits when
+  /// it serializes a Manipulate's compiled `"Specifications"` for a saved
+  /// notebook (a single, otherwise-unnamed control group) — a real Wolfram
+  /// Demonstrations Project download's Input cell carries a Manipulate
+  /// wrapped exactly this way, not the bare control-spec form most
+  /// hand-written code uses. Regression: this used to make
+  /// `extract_manipulate_spec` see zero controls and bail out entirely,
+  /// so the widget never opened.
+  #[test]
+  fn none_named_single_group_flattens_to_its_controls() {
+    let s = spec(r#"Manipulate[x, "None" -> {{x, 0}, -5, 5}]"#);
+    assert_eq!(names(&s), vec!["x"]);
+  }
+
+  /// The same shape with `:>` instead of `->` (Mathematica uses either for
+  /// this grouping) must parse identically.
+  #[test]
+  fn none_named_single_group_with_rule_delayed_flattens_too() {
+    let s = spec(r#"Manipulate[x, "None" :> {{x, 0}, -5, 5}]"#);
+    assert_eq!(names(&s), vec!["x"]);
+  }
+
+  /// The Wolfram Language documentation for `Manipulate` says a row of
+  /// tabs is added automatically once more than one named group is given.
+  /// Woxi has no tab-switching UI (the same simplification already made
+  /// for `TabView`/`PaneSelector` panes), so every group's controls just
+  /// flatten into one panel instead of behind separate tabs — but neither
+  /// group's controls are lost.
+  #[test]
+  fn multiple_named_groups_flatten_together() {
+    let s = spec(
+      r#"Manipulate[x + y,
+        "Basic" -> {{x, 0}, -5, 5},
+        "Advanced" -> {{y, 0}, -5, 5}]"#,
+    );
+    assert_eq!(names(&s), vec!["x", "y"]);
+  }
+
+  /// A named group containing more than one control spec flattens every
+  /// one of them, not just the first.
+  #[test]
+  fn named_group_with_several_controls_flattens_all_of_them() {
+    let s = spec(
+      r#"Manipulate[x + y + z,
+        "Group" -> {{{x, 0}, -5, 5}, {{y, 0}, -5, 5}, {{z, 0}, -5, 5}}]"#,
+    );
+    assert_eq!(names(&s), vec!["x", "y", "z"]);
+  }
+
+  /// A plain `Rule`/`RuleDelayed` option such as `Initialization :> …`
+  /// keeps being recognized as an option rather than mistaken for a named
+  /// control group — only a *string*-keyed rule is grouping syntax.
+  #[test]
+  fn identifier_keyed_option_is_not_mistaken_for_a_named_group() {
+    let s = spec(r#"Manipulate[x, {x, 0, 10}, Initialization :> (x = 3)]"#);
+    assert_eq!(names(&s), vec!["x"]);
+    assert_eq!(s.initialization.as_deref(), Some("x = 3"));
   }
 }
 
