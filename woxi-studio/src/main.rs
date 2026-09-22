@@ -342,6 +342,10 @@ enum Message {
   /// A `Button[…]` control row was pressed; run its action code.
   /// (cell_idx, ctrl_idx)
   ManipulateButtonPressed(usize, usize),
+  /// A `Bookmarks` preset was picked from the widget's bookmark menu; run
+  /// its assignment code. (cell_idx, bookmark_idx — indexes
+  /// `ManipulateState::bookmarks`, not `controls`)
+  ManipulateBookmarkSelected(usize, usize),
   /// Swallow an interaction with a disabled control (its `Enabled` condition
   /// is currently `False`) without changing any state.
   Noop,
@@ -1942,6 +1946,15 @@ impl WoxiStudio {
         {
           let action = action.clone();
           state.apply_button_action(&action);
+        }
+        Task::none()
+      }
+
+      Message::ManipulateBookmarkSelected(cell_idx, bookmark_idx) => {
+        if let Some(editor) = self.cell_editors.get_mut(cell_idx)
+          && let Some(state) = editor.manipulate_state.as_mut()
+        {
+          state.apply_bookmark(bookmark_idx);
         }
         Task::none()
       }
@@ -4513,6 +4526,29 @@ fn render_manipulate_widget<'a>(
         controls_col = controls_col.push(rule::horizontal(1));
       }
     }
+  }
+
+  // A `Bookmarks` menu: a dropdown of named presets that jump the controls
+  // to preset values when selected. Indexed by position (not label text) so
+  // two presets sharing a label stay individually reachable, the same
+  // reasoning as `PopupChoice` for a `PopupMenu` display element.
+  if !state.bookmarks.is_empty() {
+    let items: Vec<PopupChoice> = state
+      .bookmarks
+      .iter()
+      .enumerate()
+      .map(|(index, (label, _))| PopupChoice {
+        index,
+        label: label.clone(),
+      })
+      .collect();
+    let on_select = move |chosen: PopupChoice| {
+      Message::ManipulateBookmarkSelected(cell_idx, chosen.index)
+    };
+    let picker = pick_list(items, None::<PopupChoice>, on_select)
+      .placeholder("Bookmarks")
+      .width(iced::Length::Shrink);
+    controls_col = controls_col.push(row![picker].align_y(Center));
   }
 
   // An animated widget (Animate / ListAnimate / Animator) gets a play/pause
@@ -26989,6 +27025,99 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`count$$ = 3, $CellContext`offset$$ 
       svg.contains("<rect"),
       "the dynamic strip's Rectangle should be present in the overlay: {svg}"
     );
+  }
+
+  /// Checked a randomly-sampled Wolfram Demonstrations Project notebook
+  /// ("Ways to Lace Your Shoes") against Woxi Studio's Manipulate pipeline.
+  /// Its shape: a single slider drives a permutation-derived picture and a
+  /// `Bookmarks -> {"name" :> {var = val, …}, …}` menu jumps straight to
+  /// named presets (there: named lacing patterns). Independently written,
+  /// not copied from the Demonstration: a star-polygon body and different
+  /// preset names/values, exercising the same `Bookmarks` mechanism with
+  /// presets that write one or two variables at once.
+  ///
+  /// Regression coverage for `Bookmarks`, which was entirely unimplemented
+  /// before this (silently accepted as an unrecognized option, with no
+  /// menu and no way to reach a preset): the presets must survive into
+  /// `ManipulateState::bookmarks`, and selecting one must move every
+  /// control it assigns and re-render the body.
+  #[test]
+  fn manipulate_bookmarks_jump_to_named_star_polygon_presets() {
+    let code = r#"Manipulate[
+      Graphics[
+        Line[Table[
+          {Cos[2 Pi Mod[i k, n]/n], Sin[2 Pi Mod[i k, n]/n]},
+          {i, 0, n}
+        ]],
+        PlotRange -> {{-1.2, 1.2}, {-1.2, 1.2}}
+      ],
+      {{n, 5, "points"}, 3, 12, 1, Appearance -> "Labeled"},
+      {{k, 2, "step"}, 1, 6, 1},
+      Bookmarks -> {
+        "pentagram" :> {n = 5, k = 2},
+        "hexagram" :> {n = 6, k = 2},
+        "triangle" :> {n = 3, k = 1}
+      }
+    ]"#;
+    let expr = woxi::interpret_to_expr(code)
+      .expect("Manipulate with Bookmarks should parse and hold");
+    let mut state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("the star-polygon Manipulate should build a ManipulateState");
+
+    assert_eq!(
+      state.error, None,
+      "the Line/Table body must evaluate cleanly: {:?}",
+      state.error
+    );
+    let labels: Vec<&str> = state
+      .bookmarks
+      .iter()
+      .map(|(label, _)| label.as_str())
+      .collect();
+    assert_eq!(
+      labels,
+      ["pentagram", "hexagram", "triangle"],
+      "the three named presets must survive into ManipulateState::bookmarks, \
+       in source order"
+    );
+
+    fn current(state: &manipulate::ManipulateState, name: &str) -> String {
+      state
+        .controls
+        .iter()
+        .find(|c| c.name() == name)
+        .unwrap_or_else(|| panic!("no control named {name}"))
+        .current_code()
+    }
+
+    // Selecting "triangle" writes both `n` and `k` at once, away from
+    // their authored defaults (5 and 2).
+    state.apply_bookmark(2);
+    assert_eq!(
+      current(&state, "n"),
+      "3",
+      "the bookmark's n = 3 must move the slider"
+    );
+    assert_eq!(
+      current(&state, "k"),
+      "1",
+      "the bookmark's k = 1 must move the slider"
+    );
+    assert_eq!(
+      state.error, None,
+      "the body must re-evaluate cleanly after the bookmark jump: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the picture must re-render at the bookmarked preset"
+    );
+
+    // An out-of-range index is a no-op rather than a panic or a silent
+    // corruption of the current controls.
+    state.apply_bookmark(99);
+    assert_eq!(current(&state, "n"), "3");
+    assert_eq!(current(&state, "k"), "1");
   }
 
   /// Checked a randomly-sampled Wolfram Demonstrations Project notebook (a

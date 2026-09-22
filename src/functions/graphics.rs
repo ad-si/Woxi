@@ -19324,6 +19324,13 @@ pub struct ManipulateSpec {
   /// sibling's current value into one list bound to the parent, instead of
   /// several same-named bindings colliding.
   pub list_elements: Vec<(String, String, usize)>,
+  /// `Bookmarks -> {"name" :> assignment, …}`: a menu of named presets. Each
+  /// entry is `(label, assignment code)`, where the assignment code is
+  /// arbitrary code (typically `var = value` or a list of several such
+  /// assignments) that is run against the live bindings — the same
+  /// mechanism as a `Button`'s `action` — when the preset is selected, then
+  /// the body re-evaluates against whatever variables it changed.
+  pub bookmarks: Vec<(String, String)>,
 }
 
 /// Where a Manipulate's control panel sits relative to its output, from the
@@ -19601,6 +19608,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   let mut appearance_none = false;
   let mut tracked_symbols: Option<Vec<String>> = None;
   let mut control_placement = ControlPlacement::default();
+  let mut bookmarks: Vec<(String, String)> = Vec::new();
   // Compound (non-symbol) control variables such as `Subscript[signal, 1]`
   // cannot be bound by name; each is renamed to a synthesized plain symbol,
   // and every occurrence in the body (and related code fragments) is
@@ -19764,6 +19772,32 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "False")
       {
         animation_running = false;
+      }
+      // `Bookmarks -> {"name" :> assignment, …}`: a menu of named presets,
+      // each holding the code that jumps the controls to that preset (the
+      // same shape as a `ButtonBar` rule, just carried as an option instead
+      // of a control).
+      if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Bookmarks")
+        && let Expr::List(items) = replacement.as_ref()
+      {
+        for item in items {
+          let (Expr::Rule {
+            pattern: label_pat,
+            replacement: action,
+          }
+          | Expr::RuleDelayed {
+            pattern: label_pat,
+            replacement: action,
+          }) = item
+          else {
+            continue;
+          };
+          let label_runs = manipulate_label_runs(label_pat, false);
+          bookmarks.push((
+            flatten_label_runs(&label_runs),
+            crate::syntax::expr_to_input_form(action),
+          ));
+        }
       }
       // `TrackedSymbols :> {a, b}` narrows re-evaluation to those
       // variables; a single symbol may be given bare. `All` / `Full` /
@@ -20290,6 +20324,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     tracking,
     control_placement,
     list_elements,
+    bookmarks,
   })
 }
 
@@ -21857,6 +21892,7 @@ pub fn extract_list_animate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     tracking: Vec::new(),
     control_placement: ControlPlacement::default(),
     list_elements: Vec::new(),
+    bookmarks: Vec::new(),
   })
 }
 
@@ -21942,6 +21978,7 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
     tracking: Vec::new(),
     control_placement: ControlPlacement::default(),
     list_elements: Vec::new(),
+    bookmarks: Vec::new(),
   })
 }
 
@@ -22069,6 +22106,7 @@ pub fn extract_locator_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     tracking: Vec::new(),
     control_placement: ControlPlacement::default(),
     list_elements: Vec::new(),
+    bookmarks: Vec::new(),
   })
 }
 
@@ -22123,6 +22161,7 @@ pub fn extract_click_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     tracking: Vec::new(),
     control_placement: ControlPlacement::default(),
     list_elements: Vec::new(),
+    bookmarks: Vec::new(),
   })
 }
 
@@ -22189,6 +22228,7 @@ pub fn extract_control_spec(expr: &Expr) -> Option<ManipulateSpec> {
     tracking: Vec::new(),
     control_placement: ControlPlacement::default(),
     list_elements: Vec::new(),
+    bookmarks: Vec::new(),
   })
 }
 
@@ -26975,6 +27015,38 @@ mod manipulate_dynamic_control_list_tests {
       }
       other => panic!("expected a Color control, got {other:?}"),
     }
+  }
+
+  /// `Bookmarks -> {"name" :> assignment, …}` parses into `spec.bookmarks`
+  /// as `(label, assignment code)` pairs, in source order, leaving the
+  /// ordinary controls untouched. Each assignment may set more than one
+  /// variable at once.
+  #[test]
+  fn bookmarks_option_parses_into_named_presets() {
+    let s = spec(
+      r#"Manipulate[Graphics[{Circle[{cx, cy}, r]}], \
+         {cx, -5, 5}, {cy, -5, 5}, {r, 1, 5}, \
+         Bookmarks -> { \
+           "origin" :> {cx = 0, cy = 0}, \
+           "big" :> {r = 5} \
+         }]"#,
+    );
+    assert_eq!(names(&s), vec!["cx", "cy", "r"]);
+    assert_eq!(
+      s.bookmarks,
+      vec![
+        ("origin".to_string(), "{cx = 0, cy = 0}".to_string()),
+        ("big".to_string(), "{r = 5}".to_string()),
+      ]
+    );
+  }
+
+  /// A `Bookmarks` menu with no matching option is simply absent —
+  /// `spec.bookmarks` stays empty rather than fabricating an entry.
+  #[test]
+  fn no_bookmarks_option_leaves_bookmarks_empty() {
+    let s = spec("Manipulate[Graphics[{Circle[{0, 0}, r]}], {r, 1, 5}]");
+    assert!(s.bookmarks.is_empty());
   }
 }
 
