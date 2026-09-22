@@ -2660,6 +2660,37 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_plot_range_dynamic_wrapper_is_unwrapped() {
+    // `PlotRange -> Dynamic[{{xmin, xmax}, {ymin, ymax}}]` is how a
+    // `Manipulate` body built from a Demonstration's saved definition
+    // spells an option value that depends on a control variable — outside
+    // an interactive front end, `Dynamic[expr]` just means expr's current
+    // value. Regression: `Dynamic[…]` options were left as an unrecognized
+    // expression by the option parser (which only handles a bare
+    // `{{...},{...}}` list), so the range silently fell back to Automatic
+    // instead of the asymmetric range actually requested.
+    clear_state();
+    let plain = interpret(
+      "ExportString[Graphics[{Red, Disk[{0, 0}, 10]}, PlotRange -> {{-5, 5}, {-2, 8}}], \"SVG\"]",
+    )
+    .unwrap();
+    let dynamic = interpret(
+      "ExportString[Graphics[{Red, Disk[{0, 0}, 10]}, PlotRange -> Dynamic[{{-5, 5}, {-2, 8}}]], \"SVG\"]",
+    )
+    .unwrap();
+    assert_eq!(
+      dynamic, plain,
+      "Dynamic-wrapped PlotRange should render identically to the bare range"
+    );
+    // Sanity: the shared range is genuinely asymmetric (off-center), so this
+    // is not vacuously true because both sides fell back to Automatic.
+    assert!(
+      plain.contains("cy=\"288.00\""),
+      "expected the asymmetric range to shift the circle's center: {plain}"
+    );
+  }
+
+  #[test]
   fn test_invisible_text_label_paints_nothing() {
     // `Text[Invisible[Style["e", …]], pos]` — a Demonstration hides one
     // item's label (e.g. an edge whose name shouldn't show) by wrapping it
