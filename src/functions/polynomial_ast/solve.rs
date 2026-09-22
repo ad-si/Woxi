@@ -1181,6 +1181,30 @@ fn is_solve_constant(s: &str) -> bool {
   )
 }
 
+/// Auto-detect the variable argument for a Solve/NSolve call that gave no
+/// explicit variable list — the one-argument form `Solve[eqns]` and the
+/// two-argument domain-only form `Solve[eqns, dom]` both resolve to this.
+/// Only the unambiguous cases are handled — a single variable, or a
+/// determined/overdetermined system (variables <= equations). An
+/// underdetermined system (which wolframscript solves with a non-obvious
+/// variable-selection heuristic) returns `None`, leaving the call
+/// unevaluated.
+fn auto_detect_solve_vars(eqns: &Expr) -> Option<Expr> {
+  let mut vars = Vec::new();
+  collect_solve_vars(eqns, &mut vars);
+  let n_eqns = match eqns {
+    Expr::List(items) => items.len(),
+    _ => 1,
+  };
+  if vars.len() == 1 {
+    Some(Expr::Identifier(vars.remove(0)))
+  } else if vars.len() >= 2 && vars.len() <= n_eqns {
+    Some(Expr::List(vars.into_iter().map(Expr::Identifier).collect()))
+  } else {
+    None
+  }
+}
+
 /// Collect the free variable symbols of an equation (or list/And of
 /// equations), in first-appearance order, descending through comparisons,
 /// arithmetic and function arguments. Used by the one-argument Solve form.
@@ -1632,20 +1656,7 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return Ok(Expr::List(vec![].into()));
       }
     }
-    let mut vars = Vec::new();
-    collect_solve_vars(&args[0], &mut vars);
-    let n_eqns = match &args[0] {
-      Expr::List(items) => items.len(),
-      _ => 1,
-    };
-    let var_arg = if vars.len() == 1 {
-      Some(Expr::Identifier(vars.remove(0)))
-    } else if vars.len() >= 2 && vars.len() <= n_eqns {
-      Some(Expr::List(vars.into_iter().map(Expr::Identifier).collect()))
-    } else {
-      None
-    };
-    return match var_arg {
+    return match auto_detect_solve_vars(&args[0]) {
       Some(va) => solve_ast(&[args[0].clone(), va]),
       None => Ok(unevaluated("Solve", args)),
     };
@@ -1669,23 +1680,9 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
         | "Algebraics"
         | "Booleans"
     )
+    && let Some(va) = auto_detect_solve_vars(&args[0])
   {
-    let mut vars = Vec::new();
-    collect_solve_vars(&args[0], &mut vars);
-    let n_eqns = match &args[0] {
-      Expr::List(items) => items.len(),
-      _ => 1,
-    };
-    let var_arg = if vars.len() == 1 {
-      Some(Expr::Identifier(vars.remove(0)))
-    } else if vars.len() >= 2 && vars.len() <= n_eqns {
-      Some(Expr::List(vars.into_iter().map(Expr::Identifier).collect()))
-    } else {
-      None
-    };
-    if let Some(va) = var_arg {
-      return solve_ast(&[args[0].clone(), va, args[1].clone()]);
-    }
+    return solve_ast(&[args[0].clone(), va, args[1].clone()]);
   }
   if args.len() < 2 || args.len() > 3 {
     return Err(InterpreterError::EvaluationError(
