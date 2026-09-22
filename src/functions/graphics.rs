@@ -13354,13 +13354,17 @@ fn grid_svg_styled_internal(
 
   // A cell may arrive inside a wrapper that only says how to set it —
   // `Pane[…]` reserving an area, an `Item[…]` cell, `Text[…]` choosing a
-  // font. What the cell *shows* is what they hold, so peel them before
-  // any sizing or drawing pass: otherwise the cell printed as source
-  // (`Pane[Grid[…]]`), which is how a Demonstration's readout panel used
-  // to render.
+  // font — or as a live `Dynamic[…]` readout (a Manipulate caption grid's
+  // idiom for a cell that recomputes each frame, e.g. a live graph picture
+  // or a rounded numeric result). What the cell *shows* is what they hold
+  // or currently evaluate to, so resolve them before any sizing or drawing
+  // pass: otherwise the cell printed as source (`Pane[Grid[…]]`, or a
+  // literal `Dynamic[…]` expression), which is how a Demonstration's
+  // readout panel used to render. `resolve_display_item` already does this
+  // for `Row`/`Column` cells; `Grid` cells need the same treatment.
   for row in &mut rows {
     for cell in row.iter_mut() {
-      *cell = unwrap_display_wrappers(cell);
+      *cell = resolve_display_item(cell);
     }
   }
 

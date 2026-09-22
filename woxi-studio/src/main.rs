@@ -8311,6 +8311,11 @@ mod tests {
   /// Demonstrations Project notebooks that expose a "how many terms" picker
   /// over a recursive multi-argument algorithm (independently written, not
   /// copied from any specific one).
+  ///
+  /// `Text[Labeled[Grid[…], …]]` renders as a picture (a real notebook
+  /// typesets `Grid`/`Labeled` visually regardless of the `Text` wrapper,
+  /// which only affects atomic content), so this checks the rendered SVG
+  /// rather than `state.text_output`.
   #[test]
   fn manipulate_term_count_picker_drives_recursive_xgcd_helper() {
     let code = r#"Manipulate[
@@ -8376,13 +8381,25 @@ mod tests {
       other => panic!("expected a discrete term-count picker, got {other:?}"),
     }
     assert_eq!(state.controls.len(), 4, "picker plus three sliders");
+    assert!(
+      state.graphics_handle.is_some(),
+      "the Text[Labeled[Grid[…]]] body must render as a picture"
+    );
     // gcd(12, 18, 30) = 6, with Bezout coefficients {0, 2, -1}: the default
     // rendering must reflect the correct fold over all three terms, not
-    // just the first one or two.
-    let text = state.text_output.as_deref().unwrap_or("");
+    // just the first one or two. `graphics_handle` is an opaque iced
+    // `svg::Handle`, so re-evaluate the body directly to inspect the SVG,
+    // the same way `view_switching_manipulate_shows_the_picked_view` does.
+    let svg = woxi::interpret_with_stdout(&format!(
+      "count = 3; b1 = 12; b2 = 18; b3 = 30;\n{}",
+      state.body
+    ))
+    .expect("the body must render")
+    .graphics
+    .expect("the body must produce a graphic");
     assert!(
-      text.contains('6'),
-      "gcd(12, 18, 30) = 6 must appear in the rendered text: {text:?}"
+      svg.contains('6'),
+      "gcd(12, 18, 30) = 6 must appear in the rendered SVG: {svg:?}"
     );
   }
 
@@ -25148,6 +25165,100 @@ SaveDefinitions -> True]";
     assert_eq!(
       cnf_caption,
       "function: ( !a ||  !b) && (a || b || c) && ( !a ||  !c) && ( !b ||  !c)"
+    );
+  }
+
+  /// End-to-end regression for the shape a network-analysis Demonstration
+  /// uses: `Manipulate[Text@Grid[{{…, Dynamic[drawing[…]]}, {…,
+  /// Column[{…, Dynamic[Round[metric[…], …]], …}]}}], …]` — a `Grid` whose
+  /// cells are a live-redrawn picture and a caption column of live-computed
+  /// numbers, the whole thing wrapped in `Text` so the widget shows a plain
+  /// table rather than a `Graphics` frame. This mirrors the general
+  /// construct category used by Wolfram Demonstrations Project notebooks
+  /// that lay a `Manipulate`'s readout panel out as a `Grid` of `Dynamic`
+  /// cells rather than a caption `Row`/`Column` (independently written, not
+  /// copied from any specific notebook).
+  ///
+  /// Regression: `Grid`'s cells were peeled with `unwrap_display_wrappers`,
+  /// which strips only display wrappers (`Pane`, `Item`, `Text`, …) and
+  /// leaves a `Dynamic[…]` cell's `HoldFirst` argument unevaluated —
+  /// `Row`/`Column` already resolve a cell's `Dynamic` through
+  /// `resolve_display_item` before formatting it, but `Grid` did not. On
+  /// top of that, a `Text[Grid[…]]` body was never grid-rendered at all:
+  /// `render_grid_if_needed` had no case for a `Grid` wrapped in `Text`, so
+  /// the whole body fell back to a plain-text echo of the raw expression —
+  /// showing literal source (`Dynamic[drawing[…]]`, `Dynamic[Round[…]]`)
+  /// instead of the picture and the computed numbers.
+  #[test]
+  fn network_readout_grid_manipulate_evaluates_its_dynamic_cells() {
+    let code = "Manipulate[\
+       Text[Grid[{\
+         {\"picture\", \"score\"}, \
+         {Dynamic[drawing[n]], \
+          Column[{\"total\", Dynamic[Round[metric[n], 0.01]]}]}\
+       }, Frame -> All]], \
+       {{n, 3, \"size\"}, 2, 5, 1}, \
+       Initialization :> (\
+         drawing[n_] := Graphics[Table[Circle[{i, 0}, 0.4], {i, n}]]; \
+         metric[n_] := n^2/2.;\
+       )]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the Grid-readout Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the Text[Grid[…]] body must render as a picture, not plain text; \
+       text output was {:?}",
+      state.text_output
+    );
+
+    // `graphics_handle` is an opaque iced `svg::Handle`; re-evaluate the
+    // body directly (with the widget's current binding for `n`) to inspect
+    // the rendered SVG, the same way other Manipulate tests above do.
+    let svg = woxi::interpret_with_stdout(&format!("n = 3;\n{}", state.body))
+      .expect("the body must render")
+      .graphics
+      .expect("the body must produce a graphic");
+    assert!(
+      svg.contains("4.5"),
+      "the live-computed score (3^2/2 = 4.5) must appear in the rendered \
+       grid, not the literal `Dynamic[Round[metric[n], 0.01]]` source: \
+       {svg:?}"
+    );
+    // Three circles, one per node — the `drawing[n]` cell's `Dynamic` must
+    // have evaluated too, not just the numeric caption.
+    assert_eq!(
+      svg.matches("<ellipse").count(),
+      3,
+      "drawing[3] must draw three circles: {svg:?}"
+    );
+
+    // Moving the slider and re-rendering must recompute both cells for the
+    // new `n`, not keep showing the picture/number for the old one.
+    if let manipulate::ControlState::Continuous { current, .. } =
+      &mut state.controls[0]
+    {
+      *current = 5.0;
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    let svg5 = woxi::interpret_with_stdout(&format!("n = 5;\n{}", state.body))
+      .expect("the body must render")
+      .graphics
+      .expect("the body must produce a graphic");
+    assert!(
+      svg5.contains("12.5"),
+      "the live-computed score (5^2/2 = 12.5) must appear after moving the \
+       slider: {svg5:?}"
+    );
+    assert_eq!(
+      svg5.matches("<ellipse").count(),
+      5,
+      "drawing[5] must draw five circles: {svg5:?}"
     );
   }
 
