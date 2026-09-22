@@ -12804,11 +12804,24 @@ fn annotation_contains_dynamic(expr: &Expr) -> bool {
 fn annotation_contains_place(expr: &Expr) -> bool {
   match expr {
     Expr::FunctionCall { name, args } => {
-      name == "Place" || args.iter().any(annotation_contains_place)
+      is_place_head(name) || args.iter().any(annotation_contains_place)
     }
     Expr::List(items) => items.iter().any(annotation_contains_place),
     _ => false,
   }
+}
+
+/// Whether a `FunctionCall`'s head is Wolfram's explicit-layout `Place[n]`
+/// marker. A notebook's own Input-cell source and a recovered
+/// `"Specifications"` dump (see [`reconstruct_manipulate_from_box_dump`])
+/// spell it differently: hand-written source almost always gives the bare
+/// name, while a FrontEnd-saved dump keeps it fully qualified as
+/// `` Manipulate`Place ``. Both must be recognized — a check for only one
+/// spelling misses the other's `Place[n]` references entirely.
+///
+/// [`reconstruct_manipulate_from_box_dump`]: crate::notebook::reconstruct_manipulate_from_box_dump
+fn is_place_head(name: &str) -> bool {
+  name == "Place" || name == "Manipulate`Place"
 }
 
 /// Peel a display-only `Invisible[expr]` wrapper, returning the content it
@@ -19521,13 +19534,20 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   // flatten into their items so each inner control becomes its own row, and
   // a `Control[spec, opts…]` wrapper unwraps to its ordinary variable
   // specification so it parses through the standard path.
+  // `Place[n]` in a custom layout template refers to the control declared
+  // at the nth Specifications argument (1-indexed, matching `args[1..]`) —
+  // used below (via `pane_control_variables`) to resolve a `PaneSelector`
+  // pane written as `Place[n]`/`Invisible[Place[n]]` rather than a literal
+  // control spec.
+  let place_map: Vec<Option<String>> =
+    args[1..].iter().map(control_spec_variable).collect();
   let mut arg_items: Vec<Expr> =
     Vec::with_capacity(args.len().saturating_sub(1));
   for spec in &args[1..] {
     // A `PaneSelector` argument shows one pane's controls at a time; the
     // flattened list holds every pane's, so each pane's controls also pick
     // up the condition under which they are on screen.
-    collect_pane_visibility(spec, &mut control_visible);
+    collect_pane_visibility(spec, &place_map, &mut control_visible);
     match control_group_items(spec) {
       Some(items) => arg_items.extend(items),
       None => arg_items.push(spec.clone()),
@@ -19535,7 +19555,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   }
   let arg_items: Vec<Expr> =
     arg_items.into_iter().map(unwrap_control_wrapper).collect();
-  let pane_governed_names = pane_or_tab_governed_names(&args[1..]);
+  let pane_governed_names = pane_or_tab_governed_names(&args[1..], &place_map);
   // A `ControlType -> …` given to the Manipulate itself sets the type of every
   // control that does not choose one; push it into the specs now that they are
   // flattened, so they parse through the single per-spec path below.
@@ -21140,14 +21160,26 @@ fn expand_conditional_control_items(
 /// are or-ed together. Only the outermost `PaneSelector` of an argument is
 /// honoured — a pane nested inside another pane keeps its parent's
 /// condition rather than gaining its own.
-fn collect_pane_visibility(spec: &Expr, out: &mut Vec<(String, String)>) {
+///
+/// `place_map` resolves a pane written as `Manipulate\`Place[n]` (the
+/// explicit-layout idiom, e.g. a Demonstration whose slider only makes
+/// sense for some steps: `PaneSelector[{True -> Place[2], False ->
+/// Invisible[Place[3]]}, Dynamic[cond]]` swaps between two identical specs
+/// for the same variable declared at Specifications positions 2 and 3)
+/// back to the variable declared at that 1-indexed Specifications position
+/// — see `pane_control_variables`.
+fn collect_pane_visibility(
+  spec: &Expr,
+  place_map: &[Option<String>],
+  out: &mut Vec<(String, String)>,
+) {
   // A `PaneSelector` may sit inside a `Grid`'s row list (the Demonstrations
   // idiom of a custom Grid-based control panel) — descend into a bare list
   // of items the same way a layout container's args are walked below, or a
   // `PaneSelector` nested that way is never found.
   if let Expr::List(items) = spec {
     for item in items {
-      collect_pane_visibility(item, out);
+      collect_pane_visibility(item, place_map, out);
     }
     return;
   }
@@ -21157,7 +21189,7 @@ fn collect_pane_visibility(spec: &Expr, out: &mut Vec<(String, String)>) {
   if name != "PaneSelector" {
     // The `PaneSelector` may sit inside a layout container.
     for arg in args {
-      collect_pane_visibility(arg, out);
+      collect_pane_visibility(arg, place_map, out);
     }
     return;
   }
@@ -21184,7 +21216,7 @@ fn collect_pane_visibility(spec: &Expr, out: &mut Vec<(String, String)>) {
       selector,
       crate::syntax::expr_to_input_form(pattern)
     );
-    for var in pane_control_variables(replacement) {
+    for var in pane_control_variables(replacement, place_map) {
       match out.iter_mut().find(|(n, _)| *n == var) {
         Some((_, existing)) => *existing = format!("{existing} || {cond}"),
         None => out.push((var, cond.clone())),
@@ -21201,10 +21233,17 @@ fn collect_pane_visibility(spec: &Expr, out: &mut Vec<(String, String)>) {
 /// list) — must still collapse to a single row; see the merge check where
 /// this is used, alongside `collect_pane_visibility` which computes the
 /// same panes' *display* condition for the row that does get built.
+///
+/// `place_map` is as in `collect_pane_visibility`.
 fn pane_or_tab_governed_names(
   args: &[Expr],
+  place_map: &[Option<String>],
 ) -> std::collections::HashSet<String> {
-  fn walk(e: &Expr, out: &mut std::collections::HashSet<String>) {
+  fn walk(
+    e: &Expr,
+    place_map: &[Option<String>],
+    out: &mut std::collections::HashSet<String>,
+  ) {
     match e {
       Expr::FunctionCall { name, args } => {
         if (name == "PaneSelector" || name == "TabView")
@@ -21214,12 +21253,12 @@ fn pane_or_tab_governed_names(
             if let Expr::Rule { replacement, .. }
             | Expr::RuleDelayed { replacement, .. } = pane
             {
-              out.extend(pane_control_variables(replacement));
+              out.extend(pane_control_variables(replacement, place_map));
             }
           }
         }
         for a in args {
-          walk(a, out);
+          walk(a, place_map, out);
         }
       }
       // A `PaneSelector`/`TabView` may sit inside a `Row[{…}]`/`Column[{…}]`
@@ -21228,7 +21267,7 @@ fn pane_or_tab_governed_names(
       // function call's own arguments, or a pane nested that way is missed.
       Expr::List(items) => {
         for it in items {
-          walk(it, out);
+          walk(it, place_map, out);
         }
       }
       _ => {}
@@ -21236,18 +21275,44 @@ fn pane_or_tab_governed_names(
   }
   let mut out = std::collections::HashSet::new();
   for a in args {
-    walk(a, &mut out);
+    walk(a, place_map, &mut out);
   }
   out
 }
 
 /// The control variables a `PaneSelector` pane declares: the variable of
 /// every `Control[…]` in it, plus — when the pane *is* a bare variable
-/// specification — that spec's own variable.
-fn pane_control_variables(pane: &Expr) -> Vec<String> {
-  fn walk(e: &Expr, out: &mut Vec<String>) {
+/// specification — that spec's own variable, plus — when the pane is a
+/// `Manipulate\`Place[n]` reference — the variable declared at the nth
+/// Specifications position in `place_map` (`None` when that position
+/// declares no control, e.g. a layout template argument, in which case the
+/// reference contributes nothing).
+///
+/// Anything under an `Invisible[…]` wrapper contributes nothing at all —
+/// Wolfram's explicit-layout idiom pairs a real `Place[n]` in one pane with
+/// `Invisible[Place[n]]` in another to swap the same control's visibility
+/// (e.g. a Demonstrations slider that only makes sense once a later step
+/// has drawn what it moves), and `collect_pane_visibility` ORs together
+/// every pane that declares a variable to build the condition under which
+/// it is on screen — a pane that deliberately hides it must not contribute
+/// to that union, or the control would read as visible in every pane
+/// instead of hidden in this one.
+fn pane_control_variables(
+  pane: &Expr,
+  place_map: &[Option<String>],
+) -> Vec<String> {
+  fn walk(e: &Expr, place_map: &[Option<String>], out: &mut Vec<String>) {
     match e {
+      Expr::FunctionCall { name, .. } if name == "Invisible" => {}
       Expr::FunctionCall { name, args } => {
+        if is_place_head(name)
+          && let [Expr::Integer(n)] = args.as_slice()
+          && *n >= 1
+          && let Some(Some(var)) = place_map.get(*n as usize - 1)
+        {
+          out.push(var.clone());
+          return;
+        }
         if name == "Control"
           && let Some(spec) = args.first()
           && let Some(var) = control_spec_variable(spec)
@@ -21256,12 +21321,12 @@ fn pane_control_variables(pane: &Expr) -> Vec<String> {
           return;
         }
         for a in args {
-          walk(a, out);
+          walk(a, place_map, out);
         }
       }
       Expr::List(items) => {
         for it in items {
-          walk(it, out);
+          walk(it, place_map, out);
         }
       }
       _ => {}
@@ -21271,7 +21336,7 @@ fn pane_control_variables(pane: &Expr) -> Vec<String> {
   if let Some(var) = control_spec_variable(pane) {
     out.push(var);
   } else {
-    walk(pane, &mut out);
+    walk(pane, place_map, &mut out);
   }
   out
 }
