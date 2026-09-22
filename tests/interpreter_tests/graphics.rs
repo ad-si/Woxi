@@ -20078,6 +20078,93 @@ mod parametric_plot3d {
       "expected PlotStyle -> Opacity[0.4] to set fill opacity: {svg}"
     );
   }
+
+  /// Regression (Wolfram Demonstration "Strips of Equal Width on a Sphere
+  /// Have Equal Surface Areas"): `MeshFunctions`, `Mesh` and `MeshShading`
+  /// together are how a `ParametricPlot3D` surface is dissected into
+  /// coloured bands — each facet is coloured by which region of the mesh
+  /// function's range (partitioned at `Mesh`'s sorted break values) its
+  /// average point falls in, cycling through `MeshShading`'s colours in
+  /// that same order. This used to be silently ignored, leaving every
+  /// surface the default height-based rainbow no matter what was asked for.
+  #[test]
+  fn mesh_shading_colors_regions_by_mesh_function() {
+    let svg = export_svg(
+      "ParametricPlot3D[{u, v, u}, {u, -2, 2}, {v, -2, 2}, \
+       MeshFunctions -> (#1 &), Mesh -> {{0}}, \
+       MeshShading -> {Red, Blue}]",
+    );
+    let colors = fill_colors(&svg);
+    assert!(
+      colors.iter().any(|&(r, g, b)| r > 0 && g == 0 && b == 0),
+      "expected a red-shaded region for the low side of the mesh break, got {colors:?}"
+    );
+    assert!(
+      colors.iter().any(|&(r, g, b)| r == 0 && g == 0 && b > 0),
+      "expected a blue-shaded region for the high side of the mesh break, got {colors:?}"
+    );
+  }
+
+  /// `Mesh -> {{v1, v2, ...}}` with more than one break value partitions
+  /// the surface into as many regions as `MeshShading` gives colours,
+  /// cycling through them in ascending order of the mesh function's value.
+  #[test]
+  fn mesh_shading_with_multiple_breaks_uses_every_color() {
+    let svg = export_svg(
+      "ParametricPlot3D[{u, v, u}, {u, -3, 3}, {v, -2, 2}, \
+       MeshFunctions -> (#1 &), Mesh -> {{-1, 1}}, \
+       MeshShading -> {Red, Green, Blue}]",
+    );
+    let colors = fill_colors(&svg);
+    assert!(
+      colors.iter().any(|&(r, g, b)| r > 0 && g == 0 && b == 0),
+      "expected a red-shaded region, got {colors:?}"
+    );
+    assert!(
+      colors.iter().any(|&(r, g, b)| r == 0 && g > 0 && b == 0),
+      "expected a green-shaded region, got {colors:?}"
+    );
+    assert!(
+      colors.iter().any(|&(r, g, b)| r == 0 && g == 0 && b > 0),
+      "expected a blue-shaded region, got {colors:?}"
+    );
+  }
+
+  /// `MeshFunctions -> {f}` (a singleton list) must colour regions the same
+  /// way the bare pure function `MeshFunctions -> f` does.
+  #[test]
+  fn mesh_functions_singleton_list_matches_bare_function() {
+    let bare = export_svg(
+      "ParametricPlot3D[{u, v, u}, {u, -2, 2}, {v, -2, 2}, \
+       MeshFunctions -> (#1 &), Mesh -> {{0}}, \
+       MeshShading -> {Red, Blue}]",
+    );
+    let list = export_svg(
+      "ParametricPlot3D[{u, v, u}, {u, -2, 2}, {v, -2, 2}, \
+       MeshFunctions -> {#1 &}, Mesh -> {{0}}, \
+       MeshShading -> {Red, Blue}]",
+    );
+    assert_eq!(
+      fill_colors(&bare),
+      fill_colors(&list),
+      "a singleton MeshFunctions list should shade identically to the bare function"
+    );
+  }
+
+  /// Without `MeshFunctions`/`Mesh`/`MeshShading`, the default height-based
+  /// rainbow coloring is unaffected by the new option parsing.
+  #[test]
+  fn mesh_shading_absent_keeps_default_coloring() {
+    let plain =
+      export_svg("ParametricPlot3D[{u, v, u}, {u, -2, 2}, {v, -2, 2}]");
+    let with_unrelated_mesh_option = export_svg(
+      "ParametricPlot3D[{u, v, u}, {u, -2, 2}, {v, -2, 2}, Mesh -> All]",
+    );
+    assert_eq!(
+      fill_colors(&plain).len(),
+      fill_colors(&with_unrelated_mesh_option).len()
+    );
+  }
 }
 
 mod box_language {
