@@ -3122,6 +3122,52 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_x_axis_touching_zero_leaves_room_for_tick_labels() {
+    // A y range that only *touches* zero (`PlotRange -> {0, ...}`, common
+    // for a histogram or a PDF plot) draws the x axis flush with the
+    // bottom edge of the picture rather than through its middle. That axis
+    // used to be classified as "interior" (spans zero) and given only a 6px
+    // gutter — too little for its 14px tick-label text, which then drew
+    // below the SVG's own height and was clipped off entirely by any
+    // conforming renderer.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Graphics[{Blue, Rectangle[{0, 0}, {1, 3}]}, \
+         Axes -> True, PlotRange -> {{-0.5, 2}, {0, 4}}, \
+         ImageSize -> {300, 200}], \"SVG\"]",
+    )
+    .unwrap();
+    let height: f64 = svg
+      .split("height=\"")
+      .nth(1)
+      .and_then(|s| s.split('"').next())
+      .and_then(|s| s.parse().ok())
+      .expect("svg must declare a height");
+    let mut found_x_tick = false;
+    for line in svg.lines() {
+      if !line.contains("dominant-baseline=\"hanging\"") {
+        continue;
+      }
+      let y: f64 = line
+        .split("y=\"")
+        .nth(1)
+        .and_then(|s| s.split('"').next())
+        .and_then(|s| s.parse().ok())
+        .expect("tick text must declare y");
+      found_x_tick = true;
+      assert!(
+        y + 14.0 <= height,
+        "x-axis tick label at y={y} (font-size 14) must fit within the \
+         svg's own height={height}, not be clipped off the bottom: {svg}"
+      );
+    }
+    assert!(
+      found_x_tick,
+      "Axes -> True must draw x-axis tick labels: {svg}"
+    );
+  }
+
+  #[test]
   fn test_audio_missing_file_still_renders_player_chrome() {
     // A file-backed Audio whose file cannot be read (missing here; any local
     // path in the browser playground) still renders the player chrome: the

@@ -8041,8 +8041,13 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // beside the drawing area — only the small padding Wolfram leaves all
   // round. Reserving the full gutter for one pushed the drawing hard
   // against the opposite edge and clipped whatever sat at the far side.
-  let y_axis_interior = axes.1 && bb.x_min <= 0.0 && 0.0 <= bb.x_max;
-  let x_axis_interior = axes.0 && bb.y_min <= 0.0 && 0.0 <= bb.y_max;
+  // The comparison is strict: a range that only *touches* zero (e.g. a
+  // histogram's `{0, 5.2}` y range) draws its axis flush with the picture's
+  // own edge, not through its middle, so the tick labels still need the
+  // full outside gutter — the 6px "interior" gutter left them with no room
+  // to draw in and they were clipped off entirely.
+  let y_axis_interior = axes.1 && bb.x_min < 0.0 && 0.0 < bb.x_max;
+  let x_axis_interior = axes.0 && bb.y_min < 0.0 && 0.0 < bb.y_max;
   // An AxesLabel sits at the end of its axis (Wolfram's placement), so
   // the x label needs room to the right and the y label room above. The
   // label arrives as SVG markup (plain text, or with sub/superscript
