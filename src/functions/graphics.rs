@@ -2305,6 +2305,108 @@ fn collect_primitives(
   }
 }
 
+/// Primitive heads whose (first) argument is a point/point-list, so their
+/// integer contents are `GraphicsComplex` indices rather than data to leave
+/// alone — the set `Normal[GraphicsComplex[…]]` and 3D `GraphicsComplex`
+/// rendering both need to recognize.
+const POINT_TAKING_PRIMITIVES: &[&str] = &[
+  "Point",
+  "Line",
+  "Polygon",
+  "Triangle",
+  "Arrow",
+  "BezierCurve",
+  "BSplineCurve",
+  "FilledCurve",
+  "JoinedCurve",
+  "Tube",
+  "Sphere",
+  "Simplex",
+];
+
+/// `Normal[GraphicsComplex[pts, data]]`: substitute each integer index in
+/// `data` with its (exact, symbolic) coordinate list from `pts`, keeping
+/// `data`'s own structure intact — Wolfram's `Normal` only "substitutes
+/// coordinates to give an ordinary list of graphics primitives and
+/// directives", it does not split a multi-face `Polygon[{face1, face2, …}]`
+/// into one `Polygon` per face. Unlike `resolve_graphics_complex_indices`,
+/// this keeps coordinates as exact `Expr`s (e.g. `Sqrt[5]`) instead of
+/// lowering to `f64`, and works for points of any dimension, not just 2D.
+pub(crate) fn graphics_complex_to_normal_form(
+  pts: &[Expr],
+  data: &Expr,
+) -> Expr {
+  let substituted = substitute_complex_indices(pts, data);
+  match substituted {
+    Expr::List(_) => substituted,
+    other => Expr::List(vec![other].into()),
+  }
+}
+
+/// Replace bare integer indices with their coordinates wherever a
+/// [`POINT_TAKING_PRIMITIVES`] primitive expects a point argument;
+/// recurse structurally everywhere else so directives and nested
+/// primitives elsewhere in the tree (e.g. inside `{RGBColor[…], Polygon[…]}`)
+/// are reached without treating unrelated integers as indices.
+fn substitute_complex_indices(pts: &[Expr], expr: &Expr) -> Expr {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if POINT_TAKING_PRIMITIVES.contains(&name.as_str()) =>
+    {
+      let new_args: Vec<Expr> = args
+        .iter()
+        .enumerate()
+        .map(|(i, a)| {
+          if i == 0 {
+            substitute_indices_in_points(pts, a)
+          } else {
+            substitute_complex_indices(pts, a)
+          }
+        })
+        .collect();
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args.into(),
+      }
+    }
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args
+        .iter()
+        .map(|a| substitute_complex_indices(pts, a))
+        .collect::<Vec<_>>()
+        .into(),
+    },
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(|a| substitute_complex_indices(pts, a))
+        .collect::<Vec<_>>()
+        .into(),
+    ),
+    _ => expr.clone(),
+  }
+}
+
+/// Replace every 1-based integer index in a (possibly nested) point
+/// argument with its coordinate list from `pts`; non-integer leaves
+/// (already-explicit coordinates) pass through unchanged.
+fn substitute_indices_in_points(pts: &[Expr], expr: &Expr) -> Expr {
+  match expr {
+    Expr::Integer(n) if *n >= 1 && (*n as usize) <= pts.len() => {
+      pts[*n as usize - 1].clone()
+    }
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(|e| substitute_indices_in_points(pts, e))
+        .collect::<Vec<_>>()
+        .into(),
+    ),
+    _ => expr.clone(),
+  }
+}
+
 /// Resolve integer indices within a GraphicsComplex to actual coordinate pairs.
 /// In GraphicsComplex, integer indices (1-based) refer to the coordinate list.
 /// This function walks the expression tree and replaces:
