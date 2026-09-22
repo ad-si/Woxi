@@ -2072,15 +2072,16 @@ fn render_boxes_text(s: &str) -> String {
     }
   }
 
-  // A `GraphicsBox[…]` embedded directly in prose — e.g. a diagram inside
-  // a Demonstration's Details text (`Cell[TextData[Cell[BoxData[FormBox[
-  // GraphicsBox[…], TraditionalForm]], "InlineMath"]], "Text"]`) — is
-  // display-only, not code: falling back to the evaluable-InputForm
-  // extractor would flood the paragraph with the reconstructed `Graphics[
-  // …]` source (hundreds to thousands of characters of box coordinates).
-  // Wolfram's own plain-text form of a graphic is `-Graphics-`
-  // (`-Image-` for a raster); use the same placeholder here rather than
-  // rendering nothing, so the surrounding sentence still reads.
+  // A `GraphicsBox[…]`/`Graphics3DBox[…]` embedded directly in prose — e.g.
+  // a diagram inside a Demonstration's Details text (`Cell[TextData[
+  // Cell[BoxData[FormBox[GraphicsBox[…], TraditionalForm]], "InlineMath"]],
+  // "Text"]`) — is display-only, not code: falling back to the
+  // evaluable-InputForm extractor would flood the paragraph with the
+  // reconstructed `Graphics[…]` source (hundreds to thousands of characters
+  // of box coordinates). Wolfram's own plain-text form of a graphic is
+  // `-Graphics-` (`-Graphics3D-` for a 3-D scene, `-Image-` for a raster);
+  // use the same placeholder here rather than rendering nothing, so the
+  // surrounding sentence still reads.
   if let Some(args) = positional_box_args("GraphicsBox", s) {
     return if args
       .first()
@@ -2090,6 +2091,9 @@ fn render_boxes_text(s: &str) -> String {
     } else {
       "-Graphics-".to_string()
     };
+  }
+  if positional_box_args("Graphics3DBox", s).is_some() {
+    return "-Graphics3D-".to_string();
   }
 
   // Anything else falls back to the evaluable-InputForm extractor.
@@ -5439,6 +5443,24 @@ Cell["Chapter 2", "Chapter"]
     let text_data = format!("{{\"photo: \", {cell}}}");
     let rendered = extract_textdata(&text_data);
     assert_eq!(rendered, "photo: -Image-");
+  }
+
+  /// Same idea as `test_text_cell_inline_diagram_renders_as_graphics_placeholder`,
+  /// but the inline box is a `Graphics3DBox[…]` — e.g. a 3-D sketch of a
+  /// solid embedded inline in a Demonstration's Details text. Regression:
+  /// only `GraphicsBox` was recognized, so a `Graphics3DBox` fell through to
+  /// the evaluable-InputForm extractor and flooded the paragraph with the
+  /// reconstructed `Graphics3D[…]` source instead of Wolfram's own
+  /// plain-text placeholder, `-Graphics3D-`.
+  #[test]
+  fn test_text_cell_inline_3d_diagram_renders_as_graphics3d_placeholder() {
+    let text_data = r#"{"solid: ", Cell[BoxData[
+ FormBox[
+  Graphics3DBox[{RGBColor[0, 0, 1], Point3DBox[{0, 0, 0}]}],
+  TraditionalForm]], "InlineMath",
+  ExpressionUUID->"00000000-0000-0000-0000-000000000001"], "."}"#;
+    let rendered = extract_textdata(text_data);
+    assert_eq!(rendered, "solid: -Graphics3D-.");
   }
 
   #[test]
