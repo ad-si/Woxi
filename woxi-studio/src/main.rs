@@ -547,9 +547,17 @@ impl WoxiStudio {
           // widget, never its source. Rebuild a `Manipulate[…]` expression
           // straight from the dump's "Body"/"Specifications" entries so the
           // widget still opens live.
-          if matches!(cell.style, CellStyle::Output | CellStyle::Print)
-            && is_dynamic_box_dump(&cell.content)
-          {
+          //
+          // Such a cell is not always styled "Output": a Demonstrations
+          // Project cloud share link saves its single cell with no
+          // `CellStyle` string at all (only display options like
+          // `ShowCellBracket -> False`), which `parse_single_cell` falls
+          // back to classifying as `Text`. `is_dynamic_box_dump` already
+          // recognizes the exact FrontEnd-generated forms this dump can
+          // take, so it alone is enough to gate this branch — real
+          // user-typed source is never literally `DynamicModuleBox[…]`,
+          // `TagBox[DynamicModuleBox[…]` or `DynamicBox[…]` at top level.
+          if is_dynamic_box_dump(&cell.content) {
             if !state_cleared {
               woxi::clear_state();
               state_cleared = true;
@@ -9362,6 +9370,45 @@ Manipulate[
     assert!(!is_dynamic_box_dump("GraphicsBox[…]"));
   }
 
+  /// A notebook downloaded straight from a Wolfram Demonstrations Project
+  /// cloud share link (`wolframcloud.com/obj/...`) saves its single cell
+  /// with no `CellStyle` string at all — only display options such as
+  /// `ShowCellBracket -> False` — rather than the `"Output"` string a
+  /// desktop-saved notebook carries. `parse_single_cell` then has nothing
+  /// to recognize as a style and falls back to `CellStyle::Text`, which
+  /// used to make `editors_from_notebook` skip the box-dump
+  /// reconstruction entirely (it was gated on `CellStyle::Output |
+  /// CellStyle::Print`) and show the raw dump as unusable text instead of
+  /// a live widget.
+  #[test]
+  fn unstyled_share_link_cell_still_instantiates_the_widget() {
+    let dump = "DynamicModuleBox[{}, DynamicBox[Manipulate`ManipulateBoxes[\n\
+      1, StandardForm, \n\
+      \"Body\" :> $CellContext`x$$^2, \n\
+      \"Specifications\" :> {{$CellContext`x$$, 0, 10}}, \n\
+      \"Options\" :> {}],\n\
+      DynamicModuleValues:>{}]]";
+    let nb = woxi::notebook::parse_notebook(&format!(
+      "Notebook[{{\n\
+       Cell[BoxData[{dump}], ShowCellBracket->False, \
+       CellMargins->{{{{1, 1}}, {{1, 1}}}}, TextAlignment->Left]\n\
+       }}]"
+    ))
+    .unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    assert_eq!(editors.len(), 1);
+    let state = editors[0]
+      .manipulate_state
+      .as_ref()
+      .expect("the unstyled share-link cell must still rebuild a live widget");
+    assert!(
+      state.error.is_none(),
+      "reconstructed widget errored: {:?}",
+      state.error
+    );
+    assert_eq!(state.controls.len(), 1);
+  }
+
   #[test]
   fn stored_manipulate_is_instantiated_on_load() {
     let state =
@@ -9510,6 +9557,51 @@ Cell[BoxData["standalone output"], "Output"]
       woxi::interpret("ownOffset").ok().as_deref(),
       Some("1"),
       "the live Initialization must still run"
+    );
+  }
+
+  /// A custom-layout `Manipulate` can box up a live section — new
+  /// controls (and their surrounding text) that should stay grouped and
+  /// only make sense together, e.g. under an `Enabled -> …` condition —
+  /// behind `Dynamic[Column[…]]` rather than a bare `Dynamic[{…}]` list.
+  /// `control_group_items` only recursed into a `Dynamic[…]` whose sole
+  /// argument was already the flat list; a `Dynamic[Column[…]]` (or
+  /// `Dynamic[Row[…]]`/`Dynamic[Grid[…]]`) fell through to the "not a
+  /// control layout" case, silently dropping every control — and every
+  /// plain-text label — that section declared, with no error at all.
+  #[test]
+  fn controls_boxed_in_dynamic_column_inside_custom_layout_are_not_dropped() {
+    let nb_src = r#"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[
+ If[hidden, y, x],
+ Column[{
+  Control[{{hidden, False, \"hide x\"}, {True, False}}],
+  \"below\",
+  Dynamic[Column[{Control[{{x, 1, \"x\"}, 0, 10}], \"label\", Control[{{y, 2, \"y\"}, 0, 10}]}]]
+ }]]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`hidden$$ = False}, \"…\"]"], "Output"]
+}, Open]]
+}]"#;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    let names: Vec<&str> = widget
+      .controls
+      .iter()
+      .map(manipulate::ControlState::name)
+      .collect();
+    assert!(
+      names.contains(&"x") && names.contains(&"y"),
+      "controls boxed inside Dynamic[Column[…]] must not be dropped: {names:?}"
     );
   }
 

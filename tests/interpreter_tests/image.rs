@@ -3092,6 +3092,117 @@ mod image_processing {
     );
   }
 
+  // `Masking -> mask` restricts `f` to pixels the mask marks positive;
+  // every other pixel passes through unchanged.
+  #[test]
+  fn image_apply_masking_image_restricts_to_marked_pixels() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImageApply[1-#&, Image[{{0.25, 0.5}, {0.75, 0.0}}], \
+         Masking -> Image[{{1, 0}, {0, 1}}]]]"
+      )
+      .unwrap(),
+      "{{0.75, 0.5}, {0.75, 1.}}"
+    );
+  }
+
+  // `Masking -> All` and `Masking -> None` both mean "no restriction",
+  // matching plain `ImageApply[f, img]`.
+  #[test]
+  fn image_apply_masking_all_and_none_apply_everywhere() {
+    clear_state();
+    let unmasked = interpret(
+      "ImageData[ImageApply[1-#&, Image[{{0.25, 0.5}, {0.75, 0.0}}]]]",
+    )
+    .unwrap();
+    assert_eq!(
+      interpret(
+        "ImageData[ImageApply[1-#&, Image[{{0.25, 0.5}, {0.75, 0.0}}], \
+         Masking -> All]]"
+      )
+      .unwrap(),
+      unmasked
+    );
+    assert_eq!(
+      interpret(
+        "ImageData[ImageApply[1-#&, Image[{{0.25, 0.5}, {0.75, 0.0}}], \
+         Masking -> None]]"
+      )
+      .unwrap(),
+      unmasked
+    );
+  }
+
+  // A smaller Image mask is centered on the target, the way
+  // wolframscript centers an array/image region of interest.
+  #[test]
+  fn image_apply_masking_image_mask_is_centered_on_target() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImageApply[1-#&, \
+         Image[{{0.1, 0.2, 0.3}, {0.4, 0.9, 0.6}, {0.7, 0.8, 0.9}}], \
+         Masking -> Image[{{1}}]]]"
+      )
+      .unwrap(),
+      "{{0.10000000149011612, 0.20000000298023224, 0.30000001192092896}, \
+       {0.4000000059604645, 0.10000002384185791, 0.6000000238418579}, \
+       {0.699999988079071, 0.800000011920929, 0.8999999761581421}}"
+    );
+  }
+
+  // Masking works on multi-channel images too: excluded pixels keep
+  // their original channel list untouched.
+  #[test]
+  fn image_apply_masking_multichannel_pass_through() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImageApply[Reverse, Image[{{{0.1, 0.5, 0.2}, {0.8, 0.3, \
+         0.9}}}], Masking -> Image[{{1, 0}}]]]"
+      )
+      .unwrap(),
+      "{{{0.20000000298023224, 0.5, 0.10000000149011612}, \
+       {0.800000011920929, 0.30000001192092896, 0.8999999761581421}}}"
+    );
+  }
+
+  // `Masking -> Graphics[...]` rasterizes the graphic to the target
+  // image's size and treats drawn (non-zero) pixels as included —
+  // matching wolframscript's `ImageApply[f, img, Masking ->
+  // Graphics[Disk[]]]` example, which negates only inside the disk.
+  #[test]
+  fn image_apply_masking_graphics_disk_affects_center_not_corners() {
+    clear_state();
+    let corner = interpret(
+      "ImageData[ImageApply[1-#&, ConstantImage[0.3, {11, 11}], \
+       Masking -> Graphics[Disk[{0, 0}, 1]]]][[1, 1]]",
+    )
+    .unwrap();
+    let opposite_corner = interpret(
+      "ImageData[ImageApply[1-#&, ConstantImage[0.3, {11, 11}], \
+       Masking -> Graphics[Disk[{0, 0}, 1]]]][[11, 11]]",
+    )
+    .unwrap();
+    let center = interpret(
+      "ImageData[ImageApply[1-#&, ConstantImage[0.3, {11, 11}], \
+       Masking -> Graphics[Disk[{0, 0}, 1]]]][[6, 6]]",
+    )
+    .unwrap();
+    assert_eq!(corner, "0.30000001192092896");
+    assert_eq!(opposite_corner, "0.30000001192092896");
+    assert_eq!(center, "0.699999988079071");
+  }
+
+  // An unrecognized third argument reports rather than silently
+  // ignoring the option.
+  #[test]
+  fn image_apply_unsupported_option_errors() {
+    clear_state();
+    assert!(interpret("ImageApply[1-#&, Image[{{0.5}}], Foo -> 1]").is_err());
+  }
+
   // ImageCollage on same-shape images lays them out as a near-square
   // grid without resizing. The matching ws layouts for n=2 and n=4
   // happen to land on cols = ceil(sqrt(n)), rows = ceil(n/cols).
