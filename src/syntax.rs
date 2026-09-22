@@ -8077,7 +8077,7 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
     Expr::Real(f) => format_real(*f),
     Expr::BigFloat(digits, prec) => format_bigfloat(digits, *prec),
     Expr::String(s) => {
-      if is_output {
+      if is_output && !in_true_input_form() {
         // A string that opens with a box segment renders as
         // DisplayForm[<box expression>] in OutputForm (matching
         // wolframscript), with any trailing prose kept.
@@ -8205,8 +8205,12 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       // wolframscript. This applies wherever the call sits — including a
       // Graphics argument held inside a symbolic wrapper such as
       // LocatorPane[Dynamic[p], Graphics[...]] or ClickPane[Graphics[...], f].
-      // (InputForm/FullForm still print the full expression.)
+      // (InputForm/FullForm still print the full expression — including a
+      // bare `CompoundExpr` that falls through to this OutputForm renderer
+      // from within genuine InputForm, `in_true_input_form()`, which must
+      // stay re-parseable for Woxi Studio's Manipulate re-evaluation.)
       if is_output
+        && !in_true_input_form()
         && !args.is_empty()
         && (name == "Graphics" || name == "Graphics3D")
       {
@@ -11214,10 +11218,8 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       }
     }
     Expr::CompoundExpr(exprs) => {
-      let mut parts: Vec<String> = exprs
-        .iter()
-        .map(|e| format_expr(e, ExprForm::Input))
-        .collect();
+      let mut parts: Vec<String> =
+        exprs.iter().map(|e| format_expr(e, form)).collect();
       // A trailing semicolon parses as a trailing `Null`, and that one
       // wolframscript writes back as nothing at all: `a; b;` echoes as
       // `a; b; `. A `Null` anywhere else is spelled out.
@@ -12031,6 +12033,28 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
       if name == "CompoundExpression" && args.len() >= 2 =>
     {
       expr_to_input_form(&Expr::CompoundExpr(args.to_vec()))
+    }
+    // A bare `CompoundExpr` (the parser's own `a; b` node, as opposed to
+    // the `CompoundExpression[...]` call form above) has no dedicated arm
+    // here, so without one it falls through to the generic `_ =>
+    // expr_to_output(expr)` case at the bottom of this match — dropping
+    // into the OutputForm renderer's `is_output`-gated shortcuts (a nested
+    // `Row[{"…", x}]` concatenates without an operator, `Graphics[...]`
+    // may summarize) for everything the `;` sequence contains, even
+    // though this whole render is meant to stay re-parseable. Handling it
+    // directly, the same way as `CompoundExpression[...]` above, keeps
+    // every statement on `expr_to_input_form`'s own path instead.
+    Expr::CompoundExpr(exprs) => {
+      let mut parts: Vec<String> =
+        exprs.iter().map(expr_to_input_form).collect();
+      if exprs
+        .last()
+        .is_some_and(|e| matches!(e, Expr::Identifier(n) if n == "Null"))
+        && let Some(last) = parts.last_mut()
+      {
+        last.clear();
+      }
+      parts.join("; ")
     }
     // `Definition[sym]` / `FullDefinition[sym]` print as the definition text
     // in every form, InputForm included (as wolframscript does).

@@ -683,6 +683,60 @@ mod implicit_times_with_strings {
     );
   }
 
+  // A `CompoundExpression` inside a held expression used to force its
+  // statements back into InputForm even while the surrounding render was
+  // OutputForm, so a string compared deeper in the same held tree (e.g. an
+  // `If` condition that can't resolve) kept its quotes only when it
+  // happened to sit after a `;`, and lost them everywhere else — the same
+  // `dim == "1D"` condition printed as `dim == 1D` in one spot and
+  // `dim == "1D"` in another within a single Diffusion-Limited-Aggregation
+  // Demonstration's `Manipulate`. OutputForm must drop every nested string's
+  // quotes uniformly, `;` or not.
+  #[test]
+  fn held_if_condition_string_output_form_unquoted_consistently() {
+    assert_eq!(
+      interpret(r#"HoldForm[dim == "1D"]"#).unwrap(),
+      "HoldForm[dim == 1D]"
+    );
+    assert_eq!(
+      interpret(r#"a; If[dim == "1D", x, y]"#).unwrap(),
+      "If[dim == 1D, x, y]"
+    );
+  }
+
+  // The `CompoundExpression`-forces-InputForm hack above was masking a
+  // second bug: fixing it naively (just propagating OutputForm through
+  // `CompoundExpr`) broke genuine InputForm rendering (`ToString[_,
+  // InputForm]`), because a bare `CompoundExpr` node falls through to the
+  // OutputForm renderer internally and then inherited its `is_output`
+  // shortcuts — dropping string quotes, replacing `Graphics[…]` with the
+  // `-Graphics-` display placeholder, and concatenating a `Row[{"…", x}]`
+  // without an operator (`"…"x`, invalid syntax) — even though the
+  // surrounding render was meant to be fully re-parseable. Woxi Studio's
+  // Manipulate re-evaluates exactly this InputForm text on every control
+  // change, so any of these breaks every Demonstration whose body is a
+  // `;`-joined sequence (regression while fixing the
+  // Diffusion-Limited-Aggregation Demonstration above; the `Row` case is
+  // from the Center-of-Mass Demonstration's `PlotLabel -> Row[{"center of
+  // mass: ", CM}]`).
+  #[test]
+  fn compound_expr_input_form_keeps_full_graphics_and_quotes() {
+    assert_eq!(
+      interpret(r#"ToString[Hold[a; If[dim == "1D", x, y]], InputForm]"#)
+        .unwrap(),
+      r#"Hold[a; If[dim == "1D", x, y]]"#
+    );
+    assert_eq!(
+      interpret(r#"ToString[Hold[a; Graphics[{Circle[]}]], InputForm]"#)
+        .unwrap(),
+      "Hold[a; Graphics[{Circle[]}]]"
+    );
+    assert_eq!(
+      interpret(r#"ToString[Hold[a; Row[{"x: ", z}]], InputForm]"#).unwrap(),
+      r#"Hold[a; Row[{"x: ", z}]]"#
+    );
+  }
+
   // `TraditionalForm[expr]` serializes into InputForm as a `\!\(\*boxes\)`
   // escape, so the boxes have to read back as the very expression they were
   // built from — Woxi Studio re-evaluates a Manipulate body from that text on
