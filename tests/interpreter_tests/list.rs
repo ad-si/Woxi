@@ -7308,6 +7308,95 @@ mod random_variate {
   }
 
   #[test]
+  fn multinormal_single() {
+    // MultinormalDistribution[mu, sigma] with a general (non-diagonal) 2x2
+    // covariance matrix samples a 2-vector.
+    let result = interpret(
+      "RandomVariate[MultinormalDistribution[{0, 0}, {{1, 0.5}, {0.5, 1}}]]",
+    )
+    .unwrap();
+    assert!(result.starts_with('{'));
+    assert!(result.ends_with('}'));
+    let inside = &result[1..result.len() - 1];
+    let vals: Vec<f64> = inside
+      .split(',')
+      .map(|s| s.trim().parse().unwrap())
+      .collect();
+    assert_eq!(vals.len(), 2);
+    assert!(vals[0].is_finite() && vals[1].is_finite());
+  }
+
+  #[test]
+  fn multinormal_list() {
+    // n=5 → 5 vectors, each of length 2 (matching the mean vector's length).
+    assert_eq!(
+      interpret(
+        "Length[RandomVariate[\
+           MultinormalDistribution[{0, 0}, {{1, 0.5}, {0.5, 1}}], 5]]"
+      )
+      .unwrap(),
+      "5"
+    );
+    assert_eq!(
+      interpret(
+        "AllTrue[\
+           RandomVariate[MultinormalDistribution[{0, 0}, {{1, 0.5}, {0.5, 1}}], 5],\
+           Length[#] == 2 &\
+         ]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn multinormal_higher_dimension() {
+    // A 3-D mean/covariance samples a 3-vector, not just the common 2-D case.
+    assert_eq!(
+      interpret(
+        "Length[RandomVariate[\
+           MultinormalDistribution[\
+             {1, 2, 3}, {{2, 0, 0}, {0, 3, 0}, {0, 0, 4}}]]]"
+      )
+      .unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn multinormal_matches_mean_and_covariance() {
+    // A large sample's empirical mean/covariance should approach the
+    // distribution's parameters — this is what would catch a sampler that
+    // draws independent normals and ignores the off-diagonal correlation
+    // instead of applying it via the covariance matrix's Cholesky factor.
+    let src = "SeedRandom[1234]; \
+      data = RandomVariate[\
+        MultinormalDistribution[{5, -2}, {{4, 2}, {2, 9}}], 40000]; \
+      {Round[Mean[data], 0.1], Round[Covariance[data], 0.2]}";
+    assert_eq!(interpret(src).unwrap(), "{{5., -2.}, {{4., 2.}, {2., 9.}}}");
+  }
+
+  #[test]
+  fn multinormal_rejects_non_positive_definite_covariance() {
+    // Same rejection CDF already applies to a non-positive-definite
+    // covariance: the distribution doesn't exist, so RandomVariate must not
+    // silently draw from some other, well-defined matrix instead.
+    let sigma = "{{1, 2}, {2, 1}}";
+    let src =
+      format!("RandomVariate[MultinormalDistribution[{{0, 0}}, {sigma}]]");
+    let r = woxi::interpret_with_stdout(&src).unwrap();
+    assert_eq!(
+      r.result,
+      format!("RandomVariate[MultinormalDistribution[{{0, 0}}, {sigma}]]")
+    );
+    assert!(r.warnings[0].contains(&format!(
+      "MultinormalDistribution::posdefprm: The value {sigma} at position 2 \
+       in MultinormalDistribution[{{0, 0}}, {sigma}] is expected to be a \
+       symmetric positive definite matrix."
+    )));
+  }
+
+  #[test]
   fn multivariate_poisson_single() {
     // MultivariatePoissonDistribution[1, {2, 3}] → 2-D non-negative integers.
     let result =
