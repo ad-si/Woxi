@@ -3803,6 +3803,20 @@ fn box_source_to_graphics_expr(s: &str) -> String {
     return format!("Polygon[{points}]");
   }
 
+  // `JoinedCurveBox` is the unfilled counterpart of `FilledCurveBox`
+  // (an open or closed multi-segment curve, e.g. a Demonstration's
+  // toolbar/hint glyph icon): same `{tags}, {points}, CurveClosed -> …`
+  // shape, but stroked rather than filled. Reuse the same
+  // straight-line approximation and rename to the evaluable `JoinedCurve`
+  // primitive `graphics_ast` already understands, wrapping the point run
+  // in `Line[…]` the way `JoinedCurve[{Line[…], …}]` expects its pieces.
+  if let Some(args) = box_call("JoinedCurveBox")
+    && args.len() >= 2
+  {
+    let points = box_source_to_graphics_expr(&args[1]);
+    return format!("JoinedCurve[{{Line[{points}]}}]");
+  }
+
   for (box_head, prim_head) in [
     ("PointBox", "Point"),
     ("LineBox", "Line"),
@@ -5150,6 +5164,41 @@ Cell["Chapter 2", "Chapter"]
          CurveClosed -> {1}]"
       ),
       "Polygon[{{{0, 0}, {1, 0}, {1, 1}}}]"
+    );
+  }
+
+  #[test]
+  fn test_box_source_to_graphics_expr_joined_curve_to_joined_curve() {
+    // `JoinedCurveBox` is the stroked (unfilled) sibling of
+    // `FilledCurveBox`, saved for a Demonstration's cached curve/icon
+    // output; it must rename to the evaluable `JoinedCurve` primitive
+    // (approximating every segment as a straight line, the same
+    // simplification `FilledCurveBox` already makes) instead of being
+    // left as an unrecognized head that `graphics_ast` silently drops.
+    assert_eq!(
+      box_source_to_graphics_expr(
+        "JoinedCurveBox[{{{1, 2, 3}}}, {{{0, 0}, {1, 0}, {1, 1}}}, \
+         CurveClosed -> {1}]"
+      ),
+      "JoinedCurve[{Line[{{{0, 0}, {1, 0}, {1, 1}}}]}]"
+    );
+  }
+
+  #[test]
+  fn test_stored_output_vector_graphics_renders_joined_curve_box() {
+    // A stored `GraphicsBox[JoinedCurveBox[…]]` output (the box form the
+    // FrontEnd saves for a cached curve, distinct from the already-handled
+    // `FilledCurveBox`) must still render as an SVG picture rather than
+    // silently producing no primitives.
+    let content = r#"Cell[BoxData[
+ GraphicsBox[JoinedCurveBox[{{{1, 2, 3}}}, {{{0, 0}, {1, 0}, {1, 1}}}]],
+ "Output"]"#;
+    let svg = stored_output_vector_graphics_svg(content)
+      .expect("a JoinedCurveBox output must render as an SVG");
+    assert!(svg.contains("<svg"), "{svg}");
+    assert!(
+      svg.contains("<path") || svg.contains("<polyline"),
+      "expected a stroked path/polyline for the joined curve: {svg}"
     );
   }
 
