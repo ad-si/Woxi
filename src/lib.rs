@@ -2248,7 +2248,8 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
     // Make sure there are no unescaped quotes inside
     let inner = &trimmed[1..trimmed.len() - 1];
     // Skip fast path if string contains escape sequences that the parser
-    // would expand (named characters, box-syntax markers, backtick escapes).
+    // would expand (named characters, box-syntax markers, backtick escapes,
+    // a linear-syntax literal space).
     if !inner.contains('"')
       && !inner.contains("\\[")
       && !inner.contains("\\(")
@@ -2256,6 +2257,7 @@ pub fn interpret(input: &str) -> Result<String, InterpreterError> {
       && !inner.contains("\\!")
       && !inner.contains("\\*")
       && !inner.contains("\\`")
+      && !inner.contains("\\ ")
     {
       set_fast_path_result_expr(syntax::Expr::String(inner.to_string()));
       return Ok(inner.to_string());

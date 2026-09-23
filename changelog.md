@@ -2,6 +2,19 @@
 
 # Unreleased
 
+- `RegionPlot3D` kept no symbolic structure at all, unlike every other 3D
+    plotting function (`RevolutionPlot3D`, `ParametricPlot3D`, …), so
+    `First[RegionPlot3D[…]]`/`RegionPlot3D[…][[1]]` failed with
+    `First::normal` instead of returning the surface as a `GraphicsComplex`.
+    Its rendered voxel faces now also carry a data-space symbolic form, so a
+    `Translate`d/`Rotate`d slice of a `RegionPlot3D` region can be
+    recombined with other primitives inside a fresh `Graphics3D` — the way
+    a solid built from plot slices closes off a face with a cross section.
+    Found while checking Woxi Studio against a Wolfram Demonstrations
+    Project notebook that builds an open-band ring out of two
+    `RevolutionPlot3D` surfaces and a `RegionPlot3D` lens cross-section
+    `Translate`d and `Rotate`d to close both ends.
+
 - `ParametricPlot` draws every curve of a multi-curve list again when one
     entry conditionally resolves to `{}` — the idiom
     `{If[cond1, {fx1, fy1}, {}], If[cond2, {fx2, fy2}, {}], …}` a
