@@ -2366,6 +2366,14 @@ fn unescape_string_inner(s: &str, code: bool) -> String {
           // `\` at end of line is a Wolfram line continuation: drop the
           // backslash AND the newline, joining the lines into one.
         }
+        Some(' ') => {
+          // Same linear-syntax family as `\<`/`\>` above: inside `\!\(…\)`
+          // embedded box syntax a bare space separates tokens rather than
+          // standing for itself, so the FrontEnd escapes an actual space
+          // character as `\ ` (e.g. a Manipulate control label padding a
+          // subscript's digits). Unescapes to one plain space.
+          result.push(' ');
+        }
         Some(other) => {
           result.push('\\');
           result.push(other);
@@ -4614,6 +4622,18 @@ Cell["Chapter 2", "Chapter"]
     // escaped a second time into `\\"`.
     let inner = r#"\"\<a \\\"quoted\\\" phrase\>\""#;
     assert_eq!(string_literal_source(inner), r#""a \"quoted\" phrase""#);
+  }
+
+  #[test]
+  fn test_unescape_literal_space() {
+    // `\ ` (backslash immediately followed by a space) is part of the same
+    // linear-syntax escape family as `\<`/`\>` above: inside `\!\(…\)`
+    // embedded box syntax a bare space separates tokens rather than
+    // standing for itself, so the FrontEnd escapes an actual space
+    // character as `\ ` — e.g. a Manipulate control label padding a
+    // subscript's digits for alignment. It unescapes to one plain space.
+    assert_eq!(unescape_string(r"a\ b"), "a b");
+    assert_eq!(unescape_string(r"2\ \ \ "), "2   ");
   }
 
   #[test]
