@@ -37,29 +37,6 @@ fn contains_unresolved_derivative(expr: &Expr, func_name: &str) -> bool {
   }
 }
 
-/// Match a function body of the shape `# ^ k` (where k is a positive integer
-/// constant). Returns the integer power k. The body must reference Slot(1)
-/// only as the base — bodies like `# ^ #` or `2 ^ #` don't qualify.
-fn match_slot_power(body: &Expr) -> Option<i128> {
-  let (base, exp) = match body {
-    Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left,
-      right,
-    } => (left.as_ref(), right.as_ref()),
-    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
-      (&args[0], &args[1])
-    }
-    // Bare slot: `#1 &` is `# ^ 1 &` for our purposes.
-    Expr::Slot(1) => return Some(1),
-    _ => return None,
-  };
-  match (base, exp) {
-    (Expr::Slot(1), Expr::Integer(k)) if *k >= 0 => Some(*k),
-    _ => None,
-  }
-}
-
 /// Build the right-nested multiplication chain that wolframscript prints for
 /// `Derivative[n][# ^ k &]` and the multivariate analogues. For n > k the
 /// function collapses to `0`. For n <= k the chain has n integer factors
@@ -417,49 +394,18 @@ pub fn dispatch_calculus_functions(
             }));
           }
         }
-        // Handle pure function: Derivative[n][body&]
-        if let Expr::Function { body } = &args[1] {
-          // Special-case `Derivative[n][# ^ k &]`: wolframscript prints the
-          // result as a right-nested multiplication chain `k*(k-1)*…*#1^(k-n)`
-          // rather than the folded `k!/(k-n)! * #1^(k-n)`. Detect this shape
-          // and build the chain literally so the test's exact output matches.
-          if let Some(k) = match_slot_power(body)
-            && let Some(chain) =
-              build_var_power_derivative_chain(&Expr::Slot(1), k, n as i128)
-          {
-            return Some(Ok(Expr::Function {
-              body: Box::new(chain),
-            }));
-          }
-          let dummy = "__d_slot__";
-          // Replace Slot(1) with dummy variable for differentiation
-          let with_dummy = crate::syntax::substitute_slots(
-            body,
-            &[Expr::Identifier(dummy.to_string())],
-          );
-          let mut deriv = with_dummy;
-          let mut resolved = true;
-          for _ in 0..n {
-            deriv = if let Ok(v) =
-              crate::functions::calculus_ast::differentiate_expr(&deriv, dummy)
-            {
-              v
-            } else {
-              resolved = false;
-              break;
-            };
-          }
-          if resolved {
-            let simplified = crate::functions::calculus_ast::simplify(deriv);
-            let with_slot = crate::syntax::substitute_variable(
-              &simplified,
-              dummy,
-              &Expr::Slot(1),
-            );
-            return Some(Ok(Expr::Function {
-              body: Box::new(with_slot),
-            }));
-          }
+        // Handle pure function: Derivative[n][body&] — the one-slot case of
+        // the multi-index `Derivative[n1, …, nk][body &]`.
+        if let Expr::Function { body } = &args[1]
+          && let Some(result) =
+            crate::evaluator::function_application::differentiate_function_body(
+              body,
+              &[n as i128],
+            )
+        {
+          return Some(Ok(Expr::Function {
+            body: Box::new(result),
+          }));
         }
       }
       return Some(Ok(unevaluated("Derivative", args)));

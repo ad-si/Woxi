@@ -509,6 +509,17 @@ fn try_nsolve_pure_power(
 
 /// Principal-branch complex power: (a+bi)^(c+di) = exp((c+di) * Log[a+bi]).
 pub(crate) fn complex_pow(a: f64, b: f64, c: f64, d: f64) -> (f64, f64) {
+  // A real power of a real base stays on the real line: going through
+  // exp(c log a) costs an ulp or two (`Sqrt[2]` came out as
+  // 1.414213562373095 instead of 1.4142135623730951).
+  if b == 0.0 && d == 0.0 {
+    if a > 0.0 {
+      return (if c == 0.5 { a.sqrt() } else { a.powf(c) }, 0.0);
+    }
+    if a < 0.0 && c.fract() == 0.0 && c.abs() < i32::MAX as f64 {
+      return (a.powi(c as i32), 0.0);
+    }
+  }
   let abs_z = (a * a + b * b).sqrt();
   if abs_z == 0.0 {
     return (0.0, 0.0);

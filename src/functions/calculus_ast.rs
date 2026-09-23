@@ -211,12 +211,14 @@ pub fn d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         result = differentiate(&result, fresh)?;
         result = simplify(result);
       }
+      // Putting the slot back changes where the factor sorts, so the
+      // result is re-evaluated into canonical order.
       result = replace_subexpr_simple(
         &result,
         &Expr::Identifier(fresh.to_string()),
         &items[0],
       );
-      return Ok(result);
+      return crate::evaluator::evaluate_expr_to_expr(&result);
     }
     // Non-symbol variable specifier (e.g. x[k]) — apply
     // differentiate_wrt_expr n times.
@@ -238,7 +240,7 @@ pub fn d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     );
     let result = differentiate(&body, fresh)?;
     let result = simplify(result);
-    return Ok(replace_subexpr_simple(
+    return crate::evaluator::evaluate_expr_to_expr(&replace_subexpr_simple(
       &result,
       &Expr::Identifier(fresh.to_string()),
       &args[1],
@@ -372,7 +374,9 @@ fn differentiate_wrt_expr(
   );
   let result = differentiate(&body, fresh)?;
   let result = simplify(result);
-  Ok(replace_subexpr_simple(
+  // `x[k]` sorts differently from the fresh symbol it stood in for, so the
+  // result is re-evaluated into canonical order.
+  crate::evaluator::evaluate_expr_to_expr(&replace_subexpr_simple(
     &result,
     &Expr::Identifier(fresh.to_string()),
     var_expr,

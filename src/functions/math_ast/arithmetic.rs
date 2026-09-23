@@ -5814,6 +5814,39 @@ pub fn order_monomial_vs_sum(
 }
 
 pub fn sort_symbolic_factors(symbolic_args: &mut [Expr]) {
+  // `#n` orders as the `Slot[n]` call it is (`a*#1`, `f[x]*#1`), so slots
+  // take part in the sort in that form and are put back afterwards.
+  let has_slot = symbolic_args
+    .iter()
+    .any(|e| matches!(e, Expr::Slot(_) | Expr::SlotSequence(_)));
+  if has_slot {
+    for e in symbolic_args.iter_mut() {
+      if let Some(c) =
+        crate::functions::list_helpers_ast::sorting::slot_as_call(e)
+      {
+        *e = c;
+      }
+    }
+  }
+  sort_symbolic_factors_inner(symbolic_args);
+  if has_slot {
+    for e in symbolic_args.iter_mut() {
+      if let Expr::FunctionCall { name, args } = e
+        && args.len() == 1
+        && let Expr::Integer(n) = &args[0]
+        && *n >= 0
+      {
+        match name.as_str() {
+          "Slot" => *e = Expr::Slot(*n as usize),
+          "SlotSequence" => *e = Expr::SlotSequence(*n as usize),
+          _ => {}
+        }
+      }
+    }
+  }
+}
+
+fn sort_symbolic_factors_inner(symbolic_args: &mut [Expr]) {
   // Radicals of integer bases where at least one base is negative — the
   // shape left behind by `(-2)^(1/3) (-1)^(2/3)`, which wolframscript keeps
   // unmerged. They order by base ascending, then exponent ascending, the
@@ -5844,7 +5877,16 @@ pub fn sort_symbolic_factors(symbolic_args: &mut [Expr]) {
     };
     Some((*b, (*p, *q)))
   };
+  // A complex number is a number: it leads the product like any other
+  // numeric coefficient — `(1 + 2*I)*Sqrt[2]`, `(1 + 2*I)*E`.
+  // (Pure imaginary factors keep their own subpriority below.)
+  let is_complex_number = |e: &Expr| matches!(try_extract_complex_exact(e), Some(((re_n, _), (im_n, _))) if re_n != 0 && im_n != 0);
   symbolic_args.sort_by(|a, b| {
+    match (is_complex_number(a), is_complex_number(b)) {
+      (true, false) => return std::cmp::Ordering::Less,
+      (false, true) => return std::cmp::Ordering::Greater,
+      _ => {}
+    }
     if let (Some((ba, (pa, qa))), Some((bb, (pb, qb)))) =
       (signed_radical_parts(a), signed_radical_parts(b))
       && (ba < 0 || bb < 0)

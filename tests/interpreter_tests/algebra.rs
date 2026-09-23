@@ -17759,6 +17759,27 @@ mod fuzz_diff_round_2026_07_17 {
   }
 
   #[test]
+  fn number_base_powers_sort_before_symbols_and_strings() {
+    // A power of a number compares by its base, and a number precedes any
+    // symbol, string or compound.
+    assert_case("Sort[{E, Sqrt[2]}]", "{Sqrt[2], E}");
+    assert_case(
+      "Sort[{1 + x, Sqrt[2], f[x], x, Pi, a^2, 2^x, E^2, Sqrt[x], \
+       1/Sqrt[2], Sqrt[2/3], \"s\", 2^(1/3)}]",
+      "{Sqrt[2/3], 1/Sqrt[2], 2^(1/3), Sqrt[2], 2^x, s, a^2, E^2, Pi, \
+       Sqrt[x], x, 1 + x, f[x]}",
+    );
+    assert_case(
+      "Sort[{Pi, Sqrt[2], 3^(1/3), E, GoldenRatio, Sqrt[5]}]",
+      "{Sqrt[2], 3^(1/3), Sqrt[5], E, GoldenRatio, Pi}",
+    );
+    assert_case(
+      "{Order[Sqrt[2], E], Order[E, Sqrt[2]], Order[\"s\", 2^x]}",
+      "{1, -1, -1}",
+    );
+  }
+
+  #[test]
   fn sort_union_same_base_powers_and_sums() {
     // case seed 16300912233182470467 (Union canonical order)
     assert_case("Union[{Pi}, {1/Pi}]", "{Pi^(-1), Pi}");
