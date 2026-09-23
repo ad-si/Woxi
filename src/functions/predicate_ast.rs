@@ -500,9 +500,25 @@ pub fn is_atomic_object(expr: &Expr) -> bool {
   matches!(expr, Expr::FunctionCall { name, .. }
     if name == "ByteArray"
       || name == "NumericArray"
-      || name == "SparseArray"
-      || name == "Tree")
+      || name == "SparseArray")
+    || is_fully_atomic_object(expr)
     || crate::functions::boolean_ast::bdd_from_object(expr).is_some()
+}
+
+/// Objects that are atoms through and through, despite their compound head:
+/// a `Tree` and a (well-formed) `MeshRegion`/`BoundaryMeshRegion`. `Length`
+/// is 0, `Depth` 1, `Dimensions` `{}`, `Map`/`Apply` leave them unchanged and
+/// `Part` cannot reach inside.
+pub fn is_fully_atomic_object(expr: &Expr) -> bool {
+  match expr {
+    Expr::FunctionCall { name, .. } if name == "Tree" => true,
+    Expr::FunctionCall { name, args }
+      if name == "MeshRegion" || name == "BoundaryMeshRegion" =>
+    {
+      args.len() >= 2 && matches!(args[0], Expr::List(_))
+    }
+    _ => false,
+  }
 }
 
 /// A Dataset is an atom for traversal (`AtomQ`, `LeafCount`, `Level`, `Depth`)
@@ -2330,7 +2346,7 @@ pub fn length_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let stripped = crate::evaluator::strip_unevaluated(&args[0]);
   // A Tree and a BooleanFunction["BDD" -> …] object are atoms: they have no
   // parts to count.
-  if matches!(&stripped, Expr::FunctionCall { name, .. } if name == "Tree")
+  if is_fully_atomic_object(&stripped)
     || crate::functions::boolean_ast::bdd_from_object(&stripped).is_some()
   {
     return Ok(Expr::Integer(0));
@@ -2436,7 +2452,7 @@ pub fn depth_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     // A Tree or a Dataset is an atom through and through: Depth is 1, not the
     // depth of the structure it stores.
-    if matches!(expr, Expr::FunctionCall { name, .. } if name == "Tree")
+    if is_fully_atomic_object(expr)
       || crate::functions::dataset_ast::is_dataset(expr)
     {
       return 1;

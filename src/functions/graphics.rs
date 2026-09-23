@@ -11910,13 +11910,13 @@ pub(crate) fn mesh_region_to_graphics_prims(
   Some(result)
 }
 
-/// Reads a `MeshCellStyle` option (e.g. from a `ConvexHullMesh`'s
-/// `BoundaryMeshRegion` options) into face/edge style directives:
-/// `MeshCellStyle -> style` colors every cell, while
-/// `MeshCellStyle -> {{d, _} -> style, ...}` picks a style by cell
-/// dimension (2 = faces → `FaceForm`, 1 = edges → `EdgeForm`; the index
-/// component is not tracked per-cell, so `All` and a specific index behave
-/// the same). Absent or unrecognized specs leave both `None`.
+/// Reads a mesh region's cell styles — the `Properties -> {{d, i} ->
+/// MeshCellStyle -> style, …}` a `ConvexHullMesh` normalizes its
+/// `MeshCellStyle` option into, or a raw `MeshCellStyle` option — into
+/// face/edge style directives: a style on 2-cells (faces → `FaceForm`) or
+/// 1-cells (edges → `EdgeForm`). The index component is not tracked
+/// per-cell, so one styled cell styles them all; `Automatic` defaults are
+/// ignored. Absent or unrecognized specs leave both `None`.
 pub(crate) fn mesh_cell_style_overrides(
   opts: &[Expr],
 ) -> (Option<Expr>, Option<Expr>) {
@@ -11930,6 +11930,41 @@ pub(crate) fn mesh_cell_style_overrides(
     else {
       continue;
     };
+    if matches!(&**pattern, Expr::Identifier(n) if n == "Properties")
+      && let Expr::List(entries) = &**replacement
+    {
+      for entry in entries {
+        let Expr::Rule {
+          pattern: key,
+          replacement: prop,
+        } = entry
+        else {
+          continue;
+        };
+        let (
+          Expr::List(k),
+          Expr::Rule {
+            pattern: prop_name,
+            replacement: style,
+          },
+        ) = (&**key, &**prop)
+        else {
+          continue;
+        };
+        if k.len() != 2
+          || !matches!(&**prop_name, Expr::Identifier(n) if n == "MeshCellStyle")
+          || matches!(&**style, Expr::Identifier(a) if a == "Automatic")
+        {
+          continue;
+        }
+        match &k[0] {
+          Expr::Integer(2) => face_style = Some((**style).clone()),
+          Expr::Integer(1) => edge_style = Some((**style).clone()),
+          _ => {}
+        }
+      }
+      continue;
+    }
     if !matches!(&**pattern, Expr::Identifier(n) if n == "MeshCellStyle") {
       continue;
     }

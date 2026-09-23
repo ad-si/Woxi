@@ -312,8 +312,79 @@ fn sum_over_polygons(polygons: &[Expr], head: &str) -> Option<Expr> {
   crate::evaluator::evaluate_function_call_ast("Plus", &terms).ok()
 }
 
-/// `RegionMeasure` / `Area` of a mesh region.
+/// Evaluate `head[args…]`.
+fn eval_call(head: &str, args: &[Expr]) -> Option<Expr> {
+  crate::evaluator::evaluate_function_call_ast(head, args).ok()
+}
+
+/// The tetrahedra a solid's boundary fans into from the origin, as
+/// `(signed volume × 6, apex-free centroid × 4)` pairs: the determinant
+/// `a . (b × c)` of each fan triangle `(a, b, c)` of an outward-wound face,
+/// and `a + b + c`. Summed, the signed volumes give the solid's volume
+/// whatever the origin, since the faces close up.
+fn solid_fan(mesh: &Mesh) -> Option<Vec<(Expr, Expr)>> {
+  let mut out = Vec::new();
+  for face in &mesh.cells[2] {
+    let pts = mesh.points(face)?;
+    for i in 1..pts.len().saturating_sub(1) {
+      let (a, b, c) = (&pts[0], &pts[i], &pts[i + 1]);
+      let det = eval_call(
+        "Dot",
+        &[a.clone(), eval_call("Cross", &[b.clone(), c.clone()])?],
+      )?;
+      let sum = eval_call("Plus", &[a.clone(), b.clone(), c.clone()])?;
+      out.push((det, sum));
+    }
+  }
+  (!out.is_empty()).then_some(out)
+}
+
+/// Whether the mesh is a solid: a boundary mesh of 3-D polygons.
+fn is_solid(mesh: &Mesh) -> bool {
+  mesh.boundary && mesh.dimension() == 3
+}
+
+/// `Volume` of a solid mesh region, exact for exact coordinates.
+fn mesh_volume(mesh: &Mesh) -> Option<Expr> {
+  let dets: Vec<Expr> = solid_fan(mesh)?.into_iter().map(|(d, _)| d).collect();
+  let total = eval_call("Plus", &dets)?;
+  eval_call("Abs", &[eval_call("Divide", &[total, Expr::Integer(6)])?])
+}
+
+/// `SurfaceArea` of a solid mesh region: its faces' total area, which
+/// wolframscript reports as a machine number even for exact coordinates.
+pub fn mesh_surface_area(mesh: &Mesh) -> Option<Expr> {
+  if !is_solid(mesh) {
+    return Some(id_expr("Undefined"));
+  }
+  let total = sum_over_polygons(&mesh.polygons(), "Area")?;
+  eval_call("N", &[total])
+}
+
+/// The measure `head` (`ArcLength`, `Area`, `Volume`) of a mesh region:
+/// defined only when it is the measure of the region's own dimension
+/// (`Area` of a solid is `Undefined`).
+pub fn mesh_named_measure(mesh: &Mesh, head: &str) -> Option<Expr> {
+  let wanted = match head {
+    "ArcLength" => 1,
+    "Area" => 2,
+    "Volume" => 3,
+    _ => return None,
+  };
+  let dimension = mesh.dimension();
+  if dimension != wanted {
+    // Only the solid and planar cases are known to be well formed here.
+    return (dimension >= 2 && wanted >= 2).then(|| id_expr("Undefined"));
+  }
+  mesh_measure(mesh)
+}
+
+/// `RegionMeasure` of a mesh region: the volume of a solid, the area of a
+/// planar region.
 pub fn mesh_measure(mesh: &Mesh) -> Option<Expr> {
+  if is_solid(mesh) {
+    return mesh_volume(mesh);
+  }
   let polygons = mesh.polygons();
   if polygons.is_empty() {
     return None;
@@ -321,8 +392,12 @@ pub fn mesh_measure(mesh: &Mesh) -> Option<Expr> {
   sum_over_polygons(&polygons, "Area")
 }
 
-/// `Perimeter` of a mesh region: the length of the edges that bound it.
+/// `Perimeter` of a mesh region: the length of the edges that bound it
+/// (`Undefined` for a solid).
 pub fn mesh_perimeter(mesh: &Mesh) -> Option<Expr> {
+  if is_solid(mesh) {
+    return Some(id_expr("Undefined"));
+  }
   let edges = mesh.boundary_edges();
   if edges.is_empty() {
     return None;
@@ -342,8 +417,25 @@ pub fn mesh_perimeter(mesh: &Mesh) -> Option<Expr> {
   crate::evaluator::evaluate_function_call_ast("Plus", &lengths).ok()
 }
 
-/// `RegionCentroid` of a mesh region: its cells' centroids weighted by area.
+/// `RegionCentroid` of a mesh region: its cells' centroids weighted by area,
+/// or for a solid its fan tetrahedra's centroids weighted by volume.
 pub fn mesh_centroid(mesh: &Mesh) -> Option<Expr> {
+  if is_solid(mesh) {
+    // Each fan tetrahedron (origin, a, b, c) has centroid (a + b + c)/4.
+    let fan = solid_fan(mesh)?;
+    let mut weighted = Vec::with_capacity(fan.len());
+    let mut dets = Vec::with_capacity(fan.len());
+    for (det, sum) in fan {
+      weighted.push(eval_call("Times", &[det.clone(), sum])?);
+      dets.push(det);
+    }
+    let total = eval_call("Plus", &dets)?;
+    let moment = eval_call("Plus", &weighted)?;
+    return eval_call(
+      "Divide",
+      &[moment, eval_call("Times", &[Expr::Integer(4), total])?],
+    );
+  }
   let polygons = mesh.polygons();
   if polygons.is_empty() {
     return None;

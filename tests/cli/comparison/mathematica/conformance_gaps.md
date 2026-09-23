@@ -3727,13 +3727,13 @@ default forms diverge for the same reason the explicit ones do.
 `{2, 3/2, 0}` in Woxi; wolframscript handles only the planar case and leaves
 the call unevaluated. Deliberate — the 3D centre is well defined.
 
-### `ConvexHullMesh`'s 3D facet order, rotation and coplanar merging is qhull's
+### `ConvexHullMesh`'s 3D facet order and rotation is qhull's
 
-3D point sets now build a real triangulated hull (a standard incremental
-"beneath-beyond" algorithm, not qhull), and its facets are the *same
-triangles with the same outward orientation* as wolframscript's — verified by
-hand against the reference table below, canonicalizing each face to start at
-its lowest vertex index. What is not replicated is qhull's own bookkeeping:
+3D point sets build a real hull (a standard incremental "beneath-beyond"
+algorithm, not qhull) whose coplanar triangles are merged into the polygons
+they tile, as qhull reports them — a cube's sides are six quads. Its facets
+are the *same polygons with the same outward orientation* as wolframscript's;
+what is not replicated is qhull's own bookkeeping:
 
 ```sh
 wolframscript -code 'ToString[ConvexHullMesh[{{0,0,0},{1,0,0},{0,1,0},{0,0,1}}], InputForm]'
@@ -3748,15 +3748,11 @@ woxi eval 'ToString[ConvexHullMesh[{{0,0,0},{1,0,0},{0,1,0},{0,0,1}}], InputForm
 
 Each face above is a cyclic rotation of the matching wolframscript face
 (`{1,3,2}` rotates to `{3,2,1}`, `{1,2,4}` to `{2,4,1}`, and so on) — the same
-triangle, the same winding, just listed starting at a different vertex. Three
-things would have to be replicated to match the printed `Polygon` exactly:
-
-1. **Facet order.** No sort explains all three samples below.
-2. **Vertex rotation within a face.** Faces are outward-oriented, but the
-   starting vertex varies.
-3. **Coplanar merging.** Triangles that share a plane come back as one polygon,
-   so the cube's six faces are quads, not twelve triangles (Woxi's hull always
-   triangulates, even a cube's flat sides).
+triangle, the same winding, just listed starting at a different vertex. The
+facet order and each facet's starting vertex follow no sort that explains the
+samples below. Compare hulls with each face rotated to start at its lowest
+vertex (which keeps the winding) and the list sorted:
+`Sort[RotateLeft[#, First[Ordering[#, 1]] - 1] & /@ MeshCells[m, 2][[All, 1]]]`.
 
 Reference outputs (all carry `Method -> {"SeparateBoundaries" -> False},
 WorkingPrecision -> Infinity`):
@@ -3766,6 +3762,32 @@ WorkingPrecision -> Infinity`):
 | `{{0,0,0},{1,0,0},{0,1,0},{0,0,1}}` | `{{3,2,1},{2,4,1},{4,3,1},{3,4,2}}` |
 | the same plus `{1,1,1}` | `{{3,2,1},{2,4,1},{4,3,1},{3,5,2},{5,4,2},{4,5,3}}` |
 | the eight unit-cube corners | `{{3,2,1,4},{1,2,6,5},{4,1,5,8},{2,3,7,6},{3,4,8,7},{5,6,7,8}}` |
+
+### Mesh regions: constructor normalization, messages and `MeshCellMarker`
+
+`ConvexHullMesh` normalizes its `MeshCellStyle`/`MeshCellHighlight`/
+`MeshCellShapeFunction`/`MeshCellLabel` options into per-cell `Properties`
+the way wolframscript does, but three related normalizations are open:
+
+- The `MeshRegion[…]`/`BoundaryMeshRegion[…]` constructors themselves are
+  echoed as given. wolframscript converts the coordinates to machine reals,
+  splits a `Line[{1, 2, 3, 4, 1}]` boundary into its segments, wraps the cells
+  in a list and normalizes the options into `Properties`:
+
+  ```sh
+  wolframscript -code 'ToString[BoundaryMeshRegion[{{0,0},{2,0},{2,2},{0,2}}, Line[{1,2,3,4,1}]], InputForm]'
+  # BoundaryMeshRegion[{{0., 0.}, {2., 0.}, {2., 2.}, {0., 2.}},
+  #   {Line[{{1, 2}, {2, 3}, {3, 4}, {4, 1}}]}, Method -> {"SeparateBoundaries" -> False}]
+  woxi eval 'ToString[BoundaryMeshRegion[{{0,0},{2,0},{2,2},{0,2}}, Line[{1,2,3,4,1}]], InputForm]'
+  # BoundaryMeshRegion[{{0, 0}, {2, 0}, {2, 2}, {0, 2}}, Line[{1, 2, 3, 4, 1}]]
+  ```
+
+- `MeshCellMarker -> {{0, 1} -> 3}` normalizes to
+  `{0, {1}} -> MeshCellMarker -> {3}, {0, Default} -> MeshCellMarker -> 0` and
+  sits between `MeshCellStyle` and `MeshCellHighlight`; Woxi keeps it as an
+  ordinary trailing option.
+- A mesh region in a message is summarized as `BoundaryMeshRegion[<2>, <2>]`
+  (`Part::partd` on one, say); Woxi prints the whole object.
 
 ### Mesh cell order is qhull's
 

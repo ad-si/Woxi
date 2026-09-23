@@ -1266,8 +1266,9 @@ pub fn dispatch_complex_and_special(
         },
       ));
     }
-    // A mesh region measures like the polygons it covers.
-    "RegionMeasure" | "Area"
+    // A mesh region measures like the polygons it covers, or — a solid —
+    // the volume they enclose.
+    "RegionMeasure"
       if args.len() == 1
         && crate::functions::mesh_region::is_mesh_region(&args[0]) =>
     {
@@ -1275,6 +1276,30 @@ pub fn dispatch_complex_and_special(
         crate::functions::mesh_region::parse_mesh(&args[0])
           .as_ref()
           .and_then(crate::functions::mesh_region::mesh_measure)
+          .unwrap_or_else(|| unevaluated(name, args)),
+      ));
+    }
+    "Area" | "Volume"
+      if args.len() == 1
+        && crate::functions::mesh_region::is_mesh_region(&args[0]) =>
+    {
+      return Some(Ok(
+        crate::functions::mesh_region::parse_mesh(&args[0])
+          .as_ref()
+          .and_then(|mesh| {
+            crate::functions::mesh_region::mesh_named_measure(mesh, name)
+          })
+          .unwrap_or_else(|| unevaluated(name, args)),
+      ));
+    }
+    "SurfaceArea"
+      if args.len() == 1
+        && crate::functions::mesh_region::is_mesh_region(&args[0]) =>
+    {
+      return Some(Ok(
+        crate::functions::mesh_region::parse_mesh(&args[0])
+          .as_ref()
+          .and_then(crate::functions::mesh_region::mesh_surface_area)
           .unwrap_or_else(|| unevaluated(name, args)),
       ));
     }
