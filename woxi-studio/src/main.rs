@@ -29189,4 +29189,78 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`\\[Phi]Deg$$ = 40., $CellContext`tH
       "narrowing the sweep angle must change the rendered picture"
     );
   }
+
+  /// End-to-end regression for the "Exponential Decay" Demonstration: a
+  /// decay curve `Exp[-k t]` split at a "time elapsed" point into a
+  /// gone (before) and remaining (after) region via two `Show`n `Plot`s
+  /// with different `PlotStyle`/`FillingStyle`, annotated with a percent
+  /// "gone"/"remaining" `Epilog`.
+  ///
+  /// It already worked (multi-`Plot` `Show` composition, `Filling ->
+  /// Bottom` on each branch, and `NumberForm`-formatted `Epilog` text all
+  /// render cleanly); this pins it with a rewritten equivalent (not the
+  /// copyrighted notebook source).
+  #[test]
+  fn exponential_decay_notebook_splits_gone_and_remaining() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[\nShow[\nPlot[Exp[-k t], {t, 0, timeElapsed}, PlotStyle -> Blue, Filling -> Bottom, FillingStyle -> LightBlue],\nPlot[Exp[-k t], {t, timeElapsed, 10}, PlotStyle -> Orange, Filling -> Bottom, FillingStyle -> LightOrange],\nPlotRange -> {{0, 10}, {0, 1}},\nEpilog -> {\nText[Style[ToString[NumberForm[100 (1 - Exp[-k timeElapsed]), {3, 1}]] <> \"% gone\", 12], Scaled[{0.3, 0.97}]],\nText[Style[ToString[NumberForm[100 Exp[-k timeElapsed], {3, 1}]] <> \"% remaining\", 12], Scaled[{0.65, 0.97}]]\n},\nImageSize -> 450\n],\n{{timeElapsed, 0.5, \"time elapsed\"}, 0, 10},\n{{k, 0.3, \"decay constant\"}, 0, 1},\nSaveDefinitions -> True\n]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`timeElapsed$$ = 0.5, $CellContext`k$$ = 0.3}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(widget.graphics_handle.is_some(), "the curve must draw");
+
+    assert!(
+      matches!(
+        &widget.controls[0],
+        manipulate::ControlState::Continuous { name, label, min, max, current, .. }
+          if name == "timeElapsed" && label == "time elapsed"
+            && (*min, *max, *current) == (0.0, 10.0, 0.5)
+      ),
+      "control 0 should be the time-elapsed slider: {:?}",
+      widget.controls[0]
+    );
+    assert!(
+      matches!(
+        &widget.controls[1],
+        manipulate::ControlState::Continuous { name, label, min, max, current, .. }
+          if name == "k" && label == "decay constant"
+            && (*min, *max, *current) == (0.0, 1.0, 0.3)
+      ),
+      "control 1 should be the decay-constant slider: {:?}",
+      widget.controls[1]
+    );
+
+    let render = |t: f64, k: f64| {
+      woxi::interpret_with_stdout(&format!(
+        "timeElapsed = {t}; k = {k};\n{}",
+        widget.body
+      ))
+      .expect("the body must render")
+      .graphics
+      .expect("the body must produce a graphic")
+    };
+    let base = render(0.5, 0.3);
+    // The gone/remaining percentages must appear, matching e^{-k t}.
+    assert!(base.contains("13.9"), "gone % missing: {base}");
+    assert!(base.contains("86.1"), "remaining % missing: {base}");
+    // Moving either slider must change the rendered scene.
+    assert_ne!(base, render(2.0, 0.3), "the time slider must matter");
+    assert_ne!(
+      base,
+      render(0.5, 0.8),
+      "the decay-constant slider must matter"
+    );
+  }
 }
