@@ -1573,4 +1573,55 @@ mod tests {
       );
     }
   }
+
+  /// Checked a randomly-sampled Wolfram Demonstrations Project notebook
+  /// ("Newton's Polynomial Solver") whose control panel is written as
+  /// `Text@Grid[{{header, header}, {Control[…], Control[…]}, …}]` — a
+  /// custom control table rather than bare top-level specs or a plain
+  /// `Row`/`Column` grouping. Independently written, not copied from any
+  /// specific Demonstration: different variables, bounds and headers
+  /// throughout.
+  ///
+  /// Regression coverage for `Text[…]` wrapping a `Grid[…]` of inline
+  /// `Control[…]` cells: `Text[…]` is not itself a `Row`/`Column`/`Grid`
+  /// layout container, so without unwrapping it first, the whole
+  /// `Text[Grid[…]]` argument used to be swallowed whole by the
+  /// static-heading path (`is_manipulate_annotation_head`), stringifying
+  /// every slider into inert label text instead of building a real
+  /// control for it.
+  #[test]
+  fn text_grid_control_table_layout() {
+    let code = r#"Manipulate[
+      Plot[p*x^2 + q*x, {x, -5, 5}],
+      Text@Grid[{
+        {"coefficient", "value"},
+        {Control[{{p, 1, "p"}, -3, 3, 0.5, Appearance -> "Labeled"}],
+         Control[{{q, 0, "q"}, -3, 3, 0.5, Appearance -> "Labeled"}]}
+      }]
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = ManipulateState::from_expr(&expr)
+      .expect("the Text[Grid[…]] control table should build a ManipulateState");
+
+    assert_eq!(
+      state.error, None,
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+
+    // The two header strings become heading rows, and the two `Control[…]`
+    // cells become real sliders bound to `p` and `q` — not a single
+    // flattened text heading with no bound variables at all.
+    let names: Vec<&str> = state.controls.iter().map(|c| c.name()).collect();
+    assert_eq!(names, ["", "", "p", "q"]);
+    assert!(
+      state.controls[2].binds_variable() && state.controls[3].binds_variable(),
+      "both Grid-embedded Control[…] cells must become real, bound sliders: \
+       {:?}",
+      state.controls
+    );
+
+    assert!(state.graphics_handle.is_some(), "the plot should render");
+  }
 }

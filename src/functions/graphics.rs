@@ -21155,9 +21155,17 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
   // `Item[content, opts…]` is a grid-alignment wrapper (the Demonstrations
   // idiom for lining up a whole control panel inside an outer `Grid`), not
   // a layout container in its own right — unwrap it to reach the container
-  // it dresses up.
+  // it dresses up. `Text[content]` is the same story for a control table
+  // that should render without a `Graphics`/expression frame (the
+  // Demonstrations idiom `Text@Grid[{{"a", Control[…]}, …}]`): it is not
+  // itself a layout container, so without unwrapping it here the whole
+  // `Text[Grid[…]]` falls through to `is_manipulate_annotation_head`'s
+  // static-heading path below, stringifying every `Control[…]` cell into
+  // inert label text instead of building a real slider for it.
   let spec = match spec {
-    Expr::FunctionCall { name, args } if name == "Item" && !args.is_empty() => {
+    Expr::FunctionCall { name, args }
+      if (name == "Item" || name == "Text") && !args.is_empty() =>
+    {
       &args[0]
     }
     _ => spec,
