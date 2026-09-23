@@ -18757,33 +18757,64 @@ fn process_manipulate_var_spec(items: &[Expr], siblings: &[String]) -> Expr {
   let mut new_items: Vec<Expr> = Vec::with_capacity(items.len());
   new_items.push(items[0].clone());
   for item in &items[1..] {
-    // `Enabled -> cond` / `TrackingFunction -> f` must stay held: `cond`
-    // references other controls' variables (and often symbols an
-    // `Initialization` block — processed after every spec here — hasn't
-    // defined yet), so evaluating it now would freeze it at whatever it
-    // happens to fold to with nothing bound, instead of the live condition
-    // `parse_manipulate_control` re-resolves on every frame.
-    if let Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } = item
-      && matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Enabled" || s == "TrackingFunction")
-    {
-      new_items.push(item.clone());
-      continue;
-    }
-    // A bound that names another control's variable (`{{triangle, 1}, 1,
-    // Length[Subsets[CirclePoints[nPolygon], {3}]], 1}`, "triangle"'s max
-    // bounded by "nPolygon") must also stay held: with nPolygon unbound
-    // here, evaluating the bound doesn't fail (Part/Length/etc. on an
-    // unevaluated CirclePoints[nPolygon] silently return some other
-    // concrete number, e.g. 0) — it just gets the WRONG number, baking a
-    // bogus literal into the echoed Manipulate form instead of leaving the
-    // reference for the frontend to re-resolve once nPolygon is bound (see
-    // `parse_manipulate_control`'s dynamic_bounds handling).
-    if siblings
-      .iter()
-      .any(|s| crate::functions::plot::expr_mentions_var(item, s))
-    {
-      new_items.push(item.clone());
-      continue;
+    let mentions_sibling = |e: &Expr| {
+      siblings
+        .iter()
+        .any(|s| crate::functions::plot::expr_mentions_var(e, s))
+    };
+    let dynamic = |e: &Expr| match e {
+      Expr::FunctionCall { name, .. } if name == "Dynamic" => e.clone(),
+      _ => call1("Dynamic", e.clone()),
+    };
+    // A bound or option value that names another control's variable
+    // (`{{triangle, 1}, 1, Length[Subsets[CirclePoints[nPolygon], {3}]],
+    // 1}`, "triangle"'s max bounded by "nPolygon") must stay held: with
+    // nPolygon unbound here, evaluating the bound doesn't fail
+    // (Part/Length/etc. on an unevaluated CirclePoints[nPolygon] silently
+    // return some other concrete number, e.g. 0) — it just gets the WRONG
+    // number. Wolfram echoes such a value wrapped in `Dynamic[…]`, which is
+    // also what tells the frontend to re-resolve it once nPolygon is bound
+    // (see `parse_manipulate_control`'s dynamic_bounds handling).
+    //
+    // `Enabled -> cond` / `TrackingFunction -> f` stay held too, even when
+    // they name no sibling: `cond` often references symbols an
+    // `Initialization` block hasn't defined yet, so evaluating it now would
+    // freeze it at whatever it happens to fold to with nothing bound,
+    // instead of the live condition `parse_manipulate_control` re-resolves
+    // on every frame.
+    match item {
+      Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "TrackingFunction") =>
+      {
+        new_items.push(item.clone());
+        continue;
+      }
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } => {
+        let is_enabled =
+          matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Enabled");
+        if is_enabled || mentions_sibling(replacement) {
+          let mut kept = item.clone();
+          if mentions_sibling(replacement)
+            && let Expr::Rule { replacement, .. }
+            | Expr::RuleDelayed { replacement, .. } = &mut kept
+          {
+            **replacement = dynamic(replacement);
+          }
+          new_items.push(kept);
+          continue;
+        }
+      }
+      _ if mentions_sibling(item) => {
+        new_items.push(dynamic(item));
+        continue;
+      }
+      _ => {}
     }
     // Try to evaluate bounds; if evaluation fails, keep the original so
     // the echoed form still round-trips. A bound stated in terms of another
@@ -23554,6 +23585,8 @@ fn parse_manipulate_control(
           && !matches!(it, Expr::Identifier(s) if s == "Locator")
       })
       .filter_map(|it| {
+        // The echo wraps such a corner in `Dynamic[…]`.
+        let it = manipulate_bound_expr(it).0;
         list2_f64(it).or_else(|| {
           list2_f64(&crate::evaluator::evaluate_expr_to_expr(it).ok()?)
         })

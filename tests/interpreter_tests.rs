@@ -846,7 +846,8 @@ mod interpreter_tests {
     // echoed `Manipulate[…]` as a wrong literal `0` instead of being left
     // symbolic for Woxi Studio's widget builder to resolve against `n`'s
     // live value (see `process_manipulate_var_spec` in
-    // `src/functions/graphics.rs`).
+    // `src/functions/graphics.rs`). Like wolframscript, the echo wraps such
+    // a bound in `Dynamic[…]`.
     clear_state();
     assert_eq!(
       interpret(
@@ -854,7 +855,23 @@ mod interpreter_tests {
       )
       .unwrap(),
       "Manipulate[pick, {{n, 4, count}, 3, 8, 1}, {{pick, 1, pick}, 1, \
-       Length[Subsets[Range[n], {2}]], 1}]"
+       Dynamic[Length[Subsets[Range[n], {2}]]], 1}]"
+    );
+    // Choice lists and option values naming a sibling are wrapped the
+    // same way; `Enabled` conditions are wrapped on their right-hand side.
+    clear_state();
+    assert_eq!(
+      interpret("Manipulate[x, {n, 1, 5}, {x, {1, 2, n}}]").unwrap(),
+      "Manipulate[x, {n, 1, 5}, {x, Dynamic[{1, 2, n}]}]"
+    );
+    assert_eq!(
+      interpret("Manipulate[x, {n, 1, 5}, {x, 0, 1, Enabled -> n > 2}]")
+        .unwrap(),
+      "Manipulate[x, {n, 1, 5}, {x, 0, 1, Enabled -> Dynamic[n > 2]}]"
+    );
+    assert_eq!(
+      interpret("Manipulate[x, {n, 1, 5}, {x, Dynamic[n], 10}]").unwrap(),
+      "Manipulate[x, {n, 1, 5}, {x, Dynamic[n], 10}]"
     );
   }
 
