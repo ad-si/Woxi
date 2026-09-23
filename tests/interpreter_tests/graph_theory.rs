@@ -1255,8 +1255,8 @@ mod graph_rendering {
       .filter_map(|s| s.parse().ok())
       .collect();
     assert_eq!(cx_values.len(), 3);
-    let spread = cx_values.iter().cloned().fold(f64::MIN, f64::max)
-      - cx_values.iter().cloned().fold(f64::MAX, f64::min);
+    let spread = cx_values.iter().copied().fold(f64::MIN, f64::max)
+      - cx_values.iter().copied().fold(f64::MAX, f64::min);
     assert!(
       spread > 100.0,
       "expected vertices spread across the canvas, got cx values: {cx_values:?}"
