@@ -632,13 +632,22 @@ fn is_identifier_like(s: &str) -> bool {
 /// Language exports. Woxi keeps its built-ins in one namespace, so nothing
 /// else would create them — and a package that reads one of the names by its
 /// short form has to land on the same symbol the built-in produces.
-fn register_standard_context_symbols(ctx: &str) {
+pub(crate) fn register_standard_context_symbols(ctx: &str) {
   if ctx == "CodeParser`" {
     crate::functions::code_parser::register_context_symbols();
     // Reading `LeafNode` after the context is loaded has to find
     // `CodeParser`LeafNode`, which is what putting the context on
     // `$ContextPath` is for. Only the contexts Woxi has symbols for go on
     // the path; the rest stay named but empty, as before.
+    crate::prepend_to_context_path(ctx);
+  }
+  if ctx == "Combinatorica`" {
+    // Combinatorica has no values to pre-create (its functions are ordinary
+    // dispatch entries, not symbol-table lookups), but putting it on
+    // `$ContextPath` is what lets `combinatorica_context_active` in
+    // `evaluate_function_call_ast_inner` redirect the bare names it shadows
+    // (`Derangements`, `Permutations[n_Integer]`) to their
+    // `Combinatorica\`` implementation.
     crate::prepend_to_context_path(ctx);
   }
 }
@@ -678,6 +687,7 @@ fn load_needed_context(ctx: &str) -> Result<(), InterpreterError> {
 
 #[cfg(target_arch = "wasm32")]
 fn load_needed_context(ctx: &str) -> Result<(), InterpreterError> {
+  register_standard_context_symbols(ctx);
   crate::register_package(ctx.to_string());
   Ok(())
 }
@@ -732,10 +742,31 @@ fn evaluate_function_call_ast_inner(
   // one flat namespace (see `is_standard_distribution_context`), so a
   // qualified call to one of these is normalized to its modern name before
   // dispatch rather than reimplementing the legacy function separately.
+  //
+  // `Combinatorica\`` is different: it shadows bare names once loaded
+  // (`Get["Combinatorica`"]`/`Needs["Combinatorica`"]` put it on
+  // `$ContextPath`, which is what a bare name is read against — see
+  // `register_standard_context_symbols`), the way it does in Mathematica
+  // itself, rather than being renamed at read time. `Derangements` has no
+  // built-in of its own to conflict with; `Permutations` does, but
+  // Combinatorica only extends it to accept a bare integer `n` (meaning
+  // `Range[n]`), so only that shape is redirected — a list argument keeps
+  // using the built-in's identical (lexicographic) algorithm.
+  let combinatorica_active = crate::current_context_path()
+    .iter()
+    .any(|c| c == "Combinatorica`");
   let original_name = name;
   let name = match name {
     "VectorFieldPlots`ListVectorFieldPlot" => "ListVectorPlot",
     "PieCharts`PieChart" => "PieChart",
+    "Derangements" if combinatorica_active => "Combinatorica`Derangements",
+    "Permutations"
+      if combinatorica_active
+        && args.len() == 1
+        && matches!(&args[0], Expr::Integer(n) if *n >= 0) =>
+    {
+      "Combinatorica`Permutations"
+    }
     other => other,
   };
 

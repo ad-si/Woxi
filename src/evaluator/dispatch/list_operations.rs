@@ -2895,6 +2895,12 @@ pub fn dispatch_list_operations(
     "Combinatorica`Partitions" if args.len() == 1 => {
       return Some(crate::functions::math_ast::integer_partitions_ast(args));
     }
+    "Combinatorica`Permutations" if args.len() == 1 => {
+      return Some(list_helpers_ast::combinatorica_permutations_ast(args));
+    }
+    "Combinatorica`Derangements" if args.len() == 1 => {
+      return Some(list_helpers_ast::combinatorica_derangements_ast(args));
+    }
     "Signature" if args.len() == 1 => {
       use crate::functions::list_helpers_ast::sorting::canonical_cmp;
       // Signature operates on any non-atomic expression: it treats the

@@ -10874,6 +10874,129 @@ mod join_non_list {
   }
 
   #[test]
+  fn combinatorica_permutations_integer_matches_range() {
+    // Combinatorica`Permutations[n], unlike the built-in Permutations, also
+    // accepts a bare non-negative integer meaning Range[n].
+    for n in 0..=5 {
+      assert_eq!(
+        interpret(&format!("Combinatorica`Permutations[{n}]")).unwrap(),
+        interpret(&format!("Permutations[Range[{n}]]")).unwrap()
+      );
+    }
+  }
+
+  #[test]
+  fn combinatorica_permutations_list_matches_builtin() {
+    // A list argument enumerates in the same (lexicographic) order as the
+    // built-in Permutations.
+    assert_eq!(
+      interpret("Combinatorica`Permutations[{a, b, c}]").unwrap(),
+      interpret("Permutations[{a, b, c}]").unwrap()
+    );
+  }
+
+  #[test]
+  fn combinatorica_permutations_invalid_argument_stays_symbolic() {
+    assert_eq!(
+      interpret("Combinatorica`Permutations[-1]").unwrap(),
+      "Combinatorica`Permutations[-1]"
+    );
+    assert_eq!(
+      interpret("Combinatorica`Permutations[x]").unwrap(),
+      "Combinatorica`Permutations[x]"
+    );
+  }
+
+  #[test]
+  fn combinatorica_derangements_count_matches_subfactorial() {
+    // A derangement is a permutation with no fixed point; Subfactorial[n]
+    // (already implemented) counts exactly how many there are, so the two
+    // must agree for every n.
+    for n in 0..=6 {
+      assert_eq!(
+        interpret(&format!("Length[Combinatorica`Derangements[{n}]]")).unwrap(),
+        interpret(&format!("Subfactorial[{n}]")).unwrap()
+      );
+    }
+  }
+
+  #[test]
+  fn combinatorica_derangements_have_no_fixed_points() {
+    assert_eq!(
+      interpret(
+        "AllTrue[Combinatorica`Derangements[5], \
+         Function[p, AllTrue[Range[5], p[[#]] != # &]]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn combinatorica_derangements_values() {
+    assert_eq!(
+      interpret("Combinatorica`Derangements[2]").unwrap(),
+      "{{2, 1}}"
+    );
+    assert_eq!(
+      interpret("Combinatorica`Derangements[3]").unwrap(),
+      "{{2, 3, 1}, {3, 1, 2}}"
+    );
+  }
+
+  #[test]
+  fn combinatorica_derangements_of_a_list() {
+    // A list argument derangements against the list's own original order,
+    // not against Range — an element just needs to move off its own slot.
+    assert_eq!(
+      interpret("Combinatorica`Derangements[{a, b, c}]").unwrap(),
+      interpret("Combinatorica`Derangements[3]")
+        .unwrap()
+        .replace('1', "a")
+        .replace('2', "b")
+        .replace('3', "c")
+    );
+  }
+
+  #[test]
+  fn get_combinatorica_exposes_derangements_and_integer_permutations_unqualified()
+   {
+    // Regression test: this is the pattern used by the "Permutations,
+    // Derangements, and Other Forbidden Position Problems Using
+    // Non-Attacking Rooks" Demonstration, which calls the bare names
+    // `Derangements[n]` and `Permutations[n]` after `Get["Combinatorica`"]`
+    // rather than the fully qualified forms. Before `Get`/`Needs` put
+    // `Combinatorica`` on `$ContextPath`, `Derangements[n]` stayed
+    // unevaluated, so `Length[Derangements[n]]` silently returned 1 (the
+    // call's own argument count) instead of erroring loudly, and indexing
+    // into it returned the bare integer n instead of a permutation.
+    assert_eq!(
+      interpret("Quiet[Get[\"Combinatorica`\"]]; Length[Derangements[5]]")
+        .unwrap(),
+      "44"
+    );
+    assert_eq!(
+      interpret("Quiet[Get[\"Combinatorica`\"]]; Permutations[3]").unwrap(),
+      interpret("Permutations[Range[3]]").unwrap()
+    );
+    // A list argument to the now-unqualified `Permutations` still goes
+    // through the ordinary built-in rather than erroring.
+    assert_eq!(
+      interpret("Quiet[Get[\"Combinatorica`\"]]; Permutations[{x, y}]")
+        .unwrap(),
+      interpret("Permutations[{x, y}]").unwrap()
+    );
+  }
+
+  #[test]
+  fn needs_combinatorica_exposes_derangements_unqualified() {
+    assert_eq!(
+      interpret("Needs[\"Combinatorica`\"]; Length[Derangements[4]]").unwrap(),
+      "9"
+    );
+  }
+
+  #[test]
   fn permutations_with_duplicates() {
     // Permutations of a multiset should return only distinct permutations.
     // Wolfram: Permutations[{1, 1, 2}] -> {{1, 1, 2}, {1, 2, 1}, {2, 1, 1}}
