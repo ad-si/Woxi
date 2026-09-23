@@ -3170,6 +3170,42 @@ mod plot3d {
       .unwrap();
       assert_eq!(result, "Graphics3D");
     }
+
+    /// Regression: `RegionPlot3D`'s result kept no symbolic structure at
+    /// all (unlike `RevolutionPlot3D`/`ParametricPlot3D`), so `First`/`Part`
+    /// on it fell straight through to `First::normal` and `Length` reported
+    /// 0 — a Demonstration that carves an end cap from a `RegionPlot3D`
+    /// slice and `Translate`s/`Rotate`s it into a solid (the way a napkin-
+    /// ring's flat faces are built from a lens-shaped cross section) could
+    /// not extract the surface at all.
+    #[test]
+    fn first_extracts_the_surface_as_a_graphics_complex() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "Head[First[RegionPlot3D[x^2 + z^2 < 1, {x, 0, 1}, {y, 0, 0.001}, \
+           {z, -1, 1}]]]"
+        )
+        .unwrap(),
+        "GraphicsComplex"
+      );
+    }
+
+    /// The extracted surface carries real data-space coordinates, so it can
+    /// be `Translate`d/`Rotate`d and recombined with other primitives inside
+    /// a fresh `Graphics3D` — not just re-displayed as-is.
+    #[test]
+    fn extracted_surface_can_be_translated_and_rotated_into_a_scene() {
+      clear_state();
+      let result = interpret(
+        "cap = First[RegionPlot3D[x^2 + z^2 < 1, {x, 0, 1}, {y, 0, 0.001}, \
+         {z, -1, 1}]]; \
+         moved = Rotate[Translate[cap, {2, 0, 0}], Pi/2, {0, 0, 1}]; \
+         Head[Graphics3D[{moved, cap}]]",
+      )
+      .unwrap();
+      assert_eq!(result, "Graphics3D");
+    }
   }
 
   mod revolution_plot3d {

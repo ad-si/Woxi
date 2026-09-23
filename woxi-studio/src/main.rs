@@ -28678,4 +28678,135 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`solid$$ = 1}, \"\\[Ellipsis]\"]"], 
       }
     }
   }
+
+  /// Checked a randomly-sampled Wolfram Demonstrations Project notebook: an
+  /// open-band ring assembled from two partial `RevolutionPlot3D` surfaces
+  /// (the band's outer and inner walls, each swept through only a `sweep`
+  /// slice of the full turn) plus a `RegionPlot3D` lens cross-section that
+  /// is `Translate`d out to the band radius and `Rotate`d to close the far
+  /// end, with an optional `Tube` core toggled by a checkbox. Independently
+  /// written, not copied from any specific Demonstration: the outer/inner
+  /// wall profiles use plain `Sin`/`Cos` sweeps rather than a fixed
+  /// ellipse, and the cross-section is a circular lens (`RegionPlot3D`)
+  /// rather than a hand-built polygon.
+  ///
+  /// Two things are worth pinning down. First, `First[RegionPlot3D[…]]`
+  /// must hand back the surface as a `GraphicsComplex` the way
+  /// `First[RevolutionPlot3D[…]]` already does — `RegionPlot3D` used to
+  /// keep no symbolic structure at all, so extracting its slice failed
+  /// before the widget ever got this far. Second, `{{sweep, 2 Pi,
+  /// "…"}, 2 Pi, 0.1}` is a reversed-direction slider (its first bound
+  /// exceeds its second) — the widget must still expose it as an ordinary
+  /// `min <= max` control.
+  #[test]
+  fn demonstration_open_band_ring_manipulate_closes_both_ends() {
+    let code = "Manipulate[\
+      Module[{outer, inner, cap, crescent, endB, core}, \
+        outer = First[RevolutionPlot3D[{radius + Sin[t], 0, Cos[t]}, \
+          {t, cut, Pi - cut}, {phi, 0, sweep}, Mesh -> None]]; \
+        inner = First[RevolutionPlot3D[{radius + Sin[cut], 0, t}, \
+          {t, -Cos[cut], Cos[cut]}, {phi, 0, sweep}, Mesh -> None, \
+          BoundaryStyle -> Black]]; \
+        cap = First[ParametricPlot3D[\
+          {radius + rad Sin[t] + cut, 0, rad Cos[t]}, \
+          {t, 0, Pi}, {rad, 0, 1}, Mesh -> None]]; \
+        crescent = Translate[First[RegionPlot3D[u^2 + w^2 < 1, \
+          {u, Sin[cut], 1}, {v, 0, 0.001}, {w, -1, 1}, Mesh -> None]], \
+          {radius, 0, 0}]; \
+        endB = Rotate[crescent, sweep, {0, 0, 1}]; \
+        core = {CapForm[None], \
+          Tube[{{0, 0, -2}, {0, 0, 2}}, radius + Sin[cut]]}; \
+        Graphics3D[{If[showCore, core, {}], crescent, endB, outer, inner, \
+          cap}, \
+          ViewPoint -> {2, -2, 3}, Boxed -> False, SphericalRegion -> True, \
+          ViewAngle -> 0.3, ImageSize -> 300, \
+          PlotRange -> {{-5, 5}, {-5, 5}, {-2, 2}}]\
+      ], \
+      {{radius, 3, \"band radius\"}, 0, 4}, \
+      {{cut, 0.2, \"cut angle\"}, -Pi/2, 1.5}, \
+      {{sweep, 2 Pi, \"sweep angle\"}, 2 Pi, 0.1}, \
+      {{showCore, False, \"core rod\"}, {True, False}}, \
+      TrackedSymbols -> True\
+    ]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the open-band ring Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(state.graphics_handle.is_some(), "the ring must render");
+
+    // The reversed-direction `sweep` slider still comes out `min <= max`.
+    match &state.controls[..] {
+      [
+        manipulate::ControlState::Continuous { name: n0, .. },
+        manipulate::ControlState::Continuous { name: n1, .. },
+        manipulate::ControlState::Continuous {
+          name: n2,
+          min: sweep_min,
+          max: sweep_max,
+          current: sweep_now,
+          ..
+        },
+        manipulate::ControlState::Discrete { name: n3, .. },
+      ] => {
+        assert_eq!(n0.as_str(), "radius");
+        assert_eq!(n1.as_str(), "cut");
+        assert_eq!(n2.as_str(), "sweep");
+        assert_eq!(n3.as_str(), "showCore");
+        assert!(sweep_min < sweep_max, "sweep must be normalized min <= max");
+        assert!((*sweep_now - 2.0 * std::f64::consts::PI).abs() < 1e-9);
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+
+    let render = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&w.body)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the ring must render")
+    };
+    let without_core = render(&state);
+
+    // Toggling the checkbox must add the Tube core to the picture.
+    match &mut state.controls[3] {
+      manipulate::ControlState::Discrete { current_index, .. } => {
+        *current_index = 0;
+      }
+      other => panic!("expected the core-rod checkbox, got {other:?}"),
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    let with_core = render(&state);
+    assert_ne!(
+      without_core, with_core,
+      "showing the core rod must change the rendered picture"
+    );
+
+    // Narrowing the sweep angle must also change the picture (it shrinks
+    // how much of the band the two `RevolutionPlot3D` walls cover, and
+    // moves `endB`, the `Rotate`d `RegionPlot3D` cap, to match).
+    match &mut state.controls[2] {
+      manipulate::ControlState::Continuous { current, .. } => {
+        *current = std::f64::consts::PI;
+      }
+      other => panic!("expected the sweep slider, got {other:?}"),
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    let half_swept = render(&state);
+    assert_ne!(
+      with_core, half_swept,
+      "narrowing the sweep angle must change the rendered picture"
+    );
+  }
 }
