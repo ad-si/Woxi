@@ -1361,6 +1361,69 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_tableform_of_non_list_passes_through_to_wrapped_content() {
+    // `TableForm[expr]` for a non-list `expr` is a pass-through in Wolfram:
+    // expr displays exactly as it would on its own. A Manipulate body that
+    // keeps whichever "screen" is on display in one variable and always
+    // renders it `TableForm[display, …]` relies on this — most screens
+    // (a title card, a caption panel, …) are plain layout constructs, not
+    // tabular data, and only look right if TableForm just shows them
+    // untouched. Regression: `tableform_grid_args` returns `None` for
+    // non-list data (as designed — there's no grid to build), but the
+    // caller treated that the same as "nothing rendered" and fell back to
+    // the raw, unevaluated `TableForm[Framed[…], …]` source text instead of
+    // rendering the wrapped `Framed[…]` picture.
+    clear_state();
+    let r = interpret_with_stdout(
+      "TableForm[Framed[Pane[Text[Style[\"hi\", 24]]]], TableAlignments -> Center]",
+    )
+    .unwrap();
+    let svg = r
+      .graphics
+      .expect("TableForm of a non-list Framed picture should still render");
+    assert!(
+      svg.contains(">hi<"),
+      "the wrapped Framed/Pane/Text content must render:\n{svg}"
+    );
+    assert!(
+      !svg.contains("TableForm["),
+      "must not fall back to the raw TableForm[…] source text:\n{svg}"
+    );
+    assert!(
+      !svg.contains("Framed["),
+      "must not fall back to the raw Framed[…] source text either:\n{svg}"
+    );
+  }
+
+  #[test]
+  fn test_bare_button_in_column_renders_as_plate_not_source_text() {
+    // A bare `Button[label, action]` drawn as a `Column`/`Row`/`Grid`/
+    // `TableForm` item (not wrapped in `Inset[…]`, which already drew it as
+    // a plate) fell back to printing its literal, unevaluated
+    // `Button[100, Set[x, 1]]`-style source text instead of a button. A
+    // Demonstration's clickable grid built with `Table[Button[…], …]`
+    // relies on each generated cell drawing as a real button plate.
+    clear_state();
+    let r =
+      interpret_with_stdout("Column[{Button[100, x = 1], Button[200, x = 2]}]")
+        .unwrap();
+    let svg = r.graphics.expect("Column of Buttons should render");
+    assert!(
+      !svg.contains("Button["),
+      "must not fall back to raw Button[…] source text:\n{svg}"
+    );
+    assert!(
+      svg.contains(">100<") && svg.contains(">200<"),
+      "each button's label must appear on its plate:\n{svg}"
+    );
+    // The plate itself: a rounded rectangle behind the label.
+    assert!(
+      svg.matches("<rect").count() >= 2,
+      "each button must draw as a plate (a <rect>), one per button:\n{svg}"
+    );
+  }
+
+  #[test]
   fn test_tableform_decimal_alignment_lines_up_dots() {
     // `TableAlignments -> "."` must line up the numbers on their decimal
     // point. Each cell is start-anchored in the SVG, so the dot's x-position
@@ -3068,6 +3131,45 @@ mod interpreter_tests {
     assert!(
       text_svg.contains(">t<"),
       "the plain-text FrameLabel must still render as text: {text_svg}"
+    );
+  }
+
+  #[test]
+  fn test_frame_label_power_renders_as_unicode_superscript() {
+    // A `FrameLabel`/`AxesLabel` entry built from `base^exp` (a Demonstration
+    // typesets `e^(iΩ)` as `Style["e", Italic]^Row[{Style["i", Italic],
+    // "Ω"}]`) used to vanish entirely: `expr_to_label` had no arm for
+    // `Expr::BinaryOp { op: Power, .. }`, so a bare Power entry returned
+    // `None` outright, and a Power nested inside a `Row[…]` was silently
+    // skipped by the row's `filter_map` while the rest of the row's text
+    // stayed — e.g. `"H(", base^exp, ")"` rendered as `"H()"`.
+    clear_state();
+
+    // A bare Power FrameLabel entry.
+    let svg = interpret(
+      "ExportString[Plot[Sin[x], {x, 0, 2 Pi}, Frame -> True, \
+         FrameLabel -> {\"t\", x^2}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      svg.contains("x²"),
+      "a bare Power FrameLabel entry must render as a Unicode superscript, \
+       not vanish: {svg}"
+    );
+
+    // A Power nested inside a Row alongside other text, the way a
+    // Demonstration typesets a styled base raised to a styled exponent.
+    clear_state();
+    let svg2 = interpret(
+      "ExportString[Plot[Sin[x], {x, 0, 2 Pi}, Frame -> True, \
+         FrameLabel -> Row[{\"H(\", Style[\"e\", Italic]^Row[{\
+         Style[\"i\", Italic], \"t\"}], \")\"}]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      svg2.contains("H(eit)"),
+      "a Power nested in a Row must render alongside the row's other text, \
+       not leave a gap: {svg2}"
     );
   }
 

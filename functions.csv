@@ -912,7 +912,7 @@ IntegerPartitions,Returns the integer partitions of n optionally constrained by 
 MinMax,Returns the minimum and maximum of a list an association values or an interval,✅,pure,10.1,885
 MachinePrecision,Machine-precision number (~15.95 digits),✅,pure,5.0,886
 AbsoluteOptions,,🚫,,4.0,888
-GraphLayout,,🚫,,8.0,888
+GraphLayout,Option specifying the layout used to position graph vertices,✅,none,8.0,888
 Names,Lists symbol names matching a string pattern whose context part selects the context,✅,pure,1.0,889
 RotateLabel,,🚫,,2.0,890
 TimeZone,,🚫,,2.0,892
@@ -2173,7 +2173,7 @@ MAProcess,Represents a moving-average time series process,🚫,None,9.0,2181
 QRDecomposition,Computes the QR decomposition of a matrix,✅,None,2.0,2181
 QuantityArray,Represents an array of quantities with units,🚫,None,10.1,2184
 SetStreamPosition,Sets the current position in an open stream,✅,io,2.0,2184
-VertexShape,Option specifying the shape used to render graph vertices,🚫,None,8.0,2184
+VertexShape,Option specifying the shape used to render graph vertices,✅,none,8.0,2184
 DawsonF,Returns the Dawson integral exp(-x^2) times integral of exp(t^2),✅,pure,7.0,2187
 FromPolarCoordinates,Converts polar coordinates to Cartesian,✅,None,10.1,2187
 GeneralizedLinearModelFit,Fits a generalized linear model to data,🚫,None,7.0,2187

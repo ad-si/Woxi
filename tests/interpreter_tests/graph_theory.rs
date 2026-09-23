@@ -1210,6 +1210,133 @@ mod graph_rendering {
   }
 
   #[test]
+  fn graph_internal_edge_encoding_undirected_side() {
+    // A `Graph` restored via `Uncompress[Compress[…]]` (a Demonstration
+    // embedding a pre-built graph) encodes its edges as
+    // `{directedPairs, undirectedPairs}` — 1-based index pairs into the
+    // vertex list, `Null` for whichever side is empty — rather than the
+    // public `UndirectedEdge`/`DirectedEdge` list a typed `Graph[…]` call
+    // uses. This must normalize to real edges instead of rendering three
+    // disconnected vertices.
+    let result = interpret(
+      "ExportString[Graph[{1, 2, 3}, {Null, {{1, 2}, {2, 3}}}], \"SVG\"]",
+    )
+    .unwrap();
+    assert_eq!(result.matches("<ellipse").count(), 3);
+    assert_eq!(result.matches("<polyline").count(), 2);
+    // Undirected: no arrowhead polygons.
+    assert_eq!(result.matches("<polygon").count(), 0);
+  }
+
+  #[test]
+  fn graph_internal_edge_encoding_directed_side() {
+    let result = interpret(
+      "ExportString[Graph[{1, 2, 3}, {{{1, 2}, {2, 3}}, Null}], \"SVG\"]",
+    )
+    .unwrap();
+    assert_eq!(result.matches("<ellipse").count(), 3);
+    // Directed: one arrowhead polygon per edge.
+    assert_eq!(result.matches("<polygon").count(), 2);
+  }
+
+  #[test]
+  fn graph_vertex_coordinates_normalizes_arbitrary_scale() {
+    // `VertexCoordinates` restored from a Demonstration's stored data can
+    // use any unit (sequence positions 1..118, say) — it must be rescaled
+    // to the layout heuristics' usual ~2-unit-wide extent rather than
+    // shrinking every vertex to an invisible dot at that scale.
+    let result = interpret(
+      "ExportString[Graph[{1, 2, 3}, {1 <-> 2, 2 <-> 3}, VertexCoordinates -> {{0, 0}, {50, 0}, {100, 0}}], \"SVG\"]"
+    ).unwrap();
+    let cx_values: Vec<f64> = result
+      .split("cx=\"")
+      .skip(1)
+      .filter_map(|s| s.split('"').next())
+      .filter_map(|s| s.parse().ok())
+      .collect();
+    assert_eq!(cx_values.len(), 3);
+    let spread = cx_values.iter().copied().fold(f64::MIN, f64::max)
+      - cx_values.iter().copied().fold(f64::MAX, f64::min);
+    assert!(
+      spread > 100.0,
+      "expected vertices spread across the canvas, got cx values: {cx_values:?}"
+    );
+  }
+
+  #[test]
+  fn graph_linear_embedding_draws_arcs_not_straight_lines() {
+    // `GraphLayout -> "LinearEmbedding"` places vertices on a line and
+    // draws every edge as a semicircular arc above it (Mathematica's
+    // standard way to lay out, e.g., an RNA sequence's base-pairing graph)
+    // rather than a straight chord.
+    let result = interpret(
+      "ExportString[Graph[{1, 2}, {1 <-> 2}, GraphLayout -> \"LinearEmbedding\"], \"SVG\"]"
+    ).unwrap();
+    let points_attr = result
+      .split("points=\"")
+      .nth(1)
+      .and_then(|s| s.split('"').next())
+      .expect("edge should render as a polyline");
+    let point_count = points_attr.split_whitespace().count();
+    assert!(
+      point_count > 2,
+      "LinearEmbedding edge should render as a curved arc (many points), got {point_count} points: {points_attr}"
+    );
+  }
+
+  #[test]
+  fn graph_linear_embedding_dense_vertices_do_not_overlap() {
+    // A dense `LinearEmbedding` (many vertices sharing a line, as an RNA
+    // sequence's positions do) must not let the vertex radius exceed half
+    // the spacing between neighbors — otherwise adjacent dots coalesce
+    // into a solid bar instead of staying individually visible.
+    let result = interpret(
+      "ExportString[Graph[Range[20], Table[i <-> (i + 1), {i, 19}], GraphLayout -> \"LinearEmbedding\"], \"SVG\"]"
+    ).unwrap();
+    let cx_values: Vec<f64> = result
+      .split("cx=\"")
+      .skip(1)
+      .filter_map(|s| s.split('"').next())
+      .filter_map(|s| s.parse().ok())
+      .collect();
+    assert_eq!(cx_values.len(), 20);
+    let rx: f64 = result
+      .split("rx=\"")
+      .nth(1)
+      .and_then(|s| s.split('"').next())
+      .unwrap()
+      .parse()
+      .unwrap();
+    let mut sorted = cx_values.clone();
+    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let min_gap = sorted
+      .windows(2)
+      .map(|w| w[1] - w[0])
+      .fold(f64::INFINITY, f64::min);
+    assert!(
+      rx * 2.0 < min_gap,
+      "vertices should not overlap: rx={rx}, min_gap={min_gap}"
+    );
+  }
+
+  #[test]
+  fn graph_vertex_shape_insets_nested_graph() {
+    // `VertexShape -> {v -> graphic, …}` replaces a vertex's default disk
+    // with a rendered picture — e.g. a Demonstration nesting one small
+    // `Graph[…]` inside each node of a larger one.
+    let result = interpret(
+      "ExportString[Graph[{1, 2}, {1 <-> 2}, VertexShape -> {1 -> Graph[{10, 20}, {10 <-> 20}]}], \"SVG\"]"
+    ).unwrap();
+    // Vertex 1 draws the nested graph's own two vertices instead of a
+    // single default disk; vertex 2 keeps its default disk.
+    assert_eq!(
+      result.matches("<ellipse").count(),
+      3,
+      "expected vertex 1's nested graph (2 vertices) plus vertex 2's default disk: {result}"
+    );
+  }
+
+  #[test]
   fn graph_with_per_vertex_style_color() {
     // Style[3, Red] inside the vertex list should color that vertex red
     // without losing the edges that reference `3`.
