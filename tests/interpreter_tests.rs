@@ -741,7 +741,22 @@ mod interpreter_tests {
     // to parse.
     clear_state();
     assert_eq!(interpret("Head[\\[FormalX]]").unwrap(), "Symbol");
-    assert_eq!(interpret("\\[FormalX] = 3; \\[FormalX] + 1").unwrap(), "4");
+    // Formal symbols are `Protected` `System`` symbols, so assigning to one
+    // fails with `Set::wrsym` and the symbol stays symbolic.
+    assert_eq!(
+      interpret("\\[FormalX] = 3; \\[FormalX] + 1").unwrap(),
+      "1 + \u{F817}"
+    );
+    assert_eq!(
+      interpret("{Attributes[\\[FormalX]], Context[\\[FormalScriptA]]}")
+        .unwrap(),
+      "{{Protected}, System`}"
+    );
+    // Scoping constructs still bind them.
+    assert_eq!(
+      interpret("Block[{\\[FormalX] = 2}, \\[FormalX]]").unwrap(),
+      "2"
+    );
     clear_state();
     // The exact shape the notebook uses: a pure function prepending a
     // generic-named pair ahead of `#`, with no pattern variable involved.
