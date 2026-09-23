@@ -910,7 +910,7 @@ pub(crate) fn expr_to_f64(expr: &Expr) -> Option<f64> {
   try_eval_to_f64(expr)
 }
 
-fn expr_to_point(expr: &Expr) -> Option<(f64, f64)> {
+pub(crate) fn expr_to_point(expr: &Expr) -> Option<(f64, f64)> {
   if let Expr::List(items) = expr
     && items.len() == 2
   {
@@ -7636,7 +7636,12 @@ pub fn splice_option_lists(args: &[Expr]) -> Vec<Expr> {
         if i > 0
           && !items.is_empty()
           && items.iter().all(|item| {
-            matches!(item, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+            // A rule restored via `Uncompress` reconstructs as a plain
+            // `Rule[pattern, replacement]` `FunctionCall`, not the
+            // dedicated `Expr::Rule`/`Expr::RuleDelayed` the parser
+            // produces for literal `->`/`:>` syntax — matched uniformly
+            // by the shared `as_rule`.
+            crate::evaluator::dispatch::list_operations::as_rule(item).is_some()
           }) =>
       {
         out.extend(items.iter().cloned());
