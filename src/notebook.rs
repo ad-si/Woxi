@@ -954,7 +954,24 @@ fn extract_typeset_box(s: &str) -> Option<String> {
       // carries removed, since that only records how the boxes were laid
       // out.
       "InterpretationBox" if args.len() >= 2 => {
-        strip_display_form_wrapper(&conv(&args[1]))
+        let raw_meaning = args[1].trim();
+        // `value` is written as ordinary source (not a box row), so a bare
+        // string here is already a String *literal* — e.g. a large
+        // `Compress`ed blob the FrontEnd iconizes for display but stores
+        // faithfully as `drawfig = "1:eJzs…"`. `extract_cell_content`'s
+        // usual handling of a top-level quoted string is for *display*
+        // text (`Cell["…", "Text"]`) and strips the quotes; doing that here
+        // would turn the string into a bareword identifier and make the
+        // cell fail to parse.
+        if raw_meaning.starts_with('"')
+          && raw_meaning.ends_with('"')
+          && raw_meaning.len() >= 2
+        {
+          let inner = &raw_meaning[1..raw_meaning.len() - 1];
+          format!("\"{}\"", escape_string(&unescape_string(inner)))
+        } else {
+          strip_display_form_wrapper(&conv(&args[1]))
+        }
       }
       // `CheckboxBox[value, {off, on}]` (Demonstrations metadata cells) —
       // render a checkbox glyph, labelled with the `on` alternative when
@@ -6802,6 +6819,32 @@ Cell[BoxData[
     match &parsed.cells[0] {
       CellEntry::Single(cell) => {
         assert_eq!(cell.content, "Quantity[3, \"Meters\"]");
+      }
+      CellEntry::Group(_) => panic!("Expected single cell"),
+    }
+  }
+
+  /// A large `Compress`ed string the FrontEnd iconizes for display (shown
+  /// as a "String length: … / Byte count: …" placeholder box) is still
+  /// stored faithfully as the `InterpretationBox`'s meaning. Since that
+  /// meaning is written as ordinary source rather than a box row, the bare
+  /// string must round-trip as a quoted literal — the Demonstrations
+  /// Project's `SaveDefinitions->True` Manipulates commonly hide their data
+  /// this way (`drawfig = "1:eJzs…"`, later read back with
+  /// `Uncompress[drawfig]`).
+  #[test]
+  fn test_interpretation_box_string_meaning_keeps_quotes() {
+    let nb = r#"Notebook[{
+Cell[BoxData[
+ RowBox[{"drawfig", "=", " ",
+  InterpretationBox[
+   DynamicModuleBox[{Typeset`open = False}, "placeholder"],
+   "1:eJzsdata=="]}]], "Input"]
+}]"#;
+    let parsed = parse_notebook(nb).unwrap();
+    match &parsed.cells[0] {
+      CellEntry::Single(cell) => {
+        assert_eq!(cell.content, "drawfig= \"1:eJzsdata==\"");
       }
       CellEntry::Group(_) => panic!("Expected single cell"),
     }

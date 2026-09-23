@@ -1,5 +1,7 @@
 use super::*;
-use crate::functions::graphics::{Color, graphics_ast, parse_color};
+use crate::functions::graphics::{
+  Color, expr_to_point, graphics_ast, parse_color, splice_option_lists,
+};
 use petgraph::graph::{DiGraph, NodeIndex, UnGraph};
 use petgraph::visit::EdgeRef;
 use std::collections::HashMap;
@@ -187,9 +189,78 @@ fn build_render_graph(
   (graph, index_map)
 }
 
+/// Mathematica's internal `Graph[…]` representation — the form a graph
+/// restores to from `Uncompress[Compress[graph]]`, as opposed to the public
+/// `Graph[verts, {UndirectedEdge[…] | DirectedEdge[…], …}, opts]` a user
+/// types — stores its edges as `{directedPairs, undirectedPairs}`, each
+/// side either a list of 1-based index pairs into `verts` or `Null` when
+/// that side is empty. `raw_edges` is `args[1]`'s items; `None` when they
+/// don't match this shape (an ordinary edge-object list already parses
+/// fine as-is).
+fn normalize_internal_edge_list(
+  vertices: &[Expr],
+  raw_edges: &[Expr],
+) -> Option<Vec<Expr>> {
+  let [directed_part, undirected_part] = raw_edges else {
+    return None;
+  };
+  let mut edges = Vec::new();
+  push_internal_index_edges(directed_part, vertices, true, &mut edges)?;
+  push_internal_index_edges(undirected_part, vertices, false, &mut edges)?;
+  if edges.is_empty() { None } else { Some(edges) }
+}
+
+/// One side of the internal edge encoding `normalize_internal_edge_list`
+/// reads: `Null` (no edges of this kind) or a list of 1-based `{i, j}`
+/// index pairs into `vertices`, appended to `out` as `DirectedEdge`/
+/// `UndirectedEdge` objects. `None` if `part` is neither — the caller then
+/// knows this isn't the internal encoding at all.
+fn push_internal_index_edges(
+  part: &Expr,
+  vertices: &[Expr],
+  directed: bool,
+  out: &mut Vec<Expr>,
+) -> Option<()> {
+  match part {
+    Expr::Identifier(s) if s == "Null" => Some(()),
+    Expr::List(pairs) => {
+      for pair in pairs {
+        let Expr::List(ij) = pair else {
+          return None;
+        };
+        let [Expr::Integer(i), Expr::Integer(j)] = ij.as_slice() else {
+          return None;
+        };
+        let (i, j) = (*i as usize, *j as usize);
+        if i == 0 || j == 0 || i > vertices.len() || j > vertices.len() {
+          return None;
+        }
+        let head = if directed {
+          "DirectedEdge"
+        } else {
+          "UndirectedEdge"
+        };
+        out.push(call(
+          head,
+          vec![vertices[i - 1].clone(), vertices[j - 1].clone()],
+        ));
+      }
+      Some(())
+    }
+    _ => None,
+  }
+}
+
 /// Render a Graph[{vertices}, {edges}, options...] expression to SVG
 /// via the Graphics pipeline, using petgraph as the underlying data structure.
 pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // A `Graph` restored via `Uncompress[Compress[…]]` packs every option
+  // into one trailing list argument (`Graph[verts, edges, {opt1, opt2,
+  // …}]`) instead of the public constructor's variadic trailing rules
+  // (`Graph[verts, edges, opt1, opt2, …]`) — split it back out first so
+  // the options loop below (which walks `args[2..]` as one rule per
+  // argument) sees them.
+  let args = &splice_option_lists(args)[..];
   if args.len() < 2 {
     return Ok(unevaluated("Graph", args));
   }
@@ -207,6 +278,14 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(unevaluated("Graph", args));
     }
   };
+  // A `Graph` restored via `Uncompress[Compress[…]]` keeps Mathematica's
+  // internal edge encoding rather than the public `UndirectedEdge`/
+  // `DirectedEdge` list — normalize it to the latter before anything below
+  // (which only ever looks for edge objects) sees it.
+  let raw_edges: crate::ExprList =
+    normalize_internal_edge_list(&vertices, &raw_edges)
+      .map(Into::into)
+      .unwrap_or(raw_edges);
 
   let n = vertices.len();
   if n == 0 {
@@ -229,6 +308,12 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut edge_shape_rules: Vec<(Expr, EdgeShape)> = Vec::new();
   let mut vertex_labels = false;
   let mut vertex_shape: Option<String> = None;
+  // `VertexShape -> {v -> graphic, …}` (plus an optional bare default
+  // applying to every vertex the list doesn't name) replaces a vertex's
+  // default disk marker with an arbitrary picture — e.g. a Demonstration
+  // that nests one small `Graph[…]` inside each node of a larger one.
+  let mut vertex_shape_default: Option<Expr> = None;
+  let mut vertex_shape_rules: Vec<(Expr, Expr)> = Vec::new();
   // `VertexRenderingFunction -> f` hands the drawing of each vertex to
   // `f`, applied as `f[{x, y}, name]`.
   let mut vertex_render: Option<VertexRender> = None;
@@ -238,15 +323,27 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `GraphLayout -> "CircularEmbedding"` puts every vertex on one circle,
   // also for graphs that fall apart into several components.
   let mut circular = false;
+  // `GraphLayout -> "LinearEmbedding"` puts every vertex on one line
+  // (evenly spaced, or at `VertexCoordinates`'s x's when given) and draws
+  // every edge as a semicircular arc above it — Mathematica's standard way
+  // to lay out a graph whose vertices have a natural linear order (e.g. an
+  // RNA sequence's positions), so edges between non-neighbors don't have
+  // to cross the line.
+  let mut linear = false;
+  // `VertexCoordinates -> {{x, y}, …}`, one pair per vertex in order,
+  // fixes the layout outright instead of computing one.
+  let mut explicit_coordinates: Option<Vec<(f64, f64)>> = None;
   let mut draw_directed = true;
   let mut image_size: Option<Expr> = None;
 
   for opt in options {
-    if let Expr::Rule {
-      pattern,
-      replacement,
-    } = opt
-      && let Expr::Identifier(oname) = pattern.as_ref()
+    // A rule restored via `Uncompress` reconstructs as a plain
+    // `Rule[pattern, replacement]` `FunctionCall`, not the dedicated
+    // `Expr::Rule` the parser produces for literal `->` syntax — matched
+    // uniformly by the shared `as_rule`.
+    if let Some((pattern, replacement)) =
+      crate::evaluator::dispatch::list_operations::as_rule(opt)
+      && let Expr::Identifier(oname) = pattern
     {
       match oname.as_str() {
         "VertexStyle" => {
@@ -264,19 +361,24 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
         "VertexLabels" => {
-          if let Expr::String(s) = replacement.as_ref()
+          if let Expr::String(s) = replacement
             && s == "Name"
           {
             vertex_labels = true;
           }
         }
         "VertexShapeFunction" => {
-          if let Expr::String(s) = replacement.as_ref() {
+          if let Expr::String(s) = replacement {
             vertex_shape = Some(s.clone());
           }
         }
+        "VertexShape" => {
+          let (rules, directives) = split_style_rules(replacement);
+          vertex_shape_rules = rules;
+          vertex_shape_default = directives.into_iter().next();
+        }
         "VertexRenderingFunction" => {
-          vertex_render = Some(match replacement.as_ref() {
+          vertex_render = Some(match replacement {
             Expr::Identifier(s) if s == "None" => VertexRender::Hidden,
             other => VertexRender::Func(other.clone()),
           });
@@ -286,7 +388,7 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           // {Tiny, Small, Medium, Large} produces a visibly increasing
           // sequence of vertex sizes. Tiny is kept at the historical 0.5
           // so existing "barely-a-dot" renderings are preserved.
-          vertex_size_scale = match replacement.as_ref() {
+          vertex_size_scale = match replacement {
             Expr::Identifier(s) => match s.as_str() {
               "Tiny" => 0.6,
               "Small" => 1.2,
@@ -302,11 +404,11 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           // Ignore PlotLabel -> None / PlotLabel -> Null so that defaults
           // don't accidentally render an empty label.
           let is_none = matches!(
-            replacement.as_ref(),
+            replacement,
             Expr::Identifier(s) if s == "None" || s == "Null"
           );
           if !is_none {
-            plot_label = Some((**replacement).clone());
+            plot_label = Some(replacement.clone());
           }
         }
         // `GraphLayout -> "LayeredDigraphEmbedding"` (optionally with an
@@ -316,6 +418,18 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "GraphLayout" => {
           layered = parse_layered_layout(replacement);
           circular = layered.is_none() && layout_is_circular(replacement);
+          linear = layered.is_none() && layout_is_linear(replacement);
+        }
+        "VertexCoordinates" => {
+          if let Expr::List(items) = replacement {
+            let pts: Option<Vec<(f64, f64)>> =
+              items.iter().map(expr_to_point).collect();
+            if let Some(pts) = pts
+              && pts.len() == n
+            {
+              explicit_coordinates = Some(pts);
+            }
+          }
         }
         // `EdgeShapeFunction -> f` hands the drawing of each edge to `f`,
         // which is applied as `f[{pt, …}, edge]` and returns the graphics
@@ -333,13 +447,12 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // plain lines rather than arrows. The underlying edges keep their
         // direction, which is what the layering reads.
         "DirectedEdges" => {
-          if matches!(replacement.as_ref(), Expr::Identifier(s) if s == "False")
-          {
+          if matches!(replacement, Expr::Identifier(s) if s == "False") {
             draw_directed = false;
           }
         }
         "ImageSize" => {
-          image_size = Some((**replacement).clone());
+          image_size = Some(replacement.clone());
         }
         _ => {}
       }
@@ -374,10 +487,15 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // circular embedding, and for multi-component graphs each component is
   // laid out independently (force-directed when large enough) and the
   // components are packed into a grid so clusters are visible.
-  let positions: Vec<(f64, f64)> = match layered {
-    Some(dir) => layered_layout(&graph, dir),
-    None if circular && n > 2 => circular_layout(n),
-    None => compute_layout(&graph),
+  let positions: Vec<(f64, f64)> = if let Some(pts) = explicit_coordinates {
+    normalize_explicit_positions(pts)
+  } else {
+    match layered {
+      Some(dir) => layered_layout(&graph, dir),
+      None if circular && n > 2 => circular_layout(n),
+      None if linear && n > 1 => linear_layout(n),
+      None => compute_layout(&graph),
+    }
   };
 
   // Compute base radius for vertices. Kept deliberately small so labels
@@ -395,7 +513,13 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .map(move |&(x2, y2)| ((x2 - x1).powi(2) + (y2 - y1).powi(2)).sqrt())
       })
       .fold(f64::INFINITY, f64::min);
-    (min_dist * 0.08).clamp(0.018, 0.06)
+    // The lower bound keeps a small graph's vertices from shrinking to
+    // invisible dots, but a very dense layout (e.g. a `LinearEmbedding`
+    // over 100+ positions) packs vertices closer together than that floor
+    // allows — capping the floor itself at a fraction of `min_dist` keeps
+    // neighboring vertices from coalescing into a solid bar there.
+    let min_radius = 0.018_f64.min(min_dist * 0.3);
+    (min_dist * 0.08).clamp(min_radius, 0.06)
   };
   let vertex_radius = base_radius * vertex_size_scale;
 
@@ -521,16 +645,31 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let cdx = hx - lx;
       let cdy = hy - ly;
       let clen = (cdx * cdx + cdy * cdy).sqrt().max(1e-9);
-      let perp_x = -cdy / clen;
-      let perp_y = cdx / clen;
+      let (perp_x, perp_y) = {
+        let (px, py) = (-cdy / clen, cdx / clen);
+        // `GraphLayout -> "LinearEmbedding"` always bulges upward — the
+        // point of the layout is that every edge arcs to the same side of
+        // the line the vertices sit on, regardless of which way each edge
+        // happens to be listed — so the two perpendiculars are canonicalized
+        // to the one with the non-negative y-component here.
+        if linear && py < 0.0 {
+          (-px, -py)
+        } else {
+          (px, py)
+        }
+      };
 
       // Offset index centered around 0. With total=2 we get [-0.5, +0.5];
       // with total=3 we get [-1, 0, +1]; etc.
       let offset_idx = k_in_group as f64 - (total as f64 - 1.0) / 2.0;
       let spacing = vertex_radius * 1.4;
-      let offset_mag = offset_idx * spacing;
+      // A `LinearEmbedding` edge always arcs, with a height proportional to
+      // how far apart its endpoints are (so a long-range pairing nests
+      // visibly outside the shorter arcs it encloses) rather than the small
+      // fixed spacing used to separate ordinary parallel edges.
+      let offset_mag = if linear { clen } else { offset_idx * spacing };
 
-      if total == 1 || offset_mag.abs() < 1e-9 {
+      if !linear && (total == 1 || offset_mag.abs() < 1e-9) {
         // Straight edge — unchanged behavior.
         let dx = x2 - x1;
         let dy = y2 - y1;
@@ -708,6 +847,20 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
       None => {}
+    }
+
+    // `VertexShape` replaces the default disk with a rendered picture
+    // (typically a nested `Graph[…]`) inset at the vertex's position.
+    let shape = vertex_shape_rules
+      .iter()
+      .find(|(target, _)| vertex_matches_rule(&vertices[i], target))
+      .map(|(_, s)| s.clone())
+      .or_else(|| vertex_shape_default.clone());
+    if let Some(shape) = shape
+      && let Some(inset) = vertex_shape_inset(&shape, x, y, vertex_radius)
+    {
+      primitives.push(inset);
+      continue;
     }
 
     // Emit this vertex's fill color: per-vertex Style[] override wins over
@@ -946,6 +1099,16 @@ fn layout_is_circular(value: &Expr) -> bool {
   }
 }
 
+/// `GraphLayout -> "LinearEmbedding"` (see [`layout_is_circular`] for the
+/// accepted shapes).
+fn layout_is_linear(value: &Expr) -> bool {
+  match value {
+    Expr::String(s) => s == "LinearEmbedding",
+    Expr::List(items) => items.iter().any(layout_is_linear),
+    _ => false,
+  }
+}
+
 /// How an edge is drawn, as `EdgeShapeFunction -> …` asks for it.
 #[derive(Clone, Debug)]
 enum EdgeShape {
@@ -1177,6 +1340,49 @@ fn circular_layout(n: usize) -> Vec<(f64, f64)> {
       let angle = PI / 2.0 + (k as f64) * 2.0 * PI / (n as f64);
       (snap_coord(angle.cos()), snap_coord(angle.sin()))
     })
+    .collect()
+}
+
+/// `GraphLayout -> "LinearEmbedding"`: vertices evenly spaced on a line,
+/// spanning the same `[-1, 1]` extent `circular_layout` uses so the two
+/// layouts scale consistently against `vertex_radius`.
+fn linear_layout(n: usize) -> Vec<(f64, f64)> {
+  if n <= 1 {
+    return vec![(0.0, 0.0); n];
+  }
+  (0..n)
+    .map(|k| (-1.0 + 2.0 * k as f64 / (n - 1) as f64, 0.0))
+    .collect()
+}
+
+/// Rescale explicit `VertexCoordinates` — which can be given in any unit
+/// (a Demonstration's sequence positions commonly run `1..118`, say) — to
+/// the same rough diameter-2 extent the auto layouts already produce, so
+/// the vertex-size and plot-range heuristics tuned for that scale still
+/// give a sensibly-proportioned picture.
+fn normalize_explicit_positions(pts: Vec<(f64, f64)>) -> Vec<(f64, f64)> {
+  let (mut x_min, mut x_max, mut y_min, mut y_max) = (
+    f64::INFINITY,
+    f64::NEG_INFINITY,
+    f64::INFINITY,
+    f64::NEG_INFINITY,
+  );
+  for &(x, y) in &pts {
+    x_min = x_min.min(x);
+    x_max = x_max.max(x);
+    y_min = y_min.min(y);
+    y_max = y_max.max(y);
+  }
+  let extent = (x_max - x_min).max(y_max - y_min);
+  if !extent.is_finite() || extent <= 0.0 {
+    return pts;
+  }
+  let scale = 2.0 / extent;
+  let cx = f64::midpoint(x_min, x_max);
+  let cy = f64::midpoint(y_min, y_max);
+  pts
+    .into_iter()
+    .map(|(x, y)| ((x - cx) * scale, (y - cy) * scale))
     .collect()
 }
 
@@ -1478,6 +1684,56 @@ fn unwrap_vertex_style(mut expr: &Expr) -> (&Expr, Option<Color>) {
     }
   }
   (expr, color)
+}
+
+/// Render a `VertexShape -> …` value — typically a nested `Graph[…]` or a
+/// `Graphics[…]` expression — to an `Inset[…]` primitive centered at the
+/// vertex's layout position. Evaluating it first (rather than nesting the
+/// raw expression inside `Inset` and letting the Graphics renderer resolve
+/// it later) is what lets a *held* value survive here: `VertexShape` is
+/// commonly restored from a stored `Uncompress[…]` blob, whose nested
+/// `Graph[…]` calls are themselves unevaluated ASTs. `None` when the value
+/// doesn't evaluate to a picture, so the caller falls back to the default
+/// disk marker.
+fn vertex_shape_inset(
+  shape: &Expr,
+  x: f64,
+  y: f64,
+  radius: f64,
+) -> Option<Expr> {
+  let evaluated = crate::evaluator::evaluate_expr_to_expr(shape).ok()?;
+  // `Graph[…]`/`Graphics[…]` stay symbolic under ordinary evaluation (the
+  // same way a bare `Graph[…]` typed at top level does) — rendering them
+  // to a picture is a separate, explicit step, normally taken only for
+  // the outermost displayed expression. A shape nested inside another
+  // graph's `VertexShape` needs that same step taken here.
+  let rendered = match &evaluated {
+    Expr::Graphics { .. } => evaluated,
+    Expr::FunctionCall { name, args } if name == "Graph" && args.len() >= 2 => {
+      graph_ast(args).ok()?
+    }
+    Expr::FunctionCall { name, args } if name == "Graphics" => {
+      graphics_ast(args).ok()?
+    }
+    _ => return None,
+  };
+  if !matches!(rendered, Expr::Graphics { .. }) {
+    return None;
+  }
+  let evaluated = rendered;
+  // Large enough that a nested picture's own detail (an RNA arc diagram's
+  // nested arcs, say) stays legible, without one vertex's icon swallowing
+  // its neighbors in the outer layout.
+  let size = radius * 12.0;
+  Some(call(
+    "Inset",
+    vec![
+      evaluated,
+      Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()),
+      id_expr("Center"),
+      Expr::List(vec![Expr::Real(size), Expr::Real(size)].into()),
+    ],
+  ))
 }
 
 // ---------------------------------------------------------------------------
@@ -3067,12 +3323,15 @@ fn split_style_rules(expr: &Expr) -> (Vec<(Expr, Expr)>, Vec<Expr>) {
   let mut rules = Vec::new();
   let mut directives = Vec::new();
   for item in items {
-    match &item {
-      Expr::Rule {
-        pattern,
-        replacement,
-      } => rules.push(((**pattern).clone(), (**replacement).clone())),
-      other => directives.extend(collect_directives(other)),
+    // A rule restored via `Uncompress` reconstructs as a plain
+    // `Rule[pattern, replacement]` `FunctionCall`, not the dedicated
+    // `Expr::Rule` the parser produces for literal `->` syntax — matched
+    // uniformly by the shared `as_rule`.
+    match crate::evaluator::dispatch::list_operations::as_rule(&item) {
+      Some((pattern, replacement)) => {
+        rules.push((pattern.clone(), replacement.clone()));
+      }
+      None => directives.extend(collect_directives(&item)),
     }
   }
   (rules, directives)

@@ -1366,8 +1366,12 @@ fn tree_delete_at(tree: &Expr, path: &[i128]) -> Option<Expr> {
   ))
 }
 
-// Destructure a rule `lhs -> rhs` (or :>) into its two parts.
-fn as_rule(e: &Expr) -> Option<(&Expr, &Expr)> {
+// Destructure a rule `lhs -> rhs` (or :>) into its two parts. Also matches
+// `Rule`/`RuleDelayed` written as a plain `FunctionCall` — the shape
+// `Uncompress` reconstructs a stored rule as, rather than the dedicated
+// `Expr::Rule`/`Expr::RuleDelayed` variant the parser produces for literal
+// `->`/`:>` syntax.
+pub(crate) fn as_rule(e: &Expr) -> Option<(&Expr, &Expr)> {
   match e {
     Expr::Rule {
       pattern,
