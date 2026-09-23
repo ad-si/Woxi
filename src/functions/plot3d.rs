@@ -7812,9 +7812,21 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let ny = |j: usize| -> f64 { (j as f64 / n as f64) * 2.0 - 1.0 };
   let nz =
     |k: usize| -> f64 { (k as f64 / n as f64) * 2.0 * Z_SCALE - Z_SCALE };
+  // Data-space counterparts of `nx`/`ny`/`nz`, kept alongside the rendering
+  // scale so the surface's symbolic `structure` (see below) carries real
+  // `{x, y, z}` coordinates rather than the normalized render-space ones —
+  // the same convention `RevolutionPlot3D`'s structure follows, so
+  // `First[RegionPlot3D[…]]` can be `Translate`d/`Rotate`d and recombined
+  // with other data-space primitives.
+  let wx = |i: usize| -> f64 { x_min + i as f64 * x_step };
+  let wy = |j: usize| -> f64 { y_min + j as f64 * y_step };
+  let wz = |k: usize| -> f64 { z_min + k as f64 * z_step };
 
   let camera = Camera::default();
   let mut all_triangles: Vec<Triangle> = Vec::new();
+  // One world-space quad per face emitted below, mirrored 1:1 against the
+  // (normalized, screen-projected) triangles pushed into `all_triangles`.
+  let mut world_quads: Vec<[Point3D; 4]> = Vec::new();
 
   // Default surface color (Mathematica-like blue with opacity)
   let base_r = 0x5E_u8;
@@ -7950,6 +7962,84 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             )
           };
 
+          // The same face quad in data-space coordinates, for `structure`
+          // (see `world_quads` above) — built from `wx`/`wy`/`wz` the same
+          // way `v0..v3` above are built from `nx`/`ny`/`nz`.
+          let wcx = wx(i) + di as f64 * x_step * 0.5;
+          let wcy = wy(j) + dj as f64 * y_step * 0.5;
+          let wcz = wz(k) + dk as f64 * z_step * 0.5;
+          let (wsx, wsy, wsz) = (x_step * 0.5, y_step * 0.5, z_step * 0.5);
+          world_quads.push(if di != 0 {
+            [
+              Point3D {
+                x: wcx,
+                y: wcy - wsy,
+                z: wcz - wsz,
+              },
+              Point3D {
+                x: wcx,
+                y: wcy + wsy,
+                z: wcz - wsz,
+              },
+              Point3D {
+                x: wcx,
+                y: wcy + wsy,
+                z: wcz + wsz,
+              },
+              Point3D {
+                x: wcx,
+                y: wcy - wsy,
+                z: wcz + wsz,
+              },
+            ]
+          } else if dj != 0 {
+            [
+              Point3D {
+                x: wcx - wsx,
+                y: wcy,
+                z: wcz - wsz,
+              },
+              Point3D {
+                x: wcx + wsx,
+                y: wcy,
+                z: wcz - wsz,
+              },
+              Point3D {
+                x: wcx + wsx,
+                y: wcy,
+                z: wcz + wsz,
+              },
+              Point3D {
+                x: wcx - wsx,
+                y: wcy,
+                z: wcz + wsz,
+              },
+            ]
+          } else {
+            [
+              Point3D {
+                x: wcx - wsx,
+                y: wcy - wsy,
+                z: wcz,
+              },
+              Point3D {
+                x: wcx + wsx,
+                y: wcy - wsy,
+                z: wcz,
+              },
+              Point3D {
+                x: wcx + wsx,
+                y: wcy + wsy,
+                z: wcz,
+              },
+              Point3D {
+                x: wcx - wsx,
+                y: wcy + wsy,
+                z: wcz,
+              },
+            ]
+          });
+
           // Triangle 1: v0, v1, v2
           {
             let normal = triangle_normal(v0, v1, v2);
@@ -8028,7 +8118,41 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // A `PlotLabel` sets a title above the finished picture.
   let svg = with_plot_label(svg, args, svg_width, svg_height);
 
-  Ok(crate::graphics3d_result(svg))
+  // ── Symbolic structure: GraphicsComplex[points, {Polygon[quads]}] ──
+  // `First[RegionPlot3D[…]]` is the voxel surface itself, in data-space
+  // coordinates, mirroring `RevolutionPlot3D`'s structure — a Demonstration
+  // that builds a solid out of a `RegionPlot3D` face (e.g. `Translate`d and
+  // `Rotate`d to close off another surface) needs the same access.
+  let structure = {
+    let mut point_exprs: Vec<Expr> = Vec::with_capacity(world_quads.len() * 4);
+    let mut quads: Vec<Expr> = Vec::with_capacity(world_quads.len());
+    for quad in &world_quads {
+      let base = point_exprs.len() as i128;
+      point_exprs.extend(quad.iter().map(|p| {
+        Expr::List(
+          vec![Expr::Real(p.x), Expr::Real(p.y), Expr::Real(p.z)].into(),
+        )
+      }));
+      quads.push(Expr::List(
+        (1..=4)
+          .map(|off| Expr::Integer(base + off))
+          .collect::<Vec<_>>()
+          .into(),
+      ));
+    }
+    call1(
+      "Graphics3D",
+      call(
+        "GraphicsComplex",
+        vec![
+          Expr::List(point_exprs.into()),
+          Expr::List(vec![call1("Polygon", Expr::List(quads.into()))].into()),
+        ],
+      ),
+    )
+  };
+
+  Ok(crate::graphics3d_result_with_structure(svg, structure))
 }
 
 // ── ContourPlot3D implementation ─────────────────────────────────────
