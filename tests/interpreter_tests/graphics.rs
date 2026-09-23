@@ -29099,6 +29099,74 @@ mod graphics3d_painters_algorithm_face_subdivision {
       svg.matches("<polygon").count()
     );
   }
+
+  /// Regression, found by a Demonstration whose picture was built from
+  /// ~100 hair-thin `Cylinder` branches (radius 0.01, some over 100x
+  /// longer than their radius) fanning out from a common root: the raw
+  /// length/radius aspect target above drove nearly every one of them to
+  /// the unconditional 200-ring subdivision cap, tessellating a small
+  /// (450x340) picture into over half a million triangles. A crowd of
+  /// small, thin `Cylinder`s should throttle their longitudinal
+  /// subdivision once there are enough of them that each one only ever
+  /// covers a sliver of the final image — the depth-sorting seams the cap
+  /// guards against are imperceptible on an object that thin.
+  #[test]
+  fn many_thin_cylinders_throttle_their_subdivision() {
+    clear_state();
+    let count = |svg: &str| svg.matches("<polygon").count();
+
+    // A single hair-thin cylinder: with only one `Cylinder` in the scene,
+    // `cylinder_max_subdivisions`'s `cylinder_count <= 8` gate leaves the
+    // full length/radius subdivision budget untouched.
+    let lone =
+      export_svg("Graphics3D[{Cylinder[{{0, 0, 0}, {1, 0, 0}}, 0.01]}]");
+    let lone_count = count(&lone);
+
+    // The same cylinder, repeated at 20 different offsets. Every one is
+    // just as thin relative to the whole scene, but now there are enough
+    // of them to trip the throttle.
+    let many_code: String = (0..20)
+      .map(|i| format!("Cylinder[{{{{0, {i}, 0}}, {{1, {i}, 0}}}}, 0.01]"))
+      .collect::<Vec<_>>()
+      .join(", ");
+    let many = export_svg(&format!("Graphics3D[{{{many_code}}}]"));
+    let many_count = count(&many);
+
+    assert!(
+      many_count < lone_count * 20 / 2,
+      "20 hair-thin cylinders sharing a scene must tessellate to well \
+       under 20x a single one's (unthrottled) count once throttled: \
+       lone={lone_count} (x20 = {}), many={many_count}",
+      lone_count * 20
+    );
+  }
+
+  /// Boundary check for the throttle above: a handful of thin cylinders
+  /// (at or under the `cylinder_count <= 8` gate) must keep the exact
+  /// same subdivision as a single one, so small scenes are never
+  /// under-tessellated by this optimization.
+  #[test]
+  fn few_thin_cylinders_keep_full_subdivision() {
+    clear_state();
+    let count = |svg: &str| svg.matches("<polygon").count();
+    let lone =
+      export_svg("Graphics3D[{Cylinder[{{0, 0, 0}, {1, 0, 0}}, 0.01]}]");
+    let lone_count = count(&lone);
+
+    let few_code: String = (0..8)
+      .map(|i| format!("Cylinder[{{{{0, {i}, 0}}, {{1, {i}, 0}}}}, 0.01]"))
+      .collect::<Vec<_>>()
+      .join(", ");
+    let few = export_svg(&format!("Graphics3D[{{{few_code}}}]"));
+    let few_count = count(&few);
+
+    assert_eq!(
+      few_count,
+      lone_count * 8,
+      "8 or fewer thin cylinders must each keep the full subdivision \
+       budget, not the throttled one"
+    );
+  }
 }
 
 mod revolution_plot3d_part_extraction {
