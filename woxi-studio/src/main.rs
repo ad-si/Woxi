@@ -7086,6 +7086,80 @@ fn strip_svg_wrapper(svg: &str) -> &str {
 mod tests {
   use super::*;
 
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook ("Dawn Spaceflight")
+  /// whose `Manipulate` control-spec list carried a bare `Item["background"]`
+  /// between two control groups — a Demonstrations idiom for a section
+  /// subheading, stylistically consistent with the template's other
+  /// `Item[…]` uses, that displays as plain text with no frame (matching
+  /// `Style[…]`/`Text[…]`/a bare string used the same way). Regression:
+  /// `is_manipulate_annotation_head` recognized `Style`, `Text`, `Row` and
+  /// `Column` as static-heading heads but not `Item`, so the heading fell
+  /// through to the generic "extra display element" path instead — it
+  /// vanished from the control panel entirely (silently rendered into the
+  /// live-display area below the graphic, which nothing there ever draws
+  /// for a plain string) rather than appearing inline where the demonstration
+  /// placed it. This is a self-authored, construct-equivalent example
+  /// (invented control names and choices) — not the specific Demonstration's
+  /// code, data or wording, which is copyrighted.
+  #[test]
+  fn manipulate_bare_item_between_controls_becomes_inline_heading() {
+    let code = r#"Manipulate[
+      Row[{colorName, shape}],
+      {{colorName, Red, ""}, {Red -> "red", Blue -> "blue"}},
+      Delimiter,
+      Item["appearance"],
+      {{shape, Circle, ""}, {Circle -> "circle", Square -> "square"}}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      manipulate::ManipulateState::from_expr(&expr).expect("build widget");
+
+    let headings: Vec<&str> = state
+      .controls
+      .iter()
+      .filter_map(|c| match c {
+        manipulate::ControlState::Heading { label, .. } => Some(label.as_str()),
+        _ => None,
+      })
+      .collect();
+    assert!(
+      headings.contains(&"appearance"),
+      "Item[\"appearance\"] must surface as an inline heading control, got: {headings:?}"
+    );
+    assert!(
+      state.displays.is_empty(),
+      "a plain Item[…] heading must not be captured as a live display \
+       element, got: {:?}",
+      state.displays
+    );
+
+    // The heading must sit between the two discrete controls it separates,
+    // not merely exist somewhere in the panel.
+    let color_idx = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "colorName")
+      .expect("colorName control");
+    let heading_idx = state
+      .controls
+      .iter()
+      .position(|c| {
+        matches!(c, manipulate::ControlState::Heading { label, .. } if label == "appearance")
+      })
+      .expect("appearance heading");
+    let shape_idx = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "shape")
+      .expect("shape control");
+    assert!(
+      color_idx < heading_idx && heading_idx < shape_idx,
+      "heading must sit between the two control groups it was written \
+       between: colorName={color_idx}, heading={heading_idx}, shape={shape_idx}"
+    );
+  }
+
   /// A notebook saved from the desktop FrontEnd can have its compiled
   /// `Manipulate\`ManipulateBoxes[…]`'s own `"Variables" :> {…}` clause
   /// disagree with the outer `DynamicModuleBox[{…}, …]`'s live variable

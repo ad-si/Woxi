@@ -12835,9 +12835,14 @@ pub(crate) fn is_style_wrapper(name: &str) -> bool {
 /// header (`Row[{Style["assets", Bold], " in ($K)"}]`) — a bare `Row`/
 /// `Column` reaches here only once any actual controls it grouped have
 /// already been flattened out by `control_group_items`, so what is left is
-/// always plain text layout, never a control panel.
+/// always plain text layout, never a control panel. `Item[content, opts…]`
+/// (a Demonstrations idiom for a section subheading between control groups,
+/// e.g. `Item["background"]` right before the background color setter) is
+/// the same story as `Text[…]`: `control_group_items` already unwraps it to
+/// look for a nested control layout, so a bare `Item[…]` reaching here never
+/// held one and is always plain text too.
 pub(crate) fn is_manipulate_annotation_head(name: &str) -> bool {
-  is_style_wrapper(name) || matches!(name, "Text" | "Row" | "Column")
+  is_style_wrapper(name) || matches!(name, "Text" | "Item" | "Row" | "Column")
 }
 
 /// Whether an annotation row (`Style[…]`, `Row[{…}]`, `Column[{…}]`, …) has a
@@ -22577,9 +22582,11 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       // `Dynamic[content]` inside a label (a Demonstration's step counter
       // buttons often frame one) only exists to keep `content` live; a
       // static label typesets `content` itself rather than the `Dynamic[…]`
-      // wrapper's own source.
-      "Text" | "DisplayForm" | "TraditionalForm" | "Tooltip" | "Framed"
-      | "Dynamic" => args
+      // wrapper's own source. `Item[content, opts…]` is the same grid-
+      // alignment wrapper `control_group_items` already unwraps to look for
+      // a nested control layout — it carries no text of its own either.
+      "Text" | "Item" | "DisplayForm" | "TraditionalForm" | "Tooltip"
+      | "Framed" | "Dynamic" => args
         .first()
         .map(|a| manipulate_label_runs(a, italic))
         .unwrap_or_default(),
