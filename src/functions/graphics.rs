@@ -2425,32 +2425,164 @@ const POINT_TAKING_PRIMITIVES: &[&str] = &[
   "Simplex",
 ];
 
-/// `Normal[GraphicsComplex[pts, data]]`: substitute each integer index in
-/// `data` with its (exact, symbolic) coordinate list from `pts`, keeping
-/// `data`'s own structure intact — Wolfram's `Normal` only "substitutes
-/// coordinates to give an ordinary list of graphics primitives and
-/// directives", it does not split a multi-face `Polygon[{face1, face2, …}]`
-/// into one `Polygon` per face. Unlike `resolve_graphics_complex_indices`,
-/// this keeps coordinates as exact `Expr`s (e.g. `Sqrt[5]`) instead of
-/// lowering to `f64`, and works for points of any dimension, not just 2D.
+/// `Normal[GraphicsComplex[pts, data, opts]]`: substitute each integer index
+/// in `data` with its (exact, symbolic) coordinate list from `pts`, the way
+/// wolframscript does — a primitive holding several index lists
+/// (`Polygon[{face1, face2, …}]`) becomes a list of one primitive each, a
+/// `Point` always becomes a list of single points, index arguments of
+/// `Disk`/`Circle`/`Rectangle`/`Inset`/… are resolved too, and a polygon
+/// picks up its vertices' share of the complex's `VertexColors`/
+/// `VertexNormals`. Unlike `resolve_graphics_complex_indices`, this keeps
+/// coordinates as exact `Expr`s (e.g. `Sqrt[5]`) instead of lowering to
+/// `f64`, and works for points of any dimension, not just 2D.
 pub(crate) fn graphics_complex_to_normal_form(
   pts: &[Expr],
   data: &Expr,
+  opts: &[Expr],
 ) -> Expr {
-  let substituted = substitute_complex_indices(pts, data);
-  match substituted {
+  let vertex_data: Vec<(&str, &[Expr])> = opts
+    .iter()
+    .filter_map(|o| match o {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => match (pattern.as_ref(), replacement.as_ref()) {
+        (Expr::Identifier(n), Expr::List(values))
+          if (n == "VertexColors" || n == "VertexNormals")
+            && values.len() == pts.len() =>
+        {
+          Some((n.as_str(), values.as_ref()))
+        }
+        _ => None,
+      },
+      _ => None,
+    })
+    .collect();
+  let substituted = substitute_complex_indices(pts, data, &vertex_data);
+  // A lone primitive comes back wrapped in a list — even one that itself
+  // became a list (`Point[1]` gives `{{Point[…]}}`).
+  match data {
     Expr::List(_) => substituted,
-    other => Expr::List(vec![other].into()),
+    _ => Expr::List(vec![substituted].into()),
   }
 }
 
-/// Replace bare integer indices with their coordinates wherever a
-/// [`POINT_TAKING_PRIMITIVES`] primitive expects a point argument;
-/// recurse structurally everywhere else so directives and nested
-/// primitives elsewhere in the tree (e.g. inside `{RGBColor[…], Polygon[…]}`)
-/// are reached without treating unrelated integers as indices.
-fn substitute_complex_indices(pts: &[Expr], expr: &Expr) -> Expr {
+/// A 1-based index into `pts`.
+fn complex_index(pts: &[Expr], e: &Expr) -> Option<usize> {
+  match e {
+    Expr::Integer(n) if *n >= 1 && (*n as usize) <= pts.len() => {
+      Some(*n as usize - 1)
+    }
+    _ => None,
+  }
+}
+
+/// A list of indices into `pts`.
+fn complex_index_list(pts: &[Expr], e: &Expr) -> Option<Vec<usize>> {
+  match e {
+    Expr::List(items) => items.iter().map(|i| complex_index(pts, i)).collect(),
+    _ => None,
+  }
+}
+
+/// Replace bare integer indices with their coordinates wherever a primitive
+/// expects a point argument; recurse structurally everywhere else so
+/// directives and nested primitives elsewhere in the tree (e.g. inside
+/// `{RGBColor[…], Polygon[…]}`) are reached without treating unrelated
+/// integers as indices.
+fn substitute_complex_indices(
+  pts: &[Expr],
+  expr: &Expr,
+  vertex_data: &[(&str, &[Expr])],
+) -> Expr {
+  let coords = |indices: &[usize]| -> Expr {
+    Expr::List(indices.iter().map(|&i| pts[i].clone()).collect())
+  };
   match expr {
+    // Points always come out one per index.
+    Expr::FunctionCall { name, args } if name == "Point" && args.len() == 1 => {
+      let indices = complex_index(pts, &args[0])
+        .map(|i| vec![i])
+        .or_else(|| complex_index_list(pts, &args[0]));
+      match indices {
+        Some(indices) => Expr::List(
+          indices
+            .iter()
+            .map(|&i| call1("Point", pts[i].clone()))
+            .collect(),
+        ),
+        None => call1("Point", substitute_indices_in_points(pts, &args[0])),
+      }
+    }
+    // Paths and faces: one primitive per index list.
+    Expr::FunctionCall { name, args }
+      if !args.is_empty()
+        && matches!(
+          name.as_str(),
+          "Line"
+            | "Polygon"
+            | "Triangle"
+            | "Arrow"
+            | "BezierCurve"
+            | "BSplineCurve"
+        ) =>
+    {
+      let rest: Vec<Expr> = args[1..]
+        .iter()
+        .map(|a| substitute_complex_indices(pts, a, vertex_data))
+        .collect();
+      let build = |indices: &[usize]| -> Expr {
+        let mut new_args = vec![coords(indices)];
+        new_args.extend(rest.iter().cloned());
+        if name == "Polygon" {
+          for (option, values) in vertex_data {
+            new_args.push(Expr::Rule {
+              pattern: Box::new(id_expr(option)),
+              replacement: Box::new(Expr::List(
+                indices.iter().map(|&i| values[i].clone()).collect(),
+              )),
+            });
+          }
+        }
+        call(name, new_args)
+      };
+      if let Some(single) = complex_index_list(pts, &args[0]) {
+        return build(&single);
+      }
+      if let Expr::List(groups) = &args[0]
+        && let Some(many) = groups
+          .iter()
+          .map(|g| complex_index_list(pts, g))
+          .collect::<Option<Vec<_>>>()
+      {
+        return Expr::List(many.iter().map(|g| build(g)).collect());
+      }
+      let mut new_args = vec![substitute_indices_in_points(pts, &args[0])];
+      new_args.extend(rest);
+      call(name, new_args)
+    }
+    // Shapes whose positional arguments are single points.
+    Expr::FunctionCall { name, args }
+      if matches!(
+        name.as_str(),
+        "Disk" | "Circle" | "Rectangle" | "Cuboid" | "Inset" | "Ball"
+      ) =>
+    {
+      let point_slots: &[usize] = match name.as_str() {
+        "Rectangle" | "Cuboid" => &[0, 1],
+        "Inset" => &[1],
+        _ => &[0],
+      };
+      let new_args: Vec<Expr> = args
+        .iter()
+        .enumerate()
+        .map(|(i, a)| match complex_index(pts, a) {
+          Some(k) if point_slots.contains(&i) => pts[k].clone(),
+          _ => substitute_complex_indices(pts, a, vertex_data),
+        })
+        .collect();
+      call(name, new_args)
+    }
     Expr::FunctionCall { name, args }
       if POINT_TAKING_PRIMITIVES.contains(&name.as_str()) =>
     {
@@ -2461,7 +2593,7 @@ fn substitute_complex_indices(pts: &[Expr], expr: &Expr) -> Expr {
           if i == 0 {
             substitute_indices_in_points(pts, a)
           } else {
-            substitute_complex_indices(pts, a)
+            substitute_complex_indices(pts, a, vertex_data)
           }
         })
         .collect();
@@ -2474,14 +2606,14 @@ fn substitute_complex_indices(pts: &[Expr], expr: &Expr) -> Expr {
       name: name.clone(),
       args: args
         .iter()
-        .map(|a| substitute_complex_indices(pts, a))
+        .map(|a| substitute_complex_indices(pts, a, vertex_data))
         .collect::<Vec<_>>()
         .into(),
     },
     Expr::List(items) => Expr::List(
       items
         .iter()
-        .map(|a| substitute_complex_indices(pts, a))
+        .map(|a| substitute_complex_indices(pts, a, vertex_data))
         .collect::<Vec<_>>()
         .into(),
     ),

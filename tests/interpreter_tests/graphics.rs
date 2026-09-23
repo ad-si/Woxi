@@ -18914,8 +18914,8 @@ mod graphics_complex {
 
 // `Normal[GraphicsComplex[pts, data]]` substitutes point indices with
 // their (exact) coordinates and returns "an ordinary list of graphics
-// primitives and directives" — it does not split a multi-point primitive
-// into separate ones.
+// primitives and directives": a primitive holding several index lists
+// becomes one primitive each, and a `Point` a list of single points.
 mod graphics_complex_normal {
   use super::*;
 
@@ -18928,7 +18928,7 @@ mod graphics_complex_normal {
          {Point[1], Line[{1, 2}]}]]"
       )
       .unwrap(),
-      "{Point[{0, 0}], Line[{{0, 0}, {Sqrt[3], Sqrt[3]/2}}]}"
+      "{{Point[{0, 0}]}, Line[{{0, 0}, {Sqrt[3], Sqrt[3]/2}}]}"
     );
   }
 
@@ -18942,21 +18942,31 @@ mod graphics_complex_normal {
       .unwrap(),
       "{Polygon[{{0, 0}, {1, 0}, {1, 1}}]}"
     );
+    assert_eq!(
+      interpret("Normal[GraphicsComplex[{{0, 0}, {1, 0}}, Point[1]]]").unwrap(),
+      "{{Point[{0, 0}]}}"
+    );
   }
 
   #[test]
-  fn multi_face_polygon_is_not_split() {
-    // A single `Polygon[{face1, face2}]` stays a single Polygon after
-    // substitution — Normal only replaces indices, it does not split
-    // multi-face primitives into one primitive per face.
+  fn multi_primitives_are_split() {
     assert_eq!(
       interpret(
         "Normal[GraphicsComplex[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, 0, 1}}, \
          Polygon[{{1, 2, 3}, {1, 2, 4}}]]]"
       )
       .unwrap(),
-      "{Polygon[{{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}}, \
-       {{0, 0, 0}, {1, 0, 0}, {0, 0, 1}}}]}"
+      "{{Polygon[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}}], \
+       Polygon[{{0, 0, 0}, {1, 0, 0}, {0, 0, 1}}]}}"
+    );
+    assert_eq!(
+      interpret(
+        "Normal[GraphicsComplex[{{0, 0}, {1, 1}, {2, 0}}, \
+         {Point[{1, 2}], Line[{{1, 2}, {2, 3}}]}]]"
+      )
+      .unwrap(),
+      "{{Point[{0, 0}], Point[{1, 1}]}, \
+       {Line[{{0, 0}, {1, 1}}], Line[{{1, 1}, {2, 0}}]}}"
     );
   }
 
@@ -18973,21 +18983,48 @@ mod graphics_complex_normal {
   }
 
   #[test]
+  fn point_arguments_of_shapes_are_resolved() {
+    assert_eq!(
+      interpret(
+        "Normal[GraphicsComplex[{{0, 0}, {1, 1}, {2, 0}}, \
+         {Disk[1, 0.1], Circle[3], Rectangle[1, 2], Inset[x, 2]}]]"
+      )
+      .unwrap(),
+      "{Disk[{0, 0}, 0.1], Circle[{2, 0}], Rectangle[{0, 0}, {1, 1}], \
+       Inset[x, {1, 1}]}"
+    );
+  }
+
+  #[test]
+  fn vertex_data_moves_onto_polygons() {
+    assert_eq!(
+      interpret(
+        "Normal[GraphicsComplex[{{0, 0}, {1, 1}, {2, 0}}, {Polygon[{1, 2, 3}], \
+         Line[{1, 2}]}, VertexColors -> {Red, Green, Blue}]]"
+      )
+      .unwrap(),
+      "{Polygon[{{0, 0}, {1, 1}, {2, 0}}, VertexColors -> \
+       {RGBColor[1, 0, 0], RGBColor[0, 1, 0], RGBColor[0, 0, 1]}], \
+       Line[{{0, 0}, {1, 1}}]}"
+    );
+  }
+
+  #[test]
   fn polyhedron_data_faces_normalizes_to_explicit_coordinates() {
     // The cube's `"Faces"` GraphicsComplex (see
-    // `polyhedron_data_faces_is_a_graphics_complex`) normalizes to a
-    // single-element list holding the same faces with their vertex
-    // indices replaced by the actual corner coordinates.
+    // `polyhedron_data_faces_is_a_graphics_complex`) normalizes to one
+    // Polygon per face, with the vertex indices replaced by the actual
+    // corner coordinates.
     assert_eq!(
       interpret(r#"Normal[PolyhedronData["Cube", "Faces"]]"#).unwrap(),
-      "{Polygon[{{{1/2, 1/2, 1/2}, {-1/2, 1/2, 1/2}, {-1/2, -1/2, 1/2}, \
-       {1/2, -1/2, 1/2}}, {{1/2, 1/2, 1/2}, {1/2, -1/2, 1/2}, \
-       {1/2, -1/2, -1/2}, {1/2, 1/2, -1/2}}, {{1/2, 1/2, 1/2}, \
-       {1/2, 1/2, -1/2}, {-1/2, 1/2, -1/2}, {-1/2, 1/2, 1/2}}, \
-       {{-1/2, 1/2, 1/2}, {-1/2, 1/2, -1/2}, {-1/2, -1/2, -1/2}, \
-       {-1/2, -1/2, 1/2}}, {{-1/2, -1/2, -1/2}, {-1/2, 1/2, -1/2}, \
-       {1/2, 1/2, -1/2}, {1/2, -1/2, -1/2}}, {{-1/2, -1/2, 1/2}, \
-       {-1/2, -1/2, -1/2}, {1/2, -1/2, -1/2}, {1/2, -1/2, 1/2}}}]}"
+      "{{Polygon[{{1/2, 1/2, 1/2}, {-1/2, 1/2, 1/2}, {-1/2, -1/2, 1/2}, \
+       {1/2, -1/2, 1/2}}], Polygon[{{1/2, 1/2, 1/2}, {1/2, -1/2, 1/2}, \
+       {1/2, -1/2, -1/2}, {1/2, 1/2, -1/2}}], Polygon[{{1/2, 1/2, 1/2}, \
+       {1/2, 1/2, -1/2}, {-1/2, 1/2, -1/2}, {-1/2, 1/2, 1/2}}], \
+       Polygon[{{-1/2, 1/2, 1/2}, {-1/2, 1/2, -1/2}, {-1/2, -1/2, -1/2}, \
+       {-1/2, -1/2, 1/2}}], Polygon[{{-1/2, -1/2, -1/2}, {-1/2, 1/2, -1/2}, \
+       {1/2, 1/2, -1/2}, {1/2, -1/2, -1/2}}], Polygon[{{-1/2, -1/2, 1/2}, \
+       {-1/2, -1/2, -1/2}, {1/2, -1/2, -1/2}, {1/2, -1/2, 1/2}}]}}"
     );
   }
 }
