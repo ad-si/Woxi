@@ -6222,10 +6222,12 @@ mod deeply_nested_lists {
   #[test]
   fn deeply_nested_braces() {
     // pest's recursive-descent parser grows ~stack-frames-per-bracket
-    // with the input, so 6 nested braces sits just above the default
-    // 2 MiB test-thread stack. Run on an 8 MiB stack to avoid SIGABRT.
+    // with the input, so 6 nested braces overflow a thread with a small
+    // stack. `interpret` must move itself onto a large stack segment rather
+    // than depend on the caller's thread size (the CLI's worker has 512 MiB,
+    // a library host's thread may have far less). Run on a 1 MiB thread.
     std::thread::Builder::new()
-      .stack_size(8 * 1024 * 1024)
+      .stack_size(1024 * 1024)
       .spawn(|| {
         assert_eq!(
           interpret("{f[{1, {{{{{{1}}}}}}}]}").unwrap(),
@@ -6235,6 +6237,42 @@ mod deeply_nested_lists {
       .unwrap()
       .join()
       .unwrap();
+  }
+
+  #[test]
+  fn default_thread_stack_does_not_slow_evaluation() {
+    // The evaluator calls `stacker::maybe_grow` with a 2 MiB red zone on every
+    // recursive step. When a hot loop runs right at that boundary of the
+    // caller's stack, each iteration crossing it mmaps and munmaps a fresh
+    // segment. On a 2 MiB thread — Rust's default, and libtest's — NSum over
+    // two infinite ranges hit exactly that and took 7s instead of 0.5s
+    // (timing out under full-suite load). `interpret` now moves onto a large
+    // segment once at entry, so the caller's thread size no longer matters.
+    // Where the boundary falls depends on frame sizes, so this pins the
+    // configuration that regressed rather than proving the general case.
+    fn time_on_stack(stack_size: usize) -> std::time::Duration {
+      std::thread::Builder::new()
+        .stack_size(stack_size)
+        .spawn(|| {
+          let start = std::time::Instant::now();
+          let v: f64 =
+            interpret("NSum[1/(i^2 j^2), {i, 1, Infinity}, {j, 1, Infinity}]")
+              .unwrap()
+              .parse()
+              .unwrap();
+          assert!((v - 2.705808084277845).abs() < 1e-6, "got {v}");
+          start.elapsed()
+        })
+        .unwrap()
+        .join()
+        .unwrap()
+    }
+    let large = time_on_stack(512 * 1024 * 1024);
+    let default = time_on_stack(2 * 1024 * 1024);
+    assert!(
+      default < large * 4,
+      "2 MiB thread took {default:?}, 512 MiB thread took {large:?}"
+    );
   }
 
   #[test]

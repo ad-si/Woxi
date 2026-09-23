@@ -2156,7 +2156,29 @@ fn real_literal_output(n: f64) -> String {
   syntax::format_real(shown)
 }
 
+/// Stack headroom below which a public entry point first moves evaluation
+/// onto a freshly allocated stack segment. It must exceed the 2 MB red zone of
+/// the evaluator's own `stacker::maybe_grow` calls by a wide margin: when the
+/// caller's thread is small (a test thread, a host's worker thread — anything
+/// but the CLI's 512 MB worker), every recursive evaluation step would
+/// otherwise find less than the red zone left and mmap/munmap a new 4 MB
+/// segment on each call, slowing evaluation down by an order of magnitude.
+const ENTRY_STACK_RED_ZONE: usize = 32 * 1024 * 1024;
+/// Size of the segment an entry point grows onto. Virtual memory, paged in
+/// lazily, so reserving generously costs nothing until deep recursion uses it.
+const ENTRY_STACK_SIZE: usize = 256 * 1024 * 1024;
+
+/// Run `f` with at least [`ENTRY_STACK_RED_ZONE`] of stack left, growing onto
+/// a new [`ENTRY_STACK_SIZE`] segment once if the current thread has less.
+fn with_entry_stack<R>(f: impl FnOnce() -> R) -> R {
+  stacker::maybe_grow(ENTRY_STACK_RED_ZONE, ENTRY_STACK_SIZE, f)
+}
+
 pub fn interpret(input: &str) -> Result<String, InterpreterError> {
+  with_entry_stack(|| interpret_on_stack(input))
+}
+
+fn interpret_on_stack(input: &str) -> Result<String, InterpreterError> {
   // A fresh input starts from a clean slate: a termination latch that some
   // display-time evaluation left behind would otherwise refuse every later
   // evaluation on this thread. Only at the outermost call — `interpret` is
@@ -6225,11 +6247,13 @@ pub fn interpret_to_expr(
   // Returning at the first `Expression` made `"a = 1; {a}"` come back as `1`,
   // and skipping the other `Statement` alternatives dropped a definition
   // whose left side carries a pattern (`f[x_] := …`) on the floor.
-  let mut last: Option<syntax::Expr> = None;
-  for expr in parse_statements(input)? {
-    last = Some(settle_termination(evaluator::evaluate_expr_to_expr(&expr))?);
-  }
-  last.ok_or(InterpreterError::EmptyInput)
+  with_entry_stack(|| {
+    let mut last: Option<syntax::Expr> = None;
+    for expr in parse_statements(input)? {
+      last = Some(settle_termination(evaluator::evaluate_expr_to_expr(&expr))?);
+    }
+    last.ok_or(InterpreterError::EmptyInput)
+  })
 }
 
 /// Run `evaluate` with the output capture buffers and visual mode that a
@@ -6316,8 +6340,11 @@ pub fn interpret_expr_with_stdout(
   expr: &syntax::Expr,
 ) -> Result<InterpretResult, InterpreterError> {
   with_capture(|| {
-    let evaluated = settle_termination(evaluator::evaluate_expr_to_expr(expr))?;
-    Ok(format_top_level_result(evaluated, 0))
+    with_entry_stack(|| {
+      let evaluated =
+        settle_termination(evaluator::evaluate_expr_to_expr(expr))?;
+      Ok(format_top_level_result(evaluated, 0))
+    })
   })
 }
 
