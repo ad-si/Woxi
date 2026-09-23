@@ -135,7 +135,7 @@ fn curve_point(p: i128, q: i128, t: f64) -> (f64, f64, f64) {
 /// knot picture). The mesh itself — vertex count, triangulation, tube
 /// radius — is our own choice, not Wolfram's internal one, so (like
 /// `SpaceCurve`) only the swept shape matches, not the exact coordinates.
-fn image_data(p: i128, q: i128) -> Result<Expr, InterpreterError> {
+fn image_data(p: i128, q: i128) -> Expr {
   const N_ALONG: usize = 96;
   const N_AROUND: usize = 8;
   const TUBE_RADIUS: f64 = 0.2;
@@ -211,7 +211,7 @@ fn image_data(p: i128, q: i128) -> Result<Expr, InterpreterError> {
     args: vec![Expr::List(points.into()), Expr::List(vec![polygon].into())]
       .into(),
   };
-  Ok(Expr::List(vec![complex].into()))
+  Expr::List(vec![complex].into())
 }
 
 fn normalize(x: f64, y: f64, z: f64) -> (f64, f64, f64) {
@@ -292,7 +292,7 @@ pub fn knot_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       };
       match property.as_str() {
         "SpaceCurve" => space_curve(p, q),
-        "ImageData" => image_data(p, q),
+        "ImageData" => Ok(image_data(p, q)),
         "CrossingNumber" => Ok(crossing_number(p, q)),
         "AlexanderBriggsNotation" => match alexander_briggs {
           Some(s) => Ok(Expr::String(s.to_string())),
