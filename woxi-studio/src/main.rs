@@ -7330,6 +7330,63 @@ mod tests {
     }
   }
 
+  /// A Manipulate whose body defines a lookup helper as its own first
+  /// statement (`table[key] = {…}`) and whose control panel uses that
+  /// helper to build *another* control's choice list dynamically
+  /// (`Dynamic[table[mode]]`) — the shape a Wolfram Demonstrations Project
+  /// note-picker uses to offer a different button row per mode
+  /// (independently written here to mirror that shape, not copied from any
+  /// specific Demonstration).
+  ///
+  /// Regression: control specs are parsed against the Manipulate's own
+  /// *unevaluated* body (it is never run for this first pass), so `table`
+  /// is still undefined and the choice-list bound merely evaluates to
+  /// itself instead of erroring — which `parse_manipulate_control` reads as
+  /// "a fixed, non-widget value" rather than "unresolved," so the control
+  /// silently degraded to an invisible `Fixed` binding instead of retrying
+  /// against the bindings a full body run leaves behind (the fallback an
+  /// outright-unparseable spec already got). The picker never appeared at
+  /// all.
+  #[test]
+  fn manipulate_dynamic_choice_list_depending_on_body_defined_helper() {
+    let code = r#"Manipulate[
+      table[letters] = {"A", "B", "C"};
+      mode,
+      {{mode, letters, ""}, {letters -> "letters"}},
+      {{pick, "A"}, Dynamic[table[mode]], ControlType -> SetterBar}
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr).expect(
+      "a body-defined helper's choice list should still build a ManipulateState",
+    );
+    let pick = state
+      .controls
+      .iter()
+      .find(|c| c.name() == "pick")
+      .unwrap_or_else(|| {
+        panic!(
+          "the `pick` SetterBar must survive as a visible control: {:?}",
+          state.controls
+        )
+      });
+    match pick {
+      manipulate::ControlState::Discrete { values, .. } => {
+        assert_eq!(
+          values,
+          &vec![
+            "\"A\"".to_string(),
+            "\"B\"".to_string(),
+            "\"C\"".to_string()
+          ],
+          "the choice list must come from `table[letters]`, resolved \
+           after retrying against a full body run"
+        );
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+  }
+
   /// A Manipulate whose control panel is a custom `Grid` mixing an embedded
   /// `Control[…]` cell with a `Dynamic[…]` caption cell that assembles a
   /// subscripted symbol (e.g. an atomic-orbital or isotope-style label) via

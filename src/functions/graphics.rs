@@ -19963,23 +19963,20 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     let first_pass = crate::with_scoped_globals(&initial_bindings, || {
       parse_manipulate_control(&spec, &sibling_names)
     });
-    // A Locator/Slider2D spec whose corner bounds or initial point reference
-    // a global the body only assigns as a side effect (not another control
-    // variable, which `initial_bindings` already covers, e.g. a geometric
-    // constant like `r = eyeRadius = 1.3` used by a later Locator's range)
-    // can't resolve to a numeric point on this first pass and silently
-    // downgrades to `Fixed`. Wolfram evaluates the body once before laying
-    // out controls, so by the time it reads a Locator's bounds such globals
-    // already hold their assigned values — retry it too against the
-    // bindings a full body run leaves behind, the same fallback an
-    // unparseable spec gets below.
-    let needs_body_retry = match &first_pass {
-      None => true,
-      Some(ParsedControl::Fixed { .. }) => {
-        matches!(&spec, Expr::List(items) if spec_marks_locator(items))
-      }
-      _ => false,
-    };
+    // A spec whose corner bounds, initial point, or choice list reference a
+    // global the body only assigns (or defines, for a helper function like
+    // `scale1[key] = {…}`) as a side effect — not another control variable,
+    // which `initial_bindings` already covers — can't resolve on this first
+    // pass and silently downgrades to `Fixed` (a `Locator`/`Slider2D`'s
+    // corner bounds; a `Dynamic[(f[#1]&) /@ helper[var]]` choice list whose
+    // `helper` the body defines, as in a Wolfram Demonstrations Project
+    // "Learn Musical Notes"-style note picker). Wolfram evaluates the body
+    // once before laying out controls, so by the time it reads such a spec
+    // the body-defined globals already hold their values — retry every
+    // `Fixed` downgrade too against the bindings a full body run leaves
+    // behind, the same fallback an unparseable spec gets below.
+    let needs_body_retry =
+      matches!(&first_pass, None | Some(ParsedControl::Fixed { .. }));
     let parsed = if needs_body_retry {
       // Wolfram evaluates the body once before laying the controls out, so
       // a control whose choice list is a symbol the *body* fills in —
@@ -20000,9 +19997,9 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       }) {
         Some(retried) => retried,
         None => match first_pass {
-          // The full body run didn't turn this Locator into anything
-          // better than the first pass's `Fixed` fallback — keep it rather
-          // than dropping the binding entirely.
+          // The full body run didn't turn this into anything better than
+          // the first pass's `Fixed` fallback — keep it rather than
+          // dropping the binding entirely.
           Some(parsed) => parsed,
           // A spec neither the leading-assignment probe nor a full body run
           // can make sense of is skipped rather than failing the whole
