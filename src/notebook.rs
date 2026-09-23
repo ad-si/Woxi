@@ -2585,7 +2585,15 @@ pub fn extract_saved_manipulate_variables(
       if name.is_empty() || rhs.is_empty() {
         return None;
       }
-      Some((name, unescape_code_string(rhs)))
+      // A saved default that is itself a bare symbol (e.g. a SetterBar
+      // choice like `abc`, as opposed to a string or number) is dumped
+      // context-qualified as `$CellContext`abc` — strip it here too, the
+      // same as every other occurrence of the prefix, so the restored
+      // value matches the plain symbol the live source's spec defines
+      // (`scale1[abc]`), not a distinct `$CellContext`abc` that resolves
+      // to nothing.
+      let value = rhs.replace("$CellContext`", "");
+      Some((name, unescape_code_string(&value)))
     })
     .collect()
 }
@@ -2623,7 +2631,11 @@ fn extract_dynamic_module_variables(box_dump: &str) -> Vec<(String, String)> {
       if name.is_empty() || name.contains('$') || rhs.is_empty() {
         return None;
       }
-      Some((unescape_code_string(name), unescape_code_string(rhs)))
+      // See the matching strip in `extract_saved_manipulate_variables`: a
+      // bare-symbol default value is context-qualified too, not just the
+      // variable name.
+      let value = rhs.replace("$CellContext`", "");
+      Some((unescape_code_string(name), unescape_code_string(&value)))
     })
     .collect()
 }
@@ -6309,6 +6321,25 @@ yf4GL4DwC5VA4w
     assert_eq!(
       extract_saved_manipulate_variables(dump),
       vec![("a".to_string(), "7".to_string())]
+    );
+  }
+
+  #[test]
+  fn test_extract_saved_manipulate_variables_strips_context_from_symbol_value()
+  {
+    // A saved default that is itself a bare symbol (a SetterBar choice
+    // like `abc`, as opposed to a string or number) is dumped
+    // context-qualified on *both* sides of the `=`: `$CellContext`style$$ =
+    // $CellContext`abc`. Regression: only the name (`style`) was stripped
+    // of the prefix; the value stayed `$CellContext`abc`, a symbol
+    // distinct from the plain `abc` the live source's own spec (and any
+    // helper function keyed on it, e.g. `lookup[abc] = …`) uses — so the
+    // restored control could never match its own choice list.
+    let dump = "DynamicModuleBox[{$CellContext`style$$ = $CellContext`abc}, \
+      DynamicBox[…]]";
+    assert_eq!(
+      extract_saved_manipulate_variables(dump),
+      vec![("style".to_string(), "abc".to_string())]
     );
   }
 
