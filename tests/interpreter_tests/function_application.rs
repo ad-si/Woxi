@@ -1210,6 +1210,57 @@ mod named_function_arity_check {
     );
   }
 
+  /// `Function[Null, body]` is the idiom Button/Manipulate action code
+  /// (and the front end's own generated wrappers) use for a niladic
+  /// function: `Null` in the parameter-spec position means "bind
+  /// nothing", not "a parameter literally named Null". Regression: this
+  /// used to be parsed as a one-name parameter list, so calling it with
+  /// zero arguments (its normal calling convention, e.g. an Association
+  /// of closures like `<|"do" -> Function[Null, x = x + 1]|>` invoked as
+  /// `cmds["do"][]`) wrongly raised `Function::fpct` and returned
+  /// unevaluated instead of running the body.
+  #[test]
+  fn function_null_is_a_niladic_function() {
+    assert_eq!(
+      interpret("x = 1; f = Function[Null, x = x + 1]; f[]; x").unwrap(),
+      "2"
+    );
+    // Extra arguments are ignored, same as `Function[{}, body][args...]`.
+    assert_eq!(interpret("Function[Null, 42][1, 2, 3]").unwrap(), "42");
+  }
+
+  /// A Command-pattern factory returning an Association of `Function[Null,
+  /// …]` handlers (a common Demonstrations undo/redo idiom: `HoldFirst` on
+  /// the factory so the receiver is held by name, letting the returned
+  /// closures mutate the caller's variable) must be callable through the
+  /// association lookup, each niladic handler closing over the enclosing
+  /// `Module`'s locals rather than binding "Null" as a variable.
+  #[test]
+  fn function_null_closure_in_association_is_callable() {
+    assert_eq!(
+      interpret(
+        "SetAttributes[makeCmd, HoldFirst]; \
+         makeCmd[receiver_] := Module[{old}, \
+           <|\"do\" -> Function[Null, old = receiver; receiver = old + 10], \
+             \"revert\" -> Function[Null, receiver = old]|>]; \
+         r = 1; cmds = makeCmd[r]; cmds[\"do\"][]; r"
+      )
+      .unwrap(),
+      "11"
+    );
+    assert_eq!(
+      interpret(
+        "SetAttributes[makeCmd2, HoldFirst]; \
+         makeCmd2[receiver_] := Module[{old}, \
+           <|\"do\" -> Function[Null, old = receiver; receiver = old + 10], \
+             \"revert\" -> Function[Null, receiver = old]|>]; \
+         r = 1; cmds = makeCmd2[r]; cmds[\"do\"][]; cmds[\"revert\"][]; r"
+      )
+      .unwrap(),
+      "1"
+    );
+  }
+
   /// The Demonstrations `Initialization` idiom: a factory closes over
   /// several packed arrays that are handed to it in one list.
   #[test]

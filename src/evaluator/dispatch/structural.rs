@@ -14,6 +14,17 @@ pub fn dispatch_structural(
       }
       2 => {
         let (params, bracketed) = match &args[0] {
+          // `Function[Null, body]` is the idiom the front end (and
+          // hand-written Button/Manipulate action code) uses for a
+          // niladic function: `Null` in the parameter-spec position
+          // means "bind nothing", not "a parameter literally named
+          // Null" — the resulting function accepts any number of
+          // arguments (typically called as `f[]`) and always just
+          // evaluates `body`, closing over its enclosing scope. Treating
+          // it as a one-name parameter list would make a zero-argument
+          // call raise a spurious Function::fpct ("too many
+          // parameters").
+          Expr::Identifier(name) if name == "Null" => (vec![], true),
           Expr::Identifier(name) => (vec![name.clone()], false),
           Expr::List(items) => (
             items
