@@ -276,15 +276,60 @@ mod area {
 
   #[test]
   fn cube_cross_section_plane_misses_box() {
-    // A plane that doesn't pass through the box at all: empty intersection,
-    // area 0.
+    // A plane that doesn't pass through the box at all: like Wolfram, Area
+    // is left unevaluated rather than reporting 0.
     assert_eq!(
       interpret(
         "Area[RegionIntersection[Cube[{0.5, 0.5, 0.5}, 1], \
          ImplicitRegion[x == 10, {x, y, z}]]]"
       )
       .unwrap(),
-      "0."
+      "Area[BooleanRegion[#1 && #2 & , {Cube[{0.5, 0.5, 0.5}, 1], \
+       ImplicitRegion[x == 10, {x, y, z}]}]]"
+    );
+    // Same when the ball misses the cross-section's plane.
+    assert_eq!(
+      interpret(
+        "Area[RegionIntersection[Ball[{0.5, 0.5, 0.5}, 0.1], \
+         RegionIntersection[Cube[{0.5, 0.5, 0.5}, 1], \
+         ImplicitRegion[x + y == 1.9, {x, y, z}]]]]"
+      )
+      .unwrap(),
+      "Area[BooleanRegion[#1 && #2 && #3 & , {Ball[{0.5, 0.5, 0.5}, 0.1], \
+       Cube[{0.5, 0.5, 0.5}, 1], ImplicitRegion[x + y == 1.9, {x, y, z}]}]]"
+    );
+  }
+
+  #[test]
+  fn nested_boolean_regions_flatten() {
+    // Nested set operations splice into one BooleanRegion, the combiners
+    // renumbered and merged.
+    assert_eq!(
+      interpret(
+        "RegionIntersection[Cube[], RegionIntersection[Ball[], \
+         ImplicitRegion[x == 0, {x, y, z}]]]"
+      )
+      .unwrap(),
+      "BooleanRegion[#1 && #2 && #3 & , {Cube[], Ball[{0, 0, 0}], \
+       ImplicitRegion[x == 0, {x, y, z}]}]"
+    );
+    assert_eq!(
+      interpret(
+        "RegionIntersection[RegionUnion[Ball[], \
+         ImplicitRegion[x == 0, {x, y, z}]], Cube[]]"
+      )
+      .unwrap(),
+      "BooleanRegion[(#1 || #2) && #3 & , {Ball[{0, 0, 0}], \
+       ImplicitRegion[x == 0, {x, y, z}], Cube[]}]"
+    );
+    assert_eq!(
+      interpret(
+        "RegionDifference[Cube[], RegionUnion[Ball[], \
+         ImplicitRegion[x == 0, {x, y, z}]]]"
+      )
+      .unwrap(),
+      "BooleanRegion[#1 &&  !(#2 || #3) & , {Cube[], Ball[{0, 0, 0}], \
+       ImplicitRegion[x == 0, {x, y, z}]}]"
     );
   }
 
@@ -295,14 +340,16 @@ mod area {
     // the rectangle's half-height along z (0.5) equals the sphere's
     // radius, so the disk of area Pi/4 fits inside the rectangle exactly
     // and RegionIntersection[Ball, planar-region] measures the whole disk.
+    // Rounded: Wolfram integrates numerically and is off in the 9th digit
+    // (0.7853981623985472).
     assert_eq!(
       interpret(
-        "Area[RegionIntersection[Ball[{0.5, 0.5, 0.5}, 0.5], \
+        "Round[Area[RegionIntersection[Ball[{0.5, 0.5, 0.5}, 0.5], \
          RegionIntersection[Cube[{0.5, 0.5, 0.5}, 1], \
-         ImplicitRegion[x + y == 1, {x, y, z}]]]]"
+         ImplicitRegion[x + y == 1, {x, y, z}]]]], 10^-6]"
       )
       .unwrap(),
-      "0.7853981633974483"
+      "392699/500000"
     );
   }
 
@@ -313,12 +360,12 @@ mod area {
     // is just Pi*r^2.
     assert_eq!(
       interpret(
-        "Area[RegionIntersection[Ball[{0.5, 0.5, 0.5}, 0.1], \
+        "Round[Area[RegionIntersection[Ball[{0.5, 0.5, 0.5}, 0.1], \
          RegionIntersection[Cube[{0.5, 0.5, 0.5}, 1], \
-         ImplicitRegion[x + y == 1, {x, y, z}]]]]"
+         ImplicitRegion[x + y == 1, {x, y, z}]]]], 10^-6]"
       )
       .unwrap(),
-      "0.03141592653589794"
+      "3927/125000"
     );
   }
 }

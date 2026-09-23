@@ -1356,6 +1356,10 @@ function main() {
     // Woxi bundles the name catalogue but not the pixels, which are not ours
     // to redistribute (see conformance_gaps.md).
     'ExampleData[{"TestImage", "Couple"}]',
+    // Same for ExampleData[{"Geometry3D", …}]: the catalogue is bundled, the
+    // meshes are Wolfram's and are not.
+    'ExampleData[{"Geometry3D", "Cow"}]',
+    'ExampleData[{"Geometry3D", "Cow"}, "PolygonObjects"]',
     // LogLogistic Variance: canonical Plus/Times ordering. Symbolic form
     // orders the inner Plus terms differently (2 g Csc[...] first vs WL's
     // -(Pi Csc[Pi/g]^2) first); the numeric form places the Pi factor before

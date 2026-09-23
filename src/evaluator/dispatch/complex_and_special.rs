@@ -10388,37 +10388,94 @@ fn compute_area(expr: &Expr) -> Result<Expr, InterpreterError> {
   }
 }
 
-/// `Area` of a `BooleanRegion[combiner, {a, b}]` that is really an
-/// intersection (`#1 && #2 &`, in either operand order): a box (`Cube`/
-/// `Cuboid`) crossed with a plane, or a `Ball` crossed with such a
-/// box-plane cross-section. `None` for any other shape or combiner, so the
-/// caller falls back to leaving `Area` unevaluated.
+/// `Area` of a `BooleanRegion[combiner, {…}]` that is really an
+/// intersection (`#1 && #2 && … &`): a box (`Cube`/`Cuboid`) crossed with a
+/// plane, optionally also with a `Ball` — in any operand order. `None` for
+/// any other shape or combiner, and — as in Wolfram, which leaves `Area`
+/// unevaluated then — when the plane misses the box or the ball misses the
+/// plane.
 fn boolean_region_area(combiner: &Expr, operands: &Expr) -> Option<f64> {
-  if !is_and_combiner(combiner) {
-    return None;
-  }
   let Expr::List(ops) = operands else {
     return None;
   };
-  let [a, b] = ops.as_ref() else { return None };
-
-  if let Some(poly) =
-    box_plane_polygon(a, b).or_else(|| box_plane_polygon(b, a))
-  {
-    return Some(crate::functions::plot3d::polygon3d_area(&poly));
+  if !is_and_combiner(combiner, ops.len()) {
+    return None;
   }
-  ball_plane_region_area(a, b).or_else(|| ball_plane_region_area(b, a))
+  let boxes: Vec<[(f64, f64); 3]> =
+    ops.iter().filter_map(try_box_bounds_3d).collect();
+  let planes: Vec<([f64; 3], [f64; 3])> =
+    ops.iter().filter_map(try_implicit_plane).collect();
+  let balls: Vec<([f64; 3], f64)> =
+    ops.iter().filter_map(try_ball_3d).collect();
+  if boxes.len() != 1
+    || planes.len() != 1
+    || boxes.len() + planes.len() + balls.len() != ops.len()
+  {
+    return None;
+  }
+  let (normal, plane_point) = planes[0];
+  let poly = crate::functions::plot3d::plane_polygon_in_box(
+    normal,
+    plane_point,
+    boxes[0],
+  )
+  .filter(|p| p.len() >= 3)?;
+  match balls.as_slice() {
+    [] => Some(crate::functions::plot3d::polygon3d_area(&poly)),
+    [(center, radius)] => {
+      ball_plane_polygon_area(*center, *radius, normal, plane_point, &poly)
+    }
+    _ => None,
+  }
 }
 
-/// Whether `combiner` is the `#1 && #2 &` pure function `RegionIntersection`
-/// builds its `BooleanRegion` fallback from — compared by rendered form,
-/// since `Expr` has no structural equality.
-fn is_and_combiner(combiner: &Expr) -> bool {
-  static AND_COMBINER: &str = "#1 && #2 &";
-  crate::syntax::string_to_expr(AND_COMBINER).is_ok_and(|and_expr| {
-    crate::syntax::expr_to_string(combiner)
-      == crate::syntax::expr_to_string(&and_expr)
-  })
+/// Whether `combiner` is the `#1 && #2 && … && #n &` pure function a plain
+/// `RegionIntersection` of `n` regions builds its `BooleanRegion` from.
+fn is_and_combiner(combiner: &Expr, n: usize) -> bool {
+  let Expr::Function { body } = combiner else {
+    return false;
+  };
+  let terms: Vec<&Expr> = match body.as_ref() {
+    Expr::FunctionCall { name, args } if name == "And" => args.iter().collect(),
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::And,
+      left,
+      right,
+    } => vec![left.as_ref(), right.as_ref()],
+    _ => return false,
+  };
+  terms.len() == n
+    && terms
+      .iter()
+      .enumerate()
+      .all(|(i, t)| matches!(t, Expr::Slot(k) if *k == i + 1))
+}
+
+/// The center and radius of a 3-D `Ball`/`Sphere`, evaluated numerically.
+fn try_ball_3d(expr: &Expr) -> Option<([f64; 3], f64)> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if !matches!(name.as_str(), "Ball" | "Sphere") {
+    return None;
+  }
+  let to_f64 = |e: &Expr| -> Option<f64> {
+    crate::functions::math_ast::try_eval_to_f64(
+      &crate::evaluator::evaluate_expr_to_expr(e).ok()?,
+    )
+  };
+  let center = match args.first() {
+    Some(Expr::List(c)) if c.len() == 3 => {
+      [to_f64(&c[0])?, to_f64(&c[1])?, to_f64(&c[2])?]
+    }
+    None => [0.0, 0.0, 0.0],
+    _ => return None,
+  };
+  let radius = match args.get(1) {
+    Some(r) => to_f64(r)?,
+    None => 1.0,
+  };
+  Some((center, radius))
 }
 
 /// The axis-aligned bounds of a 3-D `Cube[center, edge]` or
@@ -10552,66 +10609,17 @@ fn try_implicit_plane(expr: &Expr) -> Option<([f64; 3], [f64; 3])> {
   Some((normal, point))
 }
 
-/// The polygon a box (`a`) and a plane `ImplicitRegion` (`b`) cross-section
-/// each other into, if that's what the pair is. `None` when either operand
-/// isn't of the expected shape, or the plane misses the box entirely.
-fn box_plane_polygon(a: &Expr, b: &Expr) -> Option<Vec<[f64; 3]>> {
-  let bounds = try_box_bounds_3d(a)?;
-  let (normal, point) = try_implicit_plane(b)?;
-  crate::functions::plot3d::plane_polygon_in_box(normal, point, bounds)
-}
-
-/// `Area` of a `Ball` (`a`) crossed with a box-plane cross-section (`b`):
-/// the sphere meets the plane in a circle, which is then clipped to the
-/// cross-section's polygon. `None` when `a` isn't a `Ball`/`Sphere`, `b`
-/// isn't a box-plane pair, or the sphere misses the plane entirely.
-fn ball_plane_region_area(a: &Expr, b: &Expr) -> Option<f64> {
-  let Expr::FunctionCall { name, args } = a else {
-    return None;
-  };
-  if !matches!(name.as_str(), "Ball" | "Sphere") {
-    return None;
-  }
-  let to_f64 = |e: &Expr| -> Option<f64> {
-    crate::functions::math_ast::try_eval_to_f64(
-      &crate::evaluator::evaluate_expr_to_expr(e).ok()?,
-    )
-  };
-  let center = match args.first() {
-    Some(Expr::List(c)) if c.len() == 3 => {
-      [to_f64(&c[0])?, to_f64(&c[1])?, to_f64(&c[2])?]
-    }
-    None => [0.0, 0.0, 0.0],
-    _ => return None,
-  };
-  let radius = match args.get(1) {
-    Some(r) => to_f64(r)?,
-    None => 1.0,
-  };
-
-  let Expr::FunctionCall {
-    name: bname,
-    args: bargs,
-  } = b
-  else {
-    return None;
-  };
-  if bname != "BooleanRegion" || bargs.len() != 2 {
-    return None;
-  }
-  if !is_and_combiner(&bargs[0]) {
-    return None;
-  }
-  let Expr::List(inner) = &bargs[1] else {
-    return None;
-  };
-  let [ia, ib] = inner.as_ref() else {
-    return None;
-  };
-  let (poly, (normal, plane_point)) = box_plane_polygon(ia, ib)
-    .zip(try_implicit_plane(ib))
-    .or_else(|| box_plane_polygon(ib, ia).zip(try_implicit_plane(ia)))?;
-
+/// `Area` of a ball crossed with a box-plane cross-section `poly` (lying in
+/// the plane `normal . (p - plane_point) = 0`): the sphere meets the plane
+/// in a circle, which is then clipped to the polygon. `None` when the
+/// sphere misses the plane entirely.
+fn ball_plane_polygon_area(
+  center: [f64; 3],
+  radius: f64,
+  normal: [f64; 3],
+  plane_point: [f64; 3],
+  poly: &[[f64; 3]],
+) -> Option<f64> {
   // Project onto the plane's own 2-D basis (same construction
   // `plane_polygon_in_box` uses, so the polygon and the disk share axes).
   let unit_n = {
@@ -10651,7 +10659,7 @@ fn ball_plane_region_area(a: &Expr, b: &Expr) -> Option<f64> {
   ];
   let dist = dot(rel, unit_n);
   if dist.abs() > radius {
-    return Some(0.0);
+    return None;
   }
   let circle_radius = (radius * radius - dist * dist).sqrt();
   let foot = [
@@ -14346,19 +14354,52 @@ fn compute_region_set_op(
   Ok(acc)
 }
 
-/// The `BooleanRegion[op, {a, b}]` form Wolfram leaves behind when a set
-/// operation cannot be carried out concretely.
+/// The `BooleanRegion[op, {…}]` form Wolfram leaves behind when a set
+/// operation cannot be carried out concretely. An operand that is itself a
+/// `BooleanRegion` is spliced in — its regions join the list and its
+/// combiner the formula, renumbered — so nesting flattens the way Wolfram's
+/// does: `RegionIntersection[Cube[], RegionIntersection[Ball[], p]]` is
+/// `BooleanRegion[#1 && #2 && #3 &, {Cube[], Ball[], p}]`, and a union
+/// inside an intersection keeps its parentheses, `(#1 || #2) && #3 &`.
 fn boolean_region(name: &str, a: &Expr, b: &Expr) -> Option<Expr> {
-  let combiner = match name {
-    "RegionUnion" => "#1 || #2 &",
-    "RegionIntersection" => "#1 && #2 &",
-    "RegionDifference" => "#1 && !#2 &",
+  // An operand's formula over slots starting at `offset + 1`, and its
+  // regions.
+  let parts = |r: &Expr, offset: usize| -> (Expr, Vec<Expr>) {
+    if let Expr::FunctionCall { name, args } = r
+      && name == "BooleanRegion"
+      && args.len() == 2
+      && let Expr::Function { body } = &args[0]
+      && let Expr::List(regions) = &args[1]
+    {
+      let slots: Vec<Expr> = (1..=regions.len())
+        .map(|i| Expr::Slot(offset + i))
+        .collect();
+      return (
+        crate::syntax::substitute_slots(body, &slots),
+        regions.to_vec(),
+      );
+    }
+    (Expr::Slot(offset + 1), vec![r.clone()])
+  };
+  let (fa, mut regions) = parts(a, 0);
+  let (fb, regions_b) = parts(b, regions.len());
+  regions.extend(regions_b);
+  let formula = match name {
+    "RegionUnion" => call("Or", vec![fa, fb]),
+    "RegionIntersection" => call("And", vec![fa, fb]),
+    "RegionDifference" => call("And", vec![fa, call1("Not", fb)]),
     _ => return None,
   };
-  let func = crate::syntax::string_to_expr(combiner).ok()?;
+  // And/Or are Flat, so evaluating the formula merges `(#1 && #2) && #3`.
+  let formula = crate::evaluator::evaluate_expr_to_expr(&formula).ok()?;
   Some(call(
     "BooleanRegion",
-    vec![func, Expr::List(vec![a.clone(), b.clone()].into())],
+    vec![
+      Expr::Function {
+        body: Box::new(formula),
+      },
+      Expr::List(regions.into()),
+    ],
   ))
 }
 
