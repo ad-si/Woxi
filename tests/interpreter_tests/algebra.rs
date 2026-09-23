@@ -4764,11 +4764,101 @@ mod solve {
   }
 
   #[test]
-  fn one_argument_underdetermined_stays_unevaluated() {
-    // An underdetermined system uses a non-obvious variable-selection
-    // heuristic in wolframscript, so Woxi leaves it unevaluated rather than
-    // guessing the wrong variable.
-    assert_eq!(interpret("Solve[x + y == 3]").unwrap(), "Solve[x + y == 3]");
+  fn one_argument_underdetermined_solves_for_last_variables() {
+    // An underdetermined system is solved for its last variables (in
+    // canonical order), the earlier ones staying free parameters. No
+    // `svars` message: no variables were asked for.
+    assert_eq!(interpret("Solve[x + y == 3]").unwrap(), "{{y -> 3 - x}}");
+    assert!(woxi::get_captured_messages_raw().is_empty());
+    assert_eq!(
+      interpret("Solve[{x + y == 2, x - y == z}]").unwrap(),
+      "{{y -> 2 - x, z -> -2 + 2*x}}"
+    );
+    assert_eq!(
+      interpret("Solve[{y + z == 1, y + z + x == 2}]").unwrap(),
+      "{{x -> 1, z -> 1 - y}}"
+    );
+    // Nonlinear: a clean linear unknown first, then the lowest degree,
+    // then the later variable.
+    assert_eq!(
+      interpret("Solve[x + y^2 == 2]").unwrap(),
+      "{{x -> 2 - y^2}}"
+    );
+    assert_eq!(interpret("Solve[a*x + b == 0]").unwrap(), "{{b -> -(a*x)}}");
+    assert_eq!(interpret("Solve[x*y == 1]").unwrap(), "{{y -> x^(-1)}}");
+    assert_eq!(
+      interpret("Solve[x^2 - y^3 == 1]").unwrap(),
+      "{{x -> -Sqrt[1 + y^3]}, {x -> Sqrt[1 + y^3]}}"
+    );
+    // Rules come out in canonical variable order, not appearance order.
+    assert_eq!(
+      interpret("Solve[{y == 1, x == 2}]").unwrap(),
+      "{{x -> 2, y -> 1}}"
+    );
+    // A conjunction counts as several equations.
+    assert_eq!(
+      interpret("Solve[x^2 + y^2 == 1 && x == y]").unwrap(),
+      "{{x -> -(1/Sqrt[2]), y -> -(1/Sqrt[2])}, {x -> 1/Sqrt[2], y -> 1/Sqrt[2]}}"
+    );
+  }
+
+  #[test]
+  fn explicit_underdetermined_solves_for_last_variables() {
+    // With an explicit variable list the same choice is made, and `svars`
+    // reports that some of the requested variables stay free.
+    assert_eq!(
+      interpret("Solve[x + y == 2, {x, y}]").unwrap(),
+      "{{y -> 2 - x}}"
+    );
+    assert_eq!(
+      woxi::get_captured_messages_raw(),
+      vec![
+        "Solve::svars: Equations may not give solutions for all \"solve\" variables."
+      ]
+    );
+    assert_eq!(
+      interpret("Quiet[Solve[x + 2*y == 3, {x, y}]]").unwrap(),
+      "{{y -> 3/2 - x/2}}"
+    );
+    assert_eq!(
+      interpret("Quiet[Solve[x + 2*y == 3, {y, x}]]").unwrap(),
+      "{{x -> 3 - 2*y}}"
+    );
+    assert_eq!(
+      interpret("Quiet[Solve[a*x + b*y + c*z == d, {x, y, z}]]").unwrap(),
+      "{{z -> d/c - (a*x)/c - (b*y)/c}}"
+    );
+    assert_eq!(
+      interpret(
+        "Quiet[Solve[{2 x + y + 2*z == 2, x - y + 3 z == 1}, {x, y, z}]]"
+      )
+      .unwrap(),
+      "{{y -> 4/5 - (4*x)/5, z -> 3/5 - (3*x)/5}}"
+    );
+    assert_eq!(
+      interpret("Quiet[Solve[x^2 + y^2 == 1, {x, y}]]").unwrap(),
+      "{{y -> -Sqrt[1 - x^2]}, {y -> Sqrt[1 - x^2]}}"
+    );
+    // A requested variable no equation mentions is never the one solved for.
+    assert_eq!(
+      interpret("Quiet[Solve[x^2 == 4, {x, z}]]").unwrap(),
+      "{{x -> -2}, {x -> 2}}"
+    );
+  }
+
+  #[test]
+  fn nsolve_underdetermined_linear_solves_for_first_variables() {
+    // NSolve, unlike Solve, solves a linear underdetermined system for its
+    // first variables and reports no `svars`.
+    assert_eq!(
+      interpret("NSolve[{x + y + z == 2, x - y == 1}, {x, y, z}]").unwrap(),
+      "{{x -> 1.5 - 0.5*z, y -> 0.5 - 0.5*z}}"
+    );
+    assert!(woxi::get_captured_messages_raw().is_empty());
+    assert_eq!(
+      interpret("NSolve[x + y == 2, Reals]").unwrap(),
+      "{{x -> 2. - 1.*y}}"
+    );
   }
 
   #[test]
@@ -5489,12 +5579,15 @@ mod solve {
   // out a second time.
   #[test]
   fn solve_domain_only_form_auto_detects_variables() {
+    // Rounded: wolframscript's numerical root is off in the last digits
+    // (`0.6180339887498907`).
     assert_eq!(
       interpret(
-        "NSolve[{x^2 + y == 1, x + y^2 == 1, 0 < x < 1, 0 < y < 1}, Reals]"
+        "Round[{x, y} /. NSolve[{x^2 + y == 1, x + y^2 == 1, 0 < x < 1, \
+         0 < y < 1}, Reals], 10^-9]"
       )
       .unwrap(),
-      "{{x -> 0.6180339887498949, y -> 0.6180339887498948}}"
+      "{{618033989/1000000000, 618033989/1000000000}}"
     );
     assert_eq!(
       interpret("NSolve[{x^2 - 4 == 0, x > 0}, Reals]").unwrap(),
@@ -5515,15 +5608,16 @@ mod solve {
   }
 
   // Regression for review findings on the domain-only form above: an
-  // underdetermined system must stay unevaluated rather than silently
-  // falling through to solving for the domain name itself, and a domain
-  // name occurring inside the equations (via `Element[x, Reals]`) must
-  // never be picked up as a spurious extra variable.
+  // underdetermined system must not fall through to solving for the domain
+  // name itself — it is solved for its last variables like `Solve[eqns]` —
+  // and a domain name occurring inside the equations (via
+  // `Element[x, Reals]`) must never be picked up as a spurious extra
+  // variable.
   #[test]
-  fn solve_domain_only_form_stays_unevaluated_when_underdetermined() {
+  fn solve_domain_only_form_underdetermined() {
     assert_eq!(
       interpret("Solve[x + y == 2, Reals]").unwrap(),
-      "Solve[x + y == 2, Reals]"
+      "{{y -> 2 - x}}"
     );
     assert_eq!(
       interpret("Solve[{x + y == 3, Element[x, Reals]}, Reals]").unwrap(),
