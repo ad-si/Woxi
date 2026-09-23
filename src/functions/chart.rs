@@ -574,6 +574,22 @@ pub(crate) fn expr_to_label(e: &Expr) -> Option<String> {
         .collect();
       Some(format!("{base}{scripts}"))
     }
+    // `base^exp` (e.g. a `FrameLabel` typesetting `e^(iΩ)` as
+    // `Style["e", Italic]^Row[{Style["i", Italic], "Ω"}]`) reads the same
+    // way `Superscript` above does — the exponent through the Unicode
+    // script-character approximation.
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => {
+      let base = expr_to_label(left)?;
+      let exponent = expr_to_label(right)?;
+      Some(format!(
+        "{base}{}",
+        crate::functions::graphics::to_unicode_script_digits(&exponent, true)
+      ))
+    }
     // `Subsuperscript[base, sub, sup]` — both scripts in sequence, the same
     // Unicode-digit approximation `Subscript`/`Superscript` use above (a
     // Demonstration nesting it, e.g. `Nest[Subsuperscript[#, #, #] &, …]`,

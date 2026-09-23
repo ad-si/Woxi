@@ -3135,6 +3135,45 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_frame_label_power_renders_as_unicode_superscript() {
+    // A `FrameLabel`/`AxesLabel` entry built from `base^exp` (a Demonstration
+    // typesets `e^(iΩ)` as `Style["e", Italic]^Row[{Style["i", Italic],
+    // "Ω"}]`) used to vanish entirely: `expr_to_label` had no arm for
+    // `Expr::BinaryOp { op: Power, .. }`, so a bare Power entry returned
+    // `None` outright, and a Power nested inside a `Row[…]` was silently
+    // skipped by the row's `filter_map` while the rest of the row's text
+    // stayed — e.g. `"H(", base^exp, ")"` rendered as `"H()"`.
+    clear_state();
+
+    // A bare Power FrameLabel entry.
+    let svg = interpret(
+      "ExportString[Plot[Sin[x], {x, 0, 2 Pi}, Frame -> True, \
+         FrameLabel -> {\"t\", x^2}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      svg.contains("x²"),
+      "a bare Power FrameLabel entry must render as a Unicode superscript, \
+       not vanish: {svg}"
+    );
+
+    // A Power nested inside a Row alongside other text, the way a
+    // Demonstration typesets a styled base raised to a styled exponent.
+    clear_state();
+    let svg2 = interpret(
+      "ExportString[Plot[Sin[x], {x, 0, 2 Pi}, Frame -> True, \
+         FrameLabel -> Row[{\"H(\", Style[\"e\", Italic]^Row[{\
+         Style[\"i\", Italic], \"t\"}], \")\"}]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      svg2.contains("H(eit)"),
+      "a Power nested in a Row must render alongside the row's other text, \
+       not leave a gap: {svg2}"
+    );
+  }
+
+  #[test]
   fn test_axes_label_none_suppresses_that_axis_label() {
     // `AxesLabel -> {label, None}` (or `{None, label}`) must omit the axis
     // whose entry is the bare symbol `None`, not print the literal text
