@@ -1356,6 +1356,15 @@ function main() {
     // Woxi bundles the name catalogue but not the pixels, which are not ours
     // to redistribute (see conformance_gaps.md).
     'ExampleData[{"TestImage", "Couple"}]',
+    // ImageDeconvolve: wolframscript's result is shifted by a pixel and its
+    // default method iterates in a way that isn't reproducible (see
+    // conformance_gaps.md, "ImageDeconvolve shifts by a pixel").
+    "ImageData[ImageDeconvolve[Image[{{0.1, 0.5, 0.9}}], {{1}}]]",
+    "ImageData[ImageDeconvolve[Image[{{0.1, 0.2}, {0.3, 0.4}}], {{1}}]]",
+    'ImageData[ImageDeconvolve[Image[{{0.36666666666666664, 0.6333333333333334, 0.36666666666666664, 0.6333333333333334}}], {{1, 1, 1}}/3, Padding -> "Periodic"]]',
+    'ImageData[ImageDeconvolve[Image[{{0.1, 0.5, 0.9}}], {{1}}, Method -> {"Tikhonov", 0.01}]]',
+    'ImageData[ImageDeconvolve[Image[{{0.1, 0.5, 0.9}}], {{1}}, Method -> "Wiener"]]',
+    'ImageDeconvolve[Image[{{0.1, 0.5, 0.9}}], {{1}}, Method -> "RichardsonLucy"]',
     // Same for ExampleData[{"Geometry3D", …}]: the catalogue is bundled, the
     // meshes are Wolfram's and are not.
     'ExampleData[{"Geometry3D", "Cow"}]',

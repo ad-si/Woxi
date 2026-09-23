@@ -3541,6 +3541,30 @@ wolframscript gives `{{1., 0.}}` for `{0., 1., 0.}` but `{{1.}}` for
 44.1 kHz, not a rule worth matching. `FourierDCT`/`FourierDST` differ in the
 last ULP.
 
+### `ImageDeconvolve` shifts by a pixel and iterates its own way
+
+Woxi deconvolves with a regularized inverse filter in the frequency domain
+(`"DampedLS"`, `"Tikhonov"` and `"Wiener"` share it), so a 1×1 identity
+kernel gives the input back, scaled by the regularization. wolframscript's
+result is shifted one pixel up and to the left, the last row and column
+repeated — with the identity kernel `{{1}}` and with the centered
+`{{0, 1, 0}}` alike:
+
+```sh
+wolframscript -code 'ImageData[ImageDeconvolve[Image[{{0.1, 0.2, 0.3, 0.4, 0.5}}], {{1}}, Method -> "RichardsonLucy"]]'
+# {{0.2, 0.3, 0.4, 0.5, 0.5}}
+wolframscript -code 'ImageData[ImageDeconvolve[Image[{{0.1, 0.2, 0.3, 0.4, 0.5}}], {{1}}, Method -> {"Tikhonov", 0.01}]]'
+# {{0.19998, 0.29997, 0.39996, 0.49995, 0.49995}}   (shifted, times 1/(1 + 0.01^2))
+woxi eval 'ImageData[ImageDeconvolve[Image[{{0.1, 0.2, 0.3, 0.4, 0.5}}], {{1}}, Method -> {"Tikhonov", 0.01}]]'
+# {{0.0990099, 0.19802, 0.29703, 0.39604, 0.49505}}
+```
+
+The default `"DampedLS"` is an iterative method whose output
+(`{{0.207692, 0.3, 0.392308, 0.430769, 0.369231}}` for the row above) cannot
+be derived from these samples, and `"RichardsonLucy"`, `"TSVD"`, `"Hybrid"`,
+`"SteepestDescent"` and `"TotalVariation"` are unimplemented (the call stays
+unevaluated). **Not reproducible** without WL's implementation.
+
 ### `Export` of a multi-segment `Sound`
 
 Single `Play` and `Audio` exports are byte-identical to wolframscript. For
