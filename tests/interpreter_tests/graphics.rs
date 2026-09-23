@@ -6073,6 +6073,75 @@ mod plot3d {
       );
     }
 
+    /// The rest of the plot family refuses a degenerate range the same way,
+    /// some under another head's name: the log plots are `Plot`s inside,
+    /// and `RegionPlot3D` writes the endpoints as reals.
+    #[test]
+    fn a_degenerate_plot_range_is_refused_across_the_family() {
+      for (code, message) in [
+        (
+          "DensityPlot[x y, {x, 0, 0}, {y, 0, 1}]",
+          "DensityPlot::plld: Endpoints for x in {x, 0, 0}",
+        ),
+        (
+          "RegionPlot3D[x < y, {x, 0, 0}, {y, 0, 1}, {z, 0, 1}]",
+          "RegionPlot3D::plld: Endpoints for x in {x, 0., 0.}",
+        ),
+        (
+          "LogPlot[x, {x, 1, 1}]",
+          "Plot::plld: Endpoints for x in {x, 1, 1}",
+        ),
+        (
+          "LogLogPlot[x, {x, 1, 1}]",
+          "Plot::plld: Endpoints for x in {x, 1, 1}",
+        ),
+        (
+          "VectorPlot3D[{x, y, z}, {x, 0, 0}, {y, 0, 1}, {z, 0, 1}]",
+          "VectorPlot3D::plld: Endpoints for x in {x, 0, 0}",
+        ),
+        (
+          "ReImPlot[x, {x, 1, 1}]",
+          "ReImPlot::plld: Endpoints for x in {x, 1, 1}",
+        ),
+        (
+          "ComplexPlot[z, {z, 0, 1}]",
+          "ComplexPlot::plld: Corners for z in {z, 0, 1} must have distinct \
+           machine-precision real and imaginary parts.",
+        ),
+        (
+          "ComplexPlot3D[z, {z, 0, I}]",
+          "ComplexPlot3D::plld: Corners for z in {z, 0, I}",
+        ),
+      ] {
+        let result = woxi::interpret_with_stdout(code).unwrap();
+        let head = &code[..code.find('[').unwrap()];
+        assert_eq!(
+          woxi::interpret(&format!("Head[{code}]")).unwrap(),
+          head,
+          "{code} must stay unevaluated"
+        );
+        assert!(
+          result.warnings.iter().any(|w| w.starts_with(message)),
+          "{code}: expected {message:?}, got {:?}",
+          result.warnings
+        );
+      }
+    }
+
+    /// `ComplexPlot[f, {z, r}]` plots over the square with corners
+    /// `±|r| (1 + I)`.
+    #[test]
+    fn complex_plot_radius_form() {
+      assert_eq!(
+        woxi::interpret("Head[ComplexPlot[z, {z, 2}]]").unwrap(),
+        "Graphics"
+      );
+      assert_eq!(
+        woxi::interpret("Head[ComplexPlot3D[z, {z, 1 + 2 I}]]").unwrap(),
+        "Graphics3D"
+      );
+    }
+
     #[test]
     fn plot_singularity_reasonable_y_range() {
       // Plot[1/x, {x, -3, 3}] has a singularity at x=0.
@@ -29181,25 +29250,46 @@ mod revolution_plot3d_part_extraction {
   #[test]
   fn three_coordinate_curve_sweeps_the_fy_component() {
     clear_state();
-    // At theta = 0 the sweep rotation is the identity, so the point is the
-    // curve's own (fx, fy, fz) unchanged.
+    // At theta = 0 the sweep rotation is the identity, so the first point
+    // is the curve's own (fx, fy, fz) unchanged.
     assert_eq!(
       interpret(
         "First[RevolutionPlot3D[{1, 2, 3}, {t, 0, 1}, \
-         {theta, 0, 0}]][[1, 1]]"
+         {theta, 0, Pi}]][[1, 1]]"
       )
       .unwrap(),
       "{1., 2., 3.}"
     );
-    // At theta = Pi, the rotation negates both fx and fy while leaving fz
-    // untouched: (cos Pi, sin Pi; -sin Pi, cos Pi) = (-1, 0; 0, -1).
+    // At theta = Pi (the last point), the rotation negates both fx and fy
+    // while leaving fz untouched: (cos Pi, sin Pi; -sin Pi, cos Pi) =
+    // (-1, 0; 0, -1).
     assert_eq!(
       interpret(
-        "Round[First[RevolutionPlot3D[{1, 2, 3}, {t, 0, 1}, \
-         {theta, Pi, Pi}]][[1, 1]], 0.001]"
+        "Round[Last[First[RevolutionPlot3D[{1, 2, 3}, {t, 0, 1}, \
+         {theta, 0, Pi}]][[1]]], 0.001]"
       )
       .unwrap(),
       "{-1., -2., 3.}"
+    );
+  }
+
+  /// A theta range whose endpoints coincide sweeps nothing: like
+  /// wolframscript, the plot reports `ParametricPlot3D::plld` (it is a
+  /// `ParametricPlot3D` inside) and gives up with `$Failed`.
+  #[test]
+  fn degenerate_range_fails() {
+    clear_state();
+    assert_eq!(
+      interpret("RevolutionPlot3D[{1, 2, 3}, {t, 0, 1}, {theta, 0, 0}]")
+        .unwrap(),
+      "$Failed"
+    );
+    assert_eq!(
+      woxi::get_captured_messages_raw(),
+      vec![
+        "ParametricPlot3D::plld: Endpoints for theta in {theta, 0, 0} must \
+         have distinct machine-precision numerical values."
+      ]
     );
   }
 

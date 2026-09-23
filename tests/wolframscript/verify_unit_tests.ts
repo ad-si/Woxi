@@ -2225,6 +2225,9 @@ function main() {
     // surface itself and can be redrawn inside another graphic.
     "Head[SphericalPlot3D[1, {t, 0, Pi}, {p, 0, 2 Pi}][[1]]]",
     "Head[First[Plot3D[x y, {x, 0, 1}, {y, 0, 1}]]]",
+    "Head[First[RegionPlot3D[x^2 + z^2 < 1, {x, 0, 1}, {y, 0, 0.001}, {z, -1, 1}]]]",
+    "First[RevolutionPlot3D[{1, 2, 3}, {t, 0, 1}, {theta, 0, Pi}]][[1, 1]]",
+    "Round[Last[First[RevolutionPlot3D[{1, 2, 3}, {t, 0, 1}, {theta, 0, Pi}]][[1]]], 0.001]",
 
     // PolyhedronData: the vertex coordinates are value-identical but written
     // with a different radical nesting (Woxi `Sqrt[5/8 + Sqrt[5]/8]`, Wolfram
