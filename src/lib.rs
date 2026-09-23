@@ -3735,7 +3735,24 @@ pub(crate) fn render_tableform_if_needed(expr: syntax::Expr) -> syntax::Expr {
       if name == "TableForm" && !args.is_empty() =>
     {
       let Some((grid_args, group_gaps)) = tableform_grid_args(args) else {
-        return expr;
+        // `TableForm[expr]` for a non-list `expr` is a pass-through in
+        // Wolfram: expr displays exactly as it would on its own, with
+        // TableForm contributing nothing (`tableform_grid_args` only
+        // builds grid data for list-shaped input, so it returns `None`
+        // here). A Demonstration's Manipulate commonly keeps whichever
+        // "screen" is on display in one variable and always wraps it
+        // `TableForm[display, …]` for the one screen where `display`
+        // really is tabular data — every other screen (a title card, a
+        // caption panel, …) is some other layout construct
+        // (`Framed[Pane[Text[…]]]`, a `Column` that has its own nested
+        // `TableForm`, …) that should just render untouched. Render it
+        // through the same wrapper pipeline instead of falling through to
+        // the raw, unevaluated `TableForm[…]` source text below.
+        return if matches!(&args[0], syntax::Expr::List(_)) {
+          expr
+        } else {
+          render_inline_display_wrapper(&args[0])
+        };
       };
       let result = if group_gaps.is_empty() {
         functions::graphics::grid_ast(&grid_args)
