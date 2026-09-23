@@ -17665,6 +17665,95 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`ax$$ = 1.53, $CellContext`ay$$ = 0.
     );
   }
 
+  /// End-to-end regression for "Addition and Subtraction of Integers": two
+  /// number-line bar charts (colored blue for non-negative, red for
+  /// negative) for the two terms, plus a third bar for their sum or
+  /// difference, switched by a rule-choice control, laid out in a `Grid`
+  /// inside a `Pane`.
+  ///
+  /// It already worked; this pins it. `Switch` picking the operation from
+  /// a `{1 -> "plus", 2 -> "minus"}` control, `Text@Style[...]` postfix
+  /// labels, and stacked `Graphics[{background, gridlines, bar[...]}]`
+  /// all render without error, and the discrete operator control comes
+  /// back with its two rule labels alongside the two ranged sliders.
+  #[test]
+  fn addition_and_subtraction_notebook_draws_its_bars() {
+    let nb_src = r##"Notebook[{
+Cell[BoxData["barBg = {White, EdgeForm[Thin], Rectangle[{0, -10}, {6, 10}]};"], "Input"],
+Cell[BoxData["gridLines = {Thickness[.01], Line[Table[{{0, n}, {6, n}}, {n, -9, 9}]]};"], "Input"],
+Cell[BoxData["barTerm[v_] := {Opacity[0.3], If[v >= 0, Blue, Red], Rectangle[{0, 0}, {6, v}]};"], "Input"],
+Cell[BoxData["resultBg = {White, EdgeForm[Thin], Rectangle[{0, -16}, {12, 16}]};"], "Input"],
+Cell[BoxData["resultGrid = {Thickness[.005], Line[Table[{{0, n}, {12, n}}, {n, -15, 15}]]};"], "Input"],
+Cell[BoxData["barResult[a_, b_, op_] := {Opacity[0.3], If[Switch[op, 1, a + b, 2, a - b] >= 0, Blue, Red], Rectangle[{0, 0}, {12, Switch[op, 1, a + b, 2, a - b]}]};"], "Input"],
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[\nPane[\nGrid[{\n{Text@Style[a, 18, Bold], \"   \", Text@Style[b, 18, Bold], \"   \", Text@Style[Switch[op, 1, a + b, 2, a - b], 18, Bold]},\n{Graphics[{barBg, gridLines, barTerm[a]}], Style[Switch[op, 1, \" + \", 2, \" - \"], 18, Bold], Graphics[{barBg, gridLines, barTerm[b]}], Style[\" = \", 18, Bold], Graphics[{resultBg, resultGrid, barResult[a, b, op]}, ImageSize -> {120, 240}]}\n}],\n{480, 360}, Alignment -> {Center, Center}\n],\n{{a, 2, \"first term\"}, -10, 10, 1},\n{{op, 1, \"\"}, {1 -> \"plus\", 2 -> \"minus\"}},\n{{b, 3, \"second term\"}, -10, 10, 1},\nSaveDefinitions -> True\n]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`a$$ = 2, $CellContext`b$$ = 3, $CellContext`op$$ = 1}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(widget.graphics_handle.is_some(), "the bars must draw");
+
+    assert_eq!(widget.controls.len(), 3, "a, op, b");
+    assert!(
+      matches!(
+        &widget.controls[0],
+        manipulate::ControlState::Continuous { name, min, max, step, current, .. }
+          if name == "a" && (*min, *max, *step, *current) == (-10.0, 10.0, 1.0, 2.0)
+      ),
+      "control 0 should be the ranged slider a: {:?}",
+      widget.controls[0]
+    );
+    assert!(
+      matches!(
+        &widget.controls[1],
+        manipulate::ControlState::Discrete { name, value_labels, .. }
+          if name == "op" && value_labels == &["plus", "minus"]
+      ),
+      "control 1 should be the plus/minus rule-choice control: {:?}",
+      widget.controls[1]
+    );
+    assert!(
+      matches!(
+        &widget.controls[2],
+        manipulate::ControlState::Continuous { name, min, max, step, current, .. }
+          if name == "b" && (*min, *max, *step, *current) == (-10.0, 10.0, 1.0, 3.0)
+      ),
+      "control 2 should be the ranged slider b: {:?}",
+      widget.controls[2]
+    );
+
+    let render = |a: i64, b: i64, op: i64| {
+      woxi::interpret_with_stdout(&format!(
+        "a = {a}; b = {b}; op = {op};\n{}",
+        widget.body
+      ))
+      .expect("the body must render")
+      .graphics
+      .expect("the body must produce a graphic")
+    };
+    let plus = render(2, 3, 1);
+    // Three filled bars (background + result each contribute rectangles):
+    // more than a bare frame's worth of polygons.
+    assert!(
+      plus.matches("<rect").count() + plus.matches("<polygon").count() > 3,
+      "bars not drawn: {plus}"
+    );
+    // Switching the operator changes the result bar.
+    assert_ne!(plus, render(2, 3, 2), "the operator control must matter");
+    // Changing either term changes the rendered scene.
+    assert_ne!(plus, render(5, 3, 1), "the term sliders must matter");
+  }
+
   /// End-to-end regression for "Binomial Probability Distribution": a
   /// stem plot of the binomial PDF, titled and with both axes labelled.
   /// The unjoined `ListPlot` path drew no labels at all.
