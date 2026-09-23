@@ -28825,6 +28825,166 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`solid$$ = 1}, \"\\[Ellipsis]\"]"], 
     }
   }
 
+  /// End-to-end regression for the "Universal Sundial" Demonstration: a
+  /// sundial diagram driven by latitude and solar-hour sliders, switched
+  /// between a `Graphics3D` gnomon-and-shadow view and a flat `Graphics`
+  /// view by a `SetterBar`, with a text warning graphic substituted via
+  /// `Which`/`If` when the latitude is past the polar circles.
+  ///
+  /// It already worked (Unicode-named continuous sliders, a `SetterBar`
+  /// discrete control, and the `Graphics`/`Graphics3D` branch both
+  /// rendering); this pins it with a rewritten equivalent (not the
+  /// copyrighted notebook source).
+  #[test]
+  fn universal_sundial_notebook_switches_2d_3d_views() {
+    let nb_src = r##"Notebook[{
+Cell[BoxData["hourAngle[t_] := 15 (t - 12)"], "Input"],
+Cell[BoxData["sunRay2D[lat_, t_] := Graphics[{Circle[], Line[{{0, 0}, {Cos[hourAngle[t] Degree], Sin[hourAngle[t] Degree]}}]}, PlotRange -> 1.2, Axes -> False]"], "Input"],
+Cell[BoxData["sunRay3D[lat_, t_] := Graphics3D[{Sphere[{0, 0, 0}, 0.1], Cylinder[{{0, 0, 0}, {Cos[lat Degree], 0, Sin[lat Degree]}}, 0.02]}, Boxed -> False]"], "Input"],
+Cell[BoxData["polarWarning[msg_] := Graphics[Text[Style[msg, Red, 14]]]"], "Input"],
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[\nIf[Abs[\\[Phi]Deg] > 66.55, polarWarning[\"polar latitude\"], Which[view == 0, sunRay3D[\\[Phi]Deg, tHour], view == 1, sunRay2D[\\[Phi]Deg, tHour]]],\n{{\\[Phi]Deg, 40., Style[\"latitude \\[Phi] (\\[Degree])\", Bold]}, -90, 90, 1},\n{{tHour, 12., \"solar hour\"}, 0, 24, 0.5},\n{{view, 0, \"view\"}, {0 -> \"3D\", 1 -> \"2D\"}, ControlType -> SetterBar},\nSaveDefinitions -> True\n]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`\\[Phi]Deg$$ = 40., $CellContext`tHour$$ = 12., $CellContext`view$$ = 0}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let mut editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter_mut()
+      .find_map(|e| e.manipulate_state.as_mut())
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(widget.graphics_handle.is_some(), "the 3D view must draw");
+
+    let phi = widget
+      .controls
+      .iter()
+      .find_map(|c| match c {
+        manipulate::ControlState::Continuous {
+          name,
+          label,
+          min,
+          max,
+          step,
+          current,
+          ..
+        } if name == "ϕDeg" => {
+          Some((label.clone(), *min, *max, *step, *current))
+        }
+        _ => None,
+      })
+      .expect("latitude slider");
+    assert_eq!(phi, ("latitude ϕ (°)".to_string(), -90.0, 90.0, 1.0, 40.0));
+
+    let hour = widget
+      .controls
+      .iter()
+      .find_map(|c| match c {
+        manipulate::ControlState::Continuous {
+          name,
+          min,
+          max,
+          step,
+          current,
+          ..
+        } if name == "tHour" => Some((*min, *max, *step, *current)),
+        _ => None,
+      })
+      .expect("solar hour slider");
+    assert_eq!(hour, (0.0, 24.0, 0.5, 12.0));
+
+    let (view_idx, values, value_labels, setter_bar) = widget
+      .controls
+      .iter()
+      .enumerate()
+      .find_map(|(i, c)| match c {
+        manipulate::ControlState::Discrete {
+          name,
+          values,
+          value_labels,
+          setter_bar,
+          ..
+        } if name == "view" => {
+          Some((i, values.clone(), value_labels.clone(), *setter_bar))
+        }
+        _ => None,
+      })
+      .expect("the view SetterBar");
+    assert_eq!(values, ["0", "1"]);
+    assert_eq!(value_labels, ["3D", "2D"]);
+    assert!(setter_bar, "ControlType -> SetterBar must be honored");
+
+    // Switching views must re-render without error, and the 2D and 3D
+    // scenes must actually differ.
+    let render_for_view = |widget: &mut manipulate::ManipulateState,
+                           index: usize| {
+      match &mut widget.controls[view_idx] {
+        manipulate::ControlState::Discrete { current_index, .. } => {
+          *current_index = index
+        }
+        other => panic!("expected discrete, got {other:?}"),
+      }
+      widget.reevaluate();
+      assert!(
+        widget.error.is_none(),
+        "view {index} errored: {:?}",
+        widget.error
+      );
+      assert!(widget.graphics_handle.is_some(), "view {index} must draw");
+      let bindings: Vec<(String, String)> = widget
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      let body = widget.body.clone();
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&body)
+      })
+      .expect("body must render")
+      .graphics
+      .expect("view must produce a graphic")
+    };
+    let render_3d = render_for_view(widget, 0);
+    let render_2d = render_for_view(widget, 1);
+    assert_ne!(
+      render_3d, render_2d,
+      "2D and 3D views must render differently"
+    );
+
+    // Past the polar circle the warning text substitutes for the diagram,
+    // in both view modes, and still renders cleanly.
+    match &mut widget.controls[view_idx] {
+      manipulate::ControlState::Discrete { current_index, .. } => {
+        *current_index = 0
+      }
+      _ => unreachable!(),
+    }
+    let phi_idx = widget
+      .controls
+      .iter()
+      .position(|c| c.name() == "ϕDeg")
+      .expect("ϕDeg control");
+    match &mut widget.controls[phi_idx] {
+      manipulate::ControlState::Continuous { current, .. } => *current = 80.0,
+      other => panic!("expected continuous, got {other:?}"),
+    }
+    widget.reevaluate();
+    assert!(
+      widget.error.is_none(),
+      "polar-latitude warning branch must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the warning text must draw"
+    );
+  }
+
   /// Checked a randomly-sampled Wolfram Demonstrations Project notebook: an
   /// open-band ring assembled from two partial `RevolutionPlot3D` surfaces
   /// (the band's outer and inner walls, each swept through only a `sweep`
