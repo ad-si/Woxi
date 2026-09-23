@@ -2,6 +2,24 @@
 
 # Unreleased
 
+- `Graphics3D`'s `Cylinder` tessellation sized its longitudinal
+    subdivision from the raw length/radius ratio alone, with no regard for
+    how large the cylinder actually was on screen. A scene built from many
+    hair-thin `Cylinder`s (radius far smaller than the picture itself)
+    drove nearly every one of them to the unconditional 200-ring
+    subdivision cap, tessellating a small picture into hundreds of
+    thousands of triangles — a 65&nbsp;MB SVG for a single frame, several
+    seconds to render, and (since every `Manipulate` slider drag
+    re-renders the scene) an effectively frozen notebook in Woxi Studio.
+    The subdivision budget now scales down once a scene has more than a
+    handful of `Cylinder`s and a given one's radius is a small fraction of
+    the whole scene's span, the same reasoning `Sphere` tessellation
+    already used — the depth-sorting seams the budget guards against are
+    imperceptible on an object only ever a few screen pixels wide. Found
+    while checking Woxi Studio against a Wolfram Demonstrations Project
+    notebook whose `Manipulate` grows a branching tree out of ~100 such
+    `Cylinder`s.
+
 - `RegionPlot3D` kept no symbolic structure at all, unlike every other 3D
     plotting function (`RevolutionPlot3D`, `ParametricPlot3D`, …), so
     `First[RegionPlot3D[…]]`/`RegionPlot3D[…][[1]]` failed with

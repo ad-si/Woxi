@@ -3456,7 +3456,13 @@ fn tessellate_for_transform(
       p2,
       radius,
       style,
-    } => Some(tessellate_cylinder(p1, p2, *radius, style.capped)),
+    } => Some(tessellate_cylinder(
+      p1,
+      p2,
+      *radius,
+      style.capped,
+      MAX_SIDE_SUBDIVISIONS,
+    )),
     Primitive3D::Cone {
       p1,
       p2,
@@ -4799,13 +4805,52 @@ const CYLINDER_SIDES: usize = 24;
 /// How many rings to place along a side of the given length and radius so
 /// that no single tessellated face is more elongated than
 /// `MAX_SIDE_FACE_ASPECT` times as long as it is wide, given `sides`
-/// facets around the circumference.
-fn side_subdivision_steps(len: f64, radius: f64, sides: usize) -> usize {
+/// facets around the circumference. `max_subdivisions` caps the result —
+/// pass `MAX_SIDE_SUBDIVISIONS` for the unconstrained default, or a
+/// smaller scene-aware budget from `cylinder_max_subdivisions`.
+fn side_subdivision_steps(
+  len: f64,
+  radius: f64,
+  sides: usize,
+  max_subdivisions: usize,
+) -> usize {
   let facet_width =
     2.0 * std::f64::consts::PI * radius.abs().max(1e-9) / sides as f64;
   ((len / facet_width) / MAX_SIDE_FACE_ASPECT)
     .ceil()
-    .clamp(1.0, MAX_SIDE_SUBDIVISIONS as f64) as usize
+    .clamp(1.0, max_subdivisions as f64) as usize
+}
+
+/// Scales the longitudinal subdivision budget for `Cylinder` down once a
+/// scene has many of them and a given one's radius is a small fraction of
+/// the whole scene's span — mirroring `sphere_detail`'s reasoning for
+/// `Sphere`. Regression: a branching-tree Demonstration built its picture
+/// from ~100 hair-thin `Cylinder`s (radius 0.01 against a scene spanning
+/// ~1.6 units); `side_subdivision_steps`'s raw length/radius aspect target
+/// drove most of them to the unconditional 200-ring cap, tessellating the
+/// whole scene into over half a million triangles for a picture where
+/// each cylinder is only ever a few screen pixels wide — the
+/// depth-sorting seams that budget guards against are imperceptible on an
+/// object that thin. A lone or modestly sized Cylinder keeps the full
+/// budget; only a crowd of relatively tiny ones gets throttled.
+fn cylinder_max_subdivisions(
+  radius: f64,
+  scene_extent: f64,
+  cylinder_count: usize,
+) -> usize {
+  if cylinder_count <= 8 || scene_extent <= 0.0 {
+    return MAX_SIDE_SUBDIVISIONS;
+  }
+  let rel = radius.abs() / scene_extent;
+  if rel > 0.08 {
+    MAX_SIDE_SUBDIVISIONS
+  } else if rel > 0.04 {
+    100
+  } else if rel > 0.02 {
+    50
+  } else {
+    16
+  }
 }
 
 /// Tessellate a cylinder along its axis. With `capped`, flat disks close
@@ -4818,6 +4863,7 @@ fn tessellate_cylinder(
   p2: &Point3D,
   radius: f64,
   capped: bool,
+  max_subdivisions: usize,
 ) -> Vec<(Point3D, Point3D, Point3D)> {
   let n = CYLINDER_SIDES;
   let pi = std::f64::consts::PI;
@@ -4860,7 +4906,7 @@ fn tessellate_cylinder(
   let biny = az * perpx - ax * perpz;
   let binz = ax * perpy - ay * perpx;
 
-  let steps = side_subdivision_steps(len, radius, n);
+  let steps = side_subdivision_steps(len, radius, n, max_subdivisions);
   let ring_at = |t: f64| -> Vec<Point3D> {
     let center = Point3D {
       x: p1.x + dx * t,
@@ -5034,7 +5080,12 @@ fn tessellate_tube(
       let idx_next = keep[i + 1];
       let seg_len = norm(sub(&points[idx_next], &points[idx]));
       let r_next = radii.get(idx_next).copied().unwrap_or(0.0);
-      let steps = side_subdivision_steps(seg_len, r.max(r_next), TUBE_SIDES);
+      let steps = side_subdivision_steps(
+        seg_len,
+        r.max(r_next),
+        TUBE_SIDES,
+        MAX_SIDE_SUBDIVISIONS,
+      );
       for s in 1..steps {
         let frac = s as f64 / steps as f64;
         let center = Point3D {
@@ -5712,6 +5763,29 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     0.0
   };
 
+  // Cylinder-scene statistics for adaptive tessellation (see
+  // `cylinder_max_subdivisions`): how many Cylinders there are and how
+  // large the region they occupy is.
+  let mut cyl_count = 0usize;
+  let mut cyl_min = [f64::INFINITY; 3];
+  let mut cyl_max = [f64::NEG_INFINITY; 3];
+  for prim in &prims {
+    if let Primitive3D::Cylinder { p1, p2, radius, .. } = prim {
+      cyl_count += 1;
+      for p in [p1, p2] {
+        for (i, c) in [p.x, p.y, p.z].into_iter().enumerate() {
+          cyl_min[i] = cyl_min[i].min(c - radius);
+          cyl_max[i] = cyl_max[i].max(c + radius);
+        }
+      }
+    }
+  }
+  let cyl_extent = if cyl_count > 0 {
+    (0..3).fold(0.0f64, |m, i| m.max(cyl_max[i] - cyl_min[i]))
+  } else {
+    0.0
+  };
+
   for prim in &prims {
     // Per-triangle edge flags for a polygon with holes; the ordinary
     // hole-free cases derive theirs from the fan below.
@@ -5751,13 +5825,17 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           radius,
           style,
         } => {
-          let tris = tessellate_cylinder(p1, p2, *radius, style.capped);
+          let max_subdiv =
+            cylinder_max_subdivisions(*radius, cyl_extent, cyl_count);
+          let tris =
+            tessellate_cylinder(p1, p2, *radius, style.capped, max_subdiv);
           if style.edge_color.is_some() {
             let len = ((p2.x - p1.x).powi(2)
               + (p2.y - p1.y).powi(2)
               + (p2.z - p1.z).powi(2))
             .sqrt();
-            let steps = side_subdivision_steps(len, *radius, CYLINDER_SIDES);
+            let steps =
+              side_subdivision_steps(len, *radius, CYLINDER_SIDES, max_subdiv);
             holed_boundaries =
               cylinder_edge_flags(steps, CYLINDER_SIDES, style.capped);
           }
