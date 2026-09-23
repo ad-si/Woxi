@@ -11,6 +11,8 @@
 //! derived formula, not Wolfram's own internal representation, so the
 //! numeric coefficients Wolfram prints for e.g. `KnotData["Trefoil",
 //! "SpaceCurve"]` will not match ours — only the shape of the knot does.
+//! `"ImageData"` sweeps a tube mesh around that same curve; likewise only
+//! its shape, not its exact mesh coordinates, matches real Wolfram.
 
 #[allow(unused_imports)]
 use super::*;
@@ -114,6 +116,109 @@ fn space_curve(p: i128, q: i128) -> Result<Expr, InterpreterError> {
   ))
 }
 
+/// `(p, q)`-torus knot space curve, evaluated numerically at `t`.
+fn curve_point(p: i128, q: i128, t: f64) -> (f64, f64, f64) {
+  let p = p as f64;
+  let q = q as f64;
+  let radial = 2.0 + (q * t).cos();
+  (
+    radial * (p * t).cos(),
+    radial * (p * t).sin(),
+    (q * t).sin(),
+  )
+}
+
+/// The 3D mesh for `KnotData[…, "ImageData"]`: a tube swept around the
+/// `(p, q)`-torus knot's space curve, as `{GraphicsComplex[points,
+/// {Polygon[faces]}]}` — the shape `KnotData[…, "ImageData"]` returns in
+/// real Wolfram (see its docs: `GraphicsComplex` mesh data for the 3D
+/// knot picture). The mesh itself — vertex count, triangulation, tube
+/// radius — is our own choice, not Wolfram's internal one, so (like
+/// `SpaceCurve`) only the swept shape matches, not the exact coordinates.
+fn image_data(p: i128, q: i128) -> Result<Expr, InterpreterError> {
+  const N_ALONG: usize = 96;
+  const N_AROUND: usize = 8;
+  const TUBE_RADIUS: f64 = 0.2;
+  const DT: f64 = 1e-4;
+
+  let mut points: Vec<Expr> = Vec::with_capacity(N_ALONG * N_AROUND);
+  for i in 0..N_ALONG {
+    let t = 2.0 * std::f64::consts::PI * i as f64 / N_ALONG as f64;
+    let (cx, cy, cz) = curve_point(p, q, t);
+
+    // Tangent via central difference, then an arbitrary orthonormal
+    // (normal, binormal) frame around it to place the tube's ring.
+    let (px, py, pz) = curve_point(p, q, t - DT);
+    let (nx, ny, nz) = curve_point(p, q, t + DT);
+    let (tx, ty, tz) = normalize(nx - px, ny - py, nz - pz);
+    let reference = if tx.abs() < 0.9 {
+      (1.0, 0.0, 0.0)
+    } else {
+      (0.0, 1.0, 0.0)
+    };
+    let (ux, uy, uz) = normalize(
+      ty * reference.2 - tz * reference.1,
+      tz * reference.0 - tx * reference.2,
+      tx * reference.1 - ty * reference.0,
+    );
+    let (vx, vy, vz) =
+      (ty * uz - tz * uy, tz * ux - tx * uz, tx * uy - ty * ux);
+
+    for j in 0..N_AROUND {
+      let theta = 2.0 * std::f64::consts::PI * j as f64 / N_AROUND as f64;
+      let (cos_t, sin_t) = (theta.cos(), theta.sin());
+      let ox = TUBE_RADIUS * (cos_t * ux + sin_t * vx);
+      let oy = TUBE_RADIUS * (cos_t * uy + sin_t * vy);
+      let oz = TUBE_RADIUS * (cos_t * uz + sin_t * vz);
+      points.push(Expr::List(
+        vec![
+          Expr::Real(cx + ox),
+          Expr::Real(cy + oy),
+          Expr::Real(cz + oz),
+        ]
+        .into(),
+      ));
+    }
+  }
+
+  let mut faces: Vec<Expr> = Vec::with_capacity(N_ALONG * N_AROUND);
+  for i in 0..N_ALONG {
+    let i_next = (i + 1) % N_ALONG;
+    for j in 0..N_AROUND {
+      let j_next = (j + 1) % N_AROUND;
+      let a = (i * N_AROUND + j + 1) as i128;
+      let b = (i * N_AROUND + j_next + 1) as i128;
+      let c = (i_next * N_AROUND + j_next + 1) as i128;
+      let d = (i_next * N_AROUND + j + 1) as i128;
+      faces.push(Expr::List(
+        vec![
+          Expr::Integer(a),
+          Expr::Integer(b),
+          Expr::Integer(c),
+          Expr::Integer(d),
+        ]
+        .into(),
+      ));
+    }
+  }
+
+  let polygon = Expr::FunctionCall {
+    name: "Polygon".to_string(),
+    args: vec![Expr::List(faces.into())].into(),
+  };
+  let complex = Expr::FunctionCall {
+    name: "GraphicsComplex".to_string(),
+    args: vec![Expr::List(points.into()), Expr::List(vec![polygon].into())]
+      .into(),
+  };
+  Ok(Expr::List(vec![complex].into()))
+}
+
+fn normalize(x: f64, y: f64, z: f64) -> (f64, f64, f64) {
+  let len = (x * x + y * y + z * z).sqrt();
+  (x / len, y / len, z / len)
+}
+
 fn knot_graphics(p: i128, q: i128) -> Result<Expr, InterpreterError> {
   eval_wl(&format!(
     "ParametricPlot3D[{{(2+Cos[{q} t]) Cos[{p} t], \
@@ -127,8 +232,12 @@ fn crossing_number(p: i128, q: i128) -> Expr {
   Expr::Integer((p * (q - 1)).min(q * (p - 1)))
 }
 
-static PROPERTIES: &[&str] =
-  &["AlexanderBriggsNotation", "CrossingNumber", "SpaceCurve"];
+static PROPERTIES: &[&str] = &[
+  "AlexanderBriggsNotation",
+  "CrossingNumber",
+  "ImageData",
+  "SpaceCurve",
+];
 
 fn string_list(items: &[&str]) -> Expr {
   Expr::List(
@@ -183,6 +292,7 @@ pub fn knot_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       };
       match property.as_str() {
         "SpaceCurve" => space_curve(p, q),
+        "ImageData" => image_data(p, q),
         "CrossingNumber" => Ok(crossing_number(p, q)),
         "AlexanderBriggsNotation" => match alexander_briggs {
           Some(s) => Ok(Expr::String(s.to_string())),

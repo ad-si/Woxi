@@ -129,7 +129,7 @@ mod knot_data_tests {
   fn knot_data_properties() {
     assert_eq!(
       interpret(r#"KnotData["Properties"]"#).unwrap(),
-      "{AlexanderBriggsNotation, CrossingNumber, SpaceCurve}"
+      "{AlexanderBriggsNotation, CrossingNumber, ImageData, SpaceCurve}"
     );
   }
 
@@ -146,5 +146,66 @@ mod knot_data_tests {
   #[test]
   fn knot_data_renders_graphics3d() {
     assert_eq!(interpret(r#"KnotData["Trefoil"]"#).unwrap(), "-Graphics3D-");
+  }
+
+  // KnotData[name, "ImageData"] is a list holding a single GraphicsComplex
+  // mesh (points + Polygon faces) that can be used as a Graphics3D
+  // primitive directly.
+  #[test]
+  fn knot_data_image_data_is_a_graphics_complex() {
+    assert_eq!(
+      interpret(r#"Head[KnotData["Trefoil", "ImageData"]]"#).unwrap(),
+      "List"
+    );
+    assert_eq!(
+      interpret(r#"Length[KnotData["Trefoil", "ImageData"]]"#).unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret(r#"Head[First[KnotData["Trefoil", "ImageData"]]]"#).unwrap(),
+      "GraphicsComplex"
+    );
+  }
+
+  // The mesh is a tube swept around the space curve: each ring of points
+  // around one cross-section is centered exactly on that point of the
+  // curve (the ring's offsets from center are evenly spaced around a
+  // circle, so they cancel out in the average).
+  #[test]
+  fn knot_data_image_data_rings_are_centered_on_the_space_curve() {
+    let result = interpret(
+      r#"With[{r = KnotData["Trefoil", "SpaceCurve"],
+              pts = First[KnotData["Trefoil", "ImageData"]][[1]]},
+           With[{centers = Mean /@ Partition[pts, Length[pts]/96]},
+             Max[Norm /@ (centers -
+               Table[r[2 Pi k/96], {k, 0, 95}])] < 10^-9]]"#,
+    )
+    .unwrap();
+    assert_eq!(result, "True", "got: {result}");
+  }
+
+  // The mesh renders fine as a Graphics3D primitive, including under
+  // Scale[…] as used by demonstrations that place several copies of the
+  // knot around a circle.
+  #[test]
+  fn knot_data_image_data_renders_in_graphics3d() {
+    assert_eq!(
+      interpret(
+        r#"Head[Graphics3D[Scale[KnotData[{"TorusKnot", {2, 7}}, "ImageData"], 6]]]"#
+      )
+      .unwrap(),
+      "Graphics3D"
+    );
+  }
+
+  // Unlike SpaceCurve/CrossingNumber, ImageData is defined for every
+  // coprime {p, q}, not only the three named entries.
+  #[test]
+  fn knot_data_image_data_general_torus_knot() {
+    assert_eq!(
+      interpret(r#"Head[First[KnotData[{"TorusKnot", {3, 4}}, "ImageData"]]]"#)
+        .unwrap(),
+      "GraphicsComplex"
+    );
   }
 }
