@@ -3675,6 +3675,29 @@ WL scrambles the order of a multi-entry rule list inside an option
 internal hash order. Woxi keeps input order.
 
 
+## Knot data
+
+### `KnotData` knows the knot table, not the curated geometry
+
+Woxi names every knot of the Rolfsen table (`KnotData[All]`, up to ten
+crossings) and answers what follows from the name alone — `CrossingNumber`,
+`AlexanderBriggsList`/`AlexanderBriggsNotation`, `StandardName`, `Name`. A
+`SpaceCurve` (and the `ImageData` tube swept around it) exists only for the
+trefoil and the torus knots, from their textbook parametrizations; the
+trefoil's is the one wolframscript uses too. wolframscript's curves for the
+other knots are `InterpolatingFunction`s built from its curated data, which
+Woxi does not bundle — so a table torus knot such as `SolomonSeal` (5_1) gets
+the torus-knot formula instead of wolframscript's interpolated curve:
+
+```sh
+wolframscript -code 'KnotData["SolomonSeal", "SpaceCurve"][1.]'  # {2.16047, -1.44119, -0.497685}
+woxi eval 'KnotData["SolomonSeal", "SpaceCurve"][1.]'            # {-0.950339, 2.07653, -0.958924}
+```
+
+`KnotData["Properties"]` lists only the properties above (wolframscript has
+68), and `KnotData[name]` draws the curve rather than wolframscript's
+pre-built tube mesh.
+
 ## Chemistry data
 
 ### `IsotopeData` carries NIST's isotope table, not the full ~3000-nuclide chart

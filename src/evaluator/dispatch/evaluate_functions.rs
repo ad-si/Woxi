@@ -1965,7 +1965,7 @@ fn evaluate_function_call_ast_inner(
   }
 
   // Knot data function
-  if name == "KnotData" && !args.is_empty() {
+  if name == "KnotData" {
     return crate::functions::knot_data::knot_data_ast(args);
   }
 
