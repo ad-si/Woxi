@@ -27934,6 +27934,136 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`count$$ = 3, $CellContext`offset$$ 
     );
   }
 
+  /// Checked a randomly-sampled Wolfram Demonstrations Project notebook (an
+  /// interactive trivia-board game) against Woxi Studio's Manipulate
+  /// pipeline. Its shape: a body that keeps whichever "screen" is currently
+  /// shown in one hidden variable and always displays it `TableForm[screen,
+  /// …]`; most screens are plain layout constructs (a title card built from
+  /// `Framed[Pane[Text[…]]]`), but the main board is a `Column` around a
+  /// `TableForm` whose data is `Table[With[{i = i}, Button[…]], {i, 1, n}]`
+  /// — a row of buttons generated one per cell, not written out literally.
+  ///
+  /// This is a self-authored, construct-equivalent example (invented
+  /// variable names, layout and values) — not the notebook's own code,
+  /// data, or wording, which is copyrighted.
+  ///
+  /// Two regressions this notebook hit together:
+  /// 1. `extract_body_togglerbars` (`src/functions/graphics.rs`) lifts a
+  ///    body-drawn `Button[…]` into the display list, replacing it with
+  ///    `Nothing` in the body — correct for a single literal button, but a
+  ///    `Table[…, Button[…]]` generator has only one *template* `Button`
+  ///    node in its unevaluated source, so this extracted one non-functional
+  ///    copy (its loop variable never resolves outside the `Table`) and left
+  ///    every generated instance blank once the `Table` ran.
+  /// 2. Even left in place, a bare `Button[label, action]` drawn as a
+  ///    `Column`/`Grid`/`TableForm` cell (not wrapped in `Inset[…]`, which
+  ///    already drew it as a plate) fell back to printing its literal,
+  ///    unevaluated source text — so the board's cells would have shown
+  ///    `Button[1, Set[chosen, 1]]`-style text, not a numbered button.
+  /// A third, independent regression in the same notebook: the *title*
+  /// screen (`TableForm[Framed[…], …]`, a non-list `display`) rendered as
+  /// raw `TableForm[Framed[…], …]` source text too — `TableForm[expr]` for
+  /// non-list `expr` is a Wolfram pass-through, but Woxi's renderer treated
+  /// "no grid to build" the same as "nothing rendered" instead of showing
+  /// `expr`'s own picture (fixed in `render_tableform_if_needed`,
+  /// `src/lib.rs`; covered directly by
+  /// `test_tableform_of_non_list_passes_through_to_wrapped_content` in
+  /// `tests/interpreter_tests.rs`).
+  #[test]
+  fn demonstration_trivia_board_generates_button_grid_from_table() {
+    let code = r#"Manipulate[
+      title = Framed[Pane[Text[Style["Pick a number", 20]], ImageSize -> {220, 80}]];
+      board = Column[{
+        TableForm[
+          Table[With[{i = i}, Button[i, chosen = i; screen = title]], {i, 1, 4}],
+          TableAlignments -> Center
+        ],
+        ""
+      }];
+      TableForm[screen, TableAlignments -> Center],
+      {{screen, title, ControlType -> None}},
+      {{chosen, 0, ControlType -> None}},
+      Button["menu", screen = board]
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let mut state = manipulate::ManipulateState::from_expr(&expr).expect(
+      "the hidden screen/chosen state and menu button should build a widget",
+    );
+    assert_eq!(
+      state.error, None,
+      "the title screen must evaluate cleanly on first build: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the title screen should render a picture"
+    );
+    let render = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .chain(w.state.iter().cloned())
+        .collect();
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&w.body)
+      })
+      .expect("body evaluates")
+      .graphics
+      .expect("the current screen must render a picture")
+    };
+    let title_svg = render(&state);
+    assert!(
+      title_svg.contains("Pick a number"),
+      "the title card's own text must render, not TableForm[…] source: {title_svg}"
+    );
+    assert!(
+      !title_svg.contains("TableForm["),
+      "must not fall back to raw TableForm[…] source text: {title_svg}"
+    );
+
+    // Click "menu": switches the hidden `screen` to the Table-generated
+    // button board.
+    let menu_action = state
+      .controls
+      .iter()
+      .find_map(|c| match c {
+        manipulate::ControlState::Button { label, action, .. }
+          if label == "menu" =>
+        {
+          Some(action.clone())
+        }
+        _ => None,
+      })
+      .expect("the menu Button control should be present");
+    state.apply_button_action(&menu_action);
+    state.reevaluate();
+    assert_eq!(
+      state.error, None,
+      "switching to the button board must re-render cleanly: {:?}",
+      state.error
+    );
+    let board_svg = render(&state);
+    assert!(
+      !board_svg.contains("Button["),
+      "the generated buttons must not fall back to raw Button[…] source \
+       text: {board_svg}"
+    );
+    for label in ["1", "2", "3", "4"] {
+      assert!(
+        board_svg.contains(&format!(">{label}<")),
+        "button {label} of the Table-generated board should show its own \
+         label on a plate: {board_svg}"
+      );
+    }
+    assert!(
+      board_svg.matches("<rect").count() >= 4,
+      "each of the 4 generated buttons should draw as its own plate: {board_svg}"
+    );
+  }
+
   /// A Demonstration's "Contributed By" section is plain prose text, and
   /// authors' names occasionally carry a Latin-1 letter that has no
   /// `\[Name]` in Wolfram's named-character table (e.g. the Spanish

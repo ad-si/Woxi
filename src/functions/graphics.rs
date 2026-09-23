@@ -13166,6 +13166,15 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
     {
       animate_snapshot_svg(args)?
     }
+    // A bare `Button[label, action]` cell (a Demonstration's clickable
+    // grid, e.g. a game board's point-value buttons laid out with
+    // `Grid`/`TableForm`) draws as its plate — the same as when it sits
+    // inside `Inset[…]` — rather than printing its raw source text.
+    Expr::FunctionCall { name, args }
+      if name == "Button" && args.len() >= 2 =>
+    {
+      button_plate_svg(&graphics_text_content(&args[0]))
+    }
     // As above, a display wrapper that resolves to a picture is drawn
     // rather than printed as source.
     Expr::FunctionCall { .. } if crate::evaluator::lays_out_a_graphic(cell) => {
@@ -17189,6 +17198,14 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
       // A sound item shows the sound box a notebook draws for it — a play
       // button and the waveform — rather than the `Play[…]` source text.
       "Sound" | "Play" => return crate::functions::sound::sound_svg(expr),
+      // A bare `Button[label, action]` drawn directly as a layout item
+      // (not wrapped in `Inset[…]`, which already draws it as a plate) —
+      // the action is never run outside a live widget, so only the plate
+      // matters here. Without this a `Column`/`Row` item holding one
+      // printed as its raw `Button[…]` source text instead of a button.
+      "Button" if args.len() >= 2 => {
+        return Some(button_plate_svg(&graphics_text_content(&args[0])));
+      }
       // `TraditionalForm[expr]` is typeset in conventional notation —
       // `=` for `Equal`, `≤` for `LessEqual`, `sin(x)` for `Sin[x]`,
       // stacked fractions — by the same box pipeline the top-level
@@ -20877,6 +20894,34 @@ fn extract_body_togglerbars(expr: &Expr, displays: &mut Vec<String>) -> Expr {
     {
       displays.push(crate::syntax::expr_to_input_form(expr));
       id_expr("Nothing")
+    }
+    // `Table[body, iterators…]` generates a variable number of copies of
+    // whatever `body` draws — a Demonstration's clickable grid (e.g. a
+    // trivia board's point-value buttons, one `Button` per cell) is
+    // commonly written `Table[With[{i=i,j=j}, Button[…]], {j,1,5},
+    // {i,1,6}]`. `displays` holds one persistent widget per *literal*
+    // source-level control, so stripping the single template `Button`
+    // node here (as the arm above does for one drawn directly by the
+    // body) would extract one non-functional copy — its `i`/`j` never
+    // resolve outside the `Table` — and blank out every generated
+    // instance in the rendered picture (each becomes `Nothing`). Leave a
+    // `Table`'s generator body untouched instead: `Table` then expands it
+    // into real per-cell `Button` calls with `i`/`j` substituted, which
+    // the picture renderer draws as button plates with their real labels
+    // (see `nested_layout_svg`/`grid_cell_graphic`) — not yet clickable,
+    // but visible and correct, rather than an invisible gap. Iterator
+    // specs are still walked normally, the same as any other argument.
+    Expr::FunctionCall { name, args }
+      if name == "Table" && !args.is_empty() =>
+    {
+      let mut new_args: Vec<Expr> = args.to_vec();
+      for a in new_args.iter_mut().skip(1) {
+        *a = extract_body_togglerbars(a, displays);
+      }
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args.into(),
+      }
     }
     Expr::FunctionCall { name, args } => Expr::FunctionCall {
       name: name.clone(),
