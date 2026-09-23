@@ -4602,29 +4602,26 @@ fn evaluate_function_call_ast_inner(
       // on. It is not an option, so it is taken off here and turned into
       // the layered embedding the renderer understands.
       let layered = matches!(name, "LayeredGraphPlot" | "TreePlot");
-      let literal_pos = args[1..]
+      let positional: Vec<&Expr> = args[1..]
         .iter()
-        .find(|a| !matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }));
+        .filter(|a| !matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+        .collect();
+      let literal_pos = positional.first().copied();
       let root_pos =
         literal_pos.and_then(crate::functions::graph::layer_direction);
-      // `TreePlot[rules, pos, …]`'s second positional argument must be one
-      // of Top/Bottom/Left/Right/Center — an older two-argument calling
-      // convention that passed a root vertex there instead (as several
-      // pre-Graph-object Demonstrations still do) now raises `TreePlot::rp`
-      // and leaves the call unevaluated rather than silently plotting.
-      if name == "TreePlot"
-        && let Some(pos_arg) = literal_pos
-        && root_pos.is_none()
-      {
-        let pos_str =
-          crate::syntax::format_expr(pos_arg, crate::syntax::ExprForm::Output);
-        crate::emit_message_with("TreePlot::rp", || {
-          format!(
-            "TreePlot::rp: The second argument {pos_str} of TreePlot must be one of Top, Bottom, Left, Right, or Center."
-          )
-        });
-        return Ok(unevaluated(name, args));
-      }
+      // `TreePlot[g, pos, v]` hangs the tree from vertex `v`. The older
+      // two-argument form `TreePlot[g, v]` (which pre-Graph-object
+      // Demonstrations use) names the root in the position slot instead;
+      // wolframscript still accepts it when `v` is a vertex of `g`.
+      let is_center =
+        matches!(literal_pos, Some(Expr::Identifier(s)) if s == "Center");
+      let root_vertex = if name != "TreePlot" {
+        None
+      } else if root_pos.is_some() || is_center {
+        positional.get(1).copied()
+      } else {
+        literal_pos
+      };
       let mut forwarded: Vec<Expr> = vec![args[0].clone()];
       forwarded.extend(
         args[1..]
@@ -4651,6 +4648,12 @@ fn evaluate_function_call_ast_inner(
       if layered {
         let mut spec =
           vec![Expr::String("LayeredDigraphEmbedding".to_string())];
+        if let Some(v) = root_vertex {
+          spec.push(Expr::Rule {
+            pattern: Box::new(Expr::String("RootVertex".to_string())),
+            replacement: Box::new(v.clone()),
+          });
+        }
         if let Some(dir) = root_pos {
           spec.push(Expr::Rule {
             pattern: Box::new(Expr::String("Orientation".to_string())),
@@ -4700,6 +4703,34 @@ fn evaluate_function_call_ast_inner(
       // print as the `-Graphics-` placeholder rather than the
       // `Graph[<n>, <m>]` data-structure summary.
       let evaluated = crate::evaluator::evaluate_expr_to_expr(&graph_expr)?;
+      // A second argument that is neither a position nor a vertex of the
+      // graph is rejected. Numbers still pass: wolframscript hands them to
+      // its legacy layout, which ignores them.
+      if name == "TreePlot"
+        && let Some(pos_arg) = literal_pos
+        && root_pos.is_none()
+        && !is_center
+        && !matches!(
+          pos_arg,
+          Expr::Integer(_)
+            | Expr::BigInteger(_)
+            | Expr::Real(_)
+            | Expr::BigFloat(..)
+        )
+        && !matches!(pos_arg, Expr::FunctionCall { name: rn, .. } if rn == "Rational")
+        && !matches!(&evaluated, Expr::FunctionCall { name: en, args: eargs }
+          if en == "Graph"
+            && matches!(eargs.first(), Some(Expr::List(vs)) if vs.iter().any(|v| crate::evaluator::pattern_matching::expr_equal(v, pos_arg))))
+      {
+        let pos_str =
+          crate::syntax::format_expr(pos_arg, crate::syntax::ExprForm::Output);
+        crate::emit_message_with("TreePlot::rp", || {
+          format!(
+            "TreePlot::rp: The second argument {pos_str} of TreePlot must be one of Top, Bottom, Left, Right or Center."
+          )
+        });
+        return Ok(unevaluated(name, args));
+      }
       if let Expr::FunctionCall {
         name: en,
         args: eargs,
