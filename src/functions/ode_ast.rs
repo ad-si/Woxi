@@ -1885,9 +1885,9 @@ fn solve_tridiagonal(a: &[f64], b: &[f64], c: &[f64], d: &[f64]) -> Vec<f64> {
 }
 
 /// Solve a periodic ("cyclic") tridiagonal system: like `solve_tridiagonal`,
-/// but row `0`'s sub-diagonal wraps around to column `n - 1` with
-/// coefficient `alpha`, and row `n - 1`'s super-diagonal wraps around to
-/// column `0` with coefficient `beta`. Uses the Sherman-Morrison trick
+/// but row `n - 1`'s sub-diagonal wraps around to column `0` with
+/// coefficient `alpha`, and row `0`'s super-diagonal wraps around to
+/// column `n - 1` with coefficient `beta`. Uses the Sherman-Morrison trick
 /// (Numerical Recipes' "cyclic" routine): absorb the two corner entries
 /// into a rank-1 update of an ordinary tridiagonal system, solve that twice
 /// (once for the real right-hand side, once for the update vector), then
@@ -2323,7 +2323,7 @@ fn try_solve_hyperbolic_pde(
       }
     }
     let w_free = if periodic {
-      solve_cyclic_tridiagonal(&a, &b, &c, &d, corner_lo, corner_hi)
+      solve_cyclic_tridiagonal(&a, &b, &c, &d, corner_hi, corner_lo)
     } else {
       solve_tridiagonal(&a, &b, &c, &d)
     };
@@ -10069,4 +10069,48 @@ fn dsolve_linear_system(
     .collect();
 
   Ok(Expr::List(vec![Expr::List(rules.into())].into()))
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  /// A hand-built 4x4 periodic tridiagonal system whose two corners
+  /// (`alpha` at the bottom-left, `beta` at the top-right — see
+  /// `solve_cyclic_tridiagonal`'s doc comment) are different values,
+  /// instead of the coincidentally-zero, symmetric corners every PDE
+  /// integration test exercises this solver through. A caller that swaps
+  /// `alpha`/`beta` (as `try_solve_hyperbolic_pde`'s call site did — see
+  /// PR #960's review) transposes the solved matrix's two corners; with
+  /// `alpha == beta` that transposition is invisible, so it takes a
+  /// genuinely asymmetric system like this one to catch it. Verified by
+  /// reconstructing the dense matrix and checking `A x == d` directly,
+  /// independent of `solve_cyclic_tridiagonal`'s own algorithm.
+  #[test]
+  fn cyclic_tridiagonal_solves_the_periodic_system_with_asymmetric_corners() {
+    let a = [0.0, 1.0, 1.0, 1.0];
+    let b = [4.0, 4.0, 4.0, 4.0];
+    let c = [1.0, 1.0, 1.0, 0.0];
+    let alpha = 2.0; // bottom-left corner: A[3][0]
+    let beta = 3.0; // top-right corner: A[0][3]
+    let d = [10.0, 11.0, 12.0, 13.0];
+
+    let x = solve_cyclic_tridiagonal(&a, &b, &c, &d, alpha, beta);
+
+    let n = 4;
+    let dense = [
+      [b[0], c[0], 0.0, beta],
+      [a[1], b[1], c[1], 0.0],
+      [0.0, a[2], b[2], c[2]],
+      [alpha, 0.0, a[3], b[3]],
+    ];
+    for i in 0..n {
+      let row_dot: f64 = (0..n).map(|j| dense[i][j] * x[j]).sum();
+      assert!(
+        (row_dot - d[i]).abs() < 1e-9,
+        "row {i}: A x = {row_dot}, expected {}",
+        d[i]
+      );
+    }
+  }
 }
