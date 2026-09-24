@@ -19006,6 +19006,81 @@ Cell[BoxData["Manipulate[Module[{s = 2. r/n, pts}, pts = Table[{{x, y}, {y, -x}}
     );
   }
 
+  /// End-to-end regression for a Demonstration whose Epilog draws a line
+  /// through the derivative of a *pure function chosen by `Switch`* — e.g.
+  /// a reflective-optics Demonstration selecting between a parabolic and a
+  /// spherical mirror profile and tracing rays off it via the profile's
+  /// slope. `curveShape[kind]` returns a different two-parameter
+  /// `Function[{u, k}, …]` depending on `kind`, and the tangent direction
+  /// at each sample point comes from `Derivative[1, 0]` applied directly to
+  /// that returned Function — not to a named symbol with `DownValues`.
+  /// Woxi previously only resolved a multi-index `Derivative[n1, …]` against
+  /// a slot-based anonymous function (`# ^ 2 &`) or a symbol's own
+  /// definition; applied straight to a `Function[{x, y}, body]` value it
+  /// stayed an unevaluated `CurriedCall`, so the angle — and every
+  /// downstream coordinate — stayed symbolic instead of collapsing to a
+  /// number, corrupting the whole picture.
+  #[test]
+  fn manipulate_traces_tangents_via_derivative_of_switched_function() {
+    let nb = woxi::notebook::parse_notebook(
+      r##"Notebook[{
+Cell[CellGroupData[{
+Cell["Initialization Code", "Section"],
+Cell[BoxData["curveShape[kind_] := Switch[kind, \"line\", Function[{u, k}, k*u], \"quad\", Function[{u, k}, k*u^2]]"], "Input"]
+}, Closed]],
+Cell[CellGroupData[{
+Cell["Manipulate", "Section"],
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[Graphics[{Table[Module[{ang = ArcTan[Derivative[1, 0][curveShape[kind]][u, k]]}, Line[{{u, curveShape[kind][u, k]}, {u + 0.2 Cos[ang], curveShape[kind][u, k] + 0.2 Sin[ang]}}]], {u, -0.9, 0.9, 0.3}]}, PlotRange -> {{-1.5, 1.5}, {-1.5, 1.5}}, ImageSize -> {300, 300}], {{k, 1, \"scale\"}, 0.5, 3}, {{kind, \"line\", \"curve type\"}, {\"line\", \"quad\"}}, SaveDefinitions -> True]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`k$$ = 1, $CellContext`kind$$ = \"line\"}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}, Closed]]
+}]"##,
+    )
+    .unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "the tangent lines must evaluate: {:?}",
+      widget.error
+    );
+    assert!(widget.graphics_handle.is_some(), "the rays must draw");
+    assert_eq!(widget.controls.len(), 2, "{:?}", widget.controls);
+
+    let render = |kind: &str, k: f64| {
+      woxi::interpret_with_stdout(&format!(
+        "kind = \"{kind}\"; k = {k};\n{}",
+        widget.body
+      ))
+      .expect("the body must render")
+      .graphics
+      .expect("the body must produce a graphic")
+    };
+    let line_svg = render("line", 1.0);
+    // Every tangent line must resolve to a plain numeric polyline — no
+    // leftover symbolic `Derivative`/`ArcTan` head leaking into the
+    // coordinates the way it did before Derivative resolved against a
+    // Switch-selected Function.
+    assert!(
+      !line_svg.contains("Derivative") && !line_svg.contains("ArcTan"),
+      "the tangent angle must be numeric: {line_svg:.400}"
+    );
+    assert!(
+      line_svg.matches("<polyline").count() == 7,
+      "expected one tangent segment per sample point, got: {line_svg:.400}"
+    );
+    // Picking the other mirror profile changes every tangent's slope.
+    assert_ne!(
+      render("quad", 1.0),
+      line_svg,
+      "the curve-shape control must matter"
+    );
+  }
+
   /// The SetterBar/PopupMenu split Wolfram's `Manipulate` makes on its own,
   /// pinned to the Demonstrations it was read off (see
   /// [`renders_as_setter_bar`]). The interesting pair is five phrases (a bar)

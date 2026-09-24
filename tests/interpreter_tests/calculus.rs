@@ -15116,6 +15116,7 @@ mod integrate_piecewise_definite {
 
 mod cases {
   use super::super::case_helpers::assert_case;
+  use super::*;
 
   #[test]
   fn integrate_1() {
@@ -15395,6 +15396,60 @@ mod cases {
     assert_case(
       r#"Derivative[1][Sin]; Derivative[3][Sin]; Derivative[2][# ^ 3&]; Sin'[x]; (# ^ 4&)''; f'[x] // InputForm; Derivative[1][#2 Sin[#1]+Cos[#2]&]; Derivative[1,2][#2^3 Sin[#1]+Cos[#2]&]; Derivative[1,2,1][#2^3 Sin[#1]+Cos[#2]&]; Derivative[0,0,0][a+b+c]; f[x_] := x ^ 2; f'[x]; Derivative[2, 1][h]; Derivative[2, 0, 1, 0][h[g]]"#,
       r#"Derivative[2, 0, 1, 0][h[g]]"#,
+    );
+  }
+  #[test]
+  fn derivative_multi_index_named_function() {
+    // Regression: `Derivative[n1, ..., nk]` applied directly to a
+    // *named-parameter* pure function (`Function[{x, y}, body]`) previously
+    // stayed an unevaluated `CurriedCall` — only the slot-based form
+    // (`# ^ 2 &`) and a symbol's own `DownValues` were handled. This shows
+    // up whenever a Demonstration picks between differently-shaped pure
+    // functions (e.g. via `Switch`) and differentiates whichever one comes
+    // back, since `Switch`'s branches are themselves `Function[{...}, ...]`
+    // literals rather than named symbols.
+    assert_eq!(
+      interpret("Derivative[1, 0][Function[{a, b}, a^2 + b]]").unwrap(),
+      "Function[{a, b}, 2*a]"
+    );
+  }
+  #[test]
+  fn derivative_multi_index_named_function_second_arg() {
+    assert_eq!(
+      interpret("Derivative[0, 1][Function[{a, b}, a^2 + b]]").unwrap(),
+      "Function[{a, b}, 1]"
+    );
+  }
+  #[test]
+  fn derivative_multi_index_named_function_applied() {
+    assert_eq!(
+      interpret("Derivative[1, 0][Function[{a, b}, a^2 + b]][3, 4]").unwrap(),
+      "6"
+    );
+  }
+  #[test]
+  fn derivative_multi_index_named_function_second_order() {
+    assert_eq!(
+      interpret("Derivative[1, 1][Function[{a, b}, a^2*b^3]][3, 4]").unwrap(),
+      "288"
+    );
+  }
+  #[test]
+  fn derivative_multi_index_named_function_via_switch() {
+    // The realistic shape: a helper returns one of several named-parameter
+    // pure functions depending on a string argument, and the caller
+    // differentiates whichever one it got back — exactly what a
+    // Demonstration's reflective-optics Epilog does when it picks a mirror
+    // profile and traces a ray off its slope.
+    assert_eq!(
+      interpret(concat!(
+        "curveShape[kind_] := Switch[kind, ",
+        "\"line\", Function[{u, k}, k*u], ",
+        "\"quad\", Function[{u, k}, k*u^2]]; ",
+        "N[ArcTan[Derivative[1, 0][curveShape[\"quad\"]][2, 3]]]"
+      ))
+      .unwrap(),
+      "1.4876550949064553"
     );
   }
   #[test]
