@@ -2,6 +2,17 @@
 
 # Unreleased
 
+- A `Slider2D` control whose corner-point bounds name another control's
+    variable declared later in the same `Manipulate` (`{{p, {0.2, 0.2}, ""},
+    {0, 0}, {a, b}, ControlType -> Slider2D}`, with `a`/`b` themselves plain
+    sliders) silently disappeared from Woxi Studio's control panel instead
+    of just widening: the held-echo pass wraps such a bound in `Dynamic[…]`,
+    which the corner-point reader did not unwrap before matching it as a
+    2-element list, so the whole control failed to parse. Found via the
+    scheduled Wolfram Demonstrations check downloading "Partially Loaded
+    Rectangular Plate", whose two load-point `Slider2D` controls are bounded
+    by the plate's own width/height sliders.
+
 - `Graphics3D`'s `Cylinder` tessellation sized its longitudinal
     subdivision from the raw length/radius ratio alone, with no regard for
     how large the cylinder actually was on screen. A scene built from many
