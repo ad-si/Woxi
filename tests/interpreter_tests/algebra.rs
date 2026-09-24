@@ -17759,6 +17759,63 @@ mod fuzz_diff_round_2026_07_17 {
   }
 
   #[test]
+  fn rational_coefficient_merges_into_a_numeric_radical() {
+    // The coefficient squares into the radicand and square factors come
+    // back out, also when other factors ride along.
+    assert_case("Sqrt[6] x/4", "(Sqrt[3/2]*x)/2");
+    assert_case("2 x/Sqrt[30]", "Sqrt[2/15]*x");
+    assert_case("4 x/Sqrt[2 Pi]", "2*Sqrt[2/Pi]*x");
+    assert_case("3 x/Sqrt[2 Pi]", "(3*x)/Sqrt[2*Pi]");
+    // A radicand with reciprocal constants joins in too.
+    assert_case("Sqrt[6/Pi]/4", "Sqrt[3/(2*Pi)]/2");
+    assert_case("Sqrt[6/Pi] Sin[t]/4", "(Sqrt[3/(2*Pi)]*Sin[t])/2");
+  }
+
+  #[test]
+  fn unit_fraction_bases_flip() {
+    // A unit fraction under a root or a power flips to its denominator.
+    assert_case("Sqrt[1/(2 Pi)]", "1/Sqrt[2*Pi]");
+    assert_case("Sqrt[x/(2 Pi)]", "Sqrt[x]/Sqrt[2*Pi]");
+    assert_case("Sqrt[1/(2 Pi)]/3", "1/(3*Sqrt[2*Pi])");
+    assert_case(
+      "{(1/2)^x, (1/3)^(-x), (1/2)^(x + 1), (1/2)^Pi}",
+      "{2^(-x), 3^x, 2^(-1 - x), 2^(-Pi)}",
+    );
+    assert_case(
+      "{(1/2)^(1/3), (1/4)^(1/3), (1/2)^(I x)}",
+      "{2^(-1/3), 2^(-2/3), 2^(-I*x)}",
+    );
+    // A complex number exponent keeps the fraction, and (2/3)^x is no
+    // unit fraction.
+    assert_case(
+      "{(1/2)^I, (1/2)^(1 + I), (2/3)^x}",
+      "{(1/2)^I, (1/2)^(1 + I), (2/3)^x}",
+    );
+    // A perfect-power base reduces under a negative exponent as it does
+    // under a positive one.
+    assert_case(
+      "{4^(-1/3), 8^(-2/9), 100^(-1/3)}",
+      "{2^(-2/3), 2^(-2/3), 10^(-2/3)}",
+    );
+  }
+
+  #[test]
+  fn number_base_powers_lead_a_product() {
+    assert_case("Sqrt[3/2] E^(I p)", "Sqrt[3/2]*E^(I*p)");
+    assert_case("(3/2)^x E^y", "(3/2)^x*E^y");
+    assert_case("Sqrt[3] (-1)^(1/4) x", "(-1)^(1/4)*Sqrt[3]*x");
+    assert_case("I Sqrt[3/2] x", "I*Sqrt[3/2]*x");
+  }
+
+  #[test]
+  fn exact_numeric_factor_joins_a_bigfloat() {
+    assert_case(
+      "N[2, 20] 3^(1/3)",
+      "2.88449914061481676464327662156021917678`20.",
+    );
+  }
+
+  #[test]
   fn number_base_powers_sort_before_symbols_and_strings() {
     // A power of a number compares by its base, and a number precedes any
     // symbol, string or compound.

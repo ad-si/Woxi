@@ -4673,15 +4673,19 @@ mod spherical_harmonic_canonical_form {
   fn negative_order_normalization() {
     assert_eq!(
       interpret("SphericalHarmonicY[1, -1, t, p]").unwrap(),
-      "(Sqrt[6/Pi]*Sin[t])/(4*E^(I*p))"
+      "(Sqrt[3/(2*Pi)]*Sin[t])/(2*E^(I*p))"
     );
     assert_eq!(
       interpret("SphericalHarmonicY[2, -1, t, p]").unwrap(),
-      "(Sqrt[30/Pi]*Cos[t]*Sin[t])/(4*E^(I*p))"
+      "(Sqrt[15/(2*Pi)]*Cos[t]*Sin[t])/(2*E^(I*p))"
     );
     assert_eq!(
       interpret("SphericalHarmonicY[2, -2, t, p]").unwrap(),
-      "(Sqrt[30/Pi]*Sin[t]^2)/(8*E^((2*I)*p))"
+      "(Sqrt[15/(2*Pi)]*Sin[t]^2)/(4*E^((2*I)*p))"
+    );
+    assert_eq!(
+      interpret("SphericalHarmonicY[3, -2, t, p]").unwrap(),
+      "(Sqrt[105/(2*Pi)]*Cos[t]*Sin[t]^2)/(4*E^((2*I)*p))"
     );
   }
 }
