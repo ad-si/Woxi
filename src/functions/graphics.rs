@@ -7832,10 +7832,10 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             || !fl.right.is_empty()
           {
             frame_label = Some((
-              svg_escape(&fl.bottom),
-              svg_escape(&fl.left),
-              svg_escape(&fl.top),
-              svg_escape(&fl.right),
+              box_string_to_svg(&fl.bottom),
+              box_string_to_svg(&fl.left),
+              box_string_to_svg(&fl.top),
+              box_string_to_svg(&fl.right),
             ));
           }
         }
