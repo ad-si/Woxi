@@ -1624,4 +1624,68 @@ mod tests {
 
     assert!(state.graphics_handle.is_some(), "the plot should render");
   }
+
+  /// Checked a randomly-sampled Wolfram Demonstrations Project notebook
+  /// ("Nonlinear Wave Equations"), whose body is `If[twoD, DensityPlot,
+  /// Plot3D][u[…] /. NDSolve[…], …]` with a `SetterBar` toggling the plot
+  /// type and the space domain's two ends tied together by a periodic
+  /// boundary (`u[t, x_min] == u[t, x_max]`) rather than fixed separately
+  /// — independently reproduced here with a different equation, domain
+  /// and control layout (a cubic nonlinearity in place of the
+  /// Demonstration's own choice, and no equation-selector control).
+  ///
+  /// Regression coverage for `NDSolve`'s hyperbolic (second-order-in-time)
+  /// solver accepting a periodic boundary at all (see the focused
+  /// core-level tests alongside
+  /// `pde_hyperbolic_wave_equation_with_periodic_boundary_matches_standing_wave`
+  /// in `tests/interpreter_tests/calculus.rs`): a periodic equation used
+  /// to be misread as an ordinary one-sided Dirichlet condition whose
+  /// "value" was the other end's own unevaluated call, silently leaving
+  /// the solve one boundary equation short — `NDSolve` returned
+  /// unevaluated with no error message, and the widget's plot never
+  /// rendered at all with the Demonstration's own default control values.
+  #[test]
+  fn nonlinear_wave_pde_with_periodic_boundary_and_setter_bar_plot_type() {
+    let code = r#"Manipulate[
+      If[twoD, DensityPlot, Plot3D][
+        Evaluate[
+          u[t, x] /. Quiet[NDSolve[
+            {D[u[t, x], t, t] ==
+               D[u[t, x], {x, 2}] - u[t, x] + u[t, x]^3/6,
+             u[0, x] == amp*Cos[Pi x],
+             Derivative[1, 0][u][0, x] == 0,
+             u[t, -1] == u[t, 1]},
+            u, {t, 0, tmax}, {x, -1, 1},
+            Method -> {"MethodOfLines",
+              "SpatialDiscretization" -> {"TensorProductGrid",
+                "DifferenceOrder" -> "Pseudospectral",
+                "MinStepSize" -> 0.2}}]]
+        ],
+        {x, -1, 1}, {t, 0, tmax},
+        PlotRange -> All, ImageSize -> {400, 300}
+      ],
+      {{tmax, 1, "duration"}, 0.5, 2},
+      {{amp, 1, "amplitude"}, 0.5, 2},
+      {{twoD, True, "plot type"}, {True -> "2D", False -> "3D"},
+        ControlType -> SetterBar}
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = ManipulateState::from_expr(&expr)
+      .expect("the periodic-boundary PDE Manipulate should build a state");
+
+    assert_eq!(
+      state.error, None,
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the density plot should render with the widget's default control \
+       values"
+    );
+
+    let names: Vec<&str> = state.controls.iter().map(|c| c.name()).collect();
+    assert_eq!(names, ["tmax", "amp", "twoD"]);
+  }
 }
