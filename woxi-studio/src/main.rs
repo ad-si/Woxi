@@ -17796,6 +17796,83 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`ax$$ = 1.53, $CellContext`ay$$ = 0.
     );
   }
 
+  /// End-to-end regression for the "Statistical Mechanics of Money"
+  /// Demonstration: a population of agents' wealth is randomly reshuffled
+  /// step by step (each step, a random amount up to the starting stake
+  /// moves from one randomly chosen agent to another, only if the payer
+  /// can afford it), snapshotted at intervals, and a `step` slider scrubs
+  /// through the recorded wealth histogram alongside a running plot of the
+  /// distribution's entropy.
+  ///
+  /// It already worked; this pins it. Two `Do` loops nested inside a
+  /// `Module` (the outer loop advancing the exchange process between
+  /// snapshots, the inner loop recording each snapshot's histogram and
+  /// entropy) evaluate cleanly through `SaveDefinitions -> True`'s
+  /// dependency on earlier Input cells, and `GraphicsGrid` combining a
+  /// `Histogram` with a `ListPlot` renders without error.
+  #[test]
+  fn statistical_mechanics_of_money_notebook_scrubs_its_histogram() {
+    woxi::clear_state();
+    let nb_src = r##"Notebook[{
+Cell[BoxData["exchangeWealth[wallets_List, maxTrade_] := Module[{updated = wallets, i, j, amount}, i = RandomInteger[{1, Length[wallets]}]; j = RandomInteger[{1, Length[wallets]}]; amount = RandomReal[{0, maxTrade}]; If[updated[[i]] >= amount, updated[[i]] -= amount; updated[[j]] += amount]; updated]"], "Input"],
+Cell[BoxData["wealthEntropy[wallets_List] := Module[{bins}, bins = N[BinCounts[wallets, {0, Ceiling[Total[wallets]], 1}]/Length[wallets]]; bins = DeleteCases[bins, 0]; -Total[bins Log[bins]]]"], "Input"],
+Cell[BoxData["simulateWealth[numAgents_Integer, startingCash_Real, numSnapshots_Integer, stepsPerSnapshot_Integer] := Module[{wallets = ConstantArray[startingCash, numAgents], wealthHistory = {}, entropyHistory = {}}, Do[wealthHistory = Append[wealthHistory, wallets]; entropyHistory = Append[entropyHistory, wealthEntropy[wallets]]; Do[wallets = exchangeWealth[wallets, startingCash], {stepsPerSnapshot}], {numSnapshots}]; {wealthHistory, entropyHistory}]"], "Input"],
+Cell[BoxData["SeedRandom[42]; {wealthSnapshots, entropySnapshots} = simulateWealth[30, 100.0, 10, 6];"], "Input"],
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[GraphicsGrid[{{Histogram[wealthSnapshots[[step]], 10, PlotLabel -> \"wealth distribution\", AxesLabel -> {\"wealth\", \"agents\"}, PlotRange -> {0, All}], ListPlot[Take[entropySnapshots, step], Joined -> True, PlotRange -> Full, AxesLabel -> {\"step\", \"entropy\"}]}}, ImageSize -> 600], {{step, 1, \"time step\"}, 1, 10, 1}, SaveDefinitions -> True]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`step$$ = 1}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(widget.graphics_handle.is_some(), "the histogram must draw");
+
+    // One labelled slider walking the recorded snapshots.
+    assert_eq!(widget.controls.len(), 1);
+    match &widget.controls[0] {
+      manipulate::ControlState::Continuous {
+        name,
+        label,
+        min,
+        max,
+        step,
+        current,
+        ..
+      } => {
+        assert_eq!(name, "step");
+        assert_eq!(label, "time step");
+        assert_eq!((*min, *max, *step, *current), (1.0, 10.0, 1.0, 1.0));
+      }
+      other => panic!("unexpected control: {other:?}"),
+    }
+
+    let render = |step: i64| {
+      woxi::interpret_with_stdout(&format!("step = {step};\n{}", widget.body))
+        .expect("the body must render")
+        .graphics
+        .expect("the body must produce a graphic")
+    };
+    let first = render(1);
+    // The histogram bars plus the (single-point) entropy plot draw some
+    // filled/stroked geometry, not just an empty pair of axes frames.
+    assert!(
+      first.matches("<rect").count() + first.matches("<polygon").count() > 0,
+      "histogram bars not drawn: {first}"
+    );
+    // Scrubbing to a later snapshot changes both the histogram and the
+    // entropy trace.
+    assert_ne!(first, render(10), "the step control must matter");
+  }
+
   /// End-to-end regression for "Addition and Subtraction of Integers": two
   /// number-line bar charts (colored blue for non-negative, red for
   /// negative) for the two terms, plus a third bar for their sum or
