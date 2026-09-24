@@ -13271,6 +13271,31 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       }
     }
 
+    /// A `FrameLabel` written with inline box notation
+    /// (`\!\(\*SubscriptBox[…]\)`, the way a notebook typesets a subscript
+    /// inside a plain string) must still render as a subscript once `Show`
+    /// merges the plot's own `FrameLabel` into a matching graphics
+    /// primitive, not leak the literal box-notation source as text (a
+    /// Wolfram Demonstrations Project notebook, "Electronic Band Structure
+    /// of a Single-Walled Carbon Nanotube by the Zone-Folding Method", hit
+    /// exactly this: its `Manipulate` body is `Show[{ContourPlot[…,
+    /// FrameLabel -> {"\!\(\*SubscriptBox[…]\)", …}], …}]`).
+    #[test]
+    fn show_renders_frame_label_box_notation() {
+      let svg = export_svg(
+        r#"Show[ContourPlot[x + y, {x, 0, 1}, {y, 0, 1}, FrameLabel -> {"\!\(\*SubscriptBox[\(k\), \(x\)]\)", "y"}], Graphics[{}]]"#,
+      );
+      assert!(
+        svg.contains("<tspan"),
+        "expected the subscript to render as a tspan, not literal box \
+         notation: {svg}"
+      );
+      assert!(
+        !svg.contains("SubscriptBox"),
+        "the box-notation source leaked into the rendered label: {svg}"
+      );
+    }
+
     /// A shaded contour plot keeps its shading when `Show` merges it with
     /// other graphics — the bands travel with the plot's symbolic form, so
     /// the merged picture is not reduced to bare contour lines. A
