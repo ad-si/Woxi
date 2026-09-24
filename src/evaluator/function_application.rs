@@ -384,12 +384,19 @@ fn emit_named_slot_messages(body: &Expr, args: &[Expr]) {
 ///
 /// Returns `None` if a fallback differentiation step fails (e.g. unknown
 /// function head), letting the caller keep the unevaluated form.
-fn differentiate_function_body(body: &Expr, orders: &[i128]) -> Option<Expr> {
+pub(crate) fn differentiate_function_body(
+  body: &Expr,
+  orders: &[i128],
+) -> Option<Expr> {
   use crate::evaluator::dispatch::calculus_functions::{
     build_var_power_derivative_chain, extract_var_power_factor,
   };
 
-  let dummies: Vec<String> = (0..orders.len())
+  // Every slot of the body gets a dummy — also those not differentiated —
+  // so the result's factors are ordered as the symbols order, the way
+  // wolframscript builds it (`Derivative[1][#2 Sin[#1] + Cos[#2] &]` is
+  // `#2*Cos[#1] &`), not as bare slots would.
+  let dummies: Vec<String> = (0..orders.len().max(max_slot_index(body)))
     .map(|i| format!("__d_slot_{}__", i + 1))
     .collect();
   let dummy_exprs: Vec<Expr> = dummies
@@ -410,9 +417,21 @@ fn differentiate_function_body(body: &Expr, orders: &[i128]) -> Option<Expr> {
       // Wolframscript keeps the literal `1` factor that appears when an
       // earlier slot's chain reduced to `1` (e.g.
       // `Derivative[1,2][#1*#2^3 &]` → `1*(3*(2*#2)) &`), so preserve `factor`
-      // even when it's `Integer(1)`.
+      // even when it's `Integer(1)` — as long as it is an actual factor of a
+      // product, not the implicit one of a bare power
+      // (`Derivative[2][#^3 &]` → `3*(2*#1) &`).
+      let is_product = matches!(&current, Expr::FunctionCall { name, .. } if name == "Times")
+        || matches!(
+          &current,
+          Expr::BinaryOp {
+            op: BinaryOperator::Times,
+            ..
+          }
+        );
       current = if matches!(chain, Expr::Integer(0)) {
         Expr::Integer(0)
+      } else if matches!(factor, Expr::Integer(1)) && !is_product {
+        chain
       } else {
         times2(factor, chain)
       };
@@ -432,6 +451,51 @@ fn differentiate_function_body(body: &Expr, orders: &[i128]) -> Option<Expr> {
     current =
       crate::syntax::substitute_variable(&current, dummy, &Expr::Slot(i + 1));
   }
+  Some(current)
+}
+
+/// Apply `Derivative[n1, …, nk]` to a named-parameter pure function
+/// (`Function[{x1, …, xk}, body]`) symbolically. Mirrors
+/// `differentiate_function_body` above, but differentiates directly with
+/// respect to the function's own parameter names — no dummy/slot
+/// substitution is needed since the parameters are already unique
+/// identifiers naming their positions.
+fn differentiate_named_function_body(
+  body: &Expr,
+  params: &[String],
+  orders: &[i128],
+) -> Option<Expr> {
+  use crate::evaluator::dispatch::calculus_functions::{
+    build_var_power_derivative_chain, extract_var_power_factor,
+  };
+
+  let mut current = body.clone();
+
+  for (param, &n_i) in params.iter().zip(orders.iter()) {
+    if n_i <= 0 {
+      continue;
+    }
+    let var_expr = Expr::Identifier(param.clone());
+    if let Some((factor, p)) = extract_var_power_factor(&current, param)
+      && let Some(chain) = build_var_power_derivative_chain(&var_expr, p, n_i)
+    {
+      current = if matches!(chain, Expr::Integer(0)) {
+        Expr::Integer(0)
+      } else {
+        times2(factor, chain)
+      };
+      continue;
+    }
+    for _ in 0..n_i {
+      current = match crate::functions::calculus_ast::differentiate_expr(
+        &current, param,
+      ) {
+        Ok(v) => v,
+        Err(_) => return None,
+      };
+    }
+  }
+
   Some(current)
 }
 
@@ -2372,6 +2436,36 @@ pub fn apply_curried_call(
           if let Some(result) = differentiate_function_body(body, &orders) {
             return Ok(Expr::Function {
               body: Box::new(result),
+            });
+          }
+        }
+        // `Derivative[n1, …, nk][Function[{x1, …, xk}, body]]` — the
+        // named-parameter analogue of the slot-based case above. Each
+        // order lines up with the parameter at the same position, so no
+        // slot renumbering is needed; a mismatched parameter count is left
+        // unevaluated (falls through to the generic CurriedCall below).
+        if args.len() == 1
+          && let Expr::NamedFunction {
+            params,
+            body,
+            bracketed,
+          } = &args[0]
+          && params.len() == func_args.len()
+        {
+          let orders: Vec<i128> = func_args
+            .iter()
+            .map(|a| match a {
+              Expr::Integer(n) => *n,
+              _ => 0,
+            })
+            .collect();
+          if let Some(result) =
+            differentiate_named_function_body(body, params, &orders)
+          {
+            return Ok(Expr::NamedFunction {
+              params: params.clone(),
+              body: Box::new(result),
+              bracketed: *bracketed,
             });
           }
         }

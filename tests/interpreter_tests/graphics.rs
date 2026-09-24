@@ -6073,6 +6073,75 @@ mod plot3d {
       );
     }
 
+    /// The rest of the plot family refuses a degenerate range the same way,
+    /// some under another head's name: the log plots are `Plot`s inside,
+    /// and `RegionPlot3D` writes the endpoints as reals.
+    #[test]
+    fn a_degenerate_plot_range_is_refused_across_the_family() {
+      for (code, message) in [
+        (
+          "DensityPlot[x y, {x, 0, 0}, {y, 0, 1}]",
+          "DensityPlot::plld: Endpoints for x in {x, 0, 0}",
+        ),
+        (
+          "RegionPlot3D[x < y, {x, 0, 0}, {y, 0, 1}, {z, 0, 1}]",
+          "RegionPlot3D::plld: Endpoints for x in {x, 0., 0.}",
+        ),
+        (
+          "LogPlot[x, {x, 1, 1}]",
+          "Plot::plld: Endpoints for x in {x, 1, 1}",
+        ),
+        (
+          "LogLogPlot[x, {x, 1, 1}]",
+          "Plot::plld: Endpoints for x in {x, 1, 1}",
+        ),
+        (
+          "VectorPlot3D[{x, y, z}, {x, 0, 0}, {y, 0, 1}, {z, 0, 1}]",
+          "VectorPlot3D::plld: Endpoints for x in {x, 0, 0}",
+        ),
+        (
+          "ReImPlot[x, {x, 1, 1}]",
+          "ReImPlot::plld: Endpoints for x in {x, 1, 1}",
+        ),
+        (
+          "ComplexPlot[z, {z, 0, 1}]",
+          "ComplexPlot::plld: Corners for z in {z, 0, 1} must have distinct \
+           machine-precision real and imaginary parts.",
+        ),
+        (
+          "ComplexPlot3D[z, {z, 0, I}]",
+          "ComplexPlot3D::plld: Corners for z in {z, 0, I}",
+        ),
+      ] {
+        let result = woxi::interpret_with_stdout(code).unwrap();
+        let head = &code[..code.find('[').unwrap()];
+        assert_eq!(
+          woxi::interpret(&format!("Head[{code}]")).unwrap(),
+          head,
+          "{code} must stay unevaluated"
+        );
+        assert!(
+          result.warnings.iter().any(|w| w.starts_with(message)),
+          "{code}: expected {message:?}, got {:?}",
+          result.warnings
+        );
+      }
+    }
+
+    /// `ComplexPlot[f, {z, r}]` plots over the square with corners
+    /// `±|r| (1 + I)`.
+    #[test]
+    fn complex_plot_radius_form() {
+      assert_eq!(
+        woxi::interpret("Head[ComplexPlot[z, {z, 2}]]").unwrap(),
+        "Graphics"
+      );
+      assert_eq!(
+        woxi::interpret("Head[ComplexPlot3D[z, {z, 1 + 2 I}]]").unwrap(),
+        "Graphics3D"
+      );
+    }
+
     #[test]
     fn plot_singularity_reasonable_y_range() {
       // Plot[1/x, {x, -3, 3}] has a singularity at x=0.
@@ -13202,6 +13271,31 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       }
     }
 
+    /// A `FrameLabel` written with inline box notation
+    /// (`\!\(\*SubscriptBox[…]\)`, the way a notebook typesets a subscript
+    /// inside a plain string) must still render as a subscript once `Show`
+    /// merges the plot's own `FrameLabel` into a matching graphics
+    /// primitive, not leak the literal box-notation source as text (a
+    /// Wolfram Demonstrations Project notebook, "Electronic Band Structure
+    /// of a Single-Walled Carbon Nanotube by the Zone-Folding Method", hit
+    /// exactly this: its `Manipulate` body is `Show[{ContourPlot[…,
+    /// FrameLabel -> {"\!\(\*SubscriptBox[…]\)", …}], …}]`).
+    #[test]
+    fn show_renders_frame_label_box_notation() {
+      let svg = export_svg(
+        r#"Show[ContourPlot[x + y, {x, 0, 1}, {y, 0, 1}, FrameLabel -> {"\!\(\*SubscriptBox[\(k\), \(x\)]\)", "y"}], Graphics[{}]]"#,
+      );
+      assert!(
+        svg.contains("<tspan"),
+        "expected the subscript to render as a tspan, not literal box \
+         notation: {svg}"
+      );
+      assert!(
+        !svg.contains("SubscriptBox"),
+        "the box-notation source leaked into the rendered label: {svg}"
+      );
+    }
+
     /// A shaded contour plot keeps its shading when `Show` merges it with
     /// other graphics — the bands travel with the plot's symbolic form, so
     /// the merged picture is not reduced to bare contour lines. A
@@ -18845,8 +18939,8 @@ mod graphics_complex {
 
 // `Normal[GraphicsComplex[pts, data]]` substitutes point indices with
 // their (exact) coordinates and returns "an ordinary list of graphics
-// primitives and directives" — it does not split a multi-point primitive
-// into separate ones.
+// primitives and directives": a primitive holding several index lists
+// becomes one primitive each, and a `Point` a list of single points.
 mod graphics_complex_normal {
   use super::*;
 
@@ -18859,7 +18953,7 @@ mod graphics_complex_normal {
          {Point[1], Line[{1, 2}]}]]"
       )
       .unwrap(),
-      "{Point[{0, 0}], Line[{{0, 0}, {Sqrt[3], Sqrt[3]/2}}]}"
+      "{{Point[{0, 0}]}, Line[{{0, 0}, {Sqrt[3], Sqrt[3]/2}}]}"
     );
   }
 
@@ -18873,21 +18967,31 @@ mod graphics_complex_normal {
       .unwrap(),
       "{Polygon[{{0, 0}, {1, 0}, {1, 1}}]}"
     );
+    assert_eq!(
+      interpret("Normal[GraphicsComplex[{{0, 0}, {1, 0}}, Point[1]]]").unwrap(),
+      "{{Point[{0, 0}]}}"
+    );
   }
 
   #[test]
-  fn multi_face_polygon_is_not_split() {
-    // A single `Polygon[{face1, face2}]` stays a single Polygon after
-    // substitution — Normal only replaces indices, it does not split
-    // multi-face primitives into one primitive per face.
+  fn multi_primitives_are_split() {
     assert_eq!(
       interpret(
         "Normal[GraphicsComplex[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, 0, 1}}, \
          Polygon[{{1, 2, 3}, {1, 2, 4}}]]]"
       )
       .unwrap(),
-      "{Polygon[{{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}}, \
-       {{0, 0, 0}, {1, 0, 0}, {0, 0, 1}}}]}"
+      "{{Polygon[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}}], \
+       Polygon[{{0, 0, 0}, {1, 0, 0}, {0, 0, 1}}]}}"
+    );
+    assert_eq!(
+      interpret(
+        "Normal[GraphicsComplex[{{0, 0}, {1, 1}, {2, 0}}, \
+         {Point[{1, 2}], Line[{{1, 2}, {2, 3}}]}]]"
+      )
+      .unwrap(),
+      "{{Point[{0, 0}], Point[{1, 1}]}, \
+       {Line[{{0, 0}, {1, 1}}], Line[{{1, 1}, {2, 0}}]}}"
     );
   }
 
@@ -18904,21 +19008,48 @@ mod graphics_complex_normal {
   }
 
   #[test]
+  fn point_arguments_of_shapes_are_resolved() {
+    assert_eq!(
+      interpret(
+        "Normal[GraphicsComplex[{{0, 0}, {1, 1}, {2, 0}}, \
+         {Disk[1, 0.1], Circle[3], Rectangle[1, 2], Inset[x, 2]}]]"
+      )
+      .unwrap(),
+      "{Disk[{0, 0}, 0.1], Circle[{2, 0}], Rectangle[{0, 0}, {1, 1}], \
+       Inset[x, {1, 1}]}"
+    );
+  }
+
+  #[test]
+  fn vertex_data_moves_onto_polygons() {
+    assert_eq!(
+      interpret(
+        "Normal[GraphicsComplex[{{0, 0}, {1, 1}, {2, 0}}, {Polygon[{1, 2, 3}], \
+         Line[{1, 2}]}, VertexColors -> {Red, Green, Blue}]]"
+      )
+      .unwrap(),
+      "{Polygon[{{0, 0}, {1, 1}, {2, 0}}, VertexColors -> \
+       {RGBColor[1, 0, 0], RGBColor[0, 1, 0], RGBColor[0, 0, 1]}], \
+       Line[{{0, 0}, {1, 1}}]}"
+    );
+  }
+
+  #[test]
   fn polyhedron_data_faces_normalizes_to_explicit_coordinates() {
     // The cube's `"Faces"` GraphicsComplex (see
-    // `polyhedron_data_faces_is_a_graphics_complex`) normalizes to a
-    // single-element list holding the same faces with their vertex
-    // indices replaced by the actual corner coordinates.
+    // `polyhedron_data_faces_is_a_graphics_complex`) normalizes to one
+    // Polygon per face, with the vertex indices replaced by the actual
+    // corner coordinates.
     assert_eq!(
       interpret(r#"Normal[PolyhedronData["Cube", "Faces"]]"#).unwrap(),
-      "{Polygon[{{{1/2, 1/2, 1/2}, {-1/2, 1/2, 1/2}, {-1/2, -1/2, 1/2}, \
-       {1/2, -1/2, 1/2}}, {{1/2, 1/2, 1/2}, {1/2, -1/2, 1/2}, \
-       {1/2, -1/2, -1/2}, {1/2, 1/2, -1/2}}, {{1/2, 1/2, 1/2}, \
-       {1/2, 1/2, -1/2}, {-1/2, 1/2, -1/2}, {-1/2, 1/2, 1/2}}, \
-       {{-1/2, 1/2, 1/2}, {-1/2, 1/2, -1/2}, {-1/2, -1/2, -1/2}, \
-       {-1/2, -1/2, 1/2}}, {{-1/2, -1/2, -1/2}, {-1/2, 1/2, -1/2}, \
-       {1/2, 1/2, -1/2}, {1/2, -1/2, -1/2}}, {{-1/2, -1/2, 1/2}, \
-       {-1/2, -1/2, -1/2}, {1/2, -1/2, -1/2}, {1/2, -1/2, 1/2}}}]}"
+      "{{Polygon[{{1/2, 1/2, 1/2}, {-1/2, 1/2, 1/2}, {-1/2, -1/2, 1/2}, \
+       {1/2, -1/2, 1/2}}], Polygon[{{1/2, 1/2, 1/2}, {1/2, -1/2, 1/2}, \
+       {1/2, -1/2, -1/2}, {1/2, 1/2, -1/2}}], Polygon[{{1/2, 1/2, 1/2}, \
+       {1/2, 1/2, -1/2}, {-1/2, 1/2, -1/2}, {-1/2, 1/2, 1/2}}], \
+       Polygon[{{-1/2, 1/2, 1/2}, {-1/2, 1/2, -1/2}, {-1/2, -1/2, -1/2}, \
+       {-1/2, -1/2, 1/2}}], Polygon[{{-1/2, -1/2, -1/2}, {-1/2, 1/2, -1/2}, \
+       {1/2, 1/2, -1/2}, {1/2, -1/2, -1/2}}], Polygon[{{-1/2, -1/2, 1/2}, \
+       {-1/2, -1/2, -1/2}, {1/2, -1/2, -1/2}, {1/2, -1/2, 1/2}}]}}"
     );
   }
 }
@@ -29181,25 +29312,46 @@ mod revolution_plot3d_part_extraction {
   #[test]
   fn three_coordinate_curve_sweeps_the_fy_component() {
     clear_state();
-    // At theta = 0 the sweep rotation is the identity, so the point is the
-    // curve's own (fx, fy, fz) unchanged.
+    // At theta = 0 the sweep rotation is the identity, so the first point
+    // is the curve's own (fx, fy, fz) unchanged.
     assert_eq!(
       interpret(
         "First[RevolutionPlot3D[{1, 2, 3}, {t, 0, 1}, \
-         {theta, 0, 0}]][[1, 1]]"
+         {theta, 0, Pi}]][[1, 1]]"
       )
       .unwrap(),
       "{1., 2., 3.}"
     );
-    // At theta = Pi, the rotation negates both fx and fy while leaving fz
-    // untouched: (cos Pi, sin Pi; -sin Pi, cos Pi) = (-1, 0; 0, -1).
+    // At theta = Pi (the last point), the rotation negates both fx and fy
+    // while leaving fz untouched: (cos Pi, sin Pi; -sin Pi, cos Pi) =
+    // (-1, 0; 0, -1).
     assert_eq!(
       interpret(
-        "Round[First[RevolutionPlot3D[{1, 2, 3}, {t, 0, 1}, \
-         {theta, Pi, Pi}]][[1, 1]], 0.001]"
+        "Round[Last[First[RevolutionPlot3D[{1, 2, 3}, {t, 0, 1}, \
+         {theta, 0, Pi}]][[1]]], 0.001]"
       )
       .unwrap(),
       "{-1., -2., 3.}"
+    );
+  }
+
+  /// A theta range whose endpoints coincide sweeps nothing: like
+  /// wolframscript, the plot reports `ParametricPlot3D::plld` (it is a
+  /// `ParametricPlot3D` inside) and gives up with `$Failed`.
+  #[test]
+  fn degenerate_range_fails() {
+    clear_state();
+    assert_eq!(
+      interpret("RevolutionPlot3D[{1, 2, 3}, {t, 0, 1}, {theta, 0, 0}]")
+        .unwrap(),
+      "$Failed"
+    );
+    assert_eq!(
+      woxi::get_captured_messages_raw(),
+      vec![
+        "ParametricPlot3D::plld: Endpoints for theta in {theta, 0, 0} must \
+         have distinct machine-precision numerical values."
+      ]
     );
   }
 

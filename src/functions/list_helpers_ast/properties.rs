@@ -1020,7 +1020,7 @@ pub fn dimensions_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   // A tree is an atom, so it has no dimensions.
-  if matches!(&args[0], Expr::FunctionCall { name, .. } if name == "Tree") {
+  if crate::functions::predicate_ast::is_fully_atomic_object(&args[0]) {
     return Ok(Expr::List(Vec::new().into()));
   }
 

@@ -168,7 +168,25 @@ fn exact_real_cmp(a: &Expr, b: &Expr) -> Option<std::cmp::Ordering> {
   Some((an * &bd).cmp(&(bn * &ad)))
 }
 
+/// `#n` / `##n` as the `Slot[n]` / `SlotSequence[n]` compound they are, so
+/// the comparators order them by head like any other call:
+/// `Sort[{#, a, f[x]}]` = `{a, f[x], #1}`.
+pub(crate) fn slot_as_call(e: &Expr) -> Option<Expr> {
+  match e {
+    Expr::Slot(n) => Some(call("Slot", vec![Expr::Integer(*n as i128)])),
+    Expr::SlotSequence(n) => {
+      Some(call("SlotSequence", vec![Expr::Integer(*n as i128)]))
+    }
+    _ => None,
+  }
+}
+
 pub fn canonical_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
+  if let (sa, sb) = (slot_as_call(a), slot_as_call(b))
+    && (sa.is_some() || sb.is_some())
+  {
+    return canonical_cmp(sa.as_ref().unwrap_or(a), sb.as_ref().unwrap_or(b));
+  }
   // Two compatible Quantities sort by their physical value (converted to a
   // common unit): Sort[{3 m, 100 cm, 2 m}] -> {100 cm, 2 m, 3 m}. A tie in
   // value falls through to the structural comparison below.
@@ -332,6 +350,27 @@ pub fn canonical_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
           };
         }
         return std::cmp::Ordering::Equal;
+      }
+      // A power of a number compares by its base first, and a number
+      // precedes everything that is not one — so it sorts ahead of every
+      // symbol, string or compound, and two such powers of the same base
+      // compare by exponent: Sort[{E, "s", 2^x, Sqrt[2]}] =
+      // {Sqrt[2], 2^x, s, E} (wolframscript-verified). Kept in step with
+      // the same rule in `compare_exprs`.
+      match (number_base_power(a), number_base_power(b)) {
+        (Some(_), None) => return std::cmp::Ordering::Less,
+        (None, Some(_)) => return std::cmp::Ordering::Greater,
+        (Some((ba, ea)), Some((bb, eb))) => {
+          let ord = canonical_cmp(&ba, &bb);
+          if ord != std::cmp::Ordering::Equal {
+            return ord;
+          }
+          let ord = canonical_cmp(&ea, &eb);
+          if ord != std::cmp::Ordering::Equal {
+            return ord;
+          }
+        }
+        (None, None) => {}
       }
       // Same-base powers (or a power against its bare base) compare by
       // exponent, ascending: Sort[{Pi, 1/Pi}] = {Pi^(-1), Pi},
@@ -1336,6 +1375,11 @@ pub fn ordered_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Returns 1 if a < b, -1 if a > b, 0 if equal (Wolfram Order convention).
 pub fn compare_exprs(a: &Expr, b: &Expr) -> i64 {
   use crate::functions::math_ast::try_eval_to_f64_with_infinity;
+  if let (sa, sb) = (slot_as_call(a), slot_as_call(b))
+    && (sa.is_some() || sb.is_some())
+  {
+    return compare_exprs(sa.as_ref().unwrap_or(a), sb.as_ref().unwrap_or(b));
+  }
   // ByteArray vs ByteArray: compare by decoded byte payload, not by the
   // wrapping `ByteArray["<base64>"]` string. wolframscript:
   //   Order[ByteArray[{1, 99}], ByteArray[{2, 0}]] = 1
@@ -1551,6 +1595,29 @@ pub fn compare_exprs(a: &Expr, b: &Expr) -> i64 {
     return 0;
   }
 
+  // A power of a number compares by its base first, and a number precedes
+  // everything that is not one — so it sorts ahead of every symbol, string
+  // or compound, and two such powers of the same base compare by exponent:
+  // Sort[{E, "s", 2^x, Sqrt[2]}] = {Sqrt[2], 2^x, s, E}
+  // (wolframscript-verified).
+  {
+    match (number_base_power(a), number_base_power(b)) {
+      (Some(_), None) => return 1,
+      (None, Some(_)) => return -1,
+      (Some((ba, ea)), Some((bb, eb))) => {
+        let ord = compare_exprs(&ba, &bb);
+        if ord != 0 {
+          return ord;
+        }
+        let ord = compare_exprs(&ea, &eb);
+        if ord != 0 {
+          return ord;
+        }
+      }
+      (None, None) => {}
+    }
+  }
+
   // Powers with the same symbolic base compare by exponent, canonically:
   // Order[E^(-2*t), E^(-1/9*t^2)] = 1 because the exponent -2*t precedes
   // -1/9*t^2 (degree ascending; wolframscript-verified). The string
@@ -1753,6 +1820,15 @@ fn ratio_cmp(a: (i128, i128), b: (i128, i128)) -> std::cmp::Ordering {
 
 /// Decompose a power expression — Power[b, e] (either Expr shape) or
 /// Sqrt[b] — into `(base, exponent)`. Non-power expressions yield None.
+/// `(base, exponent)` of a power whose base is an integer or rational.
+fn number_base_power(e: &Expr) -> Option<(Expr, Expr)> {
+  power_parts(e).filter(|(base, _)| {
+    matches!(base, Expr::Integer(_) | Expr::BigInteger(_))
+      || matches!(base, Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2)
+  })
+}
+
 fn power_parts(e: &Expr) -> Option<(Expr, Expr)> {
   match e {
     Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {

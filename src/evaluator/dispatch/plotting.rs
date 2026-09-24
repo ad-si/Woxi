@@ -17,9 +17,8 @@ fn quiet_plot(
 
 /// The plot heads that refuse an iterator whose endpoints coincide. Wolfram
 /// reports `head::plld` for each of these and leaves the call unevaluated.
-/// `DensityPlot` is left out on purpose: it reports the message under its
-/// internal context name (`Visualization`Core`DensityPlot::plld`), which is
-/// not a name Woxi can produce.
+/// (`DensityPlot` prints the message under its own name but files it under
+/// an internal context, so it is missing from `$MessageList` there.)
 const PLLD_HEADS: &[&str] = &[
   "Plot",
   "ParametricPlot",
@@ -29,10 +28,28 @@ const PLLD_HEADS: &[&str] = &[
   "ContourPlot",
   "ContourPlot3D",
   "RegionPlot",
+  "RegionPlot3D",
   "VectorPlot",
+  "VectorPlot3D",
   "StreamPlot",
   "StreamDensityPlot",
+  "DensityPlot",
+  "ReImPlot",
+  "LogPlot",
+  "LogLinearPlot",
+  "LogLogPlot",
+  "RevolutionPlot3D",
 ];
+
+/// The head a plot reports `plld` under: the log plots are `Plot` inside,
+/// and `RevolutionPlot3D` is a `ParametricPlot3D`.
+fn plld_message_head(name: &str) -> &str {
+  match name {
+    "LogPlot" | "LogLinearPlot" | "LogLogPlot" => "Plot",
+    "RevolutionPlot3D" => "ParametricPlot3D",
+    other => other,
+  }
+}
 
 pub fn dispatch_plotting(
   name: &str,
@@ -43,10 +60,49 @@ pub fn dispatch_plotting(
   // suppressed — and in one place, so every plot head refuses alike.
   if PLLD_HEADS.contains(&name)
     && args.len() >= 2
-    && args
-      .iter()
-      .skip(1)
-      .any(|a| crate::functions::plot::degenerate_iterator(name, a))
+    && args.iter().skip(1).any(|a| {
+      crate::functions::plot::degenerate_iterator(
+        plld_message_head(name),
+        a,
+        name == "RegionPlot3D",
+      )
+    })
+  {
+    // RevolutionPlot3D gives up with `$Failed` rather than staying
+    // unevaluated.
+    if name == "RevolutionPlot3D" {
+      return Some(Ok(id_expr("$Failed")));
+    }
+    return Some(Ok(call(name, args.to_vec())));
+  }
+  // `{z, r}` is the square `{z, -|r| (1 + I), |r| (1 + I)}`.
+  if matches!(name, "ComplexPlot" | "ComplexPlot3D")
+    && let Some(Expr::List(items)) = args.get(1)
+    && items.len() == 2
+    && matches!(&items[0], Expr::Identifier(_))
+  {
+    let half = crate::evaluator::evaluate_expr_to_expr(&call(
+      "Times",
+      vec![
+        call1("Abs", items[1].clone()),
+        call("Plus", vec![Expr::Integer(1), id_expr("I")]),
+      ],
+    ))
+    .ok()?;
+    let low = crate::evaluator::evaluate_expr_to_expr(&call(
+      "Times",
+      vec![Expr::Integer(-1), half.clone()],
+    ))
+    .ok()?;
+    let mut expanded = args.to_vec();
+    expanded[1] = Expr::List(vec![items[0].clone(), low, half].into());
+    return dispatch_plotting(name, &expanded);
+  }
+  // A complex plot's two corners must differ in both their real and their
+  // imaginary part, or they span no rectangle.
+  if matches!(name, "ComplexPlot" | "ComplexPlot3D")
+    && args.len() >= 2
+    && crate::functions::plot::degenerate_complex_corners(name, &args[1])
   {
     return Some(Ok(call(name, args.to_vec())));
   }

@@ -1593,8 +1593,14 @@ pub fn dispatch_io_functions(
       };
       // A package that ships with the Wolfram Language loads as a no-op:
       // Woxi keeps every built-in in one namespace, so there is nothing to
-      // read and nothing to define.
+      // read. There may be something to put on `$ContextPath` though (see
+      // `register_standard_context_symbols`), which is what lets a package
+      // like Combinatorica shadow bare names once `Get` has loaded it, the
+      // same as `Needs` already does.
       if crate::utils::is_standard_distribution_context(&filename) {
+        crate::evaluator::dispatch::evaluate_functions::register_standard_context_symbols(
+          &filename,
+        );
         return Some(Ok(null_expr()));
       }
       // `"!command"` evaluates the code the command writes to its standard

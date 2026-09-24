@@ -2425,32 +2425,164 @@ const POINT_TAKING_PRIMITIVES: &[&str] = &[
   "Simplex",
 ];
 
-/// `Normal[GraphicsComplex[pts, data]]`: substitute each integer index in
-/// `data` with its (exact, symbolic) coordinate list from `pts`, keeping
-/// `data`'s own structure intact — Wolfram's `Normal` only "substitutes
-/// coordinates to give an ordinary list of graphics primitives and
-/// directives", it does not split a multi-face `Polygon[{face1, face2, …}]`
-/// into one `Polygon` per face. Unlike `resolve_graphics_complex_indices`,
-/// this keeps coordinates as exact `Expr`s (e.g. `Sqrt[5]`) instead of
-/// lowering to `f64`, and works for points of any dimension, not just 2D.
+/// `Normal[GraphicsComplex[pts, data, opts]]`: substitute each integer index
+/// in `data` with its (exact, symbolic) coordinate list from `pts`, the way
+/// wolframscript does — a primitive holding several index lists
+/// (`Polygon[{face1, face2, …}]`) becomes a list of one primitive each, a
+/// `Point` always becomes a list of single points, index arguments of
+/// `Disk`/`Circle`/`Rectangle`/`Inset`/… are resolved too, and a polygon
+/// picks up its vertices' share of the complex's `VertexColors`/
+/// `VertexNormals`. Unlike `resolve_graphics_complex_indices`, this keeps
+/// coordinates as exact `Expr`s (e.g. `Sqrt[5]`) instead of lowering to
+/// `f64`, and works for points of any dimension, not just 2D.
 pub(crate) fn graphics_complex_to_normal_form(
   pts: &[Expr],
   data: &Expr,
+  opts: &[Expr],
 ) -> Expr {
-  let substituted = substitute_complex_indices(pts, data);
-  match substituted {
+  let vertex_data: Vec<(&str, &[Expr])> = opts
+    .iter()
+    .filter_map(|o| match o {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => match (pattern.as_ref(), replacement.as_ref()) {
+        (Expr::Identifier(n), Expr::List(values))
+          if (n == "VertexColors" || n == "VertexNormals")
+            && values.len() == pts.len() =>
+        {
+          Some((n.as_str(), values.as_ref()))
+        }
+        _ => None,
+      },
+      _ => None,
+    })
+    .collect();
+  let substituted = substitute_complex_indices(pts, data, &vertex_data);
+  // A lone primitive comes back wrapped in a list — even one that itself
+  // became a list (`Point[1]` gives `{{Point[…]}}`).
+  match data {
     Expr::List(_) => substituted,
-    other => Expr::List(vec![other].into()),
+    _ => Expr::List(vec![substituted].into()),
   }
 }
 
-/// Replace bare integer indices with their coordinates wherever a
-/// [`POINT_TAKING_PRIMITIVES`] primitive expects a point argument;
-/// recurse structurally everywhere else so directives and nested
-/// primitives elsewhere in the tree (e.g. inside `{RGBColor[…], Polygon[…]}`)
-/// are reached without treating unrelated integers as indices.
-fn substitute_complex_indices(pts: &[Expr], expr: &Expr) -> Expr {
+/// A 1-based index into `pts`.
+fn complex_index(pts: &[Expr], e: &Expr) -> Option<usize> {
+  match e {
+    Expr::Integer(n) if *n >= 1 && (*n as usize) <= pts.len() => {
+      Some(*n as usize - 1)
+    }
+    _ => None,
+  }
+}
+
+/// A list of indices into `pts`.
+fn complex_index_list(pts: &[Expr], e: &Expr) -> Option<Vec<usize>> {
+  match e {
+    Expr::List(items) => items.iter().map(|i| complex_index(pts, i)).collect(),
+    _ => None,
+  }
+}
+
+/// Replace bare integer indices with their coordinates wherever a primitive
+/// expects a point argument; recurse structurally everywhere else so
+/// directives and nested primitives elsewhere in the tree (e.g. inside
+/// `{RGBColor[…], Polygon[…]}`) are reached without treating unrelated
+/// integers as indices.
+fn substitute_complex_indices(
+  pts: &[Expr],
+  expr: &Expr,
+  vertex_data: &[(&str, &[Expr])],
+) -> Expr {
+  let coords = |indices: &[usize]| -> Expr {
+    Expr::List(indices.iter().map(|&i| pts[i].clone()).collect())
+  };
   match expr {
+    // Points always come out one per index.
+    Expr::FunctionCall { name, args } if name == "Point" && args.len() == 1 => {
+      let indices = complex_index(pts, &args[0])
+        .map(|i| vec![i])
+        .or_else(|| complex_index_list(pts, &args[0]));
+      match indices {
+        Some(indices) => Expr::List(
+          indices
+            .iter()
+            .map(|&i| call1("Point", pts[i].clone()))
+            .collect(),
+        ),
+        None => call1("Point", substitute_indices_in_points(pts, &args[0])),
+      }
+    }
+    // Paths and faces: one primitive per index list.
+    Expr::FunctionCall { name, args }
+      if !args.is_empty()
+        && matches!(
+          name.as_str(),
+          "Line"
+            | "Polygon"
+            | "Triangle"
+            | "Arrow"
+            | "BezierCurve"
+            | "BSplineCurve"
+        ) =>
+    {
+      let rest: Vec<Expr> = args[1..]
+        .iter()
+        .map(|a| substitute_complex_indices(pts, a, vertex_data))
+        .collect();
+      let build = |indices: &[usize]| -> Expr {
+        let mut new_args = vec![coords(indices)];
+        new_args.extend(rest.iter().cloned());
+        if name == "Polygon" {
+          for (option, values) in vertex_data {
+            new_args.push(Expr::Rule {
+              pattern: Box::new(id_expr(option)),
+              replacement: Box::new(Expr::List(
+                indices.iter().map(|&i| values[i].clone()).collect(),
+              )),
+            });
+          }
+        }
+        call(name, new_args)
+      };
+      if let Some(single) = complex_index_list(pts, &args[0]) {
+        return build(&single);
+      }
+      if let Expr::List(groups) = &args[0]
+        && let Some(many) = groups
+          .iter()
+          .map(|g| complex_index_list(pts, g))
+          .collect::<Option<Vec<_>>>()
+      {
+        return Expr::List(many.iter().map(|g| build(g)).collect());
+      }
+      let mut new_args = vec![substitute_indices_in_points(pts, &args[0])];
+      new_args.extend(rest);
+      call(name, new_args)
+    }
+    // Shapes whose positional arguments are single points.
+    Expr::FunctionCall { name, args }
+      if matches!(
+        name.as_str(),
+        "Disk" | "Circle" | "Rectangle" | "Cuboid" | "Inset" | "Ball"
+      ) =>
+    {
+      let point_slots: &[usize] = match name.as_str() {
+        "Rectangle" | "Cuboid" => &[0, 1],
+        "Inset" => &[1],
+        _ => &[0],
+      };
+      let new_args: Vec<Expr> = args
+        .iter()
+        .enumerate()
+        .map(|(i, a)| match complex_index(pts, a) {
+          Some(k) if point_slots.contains(&i) => pts[k].clone(),
+          _ => substitute_complex_indices(pts, a, vertex_data),
+        })
+        .collect();
+      call(name, new_args)
+    }
     Expr::FunctionCall { name, args }
       if POINT_TAKING_PRIMITIVES.contains(&name.as_str()) =>
     {
@@ -2461,7 +2593,7 @@ fn substitute_complex_indices(pts: &[Expr], expr: &Expr) -> Expr {
           if i == 0 {
             substitute_indices_in_points(pts, a)
           } else {
-            substitute_complex_indices(pts, a)
+            substitute_complex_indices(pts, a, vertex_data)
           }
         })
         .collect();
@@ -2474,14 +2606,14 @@ fn substitute_complex_indices(pts: &[Expr], expr: &Expr) -> Expr {
       name: name.clone(),
       args: args
         .iter()
-        .map(|a| substitute_complex_indices(pts, a))
+        .map(|a| substitute_complex_indices(pts, a, vertex_data))
         .collect::<Vec<_>>()
         .into(),
     },
     Expr::List(items) => Expr::List(
       items
         .iter()
-        .map(|a| substitute_complex_indices(pts, a))
+        .map(|a| substitute_complex_indices(pts, a, vertex_data))
         .collect::<Vec<_>>()
         .into(),
     ),
@@ -7832,10 +7964,10 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             || !fl.right.is_empty()
           {
             frame_label = Some((
-              svg_escape(&fl.bottom),
-              svg_escape(&fl.left),
-              svg_escape(&fl.top),
-              svg_escape(&fl.right),
+              box_string_to_svg(&fl.bottom),
+              box_string_to_svg(&fl.left),
+              box_string_to_svg(&fl.top),
+              box_string_to_svg(&fl.right),
             ));
           }
         }
@@ -11910,13 +12042,13 @@ pub(crate) fn mesh_region_to_graphics_prims(
   Some(result)
 }
 
-/// Reads a `MeshCellStyle` option (e.g. from a `ConvexHullMesh`'s
-/// `BoundaryMeshRegion` options) into face/edge style directives:
-/// `MeshCellStyle -> style` colors every cell, while
-/// `MeshCellStyle -> {{d, _} -> style, ...}` picks a style by cell
-/// dimension (2 = faces → `FaceForm`, 1 = edges → `EdgeForm`; the index
-/// component is not tracked per-cell, so `All` and a specific index behave
-/// the same). Absent or unrecognized specs leave both `None`.
+/// Reads a mesh region's cell styles — the `Properties -> {{d, i} ->
+/// MeshCellStyle -> style, …}` a `ConvexHullMesh` normalizes its
+/// `MeshCellStyle` option into, or a raw `MeshCellStyle` option — into
+/// face/edge style directives: a style on 2-cells (faces → `FaceForm`) or
+/// 1-cells (edges → `EdgeForm`). The index component is not tracked
+/// per-cell, so one styled cell styles them all; `Automatic` defaults are
+/// ignored. Absent or unrecognized specs leave both `None`.
 pub(crate) fn mesh_cell_style_overrides(
   opts: &[Expr],
 ) -> (Option<Expr>, Option<Expr>) {
@@ -11930,6 +12062,41 @@ pub(crate) fn mesh_cell_style_overrides(
     else {
       continue;
     };
+    if matches!(&**pattern, Expr::Identifier(n) if n == "Properties")
+      && let Expr::List(entries) = &**replacement
+    {
+      for entry in entries {
+        let Expr::Rule {
+          pattern: key,
+          replacement: prop,
+        } = entry
+        else {
+          continue;
+        };
+        let (
+          Expr::List(k),
+          Expr::Rule {
+            pattern: prop_name,
+            replacement: style,
+          },
+        ) = (&**key, &**prop)
+        else {
+          continue;
+        };
+        if k.len() != 2
+          || !matches!(&**prop_name, Expr::Identifier(n) if n == "MeshCellStyle")
+          || matches!(&**style, Expr::Identifier(a) if a == "Automatic")
+        {
+          continue;
+        }
+        match &k[0] {
+          Expr::Integer(2) => face_style = Some((**style).clone()),
+          Expr::Integer(1) => edge_style = Some((**style).clone()),
+          _ => {}
+        }
+      }
+      continue;
+    }
     if !matches!(&**pattern, Expr::Identifier(n) if n == "MeshCellStyle") {
       continue;
     }
@@ -12078,6 +12245,39 @@ pub fn wraps_rendered_graphic(content: &Expr) -> bool {
       matches!(evaluate_expr_to_expr(content), Ok(Expr::Graphics { .. }))
     }
     _ => false,
+  }
+}
+
+/// Whether a plot's own shape still needs pinning down with an explicit
+/// `AspectRatio` rule, or whether `opts` already fixes it — an explicit
+/// `AspectRatio`, or a two-element `ImageSize -> {w, h}` that pins both
+/// dimensions.
+pub(crate) fn plot_options_need_aspect_ratio(opts: &[Expr]) -> bool {
+  let has_aspect_ratio = opts.iter().any(|o| {
+    matches!(o, Expr::Rule { pattern, .. } if option_name(pattern) == Some("AspectRatio"))
+  });
+  let has_fixed_image_size = opts.iter().any(|o| {
+    matches!(o, Expr::Rule { pattern, replacement }
+      if option_name(pattern) == Some("ImageSize")
+        && matches!(replacement.as_ref(), Expr::List(v) if v.len() == 2))
+  });
+  !has_aspect_ratio && !has_fixed_image_size
+}
+
+/// The height/width ratio a plot rendered at `image_size` should be pinned
+/// to when its shape needs preserving outside its own renderer — e.g. when
+/// `Show` merges it with other graphics, or a structural `ReplaceAll`
+/// rebuilds it into a plain `Graphics[...]` call. `Plot`/`ListPlot` picks
+/// its height from `ImageSize` directly rather than storing an
+/// `AspectRatio` option, so callers that need the shape after the fact
+/// fall back to this. Falls back to the classic 1/GoldenRatio default when
+/// the recorded size is missing or invalid.
+pub(crate) fn plot_source_aspect_ratio(image_size: (u32, u32)) -> f64 {
+  let ratio = image_size.1 as f64 / image_size.0 as f64;
+  if ratio.is_finite() && ratio > 0.0 {
+    ratio
+  } else {
+    1.0 / 1.618_033_988_749_895
   }
 }
 
@@ -12569,24 +12769,17 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           replacement: Box::new(bool_expr(true)),
         });
       }
-      // An `ImageSize -> {w, h}` already fixes the height, so the plot
-      // aspect must not be filled in over it.
-      let sized_both_ways = merged_options.iter().any(|o| {
-        matches!(o, Expr::Rule { pattern, replacement }
-          if option_name(pattern) == Some("ImageSize")
-            && matches!(replacement.as_ref(), Expr::List(v) if v.len() == 2))
-      });
-      if !has_option(&merged_options, "AspectRatio") && !sized_both_ways {
-        // The shape the leading plot drew itself in. `Plot`/`ListPlot`
-        // default to 1/GoldenRatio, but `ParametricPlot` and friends
-        // default to `AspectRatio -> Automatic` and size themselves from
-        // the data, so a circle stays a circle once `Show` layers other
-        // graphics on top of one.
+      // The shape the leading plot drew itself in, unless the options
+      // already fix it. `Plot`/`ListPlot` default to 1/GoldenRatio, but
+      // `ParametricPlot` and friends default to `AspectRatio -> Automatic`
+      // and size themselves from the data, so a circle stays a circle once
+      // `Show` layers other graphics on top of one.
+      if plot_options_need_aspect_ratio(&merged_options) {
         let aspect = plot_sources
           .first()
-          .map(|ps| ps.image_size.1 as f64 / ps.image_size.0 as f64)
-          .filter(|r| r.is_finite() && *r > 0.0)
-          .unwrap_or(1.0 / 1.618_033_988_749_895);
+          .map_or(1.0 / 1.618_033_988_749_895, |ps| {
+            plot_source_aspect_ratio(ps.image_size)
+          });
         merged_options.push(Expr::Rule {
           pattern: Box::new(id_expr("AspectRatio")),
           replacement: Box::new(Expr::Real(aspect)),
@@ -18583,7 +18776,9 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   for spec in args.iter().skip(1) {
     match spec {
       Expr::List(items) if !items.is_empty() => {
-        out_args.push(process_manipulate_var_spec(items, &sibling_names));
+        out_args.push(bare_control_type_as_option(
+          process_manipulate_var_spec(items, &sibling_names),
+        ));
       }
       Expr::List(_) => {
         // Empty list — echo as-is.
@@ -18689,55 +18884,6 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(call("Manipulate", out_args))
 }
 
-/// Whether `expr` still mentions a free symbol after evaluation — i.e. it
-/// did not reduce to a concrete value. A control bound evaluated on its own
-/// (outside the Manipulate's own variable scope) stays symbolic when it
-/// depends on another control's variable (`Range[y]`); a call like
-/// `RGBColor[0.49, 0, 0]` that evaluates to itself has no such dependency.
-/// Named mathematical constants don't count as free — they're already
-/// concrete values in disguise.
-fn expr_is_symbolic(expr: &Expr) -> bool {
-  match expr {
-    Expr::Identifier(name) => !matches!(
-      name.as_str(),
-      "Pi"
-        | "E"
-        | "Degree"
-        | "I"
-        | "Infinity"
-        | "ComplexInfinity"
-        | "True"
-        | "False"
-        | "None"
-        | "Automatic"
-        | "All"
-        | "Null"
-        | "GoldenRatio"
-        | "EulerGamma"
-        | "Catalan"
-    ),
-    Expr::FunctionCall { args, .. } => args.iter().any(expr_is_symbolic),
-    Expr::List(items) => items.iter().any(expr_is_symbolic),
-    Expr::Association(pairs) => pairs
-      .iter()
-      .any(|(k, v)| expr_is_symbolic(k) || expr_is_symbolic(v)),
-    Expr::Rule {
-      pattern,
-      replacement,
-    }
-    | Expr::RuleDelayed {
-      pattern,
-      replacement,
-    } => expr_is_symbolic(pattern) || expr_is_symbolic(replacement),
-    _ => false,
-  }
-}
-
-/// Process a single Manipulate/Control variable specification list,
-/// evaluating trailing bounds/step/discrete values while keeping the head
-/// (variable symbol or `{u, uinit, ulbl}`) intact. A 2-item spec
-/// `{var, range}` whose range is still symbolic is wrapped in `Dynamic[…]`
-/// to match wolframscript's echoed form.
 /// The variable name a Manipulate spec list declares — `{u, ...}` or
 /// `{{u, ...}, ...}` — or `None` for something that isn't a variable spec
 /// (an option, an annotation row, ...).
@@ -18752,38 +18898,151 @@ fn manipulate_spec_var_name(items: &[Expr]) -> Option<String> {
   }
 }
 
-fn process_manipulate_var_spec(items: &[Expr], siblings: &[String]) -> Expr {
-  // Preserve the head as-is; evaluate any trailing bounds/step/values.
-  let mut new_items: Vec<Expr> = Vec::with_capacity(items.len());
-  new_items.push(items[0].clone());
-  for item in &items[1..] {
-    // `Enabled -> cond` / `TrackingFunction -> f` must stay held: `cond`
-    // references other controls' variables (and often symbols an
-    // `Initialization` block — processed after every spec here — hasn't
-    // defined yet), so evaluating it now would freeze it at whatever it
-    // happens to fold to with nothing bound, instead of the live condition
-    // `parse_manipulate_control` re-resolves on every frame.
-    if let Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } = item
-      && matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Enabled" || s == "TrackingFunction")
-    {
-      new_items.push(item.clone());
-      continue;
+/// The values a Manipulate control spec that names only its control type
+/// (`{x, Slider}`) gets filled in with, the way wolframscript echoes it
+/// (`{x, 0, 1, ControlType -> Slider}`).
+fn default_control_values(control_type: &str) -> Option<Vec<Expr>> {
+  let list = |items: Vec<Expr>| Expr::List(items.into());
+  let booleans = || vec![id_expr("True"), id_expr("False")];
+  Some(match control_type {
+    "Slider" | "VerticalSlider" | "Manipulator" | "Animator" | "Trigger"
+    | "IntervalSlider" => vec![Expr::Integer(0), Expr::Integer(1)],
+    "Slider2D" => vec![
+      list(vec![Expr::Integer(0), Expr::Integer(0)]),
+      list(vec![Expr::Integer(1), Expr::Integer(1)]),
+    ],
+    "Checkbox" | "CheckboxBar" | "Toggler" | "TogglerBar" | "Opener" => {
+      vec![list(booleans())]
     }
-    // A bound that names another control's variable (`{{triangle, 1}, 1,
-    // Length[Subsets[CirclePoints[nPolygon], {3}]], 1}`, "triangle"'s max
-    // bounded by "nPolygon") must also stay held: with nPolygon unbound
-    // here, evaluating the bound doesn't fail (Part/Length/etc. on an
-    // unevaluated CirclePoints[nPolygon] silently return some other
-    // concrete number, e.g. 0) — it just gets the WRONG number, baking a
-    // bogus literal into the echoed Manipulate form instead of leaving the
-    // reference for the frontend to re-resolve once nPolygon is bound (see
-    // `parse_manipulate_control`'s dynamic_bounds handling).
-    if siblings
-      .iter()
-      .any(|s| crate::functions::plot::expr_mentions_var(item, s))
-    {
-      new_items.push(item.clone());
-      continue;
+    "Setter" | "SetterBar" | "RadioButton" | "RadioButtonBar" | "PopupMenu" => {
+      let mut values = booleans();
+      values.push(id_expr("Automatic"));
+      vec![list(values)]
+    }
+    "ColorSlider" | "ColorSetter" => vec![id_expr("Gray")],
+    "Locator" => vec![id_expr("Automatic")],
+    "None" => vec![Expr::Integer(0)],
+    "InputField" => Vec::new(),
+    _ => return None,
+  })
+}
+
+/// A Manipulate control spec's bare control-type symbol (`{x, 0, 1,
+/// Slider}`) echoes as the `ControlType -> Slider` option it stands for,
+/// and a spec that gives nothing but the control type gets that type's
+/// default values: `{x, Slider}` → `{x, 0, 1, ControlType -> Slider}`,
+/// `{{p, init}, Locator}` → `{{p, init}, Automatic, ControlType -> Locator}`.
+fn bare_control_type_as_option(spec: Expr) -> Expr {
+  let Expr::List(items) = &spec else {
+    return spec;
+  };
+  let Some(pos) = items.iter().skip(1).position(
+    |e| matches!(e, Expr::Identifier(s) if default_control_values(s).is_some()),
+  ) else {
+    return spec;
+  };
+  let pos = pos + 1;
+  let Expr::Identifier(control_type) = &items[pos] else {
+    return spec;
+  };
+  let mut out: Vec<Expr> = items.to_vec();
+  out[pos] = Expr::Rule {
+    pattern: Box::new(id_expr("ControlType")),
+    replacement: Box::new(items[pos].clone()),
+  };
+  let has_values = items.iter().enumerate().skip(1).any(|(i, e)| {
+    i != pos && !matches!(e, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+  });
+  if !has_values && let Some(defaults) = default_control_values(control_type) {
+    out.splice(1..1, defaults);
+  }
+  Expr::List(out.into())
+}
+
+/// Process a single Manipulate variable specification list for its echo,
+/// evaluating the initial value and the trailing bounds/step/discrete
+/// values while keeping the variable and label intact; values that name a
+/// sibling control's variable stay held inside `Dynamic[…]`.
+fn process_manipulate_var_spec(items: &[Expr], siblings: &[String]) -> Expr {
+  // Keep the head's variable and label, evaluating only its initial value
+  // (`{{x, 1 + 1}, …}` echoes as `{{x, 2}, …}`); evaluate any trailing
+  // bounds/step/values.
+  let quiet_eval = |e: &Expr| {
+    let snapshot = crate::snapshot_warnings();
+    crate::push_quiet();
+    let evaluated = evaluate_expr_to_expr(e).unwrap_or_else(|_| e.clone());
+    crate::pop_quiet();
+    crate::restore_warnings(snapshot);
+    evaluated
+  };
+  let mut new_items: Vec<Expr> = Vec::with_capacity(items.len());
+  new_items.push(match &items[0] {
+    Expr::List(head) if head.len() >= 2 => {
+      let mut head = head.to_vec();
+      head[1] = quiet_eval(&head[1]);
+      Expr::List(head.into())
+    }
+    other => other.clone(),
+  });
+  for item in &items[1..] {
+    let mentions_sibling = |e: &Expr| {
+      siblings
+        .iter()
+        .any(|s| crate::functions::plot::expr_mentions_var(e, s))
+    };
+    let dynamic = |e: &Expr| match e {
+      Expr::FunctionCall { name, .. } if name == "Dynamic" => e.clone(),
+      _ => call1("Dynamic", e.clone()),
+    };
+    // A bound or option value that names another control's variable
+    // (`{{triangle, 1}, 1, Length[Subsets[CirclePoints[nPolygon], {3}]],
+    // 1}`, "triangle"'s max bounded by "nPolygon") must stay held: with
+    // nPolygon unbound here, evaluating the bound doesn't fail
+    // (Part/Length/etc. on an unevaluated CirclePoints[nPolygon] silently
+    // return some other concrete number, e.g. 0) — it just gets the WRONG
+    // number. Wolfram echoes such a value wrapped in `Dynamic[…]`, which is
+    // also what tells the frontend to re-resolve it once nPolygon is bound
+    // (see `parse_manipulate_control`'s dynamic_bounds handling).
+    //
+    // `Enabled -> cond` / `TrackingFunction -> f` stay held too, even when
+    // they name no sibling: `cond` often references symbols an
+    // `Initialization` block hasn't defined yet, so evaluating it now would
+    // freeze it at whatever it happens to fold to with nothing bound,
+    // instead of the live condition `parse_manipulate_control` re-resolves
+    // on every frame.
+    match item {
+      Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "TrackingFunction") =>
+      {
+        new_items.push(item.clone());
+        continue;
+      }
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } => {
+        let is_enabled =
+          matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Enabled");
+        if is_enabled || mentions_sibling(replacement) {
+          let mut kept = item.clone();
+          if mentions_sibling(replacement)
+            && let Expr::Rule { replacement, .. }
+            | Expr::RuleDelayed { replacement, .. } = &mut kept
+          {
+            **replacement = dynamic(replacement);
+          }
+          new_items.push(kept);
+          continue;
+        }
+      }
+      _ if mentions_sibling(item) => {
+        new_items.push(dynamic(item));
+        continue;
+      }
+      _ => {}
     }
     // Try to evaluate bounds; if evaluation fails, keep the original so
     // the echoed form still round-trips. A bound stated in terms of another
@@ -18799,82 +19058,16 @@ fn process_manipulate_var_spec(items: &[Expr], siblings: &[String]) -> Expr {
     crate::restore_warnings(snapshot);
     new_items.push(evaluated);
   }
-  // A 2-item spec `{var, range}` whose `range` doesn't reduce to a concrete
-  // numeric value or list (e.g. it still contains a free symbol like
-  // `Range[y]`) is wrapped in Dynamic[…] so the menu updates as the host
-  // variable changes.
-  if new_items.len() == 2
-    && let needs_dynamic = match &new_items[1] {
-      Expr::Integer(_) | Expr::Real(_) | Expr::List(_) => false,
-      Expr::FunctionCall { name, .. } if name == "Dynamic" => false,
-      // Any other call (e.g. `RGBColor[0.49, 0, 0]`) only needs wrapping
-      // when it stayed symbolic after evaluation — i.e. it still mentions a
-      // free symbol such as another control's variable. A call that
-      // evaluated down to a concrete value is already stable and needs no
-      // live re-resolution.
-      Expr::FunctionCall { args, .. } => args.iter().any(expr_is_symbolic),
-      // A trailing control option such as `ControlType -> None` is not a
-      // range, so it must not be wrapped in Dynamic[…].
-      Expr::Rule { .. } | Expr::RuleDelayed { .. } => false,
-      // A bare control-type shorthand in the range position (`{{p, init},
-      // Locator}`, `{u, Slider}` …) selects the control; it is not a range.
-      Expr::Identifier(s)
-        if matches!(
-          s.as_str(),
-          "Locator"
-            | "Slider"
-            | "Slider2D"
-            | "VerticalSlider"
-            | "Manipulator"
-            | "InputField"
-            | "PopupMenu"
-            | "SetterBar"
-            | "RadioButton"
-            | "RadioButtonBar"
-            | "TogglerBar"
-            | "Checkbox"
-            | "ColorSlider"
-            | "ColorSetter"
-            | "IntervalSlider"
-            | "Animator"
-            | "Trigger"
-            | "None"
-            | "Automatic"
-        ) =>
-      {
-        false
-      }
-      _ => true,
-    }
-    && needs_dynamic
-  {
-    let range = new_items.pop().unwrap();
-    new_items.push(call1("Dynamic", range));
-  }
   Expr::List(new_items.into())
 }
 
-/// Held evaluation of a standalone `Control[…]` expression. Like Manipulate,
-/// Control holds its argument and, in a text front-end, echoes itself back
-/// with the variable spec's bounds evaluated (`Control[{x, 0, 2 Pi}]` →
-/// `Control[{x, 0, 2 Pi}]` with `2 Pi` reduced). The Playground / Studio
-/// front-ends detect the held `Control[…]` and render an interactive
-/// control widget (see `extract_control_spec`).
+/// Held evaluation of a standalone `Control[…]` expression. `Control` holds
+/// its argument, and in a text front-end echoes itself back unchanged
+/// (`Control[{x, 0, 2 Pi}]`). The Playground / Studio front-ends detect the
+/// held `Control[…]` and render an interactive control widget (see
+/// `extract_control_spec`).
 pub fn control_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let mut out_args: Vec<Expr> = Vec::with_capacity(args.len());
-  if let Some(first) = args.first() {
-    match first {
-      Expr::List(items) if !items.is_empty() => {
-        out_args.push(process_manipulate_var_spec(items, &[]));
-      }
-      other => out_args.push(other.clone()),
-    }
-  }
-  // Any trailing options pass through unchanged.
-  for extra in args.iter().skip(1) {
-    out_args.push(extra.clone());
-  }
-  Ok(call("Control", out_args))
+  Ok(call("Control", args.to_vec()))
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -20534,10 +20727,74 @@ fn spec_marks_locator(items: &[Expr]) -> bool {
 /// the bare-identifier form, so a second Table of Locators reusing the same
 /// indexed variable for another purpose (e.g. a rotation handle) does not
 /// override it.
+///
+/// A `DynamicModule[{v = s, …}, …]` local that is a bare copy of another
+/// identifier is recorded here as `v -> s`. A Demonstration commonly
+/// mirrors its real, persistent `ControlType -> None` state (`s`) into a
+/// same-shaped `DynamicModule` local (`v`) purely so the body can reassign
+/// it while dragging, writing the result back to `s` only once the drag
+/// settles (`LinesTwoPoints`-style two-point locators do this). Resolving
+/// `v` back to `s` here is what lets [`collect_body_locator_callbacks`]
+/// promote the *real* state variable even though the `LocatorPane` itself
+/// only ever names the proxy.
+fn collect_dynamic_module_proxies(
+  expr: &Expr,
+  proxies: &mut Vec<(String, String)>,
+) {
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      if name == "DynamicModule"
+        && !args.is_empty()
+        && let Expr::List(locals) = &args[0]
+      {
+        for local in locals {
+          if let Expr::FunctionCall {
+            name: set_name,
+            args: set_args,
+          } = local
+            && set_name == "Set"
+            && set_args.len() == 2
+            && let Expr::Identifier(v) = &set_args[0]
+            && let Expr::Identifier(s) = &set_args[1]
+          {
+            proxies.push((v.clone(), s.clone()));
+          }
+        }
+      }
+      for a in args {
+        collect_dynamic_module_proxies(a, proxies);
+      }
+    }
+    Expr::List(items) => {
+      for it in items {
+        collect_dynamic_module_proxies(it, proxies);
+      }
+    }
+    Expr::CompoundExpr(items) => {
+      for it in items {
+        collect_dynamic_module_proxies(it, proxies);
+      }
+    }
+    _ => {}
+  }
+}
+
 fn collect_body_locator_callbacks(
   expr: &Expr,
 ) -> Vec<(String, Option<String>)> {
-  fn walk(expr: &Expr, found: &mut Vec<(String, Option<String>)>) {
+  let mut proxies = Vec::new();
+  collect_dynamic_module_proxies(expr, &mut proxies);
+  let resolve = |var: &str| -> String {
+    proxies
+      .iter()
+      .find(|(v, _)| v == var)
+      .map_or_else(|| var.to_string(), |(_, s)| s.clone())
+  };
+  fn walk(
+    expr: &Expr,
+    resolve: &dyn Fn(&str) -> String,
+    found: &mut Vec<(String, Option<String>)>,
+  ) {
     match expr {
       Expr::FunctionCall { name, args } => {
         if (name == "Locator" || name == "LocatorPane")
@@ -20548,42 +20805,63 @@ fn collect_body_locator_callbacks(
           && dname == "Dynamic"
         {
           match dargs.first() {
-            Some(Expr::Identifier(var))
-              if !found.iter().any(|(n, _)| n == var) =>
-            {
-              let callback =
-                dargs.get(1).map(crate::syntax::expr_to_input_form);
-              found.push((var.clone(), callback));
+            Some(Expr::Identifier(var)) => {
+              let var = resolve(var);
+              if !found.iter().any(|(n, _)| *n == var) {
+                let callback =
+                  dargs.get(1).map(crate::syntax::expr_to_input_form);
+                found.push((var, callback));
+              }
             }
             Some(Expr::Part { expr: base, .. }) => {
-              if let Expr::Identifier(var) = base.as_ref()
-                && !found.iter().any(|(n, _)| n == var)
-              {
-                found.push((var.clone(), None));
+              if let Expr::Identifier(var) = base.as_ref() {
+                let var = resolve(var);
+                if !found.iter().any(|(n, _)| *n == var) {
+                  found.push((var, None));
+                }
+              }
+            }
+            // A `LocatorPane[Dynamic[{p1, p2, …}, {getter, setter…}], …]`
+            // pane: several proxy locators tracked jointly. Each names its
+            // own point independently (`makegraph[pt, pt2]` reads them
+            // apart), so each is promoted on its own rather than as one
+            // combined multi-point control; the joint setter can't be
+            // replayed per-point, so no write-back callback is carried
+            // (the promoted `Slider2D` falls back to the raw dragged
+            // position, same as a plain `LocatorPane[Dynamic[var], …]`
+            // with no callback).
+            Some(Expr::List(items)) if name == "LocatorPane" => {
+              for it in items {
+                if let Expr::Identifier(var) = it {
+                  let var = resolve(var);
+                  if !found.iter().any(|(n, _)| *n == var) {
+                    found.push((var, None));
+                  }
+                }
               }
             }
             _ => {}
           }
         }
         for a in args {
-          walk(a, found);
+          walk(a, resolve, found);
         }
       }
       Expr::List(items) => {
         for it in items {
-          walk(it, found);
+          walk(it, resolve, found);
         }
       }
       Expr::CompoundExpr(items) => {
         for it in items {
-          walk(it, found);
+          walk(it, resolve, found);
         }
       }
       _ => {}
     }
   }
   let mut found = Vec::new();
-  walk(expr, &mut found);
+  walk(expr, &resolve, &mut found);
   found
 }
 
@@ -23554,6 +23832,8 @@ fn parse_manipulate_control(
           && !matches!(it, Expr::Identifier(s) if s == "Locator")
       })
       .filter_map(|it| {
+        // The echo wraps such a corner in `Dynamic[…]`.
+        let it = manipulate_bound_expr(it).0;
         list2_f64(it).or_else(|| {
           list2_f64(&crate::evaluator::evaluate_expr_to_expr(it).ok()?)
         })

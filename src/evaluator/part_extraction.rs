@@ -435,7 +435,7 @@ pub fn extract_part_ast(
 
   // A tree is an atom: Part cannot reach inside it, so the call stays
   // unevaluated and the caller reports Part::partd.
-  if matches!(expr, Expr::FunctionCall { name, .. } if name == "Tree") {
+  if crate::functions::predicate_ast::is_fully_atomic_object(expr) {
     return Ok(Expr::Part {
       expr: Box::new(expr.clone()),
       index: Box::new(index.clone()),

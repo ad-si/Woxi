@@ -193,11 +193,13 @@ fn build_render_graph(
 /// restores to from `Uncompress[Compress[graph]]`, as opposed to the public
 /// `Graph[verts, {UndirectedEdge[…] | DirectedEdge[…], …}, opts]` a user
 /// types — stores its edges as `{directedPairs, undirectedPairs}`, each
-/// side either a list of 1-based index pairs into `verts` or `Null` when
-/// that side is empty. `raw_edges` is `args[1]`'s items; `None` when they
-/// don't match this shape (an ordinary edge-object list already parses
-/// fine as-is).
-fn normalize_internal_edge_list(
+/// side either a list of 1-based index pairs into `verts`, a `SparseArray`
+/// adjacency matrix (the form a `NetworkGraphics` box caches, e.g. when a
+/// Demonstration pastes `GraphData[…]`'s output literally instead of
+/// calling it live), or `Null` when that side is empty. `raw_edges` is
+/// `args[1]`'s items; `None` when they don't match either shape (an
+/// ordinary edge-object list already parses fine as-is).
+pub(crate) fn normalize_internal_edge_list(
   vertices: &[Expr],
   raw_edges: &[Expr],
 ) -> Option<Vec<Expr>> {
@@ -211,10 +213,11 @@ fn normalize_internal_edge_list(
 }
 
 /// One side of the internal edge encoding `normalize_internal_edge_list`
-/// reads: `Null` (no edges of this kind) or a list of 1-based `{i, j}`
-/// index pairs into `vertices`, appended to `out` as `DirectedEdge`/
-/// `UndirectedEdge` objects. `None` if `part` is neither — the caller then
-/// knows this isn't the internal encoding at all.
+/// reads: `Null` (no edges of this kind), a list of 1-based `{i, j}` index
+/// pairs into `vertices`, or a `SparseArray` adjacency matrix — appended to
+/// `out` as `DirectedEdge`/`UndirectedEdge` objects. `None` if `part` is
+/// none of those — the caller then knows this isn't the internal encoding
+/// at all.
 fn push_internal_index_edges(
   part: &Expr,
   vertices: &[Expr],
@@ -235,19 +238,139 @@ fn push_internal_index_edges(
         if i == 0 || j == 0 || i > vertices.len() || j > vertices.len() {
           return None;
         }
-        let head = if directed {
-          "DirectedEdge"
-        } else {
-          "UndirectedEdge"
-        };
-        out.push(call(
-          head,
-          vec![vertices[i - 1].clone(), vertices[j - 1].clone()],
-        ));
+        push_index_edge(vertices, i, j, directed, out);
+      }
+      Some(())
+    }
+    Expr::FunctionCall { name, args } if name == "SparseArray" => {
+      let pairs = decode_sparse_adjacency_pairs(args, vertices.len())?;
+      if directed {
+        for (i, j) in pairs {
+          push_index_edge(vertices, i, j, true, out);
+        }
+      } else {
+        // The matrix is symmetric for an undirected side, so each edge
+        // shows up twice (once from each endpoint's row) — keep only the
+        // upper triangle to avoid emitting it twice.
+        let mut seen = std::collections::HashSet::new();
+        for (i, j) in pairs {
+          if i == j {
+            continue;
+          }
+          let key = (i.min(j), i.max(j));
+          if seen.insert(key) {
+            push_index_edge(vertices, key.0, key.1, false, out);
+          }
+        }
       }
       Some(())
     }
     _ => None,
+  }
+}
+
+fn push_index_edge(
+  vertices: &[Expr],
+  i: usize,
+  j: usize,
+  directed: bool,
+  out: &mut Vec<Expr>,
+) {
+  let head = if directed {
+    "DirectedEdge"
+  } else {
+    "UndirectedEdge"
+  };
+  out.push(call(
+    head,
+    vec![vertices[i - 1].clone(), vertices[j - 1].clone()],
+  ));
+}
+
+/// Decodes a `SparseArray`'s internal compressed-row form — as cached in a
+/// `NetworkGraphics` box for a graph's adjacency matrix — into 1-based
+/// `(row, column)` index pairs, one per stored (nonzero) entry. The literal
+/// looks like `SparseArray[Automatic, {n, n}, background, {1, {rowPointers,
+/// columnIndices}, values}]`, where `rowPointers` has `n + 1` entries (row
+/// `i`'s stored entries are `columnIndices[rowPointers[i] .. rowPointers[i
+/// + 1]]`, 0-based) and each `columnIndices` entry is a singleton `{j}`.
+/// The actual stored values don't matter for an adjacency matrix (every
+/// stored entry just marks an edge), so `values` is ignored. `None` if
+/// `args` doesn't match that shape.
+fn decode_sparse_adjacency_pairs(
+  args: &[Expr],
+  n: usize,
+) -> Option<Vec<(usize, usize)>> {
+  let [_pattern, _dims, _background, data] = args else {
+    return None;
+  };
+  let Expr::List(data) = data else {
+    return None;
+  };
+  let [_version, row_col, ..] = data.as_slice() else {
+    return None;
+  };
+  let Expr::List(row_col) = row_col else {
+    return None;
+  };
+  let [Expr::List(row_ptr), Expr::List(col_idx)] = row_col.as_slice() else {
+    return None;
+  };
+  let row_ptr: Vec<usize> = row_ptr
+    .iter()
+    .map(|e| match e {
+      Expr::Integer(i) if *i >= 0 => Some(*i as usize),
+      _ => None,
+    })
+    .collect::<Option<_>>()?;
+  if row_ptr.len() != n + 1 {
+    return None;
+  }
+  let mut pairs = Vec::new();
+  for i in 0..n {
+    let (start, end) = (row_ptr[i], row_ptr[i + 1]);
+    if start > end || end > col_idx.len() {
+      return None;
+    }
+    for entry in &col_idx[start..end] {
+      let Expr::List(one) = entry else {
+        return None;
+      };
+      let [Expr::Integer(j)] = one.as_slice() else {
+        return None;
+      };
+      let j = *j;
+      if j <= 0 || j as usize > n {
+        return None;
+      }
+      pairs.push((i + 1, j as usize));
+    }
+  }
+  Some(pairs)
+}
+
+/// Splits a `GraphUnion`/`GraphIntersection`/`GraphDisjointUnion`-style
+/// argument list into its leading `Graph[vertices, edges, …]` operands and
+/// the trailing option rules that configure the *result* (e.g. `GraphLayout
+/// -> "CircularEmbedding"`), matching wolframscript's `f[g1, g2, …, opts]`
+/// shape. `None` if fewer than `min` leading arguments are graphs.
+pub(crate) fn split_graph_operands(
+  args: &[Expr],
+  min: usize,
+) -> Option<(&[Expr], &[Expr])> {
+  let split = args
+    .iter()
+    .position(|a| {
+      !matches!(a, Expr::FunctionCall { name: gn, args: ga }
+        if gn == "Graph" && ga.len() >= 2
+          && matches!(&ga[0], Expr::List(_))
+          && matches!(&ga[1], Expr::List(_)))
+    })
+    .unwrap_or(args.len());
+  if split < min {
+    None
+  } else {
+    Some((&args[..split], &args[split..]))
   }
 }
 
@@ -320,6 +443,9 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut vertex_size_scale: f64 = 1.0;
   let mut plot_label: Option<Expr> = None;
   let mut layered: Option<LayerDirection> = None;
+  // `"RootVertex" -> v` in a layered `GraphLayout` spec: the vertex the
+  // layering grows from, instead of every vertex nothing points at.
+  let mut layered_root: Option<Expr> = None;
   // `GraphLayout -> "CircularEmbedding"` puts every vertex on one circle,
   // also for graphs that fall apart into several components.
   let mut circular = false;
@@ -416,7 +542,10 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // distance from a root instead of spreading them on a circle.
         // This is the embedding `LayeredGraphPlot` / `TreePlot` ask for.
         "GraphLayout" => {
-          layered = parse_layered_layout(replacement);
+          (layered, layered_root) = match parse_layered_layout(replacement) {
+            Some((dir, root)) => (Some(dir), root),
+            None => (None, None),
+          };
           circular = layered.is_none() && layout_is_circular(replacement);
           linear = layered.is_none() && layout_is_linear(replacement);
         }
@@ -480,7 +609,7 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   // Build petgraph for rendering
-  let (graph, _index_map) = build_render_graph(&vertices, &raw_edges);
+  let (graph, index_map) = build_render_graph(&vertices, &raw_edges);
 
   // Compute vertex positions. A layered embedding was asked for by name;
   // otherwise, for a single weakly-connected component we keep the simple
@@ -491,7 +620,13 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     normalize_explicit_positions(pts)
   } else {
     match layered {
-      Some(dir) => layered_layout(&graph, dir),
+      Some(dir) => {
+        let root = layered_root
+          .as_ref()
+          .and_then(|r| index_map.get(&expr_to_output(r)))
+          .map(|idx| idx.index());
+        layered_layout(&graph, dir, root)
+      }
       None if circular && n > 2 => circular_layout(n),
       None if linear && n > 1 => linear_layout(n),
       None => compute_layout(&graph),
@@ -1040,11 +1175,14 @@ pub(crate) enum LayerDirection {
 /// it names a layered embedding. Both the bare string form
 /// (`"LayeredDigraphEmbedding"`) and the sub-option form
 /// (`{"LayeredEmbedding", "Orientation" -> Left}`) are accepted; without an
-/// orientation the roots go on top, as they do in Wolfram.
-fn parse_layered_layout(value: &Expr) -> Option<LayerDirection> {
+/// orientation the roots go on top, as they do in Wolfram. A
+/// `"RootVertex" -> v` sub-option is returned alongside.
+fn parse_layered_layout(
+  value: &Expr,
+) -> Option<(LayerDirection, Option<Expr>)> {
   let named = |s: &str| s.starts_with("Layered");
   match value {
-    Expr::String(s) if named(s) => Some(LayerDirection::Top),
+    Expr::String(s) if named(s) => Some((LayerDirection::Top, None)),
     Expr::List(items) => {
       let is_layered = items
         .iter()
@@ -1061,7 +1199,16 @@ fn parse_layered_layout(value: &Expr) -> Option<LayerDirection> {
         }
         _ => None,
       });
-      Some(dir.unwrap_or(LayerDirection::Top))
+      let root = items.iter().find_map(|e| match e {
+        Expr::Rule {
+          pattern,
+          replacement,
+        } if matches!(pattern.as_ref(), Expr::String(s) if s == "RootVertex") => {
+          Some((**replacement).clone())
+        }
+        _ => None,
+      });
+      Some((dir.unwrap_or(LayerDirection::Top), root))
     }
     _ => None,
   }
@@ -1205,7 +1352,9 @@ pub(crate) fn layer_direction(expr: &Expr) -> Option<LayerDirection> {
 /// further from a root than the parent that first reached it, and the
 /// vertices of a layer are spread evenly across it. Roots are the vertices
 /// nothing points at; a graph that has none (a pure cycle) starts from its
-/// first vertex so every vertex still gets a layer.
+/// first vertex so every vertex still gets a layer. With an explicit
+/// `root` the layering instead grows from that one vertex, following
+/// edges in either direction — the tree hangs from the chosen vertex.
 ///
 /// Layers are one unit apart and so are the vertices within a layer, which
 /// keeps a chain a straight line of evenly spaced dots — the shape
@@ -1213,6 +1362,7 @@ pub(crate) fn layer_direction(expr: &Expr) -> Option<LayerDirection> {
 fn layered_layout(
   graph: &DiGraph<usize, RenderEdgeData>,
   dir: LayerDirection,
+  root: Option<usize>,
 ) -> Vec<(f64, f64)> {
   let n = graph.node_count();
   if n == 0 {
@@ -1228,6 +1378,9 @@ fn layered_layout(
     }
     successors[s].push(d);
     in_degree[d] += 1;
+    if root.is_some() {
+      successors[d].push(s);
+    }
   }
   for succ in &mut successors {
     succ.sort_unstable();
@@ -1249,7 +1402,10 @@ fn layered_layout(
     }
     order[l].push(v);
   };
-  let roots: Vec<usize> = (0..n).filter(|&v| in_degree[v] == 0).collect();
+  let roots: Vec<usize> = match root {
+    Some(r) => vec![r],
+    None => (0..n).filter(|&v| in_degree[v] == 0).collect(),
+  };
   let starts = if roots.is_empty() { vec![0] } else { roots };
   let mut queue: std::collections::VecDeque<usize> =
     std::collections::VecDeque::new();

@@ -2895,6 +2895,12 @@ pub fn dispatch_list_operations(
     "Combinatorica`Partitions" if args.len() == 1 => {
       return Some(crate::functions::math_ast::integer_partitions_ast(args));
     }
+    "Combinatorica`Permutations" if args.len() == 1 => {
+      return Some(list_helpers_ast::combinatorica_permutations_ast(args));
+    }
+    "Combinatorica`Derangements" if args.len() == 1 => {
+      return Some(list_helpers_ast::combinatorica_derangements_ast(args));
+    }
     "Signature" if args.len() == 1 => {
       use crate::functions::list_helpers_ast::sorting::canonical_cmp;
       // Signature operates on any non-atomic expression: it treats the
@@ -3246,8 +3252,7 @@ pub fn dispatch_list_operations(
       }
       // Normal[GraphicsComplex[pts, data]] substitutes point indices with
       // their coordinates in `data`, returning "an ordinary list of
-      // graphics primitives and directives" per the documentation — it
-      // does not split a multi-face Polygon into one Polygon per face.
+      // graphics primitives and directives".
       if let Expr::FunctionCall {
         name,
         args: gc_args,
@@ -3260,6 +3265,7 @@ pub fn dispatch_list_operations(
           crate::functions::graphics::graphics_complex_to_normal_form(
             pts,
             &gc_args[1],
+            &gc_args[2..],
           ),
         ));
       }

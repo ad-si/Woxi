@@ -276,15 +276,60 @@ mod area {
 
   #[test]
   fn cube_cross_section_plane_misses_box() {
-    // A plane that doesn't pass through the box at all: empty intersection,
-    // area 0.
+    // A plane that doesn't pass through the box at all: like Wolfram, Area
+    // is left unevaluated rather than reporting 0.
     assert_eq!(
       interpret(
         "Area[RegionIntersection[Cube[{0.5, 0.5, 0.5}, 1], \
          ImplicitRegion[x == 10, {x, y, z}]]]"
       )
       .unwrap(),
-      "0."
+      "Area[BooleanRegion[#1 && #2 & , {Cube[{0.5, 0.5, 0.5}, 1], \
+       ImplicitRegion[x == 10, {x, y, z}]}]]"
+    );
+    // Same when the ball misses the cross-section's plane.
+    assert_eq!(
+      interpret(
+        "Area[RegionIntersection[Ball[{0.5, 0.5, 0.5}, 0.1], \
+         RegionIntersection[Cube[{0.5, 0.5, 0.5}, 1], \
+         ImplicitRegion[x + y == 1.9, {x, y, z}]]]]"
+      )
+      .unwrap(),
+      "Area[BooleanRegion[#1 && #2 && #3 & , {Ball[{0.5, 0.5, 0.5}, 0.1], \
+       Cube[{0.5, 0.5, 0.5}, 1], ImplicitRegion[x + y == 1.9, {x, y, z}]}]]"
+    );
+  }
+
+  #[test]
+  fn nested_boolean_regions_flatten() {
+    // Nested set operations splice into one BooleanRegion, the combiners
+    // renumbered and merged.
+    assert_eq!(
+      interpret(
+        "RegionIntersection[Cube[], RegionIntersection[Ball[], \
+         ImplicitRegion[x == 0, {x, y, z}]]]"
+      )
+      .unwrap(),
+      "BooleanRegion[#1 && #2 && #3 & , {Cube[], Ball[{0, 0, 0}], \
+       ImplicitRegion[x == 0, {x, y, z}]}]"
+    );
+    assert_eq!(
+      interpret(
+        "RegionIntersection[RegionUnion[Ball[], \
+         ImplicitRegion[x == 0, {x, y, z}]], Cube[]]"
+      )
+      .unwrap(),
+      "BooleanRegion[(#1 || #2) && #3 & , {Ball[{0, 0, 0}], \
+       ImplicitRegion[x == 0, {x, y, z}], Cube[]}]"
+    );
+    assert_eq!(
+      interpret(
+        "RegionDifference[Cube[], RegionUnion[Ball[], \
+         ImplicitRegion[x == 0, {x, y, z}]]]"
+      )
+      .unwrap(),
+      "BooleanRegion[#1 &&  !(#2 || #3) & , {Cube[], Ball[{0, 0, 0}], \
+       ImplicitRegion[x == 0, {x, y, z}]}]"
     );
   }
 
@@ -295,14 +340,16 @@ mod area {
     // the rectangle's half-height along z (0.5) equals the sphere's
     // radius, so the disk of area Pi/4 fits inside the rectangle exactly
     // and RegionIntersection[Ball, planar-region] measures the whole disk.
+    // Rounded: Wolfram integrates numerically and is off in the 9th digit
+    // (0.7853981623985472).
     assert_eq!(
       interpret(
-        "Area[RegionIntersection[Ball[{0.5, 0.5, 0.5}, 0.5], \
+        "Round[Area[RegionIntersection[Ball[{0.5, 0.5, 0.5}, 0.5], \
          RegionIntersection[Cube[{0.5, 0.5, 0.5}, 1], \
-         ImplicitRegion[x + y == 1, {x, y, z}]]]]"
+         ImplicitRegion[x + y == 1, {x, y, z}]]]], 10^-6]"
       )
       .unwrap(),
-      "0.7853981633974483"
+      "392699/500000"
     );
   }
 
@@ -313,12 +360,12 @@ mod area {
     // is just Pi*r^2.
     assert_eq!(
       interpret(
-        "Area[RegionIntersection[Ball[{0.5, 0.5, 0.5}, 0.1], \
+        "Round[Area[RegionIntersection[Ball[{0.5, 0.5, 0.5}, 0.1], \
          RegionIntersection[Cube[{0.5, 0.5, 0.5}, 1], \
-         ImplicitRegion[x + y == 1, {x, y, z}]]]]"
+         ImplicitRegion[x + y == 1, {x, y, z}]]]], 10^-6]"
       )
       .unwrap(),
-      "0.03141592653589794"
+      "3927/125000"
     );
   }
 }
@@ -2834,10 +2881,9 @@ mod convex_hull_mesh {
     assert_eq!(interpret("Head[ConvexHullMesh]").unwrap(), "Symbol");
   }
 
-  // Trailing options (e.g. `MeshCellStyle`, used by a Demonstration to
-  // style a mesh's faces) are carried through onto the resulting
-  // `BoundaryMeshRegion`, alongside the `Method`/`WorkingPrecision` it
-  // already always carries.
+  // `MeshCellStyle` (used by a Demonstration to style a mesh's faces) is
+  // normalized into the region's per-cell `Properties`, listed ahead of the
+  // `Method`/`WorkingPrecision` it always carries.
   #[test]
   fn options_carried_through() {
     assert_eq!(
@@ -2848,14 +2894,95 @@ mod convex_hull_mesh {
       .unwrap(),
       "BoundaryMeshRegion[{{0, 0}, {2, 0}, {2, 2}, {0, 2}}, \
        {Line[{{1, 2}, {2, 3}, {3, 4}, {4, 1}}]}, \
+       Properties -> {{1, 1} -> MeshCellStyle -> RGBColor[1, 0, 0], \
+       {1, 2} -> MeshCellStyle -> RGBColor[1, 0, 0], \
+       {1, 3} -> MeshCellStyle -> RGBColor[1, 0, 0], \
+       {1, 4} -> MeshCellStyle -> RGBColor[1, 0, 0], \
+       {1, Default} -> MeshCellStyle -> Automatic}, \
        Method -> {\"SeparateBoundaries\" -> False}, \
-       WorkingPrecision -> Infinity, \
-       MeshCellStyle -> {{1, All} -> RGBColor[1, 0, 0]}]"
+       WorkingPrecision -> Infinity]"
+    );
+  }
+
+  #[test]
+  fn mesh_cell_options_normalize_into_properties() {
+    // A dimension default, single cells, a repeated cell (styles combine
+    // into a Directive, a label is replaced), an out-of-range cell
+    // (dropped), and several options (listed in a fixed order: Style,
+    // Highlight, ShapeFunction, Label).
+    assert_eq!(
+      interpret(
+        "ToString[ConvexHullMesh[{{0,0},{2,0},{2,2},{0,2}}, \
+         MeshCellStyle -> {{1, 2} -> Red, {1, 2} -> Blue, {1, 5} -> Green}], \
+         InputForm]"
+      )
+      .unwrap(),
+      "BoundaryMeshRegion[{{0, 0}, {2, 0}, {2, 2}, {0, 2}}, \
+       {Line[{{1, 2}, {2, 3}, {3, 4}, {4, 1}}]}, \
+       Properties -> {{1, 2} -> MeshCellStyle -> \
+       Directive[RGBColor[1, 0, 0], RGBColor[0, 0, 1]], \
+       {1, Default} -> MeshCellStyle -> Automatic}, \
+       Method -> {\"SeparateBoundaries\" -> False}, \
+       WorkingPrecision -> Infinity]"
+    );
+    assert_eq!(
+      interpret(
+        "ToString[ConvexHullMesh[{{0,0},{2,0},{2,2},{0,2}}, \
+         MeshCellShapeFunction -> {0 -> f}, \
+         MeshCellHighlight -> {{1, 2} -> Red}, \
+         MeshCellLabel -> {0 -> \"Index\", {1, {1, 3}} -> \"a\"}, \
+         MeshCellStyle -> {1 -> Blue}], InputForm]"
+      )
+      .unwrap(),
+      "BoundaryMeshRegion[{{0, 0}, {2, 0}, {2, 2}, {0, 2}}, \
+       {Line[{{1, 2}, {2, 3}, {3, 4}, {4, 1}}]}, \
+       Properties -> {{1, Default} -> MeshCellStyle -> RGBColor[0, 0, 1], \
+       {1, 2} -> MeshCellHighlight -> RGBColor[1, 0, 0], \
+       {1, Default} -> MeshCellHighlight -> Automatic, \
+       {0, Default} -> MeshCellShapeFunction -> f, \
+       {0, Default} -> MeshCellLabel -> \"Index\", \
+       {1, 1} -> MeshCellLabel -> \"a\", {1, 3} -> MeshCellLabel -> \"a\", \
+       {1, Default} -> MeshCellLabel -> Automatic}, \
+       Method -> {\"SeparateBoundaries\" -> False}, \
+       WorkingPrecision -> Infinity]"
+    );
+    // A bare style covers every cell of every dimension, the region's
+    // single 2-cell included.
+    assert_eq!(
+      interpret(
+        "StringCount[ToString[ConvexHullMesh[{{0,0},{2,0},{2,2},{0,2}}, \
+         MeshCellStyle -> Red], InputForm], \"MeshCellStyle\"]"
+      )
+      .unwrap(),
+      "12"
     );
   }
 
   // A trailing argument that is not a `Rule` (an invalid option) leaves the
   // whole call unevaluated, the same way a degenerate point set does.
+  // A mesh region is an atom despite its compound head: nothing inside it
+  // is a part, and Map/Apply leave it unchanged.
+  #[test]
+  fn mesh_region_is_atomic() {
+    assert_eq!(
+      interpret(
+        "m = ConvexHullMesh[{{0,0},{2,0},{2,2},{0,2}}]; \
+         {AtomQ[m], LeafCount[m], FreeQ[m, 2], Length[m], Depth[m], \
+         Dimensions[m], SameQ[f /@ m, m], SameQ[List @@ m, m]}"
+      )
+      .unwrap(),
+      "{True, 1, True, 0, 1, {}, True, True}"
+    );
+    assert_eq!(
+      interpret(
+        "{AtomQ[MeshRegion[{{0, 0}, {1, 0}, {0, 1}}, Polygon[{1, 2, 3}]]], \
+         AtomQ[MeshRegion[x]]}"
+      )
+      .unwrap(),
+      "{True, False}"
+    );
+  }
+
   #[test]
   fn non_rule_trailing_arg_unevaluated() {
     assert_eq!(
@@ -2900,22 +3027,37 @@ mod convex_hull_mesh {
 
     // `MeshCellStyle -> {{2, All} -> style}` (a Demonstration's way of
     // coloring a 3D `ConvexHullMesh`'s faces, e.g. translucent light blue)
-    // is carried through onto the `BoundaryMeshRegion`, the same way the 2D
-    // case carries its own trailing options.
+    // is normalized into the `BoundaryMeshRegion`'s per-cell `Properties`,
+    // the same way the 2D case does. (Only the options are compared: the
+    // face list is in qhull's order in wolframscript.)
     #[test]
     fn mesh_cell_style_option_carried_through() {
       assert_eq!(
         interpret(
-          "ToString[ConvexHullMesh[{{0,0,0},{1,0,0},{0,1,0},{0,0,1}}, \
-           MeshCellStyle -> {{2, All} -> Opacity[0.5, LightBlue]}], \
-           InputForm]"
+          "StringCases[ToString[ConvexHullMesh[{{0,0,0},{1,0,0},{0,1,0}, \
+           {0,0,1}}, MeshCellStyle -> {{2, All} -> Opacity[0.5, LightBlue]}], \
+           InputForm], \"Properties\" ~~ __]"
         )
         .unwrap(),
-        "BoundaryMeshRegion[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, 0, 1}}, \
-         {Polygon[{{1, 3, 2}, {1, 2, 4}, {1, 4, 3}, {2, 3, 4}}]}, \
+        "{Properties -> {{2, 1} -> MeshCellStyle -> \
+         Opacity[0.5, RGBColor[0.87, 0.94, 1]], \
+         {2, 2} -> MeshCellStyle -> Opacity[0.5, RGBColor[0.87, 0.94, 1]], \
+         {2, 3} -> MeshCellStyle -> Opacity[0.5, RGBColor[0.87, 0.94, 1]], \
+         {2, 4} -> MeshCellStyle -> Opacity[0.5, RGBColor[0.87, 0.94, 1]], \
+         {2, Default} -> MeshCellStyle -> Automatic}, \
          Method -> {\"SeparateBoundaries\" -> False}, \
-         WorkingPrecision -> Infinity, \
-         MeshCellStyle -> {{2, All} -> Opacity[0.5, RGBColor[0.87, 0.94, 1]]}]"
+         WorkingPrecision -> Infinity]}"
+      );
+      // A 3D region's 1-cells are its hull edges: six for a tetrahedron
+      // (plus the dimension's Default entry).
+      assert_eq!(
+        interpret(
+          "StringCount[ToString[ConvexHullMesh[{{0,0,0},{1,0,0},{0,1,0}, \
+           {0,0,1}}, MeshCellStyle -> {{1, All} -> Red}], InputForm], \
+           \"MeshCellStyle\"]"
+        )
+        .unwrap(),
+        "7"
       );
     }
 
@@ -2956,54 +3098,128 @@ mod convex_hull_mesh {
     fn interior_point_dropped() {
       assert_eq!(
         interpret(
-          "ToString[ConvexHullMesh[{{0,0,0},{1,0,0},{0,1,0},{0,0,1}, \
-           {0.1,0.1,0.1}}], InputForm]"
+          "MeshCoordinates[ConvexHullMesh[{{0,0,0},{1,0,0},{0,1,0},{0,0,1}, \
+           {0.1,0.1,0.1}}]]"
         )
         .unwrap(),
-        "BoundaryMeshRegion[{{0., 0., 0.}, {1., 0., 0.}, {0., 1., 0.}, \
-         {0., 0., 1.}}, {Polygon[{{1, 3, 2}, {1, 2, 4}, {1, 4, 3}, \
-         {2, 3, 4}}]}, Method -> {\"SeparateBoundaries\" -> False}]"
+        "{{0., 0., 0.}, {1., 0., 0.}, {0., 1., 0.}, {0., 0., 1.}}"
       );
     }
 
-    // Verified against wolframscript's own output for the same input (see
-    // `tests/cli/comparison/mathematica/conformance_gaps.md`, "ConvexHullMesh
-    // for 3D point sets"): its faces are the same 4 triangles with the same
-    // winding, `{{3,2,1},{2,4,1},{4,3,1},{3,4,2}}` — every one a cyclic
-    // rotation of the face listed here — just in a different facet order and
-    // starting vertex, which is qhull's own bookkeeping and not reproduced.
+    // wolframscript's facet order and each facet's starting vertex are
+    // qhull's own bookkeeping (see
+    // `tests/cli/comparison/mathematica/conformance_gaps.md`), so the faces
+    // are compared canonicalized: each rotated to start at its lowest
+    // vertex — which keeps its winding, i.e. its outward orientation — and
+    // the list sorted. Both engines agree on that exactly.
+    const CANONICAL_FACES: &str = "Sort[RotateLeft[#, First[Ordering[#, 1]] - 1] & \
+       /@ MeshCells[#, 2][[All, 1]]] &";
+
     #[test]
     fn tetrahedron_matches_wolfram_facets() {
       assert_eq!(
+        interpret(&format!(
+          "{CANONICAL_FACES}[ConvexHullMesh[{{{{0,0,0}},{{1,0,0}},{{0,1,0}}, \
+           {{0,0,1}}}}]]"
+        ))
+        .unwrap(),
+        "{{1, 2, 4}, {1, 3, 2}, {1, 4, 3}, {2, 3, 4}}"
+      );
+      assert_eq!(
         interpret(
-          "ToString[ConvexHullMesh[{{0,0,0},{1,0,0},{0,1,0},{0,0,1}}], \
-           InputForm]"
+          "StringCases[ToString[ConvexHullMesh[{{0,0,0},{1,0,0},{0,1,0}, \
+           {0,0,1}}], InputForm], \"Method\" ~~ __]"
         )
         .unwrap(),
-        "BoundaryMeshRegion[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, 0, 1}}, \
-         {Polygon[{{1, 3, 2}, {1, 2, 4}, {1, 4, 3}, {2, 3, 4}}]}, \
-         Method -> {\"SeparateBoundaries\" -> False}, \
-         WorkingPrecision -> Infinity]"
+        "{Method -> {\"SeparateBoundaries\" -> False}, \
+         WorkingPrecision -> Infinity]}"
       );
     }
 
-    // Same reference comparison, for the tetrahedron plus a 5th point that
-    // extends the hull (rather than falling inside it): wolframscript gives
-    // `{{3,2,1},{2,4,1},{4,3,1},{3,5,2},{5,4,2},{4,5,3}}`, and every one of
-    // those 6 triangles is a cyclic rotation of a face listed here.
     #[test]
     fn tetrahedron_plus_apex_matches_wolfram_facets() {
       assert_eq!(
+        interpret(&format!(
+          "{CANONICAL_FACES}[ConvexHullMesh[{{{{0,0,0}},{{1,0,0}},{{0,1,0}}, \
+           {{0,0,1}},{{1,1,1}}}}]]"
+        ))
+        .unwrap(),
+        "{{1, 2, 4}, {1, 3, 2}, {1, 4, 3}, {2, 3, 5}, {2, 5, 4}, {3, 4, 5}}"
+      );
+    }
+
+    // A 3D hull is a solid: its measure is its volume (exact for exact
+    // coordinates), Area and Perimeter are Undefined, SurfaceArea is a
+    // machine number, and the centroid is the volume-weighted one.
+    #[test]
+    fn solid_measures() {
+      assert_eq!(
         interpret(
-          "ToString[ConvexHullMesh[{{0,0,0},{1,0,0},{0,1,0},{0,0,1}, \
-           {1,1,1}}], InputForm]"
+          "m = ConvexHullMesh[{{0,0,0},{1,0,0},{0,1,0},{0,0,1}}]; \
+           {Volume[m], RegionMeasure[m], Area[m], SurfaceArea[m], \
+           RegionCentroid[m], RegionDimension[m], Perimeter[m]}"
         )
         .unwrap(),
-        "BoundaryMeshRegion[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, 0, 1}, \
-         {1, 1, 1}}, {Polygon[{{1, 3, 2}, {5, 2, 3}, {1, 2, 4}, {2, 5, 4}, \
-         {5, 3, 4}, {3, 1, 4}}]}, \
-         Method -> {\"SeparateBoundaries\" -> False}, \
-         WorkingPrecision -> Infinity]"
+        "{1/6, 1/6, Undefined, 2.3660254037844384, {1/4, 1/4, 1/4}, 3, \
+         Undefined}"
+      );
+      assert_eq!(
+        interpret(
+          "m = ConvexHullMesh[{{0,0,0},{2,0,0},{0,2,0},{0,0,2},{2,2,2}, \
+           {2,2,0},{1,1,3}}]; {Volume[m], SurfaceArea[m]}"
+        )
+        .unwrap(),
+        "{20/3, 21.79795897113271}"
+      );
+      assert_eq!(
+        interpret(
+          "RegionCentroid[ConvexHullMesh[{{0,0,0},{2,0,0},{2,2,0},{0,2,0}, \
+           {0,0,2},{2,0,2},{2,2,2},{0,2,2}}]]"
+        )
+        .unwrap(),
+        "{1, 1, 1}"
+      );
+      // A planar region has no volume or surface area.
+      assert_eq!(
+        interpret(
+          "m = ConvexHullMesh[{{0,0},{2,0},{2,2},{0,2}}]; \
+           {Volume[m], SurfaceArea[m], Area[m]}"
+        )
+        .unwrap(),
+        "{Undefined, Undefined, 4}"
+      );
+    }
+
+    // Coplanar triangles merge into the polygon they tile, as qhull reports
+    // them: a cube's sides are six quads, and a vertex on a straight run of
+    // a face's boundary (an edge midpoint) is not a hull vertex at all.
+    #[test]
+    fn coplanar_facets_merge() {
+      assert_eq!(
+        interpret(&format!(
+          "{CANONICAL_FACES}[ConvexHullMesh[{{{{0,0,0}},{{1,0,0}},{{1,1,0}}, \
+           {{0,1,0}},{{0,0,1}},{{1,0,1}},{{1,1,1}},{{0,1,1}}}}]]"
+        ))
+        .unwrap(),
+        "{{1, 2, 6, 5}, {1, 4, 3, 2}, {1, 5, 8, 4}, {2, 3, 7, 6}, \
+         {3, 4, 8, 7}, {5, 6, 7, 8}}"
+      );
+      assert_eq!(
+        interpret(&format!(
+          "{CANONICAL_FACES}[ConvexHullMesh[{{{{0,0,0}},{{2,0,0}},{{0,2,0}}, \
+           {{0,0,2}},{{2,2,2}},{{2,2,0}},{{1,1,3}}}}]]"
+        ))
+        .unwrap(),
+        "{{1, 2, 4}, {1, 4, 3}, {2, 5, 7}, {2, 6, 5}, {2, 7, 4}, \
+         {3, 4, 7}, {3, 5, 6}, {3, 7, 5}, {1, 3, 6, 2}}"
+      );
+      assert_eq!(
+        interpret(
+          "MeshCellCount[ConvexHullMesh[{{0,0,0},{2,0,0},{2,2,0},{0,2,0}, \
+           {0,0,2},{2,0,2},{2,2,2},{0,2,2},{1,0,0},{1,1,0}}]]"
+        )
+        .unwrap(),
+        "{8, 12, 6}"
       );
     }
 
@@ -3031,8 +3247,9 @@ mod convex_hull_mesh {
         [0.0, 1.0, 1.0],
         [1.0, 1.0, 1.0],
       ];
-      // All 8 corners of a cube are hull vertices; parse out the triangle
-      // index triples from the printed `Polygon[{{...}}]`.
+      // All 8 corners of a cube are hull vertices; parse out the faces'
+      // index lists from the printed `Polygon[{{...}}]` (the normal of a
+      // quad is that of its first three corners).
       let faces_start = s.find("Polygon[{{").unwrap() + "Polygon[{".len();
       let faces_end = s[faces_start..].find("}]").unwrap() + faces_start + 1;
       let faces_str = &s[faces_start..faces_end];
@@ -3040,17 +3257,13 @@ mod convex_hull_mesh {
         .trim_start_matches('{')
         .trim_end_matches('}')
         .split("}, {")
-        .map(|tri| {
+        .map(|face| {
           let idx: Vec<usize> =
-            tri.split(", ").map(|n| n.parse().unwrap()).collect();
+            face.split(", ").map(|n| n.parse().unwrap()).collect();
           [idx[0], idx[1], idx[2]]
         })
         .collect();
-      assert_eq!(
-        faces.len(),
-        12,
-        "a cube's hull triangulates to 12 faces (2 per square side): {s}"
-      );
+      assert_eq!(faces.len(), 6, "a cube's hull has 6 quad faces: {s}");
       let centroid = [0.5, 0.5, 0.5];
       for [a, b, c] in &faces {
         let (pa, pb, pc) = (verts[a - 1], verts[b - 1], verts[c - 1]);
@@ -3108,29 +3321,37 @@ mod cantor_mesh {
 
   #[test]
   fn level_0_dim_2() {
-    // 2D MeshRegion renders as -Graphics-, so inspect the structure.
+    // 2D MeshRegion renders as -Graphics-, and is an atom that Part cannot
+    // reach into, so inspect it through the mesh accessors.
     assert_eq!(interpret("Head[CantorMesh[0, 2]]").unwrap(), "MeshRegion");
     assert_eq!(
-      interpret("CantorMesh[0, 2][[1]]").unwrap(),
+      interpret("MeshCoordinates[CantorMesh[0, 2]]").unwrap(),
       "{{0., 0.}, {0., 1.}, {1., 0.}, {1., 1.}}"
     );
     assert_eq!(
-      interpret("CantorMesh[0, 2][[2]]").unwrap(),
-      "{Polygon[{{1, 3, 4, 2}}]}"
+      interpret("MeshCells[CantorMesh[0, 2], 2]").unwrap(),
+      "{Polygon[{1, 3, 4, 2}]}"
     );
   }
 
   #[test]
   fn level_1_dim_2() {
     assert_eq!(interpret("Head[CantorMesh[1, 2]]").unwrap(), "MeshRegion");
-    assert_eq!(interpret("Length[CantorMesh[1, 2][[1]]]").unwrap(), "16");
     assert_eq!(
-      interpret("CantorMesh[1, 2][[2]]").unwrap(),
-      "{Polygon[{{1, 5, 6, 2}, {3, 7, 8, 4}, {9, 13, 14, 10}, {11, 15, 16, 12}}]}"
+      interpret("Length[MeshCoordinates[CantorMesh[1, 2]]]").unwrap(),
+      "16"
+    );
+    assert_eq!(
+      interpret("MeshCells[CantorMesh[1, 2], 2]").unwrap(),
+      "{Polygon[{1, 5, 6, 2}], Polygon[{3, 7, 8, 4}], \
+       Polygon[{9, 13, 14, 10}], Polygon[{11, 15, 16, 12}]}"
     );
     // First and last vertices.
-    assert_eq!(interpret("CantorMesh[1, 2][[1, 1]]").unwrap(), "{0., 0.}");
-    assert_eq!(interpret("CantorMesh[1, 2][[1, -1]]").unwrap(), "{1., 1.}");
+    assert_eq!(
+      interpret("{First[#], Last[#]} &[MeshCoordinates[CantorMesh[1, 2]]]")
+        .unwrap(),
+      "{{0., 0.}, {1., 1.}}"
+    );
   }
 
   #[test]

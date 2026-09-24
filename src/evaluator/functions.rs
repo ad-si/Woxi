@@ -89,9 +89,22 @@ static ALL_BUILTIN_NAMES: LazyLock<HashSet<&'static str>> =
       .collect()
   });
 
-/// True if `name` is a `System`` symbol, i.e. listed in functions.csv.
+/// The formal symbols `\[FormalA]`, `\[FormalCapitalOmega]`,
+/// `\[FormalScriptX]`, …: single private-use glyphs that live in `System``
+/// and are `Protected`, so they can serve as bound variables that user code
+/// cannot accidentally assign to.
+static FORMAL_SYMBOLS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
+  crate::named_characters::NAMED_CHARACTERS
+    .iter()
+    .filter(|(name, _)| name.starts_with("Formal"))
+    .map(|(_, glyph)| *glyph)
+    .collect()
+});
+
+/// True if `name` is a `System`` symbol, i.e. listed in functions.csv or
+/// one of the formal symbols.
 pub fn is_builtin_symbol(name: &str) -> bool {
-  ALL_BUILTIN_NAMES.contains(name)
+  ALL_BUILTIN_NAMES.contains(name) || FORMAL_SYMBOLS.contains(name)
 }
 
 /// Information about a built-in Wolfram Language function.
