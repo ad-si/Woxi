@@ -20534,10 +20534,74 @@ fn spec_marks_locator(items: &[Expr]) -> bool {
 /// the bare-identifier form, so a second Table of Locators reusing the same
 /// indexed variable for another purpose (e.g. a rotation handle) does not
 /// override it.
+///
+/// A `DynamicModule[{v = s, …}, …]` local that is a bare copy of another
+/// identifier is recorded here as `v -> s`. A Demonstration commonly
+/// mirrors its real, persistent `ControlType -> None` state (`s`) into a
+/// same-shaped `DynamicModule` local (`v`) purely so the body can reassign
+/// it while dragging, writing the result back to `s` only once the drag
+/// settles (`LinesTwoPoints`-style two-point locators do this). Resolving
+/// `v` back to `s` here is what lets [`collect_body_locator_callbacks`]
+/// promote the *real* state variable even though the `LocatorPane` itself
+/// only ever names the proxy.
+fn collect_dynamic_module_proxies(
+  expr: &Expr,
+  proxies: &mut Vec<(String, String)>,
+) {
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      if name == "DynamicModule"
+        && !args.is_empty()
+        && let Expr::List(locals) = &args[0]
+      {
+        for local in locals {
+          if let Expr::FunctionCall {
+            name: set_name,
+            args: set_args,
+          } = local
+            && set_name == "Set"
+            && set_args.len() == 2
+            && let Expr::Identifier(v) = &set_args[0]
+            && let Expr::Identifier(s) = &set_args[1]
+          {
+            proxies.push((v.clone(), s.clone()));
+          }
+        }
+      }
+      for a in args {
+        collect_dynamic_module_proxies(a, proxies);
+      }
+    }
+    Expr::List(items) => {
+      for it in items {
+        collect_dynamic_module_proxies(it, proxies);
+      }
+    }
+    Expr::CompoundExpr(items) => {
+      for it in items {
+        collect_dynamic_module_proxies(it, proxies);
+      }
+    }
+    _ => {}
+  }
+}
+
 fn collect_body_locator_callbacks(
   expr: &Expr,
 ) -> Vec<(String, Option<String>)> {
-  fn walk(expr: &Expr, found: &mut Vec<(String, Option<String>)>) {
+  let mut proxies = Vec::new();
+  collect_dynamic_module_proxies(expr, &mut proxies);
+  let resolve = |var: &str| -> String {
+    proxies
+      .iter()
+      .find(|(v, _)| v == var)
+      .map_or_else(|| var.to_string(), |(_, s)| s.clone())
+  };
+  fn walk(
+    expr: &Expr,
+    resolve: &dyn Fn(&str) -> String,
+    found: &mut Vec<(String, Option<String>)>,
+  ) {
     match expr {
       Expr::FunctionCall { name, args } => {
         if (name == "Locator" || name == "LocatorPane")
@@ -20548,42 +20612,63 @@ fn collect_body_locator_callbacks(
           && dname == "Dynamic"
         {
           match dargs.first() {
-            Some(Expr::Identifier(var))
-              if !found.iter().any(|(n, _)| n == var) =>
-            {
-              let callback =
-                dargs.get(1).map(crate::syntax::expr_to_input_form);
-              found.push((var.clone(), callback));
+            Some(Expr::Identifier(var)) => {
+              let var = resolve(var);
+              if !found.iter().any(|(n, _)| *n == var) {
+                let callback =
+                  dargs.get(1).map(crate::syntax::expr_to_input_form);
+                found.push((var, callback));
+              }
             }
             Some(Expr::Part { expr: base, .. }) => {
-              if let Expr::Identifier(var) = base.as_ref()
-                && !found.iter().any(|(n, _)| n == var)
-              {
-                found.push((var.clone(), None));
+              if let Expr::Identifier(var) = base.as_ref() {
+                let var = resolve(var);
+                if !found.iter().any(|(n, _)| *n == var) {
+                  found.push((var, None));
+                }
+              }
+            }
+            // A `LocatorPane[Dynamic[{p1, p2, …}, {getter, setter…}], …]`
+            // pane: several proxy locators tracked jointly. Each names its
+            // own point independently (`makegraph[pt, pt2]` reads them
+            // apart), so each is promoted on its own rather than as one
+            // combined multi-point control; the joint setter can't be
+            // replayed per-point, so no write-back callback is carried
+            // (the promoted `Slider2D` falls back to the raw dragged
+            // position, same as a plain `LocatorPane[Dynamic[var], …]`
+            // with no callback).
+            Some(Expr::List(items)) if name == "LocatorPane" => {
+              for it in items {
+                if let Expr::Identifier(var) = it {
+                  let var = resolve(var);
+                  if !found.iter().any(|(n, _)| *n == var) {
+                    found.push((var, None));
+                  }
+                }
               }
             }
             _ => {}
           }
         }
         for a in args {
-          walk(a, found);
+          walk(a, resolve, found);
         }
       }
       Expr::List(items) => {
         for it in items {
-          walk(it, found);
+          walk(it, resolve, found);
         }
       }
       Expr::CompoundExpr(items) => {
         for it in items {
-          walk(it, found);
+          walk(it, resolve, found);
         }
       }
       _ => {}
     }
   }
   let mut found = Vec::new();
-  walk(expr, &mut found);
+  walk(expr, &resolve, &mut found);
   found
 }
 

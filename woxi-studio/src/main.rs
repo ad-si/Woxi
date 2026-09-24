@@ -26776,6 +26776,114 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`count$$ = 3, $CellContext`offset$$ 
     );
   }
 
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook ("Lines: Two Points"),
+  /// whose picture is driven by two draggable points. Its shape: two
+  /// persistent `ControlType -> None` points are mirrored into
+  /// `DynamicModule` proxy locals purely so the body can reassign them
+  /// while dragging (writing the result back to the real state only once
+  /// the drag settles), and a single `LocatorPane[Dynamic[{a, b}, …], …]`
+  /// drags both jointly, driving a `Dynamic` graphic keyed on the proxies.
+  ///
+  /// Regression: neither `collect_body_locator_callbacks` (which only
+  /// recognized a bare `Dynamic[var]` or `Dynamic[var[[i]]]`) nor the
+  /// `DynamicModule`-local hoisting (which only fires when the module's own
+  /// body is itself `Dynamic[…]`, not a `Column[…]` of several `Dynamic`
+  /// pieces) resolved a `LocatorPane[Dynamic[{a, b}, …], …]` back to the
+  /// real, persistent state variables `a` and `b` proxy for. The two points
+  /// therefore never got a draggable stand-in — this app has no raw canvas
+  /// dragging, so every Locator-style interaction becomes a synthesized X/Y
+  /// slider pair instead — leaving the picture permanently frozen at its
+  /// starting positions with no way to reach the rest of it. Fixed by
+  /// having `collect_body_locator_callbacks` resolve a `DynamicModule`
+  /// local through its own bare-identifier initializer back to the
+  /// variable it mirrors, and by recognizing a `LocatorPane` whose tracked
+  /// value is a list of plain identifiers (rather than only a single one).
+  ///
+  /// This is a self-authored, construct-equivalent example (invented
+  /// variable names, layout and picture) — not the Demonstration's own
+  /// code, which is copyrighted.
+  #[test]
+  fn dynamic_module_proxy_locator_pair_gets_draggable_stand_ins() {
+    let code = "Manipulate[\
+      DynamicModule[{a = startA, b = startB}, \
+        Column[{\
+          Dynamic[Text[If[a == b, \"same\", \"apart\"]]], \
+          LocatorPane[\
+            Dynamic[{a, b}, \
+              {a = startA; b = startB, \
+               (a = #[[1]]; b = #[[2]]) &, \
+               (a = #[[1]]; b = #[[2]]) &; startA = a; startB = b}], \
+            Dynamic[Graphics[{Blue, Point[a], Darker[Green], Point[b]}, \
+              PlotRange -> {{-5, 5}, {-5, 5}}]], \
+            Appearance -> Style[\".\", Opacity[0]]]\
+        }]\
+      ], \
+      {{startA, {1, 1}}, {-5, -5}, {5, 5}, ControlType -> None}, \
+      {{startB, {-3, -1}}, {-5, -5}, {5, 5}, ControlType -> None}]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the DynamicModule-proxy Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the initial render must draw both points"
+    );
+
+    let stand_ins: Vec<(&str, f64, f64, f64, f64, f64, f64)> = state
+      .controls
+      .iter()
+      .filter_map(|c| match c {
+        manipulate::ControlState::Slider2D {
+          name,
+          x_min,
+          x_max,
+          y_min,
+          y_max,
+          x,
+          y,
+          ..
+        } => Some((name.as_str(), *x_min, *x_max, *y_min, *y_max, *x, *y)),
+        _ => None,
+      })
+      .collect();
+    assert_eq!(
+      stand_ins.len(),
+      2,
+      "both proxy-mirrored points must become draggable stand-ins: {:?}",
+      state.controls
+    );
+    assert!(stand_ins.iter().any(
+      |s| s.0 == "startA" && s == &("startA", -5.0, 5.0, -5.0, 5.0, 1.0, 1.0)
+    ));
+    assert!(
+      stand_ins.iter().any(|s| s.0 == "startB"
+        && s == &("startB", -5.0, 5.0, -5.0, 5.0, -3.0, -1.0))
+    );
+
+    // Dragging `startA` must actually move the picture.
+    let before = format!("{:?}", state.graphics_handle);
+    for c in &mut state.controls {
+      if let manipulate::ControlState::Slider2D { name, x, y, .. } = c
+        && name == "startA"
+      {
+        *x = 4.0;
+        *y = -2.0;
+      }
+    }
+    state.reevaluate();
+    assert!(
+      state.error.is_none(),
+      "re-render after dragging must evaluate cleanly: {:?}",
+      state.error
+    );
+    let after = format!("{:?}", state.graphics_handle);
+    assert_ne!(before, after, "dragging a point must change the picture");
+  }
+
   /// A randomly-sampled Wolfram Demonstrations Project notebook builds a
   /// `Flatten[Table[…], 1]` lattice of points, wraps it in
   /// `Nearest[lattice -> Automatic]`, and uses a `Locator` control (a bare
