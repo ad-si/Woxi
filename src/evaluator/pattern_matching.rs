@@ -2770,15 +2770,40 @@ pub fn apply_replace_all_ast(
     // cannot quietly turn a plot into a bag of primitives.
     let symbolic = match (structure, source) {
       (Some(s), _) => Some(s.as_ref().clone()),
-      (None, Some(source)) => Some(Expr::FunctionCall {
-        name: if *is_3d { "Graphics3D" } else { "Graphics" }.to_string(),
-        args: std::iter::once(Expr::List(
-          crate::functions::graphics::plot_source_primitives(source).into(),
-        ))
-        .chain(source.options.iter().cloned())
-        .collect::<Vec<_>>()
-        .into(),
-      }),
+      (None, Some(source)) => {
+        // `Plot`'s own renderer picks the height from `image_size` directly
+        // (golden-ratio default or an explicit `AspectRatio`/`ImageSize ->
+        // {w, h}`) rather than storing an `AspectRatio` rule in
+        // `source.options`. Rebuilding a plain `Graphics[primitives, …]`
+        // call from that data loses that shape: the generic renderer falls
+        // back to fitting the primitives' own bounding box, which an
+        // `Arrow` primitive (an idiom like `plot /. Line -> Arrow` for
+        // flow-direction markers) can throw wildly off. Pin the aspect the
+        // original plot actually rendered at unless the options already
+        // fix it.
+        let mut opts: Vec<Expr> = source.options.clone();
+        if crate::functions::graphics::plot_options_need_aspect_ratio(
+          &source.options,
+        ) {
+          opts.push(Expr::Rule {
+            pattern: Box::new(Expr::Identifier("AspectRatio".to_string())),
+            replacement: Box::new(Expr::Real(
+              crate::functions::graphics::plot_source_aspect_ratio(
+                source.image_size,
+              ),
+            )),
+          });
+        }
+        Some(Expr::FunctionCall {
+          name: if *is_3d { "Graphics3D" } else { "Graphics" }.to_string(),
+          args: std::iter::once(Expr::List(
+            crate::functions::graphics::plot_source_primitives(source).into(),
+          ))
+          .chain(opts)
+          .collect::<Vec<_>>()
+          .into(),
+        })
+      }
       (None, None) => None,
     };
     if let Some(symbolic) = symbolic {
