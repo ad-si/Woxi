@@ -3069,7 +3069,7 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let cyclo_match = (ai == 1 && ci == 1) || (ai == -1 && ci == -1);
         if cyclo_match && bi.abs() == ai.abs() {
           let make_neg1_pow = |p: i128, q: i128| -> Expr {
-            call("Power", vec![Expr::Integer(-1), make_rational(p, q)])
+            pow(Expr::Integer(-1), make_rational(p, q))
           };
           // After multiplying by -1, the b/a sign flips along with a's
           // sign — so `bi*ai > 0` corresponds to Φ₃ (`x^2 + x + 1`) and
@@ -3298,12 +3298,9 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
             Some(v) if v < 0.0
           );
           let root_of = |value: &Expr| -> Expr {
-            let raw = call(
-              "Power",
-              vec![
-                value.clone(),
-                call("Rational", vec![Expr::Integer(1), Expr::Integer(n)]),
-              ],
+            let raw = pow(
+              value.clone(),
+              call("Rational", vec![Expr::Integer(1), Expr::Integer(n)]),
             );
             crate::evaluator::evaluate_expr_to_expr(&raw).unwrap_or(raw)
           };
@@ -3332,12 +3329,9 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 let g = gcd_i128(j, n);
                 let p = j / g;
                 let q = n / g;
-                let multiplier = call(
-                  "Power",
-                  vec![
-                    Expr::Integer(-1),
-                    call("Rational", vec![Expr::Integer(p), Expr::Integer(q)]),
-                  ],
+                let multiplier = pow(
+                  Expr::Integer(-1),
+                  call("Rational", vec![Expr::Integer(p), Expr::Integer(q)]),
                 );
                 let product = times2(multiplier, val_root.clone());
                 if j % 2 == 1 {
@@ -3368,17 +3362,10 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 let multiplier = if p == 1 && q == 2 {
                   id_expr("I")
                 } else {
-                  Expr::FunctionCall {
-                    name: "Power".to_string(),
-                    args: vec![
-                      Expr::Integer(-1),
-                      call(
-                        "Rational",
-                        vec![Expr::Integer(p), Expr::Integer(q)],
-                      ),
-                    ]
-                    .into(),
-                  }
+                  pow(
+                    Expr::Integer(-1),
+                    call("Rational", vec![Expr::Integer(p), Expr::Integer(q)]),
+                  )
                 };
                 let product = times2(multiplier, val_root.clone());
                 roots.push(make_rule(negate_expr(&product)));
@@ -4256,7 +4243,7 @@ fn make_root_solutions(coeffs: &[Expr], var: &str) -> Option<Expr> {
     let var_pow = match i {
       0 => None,
       1 => Some(slot.clone()),
-      _ => Some(call("Power", vec![slot.clone(), Expr::Integer(i as i128)])),
+      _ => Some(pow(slot.clone(), Expr::Integer(i as i128))),
     };
     let term = match (var_pow, c) {
       (None, c) => c.clone(),

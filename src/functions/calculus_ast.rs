@@ -807,12 +807,9 @@ fn factor_logarithmic_antiderivative(expr: &Expr, var: &str) -> Option<Expr> {
   let power_expr = if common_power == 1 {
     Expr::Identifier(var.to_string())
   } else {
-    call(
-      "Power",
-      vec![
-        Expr::Identifier(var.to_string()),
-        Expr::Integer(common_power),
-      ],
+    pow(
+      Expr::Identifier(var.to_string()),
+      Expr::Integer(common_power),
     )
   };
   let frac = call(
@@ -1535,8 +1532,7 @@ fn gaussian_moment_result(
   consts: &[Expr],
   full_range: bool,
 ) -> Expr {
-  let pow =
-    |base: Expr, exp: i128| call("Power", vec![base, Expr::Integer(exp)]);
+  let pow = |base: Expr, exp: i128| pow(base, Expr::Integer(exp));
   let half = || call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]);
   let sqrt_pi_over_a = || match coeff {
     Expr::Integer(1) => make_sqrt(const_expr("Pi")),
@@ -2759,10 +2755,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             neg1(pow2(args[0].clone(), Expr::Integer(2))),
           );
           let sqrt_expr = make_sqrt(one_minus_f_sq);
-          Ok(simplify(times2(
-            df,
-            call("Power", vec![sqrt_expr, Expr::Integer(-1)]),
-          )))
+          Ok(simplify(times2(df, pow(sqrt_expr, Expr::Integer(-1)))))
         }
         "ArcCos" if args.len() == 1 => {
           // d/dx[arccos(f(x))] = -f'(x) / sqrt(1 - f(x)^2)
@@ -2774,7 +2767,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           let sqrt_expr = make_sqrt(one_minus_f_sq);
           Ok(simplify(times2(
             neg1(df),
-            call("Power", vec![sqrt_expr, Expr::Integer(-1)]),
+            pow(sqrt_expr, Expr::Integer(-1)),
           )))
         }
         "ArcTan" if args.len() == 2 => {
@@ -2790,7 +2783,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             pow2(u.clone(), Expr::Integer(2)),
             pow2(v.clone(), Expr::Integer(2)),
           );
-          let inv_denom = call("Power", vec![denom, Expr::Integer(-1)]);
+          let inv_denom = pow(denom, Expr::Integer(-1));
           // partial wrt first arg: -v / (u^2 + v^2)
           let d_first = times2(neg1(v), inv_denom.clone());
           // partial wrt second arg: u / (u^2 + v^2)
@@ -2806,10 +2799,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           let df = differentiate(&args[0], var)?;
           let one_plus_f_sq =
             plus2(Expr::Integer(1), pow2(args[0].clone(), Expr::Integer(2)));
-          Ok(simplify(times2(
-            df,
-            call("Power", vec![one_plus_f_sq, Expr::Integer(-1)]),
-          )))
+          Ok(simplify(times2(df, pow(one_plus_f_sq, Expr::Integer(-1)))))
         }
         "ArcCot" if args.len() == 1 => {
           // d/dx[arccot(f(x))] = -f'(x) / (1 + f(x)^2)
@@ -2818,7 +2808,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             plus2(Expr::Integer(1), pow2(args[0].clone(), Expr::Integer(2)));
           Ok(simplify(times2(
             neg1(df),
-            call("Power", vec![one_plus_f_sq, Expr::Integer(-1)]),
+            pow(one_plus_f_sq, Expr::Integer(-1)),
           )))
         }
         "ArcSinh" if args.len() == 1 => {
@@ -2827,10 +2817,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           let one_plus_f_sq =
             plus2(Expr::Integer(1), pow2(args[0].clone(), Expr::Integer(2)));
           let sqrt_expr = make_sqrt(one_plus_f_sq);
-          Ok(simplify(times2(
-            df,
-            call("Power", vec![sqrt_expr, Expr::Integer(-1)]),
-          )))
+          Ok(simplify(times2(df, pow(sqrt_expr, Expr::Integer(-1)))))
         }
         "ArcCosh" if args.len() == 1 => {
           // d/dx[arccosh(f(x))] = f'(x) / (sqrt(f(x) - 1) * sqrt(f(x) + 1))
@@ -2842,10 +2829,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           let sqrt_plus = make_sqrt(f_plus_one);
           // f'(x) / (Sqrt[f-1] * Sqrt[f+1])
           let denom = times2(sqrt_minus, sqrt_plus);
-          Ok(simplify(times2(
-            df,
-            call("Power", vec![denom, Expr::Integer(-1)]),
-          )))
+          Ok(simplify(times2(df, pow(denom, Expr::Integer(-1)))))
         }
         "ArcTanh" if args.len() == 1 => {
           // d/dx[arctanh(f(x))] = f'(x) / (1 - f(x)^2)
@@ -2854,10 +2838,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             Expr::Integer(1),
             neg1(pow2(args[0].clone(), Expr::Integer(2))),
           );
-          Ok(simplify(times2(
-            df,
-            call("Power", vec![one_minus_f_sq, Expr::Integer(-1)]),
-          )))
+          Ok(simplify(times2(df, pow(one_minus_f_sq, Expr::Integer(-1)))))
         }
         "ArcCoth" if args.len() == 1 => {
           // d/dx[arccoth(f(x))] = f'(x) / (1 - f(x)^2) (same as ArcTanh)
@@ -2866,10 +2847,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             Expr::Integer(1),
             neg1(pow2(args[0].clone(), Expr::Integer(2))),
           );
-          Ok(simplify(times2(
-            df,
-            call("Power", vec![one_minus_f_sq, Expr::Integer(-1)]),
-          )))
+          Ok(simplify(times2(df, pow(one_minus_f_sq, Expr::Integer(-1)))))
         }
         "Exp" if args.len() == 1 => {
           // d/dx[e^f(x)] = e^f(x) * f'(x)
@@ -2886,8 +2864,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
         "Log" if args.len() == 1 => {
           // d/dx[ln(f(x))] = f'(x) * f(x)^(-1)
           let df = differentiate(&args[0], var)?;
-          let power_neg_one =
-            call("Power", vec![args[0].clone(), Expr::Integer(-1)]);
+          let power_neg_one = pow(args[0].clone(), Expr::Integer(-1));
           if matches!(df, Expr::Integer(1)) {
             Ok(power_neg_one)
           } else {
@@ -3284,10 +3261,9 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             "LogGamma" => {
               call("PolyGamma", vec![Expr::Integer(0), args[0].clone()])
             }
-            "LogIntegral" => call(
-              "Power",
-              vec![call1("Log", args[0].clone()), Expr::Integer(-1)],
-            ),
+            "LogIntegral" => {
+              pow(call1("Log", args[0].clone()), Expr::Integer(-1))
+            }
             "AiryAi" => Expr::FunctionCall {
               name: "AiryAiPrime".to_string(),
               args: args.clone(),
@@ -7600,8 +7576,8 @@ fn try_integrate_power_derivative(expr: &Expr, var: &str) -> Option<Expr> {
     "Times",
     vec![
       expr.clone(),
-      call("Power", vec![g.clone(), Expr::Integer(n)]),
-      call("Power", vec![dg, Expr::Integer(-1)]),
+      pow(g.clone(), Expr::Integer(n)),
+      pow(dg, Expr::Integer(-1)),
     ],
   );
   let c = crate::evaluator::evaluate_expr_to_expr(&ratio).ok()?;
@@ -7611,10 +7587,7 @@ fn try_integrate_power_derivative(expr: &Expr, var: &str) -> Option<Expr> {
   // result = c/(1 - n) * g^(1 - n)
   let result = call(
     "Times",
-    vec![
-      div2(c, Expr::Integer(1 - n)),
-      call("Power", vec![g, Expr::Integer(1 - n)]),
-    ],
+    vec![div2(c, Expr::Integer(1 - n)), pow(g, Expr::Integer(1 - n))],
   );
   crate::evaluator::evaluate_expr_to_expr(&result).ok()
 }
@@ -7647,11 +7620,7 @@ fn try_integrate_log_derivative(expr: &Expr, var: &str) -> Option<Expr> {
     // ratio = integrand · g / g'
     let ratio = call(
       "Times",
-      vec![
-        expr.clone(),
-        g.clone(),
-        call("Power", vec![dg, Expr::Integer(-1)]),
-      ],
+      vec![expr.clone(), g.clone(), pow(dg, Expr::Integer(-1))],
     );
     let Ok(ratio_val) = crate::evaluator::evaluate_expr_to_expr(&ratio) else {
       continue;
@@ -7675,7 +7644,7 @@ fn try_integrate_log_derivative(expr: &Expr, var: &str) -> Option<Expr> {
       && n != -1
     {
       let new_exp = n + 1;
-      let log_pow = call("Power", vec![log_g, Expr::Integer(new_exp)]);
+      let log_pow = pow(log_g, Expr::Integer(new_exp));
       let result = call(
         "Times",
         vec![
@@ -7783,7 +7752,7 @@ fn symbolic_sqrt(e: &Expr) -> Expr {
         return if *k == 2 {
           args[0].clone()
         } else {
-          call("Power", vec![args[0].clone(), Expr::Integer(k / 2)])
+          pow(args[0].clone(), Expr::Integer(k / 2))
         };
       }
     }
@@ -7809,7 +7778,7 @@ fn symbolic_sqrt(e: &Expr) -> Expr {
     }
     _ => {}
   }
-  call("Power", vec![e.clone(), half()])
+  pow(e.clone(), half())
 }
 
 /// True for a constant Wolfram treats as positive: a bare symbol or an even
@@ -7970,7 +7939,7 @@ fn try_integrate_reciprocal_quadratic(expr: &Expr, var: &str) -> Option<Expr> {
   }
   let (is_neg, sqrt_q) = classify_quadratic_const(&q)?;
 
-  let pow_neg1 = |e: Expr| call("Power", vec![e, Expr::Integer(-1)]);
+  let pow_neg1 = |e: Expr| pow(e, Expr::Integer(-1));
   // arg = sqrt_p * x / sqrt_q
   let arg = call(
     "Times",
@@ -9509,7 +9478,7 @@ fn harmonic_arg_tends_to_pos_inf(g: &Expr, var: &str) -> bool {
 /// Enough Euler–Maclaurin terms to resolve the common `n`-, `n^2`-scaled
 /// limits exactly (matching wolframscript).
 fn harmonic_asymptotic(g: &Expr) -> Expr {
-  let pow = |e: i128| call("Power", vec![g.clone(), Expr::Integer(e)]);
+  let pow = |e: i128| pow(g.clone(), Expr::Integer(e));
   let rat = |n: i128, d: i128| {
     call("Rational", vec![Expr::Integer(n), Expr::Integer(d)])
   };
@@ -11472,7 +11441,7 @@ fn extract_quotient_from_times(expr: &Expr) -> Option<(Expr, Expr)> {
             Some(args[0].clone())
           } else {
             // Power[base, -k] → denominator is Power[base, k]
-            Some(call("Power", vec![args[0].clone(), Expr::Integer(-*n)]))
+            Some(pow(args[0].clone(), Expr::Integer(-*n)))
           }
         } else {
           None
@@ -13754,7 +13723,7 @@ fn split_for_series(expr: &Expr) -> Option<(Expr, Expr)> {
     Some(if matches!(pos_exp, Expr::Integer(1)) {
       base
     } else {
-      call("Power", vec![base, pos_exp])
+      pow(base, pos_exp)
     })
   };
   match expr {
@@ -14822,10 +14791,7 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && is_rational_function(&args[0])
   {
     let temp = format!("{var_name}$si");
-    let recip = call(
-      "Power",
-      vec![Expr::Identifier(temp.clone()), Expr::Integer(-1)],
-    );
+    let recip = pow(Expr::Identifier(temp.clone()), Expr::Integer(-1));
     let substituted =
       crate::syntax::substitute_variable(&args[0], &var_name, &recip);
     // Compute the t = 0 expansion of the substituted form quietly: a function
@@ -15039,38 +15005,28 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let n_expr = largs[0].clone();
     let x_expr = largs[1].clone();
     // ((x + Sqrt[x^2 + 4])/2)^n
-    let rewritten = Expr::FunctionCall {
-      name: "Power".to_string(),
-      args: vec![
-        Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![
-            call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
-            Expr::FunctionCall {
-              name: "Plus".to_string(),
-              args: vec![
-                x_expr.clone(),
-                Expr::FunctionCall {
-                  name: "Sqrt".to_string(),
-                  args: vec![call(
-                    "Plus",
-                    vec![
-                      Expr::Integer(4),
-                      call("Power", vec![x_expr, Expr::Integer(2)]),
-                    ],
-                  )]
-                  .into(),
-                },
-              ]
-              .into(),
-            },
-          ]
-          .into(),
-        },
-        n_expr,
-      ]
-      .into(),
-    };
+    let rewritten = pow(
+      call(
+        "Times",
+        vec![
+          call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
+          call(
+            "Plus",
+            vec![
+              x_expr.clone(),
+              call1(
+                "Sqrt",
+                call(
+                  "Plus",
+                  vec![Expr::Integer(4), pow(x_expr, Expr::Integer(2))],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+      n_expr,
+    );
     let mut new_args = vec![rewritten, args[1].clone()];
     new_args.extend(option_args.clone());
     return series_ast(&new_args);
@@ -15209,10 +15165,8 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           fact *= k;
         }
         // k!/x^(k+1) = fact * Power[x, -(k+1)]
-        let power = call(
-          "Power",
-          vec![Expr::Identifier(var_name.clone()), Expr::Integer(-(k + 1))],
-        );
+        let power =
+          pow(Expr::Identifier(var_name.clone()), Expr::Integer(-(k + 1)));
         if fact == 1 {
           exp_terms.push(power);
         } else {
@@ -15223,10 +15177,7 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       exp_terms.reverse();
 
       // E^x * (sum of terms)
-      let exp_x = call(
-        "Power",
-        vec![const_expr("E"), Expr::Identifier(var_name.clone())],
-      );
+      let exp_x = pow(const_expr("E"), Expr::Identifier(var_name.clone()));
       let exp_part = Expr::FunctionCall {
         name: "Times".to_string(),
         args: {
@@ -15247,10 +15198,7 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           name: "Times".to_string(),
           args: vec![
             Expr::Integer(-1),
-            call(
-              "Power",
-              vec![Expr::Identifier(var_name.clone()), Expr::Integer(-1)],
-            ),
+            pow(Expr::Identifier(var_name.clone()), Expr::Integer(-1)),
           ]
           .into(),
         }]
@@ -16195,7 +16143,7 @@ fn cc_reciprocal(e: Expr) -> Expr {
   if matches!(e, Expr::Integer(1)) {
     return Expr::Integer(1);
   }
-  call("Power", vec![e, Expr::Integer(-1)])
+  pow(e, Expr::Integer(-1))
 }
 
 /// Divergence in orthogonal curvilinear coordinates with scale factors h:
@@ -16352,10 +16300,7 @@ fn grad_field(
     let comp = if matches!(h, Expr::Integer(1)) {
       deriv
     } else {
-      call(
-        "Times",
-        vec![deriv, call("Power", vec![h.clone(), Expr::Integer(-1)])],
-      )
+      call("Times", vec![deriv, pow(h.clone(), Expr::Integer(-1))])
     };
     let evald = crate::evaluator::evaluate_expr_to_expr(&comp)?;
     components.push(evald);
@@ -17269,7 +17214,7 @@ fn leading_series_term(series: &Expr, var: &str, x0: &Expr) -> Option<Expr> {
         vec![Expr::Identifier(var.to_string()), x0.clone()],
       )
     };
-    let pow = call("Power", vec![base, exp]);
+    let pow = pow(base, exp);
     return Some(call("Times", vec![c.clone(), pow]));
   }
   None
@@ -18738,7 +18683,7 @@ fn factorial_series_at_zero(var_name: &str, order: i128) -> Expr {
   let constant = |s: &str| Expr::Constant(s.to_string());
   let plus = |args: Vec<Expr>| call("Plus", args);
   let times = |args: Vec<Expr>| call("Times", args);
-  let power = |base: Expr, exp: Expr| call("Power", vec![base, exp]);
+  let power = |base: Expr, exp: Expr| pow(base, exp);
   let rational = |p: i128, q: i128| call("Rational", vec![int(p), int(q)]);
 
   let mut coeffs: Vec<Expr> = Vec::with_capacity(order.max(0) as usize + 1);
@@ -18787,7 +18732,7 @@ fn weber_anger_series_at_zero(
   let int = |n: i128| Expr::Integer(n);
   let constant = |s: &str| Expr::Constant(s.to_string());
   let times = |args: Vec<Expr>| call("Times", args);
-  let power = |base: Expr, exp: Expr| call("Power", vec![base, exp]);
+  let power = |base: Expr, exp: Expr| pow(base, exp);
   let plus = |args: Vec<Expr>| call("Plus", args);
   let pi = constant("Pi");
   let nu_pi = times(vec![nu.clone(), pi.clone()]);
@@ -18870,7 +18815,7 @@ fn factorial2_series_at_zero(var_name: &str, order: i128) -> Expr {
   let constant = |s: &str| Expr::Constant(s.to_string());
   let plus = |args: Vec<Expr>| call("Plus", args);
   let times = |args: Vec<Expr>| call("Times", args);
-  let power = |base: Expr, exp: Expr| call("Power", vec![base, exp]);
+  let power = |base: Expr, exp: Expr| pow(base, exp);
   let rational = |p: i128, q: i128| call("Rational", vec![int(p), int(q)]);
   let log = |arg: Expr| call1("Log", arg);
 
@@ -18986,7 +18931,7 @@ fn hyperfactorial_series_at_zero(var_name: &str, order: i128) -> Expr {
   let constant = |s: &str| Expr::Constant(s.to_string());
   let plus = |args: Vec<Expr>| call("Plus", args);
   let times = |args: Vec<Expr>| call("Times", args);
-  let power = |base: Expr, exp: Expr| call("Power", vec![base, exp]);
+  let power = |base: Expr, exp: Expr| pow(base, exp);
   let rational = |p: i128, q: i128| call("Rational", vec![int(p), int(q)]);
   let log = |arg: Expr| call1("Log", arg);
   let two_pi = times(vec![int(2), constant("Pi")]);
@@ -19061,7 +19006,7 @@ fn series_at_infinity(
   order: i128,
 ) -> Result<Option<Expr>, InterpreterError> {
   let t = Expr::Identifier(format!("Global`{var}$inf"));
-  let reciprocal = call("Power", vec![t.clone(), Expr::Integer(-1)]);
+  let reciprocal = pow(t.clone(), Expr::Integer(-1));
   let substituted = crate::syntax::substitute_variable(expr, var, &reciprocal);
 
   // Negative powers of t have to be cleared before expanding about t == 0, or
