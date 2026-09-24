@@ -462,7 +462,12 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
           && matches!(&args[0], Expr::FunctionCall { name, args: fa }
           if name == "ZetaZero" && fa.len() == 1) =>
       {
-        Some(0.5)
+        match &args[0] {
+          Expr::FunctionCall { args: fa, .. } => {
+            expr_to_i128(&fa[0]).filter(|k| *k != 0).map(|_| 0.5)
+          }
+          _ => None,
+        }
       }
       "Im"
         if args.len() == 1

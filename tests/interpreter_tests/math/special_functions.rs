@@ -2347,6 +2347,98 @@ mod zeta {
     assert_eq!(interpret("ZetaZero[10]").unwrap(), "ZetaZero[10]");
     assert_eq!(interpret("ZetaZero[1]").unwrap(), "ZetaZero[1]");
   }
+
+  #[test]
+  fn zeta_zero_n_finds_the_root_numerically() {
+    // N[] (or a direct Real argument) triggers root-finding for the k-th
+    // non-trivial zero 1/2 + i t_k, matching the known values.
+    assert_eq!(
+      interpret("N[ZetaZero[1]]").unwrap(),
+      "0.5 + 14.134725141734695*I"
+    );
+    assert_eq!(
+      interpret("N[ZetaZero[2]]").unwrap(),
+      "0.5 + 21.022039638771552*I"
+    );
+    assert_eq!(
+      interpret("ZetaZero[3.]").unwrap(),
+      "0.5 + 25.01085758014569*I"
+    );
+  }
+
+  #[test]
+  fn zeta_zero_n_resolves_the_lehmer_pair() {
+    // Zeros #6709 and #6710 (the famous Lehmer pair) sit only ~0.038 apart
+    // near t ~ 7005, well inside the ~0.224 average zero spacing there —
+    // a naive fixed-step scan using only the average spacing can miss the
+    // sign change entirely and silently return the wrong zero's value.
+    assert_eq!(
+      interpret("Im[N[ZetaZero[6709]]]").unwrap(),
+      "7005.062866174947"
+    );
+    assert_eq!(
+      interpret("Im[N[ZetaZero[6710]]]").unwrap(),
+      "7005.100564672637"
+    );
+  }
+
+  #[test]
+  fn zeta_zero_n_large_k_is_fast() {
+    // Regression for an O(t_k^2) scan-from-zero implementation that made
+    // a large k impractically slow (or effectively hang): this must return
+    // promptly. t_100000 is known to be ~74920.83.
+    assert_eq!(
+      interpret("Im[N[ZetaZero[100000]]]").unwrap(),
+      "74920.82749899419"
+    );
+  }
+
+  #[test]
+  fn zeta_zero_n_negative_k_is_the_conjugate_zero() {
+    assert_eq!(
+      interpret("N[ZetaZero[-1]]").unwrap(),
+      "0.5 - 14.134725141734695*I"
+    );
+  }
+
+  #[test]
+  fn zeta_zero_n_zero_index_has_no_zero() {
+    // k = 0 doesn't index a zero at all, so N[] must leave it unevaluated
+    // rather than returning a bogus root.
+    assert_eq!(interpret("N[ZetaZero[0]]").unwrap(), "ZetaZero[0.]");
+  }
+
+  #[test]
+  fn zeta_zero_im_numericalizes_when_mixed_with_a_real() {
+    // Approximate numbers contaminate the whole computation: combining the
+    // exact ZetaZero[1] with a machine real numericalizes it, the same
+    // rule that already applies to e.g. Zeta[3] + 1.0.
+    assert_eq!(
+      interpret("Im[ZetaZero[1]] - 14.").unwrap(),
+      "0.13472514173469463"
+    );
+    // Exact arithmetic (no inexact number involved) stays fully symbolic.
+    assert_eq!(
+      interpret("Im[ZetaZero[1]] - 14").unwrap(),
+      "-14 + Im[ZetaZero[1]]"
+    );
+  }
+
+  #[test]
+  fn zeta_zero_re_is_one_half_only_for_a_valid_index() {
+    // Re[ZetaZero[k]] = 1/2 for any nonzero integer k.
+    assert_eq!(interpret("Re[ZetaZero[1]] + 1.0").unwrap(), "1.5");
+    // k = 0 (no zero) and a symbolic (non-numeric) index must NOT
+    // numericalize — there is no definite zero to take the real part of.
+    assert_eq!(
+      interpret("Re[ZetaZero[0]] + 1.0").unwrap(),
+      "1. + Re[ZetaZero[0]]"
+    );
+    assert_eq!(
+      interpret("Re[ZetaZero[n]] + 1.0").unwrap(),
+      "1. + Re[ZetaZero[n]]"
+    );
+  }
 }
 
 mod hurwitz_zeta {
