@@ -7,7 +7,6 @@
 //! monic with coefficients normalized to [0, p) and sorted by degree,
 //! then by ascending coefficient vector — matching wolframscript.
 
-#[allow(unused_imports)]
 use super::*;
 
 /// Keep the c-sweep in Berlekamp splitting bounded.
@@ -578,10 +577,7 @@ pub fn polynomial_lcm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let gcd = call("PolynomialGCD", vec![result.clone(), arg.clone()]);
     let quotient = call(
       "Cancel",
-      vec![call(
-        "Times",
-        vec![result, call("Power", vec![gcd, Expr::Integer(-1)])],
-      )],
+      vec![call("Times", vec![result, pow(gcd, Expr::Integer(-1))])],
     );
     let quotient = crate::evaluator::evaluate_expr_to_expr(&quotient)
       .unwrap_or_else(|_| quotient.clone());

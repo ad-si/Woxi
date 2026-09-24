@@ -938,7 +938,6 @@ pub fn quantile_distribution_closed_form(
   // Builders for the elementary inverse-CDF formulas below.
   let log = |x: Expr| call1("Log", x);
   let sqrt = |x: Expr| call1("Sqrt", x);
-  let power = |b: Expr, e: Expr| call("Power", vec![b, e]);
   let neg = |x: Expr| times2(int(-1), x);
   let one_minus_q = || minus2(int(1), q.clone());
 
@@ -1010,11 +1009,7 @@ pub fn quantile_distribution_closed_form(
         }
       }
       let (k, lam) = (dargs[0].clone(), dargs[1].clone());
-      eval(&times2(
-        lam,
-        power(neg(log(one_minus_q())), div2(int(1), k)),
-      ))
-      .ok()
+      eval(&times2(lam, pow(neg(log(one_minus_q())), div2(int(1), k)))).ok()
     }
     // Quantile[ParetoDistribution[k, α], q] = k (1 - q)^(-1/α)
     "ParetoDistribution" if dargs.len() == 2 => {
@@ -1022,7 +1017,7 @@ pub fn quantile_distribution_closed_form(
         return Some(infinity());
       }
       let (kmin, alpha) = (dargs[0].clone(), dargs[1].clone());
-      eval(&times2(kmin, power(one_minus_q(), div2(int(-1), alpha)))).ok()
+      eval(&times2(kmin, pow(one_minus_q(), div2(int(-1), alpha)))).ok()
     }
     // Quantile[RayleighDistribution[σ], q] = σ Sqrt[-Log[(1 - q)^2]]
     "RayleighDistribution" if dargs.len() == 1 => {
@@ -1030,7 +1025,7 @@ pub fn quantile_distribution_closed_form(
         return Some(infinity());
       }
       let sigma = dargs[0].clone();
-      eval(&times2(sigma, sqrt(neg(log(power(one_minus_q(), int(2))))))).ok()
+      eval(&times2(sigma, sqrt(neg(log(pow(one_minus_q(), int(2))))))).ok()
     }
     // Quantile[LaplaceDistribution[μ, β], q]: μ + β Log[2 q] for q ≤ 1/2,
     // else μ − β Log[2 (1 − q)].
@@ -1212,7 +1207,7 @@ pub fn quantile_distribution_closed_form(
         "InverseBetaRegularized",
         vec![s, div2(nu.clone(), int(2)), make_rational(1, 2)],
       );
-      let radical = sqrt(times2(nu, plus2(int(-1), power(ibr, int(-1)))));
+      let radical = sqrt(times2(nu, plus2(int(-1), pow(ibr, int(-1)))));
       let signed = if q_num < 0.5 { neg(radical) } else { radical };
       eval(&signed).ok()
     }
@@ -1243,7 +1238,7 @@ pub fn quantile_distribution_closed_form(
           div2(n.clone(), int(2)),
         ],
       );
-      eval(&div2(times2(m, plus2(int(-1), power(ibr, int(-1)))), n)).ok()
+      eval(&div2(times2(m, plus2(int(-1), pow(ibr, int(-1)))), n)).ok()
     }
     "BinomialDistribution"
     | "PoissonDistribution"
@@ -13795,19 +13790,16 @@ fn pdf_beta_prime(dargs: &[Expr], x: Expr) -> Result<Expr, InterpreterError> {
       "Times",
       vec![
         coeff,
-        call("Power", vec![x.clone(), plus2(int(-1), p.clone())]),
-        call(
-          "Power",
-          vec![
-            plus2(int(1), x.clone()),
-            call(
-              "Plus",
-              vec![
-                call("Times", vec![int(-1), p.clone()]),
-                call("Times", vec![int(-1), q.clone()]),
-              ],
-            ),
-          ],
+        pow(x.clone(), plus2(int(-1), p.clone())),
+        pow(
+          plus2(int(1), x.clone()),
+          call(
+            "Plus",
+            vec![
+              call("Times", vec![int(-1), p.clone()]),
+              call("Times", vec![int(-1), q.clone()]),
+            ],
+          ),
         ),
       ],
     ))
@@ -17871,10 +17863,8 @@ pub fn truncated_mean_variance(
     if matches!(&density, Expr::FunctionCall { name, .. } if name == "PDF") {
       return Ok(None);
     }
-    let integrand = call(
-      "Times",
-      vec![call("Power", vec![x.clone(), Expr::Integer(k)]), density],
-    );
+    let integrand =
+      call("Times", vec![pow(x.clone(), Expr::Integer(k)), density]);
     let integral = crate::evaluator::evaluate_expr_to_expr(&call(
       "Integrate",
       vec![
@@ -17897,7 +17887,7 @@ pub fn truncated_mean_variance(
   };
   let variance = crate::evaluator::evaluate_expr_to_expr(&call(
     "Subtract",
-    vec![m2, call("Power", vec![m1.clone(), Expr::Integer(2)])],
+    vec![m2, pow(m1.clone(), Expr::Integer(2))],
   ))?;
   Ok(Some((m1, variance)))
 }
@@ -18077,9 +18067,7 @@ pub fn censored_mean_variance(
     if matches!(&density, Expr::FunctionCall { name, .. } if name == "PDF") {
       return Ok(None);
     }
-    let power = |base_expr: &Expr| {
-      call("Power", vec![base_expr.clone(), Expr::Integer(k)])
-    };
+    let power = |base_expr: &Expr| pow(base_expr.clone(), Expr::Integer(k));
     let integral = eval(
       "Integrate",
       vec![
@@ -18112,9 +18100,6 @@ pub fn censored_mean_variance(
   let (Some(m1), Some(m2)) = (moment(1)?, moment(2)?) else {
     return Ok(None);
   };
-  let variance = eval(
-    "Subtract",
-    vec![m2, call("Power", vec![m1.clone(), Expr::Integer(2)])],
-  )?;
+  let variance = eval("Subtract", vec![m2, pow(m1.clone(), Expr::Integer(2))])?;
   Ok(Some((m1, variance)))
 }

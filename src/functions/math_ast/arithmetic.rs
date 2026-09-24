@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 use contains_inexact_real as contains_real;
 
@@ -3230,10 +3229,7 @@ fn plus_term_factors(e: &Expr) -> Vec<Expr> {
         right,
       } => {
         go(left, out);
-        out.push(call(
-          "Power",
-          vec![right.as_ref().clone(), Expr::Integer(-1)],
-        ));
+        out.push(pow(right.as_ref().clone(), Expr::Integer(-1)));
       }
       other => out.push(other.clone()),
     }
@@ -6704,11 +6700,7 @@ fn combine_trig_pairs(args: Vec<Expr>) -> Vec<Expr> {
     }
     for (head, n) in heads {
       let f = call(head, vec![farg.clone()]);
-      out.push(if n == 1 {
-        f
-      } else {
-        call("Power", vec![f, Expr::Integer(n)])
-      });
+      out.push(if n == 1 { f } else { pow(f, Expr::Integer(n)) });
     }
   }
   out
@@ -10448,7 +10440,7 @@ pub fn make_divide(a: Expr, b: Expr) -> Expr {
         } else {
           call("Times", rest)
         };
-        let rest_inv = call("Power", vec![rest_expr, Expr::Integer(-1)]);
+        let rest_inv = pow(rest_expr, Expr::Integer(-1));
         // Sign is carried on the rational's numerator (Rational[-1, |c|]).
         let coeff = call(
           "Rational",
@@ -10460,9 +10452,9 @@ pub fn make_divide(a: Expr, b: Expr) -> Expr {
         return call("Times", vec![coeff, rest_inv]);
       }
     }
-    return call("Power", vec![b, Expr::Integer(-1)]);
+    return pow(b, Expr::Integer(-1));
   }
-  let b_inv = call("Power", vec![b, Expr::Integer(-1)]);
+  let b_inv = pow(b, Expr::Integer(-1));
   // Flatten: if a is already Times, merge b_inv into its args
   if let Expr::FunctionCall { name, args } = &a
     && name == "Times"
@@ -10945,7 +10937,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     } else {
       make_rational(yn, yd)
     };
-    let neg_one_pow = call("Power", vec![Expr::Integer(-1), y_expr]);
+    let neg_one_pow = pow(Expr::Integer(-1), y_expr);
     return crate::evaluator::evaluate_function_call_ast(
       "Times",
       &[Expr::Integer(-1), neg_one_pow],
@@ -10985,7 +10977,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     } else {
       make_rational(yn, yd)
     };
-    let neg_one_pow = call("Power", vec![Expr::Integer(-1), y_expr]);
+    let neg_one_pow = pow(Expr::Integer(-1), y_expr);
     return if sign == 1 {
       Ok(neg_one_pow)
     } else {
@@ -12950,7 +12942,7 @@ fn simplify_neg1_rational_power(
     return Ok(id_expr("I"));
   }
   // 0 < p < q: return (-1)^(p/q)
-  Ok(call("Power", vec![Expr::Integer(-1), make_rational(p, q)]))
+  Ok(pow(Expr::Integer(-1), make_rational(p, q)))
 }
 
 /// Numerator and denominator of a `Rational[p, q]` expression.
@@ -13058,13 +13050,13 @@ fn negative_base_rational_power(
           _ => false,
         };
         if positive_int && expr_to_string(&fexp) == root_key {
-          *factor = call("Power", vec![negate_expr(fbase), root_exp.clone()]);
+          *factor = pow(negate_expr(fbase), root_exp.clone());
           merged = true;
           break;
         }
       }
       if !merged {
-        factors.push(call("Power", vec![Expr::Integer(-1), root_exp]));
+        factors.push(pow(Expr::Integer(-1), root_exp));
       }
     }
   }

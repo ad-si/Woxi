@@ -6,7 +6,6 @@
 //! Riemann–Liouville is the constant: it differentiates `⌈α⌉` times first, so
 //! a constant vanishes for any positive order.
 
-#[allow(unused_imports)]
 use super::*;
 
 /// The same expression with its arithmetic written as calls, so one matcher
@@ -22,9 +21,9 @@ fn as_calls(expr: &Expr) -> Expr {
         }
         BinaryOperator::Times => call("Times", vec![l, r]),
         BinaryOperator::Divide => {
-          call("Times", vec![l, call("Power", vec![r, Expr::Integer(-1)])])
+          call("Times", vec![l, pow(r, Expr::Integer(-1))])
         }
-        BinaryOperator::Power => call("Power", vec![l, r]),
+        BinaryOperator::Power => pow(l, r),
         _ => expr.clone(),
       }
     }

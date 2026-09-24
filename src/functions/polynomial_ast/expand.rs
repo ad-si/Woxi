@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 use crate::functions::calculus_ast::simplify;
 
@@ -479,10 +478,7 @@ fn reduce_coefficients_mod(expr: &Expr, m: i128) -> Expr {
       right: right.clone(),
     },
     Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
-      call(
-        "Power",
-        vec![reduce_coefficients_mod(&args[0], m), args[1].clone()],
-      )
+      pow(reduce_coefficients_mod(&args[0], m), args[1].clone())
     }
     _ => reduce_term_mod(expr, m),
   }
@@ -831,7 +827,7 @@ pub fn expand_expr(expr: &Expr) -> Expr {
           }
           return result;
         }
-        call("Power", vec![base, exp])
+        pow(base, exp)
       }
       _ => expr.clone(),
     },
@@ -1567,7 +1563,7 @@ fn expand_all_recursive(expr: &Expr) -> Expr {
           _ => unreachable!(),
         };
         let expanded = expand_power(&left_exp, pos_exp);
-        return call("Power", vec![expanded, Expr::Integer(-1)]);
+        return pow(expanded, Expr::Integer(-1));
       }
       // After recursively expanding sub-expressions, expand at this level
       expand_and_combine(&Expr::BinaryOp {
@@ -1637,7 +1633,7 @@ fn expand_all_recursive(expr: &Expr) -> Expr {
             _ => unreachable!(),
           };
           let expanded = expand_power(&expanded_args[0], pos_exp);
-          call("Power", vec![expanded, Expr::Integer(-1)])
+          pow(expanded, Expr::Integer(-1))
         }
         "Plus" | "Times" | "Power" => expand_and_combine(&Expr::FunctionCall {
           name: name.clone(),
@@ -1876,7 +1872,7 @@ fn expand_denominator_recursive(expr: &Expr) -> Expr {
         right: Box::new(pos_exp),
       });
       // The expansion absorbs the positive exponent, so always use -1
-      call("Power", vec![expanded, Expr::Integer(-1)])
+      pow(expanded, Expr::Integer(-1))
     }
 
     Expr::FunctionCall { name, args }
@@ -1885,10 +1881,9 @@ fn expand_denominator_recursive(expr: &Expr) -> Expr {
         && is_negative_integer(&args[1]) =>
     {
       let pos_exp = negate_expr(&args[1]);
-      let expanded =
-        expand_and_combine(&call("Power", vec![args[0].clone(), pos_exp]));
+      let expanded = expand_and_combine(&pow(args[0].clone(), pos_exp));
       // The expansion absorbs the positive exponent, so always use -1
-      call("Power", vec![expanded, Expr::Integer(-1)])
+      pow(expanded, Expr::Integer(-1))
     }
 
     _ => expr.clone(),

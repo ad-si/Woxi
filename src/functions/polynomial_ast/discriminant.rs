@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 
 /// True when `e` is a numeric literal equal to zero (integer or real).
@@ -67,7 +66,7 @@ pub fn discriminant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if is_zero_const(&leading_coeff) {
       return Ok(Expr::Integer(0));
     }
-    let inv_sq = call("Power", vec![leading_coeff, Expr::Integer(-2)]);
+    let inv_sq = pow(leading_coeff, Expr::Integer(-2));
     let simplified = crate::evaluator::evaluate_expr_to_expr(&inv_sq)?;
     return match super::cancel_ast(std::slice::from_ref(&simplified)) {
       Ok(c) => Ok(c),
@@ -95,10 +94,7 @@ pub fn discriminant_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let result = call(
     "Times",
-    vec![
-      signed_res,
-      call("Power", vec![leading_coeff, Expr::Integer(-1)]),
-    ],
+    vec![signed_res, pow(leading_coeff, Expr::Integer(-1))],
   );
 
   // Simplify the result

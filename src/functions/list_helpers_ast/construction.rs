@@ -1,7 +1,6 @@
 use super::utilities::expr_to_f64;
 #[allow(unused_imports)]
 use super::utilities::*;
-#[allow(unused_imports)]
 use super::*;
 use crate::functions::math_ast::rat_reduce;
 
@@ -765,7 +764,7 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               call("Times", vec![Expr::Integer(-1), min_expr.clone()]),
             ],
           ),
-          call("Power", vec![step_expr.clone(), Expr::Integer(-1)]),
+          pow(step_expr.clone(), Expr::Integer(-1)),
         ]
         .into(),
       };
@@ -1645,7 +1644,7 @@ fn build_range_indices(
   if n == 1 {
     // Wolfram gives the midpoint (a + b) / 2 when requesting a single
     // sample over a range, matching Array[f, 1, {a, b}] → {f[(a+b)/2]}.
-    let half = call("Power", vec![Expr::Integer(2), Expr::Integer(-1)]);
+    let half = pow(Expr::Integer(2), Expr::Integer(-1));
     let mid = call(
       "Times",
       vec![half, call("Plus", vec![a.clone(), b.clone()])],
@@ -1658,7 +1657,7 @@ fn build_range_indices(
     "Plus",
     vec![b.clone(), call("Times", vec![Expr::Integer(-1), a.clone()])],
   );
-  let inv_denom = call("Power", vec![Expr::Integer(n - 1), Expr::Integer(-1)]);
+  let inv_denom = pow(Expr::Integer(n - 1), Expr::Integer(-1));
   for i in 0..n {
     let term = call(
       "Times",
@@ -2905,11 +2904,7 @@ pub fn try_sparse_array_divide(a: &Expr, b: &Expr) -> Option<Expr> {
   let inverse = if is_sparse(b) {
     try_sparse_array_arithmetic("Power", &[b.clone(), minus_one])?
   } else {
-    crate::evaluator::evaluate_expr_to_expr(&call(
-      "Power",
-      vec![b.clone(), minus_one],
-    ))
-    .ok()?
+    crate::evaluator::evaluate_expr_to_expr(&pow(b.clone(), minus_one)).ok()?
   };
   try_sparse_array_arithmetic("Times", &[a.clone(), inverse])
 }

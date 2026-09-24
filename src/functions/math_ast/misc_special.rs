@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 
 /// QPochhammer[a, q, n] — q-Pochhammer symbol.
@@ -43,9 +42,9 @@ pub fn q_pochhammer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let qk = if k == 0 {
       Expr::Integer(1)
     } else {
-      crate::evaluator::evaluate_expr_to_expr(&call(
-        "Power",
-        vec![q.clone(), Expr::Integer(k as i128)],
+      crate::evaluator::evaluate_expr_to_expr(&pow(
+        q.clone(),
+        Expr::Integer(k as i128),
       ))?
     };
     // Compute a * q^k
@@ -210,16 +209,16 @@ fn mittag_leffler_two_arg(
             call("Times", vec![Expr::Integer(-1), z.clone()]),
           ],
         );
-        return crate::evaluator::evaluate_expr_to_expr(&call(
-          "Power",
-          vec![one_minus_z, Expr::Integer(-1)],
+        return crate::evaluator::evaluate_expr_to_expr(&pow(
+          one_minus_z,
+          Expr::Integer(-1),
         ));
       }
       1 => {
         // E^z
-        return crate::evaluator::evaluate_expr_to_expr(&call(
-          "Power",
-          vec![id_expr("E"), z.clone()],
+        return crate::evaluator::evaluate_expr_to_expr(&pow(
+          id_expr("E"),
+          z.clone(),
         ));
       }
       2 => {
@@ -249,9 +248,9 @@ fn mittag_leffler_three_arg(
 ) -> Result<Expr, InterpreterError> {
   // E_{alpha,beta}(0) = 1/Γ(beta) (only the k = 0 term survives).
   if is_expr_zero(z) {
-    return crate::evaluator::evaluate_expr_to_expr(&call(
-      "Power",
-      vec![call1("Gamma", beta.clone()), Expr::Integer(-1)],
+    return crate::evaluator::evaluate_expr_to_expr(&pow(
+      call1("Gamma", beta.clone()),
+      Expr::Integer(-1),
     ));
   }
 
@@ -1904,7 +1903,7 @@ fn wigner_d_symbolic(
       Some(call("Rational", vec![Expr::Integer(num), Expr::Integer(2)]))?
     };
     let exponent = call("Times", vec![id_expr("I"), coef_expr, ang.clone()]);
-    Some(call("Power", vec![const_expr("E"), exponent]))
+    Some(pow(const_expr("E"), exponent))
   };
   let e1 = exp_factor(m1, phi)?;
   let e2 = exp_factor(m2, psi)?;
@@ -1981,20 +1980,14 @@ fn wigner_d_small_symbolic(
     } else if cos_power == 1 {
       cos_ht.clone()
     } else {
-      call(
-        "Power",
-        vec![cos_ht.clone(), Expr::Integer(cos_power as i128)],
-      )
+      pow(cos_ht.clone(), Expr::Integer(cos_power as i128))
     };
     let sin_term = if sin_power == 0 {
       Expr::Integer(1)
     } else if sin_power == 1 {
       sin_ht.clone()
     } else {
-      call(
-        "Power",
-        vec![sin_ht.clone(), Expr::Integer(sin_power as i128)],
-      )
+      pow(sin_ht.clone(), Expr::Integer(sin_power as i128))
     };
     // coefficient = sign / denom (Rational).
     let coeff = if denom == 1 {
@@ -2234,7 +2227,7 @@ fn norlund_b_poly_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       vec![Expr::Integer(n as i128), Expr::Integer(k as i128)],
     );
     let nb = call("NorlundB", vec![Expr::Integer(k as i128), a.clone()]);
-    let x_pow = call("Power", vec![x.clone(), Expr::Integer((n - k) as i128)]);
+    let x_pow = pow(x.clone(), Expr::Integer((n - k) as i128));
     terms.push(call("Times", vec![binom, nb, x_pow]));
   }
   let sum = call("Plus", terms);
@@ -2258,7 +2251,7 @@ fn evaluate_norlund_symbolic(
       let a_pow = if k == 1 {
         a.clone()
       } else {
-        call("Power", vec![a.clone(), Expr::Integer(k as i128)])
+        pow(a.clone(), Expr::Integer(k as i128))
       };
       call("Times", vec![coeff, a_pow])
     };
@@ -2400,8 +2393,8 @@ pub fn appell_f1_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let one = Expr::Integer(1);
     let one_minus_x = minus2(one.clone(), args[4].clone());
     let one_minus_y = minus2(one.clone(), args[5].clone());
-    let factor_x = call("Power", vec![one_minus_x, args[1].clone()]);
-    let factor_y = call("Power", vec![one_minus_y, args[2].clone()]);
+    let factor_x = pow(one_minus_x, args[1].clone());
+    let factor_y = pow(one_minus_y, args[2].clone());
     let denom = times2(factor_x, factor_y);
     let result = div2(one, denom);
     return crate::evaluator::evaluate_expr_to_expr(&result);
@@ -3122,7 +3115,7 @@ pub fn effective_interest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   if p_is_zero {
     // -1 + E^r
-    let e_r = call("Power", vec![id_expr("E"), r.clone()]);
+    let e_r = pow(id_expr("E"), r.clone());
     let expr = call("Plus", vec![Expr::Integer(-1), e_r]);
     return crate::evaluator::evaluate_expr_to_expr(&expr);
   }
@@ -3130,8 +3123,8 @@ pub fn effective_interest_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // General form: (1 + p*r)^(1/p) - 1.
   let pr = call("Times", vec![p.clone(), r.clone()]);
   let one_plus_pr = call("Plus", vec![Expr::Integer(1), pr]);
-  let inv_p = call("Power", vec![p.clone(), Expr::Integer(-1)]);
-  let pow = call("Power", vec![one_plus_pr, inv_p]);
+  let inv_p = pow(p.clone(), Expr::Integer(-1));
+  let pow = pow(one_plus_pr, inv_p);
   let expr = call("Plus", vec![Expr::Integer(-1), pow]);
   crate::evaluator::evaluate_expr_to_expr(&expr)
 }

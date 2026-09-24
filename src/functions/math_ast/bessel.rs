@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 
 /// `J_n(-z) = (-1)^n J_n(z)`, and the same for `I_n` — the parity both have
@@ -222,10 +221,7 @@ fn wrap_with_sqrt_factor_rationalised(
       call1("Sqrt", z_expr.clone()),
     ],
   );
-  let expr = call(
-    "Times",
-    vec![distributed, call("Power", vec![denom, Expr::Integer(-1)])],
-  );
+  let expr = call("Times", vec![distributed, pow(denom, Expr::Integer(-1))]);
   crate::evaluator::evaluate_expr_to_expr(&expr)
 }
 
@@ -316,7 +312,7 @@ fn bessel_poly_recurrence(
         "Times",
         vec![
           Expr::Integer(a_coef),
-          call("Power", vec![z_expr.clone(), Expr::Integer(-1)]),
+          pow(z_expr.clone(), Expr::Integer(-1)),
           p_n.clone(),
         ],
       ),
@@ -338,17 +334,11 @@ fn wrap_with_sqrt_factor(
         "Sqrt",
         call(
           "Times",
-          vec![
-            Expr::Integer(2),
-            call("Power", vec![id_expr("Pi"), Expr::Integer(-1)]),
-          ],
+          vec![Expr::Integer(2), pow(id_expr("Pi"), Expr::Integer(-1))],
         ),
       ),
       p.clone(),
-      call(
-        "Power",
-        vec![call1("Sqrt", z_expr.clone()), Expr::Integer(-1)],
-      ),
+      pow(call1("Sqrt", z_expr.clone()), Expr::Integer(-1)),
     ],
   );
   crate::evaluator::evaluate_expr_to_expr(&expr)
@@ -787,7 +777,7 @@ fn bessel_k_polynomial(
           "Times",
           vec![
             Expr::Integer(m_cur),
-            call("Power", vec![z_expr.clone(), Expr::Integer(-1)]),
+            pow(z_expr.clone(), Expr::Integer(-1)),
             curr.clone(),
           ],
         ),
@@ -817,26 +807,17 @@ fn wrap_bessel_k_factor(
         "Sqrt",
         call(
           "Times",
-          vec![
-            id_expr("Pi"),
-            call("Power", vec![Expr::Integer(2), Expr::Integer(-1)]),
-          ],
+          vec![id_expr("Pi"), pow(Expr::Integer(2), Expr::Integer(-1))],
         ),
       ),
       p.clone(),
       // 1 / E^z = E^(-z)
-      call(
-        "Power",
-        vec![
-          const_expr("E"),
-          call("Times", vec![Expr::Integer(-1), z_expr.clone()]),
-        ],
+      pow(
+        const_expr("E"),
+        call("Times", vec![Expr::Integer(-1), z_expr.clone()]),
       ),
       // 1 / Sqrt[z]
-      call(
-        "Power",
-        vec![call1("Sqrt", z_expr.clone()), Expr::Integer(-1)],
-      ),
+      pow(call1("Sqrt", z_expr.clone()), Expr::Integer(-1)),
     ],
   );
   crate::evaluator::evaluate_expr_to_expr(&expr)
@@ -1271,12 +1252,9 @@ fn coulomb_wave_reduce(
 fn coulomb_hplus_expr(l: i128, eta: &Expr, rho: &Expr) -> Expr {
   let i_unit = id_expr("I");
   // (-i)^L
-  let neg_i_pow = call(
-    "Power",
-    vec![
-      call("Times", vec![Expr::Integer(-1), i_unit.clone()]),
-      Expr::Integer(l),
-    ],
+  let neg_i_pow = pow(
+    call("Times", vec![Expr::Integer(-1), i_unit.clone()]),
+    Expr::Integer(l),
   );
   // e^(pi eta / 2)
   let exp_norm = call1(
@@ -1343,7 +1321,7 @@ fn coulomb_f_numeric(
   let two_l2 = Expr::Integer(2 * l + 2);
 
   // C_L(eta) factors.
-  let two_pow_l = call("Power", vec![Expr::Integer(2), Expr::Integer(l)]);
+  let two_pow_l = pow(Expr::Integer(2), Expr::Integer(l));
   // e^(-pi eta / 2)
   let exp_norm = call1(
     "Exp",
@@ -1367,13 +1345,10 @@ fn coulomb_f_numeric(
       ),
     ),
   );
-  let inv_gamma_2l2 = call(
-    "Power",
-    vec![call1("Gamma", two_l2.clone()), Expr::Integer(-1)],
-  );
+  let inv_gamma_2l2 = pow(call1("Gamma", two_l2.clone()), Expr::Integer(-1));
 
   // rho^(L+1) e^(-i rho) 1F1(L+1 - i eta; 2L+2; 2 i rho)
-  let rho_pow = call("Power", vec![rho.clone(), l1.clone()]);
+  let rho_pow = pow(rho.clone(), l1.clone());
   let exp_rho = call1(
     "Exp",
     call(
