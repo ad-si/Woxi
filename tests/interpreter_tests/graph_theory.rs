@@ -1239,6 +1239,70 @@ mod graph_rendering {
     assert_eq!(result.matches("<polygon").count(), 2);
   }
 
+  // `EdgeList` (and other functions that inspect a Graph's raw arguments
+  // directly, rather than going through `graph_ast`'s rendering path) must
+  // normalize the internal index-pair encoding too — not just Graph[…]'s
+  // own SVG export. Before this, `EdgeList` on such a Graph returned the
+  // `{directedPairs, undirectedPairs}` literal itself instead of edges.
+  #[test]
+  fn edge_list_normalizes_internal_index_pair_encoding() {
+    assert_eq!(
+      interpret("EdgeList[Graph[{1, 2, 3}, {Null, {{1, 2}, {2, 3}}}]]")
+        .unwrap(),
+      "{1 \u{f3d4} 2, 2 \u{f3d4} 3}"
+    );
+  }
+
+  // A `NetworkGraphics` box (cached, e.g., when a Demonstration pastes
+  // `GraphData[…]`'s output literally instead of calling it live) stores a
+  // graph's edges as a `SparseArray` adjacency matrix in compressed-row
+  // form, not as an index-pair list or a plain edge list. `EdgeList` must
+  // decode that shape too, deduplicating the symmetric undirected matrix
+  // to one edge per pair.
+  #[test]
+  fn edge_list_normalizes_sparse_array_adjacency_undirected() {
+    // Vertices 1-4 with a triangle on {1, 2, 3} and 4 left isolated:
+    // row 1 -> cols {2, 3}, row 2 -> cols {1, 3}, row 3 -> cols {1, 2},
+    // row 4 -> none.
+    let result = interpret(
+      "EdgeList[Graph[{1, 2, 3, 4}, {Null, \
+       SparseArray[Automatic, {4, 4}, 0, \
+       {1, {{0, 2, 4, 6, 6}, {{2}, {3}, {1}, {3}, {1}, {2}}}, Pattern}]}]]",
+    )
+    .unwrap();
+    assert_eq!(result, "{1 \u{f3d4} 2, 1 \u{f3d4} 3, 2 \u{f3d4} 3}");
+  }
+
+  #[test]
+  fn edge_list_normalizes_sparse_array_adjacency_directed() {
+    // A directed path 1 -> 2 -> 3: row 1 -> col {2}, row 2 -> col {3},
+    // row 3 -> none.
+    let result = interpret(
+      "EdgeList[Graph[{1, 2, 3}, \
+       {SparseArray[Automatic, {3, 3}, 0, \
+       {1, {{0, 1, 2, 2}, {{2}, {3}}}, Pattern}], Null}]]",
+    )
+    .unwrap();
+    assert_eq!(result, "{1 \u{f3d5} 2, 2 \u{f3d5} 3}");
+  }
+
+  // Reconstructing a plain Graph from such a cached literal's `EdgeList`
+  // (as a Demonstration's Manipulate body does — `Graph[EdgeList[g], …]` —
+  // to re-style it before display) must produce a graph the rest of the
+  // graph functions treat normally, not one still carrying the internal
+  // encoding.
+  #[test]
+  fn rebuilt_graph_from_sparse_array_edge_list_is_a_normal_graph() {
+    let result = interpret(
+      "g = Graph[{1, 2, 3, 4}, {Null, \
+       SparseArray[Automatic, {4, 4}, 0, \
+       {1, {{0, 2, 4, 6, 6}, {{2}, {3}, {1}, {3}, {1}, {2}}}, Pattern}]}]; \
+       EdgeCount[Graph[EdgeList[g]]]",
+    )
+    .unwrap();
+    assert_eq!(result, "3");
+  }
+
   #[test]
   fn graph_vertex_coordinates_normalizes_arbitrary_scale() {
     // `VertexCoordinates` restored from a Demonstration's stored data can
@@ -5578,6 +5642,28 @@ mod graph_disjoint_union {
     assert_eq!(
       interpret("GraphDisjointUnion[x, CycleGraph[3]] // Head").unwrap(),
       "GraphDisjointUnion"
+    );
+  }
+
+  // A trailing option configures the result's rendering and must not be
+  // mistaken for a missing graph operand, nor lost from the output.
+  #[test]
+  fn trailing_layout_option_is_kept_and_does_not_block_evaluation() {
+    assert_eq!(
+      interpret(
+        "VertexCount[GraphDisjointUnion[CycleGraph[3], PathGraph[{1, 2}], \
+         GraphLayout -> \"CircularEmbedding\"]]"
+      )
+      .unwrap(),
+      "5"
+    );
+    assert_eq!(
+      interpret(
+        "GraphDisjointUnion[CycleGraph[3], GraphLayout -> \"CircularEmbedding\"] \
+         // Head"
+      )
+      .unwrap(),
+      "Graph"
     );
   }
 }
