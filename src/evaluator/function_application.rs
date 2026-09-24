@@ -384,12 +384,19 @@ fn emit_named_slot_messages(body: &Expr, args: &[Expr]) {
 ///
 /// Returns `None` if a fallback differentiation step fails (e.g. unknown
 /// function head), letting the caller keep the unevaluated form.
-fn differentiate_function_body(body: &Expr, orders: &[i128]) -> Option<Expr> {
+pub(crate) fn differentiate_function_body(
+  body: &Expr,
+  orders: &[i128],
+) -> Option<Expr> {
   use crate::evaluator::dispatch::calculus_functions::{
     build_var_power_derivative_chain, extract_var_power_factor,
   };
 
-  let dummies: Vec<String> = (0..orders.len())
+  // Every slot of the body gets a dummy — also those not differentiated —
+  // so the result's factors are ordered as the symbols order, the way
+  // wolframscript builds it (`Derivative[1][#2 Sin[#1] + Cos[#2] &]` is
+  // `#2*Cos[#1] &`), not as bare slots would.
+  let dummies: Vec<String> = (0..orders.len().max(max_slot_index(body)))
     .map(|i| format!("__d_slot_{}__", i + 1))
     .collect();
   let dummy_exprs: Vec<Expr> = dummies
@@ -410,9 +417,21 @@ fn differentiate_function_body(body: &Expr, orders: &[i128]) -> Option<Expr> {
       // Wolframscript keeps the literal `1` factor that appears when an
       // earlier slot's chain reduced to `1` (e.g.
       // `Derivative[1,2][#1*#2^3 &]` → `1*(3*(2*#2)) &`), so preserve `factor`
-      // even when it's `Integer(1)`.
+      // even when it's `Integer(1)` — as long as it is an actual factor of a
+      // product, not the implicit one of a bare power
+      // (`Derivative[2][#^3 &]` → `3*(2*#1) &`).
+      let is_product = matches!(&current, Expr::FunctionCall { name, .. } if name == "Times")
+        || matches!(
+          &current,
+          Expr::BinaryOp {
+            op: BinaryOperator::Times,
+            ..
+          }
+        );
       current = if matches!(chain, Expr::Integer(0)) {
         Expr::Integer(0)
+      } else if matches!(factor, Expr::Integer(1)) && !is_product {
+        chain
       } else {
         times2(factor, chain)
       };

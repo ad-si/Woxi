@@ -4047,7 +4047,7 @@ pub fn evaluate_expr_to_expr_inner(
               | Expr::String(_)
           )
           // A tree is an atom, so a part specification is always too deep.
-          || matches!(base, Expr::FunctionCall { name, .. } if name == "Tree")
+          || crate::functions::predicate_ast::is_fully_atomic_object(base)
           // So are a rational and a complex number, whatever they are
           // stored as.
           || crate::evaluator::part_extraction::is_atomic_number_expr(base)

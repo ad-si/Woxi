@@ -741,7 +741,22 @@ mod interpreter_tests {
     // to parse.
     clear_state();
     assert_eq!(interpret("Head[\\[FormalX]]").unwrap(), "Symbol");
-    assert_eq!(interpret("\\[FormalX] = 3; \\[FormalX] + 1").unwrap(), "4");
+    // Formal symbols are `Protected` `System`` symbols, so assigning to one
+    // fails with `Set::wrsym` and the symbol stays symbolic.
+    assert_eq!(
+      interpret("\\[FormalX] = 3; \\[FormalX] + 1").unwrap(),
+      "1 + \u{F817}"
+    );
+    assert_eq!(
+      interpret("{Attributes[\\[FormalX]], Context[\\[FormalScriptA]]}")
+        .unwrap(),
+      "{{Protected}, System`}"
+    );
+    // Scoping constructs still bind them.
+    assert_eq!(
+      interpret("Block[{\\[FormalX] = 2}, \\[FormalX]]").unwrap(),
+      "2"
+    );
     clear_state();
     // The exact shape the notebook uses: a pure function prepending a
     // generic-named pair ahead of `#`, with no pattern variable involved.
@@ -831,7 +846,8 @@ mod interpreter_tests {
     // echoed `Manipulate[…]` as a wrong literal `0` instead of being left
     // symbolic for Woxi Studio's widget builder to resolve against `n`'s
     // live value (see `process_manipulate_var_spec` in
-    // `src/functions/graphics.rs`).
+    // `src/functions/graphics.rs`). Like wolframscript, the echo wraps such
+    // a bound in `Dynamic[…]`.
     clear_state();
     assert_eq!(
       interpret(
@@ -839,7 +855,93 @@ mod interpreter_tests {
       )
       .unwrap(),
       "Manipulate[pick, {{n, 4, count}, 3, 8, 1}, {{pick, 1, pick}, 1, \
-       Length[Subsets[Range[n], {2}]], 1}]"
+       Dynamic[Length[Subsets[Range[n], {2}]]], 1}]"
+    );
+    // Choice lists and option values naming a sibling are wrapped the
+    // same way; `Enabled` conditions are wrapped on their right-hand side.
+    clear_state();
+    assert_eq!(
+      interpret("Manipulate[x, {n, 1, 5}, {x, {1, 2, n}}]").unwrap(),
+      "Manipulate[x, {n, 1, 5}, {x, Dynamic[{1, 2, n}]}]"
+    );
+    assert_eq!(
+      interpret("Manipulate[x, {n, 1, 5}, {x, 0, 1, Enabled -> n > 2}]")
+        .unwrap(),
+      "Manipulate[x, {n, 1, 5}, {x, 0, 1, Enabled -> Dynamic[n > 2]}]"
+    );
+    assert_eq!(
+      interpret("Manipulate[x, {n, 1, 5}, {x, Dynamic[n], 10}]").unwrap(),
+      "Manipulate[x, {n, 1, 5}, {x, Dynamic[n], 10}]"
+    );
+  }
+
+  #[test]
+  fn test_manipulate_echo_normalizes_control_specs() {
+    // A bare control type echoes as the `ControlType -> …` option it stands
+    // for, and a spec giving nothing else gets that type's default values.
+    clear_state();
+    for (code, echo) in [
+      (
+        "Manipulate[x, {x, 0, 1, Slider}]",
+        "Manipulate[x, {x, 0, 1, ControlType -> Slider}]",
+      ),
+      (
+        "Manipulate[x, {x, Slider}]",
+        "Manipulate[x, {x, 0, 1, ControlType -> Slider}]",
+      ),
+      (
+        "Manipulate[p, {{p, {0, 0}}, Locator}]",
+        "Manipulate[p, {{p, {0, 0}}, Automatic, ControlType -> Locator}]",
+      ),
+      (
+        "Manipulate[x, {{x, 5}, None}]",
+        "Manipulate[x, {{x, 5}, 0, ControlType -> None}]",
+      ),
+      (
+        "Manipulate[x, {x, InputField}]",
+        "Manipulate[x, {x, ControlType -> InputField}]",
+      ),
+      (
+        "Manipulate[x, {{x, 1}, PopupMenu}]",
+        "Manipulate[x, {{x, 1}, {True, False, Automatic}, \
+         ControlType -> PopupMenu}]",
+      ),
+      (
+        "Manipulate[x, {x, Checkbox}]",
+        "Manipulate[x, {x, {True, False}, ControlType -> Checkbox}]",
+      ),
+      // `Automatic` is not a control type to spell out.
+      (
+        "Manipulate[x, {x, 0, 1, Automatic}]",
+        "Manipulate[x, {x, 0, 1, Automatic}]",
+      ),
+      // The initial value is evaluated; the label is not.
+      (
+        "Manipulate[x, {{x, 1 + 1, \"a\"}, 0, 5}]",
+        "Manipulate[x, {{x, 2, a}, 0, 5}]",
+      ),
+      (
+        "Manipulate[x, {{x, Red}, ColorSlider}]",
+        "Manipulate[x, {{x, RGBColor[1, 0, 0]}, Gray, \
+         ControlType -> ColorSlider}]",
+      ),
+      // Only a range naming a sibling control is wrapped in Dynamic.
+      ("Manipulate[x, {x, foo}]", "Manipulate[x, {x, foo}]"),
+    ] {
+      assert_eq!(interpret(code).unwrap(), echo, "{code}");
+    }
+  }
+
+  #[test]
+  fn test_control_is_held() {
+    clear_state();
+    assert_eq!(
+      interpret("Control[{x, 0, 2 Pi}]").unwrap(),
+      "Control[{x, 0, 2*Pi}]"
+    );
+    assert_eq!(
+      interpret("Control[{x, 0, 1, Slider}]").unwrap(),
+      "Control[{x, 0, 1, Slider}]"
     );
   }
 
@@ -2650,21 +2752,73 @@ mod interpreter_tests {
   #[test]
   fn test_treeplot_rejects_non_position_second_argument() {
     // `TreePlot[rules, pos, …]`'s second positional argument must be one of
-    // Top/Bottom/Left/Right/Center. Several older Demonstrations instead
-    // pass a root vertex there (the pre-Graph-object two-argument calling
-    // convention), which wolframscript now rejects with `TreePlot::rp` and
-    // leaves the call unevaluated rather than silently plotting — see the
-    // "Combinatorics of Love from A Midsummer Night's Dream" Demonstration,
-    // whose stored notebook output shows exactly this message.
+    // Top/Bottom/Left/Right/Center, a vertex of the graph (the older
+    // root-vertex calling convention), or a number. Anything else raises
+    // `TreePlot::rp` and leaves the call unevaluated.
     clear_state();
-    let result = interpret("TreePlot[{1 -> 2, 2 -> 3}, 1]").unwrap();
-    assert_eq!(result, "TreePlot[{1 -> 2, 2 -> 3}, 1]");
+    let result = interpret("TreePlot[{1 -> 2, 2 -> 3}, x]").unwrap();
+    assert_eq!(result, "TreePlot[{1 -> 2, 2 -> 3}, x]");
     let messages = woxi::get_captured_messages_raw();
     assert!(
       messages.iter().any(|m| m
-        == "TreePlot::rp: The second argument 1 of TreePlot must be one of Top, Bottom, Left, Right, or Center."),
+        == "TreePlot::rp: The second argument x of TreePlot must be one of Top, Bottom, Left, Right or Center."),
       "expected TreePlot::rp message, got: {messages:?}"
     );
+    clear_state();
+    assert_eq!(
+      interpret("TreePlot[{a -> b}, f[a]]").unwrap(),
+      "TreePlot[{a -> b}, f[a]]"
+    );
+  }
+
+  #[test]
+  fn test_treeplot_accepts_root_vertex_second_argument() {
+    // The pre-Graph-object `TreePlot[rules, v]` form (still used by older
+    // Demonstrations such as "Combinatorics of Love from A Midsummer
+    // Night's Dream") names the root vertex in the position slot.
+    for code in [
+      "TreePlot[{1 -> 2, 2 -> 3}, 1]",
+      "TreePlot[{1 -> 2, 2 -> 3}, 3]",
+      "TreePlot[{a -> b}, a]",
+      "TreePlot[{\"a\" -> \"b\"}, \"a\"]",
+      "TreePlot[{1 -> 2, 2 -> 3}, 7]",
+      "TreePlot[{1 -> 2, 2 -> 3}, Center]",
+      "TreePlot[{1 -> 2, 2 -> 3}, Top, 3]",
+    ] {
+      clear_state();
+      assert_eq!(interpret(code).unwrap(), "-Graphics-", "{code}");
+      let messages = woxi::get_captured_messages_raw();
+      assert!(
+        messages.is_empty(),
+        "{code}: unexpected messages: {messages:?}"
+      );
+    }
+  }
+
+  #[test]
+  fn test_treeplot_root_vertex_hangs_the_tree_from_it() {
+    // Rooted at the chain's far end, vertex 3 sits on top and 1 at the
+    // bottom — the edges are followed against their direction too.
+    let vertex_ys = |root: i32| -> Vec<f64> {
+      clear_state();
+      let svg = interpret(&format!(
+        "ExportString[TreePlot[{{1 -> 2, 2 -> 3}}, {root}], \"SVG\"]"
+      ))
+      .unwrap();
+      svg
+        .split("<ellipse")
+        .skip(1)
+        .map(|e| {
+          let cy = e.split("cy=\"").nth(1).unwrap();
+          cy[..cy.find('"').unwrap()].parse().unwrap()
+        })
+        .collect()
+    };
+    // SVG y grows downwards: a smaller cy is higher up.
+    let from_3 = vertex_ys(3);
+    assert!(from_3[2] < from_3[1] && from_3[1] < from_3[0], "{from_3:?}");
+    let from_1 = vertex_ys(1);
+    assert!(from_1[0] < from_1[1] && from_1[1] < from_1[2], "{from_1:?}");
   }
 
   #[test]

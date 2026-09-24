@@ -796,6 +796,12 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return power_two(&args[0], &make_rational(1, 2));
     }
   }
+  // `Sqrt[1/(2 Pi)]` is `1/Sqrt[2 Pi]` (see `flip_unit_fraction_radicand`).
+  if let Some(flipped) =
+    crate::functions::math_ast::flip_unit_fraction_radicand(&args[0])?
+  {
+    return power_two(&flipped, &make_rational(-1, 2));
+  }
   // Sqrt[I] / Sqrt[-I]: delegate to Power[base, 1/2] so the imaginary-unit
   // canonicalisation (Sqrt[I] = (-1)^(1/4), Sqrt[-I] = -(-1)^(3/4)) applies.
   if matches!(&args[0], Expr::Identifier(s) if s == "I")
@@ -1263,11 +1269,15 @@ fn split_numeric_radicand(
   }
   Some((|| {
     let mut parts: Vec<Expr> = Vec::new();
-    for group in [plain, rest] {
-      if !group.is_empty() {
-        let product = crate::functions::polynomial_ast::build_product(group);
-        parts.push(sqrt_ast(&[product])?);
-      }
+    // The numeric group is evaluated into its canonical product first, so
+    // its radical canonicalizes like any other numeric radicand
+    // (`Sqrt[x/(2 Pi)]` → `Sqrt[x]/Sqrt[2 Pi]`).
+    if !plain.is_empty() {
+      parts.push(sqrt_ast(&[times_ast(&plain)?])?);
+    }
+    if !rest.is_empty() {
+      let product = crate::functions::polynomial_ast::build_product(rest);
+      parts.push(sqrt_ast(&[product])?);
     }
     for r in radicals {
       parts.push(sqrt_ast(&[r])?);

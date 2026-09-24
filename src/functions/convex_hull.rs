@@ -134,8 +134,23 @@ fn convex_hull_mesh_2d(pts: &[Expr], args: &[Expr], opts: &[Expr]) -> Expr {
 
   let line = call1("Line", Expr::List(edges.into()));
 
-  // Options. Method -> {"SeparateBoundaries" -> False} always; exact inputs also
-  // carry WorkingPrecision -> Infinity.
+  // A boundary loop of k corners has k vertices, k edges and one 2-cell.
+  let k = rotated.len();
+  boundary_mesh_region(verts_expr, line, &[k, k, 1], all_exact, opts)
+}
+
+/// Assemble the `BoundaryMeshRegion` both hull dimensions return:
+/// coordinates, cells, the `Properties` the `MeshCell*` options normalize
+/// into, `Method`, and — for exact input — `WorkingPrecision -> Infinity`,
+/// in the order wolframscript prints them. `cell_counts[d]` is how many
+/// cells of dimension `d` the region has.
+fn boundary_mesh_region(
+  verts: Vec<Expr>,
+  cells: Expr,
+  cell_counts: &[usize],
+  all_exact: bool,
+  opts: &[Expr],
+) -> Expr {
   let method = Expr::Rule {
     pattern: Box::new(id_expr("Method")),
     replacement: Box::new(Expr::List(
@@ -146,21 +161,177 @@ fn convex_hull_mesh_2d(pts: &[Expr], args: &[Expr], opts: &[Expr]) -> Expr {
       .into(),
     )),
   };
-
-  let mut mesh_args = vec![
-    Expr::List(verts_expr.into()),
-    Expr::List(vec![line].into()),
-    method,
-  ];
+  let (properties, rest) = mesh_cell_properties(opts, cell_counts);
+  let mut mesh_args =
+    vec![Expr::List(verts.into()), Expr::List(vec![cells].into())];
+  mesh_args.extend(properties);
+  mesh_args.push(method);
   if all_exact {
     mesh_args.push(Expr::Rule {
       pattern: Box::new(id_expr("WorkingPrecision")),
       replacement: Box::new(id_expr("Infinity")),
     });
   }
-  mesh_args.extend(opts.iter().cloned());
-
+  mesh_args.extend(rest);
   call("BoundaryMeshRegion", mesh_args)
+}
+
+/// The per-cell `MeshCell*` options, in the order wolframscript lists them
+/// inside `Properties`. (`MeshCellMarker` normalizes differently and stays
+/// an ordinary option.)
+const MESH_CELL_PROPERTY_OPTIONS: [&str; 4] = [
+  "MeshCellStyle",
+  "MeshCellHighlight",
+  "MeshCellShapeFunction",
+  "MeshCellLabel",
+];
+
+/// Normalize `MeshCellStyle`/`MeshCellHighlight`/`MeshCellShapeFunction`/
+/// `MeshCellLabel` into the `Properties -> {{d, i} -> opt -> value, …}`
+/// option a mesh region stores them as. A spec `{d, i} -> v` (or
+/// `{d, {i, …}}`, `{d, All}`) sets single cells and leaves the dimension's
+/// default `Automatic`; `d -> v` sets the dimension's default; a bare value
+/// styles every cell of every dimension. Cells are listed by dimension then
+/// index, each dimension's `Default` last; several styles for one cell
+/// combine into a `Directive`, while a later label replaces an earlier one.
+/// Returns the `Properties` rule (if any option was given) and the
+/// remaining options.
+pub(crate) fn mesh_cell_properties(
+  opts: &[Expr],
+  cell_counts: &[usize],
+) -> (Option<Expr>, Vec<Expr>) {
+  let mut rest: Vec<Expr> = Vec::new();
+  let mut specs: Vec<(usize, Expr)> = Vec::new();
+  for opt in opts {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+      && let Expr::Identifier(name) = pattern.as_ref()
+      && let Some(rank) =
+        MESH_CELL_PROPERTY_OPTIONS.iter().position(|o| o == name)
+    {
+      specs.push((rank, (**replacement).clone()));
+    } else {
+      rest.push(opt.clone());
+    }
+  }
+  if specs.is_empty() {
+    return (None, rest);
+  }
+  specs.sort_by_key(|(rank, _)| *rank);
+
+  let as_index = |e: &Expr| match e {
+    Expr::Integer(n) if *n >= 0 => Some(*n as usize),
+    _ => None,
+  };
+  let mut entries: Vec<Expr> = Vec::new();
+  for (rank, spec) in specs {
+    let option = MESH_CELL_PROPERTY_OPTIONS[rank];
+    let merges = option != "MeshCellLabel";
+    // (dimension, Some(cell) or None for Default) -> value
+    let mut cells: std::collections::BTreeMap<(usize, Option<usize>), Expr> =
+      std::collections::BTreeMap::new();
+    let mut set = |key: (usize, Option<usize>), value: &Expr| {
+      let merged = match cells.get(&key) {
+        Some(prev) if merges => {
+          let mut parts = match prev {
+            Expr::FunctionCall { name, args } if name == "Directive" => {
+              args.to_vec()
+            }
+            other => vec![other.clone()],
+          };
+          parts.push(value.clone());
+          call("Directive", parts)
+        }
+        _ => value.clone(),
+      };
+      cells.insert(key, merged);
+    };
+    let rules: Vec<Expr> = match &spec {
+      Expr::List(items)
+        if items.iter().all(|r| matches!(r, Expr::Rule { .. })) =>
+      {
+        items.to_vec()
+      }
+      Expr::Rule { .. } => vec![spec.clone()],
+      value => {
+        for (d, &count) in cell_counts.iter().enumerate() {
+          for i in 1..=count {
+            set((d, Some(i)), value);
+          }
+        }
+        Vec::new()
+      }
+    };
+    let mut touched_dims: Vec<usize> = Vec::new();
+    for rule in &rules {
+      let Expr::Rule {
+        pattern: key,
+        replacement: value,
+      } = rule
+      else {
+        continue;
+      };
+      match key.as_ref() {
+        Expr::List(k) if k.len() == 2 => {
+          let Some(d) = as_index(&k[0]).filter(|d| *d < cell_counts.len())
+          else {
+            continue;
+          };
+          let count = cell_counts[d];
+          let indices: Vec<usize> = match &k[1] {
+            Expr::Identifier(a) if a == "All" => (1..=count).collect(),
+            Expr::List(is) => is.iter().filter_map(as_index).collect(),
+            other => as_index(other).into_iter().collect(),
+          };
+          for i in indices.into_iter().filter(|i| (1..=count).contains(i)) {
+            set((d, Some(i)), value);
+          }
+          touched_dims.push(d);
+        }
+        other => {
+          if let Some(d) = as_index(other).filter(|d| *d < cell_counts.len()) {
+            set((d, None), value);
+          }
+        }
+      }
+    }
+    if rules.is_empty() {
+      touched_dims = (0..cell_counts.len()).collect();
+    }
+    for d in touched_dims {
+      cells
+        .entry((d, None))
+        .or_insert_with(|| id_expr("Automatic"));
+    }
+    // BTreeMap orders `None` before `Some`; the Default entry goes last.
+    let mut keys: Vec<(usize, Option<usize>)> = cells.keys().copied().collect();
+    keys.sort_by_key(|&(d, i)| (d, i.is_none(), i));
+    for key in keys {
+      let (d, i) = key;
+      let index = match i {
+        Some(i) => Expr::Integer(i as i128),
+        None => id_expr("Default"),
+      };
+      entries.push(Expr::Rule {
+        pattern: Box::new(Expr::List(
+          vec![Expr::Integer(d as i128), index].into(),
+        )),
+        replacement: Box::new(Expr::Rule {
+          pattern: Box::new(id_expr(option)),
+          replacement: Box::new(cells[&key].clone()),
+        }),
+      });
+    }
+  }
+  (
+    Some(Expr::Rule {
+      pattern: Box::new(id_expr("Properties")),
+      replacement: Box::new(Expr::List(entries.into())),
+    }),
+    rest,
+  )
 }
 
 const EPS: f64 = 1e-10;
@@ -255,7 +426,9 @@ fn convex_hull_mesh_3d(pts: &[Expr], args: &[Expr], opts: &[Expr]) -> Expr {
   let unique_pts: Vec<(f64, f64, f64)> =
     unique.iter().map(|&(x, y, z, _)| (x, y, z)).collect();
 
-  let Some(faces) = convex_hull_3d(&unique_pts) else {
+  let Some(faces) =
+    convex_hull_3d(&unique_pts).map(|t| merge_coplanar_faces(&unique_pts, &t))
+  else {
     // Fewer than 4 affinely independent points (coplanar, collinear, too
     // few, or coincident): wolframscript issues a message and leaves the
     // call unevaluated, matched here as the 2D case already does for its
@@ -293,45 +466,34 @@ fn convex_hull_mesh_3d(pts: &[Expr], args: &[Expr], opts: &[Expr]) -> Expr {
 
   let face_exprs: Vec<Expr> = faces
     .iter()
-    .map(|&[a, b, c]| {
+    .map(|face| {
       Expr::List(
-        vec![
-          Expr::Integer(out_index(a) as i128),
-          Expr::Integer(out_index(b) as i128),
-          Expr::Integer(out_index(c) as i128),
-        ]
-        .into(),
+        face
+          .iter()
+          .map(|&v| Expr::Integer(out_index(v) as i128))
+          .collect(),
       )
     })
     .collect();
+  let edge_count = faces
+    .iter()
+    .flat_map(|face| {
+      (0..face.len()).map(move |i| {
+        let (a, b) = (face[i], face[(i + 1) % face.len()]);
+        (a.min(b), a.max(b))
+      })
+    })
+    .collect::<std::collections::BTreeSet<_>>()
+    .len();
 
   let polygon = call1("Polygon", Expr::List(face_exprs.into()));
-
-  let method = Expr::Rule {
-    pattern: Box::new(id_expr("Method")),
-    replacement: Box::new(Expr::List(
-      vec![Expr::Rule {
-        pattern: Box::new(Expr::String("SeparateBoundaries".to_string())),
-        replacement: Box::new(bool_expr(false)),
-      }]
-      .into(),
-    )),
-  };
-
-  let mut mesh_args = vec![
-    Expr::List(verts_expr.into()),
-    Expr::List(vec![polygon].into()),
-    method,
-  ];
-  if all_exact {
-    mesh_args.push(Expr::Rule {
-      pattern: Box::new(id_expr("WorkingPrecision")),
-      replacement: Box::new(id_expr("Infinity")),
-    });
-  }
-  mesh_args.extend(opts.iter().cloned());
-
-  call("BoundaryMeshRegion", mesh_args)
+  boundary_mesh_region(
+    verts_expr,
+    polygon,
+    &[used.len(), edge_count, faces.len(), 1],
+    all_exact,
+    opts,
+  )
 }
 
 /// A standard incremental ("beneath-beyond") 3D convex hull. Returns
@@ -527,6 +689,136 @@ fn convex_hull_3d(points: &[(f64, f64, f64)]) -> Option<Vec<[usize; 3]>> {
   }
 
   Some(faces)
+}
+
+/// Merge the hull's coplanar triangles into the convex polygons they tile,
+/// as wolframscript's (qhull) hull reports them — a cube's six faces are
+/// quads, not twelve triangles. Each polygon keeps the triangles' outward
+/// winding and the position of its first triangle, starts at that
+/// triangle's first vertex, and drops vertices that lie on a straight run
+/// of its boundary.
+fn merge_coplanar_faces(
+  points: &[(f64, f64, f64)],
+  triangles: &[[usize; 3]],
+) -> Vec<Vec<usize>> {
+  let sub =
+    |a: (f64, f64, f64), b: (f64, f64, f64)| (a.0 - b.0, a.1 - b.1, a.2 - b.2);
+  let cross = |a: (f64, f64, f64), b: (f64, f64, f64)| {
+    (
+      a.1 * b.2 - a.2 * b.1,
+      a.2 * b.0 - a.0 * b.2,
+      a.0 * b.1 - a.1 * b.0,
+    )
+  };
+  let dot =
+    |a: (f64, f64, f64), b: (f64, f64, f64)| a.0 * b.0 + a.1 * b.1 + a.2 * b.2;
+  let scale = points
+    .iter()
+    .flat_map(|&(x, y, z)| [x.abs(), y.abs(), z.abs()])
+    .fold(1.0_f64, f64::max);
+  let eps = 1e-9 * scale;
+
+  let unit_normal = |&[a, b, c]: &[usize; 3]| {
+    let n = cross(sub(points[b], points[a]), sub(points[c], points[a]));
+    let len = dot(n, n).sqrt();
+    (n.0 / len, n.1 / len, n.2 / len)
+  };
+  let normals: Vec<(f64, f64, f64)> =
+    triangles.iter().map(unit_normal).collect();
+  let coplanar = |i: usize, j: usize| {
+    let (ni, nj) = (normals[i], normals[j]);
+    let d = sub(ni, nj);
+    dot(d, d).sqrt() < 1e-9
+      && (dot(ni, points[triangles[j][0]]) - dot(ni, points[triangles[i][0]]))
+        .abs()
+        < eps
+  };
+
+  // Union coplanar triangles that share an edge.
+  let mut parent: Vec<usize> = (0..triangles.len()).collect();
+  fn find(parent: &mut [usize], i: usize) -> usize {
+    let mut r = i;
+    while parent[r] != r {
+      r = parent[r];
+    }
+    parent[i] = r;
+    r
+  }
+  let mut edge_owner: std::collections::HashMap<(usize, usize), usize> =
+    std::collections::HashMap::new();
+  for (ti, t) in triangles.iter().enumerate() {
+    for k in 0..3 {
+      edge_owner.insert((t[k], t[(k + 1) % 3]), ti);
+    }
+  }
+  for (ti, t) in triangles.iter().enumerate() {
+    for k in 0..3 {
+      if let Some(&tj) = edge_owner.get(&(t[(k + 1) % 3], t[k]))
+        && coplanar(ti, tj)
+      {
+        let (ri, rj) = (find(&mut parent, ti), find(&mut parent, tj));
+        if ri != rj {
+          parent[rj.max(ri)] = rj.min(ri);
+        }
+      }
+    }
+  }
+
+  let mut faces: Vec<Vec<usize>> = Vec::new();
+  let mut done = vec![false; triangles.len()];
+  for ti in 0..triangles.len() {
+    let root = find(&mut parent, ti);
+    if done[root] {
+      continue;
+    }
+    done[root] = true;
+    let group: Vec<usize> = (0..triangles.len())
+      .filter(|&j| find(&mut parent, j) == root)
+      .collect();
+    if group.len() == 1 {
+      faces.push(triangles[ti].to_vec());
+      continue;
+    }
+    // The group's boundary: its directed edges whose reverse it lacks.
+    let directed: std::collections::HashSet<(usize, usize)> = group
+      .iter()
+      .flat_map(|&j| {
+        let t = triangles[j];
+        [(t[0], t[1]), (t[1], t[2]), (t[2], t[0])]
+      })
+      .collect();
+    let next: std::collections::HashMap<usize, usize> = directed
+      .iter()
+      .filter(|&&(a, b)| !directed.contains(&(b, a)))
+      .copied()
+      .collect();
+    let start = triangles[ti]
+      .iter()
+      .copied()
+      .find(|v| next.contains_key(v))
+      .unwrap_or(triangles[ti][0]);
+    let mut walk = vec![start];
+    let mut v = start;
+    while let Some(&w) = next.get(&v) {
+      if w == start || walk.len() > next.len() {
+        break;
+      }
+      walk.push(w);
+      v = w;
+    }
+    // Drop corners on a straight run of the boundary.
+    let n = walk.len();
+    let polygon: Vec<usize> = (0..n)
+      .filter(|&i| {
+        let (p, q, r) = (walk[(i + n - 1) % n], walk[i], walk[(i + 1) % n]);
+        let c = cross(sub(points[q], points[p]), sub(points[r], points[q]));
+        dot(c, c).sqrt() > eps * eps.max(1.0)
+      })
+      .map(|i| walk[i])
+      .collect();
+    faces.push(if polygon.len() >= 3 { polygon } else { walk });
+  }
+  faces
 }
 
 /// Whether an expression is an exact number (integer or rational), so the hull

@@ -26776,6 +26776,114 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`count$$ = 3, $CellContext`offset$$ 
     );
   }
 
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook ("Lines: Two Points"),
+  /// whose picture is driven by two draggable points. Its shape: two
+  /// persistent `ControlType -> None` points are mirrored into
+  /// `DynamicModule` proxy locals purely so the body can reassign them
+  /// while dragging (writing the result back to the real state only once
+  /// the drag settles), and a single `LocatorPane[Dynamic[{a, b}, …], …]`
+  /// drags both jointly, driving a `Dynamic` graphic keyed on the proxies.
+  ///
+  /// Regression: neither `collect_body_locator_callbacks` (which only
+  /// recognized a bare `Dynamic[var]` or `Dynamic[var[[i]]]`) nor the
+  /// `DynamicModule`-local hoisting (which only fires when the module's own
+  /// body is itself `Dynamic[…]`, not a `Column[…]` of several `Dynamic`
+  /// pieces) resolved a `LocatorPane[Dynamic[{a, b}, …], …]` back to the
+  /// real, persistent state variables `a` and `b` proxy for. The two points
+  /// therefore never got a draggable stand-in — this app has no raw canvas
+  /// dragging, so every Locator-style interaction becomes a synthesized X/Y
+  /// slider pair instead — leaving the picture permanently frozen at its
+  /// starting positions with no way to reach the rest of it. Fixed by
+  /// having `collect_body_locator_callbacks` resolve a `DynamicModule`
+  /// local through its own bare-identifier initializer back to the
+  /// variable it mirrors, and by recognizing a `LocatorPane` whose tracked
+  /// value is a list of plain identifiers (rather than only a single one).
+  ///
+  /// This is a self-authored, construct-equivalent example (invented
+  /// variable names, layout and picture) — not the Demonstration's own
+  /// code, which is copyrighted.
+  #[test]
+  fn dynamic_module_proxy_locator_pair_gets_draggable_stand_ins() {
+    let code = "Manipulate[\
+      DynamicModule[{a = startA, b = startB}, \
+        Column[{\
+          Dynamic[Text[If[a == b, \"same\", \"apart\"]]], \
+          LocatorPane[\
+            Dynamic[{a, b}, \
+              {a = startA; b = startB, \
+               (a = #[[1]]; b = #[[2]]) &, \
+               (a = #[[1]]; b = #[[2]]) &; startA = a; startB = b}], \
+            Dynamic[Graphics[{Blue, Point[a], Darker[Green], Point[b]}, \
+              PlotRange -> {{-5, 5}, {-5, 5}}]], \
+            Appearance -> Style[\".\", Opacity[0]]]\
+        }]\
+      ], \
+      {{startA, {1, 1}}, {-5, -5}, {5, 5}, ControlType -> None}, \
+      {{startB, {-3, -1}}, {-5, -5}, {5, 5}, ControlType -> None}]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the DynamicModule-proxy Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the initial render must draw both points"
+    );
+
+    let stand_ins: Vec<(&str, f64, f64, f64, f64, f64, f64)> = state
+      .controls
+      .iter()
+      .filter_map(|c| match c {
+        manipulate::ControlState::Slider2D {
+          name,
+          x_min,
+          x_max,
+          y_min,
+          y_max,
+          x,
+          y,
+          ..
+        } => Some((name.as_str(), *x_min, *x_max, *y_min, *y_max, *x, *y)),
+        _ => None,
+      })
+      .collect();
+    assert_eq!(
+      stand_ins.len(),
+      2,
+      "both proxy-mirrored points must become draggable stand-ins: {:?}",
+      state.controls
+    );
+    assert!(stand_ins.iter().any(
+      |s| s.0 == "startA" && s == &("startA", -5.0, 5.0, -5.0, 5.0, 1.0, 1.0)
+    ));
+    assert!(
+      stand_ins.iter().any(|s| s.0 == "startB"
+        && s == &("startB", -5.0, 5.0, -5.0, 5.0, -3.0, -1.0))
+    );
+
+    // Dragging `startA` must actually move the picture.
+    let before = format!("{:?}", state.graphics_handle);
+    for c in &mut state.controls {
+      if let manipulate::ControlState::Slider2D { name, x, y, .. } = c
+        && name == "startA"
+      {
+        *x = 4.0;
+        *y = -2.0;
+      }
+    }
+    state.reevaluate();
+    assert!(
+      state.error.is_none(),
+      "re-render after dragging must evaluate cleanly: {:?}",
+      state.error
+    );
+    let after = format!("{:?}", state.graphics_handle);
+    assert_ne!(before, after, "dragging a point must change the picture");
+  }
+
   /// A randomly-sampled Wolfram Demonstrations Project notebook builds a
   /// `Flatten[Table[…], 1]` lattice of points, wraps it in
   /// `Nearest[lattice -> Automatic]`, and uses a `Locator` control (a bare
@@ -29320,6 +29428,142 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`\\[Phi]Deg$$ = 40., $CellContext`tH
     );
   }
 
+  /// End-to-end regression for the shape of Demonstration that morphs a
+  /// dissected figure between two layouts with a pair of `0`-to-`1`
+  /// sliders while two more sliders resize the underlying shapes, all
+  /// docked via `ControlPlacement -> Left`, with a blank string between
+  /// the shape sliders and the morph sliders acting as a spacer rather
+  /// than a bound control. Independently written here (invented figure
+  /// and formulas), not copied from any specific Demonstration, whose
+  /// code and text are copyrighted.
+  #[test]
+  fn dissection_morph_notebook_opens_with_its_widget() {
+    let nb_src = r#"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[\nGraphics[{RGBColor[0.79, 0.71, 0.26], Polygon[(1 - morph) {{0, 0}, {p + q, 0}, {p + q, p + q}, {0, p + q}} + morph {{0, 0}, {Sqrt[p^2 + q^2], 0}, {Sqrt[p^2 + q^2], (p^2 + q^2)/Sqrt[p^2 + q^2]}, {0, (p^2 + q^2)/Sqrt[p^2 + q^2]}}], Blend[{RGBColor[1, .49, 0], ColorData[\"HTML\", \"SlateBlue\"]}, sh], Polygon[(1 - sh) {{p + q + 1, 0}, {p + q + 1 + p, 0}, {p + q + 1 + p, p}, {p + q + 1, p}} + sh {{p + q + 1, 0}, {p + q + 1 + q, 0}, {p + q + 1 + q, q}, {p + q + 1, q}}]}, PlotRange -> Automatic, ImageSize -> {320, 320}],\n{{p, 3, \"leg p\"}, 1, 4, 0.1, Appearance -> \"Labeled\", ImageSize -> Tiny},\n{{q, 4, \"leg q\"}, 1, 4, 0.1, Appearance -> \"Labeled\", ImageSize -> Tiny},\n\"\",\n{{morph, 0, \"square to\\nrectangle\"}, 0, 1, 0.01, ImageSize -> Tiny},\n{{sh, 0, \"square to\\nslate patch\"}, 0, 1, 0.01, ImageSize -> Tiny},\nControlPlacement -> Left\n]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`p$$ = 3, $CellContext`q$$ = 4}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"#;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let mut editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter_mut()
+      .find_map(|e| e.manipulate_state.as_mut())
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(widget.graphics_handle.is_some(), "the figure must draw");
+    assert_eq!(widget.control_placement, manipulate::ControlPlacement::Left);
+
+    // The blank spacer string between the shape sliders and the morph
+    // sliders must become a non-binding heading, not a bound control.
+    assert_eq!(
+      widget
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .count(),
+      4,
+      "the blank spec entry must not bind a variable: {:?}",
+      widget.controls
+    );
+
+    let p = widget
+      .controls
+      .iter()
+      .find_map(|c| match c {
+        manipulate::ControlState::Continuous {
+          name,
+          label,
+          min,
+          max,
+          step,
+          current,
+          ..
+        } if name == "p" => Some((label.clone(), *min, *max, *step, *current)),
+        _ => None,
+      })
+      .expect("leg p slider");
+    assert_eq!(p, ("leg p".to_string(), 1.0, 4.0, 0.1, 3.0));
+
+    let q = widget
+      .controls
+      .iter()
+      .find_map(|c| match c {
+        manipulate::ControlState::Continuous {
+          name,
+          label,
+          min,
+          max,
+          step,
+          current,
+          ..
+        } if name == "q" => Some((label.clone(), *min, *max, *step, *current)),
+        _ => None,
+      })
+      .expect("leg q slider");
+    assert_eq!(q, ("leg q".to_string(), 1.0, 4.0, 0.1, 4.0));
+
+    let morph_idx = widget
+      .controls
+      .iter()
+      .position(|c| c.name() == "morph")
+      .expect("morph slider");
+    let sh_idx = widget
+      .controls
+      .iter()
+      .position(|c| c.name() == "sh")
+      .expect("sh slider");
+
+    // Morphing either shape must re-render without error, and change the
+    // picture.
+    let render = |widget: &mut manipulate::ManipulateState| {
+      widget.reevaluate();
+      assert!(
+        widget.error.is_none(),
+        "re-render failed: {:?}",
+        widget.error
+      );
+      let bindings: Vec<(String, String)> = widget
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      let body = widget.body.clone();
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&body)
+      })
+      .expect("body must render")
+      .graphics
+      .expect("the figure must produce a graphic")
+    };
+    let baseline = render(widget);
+
+    match &mut widget.controls[morph_idx] {
+      manipulate::ControlState::Continuous { current, .. } => *current = 1.0,
+      other => panic!("expected continuous, got {other:?}"),
+    }
+    let morphed = render(widget);
+    assert_ne!(
+      baseline, morphed,
+      "morphing the first shape must change the rendered picture"
+    );
+
+    match &mut widget.controls[sh_idx] {
+      manipulate::ControlState::Continuous { current, .. } => *current = 1.0,
+      other => panic!("expected continuous, got {other:?}"),
+    }
+    let shifted = render(widget);
+    assert_ne!(
+      morphed, shifted,
+      "morphing the second shape must change the rendered picture"
+    );
+  }
+
   /// End-to-end regression for the "Exponential Decay" Demonstration: a
   /// decay curve `Exp[-k t]` split at a "time elapsed" point into a
   /// gone (before) and remaining (after) region via two `Show`n `Plot`s
@@ -29413,6 +29657,7 @@ Cell[BoxData["Manipulate[\nGrid[{{plotDensity[distinguishableDensity], plotDensi
 Cell[BoxData["DynamicModuleBox[{$CellContext`n1$$ = 2, $CellContext`n2$$ = 3}, \"\\[Ellipsis]\"]"], "Output"]
 }, Open]]
 }]"##;
+    woxi::clear_state();
     let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
     let editors = WoxiStudio::editors_from_notebook(&nb);
     let widget = editors
@@ -29474,5 +29719,101 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`n1$$ = 2, $CellContext`n2$$ = 3}, \
     // Moving either slider must change the rendered scene.
     assert_ne!(base, render(4, 3), "the n1 slider must matter");
     assert_ne!(base, render(2, 5), "the n2 slider must matter");
+  }
+
+  /// End-to-end regression for the "Ra Expeditions" Demonstration: a
+  /// `Manipulate` composing a static background `Image` with a `Graphics`
+  /// overlay via `Show`, where two integer-range sliders (each carrying a
+  /// string label, e.g. `{{stepA, 1, "Path A"}, 1, 6, 1}`) reveal a partial
+  /// route through `Take[path, step]`/`Line`, and a checkbox toggles
+  /// `Tooltip`-labeled waypoint `Point`s on and off via `Opacity[If[…]]`,
+  /// all under `SaveDefinitions -> True` with the helper function and data
+  /// lists defined in preceding "Initialization Code" Input cells.
+  ///
+  /// It already worked end-to-end (background `Image` + `Graphics` overlay
+  /// composition, dual `Take`-driven partial-route sliders, and the
+  /// `Tooltip`/`Opacity` checkbox all render cleanly); this pins it with a
+  /// rewritten equivalent (not the copyrighted notebook source, which used
+  /// a `CompressedData` raster background and real expedition tracks).
+  #[test]
+  fn ra_expeditions_notebook_reveals_partial_routes_and_toggles_waypoints() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["background=Image[ConstantArray[0.6,{10,10}]];"], "Input"],
+Cell[BoxData["locate[pt_]:=Reverse[{-First[pt],50-Last[pt]}];"], "Input"],
+Cell[BoxData["waypointNames={\"Start\",\"Camp\",\"Summit\"};\nwaypointCoords={{0,0},{5,20},{10,40}};"], "Input"],
+Cell[BoxData["pathA={{0,0},{2,5},{4,12},{6,18},{8,25},{10,30}};"], "Input"],
+Cell[BoxData["pathB={{0,0},{1,8},{3,15},{5,20},{7,28},{9,33},{10,38}};"], "Input"],
+Cell[BoxData["Manipulate[\nShow[\nbackground,\nGraphics[{\n{Opacity[If[showNames,0.9,0.]],Orange,PointSize[0.02],Table[Tooltip[Point[locate[waypointCoords[[i]]]],waypointNames[[i]]],{i,1,3}]},\n{Blue,Line[Take[pathA,stepA]]},\n{Red,Line[Take[pathB,stepB]]}\n}],\nImageSize->300,PlotRange->All\n],\n{{stepA,1,\"Path A\"},1,6,1},\n{{stepB,1,\"Path B\"},1,7,1},\n{{showNames,False,\"show waypoint names\"},{True,False}},\nSaveDefinitions->True\n]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`stepA$$ = 1, $CellContext`stepB$$ = 1, $CellContext`showNames$$ = False}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    woxi::clear_state();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the background + overlay must draw"
+    );
+
+    assert!(
+      matches!(
+        &widget.controls[0],
+        manipulate::ControlState::Continuous { name, label, min, max, current, .. }
+          if name == "stepA" && label == "Path A"
+            && (*min, *max, *current) == (1.0, 6.0, 1.0)
+      ),
+      "control 0 should be the Path A slider: {:?}",
+      widget.controls[0]
+    );
+    assert!(
+      matches!(
+        &widget.controls[1],
+        manipulate::ControlState::Continuous { name, label, min, max, current, .. }
+          if name == "stepB" && label == "Path B"
+            && (*min, *max, *current) == (1.0, 7.0, 1.0)
+      ),
+      "control 1 should be the Path B slider: {:?}",
+      widget.controls[1]
+    );
+    assert!(
+      matches!(
+        &widget.controls[2],
+        manipulate::ControlState::Discrete { name, label, values, .. }
+          if name == "showNames" && label == "show waypoint names"
+            && values == &["True", "False"]
+      ),
+      "control 2 should be the waypoint-names checkbox: {:?}",
+      widget.controls[2]
+    );
+
+    let render = |step_a: i64, step_b: i64, show_names: &str| {
+      woxi::interpret_with_stdout(&format!(
+        "stepA = {step_a}; stepB = {step_b}; showNames = {show_names};\n{}",
+        widget.body
+      ))
+      .expect("the body must render")
+      .graphics
+      .expect("the body must produce a graphic")
+    };
+    let base = render(1, 1, "False");
+    // Advancing either route slider must lengthen its drawn Line.
+    assert_ne!(base, render(6, 1, "False"), "the Path A slider must matter");
+    assert_ne!(base, render(1, 7, "False"), "the Path B slider must matter");
+    // Toggling the checkbox must show/hide the waypoint tooltips.
+    assert_ne!(
+      base,
+      render(1, 1, "True"),
+      "the waypoint-names checkbox must matter"
+    );
   }
 }

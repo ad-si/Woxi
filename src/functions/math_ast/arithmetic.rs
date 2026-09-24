@@ -5814,6 +5814,39 @@ pub fn order_monomial_vs_sum(
 }
 
 pub fn sort_symbolic_factors(symbolic_args: &mut [Expr]) {
+  // `#n` orders as the `Slot[n]` call it is (`a*#1`, `f[x]*#1`), so slots
+  // take part in the sort in that form and are put back afterwards.
+  let has_slot = symbolic_args
+    .iter()
+    .any(|e| matches!(e, Expr::Slot(_) | Expr::SlotSequence(_)));
+  if has_slot {
+    for e in symbolic_args.iter_mut() {
+      if let Some(c) =
+        crate::functions::list_helpers_ast::sorting::slot_as_call(e)
+      {
+        *e = c;
+      }
+    }
+  }
+  sort_symbolic_factors_inner(symbolic_args);
+  if has_slot {
+    for e in symbolic_args.iter_mut() {
+      if let Expr::FunctionCall { name, args } = e
+        && args.len() == 1
+        && let Expr::Integer(n) = &args[0]
+        && *n >= 0
+      {
+        match name.as_str() {
+          "Slot" => *e = Expr::Slot(*n as usize),
+          "SlotSequence" => *e = Expr::SlotSequence(*n as usize),
+          _ => {}
+        }
+      }
+    }
+  }
+}
+
+fn sort_symbolic_factors_inner(symbolic_args: &mut [Expr]) {
   // Radicals of integer bases where at least one base is negative — the
   // shape left behind by `(-2)^(1/3) (-1)^(2/3)`, which wolframscript keeps
   // unmerged. They order by base ascending, then exponent ascending, the
@@ -5844,7 +5877,40 @@ pub fn sort_symbolic_factors(symbolic_args: &mut [Expr]) {
     };
     Some((*b, (*p, *q)))
   };
+  // A complex number is a number: it leads the product like any other
+  // numeric coefficient — `(1 + 2*I)*Sqrt[2]`, `(1 + 2*I)*E`.
+  // (Pure imaginary factors keep their own subpriority below.)
+  let is_complex_number = |e: &Expr| matches!(try_extract_complex_exact(e), Some(((re_n, _), (im_n, _))) if re_n != 0 && im_n != 0);
+  // A power of an integer or rational sorts by that number, i.e. ahead of
+  // every symbolic factor: `Sqrt[3/2]*E^x`, `(3/2)^x*E^y`. Only the numbers
+  // themselves (the imaginary unit, a BigFloat) come first.
+  let is_number_base_power = |e: &Expr| {
+    let (base, exp) = extract_base_exponent(e);
+    !matches!(exp, Expr::Integer(1))
+      && (matches!(base, Expr::Integer(_))
+        || matches!(&base, Expr::FunctionCall { name, .. } if name == "Rational"))
+  };
+  let is_number = |e: &Expr| {
+    matches!(
+      e,
+      Expr::Integer(_)
+        | Expr::BigInteger(_)
+        | Expr::Real(_)
+        | Expr::BigFloat(..)
+    ) || matches!(e, Expr::Identifier(s) | Expr::Constant(s) if s == "I")
+      || try_extract_complex_exact(e).is_some()
+  };
   symbolic_args.sort_by(|a, b| {
+    match (is_complex_number(a), is_complex_number(b)) {
+      (true, false) => return std::cmp::Ordering::Less,
+      (false, true) => return std::cmp::Ordering::Greater,
+      _ => {}
+    }
+    match (is_number_base_power(a), is_number_base_power(b)) {
+      (true, false) if !is_number(b) => return std::cmp::Ordering::Less,
+      (false, true) if !is_number(a) => return std::cmp::Ordering::Greater,
+      _ => {}
+    }
     if let (Some((ba, (pa, qa))), Some((bb, (pb, qb)))) =
       (signed_radical_parts(a), signed_radical_parts(b))
       && (ba < 0 || bb < 0)
@@ -6837,6 +6903,7 @@ fn split_positive_rational_and_constants(
     } else if matches!(factor,
       Expr::Identifier(name) | Expr::Constant(name)
         if is_pos_real_const(name))
+      || reciprocal_pos_real_const(factor).is_some()
     {
       constants.push(factor.clone());
     } else {
@@ -6844,6 +6911,51 @@ fn split_positive_rational_and_constants(
     }
   }
   (!constants.is_empty()).then_some((n, d, constants))
+}
+
+/// The constant `c` of a reciprocal `c^-1` of a named positive constant
+/// (`1/Pi`).
+fn reciprocal_pos_real_const(e: &Expr) -> Option<&Expr> {
+  let (base, exp) = match e {
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      (&args[0], &args[1])
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => (left.as_ref(), right.as_ref()),
+    _ => return None,
+  };
+  (matches!(exp, Expr::Integer(-1))
+    && matches!(base, Expr::Identifier(n) | Expr::Constant(n) if is_pos_real_const(n)))
+  .then_some(base)
+}
+
+/// A radicand that is a unit fraction times reciprocal constants,
+/// `c^-1/q`, as the `q c` a root of it flips to: `(1/(2 Pi))^(n/d)` is
+/// `(2 Pi)^(-n/d)`, so `Sqrt[1/(2 Pi)]` is `1/Sqrt[2 Pi]` the way
+/// `Sqrt[1/2]` is `1/Sqrt[2]`.
+pub fn flip_unit_fraction_radicand(
+  base: &Expr,
+) -> Result<Option<Expr>, InterpreterError> {
+  let Some((1, q, constants)) = split_positive_rational_and_constants(base)
+  else {
+    return Ok(None);
+  };
+  if q <= 1
+    || constants.is_empty()
+    || !constants
+      .iter()
+      .all(|c| reciprocal_pos_real_const(c).is_some())
+  {
+    return Ok(None);
+  }
+  let mut factors = vec![Expr::Integer(q)];
+  for c in &constants {
+    factors.extend(reciprocal_pos_real_const(c).cloned());
+  }
+  Ok(Some(times_ast(&factors)?))
 }
 
 /// A value known to be a positive real: a positive integer or rational, one of
@@ -8427,6 +8539,53 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if has_bigfloat && args.iter().all(is_bigfloat_evaluable_factor) {
     return bigfloat_times(args);
   }
+  // Any other exact numeric factor (`Sqrt[2]`, `Log[3]`) is numericized to
+  // the BigFloat's precision first, so `N[Pi, 30] Sqrt[2]` is one number.
+  if has_bigfloat
+    && let Some(precision) = args
+      .iter()
+      .filter_map(|a| match a {
+        Expr::BigFloat(_, p) => Some(*p),
+        _ => None,
+      })
+      .reduce(f64::min)
+    && args.iter().all(|a| {
+      is_bigfloat_evaluable_factor(a)
+        || (crate::functions::predicate_ast::is_numeric_q(a)
+          && !contains_imaginary_unit(a))
+    })
+  {
+    // An exact factor has no error of its own: it is numericized with
+    // guard digits, and the product keeps the precision the inexact
+    // factors alone give it.
+    let numericized: Vec<Expr> = args
+      .iter()
+      .map(|a| {
+        if is_bigfloat_evaluable_factor(a) {
+          Ok(a.clone())
+        } else {
+          crate::functions::math_ast::n_ast(&[
+            a.clone(),
+            Expr::Real(precision + 20.0),
+          ])
+        }
+      })
+      .collect::<Result<_, _>>()?;
+    if numericized.iter().all(is_bigfloat_evaluable_factor) {
+      let total_rel_err: f64 = args
+        .iter()
+        .filter_map(factor_precision_contribution)
+        .map(|p| 10f64.powf(-p))
+        .sum();
+      let product = bigfloat_times(&numericized)?;
+      return Ok(match &product {
+        Expr::BigFloat(digits, _) if total_rel_err > 0.0 => {
+          Expr::BigFloat(digits.clone(), -total_rel_err.log10())
+        }
+        _ => product,
+      });
+    }
+  }
 
   // Check if any argument needs BigInt arithmetic (BigInteger or large Integer exceeding f64 precision)
   let has_bigint = args.iter().any(needs_bigint_arithmetic);
@@ -9098,8 +9257,23 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   //   (2/5)/Sqrt[14] → Sqrt[2/7]/5     (13/35)*Sqrt[35/6] → 13/Sqrt[210]
   // Already-canonical shapes are fixed points (2*Sqrt[3], 2/Sqrt[3],
   // Sqrt[5/3]/2, (1/3)*Sqrt[5/11] all reproduce themselves) and are left
-  // untouched to avoid rewrite recursion.
-  if symbolic_args.len() == 1
+  // untouched to avoid rewrite recursion. Other factors ride along
+  // unchanged: `Sqrt[6] x/4` → `(Sqrt[3/2] x)/2`.
+  let radical_positions: Vec<usize> = symbolic_args
+    .iter()
+    .enumerate()
+    .filter(|(_, f)| {
+      let (base, exp) = extract_base_exponent(f);
+      matches!(&exp, Expr::FunctionCall { name, args }
+        if name == "Rational"
+          && args.len() == 2
+          && matches!(&args[0], Expr::Integer(1 | -1))
+          && matches!(&args[1], Expr::Integer(2)))
+        && split_positive_rational_and_constants(&base).is_some()
+    })
+    .map(|(i, _)| i)
+    .collect();
+  if let [radical_idx] = radical_positions[..]
     && let Some((cn, cd)) = (match &coeff {
       Expr::Integer(n) => Some((*n, 1i128)),
       Expr::FunctionCall { name, args }
@@ -9114,7 +9288,21 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     })
     && cn != 0
   {
-    let (base, exp) = extract_base_exponent(&symbolic_args[0]);
+    let others: Vec<Expr> = symbolic_args
+      .iter()
+      .enumerate()
+      .filter(|&(i, _)| i != radical_idx)
+      .map(|(_, f)| f.clone())
+      .collect();
+    let with_others =
+      |mut factors: Vec<Expr>| -> Result<Expr, InterpreterError> {
+        if others.is_empty() && factors.len() == 1 {
+          return Ok(factors.remove(0));
+        }
+        factors.extend(others.iter().cloned());
+        times_ast(&factors)
+      };
+    let (base, exp) = extract_base_exponent(&symbolic_args[radical_idx]);
     let half = match &exp {
       Expr::FunctionCall { name, args }
         if name == "Rational" && args.len() == 2 =>
@@ -9145,7 +9333,7 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let new_coeff = make_rational(sign * s, t);
         if p1 == 1 && q1 == 1 && rest.is_empty() {
           // The radical vanished entirely — c*Sqrt[r] is exactly rational.
-          return Ok(new_coeff);
+          return with_others(vec![new_coeff]);
         }
         // A radicand that would come out a pure reciprocal keeps the
         // reciprocal-radical spelling instead: wolframscript writes
@@ -9183,13 +9371,13 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
           // are fixed points and must return through the generic path.
           let coeff_str = expr_to_string(&coeff);
           let new_coeff_str = expr_to_string(&new_coeff);
-          let factor_str = expr_to_string(&symbolic_args[0]);
+          let factor_str = expr_to_string(&symbolic_args[radical_idx]);
           let rebuilt_str = expr_to_string(&rebuilt);
           if coeff_str != new_coeff_str || factor_str != rebuilt_str {
             if matches!(&new_coeff, Expr::Integer(1)) {
-              return Ok(rebuilt);
+              return with_others(vec![rebuilt]);
             }
-            return times_ast(&[new_coeff, rebuilt]);
+            return with_others(vec![new_coeff, rebuilt]);
           }
         }
       }
@@ -11830,6 +12018,44 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     return power_two(&flipped_base, &make_rational(-*n, *d));
   }
 
+  // A unit-fraction base flips to its denominator: `(1/2)^x` is `2^(-x)`,
+  // `(1/4)^(1/3)` is `2^(-2/3)`. Integer exponents compute directly, and a
+  // complex number exponent keeps the fraction (`(1/2)^I`, though
+  // `(1/2)^(I x)` is `2^(-I x)`).
+  if let Expr::FunctionCall { name, args: rargs } = base
+    && name == "Rational"
+    && rargs.len() == 2
+    && let (Expr::Integer(1), Expr::Integer(q)) = (&rargs[0], &rargs[1])
+    && *q > 1
+    && !matches!(
+      exp,
+      Expr::Integer(_)
+        | Expr::BigInteger(_)
+        | Expr::Real(_)
+        | Expr::BigFloat(..)
+    )
+    && !(matches!(exp, Expr::Identifier(i) if i == "I")
+      || matches!(try_extract_complex_exact(exp), Some((_, (im_n, _))) if im_n != 0))
+  {
+    let negated = times_ast(&[Expr::Integer(-1), exp.clone()])?;
+    return power_two(&Expr::Integer(*q), &negated);
+  }
+
+  // `(c^-1/q)^(n/d)` — see `flip_unit_fraction_radicand`.
+  if let Expr::FunctionCall {
+    name: ename,
+    args: eargs,
+  } = exp
+    && ename == "Rational"
+    && eargs.len() == 2
+    && let (Expr::Integer(n), Expr::Integer(d)) = (&eargs[0], &eargs[1])
+    && *n > 0
+    && *d > 0
+    && let Some(flipped_base) = flip_unit_fraction_radicand(base)?
+  {
+    return power_two(&flipped_base, &make_rational(-*n, *d));
+  }
+
   // Special case: Rational^Rational — keep the result exact/symbolic
   // rather than falling through to numeric evaluation.
   if let Expr::FunctionCall {
@@ -11982,6 +12208,19 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
         && is_sqrt(&pos_result).is_none()
       {
         return divide_ast(&[Expr::Integer(1), pos_result]);
+      }
+      // A perfect-power base reduced to a single smaller power
+      // (`4^(1/3)` → `2^(2/3)`): the reciprocal is that power negated,
+      // `4^(-1/3)` → `2^(-2/3)`.
+      let (new_base, new_exp) = extract_base_exponent(&pos_result);
+      if let (Expr::Integer(nb), Expr::FunctionCall { name, args: ea }) =
+        (&new_base, &new_exp)
+        && *nb != *b
+        && name == "Rational"
+        && ea.len() == 2
+        && let (Expr::Integer(en), Expr::Integer(ed)) = (&ea[0], &ea[1])
+      {
+        return Ok(pow2(new_base.clone(), make_rational(-*en, *ed)));
       }
     }
     // Simplify n^(p/q) by prime factorization

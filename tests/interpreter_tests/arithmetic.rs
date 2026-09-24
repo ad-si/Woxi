@@ -152,15 +152,38 @@ mod arithmetic {
       // try_extract_complex_float had no case for Complex[re, im] or
       // Power[base, exp], so the numeric-contagion check in Times (which
       // requires every factor to extract as a float) silently gave up.
+      // Sqrt[2] numericizes to the correctly rounded 1.4142135623730951,
+      // not the 1-ulp-off value going through exp(log(2)/2) gives.
       assert_eq!(
         interpret("Sqrt[2] * (1.0 + 2.0*I)").unwrap(),
-        "1.414213562373095 + 2.82842712474619*I"
+        "1.4142135623730951 + 2.8284271247461903*I"
       );
-      // An all-exact product is unaffected and stays symbolic.
+      // An all-exact product is unaffected and stays symbolic, with the
+      // complex number leading like any other numeric coefficient.
       assert_eq!(
         interpret("Sqrt[2] * (1 + 2*I)").unwrap(),
-        "Sqrt[2]*(1 + 2*I)"
+        "(1 + 2*I)*Sqrt[2]"
       );
+      assert_eq!(
+        interpret("{E*(1 + 2*I), 2^(1/3)*(1 + 2*I), Sqrt[2]*(-1 - I)*x}")
+          .unwrap(),
+        "{(1 + 2*I)*E, (1 + 2*I)*2^(1/3), (-1 - I)*Sqrt[2]*x}"
+      );
+    }
+
+    #[test]
+    fn slots_order_as_slot_calls() {
+      // `#1` is the compound `Slot[1]`, so it orders by head like any call:
+      // after symbols, powers and calls whose head precedes "Slot".
+      assert_eq!(
+        interpret("{a*#, 2*#*a^2, #*f[x], a*##}").unwrap(),
+        "{a*#1, 2*a^2*#1, f[x]*#1, a*##1}"
+      );
+      assert_eq!(
+        interpret("Sort[{#, a, a^2, f[x]}]").unwrap(),
+        "{a, a^2, f[x], #1}"
+      );
+      assert_eq!(interpret("Order[#, f[x]]").unwrap(), "-1");
     }
 
     #[test]
