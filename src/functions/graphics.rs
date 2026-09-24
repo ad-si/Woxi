@@ -22568,7 +22568,17 @@ fn manipulate_value_to_input_form(expr: &Expr) -> String {
 /// falls back to a full evaluation for exactly this reason). Each element
 /// gets the same fallback here so a `Slider2D` corner point resolves a
 /// symbolic bound the way a plain slider's `min`/`max` already does.
+///
+/// A corner point may equally name *another control's* variable declared
+/// later in the same Manipulate (`{{p, {0.2, 0.2}, ""}, {0, 0}, {a, b},
+/// ControlType -> Slider2D}`, with `a`/`b` themselves plain sliders) — the
+/// held-echo pass wraps such a bound in `Dynamic[…]` before this ever runs
+/// (see `process_manipulate_var_spec`), so the whole corner point must be
+/// unwrapped the same way a scalar bound already is, or it fails to match
+/// `Expr::List` below and the caller's `?` on the resulting `None` drops
+/// the entire control from the panel instead of just widening it.
 fn list2_f64(e: &Expr) -> Option<(f64, f64)> {
+  let (e, _) = manipulate_bound_expr(e);
   match e {
     Expr::List(l) if l.len() == 2 => {
       let a = eval_manipulate_bound(&l[0])?.0;

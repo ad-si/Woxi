@@ -22392,6 +22392,46 @@ mod manipulate {
     }
   }
 
+  /// A `Slider2D` corner point may equally name *another control's*
+  /// variable declared later in the same Manipulate, rather than a leading
+  /// body assignment (see the test above this one). The held-echo pass
+  /// wraps such a bound in `Dynamic[…]` before the widget builder ever
+  /// sees it (`process_manipulate_var_spec`), and `list2_f64` failed to
+  /// unwrap that: the corner point then matched neither `Expr::List` in
+  /// the 2D-range branch nor a scalar in the fallback, so the fallback's
+  /// `?` propagated `None` and the whole control silently disappeared from
+  /// the panel instead of just widening it. Found via the scheduled
+  /// Wolfram Demonstrations check downloading "Partially Loaded
+  /// Rectangular Plate", whose two `Slider2D` load-point controls are
+  /// bounded by `{a, b}`, a plate-size slider pair declared later in the
+  /// same Manipulate (independently written here, not copied from that
+  /// notebook).
+  #[test]
+  fn spec_slider2d_corner_bounds_see_sibling_control_declared_later() {
+    let expr = interpret_to_expr(
+      "Manipulate[g[x, y], \
+       {{pt, {0.2, 0.2}, \"\"}, {0, 0}, {a, b}, ControlType -> Slider2D}, \
+       {{a, 2, \"a\"}, 0, 10}, {{b, 3, \"b\"}, 0, 10}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    match &spec.controls[0] {
+      ManipulateControl::Slider2D {
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+        ..
+      } => {
+        assert_eq!(*x_min, 0.0);
+        assert_eq!(*x_max, 2.0);
+        assert_eq!(*y_min, 0.0);
+        assert_eq!(*y_max, 3.0);
+      }
+      other => panic!("expected a Slider2D control, got {other:?}"),
+    }
+  }
+
   /// `ControlType -> Slider` over a *choice list* keeps the choices but
   /// asks for a slider that steps through them by index — how Wolfram
   /// draws a twenty-entry colour-scheme picker. Without the flag the
