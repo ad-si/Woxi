@@ -9144,6 +9144,20 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
 
+  // A trailing option configures the result and must not be mistaken for a
+  // missing graph operand.
+  #[test]
+  fn graph_intersection_with_trailing_layout_option() {
+    assert_eq!(
+      interpret(
+        "EdgeList[GraphIntersection[CompleteGraph[3], PathGraph[{1, 2, 3}], \
+         GraphLayout -> \"CircularEmbedding\"]]"
+      )
+      .unwrap(),
+      "{1  2, 2  3}"
+    );
+  }
+
   // VertexAdd
   #[test]
   fn vertex_add_single() {
@@ -9556,6 +9570,32 @@ mod batch_unevaluated_wrappers_2 {
       )
       .unwrap(),
       "3"
+    );
+  }
+
+  // A trailing option (as opposed to another graph operand) configures the
+  // result's rendering and must not stop the vertex/edge sets from being
+  // combined — a Demonstration composing two chosen graphs this way (e.g.
+  // `GraphUnion[g, h, GraphLayout -> "CircularEmbedding"]`) previously came
+  // back completely unevaluated because every argument was required to be
+  // a Graph.
+  #[test]
+  fn graph_union_with_trailing_layout_option() {
+    assert_eq!(
+      interpret(
+        "EdgeCount[GraphUnion[PathGraph[{1, 2, 3}], PathGraph[{3, 4, 5}], \
+         GraphLayout -> \"CircularEmbedding\"]]"
+      )
+      .unwrap(),
+      "4"
+    );
+    assert_eq!(
+      interpret(
+        "Head[GraphUnion[PathGraph[{1, 2}], PathGraph[{2, 3}], \
+         GraphLayout -> \"CircularEmbedding\"]]"
+      )
+      .unwrap(),
+      "Graph"
     );
   }
 

@@ -25927,6 +25927,97 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 30, $CellContext`s$$ = 5}, \"
     );
   }
 
+  /// A randomly-sampled Wolfram Demonstrations Project notebook ("Operations
+  /// on Graphs") lets you pick two graphs from a gallery and shows their
+  /// union, disjoint union, difference or intersection, highlighted over
+  /// one of the originals. Independently written, not copied from the
+  /// original: this version uses a two-graph pool instead of a
+  /// thirty-graph one, a two-way "union"/"meet" popup instead of a
+  /// four-way switch, different variable names, and a different (smaller)
+  /// second graph.
+  ///
+  /// The construct worth pinning down is the pool itself: a Demonstration
+  /// that embeds `GraphData[…]`'s output literally (rather than calling it
+  /// live) caches each graph with Mathematica's internal `NetworkGraphics`
+  /// encoding — here, an adjacency matrix stored as a `SparseArray` in
+  /// compressed-row form — instead of a plain `UndirectedEdge` list.
+  /// Before `EdgeList` learned to decode that shape, `Graph[EdgeList[g],
+  /// …]` silently rebuilt an edgeless graph from it, so `GraphUnion`,
+  /// wrapped in `HighlightGraph`, had nothing to draw and the Grid cell
+  /// fell back to printing the graph's raw literal as text instead of
+  /// rendering it. A second, independent gap sat right behind it:
+  /// `GraphUnion`/`GraphIntersection`/`GraphDisjointUnion` rejected any
+  /// call carrying a trailing option such as `GraphLayout -> …` (exactly
+  /// what this Demonstration's Manipulate passes), because every argument
+  /// — including the option — was required to look like a `Graph[…]`.
+  #[test]
+  fn operations_on_graphs_notebook_opens_with_its_widget() {
+    let nb_src = r##"Notebook[{
+Cell[BoxData["pool = {Graph[{1, 2, 3}, {UndirectedEdge[1, 2], UndirectedEdge[2, 3], UndirectedEdge[1, 3]}], Graph[{1, 2, 3, 4}, {Null, SparseArray[Automatic, {4, 4}, 0, {1, {{0, 2, 4, 6, 6}, {{2}, {3}, {1}, {3}, {1}, {2}}}, Pattern}]}]};"], "Input"],
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[Module[{g, h}, g = Graph[EdgeList[pool[[a]]]]; h = Graph[EdgeList[pool[[b]]]]; Switch[combine, 1, HighlightGraph[GraphUnion[g, h, GraphLayout -> \"CircularEmbedding\"], g], 2, HighlightGraph[GraphIntersection[g, h, GraphLayout -> \"CircularEmbedding\"], g]]], {{a, 1}, None}, {{b, 2}, None}, {{combine, 1, \"combine with\"}, {1 -> \"union\", 2 -> \"meet\"}}, SaveDefinitions -> True]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`a$$ = 1, $CellContext`b$$ = 2, $CellContext`combine$$ = 1}, \"…\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .into_iter()
+      .find_map(|e| e.manipulate_state)
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+
+    // `a` and `b` are `Appearance -> None` — hidden state, not a control —
+    // so only "combine with" shows up as a control.
+    match &widget.controls[..] {
+      [manipulate::ControlState::Discrete { name, values, .. }] => {
+        assert_eq!(name, "combine");
+        assert_eq!(values, &["1", "2"]);
+      }
+      other => panic!("expected exactly one popup control, got {other:?}"),
+    }
+    let state_names: Vec<&str> =
+      widget.state.iter().map(|(n, _)| n.as_str()).collect();
+    assert_eq!(state_names, ["a", "b"]);
+
+    // Re-render through the same bindings the widget uses (as
+    // `examples/dump_manipulate.rs` does) to inspect the actual SVG: the
+    // union of a 3-vertex triangle and a 4-vertex pool graph, highlighted,
+    // must come back as real vertex/edge markup — not the graph object's
+    // raw textual form, which is what a broken `EdgeList` on the cached
+    // `SparseArray` graph used to leave `GraphUnion` (and so
+    // `HighlightGraph`) unable to render.
+    let mut bindings: Vec<(String, String)> = widget
+      .controls
+      .iter()
+      .filter(|c| c.binds_variable())
+      .map(|c| (c.name().to_string(), c.current_code()))
+      .collect();
+    bindings.extend(widget.state.iter().cloned());
+    let code = match widget.initialization.as_deref() {
+      Some(init) => format!("{init}; {}", widget.body),
+      None => widget.body.clone(),
+    };
+    let render = woxi::with_scoped_globals(&bindings, || {
+      woxi::interpret_with_stdout(&code)
+    })
+    .expect("the highlighted union must render");
+    let svg = render.graphics.expect("body must produce graphics");
+    assert!(
+      !svg.contains("SparseArray"),
+      "must not fall back to the graph's raw textual form: {svg}"
+    );
+    assert!(
+      svg.matches("<ellipse").count() >= 3,
+      "expected at least the triangle's 3 vertices drawn, got: {svg}"
+    );
+    assert!(svg.contains("<polyline"), "expected drawn edges: {svg}");
+  }
+
   /// A randomly-sampled Wolfram Demonstrations Project notebook ("Algebraic
   /// Values of Trigonometric Functions of Inverse Trigonometric Functions")
   /// shows an equation whose left side is a chosen trig function applied to
