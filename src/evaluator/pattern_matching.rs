@@ -2781,23 +2781,16 @@ pub fn apply_replace_all_ast(
         // flow-direction markers) can throw wildly off. Pin the aspect the
         // original plot actually rendered at unless the options already
         // fix it.
-        let is_aspect_name =
-          |e: &Expr| matches!(e, Expr::Identifier(n) if n == "AspectRatio");
-        let has_aspect_ratio = source.options.iter().any(|o| {
-          matches!(o, Expr::Rule { pattern, .. } if is_aspect_name(pattern))
-        });
-        let has_fixed_image_size = source.options.iter().any(|o| {
-          matches!(o, Expr::Rule { pattern, replacement }
-            if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ImageSize")
-              && matches!(replacement.as_ref(), Expr::List(v) if v.len() == 2))
-        });
         let mut opts: Vec<Expr> = source.options.clone();
-        if !has_aspect_ratio && !has_fixed_image_size && source.image_size.0 > 0
-        {
+        if crate::functions::graphics::plot_options_need_aspect_ratio(
+          &source.options,
+        ) {
           opts.push(Expr::Rule {
             pattern: Box::new(Expr::Identifier("AspectRatio".to_string())),
             replacement: Box::new(Expr::Real(
-              source.image_size.1 as f64 / source.image_size.0 as f64,
+              crate::functions::graphics::plot_source_aspect_ratio(
+                source.image_size,
+              ),
             )),
           });
         }
