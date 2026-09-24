@@ -1663,7 +1663,7 @@ pub(crate) fn zeta_zero_t_for_k(k: i128) -> Option<f64> {
         let mut hi = next_t;
         let mut flo = prev;
         for _ in 0..100 {
-          let mid = 0.5 * (lo + hi);
+          let mid = f64::midpoint(lo, hi);
           let fmid = riemann_siegel_z_numeric(mid);
           if fmid == 0.0 {
             lo = mid;
@@ -1677,7 +1677,7 @@ pub(crate) fn zeta_zero_t_for_k(k: i128) -> Option<f64> {
             hi = mid;
           }
         }
-        let root = 0.5 * (lo + hi);
+        let root = f64::midpoint(lo, hi);
         return Some(if k > 0 { root } else { -root });
       }
     }
