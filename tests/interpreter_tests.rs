@@ -1060,6 +1060,48 @@ mod interpreter_tests {
     );
   }
 
+  /// A Demonstration idiom draws flow-direction arrows along a curve with
+  /// `Plot[…, PlotStyle -> {..., Arrowheads[…]}] /. Line -> Arrow`. The
+  /// `ReplaceAll` forces the plot to re-render from its remembered
+  /// primitives instead of reusing the picture `Plot` already drew, and
+  /// that re-render used to lose the plot's own aspect ratio (`Plot`
+  /// derives it from `ImageSize` directly rather than storing an
+  /// `AspectRatio` option) and fit the generic `Graphics[...]` bounding box
+  /// of the primitives instead — which an `Arrow`'s head geometry can throw
+  /// wildly off. Independently written, not copied from any specific
+  /// Demonstration.
+  #[test]
+  fn test_line_to_arrow_replacement_keeps_plot_aspect_ratio() {
+    clear_state();
+    let baseline = interpret(
+      "ExportString[Plot[Sin[x], {x, 0, 10}, ImageSize -> 380], \"SVG\"]",
+    )
+    .unwrap();
+    let baseline_height = svg_root_height(&baseline);
+
+    let arrowed = interpret(
+      "ExportString[Plot[{Sin[x], Cos[x]}, {x, 0, 10}, \
+         PlotStyle -> {{Red, Arrowheads[ConstantArray[0.04, 5]]}, \
+                        {Blue, Arrowheads[ConstantArray[0.04, 5]]}}, \
+         ImageSize -> 380] /. Line -> Arrow, \"SVG\"]",
+    )
+    .unwrap();
+    let arrowed_height = svg_root_height(&arrowed);
+
+    assert!(
+      (arrowed_height - baseline_height).abs() < 1.0,
+      "Line -> Arrow replacement changed the plot's height: {arrowed_height} \
+       vs baseline {baseline_height}"
+    );
+  }
+
+  /// Extract the outermost `<svg width="…" height="…"` pair as an `f64`.
+  fn svg_root_height(svg: &str) -> f64 {
+    let after = svg.split("height=\"").nth(1).expect("no height attribute");
+    let digits: String = after.chars().take_while(|c| *c != '"').collect();
+    digits.parse().expect("height is not a number")
+  }
+
   /// A Demonstration idiom wraps a Manipulate body's live picture in
   /// `EventHandler[Style[Dynamic[graphic], opts], "MouseClicked" :> action]`
   /// so clicking the picture toggles some state. Woxi's visual hosts don't

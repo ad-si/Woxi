@@ -1088,6 +1088,8 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "PermutationSupport" => Some((1, 1)),
     "Combinatorica`UnrankPermutation" => Some((2, 2)),
     "Combinatorica`Partitions" => Some((1, 1)),
+    "Combinatorica`Permutations" => Some((1, 1)),
+    "Combinatorica`Derangements" => Some((1, 1)),
     "PerpendicularBisector" => Some((1, 2)),
     "PerfectNumber" => Some((1, 1)),
     "RamanujanTau" => Some((1, 1)),

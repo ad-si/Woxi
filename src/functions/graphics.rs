@@ -7964,10 +7964,10 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             || !fl.right.is_empty()
           {
             frame_label = Some((
-              svg_escape(&fl.bottom),
-              svg_escape(&fl.left),
-              svg_escape(&fl.top),
-              svg_escape(&fl.right),
+              box_string_to_svg(&fl.bottom),
+              box_string_to_svg(&fl.left),
+              box_string_to_svg(&fl.top),
+              box_string_to_svg(&fl.right),
             ));
           }
         }
@@ -12248,6 +12248,39 @@ pub fn wraps_rendered_graphic(content: &Expr) -> bool {
   }
 }
 
+/// Whether a plot's own shape still needs pinning down with an explicit
+/// `AspectRatio` rule, or whether `opts` already fixes it — an explicit
+/// `AspectRatio`, or a two-element `ImageSize -> {w, h}` that pins both
+/// dimensions.
+pub(crate) fn plot_options_need_aspect_ratio(opts: &[Expr]) -> bool {
+  let has_aspect_ratio = opts.iter().any(|o| {
+    matches!(o, Expr::Rule { pattern, .. } if option_name(pattern) == Some("AspectRatio"))
+  });
+  let has_fixed_image_size = opts.iter().any(|o| {
+    matches!(o, Expr::Rule { pattern, replacement }
+      if option_name(pattern) == Some("ImageSize")
+        && matches!(replacement.as_ref(), Expr::List(v) if v.len() == 2))
+  });
+  !has_aspect_ratio && !has_fixed_image_size
+}
+
+/// The height/width ratio a plot rendered at `image_size` should be pinned
+/// to when its shape needs preserving outside its own renderer — e.g. when
+/// `Show` merges it with other graphics, or a structural `ReplaceAll`
+/// rebuilds it into a plain `Graphics[...]` call. `Plot`/`ListPlot` picks
+/// its height from `ImageSize` directly rather than storing an
+/// `AspectRatio` option, so callers that need the shape after the fact
+/// fall back to this. Falls back to the classic 1/GoldenRatio default when
+/// the recorded size is missing or invalid.
+pub(crate) fn plot_source_aspect_ratio(image_size: (u32, u32)) -> f64 {
+  let ratio = image_size.1 as f64 / image_size.0 as f64;
+  if ratio.is_finite() && ratio > 0.0 {
+    ratio
+  } else {
+    1.0 / 1.618_033_988_749_895
+  }
+}
+
 /// The drawing primitives a rendered plot's sampled series stand for —
 /// filled regions, the series colour and thickness, and the `Line` /
 /// `Point` the samples make up. `Show` merges these with the primitives of
@@ -12736,24 +12769,17 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           replacement: Box::new(bool_expr(true)),
         });
       }
-      // An `ImageSize -> {w, h}` already fixes the height, so the plot
-      // aspect must not be filled in over it.
-      let sized_both_ways = merged_options.iter().any(|o| {
-        matches!(o, Expr::Rule { pattern, replacement }
-          if option_name(pattern) == Some("ImageSize")
-            && matches!(replacement.as_ref(), Expr::List(v) if v.len() == 2))
-      });
-      if !has_option(&merged_options, "AspectRatio") && !sized_both_ways {
-        // The shape the leading plot drew itself in. `Plot`/`ListPlot`
-        // default to 1/GoldenRatio, but `ParametricPlot` and friends
-        // default to `AspectRatio -> Automatic` and size themselves from
-        // the data, so a circle stays a circle once `Show` layers other
-        // graphics on top of one.
+      // The shape the leading plot drew itself in, unless the options
+      // already fix it. `Plot`/`ListPlot` default to 1/GoldenRatio, but
+      // `ParametricPlot` and friends default to `AspectRatio -> Automatic`
+      // and size themselves from the data, so a circle stays a circle once
+      // `Show` layers other graphics on top of one.
+      if plot_options_need_aspect_ratio(&merged_options) {
         let aspect = plot_sources
           .first()
-          .map(|ps| ps.image_size.1 as f64 / ps.image_size.0 as f64)
-          .filter(|r| r.is_finite() && *r > 0.0)
-          .unwrap_or(1.0 / 1.618_033_988_749_895);
+          .map_or(1.0 / 1.618_033_988_749_895, |ps| {
+            plot_source_aspect_ratio(ps.image_size)
+          });
         merged_options.push(Expr::Rule {
           pattern: Box::new(id_expr("AspectRatio")),
           replacement: Box::new(Expr::Real(aspect)),
@@ -20701,10 +20727,74 @@ fn spec_marks_locator(items: &[Expr]) -> bool {
 /// the bare-identifier form, so a second Table of Locators reusing the same
 /// indexed variable for another purpose (e.g. a rotation handle) does not
 /// override it.
+///
+/// A `DynamicModule[{v = s, …}, …]` local that is a bare copy of another
+/// identifier is recorded here as `v -> s`. A Demonstration commonly
+/// mirrors its real, persistent `ControlType -> None` state (`s`) into a
+/// same-shaped `DynamicModule` local (`v`) purely so the body can reassign
+/// it while dragging, writing the result back to `s` only once the drag
+/// settles (`LinesTwoPoints`-style two-point locators do this). Resolving
+/// `v` back to `s` here is what lets [`collect_body_locator_callbacks`]
+/// promote the *real* state variable even though the `LocatorPane` itself
+/// only ever names the proxy.
+fn collect_dynamic_module_proxies(
+  expr: &Expr,
+  proxies: &mut Vec<(String, String)>,
+) {
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      if name == "DynamicModule"
+        && !args.is_empty()
+        && let Expr::List(locals) = &args[0]
+      {
+        for local in locals {
+          if let Expr::FunctionCall {
+            name: set_name,
+            args: set_args,
+          } = local
+            && set_name == "Set"
+            && set_args.len() == 2
+            && let Expr::Identifier(v) = &set_args[0]
+            && let Expr::Identifier(s) = &set_args[1]
+          {
+            proxies.push((v.clone(), s.clone()));
+          }
+        }
+      }
+      for a in args {
+        collect_dynamic_module_proxies(a, proxies);
+      }
+    }
+    Expr::List(items) => {
+      for it in items {
+        collect_dynamic_module_proxies(it, proxies);
+      }
+    }
+    Expr::CompoundExpr(items) => {
+      for it in items {
+        collect_dynamic_module_proxies(it, proxies);
+      }
+    }
+    _ => {}
+  }
+}
+
 fn collect_body_locator_callbacks(
   expr: &Expr,
 ) -> Vec<(String, Option<String>)> {
-  fn walk(expr: &Expr, found: &mut Vec<(String, Option<String>)>) {
+  let mut proxies = Vec::new();
+  collect_dynamic_module_proxies(expr, &mut proxies);
+  let resolve = |var: &str| -> String {
+    proxies
+      .iter()
+      .find(|(v, _)| v == var)
+      .map_or_else(|| var.to_string(), |(_, s)| s.clone())
+  };
+  fn walk(
+    expr: &Expr,
+    resolve: &dyn Fn(&str) -> String,
+    found: &mut Vec<(String, Option<String>)>,
+  ) {
     match expr {
       Expr::FunctionCall { name, args } => {
         if (name == "Locator" || name == "LocatorPane")
@@ -20715,42 +20805,63 @@ fn collect_body_locator_callbacks(
           && dname == "Dynamic"
         {
           match dargs.first() {
-            Some(Expr::Identifier(var))
-              if !found.iter().any(|(n, _)| n == var) =>
-            {
-              let callback =
-                dargs.get(1).map(crate::syntax::expr_to_input_form);
-              found.push((var.clone(), callback));
+            Some(Expr::Identifier(var)) => {
+              let var = resolve(var);
+              if !found.iter().any(|(n, _)| *n == var) {
+                let callback =
+                  dargs.get(1).map(crate::syntax::expr_to_input_form);
+                found.push((var, callback));
+              }
             }
             Some(Expr::Part { expr: base, .. }) => {
-              if let Expr::Identifier(var) = base.as_ref()
-                && !found.iter().any(|(n, _)| n == var)
-              {
-                found.push((var.clone(), None));
+              if let Expr::Identifier(var) = base.as_ref() {
+                let var = resolve(var);
+                if !found.iter().any(|(n, _)| *n == var) {
+                  found.push((var, None));
+                }
+              }
+            }
+            // A `LocatorPane[Dynamic[{p1, p2, …}, {getter, setter…}], …]`
+            // pane: several proxy locators tracked jointly. Each names its
+            // own point independently (`makegraph[pt, pt2]` reads them
+            // apart), so each is promoted on its own rather than as one
+            // combined multi-point control; the joint setter can't be
+            // replayed per-point, so no write-back callback is carried
+            // (the promoted `Slider2D` falls back to the raw dragged
+            // position, same as a plain `LocatorPane[Dynamic[var], …]`
+            // with no callback).
+            Some(Expr::List(items)) if name == "LocatorPane" => {
+              for it in items {
+                if let Expr::Identifier(var) = it {
+                  let var = resolve(var);
+                  if !found.iter().any(|(n, _)| *n == var) {
+                    found.push((var, None));
+                  }
+                }
               }
             }
             _ => {}
           }
         }
         for a in args {
-          walk(a, found);
+          walk(a, resolve, found);
         }
       }
       Expr::List(items) => {
         for it in items {
-          walk(it, found);
+          walk(it, resolve, found);
         }
       }
       Expr::CompoundExpr(items) => {
         for it in items {
-          walk(it, found);
+          walk(it, resolve, found);
         }
       }
       _ => {}
     }
   }
   let mut found = Vec::new();
-  walk(expr, &mut found);
+  walk(expr, &resolve, &mut found);
   found
 }
 
@@ -22568,7 +22679,17 @@ fn manipulate_value_to_input_form(expr: &Expr) -> String {
 /// falls back to a full evaluation for exactly this reason). Each element
 /// gets the same fallback here so a `Slider2D` corner point resolves a
 /// symbolic bound the way a plain slider's `min`/`max` already does.
+///
+/// A corner point may equally name *another control's* variable declared
+/// later in the same Manipulate (`{{p, {0.2, 0.2}, ""}, {0, 0}, {a, b},
+/// ControlType -> Slider2D}`, with `a`/`b` themselves plain sliders) — the
+/// held-echo pass wraps such a bound in `Dynamic[…]` before this ever runs
+/// (see `process_manipulate_var_spec`), so the whole corner point must be
+/// unwrapped the same way a scalar bound already is, or it fails to match
+/// `Expr::List` below and the caller's `?` on the resulting `None` drops
+/// the entire control from the panel instead of just widening it.
 fn list2_f64(e: &Expr) -> Option<(f64, f64)> {
+  let (e, _) = manipulate_bound_expr(e);
   match e {
     Expr::List(l) if l.len() == 2 => {
       let a = eval_manipulate_bound(&l[0])?.0;

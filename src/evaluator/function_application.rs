@@ -454,6 +454,51 @@ pub(crate) fn differentiate_function_body(
   Some(current)
 }
 
+/// Apply `Derivative[n1, …, nk]` to a named-parameter pure function
+/// (`Function[{x1, …, xk}, body]`) symbolically. Mirrors
+/// `differentiate_function_body` above, but differentiates directly with
+/// respect to the function's own parameter names — no dummy/slot
+/// substitution is needed since the parameters are already unique
+/// identifiers naming their positions.
+fn differentiate_named_function_body(
+  body: &Expr,
+  params: &[String],
+  orders: &[i128],
+) -> Option<Expr> {
+  use crate::evaluator::dispatch::calculus_functions::{
+    build_var_power_derivative_chain, extract_var_power_factor,
+  };
+
+  let mut current = body.clone();
+
+  for (param, &n_i) in params.iter().zip(orders.iter()) {
+    if n_i <= 0 {
+      continue;
+    }
+    let var_expr = Expr::Identifier(param.clone());
+    if let Some((factor, p)) = extract_var_power_factor(&current, param)
+      && let Some(chain) = build_var_power_derivative_chain(&var_expr, p, n_i)
+    {
+      current = if matches!(chain, Expr::Integer(0)) {
+        Expr::Integer(0)
+      } else {
+        times2(factor, chain)
+      };
+      continue;
+    }
+    for _ in 0..n_i {
+      current = match crate::functions::calculus_ast::differentiate_expr(
+        &current, param,
+      ) {
+        Ok(v) => v,
+        Err(_) => return None,
+      };
+    }
+  }
+
+  Some(current)
+}
+
 /// Split an expression by its head. E.g., split_by_head(a + b, "Plus") = [a, b]
 fn split_by_head(expr: &Expr, head: &str) -> Vec<Expr> {
   // Operators like `|` (Alternatives) or `+` (Plus) are stored as (possibly
@@ -2391,6 +2436,36 @@ pub fn apply_curried_call(
           if let Some(result) = differentiate_function_body(body, &orders) {
             return Ok(Expr::Function {
               body: Box::new(result),
+            });
+          }
+        }
+        // `Derivative[n1, …, nk][Function[{x1, …, xk}, body]]` — the
+        // named-parameter analogue of the slot-based case above. Each
+        // order lines up with the parameter at the same position, so no
+        // slot renumbering is needed; a mismatched parameter count is left
+        // unevaluated (falls through to the generic CurriedCall below).
+        if args.len() == 1
+          && let Expr::NamedFunction {
+            params,
+            body,
+            bracketed,
+          } = &args[0]
+          && params.len() == func_args.len()
+        {
+          let orders: Vec<i128> = func_args
+            .iter()
+            .map(|a| match a {
+              Expr::Integer(n) => *n,
+              _ => 0,
+            })
+            .collect();
+          if let Some(result) =
+            differentiate_named_function_body(body, params, &orders)
+          {
+            return Ok(Expr::NamedFunction {
+              params: params.clone(),
+              body: Box::new(result),
+              bracketed: *bracketed,
             });
           }
         }

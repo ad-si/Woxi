@@ -632,13 +632,22 @@ fn is_identifier_like(s: &str) -> bool {
 /// Language exports. Woxi keeps its built-ins in one namespace, so nothing
 /// else would create them — and a package that reads one of the names by its
 /// short form has to land on the same symbol the built-in produces.
-fn register_standard_context_symbols(ctx: &str) {
+pub(crate) fn register_standard_context_symbols(ctx: &str) {
   if ctx == "CodeParser`" {
     crate::functions::code_parser::register_context_symbols();
     // Reading `LeafNode` after the context is loaded has to find
     // `CodeParser`LeafNode`, which is what putting the context on
     // `$ContextPath` is for. Only the contexts Woxi has symbols for go on
     // the path; the rest stay named but empty, as before.
+    crate::prepend_to_context_path(ctx);
+  }
+  if ctx == "Combinatorica`" {
+    // Combinatorica has no values to pre-create (its functions are ordinary
+    // dispatch entries, not symbol-table lookups), but putting it on
+    // `$ContextPath` is what lets `combinatorica_context_active` in
+    // `evaluate_function_call_ast_inner` redirect the bare names it shadows
+    // (`Derangements`, `Permutations[n_Integer]`) to their
+    // `Combinatorica\`` implementation.
     crate::prepend_to_context_path(ctx);
   }
 }
@@ -678,6 +687,7 @@ fn load_needed_context(ctx: &str) -> Result<(), InterpreterError> {
 
 #[cfg(target_arch = "wasm32")]
 fn load_needed_context(ctx: &str) -> Result<(), InterpreterError> {
+  register_standard_context_symbols(ctx);
   crate::register_package(ctx.to_string());
   Ok(())
 }
@@ -732,10 +742,31 @@ fn evaluate_function_call_ast_inner(
   // one flat namespace (see `is_standard_distribution_context`), so a
   // qualified call to one of these is normalized to its modern name before
   // dispatch rather than reimplementing the legacy function separately.
+  //
+  // `Combinatorica\`` is different: it shadows bare names once loaded
+  // (`Get["Combinatorica`"]`/`Needs["Combinatorica`"]` put it on
+  // `$ContextPath`, which is what a bare name is read against — see
+  // `register_standard_context_symbols`), the way it does in Mathematica
+  // itself, rather than being renamed at read time. `Derangements` has no
+  // built-in of its own to conflict with; `Permutations` does, but
+  // Combinatorica only extends it to accept a bare integer `n` (meaning
+  // `Range[n]`), so only that shape is redirected — a list argument keeps
+  // using the built-in's identical (lexicographic) algorithm.
+  let combinatorica_active = crate::current_context_path()
+    .iter()
+    .any(|c| c == "Combinatorica`");
   let original_name = name;
   let name = match name {
     "VectorFieldPlots`ListVectorFieldPlot" => "ListVectorPlot",
     "PieCharts`PieChart" => "PieChart",
+    "Derangements" if combinatorica_active => "Combinatorica`Derangements",
+    "Permutations"
+      if combinatorica_active
+        && args.len() == 1
+        && matches!(&args[0], Expr::Integer(n) if *n >= 0) =>
+    {
+      "Combinatorica`Permutations"
+    }
     other => other,
   };
 
@@ -5198,9 +5229,18 @@ fn evaluate_function_call_ast_inner(
     } = &args[0]
       && gname == "Graph"
       && gargs.len() >= 2
-      && let Expr::List(_) = &gargs[1]
+      && let Expr::List(vertices) = &gargs[0]
+      && let Expr::List(edges) = &gargs[1]
     {
-      return Ok(gargs[1].clone());
+      // A `Graph` pasted from a cached `NetworkGraphics` box (e.g. a
+      // Demonstration embedding `GraphData[…]`'s output literally) stores
+      // its edges in Mathematica's internal encoding rather than a plain
+      // `UndirectedEdge`/`DirectedEdge` list — normalize that back to the
+      // public form first.
+      let edges =
+        crate::functions::graph::normalize_internal_edge_list(vertices, edges)
+          .map_or_else(|| edges.clone(), Into::into);
+      return Ok(Expr::List(edges));
     }
     // Return unevaluated for non-graph input
     return Ok(unevaluated(name, args));
@@ -5402,28 +5442,34 @@ fn evaluate_function_call_ast_inner(
 
   // GraphDisjointUnion[g1, g2, ...] → disjoint union with vertices relabeled to
   // consecutive integers 1..N (each graph shifted by the running vertex count).
-  if name == "GraphDisjointUnion" && !args.is_empty() {
-    let mut parsed: Vec<(&[Expr], &[Expr])> = Vec::new();
-    let mut ok = true;
-    for a in args {
-      if let Expr::FunctionCall {
-        name: gname,
-        args: gargs,
-      } = a
-        && gname == "Graph"
-        && gargs.len() >= 2
-        && let (Expr::List(v), Expr::List(e)) = (&gargs[0], &gargs[1])
-      {
-        parsed.push((&v[..], &e[..]));
-      } else {
-        ok = false;
-        break;
-      }
+  if name == "GraphDisjointUnion"
+    && let Some((graphs, options)) =
+      crate::functions::graph::split_graph_operands(args, 1)
+  {
+    let parsed: Vec<(&[Expr], &[Expr])> = graphs
+      .iter()
+      .map(|g| {
+        let Expr::FunctionCall { args: ga, .. } = g else {
+          unreachable!()
+        };
+        let (Expr::List(v), Expr::List(e)) = (&ga[0], &ga[1]) else {
+          unreachable!()
+        };
+        (&v[..], &e[..])
+      })
+      .collect();
+    let result = crate::functions::graph::graph_disjoint_union(&parsed);
+    // Trailing options (e.g. `GraphLayout -> …`) configure the result and
+    // are appended to it as-is.
+    if options.is_empty() {
+      return Ok(result);
     }
-    if ok && !parsed.is_empty() {
-      return Ok(crate::functions::graph::graph_disjoint_union(&parsed));
-    }
-    return Ok(unevaluated(name, args));
+    let Expr::FunctionCall { args: rargs, .. } = &result else {
+      return Ok(result);
+    };
+    let mut graph_args = rargs.to_vec();
+    graph_args.extend(options.iter().cloned());
+    return Ok(call("Graph", graph_args));
   }
 
   // GraphReciprocity[Graph[verts, edges]] → fraction of directed edges that are
@@ -5766,22 +5812,25 @@ fn evaluate_function_call_ast_inner(
     ));
   }
 
-  // GraphIntersection[g1, g2, ...] — intersection of graphs (union vertices, intersect edges)
-  if name == "GraphIntersection" && args.len() >= 2 {
-    // Extract all graphs
-    let mut graphs = Vec::new();
-    for arg in args {
-      if let Expr::FunctionCall { name: gn, args: ga } = arg
-        && gn == "Graph"
-        && ga.len() >= 2
-        && let (Expr::List(vs), Expr::List(es)) = (&ga[0], &ga[1])
-      {
-        graphs.push((vs, es));
-      } else {
-        // Not a graph, return unevaluated
-        return Ok(unevaluated(name, args));
-      }
-    }
+  // GraphIntersection[g1, g2, ..., opts] — intersection of graphs (union
+  // vertices, intersect edges). Trailing options configure the result and
+  // are passed through as-is.
+  if name == "GraphIntersection"
+    && let Some((graph_args, options)) =
+      crate::functions::graph::split_graph_operands(args, 2)
+  {
+    let graphs: Vec<(&crate::ExprList, &crate::ExprList)> = graph_args
+      .iter()
+      .map(|arg| {
+        let Expr::FunctionCall { args: ga, .. } = arg else {
+          unreachable!()
+        };
+        let (Expr::List(vs), Expr::List(es)) = (&ga[0], &ga[1]) else {
+          unreachable!()
+        };
+        (vs, es)
+      })
+      .collect();
 
     // Union of all vertices (preserving order, no duplicates)
     let mut seen = std::collections::HashSet::new();
@@ -5811,13 +5860,12 @@ fn evaluate_function_call_ast_inner(
       .cloned()
       .collect();
 
-    return Ok(call(
-      "Graph",
-      vec![
-        Expr::List(all_vertices.into()),
-        Expr::List(common_edges.into()),
-      ],
-    ));
+    let mut result_args = vec![
+      Expr::List(all_vertices.into()),
+      Expr::List(common_edges.into()),
+    ];
+    result_args.extend(options.iter().cloned());
+    return Ok(call("Graph", result_args));
   }
 
   // EdgeQ[graph, edge] — True if edge exists in graph
@@ -6755,23 +6803,20 @@ fn evaluate_function_call_ast_inner(
     ));
   }
 
-  // GraphUnion[g1, g2, ...] — graph whose vertices are the (sorted) union of
-  // the inputs' vertices and whose edges are the union of their edges, kept in
-  // first-seen order and deduplicated by undirected endpoint pair.
+  // GraphUnion[g1, g2, ..., opts] — graph whose vertices are the (sorted)
+  // union of the inputs' vertices and whose edges are the union of their
+  // edges, kept in first-seen order and deduplicated by undirected endpoint
+  // pair. Trailing options (e.g. `GraphLayout -> "CircularEmbedding"`)
+  // configure the result and are passed through as-is.
   if name == "GraphUnion"
-    && args.len() >= 2
-    && args.iter().all(|a| {
-      matches!(a, Expr::FunctionCall { name: gn, args: ga }
-        if gn == "Graph" && ga.len() >= 2
-          && matches!(&ga[0], Expr::List(_))
-          && matches!(&ga[1], Expr::List(_)))
-    })
+    && let Some((graphs, options)) =
+      crate::functions::graph::split_graph_operands(args, 2)
   {
     let mut vertices: Vec<Expr> = Vec::new();
     let mut vertex_seen = std::collections::HashSet::new();
     let mut edges: Vec<Expr> = Vec::new();
     let mut edge_seen = std::collections::HashSet::new();
-    for g in args {
+    for g in graphs {
       let Expr::FunctionCall { args: ga, .. } = g else {
         unreachable!()
       };
@@ -6802,10 +6847,10 @@ fn evaluate_function_call_ast_inner(
       }
     }
     vertices.sort_by(crate::functions::list_helpers_ast::canonical_cmp);
-    return Ok(call(
-      "Graph",
-      vec![Expr::List(vertices.into()), Expr::List(edges.into())],
-    ));
+    let mut graph_args =
+      vec![Expr::List(vertices.into()), Expr::List(edges.into())];
+    graph_args.extend(options.iter().cloned());
+    return Ok(call("Graph", graph_args));
   }
 
   // GraphDifference[g1, g2] — g1 with the edges of g2 removed. Vertices and
