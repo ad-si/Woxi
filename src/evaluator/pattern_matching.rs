@@ -2770,15 +2770,47 @@ pub fn apply_replace_all_ast(
     // cannot quietly turn a plot into a bag of primitives.
     let symbolic = match (structure, source) {
       (Some(s), _) => Some(s.as_ref().clone()),
-      (None, Some(source)) => Some(Expr::FunctionCall {
-        name: if *is_3d { "Graphics3D" } else { "Graphics" }.to_string(),
-        args: std::iter::once(Expr::List(
-          crate::functions::graphics::plot_source_primitives(source).into(),
-        ))
-        .chain(source.options.iter().cloned())
-        .collect::<Vec<_>>()
-        .into(),
-      }),
+      (None, Some(source)) => {
+        // `Plot`'s own renderer picks the height from `image_size` directly
+        // (golden-ratio default or an explicit `AspectRatio`/`ImageSize ->
+        // {w, h}`) rather than storing an `AspectRatio` rule in
+        // `source.options`. Rebuilding a plain `Graphics[primitives, …]`
+        // call from that data loses that shape: the generic renderer falls
+        // back to fitting the primitives' own bounding box, which an
+        // `Arrow` primitive (an idiom like `plot /. Line -> Arrow` for
+        // flow-direction markers) can throw wildly off. Pin the aspect the
+        // original plot actually rendered at unless the options already
+        // fix it.
+        let is_aspect_name =
+          |e: &Expr| matches!(e, Expr::Identifier(n) if n == "AspectRatio");
+        let has_aspect_ratio = source.options.iter().any(|o| {
+          matches!(o, Expr::Rule { pattern, .. } if is_aspect_name(pattern))
+        });
+        let has_fixed_image_size = source.options.iter().any(|o| {
+          matches!(o, Expr::Rule { pattern, replacement }
+            if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ImageSize")
+              && matches!(replacement.as_ref(), Expr::List(v) if v.len() == 2))
+        });
+        let mut opts: Vec<Expr> = source.options.to_vec();
+        if !has_aspect_ratio && !has_fixed_image_size && source.image_size.0 > 0
+        {
+          opts.push(Expr::Rule {
+            pattern: Box::new(Expr::Identifier("AspectRatio".to_string())),
+            replacement: Box::new(Expr::Real(
+              source.image_size.1 as f64 / source.image_size.0 as f64,
+            )),
+          });
+        }
+        Some(Expr::FunctionCall {
+          name: if *is_3d { "Graphics3D" } else { "Graphics" }.to_string(),
+          args: std::iter::once(Expr::List(
+            crate::functions::graphics::plot_source_primitives(source).into(),
+          ))
+          .chain(opts)
+          .collect::<Vec<_>>()
+          .into(),
+        })
+      }
       (None, None) => None,
     };
     if let Some(symbolic) = symbolic {
