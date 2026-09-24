@@ -18750,7 +18750,9 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   for spec in args.iter().skip(1) {
     match spec {
       Expr::List(items) if !items.is_empty() => {
-        out_args.push(process_manipulate_var_spec(items, &sibling_names));
+        out_args.push(bare_control_type_as_option(
+          process_manipulate_var_spec(items, &sibling_names),
+        ));
       }
       Expr::List(_) => {
         // Empty list — echo as-is.
@@ -18856,55 +18858,6 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(call("Manipulate", out_args))
 }
 
-/// Whether `expr` still mentions a free symbol after evaluation — i.e. it
-/// did not reduce to a concrete value. A control bound evaluated on its own
-/// (outside the Manipulate's own variable scope) stays symbolic when it
-/// depends on another control's variable (`Range[y]`); a call like
-/// `RGBColor[0.49, 0, 0]` that evaluates to itself has no such dependency.
-/// Named mathematical constants don't count as free — they're already
-/// concrete values in disguise.
-fn expr_is_symbolic(expr: &Expr) -> bool {
-  match expr {
-    Expr::Identifier(name) => !matches!(
-      name.as_str(),
-      "Pi"
-        | "E"
-        | "Degree"
-        | "I"
-        | "Infinity"
-        | "ComplexInfinity"
-        | "True"
-        | "False"
-        | "None"
-        | "Automatic"
-        | "All"
-        | "Null"
-        | "GoldenRatio"
-        | "EulerGamma"
-        | "Catalan"
-    ),
-    Expr::FunctionCall { args, .. } => args.iter().any(expr_is_symbolic),
-    Expr::List(items) => items.iter().any(expr_is_symbolic),
-    Expr::Association(pairs) => pairs
-      .iter()
-      .any(|(k, v)| expr_is_symbolic(k) || expr_is_symbolic(v)),
-    Expr::Rule {
-      pattern,
-      replacement,
-    }
-    | Expr::RuleDelayed {
-      pattern,
-      replacement,
-    } => expr_is_symbolic(pattern) || expr_is_symbolic(replacement),
-    _ => false,
-  }
-}
-
-/// Process a single Manipulate/Control variable specification list,
-/// evaluating trailing bounds/step/discrete values while keeping the head
-/// (variable symbol or `{u, uinit, ulbl}`) intact. A 2-item spec
-/// `{var, range}` whose range is still symbolic is wrapped in `Dynamic[…]`
-/// to match wolframscript's echoed form.
 /// The variable name a Manipulate spec list declares — `{u, ...}` or
 /// `{{u, ...}, ...}` — or `None` for something that isn't a variable spec
 /// (an option, an annotation row, ...).
@@ -18919,10 +18872,92 @@ fn manipulate_spec_var_name(items: &[Expr]) -> Option<String> {
   }
 }
 
+/// The values a Manipulate control spec that names only its control type
+/// (`{x, Slider}`) gets filled in with, the way wolframscript echoes it
+/// (`{x, 0, 1, ControlType -> Slider}`).
+fn default_control_values(control_type: &str) -> Option<Vec<Expr>> {
+  let list = |items: Vec<Expr>| Expr::List(items.into());
+  let booleans = || vec![id_expr("True"), id_expr("False")];
+  Some(match control_type {
+    "Slider" | "VerticalSlider" | "Manipulator" | "Animator" | "Trigger"
+    | "IntervalSlider" => vec![Expr::Integer(0), Expr::Integer(1)],
+    "Slider2D" => vec![
+      list(vec![Expr::Integer(0), Expr::Integer(0)]),
+      list(vec![Expr::Integer(1), Expr::Integer(1)]),
+    ],
+    "Checkbox" | "CheckboxBar" | "Toggler" | "TogglerBar" | "Opener" => {
+      vec![list(booleans())]
+    }
+    "Setter" | "SetterBar" | "RadioButton" | "RadioButtonBar" | "PopupMenu" => {
+      let mut values = booleans();
+      values.push(id_expr("Automatic"));
+      vec![list(values)]
+    }
+    "ColorSlider" | "ColorSetter" => vec![id_expr("Gray")],
+    "Locator" => vec![id_expr("Automatic")],
+    "None" => vec![Expr::Integer(0)],
+    "InputField" => Vec::new(),
+    _ => return None,
+  })
+}
+
+/// A Manipulate control spec's bare control-type symbol (`{x, 0, 1,
+/// Slider}`) echoes as the `ControlType -> Slider` option it stands for,
+/// and a spec that gives nothing but the control type gets that type's
+/// default values: `{x, Slider}` → `{x, 0, 1, ControlType -> Slider}`,
+/// `{{p, init}, Locator}` → `{{p, init}, Automatic, ControlType -> Locator}`.
+fn bare_control_type_as_option(spec: Expr) -> Expr {
+  let Expr::List(items) = &spec else {
+    return spec;
+  };
+  let Some(pos) = items.iter().skip(1).position(
+    |e| matches!(e, Expr::Identifier(s) if default_control_values(s).is_some()),
+  ) else {
+    return spec;
+  };
+  let pos = pos + 1;
+  let Expr::Identifier(control_type) = &items[pos] else {
+    return spec;
+  };
+  let mut out: Vec<Expr> = items.to_vec();
+  out[pos] = Expr::Rule {
+    pattern: Box::new(id_expr("ControlType")),
+    replacement: Box::new(items[pos].clone()),
+  };
+  let has_values = items.iter().enumerate().skip(1).any(|(i, e)| {
+    i != pos && !matches!(e, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+  });
+  if !has_values && let Some(defaults) = default_control_values(control_type) {
+    out.splice(1..1, defaults);
+  }
+  Expr::List(out.into())
+}
+
+/// Process a single Manipulate variable specification list for its echo,
+/// evaluating the initial value and the trailing bounds/step/discrete
+/// values while keeping the variable and label intact; values that name a
+/// sibling control's variable stay held inside `Dynamic[…]`.
 fn process_manipulate_var_spec(items: &[Expr], siblings: &[String]) -> Expr {
-  // Preserve the head as-is; evaluate any trailing bounds/step/values.
+  // Keep the head's variable and label, evaluating only its initial value
+  // (`{{x, 1 + 1}, …}` echoes as `{{x, 2}, …}`); evaluate any trailing
+  // bounds/step/values.
+  let quiet_eval = |e: &Expr| {
+    let snapshot = crate::snapshot_warnings();
+    crate::push_quiet();
+    let evaluated = evaluate_expr_to_expr(e).unwrap_or_else(|_| e.clone());
+    crate::pop_quiet();
+    crate::restore_warnings(snapshot);
+    evaluated
+  };
   let mut new_items: Vec<Expr> = Vec::with_capacity(items.len());
-  new_items.push(items[0].clone());
+  new_items.push(match &items[0] {
+    Expr::List(head) if head.len() >= 2 => {
+      let mut head = head.to_vec();
+      head[1] = quiet_eval(&head[1]);
+      Expr::List(head.into())
+    }
+    other => other.clone(),
+  });
   for item in &items[1..] {
     let mentions_sibling = |e: &Expr| {
       siblings
@@ -18997,82 +19032,16 @@ fn process_manipulate_var_spec(items: &[Expr], siblings: &[String]) -> Expr {
     crate::restore_warnings(snapshot);
     new_items.push(evaluated);
   }
-  // A 2-item spec `{var, range}` whose `range` doesn't reduce to a concrete
-  // numeric value or list (e.g. it still contains a free symbol like
-  // `Range[y]`) is wrapped in Dynamic[…] so the menu updates as the host
-  // variable changes.
-  if new_items.len() == 2
-    && let needs_dynamic = match &new_items[1] {
-      Expr::Integer(_) | Expr::Real(_) | Expr::List(_) => false,
-      Expr::FunctionCall { name, .. } if name == "Dynamic" => false,
-      // Any other call (e.g. `RGBColor[0.49, 0, 0]`) only needs wrapping
-      // when it stayed symbolic after evaluation — i.e. it still mentions a
-      // free symbol such as another control's variable. A call that
-      // evaluated down to a concrete value is already stable and needs no
-      // live re-resolution.
-      Expr::FunctionCall { args, .. } => args.iter().any(expr_is_symbolic),
-      // A trailing control option such as `ControlType -> None` is not a
-      // range, so it must not be wrapped in Dynamic[…].
-      Expr::Rule { .. } | Expr::RuleDelayed { .. } => false,
-      // A bare control-type shorthand in the range position (`{{p, init},
-      // Locator}`, `{u, Slider}` …) selects the control; it is not a range.
-      Expr::Identifier(s)
-        if matches!(
-          s.as_str(),
-          "Locator"
-            | "Slider"
-            | "Slider2D"
-            | "VerticalSlider"
-            | "Manipulator"
-            | "InputField"
-            | "PopupMenu"
-            | "SetterBar"
-            | "RadioButton"
-            | "RadioButtonBar"
-            | "TogglerBar"
-            | "Checkbox"
-            | "ColorSlider"
-            | "ColorSetter"
-            | "IntervalSlider"
-            | "Animator"
-            | "Trigger"
-            | "None"
-            | "Automatic"
-        ) =>
-      {
-        false
-      }
-      _ => true,
-    }
-    && needs_dynamic
-  {
-    let range = new_items.pop().unwrap();
-    new_items.push(call1("Dynamic", range));
-  }
   Expr::List(new_items.into())
 }
 
-/// Held evaluation of a standalone `Control[…]` expression. Like Manipulate,
-/// Control holds its argument and, in a text front-end, echoes itself back
-/// with the variable spec's bounds evaluated (`Control[{x, 0, 2 Pi}]` →
-/// `Control[{x, 0, 2 Pi}]` with `2 Pi` reduced). The Playground / Studio
-/// front-ends detect the held `Control[…]` and render an interactive
-/// control widget (see `extract_control_spec`).
+/// Held evaluation of a standalone `Control[…]` expression. `Control` holds
+/// its argument, and in a text front-end echoes itself back unchanged
+/// (`Control[{x, 0, 2 Pi}]`). The Playground / Studio front-ends detect the
+/// held `Control[…]` and render an interactive control widget (see
+/// `extract_control_spec`).
 pub fn control_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let mut out_args: Vec<Expr> = Vec::with_capacity(args.len());
-  if let Some(first) = args.first() {
-    match first {
-      Expr::List(items) if !items.is_empty() => {
-        out_args.push(process_manipulate_var_spec(items, &[]));
-      }
-      other => out_args.push(other.clone()),
-    }
-  }
-  // Any trailing options pass through unchanged.
-  for extra in args.iter().skip(1) {
-    out_args.push(extra.clone());
-  }
-  Ok(call("Control", out_args))
+  Ok(call("Control", args.to_vec()))
 }
 
 // ─────────────────────────────────────────────────────────────────

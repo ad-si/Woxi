@@ -876,6 +876,76 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_manipulate_echo_normalizes_control_specs() {
+    // A bare control type echoes as the `ControlType -> …` option it stands
+    // for, and a spec giving nothing else gets that type's default values.
+    clear_state();
+    for (code, echo) in [
+      (
+        "Manipulate[x, {x, 0, 1, Slider}]",
+        "Manipulate[x, {x, 0, 1, ControlType -> Slider}]",
+      ),
+      (
+        "Manipulate[x, {x, Slider}]",
+        "Manipulate[x, {x, 0, 1, ControlType -> Slider}]",
+      ),
+      (
+        "Manipulate[p, {{p, {0, 0}}, Locator}]",
+        "Manipulate[p, {{p, {0, 0}}, Automatic, ControlType -> Locator}]",
+      ),
+      (
+        "Manipulate[x, {{x, 5}, None}]",
+        "Manipulate[x, {{x, 5}, 0, ControlType -> None}]",
+      ),
+      (
+        "Manipulate[x, {x, InputField}]",
+        "Manipulate[x, {x, ControlType -> InputField}]",
+      ),
+      (
+        "Manipulate[x, {{x, 1}, PopupMenu}]",
+        "Manipulate[x, {{x, 1}, {True, False, Automatic}, \
+         ControlType -> PopupMenu}]",
+      ),
+      (
+        "Manipulate[x, {x, Checkbox}]",
+        "Manipulate[x, {x, {True, False}, ControlType -> Checkbox}]",
+      ),
+      // `Automatic` is not a control type to spell out.
+      (
+        "Manipulate[x, {x, 0, 1, Automatic}]",
+        "Manipulate[x, {x, 0, 1, Automatic}]",
+      ),
+      // The initial value is evaluated; the label is not.
+      (
+        "Manipulate[x, {{x, 1 + 1, \"a\"}, 0, 5}]",
+        "Manipulate[x, {{x, 2, a}, 0, 5}]",
+      ),
+      (
+        "Manipulate[x, {{x, Red}, ColorSlider}]",
+        "Manipulate[x, {{x, RGBColor[1, 0, 0]}, Gray, \
+         ControlType -> ColorSlider}]",
+      ),
+      // Only a range naming a sibling control is wrapped in Dynamic.
+      ("Manipulate[x, {x, foo}]", "Manipulate[x, {x, foo}]"),
+    ] {
+      assert_eq!(interpret(code).unwrap(), echo, "{code}");
+    }
+  }
+
+  #[test]
+  fn test_control_is_held() {
+    clear_state();
+    assert_eq!(
+      interpret("Control[{x, 0, 2 Pi}]").unwrap(),
+      "Control[{x, 0, 2*Pi}]"
+    );
+    assert_eq!(
+      interpret("Control[{x, 0, 1, Slider}]").unwrap(),
+      "Control[{x, 0, 1, Slider}]"
+    );
+  }
+
+  #[test]
   fn test_expression_then_comment() {
     // Expression followed by comment should evaluate the expression
     clear_state();
