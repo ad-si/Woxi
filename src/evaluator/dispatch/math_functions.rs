@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 use crate::functions::math_ast::{
   expr_to_rational, gcd_i128, gcd_u64, make_rational, make_sqrt, rat_reduce,
@@ -795,7 +794,7 @@ pub fn dispatch_math_functions(
               crate::functions::math_ast::data_distribution_moment(da, 2)
             {
               // Var = E[x^2] - mean^2
-              let m_2 = call("Power", vec![m, Expr::Integer(2)]);
+              let m_2 = pow(m, Expr::Integer(2));
               let var = crate::evaluator::evaluate_expr_to_expr(&call(
                 "Plus",
                 vec![m2, call("Times", vec![Expr::Integer(-1), m_2])],
@@ -1479,7 +1478,7 @@ pub fn dispatch_math_functions(
       }
       if matches!(&args[0], Expr::Integer(1)) {
         let neg = |z: &Expr| call("Times", vec![Expr::Integer(-1), z.clone()]);
-        let exp_neg = |z: &Expr| call("Power", vec![const_expr("E"), neg(z)]);
+        let exp_neg = |z: &Expr| pow(const_expr("E"), neg(z));
         let diff = minus2(exp_neg(&args[1]), exp_neg(&args[2]));
         return Some(crate::evaluator::evaluate_expr_to_expr(&diff));
       }
@@ -2465,10 +2464,7 @@ pub fn dispatch_math_functions(
       };
       let mantissa = call(
         "Times",
-        vec![
-          args[0].clone(),
-          call("Power", vec![base_expr, Expr::Integer(-e)]),
-        ],
+        vec![args[0].clone(), pow(base_expr, Expr::Integer(-e))],
       );
       let mantissa_eval =
         crate::evaluator::evaluate_expr_to_expr(&mantissa).unwrap_or(mantissa);
@@ -4069,12 +4065,9 @@ pub fn dispatch_math_functions(
           .iter()
           .zip(v.iter())
           .map(|(ui, vi)| {
-            call(
-              "Power",
-              vec![
-                call("Plus", vec![ui.clone(), neg(vi.clone())]),
-                Expr::Integer(2),
-              ],
+            pow(
+              call("Plus", vec![ui.clone(), neg(vi.clone())]),
+              Expr::Integer(2),
             )
           })
           .collect();
@@ -4083,10 +4076,7 @@ pub fn dispatch_math_functions(
         let mean_u = call1("Mean", Expr::List(u.clone()));
         let mean_v = call1("Mean", Expr::List(v.clone()));
         let sq = |x: Expr, m: Expr| {
-          call(
-            "Power",
-            vec![call("Plus", vec![x, neg(m)]), Expr::Integer(2)],
-          )
+          pow(call("Plus", vec![x, neg(m)]), Expr::Integer(2))
         };
         let var_u: Vec<Expr> =
           u.iter().map(|ui| sq(ui.clone(), mean_u.clone())).collect();
@@ -4105,10 +4095,7 @@ pub fn dispatch_math_functions(
             call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
             call(
               "Times",
-              vec![
-                numerator,
-                call("Power", vec![denominator, Expr::Integer(-1)]),
-              ],
+              vec![numerator, pow(denominator, Expr::Integer(-1))],
             ),
           ],
         );
@@ -4268,8 +4255,8 @@ pub fn dispatch_math_functions(
                 tan.clone(),
                 v_proj[i].clone(),
                 n_vec[j].clone(),
-                call("Power", vec![sqrt_vpp.clone(), Expr::Integer(-1)]),
-                call("Power", vec![sqrt_nn.clone(), Expr::Integer(-1)]),
+                pow(sqrt_vpp.clone(), Expr::Integer(-1)),
+                pow(sqrt_nn.clone(), Expr::Integer(-1)),
               ],
             );
             // wolframscript reports each entry over a common denominator
@@ -4516,7 +4503,7 @@ pub fn dispatch_math_functions(
         && !is_zero_literal(&operands[1])
       {
         let rhs = operands[1].clone();
-        let inv = call("Power", vec![rhs.clone(), Expr::Integer(-1)]);
+        let inv = pow(rhs.clone(), Expr::Integer(-1));
         if let Some(divided) = apply_to_sides(&args[0], &inv, "Times")
           && let Ok(divided) = evaluate_expr_to_expr(&divided)
         {
@@ -4570,7 +4557,7 @@ pub fn dispatch_math_functions(
       if is_zero_literal(&args[1]) {
         return None;
       }
-      let inv = call("Power", vec![args[1].clone(), Expr::Integer(-1)]);
+      let inv = pow(args[1].clone(), Expr::Integer(-1));
       if let Some(result) = apply_to_sides(&args[0], &inv, "Times")
         && let Ok(scaled) = evaluate_expr_to_expr(&result)
       {
@@ -4937,7 +4924,7 @@ fn qgamma_ast(z_expr: &Expr, q_expr: &Expr) -> Result<Expr, InterpreterError> {
       .map(|j| match j {
         0 => Expr::Integer(1),
         1 => q_expr.clone(),
-        _ => call("Power", vec![q_expr.clone(), Expr::Integer(j)]),
+        _ => pow(q_expr.clone(), Expr::Integer(j)),
       })
       .collect();
     factors.push(call("Plus", terms));
@@ -5912,7 +5899,7 @@ fn power_split_real_imag(base: &Expr, exp: &Expr) -> Option<(Expr, Expr)> {
   {
     // Use the rewritten real part of the base, not the original: under
     // ComplexExpand Abs[x] becomes Sqrt[x^2], so Re[Abs[x]^2] = x^2.
-    return Some((call("Power", vec![b_re, exp.clone()]), Expr::Integer(0)));
+    return Some((pow(b_re, exp.clone()), Expr::Integer(0)));
   }
   // Positive real base with complex exponent:
   //   b^(a + I*c) = b^a · (Cos[c·Log[b]] + I·Sin[c·Log[b]]).
@@ -6066,7 +6053,7 @@ fn abs_complex_expand_rewrite(arg: &Expr) -> Option<Expr> {
   {
     let re_exp = call1("Re", exp);
     let re_exp = complex_expand_recursive(&re_exp);
-    return Some(call("Power", vec![base, re_exp]));
+    return Some(pow(base, re_exp));
   }
   // Abs[Log[w]] → Sqrt[Log[Abs[w]]^2 + Arg[w]^2]
   if let Expr::FunctionCall { name, args } = arg
@@ -6709,7 +6696,7 @@ fn plus(terms: &[Expr]) -> Expr {
 }
 
 fn power(base: Expr, exp: Expr) -> Expr {
-  call("Power", vec![base, exp])
+  pow(base, exp)
 }
 
 fn log_of(arg: Expr) -> Expr {
@@ -6930,10 +6917,9 @@ fn pair_sides(relation: &Expr, second: &Expr, op: SideOp) -> Option<Expr> {
         vec![a.clone(), call("Times", vec![Expr::Integer(-1), b.clone()])],
       ),
       SideOp::Multiply => call("Times", vec![a.clone(), b.clone()]),
-      SideOp::Divide => call(
-        "Times",
-        vec![a.clone(), call("Power", vec![b.clone(), Expr::Integer(-1)])],
-      ),
+      SideOp::Divide => {
+        call("Times", vec![a.clone(), pow(b.clone(), Expr::Integer(-1))])
+      }
     }
   };
 

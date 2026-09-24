@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 use crate::functions::math_ast::{make_sqrt, rat_reduce};
 
@@ -1246,7 +1245,7 @@ pub fn dispatch_linear_algebra_functions(
       {
         let times = |a: Expr, b: Expr| call("Times", vec![a, b]);
         let plus = |a: Expr, b: Expr| call("Plus", vec![a, b]);
-        let sq = |a: Expr| call("Power", vec![a, Expr::Integer(2)]);
+        let sq = |a: Expr| pow(a, Expr::Integer(2));
         let neg = |a: Expr| times(Expr::Integer(-1), a);
         let (ux, uy, vx, vy) =
           (u[0].clone(), u[1].clone(), v[0].clone(), v[1].clone());
@@ -1257,8 +1256,7 @@ pub fn dispatch_linear_algebra_functions(
           neg(times(uy.clone(), vx.clone())),
         );
         let normsq = times(plus(sq(ux), sq(uy)), plus(sq(vx), sq(vy)));
-        let inv_d =
-          call("Power", vec![call1("Sqrt", normsq), Expr::Integer(-1)]);
+        let inv_d = pow(call1("Sqrt", normsq), Expr::Integer(-1));
         let cos = times(dot, inv_d.clone());
         let sin = times(cross, inv_d);
         let mat = Expr::List(
@@ -1544,7 +1542,7 @@ pub fn dispatch_linear_algebra_functions(
       {
         let times = |a: Expr, b: Expr| call("Times", vec![a, b]);
         let plus = |a: Expr, b: Expr| call("Plus", vec![a, b]);
-        let sq = |e: &Expr| call("Power", vec![e.clone(), Expr::Integer(2)]);
+        let sq = |e: &Expr| pow(e.clone(), Expr::Integer(2));
         let sqrt = |e: Expr| call1("Sqrt", e);
         let dot = plus(
           times(u[0].clone(), v[0].clone()),
@@ -1858,7 +1856,7 @@ pub fn dispatch_linear_algebra_functions(
         Some(Expr::List(c)) if c.len() == n => Some(c.clone()),
         Some(_) => return uneval(),
       };
-      let power = |b: Expr, e: i128| call("Power", vec![b, Expr::Integer(e)]);
+      let power = |b: Expr, e: i128| pow(b, Expr::Integer(e));
       let times = |terms: Vec<Expr>| call("Times", terms);
       let plus = |terms: Vec<Expr>| call("Plus", terms);
       let vv = plus(v.iter().map(|vi| power(vi.clone(), 2)).collect());
@@ -1924,7 +1922,7 @@ pub fn dispatch_linear_algebra_functions(
       if n == 0 {
         return unevaluated();
       }
-      let power = |b: Expr, e: i128| call("Power", vec![b, Expr::Integer(e)]);
+      let power = |b: Expr, e: i128| pow(b, Expr::Integer(e));
       let times = |terms: Vec<Expr>| call("Times", terms);
       let plus = |terms: Vec<Expr>| call("Plus", terms);
       // v·v
@@ -1994,14 +1992,12 @@ pub fn dispatch_linear_algebra_functions(
         let d = e.len();
         // Norm[v] = Sqrt[Plus @@ (v^2)]
         let norm = |v: &[Expr]| -> Expr {
-          let squares: Vec<Expr> = v
-            .iter()
-            .map(|c| call("Power", vec![c.clone(), Expr::Integer(2)]))
-            .collect();
+          let squares: Vec<Expr> =
+            v.iter().map(|c| pow(c.clone(), Expr::Integer(2))).collect();
           call1("Sqrt", call("Plus", squares))
         };
         let times = |terms: Vec<Expr>| call("Times", terms);
-        let recip = |x: Expr| call("Power", vec![x, Expr::Integer(-1)]);
+        let recip = |x: Expr| pow(x, Expr::Integer(-1));
         // nhat = n / Norm[n]
         let norm_n = norm(n);
         let nhat: Vec<Expr> = n
@@ -2804,10 +2800,10 @@ pub fn dispatch_linear_algebra_functions(
       {
         let times = |terms: Vec<Expr>| call("Times", terms);
         let plus = |terms: Vec<Expr>| call("Plus", terms);
-        let sq = |a: Expr| call("Power", vec![a, Expr::Integer(2)]);
+        let sq = |a: Expr| pow(a, Expr::Integer(2));
         let vdotv = plus(v.iter().cloned().map(sq).collect());
         let s_minus_1 = plus(vec![args[0].clone(), Expr::Integer(-1)]);
-        let inv = call("Power", vec![vdotv, Expr::Integer(-1)]);
+        let inv = pow(vdotv, Expr::Integer(-1));
         let factor = times(vec![s_minus_1, inv]);
         let n = v.len();
         let rows: Vec<Expr> = (0..n)
@@ -2943,7 +2939,7 @@ pub fn dispatch_linear_algebra_functions(
         let n = n as usize;
         let int = Expr::Integer;
         let m_one_half = call("Rational", vec![int(-1), int(2)]);
-        let inv_sqrt_n = call("Power", vec![int(n as i128), m_one_half]);
+        let inv_sqrt_n = pow(int(n as i128), m_one_half);
         let mut rows = Vec::with_capacity(n);
         for j in 0..n {
           let mut row = Vec::with_capacity(n);
@@ -3285,7 +3281,7 @@ fn lu_decomposition_ast(mat: &Expr) -> Result<Expr, InterpreterError> {
         "Times",
         vec![
           matrix[i][k].clone(),
-          call("Power", vec![pivot_val.clone(), Expr::Integer(-1)]),
+          pow(pivot_val.clone(), Expr::Integer(-1)),
         ],
       ))
       .unwrap_or(matrix[i][k].clone());
@@ -3782,7 +3778,7 @@ fn matrix_minimal_polynomial(
           let xpow = if i == 1 {
             x.clone()
           } else {
-            call("Power", vec![x.clone(), Expr::Integer(i as i128)])
+            pow(x.clone(), Expr::Integer(i as i128))
           };
           call("Times", vec![coeff, xpow])
         };
@@ -4202,7 +4198,7 @@ fn rotation_transform_3d_axis(
   let times = |a: Expr, b: Expr| call("Times", vec![a, b]);
   let plus = |xs: Vec<Expr>| call("Plus", xs);
   let neg = |e: Expr| times(int(-1), e);
-  let sq = |e: &Expr| call("Power", vec![e.clone(), int(2)]);
+  let sq = |e: &Expr| pow(e.clone(), int(2));
 
   // Normalized axis u_i = axis_i / Sqrt[sum axis_i^2].
   let norm = call1("Sqrt", plus(axis.iter().map(sq).collect()));
@@ -4703,10 +4699,8 @@ fn lyapunov_symbolic_diagonal(
         ));
         return Some(Ok(unevaluated(name, args)));
       }
-      let entry = call(
-        "Times",
-        vec![cij.clone(), call("Power", vec![denom, Expr::Integer(-1)])],
-      );
+      let entry =
+        call("Times", vec![cij.clone(), pow(denom, Expr::Integer(-1))]);
       match crate::evaluator::evaluate_expr_to_expr(&entry) {
         Ok(e) => out_cells.push(e),
         Err(e) => return Some(Err(e)),

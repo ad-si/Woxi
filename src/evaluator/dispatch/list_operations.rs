@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 use crate::functions::list_helpers_ast;
 use crate::functions::string_ast::{Overlaps, parse_overlaps_option};
@@ -1549,7 +1548,7 @@ fn weighted_data_stat(
     "Variance" | "StandardDeviation" => {
       // Σ wᵢ (xᵢ − μ)².
       let diff = |x| call("Subtract", vec![x, mean.clone()]);
-      let sq = |x| call("Power", vec![x, Expr::Integer(2)]);
+      let sq = |x| pow(x, Expr::Integer(2));
       let sq_sum = eval_plus(
         data
           .iter()
