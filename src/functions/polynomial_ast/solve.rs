@@ -155,6 +155,7 @@ fn is_precision_spec(expr: &Expr) -> bool {
 /// equation contains, the way `Solve[equation]` does.
 pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let _head = IfunHead::new("NSolve");
+  let _nsolve = NSolveScope::new();
   // `NSolve[poly, x]` is `NSolve[poly == 0, x]`, and a trailing precision
   // argument is not a domain — normalize both away before solving.
   let normalized_owned: Vec<Expr>;
@@ -187,6 +188,11 @@ pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // Fall back to symbolic solve + numerize
   let symbolic = solve_ast(args)?;
+  // What Solve leaves unevaluated, NSolve leaves unevaluated too — under
+  // its own head.
+  if matches!(&symbolic, Expr::FunctionCall { name, .. } if name == "Solve") {
+    return Ok(unevaluated("NSolve", args));
+  }
   let numerized = nsolve_numerize(&symbolic)?;
   // A `Reals` domain keeps only the real solutions. It is the optional
   // third argument in the ordinary `NSolve[eqns, vars, Reals]` form, but
@@ -503,6 +509,17 @@ fn try_nsolve_pure_power(
 
 /// Principal-branch complex power: (a+bi)^(c+di) = exp((c+di) * Log[a+bi]).
 pub(crate) fn complex_pow(a: f64, b: f64, c: f64, d: f64) -> (f64, f64) {
+  // A real power of a real base stays on the real line: going through
+  // exp(c log a) costs an ulp or two (`Sqrt[2]` came out as
+  // 1.414213562373095 instead of 1.4142135623730951).
+  if b == 0.0 && d == 0.0 {
+    if a > 0.0 {
+      return (if c == 0.5 { a.sqrt() } else { a.powf(c) }, 0.0);
+    }
+    if a < 0.0 && c.fract() == 0.0 && c.abs() < i32::MAX as f64 {
+      return (a.powi(c as i32), 0.0);
+    }
+  }
   let abs_z = (a * a + b * b).sqrt();
   if abs_z == 0.0 {
     return (0.0, 0.0);
@@ -1198,25 +1215,112 @@ fn is_solve_constant(s: &str) -> bool {
 /// Auto-detect the variable argument for a Solve/NSolve call that gave no
 /// explicit variable list — the one-argument form `Solve[eqns]` and the
 /// two-argument domain-only form `Solve[eqns, dom]` both resolve to this.
-/// Only the unambiguous cases are handled — a single variable, or a
-/// determined/overdetermined system (variables <= equations). An
-/// underdetermined system (which wolframscript solves with a non-obvious
-/// variable-selection heuristic) returns `None`, leaving the call
-/// unevaluated.
+/// The variables come back in canonical order, as Wolfram lists them; an
+/// underdetermined system gets all of them too and is solved for the ones
+/// `select_underdetermined_vars` / the linear solver pick.
 fn auto_detect_solve_vars(eqns: &Expr) -> Option<Expr> {
   let mut vars = Vec::new();
   collect_solve_vars(eqns, &mut vars);
-  let n_eqns = match eqns {
-    Expr::List(items) => items.len(),
-    _ => 1,
-  };
-  if vars.len() == 1 {
-    Some(Expr::Identifier(vars.remove(0)))
-  } else if vars.len() >= 2 && vars.len() <= n_eqns {
-    Some(Expr::List(vars.into_iter().map(Expr::Identifier).collect()))
-  } else {
-    None
+  if solve_equalities(eqns).is_empty() {
+    return None;
   }
+  vars.sort_by(|a, b| {
+    crate::functions::list_helpers_ast::sorting::canonical_cmp(
+      &Expr::Identifier(a.clone()),
+      &Expr::Identifier(b.clone()),
+    )
+  });
+  match vars.len() {
+    0 => None,
+    1 => Some(Expr::Identifier(vars.remove(0))),
+    _ => Some(Expr::List(vars.into_iter().map(Expr::Identifier).collect())),
+  }
+}
+
+/// The plain equations among `eqns` (a list, a conjunction, or a single
+/// equation) — the constraints that each pin down one unknown.
+fn solve_equalities(eqns: &Expr) -> Vec<Expr> {
+  flatten_and_constraints(std::slice::from_ref(eqns))
+    .into_iter()
+    .flat_map(|e| thread_list_equation(&e).unwrap_or_else(|| vec![e]))
+    .filter(|e| {
+      matches!(
+        e,
+        Expr::Comparison { operators, .. }
+          if operators.len() == 1 && operators[0] == ComparisonOp::Equal
+      )
+    })
+    .collect()
+}
+
+/// Which variables an underdetermined nonlinear system is solved for: one
+/// per equation, the rest staying free parameters. Like Wolfram, the choice
+/// prefers a variable every equation is linear in with a coefficient free
+/// of the other unknowns (`x + y^2 == 2` is solved for `x`, `a x + b == 0`
+/// over `{a, b, x}` for `b`), then the variable of lowest degree
+/// (`x^2 - y^3 == 1` for `x`), and among equals the later variable
+/// (`x y == 1` for `y`). The chosen variables keep their order in `vars`.
+fn select_underdetermined_vars(eqs: &[Expr], vars: &[String]) -> Vec<String> {
+  let wanted = eqs.len().min(vars.len());
+  let polys: Vec<Expr> = eqs
+    .iter()
+    .filter_map(|eq| match eq {
+      Expr::Comparison { operands, .. } if operands.len() == 2 => Some(
+        expand_and_combine(&minus2(operands[0].clone(), operands[1].clone())),
+      ),
+      _ => None,
+    })
+    .collect();
+  // (not a clean linear unknown, degree), lower is preferred.
+  let rank = |v: &String| -> (bool, i128) {
+    let mut degree = 0;
+    let mut clean = true;
+    for poly in &polys {
+      match crate::functions::polynomial_ast::max_power_int(poly, v) {
+        Some(d) if d >= 0 => {
+          degree = degree.max(d);
+          if d == 1 {
+            let coeff =
+              crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+                name: "Coefficient".to_string(),
+                args: vec![
+                  poly.clone(),
+                  Expr::Identifier(v.clone()),
+                  Expr::Integer(1),
+                ]
+                .into(),
+              });
+            clean &= matches!(coeff, Ok(c) if !is_expr_zero(&c)
+              && vars.iter().all(|w| is_constant_wrt(&c, w)));
+          } else if d > 1 {
+            clean = false;
+          }
+        }
+        _ => {
+          degree = i128::MAX;
+          clean = false;
+        }
+      }
+    }
+    // A variable no equation mentions cannot be solved for.
+    if degree == 0 {
+      return (true, i128::MAX);
+    }
+    (!(clean && degree == 1), degree)
+  };
+  let mut ranked: Vec<(usize, (bool, i128))> =
+    vars.iter().enumerate().map(|(i, v)| (i, rank(v))).collect();
+  // Stable sort on the rank with the later variable first among equals.
+  ranked.reverse();
+  ranked.sort_by_key(|&(_, r)| r);
+  let chosen: Vec<usize> =
+    ranked.iter().take(wanted).map(|&(i, _)| i).collect();
+  vars
+    .iter()
+    .enumerate()
+    .filter(|(i, _)| chosen.contains(i))
+    .map(|(_, v)| v.clone())
+    .collect()
 }
 
 /// Collect the free variable symbols of an equation (or list/And of
@@ -1403,10 +1507,33 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
-  let solutions = match modulus {
-    Some(n) => solve_modular(&positional, n, args)?,
-    None => solve_core(&positional)?,
-  };
+  let depth = SOLVE_DEPTH.with(|d| {
+    let v = d.get();
+    d.set(v + 1);
+    v
+  });
+  let solutions = solve_with_var_selection(&positional, modulus, args);
+  SOLVE_DEPTH.with(|d| d.set(depth));
+  let solutions = solutions?;
+  // The outermost call reports when the equations left some of the
+  // explicitly requested variables free.
+  if depth == 0
+    && !in_nsolve()
+    && let Some(Expr::List(requested)) = positional.get(1)
+    && let Expr::List(sols) = &solutions
+    && let Some(Expr::List(first)) = sols.first()
+    && requested.iter().any(|v| {
+      !first.iter().any(|r| {
+        matches!(r, Expr::Rule { pattern, .. }
+          if crate::evaluator::pattern_matching::expr_equal(pattern, v))
+      })
+    })
+  {
+    let head = IFUN_HEAD.with(|h| *h.borrow());
+    crate::emit_message(&format!(
+      "{head}::svars: Equations may not give solutions for all \"solve\" variables."
+    ));
+  }
   // MaxRoots keeps the leading solutions of a solution list; anything else
   // (an unevaluated call, a conditional form) passes through untouched.
   match (max_roots, &solutions) {
@@ -1414,6 +1541,82 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Ok(Expr::List(items.iter().take(n).cloned().collect()))
     }
     _ => Ok(solutions),
+  }
+}
+
+thread_local! {
+  /// How deeply `solve_ast` is nested; only the outermost call reports
+  /// `svars`.
+  static SOLVE_DEPTH: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+  /// How many `NSolve` calls are in progress. NSolve does not share Solve's
+  /// handling of underdetermined systems: it solves a linear one for its
+  /// *first* variables and reports no `svars`.
+  static NSOLVE_DEPTH: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Marks an `NSolve` in progress for as long as it is alive.
+struct NSolveScope;
+
+impl NSolveScope {
+  fn new() -> Self {
+    NSOLVE_DEPTH.with(|d| d.set(d.get() + 1));
+    Self
+  }
+}
+
+impl Drop for NSolveScope {
+  fn drop(&mut self) {
+    NSOLVE_DEPTH.with(|d| d.set(d.get() - 1));
+  }
+}
+
+fn in_nsolve() -> bool {
+  NSOLVE_DEPTH.with(std::cell::Cell::get) > 0
+}
+
+/// Solve with the explicit variable list narrowed first when the system is
+/// underdetermined and nonlinear (see `select_underdetermined_vars`); a
+/// linear one goes to the linear solver, which picks its own pivots.
+fn solve_with_var_selection(
+  positional: &[Expr],
+  modulus: Option<i128>,
+  original: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  if modulus.is_none()
+    && !in_nsolve()
+    && positional.len() >= 2
+    && let Expr::List(var_exprs) = &positional[1]
+    && var_exprs.len() >= 2
+    && let Some(vars) = var_exprs
+      .iter()
+      .map(|v| match v {
+        Expr::Identifier(n) => Some(n.clone()),
+        _ => None,
+      })
+      .collect::<Option<Vec<String>>>()
+  {
+    let eqs = solve_equalities(&positional[0]);
+    let constraints =
+      flatten_and_constraints(std::slice::from_ref(&positional[0]));
+    // Only a system of plain equations: inequalities narrow the solution
+    // set differently.
+    if !eqs.is_empty()
+      && eqs.len() < vars.len()
+      && eqs.len() == constraints.len()
+    {
+      if let Some(result) = solve_linear_symbolic(&eqs, &vars) {
+        return Ok(result);
+      }
+      let chosen = select_underdetermined_vars(&eqs, &vars);
+      let mut narrowed = positional.to_vec();
+      narrowed[1] =
+        Expr::List(chosen.into_iter().map(Expr::Identifier).collect());
+      return solve_core(&narrowed);
+    }
+  }
+  match modulus {
+    Some(n) => solve_modular(positional, n, original),
+    None => solve_core(positional),
   }
 }
 
@@ -11080,49 +11283,66 @@ fn solve_linear_symbolic(eqs: &[Expr], var_names: &[String]) -> Option<Expr> {
 
   let nrows = matrix.len();
   let ncols = n + 1;
-  let mut pivot_row = 0;
-  let mut pivot_cols: Vec<(usize, usize)> = Vec::new();
 
-  for col in 0..n {
-    if pivot_row >= nrows {
-      break;
-    }
-    let found = (pivot_row..nrows).find(|&r| !is_expr_zero(&matrix[r][col]));
-    let Some(swap_row) = found else { continue };
-    if swap_row != pivot_row {
-      matrix.swap(pivot_row, swap_row);
-    }
-    pivot_cols.push((pivot_row, col));
-    let pivot = matrix[pivot_row][col].clone();
-
-    for row in 0..nrows {
-      if row == pivot_row {
-        continue;
+  // Gauss-Jordan elimination, trying the columns in `col_order` for pivots.
+  // Each pivot row is normalized so its pivot is 1; returns the reduced
+  // matrix and its `(row, col)` pivots.
+  let eliminate = |mut matrix: Vec<Vec<Expr>>,
+                   col_order: &mut dyn Iterator<Item = usize>|
+   -> (Vec<Vec<Expr>>, Vec<(usize, usize)>) {
+    let mut pivot_row = 0;
+    let mut pivot_cols: Vec<(usize, usize)> = Vec::new();
+    for col in col_order {
+      if pivot_row >= nrows {
+        break;
       }
-      let factor = matrix[row][col].clone();
-      if !is_expr_zero(&factor) {
+      let found = (pivot_row..nrows).find(|&r| !is_expr_zero(&matrix[r][col]));
+      let Some(swap_row) = found else { continue };
+      if swap_row != pivot_row {
+        matrix.swap(pivot_row, swap_row);
+      }
+      pivot_cols.push((pivot_row, col));
+      let pivot = matrix[pivot_row][col].clone();
+
+      for row in 0..nrows {
+        if row == pivot_row {
+          continue;
+        }
+        let factor = matrix[row][col].clone();
+        if !is_expr_zero(&factor) {
+          for j in 0..ncols {
+            let t1 = eval_entry(multiply_exprs(&pivot, &matrix[row][j]));
+            let t2 = eval_entry(multiply_exprs(&factor, &matrix[pivot_row][j]));
+            matrix[row][j] = eval_entry(minus2(t1, t2));
+          }
+        }
+      }
+      pivot_row += 1;
+    }
+    for &(row, col) in &pivot_cols {
+      let pivot = matrix[row][col].clone();
+      if !is_expr_zero(&pivot) {
         for j in 0..ncols {
-          let t1 = eval_entry(multiply_exprs(&pivot, &matrix[row][j]));
-          let t2 = eval_entry(multiply_exprs(&factor, &matrix[pivot_row][j]));
-          matrix[row][j] = eval_entry(minus2(t1, t2));
+          let entry = matrix[row][j].clone();
+          if !is_expr_zero(&entry) {
+            matrix[row][j] = eval_entry(solve_divide(&entry, &pivot));
+          }
         }
       }
     }
-    pivot_row += 1;
-  }
+    (matrix, pivot_cols)
+  };
 
-  // Normalize each pivot row by dividing by its pivot element
-  for &(row, col) in &pivot_cols {
-    let pivot = matrix[row][col].clone();
-    if !is_expr_zero(&pivot) {
-      for j in 0..ncols {
-        let entry = matrix[row][j].clone();
-        if !is_expr_zero(&entry) {
-          matrix[row][j] = eval_entry(solve_divide(&entry, &pivot));
-        }
-      }
-    }
+  let (mut reduced, mut pivot_cols) = eliminate(matrix.clone(), &mut (0..n));
+  let underdetermined = pivot_cols.len() < n;
+  if underdetermined && !in_nsolve() {
+    // Wolfram solves an underdetermined system for its *last* variables,
+    // keeping the earlier ones as the free parameters
+    // (`Solve[x + y == 2, {x, y}]` gives `y -> 2 - x`), so the pivots are
+    // searched for from the last column backwards.
+    (reduced, pivot_cols) = eliminate(matrix, &mut (0..n).rev());
   }
+  let matrix = reduced;
 
   // Check for inconsistency
   for row in 0..nrows {
@@ -11137,176 +11357,41 @@ fn solve_linear_symbolic(eqs: &[Expr], var_names: &[String]) -> Option<Expr> {
   let free_var_cols: Vec<usize> =
     (0..n).filter(|j| !pivot_var_cols.contains(j)).collect();
 
-  // Build solution expression for one parameterization:
-  // vars[pivot_col] = rhs - sum_fc(coeff_fc * vars[fc]) where fc are free cols.
-  // Rules are sorted by variable index to match Wolfram's output order.
-  let build_rules = |pivot_cols: &[(usize, usize)],
-                     free_var_cols: &[usize],
-                     matrix: &[Vec<Expr>]|
-   -> Vec<Expr> {
-    let mut rules = Vec::new();
-    // Sort pivot_cols by column index so rules appear in variable order
-    let mut sorted_pivots = pivot_cols.to_vec();
-    sorted_pivots.sort_by_key(|&(_, c)| c);
-    for &(row, col) in &sorted_pivots {
-      let mut rhs_expr = matrix[row][n].clone();
-      for &fc in free_var_cols {
-        let coeff = matrix[row][fc].clone();
-        if !is_expr_zero(&coeff) {
-          let term =
-            multiply_exprs(&coeff, &Expr::Identifier(var_names[fc].clone()));
-          let neg_term = negate_expr(&eval_entry(term));
-          rhs_expr = eval_entry(add_exprs(&rhs_expr, &neg_term));
-        }
+  // vars[pivot_col] = rhs - sum_fc(coeff_fc * vars[fc]) where fc are the
+  // free columns. Rules are sorted by variable index to match Wolfram's
+  // output order.
+  let mut sorted_pivots = pivot_cols.clone();
+  sorted_pivots.sort_by_key(|&(_, c)| c);
+  let mut rules = Vec::new();
+  for &(row, col) in &sorted_pivots {
+    let mut rhs_expr = matrix[row][n].clone();
+    for &fc in &free_var_cols {
+      let coeff = matrix[row][fc].clone();
+      if !is_expr_zero(&coeff) {
+        let term =
+          multiply_exprs(&coeff, &Expr::Identifier(var_names[fc].clone()));
+        let neg_term = negate_expr(&eval_entry(term));
+        rhs_expr = eval_entry(add_exprs(&rhs_expr, &neg_term));
       }
-      // Run the user-level Simplify so the RHS collapses forms like
-      // -1*(1 - E^3)/2 into (-1 + E^3)/2 (matching wolframscript).
-      let intermediate = eval_entry(rhs_expr);
-      let simplified_rhs = crate::functions::polynomial_ast::simplify_ast(
-        std::slice::from_ref(&intermediate),
-      )
-      .unwrap_or(intermediate);
-      rules.push(Expr::Rule {
-        pattern: Box::new(Expr::Identifier(var_names[col].clone())),
-        replacement: Box::new(simplified_rhs),
-      });
     }
-    rules
-  };
-
-  // Check if an expression contains rational (fractional) coefficients
-  fn has_fraction(e: &Expr) -> bool {
-    match e {
-      Expr::FunctionCall { name, args }
-        if name == "Rational" && args.len() == 2 =>
-      {
-        !matches!(&args[1], Expr::Integer(1))
-      }
-      Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        right,
-        ..
-      } => !matches!(right.as_ref(), Expr::Integer(1)),
-      Expr::BinaryOp { left, right, .. } => {
-        has_fraction(left) || has_fraction(right)
-      }
-      Expr::FunctionCall { args, .. } => args.iter().any(has_fraction),
-      Expr::UnaryOp { operand, .. } => has_fraction(operand),
-      _ => false,
-    }
+    let intermediate = eval_entry(rhs_expr);
+    // A parametrized solution keeps the elimination's term-by-term form
+    // (`3/2 - x/2`, `c/b - (a*x)/b`), as Wolfram's does. A unique one runs
+    // through the user-level Simplify so the RHS collapses forms like
+    // -1*(1 - E^3)/2 into (-1 + E^3)/2 (matching wolframscript).
+    let rhs = if underdetermined {
+      intermediate
+    } else {
+      crate::functions::polynomial_ast::simplify_ast(std::slice::from_ref(
+        &intermediate,
+      ))
+      .unwrap_or(intermediate)
+    };
+    rules.push(Expr::Rule {
+      pattern: Box::new(Expr::Identifier(var_names[col].clone())),
+      replacement: Box::new(rhs),
+    });
   }
-
-  let rules = build_rules(&pivot_cols, &free_var_cols, &matrix);
-
-  // If any rule has fractional coefficients, try column swaps to eliminate fractions.
-  // This matches Wolfram's convention of preferring integer-coefficient parameterizations.
-  let rules = if free_var_cols.is_empty()
-    || !rules.iter().any(|r| {
-      if let Expr::Rule { replacement, .. } = r {
-        has_fraction(replacement)
-      } else {
-        false
-      }
-    }) {
-    rules
-  } else {
-    // Try each (free_col, pivot_row) swap.
-    // A swap of free column fc with pivot at (row r, col pc_r) is "integer-clean" if:
-    //   for all other pivot rows r', rref[r'][fc] / rref[r][fc] is integer.
-    let mut best_rules = rules;
-    'swap_search: for fi in 0..free_var_cols.len() {
-      let fc = free_var_cols[fi];
-      for pi in 0..pivot_cols.len() {
-        let (pivot_r, pivot_c) = pivot_cols[pi];
-        let swap_coeff = matrix[pivot_r][fc].clone();
-        if is_expr_zero(&swap_coeff) {
-          continue;
-        }
-        // Check that for all other pivot rows, the ratio is integer
-        let mut all_ratios_integer = true;
-        for (pi2, &(r2, _)) in pivot_cols.iter().enumerate() {
-          if pi2 == pi {
-            continue;
-          }
-          let other_coeff = &matrix[r2][fc];
-          if is_expr_zero(other_coeff) {
-            continue;
-          }
-          // Check if other_coeff / swap_coeff is integer
-          let ratio = eval_entry(solve_divide(other_coeff, &swap_coeff));
-          if has_fraction(&ratio) {
-            all_ratios_integer = false;
-            break;
-          }
-        }
-        if !all_ratios_integer {
-          continue;
-        }
-        // Perform the column swap: fc becomes a pivot, pivot_c becomes free.
-        // New pivot rows = same as before but row pi now solves for vars[fc] instead of vars[pivot_c].
-        // New free cols = (free_var_cols with fc replaced by pivot_c).
-        let new_pivot_cols: Vec<(usize, usize)> = pivot_cols
-          .iter()
-          .enumerate()
-          .map(|(i, &(r, c))| if i == pi { (r, fc) } else { (r, c) })
-          .collect();
-        let new_free_var_cols: Vec<usize> = free_var_cols
-          .iter()
-          .map(|&f| if f == fc { pivot_c } else { f })
-          .collect();
-        // Rebuild the RREF for the new pivot structure.
-        // We need to "pivot" column fc out of row pi:
-        // For row pi: new_matrix[pi][fc] = 1, others in col fc = 0, vars[pivot_c] is free.
-        // Re-express: row pi → divide by swap_coeff, then eliminate fc from all other rows.
-        let mut new_matrix = matrix.clone();
-        // Normalize row pi: divide by swap_coeff
-        {
-          let sc = new_matrix[pivot_r][fc].clone();
-          for j in 0..ncols {
-            let v = new_matrix[pivot_r][j].clone();
-            if !is_expr_zero(&v) {
-              new_matrix[pivot_r][j] = eval_entry(solve_divide(&v, &sc));
-            }
-          }
-          // After dividing, old pivot col entry: divide pivot_c col
-          // (was 1, now 1/swap_coeff * 1 = 1/swap_coeff... wait)
-          // Actually the matrix had rref[pi][pivot_c] = 1 (since it was normalized after GE)
-          // and rref[pi][fc] = swap_coeff.
-          // After dividing row pi by swap_coeff: rref[pi][fc] = 1, rref[pi][pivot_c] = 1/swap_coeff.
-        }
-        // Eliminate fc from all other pivot rows
-        for (pi2, &(r2, _)) in pivot_cols.iter().enumerate() {
-          if pi2 == pi {
-            continue;
-          }
-          let factor = new_matrix[r2][fc].clone();
-          if is_expr_zero(&factor) {
-            continue;
-          }
-          for j in 0..ncols {
-            let t1 = new_matrix[r2][j].clone();
-            let t2 =
-              eval_entry(multiply_exprs(&factor, &new_matrix[pivot_r][j]));
-            new_matrix[r2][j] = eval_entry(minus2(t1, t2));
-          }
-        }
-        let new_rules =
-          build_rules(&new_pivot_cols, &new_free_var_cols, &new_matrix);
-        let any_fraction = new_rules.iter().any(|r| {
-          if let Expr::Rule { replacement, .. } = r {
-            has_fraction(replacement)
-          } else {
-            false
-          }
-        });
-        if !any_fraction {
-          best_rules = new_rules;
-          break 'swap_search;
-        }
-      }
-    }
-    best_rules
-  };
 
   Some(Expr::List(vec![Expr::List(rules.into())].into()))
 }

@@ -4764,11 +4764,101 @@ mod solve {
   }
 
   #[test]
-  fn one_argument_underdetermined_stays_unevaluated() {
-    // An underdetermined system uses a non-obvious variable-selection
-    // heuristic in wolframscript, so Woxi leaves it unevaluated rather than
-    // guessing the wrong variable.
-    assert_eq!(interpret("Solve[x + y == 3]").unwrap(), "Solve[x + y == 3]");
+  fn one_argument_underdetermined_solves_for_last_variables() {
+    // An underdetermined system is solved for its last variables (in
+    // canonical order), the earlier ones staying free parameters. No
+    // `svars` message: no variables were asked for.
+    assert_eq!(interpret("Solve[x + y == 3]").unwrap(), "{{y -> 3 - x}}");
+    assert!(woxi::get_captured_messages_raw().is_empty());
+    assert_eq!(
+      interpret("Solve[{x + y == 2, x - y == z}]").unwrap(),
+      "{{y -> 2 - x, z -> -2 + 2*x}}"
+    );
+    assert_eq!(
+      interpret("Solve[{y + z == 1, y + z + x == 2}]").unwrap(),
+      "{{x -> 1, z -> 1 - y}}"
+    );
+    // Nonlinear: a clean linear unknown first, then the lowest degree,
+    // then the later variable.
+    assert_eq!(
+      interpret("Solve[x + y^2 == 2]").unwrap(),
+      "{{x -> 2 - y^2}}"
+    );
+    assert_eq!(interpret("Solve[a*x + b == 0]").unwrap(), "{{b -> -(a*x)}}");
+    assert_eq!(interpret("Solve[x*y == 1]").unwrap(), "{{y -> x^(-1)}}");
+    assert_eq!(
+      interpret("Solve[x^2 - y^3 == 1]").unwrap(),
+      "{{x -> -Sqrt[1 + y^3]}, {x -> Sqrt[1 + y^3]}}"
+    );
+    // Rules come out in canonical variable order, not appearance order.
+    assert_eq!(
+      interpret("Solve[{y == 1, x == 2}]").unwrap(),
+      "{{x -> 2, y -> 1}}"
+    );
+    // A conjunction counts as several equations.
+    assert_eq!(
+      interpret("Solve[x^2 + y^2 == 1 && x == y]").unwrap(),
+      "{{x -> -(1/Sqrt[2]), y -> -(1/Sqrt[2])}, {x -> 1/Sqrt[2], y -> 1/Sqrt[2]}}"
+    );
+  }
+
+  #[test]
+  fn explicit_underdetermined_solves_for_last_variables() {
+    // With an explicit variable list the same choice is made, and `svars`
+    // reports that some of the requested variables stay free.
+    assert_eq!(
+      interpret("Solve[x + y == 2, {x, y}]").unwrap(),
+      "{{y -> 2 - x}}"
+    );
+    assert_eq!(
+      woxi::get_captured_messages_raw(),
+      vec![
+        "Solve::svars: Equations may not give solutions for all \"solve\" variables."
+      ]
+    );
+    assert_eq!(
+      interpret("Quiet[Solve[x + 2*y == 3, {x, y}]]").unwrap(),
+      "{{y -> 3/2 - x/2}}"
+    );
+    assert_eq!(
+      interpret("Quiet[Solve[x + 2*y == 3, {y, x}]]").unwrap(),
+      "{{x -> 3 - 2*y}}"
+    );
+    assert_eq!(
+      interpret("Quiet[Solve[a*x + b*y + c*z == d, {x, y, z}]]").unwrap(),
+      "{{z -> d/c - (a*x)/c - (b*y)/c}}"
+    );
+    assert_eq!(
+      interpret(
+        "Quiet[Solve[{2 x + y + 2*z == 2, x - y + 3 z == 1}, {x, y, z}]]"
+      )
+      .unwrap(),
+      "{{y -> 4/5 - (4*x)/5, z -> 3/5 - (3*x)/5}}"
+    );
+    assert_eq!(
+      interpret("Quiet[Solve[x^2 + y^2 == 1, {x, y}]]").unwrap(),
+      "{{y -> -Sqrt[1 - x^2]}, {y -> Sqrt[1 - x^2]}}"
+    );
+    // A requested variable no equation mentions is never the one solved for.
+    assert_eq!(
+      interpret("Quiet[Solve[x^2 == 4, {x, z}]]").unwrap(),
+      "{{x -> -2}, {x -> 2}}"
+    );
+  }
+
+  #[test]
+  fn nsolve_underdetermined_linear_solves_for_first_variables() {
+    // NSolve, unlike Solve, solves a linear underdetermined system for its
+    // first variables and reports no `svars`.
+    assert_eq!(
+      interpret("NSolve[{x + y + z == 2, x - y == 1}, {x, y, z}]").unwrap(),
+      "{{x -> 1.5 - 0.5*z, y -> 0.5 - 0.5*z}}"
+    );
+    assert!(woxi::get_captured_messages_raw().is_empty());
+    assert_eq!(
+      interpret("NSolve[x + y == 2, Reals]").unwrap(),
+      "{{x -> 2. - 1.*y}}"
+    );
   }
 
   #[test]
@@ -5489,12 +5579,15 @@ mod solve {
   // out a second time.
   #[test]
   fn solve_domain_only_form_auto_detects_variables() {
+    // Rounded: wolframscript's numerical root is off in the last digits
+    // (`0.6180339887498907`).
     assert_eq!(
       interpret(
-        "NSolve[{x^2 + y == 1, x + y^2 == 1, 0 < x < 1, 0 < y < 1}, Reals]"
+        "Round[{x, y} /. NSolve[{x^2 + y == 1, x + y^2 == 1, 0 < x < 1, \
+         0 < y < 1}, Reals], 10^-9]"
       )
       .unwrap(),
-      "{{x -> 0.6180339887498949, y -> 0.6180339887498948}}"
+      "{{618033989/1000000000, 618033989/1000000000}}"
     );
     assert_eq!(
       interpret("NSolve[{x^2 - 4 == 0, x > 0}, Reals]").unwrap(),
@@ -5515,15 +5608,16 @@ mod solve {
   }
 
   // Regression for review findings on the domain-only form above: an
-  // underdetermined system must stay unevaluated rather than silently
-  // falling through to solving for the domain name itself, and a domain
-  // name occurring inside the equations (via `Element[x, Reals]`) must
-  // never be picked up as a spurious extra variable.
+  // underdetermined system must not fall through to solving for the domain
+  // name itself — it is solved for its last variables like `Solve[eqns]` —
+  // and a domain name occurring inside the equations (via
+  // `Element[x, Reals]`) must never be picked up as a spurious extra
+  // variable.
   #[test]
-  fn solve_domain_only_form_stays_unevaluated_when_underdetermined() {
+  fn solve_domain_only_form_underdetermined() {
     assert_eq!(
       interpret("Solve[x + y == 2, Reals]").unwrap(),
-      "Solve[x + y == 2, Reals]"
+      "{{y -> 2 - x}}"
     );
     assert_eq!(
       interpret("Solve[{x + y == 3, Element[x, Reals]}, Reals]").unwrap(),
@@ -17662,6 +17756,84 @@ mod fuzz_diff_round_2026_07_17 {
     assert_case("Sort[{Sqrt[3], Sqrt[5/3]}]", "{Sqrt[5/3], Sqrt[3]}");
     assert_case("Sort[{Sqrt[3], Sqrt[7/2]}]", "{Sqrt[3], Sqrt[7/2]}");
     assert_case("Sort[{Sqrt[2], Sqrt[1/2]}]", "{1/Sqrt[2], Sqrt[2]}");
+  }
+
+  #[test]
+  fn rational_coefficient_merges_into_a_numeric_radical() {
+    // The coefficient squares into the radicand and square factors come
+    // back out, also when other factors ride along.
+    assert_case("Sqrt[6] x/4", "(Sqrt[3/2]*x)/2");
+    assert_case("2 x/Sqrt[30]", "Sqrt[2/15]*x");
+    assert_case("4 x/Sqrt[2 Pi]", "2*Sqrt[2/Pi]*x");
+    assert_case("3 x/Sqrt[2 Pi]", "(3*x)/Sqrt[2*Pi]");
+    // A radicand with reciprocal constants joins in too.
+    assert_case("Sqrt[6/Pi]/4", "Sqrt[3/(2*Pi)]/2");
+    assert_case("Sqrt[6/Pi] Sin[t]/4", "(Sqrt[3/(2*Pi)]*Sin[t])/2");
+  }
+
+  #[test]
+  fn unit_fraction_bases_flip() {
+    // A unit fraction under a root or a power flips to its denominator.
+    assert_case("Sqrt[1/(2 Pi)]", "1/Sqrt[2*Pi]");
+    assert_case("Sqrt[x/(2 Pi)]", "Sqrt[x]/Sqrt[2*Pi]");
+    assert_case("Sqrt[1/(2 Pi)]/3", "1/(3*Sqrt[2*Pi])");
+    assert_case(
+      "{(1/2)^x, (1/3)^(-x), (1/2)^(x + 1), (1/2)^Pi}",
+      "{2^(-x), 3^x, 2^(-1 - x), 2^(-Pi)}",
+    );
+    assert_case(
+      "{(1/2)^(1/3), (1/4)^(1/3), (1/2)^(I x)}",
+      "{2^(-1/3), 2^(-2/3), 2^(-I*x)}",
+    );
+    // A complex number exponent keeps the fraction, and (2/3)^x is no
+    // unit fraction.
+    assert_case(
+      "{(1/2)^I, (1/2)^(1 + I), (2/3)^x}",
+      "{(1/2)^I, (1/2)^(1 + I), (2/3)^x}",
+    );
+    // A perfect-power base reduces under a negative exponent as it does
+    // under a positive one.
+    assert_case(
+      "{4^(-1/3), 8^(-2/9), 100^(-1/3)}",
+      "{2^(-2/3), 2^(-2/3), 10^(-2/3)}",
+    );
+  }
+
+  #[test]
+  fn number_base_powers_lead_a_product() {
+    assert_case("Sqrt[3/2] E^(I p)", "Sqrt[3/2]*E^(I*p)");
+    assert_case("(3/2)^x E^y", "(3/2)^x*E^y");
+    assert_case("Sqrt[3] (-1)^(1/4) x", "(-1)^(1/4)*Sqrt[3]*x");
+    assert_case("I Sqrt[3/2] x", "I*Sqrt[3/2]*x");
+  }
+
+  #[test]
+  fn exact_numeric_factor_joins_a_bigfloat() {
+    assert_case(
+      "N[2, 20] 3^(1/3)",
+      "2.88449914061481676464327662156021917678`20.",
+    );
+  }
+
+  #[test]
+  fn number_base_powers_sort_before_symbols_and_strings() {
+    // A power of a number compares by its base, and a number precedes any
+    // symbol, string or compound.
+    assert_case("Sort[{E, Sqrt[2]}]", "{Sqrt[2], E}");
+    assert_case(
+      "Sort[{1 + x, Sqrt[2], f[x], x, Pi, a^2, 2^x, E^2, Sqrt[x], \
+       1/Sqrt[2], Sqrt[2/3], \"s\", 2^(1/3)}]",
+      "{Sqrt[2/3], 1/Sqrt[2], 2^(1/3), Sqrt[2], 2^x, s, a^2, E^2, Pi, \
+       Sqrt[x], x, 1 + x, f[x]}",
+    );
+    assert_case(
+      "Sort[{Pi, Sqrt[2], 3^(1/3), E, GoldenRatio, Sqrt[5]}]",
+      "{Sqrt[2], 3^(1/3), Sqrt[5], E, GoldenRatio, Pi}",
+    );
+    assert_case(
+      "{Order[Sqrt[2], E], Order[E, Sqrt[2]], Order[\"s\", 2^x]}",
+      "{1, -1, -1}",
+    );
   }
 
   #[test]

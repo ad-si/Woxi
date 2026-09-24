@@ -320,6 +320,9 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut vertex_size_scale: f64 = 1.0;
   let mut plot_label: Option<Expr> = None;
   let mut layered: Option<LayerDirection> = None;
+  // `"RootVertex" -> v` in a layered `GraphLayout` spec: the vertex the
+  // layering grows from, instead of every vertex nothing points at.
+  let mut layered_root: Option<Expr> = None;
   // `GraphLayout -> "CircularEmbedding"` puts every vertex on one circle,
   // also for graphs that fall apart into several components.
   let mut circular = false;
@@ -416,7 +419,10 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // distance from a root instead of spreading them on a circle.
         // This is the embedding `LayeredGraphPlot` / `TreePlot` ask for.
         "GraphLayout" => {
-          layered = parse_layered_layout(replacement);
+          (layered, layered_root) = match parse_layered_layout(replacement) {
+            Some((dir, root)) => (Some(dir), root),
+            None => (None, None),
+          };
           circular = layered.is_none() && layout_is_circular(replacement);
           linear = layered.is_none() && layout_is_linear(replacement);
         }
@@ -480,7 +486,7 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   // Build petgraph for rendering
-  let (graph, _index_map) = build_render_graph(&vertices, &raw_edges);
+  let (graph, index_map) = build_render_graph(&vertices, &raw_edges);
 
   // Compute vertex positions. A layered embedding was asked for by name;
   // otherwise, for a single weakly-connected component we keep the simple
@@ -491,7 +497,13 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     normalize_explicit_positions(pts)
   } else {
     match layered {
-      Some(dir) => layered_layout(&graph, dir),
+      Some(dir) => {
+        let root = layered_root
+          .as_ref()
+          .and_then(|r| index_map.get(&expr_to_output(r)))
+          .map(|idx| idx.index());
+        layered_layout(&graph, dir, root)
+      }
       None if circular && n > 2 => circular_layout(n),
       None if linear && n > 1 => linear_layout(n),
       None => compute_layout(&graph),
@@ -1040,11 +1052,14 @@ pub(crate) enum LayerDirection {
 /// it names a layered embedding. Both the bare string form
 /// (`"LayeredDigraphEmbedding"`) and the sub-option form
 /// (`{"LayeredEmbedding", "Orientation" -> Left}`) are accepted; without an
-/// orientation the roots go on top, as they do in Wolfram.
-fn parse_layered_layout(value: &Expr) -> Option<LayerDirection> {
+/// orientation the roots go on top, as they do in Wolfram. A
+/// `"RootVertex" -> v` sub-option is returned alongside.
+fn parse_layered_layout(
+  value: &Expr,
+) -> Option<(LayerDirection, Option<Expr>)> {
   let named = |s: &str| s.starts_with("Layered");
   match value {
-    Expr::String(s) if named(s) => Some(LayerDirection::Top),
+    Expr::String(s) if named(s) => Some((LayerDirection::Top, None)),
     Expr::List(items) => {
       let is_layered = items
         .iter()
@@ -1061,7 +1076,16 @@ fn parse_layered_layout(value: &Expr) -> Option<LayerDirection> {
         }
         _ => None,
       });
-      Some(dir.unwrap_or(LayerDirection::Top))
+      let root = items.iter().find_map(|e| match e {
+        Expr::Rule {
+          pattern,
+          replacement,
+        } if matches!(pattern.as_ref(), Expr::String(s) if s == "RootVertex") => {
+          Some((**replacement).clone())
+        }
+        _ => None,
+      });
+      Some((dir.unwrap_or(LayerDirection::Top), root))
     }
     _ => None,
   }
@@ -1205,7 +1229,9 @@ pub(crate) fn layer_direction(expr: &Expr) -> Option<LayerDirection> {
 /// further from a root than the parent that first reached it, and the
 /// vertices of a layer are spread evenly across it. Roots are the vertices
 /// nothing points at; a graph that has none (a pure cycle) starts from its
-/// first vertex so every vertex still gets a layer.
+/// first vertex so every vertex still gets a layer. With an explicit
+/// `root` the layering instead grows from that one vertex, following
+/// edges in either direction — the tree hangs from the chosen vertex.
 ///
 /// Layers are one unit apart and so are the vertices within a layer, which
 /// keeps a chain a straight line of evenly spaced dots — the shape
@@ -1213,6 +1239,7 @@ pub(crate) fn layer_direction(expr: &Expr) -> Option<LayerDirection> {
 fn layered_layout(
   graph: &DiGraph<usize, RenderEdgeData>,
   dir: LayerDirection,
+  root: Option<usize>,
 ) -> Vec<(f64, f64)> {
   let n = graph.node_count();
   if n == 0 {
@@ -1228,6 +1255,9 @@ fn layered_layout(
     }
     successors[s].push(d);
     in_degree[d] += 1;
+    if root.is_some() {
+      successors[d].push(s);
+    }
   }
   for succ in &mut successors {
     succ.sort_unstable();
@@ -1249,7 +1279,10 @@ fn layered_layout(
     }
     order[l].push(v);
   };
-  let roots: Vec<usize> = (0..n).filter(|&v| in_degree[v] == 0).collect();
+  let roots: Vec<usize> = match root {
+    Some(r) => vec![r],
+    None => (0..n).filter(|&v| in_degree[v] == 0).collect(),
+  };
   let starts = if roots.is_empty() { vec![0] } else { roots };
   let mut queue: std::collections::VecDeque<usize> =
     std::collections::VecDeque::new();

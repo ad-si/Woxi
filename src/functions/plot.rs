@@ -155,7 +155,13 @@ pub(crate) fn substitute_var(expr: &Expr, var: &str, value: &Expr) -> Expr {
 /// the call unevaluated, so every plot head refuses it the same way through
 /// this one check. A reversed range (`{x, 1, 0}`) is fine and samples
 /// backwards.
-pub(crate) fn degenerate_iterator(head: &str, spec: &Expr) -> bool {
+/// `as_reals` writes the endpoints as machine reals (`{x, 0., 0.}`), the way
+/// `RegionPlot3D` reports them.
+pub(crate) fn degenerate_iterator(
+  head: &str,
+  spec: &Expr,
+  as_reals: bool,
+) -> bool {
   let Expr::List(items) = spec else {
     return false;
   };
@@ -177,9 +183,51 @@ pub(crate) fn degenerate_iterator(head: &str, spec: &Expr) -> bool {
   if a != b {
     return false;
   }
+  let (lo, hi) = if as_reals {
+    (Expr::Real(a), Expr::Real(b))
+  } else {
+    (lo, hi)
+  };
   crate::emit_message(&format!(
     "{head}::plld: Endpoints for {var} in {{{var}, {}, {}}} must have \
      distinct machine-precision numerical values.",
+    crate::syntax::expr_to_input_form(&lo),
+    crate::syntax::expr_to_input_form(&hi),
+  ));
+  true
+}
+
+/// Whether a complex plot's `{z, zmin, zmax}` corners share a real or an
+/// imaginary part, so they span no rectangle; reports `head::plld` if so.
+pub(crate) fn degenerate_complex_corners(head: &str, spec: &Expr) -> bool {
+  let Expr::List(items) = spec else {
+    return false;
+  };
+  if items.len() != 3 {
+    return false;
+  }
+  let Expr::Identifier(var) = &items[0] else {
+    return false;
+  };
+  let (Ok(lo), Ok(hi)) = (
+    evaluate_expr_to_expr(&items[1]),
+    evaluate_expr_to_expr(&items[2]),
+  ) else {
+    return false;
+  };
+  let parts = |e: &Expr| {
+    crate::functions::math_ast::try_extract_complex_float(e)
+      .or_else(|| try_eval_to_f64(e).map(|re| (re, 0.0)))
+  };
+  let (Some((ar, ai)), Some((br, bi))) = (parts(&lo), parts(&hi)) else {
+    return false;
+  };
+  if ar != br && ai != bi {
+    return false;
+  }
+  crate::emit_message(&format!(
+    "{head}::plld: Corners for {var} in {{{var}, {}, {}}} must have \
+     distinct machine-precision real and imaginary parts.",
     crate::syntax::expr_to_input_form(&lo),
     crate::syntax::expr_to_input_form(&hi),
   ));

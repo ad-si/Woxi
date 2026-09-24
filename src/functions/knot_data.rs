@@ -1,58 +1,68 @@
-//! `KnotData[name]` and `KnotData[name, property]` for torus knots: knots
-//! that lie on the surface of an (unknotted) torus, winding `p` times
-//! around its tube and `q` times through its hole. Every named entity here
-//! is a torus knot, and any coprime `{p, q}` is accepted directly through
-//! `KnotData[{"TorusKnot", {p, q}}]` — the general family, not just the
-//! handful of named members.
+//! `KnotData[knot]` and `KnotData[knot, property]`.
 //!
-//! The space curve is the standard textbook parametrization of a
-//! `(p, q)`-torus knot on a torus of major radius 2 and tube radius 1
-//! (see e.g. the "Torus knot" article on Wikipedia): an independently
-//! derived formula, not Wolfram's own internal representation, so the
-//! numeric coefficients Wolfram prints for e.g. `KnotData["Trefoil",
-//! "SpaceCurve"]` will not match ours — only the shape of the knot does.
-//! `"ImageData"` sweeps a tube mesh around that same curve; likewise only
-//! its shape, not its exact mesh coordinates, matches real Wolfram.
+//! Knots are named by their place in the Rolfsen table of prime knots,
+//! `{n, k}` — the `k`-th knot with `n` crossings, `{0, 1}` being the unknot
+//! — by the standard names of the few famous ones (`"Trefoil"`,
+//! `"FigureEight"`, …), or as a general torus knot `{"TorusKnot", {p, q}}`,
+//! which winds `p` times around a torus's tube and `q` times through its
+//! hole.
+//!
+//! Properties that follow from the name alone (crossing number, the
+//! Alexander–Briggs label, the standard name) are known for every table
+//! knot. A space curve is known for the torus knots — the textbook
+//! parametrization on a torus of major radius 2 and tube radius 1 (see e.g.
+//! the "Torus knot" article on Wikipedia) — and for the trefoil, whose
+//! classic `{Sin[t] + 2 Sin[2 t], Cos[t] - 2 Cos[2 t], -Sin[3 t]}` form is
+//! the one Wolfram uses too. Wolfram's space curves for other knots are
+//! interpolated from its own curated data, which is not bundled.
+//! `"ImageData"` sweeps a tube mesh around the space curve; only its shape,
+//! not its exact mesh coordinates, matches real Wolfram.
 
 #[allow(unused_imports)]
 use super::*;
 
-struct KnotInfo {
-  name: &'static str,
-  aliases: &'static [&'static str],
-  alexander_briggs: &'static str,
-  p: i128,
-  q: i128,
-}
-
-static KNOTS: &[KnotInfo] = &[
-  KnotInfo {
-    name: "Trefoil",
-    aliases: &["TrefoilKnot", "3_1"],
-    alexander_briggs: "3_1",
-    p: 2,
-    q: 3,
-  },
-  KnotInfo {
-    name: "CinquefoilKnot",
-    aliases: &["SolomonsSealKnot", "Cinquefoil", "5_1"],
-    alexander_briggs: "5_1",
-    p: 2,
-    q: 5,
-  },
-  KnotInfo {
-    name: "SeptafoilKnot",
-    aliases: &["Septafoil", "7_1"],
-    alexander_briggs: "7_1",
-    p: 2,
-    q: 7,
-  },
+/// How many prime knots the Rolfsen table lists for each crossing number,
+/// `{0, 1}` (the unknot) included.
+const TABLE_COUNTS: &[(i128, i128)] = &[
+  (0, 1),
+  (3, 1),
+  (4, 1),
+  (5, 2),
+  (6, 3),
+  (7, 7),
+  (8, 21),
+  (9, 49),
+  (10, 165),
 ];
 
-fn find_named_knot(name: &str) -> Option<&'static KnotInfo> {
-  KNOTS
-    .iter()
-    .find(|k| k.name == name || k.aliases.contains(&name))
+/// The knots with a standard name, their table entry, and their lowercase
+/// descriptive name.
+const NAMED_KNOTS: &[(&str, (i128, i128), &str)] = &[
+  ("Unknot", (0, 1), "unknot"),
+  ("Trefoil", (3, 1), "trefoil"),
+  ("FigureEight", (4, 1), "figure eight knot"),
+  ("SolomonSeal", (5, 1), "Solomon seal knot"),
+  ("Stevedore", (6, 1), "Stevedore knot"),
+  ("PerkoPair", (10, 161), "Perko pair"),
+];
+
+/// The table knots that are torus knots, with their `(p, q)`.
+const TABLE_TORUS_KNOTS: &[((i128, i128), (i128, i128))] = &[
+  ((3, 1), (2, 3)),
+  ((5, 1), (2, 5)),
+  ((7, 1), (2, 7)),
+  ((8, 19), (3, 4)),
+  ((9, 1), (2, 9)),
+  ((10, 124), (3, 5)),
+];
+
+/// A knot `KnotData` knows.
+#[derive(Clone, Copy)]
+enum Knot {
+  /// `{n, k}` in the Rolfsen table.
+  Table(i128, i128),
+  /// `{"TorusKnot", {p, q}}`.
+  Torus(i128, i128),
 }
 
 fn as_i128(expr: &Expr) -> Option<i128> {
@@ -91,15 +101,68 @@ fn torus_knot_spec(expr: &Expr) -> Option<(i128, i128)> {
   Some((p, q))
 }
 
-/// Resolve any accepted `KnotData` name spec to `(p, q, Alexander-Briggs
-/// notation)`.
-fn resolve(spec: &Expr) -> Option<(i128, i128, Option<&'static str>)> {
+fn in_table(n: i128, k: i128) -> bool {
+  TABLE_COUNTS
+    .iter()
+    .any(|&(cn, count)| cn == n && (1..=count).contains(&k))
+}
+
+/// Resolve a `KnotData` knot spec.
+fn resolve(spec: &Expr) -> Option<Knot> {
   match spec {
-    Expr::String(name) => {
-      find_named_knot(name).map(|k| (k.p, k.q, Some(k.alexander_briggs)))
+    Expr::String(name) => NAMED_KNOTS
+      .iter()
+      .find(|(n, _, _)| n == name)
+      .map(|&(_, (n, k), _)| Knot::Table(n, k)),
+    Expr::List(items) if items.len() == 2 => {
+      if let (Some(n), Some(k)) = (as_i128(&items[0]), as_i128(&items[1])) {
+        return in_table(n, k).then_some(Knot::Table(n, k));
+      }
+      torus_knot_spec(spec).map(|(p, q)| Knot::Torus(p, q))
     }
-    Expr::List(_) => torus_knot_spec(spec).map(|(p, q)| (p, q, None)),
     _ => None,
+  }
+}
+
+impl Knot {
+  /// `(p, q)` when the knot is a torus knot.
+  fn torus(self) -> Option<(i128, i128)> {
+    match self {
+      Knot::Torus(p, q) => Some((p, q)),
+      Knot::Table(n, k) => TABLE_TORUS_KNOTS
+        .iter()
+        .find(|(entry, _)| *entry == (n, k))
+        .map(|&(_, pq)| pq),
+    }
+  }
+
+  /// The space curve, as a `{x, y, z}` formula in `#1`, written the way
+  /// Wolfram's (held) pure function body reads.
+  fn curve_formula(self) -> Option<String> {
+    if let Knot::Table(3, 1) = self {
+      return Some(
+        "{Sin[#1] + 2*Sin[2*#1], Cos[#1] - 2*Cos[2*#1], -Sin[3*#1]}"
+          .to_string(),
+      );
+    }
+    let (p, q) = self.torus()?;
+    Some(format!(
+      "{{(2 + Cos[{q}*#1])*Cos[{p}*#1], (2 + Cos[{q}*#1])*Sin[{p}*#1], \
+       Sin[{q}*#1]}}"
+    ))
+  }
+
+  /// The space curve, evaluated numerically at `t`.
+  fn curve_point(self, t: f64) -> Option<(f64, f64, f64)> {
+    if let Knot::Table(3, 1) = self {
+      return Some((
+        t.sin() + 2.0 * (2.0 * t).sin(),
+        t.cos() - 2.0 * (2.0 * t).cos(),
+        -(3.0 * t).sin(),
+      ));
+    }
+    let (p, q) = self.torus()?;
+    Some(curve_point(p, q, t))
   }
 }
 
@@ -108,12 +171,9 @@ fn eval_wl(src: &str) -> Result<Expr, InterpreterError> {
   crate::evaluator::evaluate_expr_to_expr(&parsed)
 }
 
-/// The `(p, q)`-torus knot's space curve, as `Function[{t}, {x, y, z}]`.
-fn space_curve(p: i128, q: i128) -> Result<Expr, InterpreterError> {
-  eval_wl(&format!(
-    "Function[{{t}}, {{(2+Cos[{q} t]) Cos[{p} t], \
-     (2+Cos[{q} t]) Sin[{p} t], Sin[{q} t]}}]"
-  ))
+/// The knot's space curve as a pure function, `{x, y, z} &`.
+fn space_curve(knot: Knot) -> Option<Result<Expr, InterpreterError>> {
+  Some(eval_wl(&format!("{} &", knot.curve_formula()?)))
 }
 
 /// `(p, q)`-torus knot space curve, evaluated numerically at `t`.
@@ -135,7 +195,7 @@ fn curve_point(p: i128, q: i128, t: f64) -> (f64, f64, f64) {
 /// knot picture). The mesh itself — vertex count, triangulation, tube
 /// radius — is our own choice, not Wolfram's internal one, so (like
 /// `SpaceCurve`) only the swept shape matches, not the exact coordinates.
-fn image_data(p: i128, q: i128) -> Expr {
+fn image_data(knot: Knot) -> Option<Expr> {
   const N_ALONG: usize = 96;
   const N_AROUND: usize = 8;
   const TUBE_RADIUS: f64 = 0.2;
@@ -144,12 +204,12 @@ fn image_data(p: i128, q: i128) -> Expr {
   let mut points: Vec<Expr> = Vec::with_capacity(N_ALONG * N_AROUND);
   for i in 0..N_ALONG {
     let t = 2.0 * std::f64::consts::PI * i as f64 / N_ALONG as f64;
-    let (cx, cy, cz) = curve_point(p, q, t);
+    let (cx, cy, cz) = knot.curve_point(t)?;
 
     // Tangent via central difference, then an arbitrary orthonormal
     // (normal, binormal) frame around it to place the tube's ring.
-    let (px, py, pz) = curve_point(p, q, t - DT);
-    let (nx, ny, nz) = curve_point(p, q, t + DT);
+    let (px, py, pz) = knot.curve_point(t - DT)?;
+    let (nx, ny, nz) = knot.curve_point(t + DT)?;
     let (tx, ty, tz) = normalize(nx - px, ny - py, nz - pz);
     let reference = if tx.abs() < 0.9 {
       (1.0, 0.0, 0.0)
@@ -211,7 +271,7 @@ fn image_data(p: i128, q: i128) -> Expr {
     args: vec![Expr::List(points.into()), Expr::List(vec![polygon].into())]
       .into(),
   };
-  Expr::List(vec![complex].into())
+  Some(Expr::List(vec![complex].into()))
 }
 
 fn normalize(x: f64, y: f64, z: f64) -> (f64, f64, f64) {
@@ -219,24 +279,30 @@ fn normalize(x: f64, y: f64, z: f64) -> (f64, f64, f64) {
   (x / len, y / len, z / len)
 }
 
-fn knot_graphics(p: i128, q: i128) -> Result<Expr, InterpreterError> {
-  eval_wl(&format!(
-    "ParametricPlot3D[{{(2+Cos[{q} t]) Cos[{p} t], \
-     (2+Cos[{q} t]) Sin[{p} t], Sin[{q} t]}}, {{t, 0, 2 Pi}}]"
-  ))
+fn knot_graphics(knot: Knot) -> Option<Result<Expr, InterpreterError>> {
+  let curve = knot.curve_formula()?.replace("#1", "t");
+  Some(eval_wl(&format!(
+    "ParametricPlot3D[{curve}, {{t, 0, 2 Pi}}]"
+  )))
 }
 
-/// Crossing number of the `(p, q)`-torus knot: `min(p(q-1), q(p-1))`, a
-/// proven theorem for torus knots (not specific to any single one).
-fn crossing_number(p: i128, q: i128) -> Expr {
-  Expr::Integer((p * (q - 1)).min(q * (p - 1)))
+/// Crossing number: the table's `n`, or for a `(p, q)`-torus knot
+/// `min(p(q-1), q(p-1))`, a proven theorem for torus knots.
+fn crossing_number(knot: Knot) -> Expr {
+  match knot {
+    Knot::Table(n, _) => Expr::Integer(n),
+    Knot::Torus(p, q) => Expr::Integer((p * (q - 1)).min(q * (p - 1))),
+  }
 }
 
 static PROPERTIES: &[&str] = &[
+  "AlexanderBriggsList",
   "AlexanderBriggsNotation",
   "CrossingNumber",
   "ImageData",
+  "Name",
   "SpaceCurve",
+  "StandardName",
 ];
 
 fn string_list(items: &[&str]) -> Expr {
@@ -249,17 +315,34 @@ fn string_list(items: &[&str]) -> Expr {
   )
 }
 
+fn pair(a: i128, b: i128) -> Expr {
+  Expr::List(vec![Expr::Integer(a), Expr::Integer(b)].into())
+}
+
+fn not_applicable() -> Expr {
+  call1("Missing", Expr::String("NotApplicable".to_string()))
+}
+
 pub fn knot_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || Ok(unevaluated("KnotData", args));
 
-  // `KnotData[All]` — the list of known named entities.
+  // `KnotData[]` — the knots with a standard name.
+  if args.is_empty() {
+    let names: Vec<&str> = NAMED_KNOTS.iter().map(|(n, _, _)| *n).collect();
+    return Ok(string_list(&names));
+  }
+
+  // `KnotData[All]` — every knot of the table.
   if let Some(Expr::Identifier(sym)) = args.first()
     && sym == "All"
     && args.len() == 1
   {
-    let mut names: Vec<&str> = KNOTS.iter().map(|k| k.name).collect();
-    names.sort_unstable();
-    return Ok(string_list(&names));
+    return Ok(Expr::List(
+      TABLE_COUNTS
+        .iter()
+        .flat_map(|&(n, count)| (1..=count).map(move |k| pair(n, k)))
+        .collect(),
+    ));
   }
 
   // `KnotData["Properties"]` — handled before `resolve` so this reserved
@@ -271,13 +354,13 @@ pub fn knot_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(string_list(PROPERTIES));
   }
 
-  let Some(spec) = args.first() else {
-    return unevaluated();
-  };
-  let Some((p, q, alexander_briggs)) = resolve(spec) else {
-    if let Expr::String(name) = spec {
+  let spec = &args[0];
+  let Some(knot) = resolve(spec) else {
+    if matches!(spec, Expr::String(_) | Expr::List(_)) {
+      let shown =
+        crate::syntax::format_expr(spec, crate::syntax::ExprForm::Output);
       crate::emit_message(&format!(
-        "KnotData::notent: {name} is not a known entity, class, or tag for \
+        "KnotData::notent: {shown} is not a known entity, class or tag for \
          KnotData. Use KnotData[] for a list of entities."
       ));
     }
@@ -285,19 +368,43 @@ pub fn knot_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   match args.len() {
-    1 => knot_graphics(p, q),
+    1 => knot_graphics(knot).unwrap_or_else(unevaluated),
     2 => {
       let Expr::String(property) = &args[1] else {
         return unevaluated();
       };
-      match property.as_str() {
-        "SpaceCurve" => space_curve(p, q),
-        "ImageData" => Ok(image_data(p, q)),
-        "CrossingNumber" => Ok(crossing_number(p, q)),
-        "AlexanderBriggsNotation" => match alexander_briggs {
-          Some(s) => Ok(Expr::String(s.to_string())),
-          None => unevaluated(),
-        },
+      let named = match knot {
+        Knot::Table(n, k) => NAMED_KNOTS.iter().find(|(_, e, _)| *e == (n, k)),
+        Knot::Torus(..) => None,
+      };
+      match (property.as_str(), knot) {
+        ("SpaceCurve", _) => space_curve(knot).unwrap_or_else(unevaluated),
+        ("ImageData", _) => image_data(knot).map_or_else(unevaluated, Ok),
+        ("CrossingNumber", _) => Ok(crossing_number(knot)),
+        ("AlexanderBriggsList", Knot::Table(n, k)) => Ok(pair(n, k)),
+        ("AlexanderBriggsNotation", Knot::Table(n, k)) => {
+          Ok(call("Subscript", vec![Expr::Integer(n), Expr::Integer(k)]))
+        }
+        (
+          "AlexanderBriggsList" | "AlexanderBriggsNotation",
+          Knot::Torus(..),
+        ) => Ok(not_applicable()),
+        ("StandardName", Knot::Table(n, k)) => Ok(match named {
+          Some((name, _, _)) => Expr::String(name.to_string()),
+          None => Expr::List(
+            vec![Expr::String("Knot".to_string()), pair(n, k)].into(),
+          ),
+        }),
+        ("StandardName", Knot::Torus(p, q)) => Ok(Expr::List(
+          vec![Expr::String("TorusKnot".to_string()), pair(p, q)].into(),
+        )),
+        ("Name", Knot::Table(n, k)) => Ok(Expr::String(match named {
+          Some((_, _, name)) => name.to_string(),
+          None => format!("knot {n}-{k}"),
+        })),
+        ("Name", Knot::Torus(p, q)) => {
+          Ok(Expr::String(format!("({p},{q})-torus knot")))
+        }
         _ => unevaluated(),
       }
     }
