@@ -2791,7 +2791,7 @@ pub fn apply_replace_all_ast(
             if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ImageSize")
               && matches!(replacement.as_ref(), Expr::List(v) if v.len() == 2))
         });
-        let mut opts: Vec<Expr> = source.options.to_vec();
+        let mut opts: Vec<Expr> = source.options.clone();
         if !has_aspect_ratio && !has_fixed_image_size && source.image_size.0 > 0
         {
           opts.push(Expr::Rule {
