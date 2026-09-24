@@ -3,8 +3,7 @@ use super::*;
 mod knot_data_tests {
   use super::*;
 
-  // The Trefoil is the (2, 3)-torus knot: 3 crossings, Alexander-Briggs
-  // notation 3_1.
+  // The Trefoil is the first 3-crossing knot of the Rolfsen table, 3_1.
   #[test]
   fn knot_data_trefoil_basics() {
     assert_eq!(
@@ -13,33 +12,63 @@ mod knot_data_tests {
     );
     assert_eq!(
       interpret(r#"KnotData["Trefoil", "AlexanderBriggsNotation"]"#).unwrap(),
-      "3_1"
+      "Subscript[3, 1]"
+    );
+    assert_eq!(
+      interpret(r#"KnotData["Trefoil", "AlexanderBriggsList"]"#).unwrap(),
+      "{3, 1}"
     );
   }
 
-  // Aliases resolve to the same knot.
+  // A knot is named by its table entry {n, k} or by its standard name.
   #[test]
-  fn knot_data_aliases() {
-    for name in ["Trefoil", "TrefoilKnot", "3_1"] {
-      assert_eq!(
-        interpret(&format!(r#"KnotData["{name}", "CrossingNumber"]"#)).unwrap(),
-        "3",
-        "name: {name}"
-      );
-    }
+  fn knot_data_table_entries_and_names() {
+    assert_eq!(
+      interpret(
+        r#"Table[{KnotData[k, "StandardName"], KnotData[k, "Name"],
+             KnotData[k, "CrossingNumber"]},
+           {k, {{0, 1}, {3, 1}, {4, 1}, {5, 1}, {5, 2}, {6, 1}, {10, 161}}}]"#
+      )
+      .unwrap(),
+      "{{Unknot, unknot, 0}, {Trefoil, trefoil, 3}, \
+       {FigureEight, figure eight knot, 4}, \
+       {SolomonSeal, Solomon seal knot, 5}, {{Knot, {5, 2}}, knot 5-2, 5}, \
+       {Stevedore, Stevedore knot, 6}, {PerkoPair, Perko pair, 10}}"
+    );
+    assert_eq!(
+      interpret("KnotData[]").unwrap(),
+      "{Unknot, Trefoil, FigureEight, SolomonSeal, Stevedore, PerkoPair}"
+    );
   }
 
-  // KnotData[name, "SpaceCurve"] is a Function[{t}, {x, y, z}] that can be
-  // applied to a variable and then evaluated numerically.
+  // KnotData[All] lists the Rolfsen table: every prime knot of up to ten
+  // crossings, plus the unknot.
+  #[test]
+  fn knot_data_all_is_the_knot_table() {
+    assert_eq!(
+      interpret(
+        "{Length[KnotData[All]], Take[KnotData[All], 5], \
+         Last[KnotData[All]], Counts[First /@ KnotData[All]]}"
+      )
+      .unwrap(),
+      "{250, {{0, 1}, {3, 1}, {4, 1}, {5, 1}, {5, 2}}, {10, 165}, \
+       <|0 -> 1, 3 -> 1, 4 -> 1, 5 -> 2, 6 -> 3, 7 -> 7, 8 -> 21, 9 -> 49, \
+       10 -> 165|>}"
+    );
+  }
+
+  // KnotData[name, "SpaceCurve"] is a pure function of the curve
+  // parameter, the trefoil's the classic
+  // {Sin[t] + 2 Sin[2 t], Cos[t] - 2 Cos[2 t], -Sin[3 t]}.
   #[test]
   fn knot_data_space_curve_is_a_function_of_t() {
     assert_eq!(
-      interpret(r#"Head[KnotData["Trefoil", "SpaceCurve"]]"#).unwrap(),
-      "Function"
+      interpret(r#"KnotData["Trefoil", "SpaceCurve"]"#).unwrap(),
+      "{Sin[#1] + 2*Sin[2*#1], Cos[#1] - 2*Cos[2*#1], -Sin[3*#1]} & "
     );
     assert_eq!(
       interpret(r#"KnotData["Trefoil", "SpaceCurve"][0]"#).unwrap(),
-      "{3, 0, 0}"
+      "{0, -1, 0}"
     );
     // The curve closes up after one period.
     assert_eq!(
@@ -52,12 +81,16 @@ mod knot_data_tests {
     );
   }
 
-  // Every point of the space curve sits at distance 1 from the core torus
-  // circle of radius 2, since it winds around a unit tube.
+  // A torus knot's space curve winds around a unit tube about the core
+  // circle of radius 2: every point is at distance 1 from it.
   #[test]
-  fn knot_data_space_curve_lies_on_unit_tube() {
+  fn knot_data_torus_space_curve_lies_on_unit_tube() {
+    assert_eq!(
+      interpret(r#"KnotData[{"TorusKnot", {2, 5}}, "SpaceCurve"]"#).unwrap(),
+      "{(2 + Cos[5*#1])*Cos[2*#1], (2 + Cos[5*#1])*Sin[2*#1], Sin[5*#1]} & "
+    );
     let result = interpret(
-      r#"With[{r = KnotData["Trefoil", "SpaceCurve"]},
+      r#"With[{r = KnotData[{"TorusKnot", {2, 5}}, "SpaceCurve"]},
            Table[
              Round[(Sqrt[r[t][[1]]^2 + r[t][[2]]^2] - 2)^2 + r[t][[3]]^2, 10^-9],
              {t, 0, 2 Pi, Pi/5}] // N]"#,
@@ -69,29 +102,21 @@ mod knot_data_tests {
     );
   }
 
-  // The general `{"TorusKnot", {p, q}}` family covers knots beyond the
-  // handful of named entries, and its crossing number follows the same
-  // min(p(q-1), q(p-1)) formula.
+  // The general `{"TorusKnot", {p, q}}` family covers every torus knot;
+  // its crossing number follows the min(p(q-1), q(p-1)) formula, and it
+  // has no place in the knot table.
   #[test]
   fn knot_data_general_torus_knot() {
     assert_eq!(
-      interpret(r#"KnotData[{"TorusKnot", {2, 5}}, "CrossingNumber"]"#)
-        .unwrap(),
-      "5"
-    );
-    assert_eq!(
-      interpret(r#"KnotData[{"TorusKnot", {3, 5}}, "CrossingNumber"]"#)
-        .unwrap(),
-      "10"
-    );
-    // Named entries and their explicit torus-knot spec agree.
-    assert_eq!(
       interpret(
-        r#"KnotData["CinquefoilKnot", "CrossingNumber"] ==
-             KnotData[{"TorusKnot", {2, 5}}, "CrossingNumber"]"#
+        r#"{KnotData[{"TorusKnot", {2, 5}}, "CrossingNumber"],
+            KnotData[{"TorusKnot", {3, 5}}, "CrossingNumber"],
+            KnotData[{"TorusKnot", {3, 4}}, "AlexanderBriggsList"],
+            KnotData[{"TorusKnot", {3, 4}}, "Name"],
+            KnotData[{"TorusKnot", {3, 4}}, "StandardName"]}"#
       )
       .unwrap(),
-      "True"
+      "{5, 10, Missing[NotApplicable], (3,4)-torus knot, {TorusKnot, {3, 4}}}"
     );
   }
 
@@ -106,13 +131,29 @@ mod knot_data_tests {
     );
   }
 
-  // Unknown entities stay unevaluated (with a notent message).
+  // Unknown entities stay unevaluated (with a notent message) — an
+  // Alexander–Briggs label is not a name, and the table ends at ten
+  // crossings.
   #[test]
   fn knot_data_unknown_name() {
-    assert_eq!(
-      interpret(r#"KnotData["NoSuchKnot", "CrossingNumber"]"#).unwrap(),
-      r#"KnotData[NoSuchKnot, CrossingNumber]"#
-    );
+    for (code, shown) in [
+      (r#"KnotData["NoSuchKnot", "CrossingNumber"]"#, "NoSuchKnot"),
+      (r#"KnotData["3_1", "CrossingNumber"]"#, "3_1"),
+      (r#"KnotData[{11, 1}, "CrossingNumber"]"#, "{11, 1}"),
+    ] {
+      assert_eq!(
+        interpret(code).unwrap(),
+        code.replace('"', ""),
+        "{code} stays unevaluated"
+      );
+      assert_eq!(
+        woxi::get_captured_messages_raw(),
+        vec![format!(
+          "KnotData::notent: {shown} is not a known entity, class or tag \
+           for KnotData. Use KnotData[] for a list of entities."
+        )]
+      );
+    }
   }
 
   // Unknown properties stay unevaluated.
@@ -124,28 +165,27 @@ mod knot_data_tests {
     );
   }
 
-  // KnotData["Properties"] lists the supported property names.
+  // KnotData["Properties"] includes the supported property names.
   #[test]
   fn knot_data_properties() {
     assert_eq!(
-      interpret(r#"KnotData["Properties"]"#).unwrap(),
-      "{AlexanderBriggsNotation, CrossingNumber, ImageData, SpaceCurve}"
+      interpret(
+        r#"SubsetQ[KnotData["Properties"], {"AlexanderBriggsList",
+             "AlexanderBriggsNotation", "CrossingNumber", "ImageData", "Name",
+             "SpaceCurve", "StandardName"}]"#
+      )
+      .unwrap(),
+      "True"
     );
   }
 
-  // KnotData[All] lists the named entities.
-  #[test]
-  fn knot_data_all_lists_named_entities() {
-    assert_eq!(
-      interpret("KnotData[All]").unwrap(),
-      "{CinquefoilKnot, SeptafoilKnot, Trefoil}"
-    );
-  }
-
-  // KnotData[name] renders the knot as a 3D parametric plot.
+  // KnotData[name] renders the knot in 3D.
   #[test]
   fn knot_data_renders_graphics3d() {
-    assert_eq!(interpret(r#"KnotData["Trefoil"]"#).unwrap(), "-Graphics3D-");
+    assert_eq!(
+      interpret(r#"Head[KnotData["Trefoil"]]"#).unwrap(),
+      "Graphics3D"
+    );
   }
 
   // KnotData[name, "ImageData"] is a list holding a single GraphicsComplex

@@ -1880,7 +1880,10 @@ mod differentiate_plus_times {
   // `differentiate` (which has every rule) does the work.
   #[test]
   fn derivative_wrt_indexed_var_power_rule() {
-    assert_eq!(interpret("D[(a*x[k])^2, x[k]]").unwrap(), "2*x[k]*a^2");
+    // The result is in canonical order: `x[k]` sorts after `a^2`.
+    assert_eq!(interpret("D[(a*x[k])^2, x[k]]").unwrap(), "2*a^2*x[k]");
+    assert_eq!(interpret("D[(a*#)^2, #]").unwrap(), "2*a^2*#1");
+    assert_eq!(interpret("D[(a*#)^2, {#, 1}]").unwrap(), "2*a^2*#1");
   }
 
   #[test]

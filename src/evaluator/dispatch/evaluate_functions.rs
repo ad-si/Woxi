@@ -632,13 +632,22 @@ fn is_identifier_like(s: &str) -> bool {
 /// Language exports. Woxi keeps its built-ins in one namespace, so nothing
 /// else would create them — and a package that reads one of the names by its
 /// short form has to land on the same symbol the built-in produces.
-fn register_standard_context_symbols(ctx: &str) {
+pub(crate) fn register_standard_context_symbols(ctx: &str) {
   if ctx == "CodeParser`" {
     crate::functions::code_parser::register_context_symbols();
     // Reading `LeafNode` after the context is loaded has to find
     // `CodeParser`LeafNode`, which is what putting the context on
     // `$ContextPath` is for. Only the contexts Woxi has symbols for go on
     // the path; the rest stay named but empty, as before.
+    crate::prepend_to_context_path(ctx);
+  }
+  if ctx == "Combinatorica`" {
+    // Combinatorica has no values to pre-create (its functions are ordinary
+    // dispatch entries, not symbol-table lookups), but putting it on
+    // `$ContextPath` is what lets `combinatorica_context_active` in
+    // `evaluate_function_call_ast_inner` redirect the bare names it shadows
+    // (`Derangements`, `Permutations[n_Integer]`) to their
+    // `Combinatorica\`` implementation.
     crate::prepend_to_context_path(ctx);
   }
 }
@@ -678,6 +687,7 @@ fn load_needed_context(ctx: &str) -> Result<(), InterpreterError> {
 
 #[cfg(target_arch = "wasm32")]
 fn load_needed_context(ctx: &str) -> Result<(), InterpreterError> {
+  register_standard_context_symbols(ctx);
   crate::register_package(ctx.to_string());
   Ok(())
 }
@@ -732,10 +742,31 @@ fn evaluate_function_call_ast_inner(
   // one flat namespace (see `is_standard_distribution_context`), so a
   // qualified call to one of these is normalized to its modern name before
   // dispatch rather than reimplementing the legacy function separately.
+  //
+  // `Combinatorica\`` is different: it shadows bare names once loaded
+  // (`Get["Combinatorica`"]`/`Needs["Combinatorica`"]` put it on
+  // `$ContextPath`, which is what a bare name is read against — see
+  // `register_standard_context_symbols`), the way it does in Mathematica
+  // itself, rather than being renamed at read time. `Derangements` has no
+  // built-in of its own to conflict with; `Permutations` does, but
+  // Combinatorica only extends it to accept a bare integer `n` (meaning
+  // `Range[n]`), so only that shape is redirected — a list argument keeps
+  // using the built-in's identical (lexicographic) algorithm.
+  let combinatorica_active = crate::current_context_path()
+    .iter()
+    .any(|c| c == "Combinatorica`");
   let original_name = name;
   let name = match name {
     "VectorFieldPlots`ListVectorFieldPlot" => "ListVectorPlot",
     "PieCharts`PieChart" => "PieChart",
+    "Derangements" if combinatorica_active => "Combinatorica`Derangements",
+    "Permutations"
+      if combinatorica_active
+        && args.len() == 1
+        && matches!(&args[0], Expr::Integer(n) if *n >= 0) =>
+    {
+      "Combinatorica`Permutations"
+    }
     other => other,
   };
 
@@ -1965,7 +1996,7 @@ fn evaluate_function_call_ast_inner(
   }
 
   // Knot data function
-  if name == "KnotData" && !args.is_empty() {
+  if name == "KnotData" {
     return crate::functions::knot_data::knot_data_ast(args);
   }
 
@@ -4602,29 +4633,26 @@ fn evaluate_function_call_ast_inner(
       // on. It is not an option, so it is taken off here and turned into
       // the layered embedding the renderer understands.
       let layered = matches!(name, "LayeredGraphPlot" | "TreePlot");
-      let literal_pos = args[1..]
+      let positional: Vec<&Expr> = args[1..]
         .iter()
-        .find(|a| !matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }));
+        .filter(|a| !matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+        .collect();
+      let literal_pos = positional.first().copied();
       let root_pos =
         literal_pos.and_then(crate::functions::graph::layer_direction);
-      // `TreePlot[rules, pos, …]`'s second positional argument must be one
-      // of Top/Bottom/Left/Right/Center — an older two-argument calling
-      // convention that passed a root vertex there instead (as several
-      // pre-Graph-object Demonstrations still do) now raises `TreePlot::rp`
-      // and leaves the call unevaluated rather than silently plotting.
-      if name == "TreePlot"
-        && let Some(pos_arg) = literal_pos
-        && root_pos.is_none()
-      {
-        let pos_str =
-          crate::syntax::format_expr(pos_arg, crate::syntax::ExprForm::Output);
-        crate::emit_message_with("TreePlot::rp", || {
-          format!(
-            "TreePlot::rp: The second argument {pos_str} of TreePlot must be one of Top, Bottom, Left, Right, or Center."
-          )
-        });
-        return Ok(unevaluated(name, args));
-      }
+      // `TreePlot[g, pos, v]` hangs the tree from vertex `v`. The older
+      // two-argument form `TreePlot[g, v]` (which pre-Graph-object
+      // Demonstrations use) names the root in the position slot instead;
+      // wolframscript still accepts it when `v` is a vertex of `g`.
+      let is_center =
+        matches!(literal_pos, Some(Expr::Identifier(s)) if s == "Center");
+      let root_vertex = if name != "TreePlot" {
+        None
+      } else if root_pos.is_some() || is_center {
+        positional.get(1).copied()
+      } else {
+        literal_pos
+      };
       let mut forwarded: Vec<Expr> = vec![args[0].clone()];
       forwarded.extend(
         args[1..]
@@ -4651,6 +4679,12 @@ fn evaluate_function_call_ast_inner(
       if layered {
         let mut spec =
           vec![Expr::String("LayeredDigraphEmbedding".to_string())];
+        if let Some(v) = root_vertex {
+          spec.push(Expr::Rule {
+            pattern: Box::new(Expr::String("RootVertex".to_string())),
+            replacement: Box::new(v.clone()),
+          });
+        }
         if let Some(dir) = root_pos {
           spec.push(Expr::Rule {
             pattern: Box::new(Expr::String("Orientation".to_string())),
@@ -4700,6 +4734,34 @@ fn evaluate_function_call_ast_inner(
       // print as the `-Graphics-` placeholder rather than the
       // `Graph[<n>, <m>]` data-structure summary.
       let evaluated = crate::evaluator::evaluate_expr_to_expr(&graph_expr)?;
+      // A second argument that is neither a position nor a vertex of the
+      // graph is rejected. Numbers still pass: wolframscript hands them to
+      // its legacy layout, which ignores them.
+      if name == "TreePlot"
+        && let Some(pos_arg) = literal_pos
+        && root_pos.is_none()
+        && !is_center
+        && !matches!(
+          pos_arg,
+          Expr::Integer(_)
+            | Expr::BigInteger(_)
+            | Expr::Real(_)
+            | Expr::BigFloat(..)
+        )
+        && !matches!(pos_arg, Expr::FunctionCall { name: rn, .. } if rn == "Rational")
+        && !matches!(&evaluated, Expr::FunctionCall { name: en, args: eargs }
+          if en == "Graph"
+            && matches!(eargs.first(), Some(Expr::List(vs)) if vs.iter().any(|v| crate::evaluator::pattern_matching::expr_equal(v, pos_arg))))
+      {
+        let pos_str =
+          crate::syntax::format_expr(pos_arg, crate::syntax::ExprForm::Output);
+        crate::emit_message_with("TreePlot::rp", || {
+          format!(
+            "TreePlot::rp: The second argument {pos_str} of TreePlot must be one of Top, Bottom, Left, Right or Center."
+          )
+        });
+        return Ok(unevaluated(name, args));
+      }
       if let Expr::FunctionCall {
         name: en,
         args: eargs,

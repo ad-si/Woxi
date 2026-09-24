@@ -1356,6 +1356,19 @@ function main() {
     // Woxi bundles the name catalogue but not the pixels, which are not ours
     // to redistribute (see conformance_gaps.md).
     'ExampleData[{"TestImage", "Couple"}]',
+    // ImageDeconvolve: wolframscript's result is shifted by a pixel and its
+    // default method iterates in a way that isn't reproducible (see
+    // conformance_gaps.md, "ImageDeconvolve shifts by a pixel").
+    "ImageData[ImageDeconvolve[Image[{{0.1, 0.5, 0.9}}], {{1}}]]",
+    "ImageData[ImageDeconvolve[Image[{{0.1, 0.2}, {0.3, 0.4}}], {{1}}]]",
+    'ImageData[ImageDeconvolve[Image[{{0.36666666666666664, 0.6333333333333334, 0.36666666666666664, 0.6333333333333334}}], {{1, 1, 1}}/3, Padding -> "Periodic"]]',
+    'ImageData[ImageDeconvolve[Image[{{0.1, 0.5, 0.9}}], {{1}}, Method -> {"Tikhonov", 0.01}]]',
+    'ImageData[ImageDeconvolve[Image[{{0.1, 0.5, 0.9}}], {{1}}, Method -> "Wiener"]]',
+    'ImageDeconvolve[Image[{{0.1, 0.5, 0.9}}], {{1}}, Method -> "RichardsonLucy"]',
+    // Same for ExampleData[{"Geometry3D", …}]: the catalogue is bundled, the
+    // meshes are Wolfram's and are not.
+    'ExampleData[{"Geometry3D", "Cow"}]',
+    'ExampleData[{"Geometry3D", "Cow"}, "PolygonObjects"]',
     // LogLogistic Variance: canonical Plus/Times ordering. Symbolic form
     // orders the inner Plus terms differently (2 g Csc[...] first vs WL's
     // -(Pi Csc[Pi/g]^2) first); the numeric form places the Pi factor before
@@ -2221,6 +2234,9 @@ function main() {
     // surface itself and can be redrawn inside another graphic.
     "Head[SphericalPlot3D[1, {t, 0, Pi}, {p, 0, 2 Pi}][[1]]]",
     "Head[First[Plot3D[x y, {x, 0, 1}, {y, 0, 1}]]]",
+    "Head[First[RegionPlot3D[x^2 + z^2 < 1, {x, 0, 1}, {y, 0, 0.001}, {z, -1, 1}]]]",
+    "First[RevolutionPlot3D[{1, 2, 3}, {t, 0, 1}, {theta, 0, Pi}]][[1, 1]]",
+    "Round[Last[First[RevolutionPlot3D[{1, 2, 3}, {t, 0, 1}, {theta, 0, Pi}]][[1]]], 0.001]",
 
     // PolyhedronData: the vertex coordinates are value-identical but written
     // with a different radical nesting (Woxi `Sqrt[5/8 + Sqrt[5]/8]`, Wolfram

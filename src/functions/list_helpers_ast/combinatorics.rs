@@ -189,6 +189,74 @@ pub fn combinatorica_unrank_permutation_ast(
   Ok(Expr::List(result.into()))
 }
 
+/// `Combinatorica\`Permutations[l]` / `Combinatorica\`Permutations[n]` — the
+/// legacy Combinatorica package's `Permutations`, extended (unlike the
+/// built-in of the same name) to accept a bare non-negative integer `n`
+/// meaning `Range[n]`. For a list argument the two agree: both enumerate
+/// permutations in the same lexicographic order (the order
+/// `Combinatorica\`UnrankPermutation` already relies on), so a list simply
+/// delegates to the built-in's algorithm. A non-list, non-integer argument
+/// is left symbolic, matching that Combinatorica itself only defines the
+/// function on that domain.
+pub fn combinatorica_permutations_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let original = || unevaluated("Combinatorica`Permutations", args);
+  if args.len() != 1 {
+    return Ok(original());
+  }
+  let items: Option<Vec<Expr>> = match &args[0] {
+    Expr::List(items) => Some(items.to_vec()),
+    Expr::Integer(n) if *n >= 0 => Some((1..=*n).map(Expr::Integer).collect()),
+    _ => None,
+  };
+  let Some(items) = items else {
+    return Ok(original());
+  };
+  permutations_ast(&[Expr::List(items.into())])
+}
+
+/// `Combinatorica\`Derangements[l]` / `Combinatorica\`Derangements[n]` — all
+/// permutations of `l` (or of `Range[n]`) that leave no element in its
+/// original position, in the same order `Combinatorica\`Permutations`
+/// enumerates them.
+pub fn combinatorica_derangements_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let original = || unevaluated("Combinatorica`Derangements", args);
+  if args.len() != 1 {
+    return Ok(original());
+  }
+  let items: Option<Vec<Expr>> = match &args[0] {
+    Expr::List(items) => Some(items.to_vec()),
+    Expr::Integer(n) if *n >= 0 => Some((1..=*n).map(Expr::Integer).collect()),
+    _ => None,
+  };
+  let Some(items) = items else {
+    return Ok(original());
+  };
+  let all = permutations_ast(&[Expr::List(items.clone().into())])?;
+  let perms: Vec<Expr> = match &all {
+    Expr::List(perms) => perms.iter().cloned().collect(),
+    other => {
+      unreachable!(
+        "permutations_ast always returns a List for a List argument, got {other:?}"
+      )
+    }
+  };
+  let kept: Vec<Expr> = perms
+    .into_iter()
+    .filter(|perm| match perm {
+      Expr::List(elems) => elems
+        .iter()
+        .zip(items.iter())
+        .all(|(a, b)| !crate::evaluator::pattern_matching::expr_equal(a, b)),
+      _ => true,
+    })
+    .collect();
+  Ok(Expr::List(kept.into()))
+}
+
 /// Helper to generate k-permutations.
 ///
 /// When the input contains duplicate elements, only distinct permutations

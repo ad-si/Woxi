@@ -881,7 +881,7 @@ pub(crate) fn expr_children(expr: &Expr) -> Option<Vec<Expr>> {
     return None;
   }
   // A tree is an atom too.
-  if matches!(expr, Expr::FunctionCall { name, .. } if name == "Tree") {
+  if crate::functions::predicate_ast::is_fully_atomic_object(expr) {
     return None;
   }
   match expr {
