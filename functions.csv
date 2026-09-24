@@ -1348,7 +1348,7 @@ DeleteSmallComponents,Zero out label-matrix components with few pixels,✅,pure,
 DeleteMissing,Delete Missing elements from a list or pairs with a missing value from an association,✅,pure,10.0,1338
 GalaxyData,,🚫,,10.0,1338
 PutAppend,Append expressions to a file,✅,effectful,1.0,1338
-ZetaZero,,✅,,6.0,1338
+ZetaZero,k-th non-trivial zero of the Riemann zeta function on the critical line,✅,pure,6.0,1338
 Echo,Prints and returns an expression,✅,effectful,10.3,1339
 ConstellationData,,🚫,,10.0,1342
 Directory,Current working directory,✅,effectful,2.0,1342

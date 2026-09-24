@@ -1648,6 +1648,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Wronskian" => Some((2, 2)),
     "YuleDissimilarity" => Some((2, 2)),
     "Zeta" => Some((1, 2)),
+    "ZetaZero" => Some((1, 3)),
     "HurwitzZeta" => Some((2, 2)),
     _ => None,
   }

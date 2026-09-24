@@ -1634,6 +1634,103 @@ fn riemann_siegel_z_numeric(t: f64) -> f64 {
   theta.cos() * zre - theta.sin() * zim
 }
 
+/// Locate the |k|-th positive zero t_k of the Riemann-Siegel Z function
+/// (equivalently, of ζ(1/2 + i t)) by scanning for sign changes from t = 0
+/// upward and bisecting each bracket. The scan step is kept below half the
+/// Riemann-von Mangoldt average zero spacing 2π/ln(t/2π) so no zero is
+/// skipped. Negative k gives the conjugate zero (t_{-k} = -t_k); k = 0 has
+/// no zero.
+pub(crate) fn zeta_zero_t_for_k(k: i128) -> Option<f64> {
+  if k == 0 {
+    return None;
+  }
+  let target = k.unsigned_abs();
+  let mut count: u128 = 0;
+  let mut t = 0.0f64;
+  let mut prev = riemann_siegel_z_numeric(t);
+  // Safety bound: this is a linear scan, so keep it well away from where
+  // it would become impractically slow rather than searching forever.
+  while t < 2.0e6 {
+    let x = (t / (2.0 * std::f64::consts::PI)).max(3.0);
+    let avg_gap = 2.0 * std::f64::consts::PI / x.ln();
+    let step = (avg_gap * 0.25).clamp(0.02, 0.5);
+    let next_t = t + step;
+    let next = riemann_siegel_z_numeric(next_t);
+    if prev != 0.0 && next != 0.0 && prev.signum() != next.signum() {
+      count += 1;
+      if count == target {
+        let mut lo = t;
+        let mut hi = next_t;
+        let mut flo = prev;
+        for _ in 0..100 {
+          let mid = 0.5 * (lo + hi);
+          let fmid = riemann_siegel_z_numeric(mid);
+          if fmid == 0.0 {
+            lo = mid;
+            hi = mid;
+            break;
+          }
+          if fmid.signum() == flo.signum() {
+            lo = mid;
+            flo = fmid;
+          } else {
+            hi = mid;
+          }
+        }
+        let root = 0.5 * (lo + hi);
+        return Some(if k > 0 { root } else { -root });
+      }
+    }
+    t = next_t;
+    prev = next;
+  }
+  None
+}
+
+/// Numeric evaluation of ZetaZero[k] for use by N[] and by automatic
+/// numericalization when ZetaZero appears mixed with an inexact number.
+/// Returns the k-th non-trivial zero 1/2 + i t_k as a machine-complex Expr.
+pub fn zeta_zero_n_eval(k: i128) -> Option<Expr> {
+  zeta_zero_t_for_k(k).map(|t| build_complex_float_expr(0.5, t))
+}
+
+/// ZetaZero[k] — the k-th non-trivial zero of the Riemann zeta function on
+/// the critical line, 1/2 + i t_k. Numeric evaluation triggers only for an
+/// inexact (Real/BigFloat) argument, matching wolframscript's behaviour of
+/// leaving the exact form ZetaZero[1] symbolic until N[] is applied.
+/// ZetaZero[k, t] / ZetaZero[k, t1, t2] (a zero pinned near a starting
+/// point / in a range) stay symbolic — only the plain 1-argument form is
+/// numerically evaluated here.
+pub fn zeta_zero_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() == 1 {
+    // Integer/BigInteger k stays exact-symbolic (matches wolframscript);
+    // only a Real/BigFloat k (as N[] produces) triggers numeric root-finding.
+    let k_from_inexact = match &args[0] {
+      Expr::Real(f) if *f == f.floor() => Some(*f as i128),
+      Expr::BigFloat(digits, _) => digits.parse::<f64>().ok().and_then(|f| {
+        if f == f.floor() {
+          Some(f as i128)
+        } else {
+          None
+        }
+      }),
+      _ => None,
+    };
+    if let Some(k) = k_from_inexact
+      && let Some(result) = zeta_zero_n_eval(k)
+    {
+      return Ok(result);
+    }
+    return Ok(unevaluated("ZetaZero", args));
+  }
+  if args.len() == 2 || args.len() == 3 {
+    return Ok(unevaluated("ZetaZero", args));
+  }
+  Err(InterpreterError::EvaluationError(
+    "ZetaZero expects 1 to 3 arguments".into(),
+  ))
+}
+
 /// RiemannSiegelZ[t] — the Riemann-Siegel Z function.
 pub fn riemann_siegel_z_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 1 {
