@@ -29529,4 +29529,100 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`timeElapsed$$ = 0.5, $CellContext`k
       "the decay-constant slider must matter"
     );
   }
+
+  /// End-to-end regression for the "Ra Expeditions" Demonstration: a
+  /// `Manipulate` composing a static background `Image` with a `Graphics`
+  /// overlay via `Show`, where two integer-range sliders (each carrying a
+  /// string label, e.g. `{{stepA, 1, "Path A"}, 1, 6, 1}`) reveal a partial
+  /// route through `Take[path, step]`/`Line`, and a checkbox toggles
+  /// `Tooltip`-labeled waypoint `Point`s on and off via `Opacity[If[…]]`,
+  /// all under `SaveDefinitions -> True` with the helper function and data
+  /// lists defined in preceding "Initialization Code" Input cells.
+  ///
+  /// It already worked end-to-end (background `Image` + `Graphics` overlay
+  /// composition, dual `Take`-driven partial-route sliders, and the
+  /// `Tooltip`/`Opacity` checkbox all render cleanly); this pins it with a
+  /// rewritten equivalent (not the copyrighted notebook source, which used
+  /// a `CompressedData` raster background and real expedition tracks).
+  #[test]
+  fn ra_expeditions_notebook_reveals_partial_routes_and_toggles_waypoints() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["background=Image[ConstantArray[0.6,{10,10}]];"], "Input"],
+Cell[BoxData["locate[pt_]:=Reverse[{-First[pt],50-Last[pt]}];"], "Input"],
+Cell[BoxData["waypointNames={\"Start\",\"Camp\",\"Summit\"};\nwaypointCoords={{0,0},{5,20},{10,40}};"], "Input"],
+Cell[BoxData["pathA={{0,0},{2,5},{4,12},{6,18},{8,25},{10,30}};"], "Input"],
+Cell[BoxData["pathB={{0,0},{1,8},{3,15},{5,20},{7,28},{9,33},{10,38}};"], "Input"],
+Cell[BoxData["Manipulate[\nShow[\nbackground,\nGraphics[{\n{Opacity[If[showNames,0.9,0.]],Orange,PointSize[0.02],Table[Tooltip[Point[locate[waypointCoords[[i]]]],waypointNames[[i]]],{i,1,3}]},\n{Blue,Line[Take[pathA,stepA]]},\n{Red,Line[Take[pathB,stepB]]}\n}],\nImageSize->300,PlotRange->All\n],\n{{stepA,1,\"Path A\"},1,6,1},\n{{stepB,1,\"Path B\"},1,7,1},\n{{showNames,False,\"show waypoint names\"},{True,False}},\nSaveDefinitions->True\n]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`stepA$$ = 1, $CellContext`stepB$$ = 1, $CellContext`showNames$$ = False}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    woxi::clear_state();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the background + overlay must draw"
+    );
+
+    assert!(
+      matches!(
+        &widget.controls[0],
+        manipulate::ControlState::Continuous { name, label, min, max, current, .. }
+          if name == "stepA" && label == "Path A"
+            && (*min, *max, *current) == (1.0, 6.0, 1.0)
+      ),
+      "control 0 should be the Path A slider: {:?}",
+      widget.controls[0]
+    );
+    assert!(
+      matches!(
+        &widget.controls[1],
+        manipulate::ControlState::Continuous { name, label, min, max, current, .. }
+          if name == "stepB" && label == "Path B"
+            && (*min, *max, *current) == (1.0, 7.0, 1.0)
+      ),
+      "control 1 should be the Path B slider: {:?}",
+      widget.controls[1]
+    );
+    assert!(
+      matches!(
+        &widget.controls[2],
+        manipulate::ControlState::Discrete { name, label, values, .. }
+          if name == "showNames" && label == "show waypoint names"
+            && values == &["True", "False"]
+      ),
+      "control 2 should be the waypoint-names checkbox: {:?}",
+      widget.controls[2]
+    );
+
+    let render = |step_a: i64, step_b: i64, show_names: &str| {
+      woxi::interpret_with_stdout(&format!(
+        "stepA = {step_a}; stepB = {step_b}; showNames = {show_names};\n{}",
+        widget.body
+      ))
+      .expect("the body must render")
+      .graphics
+      .expect("the body must produce a graphic")
+    };
+    let base = render(1, 1, "False");
+    // Advancing either route slider must lengthen its drawn Line.
+    assert_ne!(base, render(6, 1, "False"), "the Path A slider must matter");
+    assert_ne!(base, render(1, 7, "False"), "the Path B slider must matter");
+    // Toggling the checkbox must show/hide the waypoint tooltips.
+    assert_ne!(
+      base,
+      render(1, 1, "True"),
+      "the waypoint-names checkbox must matter"
+    );
+  }
 }
