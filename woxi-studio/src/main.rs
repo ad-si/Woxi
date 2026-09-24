@@ -29393,4 +29393,111 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`timeElapsed$$ = 0.5, $CellContext`k
       "the decay-constant slider must matter"
     );
   }
+
+  /// End-to-end regression for a Wolfram Demonstration randomly sampled by
+  /// the scheduled QA routine ("Arithmetic Mean, Geometric Mean, Root Mean
+  /// Square and Harmonic Mean for Two Numbers"): a `Manipulate` with two
+  /// number sliders whose body draws the four classical Pythagorean means
+  /// of the two numbers, computed by helper functions the widget only
+  /// keeps via `SaveDefinitions -> True` (its own `Initialization` option
+  /// is absent; Wolfram folds the helpers into the saved
+  /// `DynamicModuleBox`'s `Initialization :> (…)` instead).
+  ///
+  /// It already worked end-to-end (the `SaveDefinitions` helper-recovery
+  /// path `instantiate_stored_manipulate` implements already covers plain
+  /// pattern-matched helper functions referenced from a `Graphics` body);
+  /// this pins it with an independently written equivalent — a number-line
+  /// plot of the four means rather than the notebook's semicircle-chord
+  /// construction, and its own helper formulas — not the copyrighted
+  /// notebook source.
+  #[test]
+  fn manipulate_save_definitions_pythagorean_means_on_number_line() {
+    let code = r##"Manipulate[
+      Graphics[{
+        Blue, Point[{am[p, q], 0}],
+        Text[Style["AM " <> ToString[NumberForm[N[am[p, q]], {3, 2}]], 12], {am[p, q], 0.5}],
+        Red, Point[{gm[p, q], 0}],
+        Text[Style["GM " <> ToString[NumberForm[N[gm[p, q]], {3, 2}]], 12], {gm[p, q], 0.5}],
+        Darker[Green], Point[{hm[p, q], 0}],
+        Text[Style["HM " <> ToString[NumberForm[N[hm[p, q]], {3, 2}]], 12], {hm[p, q], -0.5}],
+        Purple, Point[{qm[p, q], 0}],
+        Text[Style["QM " <> ToString[NumberForm[N[qm[p, q]], {3, 2}]], 12], {qm[p, q], -0.5}],
+        Black, Line[{{0, 0}, {10, 0}}]
+      }, PlotRange -> {{0, 10}, {-1, 1}}, ImageSize -> 400, Axes -> False],
+      {{p, 1, "first number"}, 0.01, 10, 0.1},
+      {{q, 9, "second number"}, 0.01, 10, 0.1},
+      SaveDefinitions -> True
+    ]"##;
+    let stored = r##"DynamicModuleBox[{$CellContext`p$$ = 1, $CellContext`q$$ = 9},
+      DynamicBox[Manipulate`ManipulateBoxes[1, StandardForm]],
+      Initialization:>($CellContext`am[
+          Pattern[$CellContext`u, Blank[]], Pattern[$CellContext`v, Blank[]]] :=
+          ($CellContext`u + $CellContext`v)/2;
+        $CellContext`gm[
+          Pattern[$CellContext`u, Blank[]], Pattern[$CellContext`v, Blank[]]] :=
+          Sqrt[$CellContext`u $CellContext`v];
+        $CellContext`hm[
+          Pattern[$CellContext`u, Blank[]], Pattern[$CellContext`v, Blank[]]] :=
+          2 $CellContext`u $CellContext`v/($CellContext`u + $CellContext`v);
+        $CellContext`qm[
+          Pattern[$CellContext`u, Blank[]], Pattern[$CellContext`v, Blank[]]] :=
+          Sqrt[($CellContext`u^2 + $CellContext`v^2)/2];
+        Typeset`initDone$$ = True)]"##;
+
+    let state = instantiate_stored_manipulate(code, stored).expect(
+      "SaveDefinitions widget must instantiate from the recovered helpers",
+    );
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(state.graphics_handle.is_some(), "the number line must draw");
+
+    assert!(
+      matches!(
+        &state.controls[0],
+        manipulate::ControlState::Continuous { name, label, min, max, current, .. }
+          if name == "p" && label == "first number"
+            && (*min, *max, *current) == (0.01, 10.0, 1.0)
+      ),
+      "control 0 should be the first-number slider: {:?}",
+      state.controls[0]
+    );
+    assert!(
+      matches!(
+        &state.controls[1],
+        manipulate::ControlState::Continuous { name, label, min, max, current, .. }
+          if name == "q" && label == "second number"
+            && (*min, *max, *current) == (0.01, 10.0, 9.0)
+      ),
+      "control 1 should be the second-number slider: {:?}",
+      state.controls[1]
+    );
+
+    let render = |p: f64, q: f64| {
+      woxi::interpret_with_stdout(&format!("p = {p}; q = {q};\n{}", state.body))
+        .expect("the body must render")
+        .graphics
+        .expect("the body must produce a graphic")
+    };
+    let base = render(1.0, 9.0);
+    // AM = 5, GM = 3, HM = 1.8, QM ≈ 6.40 for p = 1, q = 9 — the classical
+    // Pythagorean-mean ordering HM <= GM <= AM <= QM.
+    assert!(base.contains("AM 5.00"), "AM label missing: {base}");
+    assert!(base.contains("GM 3.00"), "GM label missing: {base}");
+    assert!(base.contains("HM 1.80"), "HM label missing: {base}");
+    assert!(base.contains("QM 6.40"), "QM label missing: {base}");
+    // Moving either slider must change the rendered scene.
+    assert_ne!(
+      base,
+      render(4.0, 9.0),
+      "the first-number slider must matter"
+    );
+    assert_ne!(
+      base,
+      render(1.0, 5.0),
+      "the second-number slider must matter"
+    );
+  }
 }
