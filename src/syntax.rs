@@ -1,4 +1,4 @@
-use crate::helpers::unevaluated;
+use crate::helpers::{call, pow, unevaluated};
 use num_bigint::{BigInt, Sign};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1701,7 +1701,7 @@ fn parse_box_rowbox(toks: &[BoxTok]) -> Option<Expr> {
         let inner_toks = &toks[i + 1..j];
         let inner_expr = parse_box_rowbox(inner_toks)?;
         // Build the parenthesised group as its own RowBox of `(`, inner, `)`.
-        let group = box_call(
+        let group = call(
           "RowBox",
           vec![Expr::List(
             vec![
@@ -1739,7 +1739,7 @@ fn parse_box_rowbox(toks: &[BoxTok]) -> Option<Expr> {
   if parts.len() == 1 {
     return Some(parts.into_iter().next().unwrap());
   }
-  Some(box_call("RowBox", vec![Expr::List(parts.into())]))
+  Some(call("RowBox", vec![Expr::List(parts.into())]))
 }
 
 #[derive(Debug)]
@@ -1867,7 +1867,7 @@ fn box_unit_or_group(toks: &[BoxTok], start: usize) -> Option<(Expr, usize)> {
       return None;
     }
     let inner = parse_box_rowbox(&toks[start + 1..j])?;
-    let group = box_call(
+    let group = call(
       "RowBox",
       vec![Expr::List(
         vec![
@@ -1884,13 +1884,6 @@ fn box_unit_or_group(toks: &[BoxTok], start: usize) -> Option<(Expr, usize)> {
   Some((unit, start + 1))
 }
 
-fn box_call(name: &str, args: Vec<Expr>) -> Expr {
-  Expr::FunctionCall {
-    name: name.to_string(),
-    args: args.into(),
-  }
-}
-
 fn parse_box_chain(toks: &[BoxTok], start: usize) -> Option<(Expr, usize)> {
   if start >= toks.len() {
     return None;
@@ -1898,7 +1891,7 @@ fn parse_box_chain(toks: &[BoxTok], start: usize) -> Option<(Expr, usize)> {
   // Prefix `\@` (SqrtBox).
   if matches!(toks[start], BoxTok::Op('@')) {
     let (arg, end) = parse_box_chain(toks, start + 1)?;
-    return Some((box_call("SqrtBox", vec![arg]), end));
+    return Some((call("SqrtBox", vec![arg]), end));
   }
   let lhs = box_unit(&toks[start])?;
   parse_box_continued(lhs, toks, start + 1)
@@ -1923,7 +1916,7 @@ fn parse_box_continued(
         } else {
           "SubscriptBox"
         };
-        return Some((box_call(head, vec![lhs, rhs]), end));
+        return Some((call(head, vec![lhs, rhs]), end));
       }
       BoxTok::Op('/') => {
         // `\/` → FractionBox[lhs, rhs]. Binds tighter than the
@@ -1933,7 +1926,7 @@ fn parse_box_continued(
         // that recursively becomes `RowBox[{"(", inner, ")"}]`
         // (regression for `\(x \/ (y + z)\)`).
         let (rhs, end) = box_unit_or_group(toks, idx + 1)?;
-        lhs = box_call("FractionBox", vec![lhs, rhs]);
+        lhs = call("FractionBox", vec![lhs, rhs]);
         idx = end;
       }
       BoxTok::Op('`') => {
@@ -1947,7 +1940,7 @@ fn parse_box_continued(
           Expr::String(s) => Expr::Identifier(s.clone()),
           other => other.clone(),
         };
-        return Some((box_call("FormBox", vec![body, form_tag]), toks.len()));
+        return Some((call("FormBox", vec![body, form_tag]), toks.len()));
       }
       BoxTok::Op('+' | '&') => {
         let op = match &toks[idx] {
@@ -1967,9 +1960,9 @@ fn parse_box_continued(
           let third = box_unit(&toks[end + 1])?;
           end += 2;
           let combined = if op == '+' {
-            box_call("UnderoverscriptBox", vec![lhs, rhs, third])
+            call("UnderoverscriptBox", vec![lhs, rhs, third])
           } else {
-            box_call("UnderoverscriptBox", vec![lhs, third, rhs])
+            call("UnderoverscriptBox", vec![lhs, third, rhs])
           };
           lhs = combined;
         } else {
@@ -1978,7 +1971,7 @@ fn parse_box_continued(
           } else {
             "OverscriptBox"
           };
-          lhs = box_call(head, vec![lhs, rhs]);
+          lhs = call(head, vec![lhs, rhs]);
         }
         idx = end;
       }
@@ -7452,10 +7445,7 @@ fn denominator_form(expr: &Expr) -> Expr {
   {
     crate::functions::math_ast::make_sqrt(base.clone())
   } else {
-    Expr::FunctionCall {
-      name: "Power".to_string(),
-      args: vec![base.clone(), pos_exp].into(),
-    }
+    pow(base.clone(), pos_exp)
   }
 }
 
@@ -11692,10 +11682,7 @@ fn flatten_times_recursive(expr: &Expr, out: &mut Vec<Expr>) {
       right,
     } => {
       flatten_times_recursive(left, out);
-      out.push(Expr::FunctionCall {
-        name: "Power".to_string(),
-        args: vec![(**right).clone(), Expr::Integer(-1)].into(),
-      });
+      out.push(pow((**right).clone(), Expr::Integer(-1)));
     }
     // `-x` inside a product is `(-1)*x`; split out the `-1` so an imaginary
     // operand (`-I`) is exposed to the coefficient handling. Don't split a
@@ -15422,10 +15409,7 @@ fn expr_to_textbox(expr: &Expr) -> TextBox {
       let denom = if matches!(pos_exp, Expr::Integer(1)) {
         expr_to_textbox(&base)
       } else {
-        expr_to_textbox(&Expr::FunctionCall {
-          name: "Power".to_string(),
-          args: vec![base, pos_exp].into(),
-        })
+        expr_to_textbox(&pow(base, pos_exp))
       };
       TextBox::fraction(&TextBox::atom("1"), &denom)
     }
@@ -16096,10 +16080,7 @@ fn render_times_textbox(args: &[Expr]) -> TextBox {
           if matches!(pos_exp, Expr::Integer(1)) {
             denom_factors.push(base);
           } else {
-            denom_factors.push(Expr::FunctionCall {
-              name: "Power".to_string(),
-              args: vec![base, pos_exp].into(),
-            });
+            denom_factors.push(pow(base, pos_exp));
           }
         } else {
           num_factors.push(arg.clone());

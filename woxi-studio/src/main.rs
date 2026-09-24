@@ -30009,6 +30009,142 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`timeElapsed$$ = 0.5, $CellContext`k
     );
   }
 
+  /// Checked a randomly-sampled Wolfram Demonstrations Project notebook: a
+  /// "flex" slider drives `FindRoot`-solved vertex positions for a hinged
+  /// polyhedron rendered via a `GraphicsComplex`/`Polygon` composed with
+  /// `RotationTransform` inside a `Graphics3D`, with an opacity slider and
+  /// a `{var, {True, False}}` checkbox that swaps in a flat unfolded net
+  /// view, both continuous sliders wired `Enabled -> Dynamic[Not[…]]` to
+  /// the checkbox. Independently written, not copied from the notebook: a
+  /// four-vertex tetrahedron whose apex is `FindRoot`-solved from three
+  /// fixed edge lengths (rather than the nine-vertex construction the
+  /// actual Demonstration builds), with a simplified triangle net.
+  ///
+  /// It already worked end-to-end (no code changes needed): `Quiet` +
+  /// `FindRoot` + `ReplaceAll` solving for a `Module`-local vertex,
+  /// `GraphicsComplex`/`Polygon` composed with `RotationTransform`, a
+  /// `Graphics3D` `Opacity`/`Boxed`/`PlotRange`/`SphericalRegion`/
+  /// `ViewAngle` combination, and the checkbox-style discrete control all
+  /// render cleanly; this pins the behavior with a rewritten equivalent as
+  /// a regression test.
+  #[test]
+  fn flex_polyhedron_notebook_switches_solid_and_net_views() {
+    let nb_src = r##"Notebook[{
+Cell[BoxData["mag2 = Dot[#, #] &;"], "Input"],
+Cell[BoxData["netView = Graphics[{Line[{{0, 0}, {6, 0}, {3, 5.196}, {0, 0}}], Line[{{0, 0}, {3, 5.196}, {-3, 5.196}, {0, 0}}], Line[{{6, 0}, {3, 5.196}, {9, 5.196}, {6, 0}}], Line[{{0, 0}, {6, 0}, {3, -5.196}, {0, 0}}]}, ImageSize -> {300, 300}];"], "Input"],
+Cell[BoxData["flexTetra[t_, o_] := Module[{b1, b2, b3, apex, x, y, z, sols, edge, vol}, b1 = {0, 0, 0}; b2 = {6, 0, 0}; b3 = {3, 5.196, 0}; edge = 5 + t; apex = {x, y, z}; sols = Quiet[FindRoot[{mag2[apex - b1] == edge^2, mag2[apex - b2] == edge^2, mag2[apex - b3] == edge^2}, {x, 3}, {y, 1.7}, {z, 4}]]; apex = apex /. sols; vol = Det[{b2 - b1, b3 - b1, apex - b1}]/6; Column[{Graphics3D[{Opacity[o], GraphicsComplex[RotationTransform[Pi/6, {0, 0, 1}, {3, 1.7, 0}] /@ {b1, b2, b3, apex}, Polygon[{{1, 2, 3}, {1, 2, 4}, {2, 3, 4}, {3, 1, 4}}]]}, Boxed -> False, PlotRange -> 8, SphericalRegion -> True, ViewAngle -> 20 Degree, ImageSize -> {300, 300}], Text[Row[{\"volume = \", vol}]]}, Alignment -> Center]]"], "Input"],
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[\nIf[flat, netView, flexTetra[t, o]],\n{{t, 1, \"flex\"}, 0, 4, Enabled -> Dynamic[Not[flat]]},\n{{o, 0.8, \"opacity\"}, 0, 0.99, Enabled -> Dynamic[Not[flat]]},\n{{flat, False, \"solid/net\"}, {True, False}},\nSaveDefinitions -> True\n]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`t$$ = 1., $CellContext`o$$ = 0.8, $CellContext`flat$$ = False}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let mut editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter_mut()
+      .find_map(|e| e.manipulate_state.as_mut())
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(widget.graphics_handle.is_some(), "the solid view must draw");
+
+    assert!(
+      matches!(
+        &widget.controls[0],
+        manipulate::ControlState::Continuous { name, label, min, max, current, .. }
+          if name == "t" && label == "flex" && (*min, *max, *current) == (0.0, 4.0, 1.0)
+      ),
+      "control 0 should be the flex slider: {:?}",
+      widget.controls[0]
+    );
+    assert!(
+      matches!(
+        &widget.controls[1],
+        manipulate::ControlState::Continuous { name, label, min, max, current, .. }
+          if name == "o" && label == "opacity" && (*min, *max, *current) == (0.0, 0.99, 0.8)
+      ),
+      "control 1 should be the opacity slider: {:?}",
+      widget.controls[1]
+    );
+    let (flat_values, flat_index) = match &widget.controls[2] {
+      manipulate::ControlState::Discrete {
+        name,
+        values,
+        current_index,
+        ..
+      } if name == "flat" => (values.clone(), *current_index),
+      other => panic!("control 2 should be the solid/net checkbox: {other:?}"),
+    };
+    assert_eq!(flat_values, ["True", "False"]);
+    assert_eq!(flat_values[flat_index], "False", "starts in solid view");
+
+    // Toggling to the net view must re-render without error, and the net
+    // and solid scenes must actually differ.
+    let render_for = |widget: &mut manipulate::ManipulateState,
+                      index: usize| {
+      match &mut widget.controls[2] {
+        manipulate::ControlState::Discrete { current_index, .. } => {
+          *current_index = index
+        }
+        other => panic!("expected discrete, got {other:?}"),
+      }
+      widget.reevaluate();
+      assert!(
+        widget.error.is_none(),
+        "view {index} errored: {:?}",
+        widget.error
+      );
+      assert!(widget.graphics_handle.is_some(), "view {index} must draw");
+      let bindings: Vec<(String, String)> = widget
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      let body = widget.body.clone();
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&body)
+      })
+      .expect("body must render")
+      .graphics
+      .expect("view must produce a graphic")
+    };
+    let solid = render_for(widget, 0);
+    let net = render_for(widget, 1);
+    assert_ne!(solid, net, "solid and net views must render differently");
+
+    // Moving the flex slider must change the solid scene's rendered volume.
+    match &mut widget.controls[0] {
+      manipulate::ControlState::Continuous { current, .. } => *current = 3.0,
+      other => panic!("expected continuous, got {other:?}"),
+    }
+    widget.reevaluate();
+    assert!(
+      widget.error.is_none(),
+      "flexed body errored: {:?}",
+      widget.error
+    );
+    let bindings: Vec<(String, String)> = widget
+      .controls
+      .iter()
+      .filter(|c| c.binds_variable())
+      .map(|c| (c.name().to_string(), c.current_code()))
+      .collect();
+    let flexed = woxi::with_scoped_globals(&bindings, || {
+      woxi::interpret_with_stdout(&widget.body)
+    })
+    .expect("body must render")
+    .graphics
+    .expect("view must produce a graphic");
+    assert_ne!(
+      solid, flexed,
+      "the flex slider must change the rendered scene"
+    );
+  }
+
   /// End-to-end regression for the "Ra Expeditions" Demonstration: a
   /// `Manipulate` composing a static background `Image` with a `Graphics`
   /// overlay via `Show`, where two integer-range sliders (each carrying a
