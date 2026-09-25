@@ -590,6 +590,9 @@ pub fn dispatch_plotting(
     "SectorChart" if !args.is_empty() => {
       Some(crate::functions::chart::sector_chart_ast(args))
     }
+    "SectorChart3D" if !args.is_empty() => Some(quiet_plot(|| {
+      crate::functions::chart::sector_chart_3d_ast(args)
+    })),
     "DateListPlot" if !args.is_empty() => {
       Some(crate::functions::chart::date_list_plot_ast(args))
     }

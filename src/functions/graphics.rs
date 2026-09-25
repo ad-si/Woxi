@@ -16408,6 +16408,7 @@ pub(crate) fn is_graphics_producing_head(name: &str) -> bool {
       | "BoxWhiskerChart"
       | "DistributionChart"
       | "SectorChart"
+      | "SectorChart3D"
       | "CandlestickChart"
       // Arrays / matrices
       | "ArrayPlot"
