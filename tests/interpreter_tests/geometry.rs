@@ -3909,6 +3909,54 @@ mod scaling_transform {
   }
 }
 
+// A TransformationFunction applied to a *list* of points transforms each
+// point individually, the same as Mathematica's listable geometric
+// transforms. Regression test: applying one used to index the homogeneous
+// matrix with the point count instead of the coordinate dimension, panicking
+// whenever the list held more points than the matrix had rows (e.g. five
+// 3D points against a 4x4 rotation matrix).
+mod transformation_function_apply_to_point_list {
+  use super::*;
+
+  #[test]
+  fn rotation_2d() {
+    assert_eq!(
+      interpret("RotationTransform[Pi/2][{{1, 0}, {0, 1}}]").unwrap(),
+      "{{0, 1}, {-1, 0}}"
+    );
+  }
+
+  #[test]
+  fn translation_2d() {
+    assert_eq!(
+      interpret("TranslationTransform[{1, 2}][{{0, 0}, {1, 1}}]").unwrap(),
+      "{{1, 2}, {2, 3}}"
+    );
+  }
+
+  #[test]
+  fn scaling_2d() {
+    assert_eq!(
+      interpret("ScalingTransform[{2, 3}][{{1, 1}, {2, 2}}]").unwrap(),
+      "{{2, 3}, {4, 6}}"
+    );
+  }
+
+  // The regression case: a 3D rotation (a 4x4 homogeneous matrix) applied to
+  // more points than the matrix has rows.
+  #[test]
+  fn rotation_3d_more_points_than_matrix_rows() {
+    assert_eq!(
+      interpret(
+        "RotationTransform[Pi/2, {0, 0, 1}][{{1, 0, 0}, {0, 1, 0}, \
+         {1, 1, 0}, {2, 0, 0}, {0, 2, 0}}]"
+      )
+      .unwrap(),
+      "{{0, 1, 0}, {-1, 0, 0}, {-1, 1, 0}, {0, 2, 0}, {-2, 0, 0}}"
+    );
+  }
+}
+
 // ShearingTransform[phi, e, n, p] shears about the point p instead of the
 // origin, giving the translation column p - M.p.
 mod shearing_transform_about_a_point {
