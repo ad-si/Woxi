@@ -12074,6 +12074,85 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       let svg = export_svg("PieChart3D[{1, 2, 3}, ImageSize -> 200]");
       assert!(svg.contains("width=\"200\""));
     }
+
+    #[test]
+    fn sector_chart_3d_returns_graphics3d_head() {
+      assert_eq!(
+        interpret("Head[SectorChart3D[{{2, 2, 3}, {2, 1, 2}, {1, 2, 1}}]]")
+          .unwrap(),
+        "Graphics3D"
+      );
+    }
+
+    #[test]
+    fn sector_chart_3d_basic() {
+      let svg = export_svg("SectorChart3D[{{2, 2, 3}, {2, 1, 2}, {1, 2, 1}}]");
+      assert!(
+        svg.matches("<polygon").count() > 0,
+        "expected triangles in SectorChart3D output"
+      );
+    }
+
+    #[test]
+    fn sector_chart_3d_single_sector() {
+      // A single sector should still render without errors.
+      let svg = export_svg("SectorChart3D[{{1, 2, 3}}]");
+      assert!(svg.matches("<polygon").count() > 0);
+    }
+
+    #[test]
+    fn sector_chart_3d_image_size() {
+      let svg =
+        export_svg("SectorChart3D[{{1, 2, 3}, {2, 3, 1}}, ImageSize -> 200]");
+      assert!(svg.contains("width=\"200\""));
+    }
+
+    #[test]
+    fn sector_chart_3d_multi_dataset_grouped() {
+      // Grouped (the default) draws one concentric ring per dataset.
+      assert_eq!(
+        interpret(
+          "Head[SectorChart3D[{{{1, 1, 3}, {2, 2, 2}, {2, 3, 1}}, \
+           {{1, 1, 3}, {1, 2, 2}, {2, 3, 2}, {3, 2, 1}}}]]"
+        )
+        .unwrap(),
+        "Graphics3D"
+      );
+    }
+
+    #[test]
+    fn sector_chart_3d_chart_layout_stacked() {
+      let svg = export_svg(
+        "SectorChart3D[{{{1, 1, 3}, {2, 2, 2}}, {{1, 1, 3}, {1, 2, 2}}}, \
+         ChartLayout -> \"Stacked\"]",
+      );
+      assert!(svg.matches("<polygon").count() > 0);
+    }
+
+    #[test]
+    fn sector_chart_3d_chart_element_function_profile() {
+      let svg = export_svg(
+        "SectorChart3D[{{1, 3, 2}, {2, 1, 3}}, \
+         ChartElementFunction -> \"ProfileSector3D\"]",
+      );
+      assert!(svg.matches("<polygon").count() > 0);
+    }
+
+    #[test]
+    fn sector_chart_3d_chart_element_function_torus() {
+      let svg = export_svg(
+        "SectorChart3D[{{1, 3, 2}, {2, 1, 3}}, \
+         ChartElementFunction -> \"TorusSector3D\"]",
+      );
+      assert!(svg.matches("<polygon").count() > 0);
+    }
+
+    #[test]
+    fn sector_chart_3d_invalid_input_unevaluated() {
+      // Non-list input has no sensible chart to draw, so it stays
+      // unevaluated rather than crashing — matching the other charts.
+      assert_eq!(interpret("SectorChart3D[5]").unwrap(), "SectorChart3D[5]");
+    }
   }
 
   mod field_plots {

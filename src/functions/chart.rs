@@ -2545,6 +2545,596 @@ fn render_3d_triangles(
   svg
 }
 
+/// The 3D shape drawn per sector by `SectorChart3D`'s `ChartElementFunction`.
+#[derive(Clone, Copy, PartialEq)]
+enum SectorElement {
+  /// Flat-sided wedge (the default) — same cross-section as `PieChart3D`.
+  Cylindrical,
+  /// Stepped/tapering wedge, giving a raised profile silhouette.
+  Profile,
+  /// Round tube (torus) cross-section swept around the sector's arc.
+  Torus,
+}
+
+/// Parses `SectorChart3D`'s data argument into one dataset per sublist, each
+/// a list of `(angle, radius, height)` triples — Wolfram's convention of
+/// sector angle proportional to x, radius y, height z. A flat list of
+/// triples is a single dataset; wrapping it in another list gives one
+/// dataset per sublist, matching the multi-dataset convention shared by
+/// `PieChart3D`/`BarChart3D`.
+fn extract_sector_rows(
+  arg: &Expr,
+) -> Result<Vec<Vec<(f64, f64, f64)>>, InterpreterError> {
+  let data = evaluate_expr_to_expr(arg)?;
+  let Expr::List(items) = &data else {
+    return Err(InterpreterError::EvaluationError(
+      "SectorChart3D: first argument must be a list".into(),
+    ));
+  };
+  if items.is_empty() {
+    return Ok(vec![]);
+  }
+
+  let as_triple = |e: &Expr| -> Option<(f64, f64, f64)> {
+    let Expr::List(v) = e else { return None };
+    if v.len() != 3 {
+      return None;
+    }
+    let a = try_eval_to_f64(
+      &evaluate_expr_to_expr(&v[0]).unwrap_or_else(|_| v[0].clone()),
+    )?;
+    let r = try_eval_to_f64(
+      &evaluate_expr_to_expr(&v[1]).unwrap_or_else(|_| v[1].clone()),
+    )?;
+    let h = try_eval_to_f64(
+      &evaluate_expr_to_expr(&v[2]).unwrap_or_else(|_| v[2].clone()),
+    )?;
+    Some((a, r, h))
+  };
+
+  let evaluated: Vec<Expr> = items
+    .iter()
+    .map(|i| evaluate_expr_to_expr(i).unwrap_or_else(|_| i.clone()))
+    .collect();
+
+  // Multi-dataset: every item is itself a non-empty list of triples.
+  let is_multi_dataset = evaluated.iter().all(|e| match e {
+    Expr::List(inner) => {
+      !inner.is_empty() && inner.iter().all(|x| as_triple(x).is_some())
+    }
+    _ => false,
+  });
+  if is_multi_dataset {
+    let mut rows = Vec::with_capacity(evaluated.len());
+    for e in &evaluated {
+      let Expr::List(inner) = e else { continue };
+      rows.push(inner.iter().filter_map(&as_triple).collect());
+    }
+    return Ok(rows);
+  }
+
+  // Single dataset: every item is itself a triple.
+  let row: Vec<(f64, f64, f64)> =
+    evaluated.iter().filter_map(as_triple).collect();
+  Ok(vec![row])
+}
+
+/// Picks the color for sector/index `idx`, honoring `ChartStyle` the same
+/// way the other chart renderers do.
+fn sector_color(opts: &ChartOptions, idx: usize) -> (u8, u8, u8) {
+  if opts.chart_style.is_empty() {
+    PLOT_COLORS[idx % PLOT_COLORS.len()]
+  } else {
+    let c = &opts.chart_style[idx % opts.chart_style.len()];
+    (
+      (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+      (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+      (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+    )
+  }
+}
+
+/// Builds the triangles for one 3D sector wedge spanning radius `[r_in,
+/// r_out]`, height `[z_bot, z_top]` and angle `[start_angle, end_angle]`,
+/// with the cross-section shape selected by `element`.
+#[allow(clippy::too_many_arguments)]
+fn build_sector_wedge(
+  element: SectorElement,
+  r_in: f64,
+  r_out: f64,
+  z_bot: f64,
+  z_top: f64,
+  start_angle: f64,
+  end_angle: f64,
+  base_color: (u8, u8, u8),
+  camera: &crate::functions::plot3d::Camera,
+  seg_per_turn: usize,
+  out: &mut Vec<crate::functions::plot3d::Triangle>,
+) {
+  match element {
+    SectorElement::Torus => build_torus_sector(
+      r_in,
+      r_out,
+      z_bot,
+      z_top,
+      start_angle,
+      end_angle,
+      base_color,
+      camera,
+      seg_per_turn,
+      out,
+    ),
+    SectorElement::Cylindrical => build_cylindrical_sector(
+      r_in,
+      r_out,
+      z_bot,
+      z_top,
+      start_angle,
+      end_angle,
+      base_color,
+      camera,
+      seg_per_turn,
+      out,
+    ),
+    SectorElement::Profile => {
+      // Three stepped tiers, each narrower than the last, giving the
+      // wedge a tapered silhouette instead of a flat block.
+      const TIERS: usize = 3;
+      let total_h = z_top - z_bot;
+      let total_inset = 0.18 * (r_out - r_in).max(0.0);
+      for t in 0..TIERS {
+        let tb = z_bot + total_h * t as f64 / TIERS as f64;
+        let tt = z_bot + total_h * (t + 1) as f64 / TIERS as f64;
+        let inset = total_inset * t as f64 / TIERS as f64;
+        let tier_r_in = r_in + inset;
+        let tier_r_out = (r_out - inset).max(tier_r_in + 1e-6);
+        build_cylindrical_sector(
+          tier_r_in,
+          tier_r_out,
+          tb,
+          tt,
+          start_angle,
+          end_angle,
+          base_color,
+          camera,
+          seg_per_turn,
+          out,
+        );
+      }
+    }
+  }
+}
+
+/// Flat-sided annular wedge — the default `SectorChart3D` element and the
+/// building block `SectorElement::Profile` tiers from. Mirrors the
+/// wedge tessellation `PieChart3D` uses for its rings.
+#[allow(clippy::too_many_arguments)]
+fn build_cylindrical_sector(
+  r_in: f64,
+  r_out: f64,
+  z_bot: f64,
+  z_top: f64,
+  start_angle: f64,
+  end_angle: f64,
+  base_color: (u8, u8, u8),
+  camera: &crate::functions::plot3d::Camera,
+  seg_per_turn: usize,
+  out: &mut Vec<crate::functions::plot3d::Triangle>,
+) {
+  use crate::functions::plot3d::{
+    Point3D, Triangle, apply_lighting, depth, project, triangle_normal,
+  };
+
+  let sweep = end_angle - start_angle;
+  if sweep <= 0.0 || r_out <= r_in {
+    return;
+  }
+  let n_seg = ((sweep / (2.0 * std::f64::consts::PI) * seg_per_turn as f64)
+    .ceil() as usize)
+    .max(1);
+  let is_innermost = r_in <= 1e-9;
+
+  let push_tri =
+    |v0: Point3D, v1: Point3D, v2: Point3D, all: &mut Vec<Triangle>| {
+      let normal = triangle_normal(v0, v1, v2);
+      let color = apply_lighting(base_color, normal);
+      let center = Point3D {
+        x: (v0.x + v1.x + v2.x) / 3.0,
+        y: (v0.y + v1.y + v2.y) / 3.0,
+        z: (v0.z + v1.z + v2.z) / 3.0,
+      };
+      all.push(Triangle {
+        boundary: [true; 3],
+        edge_color: None,
+        projected: [
+          project(v0, camera),
+          project(v1, camera),
+          project(v2, camera),
+        ],
+        depth: depth(center, camera),
+        color,
+        opacity: 1.0,
+      });
+    };
+
+  let pt = |r: f64, a: f64, z: f64| Point3D {
+    x: r * a.cos(),
+    y: r * a.sin(),
+    z,
+  };
+
+  for s in 0..n_seg {
+    let t0 = s as f64 / n_seg as f64;
+    let t1 = (s + 1) as f64 / n_seg as f64;
+    let a0 = start_angle + t0 * sweep;
+    let a1 = start_angle + t1 * sweep;
+
+    let o_top_0 = pt(r_out, a0, z_top);
+    let o_top_1 = pt(r_out, a1, z_top);
+    let o_bot_0 = pt(r_out, a0, z_bot);
+    let o_bot_1 = pt(r_out, a1, z_bot);
+
+    if is_innermost {
+      let center_top = pt(0.0, 0.0, z_top);
+      let center_bot = pt(0.0, 0.0, z_bot);
+      push_tri(center_top, o_top_0, o_top_1, out);
+      push_tri(center_bot, o_bot_1, o_bot_0, out);
+    } else {
+      let i_top_0 = pt(r_in, a0, z_top);
+      let i_top_1 = pt(r_in, a1, z_top);
+      let i_bot_0 = pt(r_in, a0, z_bot);
+      let i_bot_1 = pt(r_in, a1, z_bot);
+
+      push_tri(i_top_0, o_top_0, o_top_1, out);
+      push_tri(i_top_0, o_top_1, i_top_1, out);
+      push_tri(i_bot_0, o_bot_1, o_bot_0, out);
+      push_tri(i_bot_0, i_bot_1, o_bot_1, out);
+
+      push_tri(i_top_0, i_top_1, i_bot_1, out);
+      push_tri(i_top_0, i_bot_1, i_bot_0, out);
+    }
+
+    push_tri(o_top_0, o_bot_0, o_bot_1, out);
+    push_tri(o_top_0, o_bot_1, o_top_1, out);
+  }
+
+  let edge0_out_top = pt(r_out, start_angle, z_top);
+  let edge0_out_bot = pt(r_out, start_angle, z_bot);
+  let edge1_out_top = pt(r_out, end_angle, z_top);
+  let edge1_out_bot = pt(r_out, end_angle, z_bot);
+
+  if is_innermost {
+    let center_top = pt(0.0, 0.0, z_top);
+    let center_bot = pt(0.0, 0.0, z_bot);
+    push_tri(center_top, center_bot, edge0_out_bot, out);
+    push_tri(center_top, edge0_out_bot, edge0_out_top, out);
+    push_tri(center_top, edge1_out_top, edge1_out_bot, out);
+    push_tri(center_top, edge1_out_bot, center_bot, out);
+  } else {
+    let edge0_in_top = pt(r_in, start_angle, z_top);
+    let edge0_in_bot = pt(r_in, start_angle, z_bot);
+    let edge1_in_top = pt(r_in, end_angle, z_top);
+    let edge1_in_bot = pt(r_in, end_angle, z_bot);
+    push_tri(edge0_in_top, edge0_in_bot, edge0_out_bot, out);
+    push_tri(edge0_in_top, edge0_out_bot, edge0_out_top, out);
+    push_tri(edge1_in_top, edge1_out_top, edge1_out_bot, out);
+    push_tri(edge1_in_top, edge1_out_bot, edge1_in_bot, out);
+  }
+}
+
+/// Round tube (torus) cross-section swept around the sector's arc, capped
+/// with a flat disk at each angular end. The tube's cross-section is an
+/// ellipse fit to `[r_in, r_out]` and `[z_bot, z_top]`, so it stays inside
+/// the same bounding wedge the other elements use.
+#[allow(clippy::too_many_arguments)]
+fn build_torus_sector(
+  r_in: f64,
+  r_out: f64,
+  z_bot: f64,
+  z_top: f64,
+  start_angle: f64,
+  end_angle: f64,
+  base_color: (u8, u8, u8),
+  camera: &crate::functions::plot3d::Camera,
+  seg_per_turn: usize,
+  out: &mut Vec<crate::functions::plot3d::Triangle>,
+) {
+  use crate::functions::plot3d::{
+    Point3D, Triangle, apply_lighting, depth, project, triangle_normal,
+  };
+
+  let sweep = end_angle - start_angle;
+  if sweep <= 0.0 || r_out <= r_in {
+    return;
+  }
+  let tube_r = (r_out - r_in) / 2.0;
+  let tube_z = ((z_top - z_bot) / 2.0).max(tube_r * 0.15);
+  let center_r = f64::midpoint(r_in, r_out);
+  let center_z = f64::midpoint(z_bot, z_top);
+
+  let n_seg = ((sweep / (2.0 * std::f64::consts::PI) * seg_per_turn as f64)
+    .ceil() as usize)
+    .max(1);
+  const M_SEG: usize = 14;
+
+  let push_tri =
+    |v0: Point3D, v1: Point3D, v2: Point3D, all: &mut Vec<Triangle>| {
+      let normal = triangle_normal(v0, v1, v2);
+      let color = apply_lighting(base_color, normal);
+      let center = Point3D {
+        x: (v0.x + v1.x + v2.x) / 3.0,
+        y: (v0.y + v1.y + v2.y) / 3.0,
+        z: (v0.z + v1.z + v2.z) / 3.0,
+      };
+      all.push(Triangle {
+        boundary: [true; 3],
+        edge_color: None,
+        projected: [
+          project(v0, camera),
+          project(v1, camera),
+          project(v2, camera),
+        ],
+        depth: depth(center, camera),
+        color,
+        opacity: 1.0,
+      });
+    };
+
+  // A point on the tube surface at sweep angle `a` and cross-section
+  // angle `phi` (going around the tube's own circular profile).
+  let ring_point = |a: f64, phi: f64| -> Point3D {
+    let r = center_r + tube_r * phi.cos();
+    Point3D {
+      x: r * a.cos(),
+      y: r * a.sin(),
+      z: center_z + tube_z * phi.sin(),
+    }
+  };
+
+  for s in 0..n_seg {
+    let a0 = start_angle + sweep * s as f64 / n_seg as f64;
+    let a1 = start_angle + sweep * (s + 1) as f64 / n_seg as f64;
+    for m in 0..M_SEG {
+      let phi0 = 2.0 * std::f64::consts::PI * m as f64 / M_SEG as f64;
+      let phi1 = 2.0 * std::f64::consts::PI * (m + 1) as f64 / M_SEG as f64;
+      let p00 = ring_point(a0, phi0);
+      let p01 = ring_point(a0, phi1);
+      let p10 = ring_point(a1, phi0);
+      let p11 = ring_point(a1, phi1);
+      push_tri(p00, p10, p11, out);
+      push_tri(p00, p11, p01, out);
+    }
+  }
+
+  // Flat end caps at start_angle and end_angle: a triangle fan around
+  // each cross-section's own center.
+  for (a, flip) in [(start_angle, true), (end_angle, false)] {
+    let hub = Point3D {
+      x: center_r * a.cos(),
+      y: center_r * a.sin(),
+      z: center_z,
+    };
+    for m in 0..M_SEG {
+      let phi0 = 2.0 * std::f64::consts::PI * m as f64 / M_SEG as f64;
+      let phi1 = 2.0 * std::f64::consts::PI * (m + 1) as f64 / M_SEG as f64;
+      let p0 = ring_point(a, phi0);
+      let p1 = ring_point(a, phi1);
+      if flip {
+        push_tri(hub, p1, p0, out);
+      } else {
+        push_tri(hub, p0, p1, out);
+      }
+    }
+  }
+}
+
+/// Extracts a bare option value's name (`"Stacked"` or `` `Stacked` ``) for
+/// comparing against `ChartLayout`/`ChartElementFunction` settings.
+fn sector_option_name(e: &Expr) -> Option<&str> {
+  match e {
+    Expr::String(s) | Expr::Identifier(s) => Some(s.as_str()),
+    _ => None,
+  }
+}
+
+/// SectorChart3D[{{x1, y1, z1}, ...}] or SectorChart3D[{data1, data2, ...}]
+///
+/// Each `{x, y, z}` triple draws a 3D sector whose angular sweep is
+/// proportional to `x`, whose outer radius is `y`, and whose height is `z`
+/// — Wolfram's `SectorChart3D` convention. A flat list of triples is a
+/// single dataset; wrapping it in another list gives one dataset per
+/// sublist. `ChartLayout -> "Grouped"` (the default) draws each dataset as
+/// its own concentric ring, matching `PieChart3D`'s multi-dataset
+/// convention; `"Stacked"` accumulates radius across datasets within each
+/// category instead. `ChartElementFunction` selects the sector's 3D shape:
+/// `"CylindricalSector3D"` (default, flat-sided), `"ProfileSector3D"`
+/// (tapered/stepped), or `"TorusSector3D"` (round tube cross-section).
+pub fn sector_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  use crate::functions::plot3d::Triangle;
+
+  let Ok(datasets) = extract_sector_rows(&args[0]) else {
+    return Ok(unevaluated("SectorChart3D", args));
+  };
+  let n_categories = datasets.iter().map(std::vec::Vec::len).max().unwrap_or(0);
+  if datasets.is_empty() || n_categories == 0 {
+    return Ok(crate::graphics3d_result(
+      "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
+    ));
+  }
+
+  let opts = parse_chart_options(args);
+  let (svg_width, svg_height, full_width) =
+    (opts.svg_width, opts.svg_height, opts.full_width);
+
+  let mut layout_stacked = false;
+  let mut element = SectorElement::Cylindrical;
+  for opt in &args[1..] {
+    if let Some((name, value)) =
+      crate::functions::graphics::option_name_value(opt)
+    {
+      match name {
+        "ChartLayout" => {
+          layout_stacked = sector_option_name(&value) == Some("Stacked");
+        }
+        "ChartElementFunction" => {
+          element = match sector_option_name(&value) {
+            Some("ProfileSector3D") => SectorElement::Profile,
+            Some("TorusSector3D") => SectorElement::Torus,
+            _ => SectorElement::Cylindrical,
+          };
+        }
+        _ => {}
+      }
+    }
+  }
+
+  // Normalize height into world space the same way BarChart3D does, across
+  // every dataset so sectors stay comparable to one another. Z_SCALE
+  // matches the default BoxRatios used by plot3d.
+  const Z_SCALE: f64 = 0.4;
+  let z_max = datasets
+    .iter()
+    .flat_map(|row| row.iter().map(|&(_, _, z)| z.abs()))
+    .fold(0.0_f64, f64::max);
+  let z_max = if z_max <= 0.0 { 1.0 } else { z_max };
+  let nz = |z: f64| -> f64 { (z / z_max) * Z_SCALE };
+
+  let max_radius = 0.95_f64;
+  let camera = chart_3d_camera();
+  let mut all_triangles: Vec<Triangle> = Vec::new();
+  const SEG_PER_TURN: usize = 64;
+
+  if layout_stacked {
+    // Every dataset shares one ring; radius accumulates outward per
+    // category so stacked layers of the same category line up, and the
+    // category's angular width comes from the datasets' summed `x`.
+    let mut totals_by_cat = vec![0.0_f64; n_categories];
+    for row in &datasets {
+      for (i, &(x, _, _)) in row.iter().enumerate() {
+        totals_by_cat[i] += x;
+      }
+    }
+    let total_x: f64 = totals_by_cat.iter().sum();
+    if total_x <= 0.0 {
+      return Ok(crate::graphics3d_result(
+        "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string(),
+      ));
+    }
+    let y_max = (0..n_categories)
+      .map(|i| {
+        datasets
+          .iter()
+          .filter_map(|r| r.get(i))
+          .map(|&(_, y, _)| y)
+          .sum::<f64>()
+      })
+      .fold(0.0_f64, f64::max);
+    let y_max = if y_max <= 0.0 { 1.0 } else { y_max };
+
+    let mut start_angle = std::f64::consts::PI;
+    for cat in 0..n_categories {
+      let sweep = 2.0 * std::f64::consts::PI * totals_by_cat[cat] / total_x;
+      if sweep <= 0.0 {
+        continue;
+      }
+      let end_angle = start_angle + sweep;
+      let mut r_acc = 0.0_f64;
+      for (ds_idx, row) in datasets.iter().enumerate() {
+        let Some(&(_, y, z)) = row.get(cat) else {
+          continue;
+        };
+        if y <= 0.0 {
+          continue;
+        }
+        let r_in = r_acc / y_max * max_radius;
+        r_acc += y;
+        let r_out = r_acc / y_max * max_radius;
+        let z_top = nz(z).max(0.0);
+        let z_bot = nz(z).min(0.0);
+        let base_color = sector_color(&opts, ds_idx);
+        build_sector_wedge(
+          element,
+          r_in,
+          r_out,
+          z_bot,
+          z_top,
+          start_angle,
+          end_angle,
+          base_color,
+          &camera,
+          SEG_PER_TURN,
+          &mut all_triangles,
+        );
+      }
+      start_angle = end_angle;
+    }
+  } else {
+    // Grouped (default): each dataset is its own concentric ring, exactly
+    // like PieChart3D's multi-dataset rendering.
+    let n_rings = datasets.len();
+    let ring_gap = if n_rings > 1 {
+      0.015_f64.min(max_radius / n_rings as f64 * 0.25)
+    } else {
+      0.0
+    };
+    let ring_width = (max_radius
+      - (n_rings.saturating_sub(1)) as f64 * ring_gap)
+      / n_rings as f64;
+
+    for (ring_idx, row) in datasets.iter().enumerate() {
+      let total_x: f64 = row.iter().map(|&(x, _, _)| x).sum();
+      if total_x <= 0.0 {
+        continue;
+      }
+      let y_max = row.iter().map(|&(_, y, _)| y).fold(0.0_f64, f64::max);
+      let y_max = if y_max <= 0.0 { 1.0 } else { y_max };
+      let ring_r_in = ring_idx as f64 * (ring_width + ring_gap);
+
+      // Color by position within the ring (category), restarting the
+      // cycle at each ring, so every dataset uses the same category ->
+      // color mapping — the rings themselves carry the dataset distinction,
+      // matching PieChart3D's multi-dataset convention.
+      let mut start_angle = std::f64::consts::PI;
+      for (cat_idx, &(x, y, z)) in row.iter().enumerate() {
+        let sweep = 2.0 * std::f64::consts::PI * x / total_x;
+        if sweep <= 0.0 || y <= 0.0 {
+          start_angle += sweep.max(0.0);
+          continue;
+        }
+        let end_angle = start_angle + sweep;
+        let r_in = ring_r_in;
+        let r_out = ring_r_in + (y / y_max) * ring_width;
+        let z_top = nz(z).max(0.0);
+        let z_bot = nz(z).min(0.0);
+        let base_color = sector_color(&opts, cat_idx);
+        build_sector_wedge(
+          element,
+          r_in,
+          r_out,
+          z_bot,
+          z_top,
+          start_angle,
+          end_angle,
+          base_color,
+          &camera,
+          SEG_PER_TURN,
+          &mut all_triangles,
+        );
+        start_angle = end_angle;
+      }
+    }
+  }
+
+  all_triangles.sort_by(|a, b| {
+    b.depth
+      .partial_cmp(&a.depth)
+      .unwrap_or(std::cmp::Ordering::Equal)
+  });
+  let svg =
+    render_3d_triangles(&all_triangles, svg_width, svg_height, full_width);
+  Ok(crate::graphics3d_result(svg))
+}
+
 /// Histogram[{d1, d2, ...}] or Histogram[{d1, d2, ...}, nbins]
 /// or Histogram[{d1, d2, ...}, {{e1, e2, ...}}]
 pub fn histogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
