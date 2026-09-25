@@ -94,10 +94,10 @@ fn ks_test(u: &[f64]) -> TestResult {
   let (d_plus, d_minus) = edf_deviations(u);
   let d = d_plus.max(d_minus);
   let lambda = (n.sqrt() + 0.12 + 0.11 / n.sqrt()) * d;
-  (TestResult {
+  TestResult {
     statistic: d,
     p_value: kolmogorov_tail(lambda),
-  })
+  }
 }
 
 /// `Q_KS(λ) = 2 Σ_{k=1}^∞ (-1)^{k-1} exp(-2k²λ²)`, the asymptotic tail
