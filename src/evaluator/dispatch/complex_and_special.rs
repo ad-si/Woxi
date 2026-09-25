@@ -2611,6 +2611,57 @@ fn paren_box(inner: Expr) -> Expr {
   row_box(row)
 }
 
+/// Box form of `StringForm["template", args…]`: a `RowBox` alternating the
+/// template's literal text with each substituted argument's own box form
+/// (so e.g. a `Style[a, Red]` argument keeps its `StyleBox`/color instead of
+/// collapsing to plain text). `None` for anything else, including a
+/// `StringForm` whose template isn't a literal string.
+fn string_form_boxes(expr: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "StringForm" || args.is_empty() {
+    return None;
+  }
+  let Expr::String(template) = &args[0] else {
+    return None;
+  };
+  let values = &args[1..];
+  // `format_string_form_with` already implements the `` `` ``/`` `n` ``
+  // slot-parsing (including out-of-range warnings); reuse it to split the
+  // template, but have its per-argument formatter emit a private-use-area
+  // marker encoding the argument's index instead of rendered text, then
+  // splice each argument's own box form in at its marker below. Two
+  // markers in a row (an empty literal segment) are collapsed away by the
+  // final filter.
+  const MARK: char = '\u{E000}';
+  let marked = crate::functions::string_ast::format_string_form_with(
+    template,
+    values,
+    |v| {
+      let idx = values.iter().position(|x| std::ptr::eq(x, v)).unwrap_or(0);
+      format!("{MARK}{idx}{MARK}")
+    },
+  );
+  let mut pieces: Vec<Expr> = Vec::new();
+  for (i, segment) in marked.split(MARK).enumerate() {
+    if i % 2 == 0 {
+      if !segment.is_empty() {
+        pieces.push(Expr::String(segment.to_string()));
+      }
+    } else if let Ok(idx) = segment.parse::<usize>()
+      && let Some(value) = values.get(idx)
+    {
+      pieces.push(expr_to_box_form(value));
+    }
+  }
+  Some(match pieces.len() {
+    0 => Expr::String(String::new()),
+    1 => pieces.into_iter().next().unwrap(),
+    _ => row_box(pieces),
+  })
+}
+
 /// Returns true if `expr` is an additive expression (Plus or BinaryOp::Plus/Minus)
 /// that needs to be parenthesized when used as a sub-expression in a Power base
 /// or Times factor (so the rendered output is unambiguous).
@@ -3204,6 +3255,34 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
   {
     return boxed;
   }
+  // `StringForm["template", args…]` substitutes its placeholders wherever
+  // it is *typeset* (MakeBoxes / the Playground-Studio SVG output) — unlike
+  // plain OutputForm (`expr_to_output_form_2d`), which prints the literal
+  // `StringForm[…]` wrapper, since Wolfram only substitutes at ToString or
+  // display time. A Demonstration's `MatrixForm[StringForm["(``×``)-(``×``)",
+  // Style[a, Red], Style[d, Green], Style[b, Brown], Style[c, Orange]]]`
+  // idiom (labeling a determinant formula) depends on this: without it, the
+  // un-substituted call fell through to the generic `FunctionCall` renderer
+  // below and every argument box (including the literal template string)
+  // printed as its own separate token.
+  if let Some(boxed) = string_form_boxes(expr) {
+    return boxed;
+  }
+  // `MatrixForm[data]` typesets `data` as a matrix only when `data` is
+  // actually a list; on anything else (a scalar, a string, a `StringForm`
+  // formula) Wolfram just displays `data` plainly, with no `MatrixForm[…]`
+  // wrapper or brackets at all. Without this, a Demonstration's
+  // `MatrixForm[StringForm["(``×``)-(``×``)", …]]` idiom (labeling a
+  // determinant formula, not an actual matrix) printed the literal
+  // `MatrixForm[ … ]` call around the substituted formula instead of just
+  // the formula.
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "MatrixForm"
+    && args.len() == 1
+    && !matches!(&args[0], Expr::List(_))
+  {
+    return expr_to_box_form(&args[0]);
+  }
   // `f'[x]` is held as `Derivative[1][f][x]`, and no notebook shows that
   // head: the order sets as prime marks on the differentiated function.
   // Without this the whole call fell through to its plain text, so every
@@ -3775,11 +3854,23 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       ];
       call("TagBox", vec![call("StyleBox", style), id_expr("FullForm")])
     }
-    // Style[content, ...] → just the content
+    // Style[content, directives…] → StyleBox[content-box, directives…],
+    // keeping the directives (a color, `Bold`, `FontColor -> …`, …) in the
+    // box tree so `layout_box`'s `StyleBox` case can still apply them —
+    // e.g. a Demonstration's `StringForm["(``×``)-(``×``)", Style[a, Red],
+    // …]` (coloring each term to match its slider) previously lost every
+    // color, since the directives were simply dropped here.
     Expr::FunctionCall { name, args }
       if name == "Style" && !args.is_empty() =>
     {
-      expr_to_box_form(&args[0])
+      let inner = expr_to_box_form(&args[0]);
+      if args.len() > 1 {
+        let mut items = vec![inner];
+        items.extend(args[1..].iter().cloned());
+        call("StyleBox", items)
+      } else {
+        inner
+      }
     }
     // HoldForm[expr] → just the content
     Expr::FunctionCall { name, args }

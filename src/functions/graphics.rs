@@ -9309,7 +9309,11 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         let mut effective_font_size = font_size;
         let mut font_color: Option<Color> = None;
         let mut background: Option<Color> = None;
-        // Scan style options (Rule expressions) in args[1..]
+        // Scan style options (Rule expressions) in args[1..]. A directive can
+        // also be bare rather than a `Rule` — `Style[expr, Red]`/`StyleBox[b,
+        // Red]` — the short form Wolfram itself expands to `FontColor->Red`
+        // internally; recognize it here the same way rather than requiring
+        // callers to normalize every directive to `Rule` form first.
         for opt in &args[1..] {
           let (key, val) = match opt {
             Expr::Rule {
@@ -9321,7 +9325,12 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
             {
               (&ra[0], &ra[1])
             }
-            _ => continue,
+            _ => {
+              if let Some(color) = parse_color(opt) {
+                font_color = Some(color);
+              }
+              continue;
+            }
           };
           if let Expr::Identifier(k) = key {
             match k.as_str() {
