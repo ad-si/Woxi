@@ -21770,6 +21770,67 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`view$$ = 1, $CellContext`k$$ = 0.2}
     );
   }
 
+  /// The same Diophantine-style shape as
+  /// `manipulate_button_and_checkbox_reveal_diophantine_solution` above, but
+  /// with its `Button` and checkbox spec grouped inside a bordered
+  /// `Panel[Column[{…}]]` instead of sitting bare among the Manipulate
+  /// arguments — the shape a Demonstration takes when its author hand-builds
+  /// the whole control area as one custom panel rather than letting
+  /// Manipulate auto-generate the layout (independently written here, not
+  /// copied from any specific Demonstration). Regression: `Panel[…]` was not
+  /// among the recognized layout-container heads, so Manipulate treated the
+  /// whole panel as a malformed variable specification — emitting a spurious
+  /// `Manipulate::vsform` message and dropping the button/checkbox it
+  /// contained instead of flattening them into real controls.
+  #[test]
+  fn manipulate_panel_wrapped_button_and_checkbox_builds_same_widget() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[\
+       Pane[If[show, Reduce[a x == b y, {x, y}, Integers], Invisible[\"hidden\"]], ImageSize -> {300, 60}], \
+       {a, 2, ControlType -> None}, \
+       {b, 4, ControlType -> None}, \
+       Panel[Column[{\
+         Button[\"new example\", a = RandomInteger[{1, 9}]; b = RandomInteger[{1, 9}]; show = False], \
+         {{show, False, \"reveal\"}, {True, False}}\
+       }]]\
+       ]",
+    )
+    .expect("Manipulate should parse and hold");
+    let mut state = manipulate::ManipulateState::from_expr(&expr).expect(
+      "a Panel-wrapped button + checkbox group should still build a ManipulateState",
+    );
+
+    // The Panel/Column wrapper must flatten away entirely, leaving the same
+    // panel rows as the unwrapped version: hidden a/b stay off the visible
+    // panel, and the button row (binds no variable) and checkbox appear.
+    let names: Vec<&str> = state.controls.iter().map(|c| c.name()).collect();
+    assert_eq!(
+      names,
+      vec!["", "show"],
+      "Panel[Column[{{…}}]] should flatten to the same rows as the bare args: {names:?}"
+    );
+    assert!(
+      state.error.is_none(),
+      "initial render failed: {:?}",
+      state.error
+    );
+
+    let action = state
+      .controls
+      .iter()
+      .find_map(|c| match c {
+        manipulate::ControlState::Button { action, .. } => Some(action.clone()),
+        _ => None,
+      })
+      .expect("a Button row inside the Panel should still be present");
+    state.apply_button_action(&action);
+    assert!(
+      state.error.is_none(),
+      "body should evaluate cleanly after the panel's button reassigns a/b: {:?}",
+      state.error
+    );
+  }
+
   // Checked a randomly-sampled Wolfram Demonstrations Project notebook
   // (a per-`n` numeric square, memoized via `f[n_] := f[n] = …` inside
   // `Initialization :> (…)`, laid out with row/column totals appended

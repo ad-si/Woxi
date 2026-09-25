@@ -18836,7 +18836,11 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // swaps whole control panels as `sel` changes. `Item[Column[…], opts]`
       // is the same layout pattern wrapped in a grid-alignment `Item[…]`
       // (a Demonstration lining up its whole control panel inside an outer
-      // `Grid`), not a control itself. `OpenerView[{label, content}]` is the
+      // `Grid`), not a control itself. `Panel[Column[…]]` is the same
+      // pattern wrapped in a bordered `Panel[…]` instead — a Demonstration
+      // that hand-builds its entire control area (buttons, checkboxes,
+      // popups, …) as one custom panel rather than letting Manipulate
+      // auto-generate sliders. `OpenerView[{label, content}]` is the
       // same pattern for a collapsible disclosure widget (e.g. a "circuit
       // diagram" aside tucked below the sliders). `Tooltip[control, hint]`
       // is the same pattern for a custom control (often a `DynamicModule`
@@ -18862,6 +18866,7 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             | "PaneSelector"
             | "TabView"
             | "Item"
+            | "Panel"
             | "OpenerView"
             | "Tooltip"
         ) =>
@@ -21491,10 +21496,16 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
   // itself a layout container, so without unwrapping it here the whole
   // `Text[Grid[…]]` falls through to `is_manipulate_annotation_head`'s
   // static-heading path below, stringifying every `Control[…]` cell into
-  // inert label text instead of building a real slider for it.
+  // inert label text instead of building a real slider for it. `Panel[…]`
+  // is the same story for a Demonstration that hand-builds its whole
+  // control area as one bordered panel instead of letting Manipulate
+  // auto-generate sliders — unwrap it the same way so the `Row`/`Column`
+  // it dresses up is reached and its buttons/checkboxes/popups flatten
+  // into real controls instead of the entire panel being dropped.
   let spec = match spec {
     Expr::FunctionCall { name, args }
-      if (name == "Item" || name == "Text") && !args.is_empty() =>
+      if (name == "Item" || name == "Text" || name == "Panel")
+        && !args.is_empty() =>
     {
       &args[0]
     }
