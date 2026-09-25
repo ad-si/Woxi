@@ -30000,6 +30000,210 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`tau$$ = 14.1, $CellContext`showFram
     );
   }
 
+  /// End-to-end regression for a Wolfram Demonstration randomly sampled by
+  /// the scheduled QA routine ("Arithmetic Mean, Geometric Mean, Root Mean
+  /// Square and Harmonic Mean for Two Numbers"): a `Manipulate` with two
+  /// number sliders whose body draws the four classical Pythagorean means
+  /// of the two numbers, computed by helper functions the widget only
+  /// keeps via `SaveDefinitions -> True` (its own `Initialization` option
+  /// is absent; Wolfram folds the helpers into the saved
+  /// `DynamicModuleBox`'s `Initialization :> (…)` instead).
+  ///
+  /// It already worked end-to-end (the `SaveDefinitions` helper-recovery
+  /// path `instantiate_stored_manipulate` implements already covers plain
+  /// pattern-matched helper functions referenced from a `Graphics` body);
+  /// this pins it with an independently written equivalent — a number-line
+  /// plot of the four means rather than the notebook's semicircle-chord
+  /// construction, and its own helper formulas — not the copyrighted
+  /// notebook source.
+  #[test]
+  fn manipulate_save_definitions_pythagorean_means_on_number_line() {
+    let code = r##"Manipulate[
+      Graphics[{
+        Blue, Point[{am[p, q], 0}],
+        Text[Style["AM " <> ToString[NumberForm[N[am[p, q]], {3, 2}]], 12], {am[p, q], 0.5}],
+        Red, Point[{gm[p, q], 0}],
+        Text[Style["GM " <> ToString[NumberForm[N[gm[p, q]], {3, 2}]], 12], {gm[p, q], 0.5}],
+        Darker[Green], Point[{hm[p, q], 0}],
+        Text[Style["HM " <> ToString[NumberForm[N[hm[p, q]], {3, 2}]], 12], {hm[p, q], -0.5}],
+        Purple, Point[{qm[p, q], 0}],
+        Text[Style["QM " <> ToString[NumberForm[N[qm[p, q]], {3, 2}]], 12], {qm[p, q], -0.5}],
+        Black, Line[{{0, 0}, {10, 0}}]
+      }, PlotRange -> {{0, 10}, {-1, 1}}, ImageSize -> 400, Axes -> False],
+      {{p, 1, "first number"}, 0.01, 10, 0.1},
+      {{q, 9, "second number"}, 0.01, 10, 0.1},
+      SaveDefinitions -> True
+    ]"##;
+    let stored = r##"DynamicModuleBox[{$CellContext`p$$ = 1, $CellContext`q$$ = 9},
+      DynamicBox[Manipulate`ManipulateBoxes[1, StandardForm]],
+      Initialization:>($CellContext`am[
+          Pattern[$CellContext`u, Blank[]], Pattern[$CellContext`v, Blank[]]] :=
+          ($CellContext`u + $CellContext`v)/2;
+        $CellContext`gm[
+          Pattern[$CellContext`u, Blank[]], Pattern[$CellContext`v, Blank[]]] :=
+          Sqrt[$CellContext`u $CellContext`v];
+        $CellContext`hm[
+          Pattern[$CellContext`u, Blank[]], Pattern[$CellContext`v, Blank[]]] :=
+          2 $CellContext`u $CellContext`v/($CellContext`u + $CellContext`v);
+        $CellContext`qm[
+          Pattern[$CellContext`u, Blank[]], Pattern[$CellContext`v, Blank[]]] :=
+          Sqrt[($CellContext`u^2 + $CellContext`v^2)/2];
+        Typeset`initDone$$ = True)]"##;
+
+    let state = instantiate_stored_manipulate(code, stored).expect(
+      "SaveDefinitions widget must instantiate from the recovered helpers",
+    );
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(state.graphics_handle.is_some(), "the number line must draw");
+
+    assert!(
+      matches!(
+        &state.controls[0],
+        manipulate::ControlState::Continuous { name, label, min, max, current, .. }
+          if name == "p" && label == "first number"
+            && (*min, *max, *current) == (0.01, 10.0, 1.0)
+      ),
+      "control 0 should be the first-number slider: {:?}",
+      state.controls[0]
+    );
+    assert!(
+      matches!(
+        &state.controls[1],
+        manipulate::ControlState::Continuous { name, label, min, max, current, .. }
+          if name == "q" && label == "second number"
+            && (*min, *max, *current) == (0.01, 10.0, 9.0)
+      ),
+      "control 1 should be the second-number slider: {:?}",
+      state.controls[1]
+    );
+
+    let render = |p: f64, q: f64| {
+      woxi::interpret_with_stdout(&format!("p = {p}; q = {q};\n{}", state.body))
+        .expect("the body must render")
+        .graphics
+        .expect("the body must produce a graphic")
+    };
+    let base = render(1.0, 9.0);
+    // AM = 5, GM = 3, HM = 1.8, QM ≈ 6.40 for p = 1, q = 9 — the classical
+    // Pythagorean-mean ordering HM <= GM <= AM <= QM.
+    assert!(base.contains("AM 5.00"), "AM label missing: {base}");
+    assert!(base.contains("GM 3.00"), "GM label missing: {base}");
+    assert!(base.contains("HM 1.80"), "HM label missing: {base}");
+    assert!(base.contains("QM 6.40"), "QM label missing: {base}");
+    // Moving either slider must change the rendered scene.
+    assert_ne!(
+      base,
+      render(4.0, 9.0),
+      "the first-number slider must matter"
+    );
+    assert_ne!(
+      base,
+      render(1.0, 5.0),
+      "the second-number slider must matter"
+    );
+  }
+
+  /// End-to-end regression for the "Wave Functions of Identical Particles"
+  /// Demonstration: two infinite-square-well `Plot3D` densities are combined
+  /// into a distinguishable-particle, a symmetric (boson), and an
+  /// antisymmetric (fermion) two-particle density, each drawn side by side
+  /// in a `Grid`, controlled by two per-particle quantum-number sliders.
+  ///
+  /// It already worked (curried pattern-matching definitions
+  /// `f[{a_, b_}][x_, y_] := …` set up in `Initialization`, `Which` picking
+  /// the `PlotLabel` by `SameQ`-comparing the held function head, and three
+  /// `Plot3D`s laid out in a `Grid` all render cleanly); this pins it with a
+  /// rewritten equivalent (not the copyrighted notebook source).
+  #[test]
+  fn identical_particles_notebook_antisymmetrizes_the_fermion_density() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[\nGrid[{{plotDensity[distinguishableDensity], plotDensity[symmetricDensity], plotDensity[antisymmetricDensity]}}],\n{{n1, 2, \"level of particle A\"}, 1, 6, 1},\n{{n2, 3, \"level of particle B\"}, 1, 6, 1},\nInitialization :> (\nboxState[n_][x_] := Sqrt[2/Pi] Sin[n x];\ndistinguishableDensity[{n1_, n2_}][x_, y_] := boxState[n1][x] boxState[n2][y];\nsymmetricDensity[{n1_, n2_}][x_, y_] := (boxState[n1][x] boxState[n2][y] + boxState[n1][y] boxState[n2][x]) / Sqrt[2];\nantisymmetricDensity[{n1_, n2_}][x_, y_] := (boxState[n1][x] boxState[n2][y] - boxState[n1][y] boxState[n2][x]) / Sqrt[2];\nplotDensity[wave_] := Plot3D[\nEvaluate[Abs[wave[{n1, n2}][x, y]]^2],\n{x, 0, Pi}, {y, 0, Pi},\nPlotRange -> All, Mesh -> False, Axes -> False, Boxed -> False,\nImageSize -> 140,\nPlotLabel -> Which[\nwave === distinguishableDensity, Style[\"Distinguishable\", \"Label\", 14],\nwave === symmetricDensity, Style[\"Bosons\", \"Label\", 14],\nwave === antisymmetricDensity, Style[\"Fermions\", \"Label\", 14]\n]\n];\n),\nSaveDefinitions -> True\n]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`n1$$ = 2, $CellContext`n2$$ = 3}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    woxi::clear_state();
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the grid of plots must draw"
+    );
+
+    assert!(
+      matches!(
+        &widget.controls[0],
+        manipulate::ControlState::Continuous { name, label, min, max, current, .. }
+          if name == "n1" && label == "level of particle A"
+            && (*min, *max, *current) == (1.0, 6.0, 2.0)
+      ),
+      "control 0 should be particle A's level slider: {:?}",
+      widget.controls[0]
+    );
+    assert!(
+      matches!(
+        &widget.controls[1],
+        manipulate::ControlState::Continuous { name, label, min, max, current, .. }
+          if name == "n2" && label == "level of particle B"
+            && (*min, *max, *current) == (1.0, 6.0, 3.0)
+      ),
+      "control 1 should be particle B's level slider: {:?}",
+      widget.controls[1]
+    );
+
+    let render = |n1: i64, n2: i64| {
+      woxi::interpret_with_stdout(&format!(
+        "n1 = {n1}; n2 = {n2};\n{}",
+        widget.body
+      ))
+      .expect("the body must render")
+      .graphics
+      .expect("the body must produce a graphic")
+    };
+    let base = render(2, 3);
+    // All three plot labels must appear in the grid.
+    assert!(base.contains("Distinguishable"), "label missing: {base}");
+    assert!(base.contains("Bosons"), "label missing: {base}");
+    assert!(base.contains("Fermions"), "label missing: {base}");
+    // Moving either slider must change the rendered scene.
+    assert_ne!(base, render(4, 3), "the n1 slider must matter");
+    assert_ne!(base, render(2, 5), "the n2 slider must matter");
+
+    // Pauli exclusion: the antisymmetric (fermion) combination must vanish
+    // identically at every point when the two levels coincide, checked
+    // directly against the function (not the rendered grid, which two other
+    // panels' dependence on n1/n2 would make a false positive).
+    let antisymmetric_density_at = |n1: i64, n2: i64, x: f64, y: f64| {
+      woxi::interpret(&format!(
+        "N[antisymmetricDensity[{{{n1}, {n2}}}][{x}, {y}]]"
+      ))
+      .expect("antisymmetricDensity must evaluate")
+    };
+    assert_eq!(
+      antisymmetric_density_at(2, 2, 0.5, 0.7),
+      "0.",
+      "the fermion wave function must vanish identically when n1 == n2"
+    );
+    assert_ne!(
+      antisymmetric_density_at(2, 3, 0.5, 0.7),
+      "0.",
+      "the fermion wave function must not vanish when n1 != n2"
+    );
+  }
+
   /// Checked a randomly-sampled Wolfram Demonstrations Project notebook: an
   /// image-puzzle picker where a `PopupMenu` selects one of several
   /// near-identical image pairs and a `Checkbox` reveals the difference
