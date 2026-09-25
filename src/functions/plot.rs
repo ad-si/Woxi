@@ -7810,6 +7810,11 @@ fn apply_style_directive(expr: &Expr, style: &mut SeriesStyle) {
 /// names none — the default graphics font size the Wolfram Language uses.
 const DEFAULT_MARKER_SIZE: f64 = 12.0;
 
+/// The glyphs `PlotMarkers -> "OpenMarkers"` cycles over the series: open
+/// (unfilled) shapes rather than the default filled dot, so overlapping
+/// series stay distinguishable by outline as well as colour.
+const OPEN_MARKER_GLYPHS: [&str; 8] = ["○", "□", "◇", "△", "▽", "☆", "⬠", "⬡"];
+
 /// Read one `PlotMarkers` entry: a glyph, optionally wrapped in `Style`
 /// (which may carry a colour and a font size in any order) or paired with
 /// its size as `{marker, size}`. Anything else (a `Graphics` marker, say)
@@ -7865,6 +7870,20 @@ pub(crate) fn parse_plot_markers(
 ) -> Vec<Option<PlotMarker>> {
   let val =
     evaluate_expr_to_expr(replacement).unwrap_or_else(|_| replacement.clone());
+  // `"OpenMarkers"` is a named marker set, not a literal glyph: it cycles
+  // the open shapes above over the series instead of drawing the word.
+  if matches!(&val, Expr::String(s) if s == "OpenMarkers") {
+    return OPEN_MARKER_GLYPHS
+      .iter()
+      .map(|glyph| {
+        Some(PlotMarker {
+          glyph: (*glyph).to_string(),
+          size: DEFAULT_MARKER_SIZE,
+          color: None,
+        })
+      })
+      .collect();
+  }
   // `{m1, m2, …}` is per-series unless it is the `{marker, size}` pair,
   // which `parse_one_marker` recognises.
   if let Expr::List(items) = &val

@@ -930,7 +930,7 @@ pub fn random_choice_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let mut cdf = Vec::with_capacity(weights.len());
         let mut acc = 0.0f64;
         for w in weights {
-          let v = expr_to_num(w).ok_or_else(|| {
+          let v = try_eval_to_f64(w).ok_or_else(|| {
             InterpreterError::EvaluationError(
               "RandomChoice: weights must be numeric".into(),
             )
@@ -1066,7 +1066,7 @@ pub fn random_sample_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       let mut ws = Vec::with_capacity(weights.len());
       for w in weights {
-        let v = expr_to_num(w).ok_or_else(|| {
+        let v = try_eval_to_f64(w).ok_or_else(|| {
           InterpreterError::EvaluationError(
             "RandomSample: weights must be numeric".into(),
           )
@@ -1308,19 +1308,32 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
           return Ok(empty_nested(&dims));
         }
-        let flat =
+        // Draw `total` samples and nest them into `dims` shape by grouping,
+        // never by flattening: a vector-valued distribution (Multinormal,
+        // Binormal, …) draws whole vectors, and reshaping their flattened
+        // reals would scramble those vectors across the wrong dimensions.
+        // `RandomVariate[dist, {n}]` for such a distribution must match
+        // `RandomVariate[dist, n]`, appending the vector's own length as an
+        // implicit trailing dimension — exactly what treating each draw as
+        // one opaque leaf achieves.
+        let sample =
           random_variate_ast(&[dist.clone(), Expr::Integer(total as i128)])?;
-        let reshaped = Expr::FunctionCall {
-          name: "ArrayReshape".to_string(),
-          args: vec![
-            flat,
-            Expr::List(
-              dims.iter().map(|&d| Expr::Integer(d as i128)).collect(),
-            ),
-          ]
-          .into(),
+        let Expr::List(flat) = &sample else {
+          return Ok(random_array_dims_error("RandomVariate", args));
         };
-        return crate::evaluator::evaluate_expr_to_expr(&reshaped);
+        fn nest_leaves(
+          leaves: &mut impl Iterator<Item = Expr>,
+          dims: &[usize],
+        ) -> Expr {
+          match dims {
+            [] => leaves.next().expect("dims product matches leaf count"),
+            [d, rest @ ..] => {
+              Expr::List((0..*d).map(|_| nest_leaves(leaves, rest)).collect())
+            }
+          }
+        }
+        let mut leaves = flat.iter().cloned();
+        return Ok(nest_leaves(&mut leaves, &dims));
       }
       _ => return Ok(random_array_dims_error("RandomVariate", args)),
     }
@@ -1352,12 +1365,12 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if dargs.len() == 1 {
         if let Expr::List(bounds) = &dargs[0] {
           if bounds.len() == 2 {
-            let lo = expr_to_num(&bounds[0]).ok_or_else(|| {
+            let lo = try_eval_to_f64(&bounds[0]).ok_or_else(|| {
               InterpreterError::EvaluationError(
                 "UniformDistribution: invalid min bound".into(),
               )
             })?;
-            let hi = expr_to_num(&bounds[1]).ok_or_else(|| {
+            let hi = try_eval_to_f64(&bounds[1]).ok_or_else(|| {
               InterpreterError::EvaluationError(
                 "UniformDistribution: invalid max bound".into(),
               )
@@ -1400,12 +1413,12 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let (mu, sigma) = match dargs.len() {
         0 => (0.0, 1.0),
         2 => {
-          let mu = expr_to_num(&dargs[0]).ok_or_else(|| {
+          let mu = try_eval_to_f64(&dargs[0]).ok_or_else(|| {
             InterpreterError::EvaluationError(
               "NormalDistribution: invalid mean".into(),
             )
           })?;
-          let sigma = expr_to_num(&dargs[1]).ok_or_else(|| {
+          let sigma = try_eval_to_f64(&dargs[1]).ok_or_else(|| {
             InterpreterError::EvaluationError(
               "NormalDistribution: invalid standard deviation".into(),
             )
@@ -1434,7 +1447,7 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Expr::FunctionCall { name, args: dargs }
       if name == "PoissonDistribution" && dargs.len() == 1 =>
     {
-      let lambda = expr_to_num(&dargs[0]).ok_or_else(|| {
+      let lambda = try_eval_to_f64(&dargs[0]).ok_or_else(|| {
         InterpreterError::EvaluationError(
           "PoissonDistribution: invalid mean parameter".into(),
         )
@@ -1462,7 +1475,7 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // BinormalDistribution[{mu1, mu2}, {sigma1, sigma2}, rho] is the full form.
       let (mu1, mu2, sigma1, sigma2, rho) = match dargs.len() {
         1 => {
-          let r = expr_to_num(&dargs[0]).ok_or_else(|| {
+          let r = try_eval_to_f64(&dargs[0]).ok_or_else(|| {
             InterpreterError::EvaluationError(
               "BinormalDistribution: invalid correlation".into(),
             )
@@ -1475,7 +1488,7 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               if let Expr::List(items) = e
                 && items.len() == 2
                 && let (Some(a), Some(b)) =
-                  (expr_to_num(&items[0]), expr_to_num(&items[1]))
+                  (try_eval_to_f64(&items[0]), try_eval_to_f64(&items[1]))
               {
                 Ok((a, b))
               } else {
@@ -1487,7 +1500,7 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let (mu1, mu2) = extract_pair(&dargs[0], "mean vector")?;
           let (sigma1, sigma2) =
             extract_pair(&dargs[1], "standard deviations")?;
-          let r = expr_to_num(&dargs[2]).ok_or_else(|| {
+          let r = try_eval_to_f64(&dargs[2]).ok_or_else(|| {
             InterpreterError::EvaluationError(
               "BinormalDistribution: invalid correlation".into(),
             )
@@ -1541,7 +1554,7 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       let mut mu = Vec::with_capacity(k);
       for m in mu_list {
-        match expr_to_num(m) {
+        match try_eval_to_f64(m) {
           Some(v) => mu.push(v),
           None => return Ok(unevaluated("RandomVariate", args)),
         }
@@ -1555,7 +1568,7 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           return Ok(unevaluated("RandomVariate", args));
         }
         for (j, c) in cols.iter().enumerate() {
-          match expr_to_num(c) {
+          match try_eval_to_f64(c) {
             Some(v) => sigma[i][j] = v,
             None => return Ok(unevaluated("RandomVariate", args)),
           }
@@ -1633,7 +1646,7 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       //   X_0 ~ Poisson(mu0) shared across components;
       //   Y_i ~ Poisson(mu_i) independent;
       //   sample is (X_0 + Y_1, ..., X_0 + Y_k).
-      let mu0 = expr_to_num(&dargs[0]).ok_or_else(|| {
+      let mu0 = try_eval_to_f64(&dargs[0]).ok_or_else(|| {
         InterpreterError::EvaluationError(
           "MultivariatePoissonDistribution: invalid shared rate".into(),
         )
@@ -1647,7 +1660,7 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let mut marginal_rates: Vec<f64> =
         Vec::with_capacity(marginals_list.len());
       for item in marginals_list {
-        let mi = expr_to_num(item).ok_or_else(|| {
+        let mi = try_eval_to_f64(item).ok_or_else(|| {
           InterpreterError::EvaluationError(
             "MultivariatePoissonDistribution: invalid marginal rate".into(),
           )
@@ -1684,12 +1697,12 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       // BinomialDistribution[n, p]: number of successes in `trials`
       // independent Bernoulli(p) trials.
-      let trials = expr_to_num(&dargs[0]).ok_or_else(|| {
+      let trials = try_eval_to_f64(&dargs[0]).ok_or_else(|| {
         InterpreterError::EvaluationError(
           "BinomialDistribution: invalid trial count".into(),
         )
       })?;
-      let prob = expr_to_num(&dargs[1]).ok_or_else(|| {
+      let prob = try_eval_to_f64(&dargs[1]).ok_or_else(|| {
         InterpreterError::EvaluationError(
           "BinomialDistribution: invalid success probability".into(),
         )
@@ -1721,7 +1734,7 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       // BernoulliDistribution[p]: 1 with probability p, 0 with probability
       // 1 - p (a single Binomial[1, p] trial).
-      let prob = expr_to_num(&dargs[0]).ok_or_else(|| {
+      let prob = try_eval_to_f64(&dargs[0]).ok_or_else(|| {
         InterpreterError::EvaluationError(
           "BernoulliDistribution: invalid success probability".into(),
         )
