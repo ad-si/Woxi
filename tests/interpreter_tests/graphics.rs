@@ -15399,6 +15399,29 @@ mod matrix_form {
   }
 }
 
+mod traditional_form_style_box {
+  use super::*;
+
+  // `boxes_to_svg`'s `StyleBox` case (reached for a `StyleBox` nested
+  // inside a `FractionBox`/`SqrtBox`/etc. under `TraditionalForm`) is a
+  // near-duplicate of `layout_box`'s `StyleBox` case and must recognize a
+  // bare color directive (`StyleBox[b, Red]`) the same way, not just the
+  // `FontColor -> Red` `Rule` form — otherwise the two renderers drift
+  // apart, silently dropping color on one path but not the other.
+  #[test]
+  fn fraction_with_bare_colored_style_keeps_colors() {
+    clear_state();
+    let svg = export_svg("TraditionalForm[Style[5, Red]/Style[3, Blue]]");
+    for color in ["rgb(255,0,0)", "rgb(0,0,255)"] {
+      assert!(
+        svg.contains(color),
+        "the bare `Style[…, color]` directive must keep its color \
+         ({color} missing): {svg}"
+      );
+    }
+  }
+}
+
 mod show {
   use super::*;
 

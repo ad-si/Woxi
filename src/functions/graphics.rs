@@ -11364,7 +11364,14 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
       // InterpretationBox[display, interpretation] → render display part only
       "InterpretationBox" if args.len() >= 2 => boxes_to_svg(&args[0]),
 
-      // StyleBox[content, ...] → render content with style attributes
+      // StyleBox[content, ...] → render content with style attributes. A
+      // directive can also be bare rather than a `Rule` — `StyleBox[b,
+      // Red]` — mirroring `layout_box`'s `StyleBox` case above, which this
+      // one otherwise duplicates (kept in sync rather than merged: see
+      // CLAUDE.md's "never implement a construct twice" — these two exist
+      // for different renderers, `layout_box` producing a `BoxLayout` and
+      // this one plain SVG markup, but both must recognize the same
+      // directive shapes).
       "StyleBox" if !args.is_empty() => {
         let content = boxes_to_svg(&args[0]);
         let mut font_size_attr = String::new();
@@ -11380,7 +11387,12 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
             {
               (&ra[0], &ra[1])
             }
-            _ => continue,
+            _ => {
+              if let Some(color) = parse_color(opt) {
+                color_attr = format!(" fill=\"{}\"", color.to_svg_rgb());
+              }
+              continue;
+            }
           };
           if let Expr::Identifier(k) = key {
             match k.as_str() {
