@@ -30631,9 +30631,9 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`stepA$$ = 1, $CellContext`stepB$$ =
     assert!(
       matches!(
         &state.controls[1],
-        manipulate::ControlState::Discrete { name, label, values, .. }
+        manipulate::ControlState::Discrete { name, label, value_labels, .. }
           if name == "whichTest" && label == "goodness-of-fit test"
-            && values == &[
+            && value_labels == &[
               "AndersonDarling", "CramerVonMises", "KolmogorovSmirnov",
               "Kuiper", "PearsonChiSquare", "WatsonUSquare",
             ]
