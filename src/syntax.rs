@@ -3430,6 +3430,21 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
         args: vec![operand].into(),
       }
     }
+    // `⌊x⌋` / `⌈x⌉`: the typeset bracket forms for Floor[x] / Ceiling[x].
+    Rule::FloorBrackets => {
+      let operand = pair_to_expr(pair.into_inner().next().unwrap());
+      Expr::FunctionCall {
+        name: "Floor".to_string(),
+        args: vec![operand].into(),
+      }
+    }
+    Rule::CeilingBrackets => {
+      let operand = pair_to_expr(pair.into_inner().next().unwrap());
+      Expr::FunctionCall {
+        name: "Ceiling".to_string(),
+        args: vec![operand].into(),
+      }
+    }
     Rule::Increment => {
       // x++ -> Increment[x]; chained `x++++` -> Increment[Increment[x]].
       // Grammar emits one base pair followed by N `IncrementOp` pairs
