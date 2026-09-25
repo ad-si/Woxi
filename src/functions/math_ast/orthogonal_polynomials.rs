@@ -502,10 +502,7 @@ fn jacobi_p_rational_ab(
     match s {
       0 => {}
       1 => factors.push(x_minus_1.clone()),
-      p => factors.push(call(
-        "Power",
-        vec![x_minus_1.clone(), Expr::Integer(p as i128)],
-      )),
+      p => factors.push(pow(x_minus_1.clone(), Expr::Integer(p as i128))),
     }
     terms.push(call("Times", factors));
   }
@@ -758,34 +755,25 @@ fn associated_legendre_p_ast(
   let factor = if m % 2 == 0 {
     // (1 - x^2)^(m/2) — integer power
     let half_m = m / 2;
-    call(
-      "Power",
-      vec![
-        minus2(Expr::Integer(1), pow2(x_expr.clone(), Expr::Integer(2))),
-        Expr::Integer(half_m as i128),
-      ],
+    pow(
+      minus2(Expr::Integer(1), pow2(x_expr.clone(), Expr::Integer(2))),
+      Expr::Integer(half_m as i128),
     )
   } else {
     // (1 - x^2)^(m/2) with m odd → (1 - x^2)^((m-1)/2) * Sqrt[1 - x^2]
     let half_m = (m - 1) / 2;
-    let sqrt_part = call(
-      "Power",
-      vec![
-        minus2(Expr::Integer(1), pow2(x_expr.clone(), Expr::Integer(2))),
-        call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
-      ],
+    let sqrt_part = pow(
+      minus2(Expr::Integer(1), pow2(x_expr.clone(), Expr::Integer(2))),
+      call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
     );
     if half_m == 0 {
       sqrt_part
     } else {
       Expr::BinaryOp {
         op: BinaryOperator::Times,
-        left: Box::new(call(
-          "Power",
-          vec![
-            minus2(Expr::Integer(1), pow2(x_expr.clone(), Expr::Integer(2))),
-            Expr::Integer(half_m as i128),
-          ],
+        left: Box::new(pow(
+          minus2(Expr::Integer(1), pow2(x_expr.clone(), Expr::Integer(2))),
+          Expr::Integer(half_m as i128),
         )),
         right: Box::new(sqrt_part),
       }
@@ -1091,17 +1079,11 @@ pub fn spherical_harmonic_y_ast(
   // Sqrt[Rational[2l+1, fact_ratio_den] / Pi] = Sqrt[arg]
   let sqrt_arg = call(
     "Times",
-    vec![
-      norm_inner,
-      call("Power", vec![const_expr("Pi"), Expr::Integer(-1)]),
-    ],
+    vec![norm_inner, pow(const_expr("Pi"), Expr::Integer(-1))],
   );
-  let sqrt_part = call(
-    "Power",
-    vec![
-      sqrt_arg,
-      call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
-    ],
+  let sqrt_part = pow(
+    sqrt_arg,
+    call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
   );
   let norm_expr = call(
     "Times",
@@ -1123,17 +1105,13 @@ pub fn spherical_harmonic_y_ast(
   let imp = if m == 0 {
     Expr::Integer(1)
   } else {
-    Expr::FunctionCall {
-      name: "Power".to_string(),
-      args: vec![
-        const_expr("E"),
-        call(
-          "Times",
-          vec![id_expr("I"), Expr::Integer(m), args[3].clone()],
-        ),
-      ]
-      .into(),
-    }
+    pow(
+      const_expr("E"),
+      call(
+        "Times",
+        vec![id_expr("I"), Expr::Integer(m), args[3].clone()],
+      ),
+    )
   };
   let result = call("Times", vec![norm_expr, plm, imp]);
   let evaluated = crate::evaluator::evaluate_expr_to_expr(&result)?;
@@ -1283,17 +1261,11 @@ fn simplify_spherical_harmonic_form(expr: &Expr) -> Expr {
     };
     let new_sqrt_arg = call(
       "Times",
-      vec![
-        new_radicand_rat,
-        call("Power", vec![const_expr("Pi"), Expr::Integer(-1)]),
-      ],
+      vec![new_radicand_rat, pow(const_expr("Pi"), Expr::Integer(-1))],
     );
-    let new_sqrt = call(
-      "Power",
-      vec![
-        new_sqrt_arg,
-        call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
-      ],
+    let new_sqrt = pow(
+      new_sqrt_arg,
+      call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
     );
     (Some(new_coeff), Some(new_sqrt))
   } else {
@@ -2630,7 +2602,7 @@ fn gegenbauer_symbolic_lambda(n: usize, lambda: &Expr, x: &Expr) -> Expr {
       0 => {}
       1 => factors.push(x.clone()),
       p => {
-        factors.push(call("Power", vec![x.clone(), Expr::Integer(p as i128)]));
+        factors.push(pow(x.clone(), Expr::Integer(p as i128)));
       }
     }
     terms.push(match factors.len() {
@@ -3191,7 +3163,7 @@ fn generalized_laguerre_l_ast(
       vec![n_expr.clone(), a_expr.clone(), x_expr.clone()],
     ));
   };
-  let pow = |b: Expr, e: i128| call("Power", vec![b, Expr::Integer(e)]);
+  let pow = |b: Expr, e: i128| pow(b, Expr::Integer(e));
   let mut sum_terms: Vec<Expr> = Vec::with_capacity(n + 1);
   for k in 0..=n {
     let k_fact = fact(k);
@@ -3644,7 +3616,7 @@ fn rewrite_sqrt_one_minus_cos_sq(expr: &Expr, theta: &Expr) -> Expr {
     if matches!(&e2, Expr::Integer(1)) {
       sin()
     } else {
-      call("Power", vec![sin(), e2])
+      pow(sin(), e2)
     }
   };
   // Double an exponent e → 2e (reduced), so (1 - Cos[θ]^2)^e becomes

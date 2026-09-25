@@ -348,12 +348,9 @@ pub fn airy_bi_prime_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // AiryBiPrime[0] = 3^(1/6) / Gamma[1/3]
   if matches!(&args[0], Expr::Integer(0)) {
     // 3^(1/6) / Gamma[1/3] — no factor of 3 in denominator
-    let power_3 = call(
-      "Power",
-      vec![
-        Expr::Integer(3),
-        call("Rational", vec![Expr::Integer(1), Expr::Integer(6)]),
-      ],
+    let power_3 = pow(
+      Expr::Integer(3),
+      call("Rational", vec![Expr::Integer(1), Expr::Integer(6)]),
     );
     let gamma = call1(
       "Gamma",
@@ -436,17 +433,13 @@ fn airy_build_value(
   gamma_frac: (i128, i128),
   with_extra_3: bool,
 ) -> Result<Expr, InterpreterError> {
-  let power_3 = Expr::FunctionCall {
-    name: "Power".to_string(),
-    args: vec![
-      Expr::Integer(3),
-      call(
-        "Rational",
-        vec![Expr::Integer(power_frac.0), Expr::Integer(power_frac.1)],
-      ),
-    ]
-    .into(),
-  };
+  let power_3 = pow(
+    Expr::Integer(3),
+    call(
+      "Rational",
+      vec![Expr::Integer(power_frac.0), Expr::Integer(power_frac.1)],
+    ),
+  );
   let gamma = call1(
     "Gamma",
     call(
@@ -584,7 +577,7 @@ fn scorer_value_at_zero(numer: i128) -> Result<Expr, InterpreterError> {
   let rational = |a: i128, b: i128| {
     call("Rational", vec![Expr::Integer(a), Expr::Integer(b)])
   };
-  let three_sixth = call("Power", vec![Expr::Integer(3), rational(1, 6)]);
+  let three_sixth = pow(Expr::Integer(3), rational(1, 6));
   let gamma = call1("Gamma", rational(2, 3));
   let denom = call("Times", vec![Expr::Integer(3), three_sixth, gamma]);
   let result = div2(Expr::Integer(numer), denom);
