@@ -1651,6 +1651,25 @@ pub fn apply_curried_call(
     } if name == "AssessmentResultObject" && args.len() == 1 => {
       crate::functions::assessment_ast::apply_result_object(func_args, &args[0])
     }
+    // HypothesisTestData[<|…|>]["property"(, testName)] — property access on
+    // the object DistributionFitTest[…, "HypothesisTestData"] returns (e.g.
+    // "FittedDistribution", "AllTests", "TestDataTable").
+    Expr::FunctionCall {
+      name,
+      args: func_args,
+    } if name == "HypothesisTestData"
+      && (args.len() == 1 || args.len() == 2) =>
+    {
+      match crate::functions::math_ast::apply_hypothesis_test_data(
+        func_args, args,
+      ) {
+        Some(result) => Ok(result),
+        None => Ok(Expr::CurriedCall {
+          func: Box::new(func.clone()),
+          args: args.to_vec(),
+        }),
+      }
+    }
     // BooleanFunction[bdd][b1, …, bn] — the Boolean-function object applied
     // to n arguments. Literal True/False (or 1/0) arguments are substituted
     // in: all n of them give True or False outright, and a proper subset

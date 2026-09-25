@@ -1353,7 +1353,7 @@ Echo,Prints and returns an expression,✅,effectful,10.3,1339
 ConstellationData,,🚫,,10.0,1342
 Directory,Current working directory,✅,effectful,2.0,1342
 Hypergeometric1F1Regularized,Regularized confluent hypergeometric function 1F1(a b z)/Gamma(b),✅,pure,3.0,1342
-DistributionFitTest,,🚫,,8.0,1343
+DistributionFitTest,Tests whether data comes from a specified distribution using AndersonDarling/CramerVonMises/KolmogorovSmirnov/Kuiper/PearsonChiSquare/WatsonUSquare,✅,pure,8.0,1343
 DiskMatrix,Gives the disk (L2-ball) structuring element for a scalar radius or list of radii (n-D),✅,pure,7.0,1345
 ExtentSize,,🚫,,8.0,1345
 CoshIntegral,Hyperbolic cosine integral Chi(z),✅,pure,3.0,1347
@@ -4955,7 +4955,7 @@ GreaterFullEqual,,,,3.0,5184
 HaradaNortonGroupHN,,,,8.0,5184
 HardcorePointProcess,,🚫,,12.2,5184
 HeatFluxValue,,,,12.2,5184
-HypothesisTestData,,🚫,,8.0,5184
+HypothesisTestData,Object returned by DistributionFitTest holding a fitted distribution's test statistics and p-values,✅,pure,8.0,5184
 IgnoreDiacritics,,,,10.1,5184
 InhomogeneousPoissonPointProcess,,🚫,,12.2,5184
 JankoGroupJ4,,,,8.0,5184

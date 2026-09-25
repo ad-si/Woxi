@@ -30563,4 +30563,106 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`stepA$$ = 1, $CellContext`stepB$$ =
       "the waypoint-names checkbox must matter"
     );
   }
+
+  /// End-to-end regression for a Wolfram Demonstration randomly sampled by
+  /// the scheduled QA routine ("Spacing Distribution of Random Numbers"): a
+  /// `Manipulate` whose body draws sorted-uniform-variate spacings, fits
+  /// them to an `ExponentialDistribution` via `FindDistributionParameters`,
+  /// and reports goodness of fit through
+  /// `DistributionFitTest[…, "HypothesisTestData"]` — a Wolfram Demonstration
+  /// idiom that was completely unimplemented (`DistributionFitTest` and the
+  /// `HypothesisTestData` object it returns were both `🚫` in
+  /// `functions.csv`), so this widget could not evaluate at all before that
+  /// support was added. An independently written histogram/PDF-overlay
+  /// scene with its own control labels and Epilog annotation — not the
+  /// copyrighted notebook source — pins the fix: the widget must build, its
+  /// two controls (a sample-count slider and a goodness-of-fit-test picker)
+  /// must have the right shape, and both must actually affect the render.
+  #[test]
+  fn manipulate_distribution_fit_test_hypothesis_test_data() {
+    let code = r#"Manipulate[
+      Module[{pts, gaps, gapsNorm, fit, ht, pval},
+        SeedRandom[sampleSeed];
+        pts = Sort[RandomVariate[UniformDistribution[{0, 1}], sampleSeed + 1]];
+        gaps = Differences[pts];
+        gapsNorm = gaps/Mean[gaps];
+        fit = FindDistributionParameters[gapsNorm, ExponentialDistribution[lam]];
+        ht = DistributionFitTest[gapsNorm, ExponentialDistribution[lam /. fit], "HypothesisTestData"];
+        pval = ht["PValue", whichTest];
+        Show[
+          Histogram[gapsNorm, {0, 4, 1/4}, "PDF"],
+          Plot[PDF[ht["FittedDistribution"], t], {t, 0, 4}, PlotStyle -> Red],
+          Epilog -> Text[
+            Style["p = " <> ToString[NumberForm[pval, {3, 2}]], 12], {3, 0.8}]
+        ]
+      ],
+      {{sampleSeed, 40, "sample count"}, 20, 200, 1},
+      {{whichTest, "AndersonDarling", "goodness-of-fit test"},
+        {"AndersonDarling", "CramerVonMises", "KolmogorovSmirnov", "Kuiper",
+         "PearsonChiSquare", "WatsonUSquare"}}
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr).expect(
+      "the sample-count slider and goodness-of-fit-test picker should \
+       build a ManipulateState",
+    );
+    assert_eq!(
+      state.error, None,
+      "the FindDistributionParameters/DistributionFitTest body must \
+       evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the histogram + fitted-PDF overlay must render as a picture"
+    );
+
+    assert!(
+      matches!(
+        &state.controls[0],
+        manipulate::ControlState::Continuous { name, label, min, max, current, .. }
+          if name == "sampleSeed" && label == "sample count"
+            && (*min, *max, *current) == (20.0, 200.0, 40.0)
+      ),
+      "control 0 should be the sample-count slider: {:?}",
+      state.controls[0]
+    );
+    assert!(
+      matches!(
+        &state.controls[1],
+        manipulate::ControlState::Discrete { name, label, value_labels, .. }
+          if name == "whichTest" && label == "goodness-of-fit test"
+            && value_labels == &[
+              "AndersonDarling", "CramerVonMises", "KolmogorovSmirnov",
+              "Kuiper", "PearsonChiSquare", "WatsonUSquare",
+            ]
+      ),
+      "control 1 should be the goodness-of-fit-test picker: {:?}",
+      state.controls[1]
+    );
+
+    let render = |seed: i64, test: &str| {
+      woxi::interpret_with_stdout(&format!(
+        "sampleSeed = {seed}; whichTest = \"{test}\";\n{}",
+        state.body
+      ))
+      .expect("the body must render")
+      .graphics
+      .expect("the body must produce a graphic")
+    };
+    let base = render(40, "AndersonDarling");
+    // A different seed resamples the data, changing the histogram and fit.
+    assert_ne!(
+      base,
+      render(80, "AndersonDarling"),
+      "the sample-count slider must matter"
+    );
+    // Switching tests changes the reported p-value in the Epilog text.
+    assert_ne!(
+      base,
+      render(40, "KolmogorovSmirnov"),
+      "the goodness-of-fit-test picker must matter"
+    );
+  }
 }
