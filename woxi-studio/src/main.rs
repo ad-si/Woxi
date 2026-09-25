@@ -26079,6 +26079,97 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 30, $CellContext`s$$ = 5}, \"
     );
   }
 
+  /// A randomly-sampled Wolfram Demonstrations Project notebook ("Operations
+  /// on Graphs") lets you pick two graphs from a gallery and shows their
+  /// union, disjoint union, difference or intersection, highlighted over
+  /// one of the originals. Independently written, not copied from the
+  /// original: this version uses a two-graph pool instead of a
+  /// thirty-graph one, a two-way "union"/"meet" popup instead of a
+  /// four-way switch, different variable names, and a different (smaller)
+  /// second graph.
+  ///
+  /// The construct worth pinning down is the pool itself: a Demonstration
+  /// that embeds `GraphData[…]`'s output literally (rather than calling it
+  /// live) caches each graph with Mathematica's internal `NetworkGraphics`
+  /// encoding — here, an adjacency matrix stored as a `SparseArray` in
+  /// compressed-row form — instead of a plain `UndirectedEdge` list.
+  /// Before `EdgeList` learned to decode that shape, `Graph[EdgeList[g],
+  /// …]` silently rebuilt an edgeless graph from it, so `GraphUnion`,
+  /// wrapped in `HighlightGraph`, had nothing to draw and the Grid cell
+  /// fell back to printing the graph's raw literal as text instead of
+  /// rendering it. A second, independent gap sat right behind it:
+  /// `GraphUnion`/`GraphIntersection`/`GraphDisjointUnion` rejected any
+  /// call carrying a trailing option such as `GraphLayout -> …` (exactly
+  /// what this Demonstration's Manipulate passes), because every argument
+  /// — including the option — was required to look like a `Graph[…]`.
+  #[test]
+  fn operations_on_graphs_notebook_opens_with_its_widget() {
+    let nb_src = r##"Notebook[{
+Cell[BoxData["pool = {Graph[{1, 2, 3}, {UndirectedEdge[1, 2], UndirectedEdge[2, 3], UndirectedEdge[1, 3]}], Graph[{1, 2, 3, 4}, {Null, SparseArray[Automatic, {4, 4}, 0, {1, {{0, 2, 4, 6, 6}, {{2}, {3}, {1}, {3}, {1}, {2}}}, Pattern}]}]};"], "Input"],
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[Module[{g, h}, g = Graph[EdgeList[pool[[a]]]]; h = Graph[EdgeList[pool[[b]]]]; Switch[combine, 1, HighlightGraph[GraphUnion[g, h, GraphLayout -> \"CircularEmbedding\"], g], 2, HighlightGraph[GraphIntersection[g, h, GraphLayout -> \"CircularEmbedding\"], g]]], {{a, 1}, None}, {{b, 2}, None}, {{combine, 1, \"combine with\"}, {1 -> \"union\", 2 -> \"meet\"}}, SaveDefinitions -> True]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`a$$ = 1, $CellContext`b$$ = 2, $CellContext`combine$$ = 1}, \"…\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .into_iter()
+      .find_map(|e| e.manipulate_state)
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+
+    // `a` and `b` are `Appearance -> None` — hidden state, not a control —
+    // so only "combine with" shows up as a control.
+    match &widget.controls[..] {
+      [manipulate::ControlState::Discrete { name, values, .. }] => {
+        assert_eq!(name, "combine");
+        assert_eq!(values, &["1", "2"]);
+      }
+      other => panic!("expected exactly one popup control, got {other:?}"),
+    }
+    let state_names: Vec<&str> =
+      widget.state.iter().map(|(n, _)| n.as_str()).collect();
+    assert_eq!(state_names, ["a", "b"]);
+
+    // Re-render through the same bindings the widget uses (as
+    // `examples/dump_manipulate.rs` does) to inspect the actual SVG: the
+    // union of a 3-vertex triangle and a 4-vertex pool graph, highlighted,
+    // must come back as real vertex/edge markup — not the graph object's
+    // raw textual form, which is what a broken `EdgeList` on the cached
+    // `SparseArray` graph used to leave `GraphUnion` (and so
+    // `HighlightGraph`) unable to render.
+    let mut bindings: Vec<(String, String)> = widget
+      .controls
+      .iter()
+      .filter(|c| c.binds_variable())
+      .map(|c| (c.name().to_string(), c.current_code()))
+      .collect();
+    bindings.extend(widget.state.iter().cloned());
+    let code = match widget.initialization.as_deref() {
+      Some(init) => format!("{init}; {}", widget.body),
+      None => widget.body.clone(),
+    };
+    let render = woxi::with_scoped_globals(&bindings, || {
+      woxi::interpret_with_stdout(&code)
+    })
+    .expect("the highlighted union must render");
+    let svg = render.graphics.expect("body must produce graphics");
+    assert!(
+      !svg.contains("SparseArray"),
+      "must not fall back to the graph's raw textual form: {svg}"
+    );
+    assert!(
+      svg.matches("<ellipse").count() >= 3,
+      "expected at least the triangle's 3 vertices drawn, got: {svg}"
+    );
+    assert!(svg.contains("<polyline"), "expected drawn edges: {svg}");
+  }
+
   /// A randomly-sampled Wolfram Demonstrations Project notebook ("Algebraic
   /// Values of Trigonometric Functions of Inverse Trigonometric Functions")
   /// shows an equation whose left side is a chosen trig function applied to
@@ -29894,6 +29985,270 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`timeElapsed$$ = 0.5, $CellContext`k
       base,
       render(1.0, 5.0),
       "the second-number slider must matter"
+    );
+  }
+
+  /// Checked a randomly-sampled Wolfram Demonstrations Project notebook: an
+  /// image-puzzle picker where a `PopupMenu` selects one of several
+  /// near-identical image pairs and a `Checkbox` reveals the difference
+  /// region tinted in a marking color. Independently written with tiny
+  /// synthetic black/white images built inline, not copied from any
+  /// specific Demonstration (whose actual photographs are copyrighted).
+  ///
+  /// This is what surfaced the real gap: `ImageApply[f, img]` on a
+  /// single-channel (grayscale) `img` assumed `f` always returns a scalar,
+  /// so a colorizing `f` that returns `{r, g, b}` per pixel — exactly the
+  /// "tint the diff mask red" idiom this puzzle uses — crashed with
+  /// `Image: expected a number, got {r, g, b}` instead of widening to a
+  /// 3-channel image the way the already-supported RGB-collapses-to-
+  /// grayscale direction (`ImageApply[Max, rgbImage]`) does in reverse.
+  #[test]
+  fn demonstration_twin_images_puzzle_reveals_tinted_difference() {
+    let code = "Manipulate[\
+      Module[{a, b, mask, tint}, \
+        {a, b} = data[[pair]]; \
+        If[reveal == False, \
+          Grid[{Panel[#] & /@ {a, b}}], \
+          mask = Binarize[Blur[ColorNegate[EdgeDetect[\
+            ImageDifference[a, b]]], 1]]; \
+          tint = ImageApply[If[# == 0, white, red] &, mask]; \
+          Grid[{Panel[#] & /@ (ImageMultiply[#, tint] & /@ {a, b})}]\
+        ]\
+      ], \
+      {{pair, 1, \"image pair\"}, {1, 2}, ControlType -> PopupMenu}, \
+      {{reveal, False}, {True, False}, ControlType -> Checkbox}, \
+      TrackedSymbols -> True, \
+      Initialization :> ( \
+        white = {1, 1, 1}; black = {0, 0, 0}; red = {1, 0, 0}; \
+        data = { \
+          {Image[{{white, white, black, black, white, white}, \
+                  {white, white, black, black, white, white}, \
+                  {white, white, black, black, white, white}}], \
+           Image[{{white, white, black, black, white, white}, \
+                  {white, black, black, black, white, white}, \
+                  {white, white, black, black, white, white}}]}, \
+          {Image[{{black, white, white, white, black, black}, \
+                  {black, white, white, white, black, black}, \
+                  {black, white, white, white, black, black}}], \
+           Image[{{black, white, white, white, black, black}, \
+                  {black, white, white, black, black, black}, \
+                  {black, white, white, white, black, black}}]} \
+        } \
+      )\
+    ]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the twin-images-puzzle Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+
+    match &state.controls[..] {
+      [
+        manipulate::ControlState::Discrete {
+          name: n0, popup, ..
+        },
+        manipulate::ControlState::Discrete { name: n1, .. },
+      ] => {
+        assert_eq!(n0.as_str(), "pair");
+        assert!(*popup, "ControlType -> PopupMenu must render a dropdown");
+        assert_eq!(n1.as_str(), "reveal");
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+
+    assert!(
+      state.graphics_handle.is_some(),
+      "the puzzle pair must render"
+    );
+
+    // `Grid[Panel[Image[…]]]` shows as the placeholder text `-Image-` in
+    // both the rendered SVG summary and the InputForm-ish result, hiding
+    // any actual pixel difference between states — so compare the
+    // structured `expr` tree (which still carries each `Image`'s raw
+    // pixel data) instead.
+    let render = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      let expr = woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&w.body)
+      })
+      .expect("body evaluates")
+      .expr
+      .expect("the puzzle pair must produce a value");
+      format!("{expr:?}")
+    };
+    let plain = render(&state);
+
+    // Ticking the checkbox must swap in the tinted-difference images.
+    match &mut state.controls[1] {
+      manipulate::ControlState::Discrete { current_index, .. } => {
+        *current_index = 0;
+      }
+      other => panic!("expected the reveal checkbox, got {other:?}"),
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    let revealed = render(&state);
+    assert_ne!(
+      plain, revealed,
+      "revealing the difference must change the rendered picture"
+    );
+
+    // Switching to the other image pair must also change the picture.
+    match &mut state.controls[0] {
+      manipulate::ControlState::Discrete { current_index, .. } => {
+        *current_index = 1;
+      }
+      other => panic!("expected the pair popup, got {other:?}"),
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    let other_pair_revealed = render(&state);
+    assert_ne!(
+      revealed, other_pair_revealed,
+      "switching image pairs must change the rendered picture"
+    );
+  }
+
+  /// Checked a randomly-sampled Wolfram Demonstrations Project notebook: a
+  /// "flex" slider drives `FindRoot`-solved vertex positions for a hinged
+  /// polyhedron rendered via a `GraphicsComplex`/`Polygon` composed with
+  /// `RotationTransform` inside a `Graphics3D`, with an opacity slider and
+  /// a `{var, {True, False}}` checkbox that swaps in a flat unfolded net
+  /// view, both continuous sliders wired `Enabled -> Dynamic[Not[…]]` to
+  /// the checkbox. Independently written, not copied from the notebook: a
+  /// four-vertex tetrahedron whose apex is `FindRoot`-solved from three
+  /// fixed edge lengths (rather than the nine-vertex construction the
+  /// actual Demonstration builds), with a simplified triangle net.
+  ///
+  /// It already worked end-to-end (no code changes needed): `Quiet` +
+  /// `FindRoot` + `ReplaceAll` solving for a `Module`-local vertex,
+  /// `GraphicsComplex`/`Polygon` composed with `RotationTransform`, a
+  /// `Graphics3D` `Opacity`/`Boxed`/`PlotRange`/`SphericalRegion`/
+  /// `ViewAngle` combination, and the checkbox-style discrete control all
+  /// render cleanly; this pins the behavior with a rewritten equivalent as
+  /// a regression test.
+  #[test]
+  fn flex_polyhedron_notebook_switches_solid_and_net_views() {
+    let nb_src = r##"Notebook[{
+Cell[BoxData["mag2 = Dot[#, #] &;"], "Input"],
+Cell[BoxData["netView = Graphics[{Line[{{0, 0}, {6, 0}, {3, 5.196}, {0, 0}}], Line[{{0, 0}, {3, 5.196}, {-3, 5.196}, {0, 0}}], Line[{{6, 0}, {3, 5.196}, {9, 5.196}, {6, 0}}], Line[{{0, 0}, {6, 0}, {3, -5.196}, {0, 0}}]}, ImageSize -> {300, 300}];"], "Input"],
+Cell[BoxData["flexTetra[t_, o_] := Module[{b1, b2, b3, apex, x, y, z, sols, edge, vol}, b1 = {0, 0, 0}; b2 = {6, 0, 0}; b3 = {3, 5.196, 0}; edge = 5 + t; apex = {x, y, z}; sols = Quiet[FindRoot[{mag2[apex - b1] == edge^2, mag2[apex - b2] == edge^2, mag2[apex - b3] == edge^2}, {x, 3}, {y, 1.7}, {z, 4}]]; apex = apex /. sols; vol = Det[{b2 - b1, b3 - b1, apex - b1}]/6; Column[{Graphics3D[{Opacity[o], GraphicsComplex[RotationTransform[Pi/6, {0, 0, 1}, {3, 1.7, 0}] /@ {b1, b2, b3, apex}, Polygon[{{1, 2, 3}, {1, 2, 4}, {2, 3, 4}, {3, 1, 4}}]]}, Boxed -> False, PlotRange -> 8, SphericalRegion -> True, ViewAngle -> 20 Degree, ImageSize -> {300, 300}], Text[Row[{\"volume = \", vol}]]}, Alignment -> Center]]"], "Input"],
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[\nIf[flat, netView, flexTetra[t, o]],\n{{t, 1, \"flex\"}, 0, 4, Enabled -> Dynamic[Not[flat]]},\n{{o, 0.8, \"opacity\"}, 0, 0.99, Enabled -> Dynamic[Not[flat]]},\n{{flat, False, \"solid/net\"}, {True, False}},\nSaveDefinitions -> True\n]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`t$$ = 1., $CellContext`o$$ = 0.8, $CellContext`flat$$ = False}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let mut editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter_mut()
+      .find_map(|e| e.manipulate_state.as_mut())
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(widget.graphics_handle.is_some(), "the solid view must draw");
+
+    assert!(
+      matches!(
+        &widget.controls[0],
+        manipulate::ControlState::Continuous { name, label, min, max, current, .. }
+          if name == "t" && label == "flex" && (*min, *max, *current) == (0.0, 4.0, 1.0)
+      ),
+      "control 0 should be the flex slider: {:?}",
+      widget.controls[0]
+    );
+    assert!(
+      matches!(
+        &widget.controls[1],
+        manipulate::ControlState::Continuous { name, label, min, max, current, .. }
+          if name == "o" && label == "opacity" && (*min, *max, *current) == (0.0, 0.99, 0.8)
+      ),
+      "control 1 should be the opacity slider: {:?}",
+      widget.controls[1]
+    );
+    let (flat_values, flat_index) = match &widget.controls[2] {
+      manipulate::ControlState::Discrete {
+        name,
+        values,
+        current_index,
+        ..
+      } if name == "flat" => (values.clone(), *current_index),
+      other => panic!("control 2 should be the solid/net checkbox: {other:?}"),
+    };
+    assert_eq!(flat_values, ["True", "False"]);
+    assert_eq!(flat_values[flat_index], "False", "starts in solid view");
+
+    // Toggling to the net view must re-render without error, and the net
+    // and solid scenes must actually differ.
+    let render_for = |widget: &mut manipulate::ManipulateState,
+                      index: usize| {
+      match &mut widget.controls[2] {
+        manipulate::ControlState::Discrete { current_index, .. } => {
+          *current_index = index
+        }
+        other => panic!("expected discrete, got {other:?}"),
+      }
+      widget.reevaluate();
+      assert!(
+        widget.error.is_none(),
+        "view {index} errored: {:?}",
+        widget.error
+      );
+      assert!(widget.graphics_handle.is_some(), "view {index} must draw");
+      let bindings: Vec<(String, String)> = widget
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      let body = widget.body.clone();
+      woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&body)
+      })
+      .expect("body must render")
+      .graphics
+      .expect("view must produce a graphic")
+    };
+    let solid = render_for(widget, 0);
+    let net = render_for(widget, 1);
+    assert_ne!(solid, net, "solid and net views must render differently");
+
+    // Moving the flex slider must change the solid scene's rendered volume.
+    match &mut widget.controls[0] {
+      manipulate::ControlState::Continuous { current, .. } => *current = 3.0,
+      other => panic!("expected continuous, got {other:?}"),
+    }
+    widget.reevaluate();
+    assert!(
+      widget.error.is_none(),
+      "flexed body errored: {:?}",
+      widget.error
+    );
+    let bindings: Vec<(String, String)> = widget
+      .controls
+      .iter()
+      .filter(|c| c.binds_variable())
+      .map(|c| (c.name().to_string(), c.current_code()))
+      .collect();
+    let flexed = woxi::with_scoped_globals(&bindings, || {
+      woxi::interpret_with_stdout(&widget.body)
+    })
+    .expect("body must render")
+    .graphics
+    .expect("view must produce a graphic");
+    assert_ne!(
+      solid, flexed,
+      "the flex slider must change the rendered scene"
     );
   }
 

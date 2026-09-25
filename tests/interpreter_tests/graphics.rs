@@ -13271,6 +13271,31 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       }
     }
 
+    /// A `FrameLabel` written with inline box notation
+    /// (`\!\(\*SubscriptBox[…]\)`, the way a notebook typesets a subscript
+    /// inside a plain string) must still render as a subscript once `Show`
+    /// merges the plot's own `FrameLabel` into a matching graphics
+    /// primitive, not leak the literal box-notation source as text (a
+    /// Wolfram Demonstrations Project notebook, "Electronic Band Structure
+    /// of a Single-Walled Carbon Nanotube by the Zone-Folding Method", hit
+    /// exactly this: its `Manipulate` body is `Show[{ContourPlot[…,
+    /// FrameLabel -> {"\!\(\*SubscriptBox[…]\)", …}], …}]`).
+    #[test]
+    fn show_renders_frame_label_box_notation() {
+      let svg = export_svg(
+        r#"Show[ContourPlot[x + y, {x, 0, 1}, {y, 0, 1}, FrameLabel -> {"\!\(\*SubscriptBox[\(k\), \(x\)]\)", "y"}], Graphics[{}]]"#,
+      );
+      assert!(
+        svg.contains("<tspan"),
+        "expected the subscript to render as a tspan, not literal box \
+         notation: {svg}"
+      );
+      assert!(
+        !svg.contains("SubscriptBox"),
+        "the box-notation source leaked into the rendered label: {svg}"
+      );
+    }
+
     /// A shaded contour plot keeps its shading when `Show` merges it with
     /// other graphics — the bands travel with the plot's symbolic form, so
     /// the merged picture is not reduced to bare contour lines. A
@@ -22387,6 +22412,46 @@ mod manipulate {
         assert_eq!(*x_max, 5.0);
         assert_eq!(*y_min, -5.0);
         assert_eq!(*y_max, 5.0);
+      }
+      other => panic!("expected a Slider2D control, got {other:?}"),
+    }
+  }
+
+  /// A `Slider2D` corner point may equally name *another control's*
+  /// variable declared later in the same Manipulate, rather than a leading
+  /// body assignment (see the test above this one). The held-echo pass
+  /// wraps such a bound in `Dynamic[…]` before the widget builder ever
+  /// sees it (`process_manipulate_var_spec`), and `list2_f64` failed to
+  /// unwrap that: the corner point then matched neither `Expr::List` in
+  /// the 2D-range branch nor a scalar in the fallback, so the fallback's
+  /// `?` propagated `None` and the whole control silently disappeared from
+  /// the panel instead of just widening it. Found via the scheduled
+  /// Wolfram Demonstrations check downloading "Partially Loaded
+  /// Rectangular Plate", whose two `Slider2D` load-point controls are
+  /// bounded by `{a, b}`, a plate-size slider pair declared later in the
+  /// same Manipulate (independently written here, not copied from that
+  /// notebook).
+  #[test]
+  fn spec_slider2d_corner_bounds_see_sibling_control_declared_later() {
+    let expr = interpret_to_expr(
+      "Manipulate[g[x, y], \
+       {{pt, {0.2, 0.2}, \"\"}, {0, 0}, {a, b}, ControlType -> Slider2D}, \
+       {{a, 2, \"a\"}, 0, 10}, {{b, 3, \"b\"}, 0, 10}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    match &spec.controls[0] {
+      ManipulateControl::Slider2D {
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+        ..
+      } => {
+        assert_eq!(*x_min, 0.0);
+        assert_eq!(*x_max, 2.0);
+        assert_eq!(*y_min, 0.0);
+        assert_eq!(*y_max, 3.0);
       }
       other => panic!("expected a Slider2D control, got {other:?}"),
     }
