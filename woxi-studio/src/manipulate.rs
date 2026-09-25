@@ -1626,6 +1626,121 @@ mod tests {
   }
 
   /// Checked a randomly-sampled Wolfram Demonstrations Project notebook
+  /// ("Vector Transformations and Eigenvectors of 2×2 Matrix") whose body
+  /// builds its matrix and vector through a `Function[…][t]`/`ToExpression`
+  /// indirection rather than referencing the control variables directly,
+  /// and whose caption panel labels a determinant/inverse *formula* (not an
+  /// actual matrix) via `MatrixForm[StringForm["(``×``)-(``×``)", Style[a,
+  /// FontColor -> Red], …]]` — coloring each digit to match the slider that
+  /// produced it. Independently written, not copied from any specific
+  /// Demonstration: different helper name, layout and preset values
+  /// throughout.
+  ///
+  /// Regression coverage for two bugs this uncovered in the shared
+  /// typeset/SVG box pipeline (`expr_to_box_form` in
+  /// `evaluator/dispatch/complex_and_special.rs`, used by both
+  /// `ExportString[…, "SVG"]` and this Manipulate re-render path):
+  ///
+  /// 1. `MatrixForm[StringForm[…]]` — `MatrixForm` wrapping a *formula*,
+  ///    not a list — fell through to the generic `FunctionCall` box
+  ///    renderer, which printed the literal `MatrixForm[StringForm["…",
+  ///    …]]` call (every token, including the raw template string, as its
+  ///    own separate box) instead of the substituted formula. Wolfram
+  ///    substitutes `StringForm` wherever it is typeset, and `MatrixForm`
+  ///    on a non-list argument just displays that argument plainly.
+  /// 2. `Style[value, FontColor -> color]` (or a bare color directive) was
+  ///    silently discarded by `expr_to_box_form`, so every colored digit in
+  ///    the formula rendered in the default text color instead of matching
+  ///    its slider.
+  #[test]
+  fn nested_function_to_expression_matrix_with_colored_formula_captions() {
+    let code = r#"Manipulate[
+      Module[{m, u, w},
+        m = Function[t, ToExpression[{{p, q}, {r, s}}]][t];
+        u = Function[t, ToExpression[{u1, u2}]][t];
+        w = m . u;
+        Text@Column[{
+          Framed[Labeled[
+            MatrixForm[StringForm["(``\[Times]``)-(``\[Times]``)",
+              Style[p, FontColor -> Red], Style[s, FontColor -> Green],
+              Style[q, FontColor -> Brown], Style[r, FontColor -> Orange]]],
+            "determinant formula", Top]],
+          Framed[TableForm[
+            Table[{Eigensystem[m][[1,n]], MatrixForm[Eigensystem[m][[2,n]]]},
+              {n, 1, Length[Eigensystem[m][[1]]]}],
+            TableHeadings -> {None, {"eigenvalue", "eigenvector"}}]],
+          Graphics[{{Black, Arrow[{{0,0}, u}]}, {tint, Arrow[{{0,0}, w}]}},
+            Axes -> True, ImageSize -> {150,150}]
+        }]
+      ],
+      Grid[{
+        {Control@{{p, 1, Style["p", Italic]}, -10, 10, 1, ImageSize -> Tiny},
+         Control@{{q, 2, Style["q", Italic]}, -10, 10, 1, ImageSize -> Tiny}},
+        {Control@{{r, 3, Style["r", Italic]}, -10, 10, 1, ImageSize -> Tiny},
+         Control@{{s, 4, Style["s", Italic]}, -10, 10, 1, ImageSize -> Tiny}}
+      }],
+      {{u1, 5, Style["u1", Italic]}, -10, 10, 1, ImageSize -> Tiny},
+      {{u2, 6, Style["u2", Italic]}, -10, 10, 1, ImageSize -> Tiny},
+      {{tint, Red}, Red},
+      ControlPlacement -> Left
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = ManipulateState::from_expr(&expr)
+      .expect("the Function/ToExpression body should build a ManipulateState");
+    assert_eq!(
+      state.error, None,
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the Text@Column body (formula caption + eigen-table + vector plot) \
+       should render"
+    );
+
+    // p=1, q=2, r=3, s=4 (the sliders' defaults): re-render the body and
+    // check the determinant formula substituted correctly and in color,
+    // rather than dumping `MatrixForm[StringForm[…]]`'s literal source.
+    let bindings: Vec<(String, String)> = state
+      .controls
+      .iter()
+      .filter(|c| c.binds_variable())
+      .map(|c| (c.name().to_string(), c.current_code()))
+      .chain(state.state.iter().cloned())
+      .collect();
+    let svg = woxi::with_scoped_globals(&bindings, || {
+      woxi::interpret_with_stdout(&state.body)
+    })
+    .expect("body evaluates")
+    .graphics
+    .expect("the Column body should render as a graphic");
+    for marker in ["MatrixForm[", "StringForm[", "``"] {
+      assert!(
+        !svg.contains(marker),
+        "the determinant formula must substitute, not leak {marker:?} from \
+         the un-evaluated call: {svg}"
+      );
+    }
+    assert!(
+      svg.contains("(1") && svg.contains(")-(") && svg.contains("2"),
+      "the substituted determinant formula '(1×4)-(2×3)' must appear: {svg}"
+    );
+    for color in [
+      "rgb(255,0,0)",
+      "rgb(0,255,0)",
+      "rgb(153,102,51)",
+      "rgb(255,128,0)",
+    ] {
+      assert!(
+        svg.contains(color),
+        "each `Style[…, FontColor -> …]` digit must keep its color \
+         ({color} missing): {svg}"
+      );
+    }
+  }
+
+  /// Checked a randomly-sampled Wolfram Demonstrations Project notebook
   /// ("Nonlinear Wave Equations"), whose body is `If[twoD, DensityPlot,
   /// Plot3D][u[…] /. NDSolve[…], …]` with a `SetterBar` toggling the plot
   /// type and the space domain's two ends tied together by a periodic

@@ -3848,7 +3848,25 @@ pub(crate) fn render_matrixform_if_needed(expr: syntax::Expr) -> syntax::Expr {
             Err(_) => expr,
           }
         }
-        _ => expr,
+        // Anything else (a scalar, a string, a `StringForm[…]` formula, …)
+        // has nothing to lay out as a matrix: Wolfram just displays `data`
+        // plainly, with no `MatrixForm[…]` wrapper — a Demonstration's
+        // `MatrixForm[StringForm["(``×``)-(``×``)", …]]` idiom (labeling a
+        // determinant formula, not an actual matrix) depends on this.
+        _ => {
+          let svg = evaluator::expr_to_svg(data);
+          if svg.starts_with("<svg") {
+            syntax::Expr::Graphics {
+              svg,
+              is_3d: false,
+              source: None,
+              head: None,
+              structure: None,
+            }
+          } else {
+            expr
+          }
+        }
       }
     }
     _ => expr,

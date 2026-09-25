@@ -15304,6 +15304,122 @@ mod matrix_form {
       pos3.0
     );
   }
+
+  // `MatrixForm[data]` only typesets `data` as a matrix when `data` is
+  // actually a list; on anything else Wolfram just displays `data` plainly,
+  // with no `MatrixForm[…]` wrapper. A Wolfram Demonstrations idiom labels a
+  // formula (not a matrix) this way, e.g. `MatrixForm[StringForm["(``×``)-
+  // (``×``)", a, d, b, c]]` captioning a 2×2 determinant.
+  #[test]
+  fn matrix_form_of_non_list_shows_argument_plainly() {
+    clear_state();
+    let result = interpret_with_stdout("MatrixForm[1 + 2]").unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    assert!(
+      !svg.contains("MatrixForm"),
+      "MatrixForm[non-list] must not print its own head: {svg}"
+    );
+    assert!(
+      svg.contains(">3</text>"),
+      "must show the evaluated sum: {svg}"
+    );
+  }
+
+  // `StringForm` substitutes its placeholders wherever it is *typeset*
+  // (unlike plain `OutputForm`/console text, which prints the literal
+  // wrapper) — `MatrixForm[StringForm[…]]` is the Demonstrations idiom
+  // above with a literal formula instead of `1 + 2`.
+  #[test]
+  fn matrix_form_of_string_form_substitutes_and_keeps_colors() {
+    clear_state();
+    let result = interpret_with_stdout(
+      r#"MatrixForm[StringForm["(``\[Times]``)-(``\[Times]``)",
+        Style[1, FontColor -> Red], Style[4, FontColor -> Green],
+        Style[2, FontColor -> Brown], Style[3, FontColor -> Orange]]]"#,
+    )
+    .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    for marker in ["MatrixForm", "StringForm", "``"] {
+      assert!(
+        !svg.contains(marker),
+        "the formula must substitute, not leak {marker:?} from the \
+         un-evaluated call: {svg}"
+      );
+    }
+    assert!(
+      svg.contains(">1</text>")
+        && svg.contains(">4</text>")
+        && svg.contains(")-(")
+        && svg.contains("\u{d7}"),
+      "the substituted '(1×4)-(2×3)' formula must appear: {svg}"
+    );
+    for color in [
+      "rgb(255,0,0)",
+      "rgb(0,255,0)",
+      "rgb(153,102,51)",
+      "rgb(255,128,0)",
+    ] {
+      assert!(
+        svg.contains(color),
+        "each `Style[…, FontColor -> …]` argument must keep its color \
+         ({color} missing): {svg}"
+      );
+    }
+  }
+
+  // A `StringForm` string argument substitutes as its raw text, not the
+  // quoted literal `expr_to_box_form` gives an ordinary string expression
+  // — `StringForm["x = ``", "hello"]` typesets as `x = hello`, not
+  // `x = "hello"`. A `Style`-wrapped string argument keeps both the
+  // unquoting and its color.
+  #[test]
+  fn matrix_form_of_string_form_keeps_string_arguments_unquoted() {
+    clear_state();
+    let result = interpret_with_stdout(
+      r#"MatrixForm[StringForm["value = ``, ``", "hello", Style["world", Red]]]"#,
+    )
+    .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    assert!(
+      svg.contains(">hello</text>") && svg.contains(">world</text>"),
+      "string arguments must render unquoted: {svg}"
+    );
+    assert!(
+      !svg.contains("&quot;"),
+      "no escaped quote marks should appear around the substituted \
+       strings: {svg}"
+    );
+    assert!(
+      svg.contains("rgb(255,0,0)"),
+      "the Style-wrapped string argument must keep its color: {svg}"
+    );
+  }
+}
+
+mod traditional_form_style_box {
+  use super::*;
+
+  // `boxes_to_svg`'s `StyleBox` case (reached for a `StyleBox` nested
+  // inside a `FractionBox`/`SqrtBox`/etc. under `TraditionalForm`) is a
+  // near-duplicate of `layout_box`'s `StyleBox` case and must recognize a
+  // bare color directive (`StyleBox[b, Red]`) the same way, not just the
+  // `FontColor -> Red` `Rule` form — otherwise the two renderers drift
+  // apart, silently dropping color on one path but not the other.
+  #[test]
+  fn fraction_with_bare_colored_style_keeps_colors() {
+    clear_state();
+    let svg = export_svg("TraditionalForm[Style[5, Red]/Style[3, Blue]]");
+    for color in ["rgb(255,0,0)", "rgb(0,0,255)"] {
+      assert!(
+        svg.contains(color),
+        "the bare `Style[…, color]` directive must keep its color \
+         ({color} missing): {svg}"
+      );
+    }
+  }
 }
 
 mod show {
