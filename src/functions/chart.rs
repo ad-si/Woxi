@@ -2239,9 +2239,7 @@ pub fn bar_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// ring per sublist, innermost first — matching Wolfram's multi-dataset
 /// PieChart3D convention.
 pub fn pie_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  use crate::functions::plot3d::{
-    Point3D, Triangle, apply_lighting, depth, project, triangle_normal,
-  };
+  use crate::functions::plot3d::Triangle;
 
   let Ok(rows) = extract_pie_rows(&args[0]) else {
     return Ok(unevaluated("PieChart3D", args));
@@ -2311,139 +2309,20 @@ pub fn pie_chart_3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       let end_angle = start_angle + sweep;
 
-      let base_color = if opts.chart_style.is_empty() {
-        PLOT_COLORS[slot_color_idx % PLOT_COLORS.len()]
-      } else {
-        let c = &opts.chart_style[slot_color_idx % opts.chart_style.len()];
-        (
-          (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
-          (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
-          (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
-        )
-      };
+      let base_color = sector_color(&opts, slot_color_idx);
 
-      let n_seg = ((sweep / (2.0 * std::f64::consts::PI) * SEG_PER_TURN as f64)
-        .ceil() as usize)
-        .max(1);
-
-      let push_tri =
-        |v0: Point3D, v1: Point3D, v2: Point3D, all: &mut Vec<Triangle>| {
-          let normal = triangle_normal(v0, v1, v2);
-          let color = apply_lighting(base_color, normal);
-          let center = Point3D {
-            x: (v0.x + v1.x + v2.x) / 3.0,
-            y: (v0.y + v1.y + v2.y) / 3.0,
-            z: (v0.z + v1.z + v2.z) / 3.0,
-          };
-          all.push(Triangle {
-            boundary: [true; 3],
-            edge_color: None,
-            projected: [
-              project(v0, &camera),
-              project(v1, &camera),
-              project(v2, &camera),
-            ],
-            depth: depth(center, &camera),
-            color,
-            opacity: 1.0,
-          });
-        };
-
-      let pt = |r: f64, a: f64, z: f64| Point3D {
-        x: r * a.cos(),
-        y: r * a.sin(),
-        z,
-      };
-      let is_innermost = r_in <= 1e-9;
-
-      for s in 0..n_seg {
-        let t0 = s as f64 / n_seg as f64;
-        let t1 = (s + 1) as f64 / n_seg as f64;
-        let a0 = start_angle + t0 * sweep;
-        let a1 = start_angle + t1 * sweep;
-
-        let o_top_0 = pt(r_out, a0, z_top);
-        let o_top_1 = pt(r_out, a1, z_top);
-        let o_bot_0 = pt(r_out, a0, z_bot);
-        let o_bot_1 = pt(r_out, a1, z_bot);
-
-        if is_innermost {
-          // Innermost ring: top/bottom faces are triangle fans from
-          // the central axis; there's no inner cylindrical wall.
-          let center_top = pt(0.0, 0.0, z_top);
-          let center_bot = pt(0.0, 0.0, z_bot);
-          push_tri(center_top, o_top_0, o_top_1, &mut all_triangles);
-          push_tri(center_bot, o_bot_1, o_bot_0, &mut all_triangles);
-        } else {
-          let i_top_0 = pt(r_in, a0, z_top);
-          let i_top_1 = pt(r_in, a1, z_top);
-          let i_bot_0 = pt(r_in, a0, z_bot);
-          let i_bot_1 = pt(r_in, a1, z_bot);
-
-          // Top annular face (quad → two triangles).
-          push_tri(i_top_0, o_top_0, o_top_1, &mut all_triangles);
-          push_tri(i_top_0, o_top_1, i_top_1, &mut all_triangles);
-          // Bottom annular face (reverse winding so the normal points down).
-          push_tri(i_bot_0, o_bot_1, o_bot_0, &mut all_triangles);
-          push_tri(i_bot_0, i_bot_1, o_bot_1, &mut all_triangles);
-
-          // Inner cylindrical wall (normal points inward).
-          push_tri(i_top_0, i_top_1, i_bot_1, &mut all_triangles);
-          push_tri(i_top_0, i_bot_1, i_bot_0, &mut all_triangles);
-        }
-
-        // Outer cylindrical wall: two triangles per quad.
-        push_tri(o_top_0, o_bot_0, o_bot_1, &mut all_triangles);
-        push_tri(o_top_0, o_bot_1, o_top_1, &mut all_triangles);
-      }
-
-      // Two flat side walls (one for each radial edge of the slice).
-      let edge0_out_top = pt(r_out, start_angle, z_top);
-      let edge0_out_bot = pt(r_out, start_angle, z_bot);
-      let edge1_out_top = pt(r_out, end_angle, z_top);
-      let edge1_out_bot = pt(r_out, end_angle, z_bot);
-
-      if is_innermost {
-        let center_top = pt(0.0, 0.0, z_top);
-        let center_bot = pt(0.0, 0.0, z_bot);
-        // Side at start_angle.
-        push_tri(center_top, center_bot, edge0_out_bot, &mut all_triangles);
-        push_tri(center_top, edge0_out_bot, edge0_out_top, &mut all_triangles);
-        // Side at end_angle (reverse winding for the opposing face).
-        push_tri(center_top, edge1_out_top, edge1_out_bot, &mut all_triangles);
-        push_tri(center_top, edge1_out_bot, center_bot, &mut all_triangles);
-      } else {
-        let edge0_in_top = pt(r_in, start_angle, z_top);
-        let edge0_in_bot = pt(r_in, start_angle, z_bot);
-        let edge1_in_top = pt(r_in, end_angle, z_top);
-        let edge1_in_bot = pt(r_in, end_angle, z_bot);
-        // Side at start_angle.
-        push_tri(
-          edge0_in_top,
-          edge0_in_bot,
-          edge0_out_bot,
-          &mut all_triangles,
-        );
-        push_tri(
-          edge0_in_top,
-          edge0_out_bot,
-          edge0_out_top,
-          &mut all_triangles,
-        );
-        // Side at end_angle (reverse winding for the opposing face).
-        push_tri(
-          edge1_in_top,
-          edge1_out_top,
-          edge1_out_bot,
-          &mut all_triangles,
-        );
-        push_tri(
-          edge1_in_top,
-          edge1_out_bot,
-          edge1_in_bot,
-          &mut all_triangles,
-        );
-      }
+      build_cylindrical_sector(
+        r_in,
+        r_out,
+        z_bot,
+        z_top,
+        start_angle,
+        end_angle,
+        base_color,
+        &camera,
+        SEG_PER_TURN,
+        &mut all_triangles,
+      );
 
       start_angle = end_angle;
     }
