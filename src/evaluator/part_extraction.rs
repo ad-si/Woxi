@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 
 fn expr_to_i64(expr: &Expr) -> Option<i64> {
@@ -1031,8 +1030,7 @@ fn extract_part_ast_rest(
             ("Power", vec![*right.clone(), Expr::Integer(-1)])
           } else {
             // a/b = Times[a, Power[b, -1]]
-            let inv_right =
-              call("Power", vec![*right.clone(), Expr::Integer(-1)]);
+            let inv_right = pow(*right.clone(), Expr::Integer(-1));
             ("Times", vec![*left.clone(), inv_right])
           }
         }
