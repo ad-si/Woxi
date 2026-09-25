@@ -7268,7 +7268,7 @@ pub fn graph_metric_ast(
         })
         .collect();
       let sum = call("Plus", terms);
-      let mean = call("Divide", vec![sum, Expr::Integer(local.len() as i128)]);
+      let mean = div(sum, Expr::Integer(local.len() as i128));
       return Ok(
         crate::evaluator::evaluate_expr_to_expr(&mean)
           .unwrap_or_else(|_| unevaluated()),

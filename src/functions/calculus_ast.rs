@@ -974,10 +974,7 @@ fn try_dirac_delta_integral(
   }
 
   // Root x0 = -d / c.
-  let root = eval(call(
-    "Divide",
-    vec![call("Times", vec![Expr::Integer(-1), d]), c.clone()],
-  ))?;
+  let root = eval(div(call("Times", vec![Expr::Integer(-1), d]), c.clone()))?;
   // g(x): the product of the non-delta factors.
   let g = if others.is_empty() {
     Expr::Integer(1)
@@ -987,7 +984,7 @@ fn try_dirac_delta_integral(
   // Sifted value g(x0)/|c|. Defined symbolically so it also works when the
   // root is symbolic.
   let g_at_root = eval(at(&g, root.clone()))?;
-  let sifted = eval(call("Divide", vec![g_at_root, call1("Abs", c)]))?;
+  let sifted = eval(div(g_at_root, call1("Abs", c)))?;
 
   match crate::functions::math_ast::try_eval_to_f64(&root) {
     // Numeric root: position it relative to the (numeric) bounds.
@@ -18506,7 +18503,7 @@ pub fn discrete_ratio_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let shift_spec =
         Expr::List(vec![Expr::Identifier(var.clone()), step.clone()].into());
       let shifted = discrete_shift_ast(&[result.clone(), shift_spec])?;
-      let ratio = call("Divide", vec![shifted, result.clone()]);
+      let ratio = div(shifted, result.clone());
       result = crate::evaluator::evaluate_expr_to_expr(&ratio)?;
     }
   }

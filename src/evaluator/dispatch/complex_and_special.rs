@@ -11690,9 +11690,9 @@ impl BigRat {
     if self.den == BigInt::from(1) {
       return Ok(int(&self.num));
     }
-    crate::evaluator::evaluate_expr_to_expr(&call(
-      "Divide",
-      vec![int(&self.num), int(&self.den)],
+    crate::evaluator::evaluate_expr_to_expr(&div(
+      int(&self.num),
+      int(&self.den),
     ))
   }
 }
@@ -13078,21 +13078,18 @@ fn compute_bounding_region(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // The circumball of the bounding box: centred on the box centre with the
     // half-diagonal as its radius.
     let half = |a: &Expr, b: &Expr| -> Result<Expr, InterpreterError> {
-      crate::evaluator::evaluate_expr_to_expr(&call(
-        "Divide",
-        vec![call("Plus", vec![a.clone(), b.clone()]), Expr::Integer(2)],
+      crate::evaluator::evaluate_expr_to_expr(&div(
+        call("Plus", vec![a.clone(), b.clone()]),
+        Expr::Integer(2),
       ))
     };
     let mut center = Vec::with_capacity(d);
     let mut squares = Vec::with_capacity(d);
     for j in 0..d {
       center.push(half(&mins[j], &maxs[j])?);
-      let extent = crate::evaluator::evaluate_expr_to_expr(&call(
-        "Divide",
-        vec![
-          call("Subtract", vec![maxs[j].clone(), mins[j].clone()]),
-          Expr::Integer(2),
-        ],
+      let extent = crate::evaluator::evaluate_expr_to_expr(&div(
+        call("Subtract", vec![maxs[j].clone(), mins[j].clone()]),
+        Expr::Integer(2),
       ))?;
       squares.push(pow(extent, Expr::Integer(2)));
     }
@@ -13156,10 +13153,7 @@ fn compute_perpendicular_bisector(
   let eval = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e);
   let sub = |a: &Expr, b: &Expr| call("Subtract", vec![a.clone(), b.clone()]);
   let midpoint_coord = |a: &Expr, b: &Expr| {
-    call(
-      "Divide",
-      vec![call("Plus", vec![a.clone(), b.clone()]), Expr::Integer(2)],
-    )
+    div(call("Plus", vec![a.clone(), b.clone()]), Expr::Integer(2))
   };
 
   // Midpoint = ((p1 + p2)/2).
