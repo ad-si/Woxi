@@ -378,9 +378,9 @@ pub fn find_peaks_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let pos = if twice_pos % 2 == 0 {
         Expr::Integer((twice_pos / 2) as i128)
       } else {
-        crate::evaluator::evaluate_expr_to_expr(&call(
-          "Divide",
-          vec![Expr::Integer(twice_pos as i128), Expr::Integer(2)],
+        crate::evaluator::evaluate_expr_to_expr(&div(
+          Expr::Integer(twice_pos as i128),
+          Expr::Integer(2),
         ))?
       };
       peaks.push(Expr::List(vec![pos, items[i].clone()].into()));

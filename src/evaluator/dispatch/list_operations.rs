@@ -1539,10 +1539,7 @@ fn weighted_data_stat(
       .map(|(x, w)| times(w.clone(), x.clone()))
       .collect(),
   )?;
-  let mean = evaluate_expr_to_expr(&call(
-    "Divide",
-    vec![weighted_sum, total_w.clone()],
-  ))?;
+  let mean = evaluate_expr_to_expr(&div(weighted_sum, total_w.clone()))?;
   match stat {
     "Mean" => Ok(mean),
     "Variance" | "StandardDeviation" => {
@@ -1556,8 +1553,7 @@ fn weighted_data_stat(
           .map(|(x, w)| times(w.clone(), sq(diff(x.clone()))))
           .collect(),
       )?;
-      let variance =
-        evaluate_expr_to_expr(&call("Divide", vec![sq_sum, total_w]))?;
+      let variance = evaluate_expr_to_expr(&div(sq_sum, total_w))?;
       if stat == "Variance" {
         Ok(variance)
       } else {

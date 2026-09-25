@@ -1904,10 +1904,7 @@ pub fn companion_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let lead = c.last().expect("checked non-empty");
       let mut monic = Vec::with_capacity(c.len() - 1);
       for coeff in &c[..c.len() - 1] {
-        monic.push(evaluate_expr_to_expr(&call(
-          "Divide",
-          vec![coeff.clone(), lead.clone()],
-        ))?);
+        monic.push(evaluate_expr_to_expr(&div(coeff.clone(), lead.clone()))?);
       }
       monic
     }

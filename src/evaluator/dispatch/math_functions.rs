@@ -4216,7 +4216,7 @@ pub fn dispatch_math_functions(
             .collect(),
         ));
         // v_proj = v - (v.n / n.n) * n
-        let coeff = eval(call("Divide", vec![vn, nn.clone()]));
+        let coeff = eval(div(vn, nn.clone()));
         let v_proj: Vec<Expr> = (0..dim)
           .map(|i| {
             eval(call(

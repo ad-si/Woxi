@@ -4,7 +4,7 @@
 
 use crate::InterpreterError;
 use crate::helpers::{
-  binop, bool_expr, call, call0, call1, const_expr, div2, id_expr, minus2,
+  binop, bool_expr, call, call0, call1, const_expr, div, div2, id_expr, minus2,
   neg1, null_expr, plus2, pow, pow2, times2, unevaluated,
 };
 use crate::syntax::{
