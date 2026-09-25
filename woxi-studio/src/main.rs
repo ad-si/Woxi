@@ -29881,6 +29881,103 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`timeElapsed$$ = 0.5, $CellContext`k
     );
   }
 
+  /// End-to-end regression for the "Wave Functions of Identical Particles"
+  /// Demonstration: two infinite-square-well `Plot3D` densities are combined
+  /// into a distinguishable-particle, a symmetric (boson), and an
+  /// antisymmetric (fermion) two-particle density, each drawn side by side
+  /// in a `Grid`, controlled by two per-particle quantum-number sliders.
+  ///
+  /// It already worked (curried pattern-matching definitions
+  /// `f[{a_, b_}][x_, y_] := …` set up in `Initialization`, `Which` picking
+  /// the `PlotLabel` by `SameQ`-comparing the held function head, and three
+  /// `Plot3D`s laid out in a `Grid` all render cleanly); this pins it with a
+  /// rewritten equivalent (not the copyrighted notebook source).
+  #[test]
+  fn identical_particles_notebook_antisymmetrizes_the_fermion_density() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[\nGrid[{{plotDensity[distinguishableDensity], plotDensity[symmetricDensity], plotDensity[antisymmetricDensity]}}],\n{{n1, 2, \"level of particle A\"}, 1, 6, 1},\n{{n2, 3, \"level of particle B\"}, 1, 6, 1},\nInitialization :> (\nboxState[n_][x_] := Sqrt[2/Pi] Sin[n x];\ndistinguishableDensity[{n1_, n2_}][x_, y_] := boxState[n1][x] boxState[n2][y];\nsymmetricDensity[{n1_, n2_}][x_, y_] := (boxState[n1][x] boxState[n2][y] + boxState[n1][y] boxState[n2][x]) / Sqrt[2];\nantisymmetricDensity[{n1_, n2_}][x_, y_] := (boxState[n1][x] boxState[n2][y] - boxState[n1][y] boxState[n2][x]) / Sqrt[2];\nplotDensity[wave_] := Plot3D[\nEvaluate[Abs[wave[{n1, n2}][x, y]]^2],\n{x, 0, Pi}, {y, 0, Pi},\nPlotRange -> All, Mesh -> False, Axes -> False, Boxed -> False,\nImageSize -> 140,\nPlotLabel -> Which[\nwave === distinguishableDensity, Style[\"Distinguishable\", \"Label\", 14],\nwave === symmetricDensity, Style[\"Bosons\", \"Label\", 14],\nwave === antisymmetricDensity, Style[\"Fermions\", \"Label\", 14]\n]\n];\n),\nSaveDefinitions -> True\n]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`n1$$ = 2, $CellContext`n2$$ = 3}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    woxi::clear_state();
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the grid of plots must draw"
+    );
+
+    assert!(
+      matches!(
+        &widget.controls[0],
+        manipulate::ControlState::Continuous { name, label, min, max, current, .. }
+          if name == "n1" && label == "level of particle A"
+            && (*min, *max, *current) == (1.0, 6.0, 2.0)
+      ),
+      "control 0 should be particle A's level slider: {:?}",
+      widget.controls[0]
+    );
+    assert!(
+      matches!(
+        &widget.controls[1],
+        manipulate::ControlState::Continuous { name, label, min, max, current, .. }
+          if name == "n2" && label == "level of particle B"
+            && (*min, *max, *current) == (1.0, 6.0, 3.0)
+      ),
+      "control 1 should be particle B's level slider: {:?}",
+      widget.controls[1]
+    );
+
+    let render = |n1: i64, n2: i64| {
+      woxi::interpret_with_stdout(&format!(
+        "n1 = {n1}; n2 = {n2};\n{}",
+        widget.body
+      ))
+      .expect("the body must render")
+      .graphics
+      .expect("the body must produce a graphic")
+    };
+    let base = render(2, 3);
+    // All three plot labels must appear in the grid.
+    assert!(base.contains("Distinguishable"), "label missing: {base}");
+    assert!(base.contains("Bosons"), "label missing: {base}");
+    assert!(base.contains("Fermions"), "label missing: {base}");
+    // Moving either slider must change the rendered scene.
+    assert_ne!(base, render(4, 3), "the n1 slider must matter");
+    assert_ne!(base, render(2, 5), "the n2 slider must matter");
+
+    // Pauli exclusion: the antisymmetric (fermion) combination must vanish
+    // identically at every point when the two levels coincide, checked
+    // directly against the function (not the rendered grid, which two other
+    // panels' dependence on n1/n2 would make a false positive).
+    let antisymmetric_density_at = |n1: i64, n2: i64, x: f64, y: f64| {
+      woxi::interpret(&format!(
+        "N[antisymmetricDensity[{{{n1}, {n2}}}][{x}, {y}]]"
+      ))
+      .expect("antisymmetricDensity must evaluate")
+    };
+    assert_eq!(
+      antisymmetric_density_at(2, 2, 0.5, 0.7),
+      "0.",
+      "the fermion wave function must vanish identically when n1 == n2"
+    );
+    assert_ne!(
+      antisymmetric_density_at(2, 3, 0.5, 0.7),
+      "0.",
+      "the fermion wave function must not vanish when n1 != n2"
+    );
+  }
+
   /// Checked a randomly-sampled Wolfram Demonstrations Project notebook: an
   /// image-puzzle picker where a `PopupMenu` selects one of several
   /// near-identical image pairs and a `Checkbox` reveals the difference
