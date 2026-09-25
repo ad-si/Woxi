@@ -15368,6 +15368,35 @@ mod matrix_form {
       );
     }
   }
+
+  // A `StringForm` string argument substitutes as its raw text, not the
+  // quoted literal `expr_to_box_form` gives an ordinary string expression
+  // — `StringForm["x = ``", "hello"]` typesets as `x = hello`, not
+  // `x = "hello"`. A `Style`-wrapped string argument keeps both the
+  // unquoting and its color.
+  #[test]
+  fn matrix_form_of_string_form_keeps_string_arguments_unquoted() {
+    clear_state();
+    let result = interpret_with_stdout(
+      r#"MatrixForm[StringForm["value = ``, ``", "hello", Style["world", Red]]]"#,
+    )
+    .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    assert!(
+      svg.contains(">hello</text>") && svg.contains(">world</text>"),
+      "string arguments must render unquoted: {svg}"
+    );
+    assert!(
+      !svg.contains("&quot;"),
+      "no escaped quote marks should appear around the substituted \
+       strings: {svg}"
+    );
+    assert!(
+      svg.contains("rgb(255,0,0)"),
+      "the Style-wrapped string argument must keep its color: {svg}"
+    );
+  }
 }
 
 mod show {

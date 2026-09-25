@@ -2611,6 +2611,33 @@ fn paren_box(inner: Expr) -> Expr {
   row_box(row)
 }
 
+/// Box form for a `StringForm` argument. Like `expr_to_box_form`, except a
+/// plain string substitutes as its raw text (`hello`) rather than the
+/// quoted literal (`"hello"`) `expr_to_box_form` gives an ordinary
+/// `Expr::String` expression (its ordinary box form: MakeBoxes quotes a
+/// string literal) — Wolfram shows a `StringForm` string argument
+/// unquoted. Recurses through `Style[…]` (keeping its directives, as
+/// `expr_to_box_form` does) so `Style["hello", Red]` keeps both the
+/// unquoting and the color.
+fn string_form_arg_boxes(value: &Expr) -> Expr {
+  match value {
+    Expr::String(s) => Expr::String(s.clone()),
+    Expr::FunctionCall { name, args }
+      if name == "Style" && !args.is_empty() =>
+    {
+      let inner = string_form_arg_boxes(&args[0]);
+      if args.len() > 1 {
+        let mut items = vec![inner];
+        items.extend(args[1..].iter().cloned());
+        call("StyleBox", items)
+      } else {
+        inner
+      }
+    }
+    other => expr_to_box_form(other),
+  }
+}
+
 /// Box form of `StringForm["template", args…]`: a `RowBox` alternating the
 /// template's literal text with each substituted argument's own box form
 /// (so e.g. a `Style[a, Red]` argument keeps its `StyleBox`/color instead of
@@ -2652,7 +2679,7 @@ fn string_form_boxes(expr: &Expr) -> Option<Expr> {
     } else if let Ok(idx) = segment.parse::<usize>()
       && let Some(value) = values.get(idx)
     {
-      pieces.push(expr_to_box_form(value));
+      pieces.push(string_form_arg_boxes(value));
     }
   }
   Some(match pieces.len() {
