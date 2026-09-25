@@ -4992,7 +4992,8 @@ fn is_inline_graphic(expr: &Expr) -> bool {
   match expr {
     Expr::Graphics { .. } | Expr::Image { .. } => true,
     Expr::FunctionCall { name, args }
-      if (name == "Legended" || name == "Pane") && !args.is_empty() =>
+      if (name == "Legended" || name == "Pane" || name == "Mouseover")
+        && !args.is_empty() =>
     {
       is_inline_graphic(&args[0])
     }
@@ -5087,6 +5088,15 @@ pub(crate) fn lays_out_a_graphic(expr: &Expr) -> bool {
     // handler is for, and contributes nothing to the picture.
     Expr::FunctionCall { name, args }
       if name == "ClickPane" && args.len() >= 2 =>
+    {
+      lays_out_a_graphic(&args[0])
+    }
+    // `Mouseover[expr, appearance]` shows `expr`; `appearance` only replaces
+    // it while the mouse hovers, which a static export can't represent, so
+    // the picture is `expr` — the same as `Tooltip` would be if it wrapped
+    // a whole cell instead of a primitive inside a `Graphics`.
+    Expr::FunctionCall { name, args }
+      if name == "Mouseover" && !args.is_empty() =>
     {
       lays_out_a_graphic(&args[0])
     }
@@ -5794,6 +5804,14 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     // baked into their SVG (e.g. PeriodicTablePlot["Phase"]).
     Expr::FunctionCall { name, args }
       if name == "Legended" && !args.is_empty() =>
+    {
+      expr_to_svg(&args[0])
+    }
+    // Mouseover[graphics, appearance]: a static export shows the base
+    // appearance, i.e. the wrapped graphics — `appearance` only replaces it
+    // while the mouse hovers, which does not exist outside a live front end.
+    Expr::FunctionCall { name, args }
+      if name == "Mouseover" && !args.is_empty() =>
     {
       expr_to_svg(&args[0])
     }
