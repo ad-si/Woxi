@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 
 /// PolynomialGCD[p1, p2, ...] - greatest common divisor of polynomials
@@ -307,10 +306,7 @@ pub(super) fn coeffs_to_poly(coeffs: &[i128], var: &str, p: i128) -> Expr {
       let pow = if i == 1 {
         Expr::Identifier(var.to_string())
       } else {
-        call(
-          "Power",
-          vec![Expr::Identifier(var.to_string()), Expr::Integer(i as i128)],
-        )
+        pow(Expr::Identifier(var.to_string()), Expr::Integer(i as i128))
       };
       if c == 1 {
         pow
@@ -483,10 +479,7 @@ fn poly_divide_by_constant(
 
   let div = call(
     "Times",
-    vec![
-      call("Power", vec![constant.clone(), Expr::Integer(-1)]),
-      poly.clone(),
-    ],
+    vec![pow(constant.clone(), Expr::Integer(-1)), poly.clone()],
   );
   let result = crate::evaluator::evaluate_expr_to_expr(&div)?;
   crate::evaluator::evaluate_expr_to_expr(&expand_and_combine(&result))

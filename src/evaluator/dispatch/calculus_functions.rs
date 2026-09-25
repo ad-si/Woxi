@@ -1007,10 +1007,7 @@ fn laplace_transform_inner(expr: &Expr, t: &str, s: &Expr) -> Option<Expr> {
   if !depends_on(expr, t) {
     return Some(call(
       "Times",
-      vec![
-        expr.clone(),
-        call("Power", vec![s.clone(), Expr::Integer(-1)]),
-      ],
+      vec![expr.clone(), pow(s.clone(), Expr::Integer(-1))],
     ));
   }
 
@@ -1018,7 +1015,7 @@ fn laplace_transform_inner(expr: &Expr, t: &str, s: &Expr) -> Option<Expr> {
   if let Expr::Identifier(name) = expr
     && name == t
   {
-    return Some(call("Power", vec![s.clone(), Expr::Integer(-2)]));
+    return Some(pow(s.clone(), Expr::Integer(-2)));
   }
 
   if let Some((fname, fargs)) = as_func_args(expr) {
@@ -1046,18 +1043,15 @@ fn laplace_transform_inner(expr: &Expr, t: &str, s: &Expr) -> Option<Expr> {
           "Times",
           vec![
             call1("Gamma", call("Plus", vec![n.clone(), Expr::Integer(1)])),
-            call(
-              "Power",
-              vec![
-                s.clone(),
-                call(
-                  "Plus",
-                  vec![
-                    Expr::Integer(-1),
-                    call("Times", vec![Expr::Integer(-1), n.clone()]),
-                  ],
-                ),
-              ],
+            pow(
+              s.clone(),
+              call(
+                "Plus",
+                vec![
+                  Expr::Integer(-1),
+                  call("Times", vec![Expr::Integer(-1), n.clone()]),
+                ],
+              ),
             ),
           ],
         ));
@@ -1066,15 +1060,12 @@ fn laplace_transform_inner(expr: &Expr, t: &str, s: &Expr) -> Option<Expr> {
       let is_e = matches!(fargs[0], Expr::Identifier(b) if b == "E")
         || matches!(fargs[0], Expr::Constant(b) if b == "E");
       if is_e && let Some(a) = extract_linear_coeff(fargs[1], t) {
-        return Some(call(
-          "Power",
-          vec![
-            call(
-              "Plus",
-              vec![s.clone(), call("Times", vec![Expr::Integer(-1), a])],
-            ),
-            Expr::Integer(-1),
-          ],
+        return Some(pow(
+          call(
+            "Plus",
+            vec![s.clone(), call("Times", vec![Expr::Integer(-1), a])],
+          ),
+          Expr::Integer(-1),
         ));
       }
     }
@@ -1088,18 +1079,12 @@ fn laplace_transform_inner(expr: &Expr, t: &str, s: &Expr) -> Option<Expr> {
         "Times",
         vec![
           a.clone(),
-          call(
-            "Power",
-            vec![
-              call(
-                "Plus",
-                vec![
-                  call("Power", vec![s.clone(), Expr::Integer(2)]),
-                  call("Power", vec![a, Expr::Integer(2)]),
-                ],
-              ),
-              Expr::Integer(-1),
-            ],
+          pow(
+            call(
+              "Plus",
+              vec![pow(s.clone(), Expr::Integer(2)), pow(a, Expr::Integer(2))],
+            ),
+            Expr::Integer(-1),
           ),
         ],
       ));
@@ -1114,18 +1099,12 @@ fn laplace_transform_inner(expr: &Expr, t: &str, s: &Expr) -> Option<Expr> {
         "Times",
         vec![
           s.clone(),
-          call(
-            "Power",
-            vec![
-              call(
-                "Plus",
-                vec![
-                  call("Power", vec![s.clone(), Expr::Integer(2)]),
-                  call("Power", vec![a, Expr::Integer(2)]),
-                ],
-              ),
-              Expr::Integer(-1),
-            ],
+          pow(
+            call(
+              "Plus",
+              vec![pow(s.clone(), Expr::Integer(2)), pow(a, Expr::Integer(2))],
+            ),
+            Expr::Integer(-1),
           ),
         ],
       ));
@@ -1148,20 +1127,17 @@ fn laplace_transform_inner(expr: &Expr, t: &str, s: &Expr) -> Option<Expr> {
       let denom = call(
         "Plus",
         vec![
-          call("Power", vec![s.clone(), Expr::Integer(2)]),
+          pow(s.clone(), Expr::Integer(2)),
           call(
             "Times",
-            vec![
-              Expr::Integer(-1),
-              call("Power", vec![a.clone(), Expr::Integer(2)]),
-            ],
+            vec![Expr::Integer(-1), pow(a.clone(), Expr::Integer(2))],
           ),
         ],
       );
       let numerator = if fname == "Cosh" { s.clone() } else { a };
       return Some(call(
         "Times",
-        vec![numerator, call("Power", vec![denom, Expr::Integer(-1)])],
+        vec![numerator, pow(denom, Expr::Integer(-1))],
       ));
     }
 
@@ -1173,32 +1149,26 @@ fn laplace_transform_inner(expr: &Expr, t: &str, s: &Expr) -> Option<Expr> {
     {
       let n = fargs[0];
       // sqrt_term = Sqrt[a^2 + s^2]
-      let sqrt_term = call(
-        "Power",
-        vec![
-          call(
-            "Plus",
-            vec![
-              call("Power", vec![a.clone(), Expr::Integer(2)]),
-              call("Power", vec![s.clone(), Expr::Integer(2)]),
-            ],
-          ),
-          call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
-        ],
+      let sqrt_term = pow(
+        call(
+          "Plus",
+          vec![
+            pow(a.clone(), Expr::Integer(2)),
+            pow(s.clone(), Expr::Integer(2)),
+          ],
+        ),
+        call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
       );
       // result = a^n / (sqrt_term * (s + sqrt_term)^n)
       //        = Times[Power[a, n], Power[sqrt_term, -1], Power[Plus[s, sqrt_term], Times[-1, n]]]
       return Some(call(
         "Times",
         vec![
-          call("Power", vec![a, n.clone()]),
-          call("Power", vec![sqrt_term.clone(), Expr::Integer(-1)]),
-          call(
-            "Power",
-            vec![
-              call("Plus", vec![s.clone(), sqrt_term]),
-              call("Times", vec![Expr::Integer(-1), n.clone()]),
-            ],
+          pow(a, n.clone()),
+          pow(sqrt_term.clone(), Expr::Integer(-1)),
+          pow(
+            call("Plus", vec![s.clone(), sqrt_term]),
+            call("Times", vec![Expr::Integer(-1), n.clone()]),
           ),
         ],
       ));
@@ -1682,14 +1652,8 @@ fn inverse_laplace_inner(expr: &Expr, s: &str, t: &str) -> Option<Expr> {
           return Some(call(
             "Times",
             vec![
-              call(
-                "Power",
-                vec![Expr::Identifier(t.to_string()), Expr::Integer(n - 1)],
-              ),
-              call(
-                "Power",
-                vec![call1("Gamma", Expr::Integer(n)), Expr::Integer(-1)],
-              ),
+              pow(Expr::Identifier(t.to_string()), Expr::Integer(n - 1)),
+              pow(call1("Gamma", Expr::Integer(n)), Expr::Integer(-1)),
             ],
           ));
         }
@@ -1730,7 +1694,7 @@ fn inverse_laplace_inner(expr: &Expr, s: &str, t: &str) -> Option<Expr> {
         return Some(call(
           "Times",
           vec![
-            call("Power", vec![a.clone(), Expr::Integer(-1)]),
+            pow(a.clone(), Expr::Integer(-1)),
             call(
               func,
               vec![call("Times", vec![a, Expr::Identifier(t.to_string())])],
@@ -1767,7 +1731,7 @@ fn inverse_laplace_inner(expr: &Expr, s: &str, t: &str) -> Option<Expr> {
             "Times",
             vec![Expr::Integer(-1), neg_a, Expr::Identifier(t.to_string())],
           );
-          return Some(call("Power", vec![const_expr("E"), exponent]));
+          return Some(pow(const_expr("E"), exponent));
         }
       }
     }
@@ -1808,7 +1772,7 @@ fn inverse_laplace_inner(expr: &Expr, s: &str, t: &str) -> Option<Expr> {
               "Times",
               vec![
                 numerator.clone(),
-                call("Power", vec![a.clone(), Expr::Integer(-1)]),
+                pow(a.clone(), Expr::Integer(-1)),
                 call(
                   sin_name,
                   vec![call("Times", vec![a, Expr::Identifier(t.to_string())])],
@@ -2018,24 +1982,18 @@ fn inverse_laplace_exact_term(term: &Expr, s: &str, t: &str) -> Option<Expr> {
         vec![
           Expr::Integer(-1),
           c0.clone(),
-          call("Power", vec![c1.clone(), Expr::Integer(-1)]),
+          pow(c1.clone(), Expr::Integer(-1)),
         ],
       );
       let mut parts = vec![
         coeff,
         num,
-        call("Power", vec![c1.clone(), Expr::Integer(-k)]),
-        call(
-          "Power",
-          vec![call1("Factorial", Expr::Integer(k - 1)), Expr::Integer(-1)],
-        ),
-        call(
-          "Power",
-          vec![const_expr("E"), call("Times", vec![root, t_id.clone()])],
-        ),
+        pow(c1.clone(), Expr::Integer(-k)),
+        pow(call1("Factorial", Expr::Integer(k - 1)), Expr::Integer(-1)),
+        pow(const_expr("E"), call("Times", vec![root, t_id.clone()])),
       ];
       if k > 1 {
-        parts.push(call("Power", vec![t_id, Expr::Integer(k - 1)]));
+        parts.push(pow(t_id, Expr::Integer(k - 1)));
       }
       Some(call("Times", parts))
     }
@@ -2045,7 +2003,7 @@ fn inverse_laplace_exact_term(term: &Expr, s: &str, t: &str) -> Option<Expr> {
         return None;
       }
       let c2 = &den_coeffs[2];
-      let inv_c2 = call("Power", vec![c2.clone(), Expr::Integer(-1)]);
+      let inv_c2 = pow(c2.clone(), Expr::Integer(-1));
       let monic = |c: &Expr| call("Times", vec![c.clone(), inv_c2.clone()]);
       let p = monic(&den_coeffs[1]);
       let q = monic(&den_coeffs[0]);
@@ -2061,7 +2019,7 @@ fn inverse_laplace_exact_term(term: &Expr, s: &str, t: &str) -> Option<Expr> {
       let disc = call(
         "Plus",
         vec![
-          call("Power", vec![a.clone(), Expr::Integer(2)]),
+          pow(a.clone(), Expr::Integer(2)),
           call("Times", vec![Expr::Integer(-1), q.clone()]),
         ],
       );
@@ -2091,7 +2049,7 @@ fn inverse_laplace_exact_term(term: &Expr, s: &str, t: &str) -> Option<Expr> {
             "Plus",
             vec![big_b, call("Times", vec![big_a.clone(), a.clone()])],
           ),
-          call("Power", vec![w.clone(), Expr::Integer(-1)]),
+          pow(w.clone(), Expr::Integer(-1)),
         ],
       );
       let wt = call("Times", vec![w, t_id.clone()]);
@@ -2107,7 +2065,7 @@ fn inverse_laplace_exact_term(term: &Expr, s: &str, t: &str) -> Option<Expr> {
         vec![
           coeff,
           inv_c2,
-          call("Power", vec![const_expr("E"), call("Times", vec![a, t_id])]),
+          pow(const_expr("E"), call("Times", vec![a, t_id])),
           oscillation,
         ],
       ))
@@ -2259,10 +2217,7 @@ fn inverse_laplace_partial_fractions(
       return None;
     }
     let (rr, ri) = complex_div(pr, pi, qr, qi);
-    let exp_part = call(
-      "Power",
-      vec![e_const(), call("Times", vec![Expr::Real(re), t_id()])],
-    );
+    let exp_part = pow(e_const(), call("Times", vec![Expr::Real(re), t_id()]));
     if im.abs() < 1e-9 * scale.max(1.0) {
       terms.push(call("Times", vec![Expr::Real(rr), exp_part]));
       continue;
@@ -2439,12 +2394,9 @@ fn sqrt_of_expr(expr: &Expr) -> Expr {
     }
   }
   // Fallback: return Sqrt[expr]
-  call(
-    "Power",
-    vec![
-      expr.clone(),
-      call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
-    ],
+  pow(
+    expr.clone(),
+    call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
   )
 }
 
@@ -2498,11 +2450,10 @@ fn normalize_to_func_calls(expr: &Expr) -> Expr {
           vec![left, call("Times", vec![Expr::Integer(-1), right])],
         ),
         BinaryOperator::Times => call("Times", vec![left, right]),
-        BinaryOperator::Divide => call(
-          "Times",
-          vec![left, call("Power", vec![right, Expr::Integer(-1)])],
-        ),
-        BinaryOperator::Power => call("Power", vec![left, right]),
+        BinaryOperator::Divide => {
+          call("Times", vec![left, pow(right, Expr::Integer(-1))])
+        }
+        BinaryOperator::Power => pow(left, right),
         _ => expr.clone(),
       }
     }
@@ -2541,12 +2492,9 @@ fn is_s_squared(expr: &Expr, s: &str) -> bool {
 
 /// Helper to build Sqrt[expr]
 fn make_sqrt(expr: Expr) -> Expr {
-  call(
-    "Power",
-    vec![
-      expr,
-      call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
-    ],
+  pow(
+    expr,
+    call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
   )
 }
 
@@ -2570,7 +2518,7 @@ fn make_plus(args: Vec<Expr>) -> Expr {
 
 /// Helper to build Power[base, exp]
 fn make_power(base: Expr, exp: Expr) -> Expr {
-  call("Power", vec![base, exp])
+  pow(base, exp)
 }
 
 /// Helper to build DiracDelta[x]
@@ -2878,7 +2826,7 @@ fn inverse_mellin_inner(
         unreachable!()
       };
       for f in inner {
-        out.push(call("Power", vec![f.clone(), Expr::Integer(-1)]));
+        out.push(pow(f.clone(), Expr::Integer(-1)));
       }
     } else {
       out.push(e.clone());
@@ -3068,9 +3016,9 @@ fn inverse_mellin_inner(
         };
         if neg_s_ok && !depends_on(a_part, sv) {
           // Require the 1/Gamma[a] constant.
-          let inv_gamma = expr_to_string(&call(
-            "Power",
-            vec![call1("Gamma", a_part.clone()), Expr::Integer(-1)],
+          let inv_gamma = expr_to_string(&pow(
+            call1("Gamma", a_part.clone()),
+            Expr::Integer(-1),
           ));
           let pos =
             consts.iter().position(|c| expr_to_string(c) == inv_gamma)?;
@@ -6147,7 +6095,7 @@ fn fourier_sin_cos_transform_inner(
               unreachable!()
             };
             for f in factors {
-              out.push(call("Power", vec![f.clone(), Expr::Integer(-1)]));
+              out.push(pow(f.clone(), Expr::Integer(-1)));
             }
           } else {
             out.push((*a).clone());

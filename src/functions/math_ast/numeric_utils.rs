@@ -452,6 +452,35 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
           _ => None,
         }
       }
+      // `ZetaZero[k]` is inherently complex (1/2 + i t_k, with no closed
+      // form for t_k), so it can't flow through the generic real-only
+      // NumericFunction fallback below. Handle Re/Im of it directly so
+      // e.g. `t - Im[ZetaZero[1]]` numericalizes when `t` is real, the
+      // same contamination rule that already applies to `Zeta[3] + 1.0`.
+      "Re"
+        if args.len() == 1
+          && matches!(&args[0], Expr::FunctionCall { name, args: fa }
+          if name == "ZetaZero" && fa.len() == 1) =>
+      {
+        match &args[0] {
+          Expr::FunctionCall { args: fa, .. } => {
+            expr_to_i128(&fa[0]).filter(|k| *k != 0).map(|_| 0.5)
+          }
+          _ => None,
+        }
+      }
+      "Im"
+        if args.len() == 1
+          && matches!(&args[0], Expr::FunctionCall { name, args: fa }
+          if name == "ZetaZero" && fa.len() == 1) =>
+      {
+        match &args[0] {
+          Expr::FunctionCall { args: fa, .. } => {
+            expr_to_i128(&fa[0]).and_then(super::zeta_zero_t_for_k)
+          }
+          _ => None,
+        }
+      }
       // Auxiliary Fresnel moduli: symbolic for exact arguments but
       // numericizable (so N[FresnelF[1]] works).
       "FresnelF" | "FresnelG" if args.len() == 1 => {
@@ -1262,14 +1291,23 @@ pub fn try_extract_complex_float(expr: &Expr) -> Option<(f64, f64)> {
     Expr::Integer(n) => Some((*n as f64, 0.0)),
     Expr::Real(f) => Some((*f, 0.0)),
     Expr::BigFloat(digits, _) => Some((digits.parse::<f64>().ok()?, 0.0)),
-    Expr::Constant(name) => Some((
-      match name.as_str() {
-        "Pi" => std::f64::consts::PI,
-        "E" => std::f64::consts::E,
-        _ => return None,
-      },
-      0.0,
-    )),
+    // `Pi`/`E` surface as `Expr::Constant` when built directly but as a
+    // plain `Expr::Identifier` when they arrive via a symbolic reciprocal
+    // like `Power[Pi, -1]` from dividing by `2 Pi I` — both must extract
+    // the same way, or this fast complex-multiply path silently bails out
+    // (via the `?` below) and falls through to a slower symbolic route.
+    Expr::Constant(name) | Expr::Identifier(name)
+      if name == "Pi" || name == "E" =>
+    {
+      Some((
+        match name.as_str() {
+          "Pi" => std::f64::consts::PI,
+          "E" => std::f64::consts::E,
+          _ => unreachable!(),
+        },
+        0.0,
+      ))
+    }
     Expr::FunctionCall { name, args }
       if name == "Rational" && args.len() == 2 =>
     {

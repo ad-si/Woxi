@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 use std::cmp::Ordering;
 
@@ -1343,6 +1342,6 @@ fn eval_divide(num: &Expr, den: &Expr) -> Expr {
     "Power",
     &[den.clone(), Expr::Integer(-1)],
   )
-  .unwrap_or_else(|_| call("Power", vec![den.clone(), Expr::Integer(-1)]));
+  .unwrap_or_else(|_| pow(den.clone(), Expr::Integer(-1)));
   eval_mul(num, &inv)
 }

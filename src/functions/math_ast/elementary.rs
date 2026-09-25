@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 use crate::syntax::ExprForm;
 
@@ -135,17 +134,14 @@ pub fn abs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && is_strictly_positive_real(base)
   {
     let re_exp = call1("Re", exp.clone());
-    return crate::evaluator::evaluate_expr_to_expr(&call(
-      "Power",
-      vec![base.clone(), re_exp],
-    ));
+    return crate::evaluator::evaluate_expr_to_expr(&pow(base.clone(), re_exp));
   }
   // Abs[base^exp] = Abs[base]^exp for a real numeric exponent (|z^n| = |z|^n).
   if let Some((base, exp)) = power_with_real_exponent(&args[0]) {
     let abs_base = abs_ast(std::slice::from_ref(base))?;
-    return crate::evaluator::evaluate_expr_to_expr(&call(
-      "Power",
-      vec![abs_base, exp.clone()],
+    return crate::evaluator::evaluate_expr_to_expr(&pow(
+      abs_base,
+      exp.clone(),
     ));
   }
   // Handle exact complex numbers and rationals: Abs[a + b*I] = Sqrt[a^2 + b^2]
@@ -445,9 +441,9 @@ pub fn sign_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     let im_exp = call1("Im", exp.clone());
     let new_exp = call("Times", vec![id_expr("I"), im_exp]);
-    return crate::evaluator::evaluate_expr_to_expr(&call(
-      "Power",
-      vec![base.clone(), new_exp],
+    return crate::evaluator::evaluate_expr_to_expr(&pow(
+      base.clone(),
+      new_exp,
     ));
   }
   // Handle Infinity, -Infinity, ComplexInfinity, Indeterminate
@@ -716,9 +712,9 @@ pub fn sign_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // (z^n / |z^n| = (z/|z|)^n).
   if let Some((base, exp)) = power_with_real_exponent(&args[0]) {
     let sign_base = sign_ast(std::slice::from_ref(base))?;
-    return crate::evaluator::evaluate_expr_to_expr(&call(
-      "Power",
-      vec![sign_base, exp.clone()],
+    return crate::evaluator::evaluate_expr_to_expr(&pow(
+      sign_base,
+      exp.clone(),
     ));
   }
   Ok(unevaluated("Sign", args))
@@ -1543,7 +1539,7 @@ pub fn surd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated("Surd", args));
   };
   let power = |b: Expr| -> Result<Expr, InterpreterError> {
-    let expr = call("Power", vec![b, make_rational(1, n)]);
+    let expr = pow(b, make_rational(1, n));
     crate::evaluator::evaluate_expr_to_expr(&expr)
   };
   let negate = |e: Expr| -> Result<Expr, InterpreterError> {

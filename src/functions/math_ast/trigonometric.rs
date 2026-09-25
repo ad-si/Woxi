@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 
 /// Try to express a symbolic expression as a rational multiple of Pi: k*Pi/n.
@@ -1427,7 +1426,7 @@ fn divide(num: Expr, den: Expr) -> Expr {
 /// The bare reciprocal `1/x`, canonicalized the way wolframscript prints it:
 /// `x^(-1)` for an atom, `1/(2 x)` for a product, `x^(-2)` for `x^2`, …
 fn power_neg_one(x: &Expr) -> Expr {
-  let p = call("Power", vec![x.clone(), Expr::Integer(-1)]);
+  let p = pow(x.clone(), Expr::Integer(-1));
   crate::evaluator::evaluate_expr_to_expr(&p).unwrap_or(p)
 }
 
@@ -5496,7 +5495,7 @@ fn arc_trig_degrees_ast(
     &[
       radians,
       call("Rational", vec![Expr::Integer(180), Expr::Integer(1)]),
-      call("Power", vec![const_expr("Pi"), Expr::Integer(-1)]),
+      pow(const_expr("Pi"), Expr::Integer(-1)),
     ],
   )
 }
@@ -5976,17 +5975,14 @@ fn make_minus(a: &Expr, b: &Expr) -> Expr {
 }
 
 fn make_divide(a: &Expr, b: &Expr) -> Expr {
-  call(
-    "Times",
-    vec![a.clone(), call("Power", vec![b.clone(), Expr::Integer(-1)])],
-  )
+  call("Times", vec![a.clone(), pow(b.clone(), Expr::Integer(-1))])
 }
 
 fn make_power(base: &Expr, exp: i128) -> Expr {
   if exp == 1 {
     base.clone()
   } else {
-    call("Power", vec![base.clone(), Expr::Integer(exp)])
+    pow(base.clone(), Expr::Integer(exp))
   }
 }
 

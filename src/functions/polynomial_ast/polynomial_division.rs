@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 use crate::evaluator::expr_equal;
 
@@ -184,7 +183,7 @@ pub fn polynomial_reduce_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else if d == 1 {
       var_id.clone()
     } else {
-      call("Power", vec![var_id.clone(), Expr::Integer(d)])
+      pow(var_id.clone(), Expr::Integer(d))
     }
   };
 
@@ -449,10 +448,7 @@ fn mexp_terms_to_expr(poly: &[(MExp, Expr)], vars: &[Expr]) -> Expr {
       if e == 1 {
         factors.push(vars[j].clone());
       } else if e > 1 {
-        factors.push(call(
-          "Power",
-          vec![vars[j].clone(), Expr::Integer(e as i128)],
-        ));
+        factors.push(pow(vars[j].clone(), Expr::Integer(e as i128)));
       }
     }
     terms.push(match factors.len() {
@@ -695,10 +691,8 @@ fn coeffs_to_expr_symbolic(coeffs: &[Expr], var: &str) -> Expr {
         )
       }
     } else {
-      let var_power = call(
-        "Power",
-        vec![Expr::Identifier(var.to_string()), Expr::Integer(i as i128)],
-      );
+      let var_power =
+        pow(Expr::Identifier(var.to_string()), Expr::Integer(i as i128));
       if c_str == "1" {
         var_power
       } else {

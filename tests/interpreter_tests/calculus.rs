@@ -5138,6 +5138,83 @@ mod nintegrate {
       1e-3,
     );
   }
+
+  // Helper to extract (re, im) from a "k.kkk", "k.kkk*I" or
+  // "k.kkk + k.kkk*I" NIntegrate result string.
+  fn parse_complex(s: &str) -> (f64, f64) {
+    let s = s.trim();
+    if let Some(stripped) = s.strip_suffix("*I") {
+      if let Some(idx) = stripped.rfind(" + ") {
+        return (
+          stripped[..idx].parse().unwrap(),
+          stripped[idx + 3..].parse().unwrap(),
+        );
+      } else if let Some(idx) = stripped.rfind(" - ") {
+        return (
+          stripped[..idx].parse().unwrap(),
+          -stripped[idx + 3..].parse::<f64>().unwrap(),
+        );
+      }
+      return (0.0, stripped.parse().unwrap());
+    }
+    (s.parse().unwrap(), 0.0)
+  }
+
+  fn assert_approx_complex(
+    code: &str,
+    expected_re: f64,
+    expected_im: f64,
+    tol: f64,
+  ) {
+    let result = interpret(code).unwrap();
+    let (re, im) = parse_complex(&result);
+    assert!(
+      (re - expected_re).abs() < tol && (im - expected_im).abs() < tol,
+      "NIntegrate mismatch for {code}: got {re} + {im}*I, expected {expected_re} + {expected_im}*I"
+    );
+  }
+
+  // Complex waypoints turn NIntegrate into a contour integral along the
+  // piecewise-linear path through them (the form the argument principle is
+  // stated with). ∮ 1/z dz around the diamond through 1, I, -1, -I winds
+  // once around the origin, so it equals 2*Pi*I by Cauchy's integral formula.
+  #[test]
+  fn nintegrate_contour_cauchy_integral_formula() {
+    assert_approx_complex(
+      "NIntegrate[1/z, {z, 1, I, -1, -I, 1}]",
+      0.0,
+      2.0 * std::f64::consts::PI,
+      1e-6,
+    );
+  }
+
+  // A single complex-to-complex segment: ∫ z dz from 0 to I, parametrized
+  // z(t) = i t, dz = i dt, gives i^2 * ∫₀¹ t dt = -1/2.
+  #[test]
+  fn nintegrate_contour_single_segment() {
+    assert_approx_complex("NIntegrate[z, {z, 0, I}]", -0.5, 0.0, 1e-10);
+  }
+
+  // A path that starts on the real axis still takes the complex route: z is
+  // entire, so its line integral is path-independent and equals the
+  // antiderivative difference (b^2 - a^2)/2 = ((2I)^2 - 2^2)/2 = -4.
+  #[test]
+  fn nintegrate_contour_starts_real() {
+    assert_approx_complex("NIntegrate[z, {z, 2, 2 I}]", -4.0, 0.0, 1e-8);
+  }
+
+  // The argument principle: (1/(2 Pi I)) times the contour integral of
+  // f'[z]/f[z] around a closed curve counts the zeros of f minus its poles
+  // inside it. f[z] = z^2 - 1 has simple zeros at +-1 and no poles, and the
+  // square through +-2, +-2I encloses both, so the count is 2.
+  #[test]
+  fn nintegrate_contour_argument_principle() {
+    assert_approx(
+      "Chop[NIntegrate[(2 z)/(z^2 - 1), {z, 2, 2 I, -2, -2 I, 2}]/(2 Pi I)]",
+      2.0,
+      1e-6,
+    );
+  }
 }
 
 mod trig_sec_csc_cot {
@@ -9419,6 +9496,99 @@ mod ndsolve {
     assert!(
       (val - expected).abs() < 3e-3,
       "Expected about {expected}, got {val}"
+    );
+  }
+
+  /// A periodic domain — `u[t, x_min] == u[t, x_max]`, tying both ends
+  /// together in a single equation instead of fixing each one separately
+  /// — used to make `NDSolve` silently return unevaluated with no error
+  /// message. The boundary-matching loop tried this equation as an
+  /// ordinary one-sided condition first: `u[t, x_min] == u[t, x_max]`
+  /// reads as "`u` equals the *unevaluated call* `u[t, x_max]`" at
+  /// `x_min`, which satisfies `try_pde_boundary_condition`'s shape and
+  /// gets consumed as a bogus Dirichlet condition, leaving the other end
+  /// unmatched and the whole equation list one boundary equation short.
+  /// `Cos[2 Pi x] Cos[2 Pi t]` is the standing-wave solution of `u_tt ==
+  /// u_xx` with `u(0, x) = Cos[2 Pi x]`, zero initial velocity, and a
+  /// domain exactly one period wide (`x` in `{0, 1}`), so the periodic
+  /// condition holds identically without narrowing which solution comes
+  /// out — a check independent of the solver's own discretization.
+  #[test]
+  fn pde_hyperbolic_wave_equation_with_periodic_boundary_matches_standing_wave()
+  {
+    let result = interpret(
+      "sol = NDSolve[{D[u[t, x], t, t] == D[u[t, x], {x, 2}], \
+       u[0, x] == Cos[2 Pi x], Derivative[1, 0][u][0, x] == 0, \
+       u[t, 0] == u[t, 1]}, u, {t, 0, 1}, {x, 0, 1}]; \
+       (u[t, x] /. sol[[1]]) /. {t -> 0.3, x -> 0.7}",
+    )
+    .unwrap();
+    let val: f64 = result.parse().expect("should be a number");
+    let expected = (2.0 * std::f64::consts::PI * 0.7).cos()
+      * (2.0 * std::f64::consts::PI * 0.3).cos();
+    assert!(
+      (val - expected).abs() < 3e-3,
+      "Expected about {expected}, got {val}"
+    );
+  }
+
+  /// A nonlinear right-hand side combined with a periodic boundary — the
+  /// general shape (a nonlinear Klein-Gordon-type PDE) a randomly-sampled
+  /// Wolfram Demonstrations Project notebook ("Nonlinear Wave Equations")
+  /// uses, independently reproduced here with a different domain, initial
+  /// condition and nonlinearity (a cubic restoring term, rather than the
+  /// Demonstration's own choice) and, unlike the linear case above,
+  /// exercising `Method -> {"MethodOfLines", …}` explicitly the way a
+  /// Demonstration's own `Manipulate` body does. No closed form exists
+  /// for a nonlinear PDE, so this checks the invariants the
+  /// periodic-boundary fix must preserve instead of an exact value: the
+  /// solve actually succeeds (rather than `NDSolve` returning
+  /// unevaluated), the two ends of the domain stay tied together, and the
+  /// solution stays finite and — mirroring the equation's own symmetry
+  /// under `x -> -x` — symmetric.
+  #[test]
+  fn pde_hyperbolic_nonlinear_wave_equation_with_periodic_boundary_stays_finite_and_symmetric()
+   {
+    let result = interpret(
+      "sol = NDSolve[{D[u[t, x], t, t] == \
+       D[u[t, x], {x, 2}] - u[t, x] + u[t, x]^3/6, \
+       u[0, x] == Cos[Pi x], Derivative[1, 0][u][0, x] == 0, \
+       u[t, -1] == u[t, 1]}, u, {t, 0, 1}, {x, -1, 1}, \
+       Method -> {\"MethodOfLines\", \
+       \"SpatialDiscretization\" -> {\"TensorProductGrid\", \
+       \"DifferenceOrder\" -> \"Pseudospectral\", \"MinStepSize\" -> 0.2}}]; \
+       uf = u /. sol[[1]]; \
+       N[{Abs[uf[0.6, -1] - uf[0.6, 1]], Abs[uf[0.6, 0.4] - uf[0.6, -0.4]], \
+          Boole[NumberQ[uf[0.6, 0.2]]]}]",
+    )
+    .unwrap();
+    let vals: Vec<f64> = result
+      .trim_start_matches('{')
+      .trim_end_matches('}')
+      .split(',')
+      .map(|s| {
+        s.trim()
+          .replace("*^", "e")
+          .parse()
+          .expect("should be a number")
+      })
+      .collect();
+    let [periodicity_gap, symmetry_gap, is_number] = vals[..] else {
+      panic!("expected three values, got: {result}");
+    };
+    assert_eq!(
+      is_number, 1.0,
+      "u[0.6, 0.2] must evaluate to a plain number"
+    );
+    assert!(
+      periodicity_gap < 1e-6,
+      "the two ends of a periodic domain must stay tied together: \
+       gap={periodicity_gap}"
+    );
+    assert!(
+      symmetry_gap < 1e-2,
+      "an equation and initial data symmetric under x -> -x must keep a \
+       symmetric solution: gap={symmetry_gap}"
     );
   }
 

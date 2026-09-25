@@ -182,9 +182,8 @@ pub(crate) fn slot_as_call(e: &Expr) -> Option<Expr> {
 }
 
 pub fn canonical_cmp(a: &Expr, b: &Expr) -> std::cmp::Ordering {
-  if let (sa, sb) = (slot_as_call(a), slot_as_call(b))
-    && (sa.is_some() || sb.is_some())
-  {
+  let (sa, sb) = (slot_as_call(a), slot_as_call(b));
+  if sa.is_some() || sb.is_some() {
     return canonical_cmp(sa.as_ref().unwrap_or(a), sb.as_ref().unwrap_or(b));
   }
   // Two compatible Quantities sort by their physical value (converted to a
@@ -1375,9 +1374,8 @@ pub fn ordered_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Returns 1 if a < b, -1 if a > b, 0 if equal (Wolfram Order convention).
 pub fn compare_exprs(a: &Expr, b: &Expr) -> i64 {
   use crate::functions::math_ast::try_eval_to_f64_with_infinity;
-  if let (sa, sb) = (slot_as_call(a), slot_as_call(b))
-    && (sa.is_some() || sb.is_some())
-  {
+  let (sa, sb) = (slot_as_call(a), slot_as_call(b));
+  if sa.is_some() || sb.is_some() {
     return compare_exprs(sa.as_ref().unwrap_or(a), sb.as_ref().unwrap_or(b));
   }
   // ByteArray vs ByteArray: compare by decoded byte payload, not by the

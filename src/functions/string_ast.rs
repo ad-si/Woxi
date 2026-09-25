@@ -2,7 +2,6 @@
 //!
 //! These functions work directly with `Expr` AST nodes, avoiding string round-trips.
 
-#[allow(unused_imports)]
 use super::*;
 use crate::functions::regex_engine::{
   Captures, Error as RegexError, WoxiRegex,
@@ -6317,7 +6316,7 @@ fn product_factors(expr: &Expr, inverted: bool, out: &mut Vec<Expr>) {
       let Expr::Integer(n) = &args[1] else {
         unreachable!()
       };
-      out.push(call("Power", vec![args[0].clone(), Expr::Integer(-n)]));
+      out.push(pow(args[0].clone(), Expr::Integer(-n)));
     }
     Expr::BinaryOp {
       op: BinaryOperator::Power,
@@ -6327,12 +6326,9 @@ fn product_factors(expr: &Expr, inverted: bool, out: &mut Vec<Expr>) {
       let Expr::Integer(n) = right.as_ref() else {
         unreachable!()
       };
-      out.push(call(
-        "Power",
-        vec![left.as_ref().clone(), Expr::Integer(-n)],
-      ));
+      out.push(pow(left.as_ref().clone(), Expr::Integer(-n)));
     }
-    _ => out.push(call("Power", vec![expr.clone(), Expr::Integer(-1)])),
+    _ => out.push(pow(expr.clone(), Expr::Integer(-1))),
   }
 }
 
@@ -7207,7 +7203,7 @@ fn tex_times_nary_with(args: &[Expr], distribute_sign: bool) -> String {
         numer_owned.push(if pos_exp == 1 {
           cofunction
         } else {
-          call("Power", vec![cofunction, Expr::Integer(pos_exp)])
+          pow(cofunction, Expr::Integer(pos_exp))
         });
         continue;
       }
@@ -13579,7 +13575,7 @@ fn c_like_times(args: &[Expr], fortran: bool) -> String {
       if e == 1 {
         den.push(c_like_factor(base, fortran));
       } else {
-        let pos = call("Power", vec![base.clone(), Expr::Integer(e)]);
+        let pos = pow(base.clone(), Expr::Integer(e));
         den.push(render(&pos));
       }
       continue;

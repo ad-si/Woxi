@@ -298,10 +298,8 @@ pub fn orthogonalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // for an irrational norm, where components carry nested radicals.
       let norm_rational = is_rational(&normsq);
       // e = w / Sqrt[normsq] = w * normsq^(-1/2).
-      let inv_norm = call(
-        "Power",
-        vec![normsq, crate::functions::math_ast::make_rational(-1, 2)],
-      );
+      let inv_norm =
+        pow(normsq, crate::functions::math_ast::make_rational(-1, 2));
       let e: Vec<Expr> = w
         .iter()
         .map(|wi| {
@@ -713,10 +711,7 @@ fn cauchy_generating_vectors(
   for row in mat {
     let mut sr = Vec::with_capacity(row.len());
     for e in row {
-      sr.push(evaluate_expr_to_expr(&call(
-        "Power",
-        vec![e.clone(), Expr::Integer(-1)],
-      ))?);
+      sr.push(evaluate_expr_to_expr(&pow(e.clone(), Expr::Integer(-1)))?);
     }
     s.push(sr);
   }
@@ -922,12 +917,9 @@ fn cauchy_dense(x: &[Expr], y: &[Expr]) -> Result<Expr, InterpreterError> {
   for xi in x {
     let mut row = Vec::with_capacity(y.len());
     for yj in y {
-      row.push(evaluate_expr_to_expr(&call(
-        "Power",
-        vec![
-          call("Plus", vec![xi.clone(), yj.clone()]),
-          Expr::Integer(-1),
-        ],
+      row.push(evaluate_expr_to_expr(&pow(
+        call("Plus", vec![xi.clone(), yj.clone()]),
+        Expr::Integer(-1),
       ))?);
     }
     rows.push(Expr::List(row.into()));
@@ -1984,9 +1976,9 @@ pub fn vandermonde_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let entry = match j {
         0 => Expr::Integer(1),
         1 => x.clone(),
-        _ => crate::evaluator::evaluate_expr_to_expr(&call(
-          "Power",
-          vec![x.clone(), Expr::Integer(j as i128)],
+        _ => crate::evaluator::evaluate_expr_to_expr(&pow(
+          x.clone(),
+          Expr::Integer(j as i128),
         ))?,
       };
       row.push(entry);
@@ -2858,7 +2850,7 @@ pub fn characteristic_polynomial_int(
       let pow = if i == 1 {
         var.clone()
       } else {
-        call("Power", vec![var.clone(), Expr::Integer(i as i128)])
+        pow(var.clone(), Expr::Integer(i as i128))
       };
       call("Times", vec![coeff_expr, pow])
     };
@@ -3394,10 +3386,10 @@ pub fn eigenvalues_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let disc = call(
       "Plus",
       vec![
-        call("Power", vec![a.clone(), Expr::Integer(2)]),
+        pow(a.clone(), Expr::Integer(2)),
         call("Times", vec![Expr::Integer(4), b.clone(), c.clone()]),
         call("Times", vec![Expr::Integer(-2), a.clone(), d.clone()]),
-        call("Power", vec![d.clone(), Expr::Integer(2)]),
+        pow(d.clone(), Expr::Integer(2)),
       ],
     );
     let sqrt_disc = call1("Sqrt", disc);
@@ -3750,7 +3742,7 @@ fn make_root_exprs(coeffs: &[i128]) -> Vec<Expr> {
     let var_pow = match i {
       0 => None,
       1 => Some(slot.clone()),
-      _ => Some(call("Power", vec![slot.clone(), Expr::Integer(i as i128)])),
+      _ => Some(pow(slot.clone(), Expr::Integer(i as i128))),
     };
     terms.push(match (var_pow, c) {
       (None, c) => Expr::Integer(c),
@@ -6079,7 +6071,7 @@ fn build_root_from_coeffs(coeffs: &[i128], x: f64) -> Option<Expr> {
     let var_pow = match i {
       0 => None,
       1 => Some(slot.clone()),
-      _ => Some(call("Power", vec![slot.clone(), Expr::Integer(i as i128)])),
+      _ => Some(pow(slot.clone(), Expr::Integer(i as i128))),
     };
     let term = match (var_pow, coeff) {
       (None, coeff) => Expr::Integer(coeff),
@@ -6529,10 +6521,7 @@ pub fn vector_angle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let norm_u = call1("Norm", args[0].clone());
   let norm_v = call1("Norm", args[1].clone());
   let denom = call("Times", vec![norm_u, norm_v]);
-  let ratio = call(
-    "Times",
-    vec![dot_expr, call("Power", vec![denom, Expr::Integer(-1)])],
-  );
+  let ratio = call("Times", vec![dot_expr, pow(denom, Expr::Integer(-1))]);
   let result = call1("ArcCos", ratio);
   evaluate_expr_to_expr(&result)
 }
@@ -7497,21 +7486,18 @@ pub fn logit_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "Times",
     vec![
       Expr::Integer(1),
-      call(
-        "Power",
-        vec![
-          call(
-            "Plus",
-            vec![
-              Expr::Integer(1),
-              call(
-                "Exp",
-                vec![call("Times", vec![Expr::Integer(-1), linear_expr])],
-              ),
-            ],
-          ),
-          Expr::Integer(-1),
-        ],
+      pow(
+        call(
+          "Plus",
+          vec![
+            Expr::Integer(1),
+            call(
+              "Exp",
+              vec![call("Times", vec![Expr::Integer(-1), linear_expr])],
+            ),
+          ],
+        ),
+        Expr::Integer(-1),
       ),
     ],
   );
@@ -8187,10 +8173,7 @@ fn simplify_radical_factor(expr: &Expr) -> Expr {
         right,
       } => {
         flatten(left, out);
-        out.push(call(
-          "Power",
-          vec![right.as_ref().clone(), Expr::Integer(-1)],
-        ));
+        out.push(pow(right.as_ref().clone(), Expr::Integer(-1)));
       }
       _ => out.push(e.clone()),
     }

@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 
 /// True if `expr` contains any Real or BigFloat node — used to decide
@@ -81,7 +80,7 @@ fn root_of_unity_q(z: &Expr) -> bool {
     pi = ni;
     if (pr - 1.0).abs() < 1e-9 && pi.abs() < 1e-9 {
       // Candidate order n found; confirm exactly with PossibleZeroQ[z^n - 1].
-      let zn = call("Power", vec![z.clone(), Expr::Integer(n as i128)]);
+      let zn = pow(z.clone(), Expr::Integer(n as i128));
       let diff = call("Plus", vec![zn, Expr::Integer(-1)]);
       if let Ok(result) = crate::functions::predicate_ast::possible_zero_q_ast(
         std::slice::from_ref(&diff),
@@ -1975,10 +1974,7 @@ pub fn builtin_default_options(func_name: &str) -> Vec<Expr> {
   match func_name {
     "Plot" => vec![
       make_rule("AlignmentPoint", id("Center")),
-      make_rule(
-        "AspectRatio",
-        call("Power", vec![id("GoldenRatio"), Expr::Integer(-1)]),
-      ),
+      make_rule("AspectRatio", pow(id("GoldenRatio"), Expr::Integer(-1))),
       make_rule("Axes", id("True")),
       make_rule("AxesLabel", id("None")),
       make_rule("AxesOrigin", id("Automatic")),

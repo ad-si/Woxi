@@ -212,7 +212,7 @@ Total,Sums the elements of a list down to a level spec — AllowedHeads -> All d
 ColorFunction,Option specifying the color function for visualization,✅,none,2.0,152
 ContourPlot,Creates a contour plot of a function,✅,pure,1.0,155
 RandomInteger,Generate random integers — RandomInteger[n] draws from 0 through n so a negative n draws downwards,✅,contextual,6.0,156
-NDSolve,Solves ordinary differential equations numerically (including coupled systems compound unknowns and EventLocator events) and 1-D PDEs via the method of lines: parabolic (single or coupled reaction-diffusion-convection systems) and hyperbolic (single second-order-in-time wave-type equations even with an implicit mixed space/time derivative on the right) with Dirichlet or Neumann boundaries,✅,contextual,2.0,157
+NDSolve,Solves ordinary differential equations numerically (including coupled systems compound unknowns and EventLocator events) and 1-D PDEs via the method of lines: parabolic (single or coupled reaction-diffusion-convection systems) and hyperbolic (single second-order-in-time wave-type equations even with an implicit mixed space/time derivative on the right) with Dirichlet Neumann or (hyperbolic-only) periodic boundaries,✅,contextual,2.0,157
 Integers,Domain symbol representing the set of integers,✅,pure,4.0,158
 Large,Named size symbol used as option value for ImageSize and Style,✅,pure,6.0,159
 Limit,Computes the limit of an expression,✅,pure,1.0,160
@@ -231,7 +231,7 @@ FrameStyle,Option specifying the style of the frame around a plot,✅,none,2.0,1
 Column,Displays elements in a vertical column,✅,pure,6.0,174
 ColumnForm,Legacy display directive stacking elements one per line (renders at top level and under every form),✅,pure,1.0,174
 FontColor,Option symbol for specifying text color in Style,✅,pure,3.0,175
-NIntegrate,Computes a numerical integral by tanh-sinh quadrature — which handles an endpoint singularity — falling back to an adaptive Simpson rule for oscillatory integrands and using a tangent substitution for infinite bounds,✅,pure,1.0,176
+NIntegrate,Computes a numerical integral by tanh-sinh quadrature — which handles an endpoint singularity — falling back to an adaptive Simpson rule for oscillatory integrands and using a tangent substitution for infinite bounds; complex waypoints integrate along the piecewise-linear contour through them,✅,pure,1.0,176
 Dashed,Shorthand for Dashing[{Small Small}] line style,✅,pure,6.0,177
 Import,"Imports data from a file (images CSV XLSX TXT PPM/PGM/PBM/PNM WAV and other audio; CERN ROOT incl. TH1/TH2 histograms and TTree branch data via element paths; CSV/TSV row/column subsets via {""Data"" rowspec colspec} position specs); an .xml file reads into symbolic XML; a PDF gives one Graphics per page with PageCount and Plaintext elements",✅,effectful,4.0,178
 Thread,Threads a function over corresponding list elements,✅,pure,1.0,179
@@ -1348,7 +1348,7 @@ DeleteSmallComponents,Zero out label-matrix components with few pixels,✅,pure,
 DeleteMissing,Delete Missing elements from a list or pairs with a missing value from an association,✅,pure,10.0,1338
 GalaxyData,,🚫,,10.0,1338
 PutAppend,Append expressions to a file,✅,effectful,1.0,1338
-ZetaZero,,✅,,6.0,1338
+ZetaZero,k-th non-trivial zero of the Riemann zeta function on the critical line,✅,pure,6.0,1338
 Echo,Prints and returns an expression,✅,effectful,10.3,1339
 ConstellationData,,🚫,,10.0,1342
 Directory,Current working directory,✅,effectful,2.0,1342

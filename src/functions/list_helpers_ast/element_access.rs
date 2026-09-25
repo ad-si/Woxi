@@ -1,6 +1,5 @@
 #[allow(unused_imports)]
 use super::utilities::*;
-#[allow(unused_imports)]
 use super::*;
 
 /// Decompose a BinaryOp or UnaryOp expression into canonical Wolfram
@@ -56,8 +55,7 @@ pub fn expr_to_head_args(expr: &Expr) -> Option<(String, Vec<Expr>)> {
         ),
         BinaryOperator::Divide => {
           // a / b  =  Times[a, Power[b, -1]]
-          let inv_right =
-            call("Power", vec![*right.clone(), Expr::Integer(-1)]);
+          let inv_right = pow(*right.clone(), Expr::Integer(-1));
           let mut args =
             flatten_assoc_one(BinaryOperator::Times, left.as_ref());
           args.push(inv_right);

@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 use crate::evaluator::Attributes;
 use crate::syntax::substitute_variable;
@@ -2360,11 +2359,7 @@ pub fn rescale_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let x_span = sub(&range[1], &range[0]);
   let fraction = call(
     "Times",
-    vec![
-      x_minus_min,
-      y_span,
-      call("Power", vec![x_span, Expr::Integer(-1)]),
-    ],
+    vec![x_minus_min, y_span, pow(x_span, Expr::Integer(-1))],
   );
   let result = call("Plus", vec![ymin.clone(), fraction]);
   crate::evaluator::evaluate_expr_to_expr(&result)
@@ -2658,7 +2653,7 @@ pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             } else {
               call1("Abs", item.clone())
             };
-            call("Power", vec![base, Expr::Integer(2)])
+            pow(base, Expr::Integer(2))
           })
           .collect();
         let sum = if sq_items.len() == 1 {
@@ -2674,7 +2669,7 @@ pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // (Sum Abs[item]^p)^(1/p). Abs of a known real evaluates away, so
       // numeric inputs collapse (Norm[{3, 4}, 4] -> 337^(1/4)).
       let p_term = p_expr.clone().unwrap_or(Expr::Integer(2));
-      let power = |base: Expr, exp: Expr| call("Power", vec![base, exp]);
+      let power = |base: Expr, exp: Expr| pow(base, exp);
       let terms: Vec<Expr> = items
         .iter()
         .map(|item| power(call1("Abs", item.clone()), p_term.clone()))
@@ -5387,10 +5382,7 @@ fn window_expr(name: &str, x: &Expr) -> Option<Expr> {
         Expr::Integer(1),
         call(
           "Times",
-          vec![
-            Expr::Integer(-4),
-            call("Power", vec![x.clone(), Expr::Integer(2)]),
-          ],
+          vec![Expr::Integer(-4), pow(x.clone(), Expr::Integer(2))],
         ),
       ],
     )
@@ -5409,7 +5401,7 @@ fn window_expr(name: &str, x: &Expr) -> Option<Expr> {
       ],
     ),
     "WelchWindow" => parabola(),
-    "ConnesWindow" => call("Power", vec![parabola(), Expr::Integer(2)]),
+    "ConnesWindow" => pow(parabola(), Expr::Integer(2)),
     "CosineWindow" => call1("Cos", pi_x(1)),
     "LanczosWindow" => call1("Sinc", pi_x(2)),
     _ => return None,
@@ -5602,7 +5594,7 @@ pub fn kaiser_window_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Build BesselI[0, alpha Sqrt[1 - 4 x^2]] / BesselI[0, alpha] and evaluate.
   // Real arguments numericize; exact arguments stay symbolic.
-  let x_sq = call("Power", vec![x.clone(), Expr::Integer(2)]);
+  let x_sq = pow(x.clone(), Expr::Integer(2));
   let one_minus = call(
     "Plus",
     vec![
@@ -7146,10 +7138,7 @@ pub fn list_z_transform_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       name: "Times".to_string(),
       args: vec![
         a.clone(),
-        call(
-          "Power",
-          vec![args[1].clone(), Expr::Integer(-(k as i128) - shift)],
-        ),
+        pow(args[1].clone(), Expr::Integer(-(k as i128) - shift)),
       ]
       .into(),
     })
@@ -7242,12 +7231,9 @@ pub fn discrete_hadamard_transform_ast(
         name: "Times".to_string(),
         args: vec![
           call("Plus", terms),
-          call(
-            "Power",
-            vec![
-              Expr::Integer(n as i128),
-              call("Rational", vec![Expr::Integer(-1), Expr::Integer(2)]),
-            ],
+          pow(
+            Expr::Integer(n as i128),
+            call("Rational", vec![Expr::Integer(-1), Expr::Integer(2)]),
           ),
         ]
         .into(),
@@ -7310,38 +7296,26 @@ pub fn parametric_window_ast(
   }
   let expr = match name {
     // 1/(1 + (2 α x)²)
-    "CauchyWindow" => call(
-      "Power",
-      vec![
-        call(
-          "Plus",
-          vec![
-            Expr::Integer(1),
-            call(
-              "Power",
-              vec![
-                call(
-                  "Times",
-                  vec![Expr::Integer(2), alpha_expr, args[0].clone()],
-                ),
-                Expr::Integer(2),
-              ],
-            ),
-          ],
-        ),
-        Expr::Integer(-1),
-      ],
+    "CauchyWindow" => pow(
+      call(
+        "Plus",
+        vec![
+          Expr::Integer(1),
+          pow(
+            call("Times", vec![Expr::Integer(2), alpha_expr, args[0].clone()]),
+            Expr::Integer(2),
+          ),
+        ],
+      ),
+      Expr::Integer(-1),
     ),
     // E^(-2 α |x|)
-    "PoissonWindow" => call(
-      "Power",
-      vec![
-        id_expr("E"),
-        call(
-          "Times",
-          vec![Expr::Integer(-2), alpha_expr, call1("Abs", args[0].clone())],
-        ),
-      ],
+    "PoissonWindow" => pow(
+      id_expr("E"),
+      call(
+        "Times",
+        vec![Expr::Integer(-2), alpha_expr, call1("Abs", args[0].clone())],
+      ),
     ),
     // 31/50 - (12/25)|x| + (19/50)Cos[2 π x]
     _ => call(

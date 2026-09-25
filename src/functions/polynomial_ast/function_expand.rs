@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 
 /// FunctionExpand[expr] — expand special mathematical functions into simpler forms.
@@ -105,10 +104,7 @@ fn incomplete_gamma_zero(z: &Expr) -> Expr {
           vec![
             mk_times(
               mk_int(-1),
-              call1(
-                "Log",
-                mk_times(mk_int(-1), mk_power(z.clone(), mk_int(-1))),
-              ),
+              call1("Log", mk_times(mk_int(-1), pow(z.clone(), mk_int(-1)))),
             ),
             call1("Log", minus_z),
           ],
@@ -148,7 +144,7 @@ fn as_plus_terms(e: &Expr) -> Option<Vec<Expr>> {
 }
 
 fn mk_div(a: Expr, b: Expr) -> Expr {
-  mk_times(a, mk_power(b, mk_int(-1)))
+  mk_times(a, pow(b, mk_int(-1)))
 }
 
 /// Whether `e` is `ArcSin[x]` / `ArcCos[x]` / … applied to a single argument.
@@ -399,7 +395,7 @@ fn as_scaled_square(e: &Expr) -> Option<(Rat, Expr)> {
   let root = if exponent == 2 {
     base
   } else {
-    mk_power(base, mk_int(exponent / 2))
+    pow(base, mk_int(exponent / 2))
   };
   Some((coefficient, root))
 }
@@ -593,7 +589,7 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
         && *m >= 2
       {
         let coeff = mk_div(
-          mk_power(mk_int(-1), mk_int(*m)),
+          pow(mk_int(-1), mk_int(*m)),
           call1("Factorial", mk_int(*m - 1)),
         );
         Some(mk_times(
@@ -634,7 +630,7 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
       Some(if matches!(n, Expr::Integer(1)) {
         gamma
       } else {
-        mk_times(mk_power(z.clone(), power_exp), gamma)
+        mk_times(pow(z.clone(), power_exp), gamma)
       })
     }
 
@@ -657,10 +653,9 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
           return None;
         }
         let z = &args[1];
-        let exp_neg_z = mk_power(mk_id("E"), mk_times(mk_int(-1), z.clone()));
-        let elementary = |a: i128| {
-          mk_times(mk_power(z.clone(), mk_ratio(a, 2)), exp_neg_z.clone())
-        };
+        let exp_neg_z = pow(mk_id("E"), mk_times(mk_int(-1), z.clone()));
+        let elementary =
+          |a: i128| mk_times(pow(z.clone(), mk_ratio(a, 2)), exp_neg_z.clone());
         let mut acc = mk_times(
           call1("Sqrt", mk_id("Pi")),
           mk_plus(
@@ -710,8 +705,8 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
                 mk_times(
                   mk_int(-1),
                   mk_times(
-                    mk_power(z.clone(), mk_int(a)),
-                    mk_power(mk_id("E"), mk_times(mk_int(-1), z.clone())),
+                    pow(z.clone(), mk_int(a)),
+                    pow(mk_id("E"), mk_times(mk_int(-1), z.clone())),
                   ),
                 ),
               ],
@@ -740,7 +735,7 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
         let power = if k == 1 {
           z.clone()
         } else {
-          mk_power(z.clone(), mk_int(k))
+          pow(z.clone(), mk_int(k))
         };
         terms.push(if coeff == BigInt::from(1u8) {
           power
@@ -753,7 +748,7 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
       }
       Some(mk_div(
         call("Plus", terms),
-        mk_times(mk_power(mk_id("E"), z.clone()), z.clone()),
+        mk_times(pow(mk_id("E"), z.clone()), z.clone()),
       ))
     }
 
@@ -855,14 +850,14 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
       };
       let z = &a[0];
       let sq_sum = mk_plus(
-        mk_power(call1("Re", z.clone()), mk_int(2)),
-        mk_power(call1("Im", z.clone()), mk_int(2)),
+        pow(call1("Re", z.clone()), mk_int(2)),
+        pow(call1("Im", z.clone()), mk_int(2)),
       );
       let m = e / 2;
       let result = if m == 1 {
         sq_sum
       } else {
-        mk_power(sq_sum, mk_int(m))
+        pow(sq_sum, mk_int(m))
       };
       // Re[z]/Im[z] of a sum distribute, so expand the freshly built form.
       Some(function_expand_inner(&result).unwrap_or(result))
@@ -920,7 +915,7 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
       let n = &args[0];
       Some(mk_div(
         mk_times(
-          mk_power(mk_int(2), mk_times(mk_int(2), n.clone())),
+          pow(mk_int(2), mk_times(mk_int(2), n.clone())),
           call1("Gamma", mk_plus(mk_ratio(1, 2), n.clone())),
         ),
         mk_times(
@@ -972,10 +967,10 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
     }
 
     // LogisticSigmoid[x] → 1/(1 + E^(-x)), i.e. (1 + E^(-x))^(-1).
-    "LogisticSigmoid" if args.len() == 1 => Some(mk_power(
+    "LogisticSigmoid" if args.len() == 1 => Some(pow(
       mk_plus(
         mk_int(1),
-        mk_power(mk_id("E"), mk_times(mk_int(-1), args[0].clone())),
+        pow(mk_id("E"), mk_times(mk_int(-1), args[0].clone())),
       ),
       mk_int(-1),
     )),
@@ -1013,15 +1008,15 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
       let golden = mk_times(mk_ratio(1, 2), mk_plus(mk_int(1), sqrt5.clone()));
       let inv_golden = mk_times(
         mk_int(2),
-        mk_power(mk_plus(mk_int(1), sqrt5.clone()), mk_int(-1)),
+        pow(mk_plus(mk_int(1), sqrt5.clone()), mk_int(-1)),
       );
       Some(mk_div(
         mk_plus(
-          mk_power(golden, n.clone()),
+          pow(golden, n.clone()),
           mk_times(
             mk_int(-1),
             mk_times(
-              mk_power(inv_golden, n.clone()),
+              pow(inv_golden, n.clone()),
               call1("Cos", mk_times(n.clone(), mk_id("Pi"))),
             ),
           ),
@@ -1036,11 +1031,11 @@ fn try_expand_function(name: &str, args: &[Expr]) -> Option<Expr> {
       let sqrt5 = call1("Sqrt", mk_int(5));
       let golden = mk_times(mk_ratio(1, 2), mk_plus(mk_int(1), sqrt5.clone()));
       let inv_golden =
-        mk_times(mk_int(2), mk_power(mk_plus(mk_int(1), sqrt5), mk_int(-1)));
+        mk_times(mk_int(2), pow(mk_plus(mk_int(1), sqrt5), mk_int(-1)));
       Some(mk_plus(
-        mk_power(golden, n.clone()),
+        pow(golden, n.clone()),
         mk_times(
-          mk_power(inv_golden, n.clone()),
+          pow(inv_golden, n.clone()),
           call1("Cos", mk_times(n.clone(), mk_id("Pi"))),
         ),
       ))
@@ -1148,7 +1143,7 @@ fn try_gamma_ratio_in_times(factors: &[Expr]) -> Option<Expr> {
   let poch = match k.cmp(&0) {
     std::cmp::Ordering::Greater => call("Pochhammer", vec![b, mk_int(k)]),
     std::cmp::Ordering::Less => {
-      mk_power(call("Pochhammer", vec![a, mk_int(-k)]), mk_int(-1))
+      pow(call("Pochhammer", vec![a, mk_int(-k)]), mk_int(-1))
     }
     std::cmp::Ordering::Equal => mk_int(1),
   };

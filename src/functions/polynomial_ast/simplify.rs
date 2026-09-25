@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 use crate::functions::calculus_ast::simplify;
 use crate::functions::math_ast::{
@@ -1088,7 +1087,7 @@ fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
       if let Some(val) = neg_one_integer_power(&refined_exp, info) {
         return val;
       }
-      call("Power", vec![Expr::Integer(-1), refined_exp])
+      pow(Expr::Integer(-1), refined_exp)
     }
 
     // 0^k → 0 when the exponent is provably positive (Re[k] > 0).
@@ -1114,7 +1113,7 @@ fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
       if is_known_positive(&refined_exp, info) {
         return Expr::Integer(0);
       }
-      call("Power", vec![Expr::Integer(0), refined_exp])
+      pow(Expr::Integer(0), refined_exp)
     }
 
     // Abs[u]^n → u^n when n is a positive even integer and u is real.
@@ -6225,12 +6224,9 @@ fn denest_one_sqrt(e: &Expr) -> Option<Expr> {
     return None;
   }
   let sqrt_of = |n: i128| {
-    call(
-      "Power",
-      vec![
-        Expr::Integer(n),
-        call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
-      ],
+    pow(
+      Expr::Integer(n),
+      call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
     )
   };
   let sqrt_d = sqrt_of(d);

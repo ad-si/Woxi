@@ -6060,6 +6060,27 @@ mod real_scalar_times_complex {
       "-0.5000000000000001 - 0.8660254037844386*I"
     );
   }
+
+  // Regression: `1/(2 Pi I)` reduces to `Times[Rational[1,2], Times[-1,I],
+  // Power[Pi,-1]]`, where the `Pi^-1` factor is a `BinaryOp` (from the `^`
+  // operator), not the `FunctionCall["Power", …]` shape a freshly
+  // constructed `Pi^-1` has. `try_extract_complex_float` used to only
+  // recognize `Pi`/`E` as `Expr::Constant`, never as the `Expr::Identifier`
+  // this reciprocal carries, so it silently returned `None` for the `Pi^-1`
+  // factor and the whole "float complex multiplication" fast path bailed
+  // out — leaving the product as an un-combined `Times[value, -1]` instead
+  // of a single signed number.
+  #[test]
+  fn reciprocal_of_two_pi_i_times_complex_folds() {
+    assert_eq!(
+      interpret("1/(2 Pi I) * (4. I)").unwrap(),
+      "0.6366197723675814 + 0.*I"
+    );
+    assert_eq!(
+      interpret("(4. I)/(2 Pi I)").unwrap(),
+      "0.6366197723675814 + 0.*I"
+    );
+  }
 }
 
 mod complex_division {

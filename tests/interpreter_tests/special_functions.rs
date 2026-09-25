@@ -3745,6 +3745,56 @@ mod cases {
     );
   }
   #[test]
+  fn zeta_zero_1() {
+    assert_case(r#"ZetaZero[1]"#, r#"ZetaZero[1]"#);
+  }
+  #[test]
+  fn zeta_zero_2() {
+    assert_case(r#"N[ZetaZero[1]]"#, r#"0.5 + 14.134725141734695*I"#);
+  }
+  #[test]
+  fn zeta_zero_3() {
+    // The first few known non-trivial zeta zeros (imaginary parts).
+    assert_case(
+      r#"{Im[N[ZetaZero[1]]], Im[N[ZetaZero[2]]], Im[N[ZetaZero[3]]], Im[N[ZetaZero[4]]]}"#,
+      r#"{14.134725141734695, 21.022039638771552, 25.01085758014569, 30.424876125859512}"#,
+    );
+  }
+  #[test]
+  fn zeta_zero_4() {
+    // Negative k gives the conjugate zero.
+    assert_case(r#"N[ZetaZero[-1]]"#, r#"0.5 - 14.134725141734695*I"#);
+  }
+  #[test]
+  fn zeta_zero_5() {
+    // Zeta[ZetaZero[k]] = 0 by definition, for exact positive integer k.
+    assert_case(r#"Zeta[ZetaZero[2]]"#, r#"0"#);
+  }
+  #[test]
+  fn zeta_zero_6() {
+    // Approximate numbers contaminate the whole computation: mixing a
+    // machine real with the exact ZetaZero[1] numericalizes it, the same
+    // rule that already applies to e.g. Zeta[3] + 1.0.
+    assert_case(r#"Im[ZetaZero[1]] - 14."#, r#"0.13472514173469463"#);
+  }
+  #[test]
+  fn zeta_zero_7() {
+    // Re[ZetaZero[k]] is exactly 1/2 for any valid (nonzero integer) k.
+    assert_case(r#"Re[ZetaZero[1]] + 1.0"#, r#"1.5"#);
+  }
+  #[test]
+  fn zeta_zero_8() {
+    // Regression: k = 0 has no zero at all, so Re[ZetaZero[0]] must stay
+    // symbolic rather than numericalizing to 1/2.
+    assert_case(r#"Re[ZetaZero[0]] + 1.0"#, r#"1. + Re[ZetaZero[0]]"#);
+  }
+  #[test]
+  fn zeta_zero_9() {
+    // Regression: a symbolic (non-numeric) index has no definite zero
+    // either, so Re[ZetaZero[n]] must stay symbolic too.
+    assert_case(r#"Re[ZetaZero[n]] + 1.0"#, r#"1. + Re[ZetaZero[n]]"#);
+  }
+  #[test]
   fn abs_3() {
     // Same family as case 5556 — wolframscript computes
     // `N[AiryBiZero[2], 100]` to 100 significant digits via its

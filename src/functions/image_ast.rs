@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 use crate::functions::math_ast::rat_reduce;
 use crate::syntax::ImageType;
@@ -7185,7 +7184,7 @@ enum ThreshMethod {
 /// wolframscript. The caller (`apply`) handles real-promotion of the array.
 fn threshold_one_method(x: &Expr, t: &Expr, method: ThreshMethod) -> Expr {
   // Helper constructors for the symbolic forms.
-  let pow = |b: Expr, e: i128| call("Power", vec![b, Expr::Integer(e)]);
+  let pow = |b: Expr, e: i128| pow(b, Expr::Integer(e));
   let abs_x = call1("Abs", x.clone());
   let expr = match method {
     ThreshMethod::Hard | ThreshMethod::Firm => return threshold_one(x, t),

@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 use crate::functions::math_ast::{is_sqrt, make_sqrt, rat_reduce};
 use std::collections::BTreeMap;
@@ -1344,10 +1343,7 @@ fn format_expand_compound_unit(name: &str) -> Option<Expr> {
 /// Build the unit expression `"<length>"^2` (e.g. Meters^2) used to canonicalize
 /// "Square…" area aliases.
 fn squared_length_unit(length: &str) -> Expr {
-  call(
-    "Power",
-    vec![Expr::String(length.to_string()), Expr::Integer(2)],
-  )
+  pow(Expr::String(length.to_string()), Expr::Integer(2))
 }
 
 /// Try to produce the plural form of a singular unit name.
@@ -1901,7 +1897,7 @@ fn si_base_unit_expr(dimensions: &BTreeMap<Dimension, i64>) -> Expr {
         if *e == 1 {
           base
         } else {
-          call("Power", vec![base, Expr::Integer(*e as i128)])
+          pow(base, Expr::Integer(*e as i128))
         }
       })
       .collect();
@@ -1915,10 +1911,8 @@ fn si_base_unit_expr(dimensions: &BTreeMap<Dimension, i64>) -> Expr {
   let denom = build_product(&negatives);
   match (numer, denom) {
     (Some(n), None) => n,
-    (None, Some(d)) => call("Power", vec![d, Expr::Integer(-1)]),
-    (Some(n), Some(d)) => {
-      call("Times", vec![n, call("Power", vec![d, Expr::Integer(-1)])])
-    }
+    (None, Some(d)) => pow(d, Expr::Integer(-1)),
+    (Some(n), Some(d)) => call("Times", vec![n, pow(d, Expr::Integer(-1))]),
     (None, None) => Expr::Integer(1),
   }
 }
@@ -2901,7 +2895,7 @@ fn unit_has_named_power(unit: &Expr) -> bool {
 fn unit_power(base: &Expr, exponent: &Expr) -> Expr {
   match exponent {
     Expr::Integer(-1) => base.clone(),
-    Expr::Integer(n) => call("Power", vec![base.clone(), Expr::Integer(-n)]),
+    Expr::Integer(n) => pow(base.clone(), Expr::Integer(-n)),
     _ => base.clone(),
   }
 }

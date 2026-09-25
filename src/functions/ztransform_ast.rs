@@ -98,11 +98,11 @@ pub fn z_transform_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(unevaluated(args));
     }
     let exponent = if p == 1 {
-      call("Power", vec![z.clone(), Expr::Integer(-1)])
+      pow(z.clone(), Expr::Integer(-1))
     } else {
       div2(Expr::Integer(p), z.clone())
     };
-    return Ok(call("Power", vec![id_expr("E"), exponent]));
+    return Ok(pow(id_expr("E"), exponent));
   }
 
   // Symbolic base: fixed templates for k = 0, 1, 2 (c must be 1)

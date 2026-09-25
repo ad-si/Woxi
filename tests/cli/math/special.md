@@ -138,3 +138,4 @@ Gamma, Beta, Zeta, Bessel, orthogonal polynomials, and elliptic integrals.
 - [`ThreeJSymbol`](special/ThreeJSymbol.md)
 - [`WeberE`](special/WeberE.md)
 - [`WignerD`](special/WignerD.md)
+- [`ZetaZero`](special/ZetaZero.md)

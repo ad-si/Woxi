@@ -5383,9 +5383,7 @@ fn normalize_lhs_for_upset(lhs: &Expr) -> Expr {
         BinaryOperator::Minus => {
           call("Times", vec![Expr::Integer(-1), (**right).clone()])
         }
-        BinaryOperator::Divide => {
-          call("Power", vec![(**right).clone(), Expr::Integer(-1)])
-        }
+        BinaryOperator::Divide => pow((**right).clone(), Expr::Integer(-1)),
         _ => (**right).clone(),
       };
       call(head, vec![(**left).clone(), right_expr])

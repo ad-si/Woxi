@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 
 // ─── Together ───────────────────────────────────────────────────────
@@ -268,7 +267,7 @@ fn reciprocal_base(e: &Expr) -> Option<&Expr> {
 fn hoist_product_factor(f: &Expr) -> Expr {
   match reciprocal_base(f) {
     Some(base) => match hoist_denominator_content(base) {
-      Some(new_base) => call("Power", vec![new_base, Expr::Integer(-1)]),
+      Some(new_base) => pow(new_base, Expr::Integer(-1)),
       None => f.clone(),
     },
     None => hoist_result_denominator_content(f),
@@ -500,10 +499,7 @@ pub fn extract_num_den(expr: &Expr) -> (Expr, Expr) {
         if matches!(&pos_exp, Expr::Integer(1)) {
           (Expr::Integer(1), args[0].clone())
         } else {
-          (
-            Expr::Integer(1),
-            call("Power", vec![args[0].clone(), pos_exp]),
-          )
+          (Expr::Integer(1), pow(args[0].clone(), pos_exp))
         }
       } else {
         (expr.clone(), Expr::Integer(1))
@@ -529,8 +525,7 @@ pub fn extract_num_den(expr: &Expr) -> (Expr, Expr) {
               if matches!(&pos_exp, Expr::Integer(1)) {
                 den_factors.push(pargs[0].clone());
               } else {
-                den_factors
-                  .push(call("Power", vec![pargs[0].clone(), pos_exp]));
+                den_factors.push(pow(pargs[0].clone(), pos_exp));
               }
             } else {
               // Power[fraction, n] → split base into num/den
@@ -538,10 +533,8 @@ pub fn extract_num_den(expr: &Expr) -> (Expr, Expr) {
               if matches!(&base_den, Expr::Integer(1)) {
                 num_factors.push(arg.clone());
               } else {
-                num_factors
-                  .push(call("Power", vec![base_num, pargs[1].clone()]));
-                den_factors
-                  .push(call("Power", vec![base_den, pargs[1].clone()]));
+                num_factors.push(pow(base_num, pargs[1].clone()));
+                den_factors.push(pow(base_den, pargs[1].clone()));
               }
             }
           }
@@ -557,7 +550,7 @@ pub fn extract_num_den(expr: &Expr) -> (Expr, Expr) {
               if matches!(&pos_exp, Expr::Integer(1)) {
                 den_factors.push(*left.clone());
               } else {
-                den_factors.push(call("Power", vec![*left.clone(), pos_exp]));
+                den_factors.push(pow(*left.clone(), pos_exp));
               }
             } else {
               // Power[fraction, n] → split base into num/den
@@ -769,7 +762,7 @@ fn quotient_base_flip(base: &Expr, exp: &Expr) -> Option<(Expr, Expr)> {
     if matches!(b, Expr::Integer(1)) {
       Expr::Integer(1)
     } else {
-      call("Power", vec![b.clone(), positive.clone()])
+      pow(b.clone(), positive.clone())
     }
   };
   Some((raise(&base_den), raise(&base_num)))
@@ -1377,7 +1370,7 @@ fn together_expr_preprocess(expr: &Expr) -> Expr {
           return make_fraction(b_den, b_num);
         }
       }
-      call("Power", vec![base, exp])
+      pow(base, exp)
     }
 
     // Times (binary): each factor must be fully combined so that a Plus

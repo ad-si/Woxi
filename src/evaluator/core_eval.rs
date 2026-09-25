@@ -4235,7 +4235,7 @@ fn evaluate_binary_op_pair(
     let is_seq = |e: &Expr| matches!(e, Expr::FunctionCall { name, .. } if name == "Sequence");
     if is_seq(&left_val) || is_seq(&right_val) {
       let neg = |e: Expr| call("Times", vec![Expr::Integer(-1), e]);
-      let recip = |e: Expr| call("Power", vec![e, Expr::Integer(-1)]);
+      let recip = |e: Expr| pow(e, Expr::Integer(-1));
       let spliced: Option<(&str, Expr, Expr)> = match op {
         BinaryOperator::Plus => {
           Some(("Plus", left_val.clone(), right_val.clone()))

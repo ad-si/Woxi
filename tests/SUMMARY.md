@@ -521,6 +521,7 @@
       - [`WeierstrassPPrime`](math/special/WeierstrassPPrime.md)
       - [`WignerD`](math/special/WignerD.md)
       - [`Zeta`](math/special/Zeta.md)
+      - [`ZetaZero`](math/special/ZetaZero.md)
     - [Linear Algebra](math/linear_algebra.md)
       - [`CompanionMatrix`](math/linear_algebra/CompanionMatrix.md)
       - [`GeometricTransformation`](math/linear_algebra/GeometricTransformation.md)
