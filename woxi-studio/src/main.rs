@@ -29952,18 +29952,33 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`n1$$ = 2, $CellContext`n2$$ = 3}, \
     assert!(base.contains("Distinguishable"), "label missing: {base}");
     assert!(base.contains("Bosons"), "label missing: {base}");
     assert!(base.contains("Fermions"), "label missing: {base}");
-    // Two identical-fermion levels must vanish identically (Pauli
-    // exclusion), so the fermion panel differs from the boson/mixed case.
-    let degenerate = render(2, 2);
-    assert_ne!(
-      base, degenerate,
-      "the fermion panel must go blank at n1 == n2"
-    );
     // Moving either slider must change the rendered scene.
     assert_ne!(base, render(4, 3), "the n1 slider must matter");
     assert_ne!(base, render(2, 5), "the n2 slider must matter");
+
+    // Pauli exclusion: the antisymmetric (fermion) combination must vanish
+    // identically at every point when the two levels coincide, checked
+    // directly against the function (not the rendered grid, which two other
+    // panels' dependence on n1/n2 would make a false positive).
+    let antisymmetric_density_at = |n1: i64, n2: i64, x: f64, y: f64| {
+      woxi::interpret(&format!(
+        "N[antisymmetricDensity[{{{n1}, {n2}}}][{x}, {y}]]"
+      ))
+      .expect("antisymmetricDensity must evaluate")
+    };
+    assert_eq!(
+      antisymmetric_density_at(2, 2, 0.5, 0.7),
+      "0.",
+      "the fermion wave function must vanish identically when n1 == n2"
+    );
+    assert_ne!(
+      antisymmetric_density_at(2, 3, 0.5, 0.7),
+      "0.",
+      "the fermion wave function must not vanish when n1 != n2"
+    );
   }
 
+  /// Checked a randomly-sampled Wolfram Demonstrations Project notebook: a
   /// "flex" slider drives `FindRoot`-solved vertex positions for a hinged
   /// polyhedron rendered via a `GraphicsComplex`/`Polygon` composed with
   /// `RotationTransform` inside a `Graphics3D`, with an opacity slider and
