@@ -1,6 +1,5 @@
 #[allow(unused_imports)]
 use super::utilities::*;
-#[allow(unused_imports)]
 use super::*;
 
 /// AST-based Fold/FoldList: fold a function over a list.
@@ -904,7 +903,7 @@ pub(crate) fn expr_children(expr: &Expr) -> Option<Vec<Expr>> {
           } else {
             Some(vec![
               left.as_ref().clone(),
-              call("Power", vec![right.as_ref().clone(), Expr::Integer(-1)]),
+              pow(right.as_ref().clone(), Expr::Integer(-1)),
             ])
           }
         }

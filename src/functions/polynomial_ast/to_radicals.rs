@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 
 /// ToRadicals[expr] — convert Root objects to explicit radical expressions.
@@ -308,7 +307,7 @@ fn solve_linear(coeffs: &[Expr]) -> std::vec::Vec<Expr> {
     vec![
       mk_int(-1),
       coeffs[0].clone(),
-      mk_power(coeffs[1].clone(), mk_int(-1)),
+      pow(coeffs[1].clone(), mk_int(-1)),
     ],
   )]
 }
@@ -321,10 +320,10 @@ fn solve_quadratic(coeffs: &[Expr]) -> std::vec::Vec<Expr> {
 
   // discriminant = b^2 - 4*a*c
   let disc = mk_plus(vec![
-    mk_power(b.clone(), mk_int(2)),
+    pow(b.clone(), mk_int(2)),
     mk_times(mk_int(-4), mk_times(a.clone(), c.clone())),
   ]);
-  let sqrt_disc = mk_power(disc, mk_ratio(1, 2));
+  let sqrt_disc = pow(disc, mk_ratio(1, 2));
   let denom = mk_times(mk_int(2), a.clone());
 
   // (-b ± sqrt(disc)) / (2a)
@@ -333,11 +332,11 @@ fn solve_quadratic(coeffs: &[Expr]) -> std::vec::Vec<Expr> {
       mk_times(mk_int(-1), b.clone()),
       mk_times(mk_int(-1), sqrt_disc.clone()),
     ]),
-    mk_power(denom.clone(), mk_int(-1)),
+    pow(denom.clone(), mk_int(-1)),
   );
   let root2 = mk_times(
     mk_plus(vec![mk_times(mk_int(-1), b.clone()), sqrt_disc]),
-    mk_power(denom, mk_int(-1)),
+    pow(denom, mk_int(-1)),
   );
 
   vec![root1, root2]
@@ -367,36 +366,27 @@ fn solve_cubic(coeffs: &[Expr]) -> std::vec::Vec<Expr> {
   // q = (2*a2^3 - 9*a3*a2*a1 + 27*a3^2*a0) / (27*a3^3)
   let shift = mk_times(
     mk_times(mk_int(-1), a2.clone()),
-    mk_power(mk_times(mk_int(3), a3.clone()), mk_int(-1)),
+    pow(mk_times(mk_int(3), a3.clone()), mk_int(-1)),
   );
 
   let p = mk_times(
     mk_plus(vec![
       mk_times(mk_int(3), mk_times(a3.clone(), a1.clone())),
-      mk_times(mk_int(-1), mk_power(a2.clone(), mk_int(2))),
+      mk_times(mk_int(-1), pow(a2.clone(), mk_int(2))),
     ]),
-    mk_power(
-      mk_times(mk_int(3), mk_power(a3.clone(), mk_int(2))),
-      mk_int(-1),
-    ),
+    pow(mk_times(mk_int(3), pow(a3.clone(), mk_int(2))), mk_int(-1)),
   );
 
   let q = mk_times(
     mk_plus(vec![
-      mk_times(mk_int(2), mk_power(a2.clone(), mk_int(3))),
+      mk_times(mk_int(2), pow(a2.clone(), mk_int(3))),
       mk_times(
         mk_int(-9),
         call("Times", vec![a3.clone(), a2.clone(), a1.clone()]),
       ),
-      mk_times(
-        mk_int(27),
-        mk_times(mk_power(a3.clone(), mk_int(2)), a0.clone()),
-      ),
+      mk_times(mk_int(27), mk_times(pow(a3.clone(), mk_int(2)), a0.clone())),
     ]),
-    mk_power(
-      mk_times(mk_int(27), mk_power(a3.clone(), mk_int(3))),
-      mk_int(-1),
-    ),
+    pow(mk_times(mk_int(27), pow(a3.clone(), mk_int(3))), mk_int(-1)),
   );
 
   // Cardano: discriminant D = -(4p^3 + 27q^2)
@@ -410,24 +400,24 @@ fn solve_cubic(coeffs: &[Expr]) -> std::vec::Vec<Expr> {
     mk_ratio(1, 2),
     mk_plus(vec![
       mk_int(-1),
-      mk_times(id_expr("I"), mk_power(mk_int(3), mk_ratio(1, 2))),
+      mk_times(id_expr("I"), pow(mk_int(3), mk_ratio(1, 2))),
     ]),
   );
 
   let inner = mk_plus(vec![
-    mk_times(mk_ratio(1, 4), mk_power(q.clone(), mk_int(2))),
-    mk_times(mk_ratio(1, 27), mk_power(p.clone(), mk_int(3))),
+    mk_times(mk_ratio(1, 4), pow(q.clone(), mk_int(2))),
+    mk_times(mk_ratio(1, 27), pow(p.clone(), mk_int(3))),
   ]);
-  let sqrt_inner = mk_power(inner, mk_ratio(1, 2));
+  let sqrt_inner = pow(inner, mk_ratio(1, 2));
 
-  let c_plus = mk_power(
+  let c_plus = pow(
     mk_plus(vec![
       mk_times(mk_ratio(-1, 2), q.clone()),
       sqrt_inner.clone(),
     ]),
     mk_ratio(1, 3),
   );
-  let c_minus = mk_power(
+  let c_minus = pow(
     mk_plus(vec![
       mk_times(mk_ratio(-1, 2), q),
       mk_times(mk_int(-1), sqrt_inner),
@@ -440,12 +430,12 @@ fn solve_cubic(coeffs: &[Expr]) -> std::vec::Vec<Expr> {
     let omega_k = if k == 0 {
       mk_int(1)
     } else {
-      mk_power(omega.clone(), mk_int(k))
+      pow(omega.clone(), mk_int(k))
     };
     let omega_neg_k = if k == 0 {
       mk_int(1)
     } else {
-      mk_power(omega.clone(), mk_int(-k))
+      pow(omega.clone(), mk_int(-k))
     };
 
     let t = mk_plus(vec![
@@ -469,14 +459,14 @@ fn solve_pure_nth(
   // x^n = -a0/an
   let base = mk_times(
     mk_times(mk_int(-1), constant.clone()),
-    mk_power(leading.clone(), mk_int(-1)),
+    pow(leading.clone(), mk_int(-1)),
   );
 
-  let root_base = mk_power(base, mk_ratio(1, n));
+  let root_base = pow(base, mk_ratio(1, n));
 
   // Build explicit roots of unity omega_k = exp(2*pi*i*k/n)
   let i_val = id_expr("I");
-  let sqrt3 = mk_power(mk_int(3), mk_ratio(1, 2));
+  let sqrt3 = pow(mk_int(3), mk_ratio(1, 2));
 
   let mut roots = Vec::new();
   for k in 0..n {

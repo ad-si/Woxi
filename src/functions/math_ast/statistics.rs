@@ -585,10 +585,7 @@ pub(crate) fn mixture_weighted_component_quantity(
   // Distribute the normalizing weight into every term — Σ (w_i/W) q(d_i) —
   // rather than dividing the summed numerator, so the result matches
   // wolframscript's form (e.g. `1/(2 Sqrt[2 Pi]) + …` instead of `(… )/2`).
-  let inv_w = call(
-    "Power",
-    vec![call("Plus", weights.to_vec()), Expr::Integer(-1)],
-  );
+  let inv_w = pow(call("Plus", weights.to_vec()), Expr::Integer(-1));
   let mut terms: Vec<Expr> = Vec::with_capacity(weights.len());
   for (w, d) in weights.iter().zip(dists.iter()) {
     let q = quantity(d)?;
@@ -627,17 +624,17 @@ fn mixture_variance(dargs: &[Expr]) -> Result<Option<Expr>, InterpreterError> {
     if !resolved(&mu) || !resolved(&var) {
       return Ok(None);
     }
-    let mu2 = call("Power", vec![mu.clone(), Expr::Integer(2)]);
+    let mu2 = pow(mu.clone(), Expr::Integer(2));
     ex2_terms
       .push(call("Times", vec![w.clone(), call("Plus", vec![var, mu2])]));
     mean_terms.push(call("Times", vec![w.clone(), mu]));
   }
   let w_total = call("Plus", weights.to_vec());
-  let inv_w = call("Power", vec![w_total, Expr::Integer(-1)]);
+  let inv_w = pow(w_total, Expr::Integer(-1));
   // E[X²] = (Σ w_i (σ_i²+μ_i²)) / W ; μ = (Σ w_i μ_i) / W.
   let ex2 = call("Times", vec![call("Plus", ex2_terms), inv_w.clone()]);
   let mean = call("Times", vec![call("Plus", mean_terms), inv_w]);
-  let mean2 = call("Power", vec![mean, Expr::Integer(2)]);
+  let mean2 = pow(mean, Expr::Integer(2));
   let result = call(
     "Plus",
     vec![ex2, call("Times", vec![Expr::Integer(-1), mean2])],
@@ -2948,12 +2945,9 @@ fn correlation_from_covariance(cov_rows: &[Expr]) -> Option<Expr> {
     let mut row = Vec::with_capacity(n);
     for j in 0..n {
       // Cov[i, j] / Sqrt[Cov[i, i] * Cov[j, j]]
-      let denom = call(
-        "Power",
-        vec![
-          call("Times", vec![cov[i][i].clone(), cov[j][j].clone()]),
-          call("Rational", vec![Expr::Integer(-1), Expr::Integer(2)]),
-        ],
+      let denom = pow(
+        call("Times", vec![cov[i][i].clone(), cov[j][j].clone()]),
+        call("Rational", vec![Expr::Integer(-1), Expr::Integer(2)]),
       );
       let entry = call("Times", vec![cov[i][j].clone(), denom]);
       row.push(crate::evaluator::evaluate_expr_to_expr(&entry).ok()?);
@@ -3840,7 +3834,7 @@ pub fn root_mean_square_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && !items.is_empty()
     && items.iter().all(|r| matches!(r, Expr::List(_)))
   {
-    let squared = call("Power", vec![args[0].clone(), Expr::Integer(2)]);
+    let squared = pow(args[0].clone(), Expr::Integer(2));
     let mean = call1("Mean", squared);
     let sqrt = call1("Sqrt", mean);
     return crate::evaluator::evaluate_expr_to_expr(&sqrt);
@@ -3910,7 +3904,7 @@ pub fn root_mean_square_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // it.
       let squares: Vec<Expr> = items
         .iter()
-        .map(|item| call("Power", vec![item.clone(), Expr::Integer(2)]))
+        .map(|item| pow(item.clone(), Expr::Integer(2)))
         .collect();
       let mean_square = call(
         "Divide",
@@ -4280,10 +4274,8 @@ pub fn moment_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Raise each element to power r and evaluate, then compute mean
   let mut powered = Vec::with_capacity(items.len());
   for x in items {
-    let p = crate::evaluator::evaluate_expr_to_expr(&call(
-      "Power",
-      vec![x.clone(), r.clone()],
-    ))?;
+    let p =
+      crate::evaluator::evaluate_expr_to_expr(&pow(x.clone(), r.clone()))?;
     powered.push(p);
   }
 
@@ -6521,17 +6513,11 @@ fn discrete_asymptotic_leading(expr: &Expr, var: &str) -> Option<Expr> {
         "Times",
         vec![
           // n^(n - 1/2)
-          call(
-            "Power",
-            vec![n.clone(), call("Plus", vec![n.clone(), m_one_half])],
-          ),
+          pow(n.clone(), call("Plus", vec![n.clone(), m_one_half])),
           // Sqrt[2*Pi]
           make_sqrt(call("Times", vec![Expr::Integer(2), const_expr("Pi")])),
           // E^(-n)
-          call(
-            "Power",
-            vec![const_expr("E"), call("Times", vec![Expr::Integer(-1), n])],
-          ),
+          pow(const_expr("E"), call("Times", vec![Expr::Integer(-1), n])),
         ],
       ))
     }
@@ -6681,17 +6667,11 @@ fn stirling_approx(var: &str) -> Expr {
     "Times",
     vec![
       // n^(n + 1/2)
-      call(
-        "Power",
-        vec![n.clone(), call("Plus", vec![n.clone(), one_half])],
-      ),
+      pow(n.clone(), call("Plus", vec![n.clone(), one_half])),
       // Sqrt[2*Pi]
       make_sqrt(call("Times", vec![Expr::Integer(2), const_expr("Pi")])),
       // E^(-n)
-      call(
-        "Power",
-        vec![const_expr("E"), call("Times", vec![Expr::Integer(-1), n])],
-      ),
+      pow(const_expr("E"), call("Times", vec![Expr::Integer(-1), n])),
     ],
   )
 }
@@ -6836,17 +6816,11 @@ fn asymptotic_binomial(
     "Times",
     vec![
       // 2^(1/2 + n)
-      call(
-        "Power",
-        vec![Expr::Integer(2), call("Plus", vec![one_half, n.clone()])],
-      ),
+      pow(Expr::Integer(2), call("Plus", vec![one_half, n.clone()])),
       // 1 / (Sqrt[n] * Sqrt[Pi])
-      call(
-        "Power",
-        vec![
-          call("Times", vec![make_sqrt(n), make_sqrt(const_expr("Pi"))]),
-          Expr::Integer(-1),
-        ],
+      pow(
+        call("Times", vec![make_sqrt(n), make_sqrt(const_expr("Pi"))]),
+        Expr::Integer(-1),
       ),
     ],
   ))
@@ -7402,7 +7376,7 @@ fn cf_times(xs: Vec<Expr>) -> Expr {
   call("Times", xs)
 }
 fn cf_pow(b: Expr, e: Expr) -> Expr {
-  call("Power", vec![b, e])
+  pow(b, e)
 }
 fn cf_div(n: Expr, d: Expr) -> Expr {
   div2(n, d)
@@ -9378,23 +9352,17 @@ fn erlang_b_symbolic(
   let body = call(
     "Times",
     vec![
-      call("Power", vec![a.clone(), c.clone()]),
-      call(
-        "Power",
-        vec![
-          const_expr("E"),
-          call("Times", vec![Expr::Integer(-1), a.clone()]),
-        ],
+      pow(a.clone(), c.clone()),
+      pow(
+        const_expr("E"),
+        call("Times", vec![Expr::Integer(-1), a.clone()]),
       ),
-      call(
-        "Power",
-        vec![
-          call(
-            "Gamma",
-            vec![call("Plus", vec![Expr::Integer(1), c.clone()]), a.clone()],
-          ),
-          Expr::Integer(-1),
-        ],
+      pow(
+        call(
+          "Gamma",
+          vec![call("Plus", vec![Expr::Integer(1), c.clone()]), a.clone()],
+        ),
+        Expr::Integer(-1),
       ),
     ],
   );

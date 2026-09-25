@@ -54,18 +54,15 @@ pub fn polylog_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// PolyLog[s, -1] = -(1 - 2^(1 - s)) Zeta[s] for a symbolic order `s`.
 fn polylog_at_neg1_symbolic(s: &Expr) -> Result<Expr, InterpreterError> {
   // 2^(1 - s)
-  let pow = call(
-    "Power",
-    vec![
-      Expr::Integer(2),
-      call(
-        "Plus",
-        vec![
-          Expr::Integer(1),
-          call("Times", vec![Expr::Integer(-1), s.clone()]),
-        ],
-      ),
-    ],
+  let pow = pow(
+    Expr::Integer(2),
+    call(
+      "Plus",
+      vec![
+        Expr::Integer(1),
+        call("Times", vec![Expr::Integer(-1), s.clone()]),
+      ],
+    ),
   );
   // 1 - 2^(1 - s)
   let inner = call(

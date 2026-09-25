@@ -1,7 +1,6 @@
 use super::utilities::expr_to_f64;
 #[allow(unused_imports)]
 use super::utilities::*;
-#[allow(unused_imports)]
 use super::*;
 use crate::functions::math_ast::{gcd_i128, rat_reduce};
 
@@ -410,7 +409,7 @@ fn distribution_median(name: &str, dargs: &[Expr]) -> Option<Expr> {
       // Median = μ + b * Log[2]^(-1/a) ≡ μ + b / Log[2]^(1/a)
       let log2 = call1("Log", Expr::Integer(2));
       let inv_a = div2(Expr::Integer(1), a);
-      let denom = call("Power", vec![log2, inv_a]);
+      let denom = pow(log2, inv_a);
       let b_over = div2(b, denom);
       let med = match mu {
         Some(m) => plus2(m, b_over),

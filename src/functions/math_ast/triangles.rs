@@ -297,8 +297,8 @@ pub fn sas_triangle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     vec![call(
       "Plus",
       vec![
-        call("Power", vec![a.clone(), Expr::Integer(2)]),
-        call("Power", vec![b.clone(), Expr::Integer(2)]),
+        pow(a.clone(), Expr::Integer(2)),
+        pow(b.clone(), Expr::Integer(2)),
         call(
           "Times",
           vec![
@@ -312,14 +312,14 @@ pub fn sas_triangle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     )],
   );
   let c_eval = eval(&c)?;
-  let inv_c = call("Power", vec![c_eval.clone(), Expr::Integer(-1)]);
+  let inv_c = pow(c_eval.clone(), Expr::Integer(-1));
   let cx = call(
     "Times",
     vec![
       call(
         "Plus",
         vec![
-          call("Power", vec![b.clone(), Expr::Integer(2)]),
+          pow(b.clone(), Expr::Integer(2)),
           call(
             "Times",
             vec![
@@ -434,8 +434,8 @@ pub fn triangle_measurement_ast(
       call(
         "Plus",
         vec![
-          call("Power", vec![diff(&p.0, &q.0), Expr::Integer(2)]),
-          call("Power", vec![diff(&p.1, &q.1), Expr::Integer(2)]),
+          pow(diff(&p.0, &q.0), Expr::Integer(2)),
+          pow(diff(&p.1, &q.1), Expr::Integer(2)),
         ],
       ),
     )
@@ -466,12 +466,9 @@ pub fn triangle_measurement_ast(
       "Times",
       vec![
         area,
-        call(
-          "Power",
-          vec![
-            call("Plus", vec![half(side_a), half(side_b), half(side_c)]),
-            Expr::Integer(-1),
-          ],
+        pow(
+          call("Plus", vec![half(side_a), half(side_b), half(side_c)]),
+          Expr::Integer(-1),
         ),
       ],
     ),
@@ -482,12 +479,9 @@ pub fn triangle_measurement_ast(
         side_a,
         side_b,
         side_c,
-        call(
-          "Power",
-          vec![
-            call("Times", vec![Expr::Integer(4), area]),
-            Expr::Integer(-1),
-          ],
+        pow(
+          call("Times", vec![Expr::Integer(4), area]),
+          Expr::Integer(-1),
         ),
       ],
     ),

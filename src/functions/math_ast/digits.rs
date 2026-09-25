@@ -1,4 +1,3 @@
-#[allow(unused_imports)]
 use super::*;
 use num_traits::{Signed, Zero};
 
@@ -1375,10 +1374,7 @@ fn periodic_continued_fraction(
   } else {
     call(
       "Times",
-      vec![
-        numer,
-        call("Power", vec![Expr::Integer(q), Expr::Integer(-1)]),
-      ],
+      vec![numer, pow(Expr::Integer(q), Expr::Integer(-1))],
     )
   };
   crate::evaluator::evaluate_expr_to_expr(&value).ok()
@@ -2473,7 +2469,7 @@ pub fn from_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let base_pow = if power == 1 {
           base_expr.clone()
         } else {
-          call("Power", vec![base_expr.clone(), Expr::Integer(power)])
+          pow(base_expr.clone(), Expr::Integer(power))
         };
         call("Times", vec![item.clone(), base_pow])
       };

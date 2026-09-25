@@ -50,11 +50,6 @@ pub fn mk_times(a: Expr, b: Expr) -> Expr {
   call("Times", vec![a, b])
 }
 
-/// Build `Power[base, exp]`.
-pub fn mk_power(base: Expr, exp: Expr) -> Expr {
-  call("Power", vec![base, exp])
-}
-
 // ─── Ascending trimmed polynomial coefficient vectors ────────────────
 
 /// Drop trailing zero coefficients (keeping at least one entry).

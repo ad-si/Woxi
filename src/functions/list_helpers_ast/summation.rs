@@ -1,7 +1,6 @@
 use super::utilities::expr_to_f64;
 #[allow(unused_imports)]
 use super::utilities::*;
-#[allow(unused_imports)]
 use super::*;
 use crate::functions::math_ast::{gcd_i128, rat_reduce};
 
@@ -1264,7 +1263,7 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 vec![
                   dbody,
                   Expr::Identifier(var_name.clone()),
-                  call("Power", vec![body.clone(), Expr::Integer(-1)]),
+                  pow(body.clone(), Expr::Integer(-1)),
                 ],
               ),
             );
@@ -3644,9 +3643,9 @@ fn match_log_geometric(body: &Expr, var_name: &str) -> Option<(Expr, Expr)> {
       Expr::FunctionCall { name, args }
         if name == "Power" && args.len() == 2 =>
       {
-        out.push(call(
-          "Power",
-          vec![args[0].clone(), times2(Expr::Integer(-1), args[1].clone())],
+        out.push(pow(
+          args[0].clone(),
+          times2(Expr::Integer(-1), args[1].clone()),
         ));
       }
       other => out.push(pow2(other.clone(), Expr::Integer(-1))),
@@ -3994,7 +3993,7 @@ fn try_telescoping_rational_sum(
   // the form 1/Q by inverting the body: if body^-1 is a polynomial Q, the
   // summand is 1/Q.
   if num.is_empty() {
-    let recip = call("Power", vec![body.clone(), Expr::Integer(-1)]);
+    let recip = pow(body.clone(), Expr::Integer(-1));
     if let Some(q) = tr_coeff_list(&recip, var_name, "Together").map(&trim)
       && q.len() > 1
     {
@@ -4142,7 +4141,7 @@ fn try_rational_pole_telescoping_sum(
     .map(&trim)
     .unwrap_or_default();
   if num.is_empty() {
-    let recip = call("Power", vec![body.clone(), Expr::Integer(-1)]);
+    let recip = pow(body.clone(), Expr::Integer(-1));
     if let Some(q) = tr_coeff_list(&recip, var_name, "Together").map(&trim)
       && q.len() > 1
     {
@@ -4358,7 +4357,7 @@ fn try_infinite_sum(
   // wolframscript canonicalizes those results to a different (though
   // equivalent) form.
   if let Some((coeff, base)) = match_exponential_base(body, var_name) {
-    let e_to_base = call("Power", vec![const_expr("E"), base]);
+    let e_to_base = pow(const_expr("E"), base);
     if min == 0 {
       let result = call("Times", vec![coeff, e_to_base]);
       return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&result)?));
