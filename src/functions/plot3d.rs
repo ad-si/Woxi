@@ -406,6 +406,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut show_axes = true;
   let mut z_clip: Option<(f64, f64)> = None;
   let mut plot_style_expr: Option<&Expr> = None;
+  let mut axes_labels: [Option<String>; 3] = [None, None, None];
 
   for opt in &args[3..] {
     if let Expr::Rule {
@@ -451,14 +452,8 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               y_max = y_max.min(yr.1);
             }
             z_clip = Some(zr);
-          } else if let Expr::List(items) = replacement.as_ref()
-            && items.len() == 2
-          {
-            let lo = try_eval_to_f64(&evaluate_expr_to_expr(&items[0])?);
-            let hi = try_eval_to_f64(&evaluate_expr_to_expr(&items[1])?);
-            if let (Some(lo), Some(hi)) = (lo, hi) {
-              z_clip = Some((lo, hi));
-            }
+          } else {
+            z_clip = parse_z_only_range(replacement);
           }
         }
         Expr::Identifier(name) if name == "Boxed" => {
@@ -466,6 +461,17 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             Expr::Identifier(s) if s == "False" => show_axes = false,
             Expr::Identifier(s) if s == "True" => show_axes = true,
             _ => {}
+          }
+        }
+        Expr::Identifier(name) if name == "AxesLabel" => {
+          let value = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| replacement.as_ref().clone());
+          let items: Vec<Expr> = match &value {
+            Expr::List(items) => items.to_vec(),
+            other => vec![other.clone()],
+          };
+          for (i, item) in items.iter().take(3).enumerate() {
+            axes_labels[i] = axis_label_markup(item);
           }
         }
         _ => {}
@@ -868,6 +874,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     full_width,
     mesh_mode,
     show_axes,
+    &axes_labels,
   )?;
   // A `PlotLabel` sets a title above the finished picture.
   let svg = with_plot_label(svg, args, svg_width, svg_height);
@@ -888,6 +895,7 @@ fn generate_svg(
   full_width: bool,
   mesh_mode: MeshMode,
   show_axes: bool,
+  axes_labels: &[Option<String>; 3],
 ) -> Result<String, InterpreterError> {
   // Find bounding box of all projected points
   let mut px_min = f64::INFINITY;
@@ -922,8 +930,16 @@ fn generate_svg(
     ));
   }
 
-  // Compute scale and offset to map projected coords to SVG coords
-  let margin = 25.0;
+  // Compute scale and offset to map projected coords to SVG coords. An
+  // `AxesLabel` given while axes are shown needs extra room outside the
+  // box beyond what the tick labels alone reserve (mirrors
+  // `graphics3d_ast`'s margin); every other case keeps the fixed margin
+  // this renderer always used.
+  let margin = if show_axes && axes_labels.iter().any(Option::is_some) {
+    axes_label_margin(axes_labels, svg_width.min(svg_height))
+  } else {
+    25.0
+  };
   let draw_w = svg_width as f64 - 2.0 * margin;
   let draw_h = svg_height as f64 - 2.0 * margin;
   let scale = (draw_w / p_width).min(draw_h / p_height);
@@ -1080,7 +1096,16 @@ fn generate_svg(
 
   // Draw axes (ticks, labels) on top of everything
   if show_axes {
-    draw_axes(&mut svg, camera, &to_svg, x_range, y_range, z_range);
+    draw_axes_on_box(
+      &mut svg,
+      camera,
+      &to_svg,
+      &bounding_box_corners(),
+      x_range,
+      y_range,
+      z_range,
+      axes_labels,
+    );
   }
 
   svg.push_str("</svg>");
@@ -6590,6 +6615,21 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(crate::graphics3d_result_with_structure(svg, structure))
 }
 
+/// `PlotRange -> {zmin, zmax}`: the vertical-axis-only clipping form shared
+/// by every 3D height-field plot (`Plot3D`, `ListPlot3D`) alongside the
+/// full per-axis form `parse_axis_ranges` handles.
+fn parse_z_only_range(expr: &Expr) -> Option<(f64, f64)> {
+  let Expr::List(items) = expr else {
+    return None;
+  };
+  if items.len() != 2 {
+    return None;
+  }
+  let lo = try_eval_to_f64(&evaluate_expr_to_expr(&items[0]).ok()?)?;
+  let hi = try_eval_to_f64(&evaluate_expr_to_expr(&items[1]).ok()?)?;
+  Some((lo, hi))
+}
+
 /// `PlotRange -> {{x0, x1}, {y0, y1}, {z0, z1}}`: one explicit interval per
 /// axis. Anything else (a single interval, `Automatic`, …) is not this form.
 fn parse_axis_ranges(expr: &Expr) -> Option<[(f64, f64); 3]> {
@@ -6788,6 +6828,11 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // for `Plot3D`-family density/contour plots, instead of the fixed
   // blue-green-orange default.
   let mut color_function: Option<String> = None;
+  // `PlotRange -> {zmin, zmax}`: clips (and re-normalizes the height color
+  // of) the surface to that vertical range instead of the raw data extent,
+  // same as `Plot3D`.
+  let mut z_clip: Option<(f64, f64)> = None;
+  let mut axes_labels: [Option<String>; 3] = [None, None, None];
 
   for opt in &args[1..] {
     if let Expr::Rule {
@@ -6817,6 +6862,20 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             crate::functions::field_plot::color_function_scheme_name(
               replacement,
             );
+        }
+        Expr::Identifier(name) if name == "PlotRange" => {
+          z_clip = parse_z_only_range(replacement);
+        }
+        Expr::Identifier(name) if name == "AxesLabel" => {
+          let value = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| replacement.as_ref().clone());
+          let items: Vec<Expr> = match &value {
+            Expr::List(items) => items.to_vec(),
+            other => vec![other.clone()],
+          };
+          for (i, item) in items.iter().take(3).enumerate() {
+            axes_labels[i] = axis_label_markup(item);
+          }
         }
         _ => {}
       }
@@ -6984,10 +7043,13 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let z_range = if (z_max - z_min).abs() < 1e-15 {
+  // An explicit `PlotRange` overrides the data extent; values outside it
+  // are clamped (matching `Plot3D`) rather than stretching the axis.
+  let (z_lo, z_hi) = z_clip.unwrap_or((z_min, z_max));
+  let z_range = if (z_hi - z_lo).abs() < 1e-15 {
     1.0
   } else {
-    z_max - z_min
+    z_hi - z_lo
   };
 
   let camera = Camera::default();
@@ -7018,8 +7080,9 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let ny = |jj: usize| -> f64 {
         (jj as f64 / (cols - 1).max(1) as f64) * 2.0 - 1.0
       };
-      let nz =
-        |z: f64| -> f64 { ((z - z_min) / z_range) * 2.0 * Z_SCALE - Z_SCALE };
+      let nz = |z: f64| -> f64 {
+        ((z.clamp(z_lo, z_hi) - z_lo) / z_range) * 2.0 * Z_SCALE - Z_SCALE
+      };
 
       // Triangle 1: (i,j), (i+1,j), (i,j+1)
       if z00.is_finite() && z10.is_finite() && z01.is_finite() {
@@ -7039,9 +7102,9 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           z: nz(z01),
         };
 
-        let avg = ((z00 - z_min) / z_range
-          + (z10 - z_min) / z_range
-          + (z01 - z_min) / z_range)
+        let avg = ((z00.clamp(z_lo, z_hi) - z_lo) / z_range
+          + (z10.clamp(z_lo, z_hi) - z_lo) / z_range
+          + (z01.clamp(z_lo, z_hi) - z_lo) / z_range)
           / 3.0;
         let base_color = color_at(avg);
         let normal = triangle_normal(v0, v1, v2);
@@ -7084,9 +7147,9 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           z: nz(z10),
         };
 
-        let avg = ((z11 - z_min) / z_range
-          + (z01 - z_min) / z_range
-          + (z10 - z_min) / z_range)
+        let avg = ((z11.clamp(z_lo, z_hi) - z_lo) / z_range
+          + (z01.clamp(z_lo, z_hi) - z_lo) / z_range
+          + (z10.clamp(z_lo, z_hi) - z_lo) / z_range)
           / 3.0;
         let base_color = color_at(avg);
         let normal = triangle_normal(v0, v1, v2);
@@ -7119,10 +7182,10 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let (z_axis_min, z_axis_max) = if (z_min - z_max).abs() < 1e-15 {
-    (z_min - 0.5, z_max + 0.5)
+  let (z_axis_min, z_axis_max) = if (z_lo - z_hi).abs() < 1e-15 {
+    (z_lo - 0.5, z_hi + 0.5)
   } else {
-    (z_min, z_max)
+    (z_lo, z_hi)
   };
 
   all_triangles.sort_by(|a, b| {
@@ -7143,6 +7206,7 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     full_width,
     mesh_mode,
     true, // show_axes: always show axes for list_plot3d
+    &axes_labels,
   )?;
   // A `PlotLabel` sets a title above the finished picture.
   let svg = with_plot_label(svg, args, svg_width, svg_height);
@@ -7171,7 +7235,7 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         vec![
           Expr::Real(i as f64),
           Expr::Real(j as f64),
-          Expr::Real(z.clamp(z_min, z_max)),
+          Expr::Real(z.clamp(z_lo, z_hi)),
         ]
         .into(),
       ));
@@ -7201,7 +7265,7 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         grid[i][j + 1],
       ]
       .iter()
-      .map(|z| (z.clamp(z_min, z_max) - z_min) / z_range)
+      .map(|z| (z.clamp(z_lo, z_hi) - z_lo) / z_range)
       .sum::<f64>()
         / 4.0;
       let (cr, cg, cb) = color_at(avg_z_norm);
@@ -7734,6 +7798,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     full_width,
     mesh_mode,
     show_axes,
+    &[None, None, None],
   )?;
   // A `PlotLabel` sets a title above the finished picture.
   let svg = with_plot_label(svg, args, svg_width, svg_height);
@@ -8192,6 +8257,7 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     full_width,
     mesh_mode,
     show_axes,
+    &[None, None, None],
   )?;
   // A `PlotLabel` sets a title above the finished picture.
   let svg = with_plot_label(svg, args, svg_width, svg_height);
@@ -8652,6 +8718,7 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     full_width,
     MeshMode::None,
     show_axes,
+    &[None, None, None],
   )?;
   // A `PlotLabel` sets a title above the finished picture.
   let svg = with_plot_label(svg, args, svg_width, svg_height);
@@ -10156,6 +10223,7 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     full_width,
     mesh_mode,
     show_axes,
+    &[None, None, None],
   )?;
   // A `PlotLabel` sets a title above the finished picture.
   let svg = with_plot_label(svg, args, svg_width, svg_height);
@@ -10385,6 +10453,7 @@ pub fn discrete_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     full_width,
     mesh_mode,
     show_axes,
+    &[None, None, None],
   )?;
   // A `PlotLabel` sets a title above the finished picture.
   let svg = with_plot_label(svg, args, svg_width, svg_height);
@@ -11331,6 +11400,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     full_width,
     mesh_mode,
     show_axes,
+    &[None, None, None],
   )?;
   // A `PlotLabel` sets a title above the finished picture.
   let svg = with_plot_label(svg, args, svg_width, svg_height);

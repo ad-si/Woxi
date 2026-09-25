@@ -2732,6 +2732,22 @@ mod plot3d {
       );
     }
 
+    // `AxesLabel` was never read at all: a `Plot3D` surface always drew
+    // an unlabelled box, same as `ListPlot3D`.
+    #[test]
+    fn axes_label_names_all_three_axes() {
+      let svg = export_svg(
+        "Plot3D[x + y, {x, -1, 1}, {y, -1, 1}, \
+         AxesLabel -> {\"width\", \"depth\", \"height\"}]",
+      );
+      for label in ["width", "depth", "height"] {
+        assert!(
+          svg.contains(&format!(">{label}<")),
+          "expected the {label:?} axis label in the SVG: {svg}"
+        );
+      }
+    }
+
     /// Every `<polygon>` fill colour appearing in the SVG, as `(r, g, b)`
     /// triples — parsed straight out of the `fill="rgb(r,g,b)"` attribute so
     /// a test can check the lit colours a surface actually rendered with.
@@ -15791,6 +15807,72 @@ mod list_plot_3d {
        ColorFunction -> \"SouthwestColors\"]",
     );
     assert!(standalone.contains("<polygon"));
+  }
+
+  // Regression (Wolfram Demonstrations Project: a mixing-cell transport
+  // model): its `Manipulate` draws a `ListPlot3D` surface with an explicit
+  // `PlotRange -> {zmin, zmax}` meant to clip a numerically unstable
+  // outlier corner out of view. `ListPlot3D` never read `PlotRange` at
+  // all — the vertical axis was always labelled with the raw data extent,
+  // so a spike far outside the intended range stretched the whole box
+  // instead of being clipped to it.
+
+  #[test]
+  fn list_plot3d_plot_range_clips_the_z_axis_to_the_given_range() {
+    clear_state();
+    // One corner spikes to 100; every other sample point is 1.
+    let svg = export_svg(
+      "ListPlot3D[Flatten[Table[If[x == 5 && y == 5, {x, y, 100}, \
+       {x, y, 1}], {x, 5}, {y, 5}], 1], PlotRange -> {0, 2}]",
+    );
+    assert!(
+      svg.contains(">2</text>"),
+      "the axis must be labelled with the PlotRange max: {svg}"
+    );
+    assert!(
+      !svg.contains(">100</text>") && !svg.contains(">50</text>"),
+      "PlotRange must clip the axis instead of stretching it to the \
+       outlier: {svg}"
+    );
+  }
+
+  #[test]
+  fn list_plot3d_axes_label_names_all_three_axes() {
+    clear_state();
+    let svg = export_svg(
+      "ListPlot3D[Table[x + y, {x, 3}, {y, 3}], \
+       AxesLabel -> {\"width\", \"depth\", \"height\"}]",
+    );
+    for label in ["width", "depth", "height"] {
+      assert!(
+        svg.contains(&format!(">{label}<")),
+        "expected the {label:?} axis label in the SVG: {svg}"
+      );
+    }
+  }
+
+  #[test]
+  fn list_plot3d_axes_label_rotate_wrapper_typesets_its_content() {
+    // `Rotate[label, angle]` is a common Demonstrations idiom for a
+    // vertical axis label. The label renderer has no notion of rotated
+    // text, so this must typeset the wrapped content plainly rather than
+    // falling through to `Rotate[…]` FullForm text (or, worse, corrupting
+    // it: `expr_to_svg_markup` used to run through the generic string
+    // renderer for an embedded literal newline and drop leading
+    // characters from the label).
+    clear_state();
+    let svg = export_svg(
+      "ListPlot3D[Table[x + y, {x, 3}, {y, 3}], \
+       AxesLabel -> {None, None, Rotate[\"height\", Pi/2]}]",
+    );
+    assert!(
+      svg.contains(">height<"),
+      "expected the Rotate-wrapped label's content in the SVG: {svg}"
+    );
+    assert!(
+      !svg.contains("Rotate["),
+      "the label must not leak its Rotate[…] wrapper as literal text: {svg}"
+    );
   }
 }
 
