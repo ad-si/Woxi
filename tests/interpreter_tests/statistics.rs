@@ -4936,6 +4936,14 @@ mod distribution_fit_test {
     "WatsonUSquare",
   ];
 
+  /// Parses a p-value that may print in Wolfram's `1.23*^-8` scientific
+  /// notation, which `str::parse::<f64>` doesn't understand on its own.
+  fn parse_p_value(s: &str) -> f64 {
+    s.replace("*^", "e")
+      .parse()
+      .unwrap_or_else(|_| panic!("expected a numeric p-value, got {s}"))
+  }
+
   #[test]
   fn all_tests_lists_the_six_supported_tests() {
     assert_eq!(
@@ -4983,9 +4991,7 @@ mod distribution_fit_test {
          ExponentialDistribution[1/4], \"{test}\"]"
       );
       let result = interpret(&code).unwrap();
-      let p: f64 = result.parse().unwrap_or_else(|_| {
-        panic!("{test}: expected a numeric p-value, got {result}")
-      });
+      let p = parse_p_value(&result);
       assert!(
         (0.0..=1.0).contains(&p),
         "{test}: p-value {p} must be in [0, 1]"
@@ -5018,18 +5024,18 @@ mod distribution_fit_test {
     let good = "Table[-Log[1 - (i - 0.5)/8], {i, 1, 8}]";
     let bad = "{5.0, 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7}";
     for test in ALL_TESTS {
-      let good_p: f64 = interpret(&format!(
-        "DistributionFitTest[{good}, ExponentialDistribution[1], \"{test}\"]"
-      ))
-      .unwrap()
-      .parse()
-      .unwrap_or_else(|_| panic!("{test}: good-fit p-value must be numeric"));
-      let bad_p: f64 = interpret(&format!(
-        "DistributionFitTest[{bad}, ExponentialDistribution[1], \"{test}\"]"
-      ))
-      .unwrap()
-      .parse()
-      .unwrap_or_else(|_| panic!("{test}: bad-fit p-value must be numeric"));
+      let good_p = parse_p_value(
+        &interpret(&format!(
+          "DistributionFitTest[{good}, ExponentialDistribution[1], \"{test}\"]"
+        ))
+        .unwrap(),
+      );
+      let bad_p = parse_p_value(
+        &interpret(&format!(
+          "DistributionFitTest[{bad}, ExponentialDistribution[1], \"{test}\"]"
+        ))
+        .unwrap(),
+      );
       assert!(
         good_p > bad_p,
         "{test}: good fit ({good_p}) should score above bad fit ({bad_p})"

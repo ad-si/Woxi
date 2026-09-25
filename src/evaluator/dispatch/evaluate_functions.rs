@@ -4445,6 +4445,32 @@ fn evaluate_function_call_ast_inner(
       name: dist_name,
       args: dist_args,
     } = &args[1]
+    && dist_args.len() == 1
+    && dist_name == "ExponentialDistribution"
+  {
+    let data = args[0].clone();
+    let to_real = |v: Expr| -> Result<Expr, InterpreterError> {
+      crate::evaluator::evaluate_expr_to_expr(&call1("N", v))
+    };
+    let rule = |p: Expr, v: Expr| Expr::Rule {
+      pattern: Box::new(p),
+      replacement: Box::new(v),
+    };
+    // Exponential[λ] MLE: λ̂ = 1 / mean(data).
+    let mean = crate::functions::mean_ast(std::slice::from_ref(&data))?;
+    let mean = crate::evaluator::evaluate_expr_to_expr(&mean)?;
+    let rate = div2(Expr::Integer(1), mean);
+    return Ok(Expr::List(
+      vec![rule(dist_args[0].clone(), to_real(rate)?)].into(),
+    ));
+  }
+  if name == "FindDistributionParameters"
+    && args.len() == 2
+    && let Expr::List(_) = &args[0]
+    && let Expr::FunctionCall {
+      name: dist_name,
+      args: dist_args,
+    } = &args[1]
     && dist_args.len() == 2
   {
     let data = args[0].clone();

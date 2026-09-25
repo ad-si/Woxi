@@ -1723,6 +1723,19 @@ mod find_distribution_parameters {
       "FindDistributionParameters[{1, 2, 3}, FooDistribution[a, b]]"
     );
   }
+
+  #[test]
+  fn exponential_mle() {
+    // λ̂ = 1/mean = 1/2.275
+    assert_eq!(
+      interpret(
+        "FindDistributionParameters[{1.5, 2.8, 4.3, 0.5}, \
+         ExponentialDistribution[lambda]]"
+      )
+      .unwrap(),
+      "{lambda -> 0.43956043956043955}"
+    );
+  }
 }
 
 mod mixture_distribution {
