@@ -11582,6 +11582,39 @@ mod radical_prefix_operators {
   }
 }
 
+// `⌊x⌋` / `⌈x⌉` are the typeset bracket forms for `\[LeftFloor]…\[RightFloor]`
+// / `\[LeftCeiling]…\[RightCeiling]`, which the FrontEnd renders around a
+// single enclosed expression — Floor[x] / Ceiling[x]. Regression: the
+// downloaded Wolfram Demonstration "Goldbach Partitions" defines its helper
+// function with `⌊sum/2⌋`, and this used to fail to parse at all.
+mod floor_ceiling_brackets {
+  use super::*;
+
+  #[test]
+  fn floor_brackets_parse_as_floor_call() {
+    assert_eq!(interpret("⌊5.7⌋").unwrap(), "5");
+    assert_eq!(interpret("⌊-2.5⌋").unwrap(), "-3");
+    assert_eq!(interpret("⌊x/2⌋ /. x -> 7").unwrap(), "3");
+    assert_eq!(interpret("Head[⌊x⌋]").unwrap(), "Floor");
+  }
+
+  #[test]
+  fn ceiling_brackets_parse_as_ceiling_call() {
+    assert_eq!(interpret("⌈5.2⌉").unwrap(), "6");
+    assert_eq!(interpret("⌈-2.5⌉").unwrap(), "-2");
+    assert_eq!(interpret("⌈x/2⌉ /. x -> 7").unwrap(), "4");
+    assert_eq!(interpret("Head[⌈x⌉]").unwrap(), "Ceiling");
+  }
+
+  #[test]
+  fn floor_ceiling_brackets_bind_like_a_parenthesized_atom() {
+    // The bracket pair is an atom, not a prefix operator, so an implicit
+    // factor next to it multiplies rather than nests inside the argument.
+    assert_eq!(interpret("2⌊5.7⌋").unwrap(), "10");
+    assert_eq!(interpret("⌊5.7⌋⌈2.1⌉").unwrap(), "15");
+  }
+}
+
 // `\[Piecewise]{{v1,c1},{v2,c2},…}` is the special-character input form for
 // `Piecewise[{{v1,c1},{v2,c2},…}]` that notebooks reconstruct from a
 // `GridBox` for the piecewise brace notation. Regression: a downloaded

@@ -634,6 +634,12 @@ BoxBang = _{ "\\!" | "\u{F7C1}" }
 BoxLeft = _{ "\\(" | "\u{F7C9}" }
 BoxRight = _{ "\\)" | "\u{F7C0}" }
 
+// ⌊x⌋ / ⌈x⌉: the typeset input forms for `\[LeftFloor]…\[RightFloor]` /
+// `\[LeftCeiling]…\[RightCeiling]`, which the FrontEnd renders as bracket
+// pairs around a single expression — Floor[x] / Ceiling[x].
+FloorBrackets = { "\u{230A}" ~ Expression ~ "\u{230B}" }
+CeilingBrackets = { "\u{2308}" ~ Expression ~ "\u{2309}" }
+
 Term = _{
     DisplayedBoxes
   | BoxNotation
@@ -644,6 +650,8 @@ Term = _{
   | RadicalPrefix
   | DifferentialPrefix
   | PiecewisePrefix
+  | FloorBrackets
+  | CeilingBrackets
   | Unset
   | ApplyToOp
   | AddTo
@@ -708,6 +716,8 @@ SimpleTerm = _{
   | RadicalPrefix
   | DifferentialPrefix
   | PiecewisePrefix
+  | FloorBrackets
+  | CeilingBrackets
   | UnsignedNumericValue
   | PrefixApplySimple
   | FunctionCall
@@ -731,6 +741,8 @@ TermNoImplicit = _{
     FunctionCallExtended
   | ImplicitTimes
   | PiecewisePrefix
+  | FloorBrackets
+  | CeilingBrackets
   | Unset
   | ApplyToOp
   | AddTo
