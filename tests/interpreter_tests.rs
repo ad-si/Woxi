@@ -876,6 +876,33 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_manipulate_panel_control_group_no_vsform_warning() {
+    // A Demonstrations pattern (independently written, not copied from any
+    // specific one): the author hand-builds the whole control area as one
+    // bordered `Panel[Column[{…}]]` of `Button`/`Checkbox`/`PopupMenu`
+    // instead of letting Manipulate auto-generate sliders. Like the other
+    // layout containers (`Row`, `Column`, `Grid`, `Item`, `OpenerView`,
+    // `Tooltip`), a `Panel[…]` argument must pass through without a
+    // `Manipulate::vsform` message.
+    clear_state();
+    let code = r#"Manipulate[
+      x,
+      {x, 0, 1},
+      Panel[Column[{
+        Button["Reset", x = 0],
+        Checkbox[Dynamic[flag]],
+        PopupMenu[Dynamic[mode], {1 -> "A", 2 -> "B"}]
+      }]]
+    ]"#;
+    let r = interpret_with_stdout(code).unwrap();
+    assert!(
+      !r.warnings.iter().any(|w| w.contains("Manipulate::vsform")),
+      "unexpected Manipulate::vsform warning for a Panel control group: {:?}",
+      r.warnings
+    );
+  }
+
+  #[test]
   fn test_manipulate_echo_normalizes_control_specs() {
     // A bare control type echoes as the `ControlType -> …` option it stands
     // for, and a spec giving nothing else gets that type's default values.
