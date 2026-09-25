@@ -3271,27 +3271,18 @@ pub fn image_apply_ast(
   let is_real32 = matches!(image_type, ImageType::Real32);
   let snap = |v: f64| -> f64 { if is_real32 { (v as f32) as f64 } else { v } };
 
-  if ch == 1 {
-    let mut new_data = Vec::with_capacity(data.len());
-    for i in 0..num_pixels {
-      if !included(i) {
-        new_data.push(data[i]);
-        continue;
-      }
-      let result = apply(Expr::Real(snap(data[i])))?;
-      new_data.push(expr_to_f64(&result)?);
+  // A grayscale pixel is passed to `f` as a bare scalar; a multi-channel
+  // pixel is passed as a List of its channel values. Either shape of `f`
+  // may return a scalar (grayscale output) or a List (multi-channel
+  // output) independent of the input shape — e.g. a grayscale mask image
+  // colorized by a function returning `{r, g, b}` per pixel, as a
+  // Demonstrations Project puzzle-reveal pattern does. So the output
+  // channel count is probed from the first result rather than assumed
+  // from the input.
+  let pixel_input = |i: usize| -> Expr {
+    if ch == 1 {
+      return Expr::Real(snap(data[i]));
     }
-    return Ok(Expr::Image {
-      color_space: None,
-      width: *width,
-      height: *height,
-      channels: 1,
-      data: Arc::new(new_data),
-      image_type: *image_type,
-    });
-  }
-
-  let pixel_list = |i: usize| -> Expr {
     let base = i * ch;
     Expr::List(
       (0..ch)
@@ -3306,7 +3297,7 @@ pub fn image_apply_ast(
   // has nothing to probe, so it keeps the source channel count.
   let first_included = (0..num_pixels).find(|&i| included(i));
   let first_result =
-    first_included.map(|i| apply(pixel_list(i))).transpose()?;
+    first_included.map(|i| apply(pixel_input(i))).transpose()?;
   let out_ch = match &first_result {
     Some(Expr::List(vs)) => vs.len(),
     Some(_) => 1,
@@ -3346,7 +3337,7 @@ pub fn image_apply_ast(
     if first_included == Some(i) {
       push_result(first_result.as_ref().unwrap(), &mut new_data)?;
     } else {
-      let result = apply(pixel_list(i))?;
+      let result = apply(pixel_input(i))?;
       push_result(&result, &mut new_data)?;
     }
   }

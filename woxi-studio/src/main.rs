@@ -30000,6 +30000,134 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`tau$$ = 14.1, $CellContext`showFram
     );
   }
 
+  /// Checked a randomly-sampled Wolfram Demonstrations Project notebook: an
+  /// image-puzzle picker where a `PopupMenu` selects one of several
+  /// near-identical image pairs and a `Checkbox` reveals the difference
+  /// region tinted in a marking color. Independently written with tiny
+  /// synthetic black/white images built inline, not copied from any
+  /// specific Demonstration (whose actual photographs are copyrighted).
+  ///
+  /// This is what surfaced the real gap: `ImageApply[f, img]` on a
+  /// single-channel (grayscale) `img` assumed `f` always returns a scalar,
+  /// so a colorizing `f` that returns `{r, g, b}` per pixel — exactly the
+  /// "tint the diff mask red" idiom this puzzle uses — crashed with
+  /// `Image: expected a number, got {r, g, b}` instead of widening to a
+  /// 3-channel image the way the already-supported RGB-collapses-to-
+  /// grayscale direction (`ImageApply[Max, rgbImage]`) does in reverse.
+  #[test]
+  fn demonstration_twin_images_puzzle_reveals_tinted_difference() {
+    let code = "Manipulate[\
+      Module[{a, b, mask, tint}, \
+        {a, b} = data[[pair]]; \
+        If[reveal == False, \
+          Grid[{Panel[#] & /@ {a, b}}], \
+          mask = Binarize[Blur[ColorNegate[EdgeDetect[\
+            ImageDifference[a, b]]], 1]]; \
+          tint = ImageApply[If[# == 0, white, red] &, mask]; \
+          Grid[{Panel[#] & /@ (ImageMultiply[#, tint] & /@ {a, b})}]\
+        ]\
+      ], \
+      {{pair, 1, \"image pair\"}, {1, 2}, ControlType -> PopupMenu}, \
+      {{reveal, False}, {True, False}, ControlType -> Checkbox}, \
+      TrackedSymbols -> True, \
+      Initialization :> ( \
+        white = {1, 1, 1}; black = {0, 0, 0}; red = {1, 0, 0}; \
+        data = { \
+          {Image[{{white, white, black, black, white, white}, \
+                  {white, white, black, black, white, white}, \
+                  {white, white, black, black, white, white}}], \
+           Image[{{white, white, black, black, white, white}, \
+                  {white, black, black, black, white, white}, \
+                  {white, white, black, black, white, white}}]}, \
+          {Image[{{black, white, white, white, black, black}, \
+                  {black, white, white, white, black, black}, \
+                  {black, white, white, white, black, black}}], \
+           Image[{{black, white, white, white, black, black}, \
+                  {black, white, white, black, black, black}, \
+                  {black, white, white, white, black, black}}]} \
+        } \
+      )\
+    ]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the twin-images-puzzle Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+
+    match &state.controls[..] {
+      [
+        manipulate::ControlState::Discrete {
+          name: n0, popup, ..
+        },
+        manipulate::ControlState::Discrete { name: n1, .. },
+      ] => {
+        assert_eq!(n0.as_str(), "pair");
+        assert!(*popup, "ControlType -> PopupMenu must render a dropdown");
+        assert_eq!(n1.as_str(), "reveal");
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+
+    assert!(
+      state.graphics_handle.is_some(),
+      "the puzzle pair must render"
+    );
+
+    // `Grid[Panel[Image[…]]]` shows as the placeholder text `-Image-` in
+    // both the rendered SVG summary and the InputForm-ish result, hiding
+    // any actual pixel difference between states — so compare the
+    // structured `expr` tree (which still carries each `Image`'s raw
+    // pixel data) instead.
+    let render = |w: &manipulate::ManipulateState| {
+      let bindings: Vec<(String, String)> = w
+        .controls
+        .iter()
+        .filter(|c| c.binds_variable())
+        .map(|c| (c.name().to_string(), c.current_code()))
+        .collect();
+      let expr = woxi::with_scoped_globals(&bindings, || {
+        woxi::interpret_with_stdout(&w.body)
+      })
+      .expect("body evaluates")
+      .expr
+      .expect("the puzzle pair must produce a value");
+      format!("{expr:?}")
+    };
+    let plain = render(&state);
+
+    // Ticking the checkbox must swap in the tinted-difference images.
+    match &mut state.controls[1] {
+      manipulate::ControlState::Discrete { current_index, .. } => {
+        *current_index = 0;
+      }
+      other => panic!("expected the reveal checkbox, got {other:?}"),
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    let revealed = render(&state);
+    assert_ne!(
+      plain, revealed,
+      "revealing the difference must change the rendered picture"
+    );
+
+    // Switching to the other image pair must also change the picture.
+    match &mut state.controls[0] {
+      manipulate::ControlState::Discrete { current_index, .. } => {
+        *current_index = 1;
+      }
+      other => panic!("expected the pair popup, got {other:?}"),
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    let other_pair_revealed = render(&state);
+    assert_ne!(
+      revealed, other_pair_revealed,
+      "switching image pairs must change the rendered picture"
+    );
+  }
+
   /// Checked a randomly-sampled Wolfram Demonstrations Project notebook: a
   /// "flex" slider drives `FindRoot`-solved vertex positions for a hinged
   /// polyhedron rendered via a `GraphicsComplex`/`Polygon` composed with

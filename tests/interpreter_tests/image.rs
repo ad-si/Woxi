@@ -3092,6 +3092,32 @@ mod image_processing {
     );
   }
 
+  // A grayscale image whose `f` returns a list widens to that many
+  // channels, symmetric with the RGB-collapses-to-grayscale case above
+  // (`image_apply_max_rgb_returns_grayscale`). This is the colorize-a-mask
+  // idiom a Demonstrations Project image puzzle uses to highlight a region
+  // of a photo in a marking color.
+  #[test]
+  fn image_apply_grayscale_widens_to_list_result_channels() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImageApply[If[#==0, {1,1,1}, {1,0,0}]&, \
+         Image[{{0, 1}, {1, 0}}]]]"
+      )
+      .unwrap(),
+      "{{{1., 1., 1.}, {1., 0., 0.}}, {{1., 0., 0.}, {1., 1., 1.}}}"
+    );
+    assert_eq!(
+      interpret(
+        "ImageChannels[ImageApply[If[#==0, {1,1,1}, {1,0,0}]&, \
+         Image[{{0, 1}, {1, 0}}]]]"
+      )
+      .unwrap(),
+      "3"
+    );
+  }
+
   // `Masking -> mask` restricts `f` to pixels the mask marks positive;
   // every other pixel passes through unchanged.
   #[test]
