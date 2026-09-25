@@ -64,7 +64,7 @@ fn sorted_probability_transform(data: &Expr, dist: &Expr) -> Option<Vec<f64>> {
     return None;
   };
   let mut u = Vec::with_capacity(items.len());
-  for item in items.iter() {
+  for item in items {
     let x = try_eval_to_f64(item)?;
     let f = cdf_ast(&[dist.clone(), num_to_expr(x)]).ok()?;
     u.push(try_eval_to_f64(&f)?);
@@ -128,8 +128,8 @@ fn kuiper_test(u: &[f64]) -> TestResult {
   let mut sum = 0.0;
   for k in 1..=200i64 {
     let kf = k as f64;
-    let term =
-      (4.0 * kf * kf * vstar * vstar - 1.0) * (-2.0 * kf * kf * vstar * vstar).exp();
+    let term = (4.0 * kf * kf * vstar * vstar - 1.0)
+      * (-2.0 * kf * kf * vstar * vstar).exp();
     sum += term;
     if term.abs() < 1e-17 {
       break;
@@ -154,11 +154,14 @@ fn ad_adinf(z: f64) -> f64 {
     (-1.2337141 / z).exp() / z.sqrt()
       * (2.00012
         + (0.247105
-          - (0.0649821 - (0.0347962 - (0.011672 - 0.00168691 * z) * z) * z) * z)
+          - (0.0649821 - (0.0347962 - (0.011672 - 0.00168691 * z) * z) * z)
+            * z)
           * z)
   } else {
     let poly = 1.0776
-      - (2.30695 - (0.43424 - (0.082433 - (0.008056 - 0.0003146 * z) * z) * z) * z) * z;
+      - (2.30695
+        - (0.43424 - (0.082433 - (0.008056 - 0.0003146 * z) * z) * z) * z)
+        * z;
     (-poly.exp()).exp()
   }
 }
@@ -166,7 +169,9 @@ fn ad_adinf(z: f64) -> f64 {
 fn ad_errfix(n: f64, x: f64) -> f64 {
   if x > 0.8 {
     return (-130.2137
-      + (745.2337 - (1705.091 - (1950.646 - (1116.360 - 255.7844 * x) * x) * x) * x) * x)
+      + (745.2337
+        - (1705.091 - (1950.646 - (1116.360 - 255.7844 * x) * x) * x) * x)
+        * x)
       / n;
   }
   let c = 0.01265 + 0.1757 / n;
@@ -176,8 +181,8 @@ fn ad_errfix(n: f64, x: f64) -> f64 {
     return t * (0.0037 / (n * n) + 0.00078 / n + 0.00006) / n;
   }
   let t = (x - c) / (0.8 - c);
-  let t =
-    -0.00022633 + (6.54034 - (14.6538 - (14.458 - (8.259 - 1.91864 * t) * t) * t) * t) * t;
+  let t = -0.00022633
+    + (6.54034 - (14.6538 - (14.458 - (8.259 - 1.91864 * t) * t) * t) * t) * t;
   t * (0.04213 + 0.01365 / n) / n
 }
 
@@ -307,11 +312,13 @@ fn pearson_chi_square_test(u: &[f64]) -> TestResult {
     })
     .sum();
   let df = (k - 1) as i128;
-  let p = cdf_ast(&[call1("ChiSquareDistribution", Expr::Integer(df)), num_to_expr(chi2)])
-    .ok()
-    .and_then(|e| try_eval_to_f64(&e))
-    .map(|f0| (1.0 - f0).clamp(0.0, 1.0))
-    .unwrap_or(f64::NAN);
+  let p = cdf_ast(&[
+    call1("ChiSquareDistribution", Expr::Integer(df)),
+    num_to_expr(chi2),
+  ])
+  .ok()
+  .and_then(|e| try_eval_to_f64(&e))
+  .map_or(f64::NAN, |f0| (1.0 - f0).clamp(0.0, 1.0));
   TestResult {
     statistic: chi2,
     p_value: p,
@@ -436,45 +443,39 @@ fn missing_not_available(prop: &str) -> Expr {
 /// tests in [`TEST_NAMES`].
 fn build_hypothesis_test_data(u: &[f64], dist: &Expr) -> Expr {
   let mut tests = Vec::with_capacity(TEST_NAMES.len());
-  for &name in TEST_NAMES.iter() {
+  for &name in &TEST_NAMES {
     if let Some(r) = run_test(name, u) {
       tests.push((
         Expr::String(name.to_string()),
-        Expr::Association(
-          vec![
-            (
-              Expr::String("TestStatistic".to_string()),
-              num_to_expr(r.statistic),
-            ),
-            (Expr::String("PValue".to_string()), num_to_expr(r.p_value)),
-          ]
-          .into(),
-        ),
+        Expr::Association(vec![
+          (
+            Expr::String("TestStatistic".to_string()),
+            num_to_expr(r.statistic),
+          ),
+          (Expr::String("PValue".to_string()), num_to_expr(r.p_value)),
+        ]),
       ));
     }
   }
-  Expr::Association(
-    vec![
-      (
-        Expr::String("FittedDistribution".to_string()),
-        dist.clone(),
+  Expr::Association(vec![
+    (Expr::String("FittedDistribution".to_string()), dist.clone()),
+    (
+      Expr::String("AllTests".to_string()),
+      Expr::List(
+        TEST_NAMES
+          .iter()
+          .map(|n| Expr::String(n.to_string()))
+          .collect(),
       ),
-      (
-        Expr::String("AllTests".to_string()),
-        Expr::List(
-          TEST_NAMES
-            .iter()
-            .map(|n| Expr::String(n.to_string()))
-            .collect(),
-        ),
-      ),
-      (Expr::String("Tests".to_string()), Expr::Association(tests)),
-    ]
-    .into(),
-  )
+    ),
+    (Expr::String("Tests".to_string()), Expr::Association(tests)),
+  ])
 }
 
-fn association_get<'a>(pairs: &'a [(Expr, Expr)], key: &str) -> Option<&'a Expr> {
+fn association_get<'a>(
+  pairs: &'a [(Expr, Expr)],
+  key: &str,
+) -> Option<&'a Expr> {
   pairs
     .iter()
     .find(|(k, _)| matches!(k, Expr::String(s) if s == key))
@@ -484,8 +485,12 @@ fn association_get<'a>(pairs: &'a [(Expr, Expr)], key: &str) -> Option<&'a Expr>
 /// The result of a single named test from within a `HypothesisTestData`
 /// association's `"Tests"` entry, defaulting to `"AndersonDarling"` — the
 /// generally most powerful of the six — when no test name is given.
-fn selected_test<'a>(assoc_pairs: &'a [(Expr, Expr)], test_name: Option<&str>) -> Option<&'a Expr> {
-  let Some(Expr::Association(tests)) = association_get(assoc_pairs, "Tests") else {
+fn selected_test<'a>(
+  assoc_pairs: &'a [(Expr, Expr)],
+  test_name: Option<&str>,
+) -> Option<&'a Expr> {
+  let Some(Expr::Association(tests)) = association_get(assoc_pairs, "Tests")
+  else {
     return None;
   };
   let name = test_name.unwrap_or("AndersonDarling");
@@ -535,7 +540,9 @@ pub fn apply_hypothesis_test_data(
         }
       }
     },
-    [Expr::String(prop), Expr::String(test_name)] if TEST_NAMES.contains(&test_name.as_str()) => {
+    [Expr::String(prop), Expr::String(test_name)]
+      if TEST_NAMES.contains(&test_name.as_str()) =>
+    {
       let test = selected_test(pairs, Some(test_name))?;
       match prop.as_str() {
         "TestDataTable" => {
@@ -558,7 +565,9 @@ pub fn apply_hypothesis_test_data(
 /// property]` — `property` may be `"HypothesisTestData"`, `"PValue"`,
 /// `"TestStatistic"`, one of [`TEST_NAMES`] (interpreted as that test's
 /// p-value), or omitted (defaults to `"PValue"`).
-pub fn distribution_fit_test_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+pub fn distribution_fit_test_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
   if args.len() < 2 || args.len() > 3 {
     return Ok(unevaluated("DistributionFitTest", args));
   }
@@ -591,13 +600,17 @@ pub fn distribution_fit_test_ast(args: &[Expr]) -> Result<Expr, InterpreterError
     }
     "PValue" | "TestStatistic" => {
       let test = selected_test(pairs, None).ok_or_else(|| {
-        InterpreterError::EvaluationError("DistributionFitTest: no test available".into())
+        InterpreterError::EvaluationError(
+          "DistributionFitTest: no test available".into(),
+        )
       })?;
       Ok(property_from_test(test, property).unwrap_or(assoc))
     }
     name if TEST_NAMES.contains(&name) => {
       let test = selected_test(pairs, Some(name)).ok_or_else(|| {
-        InterpreterError::EvaluationError("DistributionFitTest: unknown test".into())
+        InterpreterError::EvaluationError(
+          "DistributionFitTest: unknown test".into(),
+        )
       })?;
       Ok(property_from_test(test, "PValue").unwrap_or(assoc))
     }

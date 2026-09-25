@@ -1657,8 +1657,12 @@ pub fn apply_curried_call(
     Expr::FunctionCall {
       name,
       args: func_args,
-    } if name == "HypothesisTestData" && (args.len() == 1 || args.len() == 2) => {
-      match crate::functions::math_ast::apply_hypothesis_test_data(func_args, args) {
+    } if name == "HypothesisTestData"
+      && (args.len() == 1 || args.len() == 2) =>
+    {
+      match crate::functions::math_ast::apply_hypothesis_test_data(
+        func_args, args,
+      ) {
         Some(result) => Ok(result),
         None => Ok(Expr::CurriedCall {
           func: Box::new(func.clone()),

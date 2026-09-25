@@ -5045,9 +5045,10 @@ mod distribution_fit_test {
 
   #[test]
   fn bare_call_defaults_to_a_single_numeric_p_value() {
-    let result =
-      interpret("DistributionFitTest[{1., 2., 3., 4., 5.}, ExponentialDistribution[1/3]]")
-        .unwrap();
+    let result = interpret(
+      "DistributionFitTest[{1., 2., 3., 4., 5.}, ExponentialDistribution[1/3]]",
+    )
+    .unwrap();
     let p: f64 = result.parse().unwrap();
     assert!((0.0..=1.0).contains(&p), "expected a p-value, got {result}");
   }
