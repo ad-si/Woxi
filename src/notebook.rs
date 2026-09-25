@@ -1380,6 +1380,85 @@ fn push_juxtaposed(result: &mut String, piece: &str) {
   result.push_str(piece);
 }
 
+/// Does `s` (plain, already-flattened WL source) carry a bracket-depth-0
+/// assignment operator (`=`, `:=`, `+=`, `-=`, `*=`, `/=`, `^=`) — as
+/// opposed to a comparison (`==`, `<=`, `>=`, `!=`) or one nested inside a
+/// call/list/group? Used to decide whether a juxtaposed `RowBox` factor
+/// needs re-parenthesizing — see the call site in [`extract_rowbox_content`].
+fn has_top_level_assignment(s: &str) -> bool {
+  let chars: Vec<char> = s.chars().collect();
+  let mut depth = 0i32;
+  let mut in_string = false;
+  let mut prev_backslash = false;
+  let mut i = 0;
+  while i < chars.len() {
+    let c = chars[i];
+    if in_string {
+      if c == '"' && !prev_backslash {
+        in_string = false;
+      }
+      prev_backslash = c == '\\' && !prev_backslash;
+      i += 1;
+      continue;
+    }
+    match c {
+      '"' => in_string = true,
+      '{' | '[' | '(' => depth += 1,
+      '}' | ']' | ')' => depth -= 1,
+      '=' if depth == 0 => {
+        // `==` / `===` (Equal / SameQ): not an assignment.
+        if chars.get(i + 1) == Some(&'=') {
+          i += 2;
+          continue;
+        }
+        // `<=`, `>=`, `!=`: comparisons, not assignments.
+        if i > 0 && matches!(chars[i - 1], '<' | '>' | '!') {
+          i += 1;
+          continue;
+        }
+        // A bare `=` (Set), or the second character of `:=`, `+=`, `-=`,
+        // `*=`, `/=`, `^=` (SetDelayed / the AddTo family) — all bind
+        // looser than implicit multiplication.
+        return true;
+      }
+      _ => {}
+    }
+    i += 1;
+  }
+  false
+}
+
+/// Is `part` (one raw element of a `RowBox`'s child list, as split by
+/// [`split_top_level_commas`]) a token that carries no meaning of its own —
+/// display-only 2-D layout whitespace (`" "`, `\[IndentingNewLine]`)? A
+/// literal `"\n"` is deliberately *not* included: that's the distinct
+/// multi-statement-list convention (`BoxData[{stmt, "\n", stmt, …}]`, see
+/// [`extract_cell_content`]) marking a hard boundary between independent
+/// statements, not in-expression formatting.
+fn is_soft_whitespace_box_token(part: &str) -> bool {
+  let t = part.trim();
+  t == "\" \"" || t == "\"\\[IndentingNewLine]\""
+}
+
+/// Did a real (non-whitespace) sibling expression already appear before
+/// `parts[i]` in this row, with nothing but soft layout whitespace between
+/// them? Walks backward from `i`, skipping [`is_soft_whitespace_box_token`]
+/// entries; a literal `"\n"` multi-statement separator stops the walk
+/// (`false`) since it marks the start of a new, independent statement — see
+/// the call site in [`extract_rowbox_content`].
+fn has_real_predecessor(parts: &[String], i: usize) -> bool {
+  for part in parts[..i].iter().rev() {
+    let t = part.trim();
+    if t == "\"\\n\"" {
+      return false;
+    }
+    if !is_soft_whitespace_box_token(t) {
+      return true;
+    }
+  }
+  false
+}
+
 /// Collapse a `\[LeftDoubleBracket] … \[RightDoubleBracket]` pair back into
 /// `Part` syntax before the row is joined.
 ///
@@ -1525,6 +1604,31 @@ fn extract_rowbox_content(s: &str) -> String {
     // number is unambiguous either way (`2Product[…]` already reads back as
     // `2*Product[…]`, since digits can't extend into letters), so only a
     // trailing run that itself contains a letter is at risk.
+    //
+    // A nested `RowBox` juxtaposed this way onto a preceding factor is a
+    // *self-contained* box-tree node — 2-D layout encodes grouping through
+    // nesting itself, so the FrontEnd never needs a visible `(…)` around it
+    // even when its own top level carries an assignment (a Demonstrations
+    // idiom: two Module-body statements stacked on separate lines with a
+    // missing `;` between them, e.g. `While[…] \n\n vecLEN = Length[…]`,
+    // which the box tree still stores as `RowBox[{While[…]-box, …,
+    // vecLEN=…-box}]` — the assignment box is its own node regardless).
+    // Flattening that box to bare text and reparsing it loses the boundary
+    // nesting gave it: implicit multiplication binds *tighter* than `=`, so
+    // the reparsed text captures the wrong left-hand side (`Set[Times[
+    // While[…], vecLEN], Length[…]]`, which fails outright — `Times` is
+    // Protected) instead of `Times[While[…], Set[vecLEN, Length[…]]]`.
+    // Parenthesizing a nested box's own assignment restores the original
+    // grouping; the extra parens are always harmless for a factor that
+    // didn't need them.
+    let piece = if part.trim().starts_with("RowBox[")
+      && has_real_predecessor(&parts, i)
+      && has_top_level_assignment(&piece)
+    {
+      format!("({piece})")
+    } else {
+      piece
+    };
     push_juxtaposed(&mut result, &piece);
     i += 1;
   }
@@ -6903,5 +7007,59 @@ Cell[BoxData[RowBox[{"arrowHead", "=", RowBox[{"{", RowBox[{"Line", "[", RowBox[
       }
       CellEntry::Group(_) => panic!("Expected single cell"),
     }
+  }
+
+  #[test]
+  fn top_level_assignment_is_detected_past_bracket_depth() {
+    assert!(has_top_level_assignment("total=Length[list]"));
+    assert!(has_top_level_assignment("total:=Length[list]"));
+    assert!(has_top_level_assignment("total+=1"));
+    // A comparison, not an assignment.
+    assert!(!has_top_level_assignment("total==Length[list]"));
+    assert!(!has_top_level_assignment("total<=3"));
+    assert!(!has_top_level_assignment("total>=3"));
+    assert!(!has_top_level_assignment("total!=3"));
+    // An `=` nested inside a call/list is not at depth 0.
+    assert!(!has_top_level_assignment("f[total=1]"));
+    assert!(!has_top_level_assignment("{a==b}"));
+    assert!(!has_top_level_assignment("Length[list]"));
+  }
+
+  #[test]
+  fn juxtaposed_assignment_after_loop_keeps_its_own_grouping() {
+    // As part of a scheduled QA routine, Woxi Studio was tested against a
+    // randomly sampled Wolfram Demonstration notebook whose Initialization
+    // code had two Module-body statements — a loop, then an assignment —
+    // stacked on separate lines with the semicolon between them missing,
+    // so the box tree holds only whitespace (`\[IndentingNewLine]`)
+    // between the two `RowBox` siblings: `RowBox[{loop-box, …,
+    // assignment-box}]`. Real Wolfram's box tree keeps the assignment as
+    // its own self-contained node regardless — 2-D grouping is structural
+    // (nesting), not textual — so it evaluates as `Times[loop, Set[var,
+    // value]]`. Flattening the boxes to bare text without restoring that
+    // grouping let the `=` escape its own box and bind to the *outer*
+    // juxtaposition instead: the reparsed text read as `Set[Times[loop,
+    // var], value]`, which fails outright (`Times` is Protected), so the
+    // variable was never actually assigned — corrupting every later
+    // statement that depended on it. This is a self-authored,
+    // construct-equivalent example (an invented `Do`/`Length` loop, not
+    // the specific Demonstration's code or data, which is copyrighted).
+    let boxes = r#"RowBox[{RowBox[{"Do", "[", RowBox[{RowBox[{"n", "++"}], ",", RowBox[{"{", "3", "}"}]}], "]"}], "\[IndentingNewLine]", "\[IndentingNewLine]", RowBox[{"total", "=", RowBox[{"Length", "[", "list", "]"}]}]}]"#;
+    let expr_src =
+      box_source_to_expression(boxes).expect("box source must convert");
+    assert!(
+      expr_src.contains("(total=Length[list])"),
+      "the assignment must stay parenthesized as its own factor, got: \
+       {expr_src:?}"
+    );
+
+    let result =
+      crate::interpret(&format!("n=0; list={{1,2,3}}; {expr_src}; total"))
+        .expect("the reconstructed source must evaluate without error");
+    assert_eq!(
+      result, "3",
+      "the assignment must actually run (not fail as Set::write on a \
+       corrupted `Times[…]` target), got: {result:?} from {expr_src:?}"
+    );
   }
 }
