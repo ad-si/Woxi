@@ -736,6 +736,12 @@ fn try_pde_initial_condition_ord(
 enum PdeBc {
   Dirichlet(Expr),
   Neumann(Expr),
+  /// Both ends of the space domain tied together (`u[t, xmin] == u[t,
+  /// xmax]`), set at both `bc_lo` and `bc_hi` at once by
+  /// `try_pde_periodic_boundary`. Only the hyperbolic solver
+  /// (`compile_hyperbolic_boundary`) acts on this; the coupled-system
+  /// solver treats it like any other unrecognised shape and bails out.
+  Periodic,
 }
 
 /// Recognise `u[t, x0] == rhs(t)` (Dirichlet) or
@@ -772,6 +778,41 @@ fn try_pde_boundary_condition(
     return Some(ctor(lhs.clone()));
   }
   None
+}
+
+/// Recognise `u[t, x_min] == u[t, x_max]` (or reversed) — a periodic
+/// boundary tying both ends of the space domain together, rather than one
+/// end's value to a function of time. Unlike `try_pde_boundary_condition`,
+/// a single matching equation supplies both `bc_lo` and `bc_hi` at once, so
+/// this must be tried before that function: `u[t, x_max]` also happens to
+/// satisfy `try_pde_boundary_condition`'s shape at `x_min` (matching `u[t,
+/// x_min]`) with the *unevaluated* call `u[t, x_max]` as its "value", which
+/// silently consumes the equation as a bogus Dirichlet condition and leaves
+/// the other end unmatched.
+fn try_pde_periodic_boundary(
+  eq: &Expr,
+  u_name: &str,
+  t_name: &str,
+  x_min: f64,
+  x_max: f64,
+  swap: bool,
+) -> bool {
+  let Some((lhs, rhs)) = as_equal_pair(eq) else {
+    return false;
+  };
+  let at_end = |e: &Expr, x0: f64| -> bool {
+    let Some((dt, dx, t_arg, x_arg)) = match_pde_term_roles(e, u_name, swap)
+    else {
+      return false;
+    };
+    dt == 0
+      && dx == 0
+      && matches!(&t_arg, Expr::Identifier(n) if n == t_name)
+      && nval_to_f64(&x_arg)
+        .is_some_and(|v| (v - x0).abs() <= 1e-9 * x0.abs().max(1.0))
+  };
+  (at_end(lhs, x_min) && at_end(rhs, x_max))
+    || (at_end(lhs, x_max) && at_end(rhs, x_min))
 }
 
 /// Rewrite every unknown's occurrences in a PDE evolution right-hand side
@@ -1001,6 +1042,10 @@ enum PdeBoundaryFn {
   /// The grid point at this boundary is integrated like an interior point,
   /// using a ghost point built from `NumFn`'s flux value each step.
   Neumann(NumFn),
+  /// This end wraps around to the other end of the domain, which carries
+  /// the same value (`u[t, xmin] == u[t, xmax]`); only the hyperbolic
+  /// solver produces this.
+  Periodic,
 }
 
 /// Attempt to match and solve the coupled PDE system with `t_dom` as the
@@ -1337,6 +1382,9 @@ fn try_solve_pde_system(
         };
         PdeBoundaryFn::Neumann(NumFn::new(rewritten, &bc_rhs_vars))
       }
+      // The coupled-system solver doesn't attempt a periodic domain; only
+      // the hyperbolic solver (`compile_hyperbolic_boundary`) does.
+      PdeBc::Periodic => return Ok(None),
     };
     let bc_hi = match spec.bc_hi {
       PdeBc::Dirichlet(rhs) => PdeBoundaryFn::Dirichlet(NumFn::new(
@@ -1351,6 +1399,7 @@ fn try_solve_pde_system(
         };
         PdeBoundaryFn::Neumann(NumFn::new(rewritten, &bc_rhs_vars))
       }
+      PdeBc::Periodic => return Ok(None),
     };
     unknowns.push(PdeUnknown {
       coeff_fn,
@@ -1722,7 +1771,11 @@ fn ndsolve_pde_hyperbolic(
     other => vec![other.clone()],
   };
   let eq_items = flatten_chained_equalities(&eq_items);
-  if eq_items.len() != 5 {
+  // Normally 5: the evolution equation, both initial conditions, and one
+  // boundary condition per end. A periodic boundary (`u[t, xmin] == u[t,
+  // xmax]`) ties both ends together in a single equation, so that shape
+  // has only 4.
+  if eq_items.len() != 5 && eq_items.len() != 4 {
     return Ok(None);
   }
 
@@ -1831,6 +1884,40 @@ fn solve_tridiagonal(a: &[f64], b: &[f64], c: &[f64], d: &[f64]) -> Vec<f64> {
   x
 }
 
+/// Solve a periodic ("cyclic") tridiagonal system: like `solve_tridiagonal`,
+/// but row `n - 1`'s sub-diagonal wraps around to column `0` with
+/// coefficient `alpha`, and row `0`'s super-diagonal wraps around to
+/// column `n - 1` with coefficient `beta`. Uses the Sherman-Morrison trick
+/// (Numerical Recipes' "cyclic" routine): absorb the two corner entries
+/// into a rank-1 update of an ordinary tridiagonal system, solve that twice
+/// (once for the real right-hand side, once for the update vector), then
+/// combine the two solutions to cancel the update back out.
+fn solve_cyclic_tridiagonal(
+  a: &[f64],
+  b: &[f64],
+  c: &[f64],
+  d: &[f64],
+  alpha: f64,
+  beta: f64,
+) -> Vec<f64> {
+  let n = b.len();
+  if n == 1 {
+    return vec![d[0] / (b[0] + alpha + beta)];
+  }
+  let gamma = -b[0];
+  let mut b2 = b.to_vec();
+  b2[0] -= gamma;
+  b2[n - 1] -= alpha * beta / gamma;
+  let x = solve_tridiagonal(a, &b2, c, d);
+  let mut u = vec![0.0; n];
+  u[0] = gamma;
+  u[n - 1] = alpha;
+  let z = solve_tridiagonal(a, &b2, c, &u);
+  let fact =
+    (x[0] + beta * x[n - 1] / gamma) / (1.0 + z[0] + beta * z[n - 1] / gamma);
+  x.iter().zip(&z).map(|(xi, zi)| xi - fact * zi).collect()
+}
+
 /// One field's (`u`, `v`, or `w`) compiled boundary condition at one end
 /// of the space domain, mirroring `u`'s own condition kind: `v = D[u,t]`'s
 /// right-hand side is `u`'s own boundary value differentiated once with
@@ -1840,10 +1927,6 @@ struct HyperbolicBoundary {
   u: PdeBoundaryFn,
   v: PdeBoundaryFn,
   w: PdeBoundaryFn,
-  /// Whether this end's grid index is part of the integrated/solved
-  /// state (`true`, a Neumann boundary) or fixed each step from its own
-  /// `NumFn` (`false`, Dirichlet) — mirrors `ndsolve_pde`'s `free_lo`.
-  free: bool,
 }
 
 fn compile_hyperbolic_boundary(
@@ -1860,7 +1943,6 @@ fn compile_hyperbolic_boundary(
         u: PdeBoundaryFn::Dirichlet(NumFn::new(rhs, &t_vars)),
         v: PdeBoundaryFn::Dirichlet(NumFn::new(d1, &t_vars)),
         w: PdeBoundaryFn::Dirichlet(NumFn::new(d2, &t_vars)),
-        free: false,
       }))
     }
     PdeBc::Neumann(rhs) => {
@@ -1876,9 +1958,13 @@ fn compile_hyperbolic_boundary(
         u: PdeBoundaryFn::Neumann(NumFn::new(rhs, &t_vars)),
         v: PdeBoundaryFn::Neumann(NumFn::new(d1, &t_vars)),
         w: PdeBoundaryFn::Neumann(NumFn::new(d2, &t_vars)),
-        free: true,
       }))
     }
+    PdeBc::Periodic => Ok(Some(HyperbolicBoundary {
+      u: PdeBoundaryFn::Periodic,
+      v: PdeBoundaryFn::Periodic,
+      w: PdeBoundaryFn::Periodic,
+    })),
   }
 }
 
@@ -1905,6 +1991,12 @@ fn reconstruct_pde_profile(
   if let PdeBoundaryFn::Dirichlet(f) = bc_hi {
     full[n_x - 1] = f.eval(&[t])?;
   }
+  // A periodic domain's last grid point is never itself an integrated/free
+  // index (`free_hi` stops one short of it, at `n_x - 2`, to avoid solving
+  // for the same point twice) — it just mirrors the first.
+  if matches!(bc_lo, PdeBoundaryFn::Periodic) {
+    full[n_x - 1] = full[0];
+  }
   Ok(full)
 }
 
@@ -1924,7 +2016,18 @@ fn pde_space_derivs(
   t: f64,
 ) -> Result<(f64, f64), InterpreterError> {
   let n_x = full.len();
-  if gi == 0 {
+  if gi == 0 && matches!(bc_lo, PdeBoundaryFn::Periodic) {
+    // The periodic "ghost" below index 0 is the domain's other end, which
+    // `reconstruct_pde_profile` has already mirrored into `full[n_x - 1]`
+    // — but that's the *duplicate* of index 0 itself, so the true wrapped
+    // neighbor is one step further in, at `n_x - 2` (the last genuinely
+    // free/solved index).
+    let lo = full[n_x - 2];
+    Ok((
+      (full[1] - lo) / (2.0 * dx),
+      (full[1] - 2.0 * full[0] + lo) / (dx * dx),
+    ))
+  } else if gi == 0 {
     let PdeBoundaryFn::Neumann(f) = bc_lo else {
       unreachable!("a Dirichlet lo boundary is never a free index")
     };
@@ -1998,6 +2101,21 @@ fn try_solve_hyperbolic_pde(
       )
     {
       ic_vel = Some(rhs);
+      continue;
+    }
+    if bc_lo.is_none()
+      && bc_hi.is_none()
+      && try_pde_periodic_boundary(
+        eq,
+        u_name,
+        &t_dom.name,
+        x_dom.min,
+        x_dom.max,
+        swap,
+      )
+    {
+      bc_lo = Some(PdeBc::Periodic);
+      bc_hi = Some(PdeBc::Periodic);
       continue;
     }
     if bc_lo.is_none()
@@ -2085,8 +2203,17 @@ fn try_solve_hyperbolic_pde(
   let dx = (x_dom.max - x_dom.min) / (N_X - 1) as f64;
   let xs: Vec<f64> = (0..N_X).map(|i| x_dom.min + i as f64 * dx).collect();
 
-  let free_lo = usize::from(!bnd_lo.free);
-  let free_hi = if bnd_hi.free { N_X - 1 } else { N_X - 2 };
+  // A periodic domain's last grid point duplicates the first (see
+  // `reconstruct_pde_profile`), so it's excluded from the free/solved
+  // range just like a Dirichlet boundary, even though it isn't fixed from
+  // an external `NumFn` the way a Dirichlet point is.
+  let free_lo = usize::from(matches!(bnd_lo.u, PdeBoundaryFn::Dirichlet(_)));
+  let free_hi = if matches!(bnd_hi.u, PdeBoundaryFn::Neumann(_)) {
+    N_X - 1
+  } else {
+    N_X - 2
+  };
+  let periodic = matches!(bnd_lo.u, PdeBoundaryFn::Periodic);
   let free_len = free_hi + 1 - free_lo;
   let total_len = 2 * free_len;
 
@@ -2141,8 +2268,14 @@ fn try_solve_hyperbolic_pde(
     let mut b = vec![0.0; free_len];
     let mut c = vec![0.0; free_len];
     let mut d = vec![0.0; free_len];
+    // For a periodic domain, row 0's "lower" coupling and the last free
+    // row's "upper" coupling don't land on `a`/`c` at all — they wrap
+    // around to the *other* end of the array, which `solve_cyclic_tridiagonal`
+    // takes as separate corner coefficients instead.
+    let mut corner_lo = 0.0;
+    let mut corner_hi = 0.0;
     for (k, gi) in (free_lo..=free_hi).enumerate() {
-      if gi == 0 {
+      if gi == 0 && !periodic {
         let PdeBoundaryFn::Neumann(f) = &bnd_lo.w else {
           unreachable!("a Dirichlet lo boundary is never a free index")
         };
@@ -2150,7 +2283,7 @@ fn try_solve_hyperbolic_pde(
         b[k] = (1.0 - c0[gi]) + 2.0 * c2[gi] / (dx * dx);
         c[k] = -2.0 * c2[gi] / (dx * dx);
         d[k] = explicit[gi] + c1[gi] * flux - 2.0 * c2[gi] * flux / dx;
-      } else if gi == N_X - 1 {
+      } else if gi == N_X - 1 && !periodic {
         let PdeBoundaryFn::Neumann(f) = &bnd_hi.w else {
           unreachable!("a Dirichlet hi boundary is never a free index")
         };
@@ -2168,16 +2301,20 @@ fn try_solve_hyperbolic_pde(
             unreachable!("gi == free_lo > 0 means the lo boundary is Dirichlet")
           };
           di -= ai * f.eval(&[t])?;
+        } else if gi == 0 && periodic {
+          corner_lo = ai;
         } else {
           a[k] = ai;
         }
-        if gi == free_hi && free_hi < N_X - 1 {
+        if gi == free_hi && free_hi < N_X - 1 && !periodic {
           let PdeBoundaryFn::Dirichlet(f) = &bnd_hi.w else {
             unreachable!(
               "gi == free_hi < N_X - 1 means the hi boundary is Dirichlet"
             )
           };
           di -= ci * f.eval(&[t])?;
+        } else if gi == free_hi && periodic {
+          corner_hi = ci;
         } else {
           c[k] = ci;
         }
@@ -2185,7 +2322,11 @@ fn try_solve_hyperbolic_pde(
         d[k] = di;
       }
     }
-    let w_free = solve_tridiagonal(&a, &b, &c, &d);
+    let w_free = if periodic {
+      solve_cyclic_tridiagonal(&a, &b, &c, &d, corner_hi, corner_lo)
+    } else {
+      solve_tridiagonal(&a, &b, &c, &d)
+    };
 
     let mut out = vec![0.0; total_len];
     for (k, gi) in (free_lo..=free_hi).enumerate() {
@@ -9928,4 +10069,48 @@ fn dsolve_linear_system(
     .collect();
 
   Ok(Expr::List(vec![Expr::List(rules.into())].into()))
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  /// A hand-built 4x4 periodic tridiagonal system whose two corners
+  /// (`alpha` at the bottom-left, `beta` at the top-right — see
+  /// `solve_cyclic_tridiagonal`'s doc comment) are different values,
+  /// instead of the coincidentally-zero, symmetric corners every PDE
+  /// integration test exercises this solver through. A caller that swaps
+  /// `alpha`/`beta` (as `try_solve_hyperbolic_pde`'s call site did — see
+  /// PR #960's review) transposes the solved matrix's two corners; with
+  /// `alpha == beta` that transposition is invisible, so it takes a
+  /// genuinely asymmetric system like this one to catch it. Verified by
+  /// reconstructing the dense matrix and checking `A x == d` directly,
+  /// independent of `solve_cyclic_tridiagonal`'s own algorithm.
+  #[test]
+  fn cyclic_tridiagonal_solves_the_periodic_system_with_asymmetric_corners() {
+    let a = [0.0, 1.0, 1.0, 1.0];
+    let b = [4.0, 4.0, 4.0, 4.0];
+    let c = [1.0, 1.0, 1.0, 0.0];
+    let alpha = 2.0; // bottom-left corner: A[3][0]
+    let beta = 3.0; // top-right corner: A[0][3]
+    let d = [10.0, 11.0, 12.0, 13.0];
+
+    let x = solve_cyclic_tridiagonal(&a, &b, &c, &d, alpha, beta);
+
+    let n = 4;
+    let dense = [
+      [b[0], c[0], 0.0, beta],
+      [a[1], b[1], c[1], 0.0],
+      [0.0, a[2], b[2], c[2]],
+      [alpha, 0.0, a[3], b[3]],
+    ];
+    for i in 0..n {
+      let row_dot: f64 = (0..n).map(|j| dense[i][j] * x[j]).sum();
+      assert!(
+        (row_dot - d[i]).abs() < 1e-9,
+        "row {i}: A x = {row_dot}, expected {}",
+        d[i]
+      );
+    }
+  }
 }
