@@ -4918,6 +4918,135 @@ mod location_test {
   }
 }
 
+// `DistributionFitTest` / `HypothesisTestData`: goodness-of-fit testing of
+// data against a fully specified continuous distribution (no parameters
+// estimated inside the test itself). See
+// `src/functions/math_ast/distribution_fit_test.rs` for the six supported
+// tests and the literature each one's asymptotic p-value algorithm comes
+// from.
+mod distribution_fit_test {
+  use super::*;
+
+  const ALL_TESTS: [&str; 6] = [
+    "AndersonDarling",
+    "CramerVonMises",
+    "KolmogorovSmirnov",
+    "Kuiper",
+    "PearsonChiSquare",
+    "WatsonUSquare",
+  ];
+
+  #[test]
+  fn all_tests_lists_the_six_supported_tests() {
+    assert_eq!(
+      interpret(
+        "DistributionFitTest[{1., 2., 3., 4., 5.}, \
+         ExponentialDistribution[1/3], \"AllTests\"]"
+      )
+      .unwrap(),
+      "{AndersonDarling, CramerVonMises, KolmogorovSmirnov, Kuiper, \
+       PearsonChiSquare, WatsonUSquare}"
+    );
+  }
+
+  #[test]
+  fn fitted_distribution_returns_the_given_distribution() {
+    assert_eq!(
+      interpret(
+        "h = DistributionFitTest[{1., 2., 3., 4., 5.}, \
+         ExponentialDistribution[1/3], \"HypothesisTestData\"]; \
+         h[\"FittedDistribution\"]"
+      )
+      .unwrap(),
+      "ExponentialDistribution[1/3]"
+    );
+  }
+
+  #[test]
+  fn unknown_property_is_missing() {
+    assert_eq!(
+      interpret(
+        "h = DistributionFitTest[{1., 2., 3., 4., 5.}, \
+         ExponentialDistribution[1/3], \"HypothesisTestData\"]; \
+         h[\"NotAProperty\"]"
+      )
+      .unwrap(),
+      "Missing[NotAvailable, NotAProperty]"
+    );
+  }
+
+  #[test]
+  fn every_test_reports_a_p_value_in_the_unit_interval() {
+    for test in ALL_TESTS {
+      let code = format!(
+        "DistributionFitTest[{{1., 2., 3., 4., 5., 6., 7.}}, \
+         ExponentialDistribution[1/4], \"{test}\"]"
+      );
+      let result = interpret(&code).unwrap();
+      let p: f64 = result.parse().unwrap_or_else(|_| {
+        panic!("{test}: expected a numeric p-value, got {result}")
+      });
+      assert!(
+        (0.0..=1.0).contains(&p),
+        "{test}: p-value {p} must be in [0, 1]"
+      );
+    }
+  }
+
+  #[test]
+  fn test_data_table_names_its_row_after_the_test() {
+    let result = interpret(
+      "h = DistributionFitTest[{1., 2., 3., 4., 5.}, \
+       ExponentialDistribution[1/3], \"HypothesisTestData\"]; \
+       h[\"TestDataTable\", \"KolmogorovSmirnov\"]",
+    )
+    .unwrap();
+    assert!(
+      result.contains("KolmogorovSmirnov") && result.contains("Grid"),
+      "expected a Grid mentioning the test name, got {result}"
+    );
+  }
+
+  /// A sample built from `ExponentialDistribution[1]`'s own inverse CDF at
+  /// evenly spread plotting positions is, by construction, about as close a
+  /// fit as a finite sample can be; a sample clustered far out in the
+  /// distribution's tail is about as poor a fit as one can be. Every test's
+  /// p-value must rank the former well above the latter, regardless of the
+  /// exact asymptotic approximation used for each one.
+  #[test]
+  fn good_fit_scores_higher_than_bad_fit_on_every_test() {
+    let good = "Table[-Log[1 - (i - 0.5)/8], {i, 1, 8}]";
+    let bad = "{5.0, 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7}";
+    for test in ALL_TESTS {
+      let good_p: f64 = interpret(&format!(
+        "DistributionFitTest[{good}, ExponentialDistribution[1], \"{test}\"]"
+      ))
+      .unwrap()
+      .parse()
+      .unwrap_or_else(|_| panic!("{test}: good-fit p-value must be numeric"));
+      let bad_p: f64 = interpret(&format!(
+        "DistributionFitTest[{bad}, ExponentialDistribution[1], \"{test}\"]"
+      ))
+      .unwrap()
+      .parse()
+      .unwrap_or_else(|_| panic!("{test}: bad-fit p-value must be numeric"));
+      assert!(
+        good_p > bad_p,
+        "{test}: good fit ({good_p}) should score above bad fit ({bad_p})"
+      );
+    }
+  }
+
+  #[test]
+  fn bare_call_defaults_to_a_single_numeric_p_value() {
+    let result =
+      interpret("DistributionFitTest[{1., 2., 3., 4., 5.}, ExponentialDistribution[1/3]]")
+        .unwrap();
+    let p: f64 = result.parse().unwrap();
+    assert!((0.0..=1.0).contains(&p), "expected a p-value, got {result}");
+  }
+}
+
 mod hypothesis_testing_legacy_package {
   use super::*;
 

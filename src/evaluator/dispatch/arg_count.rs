@@ -866,6 +866,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "ListQ" => Some((1, 1)),
     "ListZTransform" => Some((2, 3)),
     "LocationTest" => Some((1, 3)),
+    "DistributionFitTest" => Some((2, 3)),
     "Log" => Some((1, 2)),
     "LogGamma" => Some((1, 1)),
     "LogicalExpand" => Some((1, 1)),
