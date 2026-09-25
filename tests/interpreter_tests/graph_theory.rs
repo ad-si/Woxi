@@ -1677,6 +1677,66 @@ mod graph_rendering {
     );
   }
 
+  /// Regression: a `PlotLabel` carrying structure (`Subscript[…]`) must
+  /// still typeset once wrapped in the default bold `Style[…]` — the label
+  /// was previously flattened to its OutputForm text (`"Subscript[I, 4]"`)
+  /// before being re-wrapped, so it rendered as that literal string instead
+  /// of `I₄`. Found via the "Dihedral Group of the Square" Wolfram
+  /// Demonstration, whose `polygon` helper labels each vertex diagram with
+  /// `Subscript[Style["I", Italic], 4]`-shaped titles.
+  #[test]
+  fn graph_plot_label_subscript_typesets() {
+    let svg = interpret(
+      "ExportString[Graph[{1 <-> 2}, PlotLabel -> Subscript[Style[\"I\", Italic], 4]], \"SVG\"]"
+    )
+    .unwrap();
+    assert!(svg.contains(">I\u{2084}<"), "SVG: {svg}");
+    assert!(
+      !svg.contains("Subscript["),
+      "label should not leak its literal head name: {svg}"
+    );
+  }
+
+  /// Regression: `GraphPlot`'s legacy `VertexLabeling -> True` option
+  /// (distinct from `Graph`'s `VertexLabels -> "Name"`) was silently
+  /// ignored, so no vertex labels were drawn at all.
+  #[test]
+  fn graph_plot_vertex_labeling_true_shows_names() {
+    let svg = interpret(
+      "ExportString[GraphPlot[{1 -> 2}, VertexLabeling -> True], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains(">1<"), "SVG: {svg}");
+    assert!(svg.contains(">2<"), "SVG: {svg}");
+  }
+
+  /// `VertexLabeling -> False` (the default) must keep drawing no labels.
+  #[test]
+  fn graph_plot_vertex_labeling_false_shows_no_names() {
+    let svg = interpret(
+      "ExportString[GraphPlot[{1 -> 2}, VertexLabeling -> False], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(!svg.contains("<text"), "SVG should have no <text>: {svg}");
+  }
+
+  /// A structured vertex name (`Subscript[x, 1]`) shown via
+  /// `VertexLabeling -> True` must typeset the same way a `PlotLabel` does,
+  /// rather than printing the vertex's literal head name.
+  #[test]
+  fn graph_plot_vertex_labeling_typesets_subscript_names() {
+    let svg = interpret(
+      "ExportString[GraphPlot[{Subscript[x, 1] -> Subscript[x, 2]}, VertexLabeling -> True], \"SVG\"]"
+    )
+    .unwrap();
+    assert!(svg.contains(">x\u{2081}<"), "SVG: {svg}");
+    assert!(svg.contains(">x\u{2082}<"), "SVG: {svg}");
+    assert!(
+      !svg.contains("Subscript["),
+      "vertex label should not leak its literal head name: {svg}"
+    );
+  }
+
   #[test]
   fn graph_preserves_vertex_list() {
     assert_eq!(
