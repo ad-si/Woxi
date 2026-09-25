@@ -193,11 +193,13 @@ fn build_render_graph(
 /// restores to from `Uncompress[Compress[graph]]`, as opposed to the public
 /// `Graph[verts, {UndirectedEdge[…] | DirectedEdge[…], …}, opts]` a user
 /// types — stores its edges as `{directedPairs, undirectedPairs}`, each
-/// side either a list of 1-based index pairs into `verts` or `Null` when
-/// that side is empty. `raw_edges` is `args[1]`'s items; `None` when they
-/// don't match this shape (an ordinary edge-object list already parses
-/// fine as-is).
-fn normalize_internal_edge_list(
+/// side either a list of 1-based index pairs into `verts`, a `SparseArray`
+/// adjacency matrix (the form a `NetworkGraphics` box caches, e.g. when a
+/// Demonstration pastes `GraphData[…]`'s output literally instead of
+/// calling it live), or `Null` when that side is empty. `raw_edges` is
+/// `args[1]`'s items; `None` when they don't match either shape (an
+/// ordinary edge-object list already parses fine as-is).
+pub(crate) fn normalize_internal_edge_list(
   vertices: &[Expr],
   raw_edges: &[Expr],
 ) -> Option<Vec<Expr>> {
@@ -211,10 +213,11 @@ fn normalize_internal_edge_list(
 }
 
 /// One side of the internal edge encoding `normalize_internal_edge_list`
-/// reads: `Null` (no edges of this kind) or a list of 1-based `{i, j}`
-/// index pairs into `vertices`, appended to `out` as `DirectedEdge`/
-/// `UndirectedEdge` objects. `None` if `part` is neither — the caller then
-/// knows this isn't the internal encoding at all.
+/// reads: `Null` (no edges of this kind), a list of 1-based `{i, j}` index
+/// pairs into `vertices`, or a `SparseArray` adjacency matrix — appended to
+/// `out` as `DirectedEdge`/`UndirectedEdge` objects. `None` if `part` is
+/// none of those — the caller then knows this isn't the internal encoding
+/// at all.
 fn push_internal_index_edges(
   part: &Expr,
   vertices: &[Expr],
@@ -235,19 +238,139 @@ fn push_internal_index_edges(
         if i == 0 || j == 0 || i > vertices.len() || j > vertices.len() {
           return None;
         }
-        let head = if directed {
-          "DirectedEdge"
-        } else {
-          "UndirectedEdge"
-        };
-        out.push(call(
-          head,
-          vec![vertices[i - 1].clone(), vertices[j - 1].clone()],
-        ));
+        push_index_edge(vertices, i, j, directed, out);
+      }
+      Some(())
+    }
+    Expr::FunctionCall { name, args } if name == "SparseArray" => {
+      let pairs = decode_sparse_adjacency_pairs(args, vertices.len())?;
+      if directed {
+        for (i, j) in pairs {
+          push_index_edge(vertices, i, j, true, out);
+        }
+      } else {
+        // The matrix is symmetric for an undirected side, so each edge
+        // shows up twice (once from each endpoint's row) — keep only the
+        // upper triangle to avoid emitting it twice.
+        let mut seen = std::collections::HashSet::new();
+        for (i, j) in pairs {
+          if i == j {
+            continue;
+          }
+          let key = (i.min(j), i.max(j));
+          if seen.insert(key) {
+            push_index_edge(vertices, key.0, key.1, false, out);
+          }
+        }
       }
       Some(())
     }
     _ => None,
+  }
+}
+
+fn push_index_edge(
+  vertices: &[Expr],
+  i: usize,
+  j: usize,
+  directed: bool,
+  out: &mut Vec<Expr>,
+) {
+  let head = if directed {
+    "DirectedEdge"
+  } else {
+    "UndirectedEdge"
+  };
+  out.push(call(
+    head,
+    vec![vertices[i - 1].clone(), vertices[j - 1].clone()],
+  ));
+}
+
+/// Decodes a `SparseArray`'s internal compressed-row form — as cached in a
+/// `NetworkGraphics` box for a graph's adjacency matrix — into 1-based
+/// `(row, column)` index pairs, one per stored (nonzero) entry. The literal
+/// looks like `SparseArray[Automatic, {n, n}, background, {1, {rowPointers,
+/// columnIndices}, values}]`, where `rowPointers` has `n + 1` entries (row
+/// `i`'s stored entries are `columnIndices[rowPointers[i] .. rowPointers[i
+/// + 1]]`, 0-based) and each `columnIndices` entry is a singleton `{j}`.
+/// The actual stored values don't matter for an adjacency matrix (every
+/// stored entry just marks an edge), so `values` is ignored. `None` if
+/// `args` doesn't match that shape.
+fn decode_sparse_adjacency_pairs(
+  args: &[Expr],
+  n: usize,
+) -> Option<Vec<(usize, usize)>> {
+  let [_pattern, _dims, _background, data] = args else {
+    return None;
+  };
+  let Expr::List(data) = data else {
+    return None;
+  };
+  let [_version, row_col, ..] = data.as_slice() else {
+    return None;
+  };
+  let Expr::List(row_col) = row_col else {
+    return None;
+  };
+  let [Expr::List(row_ptr), Expr::List(col_idx)] = row_col.as_slice() else {
+    return None;
+  };
+  let row_ptr: Vec<usize> = row_ptr
+    .iter()
+    .map(|e| match e {
+      Expr::Integer(i) if *i >= 0 => Some(*i as usize),
+      _ => None,
+    })
+    .collect::<Option<_>>()?;
+  if row_ptr.len() != n + 1 {
+    return None;
+  }
+  let mut pairs = Vec::new();
+  for i in 0..n {
+    let (start, end) = (row_ptr[i], row_ptr[i + 1]);
+    if start > end || end > col_idx.len() {
+      return None;
+    }
+    for entry in &col_idx[start..end] {
+      let Expr::List(one) = entry else {
+        return None;
+      };
+      let [Expr::Integer(j)] = one.as_slice() else {
+        return None;
+      };
+      let j = *j;
+      if j <= 0 || j as usize > n {
+        return None;
+      }
+      pairs.push((i + 1, j as usize));
+    }
+  }
+  Some(pairs)
+}
+
+/// Splits a `GraphUnion`/`GraphIntersection`/`GraphDisjointUnion`-style
+/// argument list into its leading `Graph[vertices, edges, …]` operands and
+/// the trailing option rules that configure the *result* (e.g. `GraphLayout
+/// -> "CircularEmbedding"`), matching wolframscript's `f[g1, g2, …, opts]`
+/// shape. `None` if fewer than `min` leading arguments are graphs.
+pub(crate) fn split_graph_operands(
+  args: &[Expr],
+  min: usize,
+) -> Option<(&[Expr], &[Expr])> {
+  let split = args
+    .iter()
+    .position(|a| {
+      !matches!(a, Expr::FunctionCall { name: gn, args: ga }
+        if gn == "Graph" && ga.len() >= 2
+          && matches!(&ga[0], Expr::List(_))
+          && matches!(&ga[1], Expr::List(_)))
+    })
+    .unwrap_or(args.len());
+  if split < min {
+    None
+  } else {
+    Some((&args[..split], &args[split..]))
   }
 }
 

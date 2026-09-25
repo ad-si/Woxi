@@ -7964,10 +7964,10 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             || !fl.right.is_empty()
           {
             frame_label = Some((
-              svg_escape(&fl.bottom),
-              svg_escape(&fl.left),
-              svg_escape(&fl.top),
-              svg_escape(&fl.right),
+              box_string_to_svg(&fl.bottom),
+              box_string_to_svg(&fl.left),
+              box_string_to_svg(&fl.top),
+              box_string_to_svg(&fl.right),
             ));
           }
         }
@@ -12248,6 +12248,39 @@ pub fn wraps_rendered_graphic(content: &Expr) -> bool {
   }
 }
 
+/// Whether a plot's own shape still needs pinning down with an explicit
+/// `AspectRatio` rule, or whether `opts` already fixes it — an explicit
+/// `AspectRatio`, or a two-element `ImageSize -> {w, h}` that pins both
+/// dimensions.
+pub(crate) fn plot_options_need_aspect_ratio(opts: &[Expr]) -> bool {
+  let has_aspect_ratio = opts.iter().any(|o| {
+    matches!(o, Expr::Rule { pattern, .. } if option_name(pattern) == Some("AspectRatio"))
+  });
+  let has_fixed_image_size = opts.iter().any(|o| {
+    matches!(o, Expr::Rule { pattern, replacement }
+      if option_name(pattern) == Some("ImageSize")
+        && matches!(replacement.as_ref(), Expr::List(v) if v.len() == 2))
+  });
+  !has_aspect_ratio && !has_fixed_image_size
+}
+
+/// The height/width ratio a plot rendered at `image_size` should be pinned
+/// to when its shape needs preserving outside its own renderer — e.g. when
+/// `Show` merges it with other graphics, or a structural `ReplaceAll`
+/// rebuilds it into a plain `Graphics[...]` call. `Plot`/`ListPlot` picks
+/// its height from `ImageSize` directly rather than storing an
+/// `AspectRatio` option, so callers that need the shape after the fact
+/// fall back to this. Falls back to the classic 1/GoldenRatio default when
+/// the recorded size is missing or invalid.
+pub(crate) fn plot_source_aspect_ratio(image_size: (u32, u32)) -> f64 {
+  let ratio = image_size.1 as f64 / image_size.0 as f64;
+  if ratio.is_finite() && ratio > 0.0 {
+    ratio
+  } else {
+    1.0 / 1.618_033_988_749_895
+  }
+}
+
 /// The drawing primitives a rendered plot's sampled series stand for —
 /// filled regions, the series colour and thickness, and the `Line` /
 /// `Point` the samples make up. `Show` merges these with the primitives of
@@ -12736,24 +12769,17 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           replacement: Box::new(bool_expr(true)),
         });
       }
-      // An `ImageSize -> {w, h}` already fixes the height, so the plot
-      // aspect must not be filled in over it.
-      let sized_both_ways = merged_options.iter().any(|o| {
-        matches!(o, Expr::Rule { pattern, replacement }
-          if option_name(pattern) == Some("ImageSize")
-            && matches!(replacement.as_ref(), Expr::List(v) if v.len() == 2))
-      });
-      if !has_option(&merged_options, "AspectRatio") && !sized_both_ways {
-        // The shape the leading plot drew itself in. `Plot`/`ListPlot`
-        // default to 1/GoldenRatio, but `ParametricPlot` and friends
-        // default to `AspectRatio -> Automatic` and size themselves from
-        // the data, so a circle stays a circle once `Show` layers other
-        // graphics on top of one.
+      // The shape the leading plot drew itself in, unless the options
+      // already fix it. `Plot`/`ListPlot` default to 1/GoldenRatio, but
+      // `ParametricPlot` and friends default to `AspectRatio -> Automatic`
+      // and size themselves from the data, so a circle stays a circle once
+      // `Show` layers other graphics on top of one.
+      if plot_options_need_aspect_ratio(&merged_options) {
         let aspect = plot_sources
           .first()
-          .map(|ps| ps.image_size.1 as f64 / ps.image_size.0 as f64)
-          .filter(|r| r.is_finite() && *r > 0.0)
-          .unwrap_or(1.0 / 1.618_033_988_749_895);
+          .map_or(1.0 / 1.618_033_988_749_895, |ps| {
+            plot_source_aspect_ratio(ps.image_size)
+          });
         merged_options.push(Expr::Rule {
           pattern: Box::new(id_expr("AspectRatio")),
           replacement: Box::new(Expr::Real(aspect)),
@@ -22653,7 +22679,17 @@ fn manipulate_value_to_input_form(expr: &Expr) -> String {
 /// falls back to a full evaluation for exactly this reason). Each element
 /// gets the same fallback here so a `Slider2D` corner point resolves a
 /// symbolic bound the way a plain slider's `min`/`max` already does.
+///
+/// A corner point may equally name *another control's* variable declared
+/// later in the same Manipulate (`{{p, {0.2, 0.2}, ""}, {0, 0}, {a, b},
+/// ControlType -> Slider2D}`, with `a`/`b` themselves plain sliders) — the
+/// held-echo pass wraps such a bound in `Dynamic[…]` before this ever runs
+/// (see `process_manipulate_var_spec`), so the whole corner point must be
+/// unwrapped the same way a scalar bound already is, or it fails to match
+/// `Expr::List` below and the caller's `?` on the resulting `None` drops
+/// the entire control from the panel instead of just widening it.
 fn list2_f64(e: &Expr) -> Option<(f64, f64)> {
+  let (e, _) = manipulate_bound_expr(e);
   match e {
     Expr::List(l) if l.len() == 2 => {
       let a = eval_manipulate_bound(&l[0])?.0;

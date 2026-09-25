@@ -2099,7 +2099,7 @@ fn try_symbol_replace_all(
           .unwrap_or_else(|| left.as_ref().clone());
         let new_right = try_symbol_replace_all(right, pattern_sym, replacement)
           .unwrap_or_else(|| right.as_ref().clone());
-        let power = |head: Expr| call("Power", vec![head, Expr::Integer(-1)]);
+        let power = |head: Expr| pow(head, Expr::Integer(-1));
         return Some(if pattern_sym == "Times" {
           build_with_head(vec![new_left, power(new_right)], replacement)
         } else {
@@ -2770,15 +2770,40 @@ pub fn apply_replace_all_ast(
     // cannot quietly turn a plot into a bag of primitives.
     let symbolic = match (structure, source) {
       (Some(s), _) => Some(s.as_ref().clone()),
-      (None, Some(source)) => Some(Expr::FunctionCall {
-        name: if *is_3d { "Graphics3D" } else { "Graphics" }.to_string(),
-        args: std::iter::once(Expr::List(
-          crate::functions::graphics::plot_source_primitives(source).into(),
-        ))
-        .chain(source.options.iter().cloned())
-        .collect::<Vec<_>>()
-        .into(),
-      }),
+      (None, Some(source)) => {
+        // `Plot`'s own renderer picks the height from `image_size` directly
+        // (golden-ratio default or an explicit `AspectRatio`/`ImageSize ->
+        // {w, h}`) rather than storing an `AspectRatio` rule in
+        // `source.options`. Rebuilding a plain `Graphics[primitives, …]`
+        // call from that data loses that shape: the generic renderer falls
+        // back to fitting the primitives' own bounding box, which an
+        // `Arrow` primitive (an idiom like `plot /. Line -> Arrow` for
+        // flow-direction markers) can throw wildly off. Pin the aspect the
+        // original plot actually rendered at unless the options already
+        // fix it.
+        let mut opts: Vec<Expr> = source.options.clone();
+        if crate::functions::graphics::plot_options_need_aspect_ratio(
+          &source.options,
+        ) {
+          opts.push(Expr::Rule {
+            pattern: Box::new(Expr::Identifier("AspectRatio".to_string())),
+            replacement: Box::new(Expr::Real(
+              crate::functions::graphics::plot_source_aspect_ratio(
+                source.image_size,
+              ),
+            )),
+          });
+        }
+        Some(Expr::FunctionCall {
+          name: if *is_3d { "Graphics3D" } else { "Graphics" }.to_string(),
+          args: std::iter::once(Expr::List(
+            crate::functions::graphics::plot_source_primitives(source).into(),
+          ))
+          .chain(opts)
+          .collect::<Vec<_>>()
+          .into(),
+        })
+      }
       (None, None) => None,
     };
     if let Some(symbolic) = symbolic {
@@ -5191,43 +5216,44 @@ pub fn get_expr_head(expr: &Expr) -> String {
   if crate::functions::predicate_ast::is_directed_infinity(expr) {
     return "DirectedInfinity".to_string();
   }
-  match expr {
-    Expr::Integer(_) | Expr::BigInteger(_) => "Integer".to_string(),
-    Expr::Real(_) | Expr::BigFloat(_, _) => "Real".to_string(),
-    Expr::String(_) => "String".to_string(),
-    Expr::List(_) => "List".to_string(),
-    Expr::FunctionCall { name, .. } => name.clone(),
-    Expr::Association(_) => "Association".to_string(),
+  let result = match expr {
+    Expr::Integer(_) | Expr::BigInteger(_) => "Integer",
+    Expr::Real(_) | Expr::BigFloat(_, _) => "Real",
+    Expr::String(_) => "String",
+    Expr::List(_) => "List",
+    Expr::FunctionCall { name, .. } => name.as_str(),
+    Expr::Association(_) => "Association",
     Expr::BinaryOp { op, .. } => match op {
-      BinaryOperator::Plus | BinaryOperator::Minus => "Plus".to_string(),
-      BinaryOperator::Times => "Times".to_string(),
-      BinaryOperator::Divide => "Times".to_string(),
-      BinaryOperator::Power => "Power".to_string(),
-      BinaryOperator::And => "And".to_string(),
-      BinaryOperator::Or => "Or".to_string(),
-      BinaryOperator::StringJoin => "StringJoin".to_string(),
-      BinaryOperator::Alternatives => "Alternatives".to_string(),
+      BinaryOperator::Plus | BinaryOperator::Minus => "Plus",
+      BinaryOperator::Times => "Times",
+      BinaryOperator::Divide => "Times",
+      BinaryOperator::Power => "Power",
+      BinaryOperator::And => "And",
+      BinaryOperator::Or => "Or",
+      BinaryOperator::StringJoin => "StringJoin",
+      BinaryOperator::Alternatives => "Alternatives",
     },
     Expr::UnaryOp { op, .. } => match op {
-      UnaryOperator::Minus => "Times".to_string(),
-      UnaryOperator::Not => "Not".to_string(),
+      UnaryOperator::Minus => "Times",
+      UnaryOperator::Not => "Not",
     },
-    Expr::Comparison { .. } => "Comparison".to_string(),
-    Expr::CompoundExpr(_) => "CompoundExpression".to_string(),
-    Expr::Rule { .. } => "Rule".to_string(),
-    Expr::RuleDelayed { .. } => "RuleDelayed".to_string(),
-    Expr::Map { .. } => "Map".to_string(),
-    Expr::Apply { .. } => "Apply".to_string(),
-    Expr::ReplaceAll { .. } => "ReplaceAll".to_string(),
-    Expr::ReplaceRepeated { .. } => "ReplaceRepeated".to_string(),
-    Expr::Function { .. } => "Function".to_string(),
-    Expr::Part { .. } => "Part".to_string(),
+    Expr::Comparison { .. } => "Comparison",
+    Expr::CompoundExpr(_) => "CompoundExpression",
+    Expr::Rule { .. } => "Rule",
+    Expr::RuleDelayed { .. } => "RuleDelayed",
+    Expr::Map { .. } => "Map",
+    Expr::Apply { .. } => "Apply",
+    Expr::ReplaceAll { .. } => "ReplaceAll",
+    Expr::ReplaceRepeated { .. } => "ReplaceRepeated",
+    Expr::Function { .. } => "Function",
+    Expr::Part { .. } => "Part",
     // The head of a curried call `h[a][b]` is the compound `h[a]`, not a
     // symbol — return its rendered form so typed blanks like `_Symbol` or
     // `_h` do not spuriously match the whole expression.
-    Expr::CurriedCall { func, .. } => expr_to_string(func),
-    _ => "Symbol".to_string(),
-  }
+    Expr::CurriedCall { func, .. } => return expr_to_string(func),
+    _ => "Symbol",
+  };
+  result.to_string()
 }
 
 /// Get the head of an expression from its string representation (for string-based pattern matching)

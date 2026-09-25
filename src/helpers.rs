@@ -28,6 +28,10 @@ pub fn pow2(b: Expr, e: Expr) -> Expr {
   binop(BinaryOperator::Power, b, e)
 }
 
+pub fn pow(b: Expr, e: Expr) -> Expr {
+  call("Power", vec![b, e])
+}
+
 pub fn times2(a: Expr, b: Expr) -> Expr {
   binop(BinaryOperator::Times, a, b)
 }
