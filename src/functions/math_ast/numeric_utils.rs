@@ -1291,14 +1291,23 @@ pub fn try_extract_complex_float(expr: &Expr) -> Option<(f64, f64)> {
     Expr::Integer(n) => Some((*n as f64, 0.0)),
     Expr::Real(f) => Some((*f, 0.0)),
     Expr::BigFloat(digits, _) => Some((digits.parse::<f64>().ok()?, 0.0)),
-    Expr::Constant(name) => Some((
-      match name.as_str() {
-        "Pi" => std::f64::consts::PI,
-        "E" => std::f64::consts::E,
-        _ => return None,
-      },
-      0.0,
-    )),
+    // `Pi`/`E` surface as `Expr::Constant` when built directly but as a
+    // plain `Expr::Identifier` when they arrive via a symbolic reciprocal
+    // like `Power[Pi, -1]` from dividing by `2 Pi I` — both must extract
+    // the same way, or this fast complex-multiply path silently bails out
+    // (via the `?` below) and falls through to a slower symbolic route.
+    Expr::Constant(name) | Expr::Identifier(name)
+      if name == "Pi" || name == "E" =>
+    {
+      Some((
+        match name.as_str() {
+          "Pi" => std::f64::consts::PI,
+          "E" => std::f64::consts::E,
+          _ => unreachable!(),
+        },
+        0.0,
+      ))
+    }
     Expr::FunctionCall { name, args }
       if name == "Rational" && args.len() == 2 =>
     {

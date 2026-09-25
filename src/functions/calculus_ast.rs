@@ -15737,7 +15737,7 @@ pub fn nintegrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Second argument is `{var, a, b}` or, with interior waypoints (e.g. a
   // singularity to break the interval at), `{var, a, b, c, …}`.
-  let (var_name, bounds) = match &args[1] {
+  let (var_name, evaluated_bounds) = match &args[1] {
     Expr::List(items) if items.len() >= 3 => {
       let var_name = match &items[0] {
         Expr::Identifier(name) => name.clone(),
@@ -15748,17 +15748,11 @@ pub fn nintegrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           ));
         }
       };
-      // Evaluate the boundary points — support Infinity/-Infinity at the ends.
-      let mut bounds = Vec::with_capacity(items.len() - 1);
+      let mut evaluated = Vec::with_capacity(items.len() - 1);
       for item in items.iter().skip(1) {
-        let e = crate::evaluator::evaluate_expr_to_expr(item)?;
-        bounds.push(expr_to_bound(&e).ok_or_else(|| {
-          InterpreterError::EvaluationError(
-            "NIntegrate: integration bound must be numeric or Infinity".into(),
-          )
-        })?);
+        evaluated.push(crate::evaluator::evaluate_expr_to_expr(item)?);
       }
-      (var_name, bounds)
+      (var_name, evaluated)
     }
     _ => {
       return Err(InterpreterError::EvaluationError(
@@ -15766,6 +15760,44 @@ pub fn nintegrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ));
     }
   };
+
+  // Waypoints that evaluate to a numeric quantity with a nonzero imaginary
+  // part turn this into a contour integral along the piecewise-linear path
+  // through those complex points — the standard way to state e.g. the
+  // argument principle's `NIntegrate[f'[z]/f[z], {z, z0, z1, …, z0}]`.
+  // Support it whenever any waypoint is genuinely complex, so a path with a
+  // real starting point (e.g. `{z, 1, I, -1}`) still takes the contour
+  // route instead of failing bound parsing on the second point.
+  if evaluated_bounds
+    .iter()
+    .any(|e| matches!(crate::functions::list_helpers_ast::expr_to_complex_parts(e), Some((_, im)) if im != 0.0))
+  {
+    let waypoints: Option<Vec<(f64, f64)>> = evaluated_bounds
+      .iter()
+      .map(crate::functions::list_helpers_ast::expr_to_complex_parts)
+      .collect();
+    let waypoints = waypoints.ok_or_else(|| {
+      InterpreterError::EvaluationError(
+        "NIntegrate: integration bound must be numeric or Infinity".into(),
+      )
+    })?;
+    return nintegrate_complex_path(
+      &args[0],
+      &var_name,
+      &waypoints,
+      tolerance,
+      max_recursion,
+    );
+  }
+
+  let mut bounds = Vec::with_capacity(evaluated_bounds.len());
+  for e in &evaluated_bounds {
+    bounds.push(expr_to_bound(e).ok_or_else(|| {
+      InterpreterError::EvaluationError(
+        "NIntegrate: integration bound must be numeric or Infinity".into(),
+      )
+    })?);
+  }
   let lo = bounds[0];
   let hi = *bounds.last().unwrap();
 
@@ -15875,6 +15907,94 @@ pub fn nintegrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
   Ok(Expr::Real(total))
+}
+
+/// Numerically integrates `integrand` (a function of `var_name`) along the
+/// piecewise-linear path through `waypoints` — the contour form
+/// `NIntegrate[f, {z, z0, z1, …, zn}]` takes when the zi are complex. Each
+/// segment is parametrized as `z(t) = a + t (b - a)`, `t ∈ [0, 1]`, so it
+/// contributes `∫₀¹ f(z(t)) (b - a) dt`; the real and imaginary parts of
+/// that complex-valued integrand are quadrated independently with the same
+/// adaptive Simpson rule the real-valued path uses.
+fn nintegrate_complex_path(
+  integrand: &Expr,
+  var_name: &str,
+  waypoints: &[(f64, f64)],
+  tolerance: f64,
+  max_recursion: u32,
+) -> Result<Expr, InterpreterError> {
+  let eval_at = |re: f64, im: f64| -> Option<(f64, f64)> {
+    // A sampled point that lands exactly on the real axis (e.g. a path
+    // waypoint given as a plain real number) substitutes a plain Real,
+    // not Complex[re, 0.], to avoid the integrand mixing a Real and a
+    // Complex operand.
+    let z_expr = if im == 0.0 {
+      Expr::Real(re)
+    } else {
+      crate::evaluator::evaluate_function_call_ast(
+        "Complex",
+        &[Expr::Real(re), Expr::Real(im)],
+      )
+      .ok()?
+    };
+    let substituted =
+      crate::syntax::substitute_variable(integrand, var_name, &z_expr);
+    let evaluated =
+      crate::evaluator::evaluate_expr_to_expr(&substituted).ok()?;
+    // Read the real/imaginary parts back out via `Re`/`Im` rather than a
+    // hand-rolled structural match on the evaluated expression: a real
+    // coefficient times a complex sum (e.g. `-0.4*(0. + 2.*I)`) does not
+    // always get distributed out to a flat `Plus[re, im*I]` shape, but
+    // `Re`/`Im` already know how to reduce any such numeric form.
+    let re_v = crate::functions::math_ast::try_eval_to_f64(
+      &crate::evaluator::evaluate_expr_to_expr(&crate::helpers::call1(
+        "Re",
+        evaluated.clone(),
+      ))
+      .ok()?,
+    )?;
+    let im_v = crate::functions::math_ast::try_eval_to_f64(
+      &crate::evaluator::evaluate_expr_to_expr(&crate::helpers::call1(
+        "Im", evaluated,
+      ))
+      .ok()?,
+    )?;
+    Some((re_v, im_v))
+  };
+
+  let converge_err = || {
+    InterpreterError::EvaluationError(
+      "NIntegrate: failed to converge or integrand is not numeric".into(),
+    )
+  };
+
+  let mut total_re = 0.0;
+  let mut total_im = 0.0;
+  for pair in waypoints.windows(2) {
+    let (a_re, a_im) = pair[0];
+    let (b_re, b_im) = pair[1];
+    let d_re = b_re - a_re;
+    let d_im = b_im - a_im;
+    let real_part = |t: f64| -> Option<f64> {
+      let (fr, fi) = eval_at(a_re + t * d_re, a_im + t * d_im)?;
+      Some(fr * d_re - fi * d_im)
+    };
+    let imag_part = |t: f64| -> Option<f64> {
+      let (fr, fi) = eval_at(a_re + t * d_re, a_im + t * d_im)?;
+      Some(fr * d_im + fi * d_re)
+    };
+    total_re +=
+      adaptive_simpson(&real_part, 0.0, 1.0, tolerance, max_recursion)
+        .ok_or_else(converge_err)?;
+    total_im +=
+      adaptive_simpson(&imag_part, 0.0, 1.0, tolerance, max_recursion)
+        .ok_or_else(converge_err)?;
+  }
+
+  crate::evaluator::evaluate_function_call_ast(
+    "Complex",
+    &[Expr::Real(total_re), Expr::Real(total_im)],
+  )
 }
 
 /// Convert an expression to an f64 bound, supporting Infinity/-Infinity

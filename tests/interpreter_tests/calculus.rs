@@ -5138,6 +5138,83 @@ mod nintegrate {
       1e-3,
     );
   }
+
+  // Helper to extract (re, im) from a "k.kkk", "k.kkk*I" or
+  // "k.kkk + k.kkk*I" NIntegrate result string.
+  fn parse_complex(s: &str) -> (f64, f64) {
+    let s = s.trim();
+    if let Some(stripped) = s.strip_suffix("*I") {
+      if let Some(idx) = stripped.rfind(" + ") {
+        return (
+          stripped[..idx].parse().unwrap(),
+          stripped[idx + 3..].parse().unwrap(),
+        );
+      } else if let Some(idx) = stripped.rfind(" - ") {
+        return (
+          stripped[..idx].parse().unwrap(),
+          -stripped[idx + 3..].parse::<f64>().unwrap(),
+        );
+      }
+      return (0.0, stripped.parse().unwrap());
+    }
+    (s.parse().unwrap(), 0.0)
+  }
+
+  fn assert_approx_complex(
+    code: &str,
+    expected_re: f64,
+    expected_im: f64,
+    tol: f64,
+  ) {
+    let result = interpret(code).unwrap();
+    let (re, im) = parse_complex(&result);
+    assert!(
+      (re - expected_re).abs() < tol && (im - expected_im).abs() < tol,
+      "NIntegrate mismatch for {code}: got {re} + {im}*I, expected {expected_re} + {expected_im}*I"
+    );
+  }
+
+  // Complex waypoints turn NIntegrate into a contour integral along the
+  // piecewise-linear path through them (the form the argument principle is
+  // stated with). ∮ 1/z dz around the diamond through 1, I, -1, -I winds
+  // once around the origin, so it equals 2*Pi*I by Cauchy's integral formula.
+  #[test]
+  fn nintegrate_contour_cauchy_integral_formula() {
+    assert_approx_complex(
+      "NIntegrate[1/z, {z, 1, I, -1, -I, 1}]",
+      0.0,
+      2.0 * std::f64::consts::PI,
+      1e-6,
+    );
+  }
+
+  // A single complex-to-complex segment: ∫ z dz from 0 to I, parametrized
+  // z(t) = i t, dz = i dt, gives i^2 * ∫₀¹ t dt = -1/2.
+  #[test]
+  fn nintegrate_contour_single_segment() {
+    assert_approx_complex("NIntegrate[z, {z, 0, I}]", -0.5, 0.0, 1e-10);
+  }
+
+  // A path that starts on the real axis still takes the complex route: z is
+  // entire, so its line integral is path-independent and equals the
+  // antiderivative difference (b^2 - a^2)/2 = ((2I)^2 - 2^2)/2 = -4.
+  #[test]
+  fn nintegrate_contour_starts_real() {
+    assert_approx_complex("NIntegrate[z, {z, 2, 2 I}]", -4.0, 0.0, 1e-8);
+  }
+
+  // The argument principle: (1/(2 Pi I)) times the contour integral of
+  // f'[z]/f[z] around a closed curve counts the zeros of f minus its poles
+  // inside it. f[z] = z^2 - 1 has simple zeros at +-1 and no poles, and the
+  // square through +-2, +-2I encloses both, so the count is 2.
+  #[test]
+  fn nintegrate_contour_argument_principle() {
+    assert_approx(
+      "Chop[NIntegrate[(2 z)/(z^2 - 1), {z, 2, 2 I, -2, -2 I, 2}]/(2 Pi I)]",
+      2.0,
+      1e-6,
+    );
+  }
 }
 
 mod trig_sec_csc_cot {
