@@ -1888,6 +1888,72 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_mouseover_graphics_in_grid_renders_picture() {
+    // Regression: a Grid cell wrapped in `Mouseover[graphic, appearance]` —
+    // the idiom a Demonstration uses to show a plot with a text tooltip on
+    // hover (e.g. Wolfram Demonstrations' "Square Matrix Permutations") —
+    // printed the literal `Mouseover[-Graphics-, appearance]` source instead
+    // of drawing the wrapped graphic. A static export shows the base
+    // appearance (there is no hover), so the picture is what `Mouseover`
+    // wraps.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Grid[{{Mouseover[ArrayPlot[{{1, 2}, {3, 4}}], \"tip\"]}}], \
+       \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      !svg.contains("Mouseover"),
+      "Mouseover must not leak into the rendered output as text:\n{svg}"
+    );
+    assert!(
+      svg.contains("<rect"),
+      "the wrapped ArrayPlot must be drawn as a picture:\n{svg}"
+    );
+  }
+
+  #[test]
+  fn test_mouseover_graphics_in_column_renders_picture() {
+    // Same wrapper, but as a bare Column cell rather than a Grid cell —
+    // exercises the `lays_out_a_graphic`/`expr_to_svg` path directly instead
+    // of `grid_cell_graphic`'s fallback.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Column[{Mouseover[ArrayPlot[{{1, 2}, {3, 4}}], \"tip\"]}], \
+       \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      !svg.contains("Mouseover"),
+      "Mouseover must not leak into the rendered output as text:\n{svg}"
+    );
+    assert!(
+      svg.contains("<rect"),
+      "the wrapped ArrayPlot must be drawn as a picture:\n{svg}"
+    );
+  }
+
+  #[test]
+  fn test_mouseover_graphics_bare_renders_picture() {
+    // A bare top-level `Mouseover[graphic, appearance]` (not inside any
+    // layout) must also draw the wrapped graphic rather than printing the
+    // call as source.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Mouseover[ArrayPlot[{{1, 2}, {3, 4}}], \"tip\"], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      !svg.contains("Mouseover"),
+      "Mouseover must not leak into the rendered output as text:\n{svg}"
+    );
+    assert!(
+      svg.contains("<rect"),
+      "the wrapped ArrayPlot must be drawn as a picture:\n{svg}"
+    );
+  }
+
+  #[test]
   fn test_column_item_styled_tableform_typesets() {
     // Regression: a `Column` item holding `Item[Style[TableForm[…],
     // size], opts…]` — the shape a Demonstration's Manipulate body uses to
