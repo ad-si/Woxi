@@ -29881,6 +29881,125 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`timeElapsed$$ = 0.5, $CellContext`k
     );
   }
 
+  /// End-to-end regression for "The Riemann Zeta Function in Four
+  /// Dimensions" Demonstration: a `Graphics3D` traces the real axis and,
+  /// next to it, the curve `s -> Re[Zeta[s + I tau]], Im[Zeta[s + I tau]]`
+  /// swept by an imaginary-part slider, `Show`n together with a second
+  /// `Graphics3D` whose `Which` picks an arrow annotation depending on how
+  /// close the slider sits to one of the first few non-trivial zeta zeros
+  /// (`ZetaZero[k]`). Self-authored, construct-equivalent body — its own
+  /// helper names and geometry, not the notebook's own formula or wording,
+  /// which is copyrighted.
+  ///
+  /// Exercises the general shape: two separate `InitializationCell`
+  /// helpers, a `SaveDefinitions -> True` Manipulate with a labeled
+  /// continuous slider plus a rule-form boolean checkbox
+  /// (`{True -> "on", False -> "off"}`), and — the part that didn't work
+  /// before this change — a `Which` branch comparing a real slider value
+  /// against `Im[ZetaZero[k]]`: `ZetaZero[k]` has no numeric evaluator at
+  /// all previously, so `Abs[tau - Im[ZetaZero[1]]] < 1` stayed a fully
+  /// symbolic inequality and `Which` could never pick a branch, breaking
+  /// the whole `Graphics3D`.
+  #[test]
+  fn riemann_zeta_four_dimensions_notebook_picks_zero_proximity_marker() {
+    let nb_src = r##"Notebook[{
+Cell[BoxData["critLine[s_, tau_] := {s, Re[Zeta[s + I tau]], Im[Zeta[s + I tau]]}"], "Input", InitializationCell->True],
+Cell[BoxData["marker[a_] := {Thick, Red, {Arrowheads[Large], Arrow[{{a, 0, 4}, {a, 0, 0}}]}}"], "Input", InitializationCell->True],
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[
+ Show[
+  Graphics3D[{
+    Thickness[.01],
+    {Black, Line[Table[{s, 0, 0}, {s, -6, 3, .5}]]},
+    {Blue, Line[Table[critLine[s, tau] /. Indeterminate -> 1, {s, -6, 3, .4}]]}
+   },
+   BoxRatios -> {2, 1, 1}, PlotRange -> {All, {-5, 5}, {-5, 5}},
+   Boxed -> showFrame, Axes -> showFrame
+  ],
+  Graphics3D[{
+   Which[
+    -1 < tau < 1, {marker[-2], marker[-4], marker[-6]},
+    Abs[tau - Im[ZetaZero[1]]] < 1, marker[.5],
+    Abs[tau - Im[ZetaZero[2]]] < 1, marker[.5],
+    Abs[tau - Im[ZetaZero[3]]] < .7, marker[.5],
+    Abs[tau - Im[ZetaZero[4]]] < .5, marker[.5],
+    tau < 100, Line[{{0, 0, 0}}]
+    ]
+  }],
+  ImageSize -> {480, 380}
+ ],
+ {{tau, 14.1, \"tau = Im(s)\"}, -10, 26, 0.1, Appearance -> \"Labeled\"},
+ {{showFrame, True, \"framing\"}, {True -> \"on\", False -> \"off\"}},
+ SaveDefinitions -> True
+]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`tau$$ = 14.1, $CellContext`showFrame$$ = True}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect(
+        "a SaveDefinitions Demonstration with two separate initialization \
+         cells must instantiate on load",
+      );
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(widget.graphics_handle.is_some(), "the curve must draw");
+
+    assert!(
+      matches!(
+        &widget.controls[0],
+        manipulate::ControlState::Continuous { name, label, min, max, current, .. }
+          if name == "tau" && label == "tau = Im(s)"
+            && (*min, *max, *current) == (-10.0, 26.0, 14.1)
+      ),
+      "control 0 should be the tau slider: {:?}",
+      widget.controls[0]
+    );
+    assert!(
+      matches!(
+        &widget.controls[1],
+        manipulate::ControlState::Discrete { name, label, values, value_labels, .. }
+          if name == "showFrame" && label == "framing"
+            && values.as_slice() == ["True", "False"]
+            && value_labels.as_slice() == ["on", "off"]
+      ),
+      "control 1 should be the rule-form framing checkbox: {:?}",
+      widget.controls[1]
+    );
+
+    let render = |tau: f64, frame: &str| {
+      woxi::interpret_with_stdout(&format!(
+        "tau = {tau}; showFrame = {frame};\n{}",
+        widget.body
+      ))
+      .expect("the body must render")
+      .graphics
+      .expect("the body must produce a graphic")
+    };
+    let near_zero = render(14.1, "True");
+    // tau = 14.1 sits within 1 of the first zero (Im ~ 14.1347), so the
+    // marker[.5] branch fires; tau = 5.0 doesn't hit any Which condition
+    // above the trailing `tau < 100` catch-all, so it must render
+    // differently (no arrow near the curve).
+    let far_from_zero = render(5.0, "True");
+    assert_ne!(
+      near_zero, far_from_zero,
+      "the marker Which-branch must depend on proximity to a ZetaZero"
+    );
+    // Toggling the framing checkbox (Boxed/Axes) must also change the scene.
+    assert_ne!(
+      near_zero,
+      render(14.1, "False"),
+      "the framing checkbox must matter"
+    );
+  }
+
   /// End-to-end regression for a Wolfram Demonstration randomly sampled by
   /// the scheduled QA routine ("Arithmetic Mean, Geometric Mean, Root Mean
   /// Square and Harmonic Mean for Two Numbers"): a `Manipulate` with two

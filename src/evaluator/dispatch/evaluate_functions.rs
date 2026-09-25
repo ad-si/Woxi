@@ -2898,7 +2898,6 @@ fn evaluate_function_call_ast_inner(
     | "OverTilde"
     | "AngleBracket"
     | "Larger"
-    | "ZetaZero"
     | "MixtureDistribution"
     | "ReliabilityDistribution"
     | "PermutationGroup"

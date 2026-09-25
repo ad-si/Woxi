@@ -1225,6 +1225,9 @@ pub fn dispatch_math_functions(
     "AiryBiZero" if args.len() == 1 => {
       return Some(crate::functions::math_ast::airy_bi_zero_ast(args));
     }
+    "ZetaZero" if !args.is_empty() && args.len() <= 3 => {
+      return Some(crate::functions::math_ast::zeta_zero_ast(args));
+    }
     "Hypergeometric0F1" if args.len() == 2 => {
       return Some(crate::functions::math_ast::hypergeometric_0f1_ast(args));
     }
