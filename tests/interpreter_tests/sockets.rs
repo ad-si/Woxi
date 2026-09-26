@@ -324,14 +324,15 @@ mod sockets {
       clear_state();
       // `SocketReadMessage[sock, n]` never hands over more than `n` bytes
       // and never waits: with nothing pending it stays unevaluated, which
-      // is what wolframscript does.
+      // is what wolframscript does. Each read's result is matched directly:
+      // stored in a variable, an unevaluated read would be re-evaluated —
+      // read again — every time the variable is used, losing bytes.
       let script = format!(
         "{setup} WriteString[c, \"go\"]; \
          parts = {{}}; \
-         Do[r = SocketReadMessage[c, 2]; \
-            If[Head[r] === ByteArray, \
-              parts = Append[parts, ByteArrayToString[r]], \
-              Pause[0.02]], \
+         Do[Replace[SocketReadMessage[c, 2], \
+              {{b_ByteArray :> AppendTo[parts, ByteArrayToString[b]], \
+               _ :> Pause[0.02]}}], \
            {{60}}]; \
          {{StringJoin[parts], Max[Map[StringLength, parts]]}}",
         setup = echo_setup("WriteString[#[\"SourceSocket\"], \"abcdef\"] &"),
