@@ -732,7 +732,7 @@ SimpleTerm = _{
   | List
   | StringCall
   | String
-  | &BalancedParens ~ "(" ~ Expression ~ ")"
+  | &BalancedParens ~ "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")"
 }
 
 // TermNoImplicit is like Term but without ImplicitTimes - used for function bodies
