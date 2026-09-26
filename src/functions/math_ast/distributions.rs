@@ -11906,6 +11906,57 @@ fn contains_variable(expr: &Expr, var: &str) -> bool {
 
 // ─── LogLikelihood ───────────────────────────────────────────────────
 
+/// The Gaussian log-likelihood of `x` (one joint observation) under
+/// `Sigma[i, j] = gamma[|i - j|]` — a symmetric Toeplitz covariance matrix,
+/// as a zero-mean stationary process's finite-dimensional distribution
+/// always is. Factors `Sigma = L L^T` (Cholesky) to get both `log(det
+/// Sigma) = 2 sum(log(L[i][i]))` and `x^T Sigma^-1 x = y . y` where `L y =
+/// x` (forward substitution) — `L^-1` itself is never formed. `None` if
+/// `Sigma` is not numerically positive definite (a diagonal pivot comes out
+/// <= 0), which a caller should treat as "leave the call unevaluated"
+/// rather than a hard error, since it can happen from ordinary floating
+/// point roundoff right at the edge of the parameter space.
+fn toeplitz_gaussian_log_likelihood(gamma: &[f64], x: &[f64]) -> Option<f64> {
+  let n = x.len();
+  if n == 0 || gamma.len() != n {
+    return None;
+  }
+  let sigma = |i: usize, j: usize| gamma[i.abs_diff(j)];
+  let mut l = vec![vec![0.0f64; n]; n];
+  for i in 0..n {
+    for j in 0..=i {
+      let mut sum = sigma(i, j);
+      for k in 0..j {
+        sum -= l[i][k] * l[j][k];
+      }
+      if i == j {
+        if sum.is_nan() || sum <= 0.0 {
+          return None;
+        }
+        l[i][j] = sum.sqrt();
+      } else {
+        l[i][j] = sum / l[j][j];
+      }
+    }
+  }
+  let logdet: f64 = 2.0
+    * l
+      .iter()
+      .enumerate()
+      .map(|(i, row)| row[i].ln())
+      .sum::<f64>();
+  let mut y = vec![0.0f64; n];
+  for i in 0..n {
+    let mut sum = x[i];
+    for (k, yk) in y.iter().enumerate().take(i) {
+      sum -= l[i][k] * yk;
+    }
+    y[i] = sum / l[i][i];
+  }
+  let quad: f64 = y.iter().map(|v| v * v).sum();
+  Some(-0.5 * (n as f64 * (2.0 * std::f64::consts::PI).ln() + logdet + quad))
+}
+
 /// LogLikelihood[dist, {x1, x2, ...}] — the sum of Log[PDF[dist, x_i]]
 /// in wolframscript's per-distribution closed form. Supports numeric
 /// observations for Exponential, Poisson, Bernoulli, and Normal
@@ -11938,6 +11989,57 @@ pub fn log_likelihood_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     || -> Result<Expr, InterpreterError> { eval(&unevaluated("Plus", data)) };
 
   match (dist_name, dargs) {
+    // `LogLikelihood[ARMAProcess[{a1}, {b1}, variance], data]` — unlike every
+    // other case here, `data` is not a list of i.i.d. draws: it is one
+    // realization of the correlated process itself. Its likelihood is the
+    // multivariate Normal density with the process's own covariance matrix
+    // Sigma[i, j] = gamma(|i - j|), gamma being the theoretical
+    // autocovariance. For ARMA(1, 1) (`X_t = a1 X_(t-1) + eps_t + b1
+    // eps_(t-1)`), gamma has the standard closed form used below; general
+    // ARMA(p, q) needs the Yule-Walker equations for its initial lags and is
+    // not handled here, so it — like a non-numeric `variance`, or `|a1| >=
+    // 1` (non-stationary) — is left unevaluated rather than guessed at.
+    // Computed numerically (an f64 Cholesky factorization of Sigma, not
+    // Woxi's exact/symbolic `LinearSolve`/`Det`): a dataset long enough to
+    // fit an ARMA model to is long enough that O(n^3) exact rational
+    // arithmetic on an n x n matrix would be far too slow to be usable.
+    ("ARMAProcess", [Expr::List(ar), Expr::List(ma), var])
+      if ar.len() == 1 && ma.len() == 1 =>
+    {
+      let (Some(a1), Some(b1), Some(sigma2)) = (
+        try_eval_to_f64(&ar[0]),
+        try_eval_to_f64(&ma[0]),
+        try_eval_to_f64(var),
+      ) else {
+        return Ok(uneval());
+      };
+      if sigma2.is_nan() || sigma2 <= 0.0 || a1.abs() >= 1.0 {
+        return Ok(uneval());
+      }
+      let Some(xs) = data
+        .iter()
+        .map(try_eval_to_f64)
+        .collect::<Option<Vec<f64>>>()
+      else {
+        return Ok(uneval());
+      };
+      let gamma0 = sigma2 * (1.0 + 2.0 * a1 * b1 + b1 * b1) / (1.0 - a1 * a1);
+      let gamma1 = a1 * gamma0 + b1 * sigma2;
+      let mut gamma = vec![0.0f64; xs.len()];
+      if let Some(g) = gamma.first_mut() {
+        *g = gamma0;
+      }
+      if xs.len() > 1 {
+        gamma[1] = gamma1;
+      }
+      for k in 2..gamma.len() {
+        gamma[k] = a1 * gamma[k - 1];
+      }
+      match toeplitz_gaussian_log_likelihood(&gamma, &xs) {
+        Some(ll) => Ok(Expr::Real(ll)),
+        None => Ok(uneval()),
+      }
+    }
     // n*Log[a] - a*Sum[x]
     ("ExponentialDistribution", [a]) => {
       let total = sum_expr()?;

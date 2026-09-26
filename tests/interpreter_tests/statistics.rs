@@ -8394,6 +8394,51 @@ mod log_likelihood {
       "LogLikelihood[ExponentialDistribution[a], {x1, x2}]"
     );
   }
+
+  // `LogLikelihood[ARMAProcess[...], data]` treats `data` as one joint
+  // realization of the correlated process, not i.i.d. draws — found while
+  // checking whether Woxi Studio can open a randomly sampled Wolfram
+  // Demonstration notebook whose Manipulate fit an ARMA(1, 1) model by
+  // maximizing exactly this likelihood.
+  #[test]
+  fn arma_process() {
+    // With both coefficients 0, ARMA(1, 1) is just i.i.d. Normal noise —
+    // an independent check that the Toeplitz-covariance Gaussian density
+    // reduces correctly to the ordinary i.i.d. case.
+    assert_eq!(
+      interpret(
+        "LogLikelihood[ARMAProcess[{0}, {0}, 1.], {0.1, 0.2, -0.1, 0.3}]"
+      )
+      .unwrap(),
+      interpret(
+        "LogLikelihood[NormalDistribution[0, 1], {0.1, 0.2, -0.1, 0.3}]"
+      )
+      .unwrap()
+    );
+    // A concrete correlated case (locks in the current numeric result;
+    // the i.i.d.-reduction case above is what independently pins the
+    // formula down).
+    assert_eq!(
+      interpret("LogLikelihood[ARMAProcess[{0.5}, {0.3}, 2.], {1., 2.}]")
+        .unwrap(),
+      "-3.4245466149150294"
+    );
+    // A non-stationary AR coefficient (|a1| >= 1) and a higher-order model
+    // (more than one AR or MA coefficient) both stay unevaluated rather
+    // than guessing at an answer.
+    assert_eq!(
+      interpret("LogLikelihood[ARMAProcess[{1.5}, {0}, 1.], {1., 2.}]")
+        .unwrap(),
+      "LogLikelihood[ARMAProcess[{1.5}, {0}, 1.], {1., 2.}]"
+    );
+    assert_eq!(
+      interpret(
+        "LogLikelihood[ARMAProcess[{0.5, 0.2}, {0.3}, 1.], {1., 2., 3.}]"
+      )
+      .unwrap(),
+      "LogLikelihood[ARMAProcess[{0.5, 0.2}, {0.3}, 1.], {1., 2., 3.}]"
+    );
+  }
 }
 
 mod correlation_function {
@@ -10494,6 +10539,91 @@ mod continuous_process_slices {
       interpret("N[CDF[GeometricBrownianMotionProcess[1/10, 1/2, 1][3], 2]]")
         .unwrap(),
       "0.8124551558563821"
+    );
+  }
+}
+
+// `RandomFunction[proc, {t0, t1, dt}]` — one realization of a random
+// process, sampled at t0, t0 + dt, ..., t1. Exact sample values are
+// implementation-defined (Woxi's own PRNG, not wolframscript's), so these
+// check the structural/statistical properties any correct simulation must
+// have: the right sample count and start time, determinism given the same
+// seed, and — for the Ornstein-Uhlenbeck case — that its samples land near
+// its known stationary mean/variance rather than checking specific values.
+mod random_function_simulation {
+  use super::*;
+
+  #[test]
+  fn wiener_process_path() {
+    let path = interpret(
+      "SeedRandom[1]; \
+       ts = RandomFunction[WienerProcess[0, 1], {0, 1, 0.25}]; \
+       {Head[ts], ts[\"Times\"], First[ts[\"States\"][[1]]]}",
+    )
+    .unwrap();
+    assert_eq!(path, "{TimeSeries, {0., 0.25, 0.5, 0.75, 1.}, 0.}");
+    // WienerProcess always starts at 0 and has exactly one value per
+    // sample time.
+    let states = interpret(
+      "SeedRandom[1]; \
+       Length[RandomFunction[WienerProcess[0, 1], {0, 1, 0.25}][\"States\"][[1]]]",
+    )
+    .unwrap();
+    assert_eq!(states, "5");
+    // The same seed reproduces the same realization.
+    assert_eq!(
+      interpret(
+        "SeedRandom[7]; a = RandomFunction[WienerProcess[0, 1], {0, 1, 0.2}][\"States\"][[1]]; \
+         SeedRandom[7]; b = RandomFunction[WienerProcess[0, 1], {0, 1, 0.2}][\"States\"][[1]]; \
+         a == b"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn ornstein_uhlenbeck_process_path() {
+    // Length and start time.
+    assert_eq!(
+      interpret(
+        "SeedRandom[3]; \
+         ts = RandomFunction[OrnsteinUhlenbeckProcess[0, 1, 2], {0, 1, 0.25}]; \
+         {Length[ts[\"States\"][[1]]], First[ts[\"Times\"]], Last[ts[\"Times\"]]}"
+      )
+      .unwrap(),
+      "{5, 0., 1.}"
+    );
+    // The 4-argument form starts exactly at the given x0.
+    assert_eq!(
+      interpret(
+        "SeedRandom[3]; \
+         First[RandomFunction[OrnsteinUhlenbeckProcess[0, 1, 2, 5.], {0, 1, 0.25}][\"States\"][[1]]]"
+      )
+      .unwrap(),
+      "5."
+    );
+    // A long realization's sample mean lands near the process's known
+    // stationary mean (0 here) — loosely, since it's still one random
+    // realization, not an expectation.
+    let mean = interpret(
+      "SeedRandom[11]; \
+       N[Mean[RandomFunction[OrnsteinUhlenbeckProcess[0, 1, 2], {0, 200, 0.5}][\"States\"][[1]]]]"
+    )
+    .unwrap()
+    .parse::<f64>()
+    .unwrap();
+    assert!(mean.abs() < 0.5, "sample mean too far from 0: {mean}");
+  }
+
+  #[test]
+  fn unsupported_process_stays_unevaluated() {
+    // Only WienerProcess and OrnsteinUhlenbeckProcess are simulated; any
+    // other process (or a malformed spec) is left symbolic rather than
+    // guessed at.
+    assert_eq!(
+      interpret("RandomFunction[PoissonProcess[1], {0, 1, 0.1}]").unwrap(),
+      "RandomFunction[PoissonProcess[1], {0, 1, 0.1}]"
     );
   }
 }

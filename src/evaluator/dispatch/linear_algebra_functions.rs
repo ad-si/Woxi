@@ -240,6 +240,22 @@ pub fn dispatch_linear_algebra_functions(
         args,
       ));
     }
+    // LinearSolve[m, b, opts…] with a non-Modulus option (e.g. Method ->
+    // "Cholesky"): Woxi always solves by Gaussian elimination, which gives
+    // the same answer regardless of method, so trailing options besides
+    // Modulus (already handled above) are simply dropped.
+    "LinearSolve"
+      if args.len() >= 3
+        && matches!(&args[1], Expr::List(_))
+        && crate::functions::linear_algebra_ast::extract_modulus_option_la(
+          args.last().unwrap(),
+        )
+        .is_none() =>
+    {
+      return Some(crate::functions::linear_algebra_ast::linear_solve_ast(
+        &args[..2],
+      ));
+    }
     "LeastSquares" if args.len() == 2 => {
       // LeastSquares[A, b] = Inverse[A^H . A] . A^H . b when A has full
       // column rank, with A^H the conjugate transpose (a plain transpose
