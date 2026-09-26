@@ -646,7 +646,7 @@ pub fn random_function_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   ) else {
     return unchanged();
   };
-  if !(dt > 0.0) || t1 < t0 {
+  if dt.is_nan() || dt <= 0.0 || t1 < t0 {
     return unchanged();
   }
 

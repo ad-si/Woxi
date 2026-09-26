@@ -11930,7 +11930,7 @@ fn toeplitz_gaussian_log_likelihood(gamma: &[f64], x: &[f64]) -> Option<f64> {
         sum -= l[i][k] * l[j][k];
       }
       if i == j {
-        if !(sum > 0.0) {
+        if sum.is_nan() || sum <= 0.0 {
           return None;
         }
         l[i][j] = sum.sqrt();
@@ -12013,7 +12013,7 @@ pub fn log_likelihood_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ) else {
         return Ok(uneval());
       };
-      if !(sigma2 > 0.0) || a1.abs() >= 1.0 {
+      if sigma2.is_nan() || sigma2 <= 0.0 || a1.abs() >= 1.0 {
         return Ok(uneval());
       }
       let Some(xs) = data
