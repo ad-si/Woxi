@@ -1747,15 +1747,8 @@ impl WoxiStudio {
       Message::ManipulateDiscreteChanged(cell_idx, ctrl_idx, choice) => {
         if let Some(editor) = self.cell_editors.get_mut(cell_idx)
           && let Some(state) = editor.manipulate_state.as_mut()
-          && let Some(control) = state.controls.get_mut(ctrl_idx)
-          && let manipulate::ControlState::Discrete {
-            value_labels,
-            current_index,
-            ..
-          } = control
-          && let Some(idx) = value_labels.iter().position(|v| *v == choice)
+          && state.select_discrete(ctrl_idx, &choice)
         {
-          *current_index = idx;
           state.apply_tracking(ctrl_idx);
           if state.request_reeval(ctrl_idx) {
             return manipulate_reeval_task(cell_idx);
@@ -7638,6 +7631,83 @@ mod tests {
       state.error
     );
     assert_eq!(state.text_output.as_deref(), Some("hexagon"));
+  }
+
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook ("Disentangling
+  /// Wire-and-String Puzzles in 3D") whose `Manipulate` drives a
+  /// puzzle-switching state machine with a `ControlType -> None` action
+  /// variable (its own default, `0`, outside the `SetterBar`'s own choice
+  /// domain `{1, 2, 3, 4}`, meaning nothing is highlighted at first) that a
+  /// body `If`/`Which` reads and then resets to `0`. This is a self-authored,
+  /// construct-equivalent example (invented control/variable names) — not
+  /// the specific Demonstration's code, data or wording, which is
+  /// copyrighted. Regression: `Message::ManipulateDiscreteChanged`'s handler
+  /// wrote the clicked button's `current_index` directly but never cleared
+  /// `ControlState::Discrete::overflow`, and `current_code`/rendering always
+  /// prefer a set `overflow` over `values[current_index]` (see its doc
+  /// comment: this exists so a *sibling* row's own fallback doesn't override
+  /// what another row just picked). Once the initial out-of-domain default
+  /// left `overflow` set, every subsequent click on the row's *own* buttons
+  /// kept re-sending that same stale value forever: the SetterBar looked
+  /// permanently unselected and pressing any of its buttons did nothing.
+  /// Now fixed by routing the click through `ManipulateState::select_discrete`,
+  /// which clears `overflow` — the same method the app's
+  /// `Message::ManipulateDiscreteChanged` handler calls.
+  #[test]
+  fn manipulate_discrete_click_clears_stale_overflow_from_initial_default() {
+    let code = "Manipulate[\
+      If[action > 0, \
+        Which[action == 1, count = 0, action == 2, count = Max[0, count - 1], \
+          action == 3, count = Min[max, count + 1], action == 4, count = max]; \
+        action = 0]; \
+      count, \
+      {{count, 2}, ControlType -> None}, \
+      {{max, 5}, ControlType -> None}, \
+      Control[{{action, 0, \"\"}, \
+        {1 -> \"reset\", 2 -> \"-\", 3 -> \"+\", 4 -> \"max\"}, SetterBar}]\
+      ]";
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      manipulate::ManipulateState::from_expr(&expr).expect("build widget");
+    assert_eq!(
+      state.text_output.as_deref(),
+      Some("2"),
+      "initial count must render before any click"
+    );
+
+    let action_idx = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "action")
+      .expect("action SetterBar control");
+    match &state.controls[action_idx] {
+      manipulate::ControlState::Discrete { overflow, .. } => assert_eq!(
+        overflow.as_deref(),
+        Some("0"),
+        "action's default (0) starts outside its own {{1,2,3,4}} domain"
+      ),
+      other => panic!("expected a Discrete control, got {other:?}"),
+    }
+
+    // Press "+" (the SetterBar's own third button) three times in a row,
+    // via the same `select_discrete` call the app's message handler makes
+    // for every click — not a direct field mutation on `ManipulateState`.
+    for _ in 0..3 {
+      assert!(
+        state.select_discrete(action_idx, "+"),
+        "\"+\" must be one of action's own choices"
+      );
+      state.apply_tracking(action_idx);
+      state.reevaluate();
+    }
+
+    assert_eq!(
+      state.text_output.as_deref(),
+      Some("5"),
+      "three '+' clicks from 2 must reach count = 5, not stay stuck at the \
+       initial out-of-domain default"
+    );
   }
 
   /// A `Button[…]` action alongside two disjoint `SetterBar` rows that
