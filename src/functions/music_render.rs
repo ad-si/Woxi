@@ -47,7 +47,7 @@ fn dn_y(dn: i32) -> f64 {
 // ── Musical model ────────────────────────────────────────────────────────────
 
 /// A rhythmic value, controlling note-head fill, stem and flags.
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 enum Dur {
   Whole,
   Half,
@@ -379,7 +379,20 @@ fn collect(
         false
       }
       "MusicRest" => {
-        let dur = args.first().map_or(Dur::Quarter, parse_duration);
+        // The canonical association form `MusicRest[<|"Duration" -> …|>]`
+        // carries its value under `"Duration"`; an empty `MusicRest[<||>]`
+        // is a quarter rest.
+        let dur = match args.first() {
+          Some(Expr::Association(pairs)) => pairs
+            .iter()
+            .find_map(|(k, v)| match k {
+              Expr::String(s) if s == "Duration" => Some(parse_duration(v)),
+              _ => None,
+            })
+            .unwrap_or(Dur::Quarter),
+          Some(spec) => parse_duration(spec),
+          None => Dur::Quarter,
+        };
         out.push(Glyph::Rest { dur });
         false
       }
@@ -1252,6 +1265,57 @@ mod tests {
     assert!(svg.contains("class=\"notehead\"")); // a Leland note head
     assert!(svg.contains("class=\"clef\"")); // the Leland treble clef
     assert!(svg.contains("<line")); // staff lines
+  }
+
+  /// The glyphs collected for `expr`, keeping only its rests' durations.
+  fn rest_durs(expr: &Expr) -> Vec<Dur> {
+    let mut out = Vec::new();
+    collect(expr, &mut out, &mut None);
+    out
+      .into_iter()
+      .filter_map(|g| match g {
+        Glyph::Rest { dur } => Some(dur),
+        _ => None,
+      })
+      .collect()
+  }
+
+  /// Evaluate Wolfram Language source to its (canonical) expression.
+  fn eval(src: &str) -> Expr {
+    crate::evaluator::evaluate_expr_to_expr(
+      &crate::evaluator::string_to_expr(src).unwrap(),
+    )
+    .unwrap()
+  }
+
+  /// A rest in its canonical `MusicRest[<|"Duration" -> …|>]` form (as every
+  /// evaluated rest and every rest inside a resolved measure is) is drawn with
+  /// the glyph for its own value. Regression: the association was not looked
+  /// into, so every such rest was drawn as a quarter rest.
+  #[test]
+  fn canonical_rest_renders_its_duration() {
+    let measure = eval(
+      "MusicMeasure[{MusicNote[\"G\"], MusicNote[\"A\"], MusicNote[\"B\"], \
+       MusicRest[1/8], MusicRest[1/8]}]",
+    );
+    assert_eq!(rest_durs(&measure), vec![Dur::Eighth, Dur::Eighth]);
+
+    for (value, dur) in [
+      ("1", Dur::Whole),
+      ("1/2", Dur::Half),
+      ("1/4", Dur::Quarter),
+      ("1/8", Dur::Eighth),
+      ("1/16", Dur::Sixteenth),
+      ("\"Eighth\"", Dur::Eighth),
+    ] {
+      let rest = eval(&format!("MusicRest[{value}]"));
+      assert_eq!(rest_durs(&rest), vec![dur], "MusicRest[{value}]");
+    }
+    assert_eq!(rest_durs(&eval("MusicRest[]")), vec![Dur::Quarter]);
+
+    // An empty measure's fill rest has no `Duration`, only `Beats` and
+    // `BeatDuration` — four quarter beats is a whole rest.
+    assert_eq!(rest_durs(&eval("MusicMeasure[{}]")), vec![Dur::Whole]);
   }
 
   #[test]
