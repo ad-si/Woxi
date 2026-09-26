@@ -813,11 +813,20 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
             opts.full_width = fw;
           }
         }
-        "Joined" => {
-          if matches!(replacement, Expr::Identifier(v) if v == "True") {
-            out.joined = true;
+        "Joined" => match replacement {
+          Expr::Identifier(v) if v == "True" => out.joined = true,
+          // `Joined -> {b1, b2, ...}`: join series `i` only when `bi` is
+          // True, leaving the rest as scattered points (ListPlot only).
+          Expr::List(items) => {
+            let flags: Vec<bool> = items
+              .iter()
+              .map(|e| matches!(e, Expr::Identifier(v) if v == "True"))
+              .collect();
+            out.joined = flags.iter().any(|&b| b);
+            opts.joined_per_series = Some(flags);
           }
-        }
+          _ => {}
+        },
         "PlotRange" => {
           let (rx, ry) = crate::functions::plot::parse_plot_range(replacement);
           out.plot_range_x = rx;
@@ -1251,6 +1260,14 @@ fn render_panel_layout(
     let y_range = adjust_y_range_for_filling_opts(&opts, y_range);
     let (x_range, y_range) =
       apply_plot_range_override(parsed, x_range, y_range);
+    // `PlotLayout` splits each series into its own panel; a per-series
+    // `Joined -> {..., False, ...}` still picks that panel's renderer.
+    let scatter = parsed
+      .opts
+      .joined_per_series
+      .as_ref()
+      .and_then(|v| v.get(idx))
+      .map_or(scatter, |&joined| !joined);
     let svg = if scatter {
       generate_scatter_svg_with_options(single, x_range, y_range, &opts)?
     } else {
@@ -1344,13 +1361,17 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     generate_scatter_svg_with_options(&draw_series, x_range, y_range, opts)?
   };
 
+  let is_scatter: Vec<bool> = match &opts.joined_per_series {
+    Some(flags) => flags.iter().map(|&b| !b).collect(),
+    None => vec![!joined],
+  };
   let mut source = build_plot_source(
     &draw_series,
     &opts.plot_style,
     x_range,
     y_range,
     (opts.svg_width, opts.svg_height),
-    !joined,
+    &is_scatter,
     opts.filling,
     opts.filling_style,
     crate::functions::plot::explicit_options(args),
@@ -1438,7 +1459,7 @@ pub fn complex_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     x_range,
     y_range,
     (opts.svg_width, opts.svg_height),
-    !joined,
+    &[!joined],
     opts.filling,
     opts.filling_style,
     crate::functions::plot::explicit_options(args),
@@ -1507,7 +1528,7 @@ pub fn list_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     x_range,
     y_range,
     (parsed.opts.svg_width, parsed.opts.svg_height),
-    false,
+    &[false],
     parsed.opts.filling,
     parsed.opts.filling_style,
     crate::functions::plot::explicit_options(args),
