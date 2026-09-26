@@ -23988,9 +23988,19 @@ fn parse_manipulate_control(
       )
     });
   if is_locator || is_hidden {
+    // `{v, ControlType -> None}` — a hidden state variable with no domain
+    // argument at all, only the option that hides it — has nothing at
+    // `items[1]` but the option rule itself. Skip over it rather than
+    // reading it as the domain, or the variable would start out bound to
+    // the literal text `ControlType -> None` instead of `Null`.
     let value_expr = explicit_initial
       .clone()
-      .or_else(|| items.get(1).cloned())
+      .or_else(|| {
+        items[1..]
+          .iter()
+          .find(|it| !is_control_type_rule(it))
+          .cloned()
+      })
       .unwrap_or(null_expr());
     if is_hidden {
       // A `ControlType -> None` variable stays a live, mutable binding so
@@ -28295,6 +28305,64 @@ mod manipulate_traditional_form_choice_svg_tests {
     assert!(
       json.contains(r#""italic":true"#),
       "the italic flag itself must survive into the JSON: {json}"
+    );
+  }
+}
+
+#[cfg(test)]
+mod manipulate_hidden_state_var_tests {
+  use super::*;
+
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook (an ion-diffusion
+  /// simulation) whose `Manipulate` declared several hidden accumulator
+  /// variables as a bare `{name, ControlType -> None}` — no domain or
+  /// initial value at all, just the name and the option that hides the
+  /// widget. Regression: the hidden-state-variable branch fell back to
+  /// `items.get(1)` for the domain without checking that it was an actual
+  /// domain rather than the `ControlType -> None` rule itself (the only
+  /// other element in a two-item spec), so the variable started out bound
+  /// to the literal text `ControlType -> None` instead of `Null`. This is
+  /// a self-authored, construct-equivalent example (an invented variable
+  /// name) — not the Demonstration's own code, which is copyrighted.
+  #[test]
+  fn domain_less_hidden_state_var_defaults_to_null_not_the_option_rule() {
+    let expr = crate::parse_to_expr(
+      "Manipulate[x, {{x, 0}, -1, 1}, {accum, ControlType -> None}]",
+    )
+    .expect("parse");
+    let spec = extract_manipulate_spec(&expr).expect("extract spec");
+    assert_eq!(spec.state, vec![("accum".to_string(), "Null".to_string())]);
+  }
+
+  /// The same spec with an explicit initial value (`{{accum, 0}, ControlType
+  /// -> None}`) is unaffected by the fix above — it still binds the
+  /// written initial, not `Null`.
+  #[test]
+  fn hidden_state_var_with_explicit_initial_is_unaffected() {
+    let expr = crate::parse_to_expr(
+      "Manipulate[x, {{x, 0}, -1, 1}, {{accum, 0}, ControlType -> None}]",
+    )
+    .expect("parse");
+    let spec = extract_manipulate_spec(&expr).expect("extract spec");
+    assert_eq!(spec.state, vec![("accum".to_string(), "0".to_string())]);
+  }
+
+  /// A hidden state variable whose second element genuinely is a domain
+  /// list (`{name, {choices…}, ControlType -> None}`) still starts at the
+  /// list's first entry — the fix must skip only the `ControlType -> …`
+  /// rule itself, not every non-explicit-initial spec.
+  #[test]
+  fn hidden_state_var_with_domain_list_still_takes_first_choice() {
+    let expr = crate::parse_to_expr(
+      "Manipulate[x, {{x, 0}, -1, 1}, \
+       {accum, {Thickness[0.01], RGBColor[0, 0, 0]}, ControlType -> None}]",
+    )
+    .expect("parse");
+    let spec = extract_manipulate_spec(&expr).expect("extract spec");
+    assert_eq!(
+      spec.state,
+      vec![("accum".to_string(), "Thickness[0.01]".to_string())]
     );
   }
 }
