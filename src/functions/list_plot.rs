@@ -813,11 +813,20 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
             opts.full_width = fw;
           }
         }
-        "Joined" => {
-          if matches!(replacement, Expr::Identifier(v) if v == "True") {
-            out.joined = true;
+        "Joined" => match replacement {
+          Expr::Identifier(v) if v == "True" => out.joined = true,
+          // `Joined -> {b1, b2, ...}`: join series `i` only when `bi` is
+          // True, leaving the rest as scattered points (ListPlot only).
+          Expr::List(items) => {
+            let flags: Vec<bool> = items
+              .iter()
+              .map(|e| matches!(e, Expr::Identifier(v) if v == "True"))
+              .collect();
+            out.joined = flags.iter().any(|&b| b);
+            opts.joined_per_series = Some(flags);
           }
-        }
+          _ => {}
+        },
         "PlotRange" => {
           let (rx, ry) = crate::functions::plot::parse_plot_range(replacement);
           out.plot_range_x = rx;
@@ -1251,6 +1260,23 @@ fn render_panel_layout(
     let y_range = adjust_y_range_for_filling_opts(&opts, y_range);
     let (x_range, y_range) =
       apply_plot_range_override(parsed, x_range, y_range);
+    // `PlotLayout` splits each series into its own panel; a per-series
+    // `Joined -> {..., False, ...}` still picks that panel's renderer,
+    // cycling a shorter flags list the same way every other reader of
+    // `joined_per_series` does (see `resolve_series_joined`).
+    let scatter = if let Some(flags) = &parsed.opts.joined_per_series {
+      let joined =
+        crate::functions::plot::resolve_series_joined(Some(flags), idx);
+      // `opts` now holds this single series at index 0 (`single`, below),
+      // so its own `joined_per_series` must shrink to match — left at the
+      // original full-plot flags list, the line/scatter renderer would
+      // resolve index 0 of *that* list for every panel instead of the
+      // panel's own resolved state.
+      opts.joined_per_series = Some(vec![joined]);
+      !joined
+    } else {
+      scatter
+    };
     let svg = if scatter {
       generate_scatter_svg_with_options(single, x_range, y_range, &opts)?
     } else {
@@ -1294,14 +1320,34 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   parsed.opts.error_bars = collect_error_bars(&err_series);
 
-  // InterpolationOrder reshapes the joined curve (0 = steps, >= 2 = smooth
-  // spline); mesh dots, error bars, and point labels stay anchored to the
+  // InterpolationOrder reshapes only a joined series into a curve (0 =
+  // steps, >= 2 = smooth spline); a series marked `Joined -> False` keeps
+  // its raw data points, since it draws discrete circles rather than a
+  // curve. Mesh dots, error bars, and point labels stay anchored to the
   // original data points.
+  let interpolating = matches!(parsed.interpolation_order, Some(o) if o != 1);
+  let series_joined = |i: usize| match &parsed.opts.joined_per_series {
+    Some(flags) => {
+      crate::functions::plot::resolve_series_joined(Some(flags), i)
+    }
+    None => parsed.joined,
+  };
   let curve_transformed =
-    parsed.joined && matches!(parsed.interpolation_order, Some(o) if o != 1);
+    interpolating && (0..all_series.len()).any(series_joined);
   let draw_series = if curve_transformed {
     parsed.opts.data_points.clone_from(&all_series);
-    interpolate_series(&all_series, parsed.interpolation_order.unwrap())
+    let curves =
+      interpolate_series(&all_series, parsed.interpolation_order.unwrap());
+    all_series
+      .iter()
+      .zip(curves)
+      .enumerate()
+      .map(
+        |(i, (raw, curve))| {
+          if series_joined(i) { curve } else { raw.clone() }
+        },
+      )
+      .collect()
   } else {
     all_series
   };
@@ -1344,13 +1390,30 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     generate_scatter_svg_with_options(&draw_series, x_range, y_range, opts)?
   };
 
+  // Resolved per series rather than copied from `opts.joined_per_series`
+  // directly: a flags list shorter than `draw_series` must cycle exactly
+  // like `generate_svg_with_options` cycles it when actually drawing, or
+  // `PlotSource.is_scatter` (which `Show` merges and interactive
+  // re-renders read) would disagree with the SVG this same call produced.
+  let is_scatter: Vec<bool> = if opts.joined_per_series.is_some() {
+    (0..draw_series.len())
+      .map(|i| {
+        !crate::functions::plot::resolve_series_joined(
+          opts.joined_per_series.as_deref(),
+          i,
+        )
+      })
+      .collect()
+  } else {
+    vec![!joined]
+  };
   let mut source = build_plot_source(
     &draw_series,
     &opts.plot_style,
     x_range,
     y_range,
     (opts.svg_width, opts.svg_height),
-    !joined,
+    &is_scatter,
     opts.filling,
     opts.filling_style,
     crate::functions::plot::explicit_options(args),
@@ -1438,7 +1501,7 @@ pub fn complex_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     x_range,
     y_range,
     (opts.svg_width, opts.svg_height),
-    !joined,
+    &[!joined],
     opts.filling,
     opts.filling_style,
     crate::functions::plot::explicit_options(args),
@@ -1507,7 +1570,7 @@ pub fn list_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     x_range,
     y_range,
     (parsed.opts.svg_width, parsed.opts.svg_height),
-    false,
+    &[false],
     parsed.opts.filling,
     parsed.opts.filling_style,
     crate::functions::plot::explicit_options(args),

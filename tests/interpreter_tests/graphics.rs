@@ -8073,6 +8073,91 @@ mod plot3d {
       ));
     }
 
+    // Regression: `Joined -> {b1, b2, ...}` (per-series joining) only ever
+    // matched the bare `True` identifier, so a list value fell through
+    // silently and every series rendered as scattered points — found while
+    // checking Woxi Studio against a Wolfram Demonstration whose Manipulate
+    // draws a raw signal as points alongside a smoothed test curve as a
+    // joined line, sharing one `ListPlot`. Series `i` must now draw as a
+    // curve exactly when its own flag is `True`, independent of its
+    // siblings.
+    #[test]
+    fn list_plot_joined_per_series() {
+      let svg = export_svg(
+        "ListPlot[{{0, 0, 0}, {1, 2, 1}}, Joined -> {False, True}, \
+         PlotStyle -> {Red, Blue}]",
+      );
+      assert_eq!(
+        svg.matches("<circle").count(),
+        3,
+        "series 1 (Joined -> False) should draw one point per value: {svg}"
+      );
+      assert!(
+        svg.contains("<polyline"),
+        "series 2 (Joined -> True) should draw a connected curve: {svg}"
+      );
+      assert_eq!(
+        svg.matches("fill=\"#FF0000\"").count(),
+        3,
+        "the unjoined series' points should keep their PlotStyle color: {svg}"
+      );
+      assert_eq!(
+        svg.matches("stroke=\"#0000FF\"").count(),
+        1,
+        "the joined series' curve should keep its PlotStyle color: {svg}"
+      );
+    }
+
+    // The reverse assignment: the first series is joined, the second is
+    // not — makes sure the per-series flag is read positionally rather
+    // than always applying to a fixed series.
+    #[test]
+    fn list_plot_joined_per_series_reversed() {
+      let svg = export_svg(
+        "ListPlot[{{0, 0, 0}, {1, 2, 1}}, Joined -> {True, False}, \
+         PlotStyle -> {Red, Blue}]",
+      );
+      assert_eq!(
+        svg.matches("<circle").count(),
+        3,
+        "series 2 (Joined -> False) should draw one point per value: {svg}"
+      );
+      assert_eq!(
+        svg.matches("stroke=\"#FF0000\"").count(),
+        1,
+        "series 1 (Joined -> True) should draw a connected curve: {svg}"
+      );
+      assert_eq!(
+        svg.matches("fill=\"#0000FF\"").count(),
+        3,
+        "the unjoined series' points should keep their PlotStyle color: {svg}"
+      );
+    }
+
+    // Regression: `InterpolationOrder` decided whether to resample *any*
+    // series from the plot-wide `Joined` flag, so combined with a
+    // per-series `Joined -> {False, True}` it resampled the unjoined
+    // series too — turning its 5 raw values into dozens of spline points,
+    // each drawn as its own circle, instead of leaving it as 5 discrete
+    // points.
+    #[test]
+    fn list_plot_joined_per_series_interpolation_order() {
+      let svg = export_svg(
+        "ListPlot[{{1, 4, 2, 3, 10}, {0, 0, 0, 0, 0}}, \
+         Joined -> {True, False}, InterpolationOrder -> 2]",
+      );
+      assert_eq!(
+        svg.matches("<circle").count(),
+        5,
+        "series 2 (Joined -> False) should keep its 5 raw data points \
+         instead of being resampled into a spline: {svg}"
+      );
+      assert!(
+        svg.contains("<polyline"),
+        "series 1 (Joined -> True) should still draw a spline curve: {svg}"
+      );
+    }
+
     /// The pixel points of the first data-series polyline (plot color).
     fn series_polyline_points(svg: &str) -> Vec<(f64, f64)> {
       let start = svg
@@ -9386,6 +9471,29 @@ mod plot3d {
       assert!(width > 700.0, "expected two side-by-side panels: {width}");
       assert_eq!(svg.matches("fill=\"#5E81B5\"").count(), 3);
       assert_eq!(svg.matches("fill=\"#E0932C\"").count(), 3);
+    }
+
+    // Regression: `render_panel_layout` picked each panel's renderer from
+    // the plot's single `Joined` flag only, ignoring a per-series `Joined
+    // -> {b1, b2, ...}` list entirely — every panel followed whichever
+    // series happened to set `parsed.joined` via `flags.iter().any(...)`.
+    // Each series still gets its own panel under `PlotLayout`, and now its
+    // own flag decides that panel's renderer independently of the others.
+    #[test]
+    fn list_plot_row_layout_joined_per_series() {
+      let svg = export_svg(
+        "ListPlot[{{1, 2, 3}, {4, 5, 6}}, PlotLayout -> \"Row\", \
+         Joined -> {False, True}]",
+      );
+      assert_eq!(
+        svg.matches("<circle").count(),
+        3,
+        "panel 1 (Joined -> False) should draw one point per value: {svg}"
+      );
+      assert!(
+        svg.contains("<polyline"),
+        "panel 2 (Joined -> True) should draw a connected curve: {svg}"
+      );
     }
 
     /// Labeled around individual {x, y} pairs labels the points of a single
