@@ -1268,6 +1268,49 @@ mod subtraction_without_spaces {
   }
 }
 
+mod semicolon_paren_as_implicit_times_factor {
+  use super::*;
+
+  #[test]
+  fn bare_case_still_parses() {
+    // Sanity check: a semicolon-terminated paren group directly at the top
+    // level already parsed before the fix below.
+    assert_eq!(interpret("(1+2)(3+4)").unwrap(), "21");
+  }
+
+  #[test]
+  fn nested_in_another_paren() {
+    // Regression: `SimpleTerm`'s parenthesized-group alternative only
+    // matched a plain `Expression`, not a semicolon-terminated
+    // `CompoundExpression`, so a `(stmt;)` factor of an implicit-times
+    // chain failed to parse as soon as it was nested inside another
+    // group (paren, brace, `Times`, …) rather than sitting at the very
+    // top of the input.
+    clear_state();
+    assert_eq!(interpret("Head[((b = 6;) 7)]").unwrap(), "Times");
+  }
+
+  #[test]
+  fn nested_in_a_list() {
+    clear_state();
+    assert!(interpret("{(b=6;) 7}").is_ok());
+  }
+
+  #[test]
+  fn side_effects_run_for_every_factor() {
+    // Each `(stmt;)` factor still evaluates its assignment before the
+    // factors combine, regardless of the surrounding nesting.
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ClearAll[p, q, r, total]; (p = 1; (q = 2;) (r = 3;) (total = p + q + r;)); {p, q, r, total}"
+      )
+      .unwrap(),
+      "{1, 2, 3, 6}"
+    );
+  }
+}
+
 mod newline_statements {
   use super::*;
 
