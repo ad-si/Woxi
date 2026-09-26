@@ -1406,9 +1406,19 @@ fn has_top_level_assignment(s: &str) -> bool {
       '{' | '[' | '(' => depth += 1,
       '}' | ']' | ')' => depth -= 1,
       '=' if depth == 0 => {
-        // `==` / `===` (Equal / SameQ): not an assignment.
+        // `=!=` (UnsameQ): not an assignment.
+        if chars.get(i + 1) == Some(&'!') && chars.get(i + 2) == Some(&'=') {
+          i += 3;
+          continue;
+        }
+        // `==` / `===` (Equal / SameQ): not an assignment. `===` is three
+        // consecutive `=` characters — consume all of them so the trailing
+        // one isn't mistaken for a fresh (assignment) `=`.
         if chars.get(i + 1) == Some(&'=') {
           i += 2;
+          while chars.get(i) == Some(&'=') {
+            i += 1;
+          }
           continue;
         }
         // `<=`, `>=`, `!=`: comparisons, not assignments.
@@ -1445,26 +1455,30 @@ fn is_soft_whitespace_box_token(part: &str) -> bool {
 /// them — i.e. would gluing `parts[i]`'s text directly onto it read back as
 /// implicit multiplication? Walks backward from `i`, skipping
 /// [`is_soft_whitespace_box_token`] entries; a literal `"\n"` multi-statement
-/// separator, a bare `","` list/argument separator, or a bare opening
-/// delimiter (`"["`, `"{"`, `"("`) stops the walk (`false`), since each
-/// already makes the join explicit — there is no juxtaposition to protect
-/// against, so a `RowBox` sibling directly after one needs no extra parens
-/// around its own top-level assignment (`{n = 1, θ = 2}` is already
-/// unambiguous, and so is `With[{v = 1}, body]`, whose body sits right after
-/// the argument-separating `,` inside the call's own `[`…`]`). Misapplying
-/// the rule across a whole comma list — or a whole bracketed argument list —
-/// wraps everything in it together as one invalid `(a, b, …)` group instead
-/// of leaving each item alone; see the call site in
+/// separator, a bare `","`/`";"` list/argument/statement separator, or a
+/// bare opening delimiter (`"["`, `"{"`, `"("`) stops the walk (`false`),
+/// since each already makes the join explicit — there is no juxtaposition
+/// to protect against, so a `RowBox` sibling directly after one needs no
+/// extra parens around its own top-level assignment (`{n = 1, θ = 2}` is
+/// already unambiguous, and so is `With[{v = 1}, body]`, whose body sits
+/// right after the argument-separating `,` inside the call's own `[`…`]`).
+/// Misapplying the rule across a whole comma list — or a whole bracketed
+/// argument list — wraps everything in it together as one invalid `(a, b,
+/// …)` group instead of leaving each item alone; see the call site in
 /// [`extract_rowbox_content`].
 fn has_real_predecessor(parts: &[String], i: usize) -> bool {
   for part in parts[..i].iter().rev() {
     let t = part.trim();
-    if t == "\"\\n\""
-      || is_bare_char(t, ',')
-      || is_bare_char(t, '[')
-      || is_bare_char(t, '{')
-      || is_bare_char(t, '(')
-    {
+    // A literal `"\n"` multi-statement separator, a list/argument comma or
+    // statement `;`, or an opening delimiter starting the enclosing group
+    // are all structural punctuation, not a value the current part could be
+    // juxtaposed (implicitly multiplied) against — e.g. the second binding
+    // of a `With[{a = …, b = …}, …]` list follows a `","`, not an
+    // expression, so it is never "juxtaposed" onto the first.
+    if matches!(
+      t,
+      "\"\\n\"" | "\",\"" | "\";\"" | "\"{\"" | "\"(\"" | "\"[\""
+    ) {
       return false;
     }
     if !is_soft_whitespace_box_token(t) {
@@ -7075,6 +7089,96 @@ Cell[BoxData[RowBox[{"arrowHead", "=", RowBox[{"{", RowBox[{"Line", "[", RowBox[
       result, "3",
       "the assignment must actually run (not fail as Set::write on a \
        corrupted `Times[…]` target), got: {result:?} from {expr_src:?}"
+    );
+  }
+
+  #[test]
+  fn same_q_and_unsame_q_are_not_top_level_assignments() {
+    // `===` (SameQ) and `=!=` (UnsameQ) are three-character comparison
+    // operators, not assignments. The two-character `==` check consumed
+    // only the first pair of `=` in `===`, leaving its third `=` to be
+    // misread as a fresh (assignment) `=`; `=!=` was not recognized at all
+    // (its leading `=` is followed by `!`, not `=`), so it fell straight
+    // through to the "bare assignment" case.
+    assert!(!has_top_level_assignment("a===b"));
+    assert!(!has_top_level_assignment("a=!=b"));
+    assert!(!has_top_level_assignment("Last[l]===First[l]"));
+    assert!(!has_top_level_assignment("Round[sum]=!=0"));
+    // A real assignment following one of these must still be detected.
+    assert!(has_top_level_assignment("(a===b);total=1"));
+  }
+
+  #[test]
+  fn same_q_argument_list_keeps_its_grouping() {
+    // As part of a scheduled QA routine, Woxi Studio was tested against a
+    // randomly sampled Wolfram Demonstration notebook ("Color Blindness")
+    // whose Manipulate Initialization defines a point-in-polygon helper
+    // that closes an open path with `If[Last[l]===First[l], l,
+    // Append[l, l[[1]]]]`. Flattening the box tree misdetected the `===`
+    // as a top-level assignment (see `same_q_and_unsame_q_are_not_top_
+    // level_assignments`) and wrapped the whole three-argument `If[…]` row
+    // in a stray `(…)`, turning it into `If[(a===b,l,Append[…])]` — invalid
+    // syntax, since parentheses cannot hold a comma-separated list — which
+    // failed to parse at all. This is a self-authored, construct-equivalent
+    // example (an invented list-closing helper, not the Demonstration's
+    // own code or data, which is copyrighted).
+    let boxes = r#"RowBox[{"If", "[", RowBox[{RowBox[{RowBox[{"Last", "[", "l", "]"}], "===", RowBox[{"First", "[", "l", "]"}]}], ",", "l", ",", RowBox[{"Append", "[", RowBox[{"l", ",", RowBox[{"l", "[", RowBox[{"[", "1", "]"}], "]"}]}], "]"}]}], "]"}]"#;
+    let expr_src =
+      box_source_to_expression(boxes).expect("box source must convert");
+    assert!(
+      !expr_src.contains('('),
+      "a plain If[a===b, x, y] needs no extra parens, got: {expr_src:?}"
+    );
+
+    let closed =
+      crate::interpret(&format!("l={{1,2,3,1}}; {expr_src}")).unwrap();
+    let open = crate::interpret(&format!("l={{1,2,3}}; {expr_src}")).unwrap();
+    assert_eq!(closed, "{1, 2, 3, 1}", "from {expr_src:?}");
+    assert_eq!(open, "{1, 2, 3, 1}", "from {expr_src:?}");
+  }
+
+  #[test]
+  fn unsame_q_condition_keeps_its_grouping() {
+    // The same `===`/`=!=` misdetection also broke a bare `x=!=y` condition
+    // used directly as a function argument (the same Demonstration's
+    // winding-number test ends in `Round[sum]=!=0`), wrapping it in a
+    // stray `(…)` around the whole surrounding argument list.
+    let boxes = r#"RowBox[{"Not", "[", RowBox[{RowBox[{"Round", "[", "sum", "]"}], "=!=", "0"}], "]"}]"#;
+    let expr_src =
+      box_source_to_expression(boxes).expect("box source must convert");
+    assert!(!expr_src.contains('('), "got: {expr_src:?}");
+    assert_eq!(
+      crate::interpret(&format!("sum=0.4; {expr_src}")).unwrap(),
+      "True",
+      "from {expr_src:?}"
+    );
+  }
+
+  #[test]
+  fn comma_separated_binding_does_not_gain_stray_parens() {
+    // As part of the same QA pass, the Demonstration's Manipulate also
+    // binds two variables in a single `With[{a = …, b = …}, body]`, each
+    // assignment box a sibling of the other separated by a `","` display
+    // token. `has_real_predecessor` treated that comma (and the `"{"`
+    // opening the binding list) as "a real expression already precedes
+    // this", the same condition `juxtaposed_assignment_after_loop_keeps_
+    // its_own_grouping` guards against — so the second binding's `RowBox`
+    // was wrapped in a stray `(…)`, and the enclosing `{…}` list (now
+    // holding what the flattener saw as one comma-holding parenthesized
+    // item) was wrapped in another, producing invalid `{(a = …,(b =
+    // …))}` syntax that failed to parse. This is a self-authored,
+    // construct-equivalent example, not the Demonstration's own code.
+    let boxes = r#"RowBox[{"With", "[", RowBox[{RowBox[{"{", RowBox[{RowBox[{"a", "=", "1"}], ",", "\[IndentingNewLine]", RowBox[{"b", "=", "2"}]}], "}"}], ",", RowBox[{"a", "+", "b"}]}], "]"}]"#;
+    let expr_src =
+      box_source_to_expression(boxes).expect("box source must convert");
+    assert!(
+      !expr_src.contains('('),
+      "a plain {{a=1,b=2}} binding list needs no extra parens, got: {expr_src:?}"
+    );
+    assert_eq!(
+      crate::interpret(&expr_src).unwrap(),
+      "3",
+      "from {expr_src:?}"
     );
   }
 

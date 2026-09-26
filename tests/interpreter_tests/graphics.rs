@@ -20570,6 +20570,137 @@ mod parametric_plot3d {
       fill_colors(&with_unrelated_mesh_option).len()
     );
   }
+
+  /// The projected aspect ratio (projected y-span over x-span) of every
+  /// triangle fill in the SVG — reused by the `BoxRatios`/`PlotRange`
+  /// regressions below to check the rendered box's shape without
+  /// depending on exact pixel coordinates.
+  fn box_aspect(svg: &str) -> f64 {
+    let coords = |nth: usize| -> Vec<f64> {
+      svg
+        .split("<polygon points=\"")
+        .skip(1)
+        .filter_map(|p| p.split('"').next())
+        .flat_map(|p| {
+          p.split_whitespace()
+            .filter_map(|c| c.split(',').nth(nth)?.parse::<f64>().ok())
+            .collect::<Vec<_>>()
+        })
+        .collect()
+    };
+    let span = |v: &[f64]| {
+      v.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b))
+        - v.iter().fold(f64::INFINITY, |a, &b| a.min(b))
+    };
+    span(&coords(1)) / span(&coords(0))
+  }
+
+  /// Regression (Wolfram Demonstration "Twisted Surfaces of Revolution"):
+  /// `ParametricPlot3D`'s own direct render (unlike `Graphics3D`'s) never
+  /// read `BoxRatios` at all — it always squashed the box into Wolfram's
+  /// `Plot3D`-family default `{1, 1, 0.4}` no matter what was asked for.
+  /// `BoxRatios -> Automatic` asks for the box shaped like the data's own
+  /// extents instead, so a tube running ten times as far along its axis
+  /// as it is wide must draw far taller than the squashed default.
+  #[test]
+  fn box_ratios_automatic_uses_the_datas_own_proportions() {
+    let default_shape = export_svg(
+      "ParametricPlot3D[{Cos[u], Sin[u], v}, {u, 0, 2 Pi}, {v, -10, 10}]",
+    );
+    let automatic_shape = export_svg(
+      "ParametricPlot3D[{Cos[u], Sin[u], v}, {u, 0, 2 Pi}, {v, -10, 10}, \
+       BoxRatios -> Automatic]",
+    );
+    let (default_aspect, automatic_aspect) =
+      (box_aspect(&default_shape), box_aspect(&automatic_shape));
+    assert!(
+      automatic_aspect > default_aspect * 2.0,
+      "Automatic BoxRatios must draw the data's true, much taller shape: \
+       {automatic_aspect} vs default {default_aspect}"
+    );
+  }
+
+  /// An explicit `BoxRatios -> {rx, ry, rz}` on `ParametricPlot3D` must
+  /// reshape the box to those proportions directly, the same as
+  /// `Automatic` deriving them from the data.
+  #[test]
+  fn explicit_box_ratios_reshape_the_box() {
+    let flat = export_svg(
+      "ParametricPlot3D[{Cos[u], Sin[u], v}, {u, 0, 2 Pi}, {v, -1, 1}, \
+       BoxRatios -> {1, 1, 0.1}]",
+    );
+    let tall = export_svg(
+      "ParametricPlot3D[{Cos[u], Sin[u], v}, {u, 0, 2 Pi}, {v, -1, 1}, \
+       BoxRatios -> {1, 1, 4}]",
+    );
+    let (flat_aspect, tall_aspect) = (box_aspect(&flat), box_aspect(&tall));
+    assert!(
+      tall_aspect > flat_aspect * 4.0,
+      "BoxRatios -> {{1,1,4}} must draw a much taller box than \
+       {{1,1,0.1}}: {tall_aspect} vs {flat_aspect}"
+    );
+  }
+
+  /// Regression (Wolfram Demonstration "Twisted Surfaces of Revolution"):
+  /// `PlotRange` on `ParametricPlot3D` was likewise never read by its own
+  /// direct render — the axis ticks (and the box they frame) always
+  /// reported the sampled surface's actual extent, ignoring any `PlotRange`
+  /// given alongside it. A demonstration that pins `PlotRange` to keep a
+  /// `Manipulate`-driven surface's framing stable across frames instead
+  /// saw the frame follow the data every time.
+  #[test]
+  fn plot_range_pins_the_frame_independent_of_the_sampled_data() {
+    let svg = export_svg(
+      "ParametricPlot3D[{Cos[u], Sin[u], 0.1 v}, {u, 0, 2 Pi}, {v, -1, 1}, \
+       PlotRange -> {{-1, 1}, {-1, 1}, {-10, 10}}]",
+    );
+    // The surface's own z only ever reaches ±0.1, so a z tick at 10 can
+    // only come from the pinned `PlotRange`, not the data.
+    assert!(svg.contains(">10</text>"), "{svg}");
+    assert!(svg.contains(">-10</text>"), "{svg}");
+  }
+
+  /// Regression (Wolfram Demonstration "Twisted Surfaces of Revolution"):
+  /// `ParametricPlot3D`'s facet shading only ever painted `PlotStyle ->
+  /// FaceForm[front, back]`'s `front` colour — it built a `StyleState3D`
+  /// that carried `back_color` (as `Graphics3D`'s own polygon shading
+  /// already reads), but never consulted a facet's orientation relative
+  /// to the camera the way that shading does. A closed tube shows some
+  /// facets from behind no matter how it is turned, so the back colour
+  /// never appeared at all.
+  #[test]
+  fn face_form_shades_the_far_side_a_different_color() {
+    let svg = export_svg(
+      "ParametricPlot3D[{Cos[u], Sin[u], v}, {u, 0, 2 Pi}, {v, -1, 1}, \
+       PlotStyle -> FaceForm[Red, Blue]]",
+    );
+    let colors = fill_colors(&svg);
+    assert!(
+      colors.iter().any(|&(r, g, b)| r > g && r > b),
+      "expected some front-facing (red-tinted) facets, got {colors:?}"
+    );
+    assert!(
+      colors.iter().any(|&(r, g, b)| b > r && b > g),
+      "expected some back-facing (blue-tinted) facets, got {colors:?}"
+    );
+  }
+
+  /// A one-argument `PlotStyle -> FaceForm[color]` (no separate back
+  /// colour) must still colour every facet the same, regardless of which
+  /// way it faces.
+  #[test]
+  fn face_form_single_argument_colors_both_sides_the_same() {
+    let svg = export_svg(
+      "ParametricPlot3D[{Cos[u], Sin[u], v}, {u, 0, 2 Pi}, {v, -1, 1}, \
+       PlotStyle -> FaceForm[Red]]",
+    );
+    let colors = fill_colors(&svg);
+    assert!(!colors.is_empty(), "{svg}");
+    assert!(
+      colors.iter().all(|&(r, g, b)| r >= g && r >= b),
+      "expected every facet tinted toward red, got {colors:?}"
+    );
+  }
 }
 
 mod box_language {
@@ -29916,6 +30047,45 @@ mod list_plot_markers_and_epilog {
         .iter()
         .any(|(t, fill)| t == "B" && fill == "#0000FF"),
       "the second series takes the second marker: {svg}"
+    );
+  }
+
+  #[test]
+  fn open_markers_cycles_distinct_open_shapes_per_series() {
+    clear_state();
+    let svg = export_svg(
+      "ListPlot[{{{0, 1.}, {1, 2.}}, {{0, 3.}, {1, 4.}}, {{0, 5.}, {1, 6.}}}, \
+       PlotMarkers -> \"OpenMarkers\"]",
+    );
+    let markers = marker_glyphs(&svg);
+    // The literal option name must never be drawn as text.
+    assert!(
+      markers.iter().all(|(t, _)| t != "OpenMarkers"),
+      "the named marker set must not draw its own name: {svg}"
+    );
+    // Each series draws its own open (hollow) shape glyph, one per point.
+    let open_shapes = ["○", "□", "◇"];
+    for glyph in open_shapes {
+      assert_eq!(
+        markers.iter().filter(|(t, _)| t == glyph).count(),
+        2,
+        "two points for the glyph {glyph:?}: {svg}"
+      );
+    }
+    let distinct_colors: std::collections::HashSet<_> = markers
+      .iter()
+      .filter(|(t, _)| open_shapes.contains(&t.as_str()))
+      .map(|(_, fill)| fill.clone())
+      .collect();
+    assert_eq!(
+      distinct_colors.len(),
+      3,
+      "each series' open shape keeps its own series colour: {svg}"
+    );
+    assert_eq!(
+      svg.matches("<circle").count(),
+      0,
+      "glyphs replace the dots: {svg}"
     );
   }
 

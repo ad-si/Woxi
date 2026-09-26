@@ -1879,6 +1879,26 @@ fn is_button_bar(spec: &Expr) -> bool {
     if name == "ButtonBar" && !args.is_empty())
 }
 
+/// Does this Manipulate argument need `Initialization` to have already run
+/// before any control can be built from it? A `ButtonBar` is one case (see
+/// its call site); a control spec whose choice list is a computed
+/// `Dynamic[expr]` — anything but a literal list, e.g.
+/// `Dynamic[Evaluate[Thread[colors -> colorNames]]]` — is the same
+/// situation for a `PopupMenu`/`SetterBar`/etc.: the list only resolves
+/// once `Initialization`-defined symbols like `colors` exist.
+fn needs_early_initialization(spec: &Expr) -> bool {
+  if is_button_bar(spec) {
+    return true;
+  }
+  let Expr::List(items) = spec else {
+    return false;
+  };
+  items.iter().any(|it| {
+    matches!(it, Expr::FunctionCall { name, args }
+      if name == "Dynamic" && !args.is_empty() && !matches!(&args[0], Expr::List(_)))
+  })
+}
+
 /// A `Style[expr, …]` directive list in the order Wolfram applies it: a
 /// named style ("Label", "Section", …) supplies the base appearance and the
 /// explicit directives sit on top of it, whichever side of it they were
@@ -19973,9 +19993,14 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   // per vertex of a graph, labelling each from a list the `Initialization`
   // option defines. Those definitions therefore have to exist before the
   // control can be built at all, so run the initialization here rather than
-  // only in the frontend. Nothing else needs it, so nothing else pays for
-  // it.
-  if arg_items.iter().any(is_button_bar) {
+  // only in the frontend. A discrete control (`PopupMenu`/`SetterBar`/…)
+  // whose choice list is likewise computed — `Dynamic[Evaluate[…]]` rather
+  // than a literal list, e.g. a color-name picker built from
+  // `Initialization`-defined color/name arrays (the Demonstrations "color
+  // blindness test" pattern) — needs the same head start, or its choices
+  // never resolve to a list and the whole control is silently dropped.
+  // Nothing else needs it, so nothing else pays for it.
+  if arg_items.iter().any(needs_early_initialization) {
     for spec in &arg_items {
       if let Expr::Rule {
         pattern,
@@ -27372,6 +27397,49 @@ mod manipulate_dynamic_control_list_tests {
         assert_eq!(value_labels, &["a", "b", "c"]);
         assert_eq!(*initial_index, 1);
         assert!(popup, "ControlType -> PopupMenu must render as a dropdown");
+      }
+      other => panic!("expected a Discrete control, got {other:?}"),
+    }
+  }
+
+  /// A `Dynamic[expr]` choice list (see the previous test) can also depend
+  /// on symbols this very `Manipulate` defines through its own
+  /// `Initialization` option, rather than on a global set up beforehand —
+  /// the shape a Demonstration uses to build a labeled color picker (a
+  /// `PopupMenu` whose choices are `Dynamic[Evaluate[Thread[colors ->
+  /// colorNames]]]`, with `colors`/`colorNames` themselves assigned inside
+  /// `Initialization`). As part of a scheduled QA routine, Woxi Studio was
+  /// tested against a randomly sampled Wolfram Demonstration notebook
+  /// ("Color Blindness") using exactly this pattern: `Initialization` was
+  /// only run early for a `ButtonBar`'s computed labels, so this control's
+  /// choice list evaluated before its `Initialization`-defined symbols
+  /// existed, resolved to nothing, and the whole control (not just its
+  /// choices) was silently dropped.
+  #[test]
+  fn dynamic_choice_list_depending_on_own_initialization_still_builds() {
+    let s = spec(
+      "Manipulate[pick, {{pick, 2, \"\"}, \
+       Dynamic[Evaluate[Thread[codes -> names]], \
+        SynchronousUpdating -> False], ControlType -> PopupMenu}, \
+       Initialization :> (codes = {1, 2, 3}; names = {\"a\", \"b\", \"c\"})]",
+    );
+    assert_eq!(
+      names(&s),
+      vec!["pick"],
+      "the PopupMenu control must survive, not be dropped"
+    );
+    match &s.controls[0] {
+      ManipulateControl::Discrete {
+        values,
+        value_labels,
+        initial_index,
+        popup,
+        ..
+      } => {
+        assert_eq!(values, &["1", "2", "3"]);
+        assert_eq!(value_labels, &["a", "b", "c"]);
+        assert_eq!(*initial_index, 1);
+        assert!(popup);
       }
       other => panic!("expected a Discrete control, got {other:?}"),
     }
