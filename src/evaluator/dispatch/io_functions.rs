@@ -505,6 +505,7 @@ fn standard_stream_channel(expr: &Expr) -> Option<bool> {
 }
 
 /// The registry id of an `InputStream[name, id]` / `OutputStream[name, id]`.
+#[cfg(not(target_arch = "wasm32"))]
 fn io_stream_id(expr: &Expr) -> Option<usize> {
   let Expr::FunctionCall { name, args } = expr else {
     return None;
@@ -6607,6 +6608,8 @@ pub(crate) fn readlist_inputstream(
     ));
   };
   let stream_id = *id as usize;
+  // `kind` is only inspected by the native file check below.
+  #[cfg_attr(target_arch = "wasm32", allow(unused_variables))]
   let Some((kind, _)) = get_stream_kind(stream_id) else {
     return Err(InterpreterError::EvaluationError(
       "ReadList: stream is not open".into(),

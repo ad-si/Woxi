@@ -558,6 +558,7 @@ fn clear_value_expr() {
 }
 
 /// Take the value the most recent statement recorded.
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn take_value_expr() -> Option<syntax::Expr> {
   CURRENT_VALUE_EXPR.with(|c| c.borrow_mut().take())
 }

@@ -21,9 +21,12 @@
 //! language subset can't evaluate all leave the call symbolic — matching a
 //! kernel with no internet connection — rather than erroring.
 
+#[cfg(not(target_arch = "wasm32"))]
 use std::collections::HashMap;
+#[cfg(not(target_arch = "wasm32"))]
 use std::sync::{Mutex, OnceLock};
 
+#[cfg(not(target_arch = "wasm32"))]
 fn cache() -> &'static Mutex<HashMap<String, Option<String>>> {
   static CACHE: OnceLock<Mutex<HashMap<String, Option<String>>>> =
     OnceLock::new();

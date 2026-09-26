@@ -15,6 +15,7 @@ use serde_json::Value;
 use std::io::{self, BufRead, Write};
 
 /// JSON-RPC error codes used by the server (see the LSP specification).
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) const PARSE_ERROR: i64 = -32700;
 pub(crate) const INVALID_REQUEST: i64 = -32600;
 pub(crate) const METHOD_NOT_FOUND: i64 = -32601;

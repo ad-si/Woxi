@@ -1953,14 +1953,15 @@ pub fn apply_curried_call(
       && (1..=2).contains(&func_args.len())
       && matches!(&func_args[0], Expr::String(_)) =>
     {
-      let Expr::String(resource_name) = &func_args[0] else {
-        unreachable!()
-      };
       #[cfg(not(target_arch = "wasm32"))]
-      let resolved =
+      let resolved = {
+        let Expr::String(resource_name) = &func_args[0] else {
+          unreachable!()
+        };
         crate::functions::resource_function_ast::load_resource_function(
           resource_name,
-        );
+        )
+      };
       #[cfg(target_arch = "wasm32")]
       let resolved: Option<String> = None;
       match resolved {
