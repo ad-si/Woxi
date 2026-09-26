@@ -10720,6 +10720,13 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
           expr_to_svg_markup(&args[0])
         }
 
+        // Rotate[content, angle] — a Demonstration's idiom for a vertical
+        // axis label (`Rotate["concentration", Pi/2]`). The label renderer
+        // here has no notion of a rotated run of text, so this typesets
+        // the content unrotated rather than falling through to the
+        // `Rotate[…]` FullForm text every other unhandled head prints.
+        "Rotate" if !args.is_empty() => expr_to_svg_markup(&args[0]),
+
         // Row[{a, b, …}] concatenates its parts; Row[{…}, sep] joins
         // them with the separator. A `Spacer[n]` gap — as a bare item or
         // as the separator — is carried as a `dx` on the *next* rendered
