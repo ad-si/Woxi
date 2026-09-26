@@ -868,6 +868,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     full_width,
     mesh_mode,
     show_axes,
+    [1.0, 1.0, Z_SCALE],
   )?;
   // A `PlotLabel` sets a title above the finished picture.
   let svg = with_plot_label(svg, args, svg_width, svg_height);
@@ -888,6 +889,7 @@ fn generate_svg(
   full_width: bool,
   mesh_mode: MeshMode,
   show_axes: bool,
+  box_ratios: [f64; 3],
 ) -> Result<String, InterpreterError> {
   // Find bounding box of all projected points
   let mut px_min = f64::INFINITY;
@@ -905,7 +907,7 @@ fn generate_svg(
   }
 
   // Also include the bounding box corners for axes
-  let bbox_corners = bounding_box_corners();
+  let bbox_corners = bounding_box_corners_with_ratios(box_ratios);
   for &corner in &bbox_corners {
     let (px, py) = project(corner, camera);
     px_min = px_min.min(px);
@@ -966,7 +968,7 @@ fn generate_svg(
     let (_, axis_rgb, _, _, _) = crate::functions::plot::plot_theme();
     let axis_color =
       format!("rgb({},{},{})", axis_rgb.0, axis_rgb.1, axis_rgb.2);
-    let corners = bounding_box_corners();
+    let corners = bounding_box_corners_with_ratios(box_ratios);
     let edge_pairs: [(usize, usize); 12] = [
       (0, 1),
       (0, 2),
@@ -1080,55 +1082,75 @@ fn generate_svg(
 
   // Draw axes (ticks, labels) on top of everything
   if show_axes {
-    draw_axes(&mut svg, camera, &to_svg, x_range, y_range, z_range);
+    draw_axes_on_box(
+      &mut svg,
+      camera,
+      &to_svg,
+      &bounding_box_corners_with_ratios(box_ratios),
+      x_range,
+      y_range,
+      z_range,
+      &[None, None, None],
+    );
   }
 
   svg.push_str("</svg>");
   Ok(svg)
 }
 
-/// The 8 corners of the normalized [-1,1]^3 bounding box
+/// The 8 corners of the normalized [-1,1]x[-1,1]x[-Z_SCALE,Z_SCALE] bounding
+/// box — the default box shape shared by the Plot3D-family renderers.
 fn bounding_box_corners() -> [Point3D; 8] {
+  bounding_box_corners_with_ratios([1.0, 1.0, Z_SCALE])
+}
+
+/// The 8 corners of a box shaped `[-rx,rx]x[-ry,ry]x[-rz,rz]`. Only the
+/// ratios *between* `rx`, `ry` and `rz` matter — `ParametricPlot3D`'s
+/// `BoxRatios` option passes its three values straight through, and its
+/// `Automatic` (the box shaped like the data's own extents, rather than a
+/// fixed default shape) passes the data's actual per-axis spread instead.
+fn bounding_box_corners_with_ratios(ratios: [f64; 3]) -> [Point3D; 8] {
+  let [rx, ry, rz] = ratios;
   [
     Point3D {
-      x: -1.0,
-      y: -1.0,
-      z: -Z_SCALE,
+      x: -rx,
+      y: -ry,
+      z: -rz,
     },
     Point3D {
-      x: 1.0,
-      y: -1.0,
-      z: -Z_SCALE,
+      x: rx,
+      y: -ry,
+      z: -rz,
     },
     Point3D {
-      x: -1.0,
-      y: 1.0,
-      z: -Z_SCALE,
+      x: -rx,
+      y: ry,
+      z: -rz,
     },
     Point3D {
-      x: 1.0,
-      y: 1.0,
-      z: -Z_SCALE,
+      x: rx,
+      y: ry,
+      z: -rz,
     },
     Point3D {
-      x: -1.0,
-      y: -1.0,
-      z: Z_SCALE,
+      x: -rx,
+      y: -ry,
+      z: rz,
     },
     Point3D {
-      x: 1.0,
-      y: -1.0,
-      z: Z_SCALE,
+      x: rx,
+      y: -ry,
+      z: rz,
     },
     Point3D {
-      x: -1.0,
-      y: 1.0,
-      z: Z_SCALE,
+      x: -rx,
+      y: ry,
+      z: rz,
     },
     Point3D {
-      x: 1.0,
-      y: 1.0,
-      z: Z_SCALE,
+      x: rx,
+      y: ry,
+      z: rz,
     },
   ]
 }
@@ -3129,7 +3151,9 @@ fn parse_plot_style_3d(
 /// style set no colour of its own, e.g. `PlotStyle -> Opacity[.5]`) is
 /// shaded instead, with any `Specularity` the style carries layered on top,
 /// and the style's opacity is returned alongside the colour for the
-/// triangle to draw translucently.
+/// triangle to draw translucently. `PlotStyle -> FaceForm[front, back]`
+/// swaps in the style's `back_color` for a facet turned away from the
+/// viewer, the same test `Graphics3D`'s own polygon shading uses.
 fn shade_facet(
   default_color: (u8, u8, u8),
   style: Option<&StyleState3D>,
@@ -3138,7 +3162,13 @@ fn shade_facet(
 ) -> ((u8, u8, u8), f64) {
   match style {
     Some(s) => {
-      let base = s.color.unwrap_or(default_color);
+      let facing = normal[0] * view_dir[0]
+        + normal[1] * view_dir[1]
+        + normal[2] * view_dir[2];
+      let base = match s.back_color {
+        Some(back) if facing < 0.0 => back,
+        _ => s.color.unwrap_or(default_color),
+      };
       (
         apply_lighting_specular(base, normal, s.specular, view_dir),
         s.opacity,
@@ -7143,6 +7173,7 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     full_width,
     mesh_mode,
     true, // show_axes: always show axes for list_plot3d
+    [1.0, 1.0, Z_SCALE],
   )?;
   // A `PlotLabel` sets a title above the finished picture.
   let svg = with_plot_label(svg, args, svg_width, svg_height);
@@ -7734,6 +7765,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     full_width,
     mesh_mode,
     show_axes,
+    [1.0, 1.0, Z_SCALE],
   )?;
   // A `PlotLabel` sets a title above the finished picture.
   let svg = with_plot_label(svg, args, svg_width, svg_height);
@@ -8192,6 +8224,7 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     full_width,
     mesh_mode,
     show_axes,
+    [1.0, 1.0, Z_SCALE],
   )?;
   // A `PlotLabel` sets a title above the finished picture.
   let svg = with_plot_label(svg, args, svg_width, svg_height);
@@ -8652,6 +8685,7 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     full_width,
     MeshMode::None,
     show_axes,
+    [1.0, 1.0, Z_SCALE],
   )?;
   // A `PlotLabel` sets a title above the finished picture.
   let svg = with_plot_label(svg, args, svg_width, svg_height);
@@ -10156,6 +10190,7 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     full_width,
     mesh_mode,
     show_axes,
+    [1.0, 1.0, Z_SCALE],
   )?;
   // A `PlotLabel` sets a title above the finished picture.
   let svg = with_plot_label(svg, args, svg_width, svg_height);
@@ -10385,6 +10420,7 @@ pub fn discrete_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     full_width,
     mesh_mode,
     show_axes,
+    [1.0, 1.0, Z_SCALE],
   )?;
   // A `PlotLabel` sets a title above the finished picture.
   let svg = with_plot_label(svg, args, svg_width, svg_height);
@@ -10846,6 +10882,20 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `EdgeForm[]` is suppressed, leaving flat colour with no outline —
   // the usual way a mesh-shaded dissection hides its own seams.
   let mut mesh_style_none = false;
+  // `BoxRatios -> {rx, ry, rz}` reshapes the bounding box to those
+  // proportions regardless of the surface's actual extent along each axis
+  // (Wolfram's own default here is `{1, 1, 0.4}`, matching `Z_SCALE`).
+  // `BoxRatios -> Automatic` instead asks for the box shaped like the
+  // data itself — no axis stretched relative to the others.
+  let mut box_ratios_explicit: Option<[f64; 3]> = None;
+  let mut box_ratios_automatic = false;
+  // `PlotRange -> {{x0,x1},{y0,y1},{z0,z1}}` pins the displayed region
+  // regardless of the sampled surface's own extent, the same way it does
+  // for `Graphics3D` — needed so a `BoxRatios` given alongside it (as
+  // `Manipulate`-driven demonstrations commonly do, to keep the framing
+  // stable as the surface changes) reshapes the region that was asked
+  // for, not just whatever the current frame happens to sample.
+  let mut plot_range: Option<[(f64, f64); 3]> = None;
 
   for opt in &args[3..] {
     if let Expr::Rule {
@@ -10856,6 +10906,24 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       match pattern.as_ref() {
         Expr::Identifier(name) if name == "PlotStyle" => {
           plot_style_expr = Some(replacement.as_ref());
+        }
+        Expr::Identifier(name) if name == "BoxRatios" => {
+          let value = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| replacement.as_ref().clone());
+          if matches!(&value, Expr::Identifier(s) if s == "Automatic") {
+            box_ratios_automatic = true;
+          } else if let Some(r) = eval_vec3(&value)
+            && r.iter().all(|v| *v > 0.0)
+          {
+            box_ratios_explicit = Some(r);
+          }
+        }
+        Expr::Identifier(name) if name == "PlotRange" => {
+          let value = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| replacement.as_ref().clone());
+          if let Some(ranges) = parse_axis_ranges(&value) {
+            plot_range = Some(ranges);
+          }
         }
         Expr::Identifier(name) if name == "ImageSize" => {
           if let Some((w, h, fw)) =
@@ -11019,6 +11087,17 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // An explicit `PlotRange` pins the displayed region regardless of the
+  // sampled surface's own extent, matching `Graphics3D`.
+  if let Some([(xl, xh), (yl, yh), (zl, zh)]) = plot_range {
+    gx_min = xl;
+    gx_max = xh;
+    gy_min = yl;
+    gy_max = yh;
+    gz_min = zl;
+    gz_max = zh;
+  }
+
   let rx = if (gx_max - gx_min).abs() < 1e-15 {
     1.0
   } else {
@@ -11033,6 +11112,19 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     1.0
   } else {
     gz_max - gz_min
+  };
+
+  // `BoxRatios -> {a, b, c}` reshapes the box to those proportions;
+  // `BoxRatios -> Automatic` shapes it like the data's own extents
+  // instead (no axis independently stretched relative to the others);
+  // the unspecified default matches Wolfram's own `{1, 1, 0.4}` for
+  // `Plot3D`-family functions.
+  let box_ratios: [f64; 3] = if let Some(r) = box_ratios_explicit {
+    r
+  } else if box_ratios_automatic {
+    [rx, ry, rz]
+  } else {
+    [1.0, 1.0, Z_SCALE]
   };
 
   // ── Symbolic structure: Graphics3D[GraphicsComplex[points, {…}]] ──
@@ -11201,9 +11293,9 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
         let normalize = |p: (f64, f64, f64)| -> Point3D {
           Point3D {
-            x: ((p.0 - gx_min) / rx) * 2.0 - 1.0,
-            y: ((p.1 - gy_min) / ry) * 2.0 - 1.0,
-            z: ((p.2 - gz_min) / rz) * 2.0 * Z_SCALE - Z_SCALE,
+            x: ((p.0 - gx_min) / rx) * 2.0 * box_ratios[0] - box_ratios[0],
+            y: ((p.1 - gy_min) / ry) * 2.0 * box_ratios[1] - box_ratios[1],
+            z: ((p.2 - gz_min) / rz) * 2.0 * box_ratios[2] - box_ratios[2],
           }
         };
 
@@ -11331,6 +11423,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     full_width,
     mesh_mode,
     show_axes,
+    box_ratios,
   )?;
   // A `PlotLabel` sets a title above the finished picture.
   let svg = with_plot_label(svg, args, svg_width, svg_height);
