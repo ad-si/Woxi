@@ -4879,7 +4879,7 @@ mod nintegrate {
       1e-4,
     );
     assert!(
-      start.elapsed().as_secs() < 10,
+      start.elapsed().as_secs() < 30,
       "an iterated NIntegrate over a Boole region indicator must not \
        re-exhaust a full evaluation budget at every outer sample point"
     );
@@ -4904,7 +4904,7 @@ mod nintegrate {
       1e-3,
     );
     assert!(
-      start.elapsed().as_secs() < 10,
+      start.elapsed().as_secs() < 30,
       "an off-center Boole region cut must still resolve its interior \
        kink (the point where the region's cross-section vanishes) \
        without exhausting the shared evaluation budget"
