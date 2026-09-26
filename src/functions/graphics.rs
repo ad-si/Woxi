@@ -697,16 +697,36 @@ impl BBox {
     if self.is_empty() {
       return self;
     }
-    let dx = (self.x_max - self.x_min) * frac;
-    let dy = (self.y_max - self.y_min) * frac;
+    let flat_x = self.x_max - self.x_min < 1e-10;
+    let flat_y = self.y_max - self.y_min < 1e-10;
+    let mut bb = self;
+    // One flat side (e.g. a horizontal line) spans from 0 to twice its
+    // value, or {-1, 1} at 0, as in Wolfram. A single point keeps a fixed
+    // margin all round.
+    if flat_x != flat_y {
+      let widen = |v: f64| {
+        if v.abs() < 1e-10 {
+          (-1.0, 1.0)
+        } else {
+          (v.min(2.0 * v).min(0.0), v.max(2.0 * v).max(0.0))
+        }
+      };
+      if flat_x {
+        (bb.x_min, bb.x_max) = widen(bb.x_min);
+      } else {
+        (bb.y_min, bb.y_max) = widen(bb.y_min);
+      }
+    }
+    let dx = (bb.x_max - bb.x_min) * frac;
+    let dy = (bb.y_max - bb.y_min) * frac;
     // Ensure non-zero range
     let dx = if dx < 1e-10 { 0.5 } else { dx };
     let dy = if dy < 1e-10 { 0.5 } else { dy };
     Self {
-      x_min: self.x_min - dx,
-      x_max: self.x_max + dx,
-      y_min: self.y_min - dy,
-      y_max: self.y_max + dy,
+      x_min: bb.x_min - dx,
+      x_max: bb.x_max + dx,
+      y_min: bb.y_min - dy,
+      y_max: bb.y_max + dy,
     }
   }
 
@@ -773,6 +793,9 @@ enum Primitive {
     y_min: f64,
     x_max: f64,
     y_max: f64,
+    /// `RoundingRadius -> {rx, ry}` corner radii (`(0, 0)` for square
+    /// corners), in plot coordinates.
+    rounding: (f64, f64),
     style: StyleState,
   },
   PolygonPrim {
@@ -3034,6 +3057,26 @@ fn parse_rectangle(
   } else {
     (x_min + 1.0, y_min + 1.0)
   };
+  // `RoundingRadius -> r` rounds every corner with radius `r`;
+  // `RoundingRadius -> {rx, ry}` uses elliptical corners.
+  let rounding = args
+    .iter()
+    .find_map(|a| match a {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "RoundingRadius") => {
+        match replacement.as_ref() {
+          Expr::List(items) if items.len() == 2 => Some((
+            try_eval_to_f64(&items[0])?,
+            try_eval_to_f64(&items[1])?,
+          )),
+          r => try_eval_to_f64(r).map(|v| (v, v)),
+        }
+      }
+      _ => None,
+    })
+    .map_or((0.0, 0.0), |(rx, ry)| (rx.abs(), ry.abs()));
   // Wolfram accepts the two corners in any order; normalize so the primitive
   // always has min <= max (a reversed pair would otherwise render as a rect
   // with negative width/height, which SVG drops entirely).
@@ -3042,6 +3085,7 @@ fn parse_rectangle(
     y_min: y_min.min(y_max),
     x_max: x_min.max(x_max),
     y_max: y_min.max(y_max),
+    rounding,
     style: style.clone(),
   });
 }
@@ -4840,6 +4884,7 @@ fn rotate_primitive(
       x_max,
       y_max,
       style,
+      ..
     } => Primitive::PolygonPrim {
       points: [
         (*x_min, *y_min),
@@ -5059,12 +5104,14 @@ fn translate_primitive(prim: &Primitive, dx: f64, dy: f64) -> Primitive {
       y_min,
       x_max,
       y_max,
+      rounding,
       style,
     } => Primitive::RectPrim {
       x_min: x_min + dx,
       y_min: y_min + dy,
       x_max: x_max + dx,
       y_max: y_max + dy,
+      rounding: *rounding,
       style: style.clone(),
     },
     Primitive::Disk {
@@ -5294,6 +5341,7 @@ fn scale_primitive(
       y_min,
       x_max,
       y_max,
+      rounding,
       style,
     } => {
       // Negative factors swap the corners; renormalize to min/max form.
@@ -5304,6 +5352,7 @@ fn scale_primitive(
         y_min: y1.min(y2),
         x_max: x1.max(x2),
         y_max: y1.max(y2),
+        rounding: (rounding.0 * sx.abs(), rounding.1 * sy.abs()),
         style: style.clone(),
       }
     }
@@ -5897,7 +5946,15 @@ fn axis_ticks(
       .into_iter()
       .map(|t| (t, None))
       .collect(),
-    TickSpec::Explicit(entries) => entries.clone(),
+    // Ticks outside the plot range are not drawn.
+    TickSpec::Explicit(entries) => {
+      let eps = (max - min).abs() * 1e-9;
+      entries
+        .iter()
+        .filter(|(t, _)| (min - eps..=max + eps).contains(t))
+        .cloned()
+        .collect()
+    }
   }
 }
 
@@ -6780,6 +6837,7 @@ fn render_primitive(
       y_min,
       x_max,
       y_max,
+      rounding,
       style,
     } => {
       let sx = coord_x(*x_min, bb, svg_w);
@@ -6811,8 +6869,19 @@ fn render_primitive(
       } else {
         String::new()
       };
+      // Corner radii map to SVG units per axis (SVG clamps each to half the
+      // side it rounds).
+      let corner_attr = if rounding.0 > 0.0 && rounding.1 > 0.0 {
+        format!(
+          " rx=\"{:.2}\" ry=\"{:.2}\"",
+          rounding.0 / bb.width() * svg_w,
+          rounding.1 / bb.height() * svg_h
+        )
+      } else {
+        String::new()
+      };
       out.push_str(&format!(
-        "<rect x=\"{sx:.2}\" y=\"{sy:.2}\" width=\"{sw:.2}\" height=\"{sh:.2}\" fill=\"{}\"{}{}/>\n",
+        "<rect x=\"{sx:.2}\" y=\"{sy:.2}\" width=\"{sw:.2}\" height=\"{sh:.2}\"{corner_attr} fill=\"{}\"{}{}/>\n",
         color.to_svg_rgb(),
         fill_opacity,
         stroke_attr,
@@ -7714,6 +7783,7 @@ fn primitives_to_box_elements(primitives: &[Primitive]) -> Vec<String> {
         x_max,
         y_max,
         style,
+        ..
       } => {
         elements.extend(tracker.emit_style_changes(style));
         elements.push(gbox::rectangle_box(*x_min, *y_min, *x_max, *y_max));
@@ -8202,8 +8272,13 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // own edge, not through its middle, so the tick labels still need the
   // full outside gutter — the 6px "interior" gutter left them with no room
   // to draw in and they were clipped off entirely.
-  let y_axis_interior = axes.1 && bb.x_min < 0.0 && 0.0 < bb.x_max;
-  let x_axis_interior = axes.0 && bb.y_min < 0.0 && 0.0 < bb.y_max;
+  // An axis only just inside the range — e.g. at a data edge of 0 that the
+  // range padding moved off the picture's edge — sits too close to it for
+  // its labels, so it still takes the outside gutter.
+  let well_inside =
+    |lo: f64, hi: f64| lo < 0.0 && 0.0 < hi && -lo / (hi - lo) >= 0.1;
+  let y_axis_interior = axes.1 && well_inside(bb.x_min, bb.x_max);
+  let x_axis_interior = axes.0 && well_inside(bb.y_min, bb.y_max);
   // An AxesLabel sits at the end of its axis (Wolfram's placement), so
   // the x label needs room to the right and the y label room above. The
   // label arrives as SVG markup (plain text, or with sub/superscript

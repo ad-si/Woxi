@@ -387,6 +387,41 @@ mod graphics {
       ));
     }
 
+    /// `RoundingRadius -> r` rounds every corner; `{rx, ry}` gives
+    /// elliptical corners, each radius scaled along its own axis.
+    #[test]
+    fn rectangle_rounding_radius() {
+      let corners = |svg: &str| -> (f64, f64) {
+        let tag = svg
+          .split("<rect x=")
+          .find(|t| t.contains(" fill="))
+          .expect("a filled rect");
+        let attr = |name: &str| -> f64 {
+          tag
+            .split(&format!(" {name}=\""))
+            .nth(1)
+            .and_then(|v| v.split('"').next())
+            .and_then(|v| v.parse().ok())
+            .unwrap_or_else(|| panic!("no {name} in {tag}"))
+        };
+        (attr("rx"), attr("ry"))
+      };
+      let (rx, ry) = corners(&export_svg(
+        "Graphics[{Rectangle[{0, 0}, {1, 1}, RoundingRadius -> 0.25]}]",
+      ));
+      assert!(rx > 0.0 && (rx - ry).abs() < 0.01, "rx={rx} ry={ry}");
+      let (rx, ry) = corners(&export_svg(
+        "Graphics[{Rectangle[{0, 0}, {4, 1}, RoundingRadius -> {0.2, 0.1}]}, \
+         AspectRatio -> 1/4]",
+      ));
+      // 0.2 across vs 0.1 up on an equally scaled canvas.
+      assert!((rx / ry - 2.0).abs() < 0.05, "rx={rx} ry={ry}");
+      // Square corners carry no radius at all.
+      assert!(
+        !export_svg("Graphics[{Rectangle[{0, 0}, {1, 1}]}]").contains(" rx=")
+      );
+    }
+
     #[test]
     fn polygon() {
       insta::assert_snapshot!(export_svg(
@@ -1847,6 +1882,50 @@ mod graphics {
 
   mod options {
     use super::*;
+
+    /// Explicit ticks outside the plot range are not drawn.
+    #[test]
+    fn explicit_ticks_outside_the_range_are_dropped() {
+      let svg = export_svg(
+        "Graphics[{Line[{{0, 0}, {1, 1}}]}, Axes -> True, \
+         PlotRange -> {{0, 1}, {0, 1}}, \
+         Ticks -> {{{0.5, \"in\"}, {3, \"out\"}}, {{0.5, \"yin\"}, \
+         {-2, \"yout\"}}}]",
+      );
+      assert!(svg.contains(">in</text>"), "{svg}");
+      assert!(svg.contains(">yin</text>"), "{svg}");
+      assert!(!svg.contains(">out</text>"), "{svg}");
+      assert!(!svg.contains(">yout</text>"), "{svg}");
+    }
+
+    /// A y axis at an x range's padded edge (data starting at 0) keeps the
+    /// outside gutter, so its tick labels are not cut off at the left.
+    #[test]
+    fn axis_at_padded_edge_keeps_label_gutter() {
+      let svg = export_svg(
+        "Graphics[{Rectangle[{0, 60}, {1, 61}]}, Axes -> True, \
+         Ticks -> {None, {{60, \"Label\"}}}]",
+      );
+      let tag = svg
+        .split("<text ")
+        .find(|t| t.contains(">Label</text>"))
+        .expect("the y tick label");
+      let x: f64 = tag
+        .split("x=\"")
+        .nth(1)
+        .and_then(|v| v.split('"').next())
+        .and_then(|v| v.parse().ok())
+        .expect("an x position");
+      // The plot area is shifted right by the left gutter.
+      let offset: f64 = svg
+        .split("translate(")
+        .nth(1)
+        .and_then(|v| v.split(',').next())
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.0);
+      // Right-anchored at x, the 5-character label needs ~40px to its left.
+      assert!(offset + x >= 40.0, "label ends at x = {offset} + {x}");
+    }
 
     #[test]
     fn image_size_integer() {
