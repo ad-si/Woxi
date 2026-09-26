@@ -1464,7 +1464,12 @@ fn has_real_predecessor(parts: &[String], i: usize) -> bool {
     // are all structural punctuation, not a value the current part could be
     // juxtaposed (implicitly multiplied) against — e.g. the second binding
     // of a `With[{a = …, b = …}, …]` list follows a `","`, not an
-    // expression, so it is never "juxtaposed" onto the first.
+    // expression, so it is never "juxtaposed" onto the first; likewise an
+    // argument list's own opening `"["` precedes its contents, not a value
+    // to multiply them against — e.g. `f[a = 1; g[a], h]`
+    // (`RowBox[{"f", "[", RowBox[{assignment-box, ",", "h"}], "]"}]`) needs
+    // no parentheses at all, since the comma already ends that argument and
+    // reparsing the flattened text recovers the original grouping as-is.
     if matches!(
       t,
       "\"\\n\"" | "\",\"" | "\";\"" | "\"{\"" | "\"(\"" | "\"[\""
@@ -7079,6 +7084,47 @@ Cell[BoxData[RowBox[{"arrowHead", "=", RowBox[{"{", RowBox[{"Line", "[", RowBox[
       result, "3",
       "the assignment must actually run (not fail as Set::write on a \
        corrupted `Times[…]` target), got: {result:?} from {expr_src:?}"
+    );
+  }
+
+  #[test]
+  fn assignment_argument_before_a_sibling_arg_is_not_over_wrapped() {
+    // As part of a scheduled QA routine, Woxi Studio was tested against a
+    // randomly sampled Wolfram Demonstration notebook ("Intersecting Lines
+    // in All Possible Ways") whose `Manipulate` body is `points =
+    // Table[…]; LocatorPane[…]` — an assignment followed by a semicolon,
+    // both inside the *first* comma-separated argument of an enclosing
+    // call, with a sibling argument (the control specs) following. The
+    // `has_real_predecessor` check that decides whether a nested `RowBox`
+    // needs re-parenthesizing (see
+    // `juxtaposed_assignment_after_loop_keeps_its_own_grouping` above)
+    // treated the "[" opening the call's own argument list as a "real"
+    // preceding sibling expression, so the whole comma-separated argument
+    // row — not just the assignment's own factor — was wrapped: reparsing
+    // `f[points = Table[…]; body, {ctrl, …}]` as
+    // `f[(points = Table[…]; body, {ctrl, …})]` puts a bare comma directly
+    // inside a parenthesized group, which is a parse error. This is a
+    // self-authored, construct-equivalent example (an invented `f`/`g`
+    // call, not the specific Demonstration's code, which is copyrighted).
+    let boxes = r#"RowBox[{"f", "[", RowBox[{RowBox[{RowBox[{"a", "=", "1"}], ";", RowBox[{"g", "[", "a", "]"}]}], ",", RowBox[{"{", RowBox[{"b", ",", "1", ",", "2"}], "}"}]}], "]"}]"#;
+    let expr_src =
+      box_source_to_expression(boxes).expect("box source must convert");
+    assert!(
+      !expr_src.contains('('),
+      "a comma-delimited argument needs no extra parentheses around its \
+       own assignment, got: {expr_src:?}"
+    );
+
+    let result =
+      crate::interpret(&format!("g[x_]:=x+1; f[x_,y_]:={{x,y}}; {expr_src}"))
+        .expect(
+          "the reconstructed source must parse and evaluate without error",
+        );
+    assert_eq!(
+      result, "{2, {b, 1, 2}}",
+      "the assignment must run as part of the first argument and the \
+       second argument must stay independent, got: {result:?} from \
+       {expr_src:?}"
     );
   }
 
