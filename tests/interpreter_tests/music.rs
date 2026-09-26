@@ -1212,6 +1212,36 @@ fn music_score_displays_as_piano_roll_panel() {
   assert!(svg.contains("fill=\"rgb(242,160,36)\""));
 }
 
+/// The play button carries a hidden pause glyph; the "playing" variant of the
+/// panel shows it in place of the play triangle, turning it into a pause
+/// button.
+#[test]
+fn music_score_play_button_becomes_pause_button_while_playing() {
+  let svg = interpret(
+    "ExportString[MusicScore[{MusicVoice[{\"C4\", \"D4\"}]}], \"SVG\"]",
+  )
+  .unwrap();
+  assert_eq!(
+    svg
+      .matches("class=\"music-pause\" display=\"none\"")
+      .count(),
+    1
+  );
+  assert!(!svg.contains("class=\"music-play\" display=\"none\""));
+
+  let playing = woxi::functions::music_plot::score_svg_playing(&svg);
+  assert_eq!(
+    playing
+      .matches("class=\"music-play\" display=\"none\"")
+      .count(),
+    1
+  );
+  assert_eq!(playing.matches("class=\"music-pause\"").count(), 1);
+  assert!(!playing.contains("class=\"music-pause\" display=\"none\""));
+  // The stop button is unaffected.
+  assert_eq!(playing.matches("class=\"music-stop\"").count(), 1);
+}
+
 /// The panel counts every measure of the longest voice and states the meter.
 #[test]
 fn music_score_panel_reports_measures_and_meter() {

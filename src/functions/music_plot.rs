@@ -534,9 +534,16 @@ pub fn score_audio(score: &Expr) -> Option<String> {
 
 // ── MusicScore display ───────────────────────────────────────────────────────
 
+/// The play/pause glyph markers of the play button: the triangle is shown and
+/// the two pause bars hidden until [`score_svg_playing`] swaps them.
+const PLAY_GLYPH: &str = "class=\"music-play\"";
+const PAUSE_GLYPH_HIDDEN: &str = "class=\"music-pause\" display=\"none\"";
+
 /// The play and stop buttons in front of a displayed score: a circle around
 /// a triangle / rounded square each, grouped as `music-button`s (with a
-/// `data-action`) so a host can make them clickable.
+/// `data-action`) so a host can make them clickable. The play button also
+/// carries a hidden pause glyph (two bars, `music-pause`) that a host shows
+/// in place of the triangle while the score plays, making it a pause button.
 fn playback_buttons() -> String {
   let th = theme();
   let ((bx, play_y), (_, stop_y)) = (PLAY_BUTTON, STOP_BUTTON);
@@ -553,12 +560,19 @@ fn playback_buttons() -> String {
     "play",
     play_y,
     format!(
-      "<path class=\"music-play\" d=\"M {x0:.2} {y0:.2} L {x1:.2} \
-       {play_y:.2} L {x0:.2} {y1:.2} Z\" fill=\"{BUTTON_BLUE}\"/>",
+      "<path {PLAY_GLYPH} d=\"M {x0:.2} {y0:.2} L {x1:.2} \
+       {play_y:.2} L {x0:.2} {y1:.2} Z\" fill=\"{BUTTON_BLUE}\"/>\
+       <g {PAUSE_GLYPH_HIDDEN} fill=\"{BUTTON_BLUE}\">\
+       <rect x=\"{px0:.2}\" y=\"{py:.2}\" width=\"3.5\" height=\"11\" \
+       rx=\"1\"/><rect x=\"{px1:.2}\" y=\"{py:.2}\" width=\"3.5\" \
+       height=\"11\" rx=\"1\"/></g>",
       x0 = bx - 3.5,
       x1 = bx + 6.5,
       y0 = play_y - 6.5,
       y1 = play_y + 6.5,
+      px0 = bx - 4.75,
+      px1 = bx + 1.25,
+      py = play_y - 5.5,
     ),
   );
   let stop = button(
@@ -572,6 +586,15 @@ fn playback_buttons() -> String {
     ),
   );
   play + &stop
+}
+
+/// A displayed score's SVG as it looks while the score plays: the play
+/// button shows its pause glyph instead of the triangle. For hosts that
+/// cannot toggle the glyphs in place (e.g. ones that rasterize the SVG).
+pub fn score_svg_playing(svg: &str) -> String {
+  svg
+    .replace(PLAY_GLYPH, &format!("{PLAY_GLYPH} display=\"none\""))
+    .replace(PAUSE_GLYPH_HIDDEN, "class=\"music-pause\"")
 }
 
 /// A `MusicScore` shown as sheet music (`MusicNotation -> "SheetMusic"`): its

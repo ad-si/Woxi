@@ -116,6 +116,10 @@ struct Playback {
   child: std::process::Child,
   /// Whether playback is currently paused (process is SIGSTOP'd).
   paused: bool,
+  /// The cell's graphic as drawn while its embedded audio plays (a
+  /// `MusicScore` panel whose play button shows the pause glyph),
+  /// pre-rasterized like the regular graphic.
+  playing_image: Option<(iced::widget::image::Handle, u32, u32)>,
 }
 
 impl Drop for Playback {
@@ -247,9 +251,6 @@ enum Message {
   /// Toggle playback of the given cell's audio (from Play[…] / Sound[…] /
   /// Audio[…]): start playing, pause, or resume.
   PlaySound(usize),
-  /// Start the given cell's audio, or resume it when paused (a `MusicScore`
-  /// panel's play button); does nothing while it is already playing.
-  StartSound(usize),
   /// Stop the given cell's audio (a `MusicScore` panel's stop button).
   StopSound(usize),
   /// Periodic poll of the external audio player so the pause button
@@ -508,6 +509,19 @@ impl WoxiStudio {
   /// (Playback's Drop impl kills the process).
   fn stop_playback(&mut self) {
     self.playback = None;
+  }
+
+  /// The pre-rasterized "playing" variant of the given cell's graphic, while
+  /// its embedded audio plays (not paused).
+  fn playing_image(
+    &self,
+    idx: usize,
+  ) -> Option<&(iced::widget::image::Handle, u32, u32)> {
+    self
+      .playback
+      .as_ref()
+      .filter(|p| p.cell == idx && !p.paused)
+      .and_then(|p| p.playing_image.as_ref())
   }
 
   /// Whether the given cell's audio is currently playing (not paused).
@@ -1730,6 +1744,21 @@ impl WoxiStudio {
             // Manipulate graphics are drawn by the `svg` widget, which
             // rescales for DPI on its own — no manual re-rasterization needed.
           }
+          if let Some(playback) = self.playback.as_mut()
+            && playback.playing_image.is_some()
+          {
+            playback.playing_image = self
+              .cell_editors
+              .get(playback.cell)
+              .and_then(|e| e.graphics_svg.as_ref())
+              .and_then(|svg| {
+                rasterize_svg(
+                  &woxi::functions::music_plot::score_svg_playing(svg),
+                  scale,
+                  &self.fontdb,
+                )
+              });
+          }
         }
         Task::none()
       }
@@ -2222,12 +2251,24 @@ impl WoxiStudio {
         if let Some(editor) = self.cell_editors.get(idx)
           && let Some(audio) = editor.sound.clone()
         {
+          let playing_image = editor
+            .graphics_svg
+            .as_ref()
+            .filter(|_| audio.embedded)
+            .and_then(|svg| {
+              rasterize_svg(
+                &woxi::functions::music_plot::score_svg_playing(svg),
+                self.scale_factor,
+                &self.fontdb,
+              )
+            });
           match play_audio(&audio) {
             Ok(child) => {
               self.playback = Some(Playback {
                 cell: idx,
                 child,
                 paused: false,
+                playing_image,
               });
               self.status = String::from("Playing sound…");
             }
@@ -2235,13 +2276,6 @@ impl WoxiStudio {
           }
         }
         Task::none()
-      }
-
-      Message::StartSound(idx) => {
-        if self.is_playing(idx) {
-          return Task::none();
-        }
-        self.update(Message::PlaySound(idx))
       }
 
       Message::StopSound(idx) => {
@@ -3214,7 +3248,9 @@ impl WoxiStudio {
       // Graphics rendering (pre-rasterized image, falls back to SVG)
       // Double-click opens a fullscreen modal for detailed inspection.
       // Right-click opens a context menu (Save Graphic As).
-      if let Some(graphics) = render_graphics_output(idx, editor, stale) {
+      if let Some(graphics) =
+        render_graphics_output(idx, editor, stale, self.playing_image(idx))
+      {
         output_col = output_col.push(graphics);
       }
 
@@ -3299,7 +3335,9 @@ impl WoxiStudio {
         content_col = content_col.push(stdout_editor);
       }
 
-      if let Some(graphics) = render_graphics_output(idx, editor, stale) {
+      if let Some(graphics) =
+        render_graphics_output(idx, editor, stale, self.playing_image(idx))
+      {
         content_col = content_col.push(graphics);
       }
 
@@ -4891,32 +4929,35 @@ fn render_audio_player<'a>(
 /// the SVG). Double-click opens a fullscreen modal for detailed inspection;
 /// right-click opens a context menu (Save Graphic As). When the cell's audio
 /// is embedded in the graphic (a `MusicScore` panel), clickable areas are laid
-/// over the panel's play and stop buttons.
+/// over the panel's play/pause and stop buttons, and `playing_image` (the
+/// panel with a pause glyph) replaces the graphic while the audio plays.
 fn render_graphics_output<'a>(
   idx: usize,
   editor: &CellEditor,
   stale: bool,
+  playing_image: Option<&(iced::widget::image::Handle, u32, u32)>,
 ) -> Option<Element<'a, Message>> {
   const PAD: f32 = 4.0;
-  let picture: Element<'a, Message> =
-    if let Some((ref img_handle, w, h)) = editor.graphics_image {
-      let mut img_widget = image(img_handle.clone())
-        .width(iced::Length::Fixed(w as f32))
-        .height(iced::Length::Fixed(h as f32));
-      if stale {
-        img_widget = img_widget.opacity(0.3_f32);
-      }
-      container(img_widget).padding(PAD).into()
-    } else if let Some(ref handle) = editor.graphics_handle {
-      let mut svg_widget =
-        svg::Svg::new(handle.clone()).width(iced::Length::Shrink);
-      if stale {
-        svg_widget = svg_widget.opacity(0.3_f32);
-      }
-      container(svg_widget).padding(PAD).into()
-    } else {
-      return None;
-    };
+  let picture: Element<'a, Message> = if let Some((ref img_handle, w, h)) =
+    playing_image.or(editor.graphics_image.as_ref()).cloned()
+  {
+    let mut img_widget = image(img_handle.clone())
+      .width(iced::Length::Fixed(w as f32))
+      .height(iced::Length::Fixed(h as f32));
+    if stale {
+      img_widget = img_widget.opacity(0.3_f32);
+    }
+    container(img_widget).padding(PAD).into()
+  } else if let Some(ref handle) = editor.graphics_handle {
+    let mut svg_widget =
+      svg::Svg::new(handle.clone()).width(iced::Length::Shrink);
+    if stale {
+      svg_widget = svg_widget.opacity(0.3_f32);
+    }
+    container(svg_widget).padding(PAD).into()
+  } else {
+    return None;
+  };
   let picture = if editor.sound.as_ref().is_some_and(|a| a.embedded) {
     use woxi::functions::music_plot::{
       BUTTON_RADIUS, PLAY_BUTTON, STOP_BUTTON,
@@ -4940,7 +4981,7 @@ fn render_graphics_output<'a>(
     };
     stack![
       picture,
-      hotspot(PLAY_BUTTON, Message::StartSound(idx)),
+      hotspot(PLAY_BUTTON, Message::PlaySound(idx)),
       hotspot(STOP_BUTTON, Message::StopSound(idx)),
     ]
     .into()
@@ -15032,6 +15073,57 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
     assert!(editor.output_svgs[0].contains('\u{00d7}'));
     // The raw text is still kept (for saving to the notebook).
     assert_eq!(editor.output.as_deref(), Some("1.\u{00d7}10^10"));
+  }
+
+  #[test]
+  fn music_score_playing_variant_rasterizes_a_pause_glyph() {
+    // While a MusicScore plays, its panel is drawn from the "playing" SVG:
+    // the play triangle is replaced by two pause bars (not just hidden).
+    use woxi::functions::music_plot::{PLAY_BUTTON, score_svg_playing};
+    let fontdb = Arc::new(resvg::usvg::fontdb::Database::new());
+    let mut editor = blank_editor();
+    evaluate_cell_statements(
+      &mut editor,
+      "MusicScore[{MusicVoice[{\"C4\", \"D4\"}]}]",
+      false,
+      1.0,
+      &fontdb,
+    );
+    assert!(editor.sound.as_ref().is_some_and(|a| a.embedded));
+    let svg = editor.graphics_svg.clone().expect("the score panel");
+    let is_blue = |svg: &str, (x, y): (f64, f64)| {
+      let tree =
+        resvg::usvg::Tree::from_str(svg, &resvg::usvg::Options::default())
+          .unwrap();
+      let size = tree.size();
+      // Sampled at 4x so a pixel lies wholly inside one glyph.
+      const SCALE: f32 = 4.0;
+      let mut pixmap = tiny_skia::Pixmap::new(
+        (size.width() * SCALE).ceil() as u32,
+        (size.height() * SCALE).ceil() as u32,
+      )
+      .unwrap();
+      resvg::render(
+        &tree,
+        tiny_skia::Transform::from_scale(SCALE, SCALE),
+        &mut pixmap.as_mut(),
+      );
+      let p = pixmap
+        .pixel((x * SCALE as f64) as u32, (y * SCALE as f64) as u32)
+        .unwrap();
+      p.blue() > 150 && p.red() < 100
+    };
+    let (bx, by) = PLAY_BUTTON;
+    // A point only the left pause bar covers, and one only the triangle's
+    // tip covers (right of the right pause bar).
+    let bar = (bx - 4.25, by + 4.5);
+    let tip = (bx + 5.0, by);
+    assert!(!is_blue(&svg, bar) && is_blue(&svg, tip), "play triangle");
+    let playing = score_svg_playing(&svg);
+    assert!(
+      is_blue(&playing, bar) && !is_blue(&playing, tip),
+      "pause bars"
+    );
   }
 
   #[test]
