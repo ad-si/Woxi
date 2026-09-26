@@ -4126,6 +4126,40 @@ sharing, so building a large result deep-copies its elements.
 roughly 100× slower than wolframscript, which shares structure. A real fix
 needs `Rc`/`Arc`-backed lists or a different allocator.
 
+A `Table` of many `FindRoot` calls is slow the same way, for a different
+reason: each Newton iteration re-substitutes the numeric guess into the whole
+symbolic expression tree and walks it again with the general evaluator, and
+every one of those recursive sub-evaluations pays `evaluate_expr_to_expr`'s
+per-node bookkeeping (recursion-depth tracking, the `stacker` stack-growth
+check, the termination latch). wolframscript's kernel instead compiles the
+numeric expression once. As part of a scheduled QA routine, Woxi Studio was
+tested against a randomly sampled Wolfram Demonstration notebook (a
+chemical-engineering phase-equilibrium plot) whose `Manipulate` computed a
+100×100 `Table` of `FindRoot` calls once in its `Initialization` to build an
+`Interpolation`; this construct-equivalent example (invented constants and
+variable names, similar expression nesting depth — not the Demonstration's
+own code or data, which is copyrighted) reproduces both the shape and the
+cost:
+
+```wolfram
+k1 = 3.2; k2 = 47.5; k3 = 6.1; m1 = 2.4; m2 = 33.8; m3 = 4.9; c1 = 1.3; c2 = 0.8;
+a = 10^(k1 - k2/(k3 + T));
+b = 10^(m1 - m2/(m3 + T));
+g = Exp[c1 (c2 ((1 - u)/(c1 u + c2 (1 - u))))^2];
+h = Exp[c2 (c1 (u/(c1 u + c2 (1 - u))))^2];
+tbl = Table[
+   FindRoot[u a g + (1 - u) b h - v == 0, {T, 1, 50}],
+   {u, 0.01, 1, 0.01}, {v, 1, 100, 1}];
+```
+
+The 10,000 `FindRoot` calls take ~40 s in a release build against
+wolframscript's sub-second evaluation — long enough that opening such a
+notebook in Woxi Studio, which instantiates a stored `Manipulate`'s widget
+(and so runs its `Initialization`) synchronously when the file loads,
+freezes the UI for the whole computation. Like the `Tuples` case above, a
+real fix is a faster/compiled numeric evaluation path rather than a
+targeted change to `FindRoot` itself.
+
 ### `woxi eval` exits 0 on an evaluation error
 
 The error goes to stderr but the exit code stays 0, so a shell check like
