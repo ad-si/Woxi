@@ -8089,6 +8089,91 @@ mod plot3d {
       ));
     }
 
+    // Regression: `Joined -> {b1, b2, ...}` (per-series joining) only ever
+    // matched the bare `True` identifier, so a list value fell through
+    // silently and every series rendered as scattered points — found while
+    // checking Woxi Studio against a Wolfram Demonstration whose Manipulate
+    // draws a raw signal as points alongside a smoothed test curve as a
+    // joined line, sharing one `ListPlot`. Series `i` must now draw as a
+    // curve exactly when its own flag is `True`, independent of its
+    // siblings.
+    #[test]
+    fn list_plot_joined_per_series() {
+      let svg = export_svg(
+        "ListPlot[{{0, 0, 0}, {1, 2, 1}}, Joined -> {False, True}, \
+         PlotStyle -> {Red, Blue}]",
+      );
+      assert_eq!(
+        svg.matches("<circle").count(),
+        3,
+        "series 1 (Joined -> False) should draw one point per value: {svg}"
+      );
+      assert!(
+        svg.contains("<polyline"),
+        "series 2 (Joined -> True) should draw a connected curve: {svg}"
+      );
+      assert_eq!(
+        svg.matches("fill=\"#FF0000\"").count(),
+        3,
+        "the unjoined series' points should keep their PlotStyle color: {svg}"
+      );
+      assert_eq!(
+        svg.matches("stroke=\"#0000FF\"").count(),
+        1,
+        "the joined series' curve should keep its PlotStyle color: {svg}"
+      );
+    }
+
+    // The reverse assignment: the first series is joined, the second is
+    // not — makes sure the per-series flag is read positionally rather
+    // than always applying to a fixed series.
+    #[test]
+    fn list_plot_joined_per_series_reversed() {
+      let svg = export_svg(
+        "ListPlot[{{0, 0, 0}, {1, 2, 1}}, Joined -> {True, False}, \
+         PlotStyle -> {Red, Blue}]",
+      );
+      assert_eq!(
+        svg.matches("<circle").count(),
+        3,
+        "series 2 (Joined -> False) should draw one point per value: {svg}"
+      );
+      assert_eq!(
+        svg.matches("stroke=\"#FF0000\"").count(),
+        1,
+        "series 1 (Joined -> True) should draw a connected curve: {svg}"
+      );
+      assert_eq!(
+        svg.matches("fill=\"#0000FF\"").count(),
+        3,
+        "the unjoined series' points should keep their PlotStyle color: {svg}"
+      );
+    }
+
+    // Regression: `InterpolationOrder` decided whether to resample *any*
+    // series from the plot-wide `Joined` flag, so combined with a
+    // per-series `Joined -> {False, True}` it resampled the unjoined
+    // series too — turning its 5 raw values into dozens of spline points,
+    // each drawn as its own circle, instead of leaving it as 5 discrete
+    // points.
+    #[test]
+    fn list_plot_joined_per_series_interpolation_order() {
+      let svg = export_svg(
+        "ListPlot[{{1, 4, 2, 3, 10}, {0, 0, 0, 0, 0}}, \
+         Joined -> {True, False}, InterpolationOrder -> 2]",
+      );
+      assert_eq!(
+        svg.matches("<circle").count(),
+        5,
+        "series 2 (Joined -> False) should keep its 5 raw data points \
+         instead of being resampled into a spline: {svg}"
+      );
+      assert!(
+        svg.contains("<polyline"),
+        "series 1 (Joined -> True) should still draw a spline curve: {svg}"
+      );
+    }
+
     /// The pixel points of the first data-series polyline (plot color).
     fn series_polyline_points(svg: &str) -> Vec<(f64, f64)> {
       let start = svg
@@ -9402,6 +9487,29 @@ mod plot3d {
       assert!(width > 700.0, "expected two side-by-side panels: {width}");
       assert_eq!(svg.matches("fill=\"#5E81B5\"").count(), 3);
       assert_eq!(svg.matches("fill=\"#E0932C\"").count(), 3);
+    }
+
+    // Regression: `render_panel_layout` picked each panel's renderer from
+    // the plot's single `Joined` flag only, ignoring a per-series `Joined
+    // -> {b1, b2, ...}` list entirely — every panel followed whichever
+    // series happened to set `parsed.joined` via `flags.iter().any(...)`.
+    // Each series still gets its own panel under `PlotLayout`, and now its
+    // own flag decides that panel's renderer independently of the others.
+    #[test]
+    fn list_plot_row_layout_joined_per_series() {
+      let svg = export_svg(
+        "ListPlot[{{1, 2, 3}, {4, 5, 6}}, PlotLayout -> \"Row\", \
+         Joined -> {False, True}]",
+      );
+      assert_eq!(
+        svg.matches("<circle").count(),
+        3,
+        "panel 1 (Joined -> False) should draw one point per value: {svg}"
+      );
+      assert!(
+        svg.contains("<polyline"),
+        "panel 2 (Joined -> True) should draw a connected curve: {svg}"
+      );
     }
 
     /// Labeled around individual {x, y} pairs labels the points of a single
@@ -12089,6 +12197,85 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     fn pie_chart_3d_image_size() {
       let svg = export_svg("PieChart3D[{1, 2, 3}, ImageSize -> 200]");
       assert!(svg.contains("width=\"200\""));
+    }
+
+    #[test]
+    fn sector_chart_3d_returns_graphics3d_head() {
+      assert_eq!(
+        interpret("Head[SectorChart3D[{{2, 2, 3}, {2, 1, 2}, {1, 2, 1}}]]")
+          .unwrap(),
+        "Graphics3D"
+      );
+    }
+
+    #[test]
+    fn sector_chart_3d_basic() {
+      let svg = export_svg("SectorChart3D[{{2, 2, 3}, {2, 1, 2}, {1, 2, 1}}]");
+      assert!(
+        svg.matches("<polygon").count() > 0,
+        "expected triangles in SectorChart3D output"
+      );
+    }
+
+    #[test]
+    fn sector_chart_3d_single_sector() {
+      // A single sector should still render without errors.
+      let svg = export_svg("SectorChart3D[{{1, 2, 3}}]");
+      assert!(svg.matches("<polygon").count() > 0);
+    }
+
+    #[test]
+    fn sector_chart_3d_image_size() {
+      let svg =
+        export_svg("SectorChart3D[{{1, 2, 3}, {2, 3, 1}}, ImageSize -> 200]");
+      assert!(svg.contains("width=\"200\""));
+    }
+
+    #[test]
+    fn sector_chart_3d_multi_dataset_grouped() {
+      // Grouped (the default) draws one concentric ring per dataset.
+      assert_eq!(
+        interpret(
+          "Head[SectorChart3D[{{{1, 1, 3}, {2, 2, 2}, {2, 3, 1}}, \
+           {{1, 1, 3}, {1, 2, 2}, {2, 3, 2}, {3, 2, 1}}}]]"
+        )
+        .unwrap(),
+        "Graphics3D"
+      );
+    }
+
+    #[test]
+    fn sector_chart_3d_chart_layout_stacked() {
+      let svg = export_svg(
+        "SectorChart3D[{{{1, 1, 3}, {2, 2, 2}}, {{1, 1, 3}, {1, 2, 2}}}, \
+         ChartLayout -> \"Stacked\"]",
+      );
+      assert!(svg.matches("<polygon").count() > 0);
+    }
+
+    #[test]
+    fn sector_chart_3d_chart_element_function_profile() {
+      let svg = export_svg(
+        "SectorChart3D[{{1, 3, 2}, {2, 1, 3}}, \
+         ChartElementFunction -> \"ProfileSector3D\"]",
+      );
+      assert!(svg.matches("<polygon").count() > 0);
+    }
+
+    #[test]
+    fn sector_chart_3d_chart_element_function_torus() {
+      let svg = export_svg(
+        "SectorChart3D[{{1, 3, 2}, {2, 1, 3}}, \
+         ChartElementFunction -> \"TorusSector3D\"]",
+      );
+      assert!(svg.matches("<polygon").count() > 0);
+    }
+
+    #[test]
+    fn sector_chart_3d_invalid_input_unevaluated() {
+      // Non-list input has no sensible chart to draw, so it stays
+      // unevaluated rather than crashing — matching the other charts.
+      assert_eq!(interpret("SectorChart3D[5]").unwrap(), "SectorChart3D[5]");
     }
   }
 
@@ -15319,6 +15506,122 @@ mod matrix_form {
       pos1.0,
       pos3.0
     );
+  }
+
+  // `MatrixForm[data]` only typesets `data` as a matrix when `data` is
+  // actually a list; on anything else Wolfram just displays `data` plainly,
+  // with no `MatrixForm[…]` wrapper. A Wolfram Demonstrations idiom labels a
+  // formula (not a matrix) this way, e.g. `MatrixForm[StringForm["(``×``)-
+  // (``×``)", a, d, b, c]]` captioning a 2×2 determinant.
+  #[test]
+  fn matrix_form_of_non_list_shows_argument_plainly() {
+    clear_state();
+    let result = interpret_with_stdout("MatrixForm[1 + 2]").unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    assert!(
+      !svg.contains("MatrixForm"),
+      "MatrixForm[non-list] must not print its own head: {svg}"
+    );
+    assert!(
+      svg.contains(">3</text>"),
+      "must show the evaluated sum: {svg}"
+    );
+  }
+
+  // `StringForm` substitutes its placeholders wherever it is *typeset*
+  // (unlike plain `OutputForm`/console text, which prints the literal
+  // wrapper) — `MatrixForm[StringForm[…]]` is the Demonstrations idiom
+  // above with a literal formula instead of `1 + 2`.
+  #[test]
+  fn matrix_form_of_string_form_substitutes_and_keeps_colors() {
+    clear_state();
+    let result = interpret_with_stdout(
+      r#"MatrixForm[StringForm["(``\[Times]``)-(``\[Times]``)",
+        Style[1, FontColor -> Red], Style[4, FontColor -> Green],
+        Style[2, FontColor -> Brown], Style[3, FontColor -> Orange]]]"#,
+    )
+    .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    for marker in ["MatrixForm", "StringForm", "``"] {
+      assert!(
+        !svg.contains(marker),
+        "the formula must substitute, not leak {marker:?} from the \
+         un-evaluated call: {svg}"
+      );
+    }
+    assert!(
+      svg.contains(">1</text>")
+        && svg.contains(">4</text>")
+        && svg.contains(")-(")
+        && svg.contains("\u{d7}"),
+      "the substituted '(1×4)-(2×3)' formula must appear: {svg}"
+    );
+    for color in [
+      "rgb(255,0,0)",
+      "rgb(0,255,0)",
+      "rgb(153,102,51)",
+      "rgb(255,128,0)",
+    ] {
+      assert!(
+        svg.contains(color),
+        "each `Style[…, FontColor -> …]` argument must keep its color \
+         ({color} missing): {svg}"
+      );
+    }
+  }
+
+  // A `StringForm` string argument substitutes as its raw text, not the
+  // quoted literal `expr_to_box_form` gives an ordinary string expression
+  // — `StringForm["x = ``", "hello"]` typesets as `x = hello`, not
+  // `x = "hello"`. A `Style`-wrapped string argument keeps both the
+  // unquoting and its color.
+  #[test]
+  fn matrix_form_of_string_form_keeps_string_arguments_unquoted() {
+    clear_state();
+    let result = interpret_with_stdout(
+      r#"MatrixForm[StringForm["value = ``, ``", "hello", Style["world", Red]]]"#,
+    )
+    .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    assert!(
+      svg.contains(">hello</text>") && svg.contains(">world</text>"),
+      "string arguments must render unquoted: {svg}"
+    );
+    assert!(
+      !svg.contains("&quot;"),
+      "no escaped quote marks should appear around the substituted \
+       strings: {svg}"
+    );
+    assert!(
+      svg.contains("rgb(255,0,0)"),
+      "the Style-wrapped string argument must keep its color: {svg}"
+    );
+  }
+}
+
+mod traditional_form_style_box {
+  use super::*;
+
+  // `boxes_to_svg`'s `StyleBox` case (reached for a `StyleBox` nested
+  // inside a `FractionBox`/`SqrtBox`/etc. under `TraditionalForm`) is a
+  // near-duplicate of `layout_box`'s `StyleBox` case and must recognize a
+  // bare color directive (`StyleBox[b, Red]`) the same way, not just the
+  // `FontColor -> Red` `Rule` form — otherwise the two renderers drift
+  // apart, silently dropping color on one path but not the other.
+  #[test]
+  fn fraction_with_bare_colored_style_keeps_colors() {
+    clear_state();
+    let svg = export_svg("TraditionalForm[Style[5, Red]/Style[3, Blue]]");
+    for color in ["rgb(255,0,0)", "rgb(0,0,255)"] {
+      assert!(
+        svg.contains(color),
+        "the bare `Style[…, color]` directive must keep its color \
+         ({color} missing): {svg}"
+      );
+    }
   }
 }
 
@@ -20457,6 +20760,137 @@ mod parametric_plot3d {
       fill_colors(&with_unrelated_mesh_option).len()
     );
   }
+
+  /// The projected aspect ratio (projected y-span over x-span) of every
+  /// triangle fill in the SVG — reused by the `BoxRatios`/`PlotRange`
+  /// regressions below to check the rendered box's shape without
+  /// depending on exact pixel coordinates.
+  fn box_aspect(svg: &str) -> f64 {
+    let coords = |nth: usize| -> Vec<f64> {
+      svg
+        .split("<polygon points=\"")
+        .skip(1)
+        .filter_map(|p| p.split('"').next())
+        .flat_map(|p| {
+          p.split_whitespace()
+            .filter_map(|c| c.split(',').nth(nth)?.parse::<f64>().ok())
+            .collect::<Vec<_>>()
+        })
+        .collect()
+    };
+    let span = |v: &[f64]| {
+      v.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b))
+        - v.iter().fold(f64::INFINITY, |a, &b| a.min(b))
+    };
+    span(&coords(1)) / span(&coords(0))
+  }
+
+  /// Regression (Wolfram Demonstration "Twisted Surfaces of Revolution"):
+  /// `ParametricPlot3D`'s own direct render (unlike `Graphics3D`'s) never
+  /// read `BoxRatios` at all — it always squashed the box into Wolfram's
+  /// `Plot3D`-family default `{1, 1, 0.4}` no matter what was asked for.
+  /// `BoxRatios -> Automatic` asks for the box shaped like the data's own
+  /// extents instead, so a tube running ten times as far along its axis
+  /// as it is wide must draw far taller than the squashed default.
+  #[test]
+  fn box_ratios_automatic_uses_the_datas_own_proportions() {
+    let default_shape = export_svg(
+      "ParametricPlot3D[{Cos[u], Sin[u], v}, {u, 0, 2 Pi}, {v, -10, 10}]",
+    );
+    let automatic_shape = export_svg(
+      "ParametricPlot3D[{Cos[u], Sin[u], v}, {u, 0, 2 Pi}, {v, -10, 10}, \
+       BoxRatios -> Automatic]",
+    );
+    let (default_aspect, automatic_aspect) =
+      (box_aspect(&default_shape), box_aspect(&automatic_shape));
+    assert!(
+      automatic_aspect > default_aspect * 2.0,
+      "Automatic BoxRatios must draw the data's true, much taller shape: \
+       {automatic_aspect} vs default {default_aspect}"
+    );
+  }
+
+  /// An explicit `BoxRatios -> {rx, ry, rz}` on `ParametricPlot3D` must
+  /// reshape the box to those proportions directly, the same as
+  /// `Automatic` deriving them from the data.
+  #[test]
+  fn explicit_box_ratios_reshape_the_box() {
+    let flat = export_svg(
+      "ParametricPlot3D[{Cos[u], Sin[u], v}, {u, 0, 2 Pi}, {v, -1, 1}, \
+       BoxRatios -> {1, 1, 0.1}]",
+    );
+    let tall = export_svg(
+      "ParametricPlot3D[{Cos[u], Sin[u], v}, {u, 0, 2 Pi}, {v, -1, 1}, \
+       BoxRatios -> {1, 1, 4}]",
+    );
+    let (flat_aspect, tall_aspect) = (box_aspect(&flat), box_aspect(&tall));
+    assert!(
+      tall_aspect > flat_aspect * 4.0,
+      "BoxRatios -> {{1,1,4}} must draw a much taller box than \
+       {{1,1,0.1}}: {tall_aspect} vs {flat_aspect}"
+    );
+  }
+
+  /// Regression (Wolfram Demonstration "Twisted Surfaces of Revolution"):
+  /// `PlotRange` on `ParametricPlot3D` was likewise never read by its own
+  /// direct render — the axis ticks (and the box they frame) always
+  /// reported the sampled surface's actual extent, ignoring any `PlotRange`
+  /// given alongside it. A demonstration that pins `PlotRange` to keep a
+  /// `Manipulate`-driven surface's framing stable across frames instead
+  /// saw the frame follow the data every time.
+  #[test]
+  fn plot_range_pins_the_frame_independent_of_the_sampled_data() {
+    let svg = export_svg(
+      "ParametricPlot3D[{Cos[u], Sin[u], 0.1 v}, {u, 0, 2 Pi}, {v, -1, 1}, \
+       PlotRange -> {{-1, 1}, {-1, 1}, {-10, 10}}]",
+    );
+    // The surface's own z only ever reaches ±0.1, so a z tick at 10 can
+    // only come from the pinned `PlotRange`, not the data.
+    assert!(svg.contains(">10</text>"), "{svg}");
+    assert!(svg.contains(">-10</text>"), "{svg}");
+  }
+
+  /// Regression (Wolfram Demonstration "Twisted Surfaces of Revolution"):
+  /// `ParametricPlot3D`'s facet shading only ever painted `PlotStyle ->
+  /// FaceForm[front, back]`'s `front` colour — it built a `StyleState3D`
+  /// that carried `back_color` (as `Graphics3D`'s own polygon shading
+  /// already reads), but never consulted a facet's orientation relative
+  /// to the camera the way that shading does. A closed tube shows some
+  /// facets from behind no matter how it is turned, so the back colour
+  /// never appeared at all.
+  #[test]
+  fn face_form_shades_the_far_side_a_different_color() {
+    let svg = export_svg(
+      "ParametricPlot3D[{Cos[u], Sin[u], v}, {u, 0, 2 Pi}, {v, -1, 1}, \
+       PlotStyle -> FaceForm[Red, Blue]]",
+    );
+    let colors = fill_colors(&svg);
+    assert!(
+      colors.iter().any(|&(r, g, b)| r > g && r > b),
+      "expected some front-facing (red-tinted) facets, got {colors:?}"
+    );
+    assert!(
+      colors.iter().any(|&(r, g, b)| b > r && b > g),
+      "expected some back-facing (blue-tinted) facets, got {colors:?}"
+    );
+  }
+
+  /// A one-argument `PlotStyle -> FaceForm[color]` (no separate back
+  /// colour) must still colour every facet the same, regardless of which
+  /// way it faces.
+  #[test]
+  fn face_form_single_argument_colors_both_sides_the_same() {
+    let svg = export_svg(
+      "ParametricPlot3D[{Cos[u], Sin[u], v}, {u, 0, 2 Pi}, {v, -1, 1}, \
+       PlotStyle -> FaceForm[Red]]",
+    );
+    let colors = fill_colors(&svg);
+    assert!(!colors.is_empty(), "{svg}");
+    assert!(
+      colors.iter().all(|&(r, g, b)| r >= g && r >= b),
+      "expected every facet tinted toward red, got {colors:?}"
+    );
+  }
 }
 
 mod box_language {
@@ -21718,6 +22152,74 @@ mod manipulate {
       ManipulateControl::Slider2D { name, .. } => assert_eq!(name, "pt"),
       other => panic!("expected a draggable 2D control, got {other:?}"),
     }
+  }
+
+  // A Demonstration that drags a *list* of points drawn by a body-local
+  // `LocatorPane` (e.g. a polygon's vertices) — with no `Specifications`
+  // entry for that variable at all, only a plain `var = expr;` statement
+  // recomputing it from another control (the Wolfram Demonstrations Project
+  // "Intersecting Lines in All Possible Ways" idiom) — becomes a draggable
+  // multi-point `Locator` control, and the statement resetting it moves out
+  // of the body into `dynamic_locator_defaults` so it can be replayed only
+  // when `n` (not a drag) changes.
+  #[test]
+  fn spec_body_locator_pane_promotes_a_list_of_points() {
+    let expr = interpret_to_expr(
+      "Manipulate[pts = Table[{i, 0}, {i, n}]; \
+       LocatorPane[Dynamic[pts], Graphics[{Point[pts]}]], {{n, 3}, 2, 5, 1}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    let locator = spec
+      .controls
+      .iter()
+      .find(|c| c.name() == "pts")
+      .expect("pts is promoted to a control");
+    match locator {
+      ManipulateControl::Locator {
+        points,
+        auto_create,
+        ..
+      } => {
+        assert_eq!(*points, vec![(1.0, 0.0), (2.0, 0.0), (3.0, 0.0)]);
+        assert!(
+          !auto_create,
+          "the point count follows `n`, not manual add/remove"
+        );
+      }
+      other => panic!("expected a multi-point Locator control, got {other:?}"),
+    }
+    let (var, code) = spec
+      .dynamic_locator_defaults
+      .iter()
+      .find(|(n, _)| n == "pts")
+      .expect("pts carries a reset expression depending on n");
+    assert_eq!(var, "pts");
+    // Evaluated against a *different* `n` (rather than string-matching the
+    // InputForm) so the assertion doesn't depend on incidental spacing —
+    // and it proves the code actually recomputes from `n` rather than
+    // having frozen the build-time value.
+    let recomputed =
+      woxi::with_scoped_globals(&[("n".to_string(), "5".to_string())], || {
+        woxi::interpret_to_expr(code)
+      })
+      .expect("the reset code evaluates against a live `n`");
+    assert_eq!(
+      woxi::syntax::expr_to_input_form(&recomputed),
+      "{{1, 0}, {2, 0}, {3, 0}, {4, 0}, {5, 0}}",
+      "recomputing with n = 5 should yield 5 points"
+    );
+    assert!(
+      !spec.body_code.contains("pts = Table"),
+      "the reset statement moved out of the body so re-evaluating it \
+       doesn't clobber a drag: {}",
+      spec.body_code
+    );
+    assert!(
+      spec.body_code.contains("LocatorPane"),
+      "the LocatorPane call itself stays in the body: {}",
+      spec.body_code
+    );
   }
 
   // A Demonstration that wants its pick list *inside* its own layout writes
@@ -29803,6 +30305,45 @@ mod list_plot_markers_and_epilog {
         .iter()
         .any(|(t, fill)| t == "B" && fill == "#0000FF"),
       "the second series takes the second marker: {svg}"
+    );
+  }
+
+  #[test]
+  fn open_markers_cycles_distinct_open_shapes_per_series() {
+    clear_state();
+    let svg = export_svg(
+      "ListPlot[{{{0, 1.}, {1, 2.}}, {{0, 3.}, {1, 4.}}, {{0, 5.}, {1, 6.}}}, \
+       PlotMarkers -> \"OpenMarkers\"]",
+    );
+    let markers = marker_glyphs(&svg);
+    // The literal option name must never be drawn as text.
+    assert!(
+      markers.iter().all(|(t, _)| t != "OpenMarkers"),
+      "the named marker set must not draw its own name: {svg}"
+    );
+    // Each series draws its own open (hollow) shape glyph, one per point.
+    let open_shapes = ["○", "□", "◇"];
+    for glyph in open_shapes {
+      assert_eq!(
+        markers.iter().filter(|(t, _)| t == glyph).count(),
+        2,
+        "two points for the glyph {glyph:?}: {svg}"
+      );
+    }
+    let distinct_colors: std::collections::HashSet<_> = markers
+      .iter()
+      .filter(|(t, _)| open_shapes.contains(&t.as_str()))
+      .map(|(_, fill)| fill.clone())
+      .collect();
+    assert_eq!(
+      distinct_colors.len(),
+      3,
+      "each series' open shape keeps its own series colour: {svg}"
+    );
+    assert_eq!(
+      svg.matches("<circle").count(),
+      0,
+      "glyphs replace the dots: {svg}"
     );
   }
 

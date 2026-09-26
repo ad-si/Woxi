@@ -876,6 +876,33 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_manipulate_panel_control_group_no_vsform_warning() {
+    // A Demonstrations pattern (independently written, not copied from any
+    // specific one): the author hand-builds the whole control area as one
+    // bordered `Panel[Column[{…}]]` of `Button`/`Checkbox`/`PopupMenu`
+    // instead of letting Manipulate auto-generate sliders. Like the other
+    // layout containers (`Row`, `Column`, `Grid`, `Item`, `OpenerView`,
+    // `Tooltip`), a `Panel[…]` argument must pass through without a
+    // `Manipulate::vsform` message.
+    clear_state();
+    let code = r#"Manipulate[
+      x,
+      {x, 0, 1},
+      Panel[Column[{
+        Button["Reset", x = 0],
+        Checkbox[Dynamic[flag]],
+        PopupMenu[Dynamic[mode], {1 -> "A", 2 -> "B"}]
+      }]]
+    ]"#;
+    let r = interpret_with_stdout(code).unwrap();
+    assert!(
+      !r.warnings.iter().any(|w| w.contains("Manipulate::vsform")),
+      "unexpected Manipulate::vsform warning for a Panel control group: {:?}",
+      r.warnings
+    );
+  }
+
+  #[test]
   fn test_manipulate_echo_normalizes_control_specs() {
     // A bare control type echoes as the `ControlType -> …` option it stands
     // for, and a spec giving nothing else gets that type's default values.
@@ -3709,6 +3736,82 @@ mod interpreter_tests {
     // immediate top-level code.
     interpret(&printed).unwrap();
     assert_eq!(interpret("run[10]").unwrap(), "13");
+  }
+
+  #[test]
+  fn test_replaceall_span_before_dangling_set_becomes_null_statement() {
+    // Regression from a real Wolfram Demonstration ("Flash Distillation of
+    // a Benzene, Toluene, p-Xylene Mixture"): the author's cell had a
+    // literal `;;` typo — `Tdew = Ta /. FindRoot[...];;\nK1 = ...` — right
+    // after a `/.` whose RHS ends in a bracketed call. Woxi's `;;` operator
+    // has higher precedence than `=` (matching Wolfram's own placement of
+    // Span between `=` and `+`), so a naive parse lets it reach across the
+    // `/.` and swallow the next statement's `K1 = ...` as Span's second
+    // operand — and because `ConditionExpr` (which parses a `/.` RHS) has
+    // no lower-precedence continuation to hand a trailing `=` back to, that
+    // swallowed `=` couldn't be parsed at all: the whole expression failed
+    // to parse. Real Wolfram (per the notebook's own cached box output)
+    // treats the adjacent `;;` here as two ordinary CompoundExpression
+    // separators around an omitted (`Null`) statement instead, exactly like
+    // `a ; ; b`. `Ta /. z1` must stay its own statement, `K1 = 1` its own,
+    // with a `Null` in between.
+    clear_state();
+    assert_eq!(
+      interpret("ToString[Hold[a = 1; Ta /. z1 ;; K1 = 1], InputForm]")
+        .unwrap(),
+      "Hold[a = 1; Ta /. z1; Null; K1 = 1]"
+    );
+  }
+
+  #[test]
+  fn test_replaceall_span_before_dangling_set_evaluates_every_statement() {
+    // Same shape as above but actually run (inside a `(...)`
+    // CompoundExpression, the same grammar path a Demonstration's
+    // `DynamicModule` body parses through in Woxi Studio): every statement
+    // around the accidental `;;` must still execute, in particular the one
+    // *after* it, which used to be swallowed and left completely
+    // unevaluated.
+    clear_state();
+    assert_eq!(
+      interpret("(x = 1; y = {1, 2, 3} /. w ;; z = 42; {x, y, z})").unwrap(),
+      "{1, {1, 2, 3} /. w, 42}"
+    );
+    assert_eq!(interpret("z").unwrap(), "42");
+  }
+
+  #[test]
+  fn test_replaceall_span_without_dangling_set_is_unaffected() {
+    // The fix must not touch the ordinary case a `/.` RHS Span is meant
+    // for: nothing dangerous follows the second operand, so it still reads
+    // as `ReplaceAll[Ta, Span[z1, K1]]`.
+    clear_state();
+    assert_eq!(
+      interpret("ToString[Hold[Ta /. z1 ;; K1], InputForm]").unwrap(),
+      "Hold[Ta /. Span[z1, K1]]"
+    );
+  }
+
+  #[test]
+  fn test_replaceall_trailing_span_at_end_of_condition_is_unaffected() {
+    // A `;;` with nothing after it at all (not even a dangling `=`) still
+    // reads as the usual "no right operand" Span, defaulting to `All`.
+    clear_state();
+    assert_eq!(
+      interpret("ToString[Hold[Ta /. z1 ;;], InputForm]").unwrap(),
+      "Hold[Ta /. Span[z1, All]]"
+    );
+  }
+
+  #[test]
+  fn test_part_span_range_is_unaffected_by_condition_expr_guard() {
+    // The main `Expression` operator chain's own `;;` (used by `[[...]]`
+    // ranges, unrelated to `ConditionExpr`) must keep working exactly as
+    // before.
+    clear_state();
+    assert_eq!(
+      interpret("{10, 20, 30, 40, 50}[[2 ;; 4]]").unwrap(),
+      "{20, 30, 40}"
+    );
   }
 
   #[test]

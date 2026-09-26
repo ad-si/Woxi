@@ -2560,10 +2560,7 @@ pub fn kendall_tau_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if is_real {
     return Ok(Expr::Real(num as f64 / (denom_sq as f64).sqrt()));
   }
-  let expr = call(
-    "Divide",
-    vec![Expr::Integer(num), call1("Sqrt", Expr::Integer(denom_sq))],
-  );
+  let expr = div(Expr::Integer(num), call1("Sqrt", Expr::Integer(denom_sq)));
   crate::evaluator::evaluate_expr_to_expr(&expr)
 }
 
@@ -2632,9 +2629,9 @@ pub fn hoeffding_d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let k = (n - 2) * (n - 3) * d1 + d2 - 2 * (n - 2) * d3;
     let den = 16 * n * (n - 1) * (n - 2) * (n - 3) * (n - 4);
     if exact {
-      crate::evaluator::evaluate_expr_to_expr(&call(
-        "Divide",
-        vec![Expr::Integer(30 * k), Expr::Integer(den)],
+      crate::evaluator::evaluate_expr_to_expr(&div(
+        Expr::Integer(30 * k),
+        Expr::Integer(den),
       ))
       .unwrap_or(Expr::Integer(0))
     } else {
@@ -2859,9 +2856,9 @@ pub fn goodman_kruskal_gamma_ast(
       return Ok(id_expr("Indeterminate"));
     }
     if exact {
-      crate::evaluator::evaluate_expr_to_expr(&call(
-        "Divide",
-        vec![Expr::Integer(num), Expr::Integer(den)],
+      crate::evaluator::evaluate_expr_to_expr(&div(
+        Expr::Integer(num),
+        Expr::Integer(den),
       ))
     } else {
       Ok(Expr::Real(num as f64 / den as f64))
@@ -3906,10 +3903,8 @@ pub fn root_mean_square_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .iter()
         .map(|item| pow(item.clone(), Expr::Integer(2)))
         .collect();
-      let mean_square = call(
-        "Divide",
-        vec![call("Plus", squares), Expr::Integer(items.len() as i128)],
-      );
+      let mean_square =
+        div(call("Plus", squares), Expr::Integer(items.len() as i128));
       Ok(crate::evaluator::evaluate_expr_to_expr(&make_sqrt(
         mean_square,
       ))?)

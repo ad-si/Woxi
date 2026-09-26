@@ -10078,9 +10078,9 @@ fn image_measurement(
       }
       .into(),
     )),
-    "AspectRatio" => crate::evaluator::evaluate_expr_to_expr(&call(
-      "Divide",
-      vec![Expr::Integer(h as i128), Expr::Integer(w as i128)],
+    "AspectRatio" => crate::evaluator::evaluate_expr_to_expr(&div(
+      Expr::Integer(h as i128),
+      Expr::Integer(w as i128),
     ))
     .ok(),
     "DataType" => Some(Expr::String(

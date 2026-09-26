@@ -27,6 +27,75 @@ where
   result
 }
 
+thread_local! {
+  /// Shared leaf-evaluation budget for the *entire* call tree of one
+  /// top-level `NIntegrate` — `None` when no `NIntegrate` is currently
+  /// running. An iterated integral (`NIntegrate[…, {y,…}, {z,…}]`) reduces
+  /// to an outer 1D quadrature whose integrand, at every sampled outer
+  /// point, runs a whole new inner `NIntegrate`. Without a shared bound,
+  /// each dimension gets its own independent evaluation cap and a
+  /// non-converging integrand (e.g. `Boole[…]`, discontinuous at the
+  /// region boundary) exhausts its cap at *every* one of the potentially
+  /// thousands of outer samples, multiplying instead of sharing the bound
+  /// — turning a call meant to return in bounded time into one that
+  /// effectively hangs. Pooling one budget across the whole tree keeps the
+  /// same "always bounded" guarantee regardless of nesting depth.
+  static NINTEGRATE_BUDGET: std::cell::Cell<Option<u64>> =
+    const { std::cell::Cell::new(None) };
+}
+
+/// Total shared leaf-evaluation budget for one top-level `NIntegrate` call
+/// tree — matches the combined ceiling a single (non-iterated) dimension
+/// already used (tanh-sinh's 20,000 plus adaptive Simpson's 10,000
+/// fallback), so an ordinary 1D integral's behavior is unchanged; an
+/// iterated integral now shares this same total across every dimension
+/// instead of multiplying it.
+const NINTEGRATE_TOTAL_BUDGET: u64 = 30_000;
+
+/// Run `f` with a shared `NIntegrate` evaluation budget installed, unless
+/// one is already active — a nested/iterated call reuses its parent's
+/// budget rather than getting a fresh one of its own, so the whole call
+/// tree draws from one pool.
+fn with_nintegrate_budget<F, R>(f: F) -> R
+where
+  F: FnOnce() -> R,
+{
+  let is_top_level = NINTEGRATE_BUDGET.with(|b| b.get().is_none());
+  if is_top_level {
+    NINTEGRATE_BUDGET.with(|b| b.set(Some(NINTEGRATE_TOTAL_BUDGET)));
+  }
+  let result = f();
+  if is_top_level {
+    NINTEGRATE_BUDGET.with(|b| b.set(None));
+  }
+  result
+}
+
+/// Take up to `want` units from the shared `NIntegrate` budget, returning
+/// how many are actually available. Callers should return whatever they
+/// don't end up spending via [`nintegrate_budget_return`].
+fn nintegrate_budget_take(want: u64) -> u64 {
+  NINTEGRATE_BUDGET.with(|b| match b.get() {
+    Some(remaining) => {
+      let take = remaining.min(want);
+      b.set(Some(remaining - take));
+      take
+    }
+    // No budget installed (shouldn't happen: `nintegrate_ast` always
+    // installs one) — don't artificially constrain the caller.
+    None => want,
+  })
+}
+
+/// Return `n` unspent units to the shared `NIntegrate` budget.
+fn nintegrate_budget_return(n: u64) {
+  NINTEGRATE_BUDGET.with(|b| {
+    if let Some(remaining) = b.get() {
+      b.set(Some(remaining + n));
+    }
+  });
+}
+
 /// D[expr, var] or D[expr, {var, n}] or D[expr, x, y, ...] - Symbolic differentiation
 pub fn d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 {
@@ -974,10 +1043,7 @@ fn try_dirac_delta_integral(
   }
 
   // Root x0 = -d / c.
-  let root = eval(call(
-    "Divide",
-    vec![call("Times", vec![Expr::Integer(-1), d]), c.clone()],
-  ))?;
+  let root = eval(div(call("Times", vec![Expr::Integer(-1), d]), c.clone()))?;
   // g(x): the product of the non-delta factors.
   let g = if others.is_empty() {
     Expr::Integer(1)
@@ -987,7 +1053,7 @@ fn try_dirac_delta_integral(
   // Sifted value g(x0)/|c|. Defined symbolically so it also works when the
   // root is symbolic.
   let g_at_root = eval(at(&g, root.clone()))?;
-  let sifted = eval(call("Divide", vec![g_at_root, call1("Abs", c)]))?;
+  let sifted = eval(div(g_at_root, call1("Abs", c)))?;
 
   match crate::functions::math_ast::try_eval_to_f64(&root) {
     // Numeric root: position it relative to the (numeric) bounds.
@@ -15550,6 +15616,10 @@ fn gaussian_closed_form_integral(
 }
 
 pub fn nintegrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  with_nintegrate_budget(|| nintegrate_ast_impl(args))
+}
+
+fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 2 {
     return Err(InterpreterError::EvaluationError(
       "NIntegrate expects at least 2 arguments".into(),
@@ -15721,18 +15791,165 @@ pub fn nintegrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       crate::functions::math_ast::try_eval_to_f64(&result)
         .filter(|v| v.is_finite())
     };
-    return match adaptive_simpson(
-      &inner_eval,
-      olo,
-      ohi,
-      tolerance,
-      max_recursion,
-    ) {
-      Some(v) => Ok(Expr::Real(v)),
-      None => Err(InterpreterError::EvaluationError(
-        "NIntegrate: failed to converge or integrand is not numeric".into(),
-      )),
+
+    // Recognize the common area/volume shape — the inner dimension is
+    // itself exactly `Boole[cond]` over a simple `{var, lo, hi}` range —
+    // once, up front. When it matches, both the actual outer quadrature
+    // and the kink-scan below can call `boole_exact_measure_with_crossings`
+    // directly instead of going through the whole recursive `NIntegrate`
+    // dispatch per outer sample (parsing options, re-entering this
+    // function, …), and — the part that matters for correctness, not just
+    // speed — get back how many True/False crossings the inner slice has,
+    // not just its resulting measure.
+    let boole_shape =
+      if let (Expr::FunctionCall { name, args: bargs }, [Expr::List(items)]) =
+        (&integrand0, inner_ranges.as_slice())
+        && name == "Boole"
+        && bargs.len() == 1
+        && items.len() == 3
+        && matches!(&items[0], Expr::Identifier(_))
+      {
+        let Expr::Identifier(ivar) = &items[0] else {
+          unreachable!()
+        };
+        Some((
+          bargs[0].clone(),
+          ivar.clone(),
+          items[1].clone(),
+          items[2].clone(),
+        ))
+      } else {
+        None
+      };
+    // `(measure, crossing count)` at outer sample `x`. The count is always
+    // 0 outside the `Boole`-shape fast path — there's no way to recover it
+    // from a generic reduction that only ever returns a single number —
+    // which the kink-scan below compensates for by also treating a
+    // transition through exactly 0 as a signal on its own.
+    let measure_and_crossings = |x: f64| -> Option<(f64, usize)> {
+      if let Some((cond, ivar, ilo_e, ihi_e)) = &boole_shape {
+        let x_expr = Expr::Real(x);
+        let cond_x = crate::syntax::substitute_variable(cond, &ovar, &x_expr);
+        let eval_bound = |e: &Expr| {
+          crate::functions::math_ast::try_eval_to_f64(
+            &crate::evaluator::evaluate_expr_to_expr(
+              &crate::syntax::substitute_variable(e, &ovar, &x_expr),
+            )
+            .ok()?,
+          )
+        };
+        let ilo = eval_bound(ilo_e)?;
+        let ihi = eval_bound(ihi_e)?;
+        let (total, crossings) =
+          boole_exact_measure_with_crossings(&cond_x, ivar, ilo, ihi)?;
+        Some((total, crossings.len()))
+      } else {
+        Some((inner_eval(x)?, 0))
+      }
     };
+    let eval_for_quadrature =
+      |x: f64| -> Option<f64> { measure_and_crossings(x).map(|(v, _)| v) };
+
+    // Tanh-sinh first, exactly like the base single-dimension case below:
+    // the outer reduction of e.g. a disk's area/volume integral is smooth
+    // in its interior but has a vertical-tangent (endpoint-singularity-like)
+    // boundary at the outer variable's own extremes, which plain adaptive
+    // Simpson converges to a tight tolerance on only by brute recursion.
+    //
+    // Loosen the tolerance this reduction itself has to hit: each sample
+    // is already the result of a whole separate (inner) integration, so
+    // demanding the same tightness as a single plain integral both costs
+    // far more (every extra digit here means re-running the entire inner
+    // integral at ever more outer sample points) and buys little, since
+    // the inner estimate's own error already dominates. It also matters
+    // for area/volume-style inner integrands (e.g. `Boole[…]`, handled
+    // exactly by `boole_exact_measure` above): reaching the last few
+    // digits of 1e-10 drives tanh-sinh's node-crowding arbitrarily close
+    // to the outer endpoints, down to where the true region's width can
+    // fall below any fixed sampling resolution and read as exactly zero —
+    // an artificial cliff right where quadrature is sampling most densely
+    // that breaks convergence for both methods.
+    let outer_tolerance = tolerance.max(1e-7);
+
+    // An area/volume-style inner reduction has a genuine kink in the outer
+    // integrand's *derivative* at an interior point wherever the inner
+    // slice's own topology changes — e.g. once |y| passes the point where
+    // a horizontal strip stops meeting a disk at all (the measure hits
+    // exactly 0), or the point where a cutting plane starts slicing all
+    // the way through it instead of only partway (the crossing count
+    // drops from 2 to 0 with no simple value to key off). Neither
+    // tanh-sinh (built for endpoint behavior) nor plain adaptive Simpson
+    // locates an interior kink on their own — both grind toward their
+    // evaluation ceilings trying to quadrature across it as if it were
+    // smooth. Scan for a change in (crossing count, measure-is-zero) —
+    // whichever signal is available — and bisect each to a breakpoint,
+    // splitting the range so every piece handed to tanh-sinh/Simpson is
+    // smooth on its own interior.
+    const KINK_SCAN_POINTS: u32 = 200;
+    let ospan = ohi - olo;
+    let signature = |v: f64, count: usize| (count, v == 0.0);
+    let mut kink_samples = Vec::with_capacity(KINK_SCAN_POINTS as usize + 1);
+    for i in 0..=KINK_SCAN_POINTS {
+      let y = if i == KINK_SCAN_POINTS {
+        ohi
+      } else {
+        olo + ospan * f64::from(i) / f64::from(KINK_SCAN_POINTS)
+      };
+      if let Some((v, count)) = measure_and_crossings(y) {
+        kink_samples.push((y, signature(v, count)));
+      }
+    }
+    let mut breakpoints: Vec<f64> = Vec::new();
+    for w in kink_samples.windows(2) {
+      let (a, sig_a) = w[0];
+      let (b, sig_b) = w[1];
+      if sig_a == sig_b {
+        continue;
+      }
+      let (mut lo_b, mut hi_b) = (a, b);
+      for _ in 0..40 {
+        let mid = f64::midpoint(lo_b, hi_b);
+        match measure_and_crossings(mid) {
+          Some((v, count)) if signature(v, count) == sig_a => lo_b = mid,
+          Some(_) => hi_b = mid,
+          None => break,
+        }
+      }
+      breakpoints.push(f64::midpoint(lo_b, hi_b));
+    }
+    breakpoints.sort_by(f64::total_cmp);
+
+    let mut segment_bounds = Vec::with_capacity(breakpoints.len() + 2);
+    segment_bounds.push(olo);
+    segment_bounds.extend(breakpoints);
+    segment_bounds.push(ohi);
+
+    let mut total = 0.0;
+    for seg in segment_bounds.windows(2) {
+      let (a, b) = (seg[0], seg[1]);
+      if b <= a {
+        continue;
+      }
+      let piece = tanh_sinh(&eval_for_quadrature, a, b, outer_tolerance)
+        .or_else(|| {
+          adaptive_simpson(
+            &eval_for_quadrature,
+            a,
+            b,
+            outer_tolerance,
+            max_recursion,
+          )
+        });
+      match piece {
+        Some(v) => total += v,
+        None => {
+          return Err(InterpreterError::EvaluationError(
+            "NIntegrate: failed to converge or integrand is not numeric".into(),
+          ));
+        }
+      }
+    }
+    return Ok(Expr::Real(total));
   }
 
   // Second argument is `{var, a, b}` or, with interior waypoints (e.g. a
@@ -15814,6 +16031,29 @@ pub fn nintegrate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && let Some(alpha) = detect_gaussian_coefficient(integrand, &var_name)
   {
     return gaussian_closed_form_integral(&alpha, lo, hi, working_precision);
+  }
+
+  // `Boole[cond]` fast/exact path: the integrand is a 0/1 indicator, so the
+  // integral is exactly the total length of the sub-intervals of [lo, hi]
+  // where `cond` holds — a region-measure computation, not a smooth
+  // function to quadrature. Generic Simpson/tanh-sinh treat the jump at
+  // each boundary crossing as noise: reaching a tight tolerance there
+  // needs recursing to the evaluation-budget ceiling, which (for an
+  // iterated integral whose *inner* dimension is a Boole condition,
+  // e.g. computing a region's area or volume) gets hit at nearly every
+  // outer sample point and either times out or — once bounded by a
+  // shared budget (`NINTEGRATE_BUDGET`) — returns a badly biased
+  // estimate instead. Locating the crossing(s) directly and integrating
+  // the resulting piecewise-constant function exactly sidesteps both.
+  if bounds.len() == 2
+    && lo.is_finite()
+    && hi.is_finite()
+    && let Expr::FunctionCall { name, args: bargs } = integrand
+    && name == "Boole"
+    && bargs.len() == 1
+    && let Some(measure) = boole_exact_measure(&bargs[0], &var_name, lo, hi)
+  {
+    return Ok(Expr::Real(measure));
   }
 
   // Evaluate the integrand at a point. A point where the integrand is not
@@ -16020,6 +16260,119 @@ fn expr_to_bound(expr: &Expr) -> Option<f64> {
   crate::functions::math_ast::try_eval_to_f64(expr)
 }
 
+/// Exactly integrates `Boole[cond]` (as a function of `var_name`, holding
+/// any other symbols in `cond` at whatever constant value they already
+/// evaluate to) over `[lo, hi]` by finding where `cond` changes between
+/// true and false and summing the widths of the true sub-intervals — the
+/// integral of a 0/1 indicator is, by definition, the measure of the set
+/// where it's 1, not a quantity a smoothness-assuming quadrature rule
+/// should approximate.
+///
+/// A coarse scan first brackets every crossing (a sign change between
+/// consecutive samples), then each bracket is bisected to machine
+/// precision. This only finds crossings the scan's resolution actually
+/// samples past — adequate for the boundaries ordinary regions produce
+/// (circles, polygons, finitely many algebraic conditions), but a
+/// pathologically thin true/false sliver narrower than the scan step could
+/// still be missed, same as any other sampling-based method.
+///
+/// Returns `None` if `cond` doesn't evaluate to a definite `True`/`False`
+/// everywhere sampled (e.g. it depends on a genuinely symbolic quantity),
+/// so the caller falls back to generic numeric quadrature.
+fn boole_exact_measure(
+  cond: &Expr,
+  var_name: &str,
+  lo: f64,
+  hi: f64,
+) -> Option<f64> {
+  boole_exact_measure_with_crossings(cond, var_name, lo, hi)
+    .map(|(total, _)| total)
+}
+
+/// As [`boole_exact_measure`], but also returns the sorted True/False
+/// crossing points it found. An outer integration reducing over this one
+/// (an iterated `NIntegrate` whose inner dimension is this same `Boole[…]`
+/// condition) uses the *count* of crossings, not just the resulting
+/// measure, to detect its own interior kinks: the region's topology at a
+/// given outer sample — how many crossings the inner slice has — changes
+/// exactly where the outer variable's own quadrature needs a breakpoint
+/// (e.g. where a cutting plane starts, or stops, missing a circle
+/// entirely, or starts, or stops, cutting all the way through it), whether
+/// that shows up in the measure as hitting zero, hitting its local
+/// maximum, or nothing simple at all.
+fn boole_exact_measure_with_crossings(
+  cond: &Expr,
+  var_name: &str,
+  lo: f64,
+  hi: f64,
+) -> Option<(f64, Vec<f64>)> {
+  let span = hi - lo;
+  if !span.is_finite() || span <= 0.0 {
+    return None;
+  }
+  let pred = |v: f64| -> Option<bool> {
+    let substituted =
+      crate::syntax::substitute_variable(cond, var_name, &Expr::Real(v));
+    match &crate::evaluator::evaluate_expr_to_expr(&substituted).ok()? {
+      Expr::Identifier(s) if s == "True" => Some(true),
+      Expr::Identifier(s) if s == "False" => Some(false),
+      _ => None,
+    }
+  };
+
+  // Only needs to bracket each crossing, not locate it — bisection below
+  // refines to machine precision regardless of how coarse the bracket is.
+  // Kept modest because the outer reduction of an iterated integral (e.g.
+  // an area/volume double integral) calls this once per outer sample.
+  const SCAN_POINTS: u32 = 400;
+  let step = span / f64::from(SCAN_POINTS);
+  let mut samples = Vec::with_capacity(SCAN_POINTS as usize + 1);
+  for i in 0..=SCAN_POINTS {
+    let v = if i == SCAN_POINTS {
+      hi
+    } else {
+      lo + step * f64::from(i)
+    };
+    samples.push((v, pred(v)?));
+  }
+
+  // Bisect each bracketed True/False transition down to a precise crossing.
+  let mut crossings = Vec::new();
+  for w in samples.windows(2) {
+    let ((a, pa), (b, _)) = (w[0], w[1]);
+    if w[0].1 == w[1].1 {
+      continue;
+    }
+    let (mut lo_b, mut hi_b) = (a, b);
+    for _ in 0..60 {
+      let mid = f64::midpoint(lo_b, hi_b);
+      match pred(mid) {
+        Some(p) if p == pa => lo_b = mid,
+        Some(_) => hi_b = mid,
+        // An indeterminate probe exactly at the crossing (e.g. a removable
+        // discontinuity in `cond` itself) — stop refining, keep the
+        // current bracket as the crossing location.
+        None => break,
+      }
+    }
+    crossings.push(f64::midpoint(lo_b, hi_b));
+  }
+  crossings.sort_by(f64::total_cmp);
+
+  let mut points = Vec::with_capacity(crossings.len() + 2);
+  points.push(lo);
+  points.extend(crossings.iter().copied());
+  points.push(hi);
+  let mut total = 0.0;
+  for w in points.windows(2) {
+    let (a, b) = (w[0], w[1]);
+    if b > a && pred(f64::midpoint(a, b))? {
+      total += b - a;
+    }
+  }
+  Some((total, crossings))
+}
+
 /// Adaptive Simpson's quadrature
 /// Tanh-sinh (double-exponential) quadrature over a finite interval.
 ///
@@ -16057,7 +16410,27 @@ fn tanh_sinh(
   const T_MAX: f64 = 6.5;
   const MAX_LEVELS: u32 = 11;
   let evaluations = std::cell::Cell::new(0u32);
-  const MAX_EVALUATIONS: u32 = 20_000;
+  // Draw the ceiling from the shared cross-call `NIntegrate` budget (see
+  // [`NINTEGRATE_BUDGET`]) instead of a fixed 20,000, so a nested/iterated
+  // call can't each claim a full allotment of their own. `ReturnUnspent`
+  // gives back whatever this call didn't spend when it drops, covering
+  // every `return` below (including the early ones) uniformly.
+  let max_evaluations = nintegrate_budget_take(20_000) as u32;
+  struct ReturnUnspent<'a> {
+    taken: u32,
+    evaluations: &'a std::cell::Cell<u32>,
+  }
+  impl Drop for ReturnUnspent<'_> {
+    fn drop(&mut self) {
+      nintegrate_budget_return(u64::from(
+        self.taken.saturating_sub(self.evaluations.get()),
+      ));
+    }
+  }
+  let _return_unspent = ReturnUnspent {
+    taken: max_evaluations,
+    evaluations: &evaluations,
+  };
 
   // `w * f(x)` for the node at abscissa parameter `t`, on the `b` side when
   // `toward_b` and on the `a` side otherwise. A node whose distance or weight
@@ -16125,7 +16498,7 @@ fn tanh_sinh(
     {
       return Some(estimate);
     }
-    if evaluations.get() > MAX_EVALUATIONS {
+    if evaluations.get() > max_evaluations {
       return None;
     }
     previous = Some(estimate);
@@ -16155,9 +16528,15 @@ fn adaptive_simpson(
   // bounds the divergent fallback; keep it small enough that even in a debug
   // build the fallback returns in ~1s (each node re-interprets the integrand
   // expression, which is slow unoptimized) rather than brushing the test
-  // harness's per-test timeout under parallel CI load.
-  let budget = std::cell::Cell::new(10_000u64);
-  adaptive_simpson_rec(f, a, b, tol, whole, fa, fm, fb, max_depth, &budget)
+  // harness's per-test timeout under parallel CI load. Draw the ceiling from
+  // the shared cross-call budget (see [`NINTEGRATE_BUDGET`]) rather than a
+  // fresh 10,000 every time, so a nested/iterated NIntegrate can't multiply
+  // this cap once per dimension; give back whatever this call didn't spend.
+  let budget = std::cell::Cell::new(nintegrate_budget_take(10_000));
+  let result =
+    adaptive_simpson_rec(f, a, b, tol, whole, fa, fm, fb, max_depth, &budget);
+  nintegrate_budget_return(budget.get());
+  result
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -18506,7 +18885,7 @@ pub fn discrete_ratio_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let shift_spec =
         Expr::List(vec![Expr::Identifier(var.clone()), step.clone()].into());
       let shifted = discrete_shift_ast(&[result.clone(), shift_spec])?;
-      let ratio = call("Divide", vec![shifted, result.clone()]);
+      let ratio = div(shifted, result.clone());
       result = crate::evaluator::evaluate_expr_to_expr(&ratio)?;
     }
   }

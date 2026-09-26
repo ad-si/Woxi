@@ -231,7 +231,7 @@ FrameStyle,Option specifying the style of the frame around a plot,✅,none,2.0,1
 Column,Displays elements in a vertical column,✅,pure,6.0,174
 ColumnForm,Legacy display directive stacking elements one per line (renders at top level and under every form),✅,pure,1.0,174
 FontColor,Option symbol for specifying text color in Style,✅,pure,3.0,175
-NIntegrate,Computes a numerical integral by tanh-sinh quadrature — which handles an endpoint singularity — falling back to an adaptive Simpson rule for oscillatory integrands and using a tangent substitution for infinite bounds; complex waypoints integrate along the piecewise-linear contour through them,✅,pure,1.0,176
+NIntegrate,Computes a numerical integral by tanh-sinh quadrature — which handles an endpoint singularity — falling back to an adaptive Simpson rule for oscillatory integrands and using a tangent substitution for infinite bounds; complex waypoints integrate along the piecewise-linear contour through them; a Boole[…] region indicator integrates exactly via boundary-crossing detection instead of quadrature; an iterated (multi-dimensional) integral shares one evaluation budget across every dimension so a non-converging inner integrand can't multiply it,✅,pure,1.0,176
 Dashed,Shorthand for Dashing[{Small Small}] line style,✅,pure,6.0,177
 Import,"Imports data from a file (images CSV XLSX TXT PPM/PGM/PBM/PNM WAV and other audio; CERN ROOT incl. TH1/TH2 histograms and TTree branch data via element paths; CSV/TSV row/column subsets via {""Data"" rowspec colspec} position specs); an .xml file reads into symbolic XML; a PDF gives one Graphics per page with PageCount and Plaintext elements",✅,effectful,4.0,178
 Thread,Threads a function over corresponding list elements,✅,pure,1.0,179
@@ -957,7 +957,7 @@ IntegerString,Converts an integer to a string in a given base,✅,pure,6.0,933
 FontTracking,,🚫,,3.0,935
 MeshRegion,Mesh region built from coordinates and cells; measured and read like any other region,✅,pure,10.0,935
 ScalingFunctions,,🚫,,8.0,936
-ChartElementFunction,,🚫,,7.0,937
+ChartElementFunction,Selects a sector's 3D shape in SectorChart3D (CylindricalSector3D/ProfileSector3D/TorusSector3D),✅,none,7.0,937
 ComponentMeasurements,Measure labelled components of a label matrix (Count Area Label),✅,pure,8.0,938
 PolynomialMod,Reduces a polynomial modulo m (a number reduces the coefficients; a polynomial divides and leaves the remainder; a list reduces modulo the ideal they generate),✅,pure,2.0,939
 RegionMember,Tests whether a point lies in a region (Disk/Ball/Circle/Sphere/Rectangle/Triangle/Polygon),✅,pure,10.0,940
@@ -1233,7 +1233,7 @@ CellMargins,,🚫,,3.0,1219
 Minors,Matrix minors (determinants of submatrices),✅,pure,1.0,1221
 VoronoiMesh,Voronoi tessellation mesh from 2D points,✅,pure,10.0,1221
 UpTo,Represents a limit specification,✅,1,10.3,1222
-ChartLayout,,🚫,,7.0,1223
+ChartLayout,Grouped vs Stacked layout for multi-dataset SectorChart3D,✅,none,7.0,1223
 BinCounts,Counts data points in equal-width bins,✅,pure,6.0,1225
 VertexCount,Returns the number of vertices in a graph (optionally matching a pattern),✅,pure,8.0,1225
 LetterCharacter,String pattern for letter characters,✅,1,5.1,1226
@@ -3007,7 +3007,7 @@ ListSliceDensityPlot3D,,🚫,,10.2,3048
 LongestCommonSubsequence,Returns the longest contiguous subsequence common to two strings or lists,✅,pure,7.0,3048
 NotebookDynamicExpression,,🚫,,8.0,3048
 RangeFilter,,🚫,,8.0,3048
-SectorChart3D,,🚫,,7.0,3048
+SectorChart3D,Creates a 3D sector chart with angle/radius/height driven by data,✅,pure,7.0,3048
 SlideView,Slide view control (stays symbolic in script mode),✅,unevaluated,6.0,3048
 SpanMaxSize,,,,3.0,3048
 TestReport,,,,10.0,3048
@@ -6346,3 +6346,4 @@ $Version,The version of the Woxi kernel,✅,pure,1.0,
 $VersionNumber,The version number of the Woxi kernel,✅,pure,2.0,
 EdgeRenderingFunction,Option giving the function that draws each edge of a GraphPlot (GraphPlot's older name for EdgeShapeFunction),✅,none,6.0,
 InterpolatingFunctionDomain,Gives the domain over which an InterpolatingFunction is defined (same as its "Domain" property),✅,pure,12.0,
+VertexLabeling,GraphPlot's legacy option for turning each vertex's name into a label (predates Graph's VertexLabels),✅,none,6.0,

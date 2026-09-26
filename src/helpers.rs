@@ -40,6 +40,10 @@ pub fn div2(a: Expr, b: Expr) -> Expr {
   binop(BinaryOperator::Divide, a, b)
 }
 
+pub fn div(a: Expr, b: Expr) -> Expr {
+  call("Divide", vec![a, b])
+}
+
 pub fn call(name: &str, args: Vec<Expr>) -> Expr {
   Expr::FunctionCall {
     name: name.to_string(),

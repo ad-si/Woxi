@@ -17876,9 +17876,9 @@ pub fn truncated_mean_variance(
     {
       return Ok(None);
     }
-    Ok(Some(crate::evaluator::evaluate_expr_to_expr(&call(
-      "Divide",
-      vec![integral, z.clone()],
+    Ok(Some(crate::evaluator::evaluate_expr_to_expr(&div(
+      integral,
+      z.clone(),
     ))?))
   };
 

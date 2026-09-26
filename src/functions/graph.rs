@@ -493,6 +493,13 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             vertex_labels = true;
           }
         }
+        // `VertexLabeling -> True/False`: `GraphPlot`'s own legacy option
+        // (predating `Graph`'s `VertexLabels -> "Name"`) for turning each
+        // vertex's name into a label next to it.
+        "VertexLabeling" => {
+          vertex_labels =
+            matches!(replacement, Expr::Identifier(s) if s == "True");
+        }
         "VertexShapeFunction" => {
           if let Expr::String(s) = replacement {
             vertex_shape = Some(s.clone());
@@ -1046,14 +1053,16 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
     if vertex_labels {
       // Strip any Style wrapper so the label shows the underlying vertex
-      // name (e.g. `3`, not `Style[3, Red]`).
-      let label_text = expr_to_output(unwrap_vertex_style(&vertices[i]).0);
+      // name (e.g. `3`, not `Style[3, Red]`), keeping the name itself as an
+      // expression (rather than pre-stringifying it) so a structured name
+      // like `Subscript[x, 1]` still typesets instead of showing its
+      // literal head name.
+      let label_expr = unwrap_vertex_style(&vertices[i]).0;
       primitives.push(call(
         "RGBColor",
         vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)],
       ));
-      let styled =
-        call("Style", vec![Expr::String(label_text), Expr::Integer(10)]);
+      let styled = call("Style", vec![label_expr.clone(), Expr::Integer(10)]);
       let point = Expr::List(
         vec![Expr::Real(x), Expr::Real(y + vertex_radius + 0.08)].into(),
       );
@@ -1076,7 +1085,9 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
     // If the user already provided a Style[...] wrapper, keep it so their
     // directives (color, size, Bold/Italic) win. Otherwise wrap the label
-    // so it renders at a larger, bold font by default.
+    // so it renders at a larger, bold font by default. Either way the label
+    // is kept as an expression (not pre-stringified) so structure such as
+    // `Subscript[…]` typesets instead of showing its literal head name.
     let styled = match &label_expr {
       Expr::FunctionCall { name, args }
         if name == "Style" && !args.is_empty() =>
@@ -1085,11 +1096,7 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       _ => call(
         "Style",
-        vec![
-          Expr::String(expr_to_output(&label_expr)),
-          Expr::Integer(16),
-          id_expr("Bold"),
-        ],
+        vec![label_expr.clone(), Expr::Integer(16), id_expr("Bold")],
       ),
     };
 
@@ -7268,7 +7275,7 @@ pub fn graph_metric_ast(
         })
         .collect();
       let sum = call("Plus", terms);
-      let mean = call("Divide", vec![sum, Expr::Integer(local.len() as i128)]);
+      let mean = div(sum, Expr::Integer(local.len() as i128));
       return Ok(
         crate::evaluator::evaluate_expr_to_expr(&mean)
           .unwrap_or_else(|_| unevaluated()),

@@ -732,7 +732,7 @@ SimpleTerm = _{
   | List
   | StringCall
   | String
-  | &BalancedParens ~ "(" ~ Expression ~ ")"
+  | &BalancedParens ~ "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")"
 }
 
 // TermNoImplicit is like Term but without ImplicitTimes - used for function bodies
@@ -819,7 +819,7 @@ PatternTestHead = { !("_") ~ Identifier }
 CondOperand = _{ LeadingNot ~ Term ~ FactorialSuffix? ~ TermSuffix* | LeadingMinus ~ Term ~ FactorialSuffix? ~ TermSuffix* | Term ~ FactorialSuffix? ~ TermSuffix* }
 SpanOrCondOperand = _{ SpanNoLhsSep ~ CondOperand | SpanNoOperandSep | CondOperand }
 ConditionExpr = {
-    SpanOrCondOperand ~ ((ConditionOp | TildeInfix) ~ SpanOrCondOperand | SpanNoRhsSep)*
+    SpanOrCondOperand ~ ((ConditionOp | TildeInfix) ~ SpanOrCondOperand | CondSpanOp ~ SpanOrCondOperand | CondSpanNoRhs)*
 }
 // Operators allowed in conditions - excludes -> and :> which mark rule boundaries
 // Atomic so that WHITESPACE/COMMENT tokens are not consumed within the operator span.
@@ -842,7 +842,6 @@ ConditionOp = @{
   | "<->"                         // TwoWayRule (must be before <>, <=, <)
   | "<>"                          // StringJoin (must be before < to avoid partial match)
   | "<=" | "\u{2264}" | "\u{2A7D}" | "\\[LessEqual]" | ">=" | "\u{2265}" | "\u{2A7E}" | "\\[GreaterEqual]" | "<" | ">"       // Order comparison, ≤, ≥, ⩽, ⩾
-  | ";;"                          // Span
   | "/@"                          // Map (must be before the bare "/" of Arithmetic)
   | "@@@"                         // MapApply (must be before @@)
   | "@@"                          // Apply (must be before @)
@@ -853,6 +852,26 @@ ConditionOp = @{
   | "~~"                          // StringExpression
   | "." ~ !ASCII_DIGIT ~ !"."    // Dot operator
 }
+// `;;` inside a condition position (a `/.`/`//.` replacement-rule slot, or a
+// `/;` pattern condition): unlike the main `Expression` chain, `ConditionExpr`
+// has no lower-precedence continuation to hand a trailing `=` back to — its
+// caller (`ReplaceAllSuffix` et al.) ends right where it does. So if the
+// right operand a `;;` would consume is immediately followed by a bare `=`
+// (Set, not `==`/`=!=`), consuming it here strands that `=` with nothing able
+// to parse it, and the whole expression fails outright instead of the `=`
+// starting the *next* CompoundExpression statement — e.g. `a /. b ;; c = d`
+// is two statements around an empty one (`a /. b; Null; c = d`, matching
+// Wolfram's `x ; ; y` — see `parse_compound_expression`), not
+// `Set[Span[b, c], d]`, which nothing downstream can consume. Declining the
+// match here falls through to `CondSpanNoRhs`, which carries the identical
+// guard so it can't paper over the same hazard, leaving `c = d` for the
+// enclosing `CompoundExpression` to pick up as its own statement.
+CondSpanOp = { ";;" ~ !(SpanOrCondOperand ~ "=" ~ !("=" | "!")) }
+// The trailing, no-right-operand form of the same `;;` (`a /. b ;;`, nothing
+// or nothing safe follows) — carries the same guard as `CondSpanOp` so this
+// alternative can't swallow the `;;` that `CondSpanOp` just declined for
+// having a real (but dangerous) operand ahead of it.
+CondSpanNoRhs = { ";;" ~ !(SpanOrCondOperand ~ "=" ~ !("=" | "!")) }
 PatternCondition = { PatternName ~ "_" ~ "/;" ~ ConditionExpr }
 // PatternOptional: x_ : default or x_Head : default (Optional pattern with default value)
 // Note: Wolfram uses both "x_:val" and "x_ : val" syntax. The colon must NOT be ":=" (SetDelayed)

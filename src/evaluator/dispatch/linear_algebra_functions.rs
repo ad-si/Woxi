@@ -750,12 +750,9 @@ pub fn dispatch_linear_algebra_functions(
         }
         // Build the Hermitian part: (m + ConjugateTranspose[m]) / 2.
         let conj_t = call1("ConjugateTranspose", args[0].clone());
-        let herm = call(
-          "Divide",
-          vec![
-            call("Plus", vec![args[0].clone(), conj_t]),
-            Expr::Integer(2),
-          ],
+        let herm = div(
+          call("Plus", vec![args[0].clone(), conj_t]),
+          Expr::Integer(2),
         );
         let herm_eval =
           evaluate_expr_to_expr(&herm).unwrap_or_else(|_| herm.clone());
@@ -1440,7 +1437,7 @@ pub fn dispatch_linear_algebra_functions(
         // scale = (ymax - ymin)/(max - min)
         let num = call("Subtract", vec![ymax_i.clone(), ymin_i.clone()]);
         let den = call("Subtract", vec![max_i.clone(), min_i.clone()]);
-        let scale = call("Divide", vec![num, den]);
+        let scale = div(num, den);
         // translate = ymin - min * scale
         let translate = call(
           "Subtract",
@@ -3771,7 +3768,7 @@ fn matrix_minimal_polynomial(
       let lead = coeffs[k].clone();
       let mut terms: Vec<Expr> = Vec::with_capacity(k + 1);
       for (i, c) in coeffs.iter().enumerate() {
-        let coeff = call("Divide", vec![c.clone(), lead.clone()]);
+        let coeff = div(c.clone(), lead.clone());
         let term = if i == 0 {
           coeff
         } else {

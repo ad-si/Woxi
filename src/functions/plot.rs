@@ -1993,6 +1993,11 @@ pub(crate) struct PlotOptions {
   /// picture to embed under the frame instead of the plain-text
   /// `frame_label_bottom` (which stays empty in that case).
   pub frame_label_bottom_graphic: Option<GraphicLabel>,
+  /// Per-series `Joined` from `ListPlot[…, Joined -> {b1, b2, …}]`: series
+  /// `i` is drawn as a connected line when `joined_per_series[i]` is true,
+  /// as scattered points otherwise. `None` means every series follows the
+  /// plot's single `Joined -> True`/`False` setting instead.
+  pub joined_per_series: Option<Vec<bool>>,
 }
 
 /// A `FrameLabel` entry that renders as a picture (`Grid[…]`/`TableForm[…]`)
@@ -2081,6 +2086,7 @@ impl Default for PlotOptions {
       aspect_ratio: None,
       plot_markers: Vec::new(),
       label_style: None,
+      joined_per_series: None,
     }
   }
 }
@@ -3277,107 +3283,130 @@ fn generate_svg_with_options(
             draw_interval_band(&mut chart, anchor, bars, color)?;
           }
 
-          // Draw filled area before the line so the line renders on top.
-          // In stacked mode each band is bounded below by the previous
-          // cumulative curve (or the axis for the first series) and above by
-          // the current one; the bands are disjoint so an opaque polygon fill
-          // renders cleanly. Otherwise fill each segment down to the constant
-          // reference level given by the Filling option.
-          if opts.stacked {
-            let baseline: Vec<(f64, f64)> = if series_idx == 0 {
-              points.iter().map(|&(x, _)| (x, 0.0)).collect()
-            } else {
-              all_points[series_idx - 1].clone()
-            };
-            let mut polygon: Vec<(f64, f64)> = points.to_vec();
-            polygon.extend(baseline.iter().rev().copied());
-            if polygon.len() >= 3 {
-              chart
-                .draw_series(std::iter::once(Polygon::new(
-                  polygon,
-                  RGBColor(r, g, b).mix(0.6),
-                )))
-                .map_err(|e| {
-                  InterpreterError::EvaluationError(format!("Plot: {e}"))
-                })?;
-            }
+          // `ListPlot[…, Joined -> {..., False, ...}]`: this series stays a
+          // scatter of points instead of a connected curve, while sibling
+          // series in the same chart still join.
+          let series_joined =
+            resolve_series_joined(opts.joined_per_series.as_deref(), series_idx);
+
+          if !series_joined {
+            let marker_size =
+              series_point_radius(&opts.plot_style, series_idx, render_width);
+            draw_scatter_series(
+              &mut chart,
+              all_points,
+              series_idx,
+              opts,
+              (r, g, b),
+              marker_size,
+              y_min,
+              y_max,
+            )?;
           } else {
-            let paint =
-              fill_paint(series_filling_style(opts, series_idx), (r, g, b));
-            match series_fill_target(opts, series_idx) {
-              FillTarget::Level(level) => {
-                if let Some(ref_y) = level.reference_y(y_min, y_max) {
-                  for segment in &segments {
-                    if segment.len() < 2 {
-                      continue;
+            // Draw filled area before the line so the line renders on top.
+            // In stacked mode each band is bounded below by the previous
+            // cumulative curve (or the axis for the first series) and above by
+            // the current one; the bands are disjoint so an opaque polygon fill
+            // renders cleanly. Otherwise fill each segment down to the constant
+            // reference level given by the Filling option.
+            if opts.stacked {
+              let baseline: Vec<(f64, f64)> = if series_idx == 0 {
+                points.iter().map(|&(x, _)| (x, 0.0)).collect()
+              } else {
+                all_points[series_idx - 1].clone()
+              };
+              let mut polygon: Vec<(f64, f64)> = points.to_vec();
+              polygon.extend(baseline.iter().rev().copied());
+              if polygon.len() >= 3 {
+                chart
+                  .draw_series(std::iter::once(Polygon::new(
+                    polygon,
+                    RGBColor(r, g, b).mix(0.6),
+                  )))
+                  .map_err(|e| {
+                    InterpreterError::EvaluationError(format!("Plot: {e}"))
+                  })?;
+              }
+            } else {
+              let paint =
+                fill_paint(series_filling_style(opts, series_idx), (r, g, b));
+              match series_fill_target(opts, series_idx) {
+                FillTarget::Level(level) => {
+                  if let Some(ref_y) = level.reference_y(y_min, y_max) {
+                    for segment in &segments {
+                      if segment.len() < 2 {
+                        continue;
+                      }
+                      chart
+                        .draw_series(AreaSeries::new(
+                          segment.iter().copied(),
+                          ref_y,
+                          paint,
+                        ))
+                        .map_err(|e| {
+                          InterpreterError::EvaluationError(format!(
+                            "Plot: {e}"
+                          ))
+                        })?;
                     }
+                  }
+                }
+                // `Filling -> {i -> {j}}`: fill the region between this
+                // series and series j over the overlap of their x-domains.
+                FillTarget::Series(target_idx) => {
+                  if target_idx != series_idx
+                    && let Some(target) = all_points.get(target_idx)
+                    && let Some(polygon) = fill_between_polygon(points, target)
+                  {
                     chart
-                      .draw_series(AreaSeries::new(
-                        segment.iter().copied(),
-                        ref_y,
-                        paint,
-                      ))
+                      .draw_series(std::iter::once(Polygon::new(polygon, paint)))
                       .map_err(|e| {
                         InterpreterError::EvaluationError(format!("Plot: {e}"))
                       })?;
                   }
                 }
               }
-              // `Filling -> {i -> {j}}`: fill the region between this
-              // series and series j over the overlap of their x-domains.
-              FillTarget::Series(target_idx) => {
-                if target_idx != series_idx
-                  && let Some(target) = all_points.get(target_idx)
-                  && let Some(polygon) = fill_between_polygon(points, target)
-                {
-                  chart
-                    .draw_series(std::iter::once(Polygon::new(polygon, paint)))
-                    .map_err(|e| {
-                      InterpreterError::EvaluationError(format!("Plot: {e}"))
-                    })?;
-                }
-              }
             }
-          }
 
-          if let Some(ref dash_pattern) = dashing {
-            if opts.log_x || opts.log_y {
-              // Log axes use a non-linear transform; keep the per-dash
-              // fallback that lets plotters map each segment.
-              for segment in &segments {
-                draw_dashed_line(
-                  &mut chart,
-                  segment,
-                  color,
-                  stroke_w,
-                  dash_pattern,
-                  x_max - x_min,
-                )?;
+            if let Some(ref dash_pattern) = dashing {
+              if opts.log_x || opts.log_y {
+                // Log axes use a non-linear transform; keep the per-dash
+                // fallback that lets plotters map each segment.
+                for segment in &segments {
+                  draw_dashed_line(
+                    &mut chart,
+                    segment,
+                    color,
+                    stroke_w,
+                    dash_pattern,
+                    x_max - x_min,
+                  )?;
+                }
+              } else {
+                // Defer to a single <polyline stroke-dasharray> per segment,
+                // emitted after the plot is drawn.
+                for segment in &segments {
+                  if segment.len() >= 2 {
+                    dashed_overlays.push(DashedOverlay {
+                      color: (r, g, b),
+                      stroke_w,
+                      dashes: dash_pattern.clone(),
+                      points: segment.clone(),
+                    });
+                  }
+                }
               }
             } else {
-              // Defer to a single <polyline stroke-dasharray> per segment,
-              // emitted after the plot is drawn.
               for segment in &segments {
-                if segment.len() >= 2 {
-                  dashed_overlays.push(DashedOverlay {
-                    color: (r, g, b),
-                    stroke_w,
-                    dashes: dash_pattern.clone(),
-                    points: segment.clone(),
-                  });
-                }
+                chart
+                  .draw_series(LineSeries::new(
+                    segment.iter().copied(),
+                    color.stroke_width(stroke_w),
+                  ))
+                  .map_err(|e| {
+                    InterpreterError::EvaluationError(format!("Plot: {e}"))
+                  })?;
               }
-            }
-          } else {
-            for segment in &segments {
-              chart
-                .draw_series(LineSeries::new(
-                  segment.iter().copied(),
-                  color.stroke_width(stroke_w),
-                ))
-                .map_err(|e| {
-                  InterpreterError::EvaluationError(format!("Plot: {e}"))
-                })?;
             }
           }
 
@@ -3933,7 +3962,7 @@ pub(crate) fn build_plot_source(
   x_range: (f64, f64),
   y_range: (f64, f64),
   image_size: (u32, u32),
-  is_scatter: bool,
+  is_scatter: &[bool],
   filling: Filling,
   filling_style: Option<FillStyle>,
   options: Vec<Expr>,
@@ -3954,10 +3983,15 @@ pub(crate) fn build_plot_source(
         let style = &plot_style[i % plot_style.len()];
         (style.thickness, style.point_size)
       };
+      let scatter = if is_scatter.is_empty() {
+        false
+      } else {
+        is_scatter[i % is_scatter.len()]
+      };
       crate::syntax::PlotSeriesData {
         points: points.clone(),
         color,
-        is_scatter,
+        is_scatter: scatter,
         filling: series_filling,
         fill_color,
         fill_opacity,
@@ -4069,6 +4103,24 @@ fn series_point_radius(
     Some(f) if f > 0.0 => (f * render_width as f64 * 0.5).round() as u32,
     Some(p) => (-p * 0.5 * RESOLUTION_SCALE as f64).round() as u32,
     None => default_radius,
+  }
+}
+
+/// Whether series `idx` draws as a connected line rather than scattered
+/// points, per `ListPlot[…, Joined -> {b1, b2, …}]`. A series past the end
+/// of a shorter flags list cycles back into it — the same rule `PlotStyle`,
+/// `PlotMarkers`, and every other per-series option already follow — rather
+/// than picking an arbitrary default; every place that reads
+/// `PlotOptions::joined_per_series` calls this one function so a plot's
+/// initial render, a `Show` merge, and an interactive re-render never
+/// disagree about which series is which.
+pub(crate) fn resolve_series_joined(
+  joined_per_series: Option<&[bool]>,
+  idx: usize,
+) -> bool {
+  match joined_per_series {
+    Some(flags) if !flags.is_empty() => flags[idx % flags.len()],
+    _ => true,
   }
 }
 
@@ -4386,50 +4438,6 @@ pub(crate) fn generate_scatter_svg_with_options(
         series_point_radius(&opts.plot_style, series_idx, render_width);
       let (r, g, b) = series_color(&opts.plot_style, series_idx);
       let color = RGBColor(r, g, b);
-      let finite_pts: Vec<(f64, f64)> = points
-        .iter()
-        .copied()
-        .filter(|(x, y)| x.is_finite() && y.is_finite())
-        .collect();
-
-      // Draw stem lines from each point to the fill reference: a constant
-      // level for Axis/Bottom/Top/value, or — for `Filling -> {i -> {j}}` —
-      // the other series, linearly interpolated at this point's x so
-      // irregularly spaced datasets fill correctly.
-      let stem_style =
-        fill_paint(series_filling_style(opts, series_idx), (r, g, b))
-          .stroke_width(RESOLUTION_SCALE);
-      let stem_targets: Vec<((f64, f64), f64)> =
-        match series_fill_target(opts, series_idx) {
-          FillTarget::Level(level) => level
-            .reference_y(y_min, y_max)
-            .map(|ref_y| finite_pts.iter().map(|&p| (p, ref_y)).collect())
-            .unwrap_or_default(),
-          FillTarget::Series(target_idx) => {
-            if target_idx != series_idx
-              && let Some(target) = all_series.get(target_idx)
-            {
-              finite_pts
-                .iter()
-                .filter_map(|&(x, y)| {
-                  interp_polyline_y(target, x).map(|ty| ((x, y), ty))
-                })
-                .collect()
-            } else {
-              Vec::new()
-            }
-          }
-        };
-      for ((x, y), ref_y) in stem_targets {
-        chart
-          .draw_series(std::iter::once(PathElement::new(
-            vec![(x, y), (x, ref_y)],
-            stem_style,
-          )))
-          .map_err(|e| {
-            InterpreterError::EvaluationError(format!("Plot: {e}"))
-          })?;
-      }
 
       // Uncertainty intervals from Around data values, under the point
       // markers: capped error bars by default, one filled band per series
@@ -4451,42 +4459,16 @@ pub(crate) fn generate_scatter_svg_with_options(
         }
       }
 
-      // `PlotMarkers` replaces the round dot with its glyph, drawn
-      // centred on the point at the size the marker spec asks for.
-      match series_marker(&opts.plot_markers, series_idx) {
-        Some(marker) => {
-          let (mr, mg, mb) = marker.color.unwrap_or((r, g, b));
-          let style = ("sans-serif", marker.size * sf)
-            .into_font()
-            .color(&RGBColor(mr, mg, mb))
-            .pos(plotters::style::text_anchor::Pos::new(
-              plotters::style::text_anchor::HPos::Center,
-              plotters::style::text_anchor::VPos::Center,
-            ));
-          chart
-            .draw_series(finite_pts.iter().map(|&(x, y)| {
-              plotters::element::Text::new(
-                marker.glyph.clone(),
-                (x, y),
-                style.clone(),
-              )
-            }))
-            .map_err(|e| {
-              InterpreterError::EvaluationError(format!("Plot: {e}"))
-            })?;
-        }
-        None => {
-          chart
-            .draw_series(
-              finite_pts.iter().map(|&(x, y)| {
-                Circle::new((x, y), marker_size, color.filled())
-              }),
-            )
-            .map_err(|e| {
-              InterpreterError::EvaluationError(format!("Plot: {e}"))
-            })?;
-        }
-      }
+      draw_scatter_series(
+        &mut chart,
+        all_series,
+        series_idx,
+        opts,
+        (r, g, b),
+        marker_size,
+        y_min,
+        y_max,
+      )?;
     }
 
     root
@@ -7810,6 +7792,11 @@ fn apply_style_directive(expr: &Expr, style: &mut SeriesStyle) {
 /// names none — the default graphics font size the Wolfram Language uses.
 const DEFAULT_MARKER_SIZE: f64 = 12.0;
 
+/// The glyphs `PlotMarkers -> "OpenMarkers"` cycles over the series: open
+/// (unfilled) shapes rather than the default filled dot, so overlapping
+/// series stay distinguishable by outline as well as colour.
+const OPEN_MARKER_GLYPHS: [&str; 8] = ["○", "□", "◇", "△", "▽", "☆", "⬠", "⬡"];
+
 /// Read one `PlotMarkers` entry: a glyph, optionally wrapped in `Style`
 /// (which may carry a colour and a font size in any order) or paired with
 /// its size as `{marker, size}`. Anything else (a `Graphics` marker, say)
@@ -7865,6 +7852,20 @@ pub(crate) fn parse_plot_markers(
 ) -> Vec<Option<PlotMarker>> {
   let val =
     evaluate_expr_to_expr(replacement).unwrap_or_else(|_| replacement.clone());
+  // `"OpenMarkers"` is a named marker set, not a literal glyph: it cycles
+  // the open shapes above over the series instead of drawing the word.
+  if matches!(&val, Expr::String(s) if s == "OpenMarkers") {
+    return OPEN_MARKER_GLYPHS
+      .iter()
+      .map(|glyph| {
+        Some(PlotMarker {
+          glyph: (*glyph).to_string(),
+          size: DEFAULT_MARKER_SIZE,
+          color: None,
+        })
+      })
+      .collect();
+  }
   // `{m1, m2, …}` is per-series unless it is the `{marker, size}` pair,
   // which `parse_one_marker` recognises.
   if let Expr::List(items) = &val
@@ -7888,6 +7889,113 @@ fn series_marker(
     return None;
   }
   markers[idx % markers.len()].as_ref()
+}
+
+/// Draw one series of scattered points onto an already-built chart:
+/// fill-target stem lines (mirroring the fill a joined curve would get from
+/// `Filling`), then either the series' `PlotMarkers` glyph or, lacking one,
+/// the default round dot — the two are mutually exclusive, exactly as
+/// `generate_scatter_svg_with_options` draws an all-points `ListPlot`. This
+/// is the single implementation both that renderer and a `ListPlot[…,
+/// Joined -> {…, False, …}]` series inside the line renderer
+/// (`generate_svg_with_options`) call, so the two never drift into drawing
+/// a series' points differently (e.g. a default circle *and* a glyph on
+/// top of it).
+#[allow(clippy::too_many_arguments)]
+fn draw_scatter_series<DB, CT>(
+  chart: &mut plotters::prelude::ChartContext<DB, CT>,
+  all_series: &[Vec<(f64, f64)>],
+  series_idx: usize,
+  opts: &PlotOptions,
+  rgb: (u8, u8, u8),
+  marker_size: u32,
+  y_min: f64,
+  y_max: f64,
+) -> Result<(), InterpreterError>
+where
+  DB: plotters::prelude::DrawingBackend,
+  CT: plotters::prelude::CoordTranslate<From = (f64, f64)>,
+{
+  let (r, g, b) = rgb;
+  let color = RGBColor(r, g, b);
+  let points = &all_series[series_idx];
+  let finite_pts: Vec<(f64, f64)> = points
+    .iter()
+    .copied()
+    .filter(|(x, y)| x.is_finite() && y.is_finite())
+    .collect();
+
+  // Draw stem lines from each point to the fill reference: a constant
+  // level for Axis/Bottom/Top/value, or — for `Filling -> {i -> {j}}` —
+  // the other series, linearly interpolated at this point's x so
+  // irregularly spaced datasets fill correctly.
+  let stem_style =
+    fill_paint(series_filling_style(opts, series_idx), (r, g, b))
+      .stroke_width(RESOLUTION_SCALE);
+  let stem_targets: Vec<((f64, f64), f64)> =
+    match series_fill_target(opts, series_idx) {
+      FillTarget::Level(level) => level
+        .reference_y(y_min, y_max)
+        .map(|ref_y| finite_pts.iter().map(|&p| (p, ref_y)).collect())
+        .unwrap_or_default(),
+      FillTarget::Series(target_idx) => {
+        if target_idx != series_idx
+          && let Some(target) = all_series.get(target_idx)
+        {
+          finite_pts
+            .iter()
+            .copied()
+            .filter_map(|(x, y)| {
+              interp_polyline_y(target, x).map(|ty| ((x, y), ty))
+            })
+            .collect()
+        } else {
+          Vec::new()
+        }
+      }
+    };
+  for ((x, y), ref_y) in stem_targets {
+    chart
+      .draw_series(std::iter::once(PathElement::new(
+        vec![(x, y), (x, ref_y)],
+        stem_style,
+      )))
+      .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
+  }
+
+  // `PlotMarkers` replaces the round dot with its glyph, drawn
+  // centred on the point at the size the marker spec asks for.
+  match series_marker(&opts.plot_markers, series_idx) {
+    Some(marker) => {
+      let (mr, mg, mb) = marker.color.unwrap_or((r, g, b));
+      let style = ("sans-serif", marker.size * RESOLUTION_SCALE as f64)
+        .into_font()
+        .color(&RGBColor(mr, mg, mb))
+        .pos(plotters::style::text_anchor::Pos::new(
+          plotters::style::text_anchor::HPos::Center,
+          plotters::style::text_anchor::VPos::Center,
+        ));
+      chart
+        .draw_series(finite_pts.iter().map(|&(x, y)| {
+          plotters::element::Text::new(
+            marker.glyph.clone(),
+            (x, y),
+            style.clone(),
+          )
+        }))
+        .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
+    }
+    None => {
+      chart
+        .draw_series(
+          finite_pts
+            .iter()
+            .map(|&(x, y)| Circle::new((x, y), marker_size, color.filled())),
+        )
+        .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
+    }
+  }
+  Ok(())
 }
 
 /// Carry the parsed `PlotMarkers` into a plot's [`PlotSource`], so a
@@ -9176,7 +9284,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (x_display_min, x_display_max),
     (y_display_min, y_display_max),
     (plot_opts.svg_width, plot_opts.svg_height),
-    false,
+    &[false],
     plot_opts.filling,
     plot_opts.filling_style,
     crate::functions::plot::explicit_options(args),

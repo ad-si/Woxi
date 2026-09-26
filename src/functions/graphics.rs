@@ -1879,6 +1879,26 @@ fn is_button_bar(spec: &Expr) -> bool {
     if name == "ButtonBar" && !args.is_empty())
 }
 
+/// Does this Manipulate argument need `Initialization` to have already run
+/// before any control can be built from it? A `ButtonBar` is one case (see
+/// its call site); a control spec whose choice list is a computed
+/// `Dynamic[expr]` — anything but a literal list, e.g.
+/// `Dynamic[Evaluate[Thread[colors -> colorNames]]]` — is the same
+/// situation for a `PopupMenu`/`SetterBar`/etc.: the list only resolves
+/// once `Initialization`-defined symbols like `colors` exist.
+fn needs_early_initialization(spec: &Expr) -> bool {
+  if is_button_bar(spec) {
+    return true;
+  }
+  let Expr::List(items) = spec else {
+    return false;
+  };
+  items.iter().any(|it| {
+    matches!(it, Expr::FunctionCall { name, args }
+      if name == "Dynamic" && !args.is_empty() && !matches!(&args[0], Expr::List(_)))
+  })
+}
+
 /// A `Style[expr, …]` directive list in the order Wolfram applies it: a
 /// named style ("Label", "Section", …) supplies the base appearance and the
 /// explicit directives sit on top of it, whichever side of it they were
@@ -9309,7 +9329,11 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         let mut effective_font_size = font_size;
         let mut font_color: Option<Color> = None;
         let mut background: Option<Color> = None;
-        // Scan style options (Rule expressions) in args[1..]
+        // Scan style options (Rule expressions) in args[1..]. A directive can
+        // also be bare rather than a `Rule` — `Style[expr, Red]`/`StyleBox[b,
+        // Red]` — the short form Wolfram itself expands to `FontColor->Red`
+        // internally; recognize it here the same way rather than requiring
+        // callers to normalize every directive to `Rule` form first.
         for opt in &args[1..] {
           let (key, val) = match opt {
             Expr::Rule {
@@ -9321,7 +9345,12 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
             {
               (&ra[0], &ra[1])
             }
-            _ => continue,
+            _ => {
+              if let Some(color) = parse_color(opt) {
+                font_color = Some(color);
+              }
+              continue;
+            }
           };
           if let Expr::Identifier(k) = key {
             match k.as_str() {
@@ -11362,7 +11391,14 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
       // InterpretationBox[display, interpretation] → render display part only
       "InterpretationBox" if args.len() >= 2 => boxes_to_svg(&args[0]),
 
-      // StyleBox[content, ...] → render content with style attributes
+      // StyleBox[content, ...] → render content with style attributes. A
+      // directive can also be bare rather than a `Rule` — `StyleBox[b,
+      // Red]` — mirroring `layout_box`'s `StyleBox` case above, which this
+      // one otherwise duplicates (kept in sync rather than merged: see
+      // CLAUDE.md's "never implement a construct twice" — these two exist
+      // for different renderers, `layout_box` producing a `BoxLayout` and
+      // this one plain SVG markup, but both must recognize the same
+      // directive shapes).
       "StyleBox" if !args.is_empty() => {
         let content = boxes_to_svg(&args[0]);
         let mut font_size_attr = String::new();
@@ -11378,7 +11414,12 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
             {
               (&ra[0], &ra[1])
             }
-            _ => continue,
+            _ => {
+              if let Some(color) = parse_color(opt) {
+                color_attr = format!(" fill=\"{}\"", color.to_svg_rgb());
+              }
+              continue;
+            }
           };
           if let Expr::Identifier(k) = key {
             match k.as_str() {
@@ -16394,6 +16435,7 @@ pub(crate) fn is_graphics_producing_head(name: &str) -> bool {
       | "BoxWhiskerChart"
       | "DistributionChart"
       | "SectorChart"
+      | "SectorChart3D"
       | "CandlestickChart"
       // Arrays / matrices
       | "ArrayPlot"
@@ -18843,7 +18885,11 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // swaps whole control panels as `sel` changes. `Item[Column[…], opts]`
       // is the same layout pattern wrapped in a grid-alignment `Item[…]`
       // (a Demonstration lining up its whole control panel inside an outer
-      // `Grid`), not a control itself. `OpenerView[{label, content}]` is the
+      // `Grid`), not a control itself. `Panel[Column[…]]` is the same
+      // pattern wrapped in a bordered `Panel[…]` instead — a Demonstration
+      // that hand-builds its entire control area (buttons, checkboxes,
+      // popups, …) as one custom panel rather than letting Manipulate
+      // auto-generate sliders. `OpenerView[{label, content}]` is the
       // same pattern for a collapsible disclosure widget (e.g. a "circuit
       // diagram" aside tucked below the sliders). `Tooltip[control, hint]`
       // is the same pattern for a custom control (often a `DynamicModule`
@@ -18869,6 +18915,7 @@ pub fn manipulate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             | "PaneSelector"
             | "TabView"
             | "Item"
+            | "Panel"
             | "OpenerView"
             | "Tooltip"
         ) =>
@@ -19510,6 +19557,18 @@ pub struct ManipulateSpec {
   /// initial values produce — the frontend re-evaluates this code fragment
   /// against the live bindings after every change and rebuilds the choices.
   pub dynamic_values: Vec<(String, String)>,
+  /// `(control name, reset code)` for a `LocatorPane`/`Locator` variable
+  /// promoted from a plain body-local `var = expr;` assignment (see
+  /// `collect_body_locator_pane_vars`), where `expr` references another
+  /// control (e.g. a polygon's vertex count slider). Wolfram never reruns
+  /// this statement when the Locator itself is dragged — it isn't a
+  /// declared control, so nothing tracks it — only when an *actual* control
+  /// changes, which re-evaluates the whole body from scratch. Woxi has no
+  /// equivalent of that partial re-evaluation, so the assignment is instead
+  /// stripped out of `body_code` (it would otherwise clobber every drag on
+  /// its own next re-render) and replayed here — by the frontend, against
+  /// the live bindings — only when a control other than this one changes.
+  pub dynamic_locator_defaults: Vec<(String, String)>,
   /// The variable animated by a `ControlType -> Trigger`/`Animator` control
   /// spec. Wolfram renders those as play buttons that sweep the variable
   /// over its range; the widget's animation targets this variable instead
@@ -19766,6 +19825,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     mut control_visible,
     mut dynamic_bounds,
     mut dynamic_values,
+    mut dynamic_locator_defaults,
     mut animation_var,
     mut tracking,
     mut list_elements,
@@ -19782,6 +19842,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       inner.control_visible,
       inner.dynamic_bounds,
       inner.dynamic_values,
+      inner.dynamic_locator_defaults,
       inner.animation_var,
       inner.tracking,
       inner.list_elements,
@@ -19816,6 +19877,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       Vec::new(),
       Vec::new(),
       Vec::new(),
+      Vec::new(),
       None,
       Vec::new(),
       Vec::new(),
@@ -19837,6 +19899,12 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     None => Vec::new(),
   };
   let mut promoted_popups: Vec<String> = Vec::new();
+  // Body-local `LocatorPane` variables promoted to a multi-point `Locator`
+  // control from a `var = expr;` reset statement (see the loop over
+  // `collect_body_locator_pane_vars` below) — their reset statements are
+  // stripped from the body once the loop finishes, same treatment as
+  // `promoted_popups` above.
+  let mut locator_reset_vars: Vec<String> = Vec::new();
   // `Locator` bindings are baked into the body (never rewritten by a
   // display); `ControlType -> None` bindings become live mutable state.
   let mut fixed: Vec<(String, String)> = Vec::new();
@@ -19953,9 +20021,14 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   // per vertex of a graph, labelling each from a list the `Initialization`
   // option defines. Those definitions therefore have to exist before the
   // control can be built at all, so run the initialization here rather than
-  // only in the frontend. Nothing else needs it, so nothing else pays for
-  // it.
-  if arg_items.iter().any(is_button_bar) {
+  // only in the frontend. A discrete control (`PopupMenu`/`SetterBar`/…)
+  // whose choice list is likewise computed — `Dynamic[Evaluate[…]]` rather
+  // than a literal list, e.g. a color-name picker built from
+  // `Initialization`-defined color/name arrays (the Demonstrations "color
+  // blindness test" pattern) — needs the same head start, or its choices
+  // never resolve to a list and the whole control is silently dropped.
+  // Nothing else needs it, so nothing else pays for it.
+  if arg_items.iter().any(needs_early_initialization) {
     for spec in &arg_items {
       if let Expr::Rule {
         pattern,
@@ -20441,18 +20514,55 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       // that rather than surfacing a row they chose not to show.
       continue;
     }
-    // Only a variable whose default resolves to a plain `{x, y}` point is a
-    // fit for a single draggable stand-in slider — e.g. a `DynamicModule`
-    // local holding a list of several locators (a polygon's vertices) is
-    // left alone rather than showing a meaningless synthesized row for it.
-    let Some((x_initial, y_initial)) = crate::with_scoped_globals(
+    // A variable whose default resolves to a plain `{x, y}` point is a fit
+    // for a single draggable stand-in slider.
+    let point_default = crate::with_scoped_globals(
       &initial_bindings,
       || -> Option<(f64, f64)> {
         let (_, code) = initial_bindings.iter().find(|(n, _)| *n == var)?;
         let expr = crate::interpret_to_expr(code).ok()?;
         list2_f64(&evaluate_expr_to_expr(&expr).ok()?)
       },
-    ) else {
+    );
+    let Some((x_initial, y_initial)) = point_default else {
+      // A list-of-points default (a polygon's vertices) is a fit for a
+      // multi-point `Locator` control instead — but only when the body
+      // carries a plain `var = expr;` statement recomputing it, since that
+      // recompute has to be replayed whenever an actual control changes
+      // (Wolfram re-evaluates the whole body then) rather than baked once:
+      // dragging never replays it (the variable isn't itself a declared
+      // control, so nothing retriggers on it). A bare list default with no
+      // such statement — e.g. a `DynamicModule` local holding several
+      // independent Locators serving different roles — has no single reset
+      // expression to replay, so it's left alone as before.
+      let Some(reset_expr) = find_body_var_reset(&args[0], &var) else {
+        continue;
+      };
+      let reset_code = crate::syntax::expr_to_input_form(&reset_expr);
+      let initial_points = crate::with_scoped_globals(
+        &initial_bindings,
+        || -> Option<Vec<(f64, f64)>> {
+          let expr = crate::interpret_to_expr(&reset_code).ok()?;
+          point_list_f64(&evaluate_expr_to_expr(&expr).ok()?)
+        },
+      );
+      let Some(points) = initial_points else {
+        continue;
+      };
+      let ((x_min, y_min), (x_max, y_max)) =
+        pane_range(range_arg.as_ref(), &graphic);
+      controls.push(ManipulateControl::Locator {
+        name: var.clone(),
+        points,
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+        auto_create: false,
+        label: var.clone(),
+      });
+      dynamic_locator_defaults.push((var.clone(), reset_code));
+      locator_reset_vars.push(var);
       continue;
     };
     let ((x_min, y_min), (x_max, y_max)) =
@@ -20489,14 +20599,20 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   let mut body_code = body_code;
   // A pick list that became a control is no longer part of the body — left
   // in, it would print as its own source next to the control that replaced
-  // it.
-  if !promoted_popups.is_empty()
+  // it. A `LocatorPane` variable's own reset statement is stripped the same
+  // way — left in, it would re-run (and clobber a drag) on every
+  // re-evaluation; see `dynamic_locator_defaults`.
+  if (!promoted_popups.is_empty() || !locator_reset_vars.is_empty())
     && let Some(body_expr) = &body_expr_kept
   {
-    body_code = crate::syntax::expr_to_input_form(&strip_body_popup_menus(
-      body_expr,
-      &promoted_popups,
-    ));
+    let mut stripped = body_expr.clone();
+    if !promoted_popups.is_empty() {
+      stripped = strip_body_popup_menus(&stripped, &promoted_popups);
+    }
+    if !locator_reset_vars.is_empty() {
+      stripped = strip_body_locator_resets(&stripped, &locator_reset_vars);
+    }
+    body_code = crate::syntax::expr_to_input_form(&stripped);
   }
   if !renames.is_empty() {
     renames.sort_by_key(|(orig, _)| std::cmp::Reverse(orig.len()));
@@ -20552,6 +20668,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     control_visible,
     dynamic_bounds,
     dynamic_values,
+    dynamic_locator_defaults,
     animation_var,
     animated,
     animation_running,
@@ -20920,6 +21037,73 @@ fn collect_body_locator_pane_vars(
   let mut found = Vec::new();
   walk(expr, &mut found);
   found
+}
+
+/// The right-hand side of a plain `var = expr` assignment anywhere inside a
+/// Manipulate body, if one exists. Used to recompute a promoted
+/// `LocatorPane` variable's default whenever another control changes (see
+/// the loop over [`collect_body_locator_pane_vars`] in
+/// `extract_manipulate_spec`) without baking the assignment into
+/// `body_code`, where it would instead re-run — clobbering a drag — on
+/// every re-evaluation, including the Locator's own.
+fn find_body_var_reset(expr: &Expr, var: &str) -> Option<Expr> {
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Set" && args.len() == 2 => {
+      if matches!(&args[0], Expr::Identifier(v) if v == var) {
+        return Some(args[1].clone());
+      }
+      find_body_var_reset(&args[1], var)
+    }
+    Expr::FunctionCall { args, .. } => {
+      args.iter().find_map(|a| find_body_var_reset(a, var))
+    }
+    Expr::List(items) => {
+      items.iter().find_map(|it| find_body_var_reset(it, var))
+    }
+    Expr::CompoundExpr(items) => {
+      items.iter().find_map(|it| find_body_var_reset(it, var))
+    }
+    _ => None,
+  }
+}
+
+/// Replace every top-level `var = expr` assignment for a promoted
+/// `LocatorPane` variable with `Null`, so the statement no longer re-runs
+/// (and resets the dragged value) on every body re-evaluation — see
+/// [`ManipulateSpec::dynamic_locator_defaults`], which replays it instead,
+/// only when a genuine control changes.
+fn strip_body_locator_resets(expr: &Expr, vars: &[String]) -> Expr {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if name == "Set"
+        && args.len() == 2
+        && matches!(&args[0], Expr::Identifier(v) if vars.contains(v)) =>
+    {
+      id_expr("Null")
+    }
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args
+        .iter()
+        .map(|a| strip_body_locator_resets(a, vars))
+        .collect::<Vec<_>>()
+        .into(),
+    },
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(|it| strip_body_locator_resets(it, vars))
+        .collect::<Vec<_>>()
+        .into(),
+    ),
+    Expr::CompoundExpr(items) => Expr::CompoundExpr(
+      items
+        .iter()
+        .map(|it| strip_body_locator_resets(it, vars))
+        .collect(),
+    ),
+    other => other.clone(),
+  }
 }
 
 /// A `PopupMenu[Dynamic[var], choices, Enabled -> cond]` found inside a
@@ -21498,10 +21682,16 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
   // itself a layout container, so without unwrapping it here the whole
   // `Text[Grid[…]]` falls through to `is_manipulate_annotation_head`'s
   // static-heading path below, stringifying every `Control[…]` cell into
-  // inert label text instead of building a real slider for it.
+  // inert label text instead of building a real slider for it. `Panel[…]`
+  // is the same story for a Demonstration that hand-builds its whole
+  // control area as one bordered panel instead of letting Manipulate
+  // auto-generate sliders — unwrap it the same way so the `Row`/`Column`
+  // it dresses up is reached and its buttons/checkboxes/popups flatten
+  // into real controls instead of the entire panel being dropped.
   let spec = match spec {
     Expr::FunctionCall { name, args }
-      if (name == "Item" || name == "Text") && !args.is_empty() =>
+      if (name == "Item" || name == "Text" || name == "Panel")
+        && !args.is_empty() =>
     {
       &args[0]
     }
@@ -22316,6 +22506,7 @@ pub fn extract_list_animate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     control_visible: Vec::new(),
     dynamic_bounds: Vec::new(),
     dynamic_values: Vec::new(),
+    dynamic_locator_defaults: Vec::new(),
     animation_var: None,
     animated: true,
     animation_running: true,
@@ -22402,6 +22593,7 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
     control_visible: Vec::new(),
     dynamic_bounds: Vec::new(),
     dynamic_values: Vec::new(),
+    dynamic_locator_defaults: Vec::new(),
     animation_var: None,
     animated: true,
     animation_running: true,
@@ -22530,6 +22722,7 @@ pub fn extract_locator_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     control_visible: Vec::new(),
     dynamic_bounds: Vec::new(),
     dynamic_values: Vec::new(),
+    dynamic_locator_defaults: Vec::new(),
     animation_var: None,
     animated: false,
     animation_running: true,
@@ -22585,6 +22778,7 @@ pub fn extract_click_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     control_visible: Vec::new(),
     dynamic_bounds: Vec::new(),
     dynamic_values: Vec::new(),
+    dynamic_locator_defaults: Vec::new(),
     animation_var: None,
     animated: false,
     animation_running: true,
@@ -22652,6 +22846,7 @@ pub fn extract_control_spec(expr: &Expr) -> Option<ManipulateSpec> {
     control_visible: Vec::new(),
     dynamic_bounds: Vec::new(),
     dynamic_values: Vec::new(),
+    dynamic_locator_defaults: Vec::new(),
     animation_var,
     animated: animate.is_some(),
     animation_running: animate.unwrap_or(true),
@@ -27346,6 +27541,49 @@ mod manipulate_dynamic_control_list_tests {
         assert_eq!(value_labels, &["a", "b", "c"]);
         assert_eq!(*initial_index, 1);
         assert!(popup, "ControlType -> PopupMenu must render as a dropdown");
+      }
+      other => panic!("expected a Discrete control, got {other:?}"),
+    }
+  }
+
+  /// A `Dynamic[expr]` choice list (see the previous test) can also depend
+  /// on symbols this very `Manipulate` defines through its own
+  /// `Initialization` option, rather than on a global set up beforehand —
+  /// the shape a Demonstration uses to build a labeled color picker (a
+  /// `PopupMenu` whose choices are `Dynamic[Evaluate[Thread[colors ->
+  /// colorNames]]]`, with `colors`/`colorNames` themselves assigned inside
+  /// `Initialization`). As part of a scheduled QA routine, Woxi Studio was
+  /// tested against a randomly sampled Wolfram Demonstration notebook
+  /// ("Color Blindness") using exactly this pattern: `Initialization` was
+  /// only run early for a `ButtonBar`'s computed labels, so this control's
+  /// choice list evaluated before its `Initialization`-defined symbols
+  /// existed, resolved to nothing, and the whole control (not just its
+  /// choices) was silently dropped.
+  #[test]
+  fn dynamic_choice_list_depending_on_own_initialization_still_builds() {
+    let s = spec(
+      "Manipulate[pick, {{pick, 2, \"\"}, \
+       Dynamic[Evaluate[Thread[codes -> names]], \
+        SynchronousUpdating -> False], ControlType -> PopupMenu}, \
+       Initialization :> (codes = {1, 2, 3}; names = {\"a\", \"b\", \"c\"})]",
+    );
+    assert_eq!(
+      names(&s),
+      vec!["pick"],
+      "the PopupMenu control must survive, not be dropped"
+    );
+    match &s.controls[0] {
+      ManipulateControl::Discrete {
+        values,
+        value_labels,
+        initial_index,
+        popup,
+        ..
+      } => {
+        assert_eq!(values, &["1", "2", "3"]);
+        assert_eq!(value_labels, &["a", "b", "c"]);
+        assert_eq!(*initial_index, 1);
+        assert!(popup);
       }
       other => panic!("expected a Discrete control, got {other:?}"),
     }

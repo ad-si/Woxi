@@ -1380,6 +1380,130 @@ fn push_juxtaposed(result: &mut String, piece: &str) {
   result.push_str(piece);
 }
 
+/// Does `s` (plain, already-flattened WL source) carry a bracket-depth-0
+/// assignment operator (`=`, `:=`, `+=`, `-=`, `*=`, `/=`, `^=`) — as
+/// opposed to a comparison (`==`, `<=`, `>=`, `!=`) or one nested inside a
+/// call/list/group? Used to decide whether a juxtaposed `RowBox` factor
+/// needs re-parenthesizing — see the call site in [`extract_rowbox_content`].
+fn has_top_level_assignment(s: &str) -> bool {
+  let chars: Vec<char> = s.chars().collect();
+  let mut depth = 0i32;
+  let mut in_string = false;
+  let mut prev_backslash = false;
+  let mut i = 0;
+  while i < chars.len() {
+    let c = chars[i];
+    if in_string {
+      if c == '"' && !prev_backslash {
+        in_string = false;
+      }
+      prev_backslash = c == '\\' && !prev_backslash;
+      i += 1;
+      continue;
+    }
+    match c {
+      '"' => in_string = true,
+      '{' | '[' | '(' => depth += 1,
+      '}' | ']' | ')' => depth -= 1,
+      '=' if depth == 0 => {
+        // `=!=` (UnsameQ): not an assignment.
+        if chars.get(i + 1) == Some(&'!') && chars.get(i + 2) == Some(&'=') {
+          i += 3;
+          continue;
+        }
+        // `==` / `===` (Equal / SameQ): not an assignment. `===` is three
+        // consecutive `=` characters — consume all of them so the trailing
+        // one isn't mistaken for a fresh (assignment) `=`.
+        if chars.get(i + 1) == Some(&'=') {
+          i += 2;
+          while chars.get(i) == Some(&'=') {
+            i += 1;
+          }
+          continue;
+        }
+        // `<=`, `>=`, `!=`: comparisons, not assignments.
+        if i > 0 && matches!(chars[i - 1], '<' | '>' | '!') {
+          i += 1;
+          continue;
+        }
+        // A bare `=` (Set), or the second character of `:=`, `+=`, `-=`,
+        // `*=`, `/=`, `^=` (SetDelayed / the AddTo family) — all bind
+        // looser than implicit multiplication.
+        return true;
+      }
+      _ => {}
+    }
+    i += 1;
+  }
+  false
+}
+
+/// Is `part` (one raw element of a `RowBox`'s child list, as split by
+/// [`split_top_level_commas`]) a token that carries no meaning of its own —
+/// display-only 2-D layout whitespace (`" "`, `\[IndentingNewLine]`)? A
+/// literal `"\n"` is deliberately *not* included: that's the distinct
+/// multi-statement-list convention (`BoxData[{stmt, "\n", stmt, …}]`, see
+/// [`extract_cell_content`]) marking a hard boundary between independent
+/// statements, not in-expression formatting.
+fn is_soft_whitespace_box_token(part: &str) -> bool {
+  let t = part.trim();
+  t == "\" \"" || t == "\"\\[IndentingNewLine]\""
+}
+
+/// Did a real (non-whitespace) sibling *expression* already appear before
+/// `parts[i]` in this row, with nothing but soft layout whitespace between
+/// them — i.e. would placing `parts[i]` here read as implicit
+/// multiplication against it? Walks backward from `i`, skipping
+/// [`is_soft_whitespace_box_token`] entries; a literal `"\n"`
+/// multi-statement separator stops the walk (`false`) since it marks the
+/// start of a new, independent statement — see the call site in
+/// [`extract_rowbox_content`].
+///
+/// A bracket-opener or list/statement separator (`[`, `(`, `{`, `,`, `;`)
+/// also stops the walk (`false`): it already establishes that `parts[i]`
+/// begins a fresh argument, element, or statement, so there is no
+/// preceding *value* for it to be juxtaposed against. Treating one of
+/// these as "a real predecessor" wrongly parenthesizes a function's whole
+/// `body, iterator` argument list (e.g. `Table[stmt; stmt; …, {i, 0, n}]`,
+/// found immediately after `Table["["`) as one factor — trapping the
+/// argument-separating comma inside the added parens and producing
+/// unparseable text.
+fn has_real_predecessor(parts: &[String], i: usize) -> bool {
+  for part in parts[..i].iter().rev() {
+    let t = part.trim();
+    // A literal `"\n"` multi-statement separator, a list/argument comma or
+    // statement `;`, or an opening delimiter starting the enclosing group
+    // are all structural punctuation, not a value the current part could be
+    // juxtaposed (implicitly multiplied) against — e.g. the second binding
+    // of a `With[{a = …, b = …}, …]` list follows a `","`, not an
+    // expression, so it is never "juxtaposed" onto the first; likewise an
+    // argument list's own opening `"["` precedes its contents, not a value
+    // to multiply them against — e.g. `f[a = 1; g[a], h]`
+    // (`RowBox[{"f", "[", RowBox[{assignment-box, ",", "h"}], "]"}]`) needs
+    // no parentheses at all, since the comma already ends that argument and
+    // reparsing the flattened text recovers the original grouping as-is.
+    if matches!(
+      t,
+      "\"\\n\"" | "\",\"" | "\";\"" | "\"{\"" | "\"(\"" | "\"[\""
+    ) {
+      return false;
+    }
+    if is_soft_whitespace_box_token(t) {
+      continue;
+    }
+    if is_bare_char(t, '[')
+      || is_bare_char(t, '(')
+      || is_bare_char(t, '{')
+      || is_bare_char(t, ',')
+      || is_bare_char(t, ';')
+    {
+      return false;
+    }
+    return true;
+  }
+  false
+}
+
 /// Collapse a `\[LeftDoubleBracket] … \[RightDoubleBracket]` pair back into
 /// `Part` syntax before the row is joined.
 ///
@@ -1525,6 +1649,38 @@ fn extract_rowbox_content(s: &str) -> String {
     // number is unambiguous either way (`2Product[…]` already reads back as
     // `2*Product[…]`, since digits can't extend into letters), so only a
     // trailing run that itself contains a letter is at risk.
+    //
+    // A nested `RowBox` juxtaposed this way onto a preceding factor is a
+    // *self-contained* box-tree node — 2-D layout encodes grouping through
+    // nesting itself, so the FrontEnd never needs a visible `(…)` around it
+    // even when its own top level carries an assignment (a Demonstrations
+    // idiom: two Module-body statements stacked on separate lines with a
+    // missing `;` between them, e.g. `While[…] \n\n vecLEN = Length[…]`,
+    // which the box tree still stores as `RowBox[{While[…]-box, …,
+    // vecLEN=…-box}]` — the assignment box is its own node regardless).
+    // Flattening that box to bare text and reparsing it loses the boundary
+    // nesting gave it: implicit multiplication binds *tighter* than `=`, so
+    // the reparsed text captures the wrong left-hand side (`Set[Times[
+    // While[…], vecLEN], Length[…]]`, which fails outright — `Times` is
+    // Protected) instead of `Times[While[…], Set[vecLEN, Length[…]]]`.
+    // Parenthesizing a nested box's own assignment restores the original
+    // grouping; the extra parens are always harmless for a factor that
+    // didn't need them.
+    // Never wrap a piece that carries its own bracket-depth-0 comma: it
+    // is not a single juxtaposed statement but a whole `body, iterator`
+    // (or similar) argument list — e.g. `Table`'s bracket content, whose
+    // separating comma must stay outside any added parens. Parenthesizing
+    // it would trap that comma inside a bare `(…)`, which is not valid
+    // Wolfram syntax and fails to reparse.
+    let piece = if part.trim().starts_with("RowBox[")
+      && has_real_predecessor(&parts, i)
+      && has_top_level_assignment(&piece)
+      && split_top_level_commas(&piece).len() == 1
+    {
+      format!("({piece})")
+    } else {
+      piece
+    };
     push_juxtaposed(&mut result, &piece);
     i += 1;
   }
@@ -3978,6 +4134,25 @@ pub fn stored_output_vector_graphics_svg(content: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  /// Regression: a multi-statement `Table` body — several `stmt;`-joined
+  /// assignments ending in a result expression, each wrapped in its own
+  /// `RowBox` the way the FrontEnd stores a stack of Input-cell lines —
+  /// was flattened with the assignment-protecting parens (see
+  /// `has_real_predecessor`) wrongly applied to the *whole* `body,
+  /// iterator` row instead of individual statements, trapping the
+  /// argument-separating comma inside them: `Table[stmt;(stmt);(stmt);
+  /// result,{i,0,n})]` instead of `Table[stmt;(stmt);(stmt);result,{i,0,
+  /// n}]`. The corrupted text failed to reparse.
+  #[test]
+  fn test_extract_cell_content_table_body_with_stacked_statements() {
+    let s = r#"BoxData[RowBox[{RowBox[{"total", "=", RowBox[{"Table", "[", "\[IndentingNewLine]", RowBox[{RowBox[{RowBox[{"p", "=", "1"}], ";", "\[IndentingNewLine]", RowBox[{"q", "=", "2"}], ";", "\[IndentingNewLine]", RowBox[{"r", "=", RowBox[{"p", "+", "q"}]}], ";", "\[IndentingNewLine]", RowBox[{"{", "r", "}"}]}], "\[IndentingNewLine]", ",", RowBox[{"{", RowBox[{"i", ",", "1", ",", "3"}], "}"}]}], "]"}]}], ";"}]]"#;
+    let content = extract_cell_content(s);
+    assert_eq!(content, "total=Table[\np=1;\nq=2;\nr=p+q;\n{r}\n,{i,1,3}];");
+    crate::clear_state();
+    crate::interpret(&content).unwrap();
+    assert_eq!(crate::interpret("total").unwrap(), "{{3}, {3}, {3}}");
+  }
 
   #[test]
   fn test_parse_simple_notebook() {
@@ -6903,5 +7078,190 @@ Cell[BoxData[RowBox[{"arrowHead", "=", RowBox[{"{", RowBox[{"Line", "[", RowBox[
       }
       CellEntry::Group(_) => panic!("Expected single cell"),
     }
+  }
+
+  #[test]
+  fn top_level_assignment_is_detected_past_bracket_depth() {
+    assert!(has_top_level_assignment("total=Length[list]"));
+    assert!(has_top_level_assignment("total:=Length[list]"));
+    assert!(has_top_level_assignment("total+=1"));
+    // A comparison, not an assignment.
+    assert!(!has_top_level_assignment("total==Length[list]"));
+    assert!(!has_top_level_assignment("total<=3"));
+    assert!(!has_top_level_assignment("total>=3"));
+    assert!(!has_top_level_assignment("total!=3"));
+    // An `=` nested inside a call/list is not at depth 0.
+    assert!(!has_top_level_assignment("f[total=1]"));
+    assert!(!has_top_level_assignment("{a==b}"));
+    assert!(!has_top_level_assignment("Length[list]"));
+  }
+
+  #[test]
+  fn juxtaposed_assignment_after_loop_keeps_its_own_grouping() {
+    // As part of a scheduled QA routine, Woxi Studio was tested against a
+    // randomly sampled Wolfram Demonstration notebook whose Initialization
+    // code had two Module-body statements — a loop, then an assignment —
+    // stacked on separate lines with the semicolon between them missing,
+    // so the box tree holds only whitespace (`\[IndentingNewLine]`)
+    // between the two `RowBox` siblings: `RowBox[{loop-box, …,
+    // assignment-box}]`. Real Wolfram's box tree keeps the assignment as
+    // its own self-contained node regardless — 2-D grouping is structural
+    // (nesting), not textual — so it evaluates as `Times[loop, Set[var,
+    // value]]`. Flattening the boxes to bare text without restoring that
+    // grouping let the `=` escape its own box and bind to the *outer*
+    // juxtaposition instead: the reparsed text read as `Set[Times[loop,
+    // var], value]`, which fails outright (`Times` is Protected), so the
+    // variable was never actually assigned — corrupting every later
+    // statement that depended on it. This is a self-authored,
+    // construct-equivalent example (an invented `Do`/`Length` loop, not
+    // the specific Demonstration's code or data, which is copyrighted).
+    let boxes = r#"RowBox[{RowBox[{"Do", "[", RowBox[{RowBox[{"n", "++"}], ",", RowBox[{"{", "3", "}"}]}], "]"}], "\[IndentingNewLine]", "\[IndentingNewLine]", RowBox[{"total", "=", RowBox[{"Length", "[", "list", "]"}]}]}]"#;
+    let expr_src =
+      box_source_to_expression(boxes).expect("box source must convert");
+    assert!(
+      expr_src.contains("(total=Length[list])"),
+      "the assignment must stay parenthesized as its own factor, got: \
+       {expr_src:?}"
+    );
+
+    let result =
+      crate::interpret(&format!("n=0; list={{1,2,3}}; {expr_src}; total"))
+        .expect("the reconstructed source must evaluate without error");
+    assert_eq!(
+      result, "3",
+      "the assignment must actually run (not fail as Set::write on a \
+       corrupted `Times[…]` target), got: {result:?} from {expr_src:?}"
+    );
+  }
+
+  #[test]
+  fn assignment_argument_before_a_sibling_arg_is_not_over_wrapped() {
+    // As part of a scheduled QA routine, Woxi Studio was tested against a
+    // randomly sampled Wolfram Demonstration notebook ("Intersecting Lines
+    // in All Possible Ways") whose `Manipulate` body is `points =
+    // Table[…]; LocatorPane[…]` — an assignment followed by a semicolon,
+    // both inside the *first* comma-separated argument of an enclosing
+    // call, with a sibling argument (the control specs) following. The
+    // `has_real_predecessor` check that decides whether a nested `RowBox`
+    // needs re-parenthesizing (see
+    // `juxtaposed_assignment_after_loop_keeps_its_own_grouping` above)
+    // treated the "[" opening the call's own argument list as a "real"
+    // preceding sibling expression, so the whole comma-separated argument
+    // row — not just the assignment's own factor — was wrapped: reparsing
+    // `f[points = Table[…]; body, {ctrl, …}]` as
+    // `f[(points = Table[…]; body, {ctrl, …})]` puts a bare comma directly
+    // inside a parenthesized group, which is a parse error. This is a
+    // self-authored, construct-equivalent example (an invented `f`/`g`
+    // call, not the specific Demonstration's code, which is copyrighted).
+    let boxes = r#"RowBox[{"f", "[", RowBox[{RowBox[{RowBox[{"a", "=", "1"}], ";", RowBox[{"g", "[", "a", "]"}]}], ",", RowBox[{"{", RowBox[{"b", ",", "1", ",", "2"}], "}"}]}], "]"}]"#;
+    let expr_src =
+      box_source_to_expression(boxes).expect("box source must convert");
+    assert!(
+      !expr_src.contains('('),
+      "a comma-delimited argument needs no extra parentheses around its \
+       own assignment, got: {expr_src:?}"
+    );
+
+    let result =
+      crate::interpret(&format!("g[x_]:=x+1; f[x_,y_]:={{x,y}}; {expr_src}"))
+        .expect(
+          "the reconstructed source must parse and evaluate without error",
+        );
+    assert_eq!(
+      result, "{2, {b, 1, 2}}",
+      "the assignment must run as part of the first argument and the \
+       second argument must stay independent, got: {result:?} from \
+       {expr_src:?}"
+    );
+  }
+
+  #[test]
+  fn same_q_and_unsame_q_are_not_top_level_assignments() {
+    // `===` (SameQ) and `=!=` (UnsameQ) are three-character comparison
+    // operators, not assignments. The two-character `==` check consumed
+    // only the first pair of `=` in `===`, leaving its third `=` to be
+    // misread as a fresh (assignment) `=`; `=!=` was not recognized at all
+    // (its leading `=` is followed by `!`, not `=`), so it fell straight
+    // through to the "bare assignment" case.
+    assert!(!has_top_level_assignment("a===b"));
+    assert!(!has_top_level_assignment("a=!=b"));
+    assert!(!has_top_level_assignment("Last[l]===First[l]"));
+    assert!(!has_top_level_assignment("Round[sum]=!=0"));
+    // A real assignment following one of these must still be detected.
+    assert!(has_top_level_assignment("(a===b);total=1"));
+  }
+
+  #[test]
+  fn same_q_argument_list_keeps_its_grouping() {
+    // As part of a scheduled QA routine, Woxi Studio was tested against a
+    // randomly sampled Wolfram Demonstration notebook ("Color Blindness")
+    // whose Manipulate Initialization defines a point-in-polygon helper
+    // that closes an open path with `If[Last[l]===First[l], l,
+    // Append[l, l[[1]]]]`. Flattening the box tree misdetected the `===`
+    // as a top-level assignment (see `same_q_and_unsame_q_are_not_top_
+    // level_assignments`) and wrapped the whole three-argument `If[…]` row
+    // in a stray `(…)`, turning it into `If[(a===b,l,Append[…])]` — invalid
+    // syntax, since parentheses cannot hold a comma-separated list — which
+    // failed to parse at all. This is a self-authored, construct-equivalent
+    // example (an invented list-closing helper, not the Demonstration's
+    // own code or data, which is copyrighted).
+    let boxes = r#"RowBox[{"If", "[", RowBox[{RowBox[{RowBox[{"Last", "[", "l", "]"}], "===", RowBox[{"First", "[", "l", "]"}]}], ",", "l", ",", RowBox[{"Append", "[", RowBox[{"l", ",", RowBox[{"l", "[", RowBox[{"[", "1", "]"}], "]"}]}], "]"}]}], "]"}]"#;
+    let expr_src =
+      box_source_to_expression(boxes).expect("box source must convert");
+    assert!(
+      !expr_src.contains('('),
+      "a plain If[a===b, x, y] needs no extra parens, got: {expr_src:?}"
+    );
+
+    let closed =
+      crate::interpret(&format!("l={{1,2,3,1}}; {expr_src}")).unwrap();
+    let open = crate::interpret(&format!("l={{1,2,3}}; {expr_src}")).unwrap();
+    assert_eq!(closed, "{1, 2, 3, 1}", "from {expr_src:?}");
+    assert_eq!(open, "{1, 2, 3, 1}", "from {expr_src:?}");
+  }
+
+  #[test]
+  fn unsame_q_condition_keeps_its_grouping() {
+    // The same `===`/`=!=` misdetection also broke a bare `x=!=y` condition
+    // used directly as a function argument (the same Demonstration's
+    // winding-number test ends in `Round[sum]=!=0`), wrapping it in a
+    // stray `(…)` around the whole surrounding argument list.
+    let boxes = r#"RowBox[{"Not", "[", RowBox[{RowBox[{"Round", "[", "sum", "]"}], "=!=", "0"}], "]"}]"#;
+    let expr_src =
+      box_source_to_expression(boxes).expect("box source must convert");
+    assert!(!expr_src.contains('('), "got: {expr_src:?}");
+    assert_eq!(
+      crate::interpret(&format!("sum=0.4; {expr_src}")).unwrap(),
+      "True",
+      "from {expr_src:?}"
+    );
+  }
+
+  #[test]
+  fn comma_separated_binding_does_not_gain_stray_parens() {
+    // As part of the same QA pass, the Demonstration's Manipulate also
+    // binds two variables in a single `With[{a = …, b = …}, body]`, each
+    // assignment box a sibling of the other separated by a `","` display
+    // token. `has_real_predecessor` treated that comma (and the `"{"`
+    // opening the binding list) as "a real expression already precedes
+    // this", the same condition `juxtaposed_assignment_after_loop_keeps_
+    // its_own_grouping` guards against — so the second binding's `RowBox`
+    // was wrapped in a stray `(…)`, and the enclosing `{…}` list (now
+    // holding what the flattener saw as one comma-holding parenthesized
+    // item) was wrapped in another, producing invalid `{(a = …,(b =
+    // …))}` syntax that failed to parse. This is a self-authored,
+    // construct-equivalent example, not the Demonstration's own code.
+    let boxes = r#"RowBox[{"With", "[", RowBox[{RowBox[{"{", RowBox[{RowBox[{"a", "=", "1"}], ",", "\[IndentingNewLine]", RowBox[{"b", "=", "2"}]}], "}"}], ",", RowBox[{"a", "+", "b"}]}], "]"}]"#;
+    let expr_src =
+      box_source_to_expression(boxes).expect("box source must convert");
+    assert!(
+      !expr_src.contains('('),
+      "a plain {{a=1,b=2}} binding list needs no extra parens, got: {expr_src:?}"
+    );
+    assert_eq!(
+      crate::interpret(&expr_src).unwrap(),
+      "3",
+      "from {expr_src:?}"
+    );
   }
 }
