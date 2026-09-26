@@ -64,6 +64,7 @@ pub mod molecule_render;
 pub mod music_ast;
 pub mod music_font;
 pub mod music_midi;
+pub mod music_plot;
 pub mod music_render;
 pub mod number_line_plot;
 pub mod ode_ast;

@@ -345,6 +345,7 @@ fn evaluate_statement_items(stmt: &str) -> Vec<String> {
       // "sound" item carrying the base64 data so the frontend can render a
       // graphical audio player. The textual echo is suppressed in favor of it.
       if let Some(ref audio) = result.sound
+        && !audio.embedded
         && result.result != "\0"
       {
         items.push(json_sound_item(audio));
@@ -355,7 +356,17 @@ fn evaluate_statement_items(stmt: &str) -> Vec<String> {
       if let Some(ref svg) = result.graphics {
         // Only display graphics if output wasn't suppressed by trailing semicolon
         if result.result != "\0" {
-          items.push(json_output_item("graphics", svg, None));
+          // Audio embedded in the graphic (a MusicScore panel) travels with
+          // it, for the frontend to wire to the graphic's own buttons.
+          match result.sound.as_ref().filter(|a| a.embedded) {
+            Some(audio) => items.push(format!(
+              r#"{{"type":"graphics","svg":"{}","audio":"{}","mime":"{}"}}"#,
+              json_escape(svg),
+              json_escape(&audio.base64),
+              json_escape(&audio.mime)
+            )),
+            None => items.push(json_output_item("graphics", svg, None)),
+          }
           // Check for non-graphics text mixed in
           let cleaned = residual_text(&result.result);
           if !cleaned.is_empty() && cleaned != "\0" {

@@ -264,11 +264,35 @@ function restoreOutput() {
 
 restoreOutput()
 
+// Play/stop buttons drawn inside a graphic (a MusicScore panel). Handled by
+// delegation on #outputs so the buttons keep working after the outputs are
+// restored from localStorage. At most one such graphic plays at a time.
+let embeddedAudio = null
+document.getElementById("outputs").addEventListener("click", (event) => {
+  const button = event.target.closest(".music-button")
+  const box = button && button.closest("[data-audio]")
+  if (!box) return
+  if (embeddedAudio) {
+    embeddedAudio.pause()
+    embeddedAudio = null
+  }
+  if (button.dataset.action === "play") {
+    embeddedAudio = new Audio(box.dataset.audio)
+    embeddedAudio.play()
+  }
+})
+
 function appendOutputItem(outputsEl, item) {
   if (item.type === "graphics") {
     const div = document.createElement("div")
     div.className = "output-box graphics-box"
     div.innerHTML = item.svg
+    // Audio that plays through the graphic's own buttons (a MusicScore
+    // panel); see the delegated `.music-button` click handler below.
+    if (item.audio) {
+      div.dataset.audio =
+        "data:" + (item.mime || "audio/wav") + ";base64," + item.audio
+    }
     outputsEl.appendChild(div)
   } else if (item.type === "sound") {
     const div = document.createElement("div")

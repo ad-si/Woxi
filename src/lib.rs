@@ -143,6 +143,10 @@ pub struct AudioOutput {
   pub mime: String,
   /// Display label — the file name for file-backed `Audio` objects.
   pub label: Option<String>,
+  /// Whether the audio is played through controls drawn in the captured
+  /// graphics (the play/stop buttons in front of a displayed `MusicScore`)
+  /// rather than a separate player.
+  pub embedded: bool,
 }
 
 /// Extended result type that includes both stdout and the result
@@ -1501,6 +1505,7 @@ fn capture_sound(wav_base64: &str) {
     base64: wav_base64.to_string(),
     mime: "audio/wav".to_string(),
     label: None,
+    embedded: false,
   });
 }
 
@@ -3427,6 +3432,16 @@ fn render_music_if_needed(expr: syntax::Expr) -> syntax::Expr {
     && functions::music_ast::MUSIC_OBJECT_HEADS.contains(&name.as_str())
     && let Some(svg) = functions::music_render::music_to_svg(&expr)
   {
+    // A displayed score plays its synthesized audio through the play/stop
+    // buttons in front of it.
+    if let Some(wav_base64) = functions::music_plot::score_audio(&expr) {
+      capture_audio(AudioOutput {
+        base64: wav_base64,
+        mime: "audio/wav".to_string(),
+        label: None,
+        embedded: true,
+      });
+    }
     return graphics_result(svg);
   }
   // A plain list of music events (e.g. {MusicNote[…], MusicNote[…]}) keeps its

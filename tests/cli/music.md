@@ -119,6 +119,14 @@ $ wo 'MusicChord[{MusicPitch["C"], MusicPitch["E"], MusicPitch["G"]}]'
 MusicChord[<|PitchList -> {MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> C|>], MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> E|>], MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> G|>]}|>]
 ```
 
+Tones may also be pitch names or MIDI numbers; a name with an octave keeps its
+`Name`, a MIDI number stays unspelled.
+
+```scrut
+$ wo 'MusicChord[{"C4", "Eb", 67}]'
+MusicChord[<|PitchList -> {MusicPitch[<|Accidental -> 0, Octave -> 4, Key -> C, Name -> C|>], MusicPitch[<|Accidental -> -1, Octave -> 4, Key -> E|>], MusicPitch[<|MIDINumber -> 67|>]}|>]
+```
+
 ```scrut
 $ wo 'Head[MusicNote[MusicPitch["C4"]]]'
 MusicNote
@@ -233,20 +241,39 @@ InputForm[MusicChord[<|PitchList -> {MusicPitch[<|Accidental -> 0, Key -> F, MID
 ```
 
 
-## Rendering as notation
+## Rendering
 
 In the visual hosts — the [Woxi Playground](https://woxi.dev) and Woxi Studio —
 music objects (`MusicNote`, `MusicChord`, `MusicScale`, `MusicMeasure`,
-`MusicVoice`, `MusicScore`, …) are drawn on a treble staff the way Mathematica
-displays them, with note heads, stems, flags, accidentals, ledger lines, rests
-and barlines. On the command line they stay symbolic (as shown above).
+`MusicVoice`, …) are drawn on a treble staff the way Mathematica displays
+them, with note heads, stems, flags, accidentals, ledger lines, rests and
+barlines. A `MusicScore` is shown as a summary panel: play and stop buttons
+(which play the score, synthesized at its `MusicTempo` — 120 quarter notes per
+minute by default), a piano roll of its voices (one color per voice), and its
+duration in measures and its time signature. On the command line they stay symbolic (as shown
+above).
 
-`MusicPlot` renders a music object explicitly and, like `Plot`, yields a
+`MusicPlot` draws a music object as a piano roll and, like `Plot`, yields a
 graphic:
 
 ```scrut
 $ wo 'Head[MusicPlot[MusicMeasure[{"C", "E", "G"}]]]'
 Graphics
+```
+
+Every note becomes a rounded bar from its onset to its end (in whole notes),
+centred on its MIDI number; a chord gives one bar per tone.
+
+```scrut
+$ wo 'Cases[MusicPlot[MusicChord[{"C4", "E4", "G4"}]], Rectangle[{_, lo_}, __] :> lo + 0.4, Infinity]'
+{60., 64., 67.}
+```
+
+Each voice of a score has its own color; the last voice is drawn first.
+
+```scrut
+$ wo 'Cases[MusicPlot[MusicScore[{MusicVoice[{"C4", "D4"}], MusicVoice[{"C3"}]}]], EdgeForm[c_] :> c, Infinity]'
+{RGBColor[0.95, 0.627, 0.1425], RGBColor[0.24, 0.6, 0.8]}
 ```
 
 A `MusicScale` requires any second argument to be a property *association*; a
@@ -262,9 +289,25 @@ MusicPlot::music: Expecting a valid music object instead of MusicScale[Major, -M
 MusicPlot
 ```
 
-The same notation SVG is produced by `ExportString[obj, "SVG"]`. A chord built
-from transposed pitches — here a stack of minor thirds above C — draws as one
-staff with all its note heads and (double) accidentals.
+### Sheet music
+
+Woxi adds the option `MusicNotation` (not yet part of the Wolfram Language) to
+switch a `MusicScore`'s display, and `MusicPlot`, from the piano roll
+(`Automatic` or `"PianoRoll"`) to staff notation (`"SheetMusic"`). A two-voice
+score is then set as a grand staff, any other number of voices on one shared
+staff, with the same play and stop buttons in front of it:
+
+```wolfram
+MusicScore[{MusicVoice[{"C4", "D4", "E4", "F4"}], MusicVoice[{"C3", "E3"}]},
+  MusicNotation -> "SheetMusic"]
+
+MusicPlot[MusicMeasure[{"C", "G", "A", "C"}], MusicNotation -> "SheetMusic"]
+```
+
+The other music objects are always shown as staff notation, and so is their
+`ExportString[obj, "SVG"]`. A chord built from transposed pitches — here a
+stack of minor thirds above C — draws as one staff with all its note heads and
+(double) accidentals.
 
 ```scrut
 $ wo 'StringContainsQ[ExportString[MusicChord[NestList[# + MusicInterval["MinorThird"] &, MusicPitch["C"], 4]], "SVG"], "<svg"]'
@@ -275,18 +318,6 @@ Transposing that chord by a further interval still renders as a chord.
 
 ```scrut
 $ wo 'StringContainsQ[ExportString[MusicChord[NestList[# + MusicInterval["MinorThird"] &, MusicPitch["C"], 4]] + MusicInterval[5], "SVG"], "<svg"]'
-True
-```
-
-`MusicPlot` of a `MusicMeasure` draws its pitches as quarter notes on the staff.
-
-```scrut
-$ wo 'Head[MusicPlot[MusicMeasure[{"C", "G", "A", "C"}]]]'
-Graphics
-```
-
-```scrut
-$ wo 'StringContainsQ[ExportString[MusicPlot[MusicMeasure[{"C", "G", "A", "C"}]], "SVG"], "<svg"]'
 True
 ```
 

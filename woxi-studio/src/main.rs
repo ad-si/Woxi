@@ -247,6 +247,11 @@ enum Message {
   /// Toggle playback of the given cell's audio (from Play[…] / Sound[…] /
   /// Audio[…]): start playing, pause, or resume.
   PlaySound(usize),
+  /// Start the given cell's audio, or resume it when paused (a `MusicScore`
+  /// panel's play button); does nothing while it is already playing.
+  StartSound(usize),
+  /// Stop the given cell's audio (a `MusicScore` panel's stop button).
+  StopSound(usize),
   /// Periodic poll of the external audio player so the pause button
   /// reverts to a play button when playback finishes on its own.
   PlaybackTick,
@@ -2232,6 +2237,21 @@ impl WoxiStudio {
         Task::none()
       }
 
+      Message::StartSound(idx) => {
+        if self.is_playing(idx) {
+          return Task::none();
+        }
+        self.update(Message::PlaySound(idx))
+      }
+
+      Message::StopSound(idx) => {
+        if self.playback.as_ref().is_some_and(|p| p.cell == idx) {
+          self.stop_playback();
+          self.status = String::from("Sound stopped");
+        }
+        Task::none()
+      }
+
       Message::PlaybackTick => {
         // Revert the pause button to a play button once the external
         // player exits (playback finished on its own or was killed).
@@ -3194,27 +3214,8 @@ impl WoxiStudio {
       // Graphics rendering (pre-rasterized image, falls back to SVG)
       // Double-click opens a fullscreen modal for detailed inspection.
       // Right-click opens a context menu (Save Graphic As).
-      if let Some((ref img_handle, w, h)) = editor.graphics_image {
-        let mut img_widget = image(img_handle.clone())
-          .width(iced::Length::Fixed(w as f32))
-          .height(iced::Length::Fixed(h as f32));
-        if stale {
-          img_widget = img_widget.opacity(0.3_f32);
-        }
-        let clickable = mouse_area(container(img_widget).padding(4))
-          .on_double_click(Message::OpenGraphicsModal(idx))
-          .on_right_press(Message::ShowGraphicsContextMenu(idx));
-        output_col = output_col.push(clickable);
-      } else if let Some(ref handle) = editor.graphics_handle {
-        let mut svg_widget =
-          svg::Svg::new(handle.clone()).width(iced::Length::Shrink);
-        if stale {
-          svg_widget = svg_widget.opacity(0.3_f32);
-        }
-        let clickable = mouse_area(container(svg_widget).padding(4))
-          .on_double_click(Message::OpenGraphicsModal(idx))
-          .on_right_press(Message::ShowGraphicsContextMenu(idx));
-        output_col = output_col.push(clickable);
+      if let Some(graphics) = render_graphics_output(idx, editor, stale) {
+        output_col = output_col.push(graphics);
       }
 
       // Interactive Manipulate widget
@@ -3224,7 +3225,9 @@ impl WoxiStudio {
       }
 
       // Graphical audio player (Play[…] / Sound[…] / Audio[…] results)
-      if let Some(ref audio) = editor.sound {
+      if let Some(ref audio) = editor.sound
+        && !audio.embedded
+      {
         output_col = output_col.push(render_audio_player(
           idx,
           audio,
@@ -3296,27 +3299,8 @@ impl WoxiStudio {
         content_col = content_col.push(stdout_editor);
       }
 
-      if let Some((ref img_handle, w, h)) = editor.graphics_image {
-        let mut img_widget = image(img_handle.clone())
-          .width(iced::Length::Fixed(w as f32))
-          .height(iced::Length::Fixed(h as f32));
-        if stale {
-          img_widget = img_widget.opacity(0.3_f32);
-        }
-        let clickable = mouse_area(container(img_widget).padding(4))
-          .on_double_click(Message::OpenGraphicsModal(idx))
-          .on_right_press(Message::ShowGraphicsContextMenu(idx));
-        content_col = content_col.push(clickable);
-      } else if let Some(ref handle) = editor.graphics_handle {
-        let mut svg_widget =
-          svg::Svg::new(handle.clone()).width(iced::Length::Shrink);
-        if stale {
-          svg_widget = svg_widget.opacity(0.3_f32);
-        }
-        let clickable = mouse_area(container(svg_widget).padding(4))
-          .on_double_click(Message::OpenGraphicsModal(idx))
-          .on_right_press(Message::ShowGraphicsContextMenu(idx));
-        content_col = content_col.push(clickable);
+      if let Some(graphics) = render_graphics_output(idx, editor, stale) {
+        content_col = content_col.push(graphics);
       }
 
       // Interactive Manipulate widget
@@ -3326,7 +3310,9 @@ impl WoxiStudio {
       }
 
       // Graphical audio player (Play[…] / Sound[…] / Audio[…] results)
-      if let Some(ref audio) = editor.sound {
+      if let Some(ref audio) = editor.sound
+        && !audio.embedded
+      {
         content_col = content_col.push(render_audio_player(
           idx,
           audio,
@@ -4899,6 +4885,74 @@ fn render_audio_player<'a>(
     .padding(8)
     .style(audio_player_style)
     .into()
+}
+
+/// The graphics output of a cell: its pre-rasterized image (or, failing that,
+/// the SVG). Double-click opens a fullscreen modal for detailed inspection;
+/// right-click opens a context menu (Save Graphic As). When the cell's audio
+/// is embedded in the graphic (a `MusicScore` panel), clickable areas are laid
+/// over the panel's play and stop buttons.
+fn render_graphics_output<'a>(
+  idx: usize,
+  editor: &CellEditor,
+  stale: bool,
+) -> Option<Element<'a, Message>> {
+  const PAD: f32 = 4.0;
+  let picture: Element<'a, Message> =
+    if let Some((ref img_handle, w, h)) = editor.graphics_image {
+      let mut img_widget = image(img_handle.clone())
+        .width(iced::Length::Fixed(w as f32))
+        .height(iced::Length::Fixed(h as f32));
+      if stale {
+        img_widget = img_widget.opacity(0.3_f32);
+      }
+      container(img_widget).padding(PAD).into()
+    } else if let Some(ref handle) = editor.graphics_handle {
+      let mut svg_widget =
+        svg::Svg::new(handle.clone()).width(iced::Length::Shrink);
+      if stale {
+        svg_widget = svg_widget.opacity(0.3_f32);
+      }
+      container(svg_widget).padding(PAD).into()
+    } else {
+      return None;
+    };
+  let picture = if editor.sound.as_ref().is_some_and(|a| a.embedded) {
+    use woxi::functions::music_plot::{
+      BUTTON_RADIUS, PLAY_BUTTON, STOP_BUTTON,
+    };
+    // The panel is drawn at its SVG size, so its user units are pixels.
+    let r = BUTTON_RADIUS as f32;
+    let hotspot = |(cx, cy): (f64, f64), message: Message| {
+      container(
+        button(space::Space::new())
+          .width(2.0 * r)
+          .height(2.0 * r)
+          .style(|_, _| button::Style::default())
+          .on_press(message),
+      )
+      .padding(iced::Padding {
+        top: PAD + cy as f32 - r,
+        left: PAD + cx as f32 - r,
+        right: 0.0,
+        bottom: 0.0,
+      })
+    };
+    stack![
+      picture,
+      hotspot(PLAY_BUTTON, Message::StartSound(idx)),
+      hotspot(STOP_BUTTON, Message::StopSound(idx)),
+    ]
+    .into()
+  } else {
+    picture
+  };
+  Some(
+    mouse_area(picture)
+      .on_double_click(Message::OpenGraphicsModal(idx))
+      .on_right_press(Message::ShowGraphicsContextMenu(idx))
+      .into(),
+  )
 }
 
 /// Style the audio player card: a subtly bordered rounded container so the

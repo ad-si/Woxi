@@ -288,7 +288,7 @@ fn quantize_i16(v: f64) -> i16 {
 
 /// Quantize [-1, 1] amplitude samples to 16-bit PCM and encode them as a
 /// mono WAV byte stream.
-fn samples_to_mono_wav(samples: &[f64], rate: u32) -> Vec<u8> {
+pub(crate) fn samples_to_mono_wav(samples: &[f64], rate: u32) -> Vec<u8> {
   let pcm: Vec<i16> = samples.iter().map(|s| quantize_i16(*s)).collect();
   encode_wav(&pcm, 1, rate)
 }
@@ -535,6 +535,7 @@ pub fn audio_to_output(expr: &Expr) -> Option<AudioOutput> {
       base64,
       mime,
       label: Some(label),
+      embedded: false,
     });
   }
 
@@ -552,5 +553,6 @@ pub fn audio_to_output(expr: &Expr) -> Option<AudioOutput> {
     base64: base64::engine::general_purpose::STANDARD.encode(&wav),
     mime: "audio/wav".to_string(),
     label: None,
+    embedded: false,
   })
 }

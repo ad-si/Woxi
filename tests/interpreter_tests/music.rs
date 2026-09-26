@@ -1144,8 +1144,8 @@ fn music_voice_plus_interval_transposes_every_pitch() {
 
 // ─── MusicScore rendering ────────────────────────────────────────────────────
 
-/// A `MusicScore` with other than two voices overlays them on one shared
-/// staff: the voices sound simultaneously, so a note from each at the same
+/// With `MusicNotation -> "SheetMusic"`, a `MusicScore` with other than two
+/// voices overlays them on one shared staff: the voices sound simultaneously, so a note from each at the same
 /// position stacks into a chord. Here a voice and its transpositions up a
 /// fourth and a fifth print as three three-note chords on a single staff.
 #[test]
@@ -1153,7 +1153,7 @@ fn music_score_overlays_voices_on_one_staff() {
   let svg = interpret(
     "voice = MusicVoice[{MusicNote[\"E\"], MusicNote[\"C\"], MusicNote[\"D\"]}]; \
      ExportString[MusicScore[{voice, voice + MusicInterval[5], \
-     voice + MusicInterval[7]}], \"SVG\"]",
+     voice + MusicInterval[7]}, MusicNotation -> \"SheetMusic\"], \"SVG\"]",
   )
   .unwrap();
   assert!(svg.starts_with("<svg"), "expected an SVG, got: {svg}");
@@ -1163,7 +1163,8 @@ fn music_score_overlays_voices_on_one_staff() {
   assert!(!svg.contains("class=\"brace\""));
 }
 
-/// A two-voice `MusicScore` is set as a grand staff: the first voice on a
+/// With `MusicNotation -> "SheetMusic"`, a two-voice `MusicScore` is set as a
+/// grand staff: the first voice on a
 /// treble staff, the second on a bass staff, joined by a brace.
 #[test]
 fn music_score_with_two_voices_renders_a_grand_staff() {
@@ -1175,7 +1176,8 @@ fn music_score_with_two_voices_renders_a_grand_staff() {
      trebleVoice = MusicVoice[{trebleBar1, trebleBar2}]; \
      bassVoice = MusicVoice[{trebleBar1 - MusicInterval[12], \
      trebleBar2 - MusicInterval[12]}]; \
-     ExportString[MusicScore[{trebleVoice, bassVoice}], \"SVG\"]",
+     ExportString[MusicScore[{trebleVoice, bassVoice}, \
+     MusicNotation -> \"SheetMusic\"], \"SVG\"]",
   )
   .unwrap();
   assert!(svg.starts_with("<svg"), "expected an SVG, got: {svg}");
@@ -1186,4 +1188,380 @@ fn music_score_with_two_voices_renders_a_grand_staff() {
   // Every note and rest of both voices is drawn on its own staff.
   assert_eq!(svg.matches("class=\"notehead\"").count(), 14);
   assert_eq!(svg.matches("class=\"rest\"").count(), 2);
+}
+
+/// By default a `MusicScore` displays as a summary panel: play and stop
+/// buttons, a piano roll with one bar per note, and its length and meter.
+#[test]
+fn music_score_displays_as_piano_roll_panel() {
+  let svg = interpret(
+    "ExportString[MusicScore[{MusicVoice[{\"C4\", \"D4\", \"E4\", \"F4\"}], \
+     MusicVoice[{\"C3\", \"E3\"}]}], \"SVG\"]",
+  )
+  .unwrap();
+  assert!(svg.starts_with("<svg"), "expected an SVG, got: {svg}");
+  assert_eq!(svg.matches("class=\"music-play\"").count(), 1);
+  assert_eq!(svg.matches("class=\"music-stop\"").count(), 1);
+  assert_eq!(svg.matches("class=\"music-note\"").count(), 6);
+  assert!(svg.contains("Duration: 1 measures"));
+  assert!(svg.contains("Time Signature: 4/4"));
+  // No staff notation.
+  assert!(!svg.contains("class=\"clef\""));
+  // The two voices are drawn in different colors.
+  assert!(svg.contains("fill=\"rgb(61,153,204)\""));
+  assert!(svg.contains("fill=\"rgb(242,160,36)\""));
+}
+
+/// The panel counts every measure of the longest voice and states the meter.
+#[test]
+fn music_score_panel_reports_measures_and_meter() {
+  let svg = interpret(
+    "ExportString[MusicScore[{MusicVoice[Table[MusicMeasure[{\"C\", \"E\", \
+     \"G\"}, MusicTimeSignature[3, 4]], 3]]}], \"SVG\"]",
+  )
+  .unwrap();
+  assert!(svg.contains("Duration: 3 measures"), "got: {svg}");
+  assert!(svg.contains("Time Signature: 3/4"), "got: {svg}");
+  assert_eq!(svg.matches("class=\"music-note\"").count(), 9);
+}
+
+/// `MusicNotation -> "PianoRoll"` is the explicit form of the default.
+#[test]
+fn music_score_piano_roll_notation_is_the_default() {
+  let svg = interpret(
+    "ExportString[MusicScore[{MusicVoice[{\"C4\"}]}, \
+     MusicNotation -> \"PianoRoll\"], \"SVG\"]",
+  )
+  .unwrap();
+  assert_eq!(svg.matches("class=\"music-play\"").count(), 1);
+}
+
+/// Options are stored as trailing symbol-keyed entries of the score's
+/// association; a repeated option keeps its last value.
+#[test]
+fn music_score_stores_options() {
+  assert_eq!(
+    interpret("MusicScore[{}, MusicTempo -> 90]").unwrap(),
+    "MusicScore[<|VoiceList -> {}, MusicTempo -> 90|>]"
+  );
+  assert_eq!(
+    interpret(
+      "Last[Normal[First[MusicScore[{MusicVoice[{\"C4\"}]}, \
+       MusicTempo -> 90, MusicTempo :> 80]]]]"
+    )
+    .unwrap(),
+    "MusicTempo -> 80"
+  );
+  assert_eq!(
+    interpret(
+      "Last[Normal[First[MusicScore[{MusicVoice[{\"C4\"}]}, \
+       {MusicNotation -> \"SheetMusic\"}]]]]"
+    )
+    .unwrap(),
+    "MusicNotation -> SheetMusic"
+  );
+  assert_eq!(
+    interpret("Options[MusicScore]").unwrap(),
+    "{MusicTempo -> Automatic, MusicNotation -> Automatic}"
+  );
+}
+
+/// An unknown option emits `MusicScore::optx` and leaves the score
+/// unevaluated.
+#[test]
+fn music_score_rejects_unknown_option() {
+  clear_state();
+  let r = woxi::interpret_with_stdout(
+    "Head[First[MusicScore[{MusicVoice[{\"C4\"}]}, Foo -> 1]]]",
+  )
+  .unwrap();
+  assert_eq!(r.result, "List");
+  assert!(
+    r.warnings.iter().any(|w| w.contains(
+      "MusicScore::optx: Unknown option Foo in \
+       MusicScore[{-MusicVoice-}, Foo -> 1]."
+    )),
+    "got {:?}",
+    r.warnings
+  );
+}
+
+// ─── MusicChord canonicalization ────────────────────────────────────────────
+
+/// A pitch-list chord stores every tone as its canonical pitch: an octaved
+/// name gains its `Name`, an octaveless one sits in octave 4 without a
+/// `Name`, and a MIDI number stays `<|MIDINumber -> n|>`.
+#[test]
+fn music_chord_pitch_list_canonicalizes_tones() {
+  assert_eq!(
+    interpret("MusicChord[{\"C4\", \"Eb\", 67}]").unwrap(),
+    "MusicChord[<|PitchList -> {MusicPitch[<|Accidental -> 0, Octave -> 4, \
+     Key -> C, Name -> C|>], MusicPitch[<|Accidental -> -1, Octave -> 4, \
+     Key -> E|>], MusicPitch[<|MIDINumber -> 67|>]}|>]"
+  );
+  assert_eq!(
+    interpret("MusicChord[{MusicPitch[\"C4\"], MusicPitch[\"E\"]}]").unwrap(),
+    "MusicChord[<|PitchList -> {MusicPitch[<|Accidental -> 0, Octave -> 4, \
+     Key -> C, Name -> C|>], MusicPitch[<|Accidental -> 0, Octave -> 4, \
+     Key -> E|>]}|>]"
+  );
+}
+
+/// `MusicChord[spec, duration]` stores the duration first.
+#[test]
+fn music_chord_with_duration() {
+  assert_eq!(
+    interpret("MusicChord[\"CMajor\", 1/2]").unwrap(),
+    "MusicChord[<|Duration -> MusicDuration[<|Duration -> 1/2|>], \
+     Name -> Major, Root -> MusicPitch[<|Key -> C, Accidental -> 0|>]|>]"
+  );
+  assert_eq!(
+    interpret("MusicChord[{\"C4\"}, MusicDuration[\"Half\"]]").unwrap(),
+    "MusicChord[<|Duration -> MusicDuration[<|Duration -> 1/2, \
+     Name -> Half|>], PitchList -> {MusicPitch[<|Accidental -> 0, \
+     Octave -> 4, Key -> C, Name -> C|>]}|>]"
+  );
+}
+
+/// Chords take part in a measure's rhythm like notes: a default chord lasts
+/// a beat (the last one stretching to fill the measure), an explicit one its
+/// value, and a rigid final event is padded with a rest.
+#[test]
+fn music_measure_resolves_chords() {
+  assert_eq!(
+    interpret(
+      "MusicMeasure[{MusicChord[\"CMajor\"], MusicChord[{\"C4\", \"E4\"}, \
+       1/2]}]"
+    )
+    .unwrap(),
+    "MusicMeasure[<|NoteList -> {MusicChord[<|Name -> Major, \
+     Root -> MusicPitch[<|Key -> C, Accidental -> 0|>], \
+     Duration -> MusicDuration[<|BeatDuration -> 1/4, Beats -> 1|>]|>], \
+     MusicChord[<|PitchList -> {MusicPitch[<|Accidental -> 0, Octave -> 4, \
+     Key -> C, Name -> C|>], MusicPitch[<|Accidental -> 0, Octave -> 4, \
+     Key -> E, Name -> E|>]}, Duration -> MusicDuration[<|Duration -> 1/2, \
+     BeatDuration -> 1/4, Beats -> 2|>]|>], MusicRest[<|Duration -> \
+     MusicDuration[<|Duration -> 1/4, BeatDuration -> 1/4, Beats -> 1|>]|>]}, \
+     TimeSignature -> MusicTimeSignature[<|Numerator -> 4, Denominator -> 4, \
+     BeatLength -> 1|>]|>]"
+  );
+}
+
+/// A note given a MIDI number keeps the unspelled `<|MIDINumber -> n|>` pitch.
+#[test]
+fn music_note_from_midi_number_keeps_midi_pitch() {
+  assert_eq!(
+    interpret("MusicNote[60]").unwrap(),
+    "MusicNote[<|Pitch -> MusicPitch[<|MIDINumber -> 60|>]|>]"
+  );
+}
+
+// ─── MusicPlot (piano roll) ──────────────────────────────────────────────────
+
+/// `MusicPlot` draws a piano roll: per voice (last voice first) a directive in
+/// the voice's color and a rounded rectangle per note, spanning its onset to
+/// its end in whole notes and ±0.4 around its MIDI number.
+#[test]
+fn music_plot_draws_piano_roll_rectangles() {
+  assert_eq!(
+    interpret(
+      "First[MusicPlot[MusicScore[{MusicVoice[{\"C4\", \"D4\", \"E4\", \
+       \"F4\"}], MusicVoice[{\"C3\", \"E3\"}]}]]]"
+    )
+    .unwrap(),
+    "{{Directive[EdgeForm[RGBColor[0.95, 0.627, 0.1425]], \
+     FaceForm[RGBColor[0.95, 0.627, 0.1425, 0.8]]], \
+     {Rectangle[{0, 47.6}, {1/4, 48.4}, RoundingRadius -> {0.2, 0.1}], \
+     Rectangle[{1/4, 51.6}, {1, 52.4}, RoundingRadius -> {0.2, 0.1}]}}, \
+     {Directive[EdgeForm[RGBColor[0.24, 0.6, 0.8]], \
+     FaceForm[RGBColor[0.24, 0.6, 0.8, 0.8]]], \
+     {Rectangle[{0, 59.6}, {1/4, 60.4}, RoundingRadius -> {0.2, 0.1}], \
+     Rectangle[{1/4, 61.6}, {1/2, 62.4}, RoundingRadius -> {0.2, 0.1}], \
+     Rectangle[{1/2, 63.6}, {3/4, 64.4}, RoundingRadius -> {0.2, 0.1}], \
+     Rectangle[{3/4, 64.6}, {1, 65.4}, RoundingRadius -> {0.2, 0.1}]}}}"
+  );
+}
+
+/// Rests are invisible lines at the voice's mid pitch; a chord draws one bar
+/// per tone; a lone note is padded to a full measure.
+#[test]
+fn music_plot_rests_chords_and_padding() {
+  assert_eq!(
+    interpret(
+      "First[MusicPlot[MusicVoice[{MusicNote[\"C#4\", 1/8], MusicRest[1/8], \
+       MusicNote[\"G4\", 1/2], MusicChord[{\"C4\", \"E4\"}, 1/4]}]]]"
+    )
+    .unwrap(),
+    "{{Directive[EdgeForm[RGBColor[0.24, 0.6, 0.8]], \
+     FaceForm[RGBColor[0.24, 0.6, 0.8, 0.8]]], \
+     {Rectangle[{0, 60.6}, {1/8, 61.4}, RoundingRadius -> {0.2, 0.1}], \
+     {Opacity[0], Line[{{1/8, 63.5}, {1/4, 63.5}}]}, \
+     Rectangle[{1/4, 66.6}, {3/4, 67.4}, RoundingRadius -> {0.2, 0.1}], \
+     Rectangle[{3/4, 59.6}, {1, 60.4}, RoundingRadius -> {0.2, 0.1}], \
+     Rectangle[{3/4, 63.6}, {1, 64.4}, RoundingRadius -> {0.2, 0.1}]}}}"
+  );
+  assert_eq!(
+    interpret("First[MusicPlot[MusicNote[\"C4\", 1/2]]]").unwrap(),
+    "{{Directive[EdgeForm[RGBColor[0.24, 0.6, 0.8]], \
+     FaceForm[RGBColor[0.24, 0.6, 0.8, 0.8]]], \
+     {Rectangle[{0, 59.6}, {1/2, 60.4}, RoundingRadius -> {0.2, 0.1}], \
+     {Opacity[0], Line[{{1/2, 60.}, {1, 60.}}]}}}}"
+  );
+}
+
+/// Voices beyond the second cycle through the music palette.
+#[test]
+fn music_plot_voice_palette() {
+  assert_eq!(
+    interpret(
+      "Cases[MusicPlot[MusicScore[Table[MusicVoice[{\"C4\"}], 8]]], \
+       Directive[EdgeForm[c_], __] :> c, Infinity]"
+    )
+    .unwrap(),
+    "{RGBColor[1., 0.75, 0.], RGBColor[0.4, 0.64, 1.], \
+     RGBColor[0.772079, 0.431554, 0.102387], RGBColor[0.578, 0.51, 0.85], \
+     RGBColor[0.922526, 0.385626, 0.209179], RGBColor[0.455, 0.7, 0.21], \
+     RGBColor[0.95, 0.627, 0.1425], RGBColor[0.24, 0.6, 0.8]}"
+  );
+}
+
+/// A narrow pitch range is shown in a fixed seven-semitone window; a wider
+/// one spans the notes with the time axis just below them.
+#[test]
+fn music_plot_axes_origin_and_range() {
+  assert_eq!(
+    interpret(
+      "{AxesOrigin, AspectRatio, PlotRange} /. \
+       Options[MusicPlot[MusicVoice[{\"C4\", \"D4\", \"E4\"}]]]"
+    )
+    .unwrap(),
+    "{{Automatic, 58.5}, 1/4, {Full, {58.5, 65.5}}}"
+  );
+  assert_eq!(
+    interpret(
+      "{AxesOrigin, PlotRange} /. Options[MusicPlot[MusicVoice[Table[\
+       MusicMeasure[{\"C4\", \"E4\", \"C5\"}, MusicTimeSignature[3, 4]], 3]]]]"
+    )
+    .unwrap(),
+    "{{Automatic, 58.48136363636364}, {Full, Full}}"
+  );
+}
+
+/// Other options pass on to the resulting `Graphics`.
+#[test]
+fn music_plot_passes_graphics_options() {
+  assert_eq!(
+    interpret(
+      "Options[MusicPlot[MusicVoice[{\"C4\"}], ImageSize -> 100], ImageSize]"
+    )
+    .unwrap(),
+    "{ImageSize -> 100}"
+  );
+}
+
+/// `MusicNotation -> "SheetMusic"` draws staff notation instead — also when
+/// stored in the score.
+#[test]
+fn music_plot_sheet_music_notation() {
+  let svg = interpret(
+    "ExportString[MusicPlot[MusicVoice[{\"C4\", \"E4\"}], \
+     MusicNotation -> \"SheetMusic\"], \"SVG\"]",
+  )
+  .unwrap();
+  assert!(svg.contains("class=\"clef\""), "got: {svg}");
+  let svg = interpret(
+    "ExportString[MusicPlot[MusicScore[{MusicVoice[{\"C4\"}]}, \
+     MusicNotation -> \"SheetMusic\"]], \"SVG\"]",
+  )
+  .unwrap();
+  assert!(svg.contains("class=\"clef\""), "got: {svg}");
+  let svg =
+    interpret("ExportString[MusicPlot[MusicVoice[{\"C4\", \"E4\"}]], \"SVG\"]")
+      .unwrap();
+  assert!(!svg.contains("class=\"clef\""), "got: {svg}");
+}
+
+/// A music object that sounds no note cannot be plotted. (A scale is shown
+/// in its raw form: Woxi does not canonicalize `MusicScale["CMajor"]` yet.)
+#[test]
+fn music_plot_rejects_objects_without_notes() {
+  for (input, form) in [
+    ("MusicRest[]", "-MusicRest-"),
+    ("MusicPitch[\"C4\"]", "-MusicPitch-"),
+    ("MusicScale[\"CMajor\"]", "MusicScale[CMajor]"),
+  ] {
+    clear_state();
+    let r = woxi::interpret_with_stdout(&format!("Head[MusicPlot[{input}]]"))
+      .unwrap();
+    assert_eq!(r.result, "MusicPlot", "{input}");
+    assert!(
+      r.warnings.iter().any(|w| w.contains(&format!(
+        "MusicPlot::music: Expecting a valid music object instead of {form}."
+      ))),
+      "{input}: {:?}",
+      r.warnings
+    );
+  }
+}
+
+/// The WAV byte length of a base64-encoded mono 16-bit sound.
+fn wav_samples(base64: &str) -> usize {
+  use base64::Engine;
+  let bytes = base64::engine::general_purpose::STANDARD
+    .decode(base64)
+    .expect("valid base64");
+  assert_eq!(&bytes[..4], b"RIFF");
+  (bytes.len() - 44) / 2
+}
+
+/// A score's panel carries its synthesized audio, embedded so the panel's
+/// own play/stop buttons play it: one 4/4 measure at the default 120 quarter
+/// notes per minute lasts two seconds (plus a short release).
+#[test]
+fn music_score_panel_embeds_synthesized_audio() {
+  clear_state();
+  let r = woxi::interpret_with_stdout(
+    "MusicScore[{MusicVoice[{\"C4\", \"D4\", \"E4\", \"F4\"}], \
+     MusicVoice[{\"C3\", \"E3\"}]}]",
+  )
+  .unwrap();
+  let audio = r.sound.expect("the panel's audio");
+  assert!(audio.embedded);
+  assert_eq!(audio.mime, "audio/wav");
+  let secs = wav_samples(&audio.base64) as f64 / 22050.0;
+  assert!((secs - 2.04).abs() < 0.01, "lasts {secs} s");
+  assert!(
+    r.graphics
+      .is_some_and(|g| g.contains("class=\"music-button\""))
+  );
+}
+
+/// `MusicTempo` sets the playback speed in quarter notes per minute.
+#[test]
+fn music_score_audio_follows_music_tempo() {
+  clear_state();
+  let r = woxi::interpret_with_stdout(
+    "MusicScore[{MusicVoice[{\"C4\", \"D4\"}]}, MusicTempo -> 60]",
+  )
+  .unwrap();
+  let secs = wav_samples(&r.sound.expect("audio").base64) as f64 / 22050.0;
+  assert!((secs - 4.04).abs() < 0.01, "lasts {secs} s");
+}
+
+/// A score shown as sheet music has the same play and stop buttons in front
+/// of its staff notation, playing the same embedded audio.
+#[test]
+fn music_score_sheet_music_has_playback_buttons() {
+  clear_state();
+  let r = woxi::interpret_with_stdout(
+    "MusicScore[{MusicVoice[{\"C4\", \"E4\"}]}, \
+     MusicNotation -> \"SheetMusic\"]",
+  )
+  .unwrap();
+  assert!(r.sound.expect("the score's audio").embedded);
+  let svg = r.graphics.expect("the sheet music");
+  assert_eq!(svg.matches("class=\"music-button\"").count(), 2);
+  assert_eq!(svg.matches("class=\"clef\"").count(), 1);
+  // The buttons come first, in front of the staff.
+  assert!(svg.find("music-button") < svg.find("class=\"clef\""));
 }

@@ -17,7 +17,8 @@ pub(super) fn dispatch_music_functions(
       Some(Ok(crate::functions::music_ast::music_object_q(args)))
     }
     "MusicPitch" => crate::functions::music_ast::music_pitch(args).map(Ok),
-    // MusicNote[pitch[, duration]] / MusicDuration[number] / MusicChord[name] /
+    // MusicNote[pitch[, duration]] / MusicDuration[number] /
+    // MusicChord[spec[, duration]] /
     // MusicTimeSignature[n, d] / MusicRest[[duration]] canonicalize to their
     // WL 15 association forms; other arities/argument shapes are left as
     // canonical symbolic expressions.
@@ -27,7 +28,7 @@ pub(super) fn dispatch_music_functions(
     "MusicDuration" if args.len() == 1 => {
       crate::functions::music_ast::music_duration(args).map(Ok)
     }
-    "MusicChord" if args.len() == 1 => {
+    "MusicChord" if args.len() == 1 || args.len() == 2 => {
       crate::functions::music_ast::music_chord(args).map(Ok)
     }
     "MusicTimeSignature" if args.len() == 2 => {
@@ -45,24 +46,16 @@ pub(super) fn dispatch_music_functions(
     "MusicVoice" if args.len() <= 1 => {
       crate::functions::music_ast::music_voice(args).map(Ok)
     }
-    "MusicScore" if args.len() <= 1 => {
-      crate::functions::music_ast::music_score(args).map(Ok)
-    }
+    "MusicScore" => crate::functions::music_ast::music_score(args).map(Ok),
     // MusicScale's second argument must be a property association; any other
     // second argument emits MusicScale::passc and stays unevaluated.
     "MusicScale" => crate::functions::music_ast::music_scale(args).map(Ok),
-    // MusicPlot[obj] draws the object as staff notation, returning a Graphics
-    // (which renders as the SVG in visual hosts and as `-Graphics-` in the CLI,
-    // just like Plot). An invalid MusicScale (rejected by MusicScale::passc)
-    // is not a valid music object: it emits MusicPlot::music and stays
-    // unevaluated. Other non-renderable arguments are left symbolic.
-    "MusicPlot" if args.len() == 1 => {
-      if crate::functions::music_ast::is_invalid_music_scale(&args[0]) {
-        crate::functions::music_ast::emit_music_plot_message(&args[0]);
-        return Some(Ok(unevaluated("MusicPlot", args)));
-      }
-      crate::functions::music_render::music_to_svg(&args[0])
-        .map(|svg| Ok(crate::graphics_result(svg)))
+    // MusicPlot[obj, opts…] draws the object as a piano roll (or, with the
+    // Woxi extension `MusicNotation -> "SheetMusic"`, as staff notation),
+    // returning a Graphics (which renders as the SVG in visual hosts and as
+    // `-Graphics-` in the CLI, just like Plot).
+    "MusicPlot" if !args.is_empty() => {
+      crate::functions::music_plot::music_plot(args)
     }
     _ => None,
   }
