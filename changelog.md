@@ -2,6 +2,16 @@
 
 # Unreleased
 
+- A string literal's `\|HHHHHH` escape — Wolfram's 6-hex-digit form for a
+    code point outside the Basic Multilingual Plane, needed for characters
+    like an Egyptian hieroglyph (Unicode Plane 1) that have no 4-hex-digit
+    `\:HHHH` or named `\[...]` form — was left as literal backslash-pipe-hex
+    text instead of expanding to the character, both when the interpreter
+    reads source code and when Woxi Studio reconstructs an Input cell's text
+    from a notebook's box data. Found while checking Woxi Studio against the
+    "Hieroglyphs" Wolfram Demonstration, whose digit-to-hieroglyph lookup
+    table is built entirely from `\|HHHHHH` string literals.
+
 - `ListPlot[{list1, list2, ...}, Joined -> {b1, b2, ...}]` only ever
     matched the bare `Joined -> True` identifier, so a per-series list of
     booleans fell through unnoticed and every series rendered as scattered

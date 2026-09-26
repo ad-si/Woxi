@@ -157,4 +157,8 @@ fn character_escapes_expand_to_their_characters() {
   assert_eq!(run(r#"Hold["\:ac00"]"#), r#"Hold["가"]"#);
   // An escaped backslash is a literal backslash, not the start of an escape.
   assert_eq!(run(r#"StringLength["\\:ac00"]"#), "6");
+  // `\|HHHHHH` is the 6-hex-digit escape for a code point outside the
+  // Basic Multilingual Plane (e.g. an Egyptian hieroglyph, Unicode Plane
+  // 1) — a Demonstration data literal's usual way of writing one.
+  assert_eq!(run(r#"StringLength["\|013362"]"#), "1");
 }

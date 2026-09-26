@@ -7404,6 +7404,37 @@ mod tests {
     }
   }
 
+  /// Regression for the "Hieroglyphs" Demonstration: its digit-to-symbol
+  /// lookup table is built from string literals in Wolfram's `\|HHHHHH`
+  /// form — 6 hex digits, needed for a code point outside the Basic
+  /// Multilingual Plane (an Egyptian hieroglyph lives in Unicode Plane 1,
+  /// past what the 4-hex-digit `\:HHHH` escape can reach). That escape
+  /// wasn't recognized when the interpreter expanded a saved
+  /// `SaveDefinitions -> True` initialization, so the association's values
+  /// stayed the literal 8-character escape text instead of becoming the
+  /// character. Independently written here with a made-up mapping and
+  /// character, not copied from the Demonstration.
+  #[test]
+  fn save_definitions_initialization_expands_six_hex_digit_escape() {
+    let code = "Manipulate[Dynamic[symbolTable[key]], \
+      {{key, 2}, 1, 3, 1}, SaveDefinitions -> True]";
+    let stored = "DynamicModuleBox[{$CellContext`key$$ = 2}, \
+      DynamicBox[…],\n\
+      Initialization:>($CellContext`symbolTable = <|1 -> \"\\|013362\", \
+      2 -> \"\\|0133fa\", 3 -> \"\\|013068\"|>; \
+      Typeset`initDone$$ = True)]";
+    let state = instantiate_stored_manipulate(code, stored)
+      .expect("instantiate_stored_manipulate should build a widget");
+    assert_eq!(state.error, None);
+    assert_eq!(
+      state.text_output.as_deref(),
+      Some("\u{133fa}"),
+      "the association's value must be the decoded hieroglyph character, \
+       not the literal \\|HHHHHH escape text: {:?}",
+      state.text_output
+    );
+  }
+
   /// A Manipulate whose body defines a lookup helper as its own first
   /// statement (`table[key] = {…}`) and whose control panel uses that
   /// helper to build *another* control's choice list dynamically

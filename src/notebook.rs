@@ -2496,6 +2496,24 @@ fn unescape_string_inner(s: &str, code: bool) -> String {
             result.push_str(&hex);
           }
         }
+        Some('|') => {
+          // `\|HHHHHH` is Wolfram's 6-hex-digit escape for a code point
+          // outside the Basic Multilingual Plane — the same family as
+          // `\:XXXX` above, just wide enough for e.g. an Egyptian
+          // hieroglyph (Unicode Plane 1). A Demonstration's data literals
+          // are a common source: characters with no `\[Name]` and no
+          // 4-hex-digit representation get written this way.
+          let hex: String = chars.by_ref().take(6).collect();
+          if let Ok(code) = u32::from_str_radix(&hex, 16)
+            && let Some(ch) = char::from_u32(code)
+          {
+            result.push(ch);
+          } else {
+            result.push('\\');
+            result.push('|');
+            result.push_str(&hex);
+          }
+        }
         Some('[') => {
           // Wolfram named character like \[Alpha] / \[CloseCurlyQuote].
           // Translate to Unicode when known; otherwise keep \[Name].
@@ -4873,6 +4891,18 @@ Cell["Chapter 2", "Chapter"]
     // An incomplete/invalid escape is left untouched rather than eating
     // following characters.
     assert_eq!(unescape_string("a\\.zzb"), "a\\.zzb");
+  }
+
+  #[test]
+  fn test_unescape_six_hex_digit_escape() {
+    // `\|HHHHHH` is Wolfram's 6-hex-digit escape for a code point outside
+    // the Basic Multilingual Plane, e.g. an Egyptian hieroglyph a
+    // Demonstration's data literal writes as `\|013362`.
+    assert_eq!(unescape_string("\\|013362"), "\u{13362}");
+    assert_eq!(unescape_code_string("\\<\\|0133fa\\>"), "\u{133fa}");
+    // An incomplete/invalid escape is left untouched rather than eating
+    // following characters.
+    assert_eq!(unescape_string("a\\|zzzzzzb"), "a\\|zzzzzzb");
   }
 
   #[test]

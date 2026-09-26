@@ -5527,6 +5527,29 @@ fn expand_char_escapes(input: &str) -> String {
             continue;
           }
         }
+      Some('|')
+        // `\|HHHHHH` — 6 hex digits, Wolfram's escape for a codepoint
+        // outside the Basic Multilingual Plane (e.g. an Egyptian hieroglyph
+        // in Unicode's Plane 1). `char::from_u32` on the resulting code
+        // point maps straight to Rust's own `char`, since both use the same
+        // Unicode scalar values above 0xFFFF.
+        if i + 7 < len
+          && chars[i + 2].is_ascii_hexdigit()
+          && chars[i + 3].is_ascii_hexdigit()
+          && chars[i + 4].is_ascii_hexdigit()
+          && chars[i + 5].is_ascii_hexdigit()
+          && chars[i + 6].is_ascii_hexdigit()
+          && chars[i + 7].is_ascii_hexdigit()
+        => {
+          let hex: String = chars[i + 2..=i + 7].iter().collect();
+          if let Ok(code) = u32::from_str_radix(&hex, 16)
+            && let Some(c) = char::from_u32(code)
+          {
+            result.push(c);
+            i += 8;
+            continue;
+          }
+        }
       Some(d) if ('0'..='7').contains(&d)
         // `\OOO` — 3 octal digits (must all be 0-7).
         && i + 3 < len
