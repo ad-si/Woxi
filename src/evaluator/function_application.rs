@@ -2990,6 +2990,18 @@ fn apply_transformation_function(
     });
   };
 
+  // `point` may instead be a *list of points* (each itself a coordinate
+  // list), e.g. `RotationTransform[angle, axis][{{x1,y1,z1}, {x2,y2,z2}}]`.
+  // A genuine point's own coordinates are never themselves lists, so treat
+  // this case as listable: apply the transform to each point separately.
+  if !coords.is_empty() && coords.iter().all(|c| matches!(c, Expr::List(_))) {
+    let mapped: Result<Vec<Expr>, InterpreterError> = coords
+      .iter()
+      .map(|pt| apply_transformation_function(matrix, std::slice::from_ref(pt)))
+      .collect();
+    return Ok(Expr::List(mapped?.into()));
+  }
+
   let n = coords.len();
   // Build homogeneous coordinate vector: {x1, ..., xn, 1}
   let mut hom = coords.clone();
