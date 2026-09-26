@@ -7512,6 +7512,56 @@ mod tests {
     );
   }
 
+  /// A `Manipulate` whose body builds a list of points and rotates the
+  /// whole list at once with `RotationTransform[…, axis][points]` — the
+  /// shape a Wolfram Demonstrations Project notebook's "arrange N copies
+  /// of a shape around an axis" body commonly takes (independently
+  /// written: a ring of markers around the z-axis, not any specific
+  /// notebook's geometry). Regression: applying a `TransformationFunction`
+  /// to a list of points indexed the transform's homogeneous matrix with
+  /// the *point count* instead of the coordinate dimension, so it panicked
+  /// with an out-of-bounds index whenever the list held more points than
+  /// the matrix had rows — e.g. five or more 3D points against the 4x4
+  /// matrix a 3D `RotationTransform` produces. `segments -> 6` below
+  /// yields seven points, well past that threshold.
+  #[test]
+  fn manipulate_rotation_transform_applied_to_a_list_of_points() {
+    let code = "Manipulate[\
+      Module[{pts, ring}, \
+        pts = Table[{radius, 0, k}, {k, 0, 1, 1/segments}]; \
+        ring = RotationTransform[angle, {0, 0, 1}][pts]; \
+        Graphics3D[{PointSize[0.05], Point[ring], Line[ring]}, \
+          Boxed -> False, PlotRange -> {{-2, 2}, {-2, 2}, {0, 1}}]\
+      ], \
+      {{radius, 1, \"radius\"}, 0.5, 2, 0.1}, \
+      {{angle, Pi/4, \"rotation angle\"}, 0, Pi, Pi/12}, \
+      {{segments, 6, \"segments\"}, 3, 12, 1}\
+      ]";
+    let state = instantiate_stored_manipulate(code, "")
+      .expect("the rotated-ring Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly, not panic on the point-list rotation: {:?}",
+      state.error
+    );
+    assert!(state.graphics_handle.is_some(), "the ring must render");
+
+    let render = |radius: f64, segments: i64| {
+      woxi::interpret_with_stdout(&format!(
+        "radius = {radius}; angle = Pi/4; segments = {segments};\n{}",
+        state.body
+      ))
+      .expect("the body must render")
+      .graphics
+      .expect("the body must produce a graphic")
+    };
+    let base = render(1.0, 6);
+    assert_ne!(base, render(1.5, 6), "the radius slider must matter");
+    // Nine segments makes ten points, still comfortably past the 3D
+    // transform's four matrix rows.
+    assert_ne!(base, render(1.0, 9), "the segments slider must matter");
+  }
+
   /// A picker offering more choices than fit in one row splits them across
   /// several `SetterBar`s that all share one control variable — the shape a
   /// Wolfram Demonstrations Project notebook's aberration/category picker
