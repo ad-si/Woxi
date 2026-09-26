@@ -825,12 +825,13 @@ pub fn apply_function_to_arg(
         let new_args = vec![args[0].clone(), arg.clone()];
         return evaluate_function_call_ast(name, &new_args);
       }
-      // LinearSolve[m][b] -> LinearSolve[m, b] (operator form).
+      // LinearSolve[m][b] -> LinearSolve[m, b] (operator form), and
+      // LinearSolve[m, opts][b] -> LinearSolve[m, b, opts] when the
+      // trailing arguments are options (e.g. Method -> "Cholesky") rather
+      // than the right-hand side.
       if name == "LinearSolve"
-        && args.len() == 1
-        && matches!(&args[0], Expr::List(_))
+        && let Some(new_args) = linear_solve_operator_args(args, arg)
       {
-        let new_args = vec![args[0].clone(), arg.clone()];
         return evaluate_function_call_ast(name, &new_args);
       }
       // Curried function: f[a] applied to b becomes f[a, b]
@@ -1059,6 +1060,30 @@ fn operator_form_accepts_subject(name: &str, subject: &Expr) -> bool {
     ));
   }
   accepted
+}
+
+/// Whether `func_args` is an opaque `LinearSolve[m]` / `LinearSolve[m,
+/// opts]` object (a `LinearSolveFunction`) that `applied` (the right-hand
+/// side vector) can be plugged into — and if so, the full `LinearSolve[m,
+/// b, opts]` argument list to evaluate. `opts` are trailing
+/// `Rule`/`RuleDelayed` options (e.g. `Method -> "Cholesky"`), distinct
+/// from the right-hand side, which is always a bare `List`.
+fn linear_solve_operator_args(
+  func_args: &[Expr],
+  applied: &Expr,
+) -> Option<Vec<Expr>> {
+  if func_args.is_empty() || !matches!(&func_args[0], Expr::List(_)) {
+    return None;
+  }
+  if !func_args[1..]
+    .iter()
+    .all(|a| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+  {
+    return None;
+  }
+  let mut new_args = vec![func_args[0].clone(), applied.clone()];
+  new_args.extend(func_args[1..].iter().cloned());
+  Some(new_args)
 }
 
 /// Functions whose one-argument call is an operator form that takes the
@@ -1823,19 +1848,23 @@ pub fn apply_curried_call(
       new_args.extend(args.iter().cloned());
       evaluate_function_call_ast(name, &new_args)
     }
-    // LinearSolve operator form: LinearSolve[m][b] -> LinearSolve[m, b]. (The
-    // bare LinearSolve[m] is wolframscript's opaque LinearSolveFunction, which
-    // Woxi keeps unevaluated, but the application solves the system.)
+    // LinearSolve operator form: LinearSolve[m][b] -> LinearSolve[m, b],
+    // and LinearSolve[m, opts][b] -> LinearSolve[m, b, opts] when the
+    // trailing arguments are options (e.g. Method -> "Cholesky") rather
+    // than the right-hand side. (The bare LinearSolveFunction is
+    // wolframscript's opaque object, which Woxi keeps unevaluated, but the
+    // application solves the system.)
     Expr::FunctionCall {
       name,
       args: func_args,
     } if name == "LinearSolve"
-      && func_args.len() == 1
-      && matches!(&func_args[0], Expr::List(_)) =>
+      && args.len() == 1
+      && linear_solve_operator_args(func_args, &args[0]).is_some() =>
     {
-      let mut new_args = func_args.to_vec();
-      new_args.extend(args.iter().cloned());
-      evaluate_function_call_ast(name, &new_args)
+      evaluate_function_call_ast(
+        name,
+        &linear_solve_operator_args(func_args, &args[0]).unwrap(),
+      )
     }
     // TreeFold/TreeMap operator form: T[f][tree] -> T[f, tree].
     Expr::FunctionCall {

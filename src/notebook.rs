@@ -1467,7 +1467,10 @@ fn is_soft_whitespace_box_token(part: &str) -> bool {
 /// `body, iterator` argument list (e.g. `Table[stmt; stmt; …, {i, 0, n}]`,
 /// found immediately after `Table["["`) as one factor — trapping the
 /// argument-separating comma inside the added parens and producing
-/// unparseable text.
+/// unparseable text; the same misfire wraps a whole comma-separated
+/// `Module` local-variable list, or a `With[{v = 1}, body]`'s body sitting
+/// right after the binding list's own `,`, in one invalid `(a, b, …)`
+/// group instead of leaving each item alone.
 fn has_real_predecessor(parts: &[String], i: usize) -> bool {
   for part in parts[..i].iter().rev() {
     let t = part.trim();
@@ -7263,5 +7266,43 @@ Cell[BoxData[RowBox[{"arrowHead", "=", RowBox[{"{", RowBox[{"Line", "[", RowBox[
       "3",
       "from {expr_src:?}"
     );
+  }
+
+  #[test]
+  fn module_variable_list_assignments_are_not_wrapped_together() {
+    // As part of the same scheduled QA routine, a much larger Wolfram
+    // Demonstration notebook's `Module[{var1 = val1, var2 = val2, ...}, …]`
+    // local-variable list (many `var = val` items, each a comma-separated
+    // sibling `RowBox` — the ordinary box shape for such a list) reconstructed
+    // as one invalid `(var1 = val1, var2 = val2, ...)` group: every item after
+    // the first got parenthesized *together* with everything before it,
+    // because `has_real_predecessor` treated the preceding bare `","` (an
+    // explicit separator, not implicit multiplication) as a "real" sibling
+    // needing juxtaposition protection. The resulting `(a, b)` — a comma
+    // inside plain parens, never valid Wolfram syntax outside a list or call
+    // — made the whole cell unparseable. This is a self-authored,
+    // construct-equivalent example (an invented three-variable `Module`, not
+    // the specific Demonstration's code, which is copyrighted).
+    let boxes = r#"RowBox[{"Module", "[", RowBox[{RowBox[{"{", RowBox[{RowBox[{"a", "=", "1"}], ",", RowBox[{"b", "=", "2"}], ",", "c"}], "}"}], ",", RowBox[{"a", "+", "b"}]}], "]"}]"#;
+    let expr_src =
+      box_source_to_expression(boxes).expect("box source must convert");
+    assert_eq!(
+      expr_src, "Module[{a=1,b=2,c},a+b]",
+      "each list item must stay its own factor, with no extra grouping \
+       parens around any of them, got: {expr_src:?}"
+    );
+    let result = crate::interpret(&expr_src)
+      .expect("the reconstructed source must evaluate without error");
+    assert_eq!(result, "3");
+
+    // The same bug hit a `RowBox` sibling directly inside a function-call
+    // bracket too — e.g. `With[{v = 1}, body]`'s `body`, which sits right
+    // after the argument list's own `,` — since a bare `"["`/`"{"`/`"("`
+    // opening delimiter was *also* treated as a "real" predecessor.
+    let with_boxes = r#"RowBox[{"With", "[", RowBox[{RowBox[{"{", RowBox[{"v", "=", "1"}], "}"}], ",", RowBox[{"v", "+", "1"}]}], "]"}]"#;
+    let with_src =
+      box_source_to_expression(with_boxes).expect("box source must convert");
+    assert_eq!(with_src, "With[{v=1},v+1]", "got: {with_src:?}");
+    assert_eq!(crate::interpret(&with_src).unwrap(), "2");
   }
 }

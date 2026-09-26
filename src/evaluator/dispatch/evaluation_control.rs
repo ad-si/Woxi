@@ -382,6 +382,14 @@ pub fn dispatch_evaluation_control(
     | "WhiteNoiseProcess" => {
       return Some(Ok(unevaluated(name, args)));
     }
+    // RandomFunction[proc, {t0, t1, dt}] simulates one realization of the
+    // process, returned as a TemporalData object. Only WienerProcess and
+    // OrnsteinUhlenbeckProcess are simulated (see
+    // `timeseries_ast::random_function_ast`); any other process, or an
+    // unrecognized argument shape, is left unevaluated rather than erroring.
+    "RandomFunction" => {
+      return Some(crate::functions::timeseries_ast::random_function_ast(args));
+    }
     // DiscreteMarkovProcess and its distribution wrappers are symbolic
     // objects consumed by PDF/CDF/Mean/Variance.
     "DiscreteMarkovProcess"
