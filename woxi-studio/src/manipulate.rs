@@ -833,6 +833,42 @@ impl ManipulateState {
     }
   }
 
+  /// Select `choice_label` on the `Discrete` control at `ctrl_idx` (a
+  /// SetterBar/RadioButtonBar/PopupMenu/checkbox click sends its choice's
+  /// display label). Returns `true` if the control was found and the label
+  /// matched one of its choices.
+  ///
+  /// Also clears a stale `overflow` (see its doc comment): the row's own
+  /// choice was just picked, so the control can no longer be showing a value
+  /// from outside its own domain. Without this, a control whose *initial*
+  /// value happens to fall outside its own choice list (e.g. a
+  /// `ControlType -> None` action variable defaulting to `0` with buttons
+  /// for `1`..`4`, a common Demonstrations idiom for a button-driven state
+  /// machine) would set `overflow` once at build time and then keep
+  /// `current_code`/rendering preferring that same stale value forever —
+  /// every later click on the row's own buttons would appear to do nothing.
+  pub fn select_discrete(
+    &mut self,
+    ctrl_idx: usize,
+    choice_label: &str,
+  ) -> bool {
+    let Some(ControlState::Discrete {
+      value_labels,
+      current_index,
+      overflow,
+      ..
+    }) = self.controls.get_mut(ctrl_idx)
+    else {
+      return false;
+    };
+    let Some(idx) = value_labels.iter().position(|v| v == choice_label) else {
+      return false;
+    };
+    *current_index = idx;
+    *overflow = None;
+    true
+  }
+
   /// Whether moving the control at `ctrl_idx` re-runs the body. With
   /// `TrackedSymbols :> {…}` only the listed variables do: Wolfram leaves
   /// the rendering as it is until one of them changes, so a control outside
