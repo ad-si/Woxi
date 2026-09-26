@@ -1320,14 +1320,34 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   parsed.opts.error_bars = collect_error_bars(&err_series);
 
-  // InterpolationOrder reshapes the joined curve (0 = steps, >= 2 = smooth
-  // spline); mesh dots, error bars, and point labels stay anchored to the
+  // InterpolationOrder reshapes only a joined series into a curve (0 =
+  // steps, >= 2 = smooth spline); a series marked `Joined -> False` keeps
+  // its raw data points, since it draws discrete circles rather than a
+  // curve. Mesh dots, error bars, and point labels stay anchored to the
   // original data points.
+  let interpolating = matches!(parsed.interpolation_order, Some(o) if o != 1);
+  let series_joined = |i: usize| match &parsed.opts.joined_per_series {
+    Some(flags) => {
+      crate::functions::plot::resolve_series_joined(Some(flags), i)
+    }
+    None => parsed.joined,
+  };
   let curve_transformed =
-    parsed.joined && matches!(parsed.interpolation_order, Some(o) if o != 1);
+    interpolating && (0..all_series.len()).any(series_joined);
   let draw_series = if curve_transformed {
     parsed.opts.data_points.clone_from(&all_series);
-    interpolate_series(&all_series, parsed.interpolation_order.unwrap())
+    let curves =
+      interpolate_series(&all_series, parsed.interpolation_order.unwrap());
+    all_series
+      .iter()
+      .zip(curves)
+      .enumerate()
+      .map(
+        |(i, (raw, curve))| {
+          if series_joined(i) { curve } else { raw.clone() }
+        },
+      )
+      .collect()
   } else {
     all_series
   };

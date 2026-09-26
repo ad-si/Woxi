@@ -8134,6 +8134,30 @@ mod plot3d {
       );
     }
 
+    // Regression: `InterpolationOrder` decided whether to resample *any*
+    // series from the plot-wide `Joined` flag, so combined with a
+    // per-series `Joined -> {False, True}` it resampled the unjoined
+    // series too — turning its 5 raw values into dozens of spline points,
+    // each drawn as its own circle, instead of leaving it as 5 discrete
+    // points.
+    #[test]
+    fn list_plot_joined_per_series_interpolation_order() {
+      let svg = export_svg(
+        "ListPlot[{{1, 4, 2, 3, 10}, {0, 0, 0, 0, 0}}, \
+         Joined -> {True, False}, InterpolationOrder -> 2]",
+      );
+      assert_eq!(
+        svg.matches("<circle").count(),
+        5,
+        "series 2 (Joined -> False) should keep its 5 raw data points \
+         instead of being resampled into a spline: {svg}"
+      );
+      assert!(
+        svg.contains("<polyline"),
+        "series 1 (Joined -> True) should still draw a spline curve: {svg}"
+      );
+    }
+
     /// The pixel points of the first data-series polyline (plot color).
     fn series_polyline_points(svg: &str) -> Vec<(f64, f64)> {
       let start = svg
