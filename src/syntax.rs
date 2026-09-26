@@ -4377,7 +4377,7 @@ fn parse_expression_inner(
         // !a! → Not[Factorial[a]] rather than Factorial[Not[a]].
         leading_not = true;
       }
-      Rule::Operator | Rule::ConditionOp => {
+      Rule::Operator | Rule::ConditionOp | Rule::CondSpanOp => {
         flush_pending_not(
           &mut pending_not_on_last,
           &mut terms,
@@ -4414,8 +4414,9 @@ fn parse_expression_inner(
         term_was_implicit_times.push(false);
         operators.push(";;".to_string());
       }
-      Rule::SpanNoRhsSep => {
+      Rule::SpanNoRhsSep | Rule::CondSpanNoRhs => {
         // `3 ;;`, and the gap in `1 ;;;; 3` — a `;;` with no right operand.
+        // `CondSpanNoRhs` is the same shape inside a `/.`/`/;` condition.
         flush_pending_not(
           &mut pending_not_on_last,
           &mut terms,
@@ -5061,8 +5062,16 @@ fn parse_compound_expression(pair: &Pair<Rule>) -> Expr {
   let stmts_end = src_start + src.len();
   let mut exprs: Vec<Expr> = Vec::new();
   // Count the number of top-level `;` separators between `lo` and `hi`
-  // (absolute offsets into the original input). `;;` is treated as a
-  // Span separator and counted as zero semicolons.
+  // (absolute offsets into the original input). Every bare `;` here — even
+  // one immediately adjacent to another, i.e. a literal `;;` — is a genuine
+  // CompoundExpression separator: this scans the gap *between* two already
+  // -parsed sibling children, and `Expression`/`ConditionExpr` always try to
+  // absorb a real Span (`;;`) into a child themselves first, greedily, as
+  // part of parsing that child's own term. Anything left over in the gap is
+  // exactly what they declined to absorb — e.g. `ConditionExpr`'s `CondSpanOp`
+  // guard, which won't let a `/.` RHS's `;;` swallow a statement its caller
+  // has nowhere to put (see the grammar comment there) — so it can never be
+  // a Span still waiting to be recognized.
   let count_separators = |lo: usize, hi: usize| -> usize {
     let local_lo = lo.saturating_sub(src_start);
     let local_hi = hi.saturating_sub(src_start);
@@ -5087,12 +5096,7 @@ fn parse_compound_expression(pair: &Pair<Rule>) -> Expr {
           }
         }
         b';' if depth == 0 => {
-          // Skip `;;` (Span) — it's two chars, not two separators.
-          if i + 1 < bytes.len() && bytes[i + 1] == b';' {
-            i += 1;
-          } else {
-            count += 1;
-          }
+          count += 1;
         }
         _ => {}
       }

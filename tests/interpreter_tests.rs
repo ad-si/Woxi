@@ -3739,6 +3739,82 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_replaceall_span_before_dangling_set_becomes_null_statement() {
+    // Regression from a real Wolfram Demonstration ("Flash Distillation of
+    // a Benzene, Toluene, p-Xylene Mixture"): the author's cell had a
+    // literal `;;` typo — `Tdew = Ta /. FindRoot[...];;\nK1 = ...` — right
+    // after a `/.` whose RHS ends in a bracketed call. Woxi's `;;` operator
+    // has higher precedence than `=` (matching Wolfram's own placement of
+    // Span between `=` and `+`), so a naive parse lets it reach across the
+    // `/.` and swallow the next statement's `K1 = ...` as Span's second
+    // operand — and because `ConditionExpr` (which parses a `/.` RHS) has
+    // no lower-precedence continuation to hand a trailing `=` back to, that
+    // swallowed `=` couldn't be parsed at all: the whole expression failed
+    // to parse. Real Wolfram (per the notebook's own cached box output)
+    // treats the adjacent `;;` here as two ordinary CompoundExpression
+    // separators around an omitted (`Null`) statement instead, exactly like
+    // `a ; ; b`. `Ta /. z1` must stay its own statement, `K1 = 1` its own,
+    // with a `Null` in between.
+    clear_state();
+    assert_eq!(
+      interpret("ToString[Hold[a = 1; Ta /. z1 ;; K1 = 1], InputForm]")
+        .unwrap(),
+      "Hold[a = 1; Ta /. z1; Null; K1 = 1]"
+    );
+  }
+
+  #[test]
+  fn test_replaceall_span_before_dangling_set_evaluates_every_statement() {
+    // Same shape as above but actually run (inside a `(...)`
+    // CompoundExpression, the same grammar path a Demonstration's
+    // `DynamicModule` body parses through in Woxi Studio): every statement
+    // around the accidental `;;` must still execute, in particular the one
+    // *after* it, which used to be swallowed and left completely
+    // unevaluated.
+    clear_state();
+    assert_eq!(
+      interpret("(x = 1; y = {1, 2, 3} /. w ;; z = 42; {x, y, z})").unwrap(),
+      "{1, {1, 2, 3} /. w, 42}"
+    );
+    assert_eq!(interpret("z").unwrap(), "42");
+  }
+
+  #[test]
+  fn test_replaceall_span_without_dangling_set_is_unaffected() {
+    // The fix must not touch the ordinary case a `/.` RHS Span is meant
+    // for: nothing dangerous follows the second operand, so it still reads
+    // as `ReplaceAll[Ta, Span[z1, K1]]`.
+    clear_state();
+    assert_eq!(
+      interpret("ToString[Hold[Ta /. z1 ;; K1], InputForm]").unwrap(),
+      "Hold[Ta /. Span[z1, K1]]"
+    );
+  }
+
+  #[test]
+  fn test_replaceall_trailing_span_at_end_of_condition_is_unaffected() {
+    // A `;;` with nothing after it at all (not even a dangling `=`) still
+    // reads as the usual "no right operand" Span, defaulting to `All`.
+    clear_state();
+    assert_eq!(
+      interpret("ToString[Hold[Ta /. z1 ;;], InputForm]").unwrap(),
+      "Hold[Ta /. Span[z1, All]]"
+    );
+  }
+
+  #[test]
+  fn test_part_span_range_is_unaffected_by_condition_expr_guard() {
+    // The main `Expression` operator chain's own `;;` (used by `[[...]]`
+    // ranges, unrelated to `ConditionExpr`) must keep working exactly as
+    // before.
+    clear_state();
+    assert_eq!(
+      interpret("{10, 20, 30, 40, 50}[[2 ;; 4]]").unwrap(),
+      "{20, 30, 40}"
+    );
+  }
+
+  #[test]
   fn test_protect_takes_strings_and_lists_of_symbols() {
     // `Protect`/`Unprotect` address a symbol, a string naming one, a string
     // name pattern, or a list of any of those. Only the bare symbol worked,
