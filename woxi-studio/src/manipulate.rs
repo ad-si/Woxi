@@ -1873,6 +1873,47 @@ mod tests {
   }
 
   /// Checked a randomly-sampled Wolfram Demonstrations Project notebook
+  /// ("Box-Counting Algorithm of the Hénon Map") whose dimension-estimation
+  /// display mode fits a `LinearModelFit` to log-log data and captions the
+  /// plot with the fitted slope and its uncertainty via
+  /// `lm[{"ParameterTableEntries"}][[1,2,1]]` / `[[1,2,2]]` — a
+  /// `FittedModel` property Woxi did not implement, aborting the widget
+  /// with `FittedModel: unknown property "ParameterTableEntries"` the
+  /// moment that mode was selected (see the regression tests alongside
+  /// `LinearModelFit` in `tests/interpreter_tests/linear_algebra.rs` for the
+  /// property itself). Independently written: different data, variable
+  /// names and caption text throughout.
+  #[test]
+  fn manipulate_body_captions_fit_slope_with_parameter_table_entries() {
+    let code = r#"Manipulate[
+      Module[{lm, slopetext},
+        lm = LinearModelFit[
+          Table[{k, m*k + (-1)^k*0.2}, {k, 1, 8}], k, k];
+        slopetext = Row[{"slope = ",
+          SetPrecision[lm[{"ParameterTableEntries"}][[1, 2, 1]], 3],
+          " +/- ",
+          SetPrecision[lm[{"ParameterTableEntries"}][[1, 2, 2]], 3]}];
+        Graphics[Text[slopetext]]
+      ],
+      {{m, 2}, 1, 5}
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = ManipulateState::from_expr(&expr).expect("state should build");
+
+    assert_eq!(
+      state.error, None,
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the captioned graphic should render with the widget's default \
+       control values"
+    );
+  }
+
+  /// Checked a randomly-sampled Wolfram Demonstrations Project notebook
   /// whose body is `Module[{…}, Text@Column[{RegionPlot[…], Row[{…,
   /// var = Round[NIntegrate[Boole[region], {…}, {…}]], …}]}]]` driven by
   /// two `Control@{{var, default, "label"}, lo, hi, step, ImageSize ->
