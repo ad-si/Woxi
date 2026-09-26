@@ -1144,19 +1144,46 @@ fn music_voice_plus_interval_transposes_every_pitch() {
 
 // ─── MusicScore rendering ────────────────────────────────────────────────────
 
-/// A `MusicScore` overlays its voices on one shared staff: the voices sound
-/// simultaneously, so a note from each at the same position stacks into a
-/// chord. Here a voice and its transposition up a fourth print as three
-/// two-note chords on a single staff.
+/// A `MusicScore` with other than two voices overlays them on one shared
+/// staff: the voices sound simultaneously, so a note from each at the same
+/// position stacks into a chord. Here a voice and its transpositions up a
+/// fourth and a fifth print as three three-note chords on a single staff.
 #[test]
 fn music_score_overlays_voices_on_one_staff() {
   let svg = interpret(
     "voice = MusicVoice[{MusicNote[\"E\"], MusicNote[\"C\"], MusicNote[\"D\"]}]; \
-     ExportString[MusicScore[{voice, voice + MusicInterval[5]}], \"SVG\"]",
+     ExportString[MusicScore[{voice, voice + MusicInterval[5], \
+     voice + MusicInterval[7]}], \"SVG\"]",
   )
   .unwrap();
   assert!(svg.starts_with("<svg"), "expected an SVG, got: {svg}");
-  // One shared staff (one clef), with both voices' heads: 3 positions × 2 = 6.
+  // One shared staff (one clef), with every voice's heads: 3 positions × 3.
   assert_eq!(svg.matches("class=\"clef\"").count(), 1);
-  assert_eq!(svg.matches("class=\"notehead\"").count(), 6);
+  assert_eq!(svg.matches("class=\"notehead\"").count(), 9);
+  assert!(!svg.contains("class=\"brace\""));
+}
+
+/// A two-voice `MusicScore` is set as a grand staff: the first voice on a
+/// treble staff, the second on a bass staff, joined by a brace.
+#[test]
+fn music_score_with_two_voices_renders_a_grand_staff() {
+  let svg = interpret(
+    "trebleBar1 = MusicMeasure[{MusicNote[\"C\"], MusicNote[\"D\"], \
+     MusicNote[\"E\"], MusicNote[\"F\"]}]; \
+     trebleBar2 = MusicMeasure[{MusicNote[\"G\"], MusicNote[\"A\"], \
+     MusicNote[\"B\"], MusicRest[1/4]}]; \
+     trebleVoice = MusicVoice[{trebleBar1, trebleBar2}]; \
+     bassVoice = MusicVoice[{trebleBar1 - MusicInterval[12], \
+     trebleBar2 - MusicInterval[12]}]; \
+     ExportString[MusicScore[{trebleVoice, bassVoice}], \"SVG\"]",
+  )
+  .unwrap();
+  assert!(svg.starts_with("<svg"), "expected an SVG, got: {svg}");
+  // Two staves (a treble and a bass clef, two meters), braced together.
+  assert_eq!(svg.matches("class=\"clef\"").count(), 2);
+  assert_eq!(svg.matches("class=\"brace\"").count(), 1);
+  assert_eq!(svg.matches("class=\"timesig\"").count(), 4);
+  // Every note and rest of both voices is drawn on its own staff.
+  assert_eq!(svg.matches("class=\"notehead\"").count(), 14);
+  assert_eq!(svg.matches("class=\"rest\"").count(), 2);
 }
