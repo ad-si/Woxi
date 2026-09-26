@@ -264,11 +264,70 @@ function restoreOutput() {
 
 restoreOutput()
 
+// Play/pause and stop buttons drawn inside a graphic (a MusicScore panel).
+// Handled by delegation on #outputs so the buttons keep working after the
+// outputs are restored from localStorage. At most one such graphic plays at
+// a time; while it plays, its play button shows the pause glyph.
+let embedded = null // { box, audio }
+
+function showPauseGlyph(box, playing) {
+  // Graphics rendered before the pause glyph existed (e.g. restored from
+  // localStorage) keep their play triangle rather than showing no icon.
+  if (!box.querySelector(".music-pause")) return
+  box.querySelectorAll(".music-play").forEach((el) => {
+    if (playing) el.setAttribute("display", "none")
+    else el.removeAttribute("display")
+  })
+  box.querySelectorAll(".music-pause").forEach((el) => {
+    if (playing) el.removeAttribute("display")
+    else el.setAttribute("display", "none")
+  })
+}
+
+function stopEmbeddedAudio() {
+  if (!embedded) return
+  embedded.audio.pause()
+  showPauseGlyph(embedded.box, false)
+  embedded = null
+}
+
+document.getElementById("outputs").addEventListener("click", (event) => {
+  const button = event.target.closest(".music-button")
+  const box = button && button.closest("[data-audio]")
+  if (!box) return
+  const ownsPlayback = embedded && embedded.box === box
+  if (button.dataset.action !== "play") {
+    if (ownsPlayback) stopEmbeddedAudio()
+    return
+  }
+  if (ownsPlayback) {
+    // Toggle pause/resume of this graphic's audio.
+    if (embedded.audio.paused) embedded.audio.play()
+    else embedded.audio.pause()
+    showPauseGlyph(box, !embedded.audio.paused)
+    return
+  }
+  stopEmbeddedAudio()
+  const audio = new Audio(box.dataset.audio)
+  embedded = { box, audio }
+  audio.addEventListener("ended", () => {
+    if (embedded && embedded.audio === audio) stopEmbeddedAudio()
+  })
+  audio.play()
+  showPauseGlyph(box, true)
+})
+
 function appendOutputItem(outputsEl, item) {
   if (item.type === "graphics") {
     const div = document.createElement("div")
     div.className = "output-box graphics-box"
     div.innerHTML = item.svg
+    // Audio that plays through the graphic's own buttons (a MusicScore
+    // panel); see the delegated `.music-button` click handler below.
+    if (item.audio) {
+      div.dataset.audio =
+        "data:" + (item.mime || "audio/wav") + ";base64," + item.audio
+    }
     outputsEl.appendChild(div)
   } else if (item.type === "sound") {
     const div = document.createElement("div")

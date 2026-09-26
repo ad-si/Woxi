@@ -1249,6 +1249,10 @@ function main() {
     // fuzzer must not chase it (this expression was flip-flopped twice before).
     // Woxi returns the cold-kernel value, matching the unit test.
     "Attributes[ParallelDo]",
+    // `MusicNotation` is a Woxi extension of MusicScore (not yet in the
+    // Wolfram Language, which rejects it with MusicScore::optx).
+    'Last[Normal[First[MusicScore[{MusicVoice[{"C4"}]}, {MusicNotation -> "SheetMusic"}]]]]',
+    "Options[MusicScore]",
     // Same lazy-autoload non-determinism as Attributes[ParallelDo].
     "Attributes[ParallelSelect]",
     "Attributes[ParallelCases]",

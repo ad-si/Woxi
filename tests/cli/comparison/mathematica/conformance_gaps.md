@@ -2457,6 +2457,34 @@ woxi eval 'ListCorrelate[{x, y}, {a, b, c}, 1, p, Times, Plus, 1]'
 # ListCorrelate::argb: called with 7 arguments; between 2 and 6 arguments are expected.
 ```
 
+### `MusicScale` of a name stays raw
+
+wolframscript resolves a named scale to its association form; Woxi leaves it
+as written, so it also prints that way in messages:
+
+```sh
+wolframscript -code 'InputForm[MusicScale["CMajor"]]'
+# MusicScale[<|Name -> Major, Tonic -> MusicPitch[<|Key -> C, Accidental -> 0|>]|>]
+woxi eval 'InputForm[MusicScale["CMajor"]]'
+# MusicScale["CMajor"]
+```
+
+`MusicPlot[MusicScale["CMajor"]]` therefore reports
+`… instead of MusicScale[CMajor].` where wolframscript writes
+`… instead of -MusicScale-.`
+
+### `MusicNotation` is a Woxi extension
+
+`MusicScore` and `MusicPlot` accept `MusicNotation -> "PianoRoll" |
+"SheetMusic"` (default `Automatic`, the piano roll), which is not yet part of
+the Wolfram Language. wolframscript answers it with `MusicScore::optx`, and
+`Options[MusicScore]` lists it only in Woxi:
+
+```sh
+wolframscript -code 'Options[MusicScore]'   # {MusicTempo -> Automatic}
+woxi eval 'Options[MusicScore]'             # {MusicTempo -> Automatic, MusicNotation -> Automatic}
+```
+
 ### Total groups negative levels globally rather than per parent
 
 ```sh
@@ -3123,6 +3151,15 @@ from x = 0 with only a right-hand margin, so the tick label at the range
 minimum is centred on x = 0 and half of it falls outside the canvas; the
 topmost y label is clipped the same way. Wolfram insets the area far enough for
 both. This is the `Graphics` renderer, not the one `Plot` uses.
+
+### `Graphics` ignores `AxesOrigin` and pads a `Full` range less
+
+The `Graphics` renderer draws the x axis at `y = 0` when that is in range and
+at the bottom edge otherwise, whatever `AxesOrigin` says, and pads a
+`PlotRange -> Full` side by 4 %, where Wolfram extends it to include the axes
+origin and pads more. In a `MusicPlot` this drops the pitch label just above
+the highest note (the `C5` of `MusicPlot[MusicVoice[{"C4", "B4"}]]`), which
+Wolfram shows.
 
 ### Tick step from the padded range
 

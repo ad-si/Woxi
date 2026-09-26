@@ -460,8 +460,15 @@ fn collect(
         }
         if !heads.is_empty() {
           heads.sort_by_key(|h| h.dn);
-          let (dur, len) =
-            args.get(1).map_or((Dur::Quarter, 0.25), parse_length);
+          // A canonical chord stores its duration under `"Duration"`; the raw
+          // form carries it as the second argument.
+          let duration = match &args[0] {
+            Expr::Association(pairs) => pairs.iter().find_map(|(k, v)| {
+              matches!(k, Expr::String(s) if s == "Duration").then_some(v)
+            }),
+            _ => args.get(1),
+          };
+          let (dur, len) = duration.map_or((Dur::Quarter, 0.25), parse_length);
           out.push(Glyph::Note { heads, dur, len });
         }
         false
@@ -1046,8 +1053,28 @@ fn draw_brace(cv: &mut Canvas, right: f64, top: f64, bottom: f64) {
 }
 
 /// Render a computational-music object to a standalone SVG, or `None` when the
-/// expression is not a music object that carries notation.
+/// expression is not a music object that carries notation. A `MusicScore` is
+/// displayed as its summary panel with a piano roll, or — with
+/// `MusicNotation -> "SheetMusic"` — as staff notation; either way with play
+/// and stop buttons in front.
 pub fn music_to_svg(expr: &Expr) -> Option<String> {
+  if let Expr::FunctionCall { name, .. } = expr
+    && name == "MusicScore"
+  {
+    return if crate::functions::music_plot::stored_notation(expr)
+      == Some(crate::functions::music_plot::Notation::SheetMusic)
+    {
+      crate::functions::music_plot::score_sheet_music_svg(expr)
+    } else {
+      crate::functions::music_plot::score_panel_svg(expr)
+    };
+  }
+  music_staff_svg(expr)
+}
+
+/// Render a computational-music object as staff notation (a `MusicScore` as a
+/// grand staff or a shared staff), or `None` when it carries no notation.
+pub fn music_staff_svg(expr: &Expr) -> Option<String> {
   if let Expr::FunctionCall { name, args } = expr
     && name == "MusicScore"
   {
@@ -1370,7 +1397,7 @@ fn music_score_to_svg(args: &[Expr]) -> Option<String> {
 
 /// The voices of a `MusicScore` — its single list argument, its direct
 /// arguments, or the `"VoiceList"` of a resolved `MusicScore[<|…|>]`.
-fn score_voices(args: &[Expr]) -> Option<Vec<Expr>> {
+pub(crate) fn score_voices(args: &[Expr]) -> Option<Vec<Expr>> {
   match args.first() {
     Some(Expr::Association(pairs)) => {
       pairs.iter().find_map(|(k, v)| match (k, v) {
@@ -1383,6 +1410,70 @@ fn score_voices(args: &[Expr]) -> Option<Vec<Expr>> {
     Some(Expr::List(items)) if args.len() == 1 => Some(items.to_vec()),
     _ => Some(args.to_vec()),
   }
+}
+
+/// A note, chord or rest of a voice placed in time: it sounds from `onset` for
+/// `len` (both in whole notes). `midis` holds the MIDI numbers of its tones —
+/// empty for a rest.
+pub(crate) struct TimedEvent {
+  pub onset: f64,
+  pub len: f64,
+  pub midis: Vec<i128>,
+}
+
+/// One voice of a music object laid out in time: its events, the positions
+/// (in whole notes) of its barlines, and its first time signature.
+pub(crate) struct VoiceTimeline {
+  pub events: Vec<TimedEvent>,
+  pub barlines: Vec<f64>,
+  pub time_signature: Option<(u32, u32)>,
+}
+
+impl Head {
+  /// The MIDI number of the head (middle C, C4, is 60).
+  fn midi(self) -> i128 {
+    const BASE: [i128; 7] = [0, 2, 4, 5, 7, 9, 11];
+    let octave = self.dn.div_euclid(7) as i128;
+    (octave + 1) * 12
+      + BASE[self.dn.rem_euclid(7) as usize]
+      + self.accidental as i128
+  }
+}
+
+/// Lay out one voice (a `MusicVoice`, `MusicMeasure`, or any other music
+/// object [`collect`] understands) in time.
+pub(crate) fn voice_timeline(voice: &Expr) -> VoiceTimeline {
+  let mut glyphs = Vec::new();
+  let mut ts = None;
+  collect(voice, &mut glyphs, &mut ts);
+  let mut timeline = VoiceTimeline {
+    events: Vec::new(),
+    barlines: Vec::new(),
+    time_signature: None,
+  };
+  let mut onset = 0.0;
+  for glyph in glyphs {
+    match glyph {
+      Glyph::Note { heads, len, .. } => {
+        let midis = heads.iter().map(|h| h.midi()).collect();
+        timeline.events.push(TimedEvent { onset, len, midis });
+        onset += len;
+      }
+      Glyph::Rest { len, .. } => {
+        timeline.events.push(TimedEvent {
+          onset,
+          len,
+          midis: Vec::new(),
+        });
+        onset += len;
+      }
+      Glyph::Barline => timeline.barlines.push(onset),
+      Glyph::TimeSig { num, den } => {
+        timeline.time_signature.get_or_insert((num, den));
+      }
+    }
+  }
+  timeline
 }
 
 /// Overlay several voices' glyph streams onto one staff. The voices' events at
@@ -1414,7 +1505,7 @@ fn merge_voice_glyphs(streams: &[Vec<Glyph>]) -> Vec<Glyph> {
 
 /// Extract a numeric attribute (e.g. `width`, `height`) from the opening tag
 /// of an SVG string produced by [`music_to_svg`].
-fn svg_attr(svg: &str, attr: &str) -> Option<f64> {
+pub(crate) fn svg_attr(svg: &str, attr: &str) -> Option<f64> {
   let key = format!("{attr}=\"");
   let start = svg.find(&key)? + key.len();
   let rest = &svg[start..];
@@ -1425,7 +1516,7 @@ fn svg_attr(svg: &str, attr: &str) -> Option<f64> {
 /// Turn each `<svg …>…</svg>` produced by [`music_to_svg`] into a nested SVG
 /// element positioned at `(x, y)` by injecting the coordinates into its
 /// opening tag. The inner `width`/`height`/`viewBox` keep it at natural size.
-fn nest_svg_at(svg: &str, x: f64, y: f64) -> String {
+pub(crate) fn nest_svg_at(svg: &str, x: f64, y: f64) -> String {
   svg.replacen("<svg ", &format!("<svg x=\"{x:.2}\" y=\"{y:.2}\" "), 1)
 }
 

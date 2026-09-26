@@ -833,6 +833,42 @@ impl ManipulateState {
     }
   }
 
+  /// Select `choice_label` on the `Discrete` control at `ctrl_idx` (a
+  /// SetterBar/RadioButtonBar/PopupMenu/checkbox click sends its choice's
+  /// display label). Returns `true` if the control was found and the label
+  /// matched one of its choices.
+  ///
+  /// Also clears a stale `overflow` (see its doc comment): the row's own
+  /// choice was just picked, so the control can no longer be showing a value
+  /// from outside its own domain. Without this, a control whose *initial*
+  /// value happens to fall outside its own choice list (e.g. a
+  /// `ControlType -> None` action variable defaulting to `0` with buttons
+  /// for `1`..`4`, a common Demonstrations idiom for a button-driven state
+  /// machine) would set `overflow` once at build time and then keep
+  /// `current_code`/rendering preferring that same stale value forever —
+  /// every later click on the row's own buttons would appear to do nothing.
+  pub fn select_discrete(
+    &mut self,
+    ctrl_idx: usize,
+    choice_label: &str,
+  ) -> bool {
+    let Some(ControlState::Discrete {
+      value_labels,
+      current_index,
+      overflow,
+      ..
+    }) = self.controls.get_mut(ctrl_idx)
+    else {
+      return false;
+    };
+    let Some(idx) = value_labels.iter().position(|v| v == choice_label) else {
+      return false;
+    };
+    *current_index = idx;
+    *overflow = None;
+    true
+  }
+
   /// Whether moving the control at `ctrl_idx` re-runs the body. With
   /// `TrackedSymbols :> {…}` only the listed variables do: Wolfram leaves
   /// the rendering as it is until one of them changes, so a control outside
@@ -1870,6 +1906,47 @@ mod tests {
 
     let names: Vec<&str> = state.controls.iter().map(|c| c.name()).collect();
     assert_eq!(names, ["tmax", "amp", "twoD"]);
+  }
+
+  /// Checked a randomly-sampled Wolfram Demonstrations Project notebook
+  /// ("Box-Counting Algorithm of the Hénon Map") whose dimension-estimation
+  /// display mode fits a `LinearModelFit` to log-log data and captions the
+  /// plot with the fitted slope and its uncertainty via
+  /// `lm[{"ParameterTableEntries"}][[1,2,1]]` / `[[1,2,2]]` — a
+  /// `FittedModel` property Woxi did not implement, aborting the widget
+  /// with `FittedModel: unknown property "ParameterTableEntries"` the
+  /// moment that mode was selected (see the regression tests alongside
+  /// `LinearModelFit` in `tests/interpreter_tests/linear_algebra.rs` for the
+  /// property itself). Independently written: different data, variable
+  /// names and caption text throughout.
+  #[test]
+  fn manipulate_body_captions_fit_slope_with_parameter_table_entries() {
+    let code = r#"Manipulate[
+      Module[{lm, slopetext},
+        lm = LinearModelFit[
+          Table[{k, m*k + (-1)^k*0.2}, {k, 1, 8}], k, k];
+        slopetext = Row[{"slope = ",
+          SetPrecision[lm[{"ParameterTableEntries"}][[1, 2, 1]], 3],
+          " +/- ",
+          SetPrecision[lm[{"ParameterTableEntries"}][[1, 2, 2]], 3]}];
+        Graphics[Text[slopetext]]
+      ],
+      {{m, 2}, 1, 5}
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = ManipulateState::from_expr(&expr).expect("state should build");
+
+    assert_eq!(
+      state.error, None,
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the captioned graphic should render with the widget's default \
+       control values"
+    );
   }
 
   /// Checked a randomly-sampled Wolfram Demonstrations Project notebook

@@ -2347,6 +2347,34 @@ mod linear_solve {
     );
   }
 
+  // Regression: `LinearSolve[m, opts]` (a `Method` option rather than a
+  // right-hand side) is also a `LinearSolveFunction` — applying it must
+  // reach `LinearSolve[m, b, opts]`, not stay curried. Found while checking
+  // whether Woxi Studio can open a randomly sampled Wolfram Demonstration
+  // notebook: its Manipulate factored a repeated solve as `Aoperator =
+  // LinearSolve[m, Method -> "Cholesky"]`, then called `Aoperator[b1]` and
+  // `Aoperator[b2]` for two different right-hand sides. Woxi always solves
+  // by Gaussian elimination regardless of `Method`, so the option is simply
+  // carried through and dropped.
+  #[test]
+  fn solve_operator_form_with_options() {
+    assert_eq!(
+      interpret(
+        "op = LinearSolve[{{1, 2}, {3, 4}}, Method -> \"Cholesky\"]; \
+         {op[{5, 6}], op[{1, 0}]}"
+      )
+      .unwrap(),
+      "{{-4, 9/2}, {-2, 3/2}}"
+    );
+    // The un-applied object itself stays a symbolic LinearSolveFunction
+    // stand-in — the options don't make it try (and fail) to solve.
+    assert_eq!(
+      interpret("LinearSolve[{{1, 2}, {3, 4}}, Method -> \"Cholesky\"]")
+        .unwrap(),
+      "LinearSolve[{{1, 2}, {3, 4}}, Method -> Cholesky]"
+    );
+  }
+
   #[test]
   fn solve_diagonal() {
     // Diagonal matrix
@@ -3875,6 +3903,103 @@ mod linear_model_fit {
         .unwrap();
     let adjusted: f64 = adjusted.parse().unwrap();
     assert!((parts[1] - adjusted).abs() < 1e-10);
+  }
+
+  // Regression test: `lm["ParameterTableEntries"]` (and its constituent
+  // "ParameterErrors"/"ParameterTStatistics"/"ParameterPValues" properties)
+  // used to be unimplemented, aborting any Manipulate body that reports a
+  // fit's uncertainty this way (e.g. a slope ± standard-error caption) with
+  // `FittedModel: unknown property "ParameterTableEntries"`. Expected values
+  // cross-checked against an independent OLS computation (`numpy.linalg.lstsq`
+  // + `scipy.stats.t.cdf`) on the same `{{0,1},{1,0},{3,2},{5,4}}` fixture
+  // used throughout this file.
+  #[test]
+  fn parameter_errors() {
+    let result = interpret(
+      "lm = LinearModelFit[{{0, 1}, {1, 0}, {3, 2}, {5, 4}}, x, x]; lm[\"ParameterErrors\"]",
+    )
+    .unwrap();
+    let parts: Vec<f64> = result
+      .trim_start_matches('{')
+      .trim_end_matches('}')
+      .split(',')
+      .map(|s| s.trim().parse().unwrap())
+      .collect();
+    assert!((parts[0] - 0.6947085265057354).abs() < 1e-10);
+    assert!((parts[1] - 0.23485434678900033).abs() < 1e-10);
+  }
+
+  #[test]
+  fn parameter_t_statistics() {
+    let result = interpret(
+      "lm = LinearModelFit[{{0, 1}, {1, 0}, {3, 2}, {5, 4}}, x, x]; lm[\"ParameterTStatistics\"]",
+    )
+    .unwrap();
+    let parts: Vec<f64> = result
+      .trim_start_matches('{')
+      .trim_end_matches('}')
+      .split(',')
+      .map(|s| s.trim().parse().unwrap())
+      .collect();
+    assert!((parts[0] - 0.2683725200608469).abs() < 1e-10);
+    assert!((parts[1] - 2.9589201295968315).abs() < 1e-10);
+  }
+
+  #[test]
+  fn parameter_p_values() {
+    let result = interpret(
+      "lm = LinearModelFit[{{0, 1}, {1, 0}, {3, 2}, {5, 4}}, x, x]; lm[\"ParameterPValues\"]",
+    )
+    .unwrap();
+    let parts: Vec<f64> = result
+      .trim_start_matches('{')
+      .trim_end_matches('}')
+      .split(',')
+      .map(|s| s.trim().parse().unwrap())
+      .collect();
+    assert!((parts[0] - 0.8135593220338979).abs() < 1e-10);
+    assert!((parts[1] - 0.09775636132189414).abs() < 1e-10);
+  }
+
+  #[test]
+  fn parameter_table_entries() {
+    // Each row is {Estimate, StandardError, TStatistic, PValue} for one
+    // basis function (the constant intercept, then `x`), matching
+    // `BestFitParameters`' order and values.
+    let result = interpret(
+      "lm = LinearModelFit[{{0, 1}, {1, 0}, {3, 2}, {5, 4}}, x, x]; lm[\"ParameterTableEntries\"]",
+    )
+    .unwrap();
+    assert!(result.contains("0.18644067796610186"), "got: {result}");
+    assert!(result.contains("0.6949152542372881"), "got: {result}");
+    assert!(result.contains("0.8135593220338979"), "got: {result}");
+    assert!(result.contains("0.09775636132189414"), "got: {result}");
+  }
+
+  #[test]
+  fn multiple_properties_at_once_includes_parameter_table_entries() {
+    // `fit[{prop1, prop2, ...}]` must resolve the new property the same way
+    // it resolves the long-standing ones.
+    let result = interpret(
+      "lm = LinearModelFit[{{0, 1}, {1, 0}, {3, 2}, {5, 4}}, x, x]; \
+       lm[{\"RSquared\", \"ParameterTableEntries\"}][[2, 2, 2]]",
+    )
+    .unwrap();
+    let val: f64 = result.parse().unwrap();
+    assert!((val - 0.23485434678900033).abs() < 1e-10);
+  }
+
+  // A degenerate fit (as many data points as parameters, zero degrees of
+  // freedom) has no defined standard error: the property must stay absent
+  // rather than divide by zero or panic, same as before this statistic
+  // existed.
+  #[test]
+  fn parameter_table_entries_absent_with_zero_degrees_of_freedom() {
+    let err = interpret(
+      "lm = LinearModelFit[{{0, 1}, {1, 0}}, x, x]; lm[\"ParameterTableEntries\"]",
+    )
+    .unwrap_err();
+    assert!(err.to_string().contains("unknown property"), "got: {err}");
   }
 
   #[test]

@@ -1138,9 +1138,34 @@ fn resolve_pitch_object(spec: &Expr) -> Option<Expr> {
   {
     return Some(spec.clone());
   }
+  // A MIDI number fixes no spelling, so it stays `<|MIDINumber -> n|>`.
+  if let Expr::Integer(midi) = spec {
+    return Some(midi_number_pitch(*midi));
+  }
   let name = resolve_pitch_name(spec)?;
   let (letter, accidental, octave) = parse_pitch_spelled(&name)?;
   Some(note_pitch_object(letter, accidental, octave))
+}
+
+/// The canonical pitch object of one tone of a pitch-list chord: the tone's
+/// own canonical pitch (see [`resolve_pitch_object`]), except that an
+/// octaveless spelled tone is placed in the default register 4 — without the
+/// `"Name"` an explicitly-octaved pitch carries. `MusicChord[{"C4", "Eb"}]`
+/// holds `<|Accidental -> 0, Octave -> 4, Key -> C, Name -> C|>` and
+/// `<|Accidental -> -1, Octave -> 4, Key -> E|>`.
+fn chord_tone_object(spec: &Expr) -> Option<Expr> {
+  let tone = resolve_pitch_object(spec)?;
+  if let Expr::FunctionCall { args, .. } = &tone
+    && let Some(Expr::Association(pairs)) = args.first()
+    && assoc_get(pairs, "Key").is_some()
+    && assoc_get(pairs, "Octave").is_none()
+  {
+    let mut pairs = pairs.clone();
+    let at = usize::from(assoc_get(&pairs, "Accidental").is_some());
+    pairs.insert(at, (Expr::String("Octave".to_string()), Expr::Integer(4)));
+    return Some(call1("MusicPitch", Expr::Association(pairs)));
+  }
+  Some(tone)
 }
 
 /// The rhythmic value of one of the named note durations, or `None` for an
@@ -1469,24 +1494,29 @@ pub fn music_chord(args: &[Expr]) -> Option<Expr> {
         ],
       ))
     }
-    // An explicit pitch list: spell every tone as its full pitch object.
+    // An explicit pitch list: every tone becomes its canonical pitch object.
     [Expr::List(items)] => {
-      let tones: Option<Vec<Expr>> = items
-        .iter()
-        .map(|p| {
-          if !matches!(p, Expr::FunctionCall { name, .. } if name == "MusicPitch")
-          {
-            return None;
-          }
-          let name = resolve_pitch_name(p)?;
-          let (letter, accidental, octave) = parse_pitch_spelled(&name)?;
-          Some(pitch_object(letter, accidental, Some(octave.unwrap_or(4))))
-        })
-        .collect();
+      let tones: Vec<Expr> =
+        items.iter().map(chord_tone_object).collect::<Option<_>>()?;
       Some(music_assoc(
         "MusicChord",
-        vec![("PitchList", Expr::List(tones?.into()))],
+        vec![("PitchList", Expr::List(tones.into()))],
       ))
+    }
+    // `MusicChord[spec, duration]`: the chord of `spec`, its `"Duration"`
+    // stored first.
+    [spec, duration] => {
+      let duration = resolve_duration_object(duration)?;
+      let chord = music_chord(std::slice::from_ref(spec))?;
+      let Expr::FunctionCall { args, .. } = &chord else {
+        return None;
+      };
+      let Some(Expr::Association(pairs)) = args.first() else {
+        return None; // an invalid chord name stays unevaluated
+      };
+      let mut pairs = pairs.clone();
+      pairs.insert(0, (Expr::String("Duration".to_string()), duration));
+      Some(call1("MusicChord", Expr::Association(pairs)))
     }
     _ => None,
   }
@@ -1891,11 +1921,13 @@ fn time_signature_parts(expr: &Expr) -> Option<(i128, i128)> {
   Some((numer, denom))
 }
 
-/// One event of a measure: a note (with its pitch object) or a rest, together
-/// with its explicit rhythmic value if one was given (`None` for the default
-/// one-beat duration).
+/// One event of a measure: a note (with its pitch object), a chord (with its
+/// association entries other than `"Duration"`) or a rest, together with its
+/// explicit rhythmic value if one was given (`None` for the default one-beat
+/// duration).
 enum MeasureEvent {
   Note(Expr, Option<Rat>),
+  Chord(Vec<(Expr, Expr)>, Option<Rat>),
   Rest(Option<Rat>),
 }
 
@@ -1903,7 +1935,17 @@ impl MeasureEvent {
   /// Whether the event carries an explicit (rigid) duration. Default events are
   /// elastic: a trailing default note stretches to fill the measure.
   fn is_explicit(&self) -> bool {
-    matches!(self, Self::Note(_, Some(_)) | Self::Rest(Some(_)))
+    matches!(
+      self,
+      Self::Note(_, Some(_)) | Self::Chord(_, Some(_)) | Self::Rest(Some(_))
+    )
+  }
+
+  /// The explicit rhythmic value, if one was given.
+  fn explicit(&self) -> Option<Rat> {
+    match self {
+      Self::Note(_, v) | Self::Chord(_, v) | Self::Rest(v) => *v,
+    }
   }
 }
 
@@ -1931,6 +1973,15 @@ fn parse_measure_event(expr: &Expr) -> Option<MeasureEvent> {
       }
       "MusicRest" => {
         return Some(MeasureEvent::Rest(explicit_duration(pairs)?));
+      }
+      "MusicChord" => {
+        let explicit = explicit_duration(pairs)?;
+        let rest = pairs
+          .iter()
+          .filter(|(k, _)| !matches!(k, Expr::String(s) if s == "Duration"))
+          .cloned()
+          .collect();
+        return Some(MeasureEvent::Chord(rest, explicit));
       }
       _ => return None,
     }
@@ -1973,6 +2024,15 @@ fn annotate_event(
         ),
       ],
     ),
+    // A chord keeps its tones and appends its beat-annotated duration.
+    MeasureEvent::Chord(pairs, explicit) => {
+      let mut pairs = pairs.clone();
+      pairs.push((
+        Expr::String("Duration".to_string()),
+        beat_annotated_duration(*explicit, beat_duration, beats),
+      ));
+      call1("MusicChord", Expr::Association(pairs))
+    }
     MeasureEvent::Rest(explicit) => music_assoc(
       "MusicRest",
       vec![(
@@ -2068,11 +2128,9 @@ pub fn music_measure(args: &[Expr]) -> Option<Expr> {
   // beats; a default event is one beat.
   let nominal: Vec<Rat> = events
     .iter()
-    .map(|e| match e {
-      MeasureEvent::Note(_, Some(v)) | MeasureEvent::Rest(Some(v)) => {
-        rat_mul(*v, (beat_duration.1, beat_duration.0))
-      }
-      _ => (1, 1),
+    .map(|e| match e.explicit() {
+      Some(v) => rat_mul(v, (beat_duration.1, beat_duration.0)),
+      None => (1, 1),
     })
     .collect();
   let total = nominal.iter().fold((0, 1), |acc, &b| rat_add(acc, b));
@@ -2197,34 +2255,87 @@ pub fn music_voice(args: &[Expr]) -> Option<Expr> {
   ))
 }
 
-/// `MusicScore[{voices…}]` — resolve to the association form
-/// `MusicScore[<|"VoiceList" -> {…}, "TimeSignature" -> …|>]`, keeping each
-/// already-resolved voice and taking its `"TimeSignature"` from the first
-/// voice. An empty score resolves to `MusicScore[<|"VoiceList" -> {}|>]`. Any
-/// non-voice element leaves the score symbolic (`None`).
+/// The options `MusicScore` accepts. `MusicTempo` is the Wolfram Language's;
+/// `MusicNotation` is a Woxi extension choosing how the score is displayed:
+/// `Automatic`/`"PianoRoll"` (the default summary panel with a piano roll) or
+/// `"SheetMusic"` (staff notation).
+pub const MUSIC_SCORE_OPTIONS: [&str; 2] = ["MusicTempo", "MusicNotation"];
+
+/// Flatten a trailing option sequence (rules, or lists of rules) into
+/// `(name, value)` pairs. Returns `None` if any element is not a rule with a
+/// symbol (or string) name.
+pub fn music_option_rules(opts: &[Expr]) -> Option<Vec<(String, Expr)>> {
+  let mut out = Vec::new();
+  for opt in opts {
+    match opt {
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } => match pattern.as_ref() {
+        Expr::Identifier(n) | Expr::String(n) => {
+          out.push((n.clone(), replacement.as_ref().clone()));
+        }
+        _ => return None,
+      },
+      Expr::List(items) => out.extend(music_option_rules(items)?),
+      _ => return None,
+    }
+  }
+  Some(out)
+}
+
+/// `MusicScore[{voices…}, opts…]` — resolve to the association form
+/// `MusicScore[<|"VoiceList" -> {…}, "TimeSignature" -> …, opt -> v, …|>]`,
+/// keeping each already-resolved voice and taking its `"TimeSignature"` from
+/// the first voice. Options are stored as trailing symbol-keyed entries (a
+/// repeated option keeps its last value); an unknown option emits
+/// `MusicScore::optx` and leaves the score unevaluated. An empty score resolves
+/// to `MusicScore[<|"VoiceList" -> {}|>]`. Any non-voice element leaves the
+/// score symbolic (`None`).
 pub fn music_score(args: &[Expr]) -> Option<Expr> {
-  let items: crate::ExprList = match args {
-    [] => vec![].into(),
-    [Expr::List(items)] => items.clone(),
+  let (items, opts): (crate::ExprList, &[Expr]) = match args {
+    [] => (vec![].into(), &[]),
+    [Expr::List(items), opts @ ..] => (items.clone(), opts),
     _ => return None,
   };
-  if items.is_empty() {
-    return Some(music_assoc(
-      "MusicScore",
-      vec![("VoiceList", Expr::List(vec![].into()))],
+  let opts = music_option_rules(opts)?;
+  if let Some((name, _)) = opts
+    .iter()
+    .find(|(n, _)| !MUSIC_SCORE_OPTIONS.contains(&n.as_str()))
+  {
+    crate::emit_message_to_stdout(&format!(
+      "MusicScore::optx: Unknown option {name} in {}.",
+      message_form(&unevaluated("MusicScore", args))
+    ));
+    return Some(unevaluated("MusicScore", args));
+  }
+  let mut pairs = vec![(
+    Expr::String("VoiceList".to_string()),
+    Expr::List(items.clone()),
+  )];
+  if !items.is_empty() {
+    if !items.iter().all(is_resolved_voice) {
+      return None;
+    }
+    pairs.push((
+      Expr::String("TimeSignature".to_string()),
+      resolved_time_signature(items.first()?)?,
     ));
   }
-  if !items.iter().all(is_resolved_voice) {
-    return None;
+  for (name, value) in opts {
+    match pairs
+      .iter_mut()
+      .find(|(k, _)| matches!(k, Expr::Identifier(n) if *n == name))
+    {
+      Some(entry) => entry.1 = value,
+      None => pairs.push((Expr::Identifier(name), value)),
+    }
   }
-  let time_signature = resolved_time_signature(items.first()?)?;
-  Some(music_assoc(
-    "MusicScore",
-    vec![
-      ("VoiceList", Expr::List(items.clone())),
-      ("TimeSignature", time_signature),
-    ],
-  ))
+  Some(call1("MusicScore", Expr::Association(pairs)))
 }
 
 /// Render an expression for a music error message the way wolframscript

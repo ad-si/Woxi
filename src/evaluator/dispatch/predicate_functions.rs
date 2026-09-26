@@ -2314,6 +2314,11 @@ pub fn builtin_default_options(func_name: &str) -> Vec<Expr> {
       make_rule("VerifySolutions", id("Automatic")),
       make_rule("WorkingPrecision", id("Infinity")),
     ],
+    // `MusicNotation` is a Woxi extension (see `music_ast::music_score`).
+    "MusicScore" => vec![
+      make_rule("MusicTempo", id("Automatic")),
+      make_rule("MusicNotation", id("Automatic")),
+    ],
     _ => vec![],
   }
 }

@@ -3010,6 +3010,7 @@ fn compile_string_pattern(
 /// repeat: `ReadString[s, StartOfLine ~~ "c"]` reads, `ReadString[s,
 /// StartOfLine]` reports `ReadString::iterm`. The head is what decides —
 /// `EndOfLine` alone is refused, `EndOfLine | "\r"` is not.
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn is_read_terminator(expr: &Expr) -> bool {
   match expr {
     Expr::String(_) => true,
@@ -3041,6 +3042,7 @@ pub(crate) fn is_read_terminator(expr: &Expr) -> bool {
 /// Anchors are resolved against the whole of `text`, not against the tail
 /// being searched, so a `StartOfLine` in the pattern means a real line start.
 /// `ReadString` uses this to stop at a pattern terminator.
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn first_string_pattern_match(
   text: &str,
   from: usize,

@@ -4058,8 +4058,10 @@ mod high_level_functions {
         (ls[1][0] - ls[0][1]).abs() < 1e-2,
         "scaled line must start at {{2,0}}: {svg}"
       );
+      // Coordinates are written to 2 decimals, so the doubled length can be
+      // off by twice that rounding.
       assert!(
-        (len1 - 2.0 * len0).abs() < 1e-2,
+        (len1 - 2.0 * len0).abs() < 0.05,
         "scaled line must be twice as long: {svg}"
       );
     }

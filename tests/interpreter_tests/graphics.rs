@@ -387,6 +387,41 @@ mod graphics {
       ));
     }
 
+    /// `RoundingRadius -> r` rounds every corner; `{rx, ry}` gives
+    /// elliptical corners, each radius scaled along its own axis.
+    #[test]
+    fn rectangle_rounding_radius() {
+      let corners = |svg: &str| -> (f64, f64) {
+        let tag = svg
+          .split("<rect x=")
+          .find(|t| t.contains(" fill="))
+          .expect("a filled rect");
+        let attr = |name: &str| -> f64 {
+          tag
+            .split(&format!(" {name}=\""))
+            .nth(1)
+            .and_then(|v| v.split('"').next())
+            .and_then(|v| v.parse().ok())
+            .unwrap_or_else(|| panic!("no {name} in {tag}"))
+        };
+        (attr("rx"), attr("ry"))
+      };
+      let (rx, ry) = corners(&export_svg(
+        "Graphics[{Rectangle[{0, 0}, {1, 1}, RoundingRadius -> 0.25]}]",
+      ));
+      assert!(rx > 0.0 && (rx - ry).abs() < 0.01, "rx={rx} ry={ry}");
+      let (rx, ry) = corners(&export_svg(
+        "Graphics[{Rectangle[{0, 0}, {4, 1}, RoundingRadius -> {0.2, 0.1}]}, \
+         AspectRatio -> 1/4]",
+      ));
+      // 0.2 across vs 0.1 up on an equally scaled canvas.
+      assert!((rx / ry - 2.0).abs() < 0.05, "rx={rx} ry={ry}");
+      // Square corners carry no radius at all.
+      assert!(
+        !export_svg("Graphics[{Rectangle[{0, 0}, {1, 1}]}]").contains(" rx=")
+      );
+    }
+
     #[test]
     fn polygon() {
       insta::assert_snapshot!(export_svg(
@@ -1848,6 +1883,50 @@ mod graphics {
   mod options {
     use super::*;
 
+    /// Explicit ticks outside the plot range are not drawn.
+    #[test]
+    fn explicit_ticks_outside_the_range_are_dropped() {
+      let svg = export_svg(
+        "Graphics[{Line[{{0, 0}, {1, 1}}]}, Axes -> True, \
+         PlotRange -> {{0, 1}, {0, 1}}, \
+         Ticks -> {{{0.5, \"in\"}, {3, \"out\"}}, {{0.5, \"yin\"}, \
+         {-2, \"yout\"}}}]",
+      );
+      assert!(svg.contains(">in</text>"), "{svg}");
+      assert!(svg.contains(">yin</text>"), "{svg}");
+      assert!(!svg.contains(">out</text>"), "{svg}");
+      assert!(!svg.contains(">yout</text>"), "{svg}");
+    }
+
+    /// A y axis at an x range's padded edge (data starting at 0) keeps the
+    /// outside gutter, so its tick labels are not cut off at the left.
+    #[test]
+    fn axis_at_padded_edge_keeps_label_gutter() {
+      let svg = export_svg(
+        "Graphics[{Rectangle[{0, 60}, {1, 61}]}, Axes -> True, \
+         Ticks -> {None, {{60, \"Label\"}}}]",
+      );
+      let tag = svg
+        .split("<text ")
+        .find(|t| t.contains(">Label</text>"))
+        .expect("the y tick label");
+      let x: f64 = tag
+        .split("x=\"")
+        .nth(1)
+        .and_then(|v| v.split('"').next())
+        .and_then(|v| v.parse().ok())
+        .expect("an x position");
+      // The plot area is shifted right by the left gutter.
+      let offset: f64 = svg
+        .split("translate(")
+        .nth(1)
+        .and_then(|v| v.split(',').next())
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.0);
+      // Right-anchored at x, the 5-character label needs ~40px to its left.
+      assert!(offset + x >= 40.0, "label ends at x = {offset} + {x}");
+    }
+
     #[test]
     fn image_size_integer() {
       insta::assert_snapshot!(export_svg(
@@ -2730,6 +2809,22 @@ mod plot3d {
         largest_tick(&svg) <= 2.0,
         "the box must stop at the range asked for, not at the domain: {svg}"
       );
+    }
+
+    // `AxesLabel` was never read at all: a `Plot3D` surface always drew
+    // an unlabelled box, same as `ListPlot3D`.
+    #[test]
+    fn axes_label_names_all_three_axes() {
+      let svg = export_svg(
+        "Plot3D[x + y, {x, -1, 1}, {y, -1, 1}, \
+         AxesLabel -> {\"width\", \"depth\", \"height\"}]",
+      );
+      for label in ["width", "depth", "height"] {
+        assert!(
+          svg.contains(&format!(">{label}<")),
+          "expected the {label:?} axis label in the SVG: {svg}"
+        );
+      }
     }
 
     /// Every `<polygon>` fill colour appearing in the SVG, as `(r, g, b)`
@@ -16094,6 +16189,72 @@ mod list_plot_3d {
        ColorFunction -> \"SouthwestColors\"]",
     );
     assert!(standalone.contains("<polygon"));
+  }
+
+  // Regression (Wolfram Demonstrations Project: a mixing-cell transport
+  // model): its `Manipulate` draws a `ListPlot3D` surface with an explicit
+  // `PlotRange -> {zmin, zmax}` meant to clip a numerically unstable
+  // outlier corner out of view. `ListPlot3D` never read `PlotRange` at
+  // all — the vertical axis was always labelled with the raw data extent,
+  // so a spike far outside the intended range stretched the whole box
+  // instead of being clipped to it.
+
+  #[test]
+  fn list_plot3d_plot_range_clips_the_z_axis_to_the_given_range() {
+    clear_state();
+    // One corner spikes to 100; every other sample point is 1.
+    let svg = export_svg(
+      "ListPlot3D[Flatten[Table[If[x == 5 && y == 5, {x, y, 100}, \
+       {x, y, 1}], {x, 5}, {y, 5}], 1], PlotRange -> {0, 2}]",
+    );
+    assert!(
+      svg.contains(">2</text>"),
+      "the axis must be labelled with the PlotRange max: {svg}"
+    );
+    assert!(
+      !svg.contains(">100</text>") && !svg.contains(">50</text>"),
+      "PlotRange must clip the axis instead of stretching it to the \
+       outlier: {svg}"
+    );
+  }
+
+  #[test]
+  fn list_plot3d_axes_label_names_all_three_axes() {
+    clear_state();
+    let svg = export_svg(
+      "ListPlot3D[Table[x + y, {x, 3}, {y, 3}], \
+       AxesLabel -> {\"width\", \"depth\", \"height\"}]",
+    );
+    for label in ["width", "depth", "height"] {
+      assert!(
+        svg.contains(&format!(">{label}<")),
+        "expected the {label:?} axis label in the SVG: {svg}"
+      );
+    }
+  }
+
+  #[test]
+  fn list_plot3d_axes_label_rotate_wrapper_typesets_its_content() {
+    // `Rotate[label, angle]` is a common Demonstrations idiom for a
+    // vertical axis label. The label renderer has no notion of rotated
+    // text, so this must typeset the wrapped content plainly rather than
+    // falling through to `Rotate[…]` FullForm text (or, worse, corrupting
+    // it: `expr_to_svg_markup` used to run through the generic string
+    // renderer for an embedded literal newline and drop leading
+    // characters from the label).
+    clear_state();
+    let svg = export_svg(
+      "ListPlot3D[Table[x + y, {x, 3}, {y, 3}], \
+       AxesLabel -> {None, None, Rotate[\"height\", Pi/2]}]",
+    );
+    assert!(
+      svg.contains(">height<"),
+      "expected the Rotate-wrapped label's content in the SVG: {svg}"
+    );
+    assert!(
+      !svg.contains("Rotate["),
+      "the label must not leak its Rotate[…] wrapper as literal text: {svg}"
+    );
   }
 }
 

@@ -10686,7 +10686,23 @@ pub fn find_minimum_ast(
   // Method -> "Newton"). They aren't honoured yet, but we accept them
   // silently rather than aborting so call shapes match Wolfram.
   // Only the first two positional arguments drive the optimisation.
-  let f = &args[0];
+  //
+  // `{f}` (a one-element list) is `{f, constraints...}` with zero
+  // constraints — plain unconstrained `f`, same as writing it bare. Unwrap
+  // it up front so the rest of this function (symbolic differentiation in
+  // particular) never has to differentiate a `List`-headed expression: a
+  // second differentiation of an already-`List`-wrapped derivative hits a
+  // `differentiate_expr` case the ordinary `D[…]` entry point (which
+  // threads over a `List` argument itself before ever calling
+  // `differentiate_expr` on a bare, non-`List` factor) does not exercise.
+  let unwrapped_f;
+  let f = match &args[0] {
+    Expr::List(items) if items.len() == 1 => {
+      unwrapped_f = items[0].clone();
+      &unwrapped_f
+    }
+    other => other,
+  };
 
   // A single variable spec: {x, x0} (unconstrained) or {x, x0, xmin, xmax}
   // (`x` constrained to stay within [xmin, xmax] throughout the search).
@@ -10809,26 +10825,43 @@ pub fn find_minimum_ast(
   clamp(&mut x);
   let n = vars.len();
 
-  // Compute symbolic gradients (partial derivatives)
+  // Compute the symbolic gradient and Hessian (for Newton's method). Either
+  // step can fail outright — not just fail to reduce to a real number,
+  // which `symbolic_works` below already screens for, but return a hard
+  // `Err` — when `f` calls an opaque (unrecognized) function with a large
+  // List-valued argument that isn't itself a differentiation variable
+  // (e.g. a fixed dataset passed alongside the parameters being fit):
+  // `differentiate_expr` represents "no dependence here" for such an
+  // argument with a same-shape list of zero orders, matching how Wolfram's
+  // own `Derivative` generalizes over vector arguments, but building the
+  // *second* derivative from an already-List-shaped first one this way is
+  // not yet implemented for every case. Since this is exactly the same
+  // "not symbolically differentiable" situation the `_?NumericQ`-guarded
+  // case below already falls back from, a failure here falls back the same
+  // way — the derivative-free branch never touches `grad_exprs`/
+  // `hess_exprs`, so leaving them empty is safe.
   let mut grad_exprs: Vec<Expr> = Vec::with_capacity(n);
-  for var in &vars {
-    let deriv = crate::functions::calculus_ast::differentiate_expr(f, var)?;
-    grad_exprs.push(simplify(deriv));
-  }
-
-  // Compute symbolic Hessian (for Newton's method in 1D, second derivative)
   let mut hess_exprs: Vec<Vec<Expr>> = Vec::new();
-  for i in 0..n {
-    let mut row = Vec::new();
-    for j in 0..n {
-      let h = crate::functions::calculus_ast::differentiate_expr(
-        &grad_exprs[i],
-        &vars[j],
-      )?;
-      row.push(simplify(h));
+  let symbolic_derivatives: Option<()> = (|| {
+    for var in &vars {
+      let deriv =
+        crate::functions::calculus_ast::differentiate_expr(f, var).ok()?;
+      grad_exprs.push(simplify(deriv));
     }
-    hess_exprs.push(row);
-  }
+    for i in 0..n {
+      let mut row = Vec::new();
+      for j in 0..n {
+        let h = crate::functions::calculus_ast::differentiate_expr(
+          &grad_exprs[i],
+          &vars[j],
+        )
+        .ok()?;
+        row.push(simplify(h));
+      }
+      hess_exprs.push(row);
+    }
+    Some(())
+  })();
 
   // Evaluate expression at point
   let eval_at = |expr: &Expr, point: &[f64]| -> Result<f64, InterpreterError> {
@@ -10850,7 +10883,8 @@ pub fn find_minimum_ast(
   // instead of failing outright — matching Wolfram, which switches
   // methods automatically whenever the objective isn't symbolically
   // differentiable.
-  let symbolic_works = (0..n).all(|i| eval_at(&grad_exprs[i], &x).is_ok())
+  let symbolic_works = symbolic_derivatives.is_some()
+    && (0..n).all(|i| eval_at(&grad_exprs[i], &x).is_ok())
     && (0..n).all(|i| (0..n).all(|j| eval_at(&hess_exprs[i][j], &x).is_ok()));
 
   // Pre-flight: if f doesn't reduce to a real number at the starting

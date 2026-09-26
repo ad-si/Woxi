@@ -116,6 +116,10 @@ struct Playback {
   child: std::process::Child,
   /// Whether playback is currently paused (process is SIGSTOP'd).
   paused: bool,
+  /// The cell's graphic as drawn while its embedded audio plays (a
+  /// `MusicScore` panel whose play button shows the pause glyph),
+  /// pre-rasterized like the regular graphic.
+  playing_image: Option<(iced::widget::image::Handle, u32, u32)>,
 }
 
 impl Drop for Playback {
@@ -247,6 +251,8 @@ enum Message {
   /// Toggle playback of the given cell's audio (from Play[…] / Sound[…] /
   /// Audio[…]): start playing, pause, or resume.
   PlaySound(usize),
+  /// Stop the given cell's audio (a `MusicScore` panel's stop button).
+  StopSound(usize),
   /// Periodic poll of the external audio player so the pause button
   /// reverts to a play button when playback finishes on its own.
   PlaybackTick,
@@ -503,6 +509,19 @@ impl WoxiStudio {
   /// (Playback's Drop impl kills the process).
   fn stop_playback(&mut self) {
     self.playback = None;
+  }
+
+  /// The pre-rasterized "playing" variant of the given cell's graphic, while
+  /// its embedded audio plays (not paused).
+  fn playing_image(
+    &self,
+    idx: usize,
+  ) -> Option<&(iced::widget::image::Handle, u32, u32)> {
+    self
+      .playback
+      .as_ref()
+      .filter(|p| p.cell == idx && !p.paused)
+      .and_then(|p| p.playing_image.as_ref())
   }
 
   /// Whether the given cell's audio is currently playing (not paused).
@@ -1725,6 +1744,21 @@ impl WoxiStudio {
             // Manipulate graphics are drawn by the `svg` widget, which
             // rescales for DPI on its own — no manual re-rasterization needed.
           }
+          if let Some(playback) = self.playback.as_mut()
+            && playback.playing_image.is_some()
+          {
+            playback.playing_image = self
+              .cell_editors
+              .get(playback.cell)
+              .and_then(|e| e.graphics_svg.as_ref())
+              .and_then(|svg| {
+                rasterize_svg(
+                  &woxi::functions::music_plot::score_svg_playing(svg),
+                  scale,
+                  &self.fontdb,
+                )
+              });
+          }
         }
         Task::none()
       }
@@ -1747,15 +1781,8 @@ impl WoxiStudio {
       Message::ManipulateDiscreteChanged(cell_idx, ctrl_idx, choice) => {
         if let Some(editor) = self.cell_editors.get_mut(cell_idx)
           && let Some(state) = editor.manipulate_state.as_mut()
-          && let Some(control) = state.controls.get_mut(ctrl_idx)
-          && let manipulate::ControlState::Discrete {
-            value_labels,
-            current_index,
-            ..
-          } = control
-          && let Some(idx) = value_labels.iter().position(|v| *v == choice)
+          && state.select_discrete(ctrl_idx, &choice)
         {
-          *current_index = idx;
           state.apply_tracking(ctrl_idx);
           if state.request_reeval(ctrl_idx) {
             return manipulate_reeval_task(cell_idx);
@@ -2217,17 +2244,37 @@ impl WoxiStudio {
         if let Some(editor) = self.cell_editors.get(idx)
           && let Some(audio) = editor.sound.clone()
         {
+          let playing_image = editor
+            .graphics_svg
+            .as_ref()
+            .filter(|_| audio.embedded)
+            .and_then(|svg| {
+              rasterize_svg(
+                &woxi::functions::music_plot::score_svg_playing(svg),
+                self.scale_factor,
+                &self.fontdb,
+              )
+            });
           match play_audio(&audio) {
             Ok(child) => {
               self.playback = Some(Playback {
                 cell: idx,
                 child,
                 paused: false,
+                playing_image,
               });
               self.status = String::from("Playing sound…");
             }
             Err(e) => self.status = format!("Could not play sound: {e}"),
           }
+        }
+        Task::none()
+      }
+
+      Message::StopSound(idx) => {
+        if self.playback.as_ref().is_some_and(|p| p.cell == idx) {
+          self.stop_playback();
+          self.status = String::from("Sound stopped");
         }
         Task::none()
       }
@@ -3194,27 +3241,10 @@ impl WoxiStudio {
       // Graphics rendering (pre-rasterized image, falls back to SVG)
       // Double-click opens a fullscreen modal for detailed inspection.
       // Right-click opens a context menu (Save Graphic As).
-      if let Some((ref img_handle, w, h)) = editor.graphics_image {
-        let mut img_widget = image(img_handle.clone())
-          .width(iced::Length::Fixed(w as f32))
-          .height(iced::Length::Fixed(h as f32));
-        if stale {
-          img_widget = img_widget.opacity(0.3_f32);
-        }
-        let clickable = mouse_area(container(img_widget).padding(4))
-          .on_double_click(Message::OpenGraphicsModal(idx))
-          .on_right_press(Message::ShowGraphicsContextMenu(idx));
-        output_col = output_col.push(clickable);
-      } else if let Some(ref handle) = editor.graphics_handle {
-        let mut svg_widget =
-          svg::Svg::new(handle.clone()).width(iced::Length::Shrink);
-        if stale {
-          svg_widget = svg_widget.opacity(0.3_f32);
-        }
-        let clickable = mouse_area(container(svg_widget).padding(4))
-          .on_double_click(Message::OpenGraphicsModal(idx))
-          .on_right_press(Message::ShowGraphicsContextMenu(idx));
-        output_col = output_col.push(clickable);
+      if let Some(graphics) =
+        render_graphics_output(idx, editor, stale, self.playing_image(idx))
+      {
+        output_col = output_col.push(graphics);
       }
 
       // Interactive Manipulate widget
@@ -3224,7 +3254,9 @@ impl WoxiStudio {
       }
 
       // Graphical audio player (Play[…] / Sound[…] / Audio[…] results)
-      if let Some(ref audio) = editor.sound {
+      if let Some(ref audio) = editor.sound
+        && !audio.embedded
+      {
         output_col = output_col.push(render_audio_player(
           idx,
           audio,
@@ -3296,27 +3328,10 @@ impl WoxiStudio {
         content_col = content_col.push(stdout_editor);
       }
 
-      if let Some((ref img_handle, w, h)) = editor.graphics_image {
-        let mut img_widget = image(img_handle.clone())
-          .width(iced::Length::Fixed(w as f32))
-          .height(iced::Length::Fixed(h as f32));
-        if stale {
-          img_widget = img_widget.opacity(0.3_f32);
-        }
-        let clickable = mouse_area(container(img_widget).padding(4))
-          .on_double_click(Message::OpenGraphicsModal(idx))
-          .on_right_press(Message::ShowGraphicsContextMenu(idx));
-        content_col = content_col.push(clickable);
-      } else if let Some(ref handle) = editor.graphics_handle {
-        let mut svg_widget =
-          svg::Svg::new(handle.clone()).width(iced::Length::Shrink);
-        if stale {
-          svg_widget = svg_widget.opacity(0.3_f32);
-        }
-        let clickable = mouse_area(container(svg_widget).padding(4))
-          .on_double_click(Message::OpenGraphicsModal(idx))
-          .on_right_press(Message::ShowGraphicsContextMenu(idx));
-        content_col = content_col.push(clickable);
+      if let Some(graphics) =
+        render_graphics_output(idx, editor, stale, self.playing_image(idx))
+      {
+        content_col = content_col.push(graphics);
       }
 
       // Interactive Manipulate widget
@@ -3326,7 +3341,9 @@ impl WoxiStudio {
       }
 
       // Graphical audio player (Play[…] / Sound[…] / Audio[…] results)
-      if let Some(ref audio) = editor.sound {
+      if let Some(ref audio) = editor.sound
+        && !audio.embedded
+      {
         content_col = content_col.push(render_audio_player(
           idx,
           audio,
@@ -4899,6 +4916,77 @@ fn render_audio_player<'a>(
     .padding(8)
     .style(audio_player_style)
     .into()
+}
+
+/// The graphics output of a cell: its pre-rasterized image (or, failing that,
+/// the SVG). Double-click opens a fullscreen modal for detailed inspection;
+/// right-click opens a context menu (Save Graphic As). When the cell's audio
+/// is embedded in the graphic (a `MusicScore` panel), clickable areas are laid
+/// over the panel's play/pause and stop buttons, and `playing_image` (the
+/// panel with a pause glyph) replaces the graphic while the audio plays.
+fn render_graphics_output<'a>(
+  idx: usize,
+  editor: &CellEditor,
+  stale: bool,
+  playing_image: Option<&(iced::widget::image::Handle, u32, u32)>,
+) -> Option<Element<'a, Message>> {
+  const PAD: f32 = 4.0;
+  let picture: Element<'a, Message> = if let Some((ref img_handle, w, h)) =
+    playing_image.or(editor.graphics_image.as_ref()).cloned()
+  {
+    let mut img_widget = image(img_handle.clone())
+      .width(iced::Length::Fixed(w as f32))
+      .height(iced::Length::Fixed(h as f32));
+    if stale {
+      img_widget = img_widget.opacity(0.3_f32);
+    }
+    container(img_widget).padding(PAD).into()
+  } else if let Some(ref handle) = editor.graphics_handle {
+    let mut svg_widget =
+      svg::Svg::new(handle.clone()).width(iced::Length::Shrink);
+    if stale {
+      svg_widget = svg_widget.opacity(0.3_f32);
+    }
+    container(svg_widget).padding(PAD).into()
+  } else {
+    return None;
+  };
+  let picture = if editor.sound.as_ref().is_some_and(|a| a.embedded) {
+    use woxi::functions::music_plot::{
+      BUTTON_RADIUS, PLAY_BUTTON, STOP_BUTTON,
+    };
+    // The panel is drawn at its SVG size, so its user units are pixels.
+    let r = BUTTON_RADIUS as f32;
+    let hotspot = |(cx, cy): (f64, f64), message: Message| {
+      container(
+        button(space::Space::new())
+          .width(2.0 * r)
+          .height(2.0 * r)
+          .style(|_, _| button::Style::default())
+          .on_press(message),
+      )
+      .padding(iced::Padding {
+        top: PAD + cy as f32 - r,
+        left: PAD + cx as f32 - r,
+        right: 0.0,
+        bottom: 0.0,
+      })
+    };
+    stack![
+      picture,
+      hotspot(PLAY_BUTTON, Message::PlaySound(idx)),
+      hotspot(STOP_BUTTON, Message::StopSound(idx)),
+    ]
+    .into()
+  } else {
+    picture
+  };
+  Some(
+    mouse_area(picture)
+      .on_double_click(Message::OpenGraphicsModal(idx))
+      .on_right_press(Message::ShowGraphicsContextMenu(idx))
+      .into(),
+  )
 }
 
 /// Style the audio player card: a subtly bordered rounded container so the
@@ -7669,6 +7757,83 @@ mod tests {
       state.error
     );
     assert_eq!(state.text_output.as_deref(), Some("hexagon"));
+  }
+
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook ("Disentangling
+  /// Wire-and-String Puzzles in 3D") whose `Manipulate` drives a
+  /// puzzle-switching state machine with a `ControlType -> None` action
+  /// variable (its own default, `0`, outside the `SetterBar`'s own choice
+  /// domain `{1, 2, 3, 4}`, meaning nothing is highlighted at first) that a
+  /// body `If`/`Which` reads and then resets to `0`. This is a self-authored,
+  /// construct-equivalent example (invented control/variable names) — not
+  /// the specific Demonstration's code, data or wording, which is
+  /// copyrighted. Regression: `Message::ManipulateDiscreteChanged`'s handler
+  /// wrote the clicked button's `current_index` directly but never cleared
+  /// `ControlState::Discrete::overflow`, and `current_code`/rendering always
+  /// prefer a set `overflow` over `values[current_index]` (see its doc
+  /// comment: this exists so a *sibling* row's own fallback doesn't override
+  /// what another row just picked). Once the initial out-of-domain default
+  /// left `overflow` set, every subsequent click on the row's *own* buttons
+  /// kept re-sending that same stale value forever: the SetterBar looked
+  /// permanently unselected and pressing any of its buttons did nothing.
+  /// Now fixed by routing the click through `ManipulateState::select_discrete`,
+  /// which clears `overflow` — the same method the app's
+  /// `Message::ManipulateDiscreteChanged` handler calls.
+  #[test]
+  fn manipulate_discrete_click_clears_stale_overflow_from_initial_default() {
+    let code = "Manipulate[\
+      If[action > 0, \
+        Which[action == 1, count = 0, action == 2, count = Max[0, count - 1], \
+          action == 3, count = Min[max, count + 1], action == 4, count = max]; \
+        action = 0]; \
+      count, \
+      {{count, 2}, ControlType -> None}, \
+      {{max, 5}, ControlType -> None}, \
+      Control[{{action, 0, \"\"}, \
+        {1 -> \"reset\", 2 -> \"-\", 3 -> \"+\", 4 -> \"max\"}, SetterBar}]\
+      ]";
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      manipulate::ManipulateState::from_expr(&expr).expect("build widget");
+    assert_eq!(
+      state.text_output.as_deref(),
+      Some("2"),
+      "initial count must render before any click"
+    );
+
+    let action_idx = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "action")
+      .expect("action SetterBar control");
+    match &state.controls[action_idx] {
+      manipulate::ControlState::Discrete { overflow, .. } => assert_eq!(
+        overflow.as_deref(),
+        Some("0"),
+        "action's default (0) starts outside its own {{1,2,3,4}} domain"
+      ),
+      other => panic!("expected a Discrete control, got {other:?}"),
+    }
+
+    // Press "+" (the SetterBar's own third button) three times in a row,
+    // via the same `select_discrete` call the app's message handler makes
+    // for every click — not a direct field mutation on `ManipulateState`.
+    for _ in 0..3 {
+      assert!(
+        state.select_discrete(action_idx, "+"),
+        "\"+\" must be one of action's own choices"
+      );
+      state.apply_tracking(action_idx);
+      state.reevaluate();
+    }
+
+    assert_eq!(
+      state.text_output.as_deref(),
+      Some("5"),
+      "three '+' clicks from 2 must reach count = 5, not stay stuck at the \
+       initial out-of-domain default"
+    );
   }
 
   /// A `Button[…]` action alongside two disjoint `SetterBar` rows that
@@ -15009,6 +15174,57 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
     assert!(editor.output_svgs[0].contains('\u{00d7}'));
     // The raw text is still kept (for saving to the notebook).
     assert_eq!(editor.output.as_deref(), Some("1.\u{00d7}10^10"));
+  }
+
+  #[test]
+  fn music_score_playing_variant_rasterizes_a_pause_glyph() {
+    // While a MusicScore plays, its panel is drawn from the "playing" SVG:
+    // the play triangle is replaced by two pause bars (not just hidden).
+    use woxi::functions::music_plot::{PLAY_BUTTON, score_svg_playing};
+    let fontdb = Arc::new(resvg::usvg::fontdb::Database::new());
+    let mut editor = blank_editor();
+    evaluate_cell_statements(
+      &mut editor,
+      "MusicScore[{MusicVoice[{\"C4\", \"D4\"}]}]",
+      false,
+      1.0,
+      &fontdb,
+    );
+    assert!(editor.sound.as_ref().is_some_and(|a| a.embedded));
+    let svg = editor.graphics_svg.clone().expect("the score panel");
+    let is_blue = |svg: &str, (x, y): (f64, f64)| {
+      let tree =
+        resvg::usvg::Tree::from_str(svg, &resvg::usvg::Options::default())
+          .unwrap();
+      let size = tree.size();
+      // Sampled at 4x so a pixel lies wholly inside one glyph.
+      const SCALE: f32 = 4.0;
+      let mut pixmap = tiny_skia::Pixmap::new(
+        (size.width() * SCALE).ceil() as u32,
+        (size.height() * SCALE).ceil() as u32,
+      )
+      .unwrap();
+      resvg::render(
+        &tree,
+        tiny_skia::Transform::from_scale(SCALE, SCALE),
+        &mut pixmap.as_mut(),
+      );
+      let p = pixmap
+        .pixel((x * SCALE as f64) as u32, (y * SCALE as f64) as u32)
+        .unwrap();
+      p.blue() > 150 && p.red() < 100
+    };
+    let (bx, by) = PLAY_BUTTON;
+    // A point only the left pause bar covers, and one only the triangle's
+    // tip covers (right of the right pause bar).
+    let bar = (bx - 4.25, by + 4.5);
+    let tip = (bx + 5.0, by);
+    assert!(!is_blue(&svg, bar) && is_blue(&svg, tip), "play triangle");
+    let playing = score_svg_playing(&svg);
+    assert!(
+      is_blue(&playing, bar) && !is_blue(&playing, tip),
+      "pause bars"
+    );
   }
 
   #[test]
