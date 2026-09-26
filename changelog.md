@@ -2,6 +2,19 @@
 
 # Unreleased
 
+- `LinearModelFit`'s `FittedModel` did not implement the
+    `"ParameterTableEntries"` property (nor its constituent
+    `"ParameterErrors"`/`"ParameterTStatistics"`/`"ParameterPValues"`),
+    aborting any `Manipulate` body that reports a fit's uncertainty this
+    way — e.g. a box-counting-dimension caption showing the fitted slope
+    ± its standard error — with `FittedModel: unknown property
+    "ParameterTableEntries"`. Each property is now computed from the
+    standard OLS covariance `sigma^2 (X^T X)^{-1}`, with the two-tailed
+    p-value delegating to the existing `StudentTDistribution`/`CDF`
+    implementation. Found via the scheduled Wolfram Demonstrations check
+    downloading "Box-Counting Algorithm of the Hénon Map", whose
+    dimension-estimation display mode hit this exact call.
+
 - `ListPlot[{list1, list2, ...}, Joined -> {b1, b2, ...}]` only ever
     matched the bare `Joined -> True` identifier, so a per-series list of
     booleans fell through unnoticed and every series rendered as scattered

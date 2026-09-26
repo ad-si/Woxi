@@ -6857,6 +6857,45 @@ pub fn linear_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     r_squared
   };
 
+  // Per-parameter significance statistics ("ParameterTable"/
+  // "ParameterTableEntries" and their constituent properties): the standard
+  // OLS covariance `Cov[beta] = sigma^2 (X^T X)^{-1}`, whose diagonal gives
+  // each coefficient's standard error, from which the t-statistic and its
+  // two-tailed Student-t p-value follow. `None` when the degrees of freedom
+  // are exhausted (`n <= m`) or `X^T X` is singular — the properties are
+  // simply absent then, same as before this statistic existed.
+  let parameter_stats: Option<(Vec<f64>, Vec<f64>, Vec<f64>)> = (n > m)
+    .then(|| {
+      let dof = (n - m) as f64;
+      let sigma2 = ss_res / dof;
+      let mut xtx = vec![vec![0.0f64; m]; m];
+      for row in &a_matrix {
+        for j in 0..m {
+          for k in 0..m {
+            xtx[j][k] += row[j] * row[k];
+          }
+        }
+      }
+      let xtx_inv = invert_square_matrix(&xtx)?;
+      let mut errors = Vec::with_capacity(m);
+      let mut t_stats = Vec::with_capacity(m);
+      let mut p_values = Vec::with_capacity(m);
+      for j in 0..m {
+        let se = (sigma2 * xtx_inv[j][j]).max(0.0).sqrt();
+        let t_stat = if se > 0.0 {
+          coeffs[j] / se
+        } else {
+          f64::INFINITY
+        };
+        let p_value = student_t_two_tailed_p_value(dof, t_stat)?;
+        errors.push(se);
+        t_stats.push(t_stat);
+        p_values.push(p_value);
+      }
+      Some((errors, t_stats, p_values))
+    })
+    .flatten();
+
   // Build the fitted expression: c[0]*basis[0] + c[1]*basis[1] + ...
   let mut terms = Vec::new();
   for (j, c) in coeffs.iter().enumerate() {
@@ -6935,7 +6974,7 @@ pub fn linear_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   );
 
   // Build FittedModel association
-  let assoc = Expr::Association(vec![
+  let mut assoc = vec![
     (Expr::String("Type".to_string()), id_expr("Linear")),
     (Expr::String("FittedExpression".to_string()), fitted_expr),
     (
@@ -6976,9 +7015,70 @@ pub fn linear_model_fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Expr::String("VariableName".to_string()),
       Expr::String(var_names.first().cloned().unwrap_or_default()),
     ),
-  ]);
+  ];
 
-  Ok(call1("FittedModel", assoc))
+  if let Some((errors, t_stats, p_values)) = parameter_stats {
+    let entries = Expr::List(
+      (0..m)
+        .map(|j| {
+          Expr::List(
+            vec![
+              Expr::Real(coeffs[j]),
+              Expr::Real(errors[j]),
+              Expr::Real(t_stats[j]),
+              Expr::Real(p_values[j]),
+            ]
+            .into(),
+          )
+        })
+        .collect(),
+    );
+    assoc.push((
+      Expr::String("ParameterErrors".to_string()),
+      Expr::List(errors.iter().map(|e| Expr::Real(*e)).collect()),
+    ));
+    assoc.push((
+      Expr::String("ParameterTStatistics".to_string()),
+      Expr::List(t_stats.iter().map(|t| Expr::Real(*t)).collect()),
+    ));
+    assoc.push((
+      Expr::String("ParameterPValues".to_string()),
+      Expr::List(p_values.iter().map(|p| Expr::Real(*p)).collect()),
+    ));
+    assoc.push((Expr::String("ParameterTableEntries".to_string()), entries));
+  }
+
+  Ok(call1("FittedModel", Expr::Association(assoc)))
+}
+
+/// Invert a square matrix by solving `A x_j = e_j` for each standard basis
+/// column via [`solve_linear_system`]. Returns `None` when `a` is singular.
+fn invert_square_matrix(a: &[Vec<f64>]) -> Option<Vec<Vec<f64>>> {
+  let n = a.len();
+  let mut cols = Vec::with_capacity(n);
+  for j in 0..n {
+    let mut e_j = vec![0.0f64; n];
+    e_j[j] = 1.0;
+    cols.push(solve_linear_system(a, &e_j)?);
+  }
+  // `cols[j]` is the inverse's j-th column; transpose into row-major form.
+  Some(
+    (0..n)
+      .map(|i| (0..n).map(|j| cols[j][i]).collect())
+      .collect(),
+  )
+}
+
+/// Two-tailed p-value `2 (1 - CDF[StudentTDistribution[dof], |t|])` for a
+/// t-statistic with `dof` degrees of freedom, delegating to the canonical
+/// `StudentTDistribution`/`CDF` implementation rather than re-deriving the
+/// incomplete-beta form here.
+fn student_t_two_tailed_p_value(dof: f64, t_stat: f64) -> Option<f64> {
+  let dist = call("StudentTDistribution", vec![Expr::Real(dof)]);
+  let cdf_expr = call("CDF", vec![dist, Expr::Real(t_stat.abs())]);
+  let evaluated = evaluate_expr_to_expr(&cdf_expr).ok()?;
+  let cdf_val = try_eval_to_f64(&evaluated)?;
+  Some(2.0 * (1.0 - cdf_val))
 }
 
 /// NonlinearModelFit[data, model, params, var] — fits a (possibly nonlinear)
