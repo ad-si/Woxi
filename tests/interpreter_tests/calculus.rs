@@ -6596,6 +6596,36 @@ mod find_minimum {
     .unwrap();
     assert_eq!(result, "{0., {k -> 4.}}");
   }
+
+  #[test]
+  fn numeric_only_objective_with_list_argument_falls_back_too() {
+    // As part of a scheduled QA routine, Woxi Studio was tested against a
+    // randomly sampled Wolfram Demonstration notebook whose Manipulate fit
+    // a model by maximizing a `_?NumberQ`-guarded log-likelihood function
+    // that also took the (fixed, already-evaluated) dataset as its own
+    // List-valued argument — e.g. `loglik[data_List, a_?NumberQ,
+    // b_?NumberQ] := …`. Differentiating that opaque call twice (building
+    // the Hessian) represents "no dependence on `a`/`b` here" for the
+    // constant `data` argument with a matching-shape list of zero
+    // derivative orders (as Wolfram's own `Derivative` does for vector
+    // arguments), but re-differentiating an already list-shaped first
+    // derivative that way isn't implemented for every case and used to
+    // hard-error with "Binary operation expects 2 arguments" instead of
+    // falling back to the same derivative-free search the plain
+    // `_?NumericQ` case above already falls back to. This is a
+    // self-authored, construct-equivalent example (an invented objective
+    // over a made-up dataset, not the specific Demonstration's code or
+    // data, which is copyrighted).
+    clear_state();
+    let result = interpret(
+      "loglik[data_List, a_?NumberQ, b_?NumberQ] := \
+         -((Total[data] - a)^2 + (Length[data] - b)^2); \
+       Round[{#[[1]], {a, b} /. #[[2]]} &[\
+         FindMaximum[loglik[Table[1., {50}], a, b], {{a, 0}, {b, 0}}]], 10^-6]",
+    )
+    .unwrap();
+    assert_eq!(result, "{0, {50, 50}}");
+  }
 }
 
 mod dt {

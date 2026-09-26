@@ -2347,6 +2347,34 @@ mod linear_solve {
     );
   }
 
+  // Regression: `LinearSolve[m, opts]` (a `Method` option rather than a
+  // right-hand side) is also a `LinearSolveFunction` — applying it must
+  // reach `LinearSolve[m, b, opts]`, not stay curried. Found while checking
+  // whether Woxi Studio can open a randomly sampled Wolfram Demonstration
+  // notebook: its Manipulate factored a repeated solve as `Aoperator =
+  // LinearSolve[m, Method -> "Cholesky"]`, then called `Aoperator[b1]` and
+  // `Aoperator[b2]` for two different right-hand sides. Woxi always solves
+  // by Gaussian elimination regardless of `Method`, so the option is simply
+  // carried through and dropped.
+  #[test]
+  fn solve_operator_form_with_options() {
+    assert_eq!(
+      interpret(
+        "op = LinearSolve[{{1, 2}, {3, 4}}, Method -> \"Cholesky\"]; \
+         {op[{5, 6}], op[{1, 0}]}"
+      )
+      .unwrap(),
+      "{{-4, 9/2}, {-2, 3/2}}"
+    );
+    // The un-applied object itself stays a symbolic LinearSolveFunction
+    // stand-in — the options don't make it try (and fail) to solve.
+    assert_eq!(
+      interpret("LinearSolve[{{1, 2}, {3, 4}}, Method -> \"Cholesky\"]")
+        .unwrap(),
+      "LinearSolve[{{1, 2}, {3, 4}}, Method -> Cholesky]"
+    );
+  }
+
   #[test]
   fn solve_diagonal() {
     // Diagonal matrix

@@ -602,6 +602,125 @@ fn time_series(pairs: Vec<Expr>) -> Expr {
   call1("TimeSeries", Expr::List(pairs.into()))
 }
 
+/// `RandomFunction[proc, {t0, t1, dt}]` — one realization of a random
+/// process, sampled at `t0, t0 + dt, …` up to `t1`. Returned as a
+/// `TimeSeries[{{t0, v0}, …}]` object (Woxi's canonical internal form for
+/// `TemporalData`, the same one `TemporalData[values, times]` itself
+/// normalizes to — see the module doc comment), so every existing
+/// `["Values"]`/`["Times"]`/… property accessor already works on it, plus
+/// the `["States"]` accessor added above for wolframscript's own
+/// process-realization report.
+///
+/// A continuous-time Markov process's value one step later depends only on
+/// its current value, not on how it got there, so simulating a full path is
+/// just repeatedly drawing from the process's own one-step transition
+/// distribution — no discretization error, unlike an Euler–Maruyama
+/// approximation. That transition distribution is implemented here for the
+/// two process types Woxi already recognizes as one-dimensional continuous
+/// processes ([`crate::functions::math_ast::distributions::process_slice_distribution`]
+/// gives their unconditional time-`t` slice the same way): `WienerProcess[m,
+/// s]` and `OrnsteinUhlenbeckProcess[m, s, th]`/`OrnsteinUhlenbeckProcess[m,
+/// s, th, x0]`. Any other process, or a malformed spec, is left unevaluated.
+pub fn random_function_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let unchanged = || Ok(unevaluated("RandomFunction", args));
+  if args.len() != 2 {
+    return unchanged();
+  }
+  let Expr::FunctionCall {
+    name: proc_name,
+    args: dargs,
+  } = &args[0]
+  else {
+    return unchanged();
+  };
+  let Expr::List(spec) = &args[1] else {
+    return unchanged();
+  };
+  let [t0, t1, dt] = spec.as_slice() else {
+    return unchanged();
+  };
+  let (Some(t0), Some(t1), Some(dt)) = (
+    try_eval_to_f64(t0),
+    try_eval_to_f64(t1),
+    try_eval_to_f64(dt),
+  ) else {
+    return unchanged();
+  };
+  if !(dt > 0.0) || t1 < t0 {
+    return unchanged();
+  }
+
+  use rand_distr::{Distribution, Normal};
+  let sample_normal = |mean: f64, sd: f64| -> Option<f64> {
+    let n = Normal::new(mean, sd.max(0.0)).ok()?;
+    Some(crate::with_rng(|rng| n.sample(rng)))
+  };
+
+  // The distribution of the process one step of size `step` after being at
+  // value `x` — the process's own transition kernel.
+  let step_params = |x: f64, step: f64| -> Option<(f64, f64)> {
+    match (proc_name.as_str(), dargs.as_slice()) {
+      ("WienerProcess", [m, s]) => {
+        let (m, s) = (try_eval_to_f64(m)?, try_eval_to_f64(s)?);
+        Some((x + m * step, s * step.sqrt()))
+      }
+      ("OrnsteinUhlenbeckProcess", [m, s, th] | [m, s, th, _]) => {
+        let (m, s, th) = (
+          try_eval_to_f64(m)?,
+          try_eval_to_f64(s)?,
+          try_eval_to_f64(th)?,
+        );
+        let decay = (-th * step).exp();
+        let mean = m + (x - m) * decay;
+        let var = s * s * (1.0 - decay * decay) / (2.0 * th);
+        Some((mean, var.max(0.0).sqrt()))
+      }
+      _ => None,
+    }
+  };
+
+  // The process's value at t0: `WienerProcess` always starts at 0;
+  // `OrnsteinUhlenbeckProcess`'s 3-argument form starts in its stationary
+  // distribution (mean `m`, variance `s^2 / (2 th)`), and the 4-argument
+  // form starts at the given `x0`.
+  let initial = match (proc_name.as_str(), dargs.as_slice()) {
+    ("WienerProcess", [_, _]) => Some(0.0),
+    ("OrnsteinUhlenbeckProcess", [m, s, th]) => {
+      match (try_eval_to_f64(m), try_eval_to_f64(s), try_eval_to_f64(th)) {
+        (Some(m), Some(s), Some(th)) => sample_normal(m, s / (2.0 * th).sqrt()),
+        _ => None,
+      }
+    }
+    ("OrnsteinUhlenbeckProcess", [_, _, _, x0]) => try_eval_to_f64(x0),
+    _ => None,
+  };
+  let Some(mut x) = initial else {
+    return unchanged();
+  };
+
+  let n_steps = ((t1 - t0) / dt).round() as i64;
+  if n_steps < 0 {
+    return unchanged();
+  }
+  let mut pairs = Vec::with_capacity(n_steps as usize + 1);
+  pairs.push(Expr::List(vec![Expr::Real(t0), Expr::Real(x)].into()));
+  let mut t = t0;
+  for _ in 0..n_steps {
+    let this_step = dt.min(t1 - t);
+    let Some((mean, sd)) = step_params(x, this_step) else {
+      return unchanged();
+    };
+    let Some(v) = sample_normal(mean, sd) else {
+      return unchanged();
+    };
+    x = v;
+    t += this_step;
+    pairs.push(Expr::List(vec![Expr::Real(t), Expr::Real(x)].into()));
+  }
+
+  Ok(time_series(pairs))
+}
+
 /// Return the `{{date, value}, ...}` pairs of a canonical `TimeSeries`.
 pub fn time_series_pairs(expr: &Expr) -> Option<Vec<(Expr, Expr)>> {
   let pairs = match expr {
@@ -1426,6 +1545,13 @@ fn apply_property(
       Expr::List(items) => Some(Expr::Integer(items.len() as i128)),
       _ => Some(Expr::Integer(1)),
     },
+    // `RandomFunction[…]["States"]` — wolframscript reports every
+    // realization the same way whether one or several were requested, so a
+    // single realization (the only kind Woxi's `RandomFunction` produces) is
+    // still wrapped as a one-element list of paths: `[[1]]` then extracts it.
+    "States" => Some(Expr::List(
+      vec![Expr::List(pairs.iter().map(|(_, v)| v.clone()).collect())].into(),
+    )),
     _ => None,
   }
 }
