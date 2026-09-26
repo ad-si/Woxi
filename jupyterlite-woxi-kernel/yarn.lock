@@ -354,23 +354,10 @@
     "@lumino/signaling" "^2.1.5"
     "@lumino/virtualdom" "^2.0.4"
 
-"@module-federation/error-codes@0.22.0":
-  version "0.22.0"
-  resolved "https://registry.npmjs.org/@module-federation/error-codes/-/error-codes-0.22.0.tgz"
-  integrity sha512-xF9SjnEy7vTdx+xekjPCV5cIHOGCkdn3pIxo9vU7gEZMIw0SvAEdsy6Uh17xaCpm8V0FWvR0SZoK9Ik6jGOaug==
-
 "@module-federation/error-codes@2.6.0":
   version "2.6.0"
   resolved "https://registry.npmjs.org/@module-federation/error-codes/-/error-codes-2.6.0.tgz"
   integrity sha512-J9opjWJJZ1JI/9EvNZF8Ps1VMHS9EsH/i0UjCkQQxFVYZxSDBX1CFunvc7awac4cY//LqJUfqBbfoQPhCfKKKw==
-
-"@module-federation/runtime-core@0.22.0":
-  version "0.22.0"
-  resolved "https://registry.npmjs.org/@module-federation/runtime-core/-/runtime-core-0.22.0.tgz"
-  integrity sha512-GR1TcD6/s7zqItfhC87zAp30PqzvceoeDGYTgF3Vx2TXvsfDrhP6Qw9T4vudDQL3uJRne6t7CzdT29YyVxlgIA==
-  dependencies:
-    "@module-federation/error-codes" "0.22.0"
-    "@module-federation/sdk" "0.22.0"
 
 "@module-federation/runtime-core@2.6.0":
   version "2.6.0"
@@ -388,23 +375,6 @@
     "@module-federation/runtime" "2.6.0"
     "@module-federation/webpack-bundler-runtime" "2.6.0"
 
-"@module-federation/runtime-tools@0.22.0":
-  version "0.22.0"
-  resolved "https://registry.npmjs.org/@module-federation/runtime-tools/-/runtime-tools-0.22.0.tgz"
-  integrity sha512-4ScUJ/aUfEernb+4PbLdhM/c60VHl698Gn1gY21m9vyC1Ucn69fPCA1y2EwcCB7IItseRMoNhdcWQnzt/OPCNA==
-  dependencies:
-    "@module-federation/runtime" "0.22.0"
-    "@module-federation/webpack-bundler-runtime" "0.22.0"
-
-"@module-federation/runtime@0.22.0":
-  version "0.22.0"
-  resolved "https://registry.npmjs.org/@module-federation/runtime/-/runtime-0.22.0.tgz"
-  integrity sha512-38g5iPju2tPC3KHMPxRKmy4k4onNp6ypFPS1eKGsNLUkXgHsPMBFqAjDw96iEcjri91BrahG4XcdyKi97xZzlA==
-  dependencies:
-    "@module-federation/error-codes" "0.22.0"
-    "@module-federation/runtime-core" "0.22.0"
-    "@module-federation/sdk" "0.22.0"
-
 "@module-federation/runtime@2.6.0":
   version "2.6.0"
   resolved "https://registry.npmjs.org/@module-federation/runtime/-/runtime-2.6.0.tgz"
@@ -414,23 +384,10 @@
     "@module-federation/runtime-core" "2.6.0"
     "@module-federation/sdk" "2.6.0"
 
-"@module-federation/sdk@0.22.0":
-  version "0.22.0"
-  resolved "https://registry.npmjs.org/@module-federation/sdk/-/sdk-0.22.0.tgz"
-  integrity sha512-x4aFNBKn2KVQRuNVC5A7SnrSCSqyfIWmm1DvubjbO9iKFe7ith5niw8dqSFBekYBg2Fwy+eMg4sEFNVvCAdo6g==
-
 "@module-federation/sdk@2.6.0":
   version "2.6.0"
   resolved "https://registry.npmjs.org/@module-federation/sdk/-/sdk-2.6.0.tgz"
   integrity sha512-Z3HT1uDciMrvz2at3sw6TJbAK9Fl7RmoC/8iqO35HDtQMQJ1qSsMIAjnsiCpAC0D4nAm6PIqgSqPWRO/WYgo0Q==
-
-"@module-federation/webpack-bundler-runtime@0.22.0":
-  version "0.22.0"
-  resolved "https://registry.npmjs.org/@module-federation/webpack-bundler-runtime/-/webpack-bundler-runtime-0.22.0.tgz"
-  integrity sha512-aM8gCqXu+/4wBmJtVeMeeMN5guw3chf+2i6HajKtQv7SJfxV/f4IyNQJUeUQu9HfiAZHjqtMV5Lvq/Lvh8LdyA==
-  dependencies:
-    "@module-federation/runtime" "0.22.0"
-    "@module-federation/sdk" "0.22.0"
 
 "@module-federation/webpack-bundler-runtime@2.6.0":
   version "2.6.0"
@@ -453,31 +410,10 @@
     lodash-es "^4.17.21"
     react-is "^18.2.0"
 
-"@rspack/binding-darwin-arm64@1.7.12":
-  version "1.7.12"
-  resolved "https://registry.npmjs.org/@rspack/binding-darwin-arm64/-/binding-darwin-arm64-1.7.12.tgz"
-  integrity sha512-rbFprJaJiqrmfy8SHth8EsoRS0wg4bXcucwj9NiMzpGFq14Opw8c04iQ6H9BECYzgmN0PKZ9rh41LdVvhdZe4A==
-
 "@rspack/binding-darwin-arm64@2.0.8":
   version "2.0.8"
   resolved "https://registry.npmjs.org/@rspack/binding-darwin-arm64/-/binding-darwin-arm64-2.0.8.tgz"
   integrity sha512-vCgbgH7B7qom+uID+RCZsTCOYFb9wC4/4+1U6rMfytrXGVJ72eNQs2tbdjOl0lb18CT3N/n+VkWynUiLk84GwA==
-
-"@rspack/binding@1.7.12":
-  version "1.7.12"
-  resolved "https://registry.npmjs.org/@rspack/binding/-/binding-1.7.12.tgz"
-  integrity sha512-f4HHuLbvuld8Ba4iB/4ibse5XrKxFrgmM3S4P2AOKnPlekAFlBjmltCuaTL/W2ggYvILaVY+YcFXrEH1rrKeQA==
-  optionalDependencies:
-    "@rspack/binding-darwin-arm64" "1.7.12"
-    "@rspack/binding-darwin-x64" "1.7.12"
-    "@rspack/binding-linux-arm64-gnu" "1.7.12"
-    "@rspack/binding-linux-arm64-musl" "1.7.12"
-    "@rspack/binding-linux-x64-gnu" "1.7.12"
-    "@rspack/binding-linux-x64-musl" "1.7.12"
-    "@rspack/binding-wasm32-wasi" "1.7.12"
-    "@rspack/binding-win32-arm64-msvc" "1.7.12"
-    "@rspack/binding-win32-ia32-msvc" "1.7.12"
-    "@rspack/binding-win32-x64-msvc" "1.7.12"
 
 "@rspack/binding@2.0.8":
   version "2.0.8"
@@ -501,20 +437,6 @@
   integrity sha512-+NLGJf8gZxihDmMFzjlly3toc2SMjeDmuvz0/Cai9AMdV4F+Pqcnt2BA9V4e3SY2jmhJQtPwgyyLtR1RiJO77g==
   dependencies:
     "@rspack/binding" "2.0.8"
-
-"@rspack/core@0.x || 1.x":
-  version "1.7.12"
-  resolved "https://registry.npmjs.org/@rspack/core/-/core-1.7.12.tgz"
-  integrity sha512-6CwFIHlhRmXfZoMj3v9MZ1SMTPBn+cHVXeMIeaGp5sufqinKsISbsqHu6ZMJu2wDSmZLdmQJX6zLxkhcAUlhkQ==
-  dependencies:
-    "@module-federation/runtime-tools" "0.22.0"
-    "@rspack/binding" "1.7.12"
-    "@rspack/lite-tapable" "1.1.0"
-
-"@rspack/lite-tapable@1.1.0":
-  version "1.1.0"
-  resolved "https://registry.npmjs.org/@rspack/lite-tapable/-/lite-tapable-1.1.0.tgz"
-  integrity sha512-E2B0JhYFmVAwdDiG14+DW0Di4Ze4Jg10Pc4/lILUrd5DRCaklduz2OvJ5HYQ6G+hd+WTzqQb3QnDNfK4yvAFYw==
 
 "@types/emscripten@^1.39.6":
   version "1.41.5"
@@ -1377,7 +1299,7 @@ tr46@^2.1.0:
   dependencies:
     punycode "^2.1.1"
 
-tslib@^2.3.1, tslib@^2.4.0:
+tslib@^2.3.1:
   version "2.8.1"
 
 typescript@~5.3.0:
