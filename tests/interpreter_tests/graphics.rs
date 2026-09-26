@@ -21833,6 +21833,74 @@ mod manipulate {
     }
   }
 
+  // A Demonstration that drags a *list* of points drawn by a body-local
+  // `LocatorPane` (e.g. a polygon's vertices) — with no `Specifications`
+  // entry for that variable at all, only a plain `var = expr;` statement
+  // recomputing it from another control (the Wolfram Demonstrations Project
+  // "Intersecting Lines in All Possible Ways" idiom) — becomes a draggable
+  // multi-point `Locator` control, and the statement resetting it moves out
+  // of the body into `dynamic_locator_defaults` so it can be replayed only
+  // when `n` (not a drag) changes.
+  #[test]
+  fn spec_body_locator_pane_promotes_a_list_of_points() {
+    let expr = interpret_to_expr(
+      "Manipulate[pts = Table[{i, 0}, {i, n}]; \
+       LocatorPane[Dynamic[pts], Graphics[{Point[pts]}]], {{n, 3}, 2, 5, 1}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    let locator = spec
+      .controls
+      .iter()
+      .find(|c| c.name() == "pts")
+      .expect("pts is promoted to a control");
+    match locator {
+      ManipulateControl::Locator {
+        points,
+        auto_create,
+        ..
+      } => {
+        assert_eq!(*points, vec![(1.0, 0.0), (2.0, 0.0), (3.0, 0.0)]);
+        assert!(
+          !auto_create,
+          "the point count follows `n`, not manual add/remove"
+        );
+      }
+      other => panic!("expected a multi-point Locator control, got {other:?}"),
+    }
+    let (var, code) = spec
+      .dynamic_locator_defaults
+      .iter()
+      .find(|(n, _)| n == "pts")
+      .expect("pts carries a reset expression depending on n");
+    assert_eq!(var, "pts");
+    // Evaluated against a *different* `n` (rather than string-matching the
+    // InputForm) so the assertion doesn't depend on incidental spacing —
+    // and it proves the code actually recomputes from `n` rather than
+    // having frozen the build-time value.
+    let recomputed =
+      woxi::with_scoped_globals(&[("n".to_string(), "5".to_string())], || {
+        woxi::interpret_to_expr(code)
+      })
+      .expect("the reset code evaluates against a live `n`");
+    assert_eq!(
+      woxi::syntax::expr_to_input_form(&recomputed),
+      "{{1, 0}, {2, 0}, {3, 0}, {4, 0}, {5, 0}}",
+      "recomputing with n = 5 should yield 5 points"
+    );
+    assert!(
+      !spec.body_code.contains("pts = Table"),
+      "the reset statement moved out of the body so re-evaluating it \
+       doesn't clobber a drag: {}",
+      spec.body_code
+    );
+    assert!(
+      spec.body_code.contains("LocatorPane"),
+      "the LocatorPane call itself stays in the body: {}",
+      spec.body_code
+    );
+  }
+
   // A Demonstration that wants its pick list *inside* its own layout writes
   // `PopupMenu[Dynamic[var], choices]` in the body and declares `var` as a
   // hidden `ControlType -> None` variable. That is a control, so it becomes
