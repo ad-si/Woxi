@@ -1261,13 +1261,22 @@ fn render_panel_layout(
     let (x_range, y_range) =
       apply_plot_range_override(parsed, x_range, y_range);
     // `PlotLayout` splits each series into its own panel; a per-series
-    // `Joined -> {..., False, ...}` still picks that panel's renderer.
-    let scatter = parsed
-      .opts
-      .joined_per_series
-      .as_ref()
-      .and_then(|v| v.get(idx))
-      .map_or(scatter, |&joined| !joined);
+    // `Joined -> {..., False, ...}` still picks that panel's renderer,
+    // cycling a shorter flags list the same way every other reader of
+    // `joined_per_series` does (see `resolve_series_joined`).
+    let scatter = if let Some(flags) = &parsed.opts.joined_per_series {
+      let joined =
+        crate::functions::plot::resolve_series_joined(Some(flags), idx);
+      // `opts` now holds this single series at index 0 (`single`, below),
+      // so its own `joined_per_series` must shrink to match — left at the
+      // original full-plot flags list, the line/scatter renderer would
+      // resolve index 0 of *that* list for every panel instead of the
+      // panel's own resolved state.
+      opts.joined_per_series = Some(vec![joined]);
+      !joined
+    } else {
+      scatter
+    };
     let svg = if scatter {
       generate_scatter_svg_with_options(single, x_range, y_range, &opts)?
     } else {
@@ -1361,9 +1370,22 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     generate_scatter_svg_with_options(&draw_series, x_range, y_range, opts)?
   };
 
-  let is_scatter: Vec<bool> = match &opts.joined_per_series {
-    Some(flags) => flags.iter().map(|&b| !b).collect(),
-    None => vec![!joined],
+  // Resolved per series rather than copied from `opts.joined_per_series`
+  // directly: a flags list shorter than `draw_series` must cycle exactly
+  // like `generate_svg_with_options` cycles it when actually drawing, or
+  // `PlotSource.is_scatter` (which `Show` merges and interactive
+  // re-renders read) would disagree with the SVG this same call produced.
+  let is_scatter: Vec<bool> = if opts.joined_per_series.is_some() {
+    (0..draw_series.len())
+      .map(|i| {
+        !crate::functions::plot::resolve_series_joined(
+          opts.joined_per_series.as_deref(),
+          i,
+        )
+      })
+      .collect()
+  } else {
+    vec![!joined]
   };
   let mut source = build_plot_source(
     &draw_series,

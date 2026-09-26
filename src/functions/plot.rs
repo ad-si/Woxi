@@ -3284,68 +3284,24 @@ fn generate_svg_with_options(
           }
 
           // `ListPlot[…, Joined -> {..., False, ...}]`: this series stays a
-          // scatter of points instead of a connected curve, matching what
-          // `generate_scatter_svg_with_options` draws for an all-points
-          // `ListPlot`, while sibling series in the same chart still join.
-          let series_joined = opts
-            .joined_per_series
-            .as_ref()
-            .and_then(|v| v.get(series_idx))
-            .copied()
-            .unwrap_or(true);
+          // scatter of points instead of a connected curve, while sibling
+          // series in the same chart still join.
+          let series_joined =
+            resolve_series_joined(opts.joined_per_series.as_deref(), series_idx);
 
           if !series_joined {
             let marker_size =
               series_point_radius(&opts.plot_style, series_idx, render_width);
-            let stem_style =
-              fill_paint(series_filling_style(opts, series_idx), (r, g, b))
-                .stroke_width(RESOLUTION_SCALE);
-            let stem_targets: Vec<((f64, f64), f64)> =
-              match series_fill_target(opts, series_idx) {
-                FillTarget::Level(level) => level
-                  .reference_y(y_min, y_max)
-                  .map(|ref_y| {
-                    points.iter().copied().map(|p| (p, ref_y)).collect()
-                  })
-                  .unwrap_or_default(),
-                FillTarget::Series(target_idx) => {
-                  if target_idx != series_idx
-                    && let Some(target) = all_points.get(target_idx)
-                  {
-                    points
-                      .iter()
-                      .copied()
-                      .filter_map(|(x, y)| {
-                        interp_polyline_y(target, x).map(|ty| ((x, y), ty))
-                      })
-                      .collect()
-                  } else {
-                    Vec::new()
-                  }
-                }
-              };
-            for ((x, y), ref_y) in stem_targets {
-              chart
-                .draw_series(std::iter::once(PathElement::new(
-                  vec![(x, y), (x, ref_y)],
-                  stem_style,
-                )))
-                .map_err(|e| {
-                  InterpreterError::EvaluationError(format!("Plot: {e}"))
-                })?;
-            }
-            let finite_pts: Vec<(f64, f64)> = points
-              .iter()
-              .copied()
-              .filter(|(x, y)| x.is_finite() && y.is_finite())
-              .collect();
-            chart
-              .draw_series(finite_pts.iter().map(|&(x, y)| {
-                Circle::new((x, y), marker_size, color.filled())
-              }))
-              .map_err(|e| {
-                InterpreterError::EvaluationError(format!("Plot: {e}"))
-              })?;
+            draw_scatter_series(
+              &mut chart,
+              all_points,
+              series_idx,
+              opts,
+              (r, g, b),
+              marker_size,
+              y_min,
+              y_max,
+            )?;
           } else {
             // Draw filled area before the line so the line renders on top.
             // In stacked mode each band is bounded below by the previous
@@ -4150,6 +4106,24 @@ fn series_point_radius(
   }
 }
 
+/// Whether series `idx` draws as a connected line rather than scattered
+/// points, per `ListPlot[…, Joined -> {b1, b2, …}]`. A series past the end
+/// of a shorter flags list cycles back into it — the same rule `PlotStyle`,
+/// `PlotMarkers`, and every other per-series option already follow — rather
+/// than picking an arbitrary default; every place that reads
+/// `PlotOptions::joined_per_series` calls this one function so a plot's
+/// initial render, a `Show` merge, and an interactive re-render never
+/// disagree about which series is which.
+pub(crate) fn resolve_series_joined(
+  joined_per_series: Option<&[bool]>,
+  idx: usize,
+) -> bool {
+  match joined_per_series {
+    Some(flags) if !flags.is_empty() => flags[idx % flags.len()],
+    _ => true,
+  }
+}
+
 /// Get the dash pattern (in data-space fractions) for a series, if any.
 fn series_dashing(plot_style: &[SeriesStyle], idx: usize) -> Option<Vec<f64>> {
   if plot_style.is_empty() {
@@ -4464,50 +4438,6 @@ pub(crate) fn generate_scatter_svg_with_options(
         series_point_radius(&opts.plot_style, series_idx, render_width);
       let (r, g, b) = series_color(&opts.plot_style, series_idx);
       let color = RGBColor(r, g, b);
-      let finite_pts: Vec<(f64, f64)> = points
-        .iter()
-        .copied()
-        .filter(|(x, y)| x.is_finite() && y.is_finite())
-        .collect();
-
-      // Draw stem lines from each point to the fill reference: a constant
-      // level for Axis/Bottom/Top/value, or — for `Filling -> {i -> {j}}` —
-      // the other series, linearly interpolated at this point's x so
-      // irregularly spaced datasets fill correctly.
-      let stem_style =
-        fill_paint(series_filling_style(opts, series_idx), (r, g, b))
-          .stroke_width(RESOLUTION_SCALE);
-      let stem_targets: Vec<((f64, f64), f64)> =
-        match series_fill_target(opts, series_idx) {
-          FillTarget::Level(level) => level
-            .reference_y(y_min, y_max)
-            .map(|ref_y| finite_pts.iter().map(|&p| (p, ref_y)).collect())
-            .unwrap_or_default(),
-          FillTarget::Series(target_idx) => {
-            if target_idx != series_idx
-              && let Some(target) = all_series.get(target_idx)
-            {
-              finite_pts
-                .iter()
-                .filter_map(|&(x, y)| {
-                  interp_polyline_y(target, x).map(|ty| ((x, y), ty))
-                })
-                .collect()
-            } else {
-              Vec::new()
-            }
-          }
-        };
-      for ((x, y), ref_y) in stem_targets {
-        chart
-          .draw_series(std::iter::once(PathElement::new(
-            vec![(x, y), (x, ref_y)],
-            stem_style,
-          )))
-          .map_err(|e| {
-            InterpreterError::EvaluationError(format!("Plot: {e}"))
-          })?;
-      }
 
       // Uncertainty intervals from Around data values, under the point
       // markers: capped error bars by default, one filled band per series
@@ -4529,42 +4459,16 @@ pub(crate) fn generate_scatter_svg_with_options(
         }
       }
 
-      // `PlotMarkers` replaces the round dot with its glyph, drawn
-      // centred on the point at the size the marker spec asks for.
-      match series_marker(&opts.plot_markers, series_idx) {
-        Some(marker) => {
-          let (mr, mg, mb) = marker.color.unwrap_or((r, g, b));
-          let style = ("sans-serif", marker.size * sf)
-            .into_font()
-            .color(&RGBColor(mr, mg, mb))
-            .pos(plotters::style::text_anchor::Pos::new(
-              plotters::style::text_anchor::HPos::Center,
-              plotters::style::text_anchor::VPos::Center,
-            ));
-          chart
-            .draw_series(finite_pts.iter().map(|&(x, y)| {
-              plotters::element::Text::new(
-                marker.glyph.clone(),
-                (x, y),
-                style.clone(),
-              )
-            }))
-            .map_err(|e| {
-              InterpreterError::EvaluationError(format!("Plot: {e}"))
-            })?;
-        }
-        None => {
-          chart
-            .draw_series(
-              finite_pts.iter().map(|&(x, y)| {
-                Circle::new((x, y), marker_size, color.filled())
-              }),
-            )
-            .map_err(|e| {
-              InterpreterError::EvaluationError(format!("Plot: {e}"))
-            })?;
-        }
-      }
+      draw_scatter_series(
+        &mut chart,
+        all_series,
+        series_idx,
+        opts,
+        (r, g, b),
+        marker_size,
+        y_min,
+        y_max,
+      )?;
     }
 
     root
@@ -7966,6 +7870,113 @@ fn series_marker(
     return None;
   }
   markers[idx % markers.len()].as_ref()
+}
+
+/// Draw one series of scattered points onto an already-built chart:
+/// fill-target stem lines (mirroring the fill a joined curve would get from
+/// `Filling`), then either the series' `PlotMarkers` glyph or, lacking one,
+/// the default round dot — the two are mutually exclusive, exactly as
+/// `generate_scatter_svg_with_options` draws an all-points `ListPlot`. This
+/// is the single implementation both that renderer and a `ListPlot[…,
+/// Joined -> {…, False, …}]` series inside the line renderer
+/// (`generate_svg_with_options`) call, so the two never drift into drawing
+/// a series' points differently (e.g. a default circle *and* a glyph on
+/// top of it).
+#[allow(clippy::too_many_arguments)]
+fn draw_scatter_series<DB, CT>(
+  chart: &mut plotters::prelude::ChartContext<DB, CT>,
+  all_series: &[Vec<(f64, f64)>],
+  series_idx: usize,
+  opts: &PlotOptions,
+  rgb: (u8, u8, u8),
+  marker_size: u32,
+  y_min: f64,
+  y_max: f64,
+) -> Result<(), InterpreterError>
+where
+  DB: plotters::prelude::DrawingBackend,
+  CT: plotters::prelude::CoordTranslate<From = (f64, f64)>,
+{
+  let (r, g, b) = rgb;
+  let color = RGBColor(r, g, b);
+  let points = &all_series[series_idx];
+  let finite_pts: Vec<(f64, f64)> = points
+    .iter()
+    .copied()
+    .filter(|(x, y)| x.is_finite() && y.is_finite())
+    .collect();
+
+  // Draw stem lines from each point to the fill reference: a constant
+  // level for Axis/Bottom/Top/value, or — for `Filling -> {i -> {j}}` —
+  // the other series, linearly interpolated at this point's x so
+  // irregularly spaced datasets fill correctly.
+  let stem_style =
+    fill_paint(series_filling_style(opts, series_idx), (r, g, b))
+      .stroke_width(RESOLUTION_SCALE);
+  let stem_targets: Vec<((f64, f64), f64)> =
+    match series_fill_target(opts, series_idx) {
+      FillTarget::Level(level) => level
+        .reference_y(y_min, y_max)
+        .map(|ref_y| finite_pts.iter().map(|&p| (p, ref_y)).collect())
+        .unwrap_or_default(),
+      FillTarget::Series(target_idx) => {
+        if target_idx != series_idx
+          && let Some(target) = all_series.get(target_idx)
+        {
+          finite_pts
+            .iter()
+            .copied()
+            .filter_map(|(x, y)| {
+              interp_polyline_y(target, x).map(|ty| ((x, y), ty))
+            })
+            .collect()
+        } else {
+          Vec::new()
+        }
+      }
+    };
+  for ((x, y), ref_y) in stem_targets {
+    chart
+      .draw_series(std::iter::once(PathElement::new(
+        vec![(x, y), (x, ref_y)],
+        stem_style,
+      )))
+      .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
+  }
+
+  // `PlotMarkers` replaces the round dot with its glyph, drawn
+  // centred on the point at the size the marker spec asks for.
+  match series_marker(&opts.plot_markers, series_idx) {
+    Some(marker) => {
+      let (mr, mg, mb) = marker.color.unwrap_or((r, g, b));
+      let style = ("sans-serif", marker.size * RESOLUTION_SCALE as f64)
+        .into_font()
+        .color(&RGBColor(mr, mg, mb))
+        .pos(plotters::style::text_anchor::Pos::new(
+          plotters::style::text_anchor::HPos::Center,
+          plotters::style::text_anchor::VPos::Center,
+        ));
+      chart
+        .draw_series(finite_pts.iter().map(|&(x, y)| {
+          plotters::element::Text::new(
+            marker.glyph.clone(),
+            (x, y),
+            style.clone(),
+          )
+        }))
+        .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
+    }
+    None => {
+      chart
+        .draw_series(
+          finite_pts
+            .iter()
+            .map(|&(x, y)| Circle::new((x, y), marker_size, color.filled())),
+        )
+        .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
+    }
+  }
+  Ok(())
 }
 
 /// Carry the parsed `PlotMarkers` into a plot's [`PlotSource`], so a

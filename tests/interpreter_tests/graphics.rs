@@ -9449,6 +9449,29 @@ mod plot3d {
       assert_eq!(svg.matches("fill=\"#E0932C\"").count(), 3);
     }
 
+    // Regression: `render_panel_layout` picked each panel's renderer from
+    // the plot's single `Joined` flag only, ignoring a per-series `Joined
+    // -> {b1, b2, ...}` list entirely — every panel followed whichever
+    // series happened to set `parsed.joined` via `flags.iter().any(...)`.
+    // Each series still gets its own panel under `PlotLayout`, and now its
+    // own flag decides that panel's renderer independently of the others.
+    #[test]
+    fn list_plot_row_layout_joined_per_series() {
+      let svg = export_svg(
+        "ListPlot[{{1, 2, 3}, {4, 5, 6}}, PlotLayout -> \"Row\", \
+         Joined -> {False, True}]",
+      );
+      assert_eq!(
+        svg.matches("<circle").count(),
+        3,
+        "panel 1 (Joined -> False) should draw one point per value: {svg}"
+      );
+      assert!(
+        svg.contains("<polyline"),
+        "panel 2 (Joined -> True) should draw a connected curve: {svg}"
+      );
+    }
+
     /// Labeled around individual {x, y} pairs labels the points of a single
     /// series (like wolframscript, which interprets `{{1, 2}, {3, 4}}` as a
     /// list of points regardless of wrappers), not two separate datasets.
