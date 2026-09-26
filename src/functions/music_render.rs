@@ -61,6 +61,17 @@ impl Dur {
   fn has_stem(self) -> bool {
     self != Self::Whole
   }
+
+  /// The nominal rhythmic value (a whole note is `1`).
+  fn value(self) -> f64 {
+    match self {
+      Self::Whole => 1.0,
+      Self::Half => 0.5,
+      Self::Quarter => 0.25,
+      Self::Eighth => 0.125,
+      Self::Sixteenth => 0.0625,
+    }
+  }
 }
 
 /// One note head: its diatonic staff position and accidental
@@ -74,13 +85,17 @@ struct Head {
 /// A drawable element laid out left to right on the staff.
 #[derive(Clone)]
 enum Glyph {
-  /// A note or (with several heads) a chord.
+  /// A note or (with several heads) a chord. `len` is its exact rhythmic
+  /// value (a whole note is `1`), which places simultaneous events of
+  /// different voices in the same column; `dur` is only the drawn glyph.
   Note {
     heads: Vec<Head>,
     dur: Dur,
+    len: f64,
   },
   Rest {
     dur: Dur,
+    len: f64,
   },
   /// A time signature drawn as stacked numerator/denominator digits.
   TimeSig {
@@ -218,6 +233,13 @@ fn parse_duration(spec: &Expr) -> Dur {
   }
 }
 
+/// The glyph and exact rhythmic value of a duration specification (see
+/// [`parse_duration`]); a named duration has its nominal value.
+fn parse_length(spec: &Expr) -> (Dur, f64) {
+  let dur = parse_duration(spec);
+  (dur, duration_value_f64(spec).unwrap_or(dur.value()))
+}
+
 /// The numeric rhythmic value of a duration given as a bare number or a
 /// canonical `MusicDuration[<|"Duration" -> value|>]` association.
 fn duration_value_f64(spec: &Expr) -> Option<f64> {
@@ -259,7 +281,7 @@ fn duration_value_f64(spec: &Expr) -> Option<f64> {
         other => value_of(other),
       }
     }
-    _ => None,
+    other => value_of(other),
   }
 }
 
@@ -359,10 +381,12 @@ fn collect(
             })
           };
           if let Some(h) = get("Pitch").and_then(pitch_head) {
-            let dur = get("Duration").map_or(Dur::Quarter, parse_duration);
+            let (dur, len) =
+              get("Duration").map_or((Dur::Quarter, 0.25), parse_length);
             out.push(Glyph::Note {
               heads: vec![h],
               dur,
+              len,
             });
           }
         }
@@ -370,10 +394,12 @@ fn collect(
       }
       "MusicNote" if !args.is_empty() => {
         if let Some(h) = pitch_head(&args[0]) {
-          let dur = args.get(1).map_or(Dur::Quarter, parse_duration);
+          let (dur, len) =
+            args.get(1).map_or((Dur::Quarter, 0.25), parse_length);
           out.push(Glyph::Note {
             heads: vec![h],
             dur,
+            len,
           });
         }
         false
@@ -382,18 +408,18 @@ fn collect(
         // The canonical association form `MusicRest[<|"Duration" -> …|>]`
         // carries its value under `"Duration"`; an empty `MusicRest[<||>]`
         // is a quarter rest.
-        let dur = match args.first() {
+        let (dur, len) = match args.first() {
           Some(Expr::Association(pairs)) => pairs
             .iter()
             .find_map(|(k, v)| match k {
-              Expr::String(s) if s == "Duration" => Some(parse_duration(v)),
+              Expr::String(s) if s == "Duration" => Some(parse_length(v)),
               _ => None,
             })
-            .unwrap_or(Dur::Quarter),
-          Some(spec) => parse_duration(spec),
-          None => Dur::Quarter,
+            .unwrap_or((Dur::Quarter, 0.25)),
+          Some(spec) => parse_length(spec),
+          None => (Dur::Quarter, 0.25),
         };
-        out.push(Glyph::Rest { dur });
+        out.push(Glyph::Rest { dur, len });
         false
       }
       "MusicChord" if !args.is_empty() => {
@@ -434,8 +460,9 @@ fn collect(
         }
         if !heads.is_empty() {
           heads.sort_by_key(|h| h.dn);
-          let dur = args.get(1).map_or(Dur::Quarter, parse_duration);
-          out.push(Glyph::Note { heads, dur });
+          let (dur, len) =
+            args.get(1).map_or((Dur::Quarter, 0.25), parse_length);
+          out.push(Glyph::Note { heads, dur, len });
         }
         false
       }
@@ -444,6 +471,7 @@ fn collect(
           out.push(Glyph::Note {
             heads: vec![h],
             dur: Dur::Quarter,
+            len: 0.25,
           });
         }
         true
@@ -519,6 +547,7 @@ fn collect(
         out.push(Glyph::Note {
           heads: vec![h],
           dur: Dur::Quarter,
+          len: 0.25,
         });
       }
       false
@@ -576,7 +605,20 @@ impl Canvas {
   /// tagging the emitted `<path>` with `class` so hosts (and tests) can
   /// recognise it.
   fn glyph_at(&mut self, ch: char, ox: f64, oy: f64, class: &str) {
-    let Some(d) = music_font::glyph_path_d(ch, self.scale, ox, oy) else {
+    self.glyph_scaled(ch, ox, oy, self.scale, class);
+  }
+
+  /// Draw the Leland glyph `ch` at a font-unit → user-unit `scale` other than
+  /// the staff's, its origin at `(ox, oy)` (see [`Canvas::glyph_at`]).
+  fn glyph_scaled(
+    &mut self,
+    ch: char,
+    ox: f64,
+    oy: f64,
+    scale: f64,
+    class: &str,
+  ) {
+    let Some(d) = music_font::glyph_path_d(ch, scale, ox, oy) else {
       return;
     };
     self.out.push_str(&format!(
@@ -584,8 +626,8 @@ impl Canvas {
       self.stroke
     ));
     if let Some(bb) = music_font::glyph_bbox(ch) {
-      self.bound(ox + bb.x_min * self.scale, oy - bb.y_max * self.scale);
-      self.bound(ox + bb.x_max * self.scale, oy - bb.y_min * self.scale);
+      self.bound(ox + bb.x_min * scale, oy - bb.y_max * scale);
+      self.bound(ox + bb.x_max * scale, oy - bb.y_min * scale);
     }
   }
 
@@ -953,20 +995,59 @@ fn draw_time_signature(cv: &mut Canvas, cx: f64, num: u32, den: u32) {
   cv.draw_digits_centered(cx, dn_y(BOTTOM_LINE_DN + 2), &time_sig_digits(den));
 }
 
-/// Draw the treble (G) clef with its left edge at `x`. Leland's `gClef` is
-/// registered so its origin sits on the G4 staff line, which is exactly where
-/// the clef's curl must centre.
-fn draw_treble_clef(cv: &mut Canvas, x: f64) {
-  let g = dn_y(BOTTOM_LINE_DN + 2); // G4 line
-  cv.glyph_at(glyph::G_CLEF, x, g, "clef");
+/// The clef a staff is drawn in.
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum Clef {
+  Treble,
+  Bass,
+}
+
+impl Clef {
+  /// Diatonic steps added to a pitch to draw it with the treble-staff
+  /// geometry: the bass staff's lines (G2 … A3) sit twelve degrees below the
+  /// treble staff's (E4 … F5), so a bass-staff note is laid out exactly like a
+  /// treble-staff note twelve degrees higher.
+  fn shift(self) -> i32 {
+    match self {
+      Self::Treble => 0,
+      Self::Bass => 12,
+    }
+  }
+
+  fn glyph(self) -> char {
+    match self {
+      Self::Treble => glyph::G_CLEF,
+      Self::Bass => glyph::F_CLEF,
+    }
+  }
+
+  /// Draw the clef with its origin at `x`. Leland's `gClef` is registered on
+  /// the G4 line (the second line), where its curl must centre; the `fClef` on
+  /// the F3 line (the fourth line), which its dots enclose.
+  fn draw(self, cv: &mut Canvas, x: f64) {
+    let line = match self {
+      Self::Treble => BOTTOM_LINE_DN + 2,
+      Self::Bass => BOTTOM_LINE_DN + 6,
+    };
+    cv.glyph_at(self.glyph(), x, dn_y(line), "clef");
+  }
+}
+
+/// Draw a brace spanning `top` … `bottom` with its right edge at `right`. The
+/// glyph is one staff high at its natural size, so it is scaled up uniformly
+/// to the system's height (as engraving programs do).
+fn draw_brace(cv: &mut Canvas, right: f64, top: f64, bottom: f64) {
+  let Some(bb) = music_font::glyph_bbox(glyph::BRACE) else {
+    return;
+  };
+  let s = (bottom - top) / (bb.y_max - bb.y_min);
+  let (ox, oy) = (right - bb.x_max * s, bottom + bb.y_min * s);
+  cv.glyph_scaled(glyph::BRACE, ox, oy, s, "brace");
 }
 
 /// Render a computational-music object to a standalone SVG, or `None` when the
 /// expression is not a music object that carries notation.
 pub fn music_to_svg(expr: &Expr) -> Option<String> {
-  // A MusicScore is a system of simultaneous voices — overlay them on a single
-  // shared staff (a note from each voice stacked at the same rhythmic position),
-  // rather than drawing each voice on a staff of its own.
   if let Expr::FunctionCall { name, args } = expr
     && name == "MusicScore"
   {
@@ -979,122 +1060,289 @@ pub fn music_to_svg(expr: &Expr) -> Option<String> {
   if glyphs.is_empty() {
     return None;
   }
-  Some(render_staff(&glyphs, container))
+  Some(render_system(&[(Clef::Treble, glyphs)], container))
 }
 
-/// Lay a stream of glyphs out on a single treble staff and return a
-/// self-contained SVG. `container` closes the staff with a final barline (as a
-/// whole measure/voice/score does).
-fn render_staff(glyphs: &[Glyph], container: bool) -> String {
+/// Vertical distance between adjacent staves of a system, from the bottom line
+/// of one to the top line of the next (widened when their ink would collide).
+const STAFF_DISTANCE: f64 = 5.0 * GAP;
+
+/// Lay out one system of simultaneous staves — each a clef and its glyph
+/// stream — and return a self-contained SVG. The streams are aligned in time
+/// (see [`align_columns`]) so simultaneous events share a column. Several
+/// staves are braced together, and a barline common to all of them runs
+/// through the whole system. `container` closes the system with a final
+/// barline (as a whole measure/voice/score does).
+fn render_system(staves: &[(Clef, Vec<Glyph>)], container: bool) -> String {
   let stroke = theme().text_primary;
   let scale = music_font::scale_for_gap(GAP);
-  let mut cv = Canvas::new(stroke, scale);
+  let top_y = dn_y(BOTTOM_LINE_DN + 8);
+  let bottom_y = dn_y(BOTTOM_LINE_DN);
 
-  // The clef sits at the left; `right_edge` tracks the rightmost inked point so
-  // each following glyph can be nudged clear of whatever precedes it.
+  // Move every pitch onto the treble-staff geometry of its own clef.
+  let streams: Vec<Vec<Glyph>> = staves
+    .iter()
+    .map(|(clef, glyphs)| {
+      glyphs
+        .iter()
+        .map(|g| match g {
+          Glyph::Note { heads, dur, len } => Glyph::Note {
+            heads: heads
+              .iter()
+              .map(|h| Head {
+                dn: h.dn + clef.shift(),
+                ..*h
+              })
+              .collect(),
+            dur: *dur,
+            len: *len,
+          },
+          other => other.clone(),
+        })
+        .collect()
+    })
+    .collect();
+  // Each staff is drawn on its own canvas in the same staff-local coordinates
+  // and stacked afterwards; barlines through every staff are drawn once the
+  // stacking is known.
+  let mut canvases: Vec<Canvas> =
+    staves.iter().map(|_| Canvas::new(stroke, scale)).collect();
+  let mut system_barlines = Vec::new();
+
+  // The clefs sit at the left; `right_edge` tracks each staff's rightmost
+  // inked point so each following glyph can be nudged clear of whatever
+  // precedes it on its staff.
   let clef_x = STAFF_X0 + 4.0;
-  draw_treble_clef(&mut cv, clef_x);
-  let clef_right = clef_x
-    + music_font::glyph_bbox(glyph::G_CLEF).map_or(28.0, |bb| bb.x_max * scale);
+  let mut clef_right = clef_x;
+  for ((clef, _), cv) in staves.iter().zip(&mut canvases) {
+    clef.draw(cv, clef_x);
+    let width =
+      music_font::glyph_bbox(clef.glyph()).map_or(28.0, |bb| bb.x_max * scale);
+    clef_right = clef_right.max(clef_x + width);
+  }
   let first_note_x = clef_right + 14.0;
 
-  // Lay the glyphs out left to right. `cursor` is the preferred centre of the
-  // next note (a steady rhythmic advance); `right_edge` is the rightmost ink so
-  // far. A note whose left extent (its accidentals) would collide with the
-  // previous ink is pushed right just enough to clear it, `PAD` apart.
+  // Lay the columns out left to right. `cursor` is the preferred centre of the
+  // next note (a steady rhythmic advance). A column whose left extent (e.g. an
+  // accidental) would collide with the previous ink on any of its staves is
+  // pushed right just enough to clear it, `PAD` apart.
   const PAD: f64 = 4.0;
   let mut cursor = first_note_x;
-  let mut right_edge = clef_right;
-  for g in glyphs {
-    match g {
-      Glyph::Note { heads, dur } => {
-        let left = cv.note_left_extent(heads, *dur);
-        let center = cursor.max(right_edge + PAD + left);
-        draw_note(&mut cv, center, heads, *dur);
-        right_edge = center + cv.note_right_extent(heads, *dur);
+  let mut right_edge = vec![clef_right; staves.len()];
+  for column in align_columns(&streams) {
+    let present = || {
+      column
+        .iter()
+        .enumerate()
+        .filter_map(|(s, g)| g.map(|g| (s, g)))
+    };
+    // A column holds glyphs of one kind only (see `align_columns`).
+    let Some((_, lead)) = present().next() else {
+      continue;
+    };
+    match lead {
+      Glyph::Note { .. } | Glyph::Rest { .. } => {
+        let mut center = cursor;
+        for (s, g) in present() {
+          let cv = &canvases[s];
+          let left = match g {
+            Glyph::Note { heads, dur, .. } => cv.note_left_extent(heads, *dur),
+            Glyph::Rest { dur, .. } => cv.glyph_half_width(rest_glyph(*dur)),
+            _ => 0.0,
+          };
+          center = center.max(right_edge[s] + PAD + left);
+        }
+        for (s, g) in present() {
+          let cv = &mut canvases[s];
+          right_edge[s] = center
+            + match g {
+              Glyph::Note { heads, dur, .. } => {
+                draw_note(cv, center, heads, *dur);
+                cv.note_right_extent(heads, *dur)
+              }
+              Glyph::Rest { dur, .. } => {
+                draw_rest(cv, center, *dur);
+                cv.glyph_half_width(rest_glyph(*dur))
+              }
+              _ => 0.0,
+            };
+        }
         cursor = center + ADVANCE;
       }
-      Glyph::Rest { dur } => {
-        let hw = cv.glyph_half_width(rest_glyph(*dur));
-        let center = cursor.max(right_edge + PAD + hw);
-        draw_rest(&mut cv, center, *dur);
-        right_edge = center + hw;
-        cursor = center + ADVANCE;
-      }
-      Glyph::TimeSig { num, den } => {
-        let hw = cv.time_signature_half_width(*num, *den);
-        let center = (right_edge + PAD + hw).max(clef_right + 8.0 + hw);
-        draw_time_signature(&mut cv, center, *num, *den);
-        right_edge = center + hw;
-        cursor = (center + hw + 18.0).max(cursor);
+      Glyph::TimeSig { .. } => {
+        let sigs = || {
+          present().filter_map(|(s, g)| match g {
+            Glyph::TimeSig { num, den } => Some((
+              s,
+              *num,
+              *den,
+              canvases[s].time_signature_half_width(*num, *den),
+            )),
+            _ => None,
+          })
+        };
+        let mut center = f64::NEG_INFINITY;
+        let mut hw_max = 0.0_f64;
+        for (s, _, _, hw) in sigs() {
+          center = center
+            .max(right_edge[s] + PAD + hw)
+            .max(clef_right + 8.0 + hw);
+          hw_max = hw_max.max(hw);
+        }
+        let placed: Vec<_> = sigs().collect();
+        for (s, num, den, hw) in placed {
+          draw_time_signature(&mut canvases[s], center, num, den);
+          right_edge[s] = center + hw;
+        }
+        cursor = (center + hw_max + 18.0).max(cursor);
       }
       Glyph::Barline => {
-        let bx = (right_edge + PAD).max(cursor - ADVANCE / 2.0);
-        cv.line(bx, dn_y(BOTTOM_LINE_DN + 8), bx, dn_y(BOTTOM_LINE_DN), 1.3);
-        right_edge = bx;
+        let mut bx = cursor - ADVANCE / 2.0;
+        for (s, _) in present() {
+          bx = bx.max(right_edge[s] + PAD);
+        }
+        if present().count() == staves.len() {
+          system_barlines.push(bx);
+        } else {
+          for (s, _) in present() {
+            canvases[s].line(bx, top_y, bx, bottom_y, 1.3);
+          }
+        }
+        for (s, _) in present() {
+          right_edge[s] = bx;
+        }
         cursor = bx + ADVANCE * 0.5;
       }
     }
   }
-  let staff_x_end = (right_edge + 12.0).max(first_note_x + 8.0);
-
-  // The five staff lines (drawn first, conceptually behind the glyphs — SVG
-  // paint order does not matter here since strokes are opaque and thin).
-  let mut staff = String::new();
-  for i in 0..5 {
-    let y = BOTTOM_LINE_Y - i as f64 * GAP;
-    staff.push_str(&format!(
-      "<line x1=\"{STAFF_X0:.2}\" y1=\"{y:.2}\" x2=\"{staff_x_end:.2}\" \
-       y2=\"{y:.2}\" stroke=\"{stroke}\" stroke-width=\"1\"/>"
-    ));
+  let staff_x_end = (right_edge.iter().copied().fold(clef_right, f64::max)
+    + 12.0)
+    .max(first_note_x + 8.0);
+  for cv in &mut canvases {
+    cv.bound(STAFF_X0, top_y);
+    cv.bound(staff_x_end, bottom_y);
   }
-  cv.bound(STAFF_X0, dn_y(BOTTOM_LINE_DN + 8));
-  cv.bound(staff_x_end, dn_y(BOTTOM_LINE_DN));
 
+  // Stack the staves top-down, each `STAFF_DISTANCE` below the previous one,
+  // or further if their ink would otherwise come closer than a staff space.
+  let mut offsets: Vec<f64> = Vec::with_capacity(canvases.len());
+  for (s, cv) in canvases.iter().enumerate() {
+    let off = match s.checked_sub(1) {
+      None => 0.0,
+      Some(p) => (offsets[p] + bottom_y + STAFF_DISTANCE - top_y)
+        .max(offsets[p] + canvases[p].maxy + GAP - cv.miny),
+    };
+    offsets.push(off);
+  }
+
+  // Each staff — its five lines and its glyphs — shifted into place.
+  let mut system = Canvas::new(stroke, scale);
+  let mut body = String::new();
+  for (cv, off) in canvases.iter().zip(&offsets) {
+    body.push_str(&format!("<g transform=\"translate(0 {off:.2})\">"));
+    for i in 0..5 {
+      let y = BOTTOM_LINE_Y - i as f64 * GAP;
+      body.push_str(&format!(
+        "<line x1=\"{STAFF_X0:.2}\" y1=\"{y:.2}\" x2=\"{staff_x_end:.2}\" \
+         y2=\"{y:.2}\" stroke=\"{stroke}\" stroke-width=\"1\"/>"
+      ));
+    }
+    body.push_str(&cv.out);
+    body.push_str("</g>");
+    system.bound(cv.minx, cv.miny + off);
+    system.bound(cv.maxx, cv.maxy + off);
+  }
+
+  let system_bottom = offsets.last().copied().unwrap_or(0.0) + bottom_y;
+  for bx in system_barlines {
+    system.line(bx, top_y, bx, system_bottom, 1.3);
+  }
+  // Several staves are joined at their left edge by a line and a brace.
+  if staves.len() > 1 {
+    system.line(STAFF_X0, top_y, STAFF_X0, system_bottom, 1.3);
+    draw_brace(&mut system, STAFF_X0 - 3.0, top_y, system_bottom);
+  }
   // A closing barline for whole containers (measures/voices/scores/scales).
   if container {
-    staff.push_str(&format!(
-      "<line x1=\"{x1:.2}\" y1=\"{y1:.2}\" x2=\"{x1:.2}\" y2=\"{y2:.2}\" \
-       stroke=\"{stroke}\" stroke-width=\"1.6\"/>",
-      x1 = staff_x_end,
-      y1 = dn_y(BOTTOM_LINE_DN + 8),
-      y2 = dn_y(BOTTOM_LINE_DN),
+    body.push_str(&format!(
+      "<line x1=\"{staff_x_end:.2}\" y1=\"{top_y:.2}\" x2=\"{staff_x_end:.2}\" \
+       y2=\"{system_bottom:.2}\" stroke=\"{stroke}\" stroke-width=\"1.6\"/>",
     ));
   }
 
   // Fit the viewBox around everything with a small margin.
   let pad = 6.0;
-  let minx = cv.minx.min(STAFF_X0) - pad;
-  let miny = cv.miny - pad;
-  let width = (cv.maxx.max(staff_x_end) - minx) + pad;
-  let height = (cv.maxy - miny) + pad;
+  let minx = system.minx.min(STAFF_X0) - pad;
+  let miny = system.miny - pad;
+  let width = (system.maxx.max(staff_x_end) - minx) + pad;
+  let height = (system.maxy - miny) + pad;
 
   format!(
     "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{w:.0}\" \
      height=\"{h:.0}\" viewBox=\"{minx:.2} {miny:.2} {width:.2} {height:.2}\">\
-     {staff}{body}</svg>",
+     {body}{marks}</svg>",
     w = width,
     h = height,
-    body = cv.out,
+    marks = system.out,
   )
 }
 
-/// Render a `MusicScore[{voice, …}]` as a single shared staff on which the
-/// voices are overlaid: the voices sound simultaneously, so a note from each
-/// voice at the same rhythmic position is drawn as one stacked chord. The
-/// voices are the score's single list argument (or its direct arguments), or
-/// the `"VoiceList"` of a resolved score. Returns `None` when the score is
-/// empty or any voice is not drawable, so the caller falls back to the text
-/// form.
+/// Align several glyph streams on a shared timeline and return, column by
+/// column, each stream's glyph there (or `None`). A glyph's onset is the
+/// summed length of the notes and rests before it in its stream; at one onset
+/// barlines come before time signatures, which come before notes and rests, so
+/// a column only ever holds glyphs of one kind and measure boundaries line up
+/// across the streams.
+fn align_columns(streams: &[Vec<Glyph>]) -> Vec<Vec<Option<&Glyph>>> {
+  // (onset in 2⁻²⁰ whole notes, kind rank, repeat index at that onset/rank)
+  type Key = (i64, u8, usize);
+  let keyed: Vec<Vec<Key>> = streams
+    .iter()
+    .map(|glyphs| {
+      let mut time = 0.0;
+      let mut seen = std::collections::HashMap::new();
+      glyphs
+        .iter()
+        .map(|g| {
+          let (rank, len) = match g {
+            Glyph::Barline => (0, 0.0),
+            Glyph::TimeSig { .. } => (1, 0.0),
+            Glyph::Note { len, .. } | Glyph::Rest { len, .. } => (2, *len),
+          };
+          #[allow(clippy::cast_possible_truncation)]
+          let onset = (time * 1_048_576.0_f64).round() as i64;
+          time += len;
+          let repeat = seen.entry((onset, rank)).or_insert(0);
+          *repeat += 1;
+          (onset, rank, *repeat - 1)
+        })
+        .collect()
+    })
+    .collect();
+  let mut keys: Vec<Key> = keyed.iter().flatten().copied().collect();
+  keys.sort_unstable();
+  keys.dedup();
+  let mut columns = vec![vec![None; streams.len()]; keys.len()];
+  for (s, (glyphs, stream_keys)) in streams.iter().zip(&keyed).enumerate() {
+    for (g, key) in glyphs.iter().zip(stream_keys) {
+      if let Ok(c) = keys.binary_search(key) {
+        columns[c][s] = Some(g);
+      }
+    }
+  }
+  columns
+}
+
+/// Render a `MusicScore[{voice, …}]` — its voices are the score's single list
+/// argument (or its direct arguments), or the `"VoiceList"` of a resolved
+/// score. A two-voice score is set as a grand staff: the first voice on a
+/// treble staff, the second on a bass staff, braced together with their
+/// simultaneous events aligned. Any other number of voices is overlaid on a
+/// single treble staff, simultaneous notes stacked into one chord. Returns
+/// `None` when no voice is drawable, so the caller falls back to the text form.
 fn music_score_to_svg(args: &[Expr]) -> Option<String> {
   let voices = score_voices(args)?;
-  if voices.is_empty() {
-    return None;
-  }
-
-  // Collect each voice's own glyph stream; they share meter/rhythm, so the
-  // streams line up position by position.
-  let streams: Vec<Vec<Glyph>> = voices
+  let mut streams: Vec<Vec<Glyph>> = voices
     .iter()
     .map(|v| {
       let mut glyphs = Vec::new();
@@ -1106,7 +1354,18 @@ fn music_score_to_svg(args: &[Expr]) -> Option<String> {
   if streams.iter().all(std::vec::Vec::is_empty) {
     return None;
   }
-  Some(render_staff(&merge_voice_glyphs(&streams), true))
+  if streams.len() == 2 {
+    let lower = streams.pop()?;
+    let upper = streams.pop()?;
+    return Some(render_system(
+      &[(Clef::Treble, upper), (Clef::Bass, lower)],
+      true,
+    ));
+  }
+  Some(render_system(
+    &[(Clef::Treble, merge_voice_glyphs(&streams))],
+    true,
+  ))
 }
 
 /// The voices of a `MusicScore` — its single list argument, its direct
@@ -1126,36 +1385,29 @@ fn score_voices(args: &[Expr]) -> Option<Vec<Expr>> {
   }
 }
 
-/// Overlay several voices' glyph streams into one, stacking simultaneous notes
-/// into chords. The streams are walked in lock-step (the voices share the same
-/// meter and rhythm); at each position the note heads of every voice are merged
-/// onto the leading voice's glyph, so two melodic lines print as one staff of
-/// intervals/chords. Non-note glyphs (time signatures, barlines) are taken from
-/// the leading voice.
+/// Overlay several voices' glyph streams onto one staff. The voices' events at
+/// the same onset (see [`align_columns`]) merge into one glyph: their note
+/// heads stack into a chord drawn with the first sounding voice's rhythmic
+/// value, and a rest remains only where no voice sounds a note. Meters and
+/// barlines are shared.
 fn merge_voice_glyphs(streams: &[Vec<Glyph>]) -> Vec<Glyph> {
-  let Some(lead_idx) = (0..streams.len()).max_by_key(|&i| streams[i].len())
-  else {
-    return Vec::new();
-  };
-  streams[lead_idx]
-    .iter()
-    .enumerate()
-    .map(|(i, g)| match g {
-      Glyph::Note { heads, dur } => {
-        let mut heads = heads.clone();
-        for (j, other) in streams.iter().enumerate() {
-          if j == lead_idx {
-            continue;
-          }
-          if let Some(Glyph::Note { heads: h2, .. }) = other.get(i) {
-            heads.extend(h2.iter().copied());
-          }
-        }
-        heads.sort_by_key(|h| h.dn);
-        heads.dedup_by_key(|h| (h.dn, h.accidental));
-        Glyph::Note { heads, dur: *dur }
+  align_columns(streams)
+    .into_iter()
+    .filter_map(|column| {
+      let mut notes = column.iter().flatten().filter_map(|g| match g {
+        Glyph::Note { heads, dur, len } => Some((heads, *dur, *len)),
+        _ => None,
+      });
+      let Some((first, dur, len)) = notes.next() else {
+        return column.iter().flatten().next().map(|g| (*g).clone());
+      };
+      let mut heads = first.clone();
+      for (more, _, _) in notes {
+        heads.extend(more.iter().copied());
       }
-      other => other.clone(),
+      heads.sort_by_key(|h| (h.dn, h.accidental));
+      heads.dedup_by_key(|h| (h.dn, h.accidental));
+      Some(Glyph::Note { heads, dur, len })
     })
     .collect()
 }
@@ -1274,7 +1526,7 @@ mod tests {
     out
       .into_iter()
       .filter_map(|g| match g {
-        Glyph::Rest { dur } => Some(dur),
+        Glyph::Rest { dur, .. } => Some(dur),
         _ => None,
       })
       .collect()
@@ -1599,5 +1851,82 @@ mod tests {
       })
       .collect();
     assert_eq!(sigs, vec![(4, 4), (3, 4), (4, 4)]);
+  }
+
+  /// A note of the given length on diatonic position `dn`.
+  fn note_of(dn: i32, len: f64) -> Glyph {
+    Glyph::Note {
+      heads: vec![Head { dn, accidental: 0 }],
+      dur: Dur::Quarter,
+      len,
+    }
+  }
+
+  /// Streams are aligned by onset, not by position: a half note spans two
+  /// columns of a voice moving in quarters, and a barline lines up with the
+  /// other voice's barline even when the measures hold different note counts.
+  #[test]
+  fn columns_align_simultaneous_events_by_onset() {
+    let upper = vec![note_of(35, 0.5), note_of(36, 0.25), Glyph::Barline];
+    let lower = vec![
+      note_of(21, 0.25),
+      note_of(22, 0.25),
+      Glyph::Rest {
+        dur: Dur::Quarter,
+        len: 0.25,
+      },
+      Glyph::Barline,
+    ];
+    let streams = [upper, lower];
+    let columns = align_columns(&streams);
+    let shape: Vec<(bool, bool)> = columns
+      .iter()
+      .map(|c| (c[0].is_some(), c[1].is_some()))
+      .collect();
+    // onset 0: both, 1/4: lower only, 1/2: both, 3/4: the shared barline.
+    assert_eq!(
+      shape,
+      vec![(true, true), (false, true), (true, true), (true, true)]
+    );
+    assert!(matches!(columns[3][0], Some(Glyph::Barline)));
+    assert!(matches!(columns[3][1], Some(Glyph::Barline)));
+  }
+
+  /// Overlaying voices merges only the notes that sound together; a note held
+  /// in one voice leaves the other voice's following note on its own.
+  #[test]
+  fn merged_voices_stack_only_simultaneous_notes() {
+    let merged = merge_voice_glyphs(&[
+      vec![note_of(35, 0.5)],
+      vec![note_of(30, 0.25), note_of(31, 0.25)],
+    ]);
+    let heads: Vec<Vec<i32>> = merged
+      .iter()
+      .map(|g| match g {
+        Glyph::Note { heads, .. } => heads.iter().map(|h| h.dn).collect(),
+        _ => vec![],
+      })
+      .collect();
+    assert_eq!(heads, vec![vec![30, 35], vec![31]]);
+  }
+
+  /// The bass staff's lines are G2 … A3: C3 sits in its second space, which is
+  /// drawn exactly where A4 (the treble staff's second space) is.
+  #[test]
+  fn bass_clef_shifts_pitches_onto_the_staff() {
+    let (c3, _) = diatonic_number("C3").unwrap();
+    let (a4, _) = diatonic_number("A4").unwrap();
+    assert_eq!(c3 + Clef::Bass.shift(), a4);
+    assert_eq!(Clef::Treble.shift(), 0);
+  }
+
+  /// A bare rhythmic value (as in an unevaluated `MusicRest[1/8]`) is read as
+  /// that value rather than falling back to a quarter.
+  #[test]
+  fn bare_rhythmic_value_is_its_own_length() {
+    let eighth = call("Rational", vec![Expr::Integer(1), Expr::Integer(8)]);
+    let (dur, len) = parse_length(&eighth);
+    assert_eq!(dur, Dur::Eighth);
+    assert!((len - 0.125).abs() < 1e-12);
   }
 }

@@ -32,6 +32,11 @@ fn face() -> Option<&'static Face<'static>> {
 pub mod glyph {
   /// Treble (G) clef; its origin sits on the G4 staff line.
   pub const G_CLEF: char = '\u{E050}';
+  /// Bass (F) clef; its origin sits on the F3 staff line.
+  pub const F_CLEF: char = '\u{E062}';
+  /// The brace joining the staves of a grand staff; one staff high at its
+  /// natural size, with its origin at the bottom.
+  pub const BRACE: char = '\u{E000}';
   pub const NOTEHEAD_WHOLE: char = '\u{E0A2}';
   pub const NOTEHEAD_HALF: char = '\u{E0A3}';
   pub const NOTEHEAD_BLACK: char = '\u{E0A4}';
@@ -178,6 +183,8 @@ mod tests {
   fn every_used_glyph_has_an_outline() {
     for ch in [
       glyph::G_CLEF,
+      glyph::F_CLEF,
+      glyph::BRACE,
       glyph::NOTEHEAD_WHOLE,
       glyph::NOTEHEAD_HALF,
       glyph::NOTEHEAD_BLACK,

@@ -390,6 +390,12 @@ $(WASM_PKG): $(WASM_SRCS)
 wasm-build: $(WASM_PKG)
 
 
+# Serve only the playground (no docs site or JupyterLite build).
+.PHONY: playground/serve
+playground/serve: $(WASM_PKG)
+	cd tests/playground && npx -y http-server -p 5501 -c-1 -s .
+
+
 # Bundle CodeMirror (+ LZString) into tests/playground/vendor/codemirror.js so
 # the playground loads its editor locally instead of from the esm.sh CDN. The
 # committed bundle is what the playground actually serves; run this only to

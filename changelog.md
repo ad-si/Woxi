@@ -2,6 +2,16 @@
 
 # Unreleased
 
+- `ListPlot[{list1, list2, ...}, Joined -> {b1, b2, ...}]` only ever
+    matched the bare `Joined -> True` identifier, so a per-series list of
+    booleans fell through unnoticed and every series rendered as scattered
+    points regardless of its own flag. Series `i` now draws as a connected
+    curve exactly when `bi` is `True`, independent of its siblings, sharing
+    one chart with the rest. Found while checking Woxi Studio against the
+    "Detecting a Signal with Background Noise" Wolfram Demonstration, whose
+    `Manipulate` plots a raw noisy signal as points next to a smoothed test
+    curve drawn as a line, both from a single `ListPlot` call.
+
 - A `Slider2D` control whose corner-point bounds name another control's
     variable declared later in the same `Manipulate` (`{{p, {0.2, 0.2}, ""},
     {0, 0}, {a, b}, ControlType -> Slider2D}`, with `a`/`b` themselves plain

@@ -4844,6 +4844,74 @@ mod nintegrate {
     );
   }
   #[test]
+  fn nintegrate_boole_indicator_is_exact_region_length() {
+    // Boole[cond] is a 0/1 indicator: its integral is exactly the length
+    // of the sub-interval where cond holds, not a quantity a smoothness-
+    // assuming quadrature rule should have to approximate. ∫₀¹ Boole[x>0.5]
+    // dx = 0.5 exactly (the interval (0.5, 1]).
+    assert_approx("NIntegrate[Boole[x > 0.5], {x, 0, 1}]", 0.5, 1e-12);
+    // A compound condition carves out a sub-interval on both sides:
+    // ∫₀¹₀ Boole[3<x<7] dx = 4.
+    assert_approx("NIntegrate[Boole[3 < x < 7], {x, 0, 10}]", 4.0, 1e-10);
+    // Always-false and always-true conditions are the degenerate cases.
+    assert_approx("NIntegrate[Boole[x > 10], {x, 0, 1}]", 0.0, 1e-12);
+    assert_approx("NIntegrate[Boole[x < 10], {x, 0, 1}]", 1.0, 1e-12);
+  }
+
+  // Regression: an iterated (2D) `NIntegrate` whose inner dimension is a
+  // `Boole[…]` region indicator — the standard way to compute an area or
+  // volume numerically — used to hang for minutes instead of returning:
+  // each of the (potentially thousands of) outer sample points re-ran a
+  // whole separate inner integration, and a discontinuous integrand made
+  // that inner integration exhaust its own full evaluation budget at
+  // nearly every single one of them, multiplying instead of sharing a
+  // bound. Independently written (not from any specific source): an
+  // off-center disk cut by a horizontal line through its own center, so
+  // the answer is exactly half the disk's area — π·radius²/2.
+  #[test]
+  fn nintegrate_iterated_boole_region_area_is_fast_and_exact() {
+    let start = std::time::Instant::now();
+    // Disk of radius 2 centered at (0, 3) in the (p, q) plane, cut at
+    // q < 3 (through its own center): area = π·2²/2 = 2π.
+    assert_approx(
+      "NIntegrate[Boole[p^2 + (q - 3)^2 < 4 && q < 3], {p, -2, 2}, {q, 1, 5}]",
+      2.0 * std::f64::consts::PI,
+      1e-4,
+    );
+    assert!(
+      start.elapsed().as_secs() < 30,
+      "an iterated NIntegrate over a Boole region indicator must not \
+       re-exhaust a full evaluation budget at every outer sample point"
+    );
+  }
+
+  // Regression: the same shape, but cut off-center (not through the
+  // disk's own center), so the inner region's measure touches exactly
+  // zero partway across the outer range — a genuine kink in the outer
+  // integrand's derivative at an interior point, not just at its own
+  // endpoints, which neither tanh-sinh nor plain adaptive Simpson locates
+  // without help. Verified against the closed-form circular-segment area
+  // (r²·acos(d/r) − d·√(r²−d²), with d the offset from the center).
+  #[test]
+  fn nintegrate_iterated_boole_off_center_region_is_fast_and_exact() {
+    let start = std::time::Instant::now();
+    let r = 2.0_f64;
+    let d = 1.0_f64; // cut at q < 2, disk centered at q = 3.
+    let segment = r * r * (d / r).acos() - d * (r * r - d * d).sqrt();
+    assert_approx(
+      "NIntegrate[Boole[p^2 + (q - 3)^2 < 4 && q < 2], {p, -2, 2}, {q, 1, 5}]",
+      segment,
+      1e-3,
+    );
+    assert!(
+      start.elapsed().as_secs() < 30,
+      "an off-center Boole region cut must still resolve its interior \
+       kink (the point where the region's cross-section vanishes) \
+       without exhausting the shared evaluation budget"
+    );
+  }
+
+  #[test]
   fn n_falls_back_to_nintegrate_for_unevaluated_integrate() {
     // Integrate[Abs[Sin[phi]], {phi, 0, 2 Pi}] doesn't reduce
     // symbolically in Woxi. With // N, wolframscript returns 4.; we

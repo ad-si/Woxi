@@ -19550,6 +19550,18 @@ pub struct ManipulateSpec {
   /// initial values produce — the frontend re-evaluates this code fragment
   /// against the live bindings after every change and rebuilds the choices.
   pub dynamic_values: Vec<(String, String)>,
+  /// `(control name, reset code)` for a `LocatorPane`/`Locator` variable
+  /// promoted from a plain body-local `var = expr;` assignment (see
+  /// `collect_body_locator_pane_vars`), where `expr` references another
+  /// control (e.g. a polygon's vertex count slider). Wolfram never reruns
+  /// this statement when the Locator itself is dragged — it isn't a
+  /// declared control, so nothing tracks it — only when an *actual* control
+  /// changes, which re-evaluates the whole body from scratch. Woxi has no
+  /// equivalent of that partial re-evaluation, so the assignment is instead
+  /// stripped out of `body_code` (it would otherwise clobber every drag on
+  /// its own next re-render) and replayed here — by the frontend, against
+  /// the live bindings — only when a control other than this one changes.
+  pub dynamic_locator_defaults: Vec<(String, String)>,
   /// The variable animated by a `ControlType -> Trigger`/`Animator` control
   /// spec. Wolfram renders those as play buttons that sweep the variable
   /// over its range; the widget's animation targets this variable instead
@@ -19806,6 +19818,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     mut control_visible,
     mut dynamic_bounds,
     mut dynamic_values,
+    mut dynamic_locator_defaults,
     mut animation_var,
     mut tracking,
     mut list_elements,
@@ -19822,6 +19835,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       inner.control_visible,
       inner.dynamic_bounds,
       inner.dynamic_values,
+      inner.dynamic_locator_defaults,
       inner.animation_var,
       inner.tracking,
       inner.list_elements,
@@ -19856,6 +19870,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       Vec::new(),
       Vec::new(),
       Vec::new(),
+      Vec::new(),
       None,
       Vec::new(),
       Vec::new(),
@@ -19877,6 +19892,12 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     None => Vec::new(),
   };
   let mut promoted_popups: Vec<String> = Vec::new();
+  // Body-local `LocatorPane` variables promoted to a multi-point `Locator`
+  // control from a `var = expr;` reset statement (see the loop over
+  // `collect_body_locator_pane_vars` below) — their reset statements are
+  // stripped from the body once the loop finishes, same treatment as
+  // `promoted_popups` above.
+  let mut locator_reset_vars: Vec<String> = Vec::new();
   // `Locator` bindings are baked into the body (never rewritten by a
   // display); `ControlType -> None` bindings become live mutable state.
   let mut fixed: Vec<(String, String)> = Vec::new();
@@ -20486,18 +20507,55 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       // that rather than surfacing a row they chose not to show.
       continue;
     }
-    // Only a variable whose default resolves to a plain `{x, y}` point is a
-    // fit for a single draggable stand-in slider — e.g. a `DynamicModule`
-    // local holding a list of several locators (a polygon's vertices) is
-    // left alone rather than showing a meaningless synthesized row for it.
-    let Some((x_initial, y_initial)) = crate::with_scoped_globals(
+    // A variable whose default resolves to a plain `{x, y}` point is a fit
+    // for a single draggable stand-in slider.
+    let point_default = crate::with_scoped_globals(
       &initial_bindings,
       || -> Option<(f64, f64)> {
         let (_, code) = initial_bindings.iter().find(|(n, _)| *n == var)?;
         let expr = crate::interpret_to_expr(code).ok()?;
         list2_f64(&evaluate_expr_to_expr(&expr).ok()?)
       },
-    ) else {
+    );
+    let Some((x_initial, y_initial)) = point_default else {
+      // A list-of-points default (a polygon's vertices) is a fit for a
+      // multi-point `Locator` control instead — but only when the body
+      // carries a plain `var = expr;` statement recomputing it, since that
+      // recompute has to be replayed whenever an actual control changes
+      // (Wolfram re-evaluates the whole body then) rather than baked once:
+      // dragging never replays it (the variable isn't itself a declared
+      // control, so nothing retriggers on it). A bare list default with no
+      // such statement — e.g. a `DynamicModule` local holding several
+      // independent Locators serving different roles — has no single reset
+      // expression to replay, so it's left alone as before.
+      let Some(reset_expr) = find_body_var_reset(&args[0], &var) else {
+        continue;
+      };
+      let reset_code = crate::syntax::expr_to_input_form(&reset_expr);
+      let initial_points = crate::with_scoped_globals(
+        &initial_bindings,
+        || -> Option<Vec<(f64, f64)>> {
+          let expr = crate::interpret_to_expr(&reset_code).ok()?;
+          point_list_f64(&evaluate_expr_to_expr(&expr).ok()?)
+        },
+      );
+      let Some(points) = initial_points else {
+        continue;
+      };
+      let ((x_min, y_min), (x_max, y_max)) =
+        pane_range(range_arg.as_ref(), &graphic);
+      controls.push(ManipulateControl::Locator {
+        name: var.clone(),
+        points,
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+        auto_create: false,
+        label: var.clone(),
+      });
+      dynamic_locator_defaults.push((var.clone(), reset_code));
+      locator_reset_vars.push(var);
       continue;
     };
     let ((x_min, y_min), (x_max, y_max)) =
@@ -20534,14 +20592,20 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   let mut body_code = body_code;
   // A pick list that became a control is no longer part of the body — left
   // in, it would print as its own source next to the control that replaced
-  // it.
-  if !promoted_popups.is_empty()
+  // it. A `LocatorPane` variable's own reset statement is stripped the same
+  // way — left in, it would re-run (and clobber a drag) on every
+  // re-evaluation; see `dynamic_locator_defaults`.
+  if (!promoted_popups.is_empty() || !locator_reset_vars.is_empty())
     && let Some(body_expr) = &body_expr_kept
   {
-    body_code = crate::syntax::expr_to_input_form(&strip_body_popup_menus(
-      body_expr,
-      &promoted_popups,
-    ));
+    let mut stripped = body_expr.clone();
+    if !promoted_popups.is_empty() {
+      stripped = strip_body_popup_menus(&stripped, &promoted_popups);
+    }
+    if !locator_reset_vars.is_empty() {
+      stripped = strip_body_locator_resets(&stripped, &locator_reset_vars);
+    }
+    body_code = crate::syntax::expr_to_input_form(&stripped);
   }
   if !renames.is_empty() {
     renames.sort_by_key(|(orig, _)| std::cmp::Reverse(orig.len()));
@@ -20597,6 +20661,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     control_visible,
     dynamic_bounds,
     dynamic_values,
+    dynamic_locator_defaults,
     animation_var,
     animated,
     animation_running,
@@ -20965,6 +21030,73 @@ fn collect_body_locator_pane_vars(
   let mut found = Vec::new();
   walk(expr, &mut found);
   found
+}
+
+/// The right-hand side of a plain `var = expr` assignment anywhere inside a
+/// Manipulate body, if one exists. Used to recompute a promoted
+/// `LocatorPane` variable's default whenever another control changes (see
+/// the loop over [`collect_body_locator_pane_vars`] in
+/// `extract_manipulate_spec`) without baking the assignment into
+/// `body_code`, where it would instead re-run — clobbering a drag — on
+/// every re-evaluation, including the Locator's own.
+fn find_body_var_reset(expr: &Expr, var: &str) -> Option<Expr> {
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Set" && args.len() == 2 => {
+      if matches!(&args[0], Expr::Identifier(v) if v == var) {
+        return Some(args[1].clone());
+      }
+      find_body_var_reset(&args[1], var)
+    }
+    Expr::FunctionCall { args, .. } => {
+      args.iter().find_map(|a| find_body_var_reset(a, var))
+    }
+    Expr::List(items) => {
+      items.iter().find_map(|it| find_body_var_reset(it, var))
+    }
+    Expr::CompoundExpr(items) => {
+      items.iter().find_map(|it| find_body_var_reset(it, var))
+    }
+    _ => None,
+  }
+}
+
+/// Replace every top-level `var = expr` assignment for a promoted
+/// `LocatorPane` variable with `Null`, so the statement no longer re-runs
+/// (and resets the dragged value) on every body re-evaluation — see
+/// [`ManipulateSpec::dynamic_locator_defaults`], which replays it instead,
+/// only when a genuine control changes.
+fn strip_body_locator_resets(expr: &Expr, vars: &[String]) -> Expr {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if name == "Set"
+        && args.len() == 2
+        && matches!(&args[0], Expr::Identifier(v) if vars.contains(v)) =>
+    {
+      id_expr("Null")
+    }
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args
+        .iter()
+        .map(|a| strip_body_locator_resets(a, vars))
+        .collect::<Vec<_>>()
+        .into(),
+    },
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(|it| strip_body_locator_resets(it, vars))
+        .collect::<Vec<_>>()
+        .into(),
+    ),
+    Expr::CompoundExpr(items) => Expr::CompoundExpr(
+      items
+        .iter()
+        .map(|it| strip_body_locator_resets(it, vars))
+        .collect(),
+    ),
+    other => other.clone(),
+  }
 }
 
 /// A `PopupMenu[Dynamic[var], choices, Enabled -> cond]` found inside a
@@ -22367,6 +22499,7 @@ pub fn extract_list_animate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     control_visible: Vec::new(),
     dynamic_bounds: Vec::new(),
     dynamic_values: Vec::new(),
+    dynamic_locator_defaults: Vec::new(),
     animation_var: None,
     animated: true,
     animation_running: true,
@@ -22453,6 +22586,7 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
     control_visible: Vec::new(),
     dynamic_bounds: Vec::new(),
     dynamic_values: Vec::new(),
+    dynamic_locator_defaults: Vec::new(),
     animation_var: None,
     animated: true,
     animation_running: true,
@@ -22581,6 +22715,7 @@ pub fn extract_locator_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     control_visible: Vec::new(),
     dynamic_bounds: Vec::new(),
     dynamic_values: Vec::new(),
+    dynamic_locator_defaults: Vec::new(),
     animation_var: None,
     animated: false,
     animation_running: true,
@@ -22636,6 +22771,7 @@ pub fn extract_click_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     control_visible: Vec::new(),
     dynamic_bounds: Vec::new(),
     dynamic_values: Vec::new(),
+    dynamic_locator_defaults: Vec::new(),
     animation_var: None,
     animated: false,
     animation_running: true,
@@ -22703,6 +22839,7 @@ pub fn extract_control_spec(expr: &Expr) -> Option<ManipulateSpec> {
     control_visible: Vec::new(),
     dynamic_bounds: Vec::new(),
     dynamic_values: Vec::new(),
+    dynamic_locator_defaults: Vec::new(),
     animation_var,
     animated: animate.is_some(),
     animation_running: animate.unwrap_or(true),
