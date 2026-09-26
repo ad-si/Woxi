@@ -391,6 +391,26 @@ pub struct ManipulateState {
   /// (InputForm code), re-resolved on every change the way
   /// `dynamic_bounds` are.
   dynamic_values: Vec<(String, String)>,
+  /// `(control name, reset code)` for a `LocatorPane` variable promoted from
+  /// a body-local `var = expr;` assignment (see
+  /// `woxi::functions::graphics::ManipulateSpec::dynamic_locator_defaults`).
+  /// Unlike `dynamic_bounds`/`dynamic_values`, this is *not* re-resolved on
+  /// every re-evaluation — only when [`pending_locator_reset`] marks it, i.e.
+  /// when some *other* control changed since the last re-evaluation. Wolfram
+  /// never reruns this statement for a change to the Locator's own dragged
+  /// value (it isn't a declared control, so nothing tracks it), only for an
+  /// actual control, which re-evaluates the whole body from scratch.
+  ///
+  /// [`pending_locator_reset`]: Self::pending_locator_reset
+  dynamic_locator_defaults: Vec<(String, String)>,
+  /// Parallel to `dynamic_locator_defaults`: whether that entry's default
+  /// needs replaying at the next re-evaluation. Set by [`request_reeval`]
+  /// for every entry other than the one (if any) whose own control just
+  /// changed, cleared once [`reevaluate_inner`] replays it.
+  ///
+  /// [`request_reeval`]: Self::request_reeval
+  /// [`reevaluate_inner`]: Self::reevaluate_inner
+  pending_locator_reset: Vec<bool>,
   /// Per-control `Enabled` condition (InputForm code), parallel to `controls`.
   /// `None` means the control has no condition and is always enabled.
   control_enabled: Vec<Option<String>>,
@@ -498,6 +518,8 @@ impl ManipulateState {
       tracking: spec.tracking,
       dynamic_bounds: spec.dynamic_bounds,
       dynamic_values: spec.dynamic_values,
+      pending_locator_reset: vec![false; spec.dynamic_locator_defaults.len()],
+      dynamic_locator_defaults: spec.dynamic_locator_defaults,
       control_enabled,
       control_is_enabled,
       control_visible,
@@ -843,6 +865,18 @@ impl ManipulateState {
     if !self.control_is_tracked(ctrl_idx) {
       return false;
     }
+    // A change to any control *other* than a promoted `LocatorPane`
+    // variable's own row means Wolfram would re-run the whole body —
+    // replaying that variable's reset expression too. A change to its own
+    // row (a drag) never does: it isn't a declared control, so nothing
+    // reruns on it, which is the entire point of promoting it instead of
+    // just re-evaluating the body's own `var = expr` statement in place.
+    let changed_name = self.controls.get(ctrl_idx).map(ControlState::name);
+    for (j, (name, _)) in self.dynamic_locator_defaults.iter().enumerate() {
+      if changed_name != Some(name.as_str()) {
+        self.pending_locator_reset[j] = true;
+      }
+    }
     self.reeval_pending = self.reeval_pending.wrapping_add(1);
     if self.reeval_scheduled {
       false
@@ -926,6 +960,39 @@ impl ManipulateState {
     self.reevaluate_inner(true);
   }
 
+  /// Replay each promoted `LocatorPane` variable's reset expression that
+  /// [`request_reeval`] marked pending — i.e. whose default depends on a
+  /// control that changed since the last re-evaluation — against the
+  /// current bindings, and move that control to the freshly computed value.
+  /// A no-op when nothing is pending (the common case: a drag on the
+  /// Locator's own row, or no such variable at all).
+  ///
+  /// [`request_reeval`]: Self::request_reeval
+  fn apply_pending_locator_resets(&mut self) {
+    if !self.pending_locator_reset.iter().any(|p| *p) {
+      return;
+    }
+    let bindings = self.bindings();
+    for j in 0..self.dynamic_locator_defaults.len() {
+      if !self.pending_locator_reset[j] {
+        continue;
+      }
+      self.pending_locator_reset[j] = false;
+      let (name, code) = self.dynamic_locator_defaults[j].clone();
+      let full_code =
+        woxi::functions::graphics::manipulate_block_code(&code, &bindings);
+      let Ok(expr) = woxi::interpret_to_expr(&full_code) else {
+        continue;
+      };
+      let value_code = woxi::syntax::expr_to_input_form(&expr);
+      for ctrl in &mut self.controls {
+        if ctrl.name() == name {
+          ctrl.set_current_from_code(&value_code);
+        }
+      }
+    }
+  }
+
   /// The body of [`reevaluate`]. `allow_retry` guards the single re-run
   /// that a re-resolved choice list can trigger: when the new list drops
   /// the selected value, the output just rendered was for a value the
@@ -935,6 +1002,7 @@ impl ManipulateState {
   ///
   /// [`reevaluate`]: Self::reevaluate
   fn reevaluate_inner(&mut self, allow_retry: bool) {
+    self.apply_pending_locator_resets();
     let bindings = self.bindings();
     let code = self.body.clone();
 
@@ -1843,5 +1911,70 @@ mod tests {
       "the captioned graphic should render with the widget's default \
        control values"
     );
+  }
+
+  /// Checked a randomly-sampled Wolfram Demonstrations Project notebook
+  /// whose body is `Module[{…}, Text@Column[{RegionPlot[…], Row[{…,
+  /// var = Round[NIntegrate[Boole[region], {…}, {…}]], …}]}]]` driven by
+  /// two `Control@{{var, default, "label"}, lo, hi, step, ImageSize ->
+  /// Tiny, Appearance -> "Labeled"}` sliders laid out with `Spacer` — an
+  /// area/volume readout computed live from a double integral of a
+  /// region indicator. Independently reproduced here with a different
+  /// region (an off-center disk instead of a fixed circle through its
+  /// own center), different helper/variable names and a single slider —
+  /// not copied from any specific Demonstration.
+  ///
+  /// Regression coverage for the whole `Boole`-in-a-double-`NIntegrate`
+  /// path itself (see the focused core-level tests
+  /// `nintegrate_iterated_boole_region_area_is_fast_and_exact` and
+  /// `nintegrate_iterated_boole_off_center_region_is_fast_and_exact` in
+  /// `tests/interpreter_tests/calculus.rs`): building this widget used to
+  /// mean evaluating its body once with the default control values, which
+  /// ran headfirst into that same hang — the whole Studio looked frozen
+  /// before it ever showed a first frame.
+  #[test]
+  fn region_area_readout_from_double_nintegrate_with_boole_indicator() {
+    let code = r#"Manipulate[
+      Module[{filled},
+        Text@Column[{
+          RegionPlot[p^2 + (q - 3)^2 < 4 && q < cutoff, {p, -2, 2}, {q, 1, 5},
+            Mesh -> None, PlotPoints -> 40, Axes -> None, Frame -> False,
+            ImageSize -> 350, Epilog -> Circle[{0, 3}, 2]],
+          Row[{"filled area: ",
+            filled = Round[
+              NIntegrate[Boole[p^2 + (q - 3)^2 < 4 && q < cutoff],
+                {p, -2, 2}, {q, 1, 5}], 0.01]}]
+        }, Alignment -> Center]
+      ],
+      Control@{{cutoff, 3, "cutoff level"}, 1, 5, 0.01,
+        ImageSize -> Tiny, Appearance -> "Labeled"}
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let start = std::time::Instant::now();
+    let state = ManipulateState::from_expr(&expr)
+      .expect("the region-area Manipulate should build a state");
+    // Generous bound: this also renders the RegionPlot, not just the
+    // NIntegrate, and only needs to catch a regression back to the
+    // multi-minute hang the fix addresses, not enforce a tight SLA.
+    assert!(
+      start.elapsed().as_secs() < 20,
+      "building the widget runs the body once at its default control \
+       values — that must not hang on the double NIntegrate"
+    );
+
+    assert_eq!(
+      state.error, None,
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the region plot should render with the widget's default control \
+       values"
+    );
+
+    let names: Vec<&str> = state.controls.iter().map(|c| c.name()).collect();
+    assert_eq!(names, ["cutoff"]);
   }
 }

@@ -8073,6 +8073,91 @@ mod plot3d {
       ));
     }
 
+    // Regression: `Joined -> {b1, b2, ...}` (per-series joining) only ever
+    // matched the bare `True` identifier, so a list value fell through
+    // silently and every series rendered as scattered points — found while
+    // checking Woxi Studio against a Wolfram Demonstration whose Manipulate
+    // draws a raw signal as points alongside a smoothed test curve as a
+    // joined line, sharing one `ListPlot`. Series `i` must now draw as a
+    // curve exactly when its own flag is `True`, independent of its
+    // siblings.
+    #[test]
+    fn list_plot_joined_per_series() {
+      let svg = export_svg(
+        "ListPlot[{{0, 0, 0}, {1, 2, 1}}, Joined -> {False, True}, \
+         PlotStyle -> {Red, Blue}]",
+      );
+      assert_eq!(
+        svg.matches("<circle").count(),
+        3,
+        "series 1 (Joined -> False) should draw one point per value: {svg}"
+      );
+      assert!(
+        svg.contains("<polyline"),
+        "series 2 (Joined -> True) should draw a connected curve: {svg}"
+      );
+      assert_eq!(
+        svg.matches("fill=\"#FF0000\"").count(),
+        3,
+        "the unjoined series' points should keep their PlotStyle color: {svg}"
+      );
+      assert_eq!(
+        svg.matches("stroke=\"#0000FF\"").count(),
+        1,
+        "the joined series' curve should keep its PlotStyle color: {svg}"
+      );
+    }
+
+    // The reverse assignment: the first series is joined, the second is
+    // not — makes sure the per-series flag is read positionally rather
+    // than always applying to a fixed series.
+    #[test]
+    fn list_plot_joined_per_series_reversed() {
+      let svg = export_svg(
+        "ListPlot[{{0, 0, 0}, {1, 2, 1}}, Joined -> {True, False}, \
+         PlotStyle -> {Red, Blue}]",
+      );
+      assert_eq!(
+        svg.matches("<circle").count(),
+        3,
+        "series 2 (Joined -> False) should draw one point per value: {svg}"
+      );
+      assert_eq!(
+        svg.matches("stroke=\"#FF0000\"").count(),
+        1,
+        "series 1 (Joined -> True) should draw a connected curve: {svg}"
+      );
+      assert_eq!(
+        svg.matches("fill=\"#0000FF\"").count(),
+        3,
+        "the unjoined series' points should keep their PlotStyle color: {svg}"
+      );
+    }
+
+    // Regression: `InterpolationOrder` decided whether to resample *any*
+    // series from the plot-wide `Joined` flag, so combined with a
+    // per-series `Joined -> {False, True}` it resampled the unjoined
+    // series too — turning its 5 raw values into dozens of spline points,
+    // each drawn as its own circle, instead of leaving it as 5 discrete
+    // points.
+    #[test]
+    fn list_plot_joined_per_series_interpolation_order() {
+      let svg = export_svg(
+        "ListPlot[{{1, 4, 2, 3, 10}, {0, 0, 0, 0, 0}}, \
+         Joined -> {True, False}, InterpolationOrder -> 2]",
+      );
+      assert_eq!(
+        svg.matches("<circle").count(),
+        5,
+        "series 2 (Joined -> False) should keep its 5 raw data points \
+         instead of being resampled into a spline: {svg}"
+      );
+      assert!(
+        svg.contains("<polyline"),
+        "series 1 (Joined -> True) should still draw a spline curve: {svg}"
+      );
+    }
+
     /// The pixel points of the first data-series polyline (plot color).
     fn series_polyline_points(svg: &str) -> Vec<(f64, f64)> {
       let start = svg
@@ -9386,6 +9471,29 @@ mod plot3d {
       assert!(width > 700.0, "expected two side-by-side panels: {width}");
       assert_eq!(svg.matches("fill=\"#5E81B5\"").count(), 3);
       assert_eq!(svg.matches("fill=\"#E0932C\"").count(), 3);
+    }
+
+    // Regression: `render_panel_layout` picked each panel's renderer from
+    // the plot's single `Joined` flag only, ignoring a per-series `Joined
+    // -> {b1, b2, ...}` list entirely — every panel followed whichever
+    // series happened to set `parsed.joined` via `flags.iter().any(...)`.
+    // Each series still gets its own panel under `PlotLayout`, and now its
+    // own flag decides that panel's renderer independently of the others.
+    #[test]
+    fn list_plot_row_layout_joined_per_series() {
+      let svg = export_svg(
+        "ListPlot[{{1, 2, 3}, {4, 5, 6}}, PlotLayout -> \"Row\", \
+         Joined -> {False, True}]",
+      );
+      assert_eq!(
+        svg.matches("<circle").count(),
+        3,
+        "panel 1 (Joined -> False) should draw one point per value: {svg}"
+      );
+      assert!(
+        svg.contains("<polyline"),
+        "panel 2 (Joined -> True) should draw a connected curve: {svg}"
+      );
     }
 
     /// Labeled around individual {x, y} pairs labels the points of a single
@@ -21962,6 +22070,74 @@ mod manipulate {
       ManipulateControl::Slider2D { name, .. } => assert_eq!(name, "pt"),
       other => panic!("expected a draggable 2D control, got {other:?}"),
     }
+  }
+
+  // A Demonstration that drags a *list* of points drawn by a body-local
+  // `LocatorPane` (e.g. a polygon's vertices) — with no `Specifications`
+  // entry for that variable at all, only a plain `var = expr;` statement
+  // recomputing it from another control (the Wolfram Demonstrations Project
+  // "Intersecting Lines in All Possible Ways" idiom) — becomes a draggable
+  // multi-point `Locator` control, and the statement resetting it moves out
+  // of the body into `dynamic_locator_defaults` so it can be replayed only
+  // when `n` (not a drag) changes.
+  #[test]
+  fn spec_body_locator_pane_promotes_a_list_of_points() {
+    let expr = interpret_to_expr(
+      "Manipulate[pts = Table[{i, 0}, {i, n}]; \
+       LocatorPane[Dynamic[pts], Graphics[{Point[pts]}]], {{n, 3}, 2, 5, 1}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    let locator = spec
+      .controls
+      .iter()
+      .find(|c| c.name() == "pts")
+      .expect("pts is promoted to a control");
+    match locator {
+      ManipulateControl::Locator {
+        points,
+        auto_create,
+        ..
+      } => {
+        assert_eq!(*points, vec![(1.0, 0.0), (2.0, 0.0), (3.0, 0.0)]);
+        assert!(
+          !auto_create,
+          "the point count follows `n`, not manual add/remove"
+        );
+      }
+      other => panic!("expected a multi-point Locator control, got {other:?}"),
+    }
+    let (var, code) = spec
+      .dynamic_locator_defaults
+      .iter()
+      .find(|(n, _)| n == "pts")
+      .expect("pts carries a reset expression depending on n");
+    assert_eq!(var, "pts");
+    // Evaluated against a *different* `n` (rather than string-matching the
+    // InputForm) so the assertion doesn't depend on incidental spacing —
+    // and it proves the code actually recomputes from `n` rather than
+    // having frozen the build-time value.
+    let recomputed =
+      woxi::with_scoped_globals(&[("n".to_string(), "5".to_string())], || {
+        woxi::interpret_to_expr(code)
+      })
+      .expect("the reset code evaluates against a live `n`");
+    assert_eq!(
+      woxi::syntax::expr_to_input_form(&recomputed),
+      "{{1, 0}, {2, 0}, {3, 0}, {4, 0}, {5, 0}}",
+      "recomputing with n = 5 should yield 5 points"
+    );
+    assert!(
+      !spec.body_code.contains("pts = Table"),
+      "the reset statement moved out of the body so re-evaluating it \
+       doesn't clobber a drag: {}",
+      spec.body_code
+    );
+    assert!(
+      spec.body_code.contains("LocatorPane"),
+      "the LocatorPane call itself stays in the body: {}",
+      spec.body_code
+    );
   }
 
   // A Demonstration that wants its pick list *inside* its own layout writes

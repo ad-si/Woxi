@@ -1450,12 +1450,24 @@ fn is_soft_whitespace_box_token(part: &str) -> bool {
   t == "\" \"" || t == "\"\\[IndentingNewLine]\""
 }
 
-/// Did a real (non-whitespace) sibling expression already appear before
+/// Did a real (non-whitespace) sibling *expression* already appear before
 /// `parts[i]` in this row, with nothing but soft layout whitespace between
-/// them? Walks backward from `i`, skipping [`is_soft_whitespace_box_token`]
-/// entries; a literal `"\n"` multi-statement separator stops the walk
-/// (`false`) since it marks the start of a new, independent statement — see
-/// the call site in [`extract_rowbox_content`].
+/// them — i.e. would placing `parts[i]` here read as implicit
+/// multiplication against it? Walks backward from `i`, skipping
+/// [`is_soft_whitespace_box_token`] entries; a literal `"\n"`
+/// multi-statement separator stops the walk (`false`) since it marks the
+/// start of a new, independent statement — see the call site in
+/// [`extract_rowbox_content`].
+///
+/// A bracket-opener or list/statement separator (`[`, `(`, `{`, `,`, `;`)
+/// also stops the walk (`false`): it already establishes that `parts[i]`
+/// begins a fresh argument, element, or statement, so there is no
+/// preceding *value* for it to be juxtaposed against. Treating one of
+/// these as "a real predecessor" wrongly parenthesizes a function's whole
+/// `body, iterator` argument list (e.g. `Table[stmt; stmt; …, {i, 0, n}]`,
+/// found immediately after `Table["["`) as one factor — trapping the
+/// argument-separating comma inside the added parens and producing
+/// unparseable text.
 fn has_real_predecessor(parts: &[String], i: usize) -> bool {
   for part in parts[..i].iter().rev() {
     let t = part.trim();
@@ -1464,16 +1476,30 @@ fn has_real_predecessor(parts: &[String], i: usize) -> bool {
     // are all structural punctuation, not a value the current part could be
     // juxtaposed (implicitly multiplied) against — e.g. the second binding
     // of a `With[{a = …, b = …}, …]` list follows a `","`, not an
-    // expression, so it is never "juxtaposed" onto the first.
+    // expression, so it is never "juxtaposed" onto the first; likewise an
+    // argument list's own opening `"["` precedes its contents, not a value
+    // to multiply them against — e.g. `f[a = 1; g[a], h]`
+    // (`RowBox[{"f", "[", RowBox[{assignment-box, ",", "h"}], "]"}]`) needs
+    // no parentheses at all, since the comma already ends that argument and
+    // reparsing the flattened text recovers the original grouping as-is.
     if matches!(
       t,
       "\"\\n\"" | "\",\"" | "\";\"" | "\"{\"" | "\"(\"" | "\"[\""
     ) {
       return false;
     }
-    if !is_soft_whitespace_box_token(t) {
-      return true;
+    if is_soft_whitespace_box_token(t) {
+      continue;
     }
+    if is_bare_char(t, '[')
+      || is_bare_char(t, '(')
+      || is_bare_char(t, '{')
+      || is_bare_char(t, ',')
+      || is_bare_char(t, ';')
+    {
+      return false;
+    }
+    return true;
   }
   false
 }
@@ -1640,9 +1666,16 @@ fn extract_rowbox_content(s: &str) -> String {
     // Parenthesizing a nested box's own assignment restores the original
     // grouping; the extra parens are always harmless for a factor that
     // didn't need them.
+    // Never wrap a piece that carries its own bracket-depth-0 comma: it
+    // is not a single juxtaposed statement but a whole `body, iterator`
+    // (or similar) argument list — e.g. `Table`'s bracket content, whose
+    // separating comma must stay outside any added parens. Parenthesizing
+    // it would trap that comma inside a bare `(…)`, which is not valid
+    // Wolfram syntax and fails to reparse.
     let piece = if part.trim().starts_with("RowBox[")
       && has_real_predecessor(&parts, i)
       && has_top_level_assignment(&piece)
+      && split_top_level_commas(&piece).len() == 1
     {
       format!("({piece})")
     } else {
@@ -4101,6 +4134,25 @@ pub fn stored_output_vector_graphics_svg(content: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  /// Regression: a multi-statement `Table` body — several `stmt;`-joined
+  /// assignments ending in a result expression, each wrapped in its own
+  /// `RowBox` the way the FrontEnd stores a stack of Input-cell lines —
+  /// was flattened with the assignment-protecting parens (see
+  /// `has_real_predecessor`) wrongly applied to the *whole* `body,
+  /// iterator` row instead of individual statements, trapping the
+  /// argument-separating comma inside them: `Table[stmt;(stmt);(stmt);
+  /// result,{i,0,n})]` instead of `Table[stmt;(stmt);(stmt);result,{i,0,
+  /// n}]`. The corrupted text failed to reparse.
+  #[test]
+  fn test_extract_cell_content_table_body_with_stacked_statements() {
+    let s = r#"BoxData[RowBox[{RowBox[{"total", "=", RowBox[{"Table", "[", "\[IndentingNewLine]", RowBox[{RowBox[{RowBox[{"p", "=", "1"}], ";", "\[IndentingNewLine]", RowBox[{"q", "=", "2"}], ";", "\[IndentingNewLine]", RowBox[{"r", "=", RowBox[{"p", "+", "q"}]}], ";", "\[IndentingNewLine]", RowBox[{"{", "r", "}"}]}], "\[IndentingNewLine]", ",", RowBox[{"{", RowBox[{"i", ",", "1", ",", "3"}], "}"}]}], "]"}]}], ";"}]]"#;
+    let content = extract_cell_content(s);
+    assert_eq!(content, "total=Table[\np=1;\nq=2;\nr=p+q;\n{r}\n,{i,1,3}];");
+    crate::clear_state();
+    crate::interpret(&content).unwrap();
+    assert_eq!(crate::interpret("total").unwrap(), "{{3}, {3}, {3}}");
+  }
 
   #[test]
   fn test_parse_simple_notebook() {
@@ -7079,6 +7131,47 @@ Cell[BoxData[RowBox[{"arrowHead", "=", RowBox[{"{", RowBox[{"Line", "[", RowBox[
       result, "3",
       "the assignment must actually run (not fail as Set::write on a \
        corrupted `Times[…]` target), got: {result:?} from {expr_src:?}"
+    );
+  }
+
+  #[test]
+  fn assignment_argument_before_a_sibling_arg_is_not_over_wrapped() {
+    // As part of a scheduled QA routine, Woxi Studio was tested against a
+    // randomly sampled Wolfram Demonstration notebook ("Intersecting Lines
+    // in All Possible Ways") whose `Manipulate` body is `points =
+    // Table[…]; LocatorPane[…]` — an assignment followed by a semicolon,
+    // both inside the *first* comma-separated argument of an enclosing
+    // call, with a sibling argument (the control specs) following. The
+    // `has_real_predecessor` check that decides whether a nested `RowBox`
+    // needs re-parenthesizing (see
+    // `juxtaposed_assignment_after_loop_keeps_its_own_grouping` above)
+    // treated the "[" opening the call's own argument list as a "real"
+    // preceding sibling expression, so the whole comma-separated argument
+    // row — not just the assignment's own factor — was wrapped: reparsing
+    // `f[points = Table[…]; body, {ctrl, …}]` as
+    // `f[(points = Table[…]; body, {ctrl, …})]` puts a bare comma directly
+    // inside a parenthesized group, which is a parse error. This is a
+    // self-authored, construct-equivalent example (an invented `f`/`g`
+    // call, not the specific Demonstration's code, which is copyrighted).
+    let boxes = r#"RowBox[{"f", "[", RowBox[{RowBox[{RowBox[{"a", "=", "1"}], ";", RowBox[{"g", "[", "a", "]"}]}], ",", RowBox[{"{", RowBox[{"b", ",", "1", ",", "2"}], "}"}]}], "]"}]"#;
+    let expr_src =
+      box_source_to_expression(boxes).expect("box source must convert");
+    assert!(
+      !expr_src.contains('('),
+      "a comma-delimited argument needs no extra parentheses around its \
+       own assignment, got: {expr_src:?}"
+    );
+
+    let result =
+      crate::interpret(&format!("g[x_]:=x+1; f[x_,y_]:={{x,y}}; {expr_src}"))
+        .expect(
+          "the reconstructed source must parse and evaluate without error",
+        );
+    assert_eq!(
+      result, "{2, {b, 1, 2}}",
+      "the assignment must run as part of the first argument and the \
+       second argument must stay independent, got: {result:?} from \
+       {expr_src:?}"
     );
   }
 
