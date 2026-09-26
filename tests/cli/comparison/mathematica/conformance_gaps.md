@@ -3252,6 +3252,34 @@ against the rendered picture.
   single unsupported control takes every other control with it.
 - `Manipulate[…, Initialization :> …]` leaks its definitions into the session.
 
+### Iterated `NIntegrate` over a `Boole[…]` region can still be slow for
+### some outer-parameter ranges
+
+`NIntegrate[Boole[cond], {inner, a, b}]` integrates exactly (a boundary-
+crossing search, not quadrature), and the iterated (2D+) form now detects
+the common case where the *inner* region's measure touches exactly zero
+partway across the outer range — a kink in the outer integrand's
+derivative — and splits the outer integration there. That covers a region
+disappearing (or appearing) as the outer variable sweeps past it, e.g. a
+horizontal strip moving off the edge of a disk.
+
+It does *not* detect a kink where the region's boundary switches which
+underlying curve is active without the total number of boundary crossings
+changing — e.g. cutting a disk with a horizontal plane whose height sweeps
+past the disk's own top or bottom edge (as opposed to past the disk
+entirely): the inner slice keeps exactly one crossing in, one out, on both
+sides of that switch, so the crossing-count signal sees no kink there.
+Outer sample points near that switch fall back to the shared evaluation
+budget as a bounded-but-slow backstop (tens of seconds, not the multi-
+minute hang before that budget was shared across the whole iterated call —
+see `NINTEGRATE_BUDGET` in `src/functions/calculus_ast.rs`) rather than
+hanging outright. Verified with:
+
+```sh
+woxi eval 'NIntegrate[Boole[p^2 + (q - 3)^2 < 4 && q < 4], {p, -2, 2}, {q, 1, 5}]'
+# Correct (2.456739...+), but takes on the order of tens of seconds.
+```
+
 ### Woxi's own SVG cannot be compared
 
 `wolframscript`'s `ExportString[…, "SVG"]` is always cairo output — `pt` units,

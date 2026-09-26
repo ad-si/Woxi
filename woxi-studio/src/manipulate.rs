@@ -1871,4 +1871,69 @@ mod tests {
     let names: Vec<&str> = state.controls.iter().map(|c| c.name()).collect();
     assert_eq!(names, ["tmax", "amp", "twoD"]);
   }
+
+  /// Checked a randomly-sampled Wolfram Demonstrations Project notebook
+  /// whose body is `Module[{…}, Text@Column[{RegionPlot[…], Row[{…,
+  /// var = Round[NIntegrate[Boole[region], {…}, {…}]], …}]}]]` driven by
+  /// two `Control@{{var, default, "label"}, lo, hi, step, ImageSize ->
+  /// Tiny, Appearance -> "Labeled"}` sliders laid out with `Spacer` — an
+  /// area/volume readout computed live from a double integral of a
+  /// region indicator. Independently reproduced here with a different
+  /// region (an off-center disk instead of a fixed circle through its
+  /// own center), different helper/variable names and a single slider —
+  /// not copied from any specific Demonstration.
+  ///
+  /// Regression coverage for the whole `Boole`-in-a-double-`NIntegrate`
+  /// path itself (see the focused core-level tests
+  /// `nintegrate_iterated_boole_region_area_is_fast_and_exact` and
+  /// `nintegrate_iterated_boole_off_center_region_is_fast_and_exact` in
+  /// `tests/interpreter_tests/calculus.rs`): building this widget used to
+  /// mean evaluating its body once with the default control values, which
+  /// ran headfirst into that same hang — the whole Studio looked frozen
+  /// before it ever showed a first frame.
+  #[test]
+  fn region_area_readout_from_double_nintegrate_with_boole_indicator() {
+    let code = r#"Manipulate[
+      Module[{filled},
+        Text@Column[{
+          RegionPlot[p^2 + (q - 3)^2 < 4 && q < cutoff, {p, -2, 2}, {q, 1, 5},
+            Mesh -> None, PlotPoints -> 40, Axes -> None, Frame -> False,
+            ImageSize -> 350, Epilog -> Circle[{0, 3}, 2]],
+          Row[{"filled area: ",
+            filled = Round[
+              NIntegrate[Boole[p^2 + (q - 3)^2 < 4 && q < cutoff],
+                {p, -2, 2}, {q, 1, 5}], 0.01]}]
+        }, Alignment -> Center]
+      ],
+      Control@{{cutoff, 3, "cutoff level"}, 1, 5, 0.01,
+        ImageSize -> Tiny, Appearance -> "Labeled"}
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let start = std::time::Instant::now();
+    let state = ManipulateState::from_expr(&expr)
+      .expect("the region-area Manipulate should build a state");
+    // Generous bound: this also renders the RegionPlot, not just the
+    // NIntegrate, and only needs to catch a regression back to the
+    // multi-minute hang the fix addresses, not enforce a tight SLA.
+    assert!(
+      start.elapsed().as_secs() < 20,
+      "building the widget runs the body once at its default control \
+       values — that must not hang on the double NIntegrate"
+    );
+
+    assert_eq!(
+      state.error, None,
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the region plot should render with the widget's default control \
+       values"
+    );
+
+    let names: Vec<&str> = state.controls.iter().map(|c| c.name()).collect();
+    assert_eq!(names, ["cutoff"]);
+  }
 }
