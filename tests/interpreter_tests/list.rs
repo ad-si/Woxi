@@ -7350,6 +7350,56 @@ mod random_variate {
   }
 
   #[test]
+  fn multinormal_list_form_count_matches_bare_integer() {
+    // `RandomVariate[dist, {n}]` must draw n whole vectors, exactly like
+    // `RandomVariate[dist, n]` — not flatten the vectors' reals and reshape
+    // them into an n-element list, which used to scramble the samples.
+    assert_eq!(
+      interpret(
+        "Dimensions[RandomVariate[\
+           MultinormalDistribution[{0, 0}, {{1, 0.5}, {0.5, 1}}], {5}]]"
+      )
+      .unwrap(),
+      "{5, 2}"
+    );
+  }
+
+  #[test]
+  fn multinormal_list_form_count_with_extra_dimensions() {
+    // `{n1, n2}` nests n1*n2 vector draws two levels deep, appending the
+    // vector's own length as the innermost dimension.
+    assert_eq!(
+      interpret(
+        "Dimensions[RandomVariate[\
+           MultinormalDistribution[{0, 0, 0}, IdentityMatrix[3]], {2, 3}]]"
+      )
+      .unwrap(),
+      "{2, 3, 3}"
+    );
+  }
+
+  #[test]
+  fn binormal_list_form_count_matches_bare_integer() {
+    assert_eq!(
+      interpret("Dimensions[RandomVariate[BinormalDistribution[1/2], {4}]]")
+        .unwrap(),
+      "{4, 2}"
+    );
+  }
+
+  #[test]
+  fn multivariate_poisson_list_form_count_matches_bare_integer() {
+    assert_eq!(
+      interpret(
+        "Dimensions[RandomVariate[\
+           MultivariatePoissonDistribution[1, {2, 3}], {5}]]"
+      )
+      .unwrap(),
+      "{5, 2}"
+    );
+  }
+
+  #[test]
   fn multinormal_higher_dimension() {
     // A 3-D mean/covariance samples a 3-vector, not just the common 2-D case.
     assert_eq!(

@@ -29920,6 +29920,45 @@ mod list_plot_markers_and_epilog {
   }
 
   #[test]
+  fn open_markers_cycles_distinct_open_shapes_per_series() {
+    clear_state();
+    let svg = export_svg(
+      "ListPlot[{{{0, 1.}, {1, 2.}}, {{0, 3.}, {1, 4.}}, {{0, 5.}, {1, 6.}}}, \
+       PlotMarkers -> \"OpenMarkers\"]",
+    );
+    let markers = marker_glyphs(&svg);
+    // The literal option name must never be drawn as text.
+    assert!(
+      markers.iter().all(|(t, _)| t != "OpenMarkers"),
+      "the named marker set must not draw its own name: {svg}"
+    );
+    // Each series draws its own open (hollow) shape glyph, one per point.
+    let open_shapes = ["○", "□", "◇"];
+    for glyph in open_shapes {
+      assert_eq!(
+        markers.iter().filter(|(t, _)| t == glyph).count(),
+        2,
+        "two points for the glyph {glyph:?}: {svg}"
+      );
+    }
+    let distinct_colors: std::collections::HashSet<_> = markers
+      .iter()
+      .filter(|(t, _)| open_shapes.contains(&t.as_str()))
+      .map(|(_, fill)| fill.clone())
+      .collect();
+    assert_eq!(
+      distinct_colors.len(),
+      3,
+      "each series' open shape keeps its own series colour: {svg}"
+    );
+    assert_eq!(
+      svg.matches("<circle").count(),
+      0,
+      "glyphs replace the dots: {svg}"
+    );
+  }
+
+  #[test]
   fn a_marker_pair_sets_the_glyph_size() {
     clear_state();
     let big =
