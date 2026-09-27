@@ -6990,8 +6990,29 @@ mod minimize {
 
   #[test]
   fn exponential_minus_x() {
-    // E^x - x has minimum 1 at x=0
+    // E^x - x has minimum 1 at x=0. Regression test: solving the critical
+    // point E^x - 1 == 0 returns the periodic family
+    // ConditionalExpression[2*I*Pi*C[1], C[1] in Integers] (every other
+    // member is genuinely complex), and substituting C[1] -> 0 into that
+    // n-ary `Times[2, I, Pi, C[1]]` used to leave the literal `Times[2, I,
+    // Pi, 0]` unsimplified — the lightweight algebraic simplifier only folds
+    // a zero factor out of a two-argument product, not an n-ary `Times`
+    // call. The unfolded `I` factor then made the complex-critical-point
+    // filter reject the (actually real, zero) candidate along with the
+    // rest, leaving no usable critical point and `Minimize` unevaluated.
     assert_eq!(interpret("Minimize[E^x - x, x]").unwrap(), "{1, {x -> 0}}");
+  }
+
+  #[test]
+  fn exponential_base_two_minus_linear() {
+    // 2^x - x*Log[2] has derivative Log[2]*(2^x - 1), zero at x=0, with
+    // minimum value 1: same periodic-root-instantiation path as
+    // `exponential_minus_x`, but through the general (non-E) base branch
+    // that divides the periodic term by Log[2] instead of dropping it.
+    assert_eq!(
+      interpret("Minimize[2^x - x*Log[2], x]").unwrap(),
+      "{1, {x -> 0}}"
+    );
   }
 
   // --- Unconstrained multi-variable ---

@@ -2,6 +2,28 @@
 
 # Unreleased
 
+- `Solve` mistook an invertible-function atom (an exponential like
+    `b^f(x)`, a `Log`, `Sqrt`, or trig call) for a degree-0 polynomial
+    whenever it was combined with the rest of the equation by division or
+    an additive constant — e.g. `Solve[b^f(x)/k == c, x]` or
+    `Solve[Log[x] + k == c, x]` — because a constant base made `base^f(x)`
+    register as degree 0 to the polynomial-degree check, so the
+    coefficient extraction silently dropped the atom term and `Solve`
+    reported no solutions (`{}`) instead of solving `atom == target`. Now
+    isolated and routed through the same invertible-function/trig solvers
+    used for the bare `atom == const` case. Also fixed
+    `Minimize`/`Maximize` losing a genuinely real critical point drawn
+    from such an equation's periodic solution family: substituting the
+    family's integer parameter at 0 left an unsimplified `Times[2, I, Pi,
+    0]` (the lightweight simplifier only folds a zero factor out of a
+    two-argument product, not an n-ary `Times` call), and the leftover
+    literal `I` made the complex-critical-point filter reject the
+    candidate even though the whole product was zero — e.g. `Minimize[E^x
+    - x, x]` fell back to reporting no minimum. Found via the scheduled
+    Wolfram Demonstrations check downloading "Temperature-Composition
+    Diagram for Immiscible Liquids", whose Manipulate solves a vapor-pressure
+    equation of exactly this divided-exponential shape.
+
 - A string literal's `\|HHHHHH` escape — Wolfram's 6-hex-digit form for a
     code point outside the Basic Multilingual Plane, needed for characters
     like an Egyptian hieroglyph (Unicode Plane 1) that have no 4-hex-digit

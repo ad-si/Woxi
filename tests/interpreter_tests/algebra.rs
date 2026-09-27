@@ -5684,6 +5684,73 @@ mod solve {
     );
   }
 
+  // An invertible-function atom (an exponential, Log, or trig call) combined
+  // additively or by division with terms constant w.r.t. the solve variable
+  // used to look like a degree-0 polynomial to the solver's degree
+  // detection, which treats `constant^f(x)` as if the exponent didn't
+  // matter — the coefficient extraction then silently dropped the atom term
+  // and Solve reported no solutions (`{}`) instead of solving
+  // `atom == target`. Regression tests for isolating the atom first.
+  mod linear_combination_of_invertible_atom {
+    use super::*;
+
+    #[test]
+    fn exponential_divided_by_constant() {
+      assert_eq!(
+        interpret("Solve[2^x/12 == 5, x]").unwrap(),
+        "{{x -> ConditionalExpression[((2*I)*Pi*C[1])/Log[2] + \
+         Log[60]/Log[2], Element[C[1], Integers]]}}"
+      );
+    }
+
+    #[test]
+    fn exponential_plus_constant_offset() {
+      assert_eq!(
+        interpret("Solve[2^x - 60 == 0, x]").unwrap(),
+        "{{x -> ConditionalExpression[((2*I)*Pi*C[1])/Log[2] + \
+         Log[60]/Log[2], Element[C[1], Integers]]}}"
+      );
+    }
+
+    #[test]
+    fn log_plus_constant_offset() {
+      assert_eq!(
+        interpret("Solve[Log[x] + 3 == 5, x]").unwrap(),
+        "{{x -> E^2}}"
+      );
+    }
+
+    #[test]
+    fn sin_plus_constant_offset() {
+      assert_eq!(
+        interpret("Solve[Sin[x] + 1 == 2, x]").unwrap(),
+        "{{x -> ConditionalExpression[Pi/2 + 2*Pi*C[1], \
+         Element[C[1], Integers]]}}"
+      );
+    }
+
+    // A term with more than one variable-dependent factor (here `x` and
+    // `Sin[x]` both) has no single atom to isolate, so this must still fall
+    // through to reporting no closed form rather than misfiring.
+    #[test]
+    fn no_single_atom_stays_unevaluated() {
+      assert_eq!(
+        interpret("Solve[x*Sin[x] == 1, x]").unwrap(),
+        "Solve[x*Sin[x] == 1, x]"
+      );
+    }
+
+    // A genuine polynomial (integer power of the variable) must keep using
+    // the ordinary polynomial solver, not the invertible-atom shortcut.
+    #[test]
+    fn polynomial_is_unaffected() {
+      assert_eq!(
+        interpret("Solve[x^2 - 5*x + 6 == 0, x]").unwrap(),
+        "{{x -> 2}, {x -> 3}}"
+      );
+    }
+  }
+
   #[test]
   fn solve_log_with_linear_inner() {
     // Matches wolframscript's preferred form: (-1 + E^3)/2 over

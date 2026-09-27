@@ -2830,6 +2830,14 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let expanded = factor_out_constant_factors(&expanded, var);
   let terms = collect_additive_terms(&expanded);
 
+  // Catch `atom == const` equations hiding inside a linear combination
+  // (e.g. `b^f(var)/k == c` or `Log[var] + k == c`) before degree
+  // extraction below mistakes them for polynomials — see
+  // `try_solve_isolated_invertible_atom`.
+  if let Some(result) = try_solve_isolated_invertible_atom(&expanded, var) {
+    return result;
+  }
+
   // Find maximum degree
   let Some(degree) = max_power_int(&expanded, var) else {
     // Non-polynomial: try factoring out common fractional-power sub-expressions
@@ -4815,6 +4823,104 @@ fn try_solve_trig_eq(eq: &Expr, var: &str) -> Option<Expr> {
   Some(make_rule_list(solutions))
 }
 
+/// Shape `try_solve_inverse_function` knows how to invert once an
+/// expression is isolated as `atom == value`: a bare function call or a
+/// `Power`.
+fn is_invertible_atom_shape(e: &Expr) -> bool {
+  matches!(
+    e,
+    Expr::FunctionCall { .. }
+      | Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        ..
+      }
+  )
+}
+
+/// Factor a single additive term into `(constant coefficient, invertible
+/// atom)` when exactly one of its multiplicative factors depends on `var`
+/// and that factor has an invertible-function shape (`Power[..]` or a
+/// function call). Returns `None` when `var` appears in more than one
+/// factor of the term or in a shape that isn't invertible — nothing to
+/// isolate there.
+fn factor_term_for_invertible_atom(
+  term: &Expr,
+  var: &str,
+) -> Option<(Expr, Expr)> {
+  let (sign, inner) = match term {
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => (Expr::Integer(-1), operand.as_ref().clone()),
+    _ => (Expr::Integer(1), term.clone()),
+  };
+  let mut const_factors = vec![sign];
+  let mut atom: Option<Expr> = None;
+  for f in collect_multiplicative_factors(&inner) {
+    if is_constant_wrt(&f, var) {
+      const_factors.push(f);
+    } else if atom.is_none() && is_invertible_atom_shape(&f) {
+      atom = Some(f);
+    } else {
+      return None;
+    }
+  }
+  let atom = atom?;
+  let k = const_factors
+    .into_iter()
+    .reduce(|a, b| multiply_exprs(&a, &b))
+    .unwrap_or(Expr::Integer(1));
+  Some((k, atom))
+}
+
+/// `expanded == 0` where `expanded` sums exactly one invertible-function
+/// atom (an exponential like `b^f(var)`, a `Log`, `Sqrt`, trig call, …)
+/// against terms constant w.r.t. `var` looks like a degree-0 polynomial to
+/// `max_power_int`: a constant base makes `base^f(var)` register as degree
+/// 0, so the coefficient extraction below silently drops the atom term and
+/// Solve reports no solutions instead of solving `atom == -c/k`. Detect
+/// that shape directly and delegate to the same invertible-function/trig
+/// solvers used for the bare `atom == const` case.
+fn try_solve_isolated_invertible_atom(
+  expanded: &Expr,
+  var: &str,
+) -> Option<Result<Expr, InterpreterError>> {
+  let terms = collect_additive_terms(expanded);
+  let mut const_sum: Vec<Expr> = Vec::new();
+  let mut atom_term: Option<(Expr, Expr)> = None;
+  for term in &terms {
+    if is_constant_wrt(term, var) {
+      const_sum.push(term.clone());
+      continue;
+    }
+    let (k, atom) = factor_term_for_invertible_atom(term, var)?;
+    if atom_term.is_some() {
+      // More than one term depends on `var` — outside this fallback's scope.
+      return None;
+    }
+    atom_term = Some((k, atom));
+  }
+  let (k, atom) = atom_term?;
+  let c = const_sum
+    .into_iter()
+    .reduce(plus2)
+    .unwrap_or(Expr::Integer(0));
+  // atom == -c/k
+  let target =
+    crate::evaluator::evaluate_expr_to_expr(&div2(neg1(c), k)).ok()?;
+  let synthetic_eq = Expr::Comparison {
+    operands: vec![atom, target],
+    operators: vec![ComparisonOp::Equal],
+  };
+  if let Some(result) = try_solve_inverse_function(&synthetic_eq, var) {
+    return Some(result);
+  }
+  if let Some(result) = try_solve_trig_eq(&synthetic_eq, var) {
+    return Some(Ok(result));
+  }
+  None
+}
+
 fn try_solve_inverse_function(
   eq: &Expr,
   var: &str,
@@ -4836,25 +4942,13 @@ fn try_solve_inverse_function(
     _ => return None,
   };
 
-  // Check if an expression is a function call or power (invertible form)
-  let is_invertible_form = |e: &Expr| -> bool {
-    matches!(
-      e,
-      Expr::FunctionCall { .. }
-        | Expr::BinaryOp {
-          op: BinaryOperator::Power,
-          ..
-        }
-    )
-  };
-
   // Try both orientations: f[expr] == val and val == f[expr]
-  let (func_call, val) = if is_invertible_form(&lhs)
+  let (func_call, val) = if is_invertible_atom_shape(&lhs)
     && is_constant_wrt(&rhs, var)
     && !is_constant_wrt(&lhs, var)
   {
     (&lhs, &rhs)
-  } else if is_invertible_form(&rhs)
+  } else if is_invertible_atom_shape(&rhs)
     && is_constant_wrt(&lhs, var)
     && !is_constant_wrt(&rhs, var)
   {
@@ -8844,11 +8938,19 @@ fn minimize_instantiate_periodic_roots(roots: &[Expr]) -> Vec<Expr> {
     // wolframscript reports the one near the origin.
     let order = std::iter::once(0).chain((1..=WINDOW).flat_map(|k| [-k, k]));
     for k in order {
-      out.push(simplify(substitute_expr(
-        &args[0],
-        &cond_args[0],
-        &Expr::Integer(k),
-      )));
+      let instantiated =
+        substitute_expr(&args[0], &cond_args[0], &Expr::Integer(k));
+      // `simplify` alone only folds a zero factor out of a two-argument
+      // `BinaryOp` product, not an n-ary `Times[...]` call — so a
+      // once-imaginary member like `2*I*Pi*C[1]` at `C[1] -> 0` stayed
+      // `Times[2, I, Pi, 0]` instead of collapsing to the real `0`, and the
+      // literal `I` still in the tree made `minimize_cp_is_complex` reject
+      // it as complex even though the whole product is zero. Run it through
+      // the real evaluator first so a genuinely-zero coefficient collapses
+      // the product before that complexity check sees it.
+      let evaluated = crate::evaluator::evaluate_expr_to_expr(&instantiated)
+        .unwrap_or(instantiated);
+      out.push(simplify(evaluated));
     }
   }
   out
