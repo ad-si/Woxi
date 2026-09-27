@@ -26129,6 +26129,18 @@ pub enum DisplayNode {
   /// Manipulate control argument. Demonstrations use these inside a
   /// `Dynamic[…]` caption to step a variable (`n++`, `n = 1`, …).
   Button { label: Box<Self>, action: String },
+  /// An `ActionMenu[label, {"item" :> action, …}]`: a dropdown button
+  /// always showing `label` (never a chosen item, unlike `Popup`); picking
+  /// an item evaluates that item's own held `action` (InputForm) against
+  /// the live bindings, the same action-on-interaction idiom as `Button`
+  /// but offering a menu of distinct actions instead of one — a
+  /// Demonstrations jigsaw-style puzzle's per-piece "rotate"/"flip" menu is
+  /// commonly written this way.
+  ActionMenu {
+    label: Box<Self>,
+    /// Each item's `(display label, held action InputForm)`.
+    items: Vec<(String, String)>,
+  },
   /// A `PopupMenu[Dynamic[lval], choices]` drawn as a display element (not a
   /// top-level Manipulate control): a dropdown whose selection writes back
   /// into `lval`. Unlike `TogglerBar`, `lval` need not be a bare symbol — a
@@ -26333,6 +26345,15 @@ fn display_expr_to_node(
         Some(node) => node,
         None => static_leaf_node(expr, bindings),
       },
+      // `ActionMenu[label, {"item" :> action, …}]`: a menu button that
+      // runs a distinct held action per item, rather than writing back a
+      // value like `PopupMenu` — the Demonstrations "choose a motif" idiom.
+      "ActionMenu" if args.len() >= 2 => {
+        match action_menu_node(args, bindings, probes, ons) {
+          Some(node) => node,
+          None => static_leaf_node(expr, bindings),
+        }
+      }
       // `PaneSelector[{v1 -> content1, v2 -> content2, …}, sel]` used as a
       // caption/heading row (e.g. a "set the isothermal temperature" label
       // that swaps to "choose a nonisothermal temperature profile" as a
@@ -26836,6 +26857,57 @@ fn extract_enabled_condition(items: &[Expr]) -> Option<&Expr> {
   })
 }
 
+/// `ActionMenu[label, {"item" :> action, …}]`. Unlike `PopupMenu`'s
+/// `value -> label` rules (whose *value*, the left side, is what gets
+/// written back), an ActionMenu rule's payload is the *replacement* (right
+/// side) — a held action, never evaluated here — and its pattern (left
+/// side) is only ever the item's display text.
+fn action_menu_node(
+  args: &[Expr],
+  bindings: &[(String, String)],
+  probes: &mut Vec<String>,
+  ons: &mut Vec<String>,
+) -> Option<DisplayNode> {
+  // The item list is usually a literal `{…}` but may be computed; evaluate
+  // it as a whole while leaving each item's own `:>` replacement (or `->`
+  // right side) held.
+  let items_expr = match &args[1] {
+    l @ Expr::List(_) => l.clone(),
+    other => crate::evaluator::evaluate_expr_to_expr(other).ok()?,
+  };
+  let Expr::List(items) = &items_expr else {
+    return None;
+  };
+  let entries: Vec<(String, String)> = items
+    .iter()
+    .filter_map(|item| {
+      let (Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      }) = item
+      else {
+        return None;
+      };
+      let label = match pattern.as_ref() {
+        Expr::String(s) => s.clone(),
+        other => flatten_label_runs(&manipulate_label_runs(other, false)),
+      };
+      Some((label, crate::syntax::expr_to_input_form(replacement)))
+    })
+    .collect();
+  if entries.is_empty() {
+    return None;
+  }
+  Some(DisplayNode::ActionMenu {
+    label: Box::new(display_expr_to_node(&args[0], bindings, probes, ons)),
+    items: entries,
+  })
+}
+
 fn popup_node(args: &[Expr]) -> Option<DisplayNode> {
   let lval = match args.first() {
     Some(Expr::FunctionCall { name, args: dargs })
@@ -26902,7 +26974,9 @@ fn assign_checkbox_state(
         assign_checkbox_state(c, flags, idx);
       }
     }
-    DisplayNode::Toggler { label, .. } | DisplayNode::Button { label, .. } => {
+    DisplayNode::Toggler { label, .. }
+    | DisplayNode::Button { label, .. }
+    | DisplayNode::ActionMenu { label, .. } => {
       assign_checkbox_state(label, flags, idx);
     }
     DisplayNode::Checkbox { checked, .. } => {
@@ -27035,6 +27109,23 @@ fn display_node_to_json(node: &DisplayNode) -> String {
       display_node_to_json(label),
       json_escape_manipulate(action),
     ),
+    DisplayNode::ActionMenu { label, items } => {
+      let items_json: Vec<String> = items
+        .iter()
+        .map(|(item_label, action)| {
+          format!(
+            r#"{{"label":"{}","action":"{}"}}"#,
+            json_escape_manipulate(item_label),
+            json_escape_manipulate(action),
+          )
+        })
+        .collect();
+      format!(
+        r#"{{"kind":"actionmenu","label":{},"items":[{}]}}"#,
+        display_node_to_json(label),
+        items_json.join(","),
+      )
+    }
     DisplayNode::Popup {
       target,
       current,
@@ -27960,6 +28051,102 @@ mod manipulate_display_pane_selector_tests {
       DisplayNode::Row(children) => assert_eq!(children.len(), 2),
       other => panic!("expected a row node, got {other:?}"),
     }
+  }
+}
+
+#[cfg(test)]
+mod manipulate_display_action_menu_tests {
+  use super::*;
+
+  /// `ActionMenu[label, {"item" :> action, …}]`, the Wolfram Demonstrations
+  /// jigsaw-puzzle idiom for a per-piece "rotate"/"flip" menu, parses into
+  /// one `ActionMenu` node carrying its own label plus each item's display
+  /// text and *held* action — the action must not be evaluated while
+  /// building the node (it may reference variables the button click alone
+  /// is supposed to introduce, e.g. an `Increment`).
+  #[test]
+  fn parses_label_and_held_per_item_actions() {
+    let code = r#"ActionMenu["rotate", {"piece 1" :> (t1 = t1 + 1), "piece 2" :> (t2 = t2 + 1)}]"#;
+    let node = build_manipulate_display(code, &[]);
+    match node {
+      DisplayNode::ActionMenu { label, items } => {
+        match *label {
+          DisplayNode::Text { runs } => {
+            assert_eq!(flatten_label_runs(&runs), "rotate");
+          }
+          other => panic!("expected a text label, got {other:?}"),
+        }
+        assert_eq!(
+          items,
+          vec![
+            ("piece 1".to_string(), "t1 = t1 + 1".to_string()),
+            ("piece 2".to_string(), "t2 = t2 + 1".to_string()),
+          ]
+        );
+      }
+      other => panic!("expected an ActionMenu node, got {other:?}"),
+    }
+  }
+
+  /// The item list may itself be computed (e.g. a `Table` generating one
+  /// "flip piece N" entry per piece) — the same idiom `ButtonBar` already
+  /// supports for its own rule list — rather than written out as 16
+  /// literal items the way the Demonstrations source this idiom is modeled
+  /// on does. The computed list is evaluated as a whole to produce each
+  /// item's label; the label side (`ToString[i]`, not held) sees `i`'s
+  /// per-iteration value correctly (`Table`/`Sum`/`Product` binding
+  /// unheld positions is not in question — see
+  /// `tests/cli/comparison/mathematica/conformance_gaps.md`'s "Iteration
+  /// constructs substitute their variable instead of binding it" for the
+  /// held-position divergence this deliberately does not re-litigate).
+  #[test]
+  fn computed_item_list_evaluates_outer_list_for_labels() {
+    let code = r#"ActionMenu["flip", Table["piece " <> ToString[i] :> (h[i] = h[i] + 1), {i, 1, 2}]]"#;
+    let node = build_manipulate_display(code, &[]);
+    match node {
+      DisplayNode::ActionMenu { items, .. } => {
+        let labels: Vec<&str> = items.iter().map(|(l, _)| l.as_str()).collect();
+        assert_eq!(labels, vec!["piece 1", "piece 2"]);
+      }
+      other => panic!("expected an ActionMenu node, got {other:?}"),
+    }
+  }
+
+  /// A plain `Rule` (`->`) item's right side is *not* held the way
+  /// `RuleDelayed`'s (`:>`) is — Woxi has no special "ActionMenu never
+  /// evaluates its items list" attribute, so a bare `->` action runs the
+  /// moment the item list itself is built, not when the item is chosen.
+  /// Every real ActionMenu idiom (and this one) therefore always writes
+  /// its actions with `:>`; this pins down why a bare `->` is not an
+  /// equivalent alternative here, unlike in a `PopupMenu`'s `value ->
+  /// label` choice list (whose right side is display text, never code).
+  #[test]
+  fn plain_rule_item_runs_its_action_immediately_unlike_rule_delayed() {
+    let code = r#"ActionMenu["go", {"reset" -> (n = 0)}]"#;
+    let node = build_manipulate_display(code, &[]);
+    match node {
+      DisplayNode::ActionMenu { items, .. } => {
+        assert_eq!(items, vec![("reset".to_string(), "0".to_string())]);
+      }
+      other => panic!("expected an ActionMenu node, got {other:?}"),
+    }
+  }
+
+  /// Serializes to the JSON kind the Playground's renderer expects, with
+  /// each item's own label/action pair, not just the menu's own label.
+  #[test]
+  fn serializes_to_actionmenu_json() {
+    let node = build_manipulate_display(
+      r#"ActionMenu["spin", {"cw" :> (a = a + 1)}]"#,
+      &[],
+    );
+    let json = display_node_to_json(&node);
+    assert!(
+      json.starts_with(r#"{"kind":"actionmenu","label":"#),
+      "{json}"
+    );
+    assert!(json.contains(r#""label":"cw""#), "{json}");
+    assert!(json.contains(r#""action":"a = a + 1""#), "{json}");
   }
 }
 
