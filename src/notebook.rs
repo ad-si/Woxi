@@ -1695,9 +1695,26 @@ fn extract_rowbox_content(s: &str) -> String {
       // `;` outside makes this factor its own complete, self-terminated
       // statement instead: `(var = value);`, unable to juxtapose with
       // anything after it at all.
-      match piece.strip_suffix(';') {
-        Some(stripped) => format!("({stripped});"),
-        None => format!("({piece})"),
+      //
+      // A trailing `;` is not always a statement terminator, though: it is
+      // also the second character of the `;;` `Span` operator (`rng =
+      // 2;;` is `Set[rng, Span[2, All]]`, not `Set[rng, 2]` followed by an
+      // empty statement). Blindly stripping one `;` off `"rng=2;;"` would
+      // leave `"rng=2;"` — a *different*, silently wrong expression
+      // (`Set[rng, 2]`) once the remaining `;` is reinterpreted as its own
+      // terminator. Counting the run of trailing `;` tells them apart: an
+      // *even* run (0, 2, 4, …) is entirely `Span` syntax with no real
+      // terminator to relocate, so the piece is wrapped whole; an *odd*
+      // run has exactly one genuine terminator on top of a (possibly
+      // empty) `Span`, so only that one is moved outside, leaving the rest
+      // of the run — still even — attached to the `Span` it belongs to.
+      let trailing_semicolons =
+        piece.chars().rev().take_while(|&c| c == ';').count();
+      if trailing_semicolons % 2 == 1 {
+        let stripped = &piece[..piece.len() - 1];
+        format!("({stripped});")
+      } else {
+        format!("({piece})")
       }
     } else {
       piece
@@ -7194,6 +7211,41 @@ Cell[BoxData[RowBox[{"arrowHead", "=", RowBox[{"{", RowBox[{"Line", "[", RowBox[
       "the final assignment must actually run (not fail as Set::write on \
        a corrupted `Times[…]` target carrying a stray `Null` factor from \
        the previous statement), got: {result:?} from {expr_src:?}"
+    );
+  }
+
+  #[test]
+  fn wrapped_statement_ending_in_an_open_span_keeps_both_semicolons() {
+    // Regression for a review finding on the fix above: a trailing `;` is
+    // not always a statement terminator that needs relocating outside the
+    // added parens — it can also be the second character of the `;;`
+    // `Span` operator. `rng = 2;;` (`Set[rng, Span[2, All]]`) juxtaposed
+    // against a preceding statement via the same "blank lines, no visible
+    // operator" idiom flattens to the piece `"rng=2;;"`. Treating its last
+    // `;` as a lone terminator (stripping exactly one) would leave
+    // `"rng=2;"` wrapped as `(rng=2;)` — a *different*, silently wrong
+    // expression (`Set[rng, 2]`, plain `2` instead of `Span[2, All]`) once
+    // the remaining `;` is read as that piece's own terminator. Since both
+    // `;` here belong to `Span`, neither should move: the whole piece
+    // wraps unchanged, `(rng=2;;)`. This is a self-authored,
+    // construct-equivalent example (an invented `Do`/`Span` assignment,
+    // not the specific Demonstration's code or data, which is
+    // copyrighted).
+    let boxes = r#"RowBox[{RowBox[{"Do", "[", RowBox[{RowBox[{"n", "++"}], ",", RowBox[{"{", "3", "}"}]}], "]"}], "\[IndentingNewLine]", "\[IndentingNewLine]", RowBox[{"rng", "=", RowBox[{"2", ";", ";"}]}]}]"#;
+    let expr_src =
+      box_source_to_expression(boxes).expect("box source must convert");
+    assert!(
+      expr_src.contains("(rng=2;;)"),
+      "both semicolons of the open `Span` must stay together inside the \
+       added parens, got: {expr_src:?}"
+    );
+
+    let result = crate::interpret(&format!("n=0; {expr_src}; Head[rng]"))
+      .expect("the reconstructed source must evaluate without error");
+    assert_eq!(
+      result, "Span",
+      "rng must stay a `Span[2, All]`, not get silently truncated to the \
+       plain integer `2`, got: {result:?} from {expr_src:?}"
     );
   }
 
