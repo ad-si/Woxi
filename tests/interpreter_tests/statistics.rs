@@ -10670,13 +10670,27 @@ mod random_function_simulation {
   }
 
   #[test]
-  fn unsupported_process_stays_unevaluated() {
-    // Only WienerProcess and OrnsteinUhlenbeckProcess are simulated; any
-    // other process (or a malformed spec) is left symbolic rather than
-    // guessed at.
+  fn poisson_process_counts_up_from_zero() {
+    // A counting process: integer values, starting at 0, never decreasing.
     assert_eq!(
-      interpret("RandomFunction[PoissonProcess[1], {0, 1, 0.1}]").unwrap(),
-      "RandomFunction[PoissonProcess[1], {0, 1, 0.1}]"
+      interpret(
+        "r = RandomFunction[PoissonProcess[1], {0, 1, 0.1}]; \
+         {Length[r[\"Times\"]], First[r[\"Path\"]], \
+         And @@ IntegerQ /@ r[\"Values\"], \
+         Min[Differences[r[\"Values\"]]] >= 0}"
+      )
+      .unwrap(),
+      "{11, {0., 0}, True, True}"
+    );
+  }
+
+  #[test]
+  fn unsupported_process_stays_unevaluated() {
+    // A process that isn't simulated (or a malformed spec) is left
+    // symbolic rather than guessed at.
+    assert_eq!(
+      interpret("RandomFunction[PoissonProcess[x], {0, 1, 0.1}]").unwrap(),
+      "RandomFunction[PoissonProcess[x], {0, 1, 0.1}]"
     );
   }
 }

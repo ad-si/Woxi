@@ -620,7 +620,9 @@ fn time_series(pairs: Vec<Expr>) -> Expr {
 /// processes ([`crate::functions::math_ast::distributions::process_slice_distribution`]
 /// gives their unconditional time-`t` slice the same way): `WienerProcess[m,
 /// s]` and `OrnsteinUhlenbeckProcess[m, s, th]`/`OrnsteinUhlenbeckProcess[m,
-/// s, th, x0]`. Any other process, or a malformed spec, is left unevaluated.
+/// s, th, x0]` — plus the counting process `PoissonProcess[mu]`, which starts
+/// at 0 and grows by a `PoissonDistribution[mu dt]` count each step. Any
+/// other process, or a malformed spec, is left unevaluated.
 pub fn random_function_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unchanged = || Ok(unevaluated("RandomFunction", args));
   if args.len() != 2 {
@@ -651,6 +653,38 @@ pub fn random_function_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   use rand_distr::{Distribution, Normal};
+  let n_steps = ((t1 - t0) / dt).round() as i64;
+  if n_steps < 0 {
+    return unchanged();
+  }
+
+  if let ("PoissonProcess", [mu]) = (proc_name.as_str(), dargs.as_slice()) {
+    let Some(mu) = try_eval_to_f64(mu).filter(|m| *m > 0.0) else {
+      if !crate::functions::predicate_ast::is_numeric_q(mu) {
+        crate::emit_message(&format!(
+          "PoissonProcess::realprm: Parameter {} at position 1 in {} is expected to be real.",
+          crate::syntax::expr_to_output(mu),
+          crate::syntax::expr_to_output(&args[0])
+        ));
+      }
+      return unchanged();
+    };
+    let mut count: i128 = 0;
+    let mut t = t0;
+    let mut pairs = Vec::with_capacity(n_steps as usize + 1);
+    pairs.push(Expr::List(vec![Expr::Real(t0), Expr::Integer(0)].into()));
+    for _ in 0..n_steps {
+      let this_step = dt.min(t1 - t);
+      let Ok(increments) = rand_distr::Poisson::new(mu * this_step) else {
+        return unchanged();
+      };
+      count += crate::with_rng(|rng| increments.sample(rng)) as i128;
+      t += this_step;
+      pairs.push(Expr::List(vec![Expr::Real(t), Expr::Integer(count)].into()));
+    }
+    return Ok(time_series(pairs));
+  }
+
   let sample_normal = |mean: f64, sd: f64| -> Option<f64> {
     let n = Normal::new(mean, sd.max(0.0)).ok()?;
     Some(crate::with_rng(|rng| n.sample(rng)))
@@ -698,10 +732,6 @@ pub fn random_function_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return unchanged();
   };
 
-  let n_steps = ((t1 - t0) / dt).round() as i64;
-  if n_steps < 0 {
-    return unchanged();
-  }
   let mut pairs = Vec::with_capacity(n_steps as usize + 1);
   pairs.push(Expr::List(vec![Expr::Real(t0), Expr::Real(x)].into()));
   let mut t = t0;
