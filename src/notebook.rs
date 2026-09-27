@@ -2328,6 +2328,13 @@ fn named_char_to_code_op(name: &str) -> Option<&'static str> {
     "And" => "&&",
     "Or" => "||",
     "Cross" => "\\[Cross]",
+    // `expr\[Transpose]`/`expr\[ConjugateTranspose]` are the FrontEnd's
+    // postfix notation for `Transpose[expr]`/`ConjugateTranspose[expr]`.
+    // Their private-use codepoints (U+F3C7, U+F3C9) have no glyph in
+    // normal fonts and would render as blank/tofu boxes; the grammar
+    // accepts the readable `\[Name]` escape as the same postfix operator.
+    "Transpose" => "\\[Transpose]",
+    "ConjugateTranspose" => "\\[ConjugateTranspose]",
     "NoBreak"
     | "InvisibleSpace"
     | "InvisibleComma"
@@ -4916,6 +4923,24 @@ Cell["Chapter 2", "Chapter"]
     assert_eq!(extract_cell_content(s), "a<=b");
     let s = r#"BoxData[RowBox[{"a", "\[GreaterEqual]", "b"}]]"#;
     assert_eq!(extract_cell_content(s), "a>=b");
+  }
+
+  #[test]
+  fn test_extract_cell_content_transpose_postfix_operator() {
+    // `expr\[Transpose]` is the FrontEnd's postfix notation for
+    // `Transpose[expr]` (e.g. `{a, b}\[Transpose]`). Its private-use
+    // codepoint (U+F3C7) has no glyph in normal fonts and would render as
+    // a blank/tofu box, so keep the readable `\[Transpose]` escape name —
+    // our grammar accepts that literal text as the same postfix operator.
+    let s = r#"BoxData[RowBox[{RowBox[{"{", "a", "}"}], "\[Transpose]"}]]"#;
+    assert_eq!(extract_cell_content(s), "{a}\\[Transpose]");
+  }
+
+  #[test]
+  fn test_extract_cell_content_conjugate_transpose_postfix_operator() {
+    let s =
+      r#"BoxData[RowBox[{RowBox[{"{", "a", "}"}], "\[ConjugateTranspose]"}]]"#;
+    assert_eq!(extract_cell_content(s), "{a}\\[ConjugateTranspose]");
   }
 
   /// The FrontEnd also typesets `Part` as a bracketed subscript, which is
