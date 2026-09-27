@@ -2129,7 +2129,15 @@ pub fn vector_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 /// Parse a 3D point {x, y, z} from an expression.
 fn parse_point3d(expr: &Expr) -> Option<Point3D> {
-  if let Expr::List(items) = expr
+  // A point is usually already a `{x, y, z}` literal, but it can also be an
+  // arithmetic expression that only reduces to one at evaluation time (e.g.
+  // an arrow tip computed as `base + vector`) — evaluate first so those
+  // aren't silently dropped as "not a point".
+  let evaluated = match expr {
+    Expr::List(_) => expr.clone(),
+    _ => evaluate_expr_to_expr(expr).ok()?,
+  };
+  if let Expr::List(items) = &evaluated
     && items.len() == 3
   {
     let x = try_eval_to_f64(&evaluate_expr_to_expr(&items[0]).ok()?)?;

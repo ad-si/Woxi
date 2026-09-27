@@ -6271,3 +6271,70 @@ mod fullform_only_pattern_in_a_custom_head {
     );
   }
 }
+
+/// A `SetDelayed` whose formal parameter is a `List` pattern with an element
+/// written as the FullForm spelling of `x_?test` — `PatternTest[Pattern[x,
+/// Blank[]], test]` — rather than the `x_?test` shorthand. This is another
+/// shape a definition takes after a round trip through Mathematica's own
+/// stored FullForm (independently written here, not copied from any
+/// specific notebook; see `fullform_only_pattern_in_a_custom_head` above for
+/// the same class of bug in a custom-head argument).
+///
+/// Regression: `extract_pattern_info` (src/evaluator/assignment.rs), which
+/// `collect_element_bindings` falls back on to name a list element's binding,
+/// recognized the native `Pattern`/`PatternTest`/`PatternOptional` AST
+/// variants, `name_`-style identifiers, and the FullForm call `Pattern[name,
+/// Blank[…]]`, but not `PatternTest[p, test]` in call form. A list element
+/// written that way therefore reported no binding name at all, so the
+/// variable stayed unbound (and unevaluated) in the body — even though the
+/// element correctly satisfied the `MatchQ` guard built from the same
+/// pattern, so the rule still fired.
+mod fullform_pattern_test_inside_a_list_pattern {
+  use super::*;
+
+  #[test]
+  fn binds_the_tested_element() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "g[{PatternTest[Pattern[x, Blank[]], NumericQ]}] := x^2; g[{3}]"
+      )
+      .unwrap(),
+      "9"
+    );
+  }
+
+  /// Several list elements, only some wrapped in `PatternTest`, all bind.
+  #[test]
+  fn binds_alongside_plain_and_untested_elements() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "h[{Pattern[a, Blank[]], \
+         PatternTest[Pattern[b, Blank[]], NumericQ], \
+         PatternTest[Pattern[c, Blank[]], NumericQ]}] := {a, b, c}; \
+         h[{1, 2, 3}]"
+      )
+      .unwrap(),
+      "{1, 2, 3}"
+    );
+  }
+
+  /// The same FullForm `PatternTest` shape at the top level of a parameter
+  /// (not nested in a list) already worked; this checks it still does after
+  /// the fix, alongside a list-nested one in the same definition.
+  #[test]
+  fn top_level_and_list_nested_together() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "k[PatternTest[Pattern[a, Blank[]], NumericQ], \
+         {PatternTest[Pattern[r, Blank[]], NumericQ], \
+         PatternTest[Pattern[p, Blank[]], NumericQ]}] := {a, r, p}; \
+         k[1, {2, 3}]"
+      )
+      .unwrap(),
+      "{1, 2, 3}"
+    );
+  }
+}

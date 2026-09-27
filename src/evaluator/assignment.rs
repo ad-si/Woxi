@@ -4796,6 +4796,17 @@ pub fn extract_pattern_info(expr: &Expr) -> (String, Option<String>, u8) {
       }
       (String::new(), None, 1)
     }
+    // `PatternTest[p, test]` in call form — the FullForm shape of `p?test`
+    // (e.g. a Demonstration's saved `SaveDefinitions` box dump writes
+    // `a_?NumericQ` as `PatternTest[Pattern[a, Blank[]], NumericQ]` rather
+    // than the sugar-parsed native `PatternTest` node). The test doesn't
+    // change what a nested list pattern binds or where, so recurse into the
+    // tested pattern for its name/head/blank_type.
+    Expr::FunctionCall { name, args }
+      if name == "PatternTest" && args.len() == 2 =>
+    {
+      extract_pattern_info(&args[0])
+    }
     _ => {
       // Structural patterns (e.g., BinaryOp containing patterns) are not
       // simple named patterns — return empty to signal special handling.
