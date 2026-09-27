@@ -9346,6 +9346,20 @@ fn box_function_call(name: &str, args: &[Expr]) -> String {
       format!("RowBox[{{{}}}]", parts.join(", \" \", "))
     }
 
+    // `HoldForm[expr]` draws exactly as `expr` does — real Wolfram's
+    // `MakeBoxes[HoldForm[expr], _]` is `TagBox[MakeBoxes[expr, _],
+    // HoldForm]` — so it must not fall to the generic function-application
+    // case below, which would box it as the literal text `HoldForm[…]`.
+    // That literal text is what a Demonstration's `TraditionalForm[
+    // HoldForm[f[t]]]` plot label boxed to before this case existed: once
+    // embedded in a `FormBox[…, TraditionalForm]` box-escape and read back
+    // (as Woxi Studio's Manipulate widget does with its body every frame),
+    // the reader had no function call left to typeset traditionally, only
+    // the flattened text.
+    "HoldForm" if args.len() == 1 => {
+      format!("TagBox[{}, HoldForm]", expr_to_boxes(&args[0]))
+    }
+
     // Default: function application
     _ => {
       let args_boxes: Vec<String> = args.iter().map(expr_to_boxes).collect();
