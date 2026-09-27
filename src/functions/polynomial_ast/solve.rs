@@ -4942,25 +4942,13 @@ fn try_solve_inverse_function(
     _ => return None,
   };
 
-  // Check if an expression is a function call or power (invertible form)
-  let is_invertible_form = |e: &Expr| -> bool {
-    matches!(
-      e,
-      Expr::FunctionCall { .. }
-        | Expr::BinaryOp {
-          op: BinaryOperator::Power,
-          ..
-        }
-    )
-  };
-
   // Try both orientations: f[expr] == val and val == f[expr]
-  let (func_call, val) = if is_invertible_form(&lhs)
+  let (func_call, val) = if is_invertible_atom_shape(&lhs)
     && is_constant_wrt(&rhs, var)
     && !is_constant_wrt(&lhs, var)
   {
     (&lhs, &rhs)
-  } else if is_invertible_form(&rhs)
+  } else if is_invertible_atom_shape(&rhs)
     && is_constant_wrt(&lhs, var)
     && !is_constant_wrt(&rhs, var)
   {
