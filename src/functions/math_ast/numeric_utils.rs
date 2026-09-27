@@ -673,9 +673,26 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
       // into `try_eval_to_f64`) avoids looping forever on a user function
       // tagged `NumericFunction` that has no definition to reduce it.
       other if crate::functions::predicate_ast::is_numeric_function(other) => {
+        // Arguments in NHoldFirst/NHoldRest/NHoldAll positions (e.g. the
+        // index of `ZetaZero[k]`) stay exact, as they do under `N`.
+        let attrs = crate::evaluator::get_builtin_attributes(other);
+        let held = |i: usize| {
+          attrs.contains(crate::evaluator::Attributes::NHoldAll)
+            || (i == 0
+              && attrs.contains(crate::evaluator::Attributes::NHoldFirst))
+            || (i > 0
+              && attrs.contains(crate::evaluator::Attributes::NHoldRest))
+        };
         let mut real_args = Vec::with_capacity(args.len());
-        for a in args {
-          real_args.push(Expr::Real(try_eval_to_f64(a)?));
+        for (i, a) in args.iter().enumerate() {
+          real_args.push(if held(i) {
+            a.clone()
+          } else {
+            Expr::Real(try_eval_to_f64(a)?)
+          });
+        }
+        if real_args.iter().all(|a| !matches!(a, Expr::Real(_))) {
+          return None;
         }
         let new_expr = call(other, real_args);
         match crate::evaluator::evaluate_expr_to_expr(&new_expr) {

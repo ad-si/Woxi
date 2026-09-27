@@ -2350,20 +2350,43 @@ mod zeta {
 
   #[test]
   fn zeta_zero_n_finds_the_root_numerically() {
-    // N[] (or a direct Real argument) triggers root-finding for the k-th
-    // non-trivial zero 1/2 + i t_k, matching the known values.
+    // N[] triggers root-finding for the k-th non-trivial zero 1/2 + i t_k,
+    // correctly rounded to machine precision.
     assert_eq!(
       interpret("N[ZetaZero[1]]").unwrap(),
       "0.5 + 14.134725141734695*I"
     );
     assert_eq!(
       interpret("N[ZetaZero[2]]").unwrap(),
-      "0.5 + 21.022039638771552*I"
+      "0.5 + 21.022039638771556*I"
     );
     assert_eq!(
-      interpret("ZetaZero[3.]").unwrap(),
+      interpret("N[ZetaZero[3]]").unwrap(),
       "0.5 + 25.01085758014569*I"
     );
+    assert_eq!(
+      interpret("Im[N[ZetaZero[{10, 100, 1000}]]]").unwrap(),
+      "{49.7738324776723, 236.5242296658162, 1419.4224809459956}"
+    );
+  }
+
+  #[test]
+  fn zeta_zero_index_must_be_a_nonzero_integer() {
+    // ZetaZero is NHoldFirst: N leaves the index exact, and a numeric index
+    // that isn't a nonzero integer is rejected (ZetaZero::intnz) and left
+    // unevaluated.
+    assert_eq!(interpret("ZetaZero[3.]").unwrap(), "ZetaZero[3.]");
+    assert_eq!(interpret("N[ZetaZero[1/2]]").unwrap(), "ZetaZero[1/2]");
+    assert_eq!(interpret("N[ZetaZero[x]]").unwrap(), "ZetaZero[x]");
+    assert_eq!(
+      interpret("Attributes[ZetaZero]").unwrap(),
+      "{Listable, NHoldFirst, NumericFunction, Protected, ReadProtected}"
+    );
+    assert_eq!(
+      interpret("ZetaZero[{1, 2}]").unwrap(),
+      "{ZetaZero[1], ZetaZero[2]}"
+    );
+    assert_eq!(interpret("NumericQ[ZetaZero[1]]").unwrap(), "True");
   }
 
   #[test]
@@ -2372,13 +2395,16 @@ mod zeta {
     // near t ~ 7005, well inside the ~0.224 average zero spacing there —
     // a naive fixed-step scan using only the average spacing can miss the
     // sign change entirely and silently return the wrong zero's value.
+    // (wolframscript's machine values are a few ulps off here — its
+    // 25-digit ones are 7005.06286617492058… and 7005.10056467264672… — so
+    // the comparison is at 10^-9.)
     assert_eq!(
-      interpret("Im[N[ZetaZero[6709]]]").unwrap(),
-      "7005.062866174947"
+      interpret("Round[Im[N[ZetaZero[6709]]], 10^-9]").unwrap(),
+      "280202514647/40000000"
     );
     assert_eq!(
-      interpret("Im[N[ZetaZero[6710]]]").unwrap(),
-      "7005.100564672637"
+      interpret("Round[Im[N[ZetaZero[6710]]], 10^-9]").unwrap(),
+      "7005100564673/1000000000"
     );
   }
 
@@ -2405,17 +2431,18 @@ mod zeta {
   fn zeta_zero_n_zero_index_has_no_zero() {
     // k = 0 doesn't index a zero at all, so N[] must leave it unevaluated
     // rather than returning a bogus root.
-    assert_eq!(interpret("N[ZetaZero[0]]").unwrap(), "ZetaZero[0.]");
+    assert_eq!(interpret("N[ZetaZero[0]]").unwrap(), "ZetaZero[0]");
   }
 
   #[test]
   fn zeta_zero_im_numericalizes_when_mixed_with_a_real() {
     // Approximate numbers contaminate the whole computation: combining the
     // exact ZetaZero[1] with a machine real numericalizes it, the same
-    // rule that already applies to e.g. Zeta[3] + 1.0.
+    // rule that already applies to e.g. Zeta[3] + 1.0. (wolframscript's
+    // value is off by a few ulps on this path, hence the rounding.)
     assert_eq!(
-      interpret("Im[ZetaZero[1]] - 14.").unwrap(),
-      "0.13472514173469463"
+      interpret("Round[Im[ZetaZero[1]] - 14., 10^-12]").unwrap(),
+      "26945028347/200000000000"
     );
     // Exact arithmetic (no inexact number involved) stays fully symbolic.
     assert_eq!(

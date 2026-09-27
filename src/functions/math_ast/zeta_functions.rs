@@ -1742,7 +1742,7 @@ pub(crate) fn zeta_zero_t_for_k(k: i128) -> Option<f64> {
             hi = mid;
           }
         }
-        let root = f64::midpoint(lo, hi);
+        let root = refine_zeta_zero(f64::midpoint(lo, hi));
         return Some(if k > 0 { root } else { -root });
       }
     }
@@ -1750,6 +1750,158 @@ pub(crate) fn zeta_zero_t_for_k(k: i128) -> Option<f64> {
     prev = next;
   }
   None
+}
+
+/// Convert an astro-float number to the nearest f64 (for finite values in
+/// the normal f64 range). The mantissa words are little-endian with the top
+/// bit of the last word set, and the value is `0.mantissa * 2^exponent`.
+fn bigfloat_to_f64_nearest(bf: &astro_float::BigFloat) -> f64 {
+  let Some((words, _, sign, exp, _)) = bf.as_raw_parts() else {
+    return f64::NAN;
+  };
+  // The top 128 bits of the mantissa; converting them rounds to nearest.
+  let word_bits = astro_float::WORD_BIT_SIZE;
+  let mut top: u128 = 0;
+  let mut taken = 0;
+  for w in words.iter().rev() {
+    if taken + word_bits > 128 {
+      break;
+    }
+    top = (top << word_bits) | (*w as u128);
+    taken += word_bits;
+  }
+  if top == 0 {
+    return 0.0;
+  }
+  let v = top as f64 * 2f64.powi(exp - taken as i32);
+  if sign == astro_float::Sign::Neg {
+    -v
+  } else {
+    v
+  }
+}
+
+/// ζ(1/2 + i t) for a zero-refinement step, with every term's phase
+/// `t ln n` reduced modulo 2π in extended precision.
+///
+/// The phases are the accuracy bottleneck of `zeta_half_plus_it`: in f64,
+/// `t ln n` carries an absolute error of about `t ln n · 2^-53`, which near
+/// t ≈ 7000 moves the located zero by dozens of ulps. Reduced exactly, each
+/// term is only off by the f64 rounding of its own cos/sin, so the zero this
+/// value feeds into lands on the correctly rounded double. Same
+/// Euler–Maclaurin scheme (and cut-off) as `zeta_half_plus_it`.
+fn zeta_half_plus_it_accurate(t: f64) -> Option<(f64, f64)> {
+  use astro_float::{BigFloat, Consts, RoundingMode};
+  let bits = 128usize;
+  let rm = RoundingMode::ToEven;
+  let mut cc = Consts::new().ok()?;
+  let n: usize = (t.abs().ceil() as usize).max(30);
+  let two_pi = cc.pi(bits, rm).mul(&BigFloat::from_u64(2, bits), bits, rm);
+  // Turns per unit of ln n: t / (2π).
+  let turns = BigFloat::from_f64(t, bits).div(&two_pi, bits, rm);
+  // ln n for 1 ≤ n ≤ N from the logarithms of the primes, via the smallest
+  // prime factor: ln n = ln p + ln(n / p).
+  let mut spf = vec![0usize; n + 1];
+  for i in 2..=n {
+    if spf[i] == 0 {
+      let mut j = i;
+      while j <= n {
+        if spf[j] == 0 {
+          spf[j] = i;
+        }
+        j += i;
+      }
+    }
+  }
+  let mut ln: Vec<BigFloat> = Vec::with_capacity(n + 1);
+  ln.push(BigFloat::from_u64(0, bits));
+  ln.push(BigFloat::from_u64(0, bits));
+  for i in 2..=n {
+    let p = spf[i];
+    let v = if p == i {
+      BigFloat::from_u64(i as u64, bits).ln(bits, rm, &mut cc)
+    } else {
+      ln[p].add(&ln[i / p], bits, rm)
+    };
+    ln.push(v);
+  }
+  // e^{-i t ln n} as (cos, sin) of the reduced phase.
+  let phase = |i: usize| -> (f64, f64) {
+    let u = turns.mul(&ln[i], bits, rm);
+    let frac = u.sub(&u.int(), bits, rm);
+    let angle = std::f64::consts::TAU * bigfloat_to_f64_nearest(&frac);
+    (angle.cos(), -angle.sin())
+  };
+  // Neumaier-compensated complex sum.
+  let mut sum = (0.0f64, 0.0f64);
+  let mut comp = (0.0f64, 0.0f64);
+  let mut add = |v: (f64, f64)| {
+    for (s, c, x) in [
+      (&mut sum.0, &mut comp.0, v.0),
+      (&mut sum.1, &mut comp.1, v.1),
+    ] {
+      let tt = *s + x;
+      if s.abs() >= x.abs() {
+        *c += (*s - tt) + x;
+      } else {
+        *c += (x - tt) + *s;
+      }
+      *s = tt;
+    }
+  };
+  for i in 1..n {
+    let (c, s) = phase(i);
+    let m = 1.0 / (i as f64).sqrt();
+    add((m * c, m * s));
+  }
+  let nf = n as f64;
+  let e_n = phase(n);
+  let s = (0.5f64, t);
+  // N^{1-s} / (s - 1) and N^{-s} / 2.
+  let sqrt_n = nf.sqrt();
+  add(cdiv((sqrt_n * e_n.0, sqrt_n * e_n.1), (s.0 - 1.0, s.1)));
+  add((0.5 * e_n.0 / sqrt_n, 0.5 * e_n.1 / sqrt_n));
+  let bof: [f64; 10] = [
+    1.0 / 12.0,
+    -1.0 / 720.0,
+    1.0 / 30240.0,
+    -1.0 / 1209600.0,
+    1.0 / 47900160.0,
+    -691.0 / 1307674368000.0,
+    7.0 / 523069747200.0,
+    -3617.0 / 10670622842880000.0,
+    43867.0 / 5109094217170944000.0,
+    -174611.0 / 802857662698291200000.0,
+  ];
+  for (p_idx, &coeff) in bof.iter().enumerate() {
+    let two_p = 2 * (p_idx + 1);
+    let mut rising = (1.0, 0.0);
+    for j in 0..(two_p - 1) {
+      rising = cmul(rising, (s.0 + j as f64, s.1));
+    }
+    let mag = coeff * nf.powf(-(0.5 + (two_p - 1) as f64));
+    add(cmul(rising, (mag * e_n.0, mag * e_n.1)));
+  }
+  Some((sum.0 + comp.0, sum.1 + comp.1))
+}
+
+/// One Newton step on f(t) = ζ(1/2 + i t) from the f64 root `t0`, using
+/// the extended-precision value `zeta_half_plus_it_accurate(t0)`. The
+/// derivative only has to be roughly right (the step is tiny), so a central
+/// difference of the plain f64 evaluation serves.
+fn refine_zeta_zero(t0: f64) -> f64 {
+  let Some(f) = zeta_half_plus_it_accurate(t0) else {
+    return t0;
+  };
+  let h = 1e-4 * t0.abs().max(1.0).sqrt();
+  let fp = zeta_half_plus_it(t0 + h);
+  let fm = zeta_half_plus_it(t0 - h);
+  let df = ((fp.0 - fm.0) / (2.0 * h), (fp.1 - fm.1) / (2.0 * h));
+  let step = cdiv(f, df);
+  if !step.0.is_finite() || step.0.abs() > 1e-6 * t0.abs().max(1.0) {
+    return t0;
+  }
+  t0 - step.0
 }
 
 /// Numeric evaluation of ZetaZero[k] for use by N[] and by automatic
@@ -1760,40 +1912,33 @@ pub fn zeta_zero_n_eval(k: i128) -> Option<Expr> {
 }
 
 /// ZetaZero[k] — the k-th non-trivial zero of the Riemann zeta function on
-/// the critical line, 1/2 + i t_k. Numeric evaluation triggers only for an
-/// inexact (Real/BigFloat) argument, matching wolframscript's behaviour of
-/// leaving the exact form ZetaZero[1] symbolic until N[] is applied.
+/// the critical line, 1/2 + i t_k. It stays symbolic; `N` (which holds the
+/// index, ZetaZero being NHoldFirst) evaluates it via `zeta_zero_n_eval`.
+/// A numeric index that is not a nonzero integer (`ZetaZero[3.]`,
+/// `ZetaZero[0]`, `ZetaZero[1/2]`) is rejected with `ZetaZero::intnz`.
 /// ZetaZero[k, t] / ZetaZero[k, t1, t2] (a zero pinned near a starting
-/// point / in a range) stay symbolic — only the plain 1-argument form is
-/// numerically evaluated here.
+/// point / in a range) stay symbolic.
 pub fn zeta_zero_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() == 1 {
-    // Integer/BigInteger k stays exact-symbolic (matches wolframscript);
-    // only a Real/BigFloat k (as N[] produces) triggers numeric root-finding.
-    let k_from_inexact = match &args[0] {
-      Expr::Real(f) if *f == f.floor() => Some(*f as i128),
-      Expr::BigFloat(digits, _) => digits.parse::<f64>().ok().and_then(|f| {
-        if f == f.floor() {
-          Some(f as i128)
-        } else {
-          None
-        }
-      }),
-      _ => None,
-    };
-    if let Some(k) = k_from_inexact
-      && let Some(result) = zeta_zero_n_eval(k)
-    {
-      return Ok(result);
-    }
-    return Ok(unevaluated("ZetaZero", args));
+  if args.is_empty() || args.len() > 3 {
+    return Err(InterpreterError::EvaluationError(
+      "ZetaZero expects 1 to 3 arguments".into(),
+    ));
   }
-  if args.len() == 2 || args.len() == 3 {
-    return Ok(unevaluated("ZetaZero", args));
+  let k = &args[0];
+  let nonzero_integer = match k {
+    Expr::Integer(n) => *n != 0,
+    Expr::BigInteger(_) => true,
+    _ => false,
+  };
+  if args.len() == 1
+    && !nonzero_integer
+    && crate::functions::predicate_ast::is_numeric_q(k)
+  {
+    crate::emit_message(
+      "ZetaZero::intnz: Nonzero integer expected at position 1 in ZetaZero.",
+    );
   }
-  Err(InterpreterError::EvaluationError(
-    "ZetaZero expects 1 to 3 arguments".into(),
-  ))
+  Ok(unevaluated("ZetaZero", args))
 }
 
 /// RiemannSiegelZ[t] — the Riemann-Siegel Z function.

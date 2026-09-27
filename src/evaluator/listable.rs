@@ -192,6 +192,7 @@ pub fn is_builtin_listable(name: &str) -> bool {
       | "FresnelS"
       | "FresnelC"
       | "Zeta"
+      | "ZetaZero"
       | "PolyGamma"
       | "PolyLog"
       | "LogGamma"

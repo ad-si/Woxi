@@ -177,6 +177,11 @@ pub fn n_eval(expr: &Expr) -> Result<Expr, InterpreterError> {
         {
           return Ok(r);
         }
+        if name == "ZetaZero"
+          && let Some(r) = zeta_zero_n_eval(n)
+        {
+          return Ok(r);
+        }
       }
       // RootSum[poly &, fn &] — apply fn to each (complex) root of poly
       // and sum, returning a machine-precision Real (or Complex when the
@@ -208,6 +213,14 @@ pub fn n_eval(expr: &Expr) -> Result<Expr, InterpreterError> {
       let hold_all = attrs.contains(Attributes::NHoldAll);
       let hold_first = attrs.contains(Attributes::NHoldFirst);
       let hold_rest = attrs.contains(Attributes::NHoldRest);
+      // Every argument held: nothing changes, and evaluating the call again
+      // would only repeat the messages it already issued (`N[ZetaZero[0]]`).
+      if hold_all
+        || args.is_empty()
+        || (hold_first && (args.len() == 1 || hold_rest))
+      {
+        return Ok(expr.clone());
+      }
       let new_args: Vec<Expr> = if hold_all {
         args.to_vec()
       } else {

@@ -832,6 +832,7 @@ pub fn is_builtin_numeric(name: &str) -> bool {
       | "FresnelS"
       | "FresnelC"
       | "Zeta"
+      | "ZetaZero"
       | "PolyGamma"
       | "PolyLog"
       | "LogGamma"

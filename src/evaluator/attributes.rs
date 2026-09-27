@@ -870,6 +870,15 @@ pub fn get_builtin_attributes(name: &str) -> Attributes {
     // Listable + NHoldFirst + NumericFunction + Protected
     "EllipticTheta" => A::Listable | A::NHoldFirst | A::NumericFunction | A::Protected,
 
+    // Listable + NHoldFirst + NumericFunction + Protected + ReadProtected
+    "ZetaZero" => {
+      A::Listable
+        | A::NHoldFirst
+        | A::NumericFunction
+        | A::Protected
+        | A::ReadProtected
+    }
+
     // Listable + NHoldFirst + Protected
     "In" | "Out" => A::Listable | A::NHoldFirst | A::Protected,
 

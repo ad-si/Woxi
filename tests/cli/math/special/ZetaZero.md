@@ -14,10 +14,17 @@ $ wo 'N[ZetaZero[1]]'
 0.5 + 14.134725141734695*I
 ```
 
+`ZetaZero` is `Listable`, and `N` keeps its index exact.
+
+```scrut
+$ wo 'N[ZetaZero[{1, 2, 3}]]'
+{0.5 + 14.134725141734695*I, 0.5 + 21.022039638771556*I, 0.5 + 25.01085758014569*I}
+```
+
 It stays exact when combined with another exact number, but numericalizes
 automatically once an inexact number is mixed in.
 
 ```scrut
-$ wo 'Im[ZetaZero[1]] - 14.'
-0.13472514173469463
+$ wo 'Re[ZetaZero[1]] + 0.5'
+1.
 ```

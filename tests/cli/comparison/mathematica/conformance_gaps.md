@@ -646,6 +646,29 @@ enclosing `Plus`. Both changes were tried and reverted.
 
 `BesselJ`/`PolyGamma` at complex numeric arguments are separately unimplemented.
 
+### An inexact number does not numericize a complex-valued term
+
+`Plus`/`Times` with a machine number numericize a `NumericQ` term only when it
+is real-valued (`Zeta[3] + 0.`); a complex-valued one stays symbolic:
+
+```sh
+wolframscript -code 'ZetaZero[1] + 1.'     # 1.5 + 14.134725141734695*I
+woxi eval 'ZetaZero[1] + 1.'               # 1. + ZetaZero[1]
+wolframscript -code 'Zeta[1/2 + I] + 1.'   # 1.1439364270771886 - 0.7220997435316738*I
+woxi eval 'Zeta[1/2 + I] + 1.'             # 1. + Zeta[1/2 + I]
+```
+
+The fallback in `try_eval_to_f64` only produces an `f64`.
+
+### `ZetaZero` machine values and precision
+
+`N[ZetaZero[k], p]` returns the machine value; WL computes `p` digits.
+Woxi's machine values are the correctly rounded doubles, which WL's are not
+everywhere — **not reproducible**: `N[ZetaZero[6709]]` is `7005.062866174921`
+in Woxi and `7005.062866174927` in WL, whose own 25-digit value is
+`7005.06286617492058…`, and `Im[ZetaZero[1]] - 14.` is off in WL's last digits
+compared to `Im[N[ZetaZero[1]]] - 14.`.
+
 ### `Complex[Real, Real]` has the wrong head
 
 ```sh
