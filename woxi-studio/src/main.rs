@@ -17271,6 +17271,84 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k2$$ = 0}, \"\\[Ellipsis]\"]"], "Ou
     );
   }
 
+  /// A self-authored, construct-equivalent example of the "hidden tab
+  /// selector" idiom used by the real Wolfram Demonstration "Valuation and
+  /// Management of Bonds" (a bond-pricing calculator whose `TabView` of
+  /// plots is switched by a `ControlType -> None` variable) — not the
+  /// notebook's own code, data, or text, which is copyrighted. Unlike
+  /// `hidden_selector_tab_view_switches_its_displayed_pane` above, its
+  /// panes are given in the front end's own `{key, label -> content}`
+  /// "Tabs" layout-tool form (see `functions::graphics::tabview_pane_parts`)
+  /// rather than plain `label -> content`.
+  ///
+  /// Found and fixed by this test: `TabView` draws its own clickable tab
+  /// strip in Wolfram's front end, entirely independent of Manipulate's
+  /// auto-generated sliders — exactly why a Demonstration hides the
+  /// selector with `ControlType -> None` in the first place. Woxi Studio
+  /// has no equivalent tab-strip widget, so the hidden selector had no way
+  /// to change at all: the widget was permanently stuck on its first pane.
+  /// `extract_manipulate_spec` now promotes such a hidden selector into a
+  /// visible `SetterBar` built from the `TabView`'s own tab labels.
+  #[test]
+  fn hidden_tabview_selector_is_promoted_to_a_visible_setter_bar() {
+    let code = "Manipulate[\n\
+      TabView[{{1, \"trend\" -> Plot[k x, {x, 0, 1}]}, \
+                {2, \"flat\" -> Plot[k, {x, 0, 1}]}}, Dynamic[view]],\n\
+      {{k, 1, \"k\"}, 0, 5, 0.1},\n\
+      {{view, 1}, {1, 2}, ControlType -> None}]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the TabView Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+
+    let view_idx = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "view")
+      .expect("the hidden tab selector must be promoted to a visible control");
+    match &state.controls[view_idx] {
+      manipulate::ControlState::Discrete {
+        values,
+        value_labels,
+        setter_bar,
+        ..
+      } => {
+        assert_eq!(values, &["1".to_string(), "2".to_string()]);
+        assert_eq!(value_labels, &["trend".to_string(), "flat".to_string()]);
+        assert!(*setter_bar, "a handful of tabs should render as buttons");
+      }
+      other => panic!("expected a Discrete SetterBar control, got {other:?}"),
+    }
+
+    // "Click" the second tab and confirm the displayed pane switches.
+    if let manipulate::ControlState::Discrete { current_index, .. } =
+      &mut state.controls[view_idx]
+    {
+      *current_index = 1;
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+
+    let render = |view: i64| {
+      woxi::interpret_with_stdout(&format!(
+        "k = 1; view = {view};\n{}",
+        state.body
+      ))
+      .expect("the body must render")
+      .graphics
+      .expect("the body must produce a graphic")
+    };
+    let tab1 = render(1);
+    let tab2 = render(2);
+    assert_ne!(
+      tab1, tab2,
+      "switching the promoted control must change the displayed pane"
+    );
+  }
+
   #[test]
   fn duckworth_lewis_notebook_builds_its_widget() {
     let nb_src = r##"Notebook[{

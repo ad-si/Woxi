@@ -19974,6 +19974,14 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     None => Vec::new(),
   };
   let mut promoted_popups: Vec<String> = Vec::new();
+  // `TabView[{…}, Dynamic[var]]` drawn by the body likewise drives its
+  // selector variable via its own native tab strip: a hidden `ControlType
+  // -> None` spec for such a variable turns into a visible `SetterBar` of
+  // the tab labels, since Woxi Studio has no tab-strip widget of its own.
+  let body_tabviews = match &body_expr_kept {
+    Some(body) => collect_body_tabview_selectors(body),
+    None => Vec::new(),
+  };
   // Body-local `LocatorPane` variables promoted to a multi-point `Locator`
   // control from a `var = expr;` reset statement (see the loop over
   // `collect_body_locator_pane_vars` below) — their reset statements are
@@ -20547,6 +20555,47 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
             }
             dynamic_values.push((name.clone(), popup.choices_code.clone()));
             promoted_popups.push(name.clone());
+            controls.push(c);
+            continue;
+          }
+        }
+        // Likewise for a hidden variable a body `TabView[{…}, Dynamic[…]]`
+        // drives: it becomes a `SetterBar` of the tab labels, built from
+        // whichever of the three pane shapes `tabview_pane_parts`
+        // recognizes (see `collect_body_tabview_selectors`). Unlike the
+        // `Locator`/`PopupMenu` promotions above, the `TabView` itself
+        // stays in the body untouched — it still needs to render the
+        // selected pane — this only adds a way to change the selector.
+        if let Some((_, items)) = body_tabviews.iter().find(|(v, _)| *v == name)
+        {
+          let default = crate::interpret_to_expr(&value)
+            .unwrap_or_else(|_| Expr::Identifier(value.clone()));
+          let choices: Vec<Expr> = items
+            .iter()
+            .enumerate()
+            .map(|(idx, item)| {
+              let (key, label, _content) = tabview_pane_parts(item);
+              let key = key.unwrap_or_else(|| Expr::Integer(idx as i128 + 1));
+              Expr::Rule {
+                pattern: Box::new(key),
+                replacement: Box::new(label.clone()),
+              }
+            })
+            .collect();
+          let promoted = Expr::List(
+            vec![
+              Expr::List(vec![Expr::Identifier(name.clone()), default].into()),
+              Expr::List(choices.into()),
+              Expr::Rule {
+                pattern: Box::new(id_expr("ControlType")),
+                replacement: Box::new(id_expr("SetterBar")),
+              },
+            ]
+            .into(),
+          );
+          if let Some(ParsedControl::Visible { control: c, .. }) =
+            parse_manipulate_control(&promoted, &[])
+          {
             controls.push(c);
             continue;
           }
@@ -21308,6 +21357,47 @@ fn collect_body_popup_menus(expr: &Expr) -> Vec<BodyPopupMenu> {
   found
 }
 
+/// Find every `TabView[{…}, sel]` in the body whose selector (after
+/// unwrapping a FrontEnd `Dynamic[…]` wrapper, see [`unwrap_pane_selector`])
+/// is a bare variable, paired with its list of pane items. `TabView` draws
+/// its own clickable tab strip in Wolfram's front end — independent of
+/// Manipulate's auto-generated sliders — so a Demonstration commonly
+/// declares the selector `ControlType -> None` to suppress a redundant
+/// slider. Woxi Studio has no equivalent of that native tab strip, so
+/// without this the hidden variable would have no way to change at all;
+/// `extract_manipulate_spec` uses the result to promote it into a visible
+/// `SetterBar` of the tab labels instead (the same treatment already given
+/// to a body `Locator`/`PopupMenu` driving a hidden variable).
+fn collect_body_tabview_selectors(expr: &Expr) -> Vec<(String, Vec<Expr>)> {
+  fn walk(expr: &Expr, found: &mut Vec<(String, Vec<Expr>)>) {
+    match expr {
+      Expr::FunctionCall { name, args } => {
+        if name == "TabView"
+          && args.len() >= 2
+          && let Expr::List(items) = &args[0]
+          && !items.is_empty()
+          && let Expr::Identifier(var) = unwrap_pane_selector(&args[1])
+          && !found.iter().any(|(v, _)| v == var)
+        {
+          found.push((var.clone(), items.to_vec()));
+        }
+        for a in args {
+          walk(a, found);
+        }
+      }
+      Expr::List(items) => {
+        for it in items {
+          walk(it, found);
+        }
+      }
+      _ => {}
+    }
+  }
+  let mut found = Vec::new();
+  walk(expr, &mut found);
+  found
+}
+
 /// Scan an extra-display Manipulate argument for a `SetterBar[Dynamic[var],
 /// choices]` / `RadioButtonBar[Dynamic[var], choices]` widget (found
 /// anywhere inside it, e.g. nested in a `Row[…]` alongside a plain label)
@@ -21882,6 +21972,59 @@ pub(crate) fn unwrap_pane_selector(selector: &Expr) -> &Expr {
       &args[0]
     }
     _ => selector,
+  }
+}
+
+/// Split one `TabView`/`PaneSelector` list entry into its explicit key (if
+/// any), its label, and its content. Wolfram authoring notebooks use three
+/// shapes for a pane: the hand-written `label -> content` (no explicit key —
+/// the pane matches its 1-based position), the explicit `key -> label ->
+/// content`, and, from the front-end's own "Tabs" layout tool, `{key, label
+/// -> content}` — a 2-element `List` pairing an explicit numeric key with
+/// the same `label -> content` rule, rather than chaining a second `Rule`.
+/// Returns `(None, item, item)` for anything else (a malformed pane falls
+/// back to itself as both label and content, matching Wolfram's tolerance
+/// for a plain non-rule entry).
+pub(crate) fn tabview_pane_parts(item: &Expr) -> (Option<Expr>, &Expr, &Expr) {
+  match item {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => match replacement.as_ref() {
+      Expr::Rule {
+        pattern: inner_pattern,
+        replacement: inner_replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern: inner_pattern,
+        replacement: inner_replacement,
+      } => (
+        Some(pattern.as_ref().clone()),
+        inner_pattern.as_ref(),
+        inner_replacement.as_ref(),
+      ),
+      other => (None, pattern.as_ref(), other),
+    },
+    Expr::List(items) if items.len() == 2 => match &items[1] {
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } => (
+        Some(items[0].clone()),
+        pattern.as_ref(),
+        replacement.as_ref(),
+      ),
+      _ => (None, item, item),
+    },
+    other => (None, other, other),
   }
 }
 
