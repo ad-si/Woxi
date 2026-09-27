@@ -1781,16 +1781,100 @@ fn bigfloat_to_f64_nearest(bf: &astro_float::BigFloat) -> f64 {
   }
 }
 
-/// ζ(1/2 + i t) for a zero-refinement step, with every term's phase
-/// `t ln n` reduced modulo 2π in extended precision.
+/// cos and sin of 2π·x for a 128-bit `x` in [0, 1), using only additions
+/// and multiplications (astro-float's own cos/sin divide inside the series,
+/// which dominates `zeta_half_plus_it_accurate`). `x` is reduced to the
+/// nearest quarter turn, leaving |r| ≤ π/4 for the Taylor series.
+struct SinCosTurns {
+  bits: usize,
+  two_pi: astro_float::BigFloat,
+  quarter: astro_float::BigFloat,
+  /// 1/k! for k = 0..TERMS.
+  inv_fact: Vec<astro_float::BigFloat>,
+}
+
+impl SinCosTurns {
+  /// (π/4)^k / k! < 2^-130 for k ≥ 32.
+  const TERMS: usize = 34;
+
+  fn new(bits: usize) -> Self {
+    use astro_float::{BigFloat, Consts, RoundingMode};
+    let rm = RoundingMode::ToEven;
+    let mut cc = Consts::new().expect("astro-float constants");
+    let two_pi = cc.pi(bits, rm).mul(&BigFloat::from_u64(2, bits), bits, rm);
+    let mut inv_fact = vec![BigFloat::from_u64(1, bits)];
+    for k in 1..=Self::TERMS {
+      let prev = &inv_fact[k - 1];
+      inv_fact.push(prev.div(&BigFloat::from_u64(k as u64, bits), bits, rm));
+    }
+    SinCosTurns {
+      bits,
+      two_pi,
+      quarter: BigFloat::from_f64(0.25, bits),
+      inv_fact,
+    }
+  }
+
+  fn eval(
+    &self,
+    x: &astro_float::BigFloat,
+  ) -> (astro_float::BigFloat, astro_float::BigFloat) {
+    use astro_float::{BigFloat, RoundingMode};
+    let (bits, rm) = (self.bits, RoundingMode::ToEven);
+    let q = (bigfloat_to_f64_nearest(x) * 4.0).round();
+    let r = x
+      .sub(
+        &self.quarter.mul(&BigFloat::from_f64(q, bits), bits, rm),
+        bits,
+        rm,
+      )
+      .mul(&self.two_pi, bits, rm);
+    let r2 = r.mul(&r, bits, rm);
+    // Horner in r²: cos r = Σ (-1)^j r^{2j}/(2j)!, sin r = r Σ (-1)^j
+    // r^{2j}/(2j+1)!.
+    let horner = |offset: usize| -> BigFloat {
+      let mut acc = BigFloat::from_u64(0, bits);
+      let mut j = (Self::TERMS - offset) / 2;
+      loop {
+        let coeff = &self.inv_fact[2 * j + offset];
+        acc = acc.mul(&r2, bits, rm);
+        acc = if j.is_multiple_of(2) {
+          acc.add(coeff, bits, rm)
+        } else {
+          acc.sub(coeff, bits, rm)
+        };
+        if j == 0 {
+          break acc;
+        }
+        j -= 1;
+      }
+    };
+    let c = horner(0);
+    let s = horner(1).mul(&r, bits, rm);
+    match (q as i64).rem_euclid(4) {
+      0 => (c, s),
+      1 => (s.neg(), c),
+      2 => (c.neg(), s.neg()),
+      _ => (s, c.neg()),
+    }
+  }
+}
+
+/// ζ(1/2 + i t) for a zero-refinement step, evaluated in extended
+/// precision.
 ///
-/// The phases are the accuracy bottleneck of `zeta_half_plus_it`: in f64,
-/// `t ln n` carries an absolute error of about `t ln n · 2^-53`, which near
-/// t ≈ 7000 moves the located zero by dozens of ulps. Reduced exactly, each
-/// term is only off by the f64 rounding of its own cos/sin, so the zero this
-/// value feeds into lands on the correctly rounded double. Same
-/// Euler–Maclaurin scheme (and cut-off) as `zeta_half_plus_it`.
-fn zeta_half_plus_it_accurate(t: f64) -> Option<(f64, f64)> {
+/// The located zero is only correctly rounded if this value is accurate to
+/// well below an ulp of t: t_1 = 14.13472514173469379… lies just 0.03 ulp
+/// from the midpoint of two doubles. So the phases `t ln n` are reduced
+/// modulo 2π, and their cos/sin, the magnitudes n^{-1/2} and the sum are
+/// all taken at 128 bits — an f64 cos/sin is off by up to an ulp in a
+/// platform-dependent way (glibc vs. macOS libm), which alone moves the
+/// root by more than that margin. Only the Euler–Maclaurin correction
+/// terms, which are small, are summed in f64. Same scheme (and cut-off) as
+/// `zeta_half_plus_it`. Returns (Re, Im) as 128-bit numbers.
+fn zeta_half_plus_it_accurate(
+  t: f64,
+) -> Option<(astro_float::BigFloat, astro_float::BigFloat)> {
   use astro_float::{BigFloat, Consts, RoundingMode};
   let bits = 128usize;
   let rm = RoundingMode::ToEven;
@@ -1825,42 +1909,66 @@ fn zeta_half_plus_it_accurate(t: f64) -> Option<(f64, f64)> {
     };
     ln.push(v);
   }
-  // e^{-i t ln n} as (cos, sin) of the reduced phase.
-  let phase = |i: usize| -> (f64, f64) {
+  // e^{-i t ln n} as (cos, -sin) of the reduced phase.
+  let sincos = SinCosTurns::new(bits);
+  let phase = |i: usize| -> (BigFloat, BigFloat) {
     let u = turns.mul(&ln[i], bits, rm);
-    let frac = u.sub(&u.int(), bits, rm);
-    let angle = std::f64::consts::TAU * bigfloat_to_f64_nearest(&frac);
-    (angle.cos(), -angle.sin())
+    let (c, s) = sincos.eval(&u.sub(&u.int(), bits, rm));
+    (c, s.neg())
   };
-  // Neumaier-compensated complex sum.
-  let mut sum = (0.0f64, 0.0f64);
-  let mut comp = (0.0f64, 0.0f64);
-  let mut add = |v: (f64, f64)| {
-    for (s, c, x) in [
-      (&mut sum.0, &mut comp.0, v.0),
-      (&mut sum.1, &mut comp.1, v.1),
-    ] {
-      let tt = *s + x;
-      if s.abs() >= x.abs() {
-        *c += (*s - tt) + x;
-      } else {
-        *c += (x - tt) + *s;
-      }
-      *s = tt;
+  let mut re = BigFloat::from_u64(0, bits);
+  let mut im = BigFloat::from_u64(0, bits);
+  // n^{-1/2} from its f64 value by two division-free Newton steps
+  // y ← y (3 - n y²) / 2, each doubling the 53 correct bits.
+  let half = BigFloat::from_f64(0.5, bits);
+  let three = BigFloat::from_u64(3, bits);
+  let inv_sqrt = |i: usize| -> BigFloat {
+    let nb = BigFloat::from_u64(i as u64, bits);
+    let mut y = BigFloat::from_f64(1.0 / (i as f64).sqrt(), bits);
+    for _ in 0..2 {
+      let r = three.sub(&nb.mul(&y.mul(&y, bits, rm), bits, rm), bits, rm);
+      y = y.mul(&r, bits, rm).mul(&half, bits, rm);
     }
+    y
   };
   for i in 1..n {
     let (c, s) = phase(i);
-    let m = 1.0 / (i as f64).sqrt();
-    add((m * c, m * s));
+    let m = inv_sqrt(i);
+    re = re.add(&c.mul(&m, bits, rm), bits, rm);
+    im = im.add(&s.mul(&m, bits, rm), bits, rm);
   }
+  let (en_re, en_im) = phase(n);
+  let sqrt_n = BigFloat::from_u64(n as u64, bits).sqrt(bits, rm);
+  // N^{1-s} / (s - 1) with s - 1 = -1/2 + i t: multiply by the conjugate
+  // (-1/2 - i t) and divide by |s - 1|^2 = 1/4 + t^2.
+  let tb = BigFloat::from_f64(t, bits);
+  let a = sqrt_n.mul(&en_re, bits, rm);
+  let b = sqrt_n.mul(&en_im, bits, rm);
+  let den = half
+    .mul(&half, bits, rm)
+    .add(&tb.mul(&tb, bits, rm), bits, rm);
+  let q_re = b
+    .mul(&tb, bits, rm)
+    .sub(&a.mul(&half, bits, rm), bits, rm)
+    .div(&den, bits, rm);
+  let q_im = a
+    .mul(&tb, bits, rm)
+    .add(&b.mul(&half, bits, rm), bits, rm)
+    .neg()
+    .div(&den, bits, rm);
+  re = re.add(&q_re, bits, rm);
+  im = im.add(&q_im, bits, rm);
+  // N^{-s} / 2.
+  let two_sqrt_n = sqrt_n.mul(&BigFloat::from_u64(2, bits), bits, rm);
+  re = re.add(&en_re.div(&two_sqrt_n, bits, rm), bits, rm);
+  im = im.add(&en_im.div(&two_sqrt_n, bits, rm), bits, rm);
+  // Euler–Maclaurin corrections (each far below 1, so f64 suffices).
+  let e_n = (
+    bigfloat_to_f64_nearest(&en_re),
+    bigfloat_to_f64_nearest(&en_im),
+  );
   let nf = n as f64;
-  let e_n = phase(n);
   let s = (0.5f64, t);
-  // N^{1-s} / (s - 1) and N^{-s} / 2.
-  let sqrt_n = nf.sqrt();
-  add(cdiv((sqrt_n * e_n.0, sqrt_n * e_n.1), (s.0 - 1.0, s.1)));
-  add((0.5 * e_n.0 / sqrt_n, 0.5 * e_n.1 / sqrt_n));
   let bof: [f64; 10] = [
     1.0 / 12.0,
     -1.0 / 720.0,
@@ -1873,6 +1981,7 @@ fn zeta_half_plus_it_accurate(t: f64) -> Option<(f64, f64)> {
     43867.0 / 5109094217170944000.0,
     -174611.0 / 802857662698291200000.0,
   ];
+  let mut corr = (0.0f64, 0.0f64);
   for (p_idx, &coeff) in bof.iter().enumerate() {
     let two_p = 2 * (p_idx + 1);
     let mut rising = (1.0, 0.0);
@@ -1880,28 +1989,44 @@ fn zeta_half_plus_it_accurate(t: f64) -> Option<(f64, f64)> {
       rising = cmul(rising, (s.0 + j as f64, s.1));
     }
     let mag = coeff * nf.powf(-(0.5 + (two_p - 1) as f64));
-    add(cmul(rising, (mag * e_n.0, mag * e_n.1)));
+    let term = cmul(rising, (mag * e_n.0, mag * e_n.1));
+    corr = (corr.0 + term.0, corr.1 + term.1);
   }
-  Some((sum.0 + comp.0, sum.1 + comp.1))
+  re = re.add(&BigFloat::from_f64(corr.0, bits), bits, rm);
+  im = im.add(&BigFloat::from_f64(corr.1, bits), bits, rm);
+  Some((re, im))
 }
 
 /// One Newton step on f(t) = ζ(1/2 + i t) from the f64 root `t0`, using
 /// the extended-precision value `zeta_half_plus_it_accurate(t0)`. The
 /// derivative only has to be roughly right (the step is tiny), so a central
-/// difference of the plain f64 evaluation serves.
+/// difference of the plain f64 evaluation serves. The step is applied in
+/// extended precision and the result rounded once to the nearest double.
 fn refine_zeta_zero(t0: f64) -> f64 {
-  let Some(f) = zeta_half_plus_it_accurate(t0) else {
+  use astro_float::{BigFloat, RoundingMode};
+  let bits = 128usize;
+  let rm = RoundingMode::ToEven;
+  let Some((f_re, f_im)) = zeta_half_plus_it_accurate(t0) else {
     return t0;
   };
   let h = 1e-4 * t0.abs().max(1.0).sqrt();
   let fp = zeta_half_plus_it(t0 + h);
   let fm = zeta_half_plus_it(t0 - h);
   let df = ((fp.0 - fm.0) / (2.0 * h), (fp.1 - fm.1) / (2.0 * h));
-  let step = cdiv(f, df);
-  if !step.0.is_finite() || step.0.abs() > 1e-6 * t0.abs().max(1.0) {
+  // Re(f / df) = (f_re df_re + f_im df_im) / |df|^2.
+  let df_norm = df.0 * df.0 + df.1 * df.1;
+  let step = f_re
+    .mul(&BigFloat::from_f64(df.0 / df_norm, bits), bits, rm)
+    .add(
+      &f_im.mul(&BigFloat::from_f64(df.1 / df_norm, bits), bits, rm),
+      bits,
+      rm,
+    );
+  let step_f64 = bigfloat_to_f64_nearest(&step);
+  if !step_f64.is_finite() || step_f64.abs() > 1e-6 * t0.abs().max(1.0) {
     return t0;
   }
-  t0 - step.0
+  bigfloat_to_f64_nearest(&BigFloat::from_f64(t0, bits).sub(&step, bits, rm))
 }
 
 /// Numeric evaluation of ZetaZero[k] for use by N[] and by automatic

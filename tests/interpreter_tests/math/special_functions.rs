@@ -2371,6 +2371,19 @@ mod zeta {
   }
 
   #[test]
+  fn zeta_zero_n_is_correctly_rounded_on_every_platform() {
+    // t_1 = 14.13472514173469379… lies only 0.03 ulp from the midpoint of
+    // two doubles, so an f64 cos/sin in the refinement (whose last bit
+    // differs between glibc and macOS libm) used to give …693 on Linux.
+    assert_eq!(
+      interpret("Im[N[ZetaZero[Range[4, 12]]]]").unwrap(),
+      "{30.424876125859512, 32.93506158773919, 37.586178158825675, \
+       40.9187190121475, 43.327073280915, 48.00515088116716, \
+       49.7738324776723, 52.970321477714464, 56.44624769706339}"
+    );
+  }
+
+  #[test]
   fn zeta_zero_index_must_be_a_nonzero_integer() {
     // ZetaZero is NHoldFirst: N leaves the index exact, and a numeric index
     // that isn't a nonzero integer is rejected (ZetaZero::intnz) and left
