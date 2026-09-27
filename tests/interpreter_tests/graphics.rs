@@ -2359,6 +2359,57 @@ mod graphics {
       }
     }
 
+    /// `Rotate[g, θ]` where `g` is a whole `Graphics[…]` expression (rather
+    /// than one shape rotated *inside* a `Graphics[{…}]` scene) rotates the
+    /// entire picture about the center of its own bounding box — the shape
+    /// an animated Demonstration's `Manipulate` body evaluates to for a
+    /// picture that spins as a slider moves (e.g. a wheel). It must draw
+    /// exactly the picture a primitive-level `Rotate` around the same
+    /// (default) pivot draws.
+    #[test]
+    fn rotate_wrapping_a_whole_graphic_matches_primitive_level_rotate() {
+      let wrapped = export_svg(
+        "Rotate[Graphics[{Circle[{1, 0}, 0.2]}, PlotRange -> 2], Pi/3]",
+      );
+      let primitive = export_svg(
+        "Graphics[{Rotate[Circle[{1, 0}, 0.2], Pi/3]}, PlotRange -> 2]",
+      );
+      assert_eq!(
+        wrapped, primitive,
+        "rotating the whole picture must match rotating its one primitive \
+         about the same (default, bounding-box-center) pivot"
+      );
+    }
+
+    /// The three-argument form, `Rotate[g, θ, {x, y}]`, rotates about an
+    /// explicit pivot in `g`'s own data coordinates.
+    #[test]
+    fn rotate_wrapping_a_whole_graphic_honors_explicit_pivot() {
+      let wrapped = export_svg(
+        "Rotate[Graphics[{Circle[{1, 0}, 0.2]}, PlotRange -> 2], Pi/2, {0, 0}]",
+      );
+      let primitive = export_svg(
+        "Graphics[{Rotate[Circle[{1, 0}, 0.2], Pi/2, {0, 0}]}, PlotRange -> 2]",
+      );
+      assert_eq!(wrapped, primitive);
+    }
+
+    /// A wrapped `Graphics` built from several primitives (here, a
+    /// `Table`-generated ring of disks) must draw in full, not just its
+    /// first shape.
+    #[test]
+    fn rotate_wrapping_a_whole_graphic_with_multiple_primitives() {
+      let svg = export_svg(
+        "Rotate[Graphics[{Table[Disk[{Cos[2 Pi k/5], Sin[2 Pi k/5]}, 0.15], \
+         {k, 1, 5}]}, PlotRange -> 1.5], Pi/6]",
+      );
+      assert_eq!(
+        svg.matches("<circle").count() + svg.matches("<ellipse").count(),
+        5,
+        "all five disks must draw once the whole picture is rotated:\n{svg}"
+      );
+    }
+
     #[test]
     fn nested_style_scoping() {
       insta::assert_snapshot!(export_svg(

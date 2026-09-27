@@ -1845,6 +1845,70 @@ mod tests {
   }
 
   /// Checked a randomly-sampled Wolfram Demonstrations Project notebook
+  /// ("Rotating Wheel Illusion"), whose body is `Pane[Rotate[Graphics[…],
+  /// 2 Pi t], …]` — the whole rendered picture wrapped in `Rotate` (as
+  /// opposed to one shape rotated *inside* a `Graphics[{…}]` scene) so
+  /// that dragging the `t` slider spins the entire wheel. Independently
+  /// written, not copied from any specific Demonstration: different shape,
+  /// helper names and preset values throughout.
+  ///
+  /// Regression coverage for a display-pipeline gap: nothing in the
+  /// visual-mode rendering pipeline recognized `Rotate[graphic, angle]` as
+  /// a *picture*, so the body evaluated to an unevaluated `Rotate[…]` call
+  /// whose textual echo showed `Rotate[, <angle>]` (the `-Graphics-`
+  /// placeholder stripped to nothing) and no graphic ever appeared —
+  /// `ManipulateState::graphics_handle` stayed `None` for every value of
+  /// `t`. See `rotate_graphic_svg` (`evaluator/dispatch/io_functions.rs`)
+  /// and `render_rotate_if_needed` (`lib.rs`).
+  #[test]
+  fn rotate_wrapping_a_whole_graphic_renders_and_spins() {
+    let code = r#"Manipulate[
+      Pane[
+        Rotate[
+          Graphics[{Table[
+            Rotate[Disk[{1, 0}, 0.2], 2 Pi k/n, {0, 0}],
+            {k, 1, n}]}, PlotRange -> 1.5],
+          2 Pi t],
+        ImageSize -> {200, 200}, Alignment -> Center],
+      {{n, 5, "petals"}, 3, 10, 1},
+      {{t, 0, "spin"}, 0, 1, 0.01}
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = ManipulateState::from_expr(&expr)
+      .expect("the Rotate[Graphics[…], …] body should build a ManipulateState");
+    assert_eq!(
+      state.error, None,
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the whole-picture Rotate must render as a graphic, not fall back to \
+       its textual echo: text={:?}",
+      state.text_output
+    );
+
+    // Re-render at a non-zero `t` (a spun frame) and check the wheel
+    // actually turned: five petals sit at 2π k/n + 2π t, not just 2π k/n.
+    let bindings: Vec<(String, String)> = vec![
+      ("n".to_string(), "5".to_string()),
+      ("t".to_string(), "0.1".to_string()),
+    ];
+    let svg = woxi::with_scoped_globals(&bindings, || {
+      woxi::interpret_with_stdout(&state.body)
+    })
+    .expect("body evaluates")
+    .graphics
+    .expect("the spun body should still render as a graphic");
+    assert_eq!(
+      svg.matches("<circle").count() + svg.matches("<ellipse").count(),
+      5,
+      "all five petals must still draw once spun: {svg}"
+    );
+  }
+
+  /// Checked a randomly-sampled Wolfram Demonstrations Project notebook
   /// ("Nonlinear Wave Equations"), whose body is `If[twoD, DensityPlot,
   /// Plot3D][u[…] /. NDSolve[…], …]` with a `SetterBar` toggling the plot
   /// type and the space domain's two ends tied together by a periodic
