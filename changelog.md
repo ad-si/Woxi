@@ -24,6 +24,16 @@
     Diagram for Immiscible Liquids", whose Manipulate solves a vapor-pressure
     equation of exactly this divided-exponential shape.
 
+- A string literal's `\|HHHHHH` escape — Wolfram's 6-hex-digit form for a
+    code point outside the Basic Multilingual Plane, needed for characters
+    like an Egyptian hieroglyph (Unicode Plane 1) that have no 4-hex-digit
+    `\:HHHH` or named `\[...]` form — was left as literal backslash-pipe-hex
+    text instead of expanding to the character, both when the interpreter
+    reads source code and when Woxi Studio reconstructs an Input cell's text
+    from a notebook's box data. Found while checking Woxi Studio against the
+    "Hieroglyphs" Wolfram Demonstration, whose digit-to-hieroglyph lookup
+    table is built entirely from `\|HHHHHH` string literals.
+
 - `LinearModelFit`'s `FittedModel` did not implement the
     `"ParameterTableEntries"` property (nor its constituent
     `"ParameterErrors"`/`"ParameterTStatistics"`/`"ParameterPValues"`),

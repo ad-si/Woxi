@@ -4145,6 +4145,39 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_input_form_boxes_holdform_as_tagbox_not_literal_text() {
+    // `HoldForm[expr]` draws exactly as `expr` does — real Wolfram's
+    // `MakeBoxes[HoldForm[expr], _]` is `TagBox[MakeBoxes[expr, _],
+    // HoldForm]`. `ToString[…, InputForm]` embeds a `TraditionalForm[…]`
+    // sub-expression as a `\!\(\*…\)` box escape (see the comment on
+    // `expr_to_input_form`'s `TraditionalForm` arm), and that escape's
+    // boxes used to box a nested `HoldForm[f[t]]` as the literal text
+    // `RowBox[{"HoldForm[", RowBox[{"f[", "t", "]"}], "]"}]` — the word
+    // "HoldForm[" baked in as a string token — instead of a `TagBox`.
+    // Regression: a Wolfram Demonstration's Manipulate body used
+    // `PlotLabel -> Style[Framed[Row[{TraditionalForm[HoldForm[f[t]]],
+    // …}]], …]`; Woxi Studio reconstructs a Manipulate body's InputForm
+    // text from the held AST to re-evaluate it every frame, and reading
+    // that literal text back left no function call for the traditional
+    // typesetter to parenthesize, so the plot label showed `f[t]` instead
+    // of `f(t)`.
+    clear_state();
+    assert_eq!(
+      interpret("ToString[Hold[TraditionalForm[HoldForm[f[t]]]], InputForm]")
+        .unwrap(),
+      "Hold[\\!\\(\\*FormBox[TagBox[RowBox[{\"f[\", \"t\", \"]\"}], HoldForm], TraditionalForm]\\)]",
+    );
+    // A multi-argument head round-trips the same way.
+    assert_eq!(
+      interpret(
+        "ToString[Hold[TraditionalForm[HoldForm[g[x, y]]]], InputForm]"
+      )
+      .unwrap(),
+      "Hold[\\!\\(\\*FormBox[TagBox[RowBox[{\"g[\", \"x\", \",\", \"y\", \"]\"}], HoldForm], TraditionalForm]\\)]",
+    );
+  }
+
+  #[test]
   fn test_replace_all_head_prefilter_keeps_every_match() {
     // ReplaceAll skips a rule list outright at nodes whose head no rule
     // names. The shapes it must still reach:

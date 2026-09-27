@@ -4715,6 +4715,38 @@ fn popup_menu_state(
   (items, selected)
 }
 
+/// The plain text of a display-element label — used where the label must
+/// be an owned `String` rather than a rendered widget (e.g. a `pick_list`
+/// placeholder, which cannot show rich text). Concatenates every `Text`/
+/// `Static` leaf found in reading order; a label that is itself a picture
+/// (no text at all) comes back empty.
+fn display_node_plain_text(
+  node: &woxi::functions::graphics::DisplayNode,
+) -> String {
+  use woxi::functions::graphics::DisplayNode;
+  match node {
+    DisplayNode::Text { runs } => {
+      runs.iter().map(|r| r.text.as_str()).collect()
+    }
+    DisplayNode::Static { text, .. } => text.clone(),
+    DisplayNode::Panel(child)
+    | DisplayNode::Toggler { label: child, .. }
+    | DisplayNode::Button { label: child, .. }
+    | DisplayNode::ActionMenu { label: child, .. } => {
+      display_node_plain_text(child)
+    }
+    DisplayNode::Grid(rows) => rows
+      .iter()
+      .flat_map(|row| row.iter().map(display_node_plain_text))
+      .collect(),
+    DisplayNode::Column(children) | DisplayNode::Row(children) => {
+      children.iter().map(display_node_plain_text).collect()
+    }
+    DisplayNode::Checkbox { .. } | DisplayNode::Spacer { .. } => String::new(),
+    DisplayNode::Popup { current, .. } => current.clone(),
+  }
+}
+
 /// Recursively render a Manipulate display-element widget tree into iced.
 /// Interactive checkboxes emit `ManipulateDisplayToggled` with the write-back
 /// assignment (`<target> = <on|off>`) to apply on toggle.
@@ -4804,6 +4836,31 @@ fn render_display_node<'a>(
       button(render_display_node(cell_idx, label))
         .padding([2, 10])
         .on_press(Message::ManipulateDisplayAction(cell_idx, action.clone()))
+        .into()
+    }
+    DisplayNode::ActionMenu { label, items } => {
+      // A menu button (`ActionMenu["rotate", {"piece 1" :> …, …}]`): always
+      // shows `label` (never a chosen item, unlike `Popup`'s dropdown);
+      // picking an item runs its own held action, the same as `Button`.
+      let entries: Vec<PopupChoice> = items
+        .iter()
+        .enumerate()
+        .map(|(index, (item_label, _))| PopupChoice {
+          index,
+          label: item_label.clone(),
+        })
+        .collect();
+      let actions = items.clone();
+      let on_select = move |chosen: PopupChoice| {
+        Message::ManipulateDisplayAction(
+          cell_idx,
+          actions[chosen.index].1.clone(),
+        )
+      };
+      let label_text = display_node_plain_text(label);
+      pick_list(entries, None::<PopupChoice>, on_select)
+        .placeholder(label_text)
+        .width(iced::Length::Shrink)
         .into()
     }
     DisplayNode::Popup {
@@ -7492,6 +7549,37 @@ mod tests {
     }
   }
 
+  /// Regression for the "Hieroglyphs" Demonstration: its digit-to-symbol
+  /// lookup table is built from string literals in Wolfram's `\|HHHHHH`
+  /// form — 6 hex digits, needed for a code point outside the Basic
+  /// Multilingual Plane (an Egyptian hieroglyph lives in Unicode Plane 1,
+  /// past what the 4-hex-digit `\:HHHH` escape can reach). That escape
+  /// wasn't recognized when the interpreter expanded a saved
+  /// `SaveDefinitions -> True` initialization, so the association's values
+  /// stayed the literal 8-character escape text instead of becoming the
+  /// character. Independently written here with a made-up mapping and
+  /// character, not copied from the Demonstration.
+  #[test]
+  fn save_definitions_initialization_expands_six_hex_digit_escape() {
+    let code = "Manipulate[Dynamic[symbolTable[key]], \
+      {{key, 2}, 1, 3, 1}, SaveDefinitions -> True]";
+    let stored = "DynamicModuleBox[{$CellContext`key$$ = 2}, \
+      DynamicBox[…],\n\
+      Initialization:>($CellContext`symbolTable = <|1 -> \"\\|013362\", \
+      2 -> \"\\|0133fa\", 3 -> \"\\|013068\"|>; \
+      Typeset`initDone$$ = True)]";
+    let state = instantiate_stored_manipulate(code, stored)
+      .expect("instantiate_stored_manipulate should build a widget");
+    assert_eq!(state.error, None);
+    assert_eq!(
+      state.text_output.as_deref(),
+      Some("\u{133fa}"),
+      "the association's value must be the decoded hieroglyph character, \
+       not the literal \\|HHHHHH escape text: {:?}",
+      state.text_output
+    );
+  }
+
   /// A Manipulate whose body defines a lookup helper as its own first
   /// statement (`table[key] = {…}`) and whose control panel uses that
   /// helper to build *another* control's choice list dynamically
@@ -7874,6 +7962,73 @@ mod tests {
       "the Button's action must actually run even though `shape` has two \
        control rows, not silently no-op"
     );
+  }
+
+  /// A jigsaw-puzzle-style Manipulate (a Locator-draggable piece plus a
+  /// per-piece "rotate" menu, the Wolfram Demonstrations Project shape of a
+  /// tangram/dissection puzzle — independently written, not copied from any
+  /// specific one) whose bare `ActionMenu[label, {"item" :> action, …}]`
+  /// argument mutates a plain `Initialization`-seeded global that the body
+  /// reads directly, rather than writing back into a declared control
+  /// variable like `Button`'s usual reset-to-default action. Regression:
+  /// `ActionMenu` used to fall through to the generic "extra display
+  /// element" path and render as frozen, unclickable text — the item never
+  /// ran its action at all.
+  #[test]
+  fn action_menu_rotates_a_locator_piece_via_held_per_item_actions() {
+    use woxi::functions::graphics::DisplayNode;
+    let code = "Manipulate[\
+      {angle, pt}, \
+      {{pt, {0, 0}}, {-5, -5}, {5, 5}, Locator}, \
+      ActionMenu[\"spin\", {\"cw\" :> (angle = angle + 1), \
+        \"ccw\" :> (angle = angle - 1)}], \
+      Initialization :> (angle = 0)\
+      ]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the ActionMenu Manipulate must build a widget");
+    assert!(state.error.is_none(), "render failed: {:?}", state.error);
+    assert_eq!(state.text_output.as_deref(), Some("{0, {0, 0}}"));
+
+    // The menu shows up as one ActionMenu display node carrying both items
+    // with their own held action, not a frozen text dump of the source.
+    assert_eq!(state.display_trees.len(), 1);
+    let (label, items) = match &state.display_trees[0] {
+      DisplayNode::ActionMenu { label, items } => (label, items),
+      other => panic!("expected an ActionMenu display node, got {other:?}"),
+    };
+    assert_eq!(
+      display_node_plain_text(label),
+      "spin",
+      "the menu button always shows its own label, never a chosen item"
+    );
+    assert_eq!(
+      items,
+      &vec![
+        ("cw".to_string(), "angle = angle + 1".to_string()),
+        ("ccw".to_string(), "angle = angle - 1".to_string()),
+      ]
+    );
+
+    // Choosing "cw" runs its held action against the live bindings — the
+    // same mechanism a `Button` press uses — and the body re-renders with
+    // the mutated global `angle`, exactly as Wolfram's ActionMenu would.
+    let cw_action = items[0].1.clone();
+    state.apply_button_action(&cw_action);
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert_eq!(state.text_output.as_deref(), Some("{1, {0, 0}}"));
+
+    // A second, different item keeps working against the now-updated state.
+    let ccw_action = state
+      .display_trees
+      .iter()
+      .find_map(|t| match t {
+        DisplayNode::ActionMenu { items, .. } => Some(items[1].1.clone()),
+        _ => None,
+      })
+      .expect("the ActionMenu must still be present after re-render");
+    state.apply_button_action(&ccw_action);
+    state.apply_button_action(&ccw_action);
+    assert_eq!(state.text_output.as_deref(), Some("{-1, {0, 0}}"));
   }
 
   /// A Manipulate whose body calls a `Compile`d helper with bare
@@ -14658,7 +14813,8 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
             walk(c, out);
           }
         }
-        DisplayNode::Button { label, .. } => walk(label, out),
+        DisplayNode::Button { label, .. }
+        | DisplayNode::ActionMenu { label, .. } => walk(label, out),
         DisplayNode::Checkbox { .. }
         | DisplayNode::Popup { .. }
         | DisplayNode::Spacer { .. }
@@ -14695,7 +14851,8 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
           }
         }
         DisplayNode::Toggler { label, .. }
-        | DisplayNode::Button { label, .. } => walk(label, out),
+        | DisplayNode::Button { label, .. }
+        | DisplayNode::ActionMenu { label, .. } => walk(label, out),
         DisplayNode::Checkbox { .. }
         | DisplayNode::Spacer { .. }
         | DisplayNode::Text { .. }
