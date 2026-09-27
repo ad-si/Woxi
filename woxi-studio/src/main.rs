@@ -30992,4 +30992,85 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`stepA$$ = 1, $CellContext`stepB$$ =
       "the goodness-of-fit-test picker must matter"
     );
   }
+
+  /// End-to-end regression for the shape of the "Temperature-Composition
+  /// Diagram for Immiscible Liquids" Demonstration: a `Module` helper
+  /// function solves an equation whose only variable-dependent term is an
+  /// exponential (`base^f[t]`) divided by a slider-bound control, via
+  /// `t /. Quiet[Solve[...][[1]]]`. `Solve`'s degree detection used to treat
+  /// a constant base raised to a variable-dependent exponent as if it were
+  /// degree 0, so the coefficient extraction silently dropped the
+  /// exponential term and `Solve` returned `{}` instead of a root — leaving
+  /// `t` unsubstituted and the outer `ReplaceAll` unevaluated (and noisy)
+  /// instead of driving the plotted curve.
+  #[test]
+  fn demonstration_immiscible_liquids_manipulate_solves_divided_exponential() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[
+ Module[{curveT, curve},
+  curveT[frac_] := t /. Quiet[Solve[2^(5 - 20/(t + 10))/rate == frac, t][[1]]];
+  curve = Plot[curveT[frac], {frac, 0.1, 0.9}, PlotRange -> All, ImageSize -> 300];
+  curve
+ ],
+ {{rate, 4, \"rate\"}, 2, 8, 1}]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`rate$$ = 4}, DynamicBox[\[Ellipsis]]]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .into_iter()
+      .find_map(|e| e.manipulate_state)
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the Plot of the Solve-derived curve must draw"
+    );
+
+    match &widget.controls[..] {
+      [
+        manipulate::ControlState::Continuous {
+          name,
+          min,
+          max,
+          step,
+          current,
+          ..
+        },
+      ] => {
+        assert_eq!(name.as_str(), "rate");
+        assert_eq!(*min, 2.0);
+        assert_eq!(*max, 8.0);
+        assert_eq!(*step, 1.0);
+        assert_eq!(*current, 4.0);
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+
+    // Re-render the extracted body directly: with the fix, `curveT` returns
+    // real numbers and the plot changes as `rate` moves; without it, `Solve`
+    // returns `{}`, the `ReplaceAll` stays unevaluated, and `Plot` has
+    // nothing numeric to draw.
+    let render = |rate: f64| {
+      woxi::with_scoped_globals(
+        &[("rate".to_string(), rate.to_string())],
+        || woxi::interpret_with_stdout(&widget.body),
+      )
+      .expect("body evaluates")
+      .graphics
+      .expect("the curve must render")
+    };
+    let default_view = render(4.0);
+    assert_ne!(
+      default_view,
+      render(7.0),
+      "moving the rate slider must re-solve curveT and change the plot"
+    );
+  }
 }
