@@ -8444,9 +8444,7 @@ mod log_likelihood {
         .unwrap(),
       "-3.4245466149150294"
     );
-    // A non-stationary AR coefficient (|a1| >= 1) and a higher-order model
-    // (more than one AR or MA coefficient) both stay unevaluated rather
-    // than guessing at an answer.
+    // A non-stationary AR part stays unevaluated (ARMAProcess::nonwkst).
     assert_eq!(
       interpret("LogLikelihood[ARMAProcess[{1.5}, {0}, 1.], {1., 2.}]")
         .unwrap(),
@@ -8454,10 +8452,44 @@ mod log_likelihood {
     );
     assert_eq!(
       interpret(
-        "LogLikelihood[ARMAProcess[{0.5, 0.2}, {0.3}, 1.], {1., 2., 3.}]"
+        "LogLikelihood[ARMAProcess[{0.6, 0.5}, {0.1}, 1.5], {1., -2., 3.}]"
       )
       .unwrap(),
-      "LogLikelihood[ARMAProcess[{0.5, 0.2}, {0.3}, 1.], {1., 2., 3.}]"
+      "LogLikelihood[ARMAProcess[{0.6, 0.5}, {0.1}, 1.5], {1., -2., 3.}]"
+    );
+    // Higher orders, pure AR and pure MA (rounded: the last bit differs
+    // from wolframscript's).
+    assert_eq!(
+      interpret(
+        "Round[LogLikelihood[ARMAProcess[{0.5, 0.2}, {0.3}, 1.], \
+         {1., 2., 3.}], 10^-10]"
+      )
+      .unwrap(),
+      "-1038455591/200000000"
+    );
+    assert_eq!(
+      interpret(
+        "Round[LogLikelihood[ARMAProcess[{0.3, -0.2, 0.1}, {0.4, 0.25}, \
+         1.5], {1., -2., 3., 0.5, -1., 2.2}], 10^-10]"
+      )
+      .unwrap(),
+      "-21109034219/1000000000"
+    );
+    assert_eq!(
+      interpret(
+        "Round[LogLikelihood[ARMAProcess[{}, {0.4, 0.25}, 1.5], \
+         {1., -2., 3., 0.5}], 10^-10]"
+      )
+      .unwrap(),
+      "-114091314521/10000000000"
+    );
+    assert_eq!(
+      interpret(
+        "Round[LogLikelihood[ARMAProcess[{0.6, 0.3}, {}, 1.5], \
+         {1., -2., 3., 0.5}], 10^-10]"
+      )
+      .unwrap(),
+      "-32586076247/2500000000"
     );
   }
 }

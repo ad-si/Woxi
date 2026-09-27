@@ -11906,6 +11906,103 @@ fn contains_variable(expr: &Expr, var: &str) -> bool {
 
 // ─── LogLikelihood ───────────────────────────────────────────────────
 
+/// Whether the AR polynomial `1 - phi_1 z - … - phi_p z^p` has all its roots
+/// outside the unit circle: step it down through the Levinson-Durbin
+/// recursion, every partial autocorrelation must lie strictly inside (-1, 1).
+fn ar_is_stationary(phi: &[f64]) -> bool {
+  let mut a = phi.to_vec();
+  while let Some(&k) = a.last() {
+    if !k.is_finite() || k.abs() >= 1.0 {
+      return false;
+    }
+    let m = a.len();
+    a = (0..m - 1)
+      .map(|j| (a[j] + k * a[m - 2 - j]) / (1.0 - k * k))
+      .collect();
+  }
+  true
+}
+
+/// Autocovariances gamma(0), …, gamma(n - 1) of the stationary ARMA(p, q)
+/// process `X_t = phi_1 X_(t-1) + … + phi_p X_(t-p) + eps_t + theta_1
+/// eps_(t-1) + … + theta_q eps_(t-q)` with `Var[eps] = sigma2`, or `None`
+/// when they can't be determined (the AR part must be stationary, see
+/// [`ar_is_stationary`]).
+///
+/// Brockwell & Davis' second method: with psi the MA(infinity) weights
+/// (psi_0 = 1, psi_j = theta_j + sum_k phi_k psi_(j-k)), the first p + 1
+/// autocovariances solve
+///   gamma(k) - sum_i phi_i gamma(|k - i|) = sigma2 sum_(j >= k) theta_j psi_(j-k)
+/// (theta_0 = 1), and every later one follows from the same recursion.
+fn arma_autocovariance(
+  phi: &[f64],
+  theta: &[f64],
+  sigma2: f64,
+  n: usize,
+) -> Option<Vec<f64>> {
+  if !ar_is_stationary(phi) {
+    return None;
+  }
+  let p = phi.len();
+  let q = theta.len();
+  let theta_at = |j: usize| -> f64 {
+    match j {
+      0 => 1.0,
+      j if j <= q => theta[j - 1],
+      _ => 0.0,
+    }
+  };
+  let mut psi = vec![0.0f64; q + 1];
+  for j in 0..=q {
+    psi[j] = theta_at(j)
+      + (1..=j.min(p)).map(|k| phi[k - 1] * psi[j - k]).sum::<f64>();
+  }
+  let rhs = |k: usize| -> f64 {
+    sigma2 * (k..=q).map(|j| theta_at(j) * psi[j - k]).sum::<f64>()
+  };
+  // (p + 1) x (p + 1) system for gamma(0..=p).
+  let size = p + 1;
+  let mut m = vec![vec![0.0f64; size + 1]; size];
+  for k in 0..size {
+    m[k][k] += 1.0;
+    for i in 1..=p {
+      let lag = k.abs_diff(i);
+      m[k][lag] -= phi[i - 1];
+    }
+    m[k][size] = rhs(k);
+  }
+  // Gaussian elimination with partial pivoting.
+  for col in 0..size {
+    let pivot = (col..size)
+      .max_by(|&x, &y| m[x][col].abs().total_cmp(&m[y][col].abs()))?;
+    if m[pivot][col].abs() < 1e-300 {
+      return None;
+    }
+    m.swap(col, pivot);
+    for row in 0..size {
+      if row != col {
+        let f = m[row][col] / m[col][col];
+        if f != 0.0 {
+          for c in col..=size {
+            m[row][c] -= f * m[col][c];
+          }
+        }
+      }
+    }
+  }
+  let mut gamma: Vec<f64> = (0..size).map(|k| m[k][size] / m[k][k]).collect();
+  for k in size..n {
+    let next = (1..=p).map(|i| phi[i - 1] * gamma[k - i]).sum::<f64>()
+      + if k <= q { rhs(k) } else { 0.0 };
+    gamma.push(next);
+  }
+  gamma.truncate(n);
+  if gamma.first().is_some_and(|g| *g <= 0.0) {
+    return None;
+  }
+  Some(gamma)
+}
+
 /// The Gaussian log-likelihood of `x` (one joint observation) under
 /// `Sigma[i, j] = gamma[|i - j|]` — a symmetric Toeplitz covariance matrix,
 /// as a zero-mean stationary process's finite-dimensional distribution
@@ -11989,31 +12086,37 @@ pub fn log_likelihood_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     || -> Result<Expr, InterpreterError> { eval(&unevaluated("Plus", data)) };
 
   match (dist_name, dargs) {
-    // `LogLikelihood[ARMAProcess[{a1}, {b1}, variance], data]` — unlike every
-    // other case here, `data` is not a list of i.i.d. draws: it is one
-    // realization of the correlated process itself. Its likelihood is the
-    // multivariate Normal density with the process's own covariance matrix
-    // Sigma[i, j] = gamma(|i - j|), gamma being the theoretical
-    // autocovariance. For ARMA(1, 1) (`X_t = a1 X_(t-1) + eps_t + b1
-    // eps_(t-1)`), gamma has the standard closed form used below; general
-    // ARMA(p, q) needs the Yule-Walker equations for its initial lags and is
-    // not handled here, so it — like a non-numeric `variance`, or `|a1| >=
-    // 1` (non-stationary) — is left unevaluated rather than guessed at.
+    // `LogLikelihood[ARMAProcess[{a1, …, ap}, {b1, …, bq}, variance],
+    // data]` — unlike every other case here, `data` is not a list of i.i.d.
+    // draws: it is one realization of the correlated process itself. Its
+    // likelihood is the multivariate Normal density with the process's own
+    // covariance matrix Sigma[i, j] = gamma(|i - j|), gamma being the
+    // theoretical autocovariance (see `arma_autocovariance`). A non-numeric
+    // coefficient or `variance`, or a non-stationary AR part, is left
+    // unevaluated rather than guessed at.
     // Computed numerically (an f64 Cholesky factorization of Sigma, not
     // Woxi's exact/symbolic `LinearSolve`/`Det`): a dataset long enough to
     // fit an ARMA model to is long enough that O(n^3) exact rational
     // arithmetic on an n x n matrix would be far too slow to be usable.
-    ("ARMAProcess", [Expr::List(ar), Expr::List(ma), var])
-      if ar.len() == 1 && ma.len() == 1 =>
-    {
-      let (Some(a1), Some(b1), Some(sigma2)) = (
-        try_eval_to_f64(&ar[0]),
-        try_eval_to_f64(&ma[0]),
-        try_eval_to_f64(var),
-      ) else {
+    ("ARMAProcess", [Expr::List(ar), Expr::List(ma), var]) => {
+      let coeffs = |items: &[Expr]| {
+        items
+          .iter()
+          .map(try_eval_to_f64)
+          .collect::<Option<Vec<f64>>>()
+      };
+      let (Some(phi), Some(theta), Some(sigma2)) =
+        (coeffs(ar), coeffs(ma), try_eval_to_f64(var))
+      else {
         return Ok(uneval());
       };
-      if sigma2.is_nan() || sigma2 <= 0.0 || a1.abs() >= 1.0 {
+      if sigma2.is_nan() || sigma2 <= 0.0 {
+        return Ok(uneval());
+      }
+      if !ar_is_stationary(&phi) {
+        crate::emit_message(
+          "ARMAProcess::nonwkst: The process is not weakly stationary.",
+        );
         return Ok(uneval());
       }
       let Some(xs) = data
@@ -12023,18 +12126,10 @@ pub fn log_likelihood_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       else {
         return Ok(uneval());
       };
-      let gamma0 = sigma2 * (1.0 + 2.0 * a1 * b1 + b1 * b1) / (1.0 - a1 * a1);
-      let gamma1 = a1 * gamma0 + b1 * sigma2;
-      let mut gamma = vec![0.0f64; xs.len()];
-      if let Some(g) = gamma.first_mut() {
-        *g = gamma0;
-      }
-      if xs.len() > 1 {
-        gamma[1] = gamma1;
-      }
-      for k in 2..gamma.len() {
-        gamma[k] = a1 * gamma[k - 1];
-      }
+      let Some(gamma) = arma_autocovariance(&phi, &theta, sigma2, xs.len())
+      else {
+        return Ok(uneval());
+      };
       match toeplitz_gaussian_log_likelihood(&gamma, &xs) {
         Some(ll) => Ok(Expr::Real(ll)),
         None => Ok(uneval()),
