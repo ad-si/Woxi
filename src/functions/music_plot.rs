@@ -50,7 +50,7 @@ pub fn stored_notation(expr: &Expr) -> Option<Notation> {
     return None;
   };
   pairs.iter().find_map(|(k, v)| match k {
-    Expr::Identifier(n) if n == "MusicNotation" => parse_notation(v),
+    Expr::String(n) if n == "MusicNotation" => parse_notation(v),
     _ => None,
   })
 }
@@ -468,7 +468,7 @@ fn score_tempo(score: &Expr) -> f64 {
   pairs
     .iter()
     .find_map(|(k, v)| match k {
-      Expr::Identifier(n) if n == "MusicTempo" => bpm(v),
+      Expr::String(n) if n == "MusicTempo" => bpm(v),
       _ => None,
     })
     .filter(|t| *t > 0.0)

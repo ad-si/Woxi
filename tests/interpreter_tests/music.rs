@@ -319,11 +319,26 @@ fn bare_pitch_is_not_staff_notation() {
 
 #[test]
 fn music_plot_returns_graphics() {
-  // MusicPlot draws a valid music object; in the CLI a Graphics prints as
-  // -Graphics-.
+  // MusicPlot draws a valid music object. (wolframscript's ticks and grid
+  // lines are `Function`s over internal `Music`` symbols, so only the
+  // primitives and the plain options are compared.)
   assert_eq!(
-    interpret("MusicPlot[MusicNote[\"C4\"]]").unwrap(),
-    "-Graphics-"
+    interpret("Head[MusicPlot[MusicNote[\"C4\"]]]").unwrap(),
+    "Graphics"
+  );
+  assert_eq!(
+    interpret("First[MusicPlot[MusicNote[\"C4\"]]]").unwrap(),
+    "{{Directive[EdgeForm[RGBColor[0.24, 0.6, 0.8]], \
+     FaceForm[RGBColor[0.24, 0.6, 0.8, 0.8]]], \
+     {Rectangle[{0, 59.6}, {1, 60.4}, RoundingRadius -> {0.2, 0.1}]}}}"
+  );
+  assert_eq!(
+    interpret(
+      "{AspectRatio, PlotRange, AxesOrigin} /. \
+       Flatten[Rest[List @@ MusicPlot[MusicNote[\"C4\"]]]]"
+    )
+    .unwrap(),
+    "{1/4, {Full, {56.5, 63.5}}, {Automatic, 56.5}}"
   );
 }
 
@@ -1266,21 +1281,30 @@ fn music_score_piano_roll_notation_is_the_default() {
   assert_eq!(svg.matches("class=\"music-play\"").count(), 1);
 }
 
-/// Options are stored as trailing symbol-keyed entries of the score's
-/// association; a repeated option keeps its last value.
+/// Options are stored as trailing string-keyed entries of the score's
+/// association (as wolframscript does); a repeated option keeps its last
+/// value, and the option may be named by a string too.
 #[test]
 fn music_score_stores_options() {
   assert_eq!(
-    interpret("MusicScore[{}, MusicTempo -> 90]").unwrap(),
-    "MusicScore[<|VoiceList -> {}, MusicTempo -> 90|>]"
+    interpret("ToString[MusicScore[{}, MusicTempo -> 90], InputForm]").unwrap(),
+    "MusicScore[<|\"VoiceList\" -> {}, \"MusicTempo\" -> 90|>]"
   );
   assert_eq!(
     interpret(
-      "Last[Normal[First[MusicScore[{MusicVoice[{\"C4\"}]}, \
-       MusicTempo -> 90, MusicTempo :> 80]]]]"
+      "ToString[Last[Normal[First[MusicScore[{MusicVoice[{\"C4\"}]}, \
+       MusicTempo -> 90, MusicTempo :> 80]]]], InputForm]"
     )
     .unwrap(),
-    "MusicTempo -> 80"
+    "\"MusicTempo\" -> 80"
+  );
+  assert_eq!(
+    interpret(
+      "ToString[MusicScore[{}, MusicTempo -> 90, \"MusicTempo\" -> 70], \
+       InputForm]"
+    )
+    .unwrap(),
+    "MusicScore[<|\"VoiceList\" -> {}, \"MusicTempo\" -> 70|>]"
   );
   assert_eq!(
     interpret(

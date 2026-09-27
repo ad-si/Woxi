@@ -2291,8 +2291,9 @@ pub fn music_option_rules(opts: &[Expr]) -> Option<Vec<(String, Expr)>> {
 /// `MusicScore[{voices…}, opts…]` — resolve to the association form
 /// `MusicScore[<|"VoiceList" -> {…}, "TimeSignature" -> …, opt -> v, …|>]`,
 /// keeping each already-resolved voice and taking its `"TimeSignature"` from
-/// the first voice. Options are stored as trailing symbol-keyed entries (a
-/// repeated option keeps its last value); an unknown option emits
+/// the first voice. Options are stored as trailing string-keyed entries
+/// (`"MusicTempo" -> 90`, as wolframscript does; a repeated option keeps its
+/// last value); an unknown option emits
 /// `MusicScore::optx` and leaves the score unevaluated. An empty score resolves
 /// to `MusicScore[<|"VoiceList" -> {}|>]`. Any non-voice element leaves the
 /// score symbolic (`None`).
@@ -2329,10 +2330,10 @@ pub fn music_score(args: &[Expr]) -> Option<Expr> {
   for (name, value) in opts {
     match pairs
       .iter_mut()
-      .find(|(k, _)| matches!(k, Expr::Identifier(n) if *n == name))
+      .find(|(k, _)| matches!(k, Expr::String(n) if *n == name))
     {
       Some(entry) => entry.1 = value,
-      None => pairs.push((Expr::Identifier(name), value)),
+      None => pairs.push((Expr::String(name), value)),
     }
   }
   Some(call1("MusicScore", Expr::Association(pairs)))
