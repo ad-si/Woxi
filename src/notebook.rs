@@ -1680,7 +1680,25 @@ fn extract_rowbox_content(s: &str) -> String {
       && has_top_level_assignment(&piece)
       && split_top_level_commas(&piece).len() == 1
     {
-      format!("({piece})")
+      // The piece may already carry its own statement-ending `;` (a
+      // Demonstrations idiom: `var = value;` written as its own row,
+      // stacked on the next statement with only blank lines — no visible
+      // operator — between them). That `;` has to land *outside* the
+      // added parens, not inside: `(var = value;)` is a one-statement
+      // `CompoundExpression` whose trailing `;` makes its *own* value
+      // `Null`, and that `Null` then becomes a real factor when this
+      // parenthesized group is juxtaposed against whatever follows —
+      // corrupting the *next* statement's own assignment the same way
+      // this wrapping exists to prevent (`Null*nextVar = …` binds `=` to
+      // the whole product, failing with `Set::write` on the Protected
+      // `Times` head instead of ever assigning `nextVar`). Keeping the
+      // `;` outside makes this factor its own complete, self-terminated
+      // statement instead: `(var = value);`, unable to juxtapose with
+      // anything after it at all.
+      match piece.strip_suffix(';') {
+        Some(stripped) => format!("({stripped});"),
+        None => format!("({piece})"),
+      }
     } else {
       piece
     };
@@ -7134,6 +7152,48 @@ Cell[BoxData[RowBox[{"arrowHead", "=", RowBox[{"{", RowBox[{"Line", "[", RowBox[
       result, "3",
       "the assignment must actually run (not fail as Set::write on a \
        corrupted `Times[…]` target), got: {result:?} from {expr_src:?}"
+    );
+  }
+
+  #[test]
+  fn juxtaposed_semicolon_terminated_stmt_does_not_corrupt_next_assignment() {
+    // As part of a scheduled QA routine, Woxi Studio was tested against a
+    // randomly sampled Wolfram Demonstration notebook ("Neat Alternating
+    // Tilings of the Plane") whose Initialization Code assigns several
+    // module-level variables, each on its own line and each with its own
+    // trailing `;`, separated only by blank lines (two stacked
+    // `\[IndentingNewLine]` tokens, no literal operator) — the same
+    // "2-D layout is the only grouping" idiom as the test above, except
+    // here the *juxtaposed* statement is itself already `;`-terminated,
+    // e.g. `RowBox[{RowBox[{"is0", "=", …}], ";"}]`. The existing fix
+    // wraps such a statement in parens to keep its own `=` from binding to
+    // the *outer* juxtaposition — but it wrapped the trailing `;` along
+    // with it (`(is0 = …;)`), making the *whole parenthesized group's own
+    // value* `Null` (a bare `;` inside `(…)` always adds an implicit
+    // trailing `Null`). That `Null` was still one un-terminated factor of
+    // an implicit product, free to keep juxtaposing forward — so the
+    // *next* blank-line-separated statement's `=` bound to `Null * that
+    // statement's own left-hand side` instead of to the statement alone,
+    // failing with `Set::write` on the Protected `Times` head and never
+    // assigning it. This is a self-authored, construct-equivalent example
+    // (invented variable names/values, not the specific Demonstration's
+    // code or data, which is copyrighted).
+    let boxes = r#"RowBox[{RowBox[{RowBox[{"a", "=", "1"}], ";"}], "\[IndentingNewLine]", "\[IndentingNewLine]", RowBox[{RowBox[{"b", "=", "2"}], ";"}], "\[IndentingNewLine]", "\[IndentingNewLine]", RowBox[{"total", "=", "b"}]}]"#;
+    let expr_src =
+      box_source_to_expression(boxes).expect("box source must convert");
+    assert!(
+      expr_src.contains("(b=2);"),
+      "the semicolon-terminated statement's own `;` must stay outside the \
+       added parens, got: {expr_src:?}"
+    );
+
+    let result = crate::interpret(&expr_src)
+      .expect("the reconstructed source must evaluate without error");
+    assert_eq!(
+      result, "2",
+      "the final assignment must actually run (not fail as Set::write on \
+       a corrupted `Times[…]` target carrying a stray `Null` factor from \
+       the previous statement), got: {result:?} from {expr_src:?}"
     );
   }
 
