@@ -4002,6 +4002,7 @@ fn render_inline_display_wrapper(expr: &syntax::Expr) -> syntax::Expr {
   let expr = render_row_if_needed(expr);
   let expr = render_treeform_if_needed(expr);
   let expr = render_framed_if_needed(expr);
+  let expr = render_rotate_if_needed(expr);
   let expr = render_highlighted_if_needed(expr);
   // Raw `Graphics[…]` / `Graphics3D[…]` items (e.g. from Plot or
   // PolyhedronData) are rendered to embedded SVG so a `Column[{plot, …}]`
@@ -4092,6 +4093,7 @@ fn render_visual_display_pipeline(expr: &syntax::Expr) -> syntax::Expr {
   let expr = render_row_if_needed(expr);
   let expr = render_treeform_if_needed(expr);
   let expr = render_framed_if_needed(expr);
+  let expr = render_rotate_if_needed(expr);
   let result = render_highlighted_if_needed(expr);
 
   match (pane_box, &result) {
@@ -4346,6 +4348,33 @@ fn render_framed_if_needed(expr: syntax::Expr) -> syntax::Expr {
       // Render the whole list as a Row-style SVG so all items
       // (text and Framed) appear together in one graphic.
       if let Some(svg) = functions::graphics::row_with_framed_to_svg(items) {
+        graphics_result(svg)
+      } else {
+        expr
+      }
+    }
+    _ => expr,
+  }
+}
+
+/// In visual (notebook) display mode, `Rotate[g, θ]` / `Rotate[g, θ, {x,
+/// y}]` displays as the whole picture `g` rotated by `θ` radians — the
+/// shape an animated Demonstration's `Manipulate` body evaluates to for a
+/// spinning picture, e.g. `Rotate[Graphics[…], 2 Pi t]`. Without this a
+/// Manipulate body that rotates its whole picture showed only the
+/// textual echo of the call, with the picture itself blanked out.
+fn render_rotate_if_needed(expr: syntax::Expr) -> syntax::Expr {
+  match &expr {
+    syntax::Expr::FunctionCall { name, args }
+      if name == "Rotate"
+        && args.len() >= 2
+        && evaluator::lays_out_a_graphic(&args[0]) =>
+    {
+      let svg = evaluator::dispatch::io_functions::rotate_graphic_svg(
+        &args[0],
+        &args[1..],
+      );
+      if svg.starts_with("<svg") {
         graphics_result(svg)
       } else {
         expr

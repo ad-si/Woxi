@@ -5042,6 +5042,16 @@ pub(crate) fn lays_out_a_graphic(expr: &Expr) -> bool {
   {
     return true;
   }
+  // `Rotate[g, θ]` / `Rotate[g, θ, pivot]` used as a *display* wrapper
+  // (rather than a primitive inside a `Graphics[{…}]` scene) is a
+  // picture too — the whole rendered graphic `g`, rotated.
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Rotate"
+    && args.len() >= 2
+    && lays_out_a_graphic(&args[0])
+  {
+    return true;
+  }
   // `TableForm[data, …]` / `MatrixForm[data, …]`, and either wrapped in a
   // `Style[…]` that sets its font, are drawn as an aligned grid picture by
   // `expr_to_svg` — a Demonstration's Manipulate body composing one into a
@@ -5543,6 +5553,77 @@ pub(crate) fn labeled_display_svg(expr: &Expr) -> Option<String> {
   is_labeled.then(|| expr_to_svg(expr))
 }
 
+/// Render `Rotate[g, θ]` / `Rotate[g, θ, {x, y}]` used as a *display*
+/// wrapper: the whole picture `g`, rotated by `θ` radians counterclockwise
+/// about the center of its own bounding box, or about `{x, y}` (in `g`'s
+/// own data coordinates) when a third argument is given.
+///
+/// When `g` is (or evaluated to) a plain 2-D `Graphics[prims, opts…]`, the
+/// rotation is pushed onto `prims` and re-rendered through `graphics_ast`
+/// — the same primitive-level `Rotate` a scene inside a `Graphics[{…}]`
+/// already implements (`collect_primitives`'s own `"Rotate"` arm), so any
+/// angle and any pivot behave identically whether `Rotate` wraps the whole
+/// picture or one shape inside it.
+///
+/// Anything else displayable (`Graphics3D`, `Image`, or a `Graphics` value
+/// whose symbolic primitive list was not retained) falls back to rotating
+/// the already-rendered SVG about the center of its own canvas; a pivot
+/// argument has no meaning there (it names a point in data coordinates
+/// this fallback no longer has access to) and is ignored.
+pub(crate) fn rotate_graphic_svg(g: &Expr, rest: &[Expr]) -> String {
+  let literal_graphics_args = match g {
+    Expr::FunctionCall { name, args }
+      if name == "Graphics" && !args.is_empty() =>
+    {
+      Some(args.clone())
+    }
+    Expr::Graphics {
+      is_3d: false,
+      structure: Some(structure),
+      ..
+    } => match structure.as_ref() {
+      Expr::FunctionCall { name, args }
+        if name == "Graphics" && !args.is_empty() =>
+      {
+        Some(args.clone())
+      }
+      _ => None,
+    },
+    _ => None,
+  };
+  if let Some(mut gfx_args) = literal_graphics_args {
+    let rotate_args = std::iter::once(gfx_args[0].clone())
+      .chain(rest.iter().cloned())
+      .collect();
+    gfx_args[0] = Expr::FunctionCall {
+      name: "Rotate".to_string(),
+      args: rotate_args,
+    };
+    return match crate::functions::graphics::graphics_ast(&gfx_args) {
+      Ok(Expr::Graphics { ref svg, .. }) => svg.clone(),
+      _ => String::new(),
+    };
+  }
+
+  let inner_svg = expr_to_svg(g);
+  let Some(angle) = rest
+    .first()
+    .and_then(crate::functions::graphics::expr_to_f64)
+  else {
+    return inner_svg;
+  };
+  let (w, h) = crate::functions::graphics::parse_svg_wh(&inner_svg);
+  if w <= 0.0 || h <= 0.0 {
+    return inner_svg;
+  }
+  let inner = crate::functions::graphics::strip_svg_wrapper(&inner_svg);
+  let deg = -angle.to_degrees();
+  let (cx, cy) = (w / 2.0, h / 2.0);
+  format!(
+    "<svg width=\"{w:.0}\" height=\"{h:.0}\" viewBox=\"0 0 {w:.0} {h:.0}\" xmlns=\"http://www.w3.org/2000/svg\">\n<g transform=\"rotate({deg:.6} {cx:.2} {cy:.2})\">\n{inner}\n</g>\n</svg>"
+  )
+}
+
 /// The picture behind a wrapper that only shows one once its content
 /// evaluates. `None` when it does not, which leaves the call to the arms
 /// below — a `Dynamic` whose body errors still prints as itself.
@@ -5632,6 +5713,18 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
         &crate::evaluator::evaluate_expr_to_expr(&args[0])
           .unwrap_or_else(|_| args[0].clone()),
       )
+    }
+    // `Rotate[g, θ]` / `Rotate[g, θ, {x, y}]` used as a *display* wrapper
+    // (as opposed to a primitive inside a `Graphics[{…}]` scene) rotates
+    // the whole picture `g` — the shape an animated Demonstration's
+    // `Manipulate` body evaluates to for a spinning picture, e.g.
+    // `Rotate[Graphics[…], 2 Pi t]`.
+    Expr::FunctionCall { name, args }
+      if name == "Rotate"
+        && args.len() >= 2
+        && lays_out_a_graphic(&args[0]) =>
+    {
+      rotate_graphic_svg(&args[0], &args[1..])
     }
     // Outside a `Graphics`, `Text[expr]` only asks for `expr` to be shown
     // in text rather than mathematical form — it contributes no box of its
