@@ -3471,6 +3471,36 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // Any other operator node on the LHS (`a /. b = 1`, `(f & ) = 1`, …)
+  // names a Protected built-in head, and a number or string is a raw object:
+  // wolframscript rejects both with a message and returns the right-hand
+  // side, without aborting the surrounding computation.
+  let raw = matches!(
+    lhs,
+    Expr::Integer(_)
+      | Expr::BigInteger(_)
+      | Expr::Real(_)
+      | Expr::BigFloat(..)
+      | Expr::String(_)
+  );
+  let head = crate::evaluator::pattern_matching::get_expr_head(lhs);
+  if raw || get_builtin_attributes(&head).contains(Attributes::Protected) {
+    let rhs_value = evaluate_expr_to_expr(rhs)?;
+    crate::emit_message(&if raw {
+      format!(
+        "Set::setraw: Cannot assign to raw object {}.",
+        expr_to_string(lhs)
+      )
+    } else {
+      format!(
+        "Set::write: Tag {} in {} is Protected.",
+        head,
+        expr_to_string(lhs)
+      )
+    });
+    return Ok(rhs_value);
+  }
+
   Err(InterpreterError::EvaluationError(
     "First argument of Set must be an identifier, part extract, or function call".into(),
   ))

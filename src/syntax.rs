@@ -4220,6 +4220,63 @@ fn parse_function_call(pair: &Pair<Rule>) -> Expr {
 fn parse_expression(pair: Pair<Rule>) -> Expr {
   let mut inner: Vec<Pair<Rule>> = pair.into_inner().collect();
 
+  // A trailing `AssignTail` (`a /. b = 1`): build everything before it,
+  // then assign to it — descending into the right-hand side of an
+  // assignment already built, since assignments are right-associative
+  // (`x = a /. b = 1` is `Set[x, Set[ReplaceAll[a, b], 1]]`).
+  if let Some(tail) = inner.pop_if(|p| p.as_rule() == Rule::AssignTail) {
+    let mut tail = tail.into_inner();
+    let op = tail.next().unwrap().as_str().to_string();
+    let rhs = pair_to_expr(tail.next().unwrap());
+    // Only the assignments written in this chain are descended into — a
+    // parenthesised one (`(x = a) /. b = 1`) is an ordinary operand.
+    let depth = inner
+      .iter()
+      .take_while(|p| p.as_rule() != Rule::AnonymousFunctionSuffix)
+      .filter(|p| {
+        p.as_rule() == Rule::Operator && is_assignment_operator(p.as_str())
+      })
+      .count();
+    return in_assignment_rhs(parse_expression_pairs(inner), depth, |target| {
+      make_binary_op(&target, &op, &rhs)
+    });
+  }
+  parse_expression_pairs(inner)
+}
+
+/// The operators that build `Set`, `SetDelayed`, `UpSet` and `UpSetDelayed`.
+fn is_assignment_operator(op: &str) -> bool {
+  matches!(op, "=" | ":=" | "^=" | "^:=")
+}
+
+/// Apply `f` to the innermost right-hand side of a (right-associative) chain
+/// of `depth` assignments — the number of assignment operators the chain was
+/// written with — or to `expr` itself when there are none. Used for the
+/// suffixes that bind tighter than `=` but are parsed after the operator
+/// chain: in `x = y = a /. b` the `/.` belongs to `a`, giving
+/// `Set[x, Set[y, ReplaceAll[a, b]]]`, while in `(a = 1) /. b` it belongs to
+/// the whole parenthesised assignment.
+fn in_assignment_rhs(
+  mut expr: Expr,
+  depth: usize,
+  f: impl FnOnce(Expr) -> Expr,
+) -> Expr {
+  if depth > 0
+    && let Expr::FunctionCall { name, args } = &mut expr
+    && matches!(
+      name.as_str(),
+      "Set" | "SetDelayed" | "UpSet" | "UpSetDelayed"
+    )
+    && args.len() == 2
+  {
+    let rhs = std::mem::replace(&mut args[1], Expr::Integer(0));
+    args[1] = in_assignment_rhs(rhs, depth - 1, f);
+    return expr;
+  }
+  f(expr)
+}
+
+fn parse_expression_pairs(mut inner: Vec<Pair<Rule>>) -> Expr {
   if inner.is_empty() {
     return Expr::Raw(String::new());
   }
@@ -4377,7 +4434,7 @@ fn parse_expression_inner(
         // !a! → Not[Factorial[a]] rather than Factorial[Not[a]].
         leading_not = true;
       }
-      Rule::Operator | Rule::ConditionOp | Rule::CondSpanOp => {
+      Rule::Operator | Rule::ConditionOp => {
         flush_pending_not(
           &mut pending_not_on_last,
           &mut terms,
@@ -4414,9 +4471,8 @@ fn parse_expression_inner(
         term_was_implicit_times.push(false);
         operators.push(";;".to_string());
       }
-      Rule::SpanNoRhsSep | Rule::CondSpanNoRhs => {
+      Rule::SpanNoRhsSep => {
         // `3 ;;`, and the gap in `1 ;;;; 3` — a `;;` with no right operand.
-        // `CondSpanNoRhs` is the same shape inside a `/.`/`/;` condition.
         flush_pending_not(
           &mut pending_not_on_last,
           &mut terms,
@@ -4645,6 +4701,11 @@ fn parse_expression_inner(
     &mut term_was_implicit_times,
   );
   split_implicit_products(&mut terms, &mut operators, &term_was_implicit_times);
+  // How many assignments this chain itself writes (see `in_assignment_rhs`).
+  let assign_depth = operators
+    .iter()
+    .filter(|op| is_assignment_operator(op))
+    .count();
 
   let mut result = if terms.len() == 1 {
     terms.remove(0)
@@ -4735,22 +4796,9 @@ fn parse_expression_inner(
         }
       }
     };
-    // If result is an assignment, push /. inside to the right-hand side. Only
-    // the first suffix can meet a raw assignment; later folds wrap the
-    // already-rewritten result.
-    result = match result {
-      Expr::FunctionCall { ref name, ref args }
-        if (name == "Set" || name == "SetDelayed") && args.len() == 2 =>
-      {
-        let lhs = args[0].clone();
-        let rhs = args[1].clone();
-        Expr::FunctionCall {
-          name: name.clone(),
-          args: vec![lhs, make_replace(rhs, rules)].into(),
-        }
-      }
-      _ => make_replace(result, rules),
-    };
+    // If result is an assignment, push /. inside to the right-hand side.
+    result =
+      in_assignment_rhs(result, assign_depth, |rhs| make_replace(rhs, rules));
   }
 
   // Apply postfix functions. In Wolfram, `//` (postfix application) has
@@ -4760,24 +4808,10 @@ fn parse_expression_inner(
   // assignment when one is present.
   for func_pair in postfix_funcs {
     let func = parse_postfix_function(func_pair);
-    if let Expr::FunctionCall { name, args } = &mut result
-      && matches!(
-        name.as_str(),
-        "Set" | "SetDelayed" | "UpSet" | "UpSetDelayed"
-      )
-      && args.len() == 2
-    {
-      let rhs = std::mem::replace(&mut args[1], Expr::Integer(0));
-      args[1] = Expr::Postfix {
-        expr: Box::new(rhs),
-        func: Box::new(func),
-      };
-    } else {
-      result = Expr::Postfix {
-        expr: Box::new(result),
-        func: Box::new(func),
-      };
-    }
+    result = in_assignment_rhs(result, assign_depth, |rhs| Expr::Postfix {
+      expr: Box::new(rhs),
+      func: Box::new(func),
+    });
   }
 
   // Apply AnonymousFunctionSuffix: expr &
@@ -4792,8 +4826,8 @@ fn parse_expression_inner(
     // If `result` is a top-level assignment (Set/SetDelayed/UpSet/
     // UpSetDelayed), `&` (precedence 90) binds tighter than the assignment
     // (precedence 40), so we push the Function wrapper into the RHS.
-    let pushed_into_assignment = if let Expr::FunctionCall { name, args } =
-      &mut result
+    let pushed_into_assignment = if assign_depth > 0
+      && let Expr::FunctionCall { name, args } = &mut result
       && matches!(
         name.as_str(),
         "Set" | "SetDelayed" | "UpSet" | "UpSetDelayed"
@@ -4843,18 +4877,18 @@ fn parse_expression_inner(
       // tighter than `=`, so they should be applied to the RHS only.
       // Otherwise `a = body & /@ newlist` would wrongly parse as
       // `Map[Set[a, Function[body]], newlist]` and trigger Set::argrx.
-      let assignment_lhs: Option<(String, Expr)> =
-        if let Expr::FunctionCall { name, args } = &result
-          && matches!(
-            name.as_str(),
-            "Set" | "SetDelayed" | "UpSet" | "UpSetDelayed"
-          )
-          && args.len() == 2
-        {
-          Some((name.clone(), args[0].clone()))
-        } else {
-          None
-        };
+      let assignment_lhs: Option<(String, Expr)> = if assign_depth > 0
+        && let Expr::FunctionCall { name, args } = &result
+        && matches!(
+          name.as_str(),
+          "Set" | "SetDelayed" | "UpSet" | "UpSetDelayed"
+        )
+        && args.len() == 2
+      {
+        Some((name.clone(), args[0].clone()))
+      } else {
+        None
+      };
       let starting_term = if let Some((_, _)) = &assignment_lhs {
         if let Expr::FunctionCall { args, .. } = &result {
           args[1].clone()
@@ -5062,16 +5096,8 @@ fn parse_compound_expression(pair: &Pair<Rule>) -> Expr {
   let stmts_end = src_start + src.len();
   let mut exprs: Vec<Expr> = Vec::new();
   // Count the number of top-level `;` separators between `lo` and `hi`
-  // (absolute offsets into the original input). Every bare `;` here — even
-  // one immediately adjacent to another, i.e. a literal `;;` — is a genuine
-  // CompoundExpression separator: this scans the gap *between* two already
-  // -parsed sibling children, and `Expression`/`ConditionExpr` always try to
-  // absorb a real Span (`;;`) into a child themselves first, greedily, as
-  // part of parsing that child's own term. Anything left over in the gap is
-  // exactly what they declined to absorb — e.g. `ConditionExpr`'s `CondSpanOp`
-  // guard, which won't let a `/.` RHS's `;;` swallow a statement its caller
-  // has nowhere to put (see the grammar comment there) — so it can never be
-  // a Span still waiting to be recognized.
+  // (absolute offsets into the original input). `;;` is treated as a
+  // Span separator and counted as zero semicolons.
   let count_separators = |lo: usize, hi: usize| -> usize {
     let local_lo = lo.saturating_sub(src_start);
     let local_hi = hi.saturating_sub(src_start);
@@ -5096,7 +5122,12 @@ fn parse_compound_expression(pair: &Pair<Rule>) -> Expr {
           }
         }
         b';' if depth == 0 => {
-          count += 1;
+          // Skip `;;` (Span) — it's two chars, not two separators.
+          if i + 1 < bytes.len() && bytes[i + 1] == b';' {
+            i += 1;
+          } else {
+            count += 1;
+          }
         }
         _ => {}
       }
@@ -12061,6 +12092,47 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
     // though this whole render is meant to stay re-parseable. Handling it
     // directly, the same way as `CompoundExpression[...]` above, keeps
     // every statement on `expr_to_input_form`'s own path instead.
+    // `u /. v` and `u //. v` render both operands on this path too, so a
+    // `Span` rule side prints as `a ;; b` (`Hold[t /. a ;; b]`) rather than
+    // falling through to the OutputForm renderer's `Span[a, b]`. Operands
+    // that bind looser than `/.` (assignments, `&`, `;`) are bracketed, and
+    // so is a right-hand `/.` since the operator groups to the left.
+    Expr::ReplaceAll { expr: lhs, rules }
+    | Expr::ReplaceRepeated { expr: lhs, rules } => {
+      let op = if matches!(expr, Expr::ReplaceAll { .. }) {
+        "/."
+      } else {
+        "//."
+      };
+      let looser = |e: &Expr| {
+        matches!(e, Expr::Function { .. } | Expr::CompoundExpr(_))
+          || matches!(
+            e,
+            Expr::FunctionCall { name, args }
+              if matches!(
+                name.as_str(),
+                "Set" | "SetDelayed" | "UpSet" | "UpSetDelayed"
+              ) && args.len() == 2
+          )
+      };
+      let lhs_str = expr_to_input_form(lhs);
+      let lhs_str = if looser(lhs) {
+        format!("({lhs_str})")
+      } else {
+        lhs_str
+      };
+      let rules_str = expr_to_input_form(rules);
+      let rules_str = if looser(rules)
+        || matches!(
+          rules.as_ref(),
+          Expr::ReplaceAll { .. } | Expr::ReplaceRepeated { .. }
+        ) {
+        format!("({rules_str})")
+      } else {
+        rules_str
+      };
+      format!("{lhs_str} {op} {rules_str}")
+    }
     Expr::CompoundExpr(exprs) => {
       let mut parts: Vec<String> =
         exprs.iter().map(expr_to_input_form).collect();

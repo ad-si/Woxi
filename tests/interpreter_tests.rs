@@ -3788,66 +3788,105 @@ mod interpreter_tests {
   }
 
   #[test]
-  fn test_replaceall_span_before_dangling_set_becomes_null_statement() {
-    // Regression from a real Wolfram Demonstration ("Flash Distillation of
-    // a Benzene, Toluene, p-Xylene Mixture"): the author's cell had a
-    // literal `;;` typo — `Tdew = Ta /. FindRoot[...];;\nK1 = ...` — right
-    // after a `/.` whose RHS ends in a bracketed call. Woxi's `;;` operator
-    // has higher precedence than `=` (matching Wolfram's own placement of
-    // Span between `=` and `+`), so a naive parse lets it reach across the
-    // `/.` and swallow the next statement's `K1 = ...` as Span's second
-    // operand — and because `ConditionExpr` (which parses a `/.` RHS) has
-    // no lower-precedence continuation to hand a trailing `=` back to, that
-    // swallowed `=` couldn't be parsed at all: the whole expression failed
-    // to parse. Real Wolfram (per the notebook's own cached box output)
-    // treats the adjacent `;;` here as two ordinary CompoundExpression
-    // separators around an omitted (`Null`) statement instead, exactly like
-    // `a ; ; b`. `Ta /. z1` must stay its own statement, `K1 = 1` its own,
-    // with a `Null` in between.
+  fn test_replaceall_span_followed_by_set_is_one_assignment() {
+    // From a Wolfram Demonstration ("Flash Distillation of a Benzene,
+    // Toluene, p-Xylene Mixture") whose cell has a `;;` typo right after a
+    // `/.`: `Tdew = Ta /. FindRoot[...];;\nK1 = ...`. `;;` binds tighter
+    // than `/.`, which binds tighter than `=`, so wolframscript reads it as
+    // `Set[ReplaceAll[Ta, Span[..., K1]], ...]` — one statement, not two.
+    // It used to fail to parse at all: the operator loop has already ended
+    // when the `/.` suffix is read, leaving nothing to take the `=`.
     clear_state();
     assert_eq!(
       interpret("ToString[Hold[a = 1; Ta /. z1 ;; K1 = 1], InputForm]")
         .unwrap(),
-      "Hold[a = 1; Ta /. z1; Null; K1 = 1]"
+      "Hold[a = 1; Ta /. z1 ;; K1 = 1]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[Ta /. z1 ;; K1 = 1]]]").unwrap(),
+      "Hold[Set[ReplaceAll[Ta, Span[z1, K1]], 1]]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[Ta /. x := 1]]]").unwrap(),
+      "Hold[SetDelayed[ReplaceAll[Ta, x], 1]]"
     );
   }
 
   #[test]
-  fn test_replaceall_span_before_dangling_set_evaluates_every_statement() {
-    // Same shape as above but actually run (inside a `(...)`
-    // CompoundExpression, the same grammar path a Demonstration's
-    // `DynamicModule` body parses through in Woxi Studio): every statement
-    // around the accidental `;;` must still execute, in particular the one
-    // *after* it, which used to be swallowed and left completely
-    // unevaluated.
+  fn test_replaceall_span_followed_by_set_evaluates_as_protected_write() {
+    // Evaluated, the assignment to a `ReplaceAll[...]` left-hand side fails
+    // with `Set::write` and returns its right-hand side, so `y` becomes 42
+    // and `z` is never assigned.
     clear_state();
     assert_eq!(
       interpret("(x = 1; y = {1, 2, 3} /. w ;; z = 42; {x, y, z})").unwrap(),
-      "{1, {1, 2, 3} /. w, 42}"
+      "{1, 42, z}"
     );
-    assert_eq!(interpret("z").unwrap(), "42");
+    assert_eq!(interpret("z").unwrap(), "z");
   }
 
   #[test]
-  fn test_replaceall_span_without_dangling_set_is_unaffected() {
-    // The fix must not touch the ordinary case a `/.` RHS Span is meant
-    // for: nothing dangerous follows the second operand, so it still reads
-    // as `ReplaceAll[Ta, Span[z1, K1]]`.
+  fn test_suffixes_after_chained_assignments_bind_to_innermost_rhs() {
+    // `/.`, `//` and a trailing `=` all bind tighter than `=`, so they
+    // belong to the innermost right-hand side of an assignment chain.
+    clear_state();
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[x = y = a /. b]]]").unwrap(),
+      "Hold[Set[x, Set[y, ReplaceAll[a, b]]]]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[x = y = a // f]]]").unwrap(),
+      "Hold[Set[x, Set[y, f[a]]]]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[x = y = a /. b = 1]]]").unwrap(),
+      "Hold[Set[x, Set[y, Set[ReplaceAll[a, b], 1]]]]"
+    );
+    // A parenthesised assignment is an ordinary operand: the suffix
+    // applies to all of it.
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[(a = 1) /. b]]]").unwrap(),
+      "Hold[ReplaceAll[Set[a, 1], b]]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[(r = m) // f]]]").unwrap(),
+      "Hold[f[Set[r, m]]]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[(f = 1) &]]]").unwrap(),
+      "Hold[Function[Set[f, 1]]]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[(x = a) /. b = 1]]]").unwrap(),
+      "Hold[Set[ReplaceAll[Set[x, a], b], 1]]"
+    );
+  }
+
+  #[test]
+  fn test_set_on_a_raw_object_returns_the_rhs() {
+    clear_state();
+    assert_eq!(interpret("Set[1, 2]").unwrap(), "2");
+    assert_eq!(interpret("ReplaceAll[a, b] = 3").unwrap(), "3");
+  }
+
+  #[test]
+  fn test_replaceall_span_rule_side_prints_as_operator() {
+    // The ordinary case a `/.` RHS Span is meant for: it reads as
+    // `ReplaceAll[Ta, Span[z1, K1]]` and prints with `;;` in InputForm.
     clear_state();
     assert_eq!(
       interpret("ToString[Hold[Ta /. z1 ;; K1], InputForm]").unwrap(),
-      "Hold[Ta /. Span[z1, K1]]"
+      "Hold[Ta /. z1 ;; K1]"
     );
-  }
-
-  #[test]
-  fn test_replaceall_trailing_span_at_end_of_condition_is_unaffected() {
-    // A `;;` with nothing after it at all (not even a dangling `=`) still
-    // reads as the usual "no right operand" Span, defaulting to `All`.
-    clear_state();
+    // A `;;` with nothing after it defaults the right operand to `All`.
     assert_eq!(
       interpret("ToString[Hold[Ta /. z1 ;;], InputForm]").unwrap(),
-      "Hold[Ta /. Span[z1, All]]"
+      "Hold[Ta /. z1 ;; All]"
+    );
+    // Operands binding looser than `/.` keep their parentheses.
+    assert_eq!(
+      interpret("ToString[Hold[(a = 1) /. b /. (c /. d)], InputForm]").unwrap(),
+      "Hold[(a = 1) /. b /. (c /. d)]"
     );
   }
 
