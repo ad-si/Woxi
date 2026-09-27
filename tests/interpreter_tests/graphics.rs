@@ -499,6 +499,20 @@ mod graphics {
       ));
     }
 
+    /// Regression: `expr_to_point` required a point to already be a literal
+    /// `{x, y}` list, so an arrow tip computed as an arithmetic expression
+    /// (`base + vector`, as opposed to a literal `{x, y}`) was silently
+    /// dropped instead of evaluated first — leaving `Arrow` with only one
+    /// point and no visible line. A point that reduces to `{x, y}` at
+    /// evaluation time must render identically to writing that list out.
+    #[test]
+    fn arrow_computed_point_matches_literal() {
+      assert_eq!(
+        export_svg("Graphics[{Arrow[{{0, 0}, {0, 0} + {1, 2}}]}]"),
+        export_svg("Graphics[{Arrow[{{0, 0}, {1, 2}}]}]")
+      );
+    }
+
     #[test]
     fn text() {
       insta::assert_snapshot!(export_svg(
@@ -14671,6 +14685,21 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       insta::assert_snapshot!(export_svg(
         "Graphics3D[Arrow[{{0,0,0},{1,0,1}}]]"
       ));
+    }
+
+    /// Regression: `parse_point3d` required a point to already be a literal
+    /// `{x, y, z}` list, so an arrow tip computed as an arithmetic
+    /// expression (`base + vector`, e.g. a Manipulate's `Dynamic[Arrow[…]]`
+    /// whose tip is `origin + scale*fieldAt[origin]`) was silently dropped
+    /// instead of evaluated first — leaving `Arrow` with only one point and
+    /// no visible line. A point that reduces to `{x, y, z}` at evaluation
+    /// time must render identically to writing that list out.
+    #[test]
+    fn graphics3d_arrow_computed_point_matches_literal() {
+      assert_eq!(
+        export_svg("Graphics3D[Arrow[{{0,0,0},{0,0,0}+{1,0,1}}]]"),
+        export_svg("Graphics3D[Arrow[{{0,0,0},{1,0,1}}]]")
+      );
     }
 
     #[test]
