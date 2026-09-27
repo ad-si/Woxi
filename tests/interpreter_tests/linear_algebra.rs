@@ -2354,24 +2354,86 @@ mod linear_solve {
   // notebook: its Manipulate factored a repeated solve as `Aoperator =
   // LinearSolve[m, Method -> "Cholesky"]`, then called `Aoperator[b1]` and
   // `Aoperator[b2]` for two different right-hand sides. Woxi always solves
-  // by Gaussian elimination regardless of `Method`, so the option is simply
-  // carried through and dropped.
+  // by Gaussian elimination regardless of `Method`, so once the method
+  // accepts the matrix the option is simply carried through and dropped.
   #[test]
   fn solve_operator_form_with_options() {
     assert_eq!(
       interpret(
-        "op = LinearSolve[{{1, 2}, {3, 4}}, Method -> \"Cholesky\"]; \
+        "op = LinearSolve[{{2, 1}, {1, 3}}, Method -> \"Cholesky\"]; \
          {op[{5, 6}], op[{1, 0}]}"
       )
       .unwrap(),
-      "{{-4, 9/2}, {-2, 3/2}}"
+      "{{9/5, 7/5}, {3/5, -1/5}}"
     );
-    // The un-applied object itself stays a symbolic LinearSolveFunction
-    // stand-in — the options don't make it try (and fail) to solve.
+  }
+
+  // `Method -> "Cholesky"` needs a Hermitian positive definite matrix;
+  // otherwise wolframscript reports it (`LinearSolve::herm`/`::npdef`) and
+  // leaves the call — and the operator form applied to a vector —
+  // unevaluated.
+  #[test]
+  fn solve_cholesky_rejects_unsuitable_matrices() {
     assert_eq!(
       interpret("LinearSolve[{{1, 2}, {3, 4}}, Method -> \"Cholesky\"]")
         .unwrap(),
       "LinearSolve[{{1, 2}, {3, 4}}, Method -> Cholesky]"
+    );
+    assert_eq!(
+      interpret(
+        "op = LinearSolve[{{1, 2}, {3, 4}}, Method -> \"Cholesky\"]; \
+         op[{5, 6}]"
+      )
+      .unwrap(),
+      "LinearSolve[{{1, 2}, {3, 4}}, Method -> Cholesky][{5, 6}]"
+    );
+    assert_eq!(
+      interpret(
+        "LinearSolve[{{1, 2}, {3, 4}}, {5, 6}, Method -> \"Cholesky\"]"
+      )
+      .unwrap(),
+      "LinearSolve[{{1, 2}, {3, 4}}, {5, 6}, Method -> Cholesky]"
+    );
+    assert_eq!(
+      interpret(
+        "LinearSolve[{{1, 1}, {1, 1}}, {5, 5}, Method -> \"Cholesky\"]"
+      )
+      .unwrap(),
+      "LinearSolve[{{1, 1}, {1, 1}}, {5, 5}, Method -> Cholesky]"
+    );
+    assert_eq!(
+      interpret(
+        "LinearSolve[{{-4, 2}, {2, -3}}, {5, 6}, Method -> \"Cholesky\"]"
+      )
+      .unwrap(),
+      "LinearSolve[{{-4, 2}, {2, -3}}, {5, 6}, Method -> Cholesky]"
+    );
+    // Complex Hermitian (not symmetric) is fine.
+    assert_eq!(
+      interpret(
+        "LinearSolve[{{2, I}, {-I, 3}}, {5, 6}, Method -> \"Cholesky\"]"
+      )
+      .unwrap(),
+      "{3 - (6*I)/5, 12/5 + I}"
+    );
+  }
+
+  #[test]
+  fn solve_rejects_unknown_method_and_exact_banded() {
+    assert_eq!(
+      interpret("LinearSolve[{{1, 2}, {3, 4}}, {5, 6}, Method -> \"Foo\"]")
+        .unwrap(),
+      "LinearSolve[{{1, 2}, {3, 4}}, {5, 6}, Method -> Foo]"
+    );
+    assert_eq!(
+      interpret("LinearSolve[{{1, 2}, {3, 4}}, {5, 6}, Method -> \"Banded\"]")
+        .unwrap(),
+      "LinearSolve[{{1, 2}, {3, 4}}, {5, 6}, Method -> Banded]"
+    );
+    assert_eq!(
+      interpret("LinearSolve[{{1, 2}, {3, 4}}, {5, 6}, Method -> Automatic]")
+        .unwrap(),
+      "{-4, 9/2}"
     );
   }
 

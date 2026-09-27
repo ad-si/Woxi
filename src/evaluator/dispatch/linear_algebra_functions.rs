@@ -235,6 +235,22 @@ pub fn dispatch_linear_algebra_functions(
         args,
       ));
     }
+    // LinearSolve[m, opts…]: the operator form with options, kept as its
+    // own stand-in for wolframscript's LinearSolveFunction. A method that
+    // can't handle `m` is reported here, when the object is created.
+    "LinearSolve"
+      if args.len() >= 2
+        && args[1..].iter().all(|a| {
+          matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+        }) =>
+    {
+      crate::functions::linear_algebra_ast::linear_solve_method_ok(
+        &args[0],
+        &args[1..],
+        true,
+      );
+      return Some(Ok(crate::helpers::unevaluated("LinearSolve", args)));
+    }
     "LinearSolve" if args.len() == 2 => {
       return Some(crate::functions::linear_algebra_ast::linear_solve_ast(
         args,
@@ -242,8 +258,9 @@ pub fn dispatch_linear_algebra_functions(
     }
     // LinearSolve[m, b, opts…] with a non-Modulus option (e.g. Method ->
     // "Cholesky"): Woxi always solves by Gaussian elimination, which gives
-    // the same answer regardless of method, so trailing options besides
-    // Modulus (already handled above) are simply dropped.
+    // the same answer regardless of method, so once the method is known to
+    // accept `m`, trailing options besides Modulus (already handled above)
+    // are simply dropped.
     "LinearSolve"
       if args.len() >= 3
         && matches!(&args[1], Expr::List(_))
@@ -252,6 +269,13 @@ pub fn dispatch_linear_algebra_functions(
         )
         .is_none() =>
     {
+      if !crate::functions::linear_algebra_ast::linear_solve_method_ok(
+        &args[0],
+        &args[2..],
+        true,
+      ) {
+        return Some(Ok(crate::helpers::unevaluated("LinearSolve", args)));
+      }
       return Some(crate::functions::linear_algebra_ast::linear_solve_ast(
         &args[..2],
       ));

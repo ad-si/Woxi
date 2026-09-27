@@ -2034,6 +2034,19 @@ conductor/Round-2 computation), as are non-monic minimal polynomials of degree
 ≥ 3.
 
 
+### `LinearSolve[m]` is not a `LinearSolveFunction`
+
+The operator form `LinearSolve[m]` / `LinearSolve[m, opts]` stays as that
+unevaluated call in Woxi (applying it to a vector solves the system); WL
+returns a `LinearSolveFunction[dims, data]` object holding the factorization:
+
+```sh
+wolframscript -code 'LinearSolve[{{2, 1}, {1, 3}}, Method -> "Cholesky"]'
+# LinearSolveFunction[{2, 2}, {3, True, {{{Sqrt[2], 1/Sqrt[2]}, {0, Sqrt[5/2]}}, None, 0}, …}]
+woxi eval 'LinearSolve[{{2, 1}, {1, 3}}, Method -> "Cholesky"]'
+# LinearSolve[{{2, 1}, {1, 3}}, Method -> Cholesky]
+```
+
 ## Expression structure and evaluation
 
 ### A package symbol answers before its package has been loaded
@@ -3085,6 +3098,19 @@ but does not emit `$GeoLocation::dloff` or the per-function `Fn::geoloc`.
 - Message **multiplicity** in general is not comparable: wolframscript
   re-evaluates a failing specification, so it prints some messages twice, and
   applies `General::stop` after three identical ones.
+
+### A stored value is re-evaluated on every read, repeating its messages
+
+Woxi evaluates an `OwnValue` again each time the symbol is read, so a value
+that stays unevaluated with a message prints the message again on every use.
+WL marks the stored expression as already evaluated and prints it once:
+
+```sh
+wolframscript -code 'op = LinearSolve[{{1, 2}, {3, 4}}, Method -> "Cholesky"]; op'
+# LinearSolve::herm once
+woxi eval 'op = LinearSolve[{{1, 2}, {3, 4}}, Method -> "Cholesky"]; op'
+# LinearSolve::herm twice
+```
 
 ### A too-deep `Part` on a packed array is `Part::partd1`
 

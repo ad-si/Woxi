@@ -1081,6 +1081,16 @@ fn linear_solve_operator_args(
   {
     return None;
   }
+  // A method that can't handle the matrix already failed (with its
+  // message) when the operator was created; applying it stays unevaluated,
+  // as wolframscript's `LinearSolve[m, Method -> "Cholesky"][b]` does.
+  if !crate::functions::linear_algebra_ast::linear_solve_method_ok(
+    &func_args[0],
+    &func_args[1..],
+    false,
+  ) {
+    return None;
+  }
   let mut new_args = vec![func_args[0].clone(), applied.clone()];
   new_args.extend(func_args[1..].iter().cloned());
   Some(new_args)

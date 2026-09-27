@@ -5387,6 +5387,156 @@ fn linear_solve_rectangular(
   Expr::List(solution.into())
 }
 
+/// Whether `LinearSolve`'s `Method` option (the first one among `opts`) can
+/// be used on `matrix`. Woxi solves by elimination whatever the method, but
+/// wolframscript refuses — leaving `LinearSolve[…]` unevaluated — when the
+/// method is unknown (`rmeth`), when `"Cholesky"` gets a matrix that is not
+/// Hermitian (`herm`) or not positive definite (`npdef`), and when
+/// `"Banded"` gets entries that are not machine numbers (`bdnmt`). With
+/// `emit`, the corresponding message is issued.
+pub fn linear_solve_method_ok(
+  matrix: &Expr,
+  opts: &[Expr],
+  emit: bool,
+) -> bool {
+  use crate::evaluator::evaluate_expr_to_expr as eval;
+  let method = opts.iter().find_map(|o| match o {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Method") => {
+      Some(replacement.as_ref())
+    }
+    _ => None,
+  });
+  let Some(method) = method else {
+    return true;
+  };
+  let name = match method {
+    Expr::List(items) => items.first(),
+    other => Some(other),
+  };
+  let fail = |msg: String| {
+    if emit {
+      crate::emit_message(&msg);
+    }
+    false
+  };
+  const METHODS: [&str; 9] = [
+    "Cholesky",
+    "Multifrontal",
+    "Krylov",
+    "CofactorExpansion",
+    "OneStepRowReduction",
+    "DivisionFreeRowReduction",
+    "Direct",
+    "IterativeRefinement",
+    "Banded",
+  ];
+  let name = match name {
+    Some(Expr::Identifier(a)) if a == "Automatic" => return true,
+    Some(Expr::String(s)) if METHODS.contains(&s.as_str()) => s.as_str(),
+    _ => {
+      let listed = METHODS
+        .iter()
+        .map(|m| format!("\"{m}\""))
+        .collect::<Vec<_>>()
+        .join(", ");
+      let (listed, last) = listed.rsplit_once(", ").unwrap();
+      return fail(format!(
+        "LinearSolve::rmeth: The value of the option Method -> {} should be {listed}, {last} or Automatic.",
+        crate::syntax::expr_to_output(method)
+      ));
+    }
+  };
+  let Some(rows) = expr_to_matrix(matrix) else {
+    return true;
+  };
+  let shown = crate::syntax::expr_to_output(matrix);
+  match name {
+    "Cholesky" => {
+      let n = rows.len();
+      let hermitian = rows.iter().all(|r| r.len() == n)
+        && (0..n).all(|i| {
+          (0..n).all(|j| {
+            let conj = eval(&Expr::FunctionCall {
+              name: "Conjugate".to_string(),
+              args: vec![rows[j][i].clone()].into(),
+            });
+            conj.is_ok_and(|c| {
+              crate::functions::predicate_ast::is_numeric_q(&rows[i][j])
+                && expr_to_string(&c) == expr_to_string(&rows[i][j])
+            })
+          })
+        });
+      if !hermitian {
+        return fail(format!(
+          "LinearSolve::herm: The matrix {shown} is not Hermitian or real and symmetric."
+        ));
+      }
+      // Sylvester's criterion: every leading principal minor is positive.
+      let positive_definite = (1..=n).all(|k| {
+        let sub = Expr::List(
+          rows[..k]
+            .iter()
+            .map(|r| Expr::List(r[..k].to_vec().into()))
+            .collect::<Vec<_>>()
+            .into(),
+        );
+        let test = Expr::FunctionCall {
+          name: "Positive".to_string(),
+          args: vec![Expr::FunctionCall {
+            name: "Re".to_string(),
+            args: vec![Expr::FunctionCall {
+              name: "Det".to_string(),
+              args: vec![sub].into(),
+            }]
+            .into(),
+          }]
+          .into(),
+        };
+        matches!(eval(&test), Ok(Expr::Identifier(ref t)) if t == "True")
+      });
+      if !positive_definite {
+        return fail(format!(
+          "LinearSolve::npdef: The matrix {shown} is not positive definite."
+        ));
+      }
+      true
+    }
+    "Banded" => {
+      // A machine complex number keeps machine-real parts (`4. + 1.*I`).
+      fn has_real(e: &Expr) -> bool {
+        match e {
+          Expr::Real(_) => true,
+          Expr::BinaryOp { left, right, .. } => {
+            has_real(left) || has_real(right)
+          }
+          Expr::UnaryOp { operand, .. } => has_real(operand),
+          Expr::FunctionCall { args, .. } => args.iter().any(has_real),
+          _ => false,
+        }
+      }
+      let machine = |e: &Expr| {
+        matches!(e, Expr::Real(_))
+          || (crate::functions::predicate_ast::is_complex_number(e)
+            && has_real(e))
+      };
+      if !rows.iter().flatten().all(machine) {
+        return fail(
+          "LinearSolve::bdnmt: The method \"Banded\" accepts only matrices with elements that are machine-real or machine-complex numbers.".to_string(),
+        );
+      }
+      true
+    }
+    _ => true,
+  }
+}
+
 pub fn linear_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 {
     return Err(InterpreterError::EvaluationError(
