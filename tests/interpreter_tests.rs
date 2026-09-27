@@ -1068,6 +1068,55 @@ mod interpreter_tests {
     );
   }
 
+  /// A `TabView` pane can also be given in the front end's own `{key,
+  /// label -> content}` "Tabs" layout-tool form — a 2-element `List`
+  /// pairing an explicit numeric key with a `label -> content` rule —
+  /// rather than the hand-written `label -> content` form or the chained
+  /// `key -> label -> content` form. This must still unwrap to its
+  /// `content` rather than falling back to treating the raw `{key, label
+  /// -> content}` list itself as "the pane", which would leave whichever
+  /// pane was evaluated last in the capture buffer instead — the same bug
+  /// `test_tabview_shows_first_tab_not_last_evaluated` covers for the
+  /// plain form.
+  #[test]
+  fn test_tabview_list_key_form_shows_first_tab_not_last_evaluated() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "TabView[{{1, \"first\" -> Plot[Sin[x], {x, 0, 4}, ImageSize -> 320]}, \
+       {2, \"second\" -> Plot[Cos[x], {x, 0, 4}, ImageSize -> 480]}}]",
+    )
+    .unwrap();
+    let svg = r.graphics.expect("expected graphics output");
+    assert!(
+      svg.starts_with("<svg width=\"320\""),
+      "expected the first tab's plot (320 wide), got: {}",
+      &svg[..svg.len().min(80)]
+    );
+  }
+
+  /// The same `{key, label -> content}` form, but with an explicit
+  /// selector naming the *second* pane by its key rather than its
+  /// position — `selected_tabview_pane` must match on the key inside the
+  /// list, not only fall back to 1-based position (which would pick the
+  /// wrong pane whenever a key and its position disagree).
+  #[test]
+  fn test_tabview_list_key_form_selector_matches_explicit_key() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "which = 2;\n\
+       TabView[{{1, \"first\" -> Plot[Sin[x], {x, 0, 4}, ImageSize -> 320]}, \
+       {2, \"second\" -> Plot[Cos[x], {x, 0, 4}, ImageSize -> 480]}}, \
+       Dynamic[which]]",
+    )
+    .unwrap();
+    let svg = r.graphics.expect("expected graphics output");
+    assert!(
+      svg.starts_with("<svg width=\"480\""),
+      "expected the selected key-2 pane's plot (480 wide), got: {}",
+      &svg[..svg.len().min(80)]
+    );
+  }
+
   /// The same holds across the statements of one cell: the value of the
   /// last statement is what gets displayed.
   #[test]

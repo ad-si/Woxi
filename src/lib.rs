@@ -1332,12 +1332,14 @@ pub fn get_captured_graphics() -> Option<String> {
 /// or a `Dynamic[var]` written by the FrontEnd, e.g. a hidden
 /// `ControlType -> None` tab-index control) names which pane that is:
 /// evaluated against whatever the Manipulate body already assigned that
-/// variable to, matched against each pane's explicit key (the 3-argument
-/// `key -> label -> content` form) or, for the plain `label -> content`
-/// form Demonstrations normally write, the pane's 1-based position — the
-/// same shorthand the Wolfram front end uses. Recurse into the selected
-/// pane (or the first one, absent a usable `sel` or a match) and promote
-/// its picture the same way.
+/// variable to, matched against each pane's explicit key — given either as
+/// the 3-argument `key -> label -> content` form or as the front end's own
+/// `{key, label -> content}` "Tabs" layout-tool form — or, for the plain
+/// `label -> content` form Demonstrations normally write by hand, the
+/// pane's 1-based position (see `functions::graphics::tabview_pane_parts`
+/// for all three shapes). Recurse into the selected pane's content (or the
+/// first one, absent a usable `sel` or a match) and promote its picture the
+/// same way.
 fn promote_result_graphics(expr: &syntax::Expr) {
   if let syntax::Expr::Graphics { svg, .. } = expr {
     if get_captured_graphics().as_deref() != Some(svg.as_str()) {
@@ -1354,30 +1356,19 @@ fn promote_result_graphics(expr: &syntax::Expr) {
       .get(1)
       .and_then(|sel| selected_tabview_pane(items, sel))
       .unwrap_or(&items[0]);
-    let pane = match selected {
-      syntax::Expr::Rule { replacement, .. }
-      | syntax::Expr::RuleDelayed { replacement, .. } => match replacement
-        .as_ref()
-      {
-        // 3-argument `key -> label -> content` form: unwrap once more.
-        syntax::Expr::Rule { replacement, .. }
-        | syntax::Expr::RuleDelayed { replacement, .. } => replacement.as_ref(),
-        other => other,
-      },
-      other => other,
-    };
-    promote_result_graphics(pane);
+    let (_, _, content) = functions::graphics::tabview_pane_parts(selected);
+    promote_result_graphics(content);
   }
 }
 
 /// Find the pane `TabView[{…}, sel]`'s selector currently names: `sel`
 /// (stripped of any `Dynamic[…]` wrapper) is evaluated against the live
 /// global state and compared, by `InputForm` text, against each pane's
-/// explicit key when the pane is given in the 3-argument `key -> label ->
-/// content` form; the plain 2-argument `label -> content` form has no
-/// separate key, so its pane is matched against its 1-based list position
-/// instead — the same shorthand the Wolfram front end applies. `None` when
-/// `sel` fails to evaluate or no pane matches.
+/// explicit key (see `functions::graphics::tabview_pane_parts` for the
+/// three shapes a pane's key can take); a pane with no explicit key is
+/// matched against its 1-based list position instead — the same shorthand
+/// the Wolfram front end applies. `None` when `sel` fails to evaluate or no
+/// pane matches.
 fn selected_tabview_pane<'a>(
   items: &'a [syntax::Expr],
   sel: &syntax::Expr,
@@ -1389,26 +1380,11 @@ fn selected_tabview_pane<'a>(
     .iter()
     .enumerate()
     .find(|(idx, pane)| {
-      let key = match pane {
-        syntax::Expr::Rule {
-          pattern,
-          replacement,
-        }
-        | syntax::Expr::RuleDelayed {
-          pattern,
-          replacement,
-        } => {
-          match replacement.as_ref() {
-            // 3-argument form: the pane's own explicit key.
-            syntax::Expr::Rule { .. } | syntax::Expr::RuleDelayed { .. } => {
-              syntax::expr_to_input_form(pattern)
-            }
-            // 2-argument form: the implicit 1-based position.
-            _ => (idx + 1).to_string(),
-          }
-        }
-        _ => (idx + 1).to_string(),
-      };
+      let (key, ..) = functions::graphics::tabview_pane_parts(pane);
+      let key = key.map_or_else(
+        || (idx + 1).to_string(),
+        |k| syntax::expr_to_input_form(&k),
+      );
       key == selector
     })
     .map(|(_, pane)| pane)
