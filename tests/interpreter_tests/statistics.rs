@@ -4948,12 +4948,22 @@ mod distribution_fit_test {
   fn all_tests_lists_the_six_supported_tests() {
     assert_eq!(
       interpret(
-        "DistributionFitTest[{1., 2., 3., 4., 5.}, \
+        "DistributionFitTest[N[Range[7]], \
          ExponentialDistribution[1/3], \"AllTests\"]"
       )
       .unwrap(),
       "{AndersonDarling, CramerVonMises, KolmogorovSmirnov, Kuiper, \
        PearsonChiSquare, WatsonUSquare}"
+    );
+    // CramerVonMises is only valid from 7 data points on.
+    assert_eq!(
+      interpret(
+        "DistributionFitTest[{1., 2., 3., 4., 5.}, \
+         ExponentialDistribution[1/3], \"AllTests\"]"
+      )
+      .unwrap(),
+      "{AndersonDarling, KolmogorovSmirnov, Kuiper, PearsonChiSquare, \
+       WatsonUSquare}"
     );
   }
 
@@ -4971,15 +4981,26 @@ mod distribution_fit_test {
   }
 
   #[test]
-  fn unknown_property_is_missing() {
+  fn unknown_property_stays_unevaluated() {
+    // DistributionFitTest::invprp, and the property access is left as is
+    // (the object itself is replaced to compare only the shape).
     assert_eq!(
       interpret(
         "h = DistributionFitTest[{1., 2., 3., 4., 5.}, \
          ExponentialDistribution[1/3], \"HypothesisTestData\"]; \
-         h[\"NotAProperty\"]"
+         h[\"NotAProperty\"] /. h -> obj"
       )
       .unwrap(),
-      "Missing[NotAvailable, NotAProperty]"
+      "obj[NotAProperty]"
+    );
+    assert_eq!(
+      interpret(
+        "DistributionFitTest[{1., 2., 3., 4., 5.}, \
+         ExponentialDistribution[1/3], \"Foo\"]"
+      )
+      .unwrap(),
+      "DistributionFitTest[{1., 2., 3., 4., 5.}, \
+       ExponentialDistribution[1/3], Foo]"
     );
   }
 

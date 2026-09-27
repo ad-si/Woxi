@@ -520,7 +520,7 @@ Woxi does **not** support.
     `SingularValuePlot`, `RiccatiSolve`, `KalmanEstimator`,
     `StabilityMargins` (`StateSpaceModel` and `BodePlot` are supported)
 - Distribution fitting and derived distributions:
-    `EstimatedDistribution`, `DistributionFitTest`,
+    `EstimatedDistribution`,
     `SmoothKernelDistribution`, `MarginalDistribution`,
     `CopulaDistribution`
 - Hypothesis testing framework: `TTest`, `PairedTTest`,

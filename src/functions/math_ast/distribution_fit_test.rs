@@ -34,7 +34,9 @@
 //!   for it is as readily available as for the other five tests.
 //!
 //! `ShapiroWilk` and `JarqueBeraALM` (normality-specific tests) are not
-//! implemented, so `"AllTests"` always reports the six tests above.
+//! implemented, so `"AllTests"` reports the six tests above — minus
+//! `CramerVonMises` for fewer than 7 data points, where wolframscript deems it
+//! invalid (it still computes it on request, with `DistributionFitTest::htdrng`).
 
 use super::*;
 
@@ -46,6 +48,66 @@ const TEST_NAMES: [&str; 6] = [
   "PearsonChiSquare",
   "WatsonUSquare",
 ];
+
+/// Every property name wolframscript's `HypothesisTestData` accepts. Asking
+/// for one Woxi doesn't compute leaves the call unevaluated; any other name
+/// is rejected with `DistributionFitTest::invprp`.
+const PROPERTIES: [&str; 30] = [
+  "AllTests",
+  "AndersonDarling",
+  "AutomaticTest",
+  "BaringhausHenze",
+  "CramerVonMises",
+  "DegreesOfFreedom",
+  "DistanceToBoundary",
+  "FittedDistribution",
+  "FittedDistributionParameters",
+  "HypothesisTestData",
+  "JarqueBeraALM",
+  "KolmogorovSmirnov",
+  "Kuiper",
+  "MardiaCombined",
+  "MardiaKurtosis",
+  "MardiaSkewness",
+  "PearsonChiSquare",
+  "Properties",
+  "PValue",
+  "PValueTable",
+  "ShapiroWilk",
+  "ShortTestConclusion",
+  "SzekelyEnergy",
+  "TestConclusion",
+  "TestData",
+  "TestDataTable",
+  "TestEntries",
+  "TestStatistic",
+  "TestStatisticTable",
+  "WatsonUSquare",
+];
+
+/// Smallest sample the CramerVonMises test is valid for.
+const CVM_MIN_SAMPLE: usize = 7;
+
+/// Emit `DistributionFitTest::invprp` for an unknown property `spec`.
+fn emit_invalid_property(spec: &Expr) {
+  crate::emit_message(&format!(
+    "DistributionFitTest::invprp: The argument {} is not a valid property. Specify \"Properties\" to obtain a list of valid properties.",
+    crate::syntax::expr_to_output(spec)
+  ));
+}
+
+/// Requesting a test that `"AllTests"` leaves out for this sample (only
+/// CramerVonMises, on fewer than 7 points) still runs it, with a warning.
+fn warn_if_out_of_range(pairs: &[(Expr, Expr)], test_name: &str) {
+  let listed = matches!(association_get(pairs, "AllTests"),
+    Some(Expr::List(names))
+      if names.iter().any(|n| matches!(n, Expr::String(s) if s == test_name)));
+  if test_name == "CramerVonMises" && !listed {
+    crate::emit_message(&format!(
+      "DistributionFitTest::htdrng: The CramerVonMises test is only valid for sample sizes between {CVM_MIN_SAMPLE} and Infinity."
+    ));
+  }
+}
 
 struct TestResult {
   statistic: f64,
@@ -427,16 +489,6 @@ fn test_data_table(name: &str, stat: f64, p: f64) -> Expr {
   )
 }
 
-fn missing_not_available(prop: &str) -> Expr {
-  call(
-    "Missing",
-    vec![
-      Expr::String("NotAvailable".to_string()),
-      Expr::String(prop.to_string()),
-    ],
-  )
-}
-
 /// Build the `HypothesisTestData[<|…|>]` association: `"FittedDistribution"`,
 /// `"AllTests"`, and a `"Tests"` sub-association of
 /// `name -> <|"TestStatistic" -> …, "PValue" -> …|>` for each of the six
@@ -464,6 +516,7 @@ fn build_hypothesis_test_data(u: &[f64], dist: &Expr) -> Expr {
       Expr::List(
         TEST_NAMES
           .iter()
+          .filter(|n| **n != "CramerVonMises" || u.len() >= CVM_MIN_SAMPLE)
           .map(|n| Expr::String(n.to_string()))
           .collect(),
       ),
@@ -533,16 +586,25 @@ pub fn apply_hypothesis_test_data(
       }
       _ => {
         if TEST_NAMES.contains(&prop.as_str()) {
+          warn_if_out_of_range(pairs, prop);
           let test = selected_test(pairs, Some(prop))?;
           property_from_test(test, "PValue")
         } else {
-          Some(missing_not_available(prop))
+          if !PROPERTIES.contains(&prop.as_str()) {
+            emit_invalid_property(&index_args[0]);
+          }
+          None
         }
       }
     },
     [Expr::String(prop), Expr::String(test_name)]
       if TEST_NAMES.contains(&test_name.as_str()) =>
     {
+      if !PROPERTIES.contains(&prop.as_str()) {
+        emit_invalid_property(&Expr::List(index_args.to_vec().into()));
+        return None;
+      }
+      warn_if_out_of_range(pairs, test_name);
       let test = selected_test(pairs, Some(test_name))?;
       match prop.as_str() {
         "TestDataTable" => {
@@ -554,7 +616,7 @@ pub fn apply_hypothesis_test_data(
           Some(test_data_table(test_name, stat, p))
         }
         "TestStatistic" | "PValue" => property_from_test(test, prop),
-        _ => Some(missing_not_available(prop)),
+        _ => None,
       }
     }
     _ => None,
@@ -607,6 +669,7 @@ pub fn distribution_fit_test_ast(
       Ok(property_from_test(test, property).unwrap_or(assoc))
     }
     name if TEST_NAMES.contains(&name) => {
+      warn_if_out_of_range(pairs, name);
       let test = selected_test(pairs, Some(name)).ok_or_else(|| {
         InterpreterError::EvaluationError(
           "DistributionFitTest: unknown test".into(),
@@ -614,6 +677,11 @@ pub fn distribution_fit_test_ast(
       })?;
       Ok(property_from_test(test, "PValue").unwrap_or(assoc))
     }
-    _ => Ok(unevaluated("DistributionFitTest", args)),
+    other => {
+      if !PROPERTIES.contains(&other) {
+        emit_invalid_property(&args[2]);
+      }
+      Ok(unevaluated("DistributionFitTest", args))
+    }
   }
 }
