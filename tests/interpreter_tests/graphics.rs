@@ -29690,6 +29690,32 @@ mod color_data_indexed {
     );
   }
 
+  /// Regression: a region whose true fill lies *outside* every traced loop
+  /// (the complement of a disk, filling everywhere in the frame but a
+  /// hole) has no loop of its own there — the frame itself would have to
+  /// be an outer contour, which marching squares over the sampled grid
+  /// never produces — so naively filling the traced loop's interior as a
+  /// `Polygon` fills exactly the wrong side. `region_plot_part_yields_primitives`
+  /// only covers a simply-connected region; this locks in the fallback
+  /// (no symbolic backing at all, so `Show` keeps stacking the plain
+  /// rendered pictures) that keeps `show_merges_two_opaque_region_plots`
+  /// passing.
+  #[test]
+  fn region_plot_complement_of_disk_keeps_plain_rendering() {
+    clear_state();
+    // No symbolic backing: Part stays an unevaluated Part, same as before
+    // primitive extraction was added for the simply-connected case.
+    assert_eq!(
+      interpret("Head[RegionPlot[x^2 + y^2 > 1, {x, -2, 2}, {y, -2, 2}][[1]]]")
+        .unwrap(),
+      "Part"
+    );
+    // The plain SVG rendering (used directly, or by Show falling back to
+    // stacking opaque pictures) still draws the correct region.
+    let svg = export_svg("RegionPlot[x^2 + y^2 > 1, {x, -2, 2}, {y, -2, 2}]");
+    assert!(svg.contains("rgb(94,129,181)"), "{svg}");
+  }
+
   mod dynamic_content {
     use super::*;
 

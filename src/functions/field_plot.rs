@@ -1991,11 +1991,20 @@ pub fn region_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // a custom `Graphics[{RegionPlot[…][[1]], …}]` needs the actual boundary
   // curve, not an unevaluated `Part`. Trace the region's edge with the same
   // marching-squares machinery ContourPlot uses (on the boolean grid's
-  // 0/1 values, at level 0.5) so closed regions come back as one filled
-  // `Polygon` per loop, matching a single simply-connected region exactly.
-  let region_structure =
-    region_plot_boundary_structure(body, &xvar, &yvar, x_min, x_max, y_min, y_max, args);
-  Ok(crate::graphics_result_with_structure(svg, region_structure))
+  // 0/1 values, at level 0.5) so a simply-connected region — one whose fill
+  // does not reach the sampled frame, the common case for a Demonstration's
+  // "blob around the origin" — comes back as one filled `Polygon` per loop.
+  // A region whose true fill lies *outside* every traced loop (the
+  // complement of a disk, filling everywhere but a hole) can't be
+  // represented that way without the frame itself as an outer contour, so
+  // such cases fall back to the plain rendering with no symbolic backing,
+  // same as before this primitive-extraction support existed.
+  match region_plot_boundary_structure(body, &xvar, &yvar, x_min, x_max, y_min, y_max, args) {
+    Some(region_structure) => {
+      Ok(crate::graphics_result_with_structure(svg, region_structure))
+    }
+    None => Ok(crate::graphics_result(svg)),
+  }
 }
 
 /// Builds the symbolic primitive list behind a `RegionPlot`'s `Graphics`,
@@ -2014,7 +2023,7 @@ fn region_plot_boundary_structure(
   y_min: f64,
   y_max: f64,
   args: &[Expr],
-) -> Expr {
+) -> Option<Expr> {
   let n = FIELD_GRID + 1;
   let mut grid = vec![vec![0.0f64; n]; n];
   for (i, col) in grid.iter_mut().enumerate() {
@@ -2060,6 +2069,23 @@ fn region_plot_boundary_structure(
     )
   };
 
+  // A traced loop's interior is the filled region only for a
+  // simply-connected shape that doesn't reach the sampled frame (a
+  // Demonstration's "blob around the origin", say): filling it directly as
+  // one `Polygon` matches Wolfram's picture exactly. But a region whose
+  // true fill lies *outside* every loop instead — the complement of a
+  // disk, filling everywhere in the frame but a hole — has no loop of its
+  // own to trace there (the frame itself would have to be an outer
+  // contour, which marching squares over the sampled grid never
+  // produces), so filling the traced loop's interior would fill exactly
+  // the wrong side. Detect that case by sampling each closed loop's
+  // centroid against the same condition the grid was built from, and bail
+  // out of symbolic backing entirely when it fails — no `Polygon`, this
+  // function's caller renders the plain SVG with no `structure`, same as
+  // before this primitive-extraction support existed.
+  if chains.is_empty() {
+    return None;
+  }
   let mut structure_items: Vec<Expr> = vec![rgb_color((0x5E, 0x81, 0xB5))];
   for chain in &chains {
     let closed = chain.len() > 2 && {
@@ -2072,6 +2098,15 @@ fn region_plot_boundary_structure(
     } else {
       &chain[..]
     };
+    if closed {
+      let n = pts.len() as f64;
+      let (cx, cy) = pts
+        .iter()
+        .fold((0.0, 0.0), |(sx, sy), &(x, y)| (sx + x, sy + y));
+      if !evaluate_condition(body, xvar, yvar, cx / n, cy / n) {
+        return None;
+      }
+    }
     structure_items.push(call1(
       if closed { "Polygon" } else { "Line" },
       chain_points(pts),
@@ -2083,7 +2118,7 @@ fn region_plot_boundary_structure(
       structure_items.push(call1("Line", chain_points(chain)));
     }
   }
-  call("Graphics", vec![Expr::List(structure_items.into())])
+  Some(call("Graphics", vec![Expr::List(structure_items.into())]))
 }
 
 /// Draws arrows for a set of `(x, y, vx, vy, magnitude)` vectors onto `svg`,
