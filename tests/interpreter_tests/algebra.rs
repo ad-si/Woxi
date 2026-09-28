@@ -2772,6 +2772,37 @@ mod together {
     assert_eq!(interpret("Together[1/x + 1/y]").unwrap(), "(x + y)/(x*y)");
   }
 
+  // `Modulus -> p` reduces the combined numerator and denominator mod p,
+  // cancels their gcd over GF(p) and makes the denominator monic.
+  #[test]
+  fn together_modulus() {
+    assert_eq!(
+      interpret("Together[(2 + 7*x)/(2*x), Modulus -> 7]").unwrap(),
+      "x^(-1)"
+    );
+    assert_eq!(interpret("Together[1/(2*x), Modulus -> 7]").unwrap(), "4/x");
+    assert_eq!(
+      interpret("Together[(x^2 + 1)/(x + 1), Modulus -> 2]").unwrap(),
+      "1 + x"
+    );
+    assert_eq!(
+      interpret("Together[1/x + 1/(x + 1), Modulus -> 2]").unwrap(),
+      "(x + x^2)^(-1)"
+    );
+    assert_eq!(
+      interpret("Together[(x^2 - 1)/(x + 1) + 3/(2*x), Modulus -> 5]").unwrap(),
+      "(4 + 4*x + x^2)/x"
+    );
+    assert_eq!(
+      interpret("Together[x/2 + 1/3, Modulus -> 5]").unwrap(),
+      "2 + 3*x"
+    );
+    assert_eq!(
+      interpret("Together[{1/(2*x), 7*x/(x + 1)}, Modulus -> 7]").unwrap(),
+      "{4/x, 0}"
+    );
+  }
+
   // A *symbolic* negative exponent is a denominator too — `E^(-t)` is
   // `1/E^t` — so it takes part in the common denominator, and exponents
   // that are rational multiples of the same symbol combine by LCM rather

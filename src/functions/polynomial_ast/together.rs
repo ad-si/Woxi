@@ -3,11 +3,32 @@ use super::*;
 // ─── Together ───────────────────────────────────────────────────────
 
 /// Together[expr] - Combines fractions over a common denominator
+/// Together[expr, Modulus -> p] - Combines and cancels over GF(p)
 /// Threads over List.
 pub fn together_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  if args.len() == 2 {
+    let unevaluated = || Expr::FunctionCall {
+      name: "Together".to_string(),
+      args: args.to_vec().into(),
+    };
+    let Some(p) = super::polynomial_gcd::extract_modulus_option(&args[1])
+    else {
+      return Ok(unevaluated());
+    };
+    if let Expr::List(items) = &args[0] {
+      let results = items
+        .iter()
+        .map(|e| together_ast(&[e.clone(), args[1].clone()]))
+        .collect::<Result<Vec<_>, _>>()?;
+      return Ok(Expr::List(results.into()));
+    }
+    return Ok(
+      super::together_modulus(&args[0], p)?.unwrap_or_else(unevaluated),
+    );
+  }
   if args.len() != 1 {
     return Err(InterpreterError::EvaluationError(
-      "Together expects exactly 1 argument".into(),
+      "Together expects 1 or 2 arguments".into(),
     ));
   }
   // Thread over List
