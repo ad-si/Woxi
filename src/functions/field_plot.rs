@@ -1999,7 +1999,9 @@ pub fn region_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // represented that way without the frame itself as an outer contour, so
   // such cases fall back to the plain rendering with no symbolic backing,
   // same as before this primitive-extraction support existed.
-  match region_plot_boundary_structure(body, &xvar, &yvar, x_min, x_max, y_min, y_max, args) {
+  match region_plot_boundary_structure(
+    body, &xvar, &yvar, x_min, x_max, y_min, y_max, args,
+  ) {
     Some(region_structure) => {
       Ok(crate::graphics_result_with_structure(svg, region_structure))
     }

@@ -526,9 +526,7 @@ mod graphics {
     #[test]
     fn arrow_computed_point_list_matches_literal() {
       assert_eq!(
-        export_svg(
-          "Graphics[{Arrow[({{# - 2.5, 0}, {#, 0}} & )[3]]}]"
-        ),
+        export_svg("Graphics[{Arrow[({{# - 2.5, 0}, {#, 0}} & )[3]]}]"),
         export_svg("Graphics[{Arrow[{{0.5, 0}, {3, 0}}]}]")
       );
     }
@@ -29647,10 +29645,8 @@ mod color_data_indexed {
   fn region_plot_part_yields_primitives() {
     clear_state();
     assert_eq!(
-      interpret(
-        "Head[RegionPlot[x^2 + y^2 < 1, {x, -2, 2}, {y, -2, 2}][[1]]]"
-      )
-      .unwrap(),
+      interpret("Head[RegionPlot[x^2 + y^2 < 1, {x, -2, 2}, {y, -2, 2}][[1]]]")
+        .unwrap(),
       "List"
     );
     assert_eq!(

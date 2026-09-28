@@ -4616,10 +4616,9 @@ fn parse_expression_inner(
           // right operand of the chain (e.g. `b^c` in `a^-b^c`) is wrapped
           // in unary minus before being used — matching Wolfram's
           // `Power[a, -(b^c)]` (and likewise for `@`, `@@`, `/@`, …).
-          if operators
-            .last()
-            .is_some_and(|o| operator_precedence(o) > operator_precedence("NEGATE"))
-          {
+          if operators.last().is_some_and(|o| {
+            operator_precedence(o) > operator_precedence("NEGATE")
+          }) {
             let op = operators.pop().unwrap();
             operators.push(format!("{op}_NEG"));
           } else {
@@ -4970,10 +4969,9 @@ fn apply_anon_continuation(
           // `-` (see the comment in the main expression branch) — e.g.
           // `f & @ -g[x]`, the shape a Demonstration's
           // `({{# - 2.5, 0}, {#, 0}}& )[-lift[phi]]` idiom parses to.
-          if post_ops
-            .last()
-            .is_some_and(|o| operator_precedence(o) > operator_precedence("NEGATE"))
-          {
+          if post_ops.last().is_some_and(|o| {
+            operator_precedence(o) > operator_precedence("NEGATE")
+          }) {
             let op = post_ops.pop().unwrap();
             post_ops.push(format!("{op}_NEG"));
           } else {
@@ -5000,10 +4998,9 @@ fn apply_anon_continuation(
           // Tilde infix (precedence 53) also binds tighter than NEGATE
           // (45) — see the `Rule::Operator` branch above for why that
           // needs `{op}_NEG` rather than the plain synthetic pair.
-          if post_ops
-            .last()
-            .is_some_and(|o| operator_precedence(o) > operator_precedence("NEGATE"))
-          {
+          if post_ops.last().is_some_and(|o| {
+            operator_precedence(o) > operator_precedence("NEGATE")
+          }) {
             let op = post_ops.pop().unwrap();
             post_ops.push(format!("{op}_NEG"));
           } else {

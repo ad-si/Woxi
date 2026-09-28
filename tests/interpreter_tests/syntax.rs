@@ -527,10 +527,7 @@ mod unary_minus_parsing {
     );
     // Real evaluation, not just the held shape: `g[5] = 25`, so
     // `(#+1)&@-g[5]` must be `-25 + 1`.
-    assert_eq!(
-      interpret("g[x_] := x^2; (#+1)&@-g[5]").unwrap(),
-      "-24"
-    );
+    assert_eq!(interpret("g[x_] := x^2; (#+1)&@-g[5]").unwrap(), "-24");
   }
 
   #[test]
