@@ -77,6 +77,9 @@ fn apply_ranges_and_aspect(
       if data_aspect.is_finite() {
         plot_opts.svg_height =
           (plot_opts.svg_width as f64 * data_aspect).round() as u32;
+        plot_opts.svg_height = plot_opts
+          .svg_height
+          .clamp(1, crate::functions::plot::MAX_SVG_DIMENSION);
       }
     }
   }

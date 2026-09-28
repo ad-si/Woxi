@@ -7297,6 +7297,34 @@ mod plot3d {
       assert!(canvas_h > 0.0, "sanity: canvas has a height");
     }
 
+    /// Opening a random Wolfram Demonstration ("Peregrine Soliton with
+    /// Controllable Center in the Causal Interpretation") in Woxi Studio, a
+    /// `ParametricPlot` of a curve whose component ranges over vastly
+    /// different scales — one coordinate stays roughly constant while the
+    /// other spans a huge range, e.g. sampling close to a pole — panicked
+    /// with "attempt to multiply with overflow". The auto aspect ratio
+    /// (`data_h / data_w`, kept so e.g. circles stay round) came out
+    /// astronomically large, so the derived SVG height overflowed once
+    /// multiplied by the internal resolution scale. Reduced to a plain
+    /// curve with a pole in range, no notebook-specific formula.
+    #[test]
+    fn parametric_plot_with_huge_data_aspect_does_not_overflow() {
+      let svg = export_svg("ParametricPlot[{t, 1/(t - 0.5)}, {t, 0, 1}]");
+      assert!(svg.starts_with("<svg"), "{svg}");
+      let height: f64 = svg
+        .split("height=\"")
+        .nth(1)
+        .and_then(|v| v.split('"').next())
+        .and_then(|v| v.parse().ok())
+        .unwrap_or_else(|| panic!("no height in {svg}"));
+      // Clamped to a sane maximum instead of the huge value the data aspect
+      // would otherwise compute.
+      assert!(
+        height <= 100_000.0,
+        "expected the clamped max height, got {height}: {svg}"
+      );
+    }
+
     /// A named style brings its size and colour from the stylesheet:
     /// `Style[…, "Section"]` is large and orange, `"Label"` small and
     /// black. Measured against wolframscript's own rendering.
