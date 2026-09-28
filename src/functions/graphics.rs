@@ -19536,6 +19536,14 @@ pub enum ManipulateControl {
     label: String,
     label_runs: Vec<LabelRun>,
     action: String,
+    /// `Enabled -> cond` (InputForm code), e.g. a "play again" button
+    /// disabled once a game/round variable says play is over. A `Button`
+    /// binds no variable, so — unlike every other control — this condition
+    /// cannot travel through the name-keyed `ManipulateSpec::control_enabled`
+    /// list (`name()` is always `""`, and two buttons with different
+    /// conditions would collide on that one empty key); it is carried here
+    /// instead. `None` means always enabled.
+    enabled: Option<String>,
   },
   /// A static heading row between controls: a bare string or `Style[…]`
   /// Manipulate argument (Wolfram's `ThisIsNotAControl` annotations, e.g.
@@ -20280,10 +20288,13 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         if name == "Button" && args.len() >= 2 =>
       {
         let label_runs = manipulate_label_runs(&args[0], false);
+        let enabled = extract_enabled_condition(&args[2..])
+          .map(crate::syntax::expr_to_input_form);
         controls.push(ManipulateControl::Button {
           label: flatten_label_runs(&label_runs),
           label_runs,
           action: crate::syntax::expr_to_input_form(&args[1]),
+          enabled,
         });
         continue;
       }
@@ -20315,6 +20326,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
               label: flatten_label_runs(&label_runs),
               label_runs,
               action: crate::syntax::expr_to_input_form(replacement),
+              enabled: None,
             });
             any = true;
           }
@@ -24801,6 +24813,7 @@ fn parse_manipulate_control(
         label: flatten_label_runs(&button_runs),
         label_runs: button_runs,
         action: crate::syntax::expr_to_input_form(&built_args[1]),
+        enabled: None,
       },
     });
   }
@@ -26083,6 +26096,7 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
         label,
         label_runs,
         action,
+        enabled: _,
       } => {
         ctrl_parts.push(format!(
           r#"{{"kind":"button","label":"{}","labelRuns":{},"action":"{}"}}"#,
@@ -26119,11 +26133,23 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
   }
 
   // Inject each control's `Enabled` condition (when present) into its JSON
-  // object so the frontend can re-evaluate it and grey the control out.
+  // object so the frontend can re-evaluate it and grey the control out. A
+  // `Button`'s own condition travels on the control itself rather than in
+  // the name-keyed `control_enabled` list — it binds no variable, so
+  // `c.name()` is always `""` and a name lookup could never find it (and
+  // would collide across buttons that each have their own condition).
   for (c, part) in spec.controls.iter().zip(ctrl_parts.iter_mut()) {
-    if let Some((_, cond)) =
-      spec.control_enabled.iter().find(|(n, _)| n == c.name())
-      && part.ends_with('}')
+    let button_enabled = match c {
+      ManipulateControl::Button { enabled, .. } => enabled.as_deref(),
+      _ => None,
+    };
+    if let Some(cond) = button_enabled.or_else(|| {
+      spec
+        .control_enabled
+        .iter()
+        .find(|(n, _)| n == c.name())
+        .map(|(_, cond)| cond.as_str())
+    }) && part.ends_with('}')
     {
       let field =
         format!(r#","enabledWhen":"{}""#, json_escape_manipulate(cond));
@@ -28725,6 +28751,72 @@ mod manipulate_traditional_form_choice_svg_tests {
     assert!(
       json.contains(r#""italic":true"#),
       "the italic flag itself must survive into the JSON: {json}"
+    );
+  }
+}
+
+#[cfg(test)]
+mod manipulate_button_enabled_tests {
+  use super::*;
+
+  /// A `Button[label, action, Enabled -> Dynamic[cond]]` must keep its own
+  /// `Enabled` condition, and `manipulate_spec_to_json` must emit it as
+  /// that button's own `enabledWhen`. Regression: the `Button` branch of
+  /// `extract_manipulate_spec` only ever read `args[0]`/`args[1]`, silently
+  /// dropping any option past `action` — and even a correctly-parsed
+  /// condition would have nowhere to go, since `ManipulateControl::Button`
+  /// binds no variable (`name()` is `""`), so the ordinary name-keyed
+  /// `control_enabled` lookup every other control type uses could never
+  /// find it (and two buttons with different conditions would collide on
+  /// that one shared empty-string key).
+  #[test]
+  fn button_enabled_condition_is_parsed_and_exported_per_button() {
+    let expr = crate::parse_to_expr(
+      "Manipulate[Graphics[{}], \
+       {{on, True}, {True, False}, ControlType -> None}, \
+       Row[{Button[\"go\", on = on, Enabled -> Dynamic[on]], \
+       Button[\"reset\", on = True]}]]",
+    )
+    .expect("parse");
+    let spec = extract_manipulate_spec(&expr).expect("extract spec");
+    let buttons: Vec<&ManipulateControl> = spec
+      .controls
+      .iter()
+      .filter(|c| matches!(c, ManipulateControl::Button { .. }))
+      .collect();
+    assert_eq!(buttons.len(), 2, "both buttons: {:?}", spec.controls);
+    let ManipulateControl::Button {
+      enabled: go_enabled,
+      ..
+    } = buttons[0]
+    else {
+      unreachable!()
+    };
+    let ManipulateControl::Button {
+      enabled: reset_enabled,
+      ..
+    } = buttons[1]
+    else {
+      unreachable!()
+    };
+    assert_eq!(go_enabled.as_deref(), Some("on"));
+    assert_eq!(
+      reset_enabled, &None,
+      "a button with no Enabled option must carry none"
+    );
+
+    let json = manipulate_spec_to_json(&spec);
+    assert!(
+      json.contains(r#""action":"on = on","enabledWhen":"on""#),
+      "the gated button's own JSON object must carry enabledWhen: {json}"
+    );
+    assert!(
+      !json[json
+        .find(r#""label":"reset""#)
+        .expect("reset button in json")..]
+        .contains("enabledWhen"),
+      "the ungated sibling must not pick up the other button's \
+       condition: {json}"
     );
   }
 }

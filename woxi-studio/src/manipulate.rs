@@ -473,15 +473,21 @@ impl ManipulateState {
       .or_else(|| extract_locator_pane_spec(expr))
       .or_else(|| extract_click_pane_spec(expr))?;
     let controls = controls_from_spec(&spec);
-    // Line each control up with its `Enabled` condition (if any) by name.
+    // Line each control up with its `Enabled` condition (if any) by name. A
+    // `Button`'s own condition travels on the `ManipulateControl` itself
+    // instead: it binds no variable, so `c.name()` is always `""` and a
+    // name-keyed lookup into `spec.control_enabled` could never find it (and
+    // would collide across buttons that each carry their own condition).
     let control_enabled: Vec<Option<String>> = controls
       .iter()
-      .map(|c| {
-        spec
+      .zip(spec.controls.iter())
+      .map(|(c, raw)| match raw {
+        ManipulateControl::Button { enabled, .. } => enabled.clone(),
+        _ => spec
           .control_enabled
           .iter()
           .find(|(n, _)| n == c.name())
-          .map(|(_, cond)| cond.clone())
+          .map(|(_, cond)| cond.clone()),
       })
       .collect();
     let control_is_enabled = vec![true; controls.len()];
@@ -1449,6 +1455,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         label,
         label_runs,
         action,
+        enabled: _,
       } => ControlState::Button {
         label: label.clone(),
         label_runs: label_runs.clone(),
@@ -1550,6 +1557,112 @@ mod tests {
     // with each other, and both with the value the body actually bound.
     assert_eq!(n_ctrl.current_code(), "3");
     assert_eq!(n_state, Some("3"));
+  }
+
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook ("Chip Stack Game")
+  /// whose action row is `Row[{Button["have a go", …, Enabled ->
+  /// Dynamic[gameinplay]], Button["restart", …]}]` — the first button
+  /// disables itself once a round-limit variable flips to `False`, the
+  /// second has no `Enabled` option at all. This is a self-authored,
+  /// construct-equivalent example (a generic step counter, not the
+  /// specific Demonstration's names, values or wording, which are
+  /// copyrighted).
+  ///
+  /// Regression: `ManipulateControl::Button` had no field for its own
+  /// `Enabled` option, and the two call sites that build one
+  /// (`Button[label, action, opts…]` and the JSON widget serializer) both
+  /// dropped every option past `action` on the floor — so the value never
+  /// existed to look up in the first place. Even if it had, a `Button`
+  /// binds no variable (`ControlState::name()` returns `""` for one), so
+  /// the ordinary name-keyed `spec.control_enabled` lookup used for every
+  /// other control type could never find it, and two buttons with two
+  /// different conditions would collide on that one empty-string key.
+  /// The button stayed permanently clickable, so a "have a go"-style
+  /// button never grays out once its own game-over condition holds,
+  /// letting the underlying state run past the point the Demonstration
+  /// means for it to stop.
+  #[test]
+  fn button_with_own_enabled_condition_disables_independently_of_sibling() {
+    let code = r#"Manipulate[
+      Graphics[{}],
+      {{steps, 0}, ControlType -> None},
+      {{active, True}, {True, False}, ControlType -> None},
+      Row[{
+        Button["step",
+          {
+            steps = steps + 1;
+            If[steps >= 2, active = False]
+          },
+          Enabled -> Dynamic[active]
+        ],
+        Button["reset", {steps = 0; active = True}]
+      }]
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+
+    let button_indices: Vec<usize> = state
+      .controls
+      .iter()
+      .enumerate()
+      .filter_map(|(i, c)| {
+        matches!(c, ControlState::Button { .. }).then_some(i)
+      })
+      .collect();
+    assert_eq!(
+      button_indices.len(),
+      2,
+      "both Row-grouped buttons must become their own Button controls, \
+       got: {:?}",
+      state.controls
+    );
+    let (step_idx, reset_idx) = (button_indices[0], button_indices[1]);
+
+    assert!(
+      state.control_is_enabled[step_idx],
+      "the gated button starts enabled while `active` is still True"
+    );
+    assert!(
+      state.control_is_enabled[reset_idx],
+      "a button with no Enabled option must always be enabled"
+    );
+
+    // Press "step" until the action flips `active` to False.
+    for _ in 0..2 {
+      let ControlState::Button { action, .. } = &state.controls[step_idx]
+      else {
+        panic!("expected a Button control");
+      };
+      let action = action.clone();
+      state.apply_button_action(&action);
+    }
+
+    assert!(
+      !state.control_is_enabled[step_idx],
+      "the gated button must disable itself once its own Enabled \
+       condition goes False, got: {:?}",
+      state.control_is_enabled
+    );
+    assert!(
+      state.control_is_enabled[reset_idx],
+      "the ungated sibling button must stay enabled regardless of the \
+       other button's condition — the two must not collide on a shared \
+       empty-string lookup key"
+    );
+
+    // "reset" has no Enabled option, so it must still fire and clear the
+    // other button's condition again.
+    let ControlState::Button { action, .. } = &state.controls[reset_idx] else {
+      panic!("expected a Button control");
+    };
+    let action = action.clone();
+    state.apply_button_action(&action);
+    assert!(
+      state.control_is_enabled[step_idx],
+      "resetting `active` back to True must re-enable the gated button"
+    );
   }
 
   /// Checked a randomly-sampled Wolfram Demonstrations Project notebook
