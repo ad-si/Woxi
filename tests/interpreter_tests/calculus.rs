@@ -2177,6 +2177,22 @@ mod derivative_prime_notation {
     );
   }
 
+  /// `Derivative[n1, n2][f][x, y]` on a user-defined two-argument function
+  /// differentiates its definition per parameter (a Demonstration idiom for
+  /// envelope curves) instead of staying inert.
+  #[test]
+  fn derivative_multi_index_applied_to_defined_function() {
+    assert_eq!(
+      interpret(
+        "g[a_, b_] := a^3 b^2; {Derivative[1, 0][g][x, y], \
+         Derivative[0, 1][g][2, 3], Derivative[1, 1][g][2, 3], \
+         Derivative[1, 0][undefinedFn][x, y]}"
+      )
+      .unwrap(),
+      "{3*x^2*y^2, 48, 72, Derivative[1, 0][undefinedFn][x, y]}"
+    );
+  }
+
   #[test]
   fn derivative_multi_index_inputform() {
     // InputForm[Derivative[1, 0][f][x]] stays wrapped (matches wolframscript).
