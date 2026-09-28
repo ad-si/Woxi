@@ -29655,8 +29655,8 @@ mod color_data_indexed {
     );
     assert_eq!(
       interpret(
-        "Head[First[RegionPlot[x^2 + y^2 < 1, {x, -2, 2}, {y, -2, 2}][[1]] \
-         [[2]]]]"
+        "Head[RegionPlot[x^2 + y^2 < 1, {x, -2, 2}, {y, -2, 2}][[1]] \
+         [[2]]]"
       )
       .unwrap(),
       "Polygon"
