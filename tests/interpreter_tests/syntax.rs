@@ -760,7 +760,9 @@ mod implicit_times_with_strings {
       "Row[{1, 2}, x]",
       "Row[{}]",
       "f[Row[{1, 2}]]",
-      "ArcTan[N[4/3]]*180/Pi",
+      "Sin[x] + Pi",
+      "f[t]",
+      r#"Style["ab", FontSize -> 12]"#,
     ] {
       let printed = interpret(&format!(
         "ToString[Hold[TraditionalForm[{src}]], InputForm]"
@@ -775,6 +777,19 @@ mod implicit_times_with_strings {
         "box escape of `{src}` re-parses differently: `{printed}`"
       );
     }
+    // TraditionalForm writes a product's numeric factors first
+    // (`180 arctan(…)/π`), so this one reads back reordered — as it does in
+    // wolframscript — but to the same value.
+    let src = "ArcTan[N[4/3]]*180/Pi";
+    let printed = interpret(&format!(
+      "ToString[Hold[TraditionalForm[{src}]], InputForm]"
+    ))
+    .unwrap();
+    assert_eq!(
+      interpret(&format!("ReleaseHold[{printed}] === {src}")).unwrap(),
+      "True",
+      "box escape of `{src}` reads back as a different value: `{printed}`"
+    );
   }
 
   // A list's box form uses single braces. The doubled-brace spelling that
@@ -3427,7 +3442,7 @@ mod traditional_form {
   }
 
   // A `TraditionalForm` of a symbolic product typesets to a `RowBox` of
-  // *string* atoms ("Pi", " ", "p", …). Writing that box segment out as the
+  // *string* atoms ("π", " ", "p", …). Writing that box segment out as the
   // InputForm of a *string* `\"`-escapes those quotes — the box delimiters
   // included — and what is left is no longer box syntax: Wolfram answers
   // `ToExpression::sntx` and reads nothing. Woxi has no parse-time messages,
@@ -3445,7 +3460,7 @@ mod traditional_form {
     )
     .unwrap();
     assert!(
-      quoted.contains("\\\"Pi\\\""),
+      quoted.contains("\\\"p\\\""),
       "expected escaped string atoms in: {quoted}"
     );
     // Drop the `"` delimiters `InputForm` put around the string to get

@@ -234,18 +234,6 @@ while the expression is held; Woxi's parse tree is the quotient itself, so
 `Part` sees the divisor and the exponent as its two parts. The evaluated
 expression is the same in both.
 
-### TraditionalForm boxes a multi-argument call's arguments as one RowBox
-
-```sh
-wolframscript -code 'ToString[Int[Cos[x]/x^2, x], TraditionalForm]'
-# DisplayForm[FormBox[RowBox[{Int, (, RowBox[{FractionBox[…], ,, x}], )}], TraditionalForm]]
-woxi eval 'ToString[Int[Cos[x]/x^2, x], TraditionalForm]'
-# DisplayForm[FormBox[RowBox[{Int, (, FractionBox[…], ,, x, )}], TraditionalForm]]
-```
-
-Woxi lays the arguments out flat in the call's row; WL nests them in a row
-of their own. Same picture, different box tree.
-
 ### TraditionalForm boxes are written out inline instead of as TemplateBoxes
 
 `ToBoxes[TraditionalForm[…]]` differs in representation, not in picture:
@@ -265,9 +253,23 @@ The box builder that feeds Woxi's own renderers keeps flattening it:
 call's own source out as a `RowBox`. `ToBoxes` there also takes only one
 argument where WL takes a form as the second.
 
-Relatedly, `expr_to_boxes` typesets TraditionalForm with StandardForm glyphs:
-`Sin[x]/2` is `FractionBox[RowBox[{Sin[, x, ]}], 2]` against WL's
-`RowBox[{sin, (, x, )}]`, and `Pi` stays `Pi` instead of `π`.
+Smaller TraditionalForm typesetter differences, all in representation:
+
+- An inverse trig function is `arctan(x)`, WL writes `tan^-1(x)`
+  (`SuperscriptBox["tan", RowBox[{"-", "1"}]]`).
+- A held call keeps its StandardForm spelling in WL — `Hold[TraditionalForm[
+  Style[x, Red]]]` boxes as `Style[x, Red]` and `Exp[x]` as `exp(x)`,
+  `Column[…]` as its `GridBox` — where Woxi typesets the call.
+- `Times[-1, Pi, a]` is `-π a`; WL writes `π (-a)`.
+- A curried call `h[x][y, z]` gets WL's extra row around the arguments.
+- `EulerGamma`, `GoldenRatio` and `Catalan` are `TagBox`es in WL, bare glyphs
+  in Woxi, and keep their canonical place in a product where the numeric
+  constants (numbers, `ⅈ`, `ⅇ`, `π`, `°`) move to the front in both.
+- `ToString[TraditionalForm[…]]` and the InputForm of a held
+  `TraditionalForm[…]` write `Row` as its template and a styled string with
+  its quotes, as WL does; `ToString[…, TraditionalForm]` keeps the flat
+  `RowBox`, the `U+2147`/`U+2148` letters and the `U+2009` gap Woxi's own
+  renderers draw, where WL writes the template, `\[ExponentialE]` and `" "`.
 
 ### `ToBoxes` in StandardForm drops StyleBox and held TagBox
 

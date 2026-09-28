@@ -1471,16 +1471,35 @@ fn is_assoc_item_delayed(s: &str) -> bool {
 /// Wolfram, so the escape is left as literal source here.
 fn box_escape_to_expr(box_src: &str) -> Option<Expr> {
   let src = box_src.trim();
+  if src.contains("StripOnInput")
+    && let Ok(parsed) = string_to_expr(src)
+  {
+    let rewritten = crate::functions::string_ast::linear_syntax_box_text(
+      &crate::evaluator::dispatch::complex_and_special::unstripped_style_boxes_to_standard(&parsed),
+    );
+    if !rewritten.contains("StripOnInput") {
+      return box_escape_to_expr(&rewritten);
+    }
+  }
   if let Some(rest) = src.strip_prefix("FormBox[")
     && let Some(inner) = rest.strip_suffix(']')
   {
     // The form name is the last top-level argument; everything before it
     // is the boxes being displayed.
     let (boxes, form) = split_last_top_level_comma(inner)?;
-    if !matches!(form.trim(), "TraditionalForm" | "StandardForm") {
-      return None;
-    }
-    return box_escape_to_expr(boxes)
+    let boxes = match form.trim() {
+      "StandardForm" => boxes.to_string(),
+      // TraditionalForm notation (`sin(x)`, `π`) reads back as the
+      // StandardForm boxes of the same expression first.
+      "TraditionalForm" => match string_to_expr(boxes.trim()) {
+        Ok(parsed) => crate::functions::string_ast::linear_syntax_box_text(
+          &crate::evaluator::dispatch::complex_and_special::traditional_boxes_to_standard(&parsed),
+        ),
+        Err(_) => boxes.to_string(),
+      },
+      _ => return None,
+    };
+    return box_escape_to_expr(&boxes)
       .or_else(|| string_to_expr(boxes.trim()).ok());
   }
   // A bare string box carries source *text*, not a string value: the box
@@ -12581,13 +12600,7 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
     Expr::FunctionCall { name, args }
       if name == "TraditionalForm" && args.len() == 1 =>
     {
-      use crate::functions::string_ast::{
-        BOX_CLOSE, BOX_OPEN, BOX_SEP, BOX_START,
-      };
-      let box_str = crate::functions::string_ast::expr_to_boxes(&args[0]);
-      format!(
-        "{BOX_START}{BOX_OPEN}{BOX_SEP}FormBox[{box_str}, TraditionalForm]{BOX_CLOSE}"
-      )
+      crate::functions::string_ast::traditional_form_box_escape(&args[0], true)
     }
     // Or[a, b, ...] in InputForm: render as a || b || ... using InputForm for children
     Expr::FunctionCall { name, args } if name == "Or" && args.len() >= 2 => {

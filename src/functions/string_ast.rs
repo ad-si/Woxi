@@ -5332,12 +5332,12 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && name == "TraditionalForm"
     && inner_args.len() == 1
   {
-    let box_str = expr_to_boxes(&inner_args[0]);
     // Use Unicode box markers (like StandardForm) so that:
     // - OutputForm renders as DisplayForm[FormBox[..., TraditionalForm]]
     // - InputForm renders as \!\(\*FormBox[..., TraditionalForm]\)
-    return Ok(Expr::String(format!(
-      "{BOX_START}{BOX_OPEN}{BOX_SEP}FormBox[{box_str}, TraditionalForm]{BOX_CLOSE}"
+    return Ok(Expr::String(traditional_form_box_escape(
+      &inner_args[0],
+      true,
     )));
   }
 
@@ -5534,20 +5534,7 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // a String that displays as the typeset expression rather than as
         // its own source. `Sin[x]` becomes
         // `RowBox[{"sin", "(", "x", ")"}]`, a quotient a `FractionBox`.
-        let formatted =
-          crate::evaluator::dispatch::complex_and_special::apply_format_recursively(
-            &args[0],
-            "TraditionalForm",
-          );
-        let boxes =
-          crate::evaluator::dispatch::complex_and_special::expr_to_box_form_traditional(
-            &formatted,
-          );
-        let box_text = linear_syntax_box_text(&boxes);
-        return Ok(Expr::String(format!(
-          "{BOX_START}{BOX_OPEN}{BOX_SEP}FormBox[{box_text}, \
-           TraditionalForm]{BOX_CLOSE}"
-        )));
+        return Ok(Expr::String(traditional_form_box_escape(&args[0], false)));
       }
       "StandardForm" => {
         // Build the box AST via MakeBoxes (which dispatches user-defined
@@ -8952,6 +8939,31 @@ pub fn linear_syntax_box_text(expr: &Expr) -> String {
     Expr::List(items) => format!("{{{}}}", parts(items)),
     other => crate::syntax::expr_to_input_form(other),
   }
+}
+
+/// `expr` typeset into TraditionalForm boxes and wrapped in the box-syntax
+/// escape markers `\!\(\*FormBox[…, TraditionalForm]\)` — the single
+/// source for every place a `TraditionalForm[…]` turns into box text
+/// (`ToString[…, TraditionalForm]`, `ToString[TraditionalForm[…]]`, and a
+/// `TraditionalForm[…]` inside InputForm text). `as_text` selects the boxes
+/// that must read back as the expression (see
+/// `expr_to_box_form_traditional_text`); without it they are the ones Woxi's
+/// own renderers typeset from the string's markers.
+pub fn traditional_form_box_escape(expr: &Expr, as_text: bool) -> String {
+  use crate::evaluator::dispatch::complex_and_special::{
+    apply_format_recursively, expr_to_box_form_traditional,
+    expr_to_box_form_traditional_text,
+  };
+  let formatted = apply_format_recursively(expr, "TraditionalForm");
+  let boxes = if as_text {
+    expr_to_box_form_traditional_text(&formatted)
+  } else {
+    expr_to_box_form_traditional(&formatted)
+  };
+  let box_text = linear_syntax_box_text(&boxes);
+  format!(
+    "{BOX_START}{BOX_OPEN}{BOX_SEP}FormBox[{box_text}, TraditionalForm]{BOX_CLOSE}"
+  )
 }
 
 pub const BOX_START: char = '\u{f7c1}'; // \!

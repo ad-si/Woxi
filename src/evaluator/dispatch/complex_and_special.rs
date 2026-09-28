@@ -4321,6 +4321,33 @@ fn tf_row(items: Vec<Expr>) -> Expr {
   row_box(items)
 }
 
+/// A comma-separated sequence — call arguments, list elements, derivative
+/// orders — boxed as one row of its own, the way WL nests it:
+/// `g[x, y]` is `RowBox[{"g", "(", RowBox[{"x", ",", "y"}], ")"}]`, not a
+/// single flat row. A lone item is its own box.
+fn tf_comma_seq(items: impl IntoIterator<Item = Expr>) -> Option<Expr> {
+  let mut parts: Vec<Expr> = Vec::new();
+  for item in items {
+    if !parts.is_empty() {
+      parts.push(tf_string(","));
+    }
+    parts.push(item);
+  }
+  (!parts.is_empty()).then(|| tf_row(parts))
+}
+
+/// `open` + the comma-separated `items` + `close`, as one row.
+fn tf_enclosed(
+  open: &str,
+  items: impl IntoIterator<Item = Expr>,
+  close: &str,
+) -> Expr {
+  let mut parts = vec![tf_string(open)];
+  parts.extend(tf_comma_seq(items));
+  parts.push(tf_string(close));
+  tf_row(parts)
+}
+
 fn tf_box(name: &str, args: Vec<Expr>) -> Expr {
   call(name, args)
 }
@@ -4328,7 +4355,13 @@ fn tf_box(name: &str, args: Vec<Expr>) -> Expr {
 /// Thin space used between implicitly-multiplied factors (`2 a`, `n x`).
 /// The SVG text renderer draws a standalone U+2009 as a narrow gap.
 fn tf_thin_space() -> Expr {
-  Expr::String("\u{2009}".to_string())
+  // Box text spells the gap as a plain space, the way wolframscript writes
+  // it; Woxi's own renderers draw a standalone U+2009 as the narrow gap.
+  if TF_BOX_TEXT.get() {
+    tf_string(" ")
+  } else {
+    Expr::String("\u{2009}".to_string())
+  }
 }
 
 fn tf_parens(inner: Expr) -> Expr {
@@ -4347,49 +4380,198 @@ fn tf_display(expr: &Expr) -> Expr {
 /// Map a symbol/constant name to its TraditionalForm glyph. Greek letters
 /// entered as `\[Mu]` etc. already arrive as their Unicode character, so
 /// only the named mathematical constants need translating here.
+/// Symbols TraditionalForm writes as a glyph, paired with that glyph. The
+/// first symbol listed for a glyph is the one it reads back as.
+const TF_SYMBOL_GLYPHS: &[(&str, &str)] = &[
+  ("Pi", "\u{03C0}"),       // π
+  ("Infinity", "\u{221E}"), // ∞
+  ("E", "\u{2147}"),        // ⅇ
+  ("ExponentialE", "\u{2147}"),
+  ("I", "\u{2148}"), // ⅈ
+  ("ImaginaryI", "\u{2148}"),
+  ("Degree", "\u{00B0}"),          // °
+  ("EulerGamma", "\u{03B3}"),      // γ
+  ("GoldenRatio", "\u{03C6}"),     // φ
+  ("ComplexInfinity", "\u{221E}"), // ∞
+];
+
+/// The private-use characters wolframscript spells `ⅇ`/`ⅈ` with in box
+/// text (`\[ExponentialE]`, `\[ImaginaryI]`), paired with the Unicode
+/// letters Woxi's own renderers draw.
+const TF_TEXT_GLYPHS: &[(&str, &str)] = &[
+  ("\u{2147}", "\u{F74D}"), // ⅇ
+  ("\u{2148}", "\u{F74E}"), // ⅈ
+];
+
 fn tf_symbol(name: &str) -> String {
-  match name {
-    "Pi" => "\u{03C0}".to_string(),       // π
-    "Infinity" => "\u{221E}".to_string(), // ∞
-    "E" | "ExponentialE" => "\u{2147}".to_string(), // ⅇ
-    "I" | "ImaginaryI" => "\u{2148}".to_string(), // ⅈ
-    "Degree" => "\u{00B0}".to_string(),   // °
-    "EulerGamma" => "\u{03B3}".to_string(), // γ
-    "GoldenRatio" => "\u{03C6}".to_string(), // φ
-    "ComplexInfinity" => "\u{221E}".to_string(), // ∞
-    _ => name.to_string(),
+  let glyph = tf_render_symbol(name);
+  if TF_BOX_TEXT.get()
+    && let Some((_, text)) = TF_TEXT_GLYPHS.iter().find(|(g, _)| *g == glyph)
+  {
+    return text.to_string();
   }
+  glyph
 }
+
+fn tf_render_symbol(name: &str) -> String {
+  TF_SYMBOL_GLYPHS
+    .iter()
+    .find(|(symbol, _)| *symbol == name)
+    .map_or(name, |(_, glyph)| glyph)
+    .to_string()
+}
+
+/// Well-known functions TraditionalForm writes under a (lowercase roman)
+/// display name, paired with that name. The first function listed for a
+/// name is the one it reads back as.
+const TF_FUNCTION_NAMES: &[(&str, &str)] = &[
+  ("Sin", "sin"),
+  ("Cos", "cos"),
+  ("Tan", "tan"),
+  ("Cot", "cot"),
+  ("Sec", "sec"),
+  ("Csc", "csc"),
+  ("Sinh", "sinh"),
+  ("Cosh", "cosh"),
+  ("Tanh", "tanh"),
+  ("ArcSin", "arcsin"),
+  ("ArcCos", "arccos"),
+  ("ArcTan", "arctan"),
+  ("Log", "log"),
+  ("Log10", "log"),
+  ("Ln", "ln"),
+  ("Max", "max"),
+  ("Min", "min"),
+  ("Sign", "sgn"),
+  ("Mod", "mod"),
+  ("Gcd", "gcd"),
+  ("Lcm", "lcm"),
+  ("Gamma", "\u{0393}"), // Γ
+  ("Zeta", "\u{03B6}"),  // ζ
+];
 
 /// TraditionalForm display name for a well-known function (lowercase roman),
 /// or `None` if the head should be shown verbatim.
 fn tf_known_func(name: &str) -> Option<&'static str> {
-  Some(match name {
-    "Sin" => "sin",
-    "Cos" => "cos",
-    "Tan" => "tan",
-    "Cot" => "cot",
-    "Sec" => "sec",
-    "Csc" => "csc",
-    "Sinh" => "sinh",
-    "Cosh" => "cosh",
-    "Tanh" => "tanh",
-    "ArcSin" => "arcsin",
-    "ArcCos" => "arccos",
-    "ArcTan" => "arctan",
-    "Log" => "log",
-    "Log10" => "log",
-    "Ln" => "ln",
-    "Max" => "max",
-    "Min" => "min",
-    "Sign" => "sgn",
-    "Mod" => "mod",
-    "Gcd" => "gcd",
-    "Lcm" => "lcm",
-    "Gamma" => "\u{0393}", // Γ
-    "Zeta" => "\u{03B6}",  // ζ
-    _ => return None,
-  })
+  TF_FUNCTION_NAMES
+    .iter()
+    .find(|(function, _)| *function == name)
+    .map(|(_, display)| *display)
+}
+
+/// Read TraditionalForm boxes back into the StandardForm boxes of the same
+/// expression — what wolframscript does with a `FormBox[…, TraditionalForm]`
+/// escape: a symbol applied in round brackets, `RowBox[{"f", "(", "t",
+/// ")"}]`, is the call `f[t]`, a display name is its function (`sin(x)` is
+/// `Sin[x]`) and a constant's glyph is the constant (`π` is `Pi`).
+pub fn traditional_boxes_to_standard(boxes: &Expr) -> Expr {
+  match boxes {
+    Expr::String(s) => {
+      let glyph = TF_TEXT_GLYPHS
+        .iter()
+        .find(|(_, text)| text == s)
+        .map_or(s.as_str(), |(glyph, _)| glyph);
+      match TF_SYMBOL_GLYPHS.iter().find(|(_, g)| *g == glyph) {
+        Some((symbol, _)) => Expr::String(symbol.to_string()),
+        None => boxes.clone(),
+      }
+    }
+    Expr::List(items) => {
+      Expr::List(items.iter().map(traditional_boxes_to_standard).collect())
+    }
+    Expr::FunctionCall { name, args } => {
+      let args: Vec<Expr> =
+        args.iter().map(traditional_boxes_to_standard).collect();
+      if name == "RowBox"
+        && let [Expr::List(items)] = &args[..]
+        && let [
+          Expr::String(head),
+          Expr::String(open),
+          arg,
+          Expr::String(close),
+        ] = &items[..]
+        && open == "("
+        && close == ")"
+        && tf_is_symbol_token(head)
+      {
+        let head = TF_FUNCTION_NAMES
+          .iter()
+          .find(|(_, display)| display == head)
+          .map_or(head.as_str(), |(function, _)| function);
+        return row_box(vec![
+          Expr::String(head.to_string()),
+          tf_string("["),
+          arg.clone(),
+          tf_string("]"),
+        ]);
+      }
+      call(name, args)
+    }
+    _ => boxes.clone(),
+  }
+}
+
+/// A `StyleBox` marked `StripOnInput -> False` keeps its styling when read
+/// as input — wolframscript reads it back as the `Style[…]` it was typeset
+/// from — so rewrite it as the StandardForm boxes of that call, directives
+/// and options written out as source. Other boxes are left as they are.
+pub fn unstripped_style_boxes_to_standard(boxes: &Expr) -> Expr {
+  let is_keep_option = |e: &Expr| {
+    let (lhs, rhs) = match e {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => (pattern.as_ref(), replacement.as_ref()),
+      Expr::FunctionCall { name, args }
+        if name == "Rule" && args.len() == 2 =>
+      {
+        (&args[0], &args[1])
+      }
+      _ => return false,
+    };
+    matches!(lhs, Expr::Identifier(n) if n == "StripOnInput")
+      && matches!(rhs, Expr::Identifier(v) if v == "False")
+  };
+  match boxes {
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(unstripped_style_boxes_to_standard)
+        .collect(),
+    ),
+    Expr::FunctionCall { name, args } => {
+      let args: Vec<Expr> = args
+        .iter()
+        .map(unstripped_style_boxes_to_standard)
+        .collect();
+      if name == "StyleBox"
+        && args.len() >= 2
+        && args.iter().any(is_keep_option)
+      {
+        let mut parts = vec![args[0].clone()];
+        for directive in args[1..].iter().filter(|a| !is_keep_option(a)) {
+          parts.push(tf_string(","));
+          parts
+            .push(Expr::String(crate::syntax::expr_to_input_form(directive)));
+        }
+        return row_box(vec![
+          tf_string("Style"),
+          tf_string("["),
+          row_box(parts),
+          tf_string("]"),
+        ]);
+      }
+      call(name, args)
+    }
+    _ => boxes.clone(),
+  }
+}
+
+/// Is this box token a symbol name (`f`, `ψ`, `` a`b ``, `$x`)?
+fn tf_is_symbol_token(token: &str) -> bool {
+  let mut chars = token.chars();
+  chars.next().is_some_and(|c| c.is_alphabetic() || c == '$')
+    && chars.all(|c| c.is_alphanumeric() || matches!(c, '$' | '`'))
 }
 
 /// TraditionalForm data for a special function that is written with its
@@ -4445,17 +4627,7 @@ fn tf_indexed_call(
     None => match &indices[1..] {
       [] => None,
       [single] => Some(tf(single)),
-      many => {
-        let mut parts = vec![tf_string("(")];
-        for (i, a) in many.iter().enumerate() {
-          if i > 0 {
-            parts.push(tf_string(","));
-          }
-          parts.push(tf(a));
-        }
-        parts.push(tf_string(")"));
-        Some(tf_row(parts))
-      }
+      many => Some(tf_enclosed("(", many.iter().map(tf), ")")),
     },
   };
   let head = match sup {
@@ -4678,15 +4850,7 @@ fn tf_derivative_boxes(orders: &[Expr], func: &Expr) -> Option<Expr> {
   let script = if let [n @ 1..=3] = counts.as_slice() {
     tf_string(&"\u{2032}".repeat(*n as usize))
   } else {
-    let mut parts = vec![tf_string("(")];
-    for (i, n) in counts.iter().enumerate() {
-      if i > 0 {
-        parts.push(tf_string(","));
-      }
-      parts.push(tf_string(&n.to_string()));
-    }
-    parts.push(tf_string(")"));
-    tf_row(parts)
+    tf_enclosed("(", counts.iter().map(|n| tf_string(&n.to_string())), ")")
   };
   Some(tf_box("SuperscriptBox", vec![base, script]))
 }
@@ -4770,6 +4934,10 @@ fn tf_times(expr: &Expr) -> Expr {
       None => numerators.push(f.clone()),
     }
   }
+  // Exact numeric factors lead, in their canonical order: `a Pi` is set as
+  // `π a`, `a E Pi x Sqrt[3]` as `√3 ⅇ π a x`.
+  numerators.sort_by_key(|f| !tf_is_numeric_constant(f));
+  denominators.sort_by_key(|f| !tf_is_numeric_constant(f));
   let row_of = |parts: &[Expr]| -> Expr {
     let mut items: Vec<Expr> = Vec::new();
     for (i, f) in parts.iter().enumerate() {
@@ -4794,6 +4962,41 @@ fn tf_times(expr: &Expr) -> Expr {
     tf_row(vec![tf_string("-"), body])
   } else {
     body
+  }
+}
+
+/// Is this factor an exact numeric constant TraditionalForm writes ahead of
+/// the other factors of a product — a number, `I`, `E`, `Pi`, `Degree`, or a
+/// power of one with a number exponent (`Sqrt[3]`, `Pi^2`)? The named
+/// constants TraditionalForm tags instead (`GoldenRatio`, `EulerGamma`,
+/// `Catalan`) keep their place.
+fn tf_is_numeric_constant(factor: &Expr) -> bool {
+  let is_number = |e: &Expr| {
+    matches!(
+      e,
+      Expr::Integer(_)
+        | Expr::BigInteger(_)
+        | Expr::Real(_)
+        | Expr::BigFloat(..)
+    ) || matches!(e, Expr::FunctionCall { name, args }
+        if (name == "Rational" || name == "Complex") && args.len() == 2)
+  };
+  match factor {
+    Expr::Identifier(s) | Expr::Constant(s) => {
+      matches!(s.as_str(), "Pi" | "E" | "I" | "Degree")
+    }
+    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
+      tf_is_numeric_constant(&args[0])
+    }
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      tf_is_numeric_constant(&args[0]) && is_number(&args[1])
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => tf_is_numeric_constant(left) && is_number(right),
+    other => is_number(other),
   }
 }
 
@@ -5032,15 +5235,13 @@ fn tf_matrix_grid(rows: &[Expr]) -> Expr {
 /// applied here, so a symbol used as a function head (e.g. the field `E` in
 /// `E[x, y, z]`) stays `E(x, y, z)` rather than becoming `ⅇ(x, y, z)`.
 fn tf_generic_call(name: &str, args: &[Expr]) -> Expr {
-  let mut items: Vec<Expr> = Vec::with_capacity(args.len() * 2 + 3);
-  items.push(tf_string(name));
-  items.push(tf_string("("));
-  for (i, arg) in args.iter().enumerate() {
-    if i > 0 {
-      items.push(tf_string(","));
-    }
-    items.push(tf(arg));
-  }
+  tf_applied(tf_string(name), args)
+}
+
+/// `head(arg, …)` for an already-boxed head.
+fn tf_applied(head: Expr, args: &[Expr]) -> Expr {
+  let mut items = vec![head, tf_string("(")];
+  items.extend(tf_comma_seq(args.iter().map(tf)));
   items.push(tf_string(")"));
   tf_row(items)
 }
@@ -5064,14 +5265,54 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
     }
     // `Style` carries its directives into the box tree as a `StyleBox`,
     // with `StripOnInput -> False` so they survive being read back.
+    // In box text the body is boxed as an expression, so a string keeps its
+    // quotes and reads back as a string.
     "Style" | "StyleForm" if !args.is_empty() => {
-      let mut style_args = vec![tf_display(&args[0])];
+      let body = if TF_BOX_TEXT.get() {
+        tf(&args[0])
+      } else {
+        tf_display(&args[0])
+      };
+      let mut style_args = vec![body];
       style_args.extend(args[1..].iter().cloned());
       style_args.push(Expr::Rule {
         pattern: Box::new(id_expr("StripOnInput")),
         replacement: Box::new(bool_expr(false)),
       });
       call("StyleBox", style_args)
+    }
+    // In box *text* a `Row` is the FrontEnd's row template: `RowDefault` for
+    // the plain form, and one of two separator variants — the plural one
+    // carries a string separator twice, as the text it draws and as the
+    // literal it was written as. Its parts are boxed as expressions, so a
+    // string keeps its quotes and the text reads back as the same `Row`.
+    "Row"
+      if TF_BOX_TEXT.get()
+        && (1..=2).contains(&args.len())
+        && matches!(args[0], Expr::List(_)) =>
+    {
+      let Expr::List(items) = &args[0] else {
+        unreachable!("guarded by the match arm")
+      };
+      let parts = items.iter().map(tf);
+      let (template, elements): (&str, Vec<Expr>) = match args.get(1) {
+        Some(sep @ Expr::String(text)) => (
+          "RowWithSeparators",
+          [tf_string(text), tf(sep)]
+            .into_iter()
+            .chain(parts)
+            .collect(),
+        ),
+        Some(sep) => (
+          "RowWithSeparator",
+          std::iter::once(tf(sep)).chain(parts).collect(),
+        ),
+        None => ("RowDefault", parts.collect()),
+      };
+      call(
+        "TemplateBox",
+        vec![call("List", elements), Expr::String(template.to_string())],
+      )
     }
     // `Row[{a, b, …}]` concatenates its parts; `Row[{…}, sep]` joins them
     // with the separator. A row *displays* its parts, so a string item
@@ -5194,18 +5435,7 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
       tf_indexed_call(letter, fixed_sup, args)
     }
     "Subscript" if args.len() >= 2 => {
-      let sub = if args.len() == 2 {
-        tf(&args[1])
-      } else {
-        let mut parts: Vec<Expr> = Vec::new();
-        for (i, a) in args[1..].iter().enumerate() {
-          if i > 0 {
-            parts.push(tf_string(","));
-          }
-          parts.push(tf(a));
-        }
-        tf_row(parts)
-      };
+      let sub = tf_comma_seq(args[1..].iter().map(tf)).unwrap();
       tf_box("SubscriptBox", vec![tf(&args[0]), sub])
     }
     "Superscript" if args.len() == 2 => {
@@ -5239,30 +5469,12 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
       match tf_derivative_boxes(&args[..1], &args[1]) {
         None => tf_generic_call(name, args),
         Some(boxes) if args.len() == 2 => boxes,
-        Some(boxes) => {
-          let mut parts = vec![boxes, tf_string("(")];
-          for (i, a) in args[2..].iter().enumerate() {
-            if i > 0 {
-              parts.push(tf_string(","));
-            }
-            parts.push(tf(a));
-          }
-          parts.push(tf_string(")"));
-          tf_row(parts)
-        }
+        Some(boxes) => tf_applied(boxes, &args[2..]),
       }
     }
     _ => {
       if let Some(disp) = tf_known_func(name) {
-        let mut items: Vec<Expr> = vec![tf_string(disp), tf_string("(")];
-        for (i, arg) in args.iter().enumerate() {
-          if i > 0 {
-            items.push(tf_string(","));
-          }
-          items.push(tf(arg));
-        }
-        items.push(tf_string(")"));
-        tf_row(items)
+        tf_applied(tf_string(disp), args)
       } else {
         tf_generic_call(name, args)
       }
@@ -5296,29 +5508,13 @@ fn tf(expr: &Expr) -> Expr {
       {
         return boxes;
       }
-      let mut parts = vec![tf(func), tf_string("(")];
-      for (i, a) in args.iter().enumerate() {
-        if i > 0 {
-          parts.push(tf_string(","));
-        }
-        parts.push(tf(a));
-      }
-      parts.push(tf_string(")"));
-      tf_row(parts)
+      tf_applied(tf(func), args)
     }
     Expr::List(items) => {
       if tf_is_matrix(items) {
         tf_row(vec![tf_string("("), tf_matrix_grid(items), tf_string(")")])
       } else {
-        let mut parts: Vec<Expr> = vec![tf_string("{")];
-        for (i, it) in items.iter().enumerate() {
-          if i > 0 {
-            parts.push(tf_string(","));
-          }
-          parts.push(tf(it));
-        }
-        parts.push(tf_string("}"));
-        tf_row(parts)
+        tf_enclosed("{", items.iter().map(tf), "}")
       }
     }
     Expr::BinaryOp {
@@ -5401,6 +5597,30 @@ fn tf(expr: &Expr) -> Expr {
 /// stacked fractions, radicals, and bracketed matrices. Unknown functions
 /// render as `head(args)`.
 pub fn expr_to_box_form_traditional(expr: &Expr) -> Expr {
+  tf(expr)
+}
+
+thread_local! {
+  /// Set while typesetting for box *text* (see
+  /// `expr_to_box_form_traditional_text`) rather than for Woxi's own box
+  /// renderers, which draw a `Row` as a flat row and have no row templates,
+  /// and draw a string's box as its bare text.
+  static TF_BOX_TEXT: std::cell::Cell<bool> =
+    const { std::cell::Cell::new(false) };
+}
+
+/// Like `expr_to_box_form_traditional`, but for boxes written out as text in
+/// a `\!\(\*…\)` escape, which has to read back as the expression it was
+/// built from: a `Row` becomes wolframscript's `TemplateBox[…, "RowDefault"]`
+/// instead of a flat `RowBox`, and a styled string keeps its quotes.
+pub fn expr_to_box_form_traditional_text(expr: &Expr) -> Expr {
+  struct Reset(bool);
+  impl Drop for Reset {
+    fn drop(&mut self) {
+      TF_BOX_TEXT.set(self.0);
+    }
+  }
+  let _reset = Reset(TF_BOX_TEXT.replace(true));
   tf(expr)
 }
 
