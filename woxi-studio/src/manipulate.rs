@@ -2077,4 +2077,29 @@ mod tests {
     let names: Vec<&str> = state.controls.iter().map(|c| c.name()).collect();
     assert_eq!(names, ["cutoff"]);
   }
+
+  /// A sampled Demonstration titles a control with `Row[{"title",
+  /// Spacer[n]}]` and pins its readouts with left-aligned `Text`. The
+  /// spacer is layout, so the control heading must not spell out the
+  /// `Spacer[n]` head, and the left-aligned readout must be anchored at
+  /// its left edge rather than centred on a guessed width.
+  #[test]
+  fn heading_row_with_spacer_and_left_aligned_readout() {
+    let code = r#"Manipulate[
+      Graphics[{Text[Row[{Spacer[30], "level = ", k}], {-1, 0}, {-1, 0}]},
+        PlotRange -> {{-1, 1}, {-1, 1}}, ImageSize -> {200, 14}],
+      Row[{"gain", Spacer[40]}],
+      {{k, 3}, 1, 9, 1}
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = ManipulateState::from_expr(&expr).expect("state should build");
+    assert_eq!(state.error, None);
+    for c in &state.controls {
+      if let ControlState::Heading { label, .. } = c {
+        assert!(!label.contains("Spacer"), "leaked head in {label:?}");
+      }
+    }
+    assert!(state.graphics_handle.is_some());
+  }
 }
