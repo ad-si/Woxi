@@ -513,6 +513,26 @@ mod graphics {
       );
     }
 
+    /// Regression: `expr_to_point_list` required the *whole* points list to
+    /// already be a literal `{{x1,y1}, …}`, so a Demonstration's idiom of
+    /// computing an arrow's endpoints with a pure function applied to a
+    /// single tip value (`({{# - 2.5, 0}, {#, 0}}& )[tip]`, as opposed to a
+    /// literal list) left `Arrow` with an unevaluated `CurriedCall` for its
+    /// first argument — neither the point-list nor the multi-segment branch
+    /// recognized it, so no primitive was drawn and a `Coordinate … should
+    /// be a pair of numbers` message fired instead. A points list that
+    /// reduces to `{{x1,y1}, …}` at evaluation time must render identically
+    /// to writing that list out.
+    #[test]
+    fn arrow_computed_point_list_matches_literal() {
+      assert_eq!(
+        export_svg(
+          "Graphics[{Arrow[({{# - 2.5, 0}, {#, 0}} & )[3]]}]"
+        ),
+        export_svg("Graphics[{Arrow[{{0.5, 0}, {3, 0}}]}]")
+      );
+    }
+
     #[test]
     fn text() {
       insta::assert_snapshot!(export_svg(

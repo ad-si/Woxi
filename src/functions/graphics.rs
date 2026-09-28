@@ -987,7 +987,17 @@ fn resolve_anchor(x: f64, y: f64, scaled: bool, bb: &BBox) -> (f64, f64) {
 }
 
 fn expr_to_point_list(expr: &Expr) -> Option<Vec<(f64, f64)>> {
-  if let Expr::List(items) = expr {
+  // Like `expr_to_point`: a point *list* is usually already a `{{x,y},…}`
+  // literal, but a Demonstration's `Arrow[({{# - 2.5, 0}, {#, 0}}& )[tip]]`
+  // only reduces to one at evaluation time (a pure function applied to the
+  // computed tip). Without evaluating first, this whole `CurriedCall` isn't
+  // a literal `List` and the arrow is silently dropped as "not a point
+  // list" instead of drawn.
+  let evaluated = match expr {
+    Expr::List(_) => None,
+    _ => evaluate_expr_to_expr(expr).ok(),
+  };
+  if let Expr::List(items) = evaluated.as_ref().unwrap_or(expr) {
     let mut pts = Vec::with_capacity(items.len());
     for item in items {
       pts.push(expr_to_point(item)?);
