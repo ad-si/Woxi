@@ -432,25 +432,8 @@ fn extract_cell_content(s: &str) -> String {
     return extract_rowbox_content(s);
   }
 
-  // Handle quoted strings. A doubly-quoted element (`"\"…\""`) is a real
-  // string *literal* in the reconstructed code (e.g. `\"\<yes\>\"` for
-  // `"yes"`); a bare quoted operator token (`"\[Equal]"`, `"\[Rule]"`, …)
-  // is code syntax, not text, and must translate through the same
-  // operator-preferring path `box_part_source` uses for a RowBox's own
-  // elements. Without this, an operator wrapped in `StyleBox[…,
-  // "OperatorCharacter"]` (Demonstrations use this to color `&&`/`==`
-  // conditions) recurses here through the generic "StyleBox wraps its
-  // displayed argument" case above and reconstructs `\[Equal]` as the
-  // single `=` its FrontEnd typesetting *looks* like, rather than `==` —
-  // silently turning an equality test into an assignment.
-  if s.starts_with('"') && s.ends_with('"') && s.len() >= 2 {
-    let inner = &s[1..s.len() - 1];
-    if inner.starts_with("\\\"") {
-      return string_literal_source(inner);
-    }
-    return unescape_code_string(inner);
-  }
-  s.to_string()
+  // Handle quoted strings
+  extract_string_content(s)
 }
 
 /// Is this argument a top-level option rule (`name -> value` or
@@ -958,6 +941,26 @@ fn extract_typeset_box(s: &str) -> Option<String> {
       // `TagBox[content, tag, opts...]` is a display annotation; the
       // evaluable value is just `content`.
       "TagBox" if !args.is_empty() => conv(&args[0]),
+      // `StyleBox[op, "OperatorCharacter"]` colors one operator character
+      // of a larger expression (e.g. a `Which` guard's `&&`/`==`) without
+      // an enclosing `RowBox` grouping it with its operands — the FrontEnd
+      // uses this specifically to syntax-highlight code, never for prose.
+      // Recursing through the generic `conv` (`extract_cell_content`)
+      // below would reconstruct a bare `"\[Equal]"` argument through the
+      // *prose* unescaper (the same fallback a `Cell[…, "Text"]` cell's
+      // plain string content goes through), which maps `\[Equal]` to the
+      // single display glyph `=` it looks like typeset — silently turning
+      // an equality test into an assignment (`Set`). Only a bare named-
+      // character token (not a real string that merely starts with one)
+      // takes this path, so an actual quoted string styled this way still
+      // renders as prose.
+      "StyleBox"
+        if args.len() >= 2
+          && args[1].trim().trim_matches('"') == "OperatorCharacter"
+          && stylebox_bare_operator(&args[0]).is_some() =>
+      {
+        stylebox_bare_operator(&args[0]).unwrap().to_string()
+      }
       // `StyleBox`, `FrameBox`, `AdjustmentBox`, `FormBox` similarly wrap
       // a displayed expression; recurse into the first arg.
       "StyleBox" | "FrameBox" | "AdjustmentBox" | "FormBox"
@@ -2342,6 +2345,18 @@ pub(crate) fn combining_accent(over: &str) -> Option<&'static str> {
     "\\[RightVector]" | "\u{21C0}" => Some("\u{20D7}"),
     _ => None,
   }
+}
+
+/// The InputForm operator a `StyleBox[…, "OperatorCharacter"]`'s first
+/// argument stands for, if that argument is *only* a bare named-character
+/// escape (`"\[Equal]"`) and nothing else. A real string that merely
+/// starts with the same text (`"\[Equal] sign"`, say) is not this — the
+/// whole argument has to be exactly the one escape, quotes included.
+fn stylebox_bare_operator(s: &str) -> Option<&'static str> {
+  let s = s.trim();
+  let inner = s.strip_prefix('"')?.strip_suffix('"')?;
+  let name = inner.strip_prefix("\\[")?.strip_suffix(']')?;
+  named_char_to_code_op(name)
 }
 
 /// Map Wolfram named operator characters to their InputForm ASCII
@@ -4237,8 +4252,8 @@ mod tests {
   /// Regression: a `StyleBox[…, "OperatorCharacter"]`-wrapped `\[Equal]` —
   /// the FrontEnd colors a condition's comparison operators this way —
   /// reconstructed as a single `=` (`Set`, assignment) instead of `==`
-  /// (`Equal`), because the wrapper recursed through
-  /// `extract_cell_content`'s generic quoted-string fallback, which used
+  /// (`Equal`), because the wrapper recursed through `extract_cell_content`
+  /// (via the generic "StyleBox wraps its displayed argument" case) using
   /// the prose unescaper instead of the code-operator one `box_part_source`
   /// already used for a bare (unwrapped) `"\[Equal]"` RowBox element. A
   /// silently corrupted equality test is worse than a parse failure: the
@@ -4248,6 +4263,23 @@ mod tests {
   fn test_extract_cell_content_stylebox_wrapped_equal() {
     let s = r#"BoxData[RowBox[{"o1", StyleBox["\[Equal]", "OperatorCharacter"], "\"yes\""}]]"#;
     assert_eq!(extract_cell_content(s), r#"o1=="yes""#);
+  }
+
+  /// Regression: an earlier fix for the `StyleBox` case above routed
+  /// *every* quoted-string leaf `extract_cell_content` sees through the
+  /// code-operator unescaper, not just an operator-tagged `StyleBox`. That
+  /// broke ordinary prose: `parse_single_cell` sends a plain `Cell["…",
+  /// "Text"]`'s content through this same function regardless of style, so
+  /// a `\[Equal]` written mid-sentence (a Demonstration's "for a \[Equal] b
+  /// use ...") reconstructed as the code operator `==` instead of the
+  /// single `=` glyph it typesets as. The fix must be scoped to the
+  /// `"OperatorCharacter"`-tagged `StyleBox` case only; every other quoted
+  /// string, including this one despite starting with the same escape,
+  /// keeps going through the prose unescaper.
+  #[test]
+  fn test_extract_cell_content_text_cell_named_char_stays_prose() {
+    let s = r#""a \[Equal] b""#;
+    assert_eq!(extract_cell_content(s), "a = b");
   }
 
   #[test]
