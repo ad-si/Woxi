@@ -3703,6 +3703,28 @@ fn parse_inset_target_size(args: &[Expr]) -> (Option<f64>, Option<f64>) {
   }
 }
 
+/// Drop the full-size background rectangle a rendered three-dimensional
+/// scene opens with when it is the theme's default plate, so the scene can
+/// be inset into another picture without painting over it. A scene with an
+/// explicit non-default `Background` keeps its plate.
+fn strip_default_background_plate(svg: &str) -> String {
+  let (default_bg, _, _, _, _) = crate::functions::plot::plot_theme();
+  let plate = format!(
+    " fill=\"rgb({},{},{})\"/>\n",
+    default_bg.0, default_bg.1, default_bg.2
+  );
+  if let Some(start) = svg.find("<rect width=\"")
+    && let Some(len) = svg[start..].find('\n')
+    && svg[start..=(start + len)].ends_with(&plate)
+  {
+    let mut out = String::with_capacity(svg.len());
+    out.push_str(&svg[..start]);
+    out.push_str(&svg[start + len + 1..]);
+    return out;
+  }
+  svg.to_string()
+}
+
 fn inset_primitives(
   args: &[Expr],
   errors: &mut Vec<String>,
@@ -3719,17 +3741,36 @@ fn inset_primitives(
   // inside the body and insets the variable), which is also what keeps it
   // from falling through to the text path and printing `-Graphics3D-`.
   let anchor = args.get(1).and_then(expr_to_anchor);
+  // Without a `size`, an inset is the object at its own natural size — not
+  // stretched or shrunk to whatever extent its primitives happen to span in
+  // the enclosing picture's coordinates. A telescope-view inset whose
+  // primitives live in `[-1.1, 1.1]` would otherwise collapse to a dot
+  // inside a picture measured in hundreds of units.
+  let natural_size = parse_inset_target_size(args) == (None, None);
   let rendered;
   let image_svg;
+  let plate_free;
   let embedded = match peel_style_wrapper(&args[0]) {
     Expr::Graphics {
       svg,
       structure: None,
+      is_3d: false,
       ..
     } => Some(svg),
+    // A three-dimensional scene paints its own background plate; inside
+    // another picture that would hide whatever the inset sits on.
     Expr::Graphics {
       svg, is_3d: true, ..
-    } => Some(svg),
+    } => {
+      plate_free = strip_default_background_plate(svg);
+      Some(&plate_free)
+    }
+    Expr::Graphics {
+      svg,
+      structure: Some(_),
+      is_3d: false,
+      ..
+    } if natural_size => Some(svg),
     // A rasterized picture (e.g. from `Rasterize[…]` or `Import`) draws at
     // its own pixel size, the same as a rendered `Graphics` above — there is
     // no symbolic content to fold into this picture's coordinate system.
@@ -3753,10 +3794,15 @@ fn inset_primitives(
     call @ Expr::FunctionCall { name, .. }
       if name == "Graphics3D"
         || name == "Graphics3DBox"
-        || (anchor.is_some_and(|(_, _, scaled)| scaled)
+        || ((natural_size || anchor.is_some_and(|(_, _, scaled)| scaled))
           && (name == "Graphics" || name == "GraphicsBox")) =>
     {
-      rendered = crate::evaluator::expr_to_svg(call);
+      let svg = crate::evaluator::expr_to_svg(call);
+      rendered = if name.starts_with("Graphics3D") {
+        strip_default_background_plate(&svg)
+      } else {
+        svg
+      };
       (!rendered.is_empty()).then_some(&rendered)
     }
     _ => None,

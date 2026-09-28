@@ -825,6 +825,48 @@ mod graphics {
       );
     }
 
+    /// A symbolic `Graphics[…]` inset with no `size` keeps the size it would
+    /// have on its own. It used to be folded into the enclosing picture's
+    /// coordinates, so a unit-radius scene inset into a picture measured in
+    /// hundreds of units collapsed to a sub-pixel dot.
+    #[test]
+    fn a_sizeless_graphics_inset_keeps_its_natural_size() {
+      let svg = export_svg(
+        "Graphics[{Rectangle[{0, 0}, {300, 200}]}, \
+         Epilog -> Inset[Graphics[{Disk[{0, 0}, 1]}], {150, 100}]]",
+      );
+      let nested = svg
+        .split("<svg ")
+        .nth(2)
+        .and_then(|s| s.split_once('>'))
+        .expect("the inset is embedded as its own picture")
+        .0
+        .to_string();
+      assert!(
+        nested.contains("width=\"360.00\"")
+          && nested.contains("height=\"360.00\""),
+        "the inset keeps its own natural size: {nested}"
+      );
+    }
+
+    /// A three-dimensional inset is transparent: it must not paint the
+    /// default white plate over the picture it sits on.
+    #[test]
+    fn a_three_dimensional_inset_does_not_paint_a_background_plate() {
+      let svg = export_svg(
+        "Graphics[{Blue, Rectangle[{0, 0}, {10, 10}]}, \
+         Epilog -> Inset[Graphics3D[{Cuboid[]}, Boxed -> False, \
+         ImageSize -> {40, 40}], {5, 5}]]",
+      );
+      let nested = svg.split("<svg ").nth(2).expect("a nested picture");
+      assert!(
+        !nested.contains(
+          "<rect width=\"40\" height=\"40\" fill=\"rgb(255,255,255)\"/>"
+        ),
+        "no opaque plate behind the inset scene: {nested}"
+      );
+    }
+
     /// Either half of an anchor may be symbolic: a Demonstration pins its
     /// inset with `{0.8, Center}` — four-fifths along the x axis, halfway
     /// up the y one. An unresolved half used to drop the whole position and
