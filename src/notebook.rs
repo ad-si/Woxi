@@ -432,8 +432,25 @@ fn extract_cell_content(s: &str) -> String {
     return extract_rowbox_content(s);
   }
 
-  // Handle quoted strings
-  extract_string_content(s)
+  // Handle quoted strings. A doubly-quoted element (`"\"…\""`) is a real
+  // string *literal* in the reconstructed code (e.g. `\"\<yes\>\"` for
+  // `"yes"`); a bare quoted operator token (`"\[Equal]"`, `"\[Rule]"`, …)
+  // is code syntax, not text, and must translate through the same
+  // operator-preferring path `box_part_source` uses for a RowBox's own
+  // elements. Without this, an operator wrapped in `StyleBox[…,
+  // "OperatorCharacter"]` (Demonstrations use this to color `&&`/`==`
+  // conditions) recurses here through the generic "StyleBox wraps its
+  // displayed argument" case above and reconstructs `\[Equal]` as the
+  // single `=` its FrontEnd typesetting *looks* like, rather than `==` —
+  // silently turning an equality test into an assignment.
+  if s.starts_with('"') && s.ends_with('"') && s.len() >= 2 {
+    let inner = &s[1..s.len() - 1];
+    if inner.starts_with("\\\"") {
+      return string_literal_source(inner);
+    }
+    return unescape_code_string(inner);
+  }
+  s.to_string()
 }
 
 /// Is this argument a top-level option rule (`name -> value` or
@@ -4215,6 +4232,22 @@ mod tests {
     crate::clear_state();
     crate::interpret(&content).unwrap();
     assert_eq!(crate::interpret("total").unwrap(), "{{3}, {3}, {3}}");
+  }
+
+  /// Regression: a `StyleBox[…, "OperatorCharacter"]`-wrapped `\[Equal]` —
+  /// the FrontEnd colors a condition's comparison operators this way —
+  /// reconstructed as a single `=` (`Set`, assignment) instead of `==`
+  /// (`Equal`), because the wrapper recursed through
+  /// `extract_cell_content`'s generic quoted-string fallback, which used
+  /// the prose unescaper instead of the code-operator one `box_part_source`
+  /// already used for a bare (unwrapped) `"\[Equal]"` RowBox element. A
+  /// silently corrupted equality test is worse than a parse failure: the
+  /// cell still evaluates, just as the wrong code (e.g. a `Which` guard
+  /// that always assigns rather than compares).
+  #[test]
+  fn test_extract_cell_content_stylebox_wrapped_equal() {
+    let s = r#"BoxData[RowBox[{"o1", StyleBox["\[Equal]", "OperatorCharacter"], "\"yes\""}]]"#;
+    assert_eq!(extract_cell_content(s), r#"o1=="yes""#);
   }
 
   #[test]
