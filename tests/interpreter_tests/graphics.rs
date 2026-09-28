@@ -29617,6 +29617,59 @@ mod color_data_indexed {
     );
   }
 
+  // `RegionPlot[cond, …][[1]]` (or `First[…]`) yields the region's
+  // primitives, the way `ContourPlot[…][[1]]` does — a Demonstration that
+  // composes a custom `Graphics[{RegionPlot[…][[1]], …}]` (e.g. to overlay
+  // the filled region with its own styling) needs actual geometry, not an
+  // unevaluated `Part`. A disk region traces to one closed `Polygon`;
+  // `BoundaryStyle` additionally draws each loop as a styled `Line`.
+  #[test]
+  fn region_plot_part_yields_primitives() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Head[RegionPlot[x^2 + y^2 < 1, {x, -2, 2}, {y, -2, 2}][[1]]]"
+      )
+      .unwrap(),
+      "List"
+    );
+    assert_eq!(
+      interpret(
+        "Head[First[RegionPlot[x^2 + y^2 < 1, {x, -2, 2}, {y, -2, 2}][[1]] \
+         [[2]]]]"
+      )
+      .unwrap(),
+      "Polygon"
+    );
+    let len_with_boundary: i64 = interpret(
+      "Length[RegionPlot[x^2 + y^2 < 1, {x, -2, 2}, {y, -2, 2}, \
+       BoundaryStyle -> Thick][[1]]]",
+    )
+    .unwrap()
+    .parse()
+    .unwrap();
+    assert!(
+      len_with_boundary > 2,
+      "BoundaryStyle should add a styled Line on top of the fill: \
+       got {len_with_boundary} primitives"
+    );
+    // The extracted primitives embed into an outer Graphics.
+    let svg = export_svg(
+      "Graphics[{RegionPlot[x^2 + y^2 < 1, {x, -2, 2}, {y, -2, 2}][[1]]}]",
+    );
+    assert!(svg.contains("<polygon"), "{svg}");
+    // A body held in a variable resolves during sampling, same as
+    // ContourPlot.
+    assert_eq!(
+      interpret(
+        "diskCond = x^2 + y^2 < 1; \
+         Head[RegionPlot[diskCond, {x, -2, 2}, {y, -2, 2}][[1]]]"
+      )
+      .unwrap(),
+      "List"
+    );
+  }
+
   mod dynamic_content {
     use super::*;
 
