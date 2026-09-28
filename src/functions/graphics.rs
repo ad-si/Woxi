@@ -22499,6 +22499,14 @@ fn discrete_choice_columns(items: &[Expr]) -> DiscreteChoiceColumns {
   let mut svgs = Vec::with_capacity(items.len());
   let mut label_runs = Vec::with_capacity(items.len());
   for item in items {
+    // A bare `Delimiter` inside a choice list (e.g. a `PopupMenu`'s options
+    // grouped into sections) draws a separator line between the choices
+    // around it — it is never itself a selectable value, so it contributes
+    // no value/label/svg row rather than becoming a literal "Delimiter"
+    // entry.
+    if matches!(item, Expr::Identifier(s) if s == "Delimiter") {
+      continue;
+    }
     if let Some((value, label)) = discrete_choice_rule(item) {
       values.push(crate::syntax::expr_to_input_form(value));
       // A rule label that is itself a graphic (the crosshair icons of
