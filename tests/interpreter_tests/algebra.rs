@@ -5698,8 +5698,8 @@ mod solve {
     fn exponential_divided_by_constant() {
       assert_eq!(
         interpret("Solve[2^x/12 == 5, x]").unwrap(),
-        "{{x -> ConditionalExpression[((2*I)*Pi*C[1])/Log[2] + \
-         Log[60]/Log[2], Element[C[1], Integers]]}}"
+        "{{x -> ConditionalExpression[2 + ((2*I)*Pi*C[1])/Log[2] + \
+         Log[15]/Log[2], Element[C[1], Integers]]}}"
       );
     }
 
@@ -5709,6 +5709,53 @@ mod solve {
         interpret("Solve[2^x - 60 == 0, x]").unwrap(),
         "{{x -> ConditionalExpression[((2*I)*Pi*C[1])/Log[2] + \
          Log[60]/Log[2], Element[C[1], Integers]]}}"
+      );
+    }
+
+    // `b^(linear in x) == c` keeps the whole periodic family, not just the
+    // principal value, whatever the exponent's slope and offset.
+    #[test]
+    fn exponential_with_linear_exponent_keeps_periodic_family() {
+      assert_eq!(
+        interpret("Solve[2^(x + 1) == 5, x]").unwrap(),
+        "{{x -> ConditionalExpression[-1 + ((2*I)*Pi*C[1])/Log[2] + \
+         Log[5]/Log[2], Element[C[1], Integers]]}}"
+      );
+      assert_eq!(
+        interpret("Solve[2^(2 x) == 5, x]").unwrap(),
+        "{{x -> ConditionalExpression[(((2*I)*Pi*C[1])/Log[2] + \
+         Log[5]/Log[2])/2, Element[C[1], Integers]]}}"
+      );
+      assert_eq!(
+        interpret("Solve[2^(a x + b) == 5, x]").unwrap(),
+        "{{x -> ConditionalExpression[(-b + ((2*I)*Pi*C[1])/Log[2] + \
+         Log[5]/Log[2])/a, Element[C[1], Integers]]}}"
+      );
+      assert_eq!(
+        interpret("Solve[E^(x + 1) == 1, x]").unwrap(),
+        "{{x -> ConditionalExpression[-1 + (2*I)*Pi*C[1], \
+         Element[C[1], Integers]]}}"
+      );
+    }
+
+    // A negative slope takes the family with `-C[1]`, which keeps the
+    // periodic term positive.
+    #[test]
+    fn exponential_with_negative_slope_keeps_periodic_term_positive() {
+      assert_eq!(
+        interpret("Solve[3^(1 - x) == 5, x]").unwrap(),
+        "{{x -> ConditionalExpression[1 + ((2*I)*Pi*C[1])/Log[3] - \
+         Log[5]/Log[3], Element[C[1], Integers]]}}"
+      );
+      assert_eq!(
+        interpret("Solve[3^(-2 x) == 5, x]").unwrap(),
+        "{{x -> ConditionalExpression[(((2*I)*Pi*C[1])/Log[3] - \
+         Log[5]/Log[3])/2, Element[C[1], Integers]]}}"
+      );
+      assert_eq!(
+        interpret("Solve[E^(1 - x) == 5, x]").unwrap(),
+        "{{x -> ConditionalExpression[1 + (2*I)*Pi*C[1] - Log[5], \
+         Element[C[1], Integers]]}}"
       );
     }
 

@@ -485,20 +485,30 @@ already-distributed sum, `Simplify[-6 Sqrt[399] + 6 Sqrt[2261]]` returns
 sitting outside the radical does not fold in: `Pi/(2 Sqrt[2 Pi])` stays where
 WL gives `Sqrt[Pi/2]/2`.
 
-### `(1/2)^k` is not rewritten to `2^(-k)`
+### A rational power's base is not kept primitive
 
-WL rewrites a positive unit-fraction base with a **non-numeric** exponent:
-`(1/2)^k` → `2^(-k)`, `(1/2)^Pi` → `2^(-Pi)`, `(1/2)^(k+1)` → `2^(-1-k)`.
-Woxi keeps the unit fraction. Non-unit numerators (`(2/3)^k`) and negative
-bases (`(-1/2)^k`) agree.
-
-Doing it eagerly regresses `BinomialDistribution`'s PDF, which relies on
-`(1/2)^x*(1/2)^(10-x)` merging to `(1/2)^10`; the rewrite has to happen after
-same-base `Times` merging, or the integer-base merge has to combine
-`2^a*2^b` → `2^(a+b)` for symbolic exponents.
-
-Woxi also normalizes `(3/11)^(2/3)` to `(9/121)^(1/3)`, where WL keeps the
+Woxi normalizes `(3/11)^(2/3)` to `(9/121)^(1/3)`, where WL keeps the
 primitive base and even rewrites the other direction.
+
+### Powers of integer bases that share a prime do not merge
+
+A coefficient is absorbed into a power of an integer base the way WL does it
+(`2^x/12` → `2^(-2 + x)/3`, `6^x/4` → `2^(-2 + x)*3^x`), but two *powers*
+sharing a prime are not split and merged:
+
+```sh
+wolframscript -code '6^x 2^y'      # 2^(x + y)*3^x
+woxi eval '6^x 2^y'                # 2^y*6^x
+wolframscript -code '2 6^x 10^y'   # 2^(1 + x + y)*3^x*5^y
+woxi eval '2 6^x 10^y'             # 2^(1 + x)*3^x*10^y
+wolframscript -code '6 2^x 3^x'    # 6^(1 + x)
+woxi eval '6 2^x 3^x'              # 2^(1 + x)*3^(1 + x)
+```
+
+Rational bases are left out of the absorption: WL splits them into their
+primes and recombines, choosing between a base and its reciprocal in a way
+not yet pinned down (`4/9 (2/3)^x` → `(3/2)^(-2 - x)`, `2/3 (2/3)^x` →
+`(2/3)^(1 + x)`, `3 (2/3)^x` → `2^x*3^(1 - x)`).
 
 ### A complex coefficient blocks the negative-exponent fold
 
@@ -1509,6 +1519,22 @@ turning that into a rule with the parameter's membership as the
 The *bounded* case agrees:
 `Solve[Mod[x, 3] == 1 && 0 <= x < 10, x, Integers]` is `{{x -> 1}, {x -> 4},
 {x -> 7}}` in both (rechecked 2026-09-10).
+
+### Solving for a variable divided by a symbol keeps a negated sum split
+
+```sh
+wolframscript -code 'Solve[-x/a == l - p, x]'   # {{x -> -(a*(l - p))}}
+woxi eval 'Solve[-x/a == l - p, x]'             # {{x -> -(a*l) + a*p}}
+wolframscript -code 'Solve[3^(-x/a) == 5, x]'
+# {{x -> ConditionalExpression[a*(((2*I)*Pi*C[1])/Log[3] - Log[5]/Log[3]), …]}}
+woxi eval 'Solve[3^(-x/a) == 5, x]'
+# {{x -> ConditionalExpression[-(a*(((-2*I)*Pi*C[1])/Log[3] + Log[5]/Log[3])), …]}}
+```
+
+Numeric slopes (`-x`, `-2 x`, `-x/2`) and a symbolic one without the minus
+agree. The exponential case is the same linear step: `b^(linear) == c` is
+solved as `linear == Log[c]/Log[b] + 2 I Pi C[1]/Log[b]`, flipping `C[1]` for
+a negative slope.
 
 ### `Roots` root ordering
 

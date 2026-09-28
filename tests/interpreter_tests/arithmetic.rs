@@ -3264,6 +3264,92 @@ mod power_of_power {
 mod power_combining {
   use super::*;
 
+  // A power of an integer base with a non-real exponent absorbs the part of
+  // a rational coefficient made of the base's primes.
+  #[test]
+  fn coefficient_absorbed_into_symbolic_power() {
+    assert_eq!(interpret("2^x/12").unwrap(), "2^(-2 + x)/3");
+    assert_eq!(interpret("12 2^x").unwrap(), "3*2^(2 + x)");
+    assert_eq!(interpret("2^(x + 1)/8").unwrap(), "2^(-2 + x)");
+    assert_eq!(interpret("-2 2^x").unwrap(), "-2^(1 + x)");
+    assert_eq!(interpret("a 2^x/2").unwrap(), "2^(-1 + x)*a");
+    assert_eq!(interpret("2^x/2 + 1").unwrap(), "1 + 2^(-1 + x)");
+    // Constant and complex exponents are not real numbers either.
+    assert_eq!(interpret("2 2^Pi").unwrap(), "2^(1 + Pi)");
+    assert_eq!(interpret("4 2^I").unwrap(), "2^(2 + I)");
+    assert_eq!(interpret("2 2^(1/3 + I)").unwrap(), "2^(4/3 + I)");
+  }
+
+  #[test]
+  fn coefficient_absorption_leaves_coprime_and_real_cases() {
+    assert_eq!(interpret("3 2^x").unwrap(), "3*2^x");
+    assert_eq!(interpret("2 x^y").unwrap(), "2*x^y");
+    assert_eq!(interpret("2.0 2^x").unwrap(), "2.*2^x");
+    // A real exponent keeps its own canonical form.
+    assert_eq!(interpret("4 Sqrt[2]").unwrap(), "4*Sqrt[2]");
+    assert_eq!(interpret("2^x/Sqrt[2]").unwrap(), "2^(-1/2 + x)");
+  }
+
+  #[test]
+  fn coefficient_absorption_splits_composite_bases() {
+    // The part of the base the coefficient shares no prime with splits off.
+    assert_eq!(interpret("6^x/4").unwrap(), "2^(-2 + x)*3^x");
+    assert_eq!(interpret("2 30^x").unwrap(), "2^(1 + x)*15^x");
+    assert_eq!(interpret("6 30^x").unwrap(), "5^x*6^(1 + x)");
+    assert_eq!(interpret("30^x/10").unwrap(), "3^x*10^(-1 + x)");
+    assert_eq!(interpret("4 12^x").unwrap(), "3^x*4^(1 + x)");
+    assert_eq!(interpret("18 6^x").unwrap(), "2^(1 + x)*3^(2 + x)");
+    // A perfect power is rewritten over its root.
+    assert_eq!(interpret("16 4^x").unwrap(), "4^(2 + x)");
+    assert_eq!(interpret("2 4^x").unwrap(), "2^(1 + 2*x)");
+    assert_eq!(interpret("8 4^x").unwrap(), "2^(3 + 2*x)");
+    assert_eq!(interpret("12^x/8").unwrap(), "2^(-3 + 2*x)*3^x");
+    assert_eq!(interpret("6 36^x").unwrap(), "6^(1 + 2*x)");
+    assert_eq!(interpret("2 36^x").unwrap(), "2^(1 + 2*x)*9^x");
+    // Otherwise the base splits into its prime-power parts.
+    assert_eq!(interpret("6 72^x").unwrap(), "2^(1 + 3*x)*3^(1 + 2*x)");
+    assert_eq!(interpret("2/3 6^x").unwrap(), "2^(1 + x)*3^(-1 + x)");
+  }
+
+  #[test]
+  fn coefficient_absorption_negative_bases() {
+    // The sign stays with the unshared part of the base, or becomes (-1)^x.
+    assert_eq!(interpret("2 (-2)^x").unwrap(), "(-1)^x*2^(1 + x)");
+    assert_eq!(interpret("-8 (-2)^x").unwrap(), "-((-1)^x*2^(3 + x))");
+    assert_eq!(interpret("2 (-30)^x").unwrap(), "(-15)^x*2^(1 + x)");
+    assert_eq!(interpret("4 (-4)^x").unwrap(), "(-1)^x*4^(1 + x)");
+    assert_eq!(interpret("2 (-36)^x").unwrap(), "(-9)^x*2^(1 + 2*x)");
+    assert_eq!(interpret("3 (-2)^x").unwrap(), "3*(-2)^x");
+    // A coefficient equal to the base is one more factor of it.
+    assert_eq!(interpret("-2 (-2)^x").unwrap(), "(-2)^(1 + x)");
+    assert_eq!(interpret("-4 (-4)^x").unwrap(), "(-4)^(1 + x)");
+  }
+
+  #[test]
+  fn fraction_below_one_flips_to_drop_exponent_minus() {
+    assert_eq!(interpret("(2/3)^(-x)").unwrap(), "(3/2)^x");
+    assert_eq!(interpret("(2/3)^(-a b)").unwrap(), "(3/2)^(a*b)");
+    assert_eq!(interpret("1/(2/3)^x").unwrap(), "(3/2)^x");
+    assert_eq!(interpret("(3/2)^(-x)").unwrap(), "(3/2)^(-x)");
+    assert_eq!(interpret("(2/3)^(-2 x)").unwrap(), "(2/3)^(-2*x)");
+    assert_eq!(interpret("(2/3)^(1 - x)").unwrap(), "(2/3)^(1 - x)");
+    assert_eq!(interpret("(-2/3)^(-x)").unwrap(), "(-2/3)^(-x)");
+  }
+
+  #[test]
+  fn coefficient_absorption_big_integers() {
+    assert_eq!(interpret("2^(10 x) 2^100").unwrap(), "2^(100 + 10*x)");
+    assert_eq!(interpret("2^200 2^x").unwrap(), "2^(200 + x)");
+    assert_eq!(interpret("-2^100 (-2)^x").unwrap(), "-((-1)^x*2^(100 + x))");
+  }
+
+  #[test]
+  fn coefficient_absorption_merges_with_same_base_powers() {
+    assert_eq!(interpret("12 2^x 3^y").unwrap(), "2^(2 + x)*3^(1 + y)");
+    assert_eq!(interpret("2 6^x 3^y").unwrap(), "2^(1 + x)*3^(x + y)");
+    assert_eq!(interpret("2 2^x 2^y").unwrap(), "2^(1 + x + y)");
+  }
+
   #[test]
   fn same_base_add_exponents() {
     assert_eq!(interpret("x^2 * x^3").unwrap(), "x^5");

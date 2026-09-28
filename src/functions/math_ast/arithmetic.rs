@@ -7741,6 +7741,263 @@ pub fn nested_exact_const_machine_times(args: &[Expr]) -> Option<Expr> {
   Some(Expr::Real(total))
 }
 
+/// True for an exponent that is a real number (`2`, `1/2`, `0.5`) — those
+/// powers keep their own canonical form in `Times` — as opposed to a
+/// symbolic or complex one (`x`, `Pi`, `I`), which absorbs coefficients.
+fn is_real_number_exponent(exp: &Expr) -> bool {
+  match exp {
+    Expr::Integer(_)
+    | Expr::BigInteger(_)
+    | Expr::Real(_)
+    | Expr::BigFloat(_, _) => true,
+    Expr::FunctionCall { name, args } => name == "Rational" && args.len() == 2,
+    _ => false,
+  }
+}
+
+/// A power of an integer base with a non-real exponent absorbs the part of
+/// the rational coefficient built from the base's primes (see
+/// `absorb_coefficient_into_power`): 12*2^x → 3*2^(2 + x),
+/// 2^x/12 → 2^(-2 + x)/3, 6^x/4 → 2^(-2 + x)*3^x. A real exponent keeps its
+/// own canonical form: 4*Sqrt[2] stays as it is. Returns the re-multiplied
+/// product when anything was absorbed.
+fn absorb_coefficient_into_powers(
+  coeff: &Expr,
+  symbolic_args: &[Expr],
+) -> Result<Option<Expr>, InterpreterError> {
+  let big_coeff = match coeff {
+    Expr::Integer(_) | Expr::BigInteger(_) => {
+      crate::functions::math_ast::expr_to_bigint(coeff)
+        .map(|n| (n, BigInt::from(1)))
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      crate::functions::math_ast::expr_to_bigint(&args[0])
+        .zip(crate::functions::math_ast::expr_to_bigint(&args[1]))
+    }
+    _ => None,
+  };
+  if let Some((cn, cd)) = big_coeff
+    && cn != BigInt::ZERO
+  {
+    let mut negative = cn < BigInt::ZERO;
+    let mut num = cn.magnitude().clone();
+    let mut den = cd.magnitude().clone();
+    let mut rebuilt: Vec<Expr> = Vec::with_capacity(symbolic_args.len());
+    let mut changed = false;
+    for factor in symbolic_args {
+      let (base, exp) = extract_base_exponent(factor);
+      let Some(b) = (match &base {
+        Expr::Integer(_) | Expr::BigInteger(_) => {
+          crate::functions::math_ast::expr_to_bigint(&base)
+        }
+        _ => None,
+      }) else {
+        rebuilt.push(factor.clone());
+        continue;
+      };
+      let m = b.magnitude().clone();
+      if m < Nat::from(2u8) || is_real_number_exponent(&exp) {
+        rebuilt.push(factor.clone());
+        continue;
+      }
+      let base_negative = b < BigInt::ZERO;
+      // A coefficient equal to a negative base is one more factor of it:
+      // -2*(-2)^x → (-2)^(1 + x).
+      if base_negative && negative && num == m && is_one_big(&den) {
+        rebuilt.push(power_two(&base, &plus_ast(&[Expr::Integer(1), exp])?)?);
+        num = Nat::from(1u8);
+        negative = false;
+        changed = true;
+        continue;
+      }
+      if is_one_big(&gcd_big(&m, &num)) && is_one_big(&gcd_big(&m, &den)) {
+        rebuilt.push(factor.clone());
+        continue;
+      }
+      changed = true;
+      let mut parts: Vec<(Nat, Expr)> = Vec::new();
+      if base_negative {
+        // The sign stays with the part of the base the coefficient shares
+        // no prime with: 2*(-6)^x → (-3)^x*2^(1 + x), and becomes (-1)^x
+        // when there is none: 2*(-2)^x → (-1)^x*2^(1 + x).
+        let shared = shared_prime_part(&m, &num, &den);
+        rebuilt.push(power_two(&biguint_expr(&(&m / &shared), true), &exp)?);
+        absorb_coefficient_into_power(
+          shared, exp, &mut num, &mut den, &mut parts,
+        )?;
+      } else {
+        absorb_coefficient_into_power(m, exp, &mut num, &mut den, &mut parts)?;
+      }
+      for (g, e) in parts {
+        rebuilt.push(power_two(&biguint_expr(&g, false), &e)?);
+      }
+    }
+    if changed {
+      // Re-multiply so the new powers merge with any other power of the
+      // same base: 2*6^x*3^y → 2^(1 + x)*3^(x + y). The coefficient now
+      // shares no prime with any base, so this does not come back here.
+      let num = BigInt::from(num);
+      let num = if negative { -num } else { num };
+      let mut all = vec![crate::functions::math_ast::make_rational_expr(
+        &num,
+        &BigInt::from(den),
+      )];
+      all.extend(rebuilt);
+      return times_ast(&all).map(Some);
+    }
+  }
+  Ok(None)
+}
+
+/// Arbitrary-size natural number for the coefficient absorption below.
+type Nat = num_bigint::BigUint;
+
+fn gcd_big(a: &Nat, b: &Nat) -> Nat {
+  let (mut a, mut b) = (a.clone(), b.clone());
+  while b != Nat::ZERO {
+    let r = &a % &b;
+    a = b;
+    b = r;
+  }
+  a
+}
+
+fn is_one_big(n: &Nat) -> bool {
+  *n == Nat::from(1u8)
+}
+
+fn divides_big(d: &Nat, n: &Nat) -> bool {
+  (n % d) == Nat::ZERO
+}
+
+fn biguint_expr(n: &Nat, negative: bool) -> Expr {
+  let n = BigInt::from(n.clone());
+  crate::functions::math_ast::bigint_to_expr(if negative { -n } else { n })
+}
+
+/// The largest divisor of `g` made only of primes that also divide `num` or
+/// `den` — for `g = 60` against a coefficient `2` that is `4`.
+fn shared_prime_part(g: &Nat, num: &Nat, den: &Nat) -> Nat {
+  let mut rest = g.clone();
+  let mut shared = Nat::from(1u8);
+  loop {
+    let mut h = gcd_big(&rest, num);
+    if is_one_big(&h) {
+      h = gcd_big(&rest, den);
+    }
+    if is_one_big(&h) {
+      return shared;
+    }
+    while divides_big(&h, &rest) {
+      rest /= &h;
+      shared *= &h;
+    }
+  }
+}
+
+/// `g = r^t` with the largest such `t`, if `t > 1`.
+fn perfect_power_root(g: &Nat) -> Option<(Nat, u32)> {
+  let bits = g.bits() as u32;
+  (2..bits).rev().find_map(|t| {
+    let r = g.nth_root(t);
+    (r.pow(t) == *g && r > Nat::from(1u8)).then_some((r, t))
+  })
+}
+
+/// `t * exp` with the integer distributed over a sum, the way wolframscript
+/// writes a split exponent: 2*(1 + x) → 2 + 2*x.
+fn scale_exponent(t: u32, exp: &Expr) -> Result<Expr, InterpreterError> {
+  let t = Expr::Integer(t as i128);
+  match exp {
+    Expr::FunctionCall { name, args } if name == "Plus" => {
+      let terms = args
+        .iter()
+        .map(|a| times_ast(&[t.clone(), a.clone()]))
+        .collect::<Result<Vec<_>, _>>()?;
+      plus_ast(&terms)
+    }
+    _ => times_ast(&[t, exp.clone()]),
+  }
+}
+
+/// Absorb the rational coefficient `num/den` into `g^exp` (`g >= 2`, `exp`
+/// not a real number), wolframscript's canonical form for `c*g^exp`:
+///
+/// 1. Whole powers of `g` move into the exponent: 12*2^x → 3*2^(2 + x),
+///    2^x/8 → 2^(-3 + x).
+/// 2. If what is left still shares a prime with `g`, the part of `g` it
+///    shares nothing with splits off unchanged, and the rest is absorbed on
+///    its own: 2*30^x → 2^(1 + x)*15^x, 4*12^x → 3^x*4^(1 + x).
+/// 3. Otherwise a perfect power is rewritten over its root:
+///    2*4^x → 2^(1 + 2*x), 6*36^x → 6^(1 + 2*x).
+/// 4. Otherwise `g` splits into its prime-power parts:
+///    6*72^x → 2^(1 + 3*x)*3^(1 + 2*x).
+///
+/// The resulting `(base, exponent)` pairs are appended to `out`.
+fn absorb_coefficient_into_power(
+  g: Nat,
+  exp: Expr,
+  num: &mut Nat,
+  den: &mut Nat,
+  out: &mut Vec<(Nat, Expr)>,
+) -> Result<(), InterpreterError> {
+  let mut k: i128 = 0;
+  while divides_big(&g, num) {
+    *num /= &g;
+    k += 1;
+  }
+  if k == 0 {
+    while divides_big(&g, den) {
+      *den /= &g;
+      k -= 1;
+    }
+  }
+  let exp = if k == 0 {
+    exp
+  } else {
+    plus_ast(&[Expr::Integer(k), exp])?
+  };
+  if is_one_big(&gcd_big(&g, num)) && is_one_big(&gcd_big(&g, den)) {
+    out.push((g, exp));
+    return Ok(());
+  }
+  let shared = shared_prime_part(&g, num, den);
+  if shared < g {
+    out.push((&g / &shared, exp.clone()));
+    return absorb_coefficient_into_power(shared, exp, num, den, out);
+  }
+  if let Some((root, t)) = perfect_power_root(&g) {
+    let exp = scale_exponent(t, &exp)?;
+    return absorb_coefficient_into_power(root, exp, num, den, out);
+  }
+  let factors =
+    crate::functions::math_ast::number_theory::factor_integer_ast(&[
+      biguint_expr(&g, false),
+    ])?;
+  let Expr::List(pairs) = &factors else {
+    out.push((g, exp));
+    return Ok(());
+  };
+  for pair in pairs {
+    if let Expr::List(pe) = pair
+      && let [p, Expr::Integer(e)] = &pe[..]
+      && let Some(p) = crate::functions::math_ast::expr_to_bigint(p)
+      && let Some(p) = p.to_biguint()
+    {
+      absorb_coefficient_into_power(
+        p.pow(*e as u32),
+        exp.clone(),
+        num,
+        den,
+        out,
+      )?;
+    }
+  }
+  Ok(())
+}
+
 pub fn times_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(flip_unit_negative_rational_product(times_ast_inner(args)?))
 }
@@ -8742,6 +8999,11 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
 
     symbolic_args = combine_like_bases(symbolic_args)?;
+    if let Some(product) =
+      absorb_coefficient_into_powers(&coeff_expr, &symbolic_args)?
+    {
+      return Ok(product);
+    }
     sort_symbolic_factors(&mut symbolic_args);
     let mut final_args: Vec<Expr> = Vec::new();
     if !(coeff_is_int && big_numer == BigInt::from(1)) {
@@ -9229,6 +9491,11 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       }
     }
+  }
+
+  if let Some(product) = absorb_coefficient_into_powers(&coeff, &symbolic_args)?
+  {
+    return Ok(product);
   }
 
   // If all symbolic args canceled (e.g. x^2 * x^(-2)), return coefficient
@@ -12031,6 +12298,32 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
   {
     let negated = times_ast(&[Expr::Integer(-1), exp.clone()])?;
     return power_two(&Expr::Integer(*q), &negated);
+  }
+
+  // Any other fraction below 1 flips to its reciprocal to drop a bare
+  // minus sign from the exponent: `(2/3)^(-x)` is `(3/2)^x`,
+  // `(2/3)^(-a b)` is `(3/2)^(a b)`. Other coefficients stay —
+  // `(2/3)^(-2 x)` — and so does a fraction above 1: `(3/2)^(-x)`.
+  if let Expr::FunctionCall { name, args: rargs } = base
+    && name == "Rational"
+    && rargs.len() == 2
+    && let (Expr::Integer(p), Expr::Integer(q)) = (&rargs[0], &rargs[1])
+    && *p > 1
+    && p < q
+    && let Expr::FunctionCall {
+      name: ename,
+      args: eargs,
+    } = exp
+    && ename == "Times"
+    && eargs.len() >= 2
+    && matches!(&eargs[0], Expr::Integer(-1))
+  {
+    let rest = if eargs.len() == 2 {
+      eargs[1].clone()
+    } else {
+      call("Times", eargs[1..].to_vec())
+    };
+    return power_two(&make_rational(*q, *p), &rest);
   }
 
   // `(c^-1/q)^(n/d)` — see `flip_unit_fraction_radicand`.
