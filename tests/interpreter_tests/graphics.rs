@@ -20692,6 +20692,29 @@ mod parametric_plot3d {
   }
 
   #[test]
+  fn integer_mesh_draws_that_many_lines_per_direction() {
+    clear_state();
+    // n interior lines in each of the two parameter directions, each a
+    // chain of GRID_N segments.
+    assert_eq!(
+      interpret(
+        "Map[Length, Cases[ParametricPlot3D[{u, v, u v}, {u, 0, 1}, \
+         {v, 0, 1}, Mesh -> 3][[1]], Line[l_] :> l, Infinity]]"
+      )
+      .unwrap(),
+      "{300}"
+    );
+    assert_eq!(
+      interpret(
+        "Cases[ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 1}, \
+         Mesh -> 0][[1]], _Line, Infinity]"
+      )
+      .unwrap(),
+      "{}"
+    );
+  }
+
+  #[test]
   fn returns_graphics3d() {
     clear_state();
     let result =
