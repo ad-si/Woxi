@@ -17464,6 +17464,33 @@ mod line_legend {
     );
     assert_eq!(svg.matches("<line ").count(), 2);
   }
+
+  #[test]
+  fn line_legend_in_plot_label_renders_inline() {
+    clear_state();
+    // A `PlotLabel`/`AxesLabel` is drawn as an SVG `<text>` element, which
+    // (unlike a `Grid`/`Row` cell) can only hold inline content like
+    // `tspan` — it can't embed the standalone legend's own nested `<svg>`
+    // line sample. A Demonstration pairing a plot with an inline legend
+    // via `PlotLabel -> Column[{…, LineLegend[…]}]` must still typeset the
+    // legend (colored glyph + label) instead of leaking the call's raw,
+    // width-overflowing arguments as literal text.
+    let svg = export_svg(
+      "Graphics[{Red, Disk[]}, PlotLabel -> \
+       Column[{\"caption\", LineLegend[{Red, Blue}, {\"up\", \"down\"}]}]]",
+    );
+    assert!(
+      !svg.contains("LineLegend[") && !svg.contains("RGBColor"),
+      "Should typeset as a legend, not leak the raw call: {svg}"
+    );
+    assert!(svg.contains("caption"));
+    assert!(svg.contains("up") && svg.contains("down"));
+    assert!(
+      svg.contains("fill=\"rgb(255,0,0)\"")
+        && svg.contains("fill=\"rgb(0,0,255)\""),
+      "Each entry's glyph should carry its own legend color: {svg}"
+    );
+  }
 }
 
 // A bare `SwatchLegend[…]` (not wrapped in `Legended`) is the color-swatch

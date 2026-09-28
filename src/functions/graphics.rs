@@ -10810,6 +10810,51 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
         // `Rotate[…]` FullForm text every other unhandled head prints.
         "Rotate" if !args.is_empty() => expr_to_svg_markup(&args[0]),
 
+        // LineLegend[{styles…}, {labels…}] / SwatchLegend[{colors…},
+        // {labels…}] nested inside a Column/Row that ends up as a
+        // `PlotLabel`/`AxesLabel` (a plain SVG `<text>` element) can't
+        // hold the standalone legend's own nested `<svg>` sample (see
+        // `line_legend_svg`/`swatch_legend_svg`) — `<text>` only accepts
+        // inline content like `tspan`. Approximate each entry inline
+        // instead: a colored glyph (a stroke or a filled square, in the
+        // same color the full legend graphic would draw) followed by its
+        // label.
+        "LineLegend" | "SwatchLegend"
+          if args.len() >= 2
+            && matches!(&args[0], Expr::List(l) if !l.is_empty())
+            && matches!(&args[1], Expr::List(l) if !l.is_empty()) =>
+        {
+          let Expr::List(style_specs) = &args[0] else { unreachable!() };
+          let Expr::List(labels) = &args[1] else { unreachable!() };
+          let glyph =
+            if name == "SwatchLegend" { "\u{25A0}" } else { "\u{2501}" };
+          let mut out = String::new();
+          for (i, (spec, label)) in
+            style_specs.iter().zip(labels.iter()).enumerate()
+          {
+            if i > 0 {
+              out.push_str("<tspan dx=\"12\"> </tspan>");
+            }
+            let mut style = StyleState::default();
+            match spec {
+              Expr::List(directives) => {
+                for d in directives {
+                  apply_directive(d, &mut style);
+                }
+              }
+              other => {
+                apply_directive(other, &mut style);
+              }
+            }
+            out.push_str(&format!(
+              "<tspan fill=\"{}\">{glyph}</tspan> {}",
+              style.color.to_svg_rgb(),
+              expr_to_svg_markup(label)
+            ));
+          }
+          out
+        }
+
         // Row[{a, b, …}] concatenates its parts; Row[{…}, sep] joins
         // them with the separator. A `Spacer[n]` gap — as a bare item or
         // as the separator — is carried as a `dx` on the *next* rendered
