@@ -6884,12 +6884,9 @@ mod cases {
   /// body holding `Text[TraditionalForm[a == b]]` overwrote `a`).
   #[test]
   fn traditional_form_equation_round_trips_as_equal() {
-    assert_eq!(
-      interpret(
-        "ToExpression[ToString[TraditionalForm[a == b], InputForm], InputForm, Hold]"
-      )
-      .unwrap(),
-      "Hold[a == b]"
+    assert_case(
+      r#"ToExpression[ToString[TraditionalForm[a == b], InputForm], InputForm, Hold]"#,
+      "Hold[a == b]",
     );
   }
 
