@@ -82,6 +82,10 @@ pub struct Dwd {
   pub basis_override: Option<Vec<Vec<u8>>>,
   pub threshold_values: Option<Expr>,
   pub dims: Vec<usize>,
+  /// The transform was taken of an `Image`: coefficients are exposed to
+  /// `WaveletMapIndexed` as images and `InverseWaveletTransform` yields an
+  /// image, as in the Wolfram Language.
+  pub image: bool,
 }
 
 impl Dwd {
@@ -147,6 +151,12 @@ impl Dwd {
         replacement: Box::new(tv.clone()),
       });
     }
+    if self.image {
+      extras.push(Expr::Rule {
+        pattern: Box::new(Expr::String("ImageData".into())),
+        replacement: Box::new(Expr::Identifier("True".into())),
+      });
+    }
     let name = Expr::String(self.kind.name().to_string());
     let wtrans = if extras.is_empty() {
       name
@@ -187,7 +197,7 @@ impl Dwd {
       rules.push((expr_to_wind(pattern)?, replacement.as_ref().clone()));
     }
     let wavelet = args[1].clone();
-    let (kind, padding, basis_override, threshold_values) =
+    let (kind, padding, basis_override, threshold_values, image) =
       parse_wtrans(&args[2])?;
     let dims: Vec<usize> = if args.len() == 4 {
       let Expr::List(ds) = &args[3] else {
@@ -216,17 +226,23 @@ impl Dwd {
       basis_override,
       threshold_values,
       dims,
+      image,
     })
   }
 }
 
 fn parse_wtrans(
   e: &Expr,
-) -> Option<(TransformKind, Padding, Option<Vec<Vec<u8>>>, Option<Expr>)> {
+) -> Option<(
+  TransformKind,
+  Padding,
+  Option<Vec<Vec<u8>>>,
+  Option<Expr>,
+  bool,
+)> {
   match e {
-    Expr::String(s) => {
-      TransformKind::from_name(s).map(|k| (k, Padding::Periodic, None, None))
-    }
+    Expr::String(s) => TransformKind::from_name(s)
+      .map(|k| (k, Padding::Periodic, None, None, false)),
     Expr::List(items) if !items.is_empty() => {
       let Expr::String(s) = &items[0] else {
         return None;
@@ -235,6 +251,7 @@ fn parse_wtrans(
       let mut padding = Padding::Periodic;
       let mut basis = None;
       let mut thresh = None;
+      let mut image = false;
       for item in items.iter().skip(1) {
         let Expr::Rule {
           pattern,
@@ -256,11 +273,12 @@ fn parse_wtrans(
               }
             }
             "ThresholdValues" => thresh = Some(replacement.as_ref().clone()),
+            "ImageData" => image = true,
             _ => {}
           }
         }
       }
-      Some((kind, padding, basis, thresh))
+      Some((kind, padding, basis, thresh, image))
     }
     _ => None,
   }
@@ -441,6 +459,23 @@ fn parse_data(e: &Expr) -> Option<DataArg> {
   None
 }
 
+/// The pixel matrix (`ImageData`) of a single-channel image; `None` for
+/// anything else.
+fn image_to_matrix(e: &Expr) -> Option<Expr> {
+  match e {
+    Expr::Image { channels: 1, .. } => {
+      crate::functions::image_ast::image_data_ast(std::slice::from_ref(e)).ok()
+    }
+    _ => None,
+  }
+}
+
+/// The image whose pixel matrix is `m`.
+fn matrix_to_image(m: &Expr) -> Expr {
+  crate::functions::image_ast::image_constructor_ast(std::slice::from_ref(m))
+    .unwrap_or_else(|_| call("Image", vec![m.clone()]))
+}
+
 /// Shared driver for the five forward transforms.
 pub fn wavelet_transform_ast(
   kind: TransformKind,
@@ -490,7 +525,10 @@ pub fn wavelet_transform_ast(
     ));
     return Ok(unevaluated(fname, args));
   }
-  let Some(data) = parse_data(positional[0]) else {
+  let image_matrix = image_to_matrix(positional[0]);
+  let is_image = image_matrix.is_some();
+  let Some(data) = parse_data(image_matrix.as_ref().unwrap_or(positional[0]))
+  else {
     crate::emit_message(&format!(
       "{fname}::invdata: The data {} is not a rectangular array of numbers of rank 1 or 2.",
       expr_to_string(positional[0])
@@ -593,6 +631,7 @@ pub fn wavelet_transform_ast(
   };
 
   let dwd = Dwd {
+    image: is_image,
     rules,
     wavelet: wavelet_expr,
     kind,
@@ -727,7 +766,12 @@ pub fn inverse_wavelet_transform_ast(
     dwd.refinement(),
     &dwd.padding,
   );
-  Ok(result.to_expr())
+  let result = result.to_expr();
+  Ok(if dwd.image {
+    matrix_to_image(&result)
+  } else {
+    result
+  })
 }
 
 /// Collapse the deepest levels of the tree: reconstruct the node {0,…,0} at
@@ -786,6 +830,7 @@ fn partial_inverse(
   }
   new_rules.sort_by(|a, b| (a.0.len(), &a.0).cmp(&(b.0.len(), &b.0)));
   let new_dwd = Dwd {
+    image: dwd.image,
     rules: new_rules,
     wavelet: dwd.wavelet.clone(),
     kind: dwd.kind,
@@ -1045,11 +1090,19 @@ pub fn apply_dwd(func: &Expr, args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut out: Vec<Expr> = Vec::new();
   for w in &winds {
     let Some(coef) = dwd.coef(w) else { continue };
+    let coef_value = || {
+      if dwd.image {
+        matrix_to_image(coef)
+      } else {
+        coef.clone()
+      }
+    };
     let value = match form {
-      "Values" => coef.clone(),
+      "Values" => coef_value(),
       "Inverse" => {
         // Inverse transform of this coefficient alone.
         let sub = Dwd {
+          image: dwd.image,
           rules: vec![(w.clone(), coef.clone())],
           wavelet: dwd.wavelet.clone(),
           kind: dwd.kind,
@@ -1061,7 +1114,7 @@ pub fn apply_dwd(func: &Expr, args: &[Expr]) -> Result<Expr, InterpreterError> {
         let iargs = vec![sub.to_expr(), id_expr("Automatic"), wind_to_expr(w)];
         inverse_wavelet_transform_ast(&iargs)?
       }
-      _ => coef.clone(),
+      _ => coef_value(),
     };
     if form == "Rules" {
       out.push(Expr::Rule {
@@ -1467,6 +1520,7 @@ pub fn wavelet_threshold_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let new_dwd = Dwd {
+    image: dwd.image,
     rules: new_rules,
     wavelet: dwd.wavelet.clone(),
     kind: dwd.kind,
@@ -1519,13 +1573,20 @@ pub fn wavelet_map_indexed_ast(
         continue;
       };
       let coef = new_rules[pos].1.clone();
+      let coef = if dwd.image {
+        matrix_to_image(&coef)
+      } else {
+        coef
+      };
       let mapped = crate::evaluator::function_application::apply_curried_call(
         f,
         &[coef, wind_to_expr(w)],
       )?;
-      new_rules[pos].1 = mapped;
+      // An image-valued result is stored back as its pixel matrix.
+      new_rules[pos].1 = image_to_matrix(&mapped).unwrap_or(mapped);
     }
     let new_dwd = Dwd {
+      image: dwd.image,
       rules: new_rules,
       wavelet: dwd.wavelet.clone(),
       kind: dwd.kind,
@@ -1701,6 +1762,7 @@ pub fn wavelet_best_basis_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   basis.sort();
 
   let new_dwd = Dwd {
+    image: dwd.image,
     rules: dwd.rules.clone(),
     wavelet: dwd.wavelet.clone(),
     kind: dwd.kind,
