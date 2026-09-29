@@ -7780,10 +7780,10 @@ thread_local! {
 /// as `pub` while `P`` is on `$ContextPath`, and under its full name once it
 /// is not. Renderers re-enter each other, so the rewrite runs once, at the
 /// outermost call, and the inner ones format what it produced.
-pub(crate) fn with_display_names(
+pub(crate) fn with_display_names<T>(
   expr: &Expr,
-  render: impl FnOnce(&Expr) -> String,
-) -> String {
+  render: impl FnOnce(&Expr) -> T,
+) -> T {
   if !crate::evaluator::contexts::contexts_active()
     || DISPLAY_PASS.with(std::cell::Cell::get)
   {
@@ -15481,6 +15481,14 @@ fn expr_to_textbox(expr: &Expr) -> TextBox {
     Expr::String(s) => TextBox::atom(s),
     Expr::Identifier(s) | Expr::Constant(s) => TextBox::atom(s),
     Expr::Raw(s) => TextBox::atom(s),
+    // `HoldForm` is invisible in 2D OutputForm at any depth:
+    // `ToString[OutputForm[Hold[HoldForm[1/3]]]]` sets `Hold[1/3]` as a
+    // fraction without the wrapper.
+    Expr::FunctionCall { name, args }
+      if name == "HoldForm" && args.len() == 1 =>
+    {
+      expr_to_textbox(&args[0])
+    }
     // `Definition[sym]` / `FullDefinition[sym]` print as the definition text.
     Expr::FunctionCall { name, args }
       if (name == "Definition" || name == "FullDefinition")
@@ -16387,12 +16395,44 @@ pub fn format_message_with_expr(
   expr: &Expr,
   suffix: &str,
 ) -> String {
-  TextBox::hconcat(&[
-    TextBox::atom(prefix),
-    expr_to_textbox(expr),
-    TextBox::atom(suffix),
+  format_message_pieces(&[
+    MessagePiece::Text(prefix.to_string()),
+    MessagePiece::Expr(expr),
+    MessagePiece::Text(suffix.to_string()),
   ])
-  .to_string()
+}
+
+/// A run of message text or an expression embedded in it.
+pub enum MessagePiece<'a> {
+  Text(String),
+  Expr(&'a Expr),
+}
+
+/// Lay out a message from text runs and expressions, each expression in 2D
+/// OutputForm and everything aligned on the text's baseline — the general
+/// form of [`format_message_with_expr`]. Text spanning several lines has no
+/// baseline to align on, so such a message keeps its expressions flat.
+pub fn format_message_pieces(pieces: &[MessagePiece]) -> String {
+  let multiline_text = pieces
+    .iter()
+    .any(|p| matches!(p, MessagePiece::Text(t) if t.contains('\n')));
+  if multiline_text {
+    return pieces
+      .iter()
+      .map(|p| match p {
+        MessagePiece::Text(t) => t.clone(),
+        MessagePiece::Expr(e) => expr_to_output(e),
+      })
+      .collect();
+  }
+  let boxes: Vec<TextBox> = pieces
+    .iter()
+    .map(|p| match p {
+      MessagePiece::Text(t) => TextBox::atom(t),
+      MessagePiece::Expr(e) => with_display_names(e, expr_to_textbox),
+    })
+    .collect();
+  TextBox::hconcat(&boxes).to_string()
 }
 
 /// Convert a string containing Wolfram box-syntax Unicode markers to the

@@ -2358,7 +2358,7 @@ mod exact_roots {
   /// is not an error.
   #[test]
   fn non_integer_degrees_are_rejected() {
-    for code in ["Surd[8, 1/2]", "Surd[8, 2.]", "Surd[2, 2.]"] {
+    for code in ["Surd[8, 2.]", "Surd[2, 2.]"] {
       let r = interpret_with_stdout(code).unwrap();
       assert_eq!(r.result, code, "for {code}");
       assert!(
@@ -2369,6 +2369,19 @@ mod exact_roots {
         r.warnings
       );
     }
+    // The message quotes the call in 2D OutputForm, so a rational degree
+    // is set as a fraction around the message line, as in wolframscript.
+    let r = interpret_with_stdout("Surd[8, 1/2]").unwrap();
+    assert_eq!(r.result, "Surd[8, 1/2]");
+    let pad = " ".repeat(53);
+    let expected = format!(
+      "{pad}1\nSurd::int: Integer expected at position 2 in Surd[8, -].\n{pad}2"
+    );
+    assert!(
+      r.warnings.iter().any(|w| w.contains(&expected)),
+      "expected {expected:?}, got {:?}",
+      r.warnings
+    );
     let r = interpret_with_stdout("Surd[8, n]").unwrap();
     assert_eq!(r.result, "Surd[8, n]");
     assert!(r.warnings.is_empty(), "{:?}", r.warnings);

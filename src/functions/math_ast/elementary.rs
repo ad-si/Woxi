@@ -1506,12 +1506,10 @@ pub fn surd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // number yet (`Surd[8, n]`) is not an error, so it stays quiet.
   let Expr::Integer(n) = degree else {
     if expr_to_num(degree).is_some() {
-      crate::emit_message(&format!(
-        "Surd::int: Integer expected at position 2 in {}.",
-        crate::syntax::format_expr(
-          &unevaluated("Surd", args),
-          crate::syntax::ExprForm::Output
-        )
+      crate::emit_message(&crate::syntax::format_message_with_expr(
+        "Surd::int: Integer expected at position 2 in ",
+        &unevaluated("Surd", args),
+        ".",
       ));
     }
     return Ok(unevaluated("Surd", args));

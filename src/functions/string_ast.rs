@@ -6,7 +6,7 @@ use super::*;
 use crate::functions::regex_engine::{
   Captures, Error as RegexError, WoxiRegex,
 };
-use crate::syntax::pair_to_expr;
+use crate::syntax::{MessagePiece, pair_to_expr};
 use num_bigint::Sign;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -9399,11 +9399,19 @@ pub(crate) fn format_string_form(template: &str, values: &[Expr]) -> String {
 /// A slot with no argument to fill it stays literal *and stays quiet*: the
 /// message being reported is the news, and `StringForm::sfr` on top of it
 /// would only describe the template.
+///
+/// Each value is laid out in 2D OutputForm, as wolframscript prints message
+/// arguments: `Message[f::x, 1/2]` sets the fraction's numerator and
+/// denominator above and below the message line.
+/// `prefix` (the `sym::tag: ` head) is laid out on the same baseline.
 pub(crate) fn format_message_template(
+  prefix: &str,
   template: &str,
   values: &[Expr],
 ) -> String {
-  format_slots(template, values, expr_to_output, false)
+  let mut pieces = vec![MessagePiece::Text(prefix.to_string())];
+  pieces.extend(slot_pieces(template, values, false));
+  crate::syntax::format_message_pieces(&pieces)
 }
 
 /// `format_string_form`, rendering each substituted value with `fmt` instead
@@ -9427,7 +9435,27 @@ fn format_slots(
   fmt: impl Fn(&Expr) -> String,
   warn: bool,
 ) -> String {
+  slot_pieces(template, values, warn)
+    .iter()
+    .map(|piece| match piece {
+      MessagePiece::Text(t) => t.clone(),
+      MessagePiece::Expr(e) => fmt(e),
+    })
+    .collect()
+}
+
+/// Split a template into its literal text and the values its slots pick.
+fn slot_pieces<'a>(
+  template: &str,
+  values: &'a [Expr],
+  warn: bool,
+) -> Vec<MessagePiece<'a>> {
+  let mut pieces: Vec<MessagePiece<'a>> = Vec::new();
   let mut result = String::new();
+  let mut push_value = |result: &mut String, value: &'a Expr| {
+    pieces.push(MessagePiece::Text(std::mem::take(result)));
+    pieces.push(MessagePiece::Expr(value));
+  };
   let chars: Vec<char> = template.chars().collect();
   let len = chars.len();
   let mut i = 0;
@@ -9441,7 +9469,7 @@ fn format_slots(
       if i + 1 < len && chars[i + 1] == '`' {
         let idx = last_index + 1;
         if idx >= 1 && (idx as usize) <= values.len() {
-          result.push_str(&fmt(&values[(idx - 1) as usize]));
+          push_value(&mut result, &values[(idx - 1) as usize]);
         } else {
           // Out of range — keep the `` literal and warn.
           result.push('`');
@@ -9479,7 +9507,7 @@ fn format_slots(
           .unwrap_or(0);
         if signed >= 1 && (signed as usize) <= values.len() {
           let idx = signed as usize;
-          result.push_str(&fmt(&values[idx - 1]));
+          push_value(&mut result, &values[idx - 1]);
         } else {
           // Out of range — keep the `n` placeholder literal and warn.
           result.push('`');
@@ -9505,7 +9533,8 @@ fn format_slots(
     result.push(chars[i]);
     i += 1;
   }
-  result
+  pieces.push(MessagePiece::Text(result));
+  pieces
 }
 
 /// Apply a `StringTemplate[template]` to arguments, filling its slots:

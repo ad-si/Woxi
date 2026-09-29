@@ -116,7 +116,8 @@ renderer would move a great many snapshots at once, so fractions and powers are
 still 1D.
 
 Consequences elsewhere: `ToString[-48/2033]`, `ToString[-10/3]`,
-`ToString[1.5*^10]` and 2D rationals inside message text all print flat.
+`ToString[1.5*^10]` and 2D rationals inside most built-in message text
+all print flat (see "Message repetition and 2D layouts").
 
 ### `NumberForm` does not switch to scientific notation
 
@@ -3143,9 +3144,12 @@ but does not emit `$GeoLocation::dloff` or the per-function `Fn::geoloc`.
   two unit names appear in an order that is not input order
   (`Kilograms + Meters` → "Meters and Kilograms"). Woxi quotes them and emits
   once.
-- Messages that embed a fraction are rendered as 2D layouts by wolframscript
-  and 1D by Woxi. This is systemic across the distribution and `Select::normal`
-  message families.
+- Messages that embed a fraction are rendered as 2D layouts by wolframscript.
+  Woxi does the same for user `Message[sym::tag, args]` templates and for
+  built-in messages composed with `syntax::format_message_with_expr` /
+  `format_message_pieces` (`Select::normal`, `Surd::int`); built-in messages
+  assembled with a flat `format!` (e.g. the distribution family, `Take::seqs`)
+  still print 1D.
 - Message **multiplicity** in general is not comparable: wolframscript
   re-evaluates a failing specification, so it prints some messages twice, and
   applies `General::stop` after three identical ones.

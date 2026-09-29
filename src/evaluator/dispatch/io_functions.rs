@@ -1147,7 +1147,8 @@ pub fn dispatch_io_functions(
         // slots outnumber its arguments keeps them literal, and unlike
         // `StringForm` says nothing about it: the message being reported is
         // the news, not the shape of its template.
-        let filled = crate::functions::string_ast::format_message_template(
+        let message = crate::functions::string_ast::format_message_template(
+          &format!("{sym_name}::{tag}: "),
           &text,
           &args[1..],
         );
@@ -1155,7 +1156,7 @@ pub fn dispatch_io_functions(
         // reacts to user messages), respects Quiet/Off, participates in
         // General::stop suppression, and reaches the same stream as
         // built-in messages.
-        crate::emit_message(&format!("{sym_name}::{tag}: {filled}"));
+        crate::emit_message(&message);
         return Some(Ok(null_expr()));
       }
     }
