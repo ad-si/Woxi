@@ -1894,6 +1894,12 @@ pub(crate) struct PlotOptions {
   pub plot_label: Option<StyledLabel>,
   pub axes_label: Option<(String, String)>,
   pub plot_style: Vec<SeriesStyle>,
+  /// `ColorFunction -> f`: colors the curve along its length by `f[x]` (or
+  /// `f[x, y]` for a two-parameter function) instead of by `PlotStyle`.
+  pub color_function: Option<Expr>,
+  /// `ColorFunctionScaling`: whether `f` receives coordinates rescaled to
+  /// 0..1 over the plot range (the default) or the raw values.
+  pub color_function_scaling: bool,
   /// Per-axis visibility: (x_axis, y_axis). Both true = default.
   pub axes: (bool, bool),
   /// Ticks option: true = show tick marks and labels (default), false = hide
@@ -2051,6 +2057,8 @@ impl Default for PlotOptions {
       plot_label: None,
       axes_label: None,
       plot_style: Vec::new(),
+      color_function: None,
+      color_function_scaling: true,
       axes: (true, true),
       ticks: true,
       plot_points: NUM_SAMPLES,
@@ -3396,6 +3404,25 @@ fn generate_svg_with_options(
                   }
                 }
               }
+            } else if let Some(cf) = &opts.color_function {
+              for segment in &segments {
+                for (run_color, run) in color_function_runs(
+                  segment,
+                  cf,
+                  opts.color_function_scaling,
+                  (x_min, x_max, y_min, y_max),
+                ) {
+                  chart
+                    .draw_series(LineSeries::new(
+                      run,
+                      RGBColor(run_color.0, run_color.1, run_color.2)
+                        .stroke_width(stroke_w),
+                    ))
+                    .map_err(|e| {
+                      InterpreterError::EvaluationError(format!("Plot: {e}"))
+                    })?;
+                }
+              }
             } else {
               for segment in &segments {
                 chart
@@ -4054,6 +4081,79 @@ pub(crate) fn collapse_style_for_single_series(
 }
 
 /// Get the (r, g, b) color for a series, using custom plot_style if available.
+/// The color `ColorFunction -> cf` assigns at `(x, y)`, or `None` when `cf`
+/// does not evaluate to a color. A two-parameter function receives `x` and
+/// `y`; anything else just `x`. With scaling on, both are first rescaled to
+/// 0..1 over the plot range.
+fn color_function_rgb(
+  cf: &Expr,
+  scaling: bool,
+  (x, y): (f64, f64),
+  (x_min, x_max, y_min, y_max): (f64, f64, f64, f64),
+) -> Option<(u8, u8, u8)> {
+  let scale = |v: f64, lo: f64, hi: f64| {
+    if hi > lo { (v - lo) / (hi - lo) } else { 0.0 }
+  };
+  let (ax, ay) = if scaling {
+    (scale(x, x_min, x_max), scale(y, y_min, y_max))
+  } else {
+    (x, y)
+  };
+  if let Some(name) =
+    crate::functions::field_plot::color_function_scheme_name(cf)
+  {
+    return Some(crate::functions::field_plot::apply_named_color_function(
+      &name,
+      scale(x, x_min, x_max),
+    ));
+  }
+  let mut args = vec![Expr::Real(ax)];
+  let two_params = match cf {
+    Expr::NamedFunction { params, .. } => params.len() >= 2,
+    Expr::FunctionCall { name, args } if name == "Function" => {
+      matches!(args.first(), Some(Expr::List(ps)) if ps.len() >= 2)
+    }
+    _ => false,
+  };
+  if two_params {
+    args.push(Expr::Real(ay));
+  }
+  let call = Expr::CurriedCall {
+    func: Box::new(cf.clone()),
+    args,
+  };
+  let c = evaluate_expr_to_expr(&call)
+    .ok()
+    .and_then(|r| parse_color(&r))?;
+  let ch = |v: f64| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+  Some((ch(c.r), ch(c.g), ch(c.b)))
+}
+
+/// Split a curve segment into maximal runs of consecutive points whose
+/// `ColorFunction` color agrees. Each run is colored by the function at the
+/// midpoint of every step, and consecutive runs share their boundary point
+/// so the curve stays connected.
+fn color_function_runs(
+  segment: &[(f64, f64)],
+  cf: &Expr,
+  scaling: bool,
+  ranges: (f64, f64, f64, f64),
+) -> Vec<((u8, u8, u8), Vec<(f64, f64)>)> {
+  let mut runs: Vec<((u8, u8, u8), Vec<(f64, f64)>)> = Vec::new();
+  for pair in segment.windows(2) {
+    let mid = (
+      f64::midpoint(pair[0].0, pair[1].0),
+      f64::midpoint(pair[0].1, pair[1].1),
+    );
+    let c = color_function_rgb(cf, scaling, mid, ranges).unwrap_or((0, 0, 0));
+    match runs.last_mut() {
+      Some((last, pts)) if *last == c => pts.push(pair[1]),
+      _ => runs.push((c, vec![pair[0], pair[1]])),
+    }
+  }
+  runs
+}
+
 fn series_color(plot_style: &[SeriesStyle], idx: usize) -> (u8, u8, u8) {
   if plot_style.is_empty() {
     PLOT_COLORS[idx % PLOT_COLORS.len()]
@@ -8666,6 +8766,16 @@ pub(crate) fn apply_common_plot_option(
     }
     "PlotStyle" => {
       plot_opts.plot_style = parse_plot_style(replacement);
+    }
+    "ColorFunction" => {
+      plot_opts.color_function = match replacement {
+        Expr::Identifier(v) if v == "Automatic" || v == "None" => None,
+        other => Some(other.clone()),
+      };
+    }
+    "ColorFunctionScaling" => {
+      plot_opts.color_function_scaling =
+        !matches!(replacement, Expr::Identifier(v) if v == "False");
     }
     "PlotTheme" => {
       if let Expr::String(theme) = replacement {
