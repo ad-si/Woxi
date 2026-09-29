@@ -4818,6 +4818,26 @@ mod nintegrate {
     assert_approx("NIntegrate[x^2, {x, 0, 1}]", 1.0 / 3.0, 1e-10);
   }
 
+  // A list-valued integrand is integrated component-wise (previously it
+  // collapsed to `0.`).
+  #[test]
+  fn nintegrate_list_integrand() {
+    let result = interpret("NIntegrate[{x, 2 x, 3}, {x, 0, 1}]").unwrap();
+    let parts: Vec<f64> = result
+      .trim_matches(|c| c == '{' || c == '}')
+      .split(',')
+      .map(|p| p.trim().parse().unwrap())
+      .collect();
+    assert_eq!(parts.len(), 3);
+    for (got, want) in parts.iter().zip([0.5, 1.0, 3.0]) {
+      assert!((got - want).abs() < 1e-8, "{result}");
+    }
+    assert_eq!(
+      interpret("Length[NIntegrate[{x, x^2}, {x, 0, 1}]]").unwrap(),
+      "2"
+    );
+  }
+
   // Iterated (multi-dimensional) integration: additional ranges are inner
   // integration variables, not ignored. Verified against wolframscript.
   #[test]

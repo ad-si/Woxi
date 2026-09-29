@@ -15626,6 +15626,17 @@ fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // A list-valued integrand is integrated component-wise.
+  if let Expr::List(items) = &args[0] {
+    let mut results = Vec::with_capacity(items.len());
+    for item in items {
+      let mut sub_args = args.to_vec();
+      sub_args[0] = item.clone();
+      results.push(nintegrate_ast_impl(&sub_args)?);
+    }
+    return Ok(Expr::List(results.into()));
+  }
+
   // Parse options from additional arguments (Tolerance, Method, MaxRecursion, etc.)
   let mut tolerance = 1e-10_f64;
   let mut max_recursion = 50_u32;
