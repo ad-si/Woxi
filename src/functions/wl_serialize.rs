@@ -304,9 +304,11 @@ fn read_int16_array(data: &[u8], pos: &mut usize) -> Option<Expr> {
   if end > data.len() {
     return None;
   }
-  let vals: Vec<Expr> = data[*pos..end]
-    .chunks_exact(2)
-    .map(|b| Expr::Integer(i16::from_le_bytes([b[0], b[1]]) as i128))
+  let vals: Vec<Expr> = (0..count)
+    .map(|i| {
+      let at = *pos + 2 * i;
+      Expr::Integer(i16::from_le_bytes([data[at], data[at + 1]]) as i128)
+    })
     .collect();
   *pos = end;
   Some(nest(&dims, &mut vals.into_iter()))
