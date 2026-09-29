@@ -4524,3 +4524,12 @@ only for that one case.
 types) and `SocketOpen`'s `"ZMQ_STREAM"`-family options are not implemented:
 anything that is not TCP leaves the call unevaluated. `Sockets["TCP"]` is
 accepted and is the same as `Sockets[]`.
+
+### `Together[…, Modulus -> p]` only handles univariate rational functions
+
+```sh
+woxi eval 'Together[1/x + 1/y, Modulus -> 3]'   # stays unevaluated
+```
+
+The modular path cancels over GF(p) with univariate polynomial arithmetic,
+so a multivariate fraction (or a composite modulus) is returned unevaluated.
