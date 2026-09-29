@@ -210,7 +210,7 @@ impl ControlState {
         if *is_real {
           format_f64_real(*current)
         } else {
-          format_f64(*current)
+          woxi::functions::graphics::format_f64_exact(*current)
         }
       }
       ControlState::Trigger { current, .. } => format_f64(*current),

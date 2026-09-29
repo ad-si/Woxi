@@ -25389,7 +25389,7 @@ pub fn manipulate_initial_bindings(
         if *is_real {
           format_f64_real(*initial)
         } else {
-          format_f64_input(*initial)
+          format_f64_exact(*initial)
         },
       )),
       ManipulateControl::Trigger { name, initial, .. } => {
@@ -25458,6 +25458,40 @@ fn format_f64_input(v: f64) -> String {
   } else {
     format!("{v}")
   }
+}
+
+/// Format an f64 as an exact InputForm literal: a whole number stays an
+/// integer and a fraction with a small denominator (`1.5`, `0.16666666666666666`)
+/// becomes the rational `3/2` / `1/6`. A continuous control whose spec is all
+/// exact (`{b, 3/2, -5, 5, 1/6}`) binds exact values in Wolfram, and a body
+/// doing exact arithmetic on them (`GCD`, `Sqrt`, `IntegerQ`) depends on it.
+/// A value with no small-denominator form falls back to the decimal literal.
+pub fn format_f64_exact(v: f64) -> String {
+  if !v.is_finite() || v.fract() == 0.0 || v.abs() >= 1e9 {
+    return format_f64_input(v);
+  }
+  let (mut h0, mut h1) = (0i64, 1i64);
+  let (mut k0, mut k1) = (1i64, 0i64);
+  let mut x = v.abs();
+  for _ in 0..20 {
+    let a = x.floor();
+    let ai = a as i64;
+    let (h2, k2) = (ai * h1 + h0, ai * k1 + k0);
+    if k2 > 10_000 {
+      break;
+    }
+    (h0, h1, k0, k1) = (h1, h2, k1, k2);
+    if (v.abs() - h1 as f64 / k1 as f64).abs() <= 1e-9 * v.abs() {
+      let sign = if v < 0.0 { "-" } else { "" };
+      return format!("{sign}{h1}/{k1}");
+    }
+    let frac = x - a;
+    if frac < 1e-12 {
+      break;
+    }
+    x = 1.0 / frac;
+  }
+  format_f64_input(v)
 }
 
 /// Format a list of 2D points as Wolfram input code, e.g.
@@ -28783,6 +28817,31 @@ mod manipulate_hidden_state_var_tests {
     assert_eq!(
       spec.state,
       vec![("accum".to_string(), "Thickness[0.01]".to_string())]
+    );
+  }
+}
+
+#[cfg(test)]
+mod format_f64_exact_tests {
+  use super::format_f64_exact;
+
+  #[test]
+  fn fractions_become_exact_rationals() {
+    assert_eq!(format_f64_exact(1.5), "3/2");
+    assert_eq!(format_f64_exact(-5.0 + 37.0 / 6.0), "7/6");
+    assert_eq!(format_f64_exact(-1.0 / 6.0), "-1/6");
+    assert_eq!(format_f64_exact(0.1), "1/10");
+  }
+
+  #[test]
+  fn integers_and_irrationals_keep_plain_form() {
+    assert_eq!(format_f64_exact(4.0), "4");
+    assert_eq!(format_f64_exact(-3.0), "-3");
+    // A tiny value must not collapse to `0/1`.
+    assert_eq!(format_f64_exact(1e-9), format!("{}", 1e-9));
+    assert_eq!(
+      format_f64_exact(std::f64::consts::PI),
+      format!("{}", std::f64::consts::PI)
     );
   }
 }
