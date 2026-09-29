@@ -969,6 +969,17 @@ fn extract_typeset_box(s: &str) -> Option<String> {
         {
           let inner = &raw_meaning[1..raw_meaning.len() - 1];
           format!("\"{}\"", escape_string(&unescape_string(inner)))
+        } else if let Some(items) = braced_list_items(raw_meaning) {
+          // Likewise a braced list is a list *value* (an iconized
+          // `{Graphics[…], …}`), not a row of boxes to concatenate — which
+          // would fuse the items into a product.
+          let items: Vec<String> = items
+            .into_iter()
+            .map(|item| {
+              extract_cell_content(&format!("InterpretationBox[x, {item}]"))
+            })
+            .collect();
+          format!("{{{}}}", items.join(", "))
         } else {
           strip_display_form_wrapper(&conv(&args[1]))
         }
@@ -7087,6 +7098,31 @@ Cell[BoxData[
     match &parsed.cells[0] {
       CellEntry::Single(cell) => {
         assert_eq!(cell.content, "Quantity[3, \"Meters\"]");
+      }
+      CellEntry::Group(_) => panic!("Expected single cell"),
+    }
+  }
+
+  /// An iconized list (`Iconize[{a, b, c}]`) is stored as an
+  /// `InterpretationBox` whose meaning is the plain `{a, b, c}` list value.
+  /// It must stay a list rather than being read as a row of boxes, which
+  /// would fuse the items into a product.
+  #[test]
+  fn test_interpretation_box_list_meaning_stays_a_list() {
+    let nb = r#"Notebook[{
+Cell[BoxData[
+ RowBox[{"Length", "[",
+  InterpretationBox[
+   DynamicModuleBox[{Typeset`open = False}, "placeholder"],
+   {Graphics[{Circle[{0, 0}, 1]}], {1, 2}, "s"}], "]"}]], "Input"]
+}]"#;
+    let parsed = parse_notebook(nb).unwrap();
+    match &parsed.cells[0] {
+      CellEntry::Single(cell) => {
+        assert_eq!(
+          cell.content,
+          "Length[{Graphics[{Circle[{0, 0}, 1]}], {1, 2}, \"s\"}]"
+        );
       }
       CellEntry::Group(_) => panic!("Expected single cell"),
     }
