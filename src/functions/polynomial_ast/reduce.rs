@@ -3053,13 +3053,11 @@ fn normalize_solution_branches(expr: &Expr, vars: &[String]) -> Expr {
     let mut keyed: Vec<(usize, Expr)> = conj
       .drain(..)
       .map(|lit| {
-        let idx = match extract_comparison(&lit) {
-          Some((lhs, _, CompOp::Equal)) => match &lhs {
-            Expr::Identifier(v) => {
-              vars.iter().position(|w| w == v).unwrap_or(vars.len())
-            }
-            _ => vars.len(),
-          },
+        let comparison = extract_comparison(&lit);
+        let idx = match comparison.as_ref() {
+          Some((Expr::Identifier(v), _, CompOp::Equal)) => {
+            vars.iter().position(|w| w == v).unwrap_or(vars.len())
+          }
           _ => vars.len(),
         };
         (idx, lit)
