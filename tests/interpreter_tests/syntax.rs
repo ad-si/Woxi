@@ -11995,6 +11995,15 @@ mod empty_statements {
     assert_eq!(interpret("c = 4; ; c + 1").unwrap(), "5");
   }
 
+  /// A commented-out unit note after the last statement (`x = 0.039; (*
+  /// %/sec *);`) leaves empty statements after the final `;`.
+  #[test]
+  fn empty_statements_after_the_final_semicolon_are_ignored() {
+    assert_eq!(interpret("c = 4; (* note *);").unwrap(), "\0");
+    assert_eq!(interpret("c = 4; ;").unwrap(), "\0");
+    assert_eq!(interpret("c = 4; (* a *); (* b *); c + 1").unwrap(), "5");
+  }
+
   /// `;;` is still a `Span`, not two separators.
   #[test]
   fn a_double_semicolon_stays_a_span() {
