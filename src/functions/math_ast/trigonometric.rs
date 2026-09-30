@@ -940,10 +940,10 @@ pub fn negate_expr(mut expr: Expr) -> Expr {
     // "-2 - Sqrt[3]" instead of the factored "-(2 + Sqrt[3])".
     Expr::FunctionCall { name, args } if name == "Plus" => {
       let args = std::mem::take(args);
-      return Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: args.iter().map(|a| negate_expr(a.clone())).collect(),
-      };
+      return call(
+        "Plus",
+        args.iter().map(|a| negate_expr(a.clone())).collect(),
+      );
     }
     // -(a + b) => (-a) + (-b): distribute over a sum so the result keeps the
     // flattened additive form Wolfram displays (e.g. -(-1 + Sqrt[5]) => 1 - Sqrt[5]).
@@ -2979,23 +2979,21 @@ pub fn log_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if is_exact_real {
           // Log[Abs[c]] + Sign[c]*I*Pi/2, evaluated as a whole so Abs/Sign/Log
           // and the product all reduce (e.g. Log[1/2] → -Log[2], 1*… → …).
-          let result = Expr::FunctionCall {
-            name: "Plus".to_string(),
-            args: vec![
+          let result = call(
+            "Plus",
+            vec![
               call1("Log", call1("Abs", coeff.clone())),
-              Expr::FunctionCall {
-                name: "Times".to_string(),
-                args: vec![
+              call(
+                "Times",
+                vec![
                   call1("Sign", coeff.clone()),
                   make_rational(1, 2),
                   id_expr("I"),
                   const_expr("Pi"),
-                ]
-                .into(),
-              },
-            ]
-            .into(),
-          };
+                ],
+              ),
+            ],
+          );
           return crate::evaluator::evaluate_expr_to_expr(&result);
         }
       }

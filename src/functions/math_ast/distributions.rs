@@ -7442,10 +7442,7 @@ fn simplify_positive_boolean(e: &Expr) -> Expr {
   if uniq.len() == 1 {
     return uniq.into_iter().next().unwrap();
   }
-  Expr::FunctionCall {
-    name: if is_and { "And" } else { "Or" }.to_string(),
-    args: uniq.into(),
-  }
+  call(if is_and { "And" } else { "Or" }, uniq)
 }
 
 /// Rewrite an index-leaf positive Boolean expression into an equivalent
