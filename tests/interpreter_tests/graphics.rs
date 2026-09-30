@@ -1554,6 +1554,54 @@ mod graphics {
   mod text_styles {
     use super::*;
 
+    /// A `Text` label built from a `Column` of held assignments (a
+    /// Demonstration's equations beside a diagram) is typeset as one line
+    /// per item, each reading as the equation — not as the literal
+    /// `HoldForm[…]`/`TraditionalForm[…]` source on a single line.
+    #[test]
+    fn text_column_of_held_assignments() {
+      let svg = export_svg(
+        "Graphics[{Text[Column[{HoldForm[a = b c], \
+         TraditionalForm[HoldForm[x = r Cos[t]]]}], {0, 0}]}]",
+      );
+      assert!(svg.contains(">a = b c</tspan>"), "{svg}");
+      assert!(svg.contains(">x = r"), "{svg}");
+      assert!(svg.contains("cos(t)</tspan>"), "{svg}");
+      assert!(!svg.contains("HoldForm"), "{svg}");
+      assert!(!svg.contains("Set"), "{svg}");
+    }
+
+    /// The lines of a multi-line label are centred on its anchor.
+    #[test]
+    fn text_multiline_is_vertically_centered() {
+      let svg = export_svg(
+        "Graphics[{Text[Style[Column[{\"a\", \"b\", \"c\"}], 10], {0, 0}]}]",
+      );
+      assert!(svg.contains("dy=\"-10\">a</tspan>"), "{svg}");
+    }
+
+    /// `Overscript[y, ".."]` in a label draws as the accented letter.
+    #[test]
+    fn text_overscript_accent() {
+      let svg = export_svg(
+        "Graphics[{Text[Row[{Overscript[\"y\", \"..\"], \" = 1\"}], {0, 0}]}]",
+      );
+      assert!(svg.contains(">y\u{0308} = 1</text>"), "{svg}");
+    }
+
+    /// Assignments box as infix equations, like the other relations.
+    #[test]
+    fn held_assignment_boxes_are_infix() {
+      assert_eq!(
+        interpret("ToBoxes[HoldForm[x = 1]] // FullForm").unwrap(),
+        interpret("RowBox[{\"x\", \"=\", \"1\"}] // FullForm").unwrap()
+      );
+      assert_eq!(
+        interpret("ToBoxes[HoldForm[x := 1]] // FullForm").unwrap(),
+        interpret("RowBox[{\"x\", \":=\", \"1\"}] // FullForm").unwrap()
+      );
+    }
+
     #[test]
     fn text_with_style_bold() {
       insta::assert_snapshot!(export_svg(

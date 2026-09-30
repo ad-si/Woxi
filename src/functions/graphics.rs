@@ -3526,6 +3526,47 @@ fn graphics_text_content(expr: &Expr) -> String {
     {
       graphics_text_content(&args[0])
     }
+    // `HoldForm[expr]` shows `expr` unevaluated as it was written, so a held
+    // assignment reads `θ = ω t`, not `Set[θ, ω t]` — the same box text a
+    // notebook typesets it from.
+    Expr::FunctionCall { name, args } if name == "HoldForm" && args.len() == 1 => {
+      match &args[0] {
+        held @ (Expr::String(_) | Expr::Identifier(_) | Expr::Constant(_)) => {
+          graphics_text_content(held)
+        }
+        held => box_expr_to_plain(
+          &crate::evaluator::dispatch::complex_and_special::expr_to_box_form(
+            held,
+          ),
+        ),
+      }
+    }
+    // An accent over or under a base (`Overscript[y, ".."]`) is typeset as
+    // the accent, not printed as the call.
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Overscript" | "Underscript")
+        && args.len() == 2 =>
+    {
+      accent_text(
+        &graphics_text_content(&args[0]),
+        &graphics_text_content(&args[1]),
+        name == "Overscript",
+      )
+    }
+    // `Column[{a, b, …}]` stacks its items, one line each — the label's
+    // text carries the line breaks the renderer lays out.
+    Expr::FunctionCall { name, args }
+      if name == "Column" && matches!(args.first(), Some(Expr::List(_))) =>
+    {
+      let Some(Expr::List(items)) = args.first() else {
+        unreachable!()
+      };
+      items
+        .iter()
+        .map(graphics_text_content)
+        .collect::<Vec<_>>()
+        .join("\n")
+    }
     Expr::FunctionCall { name, args }
       if name == "Row"
         && !args.is_empty()
@@ -7309,8 +7350,11 @@ fn render_primitive(
         ));
         for (i, line) in lines.iter().enumerate() {
           if i == 0 {
+            // The block is centred on the anchor, so its first line sits
+            // half of the remaining height above it.
             out.push_str(&format!(
-              "<tspan x=\"{sx:.2}\" dy=\"0\">{}</tspan>",
+              "<tspan x=\"{sx:.2}\" dy=\"{}\">{}</tspan>",
+              -(lines.len() as f64 - 1.0) * fs / 2.0,
               svg_escape(line)
             ));
           } else {
@@ -11853,22 +11897,115 @@ pub fn box_string_to_svg(s: &str) -> String {
   parse_box_units(&cs).iter().map(boxes_to_svg).collect()
 }
 
+/// The combining mark that draws `accent` over (or, when `over` is false,
+/// under) a base character, and whether it spans every character of the base
+/// (a bar does; a dot or a hat sits on the last one).
+fn accent_text(base: &str, accent: &str, over: bool) -> String {
+  match combining_accent(accent.trim(), over) {
+    Some((mark, whole_base)) => {
+      let n = base.chars().count();
+      base
+        .chars()
+        .enumerate()
+        .flat_map(|(i, c)| {
+          let marked = whole_base || i + 1 == n;
+          std::iter::once(c).chain(marked.then_some(mark))
+        })
+        .collect()
+    }
+    None => format!("{base}{accent}"),
+  }
+}
+
+fn combining_accent(accent: &str, over: bool) -> Option<(char, bool)> {
+  Some(match (accent, over) {
+    ("_" | "\u{203E}" | "\u{00AF}", true) => ('\u{0305}', true),
+    ("_" | "\u{203E}" | "\u{00AF}", false) => ('\u{0332}', true),
+    (".", true) => ('\u{0307}', false),
+    ("..", true) => ('\u{0308}', false),
+    ("...", true) => ('\u{20DB}', false),
+    ("^" | "\u{02C6}", true) => ('\u{0302}', false),
+    ("~" | "\u{02DC}", true) => ('\u{0303}', false),
+    ("\u{2192}", true) => ('\u{20D7}', false),
+    _ => return None,
+  })
+}
+
 /// Plain-text projection of a box-notation Expr, used for layout width
 /// estimation (sub/superscripts contribute their content length).
 fn box_expr_to_plain(e: &Expr) -> String {
+  box_expr_to_plain_in(e, true)
+}
+
+/// `spaced` is false inside a script, where a limit `n=0` stays tight.
+fn box_expr_to_plain_in(e: &Expr, spaced: bool) -> String {
   match e {
     Expr::String(s) | Expr::Identifier(s) => {
       strip_precision_marker(s).to_string()
     }
     Expr::Integer(n) => n.to_string(),
     Expr::BigInteger(n) => n.to_string(),
-    Expr::List(items) => items.iter().map(box_expr_to_plain).collect(),
+    // A relation reads with a space either side (`x = 1`), the way it is
+    // laid out, though its box holds the bare operator.
+    Expr::List(items) => items
+      .iter()
+      .map(|item| match item {
+        Expr::String(op)
+          if spaced
+            && matches!(
+              op.as_str(),
+              "="
+                | ":="
+                | "=="
+                | "!="
+                | "<"
+                | ">"
+                | "<="
+                | ">="
+                | "+="
+                | "-="
+                | "*="
+                | "/="
+                | "\u{2260}"
+                | "\u{2264}"
+                | "\u{2265}"
+            ) =>
+        {
+          format!(" {op} ")
+        }
+        other => box_expr_to_plain_in(other, spaced),
+      })
+      .collect(),
     Expr::FunctionCall { name, args } => match name.as_str() {
       "SqrtBox" | "RadicalBox" => format!(
         "\u{221A}{}",
-        args.first().map(box_expr_to_plain).unwrap_or_default()
+        args
+          .first()
+          .map(|a| box_expr_to_plain_in(a, spaced))
+          .unwrap_or_default()
       ),
-      _ => args.iter().map(box_expr_to_plain).collect(),
+      // The trailing arguments of these are a tag, a form or display
+      // options — they are not part of the drawn text.
+      "TagBox" | "FormBox" | "StyleBox" | "InterpretationBox" => args
+        .first()
+        .map(|a| box_expr_to_plain_in(a, spaced))
+        .unwrap_or_default(),
+      // An accent that has a combining mark is drawn over (under) its base
+      // as that mark, `ÿ` for a double dot over `y`.
+      "OverscriptBox" | "UnderscriptBox" if args.len() >= 2 => accent_text(
+        &box_expr_to_plain_in(&args[0], false),
+        &box_expr_to_plain_in(&args[1], false),
+        name == "OverscriptBox",
+      ),
+      "SubscriptBox" | "SuperscriptBox" | "SubsuperscriptBox"
+      | "UnderoverscriptBox" => args
+        .iter()
+        .map(|a| box_expr_to_plain_in(a, false))
+        .collect(),
+      _ => args
+        .iter()
+        .map(|a| box_expr_to_plain_in(a, spaced))
+        .collect(),
     },
     _ => String::new(),
   }
