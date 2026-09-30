@@ -2757,10 +2757,32 @@ pub fn reconstruct_manipulate_from_box_dump(box_dump: &str) -> Option<String> {
   let specs = clean(extract_arrow_value(box_dump, "Specifications")?);
   let specs = specs.trim();
   let specs_inner = specs.strip_prefix('{')?.strip_suffix('}')?.trim();
-  if specs_inner.is_empty() {
-    return Some(format!("Manipulate[{body}]"));
+  // The compiled `"Options" :> {…}` clause carries the widget-level caption
+  // (`FrameLabel -> …`) shown with the output; it is the only option the
+  // reconstruction keeps.
+  let frame_label = extract_arrow_value(box_dump, "Options")
+    .map(clean)
+    .and_then(|opts| {
+      let inner = opts
+        .trim()
+        .strip_prefix('{')?
+        .strip_suffix('}')?
+        .to_string();
+      split_top_level_commas(&inner)
+        .into_iter()
+        .map(|part| part.trim().to_string())
+        .find(|part| {
+          part
+            .strip_prefix("FrameLabel")
+            .is_some_and(|r| r.trim_start().starts_with("->"))
+        })
+    });
+  let mut args = vec![body];
+  if !specs_inner.is_empty() {
+    args.push(specs_inner.to_string());
   }
-  Some(format!("Manipulate[{body}, {specs_inner}]"))
+  args.extend(frame_label);
+  Some(format!("Manipulate[{}]", args.join(", ")))
 }
 
 /// The live session values a saved FrontEnd dynamic-widget dump's
