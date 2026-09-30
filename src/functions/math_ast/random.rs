@@ -582,9 +582,9 @@ pub fn random_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let chosen = year_start + chrono::Duration::microseconds(total_micros);
     let seconds = chosen.second() as f64 + (chosen.nanosecond() as f64) / 1e9;
     let tz_offset_hours = chosen.offset().local_minus_utc() as f64 / 3600.0;
-    Expr::FunctionCall {
-      name: "DateObject".to_string(),
-      args: vec![
+    call(
+      "DateObject",
+      vec![
         Expr::List(
           vec![
             Expr::Integer(chosen.year() as i128),
@@ -599,9 +599,8 @@ pub fn random_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Expr::String("Instant".to_string()),
         Expr::String("Gregorian".to_string()),
         Expr::Real(tz_offset_hours),
-      ]
-      .into(),
-    }
+      ],
+    )
   }
 
   match args.len() {
@@ -641,9 +640,9 @@ pub fn random_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let seconds =
       chosen.get_seconds() as f64 + (total_micros % 1_000_000) as f64 / 1e6;
     let tz_offset_hours = -(chosen.get_timezone_offset() / 60.0);
-    Expr::FunctionCall {
-      name: "DateObject".to_string(),
-      args: vec![
+    call(
+      "DateObject",
+      vec![
         Expr::List(
           vec![
             Expr::Integer(chosen.get_full_year() as i128),
@@ -658,9 +657,8 @@ pub fn random_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Expr::String("Instant".to_string()),
         Expr::String("Gregorian".to_string()),
         Expr::Real(tz_offset_hours),
-      ]
-      .into(),
-    }
+      ],
+    )
   }
 
   match args.len() {
@@ -783,9 +781,9 @@ pub fn random_time_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let h = total_micros / 3_600_000_000;
     let m = (total_micros % 3_600_000_000) / 60_000_000;
     let s = (total_micros % 60_000_000) as f64 / 1e6;
-    Expr::FunctionCall {
-      name: "TimeObject".to_string(),
-      args: vec![
+    call(
+      "TimeObject",
+      vec![
         Expr::List(
           vec![
             Expr::Integer(h as i128),
@@ -795,9 +793,8 @@ pub fn random_time_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .into(),
         ),
         Expr::String("Instant".to_string()),
-      ]
-      .into(),
-    }
+      ],
+    )
   }
 
   fn sample(lo: f64, hi: f64) -> Expr {

@@ -488,31 +488,29 @@ pub fn hypergeometric_pfq_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && matches!(&b_list[0], Expr::Integer(3))
     && matches!(&b_list[1], Expr::Integer(3))
   {
-    let log_one_minus_z = Expr::FunctionCall {
-      name: "Log".to_string(),
-      args: vec![call(
+    let log_one_minus_z = call1(
+      "Log",
+      call(
         "Plus",
         vec![
           Expr::Integer(1),
           call("Times", vec![Expr::Integer(-1), z.clone()]),
         ],
-      )]
-      .into(),
-    };
+      ),
+    );
     let polylog = call("PolyLog", vec![Expr::Integer(2), z.clone()]);
     // Build the negated inner sum so the leading `-4·(−2·z − Log[1−z] + z·Log[1−z] + PolyLog[2,z])`
     // matches wolframscript's exact InputForm rather than the mathematically
     // equivalent `4·(2·z + …)` factoring.
-    let inner_neg = Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: vec![
+    let inner_neg = call(
+      "Plus",
+      vec![
         call("Times", vec![Expr::Integer(-2), z.clone()]),
         call("Times", vec![Expr::Integer(-1), log_one_minus_z.clone()]),
         call("Times", vec![z.clone(), log_one_minus_z]),
         polylog,
-      ]
-      .into(),
-    };
+      ],
+    );
     return times_ast(&[
       Expr::Integer(-4),
       inner_neg,
@@ -1838,29 +1836,27 @@ pub fn hypergeometric_u_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ))?;
     // U[2, 2, z] = z^{-1} - E^z · Gamma[0, z]
     let exp_z = pow(id_expr("E"), z.clone());
-    let mut u_curr =
-      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: vec![
-          pow(z.clone(), Expr::Integer(-1)),
-          call(
-            "Times",
-            vec![
-              Expr::Integer(-1),
-              exp_z,
-              call("Gamma", vec![Expr::Integer(0), z.clone()]),
-            ],
-          ),
-        ]
-        .into(),
-      })?;
+    let mut u_curr = crate::evaluator::evaluate_expr_to_expr(&call(
+      "Plus",
+      vec![
+        pow(z.clone(), Expr::Integer(-1)),
+        call(
+          "Times",
+          vec![
+            Expr::Integer(-1),
+            exp_z,
+            call("Gamma", vec![Expr::Integer(0), z.clone()]),
+          ],
+        ),
+      ],
+    ))?;
     // Iterate the recurrence from k=2 up to a-1 to obtain U[a, 2, z].
     for k in 2..*a {
       let coeff_curr =
         call("Plus", vec![Expr::Integer(2 * (k - 1)), z.clone()]);
-      let next = Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![
+      let next = call(
+        "Times",
+        vec![
           call(
             "Rational",
             vec![Expr::Integer(1), Expr::Integer(k * (k - 1))],
@@ -1872,9 +1868,8 @@ pub fn hypergeometric_u_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               call("Times", vec![Expr::Integer(-1), u_prev.clone()]),
             ],
           ),
-        ]
-        .into(),
-      };
+        ],
+      );
       let next = crate::evaluator::evaluate_expr_to_expr(&next)?;
       // Distribute the rational coefficients over Plus so the result stays
       // in the canonical "constant + coefficient·E^z·Γ[0,z]" shape rather
@@ -2194,14 +2189,11 @@ fn negate_leading_integer_coefficient(expr: &Expr) -> Expr {
     Expr::FunctionCall { name, args }
       if name == "Times" && !args.is_empty() =>
     {
-      let mut new_args = args.clone();
+      let mut new_args = args.to_vec();
       if let Expr::Integer(n) = &new_args[0] {
         new_args[0] = Expr::Integer(-n);
       }
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: new_args,
-      }
+      call("Times", new_args)
     }
     Expr::BinaryOp {
       op: BinaryOperator::Times,

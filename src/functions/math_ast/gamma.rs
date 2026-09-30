@@ -1708,9 +1708,9 @@ pub fn marcum_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // a = 0: GammaRegularized[m, b^2/2]
   if is_expr_zero(a) {
-    return crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "GammaRegularized".to_string(),
-      args: vec![
+    return crate::evaluator::evaluate_expr_to_expr(&call(
+      "GammaRegularized",
+      vec![
         m.clone(),
         call(
           "Times",
@@ -1719,9 +1719,8 @@ pub fn marcum_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             pow(b.clone(), Expr::Integer(2)),
           ],
         ),
-      ]
-      .into(),
-    });
+      ],
+    ));
   }
   if has_real
     && let (Some(m), Some(a), Some(b)) =

@@ -2043,9 +2043,9 @@ fn render_vector_arrows(
     primitives.push(Expr::List(
       vec![
         rgb_color((r, g, b)),
-        Expr::FunctionCall {
-          name: "Arrow".to_string(),
-          args: vec![Expr::List(
+        call1(
+          "Arrow",
+          Expr::List(
             vec![
               Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()),
               Expr::List(
@@ -2057,9 +2057,8 @@ fn render_vector_arrows(
               ),
             ]
             .into(),
-          )]
-          .into(),
-        },
+          ),
+        ),
       ]
       .into(),
     ));

@@ -3052,12 +3052,11 @@ pub fn fractional_part_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // corresponding direction (wolframscript): Infinity -> Interval[{0, 1}],
   // -Infinity -> Interval[{-1, 0}], ComplexInfinity -> Interval[{0, 1}].
   {
-    let unit_interval = |lo: i128, hi: i128| Expr::FunctionCall {
-      name: "Interval".to_string(),
-      args: vec![Expr::List(
-        vec![Expr::Integer(lo), Expr::Integer(hi)].into(),
-      )]
-      .into(),
+    let unit_interval = |lo: i128, hi: i128| {
+      call1(
+        "Interval",
+        Expr::List(vec![Expr::Integer(lo), Expr::Integer(hi)].into()),
+      )
     };
     if matches!(&args[0], Expr::Identifier(s) if s == "Infinity" || s == "ComplexInfinity")
     {
