@@ -12885,6 +12885,25 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       })
     };
     if first_graphic_is_plot == Some(true) {
+      // A bare `PlotRange -> {min, max}` on a plot is the *y* range; the
+      // horizontal extent stays that of the plotted domain.
+      for opt in &mut merged_options {
+        if let Expr::Rule {
+          pattern,
+          replacement,
+        } = opt
+          && option_name(pattern) == Some("PlotRange")
+          && let Expr::List(items) = replacement.as_ref()
+          && items.len() == 2
+          && !is_axis_range_spec(&items[0])
+          && !is_axis_range_spec(&items[1])
+          && parse_range_spec(replacement).is_some()
+        {
+          **replacement = Expr::List(
+            vec![id_expr("All"), replacement.as_ref().clone()].into(),
+          );
+        }
+      }
       // A framed plot draws no interior axes, so the merged graphic must
       // not grow a set of them either: `Show[ParametricPlot[…, Frame ->
       // True], …]` keeps the frame it was given and nothing more.

@@ -16005,6 +16005,23 @@ mod show {
     assert!(svg.contains(">outer</text>") && !svg.contains(">inner</text>"));
   }
 
+  /// A bare `PlotRange -> {min, max}` given to `Show` on top of a plot is the
+  /// y range: the plotted x domain (here -7..7) stays fully visible.
+  #[test]
+  fn show_plot_with_flat_plot_range_keeps_x_domain() {
+    clear_state();
+    let flat = export_svg(
+      r#"Show[Plot[Abs[2 x], {x, -7, 7}], Graphics[{Red, Disk[{0, 3}, 1]}],
+        PlotRange -> {0, 25}]"#,
+    );
+    let nested = export_svg(
+      r#"Show[Plot[Abs[2 x], {x, -7, 7}], Graphics[{Red, Disk[{0, 3}, 1]}],
+        PlotRange -> {All, {0, 25}}]"#,
+    );
+    assert_eq!(flat, nested);
+    assert!(flat.contains(">-6</text>") || flat.contains(">−6</text>"));
+  }
+
   /// `Show[g]` is `g`: with nothing to merge and no options of its own it
   /// hands back the rendering unchanged, rather than rebuilding one from
   /// the plot's series and losing how it was drawn.
