@@ -6677,6 +6677,21 @@ mod component_measurements {
     );
   }
 
+  // "LabelCount" is the total number of components, reported per component.
+  #[test]
+  fn label_count() {
+    assert_eq!(
+      interpret("ComponentMeasurements[{{1, 0}, {0, 2}}, \"LabelCount\"]")
+        .unwrap(),
+      "{1 -> 2, 2 -> 2}"
+    );
+    assert_eq!(
+      interpret("Max[Values[ComponentMeasurements[{{1, 1, 0}, {0, 0, 3}}, \"LabelCount\"]]]")
+        .unwrap(),
+      "2"
+    );
+  }
+
   #[test]
   fn area_label_and_property_list() {
     // Area is the count as a real number.
