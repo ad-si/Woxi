@@ -8645,3 +8645,56 @@ mod reliability_distribution {
     );
   }
 }
+
+mod noncentral_student_t_distribution {
+  use super::*;
+
+  fn real(code: &str) -> f64 {
+    interpret(code).unwrap().parse().unwrap()
+  }
+
+  #[test]
+  fn cdf_numeric() {
+    assert!(
+      (real("CDF[NoncentralStudentTDistribution[8, 3], 2.3]") - 0.25020).abs()
+        < 1e-4
+    );
+    // Negative arguments use the reflected series.
+    assert!(
+      (real("CDF[NoncentralStudentTDistribution[5, 1.5], -1.]") - 0.00938)
+        .abs()
+        < 1e-4
+    );
+  }
+
+  #[test]
+  fn zero_noncentrality_is_student_t() {
+    let a = real("CDF[NoncentralStudentTDistribution[3, 0], 1.]");
+    let b = real("CDF[StudentTDistribution[3], 1.]");
+    assert!((a - b).abs() < 1e-12);
+  }
+
+  #[test]
+  fn pdf_numeric() {
+    assert!(
+      (real("PDF[NoncentralStudentTDistribution[8, 3], 2.3]")
+        - 0.28774068556795)
+        .abs()
+        < 1e-9
+    );
+    assert!(
+      (real("PDF[NoncentralStudentTDistribution[4, 1.2], 0]")
+        - 0.18253209598498)
+        .abs()
+        < 1e-9
+    );
+  }
+
+  #[test]
+  fn symbolic_stays_unevaluated() {
+    assert_eq!(
+      interpret("CDF[NoncentralStudentTDistribution[n, d], x]").unwrap(),
+      "CDF[NoncentralStudentTDistribution[n, d], x]"
+    );
+  }
+}

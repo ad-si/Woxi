@@ -669,6 +669,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "PowerDistribution" => pdf_power(dargs, x),
     "PERTDistribution" => pdf_pert(dargs, x),
     "StudentTDistribution" => pdf_student_t(dargs, x),
+    "NoncentralStudentTDistribution" => pdf_noncentral_student_t(dargs, x),
     "LogNormalDistribution" => pdf_lognormal(dargs, x),
     "ChiSquareDistribution" => pdf_chi_square(dargs, x),
     "ParetoDistribution" => pdf_pareto(dargs, x),
@@ -2324,6 +2325,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "InverseGaussianDistribution" => cdf_inverse_gaussian(dargs, x),
     "StableDistribution" => cdf_stable(dargs, x),
     "StudentTDistribution" => cdf_student_t(dargs, x),
+    "NoncentralStudentTDistribution" => cdf_noncentral_student_t(dargs, x),
     "FRatioDistribution" => cdf_f_ratio(dargs, x),
     "WaringYuleDistribution" => cdf_waring_yule(dargs, x),
     "ZipfDistribution" => cdf_zipf(dargs, x),
@@ -18299,4 +18301,128 @@ pub fn censored_mean_variance(
   };
   let variance = eval("Subtract", vec![m2, pow(m1.clone(), Expr::Integer(2))])?;
   Ok(Some((m1, variance)))
+}
+
+/// Numeric parameters `(nu, delta)` and point of a
+/// `NoncentralStudentTDistribution[nu, delta]` evaluation. `None` when any
+/// of them is symbolic or `nu` is not positive, in which case the caller
+/// leaves the call unevaluated.
+fn noncentral_student_t_numeric(
+  dargs: &[Expr],
+  x: &Expr,
+) -> Option<(f64, f64, f64)> {
+  if dargs.len() != 2 {
+    return None;
+  }
+  let nu = crate::functions::math_ast::try_eval_to_f64(&dargs[0])?;
+  let delta = crate::functions::math_ast::try_eval_to_f64(&dargs[1])?;
+  let xv = crate::functions::math_ast::try_eval_to_f64(x)?;
+  (nu > 0.0).then_some((nu, delta, xv))
+}
+
+/// Distribution function of the noncentral t distribution (Lenth's
+/// algorithm AS 243: Poisson-weighted series of incomplete beta terms).
+fn noncentral_student_t_cdf_f64(t: f64, nu: f64, delta: f64) -> f64 {
+  if delta == 0.0 {
+    let x = nu / (nu + t * t);
+    let tail = 0.5
+      * crate::functions::math_ast::gamma::beta_regularized_numeric(
+        x,
+        nu / 2.0,
+        0.5,
+      );
+    return if t > 0.0 { 1.0 - tail } else { tail };
+  }
+  let (tt, del, negdel) = if t >= 0.0 {
+    (t, delta, false)
+  } else {
+    (-t, -delta, true)
+  };
+  let x = tt * tt / (tt * tt + nu);
+  let mut tnc = 0.0;
+  if x > 0.0 {
+    let lambda = del * del;
+    let mut p = 0.5 * (-0.5 * lambda).exp();
+    let mut q = (2.0 / std::f64::consts::PI).sqrt() * p * del;
+    let mut s = 0.5 - p;
+    let mut a = 0.5;
+    let b = 0.5 * nu;
+    let rxb = (1.0 - x).powf(b);
+    let albeta = 0.5 * std::f64::consts::PI.ln()
+      + crate::functions::math_ast::gamma::lgamma(b)
+      - crate::functions::math_ast::gamma::lgamma(0.5 + b);
+    let mut xodd =
+      crate::functions::math_ast::gamma::beta_regularized_numeric(x, a, b);
+    let mut godd = 2.0 * rxb * (a * x.ln() - albeta).exp();
+    let mut xeven = 1.0 - rxb;
+    let mut geven = b * x * rxb;
+    tnc = p * xodd + q * xeven;
+    for it in 1..5000 {
+      let itf = it as f64;
+      a += 1.0;
+      xodd -= godd;
+      xeven -= geven;
+      godd *= x * (a + b - 1.0) / a;
+      geven *= x * (a + b - 0.5) / (a + 0.5);
+      p *= lambda / (2.0 * itf);
+      q *= lambda / (2.0 * itf + 1.0);
+      tnc += p * xodd + q * xeven;
+      s -= p;
+      if s < -1e-10 || 2.0 * s * (xodd - godd) < 1e-13 {
+        break;
+      }
+    }
+  }
+  tnc += std_normal_cdf(-del);
+  let r = if negdel { 1.0 - tnc } else { tnc };
+  r.clamp(0.0, 1.0)
+}
+
+/// CDF[NoncentralStudentTDistribution[nu, delta], x] for numeric arguments.
+fn cdf_noncentral_student_t(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  match noncentral_student_t_numeric(dargs, &x) {
+    Some((nu, delta, xv)) => {
+      Ok(Expr::Real(noncentral_student_t_cdf_f64(xv, nu, delta)))
+    }
+    None => Ok(call(
+      "CDF",
+      vec![unevaluated("NoncentralStudentTDistribution", dargs), x],
+    )),
+  }
+}
+
+/// PDF[NoncentralStudentTDistribution[nu, delta], x] for numeric arguments,
+/// from the identity f(x) = nu/x (F_{nu+2}(x Sqrt[1 + 2/nu]) - F_nu(x)).
+fn pdf_noncentral_student_t(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  match noncentral_student_t_numeric(dargs, &x) {
+    Some((nu, delta, xv)) => {
+      let pdf = if xv == 0.0 {
+        // Limit x -> 0 of the density.
+        (-0.5 * delta * delta).exp()
+          * crate::functions::math_ast::gamma::lgamma(f64::midpoint(nu, 1.0))
+            .exp()
+          / ((std::f64::consts::PI * nu).sqrt()
+            * crate::functions::math_ast::gamma::lgamma(nu / 2.0).exp())
+      } else {
+        let hi = noncentral_student_t_cdf_f64(
+          xv * (1.0 + 2.0 / nu).sqrt(),
+          nu + 2.0,
+          delta,
+        );
+        let lo = noncentral_student_t_cdf_f64(xv, nu, delta);
+        nu / xv * (hi - lo)
+      };
+      Ok(Expr::Real(pdf))
+    }
+    None => Ok(call(
+      "PDF",
+      vec![unevaluated("NoncentralStudentTDistribution", dargs), x],
+    )),
+  }
 }

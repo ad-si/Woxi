@@ -1338,7 +1338,7 @@ fn is_positive_numeric(expr: &Expr) -> bool {
 
 /// Compute the regularized incomplete beta function I_x(a, b) numerically
 /// Uses the continued fraction representation (Lentz's algorithm)
-fn beta_regularized_numeric(x: f64, a: f64, b: f64) -> f64 {
+pub(crate) fn beta_regularized_numeric(x: f64, a: f64, b: f64) -> f64 {
   if x <= 0.0 {
     return 0.0;
   }
