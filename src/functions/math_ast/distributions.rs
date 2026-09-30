@@ -669,7 +669,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "PowerDistribution" => pdf_power(dargs, x),
     "PERTDistribution" => pdf_pert(dargs, x),
     "StudentTDistribution" => pdf_student_t(dargs, x),
-    "NoncentralStudentTDistribution" => pdf_noncentral_student_t(dargs, x),
+    "NoncentralStudentTDistribution" => Ok(pdf_noncentral_student_t(dargs, x)),
     "LogNormalDistribution" => pdf_lognormal(dargs, x),
     "ChiSquareDistribution" => pdf_chi_square(dargs, x),
     "ParetoDistribution" => pdf_pareto(dargs, x),
@@ -2325,7 +2325,7 @@ pub fn cdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "InverseGaussianDistribution" => cdf_inverse_gaussian(dargs, x),
     "StableDistribution" => cdf_stable(dargs, x),
     "StudentTDistribution" => cdf_student_t(dargs, x),
-    "NoncentralStudentTDistribution" => cdf_noncentral_student_t(dargs, x),
+    "NoncentralStudentTDistribution" => Ok(cdf_noncentral_student_t(dargs, x)),
     "FRatioDistribution" => cdf_f_ratio(dargs, x),
     "WaringYuleDistribution" => cdf_waring_yule(dargs, x),
     "ZipfDistribution" => cdf_zipf(dargs, x),
@@ -18379,27 +18379,21 @@ fn noncentral_student_t_cdf_f64(t: f64, nu: f64, delta: f64) -> f64 {
 }
 
 /// CDF[NoncentralStudentTDistribution[nu, delta], x] for numeric arguments.
-fn cdf_noncentral_student_t(
-  dargs: &[Expr],
-  x: Expr,
-) -> Result<Expr, InterpreterError> {
+fn cdf_noncentral_student_t(dargs: &[Expr], x: Expr) -> Expr {
   match noncentral_student_t_numeric(dargs, &x) {
     Some((nu, delta, xv)) => {
-      Ok(Expr::Real(noncentral_student_t_cdf_f64(xv, nu, delta)))
+      Expr::Real(noncentral_student_t_cdf_f64(xv, nu, delta))
     }
-    None => Ok(call(
+    None => call(
       "CDF",
       vec![unevaluated("NoncentralStudentTDistribution", dargs), x],
-    )),
+    ),
   }
 }
 
 /// PDF[NoncentralStudentTDistribution[nu, delta], x] for numeric arguments,
 /// from the identity f(x) = nu/x (F_{nu+2}(x Sqrt[1 + 2/nu]) - F_nu(x)).
-fn pdf_noncentral_student_t(
-  dargs: &[Expr],
-  x: Expr,
-) -> Result<Expr, InterpreterError> {
+fn pdf_noncentral_student_t(dargs: &[Expr], x: Expr) -> Expr {
   match noncentral_student_t_numeric(dargs, &x) {
     Some((nu, delta, xv)) => {
       let pdf = if xv == 0.0 {
@@ -18418,11 +18412,11 @@ fn pdf_noncentral_student_t(
         let lo = noncentral_student_t_cdf_f64(xv, nu, delta);
         nu / xv * (hi - lo)
       };
-      Ok(Expr::Real(pdf))
+      Expr::Real(pdf)
     }
-    None => Ok(call(
+    None => call(
       "PDF",
       vec![unevaluated("NoncentralStudentTDistribution", dargs), x],
-    )),
+    ),
   }
 }
