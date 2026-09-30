@@ -5616,14 +5616,14 @@ fn symbolic_gaussian_matrix(args: &[Expr]) -> Expr {
   unevaluated("GaussianMatrix", args)
 }
 
-/// Colorize[matrix] — colorize an integer-label matrix as an RGB
-/// image. wolframscript prints the result as `-Image-`. A real
-/// renderer would consult `ColorFunction -> …` and evaluate the
-/// function at each label; for now we map each unique integer
-/// label to a deterministic shade of gray so the result is a
-/// well-formed `Expr::Image`. Non-matrix / non-image arguments
-/// emit `Colorize::invinput` and stay symbolic, matching
-/// wolframscript.
+/// Colorize[matrix, opts] — colorize an integer-label matrix as an RGB
+/// image. With the default `ColorFunction -> Automatic`, background
+/// label 0 is white and every other label gets a distinct hue. With an
+/// explicit `ColorFunction -> f`, `f` is applied to each label rescaled
+/// to `[0, 1]`; `f` may be a function, a named `ColorData` gradient
+/// string, or a color-function head such as `Hue`. Non-matrix /
+/// non-image arguments emit `Colorize::invinput` and stay symbolic,
+/// matching wolframscript.
 pub fn colorize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Expr::List(rows) = &args[0]
     && !rows.is_empty()
@@ -5651,15 +5651,17 @@ pub fn colorize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .iter()
       .fold((i64::MAX, i64::MIN), |(lo, hi), &v| (lo.min(v), hi.max(v)));
     let span = (max - min).max(1) as f64;
-    // Default rendering: map each label linearly to a gray
-    // ramp [0, 1]; emit 3-channel RGB data so the Image stays
-    // well-formed. Future work: honor `ColorFunction -> …`.
+    let color_function = option_value(&args[1..], "ColorFunction")
+      .filter(|f| !matches!(f, Expr::Identifier(n) if n == "Automatic"));
+    // Each distinct label is colored once and reused for every pixel.
+    let mut palette: std::collections::HashMap<i64, (f64, f64, f64)> =
+      std::collections::HashMap::new();
     let mut data: Vec<f64> = Vec::with_capacity(labels.len() * 3);
     for v in &labels {
-      let t = ((*v - min) as f64) / span;
-      data.push(t);
-      data.push(t);
-      data.push(t);
+      let (r, g, b) = *palette.entry(*v).or_insert_with(|| {
+        colorize_label(*v, (*v - min) as f64 / span, color_function)
+      });
+      data.extend([r, g, b]);
     }
     return Ok(Expr::Image {
       color_space: None,
@@ -5678,6 +5680,53 @@ pub fn colorize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   Ok(unevaluated("Colorize", args))
+}
+
+/// The RGB color of one `Colorize` label. `t` is the label rescaled to
+/// `[0, 1]`; `color_function` is `None` for the automatic palette.
+fn colorize_label(
+  label: i64,
+  t: f64,
+  color_function: Option<&Expr>,
+) -> (f64, f64, f64) {
+  let Some(f) = color_function else {
+    if label == 0 {
+      return (1.0, 1.0, 1.0);
+    }
+    // Golden-ratio hue steps keep neighboring labels visually distinct.
+    let hue = (label as f64 * 0.618_033_988_749_895).rem_euclid(1.0);
+    return hsv_to_rgb(hue, 0.6, 0.9);
+  };
+  let color = match f {
+    Expr::String(scheme) => {
+      crate::functions::chart::sample_named_gradient(scheme, t)
+        .map(|(r, g, b)| {
+          call(
+            "RGBColor",
+            vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)],
+          )
+        })
+        .or_else(|| {
+          let scheme_fn = crate::evaluator::evaluate_expr_to_expr(&call(
+            "ColorData",
+            vec![f.clone()],
+          ))
+          .ok()?;
+          crate::evaluator::apply_function_to_arg(&scheme_fn, &Expr::Real(t))
+            .ok()
+        })
+    }
+    Expr::Identifier(head) => {
+      crate::evaluator::evaluate_expr_to_expr(&call(head, vec![Expr::Real(t)]))
+        .ok()
+    }
+    other => {
+      crate::evaluator::apply_function_to_arg(other, &Expr::Real(t)).ok()
+    }
+  };
+  color
+    .and_then(|c| color_directive_to_rgb(&c))
+    .map_or((t, t, t), |(r, g, b, _)| (r, g, b))
 }
 
 /// The positions of the 8-connected foreground neighbors of pixel `i`.

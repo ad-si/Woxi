@@ -4533,3 +4533,11 @@ woxi eval 'Together[1/x + 1/y, Modulus -> 3]'   # stays unevaluated
 
 The modular path cancels over GF(p) with univariate polynomial arithmetic,
 so a multivariate fraction (or a composite modulus) is returned unevaluated.
+
+## Colorize
+
+- `Colorize[m, ImageSize -> …]` ignores `ImageSize` (`Image` carries no
+  display size), and the `Automatic` palette is Woxi's own distinct-hue
+  scheme rather than Wolfram's exact colors.
+- `ColorFunction -> "HypsometricTints"` (and other `ColorData` gradients
+  not yet implemented) falls back to a gray ramp.
