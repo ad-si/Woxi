@@ -4533,3 +4533,12 @@ woxi eval 'Together[1/x + 1/y, Modulus -> 3]'   # stays unevaluated
 
 The modular path cancels over GF(p) with univariate polynomial arithmetic,
 so a multivariate fraction (or a composite modulus) is returned unevaluated.
+
+### `ColorData[4, k]` indexed scheme is not tabulated
+
+```sh
+woxi eval 'ColorData[4, 9]'   # stays unevaluated
+```
+
+Only the indexed schemes 1, 2, 3, 30, 35 and 97 are tabulated; a graphic that
+colors with scheme 4 renders those primitives with the default color.

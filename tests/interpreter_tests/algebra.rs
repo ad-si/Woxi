@@ -5506,6 +5506,59 @@ mod solve {
     assert_eq!(interpret("Solve[Abs[x] == -1, x]").unwrap(), "{}");
   }
 
+  // A chained equality a == b == c is the conjunction a == b && b == c.
+  #[test]
+  fn solve_chained_equality() {
+    assert_eq!(
+      interpret("Solve[x == y == 2, {x, y}]").unwrap(),
+      "{{x -> 2, y -> 2}}"
+    );
+    assert_eq!(
+      interpret("Solve[{a == b == c, c == 1}, {a, b, c}]").unwrap(),
+      "{{a -> 1, b -> 1, c -> 1}}"
+    );
+  }
+
+  // Points at distance 2 from two centres: the intersection of two circles.
+  #[test]
+  fn solve_equidistant_norms() {
+    assert_eq!(
+      interpret(
+        "Solve[Norm[{x, y} - {1, 1}] == Norm[{x, y} - {3, 1}] == 2, {x, y}]"
+      )
+      .unwrap(),
+      "{{x -> 2, y -> 1 - Sqrt[3]}, {x -> 2, y -> 1 + Sqrt[3]}}"
+    );
+    assert_eq!(
+      interpret(
+        "Solve[Norm[{x, y} - {1., 1.}] == Norm[{x, y} - {3., 1.}] == 2, {x, y}]"
+      )
+      .unwrap(),
+      "{{x -> 2., y -> -0.7320508075688772}, {x -> 2., y -> 2.732050807568877}}"
+    );
+  }
+
+  #[test]
+  fn solve_squared_abs_keeps_real_solutions() {
+    assert_eq!(
+      interpret("Solve[Abs[x]^2 == 4, x]").unwrap(),
+      "{{x -> -2}, {x -> 2}}"
+    );
+    assert_eq!(interpret("Solve[Abs[x]^2 == -4, x]").unwrap(), "{}");
+  }
+
+  // The equation that fixes only x must not hide the solution of the system.
+  #[test]
+  fn solve_system_with_radical_independent_of_last_variable() {
+    assert_eq!(
+      interpret(
+        "Solve[{Sqrt[x^2 + y^2] == Sqrt[(x - 2)^2 + y^2], y == 1}, {x, y}]"
+      )
+      .unwrap(),
+      "{{x -> 1, y -> 1}}"
+    );
+  }
+
   #[test]
   fn solve_abs_shifted_and_scaled() {
     assert_eq!(

@@ -1507,6 +1507,21 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  let mut squared_abs = false;
+  let several_unknowns =
+    matches!(positional.get(1), Some(Expr::List(vars)) if vars.len() >= 2);
+  if let Some(first) = positional.first_mut() {
+    *first = expand_chained_equalities(first);
+    let (rewritten, changed) = abs_squared_to_squares(first);
+    *first = rewritten;
+    squared_abs = changed;
+    // A radical equation in several unknowns has no elimination path of its
+    // own; squaring it leaves the equivalent polynomial system.
+    if several_unknowns {
+      *first = square_radical_equations(first);
+    }
+  }
+
   let depth = SOLVE_DEPTH.with(|d| {
     let v = d.get();
     d.set(v + 1);
@@ -1514,7 +1529,18 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   });
   let solutions = solve_with_var_selection(&positional, modulus, args);
   SOLVE_DEPTH.with(|d| d.set(depth));
-  let solutions = solutions?;
+  let mut solutions = solutions?;
+  // `Abs[u]^2` was solved as `u^2`, which also has the complex roots no
+  // real `u` can reach.
+  if squared_abs && let Expr::List(sols) = &solutions {
+    solutions = Expr::List(
+      sols
+        .iter()
+        .filter(|sol| !contains_complex(sol))
+        .cloned()
+        .collect(),
+    );
+  }
   // The outermost call reports when the equations left some of the
   // explicitly requested variables free.
   if depth == 0
@@ -1541,6 +1567,130 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Ok(Expr::List(items.iter().take(n).cloned().collect()))
     }
     _ => Ok(solutions),
+  }
+}
+
+/// Rewrites every `Abs[u]^2` of a symbolic `u` as `u^2` — the squared norm a
+/// `Norm[{x - 1, y - 1}] == 2` equation reduces to — so the equation is an
+/// ordinary polynomial one. The flag tells whether anything was rewritten.
+fn abs_squared_to_squares(eqns: &Expr) -> (Expr, bool) {
+  let changed = std::cell::Cell::new(false);
+  let abs_argument = |e: &Expr| -> Option<Expr> {
+    match e {
+      Expr::FunctionCall { name, args } if name == "Abs" && args.len() == 1 => {
+        Some(args[0].clone())
+      }
+      _ => None,
+    }
+  };
+  let rewritten = crate::functions::string_ast::map_expr_tree(eqns, &|e| {
+    let (base, exponent) = match e {
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        (&args[0], &args[1])
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } => (left.as_ref(), right.as_ref()),
+      _ => return None,
+    };
+    if !matches!(exponent, Expr::Integer(2)) {
+      return None;
+    }
+    let inner = abs_argument(base)?;
+    if try_eval_to_f64(&inner).is_some() {
+      return None;
+    }
+    changed.set(true);
+    Some(Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![inner, Expr::Integer(2)].into(),
+    })
+  });
+  (rewritten, changed.get())
+}
+
+/// Squares the radical equations of a system: `Sqrt[p] == Sqrt[q]` becomes
+/// `p == q`, and `Sqrt[p] == c` for a non-negative number `c` becomes
+/// `p == c^2`. Both are equivalences, since the principal square root is
+/// injective and non-negative. Looks through lists and `And`.
+fn square_radical_equations(eqns: &Expr) -> Expr {
+  use crate::functions::math_ast::is_sqrt;
+  match eqns {
+    Expr::List(items) => {
+      Expr::List(items.iter().map(square_radical_equations).collect())
+    }
+    Expr::FunctionCall { name, args } if name == "And" => Expr::FunctionCall {
+      name: name.clone(),
+      args: args.iter().map(square_radical_equations).collect(),
+    },
+    Expr::Comparison {
+      operands,
+      operators,
+    } if operands.len() == 2 && operators[0] == ComparisonOp::Equal => {
+      let equation = |lhs: Expr, rhs: Expr| Expr::Comparison {
+        operands: vec![lhs, rhs],
+        operators: vec![ComparisonOp::Equal],
+      };
+      let (lhs, rhs) = (&operands[0], &operands[1]);
+      if let (Some(p), Some(q)) = (is_sqrt(lhs), is_sqrt(rhs)) {
+        return equation(p.clone(), q.clone());
+      }
+      let (radical, other) = match (is_sqrt(lhs), is_sqrt(rhs)) {
+        (Some(p), None) => (p, rhs),
+        (None, Some(p)) => (p, lhs),
+        _ => return eqns.clone(),
+      };
+      match try_eval_to_f64(other) {
+        Some(c) if c >= 0.0 => {
+          let squared = crate::evaluator::evaluate_expr_to_expr(&pow(
+            other.clone(),
+            Expr::Integer(2),
+          ))
+          .unwrap_or_else(|_| pow(other.clone(), Expr::Integer(2)));
+          equation(radical.clone(), squared)
+        }
+        _ => eqns.clone(),
+      }
+    }
+    _ => eqns.clone(),
+  }
+}
+
+/// Rewrites a chained equality `a == b == c` as the conjunction
+/// `a == b && b == c` it stands for, in the equation argument of `Solve` —
+/// at the top level, inside lists and inside `And`.
+fn expand_chained_equalities(eqns: &Expr) -> Expr {
+  match eqns {
+    Expr::Comparison {
+      operands,
+      operators,
+    } if operands.len() > 2
+      && operators.iter().all(|op| *op == ComparisonOp::Equal) =>
+    {
+      Expr::FunctionCall {
+        name: "And".to_string(),
+        args: operands
+          .windows(2)
+          .map(|pair| Expr::Comparison {
+            operands: pair.to_vec(),
+            operators: vec![ComparisonOp::Equal],
+          })
+          .collect::<Vec<_>>()
+          .into(),
+      }
+    }
+    Expr::List(items) => {
+      Expr::List(items.iter().map(expand_chained_equalities).collect())
+    }
+    Expr::FunctionCall { name, args } if name == "And" => Expr::FunctionCall {
+      name: name.clone(),
+      args: args.iter().map(expand_chained_equalities).collect(),
+    },
+    _ => eqns.clone(),
   }
 }
 

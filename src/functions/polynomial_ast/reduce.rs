@@ -3018,33 +3018,34 @@ pub fn reduce_multi_var_and(
   // Find the best (equation, variable) pair: prefer last variable in the list
   // (matching Wolfram's convention where later variables are expressed in terms
   // of earlier ones), falling back to lowest degree for tie-breaking.
-  let mut best: Option<(usize, String, Expr, Expr, i128)> = None; // (eq_idx, var, lhs, rhs, degree)
+  // Every other (equation, variable) pair stays a fallback: the preferred one
+  // can come up empty although the system has solutions (an equation like
+  // `Sqrt[x^2 + y^2] == Sqrt[(x - 2)^2 + y^2]` is solved for `y` by no value
+  // at all, but fixes `x`).
+  let mut candidates: Vec<(usize, String, Expr, Expr, i128)> = Vec::new(); // (eq_idx, var, lhs, rhs, degree)
   for (i, constraint) in constraints.iter().enumerate() {
     if let Some((lhs, rhs, CompOp::Equal)) = extract_comparison(constraint) {
-      for (vi, var) in vars.iter().enumerate() {
+      for var in vars {
         let poly = minus2(lhs.clone(), rhs.clone());
         let expanded = expand_and_combine(&poly);
         if is_constant_wrt(&expanded, var) {
           continue;
         }
         if let Some(deg) = max_power_int(&expanded, var) {
-          let dominated = if let Some(ref b) = best {
-            // Prefer later variables; for the same variable position, prefer
-            // lower degree.
-            let best_vi = vars.iter().position(|v| v == &b.1).unwrap_or(0);
-            vi > best_vi || (vi == best_vi && deg < b.4)
-          } else {
-            true
-          };
-          if dominated {
-            best = Some((i, var.clone(), lhs.clone(), rhs.clone(), deg));
-          }
+          candidates.push((i, var.clone(), lhs.clone(), rhs.clone(), deg));
         }
       }
     }
   }
 
-  if let Some((i, var, lhs, rhs, _deg)) = best {
+  candidates.sort_by_key(|(_, var, _, _, deg)| {
+    (
+      std::cmp::Reverse(vars.iter().position(|v| v == var).unwrap_or(0)),
+      *deg,
+    )
+  });
+  let mut solved_any_system = false;
+  for (i, var, lhs, rhs, _deg) in candidates {
     let eq = Expr::Comparison {
       operands: vec![lhs, rhs],
       operators: vec![ComparisonOp::Equal],
@@ -3139,6 +3140,17 @@ pub fn reduce_multi_var_and(
                       let final_value =
                         crate::evaluator::evaluate_expr_to_expr(&final_value)
                           .unwrap_or(simplify(final_value));
+                      // A value free of every unknown is a plain number such
+                      // as `(2 - 2*Sqrt[3])/2`; Solve reports it expanded
+                      // (`1 - Sqrt[3]`).
+                      let final_value = if vars
+                        .iter()
+                        .all(|v| is_constant_wrt(&final_value, v))
+                      {
+                        expand_and_combine(&final_value)
+                      } else {
+                        final_value
+                      };
                       let var_eq = make_equality(
                         &Expr::Identifier(var.clone()),
                         &final_value,
@@ -3159,11 +3171,14 @@ pub fn reduce_multi_var_and(
         }
       }
 
-      if all_results.is_empty() {
-        return Ok(bool_expr(false));
+      solved_any_system = true;
+      if !all_results.is_empty() {
+        return Ok(build_or(all_results));
       }
-      return Ok(build_or(all_results));
     }
+  }
+  if solved_any_system {
+    return Ok(bool_expr(false));
   }
 
   // No equation found to solve — return unevaluated
