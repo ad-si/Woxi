@@ -4800,7 +4800,10 @@ mod solve {
     // canonical order), the earlier ones staying free parameters. No
     // `svars` message: no variables were asked for.
     assert_eq!(interpret("Solve[x + y == 3]").unwrap(), "{{y -> 3 - x}}");
-    assert!(woxi::get_captured_messages_raw().is_empty());
+    assert_eq!(
+      woxi::get_captured_messages_raw(),
+      [] as [std::string::String; 0]
+    );
     assert_eq!(
       interpret("Solve[{x + y == 2, x - y == z}]").unwrap(),
       "{{y -> 2 - x, z -> -2 + 2*x}}"
@@ -4885,7 +4888,10 @@ mod solve {
       interpret("NSolve[{x + y + z == 2, x - y == 1}, {x, y, z}]").unwrap(),
       "{{x -> 1.5 - 0.5*z, y -> 0.5 - 0.5*z}}"
     );
-    assert!(woxi::get_captured_messages_raw().is_empty());
+    assert_eq!(
+      woxi::get_captured_messages_raw(),
+      [] as [std::string::String; 0]
+    );
     assert_eq!(
       interpret("NSolve[x + y == 2, Reals]").unwrap(),
       "{{x -> 2. - 1.*y}}"

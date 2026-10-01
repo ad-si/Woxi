@@ -17676,7 +17676,10 @@ mod infinite_log_series {
       interpret("Product[c, {n, 1, Infinity}]").unwrap(),
       "Product[c, {n, 1, Infinity}]"
     );
-    assert!(woxi::get_captured_messages_raw().is_empty());
+    assert_eq!(
+      woxi::get_captured_messages_raw(),
+      [] as [std::string::String; 0]
+    );
   }
 
   // Provably divergent infinite sums emit Sum::div before staying

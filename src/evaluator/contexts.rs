@@ -670,7 +670,7 @@ fn map_symbols(expr: &Expr, f: &dyn Fn(&str) -> String) -> Expr {
       body,
       bracketed,
     } => Expr::NamedFunction {
-      params: params.iter().map(&resolve).collect(),
+      params: params.iter().map(resolve).collect(),
       body: boxed(body),
       bracketed: *bracketed,
     },
@@ -683,7 +683,7 @@ fn map_symbols(expr: &Expr, f: &dyn Fn(&str) -> String) -> Expr {
       blank_type,
     } => Expr::Pattern {
       name: resolve(name),
-      head: head.as_ref().map(&resolve),
+      head: head.as_ref().map(resolve),
       blank_type: *blank_type,
     },
     Expr::PatternOptional {
@@ -692,7 +692,7 @@ fn map_symbols(expr: &Expr, f: &dyn Fn(&str) -> String) -> Expr {
       default,
     } => Expr::PatternOptional {
       name: resolve(name),
-      head: head.as_ref().map(&resolve),
+      head: head.as_ref().map(resolve),
       default: default.as_ref().map(|d| boxed(d)),
     },
     Expr::PatternTest {

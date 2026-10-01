@@ -12408,7 +12408,7 @@ pub(crate) fn plot_source_aspect_ratio(image_size: (u32, u32)) -> f64 {
   if ratio.is_finite() && ratio > 0.0 {
     ratio
   } else {
-    1.0 / 1.618_033_988_749_895
+    1.0 / std::f64::consts::GOLDEN_RATIO
   }
 }
 
@@ -12908,7 +12908,7 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if plot_options_need_aspect_ratio(&merged_options) {
         let aspect = plot_sources
           .first()
-          .map_or(1.0 / 1.618_033_988_749_895, |ps| {
+          .map_or(1.0 / std::f64::consts::GOLDEN_RATIO, |ps| {
             plot_source_aspect_ratio(ps.image_size)
           });
         merged_options.push(Expr::Rule {
@@ -16595,7 +16595,7 @@ fn with_default_image_size(expr: &Expr, size: i128) -> Expr {
     if !has_aspect_ratio {
       new_args.push(Expr::Rule {
         pattern: Box::new(id_expr("AspectRatio")),
-        replacement: Box::new(Expr::Real(1.0 / 1.618_033_988_749_895)),
+        replacement: Box::new(Expr::Real(1.0 / std::f64::consts::GOLDEN_RATIO)),
       });
     }
   }
@@ -27778,7 +27778,7 @@ mod manipulate_dynamic_control_list_tests {
   fn dynamic_wrapped_control_list_flattens_to_controls() {
     let s = spec("Manipulate[x, Dynamic[{Control[{{x, 0}, -1, 1}]}]]");
     assert_eq!(names(&s), vec!["x"]);
-    assert!(s.displays.is_empty());
+    assert_eq!(s.displays, [] as [std::string::String; 0]);
   }
 
   /// `Dynamic[Column[{Control[…], …}]]` (the Demonstrations idiom for a
@@ -27794,7 +27794,7 @@ mod manipulate_dynamic_control_list_tests {
        Control[{{y, 0}, -1, 1}]}]]]",
     );
     assert_eq!(names(&s), vec!["x", "y"]);
-    assert!(s.displays.is_empty());
+    assert_eq!(s.displays, [] as [std::string::String; 0]);
   }
 
   /// The same flattening applies when the controls are colour pickers
@@ -27809,7 +27809,7 @@ mod manipulate_dynamic_control_list_tests {
        ImageSize -> Tiny}]}]]]",
     );
     assert_eq!(names(&s), vec!["col"]);
-    assert!(s.displays.is_empty());
+    assert_eq!(s.displays, [] as [std::string::String; 0]);
     assert!(matches!(&s.controls[0], ManipulateControl::Color { .. }));
   }
 
@@ -28057,7 +28057,10 @@ mod manipulate_dynamic_control_list_tests {
   #[test]
   fn no_bookmarks_option_leaves_bookmarks_empty() {
     let s = spec("Manipulate[Graphics[{Circle[{0, 0}, r]}], {r, 1, 5}]");
-    assert!(s.bookmarks.is_empty());
+    assert_eq!(
+      s.bookmarks,
+      [] as [(std::string::String, std::string::String); 0]
+    );
   }
 }
 
