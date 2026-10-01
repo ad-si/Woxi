@@ -576,7 +576,14 @@ impl ManipulateState {
       return;
     }
     for (name, code) in saved {
-      if let Some(control) = self.controls.iter_mut().find(|c| c.name() == name)
+      // A widget rebuilt from a bare box dump keeps the DynamicModule's
+      // `$$` uniquification suffix on its control names, while the saved
+      // variable names arrive with it already stripped.
+      let suffixed = format!("{name}$$");
+      if let Some(control) = self
+        .controls
+        .iter_mut()
+        .find(|c| c.name() == name || c.name() == suffixed)
       {
         control.set_current_from_code(code);
       }

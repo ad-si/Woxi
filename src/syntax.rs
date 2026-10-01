@@ -12058,6 +12058,25 @@ fn input_form_subtracted_term(term: &Expr) -> String {
   }
 }
 
+thread_local! {
+  /// While set, `TraditionalForm[…]` prints as source instead of the box
+  /// segment InputForm text uses for it.
+  static KEEP_FORM_HEADS_AS_SOURCE: std::cell::Cell<bool> =
+    const { std::cell::Cell::new(false) };
+}
+
+/// Like [`expr_to_input_form`], but `TraditionalForm[…]` stays literal source
+/// text, so the result re-parses to the same expression. Use this when the
+/// text is code to be evaluated again (e.g. a Manipulate body) rather than
+/// text to display: the box segment is lossy once read back (`Block(…)`,
+/// `=` for `==`).
+pub fn expr_to_source_form(expr: &Expr) -> String {
+  let prev = KEEP_FORM_HEADS_AS_SOURCE.with(|c| c.replace(true));
+  let out = expr_to_input_form(expr);
+  KEEP_FORM_HEADS_AS_SOURCE.with(|c| c.set(prev));
+  out
+}
+
 pub fn expr_to_input_form(expr: &Expr) -> String {
   // Grow the stack when running low so rendering a deeply nested expression
   // (e.g. the script-mode display of Nest[f, x, 500], or FullForm of it) does
@@ -12598,7 +12617,9 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
     // so `Row[{1, TraditionalForm[x^2], "a"}]` keeps its surrounding
     // source text.
     Expr::FunctionCall { name, args }
-      if name == "TraditionalForm" && args.len() == 1 =>
+      if name == "TraditionalForm"
+        && args.len() == 1
+        && !KEEP_FORM_HEADS_AS_SOURCE.with(std::cell::Cell::get) =>
     {
       crate::functions::string_ast::traditional_form_box_escape(&args[0], true)
     }
