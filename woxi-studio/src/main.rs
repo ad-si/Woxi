@@ -7508,6 +7508,35 @@ mod tests {
     );
   }
 
+  /// Regression: a Manipulate that plots a Bessel function over a patch of
+  /// the complex plane with a chooser for the function family and an order
+  /// slider. `BesselJ`/`BesselI`/`BesselY`/`BesselK` had no numeric value at
+  /// a complex machine-precision argument (nor `BesselY`/`BesselK` at a
+  /// negative real one), so every sample was non-finite and the body failed
+  /// with "function produced no finite values in the given range".
+  #[test]
+  fn manipulate_plot3d_of_bessel_function_over_complex_plane() {
+    let code = r#"Manipulate[
+      Plot3D[Im[fn[order, x + I y]], {x, -3, 2}, {y, -3, 2},
+        ImageSize -> {300, 240}, MaxRecursion -> 1],
+      {{order, -2, "order"}, -5, 5, 1},
+      {{fn, BesselK, "family"}, {BesselI -> "I", BesselJ -> "J",
+        BesselK -> "K", BesselY -> "Y"}}]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("the slider and chooser should build a ManipulateState");
+    assert_eq!(
+      state.error, None,
+      "the complex-plane Bessel plot must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the Bessel surface must render as a picture"
+    );
+  }
+
   /// A `SaveDefinitions -> True` Manipulate (the shape a Wolfram
   /// Demonstrations Project notebook downloaded straight from a share link
   /// carries: an Input cell holding the live `Manipulate[…]` source, and an

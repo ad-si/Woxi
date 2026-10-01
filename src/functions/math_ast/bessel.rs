@@ -107,6 +107,11 @@ pub fn bessel_j_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && z_val.is_some()
     && (matches!(z_expr, Expr::Real(_)) || matches!(n_expr, Expr::Real(_)));
 
+  // Complex (or negative-real, branch-cut) arguments evaluate numerically.
+  if let Some(result) = bessel_complex_numeric('J', n_expr, z_expr) {
+    return Ok(result);
+  }
+
   if is_numeric_eval {
     let n = n_val.unwrap();
     let z = z_val.unwrap();
@@ -623,6 +628,11 @@ pub fn bessel_i_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && z_val.is_some()
     && (matches!(z_expr, Expr::Real(_)) || matches!(n_expr, Expr::Real(_)));
 
+  // Complex (or negative-real, branch-cut) arguments evaluate numerically.
+  if let Some(result) = bessel_complex_numeric('I', n_expr, z_expr) {
+    return Ok(result);
+  }
+
   if is_numeric_eval {
     let result = bessel_i(n_val.unwrap(), z_val.unwrap());
     return Ok(Expr::Real(result));
@@ -702,6 +712,11 @@ pub fn bessel_k_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let is_numeric_eval = n_val.is_some()
     && z_val.is_some()
     && (matches!(z_expr, Expr::Real(_)) || matches!(n_expr, Expr::Real(_)));
+
+  // Complex (or negative-real, branch-cut) arguments evaluate numerically.
+  if let Some(result) = bessel_complex_numeric('K', n_expr, z_expr) {
+    return Ok(result);
+  }
 
   if is_numeric_eval {
     let n = n_val.unwrap();
@@ -966,6 +981,11 @@ pub fn bessel_y_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let is_numeric_eval = n_val.is_some()
     && z_val.is_some()
     && (matches!(z_expr, Expr::Real(_)) || matches!(n_expr, Expr::Real(_)));
+
+  // Complex (or negative-real, branch-cut) arguments evaluate numerically.
+  if let Some(result) = bessel_complex_numeric('Y', n_expr, z_expr) {
+    return Ok(result);
+  }
 
   if is_numeric_eval {
     let n = n_val.unwrap();
@@ -2126,4 +2146,203 @@ pub fn kelvin_kei_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   // KelvinKei[z] = KelvinKei[0, z] for exact/symbolic z (matches wolframscript).
   Ok(call("KelvinKei", vec![Expr::Integer(0), args[0].clone()]))
+}
+
+type Cx = (f64, f64);
+
+fn cx_mul(a: Cx, b: Cx) -> Cx {
+  (a.0 * b.0 - a.1 * b.1, a.0 * b.1 + a.1 * b.0)
+}
+
+fn cx_ln(a: Cx) -> Cx {
+  (a.0.hypot(a.1).ln(), a.1.atan2(a.0))
+}
+
+fn cx_exp(a: Cx) -> Cx {
+  let m = a.0.exp();
+  (m * a.1.cos(), m * a.1.sin())
+}
+
+/// (z/2)^p for real p. Integer powers use repeated multiplication so that
+/// negative real arguments stay exact instead of going through the log.
+fn cx_half_pow(half: Cx, p: f64) -> Cx {
+  if p == p.floor() && p.abs() < 1e6 {
+    let mut r = (1.0, 0.0);
+    for _ in 0..(p.abs() as u64) {
+      r = cx_mul(r, half);
+    }
+    if p < 0.0 {
+      let d = r.0 * r.0 + r.1 * r.1;
+      return (r.0 / d, -r.1 / d);
+    }
+    return r;
+  }
+  let (lr, li) = cx_ln(half);
+  cx_exp((p * lr, p * li))
+}
+
+/// Power series for J_nu(z) (sign = -1) and I_nu(z) (sign = +1) at a complex
+/// argument and real order nu (not a negative integer):
+///   (z/2)^nu / Gamma(nu+1) * Sum_k (sign*(z/2)^2)^k / (k! (nu+1)_k)
+fn bessel_series_complex(nu: f64, z: Cx, sign: f64) -> Cx {
+  let half = (z.0 * 0.5, z.1 * 0.5);
+  let u = cx_mul(half, half);
+  let u = (sign * u.0, sign * u.1);
+  let pref = cx_half_pow(half, nu);
+  let g = 1.0 / gamma_fn(nu + 1.0);
+  let mut term = (g, 0.0);
+  let mut sum = term;
+  for k in 1..500usize {
+    let f = 1.0 / (k as f64 * (nu + k as f64));
+    term = cx_mul(term, (u.0 * f, u.1 * f));
+    sum = (sum.0 + term.0, sum.1 + term.1);
+    if term.0.hypot(term.1) < 1e-17 * sum.0.hypot(sum.1).max(1e-300) {
+      break;
+    }
+  }
+  cx_mul(pref, sum)
+}
+
+/// Sum_{k>=0} (psi(k+1) + psi(n+k+1)) * (sign*u)^k / (k! (n+k)!) with
+/// u = (z/2)^2, shared by the integer-order Y_n and K_n expansions.
+fn bessel_digamma_series_complex(n: u64, z: Cx, sign: f64) -> Cx {
+  let half = (z.0 * 0.5, z.1 * 0.5);
+  let u = cx_mul(half, half);
+  let u = (sign * u.0, sign * u.1);
+  let n_f = n as f64;
+  let mut fact_n = 1.0;
+  for i in 1..=n {
+    fact_n *= i as f64;
+  }
+  let mut term = (1.0 / fact_n, 0.0);
+  let mut sum = (0.0, 0.0);
+  for k in 0..500usize {
+    let kf = k as f64;
+    let w = digamma(kf + 1.0) + digamma(n_f + kf + 1.0);
+    let contrib = (term.0 * w, term.1 * w);
+    sum = (sum.0 + contrib.0, sum.1 + contrib.1);
+    let f = 1.0 / ((kf + 1.0) * (n_f + kf + 1.0));
+    term = cx_mul(term, (u.0 * f, u.1 * f));
+    if k > 2
+      && contrib.0.hypot(contrib.1) < 1e-17 * sum.0.hypot(sum.1).max(1e-300)
+    {
+      break;
+    }
+  }
+  sum
+}
+
+/// Finite sum Sum_{k=0}^{n-1} (n-k-1)!/k! * (sign*(z/2)^2)^k, multiplied by
+/// (z/2)^(-n); the leading part of the Y_n and K_n expansions.
+fn bessel_finite_sum_complex(n: u64, z: Cx, sign: f64) -> Cx {
+  let half = (z.0 * 0.5, z.1 * 0.5);
+  let u = cx_mul(half, half);
+  let u = (sign * u.0, sign * u.1);
+  let mut sum = (0.0, 0.0);
+  let mut upow = (1.0, 0.0);
+  let mut ratio = 1.0; // (n-k-1)!/k!
+  for i in 1..n {
+    ratio *= i as f64;
+  }
+  for k in 0..n {
+    sum = (sum.0 + ratio * upow.0, sum.1 + ratio * upow.1);
+    upow = cx_mul(upow, u);
+    let kf = k as f64;
+    if n >= k + 2 {
+      ratio /= (n as f64 - kf - 1.0) * (kf + 1.0);
+    }
+  }
+  cx_mul(sum, cx_half_pow(half, -(n as f64)))
+}
+
+/// J (`'J'`), I (`'I'`), Y (`'Y'`) or K (`'K'`) of real order `nu` at a
+/// complex argument, via power series (accurate for moderate |z|).
+fn bessel_complex_value(kind: char, nu: f64, z: Cx) -> Cx {
+  let sign = if matches!(kind, 'J' | 'Y') { -1.0 } else { 1.0 };
+  let is_int = nu == nu.floor();
+  let half = (z.0 * 0.5, z.1 * 0.5);
+  let ln_half = cx_ln(half);
+  let pi = std::f64::consts::PI;
+  let scale = |c: Cx, f: f64| (c.0 * f, c.1 * f);
+  if is_int {
+    let n = nu.abs() as u64;
+    let neg_odd = nu < 0.0 && n % 2 == 1;
+    let nf = n as f64;
+    let direct = bessel_series_complex(nf, z, sign);
+    let digamma_sum = bessel_digamma_series_complex(n, z, sign);
+    let digamma_term = cx_mul(cx_half_pow(half, nf), digamma_sum);
+    let finite = bessel_finite_sum_complex(n, z, -sign);
+    let val = match kind {
+      'J' | 'I' => {
+        // J_{-n} = (-1)^n J_n, I_{-n} = I_n
+        if kind == 'J' && neg_odd {
+          scale(direct, -1.0)
+        } else {
+          direct
+        }
+      }
+      'Y' => {
+        // Y_n = (2/pi) J_n ln(z/2) - (1/pi) finite - (1/pi) digamma_term
+        let jl = cx_mul(direct, ln_half);
+        let y = (
+          (2.0 * jl.0 - finite.0 - digamma_term.0) / pi,
+          (2.0 * jl.1 - finite.1 - digamma_term.1) / pi,
+        );
+        if neg_odd { scale(y, -1.0) } else { y }
+      }
+      _ => {
+        // K_n = (1/2) finite - (-1)^n ln(z/2) I_n + (-1)^n (1/2) digamma_term
+        let par = if n.is_multiple_of(2) { 1.0 } else { -1.0 };
+        let il = cx_mul(direct, ln_half);
+        (
+          0.5 * finite.0 - par * il.0 + 0.5 * par * digamma_term.0,
+          0.5 * finite.1 - par * il.1 + 0.5 * par * digamma_term.1,
+        )
+      }
+    };
+    return val;
+  }
+  match kind {
+    'J' | 'I' => bessel_series_complex(nu, z, sign),
+    'Y' => {
+      // Y_nu = (J_nu cos(nu pi) - J_{-nu}) / sin(nu pi)
+      let jp = bessel_series_complex(nu, z, -1.0);
+      let jm = bessel_series_complex(-nu, z, -1.0);
+      let s = (nu * pi).sin();
+      let c = (nu * pi).cos();
+      ((jp.0 * c - jm.0) / s, (jp.1 * c - jm.1) / s)
+    }
+    _ => {
+      // K_nu = pi/2 (I_{-nu} - I_nu) / sin(nu pi)
+      let ip = bessel_series_complex(nu, z, 1.0);
+      let im = bessel_series_complex(-nu, z, 1.0);
+      let f = pi / 2.0 / (nu * pi).sin();
+      ((im.0 - ip.0) * f, (im.1 - ip.1) * f)
+    }
+  }
+}
+
+/// Numeric BesselJ/I/Y/K for an inexact complex argument, or a negative real
+/// argument where the real-line evaluators have no value (Y, K, and J, I at
+/// non-integer order). Returns `None` when the arguments don't qualify.
+fn bessel_complex_numeric(
+  kind: char,
+  n_expr: &Expr,
+  z_expr: &Expr,
+) -> Option<Expr> {
+  let nu = expr_to_f64(n_expr)?;
+  let (re, im) = try_extract_complex_float(z_expr)?;
+  if !(contains_inexact_real(z_expr) || contains_inexact_real(n_expr)) {
+    return None;
+  }
+  if re == 0.0 && im == 0.0 {
+    return None;
+  }
+  let negative_real = im == 0.0 && re < 0.0;
+  let needs_branch = matches!(kind, 'Y' | 'K') || nu != nu.floor();
+  if im == 0.0 && !(negative_real && needs_branch) {
+    return None;
+  }
+  let (r, i) = bessel_complex_value(kind, nu, (re, im));
+  Some(build_complex_float_expr(r, i))
 }
