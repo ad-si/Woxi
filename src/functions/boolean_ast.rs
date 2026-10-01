@@ -1009,13 +1009,8 @@ pub fn true_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let evaluated = evaluate_expr_to_expr(&args[0])?;
-  Ok(Expr::Identifier(
-    if matches!(&evaluated, Expr::Identifier(s) if s == "True") {
-      "True"
-    } else {
-      "False"
-    }
-    .to_string(),
+  Ok(bool_expr(
+    matches!(&evaluated, Expr::Identifier(s) if s == "True"),
   ))
 }
 
