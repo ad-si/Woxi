@@ -1376,6 +1376,47 @@ static POLYHEDRA: &[PolyhedronInfo] = &[
       {\"Amphichiral\", \"Convex\", \"Equilateral\", \"Johnson\", \
       \"Nonuniform\", \"Rigid\", \"Simple\"}",
   },
+  PolyhedronInfo {
+    name: "BilinskiDodecahedron",
+    vertex_count: 14,
+    edge_count: 24,
+    face_count: 12,
+    // A zonohedron with four unit generators whose pairwise angles all have
+    // cosine +-1/Sqrt[5], so its 12 faces are congruent golden rhombi
+    // (area 2/Sqrt[5] each) and its volume is the sum of the generators'
+    // triple-product magnitudes.
+    volume: "(4/5)*Sqrt[5 + 2*Sqrt[5]]",
+    surface_area: "24/Sqrt[5]",
+    // The vertices lie at several distances from the center, and the faces
+    // and edges likewise, so there is no circumsphere, insphere or
+    // midsphere.
+    circumradius: "Missing[\"NotApplicable\"]",
+    inradius: "Missing[\"NotApplicable\"]",
+    midradius: "Missing[\"NotApplicable\"]",
+    // Axes along the three twofold symmetry axes; with a = Sqrt[(5-Sqrt[5])/10]
+    // and b = Sqrt[(5+Sqrt[5])/10]: (+-a, +-b, 0), (+-a, 0, +-a),
+    // (0, +-b, +-b) and (0, 0, +-(a+b)), sorted lexicographically.
+    vertices_src: "{\
+      {-Sqrt[(5 - Sqrt[5])/10], -Sqrt[(5 + Sqrt[5])/10], 0}, \
+      {-Sqrt[(5 - Sqrt[5])/10], 0, -Sqrt[(5 - Sqrt[5])/10]}, \
+      {-Sqrt[(5 - Sqrt[5])/10], 0, Sqrt[(5 - Sqrt[5])/10]}, \
+      {-Sqrt[(5 - Sqrt[5])/10], Sqrt[(5 + Sqrt[5])/10], 0}, \
+      {0, -Sqrt[(5 + Sqrt[5])/10], -Sqrt[(5 + Sqrt[5])/10]}, \
+      {0, -Sqrt[(5 + Sqrt[5])/10], Sqrt[(5 + Sqrt[5])/10]}, \
+      {0, 0, -Sqrt[(5 + 2*Sqrt[5])/5]}, \
+      {0, 0, Sqrt[(5 + 2*Sqrt[5])/5]}, \
+      {0, Sqrt[(5 + Sqrt[5])/10], -Sqrt[(5 + Sqrt[5])/10]}, \
+      {0, Sqrt[(5 + Sqrt[5])/10], Sqrt[(5 + Sqrt[5])/10]}, \
+      {Sqrt[(5 - Sqrt[5])/10], -Sqrt[(5 + Sqrt[5])/10], 0}, \
+      {Sqrt[(5 - Sqrt[5])/10], 0, -Sqrt[(5 - Sqrt[5])/10]}, \
+      {Sqrt[(5 - Sqrt[5])/10], 0, Sqrt[(5 - Sqrt[5])/10]}, \
+      {Sqrt[(5 - Sqrt[5])/10], Sqrt[(5 + Sqrt[5])/10], 0}}",
+    faces_src: "{\
+      {4, 3, 8, 10}, {9, 4, 10, 14}, {7, 5, 1, 2}, {11, 5, 7, 12}, \
+      {3, 1, 6, 8}, {6, 1, 5, 11}, {13, 8, 6, 11}, {14, 12, 7, 9}, \
+      {2, 1, 3, 4}, {10, 8, 13, 14}, {9, 7, 2, 4}, {13, 11, 12, 14}}",
+    classes_src: "{\"Amphichiral\", \"Convex\", \"Equilateral\", \"Zonohedron\"}",
+  },
 ];
 
 fn find_polyhedron(name: &str) -> Option<&'static PolyhedronInfo> {

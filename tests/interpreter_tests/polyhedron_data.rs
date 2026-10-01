@@ -460,7 +460,7 @@ mod polyhedron_data_tests {
   fn polyhedron_data_all_lists_every_entity() {
     assert_eq!(
       interpret("PolyhedronData[All]").unwrap(),
-      "{Cube, DeltoidalHexecontahedron, DisdyakisTriacontahedron, \
+      "{BilinskiDodecahedron, Cube, DeltoidalHexecontahedron, DisdyakisTriacontahedron, \
        Dodecahedron, GreatRhombicosidodecahedron, Icosahedron, \
        Icosidodecahedron, Octahedron, PentakisDodecahedron, \
        RhombicDodecahedron, RhombicHexecontahedron, \
@@ -856,6 +856,70 @@ mod polyhedron_data_tests {
       )
       .unwrap(),
       "{3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4}"
+    );
+  }
+
+  // The Bilinski dodecahedron: 12 congruent golden rhombi, unit edges.
+  #[test]
+  fn polyhedron_data_bilinski_dodecahedron() {
+    assert_eq!(
+      interpret(
+        r#"PolyhedronData["BilinskiDodecahedron", #] & /@
+             {"VertexCount", "EdgeCount", "FaceCount"}"#
+      )
+      .unwrap(),
+      "{14, 24, 12}"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData["BilinskiDodecahedron", "SurfaceArea"]"#)
+        .unwrap(),
+      "24/Sqrt[5]"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData["BilinskiDodecahedron", "Circumradius"]"#)
+        .unwrap(),
+      "Missing[NotApplicable]"
+    );
+    // The scene a notebook builds from "Faces": corners in [[1]], faces in
+    // [[2, 1]] indexing into them.
+    assert_eq!(
+      interpret(
+        r#"With[{d = PolyhedronData["BilinskiDodecahedron", "Faces"]},
+             {Length[d[[1]]], Length[d[[2, 1]]], Dimensions[N[d[[1]]]]}]"#
+      )
+      .unwrap(),
+      "{14, 12, {14, 3}}"
+    );
+    // Every edge has unit length; the volume matches the exact value.
+    assert_eq!(
+      interpret(
+        r#"With[{v = N[PolyhedronData["BilinskiDodecahedron",
+               "VertexCoordinates"]],
+              e = PolyhedronData["BilinskiDodecahedron", "EdgeIndices"]},
+             Union[Round[Norm[v[[#[[1]]]] - v[[#[[2]]]]] & /@ e, 10^-10]]]"#
+      )
+      .unwrap(),
+      "{1}"
+    );
+    assert_eq!(
+      interpret(
+        r#"Round[N[PolyhedronData["BilinskiDodecahedron", "Volume"]], 10^-6]"#
+      )
+      .unwrap(),
+      "2462147/1000000"
+    );
+    // Every face is a planar rhombus with the golden-rhombus area 2/Sqrt[5].
+    assert_eq!(
+      interpret(
+        r#"With[{v = N[PolyhedronData["BilinskiDodecahedron",
+               "VertexCoordinates"]]},
+             Union[Round[Norm[Cross[v[[#[[2]]]] - v[[#[[1]]]],
+               v[[#[[4]]]] - v[[#[[1]]]]]] & /@
+               PolyhedronData["BilinskiDodecahedron", "FaceIndices"],
+               10^-10]]]"#
+      )
+      .unwrap(),
+      "{894427191/1000000000}"
     );
   }
 }
