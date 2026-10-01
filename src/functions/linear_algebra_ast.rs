@@ -3454,6 +3454,19 @@ pub fn eigenvalues_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           });
           return Ok(Expr::List(out.into()));
         }
+        // Complex-conjugate pairs: Wolfram complexifies the whole result.
+        let complex = numeric_eigenvalues_complex(&float_mat, n);
+        if complex.len() == n {
+          let out: Vec<Expr> = complex
+            .into_iter()
+            .map(|(re, im)| {
+              crate::functions::math_ast::build_complex_float_expr_keep_real(
+                re, im,
+              )
+            })
+            .collect();
+          return Ok(Expr::List(out.into()));
+        }
       }
     }
   }
@@ -3910,6 +3923,11 @@ pub fn eigenvectors_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   });
 
   if has_real && all_numeric {
+    if n >= 3
+      && let Some(result) = complex_numeric_eigenvectors(&matrix, n)
+    {
+      return Ok(result);
+    }
     return Ok(numeric_eigenvectors(&matrix, n));
   }
 
@@ -4424,6 +4442,77 @@ fn normalize_symbolic_eigenvector(v: Vec<Expr>) -> Vec<Expr> {
   v
 }
 
+/// Eigenvectors of a real float matrix (n ≥ 3) that has complex-conjugate
+/// eigenvalues; `None` when all eigenvalues are real (the real path handles
+/// that) or the iteration fails. Vectors follow `Eigenvalues`' order, have
+/// unit length, and — as LAPACK's `dgeev` does — a real largest component.
+/// Eigenvectors of real eigenvalues stay real.
+fn complex_numeric_eigenvectors(
+  matrix: &[Vec<Expr>],
+  n: usize,
+) -> Option<Expr> {
+  let f_matrix: Vec<Vec<f64>> = matrix
+    .iter()
+    .map(|row| row.iter().map(try_eval_to_f64).collect())
+    .collect::<Option<_>>()?;
+  let eigenvalues = numeric_eigenvalues_complex(&f_matrix, n);
+  if eigenvalues.len() != n || eigenvalues.iter().all(|&(_, im)| im == 0.0) {
+    return None;
+  }
+  let scale = f_matrix
+    .iter()
+    .flat_map(|row| row.iter())
+    .fold(1.0f64, |acc, v| acc.max(v.abs()));
+  let mut out = Vec::with_capacity(n);
+  for &(lr, li) in &eigenvalues {
+    // Inverse iteration on the real 2n×2n embedding of (A - λI) y = x.
+    let (sr, si) = (lr + scale * 1e-10, li);
+    let mut m = vec![vec![0.0; 2 * n]; 2 * n];
+    for i in 0..n {
+      for j in 0..n {
+        let a = f_matrix[i][j] - if i == j { sr } else { 0.0 };
+        m[i][j] = a;
+        m[n + i][n + j] = a;
+      }
+      m[i][n + i] = si;
+      m[n + i][i] = -si;
+    }
+    let mut x = vec![1.0; 2 * n];
+    for _ in 0..4 {
+      let y = solve_linear_system(&m, &x)?;
+      let norm = y.iter().map(|v| v * v).sum::<f64>().sqrt();
+      if !(norm > 1e-300) || !norm.is_finite() {
+        return None;
+      }
+      x = y.iter().map(|v| v / norm).collect();
+    }
+    let comps: Vec<(f64, f64)> = (0..n).map(|i| (x[i], x[n + i])).collect();
+    // Rotate the phase so the largest-magnitude component is real positive.
+    let (bidx, &(br, bi)) = comps
+      .iter()
+      .enumerate()
+      .max_by(|a, b| a.1.0.hypot(a.1.1).total_cmp(&b.1.0.hypot(b.1.1)))?;
+    let mag = br.hypot(bi);
+    let (pr, pi) = (br / mag, -bi / mag);
+    let vec: Vec<Expr> = comps
+      .iter()
+      .enumerate()
+      .map(|(k, &(re, im))| {
+        let (re, im) = (re * pr - im * pi, re * pi + im * pr);
+        // The pivot component is real by construction; drop rounding noise.
+        let (re, im) = if k == bidx { (mag, 0.0) } else { (re, im) };
+        if li == 0.0 {
+          Expr::Real(re)
+        } else {
+          crate::functions::math_ast::build_complex_float_expr_keep_real(re, im)
+        }
+      })
+      .collect();
+    out.push(Expr::List(vec.into()));
+  }
+  Some(Expr::List(out.into()))
+}
+
 /// Compute eigenvectors for a numeric (f64) matrix.
 fn numeric_eigenvectors(matrix: &[Vec<Expr>], n: usize) -> Expr {
   // Convert to f64 matrix
@@ -4590,6 +4679,29 @@ fn numeric_eigenvalues(matrix: &[Vec<f64>], n: usize) -> Vec<f64> {
   roots
 }
 
+/// Eigenvalues of a real n×n matrix (n ≥ 3) including complex-conjugate
+/// pairs, as `(re, im)` sorted by decreasing magnitude with the `+im` member
+/// of a conjugate pair first. Empty when the iteration does not converge.
+fn numeric_eigenvalues_complex(
+  matrix: &[Vec<f64>],
+  n: usize,
+) -> Vec<(f64, f64)> {
+  let mut h = matrix.to_vec();
+  hessenberg_reduce(&mut h, n);
+  let mut roots = qr_eigenvalues_complex(&mut h, n);
+  if roots.len() != n {
+    return Vec::new();
+  }
+  roots.sort_by(|a, b| {
+    b.0
+      .hypot(b.1)
+      .partial_cmp(&a.0.hypot(a.1))
+      .unwrap_or(std::cmp::Ordering::Equal)
+      .then(b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal))
+  });
+  roots
+}
+
 /// In-place Householder reduction to upper Hessenberg form. Columns whose
 /// below-subdiagonal part is exactly zero are skipped, so triangular and
 /// block-triangular inputs pass through bit-for-bit unchanged.
@@ -4639,7 +4751,18 @@ fn hessenberg_reduce(a: &mut [Vec<f64>], n: usize) {
 /// real "eigenvalues" (the old companion-matrix path returned garbage for
 /// rotation-like matrices).
 fn qr_eigenvalues(h: &mut [Vec<f64>], n: usize) -> Vec<f64> {
-  let mut eigenvalues: Vec<f64> = Vec::new();
+  let all = qr_eigenvalues_complex(h, n);
+  if all.len() != n || all.iter().any(|&(_, im)| im != 0.0) {
+    return Vec::new();
+  }
+  all.into_iter().map(|(re, _)| re).collect()
+}
+
+/// Like `qr_eigenvalues`, but complex-conjugate pairs are returned as
+/// `(re, im)` entries (`im > 0` first) instead of aborting. Empty on
+/// non-convergence.
+fn qr_eigenvalues_complex(h: &mut [Vec<f64>], n: usize) -> Vec<(f64, f64)> {
+  let mut eigenvalues: Vec<(f64, f64)> = Vec::new();
   let mut hi = n; // active block occupies rows/columns 0..hi
   let mut stagnant = 0usize;
 
@@ -4654,7 +4777,7 @@ fn qr_eigenvalues(h: &mut [Vec<f64>], n: usize) -> Vec<f64> {
     }
     // Deflate a trailing 1×1 block.
     if hi == 1 || h[hi - 1][hi - 2] == 0.0 {
-      eigenvalues.push(h[hi - 1][hi - 1]);
+      eigenvalues.push((h[hi - 1][hi - 1], 0.0));
       hi -= 1;
       stagnant = 0;
       continue;
@@ -4667,11 +4790,14 @@ fn qr_eigenvalues(h: &mut [Vec<f64>], n: usize) -> Vec<f64> {
       let det = a * d - b * c;
       let disc = tr * tr - 4.0 * det;
       if disc < 0.0 {
-        return Vec::new(); // complex pair: unsupported
+        let sq = (-disc).sqrt() / 2.0;
+        eigenvalues.push((tr / 2.0, sq));
+        eigenvalues.push((tr / 2.0, -sq));
+      } else {
+        let sq = disc.sqrt();
+        eigenvalues.push(((tr - sq) / 2.0, 0.0));
+        eigenvalues.push((f64::midpoint(tr, sq), 0.0));
       }
-      let sq = disc.sqrt();
-      eigenvalues.push((tr - sq) / 2.0);
-      eigenvalues.push(f64::midpoint(tr, sq));
       hi -= 2;
       stagnant = 0;
       continue;

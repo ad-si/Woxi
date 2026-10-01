@@ -1550,6 +1550,43 @@ mod projection {
 mod eigenvalues {
   use super::*;
 
+  /// Regression: float matrices (n ≥ 3) with complex-conjugate eigenvalues
+  /// stayed unevaluated, and `Eigenvectors[…][[1]]` then failed.
+  #[test]
+  fn float_matrix_with_complex_pair() {
+    let m = "{{0, 0.7, 2.2, 2, 0.2}, {0.4, 0, 0, 0, 0}, {0, 0.7, 0, 0, 0}, \
+             {0, 0, 0.8, 0, 0}, {0, 0, 0, 0.3, 0}}";
+    // All five eigenvalues come back; the sum is the trace (0), the
+    // dominant one is real and positive, and one conjugate pair is complex.
+    assert_eq!(
+      interpret(&format!("Length[Eigenvalues[{m}]]")).unwrap(),
+      "5"
+    );
+    assert_eq!(
+      interpret(&format!("Abs[Total[Eigenvalues[{m}]]] < 10^-12")).unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(&format!("Count[Eigenvalues[{m}], _Complex]")).unwrap(),
+      "2"
+    );
+    // Every eigenpair satisfies m.v == λ v.
+    assert_eq!(
+      interpret(&format!(
+        "Max[Abs[Flatten[Table[{m} . Eigenvectors[{m}][[k]] - \
+         Eigenvalues[{m}][[k]] Eigenvectors[{m}][[k]], {{k, 5}}]]]] < 10^-8"
+      ))
+      .unwrap(),
+      "True"
+    );
+    // The dominant eigenvector is real.
+    assert_eq!(
+      interpret(&format!("Im[Eigenvectors[{m}][[1]]] == {{0, 0, 0, 0, 0}}"))
+        .unwrap(),
+      "True"
+    );
+  }
+
   #[test]
   fn eigenvalues_1x1() {
     assert_eq!(interpret("Eigenvalues[{{5}}]").unwrap(), "{5}");
