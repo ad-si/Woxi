@@ -24095,6 +24095,37 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`nmax$$ = 10}, DynamicBox[\[Ellipsis
     assert!(state.graphics_handle.is_some());
   }
 
+  /// A widget rebuilt from a bare box dump (no Input cell) keeps the
+  /// DynamicModule's `$$` suffix on its control names, but the saved
+  /// variables come back with the suffix stripped. Regression: the saved
+  /// slider and setter values were never applied, so the widget reopened at
+  /// the spec defaults instead of the state the file was saved in.
+  #[test]
+  fn box_dump_widget_restores_saved_variables() {
+    let dump = "DynamicModuleBox[{$CellContext`a$$ = 0.25, \
+      $CellContext`m$$ = 2}, DynamicBox[Manipulate`ManipulateBoxes[\n\
+      1, StandardForm, \n\
+      \"Body\" :> $CellContext`m$$ $CellContext`a$$, \n\
+      \"Specifications\" :> {{{$CellContext`a$$, 0, \"amp\"}, -1, 1}, \
+        {{$CellContext`m$$, 1, \"mode\"}, {1 -> \" one \", 2 -> \" two \"}}}, \n\
+      \"Options\" :> {}],\n\
+      DynamicModuleValues:>{}]]";
+    let state = instantiate_manipulate_from_box_dump(dump)
+      .expect("the reconstructed Manipulate must build a widget");
+    match &state.controls[0] {
+      manipulate::ControlState::Continuous { current, .. } => {
+        assert_eq!(*current, 0.25)
+      }
+      other => panic!("expected a continuous control, got {other:?}"),
+    }
+    match &state.controls[1] {
+      manipulate::ControlState::Discrete { current_index, .. } => {
+        assert_eq!(*current_index, 1)
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+  }
+
   /// A saved `ManipulateBoxes[…]` dump — the shape a Wolfram Demonstration
   /// downloaded straight from a share link carries, with no Input-cell
   /// source to fall back on (see [`instantiate_manipulate_from_box_dump`]) —
