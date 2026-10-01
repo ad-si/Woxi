@@ -192,14 +192,7 @@ pub(crate) fn reliability_distribution_survival(
     let rules: Vec<Expr> = (0..n)
       .map(|i| Expr::Rule {
         pattern: Box::new(vars[i].clone()),
-        replacement: Box::new(Expr::Identifier(
-          if (mask >> i) & 1 == 1 {
-            "True"
-          } else {
-            "False"
-          }
-          .to_string(),
-        )),
+        replacement: Box::new(bool_expr((mask >> i) & 1 == 1)),
       })
       .collect();
     let substituted = call(
@@ -422,9 +415,7 @@ pub(crate) fn reliability_distribution_mean_exponential(
     let rules: Vec<Expr> = (0..n)
       .map(|i| Expr::Rule {
         pattern: Box::new(vars[i].clone()),
-        replacement: Box::new(Expr::Identifier(
-          if (b >> i) & 1 == 1 { "True" } else { "False" }.to_string(),
-        )),
+        replacement: Box::new(bool_expr((b >> i) & 1 == 1)),
       })
       .collect();
     let substituted = call(

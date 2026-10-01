@@ -416,9 +416,7 @@ pub fn exception_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .iter()
       .any(|t| expr_to_string(t) == expr_to_string(&args[1]));
   }
-  Ok(Expr::Identifier(
-    if ok { "True" } else { "False" }.to_string(),
-  ))
+  Ok(bool_expr(ok))
 }
 
 /// `ExceptionTypes[]` — the registry of exception types, which starts empty

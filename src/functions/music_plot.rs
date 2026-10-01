@@ -415,7 +415,7 @@ pub fn music_plot(args: &[Expr]) -> Option<Result<Expr, InterpreterError>> {
       "AspectRatio",
       crate::functions::math_ast::make_rational(1, 4),
     ),
-    rule("Axes", Expr::Identifier("True".to_string())),
+    rule("Axes", bool_expr(true)),
     rule(
       "GridLines",
       list(vec![

@@ -698,14 +698,7 @@ pub fn dispatch_predicate_functions(
             try_eval_to_f64(&range[0]),
             try_eval_to_f64(&range[1]),
           ) {
-            return Some(Ok(Expr::Identifier(
-              if lo <= xv && xv <= hi {
-                "True"
-              } else {
-                "False"
-              }
-              .to_string(),
-            )));
+            return Some(Ok(bool_expr(lo <= xv && xv <= hi)));
           }
           // Symbolic: a <= x <= b (chained inequality, like wolframscript).
           let chained = Expr::Comparison {

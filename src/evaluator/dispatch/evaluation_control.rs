@@ -854,14 +854,7 @@ pub fn dispatch_evaluation_control(
         // MEMO_VALUES, not FUNC_DEFS, but still count as a DownValue.
         let has_memo =
           crate::MEMO_VALUES.with(|m| m.borrow().contains_key(sym));
-        return Some(Ok(Expr::Identifier(
-          if has_value || has_func || has_memo {
-            "True"
-          } else {
-            "False"
-          }
-          .to_string(),
-        )));
+        return Some(Ok(bool_expr(has_value || has_func || has_memo)));
       }
       return Some(Ok(bool_expr(false)));
     }
