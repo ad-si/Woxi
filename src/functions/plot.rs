@@ -8352,7 +8352,7 @@ pub(crate) fn parse_explicit_ticks(value: &Expr) -> Option<Vec<(f64, String)>> {
     .iter()
     .filter_map(|entry| match entry {
       Expr::List(pair) if pair.len() >= 2 => {
-        let pos = try_eval_to_f64(&pair[0])?;
+        let pos = tick_position(&pair[0])?;
         // A label given as text may still embed box notation (a notebook
         // writes a superscript that way), so it renders like every other
         // label a plot draws rather than being escaped raw.
@@ -8364,12 +8364,23 @@ pub(crate) fn parse_explicit_ticks(value: &Expr) -> Option<Vec<(f64, String)>> {
         Some((pos, label))
       }
       other => {
-        let pos = try_eval_to_f64(other)?;
+        let pos = tick_position(other)?;
         Some((pos, bare_tick_label(other, pos)))
       }
     })
     .collect();
   (!ticks.is_empty()).then_some(ticks)
+}
+
+/// The numeric position of a tick. The spec is kept as written, so a position
+/// that depends on variables (`a/4` with `a` set elsewhere) is evaluated here
+/// before being read as a number.
+fn tick_position(e: &Expr) -> Option<f64> {
+  try_eval_to_f64(e).or_else(|| {
+    evaluate_expr_to_expr(e)
+      .ok()
+      .and_then(|v| try_eval_to_f64(&v))
+  })
 }
 
 /// The `<text>` content drawn at a tick given as a bare position rather than
