@@ -25979,6 +25979,28 @@ mod manipulate {
   }
 
   #[test]
+  fn display_invisible_is_not_shown_as_source() {
+    use woxi::functions::graphics::build_manipulate_display;
+    let tree = build_manipulate_display(
+      "Row[{\"a\", Invisible[x^2/(1 + 2^x)]}]",
+      &[("x".to_string(), "1".to_string())],
+    );
+    let mut nodes = Vec::new();
+    flatten(&tree, &mut nodes);
+    assert!(
+      nodes
+        .iter()
+        .all(|n| !matches!(n, DisplayNode::Static { .. })),
+      "Invisible must not fall through to a source-text leaf: {nodes:?}"
+    );
+    assert!(
+      nodes
+        .iter()
+        .any(|n| matches!(n, DisplayNode::Spacer { width } if *width == 0.0))
+    );
+  }
+
+  #[test]
   fn display_style_renders_as_styled_text() {
     // `Style[n, Bold, Red]` shows the *value* of n, bold and red — not the
     // literal `Style[…]` source.
