@@ -104,10 +104,10 @@ pub(crate) fn normalize_date_components(items: &[Expr]) -> Option<Vec<Expr>> {
     }
   };
   let mut y = as_i64(&items[0])?;
-  let mut mo = items.get(1).map_or(Some(1), &as_i64)?;
-  let mut d = items.get(2).map_or(Some(1), &as_i64)?;
-  let mut h = items.get(3).map_or(Some(0), &as_i64)?;
-  let mut mi = items.get(4).map_or(Some(0), &as_i64)?;
+  let mut mo = items.get(1).map_or(Some(1), as_i64)?;
+  let mut d = items.get(2).map_or(Some(1), as_i64)?;
+  let mut h = items.get(3).map_or(Some(0), as_i64)?;
+  let mut mi = items.get(4).map_or(Some(0), as_i64)?;
   let (mut s, s_is_real) = match items.get(5) {
     None => (0.0, false),
     Some(Expr::Integer(n)) => (i64::try_from(*n).ok()? as f64, false),

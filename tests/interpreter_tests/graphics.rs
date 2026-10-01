@@ -6659,7 +6659,7 @@ mod plot3d {
       // Only 1 on each axis (the origin's 0 is suppressed where the two
       // axes cross, as it is for automatic ticks).
       assert_eq!(ticks("{{0, 1}, {1}}"), ["1", "1"]);
-      assert!(ticks("None").is_empty());
+      assert_eq!(ticks("None"), [] as [std::string::String; 0]);
       // A `{pos, label}` pair carries its own text.
       assert_eq!(ticks(r#"{{{0.5, "half"}}, {}}"#), ["half"]);
       // Automatic still fills the axis with the usual marks.
@@ -11113,8 +11113,8 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       // A *different* Histogram call without `Ticks -> None` still shows its
       // automatic labels on both axes (independent options per call).
       let svg_default = export_svg("Histogram[{1, 2, 2, 3, 3, 3}, {1}]");
-      assert!(!x_tick_labels(&svg_default).is_empty());
-      assert!(!y_tick_labels(&svg_default).is_empty());
+      assert_ne!(x_tick_labels(&svg_default), [] as [std::string::String; 0]);
+      assert_ne!(y_tick_labels(&svg_default), [] as [std::string::String; 0]);
     }
 
     #[test]
@@ -24895,7 +24895,10 @@ mod manipulate {
       interpret_to_expr("Manipulate[a, {{a, 0.5}, 0.1, 0.9, Enabled -> True}]")
         .unwrap();
     let spec = extract_manipulate_spec(&expr).unwrap();
-    assert!(spec.control_enabled.is_empty());
+    assert_eq!(
+      spec.control_enabled,
+      [] as [(std::string::String, std::string::String); 0]
+    );
   }
 
   #[test]

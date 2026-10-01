@@ -13835,7 +13835,7 @@ fn compose_series_pair(outer: &Expr, inner: &Expr) -> Option<Expr> {
   let mut dense: Vec<Expr> = Vec::new();
   if nmin_r < big_m {
     let mut hi = big_m - 1;
-    while hi > nmin_r && coeff_map.get(&hi).is_none_or(&is_zero) {
+    while hi > nmin_r && coeff_map.get(&hi).is_none_or(is_zero) {
       hi -= 1;
     }
     for p in nmin_r..=hi {

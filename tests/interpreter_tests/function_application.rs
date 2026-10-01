@@ -2693,7 +2693,7 @@ mod append_prepend_nest_firstcase_operator_forms {
     // Replace[rules][expr] applies the rules — without a spurious argbu error.
     let r = interpret_with_stdout("Replace[x_ :> x^2][5]").unwrap();
     assert_eq!(r.result, "25");
-    assert!(r.warnings.is_empty());
+    assert_eq!(r.warnings, [] as [std::string::String; 0]);
     assert_eq!(interpret("Replace[{a -> 1, b -> 2}][a]").unwrap(), "1");
     assert_eq!(
       interpret("Map[Replace[x_ :> x^2], {1, 2, 3}]").unwrap(),

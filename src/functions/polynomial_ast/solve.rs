@@ -12794,7 +12794,7 @@ fn named_constant_value(name: &str) -> Option<f64> {
     "E" => std::f64::consts::E,
     "Degree" => std::f64::consts::PI / 180.0,
     "GoldenRatio" => f64::midpoint(1.0, 5.0_f64.sqrt()),
-    "EulerGamma" => 0.577_215_664_901_532_9,
+    "EulerGamma" => std::f64::consts::EULER_GAMMA,
     "Catalan" => 0.915_965_594_177_219,
     _ => return None,
   })
