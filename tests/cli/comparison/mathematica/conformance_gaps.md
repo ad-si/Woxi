@@ -4533,3 +4533,9 @@ woxi eval 'Together[1/x + 1/y, Modulus -> 3]'   # stays unevaluated
 
 The modular path cancels over GF(p) with univariate polynomial arithmetic,
 so a multivariate fraction (or a composite modulus) is returned unevaluated.
+
+## PolyhedronData["BilinskiDodecahedron", ...]
+
+Geometry (unit edges, volume, surface area, face structure) is derived from
+the golden-rhombus zonohedron; the vertex order, orientation and the
+`"Classes"` list were not checked against `wolframscript`.
