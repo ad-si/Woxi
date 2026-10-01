@@ -4481,7 +4481,7 @@ fn complex_numeric_eigenvectors(
     for _ in 0..4 {
       let y = solve_linear_system(&m, &x)?;
       let norm = y.iter().map(|v| v * v).sum::<f64>().sqrt();
-      if !(norm > 1e-300) || !norm.is_finite() {
+      if norm <= 1e-300 || !norm.is_finite() {
         return None;
       }
       x = y.iter().map(|v| v / norm).collect();

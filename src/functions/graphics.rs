@@ -26672,10 +26672,14 @@ pub fn unset_checkbox_defaults(
     match node {
       DisplayNode::Panel(c) => walk(c, out),
       DisplayNode::Grid(rows) => {
-        rows.iter().flatten().for_each(|c| walk(c, out))
+        for c in rows.iter().flatten() {
+          walk(c, out);
+        }
       }
       DisplayNode::Column(cs) | DisplayNode::Row(cs) => {
-        cs.iter().for_each(|c| walk(c, out));
+        for c in cs {
+          walk(c, out);
+        }
       }
       DisplayNode::Checkbox {
         target: Some(t),
