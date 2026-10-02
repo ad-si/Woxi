@@ -2567,6 +2567,30 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_graphics_inset_text_grid_and_column_labels() {
+    // Regression: `Inset[Style[Grid[{{"…"}}, opts], size], pos]` (how a
+    // Demonstration captions a diagram) drew the literal `Grid[{{…}}, …]`
+    // source instead of the label text.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Graphics[Inset[Style[Grid[{{\"alpha\", \"beta\"}, {\"gamma\"}}, Frame -> True, ItemSize -> {30, Automatic}], 11], {0, 0}]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(!svg.contains("Grid["), "Grid source leaked: {svg}");
+    assert!(svg.contains("alpha"), "missing label text: {svg}");
+    assert!(svg.contains("beta"), "missing label text: {svg}");
+    assert!(svg.contains("gamma"), "missing label text: {svg}");
+
+    clear_state();
+    let svg = interpret(
+      "ExportString[Graphics[Text[Column[{\"one\", \"two\"}], {0, 0}]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(!svg.contains("Column["), "Column source leaked: {svg}");
+    assert!(svg.contains("one") && svg.contains("two"));
+  }
+
+  #[test]
   fn test_greater_less_slant_equal_operators() {
     // `\[GreaterSlantEqual]` (⩾, U+2A7E) and `\[LessSlantEqual]` (⩽,
     // U+2A7D) are glyph variants of GreaterEqual/LessEqual that a
