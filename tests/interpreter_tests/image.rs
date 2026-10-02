@@ -8213,4 +8213,91 @@ mod demonstration_image_filters {
       "ColorBalance[5, RGBColor[0, 1, 0]]"
     );
   }
+
+  // ImageMultiply / ImageAdd with a list scale each channel separately (the
+  // per-channel gain of a white balance).
+  #[test]
+  fn image_arithmetic_with_per_channel_list() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImageMultiply[Image[{{{1, 0.5, 0.25}}}], {1., 0.5, 2.}]]"
+      )
+      .unwrap(),
+      "{{{1., 0.25, 0.5}}}"
+    );
+    assert_eq!(
+      interpret(
+        "ImageData[ImageAdd[Image[{{{0.5, 0.5, 0.25}}}], {0.25, 0., 0.25}]]"
+      )
+      .unwrap(),
+      "{{{0.75, 0.5, 0.5}}}"
+    );
+  }
+
+  // A color directive is a valid ImagePad fill, in any channel layout.
+  #[test]
+  fn image_pad_color_fill() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImagePad[Image[{{{1, 1, 1}}}], 1, RGBColor[1, 0, 0]]][[1, 1]]"
+      )
+      .unwrap(),
+      "{1., 0., 0.}"
+    );
+    assert_eq!(
+      interpret(
+        "ImageDimensions[ImagePad[Image[RandomReal[1, {6, 8, 3}]], 2, \
+         GrayLevel[0, 0]]]"
+      )
+      .unwrap(),
+      "{12, 10}"
+    );
+  }
+
+  // ImageCompose[image, overlay, pos] centers the overlay on `pos`
+  // (bottom-left origin); a fourth argument picks the overlay's anchor.
+  #[test]
+  fn image_compose_with_position() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImageCompose[Image[ConstantArray[0, {3, 3}]], \
+         Image[{{1}}], {0.5, 2.5}]]"
+      )
+      .unwrap(),
+      "{{1., 0., 0.}, {0., 0., 0.}, {0., 0., 0.}}"
+    );
+    assert_eq!(
+      interpret(
+        "ImageData[ImageCompose[Image[ConstantArray[0, {3, 3}]], \
+         Image[{{1}}], {2.5, 0.5}]]"
+      )
+      .unwrap(),
+      "{{0., 0., 0.}, {0., 0., 0.}, {0., 0., 1.}}"
+    );
+    assert_eq!(
+      interpret(
+        "ImageData[ImageCompose[Image[ConstantArray[0, {2, 2}]], \
+         Image[{{1, 1}, {1, 1}}], {Left, Bottom}, {Left, Bottom}]]"
+      )
+      .unwrap(),
+      "{{1., 1.}, {1., 1.}}"
+    );
+  }
+
+  // ImageResize accepts options; Resampling -> "Constant" replicates pixels.
+  #[test]
+  fn image_resize_nearest_resampling() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImageResize[Image[{{0, 1}, {1, 0}}], {4, 4}, \
+         Resampling -> \"Constant\"]]"
+      )
+      .unwrap(),
+      "{{0., 0., 1., 1.}, {0., 0., 1., 1.}, {1., 1., 0., 0.}, {1., 1., 0., 0.}}"
+    );
+  }
 }
