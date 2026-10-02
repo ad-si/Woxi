@@ -5011,7 +5011,7 @@ fn try_solve_inverse_function(
       // matching wolframscript.
       let base_gets_period = matches!(&base, Expr::Constant(n) if n == "E")
         || base_is_real_gt_one(&base);
-      if matches!(&exp, Expr::Identifier(n) if n == var) && base_gets_period {
+      if base_gets_period {
         // Log[base] (evaluates to 1 for E).
         let log_base =
           crate::evaluator::evaluate_expr_to_expr(&call1("Log", base.clone()))
@@ -5047,25 +5047,85 @@ fn try_solve_inverse_function(
         // out entirely, matching `Solve[E^x == 1, x] -> 2*I*Pi*C[1]`.
         let principal_is_zero = matches!(&principal, Expr::Integer(0))
           || matches!(&principal, Expr::Real(r) if *r == 0.0);
-        let general = if principal_is_zero {
-          periodic
-        } else {
-          call("Plus", vec![periodic, principal])
+        let condition = call("Element", vec![c1, id_expr("Integers")]);
+        let conditional = |value: Expr| {
+          call("ConditionalExpression", vec![value, condition.clone()])
         };
-        let cond = call(
-          "ConditionalExpression",
-          vec![general, call("Element", vec![c1, id_expr("Integers")])],
-        );
-        return Some(Ok(Expr::List(
-          vec![Expr::List(
-            vec![Expr::Rule {
-              pattern: Box::new(Expr::Identifier(var.to_string())),
-              replacement: Box::new(cond),
-            }]
+        let family = |periodic: Expr| {
+          if principal_is_zero {
+            periodic
+          } else {
+            call("Plus", vec![periodic, principal.clone()])
+          }
+        };
+        if matches!(&exp, Expr::Identifier(n) if n == var) {
+          return Some(Ok(Expr::List(
+            vec![Expr::List(
+              vec![Expr::Rule {
+                pattern: Box::new(Expr::Identifier(var.to_string())),
+                replacement: Box::new(conditional(family(periodic))),
+              }]
+              .into(),
+            )]
             .into(),
-          )]
-          .into(),
-        )));
+          )));
+        }
+        // An exponent linear in the variable equals that whole family:
+        // solve `exp == t` for a placeholder `t` and put the family in its
+        // place, so the family stays a sum of its own:
+        //   Solve[2^(x - 2) == 15, x]
+        //     → 2 + (2*I*Pi*C[1])/Log[2] + Log[15]/Log[2]
+        // `C[1]` ranges over all integers, so a negative slope takes the
+        // family with `-C[1]`, keeping the periodic term positive:
+        //   Solve[3^(1 - x) == 5, x]
+        //     → 1 + (2*I*Pi*C[1])/Log[3] - Log[5]/Log[3]
+        let slope = crate::evaluator::evaluate_expr_to_expr(&call(
+          "D",
+          vec![exp.clone(), Expr::Identifier(var.to_string())],
+        ))
+        .ok()?;
+        if is_constant_wrt(&slope, var) && !matches!(slope, Expr::Integer(0)) {
+          let placeholder =
+            Expr::Identifier("$SolvePeriodicFamily".to_string());
+          let new_eq = Expr::Comparison {
+            operands: vec![exp.clone(), placeholder.clone()],
+            operators: vec![ComparisonOp::Equal],
+          };
+          let solved =
+            solve_ast(&[new_eq, Expr::Identifier(var.to_string())]).ok()?;
+          if let Expr::List(solutions) = &solved
+            && let [solution] = &solutions[..]
+            && let Expr::List(rules) = solution
+            && let [Expr::Rule { replacement, .. }] = &rules[..]
+          {
+            let periodic =
+              if crate::functions::math_ast::complex::negate_if_negative(&slope)
+                .is_some()
+              {
+                crate::evaluator::evaluate_expr_to_expr(&call(
+                  "Times",
+                  vec![Expr::Integer(-1), periodic],
+                ))
+                .ok()?
+              } else {
+                periodic
+              };
+            let value = crate::evaluator::evaluate_expr_to_expr(
+              &substitute_expr(replacement, &placeholder, &family(periodic)),
+            )
+            .ok()?;
+            return Some(Ok(Expr::List(
+              vec![Expr::List(
+                vec![Expr::Rule {
+                  pattern: Box::new(Expr::Identifier(var.to_string())),
+                  replacement: Box::new(conditional(value)),
+                }]
+                .into(),
+              )]
+              .into(),
+            )));
+          }
+        }
       }
       // base^exp == val where base is constant, exp contains var
       // → exp == Log[val] / Log[base]
@@ -12734,7 +12794,7 @@ fn named_constant_value(name: &str) -> Option<f64> {
     "E" => std::f64::consts::E,
     "Degree" => std::f64::consts::PI / 180.0,
     "GoldenRatio" => f64::midpoint(1.0, 5.0_f64.sqrt()),
-    "EulerGamma" => 0.577_215_664_901_532_9,
+    "EulerGamma" => std::f64::consts::EULER_GAMMA,
     "Catalan" => 0.915_965_594_177_219,
     _ => return None,
   })

@@ -620,3 +620,62 @@ fn polynomial_lcm_modulus(
   let product = times2(gf_poly_to_expr(&q, &var)?, gf_poly_to_expr(&cb, &var)?);
   Ok(Some(crate::evaluator::evaluate_expr_to_expr(&product)?))
 }
+
+/// Together[expr, Modulus -> p] for a univariate rational function: combine
+/// over Q, reduce numerator and denominator mod p, cancel their GF(p) gcd and
+/// make the denominator monic (e.g. `(2 + 7 x)/(2 x)` → `1/x` mod 7).
+/// None when `p` is not a supported prime or the combined fraction is not a
+/// univariate integer-coefficient quotient (or its denominator vanishes mod p).
+pub fn together_modulus(
+  expr: &Expr,
+  p: i128,
+) -> Result<Option<Expr>, InterpreterError> {
+  if !(2..=MAX_MODULUS).contains(&p)
+    || !(2..p).take_while(|d| d * d <= p).all(|d| p % d != 0)
+  {
+    return Ok(None);
+  }
+  let combined = super::together_ast(std::slice::from_ref(expr))?;
+  let num = crate::evaluator::evaluate_expr_to_expr(&call1(
+    "Numerator",
+    combined.clone(),
+  ))?;
+  let den =
+    crate::evaluator::evaluate_expr_to_expr(&call1("Denominator", combined))?;
+  let (Some((nvar, ncoeffs)), Some((dvar, dcoeffs))) =
+    (univariate_int_coeffs(&num)?, univariate_int_coeffs(&den)?)
+  else {
+    return Ok(None);
+  };
+  let var = match (nvar.is_empty(), dvar.is_empty()) {
+    (_, true) => nvar,
+    (true, false) => dvar,
+    (false, false) if nvar == dvar => nvar,
+    _ => return Ok(None),
+  };
+  let reduce = |v: &[i128]| -> Vec<i128> {
+    let mut out: Vec<i128> = v.iter().map(|c| c.rem_euclid(p)).collect();
+    trim(&mut out);
+    out
+  };
+  let (n, d) = (reduce(&ncoeffs), reduce(&dcoeffs));
+  if is_zero(&d) {
+    return Ok(None);
+  }
+  if is_zero(&n) {
+    return Ok(Some(Expr::Integer(0)));
+  }
+  let g = poly_gcd(&n, &d, p);
+  let (n, d) = (poly_div_exact(&n, &g, p), poly_div_exact(&d, &g, p));
+  // Scale so the denominator is monic.
+  let inv_lc = mod_inv(*d.last().unwrap(), p);
+  let n: Vec<i128> = n.iter().map(|&c| (c * inv_lc).rem_euclid(p)).collect();
+  let d = make_monic(&d, p);
+  let num_expr = gf_poly_to_expr(&n, &var)?;
+  if deg(&d) == 0 {
+    return Ok(Some(num_expr));
+  }
+  let den_expr = gf_poly_to_expr(&d, &var)?;
+  let quotient = times2(num_expr, pow2(den_expr, Expr::Integer(-1)));
+  Ok(Some(crate::evaluator::evaluate_expr_to_expr(&quotient)?))
+}

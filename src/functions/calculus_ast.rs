@@ -1990,10 +1990,7 @@ fn strip_piecewise_condition_boundary(cond: &Expr) -> Expr {
         "GreaterEqual" => "Greater",
         _ => return cond.clone(),
       };
-      Expr::FunctionCall {
-        name: new_name.to_string(),
-        args: args.clone(),
-      }
+      call_expr(new_name, args)
     }
     _ => cond.clone(),
   }
@@ -2113,6 +2110,13 @@ fn chain_rule_unknown_function(
       result = plus2(result, term.clone());
     }
     Ok(simplify(result))
+  }
+}
+
+fn call_expr(name: &str, args: &crate::ExprList) -> Expr {
+  Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.clone(),
   }
 }
 
@@ -2284,10 +2288,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
                 left: Box::new(Expr::BinaryOp {
                   op: B::Times,
                   left: Box::new(dg), // g'
-                  right: Box::new(Expr::FunctionCall {
-                    name: "Log".to_string(),
-                    args: vec![*left.clone()].into(), // Log[f]
-                  }),
+                  right: Box::new(call1("Log", *left.clone())), // Log[f]
                 }),
                 right: Box::new(Expr::BinaryOp {
                   op: B::Times,
@@ -2587,231 +2588,105 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
         "Sin" if args.len() == 1 => {
           // d/dx[sin(f(x))] = cos(f(x)) * f'(x)
           let df = differentiate(&args[0], var)?;
-          Ok(simplify(Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(Expr::FunctionCall {
-              name: "Cos".to_string(),
-              args: args.clone(),
-            }),
-            right: Box::new(df),
-          }))
+          Ok(simplify(times2(call_expr("Cos", args), df)))
         }
         "Cos" if args.len() == 1 => {
           // d/dx[cos(f(x))] = -sin(f(x)) * f'(x)
           let df = differentiate(&args[0], var)?;
-          Ok(simplify(Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(neg1(Expr::FunctionCall {
-              name: "Sin".to_string(),
-              args: args.clone(),
-            })),
-            right: Box::new(df),
-          }))
+          Ok(simplify(times2(neg1(call_expr("Sin", args)), df)))
         }
         "Gudermannian" if args.len() == 1 => {
           // d/dx[gd(f(x))] = Sech[f(x)] * f'(x)
           let df = differentiate(&args[0], var)?;
-          Ok(simplify(Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(Expr::FunctionCall {
-              name: "Sech".to_string(),
-              args: args.clone(),
-            }),
-            right: Box::new(df),
-          }))
+          Ok(simplify(times2(call_expr("Sech", args), df)))
         }
         "InverseGudermannian" if args.len() == 1 => {
           // d/dx[gd^-1(f(x))] = Sec[f(x)] * f'(x)
           let df = differentiate(&args[0], var)?;
-          Ok(simplify(Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(Expr::FunctionCall {
-              name: "Sec".to_string(),
-              args: args.clone(),
-            }),
-            right: Box::new(df),
-          }))
+          Ok(simplify(times2(call_expr("Sec", args), df)))
         }
         "Haversine" if args.len() == 1 => {
           // d/dx[haversine(f(x))] = Sin[f(x)]/2 * f'(x)
           let df = differentiate(&args[0], var)?;
           let half = call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]);
-          Ok(simplify(Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![
-              half,
-              Expr::FunctionCall {
-                name: "Sin".to_string(),
-                args: args.clone(),
-              },
-              df,
-            ]
-            .into(),
-          }))
+          Ok(simplify(call(
+            "Times",
+            vec![half, call_expr("Sin", args), df],
+          )))
         }
         "Tan" if args.len() == 1 => {
           // d/dx[tan(f(x))] = sec^2(f(x)) * f'(x)
           let df = differentiate(&args[0], var)?;
-          Ok(simplify(Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(Expr::BinaryOp {
-              op: BinaryOperator::Power,
-              left: Box::new(Expr::FunctionCall {
-                name: "Sec".to_string(),
-                args: args.clone(),
-              }),
-              right: Box::new(Expr::Integer(2)),
-            }),
-            right: Box::new(df),
-          }))
+          Ok(simplify(times2(
+            pow2(call_expr("Sec", args), Expr::Integer(2)),
+            df,
+          )))
         }
         "Sec" if args.len() == 1 => {
           // d/dx[sec(f(x))] = sec(f(x)) * tan(f(x)) * f'(x)
           let df = differentiate(&args[0], var)?;
-          Ok(simplify(Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(Expr::BinaryOp {
-              op: BinaryOperator::Times,
-              left: Box::new(Expr::FunctionCall {
-                name: "Sec".to_string(),
-                args: args.clone(),
-              }),
-              right: Box::new(Expr::FunctionCall {
-                name: "Tan".to_string(),
-                args: args.clone(),
-              }),
-            }),
-            right: Box::new(df),
-          }))
+          Ok(simplify(times2(
+            times2(call_expr("Sec", args), call_expr("Tan", args)),
+            df,
+          )))
         }
         "Csc" if args.len() == 1 => {
           // d/dx[csc(f(x))] = -csc(f(x)) * cot(f(x)) * f'(x)
           let df = differentiate(&args[0], var)?;
-          Ok(simplify(Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(neg1(Expr::BinaryOp {
-              op: BinaryOperator::Times,
-              left: Box::new(Expr::FunctionCall {
-                name: "Csc".to_string(),
-                args: args.clone(),
-              }),
-              right: Box::new(Expr::FunctionCall {
-                name: "Cot".to_string(),
-                args: args.clone(),
-              }),
-            })),
-            right: Box::new(df),
-          }))
+          Ok(simplify(times2(
+            neg1(times2(call_expr("Csc", args), call_expr("Cot", args))),
+            df,
+          )))
         }
         "Cot" if args.len() == 1 => {
           // d/dx[cot(f(x))] = -csc^2(f(x)) * f'(x)
           let df = differentiate(&args[0], var)?;
-          Ok(simplify(Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(neg1(Expr::BinaryOp {
-              op: BinaryOperator::Power,
-              left: Box::new(Expr::FunctionCall {
-                name: "Csc".to_string(),
-                args: args.clone(),
-              }),
-              right: Box::new(Expr::Integer(2)),
-            })),
-            right: Box::new(df),
-          }))
+          Ok(simplify(times2(
+            neg1(pow2(call_expr("Csc", args), Expr::Integer(2))),
+            df,
+          )))
         }
         "Sinh" if args.len() == 1 => {
           // d/dx[sinh(f(x))] = cosh(f(x)) * f'(x)
           let df = differentiate(&args[0], var)?;
-          Ok(simplify(Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(Expr::FunctionCall {
-              name: "Cosh".to_string(),
-              args: args.clone(),
-            }),
-            right: Box::new(df),
-          }))
+          Ok(simplify(times2(call_expr("Cosh", args), df)))
         }
         "Cosh" if args.len() == 1 => {
           // d/dx[cosh(f(x))] = sinh(f(x)) * f'(x)
           let df = differentiate(&args[0], var)?;
-          Ok(simplify(Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(Expr::FunctionCall {
-              name: "Sinh".to_string(),
-              args: args.clone(),
-            }),
-            right: Box::new(df),
-          }))
+          Ok(simplify(times2(call_expr("Sinh", args), df)))
         }
         "Tanh" if args.len() == 1 => {
           // d/dx[tanh(f(x))] = sech^2(f(x)) * f'(x)
           let df = differentiate(&args[0], var)?;
-          Ok(simplify(Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(Expr::BinaryOp {
-              op: BinaryOperator::Power,
-              left: Box::new(Expr::FunctionCall {
-                name: "Sech".to_string(),
-                args: args.clone(),
-              }),
-              right: Box::new(Expr::Integer(2)),
-            }),
-            right: Box::new(df),
-          }))
+          Ok(simplify(times2(
+            pow2(call_expr("Sech", args), Expr::Integer(2)),
+            df,
+          )))
         }
         "Sech" if args.len() == 1 => {
           // d/dx[sech(f(x))] = -sech(f(x)) * tanh(f(x)) * f'(x)
           let df = differentiate(&args[0], var)?;
-          Ok(simplify(Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(neg1(Expr::BinaryOp {
-              op: BinaryOperator::Times,
-              left: Box::new(Expr::FunctionCall {
-                name: "Sech".to_string(),
-                args: args.clone(),
-              }),
-              right: Box::new(Expr::FunctionCall {
-                name: "Tanh".to_string(),
-                args: args.clone(),
-              }),
-            })),
-            right: Box::new(df),
-          }))
+          Ok(simplify(times2(
+            neg1(times2(call_expr("Sech", args), call_expr("Tanh", args))),
+            df,
+          )))
         }
         "Csch" if args.len() == 1 => {
           // d/dx[csch(f(x))] = -coth(f(x)) * csch(f(x)) * f'(x)
           let df = differentiate(&args[0], var)?;
-          Ok(simplify(Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(neg1(Expr::BinaryOp {
-              op: BinaryOperator::Times,
-              left: Box::new(Expr::FunctionCall {
-                name: "Coth".to_string(),
-                args: args.clone(),
-              }),
-              right: Box::new(Expr::FunctionCall {
-                name: "Csch".to_string(),
-                args: args.clone(),
-              }),
-            })),
-            right: Box::new(df),
-          }))
+          Ok(simplify(times2(
+            neg1(times2(call_expr("Coth", args), call_expr("Csch", args))),
+            df,
+          )))
         }
         "Coth" if args.len() == 1 => {
           // d/dx[coth(f(x))] = -csch^2(f(x)) * f'(x)
           let df = differentiate(&args[0], var)?;
-          Ok(simplify(Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(neg1(Expr::BinaryOp {
-              op: BinaryOperator::Power,
-              left: Box::new(Expr::FunctionCall {
-                name: "Csch".to_string(),
-                args: args.clone(),
-              }),
-              right: Box::new(Expr::Integer(2)),
-            })),
-            right: Box::new(df),
-          }))
+          Ok(simplify(times2(
+            neg1(pow2(call_expr("Csch", args), Expr::Integer(2))),
+            df,
+          )))
         }
         "ArcSin" if args.len() == 1 => {
           // d/dx[arcsin(f(x))] = f'(x) / sqrt(1 - f(x)^2)
@@ -2918,14 +2793,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
         "Exp" if args.len() == 1 => {
           // d/dx[e^f(x)] = e^f(x) * f'(x)
           let df = differentiate(&args[0], var)?;
-          Ok(simplify(Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(Expr::FunctionCall {
-              name: "Exp".to_string(),
-              args: args.clone(),
-            }),
-            right: Box::new(df),
-          }))
+          Ok(simplify(times2(call_expr("Exp", args), df)))
         }
         "Log" if args.len() == 1 => {
           // d/dx[ln(f(x))] = f'(x) * f(x)^(-1)
@@ -3330,14 +3198,8 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
             "LogIntegral" => {
               pow(call1("Log", args[0].clone()), Expr::Integer(-1))
             }
-            "AiryAi" => Expr::FunctionCall {
-              name: "AiryAiPrime".to_string(),
-              args: args.clone(),
-            },
-            _ => Expr::FunctionCall {
-              name: "AiryBiPrime".to_string(),
-              args: args.clone(),
-            },
+            "AiryAi" => call_expr("AiryAiPrime", args),
+            _ => call_expr("AiryBiPrime", args),
           };
           Ok(if matches!(dz, Expr::Integer(1)) {
             simplify(g)
@@ -3547,10 +3409,7 @@ fn differentiate(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
           }
           let result = simplify(Expr::BinaryOp {
             op: BinaryOperator::Times,
-            left: Box::new(Expr::FunctionCall {
-              name: "Gamma".to_string(),
-              args: args.clone(),
-            }),
+            left: Box::new(call_expr("Gamma", args)),
             right: Box::new(call(
               "PolyGamma",
               vec![Expr::Integer(0), args[0].clone()],
@@ -5174,37 +5033,25 @@ fn try_integrate_trig_squared(base: &Expr, var: &str) -> Option<Expr> {
     // ∫ Sec[a*x]^2 dx = Tan[a*x]/a
     if is_sec {
       let coeff = try_match_linear_arg(&args[0], var)?;
-      let tan_expr = Expr::FunctionCall {
-        name: "Tan".to_string(),
-        args: args.clone(),
-      };
+      let tan_expr = call_expr("Tan", args);
       return Some(make_divided(tan_expr, coeff));
     }
     // ∫ Csc[a*x]^2 dx = -Cot[a*x]/a
     if is_csc {
       let coeff = try_match_linear_arg(&args[0], var)?;
-      let cot_expr = Expr::FunctionCall {
-        name: "Cot".to_string(),
-        args: args.clone(),
-      };
+      let cot_expr = call_expr("Cot", args);
       return Some(make_neg_divided(cot_expr, coeff));
     }
     // ∫ Sech[a*x]^2 dx = Tanh[a*x]/a
     if name == "Sech" {
       let coeff = try_match_linear_arg(&args[0], var)?;
-      let tanh_expr = Expr::FunctionCall {
-        name: "Tanh".to_string(),
-        args: args.clone(),
-      };
+      let tanh_expr = call_expr("Tanh", args);
       return Some(make_divided(tanh_expr, coeff));
     }
     // ∫ Csch[a*x]^2 dx = -Coth[a*x]/a
     if name == "Csch" {
       let coeff = try_match_linear_arg(&args[0], var)?;
-      let coth_expr = Expr::FunctionCall {
-        name: "Coth".to_string(),
-        args: args.clone(),
-      };
+      let coth_expr = call_expr("Coth", args);
       return Some(make_neg_divided(coth_expr, coeff));
     }
     // ∫ Tan[a*x]^2 dx  = -ArcTan[Tan[a*x]]/a  + Tan[a*x]/a
@@ -5480,10 +5327,8 @@ fn try_integrate_trig_power(base: &Expr, n: i128, var: &str) -> Option<Expr> {
 
     // Integrated: sin(freq*x)/(freq) for both sin^n and cos^n even powers
     // cos(freq*x)/(freq) for sin^n odd powers.
-    let integrated_trig = Expr::FunctionCall {
-      name: if is_sin && is_odd { "Cos" } else { "Sin" }.to_string(),
-      args: vec![freq_arg].into(),
-    };
+    let integrated_trig =
+      call1(if is_sin && is_odd { "Cos" } else { "Sin" }, freq_arg);
 
     // Total coefficient: coeff_num / (freq * 4^m)
     let power_2n = 1i128 << n; // 2^n
@@ -8612,10 +8457,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
         "Sin" if args.len() == 1 => {
           // ∫ sin(a*x) dx = -cos(a*x)/a
           if let Some(coeff) = try_match_linear_arg(&args[0], var) {
-            let cos_expr = Expr::FunctionCall {
-              name: "Cos".to_string(),
-              args: args.clone(),
-            };
+            let cos_expr = call_expr("Cos", args);
             return Some(make_neg_divided(cos_expr, coeff));
           }
           // ∫ Sin[a*x^2] dx = Sqrt[Pi/2]/Sqrt[a] * FresnelS[Sqrt[a] Sqrt[2/Pi] x]
@@ -8641,18 +8483,10 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
             let one_plus = plus2(Expr::Integer(1), x_sq);
             let log_term = call1("Log", one_plus);
             // x ArcTan[x] - Log[1 + x^2] / 2
-            return Some(Expr::BinaryOp {
-              op: BinaryOperator::Minus,
-              left: Box::new(Expr::BinaryOp {
-                op: BinaryOperator::Times,
-                left: Box::new(x),
-                right: Box::new(Expr::FunctionCall {
-                  name: "ArcTan".to_string(),
-                  args: args.clone(),
-                }),
-              }),
-              right: Box::new(div2(log_term, Expr::Integer(2))),
-            });
+            return Some(minus2(
+              times2(x, call_expr("ArcTan", args)),
+              div2(log_term, Expr::Integer(2)),
+            ));
           }
           None
         }
@@ -8786,10 +8620,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
         "Cos" if args.len() == 1 => {
           // ∫ cos(a*x) dx = sin(a*x)/a
           if let Some(coeff) = try_match_linear_arg(&args[0], var) {
-            let sin_expr = Expr::FunctionCall {
-              name: "Sin".to_string(),
-              args: args.clone(),
-            };
+            let sin_expr = call_expr("Sin", args);
             return Some(make_divided(sin_expr, coeff));
           }
           // ∫ Cos[a*x^2] dx = Sqrt[Pi/2]/Sqrt[a] * FresnelC[Sqrt[a] Sqrt[2/Pi] x]
@@ -8803,17 +8634,11 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
           if let Expr::Identifier(n) = &args[0]
             && n == var
           {
-            return Some(Expr::FunctionCall {
-              name: "Exp".to_string(),
-              args: args.clone(),
-            });
+            return Some(call_expr("Exp", args));
           }
           // ∫ e^(a*x) dx = e^(a*x)/a  (linear argument)
           if let Some(coeff) = try_match_linear_arg(&args[0], var) {
-            let exp_expr = Expr::FunctionCall {
-              name: "Exp".to_string(),
-              args: args.clone(),
-            };
+            let exp_expr = call_expr("Exp", args);
             return Some(make_divided(exp_expr, coeff));
           }
           // ∫ Exp[-a*x^2] dx = Sqrt[Pi/a]/2 * Erf[Sqrt[a]*x]
@@ -8830,10 +8655,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
         "Sinh" if args.len() == 1 => {
           // ∫ sinh(a*x) dx = cosh(a*x)/a
           if let Some(coeff) = try_match_linear_arg(&args[0], var) {
-            let cosh_expr = Expr::FunctionCall {
-              name: "Cosh".to_string(),
-              args: args.clone(),
-            };
+            let cosh_expr = call_expr("Cosh", args);
             return Some(make_divided(cosh_expr, coeff));
           }
           None
@@ -8841,10 +8663,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
         "Cosh" if args.len() == 1 => {
           // ∫ cosh(a*x) dx = sinh(a*x)/a
           if let Some(coeff) = try_match_linear_arg(&args[0], var) {
-            let sinh_expr = Expr::FunctionCall {
-              name: "Sinh".to_string(),
-              args: args.clone(),
-            };
+            let sinh_expr = call_expr("Sinh", args);
             return Some(make_divided(sinh_expr, coeff));
           }
           None
@@ -8852,10 +8671,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
         "Tan" if args.len() == 1 => {
           // ∫ tan(a*x) dx = -Log[Cos[a*x]]/a
           if let Some(coeff) = try_match_linear_arg(&args[0], var) {
-            let cos_expr = Expr::FunctionCall {
-              name: "Cos".to_string(),
-              args: args.clone(),
-            };
+            let cos_expr = call_expr("Cos", args);
             let log_cos = call1("Log", cos_expr);
             return Some(make_neg_divided(log_cos, coeff));
           }
@@ -8864,10 +8680,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
         "Cot" if args.len() == 1 => {
           // ∫ cot(a*x) dx = Log[Sin[a*x]]/a
           if let Some(coeff) = try_match_linear_arg(&args[0], var) {
-            let sin_expr = Expr::FunctionCall {
-              name: "Sin".to_string(),
-              args: args.clone(),
-            };
+            let sin_expr = call_expr("Sin", args);
             let log_sin = call1("Log", sin_expr);
             return Some(make_divided(log_sin, coeff));
           }
@@ -8876,10 +8689,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
         "Tanh" if args.len() == 1 => {
           // ∫ tanh(a*x) dx = Log[Cosh[a*x]]/a
           if let Some(coeff) = try_match_linear_arg(&args[0], var) {
-            let cosh_expr = Expr::FunctionCall {
-              name: "Cosh".to_string(),
-              args: args.clone(),
-            };
+            let cosh_expr = call_expr("Cosh", args);
             let log_cosh = call1("Log", cosh_expr);
             return Some(make_divided(log_cosh, coeff));
           }
@@ -8888,10 +8698,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
         "Coth" if args.len() == 1 => {
           // ∫ coth(a*x) dx = Log[Sinh[a*x]]/a
           if let Some(coeff) = try_match_linear_arg(&args[0], var) {
-            let sinh_expr = Expr::FunctionCall {
-              name: "Sinh".to_string(),
-              args: args.clone(),
-            };
+            let sinh_expr = call_expr("Sinh", args);
             let log_sinh = call1("Log", sinh_expr);
             return Some(make_divided(log_sinh, coeff));
           }
@@ -8900,10 +8707,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
         "Sec" if args.len() == 1 => {
           // ∫ sec(a*x) dx = ArcCoth[Sin[a*x]]/a (wolframscript's form)
           if let Some(coeff) = try_match_linear_arg(&args[0], var) {
-            let sin_expr = Expr::FunctionCall {
-              name: "Sin".to_string(),
-              args: args.clone(),
-            };
+            let sin_expr = call_expr("Sin", args);
             let arccoth = call1("ArcCoth", sin_expr);
             return Some(make_divided(arccoth, coeff));
           }
@@ -8912,10 +8716,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
         "Csc" if args.len() == 1 => {
           // ∫ csc(a*x) dx = -ArcTanh[Cos[a*x]]/a (wolframscript's form)
           if let Some(coeff) = try_match_linear_arg(&args[0], var) {
-            let cos_expr = Expr::FunctionCall {
-              name: "Cos".to_string(),
-              args: args.clone(),
-            };
+            let cos_expr = call_expr("Cos", args);
             let arctanh = call1("ArcTanh", cos_expr);
             return Some(make_neg_divided(arctanh, coeff));
           }
@@ -8924,10 +8725,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
         "Sech" if args.len() == 1 => {
           // ∫ sech(a*x) dx = -ArcCot[Sinh[a*x]]/a (wolframscript's form)
           if let Some(coeff) = try_match_linear_arg(&args[0], var) {
-            let sinh_expr = Expr::FunctionCall {
-              name: "Sinh".to_string(),
-              args: args.clone(),
-            };
+            let sinh_expr = call_expr("Sinh", args);
             let arccot = call1("ArcCot", sinh_expr);
             return Some(make_neg_divided(arccot, coeff));
           }
@@ -8936,10 +8734,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
         "Csch" if args.len() == 1 => {
           // ∫ csch(a*x) dx = -ArcTanh[Cosh[a*x]]/a (wolframscript's form)
           if let Some(coeff) = try_match_linear_arg(&args[0], var) {
-            let cosh_expr = Expr::FunctionCall {
-              name: "Cosh".to_string(),
-              args: args.clone(),
-            };
+            let cosh_expr = call_expr("Cosh", args);
             let arctanh = call1("ArcTanh", cosh_expr);
             return Some(make_neg_divided(arctanh, coeff));
           }
@@ -8952,18 +8747,10 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
             && name == var
           {
             let x = Expr::Identifier(var.to_string());
-            return Some(Expr::BinaryOp {
-              op: BinaryOperator::Times,
-              left: Box::new(x),
-              right: Box::new(Expr::BinaryOp {
-                op: BinaryOperator::Plus,
-                left: Box::new(Expr::Integer(-1)),
-                right: Box::new(Expr::FunctionCall {
-                  name: "Log".to_string(),
-                  args: args.clone(),
-                }),
-              }),
-            });
+            return Some(times2(
+              x,
+              plus2(Expr::Integer(-1), call_expr("Log", args)),
+            ));
           }
           // ∫ Log[a x] dx = -x + x Log[a x]: the scale does not factor out.
           if let Some(coefficient) = extract_linear_coefficient(&args[0], var)
@@ -8979,18 +8766,10 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
             )
           {
             let x = Expr::Identifier(var.to_string());
-            return Some(Expr::BinaryOp {
-              op: BinaryOperator::Plus,
-              left: Box::new(neg1(x.clone())),
-              right: Box::new(Expr::BinaryOp {
-                op: BinaryOperator::Times,
-                left: Box::new(x),
-                right: Box::new(Expr::FunctionCall {
-                  name: "Log".to_string(),
-                  args: args.clone(),
-                }),
-              }),
-            });
+            return Some(plus2(
+              neg1(x.clone()),
+              times2(x, call_expr("Log", args)),
+            ));
           }
           // ∫ Log[Log[u]] dx with u = a*x + b linear in x:
           //   x*Log[Log[u]] - LogIntegral[u]/a        (b == 0)
@@ -9004,10 +8783,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
           {
             let u = inner_args[0].clone();
             if let Some(coeff) = extract_linear_coefficient(&u, var) {
-              let log_log = Expr::FunctionCall {
-                name: "Log".to_string(),
-                args: args.clone(),
-              };
+              let log_log = call_expr("Log", args);
               let first = if try_match_linear_arg(&u, var).is_some() {
                 // u = a*x, so u/a = x
                 times2(Expr::Identifier(var.to_string()), log_log)
@@ -9039,10 +8815,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
             Some(times2(const_expr, int_var))
           } else if var_factors.is_empty() {
             // All constant: ∫ c dx = c*x
-            let const_expr = Expr::FunctionCall {
-              name: "Times".to_string(),
-              args: args.clone(),
-            };
+            let const_expr = call_expr("Times", args);
             Some(times2(const_expr, Expr::Identifier(var.to_string())))
           } else {
             // Direct-derivative products: Sec*Tan, Csc*Cot, Sech*Tanh,
@@ -14062,7 +13835,7 @@ fn compose_series_pair(outer: &Expr, inner: &Expr) -> Option<Expr> {
   let mut dense: Vec<Expr> = Vec::new();
   if nmin_r < big_m {
     let mut hi = big_m - 1;
-    while hi > nmin_r && coeff_map.get(&hi).is_none_or(&is_zero) {
+    while hi > nmin_r && coeff_map.get(&hi).is_none_or(is_zero) {
       hi -= 1;
     }
     for p in nmin_r..=hi {
@@ -15260,14 +15033,13 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Regularization term: (Log[-1/x] - Log[-x] + 2*Log[x])/2
       let log_neg_inv_x = Expr::FunctionCall {
         name: "Log".to_string(),
-        args: vec![Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![
+        args: vec![call(
+          "Times",
+          vec![
             Expr::Integer(-1),
             pow(Expr::Identifier(var_name.clone()), Expr::Integer(-1)),
-          ]
-          .into(),
-        }]
+          ],
+        )]
         .into(),
       };
       let log_neg_x = call1(
@@ -17492,40 +17264,18 @@ fn total_differentiate(
         }
         "Sin" if args.len() == 1 => {
           let df = total_differentiate(&args[0], var)?;
-          Ok(simplify(Expr::BinaryOp {
-            op: B::Times,
-            left: Box::new(Expr::FunctionCall {
-              name: "Cos".to_string(),
-              args: args.clone(),
-            }),
-            right: Box::new(df),
-          }))
+          Ok(simplify(times2(call_expr("Cos", args), df)))
         }
         "Cos" if args.len() == 1 => {
           let df = total_differentiate(&args[0], var)?;
-          Ok(simplify(Expr::BinaryOp {
-            op: B::Times,
-            left: Box::new(neg1(Expr::FunctionCall {
-              name: "Sin".to_string(),
-              args: args.clone(),
-            })),
-            right: Box::new(df),
-          }))
+          Ok(simplify(times2(neg1(call_expr("Sin", args)), df)))
         }
         "Tan" if args.len() == 1 => {
           let df = total_differentiate(&args[0], var)?;
-          Ok(simplify(Expr::BinaryOp {
-            op: B::Times,
-            left: Box::new(Expr::BinaryOp {
-              op: B::Power,
-              left: Box::new(Expr::FunctionCall {
-                name: "Sec".to_string(),
-                args: args.clone(),
-              }),
-              right: Box::new(Expr::Integer(2)),
-            }),
-            right: Box::new(df),
-          }))
+          Ok(simplify(times2(
+            pow2(call_expr("Sec", args), Expr::Integer(2)),
+            df,
+          )))
         }
         "Log" if args.len() == 1 => {
           let df = total_differentiate(&args[0], var)?;
@@ -19240,10 +18990,7 @@ fn weber_anger_series_at_zero(
   //   WeberE: 1 - (-1)^k * Cos[π v]    (i.e. 1 - Cos[πν] if k even, 1 + Cos[πν] if k odd)
   //   AngerJ:        (-1)^k * Sin[π v]
   let make_numerator = |k: i128| -> Expr {
-    let trig = Expr::FunctionCall {
-      name: if is_weber { "Cos" } else { "Sin" }.to_string(),
-      args: vec![nu_pi.clone()].into(),
-    };
+    let trig = call1(if is_weber { "Cos" } else { "Sin" }, nu_pi.clone());
     let k_even = k % 2 == 0;
     if is_weber {
       // 1 - sign*Cos where sign = (-1)^k

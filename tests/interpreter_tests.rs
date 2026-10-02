@@ -4248,12 +4248,13 @@ mod interpreter_tests {
     // text from the held AST to re-evaluate it every frame, and reading
     // that literal text back left no function call for the traditional
     // typesetter to parenthesize, so the plot label showed `f[t]` instead
-    // of `f(t)`.
+    // of `f(t)`. The escape carries TraditionalForm boxes, not
+    // StandardForm ones: `f(t)`, with round brackets.
     clear_state();
     assert_eq!(
       interpret("ToString[Hold[TraditionalForm[HoldForm[f[t]]]], InputForm]")
         .unwrap(),
-      "Hold[\\!\\(\\*FormBox[TagBox[RowBox[{\"f[\", \"t\", \"]\"}], HoldForm], TraditionalForm]\\)]",
+      "Hold[\\!\\(\\*FormBox[TagBox[RowBox[{\"f\", \"(\", \"t\", \")\"}], HoldForm], TraditionalForm]\\)]",
     );
     // A multi-argument head round-trips the same way.
     assert_eq!(
@@ -4261,7 +4262,54 @@ mod interpreter_tests {
         "ToString[Hold[TraditionalForm[HoldForm[g[x, y]]]], InputForm]"
       )
       .unwrap(),
-      "Hold[\\!\\(\\*FormBox[TagBox[RowBox[{\"g[\", \"x\", \",\", \"y\", \"]\"}], HoldForm], TraditionalForm]\\)]",
+      "Hold[\\!\\(\\*FormBox[TagBox[RowBox[{\"g\", \"(\", RowBox[{\"x\", \",\", \"y\"}], \")\"}], HoldForm], TraditionalForm]\\)]",
+    );
+  }
+
+  #[test]
+  fn test_input_form_traditional_form_escape_uses_traditional_boxes() {
+    // A `TraditionalForm[…]` inside InputForm text used to be boxed with the
+    // StandardForm typesetter (`Sin[`, `Pi`); it takes the same
+    // TraditionalForm boxes as `ToString[…, TraditionalForm]`.
+    clear_state();
+    assert_eq!(
+      interpret("ToString[Hold[TraditionalForm[Sin[x] + Pi]], InputForm]")
+        .unwrap(),
+      "Hold[\\!\\(\\*FormBox[RowBox[{RowBox[{\"sin\", \"(\", \"x\", \")\"}], \"+\", \"π\"}], TraditionalForm]\\)]",
+    );
+    assert_eq!(
+      interpret("ToString[Hold[TraditionalForm[g[x, y, z]]], InputForm]")
+        .unwrap(),
+      "Hold[\\!\\(\\*FormBox[RowBox[{\"g\", \"(\", RowBox[{\"x\", \",\", \"y\", \",\", \"z\"}], \")\"}], TraditionalForm]\\)]",
+    );
+  }
+
+  #[test]
+  fn test_traditional_form_groups_comma_sequences_in_own_row() {
+    // WL nests a comma-separated sequence — call arguments, list elements,
+    // subscript indices — in a RowBox of its own instead of laying it out
+    // flat in the surrounding row.
+    clear_state();
+    assert_eq!(
+      interpret("ToString[Int[Cos[x]/x^2, x], TraditionalForm]").unwrap(),
+      "DisplayForm[FormBox[RowBox[{Int, (, RowBox[{FractionBox[RowBox[{cos, (, x, )}], SuperscriptBox[x, 2]], ,, x}], )}], TraditionalForm]]",
+    );
+    assert_eq!(
+      interpret("ToString[{a, b, c}, TraditionalForm]").unwrap(),
+      "DisplayForm[FormBox[RowBox[{{, RowBox[{a, ,, b, ,, c}], }}], TraditionalForm]]",
+    );
+    assert_eq!(
+      interpret("ToString[g[], TraditionalForm]").unwrap(),
+      "DisplayForm[FormBox[RowBox[{g, (, )}], TraditionalForm]]",
+    );
+    assert_eq!(
+      interpret("ToString[Subscript[a, i, j], TraditionalForm]").unwrap(),
+      "DisplayForm[FormBox[SubscriptBox[a, RowBox[{i, ,, j}]], TraditionalForm]]",
+    );
+    // `ToString[TraditionalForm[…]]` takes the same TraditionalForm boxes.
+    assert_eq!(
+      interpret("ToString[TraditionalForm[Sin[x]/2]]").unwrap(),
+      "DisplayForm[FormBox[FractionBox[RowBox[{sin, (, x, )}], 2], TraditionalForm]]",
     );
   }
 

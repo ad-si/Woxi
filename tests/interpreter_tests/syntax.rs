@@ -504,6 +504,32 @@ mod unary_minus_parsing {
     assert_eq!(interpret("Hold[a^-b^c]").unwrap(), "Hold[a^(-b^c)]");
   }
 
+  // Regression: `f @ -g[x]`, `f @@ -g[x]`, `f /@ -g[x]` (and the `& @ …`
+  // shape a pure function's parenthesized application takes) parsed as just
+  // `-g[x]`, dropping `f` entirely — the mirror image of the `^-` bug
+  // `power_with_negated_symbol_exponent` regression-tests: `@`/`@@`/`/@`
+  // also bind tighter than the synthetic unary-minus placeholder (NEGATE,
+  // precedence 45), so the climbing algorithm let the operator claim the
+  // placeholder before NEGATE ever combined it with the real right operand,
+  // orphaning `-g[x]` on its own with `f` (and the placeholder) discarded.
+  // A Demonstration's cam-profile idiom,
+  // `({{# - 2.5, 0}, {#, 0}}& )[-lift[phi]]` written as
+  // `{{# - 2.5, 0}, {#, 0}} & @ -lift[phi]`, hit exactly this shape.
+  #[test]
+  fn prefix_apply_map_with_negated_function_call_argument() {
+    assert_eq!(interpret("Hold[f@-g[5]]").unwrap(), "Hold[f[-g[5]]]");
+    assert_eq!(interpret("Hold[f@@-g[5]]").unwrap(), "Hold[f @@ (-g[5])]");
+    assert_eq!(interpret("Hold[f@@@-g[5]]").unwrap(), "Hold[f @@@ (-g[5])]");
+    assert_eq!(interpret("Hold[f/@-g[5]]").unwrap(), "Hold[f /@ (-g[5])]");
+    assert_eq!(
+      interpret("Hold[(#+1)&@-g[5]]").unwrap(),
+      "Hold[(#1 + 1 & )[-g[5]]]"
+    );
+    // Real evaluation, not just the held shape: `g[5] = 25`, so
+    // `(#+1)&@-g[5]` must be `-25 + 1`.
+    assert_eq!(interpret("g[x_] := x^2; (#+1)&@-g[5]").unwrap(), "-24");
+  }
+
   #[test]
   fn implicit_times_power_with_part_exponent() {
     // Regression: `a I^-#2[[1]]` failed to parse because the
@@ -760,7 +786,9 @@ mod implicit_times_with_strings {
       "Row[{1, 2}, x]",
       "Row[{}]",
       "f[Row[{1, 2}]]",
-      "ArcTan[N[4/3]]*180/Pi",
+      "Sin[x] + Pi",
+      "f[t]",
+      r#"Style["ab", FontSize -> 12]"#,
     ] {
       let printed = interpret(&format!(
         "ToString[Hold[TraditionalForm[{src}]], InputForm]"
@@ -775,6 +803,19 @@ mod implicit_times_with_strings {
         "box escape of `{src}` re-parses differently: `{printed}`"
       );
     }
+    // TraditionalForm writes a product's numeric factors first
+    // (`180 arctan(…)/π`), so this one reads back reordered — as it does in
+    // wolframscript — but to the same value.
+    let src = "ArcTan[N[4/3]]*180/Pi";
+    let printed = interpret(&format!(
+      "ToString[Hold[TraditionalForm[{src}]], InputForm]"
+    ))
+    .unwrap();
+    assert_eq!(
+      interpret(&format!("ReleaseHold[{printed}] === {src}")).unwrap(),
+      "True",
+      "box escape of `{src}` reads back as a different value: `{printed}`"
+    );
   }
 
   // A list's box form uses single braces. The doubled-brace spelling that
@@ -3427,7 +3468,7 @@ mod traditional_form {
   }
 
   // A `TraditionalForm` of a symbolic product typesets to a `RowBox` of
-  // *string* atoms ("Pi", " ", "p", …). Writing that box segment out as the
+  // *string* atoms ("π", " ", "p", …). Writing that box segment out as the
   // InputForm of a *string* `\"`-escapes those quotes — the box delimiters
   // included — and what is left is no longer box syntax: Wolfram answers
   // `ToExpression::sntx` and reads nothing. Woxi has no parse-time messages,
@@ -3445,7 +3486,7 @@ mod traditional_form {
     )
     .unwrap();
     assert!(
-      quoted.contains("\\\"Pi\\\""),
+      quoted.contains("\\\"p\\\""),
       "expected escaped string atoms in: {quoted}"
     );
     // Drop the `"` delimiters `InputForm` put around the string to get

@@ -987,7 +987,17 @@ fn resolve_anchor(x: f64, y: f64, scaled: bool, bb: &BBox) -> (f64, f64) {
 }
 
 fn expr_to_point_list(expr: &Expr) -> Option<Vec<(f64, f64)>> {
-  if let Expr::List(items) = expr {
+  // Like `expr_to_point`: a point *list* is usually already a `{{x,y},…}`
+  // literal, but a Demonstration's `Arrow[({{# - 2.5, 0}, {#, 0}}& )[tip]]`
+  // only reduces to one at evaluation time (a pure function applied to the
+  // computed tip). Without evaluating first, this whole `CurriedCall` isn't
+  // a literal `List` and the arrow is silently dropped as "not a point
+  // list" instead of drawn.
+  let evaluated = match expr {
+    Expr::List(_) => None,
+    _ => evaluate_expr_to_expr(expr).ok(),
+  };
+  if let Expr::List(items) = evaluated.as_ref().unwrap_or(expr) {
     let mut pts = Vec::with_capacity(items.len());
     for item in items {
       pts.push(expr_to_point(item)?);
@@ -10810,6 +10820,51 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
         // `Rotate[…]` FullForm text every other unhandled head prints.
         "Rotate" if !args.is_empty() => expr_to_svg_markup(&args[0]),
 
+        // LineLegend[{styles…}, {labels…}] / SwatchLegend[{colors…},
+        // {labels…}] nested inside a Column/Row that ends up as a
+        // `PlotLabel`/`AxesLabel` (a plain SVG `<text>` element) can't
+        // hold the standalone legend's own nested `<svg>` sample (see
+        // `line_legend_svg`/`swatch_legend_svg`) — `<text>` only accepts
+        // inline content like `tspan`. Approximate each entry inline
+        // instead: a colored glyph (a stroke or a filled square, in the
+        // same color the full legend graphic would draw) followed by its
+        // label.
+        "LineLegend" | "SwatchLegend"
+          if args.len() >= 2
+            && matches!(&args[0], Expr::List(l) if !l.is_empty())
+            && matches!(&args[1], Expr::List(l) if !l.is_empty()) =>
+        {
+          let Expr::List(style_specs) = &args[0] else { unreachable!() };
+          let Expr::List(labels) = &args[1] else { unreachable!() };
+          let glyph =
+            if name == "SwatchLegend" { "\u{25A0}" } else { "\u{2501}" };
+          let mut out = String::new();
+          for (i, (spec, label)) in
+            style_specs.iter().zip(labels.iter()).enumerate()
+          {
+            if i > 0 {
+              out.push_str("<tspan dx=\"12\"> </tspan>");
+            }
+            let mut style = StyleState::default();
+            match spec {
+              Expr::List(directives) => {
+                for d in directives {
+                  apply_directive(d, &mut style);
+                }
+              }
+              other => {
+                apply_directive(other, &mut style);
+              }
+            }
+            out.push_str(&format!(
+              "<tspan fill=\"{}\">{glyph}</tspan> {}",
+              style.color.to_svg_rgb(),
+              expr_to_svg_markup(label)
+            ));
+          }
+          out
+        }
+
         // Row[{a, b, …}] concatenates its parts; Row[{…}, sep] joins
         // them with the separator. A `Spacer[n]` gap — as a bare item or
         // as the separator — is carried as a `dx` on the *next* rendered
@@ -12408,7 +12463,7 @@ pub(crate) fn plot_source_aspect_ratio(image_size: (u32, u32)) -> f64 {
   if ratio.is_finite() && ratio > 0.0 {
     ratio
   } else {
-    1.0 / 1.618_033_988_749_895
+    1.0 / std::f64::consts::GOLDEN_RATIO
   }
 }
 
@@ -12908,7 +12963,7 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if plot_options_need_aspect_ratio(&merged_options) {
         let aspect = plot_sources
           .first()
-          .map_or(1.0 / 1.618_033_988_749_895, |ps| {
+          .map_or(1.0 / std::f64::consts::GOLDEN_RATIO, |ps| {
             plot_source_aspect_ratio(ps.image_size)
           });
         merged_options.push(Expr::Rule {
@@ -16595,7 +16650,7 @@ fn with_default_image_size(expr: &Expr, size: i128) -> Expr {
     if !has_aspect_ratio {
       new_args.push(Expr::Rule {
         pattern: Box::new(id_expr("AspectRatio")),
-        replacement: Box::new(Expr::Real(1.0 / 1.618_033_988_749_895)),
+        replacement: Box::new(Expr::Real(1.0 / std::f64::consts::GOLDEN_RATIO)),
       });
     }
   }
@@ -22499,6 +22554,14 @@ fn discrete_choice_columns(items: &[Expr]) -> DiscreteChoiceColumns {
   let mut svgs = Vec::with_capacity(items.len());
   let mut label_runs = Vec::with_capacity(items.len());
   for item in items {
+    // A bare `Delimiter` inside a choice list (e.g. a `PopupMenu`'s options
+    // grouped into sections) draws a separator line between the choices
+    // around it — it is never itself a selectable value, so it contributes
+    // no value/label/svg row rather than becoming a literal "Delimiter"
+    // entry.
+    if matches!(item, Expr::Identifier(s) if s == "Delimiter") {
+      continue;
+    }
     if let Some((value, label)) = discrete_choice_rule(item) {
       values.push(crate::syntax::expr_to_input_form(value));
       // A rule label that is itself a graphic (the crosshair icons of
@@ -27778,7 +27841,7 @@ mod manipulate_dynamic_control_list_tests {
   fn dynamic_wrapped_control_list_flattens_to_controls() {
     let s = spec("Manipulate[x, Dynamic[{Control[{{x, 0}, -1, 1}]}]]");
     assert_eq!(names(&s), vec!["x"]);
-    assert!(s.displays.is_empty());
+    assert_eq!(s.displays, [] as [std::string::String; 0]);
   }
 
   /// `Dynamic[Column[{Control[…], …}]]` (the Demonstrations idiom for a
@@ -27794,7 +27857,7 @@ mod manipulate_dynamic_control_list_tests {
        Control[{{y, 0}, -1, 1}]}]]]",
     );
     assert_eq!(names(&s), vec!["x", "y"]);
-    assert!(s.displays.is_empty());
+    assert_eq!(s.displays, [] as [std::string::String; 0]);
   }
 
   /// The same flattening applies when the controls are colour pickers
@@ -27809,7 +27872,7 @@ mod manipulate_dynamic_control_list_tests {
        ImageSize -> Tiny}]}]]]",
     );
     assert_eq!(names(&s), vec!["col"]);
-    assert!(s.displays.is_empty());
+    assert_eq!(s.displays, [] as [std::string::String; 0]);
     assert!(matches!(&s.controls[0], ManipulateControl::Color { .. }));
   }
 
@@ -28057,7 +28120,10 @@ mod manipulate_dynamic_control_list_tests {
   #[test]
   fn no_bookmarks_option_leaves_bookmarks_empty() {
     let s = spec("Manipulate[Graphics[{Circle[{0, 0}, r]}], {r, 1, 5}]");
-    assert!(s.bookmarks.is_empty());
+    assert_eq!(
+      s.bookmarks,
+      [] as [(std::string::String, std::string::String); 0]
+    );
   }
 }
 

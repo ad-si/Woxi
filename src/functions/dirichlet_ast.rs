@@ -11,7 +11,6 @@
 //! unity e^(2 pi i r), printed exactly as wolframscript does
 //! (1, -1, I, -I, or E^((a*I)/b*Pi) forms on the principal branch).
 
-#[allow(unused_imports)]
 use super::*;
 use crate::functions::math_ast::{gcd_i128, rat_reduce, rat_reduce_bigint};
 
@@ -794,10 +793,7 @@ fn reorder_slots_last(expr: &Expr) -> Expr {
   }
   let mut all = others;
   all.extend(slots);
-  Expr::FunctionCall {
-    name: if is_plus { "Plus" } else { "Times" }.to_string(),
-    args: all.into(),
-  }
+  call(if is_plus { "Plus" } else { "Times" }, all)
 }
 
 /// Multiply the two terms' coefficient factors into `core`.

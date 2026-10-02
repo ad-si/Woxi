@@ -39,7 +39,9 @@ The degree has to be an integer:
 ```scrut
 $ wo 'Surd[8, 1/2]'
 
-Surd::int: Integer expected at position 2 in Surd[8, 1/2].
+                                                     1
+Surd::int: Integer expected at position 2 in Surd[8, -].
+                                                     2
 Surd[8, 1/2]
 ```
 

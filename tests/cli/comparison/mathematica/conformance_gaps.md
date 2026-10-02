@@ -116,7 +116,8 @@ renderer would move a great many snapshots at once, so fractions and powers are
 still 1D.
 
 Consequences elsewhere: `ToString[-48/2033]`, `ToString[-10/3]`,
-`ToString[1.5*^10]` and 2D rationals inside message text all print flat.
+`ToString[1.5*^10]` and 2D rationals inside most built-in message text
+all print flat (see "Message repetition and 2D layouts").
 
 ### `NumberForm` does not switch to scientific notation
 
@@ -234,18 +235,6 @@ while the expression is held; Woxi's parse tree is the quotient itself, so
 `Part` sees the divisor and the exponent as its two parts. The evaluated
 expression is the same in both.
 
-### TraditionalForm boxes a multi-argument call's arguments as one RowBox
-
-```sh
-wolframscript -code 'ToString[Int[Cos[x]/x^2, x], TraditionalForm]'
-# DisplayForm[FormBox[RowBox[{Int, (, RowBox[{FractionBox[…], ,, x}], )}], TraditionalForm]]
-woxi eval 'ToString[Int[Cos[x]/x^2, x], TraditionalForm]'
-# DisplayForm[FormBox[RowBox[{Int, (, FractionBox[…], ,, x, )}], TraditionalForm]]
-```
-
-Woxi lays the arguments out flat in the call's row; WL nests them in a row
-of their own. Same picture, different box tree.
-
 ### TraditionalForm boxes are written out inline instead of as TemplateBoxes
 
 `ToBoxes[TraditionalForm[…]]` differs in representation, not in picture:
@@ -265,9 +254,23 @@ The box builder that feeds Woxi's own renderers keeps flattening it:
 call's own source out as a `RowBox`. `ToBoxes` there also takes only one
 argument where WL takes a form as the second.
 
-Relatedly, `expr_to_boxes` typesets TraditionalForm with StandardForm glyphs:
-`Sin[x]/2` is `FractionBox[RowBox[{Sin[, x, ]}], 2]` against WL's
-`RowBox[{sin, (, x, )}]`, and `Pi` stays `Pi` instead of `π`.
+Smaller TraditionalForm typesetter differences, all in representation:
+
+- An inverse trig function is `arctan(x)`, WL writes `tan^-1(x)`
+  (`SuperscriptBox["tan", RowBox[{"-", "1"}]]`).
+- A held call keeps its StandardForm spelling in WL — `Hold[TraditionalForm[
+  Style[x, Red]]]` boxes as `Style[x, Red]` and `Exp[x]` as `exp(x)`,
+  `Column[…]` as its `GridBox` — where Woxi typesets the call.
+- `Times[-1, Pi, a]` is `-π a`; WL writes `π (-a)`.
+- A curried call `h[x][y, z]` gets WL's extra row around the arguments.
+- `EulerGamma`, `GoldenRatio` and `Catalan` are `TagBox`es in WL, bare glyphs
+  in Woxi, and keep their canonical place in a product where the numeric
+  constants (numbers, `ⅈ`, `ⅇ`, `π`, `°`) move to the front in both.
+- `ToString[TraditionalForm[…]]` and the InputForm of a held
+  `TraditionalForm[…]` write `Row` as its template and a styled string with
+  its quotes, as WL does; `ToString[…, TraditionalForm]` keeps the flat
+  `RowBox`, the `U+2147`/`U+2148` letters and the `U+2009` gap Woxi's own
+  renderers draw, where WL writes the template, `\[ExponentialE]` and `" "`.
 
 ### `ToBoxes` in StandardForm drops StyleBox and held TagBox
 
@@ -483,20 +486,30 @@ already-distributed sum, `Simplify[-6 Sqrt[399] + 6 Sqrt[2261]]` returns
 sitting outside the radical does not fold in: `Pi/(2 Sqrt[2 Pi])` stays where
 WL gives `Sqrt[Pi/2]/2`.
 
-### `(1/2)^k` is not rewritten to `2^(-k)`
+### A rational power's base is not kept primitive
 
-WL rewrites a positive unit-fraction base with a **non-numeric** exponent:
-`(1/2)^k` → `2^(-k)`, `(1/2)^Pi` → `2^(-Pi)`, `(1/2)^(k+1)` → `2^(-1-k)`.
-Woxi keeps the unit fraction. Non-unit numerators (`(2/3)^k`) and negative
-bases (`(-1/2)^k`) agree.
-
-Doing it eagerly regresses `BinomialDistribution`'s PDF, which relies on
-`(1/2)^x*(1/2)^(10-x)` merging to `(1/2)^10`; the rewrite has to happen after
-same-base `Times` merging, or the integer-base merge has to combine
-`2^a*2^b` → `2^(a+b)` for symbolic exponents.
-
-Woxi also normalizes `(3/11)^(2/3)` to `(9/121)^(1/3)`, where WL keeps the
+Woxi normalizes `(3/11)^(2/3)` to `(9/121)^(1/3)`, where WL keeps the
 primitive base and even rewrites the other direction.
+
+### Powers of integer bases that share a prime do not merge
+
+A coefficient is absorbed into a power of an integer base the way WL does it
+(`2^x/12` → `2^(-2 + x)/3`, `6^x/4` → `2^(-2 + x)*3^x`), but two *powers*
+sharing a prime are not split and merged:
+
+```sh
+wolframscript -code '6^x 2^y'      # 2^(x + y)*3^x
+woxi eval '6^x 2^y'                # 2^y*6^x
+wolframscript -code '2 6^x 10^y'   # 2^(1 + x + y)*3^x*5^y
+woxi eval '2 6^x 10^y'             # 2^(1 + x)*3^x*10^y
+wolframscript -code '6 2^x 3^x'    # 6^(1 + x)
+woxi eval '6 2^x 3^x'              # 2^(1 + x)*3^(1 + x)
+```
+
+Rational bases are left out of the absorption: WL splits them into their
+primes and recombines, choosing between a base and its reciprocal in a way
+not yet pinned down (`4/9 (2/3)^x` → `(3/2)^(-2 - x)`, `2/3 (2/3)^x` →
+`(2/3)^(1 + x)`, `3 (2/3)^x` → `2^x*3^(1 - x)`).
 
 ### A complex coefficient blocks the negative-exponent fold
 
@@ -1507,6 +1520,22 @@ turning that into a rule with the parameter's membership as the
 The *bounded* case agrees:
 `Solve[Mod[x, 3] == 1 && 0 <= x < 10, x, Integers]` is `{{x -> 1}, {x -> 4},
 {x -> 7}}` in both (rechecked 2026-09-10).
+
+### Solving for a variable divided by a symbol keeps a negated sum split
+
+```sh
+wolframscript -code 'Solve[-x/a == l - p, x]'   # {{x -> -(a*(l - p))}}
+woxi eval 'Solve[-x/a == l - p, x]'             # {{x -> -(a*l) + a*p}}
+wolframscript -code 'Solve[3^(-x/a) == 5, x]'
+# {{x -> ConditionalExpression[a*(((2*I)*Pi*C[1])/Log[3] - Log[5]/Log[3]), …]}}
+woxi eval 'Solve[3^(-x/a) == 5, x]'
+# {{x -> ConditionalExpression[-(a*(((-2*I)*Pi*C[1])/Log[3] + Log[5]/Log[3])), …]}}
+```
+
+Numeric slopes (`-x`, `-2 x`, `-x/2`) and a symbolic one without the minus
+agree. The exponential case is the same linear step: `b^(linear) == c` is
+solved as `linear == Log[c]/Log[b] + 2 I Pi C[1]/Log[b]`, flipping `C[1]` for
+a negative slope.
 
 ### `Roots` root ordering
 
@@ -3115,9 +3144,12 @@ but does not emit `$GeoLocation::dloff` or the per-function `Fn::geoloc`.
   two unit names appear in an order that is not input order
   (`Kilograms + Meters` → "Meters and Kilograms"). Woxi quotes them and emits
   once.
-- Messages that embed a fraction are rendered as 2D layouts by wolframscript
-  and 1D by Woxi. This is systemic across the distribution and `Select::normal`
-  message families.
+- Messages that embed a fraction are rendered as 2D layouts by wolframscript.
+  Woxi does the same for user `Message[sym::tag, args]` templates and for
+  built-in messages composed with `syntax::format_message_with_expr` /
+  `format_message_pieces` (`Select::normal`, `Surd::int`); built-in messages
+  assembled with a flat `format!` (e.g. the distribution family, `Take::seqs`)
+  still print 1D.
 - Message **multiplicity** in general is not comparable: wolframscript
   re-evaluates a failing specification, so it prints some messages twice, and
   applies `General::stop` after three identical ones.
@@ -4492,3 +4524,12 @@ only for that one case.
 types) and `SocketOpen`'s `"ZMQ_STREAM"`-family options are not implemented:
 anything that is not TCP leaves the call unevaluated. `Sockets["TCP"]` is
 accepted and is the same as `Sockets[]`.
+
+### `Together[…, Modulus -> p]` only handles univariate rational functions
+
+```sh
+woxi eval 'Together[1/x + 1/y, Modulus -> 3]'   # stays unevaluated
+```
+
+The modular path cancels over GF(p) with univariate polynomial arithmetic,
+so a multivariate fraction (or a composite modulus) is returned unevaluated.

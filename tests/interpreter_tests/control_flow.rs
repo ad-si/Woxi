@@ -1151,6 +1151,26 @@ mod check {
     );
   }
 
+  // Slot values are laid out in 2D OutputForm around the message line, the
+  // `sym::tag: ` head included, and `HoldForm` stays invisible — as
+  // wolframscript prints `Message[f::x, {1/2, 3}, HoldForm[1/3]]`.
+  #[test]
+  fn user_message_slots_render_2d() {
+    clear_state();
+    interpret(
+      r#"f::x = "a `1` b `2` c"; Message[f::x, {1/2, 3}, HoldForm[1/3]];"#,
+    )
+    .unwrap();
+    let msgs = woxi::get_captured_messages_raw();
+    let expected = "         1       1\n\
+                    f::x: a {-, 3} b - c\n         \
+                    2       3";
+    assert!(
+      msgs.iter().any(|m| m == expected),
+      "expected {expected:?}, got {msgs:?}"
+    );
+  }
+
   // Successive `` `` `` slots take successive arguments.
   #[test]
   fn user_message_sequential_slots_advance() {

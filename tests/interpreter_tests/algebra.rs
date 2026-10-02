@@ -2772,6 +2772,37 @@ mod together {
     assert_eq!(interpret("Together[1/x + 1/y]").unwrap(), "(x + y)/(x*y)");
   }
 
+  // `Modulus -> p` reduces the combined numerator and denominator mod p,
+  // cancels their gcd over GF(p) and makes the denominator monic.
+  #[test]
+  fn together_modulus() {
+    assert_eq!(
+      interpret("Together[(2 + 7*x)/(2*x), Modulus -> 7]").unwrap(),
+      "x^(-1)"
+    );
+    assert_eq!(interpret("Together[1/(2*x), Modulus -> 7]").unwrap(), "4/x");
+    assert_eq!(
+      interpret("Together[(x^2 + 1)/(x + 1), Modulus -> 2]").unwrap(),
+      "1 + x"
+    );
+    assert_eq!(
+      interpret("Together[1/x + 1/(x + 1), Modulus -> 2]").unwrap(),
+      "(x + x^2)^(-1)"
+    );
+    assert_eq!(
+      interpret("Together[(x^2 - 1)/(x + 1) + 3/(2*x), Modulus -> 5]").unwrap(),
+      "(4 + 4*x + x^2)/x"
+    );
+    assert_eq!(
+      interpret("Together[x/2 + 1/3, Modulus -> 5]").unwrap(),
+      "2 + 3*x"
+    );
+    assert_eq!(
+      interpret("Together[{1/(2*x), 7*x/(x + 1)}, Modulus -> 7]").unwrap(),
+      "{4/x, 0}"
+    );
+  }
+
   // A *symbolic* negative exponent is a denominator too — `E^(-t)` is
   // `1/E^t` — so it takes part in the common denominator, and exponents
   // that are rational multiples of the same symbol combine by LCM rather
@@ -4769,7 +4800,10 @@ mod solve {
     // canonical order), the earlier ones staying free parameters. No
     // `svars` message: no variables were asked for.
     assert_eq!(interpret("Solve[x + y == 3]").unwrap(), "{{y -> 3 - x}}");
-    assert!(woxi::get_captured_messages_raw().is_empty());
+    assert_eq!(
+      woxi::get_captured_messages_raw(),
+      [] as [std::string::String; 0]
+    );
     assert_eq!(
       interpret("Solve[{x + y == 2, x - y == z}]").unwrap(),
       "{{y -> 2 - x, z -> -2 + 2*x}}"
@@ -4854,7 +4888,10 @@ mod solve {
       interpret("NSolve[{x + y + z == 2, x - y == 1}, {x, y, z}]").unwrap(),
       "{{x -> 1.5 - 0.5*z, y -> 0.5 - 0.5*z}}"
     );
-    assert!(woxi::get_captured_messages_raw().is_empty());
+    assert_eq!(
+      woxi::get_captured_messages_raw(),
+      [] as [std::string::String; 0]
+    );
     assert_eq!(
       interpret("NSolve[x + y == 2, Reals]").unwrap(),
       "{{x -> 2. - 1.*y}}"
@@ -5698,8 +5735,8 @@ mod solve {
     fn exponential_divided_by_constant() {
       assert_eq!(
         interpret("Solve[2^x/12 == 5, x]").unwrap(),
-        "{{x -> ConditionalExpression[((2*I)*Pi*C[1])/Log[2] + \
-         Log[60]/Log[2], Element[C[1], Integers]]}}"
+        "{{x -> ConditionalExpression[2 + ((2*I)*Pi*C[1])/Log[2] + \
+         Log[15]/Log[2], Element[C[1], Integers]]}}"
       );
     }
 
@@ -5709,6 +5746,53 @@ mod solve {
         interpret("Solve[2^x - 60 == 0, x]").unwrap(),
         "{{x -> ConditionalExpression[((2*I)*Pi*C[1])/Log[2] + \
          Log[60]/Log[2], Element[C[1], Integers]]}}"
+      );
+    }
+
+    // `b^(linear in x) == c` keeps the whole periodic family, not just the
+    // principal value, whatever the exponent's slope and offset.
+    #[test]
+    fn exponential_with_linear_exponent_keeps_periodic_family() {
+      assert_eq!(
+        interpret("Solve[2^(x + 1) == 5, x]").unwrap(),
+        "{{x -> ConditionalExpression[-1 + ((2*I)*Pi*C[1])/Log[2] + \
+         Log[5]/Log[2], Element[C[1], Integers]]}}"
+      );
+      assert_eq!(
+        interpret("Solve[2^(2 x) == 5, x]").unwrap(),
+        "{{x -> ConditionalExpression[(((2*I)*Pi*C[1])/Log[2] + \
+         Log[5]/Log[2])/2, Element[C[1], Integers]]}}"
+      );
+      assert_eq!(
+        interpret("Solve[2^(a x + b) == 5, x]").unwrap(),
+        "{{x -> ConditionalExpression[(-b + ((2*I)*Pi*C[1])/Log[2] + \
+         Log[5]/Log[2])/a, Element[C[1], Integers]]}}"
+      );
+      assert_eq!(
+        interpret("Solve[E^(x + 1) == 1, x]").unwrap(),
+        "{{x -> ConditionalExpression[-1 + (2*I)*Pi*C[1], \
+         Element[C[1], Integers]]}}"
+      );
+    }
+
+    // A negative slope takes the family with `-C[1]`, which keeps the
+    // periodic term positive.
+    #[test]
+    fn exponential_with_negative_slope_keeps_periodic_term_positive() {
+      assert_eq!(
+        interpret("Solve[3^(1 - x) == 5, x]").unwrap(),
+        "{{x -> ConditionalExpression[1 + ((2*I)*Pi*C[1])/Log[3] - \
+         Log[5]/Log[3], Element[C[1], Integers]]}}"
+      );
+      assert_eq!(
+        interpret("Solve[3^(-2 x) == 5, x]").unwrap(),
+        "{{x -> ConditionalExpression[(((2*I)*Pi*C[1])/Log[3] - \
+         Log[5]/Log[3])/2, Element[C[1], Integers]]}}"
+      );
+      assert_eq!(
+        interpret("Solve[E^(1 - x) == 5, x]").unwrap(),
+        "{{x -> ConditionalExpression[1 + (2*I)*Pi*C[1] - Log[5], \
+         Element[C[1], Integers]]}}"
       );
     }
 

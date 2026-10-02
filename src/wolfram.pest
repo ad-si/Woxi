@@ -866,18 +866,23 @@ ConditionOp = @{
 PatternCondition = { PatternName ~ "_" ~ "/;" ~ ConditionExpr }
 // PatternOptional: x_ : default or x_Head : default (Optional pattern with default value)
 // Note: Wolfram uses both "x_:val" and "x_ : val" syntax. The colon must NOT be ":=" (SetDelayed)
-PatternOptionalWithHead = { PatternName ~ "_" ~ Identifier ~ ":" ~ !("=" | ">") ~ Term }
-PatternOptionalSimple = { PatternName ~ "_" ~ ":" ~ !("=" | ">") ~ Term }
+// The default value is parsed as a `ConditionExpr` (not a bare `Term`) so
+// that a higher-precedence operator following it — e.g. the `^` in
+// `y_:10^-6` — is absorbed into the default itself (`Optional[y_, 10^-6]`)
+// instead of being left for the enclosing expression to apply to the whole
+// pattern (`(y_:10)^-6`), which is what a bare `Term` produced.
+PatternOptionalWithHead = { PatternName ~ "_" ~ Identifier ~ ":" ~ !("=" | ">") ~ ConditionExpr }
+PatternOptionalSimple = { PatternName ~ "_" ~ ":" ~ !("=" | ">") ~ ConditionExpr }
 // PatternOptionalAnonBlank: `_:default` — anonymous Optional[Blank[], default]
 // (no name binding). Distinct from PatternOptionalSimple, which requires a
 // PatternName before the `_`.
-PatternOptionalAnonBlank = { "_" ~ !("_" | "?") ~ ":" ~ !("=" | ">" | ":") ~ Term }
+PatternOptionalAnonBlank = { "_" ~ !("_" | "?") ~ ":" ~ !("=" | ">" | ":") ~ ConditionExpr }
 // PatternOptionalNamedBlank: `a:_:b` — an alternative form of `a_:b`
 // where the name binding and the blank are separated by a colon. Wolfram
 // parses both forms identically (`Optional[Pattern[a, Blank[]], b]`).
 // Must be tried before `PatternSimple`/`ColonSequence` so the full triple
 // `name : _ : default` is captured as one pattern.
-PatternOptionalNamedBlank = { PatternName ~ ":" ~ "_" ~ !("_" | "?") ~ Identifier? ~ ":" ~ !("=" | ">") ~ Term }
+PatternOptionalNamedBlank = { PatternName ~ ":" ~ "_" ~ !("_" | "?") ~ Identifier? ~ ":" ~ !("=" | ">") ~ ConditionExpr }
 // PatternOptionalDefault: x_. or _. (Optional pattern with system-determined default)
 // The dot must not be followed by a digit (decimal) or another dot (.. or ...)
 // Note: x_Head. and _Head. are NOT valid in Wolfram Language (syntax error)
@@ -897,7 +902,7 @@ PatternSimple = ${ PatternName? ~ PatternBlanks ~ !("_" | "?" | ".") }
 // `parent : _Symbol?UTypeQ : UObject` is a tested slot that may be left out.
 // Without this the default is stranded after the `?test` suffix, since the
 // chained-colon reading below only works when nothing sits between them.
-PatternNamedDefault = { ":" ~ !("=" | ">" | ":") ~ Term }
+PatternNamedDefault = { ":" ~ !("=" | ">" | ":") ~ ConditionExpr }
 PatternNamed = { PatternName ~ ":" ~ !("=" | ">" | ":") ~ Term ~ PatternTestSuffix? ~ (RepeatedNullSuffix | RepeatedSuffix)? ~ PatternNamedDefault? }
 Pattern = { PatternCondition | PatternTest | PatternOptionalNamedBlank | PatternOptionalWithHead | PatternOptionalSimple | PatternOptionalAnonBlank | PatternOptionalDefaultSimple | PatternWithHead | PatternSimple }
 

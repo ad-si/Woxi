@@ -1147,7 +1147,8 @@ pub fn dispatch_io_functions(
         // slots outnumber its arguments keeps them literal, and unlike
         // `StringForm` says nothing about it: the message being reported is
         // the news, not the shape of its template.
-        let filled = crate::functions::string_ast::format_message_template(
+        let message = crate::functions::string_ast::format_message_template(
+          &format!("{sym_name}::{tag}: "),
           &text,
           &args[1..],
         );
@@ -1155,7 +1156,7 @@ pub fn dispatch_io_functions(
         // reacts to user messages), respects Quiet/Off, participates in
         // General::stop suppression, and reaches the same stream as
         // built-in messages.
-        crate::emit_message(&format!("{sym_name}::{tag}: {filled}"));
+        crate::emit_message(&message);
         return Some(Ok(null_expr()));
       }
     }
@@ -4644,17 +4645,17 @@ fn url_build_from_parts(entries: &[(Expr, Expr)]) -> String {
     other => expr_to_string(other),
   };
 
-  let scheme = lookup("Scheme").map(&text);
-  let user = lookup("User").map(&text);
-  let domain = lookup("Domain").map(&text);
-  let port = lookup("Port").map(&text);
+  let scheme = lookup("Scheme").map(text);
+  let user = lookup("User").map(text);
+  let domain = lookup("Domain").map(text);
+  let port = lookup("Port").map(text);
   let path = lookup("Path").map(|p| match p {
     Expr::List(segments) => {
-      segments.iter().map(&text).collect::<Vec<_>>().join("/")
+      segments.iter().map(text).collect::<Vec<_>>().join("/")
     }
     other => text(other),
   });
-  let fragment = lookup("Fragment").map(&text);
+  let fragment = lookup("Fragment").map(text);
   let query: Vec<(String, String)> = match lookup("Query") {
     Some(Expr::List(items)) => items
       .iter()

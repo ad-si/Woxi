@@ -6,7 +6,7 @@ use super::*;
 use crate::functions::regex_engine::{
   Captures, Error as RegexError, WoxiRegex,
 };
-use crate::syntax::pair_to_expr;
+use crate::syntax::{MessagePiece, pair_to_expr};
 use num_bigint::Sign;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -1228,14 +1228,8 @@ pub fn string_starts_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let re = compile_regex(&full_pat).map_err(|e| {
       InterpreterError::EvaluationError(format!("Invalid pattern: {e}"))
     })?;
-    return Ok(Expr::Identifier(
-      if full_match_with_constraints(&re, &constraints, &s) {
-        "True"
-      } else {
-        "False"
-      }
-      .to_string(),
-    ));
+    let result = full_match_with_constraints(&re, &constraints, &s);
+    return Ok(bool_expr(result));
   }
 
   let prefix = expr_to_str(&args[1]);
@@ -1281,14 +1275,8 @@ pub fn string_ends_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let re = compile_regex(&full_pat).map_err(|e| {
       InterpreterError::EvaluationError(format!("Invalid pattern: {e}"))
     })?;
-    return Ok(Expr::Identifier(
-      if full_match_with_constraints(&re, &constraints, &s) {
-        "True"
-      } else {
-        "False"
-      }
-      .to_string(),
-    ));
+    let result = full_match_with_constraints(&re, &constraints, &s);
+    return Ok(bool_expr(result));
   }
 
   let suffix = expr_to_str(&args[1]);
@@ -2451,14 +2439,8 @@ pub fn string_match_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let re = compile_regex(&full_regex).map_err(|e| {
       InterpreterError::EvaluationError(format!("Invalid string pattern: {e}"))
     })?;
-    return Ok(Expr::Identifier(
-      if full_match_with_constraints(&re, &constraints, &s) {
-        "True"
-      } else {
-        "False"
-      }
-      .to_string(),
-    ));
+    let result = full_match_with_constraints(&re, &constraints, &s);
+    return Ok(bool_expr(result));
   }
 
   // Try RegularExpression pattern
@@ -5332,12 +5314,12 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && name == "TraditionalForm"
     && inner_args.len() == 1
   {
-    let box_str = expr_to_boxes(&inner_args[0]);
     // Use Unicode box markers (like StandardForm) so that:
     // - OutputForm renders as DisplayForm[FormBox[..., TraditionalForm]]
     // - InputForm renders as \!\(\*FormBox[..., TraditionalForm]\)
-    return Ok(Expr::String(format!(
-      "{BOX_START}{BOX_OPEN}{BOX_SEP}FormBox[{box_str}, TraditionalForm]{BOX_CLOSE}"
+    return Ok(Expr::String(traditional_form_box_escape(
+      &inner_args[0],
+      true,
     )));
   }
 
@@ -5534,20 +5516,7 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // a String that displays as the typeset expression rather than as
         // its own source. `Sin[x]` becomes
         // `RowBox[{"sin", "(", "x", ")"}]`, a quotient a `FractionBox`.
-        let formatted =
-          crate::evaluator::dispatch::complex_and_special::apply_format_recursively(
-            &args[0],
-            "TraditionalForm",
-          );
-        let boxes =
-          crate::evaluator::dispatch::complex_and_special::expr_to_box_form_traditional(
-            &formatted,
-          );
-        let box_text = linear_syntax_box_text(&boxes);
-        return Ok(Expr::String(format!(
-          "{BOX_START}{BOX_OPEN}{BOX_SEP}FormBox[{box_text}, \
-           TraditionalForm]{BOX_CLOSE}"
-        )));
+        return Ok(Expr::String(traditional_form_box_escape(&args[0], false)));
       }
       "StandardForm" => {
         // Build the box AST via MakeBoxes (which dispatches user-defined
@@ -8954,6 +8923,31 @@ pub fn linear_syntax_box_text(expr: &Expr) -> String {
   }
 }
 
+/// `expr` typeset into TraditionalForm boxes and wrapped in the box-syntax
+/// escape markers `\!\(\*FormBox[…, TraditionalForm]\)` — the single
+/// source for every place a `TraditionalForm[…]` turns into box text
+/// (`ToString[…, TraditionalForm]`, `ToString[TraditionalForm[…]]`, and a
+/// `TraditionalForm[…]` inside InputForm text). `as_text` selects the boxes
+/// that must read back as the expression (see
+/// `expr_to_box_form_traditional_text`); without it they are the ones Woxi's
+/// own renderers typeset from the string's markers.
+pub fn traditional_form_box_escape(expr: &Expr, as_text: bool) -> String {
+  use crate::evaluator::dispatch::complex_and_special::{
+    apply_format_recursively, expr_to_box_form_traditional,
+    expr_to_box_form_traditional_text,
+  };
+  let formatted = apply_format_recursively(expr, "TraditionalForm");
+  let boxes = if as_text {
+    expr_to_box_form_traditional_text(&formatted)
+  } else {
+    expr_to_box_form_traditional(&formatted)
+  };
+  let box_text = linear_syntax_box_text(&boxes);
+  format!(
+    "{BOX_START}{BOX_OPEN}{BOX_SEP}FormBox[{box_text}, TraditionalForm]{BOX_CLOSE}"
+  )
+}
+
 pub const BOX_START: char = '\u{f7c1}'; // \!
 pub const BOX_OPEN: char = '\u{f7c9}'; // \(
 pub const BOX_SEP: char = '\u{f7c8}'; // \*
@@ -9387,11 +9381,19 @@ pub(crate) fn format_string_form(template: &str, values: &[Expr]) -> String {
 /// A slot with no argument to fill it stays literal *and stays quiet*: the
 /// message being reported is the news, and `StringForm::sfr` on top of it
 /// would only describe the template.
+///
+/// Each value is laid out in 2D OutputForm, as wolframscript prints message
+/// arguments: `Message[f::x, 1/2]` sets the fraction's numerator and
+/// denominator above and below the message line.
+/// `prefix` (the `sym::tag: ` head) is laid out on the same baseline.
 pub(crate) fn format_message_template(
+  prefix: &str,
   template: &str,
   values: &[Expr],
 ) -> String {
-  format_slots(template, values, expr_to_output, false)
+  let mut pieces = vec![MessagePiece::Text(prefix.to_string())];
+  pieces.extend(slot_pieces(template, values, false));
+  crate::syntax::format_message_pieces(&pieces)
 }
 
 /// `format_string_form`, rendering each substituted value with `fmt` instead
@@ -9415,7 +9417,27 @@ fn format_slots(
   fmt: impl Fn(&Expr) -> String,
   warn: bool,
 ) -> String {
+  slot_pieces(template, values, warn)
+    .iter()
+    .map(|piece| match piece {
+      MessagePiece::Text(t) => t.clone(),
+      MessagePiece::Expr(e) => fmt(e),
+    })
+    .collect()
+}
+
+/// Split a template into its literal text and the values its slots pick.
+fn slot_pieces<'a>(
+  template: &str,
+  values: &'a [Expr],
+  warn: bool,
+) -> Vec<MessagePiece<'a>> {
+  let mut pieces: Vec<MessagePiece<'a>> = Vec::new();
   let mut result = String::new();
+  let mut push_value = |result: &mut String, value: &'a Expr| {
+    pieces.push(MessagePiece::Text(std::mem::take(result)));
+    pieces.push(MessagePiece::Expr(value));
+  };
   let chars: Vec<char> = template.chars().collect();
   let len = chars.len();
   let mut i = 0;
@@ -9429,7 +9451,7 @@ fn format_slots(
       if i + 1 < len && chars[i + 1] == '`' {
         let idx = last_index + 1;
         if idx >= 1 && (idx as usize) <= values.len() {
-          result.push_str(&fmt(&values[(idx - 1) as usize]));
+          push_value(&mut result, &values[(idx - 1) as usize]);
         } else {
           // Out of range — keep the `` literal and warn.
           result.push('`');
@@ -9467,7 +9489,7 @@ fn format_slots(
           .unwrap_or(0);
         if signed >= 1 && (signed as usize) <= values.len() {
           let idx = signed as usize;
-          result.push_str(&fmt(&values[idx - 1]));
+          push_value(&mut result, &values[idx - 1]);
         } else {
           // Out of range — keep the `n` placeholder literal and warn.
           result.push('`');
@@ -9493,7 +9515,8 @@ fn format_slots(
     result.push(chars[i]);
     i += 1;
   }
-  result
+  pieces.push(MessagePiece::Text(result));
+  pieces
 }
 
 /// Apply a `StringTemplate[template]` to arguments, filling its slots:

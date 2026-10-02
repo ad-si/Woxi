@@ -1617,17 +1617,16 @@ fn legendre_q_symbolic_ast(
   // Q_0(x) = -Log[1-x]/2 + Log[1+x]/2
   let half = call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]);
   let neg_half = call("Rational", vec![Expr::Integer(-1), Expr::Integer(2)]);
-  let log_1mx = Expr::FunctionCall {
-    name: "Log".to_string(),
-    args: vec![call(
+  let log_1mx = call1(
+    "Log",
+    call(
       "Plus",
       vec![
         Expr::Integer(1),
         call("Times", vec![Expr::Integer(-1), x.clone()]),
       ],
-    )]
-    .into(),
-  };
+    ),
+  );
   let log_1px = call1("Log", call("Plus", vec![Expr::Integer(1), x.clone()]));
   let q0 = call(
     "Plus",
@@ -1920,26 +1919,22 @@ fn chebyshev_general_numeric(
     _ => return None,
   };
   let arg = times2(order, acos_x);
-  let trig = Expr::FunctionCall {
-    name: match kind {
-      "T" => "Cos".to_string(),
-      "U" => "Sin".to_string(),
+  let trig = call1(
+    match kind {
+      "T" => "Cos",
+      "U" => "Sin",
       _ => return None,
     },
-    args: vec![arg].into(),
-  };
+    arg,
+  );
   let final_expr = match kind {
     "T" => trig,
     "U" => {
       // Divide by Sqrt[1 - x^2]
-      let denom = Expr::FunctionCall {
-        name: "Sqrt".to_string(),
-        args: vec![minus2(
-          Expr::Integer(1),
-          pow2(x_expr.clone(), Expr::Integer(2)),
-        )]
-        .into(),
-      };
+      let denom = call1(
+        "Sqrt",
+        minus2(Expr::Integer(1), pow2(x_expr.clone(), Expr::Integer(2))),
+      );
       div2(trig, denom)
     }
     _ => return None,
@@ -2000,10 +1995,7 @@ fn chebyshev_general_exact(
     _ => return None,
   };
   let arg = times2(order, acos_x);
-  let trig = Expr::FunctionCall {
-    name: if kind == "T" { "Cos" } else { "Sin" }.to_string(),
-    args: vec![arg].into(),
-  };
+  let trig = call1(if kind == "T" { "Cos" } else { "Sin" }, arg);
   let final_expr = if kind == "T" {
     trig
   } else {

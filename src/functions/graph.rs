@@ -269,6 +269,14 @@ fn push_internal_index_edges(
   }
 }
 
+fn edge_head(directed: bool) -> &'static str {
+  if directed {
+    "DirectedEdge"
+  } else {
+    "UndirectedEdge"
+  }
+}
+
 fn push_index_edge(
   vertices: &[Expr],
   i: usize,
@@ -276,13 +284,8 @@ fn push_index_edge(
   directed: bool,
   out: &mut Vec<Expr>,
 ) {
-  let head = if directed {
-    "DirectedEdge"
-  } else {
-    "UndirectedEdge"
-  };
   out.push(call(
-    head,
+    edge_head(directed),
     vec![vertices[i - 1].clone(), vertices[j - 1].clone()],
   ));
 }
@@ -869,14 +872,10 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let named = |idx: petgraph::graph::NodeIndex| {
         unwrap_vertex_style(&vertices[graph[idx]]).0.clone()
       };
-      let edge_expr = Expr::FunctionCall {
-        name: if edge_ref.weight().directed {
-          "DirectedEdge".to_string()
-        } else {
-          "UndirectedEdge".to_string()
-        },
-        args: vec![named(edge_ref.source()), named(edge_ref.target())].into(),
-      };
+      let edge_expr = call(
+        edge_head(edge_ref.weight().directed),
+        vec![named(edge_ref.source()), named(edge_ref.target())],
+      );
       let matched = edge_shape_rules
         .iter()
         .find(|(target, _)| same_edge(&edge_expr, target))
@@ -943,9 +942,9 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     // Default vertex border: a darker outline so small vertices remain
     // clearly visible and distinguishable from the background.
-    primitives.push(Expr::FunctionCall {
-      name: "EdgeForm".to_string(),
-      args: vec![Expr::List(
+    primitives.push(call1(
+      "EdgeForm",
+      Expr::List(
         vec![
           call(
             "RGBColor",
@@ -954,9 +953,8 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           call1("AbsoluteThickness", Expr::Real(1.0)),
         ]
         .into(),
-      )]
-      .into(),
-    });
+      ),
+    ));
   }
 
   let default_fill =
@@ -1016,9 +1014,9 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     match vertex_shape.as_deref() {
       Some("Diamond") => {
         let r = vertex_radius * 1.3;
-        primitives.push(Expr::FunctionCall {
-          name: "Polygon".to_string(),
-          args: vec![Expr::List(
+        primitives.push(call1(
+          "Polygon",
+          Expr::List(
             vec![
               Expr::List(vec![Expr::Real(x), Expr::Real(y + r)].into()),
               Expr::List(vec![Expr::Real(x + r), Expr::Real(y)].into()),
@@ -1026,9 +1024,8 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               Expr::List(vec![Expr::Real(x - r), Expr::Real(y)].into()),
             ]
             .into(),
-          )]
-          .into(),
-        });
+          ),
+        ));
       }
       Some("Square") => {
         let r = vertex_radius * 0.9;
@@ -1236,10 +1233,7 @@ fn points_expr(pts: &[(f64, f64)]) -> Expr {
 /// `Arrow[pts]` or `Line[pts]` — how an edge is drawn when no shape
 /// function takes over.
 fn line_or_arrow(directed: bool, pts: &[(f64, f64)]) -> Expr {
-  Expr::FunctionCall {
-    name: if directed { "Arrow" } else { "Line" }.to_string(),
-    args: vec![points_expr(pts)].into(),
-  }
+  call1(if directed { "Arrow" } else { "Line" }, points_expr(pts))
 }
 
 /// Whether a layout option value asks for the vertices to sit on one
@@ -2309,15 +2303,10 @@ pub fn graph_disjoint_union(graphs: &[(&[Expr], &[Expr])]) -> Expr {
               } else {
                 (nu, nv)
               };
-              new_edges.push(Expr::FunctionCall {
-                name: if directed {
-                  "DirectedEdge"
-                } else {
-                  "UndirectedEdge"
-                }
-                .to_string(),
-                args: vec![Expr::Integer(a), Expr::Integer(b)].into(),
-              });
+              new_edges.push(call(
+                edge_head(directed),
+                vec![Expr::Integer(a), Expr::Integer(b)],
+              ));
             }
             _ => new_edges.push(e.clone()),
           }
@@ -2637,14 +2626,10 @@ pub fn find_cycle_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Render an edge (src, dst, directed) as the appropriate Expr.
   let render_edge = |s: usize, d: usize, directed: bool| -> Expr {
-    Expr::FunctionCall {
-      name: if directed {
-        "DirectedEdge".to_string()
-      } else {
-        "UndirectedEdge".to_string()
-      },
-      args: vec![vertices[s].clone(), vertices[d].clone()].into(),
-    }
+    call(
+      edge_head(directed),
+      vec![vertices[s].clone(), vertices[d].clone()],
+    )
   };
 
   // Collect cycles in DFS discovery order. Each cycle is rooted at its minimum
@@ -3096,13 +3081,11 @@ pub fn find_hamiltonian_cycle_ast(
 
   let cycle: Vec<Expr> = path
     .iter()
-    .map(|&(s, d, directed)| Expr::FunctionCall {
-      name: if directed {
-        "DirectedEdge".to_string()
-      } else {
-        "UndirectedEdge".to_string()
-      },
-      args: vec![vertices[s].clone(), vertices[d].clone()].into(),
+    .map(|&(s, d, directed)| {
+      call(
+        edge_head(directed),
+        vec![vertices[s].clone(), vertices[d].clone()],
+      )
     })
     .collect();
 
@@ -3215,11 +3198,7 @@ pub fn find_eulerian_cycle_ast(
     return Ok(empty);
   };
 
-  let edge_kind = if edges.iter().any(|e| e.2) {
-    "DirectedEdge"
-  } else {
-    "UndirectedEdge"
-  };
+  let edge_kind = edge_head(edges.iter().any(|e| e.2));
   let cycle: Vec<Expr> = circuit
     .windows(2)
     .map(|w| {
@@ -4007,11 +3986,7 @@ pub fn transitive_closure_graph_ast(
     }
   }
 
-  let edge_head = if any_directed {
-    "DirectedEdge"
-  } else {
-    "UndirectedEdge"
-  };
+  let edge_head = edge_head(any_directed);
   let mut closure_edges: Vec<Expr> = Vec::new();
   for i in 0..n {
     let j_start = if any_directed { 0 } else { i + 1 };
@@ -4662,30 +4637,25 @@ pub fn weighted_adjacency_graph_ast(
         continue;
       }
       if is_edge(&rows[i][j]) {
-        edges.push(Expr::FunctionCall {
-          name: if symmetric {
-            "UndirectedEdge".to_string()
-          } else {
-            "DirectedEdge".to_string()
-          },
-          args: vec![vertices[i].clone(), vertices[j].clone()].into(),
-        });
+        edges.push(call(
+          edge_head(!symmetric),
+          vec![vertices[i].clone(), vertices[j].clone()],
+        ));
         weights.push(rows[i][j].clone());
       }
     }
   }
-  Ok(Expr::FunctionCall {
-    name: "Graph".to_string(),
-    args: vec![
+  Ok(call(
+    "Graph",
+    vec![
       Expr::List(vertices.into()),
       Expr::List(edges.into()),
       Expr::Rule {
         pattern: Box::new(id_expr("EdgeWeight")),
         replacement: Box::new(Expr::List(weights.into())),
       },
-    ]
-    .into(),
-  })
+    ],
+  ))
 }
 
 /// AdjacencyGraph[matrix] / AdjacencyGraph[vertices, matrix] — graph from
@@ -4743,14 +4713,10 @@ pub fn adjacency_matrix_to_graph(
         continue;
       }
       if is_edge(&rows[i][j]) {
-        edges.push(Expr::FunctionCall {
-          name: if symmetric {
-            "UndirectedEdge".to_string()
-          } else {
-            "DirectedEdge".to_string()
-          },
-          args: vec![verts[i].clone(), verts[j].clone()].into(),
-        });
+        edges.push(call(
+          edge_head(!symmetric),
+          vec![verts[i].clone(), verts[j].clone()],
+        ));
       }
     }
   }
@@ -5966,11 +5932,7 @@ pub fn kirchhoff_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if i == j || matrix[i][j] >= 0 || (symmetric && j < i) {
         continue;
       }
-      let head = if symmetric {
-        "UndirectedEdge"
-      } else {
-        "DirectedEdge"
-      };
+      let head = edge_head(!symmetric);
       for _ in 0..(-matrix[i][j]) {
         edges.push(call(head, vec![vertices[i].clone(), vertices[j].clone()]));
       }
@@ -6288,9 +6250,9 @@ pub fn neighborhood_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     edges.push(mk_edge(a, b));
   }
 
-  Ok(Expr::FunctionCall {
-    name: "Graph".to_string(),
-    args: vec![
+  Ok(call(
+    "Graph",
+    vec![
       Expr::List(
         order
           .into_iter()
@@ -6299,9 +6261,8 @@ pub fn neighborhood_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .into(),
       ),
       Expr::List(edges.into()),
-    ]
-    .into(),
-  })
+    ],
+  ))
 }
 
 // ---------------------------------------------------------------------------
@@ -8490,11 +8451,7 @@ pub fn edge_tagged_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         vertices.push((*v).clone());
       }
     }
-    let head = if directed {
-      "DirectedEdge"
-    } else {
-      "UndirectedEdge"
-    };
+    let head = edge_head(directed);
     // An edge already written with a tag keeps it.
     let existing_tag = match edge {
       Expr::FunctionCall { args, .. } if args.len() == 3 => {

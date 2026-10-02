@@ -34,7 +34,7 @@ pub fn exp_integral_ei_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 fn exp_integral_ei_numeric(x: f64) -> f64 {
   if x.abs() < 40.0 {
     // Power series: Ei(x) = γ + ln|x| + Σ x^n / (n * n!)
-    let euler_gamma = 0.5772156649015329;
+    let euler_gamma = std::f64::consts::EULER_GAMMA;
     let mut sum = euler_gamma + x.abs().ln();
     let mut term = 1.0;
     for n in 1..200 {
@@ -107,7 +107,7 @@ pub fn cos_integral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Ci(z) = γ + ln|z| + ∫₀ᶻ (cos(t)-1)/t dt
 /// = γ + ln|z| + Σ_{n=1}^∞ (-1)^n z^(2n) / (2n · (2n)!)
 fn cos_integral_numeric(z: f64) -> f64 {
-  let euler_gamma = 0.5772156649015329;
+  let euler_gamma = std::f64::consts::EULER_GAMMA;
 
   if z.abs() < 40.0 {
     // Power series: Ci(z) = γ + ln|z| + Σ (-1)^n z^(2n) / (2n · (2n)!)
@@ -713,7 +713,7 @@ fn exp_integral_en(n: i64, z: f64) -> f64 {
 
 /// Compute E_1(z) via series for small z, continued fraction for large z
 fn exp_integral_e1(z: f64) -> f64 {
-  let euler_gamma = 0.5772156649015329;
+  let euler_gamma = std::f64::consts::EULER_GAMMA;
 
   if z <= 0.0 {
     return f64::INFINITY;
@@ -969,7 +969,7 @@ pub fn cosh_integral_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// Chi(z) = γ + ln|z| + ∫₀ᶻ (cosh(t)-1)/t dt
 /// = γ + ln|z| + Σ_{n=1}^∞ z^(2n) / (2n · (2n)!)
 fn cosh_integral_numeric(z: f64) -> f64 {
-  let euler_gamma = 0.5772156649015329;
+  let euler_gamma = std::f64::consts::EULER_GAMMA;
 
   if z.abs() < 40.0 {
     // Power series: Chi(z) = γ + ln|z| + Σ z^(2n) / (2n · (2n)!)

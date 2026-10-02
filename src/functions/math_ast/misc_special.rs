@@ -648,9 +648,9 @@ pub fn meijer_g_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && is_int_or_real(&upper_n[1], 2)
     && is_int_or_real(&lower_m[0], 3)
   {
-    let exact = Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: vec![
+    let exact = call(
+      "Plus",
+      vec![
         Expr::Integer(2),
         call(
           "Times",
@@ -660,9 +660,8 @@ pub fn meijer_g_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             call1("ExpIntegralEi", Expr::Integer(-1)),
           ],
         ),
-      ]
-      .into(),
-    };
+      ],
+    );
     return crate::evaluator::evaluate_function_call_ast("N", &[exact]);
   }
 
