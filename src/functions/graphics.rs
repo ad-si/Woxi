@@ -3551,6 +3551,30 @@ fn graphics_text_content(expr: &Expr) -> String {
         None => parts.concat(),
       }
     }
+    // `Grid[{{…}, …}, opts…]` / `Column[{…}, opts…]` lay their items out in
+    // lines: one text line per row (cells of a row side by side, separated
+    // by a gap) rather than the literal `Grid[{{…}}, …]` source. The
+    // options (spacing, alignment, frame, item size) do not change the text.
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Grid" | "Column")
+        && matches!(args.first(), Some(Expr::List(_))) =>
+    {
+      let Some(Expr::List(rows)) = args.first() else {
+        unreachable!()
+      };
+      rows
+        .iter()
+        .map(|row| match row {
+          Expr::List(cells) if name == "Grid" => cells
+            .iter()
+            .map(graphics_text_content)
+            .collect::<Vec<_>>()
+            .join("  "),
+          other => graphics_text_content(other),
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+    }
     // `Subscript`/`Superscript`/`Subsuperscript` typeset as scripts, not as
     // the two-line OutputForm box `ToString` would give: a label reading `N`
     // over ` D` is not what the picture is meant to show. `expr_to_label`
