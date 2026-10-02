@@ -1506,6 +1506,39 @@ fn format_f64_real(v: f64) -> String {
 mod tests {
   use super::*;
 
+  /// Checked a randomly-sampled Wolfram Demonstrations Project notebook
+  /// ("Selective Resizing of Images") whose paired sliders each bound the
+  /// other through a `Dynamic[…]` limit and one of them counts *down*:
+  /// `{{hi, 114, "R"}, Dynamic[w - lo], 25, -1}`. The reversed pair
+  /// (dynamic start above the fixed end) is sorted at parse time, which used
+  /// to leave the dynamic code attached to the lower end — so the first
+  /// re-resolution pushed the slider's minimum to the dynamic value, flipped
+  /// the range and clamped the authored start (114) to 208.
+  #[test]
+  fn reversed_slider_keeps_dynamic_bound_on_its_own_end() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[
+        {w, lo, hi},
+        {{lo, 92}, 25, Dynamic[w - hi], 1},
+        {{hi, 114}, Dynamic[w - lo], 25, -1},
+        {{w, 300}, None}
+      ]",
+    )
+    .expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let current = |name: &str| {
+      state
+        .controls
+        .iter()
+        .find(|c| c.name() == name)
+        .expect("control")
+        .current_code()
+    };
+    assert_eq!(current("lo"), "92");
+    assert_eq!(current("hi"), "114");
+  }
+
   /// A Demonstrations idiom declares a control's own default
   /// (`Control[{{n, 2, "n"}, …}]`) and then redeclares the same variable's
   /// *actual* starting value via a separate, hidden `{{n, 3}, None}` spec —
