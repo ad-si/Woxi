@@ -2191,6 +2191,116 @@ mod tests {
     assert_eq!(names, ["cutoff"]);
   }
 
+  /// End-to-end regression for a Wolfram Demonstrations Project idiom found
+  /// opening a randomly-sampled Demonstration: a `Module[…]`
+  /// unconditionally builds a couple of decorative `GraphicsComplex[
+  /// PolyhedronData[name, "VertexCoordinates"], Line[PolyhedronData[name,
+  /// "EdgeIndices"]]]` overlays and only shows each one when its own
+  /// checkbox is on (`If[show, overlay, {}]`), with the checkboxes laid out
+  /// via `Control@{{…}, {True, False}}` inside a `Grid` — one row pairing
+  /// two numeric `Control@` sliders, the other a `Row[{Control@, Spacer[10],
+  /// Control@}]` holding both checkboxes — plus `TrackedSymbols`.
+  /// Independently reproduced here with a different base shape and
+  /// different overlay roles, not copied from the source Demonstration.
+  ///
+  /// Regression coverage for `PolyhedronData["GreatStellatedDodecahedron" |
+  /// "MathematicaSpikey", …]`: before those two entities existed, each
+  /// `PolyhedronData[…]` call there stayed unevaluated (emitting a
+  /// `PolyhedronData::notent` message every time the body re-ran), so
+  /// toggling either checkbox re-rendered around a broken, unevaluated
+  /// `GraphicsComplex` instead of the star polyhedron.
+  #[test]
+  fn demonstration_polyhedrondata_overlay_checkboxes_toggle_live() {
+    let code = r#"Manipulate[
+      Module[{base, star, spikes},
+        base = GraphicsComplex[PolyhedronData["Icosahedron", "VertexCoordinates"],
+          Polygon[PolyhedronData["Icosahedron", "FaceIndices"]]];
+        star = GraphicsComplex[
+          PolyhedronData["GreatStellatedDodecahedron", "VertexCoordinates"],
+          Line[PolyhedronData["GreatStellatedDodecahedron", "EdgeIndices"]]];
+        spikes = GraphicsComplex[
+          PolyhedronData["MathematicaSpikey", "VertexCoordinates"],
+          Line[PolyhedronData["MathematicaSpikey", "EdgeIndices"]]];
+        Graphics3D[{base, If[showStar, Scale[star, grow], {}],
+          If[showSpikes, Scale[spikes, shrink], {}]}, Boxed -> False]
+      ],
+      Grid[{
+        {Control@{{grow, 1.2, "star size"}, 1, 2, 0.1, ImageSize -> Small},
+         Control@{{shrink, 0.3, "spike size"}, 0.1, 0.5, 0.05,
+           ImageSize -> Small}},
+        {Row[{
+           Control@{{showStar, False, "show star"}, {True, False}},
+           Spacer[10],
+           Control@{{showSpikes, False, "show spikes"}, {True, False}}
+         }]}
+      }],
+      TrackedSymbols :> {grow, shrink, showStar, showSpikes}
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("state should build");
+
+    assert_eq!(
+      state.error, None,
+      "body must evaluate cleanly at its default (both checkboxes off) \
+       control values: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the base icosahedron must render"
+    );
+
+    let show_star_idx = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "showStar")
+      .expect("showStar checkbox control");
+    let show_spikes_idx = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "showSpikes")
+      .expect("showSpikes checkbox control");
+
+    assert!(state.select_discrete(show_star_idx, "True"));
+    state.apply_tracking(show_star_idx);
+    state.reevaluate();
+    assert_eq!(
+      state.error, None,
+      "toggling on the great stellated dodecahedron overlay must not error: \
+       {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the great stellated dodecahedron overlay must render"
+    );
+
+    assert!(state.select_discrete(show_spikes_idx, "True"));
+    state.apply_tracking(show_spikes_idx);
+    state.reevaluate();
+    assert_eq!(
+      state.error, None,
+      "toggling on the Mathematica Spikey overlay must not error: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the Mathematica Spikey overlay must render"
+    );
+
+    let slider_names: Vec<&str> = state
+      .controls
+      .iter()
+      .filter_map(|c| match c {
+        ControlState::Continuous { name, .. } => Some(name.as_str()),
+        _ => None,
+      })
+      .collect();
+    assert_eq!(slider_names, ["grow", "shrink"]);
+  }
+
   /// Checked a randomly-sampled Wolfram Demonstrations Project notebook
   /// ("Properties of Chemical Elements") whose `PopupMenu` control builds
   /// its choice list with `(If[# =!= Delimiter, # -> ElementData[1, #,
