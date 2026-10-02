@@ -27,6 +27,19 @@ pub(crate) const DEFAULT_HEIGHT: u32 = 225;
 pub(crate) const RESOLUTION_SCALE: u32 = 10;
 pub(crate) const NUM_SAMPLES: usize = 500;
 
+/// Largest logical (pre-`RESOLUTION_SCALE`) SVG dimension a plot is allowed
+/// to compute for itself, whether from `ImageSize`, an explicit
+/// `AspectRatio`, or one derived from the data range to keep round curves
+/// round. A curve that is nearly vertical or horizontal over its sampled
+/// range (a near-degenerate x- or y-extent, e.g. a `ParametricPlot` passing
+/// close to a pole) makes that derived aspect ratio — and so the computed
+/// dimension — arbitrarily large; well past this bound it is not a
+/// meaningful image size, just a value that overflows once multiplied by
+/// `RESOLUTION_SCALE`. Chosen far above any dimension a real plot would
+/// ever legitimately request (thousands of pixels at most) so clamping
+/// never changes an intentional `ImageSize`/`AspectRatio`.
+pub(crate) const MAX_SVG_DIMENSION: u32 = 100_000;
+
 /// Return plotters colors adapted to the current light/dark theme.
 pub(crate) fn plot_theme()
 -> (RGBColor, RGBColor, RGBColor, &'static str, &'static str) {
@@ -2916,7 +2929,8 @@ fn generate_svg_with_options(
     let plot_w = render_width as f64 - (pad_left + pad_right) * sf;
     if plot_w > 0.0 && ar > 0.0 {
       let target_render_h = plot_w * ar + (pad_bottom + pad_top) * sf;
-      svg_height = ((target_render_h / sf).round() as u32).max(1);
+      svg_height =
+        ((target_render_h / sf).round() as u32).clamp(1, MAX_SVG_DIMENSION);
       render_height = svg_height * RESOLUTION_SCALE;
     }
   }
@@ -2997,7 +3011,8 @@ fn generate_svg_with_options(
       let target_render_h =
         plot_h + top_margin as f64 + margin_bottom as f64 + x_label_area as f64;
       // Round to a whole svg unit so svg_height * scale == render_height.
-      svg_height = ((target_render_h / sf).round() as u32).max(1);
+      svg_height =
+        ((target_render_h / sf).round() as u32).clamp(1, MAX_SVG_DIMENSION);
       render_height = svg_height * RESOLUTION_SCALE;
     }
   }
@@ -4299,7 +4314,8 @@ pub(crate) fn generate_scatter_svg_with_options(
     };
     if plot_w > 0.0 && ar > 0.0 {
       let target_render_h = plot_w * ar + extra_h;
-      svg_height = ((target_render_h / sf).round() as u32).max(1);
+      svg_height =
+        ((target_render_h / sf).round() as u32).clamp(1, MAX_SVG_DIMENSION);
       render_height = svg_height * RESOLUTION_SCALE;
     }
   }
