@@ -8872,6 +8872,16 @@ mod find_root {
   use super::*;
 
   #[test]
+  fn nonlinear_system_not_monotone_in_max_norm() {
+    // The first full Newton step trades one component's residual for the
+    // other's; it must still be taken instead of stalling at the start.
+    assert_eq!(
+      interpret("FindRoot[{x*z == 2, z == 3}, {x, 1}, {z, 1}]").unwrap(),
+      "{x -> 0.6666666666666666, z -> 3.}"
+    );
+  }
+
+  #[test]
   fn polynomial_root() {
     assert_eq!(
       interpret("FindRoot[x^2 - 2, {x, 1}]").unwrap(),
