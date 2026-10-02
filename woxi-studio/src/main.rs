@@ -31308,4 +31308,31 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`rate$$ = 4}, DynamicBox[\[Ellipsis]
       "moving the rate slider must re-solve curveT and change the plot"
     );
   }
+
+  /// Regression: a display `Checkbox[Dynamic[flag]]` bound to a variable that
+  /// nothing sets. The body branches on `flag`; without Wolfram's implicit
+  /// "off" assignment the `If` stayed unevaluated and nothing was drawn.
+  #[test]
+  fn manipulate_unset_display_checkbox_defaults_to_off() {
+    let code = r#"Manipulate[
+      If[flag, Graphics[Circle[]], Graphics[Rectangle[]]],
+      {n, 1, 3, 1},
+      Dynamic[Checkbox[Dynamic[flag]]]
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      manipulate::ManipulateState::from_expr(&expr).expect("build widget");
+    assert_eq!(
+      state
+        .state
+        .iter()
+        .find(|(n, _)| n == "flag")
+        .map(|(_, v)| v.as_str()),
+      Some("False")
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "unchecked branch must draw"
+    );
+  }
 }
