@@ -42,10 +42,27 @@ fn main() {
 
   let mut widget_count = 0;
   for (idx, cell) in all_cells.iter().enumerate() {
-    if !matches!(cell.style, CellStyle::Input | CellStyle::Code) {
+    // A standalone stored widget dump (no Input cell, e.g. a notebook
+    // downloaded from the Demonstrations Project) is rebuilt into a plain
+    // `Manipulate[…]` source first, as the Studio does when opening it.
+    let reconstructed = if cell.style == CellStyle::Output {
+      woxi::notebook::reconstruct_manipulate_from_box_dump(&cell.content)
+    } else {
+      None
+    };
+    if reconstructed.is_none()
+      && !matches!(cell.style, CellStyle::Input | CellStyle::Code)
+    {
       continue;
     }
-    let code = cell.content.trim();
+    // Definitions saved in the dump's own Initialization run first.
+    if reconstructed.is_some()
+      && let Some(init) =
+        woxi::notebook::extract_saved_initialization(&cell.content)
+    {
+      let _ = woxi::interpret(&init);
+    }
+    let code = reconstructed.as_deref().unwrap_or(cell.content.trim());
     for stmt in woxi::split_into_statements(code) {
       // Evaluate for side effects (definitions) exactly like the studio.
       let eval = woxi::interpret_with_stdout(&stmt);
