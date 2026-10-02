@@ -513,6 +513,24 @@ mod graphics {
       );
     }
 
+    /// Regression: `expr_to_point_list` required the *whole* points list to
+    /// already be a literal `{{x1,y1}, …}`, so a Demonstration's idiom of
+    /// computing an arrow's endpoints with a pure function applied to a
+    /// single tip value (`({{# - 2.5, 0}, {#, 0}}& )[tip]`, as opposed to a
+    /// literal list) left `Arrow` with an unevaluated `CurriedCall` for its
+    /// first argument — neither the point-list nor the multi-segment branch
+    /// recognized it, so no primitive was drawn and a `Coordinate … should
+    /// be a pair of numbers` message fired instead. A points list that
+    /// reduces to `{{x1,y1}, …}` at evaluation time must render identically
+    /// to writing that list out.
+    #[test]
+    fn arrow_computed_point_list_matches_literal() {
+      assert_eq!(
+        export_svg("Graphics[{Arrow[({{# - 2.5, 0}, {#, 0}} & )[3]]}]"),
+        export_svg("Graphics[{Arrow[{{0.5, 0}, {3, 0}}]}]")
+      );
+    }
+
     #[test]
     fn text() {
       insta::assert_snapshot!(export_svg(
@@ -29645,6 +29663,83 @@ mod color_data_indexed {
       .unwrap(),
       "List"
     );
+  }
+
+  // `RegionPlot[cond, …][[1]]` (or `First[…]`) yields the region's
+  // primitives, the way `ContourPlot[…][[1]]` does — a Demonstration that
+  // composes a custom `Graphics[{RegionPlot[…][[1]], …}]` (e.g. to overlay
+  // the filled region with its own styling) needs actual geometry, not an
+  // unevaluated `Part`. A disk region traces to one closed `Polygon`;
+  // `BoundaryStyle` additionally draws each loop as a styled `Line`.
+  #[test]
+  fn region_plot_part_yields_primitives() {
+    clear_state();
+    assert_eq!(
+      interpret("Head[RegionPlot[x^2 + y^2 < 1, {x, -2, 2}, {y, -2, 2}][[1]]]")
+        .unwrap(),
+      "List"
+    );
+    assert_eq!(
+      interpret(
+        "Head[RegionPlot[x^2 + y^2 < 1, {x, -2, 2}, {y, -2, 2}][[1]] \
+         [[2]]]"
+      )
+      .unwrap(),
+      "Polygon"
+    );
+    let len_with_boundary: i64 = interpret(
+      "Length[RegionPlot[x^2 + y^2 < 1, {x, -2, 2}, {y, -2, 2}, \
+       BoundaryStyle -> Thick][[1]]]",
+    )
+    .unwrap()
+    .parse()
+    .unwrap();
+    assert!(
+      len_with_boundary > 2,
+      "BoundaryStyle should add a styled Line on top of the fill: \
+       got {len_with_boundary} primitives"
+    );
+    // The extracted primitives embed into an outer Graphics.
+    let svg = export_svg(
+      "Graphics[{RegionPlot[x^2 + y^2 < 1, {x, -2, 2}, {y, -2, 2}][[1]]}]",
+    );
+    assert!(svg.contains("<polygon"), "{svg}");
+    // A body held in a variable resolves during sampling, same as
+    // ContourPlot.
+    assert_eq!(
+      interpret(
+        "diskCond = x^2 + y^2 < 1; \
+         Head[RegionPlot[diskCond, {x, -2, 2}, {y, -2, 2}][[1]]]"
+      )
+      .unwrap(),
+      "List"
+    );
+  }
+
+  /// Regression: a region whose true fill lies *outside* every traced loop
+  /// (the complement of a disk, filling everywhere in the frame but a
+  /// hole) has no loop of its own there — the frame itself would have to
+  /// be an outer contour, which marching squares over the sampled grid
+  /// never produces — so naively filling the traced loop's interior as a
+  /// `Polygon` fills exactly the wrong side. `region_plot_part_yields_primitives`
+  /// only covers a simply-connected region; this locks in the fallback
+  /// (no symbolic backing at all, so `Show` keeps stacking the plain
+  /// rendered pictures) that keeps `show_merges_two_opaque_region_plots`
+  /// passing.
+  #[test]
+  fn region_plot_complement_of_disk_keeps_plain_rendering() {
+    clear_state();
+    // No symbolic backing: Part stays an unevaluated Part, same as before
+    // primitive extraction was added for the simply-connected case.
+    assert_eq!(
+      interpret("Head[RegionPlot[x^2 + y^2 > 1, {x, -2, 2}, {y, -2, 2}][[1]]]")
+        .unwrap(),
+      "Part"
+    );
+    // The plain SVG rendering (used directly, or by Show falling back to
+    // stacking opaque pictures) still draws the correct region.
+    let svg = export_svg("RegionPlot[x^2 + y^2 > 1, {x, -2, 2}, {y, -2, 2}]");
+    assert!(svg.contains("rgb(94,129,181)"), "{svg}");
   }
 
   mod dynamic_content {
