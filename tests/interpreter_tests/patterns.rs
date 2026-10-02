@@ -6338,3 +6338,92 @@ mod fullform_pattern_test_inside_a_list_pattern {
     );
   }
 }
+
+/// Checked whether Woxi Studio fully supports a randomly-sampled Wolfram
+/// Demonstration notebook ("Fundamental Parameters for Multivariate
+/// Analysis"). Its initialization code defines a helper with an
+/// `epsilon_:10^-6`-style optional parameter (a small numeric tolerance
+/// given as a negative power rather than a plain literal). Independently
+/// written, not copied from the notebook: different helper name and
+/// default shape.
+///
+/// Regression: the grammar rules for an Optional pattern's default value
+/// (`PatternOptionalSimple`, `PatternOptionalWithHead`,
+/// `PatternOptionalAnonBlank`, `PatternOptionalNamedBlank`,
+/// `PatternNamedDefault` in `src/wolfram.pest`) captured the default with a
+/// bare `Term`, which has no notion of binary-operator precedence. Parsing
+/// `y_:10^-6` therefore matched only `y_:10` as the Optional pattern, left
+/// `^-6` unconsumed, and the enclosing expression parser then applied that
+/// leftover `^` to the *whole* `Optional[…]` node — building
+/// `(y_:10)^(-6)` instead of `y_ : (10^-6)`. Since the resulting "pattern"
+/// was a `Power[…]`, not a valid parameter pattern at all, the whole
+/// function definition failed to match on evaluation, silently reflecting
+/// every call unevaluated (even ones that passed both arguments
+/// explicitly). Fixed by parsing the default with `ConditionExpr`, which
+/// already climbs full operator precedence for the unrelated `/;` pattern
+/// condition and correctly absorbs `10^-6` as one unit before the
+/// enclosing pattern is built.
+mod optional_pattern_default_with_negative_power {
+  use super::*;
+
+  #[test]
+  fn function_with_negative_power_default_evaluates_with_one_arg() {
+    clear_state();
+    assert_eq!(
+      interpret("f[x_, tol_:10^-6] := x + tol; f[1]").unwrap(),
+      "1000001/1000000"
+    );
+  }
+
+  /// Calling with both arguments explicitly must also match — the bug
+  /// mangled the pattern itself, not just the arity-omission path, so a
+  /// fully-specified call failed exactly the same way.
+  #[test]
+  fn function_with_negative_power_default_evaluates_with_both_args() {
+    clear_state();
+    assert_eq!(
+      interpret("f[x_, tol_:10^-6] := x + tol; f[1, 100]").unwrap(),
+      "101"
+    );
+  }
+
+  #[test]
+  fn anonymous_blank_with_negative_power_default_still_binds_named_arg() {
+    clear_state();
+    assert_eq!(interpret("h[x_, _:2^-3] := x; h[5]").unwrap(), "5");
+  }
+
+  #[test]
+  fn fullform_shows_optional_holding_the_whole_power_as_default() {
+    clear_state();
+    assert_eq!(
+      interpret("FullForm[Hold[f[x_, y_:10^-6]]]").unwrap(),
+      "FullForm[Hold[f[x_, y_:10^(-6)]]]"
+    );
+    assert_eq!(
+      interpret("FullForm[Hold[f[x_, y_:2^-3]]]").unwrap(),
+      "FullForm[Hold[f[x_, y_:2^(-3)]]]"
+    );
+  }
+
+  /// Plain (non-power) Optional defaults must still work after switching
+  /// the grammar from `Term` to `ConditionExpr` for the default value.
+  #[test]
+  fn plain_defaults_unaffected() {
+    clear_state();
+    assert_eq!(interpret("k[x_, y_:3] := x + y; k[1]").unwrap(), "4");
+    assert_eq!(
+      interpret("k2[x_, y_:{1, 2}] := y; k2[1]").unwrap(),
+      "{1, 2}"
+    );
+    assert_eq!(interpret("k3[x_, y_:Pi] := y; k3[1]").unwrap(), "Pi");
+  }
+
+  /// A multi-term arithmetic default (`1+2*3`) must also be absorbed as a
+  /// single unit, not just a bare `^`.
+  #[test]
+  fn arithmetic_chain_default() {
+    clear_state();
+    assert_eq!(interpret("s[x_, y_:1 + 2*3] := x + y; s[0]").unwrap(), "7");
+  }
+}
