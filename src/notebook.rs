@@ -436,6 +436,31 @@ fn extract_cell_content(s: &str) -> String {
   extract_string_content(s)
 }
 
+/// Converts an `InterpretationBox[boxes, value]`'s `value` argument, which
+/// (per `extract_cell_content`'s doc comment above) is written as ordinary
+/// source rather than a box row. A bare list literal in that position must
+/// keep its items comma-separated: routing it through `extract_cell_content`
+/// instead would hit that function's "BoxData statement list" handling,
+/// which *concatenates* top-level items the way `RowBox[{"a", "+",
+/// "b"}]`'s children are joined into `a+b` — gluing two list elements
+/// together with no separator reads back as implicit multiplication
+/// (`{1, 2} {3, 4}` is `Times[{1, 2}, {3, 4}]`, not a 2-element list of
+/// lists), silently turning stored data into a `Thread`ed product one
+/// evaluation removed from the value the notebook actually saved.
+fn convert_interpretation_meaning(s: &str) -> String {
+  let trimmed = s.trim();
+  if let Some(inner) =
+    trimmed.strip_prefix('{').and_then(|s| s.strip_suffix('}'))
+  {
+    let items: Vec<String> = split_top_level_commas(inner)
+      .into_iter()
+      .map(|item| convert_interpretation_meaning(item.trim()))
+      .collect();
+    return format!("{{{}}}", items.join(", "));
+  }
+  extract_cell_content(trimmed)
+}
+
 /// Is this argument a top-level option rule (`name -> value` or
 /// `name :> value`)? Typeset box heads carry display options after their
 /// positional arguments (e.g. `SuperscriptBox[a, b, MultilineFunction ->
@@ -970,7 +995,9 @@ fn extract_typeset_box(s: &str) -> Option<String> {
           let inner = &raw_meaning[1..raw_meaning.len() - 1];
           format!("\"{}\"", escape_string(&unescape_string(inner)))
         } else {
-          strip_display_form_wrapper(&conv(&args[1]))
+          strip_display_form_wrapper(&convert_interpretation_meaning(
+            raw_meaning,
+          ))
         }
       }
       // `CheckboxBox[value, {off, on}]` (Demonstrations metadata cells) —
@@ -7116,6 +7143,37 @@ Cell[BoxData[
       }
       CellEntry::Group(_) => panic!("Expected single cell"),
     }
+  }
+
+  /// An `InterpretationBox` whose meaning is a bare list literal (not
+  /// wrapped in `InputForm[…]`) must keep its elements as separate list
+  /// items. This is the `IconizedObject` display Wolfram uses for a large
+  /// stored array — e.g. a Demonstration's `SaveDefinitions->True` cache of
+  /// a table built from mismatched-length rows. Routing the value through
+  /// `extract_cell_content`'s "BoxData statement list" handling used to
+  /// concatenate the two elements with no separator, so `{{1, 2, 3}, {4,
+  /// 5}}` read back as `{1, 2, 3} {4, 5}` — implicit multiplication of two
+  /// lists — and evaluating it raised `Thread::tdlen` for the length
+  /// mismatch instead of yielding the original 2-element list.
+  #[test]
+  fn test_interpretation_box_list_meaning_keeps_list_structure() {
+    let nb = r#"Notebook[{
+Cell[BoxData[
+ RowBox[{"table", "=",
+  InterpretationBox[
+   StyleBox["\"data\"", ShowStringCharacters->False],
+   {{1, 2, 3}, {4, 5}}]}]], "Input"]
+}]"#;
+    let parsed = parse_notebook(nb).unwrap();
+    let content = match &parsed.cells[0] {
+      CellEntry::Single(cell) => cell.content.clone(),
+      CellEntry::Group(_) => panic!("Expected single cell"),
+    };
+    assert_eq!(content, "table={{1, 2, 3}, {4, 5}}");
+    assert_eq!(
+      crate::interpret(&format!("{content};Length[table]")).unwrap(),
+      "2"
+    );
   }
 
   /// The FrontEnd hard-wraps long lines with a trailing backslash, and
