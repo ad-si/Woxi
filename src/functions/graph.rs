@@ -1011,40 +1011,110 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .unwrap_or(&default_fill);
     primitives.push(fill_for_v.to_expr());
 
-    match vertex_shape.as_deref() {
+    let pt = |px: f64, py: f64| {
+      Expr::List(vec![Expr::Real(px), Expr::Real(py)].into())
+    };
+    let polygon = |pts: Vec<(f64, f64)>| {
+      call1(
+        "Polygon",
+        Expr::List(pts.into_iter().map(|(px, py)| pt(px, py)).collect()),
+      )
+    };
+    let shape_name = vertex_shape.as_deref();
+    match shape_name {
       Some("Diamond") => {
         let r = vertex_radius * 1.3;
-        primitives.push(call1(
-          "Polygon",
-          Expr::List(
-            vec![
-              Expr::List(vec![Expr::Real(x), Expr::Real(y + r)].into()),
-              Expr::List(vec![Expr::Real(x + r), Expr::Real(y)].into()),
-              Expr::List(vec![Expr::Real(x), Expr::Real(y - r)].into()),
-              Expr::List(vec![Expr::Real(x - r), Expr::Real(y)].into()),
-            ]
-            .into(),
-          ),
-        ));
+        primitives.push(polygon(vec![
+          (x, y + r),
+          (x + r, y),
+          (x, y - r),
+          (x - r, y),
+        ]));
       }
       Some("Square") => {
         let r = vertex_radius * 0.9;
+        primitives
+          .push(call("Rectangle", vec![pt(x - r, y - r), pt(x + r, y + r)]));
+      }
+      Some("Capsule") => {
+        let (hw, hh) = (vertex_radius * 1.4, vertex_radius * 0.7);
         primitives.push(call(
           "Rectangle",
           vec![
-            Expr::List(vec![Expr::Real(x - r), Expr::Real(y - r)].into()),
-            Expr::List(vec![Expr::Real(x + r), Expr::Real(y + r)].into()),
+            pt(x - hw, y - hh),
+            pt(x + hw, y + hh),
+            Expr::Rule {
+              pattern: Box::new(id_expr("RoundingRadius")),
+              replacement: Box::new(Expr::Real(hh)),
+            },
           ],
         ));
       }
+      Some("Triangle") => {
+        primitives.push(polygon(regular_polygon_points(
+          x,
+          y,
+          vertex_radius * 1.2,
+          3,
+          0.0,
+        )));
+      }
+      Some("FiveDown") => {
+        primitives.push(polygon(regular_polygon_points(
+          x,
+          y,
+          vertex_radius * 1.1,
+          5,
+          std::f64::consts::PI,
+        )));
+      }
+      Some("Star") => {
+        let (ro, ri) = (vertex_radius * 1.3, vertex_radius * 0.55);
+        let pts = (0..10)
+          .map(|k| {
+            let ang = std::f64::consts::FRAC_PI_2
+              + f64::from(k) * std::f64::consts::PI / 5.0;
+            let r = if k % 2 == 0 { ro } else { ri };
+            (x + r * ang.cos(), y + r * ang.sin())
+          })
+          .collect();
+        primitives.push(polygon(pts));
+      }
+      Some("ConcaveHexagon") => {
+        let r = vertex_radius * 1.2;
+        let pts = (0..6)
+          .map(|k| {
+            let ang = std::f64::consts::FRAC_PI_2
+              + f64::from(k) * std::f64::consts::PI / 3.0;
+            let rr = if k % 2 == 0 { r } else { r * 0.6 };
+            (x + rr * ang.cos(), y + rr * ang.sin())
+          })
+          .collect();
+        primitives.push(polygon(pts));
+      }
+      Some("Parallelogram") => {
+        let (hw, hh, sk) =
+          (vertex_radius, vertex_radius * 0.8, vertex_radius * 0.5);
+        primitives.push(polygon(vec![
+          (x - hw + sk, y + hh),
+          (x + hw + sk, y + hh),
+          (x + hw - sk, y - hh),
+          (x - hw - sk, y - hh),
+        ]));
+      }
+      Some("RoundedUpTrapezoid") => {
+        let (hw, hh) = (vertex_radius * 1.1, vertex_radius * 0.8);
+        primitives.push(polygon(vec![
+          (x - hw * 0.6, y + hh),
+          (x + hw * 0.6, y + hh),
+          (x + hw, y - hh),
+          (x - hw, y - hh),
+        ]));
+      }
+      // `"Circle"` and anything unrecognised: the default disk.
       _ => {
-        primitives.push(call(
-          "Disk",
-          vec![
-            Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()),
-            Expr::Real(vertex_radius),
-          ],
-        ));
+        primitives
+          .push(call("Disk", vec![pt(x, y), Expr::Real(vertex_radius)]));
       }
     }
 
@@ -8492,4 +8562,23 @@ pub fn edge_tagged_graph_q_ast(
       })
   });
   Ok(bool_expr(tagged))
+}
+
+/// Corners of a regular `n`-gon of circumradius `r` centred at `(x, y)`,
+/// with the first corner at angle `PI/2 + rotation` (pointing up).
+fn regular_polygon_points(
+  x: f64,
+  y: f64,
+  r: f64,
+  n: u32,
+  rotation: f64,
+) -> Vec<(f64, f64)> {
+  (0..n)
+    .map(|k| {
+      let ang = std::f64::consts::FRAC_PI_2
+        + rotation
+        + f64::from(k) * std::f64::consts::TAU / f64::from(n);
+      (x + r * ang.cos(), y + r * ang.sin())
+    })
+    .collect()
 }
