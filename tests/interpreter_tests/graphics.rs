@@ -19986,6 +19986,42 @@ mod contour_plot_3d {
          {y, -1.5, 1.5}, {z, -1.5, 1.5}, ImageSize -> 200]"
       ));
     }
+
+    #[test]
+    fn contours_count_picks_levels_when_never_zero() {
+      // Regression: `Contours -> n` was entirely ignored — marching always
+      // ran at the fixed isovalue 0, regardless of `n`. A function with no
+      // zero crossing anywhere in the sampled box (e.g. a strictly
+      // positive Gaussian, the shape a Demonstration's electron-density
+      // plot uses) therefore always errored with "the surface has no
+      // points in the given range", no matter how large `n` was, instead
+      // of drawing `n` isosurfaces spread across the function's actual
+      // sampled range the way `Contours -> n` does for `ContourPlot` (2D).
+      assert_eq!(
+        interpret(
+          "Head[ContourPlot3D[Exp[-(x^2 + y^2 + z^2)], {x, -2, 2}, \
+           {y, -2, 2}, {z, -2, 2}, Contours -> 5, PlotPoints -> 10]]"
+        )
+        .unwrap(),
+        "Graphics3D"
+      );
+    }
+
+    #[test]
+    fn contours_explicit_levels_draw_distinct_shells() {
+      let one_level = export_svg(
+        "ContourPlot3D[Exp[-(x^2 + y^2 + z^2)], {x, -2, 2}, {y, -2, 2}, \
+         {z, -2, 2}, Contours -> {0.3}, Mesh -> None, PlotPoints -> 10]",
+      );
+      let two_levels = export_svg(
+        "ContourPlot3D[Exp[-(x^2 + y^2 + z^2)], {x, -2, 2}, {y, -2, 2}, \
+         {z, -2, 2}, Contours -> {0.1, 0.3}, Mesh -> None, PlotPoints -> 10]",
+      );
+      assert_ne!(
+        one_level, two_levels,
+        "an explicit second contour level must add to the rendered surface"
+      );
+    }
   }
 
   mod errors {
