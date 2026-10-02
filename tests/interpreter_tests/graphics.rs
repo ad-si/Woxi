@@ -1972,6 +1972,18 @@ mod graphics {
       assert!(!svg.contains(">yout</text>"), "{svg}");
     }
 
+    /// Explicit tick positions that depend on variables are evaluated, so a
+    /// plot whose range and ticks both follow a variable keeps its labels.
+    #[test]
+    fn explicit_ticks_with_variable_positions_are_evaluated() {
+      let svg = export_svg(
+        "w = 0.8; Plot[Sin[t], {t, 0, w}, \
+         Ticks -> {{0, {w/4, \"qa\"}, w/2, {w, \"wa\"}}, Automatic}]",
+      );
+      assert!(svg.contains(">qa</text>"), "{svg}");
+      assert!(svg.contains(">wa</text>"), "{svg}");
+    }
+
     /// A y axis at an x range's padded edge (data starting at 0) keeps the
     /// outside gutter, so its tick labels are not cut off at the left.
     #[test]
