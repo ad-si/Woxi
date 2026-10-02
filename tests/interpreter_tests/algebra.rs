@@ -7038,6 +7038,45 @@ mod to_rules {
 }
 
 mod reduce {
+  #[test]
+  fn zero_product_equation_keeps_every_factor_branch() {
+    // `a c == 0` also holds for `a == 0`; solving it only for `c` used to
+    // lose that branch and report `False` here.
+    assert_eq!(
+      interpret("Reduce[{A*C==0,B*C==1},{A,B,C}]").unwrap(),
+      "A == 0 && C == B^(-1)"
+    );
+    // Unit vector {0, 0, 1, 0} factors as {A, B} x {C, D} with A = 0.
+    assert_eq!(
+      interpret(
+        "q={0,0,1,0}; Reduce[{A*C==q[[1]],A*D==q[[2]],B*C==q[[3]],B*D==q[[4]],\
+         A^2+B^2==1,C^2+D^2==1,A>=0,C>=0,B!=-1||D!=-1},{A,B,C,D}]"
+      )
+      .unwrap(),
+      "A == 0 && B == 1 && C == 1 && D == 0"
+    );
+    assert_eq!(
+      interpret(
+        "q={0,0,0,1}; Reduce[{A*C==q[[1]],A*D==q[[2]],B*C==q[[3]],B*D==q[[4]],\
+         A^2+B^2==1,C^2+D^2==1,A>=0,C>=0,B!=-1||D!=-1},{A,B,C,D}]"
+      )
+      .unwrap(),
+      "A == 0 && B == 1 && C == 0 && D == 1"
+    );
+  }
+
+  #[test]
+  fn factorable_qubit_state_with_denominators() {
+    assert_eq!(
+      interpret(
+        "q={1/Sqrt[2],0,1/Sqrt[2],0}; Reduce[{A*C==q[[1]],A*D==q[[2]],B*C==q[[3]],\
+         B*D==q[[4]],A^2+B^2==1,C^2+D^2==1,A>=0,C>=0,B!=-1||D!=-1},{A,B,C,D}]"
+      )
+      .unwrap(),
+      "A == 1/Sqrt[2] && B == 1/Sqrt[2] && C == 1 && D == 0"
+    );
+  }
+
   use super::*;
 
   // ── Trivial cases ──
