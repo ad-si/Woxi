@@ -2077,4 +2077,78 @@ mod tests {
     let names: Vec<&str> = state.controls.iter().map(|c| c.name()).collect();
     assert_eq!(names, ["cutoff"]);
   }
+
+  /// Checked a randomly-sampled Wolfram Demonstrations Project notebook
+  /// ("Properties of Chemical Elements") whose `PopupMenu` control builds
+  /// its choice list with `(If[# =!= Delimiter, # -> ElementData[1, #,
+  /// "Description"], #]&) /@ {…}` — a `Map` over a list of property names
+  /// interspersed with bare `Delimiter`s that group them into sections,
+  /// each non-`Delimiter` entry turned into a `value -> label` rule via
+  /// `ElementData`'s little-used third ("annotation") argument.
+  /// Independently written, not copied from the Demonstration: different
+  /// properties, a different default choice, and a differently laid out
+  /// body.
+  ///
+  /// Regression coverage for two gaps that Demonstration's control panel
+  /// hit and nothing else exercised: `ElementData[element, property,
+  /// "Description"]` (previously always unevaluated — only the two- and
+  /// one-argument forms were implemented, so every label rendered as the
+  /// literal, unevaluated `ElementData[…]` call) and a bare `Delimiter`
+  /// inside a choice list becoming a fourth, selectable "Delimiter" entry
+  /// instead of the section separator it draws as in wolframscript (see
+  /// `discrete_choice_columns` in `src/functions/graphics.rs`).
+  #[test]
+  fn popup_menu_choices_built_from_a_map_with_delimiters_and_element_descriptions()
+   {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[
+        ListPlot[Table[{z, ElementData[z, prop]}, {z, 1, 10}],
+          PlotLabel -> ElementData[1, prop, \"Description\"]],
+        {{prop, \"AtomicNumber\", \"property\"},
+         (If[# =!= Delimiter, # -> ElementData[1, #, \"Description\"], #]&) /@
+           {\"AtomicNumber\", \"AtomicRadius\", Delimiter, \"Density\"}}
+      ]",
+    )
+    .expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+
+    assert_eq!(
+      state.error, None,
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the default (AtomicNumber) plot must draw"
+    );
+
+    let prop_ctrl = state
+      .controls
+      .iter()
+      .find(|c| c.name() == "prop")
+      .expect("prop control");
+    match prop_ctrl {
+      ControlState::Discrete {
+        values,
+        value_labels,
+        ..
+      } => {
+        assert_eq!(
+          values.len(),
+          3,
+          "the bare Delimiter must not become a fourth, selectable choice: {values:?}"
+        );
+        assert_eq!(
+          value_labels,
+          &vec![
+            "atomic number".to_string(),
+            "atomic radius".to_string(),
+            "density".to_string(),
+          ]
+        );
+      }
+      other => panic!("expected a Discrete PopupMenu control, got {other:?}"),
+    }
+  }
 }
