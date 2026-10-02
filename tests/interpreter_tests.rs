@@ -2205,6 +2205,63 @@ mod interpreter_tests {
     assert_eq!(bytes.len(), 44 + (8000 * 7 / 10) * 2);
   }
 
+  /// Decode the `sound` channel of a visual-mode evaluation to WAV bytes.
+  fn sound_wav_bytes(code: &str) -> Vec<u8> {
+    clear_state();
+    let r = interpret_with_stdout(code).unwrap();
+    let audio = r.sound.expect("expected synthesized audio");
+    base64::engine::Engine::decode(
+      &base64::engine::general_purpose::STANDARD,
+      &audio.base64,
+    )
+    .expect("sound should be valid base64")
+  }
+
+  #[test]
+  fn test_sound_notes_play_in_sequence() {
+    // Notes in a list (nested lists included) follow one another:
+    // 0.25 s + 0.5 s + 0.25 s at 8000 Hz, 16-bit mono.
+    let bytes = sound_wav_bytes(
+      "Sound[{SoundNote[0, 0.25], {SoundNote[4, 0.5], SoundNote[7, 0.25]}}]",
+    );
+    assert_eq!(bytes.len(), 44 + 8000 * 2);
+    // A pitch given as a list is a chord: it takes the duration of one note.
+    let chord = sound_wav_bytes("Sound[SoundNote[{0, 4, 7}, 0.5]]");
+    assert_eq!(chord.len(), 44 + 4000 * 2);
+    assert!(
+      chord[44..].iter().any(|b| *b != 0),
+      "chord must not be silent"
+    );
+  }
+
+  #[test]
+  fn test_sound_note_names_and_explicit_spans() {
+    // `"A4"` is 9 semitones above middle C, so both spellings sound alike.
+    assert_eq!(
+      sound_wav_bytes("Sound[SoundNote[\"A4\", 0.1]]"),
+      sound_wav_bytes("Sound[SoundNote[9, 0.1]]")
+    );
+    // Notes with explicit `{start, end}` spans overlap rather than queue up.
+    let bytes =
+      sound_wav_bytes("Sound[{SoundNote[0, {0, 1}], SoundNote[4, {0, 1}]}]");
+    assert_eq!(bytes.len(), 44 + 8000 * 2);
+  }
+
+  /// A tab laid out as a `Grid` is drawn as the picture of the selected tab,
+  /// not left as the symbolic `TabView[…]` text.
+  #[test]
+  fn test_tabview_grid_pane_is_drawn() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "which = 2;\n\
+       TabView[{{1, \"first\" -> Grid[{{\"alpha\"}}]}, \
+       {2, \"second\" -> Text@Grid[{{\"beta\"}}]}}, Dynamic[which]]",
+    )
+    .unwrap();
+    let svg = r.graphics.expect("expected the selected pane's grid");
+    assert!(svg.contains("beta") && !svg.contains("alpha"), "{svg}");
+  }
+
   #[test]
   fn test_list_play_synthesizes_audio_in_visual_mode() {
     // In visual mode (playground / woxi-studio), ListPlay[{levels…}] is

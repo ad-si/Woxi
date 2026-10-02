@@ -19990,6 +19990,14 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     Some(body) => collect_body_tabview_selectors(body),
     None => Vec::new(),
   };
+  // A `SetterBar[Dynamic[var], choices]` drawn inside the body's own layout
+  // (typically in `TabView` panes) is lifted into the control panel the same
+  // way, shown only while its tab is selected.
+  let body_setters = match &body_expr_kept {
+    Some(body) => collect_body_setter_bars(body),
+    None => Vec::new(),
+  };
+  let mut promoted_setters: Vec<String> = Vec::new();
   // Body-local `LocatorPane` variables promoted to a multi-point `Locator`
   // control from a `var = expr;` reset statement (see the loop over
   // `collect_body_locator_pane_vars` below) — their reset statements are
@@ -20608,6 +20616,39 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
             continue;
           }
         }
+        if let Some(bar) = body_setters.iter().find(|b| b.var == name)
+          && let Some(choices) =
+            crate::with_scoped_globals(&initial_bindings, || {
+              crate::interpret_to_expr(&bar.choices_code)
+                .ok()
+                .and_then(|e| evaluate_expr_to_expr(&e).ok())
+            })
+          && matches!(choices, Expr::List(_))
+        {
+          let default = crate::interpret_to_expr(&value)
+            .unwrap_or_else(|_| Expr::Identifier(value.clone()));
+          let promoted = Expr::List(
+            vec![
+              Expr::List(vec![Expr::Identifier(name.clone()), default].into()),
+              choices,
+              Expr::Rule {
+                pattern: Box::new(id_expr("ControlType")),
+                replacement: Box::new(id_expr("SetterBar")),
+              },
+            ]
+            .into(),
+          );
+          if let Some(ParsedControl::Visible { control: c, .. }) =
+            parse_manipulate_control(&promoted, &[])
+          {
+            if let Some(cond) = &bar.visible_cond {
+              control_visible.push((name.clone(), cond.clone()));
+            }
+            promoted_setters.push(name.clone());
+            controls.push(c);
+            continue;
+          }
+        }
         state.push((name, value));
       }
       ParsedControl::StateWithControl {
@@ -20734,10 +20775,15 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   // it. A `LocatorPane` variable's own reset statement is stripped the same
   // way — left in, it would re-run (and clobber a drag) on every
   // re-evaluation; see `dynamic_locator_defaults`.
-  if (!promoted_popups.is_empty() || !locator_reset_vars.is_empty())
+  if (!promoted_popups.is_empty()
+    || !locator_reset_vars.is_empty()
+    || !promoted_setters.is_empty())
     && let Some(body_expr) = &body_expr_kept
   {
     let mut stripped = body_expr.clone();
+    if !promoted_setters.is_empty() {
+      stripped = strip_body_setter_bars(&stripped, &promoted_setters);
+    }
     if !promoted_popups.is_empty() {
       stripped = strip_body_popup_menus(&stripped, &promoted_popups);
     }
@@ -21460,6 +21506,170 @@ fn collect_bare_setterbar_state(
       }
     }
     _ => {}
+  }
+}
+
+/// A `SetterBar[Dynamic[var], choices]` / `RadioButtonBar[…]` written inside
+/// a Manipulate body, to be lifted into the control panel.
+struct BodySetterBar {
+  var: String,
+  /// Code producing the choice list — plain values, or `value -> label`
+  /// rules when the bar is post-processed with `/. rules` (the Demonstrations
+  /// idiom for showing note names instead of numbers).
+  choices_code: String,
+  /// When the bar sits inside a `TabView` pane: the condition under which
+  /// that pane (and so the control) is on screen.
+  visible_cond: Option<String>,
+}
+
+/// The sub-expressions of the layout constructs a Manipulate body nests its
+/// widgets in (`Text@Grid[…]`, `{key, label -> pane}` tab entries, `/.`).
+fn body_layout_children(expr: &Expr) -> Vec<&Expr> {
+  match expr {
+    Expr::FunctionCall { args, .. } => args.iter().collect(),
+    Expr::List(items) => items.iter().collect(),
+    Expr::CompoundExpr(items) => items.iter().collect(),
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => vec![pattern.as_ref(), replacement.as_ref()],
+    Expr::ReplaceAll { expr, rules } => vec![expr.as_ref(), rules.as_ref()],
+    Expr::PrefixApply { func, arg } => vec![func.as_ref(), arg.as_ref()],
+    _ => Vec::new(),
+  }
+}
+
+/// The `(var, choices)` of a `SetterBar[Dynamic[var], choices]` /
+/// `RadioButtonBar[…]` call.
+fn setter_bar_parts(expr: &Expr) -> Option<(&String, &Expr)> {
+  if let Expr::FunctionCall { name, args } = expr
+    && (name == "SetterBar" || name == "RadioButtonBar")
+    && args.len() >= 2
+    && let Expr::FunctionCall {
+      name: dname,
+      args: dargs,
+    } = &args[0]
+    && dname == "Dynamic"
+    && let Some(Expr::Identifier(var)) = dargs.first()
+  {
+    Some((var, &args[1]))
+  } else {
+    None
+  }
+}
+
+/// Every setter bar drawn by a Manipulate body, with the `TabView` pane it
+/// sits in (if any). Wolfram draws these widgets inside the body's own
+/// layout; Woxi Studio instead lifts them into the control panel, shown only
+/// while their tab is selected.
+fn collect_body_setter_bars(expr: &Expr) -> Vec<BodySetterBar> {
+  fn walk(expr: &Expr, cond: &Option<String>, found: &mut Vec<BodySetterBar>) {
+    let (bar, rules) = match expr {
+      Expr::ReplaceAll { expr: inner, rules } => (inner.as_ref(), Some(rules)),
+      other => (other, None),
+    };
+    if let Some((var, choices)) = setter_bar_parts(bar) {
+      if !found.iter().any(|b| &b.var == var) {
+        let list = crate::syntax::expr_to_input_form(choices);
+        let choices_code = match rules {
+          Some(r) => format!(
+            "Map[(#1 -> (#1 /. {}))&, {}]",
+            crate::syntax::expr_to_input_form(r),
+            list
+          ),
+          None => list,
+        };
+        found.push(BodySetterBar {
+          var: var.clone(),
+          choices_code,
+          visible_cond: cond.clone(),
+        });
+      }
+      return;
+    }
+    if let Expr::FunctionCall { name, args } = expr
+      && name == "TabView"
+      && args.len() >= 2
+      && let Expr::List(items) = &args[0]
+    {
+      let selector =
+        crate::syntax::expr_to_input_form(unwrap_pane_selector(&args[1]));
+      for (idx, item) in items.iter().enumerate() {
+        let (key, _label, content) = tabview_pane_parts(item);
+        let key = key.unwrap_or_else(|| Expr::Integer(idx as i128 + 1));
+        let pane_cond = format!(
+          "({}) == ({})",
+          selector,
+          crate::syntax::expr_to_input_form(&key)
+        );
+        walk(content, &Some(pane_cond), found);
+      }
+      return;
+    }
+    for child in body_layout_children(expr) {
+      walk(child, cond, found);
+    }
+  }
+  let mut found = Vec::new();
+  walk(expr, &None, &mut found);
+  found
+}
+
+/// Replace each `SetterBar[Dynamic[var], …]` (with or without a trailing
+/// `/. rules`) whose `var` is listed in `promoted` by an empty string, so the
+/// bar is not also drawn as source inside the layout it was lifted out of.
+/// An empty string rather than `Nothing`, so the grid cell it sat in is kept.
+fn strip_body_setter_bars(expr: &Expr, promoted: &[String]) -> Expr {
+  let is_promoted = |e: &Expr| {
+    setter_bar_parts(e).is_some_and(|(var, _)| promoted.contains(var))
+  };
+  if is_promoted(expr) {
+    return Expr::String(String::new());
+  }
+  if let Expr::ReplaceAll { expr: inner, .. } = expr
+    && is_promoted(inner)
+  {
+    return Expr::String(String::new());
+  }
+  let rec = |e: &Expr| strip_body_setter_bars(e, promoted);
+  match expr {
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args.iter().map(rec).collect::<Vec<_>>().into(),
+    },
+    Expr::List(items) => {
+      Expr::List(items.iter().map(rec).collect::<Vec<_>>().into())
+    }
+    Expr::CompoundExpr(items) => {
+      Expr::CompoundExpr(items.iter().map(rec).collect())
+    }
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => Expr::Rule {
+      pattern: Box::new(rec(pattern)),
+      replacement: Box::new(rec(replacement)),
+    },
+    Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => Expr::RuleDelayed {
+      pattern: Box::new(rec(pattern)),
+      replacement: Box::new(rec(replacement)),
+    },
+    Expr::ReplaceAll { expr, rules } => Expr::ReplaceAll {
+      expr: Box::new(rec(expr)),
+      rules: Box::new(rec(rules)),
+    },
+    Expr::PrefixApply { func, arg } => Expr::PrefixApply {
+      func: Box::new(rec(func)),
+      arg: Box::new(rec(arg)),
+    },
+    other => other.clone(),
   }
 }
 
