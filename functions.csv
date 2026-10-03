@@ -2049,7 +2049,7 @@ Annulus,Symbolic annular region; stays unevaluated and is consumed by region fun
 GeometricAssertion,Assert geometric properties,🚫,,12.0,2054
 SphericalBesselY,Spherical Bessel function of second kind,✅,pure,6.0,2054
 NestGraph,Nest graph operation,🚫,,10.2,2057
-NoncentralStudentTDistribution,Non-central Student t distribution,🚫,,6.0,2057
+NoncentralStudentTDistribution,Non-central Student t distribution (numeric PDF and CDF),✅,pure,6.0,2057
 Quartics,Option for Solve controlling whether quartic formulas are used,✅,pure,1.0,2057
 MachineNumberQ,Test whether an expression is a machine-precision real number,✅,1,2.0,2059
 TextString,Convert an expression to a human-readable string; reals print in full decimal (a fractional digit is kept below six integer digits) and exact non-symbol numbers are numericized to six significant digits,✅,pure,10.0,2059
