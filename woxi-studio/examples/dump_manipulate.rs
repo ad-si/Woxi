@@ -42,10 +42,26 @@ fn main() {
 
   let mut widget_count = 0;
   for (idx, cell) in all_cells.iter().enumerate() {
-    if !matches!(cell.style, CellStyle::Input | CellStyle::Code) {
+    // An Output cell holding a compiled widget dump with no Input cell
+    // before it (a notebook downloaded from a Demonstrations share link)
+    // is rebuilt into `Manipulate[…]` source, as the Studio does.
+    let orphan_dump_source = (cell.style == CellStyle::Output
+      && !idx.checked_sub(1).is_some_and(|prev| {
+        matches!(all_cells[prev].style, CellStyle::Input | CellStyle::Code)
+      }))
+    .then(|| {
+      woxi::notebook::reconstruct_manipulate_from_box_dump(&cell.content)
+    })
+    .flatten();
+    if orphan_dump_source.is_none()
+      && !matches!(cell.style, CellStyle::Input | CellStyle::Code)
+    {
       continue;
     }
-    let code = cell.content.trim();
+    let code = orphan_dump_source
+      .as_deref()
+      .unwrap_or(cell.content.as_str())
+      .trim();
     for stmt in woxi::split_into_statements(code) {
       // Evaluate for side effects (definitions) exactly like the studio.
       let eval = woxi::interpret_with_stdout(&stmt);
@@ -64,11 +80,17 @@ fn main() {
       // to a broken duplicate rule.
       let has_own_initialization =
         woxi::functions::graphics::manipulate_has_own_initialization(&expr);
+      let stored_cell = if orphan_dump_source.is_some() {
+        Some(cell)
+      } else {
+        all_cells
+          .get(idx + 1)
+          .filter(|next| next.style == CellStyle::Output)
+      };
       if !has_own_initialization
-        && let Some(next) = all_cells.get(idx + 1)
-        && next.style == CellStyle::Output
+        && let Some(stored) = stored_cell
         && let Some(init) =
-          woxi::notebook::extract_saved_initialization(&next.content)
+          woxi::notebook::extract_saved_initialization(&stored.content)
       {
         let _ = woxi::interpret(&init);
       }
