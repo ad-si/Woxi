@@ -6294,7 +6294,7 @@ pub fn delete_small_components_ast(
 /// component of a label matrix (each distinct nonzero value is a component).
 /// Returns a list of `label -> value` rules sorted by label. Supported
 /// properties: "Count" (pixel count), "Area" (count as a real), and "Label"
-/// (the label itself); a list of properties yields a tuple per component.
+/// (the label itself), and "LabelCount" (the number of components); a list of properties yields a tuple per component.
 pub fn component_measurements_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
@@ -6344,8 +6344,10 @@ pub fn component_measurements_ast(
   };
   let single = matches!(&args[1], Expr::String(_));
 
+  let label_count = counts.len();
   let measure = |prop: &str, label: i128, count: usize| -> Option<Expr> {
     match prop {
+      "LabelCount" => Some(Expr::Integer(label_count as i128)),
       "Count" => Some(Expr::Integer(count as i128)),
       "Area" => Some(Expr::Real(count as f64)),
       "Label" => Some(Expr::Integer(label)),
