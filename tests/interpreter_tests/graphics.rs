@@ -6896,6 +6896,33 @@ mod plot3d {
       assert_eq!(styled, ["diameter (cm)", "force (kN)"]);
     }
 
+    /// The rotated left `FrameLabel` is anchored by its baseline, whose
+    /// glyphs rise ~0.75em to the left of it; with a narrow `ImagePadding`
+    /// the baseline used to be clamped to half an em, so the label was cut
+    /// off at the image edge.
+    #[test]
+    fn plot_left_frame_label_stays_inside_the_image() {
+      let svg = export_svg(
+        "Plot[{Sin[x], Cos[x]}, {x, 0, 1}, Frame -> True, \
+         ImagePadding -> {{45, 10}, {45, 10}}, \
+         FrameLabel -> {\"x\", \"psi\"}]",
+      );
+      let line = svg
+        .lines()
+        .find(|l| l.contains("rotate(-90") && l.contains(">psi</text>"))
+        .expect("rotated left label");
+      let attr = |name: &str| -> f64 {
+        let key = format!("{name}=\"");
+        let rest = line.split_once(key.as_str()).unwrap().1;
+        rest.split_once('"').unwrap().0.parse().unwrap()
+      };
+      let size = attr("font-size");
+      assert!(
+        attr("x") - 0.75 * size >= 0.0,
+        "left label is clipped: {line}"
+      );
+    }
+
     /// Every label of a tick set carries the decimals its spacing needs, so
     /// a framed `Graphics` stepping by 0.5 reads `-1.0, -0.5, 0.0, …` —
     /// the same as the plot renderer, and as wolframscript.
