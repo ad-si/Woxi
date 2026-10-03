@@ -231,6 +231,45 @@ static POLYHEDRA: &[PolyhedronInfo] = &[
       {\"Amphichiral\", \"Isohedron\", \"KeplerPoinsot\", \
       \"Regular\", \"Rigid\"}",
   },
+  PolyhedronInfo {
+    name: "SmallStellatedDodecahedron",
+    vertex_count: 12,
+    edge_count: 30,
+    face_count: 12,
+    // Unit edge length is the full pentagram chord (the same convention as
+    // the great stellated dodecahedron). The solid is a dodecahedral core
+    // with edge (Sqrt[5] - 2) carrying twelve pentagonal pyramids.
+    volume: "(5*(-11 + 5*Sqrt[5]))/4",
+    surface_area: "15*(9 - 4*Sqrt[5])*Sqrt[5 + 2*Sqrt[5]]",
+    circumradius: "Sqrt[10 - 2*Sqrt[5]]/4",
+    // The 12 pentagrammic faces self-intersect, so there is no face-tangent
+    // insphere.
+    inradius: "Missing[\"NotApplicable\"]",
+    midradius: "(Sqrt[5] - 1)/4",
+    // A Kepler-Poinsot star polyhedron: its 12 vertices are an
+    // icosahedron's, shrunk by 1/GoldenRatio so the {5/2} chords between
+    // second neighbours have unit length. Each face is the pentagram
+    // through the five neighbours of one vertex (skip-one star order);
+    // 5 faces meet at each vertex, giving the {5/2, 5} Schläfli symbol.
+    vertices_src: "((Sqrt[5] - 1)/2)*{\
+      {0, 0, -Sqrt[5/8 + Sqrt[5]/8]}, {0, 0, Sqrt[5/8 + Sqrt[5]/8]}, \
+      {-Sqrt[1/2 + Sqrt[5]/10], 0, -Sqrt[1/8 + Sqrt[5]/40]}, {Sqrt[1/2 + \
+      Sqrt[5]/10], 0, Sqrt[1/8 + Sqrt[5]/40]}, {Sqrt[1/4 + Sqrt[5]/10], \
+      -1/2, -Sqrt[1/8 + Sqrt[5]/40]}, {Sqrt[1/4 + Sqrt[5]/10], 1/2, \
+      -Sqrt[1/8 + Sqrt[5]/40]}, {-Sqrt[1/4 + Sqrt[5]/10], -1/2, Sqrt[1/8 + \
+      Sqrt[5]/40]}, {-Sqrt[1/4 + Sqrt[5]/10], 1/2, Sqrt[1/8 + Sqrt[5]/40]}, \
+      {-Sqrt[1/8 - Sqrt[5]/40], -(1 + Sqrt[5])/4, -Sqrt[1/8 + Sqrt[5]/40]}, \
+      {-Sqrt[1/8 - Sqrt[5]/40], (1 + Sqrt[5])/4, -Sqrt[1/8 + Sqrt[5]/40]}, \
+      {Sqrt[1/8 - Sqrt[5]/40], -(1 + Sqrt[5])/4, Sqrt[1/8 + Sqrt[5]/40]}, \
+      {Sqrt[1/8 - Sqrt[5]/40], (1 + Sqrt[5])/4, Sqrt[1/8 + Sqrt[5]/40]}}",
+    faces_src: "{{9, 10, 5, 3, 6}, {8, 11, 12, 7, 4}, {7, 10, 9, 8, 1}, \
+      {12, 11, 6, 2, 5}, {11, 1, 4, 9, 6}, {1, 12, 5, 10, 4}, \
+      {8, 9, 2, 3, 11}, {3, 2, 10, 7, 12}, {7, 1, 11, 3, 5}, \
+      {3, 12, 1, 8, 6}, {2, 9, 4, 7, 5}, {10, 2, 6, 8, 4}}",
+    classes_src: "\
+      {\"Amphichiral\", \"Isohedron\", \"KeplerPoinsot\", \
+      \"Regular\", \"Rigid\"}",
+  },
   // Truncating a Platonic solid's corners gives an Archimedean solid with
   // two face types (a polygon per original face, plus one new polygon per
   // truncated vertex). None of the three below has a true insphere — the

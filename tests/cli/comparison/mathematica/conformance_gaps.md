@@ -4533,3 +4533,10 @@ woxi eval 'Together[1/x + 1/y, Modulus -> 3]'   # stays unevaluated
 
 The modular path cancels over GF(p) with univariate polynomial arithmetic,
 so a multivariate fraction (or a composite modulus) is returned unevaluated.
+
+### `PolyhedronData["SmallStellatedDodecahedron", …]` vertex/face ordering is unverified
+
+The vertex order, face order/winding and the printed form of the exact
+metrics were derived from the geometry (icosahedral vertices, {5/2, 5}
+pentagram faces, unit pentagram chord) without access to `wolframscript`, so
+they may be ordered or simplified differently from Wolfram's.
