@@ -40,6 +40,29 @@ fn main() {
     }
   }
 
+  // A notebook downloaded straight from the Demonstrations Project holds
+  // only the compiled widget dump in an Output cell. The Studio rebuilds a
+  // `Manipulate[…]` source from it (see
+  // `instantiate_manipulate_from_box_dump`); mirror that by inserting the
+  // reconstructed source as a synthetic Input cell ahead of such a dump.
+  let mut with_sources = Vec::new();
+  for (idx, cell) in all_cells.iter().enumerate() {
+    let follows_source = idx > 0
+      && matches!(all_cells[idx - 1].style, CellStyle::Input | CellStyle::Code);
+    if cell.style == CellStyle::Output
+      && !follows_source
+      && let Some(code) =
+        woxi::notebook::reconstruct_manipulate_from_box_dump(&cell.content)
+    {
+      let mut synthetic = cell.clone();
+      synthetic.style = CellStyle::Input;
+      synthetic.content = code;
+      with_sources.push(synthetic);
+    }
+    with_sources.push(cell.clone());
+  }
+  let all_cells = with_sources;
+
   let mut widget_count = 0;
   for (idx, cell) in all_cells.iter().enumerate() {
     if !matches!(cell.style, CellStyle::Input | CellStyle::Code) {
