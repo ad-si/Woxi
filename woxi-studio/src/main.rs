@@ -9927,6 +9927,33 @@ Manipulate[
     assert_eq!(state.controls.len(), 1);
   }
 
+  /// A share-link dump's `"Options" :> {FrameLabel -> …}` caption must
+  /// survive reconstruction and show up as a display above the output, and
+  /// a `Locator` spec must become a live 2D control.
+  #[test]
+  fn share_link_dump_keeps_frame_label_caption() {
+    let dump = "DynamicModuleBox[{$CellContext`p$$ = {2, 0}}, \
+      DynamicBox[Manipulate`ManipulateBoxes[\n\
+      1, StandardForm, \n\
+      \"Body\" :> Graphics[Point[{$CellContext`p$$[[1]], 1}]], \n\
+      \"Specifications\" :> {{{$CellContext`p$$, {2, 0}}, {0, 0}, {5, 0}, \
+      ControlType -> Locator}}, \n\
+      \"Options\" :> {ImageSize -> Small, FrameLabel -> Column[{Style[\
+      \"Drag the point\", 14]}, Alignment -> Center]}],\n\
+      DynamicModuleValues:>{}]]";
+    let code = woxi::notebook::reconstruct_manipulate_from_box_dump(dump)
+      .expect("reconstructed source");
+    assert!(code.contains("FrameLabel -> Column"), "{code}");
+    assert!(!code.contains("ImageSize"), "{code}");
+    let state = instantiate_manipulate_from_box_dump(dump)
+      .expect("the dump must rebuild a live widget");
+    assert!(state.error.is_none(), "{:?}", state.error);
+    assert_eq!(state.controls.len(), 1);
+    assert_eq!(state.displays.len(), 1, "{:?}", state.displays);
+    assert!(state.displays[0].contains("Drag the point"));
+    assert_eq!(state.display_trees.len(), 1);
+  }
+
   #[test]
   fn stored_manipulate_is_instantiated_on_load() {
     let state =

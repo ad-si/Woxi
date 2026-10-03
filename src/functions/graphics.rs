@@ -20279,6 +20279,14 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       {
         control_placement = placement;
       }
+      // A widget-level `FrameLabel -> label` (a string, `Style`, `Column`, …
+      // rather than the `{bottom, left}` pair a plot takes) is a caption
+      // Wolfram shows with the output, so it is an extra display element.
+      if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "FrameLabel")
+        && !matches!(replacement.as_ref(), Expr::List(_) | Expr::Identifier(_))
+      {
+        displays.push(crate::syntax::expr_to_input_form(replacement));
+      }
       // `AnimationRunning -> False` builds the widget paused.
       if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "AnimationRunning")
         && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "False")
