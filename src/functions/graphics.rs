@@ -21577,24 +21577,34 @@ fn collect_bare_setterbar_state(
 }
 
 /// Replace each `PopupMenu[Dynamic[var], …]` whose `var` is listed in
-/// `promoted` with `Nothing`, so the pick list is not also printed as source
-/// inside the body it was lifted out of.
+/// `promoted` with `var` itself, so the pick list is not also printed as
+/// source inside the body it was lifted out of.
 fn strip_body_popup_menus(expr: &Expr, promoted: &[String]) -> Expr {
+  // A promoted popup's own choice/enabled arguments still need this same
+  // walk (they can nest further Manipulate controls of their own), so this
+  // returns the replacement rather than handling it inline in the outer
+  // `match`'s guard, which cannot bind `v` for use in its arm.
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "PopupMenu"
+    && let Some(Expr::FunctionCall {
+      name: dname,
+      args: dargs,
+    }) = args.first()
+    && dname == "Dynamic"
+    && let Some(Expr::Identifier(v)) = dargs.first()
+    && promoted.contains(v)
+  {
+    // Stand in with the control's own bound variable rather than `Nothing`:
+    // a Demonstration commonly lays several such popups out as data (e.g.
+    // `Apopups = {PopupMenu[Dynamic[a1], …], PopupMenu[Dynamic[a2], …], …}`
+    // indexed later as `Apopups[[i]]`), and `Nothing` vanishes from any
+    // `List` it sits in — collapsing that list and breaking every `Part`
+    // access into it. The bound variable renders as its current value here
+    // (re-evaluated on every frame, same as the rest of the body) while the
+    // live dropdown itself lives in the promoted control above.
+    return Expr::Identifier(v.clone());
+  }
   match expr {
-    Expr::FunctionCall { name, args }
-      if name == "PopupMenu"
-        && matches!(
-          args.first(),
-          Some(Expr::FunctionCall { name: dname, args: dargs })
-            if dname == "Dynamic"
-              && matches!(
-                dargs.first(),
-                Some(Expr::Identifier(v)) if promoted.contains(v)
-              )
-        ) =>
-    {
-      id_expr("Nothing")
-    }
     Expr::FunctionCall { name, args } => Expr::FunctionCall {
       name: name.clone(),
       args: args
