@@ -7086,9 +7086,9 @@ fn find_root_eval_at(
 ) -> Result<f64, InterpreterError> {
   let substituted =
     crate::syntax::substitute_variable(expr, var, &Expr::Real(x));
-  let evaled = unwrap_singleton_list(
-    crate::evaluator::evaluate_expr_to_expr(&substituted)?,
-  );
+  let evaled = unwrap_singleton_list(crate::evaluator::evaluate_expr_to_expr(
+    &substituted,
+  )?);
   match &evaled {
     Expr::Integer(n) => Ok(*n as f64),
     Expr::Real(r) => Ok(*r),
