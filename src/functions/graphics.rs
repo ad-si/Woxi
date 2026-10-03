@@ -7317,10 +7317,19 @@ fn render_primitive(
       };
       let (ux, uy) = (angle.cos(), angle.sin());
       let (vx, vy) = (-angle.sin(), angle.cos());
-      let sx =
-        anchor_x - offset.0 * text_w / 2.0 * ux + offset.1 * text_h / 2.0 * vx;
-      let sy =
-        anchor_y - offset.0 * text_w / 2.0 * uy + offset.1 * text_h / 2.0 * vy;
+      // A label pinned by its left or right edge (`{-1, _}` / `{1, _}`) is
+      // anchored there by the renderer itself: the width estimate below is
+      // only a guess, and one that is far off for text padded with blanks.
+      let edge_anchorable = !has_direction && !text.contains('\n');
+      let (anchor_attr, edge_shift) = if offset.0 == -1.0 && edge_anchorable {
+        ("start", 0.0)
+      } else if offset.0 == 1.0 && edge_anchorable {
+        ("end", 0.0)
+      } else {
+        ("middle", offset.0 * text_w / 2.0)
+      };
+      let sx = anchor_x - edge_shift * ux + offset.1 * text_h / 2.0 * vx;
+      let sy = anchor_y - edge_shift * uy + offset.1 * text_h / 2.0 * vy;
       let rotate_attr = if has_direction {
         format!(
           " transform=\"rotate({:.3} {sx:.2} {sy:.2})\"",
@@ -7343,7 +7352,11 @@ fn render_primitive(
         };
         out.push_str(&format!(
           "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{text_w:.2}\" height=\"{text_h:.2}\" fill=\"{fill}\"{fill_opacity}{stroke}/>\n",
-          sx - text_w / 2.0,
+          match anchor_attr {
+            "start" => sx,
+            "end" => sx - text_w,
+            _ => sx - text_w / 2.0,
+          },
           sy - text_h / 2.0,
         ));
       }
@@ -7378,8 +7391,14 @@ fn render_primitive(
         }
         out.push_str("</text>\n");
       } else {
+        // Blanks a layout left in the text (a flattened `Spacer`) are kept.
+        let preserve_attr = if text.trim() == text.as_str() {
+          ""
+        } else {
+          " xml:space=\"preserve\""
+        };
         out.push_str(&format!(
-          "<text x=\"{sx:.2}\" y=\"{sy:.2}\" fill=\"{}\" font-size=\"{fs}\" font-weight=\"{}\" font-style=\"{}\"{ff_attr} text-anchor=\"middle\" dominant-baseline=\"central\"{}{rotate_attr}>{}</text>\n",
+          "<text x=\"{sx:.2}\" y=\"{sy:.2}\" fill=\"{}\" font-size=\"{fs}\" font-weight=\"{}\" font-style=\"{}\"{ff_attr} text-anchor=\"{anchor_attr}\" dominant-baseline=\"central\"{}{rotate_attr}{preserve_attr}>{}</text>\n",
           color.to_svg_rgb(),
           style.font_weight,
           style.font_style,
@@ -23511,6 +23530,14 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
         }
         runs
       }
+      // `Spacer[w]` — pure layout, a label can only carry it as one blank
+      // (so `Row[{a, Spacer[8], b}]` keeps its words apart) rather than
+      // spelling out the head.
+      "Spacer" => vec![LabelRun {
+        text: " ".to_string(),
+        italic,
+        ..Default::default()
+      }],
       // Row[{a, b, …}] — concatenate the (recursively rendered) parts.
       "Row" => match layout_parts(args.first()) {
         Some(parts) => parts

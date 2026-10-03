@@ -1615,6 +1615,22 @@ mod graphics {
     use super::*;
 
     #[test]
+    fn text_edge_alignment_sets_the_svg_anchor() {
+      let left = export_svg(
+        "Graphics[{Text[\"abc\", {-1, 0}, {-1, 0}]}, PlotRange -> {{-1, 1}, {-1, 1}}]",
+      );
+      assert!(left.contains("text-anchor=\"start\""), "{left}");
+      let right = export_svg(
+        "Graphics[{Text[\"abc\", {1, 0}, {1, 0}]}, PlotRange -> {{-1, 1}, {-1, 1}}]",
+      );
+      assert!(right.contains("text-anchor=\"end\""), "{right}");
+      let centred = export_svg("Graphics[{Text[\"abc\", {0, 0}]}]");
+      assert!(
+        centred.contains("<text") && centred.contains("text-anchor=\"middle\"")
+      );
+    }
+
+    #[test]
     fn text_with_style_bold() {
       insta::assert_snapshot!(export_svg(
         "Graphics[{Text[Style[\"Hello\", Bold], {0, 0}]}]"
