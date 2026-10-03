@@ -1051,7 +1051,7 @@ StudentTDistribution,Represents a Student t-distribution with nu degrees of free
 AppearanceElements,Option specifying which interface elements appear,✅,pure,6.0,1031
 TimesBy,Multiplies a variable by a value,✅,stateful,1.0,1032
 Merge,Merges associations using a combining function,✅,pure,10.0,1033
-Colorize,Colorize a label matrix or image,✅,,8.0,1035
+Colorize,Colorize a label matrix using Automatic or a custom ColorFunction,✅,,8.0,1035
 NumberPadding,Option for the NumberForm family giving the pad strings as {left; right} or a single string for the integer field only,✅,pure,2.0,1035
 ImageMultiply,Multiplies pixel values of two images pointwise,✅,pure,7.0,1038
 TimeSeries,Represents a time series of values paired with time stamps,✅,pure,10.0,1038
