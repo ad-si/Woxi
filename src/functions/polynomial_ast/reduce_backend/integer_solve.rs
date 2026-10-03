@@ -120,12 +120,12 @@ fn constraints_formula(expr: &Expr) -> Option<Formula> {
       Formula::And(
         items
           .iter()
-          .map(super::lower::formula_from_expr)
+          .map(super::lower::formula_from_expr_expanding_abs)
           .collect::<Option<Vec<_>>>()?,
       )
       .normalized(),
     ),
-    _ => super::lower::formula_from_expr(expr),
+    _ => super::lower::formula_from_expr_expanding_abs(expr),
   }
 }
 
