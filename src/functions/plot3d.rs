@@ -10996,6 +10996,8 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut svg_height = DEFAULT_SIZE;
   let mut full_width = false;
   let mut mesh_mode = MeshMode::Default;
+  // `Mesh -> n`: `n` evenly spaced mesh lines in each parameter direction.
+  let mut mesh_count: Option<usize> = None;
   let mut show_axes = true;
   let mut plot_style_expr: Option<&Expr> = None;
   // `MeshFunctions -> {f}` / `Mesh -> {{v1, v2, ...}}` / `MeshShading ->
@@ -11067,6 +11069,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           match replacement.as_ref() {
             Expr::Identifier(n) if n == "None" => mesh_mode = MeshMode::None,
             Expr::Identifier(n) if n == "All" => mesh_mode = MeshMode::All,
+            Expr::Integer(n) if *n >= 0 => mesh_count = Some(*n as usize),
             Expr::List(items) => {
               let level_items: &[Expr] =
                 if items.iter().all(|it| matches!(it, Expr::List(_))) {
@@ -11361,6 +11364,41 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                       .into(),
                   ),
                 ),
+              ]
+              .into(),
+            ));
+          }
+        }
+        if let Some(n) = mesh_count.filter(|&n| n > 0) {
+          let mut segments: Vec<Expr> = Vec::new();
+          let mut push_segment = |a: Option<usize>, b: Option<usize>| {
+            if let (Some(a), Some(b)) = (a, b) {
+              segments.push(Expr::List(
+                vec![
+                  Expr::Integer(a as i128 + 1),
+                  Expr::Integer(b as i128 + 1),
+                ]
+                .into(),
+              ));
+            }
+          };
+          for m in 1..=n {
+            let k = (GRID_N * m + n.div_ceil(2)) / (n + 1);
+            for i in 0..GRID_N {
+              push_segment(index_of[i][k], index_of[i + 1][k]);
+              push_segment(index_of[k][i], index_of[k][i + 1]);
+            }
+          }
+          if !segments.is_empty() {
+            content.push(Expr::List(
+              vec![
+                call1("Opacity", Expr::Real(0.63)),
+                call(
+                  "RGBColor",
+                  vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)],
+                ),
+                call1("AbsoluteThickness", Expr::Real(0.5)),
+                call1("Line", Expr::List(segments.into())),
               ]
               .into(),
             ));
