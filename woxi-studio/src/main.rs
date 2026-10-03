@@ -31374,4 +31374,26 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`rate$$ = 4}, DynamicBox[\[Ellipsis]
       "moving the rate slider must re-solve curveT and change the plot"
     );
   }
+
+  /// A slider whose whole spec is exact — `{{b, 3/2, "b"}, -5, 5, 1/6}` —
+  /// binds an exact `Rational` in Wolfram, and a body doing exact arithmetic
+  /// on it (`GCD`, `IntegerQ`, exact `Sqrt`) relies on that. The widget used
+  /// to bind the machine real `1.5` instead, so such a body evaluated with
+  /// inexact numbers (and raised `GCD::exact` for a Demonstration that
+  /// scales a point set by its greatest common divisor).
+  #[test]
+  fn exact_slider_spec_binds_an_exact_rational() {
+    let dump = "DynamicModuleBox[{$CellContext`b$$ = Rational[3, 2]}, \
+      DynamicBox[Manipulate`ManipulateBoxes[\n\
+      1, StandardForm, \n\
+      \"Body\" :> {Head[$CellContext`b$$], $CellContext`b$$ + 1/3}, \n\
+      \"Specifications\" :> {{{$CellContext`b$$, Rational[3, 2], \"b\"}, \
+        -5, 5, Rational[1, 6]}}, \n\
+      \"Options\" :> {}],\n\
+      DynamicModuleValues:>{}]]";
+    let state = instantiate_manipulate_from_box_dump(dump)
+      .expect("the reconstructed Manipulate must build a widget");
+    assert!(state.error.is_none(), "unexpected error: {:?}", state.error);
+    assert_eq!(state.text_output.as_deref(), Some("{Rational, 11/6}"));
+  }
 }
