@@ -5594,6 +5594,27 @@ mod plot3d {
     }
   }
 
+  mod parametric_plot_evaluated_body {
+    use super::*;
+
+    /// A body that is not literally a list (`{fx, fy} /. rules`) still has to
+    /// be evaluated with the plot variable symbolic: the curve lives in
+    /// symbols (`xs`, `ys`) that hold expressions of `t`, so sampling the
+    /// unevaluated body drew nothing at all.
+    #[test]
+    fn replace_all_body_draws_curve() {
+      let svg = export_svg(
+        "Module[{xs, ys}, xs = {t^2 + a}; ys = {t^3}; \
+         ParametricPlot[{xs[[1]], ys[[1]]} /. {a -> 0}, {t, -1, 1}]]",
+      );
+      let literal = export_svg("ParametricPlot[{t^2, t^3}, {t, -1, 1}]");
+      assert_eq!(
+        svg.matches("<polyline").count(),
+        literal.matches("<polyline").count()
+      );
+    }
+  }
+
   mod parametric_plot3d_curve {
     use super::*;
 

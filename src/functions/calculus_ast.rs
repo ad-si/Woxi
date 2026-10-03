@@ -17090,6 +17090,24 @@ pub fn dt_total_differential_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   let expr = &args[0];
+  // Dt threads over an equation: Dt[a == b] is Dt[a] == Dt[b].
+  if let Expr::Comparison {
+    operands,
+    operators,
+  } = expr
+    && operators
+      .iter()
+      .all(|op| matches!(op, crate::syntax::ComparisonOp::Equal))
+  {
+    let operands = operands
+      .iter()
+      .map(|o| dt_total_differential_ast(std::slice::from_ref(o)))
+      .collect::<Result<Vec<_>, _>>()?;
+    return crate::evaluator::evaluate_expr_to_expr(&Expr::Comparison {
+      operands,
+      operators: operators.clone(),
+    });
+  }
   // Numeric/named constants: Dt = 0.
   if is_true_constant(expr) {
     return Ok(Expr::Integer(0));

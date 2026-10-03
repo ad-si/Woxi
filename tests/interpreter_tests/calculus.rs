@@ -6756,6 +6756,15 @@ mod dt {
   }
 
   #[test]
+  fn threads_over_equation() {
+    assert_eq!(
+      interpret("Dt[x^2 + y^2 == 1]").unwrap(),
+      "2*x*Dt[x] + 2*y*Dt[y] == 0"
+    );
+    assert_eq!(interpret("Dt[y == x^2]").unwrap(), "Dt[y] == 2*x*Dt[x]");
+  }
+
+  #[test]
   fn product_with_dependent_var() {
     assert_eq!(interpret("Dt[x*y, x]").unwrap(), "y + x*Dt[y, x]");
   }
