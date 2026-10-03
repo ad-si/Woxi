@@ -840,6 +840,9 @@ enum Primitive {
   },
   BezierCurvePrim {
     points: Vec<(f64, f64)>,
+    /// `FilledCurve[BezierCurve[…]]`: close the path and fill it with the
+    /// face color (and edge form) instead of only stroking it.
+    filled: bool,
     style: StyleState,
   },
   /// A whole rendered picture placed inside this one by `Inset[obj, pos]`.
@@ -2220,6 +2223,28 @@ fn collect_primitives(
           parse_bspline(args, style, prims);
           if prims.len() == before {
             errors.push(format!("Coordinate {} should be a pair of numbers, or a list of pairs of numbers.", expr_to_string(&args[0])));
+          }
+        }
+        // `FilledCurve[BezierCurve[…]]` (or a list of curves) fills the
+        // region each Bezier path encloses.
+        "FilledCurve" if !args.is_empty() => {
+          let before = prims.len();
+          collect_primitives(&args[0], style, prims, errors);
+          for prim in &mut prims[before..] {
+            match prim {
+              Primitive::BezierCurvePrim { filled, .. } => *filled = true,
+              Primitive::Line {
+                segments, style, ..
+              } if segments.len() == 1 => {
+                *prim = Primitive::PolygonPrim {
+                  points: segments.remove(0),
+                  holes: Vec::new(),
+                  vertex_colors: None,
+                  style: style.clone(),
+                };
+              }
+              _ => {}
+            }
           }
         }
         "PolarCurve" if args.len() >= 2 => {
@@ -4173,6 +4198,7 @@ fn parse_bezier(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   {
     prims.push(Primitive::BezierCurvePrim {
       points: pts,
+      filled: false,
       style: style.clone(),
     });
   }
@@ -4934,12 +4960,15 @@ fn rotate_primitive(
       setback: *setback,
       style: style.clone(),
     },
-    Primitive::BezierCurvePrim { points, style } => {
-      Primitive::BezierCurvePrim {
-        points: points.iter().map(|&(x, y)| rp(x, y)).collect(),
-        style: style.clone(),
-      }
-    }
+    Primitive::BezierCurvePrim {
+      points,
+      filled,
+      style,
+    } => Primitive::BezierCurvePrim {
+      filled: *filled,
+      points: points.iter().map(|&(x, y)| rp(x, y)).collect(),
+      style: style.clone(),
+    },
     // A rotated rectangle is no longer axis-aligned → emit a polygon of its
     // four rotated corners.
     Primitive::RectPrim {
@@ -5157,12 +5186,15 @@ fn translate_primitive(prim: &Primitive, dx: f64, dy: f64) -> Primitive {
       setback: *setback,
       style: style.clone(),
     },
-    Primitive::BezierCurvePrim { points, style } => {
-      Primitive::BezierCurvePrim {
-        points: points.iter().map(|&(x, y)| tp(x, y)).collect(),
-        style: style.clone(),
-      }
-    }
+    Primitive::BezierCurvePrim {
+      points,
+      filled,
+      style,
+    } => Primitive::BezierCurvePrim {
+      filled: *filled,
+      points: points.iter().map(|&(x, y)| tp(x, y)).collect(),
+      style: style.clone(),
+    },
     Primitive::RectPrim {
       x_min,
       y_min,
@@ -5394,12 +5426,15 @@ fn scale_primitive(
       setback: *setback,
       style: style.clone(),
     },
-    Primitive::BezierCurvePrim { points, style } => {
-      Primitive::BezierCurvePrim {
-        points: points.iter().map(|&(x, y)| sp(x, y)).collect(),
-        style: style.clone(),
-      }
-    }
+    Primitive::BezierCurvePrim {
+      points,
+      filled,
+      style,
+    } => Primitive::BezierCurvePrim {
+      filled: *filled,
+      points: points.iter().map(|&(x, y)| sp(x, y)).collect(),
+      style: style.clone(),
+    },
     Primitive::RectPrim {
       x_min,
       y_min,
@@ -7388,7 +7423,11 @@ fn render_primitive(
         ));
       }
     }
-    Primitive::BezierCurvePrim { points, style } => {
+    Primitive::BezierCurvePrim {
+      points,
+      filled,
+      style,
+    } => {
       let color = style.effective_color();
       let sw = thickness_px(style.thickness, bb, svg_w).max(0.5);
       let dash = dash_attr(style.dashing.as_ref(), bb, svg_w);
@@ -7475,6 +7514,38 @@ fn render_primitive(
             coord_y(y1, bb, svg_h),
           ));
         }
+      }
+
+      if *filled {
+        let face = style.effective_face_color();
+        let fill_opacity = if face.a < 1.0 {
+          format!(" fill-opacity=\"{}\"", face.a)
+        } else {
+          String::new()
+        };
+        let stroke_attr = match edge_stroke(style.edge_form.as_ref(), bb, svg_w)
+        {
+          Some((sc, esw)) => {
+            let so = if sc.a < 1.0 {
+              format!(" stroke-opacity=\"{}\"", sc.a)
+            } else {
+              String::new()
+            };
+            format!(
+              " stroke=\"{}\" stroke-width=\"{esw:.2}\"{so}",
+              sc.to_svg_rgb()
+            )
+          }
+          None => String::new(),
+        };
+        out.push_str(&format!(
+          "<path d=\"{} Z\" fill=\"{}\"{}{}/>\n",
+          d,
+          face.to_svg_rgb(),
+          fill_opacity,
+          stroke_attr,
+        ));
+        return;
       }
 
       out.push_str(&format!(
@@ -7879,7 +7950,7 @@ fn primitives_to_box_elements(primitives: &[Primitive]) -> Vec<String> {
         elements.extend(tracker.emit_style_changes(style));
         elements.push(gbox::inset_box(text, *x, *y));
       }
-      Primitive::BezierCurvePrim { points, style } => {
+      Primitive::BezierCurvePrim { points, style, .. } => {
         elements.extend(tracker.emit_style_changes(style));
         elements.push(gbox::bezier_curve_box(points));
       }
