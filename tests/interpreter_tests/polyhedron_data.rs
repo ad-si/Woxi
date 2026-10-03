@@ -461,7 +461,8 @@ mod polyhedron_data_tests {
     assert_eq!(
       interpret("PolyhedronData[All]").unwrap(),
       "{Cube, DeltoidalHexecontahedron, DisdyakisTriacontahedron, \
-       Dodecahedron, GreatRhombicosidodecahedron, Icosahedron, \
+       Dodecahedron, GreatRhombicosidodecahedron, \
+       GreatStellatedDodecahedron, Icosahedron, \
        Icosidodecahedron, Octahedron, PentakisDodecahedron, \
        RhombicDodecahedron, RhombicHexecontahedron, \
        RhombicTriacontahedron, SmallRhombicosidodecahedron, \
@@ -642,6 +643,130 @@ mod polyhedron_data_tests {
     );
     assert_eq!(
       interpret(r#"PolyhedronData["RhombicHexecontahedron"]"#).unwrap(),
+      "-Graphics3D-"
+    );
+  }
+
+  // The great stellated dodecahedron: a Kepler-Poinsot star polyhedron
+  // ({5/2, 3}) whose 20 vertices coincide exactly with a unit-edge
+  // Dodecahedron's own vertices, grouped into 12 self-intersecting
+  // pentagram faces (3 meeting at each vertex) instead of 12 convex
+  // pentagons. Metrics cross-checked against MathWorld's closed forms.
+  #[test]
+  fn polyhedron_data_great_stellated_dodecahedron() {
+    assert_eq!(
+      interpret(
+        r#"{PolyhedronData["GreatStellatedDodecahedron", "VertexCount"],
+            PolyhedronData["GreatStellatedDodecahedron", "EdgeCount"],
+            PolyhedronData["GreatStellatedDodecahedron", "FaceCount"]}"#
+      )
+      .unwrap(),
+      "{20, 30, 12}"
+    );
+    assert_eq!(
+      interpret(
+        r#"PolyhedronData["GreatStellatedDodecahedron", "Circumradius"]"#
+      )
+      .unwrap(),
+      "(Sqrt[3]*(-1 + Sqrt[5]))/4"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData["GreatStellatedDodecahedron", "Midradius"]"#)
+        .unwrap(),
+      "(3 - Sqrt[5])/4"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData["GreatStellatedDodecahedron", "Volume"]"#)
+        .unwrap(),
+      "(5*(3 + Sqrt[5]))/4"
+    );
+    assert_eq!(
+      interpret(
+        r#"PolyhedronData["GreatStellatedDodecahedron", "SurfaceArea"]"#
+      )
+      .unwrap(),
+      "15*Sqrt[5 + 2*Sqrt[5]]"
+    );
+    // The pentagrammic faces self-intersect, so there is no face-tangent
+    // insphere.
+    assert_eq!(
+      interpret(r#"PolyhedronData["GreatStellatedDodecahedron", "Inradius"]"#)
+        .unwrap(),
+      "Missing[NotApplicable]"
+    );
+    // A single vertex shell (unlike the rhombic hexecontahedron above):
+    // every vertex sits at the same distance from the center.
+    assert_eq!(
+      interpret(
+        r#"With[{v = N[PolyhedronData["GreatStellatedDodecahedron",
+               "VertexCoordinates"]]},
+             {Length[v], Length[Union[Round[10^6 * Norm /@ v]]]}]"#
+      )
+      .unwrap(),
+      "{20, 1}"
+    );
+    // Every edge (read off the pentagram faces) is the same length, even
+    // though it connects vertices that are not nearest neighbors of the
+    // solid they coincide with.
+    assert_eq!(
+      interpret(
+        r#"With[{v = N[PolyhedronData["GreatStellatedDodecahedron",
+               "VertexCoordinates"]],
+              edges = PolyhedronData["GreatStellatedDodecahedron",
+                "EdgeIndices"]},
+             Union[Round[10^6 * (Norm[#[[1]] - #[[2]]] & /@
+               (v[[#]] & /@ edges))]]]"#
+      )
+      .unwrap(),
+      "{1000000}"
+    );
+    assert_eq!(
+      interpret(
+        r#"MemberQ[PolyhedronData["GreatStellatedDodecahedron", "Classes"],
+             "KeplerPoinsot"]"#
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData["GreatStellatedDodecahedron"]"#).unwrap(),
+      "-Graphics3D-"
+    );
+  }
+
+  // "MathematicaSpikey" (the Mathematica/Wolfram|Alpha logo) is a rhombic
+  // hexecontahedron under a different name, exactly like "Hexahedron" is an
+  // alternative name for "Cube" — so it must resolve to the identical,
+  // already cross-checked entry rather than duplicating that data.
+  #[test]
+  fn polyhedron_data_mathematica_spikey_is_rhombic_hexecontahedron() {
+    assert_eq!(
+      interpret(
+        r#"{PolyhedronData["MathematicaSpikey", "VertexCount"],
+            PolyhedronData["MathematicaSpikey", "EdgeCount"],
+            PolyhedronData["MathematicaSpikey", "FaceCount"]}"#
+      )
+      .unwrap(),
+      "{62, 120, 60}"
+    );
+    assert_eq!(
+      interpret(
+        r#"PolyhedronData["MathematicaSpikey", "VertexCoordinates"] ===
+           PolyhedronData["RhombicHexecontahedron", "VertexCoordinates"]"#
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        r#"PolyhedronData["MathematicaSpikey", "EdgeIndices"] ===
+           PolyhedronData["RhombicHexecontahedron", "EdgeIndices"]"#
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData["MathematicaSpikey"]"#).unwrap(),
       "-Graphics3D-"
     );
   }

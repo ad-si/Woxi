@@ -1631,8 +1631,7 @@ pub fn harmonic_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     // Real input - use digamma approximation
     // Euler-Mascheroni constant
-    const EULER_GAMMA: f64 = 0.5772156649015329;
-    let result = digamma(x + 1.0) + EULER_GAMMA;
+    let result = digamma(x + 1.0) + std::f64::consts::EULER_GAMMA;
     return Ok(Expr::Real(result));
   }
 
@@ -1926,9 +1925,9 @@ pub fn alternating_harmonic_number_ast(
       }
       _ => {
         // Sum[(-1)^(k+1) x^k/k^r, {k,1,Infinity}] = -PolyLog[r, -x]
-        let poly_log = Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![
+        let poly_log = call(
+          "Times",
+          vec![
             Expr::Integer(-1),
             call(
               "PolyLog",
@@ -1937,9 +1936,8 @@ pub fn alternating_harmonic_number_ast(
                 call("Times", vec![Expr::Integer(-1), args[2].clone()]),
               ],
             ),
-          ]
-          .into(),
-        };
+          ],
+        );
         return crate::evaluator::evaluate_expr_to_expr(&poly_log);
       }
     }
@@ -2367,17 +2365,16 @@ fn extract_gaussian_integer(expr: &Expr) -> Option<(i128, i128)> {
 ///     A negative `n` contributes an extra `-1` to the unit.
 fn factor_integer_gaussian(n_expr: &Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = || {
-    Ok(Expr::FunctionCall {
-      name: "FactorInteger".to_string(),
-      args: vec![
+    Ok(call(
+      "FactorInteger",
+      vec![
         n_expr.clone(),
         Expr::Rule {
           pattern: Box::new(id_expr("GaussianIntegers")),
           replacement: Box::new(bool_expr(true)),
         },
-      ]
-      .into(),
-    })
+      ],
+    ))
   };
 
   let Some((n, n_im)) = extract_gaussian_integer(n_expr) else {

@@ -4505,6 +4505,20 @@ pub fn traditional_boxes_to_standard(boxes: &Expr) -> Expr {
           tf_string("]"),
         ]);
       }
+      // TraditionalForm writes an equation with a bare `=`, and reads that
+      // token back as `==` (a `Set` would assign instead of typeset).
+      if name == "RowBox"
+        && let [Expr::List(items)] = &args[..]
+      {
+        let items: Vec<Expr> = items
+          .iter()
+          .map(|item| match item {
+            Expr::String(s) if s == "=" => Expr::String("==".to_string()),
+            other => other.clone(),
+          })
+          .collect();
+        return row_box(items);
+      }
       call(name, args)
     }
     _ => boxes.clone(),

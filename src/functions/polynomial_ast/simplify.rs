@@ -10540,14 +10540,10 @@ fn try_cos_power_reduction(expr: &Expr) -> Option<Expr> {
   };
   let half_arg = simplify_expr_inner(&div2(arg, Expr::Integer(2)));
   let two_alpha = simplify_expr_inner(&times2(Expr::Integer(2), alpha));
-  let squared = Expr::BinaryOp {
-    op: BinaryOperator::Power,
-    left: Box::new(Expr::FunctionCall {
-      name: if is_sin { "Sin" } else { "Cos" }.to_string(),
-      args: vec![half_arg].into(),
-    }),
-    right: Box::new(Expr::Integer(2)),
-  };
+  let squared = pow2(
+    call1(if is_sin { "Sin" } else { "Cos" }, half_arg),
+    Expr::Integer(2),
+  );
   Some(simplify_product(&two_alpha, &squared))
 }
 

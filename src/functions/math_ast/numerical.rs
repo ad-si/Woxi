@@ -3419,18 +3419,17 @@ fn power_expand_recursive(expr: &Expr) -> Expr {
           op: BinaryOperator::Divide,
           left,
           right,
-        } => Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![
+        } => call(
+          "Times",
+          vec![
             *left.clone(),
             Expr::BinaryOp {
               op: BinaryOperator::Power,
               left: right.clone(),
               right: Box::new(Expr::Integer(-1)),
             },
-          ]
-          .into(),
-        },
+          ],
+        ),
         _ => expanded_arg,
       };
 
@@ -7098,25 +7097,23 @@ pub fn cosine_sum_window_ast(
       if k == 0 {
         rational(n, denom)
       } else {
-        Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![
+        call(
+          "Times",
+          vec![
             rational(n, denom),
-            Expr::FunctionCall {
-              name: "Cos".to_string(),
-              args: vec![call(
+            call1(
+              "Cos",
+              call(
                 "Times",
                 vec![
                   Expr::Integer(2 * k as i128),
                   id_expr("Pi"),
                   args[0].clone(),
                 ],
-              )]
-              .into(),
-            },
-          ]
-          .into(),
-        }
+              ),
+            ),
+          ],
+        )
       }
     })
     .collect();
@@ -7147,13 +7144,14 @@ pub fn list_z_transform_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let terms: Vec<Expr> = items
     .iter()
     .enumerate()
-    .map(|(k, a)| Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![
-        a.clone(),
-        pow(args[1].clone(), Expr::Integer(-(k as i128) - shift)),
-      ]
-      .into(),
+    .map(|(k, a)| {
+      call(
+        "Times",
+        vec![
+          a.clone(),
+          pow(args[1].clone(), Expr::Integer(-(k as i128) - shift)),
+        ],
+      )
     })
     .collect();
   let sum = call("Plus", terms);
@@ -7240,17 +7238,16 @@ pub fn discrete_hadamard_transform_ast(
           }
         })
         .collect();
-      let scaled = Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![
+      let scaled = call(
+        "Times",
+        vec![
           call("Plus", terms),
           pow(
             Expr::Integer(n as i128),
             call("Rational", vec![Expr::Integer(-1), Expr::Integer(2)]),
           ),
-        ]
-        .into(),
-      };
+        ],
+      );
       out.push(eval(&scaled)?);
     }
   }

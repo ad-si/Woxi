@@ -394,9 +394,9 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
       "Pi" => Some(std::f64::consts::PI),
       "E" => Some(std::f64::consts::E),
       "Degree" => Some(std::f64::consts::PI / 180.0),
-      "EulerGamma" => Some(0.5772156649015329),
+      "EulerGamma" => Some(std::f64::consts::EULER_GAMMA),
       "Catalan" => Some(0.915_965_594_177_219),
-      "GoldenRatio" => Some(1.618_033_988_749_895),
+      "GoldenRatio" => Some(std::f64::consts::GOLDEN_RATIO),
       "GoldenAngle" => Some(2.399_963_229_728_653_5),
       "Glaisher" => Some(1.2824271291006226),
       "Khinchin" => Some(2.6854520010653064),
@@ -496,7 +496,7 @@ pub fn try_eval_to_f64(expr: &Expr) -> Option<f64> {
       },
       // Stieltjes constants (machine-precision values from wolframscript)
       "StieltjesGamma" if args.len() == 1 => match &args[0] {
-        Expr::Integer(0) => Some(0.5772156649015329),
+        Expr::Integer(0) => Some(std::f64::consts::EULER_GAMMA),
         Expr::Integer(1) => Some(-0.07281584548367673),
         Expr::Integer(2) => Some(-0.00969036319287232),
         Expr::Integer(3) => Some(0.002053834420303346),

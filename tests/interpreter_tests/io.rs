@@ -883,7 +883,7 @@ mod streams {
     let result =
       interpret(r#"file = CreateFile[]; f = OpenWrite[file]; Close[f]"#)
         .unwrap();
-    assert!(!result.is_empty());
+    assert_ne!(result, "");
   }
 
   #[test]
@@ -892,7 +892,7 @@ mod streams {
     let result =
       interpret(r#"file = CreateFile[]; f = OpenAppend[file]; Close[f]"#)
         .unwrap();
-    assert!(!result.is_empty());
+    assert_ne!(result, "");
   }
 
   #[test]
@@ -927,7 +927,7 @@ mod streams {
       r#"f = OpenWrite[CreateFile[]]; WriteString[f, "hello"]; Close[f]"#,
     )
     .unwrap();
-    assert!(!result.is_empty());
+    assert_ne!(result, "");
   }
 
   #[test]
@@ -1946,7 +1946,7 @@ mod unimplemented_warnings {
     clear_state();
     let result = interpret_with_stdout("MyCustomFunc[1, 2]").unwrap();
     assert_eq!(result.result, "MyCustomFunc[1, 2]");
-    assert!(result.warnings.is_empty());
+    assert_eq!(result.warnings, [] as [std::string::String; 0]);
   }
 
   #[test]
@@ -1970,7 +1970,7 @@ mod unimplemented_warnings {
     clear_state();
     let result = interpret_with_stdout("Map[f, {1, 2}]").unwrap();
     assert_eq!(result.result, "{f[1], f[2]}");
-    assert!(result.warnings.is_empty());
+    assert_eq!(result.warnings, [] as [std::string::String; 0]);
   }
 
   #[test]
@@ -1978,7 +1978,7 @@ mod unimplemented_warnings {
     clear_state();
     let result = interpret_with_stdout("CityData[1]").unwrap();
     assert!(!result.stdout.contains("not yet implemented"));
-    assert!(!result.warnings.is_empty());
+    assert_ne!(result.warnings, [] as [std::string::String; 0]);
   }
 
   #[test]
@@ -4397,7 +4397,7 @@ mod parent_directory {
     // ParentDirectory[] returns the parent of the current working directory;
     // just verify it's a non-empty string.
     let result = interpret("ParentDirectory[]").unwrap();
-    assert!(!result.is_empty());
+    assert_ne!(result, "");
   }
 }
 

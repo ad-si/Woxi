@@ -27582,6 +27582,72 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`count$$ = 3, $CellContext`offset$$ 
   }
 
   /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook ("The Adjusted Winner
+  /// Procedure"), whose control panel is a grid of per-item `PopupMenu`s
+  /// rather than one popup per named variable: the body collects several
+  /// `PopupMenu[Dynamic[…], …]` controls into a `List` assigned to a
+  /// variable (`Apopups = {PopupMenu[Dynamic[a1], …], PopupMenu[Dynamic[a2],
+  /// …], …}`), then indexes that list (`Apopups[[i]]`) while building a
+  /// table. Independently written, not copied from any specific
+  /// Demonstration: different variable names and layout.
+  ///
+  /// Regression: `strip_body_popup_menus` replaced each promoted popup with
+  /// the bare symbol `Nothing` wherever it appeared in the body — correct
+  /// for a popup drawn directly in a `Row`/`Column`, where `Nothing`
+  /// harmlessly vanishes from the display list, but wrong here: `Nothing`
+  /// also vanishes from an ordinary `List`, so `{Nothing, Nothing, Nothing}`
+  /// collapsed to `{}` and every subsequent `list[[i]]` access broke with
+  /// `Part::partw`.
+  #[test]
+  fn body_popup_list_survives_stripping() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[ \
+         Module[{controls}, \
+           controls = {PopupMenu[Dynamic[v1], Range[10]], \
+             PopupMenu[Dynamic[v2], Range[10]], \
+             PopupMenu[Dynamic[v3], Range[10]]}; \
+           controls[[2]]], \
+         {{v1, 2}, ControlType -> None}, \
+         {{v2, 4}, ControlType -> None}, \
+         {{v3, 6}, ControlType -> None}]",
+    )
+    .expect("the Manipulate source must parse and evaluate");
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("the grid-of-popups Manipulate must build a widget");
+    assert!(
+      state.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+
+    // All three popups get promoted to real pick-list controls, each
+    // preselecting its own variable's current value.
+    let names: Vec<&str> = state.controls.iter().map(|c| c.name()).collect();
+    assert_eq!(names, ["v1", "v2", "v3"]);
+    for (name, expected) in [("v1", "2"), ("v2", "4"), ("v3", "6")] {
+      let idx = names.iter().position(|n| *n == name).unwrap();
+      match &state.controls[idx] {
+        manipulate::ControlState::Discrete {
+          current_index,
+          values,
+          popup,
+          ..
+        } => {
+          assert!(*popup, "a body PopupMenu must promote to a dropdown");
+          assert_eq!(values[*current_index], expected);
+        }
+        other => {
+          panic!("expected a promoted Discrete popup for {name}, got {other:?}")
+        }
+      }
+    }
+
+    // `controls[[2]]` must still resolve to `v2`'s own current value (4),
+    // not fail with `Part::partw` on a collapsed `{}`.
+    assert_eq!(state.text_output.as_deref(), Some("4"));
+  }
+
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
   /// randomly sampled Wolfram Demonstration notebook ("Lines: Two Points"),
   /// whose picture is driven by two draggable points. Its shape: two
   /// persistent `ControlType -> None` points are mirrored into
@@ -31307,5 +31373,27 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`rate$$ = 4}, DynamicBox[\[Ellipsis]
       render(7.0),
       "moving the rate slider must re-solve curveT and change the plot"
     );
+  }
+
+  /// A slider whose whole spec is exact — `{{b, 3/2, "b"}, -5, 5, 1/6}` —
+  /// binds an exact `Rational` in Wolfram, and a body doing exact arithmetic
+  /// on it (`GCD`, `IntegerQ`, exact `Sqrt`) relies on that. The widget used
+  /// to bind the machine real `1.5` instead, so such a body evaluated with
+  /// inexact numbers (and raised `GCD::exact` for a Demonstration that
+  /// scales a point set by its greatest common divisor).
+  #[test]
+  fn exact_slider_spec_binds_an_exact_rational() {
+    let dump = "DynamicModuleBox[{$CellContext`b$$ = Rational[3, 2]}, \
+      DynamicBox[Manipulate`ManipulateBoxes[\n\
+      1, StandardForm, \n\
+      \"Body\" :> {Head[$CellContext`b$$], $CellContext`b$$ + 1/3}, \n\
+      \"Specifications\" :> {{{$CellContext`b$$, Rational[3, 2], \"b\"}, \
+        -5, 5, Rational[1, 6]}}, \n\
+      \"Options\" :> {}],\n\
+      DynamicModuleValues:>{}]]";
+    let state = instantiate_manipulate_from_box_dump(dump)
+      .expect("the reconstructed Manipulate must build a widget");
+    assert!(state.error.is_none(), "unexpected error: {:?}", state.error);
+    assert_eq!(state.text_output.as_deref(), Some("{Rational, 11/6}"));
   }
 }

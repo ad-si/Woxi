@@ -1506,12 +1506,10 @@ pub fn surd_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // number yet (`Surd[8, n]`) is not an error, so it stays quiet.
   let Expr::Integer(n) = degree else {
     if expr_to_num(degree).is_some() {
-      crate::emit_message(&format!(
-        "Surd::int: Integer expected at position 2 in {}.",
-        crate::syntax::format_expr(
-          &unevaluated("Surd", args),
-          crate::syntax::ExprForm::Output
-        )
+      crate::emit_message(&crate::syntax::format_message_with_expr(
+        "Surd::int: Integer expected at position 2 in ",
+        &unevaluated("Surd", args),
+        ".",
       ));
     }
     return Ok(unevaluated("Surd", args));
@@ -3054,12 +3052,11 @@ pub fn fractional_part_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // corresponding direction (wolframscript): Infinity -> Interval[{0, 1}],
   // -Infinity -> Interval[{-1, 0}], ComplexInfinity -> Interval[{0, 1}].
   {
-    let unit_interval = |lo: i128, hi: i128| Expr::FunctionCall {
-      name: "Interval".to_string(),
-      args: vec![Expr::List(
-        vec![Expr::Integer(lo), Expr::Integer(hi)].into(),
-      )]
-      .into(),
+    let unit_interval = |lo: i128, hi: i128| {
+      call1(
+        "Interval",
+        Expr::List(vec![Expr::Integer(lo), Expr::Integer(hi)].into()),
+      )
     };
     if matches!(&args[0], Expr::Identifier(s) if s == "Infinity" || s == "ComplexInfinity")
     {

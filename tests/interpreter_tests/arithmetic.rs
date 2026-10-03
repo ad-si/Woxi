@@ -6879,6 +6879,17 @@ mod cases {
     );
   }
 
+  /// TraditionalForm writes an equation with a bare `=` and reads it back as
+  /// `==`; reading it as `Set` assigned instead of typesetting (a Manipulate
+  /// body holding `Text[TraditionalForm[a == b]]` overwrote `a`).
+  #[test]
+  fn traditional_form_equation_round_trips_as_equal() {
+    assert_case(
+      r#"ToExpression[ToString[TraditionalForm[a == b], InputForm], InputForm, Hold]"#,
+      "Hold[a == b]",
+    );
+  }
+
   /// A `Plus` term with a negative coefficient boxes as `- <positive>`, the
   /// way wolframscript does (`RowBox[{a, -, RowBox[{2.5, " ", b}]}]`), not as
   /// `+ -2.5 b`.

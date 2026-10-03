@@ -654,7 +654,7 @@ pub fn dispatch_polynomial_functions(
     "Collect" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::polynomial_ast::collect_ast(args));
     }
-    "Together" if args.len() == 1 => {
+    "Together" if args.len() == 1 || args.len() == 2 => {
       return Some(crate::functions::polynomial_ast::together_ast(args));
     }
     "Apart" if !args.is_empty() && args.len() <= 2 => {

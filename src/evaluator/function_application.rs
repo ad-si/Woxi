@@ -1266,6 +1266,69 @@ fn compose_and_evaluate<'a>(
   crate::evaluator::evaluate_expr_to_expr(&built[0])
 }
 
+/// `Derivative[n1, …, nk][f][x1, …, xk]` for a symbol `f` defined by a single
+/// `f[p1_, …, pk_] := body` rule: differentiate `body` `n_i` times with
+/// respect to each parameter `p_i`, then substitute the arguments. Returns
+/// `None` (leaving the expression inert) when `f` has no such definition.
+fn try_apply_multi_derivative_of_definition(
+  func: &Expr,
+  args: &[Expr],
+) -> Option<Result<Expr, InterpreterError>> {
+  let Expr::CurriedCall {
+    func: head,
+    args: targets,
+  } = func
+  else {
+    return None;
+  };
+  let Expr::FunctionCall {
+    name,
+    args: order_exprs,
+  } = head.as_ref()
+  else {
+    return None;
+  };
+  let [Expr::Identifier(func_name)] = targets.as_slice() else {
+    return None;
+  };
+  if name != "Derivative"
+    || order_exprs.len() < 2
+    || order_exprs.len() != args.len()
+  {
+    return None;
+  }
+  let orders: Vec<i128> = order_exprs
+    .iter()
+    .map(|o| match o {
+      Expr::Integer(n) if *n >= 0 => Some(*n),
+      _ => None,
+    })
+    .collect::<Option<_>>()?;
+  let overloads =
+    crate::FUNC_DEFS.with(|m| m.borrow().get(func_name).cloned())?;
+  let (params, _, _, _, _, body) =
+    overloads.iter().find(|(params, conditions, ..)| {
+      params.len() == orders.len()
+        && conditions.iter().all(std::option::Option::is_none)
+    })?;
+  let mut current = body.clone();
+  for (param, &n) in params.iter().zip(&orders) {
+    for _ in 0..n {
+      current =
+        crate::functions::calculus_ast::differentiate_expr(&current, param)
+          .ok()?;
+    }
+  }
+  let bindings: Vec<(&str, &Expr)> = params
+    .iter()
+    .zip(args.iter())
+    .map(|(p, a)| (p.as_str(), a))
+    .collect();
+  Some(evaluate_expr_to_expr(&crate::syntax::substitute_variables(
+    &current, &bindings,
+  )))
+}
+
 pub fn apply_curried_call(
   func: &Expr,
   args: &[Expr],
@@ -2702,6 +2765,10 @@ pub fn apply_curried_call(
       })
     }
     Expr::CurriedCall { .. } => {
+      if let Some(result) = try_apply_multi_derivative_of_definition(func, args)
+      {
+        return result;
+      }
       // Nested curried call: `s[a][b][c]` arrives here as
       // `apply_curried_call(CurriedCall{s[a], [b]}, [c])`. A SubValue rule
       // spanning this many curry levels (`y[3][i_][t_] := …`, where the

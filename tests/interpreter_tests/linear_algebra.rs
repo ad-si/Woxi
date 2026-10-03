@@ -3081,7 +3081,7 @@ mod pseudo_inverse {
     // The internal singular probes must not leak an Inverse::sing message.
     let r = interpret_with_stdout("PseudoInverse[{{1, 0}, {0, 0}}]").unwrap();
     assert_eq!(r.result, "{{1, 0}, {0, 0}}");
-    assert!(r.warnings.is_empty());
+    assert_eq!(r.warnings, [] as [std::string::String; 0]);
   }
 
   #[test]

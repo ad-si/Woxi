@@ -11388,10 +11388,10 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
         let coeff = if coeff_factors.len() == 1 {
           coeff_factors[0].clone()
         } else {
-          Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: coeff_factors.iter().map(|e| (*e).clone()).collect(),
-          }
+          call(
+            "Times",
+            coeff_factors.iter().map(|e| (*e).clone()).collect(),
+          )
         };
         return power_two(x, &coeff);
       }
@@ -12121,10 +12121,7 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
         let rest_exp = if other_terms.len() == 1 {
           other_terms[0].clone()
         } else {
-          Expr::FunctionCall {
-            name: "Plus".to_string(),
-            args: other_terms.into_iter().cloned().collect(),
-          }
+          call("Plus", other_terms.into_iter().cloned().collect())
         };
         let e_sym = base.clone();
         let e_rest = power_two(&e_sym, &rest_exp)?;

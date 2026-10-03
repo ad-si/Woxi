@@ -1009,13 +1009,8 @@ pub fn true_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let evaluated = evaluate_expr_to_expr(&args[0])?;
-  Ok(Expr::Identifier(
-    if matches!(&evaluated, Expr::Identifier(s) if s == "True") {
-      "True"
-    } else {
-      "False"
-    }
-    .to_string(),
+  Ok(bool_expr(
+    matches!(&evaluated, Expr::Identifier(s) if s == "True"),
   ))
 }
 
@@ -1522,17 +1517,16 @@ fn eliminate_connectives(expr: &Expr) -> Expr {
             let a = &elim_args[0];
             let b = &elim_args[1];
             // (a && b) || (!a && !b)
-            Expr::FunctionCall {
-              name: "Or".to_string(),
-              args: vec![
+            call(
+              "Or",
+              vec![
                 call("And", vec![a.clone(), b.clone()]),
                 call(
                   "And",
                   vec![call1("Not", a.clone()), call1("Not", b.clone())],
                 ),
-              ]
-              .into(),
-            }
+              ],
+            )
           } else {
             // Pairwise: And[Equivalent[a1,a2], Equivalent[a2,a3], ...]
             let mut pairs = Vec::new();
@@ -1600,13 +1594,14 @@ fn eliminate_connectives(expr: &Expr) -> Expr {
           let wanted = elim_args.len() / 2 + 1;
           let clauses: Vec<Expr> = bc_combinations(elim_args.len(), wanted)
             .into_iter()
-            .map(|picked| Expr::FunctionCall {
-              name: "And".to_string(),
-              args: picked
-                .into_iter()
-                .map(|i| elim_args[i].clone())
-                .collect::<Vec<_>>()
-                .into(),
+            .map(|picked| {
+              call(
+                "And",
+                picked
+                  .into_iter()
+                  .map(|i| elim_args[i].clone())
+                  .collect::<Vec<_>>(),
+              )
             })
             .collect();
           call("Or", clauses)
@@ -4061,13 +4056,7 @@ pub fn unate_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .enumerate()
       .map(|(vi, v)| Expr::Rule {
         pattern: Box::new(v.clone()),
-        replacement: Box::new(Expr::Identifier(
-          if idx & (1usize << (n - 1 - vi)) == 0 {
-            "True".to_string()
-          } else {
-            "False".to_string()
-          },
-        )),
+        replacement: Box::new(bool_expr(idx & (1usize << (n - 1 - vi)) == 0)),
       })
       .collect();
     table.push(eval(&call(
@@ -4257,13 +4246,7 @@ fn boolean_quantifier(
       .enumerate()
       .map(|(vi, v)| Expr::Rule {
         pattern: Box::new(v.clone()),
-        replacement: Box::new(Expr::Identifier(
-          if idx & (1usize << (n - 1 - vi)) == 0 {
-            "True".to_string()
-          } else {
-            "False".to_string()
-          },
-        )),
+        replacement: Box::new(bool_expr(idx & (1usize << (n - 1 - vi)) == 0)),
       })
       .collect();
     branches.push(eval(&call(
@@ -4273,10 +4256,7 @@ fn boolean_quantifier(
   }
   // wolframscript returns minimized results (x || x collapses, absorption
   // applies), so run the combined expression through BooleanMinimize.
-  let combined = eval(&Expr::FunctionCall {
-    name: if conjunct { "And" } else { "Or" }.to_string(),
-    args: branches.into(),
-  })?;
+  let combined = eval(&call(if conjunct { "And" } else { "Or" }, branches))?;
   eval(&call1("BooleanMinimize", combined))
 }
 

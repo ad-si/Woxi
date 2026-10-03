@@ -116,7 +116,8 @@ renderer would move a great many snapshots at once, so fractions and powers are
 still 1D.
 
 Consequences elsewhere: `ToString[-48/2033]`, `ToString[-10/3]`,
-`ToString[1.5*^10]` and 2D rationals inside message text all print flat.
+`ToString[1.5*^10]` and 2D rationals inside most built-in message text
+all print flat (see "Message repetition and 2D layouts").
 
 ### `NumberForm` does not switch to scientific notation
 
@@ -127,6 +128,14 @@ woxi eval 'ToString[NumberForm[123456789.]]'            # 123457000.
 
 Also `NumberForm[1000000.]` (WL `1. × 10^6`) and `NumberForm[1.5*10^-8]`
 (WL `1.5 × 10^-8`). In-range reals — roughly `10^-5 ≤ |x| < 10^6` — agree.
+
+### `NumberForm[x, {n, f}]` never switches to scientific notation
+
+Seen in a Demonstration notebook (`NumberForm[h, {4, 3}, ExponentFunction -> (-6& )]`).
+Not checked against wolframscript (unavailable when found); expected from WL:
+`NumberForm[1.*^-7, {4, 3}]` is `1.000 × 10^-7`, Woxi prints `0.000`. With an
+`ExponentFunction` the 3-argument form in Studio ignores the function
+(`1.×10^-7`) and `ToString` prints `0.1 × 10^-6` without padding.
 
 ### `NumberForm`/`ScientificForm` round half-to-even, wolframscript rounds half-up
 
@@ -3143,9 +3152,12 @@ but does not emit `$GeoLocation::dloff` or the per-function `Fn::geoloc`.
   two unit names appear in an order that is not input order
   (`Kilograms + Meters` → "Meters and Kilograms"). Woxi quotes them and emits
   once.
-- Messages that embed a fraction are rendered as 2D layouts by wolframscript
-  and 1D by Woxi. This is systemic across the distribution and `Select::normal`
-  message families.
+- Messages that embed a fraction are rendered as 2D layouts by wolframscript.
+  Woxi does the same for user `Message[sym::tag, args]` templates and for
+  built-in messages composed with `syntax::format_message_with_expr` /
+  `format_message_pieces` (`Select::normal`, `Surd::int`); built-in messages
+  assembled with a flat `format!` (e.g. the distribution family, `Take::seqs`)
+  still print 1D.
 - Message **multiplicity** in general is not comparable: wolframscript
   re-evaluates a failing specification, so it prints some messages twice, and
   applies `General::stop` after three identical ones.
@@ -4520,3 +4532,12 @@ only for that one case.
 types) and `SocketOpen`'s `"ZMQ_STREAM"`-family options are not implemented:
 anything that is not TCP leaves the call unevaluated. `Sockets["TCP"]` is
 accepted and is the same as `Sockets[]`.
+
+### `Together[…, Modulus -> p]` only handles univariate rational functions
+
+```sh
+woxi eval 'Together[1/x + 1/y, Modulus -> 3]'   # stays unevaluated
+```
+
+The modular path cancels over GF(p) with univariate polynomial arithmetic,
+so a multivariate fraction (or a composite modulus) is returned unevaluated.

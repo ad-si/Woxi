@@ -169,6 +169,8 @@ editorView = new EditorView({
 // Restore code from shared URL
 const params = new URLSearchParams(window.location.search)
 const sharedCode = params.get("code")
+// Code from a shared link is run automatically once the worker is ready
+let runSharedCodeOnInit = false
 if (sharedCode) {
   try {
     const decoded = LZString.decompressFromEncodedURIComponent(sharedCode)
@@ -176,6 +178,7 @@ if (sharedCode) {
       setEditorContent(decoded)
       clearOutputs()
       localStorage.removeItem(STORAGE_KEY_OUTPUTS)
+      runSharedCodeOnInit = true
     }
   } catch (_) { /* ignore corrupt share links */ }
   // Clean the URL without reloading
@@ -1311,6 +1314,10 @@ function initWorker() {
         showStatus("")
         document.getElementById("runBtn").disabled = false
         worker.postMessage({ type: "set_theme", dark: isDark() })
+        if (runSharedCodeOnInit) {
+          runSharedCodeOnInit = false
+          document.getElementById("runBtn").click()
+        }
       }
       else {
         showStatus("Failed to load Woxi: " + message, "error")

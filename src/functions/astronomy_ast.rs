@@ -1448,14 +1448,7 @@ pub fn daylight_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   let (ra, dec) = sun_ra_dec(jd_utc_to_jde(jd));
   let (_, alt) = equatorial_to_horizontal(ra, dec, lat, lon, jd);
-  Ok(Expr::Identifier(
-    if alt > SUN_RISE_SET_ALTITUDE {
-      "True"
-    } else {
-      "False"
-    }
-    .to_string(),
-  ))
+  Ok(bool_expr(alt > SUN_RISE_SET_ALTITUDE))
 }
 
 // ─── SolarEclipse / LunarEclipse ────────────────────────────────────

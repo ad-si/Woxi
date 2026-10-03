@@ -436,6 +436,31 @@ fn extract_cell_content(s: &str) -> String {
   extract_string_content(s)
 }
 
+/// Converts an `InterpretationBox[boxes, value]`'s `value` argument, which
+/// (per `extract_cell_content`'s doc comment above) is written as ordinary
+/// source rather than a box row. A bare list literal in that position must
+/// keep its items comma-separated: routing it through `extract_cell_content`
+/// instead would hit that function's "BoxData statement list" handling,
+/// which *concatenates* top-level items the way `RowBox[{"a", "+",
+/// "b"}]`'s children are joined into `a+b` — gluing two list elements
+/// together with no separator reads back as implicit multiplication
+/// (`{1, 2} {3, 4}` is `Times[{1, 2}, {3, 4}]`, not a 2-element list of
+/// lists), silently turning stored data into a `Thread`ed product one
+/// evaluation removed from the value the notebook actually saved.
+fn convert_interpretation_meaning(s: &str) -> String {
+  let trimmed = s.trim();
+  if let Some(inner) =
+    trimmed.strip_prefix('{').and_then(|s| s.strip_suffix('}'))
+  {
+    let items: Vec<String> = split_top_level_commas(inner)
+      .into_iter()
+      .map(|item| convert_interpretation_meaning(item.trim()))
+      .collect();
+    return format!("{{{}}}", items.join(", "));
+  }
+  extract_cell_content(trimmed)
+}
+
 /// Is this argument a top-level option rule (`name -> value` or
 /// `name :> value`)? Typeset box heads carry display options after their
 /// positional arguments (e.g. `SuperscriptBox[a, b, MultilineFunction ->
@@ -941,6 +966,26 @@ fn extract_typeset_box(s: &str) -> Option<String> {
       // `TagBox[content, tag, opts...]` is a display annotation; the
       // evaluable value is just `content`.
       "TagBox" if !args.is_empty() => conv(&args[0]),
+      // `StyleBox[op, "OperatorCharacter"]` colors one operator character
+      // of a larger expression (e.g. a `Which` guard's `&&`/`==`) without
+      // an enclosing `RowBox` grouping it with its operands — the FrontEnd
+      // uses this specifically to syntax-highlight code, never for prose.
+      // Recursing through the generic `conv` (`extract_cell_content`)
+      // below would reconstruct a bare `"\[Equal]"` argument through the
+      // *prose* unescaper (the same fallback a `Cell[…, "Text"]` cell's
+      // plain string content goes through), which maps `\[Equal]` to the
+      // single display glyph `=` it looks like typeset — silently turning
+      // an equality test into an assignment (`Set`). Only a bare named-
+      // character token (not a real string that merely starts with one)
+      // takes this path, so an actual quoted string styled this way still
+      // renders as prose.
+      "StyleBox"
+        if args.len() >= 2
+          && args[1].trim().trim_matches('"') == "OperatorCharacter"
+          && stylebox_bare_operator(&args[0]).is_some() =>
+      {
+        stylebox_bare_operator(&args[0]).unwrap().to_string()
+      }
       // `StyleBox`, `FrameBox`, `AdjustmentBox`, `FormBox` similarly wrap
       // a displayed expression; recurse into the first arg.
       "StyleBox" | "FrameBox" | "AdjustmentBox" | "FormBox"
@@ -969,8 +1014,21 @@ fn extract_typeset_box(s: &str) -> Option<String> {
         {
           let inner = &raw_meaning[1..raw_meaning.len() - 1];
           format!("\"{}\"", escape_string(&unescape_string(inner)))
+        } else if let Some(items) = braced_list_items(raw_meaning) {
+          // Likewise a braced list is a list *value* (an iconized
+          // `{Graphics[…], …}`), not a row of boxes to concatenate — which
+          // would fuse the items into a product.
+          let items: Vec<String> = items
+            .into_iter()
+            .map(|item| {
+              extract_cell_content(&format!("InterpretationBox[x, {item}]"))
+            })
+            .collect();
+          format!("{{{}}}", items.join(", "))
         } else {
-          strip_display_form_wrapper(&conv(&args[1]))
+          strip_display_form_wrapper(&convert_interpretation_meaning(
+            raw_meaning,
+          ))
         }
       }
       // `CheckboxBox[value, {off, on}]` (Demonstrations metadata cells) —
@@ -2325,6 +2383,18 @@ pub(crate) fn combining_accent(over: &str) -> Option<&'static str> {
     "\\[RightVector]" | "\u{21C0}" => Some("\u{20D7}"),
     _ => None,
   }
+}
+
+/// The InputForm operator a `StyleBox[…, "OperatorCharacter"]`'s first
+/// argument stands for, if that argument is *only* a bare named-character
+/// escape (`"\[Equal]"`) and nothing else. A real string that merely
+/// starts with the same text (`"\[Equal] sign"`, say) is not this — the
+/// whole argument has to be exactly the one escape, quotes included.
+fn stylebox_bare_operator(s: &str) -> Option<&'static str> {
+  let s = s.trim();
+  let inner = s.strip_prefix('"')?.strip_suffix('"')?;
+  let name = inner.strip_prefix("\\[")?.strip_suffix(']')?;
+  named_char_to_code_op(name)
 }
 
 /// Map Wolfram named operator characters to their InputForm ASCII
@@ -4215,6 +4285,39 @@ mod tests {
     crate::clear_state();
     crate::interpret(&content).unwrap();
     assert_eq!(crate::interpret("total").unwrap(), "{{3}, {3}, {3}}");
+  }
+
+  /// Regression: a `StyleBox[…, "OperatorCharacter"]`-wrapped `\[Equal]` —
+  /// the FrontEnd colors a condition's comparison operators this way —
+  /// reconstructed as a single `=` (`Set`, assignment) instead of `==`
+  /// (`Equal`), because the wrapper recursed through `extract_cell_content`
+  /// (via the generic "StyleBox wraps its displayed argument" case) using
+  /// the prose unescaper instead of the code-operator one `box_part_source`
+  /// already used for a bare (unwrapped) `"\[Equal]"` RowBox element. A
+  /// silently corrupted equality test is worse than a parse failure: the
+  /// cell still evaluates, just as the wrong code (e.g. a `Which` guard
+  /// that always assigns rather than compares).
+  #[test]
+  fn test_extract_cell_content_stylebox_wrapped_equal() {
+    let s = r#"BoxData[RowBox[{"o1", StyleBox["\[Equal]", "OperatorCharacter"], "\"yes\""}]]"#;
+    assert_eq!(extract_cell_content(s), r#"o1=="yes""#);
+  }
+
+  /// Regression: an earlier fix for the `StyleBox` case above routed
+  /// *every* quoted-string leaf `extract_cell_content` sees through the
+  /// code-operator unescaper, not just an operator-tagged `StyleBox`. That
+  /// broke ordinary prose: `parse_single_cell` sends a plain `Cell["…",
+  /// "Text"]`'s content through this same function regardless of style, so
+  /// a `\[Equal]` written mid-sentence (a Demonstration's "for a \[Equal] b
+  /// use ...") reconstructed as the code operator `==` instead of the
+  /// single `=` glyph it typesets as. The fix must be scoped to the
+  /// `"OperatorCharacter"`-tagged `StyleBox` case only; every other quoted
+  /// string, including this one despite starting with the same escape,
+  /// keeps going through the prose unescaper.
+  #[test]
+  fn test_extract_cell_content_text_cell_named_char_stays_prose() {
+    let s = r#""a \[Equal] b""#;
+    assert_eq!(extract_cell_content(s), "a = b");
   }
 
   #[test]
@@ -7092,6 +7195,31 @@ Cell[BoxData[
     }
   }
 
+  /// An iconized list (`Iconize[{a, b, c}]`) is stored as an
+  /// `InterpretationBox` whose meaning is the plain `{a, b, c}` list value.
+  /// It must stay a list rather than being read as a row of boxes, which
+  /// would fuse the items into a product.
+  #[test]
+  fn test_interpretation_box_list_meaning_stays_a_list() {
+    let nb = r#"Notebook[{
+Cell[BoxData[
+ RowBox[{"Length", "[",
+  InterpretationBox[
+   DynamicModuleBox[{Typeset`open = False}, "placeholder"],
+   {Graphics[{Circle[{0, 0}, 1]}], {1, 2}, "s"}], "]"}]], "Input"]
+}]"#;
+    let parsed = parse_notebook(nb).unwrap();
+    match &parsed.cells[0] {
+      CellEntry::Single(cell) => {
+        assert_eq!(
+          cell.content,
+          "Length[{Graphics[{Circle[{0, 0}, 1]}], {1, 2}, \"s\"}]"
+        );
+      }
+      CellEntry::Group(_) => panic!("Expected single cell"),
+    }
+  }
+
   /// A large `Compress`ed string the FrontEnd iconizes for display (shown
   /// as a "String length: … / Byte count: …" placeholder box) is still
   /// stored faithfully as the `InterpretationBox`'s meaning. Since that
@@ -7116,6 +7244,37 @@ Cell[BoxData[
       }
       CellEntry::Group(_) => panic!("Expected single cell"),
     }
+  }
+
+  /// An `InterpretationBox` whose meaning is a bare list literal (not
+  /// wrapped in `InputForm[…]`) must keep its elements as separate list
+  /// items. This is the `IconizedObject` display Wolfram uses for a large
+  /// stored array — e.g. a Demonstration's `SaveDefinitions->True` cache of
+  /// a table built from mismatched-length rows. Routing the value through
+  /// `extract_cell_content`'s "BoxData statement list" handling used to
+  /// concatenate the two elements with no separator, so `{{1, 2, 3}, {4,
+  /// 5}}` read back as `{1, 2, 3} {4, 5}` — implicit multiplication of two
+  /// lists — and evaluating it raised `Thread::tdlen` for the length
+  /// mismatch instead of yielding the original 2-element list.
+  #[test]
+  fn test_interpretation_box_list_meaning_keeps_list_structure() {
+    let nb = r#"Notebook[{
+Cell[BoxData[
+ RowBox[{"table", "=",
+  InterpretationBox[
+   StyleBox["\"data\"", ShowStringCharacters->False],
+   {{1, 2, 3}, {4, 5}}]}]], "Input"]
+}]"#;
+    let parsed = parse_notebook(nb).unwrap();
+    let content = match &parsed.cells[0] {
+      CellEntry::Single(cell) => cell.content.clone(),
+      CellEntry::Group(_) => panic!("Expected single cell"),
+    };
+    assert_eq!(content, "table={{1, 2, 3}, {4, 5}}");
+    assert_eq!(
+      crate::interpret(&format!("{content};Length[table]")).unwrap(),
+      "2"
+    );
   }
 
   /// The FrontEnd hard-wraps long lines with a trailing backslash, and

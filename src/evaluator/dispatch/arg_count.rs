@@ -1563,7 +1563,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     | "CodeParser`CodeParse" => Some((1, usize::MAX)),
     "MakeExpression" => Some((1, 2)),
     "ToFileName" => Some((1, 2)),
-    "Together" => Some((1, 1)),
+    "Together" => Some((1, 2)),
     "ToLowerCase" => Some((1, 1)),
     "ToPolarCoordinates" => Some((1, 1)),
     "ToRadicals" => Some((1, 1)),

@@ -247,7 +247,7 @@ mod table_do_bare_count {
     clear_state();
     let r = woxi::interpret_with_stdout("Table[1 + 1]").unwrap();
     assert_eq!(r.result, "2");
-    assert!(r.warnings.is_empty());
+    assert_eq!(r.warnings, [] as [std::string::String; 0]);
   }
 
   #[test]
@@ -255,7 +255,7 @@ mod table_do_bare_count {
     clear_state();
     let r = woxi::interpret_with_stdout("Do[Print[7]]").unwrap();
     assert_eq!(r.stdout, "7\n");
-    assert!(r.warnings.is_empty());
+    assert_eq!(r.warnings, [] as [std::string::String; 0]);
   }
 
   #[test]
