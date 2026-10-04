@@ -4834,6 +4834,28 @@ mod nintegrate {
     assert_approx("NIntegrate[x^2, {x, 0, 1}]", 1.0 / 3.0, 1e-10);
   }
 
+  // Integration rules such as "GaussKronrodRule" are valid `Method` names
+  // (they previously raised NIntegrate::bdmtd and stayed unevaluated).
+  #[test]
+  fn nintegrate_integration_rule_method_names() {
+    for rule in [
+      "GaussKronrodRule",
+      "TrapezoidalRule",
+      "NewtonCotesRule",
+      "ClenshawCurtisRule",
+      "LobattoKronrodRule",
+      "GaussBerntsenEspelidRule",
+    ] {
+      assert_approx(
+        &format!(
+          "NIntegrate[x^2, {{x, 0, 1}}, Method -> \"{rule}\", PrecisionGoal -> 2]"
+        ),
+        1.0 / 3.0,
+        1e-2,
+      );
+    }
+  }
+
   // A list-valued integrand is integrated component-wise (previously it
   // collapsed to `0.`).
   #[test]
