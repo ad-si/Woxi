@@ -21863,18 +21863,18 @@ fn setter_bar_parts(expr: &Expr) -> Option<(&String, &Expr)> {
 /// layout; Woxi Studio instead lifts them into the control panel, shown only
 /// while their tab is selected.
 fn collect_body_setter_bars(expr: &Expr) -> Vec<BodySetterBar> {
-  fn walk(expr: &Expr, cond: &Option<String>, found: &mut Vec<BodySetterBar>) {
+  fn walk(expr: &Expr, cond: Option<&String>, found: &mut Vec<BodySetterBar>) {
     let (bar, rules) = match expr {
       Expr::ReplaceAll { expr: inner, rules } => (inner.as_ref(), Some(rules)),
       other => (other, None),
     };
     if let Some((var, choices)) = setter_bar_parts(bar) {
       if !found.iter().any(|b| &b.var == var) {
-        let list = crate::syntax::expr_to_input_form(choices);
+        let list = crate::syntax::expr_to_source_form(choices);
         let choices_code = match rules {
           Some(r) => format!(
             "Map[(#1 -> (#1 /. {}))&, {}]",
-            crate::syntax::expr_to_input_form(r),
+            crate::syntax::expr_to_source_form(r),
             list
           ),
           None => list,
@@ -21882,7 +21882,7 @@ fn collect_body_setter_bars(expr: &Expr) -> Vec<BodySetterBar> {
         found.push(BodySetterBar {
           var: var.clone(),
           choices_code,
-          visible_cond: cond.clone(),
+          visible_cond: cond.cloned(),
         });
       }
       return;
@@ -21893,16 +21893,16 @@ fn collect_body_setter_bars(expr: &Expr) -> Vec<BodySetterBar> {
       && let Expr::List(items) = &args[0]
     {
       let selector =
-        crate::syntax::expr_to_input_form(unwrap_pane_selector(&args[1]));
+        crate::syntax::expr_to_source_form(unwrap_pane_selector(&args[1]));
       for (idx, item) in items.iter().enumerate() {
         let (key, _label, content) = tabview_pane_parts(item);
         let key = key.unwrap_or_else(|| Expr::Integer(idx as i128 + 1));
         let pane_cond = format!(
           "({}) == ({})",
           selector,
-          crate::syntax::expr_to_input_form(&key)
+          crate::syntax::expr_to_source_form(&key)
         );
-        walk(content, &Some(pane_cond), found);
+        walk(content, Some(&pane_cond), found);
       }
       return;
     }
@@ -21911,7 +21911,7 @@ fn collect_body_setter_bars(expr: &Expr) -> Vec<BodySetterBar> {
     }
   }
   let mut found = Vec::new();
-  walk(expr, &None, &mut found);
+  walk(expr, None, &mut found);
   found
 }
 
