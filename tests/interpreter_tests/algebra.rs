@@ -10143,6 +10143,38 @@ mod solve_with_domain {
   }
 
   #[test]
+  fn integers_abs_bound_on_either_side() {
+    assert_eq!(
+      interpret("Solve[Abs[x] <= 2, x, Integers]").unwrap(),
+      "{{x -> -2}, {x -> -1}, {x -> 0}, {x -> 1}, {x -> 2}}"
+    );
+    assert_eq!(
+      interpret("Solve[Abs[x] > 1 && Abs[x] < 4, x, Integers]").unwrap(),
+      "{{x -> -3}, {x -> -2}, {x -> 2}, {x -> 3}}"
+    );
+    assert_eq!(
+      interpret("Solve[3 > Abs[x - 1], x, Integers]").unwrap(),
+      "{{x -> -1}, {x -> 0}, {x -> 1}, {x -> 2}, {x -> 3}}"
+    );
+    assert_eq!(
+      interpret("Solve[Abs[x] == 2, x, Integers]").unwrap(),
+      "{{x -> -2}, {x -> 2}}"
+    );
+    assert_eq!(interpret("Solve[Abs[x] == -2, x, Integers]").unwrap(), "{}");
+  }
+
+  #[test]
+  fn integers_abs_bound_with_linear_equation() {
+    assert_eq!(
+      interpret(
+        "Solve[a + 11 x == 18 && x > 0 && x <= 6 && Abs[a] < 80, {x, a}, Integers]"
+      )
+      .unwrap(),
+      "{{x -> 1, a -> 7}, {x -> 2, a -> -4}, {x -> 3, a -> -15}, {x -> 4, a -> -26}, {x -> 5, a -> -37}, {x -> 6, a -> -48}}"
+    );
+  }
+
+  #[test]
   fn integers_no_solutions() {
     assert_eq!(interpret("Solve[x^4 == 4, x, Integers]").unwrap(), "{}");
   }
