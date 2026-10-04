@@ -27036,6 +27036,11 @@ fn display_expr_to_node(
       "Spacer" if !args.is_empty() => DisplayNode::Spacer {
         width: spacer_width(&args[0]),
       },
+      // `Invisible[expr]` lays out like `expr` but draws nothing (the
+      // Demonstrations idiom for padding a control row), so it must not
+      // surface as its literal source. The reserved extent is not
+      // typeset-measured here; it collapses to an empty spacer.
+      "Invisible" if !args.is_empty() => DisplayNode::Spacer { width: 0.0 },
       // A styled caption fragment: rendered as rich text, not as source.
       "Style" | "StyleForm" if !args.is_empty() => {
         styled_text_node(expr, bindings)
