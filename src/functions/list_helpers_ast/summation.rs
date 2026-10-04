@@ -3983,10 +3983,10 @@ fn try_telescoping_rational_sum(
     v
   };
   let mut num = tr_coeff_list(body, var_name, "Numerator")
-    .map(&trim)
+    .map(trim)
     .unwrap_or_default();
   let mut den = tr_coeff_list(body, var_name, "Denominator")
-    .map(&trim)
+    .map(trim)
     .unwrap_or_default();
   // Woxi's Numerator/Denominator don't split a reciprocal power such as
   // Power[n^2 + n, -1]; in that case the numerator comes back empty. Recover
@@ -3994,7 +3994,7 @@ fn try_telescoping_rational_sum(
   // summand is 1/Q.
   if num.is_empty() {
     let recip = pow(body.clone(), Expr::Integer(-1));
-    if let Some(q) = tr_coeff_list(&recip, var_name, "Together").map(&trim)
+    if let Some(q) = tr_coeff_list(&recip, var_name, "Together").map(trim)
       && q.len() > 1
     {
       num = vec![(1, 1)];
@@ -4135,14 +4135,14 @@ fn try_rational_pole_telescoping_sum(
     v
   };
   let mut num = tr_coeff_list(body, var_name, "Numerator")
-    .map(&trim)
+    .map(trim)
     .unwrap_or_default();
   let mut den = tr_coeff_list(body, var_name, "Denominator")
-    .map(&trim)
+    .map(trim)
     .unwrap_or_default();
   if num.is_empty() {
     let recip = pow(body.clone(), Expr::Integer(-1));
-    if let Some(q) = tr_coeff_list(&recip, var_name, "Together").map(&trim)
+    if let Some(q) = tr_coeff_list(&recip, var_name, "Together").map(trim)
       && q.len() > 1
     {
       num = vec![(1, 1)];

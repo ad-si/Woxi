@@ -6064,14 +6064,7 @@ fn evaluate_function_call_ast_inner(
       let has_undirected = edges.iter().any(|e| {
         matches!(e, Expr::FunctionCall { name, .. } if name == "UndirectedEdge")
       });
-      return Ok(Expr::Identifier(
-        if has_directed && has_undirected {
-          "True"
-        } else {
-          "False"
-        }
-        .to_string(),
-      ));
+      return Ok(bool_expr(has_directed && has_undirected));
     }
     return Ok(bool_expr(false));
   }
@@ -6266,14 +6259,7 @@ fn evaluate_function_call_ast_inner(
           let (g, _) = build_undirected_graph(vertices, edges);
           g
         });
-        return Ok(Expr::Identifier(
-          if balanced && connected {
-            "True"
-          } else {
-            "False"
-          }
-          .to_string(),
-        ));
+        return Ok(bool_expr(balanced && connected));
       }
       // Undirected: connected + all vertices have even degree
       let (pg_graph, _pg_idx) = build_undirected_graph(vertices, edges);
@@ -6281,14 +6267,7 @@ fn evaluate_function_call_ast_inner(
         .node_indices()
         .all(|ni| pg_graph.neighbors(ni).count() % 2 == 0);
       let connected = is_connected_pg(&pg_graph);
-      return Ok(Expr::Identifier(
-        if all_even && connected {
-          "True"
-        } else {
-          "False"
-        }
-        .to_string(),
-      ));
+      return Ok(bool_expr(all_even && connected));
     }
     return Ok(bool_expr(false));
   }

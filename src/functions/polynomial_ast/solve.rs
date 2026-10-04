@@ -189,8 +189,12 @@ pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Fall back to symbolic solve + numerize
   let symbolic = solve_ast(args)?;
   // What Solve leaves unevaluated, NSolve leaves unevaluated too — under
-  // its own head.
+  // its own head — unless a numeric multi-seed search below finds real
+  // roots that no symbolic technique reached in closed form.
   if matches!(&symbolic, Expr::FunctionCall { name, .. } if name == "Solve") {
+    if let Some(result) = try_nsolve_numeric_search(args) {
+      return Ok(sort_nsolve_solutions(result));
+    }
     return Ok(unevaluated("NSolve", args));
   }
   let numerized = nsolve_numerize(&symbolic)?;
@@ -5489,6 +5493,159 @@ fn try_solve_radical_equation(
     }
   }
   Some(Ok(Expr::List(kept.into())))
+}
+
+/// Numeric last resort for `NSolve[eqn, var]` when neither the quadratic /
+/// pure-power shortcuts above nor `solve_ast`'s symbolic techniques —
+/// including `try_solve_radical_equation`'s isolate-one-term-and-raise
+/// elimination — find a closed form.
+///
+/// This covers equations that mix a sub-expression's positive and negative
+/// fractional powers, e.g. a Cardano cube-root formula added to its own
+/// reciprocal (`A^(1/3) + k/A^(1/3)`): isolating either term and cubing
+/// reintroduces a *different* fractional power of the same base instead of
+/// eliminating it, so the elimination loop gives up. Such an equation is
+/// not unsolvable, just not solvable by that one technique — it is an
+/// ordinary equation to root-find numerically, the way real Mathematica's
+/// own numerical solver does internally. Woxi does not have that solver, so
+/// this runs damped Newton iteration (central-difference derivative, since
+/// the search variable need not be a plain identifier — `C[1]`, as produced
+/// by `Solve`'s own generated constants, is common) from a spread of seed
+/// points and keeps whichever seeds converge, deduplicated.
+///
+/// Only applies to `NSolve[eqn, var]` with a single equation and a single
+/// (non-list) variable; systems and multi-variable solves are left alone.
+fn try_nsolve_numeric_search(args: &[Expr]) -> Option<Expr> {
+  if args.len() != 2 {
+    return None;
+  }
+  let (lhs, rhs, op) =
+    crate::functions::polynomial_ast::reduce::extract_comparison(&args[0])?;
+  if op != crate::functions::polynomial_ast::reduce::CompOp::Equal {
+    return None;
+  }
+  let var = &args[1];
+  if matches!(var, Expr::List(_)) {
+    return None;
+  }
+  let residual = minus2(lhs, rhs);
+  if !expr_contains_expr(&residual, var) {
+    return None;
+  }
+
+  let eval_at = |x: f64| -> Option<f64> {
+    let substituted = substitute_expr(&residual, var, &Expr::Real(x));
+    let evaled =
+      quietly(|| crate::evaluator::evaluate_expr_to_expr(&substituted)).ok()?;
+    try_eval_to_f64(&evaled).filter(|v| v.is_finite())
+  };
+
+  const SEEDS: &[f64] = &[
+    0.0, 1.0, -1.0, 2.0, -2.0, 5.0, -5.0, 10.0, -10.0, 20.0, -20.0, 50.0,
+    -50.0, 100.0, -100.0,
+  ];
+  const MAX_ITER: usize = 100;
+  const MAX_BACKTRACKS: usize = 40;
+  const TOL: f64 = 1e-13;
+  const STEP_H: f64 = 1e-6;
+
+  let mut roots: Vec<f64> = Vec::new();
+  for &seed in SEEDS {
+    let Some(mut fx) = eval_at(seed) else {
+      continue;
+    };
+    let mut x = seed;
+    let mut converged = fx.abs() < TOL;
+    for _ in 0..MAX_ITER {
+      if converged {
+        break;
+      }
+      let (Some(f_plus), Some(f_minus)) =
+        (eval_at(x + STEP_H), eval_at(x - STEP_H))
+      else {
+        break;
+      };
+      let deriv = (f_plus - f_minus) / (2.0 * STEP_H);
+      if !deriv.is_finite() || deriv.abs() < 1e-14 {
+        break;
+      }
+      let step = fx / deriv;
+      let mut shrink = 1.0;
+      let mut x_next = x - step;
+      let mut f_next = eval_at(x_next);
+      let mut tries = 0;
+      while tries < MAX_BACKTRACKS && f_next.is_none_or(|v| v.abs() >= fx.abs())
+      {
+        shrink *= 0.5;
+        x_next = x - step * shrink;
+        f_next = eval_at(x_next);
+        tries += 1;
+      }
+      let Some(fnext) = f_next else {
+        break;
+      };
+      x = x_next;
+      fx = fnext;
+      if fx.abs() < TOL {
+        converged = true;
+      }
+    }
+    if converged && x.is_finite() {
+      let is_duplicate = roots
+        .iter()
+        .any(|existing: &f64| (existing - x).abs() < 1e-6 * (1.0 + x.abs()));
+      if !is_duplicate {
+        roots.push(x);
+      }
+    }
+  }
+  if roots.is_empty() {
+    return None;
+  }
+  roots.sort_by(|a, b| a.partial_cmp(b).unwrap());
+  Some(Expr::List(
+    roots
+      .into_iter()
+      .map(|r| {
+        Expr::List(
+          vec![Expr::Rule {
+            pattern: Box::new(var.clone()),
+            replacement: Box::new(Expr::Real(r)),
+          }]
+          .into(),
+        )
+      })
+      .collect(),
+  ))
+}
+
+/// True when `target` occurs (structurally, via string comparison like
+/// `substitute_expr`) anywhere inside `expr`.
+fn expr_contains_expr(expr: &Expr, target: &Expr) -> bool {
+  if expr_to_string(expr) == expr_to_string(target) {
+    return true;
+  }
+  match expr {
+    Expr::List(items) => items.iter().any(|e| expr_contains_expr(e, target)),
+    Expr::FunctionCall { args, .. } => {
+      args.iter().any(|e| expr_contains_expr(e, target))
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      expr_contains_expr(left, target) || expr_contains_expr(right, target)
+    }
+    Expr::UnaryOp { operand, .. } => expr_contains_expr(operand, target),
+    Expr::Comparison { operands, .. } => {
+      operands.iter().any(|e| expr_contains_expr(e, target))
+    }
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => {
+      expr_contains_expr(pattern, target)
+        || expr_contains_expr(replacement, target)
+    }
+    _ => false,
+  }
 }
 
 /// Roots beyond this index are left alone: raising to them makes a
@@ -12944,7 +13101,7 @@ fn named_constant_value(name: &str) -> Option<f64> {
     "E" => std::f64::consts::E,
     "Degree" => std::f64::consts::PI / 180.0,
     "GoldenRatio" => f64::midpoint(1.0, 5.0_f64.sqrt()),
-    "EulerGamma" => 0.577_215_664_901_532_9,
+    "EulerGamma" => std::f64::consts::EULER_GAMMA,
     "Catalan" => 0.915_965_594_177_219,
     _ => return None,
   })

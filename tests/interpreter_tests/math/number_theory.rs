@@ -642,7 +642,10 @@ mod euler_phi {
     // Symbolic arguments stay silent and the values still compute
     clear_state();
     assert_eq!(interpret("StirlingS1[n, 2]").unwrap(), "StirlingS1[n, 2]");
-    assert!(woxi::get_captured_messages_raw().is_empty());
+    assert_eq!(
+      woxi::get_captured_messages_raw(),
+      [] as [std::string::String; 0]
+    );
     assert_eq!(interpret("StirlingS1[5, 2]").unwrap(), "-50");
     assert_eq!(interpret("StirlingS2[5, 2]").unwrap(), "15");
   }
@@ -2809,7 +2812,7 @@ mod gcd {
     ));
     let g = interpret_with_stdout("GCD[]").unwrap();
     assert_eq!(g.result, "0");
-    assert!(g.warnings.is_empty());
+    assert_eq!(g.warnings, [] as [std::string::String; 0]);
   }
 
   #[test]
@@ -2831,7 +2834,7 @@ mod gcd {
     // A purely symbolic argument stays unevaluated WITHOUT a warning.
     let s = interpret_with_stdout("GCD[Pi, 2]").unwrap();
     assert_eq!(s.result, "GCD[2, Pi]");
-    assert!(s.warnings.is_empty());
+    assert_eq!(s.warnings, [] as [std::string::String; 0]);
   }
 }
 
