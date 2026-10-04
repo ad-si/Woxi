@@ -7218,6 +7218,16 @@ fn find_root_complex_newton(
   ))
 }
 
+/// A FindRoot residual that evaluates to a one-element list (e.g. the
+/// derivative of a replacement by a list of solution rules) stands for the
+/// residual itself.
+fn unwrap_singleton_list(e: Expr) -> Expr {
+  match &e {
+    Expr::List(items) if items.len() == 1 => items[0].clone(),
+    _ => e,
+  }
+}
+
 /// Evaluate an expression numerically at a specific value of var.
 fn find_root_eval_at(
   expr: &Expr,
@@ -7226,7 +7236,9 @@ fn find_root_eval_at(
 ) -> Result<f64, InterpreterError> {
   let substituted =
     crate::syntax::substitute_variable(expr, var, &Expr::Real(x));
-  let evaled = crate::evaluator::evaluate_expr_to_expr(&substituted)?;
+  let evaled = unwrap_singleton_list(crate::evaluator::evaluate_expr_to_expr(
+    &substituted,
+  )?);
   match &evaled {
     Expr::Integer(n) => Ok(*n as f64),
     Expr::Real(r) => Ok(*r),
@@ -7559,7 +7571,8 @@ fn find_root_eval_multivar_at(
   bindings: &[(&str, &Expr)],
 ) -> Result<f64, InterpreterError> {
   let e = crate::syntax::substitute_variables(expr, bindings);
-  let evaled = crate::evaluator::evaluate_expr_to_expr(&e)?;
+  let evaled =
+    unwrap_singleton_list(crate::evaluator::evaluate_expr_to_expr(&e)?);
   match &evaled {
     Expr::Integer(k) => Ok(*k as f64),
     Expr::Real(r) => Ok(*r),
