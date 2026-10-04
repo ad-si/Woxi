@@ -163,6 +163,30 @@ mod user_defined_functions {
 mod conditional_definitions {
   use super::*;
 
+  /// Regression: a condition on a *named* sequence-list pattern
+  /// (`g:{__h} /; Length[g] == 2`) was tested while `g` was still unbound,
+  /// so `Length[g] == 2` read as a definite False and nothing matched.
+  #[test]
+  fn condition_on_named_sequence_list_pattern() {
+    clear_state();
+    assert_eq!(
+      interpret("MatchQ[{h[1], h[2]}, g:{__h} /; Length[g] == 2]").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("MatchQ[{h[1], h[2]}, g:{__h} /; Length[g] == 3]").unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret(
+        "total[xs:{__k} /; Length[xs] == 2] := Length[xs]; \
+         {total[{k[1], k[2]}], total[{k[1]}]}"
+      )
+      .unwrap(),
+      "{2, total[{k[1]}]}"
+    );
+  }
+
   #[test]
   fn single_condition() {
     clear_state();
