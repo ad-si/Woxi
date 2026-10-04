@@ -8292,6 +8292,22 @@ mod plot3d {
       );
     }
 
+    /// A one-sided `ImagePadding` shrinks the drawing area, but a `Graphics`
+    /// keeps equal x and y scales inside it, so a `Disk` stays a circle.
+    #[test]
+    fn image_padding_keeps_disks_round() {
+      let svg = export_svg(
+        "Graphics[{Disk[{0, 0}, 1]}, ImageSize -> {450, 300}, \
+         ImagePadding -> {{25, 0}, {0, 0}}]",
+      );
+      let attr = |name: &str| -> f64 {
+        let key = format!(" {name}=\"");
+        let i = svg.find(&key).expect(name) + key.len();
+        svg[i..i + svg[i..].find('"').unwrap()].parse().unwrap()
+      };
+      assert_eq!(attr("rx"), attr("ry"), "disk must stay round: {svg}");
+    }
+
     /// Every label of a tick set carries the decimals its step needs, so a
     /// 0.5-spaced axis reads `-1.0, -0.5, 0.0, 0.5, 1.0` — the origin
     /// included — while an integer-spaced one stays bare. Verified against

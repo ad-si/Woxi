@@ -42,10 +42,22 @@ fn main() {
 
   let mut widget_count = 0;
   for (idx, cell) in all_cells.iter().enumerate() {
-    if !matches!(cell.style, CellStyle::Input | CellStyle::Code) {
+    let is_input = matches!(cell.style, CellStyle::Input | CellStyle::Code);
+    // A notebook saved from a Demonstrations Project share link has no
+    // Input cell: the widget lives only in the compiled box dump, which the
+    // Studio rebuilds into a `Manipulate[…]` source before instantiating.
+    let rebuilt = if is_input {
+      None
+    } else {
+      woxi::notebook::reconstruct_manipulate_from_box_dump(&cell.content)
+    };
+    if !is_input && rebuilt.is_none() {
       continue;
     }
-    let code = cell.content.trim();
+    let code = rebuilt.as_deref().unwrap_or(cell.content.trim());
+    if rebuilt.is_some() {
+      println!("(rebuilt from box dump) {code}");
+    }
     for stmt in woxi::split_into_statements(code) {
       // Evaluate for side effects (definitions) exactly like the studio.
       let eval = woxi::interpret_with_stdout(&stmt);

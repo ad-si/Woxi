@@ -8353,26 +8353,8 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // 1 data-unit maps to the same number of pixels in both x and y,
   // so circles are always rendered round.
   // Skipped when AspectRatio -> Full (plots need independent axis scaling).
-  let svg_aspect = svg_w / svg_h;
-  let data_aspect_wh = bb.width() / bb.height();
-  if !aspect_ratio_full
-    && svg_aspect.is_finite()
-    && data_aspect_wh.is_finite()
-    && (svg_aspect - data_aspect_wh).abs() > 1e-9
-  {
-    if svg_aspect > data_aspect_wh {
-      // SVG is wider than data: expand bb width, centering horizontally
-      let new_width = bb.height() * svg_aspect;
-      let extra = new_width - bb.width();
-      bb.x_min -= extra / 2.0;
-      bb.x_max += extra / 2.0;
-    } else {
-      // SVG is taller than data: expand bb height, centering vertically
-      let new_height = bb.width() / svg_aspect;
-      let extra = new_height - bb.height();
-      bb.y_min -= extra / 2.0;
-      bb.y_max += extra / 2.0;
-    }
+  if !aspect_ratio_full {
+    expand_bbox_to_aspect(&mut bb, svg_w / svg_h);
   }
 
   // Compute margins for axis/frame tick labels. A PlotLabel reserves an
@@ -8506,6 +8488,12 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     (svg_w, svg_h)
   };
+  // The margins took room from one side only, so the drawing area is no
+  // longer the shape the data was fitted to; fit it again or circles come
+  // out as ellipses (e.g. `ImagePadding -> {{25, 0}, {0, 0}}`).
+  if explicit_size && !aspect_ratio_full {
+    expand_bbox_to_aspect(&mut bb, svg_w / svg_h);
+  }
   let total_width = svg_w + margin_left + margin_right;
   let total_height = svg_h + margin_bottom + margin_top;
 
@@ -12299,6 +12287,30 @@ pub(crate) fn option_name_value(
     return Some((name, std::borrow::Cow::Owned(inner)));
   }
   Some((name, value))
+}
+
+/// Grow `bb` (centered) until its width/height matches `aspect`, so one
+/// data unit covers the same number of pixels in x and y and circles stay
+/// round.
+fn expand_bbox_to_aspect(bb: &mut BBox, aspect: f64) {
+  let data_aspect = bb.width() / bb.height();
+  if !aspect.is_finite()
+    || !data_aspect.is_finite()
+    || (aspect - data_aspect).abs() <= 1e-9
+  {
+    return;
+  }
+  if aspect > data_aspect {
+    // Drawing area is wider than data: expand bb width.
+    let extra = bb.height() * aspect - bb.width();
+    bb.x_min -= extra / 2.0;
+    bb.x_max += extra / 2.0;
+  } else {
+    // Drawing area is taller than data: expand bb height.
+    let extra = bb.width() / aspect - bb.height();
+    bb.y_min -= extra / 2.0;
+    bb.y_max += extra / 2.0;
+  }
 }
 
 /// Extract the option name from a Rule pattern (e.g. Identifier("ImageSize") -> "ImageSize")
