@@ -4560,3 +4560,9 @@ proportions differ from wolframscript. Named edge shapes other than
   scheme rather than Wolfram's exact colors.
 - `ColorFunction -> "HypsometricTints"` (and other `ColorData` gradients
   not yet implemented) falls back to a gray ramp.
+
+## PolyhedronData["BilinskiDodecahedron", ...]
+
+Geometry (unit edges, volume, surface area, face structure) is derived from
+the golden-rhombus zonohedron; the vertex order, orientation and the
+`"Classes"` list were not checked against `wolframscript`.
