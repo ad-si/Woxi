@@ -15145,6 +15145,29 @@ mod pane_wrapper_display {
     assert!(svg.contains("<ellipse"), "the picture row draws: {svg}");
   }
 
+  // A styled `Text[Grid[…]]` readout above a picture (Demonstration
+  // layout): the nested tables must be laid out, not printed as source.
+  #[test]
+  fn styled_text_of_a_grid_in_a_grid_cell_lays_out_the_grid() {
+    clear_state();
+    let svg = interpret_with_stdout(
+      "Grid[{{Pane[Style[Text[Grid[{{Grid[{{\"s\", \"l\"}, {\"DE\", 3}}, \
+         Dividers -> All], Grid[{{\"c\"}, {4}}, Dividers -> All]}}]], \
+         \"Label\", 14], ImageSize -> {450, 100}]}, \
+        {Graphics[{Disk[]}, ImageSize -> {200, 100}]}}]",
+    )
+    .unwrap()
+    .graphics
+    .expect("the grid should render");
+    assert!(!svg.contains("Grid["), "the layout must not print: {svg}");
+    for part in ["s", "DE", "c", "4"] {
+      assert!(
+        svg.contains(&format!(">{part}<")),
+        "missing `{part}`: {svg}"
+      );
+    }
+  }
+
   // `Item[…]` and `Text[…]` cells are the same kind of wrapper — they say
   // how to set a cell, not what it shows.
   #[test]

@@ -13780,6 +13780,15 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
     Expr::FunctionCall { .. } if crate::evaluator::lays_out_a_graphic(cell) => {
       crate::evaluator::expr_to_svg(cell)
     }
+    // `Style[Text[Grid[…]], …]` (a Demonstration's readout panel): the
+    // `Text` only says how to set what it holds, so look through it for a
+    // nested layout or picture.
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Text" | "Pane" | "Item" | "Deploy")
+        && args.len() == 1 =>
+    {
+      return grid_cell_graphic(&unwrap_display_wrappers(cell));
+    }
     // A cell may itself be a block layout, which the text pass cannot
     // set: lay it out on its own and place the result as a picture.
     Expr::FunctionCall { name, args } => {
