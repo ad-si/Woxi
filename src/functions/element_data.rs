@@ -2462,7 +2462,24 @@ fn get_property(elem: &Element, property: &str) -> Expr {
     | "VanDerWaalsRadius"
     | "VaporizationHeat"
     | "VickersHardness"
-    | "YoungModulus" => missing_not_available(),
+    | "YoungModulus"
+    // Same "recognised but not tabulated" treatment, for properties kept out
+    // of `SUPPORTED_PROPERTIES` alongside `StableIsotopes` below (it isn't
+    // verified whether wolframscript's `ElementData["Properties"]` lists
+    // them, so they stay out of that enumeration while still answering).
+    | "CriticalPressure"
+    | "CriticalTemperature"
+    | "ElectricalConductivity"
+    | "HalfLife"
+    | "HumanAbundance"
+    | "MeteoriteAbundance"
+    | "NeutronCrossSection"
+    | "NeutronMassAbsorption"
+    | "OceanAbundance"
+    | "SolarAbundance"
+    | "ThermalExpansion"
+    | "UniverseAbundance"
+    | "Valence" => missing_not_available(),
     "IonizationEnergies" => ionization_energies_for(elem.atomic_number),
     // Answers directly (e.g. from the Wolfram Demonstration
     // "BindingEnergiesOfIsotopes", which calls it) but is deliberately left
@@ -2722,6 +2739,71 @@ static SUPPORTED_PROPERTIES: &[&str] = &[
   "YoungModulus",
 ];
 
+// Properties `get_property` answers (with real data or `Missing[NotAvailable]`)
+// but that are kept out of `SUPPORTED_PROPERTIES` because it isn't verified
+// whether wolframscript's `ElementData["Properties"]` enumeration lists them
+// (see `StableIsotopes`'s own carve-out in `get_property` above). Recognised
+// here so `ElementData[…, property, "Description"]` still answers for them.
+static PROPERTIES_EXCLUDED_FROM_ENUMERATION: &[&str] = &[
+  "CriticalPressure",
+  "CriticalTemperature",
+  "ElectricalConductivity",
+  "HalfLife",
+  "HumanAbundance",
+  "MeteoriteAbundance",
+  "NeutronCrossSection",
+  "NeutronMassAbsorption",
+  "OceanAbundance",
+  "SolarAbundance",
+  "StableIsotopes",
+  "ThermalExpansion",
+  "UniverseAbundance",
+  "Valence",
+];
+
+fn is_recognized_property(property: &str) -> bool {
+  SUPPORTED_PROPERTIES.contains(&property)
+    || PROPERTIES_EXCLUDED_FROM_ENUMERATION.contains(&property)
+}
+
+/// A human-readable name for an `ElementData` property, independent of
+/// which element it's asked about — what `ElementData[elem, property,
+/// "Description"]` answers. Most properties are just their CamelCase name
+/// decamelized to lowercase words; a handful keep the capitalization and
+/// possessive/hyphenated form of the eponym or compound term they're
+/// commonly known by (e.g. "Young's modulus", "half-life") the way
+/// reference works on materials science and chemistry name them.
+fn property_description(property: &str) -> String {
+  match property {
+    "YoungModulus" => "Young's modulus".to_string(),
+    "BrinellHardness" => "Brinell hardness".to_string(),
+    "MohsHardness" => "Mohs hardness".to_string(),
+    "VickersHardness" => "Vickers hardness".to_string(),
+    "VanDerWaalsRadius" => "Van der Waals radius".to_string(),
+    "VaporizationHeat" => "heat of vaporization".to_string(),
+    "HalfLife" => "half-life".to_string(),
+    "NeutronCrossSection" => "neutron cross-section".to_string(),
+    _ => decamelize(property),
+  }
+}
+
+/// Splits a CamelCase identifier into lowercase words: `"AbsoluteBoilingPoint"`
+/// → `"absolute boiling point"`.
+fn decamelize(name: &str) -> String {
+  let mut out = String::with_capacity(name.len() + 4);
+  for (i, c) in name.chars().enumerate() {
+    if c.is_uppercase() {
+      if i > 0 {
+        out.push(' ');
+      }
+      out.extend(c.to_lowercase());
+    } else {
+      out.push(c);
+    }
+  }
+  out
+}
+
 pub fn element_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   match args.len() {
     0 => {
@@ -2787,6 +2869,27 @@ pub fn element_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       };
       match &args[1] {
         Expr::String(prop) => Ok(get_property(elem, prop)),
+        _ => Ok(unevaluated("ElementData", args)),
+      }
+    }
+    3 => {
+      // ElementData[element, property, annotation] — an annotation *about*
+      // the property itself, not a per-element datum. Only "Description"
+      // is implemented, matching the one annotation the Demonstrations
+      // site's Manipulate controls build their PopupMenu labels from.
+      if find_element(&args[0]).is_none() {
+        return Ok(unevaluated("ElementData", args));
+      }
+      match (&args[1], &args[2]) {
+        (Expr::String(prop), Expr::String(annotation))
+          if annotation == "Description" =>
+        {
+          if is_recognized_property(prop) {
+            Ok(Expr::String(property_description(prop)))
+          } else {
+            Ok(missing_not_found())
+          }
+        }
         _ => Ok(unevaluated("ElementData", args)),
       }
     }

@@ -13835,7 +13835,7 @@ fn compose_series_pair(outer: &Expr, inner: &Expr) -> Option<Expr> {
   let mut dense: Vec<Expr> = Vec::new();
   if nmin_r < big_m {
     let mut hi = big_m - 1;
-    while hi > nmin_r && coeff_map.get(&hi).is_none_or(&is_zero) {
+    while hi > nmin_r && coeff_map.get(&hi).is_none_or(is_zero) {
       hi -= 1;
     }
     for p in nmin_r..=hi {
@@ -15396,6 +15396,17 @@ fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "NIntegrate expects at least 2 arguments".into(),
     ));
+  }
+
+  // A list-valued integrand is integrated component-wise.
+  if let Expr::List(items) = &args[0] {
+    let mut results = Vec::with_capacity(items.len());
+    for item in items {
+      let mut sub_args = args.to_vec();
+      sub_args[0] = item.clone();
+      results.push(nintegrate_ast_impl(&sub_args)?);
+    }
+    return Ok(Expr::List(results.into()));
   }
 
   // Parse options from additional arguments (Tolerance, Method, MaxRecursion, etc.)
@@ -17079,6 +17090,24 @@ pub fn dt_total_differential_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   let expr = &args[0];
+  // Dt threads over an equation: Dt[a == b] is Dt[a] == Dt[b].
+  if let Expr::Comparison {
+    operands,
+    operators,
+  } = expr
+    && operators
+      .iter()
+      .all(|op| matches!(op, crate::syntax::ComparisonOp::Equal))
+  {
+    let operands = operands
+      .iter()
+      .map(|o| dt_total_differential_ast(std::slice::from_ref(o)))
+      .collect::<Result<Vec<_>, _>>()?;
+    return crate::evaluator::evaluate_expr_to_expr(&Expr::Comparison {
+      operands,
+      operators: operators.clone(),
+    });
+  }
   // Numeric/named constants: Dt = 0.
   if is_true_constant(expr) {
     return Ok(Expr::Integer(0));

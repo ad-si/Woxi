@@ -2993,14 +2993,7 @@ fn intersecting_or_disjoint(
     let a_strs: Vec<String> = a.iter().map(expr_to_string).collect();
     b.iter().any(|e| a_strs.contains(&expr_to_string(e)))
   };
-  Ok(Expr::Identifier(
-    if has_common == want_common {
-      "True"
-    } else {
-      "False"
-    }
-    .to_string(),
-  ))
+  Ok(bool_expr(has_common == want_common))
 }
 
 /// DuplicateFreeQ[list] - True if `list` has no duplicated elements (default

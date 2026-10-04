@@ -178,9 +178,18 @@ fn a_curried_definition_is_a_function() {
 
 #[test]
 fn comparisons_are_not_definitions() {
-  assert!(definitions_of("If[x == 1, a, b]").is_empty());
-  assert!(definitions_of("x <= 1 && y >= 2").is_empty());
-  assert!(definitions_of("x =!= y").is_empty());
+  assert_eq!(
+    definitions_of("If[x == 1, a, b]"),
+    [] as [woxi::lsp::analysis::Definition; 0]
+  );
+  assert_eq!(
+    definitions_of("x <= 1 && y >= 2"),
+    [] as [woxi::lsp::analysis::Definition; 0]
+  );
+  assert_eq!(
+    definitions_of("x =!= y"),
+    [] as [woxi::lsp::analysis::Definition; 0]
+  );
 }
 
 #[test]
@@ -222,8 +231,14 @@ fn locals_are_found_but_marked_as_nested() {
 
 #[test]
 fn definitions_inside_strings_and_comments_are_ignored() {
-  assert!(definitions_of(r#"Print["x = 5"]"#).is_empty());
-  assert!(definitions_of("(* x = 5 *)").is_empty());
+  assert_eq!(
+    definitions_of(r#"Print["x = 5"]"#),
+    [] as [woxi::lsp::analysis::Definition; 0]
+  );
+  assert_eq!(
+    definitions_of("(* x = 5 *)"),
+    [] as [woxi::lsp::analysis::Definition; 0]
+  );
 }
 
 #[test]
@@ -266,13 +281,22 @@ fn reports_a_syntax_error_once() {
 #[test]
 fn valid_code_has_no_diagnostics() {
   let source = "Map[Sin, Range[3]]";
-  assert!(diagnostics(source, &tokenize(source), &[]).is_empty());
+  assert_eq!(
+    diagnostics(source, &tokenize(source), &[]),
+    [] as [woxi::lsp::analysis::Diagnostic; 0]
+  );
 }
 
 #[test]
 fn empty_input_has_no_diagnostics() {
-  assert!(diagnostics("", &tokenize(""), &[]).is_empty());
-  assert!(diagnostics("  \n", &tokenize("  \n"), &[]).is_empty());
+  assert_eq!(
+    diagnostics("", &tokenize(""), &[]),
+    [] as [woxi::lsp::analysis::Diagnostic; 0]
+  );
+  assert_eq!(
+    diagnostics("  \n", &tokenize("  \n"), &[]),
+    [] as [woxi::lsp::analysis::Diagnostic; 0]
+  );
 }
 
 #[test]
@@ -282,14 +306,20 @@ fn a_line_continuation_is_not_a_syntax_error() {
   // example) must not be flagged as broken.
   let source = "a = {\"one\", \\\n{\"two\"}};\n";
   assert!(woxi::parse(source).is_err(), "the raw grammar rejects this");
-  assert!(diagnostics(source, &tokenize(source), &[]).is_empty());
+  assert_eq!(
+    diagnostics(source, &tokenize(source), &[]),
+    [] as [woxi::lsp::analysis::Diagnostic; 0]
+  );
 }
 
 #[test]
 fn statements_separated_by_newlines_only_are_not_syntax_errors() {
   // The interpreter inserts the missing statement separators itself.
   let source = "a = 1\nb = 2\nPrint[a + b]\n";
-  assert!(diagnostics(source, &tokenize(source), &[]).is_empty());
+  assert_eq!(
+    diagnostics(source, &tokenize(source), &[]),
+    [] as [woxi::lsp::analysis::Diagnostic; 0]
+  );
 }
 
 #[test]
@@ -315,13 +345,19 @@ fn a_definition_in_the_file_shadows_an_unsupported_builtin() {
   let source = "WordData[x_] := x\nWordData[1]\n";
   let tokens = tokenize(source);
   let definitions = find_definitions(source, &tokens);
-  assert!(diagnostics(source, &tokens, &definitions).is_empty());
+  assert_eq!(
+    diagnostics(source, &tokens, &definitions),
+    [] as [woxi::lsp::analysis::Diagnostic; 0]
+  );
 }
 
 #[test]
 fn implemented_builtins_are_not_warned_about() {
   let source = "Table[Sin[i], {i, 3}]";
-  assert!(diagnostics(source, &tokenize(source), &[]).is_empty());
+  assert_eq!(
+    diagnostics(source, &tokenize(source), &[]),
+    [] as [woxi::lsp::analysis::Diagnostic; 0]
+  );
 }
 
 #[test]

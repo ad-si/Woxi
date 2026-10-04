@@ -557,7 +557,7 @@ fn upper_incomplete_gamma(a: f64, z: f64) -> f64 {
 /// for larger z (cf. Numerical Recipes §6.3).
 fn exp_integral_e1(z: f64) -> f64 {
   if z <= 1.0 {
-    let euler_gamma = 0.5772156649015329_f64;
+    let euler_gamma = std::f64::consts::EULER_GAMMA;
     let mut sum = -euler_gamma - z.ln();
     let mut term = 1.0_f64;
     for k in 1..200 {
@@ -1338,7 +1338,7 @@ fn is_positive_numeric(expr: &Expr) -> bool {
 
 /// Compute the regularized incomplete beta function I_x(a, b) numerically
 /// Uses the continued fraction representation (Lentz's algorithm)
-fn beta_regularized_numeric(x: f64, a: f64, b: f64) -> f64 {
+pub(crate) fn beta_regularized_numeric(x: f64, a: f64, b: f64) -> f64 {
   if x <= 0.0 {
     return 0.0;
   }
@@ -2126,7 +2126,7 @@ fn log_barnes_g_series(z: f64) -> f64 {
   }
 
   let log_2pi = (2.0 * std::f64::consts::PI).ln();
-  let gamma_e = 0.5772156649015329;
+  let gamma_e = std::f64::consts::EULER_GAMMA;
 
   let mut result =
     z / 2.0 * log_2pi - f64::midpoint(z, (1.0 + gamma_e) * z * z);

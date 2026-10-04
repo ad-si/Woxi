@@ -1009,9 +1009,7 @@ pub fn molecule_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated("MoleculeQ", args));
   }
   let valid = graph_from_molecule_expr(&args[0]).is_some();
-  Ok(Expr::Identifier(
-    if valid { "True" } else { "False" }.to_string(),
-  ))
+  Ok(bool_expr(valid))
 }
 
 /// ConnectedMoleculeQ[mol] — True when every atom is reachable from every
@@ -1024,9 +1022,7 @@ pub fn connected_molecule_q_ast(
     Some(graph) => connected_components(&graph).len() <= 1,
     None => false,
   };
-  Ok(Expr::Identifier(
-    if connected { "True" } else { "False" }.to_string(),
-  ))
+  Ok(bool_expr(connected))
 }
 
 /// ConnectedMoleculeComponents[mol] — the connected components of `mol`, each
@@ -1077,9 +1073,7 @@ pub fn connected_molecule_components_ast(
 /// argument that is not a molecule or a bond gives False.
 pub fn bond_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let found = bond_present(&args[0], &args[1]);
-  Ok(Expr::Identifier(
-    if found { "True" } else { "False" }.to_string(),
-  ))
+  Ok(bool_expr(found))
 }
 
 fn bond_present(mol: &Expr, bond: &Expr) -> bool {
