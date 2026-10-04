@@ -1791,6 +1791,56 @@ mod tests {
     }
   }
 
+  /// A `TabView` whose panes are `Grid`s with `SetterBar[Dynamic[var],
+  /// choices] /. labels` cells (a key picker showing note names for numeric
+  /// choices) and a `Sound[…]` row. The bars are lifted into the control
+  /// panel with their labels, each shown only on its own tab, and the
+  /// selected tab's grid is drawn as the picture instead of leaving the
+  /// symbolic `TabView[…]` text.
+  #[test]
+  fn tabview_grid_panes_with_body_setter_bars() {
+    let code = r#"Manipulate[
+      TabView[{
+        {"Major", "Major" -> Text@Grid[{
+          {SetterBar[Dynamic[ka], {0, 7, 2}] /. names, "x"},
+          {Sound[{SoundNote[ka, 0.2], SoundNote[ka + 4, 0.2]}], "y"}}]},
+        {"Minor", "Minor" -> Grid[{
+          {SetterBar[Dynamic[kb], {9, 4}] /. names}}]}
+      }, Dynamic[tab]],
+      {{tab, "Major"}, {"Major", "Minor"}, ControlType -> None},
+      {ka, 0, ControlType -> None},
+      {kb, 9, ControlType -> None},
+      Initialization :> (names = {0 -> "C", 7 -> "G", 2 -> "D", 9 -> "A", 4 -> "E"})
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = ManipulateState::from_expr(&expr)
+      .expect("the tabbed setter-bar layout should build a ManipulateState");
+    assert_eq!(state.error, None, "{:?}", state.error);
+
+    let names: Vec<&str> = state.controls.iter().map(|c| c.name()).collect();
+    assert_eq!(names, ["tab", "ka", "kb"]);
+    let labels = |name: &str| {
+      let c = state.controls.iter().find(|c| c.name() == name).unwrap();
+      format!("{c:?}")
+    };
+    assert!(
+      labels("ka").contains("\"C\", \"G\", \"D\""),
+      "setter bar choices must carry their note-name labels: {}",
+      labels("ka")
+    );
+    assert!(
+      !state.body.contains("SetterBar"),
+      "lifted setter bars must not stay in the body: {}",
+      state.body
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the selected tab's grid must render as a picture, got text {:?}",
+      state.text_output
+    );
+  }
+
   /// Checked a randomly-sampled Wolfram Demonstrations Project notebook
   /// ("Newton's Polynomial Solver") whose control panel is written as
   /// `Text@Grid[{{header, header}, {Control[…], Control[…]}, …}]` — a
