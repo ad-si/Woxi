@@ -3841,6 +3841,37 @@ fn inset_primitives(
   // is rendered here first (a Demonstration builds its little inset scene
   // inside the body and insets the variable), which is also what keeps it
   // from falling through to the text path and printing `-Graphics3D-`.
+  // `Inset[Labeled[g, label], …]` keeps its caption: the picture is
+  // embedded as usual and the label text is stacked beneath it.
+  if let Expr::FunctionCall {
+    name: labeled,
+    args: largs,
+  } = &args[0]
+    && labeled == "Labeled"
+    && largs.len() == 2
+  {
+    let mut inner_args = args.to_vec();
+    inner_args[0] = largs[0].clone();
+    let mut prims = inset_primitives(&inner_args, errors)?;
+    if let [Primitive::InsetGraphic { svg, w, h, .. }] = prims.as_mut_slice() {
+      let caption = graphics_text_content(&largs[1]);
+      if !caption.trim().is_empty() {
+        const CAPTION_H: f64 = 24.0;
+        let total_h = *h + CAPTION_H;
+        *svg = format!(
+          "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{w:.2}\" \
+           height=\"{total_h:.2}\" viewBox=\"0 0 {w:.2} {total_h:.2}\">{svg}\
+           <text x=\"{:.2}\" y=\"{:.2}\" text-anchor=\"middle\" \
+           font-family=\"sans-serif\" font-size=\"12\" fill=\"black\">{}</text></svg>",
+          *w / 2.0,
+          *h + 16.0,
+          box_string_to_svg(&caption)
+        );
+        *h = total_h;
+      }
+    }
+    return Some(prims);
+  }
   let anchor = args.get(1).and_then(expr_to_anchor);
   // Without a `size`, an inset is the object at its own natural size — not
   // stretched or shrunk to whatever extent its primitives happen to span in

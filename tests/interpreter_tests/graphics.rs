@@ -11086,6 +11086,34 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn pie_chart_part_gives_disk_primitives() {
+      // `PieChart[…][[1]]` is the list of slices, so a Demonstration can
+      // rewrite them with `/. Disk[c_, r_, a_] :> …`.
+      assert_eq!(interpret("Length[PieChart[{1, 2, 3}][[1]]]").unwrap(), "3");
+      assert_eq!(
+        interpret("Count[PieChart[{1, 2, 3}][[1]], _Disk, Infinity]").unwrap(),
+        "3"
+      );
+      assert_eq!(
+        interpret(
+          "Count[PieChart[{1, 2}, ChartLabels -> {\"a\", \"b\"}][[1]], \
+           _Text, Infinity]"
+        )
+        .unwrap(),
+        "2"
+      );
+    }
+
+    #[test]
+    fn inset_labeled_graphic_keeps_caption() {
+      let svg = export_svg(
+        "Graphics[{Inset[Labeled[Graphics[{Disk[]}], \"my caption\"], \
+         {0, 0}]}]",
+      );
+      assert!(svg.contains("my caption"), "{svg}");
+    }
+
+    #[test]
     fn pie_chart_single_slice() {
       insta::assert_snapshot!(export_svg("PieChart[{100}]"));
     }

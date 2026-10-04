@@ -4614,8 +4614,8 @@ mod interpreter_tests {
 
   #[test]
   fn test_replace_all_on_unmatched_rendered_graphic_no_op() {
-    // Regression: PieChart (and the other chart functions) render straight
-    // to SVG with no symbolic primitive list, so `PieChart[…][[1]]` stays
+    // Regression: BarChart (and the other chart functions) render straight
+    // to SVG with no symbolic primitive list, so `BarChart[…][[1]]` stays
     // an unevaluated `Part[…]` wrapping the opaque graphic. Applying a rule
     // that matches nothing (no `Disk[…]` anywhere) fell through to the
     // string-based ReplaceAll fallback, which serializes the graphic to its
@@ -4625,7 +4625,7 @@ mod interpreter_tests {
     clear_state();
     assert_eq!(
       interpret(
-        "Head[PieChart[{0.3, 0.7}][[1]] /. Disk[c_, r_, a_] :> Disk[c, r*2, a]]"
+        "Head[BarChart[{0.3, 0.7}][[1]] /. Disk[c_, r_, a_] :> Disk[c, r*2, a]]"
       )
       .unwrap(),
       "Part",
