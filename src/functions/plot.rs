@@ -292,6 +292,12 @@ pub(crate) fn evaluate_at_xy(
   let sub1 = substitute_var(body, xvar, &Expr::Real(xval));
   let sub2 = substitute_var(&sub1, yvar, &Expr::Real(yval));
   let result = evaluate_expr_to_expr(&sub2).ok()?;
+  // A body that evaluates to a one-element list (e.g. a function returning
+  // `{value}`) is a single surface, like `Plot3D[{f}, ...]`.
+  let result = match &result {
+    Expr::List(items) if items.len() == 1 => items[0].clone(),
+    other => other.clone(),
+  };
   if let Some(v) = try_eval_to_f64_lenient(&result) {
     return Some(v);
   }

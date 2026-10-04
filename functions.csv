@@ -1244,7 +1244,7 @@ ParametricNDSolve,,🚫,,9.0,1231
 AllTrue,Checks if all elements in a list are true,✅,pure,10.0,1232
 Editable,Editable display option wrapper (stays symbolic),✅,unevaluated,3.0,1233
 MoebiusMu,Returns the Möbius function value,✅,pure,1.0,1235
-FinancialDerivative,,🚫,,8.0,1236
+FinancialDerivative,Price and Greeks (Delta Gamma Vega Theta Rho) of a European call or put under Black-Scholes-Merton,✅,pure,8.0,1236
 Setter,Setter control element (stays symbolic in script mode),✅,unevaluated,6.0,1237
 GraphicsColumn,Arranges graphics in a vertical column,✅,pure,6.0,1239
 MakeExpression,Parse a string into a held (unevaluated) expression,✅,pure,3.0,1239

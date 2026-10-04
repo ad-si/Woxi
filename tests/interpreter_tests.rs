@@ -5469,6 +5469,7 @@ mod interpreter_tests {
   mod element_data;
   mod entity;
   mod example_data;
+  mod financial;
   mod function_application;
   mod function_definitions;
   mod functions;
