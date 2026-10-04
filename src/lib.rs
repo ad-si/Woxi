@@ -1357,6 +1357,27 @@ fn promote_result_graphics(expr: &syntax::Expr) {
       .and_then(|sel| selected_tabview_pane(items, sel))
       .unwrap_or(&items[0]);
     let (_, _, content) = functions::graphics::tabview_pane_parts(selected);
+    // A pane laid out as a table/column/row (`Text@Grid[…]`, the common
+    // way a Demonstration fills a tab with prose, notes and controls) is
+    // drawn as one picture — the tab's visible content — rather than left
+    // as the symbolic `TabView[…]` source text.
+    let mut layout = content;
+    while let syntax::Expr::FunctionCall { name, args } = layout
+      && matches!(name.as_str(), "Text" | "Pane" | "Panel")
+      && !args.is_empty()
+    {
+      layout = &args[0];
+    }
+    if let syntax::Expr::FunctionCall { name, args } = layout
+      && matches!(name.as_str(), "Grid" | "Column" | "Row")
+      && !args.is_empty()
+    {
+      let svg = evaluator::expr_to_svg(layout);
+      if !svg.is_empty() {
+        capture_graphics(&svg);
+        return;
+      }
+    }
     promote_result_graphics(content);
   }
 }
@@ -4078,6 +4099,10 @@ fn render_visual_display_pipeline(expr: &syntax::Expr) -> syntax::Expr {
   // Graphics[…]}]] renders the column with its embedded graphic). CLI
   // mode keeps the symbolic Pane[…] echo to match wolframscript.
   let expr = unwrap_display_pass_through(expr);
+  // A picture the wrapper held (`Pane[Image[…], {w, h}]`) only becomes the
+  // top-level Image now that the wrapper is gone, after the top-level
+  // image pass has already run.
+  let expr = render_image_if_needed(expr);
   let expr = render_interactive_pane_if_needed(expr);
   let expr = render_labeled_if_needed(expr);
   let expr = render_dynamic_if_needed(expr);

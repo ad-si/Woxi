@@ -497,6 +497,10 @@ fn table_over_iterator(
     let mut results = Vec::new();
     let mut current_expr = min_expr.clone();
     let mut safety_counter: usize = 0;
+    // Accumulated rounding (0.25 + 14 * 0.05 = 0.9500000000000003) must not
+    // push the last value past `max`, so compare with a slack proportional
+    // to the step rather than to machine epsilon.
+    let slack = 1e-9 * step_num.abs();
     if step_num > 0.0 {
       loop {
         let current_num =
@@ -508,7 +512,7 @@ fn table_over_iterator(
               "Table: iterator value became non-numeric".into(),
             )
           })?;
-        if current_num > max_num + f64::EPSILON {
+        if current_num > max_num + slack {
           break;
         }
         let val = eval_at(&current_expr)?;
@@ -535,7 +539,7 @@ fn table_over_iterator(
               "Table: iterator value became non-numeric".into(),
             )
           })?;
-        if current_num < max_num - f64::EPSILON {
+        if current_num < max_num - slack {
           break;
         }
         let val = eval_at(&current_expr)?;

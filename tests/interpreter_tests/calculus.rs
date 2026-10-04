@@ -10650,6 +10650,21 @@ mod findroot_symbolic_start {
     );
   }
 
+  // A residual that comes out as a one-element list (e.g. from a derivative
+  // of a replacement by a list of solution rules) is the residual itself.
+  #[test]
+  fn findroot_single_element_list_residual() {
+    assert_eq!(
+      interpret("FindRoot[{2 x} == 1, {x, 1}]").unwrap(),
+      "{x -> 0.5}"
+    );
+    assert_eq!(
+      interpret("g[s_?NumericQ] := {2 s}; FindRoot[g[s] == 3, {s, 1}]")
+        .unwrap(),
+      "{s -> 1.5}"
+    );
+  }
+
   // Multivariate FindRoot: a system of equations with one {var, start} per
   // variable, solved by multidimensional Newton iteration.
   #[test]

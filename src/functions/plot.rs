@@ -292,6 +292,12 @@ pub(crate) fn evaluate_at_xy(
   let sub1 = substitute_var(body, xvar, &Expr::Real(xval));
   let sub2 = substitute_var(&sub1, yvar, &Expr::Real(yval));
   let result = evaluate_expr_to_expr(&sub2).ok()?;
+  // A body that evaluates to a one-element list (e.g. a function returning
+  // `{value}`) is a single surface, like `Plot3D[{f}, ...]`.
+  let result = match &result {
+    Expr::List(items) if items.len() == 1 => items[0].clone(),
+    other => other.clone(),
+  };
   if let Some(v) = try_eval_to_f64_lenient(&result) {
     return Some(v);
   }
@@ -2602,8 +2608,11 @@ pub(crate) fn plot_labels_svg(
     // edge — adapting to the actual tick width.
     let tick_w = max_y_tick_label_chars(y_min, y_max) as f64 * sf * 13.0 * 0.6;
     let tick_left = plot_x0 - 8.0 * sf - tick_w;
-    let lx = (tick_left - font_size * 0.5 - sf * 5.0)
-      .max(margin_left_f + font_size * 0.5);
+    // `lx` is the text baseline: the glyphs extend ~0.75em to its left
+    // (the rotated "up" direction) and ~0.25em to its right, so the clamp
+    // must keep the ascenders inside the image.
+    let lx = (tick_left - font_size * 0.25 - sf * 5.0)
+      .max(margin_left_f + font_size * 0.8);
     labels_svg.push_str(&format!(
       "<text x=\"{lx:.1}\" y=\"{cy:.1}\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \

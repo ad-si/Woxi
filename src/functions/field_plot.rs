@@ -3294,6 +3294,12 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `{col - 1, col} x {n_rows - row, n_rows - row + 1}` — row 1 at the top,
   // column 1 at the left, matching `ArrayPlot`'s own `PlotRange`.
   let mut epilog: Vec<Expr> = Vec::new();
+  // `DataRange -> {{xmin, xmax}, {ymin, ymax}}`: the coordinates the grid
+  // spans (default: cell indices). It only places the grid in the `Raster`
+  // that `First`/`Part` expose; the standalone picture is unaffected.
+  let mut data_range: Option<((f64, f64), (f64, f64))> = None;
+  // `DataReversed -> True`: first row at the bottom instead of the top.
+  let mut data_reversed = false;
 
   for opt in &args[1..] {
     if let Expr::Rule {
@@ -3303,6 +3309,31 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       && let Expr::Identifier(name) = pattern.as_ref()
     {
       match name.as_str() {
+        "DataRange" => {
+          let val = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| (**replacement).clone());
+          if let Expr::List(axes) = &val
+            && axes.len() == 2
+            && let (Expr::List(xs), Expr::List(ys)) = (&axes[0], &axes[1])
+            && xs.len() == 2
+            && ys.len() == 2
+            && let (Some(x0), Some(x1), Some(y0), Some(y1)) = (
+              try_eval_to_f64(&xs[0]),
+              try_eval_to_f64(&xs[1]),
+              try_eval_to_f64(&ys[0]),
+              try_eval_to_f64(&ys[1]),
+            )
+          {
+            data_range = Some(((x0, x1), (y0, y1)));
+          }
+        }
+        "DataReversed" => {
+          if let Expr::Identifier(v) = replacement.as_ref()
+            && v == "True"
+          {
+            data_reversed = true;
+          }
+        }
         "ColorRules" => {
           color_rules = Some(
             evaluate_expr_to_expr(replacement)
@@ -3404,6 +3435,7 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (bg_color, _, _, _, _) = plot_theme();
   let border_color = RGBColor(0x66, 0x66, 0x66);
 
+  let mut cell_rgb: Vec<Vec<(u8, u8, u8)>> = Vec::with_capacity(n_rows);
   let mut buf = String::new();
   {
     let root = SVGBackend::with_string(&mut buf, (render_width, render_height))
@@ -3416,6 +3448,7 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let cell_h = render_height as f64 / n_rows as f64;
 
     for (i, row) in matrix.iter().enumerate() {
+      let mut rgb_row = Vec::with_capacity(row.len());
       for (j, cell) in row.iter().enumerate() {
         let (r, g, b) = match cell {
           ArrayCell::Color(color) => (
@@ -3492,10 +3525,12 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         };
 
+        rgb_row.push((r, g, b));
+        let vi = if data_reversed { n_rows - 1 - i } else { i };
         let x0 = (j as f64 * cell_w).round() as i32;
-        let y0 = (i as f64 * cell_h).round() as i32;
+        let y0 = (vi as f64 * cell_h).round() as i32;
         let x1 = ((j + 1) as f64 * cell_w).round() as i32;
-        let y1 = ((i + 1) as f64 * cell_h).round() as i32;
+        let y1 = ((vi + 1) as f64 * cell_h).round() as i32;
 
         root
           .draw(&Rectangle::new(
@@ -3506,6 +3541,7 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             InterpreterError::EvaluationError(format!("ArrayPlot: {e}"))
           })?;
       }
+      cell_rgb.push(rgb_row);
     }
 
     // Draw mesh grid lines between cells
@@ -3600,7 +3636,41 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let buf = frame_labelled_svg(&buf, svg_width, svg_height, &frame_labels);
 
-  Ok(crate::graphics_result(buf))
+  // The symbolic content, as `First`/`Part` see it: a `Raster` of the cell
+  // colors with the first row at the top (`Raster` rows run bottom-up, so a
+  // default plot lists them reversed) over the `DataRange` rectangle.
+  let ((x0, x1), (y0, y1)) =
+    data_range.unwrap_or(((0.0, n_cols as f64), (0.0, n_rows as f64)));
+  let channel = |v: u8| Expr::Real(f64::from(v) / 255.0);
+  let mut raster_rows: Vec<Expr> = cell_rgb
+    .iter()
+    .map(|row| {
+      Expr::List(
+        row
+          .iter()
+          .map(|&(r, g, b)| {
+            Expr::List(vec![channel(r), channel(g), channel(b)].into())
+          })
+          .collect::<Vec<_>>()
+          .into(),
+      )
+    })
+    .collect();
+  if !data_reversed {
+    raster_rows.reverse();
+  }
+  let rect = Expr::List(
+    vec![
+      Expr::List(vec![Expr::Real(x0), Expr::Real(y0)].into()),
+      Expr::List(vec![Expr::Real(x1), Expr::Real(y1)].into()),
+    ]
+    .into(),
+  );
+  let structure = call1(
+    "Graphics",
+    call("Raster", vec![Expr::List(raster_rows.into()), rect]),
+  );
+  Ok(crate::graphics_result_with_structure(buf, structure))
 }
 
 /// Put a plot's `FrameLabel` text around an already-rendered picture.
