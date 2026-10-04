@@ -7038,6 +7038,45 @@ mod to_rules {
 }
 
 mod reduce {
+  #[test]
+  fn zero_product_equation_keeps_every_factor_branch() {
+    // `a c == 0` also holds for `a == 0`; solving it only for `c` used to
+    // lose that branch and report `False` here.
+    assert_eq!(
+      interpret("Reduce[{A*C==0,B*C==1},{A,B,C}]").unwrap(),
+      "A == 0 && C == B^(-1)"
+    );
+    // Unit vector {0, 0, 1, 0} factors as {A, B} x {C, D} with A = 0.
+    assert_eq!(
+      interpret(
+        "q={0,0,1,0}; Reduce[{A*C==q[[1]],A*D==q[[2]],B*C==q[[3]],B*D==q[[4]],\
+         A^2+B^2==1,C^2+D^2==1,A>=0,C>=0,B!=-1||D!=-1},{A,B,C,D}]"
+      )
+      .unwrap(),
+      "A == 0 && B == 1 && C == 1 && D == 0"
+    );
+    assert_eq!(
+      interpret(
+        "q={0,0,0,1}; Reduce[{A*C==q[[1]],A*D==q[[2]],B*C==q[[3]],B*D==q[[4]],\
+         A^2+B^2==1,C^2+D^2==1,A>=0,C>=0,B!=-1||D!=-1},{A,B,C,D}]"
+      )
+      .unwrap(),
+      "A == 0 && B == 1 && C == 0 && D == 1"
+    );
+  }
+
+  #[test]
+  fn factorable_qubit_state_with_denominators() {
+    assert_eq!(
+      interpret(
+        "q={1/Sqrt[2],0,1/Sqrt[2],0}; Reduce[{A*C==q[[1]],A*D==q[[2]],B*C==q[[3]],\
+         B*D==q[[4]],A^2+B^2==1,C^2+D^2==1,A>=0,C>=0,B!=-1||D!=-1},{A,B,C,D}]"
+      )
+      .unwrap(),
+      "A == 1/Sqrt[2] && B == 1/Sqrt[2] && C == 1 && D == 0"
+    );
+  }
+
   use super::*;
 
   // ── Trivial cases ──
@@ -8261,6 +8300,33 @@ mod nsolve {
     assert_eq!(
       interpret("f[x_] := x^2 + x + 1; NSolve[f[b] - 2 == 0, b]").unwrap(),
       "{{b -> -1.618033988749895}, {b -> 0.6180339887498948}}"
+    );
+  }
+
+  // Opening a random Wolfram Demonstration ("Peregrine Soliton with
+  // Controllable Center in the Causal Interpretation") in Woxi Studio, its
+  // Manipulate solved for a Cardano cube-root formula's own generated
+  // constant by way of `NSolve[cardanoFormula[c] == x0 + dx, c]`. The
+  // formula added the cube root to its own reciprocal, `A^(1/3) + k/A^(1/3)`
+  // — isolating either term and cubing (the existing radical-elimination
+  // strategy) reintroduces a *different* fractional power of the same base
+  // rather than clearing it, so the elimination loop gave up and NSolve came
+  // back unevaluated instead of a numeric answer. Reduced here to a plain
+  // cube root and its reciprocal.
+  #[test]
+  fn nsolve_falls_back_to_numeric_search_for_reciprocal_fractional_powers() {
+    assert_eq!(
+      interpret("NSolve[(2 + y)^(1/3) + 3/(2 + y)^(1/3) == 6, y]").unwrap(),
+      "{{y -> -1.8331615118448772}, {y -> 159.83316151184493}}"
+    );
+    // The generated constant `Solve` itself introduces for an equation it
+    // cannot solve in closed form, `C[1]`, is exactly this kind of
+    // non-identifier "variable" — confirm the numeric fallback solves for
+    // it too, not only for a plain symbol.
+    assert_eq!(
+      interpret("NSolve[(2 + C[1])^(1/3) + 3/(2 + C[1])^(1/3) == 6, C[1]]")
+        .unwrap(),
+      "{{C[1] -> -1.8331615118448772}, {C[1] -> 159.83316151184493}}"
     );
   }
 
