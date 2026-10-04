@@ -3905,6 +3905,16 @@ fn inset_primitives(
       };
       (!rendered.is_empty()).then_some(&rendered)
     }
+    // A boxed or laid-out display holding a picture — the framed legend of
+    // swatches a Demonstration insets into its plot — is composed to its own
+    // picture and embedded whole, rather than printed as source text.
+    call @ Expr::FunctionCall { name, .. }
+      if matches!(name.as_str(), "Framed" | "Column" | "Grid" | "Row")
+        && crate::evaluator::lays_out_a_graphic(call) =>
+    {
+      rendered = crate::evaluator::expr_to_svg(call);
+      (rendered.starts_with("<svg")).then_some(&rendered)
+    }
     _ => None,
   };
   if let Some(svg) = embedded

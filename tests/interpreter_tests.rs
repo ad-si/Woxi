@@ -2648,6 +2648,28 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_graphics_inset_framed_swatch_legend() {
+    // Regression: `Inset[Framed[Style[Column[{Grid[{{swatch, "label"}}]}], …]],
+    // pos]` (a hand-built legend) drew the literal `Column[{Grid[{{Graphics[…`
+    // source because `Style` hid the picture inside from the layout check.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Graphics[{Line[{{0, 0}, {1, 1}}], Inset[Framed[Style[Column[{Grid[{{Graphics[{Red, Rectangle[{0, 0}, {1, 1}]}, ImageSize -> 6], Style[\"Demand\", 10]}}], Grid[{{Graphics[{Blue, Rectangle[{0, 0}, {1, 1}]}, ImageSize -> 6], Style[\"Cost\", 10]}}]}], \"TR\", ShowStringCharacters -> False], RoundingRadius -> 4], ImageScaled[{0.79, 0.79}]]}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(!svg.contains("Column["), "Column source leaked: {svg}");
+    assert!(!svg.contains("Graphics["), "Graphics source leaked: {svg}");
+    assert!(svg.contains("Demand") && svg.contains("Cost"));
+
+    clear_state();
+    let svg = interpret(
+      "ExportString[Style[Column[{Graphics[Disk[]], \"x\"}], 10], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(!svg.contains("Disk["), "Graphics source leaked: {svg}");
+  }
+
+  #[test]
   fn test_greater_less_slant_equal_operators() {
     // `\[GreaterSlantEqual]` (⩾, U+2A7E) and `\[LessSlantEqual]` (⩽,
     // U+2A7D) are glyph variants of GreaterEqual/LessEqual that a
