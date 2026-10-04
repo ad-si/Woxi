@@ -1979,11 +1979,12 @@ Unevaluated.
 ### Float matrices with complex eigenvalues
 
 Wolfram complexifies the **whole** result and orders each conjugate pair with
-`+I` first: `{0. + 1.*I, 0. - 1.*I, 1. + 0.*I}`. Woxi gives the value-correct
-but form-divergent `{0. - 1.*I, 0. + 1.*I, 1.}`, and non-block complex cases
-stay unevaluated. Complex `Eigenvectors` for n ≥ 3 are unevaluated too, and
-radical eigenvector components order differently (`(-Sqrt[5] + I)/3` against
-`(I - Sqrt[5])/3`).
+`+I` first: `{0. + 1.*I, 0. - 1.*I, 1. + 0.*I}`. Woxi complexifies the whole
+result too (n ≥ 3, via QR iteration), but sorts by decreasing magnitude only,
+so exact magnitude ties between a pair and a real value can order differently
+(`{0. + 1.*I, 1. + 0.*I, 0. - 1.*I}`). Complex `Eigenvectors` use unit length
+with a real largest component; LAPACK's phase/sign conventions are not
+reproducible. 2×2 float matrices with complex eigenvalues stay as before.
 
 Generic dense float matrices also differ in the last 1–2 digits from
 WL/LAPACK.

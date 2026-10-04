@@ -27242,6 +27242,61 @@ fn list_children(
   }
 }
 
+/// Initial values for the variables that Manipulate display elements bind
+/// through `Checkbox[Dynamic[var], …]` but that nothing has set yet. Like the
+/// Wolfram front end, which assigns a checkbox's "off" value to an unset
+/// variable the first time it is shown, this lets a body test the variable
+/// (`If[var, …]`) without the whole output staying unevaluated. Names
+/// already in `known` (controls, state) and variables that already hold a
+/// value are left alone. Returns `(name, off-value InputForm)` pairs.
+pub fn unset_checkbox_defaults(
+  displays: &[String],
+  known: &[String],
+) -> Vec<(String, String)> {
+  fn walk(node: &DisplayNode, out: &mut Vec<(String, String)>) {
+    match node {
+      DisplayNode::Panel(c) => walk(c, out),
+      DisplayNode::Grid(rows) => {
+        for c in rows.iter().flatten() {
+          walk(c, out);
+        }
+      }
+      DisplayNode::Column(cs) | DisplayNode::Row(cs) => {
+        for c in cs {
+          walk(c, out);
+        }
+      }
+      DisplayNode::Checkbox {
+        target: Some(t),
+        off,
+        ..
+      } => out.push((t.clone(), off.clone())),
+      _ => {}
+    }
+  }
+  let mut found = Vec::new();
+  for d in displays {
+    walk(&build_manipulate_display(d, &[]), &mut found);
+  }
+  let mut out: Vec<(String, String)> = Vec::new();
+  for (name, off) in found {
+    let is_symbol = name
+      .chars()
+      .all(|c| c.is_alphanumeric() || c == '$' || c == '`')
+      && !name.starts_with(|c: char| c.is_ascii_digit());
+    if !is_symbol
+      || known.contains(&name)
+      || out.iter().any(|(n, _)| *n == name)
+    {
+      continue;
+    }
+    if read_manipulate_state(std::slice::from_ref(&name)).is_empty() {
+      out.push((name, off));
+    }
+  }
+  out
+}
+
 /// Build a `Checkbox[…]` leaf node. An interactive checkbox is
 /// `Checkbox[Dynamic[lval], {off, on}]` (the value list defaults to
 /// `{False, True}`); its `target` is the InputForm of `lval`, its `checked`

@@ -559,6 +559,20 @@ impl ManipulateState {
         }
       }
     }
+    // A display `Checkbox[Dynamic[var]]` on a never-set variable behaves as
+    // unchecked (Wolfram stores the off value on first display); the body may
+    // already branch on it.
+    let known: Vec<String> = state
+      .state
+      .iter()
+      .map(|(n, _)| n.clone())
+      .chain(state.controls.iter().map(|c| c.name().to_string()))
+      .collect();
+    let defaults = woxi::functions::graphics::unset_checkbox_defaults(
+      &state.displays,
+      &known,
+    );
+    state.state.extend(defaults);
     state.reevaluate();
     Some(state)
   }
