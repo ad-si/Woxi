@@ -292,6 +292,12 @@ pub(crate) fn evaluate_at_xy(
   let sub1 = substitute_var(body, xvar, &Expr::Real(xval));
   let sub2 = substitute_var(&sub1, yvar, &Expr::Real(yval));
   let result = evaluate_expr_to_expr(&sub2).ok()?;
+  // A body that evaluates to a one-element list (e.g. a function returning
+  // `{value}`) is a single surface, like `Plot3D[{f}, ...]`.
+  let result = match &result {
+    Expr::List(items) if items.len() == 1 => items[0].clone(),
+    other => other.clone(),
+  };
   if let Some(v) = try_eval_to_f64_lenient(&result) {
     return Some(v);
   }
@@ -1976,6 +1982,9 @@ pub(crate) struct PlotOptions {
   /// underneath the plotted data in data coordinates — the mirror of
   /// `epilog`, painted first instead of last.
   pub prolog: Vec<Expr>,
+  /// `PlotRangeClipping -> False` lets Epilog/Prolog primitives spill past
+  /// the plotting frame instead of being cut off at its edge.
+  pub clip_overlays: bool,
   /// Per-series error bars from `Around` data values, parallel to the
   /// series' points: each entry is ((dx_minus, dx_plus), (dy_minus,
   /// dy_plus)) in data units. Empty when the data has no uncertainties.
@@ -2099,6 +2108,7 @@ impl Default for PlotOptions {
       stacked: false,
       epilog: Vec::new(),
       prolog: Vec::new(),
+      clip_overlays: true,
       error_bars: Vec::new(),
       interval_markers: IntervalMarkers::default(),
       data_points: Vec::new(),
@@ -2602,8 +2612,11 @@ pub(crate) fn plot_labels_svg(
     // edge — adapting to the actual tick width.
     let tick_w = max_y_tick_label_chars(y_min, y_max) as f64 * sf * 13.0 * 0.6;
     let tick_left = plot_x0 - 8.0 * sf - tick_w;
-    let lx = (tick_left - font_size * 0.5 - sf * 5.0)
-      .max(margin_left_f + font_size * 0.5);
+    // `lx` is the text baseline: the glyphs extend ~0.75em to its left
+    // (the rotated "up" direction) and ~0.25em to its right, so the clamp
+    // must keep the ascenders inside the image.
+    let lx = (tick_left - font_size * 0.25 - sf * 5.0)
+      .max(margin_left_f + font_size * 0.8);
     labels_svg.push_str(&format!(
       "<text x=\"{lx:.1}\" y=\"{cy:.1}\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
@@ -2716,10 +2729,11 @@ fn inject_epilog(
     y_max,
     scale,
   };
-  let epilog_svg = crate::functions::plot_epilog::render_epilog_svg(
+  let epilog_svg = crate::functions::plot_epilog::render_overlay_svg(
     &opts.epilog,
     &area,
     "epilog",
+    opts.clip_overlays,
   );
   if let Some(pos) = buf.rfind("</svg>") {
     buf.insert_str(pos, &epilog_svg);
@@ -2755,10 +2769,11 @@ fn inject_prolog(
     y_max,
     scale,
   };
-  let prolog_svg = crate::functions::plot_epilog::render_epilog_svg(
+  let prolog_svg = crate::functions::plot_epilog::render_overlay_svg(
     &opts.prolog,
     &area,
     "prolog",
+    opts.clip_overlays,
   );
   // `root.fill(&bg_color)` (plotters) draws an opaque rect spanning the
   // whole canvas as the very first thing after the opening `<svg …>` tag
@@ -8909,6 +8924,10 @@ pub(crate) fn apply_common_plot_option(
         Expr::Identifier(ref s) if s == "None" => Vec::new(),
         other => vec![other],
       };
+    }
+    "PlotRangeClipping" => {
+      plot_opts.clip_overlays =
+        !matches!(replacement, Expr::Identifier(s) if s == "False");
     }
     "Prolog" => {
       // Same evaluate-now treatment as `Epilog` — see above.

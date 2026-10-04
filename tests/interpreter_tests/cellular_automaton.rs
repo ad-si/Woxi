@@ -12,6 +12,24 @@ mod cellular_automaton {
   }
 
   #[test]
+  fn explicit_offset_neighborhood_matches_range() {
+    for (offsets, r) in
+      [("{{-1}, {0}, {1}}", 1), ("{{-2}, {-1}, {0}, {1}, {2}}", 2)]
+    {
+      let a = interpret(&format!(
+        "CellularAutomaton[{{150, 2, {offsets}}}, {{{{1, 0, 1}}, 0}}, {{4, All}}]"
+      ))
+      .unwrap();
+      let b = interpret(&format!(
+        "CellularAutomaton[{{150, 2, {r}}}, {{{{1, 0, 1}}, 0}}, {{4, All}}]"
+      ))
+      .unwrap();
+      assert_eq!(a, b);
+      assert!(a.starts_with("{{") && !a.contains("CellularAutomaton"));
+    }
+  }
+
+  #[test]
   fn rule_90_expanding() {
     assert_eq!(
       interpret("CellularAutomaton[90, {{1}, 0}, 3]").unwrap(),

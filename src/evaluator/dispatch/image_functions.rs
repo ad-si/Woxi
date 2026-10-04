@@ -1129,7 +1129,7 @@ pub fn dispatch_image_functions(
         return Some(Ok(indexed_color_function(*n)));
       }
     }
-    "ImageCompose" if args.len() == 2 => {
+    "ImageCompose" if (2..=4).contains(&args.len()) => {
       return Some(crate::functions::image_ast::image_compose_ast(args));
     }
     "ImageAdd" if args.len() >= 2 => {

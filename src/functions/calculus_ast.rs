@@ -15422,6 +15422,12 @@ fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
   const KNOWN_METHODS: &[&str] = &[
     "Automatic",
     "AdaptiveMonteCarlo",
+    "ClenshawCurtisRule",
+    "GaussBerntsenEspelidRule",
+    "GaussKronrodRule",
+    "LobattoKronrodRule",
+    "NewtonCotesRule",
+    "TrapezoidalRule",
     "AdaptiveQuasiMonteCarlo",
     "DoubleExponential",
     "GaussKronrod",

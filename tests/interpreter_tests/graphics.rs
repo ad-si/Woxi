@@ -546,6 +546,40 @@ mod graphics {
     }
 
     #[test]
+    fn filled_curve_bezier_is_filled() {
+      let svg = export_svg(
+        "Graphics[{Red, FilledCurve[BezierCurve[{{0, 0}, {1, 2}, {2, 2}, {3, 0}}]]}]",
+      );
+      assert!(svg.contains("fill=\"rgb(255,0,0)\""), "{svg}");
+      assert!(!svg.contains("fill=\"none\""), "{svg}");
+      assert!(svg.contains(" Z\""), "{svg}");
+    }
+
+    #[test]
+    fn filled_curve_uses_edge_form() {
+      let svg = export_svg(
+        "Graphics[{Blue, EdgeForm[Black], FilledCurve[BezierCurve[{{0, 0}, {1, 2}, {2, 0}}]]}]",
+      );
+      assert!(svg.contains("fill=\"rgb(0,0,255)\""), "{svg}");
+      assert!(svg.contains("stroke=\"rgb(0,0,0)\""), "{svg}");
+    }
+
+    #[test]
+    fn filled_curve_line_segments_become_filled_polygon() {
+      let svg = export_svg(
+        "Graphics[{Green, FilledCurve[Line[{{0, 0}, {1, 0}, {1, 1}}]]}]",
+      );
+      assert!(svg.contains("<polygon"), "{svg}");
+    }
+
+    #[test]
+    fn stroked_bezier_curve_stays_unfilled() {
+      let svg =
+        export_svg("Graphics[{BezierCurve[{{0, 0}, {0.5, 1}, {1, 0}}]}]");
+      assert!(svg.contains("fill=\"none\""), "{svg}");
+    }
+
+    #[test]
     fn bspline_curve() {
       insta::assert_snapshot!(export_svg(
         "Graphics[{BSplineCurve[{{0, 0}, {1, 2}, {2, 0}, {3, 1}}]}]"
@@ -2542,6 +2576,36 @@ mod graphics {
         "Graphics[{Rotate[Circle[{1, 0}, 0.2], Pi/2, {0, 0}]}, PlotRange -> 2]",
       );
       assert_eq!(wrapped, primitive);
+    }
+
+    /// `Rotate[g, {u, v}]` turns the direction `u` onto the direction `v`,
+    /// i.e. by the angle between them — the treadmill incline in a
+    /// Demonstration is written this way.
+    #[test]
+    fn rotate_with_vector_pair_matches_the_equivalent_angle() {
+      let pair = export_svg(
+        "Graphics[Rotate[Rectangle[{-1, -1/2}, {3, 0}], {{4, 0}, {0, 3}}]]",
+      );
+      let angle = export_svg(
+        "Graphics[Rotate[Rectangle[{-1, -1/2}, {3, 0}], ArcTan[0, 3] - ArcTan[4, 0]]]",
+      );
+      assert_eq!(pair, angle);
+      let flat = export_svg("Graphics[Rectangle[{-1, -1/2}, {3, 0}]]");
+      assert_ne!(pair, flat, "the vector pair must actually rotate");
+    }
+
+    /// `PlotRangeClipping -> False` stops a `Plot`'s Epilog being cut off
+    /// at the frame, so a label anchored near the edge shows in full.
+    #[test]
+    fn plot_range_clipping_false_leaves_epilog_unclipped() {
+      let clipped =
+        export_svg("Plot[x, {x, 0, 1}, Epilog -> Text[\"label\", {1, 1}]]");
+      assert!(clipped.contains("epilogClip_"), "{clipped}");
+      let open = export_svg(
+        "Plot[x, {x, 0, 1}, Epilog -> Text[\"label\", {1, 1}], PlotRangeClipping -> False]",
+      );
+      assert!(!open.contains("epilogClip_"), "{open}");
+      assert!(open.contains("label"), "{open}");
     }
 
     /// A wrapped `Graphics` built from several primitives (here, a
@@ -6993,6 +7057,33 @@ mod plot3d {
       assert_eq!(styled, ["diameter (cm)", "force (kN)"]);
     }
 
+    /// The rotated left `FrameLabel` is anchored by its baseline, whose
+    /// glyphs rise ~0.75em to the left of it; with a narrow `ImagePadding`
+    /// the baseline used to be clamped to half an em, so the label was cut
+    /// off at the image edge.
+    #[test]
+    fn plot_left_frame_label_stays_inside_the_image() {
+      let svg = export_svg(
+        "Plot[{Sin[x], Cos[x]}, {x, 0, 1}, Frame -> True, \
+         ImagePadding -> {{45, 10}, {45, 10}}, \
+         FrameLabel -> {\"x\", \"psi\"}]",
+      );
+      let line = svg
+        .lines()
+        .find(|l| l.contains("rotate(-90") && l.contains(">psi</text>"))
+        .expect("rotated left label");
+      let attr = |name: &str| -> f64 {
+        let key = format!("{name}=\"");
+        let rest = line.split_once(key.as_str()).unwrap().1;
+        rest.split_once('"').unwrap().0.parse().unwrap()
+      };
+      let size = attr("font-size");
+      assert!(
+        attr("x") - 0.75 * size >= 0.0,
+        "left label is clipped: {line}"
+      );
+    }
+
     /// Every label of a tick set carries the decimals its spacing needs, so
     /// a framed `Graphics` stepping by 0.5 reads `-1.0, -0.5, 0.0, …` —
     /// the same as the plot renderer, and as wolframscript.
@@ -11011,6 +11102,34 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn pie_chart_part_gives_disk_primitives() {
+      // `PieChart[…][[1]]` is the list of slices, so a Demonstration can
+      // rewrite them with `/. Disk[c_, r_, a_] :> …`.
+      assert_eq!(interpret("Length[PieChart[{1, 2, 3}][[1]]]").unwrap(), "3");
+      assert_eq!(
+        interpret("Count[PieChart[{1, 2, 3}][[1]], _Disk, Infinity]").unwrap(),
+        "3"
+      );
+      assert_eq!(
+        interpret(
+          "Count[PieChart[{1, 2}, ChartLabels -> {\"a\", \"b\"}][[1]], \
+           _Text, Infinity]"
+        )
+        .unwrap(),
+        "2"
+      );
+    }
+
+    #[test]
+    fn inset_labeled_graphic_keeps_caption() {
+      let svg = export_svg(
+        "Graphics[{Inset[Labeled[Graphics[{Disk[]}], \"my caption\"], \
+         {0, 0}]}]",
+      );
+      assert!(svg.contains("my caption"), "{svg}");
+    }
+
+    #[test]
     fn pie_chart_single_slice() {
       insta::assert_snapshot!(export_svg("PieChart[{100}]"));
     }
@@ -13469,6 +13588,52 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       ));
     }
 
+    /// Regression: `First[ArrayPlot[…]]` hit `First::normal` because the plot
+    /// had no symbolic content, so a Manipulate that draws an ArrayPlot as a
+    /// backdrop (`First@background`) rendered nothing.
+    #[test]
+    fn array_plot_first_is_raster() {
+      clear_state();
+      assert_eq!(
+        interpret("Head[First[ArrayPlot[{{1, 2}, {3, 4}}]]]").unwrap(),
+        "Raster"
+      );
+      // The first matrix row sits at the top, i.e. is the last Raster row.
+      assert_eq!(
+        interpret("First[ArrayPlot[{{1, 2}, {3, 4}}]][[1, 1, 1]]").unwrap(),
+        interpret(
+          "First[ArrayPlot[{{3, 4}, {1, 2}}, DataReversed -> True]][[1, 1, 1]]"
+        )
+        .unwrap()
+      );
+    }
+
+    #[test]
+    fn array_plot_data_range_places_raster() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "First[ArrayPlot[{{1, 2}, {3, 4}}, DataRange -> {{-2, 2}, {-1, 1}}]][[2]]"
+        )
+        .unwrap(),
+        "{{-2., -1.}, {2., 1.}}"
+      );
+    }
+
+    #[test]
+    fn array_plot_data_reversed_keeps_row_order() {
+      clear_state();
+      // DataReversed -> True puts row 1 at the bottom: Raster rows are
+      // listed bottom-up, so the matrix order is kept.
+      assert_eq!(
+        interpret(
+          "Length[First[ArrayPlot[{{1, 2}, {3, 4}, {5, 6}}, DataReversed -> True]][[1]]]"
+        )
+        .unwrap(),
+        "3"
+      );
+    }
+
     #[test]
     fn array_plot_epilog_text_position() {
       // Regression: Epilog was silently ignored, dropping any overlay
@@ -15159,6 +15324,29 @@ mod pane_wrapper_display {
       );
     }
     assert!(svg.contains("<ellipse"), "the picture row draws: {svg}");
+  }
+
+  // A styled `Text[Grid[…]]` readout above a picture (Demonstration
+  // layout): the nested tables must be laid out, not printed as source.
+  #[test]
+  fn styled_text_of_a_grid_in_a_grid_cell_lays_out_the_grid() {
+    clear_state();
+    let svg = interpret_with_stdout(
+      "Grid[{{Pane[Style[Text[Grid[{{Grid[{{\"s\", \"l\"}, {\"DE\", 3}}, \
+         Dividers -> All], Grid[{{\"c\"}, {4}}, Dividers -> All]}}]], \
+         \"Label\", 14], ImageSize -> {450, 100}]}, \
+        {Graphics[{Disk[]}, ImageSize -> {200, 100}]}}]",
+    )
+    .unwrap()
+    .graphics
+    .expect("the grid should render");
+    assert!(!svg.contains("Grid["), "the layout must not print: {svg}");
+    for part in ["s", "DE", "c", "4"] {
+      assert!(
+        svg.contains(&format!(">{part}<")),
+        "missing `{part}`: {svg}"
+      );
+    }
   }
 
   // `Item[…]` and `Text[…]` cells are the same kind of wrapper — they say
@@ -26024,9 +26212,10 @@ mod manipulate {
         assert_eq!(name, "g");
         // The five Platonic solids, the Archimedean solids (and their
         // duals) with icosahedral or cubic symmetry, the great stellated
-        // dodecahedron and rhombic hexecontahedron stellations, and the
-        // triangular orthobicupola.
-        assert_eq!(values.len(), 21, "every known solid");
+        // dodecahedron and rhombic hexecontahedron stellations, the
+        // triangular orthobicupola, the Bilinski dodecahedron, and the
+        // stella octangula.
+        assert_eq!(values.len(), 23, "every known solid");
         assert!(values.contains(&"\"Cube\"".to_string()));
         assert!(values.contains(&"\"TruncatedIcosahedron\"".to_string()));
       }
@@ -31841,5 +32030,35 @@ mod options_of_a_graphic {
     assert!(svg.contains(r#"width="30" height="15""#), "{svg}");
     assert!(svg.contains(r#"viewBox="0 0 40 20""#), "{svg}");
     let _ = std::fs::remove_dir_all(&dir);
+  }
+}
+
+mod cases_on_a_plot {
+  use super::*;
+
+  // Regression: `Cases` treated a rendered plot as an atom, so extracting
+  // a curve's points with `Cases[plot, Line[u_] -> u, Infinity]` (a common
+  // idiom in Demonstrations) returned `{}` while `First`/`Length` worked.
+  #[test]
+  fn finds_the_line_primitives_of_a_parametric_plot() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "pts = First[Cases[ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 1}], \
+         Line[u_] -> u, Infinity]]; {Length[pts] > 2, First[pts]}"
+      )
+      .unwrap(),
+      "{True, {1., 0.}}"
+    );
+  }
+
+  #[test]
+  fn finds_the_line_primitives_of_a_plot() {
+    clear_state();
+    assert_eq!(
+      interpret("Length[Cases[Plot[x^2, {x, 0, 1}], Line[u_] -> u, Infinity]]")
+        .unwrap(),
+      "1"
+    );
   }
 }

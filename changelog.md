@@ -2,6 +2,12 @@
 
 # Unreleased
 
+- `FindRoot` failed with `FindRoot::nlnum` when its residual evaluated to a
+    one-element list, e.g. `D[f[x] /. NDSolve[...], x] /. x -> 4` (a list of
+    solution rules yields `{value}`). The singleton list is now treated as
+    the residual itself. Found via the scheduled Wolfram Demonstrations
+    check opening "Numerical Solution of the Falkner-Skan Equation for
+    Various Wedge Angles", whose Manipulate shoots on `FindRoot`.
 - `PolyhedronData["GreatStellatedDodecahedron", …]` and
     `PolyhedronData["MathematicaSpikey", …]` were unknown entities (a
     `PolyhedronData::notent` message, left unevaluated), so a

@@ -103,18 +103,68 @@ pub fn permutations_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(original());
   };
 
-  let n = items.len();
-  let mut result: Vec<Expr> = Vec::new();
-  for k in sizes {
-    if (0..=len).contains(&k) {
-      generate_k_permutations(
-        k as usize,
-        &mut vec![],
-        &mut vec![false; n],
-        items,
-        &mut result,
-      );
+  // Refuse results that cannot be represented or built, as WL does:
+  // ::fac when the length is at least 21! (checked without computing it),
+  // ::len when the exact count is not a machine integer, ::toobig when it
+  // is but the list would not fit in memory.
+  let sizes: Vec<usize> = sizes
+    .into_iter()
+    .filter(|k| (0..=len).contains(k))
+    .map(|k| k as usize)
+    .collect();
+  let mut multiplicities: Vec<usize> = Vec::new();
+  let mut group_of: std::collections::HashMap<String, usize> =
+    std::collections::HashMap::new();
+  for item in items {
+    let next = group_of.len();
+    let g = *group_of.entry(expr_to_string(item)).or_insert(next);
+    if g == multiplicities.len() {
+      multiplicities.push(0);
     }
+    multiplicities[g] += 1;
+  }
+  if multiplicities.len() >= 21 && sizes.iter().any(|&k| k >= 21) {
+    crate::emit_message(&format!(
+      "Permutations::fac: In {} there are at least 21 distinct elements in the input list, and the requested permutation lengths include one that is at least 21. The result cannot be computed because it has length at least 21 factorial, which is not a machine integer.",
+      show(&original())
+    ));
+    return Ok(original());
+  }
+  let counts = multiset_permutation_counts(
+    &multiplicities,
+    sizes.iter().copied().max().unwrap_or(0),
+  );
+  let total: BigInt = sizes.iter().map(|&k| &counts[k]).sum();
+  if total > BigInt::from(i64::MAX) {
+    crate::emit_message(&format!(
+      "Permutations::len: {} cannot be computed because its length is {}, which is not a machine integer.",
+      show(&original()),
+      total
+    ));
+    return Ok(original());
+  }
+  let nodes: BigInt = sizes
+    .iter()
+    .map(|&k| &counts[k] * BigInt::from(k + 1))
+    .sum();
+  if nodes > BigInt::from(MAX_PERMUTATIONS_NODES) {
+    crate::emit_message(&format!(
+      "Permutations::toobig: Insufficient memory available to evaluate {}.",
+      show(&original())
+    ));
+    return Ok(original());
+  }
+
+  let n = items.len();
+  let mut result: Vec<Expr> = Vec::with_capacity(total.try_into().unwrap_or(0));
+  for k in sizes {
+    generate_k_permutations(
+      k,
+      &mut vec![],
+      &mut vec![false; n],
+      items,
+      &mut result,
+    );
   }
 
   if let Some(h) = head {
@@ -255,6 +305,41 @@ pub fn combinatorica_derangements_ast(
     })
     .collect();
   Ok(Expr::List(kept.into()))
+}
+
+/// Largest `Permutations` result, counted in `Expr` nodes (each
+/// permutation's elements plus its own `List`), that is built rather than
+/// refused with ::toobig. WL's bound is the machine's free memory; an
+/// owned `Expr` tree costs far more per element than a packed array, so
+/// Woxi's is lower: `Permutations[Range[10]]` (~40M nodes) still builds,
+/// `Permutations[Range[11]]` (~479M) is refused.
+const MAX_PERMUTATIONS_NODES: u64 = 1 << 26;
+
+/// `counts[k]` = number of distinct length-`k` permutations of a multiset
+/// with the given element multiplicities, for `k` in `0..=kmax`. Adds one
+/// group at a time: placing `j` copies of the new element among `i + j`
+/// positions multiplies each length-`i` arrangement by `Binomial[i + j, j]`.
+fn multiset_permutation_counts(
+  multiplicities: &[usize],
+  kmax: usize,
+) -> Vec<BigInt> {
+  let mut counts = vec![BigInt::from(1u32)];
+  for &m in multiplicities {
+    let new_len = (counts.len() - 1 + m).min(kmax) + 1;
+    let mut next = vec![BigInt::ZERO; new_len];
+    for (i, c) in counts.iter().enumerate() {
+      let mut binom = BigInt::from(1u32);
+      for j in 0..=m.min(new_len - 1 - i) {
+        if j > 0 {
+          binom = binom * (i + j) / j;
+        }
+        next[i + j] += c * &binom;
+      }
+    }
+    counts = next;
+  }
+  counts.resize(kmax + 1, BigInt::ZERO);
+  counts
 }
 
 /// Helper to generate k-permutations.

@@ -513,7 +513,7 @@ Woxi does **not** support.
 - Free-form linguistic input via Wolfram|Alpha
 - GPU computing: `CUDAFunction` (CUDALink / OpenCLLink)
 - C code generation: `CCodeGenerate`, `CompileToC`
-- Financial engineering: `FinancialDerivative`, `FinancialData`
+- Financial engineering: `FinancialData`, and `FinancialDerivative` beyond European calls and puts
 - Continuous `WaveletTransform`
 - Control systems: `TransferFunctionModel`, `OutputResponse`,
     `StateResponse`, `NyquistPlot`, `NicholsPlot`, `RootLocusPlot`,
