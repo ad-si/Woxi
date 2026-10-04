@@ -1754,6 +1754,35 @@ mod graph_rendering {
   }
 
   #[test]
+  fn graph_with_named_vertex_shapes() {
+    for shape in [
+      "Triangle",
+      "Star",
+      "FiveDown",
+      "ConcaveHexagon",
+      "Parallelogram",
+      "RoundedUpTrapezoid",
+    ] {
+      let result = interpret(&format!(
+        "ExportString[Graph[{{1 <-> 2}}, VertexShapeFunction -> \"{shape}\"], \"SVG\"]"
+      ))
+      .unwrap();
+      assert!(result.contains("<polygon"), "{shape}: {result}");
+      assert!(!result.contains("<ellipse"), "{shape}: {result}");
+    }
+  }
+
+  #[test]
+  fn graph_with_capsule_vertex_shape() {
+    let result = interpret(
+      "ExportString[Graph[{1 <-> 2}, VertexShapeFunction -> \"Capsule\"], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(result.contains("rx="), "{result}");
+    assert!(!result.contains("<ellipse"), "{result}");
+  }
+
+  #[test]
   fn graph_with_square_shape() {
     let result = interpret(
       "ExportString[Graph[{1  2}, VertexShapeFunction -> \"Square\"], \"SVG\"]"

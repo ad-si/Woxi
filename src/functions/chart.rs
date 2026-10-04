@@ -366,6 +366,23 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
     return Some(label);
   }
   match expr {
+    // A string with line breaks stacks like a `Column` title: each line
+    // is its own row.
+    Expr::String(s) if s.contains('\n') => {
+      let mut lines = s
+        .split('\n')
+        .map(crate::functions::graphics::box_string_to_svg);
+      let first = lines.next()?;
+      Some(StyledLabel {
+        text: s.replace('\n', " "),
+        markup: Some(first),
+        extra_lines: lines.collect(),
+        bold: false,
+        italic: false,
+        color: None,
+        font_size: None,
+      })
+    }
     Expr::String(s) => Some(StyledLabel {
       text: s.clone(),
       markup: None,

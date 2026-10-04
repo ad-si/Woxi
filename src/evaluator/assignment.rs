@@ -2615,7 +2615,10 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
     // Evaluate indices
     let mut eval_indices = Vec::new();
     for idx in &indices {
-      eval_indices.push(evaluate_expr_to_expr(idx)?);
+      crate::evaluator::part_extraction::push_part_index(
+        &mut eval_indices,
+        evaluate_expr_to_expr(idx)?,
+      );
     }
 
     // Evaluate the RHS

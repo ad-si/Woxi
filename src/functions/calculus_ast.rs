@@ -15398,6 +15398,17 @@ fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // A list-valued integrand is integrated component-wise.
+  if let Expr::List(items) = &args[0] {
+    let mut results = Vec::with_capacity(items.len());
+    for item in items {
+      let mut sub_args = args.to_vec();
+      sub_args[0] = item.clone();
+      results.push(nintegrate_ast_impl(&sub_args)?);
+    }
+    return Ok(Expr::List(results.into()));
+  }
+
   // Parse options from additional arguments (Tolerance, Method, MaxRecursion, etc.)
   let mut tolerance = 1e-10_f64;
   let mut max_recursion = 50_u32;
@@ -17079,6 +17090,24 @@ pub fn dt_total_differential_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   let expr = &args[0];
+  // Dt threads over an equation: Dt[a == b] is Dt[a] == Dt[b].
+  if let Expr::Comparison {
+    operands,
+    operators,
+  } = expr
+    && operators
+      .iter()
+      .all(|op| matches!(op, crate::syntax::ComparisonOp::Equal))
+  {
+    let operands = operands
+      .iter()
+      .map(|o| dt_total_differential_ast(std::slice::from_ref(o)))
+      .collect::<Result<Vec<_>, _>>()?;
+    return crate::evaluator::evaluate_expr_to_expr(&Expr::Comparison {
+      operands,
+      operators: operators.clone(),
+    });
+  }
   // Numeric/named constants: Dt = 0.
   if is_true_constant(expr) {
     return Ok(Expr::Integer(0));

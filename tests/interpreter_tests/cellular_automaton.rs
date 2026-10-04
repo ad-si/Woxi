@@ -702,4 +702,19 @@ mod step_and_cell_specs {
       "{{1, 1, 1}, {0}}"
     );
   }
+
+  #[test]
+  fn a_sparse_array_init_is_its_dense_list() {
+    clear_state();
+    assert_eq!(
+      interpret("CellularAutomaton[30, SparseArray[{3 -> 1}, 5], {2, All}]")
+        .unwrap(),
+      interpret("CellularAutomaton[30, {0, 0, 1, 0, 0}, {2, All}]").unwrap()
+    );
+    assert_eq!(
+      interpret("CellularAutomaton[30, SparseArray[{3 -> 1}, 5], {{1}}]")
+        .unwrap(),
+      "{{0, 1, 1, 1, 0}}"
+    );
+  }
 }

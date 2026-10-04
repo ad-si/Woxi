@@ -431,6 +431,108 @@ mod element_data_tests {
       "{Abbreviation, AbsoluteBoilingPoint, AbsoluteMeltingPoint, AtomicNumber, AtomicRadius, AtomicWeight, Block, BoilingPoint, BrinellHardness, BulkModulus, CovalentRadius, CrustAbundance, Density, DiscoveryYear, ElectroNegativity, ElectronAffinity, ElectronConfiguration, ElectronConfigurationString, ElectronShellConfiguration, FusionHeat, Group, IonizationEnergies, LiquidDensity, MeltingPoint, MohsHardness, Name, Period, Phase, PoissonRatio, Series, ShearModulus, SpecificHeat, StandardName, ThermalConductivity, VanDerWaalsRadius, VaporizationHeat, VickersHardness, YoungModulus}"
     );
   }
+
+  // The three-argument form, `ElementData[element, property, annotation]`,
+  // answers something about the *property* rather than the element — the
+  // element argument only needs to resolve to a real element. Found while
+  // checking a Wolfram Demonstrations Project notebook ("Properties of
+  // Chemical Elements") whose PopupMenu control builds its option labels
+  // from `ElementData[1, prop, "Description"]` for a couple dozen
+  // properties; only the "Description" annotation is implemented.
+  #[test]
+  fn element_data_description_annotation_is_general_across_properties() {
+    // A plain decamelization of the property name…
+    assert_eq!(
+      interpret(r#"ElementData[1, "AtomicNumber", "Description"]"#).unwrap(),
+      "atomic number"
+    );
+    assert_eq!(
+      interpret(r#"ElementData[1, "AbsoluteBoilingPoint", "Description"]"#)
+        .unwrap(),
+      "absolute boiling point"
+    );
+    assert_eq!(
+      interpret(r#"ElementData[1, "ThermalConductivity", "Description"]"#)
+        .unwrap(),
+      "thermal conductivity"
+    );
+    // …and a few properties named after a person or a compound term keep
+    // that eponym's capitalization/possessive or hyphenated form instead.
+    assert_eq!(
+      interpret(r#"ElementData[1, "YoungModulus", "Description"]"#).unwrap(),
+      "Young's modulus"
+    );
+    assert_eq!(
+      interpret(r#"ElementData[1, "VanDerWaalsRadius", "Description"]"#)
+        .unwrap(),
+      "Van der Waals radius"
+    );
+    assert_eq!(
+      interpret(r#"ElementData[1, "HalfLife", "Description"]"#).unwrap(),
+      "half-life"
+    );
+    // The annotation doesn't depend on which element (or how it's spelled)
+    // was passed, only on the property.
+    assert_eq!(
+      interpret(r#"ElementData["Gold", "Density", "Description"]"#).unwrap(),
+      "density"
+    );
+    assert_eq!(
+      interpret(r#"ElementData["Fe", "Density", "Description"]"#).unwrap(),
+      "density"
+    );
+  }
+
+  #[test]
+  fn element_data_description_annotation_unrecognized_property() {
+    assert_eq!(
+      interpret(r#"ElementData[1, "NotAnElementDataProperty", "Description"]"#)
+        .unwrap(),
+      "Missing[NotFound]"
+    );
+  }
+
+  #[test]
+  fn element_data_description_annotation_unrecognized_element() {
+    assert_eq!(
+      interpret(r#"ElementData[999, "Density", "Description"]"#).unwrap(),
+      "ElementData[999, Density, Description]"
+    );
+  }
+
+  // Properties the "Properties of Chemical Elements" Demonstration's control
+  // panel offers alongside the already-tabulated ones — recognised (so the
+  // Manipulate's Map over the whole property list doesn't leave any of them
+  // unevaluated) but not yet backed by real per-element data, matching the
+  // existing treatment of e.g. `Density`/`SpecificHeat` above. Checked
+  // across two different elements to confirm the answer isn't hardcoded to
+  // one atomic number.
+  #[test]
+  fn element_data_newly_recognized_untabulated_properties() {
+    for prop in [
+      "OceanAbundance",
+      "HumanAbundance",
+      "MeteoriteAbundance",
+      "SolarAbundance",
+      "UniverseAbundance",
+      "ThermalExpansion",
+      "CriticalTemperature",
+      "CriticalPressure",
+      "ElectricalConductivity",
+      "Valence",
+      "HalfLife",
+      "NeutronCrossSection",
+      "NeutronMassAbsorption",
+    ] {
+      for element in ["Hydrogen", "Uranium"] {
+        assert_eq!(
+          interpret(&format!(r#"ElementData["{element}", "{prop}"]"#)).unwrap(),
+          "Missing[NotAvailable]",
+          "ElementData[{element}, {prop}]"
+        );
+      }
+    }
+  }
 }
 
 mod cases {

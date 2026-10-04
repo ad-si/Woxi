@@ -186,6 +186,51 @@ static POLYHEDRA: &[PolyhedronInfo] = &[
       \"PlatonicDual\", \"Rigid\", \"Rupert\", \"Simple\", \
       \"Uniform\", \"UniformDual\"}",
   },
+  PolyhedronInfo {
+    name: "GreatStellatedDodecahedron",
+    vertex_count: 20,
+    edge_count: 30,
+    face_count: 12,
+    // Cross-checked against MathWorld's closed forms (Circumradius,
+    // Surface area, Volume) for the unit-edge solid.
+    volume: "(5*(3 + Sqrt[5]))/4",
+    surface_area: "15*Sqrt[5 + 2*Sqrt[5]]",
+    circumradius: "(Sqrt[3]*(Sqrt[5] - 1))/4",
+    // The 12 pentagrammic faces self-intersect, so there is no face-tangent
+    // insphere.
+    inradius: "Missing[\"NotApplicable\"]",
+    midradius: "(3 - Sqrt[5])/4",
+    // A Kepler-Poinsot star polyhedron: its 20 vertices coincide exactly
+    // with a unit-edge Dodecahedron's own vertices (same points, matching
+    // its stated circumradius), just grouped into 12 self-intersecting
+    // pentagram faces instead of 12 convex pentagons. Each face connects 5
+    // of those vertices by the {5/2} (skip-one) pattern, in the density-2
+    // star order Polygon needs to draw a true pentagram rather than a plain
+    // pentagon; 3 faces meet at each vertex, giving the {5/2, 3} Schläfli
+    // symbol.
+    vertices_src: "{\
+      {(Sqrt[5] - 1)/4, (Sqrt[5] - 1)/4, (Sqrt[5] - 1)/4}, \
+      {(Sqrt[5] - 1)/4, (Sqrt[5] - 1)/4, -(Sqrt[5] - 1)/4}, \
+      {(Sqrt[5] - 1)/4, -(Sqrt[5] - 1)/4, (Sqrt[5] - 1)/4}, \
+      {(Sqrt[5] - 1)/4, -(Sqrt[5] - 1)/4, -(Sqrt[5] - 1)/4}, \
+      {-(Sqrt[5] - 1)/4, (Sqrt[5] - 1)/4, (Sqrt[5] - 1)/4}, \
+      {-(Sqrt[5] - 1)/4, (Sqrt[5] - 1)/4, -(Sqrt[5] - 1)/4}, \
+      {-(Sqrt[5] - 1)/4, -(Sqrt[5] - 1)/4, (Sqrt[5] - 1)/4}, \
+      {-(Sqrt[5] - 1)/4, -(Sqrt[5] - 1)/4, -(Sqrt[5] - 1)/4}, \
+      {(3 - Sqrt[5])/4, 1/2, 0}, {(3 - Sqrt[5])/4, -1/2, 0}, \
+      {-(3 - Sqrt[5])/4, 1/2, 0}, {-(3 - Sqrt[5])/4, -1/2, 0}, \
+      {0, (3 - Sqrt[5])/4, 1/2}, {0, (3 - Sqrt[5])/4, -1/2}, \
+      {0, -(3 - Sqrt[5])/4, 1/2}, {0, -(3 - Sqrt[5])/4, -1/2}, \
+      {1/2, 0, (3 - Sqrt[5])/4}, {1/2, 0, -(3 - Sqrt[5])/4}, \
+      {-1/2, 0, (3 - Sqrt[5])/4}, {-1/2, 0, -(3 - Sqrt[5])/4}}",
+    faces_src: "{{1, 20, 18, 5, 16}, {1, 20, 3, 11, 12}, {1, 12, 2, 15, 16}, \
+      {2, 19, 17, 6, 15}, {2, 19, 4, 11, 12}, {3, 11, 4, 13, 14}, \
+      {3, 20, 18, 7, 14}, {4, 19, 17, 8, 13}, {5, 10, 9, 7, 18}, \
+      {5, 10, 6, 15, 16}, {6, 17, 8, 9, 10}, {7, 9, 8, 13, 14}}",
+    classes_src: "\
+      {\"Amphichiral\", \"Isohedron\", \"KeplerPoinsot\", \
+      \"Regular\", \"Rigid\"}",
+  },
   // Truncating a Platonic solid's corners gives an Archimedean solid with
   // two face types (a polygon per original face, plus one new polygon per
   // truncated vertex). None of the three below has a true insphere — the
@@ -1405,11 +1450,60 @@ static POLYHEDRA: &[PolyhedronInfo] = &[
       {5, 7, 6}, {5, 6, 8}, {5, 8, 7}, {6, 7, 8}}",
     classes_src: "{\"Amphichiral\", \"Compound\"}",
   },
+  PolyhedronInfo {
+    name: "BilinskiDodecahedron",
+    vertex_count: 14,
+    edge_count: 24,
+    face_count: 12,
+    // A zonohedron with four unit generators whose pairwise angles all have
+    // cosine +-1/Sqrt[5], so its 12 faces are congruent golden rhombi
+    // (area 2/Sqrt[5] each) and its volume is the sum of the generators'
+    // triple-product magnitudes.
+    volume: "(4/5)*Sqrt[5 + 2*Sqrt[5]]",
+    surface_area: "24/Sqrt[5]",
+    // The vertices lie at several distances from the center, and the faces
+    // and edges likewise, so there is no circumsphere, insphere or
+    // midsphere.
+    circumradius: "Missing[\"NotApplicable\"]",
+    inradius: "Missing[\"NotApplicable\"]",
+    midradius: "Missing[\"NotApplicable\"]",
+    // Axes along the three twofold symmetry axes; with a = Sqrt[(5-Sqrt[5])/10]
+    // and b = Sqrt[(5+Sqrt[5])/10]: (+-a, +-b, 0), (+-a, 0, +-a),
+    // (0, +-b, +-b) and (0, 0, +-(a+b)), sorted lexicographically.
+    vertices_src: "{\
+      {-Sqrt[(5 - Sqrt[5])/10], -Sqrt[(5 + Sqrt[5])/10], 0}, \
+      {-Sqrt[(5 - Sqrt[5])/10], 0, -Sqrt[(5 - Sqrt[5])/10]}, \
+      {-Sqrt[(5 - Sqrt[5])/10], 0, Sqrt[(5 - Sqrt[5])/10]}, \
+      {-Sqrt[(5 - Sqrt[5])/10], Sqrt[(5 + Sqrt[5])/10], 0}, \
+      {0, -Sqrt[(5 + Sqrt[5])/10], -Sqrt[(5 + Sqrt[5])/10]}, \
+      {0, -Sqrt[(5 + Sqrt[5])/10], Sqrt[(5 + Sqrt[5])/10]}, \
+      {0, 0, -Sqrt[(5 + 2*Sqrt[5])/5]}, \
+      {0, 0, Sqrt[(5 + 2*Sqrt[5])/5]}, \
+      {0, Sqrt[(5 + Sqrt[5])/10], -Sqrt[(5 + Sqrt[5])/10]}, \
+      {0, Sqrt[(5 + Sqrt[5])/10], Sqrt[(5 + Sqrt[5])/10]}, \
+      {Sqrt[(5 - Sqrt[5])/10], -Sqrt[(5 + Sqrt[5])/10], 0}, \
+      {Sqrt[(5 - Sqrt[5])/10], 0, -Sqrt[(5 - Sqrt[5])/10]}, \
+      {Sqrt[(5 - Sqrt[5])/10], 0, Sqrt[(5 - Sqrt[5])/10]}, \
+      {Sqrt[(5 - Sqrt[5])/10], Sqrt[(5 + Sqrt[5])/10], 0}}",
+    faces_src: "{\
+      {4, 3, 8, 10}, {9, 4, 10, 14}, {7, 5, 1, 2}, {11, 5, 7, 12}, \
+      {3, 1, 6, 8}, {6, 1, 5, 11}, {13, 8, 6, 11}, {14, 12, 7, 9}, \
+      {2, 1, 3, 4}, {10, 8, 13, 14}, {9, 7, 2, 4}, {13, 11, 12, 14}}",
+    classes_src: "{\"Amphichiral\", \"Convex\", \"Equilateral\", \"Zonohedron\"}",
+  },
 ];
 
 fn find_polyhedron(name: &str) -> Option<&'static PolyhedronInfo> {
   // "Hexahedron" is the standard alternative name for the cube.
-  let name = if name == "Hexahedron" { "Cube" } else { name };
+  // "MathematicaSpikey" (the Mathematica/Wolfram|Alpha logo) is a rhombic
+  // hexecontahedron: its 62 vertices are the 12+30+20 vertices of an
+  // icosahedron, an icosidodecahedron and a dodecahedron, moved out to a
+  // common radius per vertex class — exactly this solid's own construction.
+  let name = match name {
+    "Hexahedron" => "Cube",
+    "MathematicaSpikey" => "RhombicHexecontahedron",
+    _ => name,
+  };
   POLYHEDRA.iter().find(|p| p.name == name)
 }
 

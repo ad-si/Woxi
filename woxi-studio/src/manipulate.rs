@@ -210,7 +210,7 @@ impl ControlState {
         if *is_real {
           format_f64_real(*current)
         } else {
-          format_f64(*current)
+          woxi::functions::graphics::format_f64_exact(*current)
         }
       }
       ControlState::Trigger { current, .. } => format_f64(*current),
@@ -473,15 +473,21 @@ impl ManipulateState {
       .or_else(|| extract_locator_pane_spec(expr))
       .or_else(|| extract_click_pane_spec(expr))?;
     let controls = controls_from_spec(&spec);
-    // Line each control up with its `Enabled` condition (if any) by name.
+    // Line each control up with its `Enabled` condition (if any) by name. A
+    // `Button`'s own condition travels on the `ManipulateControl` itself
+    // instead: it binds no variable, so `c.name()` is always `""` and a
+    // name-keyed lookup into `spec.control_enabled` could never find it (and
+    // would collide across buttons that each carry their own condition).
     let control_enabled: Vec<Option<String>> = controls
       .iter()
-      .map(|c| {
-        spec
+      .zip(spec.controls.iter())
+      .map(|(c, raw)| match raw {
+        ManipulateControl::Button { enabled, .. } => enabled.clone(),
+        _ => spec
           .control_enabled
           .iter()
           .find(|(n, _)| n == c.name())
-          .map(|(_, cond)| cond.clone())
+          .map(|(_, cond)| cond.clone()),
       })
       .collect();
     let control_is_enabled = vec![true; controls.len()];
@@ -576,7 +582,14 @@ impl ManipulateState {
       return;
     }
     for (name, code) in saved {
-      if let Some(control) = self.controls.iter_mut().find(|c| c.name() == name)
+      // A widget rebuilt from a bare box dump keeps the DynamicModule's
+      // `$$` uniquification suffix on its control names, while the saved
+      // variable names arrive with it already stripped.
+      let suffixed = format!("{name}$$");
+      if let Some(control) = self
+        .controls
+        .iter_mut()
+        .find(|c| c.name() == name || c.name() == suffixed)
       {
         control.set_current_from_code(code);
       }
@@ -1449,6 +1462,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         label,
         label_runs,
         action,
+        enabled: _,
       } => ControlState::Button {
         label: label.clone(),
         label_runs: label_runs.clone(),
@@ -1550,6 +1564,112 @@ mod tests {
     // with each other, and both with the value the body actually bound.
     assert_eq!(n_ctrl.current_code(), "3");
     assert_eq!(n_state, Some("3"));
+  }
+
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook ("Chip Stack Game")
+  /// whose action row is `Row[{Button["have a go", …, Enabled ->
+  /// Dynamic[gameinplay]], Button["restart", …]}]` — the first button
+  /// disables itself once a round-limit variable flips to `False`, the
+  /// second has no `Enabled` option at all. This is a self-authored,
+  /// construct-equivalent example (a generic step counter, not the
+  /// specific Demonstration's names, values or wording, which are
+  /// copyrighted).
+  ///
+  /// Regression: `ManipulateControl::Button` had no field for its own
+  /// `Enabled` option, and the two call sites that build one
+  /// (`Button[label, action, opts…]` and the JSON widget serializer) both
+  /// dropped every option past `action` on the floor — so the value never
+  /// existed to look up in the first place. Even if it had, a `Button`
+  /// binds no variable (`ControlState::name()` returns `""` for one), so
+  /// the ordinary name-keyed `spec.control_enabled` lookup used for every
+  /// other control type could never find it, and two buttons with two
+  /// different conditions would collide on that one empty-string key.
+  /// The button stayed permanently clickable, so a "have a go"-style
+  /// button never grays out once its own game-over condition holds,
+  /// letting the underlying state run past the point the Demonstration
+  /// means for it to stop.
+  #[test]
+  fn button_with_own_enabled_condition_disables_independently_of_sibling() {
+    let code = r#"Manipulate[
+      Graphics[{}],
+      {{steps, 0}, ControlType -> None},
+      {{active, True}, {True, False}, ControlType -> None},
+      Row[{
+        Button["step",
+          {
+            steps = steps + 1;
+            If[steps >= 2, active = False]
+          },
+          Enabled -> Dynamic[active]
+        ],
+        Button["reset", {steps = 0; active = True}]
+      }]
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+
+    let button_indices: Vec<usize> = state
+      .controls
+      .iter()
+      .enumerate()
+      .filter_map(|(i, c)| {
+        matches!(c, ControlState::Button { .. }).then_some(i)
+      })
+      .collect();
+    assert_eq!(
+      button_indices.len(),
+      2,
+      "both Row-grouped buttons must become their own Button controls, \
+       got: {:?}",
+      state.controls
+    );
+    let (step_idx, reset_idx) = (button_indices[0], button_indices[1]);
+
+    assert!(
+      state.control_is_enabled[step_idx],
+      "the gated button starts enabled while `active` is still True"
+    );
+    assert!(
+      state.control_is_enabled[reset_idx],
+      "a button with no Enabled option must always be enabled"
+    );
+
+    // Press "step" until the action flips `active` to False.
+    for _ in 0..2 {
+      let ControlState::Button { action, .. } = &state.controls[step_idx]
+      else {
+        panic!("expected a Button control");
+      };
+      let action = action.clone();
+      state.apply_button_action(&action);
+    }
+
+    assert!(
+      !state.control_is_enabled[step_idx],
+      "the gated button must disable itself once its own Enabled \
+       condition goes False, got: {:?}",
+      state.control_is_enabled
+    );
+    assert!(
+      state.control_is_enabled[reset_idx],
+      "the ungated sibling button must stay enabled regardless of the \
+       other button's condition — the two must not collide on a shared \
+       empty-string lookup key"
+    );
+
+    // "reset" has no Enabled option, so it must still fire and clear the
+    // other button's condition again.
+    let ControlState::Button { action, .. } = &state.controls[reset_idx] else {
+      panic!("expected a Button control");
+    };
+    let action = action.clone();
+    state.apply_button_action(&action);
+    assert!(
+      state.control_is_enabled[step_idx],
+      "resetting `active` back to True must re-enable the gated button"
+    );
   }
 
   /// Checked a randomly-sampled Wolfram Demonstrations Project notebook
@@ -1676,6 +1796,56 @@ mod tests {
          found): {svg}"
       );
     }
+  }
+
+  /// A `TabView` whose panes are `Grid`s with `SetterBar[Dynamic[var],
+  /// choices] /. labels` cells (a key picker showing note names for numeric
+  /// choices) and a `Sound[…]` row. The bars are lifted into the control
+  /// panel with their labels, each shown only on its own tab, and the
+  /// selected tab's grid is drawn as the picture instead of leaving the
+  /// symbolic `TabView[…]` text.
+  #[test]
+  fn tabview_grid_panes_with_body_setter_bars() {
+    let code = r#"Manipulate[
+      TabView[{
+        {"Major", "Major" -> Text@Grid[{
+          {SetterBar[Dynamic[ka], {0, 7, 2}] /. names, "x"},
+          {Sound[{SoundNote[ka, 0.2], SoundNote[ka + 4, 0.2]}], "y"}}]},
+        {"Minor", "Minor" -> Grid[{
+          {SetterBar[Dynamic[kb], {9, 4}] /. names}}]}
+      }, Dynamic[tab]],
+      {{tab, "Major"}, {"Major", "Minor"}, ControlType -> None},
+      {ka, 0, ControlType -> None},
+      {kb, 9, ControlType -> None},
+      Initialization :> (names = {0 -> "C", 7 -> "G", 2 -> "D", 9 -> "A", 4 -> "E"})
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = ManipulateState::from_expr(&expr)
+      .expect("the tabbed setter-bar layout should build a ManipulateState");
+    assert_eq!(state.error, None, "{:?}", state.error);
+
+    let names: Vec<&str> = state.controls.iter().map(|c| c.name()).collect();
+    assert_eq!(names, ["tab", "ka", "kb"]);
+    let labels = |name: &str| {
+      let c = state.controls.iter().find(|c| c.name() == name).unwrap();
+      format!("{c:?}")
+    };
+    assert!(
+      labels("ka").contains("\"C\", \"G\", \"D\""),
+      "setter bar choices must carry their note-name labels: {}",
+      labels("ka")
+    );
+    assert!(
+      !state.body.contains("SetterBar"),
+      "lifted setter bars must not stay in the body: {}",
+      state.body
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the selected tab's grid must render as a picture, got text {:?}",
+      state.text_output
+    );
   }
 
   /// Checked a randomly-sampled Wolfram Demonstrations Project notebook
@@ -2076,5 +2246,214 @@ mod tests {
 
     let names: Vec<&str> = state.controls.iter().map(|c| c.name()).collect();
     assert_eq!(names, ["cutoff"]);
+  }
+
+  /// A sampled Demonstration titles a control with `Row[{"title",
+  /// Spacer[n]}]` and pins its readouts with left-aligned `Text`. The
+  /// spacer is layout, so the control heading must not spell out the
+  /// `Spacer[n]` head, and the left-aligned readout must be anchored at
+  /// its left edge rather than centred on a guessed width.
+  #[test]
+  fn heading_row_with_spacer_and_left_aligned_readout() {
+    let code = r#"Manipulate[
+      Graphics[{Text[Row[{Spacer[30], "level = ", k}], {-1, 0}, {-1, 0}]},
+        PlotRange -> {{-1, 1}, {-1, 1}}, ImageSize -> {200, 14}],
+      Row[{"gain", Spacer[40]}],
+      {{k, 3}, 1, 9, 1}
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = ManipulateState::from_expr(&expr).expect("state should build");
+    assert_eq!(state.error, None);
+    for c in &state.controls {
+      if let ControlState::Heading { label, .. } = c {
+        assert!(!label.contains("Spacer"), "leaked head in {label:?}");
+      }
+    }
+    assert!(state.graphics_handle.is_some());
+  }
+
+  /// End-to-end regression for a Wolfram Demonstrations Project idiom found
+  /// opening a randomly-sampled Demonstration: a `Module[…]`
+  /// unconditionally builds a couple of decorative `GraphicsComplex[
+  /// PolyhedronData[name, "VertexCoordinates"], Line[PolyhedronData[name,
+  /// "EdgeIndices"]]]` overlays and only shows each one when its own
+  /// checkbox is on (`If[show, overlay, {}]`), with the checkboxes laid out
+  /// via `Control@{{…}, {True, False}}` inside a `Grid` — one row pairing
+  /// two numeric `Control@` sliders, the other a `Row[{Control@, Spacer[10],
+  /// Control@}]` holding both checkboxes — plus `TrackedSymbols`.
+  /// Independently reproduced here with a different base shape and
+  /// different overlay roles, not copied from the source Demonstration.
+  ///
+  /// Regression coverage for `PolyhedronData["GreatStellatedDodecahedron" |
+  /// "MathematicaSpikey", …]`: before those two entities existed, each
+  /// `PolyhedronData[…]` call there stayed unevaluated (emitting a
+  /// `PolyhedronData::notent` message every time the body re-ran), so
+  /// toggling either checkbox re-rendered around a broken, unevaluated
+  /// `GraphicsComplex` instead of the star polyhedron.
+  #[test]
+  fn demonstration_polyhedrondata_overlay_checkboxes_toggle_live() {
+    let code = r#"Manipulate[
+      Module[{base, star, spikes},
+        base = GraphicsComplex[PolyhedronData["Icosahedron", "VertexCoordinates"],
+          Polygon[PolyhedronData["Icosahedron", "FaceIndices"]]];
+        star = GraphicsComplex[
+          PolyhedronData["GreatStellatedDodecahedron", "VertexCoordinates"],
+          Line[PolyhedronData["GreatStellatedDodecahedron", "EdgeIndices"]]];
+        spikes = GraphicsComplex[
+          PolyhedronData["MathematicaSpikey", "VertexCoordinates"],
+          Line[PolyhedronData["MathematicaSpikey", "EdgeIndices"]]];
+        Graphics3D[{base, If[showStar, Scale[star, grow], {}],
+          If[showSpikes, Scale[spikes, shrink], {}]}, Boxed -> False]
+      ],
+      Grid[{
+        {Control@{{grow, 1.2, "star size"}, 1, 2, 0.1, ImageSize -> Small},
+         Control@{{shrink, 0.3, "spike size"}, 0.1, 0.5, 0.05,
+           ImageSize -> Small}},
+        {Row[{
+           Control@{{showStar, False, "show star"}, {True, False}},
+           Spacer[10],
+           Control@{{showSpikes, False, "show spikes"}, {True, False}}
+         }]}
+      }],
+      TrackedSymbols :> {grow, shrink, showStar, showSpikes}
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("state should build");
+
+    assert_eq!(
+      state.error, None,
+      "body must evaluate cleanly at its default (both checkboxes off) \
+       control values: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the base icosahedron must render"
+    );
+
+    let show_star_idx = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "showStar")
+      .expect("showStar checkbox control");
+    let show_spikes_idx = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "showSpikes")
+      .expect("showSpikes checkbox control");
+
+    assert!(state.select_discrete(show_star_idx, "True"));
+    state.apply_tracking(show_star_idx);
+    state.reevaluate();
+    assert_eq!(
+      state.error, None,
+      "toggling on the great stellated dodecahedron overlay must not error: \
+       {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the great stellated dodecahedron overlay must render"
+    );
+
+    assert!(state.select_discrete(show_spikes_idx, "True"));
+    state.apply_tracking(show_spikes_idx);
+    state.reevaluate();
+    assert_eq!(
+      state.error, None,
+      "toggling on the Mathematica Spikey overlay must not error: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the Mathematica Spikey overlay must render"
+    );
+
+    let slider_names: Vec<&str> = state
+      .controls
+      .iter()
+      .filter_map(|c| match c {
+        ControlState::Continuous { name, .. } => Some(name.as_str()),
+        _ => None,
+      })
+      .collect();
+    assert_eq!(slider_names, ["grow", "shrink"]);
+  }
+
+  /// Checked a randomly-sampled Wolfram Demonstrations Project notebook
+  /// ("Properties of Chemical Elements") whose `PopupMenu` control builds
+  /// its choice list with `(If[# =!= Delimiter, # -> ElementData[1, #,
+  /// "Description"], #]&) /@ {…}` — a `Map` over a list of property names
+  /// interspersed with bare `Delimiter`s that group them into sections,
+  /// each non-`Delimiter` entry turned into a `value -> label` rule via
+  /// `ElementData`'s little-used third ("annotation") argument.
+  /// Independently written, not copied from the Demonstration: different
+  /// properties, a different default choice, and a differently laid out
+  /// body.
+  ///
+  /// Regression coverage for two gaps that Demonstration's control panel
+  /// hit and nothing else exercised: `ElementData[element, property,
+  /// "Description"]` (previously always unevaluated — only the two- and
+  /// one-argument forms were implemented, so every label rendered as the
+  /// literal, unevaluated `ElementData[…]` call) and a bare `Delimiter`
+  /// inside a choice list becoming a fourth, selectable "Delimiter" entry
+  /// instead of the section separator it draws as in wolframscript (see
+  /// `discrete_choice_columns` in `src/functions/graphics.rs`).
+  #[test]
+  fn popup_menu_choices_built_from_a_map_with_delimiters_and_element_descriptions()
+   {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[
+        ListPlot[Table[{z, ElementData[z, prop]}, {z, 1, 10}],
+          PlotLabel -> ElementData[1, prop, \"Description\"]],
+        {{prop, \"AtomicNumber\", \"property\"},
+         (If[# =!= Delimiter, # -> ElementData[1, #, \"Description\"], #]&) /@
+           {\"AtomicNumber\", \"AtomicRadius\", Delimiter, \"Density\"}}
+      ]",
+    )
+    .expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+
+    assert_eq!(
+      state.error, None,
+      "body must evaluate cleanly: {:?}",
+      state.error
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the default (AtomicNumber) plot must draw"
+    );
+
+    let prop_ctrl = state
+      .controls
+      .iter()
+      .find(|c| c.name() == "prop")
+      .expect("prop control");
+    match prop_ctrl {
+      ControlState::Discrete {
+        values,
+        value_labels,
+        ..
+      } => {
+        assert_eq!(
+          values.len(),
+          3,
+          "the bare Delimiter must not become a fourth, selectable choice: {values:?}"
+        );
+        assert_eq!(
+          value_labels,
+          &vec![
+            "atomic number".to_string(),
+            "atomic radius".to_string(),
+            "density".to_string(),
+          ]
+        );
+      }
+      other => panic!("expected a Discrete PopupMenu control, got {other:?}"),
+    }
   }
 }
