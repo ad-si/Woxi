@@ -19006,11 +19006,13 @@ mod nested_product_expansion_stays_bounded {
       "0"
     );
     // It still interpolates: substituting the symbolic ordinate back gives
-    // every sample point.
+    // every sample point. Simplify once outside the Table: the Newton form
+    // is exponentially large, and re-simplifying it per sample pushed this
+    // test past the 20s timeout on the Windows runner.
     assert_eq!(
       interpret(&format!(
-        "Table[Simplify[InterpolatingPolynomial[{pts}, x]] \
-         /. {{q -> 86, x -> k}}, {{k, 0, 10}}]"
+        "With[{{p = Simplify[InterpolatingPolynomial[{pts}, x]]}}, \
+         Table[p /. {{q -> 86, x -> k}}, {{k, 0, 10}}]]"
       ))
       .unwrap(),
       "{1, 6, 17, 34, 57, 86, 121, 162, 209, 262, 321}"

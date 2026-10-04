@@ -2513,6 +2513,15 @@ can never work.
 
 ## Lists, associations and structured objects
 
+### `Permutations::toobig` triggers at a fixed size
+
+WL refuses a `Permutations` result with `::toobig` when it would not fit in
+the machine's free memory, and builds its packed array otherwise. Woxi's
+owned `Expr` tree costs far more per element, so it refuses anything over
+2^26 nodes. That means `Permutations[Range[11]]` (479M nodes) is refused
+even where wolframscript, with enough RAM, returns all 39916800 permutations.
+`::fac` and `::len` do not depend on memory, and those match.
+
 ### ListCorrelate / ListConvolve: the 7th argument (a level specification)
 
 The overhang path (`k` / `{kL, kR}`, padding, generalized `g`/`h`) now
@@ -3174,6 +3183,14 @@ wolframscript -code 'op = LinearSolve[{{1, 2}, {3, 4}}, Method -> "Cholesky"]; o
 woxi eval 'op = LinearSolve[{{1, 2}, {3, 4}}, Method -> "Cholesky"]; op'
 # LinearSolve::herm twice
 ```
+
+The same missing mark shows when an unevaluated result is passed on: the
+pure function in `Prepend[f[DeleteCases[l, #]], #] &@ l[[Quotient[n, 6] + 1]]`
+gets `l[[1 + Quotient[n, 6]]]` as `#` and evaluates it again, so the first
+`Part::pkspec1` prints twice. It also costs time: a recursion that nests an
+unevaluated expression one level deeper per call re-evaluates the whole nest
+on every call. A `fromrank[list_, n_]` whose `Mod[n, 6]` argument nests
+until `$RecursionLimit` takes ~3s in Woxi and 0.03s in wolframscript.
 
 ### A too-deep `Part` on a packed array is `Part::partd1`
 
