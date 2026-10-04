@@ -4551,6 +4551,17 @@ woxi eval 'ColorData[4, 9]'   # stays unevaluated
 Only the indexed schemes 1, 2, 3, 30, 35 and 97 are tabulated; a graphic that
 colors with scheme 4 renders those primitives with the default color.
 
+### Named `VertexShapeFunction`/`EdgeShapeFunction` shapes are approximations
+
+`VertexShapeFunction -> "Capsule"`, `"Star"`, `"Triangle"`, `"FiveDown"`,
+`"ConcaveHexagon"`, `"Parallelogram"` and `"RoundedUpTrapezoid"` are drawn as
+a plain polygon or rounded rectangle at roughly the right size; the exact
+proportions differ from wolframscript. Named edge shapes other than
+`"Line"`/`"Arrow"` (e.g. `"CarvedArrow"`, `"DashedLine"`, `"DottedLine"`,
+`"DiamondLine"`, `"FilledArcArrow"`) still fall back to the plain edge.
+`GraphData` also lacks most atlas names (e.g. `"PappusGraph"`,
+`"HeawoodGraph"`), so Demonstrations that pick graphs by name still fail.
+
 ## Colorize
 
 - `Colorize[m, ImageSize -> …]` ignores `ImageSize` (`Image` carries no
