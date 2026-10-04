@@ -4560,6 +4560,17 @@ woxi eval 'Together[1/x + 1/y, Modulus -> 3]'   # stays unevaluated
 The modular path cancels over GF(p) with univariate polynomial arithmetic,
 so a multivariate fraction (or a composite modulus) is returned unevaluated.
 
+### `BesselJ/I/Y/K` at complex arguments lose accuracy for large `|z|`
+
+```sh
+woxi eval 'BesselJ[0, 40. + 5. I]'   # power series, cancellation error
+```
+
+Complex (and negative-real `BesselY`/`BesselK`) arguments are evaluated with
+the plain power series in machine precision, which is accurate for moderate
+`|z|` (roughly below 12) but suffers cancellation beyond that; there is no
+asymptotic-expansion branch yet.
+
 ### `ColorData[4, k]` indexed scheme is not tabulated
 
 ```sh
