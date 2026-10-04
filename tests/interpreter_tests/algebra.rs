@@ -14498,6 +14498,28 @@ mod cases {
   use super::super::case_helpers::assert_case;
 
   #[test]
+  fn solve_trig_linear_argument() {
+    assert_case(
+      r#"Solve[Cos[2 x] == 0, x]"#,
+      r#"{{x -> ConditionalExpression[-1/4*Pi + Pi*C[1], Element[C[1], Integers]]}, {x -> ConditionalExpression[Pi/4 + Pi*C[1], Element[C[1], Integers]]}}"#,
+    );
+    assert_case(
+      r#"Solve[Cos[4 Pi x] == 0, x]"#,
+      r#"{{x -> ConditionalExpression[-1/8 + C[1]/2, Element[C[1], Integers]]}, {x -> ConditionalExpression[1/8 + C[1]/2, Element[C[1], Integers]]}}"#,
+    );
+    assert_case(
+      r#"Solve[Tan[3 x] == 1, x]"#,
+      r#"{{x -> ConditionalExpression[Pi/12 + (Pi*C[1])/3, Element[C[1], Integers]]}}"#,
+    );
+  }
+
+  #[test]
+  fn maximize_sinusoid_with_scaled_argument() {
+    assert_case(r#"Maximize[5 Sin[4 Pi t], t]"#, r#"{5, {t -> 1/8}}"#);
+    assert_case(r#"Minimize[5 Sin[2 t], t]"#, r#"{-5, {t -> -1/4*Pi}}"#);
+  }
+
+  #[test]
   fn maximize() {
     assert_case(r#"Maximize[-2 x^2 - 3 x + 5, x]"#, r#"{49/8, {x -> -3/4}}"#);
   }

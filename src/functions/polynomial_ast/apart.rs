@@ -1009,7 +1009,10 @@ fn flatten_product_factors(expr: &Expr, out: &mut Vec<Expr>) {
 
 /// Check if expr is a polynomial of degree exactly 1 in var.
 /// Returns Some((coeff_of_var, constant_term)) if linear.
-fn extract_linear_coeffs(expr: &Expr, var: &str) -> Option<(Expr, Expr)> {
+pub(super) fn extract_linear_coeffs(
+  expr: &Expr,
+  var: &str,
+) -> Option<(Expr, Expr)> {
   let expanded = expand_and_combine(expr);
   // Constant term: substitute var=0
   let constant =
