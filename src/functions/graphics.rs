@@ -840,6 +840,9 @@ enum Primitive {
   },
   BezierCurvePrim {
     points: Vec<(f64, f64)>,
+    /// `FilledCurve[BezierCurve[…]]`: close the path and fill it with the
+    /// face color (and edge form) instead of only stroking it.
+    filled: bool,
     style: StyleState,
   },
   /// A whole rendered picture placed inside this one by `Inset[obj, pos]`.
@@ -2222,6 +2225,28 @@ fn collect_primitives(
             errors.push(format!("Coordinate {} should be a pair of numbers, or a list of pairs of numbers.", expr_to_string(&args[0])));
           }
         }
+        // `FilledCurve[BezierCurve[…]]` (or a list of curves) fills the
+        // region each Bezier path encloses.
+        "FilledCurve" if !args.is_empty() => {
+          let before = prims.len();
+          collect_primitives(&args[0], style, prims, errors);
+          for prim in &mut prims[before..] {
+            match prim {
+              Primitive::BezierCurvePrim { filled, .. } => *filled = true,
+              Primitive::Line {
+                segments, style, ..
+              } if segments.len() == 1 => {
+                *prim = Primitive::PolygonPrim {
+                  points: segments.remove(0),
+                  holes: Vec::new(),
+                  vertex_colors: None,
+                  style: style.clone(),
+                };
+              }
+              _ => {}
+            }
+          }
+        }
         "PolarCurve" if args.len() >= 2 => {
           parse_polar_curve(args, style, prims, false);
         }
@@ -2284,13 +2309,14 @@ fn collect_primitives(
           parse_infinite_line(args, style, prims, true);
         }
         // Rotate[g, θ] rotates g by θ radians counterclockwise about the
-        // center of its bounding box; Rotate[g, θ, {x, y}] about the point
+        // center of its bounding box; Rotate[g, {u, v}] by the angle that
+        // carries the direction u onto the direction v; Rotate[g, θ, {x, y}] about the point
         // {x, y}. Collect the inner primitives, then rotate their coordinates.
         "Rotate" if args.len() >= 2 => {
           let mut inner_style = style.clone();
           let mut inner = Vec::new();
           collect_primitives(&args[0], &mut inner_style, &mut inner, errors);
-          match expr_to_f64(&args[1]) {
+          match rotation_angle(&args[1]) {
             Some(angle) => {
               let (cx, cy) =
                 args.get(2).and_then(expr_to_point).unwrap_or_else(|| {
@@ -3602,6 +3628,30 @@ fn graphics_text_content(expr: &Expr) -> String {
         None => parts.concat(),
       }
     }
+    // `Grid[{{…}, …}, opts…]` / `Column[{…}, opts…]` lay their items out in
+    // lines: one text line per row (cells of a row side by side, separated
+    // by a gap) rather than the literal `Grid[{{…}}, …]` source. The
+    // options (spacing, alignment, frame, item size) do not change the text.
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Grid" | "Column")
+        && matches!(args.first(), Some(Expr::List(_))) =>
+    {
+      let Some(Expr::List(rows)) = args.first() else {
+        unreachable!()
+      };
+      rows
+        .iter()
+        .map(|row| match row {
+          Expr::List(cells) if name == "Grid" => cells
+            .iter()
+            .map(graphics_text_content)
+            .collect::<Vec<_>>()
+            .join("  "),
+          other => graphics_text_content(other),
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+    }
     // `Subscript`/`Superscript`/`Subsuperscript` typeset as scripts, not as
     // the two-line OutputForm box `ToString` would give: a label reading `N`
     // over ` D` is not what the picture is meant to show. `expr_to_label`
@@ -3791,6 +3841,37 @@ fn inset_primitives(
   // is rendered here first (a Demonstration builds its little inset scene
   // inside the body and insets the variable), which is also what keeps it
   // from falling through to the text path and printing `-Graphics3D-`.
+  // `Inset[Labeled[g, label], …]` keeps its caption: the picture is
+  // embedded as usual and the label text is stacked beneath it.
+  if let Expr::FunctionCall {
+    name: labeled,
+    args: largs,
+  } = &args[0]
+    && labeled == "Labeled"
+    && largs.len() == 2
+  {
+    let mut inner_args = args.to_vec();
+    inner_args[0] = largs[0].clone();
+    let mut prims = inset_primitives(&inner_args, errors)?;
+    if let [Primitive::InsetGraphic { svg, w, h, .. }] = prims.as_mut_slice() {
+      let caption = graphics_text_content(&largs[1]);
+      if !caption.trim().is_empty() {
+        const CAPTION_H: f64 = 24.0;
+        let total_h = *h + CAPTION_H;
+        *svg = format!(
+          "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{w:.2}\" \
+           height=\"{total_h:.2}\" viewBox=\"0 0 {w:.2} {total_h:.2}\">{svg}\
+           <text x=\"{:.2}\" y=\"{:.2}\" text-anchor=\"middle\" \
+           font-family=\"sans-serif\" font-size=\"12\" fill=\"black\">{}</text></svg>",
+          *w / 2.0,
+          *h + 16.0,
+          box_string_to_svg(&caption)
+        );
+        *h = total_h;
+      }
+    }
+    return Some(prims);
+  }
   let anchor = args.get(1).and_then(expr_to_anchor);
   // Without a `size`, an inset is the object at its own natural size — not
   // stretched or shrunk to whatever extent its primitives happen to span in
@@ -4214,6 +4295,7 @@ fn parse_bezier(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   {
     prims.push(Primitive::BezierCurvePrim {
       points: pts,
+      filled: false,
       style: style.clone(),
     });
   }
@@ -4893,6 +4975,26 @@ fn affine_primitive(
   translate_primitive(&rotated, v.0, v.1)
 }
 
+/// The counterclockwise angle of a 2D `Rotate` specification: a plain
+/// number `θ`, or a pair of vectors `{u, v}` meaning "rotate `u` onto `v`".
+fn rotation_angle(spec: &Expr) -> Option<f64> {
+  if let Some(angle) = expr_to_f64(spec) {
+    return Some(angle);
+  }
+  let Expr::List(items) = spec else {
+    return None;
+  };
+  if items.len() != 2 {
+    return None;
+  }
+  let (ux, uy) = expr_to_point(&items[0])?;
+  let (vx, vy) = expr_to_point(&items[1])?;
+  if (ux == 0.0 && uy == 0.0) || (vx == 0.0 && vy == 0.0) {
+    return None;
+  }
+  Some(vy.atan2(vx) - uy.atan2(ux))
+}
+
 fn rotate_primitive(
   prim: &Primitive,
   cx: f64,
@@ -4975,12 +5077,15 @@ fn rotate_primitive(
       setback: *setback,
       style: style.clone(),
     },
-    Primitive::BezierCurvePrim { points, style } => {
-      Primitive::BezierCurvePrim {
-        points: points.iter().map(|&(x, y)| rp(x, y)).collect(),
-        style: style.clone(),
-      }
-    }
+    Primitive::BezierCurvePrim {
+      points,
+      filled,
+      style,
+    } => Primitive::BezierCurvePrim {
+      filled: *filled,
+      points: points.iter().map(|&(x, y)| rp(x, y)).collect(),
+      style: style.clone(),
+    },
     // A rotated rectangle is no longer axis-aligned → emit a polygon of its
     // four rotated corners.
     Primitive::RectPrim {
@@ -5198,12 +5303,15 @@ fn translate_primitive(prim: &Primitive, dx: f64, dy: f64) -> Primitive {
       setback: *setback,
       style: style.clone(),
     },
-    Primitive::BezierCurvePrim { points, style } => {
-      Primitive::BezierCurvePrim {
-        points: points.iter().map(|&(x, y)| tp(x, y)).collect(),
-        style: style.clone(),
-      }
-    }
+    Primitive::BezierCurvePrim {
+      points,
+      filled,
+      style,
+    } => Primitive::BezierCurvePrim {
+      filled: *filled,
+      points: points.iter().map(|&(x, y)| tp(x, y)).collect(),
+      style: style.clone(),
+    },
     Primitive::RectPrim {
       x_min,
       y_min,
@@ -5435,12 +5543,15 @@ fn scale_primitive(
       setback: *setback,
       style: style.clone(),
     },
-    Primitive::BezierCurvePrim { points, style } => {
-      Primitive::BezierCurvePrim {
-        points: points.iter().map(|&(x, y)| sp(x, y)).collect(),
-        style: style.clone(),
-      }
-    }
+    Primitive::BezierCurvePrim {
+      points,
+      filled,
+      style,
+    } => Primitive::BezierCurvePrim {
+      filled: *filled,
+      points: points.iter().map(|&(x, y)| sp(x, y)).collect(),
+      style: style.clone(),
+    },
     Primitive::RectPrim {
       x_min,
       y_min,
@@ -7451,7 +7562,11 @@ fn render_primitive(
         ));
       }
     }
-    Primitive::BezierCurvePrim { points, style } => {
+    Primitive::BezierCurvePrim {
+      points,
+      filled,
+      style,
+    } => {
       let color = style.effective_color();
       let sw = thickness_px(style.thickness, bb, svg_w).max(0.5);
       let dash = dash_attr(style.dashing.as_ref(), bb, svg_w);
@@ -7538,6 +7653,38 @@ fn render_primitive(
             coord_y(y1, bb, svg_h),
           ));
         }
+      }
+
+      if *filled {
+        let face = style.effective_face_color();
+        let fill_opacity = if face.a < 1.0 {
+          format!(" fill-opacity=\"{}\"", face.a)
+        } else {
+          String::new()
+        };
+        let stroke_attr = match edge_stroke(style.edge_form.as_ref(), bb, svg_w)
+        {
+          Some((sc, esw)) => {
+            let so = if sc.a < 1.0 {
+              format!(" stroke-opacity=\"{}\"", sc.a)
+            } else {
+              String::new()
+            };
+            format!(
+              " stroke=\"{}\" stroke-width=\"{esw:.2}\"{so}",
+              sc.to_svg_rgb()
+            )
+          }
+          None => String::new(),
+        };
+        out.push_str(&format!(
+          "<path d=\"{} Z\" fill=\"{}\"{}{}/>\n",
+          d,
+          face.to_svg_rgb(),
+          fill_opacity,
+          stroke_attr,
+        ));
+        return;
       }
 
       out.push_str(&format!(
@@ -7942,7 +8089,7 @@ fn primitives_to_box_elements(primitives: &[Primitive]) -> Vec<String> {
         elements.extend(tracker.emit_style_changes(style));
         elements.push(gbox::inset_box(text, *x, *y));
       }
-      Primitive::BezierCurvePrim { points, style } => {
+      Primitive::BezierCurvePrim { points, style, .. } => {
         elements.extend(tracker.emit_style_changes(style));
         elements.push(gbox::bezier_curve_box(points));
       }
@@ -13780,6 +13927,15 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
     Expr::FunctionCall { .. } if crate::evaluator::lays_out_a_graphic(cell) => {
       crate::evaluator::expr_to_svg(cell)
     }
+    // `Style[Text[Grid[…]], …]` (a Demonstration's readout panel): the
+    // `Text` only says how to set what it holds, so look through it for a
+    // nested layout or picture.
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Text" | "Pane" | "Item" | "Deploy")
+        && args.len() == 1 =>
+    {
+      return grid_cell_graphic(&unwrap_display_wrappers(cell));
+    }
     // A cell may itself be a block layout, which the text pass cannot
     // set: lay it out on its own and place the result as a picture.
     Expr::FunctionCall { name, args } => {
@@ -17939,6 +18095,18 @@ pub fn column_to_svg(args: &[Expr]) -> Option<String> {
             height: h,
           }
         }
+        // A raster image is a picture, drawn at its own size like any other
+        // graphic — not typeset as the text of its pixel data.
+        Expr::Image { .. } => {
+          let svg = crate::evaluator::expr_to_svg(&resolved);
+          let (w, h) =
+            svg_natural_size(&svg).unwrap_or_else(|| parse_svg_wh(&svg));
+          Cell::Svg {
+            svg,
+            width: w,
+            height: h,
+          }
+        }
         _ => match nested_layout_svg(&resolved) {
           Some(svg) => {
             let (w, h) = parse_svg_wh(&svg);
@@ -18703,7 +18871,9 @@ pub(crate) fn parse_svg_wh(svg: &str) -> (f64, f64) {
 
 /// Strip the outer <svg ...> and </svg> tags, returning only the inner content.
 pub(crate) fn strip_svg_wrapper(svg: &str) -> &str {
-  let start = svg.find('>').map_or(0, |i| i + 1);
+  // Skip an XML prolog (`<?xml …?>`) so the first `>` closes the root tag.
+  let root = svg.find("<svg").unwrap_or(0);
+  let start = svg[root..].find('>').map_or(0, |i| root + i + 1);
   let end = svg.rfind("</svg>").unwrap_or(svg.len());
   &svg[start..end]
 }
@@ -20232,7 +20402,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     // inside the rendered output they would only be an inert picture.
     let mut body_displays = Vec::new();
     let body_expr = extract_body_togglerbars(&unwrapped, &mut body_displays);
-    let body_code = crate::syntax::expr_to_input_form(&body_expr);
+    let body_code = crate::syntax::expr_to_source_form(&body_expr);
     body_expr_kept = Some(body_expr);
     (
       body_code,
@@ -20442,7 +20612,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     {
       if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Initialization")
       {
-        initialization = Some(crate::syntax::expr_to_input_form(replacement));
+        initialization = Some(crate::syntax::expr_to_source_form(replacement));
       }
       // `Appearance -> None` hides the control rows; the animation just
       // runs (an animated widget keeps its play/pause toggle).
@@ -20468,7 +20638,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "FrameLabel")
         && !matches!(replacement.as_ref(), Expr::List(_) | Expr::Identifier(_))
       {
-        displays.push(crate::syntax::expr_to_input_form(replacement));
+        displays.push(crate::syntax::expr_to_source_form(replacement));
       }
       // `AnimationRunning -> False` builds the widget paused.
       if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "AnimationRunning")
@@ -20498,7 +20668,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
           let label_runs = manipulate_label_runs(label_pat, false);
           bookmarks.push((
             flatten_label_runs(&label_runs),
-            crate::syntax::expr_to_input_form(action),
+            crate::syntax::expr_to_source_form(action),
           ));
         }
       }
@@ -20571,7 +20741,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         if is_manipulate_annotation_head(name)
           && annotation_contains_dynamic(spec) =>
       {
-        displays.push(crate::syntax::expr_to_input_form(spec));
+        displays.push(crate::syntax::expr_to_source_form(spec));
         continue;
       }
       // `Button[label, action, opts…]`: a pressable control row whose
@@ -20581,11 +20751,11 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       {
         let label_runs = manipulate_label_runs(&args[0], false);
         let enabled = extract_enabled_condition(&args[2..])
-          .map(crate::syntax::expr_to_input_form);
+          .map(crate::syntax::expr_to_source_form);
         controls.push(ManipulateControl::Button {
           label: flatten_label_runs(&label_runs),
           label_runs,
-          action: crate::syntax::expr_to_input_form(&args[1]),
+          action: crate::syntax::expr_to_source_form(&args[1]),
           enabled,
         });
         continue;
@@ -20617,7 +20787,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
             controls.push(ManipulateControl::Button {
               label: flatten_label_runs(&label_runs),
               label_runs,
-              action: crate::syntax::expr_to_input_form(replacement),
+              action: crate::syntax::expr_to_source_form(replacement),
               enabled: None,
             });
             any = true;
@@ -20651,7 +20821,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     // extra display element: capture it so the frontend can render it
     // live.
     if !matches!(spec, Expr::List(_)) {
-      displays.push(crate::syntax::expr_to_input_form(spec));
+      displays.push(crate::syntax::expr_to_source_form(spec));
       continue;
     }
     let (spec, rename) = rewrite_compound_control_var(spec);
@@ -21007,7 +21177,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       let Some(reset_expr) = find_body_var_reset(&args[0], &var) else {
         continue;
       };
-      let reset_code = crate::syntax::expr_to_input_form(&reset_expr);
+      let reset_code = crate::syntax::expr_to_source_form(&reset_expr);
       let initial_points = crate::with_scoped_globals(
         &initial_bindings,
         || -> Option<Vec<(f64, f64)>> {
@@ -21086,7 +21256,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     if !locator_reset_vars.is_empty() {
       stripped = strip_body_locator_resets(&stripped, &locator_reset_vars);
     }
-    body_code = crate::syntax::expr_to_input_form(&stripped);
+    body_code = crate::syntax::expr_to_source_form(&stripped);
   }
   if !renames.is_empty() {
     renames.sort_by_key(|(orig, _)| std::cmp::Reverse(orig.len()));
@@ -21407,7 +21577,7 @@ fn collect_body_locator_callbacks(
               let var = resolve(var);
               if !found.iter().any(|(n, _)| *n == var) {
                 let callback =
-                  dargs.get(1).map(crate::syntax::expr_to_input_form);
+                  dargs.get(1).map(crate::syntax::expr_to_source_form);
                 found.push((var, callback));
               }
             }
@@ -21667,12 +21837,12 @@ fn collect_body_popup_menus(expr: &Expr) -> Vec<BodyPopupMenu> {
           && let Some(Expr::Identifier(var)) = dargs.first()
           && !found.iter().any(|p| &p.var == var)
         {
-          let choices_code = crate::syntax::expr_to_input_form(
+          let choices_code = crate::syntax::expr_to_source_form(
             &rewrap_in_popup_scopes(args[1].clone(), scopes),
           );
           let enabled_code =
             extract_enabled_condition(&args[2..]).map(|cond| {
-              crate::syntax::expr_to_input_form(&rewrap_in_popup_scopes(
+              crate::syntax::expr_to_source_form(&rewrap_in_popup_scopes(
                 cond.clone(),
                 scopes,
               ))
@@ -21783,7 +21953,7 @@ fn collect_bare_setterbar_state(
         }
         other => other,
       };
-      state.push((var.clone(), crate::syntax::expr_to_input_form(value)));
+      state.push((var.clone(), crate::syntax::expr_to_source_form(value)));
     }
     for a in args {
       collect_bare_setterbar_state(a, known, state);
@@ -21870,11 +22040,11 @@ fn collect_body_setter_bars(expr: &Expr) -> Vec<BodySetterBar> {
     };
     if let Some((var, choices)) = setter_bar_parts(bar) {
       if !found.iter().any(|b| &b.var == var) {
-        let list = crate::syntax::expr_to_input_form(choices);
+        let list = crate::syntax::expr_to_source_form(choices);
         let choices_code = match rules {
           Some(r) => format!(
             "Map[(#1 -> (#1 /. {}))&, {}]",
-            crate::syntax::expr_to_input_form(r),
+            crate::syntax::expr_to_source_form(r),
             list
           ),
           None => list,
@@ -21893,14 +22063,14 @@ fn collect_body_setter_bars(expr: &Expr) -> Vec<BodySetterBar> {
       && let Expr::List(items) = &args[0]
     {
       let selector =
-        crate::syntax::expr_to_input_form(unwrap_pane_selector(&args[1]));
+        crate::syntax::expr_to_source_form(unwrap_pane_selector(&args[1]));
       for (idx, item) in items.iter().enumerate() {
         let (key, _label, content) = tabview_pane_parts(item);
         let key = key.unwrap_or_else(|| Expr::Integer(idx as i128 + 1));
         let pane_cond = format!(
           "({}) == ({})",
           selector,
-          crate::syntax::expr_to_input_form(&key)
+          crate::syntax::expr_to_source_form(&key)
         );
         walk(content, Some(&pane_cond), found);
       }
@@ -22038,7 +22208,7 @@ fn extract_body_togglerbars(expr: &Expr, displays: &mut Vec<String>) -> Expr {
               && matches!(dargs.first(), Some(Expr::Identifier(_)))
         ) =>
     {
-      displays.push(crate::syntax::expr_to_input_form(expr));
+      displays.push(crate::syntax::expr_to_source_form(expr));
       id_expr("Nothing")
     }
     // A bare `Button[label, action, opts…]` drawn directly by the body (a
@@ -22050,7 +22220,7 @@ fn extract_body_togglerbars(expr: &Expr, displays: &mut Vec<String>) -> Expr {
     Expr::FunctionCall { name, args }
       if name == "Button" && args.len() >= 2 =>
     {
-      displays.push(crate::syntax::expr_to_input_form(expr));
+      displays.push(crate::syntax::expr_to_source_form(expr));
       id_expr("Nothing")
     }
     // `Table[body, iterators…]` generates a variable number of copies of
@@ -22121,7 +22291,7 @@ pub fn apply_manipulate_callback(
   let code = manipulate_block_code(&body, bindings);
   crate::interpret_to_expr(&code)
     .ok()
-    .map(|e| crate::syntax::expr_to_input_form(&e))
+    .map(|e| crate::syntax::expr_to_source_form(&e))
 }
 
 /// Parse an InputForm `{x, y}` point (as stored in a Manipulate binding)
@@ -22202,7 +22372,7 @@ fn unwrap_dynamic_module_locals(
                 if let Expr::Identifier(var_name) = &set_args[0] {
                   state.push((
                     var_name.clone(),
-                    crate::syntax::expr_to_input_form(&set_args[1]),
+                    crate::syntax::expr_to_source_form(&set_args[1]),
                   ));
                 }
               }
@@ -22213,7 +22383,7 @@ fn unwrap_dynamic_module_locals(
                 if let Expr::Identifier(var_name) = pattern.as_ref() {
                   state.push((
                     var_name.clone(),
-                    crate::syntax::expr_to_input_form(replacement),
+                    crate::syntax::expr_to_source_form(replacement),
                   ));
                 }
               }
@@ -22674,7 +22844,7 @@ fn collect_pane_visibility(
     return;
   };
   let selector =
-    crate::syntax::expr_to_input_form(unwrap_pane_selector(selector));
+    crate::syntax::expr_to_source_form(unwrap_pane_selector(selector));
   for pane in panes {
     let (Expr::Rule {
       pattern,
@@ -22690,7 +22860,7 @@ fn collect_pane_visibility(
     let cond = format!(
       "({}) == ({})",
       selector,
-      crate::syntax::expr_to_input_form(pattern)
+      crate::syntax::expr_to_source_form(pattern)
     );
     for var in pane_control_variables(replacement, place_map) {
       match out.iter_mut().find(|(n, _)| *n == var) {
@@ -22850,12 +23020,12 @@ fn manipulate_initial_value_bindings(specs: &[Expr]) -> Vec<(String, String)> {
             return None;
           };
           let init = head.get(1)?;
-          Some((name.clone(), crate::syntax::expr_to_input_form(init)))
+          Some((name.clone(), crate::syntax::expr_to_source_form(init)))
         }
         Expr::Identifier(name) => {
           let min = items.get(1)?;
           crate::functions::math_ast::try_eval_to_f64(min)?;
-          Some((name.clone(), crate::syntax::expr_to_input_form(min)))
+          Some((name.clone(), crate::syntax::expr_to_source_form(min)))
         }
         _ => None,
       }
@@ -22927,7 +23097,7 @@ fn manipulate_post_body_bindings(
       if let Ok(evaluated) = evaluate_expr_to_expr(&symbol)
         && !matches!(&evaluated, Expr::Identifier(s) if s == name)
       {
-        *value = crate::syntax::expr_to_input_form(&evaluated);
+        *value = crate::syntax::expr_to_source_form(&evaluated);
       }
     }
   });
@@ -23024,7 +23194,7 @@ fn discrete_choice_columns(items: &[Expr]) -> DiscreteChoiceColumns {
       continue;
     }
     if let Some((value, label)) = discrete_choice_rule(item) {
-      values.push(crate::syntax::expr_to_input_form(value));
+      values.push(crate::syntax::expr_to_source_form(value));
       // A rule label that is itself a graphic (the crosshair icons of
       // the Demonstrations site) renders as an SVG icon; its text column
       // falls back to the bound value so a non-graphical frontend still
@@ -23046,13 +23216,13 @@ fn discrete_choice_columns(items: &[Expr]) -> DiscreteChoiceColumns {
       // A plain colour choice (no Rule label) renders as a swatch icon —
       // the ColorSetter idiom — rather than its `RGBColor[…]` InputForm.
       let runs = discrete_choice_label_runs(item);
-      values.push(crate::syntax::expr_to_input_form(item));
+      values.push(crate::syntax::expr_to_source_form(item));
       labels.push(flatten_label_runs(&runs));
       label_runs.push(runs);
       svgs.push(Some(color_swatch_svg(&color)));
     } else {
       let runs = discrete_choice_label_runs(item);
-      values.push(crate::syntax::expr_to_input_form(item));
+      values.push(crate::syntax::expr_to_source_form(item));
       labels.push(flatten_label_runs(&runs));
       label_runs.push(runs);
       svgs.push(None);
@@ -23105,10 +23275,10 @@ fn synthesize_var_name(expr: &Expr) -> Option<String> {
   let mut name = match expr {
     Expr::FunctionCall { name, args } if name == "Subscript" => args
       .iter()
-      .map(|a| sanitize(&crate::syntax::expr_to_input_form(a)))
+      .map(|a| sanitize(&crate::syntax::expr_to_source_form(a)))
       .collect::<Vec<_>>()
       .join("$"),
-    other => sanitize(&crate::syntax::expr_to_input_form(other)),
+    other => sanitize(&crate::syntax::expr_to_source_form(other)),
   };
   if name.is_empty() || name.starts_with(|c: char| c.is_ascii_digit()) {
     name.insert(0, '$');
@@ -23143,7 +23313,7 @@ fn rewrite_compound_control_var(
   let Some(synth) = synthesize_var_name(var) else {
     return (spec.clone(), None);
   };
-  let orig_form = crate::syntax::expr_to_input_form(var);
+  let orig_form = crate::syntax::expr_to_source_form(var);
   let replacement = Expr::Identifier(synth.clone());
   let new_head = match head {
     Expr::List(head_items) => {
@@ -23227,7 +23397,7 @@ pub fn extract_list_animate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     _ => return None,
   };
   let n = frames.len();
-  let list_code = crate::syntax::expr_to_input_form(&args[0]);
+  let list_code = crate::syntax::expr_to_source_form(&args[0]);
   // Frame index `i` runs 1..n in unit steps; the body picks that element.
   // `Round` guards against any float drift the slider might introduce.
   let body_code = format!("Part[{list_code}, Round[i]]");
@@ -23446,7 +23616,7 @@ pub fn extract_locator_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     }
     pt => ("p".to_string(), Some(list2_f64(pt)?)),
   };
-  let body_code = crate::syntax::expr_to_input_form(&args[1]);
+  let body_code = crate::syntax::expr_to_source_form(&args[1]);
   let ((x_min, y_min), (x_max, y_max)) = pane_range(args.get(2), &args[1]);
   // Start the locator at the given point, else the range centre.
   let (x_initial, y_initial) = explicit_init
@@ -23505,7 +23675,7 @@ pub fn extract_click_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
   let ((x_min, y_min), (x_max, y_max)) = pane_range(range_arg, &args[0]);
   // Bind the click position `pos` and show the handler applied to it; the body
   // re-evaluates `func[pos]` on every pad move.
-  let func_code = crate::syntax::expr_to_input_form(func);
+  let func_code = crate::syntax::expr_to_source_form(func);
   let body_code = format!("({func_code})[pos]");
   let control = ManipulateControl::Slider2D {
     name: "pos".to_string(),
@@ -23615,8 +23785,8 @@ pub fn extract_control_spec(expr: &Expr) -> Option<ManipulateSpec> {
 /// not change on every re-evaluation.
 fn manipulate_value_to_input_form(expr: &Expr) -> String {
   match crate::evaluator::evaluate_expr_to_expr(expr) {
-    Ok(evaluated) => crate::syntax::expr_to_input_form(&evaluated),
-    Err(_) => crate::syntax::expr_to_input_form(expr),
+    Ok(evaluated) => crate::syntax::expr_to_source_form(&evaluated),
+    Err(_) => crate::syntax::expr_to_source_form(expr),
   }
 }
 
@@ -24709,7 +24879,7 @@ fn parse_manipulate_control(
 
   // `Enabled -> cond` / `Enabled :> cond` gates the control.
   let enabled: Option<String> =
-    extract_enabled_condition(items).map(crate::syntax::expr_to_input_form);
+    extract_enabled_condition(items).map(crate::syntax::expr_to_source_form);
 
   // `TrackingFunction -> f` / `:> f` runs `f[newValue]` whenever this
   // control's value changes, so a Demonstration can reset a companion
@@ -24724,7 +24894,7 @@ fn parse_manipulate_control(
       replacement,
     } if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "TrackingFunction") =>
     {
-      Some(crate::syntax::expr_to_input_form(replacement))
+      Some(crate::syntax::expr_to_source_form(replacement))
     }
     _ => None,
   });
@@ -24780,10 +24950,10 @@ fn parse_manipulate_control(
         (None, domain) => match crate::evaluator::evaluate_expr_to_expr(domain)
         {
           Ok(Expr::List(ref choices)) if !choices.is_empty() => {
-            crate::syntax::expr_to_input_form(&choices[0])
+            crate::syntax::expr_to_source_form(&choices[0])
           }
-          Ok(evaluated) => crate::syntax::expr_to_input_form(&evaluated),
-          Err(_) => crate::syntax::expr_to_input_form(domain),
+          Ok(evaluated) => crate::syntax::expr_to_source_form(&evaluated),
+          Err(_) => crate::syntax::expr_to_source_form(domain),
         },
         _ => manipulate_value_to_input_form(&value_expr),
       };
@@ -24970,12 +25140,12 @@ fn parse_manipulate_control(
     // it against the live bindings whenever `angle`/`speed` move.
     let min_code = min_dynamic
       .then(|| {
-        crate::syntax::expr_to_input_form(manipulate_bound_expr(bounds[0]).0)
+        crate::syntax::expr_to_source_form(manipulate_bound_expr(bounds[0]).0)
       })
       .filter(|_| min.is_finite());
     let max_code = max_dynamic
       .then(|| {
-        crate::syntax::expr_to_input_form(manipulate_bound_expr(bounds[1]).0)
+        crate::syntax::expr_to_source_form(manipulate_bound_expr(bounds[1]).0)
       })
       .filter(|_| max.is_finite());
     let step = bounds
@@ -25167,12 +25337,12 @@ fn parse_manipulate_control(
     let display = if appearance_vertical {
       format!(
         "TogglerBar[Dynamic[{name}], {}, Appearance -> \"Vertical\"]",
-        crate::syntax::expr_to_input_form(&choices)
+        crate::syntax::expr_to_source_form(&choices)
       )
     } else {
       format!(
         "TogglerBar[Dynamic[{name}], {}]",
-        crate::syntax::expr_to_input_form(&choices)
+        crate::syntax::expr_to_source_form(&choices)
       )
     };
     return Some(ParsedControl::StateWithDisplay {
@@ -25207,7 +25377,7 @@ fn parse_manipulate_control(
       let mut resolved_init_code: Option<String> = None;
       let initial_index = match explicit_initial {
         Some(init) => {
-          let init_code = crate::syntax::expr_to_input_form(&init);
+          let init_code = crate::syntax::expr_to_source_form(&init);
           resolved_init_code = Some(init_code.clone());
           values
             .iter()
@@ -25219,7 +25389,7 @@ fn parse_manipulate_control(
               // matches once it is evaluated too.
               let evaluated =
                 crate::evaluator::evaluate_expr_to_expr(&init).ok()?;
-              let code = crate::syntax::expr_to_input_form(&evaluated);
+              let code = crate::syntax::expr_to_source_form(&evaluated);
               resolved_init_code = Some(code.clone());
               values.iter().position(|v| *v == code)
             })
@@ -25241,7 +25411,7 @@ fn parse_manipulate_control(
       let values_code = (bounds.len() == 1
         && expr_references_any(unwrap_dynamic_choices(bounds[0]), siblings))
       .then(|| {
-        crate::syntax::expr_to_input_form(unwrap_dynamic_choices(bounds[0]))
+        crate::syntax::expr_to_source_form(unwrap_dynamic_choices(bounds[0]))
       });
       return Some(ParsedControl::Visible {
         control: ManipulateControl::Discrete {
@@ -25325,14 +25495,14 @@ fn parse_manipulate_control(
     let button_runs = manipulate_label_runs(&built_args[0], false);
     let value = explicit_initial
       .as_ref()
-      .map_or_else(|| "Null".to_string(), crate::syntax::expr_to_input_form);
+      .map_or_else(|| "Null".to_string(), crate::syntax::expr_to_source_form);
     return Some(ParsedControl::StateWithControl {
       name,
       value,
       control: ManipulateControl::Button {
         label: flatten_label_runs(&button_runs),
         label_runs: button_runs,
-        action: crate::syntax::expr_to_input_form(&built_args[1]),
+        action: crate::syntax::expr_to_source_form(&built_args[1]),
         enabled: None,
       },
     });
@@ -25376,11 +25546,11 @@ fn parse_manipulate_control(
   {
     let value = explicit_initial
       .as_ref()
-      .map_or_else(|| "Null".to_string(), crate::syntax::expr_to_input_form);
+      .map_or_else(|| "Null".to_string(), crate::syntax::expr_to_source_form);
     return Some(ParsedControl::StateWithDisplay {
       name,
       value,
-      display: crate::syntax::expr_to_input_form(&evaluated),
+      display: crate::syntax::expr_to_source_form(&evaluated),
     });
   }
 
@@ -25397,10 +25567,10 @@ fn parse_manipulate_control(
   if bounds.len() == 1
     && crate::functions::graphics::parse_color(bounds[0]).is_some()
   {
-    let alt_code = crate::syntax::expr_to_input_form(bounds[0]);
+    let alt_code = crate::syntax::expr_to_source_form(bounds[0]);
     if let Some(init) = explicit_initial.as_ref().filter(|init| {
       parse_color(init).is_some()
-        && crate::syntax::expr_to_input_form(init) != alt_code
+        && crate::syntax::expr_to_source_form(init) != alt_code
     }) {
       let value_items = vec![init.clone(), bounds[0].clone()];
       let (values, value_labels, value_label_svgs, value_label_runs) =
@@ -25475,7 +25645,7 @@ fn parse_manipulate_control(
     && crate::evaluator::evaluate_expr_to_expr(bounds[0]).is_ok()
   {
     let value = explicit_initial.as_ref().map_or_else(
-      || crate::syntax::expr_to_input_form(bounds[0]),
+      || crate::syntax::expr_to_source_form(bounds[0]),
       manipulate_value_to_input_form,
     );
     return Some(ParsedControl::Fixed { name, value });
@@ -25518,12 +25688,12 @@ fn parse_manipulate_control(
   // bindings and let the slider range follow the other control.
   let min_code = min_dynamic
     .then(|| {
-      crate::syntax::expr_to_input_form(manipulate_bound_expr(bounds[0]).0)
+      crate::syntax::expr_to_source_form(manipulate_bound_expr(bounds[0]).0)
     })
     .filter(|_| min.is_finite());
   let max_code = max_dynamic
     .then(|| {
-      crate::syntax::expr_to_input_form(manipulate_bound_expr(bounds[1]).0)
+      crate::syntax::expr_to_source_form(manipulate_bound_expr(bounds[1]).0)
     })
     .filter(|_| max.is_finite());
   // An infinite bound (`Animate[…, {ϕ, 0, Infinity}]` runs forever in
@@ -25579,9 +25749,16 @@ fn parse_manipulate_control(
   // umin/umax order, so it is safe to sort the pair now — every downstream
   // consumer (the slider widget, dynamic-bounds re-resolution) expects
   // `min <= max`.
-  if min > max {
+  // A bound that follows another control's variable (`min_code`/`max_code`)
+  // travels with the end it was written for, so the swap carries it along:
+  // `{xLeft, Dynamic[wd - xRight], 25, -1}` counts down from the dynamic
+  // bound, which must keep driving the *upper* end of the sorted range.
+  let (min_code, max_code) = if min > max {
     std::mem::swap(&mut min, &mut max);
-  }
+    (max_code, min_code)
+  } else {
+    (min_code, max_code)
+  };
 
   Some(ParsedControl::Visible {
     control: ManipulateControl::Continuous {
@@ -25808,7 +25985,7 @@ fn discrete_choice_label_runs(expr: &Expr) -> Vec<LabelRun> {
       let structural = matches!(other, Expr::FunctionCall { name, .. } if is_text_layout_head(name));
       if flat.is_empty() && !structural {
         vec![LabelRun {
-          text: crate::syntax::expr_to_input_form(other),
+          text: crate::syntax::expr_to_source_form(other),
           ..Default::default()
         }]
       } else {
@@ -25880,7 +26057,7 @@ fn discrete_choice_label_svg(label: &Expr) -> Option<String> {
     // `manipulate_label_runs` renders these structurally instead.
     Expr::FunctionCall { name, .. } if is_text_layout_head(name) => None,
     Expr::FunctionCall { .. } => {
-      let code = crate::syntax::expr_to_input_form(label);
+      let code = crate::syntax::expr_to_source_form(label);
       match crate::interpret_with_stdout(&code) {
         Ok(result) => {
           if result.graphics.is_some() {
@@ -26265,7 +26442,7 @@ pub fn apply_manipulate_mutations(
     Ok(Expr::List(ref vals)) if vals.len() == vars.len() => vars
       .into_iter()
       .zip(vals.iter())
-      .map(|(name, v)| (name, crate::syntax::expr_to_input_form(v)))
+      .map(|(name, v)| (name, crate::syntax::expr_to_source_form(v)))
       .collect(),
     _ => Vec::new(),
   }
@@ -26292,7 +26469,7 @@ pub fn apply_manipulate_button_action(
     Ok(Expr::List(ref vals)) if vals.len() == names.len() => names
       .into_iter()
       .map(str::to_string)
-      .zip(vals.iter().map(crate::syntax::expr_to_input_form))
+      .zip(vals.iter().map(crate::syntax::expr_to_source_form))
       .collect(),
     _ => Vec::new(),
   }
@@ -26314,7 +26491,7 @@ pub fn read_manipulate_state(names: &[String]) -> Vec<(String, String)> {
       if matches!(&value, Expr::Identifier(s) if s == name) {
         return None;
       }
-      Some((name.clone(), crate::syntax::expr_to_input_form(&value)))
+      Some((name.clone(), crate::syntax::expr_to_source_form(&value)))
     })
     .collect()
 }
@@ -26945,7 +27122,7 @@ pub fn build_manipulate_display(
       Some(Expr::List(ref vals)) if vals.len() == ons.len() => vals
         .iter()
         .zip(ons.iter())
-        .map(|(v, on)| crate::syntax::expr_to_input_form(v) == *on)
+        .map(|(v, on)| crate::syntax::expr_to_source_form(v) == *on)
         .collect(),
       _ => vec![false; probes.len()],
     };
@@ -26962,7 +27139,7 @@ fn eval_display_in_scope(
   expr: &Expr,
   bindings: &[(String, String)],
 ) -> Option<Expr> {
-  eval_display_in_scope_str(&crate::syntax::expr_to_input_form(expr), bindings)
+  eval_display_in_scope_str(&crate::syntax::expr_to_source_form(expr), bindings)
 }
 
 /// Like `eval_display_in_scope` but takes the InputForm code directly (used
@@ -27031,7 +27208,7 @@ fn display_expr_to_node(
       // taken verbatim and evaluated only when the button is pressed.
       "Button" if args.len() >= 2 => DisplayNode::Button {
         label: Box::new(display_expr_to_node(&args[0], bindings, probes, ons)),
-        action: crate::syntax::expr_to_input_form(&args[1]),
+        action: crate::syntax::expr_to_source_form(&args[1]),
       },
       "Spacer" if !args.is_empty() => DisplayNode::Spacer {
         width: spacer_width(&args[0]),
@@ -27206,8 +27383,8 @@ fn pane_selector_content<'a>(
   };
   let sel_arg = unwrap_pane_selector(&args[1]);
   let selector = eval_display_in_scope(sel_arg, bindings).map_or_else(
-    || crate::syntax::expr_to_input_form(sel_arg),
-    |e| crate::syntax::expr_to_input_form(&e),
+    || crate::syntax::expr_to_source_form(sel_arg),
+    |e| crate::syntax::expr_to_source_form(&e),
   );
   panes.iter().find_map(|pane| {
     let (Expr::Rule {
@@ -27221,7 +27398,7 @@ fn pane_selector_content<'a>(
     else {
       return None;
     };
-    (crate::syntax::expr_to_input_form(pattern) == selector)
+    (crate::syntax::expr_to_source_form(pattern) == selector)
       .then_some(replacement.as_ref())
   })
 }
@@ -27240,6 +27417,61 @@ fn list_children(
       .collect(),
     other => vec![display_expr_to_node(other, bindings, probes, ons)],
   }
+}
+
+/// Initial values for the variables that Manipulate display elements bind
+/// through `Checkbox[Dynamic[var], …]` but that nothing has set yet. Like the
+/// Wolfram front end, which assigns a checkbox's "off" value to an unset
+/// variable the first time it is shown, this lets a body test the variable
+/// (`If[var, …]`) without the whole output staying unevaluated. Names
+/// already in `known` (controls, state) and variables that already hold a
+/// value are left alone. Returns `(name, off-value InputForm)` pairs.
+pub fn unset_checkbox_defaults(
+  displays: &[String],
+  known: &[String],
+) -> Vec<(String, String)> {
+  fn walk(node: &DisplayNode, out: &mut Vec<(String, String)>) {
+    match node {
+      DisplayNode::Panel(c) => walk(c, out),
+      DisplayNode::Grid(rows) => {
+        for c in rows.iter().flatten() {
+          walk(c, out);
+        }
+      }
+      DisplayNode::Column(cs) | DisplayNode::Row(cs) => {
+        for c in cs {
+          walk(c, out);
+        }
+      }
+      DisplayNode::Checkbox {
+        target: Some(t),
+        off,
+        ..
+      } => out.push((t.clone(), off.clone())),
+      _ => {}
+    }
+  }
+  let mut found = Vec::new();
+  for d in displays {
+    walk(&build_manipulate_display(d, &[]), &mut found);
+  }
+  let mut out: Vec<(String, String)> = Vec::new();
+  for (name, off) in found {
+    let is_symbol = name
+      .chars()
+      .all(|c| c.is_alphanumeric() || c == '$' || c == '`')
+      && !name.starts_with(|c: char| c.is_ascii_digit());
+    if !is_symbol
+      || known.contains(&name)
+      || out.iter().any(|(n, _)| *n == name)
+    {
+      continue;
+    }
+    if read_manipulate_state(std::slice::from_ref(&name)).is_empty() {
+      out.push((name, off));
+    }
+  }
+  out
 }
 
 /// Build a `Checkbox[…]` leaf node. An interactive checkbox is
@@ -27261,8 +27493,8 @@ fn checkbox_node(
   // Extract the {off, on} value pair (InputForm), defaulting to False/True.
   let (off, on) = match args.get(1) {
     Some(Expr::List(vs)) if vs.len() == 2 => (
-      crate::syntax::expr_to_input_form(&vs[0]),
-      crate::syntax::expr_to_input_form(&vs[1]),
+      crate::syntax::expr_to_source_form(&vs[0]),
+      crate::syntax::expr_to_source_form(&vs[1]),
     ),
     _ => ("False".to_string(), "True".to_string()),
   };
@@ -27280,7 +27512,7 @@ fn checkbox_node(
   // The expression whose value determines `checked`: the held lvalue for an
   // interactive checkbox, or the (static) first argument otherwise.
   let probe = match dynamic_lval.or_else(|| args.first()) {
-    Some(e) => crate::syntax::expr_to_input_form(e),
+    Some(e) => crate::syntax::expr_to_source_form(e),
     None => "False".to_string(),
   };
   probes.push(probe);
@@ -27288,7 +27520,7 @@ fn checkbox_node(
 
   DisplayNode::Checkbox {
     checked: false,
-    target: dynamic_lval.map(crate::syntax::expr_to_input_form),
+    target: dynamic_lval.map(crate::syntax::expr_to_source_form),
     on,
     off,
   }
@@ -27383,12 +27615,12 @@ fn togglerbar_node(
       let target = find_unique_assignment_target(&dargs[1])?;
       (
         dargs[0].clone(),
-        Some((crate::syntax::expr_to_input_form(&dargs[1]), target)),
+        Some((crate::syntax::expr_to_source_form(&dargs[1]), target)),
       )
     }
     _ => return None,
   };
-  let getter_code = crate::syntax::expr_to_input_form(&getter);
+  let getter_code = crate::syntax::expr_to_source_form(&getter);
   // The choice list may be held (e.g. `Thread[Range[1, 4] -> {…}]`).
   let choices_expr = match &args[1] {
     l @ Expr::List(_) => l.clone(),
@@ -27412,12 +27644,12 @@ fn togglerbar_node(
       } => (pattern.as_ref(), replacement.as_ref()),
       other => (other, other),
     };
-    let value_code = crate::syntax::expr_to_input_form(value);
+    let value_code = crate::syntax::expr_to_source_form(value);
     let selected = match &current {
       Some(Expr::List(items)) => items
         .iter()
-        .any(|it| crate::syntax::expr_to_input_form(it) == value_code),
-      Some(single) => crate::syntax::expr_to_input_form(single) == value_code,
+        .any(|it| crate::syntax::expr_to_source_form(it) == value_code),
+      Some(single) => crate::syntax::expr_to_source_form(single) == value_code,
       None => false,
     };
     let toggled = format!(
@@ -27497,7 +27729,7 @@ fn setterbar_node(
   let current =
     crate::evaluator::evaluate_expr_to_expr(&Expr::Identifier(var.clone()))
       .ok()
-      .map(|e| crate::syntax::expr_to_input_form(&e));
+      .map(|e| crate::syntax::expr_to_source_form(&e));
   let mut buttons = Vec::with_capacity(choices.len());
   for choice in choices {
     let (value, label) = match choice {
@@ -27511,7 +27743,7 @@ fn setterbar_node(
       } => (pattern.as_ref(), replacement.as_ref()),
       other => (other, other),
     };
-    let value_code = crate::syntax::expr_to_input_form(value);
+    let value_code = crate::syntax::expr_to_source_form(value);
     let selected = current.as_deref() == Some(value_code.as_str());
     let mutation = format!("{var} = {value_code}");
     buttons.push(DisplayNode::Toggler {
@@ -27632,7 +27864,7 @@ fn action_menu_node(
         Expr::String(s) => s.clone(),
         other => flatten_label_runs(&manipulate_label_runs(other, false)),
       };
-      Some((label, crate::syntax::expr_to_input_form(replacement)))
+      Some((label, crate::syntax::expr_to_source_form(replacement)))
     })
     .collect();
   if entries.is_empty() {
@@ -27653,7 +27885,7 @@ fn popup_node(args: &[Expr]) -> Option<DisplayNode> {
     }
     _ => return None,
   };
-  let target = crate::syntax::expr_to_input_form(lval);
+  let target = crate::syntax::expr_to_source_form(lval);
   // The choice list may be held (e.g. `Thread[Range[1, 4] -> {…}]`).
   let choices_expr = match &args[1] {
     l @ Expr::List(_) => l.clone(),
@@ -27669,7 +27901,7 @@ fn popup_node(args: &[Expr]) -> Option<DisplayNode> {
   // The value currently held at `lval`, to preselect its choice.
   let current = crate::evaluator::evaluate_expr_to_expr(lval).map_or_else(
     |_| target.clone(),
-    |e| crate::syntax::expr_to_input_form(&e),
+    |e| crate::syntax::expr_to_source_form(&e),
   );
   // A trailing `Enabled -> cond`, evaluated against the same live bindings
   // `current` just used. Anything but a `False` result — including a failed
@@ -27742,7 +27974,7 @@ fn assign_checkbox_state(
 /// the same treatment before falling back to the plain OutputForm text.
 fn static_leaf_node(expr: &Expr, bindings: &[(String, String)]) -> DisplayNode {
   let code =
-    manipulate_block_code(&crate::syntax::expr_to_input_form(expr), bindings);
+    manipulate_block_code(&crate::syntax::expr_to_source_form(expr), bindings);
   match crate::interpret_with_stdout(&code) {
     Ok(r) => {
       if let Some(svg) = r.graphics {

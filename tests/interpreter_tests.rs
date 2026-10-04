@@ -2624,6 +2624,30 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_graphics_inset_text_grid_and_column_labels() {
+    // Regression: `Inset[Style[Grid[{{"…"}}, opts], size], pos]` (how a
+    // Demonstration captions a diagram) drew the literal `Grid[{{…}}, …]`
+    // source instead of the label text.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Graphics[Inset[Style[Grid[{{\"alpha\", \"beta\"}, {\"gamma\"}}, Frame -> True, ItemSize -> {30, Automatic}], 11], {0, 0}]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(!svg.contains("Grid["), "Grid source leaked: {svg}");
+    assert!(svg.contains("alpha"), "missing label text: {svg}");
+    assert!(svg.contains("beta"), "missing label text: {svg}");
+    assert!(svg.contains("gamma"), "missing label text: {svg}");
+
+    clear_state();
+    let svg = interpret(
+      "ExportString[Graphics[Text[Column[{\"one\", \"two\"}], {0, 0}]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(!svg.contains("Column["), "Column source leaked: {svg}");
+    assert!(svg.contains("one") && svg.contains("two"));
+  }
+
+  #[test]
   fn test_greater_less_slant_equal_operators() {
     // `\[GreaterSlantEqual]` (⩾, U+2A7E) and `\[LessSlantEqual]` (⩽,
     // U+2A7D) are glyph variants of GreaterEqual/LessEqual that a
@@ -4590,8 +4614,8 @@ mod interpreter_tests {
 
   #[test]
   fn test_replace_all_on_unmatched_rendered_graphic_no_op() {
-    // Regression: PieChart (and the other chart functions) render straight
-    // to SVG with no symbolic primitive list, so `PieChart[…][[1]]` stays
+    // Regression: BarChart (and the other chart functions) render straight
+    // to SVG with no symbolic primitive list, so `BarChart[…][[1]]` stays
     // an unevaluated `Part[…]` wrapping the opaque graphic. Applying a rule
     // that matches nothing (no `Disk[…]` anywhere) fell through to the
     // string-based ReplaceAll fallback, which serializes the graphic to its
@@ -4601,7 +4625,7 @@ mod interpreter_tests {
     clear_state();
     assert_eq!(
       interpret(
-        "Head[PieChart[{0.3, 0.7}][[1]] /. Disk[c_, r_, a_] :> Disk[c, r*2, a]]"
+        "Head[BarChart[{0.3, 0.7}][[1]] /. Disk[c_, r_, a_] :> Disk[c, r*2, a]]"
       )
       .unwrap(),
       "Part",
@@ -5469,6 +5493,7 @@ mod interpreter_tests {
   mod element_data;
   mod entity;
   mod example_data;
+  mod financial;
   mod function_application;
   mod function_definitions;
   mod functions;

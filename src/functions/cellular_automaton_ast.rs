@@ -201,8 +201,32 @@ fn parse_range(expr: &Expr) -> Option<RangeSpec> {
     let r = usize::try_from(as_nonneg_int(e)?).ok()?;
     (r <= MAX_RANGE).then_some(r)
   };
+  // An explicit 1D neighborhood `{{-r}, ..., {0}, ..., {r}}`: the ascending,
+  // symmetric offsets that the range `r` abbreviates.
+  let offsets = |items: &[Expr]| -> Option<usize> {
+    let r = items.len().checked_sub(1)? / 2;
+    if items.len().is_multiple_of(2) || r > MAX_RANGE {
+      return None;
+    }
+    for (i, item) in items.iter().enumerate() {
+      match item {
+        Expr::List(o)
+          if o.len() == 1
+            && matches!(&o[0], Expr::Integer(v) if *v == i as i128 - r as i128) =>
+          {}
+        _ => return None,
+      }
+    }
+    Some(r)
+  };
   match expr {
     Expr::Integer(_) => Some(RangeSpec::One(radius(expr)?)),
+    Expr::List(items)
+      if !items.is_empty()
+        && items.iter().all(|e| matches!(e, Expr::List(_))) =>
+    {
+      Some(RangeSpec::One(offsets(items)?))
+    }
     Expr::List(items) if items.len() == 2 => {
       Some(RangeSpec::Two(radius(&items[0])?, radius(&items[1])?))
     }

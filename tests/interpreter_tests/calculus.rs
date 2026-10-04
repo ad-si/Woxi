@@ -4834,6 +4834,28 @@ mod nintegrate {
     assert_approx("NIntegrate[x^2, {x, 0, 1}]", 1.0 / 3.0, 1e-10);
   }
 
+  // Integration rules such as "GaussKronrodRule" are valid `Method` names
+  // (they previously raised NIntegrate::bdmtd and stayed unevaluated).
+  #[test]
+  fn nintegrate_integration_rule_method_names() {
+    for rule in [
+      "GaussKronrodRule",
+      "TrapezoidalRule",
+      "NewtonCotesRule",
+      "ClenshawCurtisRule",
+      "LobattoKronrodRule",
+      "GaussBerntsenEspelidRule",
+    ] {
+      assert_approx(
+        &format!(
+          "NIntegrate[x^2, {{x, 0, 1}}, Method -> \"{rule}\", PrecisionGoal -> 2]"
+        ),
+        1.0 / 3.0,
+        1e-2,
+      );
+    }
+  }
+
   // A list-valued integrand is integrated component-wise (previously it
   // collapsed to `0.`).
   #[test]
@@ -10647,6 +10669,21 @@ mod findroot_symbolic_start {
     assert_eq!(
       interpret("FindRoot[Sin[x] == x, {x, 0}]").unwrap(),
       "{x -> 0.}"
+    );
+  }
+
+  // A residual that comes out as a one-element list (e.g. from a derivative
+  // of a replacement by a list of solution rules) is the residual itself.
+  #[test]
+  fn findroot_single_element_list_residual() {
+    assert_eq!(
+      interpret("FindRoot[{2 x} == 1, {x, 1}]").unwrap(),
+      "{x -> 0.5}"
+    );
+    assert_eq!(
+      interpret("g[s_?NumericQ] := {2 s}; FindRoot[g[s] == 3, {s, 1}]")
+        .unwrap(),
+      "{s -> 1.5}"
     );
   }
 

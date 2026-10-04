@@ -559,6 +559,20 @@ impl ManipulateState {
         }
       }
     }
+    // A display `Checkbox[Dynamic[var]]` on a never-set variable behaves as
+    // unchecked (Wolfram stores the off value on first display); the body may
+    // already branch on it.
+    let known: Vec<String> = state
+      .state
+      .iter()
+      .map(|(n, _)| n.clone())
+      .chain(state.controls.iter().map(|c| c.name().to_string()))
+      .collect();
+    let defaults = woxi::functions::graphics::unset_checkbox_defaults(
+      &state.displays,
+      &known,
+    );
+    state.state.extend(defaults);
     state.reevaluate();
     Some(state)
   }
@@ -582,7 +596,14 @@ impl ManipulateState {
       return;
     }
     for (name, code) in saved {
-      if let Some(control) = self.controls.iter_mut().find(|c| c.name() == name)
+      // A widget rebuilt from a bare box dump keeps the DynamicModule's
+      // `$$` uniquification suffix on its control names, while the saved
+      // variable names arrive with it already stripped.
+      let suffixed = format!("{name}$$");
+      if let Some(control) = self
+        .controls
+        .iter_mut()
+        .find(|c| c.name() == name || c.name() == suffixed)
       {
         control.set_current_from_code(code);
       }
@@ -1512,6 +1533,39 @@ fn format_f64_real(v: f64) -> String {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  /// Checked a randomly-sampled Wolfram Demonstrations Project notebook
+  /// ("Selective Resizing of Images") whose paired sliders each bound the
+  /// other through a `Dynamic[…]` limit and one of them counts *down*:
+  /// `{{hi, 114, "R"}, Dynamic[w - lo], 25, -1}`. The reversed pair
+  /// (dynamic start above the fixed end) is sorted at parse time, which used
+  /// to leave the dynamic code attached to the lower end — so the first
+  /// re-resolution pushed the slider's minimum to the dynamic value, flipped
+  /// the range and clamped the authored start (114) to 208.
+  #[test]
+  fn reversed_slider_keeps_dynamic_bound_on_its_own_end() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[
+        {w, lo, hi},
+        {{lo, 92}, 25, Dynamic[w - hi], 1},
+        {{hi, 114}, Dynamic[w - lo], 25, -1},
+        {{w, 300}, None}
+      ]",
+    )
+    .expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let current = |name: &str| {
+      state
+        .controls
+        .iter()
+        .find(|c| c.name() == name)
+        .expect("control")
+        .current_code()
+    };
+    assert_eq!(current("lo"), "92");
+    assert_eq!(current("hi"), "114");
+  }
 
   /// A Demonstrations idiom declares a control's own default
   /// (`Control[{{n, 2, "n"}, …}]`) and then redeclares the same variable's

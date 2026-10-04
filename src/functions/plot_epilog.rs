@@ -135,6 +135,17 @@ pub(crate) fn render_epilog_svg(
   area: &PlotArea,
   kind: &str,
 ) -> String {
+  render_overlay_svg(prims, area, kind, true)
+}
+
+/// [`render_epilog_svg`] with the clip optional: `clip = false`
+/// (`PlotRangeClipping -> False`) draws primitives past the frame as well.
+pub(crate) fn render_overlay_svg(
+  prims: &[Expr],
+  area: &PlotArea,
+  kind: &str,
+  clip: bool,
+) -> String {
   if (area.x_max - area.x_min).abs() < 1e-12
     || (area.y_max - area.y_min).abs() < 1e-12
   {
@@ -144,6 +155,9 @@ pub(crate) fn render_epilog_svg(
   let mut style = EpilogStyle::new();
   for prim in prims {
     render_item(prim, &mut style, area, &mut out);
+  }
+  if !clip {
+    return format!("<g>{out}</g>");
   }
   let clip_id = format!(
     "{kind}Clip_{:.0}_{:.0}_{:.0}_{:.0}",

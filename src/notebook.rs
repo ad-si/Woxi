@@ -2808,6 +2808,33 @@ fn extract_arrow_value<'a>(box_dump: &'a str, key: &str) -> Option<&'a str> {
   }
 }
 
+/// Drop the DynamicModule's `$$` uniquification suffix from every symbol in
+/// `src` (`` p1$$ `` → `` p1 ``), so a control variable reads — and matches
+/// the plain names [`extract_saved_manipulate_variables`] reports — as the
+/// author wrote it. Only a `$$` that ends a symbol is removed; a symbol
+/// like `` x$1$$ `` keeps its inner `$`.
+fn strip_uniquification_suffix(src: &str) -> String {
+  let chars: Vec<char> = src.chars().collect();
+  let mut out = String::with_capacity(src.len());
+  let mut i = 0;
+  while i < chars.len() {
+    let ends_symbol = chars[i] == '$'
+      && chars.get(i + 1) == Some(&'$')
+      && i > 0
+      && (chars[i - 1].is_alphanumeric() || chars[i - 1] == '$')
+      && !chars
+        .get(i + 2)
+        .is_some_and(|c| c.is_alphanumeric() || *c == '$' || *c == '`');
+    if ends_symbol {
+      i += 2;
+    } else {
+      out.push(chars[i]);
+      i += 1;
+    }
+  }
+  out
+}
+
 /// Rebuild a plain `Manipulate[body, spec, …]` source expression from a
 /// saved FrontEnd dynamic-widget dump (the `DynamicModuleBox[…]` text
 /// stored in the Output cell of an evaluated `Manipulate[…]`) when there is
@@ -2822,7 +2849,11 @@ fn extract_arrow_value<'a>(box_dump: &'a str, key: &str) -> Option<&'a str> {
 /// the same way [`extract_saved_initialization`] strips them, so the result
 /// evaluates as ordinary session-level input.
 pub fn reconstruct_manipulate_from_box_dump(box_dump: &str) -> Option<String> {
-  let clean = |s: &str| s.replace("$CellContext`", "").replace("\\\n", "");
+  let clean = |s: &str| {
+    strip_uniquification_suffix(
+      &s.replace("$CellContext`", "").replace("\\\n", ""),
+    )
+  };
   let body = clean(extract_arrow_value(box_dump, "Body")?);
   let specs = clean(extract_arrow_value(box_dump, "Specifications")?);
   let specs = specs.trim();
@@ -6771,7 +6802,7 @@ yf4GL4DwC5VA4w
     let src = reconstruct_manipulate_from_box_dump(dump).unwrap();
     assert_eq!(
       src,
-      "Manipulate[Plot[a$$*Sin[x], {x, 0, 2 Pi}], {{a$$, 2, \"amplitude\"}, 1, 5}]"
+      "Manipulate[Plot[a*Sin[x], {x, 0, 2 Pi}], {{a, 2, \"amplitude\"}, 1, 5}]"
     );
   }
 
@@ -6785,7 +6816,23 @@ yf4GL4DwC5VA4w
     let src = reconstruct_manipulate_from_box_dump(dump).unwrap();
     assert_eq!(
       src,
-      "Manipulate[f[n$$, m$$], {{n$$, 1, \"n\"}, 1, 10}, {{m$$, 1, \"m\"}, {1, 2, 3}}]"
+      "Manipulate[f[n, m], {{n, 1, \"n\"}, 1, 10}, {{m, 1, \"m\"}, {1, 2, 3}}]"
+    );
+  }
+
+  #[test]
+  fn test_reconstruct_manipulate_from_box_dump_strips_uniquification_suffix() {
+    // Regression: control names kept the `$$` suffix, so they showed as
+    // `p1$$` and never matched the plain names of the saved variable values.
+    let dump = "DynamicModuleBox[{}, DynamicBox[Manipulate`ManipulateBoxes[\n\
+      1, StandardForm, \n\
+      \"Body\" :> Graphics[Line[{$CellContext`p1$$, $CellContext`q$$}]], \n\
+      \"Specifications\" :> {{{$CellContext`p1$$, {0, 1}}, {-1, -1}, {1, 1}, \
+      ControlType -> None}}]]]";
+    let src = reconstruct_manipulate_from_box_dump(dump).unwrap();
+    assert_eq!(
+      src,
+      "Manipulate[Graphics[Line[{p1, q}]], {{p1, {0, 1}}, {-1, -1}, {1, 1}, ControlType -> None}]"
     );
   }
 

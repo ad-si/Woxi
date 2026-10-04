@@ -4099,6 +4099,10 @@ fn render_visual_display_pipeline(expr: &syntax::Expr) -> syntax::Expr {
   // Graphics[…]}]] renders the column with its embedded graphic). CLI
   // mode keeps the symbolic Pane[…] echo to match wolframscript.
   let expr = unwrap_display_pass_through(expr);
+  // A picture the wrapper held (`Pane[Image[…], {w, h}]`) only becomes the
+  // top-level Image now that the wrapper is gone, after the top-level
+  // image pass has already run.
+  let expr = render_image_if_needed(expr);
   let expr = render_interactive_pane_if_needed(expr);
   let expr = render_labeled_if_needed(expr);
   let expr = render_dynamic_if_needed(expr);

@@ -16,12 +16,24 @@ use super::{integer_value, rational_value};
 struct LoweringContext {
   next_binder: u32,
   scopes: Vec<BTreeMap<String, Variable>>,
+  /// Lower `Abs[t] relation bound` into affine atoms. Only the finite integer
+  /// solver opts in; `Reduce` has dedicated, differently-shaped Abs handling.
+  expand_abs: bool,
 }
 
 pub(super) fn formula_from_expr(expr: &Expr) -> Option<Formula> {
   LoweringContext::default()
     .formula(expr)
     .map(|formula| formula.into_nnf().normalized())
+}
+
+pub(super) fn formula_from_expr_expanding_abs(expr: &Expr) -> Option<Formula> {
+  LoweringContext {
+    expand_abs: true,
+    ..Default::default()
+  }
+  .formula(expr)
+  .map(|formula| formula.into_nnf().normalized())
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -284,10 +296,55 @@ impl LoweringContext {
         return formula;
       }
     }
+    if self.expand_abs {
+      if let Some(inner) = abs_argument(left) {
+        return self.abs_comparison(relation, inner, right);
+      }
+      if let Some(inner) = abs_argument(right) {
+        return self.abs_comparison(flipped(relation), inner, left);
+      }
+    }
     Some(Formula::Atom(Atom::Relation(
       relation,
       self.term(left)?.subtract(&self.term(right)?),
     )))
+  }
+
+  /// `Abs[t] relation bound` split into affine atoms over `t` and `-t`.
+  fn abs_comparison(
+    &mut self,
+    relation: Relation,
+    inner: &Expr,
+    bound: &Expr,
+  ) -> Option<Formula> {
+    let t = self.term(inner)?;
+    let b = self.term(bound)?;
+    let negated = t.scaled(&Rational::integer(BigInt::from(-1)));
+    let atom = |relation: Relation, term: &AffineTerm| {
+      Formula::Atom(Atom::Relation(relation, term.subtract(&b)))
+    };
+    Some(match relation {
+      Relation::Less | Relation::LessEqual => {
+        Formula::And(vec![atom(relation, &t), atom(relation, &negated)])
+      }
+      Relation::Greater | Relation::GreaterEqual => {
+        Formula::Or(vec![atom(relation, &t), atom(relation, &negated)])
+      }
+      Relation::Equal | Relation::NotEqual => {
+        let equal = Formula::And(vec![
+          Formula::Or(vec![
+            atom(Relation::Equal, &t),
+            atom(Relation::Equal, &negated),
+          ]),
+          Formula::Atom(Atom::Relation(Relation::GreaterEqual, b.clone())),
+        ]);
+        if relation == Relation::Equal {
+          equal
+        } else {
+          Formula::Not(Box::new(equal))
+        }
+      }
+    })
   }
 
   /// Returns `None` when this is not a `Mod[term, modulus] relation residue`
@@ -401,6 +458,25 @@ fn relation_from_comparison(operator: ComparisonOp) -> Option<Relation> {
     ComparisonOp::Greater => Some(Relation::Greater),
     ComparisonOp::GreaterEqual => Some(Relation::GreaterEqual),
     ComparisonOp::SameQ | ComparisonOp::UnsameQ => None,
+  }
+}
+
+fn abs_argument(expr: &Expr) -> Option<&Expr> {
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Abs" && args.len() == 1 => {
+      Some(&args[0])
+    }
+    _ => None,
+  }
+}
+
+fn flipped(relation: Relation) -> Relation {
+  match relation {
+    Relation::Less => Relation::Greater,
+    Relation::LessEqual => Relation::GreaterEqual,
+    Relation::Greater => Relation::Less,
+    Relation::GreaterEqual => Relation::LessEqual,
+    other => other,
   }
 }
 

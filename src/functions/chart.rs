@@ -1892,6 +1892,10 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Label text is collected separately so it draws on top of every wedge.
   let mut labels_svg = String::new();
 
+  // Symbolic slices (`{color, Disk[…]}`), so `PieChart[…][[1]]` yields the
+  // primitives like in Wolfram. Only single-ring pies have a plain `Disk`.
+  let mut slice_prims: Vec<Expr> = Vec::new();
+
   let n_rings = rows.len();
   // Split the total radius between `n_rings` equal-width rings and
   // `n_rings - 1` inter-ring gaps. Every ring ends up with the same
@@ -1942,6 +1946,56 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .chart_labels
         .get(i)
         .map_or_else(|| format_chart_value(val), |l| l.text.clone());
+
+      if n_rings == 1 {
+        // The SVG sweeps clockwise from the left, so the math angles run
+        // from `π - sweep end` up to `π - sweep start`.
+        let pi = std::f64::consts::PI;
+        slice_prims.push(Expr::List(
+          vec![
+            Expr::FunctionCall {
+              name: "RGBColor".to_string(),
+              args: [r, g, b]
+                .iter()
+                .map(|&c| Expr::Real(f64::from(c) / 255.0))
+                .collect(),
+            },
+            Expr::FunctionCall {
+              name: "Disk".to_string(),
+              args: vec![
+                Expr::List(vec![Expr::Integer(0), Expr::Integer(0)].into()),
+                Expr::Integer(1),
+                Expr::List(
+                  vec![
+                    Expr::Real(pi - (end_angle - pi)),
+                    Expr::Real(pi - (start_angle - pi)),
+                  ]
+                  .into(),
+                ),
+              ]
+              .into(),
+            },
+          ]
+          .into(),
+        ));
+      }
+      if n_rings == 1
+        && let Some(label) = opts.chart_labels.get(i)
+      {
+        let mid = std::f64::consts::PI
+          - (start_angle + sweep / 2.0 - std::f64::consts::PI);
+        slice_prims.push(Expr::FunctionCall {
+          name: "Text".to_string(),
+          args: vec![
+            Expr::String(label.text.clone()),
+            Expr::List(
+              vec![Expr::Real(0.6 * mid.cos()), Expr::Real(0.6 * mid.sin())]
+                .into(),
+            ),
+          ]
+          .into(),
+        });
+      }
 
       if r_in <= 1e-9 {
         // Innermost ring with no hole: render as a center-anchored wedge.
@@ -2035,7 +2089,14 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   svg.push_str(&labels_svg);
   svg.push_str("</svg>");
-  Ok(crate::graphics_result(svg))
+  if slice_prims.is_empty() {
+    return Ok(crate::graphics_result(svg));
+  }
+  let structure = Expr::FunctionCall {
+    name: "Graphics".to_string(),
+    args: vec![Expr::List(slice_prims.into())].into(),
+  };
+  Ok(crate::graphics_result_with_structure(svg, structure))
 }
 
 /// SVG for one pie-slice label, placed along the slice's mid-angle according

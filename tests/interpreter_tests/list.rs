@@ -4971,6 +4971,99 @@ mod part_noninteger_spec {
   }
 }
 
+mod part_symbolic_spec {
+  use super::*;
+  use woxi::interpret_with_stdout;
+
+  // A spec that can never address a part fails with Part::pkspec1 and the
+  // Part stays unevaluated, whatever the object is.
+  fn rejected(input: &str, echoed: &str, spec: &str) {
+    let r = interpret_with_stdout(input).unwrap();
+    assert_eq!(r.result, echoed);
+    assert_eq!(
+      r.warnings,
+      vec![format!(
+        "Part::pkspec1: The expression {spec} cannot be used as a part specification."
+      )]
+    );
+  }
+
+  #[test]
+  fn symbols_and_expressions() {
+    rejected("{1, 2, 3}[[x]]", "{1, 2, 3}[[x]]", "x");
+    rejected("{1, 2, 3}[[1 + x]]", "{1, 2, 3}[[1 + x]]", "1 + x");
+    rejected("Part[f[a, b], g[x]]", "f[a, b][[g[x]]]", "g[x]");
+    rejected("{1, 2, 3}[[None]]", "{1, 2, 3}[[None]]", "None");
+    rejected("{1, 2, 3}[[I]]", "{1, 2, 3}[[I]]", "I");
+    rejected("<|a -> 1|>[[x]]", "<|a -> 1|>[[x]]", "x");
+  }
+
+  #[test]
+  fn invalid_position_lists_fail_whole() {
+    // Not a partially resolved {1, {1, 2, 3}[[x]]}.
+    rejected("{1, 2, 3}[[{1, x}]]", "{1, 2, 3}[[{1, x}]]", "{1, x}");
+    rejected("{1, 2, 3}[[{1, 2.5}]]", "{1, 2, 3}[[{1, 2.5}]]", "{1, 2.5}");
+    rejected("{1, 2, 3}[[{{1, 2}}]]", "{1, 2, 3}[[{{1, 2}}]]", "{{1, 2}}");
+    rejected("<|a -> 1|>[[{x}]]", "<|a -> 1|>[[{x}]]", "{x}");
+  }
+
+  #[test]
+  fn checked_before_depth_at_any_level() {
+    // The spec is rejected before the depth is looked at: no Part::partd.
+    rejected("x[[1 + y]]", "x[[1 + y]]", "1 + y");
+    rejected("5[[y]]", "5[[y]]", "y");
+    rejected("{{1, 2}, {3, 4}}[[1, x]]", "{{1, 2}, {3, 4}}[[1,x]]", "x");
+    rejected("{{1}}[[{1}, x]]", "{{1}}[[{1},x]]", "x");
+    rejected("{1, 2}[[All, x]]", "{1, 2}[[All,x]]", "x");
+  }
+
+  #[test]
+  fn sequence_indices_splice() {
+    // A Sequence is not an invalid spec: Part splices it into its indices.
+    assert_eq!(
+      interpret(
+        "m = {{1, 2}, {3, 4}}; \
+         {m[[Sequence @@ {1, 2}]], m[[Sequence[]]], m[[2, Sequence[1]]]}"
+      )
+      .unwrap(),
+      "{2, {{1, 2}, {3, 4}}, 3}"
+    );
+    // Regression: part assignments did not splice it and reported Set::noval.
+    assert_eq!(
+      interpret("m = {{1, 2}, {3, 4}}; m[[Sequence @@ {1, 2}]] *= -1; m")
+        .unwrap(),
+      "{{1, -2}, {3, 4}}"
+    );
+    assert_eq!(
+      interpret("m = {{1, 2}, {3, 4}}; m[[Sequence @@ {2, 1}]] = 7; m")
+        .unwrap(),
+      "{{1, 2}, {7, 4}}"
+    );
+  }
+
+  #[test]
+  fn held_base_does_not_recurse() {
+    // Regression: the unevaluated Part was re-evaluated because its base
+    // holds its arguments, recursing until $RecursionLimit.
+    rejected("Hold[a][[x]]", "Hold[a][[x]]", "x");
+  }
+
+  #[test]
+  fn string_positions_on_a_list() {
+    let r = interpret_with_stdout("{1, 2, 3}[[{\"a\"}]]").unwrap();
+    assert_eq!(r.result, "{1, 2, 3}[[{a}]]");
+    assert_eq!(
+      r.warnings,
+      vec!["Part::pspec1: Part specification {a} is not applicable."]
+    );
+    // Keys still address an association below a positional index.
+    assert_eq!(
+      interpret("{<|\"a\" -> 1|>}[[1, {\"a\"}]]").unwrap(),
+      "<|a -> 1|>"
+    );
+  }
+}
+
 mod part_upto {
   use super::*;
   use woxi::interpret_with_stdout;
@@ -19938,6 +20031,60 @@ mod permutations_specs_and_messages {
       "{{a}, {b}, {c}, {a, b}, {a, c}, {b, a}, {b, c}, {c, a}, {c, b}, {a, b, c}, {a, c, b}, {b, a, c}, {b, c, a}, {c, a, b}, {c, b, a}}"
     );
   }
+
+  fn refused(input: &str, message: &str) {
+    assert_eq!(interpret(input).unwrap(), input);
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m == message),
+      "expected {message:?}, got {msgs:?}"
+    );
+  }
+
+  #[test]
+  fn twenty_one_distinct_elements_emit_fac() {
+    // Regression (nightly fuzz OOM): Permutations[Range[504]] tried to
+    // enumerate all 504! permutations.
+    refused(
+      "Permutations[{a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u}]",
+      "Permutations::fac: In Permutations[{a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u}] there are at least 21 distinct elements in the input list, and the requested permutation lengths include one that is at least 21. The result cannot be computed because it has length at least 21 factorial, which is not a machine integer.",
+    );
+  }
+
+  #[test]
+  fn non_machine_length_emits_len_with_the_exact_count() {
+    // 25!/5!, below the ::fac threshold since every length is 20.
+    refused(
+      "Permutations[{a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y}, {20}]",
+      "Permutations::len: Permutations[{a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y}, {20}] cannot be computed because its length is 129260083694424883200000, which is not a machine integer.",
+    );
+    // Repeated elements count distinct permutations only, summed over the
+    // requested lengths: 20 distinct elements, one of them three times.
+    refused(
+      "Permutations[{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 1, 1}, {20, 21}]",
+      "Permutations::len: Permutations[{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 1, 1}, {20, 21}] cannot be computed because its length is 282216632948490240000, which is not a machine integer.",
+    );
+  }
+
+  #[test]
+  fn oversized_machine_length_emits_toobig() {
+    refused(
+      "Permutations[{a, b, c, d, e, f, g, h, i, j, k}]",
+      "Permutations::toobig: Insufficient memory available to evaluate Permutations[{a, b, c, d, e, f, g, h, i, j, k}].",
+    );
+  }
+
+  #[test]
+  fn multiset_lengths_count_distinct_permutations() {
+    assert_eq!(
+      interpret("Length[Permutations[{a, a, b, c}, {0, 3}]]").unwrap(),
+      "23"
+    );
+    assert_eq!(
+      interpret("Length[Permutations[{a, a, a, b, b}]]").unwrap(),
+      "10"
+    );
+  }
 }
 
 mod tuples_specs_and_messages {
@@ -22830,5 +22977,24 @@ mod part_assignment_failures {
       printed,
       ["{1, 1/2}", "{2, 2}", "{3, 2}", "{4, 2}", "{5, 2}", "{6, 2}"]
     );
+  }
+}
+
+mod table_real_step_accumulated_rounding {
+  use super::*;
+
+  // Repeatedly adding 0.05 to 0.25 overshoots 0.95 by a few ulps; the last
+  // iterator value must still be included.
+  #[test]
+  fn table_real_step_keeps_last_value() {
+    for (input, expected) in [
+      ("Length[Table[a, {a, 0.25, 0.95, 0.05}]]", "15"),
+      ("Length[Table[a, {a, 0.1, 0.7, 0.1}]]", "7"),
+      ("Length[Table[a, {a, 0.95, 0.25, -0.05}]]", "15"),
+      ("Length[Table[a, {a, 0, 1, 0.3}]]", "4"),
+    ] {
+      clear_state();
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
   }
 }

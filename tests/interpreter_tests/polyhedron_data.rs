@@ -460,14 +460,15 @@ mod polyhedron_data_tests {
   fn polyhedron_data_all_lists_every_entity() {
     assert_eq!(
       interpret("PolyhedronData[All]").unwrap(),
-      "{Cube, DeltoidalHexecontahedron, DisdyakisTriacontahedron, \
-       Dodecahedron, GreatRhombicosidodecahedron, \
+      "{BilinskiDodecahedron, Cube, DeltoidalHexecontahedron, \
+       DisdyakisTriacontahedron, Dodecahedron, GreatRhombicosidodecahedron, \
        GreatStellatedDodecahedron, Icosahedron, \
        Icosidodecahedron, Octahedron, PentakisDodecahedron, \
        RhombicDodecahedron, RhombicHexecontahedron, \
        RhombicTriacontahedron, SmallRhombicosidodecahedron, \
-       SmallRhombicuboctahedron, SmallStellatedDodecahedron, Tetrahedron, TriangularOrthobicupola, \
-       TruncatedDodecahedron, TruncatedIcosahedron, TruncatedOctahedron, \
+       SmallRhombicuboctahedron, SmallStellatedDodecahedron, StellaOctangula, \
+       Tetrahedron, TriangularOrthobicupola, TruncatedDodecahedron, \
+       TruncatedIcosahedron, TruncatedOctahedron, \
        TruncatedTetrahedron}"
     );
   }
@@ -914,9 +915,9 @@ mod polyhedron_data_tests {
       .unwrap(),
       "{True}"
     );
-    // Euler's formula holds for all of them (the small stellated
-    // dodecahedron is the one genus-4 solid, with characteristic -6), so no
-    // face or edge is lost.
+    // Euler's formula holds for all of them, so no face or edge is lost
+    // (the stella octangula is two disjoint tetrahedra, so it adds up to 4,
+    // and the small stellated dodecahedron is a genus-4 solid with -6).
     assert_eq!(
       interpret(
         r#"Union @ Table[
@@ -924,7 +925,7 @@ mod polyhedron_data_tests {
                PolyhedronData[s, "EdgeCount"] +
                PolyhedronData[s, "FaceCount"],
              {s, DeleteCases[PolyhedronData[All],
-               "SmallStellatedDodecahedron"]}]"#
+               "StellaOctangula" | "SmallStellatedDodecahedron"]}]"#
       )
       .unwrap(),
       "{2}"
@@ -1028,6 +1029,113 @@ mod polyhedron_data_tests {
       )
       .unwrap(),
       "{3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4}"
+    );
+  }
+
+  // The stella octangula (compound of two tetrahedra) is a known entity.
+  #[test]
+  fn polyhedron_data_stella_octangula() {
+    assert_eq!(
+      interpret(r#"PolyhedronData["StellaOctangula", "VertexCount"]"#).unwrap(),
+      "8"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData["StellaOctangula", "EdgeCount"]"#).unwrap(),
+      "12"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData["StellaOctangula", "EdgeIndices"]"#).unwrap(),
+      "{{1, 2}, {1, 3}, {1, 4}, {2, 3}, {2, 4}, {3, 4}, {5, 6}, {5, 7}, {5, 8}, {6, 7}, {6, 8}, {7, 8}}"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData["StellaOctangula", "FaceCountRules"]"#)
+        .unwrap(),
+      "{3 -> 8}"
+    );
+    // Every vertex is on the circumsphere, every edge has unit length, and
+    // every face is wound outward.
+    assert_eq!(
+      interpret(
+        r#"With[{v = PolyhedronData["StellaOctangula", "VertexCoordinates"],
+          f = PolyhedronData["StellaOctangula", "FaceIndices"]},
+          {Simplify[Norm /@ v == ConstantArray[PolyhedronData["StellaOctangula", "Circumradius"], 8]],
+           Simplify[(Norm[v[[#[[1]]]] - v[[#[[2]]]]] & /@ PolyhedronData["StellaOctangula", "EdgeIndices"]) == ConstantArray[1, 12]],
+           AllTrue[f, Simplify[Cross[v[[#[[2]]]] - v[[#[[1]]]], v[[#[[3]]]] - v[[#[[1]]]]] . (v[[#[[1]]]] + v[[#[[2]]]] + v[[#[[3]]]]) > 0] &]}]"#
+      )
+      .unwrap(),
+      "{True, True, True}"
+    );
+    // The notebook idiom: build graphics from the vertex/face data.
+    assert_eq!(
+      interpret(
+        r#"Head[Graphics3D[GraphicsComplex[PolyhedronData["StellaOctangula", "VertexCoordinates"], Polygon[PolyhedronData["StellaOctangula", "FaceIndices"]]]]]"#
+      )
+      .unwrap(),
+      "Graphics3D"
+    );
+  }
+
+  // The Bilinski dodecahedron: 12 congruent golden rhombi, unit edges.
+  #[test]
+  fn polyhedron_data_bilinski_dodecahedron() {
+    assert_eq!(
+      interpret(
+        r#"PolyhedronData["BilinskiDodecahedron", #] & /@
+             {"VertexCount", "EdgeCount", "FaceCount"}"#
+      )
+      .unwrap(),
+      "{14, 24, 12}"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData["BilinskiDodecahedron", "SurfaceArea"]"#)
+        .unwrap(),
+      "24/Sqrt[5]"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData["BilinskiDodecahedron", "Circumradius"]"#)
+        .unwrap(),
+      "Missing[NotApplicable]"
+    );
+    // The scene a notebook builds from "Faces": corners in [[1]], faces in
+    // [[2, 1]] indexing into them.
+    assert_eq!(
+      interpret(
+        r#"With[{d = PolyhedronData["BilinskiDodecahedron", "Faces"]},
+             {Length[d[[1]]], Length[d[[2, 1]]], Dimensions[N[d[[1]]]]}]"#
+      )
+      .unwrap(),
+      "{14, 12, {14, 3}}"
+    );
+    // Every edge has unit length; the volume matches the exact value.
+    assert_eq!(
+      interpret(
+        r#"With[{v = N[PolyhedronData["BilinskiDodecahedron",
+               "VertexCoordinates"]],
+              e = PolyhedronData["BilinskiDodecahedron", "EdgeIndices"]},
+             Union[Round[Norm[v[[#[[1]]]] - v[[#[[2]]]]] & /@ e, 10^-10]]]"#
+      )
+      .unwrap(),
+      "{1}"
+    );
+    assert_eq!(
+      interpret(
+        r#"Round[N[PolyhedronData["BilinskiDodecahedron", "Volume"]], 10^-6]"#
+      )
+      .unwrap(),
+      "2462147/1000000"
+    );
+    // Every face is a planar rhombus with the golden-rhombus area 2/Sqrt[5].
+    assert_eq!(
+      interpret(
+        r#"With[{v = N[PolyhedronData["BilinskiDodecahedron",
+               "VertexCoordinates"]]},
+             Union[Round[Norm[Cross[v[[#[[2]]]] - v[[#[[1]]]],
+               v[[#[[4]]]] - v[[#[[1]]]]]] & /@
+               PolyhedronData["BilinskiDodecahedron", "FaceIndices"],
+               10^-10]]]"#
+      )
+      .unwrap(),
+      "{894427191/1000000000}"
     );
   }
 }

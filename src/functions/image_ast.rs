@@ -2182,11 +2182,51 @@ pub fn image_resize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated("ImageResize", args));
   }
 
-  if args.len() != 2 {
-    return Err(InterpreterError::EvaluationError(
-      "ImageResize expects exactly 2 arguments".into(),
-    ));
+  // Trailing arguments are options; `Resampling -> "Nearest"` (or
+  // "Constant") picks the nearest source pixel instead of interpolating.
+  let mut nearest = false;
+  for opt in &args[2..] {
+    let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+    else {
+      return Ok(unevaluated("ImageResize", args));
+    };
+    if matches!(pattern.as_ref(), Expr::Identifier(n) | Expr::String(n) if n == "Resampling")
+      && matches!(replacement.as_ref(), Expr::String(m) | Expr::Identifier(m) if m == "Nearest" || m == "Constant")
+    {
+      nearest = true;
+    }
   }
+
+  // `Scaled[s]` / `Scaled[{sx, sy}]` is a fraction of the image's own size:
+  // restate it as the pixel dimensions it stands for, then resize as usual.
+  let scaled;
+  let args: &[Expr] = if let Expr::FunctionCall { name, args: sargs } = &args[1]
+    && name == "Scaled"
+    && sargs.len() == 1
+    && let Expr::Image { width, height, .. } = &args[0]
+    && let Some((sx, sy)) = match &sargs[0] {
+      Expr::List(f) if f.len() == 2 => {
+        expr_to_f64(&f[0]).ok().zip(expr_to_f64(&f[1]).ok())
+      }
+      f => expr_to_f64(f).ok().map(|v| (v, v)),
+    }
+    && sx > 0.0
+    && sy > 0.0
+  {
+    let px = |frac: f64, side: u32| {
+      Expr::Integer((frac * side as f64).round().max(1.0) as i128)
+    };
+    scaled = vec![
+      args[0].clone(),
+      Expr::List(vec![px(sx, *width), px(sy, *height)].into()),
+    ];
+    &scaled
+  } else {
+    args
+  };
 
   // Validate the size specification against the form as written, so the message
   // names what the caller passed. A size that is present but not positive is
@@ -2300,6 +2340,19 @@ pub fn image_resize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let scale_x = src_w as f64 / new_w as f64;
   let scale_y = src_h as f64 / new_h as f64;
   for ny in 0..new_h as usize {
+    if nearest {
+      let sy = ((((ny as f64) + 0.5) * scale_y).floor() as usize)
+        .min(src_h.saturating_sub(1));
+      for nx in 0..new_w as usize {
+        let sx = ((((nx as f64) + 0.5) * scale_x).floor() as usize)
+          .min(src_w.saturating_sub(1));
+        for c in 0..ch {
+          new_data[(ny * new_w as usize + nx) * ch + c] =
+            data[(sy * src_w + sx) * ch + c];
+        }
+      }
+      continue;
+    }
     let sy_f = ((ny as f64) + 0.5) * scale_y - 0.5;
     let sy0 = sy_f.floor().max(0.0) as usize;
     let sy1 = (sy0 + 1).min(src_h.saturating_sub(1));
@@ -2667,7 +2720,23 @@ fn image_pad_extents(
         v
       }
       other => {
-        vec![crate::functions::math_ast::try_eval_to_f64(other)?; ch]
+        if let Some((r, g, b, alpha)) = color_directive_to_rgb(other) {
+          // A color directive fills in the image's own channel layout: gray
+          // images take the luminance, and an alpha channel the directive's
+          // opacity (opaque when it names none).
+          match ch {
+            1 => vec![(r + g + b) / 3.0],
+            2 => vec![(r + g + b) / 3.0, alpha.unwrap_or(1.0)],
+            3 => vec![r, g, b],
+            _ => {
+              let mut v = vec![r, g, b, alpha.unwrap_or(1.0)];
+              v.resize(ch, 1.0);
+              v
+            }
+          }
+        } else {
+          vec![crate::functions::math_ast::try_eval_to_f64(other)?; ch]
+        }
       }
     },
   };
@@ -3727,10 +3796,43 @@ pub fn color_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// dimensions, channel count and image type as `img`. With an alpha
 /// argument, the overlapping region is blended as (1 - α)*bg + α*ov;
 /// without one the overlay replaces the background pixels.
+/// A position spec of `ImageCompose` — `{x, y}` in image coordinates (origin
+/// bottom-left), or the names `Left`/`Right`/`Center` and `Bottom`/`Top`
+/// (alone for one axis, or in an `{x, y}` pair) — resolved against an image
+/// of the given size.
+fn image_compose_position(spec: &Expr, w: f64, h: f64) -> Option<(f64, f64)> {
+  let axis = |e: &Expr, len: f64, low: &str, high: &str| -> Option<f64> {
+    match e {
+      Expr::Identifier(n) | Expr::String(n) => match n.as_str() {
+        "Center" => Some(len / 2.0),
+        n if n == low => Some(0.0),
+        n if n == high => Some(len),
+        _ => None,
+      },
+      other => crate::functions::math_ast::try_eval_to_f64(other),
+    }
+  };
+  match spec {
+    Expr::List(p) if p.len() == 2 => Some((
+      axis(&p[0], w, "Left", "Right")?,
+      axis(&p[1], h, "Bottom", "Top")?,
+    )),
+    Expr::Identifier(n) | Expr::String(n) => match n.as_str() {
+      "Center" => Some((w / 2.0, h / 2.0)),
+      "Left" => Some((0.0, h / 2.0)),
+      "Right" => Some((w, h / 2.0)),
+      "Bottom" => Some((w / 2.0, 0.0)),
+      "Top" => Some((w / 2.0, h)),
+      _ => None,
+    },
+    _ => None,
+  }
+}
+
 pub fn image_compose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  if args.len() < 2 || args.len() > 4 {
     return Err(InterpreterError::EvaluationError(
-      "ImageCompose expects exactly 2 arguments".into(),
+      "ImageCompose expects 2 to 4 arguments".into(),
     ));
   }
 
@@ -3777,8 +3879,23 @@ pub fn image_compose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // top-down, but Wolfram positions things in image (bottom-up) y. Use
   // `floor(bw/2) - floor(ow/2)` for x and `ceil(bh/2) - ceil(oh/2)` for
   // the top-down y so behavior matches across even/odd sizes.
-  let offset_x = bw / 2 - ow / 2;
-  let offset_y = (bh + 1) / 2 - (oh + 1) / 2;
+  let (mut offset_x, mut offset_y) =
+    (bw / 2 - ow / 2, (bh + 1) / 2 - (oh + 1) / 2);
+  // ImageCompose[image, overlay, pos, opos] puts the overlay's `opos` point
+  // (default: its center) on the image's `pos` point (default: its center).
+  if args.len() >= 3 {
+    let base_pos = image_compose_position(&args[2], bw as f64, bh as f64);
+    let over_pos = match args.get(3) {
+      Some(spec) => image_compose_position(spec, ow as f64, oh as f64),
+      None => Some((ow as f64 / 2.0, oh as f64 / 2.0)),
+    };
+    let (Some((px, py)), Some((qx, qy))) = (base_pos, over_pos) else {
+      return Ok(unevaluated("ImageCompose", args));
+    };
+    // Image y grows upward; the buffer's rows run top-down.
+    offset_x = (px - qx).round() as i64;
+    offset_y = (bh as f64 - (py - qy) - oh as f64).round() as i64;
+  }
 
   // Output starts as a copy of the background; overlapping pixels are
   // replaced (or alpha-blended) using the overlay's channels.
@@ -3883,6 +4000,55 @@ fn pointwise_image_op(
       data: Arc::new(new_data),
       image_type: *t1,
     });
+  }
+
+  // (Image, {c1, c2, ...}) / ({c1, c2, ...}, Image) — one constant per
+  // channel, e.g. the per-channel gain of a white balance.
+  for (img_idx, list_idx) in [(0usize, 1usize), (1, 0)] {
+    if let Expr::Image {
+      width,
+      height,
+      channels,
+      data,
+      image_type,
+      ..
+    } = &args[img_idx]
+      && let Expr::List(items) = &args[list_idx]
+      && items.len() == *channels as usize
+      && *channels > 1
+    {
+      let mut per_channel = Vec::with_capacity(items.len());
+      for item in items {
+        match crate::functions::math_ast::try_eval_to_f64(item) {
+          Some(v) => per_channel.push(v),
+          None => break,
+        }
+      }
+      if per_channel.len() == items.len() {
+        let is_r32 = matches!(image_type, ImageType::Real32);
+        let ch = *channels as usize;
+        let new_data: Vec<f64> = data
+          .iter()
+          .enumerate()
+          .map(|(i, &v)| {
+            let s = per_channel[i % ch];
+            if img_idx == 0 {
+              apply(v, s, is_r32)
+            } else {
+              apply(s, v, is_r32)
+            }
+          })
+          .collect();
+        return Ok(Expr::Image {
+          color_space: None,
+          width: *width,
+          height: *height,
+          channels: *channels,
+          data: Arc::new(new_data),
+          image_type: *image_type,
+        });
+      }
+    }
   }
 
   // (Image, scalar) — apply `op(pixel, scalar)` to every pixel.
