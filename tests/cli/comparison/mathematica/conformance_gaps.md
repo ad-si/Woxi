@@ -1979,11 +1979,12 @@ Unevaluated.
 ### Float matrices with complex eigenvalues
 
 Wolfram complexifies the **whole** result and orders each conjugate pair with
-`+I` first: `{0. + 1.*I, 0. - 1.*I, 1. + 0.*I}`. Woxi gives the value-correct
-but form-divergent `{0. - 1.*I, 0. + 1.*I, 1.}`, and non-block complex cases
-stay unevaluated. Complex `Eigenvectors` for n ≥ 3 are unevaluated too, and
-radical eigenvector components order differently (`(-Sqrt[5] + I)/3` against
-`(I - Sqrt[5])/3`).
+`+I` first: `{0. + 1.*I, 0. - 1.*I, 1. + 0.*I}`. Woxi complexifies the whole
+result too (n ≥ 3, via QR iteration), but sorts by decreasing magnitude only,
+so exact magnitude ties between a pair and a real value can order differently
+(`{0. + 1.*I, 1. + 0.*I, 0. - 1.*I}`). Complex `Eigenvectors` use unit length
+with a real largest component; LAPACK's phase/sign conventions are not
+reproducible. 2×2 float matrices with complex eigenvalues stay as before.
 
 Generic dense float matrices also differ in the last 1–2 digits from
 WL/LAPACK.
@@ -2512,6 +2513,15 @@ can never work.
 
 
 ## Lists, associations and structured objects
+
+### `Permutations::toobig` triggers at a fixed size
+
+WL refuses a `Permutations` result with `::toobig` when it would not fit in
+the machine's free memory, and builds its packed array otherwise. Woxi's
+owned `Expr` tree costs far more per element, so it refuses anything over
+2^26 nodes. That means `Permutations[Range[11]]` (479M nodes) is refused
+even where wolframscript, with enough RAM, returns all 39916800 permutations.
+`::fac` and `::len` do not depend on memory, and those match.
 
 ### ListCorrelate / ListConvolve: the 7th argument (a level specification)
 
@@ -3174,6 +3184,14 @@ wolframscript -code 'op = LinearSolve[{{1, 2}, {3, 4}}, Method -> "Cholesky"]; o
 woxi eval 'op = LinearSolve[{{1, 2}, {3, 4}}, Method -> "Cholesky"]; op'
 # LinearSolve::herm twice
 ```
+
+The same missing mark shows when an unevaluated result is passed on: the
+pure function in `Prepend[f[DeleteCases[l, #]], #] &@ l[[Quotient[n, 6] + 1]]`
+gets `l[[1 + Quotient[n, 6]]]` as `#` and evaluates it again, so the first
+`Part::pkspec1` prints twice. It also costs time: a recursion that nests an
+unevaluated expression one level deeper per call re-evaluates the whole nest
+on every call. A `fromrank[list_, n_]` whose `Mod[n, 6]` argument nests
+until `$RecursionLimit` takes ~3s in Woxi and 0.03s in wolframscript.
 
 ### A too-deep `Part` on a packed array is `Part::partd1`
 
@@ -4553,6 +4571,15 @@ the plain power series in machine precision, which is accurate for moderate
 `|z|` (roughly below 12) but suffers cancellation beyond that; there is no
 asymptotic-expansion branch yet.
 
+### `ColorData[4, k]` indexed scheme is not tabulated
+
+```sh
+woxi eval 'ColorData[4, 9]'   # stays unevaluated
+```
+
+Only the indexed schemes 1, 2, 3, 30, 35 and 97 are tabulated; a graphic that
+colors with scheme 4 renders those primitives with the default color.
+
 ### Named `VertexShapeFunction`/`EdgeShapeFunction` shapes are approximations
 
 `VertexShapeFunction -> "Capsule"`, `"Star"`, `"Triangle"`, `"FiveDown"`,
@@ -4571,3 +4598,9 @@ proportions differ from wolframscript. Named edge shapes other than
   scheme rather than Wolfram's exact colors.
 - `ColorFunction -> "HypsometricTints"` (and other `ColorData` gradients
   not yet implemented) falls back to a gray ramp.
+
+## PolyhedronData["BilinskiDodecahedron", ...]
+
+Geometry (unit edges, volume, surface area, face structure) is derived from
+the golden-rhombus zonohedron; the vertex order, orientation and the
+`"Classes"` list were not checked against `wolframscript`.
