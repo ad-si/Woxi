@@ -3418,6 +3418,27 @@ mod cases {
   }
 
   #[test]
+  fn incomplete_beta_inexact_non_integer_parameters() {
+    // Regression: the three-argument Beta stayed unevaluated for inexact
+    // arguments unless b was a whole number, so Compile/Plot code built on
+    // it (e.g. region plots of beta-distribution models) produced nothing.
+    assert_case(
+      "Abs[Beta[0.5, 2.5, 3.5] - 0.024657769454627707] < 10^-12",
+      "True",
+    );
+    assert_case(
+      "Abs[Beta[0.5, 7.2, 16.8]/4.753868284071223*^-7 - 1] < 10^-9",
+      "True",
+    );
+    assert_case(
+      "Abs[Beta[0.2, 1.5, 0.5] - NIntegrate[t^0.5 (1-t)^(-0.5), {t, 0, 0.2}]] < 10^-6",
+      "True",
+    );
+    // Exact arguments with a non-whole b stay symbolic.
+    assert_case("Beta[1/2, 5/2, 7/2]", "Beta[1/2, 5/2, 7/2]");
+  }
+
+  #[test]
   fn beta_non_positive_integer_args() {
     // A surviving numerator pole gives ComplexInfinity.
     assert_case("Beta[0, 0]", "ComplexInfinity");

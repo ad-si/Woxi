@@ -6993,6 +6993,18 @@ mod plot3d {
       assert_eq!(styled, ["diameter (cm)", "force (kN)"]);
     }
 
+    /// Regression: `RegionPlot` ignored `FrameLabel`, so a Demonstration's
+    /// captioned region plot came out with bare axes.
+    #[test]
+    fn region_plot_frame_label_captions_the_edges() {
+      let svg = export_svg(
+        "RegionPlot[x + y < 1, {x, 0, 1}, {y, 0, 1}, \
+         FrameLabel -> {\"fb\", \"fl\"}]",
+      );
+      assert!(svg.contains(">fb</text>"), "{svg}");
+      assert!(svg.contains(">fl</text>"), "{svg}");
+    }
+
     /// Every label of a tick set carries the decimals its spacing needs, so
     /// a framed `Graphics` stepping by 0.5 reads `-1.0, -0.5, 0.0, …` —
     /// the same as the plot renderer, and as wolframscript.

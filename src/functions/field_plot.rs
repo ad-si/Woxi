@@ -497,20 +497,29 @@ fn push_field_plot_overlays(
       "epilog",
     ));
   }
-  if opts.frame_labels.bottom.is_empty()
-    && opts.frame_labels.left.is_empty()
-    && opts.frame_labels.top.is_empty()
-    && opts.frame_labels.right.is_empty()
+  push_frame_labels(svg, area, &opts.frame_labels);
+}
+
+/// Write a plot's `FrameLabel` text along the frame edges it names.
+fn push_frame_labels(
+  svg: &mut String,
+  area: &crate::functions::plot::PlotArea,
+  frame_labels: &crate::functions::plot::FrameLabels,
+) {
+  if frame_labels.bottom.is_empty()
+    && frame_labels.left.is_empty()
+    && frame_labels.top.is_empty()
+    && frame_labels.right.is_empty()
   {
     return;
   }
   let (.., label_fill, title_fill) = plot_theme();
   let mut plot_opts = crate::functions::plot::PlotOptions::default();
   let non_empty = |s: &String| (!s.is_empty()).then(|| s.clone());
-  plot_opts.frame_label_bottom = non_empty(&opts.frame_labels.bottom);
-  plot_opts.frame_label_left = non_empty(&opts.frame_labels.left);
-  plot_opts.frame_label_top = non_empty(&opts.frame_labels.top);
-  plot_opts.frame_label_right = non_empty(&opts.frame_labels.right);
+  plot_opts.frame_label_bottom = non_empty(&frame_labels.bottom);
+  plot_opts.frame_label_left = non_empty(&frame_labels.left);
+  plot_opts.frame_label_top = non_empty(&frame_labels.top);
+  plot_opts.frame_label_right = non_empty(&frame_labels.right);
   svg.push_str(&crate::functions::plot::plot_labels_svg(
     &plot_opts,
     (area.plot_x0, area.plot_y0, area.plot_w, area.plot_h),
@@ -1945,8 +1954,37 @@ pub fn region_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (svg_width, svg_height, full_width) = parse_field_options(args, 3);
   let plot_label = parse_field_plot_label(args, 3);
 
-  // Use plotters for axes, reserving room above the frame for a PlotLabel.
-  let margins = field_plot_label_margins(plot_label.as_ref());
+  let frame_labels = args[3..]
+    .iter()
+    .find_map(|opt| match opt {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "FrameLabel") => {
+        Some(crate::functions::plot::parse_frame_label(replacement))
+      }
+      _ => None,
+    })
+    .unwrap_or_default();
+  let has_outer_labels =
+    !frame_labels.bottom.is_empty() || !frame_labels.left.is_empty();
+
+  // Use plotters for axes, reserving room above the frame for a PlotLabel
+  // and beside it for `FrameLabel` text.
+  let margins = if has_outer_labels {
+    Some(crate::functions::plot::MarginOverrides {
+      top_margin: match &plot_label {
+        Some((_, size)) => {
+          ((size.unwrap_or(14.0) * 2.0).round() as u32) * RESOLUTION_SCALE
+        }
+        None => 10 * RESOLUTION_SCALE,
+      },
+      x_label_area: (40 + 24) * RESOLUTION_SCALE,
+      y_label_area: (65 + 20) * RESOLUTION_SCALE,
+    })
+  } else {
+    field_plot_label_margins(plot_label.as_ref())
+  };
   let area = crate::functions::plot::generate_axes_only_opts(
     (x_min, x_max),
     (y_min, y_max),
@@ -1984,6 +2022,7 @@ pub fn region_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  push_frame_labels(&mut svg, &area, &frame_labels);
   svg.push_str("</svg>");
 
   // Symbolic form so `RegionPlot[…][[1]]` (or `First[…]`) can reach the
