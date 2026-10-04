@@ -546,6 +546,40 @@ mod graphics {
     }
 
     #[test]
+    fn filled_curve_bezier_is_filled() {
+      let svg = export_svg(
+        "Graphics[{Red, FilledCurve[BezierCurve[{{0, 0}, {1, 2}, {2, 2}, {3, 0}}]]}]",
+      );
+      assert!(svg.contains("fill=\"rgb(255,0,0)\""), "{svg}");
+      assert!(!svg.contains("fill=\"none\""), "{svg}");
+      assert!(svg.contains(" Z\""), "{svg}");
+    }
+
+    #[test]
+    fn filled_curve_uses_edge_form() {
+      let svg = export_svg(
+        "Graphics[{Blue, EdgeForm[Black], FilledCurve[BezierCurve[{{0, 0}, {1, 2}, {2, 0}}]]}]",
+      );
+      assert!(svg.contains("fill=\"rgb(0,0,255)\""), "{svg}");
+      assert!(svg.contains("stroke=\"rgb(0,0,0)\""), "{svg}");
+    }
+
+    #[test]
+    fn filled_curve_line_segments_become_filled_polygon() {
+      let svg = export_svg(
+        "Graphics[{Green, FilledCurve[Line[{{0, 0}, {1, 0}, {1, 1}}]]}]",
+      );
+      assert!(svg.contains("<polygon"), "{svg}");
+    }
+
+    #[test]
+    fn stroked_bezier_curve_stays_unfilled() {
+      let svg =
+        export_svg("Graphics[{BezierCurve[{{0, 0}, {0.5, 1}, {1, 0}}]}]");
+      assert!(svg.contains("fill=\"none\""), "{svg}");
+    }
+
+    #[test]
     fn bspline_curve() {
       insta::assert_snapshot!(export_svg(
         "Graphics[{BSplineCurve[{{0, 0}, {1, 2}, {2, 0}, {3, 1}}]}]"
