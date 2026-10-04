@@ -1173,10 +1173,13 @@ fn is_non_color_graphics_directive(expr: &Expr) -> bool {
 /// packed into a single list (`RGBColor[{r, g, b}]`, as `Table[RGBColor[
 /// RandomReal[1, 3]], …]` produces) — unpack that form here so both call
 /// shapes share the same arity logic below.
-fn unpack_channels(args: &crate::ExprList) -> std::borrow::Cow<'_, [Expr]> {
+fn unpack_channels(
+  args: &crate::ExprList,
+  min_len: usize,
+) -> std::borrow::Cow<'_, [Expr]> {
   if args.len() == 1
     && let Expr::List(list) = &args[0]
-    && list.len() >= 2
+    && list.len() >= min_len
   {
     std::borrow::Cow::Owned(list.to_vec())
   } else {
@@ -1189,7 +1192,7 @@ pub(crate) fn parse_color(expr: &Expr) -> Option<Color> {
     Expr::Identifier(name) => named_color(name),
     Expr::FunctionCall { name, args } => match name.as_str() {
       "RGBColor" => {
-        let args = unpack_channels(args);
+        let args = unpack_channels(args, 2);
         if args.len() >= 3 {
           let r = expr_to_f64(&args[0])?;
           let g = expr_to_f64(&args[1])?;
@@ -1212,7 +1215,8 @@ pub(crate) fn parse_color(expr: &Expr) -> Option<Color> {
         }
       }
       "Hue" => {
-        let args = unpack_channels(args);
+        // `Hue[{h}]` is accepted too (e.g. `Hue[Part[Position[…], 1]/n]`).
+        let args = unpack_channels(args, 1);
         if args.len() >= 3 {
           let h = expr_to_f64(&args[0])?;
           let s = expr_to_f64(&args[1])?;
