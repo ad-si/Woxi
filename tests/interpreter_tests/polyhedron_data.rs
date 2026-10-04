@@ -466,7 +466,7 @@ mod polyhedron_data_tests {
        Icosidodecahedron, Octahedron, PentakisDodecahedron, \
        RhombicDodecahedron, RhombicHexecontahedron, \
        RhombicTriacontahedron, SmallRhombicosidodecahedron, \
-       SmallRhombicuboctahedron, Tetrahedron, TriangularOrthobicupola, \
+       SmallRhombicuboctahedron, SmallStellatedDodecahedron, Tetrahedron, TriangularOrthobicupola, \
        TruncatedDodecahedron, TruncatedIcosahedron, TruncatedOctahedron, \
        TruncatedTetrahedron}"
     );
@@ -734,6 +734,50 @@ mod polyhedron_data_tests {
     );
   }
 
+  // The small stellated dodecahedron: a Kepler-Poinsot star polyhedron
+  // ({5/2, 5}) on an icosahedron's 12 vertices with 12 pentagram faces.
+  #[test]
+  fn polyhedron_data_small_stellated_dodecahedron() {
+    assert_eq!(
+      interpret(
+        r#"{PolyhedronData["SmallStellatedDodecahedron", "VertexCount"],
+            PolyhedronData["SmallStellatedDodecahedron", "EdgeCount"],
+            PolyhedronData["SmallStellatedDodecahedron", "FaceCount"]}"#
+      )
+      .unwrap(),
+      "{12, 30, 12}"
+    );
+    // One vertex shell, and every pentagram edge has unit length.
+    assert_eq!(
+      interpret(
+        r#"With[{v = N[PolyhedronData["SmallStellatedDodecahedron",
+               "VertexCoordinates"]],
+              edges = PolyhedronData["SmallStellatedDodecahedron",
+                "EdgeIndices"]},
+             {Length[Union[Round[10^6 * Norm /@ v]]],
+              Union[Round[10^6 * (Norm[#[[1]] - #[[2]]] & /@
+                (v[[#]] & /@ edges))]]}]"#
+      )
+      .unwrap(),
+      "{1, {1000000}}"
+    );
+    // The closed forms agree with the numeric geometry.
+    assert_eq!(
+      interpret(
+        r#"Round[10^6 * N[{PolyhedronData["SmallStellatedDodecahedron", "Volume"],
+            PolyhedronData["SmallStellatedDodecahedron", "SurfaceArea"],
+            PolyhedronData["SmallStellatedDodecahedron", "Circumradius"],
+            PolyhedronData["SmallStellatedDodecahedron", "Midradius"]}]]"#
+      )
+      .unwrap(),
+      "{225425, 2572701, 587785, 309017}"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData["SmallStellatedDodecahedron"]"#).unwrap(),
+      "-Graphics3D-"
+    );
+  }
+
   // "MathematicaSpikey" (the Mathematica/Wolfram|Alpha logo) is a rhombic
   // hexecontahedron under a different name, exactly like "Hexahedron" is an
   // alternative name for "Cube" — so it must resolve to the identical,
@@ -870,14 +914,17 @@ mod polyhedron_data_tests {
       .unwrap(),
       "{True}"
     );
-    // Euler's formula holds for all of them, so no face or edge is lost.
+    // Euler's formula holds for all of them (the small stellated
+    // dodecahedron is the one genus-4 solid, with characteristic -6), so no
+    // face or edge is lost.
     assert_eq!(
       interpret(
         r#"Union @ Table[
              PolyhedronData[s, "VertexCount"] -
                PolyhedronData[s, "EdgeCount"] +
                PolyhedronData[s, "FaceCount"],
-             {s, PolyhedronData[All]}]"#
+             {s, DeleteCases[PolyhedronData[All],
+               "SmallStellatedDodecahedron"]}]"#
       )
       .unwrap(),
       "{2}"

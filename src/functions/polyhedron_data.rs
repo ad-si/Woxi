@@ -231,6 +231,37 @@ static POLYHEDRA: &[PolyhedronInfo] = &[
       {\"Amphichiral\", \"Isohedron\", \"KeplerPoinsot\", \
       \"Regular\", \"Rigid\"}",
   },
+  PolyhedronInfo {
+    name: "SmallStellatedDodecahedron",
+    vertex_count: 12,
+    edge_count: 30,
+    face_count: 12,
+    volume: "(5*(-11 + 5*Sqrt[5]))/4",
+    surface_area: "15*(-2 + Sqrt[5])*Sqrt[5 - 2*Sqrt[5]]",
+    circumradius: "Sqrt[(5 - Sqrt[5])/8]",
+    // The pentagrammic faces self-intersect, so there is no face-tangent
+    // insphere.
+    inradius: "Missing[\"NotApplicable\"]",
+    midradius: "(-1 + Sqrt[5])/4",
+    // A Kepler-Poinsot star polyhedron ({5/2, 5}): its 12 vertices are an
+    // icosahedron's, scaled so that the pentagram edges (the icosahedron's
+    // second-neighbor chords) have unit length. Each face joins the 5
+    // neighbors of one vertex in the {5/2} skip-one order.
+    vertices_src: "{\
+      {0, (Sqrt[5] - 1)/4, 1/2}, {0, (Sqrt[5] - 1)/4, -1/2}, \
+      {0, -(Sqrt[5] - 1)/4, 1/2}, {0, -(Sqrt[5] - 1)/4, -1/2}, \
+      {(Sqrt[5] - 1)/4, 1/2, 0}, {(Sqrt[5] - 1)/4, -1/2, 0}, \
+      {-(Sqrt[5] - 1)/4, 1/2, 0}, {-(Sqrt[5] - 1)/4, -1/2, 0}, \
+      {1/2, 0, (Sqrt[5] - 1)/4}, {1/2, 0, -(Sqrt[5] - 1)/4}, \
+      {-1/2, 0, (Sqrt[5] - 1)/4}, {-1/2, 0, -(Sqrt[5] - 1)/4}}",
+    faces_src: "{{3, 5, 11, 9, 7}, {4, 5, 12, 10, 7}, {1, 6, 11, 9, 8}, \
+      {2, 6, 12, 10, 8}, {1, 2, 9, 7, 10}, {3, 4, 9, 8, 10}, \
+      {1, 2, 11, 5, 12}, {3, 4, 11, 6, 12}, {1, 6, 5, 3, 10}, \
+      {2, 6, 5, 4, 9}, {1, 8, 7, 3, 12}, {2, 8, 7, 4, 11}}",
+    classes_src: "\
+      {\"Amphichiral\", \"Isohedron\", \"KeplerPoinsot\", \
+      \"Regular\", \"Rigid\"}",
+  },
   // Truncating a Platonic solid's corners gives an Archimedean solid with
   // two face types (a polygon per original face, plus one new polygon per
   // truncated vertex). None of the three below has a true insphere — the
