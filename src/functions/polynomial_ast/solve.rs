@@ -7826,15 +7826,16 @@ fn find_root_multivariate(
     let (mut fv, mut resid) = eval_residual(&x)?;
     best_resid = resid;
     best_x.clone_from(&x);
-    let mut prev_resid = f64::INFINITY;
+    // Newton steps are damped by backtracking on the Euclidean norm of the
+    // residual vector (the merit function). Demanding the max-norm drop on
+    // every full step wrongly stalls systems where one component's residual
+    // is traded for another's (e.g. `{x*z == 2, z == 3}` from `{1, 1}` lands
+    // on `{0, 3}` first), so the iteration never left its starting point.
+    let merit = |fv: &[f64]| fv.iter().map(|v| v * v).sum::<f64>();
     for _ in 0..max_iter {
       if resid < tol {
         break;
       }
-      if resid >= prev_resid {
-        break;
-      }
-      prev_resid = resid;
       let reals: Vec<Expr> = x.iter().map(|&v| Expr::Real(v)).collect();
       let bindings: Vec<(&str, &Expr)> =
         vars.iter().map(String::as_str).zip(reals.iter()).collect();
@@ -7843,12 +7844,31 @@ fn find_root_multivariate(
       let Some(delta) = find_root_solve_linear(jm, neg_f) else {
         break;
       };
-      let mut max_d = 0.0f64;
-      for (j, &dj) in delta.iter().enumerate() {
-        x[j] += dj;
-        max_d = max_d.max(dj.abs());
+      let base_merit = merit(&fv);
+      let mut shrink = 1.0;
+      let mut accepted = None;
+      for _ in 0..FIND_ROOT_MAX_BACKTRACKS {
+        let x_trial: Vec<f64> = x
+          .iter()
+          .zip(&delta)
+          .map(|(&xj, &dj)| xj + dj * shrink)
+          .collect();
+        if let Ok((fv_trial, resid_trial)) = eval_residual(&x_trial)
+          && fv_trial.iter().all(|v| v.is_finite())
+          && merit(&fv_trial) < base_merit
+        {
+          accepted = Some((x_trial, fv_trial, resid_trial, shrink));
+          break;
+        }
+        shrink *= 0.5;
       }
-      (fv, resid) = eval_residual(&x)?;
+      let Some((x_new, fv_new, resid_new, shrink)) = accepted else {
+        break;
+      };
+      let max_d = delta.iter().fold(0.0f64, |a, &d| a.max((d * shrink).abs()));
+      x = x_new;
+      fv = fv_new;
+      resid = resid_new;
       if resid < best_resid {
         best_resid = resid;
         best_x.clone_from(&x);
