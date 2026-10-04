@@ -1228,14 +1228,8 @@ pub fn string_starts_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let re = compile_regex(&full_pat).map_err(|e| {
       InterpreterError::EvaluationError(format!("Invalid pattern: {e}"))
     })?;
-    return Ok(Expr::Identifier(
-      if full_match_with_constraints(&re, &constraints, &s) {
-        "True"
-      } else {
-        "False"
-      }
-      .to_string(),
-    ));
+    let result = full_match_with_constraints(&re, &constraints, &s);
+    return Ok(bool_expr(result));
   }
 
   let prefix = expr_to_str(&args[1]);
@@ -1281,14 +1275,8 @@ pub fn string_ends_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let re = compile_regex(&full_pat).map_err(|e| {
       InterpreterError::EvaluationError(format!("Invalid pattern: {e}"))
     })?;
-    return Ok(Expr::Identifier(
-      if full_match_with_constraints(&re, &constraints, &s) {
-        "True"
-      } else {
-        "False"
-      }
-      .to_string(),
-    ));
+    let result = full_match_with_constraints(&re, &constraints, &s);
+    return Ok(bool_expr(result));
   }
 
   let suffix = expr_to_str(&args[1]);
@@ -2451,14 +2439,8 @@ pub fn string_match_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let re = compile_regex(&full_regex).map_err(|e| {
       InterpreterError::EvaluationError(format!("Invalid string pattern: {e}"))
     })?;
-    return Ok(Expr::Identifier(
-      if full_match_with_constraints(&re, &constraints, &s) {
-        "True"
-      } else {
-        "False"
-      }
-      .to_string(),
-    ));
+    let result = full_match_with_constraints(&re, &constraints, &s);
+    return Ok(bool_expr(result));
   }
 
   // Try RegularExpression pattern

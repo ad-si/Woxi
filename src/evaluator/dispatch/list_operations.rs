@@ -4215,14 +4215,7 @@ pub fn dispatch_list_operations(
           false
         }
       }
-      return Some(Ok(Expr::Identifier(
-        if is_valid_tree(&args[0]) {
-          "True"
-        } else {
-          "False"
-        }
-        .to_string(),
-      )));
+      return Some(Ok(bool_expr(is_valid_tree(&args[0]))));
     }
     // TreeData[Tree[d, _]] -> d ; TreeChildren[Tree[_, c]] -> c.
     "TreeData" | "TreeChildren" if args.len() == 1 => {
