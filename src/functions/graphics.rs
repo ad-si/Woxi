@@ -18010,6 +18010,18 @@ pub fn column_to_svg(args: &[Expr]) -> Option<String> {
             height: h,
           }
         }
+        // A raster image is a picture, drawn at its own size like any other
+        // graphic — not typeset as the text of its pixel data.
+        Expr::Image { .. } => {
+          let svg = crate::evaluator::expr_to_svg(&resolved);
+          let (w, h) =
+            svg_natural_size(&svg).unwrap_or_else(|| parse_svg_wh(&svg));
+          Cell::Svg {
+            svg,
+            width: w,
+            height: h,
+          }
+        }
         _ => match nested_layout_svg(&resolved) {
           Some(svg) => {
             let (w, h) = parse_svg_wh(&svg);
@@ -18774,7 +18786,9 @@ pub(crate) fn parse_svg_wh(svg: &str) -> (f64, f64) {
 
 /// Strip the outer <svg ...> and </svg> tags, returning only the inner content.
 pub(crate) fn strip_svg_wrapper(svg: &str) -> &str {
-  let start = svg.find('>').map_or(0, |i| i + 1);
+  // Skip an XML prolog (`<?xml …?>`) so the first `>` closes the root tag.
+  let root = svg.find("<svg").unwrap_or(0);
+  let start = svg[root..].find('>').map_or(0, |i| root + i + 1);
   let end = svg.rfind("</svg>").unwrap_or(svg.len());
   &svg[start..end]
 }
@@ -25650,9 +25664,16 @@ fn parse_manipulate_control(
   // umin/umax order, so it is safe to sort the pair now — every downstream
   // consumer (the slider widget, dynamic-bounds re-resolution) expects
   // `min <= max`.
-  if min > max {
+  // A bound that follows another control's variable (`min_code`/`max_code`)
+  // travels with the end it was written for, so the swap carries it along:
+  // `{xLeft, Dynamic[wd - xRight], 25, -1}` counts down from the dynamic
+  // bound, which must keep driving the *upper* end of the sorted range.
+  let (min_code, max_code) = if min > max {
     std::mem::swap(&mut min, &mut max);
-  }
+    (max_code, min_code)
+  } else {
+    (min_code, max_code)
+  };
 
   Some(ParsedControl::Visible {
     control: ManipulateControl::Continuous {

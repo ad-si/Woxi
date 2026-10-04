@@ -2200,6 +2200,34 @@ pub fn image_resize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // `Scaled[s]` / `Scaled[{sx, sy}]` is a fraction of the image's own size:
+  // restate it as the pixel dimensions it stands for, then resize as usual.
+  let scaled;
+  let args: &[Expr] = if let Expr::FunctionCall { name, args: sargs } = &args[1]
+    && name == "Scaled"
+    && sargs.len() == 1
+    && let Expr::Image { width, height, .. } = &args[0]
+    && let Some((sx, sy)) = match &sargs[0] {
+      Expr::List(f) if f.len() == 2 => {
+        expr_to_f64(&f[0]).ok().zip(expr_to_f64(&f[1]).ok())
+      }
+      f => expr_to_f64(f).ok().map(|v| (v, v)),
+    }
+    && sx > 0.0
+    && sy > 0.0
+  {
+    let px = |frac: f64, side: u32| {
+      Expr::Integer((frac * side as f64).round().max(1.0) as i128)
+    };
+    scaled = vec![
+      args[0].clone(),
+      Expr::List(vec![px(sx, *width), px(sy, *height)].into()),
+    ];
+    &scaled
+  } else {
+    args
+  };
+
   // Validate the size specification against the form as written, so the message
   // names what the caller passed. A size that is present but not positive is
   // reported; a bare specification that is not a number at all is left alone

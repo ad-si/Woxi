@@ -8273,6 +8273,23 @@ mod demonstration_image_filters {
     );
   }
 
+  // `Scaled[s]` and `Scaled[{sx, sy}]` are fractions of the image's own size.
+  #[test]
+  fn image_resize_accepts_scaled_sizes() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "i = Image[RandomReal[1, {60, 80, 3}]]; \
+         {ImageDimensions[ImageResize[i, Scaled[0.4]]], \
+          ImageDimensions[ImageResize[i, Scaled[1/2]]], \
+          ImageDimensions[ImageResize[i, Scaled[{0.5, 0.25}]]], \
+          ImageDimensions[ImageResize[i, Scaled[2]]]}"
+      )
+      .unwrap(),
+      "{{32, 24}, {40, 30}, {40, 15}, {160, 120}}"
+    );
+  }
+
   // ImageMultiply / ImageAdd with a list scale each channel separately (the
   // per-channel gain of a white balance).
   #[test]

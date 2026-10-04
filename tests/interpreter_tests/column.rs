@@ -113,6 +113,24 @@ mod column_text_mode {
 mod column_visual_mode {
   use super::*;
 
+  // `Column[{…, image}, Center, …]` positions its own items; a raster image
+  // among them used to be typeset as text and so vanished from the picture.
+  #[test]
+  fn column_with_alignment_draws_an_image_item() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Column[{\"caption\", Image[RandomReal[1, {6, 8, 3}]]}, Center, \
+       ItemSize -> 32]",
+    )
+    .unwrap();
+    assert_eq!(result.result, "-Graphics-");
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains(">caption</text>"));
+    assert!(svg.contains("<image"));
+    // The image is nested as a plain <svg> child, with no XML prolog left in.
+    assert!(!svg.contains("<?xml"));
+  }
+
   #[test]
   fn column_renders_svg() {
     clear_state();
