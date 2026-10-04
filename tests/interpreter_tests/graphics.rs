@@ -13487,6 +13487,52 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       ));
     }
 
+    /// Regression: `First[ArrayPlot[…]]` hit `First::normal` because the plot
+    /// had no symbolic content, so a Manipulate that draws an ArrayPlot as a
+    /// backdrop (`First@background`) rendered nothing.
+    #[test]
+    fn array_plot_first_is_raster() {
+      clear_state();
+      assert_eq!(
+        interpret("Head[First[ArrayPlot[{{1, 2}, {3, 4}}]]]").unwrap(),
+        "Raster"
+      );
+      // The first matrix row sits at the top, i.e. is the last Raster row.
+      assert_eq!(
+        interpret("First[ArrayPlot[{{1, 2}, {3, 4}}]][[1, 1, 1]]").unwrap(),
+        interpret(
+          "First[ArrayPlot[{{3, 4}, {1, 2}}, DataReversed -> True]][[1, 1, 1]]"
+        )
+        .unwrap()
+      );
+    }
+
+    #[test]
+    fn array_plot_data_range_places_raster() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "First[ArrayPlot[{{1, 2}, {3, 4}}, DataRange -> {{-2, 2}, {-1, 1}}]][[2]]"
+        )
+        .unwrap(),
+        "{{-2., -1.}, {2., 1.}}"
+      );
+    }
+
+    #[test]
+    fn array_plot_data_reversed_keeps_row_order() {
+      clear_state();
+      // DataReversed -> True puts row 1 at the bottom: Raster rows are
+      // listed bottom-up, so the matrix order is kept.
+      assert_eq!(
+        interpret(
+          "Length[First[ArrayPlot[{{1, 2}, {3, 4}, {5, 6}}, DataReversed -> True]][[1]]]"
+        )
+        .unwrap(),
+        "3"
+      );
+    }
+
     #[test]
     fn array_plot_epilog_text_position() {
       // Regression: Epilog was silently ignored, dropping any overlay
