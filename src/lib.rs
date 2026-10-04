@@ -1357,6 +1357,27 @@ fn promote_result_graphics(expr: &syntax::Expr) {
       .and_then(|sel| selected_tabview_pane(items, sel))
       .unwrap_or(&items[0]);
     let (_, _, content) = functions::graphics::tabview_pane_parts(selected);
+    // A pane laid out as a table/column/row (`Text@Grid[…]`, the common
+    // way a Demonstration fills a tab with prose, notes and controls) is
+    // drawn as one picture — the tab's visible content — rather than left
+    // as the symbolic `TabView[…]` source text.
+    let mut layout = content;
+    while let syntax::Expr::FunctionCall { name, args } = layout
+      && matches!(name.as_str(), "Text" | "Pane" | "Panel")
+      && !args.is_empty()
+    {
+      layout = &args[0];
+    }
+    if let syntax::Expr::FunctionCall { name, args } = layout
+      && matches!(name.as_str(), "Grid" | "Column" | "Row")
+      && !args.is_empty()
+    {
+      let svg = evaluator::expr_to_svg(layout);
+      if !svg.is_empty() {
+        capture_graphics(&svg);
+        return;
+      }
+    }
     promote_result_graphics(content);
   }
 }
