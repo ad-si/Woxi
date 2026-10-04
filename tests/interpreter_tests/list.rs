@@ -22979,3 +22979,22 @@ mod part_assignment_failures {
     );
   }
 }
+
+mod table_real_step_accumulated_rounding {
+  use super::*;
+
+  // Repeatedly adding 0.05 to 0.25 overshoots 0.95 by a few ulps; the last
+  // iterator value must still be included.
+  #[test]
+  fn table_real_step_keeps_last_value() {
+    for (input, expected) in [
+      ("Length[Table[a, {a, 0.25, 0.95, 0.05}]]", "15"),
+      ("Length[Table[a, {a, 0.1, 0.7, 0.1}]]", "7"),
+      ("Length[Table[a, {a, 0.95, 0.25, -0.05}]]", "15"),
+      ("Length[Table[a, {a, 0, 1, 0.3}]]", "4"),
+    ] {
+      clear_state();
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+  }
+}
