@@ -4542,6 +4542,17 @@ woxi eval 'Together[1/x + 1/y, Modulus -> 3]'   # stays unevaluated
 The modular path cancels over GF(p) with univariate polynomial arithmetic,
 so a multivariate fraction (or a composite modulus) is returned unevaluated.
 
+### Named `VertexShapeFunction`/`EdgeShapeFunction` shapes are approximations
+
+`VertexShapeFunction -> "Capsule"`, `"Star"`, `"Triangle"`, `"FiveDown"`,
+`"ConcaveHexagon"`, `"Parallelogram"` and `"RoundedUpTrapezoid"` are drawn as
+a plain polygon or rounded rectangle at roughly the right size; the exact
+proportions differ from wolframscript. Named edge shapes other than
+`"Line"`/`"Arrow"` (e.g. `"CarvedArrow"`, `"DashedLine"`, `"DottedLine"`,
+`"DiamondLine"`, `"FilledArcArrow"`) still fall back to the plain edge.
+`GraphData` also lacks most atlas names (e.g. `"PappusGraph"`,
+`"HeawoodGraph"`), so Demonstrations that pick graphs by name still fail.
+
 ## Colorize
 
 - `Colorize[m, ImageSize -> …]` ignores `ImageSize` (`Image` carries no
