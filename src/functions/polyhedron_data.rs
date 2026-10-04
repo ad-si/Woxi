@@ -1422,6 +1422,35 @@ static POLYHEDRA: &[PolyhedronInfo] = &[
       \"Nonuniform\", \"Rigid\", \"Simple\"}",
   },
   PolyhedronInfo {
+    name: "StellaOctangula",
+    vertex_count: 8,
+    edge_count: 12,
+    face_count: 8,
+    // The compound of two dual regular tetrahedra, whose union is the
+    // stellated octahedron. The metrics of the union are not catalogued
+    // (see conformance_gaps.md); only the geometry is.
+    volume: "Missing[\"NotAvailable\"]",
+    surface_area: "Missing[\"NotAvailable\"]",
+    circumradius: "Sqrt[3/8]",
+    inradius: "Missing[\"NotApplicable\"]",
+    midradius: "Missing[\"NotApplicable\"]",
+    // The eight corners of the cube of side 1/Sqrt[2]: the first four
+    // span one unit-edge tetrahedron, the last four its point reflection.
+    vertices_src: "{\
+      {1/(2*Sqrt[2]), 1/(2*Sqrt[2]), 1/(2*Sqrt[2])}, \
+      {1/(2*Sqrt[2]), -1/(2*Sqrt[2]), -1/(2*Sqrt[2])}, \
+      {-1/(2*Sqrt[2]), 1/(2*Sqrt[2]), -1/(2*Sqrt[2])}, \
+      {-1/(2*Sqrt[2]), -1/(2*Sqrt[2]), 1/(2*Sqrt[2])}, \
+      {-1/(2*Sqrt[2]), -1/(2*Sqrt[2]), -1/(2*Sqrt[2])}, \
+      {-1/(2*Sqrt[2]), 1/(2*Sqrt[2]), 1/(2*Sqrt[2])}, \
+      {1/(2*Sqrt[2]), -1/(2*Sqrt[2]), 1/(2*Sqrt[2])}, \
+      {1/(2*Sqrt[2]), 1/(2*Sqrt[2]), -1/(2*Sqrt[2])}}",
+    // Outward-wound triangles of both tetrahedra.
+    faces_src: "{{1, 2, 3}, {1, 4, 2}, {1, 3, 4}, {2, 4, 3}, \
+      {5, 7, 6}, {5, 6, 8}, {5, 8, 7}, {6, 7, 8}}",
+    classes_src: "{\"Amphichiral\", \"Compound\"}",
+  },
+  PolyhedronInfo {
     name: "BilinskiDodecahedron",
     vertex_count: 14,
     edge_count: 24,

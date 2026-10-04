@@ -4560,6 +4560,14 @@ woxi eval 'Together[1/x + 1/y, Modulus -> 3]'   # stays unevaluated
 The modular path cancels over GF(p) with univariate polynomial arithmetic,
 so a multivariate fraction (or a composite modulus) is returned unevaluated.
 
+### `PolyhedronData["StellaOctangula", …]` is unverified against wolframscript
+
+The entity was added from the geometry (compound of two unit-edge
+tetrahedra, vertices at the cube corners of side `1/Sqrt[2]`) without a
+wolframscript to compare against. The vertex and face *order*, the
+`"Classes"` list and the `"Volume"` / `"SurfaceArea"` / `"Inradius"` /
+`"Midradius"` values (currently `Missing[…]`) may differ from Wolfram's.
+
 ### `BesselJ/I/Y/K` at complex arguments lose accuracy for large `|z|`
 
 ```sh
