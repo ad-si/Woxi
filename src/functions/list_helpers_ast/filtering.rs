@@ -1044,7 +1044,15 @@ pub fn cases_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if positional.len() < 2 || positional.len() > 4 {
     return Ok(original());
   }
-  let subject = &positional[0];
+  // A rendered graphic (a plot's `Graphics[…]`) is searched through the
+  // symbolic expression it was built from, like `Part`/`First`/`Length`
+  // do — `Cases[Plot[…], Line[u_] -> u, Infinity]` finds the curve points.
+  let graphic_form = if let Expr::Graphics { .. } = &positional[0] {
+    crate::evaluator::part_extraction::graphics_symbolic_form(&positional[0])
+  } else {
+    None
+  };
+  let subject = graphic_form.as_ref().unwrap_or(&positional[0]);
   let pattern = &positional[1];
   let (match_pat, replacement) = extract_rule_parts(pattern);
 

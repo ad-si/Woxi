@@ -1979,11 +1979,12 @@ Unevaluated.
 ### Float matrices with complex eigenvalues
 
 Wolfram complexifies the **whole** result and orders each conjugate pair with
-`+I` first: `{0. + 1.*I, 0. - 1.*I, 1. + 0.*I}`. Woxi gives the value-correct
-but form-divergent `{0. - 1.*I, 0. + 1.*I, 1.}`, and non-block complex cases
-stay unevaluated. Complex `Eigenvectors` for n ≥ 3 are unevaluated too, and
-radical eigenvector components order differently (`(-Sqrt[5] + I)/3` against
-`(I - Sqrt[5])/3`).
+`+I` first: `{0. + 1.*I, 0. - 1.*I, 1. + 0.*I}`. Woxi complexifies the whole
+result too (n ≥ 3, via QR iteration), but sorts by decreasing magnitude only,
+so exact magnitude ties between a pair and a real value can order differently
+(`{0. + 1.*I, 1. + 0.*I, 0. - 1.*I}`). Complex `Eigenvectors` use unit length
+with a real largest component; LAPACK's phase/sign conventions are not
+reproducible. 2×2 float matrices with complex eigenvalues stay as before.
 
 Generic dense float matrices also differ in the last 1–2 digits from
 WL/LAPACK.
@@ -4566,6 +4567,26 @@ tetrahedra, vertices at the cube corners of side `1/Sqrt[2]`) without a
 wolframscript to compare against. The vertex and face *order*, the
 `"Classes"` list and the `"Volume"` / `"SurfaceArea"` / `"Inradius"` /
 `"Midradius"` values (currently `Missing[…]`) may differ from Wolfram's.
+
+### `BesselJ/I/Y/K` at complex arguments lose accuracy for large `|z|`
+
+```sh
+woxi eval 'BesselJ[0, 40. + 5. I]'   # power series, cancellation error
+```
+
+Complex (and negative-real `BesselY`/`BesselK`) arguments are evaluated with
+the plain power series in machine precision, which is accurate for moderate
+`|z|` (roughly below 12) but suffers cancellation beyond that; there is no
+asymptotic-expansion branch yet.
+
+### `ColorData[4, k]` indexed scheme is not tabulated
+
+```sh
+woxi eval 'ColorData[4, 9]'   # stays unevaluated
+```
+
+Only the indexed schemes 1, 2, 3, 30, 35 and 97 are tabulated; a graphic that
+colors with scheme 4 renders those primitives with the default color.
 
 ### Named `VertexShapeFunction`/`EdgeShapeFunction` shapes are approximations
 
