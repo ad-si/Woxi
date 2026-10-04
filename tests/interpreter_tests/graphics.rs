@@ -2612,6 +2612,18 @@ mod graphics {
     }
 
     #[test]
+    fn hue_single_element_list_matches_scalar() {
+      assert_eq!(
+        export_svg("Graphics[{Hue[{1/3}], Disk[]}]"),
+        export_svg("Graphics[{Hue[1/3], Disk[]}]")
+      );
+      assert_eq!(
+        export_svg("Graphics[{Hue[{0.6, 0.5, 0.9}], Disk[]}]"),
+        export_svg("Graphics[{Hue[0.6, 0.5, 0.9], Disk[]}]")
+      );
+    }
+
+    #[test]
     fn directive_compound() {
       insta::assert_snapshot!(export_svg(
         "Graphics[{Directive[Red, Thickness[0.01]], Line[{{0, 0}, {1, 1}}]}]"
