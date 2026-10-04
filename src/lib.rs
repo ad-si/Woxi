@@ -1357,6 +1357,27 @@ fn promote_result_graphics(expr: &syntax::Expr) {
       .and_then(|sel| selected_tabview_pane(items, sel))
       .unwrap_or(&items[0]);
     let (_, _, content) = functions::graphics::tabview_pane_parts(selected);
+    // A pane laid out as a table/column/row (`Text@Grid[…]`, the common
+    // way a Demonstration fills a tab with prose, notes and controls) is
+    // drawn as one picture — the tab's visible content — rather than left
+    // as the symbolic `TabView[…]` source text.
+    let mut layout = content;
+    while let syntax::Expr::FunctionCall { name, args } = layout
+      && matches!(name.as_str(), "Text" | "Pane" | "Panel")
+      && !args.is_empty()
+    {
+      layout = &args[0];
+    }
+    if let syntax::Expr::FunctionCall { name, args } = layout
+      && matches!(name.as_str(), "Grid" | "Column" | "Row")
+      && !args.is_empty()
+    {
+      let svg = evaluator::expr_to_svg(layout);
+      if !svg.is_empty() {
+        capture_graphics(&svg);
+        return;
+      }
+    }
     promote_result_graphics(content);
   }
 }
@@ -3062,6 +3083,20 @@ fn format_top_level_result(result_expr: syntax::Expr, depth: usize) -> String {
   }
 }
 
+/// Whether `expr` is a `Pane`/`Framed`/`Text` display wrapper (optionally
+/// under `Style`) — content the SVG exporter typesets on its own, so a
+/// `Labeled` around it can be composed as a picture like one around a table.
+fn is_display_wrapper(expr: &syntax::Expr) -> bool {
+  match expr {
+    syntax::Expr::FunctionCall { name, args } => match name.as_str() {
+      "Pane" | "Panel" | "Framed" | "Text" => !args.is_empty(),
+      "Style" => args.first().is_some_and(is_display_wrapper),
+      _ => false,
+    },
+    _ => false,
+  }
+}
+
 /// If `expr` is a Grid[…] or TextGrid[…] call (possibly nested in a list),
 /// render it as SVG and return `-Graphics-`. Grid/TextGrid stay symbolic
 /// during evaluation so that part-assignment works; rendering only happens
@@ -3152,6 +3187,9 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
       let rendered_content = render_grid_if_needed(args[0].clone());
       let content_svg = match &rendered_content {
         syntax::Expr::Graphics { svg, .. } => svg.clone(),
+        other if is_display_wrapper(other) => {
+          evaluator::dispatch::io_functions::expr_to_svg(other)
+        }
         _ => return expr,
       };
       let placements: Vec<(syntax::Expr, String)> =
@@ -3171,6 +3209,10 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
           _ => {
             let position = match args.get(2) {
               Some(syntax::Expr::Identifier(p)) => p.clone(),
+              Some(syntax::Expr::List(ps)) => match ps.first() {
+                Some(syntax::Expr::Identifier(p)) => p.clone(),
+                _ => "Bottom".to_string(),
+              },
               _ => "Bottom".to_string(),
             };
             vec![(args[1].clone(), position)]
@@ -3189,9 +3231,12 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
           .into(),
         };
         let rendered_label = render_grid_if_needed(label_grid);
-        let syntax::Expr::Graphics { svg: label_svg, .. } = &rendered_label
-        else {
-          return expr;
+        let label_svg = match &rendered_label {
+          syntax::Expr::Graphics { svg, .. } => svg,
+          _ if is_display_wrapper(label) => {
+            &evaluator::dispatch::io_functions::expr_to_svg(label)
+          }
+          _ => return expr,
         };
         match position.as_str() {
           "Top" => top.push(label_svg.clone()),

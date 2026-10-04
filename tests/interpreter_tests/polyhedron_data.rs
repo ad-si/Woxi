@@ -460,8 +460,9 @@ mod polyhedron_data_tests {
   fn polyhedron_data_all_lists_every_entity() {
     assert_eq!(
       interpret("PolyhedronData[All]").unwrap(),
-      "{Cube, DeltoidalHexecontahedron, DisdyakisTriacontahedron, \
-       Dodecahedron, GreatRhombicosidodecahedron, Icosahedron, \
+      "{BilinskiDodecahedron, Cube, DeltoidalHexecontahedron, \
+       DisdyakisTriacontahedron, Dodecahedron, GreatRhombicosidodecahedron, \
+       GreatStellatedDodecahedron, Icosahedron, \
        Icosidodecahedron, Octahedron, PentakisDodecahedron, \
        RhombicDodecahedron, RhombicHexecontahedron, \
        RhombicTriacontahedron, SmallRhombicosidodecahedron, \
@@ -642,6 +643,130 @@ mod polyhedron_data_tests {
     );
     assert_eq!(
       interpret(r#"PolyhedronData["RhombicHexecontahedron"]"#).unwrap(),
+      "-Graphics3D-"
+    );
+  }
+
+  // The great stellated dodecahedron: a Kepler-Poinsot star polyhedron
+  // ({5/2, 3}) whose 20 vertices coincide exactly with a unit-edge
+  // Dodecahedron's own vertices, grouped into 12 self-intersecting
+  // pentagram faces (3 meeting at each vertex) instead of 12 convex
+  // pentagons. Metrics cross-checked against MathWorld's closed forms.
+  #[test]
+  fn polyhedron_data_great_stellated_dodecahedron() {
+    assert_eq!(
+      interpret(
+        r#"{PolyhedronData["GreatStellatedDodecahedron", "VertexCount"],
+            PolyhedronData["GreatStellatedDodecahedron", "EdgeCount"],
+            PolyhedronData["GreatStellatedDodecahedron", "FaceCount"]}"#
+      )
+      .unwrap(),
+      "{20, 30, 12}"
+    );
+    assert_eq!(
+      interpret(
+        r#"PolyhedronData["GreatStellatedDodecahedron", "Circumradius"]"#
+      )
+      .unwrap(),
+      "(Sqrt[3]*(-1 + Sqrt[5]))/4"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData["GreatStellatedDodecahedron", "Midradius"]"#)
+        .unwrap(),
+      "(3 - Sqrt[5])/4"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData["GreatStellatedDodecahedron", "Volume"]"#)
+        .unwrap(),
+      "(5*(3 + Sqrt[5]))/4"
+    );
+    assert_eq!(
+      interpret(
+        r#"PolyhedronData["GreatStellatedDodecahedron", "SurfaceArea"]"#
+      )
+      .unwrap(),
+      "15*Sqrt[5 + 2*Sqrt[5]]"
+    );
+    // The pentagrammic faces self-intersect, so there is no face-tangent
+    // insphere.
+    assert_eq!(
+      interpret(r#"PolyhedronData["GreatStellatedDodecahedron", "Inradius"]"#)
+        .unwrap(),
+      "Missing[NotApplicable]"
+    );
+    // A single vertex shell (unlike the rhombic hexecontahedron above):
+    // every vertex sits at the same distance from the center.
+    assert_eq!(
+      interpret(
+        r#"With[{v = N[PolyhedronData["GreatStellatedDodecahedron",
+               "VertexCoordinates"]]},
+             {Length[v], Length[Union[Round[10^6 * Norm /@ v]]]}]"#
+      )
+      .unwrap(),
+      "{20, 1}"
+    );
+    // Every edge (read off the pentagram faces) is the same length, even
+    // though it connects vertices that are not nearest neighbors of the
+    // solid they coincide with.
+    assert_eq!(
+      interpret(
+        r#"With[{v = N[PolyhedronData["GreatStellatedDodecahedron",
+               "VertexCoordinates"]],
+              edges = PolyhedronData["GreatStellatedDodecahedron",
+                "EdgeIndices"]},
+             Union[Round[10^6 * (Norm[#[[1]] - #[[2]]] & /@
+               (v[[#]] & /@ edges))]]]"#
+      )
+      .unwrap(),
+      "{1000000}"
+    );
+    assert_eq!(
+      interpret(
+        r#"MemberQ[PolyhedronData["GreatStellatedDodecahedron", "Classes"],
+             "KeplerPoinsot"]"#
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData["GreatStellatedDodecahedron"]"#).unwrap(),
+      "-Graphics3D-"
+    );
+  }
+
+  // "MathematicaSpikey" (the Mathematica/Wolfram|Alpha logo) is a rhombic
+  // hexecontahedron under a different name, exactly like "Hexahedron" is an
+  // alternative name for "Cube" — so it must resolve to the identical,
+  // already cross-checked entry rather than duplicating that data.
+  #[test]
+  fn polyhedron_data_mathematica_spikey_is_rhombic_hexecontahedron() {
+    assert_eq!(
+      interpret(
+        r#"{PolyhedronData["MathematicaSpikey", "VertexCount"],
+            PolyhedronData["MathematicaSpikey", "EdgeCount"],
+            PolyhedronData["MathematicaSpikey", "FaceCount"]}"#
+      )
+      .unwrap(),
+      "{62, 120, 60}"
+    );
+    assert_eq!(
+      interpret(
+        r#"PolyhedronData["MathematicaSpikey", "VertexCoordinates"] ===
+           PolyhedronData["RhombicHexecontahedron", "VertexCoordinates"]"#
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        r#"PolyhedronData["MathematicaSpikey", "EdgeIndices"] ===
+           PolyhedronData["RhombicHexecontahedron", "EdgeIndices"]"#
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData["MathematicaSpikey"]"#).unwrap(),
       "-Graphics3D-"
     );
   }
@@ -856,6 +981,70 @@ mod polyhedron_data_tests {
       )
       .unwrap(),
       "{3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4}"
+    );
+  }
+
+  // The Bilinski dodecahedron: 12 congruent golden rhombi, unit edges.
+  #[test]
+  fn polyhedron_data_bilinski_dodecahedron() {
+    assert_eq!(
+      interpret(
+        r#"PolyhedronData["BilinskiDodecahedron", #] & /@
+             {"VertexCount", "EdgeCount", "FaceCount"}"#
+      )
+      .unwrap(),
+      "{14, 24, 12}"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData["BilinskiDodecahedron", "SurfaceArea"]"#)
+        .unwrap(),
+      "24/Sqrt[5]"
+    );
+    assert_eq!(
+      interpret(r#"PolyhedronData["BilinskiDodecahedron", "Circumradius"]"#)
+        .unwrap(),
+      "Missing[NotApplicable]"
+    );
+    // The scene a notebook builds from "Faces": corners in [[1]], faces in
+    // [[2, 1]] indexing into them.
+    assert_eq!(
+      interpret(
+        r#"With[{d = PolyhedronData["BilinskiDodecahedron", "Faces"]},
+             {Length[d[[1]]], Length[d[[2, 1]]], Dimensions[N[d[[1]]]]}]"#
+      )
+      .unwrap(),
+      "{14, 12, {14, 3}}"
+    );
+    // Every edge has unit length; the volume matches the exact value.
+    assert_eq!(
+      interpret(
+        r#"With[{v = N[PolyhedronData["BilinskiDodecahedron",
+               "VertexCoordinates"]],
+              e = PolyhedronData["BilinskiDodecahedron", "EdgeIndices"]},
+             Union[Round[Norm[v[[#[[1]]]] - v[[#[[2]]]]] & /@ e, 10^-10]]]"#
+      )
+      .unwrap(),
+      "{1}"
+    );
+    assert_eq!(
+      interpret(
+        r#"Round[N[PolyhedronData["BilinskiDodecahedron", "Volume"]], 10^-6]"#
+      )
+      .unwrap(),
+      "2462147/1000000"
+    );
+    // Every face is a planar rhombus with the golden-rhombus area 2/Sqrt[5].
+    assert_eq!(
+      interpret(
+        r#"With[{v = N[PolyhedronData["BilinskiDodecahedron",
+               "VertexCoordinates"]]},
+             Union[Round[Norm[Cross[v[[#[[2]]]] - v[[#[[1]]]],
+               v[[#[[4]]]] - v[[#[[1]]]]]] & /@
+               PolyhedronData["BilinskiDodecahedron", "FaceIndices"],
+               10^-10]]]"#
+      )
+      .unwrap(),
+      "{894427191/1000000000}"
     );
   }
 }

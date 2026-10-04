@@ -513,6 +513,24 @@ mod graphics {
       );
     }
 
+    /// Regression: `expr_to_point_list` required the *whole* points list to
+    /// already be a literal `{{x1,y1}, …}`, so a Demonstration's idiom of
+    /// computing an arrow's endpoints with a pure function applied to a
+    /// single tip value (`({{# - 2.5, 0}, {#, 0}}& )[tip]`, as opposed to a
+    /// literal list) left `Arrow` with an unevaluated `CurriedCall` for its
+    /// first argument — neither the point-list nor the multi-segment branch
+    /// recognized it, so no primitive was drawn and a `Coordinate … should
+    /// be a pair of numbers` message fired instead. A points list that
+    /// reduces to `{{x1,y1}, …}` at evaluation time must render identically
+    /// to writing that list out.
+    #[test]
+    fn arrow_computed_point_list_matches_literal() {
+      assert_eq!(
+        export_svg("Graphics[{Arrow[({{# - 2.5, 0}, {#, 0}} & )[3]]}]"),
+        export_svg("Graphics[{Arrow[{{0.5, 0}, {3, 0}}]}]")
+      );
+    }
+
     #[test]
     fn text() {
       insta::assert_snapshot!(export_svg(
@@ -822,6 +840,48 @@ mod graphics {
       assert!(
         nested.contains("x=\"250.00\"") && nested.contains("y=\"240.00\""),
         "and sits at the scaled anchor: {nested}"
+      );
+    }
+
+    /// A symbolic `Graphics[…]` inset with no `size` keeps the size it would
+    /// have on its own. It used to be folded into the enclosing picture's
+    /// coordinates, so a unit-radius scene inset into a picture measured in
+    /// hundreds of units collapsed to a sub-pixel dot.
+    #[test]
+    fn a_sizeless_graphics_inset_keeps_its_natural_size() {
+      let svg = export_svg(
+        "Graphics[{Rectangle[{0, 0}, {300, 200}]}, \
+         Epilog -> Inset[Graphics[{Disk[{0, 0}, 1]}], {150, 100}]]",
+      );
+      let nested = svg
+        .split("<svg ")
+        .nth(2)
+        .and_then(|s| s.split_once('>'))
+        .expect("the inset is embedded as its own picture")
+        .0
+        .to_string();
+      assert!(
+        nested.contains("width=\"360.00\"")
+          && nested.contains("height=\"360.00\""),
+        "the inset keeps its own natural size: {nested}"
+      );
+    }
+
+    /// A three-dimensional inset is transparent: it must not paint the
+    /// default white plate over the picture it sits on.
+    #[test]
+    fn a_three_dimensional_inset_does_not_paint_a_background_plate() {
+      let svg = export_svg(
+        "Graphics[{Blue, Rectangle[{0, 0}, {10, 10}]}, \
+         Epilog -> Inset[Graphics3D[{Cuboid[]}, Boxed -> False, \
+         ImageSize -> {40, 40}], {5, 5}]]",
+      );
+      let nested = svg.split("<svg ").nth(2).expect("a nested picture");
+      assert!(
+        !nested.contains(
+          "<rect width=\"40\" height=\"40\" fill=\"rgb(255,255,255)\"/>"
+        ),
+        "no opaque plate behind the inset scene: {nested}"
       );
     }
 
@@ -1554,6 +1614,70 @@ mod graphics {
   mod text_styles {
     use super::*;
 
+    /// A `Text` label built from a `Column` of held assignments (a
+    /// Demonstration's equations beside a diagram) is typeset as one line
+    /// per item, each reading as the equation — not as the literal
+    /// `HoldForm[…]`/`TraditionalForm[…]` source on a single line.
+    #[test]
+    fn text_column_of_held_assignments() {
+      let svg = export_svg(
+        "Graphics[{Text[Column[{HoldForm[a = b c], \
+         TraditionalForm[HoldForm[x = r Cos[t]]]}], {0, 0}]}]",
+      );
+      assert!(svg.contains(">a = b c</tspan>"), "{svg}");
+      assert!(svg.contains(">x = r"), "{svg}");
+      assert!(svg.contains("cos(t)</tspan>"), "{svg}");
+      assert!(!svg.contains("HoldForm"), "{svg}");
+      assert!(!svg.contains("Set"), "{svg}");
+    }
+
+    /// The lines of a multi-line label are centred on its anchor.
+    #[test]
+    fn text_multiline_is_vertically_centered() {
+      let svg = export_svg(
+        "Graphics[{Text[Style[Column[{\"a\", \"b\", \"c\"}], 10], {0, 0}]}]",
+      );
+      assert!(svg.contains("dy=\"-10\">a</tspan>"), "{svg}");
+    }
+
+    /// `Overscript[y, ".."]` in a label draws as the accented letter.
+    #[test]
+    fn text_overscript_accent() {
+      let svg = export_svg(
+        "Graphics[{Text[Row[{Overscript[\"y\", \"..\"], \" = 1\"}], {0, 0}]}]",
+      );
+      assert!(svg.contains(">y\u{0308} = 1</text>"), "{svg}");
+    }
+
+    /// Assignments box as infix equations, like the other relations.
+    #[test]
+    fn held_assignment_boxes_are_infix() {
+      assert_eq!(
+        interpret("ToBoxes[HoldForm[x = 1]] // FullForm").unwrap(),
+        interpret("RowBox[{\"x\", \"=\", \"1\"}] // FullForm").unwrap()
+      );
+      assert_eq!(
+        interpret("ToBoxes[HoldForm[x := 1]] // FullForm").unwrap(),
+        interpret("RowBox[{\"x\", \":=\", \"1\"}] // FullForm").unwrap()
+      );
+    }
+
+    #[test]
+    fn text_edge_alignment_sets_the_svg_anchor() {
+      let left = export_svg(
+        "Graphics[{Text[\"abc\", {-1, 0}, {-1, 0}]}, PlotRange -> {{-1, 1}, {-1, 1}}]",
+      );
+      assert!(left.contains("text-anchor=\"start\""), "{left}");
+      let right = export_svg(
+        "Graphics[{Text[\"abc\", {1, 0}, {1, 0}]}, PlotRange -> {{-1, 1}, {-1, 1}}]",
+      );
+      assert!(right.contains("text-anchor=\"end\""), "{right}");
+      let centred = export_svg("Graphics[{Text[\"abc\", {0, 0}]}]");
+      assert!(
+        centred.contains("<text") && centred.contains("text-anchor=\"middle\"")
+      );
+    }
+
     #[test]
     fn text_with_style_bold() {
       insta::assert_snapshot!(export_svg(
@@ -1910,6 +2034,18 @@ mod graphics {
       assert!(svg.contains(">yin</text>"), "{svg}");
       assert!(!svg.contains(">out</text>"), "{svg}");
       assert!(!svg.contains(">yout</text>"), "{svg}");
+    }
+
+    /// Explicit tick positions that depend on variables are evaluated, so a
+    /// plot whose range and ticks both follow a variable keeps its labels.
+    #[test]
+    fn explicit_ticks_with_variable_positions_are_evaluated() {
+      let svg = export_svg(
+        "w = 0.8; Plot[Sin[t], {t, 0, w}, \
+         Ticks -> {{0, {w/4, \"qa\"}, w/2, {w, \"wa\"}}, Automatic}]",
+      );
+      assert!(svg.contains(">qa</text>"), "{svg}");
+      assert!(svg.contains(">wa</text>"), "{svg}");
     }
 
     /// A y axis at an x range's padded edge (data starting at 0) keeps the
@@ -5534,6 +5670,27 @@ mod plot3d {
     }
   }
 
+  mod parametric_plot_evaluated_body {
+    use super::*;
+
+    /// A body that is not literally a list (`{fx, fy} /. rules`) still has to
+    /// be evaluated with the plot variable symbolic: the curve lives in
+    /// symbols (`xs`, `ys`) that hold expressions of `t`, so sampling the
+    /// unevaluated body drew nothing at all.
+    #[test]
+    fn replace_all_body_draws_curve() {
+      let svg = export_svg(
+        "Module[{xs, ys}, xs = {t^2 + a}; ys = {t^3}; \
+         ParametricPlot[{xs[[1]], ys[[1]]} /. {a -> 0}, {t, -1, 1}]]",
+      );
+      let literal = export_svg("ParametricPlot[{t^2, t^3}, {t, -1, 1}]");
+      assert_eq!(
+        svg.matches("<polyline").count(),
+        literal.matches("<polyline").count()
+      );
+    }
+  }
+
   mod parametric_plot3d_curve {
     use super::*;
 
@@ -7295,6 +7452,34 @@ mod plot3d {
         "y AxesLabel overflows the canvas' left edge ({visits_x}): {visits}"
       );
       assert!(canvas_h > 0.0, "sanity: canvas has a height");
+    }
+
+    /// Opening a random Wolfram Demonstration ("Peregrine Soliton with
+    /// Controllable Center in the Causal Interpretation") in Woxi Studio, a
+    /// `ParametricPlot` of a curve whose component ranges over vastly
+    /// different scales — one coordinate stays roughly constant while the
+    /// other spans a huge range, e.g. sampling close to a pole — panicked
+    /// with "attempt to multiply with overflow". The auto aspect ratio
+    /// (`data_h / data_w`, kept so e.g. circles stay round) came out
+    /// astronomically large, so the derived SVG height overflowed once
+    /// multiplied by the internal resolution scale. Reduced to a plain
+    /// curve with a pole in range, no notebook-specific formula.
+    #[test]
+    fn parametric_plot_with_huge_data_aspect_does_not_overflow() {
+      let svg = export_svg("ParametricPlot[{t, 1/(t - 0.5)}, {t, 0, 1}]");
+      assert!(svg.starts_with("<svg"), "{svg}");
+      let height: f64 = svg
+        .split("height=\"")
+        .nth(1)
+        .and_then(|v| v.split('"').next())
+        .and_then(|v| v.parse().ok())
+        .unwrap_or_else(|| panic!("no height in {svg}"));
+      // Clamped to a sane maximum instead of the huge value the data aspect
+      // would otherwise compute.
+      assert!(
+        height <= 100_000.0,
+        "expected the clamped max height, got {height}: {svg}"
+      );
     }
 
     /// A named style brings its size and colour from the stylesheet:
@@ -16005,6 +16190,23 @@ mod show {
     assert!(svg.contains(">outer</text>") && !svg.contains(">inner</text>"));
   }
 
+  /// A bare `PlotRange -> {min, max}` given to `Show` on top of a plot is the
+  /// y range: the plotted x domain (here -7..7) stays fully visible.
+  #[test]
+  fn show_plot_with_flat_plot_range_keeps_x_domain() {
+    clear_state();
+    let flat = export_svg(
+      r#"Show[Plot[Abs[2 x], {x, -7, 7}], Graphics[{Red, Disk[{0, 3}, 1]}],
+        PlotRange -> {0, 25}]"#,
+    );
+    let nested = export_svg(
+      r#"Show[Plot[Abs[2 x], {x, -7, 7}], Graphics[{Red, Disk[{0, 3}, 1]}],
+        PlotRange -> {All, {0, 25}}]"#,
+    );
+    assert_eq!(flat, nested);
+    assert!(flat.contains(">-6</text>") || flat.contains(">−6</text>"));
+  }
+
   /// `Show[g]` is `g`: with nothing to merge and no options of its own it
   /// hands back the rendering unchanged, rather than rebuilding one from
   /// the plot's series and losing how it was drawn.
@@ -17463,6 +17665,33 @@ mod line_legend {
       "Should be drawn inside the grid cell, not printed as source: {svg}"
     );
     assert_eq!(svg.matches("<line ").count(), 2);
+  }
+
+  #[test]
+  fn line_legend_in_plot_label_renders_inline() {
+    clear_state();
+    // A `PlotLabel`/`AxesLabel` is drawn as an SVG `<text>` element, which
+    // (unlike a `Grid`/`Row` cell) can only hold inline content like
+    // `tspan` — it can't embed the standalone legend's own nested `<svg>`
+    // line sample. A Demonstration pairing a plot with an inline legend
+    // via `PlotLabel -> Column[{…, LineLegend[…]}]` must still typeset the
+    // legend (colored glyph + label) instead of leaking the call's raw,
+    // width-overflowing arguments as literal text.
+    let svg = export_svg(
+      "Graphics[{Red, Disk[]}, PlotLabel -> \
+       Column[{\"caption\", LineLegend[{Red, Blue}, {\"up\", \"down\"}]}]]",
+    );
+    assert!(
+      !svg.contains("LineLegend[") && !svg.contains("RGBColor"),
+      "Should typeset as a legend, not leak the raw call: {svg}"
+    );
+    assert!(svg.contains("caption"));
+    assert!(svg.contains("up") && svg.contains("down"));
+    assert!(
+      svg.contains("fill=\"rgb(255,0,0)\"")
+        && svg.contains("fill=\"rgb(0,0,255)\""),
+      "Each entry's glyph should carry its own legend color: {svg}"
+    );
   }
 }
 
@@ -19941,6 +20170,42 @@ mod contour_plot_3d {
          {y, -1.5, 1.5}, {z, -1.5, 1.5}, ImageSize -> 200]"
       ));
     }
+
+    #[test]
+    fn contours_count_picks_levels_when_never_zero() {
+      // Regression: `Contours -> n` was entirely ignored — marching always
+      // ran at the fixed isovalue 0, regardless of `n`. A function with no
+      // zero crossing anywhere in the sampled box (e.g. a strictly
+      // positive Gaussian, the shape a Demonstration's electron-density
+      // plot uses) therefore always errored with "the surface has no
+      // points in the given range", no matter how large `n` was, instead
+      // of drawing `n` isosurfaces spread across the function's actual
+      // sampled range the way `Contours -> n` does for `ContourPlot` (2D).
+      assert_eq!(
+        interpret(
+          "Head[ContourPlot3D[Exp[-(x^2 + y^2 + z^2)], {x, -2, 2}, \
+           {y, -2, 2}, {z, -2, 2}, Contours -> 5, PlotPoints -> 10]]"
+        )
+        .unwrap(),
+        "Graphics3D"
+      );
+    }
+
+    #[test]
+    fn contours_explicit_levels_draw_distinct_shells() {
+      let one_level = export_svg(
+        "ContourPlot3D[Exp[-(x^2 + y^2 + z^2)], {x, -2, 2}, {y, -2, 2}, \
+         {z, -2, 2}, Contours -> {0.3}, Mesh -> None, PlotPoints -> 10]",
+      );
+      let two_levels = export_svg(
+        "ContourPlot3D[Exp[-(x^2 + y^2 + z^2)], {x, -2, 2}, {y, -2, 2}, \
+         {z, -2, 2}, Contours -> {0.1, 0.3}, Mesh -> None, PlotPoints -> 10]",
+      );
+      assert_ne!(
+        one_level, two_levels,
+        "an explicit second contour level must add to the rendered surface"
+      );
+    }
   }
 
   mod errors {
@@ -20689,6 +20954,29 @@ mod parametric_plot3d {
     insta::assert_snapshot!(export_svg(
       "ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]}, {t, 0, Pi}, {p, 0, 2 Pi}]"
     ));
+  }
+
+  #[test]
+  fn integer_mesh_draws_that_many_lines_per_direction() {
+    clear_state();
+    // n interior lines in each of the two parameter directions, each a
+    // chain of GRID_N segments.
+    assert_eq!(
+      interpret(
+        "Map[Length, Cases[ParametricPlot3D[{u, v, u v}, {u, 0, 1}, \
+         {v, 0, 1}, Mesh -> 3][[1]], Line[l_] :> l, Infinity]]"
+      )
+      .unwrap(),
+      "{300}"
+    );
+    assert_eq!(
+      interpret(
+        "Cases[ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 1}, \
+         Mesh -> 0][[1]], _Line, Infinity]"
+      )
+      .unwrap(),
+      "{}"
+    );
   }
 
   #[test]
@@ -25719,9 +26007,10 @@ mod manipulate {
       ManipulateControl::Discrete { name, values, .. } => {
         assert_eq!(name, "g");
         // The five Platonic solids, the Archimedean solids (and their
-        // duals) with icosahedral or cubic symmetry, the rhombic
-        // hexecontahedron stellation, and the triangular orthobicupola.
-        assert_eq!(values.len(), 20, "every known solid");
+        // duals) with icosahedral or cubic symmetry, the great stellated
+        // dodecahedron and rhombic hexecontahedron stellations, the
+        // triangular orthobicupola, and the Bilinski dodecahedron.
+        assert_eq!(values.len(), 22, "every known solid");
         assert!(values.contains(&"\"Cube\"".to_string()));
         assert!(values.contains(&"\"TruncatedIcosahedron\"".to_string()));
       }
@@ -25976,6 +26265,28 @@ mod manipulate {
       })
       .collect();
     assert_eq!(widths, vec![10.0, 10.0]);
+  }
+
+  #[test]
+  fn display_invisible_is_not_shown_as_source() {
+    use woxi::functions::graphics::build_manipulate_display;
+    let tree = build_manipulate_display(
+      "Row[{\"a\", Invisible[x^2/(1 + 2^x)]}]",
+      &[("x".to_string(), "1".to_string())],
+    );
+    let mut nodes = Vec::new();
+    flatten(&tree, &mut nodes);
+    assert!(
+      nodes
+        .iter()
+        .all(|n| !matches!(n, DisplayNode::Static { .. })),
+      "Invisible must not fall through to a source-text leaf: {nodes:?}"
+    );
+    assert!(
+      nodes
+        .iter()
+        .any(|n| matches!(n, DisplayNode::Spacer { width } if *width == 0.0))
+    );
   }
 
   #[test]
@@ -29618,6 +29929,83 @@ mod color_data_indexed {
       .unwrap(),
       "List"
     );
+  }
+
+  // `RegionPlot[cond, …][[1]]` (or `First[…]`) yields the region's
+  // primitives, the way `ContourPlot[…][[1]]` does — a Demonstration that
+  // composes a custom `Graphics[{RegionPlot[…][[1]], …}]` (e.g. to overlay
+  // the filled region with its own styling) needs actual geometry, not an
+  // unevaluated `Part`. A disk region traces to one closed `Polygon`;
+  // `BoundaryStyle` additionally draws each loop as a styled `Line`.
+  #[test]
+  fn region_plot_part_yields_primitives() {
+    clear_state();
+    assert_eq!(
+      interpret("Head[RegionPlot[x^2 + y^2 < 1, {x, -2, 2}, {y, -2, 2}][[1]]]")
+        .unwrap(),
+      "List"
+    );
+    assert_eq!(
+      interpret(
+        "Head[RegionPlot[x^2 + y^2 < 1, {x, -2, 2}, {y, -2, 2}][[1]] \
+         [[2]]]"
+      )
+      .unwrap(),
+      "Polygon"
+    );
+    let len_with_boundary: i64 = interpret(
+      "Length[RegionPlot[x^2 + y^2 < 1, {x, -2, 2}, {y, -2, 2}, \
+       BoundaryStyle -> Thick][[1]]]",
+    )
+    .unwrap()
+    .parse()
+    .unwrap();
+    assert!(
+      len_with_boundary > 2,
+      "BoundaryStyle should add a styled Line on top of the fill: \
+       got {len_with_boundary} primitives"
+    );
+    // The extracted primitives embed into an outer Graphics.
+    let svg = export_svg(
+      "Graphics[{RegionPlot[x^2 + y^2 < 1, {x, -2, 2}, {y, -2, 2}][[1]]}]",
+    );
+    assert!(svg.contains("<polygon"), "{svg}");
+    // A body held in a variable resolves during sampling, same as
+    // ContourPlot.
+    assert_eq!(
+      interpret(
+        "diskCond = x^2 + y^2 < 1; \
+         Head[RegionPlot[diskCond, {x, -2, 2}, {y, -2, 2}][[1]]]"
+      )
+      .unwrap(),
+      "List"
+    );
+  }
+
+  /// Regression: a region whose true fill lies *outside* every traced loop
+  /// (the complement of a disk, filling everywhere in the frame but a
+  /// hole) has no loop of its own there — the frame itself would have to
+  /// be an outer contour, which marching squares over the sampled grid
+  /// never produces — so naively filling the traced loop's interior as a
+  /// `Polygon` fills exactly the wrong side. `region_plot_part_yields_primitives`
+  /// only covers a simply-connected region; this locks in the fallback
+  /// (no symbolic backing at all, so `Show` keeps stacking the plain
+  /// rendered pictures) that keeps `show_merges_two_opaque_region_plots`
+  /// passing.
+  #[test]
+  fn region_plot_complement_of_disk_keeps_plain_rendering() {
+    clear_state();
+    // No symbolic backing: Part stays an unevaluated Part, same as before
+    // primitive extraction was added for the simply-connected case.
+    assert_eq!(
+      interpret("Head[RegionPlot[x^2 + y^2 > 1, {x, -2, 2}, {y, -2, 2}][[1]]]")
+        .unwrap(),
+      "Part"
+    );
+    // The plain SVG rendering (used directly, or by Show falling back to
+    // stacking opaque pictures) still draws the correct region.
+    let svg = export_svg("RegionPlot[x^2 + y^2 > 1, {x, -2, 2}, {y, -2, 2}]");
+    assert!(svg.contains("rgb(94,129,181)"), "{svg}");
   }
 
   mod dynamic_content {

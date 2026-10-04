@@ -189,8 +189,12 @@ pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Fall back to symbolic solve + numerize
   let symbolic = solve_ast(args)?;
   // What Solve leaves unevaluated, NSolve leaves unevaluated too — under
-  // its own head.
+  // its own head — unless a numeric multi-seed search below finds real
+  // roots that no symbolic technique reached in closed form.
   if matches!(&symbolic, Expr::FunctionCall { name, .. } if name == "Solve") {
+    if let Some(result) = try_nsolve_numeric_search(args) {
+      return Ok(sort_nsolve_solutions(result));
+    }
     return Ok(unevaluated("NSolve", args));
   }
   let numerized = nsolve_numerize(&symbolic)?;
@@ -1507,6 +1511,21 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  let mut squared_abs = false;
+  let several_unknowns =
+    matches!(positional.get(1), Some(Expr::List(vars)) if vars.len() >= 2);
+  if let Some(first) = positional.first_mut() {
+    *first = expand_chained_equalities(first);
+    let (rewritten, changed) = abs_squared_to_squares(first);
+    *first = rewritten;
+    squared_abs = changed;
+    // A radical equation in several unknowns has no elimination path of its
+    // own; squaring it leaves the equivalent polynomial system.
+    if several_unknowns {
+      *first = square_radical_equations(first);
+    }
+  }
+
   let depth = SOLVE_DEPTH.with(|d| {
     let v = d.get();
     d.set(v + 1);
@@ -1514,7 +1533,18 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   });
   let solutions = solve_with_var_selection(&positional, modulus, args);
   SOLVE_DEPTH.with(|d| d.set(depth));
-  let solutions = solutions?;
+  let mut solutions = solutions?;
+  // `Abs[u]^2` was solved as `u^2`, which also has the complex roots no
+  // real `u` can reach.
+  if squared_abs && let Expr::List(sols) = &solutions {
+    solutions = Expr::List(
+      sols
+        .iter()
+        .filter(|sol| !contains_complex(sol))
+        .cloned()
+        .collect(),
+    );
+  }
   // The outermost call reports when the equations left some of the
   // explicitly requested variables free.
   if depth == 0
@@ -1541,6 +1571,130 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Ok(Expr::List(items.iter().take(n).cloned().collect()))
     }
     _ => Ok(solutions),
+  }
+}
+
+/// Rewrites every `Abs[u]^2` of a symbolic `u` as `u^2` — the squared norm a
+/// `Norm[{x - 1, y - 1}] == 2` equation reduces to — so the equation is an
+/// ordinary polynomial one. The flag tells whether anything was rewritten.
+fn abs_squared_to_squares(eqns: &Expr) -> (Expr, bool) {
+  let changed = std::cell::Cell::new(false);
+  let abs_argument = |e: &Expr| -> Option<Expr> {
+    match e {
+      Expr::FunctionCall { name, args } if name == "Abs" && args.len() == 1 => {
+        Some(args[0].clone())
+      }
+      _ => None,
+    }
+  };
+  let rewritten = crate::functions::string_ast::map_expr_tree(eqns, &|e| {
+    let (base, exponent) = match e {
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        (&args[0], &args[1])
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } => (left.as_ref(), right.as_ref()),
+      _ => return None,
+    };
+    if !matches!(exponent, Expr::Integer(2)) {
+      return None;
+    }
+    let inner = abs_argument(base)?;
+    if try_eval_to_f64(&inner).is_some() {
+      return None;
+    }
+    changed.set(true);
+    Some(Expr::FunctionCall {
+      name: "Power".to_string(),
+      args: vec![inner, Expr::Integer(2)].into(),
+    })
+  });
+  (rewritten, changed.get())
+}
+
+/// Squares the radical equations of a system: `Sqrt[p] == Sqrt[q]` becomes
+/// `p == q`, and `Sqrt[p] == c` for a non-negative number `c` becomes
+/// `p == c^2`. Both are equivalences, since the principal square root is
+/// injective and non-negative. Looks through lists and `And`.
+fn square_radical_equations(eqns: &Expr) -> Expr {
+  use crate::functions::math_ast::is_sqrt;
+  match eqns {
+    Expr::List(items) => {
+      Expr::List(items.iter().map(square_radical_equations).collect())
+    }
+    Expr::FunctionCall { name, args } if name == "And" => Expr::FunctionCall {
+      name: name.clone(),
+      args: args.iter().map(square_radical_equations).collect(),
+    },
+    Expr::Comparison {
+      operands,
+      operators,
+    } if operands.len() == 2 && operators[0] == ComparisonOp::Equal => {
+      let equation = |lhs: Expr, rhs: Expr| Expr::Comparison {
+        operands: vec![lhs, rhs],
+        operators: vec![ComparisonOp::Equal],
+      };
+      let (lhs, rhs) = (&operands[0], &operands[1]);
+      if let (Some(p), Some(q)) = (is_sqrt(lhs), is_sqrt(rhs)) {
+        return equation(p.clone(), q.clone());
+      }
+      let (radical, other) = match (is_sqrt(lhs), is_sqrt(rhs)) {
+        (Some(p), None) => (p, rhs),
+        (None, Some(p)) => (p, lhs),
+        _ => return eqns.clone(),
+      };
+      match try_eval_to_f64(other) {
+        Some(c) if c >= 0.0 => {
+          let squared = crate::evaluator::evaluate_expr_to_expr(&pow(
+            other.clone(),
+            Expr::Integer(2),
+          ))
+          .unwrap_or_else(|_| pow(other.clone(), Expr::Integer(2)));
+          equation(radical.clone(), squared)
+        }
+        _ => eqns.clone(),
+      }
+    }
+    _ => eqns.clone(),
+  }
+}
+
+/// Rewrites a chained equality `a == b == c` as the conjunction
+/// `a == b && b == c` it stands for, in the equation argument of `Solve` —
+/// at the top level, inside lists and inside `And`.
+fn expand_chained_equalities(eqns: &Expr) -> Expr {
+  match eqns {
+    Expr::Comparison {
+      operands,
+      operators,
+    } if operands.len() > 2
+      && operators.iter().all(|op| *op == ComparisonOp::Equal) =>
+    {
+      Expr::FunctionCall {
+        name: "And".to_string(),
+        args: operands
+          .windows(2)
+          .map(|pair| Expr::Comparison {
+            operands: pair.to_vec(),
+            operators: vec![ComparisonOp::Equal],
+          })
+          .collect::<Vec<_>>()
+          .into(),
+      }
+    }
+    Expr::List(items) => {
+      Expr::List(items.iter().map(expand_chained_equalities).collect())
+    }
+    Expr::FunctionCall { name, args } if name == "And" => Expr::FunctionCall {
+      name: name.clone(),
+      args: args.iter().map(expand_chained_equalities).collect(),
+    },
+    _ => eqns.clone(),
   }
 }
 
@@ -5341,6 +5495,159 @@ fn try_solve_radical_equation(
   Some(Ok(Expr::List(kept.into())))
 }
 
+/// Numeric last resort for `NSolve[eqn, var]` when neither the quadratic /
+/// pure-power shortcuts above nor `solve_ast`'s symbolic techniques —
+/// including `try_solve_radical_equation`'s isolate-one-term-and-raise
+/// elimination — find a closed form.
+///
+/// This covers equations that mix a sub-expression's positive and negative
+/// fractional powers, e.g. a Cardano cube-root formula added to its own
+/// reciprocal (`A^(1/3) + k/A^(1/3)`): isolating either term and cubing
+/// reintroduces a *different* fractional power of the same base instead of
+/// eliminating it, so the elimination loop gives up. Such an equation is
+/// not unsolvable, just not solvable by that one technique — it is an
+/// ordinary equation to root-find numerically, the way real Mathematica's
+/// own numerical solver does internally. Woxi does not have that solver, so
+/// this runs damped Newton iteration (central-difference derivative, since
+/// the search variable need not be a plain identifier — `C[1]`, as produced
+/// by `Solve`'s own generated constants, is common) from a spread of seed
+/// points and keeps whichever seeds converge, deduplicated.
+///
+/// Only applies to `NSolve[eqn, var]` with a single equation and a single
+/// (non-list) variable; systems and multi-variable solves are left alone.
+fn try_nsolve_numeric_search(args: &[Expr]) -> Option<Expr> {
+  if args.len() != 2 {
+    return None;
+  }
+  let (lhs, rhs, op) =
+    crate::functions::polynomial_ast::reduce::extract_comparison(&args[0])?;
+  if op != crate::functions::polynomial_ast::reduce::CompOp::Equal {
+    return None;
+  }
+  let var = &args[1];
+  if matches!(var, Expr::List(_)) {
+    return None;
+  }
+  let residual = minus2(lhs, rhs);
+  if !expr_contains_expr(&residual, var) {
+    return None;
+  }
+
+  let eval_at = |x: f64| -> Option<f64> {
+    let substituted = substitute_expr(&residual, var, &Expr::Real(x));
+    let evaled =
+      quietly(|| crate::evaluator::evaluate_expr_to_expr(&substituted)).ok()?;
+    try_eval_to_f64(&evaled).filter(|v| v.is_finite())
+  };
+
+  const SEEDS: &[f64] = &[
+    0.0, 1.0, -1.0, 2.0, -2.0, 5.0, -5.0, 10.0, -10.0, 20.0, -20.0, 50.0,
+    -50.0, 100.0, -100.0,
+  ];
+  const MAX_ITER: usize = 100;
+  const MAX_BACKTRACKS: usize = 40;
+  const TOL: f64 = 1e-13;
+  const STEP_H: f64 = 1e-6;
+
+  let mut roots: Vec<f64> = Vec::new();
+  for &seed in SEEDS {
+    let Some(mut fx) = eval_at(seed) else {
+      continue;
+    };
+    let mut x = seed;
+    let mut converged = fx.abs() < TOL;
+    for _ in 0..MAX_ITER {
+      if converged {
+        break;
+      }
+      let (Some(f_plus), Some(f_minus)) =
+        (eval_at(x + STEP_H), eval_at(x - STEP_H))
+      else {
+        break;
+      };
+      let deriv = (f_plus - f_minus) / (2.0 * STEP_H);
+      if !deriv.is_finite() || deriv.abs() < 1e-14 {
+        break;
+      }
+      let step = fx / deriv;
+      let mut shrink = 1.0;
+      let mut x_next = x - step;
+      let mut f_next = eval_at(x_next);
+      let mut tries = 0;
+      while tries < MAX_BACKTRACKS && f_next.is_none_or(|v| v.abs() >= fx.abs())
+      {
+        shrink *= 0.5;
+        x_next = x - step * shrink;
+        f_next = eval_at(x_next);
+        tries += 1;
+      }
+      let Some(fnext) = f_next else {
+        break;
+      };
+      x = x_next;
+      fx = fnext;
+      if fx.abs() < TOL {
+        converged = true;
+      }
+    }
+    if converged && x.is_finite() {
+      let is_duplicate = roots
+        .iter()
+        .any(|existing: &f64| (existing - x).abs() < 1e-6 * (1.0 + x.abs()));
+      if !is_duplicate {
+        roots.push(x);
+      }
+    }
+  }
+  if roots.is_empty() {
+    return None;
+  }
+  roots.sort_by(|a, b| a.partial_cmp(b).unwrap());
+  Some(Expr::List(
+    roots
+      .into_iter()
+      .map(|r| {
+        Expr::List(
+          vec![Expr::Rule {
+            pattern: Box::new(var.clone()),
+            replacement: Box::new(Expr::Real(r)),
+          }]
+          .into(),
+        )
+      })
+      .collect(),
+  ))
+}
+
+/// True when `target` occurs (structurally, via string comparison like
+/// `substitute_expr`) anywhere inside `expr`.
+fn expr_contains_expr(expr: &Expr, target: &Expr) -> bool {
+  if expr_to_string(expr) == expr_to_string(target) {
+    return true;
+  }
+  match expr {
+    Expr::List(items) => items.iter().any(|e| expr_contains_expr(e, target)),
+    Expr::FunctionCall { args, .. } => {
+      args.iter().any(|e| expr_contains_expr(e, target))
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      expr_contains_expr(left, target) || expr_contains_expr(right, target)
+    }
+    Expr::UnaryOp { operand, .. } => expr_contains_expr(operand, target),
+    Expr::Comparison { operands, .. } => {
+      operands.iter().any(|e| expr_contains_expr(e, target))
+    }
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => {
+      expr_contains_expr(pattern, target)
+        || expr_contains_expr(replacement, target)
+    }
+    _ => false,
+  }
+}
+
 /// Roots beyond this index are left alone: raising to them makes a
 /// polynomial no solver reports in radicals anyway.
 const MAX_RADICAL_INDEX: i128 = 4;
@@ -7669,15 +7976,16 @@ fn find_root_multivariate(
     let (mut fv, mut resid) = eval_residual(&x)?;
     best_resid = resid;
     best_x.clone_from(&x);
-    let mut prev_resid = f64::INFINITY;
+    // Newton steps are damped by backtracking on the Euclidean norm of the
+    // residual vector (the merit function). Demanding the max-norm drop on
+    // every full step wrongly stalls systems where one component's residual
+    // is traded for another's (e.g. `{x*z == 2, z == 3}` from `{1, 1}` lands
+    // on `{0, 3}` first), so the iteration never left its starting point.
+    let merit = |fv: &[f64]| fv.iter().map(|v| v * v).sum::<f64>();
     for _ in 0..max_iter {
       if resid < tol {
         break;
       }
-      if resid >= prev_resid {
-        break;
-      }
-      prev_resid = resid;
       let reals: Vec<Expr> = x.iter().map(|&v| Expr::Real(v)).collect();
       let bindings: Vec<(&str, &Expr)> =
         vars.iter().map(String::as_str).zip(reals.iter()).collect();
@@ -7686,12 +7994,31 @@ fn find_root_multivariate(
       let Some(delta) = find_root_solve_linear(jm, neg_f) else {
         break;
       };
-      let mut max_d = 0.0f64;
-      for (j, &dj) in delta.iter().enumerate() {
-        x[j] += dj;
-        max_d = max_d.max(dj.abs());
+      let base_merit = merit(&fv);
+      let mut shrink = 1.0;
+      let mut accepted = None;
+      for _ in 0..FIND_ROOT_MAX_BACKTRACKS {
+        let x_trial: Vec<f64> = x
+          .iter()
+          .zip(&delta)
+          .map(|(&xj, &dj)| xj + dj * shrink)
+          .collect();
+        if let Ok((fv_trial, resid_trial)) = eval_residual(&x_trial)
+          && fv_trial.iter().all(|v| v.is_finite())
+          && merit(&fv_trial) < base_merit
+        {
+          accepted = Some((x_trial, fv_trial, resid_trial, shrink));
+          break;
+        }
+        shrink *= 0.5;
       }
-      (fv, resid) = eval_residual(&x)?;
+      let Some((x_new, fv_new, resid_new, shrink)) = accepted else {
+        break;
+      };
+      let max_d = delta.iter().fold(0.0f64, |a, &d| a.max((d * shrink).abs()));
+      x = x_new;
+      fv = fv_new;
+      resid = resid_new;
       if resid < best_resid {
         best_resid = resid;
         best_x.clone_from(&x);

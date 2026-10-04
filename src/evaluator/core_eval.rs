@@ -3874,7 +3874,10 @@ pub fn evaluate_expr_to_expr_inner(
           }
           indices.push(call("Span", evaluated_args));
         } else {
-          indices.push(evaluate_expr_to_expr(idx)?);
+          part_extraction::push_part_index(
+            &mut indices,
+            evaluate_expr_to_expr(idx)?,
+          );
         }
       }
 
@@ -3941,6 +3944,17 @@ pub fn evaluate_expr_to_expr_inner(
       // time just to ask what its head is doubled the cost of every failing
       // Part on a large list.
       let base_holds = head_holds_arguments(&base_val);
+      // An index that cannot address any part fails the whole spec before
+      // the object is looked at. Returning here also keeps a held base
+      // (`Hold[a][[x]]`) from re-evaluating the unevaluated Part below.
+      if let Some(bad) = part_extraction::invalid_part_spec(&indices) {
+        part_extraction::emit_pkspec1(bad);
+        PART_DEPTH.with(|d| *d.borrow_mut() -= 1);
+        return Ok(indices.into_iter().fold(base_val, |acc, idx| Expr::Part {
+          expr: Box::new(acc),
+          index: Box::new(idx),
+        }));
+      }
       let result = if needs_mapping {
         // All requires collecting indices and mapping — must clone base
         apply_part_indices(&base_val, &indices)?

@@ -4777,17 +4777,33 @@ fn match_pattern_impl(
       // this condition still on the stack — otherwise it reapplies our
       // guard to its own (differently bound) candidate and recurses into
       // evaluating the test forever.
+      //
+      // A named pattern (`g:{__h} /; Length[g] == 2`) only binds its name
+      // once the whole inner pattern has matched. Testing the condition
+      // against the partial bindings of a sequence split inside it would
+      // evaluate it with `g` still unbound (`Length[g] == 2` is a definite
+      // `False` there) and wrongly reject every split, so that case is left
+      // to the final check below.
+      let defers_to_final_check = matches!(
+        &pat_args[0],
+        Expr::FunctionCall { name, .. } if name == "Pattern"
+      );
       let bindings = {
-        OUTER_LHS_CONDITION.with(|s| s.borrow_mut().push(pat_args[1].clone()));
-        struct G;
+        if !defers_to_final_check {
+          OUTER_LHS_CONDITION
+            .with(|s| s.borrow_mut().push(pat_args[1].clone()));
+        }
+        struct G(bool);
         impl Drop for G {
           fn drop(&mut self) {
-            OUTER_LHS_CONDITION.with(|s| {
-              s.borrow_mut().pop();
-            });
+            if self.0 {
+              OUTER_LHS_CONDITION.with(|s| {
+                s.borrow_mut().pop();
+              });
+            }
           }
         }
-        let _g = G;
+        let _g = G(!defers_to_final_check);
         // First match the pattern part
         match_pattern(expr, &pat_args[0])
       };

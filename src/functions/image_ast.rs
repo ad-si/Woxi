@@ -2182,10 +2182,22 @@ pub fn image_resize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated("ImageResize", args));
   }
 
-  if args.len() != 2 {
-    return Err(InterpreterError::EvaluationError(
-      "ImageResize expects exactly 2 arguments".into(),
-    ));
+  // Trailing arguments are options; `Resampling -> "Nearest"` (or
+  // "Constant") picks the nearest source pixel instead of interpolating.
+  let mut nearest = false;
+  for opt in &args[2..] {
+    let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+    else {
+      return Ok(unevaluated("ImageResize", args));
+    };
+    if matches!(pattern.as_ref(), Expr::Identifier(n) | Expr::String(n) if n == "Resampling")
+      && matches!(replacement.as_ref(), Expr::String(m) | Expr::Identifier(m) if m == "Nearest" || m == "Constant")
+    {
+      nearest = true;
+    }
   }
 
   // `Scaled[s]` / `Scaled[{sx, sy}]` is a fraction of the image's own size:
@@ -2328,6 +2340,19 @@ pub fn image_resize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let scale_x = src_w as f64 / new_w as f64;
   let scale_y = src_h as f64 / new_h as f64;
   for ny in 0..new_h as usize {
+    if nearest {
+      let sy = ((((ny as f64) + 0.5) * scale_y).floor() as usize)
+        .min(src_h.saturating_sub(1));
+      for nx in 0..new_w as usize {
+        let sx = ((((nx as f64) + 0.5) * scale_x).floor() as usize)
+          .min(src_w.saturating_sub(1));
+        for c in 0..ch {
+          new_data[(ny * new_w as usize + nx) * ch + c] =
+            data[(sy * src_w + sx) * ch + c];
+        }
+      }
+      continue;
+    }
     let sy_f = ((ny as f64) + 0.5) * scale_y - 0.5;
     let sy0 = sy_f.floor().max(0.0) as usize;
     let sy1 = (sy0 + 1).min(src_h.saturating_sub(1));
@@ -2695,7 +2720,23 @@ fn image_pad_extents(
         v
       }
       other => {
-        vec![crate::functions::math_ast::try_eval_to_f64(other)?; ch]
+        if let Some((r, g, b, alpha)) = color_directive_to_rgb(other) {
+          // A color directive fills in the image's own channel layout: gray
+          // images take the luminance, and an alpha channel the directive's
+          // opacity (opaque when it names none).
+          match ch {
+            1 => vec![(r + g + b) / 3.0],
+            2 => vec![(r + g + b) / 3.0, alpha.unwrap_or(1.0)],
+            3 => vec![r, g, b],
+            _ => {
+              let mut v = vec![r, g, b, alpha.unwrap_or(1.0)];
+              v.resize(ch, 1.0);
+              v
+            }
+          }
+        } else {
+          vec![crate::functions::math_ast::try_eval_to_f64(other)?; ch]
+        }
       }
     },
   };
@@ -3755,10 +3796,43 @@ pub fn color_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// dimensions, channel count and image type as `img`. With an alpha
 /// argument, the overlapping region is blended as (1 - α)*bg + α*ov;
 /// without one the overlay replaces the background pixels.
+/// A position spec of `ImageCompose` — `{x, y}` in image coordinates (origin
+/// bottom-left), or the names `Left`/`Right`/`Center` and `Bottom`/`Top`
+/// (alone for one axis, or in an `{x, y}` pair) — resolved against an image
+/// of the given size.
+fn image_compose_position(spec: &Expr, w: f64, h: f64) -> Option<(f64, f64)> {
+  let axis = |e: &Expr, len: f64, low: &str, high: &str| -> Option<f64> {
+    match e {
+      Expr::Identifier(n) | Expr::String(n) => match n.as_str() {
+        "Center" => Some(len / 2.0),
+        n if n == low => Some(0.0),
+        n if n == high => Some(len),
+        _ => None,
+      },
+      other => crate::functions::math_ast::try_eval_to_f64(other),
+    }
+  };
+  match spec {
+    Expr::List(p) if p.len() == 2 => Some((
+      axis(&p[0], w, "Left", "Right")?,
+      axis(&p[1], h, "Bottom", "Top")?,
+    )),
+    Expr::Identifier(n) | Expr::String(n) => match n.as_str() {
+      "Center" => Some((w / 2.0, h / 2.0)),
+      "Left" => Some((0.0, h / 2.0)),
+      "Right" => Some((w, h / 2.0)),
+      "Bottom" => Some((w / 2.0, 0.0)),
+      "Top" => Some((w / 2.0, h)),
+      _ => None,
+    },
+    _ => None,
+  }
+}
+
 pub fn image_compose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  if args.len() != 2 {
+  if args.len() < 2 || args.len() > 4 {
     return Err(InterpreterError::EvaluationError(
-      "ImageCompose expects exactly 2 arguments".into(),
+      "ImageCompose expects 2 to 4 arguments".into(),
     ));
   }
 
@@ -3805,8 +3879,23 @@ pub fn image_compose_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // top-down, but Wolfram positions things in image (bottom-up) y. Use
   // `floor(bw/2) - floor(ow/2)` for x and `ceil(bh/2) - ceil(oh/2)` for
   // the top-down y so behavior matches across even/odd sizes.
-  let offset_x = bw / 2 - ow / 2;
-  let offset_y = (bh + 1) / 2 - (oh + 1) / 2;
+  let (mut offset_x, mut offset_y) =
+    (bw / 2 - ow / 2, (bh + 1) / 2 - (oh + 1) / 2);
+  // ImageCompose[image, overlay, pos, opos] puts the overlay's `opos` point
+  // (default: its center) on the image's `pos` point (default: its center).
+  if args.len() >= 3 {
+    let base_pos = image_compose_position(&args[2], bw as f64, bh as f64);
+    let over_pos = match args.get(3) {
+      Some(spec) => image_compose_position(spec, ow as f64, oh as f64),
+      None => Some((ow as f64 / 2.0, oh as f64 / 2.0)),
+    };
+    let (Some((px, py)), Some((qx, qy))) = (base_pos, over_pos) else {
+      return Ok(unevaluated("ImageCompose", args));
+    };
+    // Image y grows upward; the buffer's rows run top-down.
+    offset_x = (px - qx).round() as i64;
+    offset_y = (bh as f64 - (py - qy) - oh as f64).round() as i64;
+  }
 
   // Output starts as a copy of the background; overlapping pixels are
   // replaced (or alpha-blended) using the overlay's channels.
@@ -3911,6 +4000,55 @@ fn pointwise_image_op(
       data: Arc::new(new_data),
       image_type: *t1,
     });
+  }
+
+  // (Image, {c1, c2, ...}) / ({c1, c2, ...}, Image) — one constant per
+  // channel, e.g. the per-channel gain of a white balance.
+  for (img_idx, list_idx) in [(0usize, 1usize), (1, 0)] {
+    if let Expr::Image {
+      width,
+      height,
+      channels,
+      data,
+      image_type,
+      ..
+    } = &args[img_idx]
+      && let Expr::List(items) = &args[list_idx]
+      && items.len() == *channels as usize
+      && *channels > 1
+    {
+      let mut per_channel = Vec::with_capacity(items.len());
+      for item in items {
+        match crate::functions::math_ast::try_eval_to_f64(item) {
+          Some(v) => per_channel.push(v),
+          None => break,
+        }
+      }
+      if per_channel.len() == items.len() {
+        let is_r32 = matches!(image_type, ImageType::Real32);
+        let ch = *channels as usize;
+        let new_data: Vec<f64> = data
+          .iter()
+          .enumerate()
+          .map(|(i, &v)| {
+            let s = per_channel[i % ch];
+            if img_idx == 0 {
+              apply(v, s, is_r32)
+            } else {
+              apply(s, v, is_r32)
+            }
+          })
+          .collect();
+        return Ok(Expr::Image {
+          color_space: None,
+          width: *width,
+          height: *height,
+          channels: *channels,
+          data: Arc::new(new_data),
+          image_type: *image_type,
+        });
+      }
+    }
   }
 
   // (Image, scalar) — apply `op(pixel, scalar)` to every pixel.
@@ -5644,14 +5782,14 @@ fn symbolic_gaussian_matrix(args: &[Expr]) -> Expr {
   unevaluated("GaussianMatrix", args)
 }
 
-/// Colorize[matrix] — colorize an integer-label matrix as an RGB
-/// image. wolframscript prints the result as `-Image-`. A real
-/// renderer would consult `ColorFunction -> …` and evaluate the
-/// function at each label; for now we map each unique integer
-/// label to a deterministic shade of gray so the result is a
-/// well-formed `Expr::Image`. Non-matrix / non-image arguments
-/// emit `Colorize::invinput` and stay symbolic, matching
-/// wolframscript.
+/// Colorize[matrix, opts] — colorize an integer-label matrix as an RGB
+/// image. With the default `ColorFunction -> Automatic`, background
+/// label 0 is white and every other label gets a distinct hue. With an
+/// explicit `ColorFunction -> f`, `f` is applied to each label rescaled
+/// to `[0, 1]`; `f` may be a function, a named `ColorData` gradient
+/// string, or a color-function head such as `Hue`. Non-matrix /
+/// non-image arguments emit `Colorize::invinput` and stay symbolic,
+/// matching wolframscript.
 pub fn colorize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Expr::List(rows) = &args[0]
     && !rows.is_empty()
@@ -5679,15 +5817,17 @@ pub fn colorize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .iter()
       .fold((i64::MAX, i64::MIN), |(lo, hi), &v| (lo.min(v), hi.max(v)));
     let span = (max - min).max(1) as f64;
-    // Default rendering: map each label linearly to a gray
-    // ramp [0, 1]; emit 3-channel RGB data so the Image stays
-    // well-formed. Future work: honor `ColorFunction -> …`.
+    let color_function = option_value(&args[1..], "ColorFunction")
+      .filter(|f| !matches!(f, Expr::Identifier(n) if n == "Automatic"));
+    // Each distinct label is colored once and reused for every pixel.
+    let mut palette: std::collections::HashMap<i64, (f64, f64, f64)> =
+      std::collections::HashMap::new();
     let mut data: Vec<f64> = Vec::with_capacity(labels.len() * 3);
     for v in &labels {
-      let t = ((*v - min) as f64) / span;
-      data.push(t);
-      data.push(t);
-      data.push(t);
+      let (r, g, b) = *palette.entry(*v).or_insert_with(|| {
+        colorize_label(*v, (*v - min) as f64 / span, color_function)
+      });
+      data.extend([r, g, b]);
     }
     return Ok(Expr::Image {
       color_space: None,
@@ -5706,6 +5846,53 @@ pub fn colorize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   Ok(unevaluated("Colorize", args))
+}
+
+/// The RGB color of one `Colorize` label. `t` is the label rescaled to
+/// `[0, 1]`; `color_function` is `None` for the automatic palette.
+fn colorize_label(
+  label: i64,
+  t: f64,
+  color_function: Option<&Expr>,
+) -> (f64, f64, f64) {
+  let Some(f) = color_function else {
+    if label == 0 {
+      return (1.0, 1.0, 1.0);
+    }
+    // Golden-ratio hue steps keep neighboring labels visually distinct.
+    let hue = (label as f64 * 0.618_033_988_749_895).rem_euclid(1.0);
+    return hsv_to_rgb(hue, 0.6, 0.9);
+  };
+  let color = match f {
+    Expr::String(scheme) => {
+      crate::functions::chart::sample_named_gradient(scheme, t)
+        .map(|(r, g, b)| {
+          call(
+            "RGBColor",
+            vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)],
+          )
+        })
+        .or_else(|| {
+          let scheme_fn = crate::evaluator::evaluate_expr_to_expr(&call(
+            "ColorData",
+            vec![f.clone()],
+          ))
+          .ok()?;
+          crate::evaluator::apply_function_to_arg(&scheme_fn, &Expr::Real(t))
+            .ok()
+        })
+    }
+    Expr::Identifier(head) => {
+      crate::evaluator::evaluate_expr_to_expr(&call(head, vec![Expr::Real(t)]))
+        .ok()
+    }
+    other => {
+      crate::evaluator::apply_function_to_arg(other, &Expr::Real(t)).ok()
+    }
+  };
+  color
+    .and_then(|c| color_directive_to_rgb(&c))
+    .map_or((t, t, t), |(r, g, b, _)| (r, g, b))
 }
 
 /// The positions of the 8-connected foreground neighbors of pixel `i`.
@@ -6322,7 +6509,7 @@ pub fn delete_small_components_ast(
 /// component of a label matrix (each distinct nonzero value is a component).
 /// Returns a list of `label -> value` rules sorted by label. Supported
 /// properties: "Count" (pixel count), "Area" (count as a real), and "Label"
-/// (the label itself); a list of properties yields a tuple per component.
+/// (the label itself), and "LabelCount" (the number of components); a list of properties yields a tuple per component.
 pub fn component_measurements_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
@@ -6372,8 +6559,10 @@ pub fn component_measurements_ast(
   };
   let single = matches!(&args[1], Expr::String(_));
 
+  let label_count = counts.len();
   let measure = |prop: &str, label: i128, count: usize| -> Option<Expr> {
     match prop {
+      "LabelCount" => Some(Expr::Integer(label_count as i128)),
       "Count" => Some(Expr::Integer(count as i128)),
       "Area" => Some(Expr::Real(count as f64)),
       "Label" => Some(Expr::Integer(label)),

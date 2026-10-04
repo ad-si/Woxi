@@ -2295,9 +2295,9 @@ fn reduce_and(
             }
           }
 
-          // Check inequalities
+          // Check inequalities (and other boolean constraints such as `||`)
           if satisfies {
-            for ineq in &inequalities {
+            for ineq in inequalities.iter().chain(other.iter()) {
               let subst =
                 crate::syntax::substitute_variable(ineq, var, &rhs_val);
               let evaled = crate::evaluator::evaluate_expr_to_expr(&subst);
@@ -3011,40 +3011,189 @@ pub fn reduce_multi_var_and(
   vars: &[String],
   domain: Option<&str>,
 ) -> Result<Expr, InterpreterError> {
+  let result = reduce_multi_var_and_inner(constraints, vars, domain)?;
+  Ok(normalize_solution_branches(&result, vars))
+}
+
+/// Flatten a nested And/Or answer into a disjunction of conjunctions, drop
+/// duplicate branches and order each conjunction's `v == c` literals by the
+/// variable list, as wolframscript prints them.
+fn normalize_solution_branches(expr: &Expr, vars: &[String]) -> Expr {
+  fn dnf(e: &Expr) -> Vec<Vec<Expr>> {
+    match e {
+      Expr::BinaryOp {
+        op: BinaryOperator::Or,
+        left,
+        right,
+      } => {
+        let mut out = dnf(left);
+        out.extend(dnf(right));
+        out
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::And,
+        left,
+        right,
+      } => {
+        let (l, r) = (dnf(left), dnf(right));
+        let mut out = Vec::new();
+        for a in &l {
+          for b in &r {
+            out.push(a.iter().chain(b.iter()).cloned().collect());
+          }
+        }
+        out
+      }
+      _ => vec![vec![e.clone()]],
+    }
+  }
+  let mut seen = std::collections::HashSet::new();
+  let mut branches = Vec::new();
+  for mut conj in dnf(expr) {
+    let mut keyed: Vec<(usize, Expr)> = conj
+      .drain(..)
+      .map(|lit| {
+        let comparison = extract_comparison(&lit);
+        let idx = match comparison.as_ref() {
+          Some((Expr::Identifier(v), _, CompOp::Equal)) => {
+            vars.iter().position(|w| w == v).unwrap_or(vars.len())
+          }
+          _ => vars.len(),
+        };
+        (idx, lit)
+      })
+      .collect();
+    keyed.sort_by_key(|(idx, _)| *idx);
+    let lits: Vec<Expr> = keyed.into_iter().map(|(_, l)| l).collect();
+    let key = lits
+      .iter()
+      .map(crate::syntax::expr_to_string)
+      .collect::<Vec<_>>()
+      .join(" && ");
+    if seen.insert(key) {
+      branches.push(and_chain(&lits));
+    }
+  }
+  if branches.is_empty() {
+    return expr.clone();
+  }
+  build_or(branches)
+}
+
+fn reduce_multi_var_and_inner(
+  constraints: &[Expr],
+  vars: &[String],
+  domain: Option<&str>,
+) -> Result<Expr, InterpreterError> {
   if vars.is_empty() || constraints.is_empty() {
     return Ok(bool_expr(true));
+  }
+
+  // A product equation `f g == 0` holds when either factor vanishes. Solving
+  // it for a single variable would only keep the branch where the variable's
+  // coefficient is nonzero (`Solve[a c == 0, c]` is `c -> 0`), silently losing
+  // solutions such as `a == 0` when other constraints involve `c`. Split it
+  // into one branch per factor first.
+  for (i, constraint) in constraints.iter().enumerate() {
+    let Some(factors) = zero_product_factors(constraint, vars) else {
+      continue;
+    };
+    let mut branches = Vec::new();
+    for factor in factors {
+      let mut branch_constraints = constraints.to_vec();
+      branch_constraints[i] = make_equality(&factor, &Expr::Integer(0));
+      let branch =
+        reduce_multi_var_and_inner(&branch_constraints, vars, domain)?;
+      if !matches!(&branch, Expr::Identifier(s) if s == "False") {
+        branches.push(branch);
+      }
+    }
+    if branches.is_empty() {
+      return Ok(bool_expr(false));
+    }
+    return Ok(build_or(branches));
+  }
+
+  // An equation pinning a variable to a constant (`v == c`) is eliminated
+  // first: substituting it leaves a smaller system in which contradictions
+  // (`0 == 1`) surface immediately instead of being solved for a variable.
+  for (i, constraint) in constraints.iter().enumerate() {
+    let Some((lhs, c, CompOp::Equal)) = extract_comparison(constraint) else {
+      continue;
+    };
+    let Expr::Identifier(v) = &lhs else {
+      continue;
+    };
+    let v = v.clone();
+    if !vars.contains(&v) || vars.iter().any(|w| contains_var(&c, w)) {
+      continue;
+    }
+    let mut remaining = Vec::new();
+    for (j, other) in constraints.iter().enumerate() {
+      if j == i {
+        continue;
+      }
+      let substituted = crate::syntax::substitute_variable(other, &v, &c);
+      let evaled = crate::evaluator::evaluate_expr_to_expr(&substituted)
+        .unwrap_or(substituted);
+      match &evaled {
+        Expr::Identifier(t) if t == "True" => {}
+        Expr::Identifier(t) if t == "False" => return Ok(bool_expr(false)),
+        _ => remaining.push(evaled),
+      }
+    }
+    let remaining_vars: Vec<String> =
+      vars.iter().filter(|w| **w != v).cloned().collect();
+    let sub = if remaining.is_empty() || remaining_vars.is_empty() {
+      bool_expr(true)
+    } else {
+      reduce_expr(&and_chain(&remaining), &remaining_vars, domain)?
+    };
+    if matches!(&sub, Expr::Identifier(t) if t == "False") {
+      return Ok(bool_expr(false));
+    }
+    let pinned = make_equality(&Expr::Identifier(v.clone()), &c);
+    if matches!(&sub, Expr::Identifier(t) if t == "True") {
+      return Ok(pinned);
+    }
+    return Ok(Expr::BinaryOp {
+      op: BinaryOperator::And,
+      left: Box::new(pinned),
+      right: Box::new(sub),
+    });
   }
 
   // Find the best (equation, variable) pair: prefer last variable in the list
   // (matching Wolfram's convention where later variables are expressed in terms
   // of earlier ones), falling back to lowest degree for tie-breaking.
-  let mut best: Option<(usize, String, Expr, Expr, i128)> = None; // (eq_idx, var, lhs, rhs, degree)
+  // Every other (equation, variable) pair stays a fallback: the preferred one
+  // can come up empty although the system has solutions (an equation like
+  // `Sqrt[x^2 + y^2] == Sqrt[(x - 2)^2 + y^2]` is solved for `y` by no value
+  // at all, but fixes `x`).
+  let mut candidates: Vec<(usize, String, Expr, Expr, i128)> = Vec::new(); // (eq_idx, var, lhs, rhs, degree)
   for (i, constraint) in constraints.iter().enumerate() {
     if let Some((lhs, rhs, CompOp::Equal)) = extract_comparison(constraint) {
-      for (vi, var) in vars.iter().enumerate() {
+      for var in vars {
         let poly = minus2(lhs.clone(), rhs.clone());
         let expanded = expand_and_combine(&poly);
         if is_constant_wrt(&expanded, var) {
           continue;
         }
         if let Some(deg) = max_power_int(&expanded, var) {
-          let dominated = if let Some(ref b) = best {
-            // Prefer later variables; for the same variable position, prefer
-            // lower degree.
-            let best_vi = vars.iter().position(|v| v == &b.1).unwrap_or(0);
-            vi > best_vi || (vi == best_vi && deg < b.4)
-          } else {
-            true
-          };
-          if dominated {
-            best = Some((i, var.clone(), lhs.clone(), rhs.clone(), deg));
-          }
+          candidates.push((i, var.clone(), lhs.clone(), rhs.clone(), deg));
         }
       }
     }
   }
 
-  if let Some((i, var, lhs, rhs, _deg)) = best {
+  candidates.sort_by_key(|(_, var, _, _, deg)| {
+    (
+      std::cmp::Reverse(vars.iter().position(|v| v == var).unwrap_or(0)),
+      *deg,
+    )
+  });
+  let mut solved_any_system = false;
+  for (i, var, lhs, rhs, _deg) in candidates {
     let eq = Expr::Comparison {
       operands: vec![lhs, rhs],
       operators: vec![ComparisonOp::Equal],
@@ -3139,6 +3288,17 @@ pub fn reduce_multi_var_and(
                       let final_value =
                         crate::evaluator::evaluate_expr_to_expr(&final_value)
                           .unwrap_or(simplify(final_value));
+                      // A value free of every unknown is a plain number such
+                      // as `(2 - 2*Sqrt[3])/2`; Solve reports it expanded
+                      // (`1 - Sqrt[3]`).
+                      let final_value = if vars
+                        .iter()
+                        .all(|v| is_constant_wrt(&final_value, v))
+                      {
+                        expand_and_combine(&final_value)
+                      } else {
+                        final_value
+                      };
                       let var_eq = make_equality(
                         &Expr::Identifier(var.clone()),
                         &final_value,
@@ -3159,11 +3319,14 @@ pub fn reduce_multi_var_and(
         }
       }
 
-      if all_results.is_empty() {
-        return Ok(bool_expr(false));
+      solved_any_system = true;
+      if !all_results.is_empty() {
+        return Ok(build_or(all_results));
       }
-      return Ok(build_or(all_results));
     }
+  }
+  if solved_any_system {
+    return Ok(bool_expr(false));
   }
 
   // No equation found to solve — return unevaluated
@@ -3496,6 +3659,84 @@ fn flatten_and_into(e: &Expr, out: &mut Vec<Expr>) {
     }
     other => out.push(other.clone()),
   }
+}
+
+/// For an equation `p == q` whose difference factors into two or more
+/// distinct non-constant factors involving `vars`, return those factors
+/// (repeated factors collapse to their base). `None` otherwise.
+fn zero_product_factors(
+  constraint: &Expr,
+  vars: &[String],
+) -> Option<Vec<Expr>> {
+  let (lhs, rhs, CompOp::Equal) = extract_comparison(constraint)? else {
+    return None;
+  };
+  let poly = expand_and_combine(&minus2(lhs, rhs));
+  let factored = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+    name: "Factor".to_string(),
+    args: vec![poly].into(),
+  })
+  .ok()?;
+  fn flatten(e: &Expr, out: &mut Vec<Expr>) {
+    match e {
+      Expr::BinaryOp {
+        op: BinaryOperator::Times,
+        left,
+        right,
+      } => {
+        flatten(left, out);
+        flatten(right, out);
+      }
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        args.iter().for_each(|a| flatten(a, out));
+      }
+      _ => out.push(e.clone()),
+    }
+  }
+  let mut raw = Vec::new();
+  flatten(&factored, &mut raw);
+  let mut factors: Vec<Expr> = Vec::new();
+  for f in raw {
+    let base = match &f {
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } if matches!(right.as_ref(), Expr::Integer(n) if *n > 0) => {
+        left.as_ref().clone()
+      }
+      Expr::FunctionCall { name, args }
+        if name == "Power"
+          && args.len() == 2
+          && matches!(&args[1], Expr::Integer(n) if *n > 0) =>
+      {
+        args[0].clone()
+      }
+      // Denominators (`a^(-1)`) never vanish, so they are no branch.
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        ..
+      } => continue,
+      Expr::FunctionCall { name, .. } if name == "Power" => continue,
+      _ => f,
+    };
+    if vars.iter().any(|v| contains_var(&base, v))
+      && !factors.iter().any(|g| {
+        crate::syntax::expr_to_string(g) == crate::syntax::expr_to_string(&base)
+      })
+    {
+      factors.push(base);
+    }
+  }
+  // Factors over one and the same variable set (`(x - 1)(x + 1)`) are solved
+  // directly by the single-equation path, which orders their roots as
+  // wolframscript does; only mixed-variable products lose branches.
+  let var_sets: Vec<Vec<bool>> = factors
+    .iter()
+    .map(|f| vars.iter().map(|v| contains_var(f, v)).collect())
+    .collect();
+  let mixed = var_sets.windows(2).any(|w| w[0] != w[1]);
+  (factors.len() >= 2 && mixed).then_some(factors)
 }
 
 fn contains_var(e: &Expr, name: &str) -> bool {

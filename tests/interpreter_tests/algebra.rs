@@ -5512,6 +5512,59 @@ mod solve {
     assert_eq!(interpret("Solve[Abs[x] == -1, x]").unwrap(), "{}");
   }
 
+  // A chained equality a == b == c is the conjunction a == b && b == c.
+  #[test]
+  fn solve_chained_equality() {
+    assert_eq!(
+      interpret("Solve[x == y == 2, {x, y}]").unwrap(),
+      "{{x -> 2, y -> 2}}"
+    );
+    assert_eq!(
+      interpret("Solve[{a == b == c, c == 1}, {a, b, c}]").unwrap(),
+      "{{a -> 1, b -> 1, c -> 1}}"
+    );
+  }
+
+  // Points at distance 2 from two centres: the intersection of two circles.
+  #[test]
+  fn solve_equidistant_norms() {
+    assert_eq!(
+      interpret(
+        "Solve[Norm[{x, y} - {1, 1}] == Norm[{x, y} - {3, 1}] == 2, {x, y}]"
+      )
+      .unwrap(),
+      "{{x -> 2, y -> 1 - Sqrt[3]}, {x -> 2, y -> 1 + Sqrt[3]}}"
+    );
+    assert_eq!(
+      interpret(
+        "Solve[Norm[{x, y} - {1., 1.}] == Norm[{x, y} - {3., 1.}] == 2, {x, y}]"
+      )
+      .unwrap(),
+      "{{x -> 2., y -> -0.7320508075688772}, {x -> 2., y -> 2.732050807568877}}"
+    );
+  }
+
+  #[test]
+  fn solve_squared_abs_keeps_real_solutions() {
+    assert_eq!(
+      interpret("Solve[Abs[x]^2 == 4, x]").unwrap(),
+      "{{x -> -2}, {x -> 2}}"
+    );
+    assert_eq!(interpret("Solve[Abs[x]^2 == -4, x]").unwrap(), "{}");
+  }
+
+  // The equation that fixes only x must not hide the solution of the system.
+  #[test]
+  fn solve_system_with_radical_independent_of_last_variable() {
+    assert_eq!(
+      interpret(
+        "Solve[{Sqrt[x^2 + y^2] == Sqrt[(x - 2)^2 + y^2], y == 1}, {x, y}]"
+      )
+      .unwrap(),
+      "{{x -> 1, y -> 1}}"
+    );
+  }
+
   #[test]
   fn solve_abs_shifted_and_scaled() {
     assert_eq!(
@@ -7038,6 +7091,45 @@ mod to_rules {
 }
 
 mod reduce {
+  #[test]
+  fn zero_product_equation_keeps_every_factor_branch() {
+    // `a c == 0` also holds for `a == 0`; solving it only for `c` used to
+    // lose that branch and report `False` here.
+    assert_eq!(
+      interpret("Reduce[{A*C==0,B*C==1},{A,B,C}]").unwrap(),
+      "A == 0 && C == B^(-1)"
+    );
+    // Unit vector {0, 0, 1, 0} factors as {A, B} x {C, D} with A = 0.
+    assert_eq!(
+      interpret(
+        "q={0,0,1,0}; Reduce[{A*C==q[[1]],A*D==q[[2]],B*C==q[[3]],B*D==q[[4]],\
+         A^2+B^2==1,C^2+D^2==1,A>=0,C>=0,B!=-1||D!=-1},{A,B,C,D}]"
+      )
+      .unwrap(),
+      "A == 0 && B == 1 && C == 1 && D == 0"
+    );
+    assert_eq!(
+      interpret(
+        "q={0,0,0,1}; Reduce[{A*C==q[[1]],A*D==q[[2]],B*C==q[[3]],B*D==q[[4]],\
+         A^2+B^2==1,C^2+D^2==1,A>=0,C>=0,B!=-1||D!=-1},{A,B,C,D}]"
+      )
+      .unwrap(),
+      "A == 0 && B == 1 && C == 0 && D == 1"
+    );
+  }
+
+  #[test]
+  fn factorable_qubit_state_with_denominators() {
+    assert_eq!(
+      interpret(
+        "q={1/Sqrt[2],0,1/Sqrt[2],0}; Reduce[{A*C==q[[1]],A*D==q[[2]],B*C==q[[3]],\
+         B*D==q[[4]],A^2+B^2==1,C^2+D^2==1,A>=0,C>=0,B!=-1||D!=-1},{A,B,C,D}]"
+      )
+      .unwrap(),
+      "A == 1/Sqrt[2] && B == 1/Sqrt[2] && C == 1 && D == 0"
+    );
+  }
+
   use super::*;
 
   // ── Trivial cases ──
@@ -8264,6 +8356,33 @@ mod nsolve {
     );
   }
 
+  // Opening a random Wolfram Demonstration ("Peregrine Soliton with
+  // Controllable Center in the Causal Interpretation") in Woxi Studio, its
+  // Manipulate solved for a Cardano cube-root formula's own generated
+  // constant by way of `NSolve[cardanoFormula[c] == x0 + dx, c]`. The
+  // formula added the cube root to its own reciprocal, `A^(1/3) + k/A^(1/3)`
+  // — isolating either term and cubing (the existing radical-elimination
+  // strategy) reintroduces a *different* fractional power of the same base
+  // rather than clearing it, so the elimination loop gave up and NSolve came
+  // back unevaluated instead of a numeric answer. Reduced here to a plain
+  // cube root and its reciprocal.
+  #[test]
+  fn nsolve_falls_back_to_numeric_search_for_reciprocal_fractional_powers() {
+    assert_eq!(
+      interpret("NSolve[(2 + y)^(1/3) + 3/(2 + y)^(1/3) == 6, y]").unwrap(),
+      "{{y -> -1.8331615118448772}, {y -> 159.83316151184493}}"
+    );
+    // The generated constant `Solve` itself introduces for an equation it
+    // cannot solve in closed form, `C[1]`, is exactly this kind of
+    // non-identifier "variable" — confirm the numeric fallback solves for
+    // it too, not only for a plain symbol.
+    assert_eq!(
+      interpret("NSolve[(2 + C[1])^(1/3) + 3/(2 + C[1])^(1/3) == 6, C[1]]")
+        .unwrap(),
+      "{{C[1] -> -1.8331615118448772}, {C[1] -> 159.83316151184493}}"
+    );
+  }
+
   #[test]
   fn rational_solution() {
     assert_eq!(
@@ -8870,6 +8989,16 @@ mod linear_programming {
 
 mod find_root {
   use super::*;
+
+  #[test]
+  fn nonlinear_system_not_monotone_in_max_norm() {
+    // The first full Newton step trades one component's residual for the
+    // other's; it must still be taken instead of stalling at the start.
+    assert_eq!(
+      interpret("FindRoot[{x*z == 2, z == 3}, {x, 1}, {z, 1}]").unwrap(),
+      "{x -> 0.6666666666666666, z -> 3.}"
+    );
+  }
 
   #[test]
   fn polynomial_root() {
@@ -18930,11 +19059,13 @@ mod nested_product_expansion_stays_bounded {
       "0"
     );
     // It still interpolates: substituting the symbolic ordinate back gives
-    // every sample point.
+    // every sample point. Simplify once outside the Table: the Newton form
+    // is exponentially large, and re-simplifying it per sample pushed this
+    // test past the 20s timeout on the Windows runner.
     assert_eq!(
       interpret(&format!(
-        "Table[Simplify[InterpolatingPolynomial[{pts}, x]] \
-         /. {{q -> 86, x -> k}}, {{k, 0, 10}}]"
+        "With[{{p = Simplify[InterpolatingPolynomial[{pts}, x]]}}, \
+         Table[p /. {{q -> 86, x -> k}}, {{k, 0, 10}}]]"
       ))
       .unwrap(),
       "{1, 6, 17, 34, 57, 86, 121, 162, 209, 262, 321}"

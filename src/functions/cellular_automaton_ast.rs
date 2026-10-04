@@ -31,6 +31,22 @@ use super::*;
 pub fn cellular_automaton_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = || Ok(unevaluated("CellularAutomaton", args));
 
+  // A SparseArray init stands for the dense list of its cells.
+  if args.len() >= 2
+    && matches!(&args[1], Expr::FunctionCall { name, .. } if name == "SparseArray")
+  {
+    let dense = crate::evaluator::evaluate_function_call_ast(
+      "Normal",
+      &[args[1].clone()],
+    )?;
+    if matches!(dense, Expr::List(_)) {
+      let mut new_args = args.to_vec();
+      new_args[1] = dense;
+      return cellular_automaton_ast(&new_args);
+    }
+    return unevaluated();
+  }
+
   // CellularAutomaton[rule, init] — one step. The result is the new state on
   // its own: a bare list for a cyclic init, or the `{cells, {background}}`
   // pair that can be fed straight back in for a background init.

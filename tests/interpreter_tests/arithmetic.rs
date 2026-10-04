@@ -4239,6 +4239,14 @@ mod expand_threading {
   }
 
   #[test]
+  fn norm_mixed_inexact_and_symbolic_vector() {
+    assert_eq!(
+      interpret("Norm[{-2., y - 1}]").unwrap(),
+      "Sqrt[4. + Abs[-1 + y]^2]"
+    );
+  }
+
+  #[test]
   fn norm_infinity_symbolic() {
     assert_eq!(
       interpret("Norm[{x, y, z}, Infinity]").unwrap(),
@@ -6876,6 +6884,17 @@ mod cases {
     assert_case(
       r#"\(TraditionalForm \` a + b\)"#,
       r#"FormBox[RowBox[{"a", "+", "b"}], TraditionalForm]"#,
+    );
+  }
+
+  /// TraditionalForm writes an equation with a bare `=` and reads it back as
+  /// `==`; reading it as `Set` assigned instead of typesetting (a Manipulate
+  /// body holding `Text[TraditionalForm[a == b]]` overwrote `a`).
+  #[test]
+  fn traditional_form_equation_round_trips_as_equal() {
+    assert_case(
+      r#"ToExpression[ToString[TraditionalForm[a == b], InputForm], InputForm, Hold]"#,
+      "Hold[a == b]",
     );
   }
 

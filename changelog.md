@@ -2,6 +2,20 @@
 
 # Unreleased
 
+- `PolyhedronData["GreatStellatedDodecahedron", …]` and
+    `PolyhedronData["MathematicaSpikey", …]` were unknown entities (a
+    `PolyhedronData::notent` message, left unevaluated), so a
+    `GraphicsComplex` built from either one rendered as an empty overlay
+    instead of the star polyhedron. Added the great stellated dodecahedron
+    as a full entry (its 20 vertices coincide exactly with a unit-edge
+    `Dodecahedron`'s own vertices, just grouped into 12 self-intersecting
+    pentagram faces) and `MathematicaSpikey` as an alternative name for the
+    already-supported `RhombicHexecontahedron`, the same way `Hexahedron`
+    already aliases `Cube`. Found via the scheduled Wolfram Demonstrations
+    check opening "Stellating an Icosahedron with Triangular Slabs", whose
+    Manipulate toggles both solids on as optional decorations via
+    checkboxes.
+
 - `Solve` mistook an invertible-function atom (an exponential like
     `b^f(x)`, a `Log`, `Sqrt`, or trig call) for a degree-0 polynomial
     whenever it was combined with the rest of the equation by division or

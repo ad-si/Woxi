@@ -77,6 +77,9 @@ fn apply_ranges_and_aspect(
       if data_aspect.is_finite() {
         plot_opts.svg_height =
           (plot_opts.svg_width as f64 * data_aspect).round() as u32;
+        plot_opts.svg_height = plot_opts
+          .svg_height
+          .clamp(1, crate::functions::plot::MAX_SVG_DIMENSION);
       }
     }
   }
@@ -387,7 +390,26 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     is_curve_group(ev) && collect_curves(ev, &mut evaluated_group)
   });
 
-  let curves: Vec<CurveSrc> = if evaluated_group_ok {
+  // A non-list body (`{fx, fy} /. rules`, `Evaluate[…]`, a function call…)
+  // may still evaluate — with the plot variable symbolic — to a curve list,
+  // and its held symbols (`xp` standing for an expression in `t`) only
+  // reveal the variable once evaluated. Evaluating first matches Wolfram; a
+  // body that stays opaque (`f[t]`) is sampled whole below.
+  let evaluated_nonlist: Option<Expr> = if is_list_body {
+    None
+  } else {
+    evaluate_expr_to_expr(body)
+      .ok()
+      .filter(|ev| matches!(ev, Expr::List(_)))
+  };
+  let mut nonlist_curves = Vec::new();
+  let nonlist_ok = evaluated_nonlist
+    .as_ref()
+    .is_some_and(|ev| collect_curves(ev, &mut nonlist_curves));
+
+  let curves: Vec<CurveSrc> = if nonlist_ok {
+    nonlist_curves
+  } else if evaluated_group_ok {
     evaluated_group
   } else if syntactic_ok {
     syntactic

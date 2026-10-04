@@ -4147,6 +4147,37 @@ mod tests {
       );
     }
 
+    /// `Labeled` around a `Pane`/`Text` wrapper (the shape of a text
+    /// Manipulate body captioned by a framed label) is composed as a
+    /// picture, the label on the side the position list names.
+    #[test]
+    fn labeled_text_pane_composes_a_picture_with_the_label_on_top() {
+      let result = woxi::interpret_with_stdout(
+        r#"Labeled[Pane[Text[Row[{"abc", "def"}]], {200, 100}], Framed["cap"], {Top}]"#,
+      )
+      .expect("interpret should succeed");
+      let svg = result.graphics.expect("the labeled pane is a graphic");
+      let cap = svg.find(">cap<");
+      let body = svg.find(">abc<");
+      assert!(cap.is_some() && body.is_some(), "both parts drawn: {svg}");
+      assert!(cap < body, "the label sits above the content");
+    }
+
+    /// A `Pane` with a fixed width breaks long text into lines that fit
+    /// instead of running it off the edge.
+    #[test]
+    fn a_sized_pane_wraps_long_text() {
+      let result = woxi::interpret_with_stdout(
+        r#"Labeled[Pane[Text[Row[Characters[StringRepeat["a", 200]]]], {100, 100}], "x", Top]"#,
+      )
+      .expect("interpret should succeed");
+      let svg = result.graphics.expect("the labeled pane is a graphic");
+      assert!(
+        !svg.contains("x=\"1000"),
+        "text is wrapped within the pane width"
+      );
+    }
+
     /// `Pane[content, {width, height}]` reserves a fixed box in the
     /// FrontEnd; content taller than it is clipped there rather than drawn
     /// past it — there is no scrollbar in a static rendering. Without this,

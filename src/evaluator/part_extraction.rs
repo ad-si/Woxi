@@ -404,6 +404,49 @@ fn simple_position(e: &Expr) -> Option<i64> {
   }
 }
 
+/// The first index of a Part spec that cannot address a part of anything:
+/// a symbol other than `All`, a non-integer number, an arbitrary
+/// expression, or a list holding anything but positions and keys. WL
+/// rejects such a spec with Part::pkspec1 before it looks at the object, so
+/// `x[[1 + y]]` reports the spec rather than the depth. Spans and `UpTo`
+/// carry their own messages and are left to `extract_part_ast`.
+pub fn invalid_part_spec(indices: &[Expr]) -> Option<&Expr> {
+  let position_or_key = |e: &Expr| {
+    simple_position(e).is_some()
+      || matches!(e, Expr::BigInteger(_) | Expr::String(_))
+      || matches!(e, Expr::FunctionCall { name, args }
+        if name == "Key" && args.len() == 1)
+  };
+  indices.iter().find(|idx| {
+    let valid = position_or_key(idx)
+      || matches!(idx, Expr::Identifier(s) if s == "All")
+      || matches!(idx, Expr::FunctionCall { name, .. }
+        if name == "Span" || name == "UpTo")
+      || matches!(idx, Expr::List(items) if items.iter().all(position_or_key));
+    !valid
+  })
+}
+
+/// Append an evaluated Part index to `indices`. Part has no SequenceHold,
+/// so an index that evaluated to a Sequence splices into several:
+/// `m[[Sequence @@ {i, j}]]` is `m[[i, j]]`, and `m[[Sequence[]]]` is `m`.
+pub fn push_part_index(indices: &mut Vec<Expr>, evaluated: Expr) {
+  match &evaluated {
+    Expr::FunctionCall { name, args } if name == "Sequence" => {
+      indices.extend(args.iter().cloned());
+    }
+    _ => indices.push(evaluated),
+  }
+}
+
+/// Emit Part::pkspec1 for `index`.
+pub fn emit_pkspec1(index: &Expr) {
+  crate::emit_message_to_stdout(&format!(
+    "Part::pkspec1: The expression {} cannot be used as a part specification.",
+    crate::syntax::format_expr(index, crate::syntax::ExprForm::Output)
+  ));
+}
+
 /// Extract part from expression on AST (expr[[index]])
 pub fn extract_part_ast(
   expr: &Expr,
@@ -868,6 +911,16 @@ fn extract_part_ast_rest(
       // fails the WHOLE spec with one Part::partw naming the full index list
       // (matching wolframscript), instead of returning a partially-resolved
       // list with a per-index message.
+      //
+      // A key only addresses an association (handled above), so a string
+      // among the positions fails the whole spec here.
+      if indices.iter().any(|i| matches!(i, Expr::String(_))) {
+        crate::emit_message_to_stdout(&format!(
+          "Part::pspec1: Part specification {} is not applicable.",
+          crate::syntax::format_expr(index, crate::syntax::ExprForm::Output)
+        ));
+        return Ok(part_take_unevaluated(expr, index));
+      }
       if let Some(len) = positional_length(expr) {
         let positions: Option<Vec<i64>> =
           indices.iter().map(simple_position).collect();
