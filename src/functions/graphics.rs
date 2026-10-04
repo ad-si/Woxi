@@ -21863,7 +21863,7 @@ fn setter_bar_parts(expr: &Expr) -> Option<(&String, &Expr)> {
 /// layout; Woxi Studio instead lifts them into the control panel, shown only
 /// while their tab is selected.
 fn collect_body_setter_bars(expr: &Expr) -> Vec<BodySetterBar> {
-  fn walk(expr: &Expr, cond: &Option<String>, found: &mut Vec<BodySetterBar>) {
+  fn walk(expr: &Expr, cond: Option<&String>, found: &mut Vec<BodySetterBar>) {
     let (bar, rules) = match expr {
       Expr::ReplaceAll { expr: inner, rules } => (inner.as_ref(), Some(rules)),
       other => (other, None),
@@ -21882,7 +21882,7 @@ fn collect_body_setter_bars(expr: &Expr) -> Vec<BodySetterBar> {
         found.push(BodySetterBar {
           var: var.clone(),
           choices_code,
-          visible_cond: cond.clone(),
+          visible_cond: cond.cloned(),
         });
       }
       return;
@@ -21902,7 +21902,7 @@ fn collect_body_setter_bars(expr: &Expr) -> Vec<BodySetterBar> {
           selector,
           crate::syntax::expr_to_input_form(&key)
         );
-        walk(content, &Some(pane_cond), found);
+        walk(content, Some(&pane_cond), found);
       }
       return;
     }
@@ -21911,7 +21911,7 @@ fn collect_body_setter_bars(expr: &Expr) -> Vec<BodySetterBar> {
     }
   }
   let mut found = Vec::new();
-  walk(expr, &None, &mut found);
+  walk(expr, None, &mut found);
   found
 }
 
