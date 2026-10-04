@@ -8506,6 +8506,12 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // SphericalPlot3D). Demonstrations commonly toggle this between a coarse
   // preview and a refined render.
   let mut plot_points: Option<usize> = None;
+  // `Contours -> n` draws n isosurfaces evenly spaced across the function's
+  // actual sampled range; `Contours -> {v1, v2, ...}` draws explicit levels.
+  // With no `Contours` option, ContourPlot3D draws the single surface where
+  // the (equation-normalized) body is zero.
+  let mut contour_count: Option<usize> = None;
+  let mut contour_levels: Option<Vec<f64>> = None;
 
   for opt in &args[4..] {
     if let Expr::Rule {
@@ -8545,6 +8551,29 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             && n >= 2
           {
             plot_points = Some(n as usize);
+          }
+        }
+        Expr::Identifier(name) if name == "Contours" => {
+          let resolved = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| (**replacement).clone());
+          match &resolved {
+            Expr::Integer(cnt) if *cnt > 0 => {
+              contour_count = Some(*cnt as usize);
+            }
+            Expr::List(items) => {
+              let levels: Vec<f64> = items
+                .iter()
+                .filter_map(|item| {
+                  let v = evaluate_expr_to_expr(item)
+                    .unwrap_or_else(|_| item.clone());
+                  try_eval_to_f64(&v)
+                })
+                .collect();
+              if !levels.is_empty() {
+                contour_levels = Some(levels);
+              }
+            }
+            _ => {}
           }
         }
         _ => {}
@@ -8608,119 +8637,151 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ],
     );
 
-    for i in 0..n {
-      for j in 0..n {
-        for k in 0..n {
-          let cvals = [
-            field[i][j][k],
-            field[i + 1][j][k],
-            field[i + 1][j + 1][k],
-            field[i][j + 1][k],
-            field[i][j][k + 1],
-            field[i + 1][j][k + 1],
-            field[i + 1][j + 1][k + 1],
-            field[i][j + 1][k + 1],
-          ];
-          if cvals.iter().any(|v| !v.is_finite()) {
-            continue;
-          }
-          let xs = [x_min + i as f64 * x_step, x_min + (i + 1) as f64 * x_step];
-          let ys = [y_min + j as f64 * y_step, y_min + (j + 1) as f64 * y_step];
-          let zs = [z_min + k as f64 * z_step, z_min + (k + 1) as f64 * z_step];
-          let corners_world: [Point3D; 8] = [
-            Point3D {
-              x: xs[0],
-              y: ys[0],
-              z: zs[0],
-            },
-            Point3D {
-              x: xs[1],
-              y: ys[0],
-              z: zs[0],
-            },
-            Point3D {
-              x: xs[1],
-              y: ys[1],
-              z: zs[0],
-            },
-            Point3D {
-              x: xs[0],
-              y: ys[1],
-              z: zs[0],
-            },
-            Point3D {
-              x: xs[0],
-              y: ys[0],
-              z: zs[1],
-            },
-            Point3D {
-              x: xs[1],
-              y: ys[0],
-              z: zs[1],
-            },
-            Point3D {
-              x: xs[1],
-              y: ys[1],
-              z: zs[1],
-            },
-            Point3D {
-              x: xs[0],
-              y: ys[1],
-              z: zs[1],
-            },
-          ];
-
-          march_cube(&corners_world, &cvals, 0.0, &mut |tri_world| {
-            let tri_norm = tri_world.map(|p| Point3D {
-              x: nx(p.x),
-              y: ny(p.y),
-              z: nz(p.z),
-            });
-            let normal = triangle_normal(tri_norm[0], tri_norm[1], tri_norm[2]);
-            let (color, opacity) =
-              shade_facet(default_color, style, normal, view_dir);
-            let p0 = project(tri_norm[0], &camera);
-            let p1 = project(tri_norm[1], &camera);
-            let p2 = project(tri_norm[2], &camera);
-            let center = Point3D {
-              x: (tri_norm[0].x + tri_norm[1].x + tri_norm[2].x) / 3.0,
-              y: (tri_norm[0].y + tri_norm[1].y + tri_norm[2].y) / 3.0,
-              z: (tri_norm[0].z + tri_norm[1].z + tri_norm[2].z) / 3.0,
-            };
-            all_triangles.push(Triangle {
-              boundary: [true; 3],
-              edge_color: style.and_then(|s| s.edge_color),
-              projected: [p0, p1, p2],
-              depth: depth(center, &camera),
-              color,
-              opacity,
-            });
-
-            // World-coordinate copy for `Show[]` to merge via GraphicsComplex.
-            let base = point_exprs.len();
-            for p in &tri_world {
-              point_exprs.push(Expr::List(
-                vec![Expr::Real(p.x), Expr::Real(p.y), Expr::Real(p.z)].into(),
-              ));
+    let levels: Vec<f64> = if let Some(explicit) = &contour_levels {
+      explicit.clone()
+    } else if let Some(cnt) = contour_count {
+      let mut v_min = f64::INFINITY;
+      let mut v_max = f64::NEG_INFINITY;
+      for xrow in &field {
+        for yrow in xrow {
+          for &v in yrow {
+            if v.is_finite() {
+              v_min = v_min.min(v);
+              v_max = v_max.max(v);
             }
-            content.push(Expr::List(
-              vec![
-                color_directive.clone(),
-                call1(
-                  "Polygon",
-                  Expr::List(
-                    vec![
-                      Expr::Integer(base as i128 + 1),
-                      Expr::Integer(base as i128 + 2),
-                      Expr::Integer(base as i128 + 3),
-                    ]
+          }
+        }
+      }
+      if v_max > v_min {
+        let step = (v_max - v_min) / (cnt as f64 + 1.0);
+        (1..=cnt).map(|k| v_min + k as f64 * step).collect()
+      } else {
+        vec![0.0]
+      }
+    } else {
+      vec![0.0]
+    };
+
+    for &level in &levels {
+      for i in 0..n {
+        for j in 0..n {
+          for k in 0..n {
+            let cvals = [
+              field[i][j][k],
+              field[i + 1][j][k],
+              field[i + 1][j + 1][k],
+              field[i][j + 1][k],
+              field[i][j][k + 1],
+              field[i + 1][j][k + 1],
+              field[i + 1][j + 1][k + 1],
+              field[i][j + 1][k + 1],
+            ];
+            if cvals.iter().any(|v| !v.is_finite()) {
+              continue;
+            }
+            let xs =
+              [x_min + i as f64 * x_step, x_min + (i + 1) as f64 * x_step];
+            let ys =
+              [y_min + j as f64 * y_step, y_min + (j + 1) as f64 * y_step];
+            let zs =
+              [z_min + k as f64 * z_step, z_min + (k + 1) as f64 * z_step];
+            let corners_world: [Point3D; 8] = [
+              Point3D {
+                x: xs[0],
+                y: ys[0],
+                z: zs[0],
+              },
+              Point3D {
+                x: xs[1],
+                y: ys[0],
+                z: zs[0],
+              },
+              Point3D {
+                x: xs[1],
+                y: ys[1],
+                z: zs[0],
+              },
+              Point3D {
+                x: xs[0],
+                y: ys[1],
+                z: zs[0],
+              },
+              Point3D {
+                x: xs[0],
+                y: ys[0],
+                z: zs[1],
+              },
+              Point3D {
+                x: xs[1],
+                y: ys[0],
+                z: zs[1],
+              },
+              Point3D {
+                x: xs[1],
+                y: ys[1],
+                z: zs[1],
+              },
+              Point3D {
+                x: xs[0],
+                y: ys[1],
+                z: zs[1],
+              },
+            ];
+
+            march_cube(&corners_world, &cvals, level, &mut |tri_world| {
+              let tri_norm = tri_world.map(|p| Point3D {
+                x: nx(p.x),
+                y: ny(p.y),
+                z: nz(p.z),
+              });
+              let normal =
+                triangle_normal(tri_norm[0], tri_norm[1], tri_norm[2]);
+              let (color, opacity) =
+                shade_facet(default_color, style, normal, view_dir);
+              let p0 = project(tri_norm[0], &camera);
+              let p1 = project(tri_norm[1], &camera);
+              let p2 = project(tri_norm[2], &camera);
+              let center = Point3D {
+                x: (tri_norm[0].x + tri_norm[1].x + tri_norm[2].x) / 3.0,
+                y: (tri_norm[0].y + tri_norm[1].y + tri_norm[2].y) / 3.0,
+                z: (tri_norm[0].z + tri_norm[1].z + tri_norm[2].z) / 3.0,
+              };
+              all_triangles.push(Triangle {
+                boundary: [true; 3],
+                edge_color: style.and_then(|s| s.edge_color),
+                projected: [p0, p1, p2],
+                depth: depth(center, &camera),
+                color,
+                opacity,
+              });
+
+              // World-coordinate copy for `Show[]` to merge via GraphicsComplex.
+              let base = point_exprs.len();
+              for p in &tri_world {
+                point_exprs.push(Expr::List(
+                  vec![Expr::Real(p.x), Expr::Real(p.y), Expr::Real(p.z)]
                     .into(),
+                ));
+              }
+              content.push(Expr::List(
+                vec![
+                  color_directive.clone(),
+                  call1(
+                    "Polygon",
+                    Expr::List(
+                      vec![
+                        Expr::Integer(base as i128 + 1),
+                        Expr::Integer(base as i128 + 2),
+                        Expr::Integer(base as i128 + 3),
+                      ]
+                      .into(),
+                    ),
                   ),
-                ),
-              ]
-              .into(),
-            ));
-          });
+                ]
+                .into(),
+              ));
+            });
+          }
         }
       }
     }
@@ -10935,6 +10996,8 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut svg_height = DEFAULT_SIZE;
   let mut full_width = false;
   let mut mesh_mode = MeshMode::Default;
+  // `Mesh -> n`: `n` evenly spaced mesh lines in each parameter direction.
+  let mut mesh_count: Option<usize> = None;
   let mut show_axes = true;
   let mut plot_style_expr: Option<&Expr> = None;
   // `MeshFunctions -> {f}` / `Mesh -> {{v1, v2, ...}}` / `MeshShading ->
@@ -11006,6 +11069,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           match replacement.as_ref() {
             Expr::Identifier(n) if n == "None" => mesh_mode = MeshMode::None,
             Expr::Identifier(n) if n == "All" => mesh_mode = MeshMode::All,
+            Expr::Integer(n) if *n >= 0 => mesh_count = Some(*n as usize),
             Expr::List(items) => {
               let level_items: &[Expr] =
                 if items.iter().all(|it| matches!(it, Expr::List(_))) {
@@ -11300,6 +11364,41 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                       .into(),
                   ),
                 ),
+              ]
+              .into(),
+            ));
+          }
+        }
+        if let Some(n) = mesh_count.filter(|&n| n > 0) {
+          let mut segments: Vec<Expr> = Vec::new();
+          let mut push_segment = |a: Option<usize>, b: Option<usize>| {
+            if let (Some(a), Some(b)) = (a, b) {
+              segments.push(Expr::List(
+                vec![
+                  Expr::Integer(a as i128 + 1),
+                  Expr::Integer(b as i128 + 1),
+                ]
+                .into(),
+              ));
+            }
+          };
+          for m in 1..=n {
+            let k = (GRID_N * m + n.div_ceil(2)) / (n + 1);
+            for i in 0..GRID_N {
+              push_segment(index_of[i][k], index_of[i + 1][k]);
+              push_segment(index_of[k][i], index_of[k][i + 1]);
+            }
+          }
+          if !segments.is_empty() {
+            content.push(Expr::List(
+              vec![
+                call1("Opacity", Expr::Real(0.63)),
+                call(
+                  "RGBColor",
+                  vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)],
+                ),
+                call1("AbsoluteThickness", Expr::Real(0.5)),
+                call1("Line", Expr::List(segments.into())),
               ]
               .into(),
             ));

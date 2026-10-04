@@ -987,7 +987,17 @@ fn resolve_anchor(x: f64, y: f64, scaled: bool, bb: &BBox) -> (f64, f64) {
 }
 
 fn expr_to_point_list(expr: &Expr) -> Option<Vec<(f64, f64)>> {
-  if let Expr::List(items) = expr {
+  // Like `expr_to_point`: a point *list* is usually already a `{{x,y},…}`
+  // literal, but a Demonstration's `Arrow[({{# - 2.5, 0}, {#, 0}}& )[tip]]`
+  // only reduces to one at evaluation time (a pure function applied to the
+  // computed tip). Without evaluating first, this whole `CurriedCall` isn't
+  // a literal `List` and the arrow is silently dropped as "not a point
+  // list" instead of drawn.
+  let evaluated = match expr {
+    Expr::List(_) => None,
+    _ => evaluate_expr_to_expr(expr).ok(),
+  };
+  if let Expr::List(items) = evaluated.as_ref().unwrap_or(expr) {
     let mut pts = Vec::with_capacity(items.len());
     for item in items {
       pts.push(expr_to_point(item)?);
@@ -3526,6 +3536,47 @@ fn graphics_text_content(expr: &Expr) -> String {
     {
       graphics_text_content(&args[0])
     }
+    // `HoldForm[expr]` shows `expr` unevaluated as it was written, so a held
+    // assignment reads `θ = ω t`, not `Set[θ, ω t]` — the same box text a
+    // notebook typesets it from.
+    Expr::FunctionCall { name, args } if name == "HoldForm" && args.len() == 1 => {
+      match &args[0] {
+        held @ (Expr::String(_) | Expr::Identifier(_) | Expr::Constant(_)) => {
+          graphics_text_content(held)
+        }
+        held => box_expr_to_plain(
+          &crate::evaluator::dispatch::complex_and_special::expr_to_box_form(
+            held,
+          ),
+        ),
+      }
+    }
+    // An accent over or under a base (`Overscript[y, ".."]`) is typeset as
+    // the accent, not printed as the call.
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Overscript" | "Underscript")
+        && args.len() == 2 =>
+    {
+      accent_text(
+        &graphics_text_content(&args[0]),
+        &graphics_text_content(&args[1]),
+        name == "Overscript",
+      )
+    }
+    // `Column[{a, b, …}]` stacks its items, one line each — the label's
+    // text carries the line breaks the renderer lays out.
+    Expr::FunctionCall { name, args }
+      if name == "Column" && matches!(args.first(), Some(Expr::List(_))) =>
+    {
+      let Some(Expr::List(items)) = args.first() else {
+        unreachable!()
+      };
+      items
+        .iter()
+        .map(graphics_text_content)
+        .collect::<Vec<_>>()
+        .join("\n")
+    }
     Expr::FunctionCall { name, args }
       if name == "Row"
         && !args.is_empty()
@@ -3703,6 +3754,28 @@ fn parse_inset_target_size(args: &[Expr]) -> (Option<f64>, Option<f64>) {
   }
 }
 
+/// Drop the full-size background rectangle a rendered three-dimensional
+/// scene opens with when it is the theme's default plate, so the scene can
+/// be inset into another picture without painting over it. A scene with an
+/// explicit non-default `Background` keeps its plate.
+fn strip_default_background_plate(svg: &str) -> String {
+  let (default_bg, _, _, _, _) = crate::functions::plot::plot_theme();
+  let plate = format!(
+    " fill=\"rgb({},{},{})\"/>\n",
+    default_bg.0, default_bg.1, default_bg.2
+  );
+  if let Some(start) = svg.find("<rect width=\"")
+    && let Some(len) = svg[start..].find('\n')
+    && svg[start..=(start + len)].ends_with(&plate)
+  {
+    let mut out = String::with_capacity(svg.len());
+    out.push_str(&svg[..start]);
+    out.push_str(&svg[start + len + 1..]);
+    return out;
+  }
+  svg.to_string()
+}
+
 fn inset_primitives(
   args: &[Expr],
   errors: &mut Vec<String>,
@@ -3719,17 +3792,36 @@ fn inset_primitives(
   // inside the body and insets the variable), which is also what keeps it
   // from falling through to the text path and printing `-Graphics3D-`.
   let anchor = args.get(1).and_then(expr_to_anchor);
+  // Without a `size`, an inset is the object at its own natural size — not
+  // stretched or shrunk to whatever extent its primitives happen to span in
+  // the enclosing picture's coordinates. A telescope-view inset whose
+  // primitives live in `[-1.1, 1.1]` would otherwise collapse to a dot
+  // inside a picture measured in hundreds of units.
+  let natural_size = parse_inset_target_size(args) == (None, None);
   let rendered;
   let image_svg;
+  let plate_free;
   let embedded = match peel_style_wrapper(&args[0]) {
     Expr::Graphics {
       svg,
       structure: None,
+      is_3d: false,
       ..
     } => Some(svg),
+    // A three-dimensional scene paints its own background plate; inside
+    // another picture that would hide whatever the inset sits on.
     Expr::Graphics {
       svg, is_3d: true, ..
-    } => Some(svg),
+    } => {
+      plate_free = strip_default_background_plate(svg);
+      Some(&plate_free)
+    }
+    Expr::Graphics {
+      svg,
+      structure: Some(_),
+      is_3d: false,
+      ..
+    } if natural_size => Some(svg),
     // A rasterized picture (e.g. from `Rasterize[…]` or `Import`) draws at
     // its own pixel size, the same as a rendered `Graphics` above — there is
     // no symbolic content to fold into this picture's coordinate system.
@@ -3753,10 +3845,15 @@ fn inset_primitives(
     call @ Expr::FunctionCall { name, .. }
       if name == "Graphics3D"
         || name == "Graphics3DBox"
-        || (anchor.is_some_and(|(_, _, scaled)| scaled)
+        || ((natural_size || anchor.is_some_and(|(_, _, scaled)| scaled))
           && (name == "Graphics" || name == "GraphicsBox")) =>
     {
-      rendered = crate::evaluator::expr_to_svg(call);
+      let svg = crate::evaluator::expr_to_svg(call);
+      rendered = if name.starts_with("Graphics3D") {
+        strip_default_background_plate(&svg)
+      } else {
+        svg
+      };
       (!rendered.is_empty()).then_some(&rendered)
     }
     _ => None,
@@ -7261,10 +7358,19 @@ fn render_primitive(
       };
       let (ux, uy) = (angle.cos(), angle.sin());
       let (vx, vy) = (-angle.sin(), angle.cos());
-      let sx =
-        anchor_x - offset.0 * text_w / 2.0 * ux + offset.1 * text_h / 2.0 * vx;
-      let sy =
-        anchor_y - offset.0 * text_w / 2.0 * uy + offset.1 * text_h / 2.0 * vy;
+      // A label pinned by its left or right edge (`{-1, _}` / `{1, _}`) is
+      // anchored there by the renderer itself: the width estimate below is
+      // only a guess, and one that is far off for text padded with blanks.
+      let edge_anchorable = !has_direction && !text.contains('\n');
+      let (anchor_attr, edge_shift) = if offset.0 == -1.0 && edge_anchorable {
+        ("start", 0.0)
+      } else if offset.0 == 1.0 && edge_anchorable {
+        ("end", 0.0)
+      } else {
+        ("middle", offset.0 * text_w / 2.0)
+      };
+      let sx = anchor_x - edge_shift * ux + offset.1 * text_h / 2.0 * vx;
+      let sy = anchor_y - edge_shift * uy + offset.1 * text_h / 2.0 * vy;
       let rotate_attr = if has_direction {
         format!(
           " transform=\"rotate({:.3} {sx:.2} {sy:.2})\"",
@@ -7287,7 +7393,11 @@ fn render_primitive(
         };
         out.push_str(&format!(
           "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{text_w:.2}\" height=\"{text_h:.2}\" fill=\"{fill}\"{fill_opacity}{stroke}/>\n",
-          sx - text_w / 2.0,
+          match anchor_attr {
+            "start" => sx,
+            "end" => sx - text_w,
+            _ => sx - text_w / 2.0,
+          },
           sy - text_h / 2.0,
         ));
       }
@@ -7309,8 +7419,11 @@ fn render_primitive(
         ));
         for (i, line) in lines.iter().enumerate() {
           if i == 0 {
+            // The block is centred on the anchor, so its first line sits
+            // half of the remaining height above it.
             out.push_str(&format!(
-              "<tspan x=\"{sx:.2}\" dy=\"0\">{}</tspan>",
+              "<tspan x=\"{sx:.2}\" dy=\"{}\">{}</tspan>",
+              -(lines.len() as f64 - 1.0) * fs / 2.0,
               svg_escape(line)
             ));
           } else {
@@ -7322,8 +7435,14 @@ fn render_primitive(
         }
         out.push_str("</text>\n");
       } else {
+        // Blanks a layout left in the text (a flattened `Spacer`) are kept.
+        let preserve_attr = if text.trim() == text.as_str() {
+          ""
+        } else {
+          " xml:space=\"preserve\""
+        };
         out.push_str(&format!(
-          "<text x=\"{sx:.2}\" y=\"{sy:.2}\" fill=\"{}\" font-size=\"{fs}\" font-weight=\"{}\" font-style=\"{}\"{ff_attr} text-anchor=\"middle\" dominant-baseline=\"central\"{}{rotate_attr}>{}</text>\n",
+          "<text x=\"{sx:.2}\" y=\"{sy:.2}\" fill=\"{}\" font-size=\"{fs}\" font-weight=\"{}\" font-style=\"{}\"{ff_attr} text-anchor=\"{anchor_attr}\" dominant-baseline=\"central\"{}{rotate_attr}{preserve_attr}>{}</text>\n",
           color.to_svg_rgb(),
           style.font_weight,
           style.font_style,
@@ -10810,6 +10929,51 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
         // `Rotate[…]` FullForm text every other unhandled head prints.
         "Rotate" if !args.is_empty() => expr_to_svg_markup(&args[0]),
 
+        // LineLegend[{styles…}, {labels…}] / SwatchLegend[{colors…},
+        // {labels…}] nested inside a Column/Row that ends up as a
+        // `PlotLabel`/`AxesLabel` (a plain SVG `<text>` element) can't
+        // hold the standalone legend's own nested `<svg>` sample (see
+        // `line_legend_svg`/`swatch_legend_svg`) — `<text>` only accepts
+        // inline content like `tspan`. Approximate each entry inline
+        // instead: a colored glyph (a stroke or a filled square, in the
+        // same color the full legend graphic would draw) followed by its
+        // label.
+        "LineLegend" | "SwatchLegend"
+          if args.len() >= 2
+            && matches!(&args[0], Expr::List(l) if !l.is_empty())
+            && matches!(&args[1], Expr::List(l) if !l.is_empty()) =>
+        {
+          let Expr::List(style_specs) = &args[0] else { unreachable!() };
+          let Expr::List(labels) = &args[1] else { unreachable!() };
+          let glyph =
+            if name == "SwatchLegend" { "\u{25A0}" } else { "\u{2501}" };
+          let mut out = String::new();
+          for (i, (spec, label)) in
+            style_specs.iter().zip(labels.iter()).enumerate()
+          {
+            if i > 0 {
+              out.push_str("<tspan dx=\"12\"> </tspan>");
+            }
+            let mut style = StyleState::default();
+            match spec {
+              Expr::List(directives) => {
+                for d in directives {
+                  apply_directive(d, &mut style);
+                }
+              }
+              other => {
+                apply_directive(other, &mut style);
+              }
+            }
+            out.push_str(&format!(
+              "<tspan fill=\"{}\">{glyph}</tspan> {}",
+              style.color.to_svg_rgb(),
+              expr_to_svg_markup(label)
+            ));
+          }
+          out
+        }
+
         // Row[{a, b, …}] concatenates its parts; Row[{…}, sep] joins
         // them with the separator. A `Spacer[n]` gap — as a bare item or
         // as the separator — is carried as a `dx` on the *next* rendered
@@ -11853,22 +12017,115 @@ pub fn box_string_to_svg(s: &str) -> String {
   parse_box_units(&cs).iter().map(boxes_to_svg).collect()
 }
 
+/// The combining mark that draws `accent` over (or, when `over` is false,
+/// under) a base character, and whether it spans every character of the base
+/// (a bar does; a dot or a hat sits on the last one).
+fn accent_text(base: &str, accent: &str, over: bool) -> String {
+  match combining_accent(accent.trim(), over) {
+    Some((mark, whole_base)) => {
+      let n = base.chars().count();
+      base
+        .chars()
+        .enumerate()
+        .flat_map(|(i, c)| {
+          let marked = whole_base || i + 1 == n;
+          std::iter::once(c).chain(marked.then_some(mark))
+        })
+        .collect()
+    }
+    None => format!("{base}{accent}"),
+  }
+}
+
+fn combining_accent(accent: &str, over: bool) -> Option<(char, bool)> {
+  Some(match (accent, over) {
+    ("_" | "\u{203E}" | "\u{00AF}", true) => ('\u{0305}', true),
+    ("_" | "\u{203E}" | "\u{00AF}", false) => ('\u{0332}', true),
+    (".", true) => ('\u{0307}', false),
+    ("..", true) => ('\u{0308}', false),
+    ("...", true) => ('\u{20DB}', false),
+    ("^" | "\u{02C6}", true) => ('\u{0302}', false),
+    ("~" | "\u{02DC}", true) => ('\u{0303}', false),
+    ("\u{2192}", true) => ('\u{20D7}', false),
+    _ => return None,
+  })
+}
+
 /// Plain-text projection of a box-notation Expr, used for layout width
 /// estimation (sub/superscripts contribute their content length).
 fn box_expr_to_plain(e: &Expr) -> String {
+  box_expr_to_plain_in(e, true)
+}
+
+/// `spaced` is false inside a script, where a limit `n=0` stays tight.
+fn box_expr_to_plain_in(e: &Expr, spaced: bool) -> String {
   match e {
     Expr::String(s) | Expr::Identifier(s) => {
       strip_precision_marker(s).to_string()
     }
     Expr::Integer(n) => n.to_string(),
     Expr::BigInteger(n) => n.to_string(),
-    Expr::List(items) => items.iter().map(box_expr_to_plain).collect(),
+    // A relation reads with a space either side (`x = 1`), the way it is
+    // laid out, though its box holds the bare operator.
+    Expr::List(items) => items
+      .iter()
+      .map(|item| match item {
+        Expr::String(op)
+          if spaced
+            && matches!(
+              op.as_str(),
+              "="
+                | ":="
+                | "=="
+                | "!="
+                | "<"
+                | ">"
+                | "<="
+                | ">="
+                | "+="
+                | "-="
+                | "*="
+                | "/="
+                | "\u{2260}"
+                | "\u{2264}"
+                | "\u{2265}"
+            ) =>
+        {
+          format!(" {op} ")
+        }
+        other => box_expr_to_plain_in(other, spaced),
+      })
+      .collect(),
     Expr::FunctionCall { name, args } => match name.as_str() {
       "SqrtBox" | "RadicalBox" => format!(
         "\u{221A}{}",
-        args.first().map(box_expr_to_plain).unwrap_or_default()
+        args
+          .first()
+          .map(|a| box_expr_to_plain_in(a, spaced))
+          .unwrap_or_default()
       ),
-      _ => args.iter().map(box_expr_to_plain).collect(),
+      // The trailing arguments of these are a tag, a form or display
+      // options — they are not part of the drawn text.
+      "TagBox" | "FormBox" | "StyleBox" | "InterpretationBox" => args
+        .first()
+        .map(|a| box_expr_to_plain_in(a, spaced))
+        .unwrap_or_default(),
+      // An accent that has a combining mark is drawn over (under) its base
+      // as that mark, `ÿ` for a double dot over `y`.
+      "OverscriptBox" | "UnderscriptBox" if args.len() >= 2 => accent_text(
+        &box_expr_to_plain_in(&args[0], false),
+        &box_expr_to_plain_in(&args[1], false),
+        name == "OverscriptBox",
+      ),
+      "SubscriptBox" | "SuperscriptBox" | "SubsuperscriptBox"
+      | "UnderoverscriptBox" => args
+        .iter()
+        .map(|a| box_expr_to_plain_in(a, false))
+        .collect(),
+      _ => args
+        .iter()
+        .map(|a| box_expr_to_plain_in(a, spaced))
+        .collect(),
     },
     _ => String::new(),
   }
@@ -12408,7 +12665,7 @@ pub(crate) fn plot_source_aspect_ratio(image_size: (u32, u32)) -> f64 {
   if ratio.is_finite() && ratio > 0.0 {
     ratio
   } else {
-    1.0 / 1.618_033_988_749_895
+    1.0 / std::f64::consts::GOLDEN_RATIO
   }
 }
 
@@ -12885,6 +13142,25 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       })
     };
     if first_graphic_is_plot == Some(true) {
+      // A bare `PlotRange -> {min, max}` on a plot is the *y* range; the
+      // horizontal extent stays that of the plotted domain.
+      for opt in &mut merged_options {
+        if let Expr::Rule {
+          pattern,
+          replacement,
+        } = opt
+          && option_name(pattern) == Some("PlotRange")
+          && let Expr::List(items) = replacement.as_ref()
+          && items.len() == 2
+          && !is_axis_range_spec(&items[0])
+          && !is_axis_range_spec(&items[1])
+          && parse_range_spec(replacement).is_some()
+        {
+          **replacement = Expr::List(
+            vec![id_expr("All"), replacement.as_ref().clone()].into(),
+          );
+        }
+      }
       // A framed plot draws no interior axes, so the merged graphic must
       // not grow a set of them either: `Show[ParametricPlot[…, Frame ->
       // True], …]` keeps the frame it was given and nothing more.
@@ -12908,7 +13184,7 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if plot_options_need_aspect_ratio(&merged_options) {
         let aspect = plot_sources
           .first()
-          .map_or(1.0 / 1.618_033_988_749_895, |ps| {
+          .map_or(1.0 / std::f64::consts::GOLDEN_RATIO, |ps| {
             plot_source_aspect_ratio(ps.image_size)
           });
         merged_options.push(Expr::Rule {
@@ -16595,7 +16871,7 @@ fn with_default_image_size(expr: &Expr, size: i128) -> Expr {
     if !has_aspect_ratio {
       new_args.push(Expr::Rule {
         pattern: Box::new(id_expr("AspectRatio")),
-        replacement: Box::new(Expr::Real(1.0 / 1.618_033_988_749_895)),
+        replacement: Box::new(Expr::Real(1.0 / std::f64::consts::GOLDEN_RATIO)),
       });
     }
   }
@@ -19536,6 +19812,14 @@ pub enum ManipulateControl {
     label: String,
     label_runs: Vec<LabelRun>,
     action: String,
+    /// `Enabled -> cond` (InputForm code), e.g. a "play again" button
+    /// disabled once a game/round variable says play is over. A `Button`
+    /// binds no variable, so — unlike every other control — this condition
+    /// cannot travel through the name-keyed `ManipulateSpec::control_enabled`
+    /// list (`name()` is always `""`, and two buttons with different
+    /// conditions would collide on that one empty key); it is carried here
+    /// instead. `None` means always enabled.
+    enabled: Option<String>,
   },
   /// A static heading row between controls: a bare string or `Style[…]`
   /// Manipulate argument (Wolfram's `ThisIsNotAControl` annotations, e.g.
@@ -19948,7 +20232,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     // inside the rendered output they would only be an inert picture.
     let mut body_displays = Vec::new();
     let body_expr = extract_body_togglerbars(&unwrapped, &mut body_displays);
-    let body_code = crate::syntax::expr_to_input_form(&body_expr);
+    let body_code = crate::syntax::expr_to_source_form(&body_expr);
     body_expr_kept = Some(body_expr);
     (
       body_code,
@@ -19990,6 +20274,14 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     Some(body) => collect_body_tabview_selectors(body),
     None => Vec::new(),
   };
+  // A `SetterBar[Dynamic[var], choices]` drawn inside the body's own layout
+  // (typically in `TabView` panes) is lifted into the control panel the same
+  // way, shown only while its tab is selected.
+  let body_setters = match &body_expr_kept {
+    Some(body) => collect_body_setter_bars(body),
+    None => Vec::new(),
+  };
+  let mut promoted_setters: Vec<String> = Vec::new();
   // Body-local `LocatorPane` variables promoted to a multi-point `Locator`
   // control from a `var = expr;` reset statement (see the loop over
   // `collect_body_locator_pane_vars` below) — their reset statements are
@@ -20150,7 +20442,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     {
       if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Initialization")
       {
-        initialization = Some(crate::syntax::expr_to_input_form(replacement));
+        initialization = Some(crate::syntax::expr_to_source_form(replacement));
       }
       // `Appearance -> None` hides the control rows; the animation just
       // runs (an animated widget keeps its play/pause toggle).
@@ -20169,6 +20461,14 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         && let Some(placement) = ControlPlacement::from_symbol(side)
       {
         control_placement = placement;
+      }
+      // A widget-level `FrameLabel -> label` (a string, `Style`, `Column`, …
+      // rather than the `{bottom, left}` pair a plot takes) is a caption
+      // Wolfram shows with the output, so it is an extra display element.
+      if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "FrameLabel")
+        && !matches!(replacement.as_ref(), Expr::List(_) | Expr::Identifier(_))
+      {
+        displays.push(crate::syntax::expr_to_source_form(replacement));
       }
       // `AnimationRunning -> False` builds the widget paused.
       if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "AnimationRunning")
@@ -20198,7 +20498,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
           let label_runs = manipulate_label_runs(label_pat, false);
           bookmarks.push((
             flatten_label_runs(&label_runs),
-            crate::syntax::expr_to_input_form(action),
+            crate::syntax::expr_to_source_form(action),
           ));
         }
       }
@@ -20271,7 +20571,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         if is_manipulate_annotation_head(name)
           && annotation_contains_dynamic(spec) =>
       {
-        displays.push(crate::syntax::expr_to_input_form(spec));
+        displays.push(crate::syntax::expr_to_source_form(spec));
         continue;
       }
       // `Button[label, action, opts…]`: a pressable control row whose
@@ -20280,10 +20580,13 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         if name == "Button" && args.len() >= 2 =>
       {
         let label_runs = manipulate_label_runs(&args[0], false);
+        let enabled = extract_enabled_condition(&args[2..])
+          .map(crate::syntax::expr_to_source_form);
         controls.push(ManipulateControl::Button {
           label: flatten_label_runs(&label_runs),
           label_runs,
-          action: crate::syntax::expr_to_input_form(&args[1]),
+          action: crate::syntax::expr_to_source_form(&args[1]),
+          enabled,
         });
         continue;
       }
@@ -20314,7 +20617,8 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
             controls.push(ManipulateControl::Button {
               label: flatten_label_runs(&label_runs),
               label_runs,
-              action: crate::syntax::expr_to_input_form(replacement),
+              action: crate::syntax::expr_to_source_form(replacement),
+              enabled: None,
             });
             any = true;
           }
@@ -20347,7 +20651,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     // extra display element: capture it so the frontend can render it
     // live.
     if !matches!(spec, Expr::List(_)) {
-      displays.push(crate::syntax::expr_to_input_form(spec));
+      displays.push(crate::syntax::expr_to_source_form(spec));
       continue;
     }
     let (spec, rename) = rewrite_compound_control_var(spec);
@@ -20608,6 +20912,39 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
             continue;
           }
         }
+        if let Some(bar) = body_setters.iter().find(|b| b.var == name)
+          && let Some(choices) =
+            crate::with_scoped_globals(&initial_bindings, || {
+              crate::interpret_to_expr(&bar.choices_code)
+                .ok()
+                .and_then(|e| evaluate_expr_to_expr(&e).ok())
+            })
+          && matches!(choices, Expr::List(_))
+        {
+          let default = crate::interpret_to_expr(&value)
+            .unwrap_or_else(|_| Expr::Identifier(value.clone()));
+          let promoted = Expr::List(
+            vec![
+              Expr::List(vec![Expr::Identifier(name.clone()), default].into()),
+              choices,
+              Expr::Rule {
+                pattern: Box::new(id_expr("ControlType")),
+                replacement: Box::new(id_expr("SetterBar")),
+              },
+            ]
+            .into(),
+          );
+          if let Some(ParsedControl::Visible { control: c, .. }) =
+            parse_manipulate_control(&promoted, &[])
+          {
+            if let Some(cond) = &bar.visible_cond {
+              control_visible.push((name.clone(), cond.clone()));
+            }
+            promoted_setters.push(name.clone());
+            controls.push(c);
+            continue;
+          }
+        }
         state.push((name, value));
       }
       ParsedControl::StateWithControl {
@@ -20670,7 +21007,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       let Some(reset_expr) = find_body_var_reset(&args[0], &var) else {
         continue;
       };
-      let reset_code = crate::syntax::expr_to_input_form(&reset_expr);
+      let reset_code = crate::syntax::expr_to_source_form(&reset_expr);
       let initial_points = crate::with_scoped_globals(
         &initial_bindings,
         || -> Option<Vec<(f64, f64)>> {
@@ -20734,17 +21071,22 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   // it. A `LocatorPane` variable's own reset statement is stripped the same
   // way — left in, it would re-run (and clobber a drag) on every
   // re-evaluation; see `dynamic_locator_defaults`.
-  if (!promoted_popups.is_empty() || !locator_reset_vars.is_empty())
+  if (!promoted_popups.is_empty()
+    || !locator_reset_vars.is_empty()
+    || !promoted_setters.is_empty())
     && let Some(body_expr) = &body_expr_kept
   {
     let mut stripped = body_expr.clone();
+    if !promoted_setters.is_empty() {
+      stripped = strip_body_setter_bars(&stripped, &promoted_setters);
+    }
     if !promoted_popups.is_empty() {
       stripped = strip_body_popup_menus(&stripped, &promoted_popups);
     }
     if !locator_reset_vars.is_empty() {
       stripped = strip_body_locator_resets(&stripped, &locator_reset_vars);
     }
-    body_code = crate::syntax::expr_to_input_form(&stripped);
+    body_code = crate::syntax::expr_to_source_form(&stripped);
   }
   if !renames.is_empty() {
     renames.sort_by_key(|(orig, _)| std::cmp::Reverse(orig.len()));
@@ -21065,7 +21407,7 @@ fn collect_body_locator_callbacks(
               let var = resolve(var);
               if !found.iter().any(|(n, _)| *n == var) {
                 let callback =
-                  dargs.get(1).map(crate::syntax::expr_to_input_form);
+                  dargs.get(1).map(crate::syntax::expr_to_source_form);
                 found.push((var, callback));
               }
             }
@@ -21325,12 +21667,12 @@ fn collect_body_popup_menus(expr: &Expr) -> Vec<BodyPopupMenu> {
           && let Some(Expr::Identifier(var)) = dargs.first()
           && !found.iter().any(|p| &p.var == var)
         {
-          let choices_code = crate::syntax::expr_to_input_form(
+          let choices_code = crate::syntax::expr_to_source_form(
             &rewrap_in_popup_scopes(args[1].clone(), scopes),
           );
           let enabled_code =
             extract_enabled_condition(&args[2..]).map(|cond| {
-              crate::syntax::expr_to_input_form(&rewrap_in_popup_scopes(
+              crate::syntax::expr_to_source_form(&rewrap_in_popup_scopes(
                 cond.clone(),
                 scopes,
               ))
@@ -21441,7 +21783,7 @@ fn collect_bare_setterbar_state(
         }
         other => other,
       };
-      state.push((var.clone(), crate::syntax::expr_to_input_form(value)));
+      state.push((var.clone(), crate::syntax::expr_to_source_form(value)));
     }
     for a in args {
       collect_bare_setterbar_state(a, known, state);
@@ -21463,25 +21805,199 @@ fn collect_bare_setterbar_state(
   }
 }
 
-/// Replace each `PopupMenu[Dynamic[var], …]` whose `var` is listed in
-/// `promoted` with `Nothing`, so the pick list is not also printed as source
-/// inside the body it was lifted out of.
-fn strip_body_popup_menus(expr: &Expr, promoted: &[String]) -> Expr {
+/// A `SetterBar[Dynamic[var], choices]` / `RadioButtonBar[…]` written inside
+/// a Manipulate body, to be lifted into the control panel.
+struct BodySetterBar {
+  var: String,
+  /// Code producing the choice list — plain values, or `value -> label`
+  /// rules when the bar is post-processed with `/. rules` (the Demonstrations
+  /// idiom for showing note names instead of numbers).
+  choices_code: String,
+  /// When the bar sits inside a `TabView` pane: the condition under which
+  /// that pane (and so the control) is on screen.
+  visible_cond: Option<String>,
+}
+
+/// The sub-expressions of the layout constructs a Manipulate body nests its
+/// widgets in (`Text@Grid[…]`, `{key, label -> pane}` tab entries, `/.`).
+fn body_layout_children(expr: &Expr) -> Vec<&Expr> {
   match expr {
-    Expr::FunctionCall { name, args }
-      if name == "PopupMenu"
-        && matches!(
-          args.first(),
-          Some(Expr::FunctionCall { name: dname, args: dargs })
-            if dname == "Dynamic"
-              && matches!(
-                dargs.first(),
-                Some(Expr::Identifier(v)) if promoted.contains(v)
-              )
-        ) =>
-    {
-      id_expr("Nothing")
+    Expr::FunctionCall { args, .. } => args.iter().collect(),
+    Expr::List(items) => items.iter().collect(),
+    Expr::CompoundExpr(items) => items.iter().collect(),
+    Expr::Rule {
+      pattern,
+      replacement,
     }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => vec![pattern.as_ref(), replacement.as_ref()],
+    Expr::ReplaceAll { expr, rules } => vec![expr.as_ref(), rules.as_ref()],
+    Expr::PrefixApply { func, arg } => vec![func.as_ref(), arg.as_ref()],
+    _ => Vec::new(),
+  }
+}
+
+/// The `(var, choices)` of a `SetterBar[Dynamic[var], choices]` /
+/// `RadioButtonBar[…]` call.
+fn setter_bar_parts(expr: &Expr) -> Option<(&String, &Expr)> {
+  if let Expr::FunctionCall { name, args } = expr
+    && (name == "SetterBar" || name == "RadioButtonBar")
+    && args.len() >= 2
+    && let Expr::FunctionCall {
+      name: dname,
+      args: dargs,
+    } = &args[0]
+    && dname == "Dynamic"
+    && let Some(Expr::Identifier(var)) = dargs.first()
+  {
+    Some((var, &args[1]))
+  } else {
+    None
+  }
+}
+
+/// Every setter bar drawn by a Manipulate body, with the `TabView` pane it
+/// sits in (if any). Wolfram draws these widgets inside the body's own
+/// layout; Woxi Studio instead lifts them into the control panel, shown only
+/// while their tab is selected.
+fn collect_body_setter_bars(expr: &Expr) -> Vec<BodySetterBar> {
+  fn walk(expr: &Expr, cond: Option<&String>, found: &mut Vec<BodySetterBar>) {
+    let (bar, rules) = match expr {
+      Expr::ReplaceAll { expr: inner, rules } => (inner.as_ref(), Some(rules)),
+      other => (other, None),
+    };
+    if let Some((var, choices)) = setter_bar_parts(bar) {
+      if !found.iter().any(|b| &b.var == var) {
+        let list = crate::syntax::expr_to_source_form(choices);
+        let choices_code = match rules {
+          Some(r) => format!(
+            "Map[(#1 -> (#1 /. {}))&, {}]",
+            crate::syntax::expr_to_source_form(r),
+            list
+          ),
+          None => list,
+        };
+        found.push(BodySetterBar {
+          var: var.clone(),
+          choices_code,
+          visible_cond: cond.cloned(),
+        });
+      }
+      return;
+    }
+    if let Expr::FunctionCall { name, args } = expr
+      && name == "TabView"
+      && args.len() >= 2
+      && let Expr::List(items) = &args[0]
+    {
+      let selector =
+        crate::syntax::expr_to_source_form(unwrap_pane_selector(&args[1]));
+      for (idx, item) in items.iter().enumerate() {
+        let (key, _label, content) = tabview_pane_parts(item);
+        let key = key.unwrap_or_else(|| Expr::Integer(idx as i128 + 1));
+        let pane_cond = format!(
+          "({}) == ({})",
+          selector,
+          crate::syntax::expr_to_source_form(&key)
+        );
+        walk(content, Some(&pane_cond), found);
+      }
+      return;
+    }
+    for child in body_layout_children(expr) {
+      walk(child, cond, found);
+    }
+  }
+  let mut found = Vec::new();
+  walk(expr, None, &mut found);
+  found
+}
+
+/// Replace each `SetterBar[Dynamic[var], …]` (with or without a trailing
+/// `/. rules`) whose `var` is listed in `promoted` by an empty string, so the
+/// bar is not also drawn as source inside the layout it was lifted out of.
+/// An empty string rather than `Nothing`, so the grid cell it sat in is kept.
+fn strip_body_setter_bars(expr: &Expr, promoted: &[String]) -> Expr {
+  let is_promoted = |e: &Expr| {
+    setter_bar_parts(e).is_some_and(|(var, _)| promoted.contains(var))
+  };
+  if is_promoted(expr) {
+    return Expr::String(String::new());
+  }
+  if let Expr::ReplaceAll { expr: inner, .. } = expr
+    && is_promoted(inner)
+  {
+    return Expr::String(String::new());
+  }
+  let rec = |e: &Expr| strip_body_setter_bars(e, promoted);
+  match expr {
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args.iter().map(rec).collect::<Vec<_>>().into(),
+    },
+    Expr::List(items) => {
+      Expr::List(items.iter().map(rec).collect::<Vec<_>>().into())
+    }
+    Expr::CompoundExpr(items) => {
+      Expr::CompoundExpr(items.iter().map(rec).collect())
+    }
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => Expr::Rule {
+      pattern: Box::new(rec(pattern)),
+      replacement: Box::new(rec(replacement)),
+    },
+    Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => Expr::RuleDelayed {
+      pattern: Box::new(rec(pattern)),
+      replacement: Box::new(rec(replacement)),
+    },
+    Expr::ReplaceAll { expr, rules } => Expr::ReplaceAll {
+      expr: Box::new(rec(expr)),
+      rules: Box::new(rec(rules)),
+    },
+    Expr::PrefixApply { func, arg } => Expr::PrefixApply {
+      func: Box::new(rec(func)),
+      arg: Box::new(rec(arg)),
+    },
+    other => other.clone(),
+  }
+}
+
+/// Replace each `PopupMenu[Dynamic[var], …]` whose `var` is listed in
+/// `promoted` with `var` itself, so the pick list is not also printed as
+/// source inside the body it was lifted out of.
+fn strip_body_popup_menus(expr: &Expr, promoted: &[String]) -> Expr {
+  // A promoted popup's own choice/enabled arguments still need this same
+  // walk (they can nest further Manipulate controls of their own), so this
+  // returns the replacement rather than handling it inline in the outer
+  // `match`'s guard, which cannot bind `v` for use in its arm.
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "PopupMenu"
+    && let Some(Expr::FunctionCall {
+      name: dname,
+      args: dargs,
+    }) = args.first()
+    && dname == "Dynamic"
+    && let Some(Expr::Identifier(v)) = dargs.first()
+    && promoted.contains(v)
+  {
+    // Stand in with the control's own bound variable rather than `Nothing`:
+    // a Demonstration commonly lays several such popups out as data (e.g.
+    // `Apopups = {PopupMenu[Dynamic[a1], …], PopupMenu[Dynamic[a2], …], …}`
+    // indexed later as `Apopups[[i]]`), and `Nothing` vanishes from any
+    // `List` it sits in — collapsing that list and breaking every `Part`
+    // access into it. The bound variable renders as its current value here
+    // (re-evaluated on every frame, same as the rest of the body) while the
+    // live dropdown itself lives in the promoted control above.
+    return Expr::Identifier(v.clone());
+  }
+  match expr {
     Expr::FunctionCall { name, args } => Expr::FunctionCall {
       name: name.clone(),
       args: args
@@ -21522,7 +22038,7 @@ fn extract_body_togglerbars(expr: &Expr, displays: &mut Vec<String>) -> Expr {
               && matches!(dargs.first(), Some(Expr::Identifier(_)))
         ) =>
     {
-      displays.push(crate::syntax::expr_to_input_form(expr));
+      displays.push(crate::syntax::expr_to_source_form(expr));
       id_expr("Nothing")
     }
     // A bare `Button[label, action, opts…]` drawn directly by the body (a
@@ -21534,7 +22050,7 @@ fn extract_body_togglerbars(expr: &Expr, displays: &mut Vec<String>) -> Expr {
     Expr::FunctionCall { name, args }
       if name == "Button" && args.len() >= 2 =>
     {
-      displays.push(crate::syntax::expr_to_input_form(expr));
+      displays.push(crate::syntax::expr_to_source_form(expr));
       id_expr("Nothing")
     }
     // `Table[body, iterators…]` generates a variable number of copies of
@@ -21605,7 +22121,7 @@ pub fn apply_manipulate_callback(
   let code = manipulate_block_code(&body, bindings);
   crate::interpret_to_expr(&code)
     .ok()
-    .map(|e| crate::syntax::expr_to_input_form(&e))
+    .map(|e| crate::syntax::expr_to_source_form(&e))
 }
 
 /// Parse an InputForm `{x, y}` point (as stored in a Manipulate binding)
@@ -21686,7 +22202,7 @@ fn unwrap_dynamic_module_locals(
                 if let Expr::Identifier(var_name) = &set_args[0] {
                   state.push((
                     var_name.clone(),
-                    crate::syntax::expr_to_input_form(&set_args[1]),
+                    crate::syntax::expr_to_source_form(&set_args[1]),
                   ));
                 }
               }
@@ -21697,7 +22213,7 @@ fn unwrap_dynamic_module_locals(
                 if let Expr::Identifier(var_name) = pattern.as_ref() {
                   state.push((
                     var_name.clone(),
-                    crate::syntax::expr_to_input_form(replacement),
+                    crate::syntax::expr_to_source_form(replacement),
                   ));
                 }
               }
@@ -22158,7 +22674,7 @@ fn collect_pane_visibility(
     return;
   };
   let selector =
-    crate::syntax::expr_to_input_form(unwrap_pane_selector(selector));
+    crate::syntax::expr_to_source_form(unwrap_pane_selector(selector));
   for pane in panes {
     let (Expr::Rule {
       pattern,
@@ -22174,7 +22690,7 @@ fn collect_pane_visibility(
     let cond = format!(
       "({}) == ({})",
       selector,
-      crate::syntax::expr_to_input_form(pattern)
+      crate::syntax::expr_to_source_form(pattern)
     );
     for var in pane_control_variables(replacement, place_map) {
       match out.iter_mut().find(|(n, _)| *n == var) {
@@ -22334,12 +22850,12 @@ fn manipulate_initial_value_bindings(specs: &[Expr]) -> Vec<(String, String)> {
             return None;
           };
           let init = head.get(1)?;
-          Some((name.clone(), crate::syntax::expr_to_input_form(init)))
+          Some((name.clone(), crate::syntax::expr_to_source_form(init)))
         }
         Expr::Identifier(name) => {
           let min = items.get(1)?;
           crate::functions::math_ast::try_eval_to_f64(min)?;
-          Some((name.clone(), crate::syntax::expr_to_input_form(min)))
+          Some((name.clone(), crate::syntax::expr_to_source_form(min)))
         }
         _ => None,
       }
@@ -22411,7 +22927,7 @@ fn manipulate_post_body_bindings(
       if let Ok(evaluated) = evaluate_expr_to_expr(&symbol)
         && !matches!(&evaluated, Expr::Identifier(s) if s == name)
       {
-        *value = crate::syntax::expr_to_input_form(&evaluated);
+        *value = crate::syntax::expr_to_source_form(&evaluated);
       }
     }
   });
@@ -22499,8 +23015,16 @@ fn discrete_choice_columns(items: &[Expr]) -> DiscreteChoiceColumns {
   let mut svgs = Vec::with_capacity(items.len());
   let mut label_runs = Vec::with_capacity(items.len());
   for item in items {
+    // A bare `Delimiter` inside a choice list (e.g. a `PopupMenu`'s options
+    // grouped into sections) draws a separator line between the choices
+    // around it — it is never itself a selectable value, so it contributes
+    // no value/label/svg row rather than becoming a literal "Delimiter"
+    // entry.
+    if matches!(item, Expr::Identifier(s) if s == "Delimiter") {
+      continue;
+    }
     if let Some((value, label)) = discrete_choice_rule(item) {
-      values.push(crate::syntax::expr_to_input_form(value));
+      values.push(crate::syntax::expr_to_source_form(value));
       // A rule label that is itself a graphic (the crosshair icons of
       // the Demonstrations site) renders as an SVG icon; its text column
       // falls back to the bound value so a non-graphical frontend still
@@ -22522,13 +23046,13 @@ fn discrete_choice_columns(items: &[Expr]) -> DiscreteChoiceColumns {
       // A plain colour choice (no Rule label) renders as a swatch icon —
       // the ColorSetter idiom — rather than its `RGBColor[…]` InputForm.
       let runs = discrete_choice_label_runs(item);
-      values.push(crate::syntax::expr_to_input_form(item));
+      values.push(crate::syntax::expr_to_source_form(item));
       labels.push(flatten_label_runs(&runs));
       label_runs.push(runs);
       svgs.push(Some(color_swatch_svg(&color)));
     } else {
       let runs = discrete_choice_label_runs(item);
-      values.push(crate::syntax::expr_to_input_form(item));
+      values.push(crate::syntax::expr_to_source_form(item));
       labels.push(flatten_label_runs(&runs));
       label_runs.push(runs);
       svgs.push(None);
@@ -22581,10 +23105,10 @@ fn synthesize_var_name(expr: &Expr) -> Option<String> {
   let mut name = match expr {
     Expr::FunctionCall { name, args } if name == "Subscript" => args
       .iter()
-      .map(|a| sanitize(&crate::syntax::expr_to_input_form(a)))
+      .map(|a| sanitize(&crate::syntax::expr_to_source_form(a)))
       .collect::<Vec<_>>()
       .join("$"),
-    other => sanitize(&crate::syntax::expr_to_input_form(other)),
+    other => sanitize(&crate::syntax::expr_to_source_form(other)),
   };
   if name.is_empty() || name.starts_with(|c: char| c.is_ascii_digit()) {
     name.insert(0, '$');
@@ -22619,7 +23143,7 @@ fn rewrite_compound_control_var(
   let Some(synth) = synthesize_var_name(var) else {
     return (spec.clone(), None);
   };
-  let orig_form = crate::syntax::expr_to_input_form(var);
+  let orig_form = crate::syntax::expr_to_source_form(var);
   let replacement = Expr::Identifier(synth.clone());
   let new_head = match head {
     Expr::List(head_items) => {
@@ -22703,7 +23227,7 @@ pub fn extract_list_animate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     _ => return None,
   };
   let n = frames.len();
-  let list_code = crate::syntax::expr_to_input_form(&args[0]);
+  let list_code = crate::syntax::expr_to_source_form(&args[0]);
   // Frame index `i` runs 1..n in unit steps; the body picks that element.
   // `Round` guards against any float drift the slider might introduce.
   let body_code = format!("Part[{list_code}, Round[i]]");
@@ -22922,7 +23446,7 @@ pub fn extract_locator_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     }
     pt => ("p".to_string(), Some(list2_f64(pt)?)),
   };
-  let body_code = crate::syntax::expr_to_input_form(&args[1]);
+  let body_code = crate::syntax::expr_to_source_form(&args[1]);
   let ((x_min, y_min), (x_max, y_max)) = pane_range(args.get(2), &args[1]);
   // Start the locator at the given point, else the range centre.
   let (x_initial, y_initial) = explicit_init
@@ -22981,7 +23505,7 @@ pub fn extract_click_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
   let ((x_min, y_min), (x_max, y_max)) = pane_range(range_arg, &args[0]);
   // Bind the click position `pos` and show the handler applied to it; the body
   // re-evaluates `func[pos]` on every pad move.
-  let func_code = crate::syntax::expr_to_input_form(func);
+  let func_code = crate::syntax::expr_to_source_form(func);
   let body_code = format!("({func_code})[pos]");
   let control = ManipulateControl::Slider2D {
     name: "pos".to_string(),
@@ -23091,8 +23615,8 @@ pub fn extract_control_spec(expr: &Expr) -> Option<ManipulateSpec> {
 /// not change on every re-evaluation.
 fn manipulate_value_to_input_form(expr: &Expr) -> String {
   match crate::evaluator::evaluate_expr_to_expr(expr) {
-    Ok(evaluated) => crate::syntax::expr_to_input_form(&evaluated),
-    Err(_) => crate::syntax::expr_to_input_form(expr),
+    Ok(evaluated) => crate::syntax::expr_to_source_form(&evaluated),
+    Err(_) => crate::syntax::expr_to_source_form(expr),
   }
 }
 
@@ -23380,6 +23904,14 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
         }
         runs
       }
+      // `Spacer[w]` — pure layout, a label can only carry it as one blank
+      // (so `Row[{a, Spacer[8], b}]` keeps its words apart) rather than
+      // spelling out the head.
+      "Spacer" => vec![LabelRun {
+        text: " ".to_string(),
+        italic,
+        ..Default::default()
+      }],
       // Row[{a, b, …}] — concatenate the (recursively rendered) parts.
       "Row" => match layout_parts(args.first()) {
         Some(parts) => parts
@@ -24177,7 +24709,7 @@ fn parse_manipulate_control(
 
   // `Enabled -> cond` / `Enabled :> cond` gates the control.
   let enabled: Option<String> =
-    extract_enabled_condition(items).map(crate::syntax::expr_to_input_form);
+    extract_enabled_condition(items).map(crate::syntax::expr_to_source_form);
 
   // `TrackingFunction -> f` / `:> f` runs `f[newValue]` whenever this
   // control's value changes, so a Demonstration can reset a companion
@@ -24192,7 +24724,7 @@ fn parse_manipulate_control(
       replacement,
     } if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "TrackingFunction") =>
     {
-      Some(crate::syntax::expr_to_input_form(replacement))
+      Some(crate::syntax::expr_to_source_form(replacement))
     }
     _ => None,
   });
@@ -24248,10 +24780,10 @@ fn parse_manipulate_control(
         (None, domain) => match crate::evaluator::evaluate_expr_to_expr(domain)
         {
           Ok(Expr::List(ref choices)) if !choices.is_empty() => {
-            crate::syntax::expr_to_input_form(&choices[0])
+            crate::syntax::expr_to_source_form(&choices[0])
           }
-          Ok(evaluated) => crate::syntax::expr_to_input_form(&evaluated),
-          Err(_) => crate::syntax::expr_to_input_form(domain),
+          Ok(evaluated) => crate::syntax::expr_to_source_form(&evaluated),
+          Err(_) => crate::syntax::expr_to_source_form(domain),
         },
         _ => manipulate_value_to_input_form(&value_expr),
       };
@@ -24438,12 +24970,12 @@ fn parse_manipulate_control(
     // it against the live bindings whenever `angle`/`speed` move.
     let min_code = min_dynamic
       .then(|| {
-        crate::syntax::expr_to_input_form(manipulate_bound_expr(bounds[0]).0)
+        crate::syntax::expr_to_source_form(manipulate_bound_expr(bounds[0]).0)
       })
       .filter(|_| min.is_finite());
     let max_code = max_dynamic
       .then(|| {
-        crate::syntax::expr_to_input_form(manipulate_bound_expr(bounds[1]).0)
+        crate::syntax::expr_to_source_form(manipulate_bound_expr(bounds[1]).0)
       })
       .filter(|_| max.is_finite());
     let step = bounds
@@ -24635,12 +25167,12 @@ fn parse_manipulate_control(
     let display = if appearance_vertical {
       format!(
         "TogglerBar[Dynamic[{name}], {}, Appearance -> \"Vertical\"]",
-        crate::syntax::expr_to_input_form(&choices)
+        crate::syntax::expr_to_source_form(&choices)
       )
     } else {
       format!(
         "TogglerBar[Dynamic[{name}], {}]",
-        crate::syntax::expr_to_input_form(&choices)
+        crate::syntax::expr_to_source_form(&choices)
       )
     };
     return Some(ParsedControl::StateWithDisplay {
@@ -24675,7 +25207,7 @@ fn parse_manipulate_control(
       let mut resolved_init_code: Option<String> = None;
       let initial_index = match explicit_initial {
         Some(init) => {
-          let init_code = crate::syntax::expr_to_input_form(&init);
+          let init_code = crate::syntax::expr_to_source_form(&init);
           resolved_init_code = Some(init_code.clone());
           values
             .iter()
@@ -24687,7 +25219,7 @@ fn parse_manipulate_control(
               // matches once it is evaluated too.
               let evaluated =
                 crate::evaluator::evaluate_expr_to_expr(&init).ok()?;
-              let code = crate::syntax::expr_to_input_form(&evaluated);
+              let code = crate::syntax::expr_to_source_form(&evaluated);
               resolved_init_code = Some(code.clone());
               values.iter().position(|v| *v == code)
             })
@@ -24709,7 +25241,7 @@ fn parse_manipulate_control(
       let values_code = (bounds.len() == 1
         && expr_references_any(unwrap_dynamic_choices(bounds[0]), siblings))
       .then(|| {
-        crate::syntax::expr_to_input_form(unwrap_dynamic_choices(bounds[0]))
+        crate::syntax::expr_to_source_form(unwrap_dynamic_choices(bounds[0]))
       });
       return Some(ParsedControl::Visible {
         control: ManipulateControl::Discrete {
@@ -24793,14 +25325,15 @@ fn parse_manipulate_control(
     let button_runs = manipulate_label_runs(&built_args[0], false);
     let value = explicit_initial
       .as_ref()
-      .map_or_else(|| "Null".to_string(), crate::syntax::expr_to_input_form);
+      .map_or_else(|| "Null".to_string(), crate::syntax::expr_to_source_form);
     return Some(ParsedControl::StateWithControl {
       name,
       value,
       control: ManipulateControl::Button {
         label: flatten_label_runs(&button_runs),
         label_runs: button_runs,
-        action: crate::syntax::expr_to_input_form(&built_args[1]),
+        action: crate::syntax::expr_to_source_form(&built_args[1]),
+        enabled: None,
       },
     });
   }
@@ -24843,11 +25376,11 @@ fn parse_manipulate_control(
   {
     let value = explicit_initial
       .as_ref()
-      .map_or_else(|| "Null".to_string(), crate::syntax::expr_to_input_form);
+      .map_or_else(|| "Null".to_string(), crate::syntax::expr_to_source_form);
     return Some(ParsedControl::StateWithDisplay {
       name,
       value,
-      display: crate::syntax::expr_to_input_form(&evaluated),
+      display: crate::syntax::expr_to_source_form(&evaluated),
     });
   }
 
@@ -24864,10 +25397,10 @@ fn parse_manipulate_control(
   if bounds.len() == 1
     && crate::functions::graphics::parse_color(bounds[0]).is_some()
   {
-    let alt_code = crate::syntax::expr_to_input_form(bounds[0]);
+    let alt_code = crate::syntax::expr_to_source_form(bounds[0]);
     if let Some(init) = explicit_initial.as_ref().filter(|init| {
       parse_color(init).is_some()
-        && crate::syntax::expr_to_input_form(init) != alt_code
+        && crate::syntax::expr_to_source_form(init) != alt_code
     }) {
       let value_items = vec![init.clone(), bounds[0].clone()];
       let (values, value_labels, value_label_svgs, value_label_runs) =
@@ -24942,7 +25475,7 @@ fn parse_manipulate_control(
     && crate::evaluator::evaluate_expr_to_expr(bounds[0]).is_ok()
   {
     let value = explicit_initial.as_ref().map_or_else(
-      || crate::syntax::expr_to_input_form(bounds[0]),
+      || crate::syntax::expr_to_source_form(bounds[0]),
       manipulate_value_to_input_form,
     );
     return Some(ParsedControl::Fixed { name, value });
@@ -24985,12 +25518,12 @@ fn parse_manipulate_control(
   // bindings and let the slider range follow the other control.
   let min_code = min_dynamic
     .then(|| {
-      crate::syntax::expr_to_input_form(manipulate_bound_expr(bounds[0]).0)
+      crate::syntax::expr_to_source_form(manipulate_bound_expr(bounds[0]).0)
     })
     .filter(|_| min.is_finite());
   let max_code = max_dynamic
     .then(|| {
-      crate::syntax::expr_to_input_form(manipulate_bound_expr(bounds[1]).0)
+      crate::syntax::expr_to_source_form(manipulate_bound_expr(bounds[1]).0)
     })
     .filter(|_| max.is_finite());
   // An infinite bound (`Animate[…, {ϕ, 0, Infinity}]` runs forever in
@@ -25275,7 +25808,7 @@ fn discrete_choice_label_runs(expr: &Expr) -> Vec<LabelRun> {
       let structural = matches!(other, Expr::FunctionCall { name, .. } if is_text_layout_head(name));
       if flat.is_empty() && !structural {
         vec![LabelRun {
-          text: crate::syntax::expr_to_input_form(other),
+          text: crate::syntax::expr_to_source_form(other),
           ..Default::default()
         }]
       } else {
@@ -25347,7 +25880,7 @@ fn discrete_choice_label_svg(label: &Expr) -> Option<String> {
     // `manipulate_label_runs` renders these structurally instead.
     Expr::FunctionCall { name, .. } if is_text_layout_head(name) => None,
     Expr::FunctionCall { .. } => {
-      let code = crate::syntax::expr_to_input_form(label);
+      let code = crate::syntax::expr_to_source_form(label);
       match crate::interpret_with_stdout(&code) {
         Ok(result) => {
           if result.graphics.is_some() {
@@ -25389,7 +25922,7 @@ pub fn manipulate_initial_bindings(
         if *is_real {
           format_f64_real(*initial)
         } else {
-          format_f64_input(*initial)
+          format_f64_exact(*initial)
         },
       )),
       ManipulateControl::Trigger { name, initial, .. } => {
@@ -25458,6 +25991,40 @@ fn format_f64_input(v: f64) -> String {
   } else {
     format!("{v}")
   }
+}
+
+/// Format an f64 as an exact InputForm literal: a whole number stays an
+/// integer and a fraction with a small denominator (`1.5`, `0.16666666666666666`)
+/// becomes the rational `3/2` / `1/6`. A continuous control whose spec is all
+/// exact (`{b, 3/2, -5, 5, 1/6}`) binds exact values in Wolfram, and a body
+/// doing exact arithmetic on them (`GCD`, `Sqrt`, `IntegerQ`) depends on it.
+/// A value with no small-denominator form falls back to the decimal literal.
+pub fn format_f64_exact(v: f64) -> String {
+  if !v.is_finite() || v.fract() == 0.0 || v.abs() >= 1e9 {
+    return format_f64_input(v);
+  }
+  let (mut h0, mut h1) = (0i64, 1i64);
+  let (mut k0, mut k1) = (1i64, 0i64);
+  let mut x = v.abs();
+  for _ in 0..20 {
+    let a = x.floor();
+    let ai = a as i64;
+    let (h2, k2) = (ai * h1 + h0, ai * k1 + k0);
+    if k2 > 10_000 {
+      break;
+    }
+    (h0, h1, k0, k1) = (h1, h2, k1, k2);
+    if (v.abs() - h1 as f64 / k1 as f64).abs() <= 1e-9 * v.abs() {
+      let sign = if v < 0.0 { "-" } else { "" };
+      return format!("{sign}{h1}/{k1}");
+    }
+    let frac = x - a;
+    if frac < 1e-12 {
+      break;
+    }
+    x = 1.0 / frac;
+  }
+  format_f64_input(v)
 }
 
 /// Format a list of 2D points as Wolfram input code, e.g.
@@ -25698,7 +26265,7 @@ pub fn apply_manipulate_mutations(
     Ok(Expr::List(ref vals)) if vals.len() == vars.len() => vars
       .into_iter()
       .zip(vals.iter())
-      .map(|(name, v)| (name, crate::syntax::expr_to_input_form(v)))
+      .map(|(name, v)| (name, crate::syntax::expr_to_source_form(v)))
       .collect(),
     _ => Vec::new(),
   }
@@ -25725,7 +26292,7 @@ pub fn apply_manipulate_button_action(
     Ok(Expr::List(ref vals)) if vals.len() == names.len() => names
       .into_iter()
       .map(str::to_string)
-      .zip(vals.iter().map(crate::syntax::expr_to_input_form))
+      .zip(vals.iter().map(crate::syntax::expr_to_source_form))
       .collect(),
     _ => Vec::new(),
   }
@@ -25747,7 +26314,7 @@ pub fn read_manipulate_state(names: &[String]) -> Vec<(String, String)> {
       if matches!(&value, Expr::Identifier(s) if s == name) {
         return None;
       }
-      Some((name.clone(), crate::syntax::expr_to_input_form(&value)))
+      Some((name.clone(), crate::syntax::expr_to_source_form(&value)))
     })
     .collect()
 }
@@ -26083,6 +26650,7 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
         label,
         label_runs,
         action,
+        enabled: _,
       } => {
         ctrl_parts.push(format!(
           r#"{{"kind":"button","label":"{}","labelRuns":{},"action":"{}"}}"#,
@@ -26119,11 +26687,23 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
   }
 
   // Inject each control's `Enabled` condition (when present) into its JSON
-  // object so the frontend can re-evaluate it and grey the control out.
+  // object so the frontend can re-evaluate it and grey the control out. A
+  // `Button`'s own condition travels on the control itself rather than in
+  // the name-keyed `control_enabled` list — it binds no variable, so
+  // `c.name()` is always `""` and a name lookup could never find it (and
+  // would collide across buttons that each have their own condition).
   for (c, part) in spec.controls.iter().zip(ctrl_parts.iter_mut()) {
-    if let Some((_, cond)) =
-      spec.control_enabled.iter().find(|(n, _)| n == c.name())
-      && part.ends_with('}')
+    let button_enabled = match c {
+      ManipulateControl::Button { enabled, .. } => enabled.as_deref(),
+      _ => None,
+    };
+    if let Some(cond) = button_enabled.or_else(|| {
+      spec
+        .control_enabled
+        .iter()
+        .find(|(n, _)| n == c.name())
+        .map(|(_, cond)| cond.as_str())
+    }) && part.ends_with('}')
     {
       let field =
         format!(r#","enabledWhen":"{}""#, json_escape_manipulate(cond));
@@ -26365,7 +26945,7 @@ pub fn build_manipulate_display(
       Some(Expr::List(ref vals)) if vals.len() == ons.len() => vals
         .iter()
         .zip(ons.iter())
-        .map(|(v, on)| crate::syntax::expr_to_input_form(v) == *on)
+        .map(|(v, on)| crate::syntax::expr_to_source_form(v) == *on)
         .collect(),
       _ => vec![false; probes.len()],
     };
@@ -26382,7 +26962,7 @@ fn eval_display_in_scope(
   expr: &Expr,
   bindings: &[(String, String)],
 ) -> Option<Expr> {
-  eval_display_in_scope_str(&crate::syntax::expr_to_input_form(expr), bindings)
+  eval_display_in_scope_str(&crate::syntax::expr_to_source_form(expr), bindings)
 }
 
 /// Like `eval_display_in_scope` but takes the InputForm code directly (used
@@ -26451,11 +27031,16 @@ fn display_expr_to_node(
       // taken verbatim and evaluated only when the button is pressed.
       "Button" if args.len() >= 2 => DisplayNode::Button {
         label: Box::new(display_expr_to_node(&args[0], bindings, probes, ons)),
-        action: crate::syntax::expr_to_input_form(&args[1]),
+        action: crate::syntax::expr_to_source_form(&args[1]),
       },
       "Spacer" if !args.is_empty() => DisplayNode::Spacer {
         width: spacer_width(&args[0]),
       },
+      // `Invisible[expr]` lays out like `expr` but draws nothing (the
+      // Demonstrations idiom for padding a control row), so it must not
+      // surface as its literal source. The reserved extent is not
+      // typeset-measured here; it collapses to an empty spacer.
+      "Invisible" if !args.is_empty() => DisplayNode::Spacer { width: 0.0 },
       // A styled caption fragment: rendered as rich text, not as source.
       "Style" | "StyleForm" if !args.is_empty() => {
         styled_text_node(expr, bindings)
@@ -26621,8 +27206,8 @@ fn pane_selector_content<'a>(
   };
   let sel_arg = unwrap_pane_selector(&args[1]);
   let selector = eval_display_in_scope(sel_arg, bindings).map_or_else(
-    || crate::syntax::expr_to_input_form(sel_arg),
-    |e| crate::syntax::expr_to_input_form(&e),
+    || crate::syntax::expr_to_source_form(sel_arg),
+    |e| crate::syntax::expr_to_source_form(&e),
   );
   panes.iter().find_map(|pane| {
     let (Expr::Rule {
@@ -26636,7 +27221,7 @@ fn pane_selector_content<'a>(
     else {
       return None;
     };
-    (crate::syntax::expr_to_input_form(pattern) == selector)
+    (crate::syntax::expr_to_source_form(pattern) == selector)
       .then_some(replacement.as_ref())
   })
 }
@@ -26676,8 +27261,8 @@ fn checkbox_node(
   // Extract the {off, on} value pair (InputForm), defaulting to False/True.
   let (off, on) = match args.get(1) {
     Some(Expr::List(vs)) if vs.len() == 2 => (
-      crate::syntax::expr_to_input_form(&vs[0]),
-      crate::syntax::expr_to_input_form(&vs[1]),
+      crate::syntax::expr_to_source_form(&vs[0]),
+      crate::syntax::expr_to_source_form(&vs[1]),
     ),
     _ => ("False".to_string(), "True".to_string()),
   };
@@ -26695,7 +27280,7 @@ fn checkbox_node(
   // The expression whose value determines `checked`: the held lvalue for an
   // interactive checkbox, or the (static) first argument otherwise.
   let probe = match dynamic_lval.or_else(|| args.first()) {
-    Some(e) => crate::syntax::expr_to_input_form(e),
+    Some(e) => crate::syntax::expr_to_source_form(e),
     None => "False".to_string(),
   };
   probes.push(probe);
@@ -26703,7 +27288,7 @@ fn checkbox_node(
 
   DisplayNode::Checkbox {
     checked: false,
-    target: dynamic_lval.map(crate::syntax::expr_to_input_form),
+    target: dynamic_lval.map(crate::syntax::expr_to_source_form),
     on,
     off,
   }
@@ -26798,12 +27383,12 @@ fn togglerbar_node(
       let target = find_unique_assignment_target(&dargs[1])?;
       (
         dargs[0].clone(),
-        Some((crate::syntax::expr_to_input_form(&dargs[1]), target)),
+        Some((crate::syntax::expr_to_source_form(&dargs[1]), target)),
       )
     }
     _ => return None,
   };
-  let getter_code = crate::syntax::expr_to_input_form(&getter);
+  let getter_code = crate::syntax::expr_to_source_form(&getter);
   // The choice list may be held (e.g. `Thread[Range[1, 4] -> {…}]`).
   let choices_expr = match &args[1] {
     l @ Expr::List(_) => l.clone(),
@@ -26827,12 +27412,12 @@ fn togglerbar_node(
       } => (pattern.as_ref(), replacement.as_ref()),
       other => (other, other),
     };
-    let value_code = crate::syntax::expr_to_input_form(value);
+    let value_code = crate::syntax::expr_to_source_form(value);
     let selected = match &current {
       Some(Expr::List(items)) => items
         .iter()
-        .any(|it| crate::syntax::expr_to_input_form(it) == value_code),
-      Some(single) => crate::syntax::expr_to_input_form(single) == value_code,
+        .any(|it| crate::syntax::expr_to_source_form(it) == value_code),
+      Some(single) => crate::syntax::expr_to_source_form(single) == value_code,
       None => false,
     };
     let toggled = format!(
@@ -26912,7 +27497,7 @@ fn setterbar_node(
   let current =
     crate::evaluator::evaluate_expr_to_expr(&Expr::Identifier(var.clone()))
       .ok()
-      .map(|e| crate::syntax::expr_to_input_form(&e));
+      .map(|e| crate::syntax::expr_to_source_form(&e));
   let mut buttons = Vec::with_capacity(choices.len());
   for choice in choices {
     let (value, label) = match choice {
@@ -26926,7 +27511,7 @@ fn setterbar_node(
       } => (pattern.as_ref(), replacement.as_ref()),
       other => (other, other),
     };
-    let value_code = crate::syntax::expr_to_input_form(value);
+    let value_code = crate::syntax::expr_to_source_form(value);
     let selected = current.as_deref() == Some(value_code.as_str());
     let mutation = format!("{var} = {value_code}");
     buttons.push(DisplayNode::Toggler {
@@ -27047,7 +27632,7 @@ fn action_menu_node(
         Expr::String(s) => s.clone(),
         other => flatten_label_runs(&manipulate_label_runs(other, false)),
       };
-      Some((label, crate::syntax::expr_to_input_form(replacement)))
+      Some((label, crate::syntax::expr_to_source_form(replacement)))
     })
     .collect();
   if entries.is_empty() {
@@ -27068,7 +27653,7 @@ fn popup_node(args: &[Expr]) -> Option<DisplayNode> {
     }
     _ => return None,
   };
-  let target = crate::syntax::expr_to_input_form(lval);
+  let target = crate::syntax::expr_to_source_form(lval);
   // The choice list may be held (e.g. `Thread[Range[1, 4] -> {…}]`).
   let choices_expr = match &args[1] {
     l @ Expr::List(_) => l.clone(),
@@ -27084,7 +27669,7 @@ fn popup_node(args: &[Expr]) -> Option<DisplayNode> {
   // The value currently held at `lval`, to preselect its choice.
   let current = crate::evaluator::evaluate_expr_to_expr(lval).map_or_else(
     |_| target.clone(),
-    |e| crate::syntax::expr_to_input_form(&e),
+    |e| crate::syntax::expr_to_source_form(&e),
   );
   // A trailing `Enabled -> cond`, evaluated against the same live bindings
   // `current` just used. Anything but a `False` result — including a failed
@@ -27157,7 +27742,7 @@ fn assign_checkbox_state(
 /// the same treatment before falling back to the plain OutputForm text.
 fn static_leaf_node(expr: &Expr, bindings: &[(String, String)]) -> DisplayNode {
   let code =
-    manipulate_block_code(&crate::syntax::expr_to_input_form(expr), bindings);
+    manipulate_block_code(&crate::syntax::expr_to_source_form(expr), bindings);
   match crate::interpret_with_stdout(&code) {
     Ok(r) => {
       if let Some(svg) = r.graphics {
@@ -27778,7 +28363,7 @@ mod manipulate_dynamic_control_list_tests {
   fn dynamic_wrapped_control_list_flattens_to_controls() {
     let s = spec("Manipulate[x, Dynamic[{Control[{{x, 0}, -1, 1}]}]]");
     assert_eq!(names(&s), vec!["x"]);
-    assert!(s.displays.is_empty());
+    assert_eq!(s.displays, [] as [std::string::String; 0]);
   }
 
   /// `Dynamic[Column[{Control[…], …}]]` (the Demonstrations idiom for a
@@ -27794,7 +28379,7 @@ mod manipulate_dynamic_control_list_tests {
        Control[{{y, 0}, -1, 1}]}]]]",
     );
     assert_eq!(names(&s), vec!["x", "y"]);
-    assert!(s.displays.is_empty());
+    assert_eq!(s.displays, [] as [std::string::String; 0]);
   }
 
   /// The same flattening applies when the controls are colour pickers
@@ -27809,7 +28394,7 @@ mod manipulate_dynamic_control_list_tests {
        ImageSize -> Tiny}]}]]]",
     );
     assert_eq!(names(&s), vec!["col"]);
-    assert!(s.displays.is_empty());
+    assert_eq!(s.displays, [] as [std::string::String; 0]);
     assert!(matches!(&s.controls[0], ManipulateControl::Color { .. }));
   }
 
@@ -28057,7 +28642,10 @@ mod manipulate_dynamic_control_list_tests {
   #[test]
   fn no_bookmarks_option_leaves_bookmarks_empty() {
     let s = spec("Manipulate[Graphics[{Circle[{0, 0}, r]}], {r, 1, 5}]");
-    assert!(s.bookmarks.is_empty());
+    assert_eq!(
+      s.bookmarks,
+      [] as [(std::string::String, std::string::String); 0]
+    );
   }
 }
 
@@ -28730,6 +29318,72 @@ mod manipulate_traditional_form_choice_svg_tests {
 }
 
 #[cfg(test)]
+mod manipulate_button_enabled_tests {
+  use super::*;
+
+  /// A `Button[label, action, Enabled -> Dynamic[cond]]` must keep its own
+  /// `Enabled` condition, and `manipulate_spec_to_json` must emit it as
+  /// that button's own `enabledWhen`. Regression: the `Button` branch of
+  /// `extract_manipulate_spec` only ever read `args[0]`/`args[1]`, silently
+  /// dropping any option past `action` — and even a correctly-parsed
+  /// condition would have nowhere to go, since `ManipulateControl::Button`
+  /// binds no variable (`name()` is `""`), so the ordinary name-keyed
+  /// `control_enabled` lookup every other control type uses could never
+  /// find it (and two buttons with different conditions would collide on
+  /// that one shared empty-string key).
+  #[test]
+  fn button_enabled_condition_is_parsed_and_exported_per_button() {
+    let expr = crate::parse_to_expr(
+      "Manipulate[Graphics[{}], \
+       {{on, True}, {True, False}, ControlType -> None}, \
+       Row[{Button[\"go\", on = on, Enabled -> Dynamic[on]], \
+       Button[\"reset\", on = True]}]]",
+    )
+    .expect("parse");
+    let spec = extract_manipulate_spec(&expr).expect("extract spec");
+    let buttons: Vec<&ManipulateControl> = spec
+      .controls
+      .iter()
+      .filter(|c| matches!(c, ManipulateControl::Button { .. }))
+      .collect();
+    assert_eq!(buttons.len(), 2, "both buttons: {:?}", spec.controls);
+    let ManipulateControl::Button {
+      enabled: go_enabled,
+      ..
+    } = buttons[0]
+    else {
+      unreachable!()
+    };
+    let ManipulateControl::Button {
+      enabled: reset_enabled,
+      ..
+    } = buttons[1]
+    else {
+      unreachable!()
+    };
+    assert_eq!(go_enabled.as_deref(), Some("on"));
+    assert_eq!(
+      reset_enabled, &None,
+      "a button with no Enabled option must carry none"
+    );
+
+    let json = manipulate_spec_to_json(&spec);
+    assert!(
+      json.contains(r#""action":"on = on","enabledWhen":"on""#),
+      "the gated button's own JSON object must carry enabledWhen: {json}"
+    );
+    assert!(
+      !json[json
+        .find(r#""label":"reset""#)
+        .expect("reset button in json")..]
+        .contains("enabledWhen"),
+      "the ungated sibling must not pick up the other button's \
+       condition: {json}"
+    );
+  }
+}
+
+#[cfg(test)]
 mod manipulate_hidden_state_var_tests {
   use super::*;
 
@@ -28783,6 +29437,31 @@ mod manipulate_hidden_state_var_tests {
     assert_eq!(
       spec.state,
       vec![("accum".to_string(), "Thickness[0.01]".to_string())]
+    );
+  }
+}
+
+#[cfg(test)]
+mod format_f64_exact_tests {
+  use super::format_f64_exact;
+
+  #[test]
+  fn fractions_become_exact_rationals() {
+    assert_eq!(format_f64_exact(1.5), "3/2");
+    assert_eq!(format_f64_exact(-5.0 + 37.0 / 6.0), "7/6");
+    assert_eq!(format_f64_exact(-1.0 / 6.0), "-1/6");
+    assert_eq!(format_f64_exact(0.1), "1/10");
+  }
+
+  #[test]
+  fn integers_and_irrationals_keep_plain_form() {
+    assert_eq!(format_f64_exact(4.0), "4");
+    assert_eq!(format_f64_exact(-3.0), "-3");
+    // A tiny value must not collapse to `0/1`.
+    assert_eq!(format_f64_exact(1e-9), format!("{}", 1e-9));
+    assert_eq!(
+      format_f64_exact(std::f64::consts::PI),
+      format!("{}", std::f64::consts::PI)
     );
   }
 }

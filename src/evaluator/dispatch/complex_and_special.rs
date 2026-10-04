@@ -4192,6 +4192,15 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       ];
       call("TemplateBox", template)
     }
+    Expr::FunctionCall { name, args }
+      if args.len() == 2 && assignment_operator(name).is_some() =>
+    {
+      row_box(vec![
+        expr_to_box_form(&args[0]),
+        Expr::String(assignment_operator(name).unwrap().to_string()),
+        expr_to_box_form(&args[1]),
+      ])
+    }
     // General function call f[x, y] → RowBox[{f, "[", RowBox[{x, ",", y}], "]"}]
     Expr::FunctionCall { name, args } => {
       let mut parts = Vec::new();
@@ -4504,6 +4513,20 @@ pub fn traditional_boxes_to_standard(boxes: &Expr) -> Expr {
           arg.clone(),
           tf_string("]"),
         ]);
+      }
+      // TraditionalForm writes an equation with a bare `=`, and reads that
+      // token back as `==` (a `Set` would assign instead of typeset).
+      if name == "RowBox"
+        && let [Expr::List(items)] = &args[..]
+      {
+        let items: Vec<Expr> = items
+          .iter()
+          .map(|item| match item {
+            Expr::String(s) if s == "=" => Expr::String("==".to_string()),
+            other => other.clone(),
+          })
+          .collect();
+        return row_box(items);
       }
       call(name, args)
     }
@@ -5247,8 +5270,32 @@ fn tf_applied(head: Expr, args: &[Expr]) -> Expr {
 }
 
 /// Dispatch a function call to its TraditionalForm rendering.
+/// The infix operator an assignment head is written with, `Set[a, b]` being
+/// `a = b`: notebooks show a held assignment (`HoldForm[x = 1]`) as the
+/// equation it reads as, not as a call.
+fn assignment_operator(name: &str) -> Option<&'static str> {
+  Some(match name {
+    "Set" => "=",
+    "SetDelayed" => ":=",
+    "AddTo" => "+=",
+    "SubtractFrom" => "-=",
+    "TimesBy" => "*=",
+    "DivideBy" => "/=",
+    "UpSet" => "^=",
+    "UpSetDelayed" => "^:=",
+    _ => return None,
+  })
+}
+
 fn tf_call(name: &str, args: &[Expr]) -> Expr {
   match name {
+    _ if args.len() == 2 && assignment_operator(name).is_some() => {
+      tf_row(vec![
+        tf(&args[0]),
+        tf_string(assignment_operator(name).unwrap()),
+        tf(&args[1]),
+      ])
+    }
     // `HoldForm` leaves a mark on the box tree — a `TagBox` naming it — so
     // the boxes still say the expression was held; it draws as its content.
     "HoldForm" if args.len() == 1 => {

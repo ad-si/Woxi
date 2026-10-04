@@ -168,16 +168,16 @@ fn an_unknown_notification_is_ignored() {
   let responses = server.handle_message(&json!({
     "jsonrpc": "2.0", "method": "$/setTrace", "params": { "value": "off" },
   }));
-  assert!(responses.is_empty());
+  assert_eq!(responses, [] as [serde_json::Value; 0]);
 }
 
 #[test]
 fn a_response_from_the_client_is_ignored() {
   let mut server = initialized_server();
-  assert!(
+  assert_eq!(
     server
-      .handle_message(&json!({ "jsonrpc": "2.0", "id": 1, "result": null }))
-      .is_empty()
+      .handle_message(&json!({ "jsonrpc": "2.0", "id": 1, "result": null })),
+    [] as [serde_json::Value; 0]
   );
 }
 
@@ -223,7 +223,8 @@ fn changing_a_document_republishes_diagnostics() {
       "contentChanges": [{ "text": "f[1, 2]" }],
     },
   }));
-  assert!(diagnostics_of(&notifications).is_empty());
+  let diagnostics = diagnostics_of(&notifications);
+  assert_eq!(diagnostics.as_slice(), [] as [serde_json::Value; 0]);
   assert_eq!(notifications[0]["params"]["version"], json!(2));
 }
 
@@ -236,7 +237,8 @@ fn closing_a_document_clears_its_diagnostics() {
     "method": "textDocument/didClose",
     "params": { "textDocument": { "uri": "file:///test.wls" } },
   }));
-  assert!(diagnostics_of(&notifications).is_empty());
+  let diagnostics = diagnostics_of(&notifications);
+  assert_eq!(diagnostics.as_slice(), [] as [serde_json::Value; 0]);
   // The document is gone, so requests about it fail with invalid params.
   let responses = server.handle_message(&json!({
     "jsonrpc": "2.0",

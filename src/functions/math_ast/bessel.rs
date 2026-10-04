@@ -883,7 +883,7 @@ pub fn bessel_k(n: f64, z: f64) -> f64 {
 fn bessel_k01(z: f64) -> (f64, f64) {
   if z <= 2.0 {
     // Series for K_0 and K_1
-    let euler_gamma = 0.5772156649015329;
+    let euler_gamma = std::f64::consts::EULER_GAMMA;
     let lnz2 = (z / 2.0).ln();
     let t = z * z / 4.0;
 
@@ -1088,7 +1088,7 @@ pub fn bessel_y(n: f64, z: f64) -> f64 {
 /// Y_0(z) = (2/π) * (J_0(z) * (ln(z/2) + γ) + Σ (-1)^{m+1} H_m * (z/2)^{2m} / (m!)^2)
 fn bessel_y0(z: f64) -> f64 {
   let two_over_pi = 2.0 / std::f64::consts::PI;
-  let euler_gamma = 0.5772156649015329;
+  let euler_gamma = std::f64::consts::EULER_GAMMA;
   let half_z = z / 2.0;
 
   let j0 = bessel_j(0.0, z);
@@ -1115,7 +1115,7 @@ fn bessel_y0(z: f64) -> f64 {
 /// Y_1(z) = (2/π) * (J_1(z) * ln(z/2) - 1/z + Σ ...)
 fn bessel_y1(z: f64) -> f64 {
   let two_over_pi = 2.0 / std::f64::consts::PI;
-  let euler_gamma = 0.5772156649015329;
+  let euler_gamma = std::f64::consts::EULER_GAMMA;
   let half_z = z / 2.0;
 
   let j1 = bessel_j(1.0, z);
@@ -1870,7 +1870,7 @@ pub fn kelvin_bei_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// where φ(n) = 1 + 1/2 + … + 1/n.
 fn ker_series(x: f64) -> f64 {
   use std::f64::consts::PI;
-  let euler_gamma = 0.5772156649015329_f64;
+  let euler_gamma = std::f64::consts::EULER_GAMMA;
   let half = x * 0.5;
   let half2 = half * half;
   let mut total =
@@ -1901,7 +1901,7 @@ fn ker_series(x: f64) -> f64 {
 ///          + Σ_{k=0..} (-1)^k φ(2k+1) (x/2)^(4k+2) / ((2k+1)!)^2
 fn kei_series(x: f64) -> f64 {
   use std::f64::consts::PI;
-  let euler_gamma = 0.5772156649015329_f64;
+  let euler_gamma = std::f64::consts::EULER_GAMMA;
   let half = x * 0.5;
   let half2 = half * half;
   let mut total =
@@ -1932,7 +1932,7 @@ fn kei_series(x: f64) -> f64 {
 /// complex arithmetic.
 fn ker_series_complex(re: f64, im: f64) -> (f64, f64) {
   use std::f64::consts::PI;
-  let euler_gamma = 0.5772156649015329_f64;
+  let euler_gamma = std::f64::consts::EULER_GAMMA;
   let half_re = re * 0.5;
   let half_im = im * 0.5;
   // ln(z/2) = ln|z/2| + I*arg(z/2)
@@ -1984,7 +1984,7 @@ fn ker_series_complex(re: f64, im: f64) -> (f64, f64) {
 /// Complex-valued `kei(z)` via the same series as the real version.
 fn kei_series_complex(re: f64, im: f64) -> (f64, f64) {
   use std::f64::consts::PI;
-  let euler_gamma = 0.5772156649015329_f64;
+  let euler_gamma = std::f64::consts::EULER_GAMMA;
   let half_re = re * 0.5;
   let half_im = im * 0.5;
   let ln_mag = 0.5 * (half_re * half_re + half_im * half_im).ln();

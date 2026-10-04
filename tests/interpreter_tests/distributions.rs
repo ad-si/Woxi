@@ -7160,7 +7160,7 @@ mod coxian_distribution {
     clear_state();
     let r = interpret_with_stdout("CoxianDistribution[{2}, {2, 3}]").unwrap();
     assert_eq!(r.result, "CoxianDistribution[{2}, {2, 3}]");
-    assert!(r.warnings.is_empty());
+    assert_eq!(r.warnings, [] as [std::string::String; 0]);
 
     clear_state();
     let r =
@@ -7318,7 +7318,7 @@ mod hyperexponential_distribution {
     let r =
       interpret_with_stdout("HyperexponentialDistribution[{2, -1}, {2, 5}]")
         .unwrap();
-    assert!(r.warnings.is_empty());
+    assert_eq!(r.warnings, [] as [std::string::String; 0]);
   }
 }
 
@@ -7405,7 +7405,7 @@ mod von_mises_distribution {
 
     clear_state();
     let r = interpret_with_stdout("VonMisesDistribution[2, -1]").unwrap();
-    assert!(r.warnings.is_empty());
+    assert_eq!(r.warnings, [] as [std::string::String; 0]);
   }
 }
 
@@ -7602,7 +7602,7 @@ mod hotelling_t_square_distribution {
     )
     .unwrap();
     assert_eq!(r.result, "{5, Indeterminate, Indeterminate, 18}");
-    assert!(r.warnings.is_empty());
+    assert_eq!(r.warnings, [] as [std::string::String; 0]);
 
     clear_state();
     assert_eq!(
@@ -8228,7 +8228,7 @@ mod compound_poisson_distribution {
       "CompoundPoissonDistribution[-2, ExponentialDistribution[3]]",
     )
     .unwrap();
-    assert!(r.warnings.is_empty());
+    assert_eq!(r.warnings, [] as [std::string::String; 0]);
   }
 }
 
@@ -8642,6 +8642,59 @@ mod reliability_distribution {
       .unwrap(),
       "ReliabilityDistribution[Subscript[c, 1], \
        {{Subscript[c, 1], ExponentialDistribution[a]}}]"
+    );
+  }
+}
+
+mod noncentral_student_t_distribution {
+  use super::*;
+
+  fn real(code: &str) -> f64 {
+    interpret(code).unwrap().parse().unwrap()
+  }
+
+  #[test]
+  fn cdf_numeric() {
+    assert!(
+      (real("CDF[NoncentralStudentTDistribution[8, 3], 2.3]") - 0.25020).abs()
+        < 1e-4
+    );
+    // Negative arguments use the reflected series.
+    assert!(
+      (real("CDF[NoncentralStudentTDistribution[5, 1.5], -1.]") - 0.00938)
+        .abs()
+        < 1e-4
+    );
+  }
+
+  #[test]
+  fn zero_noncentrality_is_student_t() {
+    let a = real("CDF[NoncentralStudentTDistribution[3, 0], 1.]");
+    let b = real("CDF[StudentTDistribution[3], 1.]");
+    assert!((a - b).abs() < 1e-12);
+  }
+
+  #[test]
+  fn pdf_numeric() {
+    assert!(
+      (real("PDF[NoncentralStudentTDistribution[8, 3], 2.3]")
+        - 0.28774068556795)
+        .abs()
+        < 1e-9
+    );
+    assert!(
+      (real("PDF[NoncentralStudentTDistribution[4, 1.2], 0]")
+        - 0.18253209598498)
+        .abs()
+        < 1e-9
+    );
+  }
+
+  #[test]
+  fn symbolic_stays_unevaluated() {
+    assert_eq!(
+      interpret("CDF[NoncentralStudentTDistribution[n, d], x]").unwrap(),
+      "CDF[NoncentralStudentTDistribution[n, d], x]"
     );
   }
 }
