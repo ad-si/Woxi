@@ -1631,8 +1631,7 @@ pub fn harmonic_number_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     // Real input - use digamma approximation
     // Euler-Mascheroni constant
-    const EULER_GAMMA: f64 = 0.5772156649015329;
-    let result = digamma(x + 1.0) + EULER_GAMMA;
+    let result = digamma(x + 1.0) + std::f64::consts::EULER_GAMMA;
     return Ok(Expr::Real(result));
   }
 

@@ -1058,4 +1058,68 @@ mod wavelets {
       "WaveletMatrixPlot"
     );
   }
+
+  // -------------------------------------------------------------------------
+  // Transforms of images
+  // -------------------------------------------------------------------------
+
+  #[test]
+  fn transforms_of_an_image_round_trip_to_an_image() {
+    let setup =
+      "img = Image[Table[Mod[i j 7, 256], {i, 8}, {j, 8}], \"Byte\"]; ";
+    for transform in [
+      "DiscreteWaveletTransform[img, HaarWavelet[], 2]",
+      "StationaryWaveletTransform[img, HaarWavelet[], 2]",
+    ] {
+      assert_eq!(
+        interpret(&format!("{setup}Head[{transform}]")).unwrap(),
+        "DiscreteWaveletData"
+      );
+      assert_eq!(
+        interpret(&format!(
+          "{setup}Head[InverseWaveletTransform[{transform}]]"
+        ))
+        .unwrap(),
+        "Image"
+      );
+      assert_eq!(
+        interpret(&format!(
+          "{setup}Max[Abs[ImageData[InverseWaveletTransform[{transform}]] \
+           - ImageData[img]]] < 10^-6"
+        ))
+        .unwrap(),
+        "True"
+      );
+    }
+  }
+
+  #[test]
+  fn wavelet_map_indexed_hands_image_coefficients_to_the_function() {
+    // Scaling every coefficient image through ImageMultiply must work, and
+    // the mapped data must still invert to an image.
+    assert_eq!(
+      interpret(
+        "img = Image[Table[Mod[i j 7, 256], {i, 8}, {j, 8}], \"Byte\"]; \
+         d = StationaryWaveletTransform[img, HaarWavelet[], 2]; \
+         m = WaveletMapIndexed[ImageMultiply[#1, 0.5] &, d]; \
+         {Head[m], Head[InverseWaveletTransform[m]], \
+          Head[m[{0, 0}][[1, 2]]]}"
+      )
+      .unwrap(),
+      "{DiscreteWaveletData, Image, Image}"
+    );
+  }
+
+  #[test]
+  fn wavelet_threshold_keeps_image_data_an_image() {
+    assert_eq!(
+      interpret(
+        "img = Image[Table[Mod[i j 7, 256], {i, 8}, {j, 8}], \"Byte\"]; \
+         d = StationaryWaveletTransform[img, HaarWavelet[], 2]; \
+         Head[InverseWaveletTransform[WaveletThreshold[d, {\"Soft\", 0.1, 1}]]]"
+      )
+      .unwrap(),
+      "Image"
+    );
+  }
 }

@@ -377,7 +377,10 @@ mod example_data_tests {
         .unwrap(),
       "ExampleData[{Geometry3D, Cow}, PolygonObjects]"
     );
-    assert!(woxi::get_captured_messages_raw().is_empty());
+    assert_eq!(
+      woxi::get_captured_messages_raw(),
+      [] as [std::string::String; 0]
+    );
   }
 
   /// A name outside the catalogue is reported; one that is in the catalogue
@@ -404,7 +407,10 @@ mod example_data_tests {
       interpret("ExampleData[{\"NetworkGraph\", \"WorldWideWeb\"}]").unwrap(),
       "ExampleData[{NetworkGraph, WorldWideWeb}]"
     );
-    assert!(woxi::get_captured_messages_raw().is_empty());
+    assert_eq!(
+      woxi::get_captured_messages_raw(),
+      [] as [std::string::String; 0]
+    );
   }
 
   #[test]

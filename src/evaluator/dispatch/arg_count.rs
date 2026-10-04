@@ -1436,6 +1436,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "BetaPrimeDistribution" => Some((2, 4)),
     "JulianDate" => Some((0, 1)),
     "NoncentralChiSquareDistribution" => Some((2, 2)),
+    "NoncentralStudentTDistribution" => Some((2, 2)),
     "MarcumQ" => Some((3, 4)),
     "OwenT" => Some((2, 2)),
     "ExponentialPowerDistribution" => Some((3, 3)),

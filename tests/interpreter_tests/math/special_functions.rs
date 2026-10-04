@@ -2159,7 +2159,7 @@ mod polygamma {
   #[test]
   fn numeric_digamma() {
     let result: f64 = interpret("PolyGamma[1.0]").unwrap().parse().unwrap();
-    assert!((result - (-0.5772156649015329)).abs() < 1e-10);
+    assert!((result - (-std::f64::consts::EULER_GAMMA)).abs() < 1e-10);
   }
 
   #[test]

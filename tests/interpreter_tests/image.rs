@@ -830,9 +830,8 @@ mod image_processing {
 
   // `Colorize[<integer-matrix>, …]` renders the matrix as an
   // Image (printed as `-Image-`). The `ColorFunction -> …` option
-  // is accepted but currently the renderer maps each label to a
-  // shade of gray; the displayed placeholder still matches
-  // wolframscript. Regression for mathics image/colors.py
+  // is honored (see the `colorize_*_color_function` tests below); the
+  // displayed placeholder matches wolframscript. Regression for mathics image/colors.py
   // `Colorize[{{1, 2}, {2, 2}, {2, 3}}, …]` row.
   #[test]
   fn colorize_integer_matrix_returns_image() {
@@ -847,6 +846,51 @@ mod image_processing {
   fn colorize_simple_matrix_returns_image() {
     clear_state();
     assert_eq!(interpret("Colorize[{{1, 2}, {3, 4}}]").unwrap(), "-Image-");
+  }
+
+  #[test]
+  fn colorize_automatic_background_is_white() {
+    clear_state();
+    assert_eq!(
+      interpret("ImageData[Colorize[{{0, 1}, {1, 2}}]][[1, 1]]").unwrap(),
+      "{1., 1., 1.}"
+    );
+  }
+
+  #[test]
+  fn colorize_hue_color_function() {
+    clear_state();
+    // Label 0 maps to t = 0 -> Hue[0] (red); label 2 maps to t = 1.
+    assert_eq!(
+      interpret("ImageData[Colorize[{{0, 2}}, ColorFunction -> Hue]][[1, 1]]")
+        .unwrap(),
+      "{1., 0., 0.}"
+    );
+  }
+
+  #[test]
+  fn colorize_function_color_function() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[Colorize[{{1, 3}}, ColorFunction -> (GrayLevel[1 - #] &)]][[1]]"
+      )
+      .unwrap(),
+      "{{1., 1., 1.}, {0., 0., 0.}}"
+    );
+  }
+
+  #[test]
+  fn colorize_named_gradient_color_function() {
+    clear_state();
+    // Different labels get different colors from a named gradient.
+    assert_eq!(
+      interpret(
+        "Length[Union[Flatten[ImageData[Colorize[{{0, 1, 2, 3}}, ColorFunction -> \"TemperatureMap\"]], 1]]]"
+      )
+      .unwrap(),
+      "4"
+    );
   }
 
   #[test]
@@ -6674,6 +6718,21 @@ mod component_measurements {
     assert_eq!(
       interpret("ComponentMeasurements[{{3, 0}, {0, 3}}, \"Count\"]").unwrap(),
       "{3 -> 2}"
+    );
+  }
+
+  // "LabelCount" is the total number of components, reported per component.
+  #[test]
+  fn label_count() {
+    assert_eq!(
+      interpret("ComponentMeasurements[{{1, 0}, {0, 2}}, \"LabelCount\"]")
+        .unwrap(),
+      "{1 -> 2, 2 -> 2}"
+    );
+    assert_eq!(
+      interpret("Max[Values[ComponentMeasurements[{{1, 1, 0}, {0, 0, 3}}, \"LabelCount\"]]]")
+        .unwrap(),
+      "2"
     );
   }
 
