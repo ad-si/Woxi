@@ -2544,6 +2544,36 @@ mod graphics {
       assert_eq!(wrapped, primitive);
     }
 
+    /// `Rotate[g, {u, v}]` turns the direction `u` onto the direction `v`,
+    /// i.e. by the angle between them — the treadmill incline in a
+    /// Demonstration is written this way.
+    #[test]
+    fn rotate_with_vector_pair_matches_the_equivalent_angle() {
+      let pair = export_svg(
+        "Graphics[Rotate[Rectangle[{-1, -1/2}, {3, 0}], {{4, 0}, {0, 3}}]]",
+      );
+      let angle = export_svg(
+        "Graphics[Rotate[Rectangle[{-1, -1/2}, {3, 0}], ArcTan[0, 3] - ArcTan[4, 0]]]",
+      );
+      assert_eq!(pair, angle);
+      let flat = export_svg("Graphics[Rectangle[{-1, -1/2}, {3, 0}]]");
+      assert_ne!(pair, flat, "the vector pair must actually rotate");
+    }
+
+    /// `PlotRangeClipping -> False` stops a `Plot`'s Epilog being cut off
+    /// at the frame, so a label anchored near the edge shows in full.
+    #[test]
+    fn plot_range_clipping_false_leaves_epilog_unclipped() {
+      let clipped =
+        export_svg("Plot[x, {x, 0, 1}, Epilog -> Text[\"label\", {1, 1}]]");
+      assert!(clipped.contains("epilogClip_"), "{clipped}");
+      let open = export_svg(
+        "Plot[x, {x, 0, 1}, Epilog -> Text[\"label\", {1, 1}], PlotRangeClipping -> False]",
+      );
+      assert!(!open.contains("epilogClip_"), "{open}");
+      assert!(open.contains("label"), "{open}");
+    }
+
     /// A wrapped `Graphics` built from several primitives (here, a
     /// `Table`-generated ring of disks) must draw in full, not just its
     /// first shape.

@@ -2284,13 +2284,14 @@ fn collect_primitives(
           parse_infinite_line(args, style, prims, true);
         }
         // Rotate[g, θ] rotates g by θ radians counterclockwise about the
-        // center of its bounding box; Rotate[g, θ, {x, y}] about the point
+        // center of its bounding box; Rotate[g, {u, v}] by the angle that
+        // carries the direction u onto the direction v; Rotate[g, θ, {x, y}] about the point
         // {x, y}. Collect the inner primitives, then rotate their coordinates.
         "Rotate" if args.len() >= 2 => {
           let mut inner_style = style.clone();
           let mut inner = Vec::new();
           collect_primitives(&args[0], &mut inner_style, &mut inner, errors);
-          match expr_to_f64(&args[1]) {
+          match rotation_angle(&args[1]) {
             Some(angle) => {
               let (cx, cy) =
                 args.get(2).and_then(expr_to_point).unwrap_or_else(|| {
@@ -4891,6 +4892,26 @@ fn affine_primitive(
   let scaled = scale_primitive(&rotated, 0.0, 0.0, sx, sy);
   let rotated = rotate_primitive(&scaled, 0.0, 0.0, phi);
   translate_primitive(&rotated, v.0, v.1)
+}
+
+/// The counterclockwise angle of a 2D `Rotate` specification: a plain
+/// number `θ`, or a pair of vectors `{u, v}` meaning "rotate `u` onto `v`".
+fn rotation_angle(spec: &Expr) -> Option<f64> {
+  if let Some(angle) = expr_to_f64(spec) {
+    return Some(angle);
+  }
+  let Expr::List(items) = spec else {
+    return None;
+  };
+  if items.len() != 2 {
+    return None;
+  }
+  let (ux, uy) = expr_to_point(&items[0])?;
+  let (vx, vy) = expr_to_point(&items[1])?;
+  if (ux == 0.0 && uy == 0.0) || (vx == 0.0 && vy == 0.0) {
+    return None;
+  }
+  Some(vy.atan2(vx) - uy.atan2(ux))
 }
 
 fn rotate_primitive(
