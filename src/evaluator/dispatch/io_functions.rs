@@ -5657,6 +5657,71 @@ fn evaluated_wrapper_svg(expr: &Expr) -> Option<String> {
 /// for `Automatic`, `Full`, or anything else that leaves that dimension
 /// unconstrained, so a size like `{400, Automatic}` is left for the
 /// unconstrained pass-through rather than clipped against a made-up bound.
+/// A `Pane[text, {w, h}]` breaks its text into lines that fit the width
+/// rather than running it off the edge. `content` is a `Row` of strings
+/// (optionally under `Text` and `Style`); it is re-flowed into a `Column`
+/// of lines whose length follows the font size, keeping the `Style`.
+fn wrap_pane_text(content: &Expr, width: f64, font_size: f64) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = content else {
+    return None;
+  };
+  match name.as_str() {
+    "Style" if !args.is_empty() => {
+      let size = style_font_size(&args[1..]).unwrap_or(font_size);
+      let inner = wrap_pane_text(&args[0], width, size)?;
+      let mut new_args = vec![inner];
+      new_args.extend(args[1..].iter().cloned());
+      Some(Expr::FunctionCall {
+        name: "Style".to_string(),
+        args: new_args.into(),
+      })
+    }
+    "Text" if args.len() == 1 => wrap_pane_text(&args[0], width, font_size),
+    "Row" if args.len() == 1 => {
+      let Expr::List(items) = &args[0] else {
+        return None;
+      };
+      let mut text = String::new();
+      for item in items {
+        match item {
+          Expr::String(s) => text.push_str(s),
+          _ => return None,
+        }
+      }
+      // A glyph is about 0.6 em wide.
+      let per_line = ((width / (font_size * 0.6)).floor() as usize).max(1);
+      let chars: Vec<char> = text.chars().collect();
+      if chars.len() <= per_line {
+        return None;
+      }
+      let lines: Vec<Expr> = chars
+        .chunks(per_line)
+        .map(|c| Expr::String(c.iter().collect()))
+        .collect();
+      Some(Expr::FunctionCall {
+        name: "Column".to_string(),
+        args: vec![Expr::List(lines.into())].into(),
+      })
+    }
+    _ => None,
+  }
+}
+
+/// The font size a `Style` directive list sets, if any.
+fn style_font_size(directives: &[Expr]) -> Option<f64> {
+  directives.iter().find_map(|d| match d {
+    Expr::Integer(n) => Some(*n as f64),
+    Expr::Real(r) => Some(*r),
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(&**pattern, Expr::Identifier(n) if n == "FontSize") => {
+      pane_size_component(replacement)
+    }
+    _ => None,
+  })
+}
+
 pub(crate) fn pane_size_component(expr: &Expr) -> Option<f64> {
   match expr {
     Expr::Integer(n) => Some(*n as f64),
@@ -5686,7 +5751,14 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     Expr::FunctionCall { name, args }
       if (name == "Pane" || name == "Deploy") && !args.is_empty() =>
     {
-      let inner_svg = expr_to_svg(&args[0]);
+      let wrapped = match (name.as_str(), args.get(1)) {
+        ("Pane", Some(Expr::List(size))) if size.len() == 2 => {
+          pane_size_component(&size[0])
+            .and_then(|w| wrap_pane_text(&args[0], w, 14.0))
+        }
+        _ => None,
+      };
+      let inner_svg = expr_to_svg(wrapped.as_ref().unwrap_or(&args[0]));
       match (name.as_str(), args.get(1)) {
         ("Pane", Some(Expr::List(size))) if size.len() == 2 => {
           match (pane_size_component(&size[0]), pane_size_component(&size[1])) {

@@ -638,7 +638,7 @@ PlotLabels,Option for labeling plot curves,✅,none,10.4,597
 Scale,Scales a graphics object,✅,pure,6.0,597
 Log10,Returns the base-10 logarithm of a number,✅,pure,7.0,598
 EndPackage,Ends a package and puts its context on $ContextPath so its exports become visible,✅,effectful,1.0,599
-PolyhedronData,Properties of named polyhedra (Platonic solids; the icosahedral and cubic Archimedean solids and their duals; the great stellated dodecahedron and rhombic hexecontahedron stellations; the triangular orthobicupola; and MathematicaSpikey),🚧,pure,6.0,601
+PolyhedronData,Properties of named polyhedra (Platonic solids; the Bilinski dodecahedron; the icosahedral and cubic Archimedean solids and their duals; the great stellated dodecahedron and rhombic hexecontahedron stellations; the triangular orthobicupola; and MathematicaSpikey),🚧,pure,6.0,601
 PolyhedronOperations`Truncate,Corner-cuts each Polygon face of a graphics expression to a ratio (default 3/10) of its edge length; resolves Rotate/Translate-wrapped faces first,✅,pure,3.0,
 PolyhedronOperations`Stellate,Replaces each Polygon face of a graphics expression with a pyramid to a ratio (default 2) of the face's centroid distance; resolves Rotate/Translate-wrapped faces first,✅,pure,3.0,
 Nearest,Find the nearest elements in a list to a given value (numbers/vectors by Euclidean distance; strings by edit distance) — DistanceFunction supplies another metric; empty or non-list data reports ::near1,✅,pure,6.0,602
@@ -1051,7 +1051,7 @@ StudentTDistribution,Represents a Student t-distribution with nu degrees of free
 AppearanceElements,Option specifying which interface elements appear,✅,pure,6.0,1031
 TimesBy,Multiplies a variable by a value,✅,stateful,1.0,1032
 Merge,Merges associations using a combining function,✅,pure,10.0,1033
-Colorize,Colorize a label matrix or image,✅,,8.0,1035
+Colorize,Colorize a label matrix using Automatic or a custom ColorFunction,✅,,8.0,1035
 NumberPadding,Option for the NumberForm family giving the pad strings as {left; right} or a single string for the integer field only,✅,pure,2.0,1035
 ImageMultiply,Multiplies pixel values of two images pointwise,✅,pure,7.0,1038
 TimeSeries,Represents a time series of values paired with time stamps,✅,pure,10.0,1038
@@ -1244,7 +1244,7 @@ ParametricNDSolve,,🚫,,9.0,1231
 AllTrue,Checks if all elements in a list are true,✅,pure,10.0,1232
 Editable,Editable display option wrapper (stays symbolic),✅,unevaluated,3.0,1233
 MoebiusMu,Returns the Möbius function value,✅,pure,1.0,1235
-FinancialDerivative,,🚫,,8.0,1236
+FinancialDerivative,Price and Greeks (Delta Gamma Vega Theta Rho) of a European call or put under Black-Scholes-Merton,✅,pure,8.0,1236
 Setter,Setter control element (stays symbolic in script mode),✅,unevaluated,6.0,1237
 GraphicsColumn,Arranges graphics in a vertical column,✅,pure,6.0,1239
 MakeExpression,Parse a string into a held (unevaluated) expression,✅,pure,3.0,1239
@@ -2049,7 +2049,7 @@ Annulus,Symbolic annular region; stays unevaluated and is consumed by region fun
 GeometricAssertion,Assert geometric properties,🚫,,12.0,2054
 SphericalBesselY,Spherical Bessel function of second kind,✅,pure,6.0,2054
 NestGraph,Nest graph operation,🚫,,10.2,2057
-NoncentralStudentTDistribution,Non-central Student t distribution,🚫,,6.0,2057
+NoncentralStudentTDistribution,Non-central Student t distribution (numeric PDF and CDF),✅,pure,6.0,2057
 Quartics,Option for Solve controlling whether quartic formulas are used,✅,pure,1.0,2057
 MachineNumberQ,Test whether an expression is a machine-precision real number,✅,1,2.0,2059
 TextString,Convert an expression to a human-readable string; reals print in full decimal (a fractional digit is kept below six integer digits) and exact non-symbol numbers are numericized to six significant digits,✅,pure,10.0,2059

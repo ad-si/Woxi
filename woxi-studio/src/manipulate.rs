@@ -210,7 +210,7 @@ impl ControlState {
         if *is_real {
           format_f64_real(*current)
         } else {
-          format_f64(*current)
+          woxi::functions::graphics::format_f64_exact(*current)
         }
       }
       ControlState::Trigger { current, .. } => format_f64(*current),
@@ -559,6 +559,20 @@ impl ManipulateState {
         }
       }
     }
+    // A display `Checkbox[Dynamic[var]]` on a never-set variable behaves as
+    // unchecked (Wolfram stores the off value on first display); the body may
+    // already branch on it.
+    let known: Vec<String> = state
+      .state
+      .iter()
+      .map(|(n, _)| n.clone())
+      .chain(state.controls.iter().map(|c| c.name().to_string()))
+      .collect();
+    let defaults = woxi::functions::graphics::unset_checkbox_defaults(
+      &state.displays,
+      &known,
+    );
+    state.state.extend(defaults);
     state.reevaluate();
     Some(state)
   }
@@ -582,7 +596,14 @@ impl ManipulateState {
       return;
     }
     for (name, code) in saved {
-      if let Some(control) = self.controls.iter_mut().find(|c| c.name() == name)
+      // A widget rebuilt from a bare box dump keeps the DynamicModule's
+      // `$$` uniquification suffix on its control names, while the saved
+      // variable names arrive with it already stripped.
+      let suffixed = format!("{name}$$");
+      if let Some(control) = self
+        .controls
+        .iter_mut()
+        .find(|c| c.name() == name || c.name() == suffixed)
       {
         control.set_current_from_code(code);
       }
@@ -1791,6 +1812,56 @@ mod tests {
     }
   }
 
+  /// A `TabView` whose panes are `Grid`s with `SetterBar[Dynamic[var],
+  /// choices] /. labels` cells (a key picker showing note names for numeric
+  /// choices) and a `Sound[…]` row. The bars are lifted into the control
+  /// panel with their labels, each shown only on its own tab, and the
+  /// selected tab's grid is drawn as the picture instead of leaving the
+  /// symbolic `TabView[…]` text.
+  #[test]
+  fn tabview_grid_panes_with_body_setter_bars() {
+    let code = r#"Manipulate[
+      TabView[{
+        {"Major", "Major" -> Text@Grid[{
+          {SetterBar[Dynamic[ka], {0, 7, 2}] /. names, "x"},
+          {Sound[{SoundNote[ka, 0.2], SoundNote[ka + 4, 0.2]}], "y"}}]},
+        {"Minor", "Minor" -> Grid[{
+          {SetterBar[Dynamic[kb], {9, 4}] /. names}}]}
+      }, Dynamic[tab]],
+      {{tab, "Major"}, {"Major", "Minor"}, ControlType -> None},
+      {ka, 0, ControlType -> None},
+      {kb, 9, ControlType -> None},
+      Initialization :> (names = {0 -> "C", 7 -> "G", 2 -> "D", 9 -> "A", 4 -> "E"})
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = ManipulateState::from_expr(&expr)
+      .expect("the tabbed setter-bar layout should build a ManipulateState");
+    assert_eq!(state.error, None, "{:?}", state.error);
+
+    let names: Vec<&str> = state.controls.iter().map(|c| c.name()).collect();
+    assert_eq!(names, ["tab", "ka", "kb"]);
+    let labels = |name: &str| {
+      let c = state.controls.iter().find(|c| c.name() == name).unwrap();
+      format!("{c:?}")
+    };
+    assert!(
+      labels("ka").contains("\"C\", \"G\", \"D\""),
+      "setter bar choices must carry their note-name labels: {}",
+      labels("ka")
+    );
+    assert!(
+      !state.body.contains("SetterBar"),
+      "lifted setter bars must not stay in the body: {}",
+      state.body
+    );
+    assert!(
+      state.graphics_handle.is_some(),
+      "the selected tab's grid must render as a picture, got text {:?}",
+      state.text_output
+    );
+  }
+
   /// Checked a randomly-sampled Wolfram Demonstrations Project notebook
   /// ("Newton's Polynomial Solver") whose control panel is written as
   /// `Text@Grid[{{header, header}, {Control[…], Control[…]}, …}]` — a
@@ -2189,6 +2260,31 @@ mod tests {
 
     let names: Vec<&str> = state.controls.iter().map(|c| c.name()).collect();
     assert_eq!(names, ["cutoff"]);
+  }
+
+  /// A sampled Demonstration titles a control with `Row[{"title",
+  /// Spacer[n]}]` and pins its readouts with left-aligned `Text`. The
+  /// spacer is layout, so the control heading must not spell out the
+  /// `Spacer[n]` head, and the left-aligned readout must be anchored at
+  /// its left edge rather than centred on a guessed width.
+  #[test]
+  fn heading_row_with_spacer_and_left_aligned_readout() {
+    let code = r#"Manipulate[
+      Graphics[{Text[Row[{Spacer[30], "level = ", k}], {-1, 0}, {-1, 0}]},
+        PlotRange -> {{-1, 1}, {-1, 1}}, ImageSize -> {200, 14}],
+      Row[{"gain", Spacer[40]}],
+      {{k, 3}, 1, 9, 1}
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = ManipulateState::from_expr(&expr).expect("state should build");
+    assert_eq!(state.error, None);
+    for c in &state.controls {
+      if let ControlState::Heading { label, .. } = c {
+        assert!(!label.contains("Spacer"), "leaked head in {label:?}");
+      }
+    }
+    assert!(state.graphics_handle.is_some());
   }
 
   /// End-to-end regression for a Wolfram Demonstrations Project idiom found

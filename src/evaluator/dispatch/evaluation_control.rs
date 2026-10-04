@@ -171,6 +171,9 @@ pub fn dispatch_evaluation_control(
     "BetaPrimeDistribution" if (2..=4).contains(&args.len()) => {
       return Some(Ok(unevaluated("BetaPrimeDistribution", args)));
     }
+    "NoncentralStudentTDistribution" if args.len() == 2 => {
+      return Some(Ok(unevaluated("NoncentralStudentTDistribution", args)));
+    }
     "NoncentralChiSquareDistribution" if args.len() == 2 => {
       return Some(Ok(unevaluated("NoncentralChiSquareDistribution", args)));
     }

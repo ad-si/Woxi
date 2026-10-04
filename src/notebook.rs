@@ -1014,6 +1014,17 @@ fn extract_typeset_box(s: &str) -> Option<String> {
         {
           let inner = &raw_meaning[1..raw_meaning.len() - 1];
           format!("\"{}\"", escape_string(&unescape_string(inner)))
+        } else if let Some(items) = braced_list_items(raw_meaning) {
+          // Likewise a braced list is a list *value* (an iconized
+          // `{Graphics[…], …}`), not a row of boxes to concatenate — which
+          // would fuse the items into a product.
+          let items: Vec<String> = items
+            .into_iter()
+            .map(|item| {
+              extract_cell_content(&format!("InterpretationBox[x, {item}]"))
+            })
+            .collect();
+          format!("{{{}}}", items.join(", "))
         } else {
           strip_display_form_wrapper(&convert_interpretation_meaning(
             raw_meaning,
@@ -2847,10 +2858,32 @@ pub fn reconstruct_manipulate_from_box_dump(box_dump: &str) -> Option<String> {
   let specs = clean(extract_arrow_value(box_dump, "Specifications")?);
   let specs = specs.trim();
   let specs_inner = specs.strip_prefix('{')?.strip_suffix('}')?.trim();
-  if specs_inner.is_empty() {
-    return Some(format!("Manipulate[{body}]"));
+  // The compiled `"Options" :> {…}` clause carries the widget-level caption
+  // (`FrameLabel -> …`) shown with the output; it is the only option the
+  // reconstruction keeps.
+  let frame_label = extract_arrow_value(box_dump, "Options")
+    .map(clean)
+    .and_then(|opts| {
+      let inner = opts
+        .trim()
+        .strip_prefix('{')?
+        .strip_suffix('}')?
+        .to_string();
+      split_top_level_commas(&inner)
+        .into_iter()
+        .map(|part| part.trim().to_string())
+        .find(|part| {
+          part
+            .strip_prefix("FrameLabel")
+            .is_some_and(|r| r.trim_start().starts_with("->"))
+        })
+    });
+  let mut args = vec![body];
+  if !specs_inner.is_empty() {
+    args.push(specs_inner.to_string());
   }
-  Some(format!("Manipulate[{body}, {specs_inner}]"))
+  args.extend(frame_label);
+  Some(format!("Manipulate[{}]", args.join(", ")))
 }
 
 /// The live session values a saved FrontEnd dynamic-widget dump's
@@ -7226,6 +7259,31 @@ Cell[BoxData[
     match &parsed.cells[0] {
       CellEntry::Single(cell) => {
         assert_eq!(cell.content, "Quantity[3, \"Meters\"]");
+      }
+      CellEntry::Group(_) => panic!("Expected single cell"),
+    }
+  }
+
+  /// An iconized list (`Iconize[{a, b, c}]`) is stored as an
+  /// `InterpretationBox` whose meaning is the plain `{a, b, c}` list value.
+  /// It must stay a list rather than being read as a row of boxes, which
+  /// would fuse the items into a product.
+  #[test]
+  fn test_interpretation_box_list_meaning_stays_a_list() {
+    let nb = r#"Notebook[{
+Cell[BoxData[
+ RowBox[{"Length", "[",
+  InterpretationBox[
+   DynamicModuleBox[{Typeset`open = False}, "placeholder"],
+   {Graphics[{Circle[{0, 0}, 1]}], {1, 2}, "s"}], "]"}]], "Input"]
+}]"#;
+    let parsed = parse_notebook(nb).unwrap();
+    match &parsed.cells[0] {
+      CellEntry::Single(cell) => {
+        assert_eq!(
+          cell.content,
+          "Length[{Graphics[{Circle[{0, 0}, 1]}], {1, 2}, \"s\"}]"
+        );
       }
       CellEntry::Group(_) => panic!("Expected single cell"),
     }

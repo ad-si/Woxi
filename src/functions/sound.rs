@@ -58,6 +58,150 @@ fn collect_segments(expr: &Expr, out: &mut Vec<(Vec<f64>, u32)>) {
   }
 }
 
+/// One `SoundNote` voice: when it starts, how long it lasts and the
+/// frequencies (Hz) it sounds together — several for a chord.
+struct Note {
+  start: f64,
+  duration: f64,
+  freqs: Vec<f64>,
+}
+
+/// Frequency (Hz) of a `SoundNote` pitch: a number of semitones above middle
+/// C, or a note name such as `"C4"`, `"F#3"`, `"Bb"` (octave 4 when omitted).
+/// `None` for a rest (`"Rest"` / `None`) or an unreadable pitch.
+fn pitch_frequency(pitch: &Expr) -> Option<f64> {
+  const MIDDLE_C_HZ: f64 = 261.625_565_300_598_6;
+  let semitones = match pitch {
+    Expr::String(name) => {
+      let mut chars = name.chars();
+      let base = match chars.next()?.to_ascii_uppercase() {
+        'C' => 0,
+        'D' => 2,
+        'E' => 4,
+        'F' => 5,
+        'G' => 7,
+        'A' => 9,
+        'B' => 11,
+        _ => return None,
+      };
+      let mut shift = 0;
+      let mut octave = 4;
+      let rest: String = chars.collect();
+      let mut digits = String::new();
+      for c in rest.chars() {
+        match c {
+          '#' | '♯' => shift += 1,
+          'b' | '♭' => shift -= 1,
+          c if c.is_ascii_digit() || c == '-' => digits.push(c),
+          _ => return None,
+        }
+      }
+      if !digits.is_empty() {
+        octave = digits.parse().ok()?;
+      }
+      base + shift + (octave - 4) * 12
+    }
+    other => {
+      return try_eval_to_f64(other).map(|p| MIDDLE_C_HZ * (p / 12.0).exp2());
+    }
+  };
+  Some(MIDDLE_C_HZ * (semitones as f64 / 12.0).exp2())
+}
+
+/// Collect the `SoundNote[pitch, duration, …]` voices inside a `Sound`
+/// expression. Notes (also those in nested lists) play one after another from
+/// `cursor`; a note whose duration is an explicit `{start, end}` span is
+/// placed at that time instead and so sounds together with the others.
+fn collect_notes(expr: &Expr, cursor: &mut f64, out: &mut Vec<Note>) {
+  match expr {
+    Expr::FunctionCall { name, args } if name == "SoundNote" => {
+      let (start, duration) = match args.get(1) {
+        None => (*cursor, 1.0),
+        Some(Expr::List(span)) if span.len() == 2 => {
+          match (try_eval_to_f64(&span[0]), try_eval_to_f64(&span[1])) {
+            (Some(a), Some(b)) => (a, b - a),
+            _ => return,
+          }
+        }
+        Some(d) => match try_eval_to_f64(d) {
+          Some(d) => (*cursor, d),
+          None => return,
+        },
+      };
+      if duration.is_nan() || duration <= 0.0 {
+        return;
+      }
+      let freqs: Vec<f64> = match args.first() {
+        Some(Expr::List(pitches)) => {
+          pitches.iter().filter_map(pitch_frequency).collect()
+        }
+        Some(p) => pitch_frequency(p).into_iter().collect(),
+        None => vec![pitch_frequency(&Expr::Integer(0)).unwrap_or(261.6)],
+      };
+      if matches!(args.get(1), Some(Expr::List(_))) {
+        *cursor = cursor.max(start + duration);
+      } else {
+        *cursor += duration;
+      }
+      out.push(Note {
+        start,
+        duration,
+        freqs,
+      });
+    }
+    Expr::FunctionCall { args, .. } => {
+      for a in args {
+        collect_notes(a, cursor, out);
+      }
+    }
+    Expr::List(items) => {
+      for a in items {
+        collect_notes(a, cursor, out);
+      }
+    }
+    _ => {}
+  }
+}
+
+/// Mix the voices into one sample buffer: a piano-like tone (a few
+/// harmonics under a fast attack and a decaying envelope) per pitch.
+fn synthesize_notes(notes: &[Note]) -> Option<(Vec<f64>, u32)> {
+  let end = notes
+    .iter()
+    .map(|n| n.start + n.duration)
+    .fold(0.0_f64, f64::max);
+  let rate = SAMPLE_RATE as f64;
+  let total = (end * rate).round() as usize;
+  if notes.is_empty() || total == 0 {
+    return None;
+  }
+  let mut samples = vec![0.0; total];
+  for note in notes {
+    let first = (note.start.max(0.0) * rate).round() as usize;
+    let count = (note.duration * rate).round() as usize;
+    let amp = 0.5 / (note.freqs.len().max(1) as f64).sqrt();
+    for i in 0..count {
+      let Some(slot) = samples.get_mut(first + i) else {
+        break;
+      };
+      let t = i as f64 / rate;
+      let envelope = (t / 0.005).min(1.0)
+        * (-2.5 * t / note.duration).exp()
+        * ((note.duration - t) / 0.01).clamp(0.0, 1.0);
+      for f in &note.freqs {
+        let w = std::f64::consts::TAU * f * t;
+        *slot += amp
+          * envelope
+          * (w.sin() + 0.3 * (2.0 * w).sin() + 0.1 * (3.0 * w).sin());
+      }
+    }
+  }
+  for s in &mut samples {
+    *s = s.clamp(-1.0, 1.0);
+  }
+  Some((samples, SAMPLE_RATE))
+}
+
 /// Extract amplitude samples and a sample rate from a
 /// `SampledSoundList[{s1, s2, …}, rate]` primitive. The samples are the final
 /// amplitudes (already normalized by `ListPlay`); they are only clipped to
@@ -147,6 +291,12 @@ fn sample_play(play: &Expr) -> Option<(Vec<f64>, u32)> {
 pub fn sound_to_samples(sound_expr: &Expr) -> Option<(Vec<f64>, u32)> {
   let mut segments = Vec::new();
   collect_segments(sound_expr, &mut segments);
+  let mut notes = Vec::new();
+  let mut cursor = 0.0;
+  collect_notes(sound_expr, &mut cursor, &mut notes);
+  if let Some(seg) = synthesize_notes(&notes) {
+    segments.push(seg);
+  }
   if segments.is_empty() {
     return None;
   }

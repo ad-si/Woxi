@@ -38,6 +38,7 @@ pub mod entity_ast;
 pub mod example_data;
 pub mod expr_form;
 pub mod field_plot;
+pub mod financial_ast;
 pub mod function_range_ast;
 pub mod geo_math;
 pub mod geographics;
