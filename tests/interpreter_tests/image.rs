@@ -44,6 +44,22 @@ mod image_core {
     assert_eq!(result, "{3, 2}");
   }
 
+  // Regression: a picture wrapped in a fixed-size `Pane` (the shape a
+  // Manipulate body takes to show a stored snapshot) displayed nothing,
+  // because the wrapper was only peeled after the image had been captured.
+  #[test]
+  fn pane_wrapped_image_is_captured_as_graphics() {
+    clear_state();
+    for code in [
+      "Pane[Image[{{0, 1}, {1, 0}}], {40, 30}]",
+      "Switch[2, 1, 0, 2, Pane[Image[{{0, 1}, {1, 0}}], {40, 30}]]",
+    ] {
+      let r = woxi::interpret_with_stdout(code).unwrap();
+      let svg = r.graphics.expect("expected the image as graphics output");
+      assert!(svg.contains("<image"), "{code}: {svg}");
+    }
+  }
+
   // An explicit ColorSpace must agree with the channel count the data
   // actually has (one channel per component, plus an optional alpha).
   #[test]
