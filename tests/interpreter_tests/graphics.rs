@@ -31827,3 +31827,33 @@ mod options_of_a_graphic {
     let _ = std::fs::remove_dir_all(&dir);
   }
 }
+
+mod cases_on_a_plot {
+  use super::*;
+
+  // Regression: `Cases` treated a rendered plot as an atom, so extracting
+  // a curve's points with `Cases[plot, Line[u_] -> u, Infinity]` (a common
+  // idiom in Demonstrations) returned `{}` while `First`/`Length` worked.
+  #[test]
+  fn finds_the_line_primitives_of_a_parametric_plot() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "pts = First[Cases[ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 1}], \
+         Line[u_] -> u, Infinity]]; {Length[pts] > 2, First[pts]}"
+      )
+      .unwrap(),
+      "{True, {1., 0.}}"
+    );
+  }
+
+  #[test]
+  fn finds_the_line_primitives_of_a_plot() {
+    clear_state();
+    assert_eq!(
+      interpret("Length[Cases[Plot[x^2, {x, 0, 1}], Line[u_] -> u, Infinity]]")
+        .unwrap(),
+      "1"
+    );
+  }
+}
