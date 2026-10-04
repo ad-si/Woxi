@@ -5335,3 +5335,81 @@ mod neville_theta {
     ));
   }
 }
+
+mod bessel_complex_argument {
+  use super::*;
+
+  /// J_0(I x) = I_0(x) on the imaginary axis.
+  #[test]
+  fn bessel_j_on_imaginary_axis_matches_bessel_i() {
+    assert_eq!(
+      interpret("Chop[BesselJ[0, 1.3 I] - BesselI[0, 1.3]]").unwrap(),
+      "0"
+    );
+  }
+
+  /// Wronskian J_{n+1} Y_n - J_n Y_{n+1} = 2/(Pi z) for every order class
+  /// (integer, negative integer and fractional) and every quadrant.
+  #[test]
+  fn bessel_j_y_wronskian_at_complex_points() {
+    for n in ["0", "2", "-3", "0.5", "1.3"] {
+      for z in ["1.5 + I", "-2.1 + 0.7 I", "0.3 - 2.5 I"] {
+        let code = format!(
+          "n = {n}; z = {z}; \
+           Chop[BesselJ[n + 1, z] BesselY[n, z] \
+             - BesselJ[n, z] BesselY[n + 1, z] - 2/(Pi z)]"
+        );
+        assert_eq!(interpret(&code).unwrap(), "0", "n = {n}, z = {z}");
+      }
+    }
+  }
+
+  /// Wronskian I_n K_{n+1} + I_{n+1} K_n = 1/z.
+  #[test]
+  fn bessel_i_k_wronskian_at_complex_points() {
+    for n in ["0", "2", "0.5", "1.3"] {
+      for z in ["1.5 + I", "-2.1 + 0.7 I", "0.3 - 2.5 I"] {
+        let code = format!(
+          "n = {n}; z = {z}; \
+           Chop[BesselI[n, z] BesselK[n + 1, z] \
+             + BesselI[n + 1, z] BesselK[n, z] - 1/z]"
+        );
+        assert_eq!(interpret(&code).unwrap(), "0", "n = {n}, z = {z}");
+      }
+    }
+  }
+
+  #[test]
+  fn negative_integer_order_parity() {
+    assert_eq!(
+      interpret("Chop[BesselJ[-3, 1.5 + I] + BesselJ[3, 1.5 + I]]").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Chop[BesselK[-2, 1.5 + I] - BesselK[2, 1.5 + I]]").unwrap(),
+      "0"
+    );
+  }
+
+  /// BesselK and BesselY of a negative real argument sit on the branch cut:
+  /// K_1(-x) = -K_1(x) - I Pi I_1(x).
+  #[test]
+  fn bessel_k_negative_real_argument() {
+    assert_eq!(
+      interpret(
+        "Chop[BesselK[1, -2.] - (-BesselK[1, 2.] - I Pi BesselI[1, 2.])]"
+      )
+      .unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Re[BesselY[0, -2.]] == Re[BesselY[0, 2.]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn exact_complex_argument_stays_symbolic() {
+    assert_eq!(interpret("BesselJ[2, 1 + I]").unwrap(), "BesselJ[2, 1 + I]");
+  }
+}

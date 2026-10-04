@@ -40,12 +40,52 @@ fn main() {
     }
   }
 
+  // A notebook downloaded straight from the Demonstrations Project holds
+  // only the compiled widget dump in an Output cell. The Studio rebuilds a
+  // `Manipulate[…]` source from it (see
+  // `instantiate_manipulate_from_box_dump`); mirror that by inserting the
+  // reconstructed source as a synthetic Input cell ahead of such a dump.
+  let mut with_sources = Vec::new();
+  for (idx, cell) in all_cells.iter().enumerate() {
+    let follows_source = idx > 0
+      && matches!(all_cells[idx - 1].style, CellStyle::Input | CellStyle::Code);
+    if cell.style == CellStyle::Output
+      && !follows_source
+      && let Some(code) =
+        woxi::notebook::reconstruct_manipulate_from_box_dump(&cell.content)
+    {
+      let mut synthetic = cell.clone();
+      synthetic.style = CellStyle::Input;
+      synthetic.content = code;
+      with_sources.push(synthetic);
+    }
+    with_sources.push(cell.clone());
+  }
+  let all_cells = with_sources;
+
   let mut widget_count = 0;
   for (idx, cell) in all_cells.iter().enumerate() {
-    if !matches!(cell.style, CellStyle::Input | CellStyle::Code) {
+    // A standalone stored widget dump (no Input cell, e.g. a notebook
+    // downloaded from the Demonstrations Project) is rebuilt into a plain
+    // `Manipulate[…]` source first, as the Studio does when opening it.
+    let reconstructed = if cell.style == CellStyle::Output {
+      woxi::notebook::reconstruct_manipulate_from_box_dump(&cell.content)
+    } else {
+      None
+    };
+    if reconstructed.is_none()
+      && !matches!(cell.style, CellStyle::Input | CellStyle::Code)
+    {
       continue;
     }
-    let code = cell.content.trim();
+    // Definitions saved in the dump's own Initialization run first.
+    if reconstructed.is_some()
+      && let Some(init) =
+        woxi::notebook::extract_saved_initialization(&cell.content)
+    {
+      let _ = woxi::interpret(&init);
+    }
+    let code = reconstructed.as_deref().unwrap_or(cell.content.trim());
     for stmt in woxi::split_into_statements(code) {
       // Evaluate for side effects (definitions) exactly like the studio.
       let eval = woxi::interpret_with_stdout(&stmt);

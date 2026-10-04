@@ -110,6 +110,7 @@ fn read_expr(data: &[u8], pos: &mut usize) -> Option<Expr> {
     b'n' => read_integer_array(data, pos),
     b'e' => read_real_array(data, pos),
     b'b' => read_byte_array(data, pos),
+    b'h' => read_int16_array(data, pos),
     _ => None,
   }
 }
@@ -291,6 +292,28 @@ fn read_byte_array(data: &[u8], pos: &mut usize) -> Option<Expr> {
   Some(nest(&dims, &mut vals.into_iter()))
 }
 
+/// `h` token — packed signed 16-bit integer array:
+/// `<i32 rank><i32 dims><little-endian i16 values>`. A `Byte` image whose
+/// pixels a `Manipulate[…, SaveDefinitions -> True]` capture stored as
+/// `Image[CompressedData[…], "Byte", …]` arrives this way.
+fn read_int16_array(data: &[u8], pos: &mut usize) -> Option<Expr> {
+  let rank = read_i32(data, pos)?;
+  let dims = read_dims(data, pos, rank)?;
+  let count: usize = dims_product(&dims)?;
+  let end = pos.checked_add(count.checked_mul(2)?)?;
+  if end > data.len() {
+    return None;
+  }
+  let vals: Vec<Expr> = (0..count)
+    .map(|i| {
+      let at = *pos + 2 * i;
+      Expr::Integer(i16::from_le_bytes([data[at], data[at + 1]]) as i128)
+    })
+    .collect();
+  *pos = end;
+  Some(nest(&dims, &mut vals.into_iter()))
+}
+
 /// `e` token — packed real (f64) array.
 fn read_real_array(data: &[u8], pos: &mut usize) -> Option<Expr> {
   let rank = read_i32(data, pos)?;
@@ -335,6 +358,20 @@ mod tests {
     // FrontEnd uses for raster pixel data in inline Image literals.
     let data = b"!boRb\x02\x00\x00\x00\x02\x00\x00\x00\x03\x00\x00\x00\x00\x7f\xff\x01\x02\x03";
     assert_eq!(render(data), "{{0, 127, 255}, {1, 2, 3}}");
+  }
+
+  #[test]
+  fn reads_int16_array_token() {
+    // rank 2, dims {2, 3}, values 1, 2, 3, 300, -1, 0.
+    let data = b"!boRh\x02\x00\x00\x00\x02\x00\x00\x00\x03\x00\x00\x00\
+\x01\x00\x02\x00\x03\x00\x2c\x01\xff\xff\x00\x00";
+    assert_eq!(render(data), "{{1, 2, 3}, {300, -1, 0}}");
+  }
+
+  #[test]
+  fn int16_array_with_truncated_data_is_rejected() {
+    let data = b"!boRh\x01\x00\x00\x00\x05\x00\x00\x00\x01\x00";
+    assert!(deserialize(data).is_none());
   }
 
   #[test]

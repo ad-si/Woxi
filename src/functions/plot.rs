@@ -292,6 +292,12 @@ pub(crate) fn evaluate_at_xy(
   let sub1 = substitute_var(body, xvar, &Expr::Real(xval));
   let sub2 = substitute_var(&sub1, yvar, &Expr::Real(yval));
   let result = evaluate_expr_to_expr(&sub2).ok()?;
+  // A body that evaluates to a one-element list (e.g. a function returning
+  // `{value}`) is a single surface, like `Plot3D[{f}, ...]`.
+  let result = match &result {
+    Expr::List(items) if items.len() == 1 => items[0].clone(),
+    other => other.clone(),
+  };
   if let Some(v) = try_eval_to_f64_lenient(&result) {
     return Some(v);
   }
@@ -2602,8 +2608,11 @@ pub(crate) fn plot_labels_svg(
     // edge — adapting to the actual tick width.
     let tick_w = max_y_tick_label_chars(y_min, y_max) as f64 * sf * 13.0 * 0.6;
     let tick_left = plot_x0 - 8.0 * sf - tick_w;
-    let lx = (tick_left - font_size * 0.5 - sf * 5.0)
-      .max(margin_left_f + font_size * 0.5);
+    // `lx` is the text baseline: the glyphs extend ~0.75em to its left
+    // (the rotated "up" direction) and ~0.25em to its right, so the clamp
+    // must keep the ascenders inside the image.
+    let lx = (tick_left - font_size * 0.25 - sf * 5.0)
+      .max(margin_left_f + font_size * 0.8);
     labels_svg.push_str(&format!(
       "<text x=\"{lx:.1}\" y=\"{cy:.1}\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
@@ -8468,7 +8477,7 @@ pub(crate) fn parse_explicit_ticks(value: &Expr) -> Option<Vec<(f64, String)>> {
     .iter()
     .filter_map(|entry| match entry {
       Expr::List(pair) if pair.len() >= 2 => {
-        let pos = try_eval_to_f64(&pair[0])?;
+        let pos = tick_position(&pair[0])?;
         // A label given as text may still embed box notation (a notebook
         // writes a superscript that way), so it renders like every other
         // label a plot draws rather than being escaped raw.
@@ -8480,12 +8489,23 @@ pub(crate) fn parse_explicit_ticks(value: &Expr) -> Option<Vec<(f64, String)>> {
         Some((pos, label))
       }
       other => {
-        let pos = try_eval_to_f64(other)?;
+        let pos = tick_position(other)?;
         Some((pos, bare_tick_label(other, pos)))
       }
     })
     .collect();
   (!ticks.is_empty()).then_some(ticks)
+}
+
+/// The numeric position of a tick. The spec is kept as written, so a position
+/// that depends on variables (`a/4` with `a` set elsewhere) is evaluated here
+/// before being read as a number.
+fn tick_position(e: &Expr) -> Option<f64> {
+  try_eval_to_f64(e).or_else(|| {
+    evaluate_expr_to_expr(e)
+      .ok()
+      .and_then(|v| try_eval_to_f64(&v))
+  })
 }
 
 /// The `<text>` content drawn at a tick given as a bare position rather than

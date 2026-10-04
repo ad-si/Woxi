@@ -546,6 +546,40 @@ mod graphics {
     }
 
     #[test]
+    fn filled_curve_bezier_is_filled() {
+      let svg = export_svg(
+        "Graphics[{Red, FilledCurve[BezierCurve[{{0, 0}, {1, 2}, {2, 2}, {3, 0}}]]}]",
+      );
+      assert!(svg.contains("fill=\"rgb(255,0,0)\""), "{svg}");
+      assert!(!svg.contains("fill=\"none\""), "{svg}");
+      assert!(svg.contains(" Z\""), "{svg}");
+    }
+
+    #[test]
+    fn filled_curve_uses_edge_form() {
+      let svg = export_svg(
+        "Graphics[{Blue, EdgeForm[Black], FilledCurve[BezierCurve[{{0, 0}, {1, 2}, {2, 0}}]]}]",
+      );
+      assert!(svg.contains("fill=\"rgb(0,0,255)\""), "{svg}");
+      assert!(svg.contains("stroke=\"rgb(0,0,0)\""), "{svg}");
+    }
+
+    #[test]
+    fn filled_curve_line_segments_become_filled_polygon() {
+      let svg = export_svg(
+        "Graphics[{Green, FilledCurve[Line[{{0, 0}, {1, 0}, {1, 1}}]]}]",
+      );
+      assert!(svg.contains("<polygon"), "{svg}");
+    }
+
+    #[test]
+    fn stroked_bezier_curve_stays_unfilled() {
+      let svg =
+        export_svg("Graphics[{BezierCurve[{{0, 0}, {0.5, 1}, {1, 0}}]}]");
+      assert!(svg.contains("fill=\"none\""), "{svg}");
+    }
+
+    #[test]
     fn bspline_curve() {
       insta::assert_snapshot!(export_svg(
         "Graphics[{BSplineCurve[{{0, 0}, {1, 2}, {2, 0}, {3, 1}}]}]"
@@ -1614,6 +1648,70 @@ mod graphics {
   mod text_styles {
     use super::*;
 
+    /// A `Text` label built from a `Column` of held assignments (a
+    /// Demonstration's equations beside a diagram) is typeset as one line
+    /// per item, each reading as the equation — not as the literal
+    /// `HoldForm[…]`/`TraditionalForm[…]` source on a single line.
+    #[test]
+    fn text_column_of_held_assignments() {
+      let svg = export_svg(
+        "Graphics[{Text[Column[{HoldForm[a = b c], \
+         TraditionalForm[HoldForm[x = r Cos[t]]]}], {0, 0}]}]",
+      );
+      assert!(svg.contains(">a = b c</tspan>"), "{svg}");
+      assert!(svg.contains(">x = r"), "{svg}");
+      assert!(svg.contains("cos(t)</tspan>"), "{svg}");
+      assert!(!svg.contains("HoldForm"), "{svg}");
+      assert!(!svg.contains("Set"), "{svg}");
+    }
+
+    /// The lines of a multi-line label are centred on its anchor.
+    #[test]
+    fn text_multiline_is_vertically_centered() {
+      let svg = export_svg(
+        "Graphics[{Text[Style[Column[{\"a\", \"b\", \"c\"}], 10], {0, 0}]}]",
+      );
+      assert!(svg.contains("dy=\"-10\">a</tspan>"), "{svg}");
+    }
+
+    /// `Overscript[y, ".."]` in a label draws as the accented letter.
+    #[test]
+    fn text_overscript_accent() {
+      let svg = export_svg(
+        "Graphics[{Text[Row[{Overscript[\"y\", \"..\"], \" = 1\"}], {0, 0}]}]",
+      );
+      assert!(svg.contains(">y\u{0308} = 1</text>"), "{svg}");
+    }
+
+    /// Assignments box as infix equations, like the other relations.
+    #[test]
+    fn held_assignment_boxes_are_infix() {
+      assert_eq!(
+        interpret("ToBoxes[HoldForm[x = 1]] // FullForm").unwrap(),
+        interpret("RowBox[{\"x\", \"=\", \"1\"}] // FullForm").unwrap()
+      );
+      assert_eq!(
+        interpret("ToBoxes[HoldForm[x := 1]] // FullForm").unwrap(),
+        interpret("RowBox[{\"x\", \":=\", \"1\"}] // FullForm").unwrap()
+      );
+    }
+
+    #[test]
+    fn text_edge_alignment_sets_the_svg_anchor() {
+      let left = export_svg(
+        "Graphics[{Text[\"abc\", {-1, 0}, {-1, 0}]}, PlotRange -> {{-1, 1}, {-1, 1}}]",
+      );
+      assert!(left.contains("text-anchor=\"start\""), "{left}");
+      let right = export_svg(
+        "Graphics[{Text[\"abc\", {1, 0}, {1, 0}]}, PlotRange -> {{-1, 1}, {-1, 1}}]",
+      );
+      assert!(right.contains("text-anchor=\"end\""), "{right}");
+      let centred = export_svg("Graphics[{Text[\"abc\", {0, 0}]}]");
+      assert!(
+        centred.contains("<text") && centred.contains("text-anchor=\"middle\"")
+      );
+    }
+
     #[test]
     fn text_with_style_bold() {
       insta::assert_snapshot!(export_svg(
@@ -1970,6 +2068,18 @@ mod graphics {
       assert!(svg.contains(">yin</text>"), "{svg}");
       assert!(!svg.contains(">out</text>"), "{svg}");
       assert!(!svg.contains(">yout</text>"), "{svg}");
+    }
+
+    /// Explicit tick positions that depend on variables are evaluated, so a
+    /// plot whose range and ticks both follow a variable keeps its labels.
+    #[test]
+    fn explicit_ticks_with_variable_positions_are_evaluated() {
+      let svg = export_svg(
+        "w = 0.8; Plot[Sin[t], {t, 0, w}, \
+         Ticks -> {{0, {w/4, \"qa\"}, w/2, {w, \"wa\"}}, Automatic}]",
+      );
+      assert!(svg.contains(">qa</text>"), "{svg}");
+      assert!(svg.contains(">wa</text>"), "{svg}");
     }
 
     /// A y axis at an x range's padded edge (data starting at 0) keeps the
@@ -5594,6 +5704,27 @@ mod plot3d {
     }
   }
 
+  mod parametric_plot_evaluated_body {
+    use super::*;
+
+    /// A body that is not literally a list (`{fx, fy} /. rules`) still has to
+    /// be evaluated with the plot variable symbolic: the curve lives in
+    /// symbols (`xs`, `ys`) that hold expressions of `t`, so sampling the
+    /// unevaluated body drew nothing at all.
+    #[test]
+    fn replace_all_body_draws_curve() {
+      let svg = export_svg(
+        "Module[{xs, ys}, xs = {t^2 + a}; ys = {t^3}; \
+         ParametricPlot[{xs[[1]], ys[[1]]} /. {a -> 0}, {t, -1, 1}]]",
+      );
+      let literal = export_svg("ParametricPlot[{t^2, t^3}, {t, -1, 1}]");
+      assert_eq!(
+        svg.matches("<polyline").count(),
+        literal.matches("<polyline").count()
+      );
+    }
+  }
+
   mod parametric_plot3d_curve {
     use super::*;
 
@@ -6894,6 +7025,33 @@ mod plot3d {
       );
       styled.sort();
       assert_eq!(styled, ["diameter (cm)", "force (kN)"]);
+    }
+
+    /// The rotated left `FrameLabel` is anchored by its baseline, whose
+    /// glyphs rise ~0.75em to the left of it; with a narrow `ImagePadding`
+    /// the baseline used to be clamped to half an em, so the label was cut
+    /// off at the image edge.
+    #[test]
+    fn plot_left_frame_label_stays_inside_the_image() {
+      let svg = export_svg(
+        "Plot[{Sin[x], Cos[x]}, {x, 0, 1}, Frame -> True, \
+         ImagePadding -> {{45, 10}, {45, 10}}, \
+         FrameLabel -> {\"x\", \"psi\"}]",
+      );
+      let line = svg
+        .lines()
+        .find(|l| l.contains("rotate(-90") && l.contains(">psi</text>"))
+        .expect("rotated left label");
+      let attr = |name: &str| -> f64 {
+        let key = format!("{name}=\"");
+        let rest = line.split_once(key.as_str()).unwrap().1;
+        rest.split_once('"').unwrap().0.parse().unwrap()
+      };
+      let size = attr("font-size");
+      assert!(
+        attr("x") - 0.75 * size >= 0.0,
+        "left label is clipped: {line}"
+      );
     }
 
     /// Every label of a tick set carries the decimals its spacing needs, so
@@ -13356,6 +13514,52 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       ));
     }
 
+    /// Regression: `First[ArrayPlot[…]]` hit `First::normal` because the plot
+    /// had no symbolic content, so a Manipulate that draws an ArrayPlot as a
+    /// backdrop (`First@background`) rendered nothing.
+    #[test]
+    fn array_plot_first_is_raster() {
+      clear_state();
+      assert_eq!(
+        interpret("Head[First[ArrayPlot[{{1, 2}, {3, 4}}]]]").unwrap(),
+        "Raster"
+      );
+      // The first matrix row sits at the top, i.e. is the last Raster row.
+      assert_eq!(
+        interpret("First[ArrayPlot[{{1, 2}, {3, 4}}]][[1, 1, 1]]").unwrap(),
+        interpret(
+          "First[ArrayPlot[{{3, 4}, {1, 2}}, DataReversed -> True]][[1, 1, 1]]"
+        )
+        .unwrap()
+      );
+    }
+
+    #[test]
+    fn array_plot_data_range_places_raster() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "First[ArrayPlot[{{1, 2}, {3, 4}}, DataRange -> {{-2, 2}, {-1, 1}}]][[2]]"
+        )
+        .unwrap(),
+        "{{-2., -1.}, {2., 1.}}"
+      );
+    }
+
+    #[test]
+    fn array_plot_data_reversed_keeps_row_order() {
+      clear_state();
+      // DataReversed -> True puts row 1 at the bottom: Raster rows are
+      // listed bottom-up, so the matrix order is kept.
+      assert_eq!(
+        interpret(
+          "Length[First[ArrayPlot[{{1, 2}, {3, 4}, {5, 6}}, DataReversed -> True]][[1]]]"
+        )
+        .unwrap(),
+        "3"
+      );
+    }
+
     #[test]
     fn array_plot_epilog_text_position() {
       // Regression: Epilog was silently ignored, dropping any overlay
@@ -16091,6 +16295,23 @@ mod show {
         Graphics[{Point[{2, 0}]}], PlotLabel -> "outer"]"#,
     );
     assert!(svg.contains(">outer</text>") && !svg.contains(">inner</text>"));
+  }
+
+  /// A bare `PlotRange -> {min, max}` given to `Show` on top of a plot is the
+  /// y range: the plotted x domain (here -7..7) stays fully visible.
+  #[test]
+  fn show_plot_with_flat_plot_range_keeps_x_domain() {
+    clear_state();
+    let flat = export_svg(
+      r#"Show[Plot[Abs[2 x], {x, -7, 7}], Graphics[{Red, Disk[{0, 3}, 1]}],
+        PlotRange -> {0, 25}]"#,
+    );
+    let nested = export_svg(
+      r#"Show[Plot[Abs[2 x], {x, -7, 7}], Graphics[{Red, Disk[{0, 3}, 1]}],
+        PlotRange -> {All, {0, 25}}]"#,
+    );
+    assert_eq!(flat, nested);
+    assert!(flat.contains(">-6</text>") || flat.contains(">−6</text>"));
   }
 
   /// `Show[g]` is `g`: with nothing to merge and no options of its own it
@@ -25894,9 +26115,10 @@ mod manipulate {
         assert_eq!(name, "g");
         // The five Platonic solids, the Archimedean solids (and their
         // duals) with icosahedral or cubic symmetry, the great stellated
-        // dodecahedron and rhombic hexecontahedron stellations, and the
-        // triangular orthobicupola.
-        assert_eq!(values.len(), 21, "every known solid");
+        // dodecahedron and rhombic hexecontahedron stellations, the
+        // triangular orthobicupola, the Bilinski dodecahedron, and the
+        // stella octangula.
+        assert_eq!(values.len(), 23, "every known solid");
         assert!(values.contains(&"\"Cube\"".to_string()));
         assert!(values.contains(&"\"TruncatedIcosahedron\"".to_string()));
       }
@@ -26151,6 +26373,28 @@ mod manipulate {
       })
       .collect();
     assert_eq!(widths, vec![10.0, 10.0]);
+  }
+
+  #[test]
+  fn display_invisible_is_not_shown_as_source() {
+    use woxi::functions::graphics::build_manipulate_display;
+    let tree = build_manipulate_display(
+      "Row[{\"a\", Invisible[x^2/(1 + 2^x)]}]",
+      &[("x".to_string(), "1".to_string())],
+    );
+    let mut nodes = Vec::new();
+    flatten(&tree, &mut nodes);
+    assert!(
+      nodes
+        .iter()
+        .all(|n| !matches!(n, DisplayNode::Static { .. })),
+      "Invisible must not fall through to a source-text leaf: {nodes:?}"
+    );
+    assert!(
+      nodes
+        .iter()
+        .any(|n| matches!(n, DisplayNode::Spacer { width } if *width == 0.0))
+    );
   }
 
   #[test]
@@ -31689,5 +31933,35 @@ mod options_of_a_graphic {
     assert!(svg.contains(r#"width="30" height="15""#), "{svg}");
     assert!(svg.contains(r#"viewBox="0 0 40 20""#), "{svg}");
     let _ = std::fs::remove_dir_all(&dir);
+  }
+}
+
+mod cases_on_a_plot {
+  use super::*;
+
+  // Regression: `Cases` treated a rendered plot as an atom, so extracting
+  // a curve's points with `Cases[plot, Line[u_] -> u, Infinity]` (a common
+  // idiom in Demonstrations) returned `{}` while `First`/`Length` worked.
+  #[test]
+  fn finds_the_line_primitives_of_a_parametric_plot() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "pts = First[Cases[ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 1}], \
+         Line[u_] -> u, Infinity]]; {Length[pts] > 2, First[pts]}"
+      )
+      .unwrap(),
+      "{True, {1., 0.}}"
+    );
+  }
+
+  #[test]
+  fn finds_the_line_primitives_of_a_plot() {
+    clear_state();
+    assert_eq!(
+      interpret("Length[Cases[Plot[x^2, {x, 0, 1}], Line[u_] -> u, Infinity]]")
+        .unwrap(),
+      "1"
+    );
   }
 }

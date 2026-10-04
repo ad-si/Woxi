@@ -2071,6 +2071,13 @@ pub fn dispatch_math_functions(
         Err(e) => return Some(Err(e)),
       }
     }
+    "FinancialDerivative" => {
+      if let Some(result) =
+        crate::functions::financial_ast::financial_derivative_ast(args)
+      {
+        return Some(result);
+      }
+    }
     "Haversine" if args.len() == 1 => {
       // Haversine is even: Haversine[-x] = Haversine[x].
       if let Some(pos) = crate::functions::math_ast::strip_negation(&args[0]) {
