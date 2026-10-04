@@ -1592,9 +1592,7 @@ pub fn event_series_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let is_event_series = matches!(&args[0], Expr::FunctionCall { name, args: a }
     if name == "EventSeries" && a.len() == 1)
     && series_pairs_of(&args[0]).is_some();
-  Ok(Expr::Identifier(
-    if is_event_series { "True" } else { "False" }.to_string(),
-  ))
+  Ok(bool_expr(is_event_series))
 }
 
 /// EventSeriesLookup[series, t] — the events nearest to `t`, as `{time, value}`

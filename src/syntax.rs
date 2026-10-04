@@ -4624,16 +4624,22 @@ fn parse_expression_inner(
       }
       _ => {
         if leading_minus {
-          // When `^` is followed by `-`, replace the `^` operator with the
-          // synthetic `^_NEG` (Power-with-negated-right) instead of inserting
-          // a synthetic 0 NEGATE pair. This is required because Power has
-          // higher precedence than NEGATE: `a^-b` would otherwise parse as
-          // `(a^0) - b`. With `^_NEG`, the right operand of the chain
-          // (e.g. `b^c` in `a^-b^c`) is wrapped in unary minus before being
-          // used as the exponent — matching Wolfram's `Power[a, -(b^c)]`.
-          if operators.last().is_some_and(|o| o == "^") {
-            operators.pop();
-            operators.push("^_NEG".to_string());
+          // When the operator just pushed binds *tighter* than the
+          // synthetic 0/NEGATE pair (precedence 45) would on its own,
+          // replace it with its `_NEG` variant (operand negated directly)
+          // instead of inserting that pair — otherwise the tighter operator
+          // claims the synthetic `0` before NEGATE ever sees it, e.g.
+          // `a^-b` would parse as `(a^0) - b` instead of `Power[a, -b]`, and
+          // `f @ -g[x]` would parse as `f[0]` with `g[x]` orphaned and
+          // negated on its own, dropping `f` entirely. With `_NEG`, the
+          // right operand of the chain (e.g. `b^c` in `a^-b^c`) is wrapped
+          // in unary minus before being used — matching Wolfram's
+          // `Power[a, -(b^c)]` (and likewise for `@`, `@@`, `/@`, …).
+          if operators.last().is_some_and(|o| {
+            operator_precedence(o) > operator_precedence("NEGATE")
+          }) {
+            let op = operators.pop().unwrap();
+            operators.push(format!("{op}_NEG"));
           } else {
             terms.push(Expr::Integer(0));
             term_was_implicit_times.push(false);
@@ -4978,10 +4984,15 @@ fn apply_anon_continuation(
       // Check for LeadingMinus after operator
       if let Some(next_pair) = iter.next() {
         if next_pair.as_rule() == Rule::LeadingMinus {
-          // Use `^_NEG` for `^-` (see comment in main expression branch).
-          if post_ops.last().is_some_and(|o| o == "^") {
-            post_ops.pop();
-            post_ops.push("^_NEG".to_string());
+          // Use `{op}_NEG` for a tighter-than-NEGATE operator followed by
+          // `-` (see the comment in the main expression branch) — e.g.
+          // `f & @ -g[x]`, the shape a Demonstration's
+          // `({{# - 2.5, 0}, {#, 0}}& )[-lift[phi]]` idiom parses to.
+          if post_ops.last().is_some_and(|o| {
+            operator_precedence(o) > operator_precedence("NEGATE")
+          }) {
+            let op = post_ops.pop().unwrap();
+            post_ops.push(format!("{op}_NEG"));
           } else {
             post_terms.push(Expr::Integer(0));
             post_ops.push("NEGATE".to_string());
@@ -5003,8 +5014,18 @@ fn apply_anon_continuation(
       post_ops.push(func_str);
       if let Some(next_pair) = iter.next() {
         if next_pair.as_rule() == Rule::LeadingMinus {
-          post_terms.push(Expr::Integer(0));
-          post_ops.push("NEGATE".to_string());
+          // Tilde infix (precedence 53) also binds tighter than NEGATE
+          // (45) — see the `Rule::Operator` branch above for why that
+          // needs `{op}_NEG` rather than the plain synthetic pair.
+          if post_ops.last().is_some_and(|o| {
+            operator_precedence(o) > operator_precedence("NEGATE")
+          }) {
+            let op = post_ops.pop().unwrap();
+            post_ops.push(format!("{op}_NEG"));
+          } else {
+            post_terms.push(Expr::Integer(0));
+            post_ops.push("NEGATE".to_string());
+          }
           if let Some(term_pair) = iter.next() {
             post_terms.push(pair_to_expr(term_pair));
           }
@@ -5565,6 +5586,17 @@ pub fn ends_with_continuing_named_operator(code_tail: &str) -> bool {
 /// Get precedence of an operator (higher = binds tighter).
 /// Matches Wolfram Language operator precedence ordering.
 fn operator_precedence(op: &str) -> u8 {
+  // `op_NEG` (`@_NEG`, `@@_NEG`, `/@_NEG`, …) is the same operator with a
+  // unary-minus'd right operand — see the `_NEG` arm of `make_binary_op` —
+  // and always binds exactly like its base. `^_NEG` predates this generic
+  // rule and keeps its own explicit entry below, so it is excluded here to
+  // avoid a redundant recursive step; every other operator's `_NEG` variant
+  // is generated (and needs a precedence) only through this generic path.
+  if op != "^_NEG"
+    && let Some(base) = op.strip_suffix("_NEG")
+  {
+    return operator_precedence(base);
+  }
   match op {
     ">>" | ">>>" => 0,      // Put/PutAppend (lowest precedence)
     "/:" => 3, // TagSet/TagSetDelayed (lower than assignment so RHS includes :=)
@@ -5793,31 +5825,35 @@ fn build_expr_with_precedence(
       continue;
     }
 
-    // For right-associative operators, use prec, otherwise use prec + 1
-    let next_min_prec = if op_str == "^"
-      || op_str == "^_NEG"
-      || op_str == "@"
-      || op_str == "="
-      || op_str == ":="
-      || op_str == "/:"
-      || op_str == "@@"
-      || op_str == "@@@"
-      || op_str == "/@"
-      || op_str == "@*"
-      || op_str == "/*"
-      || op_str == "->"
-      || op_str == "\u{2192}"
-      || op_str == "\\[Rule]"
-      || op_str == "\u{F522}"
-      || op_str == ":>"
-      || op_str == "\\[RuleDelayed]"
-      || op_str == "\u{F51F}"
-      || op_str == "\\[RightTee]"
-      || op_str == "\u{22A2}"
-      || op_str == "\\[Implies]"
-      || op_str == "\u{F523}"
-      || op_str == "\\[DoubleRightTee]"
-      || op_str == "\u{22A8}"
+    // For right-associative operators, use prec, otherwise use prec + 1.
+    // `op_NEG`'s right operand gets unary-minus'd (see `make_binary_op`)
+    // but its associativity is still its base operator's, so the check
+    // below is against `assoc_op_str` (the `_NEG` suffix stripped) rather
+    // than `op_str` directly.
+    let assoc_op_str = op_str.strip_suffix("_NEG").unwrap_or(op_str);
+    let next_min_prec = if assoc_op_str == "^"
+      || assoc_op_str == "@"
+      || assoc_op_str == "="
+      || assoc_op_str == ":="
+      || assoc_op_str == "/:"
+      || assoc_op_str == "@@"
+      || assoc_op_str == "@@@"
+      || assoc_op_str == "/@"
+      || assoc_op_str == "@*"
+      || assoc_op_str == "/*"
+      || assoc_op_str == "->"
+      || assoc_op_str == "\u{2192}"
+      || assoc_op_str == "\\[Rule]"
+      || assoc_op_str == "\u{F522}"
+      || assoc_op_str == ":>"
+      || assoc_op_str == "\\[RuleDelayed]"
+      || assoc_op_str == "\u{F51F}"
+      || assoc_op_str == "\\[RightTee]"
+      || assoc_op_str == "\u{22A2}"
+      || assoc_op_str == "\\[Implies]"
+      || assoc_op_str == "\u{F523}"
+      || assoc_op_str == "\\[DoubleRightTee]"
+      || assoc_op_str == "\u{22A8}"
     {
       prec
     } else {
@@ -5962,6 +5998,23 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
       &span_omitted_fallback(left),
       op_str,
       &span_omitted_fallback(right),
+    ),
+    // `op_NEG` — the synthetic marker `LeadingMinus` produces when it
+    // follows an operator that binds *tighter* than the unary-minus
+    // placeholder (`NEGATE`, precedence 45): `f @ -g[x]` (precedence 56)
+    // would otherwise let `@` claim the synthetic `0` before `NEGATE` ever
+    // sees it, parsing as `f[0]` with `g[x]` orphaned and negated on its
+    // own — dropping `f` entirely (`^_NEG` predates this and is excluded
+    // here, keeping its own explicit Power-shortcut arm below). Negating
+    // the right operand directly, the same way `^_NEG` already does for
+    // `Power`, sidesteps the precedence clash for every other operator.
+    _ if op_str != "^_NEG" && op_str.ends_with("_NEG") => make_binary_op(
+      left,
+      &op_str[..op_str.len() - "_NEG".len()],
+      &Expr::UnaryOp {
+        op: UnaryOperator::Minus,
+        operand: Box::new(right.clone()),
+      },
     ),
     "=." => {
       // Unset (postfix): f[x] =. → Unset[f[x]], right operand is a dummy

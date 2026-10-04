@@ -955,7 +955,7 @@ mod precision {
       "True"
     );
     let result = interpret("$TemporaryDirectory").unwrap();
-    assert!(!result.is_empty());
+    assert_ne!(result, "");
     assert!(!result.ends_with('/') || result == "/");
   }
 

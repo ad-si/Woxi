@@ -3382,6 +3382,44 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_plot_color_function_colors_curve_by_coordinates() {
+    // `ColorFunction` used to be dropped by Plot, so the whole curve came
+    // out in the default series color.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Plot[x, {x, -1, 1}, \
+         ColorFunction -> Function[{x, y}, If[y > 0, Red, Blue]], \
+         ColorFunctionScaling -> False], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains("stroke=\"#FF0000\""), "{svg}");
+    assert!(svg.contains("stroke=\"#0000FF\""), "{svg}");
+    assert!(!svg.contains("stroke=\"#5E81B5\""), "{svg}");
+
+    // A one-parameter function sees the x coordinate rescaled to 0..1.
+    clear_state();
+    let scaled = interpret(
+      "ExportString[Plot[x, {x, 0, 10}, \
+         ColorFunction -> Function[t, If[t < 0.5, Red, Blue]]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(scaled.contains("stroke=\"#FF0000\""), "{scaled}");
+    assert!(scaled.contains("stroke=\"#0000FF\""), "{scaled}");
+  }
+
+  #[test]
+  fn test_plot_label_string_with_newlines_stacks_lines() {
+    clear_state();
+    let svg = interpret(
+      "ExportString[Plot[x, {x, 0, 1}, PlotLabel -> \"top\\nbottom\"], \
+         \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains(">top<tspan"), "{svg}");
+    assert!(svg.contains(">bottom</tspan>"), "{svg}");
+  }
+
+  #[test]
   fn test_plot_label_style_sets_frame_label_size_and_color() {
     // LabelStyle -> {size, color} must restyle the FrameLabel/AxesLabel/
     // PlotLabel text; it used to be accepted and silently dropped, so a

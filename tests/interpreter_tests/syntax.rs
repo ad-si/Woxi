@@ -504,6 +504,32 @@ mod unary_minus_parsing {
     assert_eq!(interpret("Hold[a^-b^c]").unwrap(), "Hold[a^(-b^c)]");
   }
 
+  // Regression: `f @ -g[x]`, `f @@ -g[x]`, `f /@ -g[x]` (and the `& @ …`
+  // shape a pure function's parenthesized application takes) parsed as just
+  // `-g[x]`, dropping `f` entirely — the mirror image of the `^-` bug
+  // `power_with_negated_symbol_exponent` regression-tests: `@`/`@@`/`/@`
+  // also bind tighter than the synthetic unary-minus placeholder (NEGATE,
+  // precedence 45), so the climbing algorithm let the operator claim the
+  // placeholder before NEGATE ever combined it with the real right operand,
+  // orphaning `-g[x]` on its own with `f` (and the placeholder) discarded.
+  // A Demonstration's cam-profile idiom,
+  // `({{# - 2.5, 0}, {#, 0}}& )[-lift[phi]]` written as
+  // `{{# - 2.5, 0}, {#, 0}} & @ -lift[phi]`, hit exactly this shape.
+  #[test]
+  fn prefix_apply_map_with_negated_function_call_argument() {
+    assert_eq!(interpret("Hold[f@-g[5]]").unwrap(), "Hold[f[-g[5]]]");
+    assert_eq!(interpret("Hold[f@@-g[5]]").unwrap(), "Hold[f @@ (-g[5])]");
+    assert_eq!(interpret("Hold[f@@@-g[5]]").unwrap(), "Hold[f @@@ (-g[5])]");
+    assert_eq!(interpret("Hold[f/@-g[5]]").unwrap(), "Hold[f /@ (-g[5])]");
+    assert_eq!(
+      interpret("Hold[(#+1)&@-g[5]]").unwrap(),
+      "Hold[(#1 + 1 & )[-g[5]]]"
+    );
+    // Real evaluation, not just the held shape: `g[5] = 25`, so
+    // `(#+1)&@-g[5]` must be `-25 + 1`.
+    assert_eq!(interpret("g[x_] := x^2; (#+1)&@-g[5]").unwrap(), "-24");
+  }
+
   #[test]
   fn implicit_times_power_with_part_exponent() {
     // Regression: `a I^-#2[[1]]` failed to parse because the
@@ -11993,6 +12019,15 @@ mod empty_statements {
   #[test]
   fn a_bare_empty_statement_evaluates_to_the_next_one() {
     assert_eq!(interpret("c = 4; ; c + 1").unwrap(), "5");
+  }
+
+  /// A commented-out unit note after the last statement (`x = 0.039; (*
+  /// %/sec *);`) leaves empty statements after the final `;`.
+  #[test]
+  fn empty_statements_after_the_final_semicolon_are_ignored() {
+    assert_eq!(interpret("c = 4; (* note *);").unwrap(), "\0");
+    assert_eq!(interpret("c = 4; ;").unwrap(), "\0");
+    assert_eq!(interpret("c = 4; (* a *); (* b *); c + 1").unwrap(), "5");
   }
 
   /// `;;` is still a `Span`, not two separators.
