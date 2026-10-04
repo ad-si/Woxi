@@ -2555,7 +2555,11 @@ pub fn norm_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // to a machine-precision numeric result, mirroring Wolfram's
       // behavior (Norm[{1.0, 2, 3}] → 3.741…).
       // Otherwise stay in "exact" mode and build a symbolic expression.
-      let inexact = items.iter().any(contains_inexact_real);
+      // A vector that also holds symbolic entries (Norm[{-2., y}]) cannot
+      // collapse to a number and takes the symbolic path below, keeping its
+      // inexact entries inexact.
+      let inexact = items.iter().any(contains_inexact_real)
+        && items.iter().all(|item| try_eval_to_f64(item).is_some());
 
       if inexact {
         let mut vals = Vec::with_capacity(items.len());
