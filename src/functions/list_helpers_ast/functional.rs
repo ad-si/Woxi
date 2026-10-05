@@ -1213,10 +1213,9 @@ fn binary_op_to_name(op: BinaryOperator) -> &'static str {
 }
 
 fn unary_op_to_name(op: UnaryOperator) -> &'static str {
-  use UnaryOperator as U;
   match op {
-    U::Minus => "Times",
-    U::Not => "Not",
+    UnaryOperator::Minus => "Times",
+    UnaryOperator::Not => "Not",
   }
 }
 
