@@ -32136,4 +32136,19 @@ mod cases_on_a_plot {
     assert_ne!(no_frame, framed);
     assert_eq!(framed, export_svg("Graphics[Circle[], Frame -> True]"));
   }
+
+  #[test]
+  fn grid_cell_with_raw_boxes_is_typeset_not_source() {
+    for head in ["RawBoxes", "DisplayForm"] {
+      let svg = export_svg(&format!(
+        "Grid[{{{{{head}[RowBox[{{\"2\", SqrtBox[RowBox[{{\"p\", \"×\", \"q\"}}]]}}]], 1}}}}]"
+      ));
+      assert!(
+        svg
+          .contains("2\u{221A}<tspan text-decoration=\"overline\">p×q</tspan>"),
+        "{head}: {svg}"
+      );
+      assert!(!svg.contains("RowBox"), "{head}: {svg}");
+    }
+  }
 }

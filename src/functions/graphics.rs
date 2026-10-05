@@ -3520,6 +3520,23 @@ fn point_along_path(pts: &[(f64, f64)], t: f64) -> (f64, f64) {
 /// `Row[{Style[NumberForm[50., {3, 1}], 18], Style["% shaded", 18]}]`
 /// becomes "50.0% shaded". Plain strings pass through verbatim; anything
 /// else falls back to `ToString`'s default form.
+/// Whether `name[args]` is `RawBoxes[boxes]` or `DisplayForm[boxes]` around a
+/// box tree (a `…Box[…]` call or a box string), as opposed to a
+/// `DisplayForm` of an ordinary expression.
+fn is_box_display_wrapper(name: &str, args: &[Expr]) -> bool {
+  if args.len() != 1 {
+    return false;
+  }
+  match name {
+    "RawBoxes" => true,
+    "DisplayForm" => matches!(
+      &args[0],
+      Expr::FunctionCall { name, .. } if name.ends_with("Box")
+    ),
+    _ => false,
+  }
+}
+
 fn graphics_text_content(expr: &Expr) -> String {
   match expr {
     // A string carrying inline `\!\(\*…\)` box notation — the front end's
@@ -3562,6 +3579,14 @@ fn graphics_text_content(expr: &Expr) -> String {
     // that form; inside a picture everything is typeset already, so the
     // wrapper contributes no text of its own. Without this the box markup
     // it serializes to leaked into the picture as literal source.
+    // `RawBoxes[boxes]` / `DisplayForm[boxes]` hand over a box tree, which
+    // is drawn as the typeset text it describes, not as the `RowBox[…]`
+    // source.
+    Expr::FunctionCall { name, args }
+      if is_box_display_wrapper(name, args) =>
+    {
+      box_expr_to_plain(&args[0])
+    }
     Expr::FunctionCall { name, args }
       if matches!(
         name.as_str(),
@@ -11038,6 +11063,9 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
         ),
 
         // Presentation wrappers display their content only.
+        "RawBoxes" | "DisplayForm" if is_box_display_wrapper(name, args) => {
+          boxes_to_svg(&args[0])
+        }
         "Text" | "DisplayForm" | "StandardForm" if args.len() == 1 => {
           expr_to_svg_markup(&args[0])
         }
@@ -11513,6 +11541,10 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
       // Row cell several times too wide for the glyphs drawn in it.
       // `Invisible[content]` is one of them: it reserves exactly the space
       // `content` takes, it just isn't painted.
+      "RawBoxes" | "DisplayForm" if is_box_display_wrapper(name, args) => {
+        estimate_box_display_width(&args[0])
+      }
+      "RowBox" if args.len() == 1 => estimate_box_display_width(expr),
       "Text" | "TraditionalForm" | "DisplayForm" | "StandardForm"
       | "Invisible"
         if args.len() == 1 =>
@@ -11690,7 +11722,8 @@ fn estimate_unit_abbrev_width(unit: &Expr) -> f64 {
 fn is_typeset_box_head(name: &str) -> bool {
   matches!(
     name,
-    "SubscriptBox"
+    "RowBox"
+      | "SubscriptBox"
       | "SuperscriptBox"
       | "SubsuperscriptBox"
       | "UnderscriptBox"
