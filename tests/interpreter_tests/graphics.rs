@@ -2676,6 +2676,18 @@ mod graphics {
     }
 
     #[test]
+    fn hue_single_element_list_matches_scalar() {
+      assert_eq!(
+        export_svg("Graphics[{Hue[{1/3}], Disk[]}]"),
+        export_svg("Graphics[{Hue[1/3], Disk[]}]")
+      );
+      assert_eq!(
+        export_svg("Graphics[{Hue[{0.6, 0.5, 0.9}], Disk[]}]"),
+        export_svg("Graphics[{Hue[0.6, 0.5, 0.9], Disk[]}]")
+      );
+    }
+
+    #[test]
     fn directive_compound() {
       insta::assert_snapshot!(export_svg(
         "Graphics[{Directive[Red, Thickness[0.01]], Line[{{0, 0}, {1, 1}}]}]"
@@ -7057,6 +7069,18 @@ mod plot3d {
       assert_eq!(styled, ["diameter (cm)", "force (kN)"]);
     }
 
+    /// Regression: `RegionPlot` ignored `FrameLabel`, so a Demonstration's
+    /// captioned region plot came out with bare axes.
+    #[test]
+    fn region_plot_frame_label_captions_the_edges() {
+      let svg = export_svg(
+        "RegionPlot[x + y < 1, {x, 0, 1}, {y, 0, 1}, \
+         FrameLabel -> {\"fb\", \"fl\"}]",
+      );
+      assert!(svg.contains(">fb</text>"), "{svg}");
+      assert!(svg.contains(">fl</text>"), "{svg}");
+    }
+
     /// The rotated left `FrameLabel` is anchored by its baseline, whose
     /// glyphs rise ~0.75em to the left of it; with a narrow `ImagePadding`
     /// the baseline used to be clamped to half an em, so the label was cut
@@ -8381,6 +8405,22 @@ mod plot3d {
         padded.contains("904,1029 2245,1029 2245,200 904,200"),
         "the padded frame must keep its aspect ratio: {padded}"
       );
+    }
+
+    /// A one-sided `ImagePadding` shrinks the drawing area, but a `Graphics`
+    /// keeps equal x and y scales inside it, so a `Disk` stays a circle.
+    #[test]
+    fn image_padding_keeps_disks_round() {
+      let svg = export_svg(
+        "Graphics[{Disk[{0, 0}, 1]}, ImageSize -> {450, 300}, \
+         ImagePadding -> {{25, 0}, {0, 0}}]",
+      );
+      let attr = |name: &str| -> f64 {
+        let key = format!(" {name}=\"");
+        let i = svg.find(&key).expect(name) + key.len();
+        svg[i..i + svg[i..].find('"').unwrap()].parse().unwrap()
+      };
+      assert_eq!(attr("rx"), attr("ry"), "disk must stay round: {svg}");
     }
 
     /// Every label of a tick set carries the decimals its step needs, so a
@@ -26195,10 +26235,10 @@ mod manipulate {
       ManipulateControl::Discrete { name, values, .. } => {
         assert_eq!(name, "g");
         // The five Platonic solids, the Archimedean solids (and their
-        // duals) with icosahedral or cubic symmetry, the great and small stellated
-        // dodecahedra and rhombic hexecontahedron stellations, the
-        // triangular orthobicupola, the Bilinski dodecahedron, and the
-        // stella octangula.
+        // duals) with icosahedral or cubic symmetry, the great
+        // and small stellated dodecahedra and rhombic hexecontahedron
+        // stellations, the triangular orthobicupola, the Bilinski
+        // dodecahedron, and the stella octangula.
         assert_eq!(values.len(), 24, "every known solid");
         assert!(values.contains(&"\"Cube\"".to_string()));
         assert!(values.contains(&"\"TruncatedIcosahedron\"".to_string()));

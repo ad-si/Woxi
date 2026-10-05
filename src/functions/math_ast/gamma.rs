@@ -1073,8 +1073,29 @@ fn incomplete_beta_ast(
     }
   }
 
-  // Otherwise leave unevaluated — matches wolframscript for symbolic z, a
-  // non-whole b, or an exact non-integer a.
+  // Inexact numeric arguments with a non-whole b (or a whole b the branch
+  // above did not take): B(z; a, b) = B(a, b) · I_z(a, b) on 0 < z < 1 with
+  // positive a and b. Exact arguments stay symbolic, matching wolframscript.
+  let any_inexact = contains_inexact_real(z)
+    || contains_inexact_real(a)
+    || contains_inexact_real(b);
+  if any_inexact
+    && z_is_numeric
+    && let (Some(zf), Some(af), Some(bf)) =
+      (try_eval_to_f64(z), try_eval_to_f64(a), try_eval_to_f64(b))
+    && zf > 0.0
+    && zf < 1.0
+    && af > 0.0
+    && bf > 0.0
+  {
+    let value = beta_regularized_numeric(zf, af, bf) * ln_beta(af, bf).exp();
+    if value.is_finite() {
+      return Ok(Expr::Real(value));
+    }
+  }
+
+  // Otherwise leave unevaluated — matches wolframscript for symbolic z, an
+  // exact non-whole b, or an exact non-integer a.
   Ok(call("Beta", vec![z.clone(), a.clone(), b.clone()]))
 }
 
