@@ -10915,6 +10915,28 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn geometric_transformation_distorts_text_glyphs() {
+      // Transformed text moves its anchor and has its glyphs sheared and
+      // stretched by the linear part (square 4-by-4 window: equal x/y
+      // scale, so the SVG matrix is {a, -c, -b, d}).
+      let svg = export_svg(
+        "Graphics[GeometricTransformation[Style[Text[\"A\", {0, 0}], 40], \
+         {{{1, 1}, {0, 1.5}}, {1, 0}}], \
+         PlotRange -> {{-4, 4}, {-4, 4}}]",
+      );
+      assert!(svg.contains("x=\"225.00\" y=\"180.00\""), "{svg}");
+      assert!(
+        svg.contains("matrix(1.00000 -0.00000 -1.00000 1.50000 0 0)"),
+        "{svg}"
+      );
+      // Untransformed text carries no matrix.
+      let plain = export_svg(
+        "Graphics[Text[\"A\", {0, 0}], PlotRange -> {{-4, 4}, {-4, 4}}]",
+      );
+      assert!(!plain.contains("matrix("), "{plain}");
+    }
+
+    #[test]
     fn a_plots_curve_is_reachable_by_a_structural_rule() {
       // Wolfram keeps a plot's curve as `Line` primitives, so a rule naming
       // one rewrites the picture — the Demonstrations idiom for drawing a
