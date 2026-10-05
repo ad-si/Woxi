@@ -21058,6 +21058,15 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         if let Some(code) = values_code {
           dynamic_values.push((c.name().to_string(), code));
         }
+        // A compiled widget dump lists every module variable as a hidden
+        // `{var, ControlType -> None}` entry ahead of the visible control
+        // that redeclares it; the later visible control owns the value, so
+        // the earlier hidden entry must not shadow it. (A hidden entry
+        // declared *after* the control stays: it is the deliberate
+        // "actual starting value" override idiom.)
+        if !c.name().is_empty() {
+          state.retain(|(n, _)| n != c.name());
+        }
         controls.push(c);
       }
       ParsedControl::ListElement {
