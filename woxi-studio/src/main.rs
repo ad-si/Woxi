@@ -10333,11 +10333,8 @@ Cell[BoxData[
           ..
         },
       ] => {
-        assert_eq!(
-          (a.as_str(), *a_min, *a_max, *a_now),
-          ("a$$", 1.0, 5.0, 2.0)
-        );
-        assert_eq!(b, "b$$");
+        assert_eq!((a.as_str(), *a_min, *a_max, *a_now), ("a", 1.0, 5.0, 2.0));
+        assert_eq!(b, "b");
         assert_eq!(
           b_values,
           &["1".to_string(), "2".to_string(), "3".to_string()]
@@ -10604,10 +10601,7 @@ Cell[BoxData[
           ..
         },
       ] => {
-        assert_eq!(
-          (b.as_str(), c.as_str(), zoom.as_str()),
-          ("b$$", "c$$", "zoom$$")
-        );
+        assert_eq!((b.as_str(), c.as_str(), zoom.as_str()), ("b", "c", "zoom"));
         assert_eq!((*zoom_min, *zoom_max, *zoom_now), (0.0, 45.0, 0.0));
       }
       other => panic!("unexpected controls: {other:?}"),
@@ -24219,7 +24213,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`nmax$$ = 10}, DynamicBox[\[Ellipsis
         .iter()
         .map(|c| c.name().to_string())
         .collect::<Vec<_>>(),
-      vec!["n$$"],
+      vec!["n"],
       "the tagged helper spec must not create a spurious second control: \
        {:?}",
       state.controls
@@ -24266,7 +24260,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`nmax$$ = 10}, DynamicBox[\[Ellipsis
         .iter()
         .map(|c| c.name().to_string())
         .collect::<Vec<_>>(),
-      vec!["step$$", "angle$$"],
+      vec!["step", "angle"],
       "the duplicate angle$$ spec must collapse into a single row: {:?}",
       state.controls
     );
@@ -24277,7 +24271,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`nmax$$ = 10}, DynamicBox[\[Ellipsis
        hidden: {:?}",
       state.control_is_visible
     );
-    state.apply_saved_variables(&[("step$$".to_string(), "2".to_string())]);
+    state.apply_saved_variables(&[("step".to_string(), "2".to_string())]);
     assert_eq!(
       state.control_is_visible,
       vec![true, true],

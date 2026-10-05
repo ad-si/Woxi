@@ -19142,4 +19142,22 @@ mod nested_product_expansion_stays_bounded {
       assert!(out.contains(&format!("x^{k}")), "missing x^{k} in {out}");
     }
   }
+
+  #[test]
+  fn solve_single_equation_list_keeps_root_multiplicity() {
+    // A one-element equation list is the bare equation, so a double root
+    // is reported twice in both forms.
+    assert_eq!(
+      interpret("Solve[(x - 2)^2 == 0, x]").unwrap(),
+      "{{x -> 2}, {x -> 2}}"
+    );
+    assert_eq!(
+      interpret("Solve[{(x - 2)^2 == 0}, x]").unwrap(),
+      "{{x -> 2}, {x -> 2}}"
+    );
+    assert_eq!(
+      interpret("k = -1; Solve[{2 - x^2/4 == k (x - 2) + 1}]").unwrap(),
+      "{{x -> 2}, {x -> 2}}"
+    );
+  }
 }

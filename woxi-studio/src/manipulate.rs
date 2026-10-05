@@ -1532,6 +1532,42 @@ fn format_f64_real(v: f64) -> String {
 
 #[cfg(test)]
 mod tests {
+  /// A compiled widget dump lists each module variable as a hidden
+  /// `{var, ControlType -> None}` entry before the visible control for the
+  /// same variable; the hidden initial value must not shadow the control.
+  #[test]
+  fn hidden_state_entry_does_not_shadow_visible_control() {
+    let code = r#"Manipulate[
+      {a, b},
+      {{a, 1}, ControlType -> None},
+      {{a, 2, "a"}, {1 -> "one", 2 -> "two", 3 -> "three"},
+        ControlType -> PopupMenu},
+      {{b, 0.5}, 0, 1}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert!(
+      state.state.iter().all(|(n, _)| n != "a"),
+      "control-bound variable must not stay in hidden state: {:?}",
+      state.state
+    );
+    let idx = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "a")
+      .expect("popup control for a");
+    assert!(state.select_discrete(idx, "three"));
+    let bindings = state.bindings();
+    assert_eq!(
+      bindings
+        .iter()
+        .find(|(n, _)| n == "a")
+        .map(|(_, v)| v.as_str()),
+      Some("3")
+    );
+  }
+
   use super::*;
 
   /// Checked a randomly-sampled Wolfram Demonstrations Project notebook

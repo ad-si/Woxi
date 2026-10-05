@@ -2016,6 +2016,27 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
+  // A one-element equation list stands for the bare equation. Unwrapping it
+  // keeps the bare form's root multiplicity: `Solve[{(x - 2)^2 == 0}, x]`
+  // gives `{{x -> 2}, {x -> 2}}` just like `Solve[(x - 2)^2 == 0, x]`.
+  let unwrapped_args_owned: Vec<Expr>;
+  let args = match &args[0] {
+    Expr::List(items)
+      if items.len() == 1
+        && matches!(
+          &items[0],
+          Expr::Comparison { .. } | Expr::FunctionCall { .. }
+        )
+        && !matches!(&items[0], Expr::FunctionCall { name, .. } if name == "List") =>
+    {
+      let mut new_args = args.to_vec();
+      new_args[0] = items[0].clone();
+      unwrapped_args_owned = new_args;
+      unwrapped_args_owned.as_slice()
+    }
+    _ => args,
+  };
+
   // One-argument form Solve[eqns]: auto-detect the variables and delegate to
   // the two-argument form. Only the unambiguous cases are handled — a single
   // variable, or a determined/overdetermined system (variables <= equations).
