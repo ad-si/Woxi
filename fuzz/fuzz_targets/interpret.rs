@@ -59,6 +59,18 @@ const SIDE_EFFECT_DENYLIST: &[&str] = &[
 const NONTERMINATING_DENYLIST: &[&str] =
   &["While", "For", "FixedPoint", "TimeConstrained"];
 
+/// Heads that iterate a user function a written number of times. Such a
+/// program terminates, but the fuzzer mutates the seed's *data*, and an
+/// iterate that grows each step turns that count into an exponent: in
+/// `tests/scripts/dragon_curve.wls` the line `{a, b}` becomes `{aLog, b}`,
+/// and the 11 `Nest` steps that fold a numeric curve in 0.08 s now build a
+/// symbolic one of 250 million leaves — wolframscript needs 12 s and 8 GB of
+/// unshared `ByteCount` for it, which under ASan is far past both the
+/// timeout and `-rss_limit_mb`. The finding says nothing about the
+/// interpreter, so inputs mentioning `Nest` (and through it `NestList`,
+/// `NestGraph`, `NestTree`) are skipped like the loop heads above.
+const EXPONENTIAL_DENYLIST: &[&str] = &["Nest"];
+
 fuzz_target!(|data: &[u8]| {
   if data.len() > 2048 {
     return;
@@ -69,6 +81,7 @@ fuzz_target!(|data: &[u8]| {
   if SIDE_EFFECT_DENYLIST
     .iter()
     .chain(NONTERMINATING_DENYLIST)
+    .chain(EXPONENTIAL_DENYLIST)
     .any(|head| input.contains(head))
   {
     return;

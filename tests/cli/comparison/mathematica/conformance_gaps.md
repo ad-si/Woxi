@@ -443,6 +443,36 @@ leading `-2` is distributed. All are value-identical — the unit tests check th
 `Gamma[a, z] = (Gamma[a + 1, z] - z^a E^-z)/a` recurrence and compare
 numerically against `ExpIntegralE`.
 
+### A bare symbol sorts before a scaled sum that ends in it
+
+```sh
+wolframscript -code 'ToString[x + 2 (-1 + x), InputForm]'      # 2*(-1 + x) + x
+woxi eval 'ToString[x + 2 (-1 + x), InputForm]'                # x + 2*(-1 + x)
+wolframscript -code 'ToString[y + 0.5 (-0.5 - x), InputForm]'  # 0.5*(-0.5 - x) + y
+woxi eval 'ToString[y + 0.5 (-0.5 - x), InputForm]'            # y + 0.5*(-0.5 - x)
+```
+
+Every sign and coefficient (`2 (1 - x)`, `0.5 (-1 - x)`, `(-1/2 - x)/3`) puts
+the product first in WL, while `x + 2 (y + z)` and `z + 0.5 (y + z)` keep the
+symbol first in both. Same comparator as the entry above: WL keys the scaled
+sum on its last term (`x` ties with `x`, and a sum then sorts before the bare
+symbol, the `-1 + x < x` rule of `Sort`). Value identical, display only.
+
+### Inexact zero is dropped from a symbolic sum
+
+```sh
+wolframscript -code 'ToString[x + 0., InputForm]'     # 0. + x
+woxi eval 'ToString[x + 0., InputForm]'               # x
+wolframscript -code 'ToString[2. x + 0., InputForm]'  # 0. + 2.*x
+woxi eval 'ToString[2. x + 0., InputForm]'            # 2.*x
+```
+
+WL keeps a machine `0.` as the numeric term of any sum that has a symbolic
+part, so `a + 0.5 (b - a) + {{0., 0.5}, {-0.5, 0.}} . (b - a)` with symbolic
+`a` carries a `0. +` in every component. Woxi only keeps it when an `I` term
+needs it as the real part of a `Complex` (`1. + 0. I`). The `LinearModelFit`
+`BestFit` entry below is one symptom.
+
 ### Nested sum-versus-sum factor order
 
 `(-1 + x)*(1 + (-2 + x)/2)` — WL emits the more-nested factor first. Value

@@ -6041,6 +6041,21 @@ mod qfactorial {
 mod plus_term_ordering {
   use super::*;
 
+  // The terms are sorted through an index permutation; every term has to
+  // land exactly once, in canonical order, however scrambled the input is.
+  #[test]
+  fn many_terms_sort_into_canonical_order() {
+    assert_eq!(
+      interpret("Sin[b] + 2 y + Log[z] + x^3 + c + b + 3 a^2").unwrap(),
+      "3*a^2 + b + c + x^3 + 2*y + Log[z] + Sin[b]"
+    );
+    // A sum nested in itself re-sorts its terms at every level.
+    assert_eq!(
+      interpret("Nest[2 (# - y) + # &, x, 3] /. y -> 0").unwrap(),
+      "27*x"
+    );
+  }
+
   // A pure-imaginary literal is a coefficient like any other, so the terms
   // order by what is left once it is stripped.
   #[test]

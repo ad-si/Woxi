@@ -1319,27 +1319,33 @@ pub fn plus_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Catch the panic and fall back to a stable string-based sort instead, so
     // these inputs simply lose the fine-grained Wolfram-flavoured ordering
     // rather than aborting the program.
-    let fallback_order: Vec<usize> = {
-      let mut idx: Vec<usize> = (0..sorted_symbolic.len()).collect();
-      idx.sort_by_cached_key(|&i| term_sort_key(&sorted_symbolic[i]));
-      idx
-    };
+    //
+    // Both sorts permute indices, not the terms themselves: a panicking sort
+    // leaves `sorted_symbolic` untouched without a defensive deep copy, and
+    // the string keys of the fallback are only rendered when it is needed.
+    // Each costs time proportional to the size of the whole subtree, and
+    // every level of a nested sum re-evaluates its terms, so paying them
+    // unconditionally made re-evaluating a sum quadratic in its depth.
+    let mut order: Vec<usize> = (0..sorted_symbolic.len()).collect();
     let prev_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(|_| {}));
     let sort_result =
       std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let mut clone = sorted_symbolic.clone();
-        clone.sort_by(compare_plus_terms);
-        clone
+        order.sort_by(|&i, &j| {
+          compare_plus_terms(&sorted_symbolic[i], &sorted_symbolic[j])
+        });
       }));
     std::panic::set_hook(prev_hook);
-    sorted_symbolic = match sort_result {
-      Ok(v) => v,
-      Err(_) => fallback_order
-        .into_iter()
-        .map(|i| sorted_symbolic[i].clone())
-        .collect(),
-    };
+    if sort_result.is_err() {
+      order = (0..sorted_symbolic.len()).collect();
+      order.sort_by_cached_key(|&i| term_sort_key(&sorted_symbolic[i]));
+    }
+    let mut slots: Vec<Option<Expr>> =
+      sorted_symbolic.into_iter().map(Some).collect();
+    sorted_symbolic = order
+      .into_iter()
+      .map(|i| slots[i].take().expect("sort order is a permutation"))
+      .collect();
 
     // Hoist a pure-imaginary numeric term to the front so it sorts like the
     // number it is (`x + 3*I` → `3*I + x`). See `hoist_imaginary` above.
