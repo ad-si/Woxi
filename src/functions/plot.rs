@@ -8627,8 +8627,15 @@ pub(crate) fn parse_image_padding(value: &Expr) -> Option<[f64; 4]> {
 
 /// `Frame -> True | All` draws the boxed frame; anything else (`False`,
 /// `Automatic`, a per-edge list) leaves the plain axes.
+/// `Frame -> True | All`, or the per-edge forms `{l, r, b, t}` and
+/// `{{l, r}, {b, t}}`. Edges are not drawn individually; the frame is drawn
+/// when any edge asks for it.
 pub(crate) fn parse_frame_option(value: &Expr) -> bool {
-  matches!(value, Expr::Identifier(v) if v == "True" || v == "All")
+  match value {
+    Expr::Identifier(v) => v == "True" || v == "All",
+    Expr::List(items) => items.iter().any(parse_frame_option),
+    _ => false,
+  }
 }
 
 pub(crate) fn apply_frame_label_option(value: &Expr, opts: &mut PlotOptions) {

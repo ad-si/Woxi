@@ -8340,10 +8340,8 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
         "Frame" => {
-          if let Expr::Identifier(s) = replacement {
-            if s == "True" {
-              frame = true;
-            }
+          if crate::functions::plot::parse_frame_option(replacement) {
+            frame = true;
           } else if let Expr::FunctionCall { name: fn_name, .. } = replacement
             && fn_name == "True"
           {
