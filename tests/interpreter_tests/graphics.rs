@@ -32085,4 +32085,33 @@ mod cases_on_a_plot {
       "1"
     );
   }
+
+  /// `Frame -> {True, True, True, True}` (and the nested per-edge form)
+  /// draws the frame, alone and when `Show` layers other graphics on top.
+  #[test]
+  fn per_edge_frame_option_draws_a_frame() {
+    clear_state();
+    let plain = export_svg("ListPlot[{{1, 2}, {3, 4}}, Frame -> True]");
+    for frame in ["{True, True, True, True}", "{{True, False}, {True, False}}"]
+    {
+      let listed = export_svg(&format!(
+        "ListPlot[{{{{1, 2}}, {{3, 4}}}}, Frame -> {frame}]"
+      ));
+      assert_eq!(listed, plain, "ListPlot Frame -> {frame}");
+      let shown = export_svg(&format!(
+        "Show[ListPlot[{{{{1, 2}}, {{3, 4}}}}, Frame -> {frame}], \
+         Graphics[{{Red, Line[{{{{2, 0}}, {{2, 4}}}}]}}]]"
+      ));
+      let shown_true = export_svg(
+        "Show[ListPlot[{{1, 2}, {3, 4}}, Frame -> True], \
+         Graphics[{Red, Line[{{2, 0}, {2, 4}}]}]]",
+      );
+      assert_eq!(shown, shown_true, "Show with Frame -> {frame}");
+    }
+    let no_frame = export_svg("Graphics[Circle[]]");
+    let framed =
+      export_svg("Graphics[Circle[], Frame -> {True, True, True, True}]");
+    assert_ne!(no_frame, framed);
+    assert_eq!(framed, export_svg("Graphics[Circle[], Frame -> True]"));
+  }
 }
