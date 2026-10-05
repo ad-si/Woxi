@@ -5208,7 +5208,14 @@ fn locator_positions(arg: &Expr) -> Option<Expr> {
     {
       crate::evaluator::evaluate_expr_to_expr(&args[0]).ok()
     }
-    other => crate::evaluator::evaluate_expr_to_expr(other).ok(),
+    // A locator spec computed by code (`Switch[mode, 1, Dynamic[p, f], …]`)
+    // evaluates to the `Dynamic` it selects; read the position from that.
+    other => match crate::evaluator::evaluate_expr_to_expr(other).ok()? {
+      d @ Expr::FunctionCall { .. } if matches!(&d, Expr::FunctionCall { name, .. } if name == "Dynamic") => {
+        locator_positions(&d)
+      }
+      v => Some(v),
+    },
   }
 }
 

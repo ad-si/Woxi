@@ -14517,6 +14517,8 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         "Dynamic[p, (p = #) &]",
         "p = {0.5, 0.5}; Dynamic[p]",
         "p = {0.5, 0.5}; Dynamic[p, (p = #) &]",
+        // The spec may be chosen by code, e.g. by a snapping mode.
+        "mode = 2; Switch[mode, 1, Dynamic[p], 2, Dynamic[p, (p = #) &]]",
       ] {
         let svg = export_svg(&format!(
           "p = {{0.5, 0.5}}; LocatorPane[{locators}, {body}]"
