@@ -2813,6 +2813,19 @@ fn extract_arrow_value<'a>(box_dump: &'a str, key: &str) -> Option<&'a str> {
 /// the plain names [`extract_saved_manipulate_variables`] reports — as the
 /// author wrote it. Only a `$$` that ends a symbol is removed; a symbol
 /// like `` x$1$$ `` keeps its inner `$`.
+/// Whether `prefix` ends in a complete `\[Name]` named-character escape
+/// (e.g. the `\[Alpha]` of a variable `\[Alpha]$$`).
+fn closes_named_character(prefix: &[char]) -> bool {
+  if prefix.last() != Some(&']') {
+    return false;
+  }
+  let mut j = prefix.len() - 1;
+  while j > 0 && prefix[j - 1].is_alphanumeric() {
+    j -= 1;
+  }
+  j >= 2 && prefix[j - 1] == '[' && prefix[j - 2] == '\\'
+}
+
 fn strip_uniquification_suffix(src: &str) -> String {
   let chars: Vec<char> = src.chars().collect();
   let mut out = String::with_capacity(src.len());
@@ -2821,7 +2834,9 @@ fn strip_uniquification_suffix(src: &str) -> String {
     let ends_symbol = chars[i] == '$'
       && chars.get(i + 1) == Some(&'$')
       && i > 0
-      && (chars[i - 1].is_alphanumeric() || chars[i - 1] == '$')
+      && (chars[i - 1].is_alphanumeric()
+        || chars[i - 1] == '$'
+        || closes_named_character(&chars[..i]))
       && !chars
         .get(i + 2)
         .is_some_and(|c| c.is_alphanumeric() || *c == '$' || *c == '`');
@@ -7699,5 +7714,20 @@ Cell[BoxData[RowBox[{"arrowHead", "=", RowBox[{"{", RowBox[{"Line", "[", RowBox[
       box_source_to_expression(with_boxes).expect("box source must convert");
     assert_eq!(with_src, "With[{v=1},v+1]", "got: {with_src:?}");
     assert_eq!(crate::interpret(&with_src).unwrap(), "2");
+  }
+
+  #[test]
+  fn reconstructed_manipulate_strips_suffix_from_named_character_variables() {
+    // A control whose variable is a Greek letter is dumped as
+    // `\[Alpha]$$`; the uniquification suffix used to survive because the
+    // character before `$$` is the escape's closing bracket, leaving the
+    // control labelled `α$$`.
+    let dump = "DynamicModuleBox[{}, DynamicBox[Manipulate`ManipulateBoxes[1, \
+      StandardForm, \"Body\" :> $CellContext`\\[Alpha]$$ + $CellContext`k$$, \
+      \"Specifications\" :> {{{$CellContext`\\[Alpha]$$, {0.2, 0}}, {-1, -1}, \
+      {1, 1}}, {$CellContext`k$$, 1, 5}}]]]";
+    let src = reconstruct_manipulate_from_box_dump(dump).unwrap();
+    assert!(!src.contains("$$"), "got: {src}");
+    assert!(src.contains("\\[Alpha]"), "got: {src}");
   }
 }
