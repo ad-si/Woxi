@@ -4348,12 +4348,12 @@ mod tests {
 
     #[test]
     fn unclamped_knots_leave_an_open_spline_off_its_end_points() {
-      let (x, y) = first_vertex(&format!(
-        "Graphics[BSplineCurve[{{{{0, 0}}, {{1, 0}}, {{1, 1}}, {{0, 1}}, \
-         {{0, 2}}}}, SplineKnots -> \"Unclamped\"], \
-         PlotRange -> {{{{0, 1}}, {{0, 2}}}}, PlotRangePadding -> None, \
-         ImageSize -> 100]"
-      ));
+      let (x, y) = first_vertex(
+        "Graphics[BSplineCurve[{{0, 0}, {1, 0}, {1, 1}, {0, 1}, \
+         {0, 2}}, SplineKnots -> \"Unclamped\"], \
+         PlotRange -> {{0, 1}, {0, 2}}, PlotRangePadding -> None, \
+         ImageSize -> 100]",
+      );
       assert!(
         x > 1.0 && y < 199.0,
         "curve must not start at (0, 0): {x},{y}"
