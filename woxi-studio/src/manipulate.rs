@@ -2562,4 +2562,28 @@ mod tests {
     );
     assert!(dump("k$$").contains("label: \"freq\""), "{}", dump("k$$"));
   }
+
+  /// A control written `{{flag, flag, "label"}, {False, True}}` names its
+  /// own unassigned variable as the initial value. That is no value at
+  /// all: the control starts on its first choice, so the body sees `False`
+  /// rather than the bare symbol `flag` (which `Which`/`If` cannot decide).
+  #[test]
+  fn self_named_initial_value_starts_on_the_first_choice() {
+    let code = r#"Manipulate[
+      Graphics[{If[flag, Disk[], Circle[]]}],
+      {{r, 1, "radius"}, 0, 2},
+      {{flag, flag, "toggle"}, {False, True}}
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = ManipulateState::from_expr(&expr).expect("state should build");
+    let flag = state
+      .controls
+      .iter()
+      .find(|c| c.name() == "flag")
+      .expect("flag control");
+    assert_eq!(flag.current_code(), "False");
+    assert_eq!(state.error, None);
+    assert!(state.graphics_handle.is_some());
+  }
 }

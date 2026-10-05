@@ -4380,38 +4380,6 @@ fn parse_point3d_grid(expr: &Expr) -> Option<Vec<Vec<Point3D>>> {
   }
 }
 
-/// B-spline basis weights for `n` control points sampled at `num_samples`
-/// evenly spaced parameter values (clamped uniform knots): one weight row
-/// per sample.
-fn bspline_sample_weights(
-  n: usize,
-  degree: usize,
-  num_samples: usize,
-) -> Vec<Vec<f64>> {
-  let degree = degree.min(n - 1);
-  let num_knots = n + degree + 1;
-  let mut knots = Vec::with_capacity(num_knots);
-  knots.extend(std::iter::repeat_n(0.0, degree + 1));
-  let num_internal = num_knots - 2 * (degree + 1);
-  for i in 1..=num_internal {
-    knots.push(i as f64);
-  }
-  let max_knot = (num_internal + 1) as f64;
-  knots.extend(std::iter::repeat_n(max_knot, degree + 1));
-  let t_min = knots[degree];
-  let t_max = knots[n];
-  (0..num_samples)
-    .map(|s| {
-      let t = t_min + (t_max - t_min) * s as f64 / (num_samples - 1) as f64;
-      (0..n)
-        .map(|j| {
-          crate::functions::graphics::bspline_basis(j, degree, t, &knots)
-        })
-        .collect()
-    })
-    .collect()
-}
-
 /// The polyline a `BSplineCurve[{p1, …}, opts…]` stands for: the uniform
 /// B-spline of degree `min(3, n - 1)` over its control points, sampled
 /// finely enough to read as a curve. `SplineClosed -> True` wraps the
@@ -4444,30 +4412,34 @@ fn bspline_curve_points(args: &[Expr]) -> Option<Vec<Point3D>> {
   } else {
     control
   };
+  let clamped =
+    !closed && !crate::functions::graphics::spline_knots_unclamped(&args[1..]);
   let n = control.len();
   // Enough samples that the curve is smooth without the tube it may feed
   // exploding into triangles: a handful per control point, bounded.
   let samples = (n * 6).clamp(64, 600);
   Some(
-    bspline_sample_weights(n, degree, samples)
-      .iter()
-      .map(|weights| {
-        let mut acc = Point3D {
-          x: 0.0,
-          y: 0.0,
-          z: 0.0,
-        };
-        for (j, &b) in weights.iter().enumerate() {
-          if b == 0.0 {
-            continue;
-          }
-          acc.x += b * control[j].x;
-          acc.y += b * control[j].y;
-          acc.z += b * control[j].z;
+    crate::functions::graphics::bspline_sample_weights(
+      n, degree, samples, clamped,
+    )
+    .iter()
+    .map(|weights| {
+      let mut acc = Point3D {
+        x: 0.0,
+        y: 0.0,
+        z: 0.0,
+      };
+      for (j, &b) in weights.iter().enumerate() {
+        if b == 0.0 {
+          continue;
         }
-        acc
-      })
-      .collect(),
+        acc.x += b * control[j].x;
+        acc.y += b * control[j].y;
+        acc.z += b * control[j].z;
+      }
+      acc
+    })
+    .collect(),
   )
 }
 
@@ -4479,8 +4451,18 @@ fn tessellate_bspline_surface(
   let n_rows = grid.len();
   let n_cols = grid[0].len();
   let samples = 24;
-  let wu = bspline_sample_weights(n_rows, 3usize.min(n_rows - 1), samples);
-  let wv = bspline_sample_weights(n_cols, 3usize.min(n_cols - 1), samples);
+  let wu = crate::functions::graphics::bspline_sample_weights(
+    n_rows,
+    3usize.min(n_rows - 1),
+    samples,
+    true,
+  );
+  let wv = crate::functions::graphics::bspline_sample_weights(
+    n_cols,
+    3usize.min(n_cols - 1),
+    samples,
+    true,
+  );
   let surface: Vec<Vec<Point3D>> = wu
     .iter()
     .map(|row_w| {
