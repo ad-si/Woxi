@@ -5073,6 +5073,15 @@ pub(crate) fn lays_out_a_graphic(expr: &Expr) -> bool {
   }
   match expr {
     Expr::List(items) => items.iter().any(lays_out_a_graphic),
+    // `Style[content, …]` only sets font/color; the layout underneath it
+    // decides whether there is a picture to draw.
+    Expr::FunctionCall { name, args }
+      if name == "Style"
+        && !args.is_empty()
+        && lays_out_a_graphic(&args[0]) =>
+    {
+      true
+    }
     // `Pane` and `Deploy` are transparent here: their own arms export what
     // they wrap. A `Framed` picture is drawn and framed by its own
     // renderer, so it counts as a picture too.
