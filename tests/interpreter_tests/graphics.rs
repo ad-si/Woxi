@@ -7069,6 +7069,18 @@ mod plot3d {
       assert_eq!(styled, ["diameter (cm)", "force (kN)"]);
     }
 
+    /// Regression: `RegionPlot` ignored `FrameLabel`, so a Demonstration's
+    /// captioned region plot came out with bare axes.
+    #[test]
+    fn region_plot_frame_label_captions_the_edges() {
+      let svg = export_svg(
+        "RegionPlot[x + y < 1, {x, 0, 1}, {y, 0, 1}, \
+         FrameLabel -> {\"fb\", \"fl\"}]",
+      );
+      assert!(svg.contains(">fb</text>"), "{svg}");
+      assert!(svg.contains(">fl</text>"), "{svg}");
+    }
+
     /// The rotated left `FrameLabel` is anchored by its baseline, whose
     /// glyphs rise ~0.75em to the left of it; with a narrow `ImagePadding`
     /// the baseline used to be clamped to half an em, so the label was cut
