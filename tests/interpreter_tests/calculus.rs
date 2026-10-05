@@ -19836,3 +19836,35 @@ mod integrate_tangent_powers {
     );
   }
 }
+
+mod extremum_partial_derivatives {
+  use super::*;
+
+  #[test]
+  fn partial_derivative_picks_the_extremal_slot() {
+    for (code, expected) in [
+      ("Derivative[0, 1][Max][0.5, 2.25]", "1"),
+      ("Derivative[1, 0][Max][0.5, 2.25]", "0"),
+      ("Derivative[1, 0, 0][Min][1, 2, 3]", "1"),
+      ("Derivative[0, 0, 1][Min][1, 2, 3]", "0"),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "for {code}");
+    }
+  }
+
+  #[test]
+  fn tie_stays_unevaluated() {
+    assert_eq!(
+      interpret("Derivative[0, 1][Max][2, 2]").unwrap(),
+      "Derivative[0, 1][Max][2, 2]"
+    );
+  }
+
+  #[test]
+  fn derivative_of_clamped_user_function() {
+    assert_eq!(
+      interpret("g[t_] := Max[0.5, Min[2, t^2]]; g'[1.2]").unwrap(),
+      "2.4"
+    );
+  }
+}

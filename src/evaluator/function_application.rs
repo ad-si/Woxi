@@ -1266,6 +1266,46 @@ fn compose_and_evaluate<'a>(
   crate::evaluator::evaluate_expr_to_expr(&built[0])
 }
 
+/// `Derivative[0, …, 1, …, 0][Max | Min][x1, …, xk]` at real numeric points:
+/// the partial derivative is `1` for the slot holding the unique extremum and
+/// `0` for every other slot. A tie is a kink, so it stays inert (`None`).
+fn apply_extremum_partial_derivative(
+  func_name: &str,
+  orders: &[i128],
+  args: &[Expr],
+) -> Option<Result<Expr, InterpreterError>> {
+  let slot = {
+    let mut ones = orders.iter().enumerate().filter(|(_, n)| **n == 1);
+    let (slot, _) = ones.next()?;
+    if ones.next().is_some() || orders.iter().any(|n| *n > 1) {
+      return None;
+    }
+    slot
+  };
+  let values: Vec<f64> = args
+    .iter()
+    .map(crate::functions::math_ast::try_eval_to_f64)
+    .collect::<Option<_>>()?;
+  let pick = |a: &f64, b: &f64| {
+    if func_name == "Max" { a > b } else { a < b }
+  };
+  let best = (1..values.len()).fold(0, |best, i| {
+    if pick(&values[i], &values[best]) {
+      i
+    } else {
+      best
+    }
+  });
+  let tied = values
+    .iter()
+    .enumerate()
+    .any(|(i, v)| i != best && *v == values[best]);
+  if tied {
+    return None;
+  }
+  Some(Ok(Expr::Integer(i128::from(slot == best))))
+}
+
 /// `Derivative[n1, …, nk][f][x1, …, xk]` for a symbol `f` defined by a single
 /// `f[p1_, …, pk_] := body` rule: differentiate `body` `n_i` times with
 /// respect to each parameter `p_i`, then substitute the arguments. Returns
@@ -1304,6 +1344,9 @@ fn try_apply_multi_derivative_of_definition(
       _ => None,
     })
     .collect::<Option<_>>()?;
+  if matches!(func_name.as_str(), "Max" | "Min") {
+    return apply_extremum_partial_derivative(func_name, &orders, args);
+  }
   let overloads =
     crate::FUNC_DEFS.with(|m| m.borrow().get(func_name).cloned())?;
   let (params, _, _, _, _, body) =
