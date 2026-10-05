@@ -2503,4 +2503,27 @@ mod tests {
       other => panic!("expected a Discrete PopupMenu control, got {other:?}"),
     }
   }
+
+  /// A Manipulate output saved by the FrontEnd names its controls with the
+  /// `DynamicModule` `$$` suffix and no explicit label ("Ecosystem
+  /// Dynamics"); the slider must read `amp`, not `amp$$`, while the variable
+  /// keeps its real name.
+  #[test]
+  fn unlabeled_control_label_drops_dynamic_module_suffix() {
+    let code = "Manipulate[Plot[amp$$ Sin[x], {x, 0, 6}], \
+      {{amp$$, 1}, 0, 2, 0.1}, {{k$$, 2, \"freq\"}, 1, 4, 1}]";
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = ManipulateState::from_expr(&expr).expect("widget should build");
+    let dump = |name: &str| {
+      let c = state.controls.iter().find(|c| c.name() == name).unwrap();
+      format!("{c:?}")
+    };
+    assert!(
+      dump("amp$$").contains("label: \"amp\""),
+      "{}",
+      dump("amp$$")
+    );
+    assert!(dump("k$$").contains("label: \"freq\""), "{}", dump("k$$"));
+  }
 }

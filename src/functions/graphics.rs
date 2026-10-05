@@ -23938,6 +23938,16 @@ fn grid_label_runs(rows: &[Expr], italic: bool) -> Vec<LabelRun> {
   out
 }
 
+/// The label a control shows when its spec carries none: the variable name,
+/// minus the `$$` suffix a saved `DynamicModule` appends to its variables
+/// (the FrontEnd shows `α`, not `α$$`).
+fn default_control_label(name: &str) -> String {
+  match name.strip_suffix("$$") {
+    Some(base) if !base.is_empty() => base.to_string(),
+    _ => name.to_string(),
+  }
+}
+
 fn manipulate_label_runs(expr: &Expr, italic: bool) -> Vec<LabelRun> {
   let mut runs = manipulate_label_runs_inner(expr, italic);
   // A label is text a widget draws, so the private-use code points Wolfram
@@ -24862,7 +24872,9 @@ fn parse_manipulate_control(
     }]
   };
   let (name, explicit_initial, label_runs) = match &items[0] {
-    Expr::Identifier(n) => (n.clone(), None, plain_run(n.clone())),
+    Expr::Identifier(n) => {
+      (n.clone(), None, plain_run(default_control_label(n)))
+    }
     Expr::List(head_items) if !head_items.is_empty() => {
       let n = match &head_items[0] {
         Expr::Identifier(n) => n.clone(),
@@ -24873,7 +24885,7 @@ fn parse_manipulate_control(
       // inline `\!\(\*SubscriptBox[…]\)` typesetting.
       let lbl = match head_items.get(2) {
         Some(other) => manipulate_label_runs(other, false),
-        None => plain_run(n.clone()),
+        None => plain_run(default_control_label(&n)),
       };
       (n, init, lbl)
     }
