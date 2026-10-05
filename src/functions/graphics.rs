@@ -836,6 +836,10 @@ enum Primitive {
     /// (horizontal) default — including when the argument is omitted or
     /// written `Automatic`.
     direction: Option<(f64, f64)>,
+    /// A data-space linear map a `GeometricTransformation` applied to the
+    /// label: the glyphs are sheared/stretched about the anchor with it
+    /// (the anchor itself is already moved). `None` for untransformed text.
+    glyph_map: Option<[[f64; 2]; 2]>,
     style: StyleState,
   },
   BezierCurvePrim {
@@ -4263,6 +4267,7 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     frame,
     scaled,
     direction,
+    glyph_map: None,
     style: local_style,
   });
 }
@@ -4972,6 +4977,41 @@ fn affine_primitive(
   m: [[f64; 2]; 2],
   v: (f64, f64),
 ) -> Primitive {
+  // Text keeps its position-only mapping but its glyphs are distorted by
+  // the linear part (Wolfram draws transformed text sheared/stretched).
+  if let Primitive::TextPrim {
+    x,
+    y,
+    scaled: false,
+    direction: None,
+    glyph_map,
+    ..
+  } = prim
+  {
+    let mut out = prim.clone();
+    if let Primitive::TextPrim {
+      x: nx,
+      y: ny,
+      glyph_map: ngm,
+      ..
+    } = &mut out
+    {
+      *nx = m[0][0] * x + m[0][1] * y + v.0;
+      *ny = m[1][0] * x + m[1][1] * y + v.1;
+      let g = glyph_map.unwrap_or([[1.0, 0.0], [0.0, 1.0]]);
+      *ngm = Some([
+        [
+          m[0][0] * g[0][0] + m[0][1] * g[1][0],
+          m[0][0] * g[0][1] + m[0][1] * g[1][1],
+        ],
+        [
+          m[1][0] * g[0][0] + m[1][1] * g[1][0],
+          m[1][0] * g[0][1] + m[1][1] * g[1][1],
+        ],
+      ]);
+    }
+    return out;
+  }
   let (a, b, c, d) = (m[0][0], m[0][1], m[1][0], m[1][1]);
   let (e, f, g, h) = (
     f64::midpoint(a, d),
@@ -5187,6 +5227,7 @@ fn rotate_primitive(
       frame,
       scaled,
       direction,
+      glyph_map,
       style,
     } => {
       let (nx, ny) = if *scaled { (*x, *y) } else { rp(*x, *y) };
@@ -5199,6 +5240,7 @@ fn rotate_primitive(
         frame: *frame,
         scaled: *scaled,
         direction: direction.map(|(dx, dy)| rv(dx, dy)),
+        glyph_map: *glyph_map,
         style: style.clone(),
       }
     }
@@ -5395,6 +5437,7 @@ fn translate_primitive(prim: &Primitive, dx: f64, dy: f64) -> Primitive {
       frame,
       scaled,
       direction,
+      glyph_map,
       style,
     } => Primitive::TextPrim {
       text: text.clone(),
@@ -5405,6 +5448,7 @@ fn translate_primitive(prim: &Primitive, dx: f64, dy: f64) -> Primitive {
       frame: *frame,
       scaled: *scaled,
       direction: *direction,
+      glyph_map: *glyph_map,
       style: style.clone(),
     },
     Primitive::RasterPrim {
@@ -5650,6 +5694,7 @@ fn scale_primitive(
       frame,
       scaled,
       direction,
+      glyph_map,
       style,
     } => {
       let (nx, ny) = if *scaled { (*x, *y) } else { sp(*x, *y) };
@@ -5662,6 +5707,7 @@ fn scale_primitive(
         frame: *frame,
         scaled: *scaled,
         direction: direction.map(|(dx, dy)| (dx * sx, dy * sy)),
+        glyph_map: *glyph_map,
         style: style.clone(),
       }
     }
@@ -7442,6 +7488,7 @@ fn render_primitive(
       frame,
       scaled,
       direction,
+      glyph_map,
       style,
     } => {
       let color = style.effective_color();
@@ -7500,6 +7547,20 @@ fn render_primitive(
         format!(
           " transform=\"rotate({:.3} {sx:.2} {sy:.2})\"",
           angle.to_degrees()
+        )
+      } else if let Some(m) = glyph_map {
+        // The data-space map `M` acts on screen vectors (x·kx, −y·ky) as
+        // `diag(kx, −ky)·M·diag(1/kx, −1/ky)`, applied about the anchor.
+        let kx = svg_w / bb.width();
+        let ky = svg_h / bb.height();
+        format!(
+          " transform=\"translate({sx:.2} {sy:.2}) matrix({:.5} {:.5} {:.5} {:.5} 0 0) translate({:.2} {:.2})\"",
+          m[0][0],
+          -m[1][0] * ky / kx,
+          -m[0][1] * kx / ky,
+          m[1][1],
+          -sx,
+          -sy
         )
       } else {
         String::new()
