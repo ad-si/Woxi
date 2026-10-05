@@ -1915,7 +1915,7 @@ fn render_text_element(s: &str) -> String {
     return match style.as_deref() {
       Some("InlineMath" | "InlineFormula") => parts
         .first()
-        .map(|c| render_boxes_text(c.trim()))
+        .map(|c| render_inline_math_content(c.trim()))
         .unwrap_or_default(),
       Some("InlineCell" | "InlineCode" | "InlineInput" | "InlineOutput") => {
         parts
@@ -1923,6 +1923,17 @@ fn render_text_element(s: &str) -> String {
           .map(|c| extract_cell_content(c.trim()))
           .unwrap_or_default()
       }
+      // An unstyled wrapper around another cell (`Cell[BoxData[Cell[…]]]`)
+      // is just the FrontEnd's nesting, not chrome: render what it holds.
+      None => parts
+        .first()
+        .filter(|c| {
+          c.trim()
+            .strip_prefix("BoxData[")
+            .is_some_and(|r| r.trim_start().starts_with("Cell["))
+        })
+        .map(|c| render_inline_math_content(c.trim()))
+        .unwrap_or_default(),
       _ => String::new(),
     };
   }
@@ -1936,6 +1947,37 @@ fn render_text_element(s: &str) -> String {
   }
 
   s.to_string()
+}
+
+/// Render the content of an inline math cell. Usually that is plain box
+/// source, but the FrontEnd also nests cells inside each other
+/// (`Cell[BoxData[Cell[TextData[Cell[BoxData[FormBox[…]], "InlineMath"]],
+/// "InlineMath"]], "InlineMath"]`) when a formula is pasted into a formula;
+/// unwrap those layers so the innermost typeset content still renders.
+fn render_inline_math_content(s: &str) -> String {
+  let s = s.trim();
+  for head in ["BoxData", "TextData"] {
+    if let Some(rest) = s.strip_prefix(&format!("{head}["))
+      && let Ok((inner, after)) = find_matching_bracket(rest)
+      && after.trim().is_empty()
+    {
+      let inner = inner.trim();
+      let nested = inner.starts_with("Cell[")
+        || inner.starts_with("TextData[")
+        || (head == "TextData" && inner.starts_with('{'));
+      if nested {
+        return if head == "TextData" {
+          extract_textdata(inner)
+        } else {
+          render_inline_math_content(inner)
+        };
+      }
+    }
+  }
+  if s.starts_with("Cell[") {
+    return render_text_element(s);
+  }
+  render_boxes_text(s)
 }
 
 /// Whether display text stands on its own inside a flattened fraction, i.e.
@@ -6302,6 +6344,27 @@ Cell["Chapter 2", "Chapter"]
       extract_cell_content(s),
       "One form of the equation of a parabola is y\u{00b2}=2p x."
     );
+  }
+
+  #[test]
+  fn test_extract_textdata_nested_inline_math_cells() {
+    // A formula pasted into a formula leaves inline cells nested inside
+    // each other (`Cell[BoxData[Cell[TextData[Cell[BoxData[…]]]]]]`). The
+    // innermost typeset content must still render, not vanish and leave
+    // the surrounding prose with just its trailing punctuation.
+    let s = r#"TextData[{
+ Cell[BoxData[Cell[TextData[Cell[BoxData[
+   FormBox[
+    RowBox[{
+     UnderoverscriptBox["\[Sum]",
+      RowBox[{"j", "=", "1"}], "m"],
+     FractionBox[
+      RowBox[{"cos", "(", RowBox[{"3", " ", "j", " ", "x"}], ")"}], "j"]}],
+    TraditionalForm]], "InlineMath",ExpressionUUID->"a"]], "InlineMath",
+   ExpressionUUID->"b"]],ExpressionUUID->"c"],
+ ","
+}]"#;
+    assert_eq!(extract_cell_content(s), "\u{2211}_(j=1)^m cos(3 j x)/j,");
   }
 
   #[test]
