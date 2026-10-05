@@ -10457,6 +10457,15 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
       expr_to_svg_markup,
     );
   }
+  // `Derivative[n][f]` typesets as `f` followed by its prime marks
+  // (`θ₁′`), not as the raw `Derivative[1][…]` application.
+  if let Some((func, order)) = as_derivative_of(expr) {
+    return format!(
+      "{}{}",
+      expr_to_svg_markup(func),
+      derivative_prime_marks(order)
+    );
+  }
   // A unit-fraction power is a radical, not a superscript: `Sqrt[2]`
   // (which is `2^(1/2)`) typesets as √2 under its vinculum, and a cube
   // root carries its index in the hook.
@@ -28626,6 +28635,21 @@ mod manipulate_label_tests {
     assert_eq!(marks(3), "y\u{2034}");
     // Past three primes the order is written as a superscript in parens.
     assert_eq!(marks(4), "y\u{207D}\u{2074}\u{207E}");
+  }
+
+  /// A grid header cell `Row[{Derivative[1][Subscript["θ", 1]], "(rpm)"}]`
+  /// inside `Text` typesets with a prime, not as the raw application.
+  #[test]
+  fn text_markup_of_derivative_of_subscript_uses_prime() {
+    let theta1 = call(
+      "Subscript",
+      vec![Expr::String("\u{3b8}".into()), Expr::Integer(1)],
+    );
+    let markup = expr_to_svg_markup(&derivative(1, theta1));
+    assert!(markup.ends_with("\u{2032}"), "{markup}");
+    assert!(!markup.contains("Derivative"), "{markup}");
+    let markup2 = expr_to_svg_markup(&derivative(2, id_expr("y")));
+    assert_eq!(markup2, "y\u{2033}");
   }
 
   /// The evaluator hands back `Derivative[n][f]` flattened to
