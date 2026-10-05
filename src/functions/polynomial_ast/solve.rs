@@ -4859,8 +4859,15 @@ fn try_solve_trig_eq(eq: &Expr, var: &str) -> Option<Expr> {
   if !matches!(trig_name, "Sin" | "Cos" | "Tan" | "Cot") {
     return None;
   }
-  // Inner argument has to be the bare solve variable.
-  if !matches!(trig_arg, Expr::Identifier(s) if s == var) {
+  // Inner argument has to be linear in the solve variable: `a*var + b`.
+  // The solutions are found for the whole argument and then mapped back
+  // through `var = (arg - b)/a`.
+  let (lin_a, lin_b) = if matches!(trig_arg, Expr::Identifier(s) if s == var) {
+    (Expr::Integer(1), Expr::Integer(0))
+  } else {
+    super::apart::extract_linear_coeffs(trig_arg, var)?
+  };
+  if contains_var(&lin_a, var) || contains_var(&lin_b, var) {
     return None;
   }
   // Constant rhs. The simplified special forms below apply to Sin/Cos at
@@ -4972,6 +4979,22 @@ fn try_solve_trig_eq(eq: &Expr, var: &str) -> Option<Expr> {
     }
     ("Tan", None) => vec![plus2(inverse("ArcTan"), pi_c1.clone())],
     _ => return None,
+  };
+
+  let solutions = if matches!(&lin_a, Expr::Integer(1))
+    && matches!(&lin_b, Expr::Integer(0))
+  {
+    solutions
+  } else {
+    solutions
+      .into_iter()
+      .map(|body| {
+        eval(call1(
+          "Expand",
+          div2(minus2(body, lin_b.clone()), lin_a.clone()),
+        ))
+      })
+      .collect()
   };
 
   Some(make_rule_list(solutions))
