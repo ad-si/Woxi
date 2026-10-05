@@ -4612,3 +4612,10 @@ proportions differ from wolframscript. Named edge shapes other than
 Geometry (unit edges, volume, surface area, face structure) is derived from
 the golden-rhombus zonohedron; the vertex order, orientation and the
 `"Classes"` list were not checked against `wolframscript`.
+
+### `PolyhedronData["SmallStellatedDodecahedron", …]` vertex/face ordering is unverified
+
+The vertex order, face order/winding and the printed form of the exact
+metrics were derived from the geometry (icosahedral vertices, {5/2, 5}
+pentagram faces, unit pentagram chord) without access to `wolframscript`, so
+they may be ordered or simplified differently from Wolfram's.

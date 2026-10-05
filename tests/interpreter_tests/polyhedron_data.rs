@@ -466,7 +466,7 @@ mod polyhedron_data_tests {
        Icosidodecahedron, Octahedron, PentakisDodecahedron, \
        RhombicDodecahedron, RhombicHexecontahedron, \
        RhombicTriacontahedron, SmallRhombicosidodecahedron, \
-       SmallRhombicuboctahedron, StellaOctangula, Tetrahedron, \
+       SmallRhombicuboctahedron, SmallStellatedDodecahedron, StellaOctangula, Tetrahedron, \
        TriangularOrthobicupola, TruncatedDodecahedron, TruncatedIcosahedron, TruncatedOctahedron, \
        TruncatedTetrahedron}"
     );
@@ -644,6 +644,46 @@ mod polyhedron_data_tests {
     assert_eq!(
       interpret(r#"PolyhedronData["RhombicHexecontahedron"]"#).unwrap(),
       "-Graphics3D-"
+    );
+  }
+
+  // The small stellated dodecahedron: a Kepler-Poinsot star polyhedron
+  // ({5/2, 5}) whose 12 vertices are an icosahedron's, grouped into 12
+  // pentagram faces with 5 meeting at each vertex.
+  #[test]
+  fn polyhedron_data_small_stellated_dodecahedron() {
+    assert_eq!(
+      interpret(
+        r#"{PolyhedronData["SmallStellatedDodecahedron", "VertexCount"],
+            PolyhedronData["SmallStellatedDodecahedron", "EdgeCount"],
+            PolyhedronData["SmallStellatedDodecahedron", "FaceCount"],
+            Length[PolyhedronData["SmallStellatedDodecahedron",
+              "EdgeIndices"]]}"#
+      )
+      .unwrap(),
+      "{12, 30, 12, 30}"
+    );
+    // Every vertex lies on the circumsphere and every edge has unit length.
+    assert_eq!(
+      interpret(
+        r#"With[{v = N[PolyhedronData["SmallStellatedDodecahedron",
+               "VertexCoordinates"]],
+              edges = PolyhedronData["SmallStellatedDodecahedron",
+                "EdgeIndices"]},
+             {Union[Round[10^6 * Norm /@ v]],
+              Union[Round[10^6 * (Norm[#[[1]] - #[[2]]] & /@
+               (v[[#]] & /@ edges))]]}]"#
+      )
+      .unwrap(),
+      "{{587785}, {1000000}}"
+    );
+    assert_eq!(
+      interpret(
+        r#"Round[10^6 * N[PolyhedronData["SmallStellatedDodecahedron",
+             "Volume"]]]"#
+      )
+      .unwrap(),
+      "225425"
     );
   }
 
@@ -870,15 +910,17 @@ mod polyhedron_data_tests {
       .unwrap(),
       "{True}"
     );
-    // Euler's formula holds for all of them, so no face or edge is lost
-    // (the stella octangula is two disjoint tetrahedra, so it adds up to 4).
+    // Euler's formula holds for all of them, so no face or edge is lost.
+    // The stella octangula is two disjoint tetrahedra (sum 4) and the
+    // small stellated dodecahedron a genus-4 surface (sum -6).
     assert_eq!(
       interpret(
         r#"Union @ Table[
              PolyhedronData[s, "VertexCount"] -
                PolyhedronData[s, "EdgeCount"] +
                PolyhedronData[s, "FaceCount"],
-             {s, DeleteCases[PolyhedronData[All], "StellaOctangula"]}]"#
+             {s, DeleteCases[PolyhedronData[All],
+               "StellaOctangula" | "SmallStellatedDodecahedron"]}]"#
       )
       .unwrap(),
       "{2}"
