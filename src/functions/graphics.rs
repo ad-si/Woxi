@@ -13009,9 +13009,20 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
     // don't leak onto the line drawn after it. FillingStyle appearance
     // travels on the series (fill_color/fill_opacity); the defaults
     // match the standalone plot render (series color at 0.2 opacity).
-    if !sd.is_scatter
-      && let Some(ref_y) = sd.filling.reference_y(ps.y_range.0, ps.y_range.1)
-    {
+    let between = match sd.filling {
+      crate::syntax::SeriesFilling::Series(j) if !sd.is_scatter => {
+        ps.series.get(j).and_then(|t| {
+          crate::functions::plot::fill_between_polygon(&sd.points, &t.points)
+        })
+      }
+      _ => None,
+    };
+    let level_ref_y = if sd.is_scatter {
+      None
+    } else {
+      sd.filling.reference_y(ps.y_range.0, ps.y_range.1)
+    };
+    if between.is_some() || level_ref_y.is_some() {
       let (fr, fg, fb) = sd.fill_color.unwrap_or(sd.color);
       let mut fill_prims: Vec<Expr> = vec![
         call1("Opacity", Expr::Real(sd.fill_opacity.unwrap_or(0.2))),
@@ -13024,7 +13035,20 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
           ],
         ),
       ];
-      for seg in &crate::functions::plot::split_into_segments(&sd.points) {
+      let segments = if between.is_some() {
+        Vec::new()
+      } else {
+        crate::functions::plot::split_into_segments(&sd.points)
+      };
+      if let Some(poly) = &between {
+        let coords: Vec<Expr> = poly
+          .iter()
+          .map(|&(x, y)| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()))
+          .collect();
+        fill_prims.push(call1("Polygon", Expr::List(coords.into())));
+      }
+      let ref_y = level_ref_y.unwrap_or(0.0);
+      for seg in &segments {
         if seg.len() < 2 {
           continue;
         }

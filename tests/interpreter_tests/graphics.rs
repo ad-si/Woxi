@@ -10325,6 +10325,21 @@ ParametricPlot[{sol[[1, 1, 2]], sol[[1, 2, 2]]}, {t, 0, 6}]",
       );
     }
 
+    // Regression: a curve-to-curve `Filling -> {i -> {{j}, style}}` must
+    // survive `Show` merging the plot with other graphics, drawn as a
+    // polygon between the two curves in the requested colour.
+    #[test]
+    fn show_keeps_filling_between_curves() {
+      let svg = export_svg(
+        "Show[Graphics[{Red, Disk[{0, 0}, 2]}], \
+Plot[{x^2 - 1, 1 - x^2}, {x, -1, 1}, Filling -> {1 -> {{2}, Blue}}]]",
+      );
+      assert!(
+        svg.contains("<polygon") && svg.contains("rgb(0,0,255)"),
+        "Show dropped the between-curves fill: {svg}"
+      );
+    }
+
     // Regression: `Show[Graphics[…], ParametricPlot[…]]` must keep the
     // parametric curve when merged with other graphics primitives. The plot
     // previously had no PlotSource, so Show treated it as opaque and dropped
