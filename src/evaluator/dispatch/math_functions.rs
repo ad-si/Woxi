@@ -6241,11 +6241,7 @@ fn complex_expand_recursive(expr: &Expr) -> Expr {
       if let Some((re, im)) = split_real_imag(exp) {
         let im_is_zero = matches!(&im, Expr::Integer(0));
         if !im_is_zero {
-          let exp_a = Expr::BinaryOp {
-            op: BinaryOperator::Power,
-            left: base.clone(),
-            right: Box::new(re),
-          };
+          let exp_a = pow2(*base.clone(), re);
           // Inner Cos/Sin argument: b * Log[base]; collapse to b for E.
           let inner_arg = if matches!(base.as_ref(), Expr::Identifier(s) if s == "E")
             || matches!(base.as_ref(), Expr::Constant(s) if s == "E")

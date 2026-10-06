@@ -76,11 +76,7 @@ pub fn thread_binary_op(
           if let (Some(a), Some(b)) = (ln, rn) {
             return Ok(num_to_expr(a / b));
           }
-          return Ok(Expr::BinaryOp {
-            op,
-            left: Box::new(l.clone()),
-            right: Box::new(r.clone()),
-          });
+          return Ok(binop(op, l.clone(), r.clone()));
         }
       };
       return Ok(crate::functions::math_ast::bigint_to_expr(result));
@@ -156,11 +152,7 @@ pub fn thread_binary_op(
         // collapsing to a lossy Real via f64::powf).
         crate::functions::math_ast::power_two(l, r)
       }
-      _ => Ok(Expr::BinaryOp {
-        op,
-        left: Box::new(l.clone()),
-        right: Box::new(r.clone()),
-      }),
+      _ => Ok(binop(op, l.clone(), r.clone())),
     }
   }
 
@@ -206,11 +198,7 @@ pub fn thread_binary_op(
       if left_items.len() != right_items.len() {
         // Emit Thread::tdlen warning and return the expression unevaluated,
         // matching wolframscript behavior.
-        let unevaluated = Expr::BinaryOp {
-          op,
-          left: Box::new(left.clone()),
-          right: Box::new(right.clone()),
-        };
+        let unevaluated = binop(op, left.clone(), right.clone());
         crate::emit_message(&format!(
           "Thread::tdlen: Objects of unequal length in {} cannot be combined.",
           expr_to_string(&unevaluated)

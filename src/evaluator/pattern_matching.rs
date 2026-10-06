@@ -680,11 +680,7 @@ fn try_ast_pattern_replace_impl(
         None => (**right).clone(),
       };
       if any_matched {
-        Ok(Some(Expr::BinaryOp {
-          op: *op,
-          left: Box::new(new_left),
-          right: Box::new(new_right),
-        }))
+        Ok(Some(binop(*op, new_left, new_right)))
       } else {
         Ok(None)
       }
@@ -2103,14 +2099,10 @@ fn try_symbol_replace_all(
         return Some(if pattern_sym == "Times" {
           build_with_head(vec![new_left, power(new_right)], replacement)
         } else {
-          Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(new_left),
-            right: Box::new(build_with_head(
-              vec![new_right, Expr::Integer(-1)],
-              replacement,
-            )),
-          }
+          times2(
+            new_left,
+            build_with_head(vec![new_right, Expr::Integer(-1)], replacement),
+          )
         });
       }
       // Head replacement: a rule targeting the operator's symbol (e.g.
@@ -2151,11 +2143,11 @@ fn try_symbol_replace_all(
       let new_left = try_symbol_replace_all(left, pattern_sym, replacement);
       let new_right = try_symbol_replace_all(right, pattern_sym, replacement);
       if new_left.is_some() || new_right.is_some() {
-        Some(Expr::BinaryOp {
-          op: *op,
-          left: Box::new(new_left.unwrap_or_else(|| left.as_ref().clone())),
-          right: Box::new(new_right.unwrap_or_else(|| right.as_ref().clone())),
-        })
+        Some(binop(
+          *op,
+          new_left.unwrap_or_else(|| left.as_ref().clone()),
+          new_right.unwrap_or_else(|| right.as_ref().clone()),
+        ))
       } else {
         None
       }
@@ -5712,11 +5704,7 @@ fn apply_replace_all_multi_ast_impl(
     Expr::BinaryOp { op, left, right } => {
       let new_left = apply_replace_all_multi_ast_impl(left, rules, held)?;
       let new_right = apply_replace_all_multi_ast_impl(right, rules, held)?;
-      Ok(Expr::BinaryOp {
-        op: *op,
-        left: Box::new(new_left),
-        right: Box::new(new_right),
-      })
+      Ok(binop(*op, new_left, new_right))
     }
     // `!x /. {x -> True}` must descend into the operand like any other
     // compound expression.

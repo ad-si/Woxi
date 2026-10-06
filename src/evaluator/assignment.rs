@@ -1120,11 +1120,11 @@ fn replace_patterns_with_placeholders(
         expr.clone()
       }
     }
-    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-      op: *op,
-      left: Box::new(replace_patterns_with_placeholders(left, vars)),
-      right: Box::new(replace_patterns_with_placeholders(right, vars)),
-    },
+    Expr::BinaryOp { op, left, right } => binop(
+      *op,
+      replace_patterns_with_placeholders(left, vars),
+      replace_patterns_with_placeholders(right, vars),
+    ),
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
       op: *op,
       operand: Box::new(replace_patterns_with_placeholders(operand, vars)),
@@ -1194,11 +1194,11 @@ fn replace_placeholders_with_patterns(
       }
       expr.clone()
     }
-    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-      op: *op,
-      left: Box::new(replace_placeholders_with_patterns(left, vars)),
-      right: Box::new(replace_placeholders_with_patterns(right, vars)),
-    },
+    Expr::BinaryOp { op, left, right } => binop(
+      *op,
+      replace_placeholders_with_patterns(left, vars),
+      replace_placeholders_with_patterns(right, vars),
+    ),
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
       op: *op,
       operand: Box::new(replace_placeholders_with_patterns(operand, vars)),
@@ -1368,11 +1368,11 @@ pub fn canonicalize_divide_in_expr(expr: &Expr) -> Expr {
       name: name.clone(),
       args: args.iter().map(canonicalize_divide_in_expr).collect(),
     },
-    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-      op: *op,
-      left: Box::new(canonicalize_divide_in_expr(left)),
-      right: Box::new(canonicalize_divide_in_expr(right)),
-    },
+    Expr::BinaryOp { op, left, right } => binop(
+      *op,
+      canonicalize_divide_in_expr(left),
+      canonicalize_divide_in_expr(right),
+    ),
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
       op: *op,
       operand: Box::new(canonicalize_divide_in_expr(operand)),
@@ -4365,11 +4365,11 @@ fn replace_subexpr(expr: &Expr, from: &Expr, to: &Expr) -> Expr {
         .collect::<Vec<_>>()
         .into(),
     },
-    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-      op: *op,
-      left: Box::new(replace_subexpr(left, from, to)),
-      right: Box::new(replace_subexpr(right, from, to)),
-    },
+    Expr::BinaryOp { op, left, right } => binop(
+      *op,
+      replace_subexpr(left, from, to),
+      replace_subexpr(right, from, to),
+    ),
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
       op: *op,
       operand: Box::new(replace_subexpr(operand, from, to)),
@@ -5011,22 +5011,14 @@ pub fn tag_set_delayed_ast(
           "Plus",
           vec![
             left.as_ref().clone(),
-            Expr::BinaryOp {
-              op: BinaryOperator::Times,
-              left: Box::new(Expr::Integer(-1)),
-              right: right.clone(),
-            },
+            times2(Expr::Integer(-1), *right.clone()),
           ],
         ),
         BinaryOperator::Divide => (
           "Times",
           vec![
             left.as_ref().clone(),
-            Expr::BinaryOp {
-              op: BinaryOperator::Power,
-              left: right.clone(),
-              right: Box::new(Expr::Integer(-1)),
-            },
+            pow2(*right.clone(), Expr::Integer(-1)),
           ],
         ),
         BinaryOperator::Power => {
