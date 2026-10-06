@@ -195,6 +195,9 @@ pub fn dispatch_evaluation_control(
     "MaxwellDistribution" if args.len() == 1 => {
       return Some(Ok(unevaluated("MaxwellDistribution", args)));
     }
+    "MarchenkoPasturDistribution" if args.len() == 1 || args.len() == 2 => {
+      return Some(Ok(unevaluated("MarchenkoPasturDistribution", args)));
+    }
     "WignerSemicircleDistribution" if args.len() == 1 || args.len() == 2 => {
       return Some(Ok(unevaluated("WignerSemicircleDistribution", args)));
     }

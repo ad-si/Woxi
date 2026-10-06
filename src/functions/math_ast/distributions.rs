@@ -622,6 +622,7 @@ pub fn pdf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     "LevyDistribution" => pdf_levy(dargs, x),
     "LindleyDistribution" => pdf_lindley(dargs, x),
     "WignerSemicircleDistribution" => pdf_wigner_semicircle(dargs, x),
+    "MarchenkoPasturDistribution" => pdf_marchenko_pastur(dargs, x),
     "SechDistribution" => pdf_sech(dargs, x),
     "MoyalDistribution" => pdf_moyal(dargs, x),
     "BorelTannerDistribution" => pdf_borel_tanner(dargs, x),
@@ -16203,6 +16204,96 @@ pub fn maxwell_mean_variance(
     Expr::Raw(format!("((-8 + 3*Pi)*{}^2)/Pi", expr_to_string(s)))
   };
   Ok((mean, var))
+}
+
+/// PDF[MarchenkoPasturDistribution[l, s], x] for 0 < l <= 1 =
+/// Piecewise[{{Sqrt[(b - x) (x - a)]/(2 Pi l s^2 x), a <= x <= b}}, 0]
+/// with a = s^2 (1 - Sqrt[l])^2 and b = s^2 (1 + Sqrt[l])^2.
+/// The scale s defaults to 1. For l > 1 the distribution has an atom at 0,
+/// which is left unevaluated.
+fn pdf_marchenko_pastur(
+  dargs: &[Expr],
+  x: Expr,
+) -> Result<Expr, InterpreterError> {
+  let unevaluated = |dargs: &[Expr], x: Expr| {
+    call(
+      "PDF",
+      vec![unevaluated("MarchenkoPasturDistribution", dargs), x],
+    )
+  };
+  let (lambda, sigma) = match dargs {
+    [l] => (l.clone(), int(1)),
+    [l, s] => (l.clone(), s.clone()),
+    _ => return Ok(unevaluated(dargs, x)),
+  };
+  let (Some(lv), Some(sv)) = (ms_numeric(&lambda), ms_numeric(&sigma)) else {
+    return Ok(unevaluated(dargs, x));
+  };
+  if !(lv > 0.0 && lv <= 1.0 && sv > 0.0) {
+    return Ok(unevaluated(dargs, x));
+  }
+  let sigma2 = pow2(sigma.clone(), int(2));
+  let root = call1("Sqrt", lambda.clone());
+  let edge = |sign: i128| -> Result<Expr, InterpreterError> {
+    eval(&call(
+      "Times",
+      vec![
+        sigma2.clone(),
+        pow2(
+          call(
+            "Plus",
+            vec![int(1), call("Times", vec![int(sign), root.clone()])],
+          ),
+          int(2),
+        ),
+      ],
+    ))
+  };
+  let (lo, hi) = (edge(-1)?, edge(1)?);
+  let body = |at: &Expr| -> Result<Expr, InterpreterError> {
+    eval(&div2(
+      call1(
+        "Sqrt",
+        call(
+          "Times",
+          vec![
+            call(
+              "Plus",
+              vec![hi.clone(), call("Times", vec![int(-1), at.clone()])],
+            ),
+            call(
+              "Plus",
+              vec![at.clone(), call("Times", vec![int(-1), lo.clone()])],
+            ),
+          ],
+        ),
+      ),
+      call(
+        "Times",
+        vec![int(2), pi(), lambda.clone(), sigma2.clone(), at.clone()],
+      ),
+    ))
+  };
+  if let Some(xv) = ms_numeric(&x) {
+    let (a, b) = (ms_numeric(&lo), ms_numeric(&hi));
+    if let (Some(a), Some(b)) = (a, b)
+      && (xv < a || xv > b)
+    {
+      return Ok(int(0));
+    }
+    return body(&x);
+  }
+  if !matches!(&x, Expr::Identifier(_)) {
+    return Ok(unevaluated(dargs, x));
+  }
+  let cond = comparison3(
+    lo.clone(),
+    ComparisonOp::LessEqual,
+    x.clone(),
+    ComparisonOp::LessEqual,
+    hi.clone(),
+  );
+  Ok(piecewise(vec![(body(&x)?, cond)], int(0)))
 }
 
 /// Parse WignerSemicircleDistribution arguments: [r] or [a, r].

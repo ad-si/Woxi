@@ -3825,7 +3825,7 @@ GuidedFilter,,,,10.2,3916
 ImageApplyIndexed,,🚫,,10.0,3916
 KatzCentrality,Katz centrality of graph vertices solving (I - alpha A) x = beta,✅,pure,8.0,3916
 LinearOffsetFunction,,,,7.0,3916
-MarchenkoPasturDistribution,,,,10.3,3916
+MarchenkoPasturDistribution,Marchenko-Pastur distribution (PDF for ratio <= 1),✅,pure,10.3,3916
 MatchingDissimilarity,Matching dissimilarity between binary vectors,✅,pure,6.0,3916
 MenuStyle,,🚫,,8.0,3916
 MeyerWavelet,Meyer wavelet family defined in the frequency domain,✅,pure,8.0,3916

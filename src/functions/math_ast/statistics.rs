@@ -829,6 +829,7 @@ pub fn mean_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         | "MaxStableDistribution"
         | "TriangularDistribution"
         | "MaxwellDistribution"
+        | "MarchenkoPasturDistribution"
         | "WignerSemicircleDistribution"
         | "SechDistribution"
         | "BorelTannerDistribution"
