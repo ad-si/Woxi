@@ -952,6 +952,7 @@ pub fn get_builtin_attributes(name: &str) -> Attributes {
     | "Cuboid"
     | "Raster"
     | "InterpolatingFunction"
+    | "ParametricFunction"
     | "BezierFunction"
     | "BSplineFunction"
     | "WignerD" | "PfaffianDet"

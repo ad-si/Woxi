@@ -25901,6 +25901,41 @@ mod manipulate {
     assert_eq!(interpret(&format!("Head[{code}]")).unwrap(), "Graphics");
   }
 
+  /// A parameter-estimation Manipulate: noisy samples of an ODE solution are
+  /// fitted through `ParametricNDSolve` + `FindFit`, and the data and the
+  /// fitted curve are combined with `Show`. The body must come out as a
+  /// Graphics with the initial bindings.
+  #[test]
+  fn spec_parametric_ode_fit_demonstration_manipulate() {
+    clear_state();
+    let expr = interpret_to_expr(
+      "Manipulate[\
+       Module[{s, pts, g1, pf, ft, g2},\
+       s = NDSolve[{u'[x] == -rate u[x]^ord, u[0] == 1}, u, {x, 0, 10}];\
+       SeedRandom[sd];\
+       pts = Table[{i, Max[0, First[(amp (2 Random[] - 1)/2 + u[x]) /. s \
+       /. x -> i]]}, {i, 0, 4, 0.5}];\
+       g1 = ListPlot[pts, Frame -> True];\
+       pf = w /. ParametricNDSolve[{w'[x] == -a1 w[x]^b1, w[0] == 1}, w, \
+       {x, 0, 10}, {a1, b1}];\
+       ft = FindFit[pts, pf[a1, b1][x], {{a1, 1., 2.}, {b1, 1.5, 2.}}, x];\
+       g2 = Plot[pf[a1, b1][x] /. ft, {x, 0, 4}, Frame -> True];\
+       Show[g1, g2, PlotRange -> {{0, 4}, {0, 1}}, \
+       PlotLabel -> Row[{\"order \", NumberForm[b1 /. ft, {4, 2}]}]]],\
+       {{ord, 1.5, \"order\"}, 1., 2.5, 0.01, Appearance -> \"Labeled\"},\
+       {{rate, 1, \"rate\"}, 1., 5., 0.01, Appearance -> \"Labeled\"},\
+       {{sd, 1, \"seed\"}, 1, 1000, 1, Appearance -> \"Labeled\"},\
+       {{amp, 0.05, \"noise\"}, 0.01, 0.2, 0.01, Appearance -> \"Labeled\"},\
+       TrackedSymbols :> {ord, rate, sd, amp}, ControlPlacement -> Left]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).unwrap();
+    assert_eq!(spec.controls.len(), 4);
+    let bindings = manipulate_initial_bindings(&spec);
+    let code = manipulate_block_code(&spec.body_code, &bindings);
+    assert_eq!(interpret(&format!("Head[{code}]")).unwrap(), "Graphics");
+  }
+
   /// End-to-end regression for the shape a "waveform and sound" Wolfram
   /// Demonstration has: a `Grid` body pairing typeset headings with a
   /// multi-curve `Plot` and a `Play` carrying a `SampleRate` option, driven

@@ -996,7 +996,7 @@ SetAccuracy,Set every numeric leaf of an expression to a fixed accuracy (precisi
 NotebookWrite,Requires external services or GUI infrastructure,🚫,io,3.0,974
 ByteCount,Count bytes used internally to store an expression,✅,pure,1.0,975
 Ramp,Returns the ramp function (max of 0 and x),✅,pure,11.0,976
-ParametricNDSolveValue,,🚫,,9.0,977
+ParametricNDSolveValue,Like ParametricNDSolve but gives the value of an expression of the solution as a ParametricFunction of the parameters,✅,pure,9.0,977
 SuperStar,Display form with a superscript star,✅,none,6.0,979
 Abort,Aborts evaluation,✅,effectful,2.0,980
 GammaDistribution,Gamma probability distribution,✅,pure,6.0,981
@@ -1240,7 +1240,7 @@ LetterCharacter,String pattern for letter characters,✅,1,5.1,1226
 FormatType,Option for output format type,✅,pure,1.0,1227
 BitXor,Returns the bitwise XOR of integers,✅,pure,4.0,1228
 AiryAi,Airy function of the first kind Ai(x),✅,pure,1.0,1230
-ParametricNDSolve,,🚫,,9.0,1231
+ParametricNDSolve,Solves differential equations with symbolic parameters; gives ParametricFunction objects that run the solve once all parameters are numeric,✅,pure,9.0,1231
 AllTrue,Checks if all elements in a list are true,✅,pure,10.0,1232
 Editable,Editable display option wrapper (stays symbolic),✅,unevaluated,3.0,1233
 MoebiusMu,Returns the Möbius function value,✅,pure,1.0,1235
@@ -4035,7 +4035,7 @@ JordanModelDecomposition,,,,8.0,4138
 KendallTauTest,,,,9.0,4138
 KeypointStrength,,,,10.0,4138
 NetPairEmbeddingOperator,,🚫,,11.1,4138
-ParametricFunction,,,,9.0,4138
+ParametricFunction,Represents a function of numeric parameters returned by ParametricNDSolve (inert until all parameters are numeric),✅,none,9.0,4138
 SocketReadMessage,Read the bytes available on a socket as a ByteArray,✅,effectful,11.2,4138
 SolarSystemFeatureData,,🚫,,10.0,4138
 SpatialMedian,,,,11.1,4138

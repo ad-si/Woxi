@@ -19868,3 +19868,71 @@ mod extremum_partial_derivatives {
     );
   }
 }
+
+mod parametric_ndsolve {
+  use super::*;
+
+  #[test]
+  fn parametric_function_applies_once_parameters_are_numeric() {
+    assert_eq!(
+      interpret(
+        "pf = y /. ParametricNDSolve[{y'[t] == -k y[t]^n, y[0] == 1}, y, \
+         {t, 0, 10}, {k, n}]; Round[pf[1., 2.][2.], 0.001]"
+      )
+      .unwrap(),
+      "0.333"
+    );
+  }
+
+  #[test]
+  fn parametric_function_is_inert_with_symbolic_parameters() {
+    assert_eq!(
+      interpret(
+        "pf = y /. ParametricNDSolve[{y'[t] == -k y[t]^n, y[0] == 1}, y, \
+         {t, 0, 10}, {k, n}]; pf[a, b][2.]"
+      )
+      .unwrap(),
+      "ParametricFunction[<>][a, b][2.]"
+    );
+  }
+
+  #[test]
+  fn parametric_function_displays_opaquely() {
+    assert_eq!(
+      interpret(
+        "y /. ParametricNDSolve[{y'[t] == -k y[t], y[0] == 1}, y, \
+         {t, 0, 1}, {k}]"
+      )
+      .unwrap(),
+      "ParametricFunction[<>]"
+    );
+  }
+
+  #[test]
+  fn parametric_ndsolve_value() {
+    assert_eq!(
+      interpret(
+        "f = ParametricNDSolveValue[{y'[t] == -k y[t], y[0] == 1}, y, \
+         {t, 0, 5}, {k}]; Round[f[0.5][2.], 0.001]"
+      )
+      .unwrap(),
+      "0.368"
+    );
+  }
+
+  #[test]
+  fn find_fit_through_a_parametric_solution() {
+    // Data from y' = -k y^n with k = 0.8, n = 2 (y = 1/(1 + 0.8 t)).
+    assert_eq!(
+      interpret(
+        "pf = y /. ParametricNDSolve[{y'[t] == -k y[t]^n, y[0] == 1}, y, \
+         {t, 0, 10}, {k, n}]; \
+         data = Table[{i, 1/(1 + 0.8 i)}, {i, 0, 4, 0.5}]; \
+         fit = FindFit[data, pf[k, n][t], {{k, 1.0, 2.0}, {n, 1.5, 2.0}}, t]; \
+         Round[{k, n} /. fit, 0.001]"
+      )
+      .unwrap(),
+      "{0.8, 2.}"
+    );
+  }
+}
