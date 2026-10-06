@@ -31504,4 +31504,48 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`rate$$ = 4}, DynamicBox[\[Ellipsis]
     assert!(state.error.is_none(), "unexpected error: {:?}", state.error);
     assert_eq!(state.text_output.as_deref(), Some("{Rational, 11/6}"));
   }
+
+  /// Regression: a Manipulate whose control panel is hand-laid with one
+  /// `Control[…]` per radio button (all sharing a variable) and a
+  /// `Style[Row[{"caption", …, Control[…]}], size]` checkbox row must yield
+  /// a single radio group preselecting the declared default, and a
+  /// checkbox whose multi-piece caption is one heading — not a heading per
+  /// fragment with the checkbox lost inside the label text.
+  #[test]
+  fn hand_laid_radio_buttons_and_styled_checkbox_row_become_controls() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[If[flag, k, -k], \
+       Style[Row[{\"show \", Style[\"x\", Italic], \" values\", \
+         Control[{{flag, False, \"\"}, {True, False}, \
+           ControlType -> Checkbox}]}], 9], \
+       Control[{{k, 2, \"\"}, {1 -> \"one\"}, ControlType -> RadioButton}], \
+       Control[{{k, 2, \"\"}, {2 -> \"two\"}, ControlType -> RadioButton}], \
+       Control[{{k, 2, \"\"}, {3 -> \"three\"}, ControlType -> RadioButton}]]",
+    )
+    .unwrap();
+    let widget = manipulate::ManipulateState::from_expr(&expr)
+      .expect("a Manipulate must instantiate");
+    assert!(widget.error.is_none(), "{:?}", widget.error);
+
+    let summary: Vec<String> = widget
+      .controls
+      .iter()
+      .map(|c| match c {
+        manipulate::ControlState::Heading { label, .. } => {
+          format!("heading:{label}")
+        }
+        manipulate::ControlState::Discrete {
+          name,
+          values,
+          current_index,
+          ..
+        } => format!("{name}:{}@{current_index}", values.join("/")),
+        other => panic!("unexpected control: {other:?}"),
+      })
+      .collect();
+    assert_eq!(
+      summary,
+      vec!["heading:show x values", "flag:True/False@1", "k:1/2/3@1"]
+    );
+  }
 }
