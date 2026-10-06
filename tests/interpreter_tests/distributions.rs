@@ -4479,6 +4479,32 @@ mod wigner_semicircle_distribution {
   use super::*;
 
   #[test]
+  fn marchenko_pastur_pdf() {
+    assert_eq!(
+      interpret("PDF[MarchenkoPasturDistribution[1/4], x]").unwrap(),
+      "Piecewise[{{(2*Sqrt[(9/4 - x)*(-1/4 + x)])/(Pi*x), 1/4 <= x <= 9/4}}, 0]"
+    );
+    // Outside the support
+    assert_eq!(
+      interpret("PDF[MarchenkoPasturDistribution[1/4, 2], 100]").unwrap(),
+      "0"
+    );
+    // Numeric point inside the support, scale defaults to 1
+    assert_eq!(
+      interpret(
+        "Abs[PDF[MarchenkoPasturDistribution[1/10, 1], 1.] - 0.99392] < 0.001"
+      )
+      .unwrap(),
+      "True"
+    );
+    // Ratios above 1 (atom at 0) stay unevaluated
+    assert_eq!(
+      interpret("PDF[MarchenkoPasturDistribution[2, 1], x]").unwrap(),
+      "PDF[MarchenkoPasturDistribution[2, 1], x]"
+    );
+  }
+
+  #[test]
   fn pdf_forms() {
     assert_eq!(
       interpret("PDF[WignerSemicircleDistribution[1], x]").unwrap(),

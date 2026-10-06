@@ -447,6 +447,7 @@ const UNPROTECTED_BUILTINS: &[&str] = &[
   "VerticalTilde",
   "VonMisesDistribution",
   "Wedge",
+  "MarchenkoPasturDistribution",
   "WignerSemicircleDistribution",
 ];
 
