@@ -7871,6 +7871,90 @@ mod select {
     }
   }
 
+  #[test]
+  fn count_limit() {
+    assert_eq!(
+      interpret("Select[{1, 2, 4, 6}, EvenQ, 2]").unwrap(),
+      "{2, 4}"
+    );
+    assert_eq!(interpret("Select[{1, 2, 4}, EvenQ, 0]").unwrap(), "{}");
+    assert_eq!(interpret("Select[f[1, 2, 4], EvenQ, 0]").unwrap(), "f[]");
+    assert_eq!(
+      interpret("Select[<|a -> 2, b -> 4|>, EvenQ, 0]").unwrap(),
+      "<||>"
+    );
+    assert_eq!(
+      interpret("Select[{1, 2, 4}, EvenQ, Infinity]").unwrap(),
+      "{2, 4}"
+    );
+    assert_eq!(
+      interpret("Select[{1, 2, 4}, EvenQ, 10^30]").unwrap(),
+      "{2, 4}"
+    );
+  }
+
+  // A count that is not a non-negative integer or Infinity leaves the call
+  // unevaluated with ::innf instead of being ignored (nightly fuzz finding:
+  // a mutated `Select[list, crit, f]` returned `Permutations[]`).
+  #[test]
+  fn invalid_count_emits_innf() {
+    for (input, call) in [
+      ("Select[{1, 2, 3}, x, EvenQ]", "Select[{1, 2, 3}, x, EvenQ]"),
+      (
+        "Select[g[1, 2, 3], EvenQ, x]",
+        "Select[g[1, 2, 3], EvenQ, x]",
+      ),
+      (
+        "Select[{1, 2, 3}, EvenQ, -1]",
+        "Select[{1, 2, 3}, EvenQ, -1]",
+      ),
+      (
+        "Select[{1, 2, 3}, EvenQ, 2.]",
+        "Select[{1, 2, 3}, EvenQ, 2.]",
+      ),
+      (
+        "Select[{1, 2, 3}, EvenQ, -Infinity]",
+        "Select[{1, 2, 3}, EvenQ, -Infinity]",
+      ),
+      (
+        "Select[<|a -> 1, b -> 2|>, EvenQ, x]",
+        "Select[<|a -> 1, b -> 2|>, EvenQ, x]",
+      ),
+    ] {
+      clear_state();
+      assert_eq!(interpret(input).unwrap(), call);
+      let msgs = woxi::get_captured_messages_raw();
+      let expected = format!(
+        "Select::innf: Non-negative integer or Infinity expected at position 3 in {call}."
+      );
+      assert!(
+        msgs.iter().any(|m| m.contains(&expected)),
+        "expected {expected:?}, got {msgs:?}"
+      );
+    }
+  }
+
+  // An atomic first argument takes precedence: only ::normal is reported.
+  #[test]
+  fn atomic_argument_with_invalid_count_emits_only_normal() {
+    clear_state();
+    assert_eq!(
+      interpret("Select[5, EvenQ, x]").unwrap(),
+      "Select[5, EvenQ, x]"
+    );
+    let msgs = woxi::get_captured_messages_raw();
+    assert!(
+      msgs.iter().any(|m| m.contains(
+        "Select::normal: Nonatomic expression expected at position 1 in Select[5, EvenQ, x]."
+      )),
+      "expected Select::normal, got {msgs:?}"
+    );
+    assert!(
+      !msgs.iter().any(|m| m.contains("::innf")),
+      "unexpected ::innf in {msgs:?}"
+    );
+  }
+
   // Message arguments render in 2D OutputForm: a rational spans three
   // lines with the message text on the baseline, exactly as wolframscript
   // prints it (differential-fuzzer regression, seeds 7793970072796924757
@@ -8064,6 +8148,35 @@ mod discard {
       interpret("Discard[{1, 2, 4, 7, 6, 2}, OddQ, 1]").unwrap(),
       "{2, 4, 7, 6, 2}"
     );
+    assert_eq!(
+      interpret("Discard[{1, 2, 4}, EvenQ, 0]").unwrap(),
+      "{1, 2, 4}"
+    );
+  }
+
+  #[test]
+  fn invalid_count_emits_innf() {
+    for (input, call) in [
+      (
+        "Discard[{1, 2, 3}, EvenQ, x]",
+        "Discard[{1, 2, 3}, EvenQ, x]",
+      ),
+      (
+        "Discard[{1, 2, 3}, EvenQ, -1]",
+        "Discard[{1, 2, 3}, EvenQ, -1]",
+      ),
+    ] {
+      clear_state();
+      assert_eq!(interpret(input).unwrap(), call);
+      let msgs = woxi::get_captured_messages_raw();
+      let expected = format!(
+        "Discard::innf: Non-negative integer or Infinity expected at position 3 in {call}."
+      );
+      assert!(
+        msgs.iter().any(|m| m.contains(&expected)),
+        "expected {expected:?}, got {msgs:?}"
+      );
+    }
   }
 
   #[test]

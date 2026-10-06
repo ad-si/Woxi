@@ -13,6 +13,12 @@ use libfuzzer_sys::fuzz_target;
 /// Heads that touch the filesystem, network, or environment. Inputs
 /// containing them are skipped so the fuzzer neither litters the disk nor
 /// mutates towards I/O instead of interpreter logic.
+///
+/// `Socket` (matched as a substring, so it covers `SocketOpen`,
+/// `SocketListen`, `SocketConnect`, `SocketReadMessage`, …) is here
+/// because a read blocks until the peer writes: a mutation that misspells
+/// the socket a request is written to leaves `SocketReadMessage` waiting
+/// forever, exactly as it does in the Wolfram Language.
 const SIDE_EFFECT_DENYLIST: &[&str] = &[
   "Export",
   "Import",
@@ -32,6 +38,7 @@ const SIDE_EFFECT_DENYLIST: &[&str] = &[
   "URLFetch",
   "URLRead",
   "URLDownload",
+  "Socket",
   "Install",
   "Pause",
   "Environment",

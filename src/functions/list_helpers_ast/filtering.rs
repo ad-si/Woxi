@@ -3,6 +3,54 @@ use super::utilities::*;
 #[allow(unused_imports)]
 use super::*;
 
+/// The optional count of `Select[list, crit, n]` / `Discard[list, crit, n]`:
+/// `Ok(None)` when absent or `Infinity`, `Ok(Some(n))` for a non-negative
+/// integer. Anything else (a negative or inexact number, `-Infinity`, a
+/// symbol) yields `Err` with the unevaluated call, which is what WL returns,
+/// after emitting `::innf` — unless the first argument is atomic, where WL
+/// reports `::normal` instead.
+fn filter_count_limit(
+  name: &str,
+  list: &Expr,
+  crit: &Expr,
+  n: Option<&Expr>,
+) -> Result<Option<usize>, Expr> {
+  use num_traits::{Signed, ToPrimitive};
+  let Some(n) = n else { return Ok(None) };
+  match n {
+    Expr::Integer(i) if *i >= 0 => {
+      return Ok(Some(usize::try_from(*i).unwrap_or(usize::MAX)));
+    }
+    Expr::BigInteger(i) if !i.is_negative() => {
+      return Ok(Some(i.to_usize().unwrap_or(usize::MAX)));
+    }
+    Expr::Identifier(s) | Expr::Constant(s) if s == "Infinity" => {
+      return Ok(None);
+    }
+    Expr::FunctionCall { name, args }
+      if name == "DirectedInfinity"
+        && args.len() == 1
+        && matches!(args[0], Expr::Integer(1)) =>
+    {
+      return Ok(None);
+    }
+    _ => {}
+  }
+  let args = vec![list.clone(), crit.clone(), n.clone()];
+  if is_atomic_arg(list) {
+    emit_nonatomic_normal_message(name, &args);
+  } else {
+    crate::emit_message(&format!(
+      "{name}::innf: Non-negative integer or Infinity expected at position 3 in {}.",
+      crate::syntax::format_expr(
+        &call(name, args.clone()),
+        crate::syntax::ExprForm::Output
+      )
+    ));
+  }
+  Err(call(name, args))
+}
+
 /// AST-based Select: filter elements where predicate returns True.
 /// Select[{a, b, c}, pred] -> elements where pred[elem] is True
 /// Select[{a, b, c}, pred, n] -> first n elements where pred[elem] is True
@@ -11,23 +59,21 @@ pub fn select_ast(
   pred: &Expr,
   n: Option<&Expr>,
 ) -> Result<Expr, InterpreterError> {
-  let limit = match n {
-    Some(Expr::Integer(i)) => Some(*i as usize),
-    _ => None,
+  let limit = match filter_count_limit("Select", list, pred, n) {
+    Ok(limit) => limit,
+    Err(original) => return Ok(original),
   };
 
   // Handle associations: Select on values, preserve key-value pairs
   if let Expr::Association(pairs) = list {
     let mut kept = Vec::new();
     for (key, val) in pairs {
+      if limit.is_some_and(|lim| kept.len() >= lim) {
+        break;
+      }
       let result = apply_func_value(pred, val)?;
       if expr_to_bool(&result) == Some(true) {
         kept.push((key.clone(), val.clone()));
-        if let Some(lim) = limit
-          && kept.len() >= lim
-        {
-          break;
-        }
       }
     }
     return Ok(Expr::Association(kept));
@@ -83,14 +129,12 @@ pub fn select_ast(
 
   let mut kept = Vec::new();
   for item in items {
+    if limit.is_some_and(|lim| kept.len() >= lim) {
+      break;
+    }
     let result = apply_func_value(pred, item)?;
     if expr_to_bool(&result) == Some(true) {
       kept.push(item.clone());
-      if let Some(lim) = limit
-        && kept.len() >= lim
-      {
-        break;
-      }
     }
   }
 
@@ -117,9 +161,9 @@ pub fn discard_ast(
   crit: &Expr,
   n: Option<&Expr>,
 ) -> Result<Expr, InterpreterError> {
-  let limit = match n {
-    Some(Expr::Integer(i)) => Some(*i as usize),
-    _ => None,
+  let limit = match filter_count_limit("Discard", list, crit, n) {
+    Ok(limit) => limit,
+    Err(original) => return Ok(original),
   };
 
   // Associations: test the criterion against the values, keep non-matching
