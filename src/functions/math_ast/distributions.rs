@@ -8827,15 +8827,11 @@ fn variance_gamma_pdf(
       default,
     ))
   } else {
-    let cond_point = Expr::BinaryOp {
-      op: BinaryOperator::And,
-      left: Box::new(comparison(x.clone(), ComparisonOp::Equal, m)),
-      right: Box::new(comparison(
-        l,
-        ComparisonOp::Greater,
-        div2(int(1), int(2)),
-      )),
-    };
+    let cond_point = binop(
+      BinaryOperator::And,
+      comparison(x.clone(), ComparisonOp::Equal, m),
+      comparison(l, ComparisonOp::Greater, div2(int(1), int(2))),
+    );
     eval(&piecewise_with_default(
       vec![
         (above, cond_above),
@@ -9071,17 +9067,17 @@ fn tsallis_qgaussian_pdf(
         ComparisonOp::Less,
         int(3),
       );
-      let q_low = Expr::BinaryOp {
-        op: BinaryOperator::And,
-        left: Box::new(comparison(q.clone(), ComparisonOp::Less, int(1))),
-        right: Box::new(comparison3(
+      let q_low = binop(
+        BinaryOperator::And,
+        comparison(q.clone(), ComparisonOp::Less, int(1)),
+        comparison3(
           int(-1),
           ComparisonOp::LessEqual,
           parts.compact_arg,
           ComparisonOp::LessEqual,
           int(1),
-        )),
-      };
+        ),
+      );
       eval(&piecewise(
         vec![
           (parts.gaussian, q_eq_1),
@@ -13848,11 +13844,9 @@ fn pdf_beta_binomial(
     Expr::Identifier(_) => {
       let body = pmf(x.clone());
       let body = match &body {
-        Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-          op: *op,
-          left: left.clone(),
-          right: Box::new(eval(&(**right).clone())?),
-        },
+        Expr::BinaryOp { op, left, right } => {
+          binop(*op, *left.clone(), eval(&(**right).clone())?)
+        }
         other => other.clone(),
       };
       let cond = comparison3(

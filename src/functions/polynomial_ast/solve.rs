@@ -29,11 +29,7 @@ fn strip_sqrt_square(expr: Expr) -> Expr {
         if half == 1 {
           return *base.clone();
         }
-        return Expr::BinaryOp {
-          op: BinaryOperator::Power,
-          left: base.clone(),
-          right: Box::new(Expr::Integer(half)),
-        };
+        return pow2(*base.clone(), Expr::Integer(half));
       }
       expr
     }
@@ -1284,16 +1280,10 @@ fn select_underdetermined_vars(eqs: &[Expr], vars: &[String]) -> Vec<String> {
         Some(d) if d >= 0 => {
           degree = degree.max(d);
           if d == 1 {
-            let coeff =
-              crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-                name: "Coefficient".to_string(),
-                args: vec![
-                  poly.clone(),
-                  Expr::Identifier(v.clone()),
-                  Expr::Integer(1),
-                ]
-                .into(),
-              });
+            let coeff = crate::evaluator::evaluate_expr_to_expr(&call(
+              "Coefficient",
+              vec![poly.clone(), Expr::Identifier(v.clone()), Expr::Integer(1)],
+            ));
             clean &= matches!(coeff, Ok(c) if !is_expr_zero(&c)
               && vars.iter().all(|w| is_constant_wrt(&c, w)));
           } else if d > 1 {
@@ -1609,10 +1599,7 @@ fn abs_squared_to_squares(eqns: &Expr) -> (Expr, bool) {
       return None;
     }
     changed.set(true);
-    Some(Expr::FunctionCall {
-      name: "Power".to_string(),
-      args: vec![inner, Expr::Integer(2)].into(),
-    })
+    Some(call("Power", vec![inner, Expr::Integer(2)]))
   });
   (rewritten, changed.get())
 }
@@ -3223,15 +3210,12 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
               }
             } else {
               let nb_expr = Expr::Integer(nb);
-              Expr::BinaryOp {
-                op: if sign_minus {
-                  BinaryOperator::Minus
-                } else {
-                  BinaryOperator::Plus
-                },
-                left: Box::new(nb_expr),
-                right: Box::new(sqrt_part.clone()),
-              }
+              let join_op = if sign_minus {
+                BinaryOperator::Minus
+              } else {
+                BinaryOperator::Plus
+              };
+              binop(join_op, nb_expr, sqrt_part.clone())
             };
             if den == 1 {
               num
@@ -3282,15 +3266,12 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
             solve_divide(&Expr::Integer(sqrt_out), &Expr::Integer(2 * ai));
           let make_sol = |sign_minus: bool| -> Expr {
             let i_part = multiply_exprs(&id_expr("I"), &imag_part);
-            simplify(Expr::BinaryOp {
-              op: if sign_minus {
-                BinaryOperator::Minus
-              } else {
-                BinaryOperator::Plus
-              },
-              left: Box::new(real_part.clone()),
-              right: Box::new(i_part),
-            })
+            let join_op = if sign_minus {
+              BinaryOperator::Minus
+            } else {
+              BinaryOperator::Plus
+            };
+            simplify(binop(join_op, real_part.clone(), i_part))
           };
           let sol1 = make_sol(true);
           let sol2 = make_sol(false);
@@ -3329,15 +3310,12 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
               sqrt_part.clone()
             }
           } else {
-            Expr::BinaryOp {
-              op: if sign_minus {
-                BinaryOperator::Minus
-              } else {
-                BinaryOperator::Plus
-              },
-              left: Box::new(Expr::Integer(nb)),
-              right: Box::new(sqrt_part.clone()),
-            }
+            let join_op = if sign_minus {
+              BinaryOperator::Minus
+            } else {
+              BinaryOperator::Plus
+            };
+            binop(join_op, Expr::Integer(nb), sqrt_part.clone())
           };
           if den == 1 {
             num
@@ -5222,22 +5200,14 @@ fn try_solve_inverse_function(
         .ok()?;
         // Periodic part: (2*Pi*I*C[1]) / Log[base].
         let c1 = call1("C", Expr::Integer(1));
-        let periodic =
-          crate::evaluator::evaluate_expr_to_expr(&Expr::BinaryOp {
-            op: BinaryOperator::Divide,
-            left: Box::new(Expr::FunctionCall {
-              name: "Times".to_string(),
-              args: vec![
-                Expr::Integer(2),
-                id_expr("I"),
-                id_expr("Pi"),
-                c1.clone(),
-              ]
-              .into(),
-            }),
-            right: Box::new(log_base),
-          })
-          .ok()?;
+        let periodic = crate::evaluator::evaluate_expr_to_expr(&div2(
+          call(
+            "Times",
+            vec![Expr::Integer(2), id_expr("I"), id_expr("Pi"), c1.clone()],
+          ),
+          log_base,
+        ))
+        .ok()?;
         // Keep the periodic term first without re-canonicalizing the sum:
         // wolframscript lists `(2*I*Pi*C[1])/Log[b] + Log[val]/Log[b]` in that
         // order, whereas Woxi's Plus ordering would otherwise float the
@@ -6054,14 +6024,10 @@ fn build_eq_from_coeffs(coeffs: &[Expr], var: &str) -> Expr {
     } else if i == 1 {
       times2(c.clone(), Expr::Identifier(var.to_string()))
     } else {
-      Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(c.clone()),
-        right: Box::new(pow2(
-          Expr::Identifier(var.to_string()),
-          Expr::Integer(i as i128),
-        )),
-      }
+      times2(
+        c.clone(),
+        pow2(Expr::Identifier(var.to_string()), Expr::Integer(i as i128)),
+      )
     };
     terms.push(term);
   }
@@ -6121,11 +6087,11 @@ fn rs_subst_slot(expr: &Expr, k: usize, name: &str) -> Expr {
       name: fname.clone(),
       args: args.iter().map(|e| rs_subst_slot(e, k, name)).collect(),
     },
-    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-      op: *op,
-      left: Box::new(rs_subst_slot(left, k, name)),
-      right: Box::new(rs_subst_slot(right, k, name)),
-    },
+    Expr::BinaryOp { op, left, right } => binop(
+      *op,
+      rs_subst_slot(left, k, name),
+      rs_subst_slot(right, k, name),
+    ),
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
       op: *op,
       operand: Box::new(rs_subst_slot(operand, k, name)),
@@ -7528,11 +7494,11 @@ fn find_root_rename_walk(
         .map(|a| find_root_rename_walk(a, id_map, idx_map))
         .collect(),
     ),
-    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-      op: *op,
-      left: Box::new(find_root_rename_walk(left, id_map, idx_map)),
-      right: Box::new(find_root_rename_walk(right, id_map, idx_map)),
-    },
+    Expr::BinaryOp { op, left, right } => binop(
+      *op,
+      find_root_rename_walk(left, id_map, idx_map),
+      find_root_rename_walk(right, id_map, idx_map),
+    ),
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
       op: *op,
       operand: Box::new(find_root_rename_walk(operand, id_map, idx_map)),
@@ -8575,11 +8541,11 @@ pub(crate) fn substitute_expr(expr: &Expr, from: &Expr, to: &Expr) -> Expr {
       name: name.clone(),
       args: args.iter().map(|e| substitute_expr(e, from, to)).collect(),
     },
-    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-      op: *op,
-      left: Box::new(substitute_expr(left, from, to)),
-      right: Box::new(substitute_expr(right, from, to)),
-    },
+    Expr::BinaryOp { op, left, right } => binop(
+      *op,
+      substitute_expr(left, from, to),
+      substitute_expr(right, from, to),
+    ),
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
       op: *op,
       operand: Box::new(substitute_expr(operand, from, to)),
@@ -8850,15 +8816,12 @@ fn minimize_poly_roots_int(coeffs: &[i128], var: &str) -> Vec<Expr> {
                 }
               } else {
                 let nb_expr = Expr::Integer(nb);
-                Expr::BinaryOp {
-                  op: if sign_minus {
-                    BinaryOperator::Minus
-                  } else {
-                    BinaryOperator::Plus
-                  },
-                  left: Box::new(nb_expr),
-                  right: Box::new(sqrt_part.clone()),
-                }
+                let join_op = if sign_minus {
+                  BinaryOperator::Minus
+                } else {
+                  BinaryOperator::Plus
+                };
+                binop(join_op, nb_expr, sqrt_part.clone())
               };
               let root = if den == 1 {
                 num

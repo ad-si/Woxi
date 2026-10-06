@@ -27,11 +27,7 @@ fn flatten_times(expr: &Expr, out: &mut Vec<Expr>) {
       right,
     } => {
       flatten_times(left, out);
-      out.push(Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: right.clone(),
-        right: Box::new(Expr::Integer(-1)),
-      });
+      out.push(pow2(*right.clone(), Expr::Integer(-1)));
     }
     other => out.push(other.clone()),
   }
@@ -2205,11 +2201,7 @@ fn negate_leading_integer_coefficient(expr: &Expr) -> Expr {
       } else {
         (**left).clone()
       };
-      Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(new_left),
-        right: right.clone(),
-      }
+      times2(new_left, *right.clone())
     }
     _ => expr.clone(),
   }

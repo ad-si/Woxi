@@ -1434,11 +1434,11 @@ fn expand_dollar_in_expr(expr: &Expr, caps: &Captures) -> Expr {
     },
     // `"<" <> "$1" <> ">"` is a BinaryOp, so the operators have to be walked
     // too or the backreference never reaches its string literal.
-    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-      op: *op,
-      left: Box::new(expand_dollar_in_expr(left, caps)),
-      right: Box::new(expand_dollar_in_expr(right, caps)),
-    },
+    Expr::BinaryOp { op, left, right } => binop(
+      *op,
+      expand_dollar_in_expr(left, caps),
+      expand_dollar_in_expr(right, caps),
+    ),
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
       op: *op,
       operand: Box::new(expand_dollar_in_expr(operand, caps)),
@@ -2649,11 +2649,11 @@ fn substitute_captures(expr: &Expr, captures: &Captures) -> Expr {
         args: new_args.into(),
       }
     }
-    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-      op: *op,
-      left: Box::new(substitute_captures(left, captures)),
-      right: Box::new(substitute_captures(right, captures)),
-    },
+    Expr::BinaryOp { op, left, right } => binop(
+      *op,
+      substitute_captures(left, captures),
+      substitute_captures(right, captures),
+    ),
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
       op: *op,
       operand: Box::new(substitute_captures(operand, captures)),
@@ -4841,11 +4841,9 @@ fn strip_hold_form(e: &Expr) -> Expr {
     Expr::List(items) => {
       Expr::List(items.iter().map(strip_hold_form).collect::<Vec<_>>().into())
     }
-    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-      op: *op,
-      left: Box::new(strip_hold_form(left)),
-      right: Box::new(strip_hold_form(right)),
-    },
+    Expr::BinaryOp { op, left, right } => {
+      binop(*op, strip_hold_form(left), strip_hold_form(right))
+    }
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
       op: *op,
       operand: Box::new(strip_hold_form(operand)),
@@ -5664,11 +5662,11 @@ fn truncate_machine_reals_for_to_string(expr: &Expr) -> Expr {
         .map(truncate_machine_reals_for_to_string)
         .collect(),
     },
-    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-      op: *op,
-      left: Box::new(truncate_machine_reals_for_to_string(left)),
-      right: Box::new(truncate_machine_reals_for_to_string(right)),
-    },
+    Expr::BinaryOp { op, left, right } => binop(
+      *op,
+      truncate_machine_reals_for_to_string(left),
+      truncate_machine_reals_for_to_string(right),
+    ),
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
       op: *op,
       operand: Box::new(truncate_machine_reals_for_to_string(operand)),
@@ -6598,11 +6596,7 @@ fn negated_numeric_exponent(exp: &Expr) -> Option<Expr> {
       let Expr::Integer(n) = left.as_ref() else {
         return None;
       };
-      Some(Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(Expr::Integer(-n)),
-        right: right.clone(),
-      })
+      Some(div2(Expr::Integer(-n), *right.clone()))
     }
     _ => None,
   }
@@ -6841,7 +6835,7 @@ fn tex_reciprocal_trig(base: &Expr) -> Option<Expr> {
     "Coth" => "Tanh",
     _ => return None,
   };
-  Some(call(cofunction, vec![args[0].clone()]))
+  Some(call1(cofunction, args[0].clone()))
 }
 
 /// The quotient function a numerator and a reciprocal (already turned into
@@ -6868,7 +6862,7 @@ fn tex_trig_quotient(numer: &Expr, reciprocal: &Expr) -> Option<Expr> {
     ("Sinh", "Sech") => "Tanh",
     _ => return None,
   };
-  Some(call(quotient, vec![na[0].clone()]))
+  Some(call1(quotient, na[0].clone()))
 }
 
 /// `Power[base, -p/q]` split into the base and the positive exponent.
@@ -7100,7 +7094,7 @@ fn tex_times_nary_with(args: &[Expr], distribute_sign: bool) -> String {
     && let Some(pos) = owned.iter().position(is_tex_sum)
   {
     let sum = owned[pos].clone();
-    owned[pos] = call(NEGATED_SUM, vec![sum]);
+    owned[pos] = call1(NEGATED_SUM, sum);
     negate = false;
   }
   let factors: &[Expr] = &owned;
@@ -13782,11 +13776,7 @@ fn negated_term(expr: &Expr) -> Option<Expr> {
       Some(if matches!(head, Expr::Integer(1)) {
         (**right).clone()
       } else {
-        Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(head),
-          right: right.clone(),
-        }
+        times2(head, *right.clone())
       })
     }
     _ => None,
@@ -14207,11 +14197,7 @@ pub(crate) fn map_expr_tree(
         }
       }
     }
-    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-      op: *op,
-      left: Box::new(go(left)),
-      right: Box::new(go(right)),
-    },
+    Expr::BinaryOp { op, left, right } => binop(*op, go(left), go(right)),
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
       op: *op,
       operand: Box::new(go(operand)),
@@ -16028,11 +16014,9 @@ fn number_form_family_inner(
     Expr::List(items) => {
       Expr::List(items.iter().map(recurse).collect::<Vec<_>>().into())
     }
-    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-      op: *op,
-      left: Box::new(recurse(left)),
-      right: Box::new(recurse(right)),
-    },
+    Expr::BinaryOp { op, left, right } => {
+      binop(*op, recurse(left), recurse(right))
+    }
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
       op: *op,
       operand: Box::new(recurse(operand)),
@@ -16620,11 +16604,11 @@ fn expand_template_parts(
         operators: operators.clone(),
       })
     }
-    Expr::BinaryOp { op, left, right } => one(Expr::BinaryOp {
-      op: *op,
-      left: Box::new(expand_template_one(left, args)?),
-      right: Box::new(expand_template_one(right, args)?),
-    }),
+    Expr::BinaryOp { op, left, right } => one(binop(
+      *op,
+      expand_template_one(left, args)?,
+      expand_template_one(right, args)?,
+    )),
     Expr::UnaryOp { op, operand } => one(Expr::UnaryOp {
       op: *op,
       operand: Box::new(expand_template_one(operand, args)?),

@@ -472,11 +472,7 @@ fn reduce_coefficients_mod(expr: &Expr, m: i128) -> Expr {
       op: BinaryOperator::Power,
       left,
       right,
-    } => Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left: Box::new(reduce_coefficients_mod(left, m)),
-      right: right.clone(),
-    },
+    } => pow2(reduce_coefficients_mod(left, m), *right.clone()),
     Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
       pow(reduce_coefficients_mod(&args[0], m), args[1].clone())
     }
@@ -672,16 +668,10 @@ pub fn expand_expr(expr: &Expr) -> Expr {
               right: den,
             } = &left_exp
           {
-            let num_expanded = expand_and_combine(&Expr::BinaryOp {
-              op: BinaryOperator::Power,
-              left: num.clone(),
-              right: Box::new(Expr::Integer(*n)),
-            });
-            let den_power = expand_and_combine(&Expr::BinaryOp {
-              op: BinaryOperator::Power,
-              left: den.clone(),
-              right: Box::new(Expr::Integer(*n)),
-            });
+            let num_expanded =
+              expand_and_combine(&pow2(*num.clone(), Expr::Integer(*n)));
+            let den_power =
+              expand_and_combine(&pow2(*den.clone(), Expr::Integer(*n)));
             return distribute_product(
               &num_expanded,
               &pow2(den_power, Expr::Integer(-1)),
@@ -721,11 +711,7 @@ pub fn expand_expr(expr: &Expr) -> Expr {
           }
           pow2(left_exp, right_exp)
         }
-        _ => Expr::BinaryOp {
-          op: *op,
-          left: Box::new(left_exp),
-          right: Box::new(right_exp),
-        },
+        _ => binop(*op, left_exp, right_exp),
       }
     }
 
@@ -796,16 +782,10 @@ pub fn expand_expr(expr: &Expr) -> Expr {
             right: den,
           } = &base
         {
-          let num_expanded = expand_and_combine(&Expr::BinaryOp {
-            op: BinaryOperator::Power,
-            left: num.clone(),
-            right: Box::new(Expr::Integer(*n)),
-          });
-          let den_power = expand_and_combine(&Expr::BinaryOp {
-            op: BinaryOperator::Power,
-            left: den.clone(),
-            right: Box::new(Expr::Integer(*n)),
-          });
+          let num_expanded =
+            expand_and_combine(&pow2(*num.clone(), Expr::Integer(*n)));
+          let den_power =
+            expand_and_combine(&pow2(*den.clone(), Expr::Integer(*n)));
           return distribute_product(
             &num_expanded,
             &pow2(den_power, Expr::Integer(-1)),
@@ -1566,11 +1546,7 @@ fn expand_all_recursive(expr: &Expr) -> Expr {
         return pow(expanded, Expr::Integer(-1));
       }
       // After recursively expanding sub-expressions, expand at this level
-      expand_and_combine(&Expr::BinaryOp {
-        op: *op,
-        left: Box::new(left_exp),
-        right: Box::new(right_exp),
-      })
+      expand_and_combine(&binop(*op, left_exp, right_exp))
     }
 
     Expr::UnaryOp { op, operand } => {
@@ -1704,11 +1680,7 @@ fn expand_numerator_recursive(expr: &Expr) -> Expr {
       right,
     } => {
       let expanded_num = expand_and_combine(left);
-      Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(expanded_num),
-        right: right.clone(),
-      }
+      div2(expanded_num, *right.clone())
     }
 
     // a * b : expand factors with positive power
@@ -1840,11 +1812,7 @@ fn expand_denominator_recursive(expr: &Expr) -> Expr {
       right,
     } => {
       let expanded_den = expand_and_combine(right);
-      Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: left.clone(),
-        right: Box::new(expanded_den),
-      }
+      div2(*left.clone(), expanded_den)
     }
 
     // Times: split into numerator/denominator, expand the combined
@@ -1866,11 +1834,7 @@ fn expand_denominator_recursive(expr: &Expr) -> Expr {
       right: exp,
     } if is_negative_integer(exp) => {
       let pos_exp = negate_expr(exp);
-      let expanded = expand_and_combine(&Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: base.clone(),
-        right: Box::new(pos_exp),
-      });
+      let expanded = expand_and_combine(&pow2(*base.clone(), pos_exp));
       // The expansion absorbs the positive exponent, so always use -1
       pow(expanded, Expr::Integer(-1))
     }

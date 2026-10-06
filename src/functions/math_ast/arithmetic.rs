@@ -693,11 +693,7 @@ pub fn try_threaded_op(
         };
         let mut folded = args[0].clone();
         for a in &args[1..] {
-          folded = Expr::BinaryOp {
-            op: bin_op,
-            left: Box::new(folded),
-            right: Box::new(a.clone()),
-          };
+          folded = binop(bin_op, folded, a.clone());
         }
         let pos = args
           .iter()
@@ -762,11 +758,7 @@ fn split_numeric_complex_minus(e: &Expr) -> Option<(Expr, Expr)> {
         Expr::Integer(n) => Expr::Integer(-n),
         _ => return None,
       };
-      Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(neg_coeff),
-        right: i.clone(),
-      }
+      times2(neg_coeff, *i.clone())
     }
     i if is_i(i) => times2(Expr::Integer(-1), id_expr("I")),
     _ => return None,
@@ -5163,14 +5155,7 @@ fn compare_expr_canonical(a: &Expr, b: &Expr) -> std::cmp::Ordering {
           },
         )
       } else if *op_a == BinaryOperator::Divide {
-        (
-          BinaryOperator::Times,
-          Expr::BinaryOp {
-            op: BinaryOperator::Power,
-            left: ra.clone(),
-            right: Box::new(Expr::Integer(-1)),
-          },
-        )
+        (BinaryOperator::Times, pow2(*ra.clone(), Expr::Integer(-1)))
       } else {
         (*op_a, *ra.clone())
       };
@@ -5183,14 +5168,7 @@ fn compare_expr_canonical(a: &Expr, b: &Expr) -> std::cmp::Ordering {
           },
         )
       } else if *op_b == BinaryOperator::Divide {
-        (
-          BinaryOperator::Times,
-          Expr::BinaryOp {
-            op: BinaryOperator::Power,
-            left: rb.clone(),
-            right: Box::new(Expr::Integer(-1)),
-          },
-        )
+        (BinaryOperator::Times, pow2(*rb.clone(), Expr::Integer(-1)))
       } else {
         (*op_b, *rb.clone())
       };
@@ -5403,11 +5381,7 @@ fn strip_negation(e: &Expr) -> Expr {
         if pos_n == 1 {
           *right.clone()
         } else {
-          Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(Expr::Integer(pos_n)),
-            right: right.clone(),
-          }
+          times2(Expr::Integer(pos_n), *right.clone())
         }
       } else {
         e.clone()
@@ -6705,7 +6679,7 @@ fn combine_trig_pairs(args: Vec<Expr>) -> Vec<Expr> {
       }
     }
     for (head, n) in heads {
-      let f = call(head, vec![farg.clone()]);
+      let f = call1(head, farg.clone());
       out.push(if n == 1 { f } else { pow(f, Expr::Integer(n)) });
     }
   }
@@ -8239,11 +8213,7 @@ fn times_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } => {
         // a/b → a * b^(-1)
         flatten_times(left, out);
-        out.push(Expr::BinaryOp {
-          op: BinaryOperator::Power,
-          left: right.clone(),
-          right: Box::new(Expr::Integer(-1)),
-        });
+        out.push(pow2(*right.clone(), Expr::Integer(-1)));
       }
       Expr::UnaryOp {
         op: UnaryOperator::Minus,
