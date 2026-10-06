@@ -1947,6 +1947,9 @@ pub(crate) struct PlotOptions {
   pub grid_lines_style: Option<SeriesStyle>,
   /// Use frame (left+bottom border) instead of axes
   pub frame: bool,
+  /// `FrameTicks -> None | False`: a framed plot keeps its border but loses
+  /// the tick marks and labels on it.
+  pub frame_ticks: bool,
   /// `Evaluated -> True`: work the body out once, with the plot variable
   /// symbolic, rather than re-evaluating it at every sample point.
   pub evaluated: bool,
@@ -2065,6 +2068,14 @@ pub(crate) struct LabelStyleSpec {
   pub font_size: Option<f64>,
 }
 
+impl PlotOptions {
+  /// Whether tick marks and their labels are drawn at all: `Ticks -> None`
+  /// removes them everywhere, `FrameTicks -> None` only on a frame.
+  fn ticks_visible(&self) -> bool {
+    self.ticks && (self.frame_ticks || !self.frame)
+  }
+}
+
 impl Default for PlotOptions {
   fn default() -> Self {
     Self {
@@ -2092,6 +2103,7 @@ impl Default for PlotOptions {
       grid_y_lines: Vec::new(),
       grid_lines_style: None,
       frame: false,
+      frame_ticks: true,
       evaluated: false,
       ticks_x: None,
       ticks_y: None,
@@ -2821,7 +2833,7 @@ fn generate_svg_with_options(
   } else {
     (show_x_axis, show_y_axis)
   };
-  let show_ticks = opts.ticks;
+  let show_ticks = opts.ticks_visible();
   let render_width = svg_width * RESOLUTION_SCALE;
   let mut render_height = svg_height * RESOLUTION_SCALE;
 
@@ -6443,7 +6455,7 @@ fn legend_plot_area_width(vb_w: f64, opts: &PlotOptions) -> f64 {
   let show_y_axis = opts.axes.1;
   let y_label_area = if !show_y_axis {
     0.0
-  } else if !opts.ticks {
+  } else if !opts.ticks_visible() {
     5.0 * sf
   } else {
     65.0 * sf
@@ -8887,6 +8899,12 @@ pub(crate) fn apply_common_plot_option(
       plot_opts.background = parse_background_option(replacement);
     }
     "Frame" => plot_opts.frame = parse_frame_option(replacement),
+    "FrameTicks" => {
+      plot_opts.frame_ticks = !matches!(
+        replacement,
+        Expr::Identifier(s) if s == "None" || s == "False"
+      );
+    }
     "Evaluated" => {
       plot_opts.evaluated =
         matches!(replacement, Expr::Identifier(v) if v == "True");
