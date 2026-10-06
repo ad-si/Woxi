@@ -926,11 +926,7 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if half == 1 {
           return Ok(*base.clone());
         }
-        return Ok(Expr::BinaryOp {
-          op: BinaryOperator::Power,
-          left: base.clone(),
-          right: Box::new(Expr::Integer(half)),
-        });
+        return Ok(pow2(*base.clone(), Expr::Integer(half)));
       }
       Ok(make_sqrt(args[0].clone()))
     }
@@ -1007,11 +1003,7 @@ pub fn sqrt_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               if half == 1 {
                 outside.push(*base.clone());
               } else {
-                outside.push(Expr::BinaryOp {
-                  op: BinaryOperator::Power,
-                  left: base.clone(),
-                  right: Box::new(Expr::Integer(half)),
-                });
+                outside.push(pow2(*base.clone(), Expr::Integer(half)));
               }
             }
           }

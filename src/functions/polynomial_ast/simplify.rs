@@ -1628,11 +1628,11 @@ fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
       )
     }
 
-    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-      op: *op,
-      left: Box::new(refine_expr(left, info, assumption)),
-      right: Box::new(refine_expr(right, info, assumption)),
-    },
+    Expr::BinaryOp { op, left, right } => binop(
+      *op,
+      refine_expr(left, info, assumption),
+      refine_expr(right, info, assumption),
+    ),
 
     // Recurse into unary ops
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
@@ -1813,14 +1813,10 @@ fn refine_product_root(
 
   for factor in &factors {
     // Try to refine (factor)^(1/m)
-    let root_expr = Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left: Box::new(factor.clone()),
-      right: Box::new(call(
-        "Rational",
-        vec![Expr::Integer(1), Expr::Integer(m)],
-      )),
-    };
+    let root_expr = pow2(
+      factor.clone(),
+      call("Rational", vec![Expr::Integer(1), Expr::Integer(m)]),
+    );
     let refined = refine_expr(&root_expr, info, assumption);
     // Check if it actually simplified (different from input)
     if expr_to_string(&refined) == expr_to_string(&root_expr) {
@@ -3147,15 +3143,10 @@ fn try_simplify_nested_power(
   } = outer_base
     && is_var_in_open_range(inner_exp, -1, 1, info)
   {
-    return Some(Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left: base.clone(),
-      right: Box::new(Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: inner_exp.clone(),
-        right: Box::new(refine_expr(outer_exp, info, assumption)),
-      }),
-    });
+    return Some(pow2(
+      *base.clone(),
+      times2(*inner_exp.clone(), refine_expr(outer_exp, info, assumption)),
+    ));
   }
   None
 }
@@ -4104,11 +4095,11 @@ fn extract_equation_substitutions_inner(
 fn substitute_var(expr: &Expr, var: &str, replacement: &Expr) -> Expr {
   match expr {
     Expr::Identifier(name) if name == var => replacement.clone(),
-    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-      op: *op,
-      left: Box::new(substitute_var(left, var, replacement)),
-      right: Box::new(substitute_var(right, var, replacement)),
-    },
+    Expr::BinaryOp { op, left, right } => binop(
+      *op,
+      substitute_var(left, var, replacement),
+      substitute_var(right, var, replacement),
+    ),
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
       op: *op,
       operand: Box::new(substitute_var(operand, var, replacement)),
@@ -5832,11 +5823,7 @@ fn together_subexpressions(expr: &Expr) -> Expr {
     Expr::BinaryOp { op, left, right } => {
       let l = super::together::together_expr(left);
       let r = super::together::together_expr(right);
-      Expr::BinaryOp {
-        op: *op,
-        left: Box::new(l),
-        right: Box::new(r),
-      }
+      binop(*op, l, r)
     }
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
       op: *op,
@@ -6252,11 +6239,11 @@ fn denest_nested_radicals(expr: &Expr) -> Expr {
       name: name.clone(),
       args: args.iter().map(denest_nested_radicals).collect(),
     },
-    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-      op: *op,
-      left: Box::new(denest_nested_radicals(left)),
-      right: Box::new(denest_nested_radicals(right)),
-    },
+    Expr::BinaryOp { op, left, right } => binop(
+      *op,
+      denest_nested_radicals(left),
+      denest_nested_radicals(right),
+    ),
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
       op: *op,
       operand: Box::new(denest_nested_radicals(operand)),
@@ -8921,14 +8908,10 @@ fn radical_quotient_num_content(num: &Expr, den: &Expr) -> Option<Expr> {
     })
     .collect();
   let divided = divided.ok()?;
-  Some(Expr::BinaryOp {
-    op: BinaryOperator::Divide,
-    left: Box::new(call(
-      "Times",
-      vec![Expr::Integer(signed), call("Plus", divided)],
-    )),
-    right: Box::new(den.clone()),
-  })
+  Some(div2(
+    call("Times", vec![Expr::Integer(signed), call("Plus", divided)]),
+    den.clone(),
+  ))
 }
 
 /// Pull the integer content out of a sum, keeping the polynomial

@@ -262,11 +262,11 @@ fn rr_contains_identifier(expr: &Expr, name: &str) -> bool {
 fn substitute_identifier(expr: &Expr, name: &str, replacement: &Expr) -> Expr {
   match expr {
     Expr::Identifier(n) if n == name => replacement.clone(),
-    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-      op: *op,
-      left: Box::new(substitute_identifier(left, name, replacement)),
-      right: Box::new(substitute_identifier(right, name, replacement)),
-    },
+    Expr::BinaryOp { op, left, right } => binop(
+      *op,
+      substitute_identifier(left, name, replacement),
+      substitute_identifier(right, name, replacement),
+    ),
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
       op: *op,
       operand: Box::new(substitute_identifier(operand, name, replacement)),
@@ -331,11 +331,11 @@ fn factor_int_coeffs(factor: &Expr, var: &str) -> Option<Vec<i128>> {
 fn replace_identifier_with_slot1(expr: &Expr, name: &str) -> Expr {
   match expr {
     Expr::Identifier(n) if n == name => Expr::Slot(1),
-    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-      op: *op,
-      left: Box::new(replace_identifier_with_slot1(left, name)),
-      right: Box::new(replace_identifier_with_slot1(right, name)),
-    },
+    Expr::BinaryOp { op, left, right } => binop(
+      *op,
+      replace_identifier_with_slot1(left, name),
+      replace_identifier_with_slot1(right, name),
+    ),
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
       op: *op,
       operand: Box::new(replace_identifier_with_slot1(operand, name)),
@@ -469,14 +469,10 @@ fn compute_minpoly_coeffs(
     // Sqrt[n] → Power[n, 1/2]
     expr if is_sqrt(expr).is_some() => {
       let sqrt_arg = is_sqrt(expr).unwrap();
-      let power_expr = Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(sqrt_arg.clone()),
-        right: Box::new(call(
-          "Rational",
-          vec![Expr::Integer(1), Expr::Integer(2)],
-        )),
-      };
+      let power_expr = pow2(
+        sqrt_arg.clone(),
+        call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
+      );
       compute_minpoly_coeffs(&power_expr)
     }
 

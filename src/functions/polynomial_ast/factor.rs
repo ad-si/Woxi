@@ -1583,11 +1583,7 @@ fn decompose_product(
         // numeric^exp: handle as coefficient
         *numeric_coeff = times_ast(&[
           numeric_coeff.clone(),
-          Expr::BinaryOp {
-            op: BinaryOperator::Power,
-            left: left.clone(),
-            right: right.clone(),
-          },
+          pow2(*left.clone(), *right.clone()),
         ])
         .unwrap_or(expr.clone());
       } else {
@@ -1694,11 +1690,7 @@ pub fn factor_terms_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } => {
         // numeric_factor * inner — apply var factoring to inner
         let inner_factored = factor_terms_wrt_var(right, &var);
-        return Ok(Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: left.clone(),
-          right: Box::new(inner_factored),
-        });
+        return Ok(times2(*left.clone(), inner_factored));
       }
       _ => {
         // No numeric factor was extracted

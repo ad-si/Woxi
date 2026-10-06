@@ -367,11 +367,11 @@ fn replace_subexpr_simple(
         .map(|a| replace_subexpr_simple(a, target, replacement))
         .collect(),
     ),
-    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-      op: *op,
-      left: Box::new(replace_subexpr_simple(left, target, replacement)),
-      right: Box::new(replace_subexpr_simple(right, target, replacement)),
-    },
+    Expr::BinaryOp { op, left, right } => binop(
+      *op,
+      replace_subexpr_simple(left, target, replacement),
+      replace_subexpr_simple(right, target, replacement),
+    ),
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
       op: *op,
       operand: Box::new(replace_subexpr_simple(operand, target, replacement)),
@@ -4856,11 +4856,7 @@ fn arcsin_arccos_linear_antideriv(
   } else {
     BinaryOperator::Plus
   };
-  Some(Expr::BinaryOp {
-    op: join_op,
-    left: Box::new(x_times_atrig),
-    right: Box::new(sqrt_over_p),
-  })
+  Some(binop(join_op, x_times_atrig, sqrt_over_p))
 }
 
 /// Extract the coefficient of `var` from a linear expression `a*var + b`.
@@ -5005,15 +5001,12 @@ fn try_integrate_trig_squared(base: &Expr, var: &str) -> Option<Expr> {
       let four_a = simplify(times2(Expr::Integer(4), coeff));
       let sinh_term = div2(sinh_double, four_a);
       let x_half = div2(Expr::Identifier(var.to_string()), Expr::Integer(2));
-      return Some(Expr::BinaryOp {
-        op: if name == "Cosh" {
-          BinaryOperator::Plus
-        } else {
-          BinaryOperator::Minus
-        },
-        left: Box::new(sinh_term),
-        right: Box::new(x_half),
-      });
+      let join_op = if name == "Cosh" {
+        BinaryOperator::Plus
+      } else {
+        BinaryOperator::Minus
+      };
+      return Some(binop(join_op, sinh_term, x_half));
     }
 
     if !is_sin && !is_cos {
@@ -8362,14 +8355,13 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
               "CoshIntegral" => neg(call1("Sinh", x.clone())),
               _ => neg(pow2(const_expr("E"), x.clone())),
             };
-            let x_f = Expr::BinaryOp {
-              op: BinaryOperator::Times,
-              left: Box::new(x),
-              right: Box::new(Expr::FunctionCall {
+            let x_f = times2(
+              x,
+              Expr::FunctionCall {
                 name: name.clone(),
                 args: args.clone(),
-              }),
-            };
+              },
+            );
             return Some(simplify(plus2(x_f, correction)));
           }
           None
@@ -8998,11 +8990,7 @@ pub fn simplify(mut expr: Expr) -> Expr {
         return result;
       }
 
-      Expr::BinaryOp {
-        op,
-        left: Box::new(left),
-        right: Box::new(right),
-      }
+      binop(op, left, right)
     }
     Expr::UnaryOp { op, operand } => {
       let op = *op;
@@ -9214,10 +9202,12 @@ fn rewrite_harmonic_asymptotic(expr: &Expr, var: &str) -> Option<Expr> {
     Expr::BinaryOp { op, left, right } => {
       let nl = rewrite_harmonic_asymptotic(left, var);
       let nr = rewrite_harmonic_asymptotic(right, var);
-      (nl.is_some() || nr.is_some()).then(|| Expr::BinaryOp {
-        op: *op,
-        left: Box::new(nl.unwrap_or_else(|| (**left).clone())),
-        right: Box::new(nr.unwrap_or_else(|| (**right).clone())),
+      (nl.is_some() || nr.is_some()).then(|| {
+        binop(
+          *op,
+          nl.unwrap_or_else(|| (**left).clone()),
+          nr.unwrap_or_else(|| (**right).clone()),
+        )
       })
     }
     Expr::UnaryOp { op, operand } => rewrite_harmonic_asymptotic(operand, var)
@@ -11756,11 +11746,9 @@ fn abs_deriv_to_sign(expr: &Expr) -> Expr {
     return call1("Sign", abs_deriv_to_sign(&args[0]));
   }
   match expr {
-    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-      op: *op,
-      left: Box::new(abs_deriv_to_sign(left)),
-      right: Box::new(abs_deriv_to_sign(right)),
-    },
+    Expr::BinaryOp { op, left, right } => {
+      binop(*op, abs_deriv_to_sign(left), abs_deriv_to_sign(right))
+    }
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
       op: *op,
       operand: Box::new(abs_deriv_to_sign(operand)),
@@ -12427,11 +12415,9 @@ fn rewrite_reciprocal_trig(e: &Expr) -> Option<Expr> {
           .collect::<Vec<_>>()
           .into(),
       },
-      Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-        op: *op,
-        left: Box::new(walk(left, changed)),
-        right: Box::new(walk(right, changed)),
-      },
+      Expr::BinaryOp { op, left, right } => {
+        binop(*op, walk(left, changed), walk(right, changed))
+      }
       Expr::UnaryOp { op, operand } => Expr::UnaryOp {
         op: *op,
         operand: Box::new(walk(operand, changed)),
@@ -12603,11 +12589,9 @@ fn gamma_model_pathological(expr: &Expr, var: &str, z0: &Expr) -> bool {
         name: name.clone(),
         args: args.iter().map(strip_modeled).collect::<Vec<_>>().into(),
       },
-      Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-        op: *op,
-        left: Box::new(strip_modeled(left)),
-        right: Box::new(strip_modeled(right)),
-      },
+      Expr::BinaryOp { op, left, right } => {
+        binop(*op, strip_modeled(left), strip_modeled(right))
+      }
       Expr::UnaryOp { op, operand } => Expr::UnaryOp {
         op: *op,
         operand: Box::new(strip_modeled(operand)),
@@ -12725,23 +12709,11 @@ fn rewrite_pole_models(
         .collect::<Vec<_>>()
         .into(),
     },
-    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-      op: *op,
-      left: Box::new(rewrite_pole_models(
-        left,
-        var,
-        z0,
-        applied,
-        gamma_applied,
-      )),
-      right: Box::new(rewrite_pole_models(
-        right,
-        var,
-        z0,
-        applied,
-        gamma_applied,
-      )),
-    },
+    Expr::BinaryOp { op, left, right } => binop(
+      *op,
+      rewrite_pole_models(left, var, z0, applied, gamma_applied),
+      rewrite_pole_models(right, var, z0, applied, gamma_applied),
+    ),
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
       op: *op,
       operand: Box::new(rewrite_pole_models(

@@ -1223,21 +1223,16 @@ pub fn product_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 times2(n.clone(), plus2(Expr::Integer(1), n)),
                 Expr::Integer(2),
               );
-              return Ok(Expr::BinaryOp {
-                op: BinaryOperator::Power,
-                left: base.clone(),
-                right: Box::new(exponent),
-              });
+              return Ok(pow2(*base.clone(), exponent));
             }
 
             // Product[i^k, {i, 1, n}] = n!^k
             if matches!(base.as_ref(), Expr::Identifier(name) if name == &var_name)
             {
-              return Ok(Expr::BinaryOp {
-                op: BinaryOperator::Power,
-                left: Box::new(call1("Factorial", max_expr.clone())),
-                right: exp.clone(),
-              });
+              return Ok(pow2(
+                call1("Factorial", max_expr.clone()),
+                *exp.clone(),
+              ));
             }
           }
 
@@ -2137,11 +2132,11 @@ fn harmonic_antidifference_as_polygamma(expr: &Expr, var_name: &str) -> Expr {
         .map(|a| harmonic_antidifference_as_polygamma(a, var_name))
         .collect(),
     ),
-    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-      op: *op,
-      left: Box::new(harmonic_antidifference_as_polygamma(left, var_name)),
-      right: Box::new(harmonic_antidifference_as_polygamma(right, var_name)),
-    },
+    Expr::BinaryOp { op, left, right } => binop(
+      *op,
+      harmonic_antidifference_as_polygamma(left, var_name),
+      harmonic_antidifference_as_polygamma(right, var_name),
+    ),
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
       op: *op,
       operand: Box::new(harmonic_antidifference_as_polygamma(
@@ -2835,11 +2830,7 @@ fn try_symbolic_sum(
         right,
       } => Some(vec![
         (**left).clone(),
-        Expr::BinaryOp {
-          op: BinaryOperator::Power,
-          left: right.clone(),
-          right: Box::new(Expr::Integer(-1)),
-        },
+        pow2(*right.clone(), Expr::Integer(-1)),
       ]),
       _ => None,
     };
@@ -3220,11 +3211,7 @@ fn match_geometric_base(body: &Expr, var_name: &str) -> Option<(Expr, Expr)> {
         right,
       } => {
         collect(left, out);
-        out.push(Expr::BinaryOp {
-          op: BinaryOperator::Power,
-          left: right.clone(),
-          right: Box::new(Expr::Integer(-1)),
-        });
+        out.push(pow2(*right.clone(), Expr::Integer(-1)));
       }
       Expr::FunctionCall { name, args } if name == "Times" => {
         for a in args {
@@ -3403,11 +3390,7 @@ fn match_geometric_symbolic_exp(
         };
         // Reject a plain-integer q — that is the strict matcher's job.
         if !matches!(&q, Expr::Integer(_) | Expr::BigInteger(_)) {
-          eff_base = Some(Expr::BinaryOp {
-            op: BinaryOperator::Power,
-            left: left.clone(),
-            right: Box::new(q),
-          });
+          eff_base = Some(pow2(*left.clone(), q));
           continue;
         }
       }
@@ -3451,11 +3434,7 @@ fn match_arith_geometric(body: &Expr, var_name: &str) -> Option<(i128, Expr)> {
         right,
       } => {
         collect(left, out);
-        out.push(Expr::BinaryOp {
-          op: BinaryOperator::Power,
-          left: right.clone(),
-          right: Box::new(Expr::Integer(-1)),
-        });
+        out.push(pow2(*right.clone(), Expr::Integer(-1)));
       }
       Expr::FunctionCall { name, args } if name == "Times" => {
         for a in args {
@@ -3631,15 +3610,10 @@ fn match_log_geometric(body: &Expr, var_name: &str) -> Option<(Expr, Expr)> {
         op: BinaryOperator::Power,
         left,
         right,
-      } => out.push(Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: left.clone(),
-        right: Box::new(Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(Expr::Integer(-1)),
-          right: right.clone(),
-        }),
-      }),
+      } => out.push(pow2(
+        *left.clone(),
+        times2(Expr::Integer(-1), *right.clone()),
+      )),
       Expr::FunctionCall { name, args }
         if name == "Power" && args.len() == 2 =>
       {
@@ -3797,11 +3771,7 @@ fn match_exponential_base(body: &Expr, var_name: &str) -> Option<(Expr, Expr)> {
         right,
       } => {
         collect(left, out);
-        out.push(Expr::BinaryOp {
-          op: BinaryOperator::Power,
-          left: right.clone(),
-          right: Box::new(Expr::Integer(-1)),
-        });
+        out.push(pow2(*right.clone(), Expr::Integer(-1)));
       }
       Expr::FunctionCall { name, args } if name == "Times" => {
         for a in args {
@@ -4297,14 +4267,10 @@ fn try_infinite_sum(
       match_geometric_symbolic_exp(body, var_name)
   {
     let neg_one_plus_base = plus2(Expr::Integer(-1), eff_base);
-    let closed = Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(crate::functions::math_ast::times_ast(&[
-        Expr::Integer(-1),
-        coeff,
-      ])?),
-      right: Box::new(neg_one_plus_base),
-    };
+    let closed = div2(
+      crate::functions::math_ast::times_ast(&[Expr::Integer(-1), coeff])?,
+      neg_one_plus_base,
+    );
     return Ok(Some(crate::evaluator::evaluate_expr_to_expr(&closed)?));
   }
 

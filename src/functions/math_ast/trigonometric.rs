@@ -1388,15 +1388,12 @@ fn imaginary_arg_reduction(
 /// argument's square expands (e.g. `(2 y)^2 -> 4 y^2`), matching wolframscript.
 fn sqrt_one_pm_sq(x: &Expr, plus: bool) -> Expr {
   let x_sq = pow2(x.clone(), Expr::Integer(2));
-  let inner = Expr::BinaryOp {
-    op: if plus {
-      BinaryOperator::Plus
-    } else {
-      BinaryOperator::Minus
-    },
-    left: Box::new(Expr::Integer(1)),
-    right: Box::new(x_sq),
+  let join_op = if plus {
+    BinaryOperator::Plus
+  } else {
+    BinaryOperator::Minus
   };
+  let inner = binop(join_op, Expr::Integer(1), x_sq);
   let inner = crate::evaluator::evaluate_expr_to_expr(&inner).unwrap_or(inner);
   // Evaluate the Sqrt too, so a rational radicand collapses (e.g.
   // Cos[ArcSin[3/5]] = Sqrt[16/25] -> 4/5). A symbolic radicand such as
@@ -2424,11 +2421,7 @@ pub fn erf_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if let Expr::Integer(n) = left.as_ref()
         && *n < 0
       {
-        let pos_arg = Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(Expr::Integer(-*n)),
-          right: right.clone(),
-        };
+        let pos_arg = times2(Expr::Integer(-*n), *right.clone());
         return Ok(negate_erf(pos_arg));
       }
       Ok(unevaluated("Erf", args))
@@ -2542,11 +2535,7 @@ pub fn erfi_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if let Expr::Integer(n) = left.as_ref()
         && *n < 0
       {
-        let pos_arg = Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(Expr::Integer(-*n)),
-          right: right.clone(),
-        };
+        let pos_arg = times2(Expr::Integer(-*n), *right.clone());
         return negate_erfi(pos_arg);
       }
       Ok(unevaluated("Erfi", args))
@@ -2617,11 +2606,7 @@ pub fn dawson_f_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if let Expr::Integer(n) = left.as_ref()
         && *n < 0
       {
-        let pos_arg = Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(Expr::Integer(-*n)),
-          right: right.clone(),
-        };
+        let pos_arg = times2(Expr::Integer(-*n), *right.clone());
         return negate(pos_arg);
       }
       Ok(unevaluated("DawsonF", args))
@@ -4119,11 +4104,7 @@ fn try_extract_negated(expr: &Expr) -> Option<Expr> {
         if matches!(&negated, Expr::Integer(1)) {
           Some((**right).clone())
         } else {
-          Some(Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(negated),
-            right: right.clone(),
-          })
+          Some(times2(negated, *right.clone()))
         }
       } else {
         None
@@ -5236,11 +5217,7 @@ pub fn strip_negation(e: &Expr) -> Option<Expr> {
         return Some((**right).clone());
       }
       let pos = negate_negative_coeff(left)?;
-      Some(Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(pos),
-        right: right.clone(),
-      })
+      Some(times2(pos, *right.clone()))
     }
     Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 2 => {
       if matches!(&args[0], Expr::Integer(-1)) {

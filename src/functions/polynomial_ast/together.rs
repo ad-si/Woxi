@@ -7,10 +7,7 @@ use super::*;
 /// Threads over List.
 pub fn together_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() == 2 {
-    let unevaluated = || Expr::FunctionCall {
-      name: "Together".to_string(),
-      args: args.to_vec().into(),
-    };
+    let unevaluated = || call("Together", args.to_vec());
     let Some(p) = super::polynomial_gcd::extract_modulus_option(&args[1])
     else {
       return Ok(unevaluated());
@@ -233,11 +230,7 @@ pub(super) fn hoist_result_denominator_content(expr: &Expr) -> Expr {
       left,
       right,
     } => match hoist_denominator_content(right) {
-      Some(new_den) => Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: left.clone(),
-        right: Box::new(new_den),
-      },
+      Some(new_den) => div2(*left.clone(), new_den),
       None => expr.clone(),
     },
     Expr::BinaryOp {
@@ -579,16 +572,8 @@ pub fn extract_num_den(expr: &Expr) -> (Expr, Expr) {
               if matches!(&base_den, Expr::Integer(1)) {
                 num_factors.push(arg.clone());
               } else {
-                num_factors.push(Expr::BinaryOp {
-                  op: BinaryOperator::Power,
-                  left: Box::new(base_num),
-                  right: right.clone(),
-                });
-                den_factors.push(Expr::BinaryOp {
-                  op: BinaryOperator::Power,
-                  left: Box::new(base_den),
-                  right: right.clone(),
-                });
+                num_factors.push(pow2(base_num, *right.clone()));
+                den_factors.push(pow2(base_den, *right.clone()));
               }
             }
           }
@@ -634,14 +619,7 @@ pub fn extract_num_den(expr: &Expr) -> (Expr, Expr) {
         if matches!(&pos_exp, Expr::Integer(1)) {
           (Expr::Integer(1), *left.clone())
         } else {
-          (
-            Expr::Integer(1),
-            Expr::BinaryOp {
-              op: BinaryOperator::Power,
-              left: left.clone(),
-              right: Box::new(pos_exp),
-            },
-          )
+          (Expr::Integer(1), pow2(*left.clone(), pos_exp))
         }
       } else {
         // Power[num/den, n] → (num^n, den^n)
@@ -649,16 +627,8 @@ pub fn extract_num_den(expr: &Expr) -> (Expr, Expr) {
         if matches!(&base_den, Expr::Integer(1)) {
           (expr.clone(), Expr::Integer(1))
         } else {
-          let num = Expr::BinaryOp {
-            op: BinaryOperator::Power,
-            left: Box::new(base_num),
-            right: right.clone(),
-          };
-          let den = Expr::BinaryOp {
-            op: BinaryOperator::Power,
-            left: Box::new(base_den),
-            right: right.clone(),
-          };
+          let num = pow2(base_num, *right.clone());
+          let den = pow2(base_den, *right.clone());
           (num, den)
         }
       }
@@ -1407,11 +1377,11 @@ fn together_expr_preprocess(expr: &Expr) -> Expr {
 
     // Binary plus/minus: recurse into each side. together_expr itself will
     // combine additive terms after preprocessing.
-    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-      op: *op,
-      left: Box::new(together_expr_preprocess(left)),
-      right: Box::new(together_expr_preprocess(right)),
-    },
+    Expr::BinaryOp { op, left, right } => binop(
+      *op,
+      together_expr_preprocess(left),
+      together_expr_preprocess(right),
+    ),
 
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
       op: *op,
@@ -1667,13 +1637,10 @@ pub fn together_expr(expr: &Expr) -> Expr {
         && single_variable_fraction(&en, &ed)
         && fraction_has_polynomial_gcd(&en, &ed)
       {
-        let frac = Expr::BinaryOp {
-          op: BinaryOperator::Divide,
-          left: Box::new(en.clone()),
-          right: Box::new(
-            crate::functions::polynomial_ast::expand::expand_and_combine(&ed),
-          ),
-        };
+        let frac = div2(
+          en.clone(),
+          crate::functions::polynomial_ast::expand::expand_and_combine(&ed),
+        );
         let cancelled = super::cancel::cancel_expr_keep_quotient_sign(&frac);
         if expr_to_string(&cancelled) != expr_to_string(&frac) {
           return cancelled;

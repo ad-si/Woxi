@@ -1358,11 +1358,9 @@ pub fn rationalize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Expr::Real(_) | Expr::BigFloat(_, _) => {
           rationalize_ast(std::slice::from_ref(e))
         }
-        Expr::BinaryOp { op, left, right } => Ok(Expr::BinaryOp {
-          op: *op,
-          left: Box::new(map_reals(left)?),
-          right: Box::new(map_reals(right)?),
-        }),
+        Expr::BinaryOp { op, left, right } => {
+          Ok(binop(*op, map_reals(left)?, map_reals(right)?))
+        }
         Expr::UnaryOp { op, operand } => Ok(Expr::UnaryOp {
           op: *op,
           operand: Box::new(map_reals(operand)?),
@@ -2075,11 +2073,9 @@ pub(crate) fn negate_if_negative(exp: &Expr) -> Option<Expr> {
       op: BinaryOperator::Divide,
       left,
       right,
-    } => negate_if_negative(left).map(|positive| Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left: Box::new(positive),
-      right: right.clone(),
-    }),
+    } => {
+      negate_if_negative(left).map(|positive| div2(positive, *right.clone()))
+    }
     Expr::BinaryOp {
       op: BinaryOperator::Times,
       left,
@@ -2088,11 +2084,7 @@ pub(crate) fn negate_if_negative(exp: &Expr) -> Option<Expr> {
       if matches!(&positive, Expr::Integer(1)) {
         right.as_ref().clone()
       } else {
-        Expr::BinaryOp {
-          op: BinaryOperator::Times,
-          left: Box::new(positive),
-          right: right.clone(),
-        }
+        times2(positive, *right.clone())
       }
     }),
     Expr::FunctionCall { name, args } if name == "Times" && args.len() >= 2 => {

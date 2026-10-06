@@ -3296,11 +3296,7 @@ fn power_expand_recursive(expr: &Expr) -> Expr {
         right,
       } => {
         let mut factors = collect_times_factors(left);
-        factors.push(Expr::BinaryOp {
-          op: BinaryOperator::Power,
-          left: right.clone(),
-          right: Box::new(Expr::Integer(-1)),
-        });
+        factors.push(pow2(*right.clone(), Expr::Integer(-1)));
         factors
       }
       _ => vec![e.clone()],
@@ -3425,14 +3421,7 @@ fn power_expand_recursive(expr: &Expr) -> Expr {
           right,
         } => call(
           "Times",
-          vec![
-            *left.clone(),
-            Expr::BinaryOp {
-              op: BinaryOperator::Power,
-              left: right.clone(),
-              right: Box::new(Expr::Integer(-1)),
-            },
-          ],
+          vec![*left.clone(), pow2(*right.clone(), Expr::Integer(-1))],
         ),
         _ => expanded_arg,
       };

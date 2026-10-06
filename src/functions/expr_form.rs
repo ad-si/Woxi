@@ -163,11 +163,7 @@ pub fn decompose_expr(expr: &Expr) -> ExprForm {
         head: "Plus".to_string(),
         children: vec![
           left.as_ref().clone(),
-          Expr::BinaryOp {
-            op: BinaryOperator::Times,
-            left: Box::new(Expr::Integer(-1)),
-            right: right.clone(),
-          },
+          times2(Expr::Integer(-1), *right.clone()),
         ],
       },
       BinaryOperator::Divide => {
@@ -184,11 +180,7 @@ pub fn decompose_expr(expr: &Expr) -> ExprForm {
             head: "Times".to_string(),
             children: vec![
               left.as_ref().clone(),
-              Expr::BinaryOp {
-                op: BinaryOperator::Power,
-                left: right.clone(),
-                right: Box::new(Expr::Integer(-1)),
-              },
+              pow2(*right.clone(), Expr::Integer(-1)),
             ],
           }
         }

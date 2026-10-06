@@ -790,14 +790,10 @@ pub fn cancel_symbolic_factors(num: &Expr, den: &Expr) -> Expr {
       Some(make_sqrt(base.clone()))
     } else {
       // Rational exponent: base^Rational[n, d]
-      Some(Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(base.clone()),
-        right: Box::new(call(
-          "Rational",
-          vec![Expr::Integer(n), Expr::Integer(d)],
-        )),
-      })
+      Some(pow2(
+        base.clone(),
+        call("Rational", vec![Expr::Integer(n), Expr::Integer(d)]),
+      ))
     }
   }
 
