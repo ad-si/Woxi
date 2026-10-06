@@ -4732,6 +4732,56 @@ fn tessellate_polygon_with_holes(
   (tris, flags)
 }
 
+/// The six faces of an axis-aligned box in the order `tessellate_cuboid`
+/// emits them (bottom, top, front, back, left, right), each as a hashable
+/// key: the axis it is perpendicular to, which side of the box it is on,
+/// and its plane coordinate and rectangle snapped to a 1e-9 grid.
+fn cuboid_face_keys(
+  p_min: &Point3D,
+  p_max: &Point3D,
+) -> [(u8, bool, [i64; 5]); 6] {
+  let q = |v: f64| (v * 1e9).round() as i64;
+  let (x0, y0, z0) = (q(p_min.x), q(p_min.y), q(p_min.z));
+  let (x1, y1, z1) = (q(p_max.x), q(p_max.y), q(p_max.z));
+  [
+    (2, false, [z0, x0, x1, y0, y1]),
+    (2, true, [z1, x0, x1, y0, y1]),
+    (1, false, [y0, x0, x1, z0, z1]),
+    (1, true, [y1, x0, x1, z0, z1]),
+    (0, false, [x0, y0, y1, z0, z1]),
+    (0, true, [x1, y0, y1, z0, z1]),
+  ]
+}
+
+/// Faces of opaque boxes that sit exactly against an opposite-facing face
+/// of another opaque box (same plane, same rectangle). They are interior
+/// to the union and never visible, but a grid of many boxes (e.g. a
+/// fractal built from unit cubes) would otherwise emit them all.
+fn hidden_cuboid_faces(
+  prims: &[Primitive3D],
+) -> std::collections::HashSet<(u8, [i64; 5])> {
+  let mut seen: std::collections::HashSet<(u8, bool, [i64; 5])> =
+    std::collections::HashSet::new();
+  let mut hidden = std::collections::HashSet::new();
+  for prim in prims {
+    if let Primitive3D::Cuboid {
+      p_min,
+      p_max,
+      style,
+    } = prim
+      && style.opacity >= 1.0
+    {
+      for (axis, hi, key) in cuboid_face_keys(p_min, p_max) {
+        if seen.contains(&(axis, !hi, key)) {
+          hidden.insert((axis, key));
+        }
+        seen.insert((axis, hi, key));
+      }
+    }
+  }
+  hidden
+}
+
 /// Tessellate a cuboid into 12 triangles (2 per face).
 pub(crate) fn tessellate_cuboid(
   p_min: &Point3D,
@@ -5822,6 +5872,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     0.0
   };
 
+  let hidden_faces = hidden_cuboid_faces(&prims);
+
   for prim in &prims {
     // Per-triangle edge flags for a polygon with holes; the ordinary
     // hole-free cases derive theirs from the fan below.
@@ -5845,7 +5897,16 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           p_max,
           style,
         } => {
-          let tris = tessellate_cuboid(p_min, p_max);
+          let mut tris = tessellate_cuboid(p_min, p_max);
+          if style.opacity >= 1.0 && !hidden_faces.is_empty() {
+            let keys = cuboid_face_keys(p_min, p_max);
+            let mut face = 0;
+            tris.retain(|_| {
+              let (axis, _, key) = keys[face / 2];
+              face += 1;
+              !hidden_faces.contains(&(axis, key))
+            });
+          }
           holed_boundaries = tris.iter().map(box_edge_flags).collect();
           (tris, style)
         }

@@ -2938,6 +2938,26 @@ mod graphics {
 }
 
 mod plot3d {
+  /// Faces shared by two touching opaque boxes are interior to the union;
+  /// a grid of unit cubes (e.g. a Menger-style fractal) must not emit them.
+  #[test]
+  fn touching_cuboids_drop_their_shared_faces() {
+    let polys = |code: &str| export_svg(code).matches("<polygon").count();
+    let apart = polys(
+      "Graphics3D[{EdgeForm[], Cuboid[{0,0,0},{1,1,1}], Cuboid[{3,0,0},{4,1,1}]}]",
+    );
+    let touching = polys(
+      "Graphics3D[{EdgeForm[], Cuboid[{0,0,0},{1,1,1}], Cuboid[{1,0,0},{2,1,1}]}]",
+    );
+    assert_eq!(apart, 24);
+    assert_eq!(touching, 20);
+    // Translucent boxes keep every face.
+    let glass = polys(
+      "Graphics3D[{Opacity[0.5], Cuboid[{0,0,0},{1,1,1}], Cuboid[{1,0,0},{2,1,1}]}]",
+    );
+    assert_eq!(glass, 24);
+  }
+
   use super::*;
 
   mod basic {
