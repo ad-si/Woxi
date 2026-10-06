@@ -24308,13 +24308,13 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
         Some(rows) => grid_label_runs(&rows, italic),
         _ => output_run(italic),
       },
-      "Subscript" => script_runs(args, italic, false),
-      "Superscript" => script_runs(args, italic, true),
+      "Subscript" | "SubscriptBox" => script_runs(args, italic, false),
+      "Superscript" | "SuperscriptBox" => script_runs(args, italic, true),
       // `Subsuperscript[base, sub, sup]` — a Demonstration's slider label for
       // an initial derivative writes `y0'` as `Subsuperscript[y, 0, "\[Prime]"]`.
       // Plain text can't stack a sub- and superscript at once, so the two
       // render in sequence: the subscript first, then the superscript.
-      "Subsuperscript" if args.len() == 3 => {
+      "Subsuperscript" | "SubsuperscriptBox" if args.len() == 3 => {
         let mut runs = script_runs(&args[..2], italic, false);
         let sup = to_unicode_script(
           &flatten_label_runs(&manipulate_label_runs(&args[2], false)),

@@ -1570,6 +1570,38 @@ mod tests {
 
   use super::*;
 
+  /// A Demonstration's setter-bar choices are typeset box labels
+  /// (`DisplayForm[SubsuperscriptBox["C", 3, "+"]]`). The box heads must fold
+  /// into Unicode scripts like `Subscript`/`Superscript` do, rather than
+  /// showing the raw `SubsuperscriptBox[C, 3, +]` source.
+  #[test]
+  fn setter_labels_typeset_subsuperscript_boxes() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[
+        d,
+        {{d, 1, \"\"}, {
+          1 -> DisplayForm[SubscriptBox[\"A\", \"2\"]],
+          2 -> DisplayForm[SubsuperscriptBox[\"C\", \"3\", \"+\"]],
+          3 -> DisplayForm[SuperscriptBox[\"B\", \"2\"]]
+        }, ControlType -> SetterBar}
+      ]",
+    )
+    .expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let labels = state
+      .controls
+      .iter()
+      .find_map(|c| match c {
+        ControlState::Discrete { value_labels, .. } => {
+          Some(value_labels.clone())
+        }
+        _ => None,
+      })
+      .expect("setter control");
+    assert_eq!(labels, vec!["A\u{2082}", "C\u{2083}\u{207A}", "B\u{00B2}"]);
+  }
+
   /// Checked a randomly-sampled Wolfram Demonstrations Project notebook
   /// ("Selective Resizing of Images") whose paired sliders each bound the
   /// other through a `Dynamic[…]` limit and one of them counts *down*:
