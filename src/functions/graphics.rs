@@ -1957,10 +1957,21 @@ fn needs_early_initialization(spec: &Expr) -> bool {
 /// written. `Style["A", 20, "Label"]` is 20-point text, not the 9-point the
 /// "Label" stylesheet entry gives on its own.
 fn style_directives_in_application_order(directives: &[Expr]) -> Vec<&Expr> {
-  let (named, explicit): (Vec<&Expr>, Vec<&Expr>) =
-    directives.iter().partition(
-      |d| matches!(d, Expr::String(s) if named_style_appearance(s).is_some()),
-    );
+  // `Style[x, {RGBColor[…], 15}]` — a list of directives is the same as the
+  // directives written out one by one, so splice (nested) lists in place.
+  fn flatten<'a>(ds: &'a [Expr], out: &mut Vec<&'a Expr>) {
+    for d in ds {
+      match d {
+        Expr::List(items) => flatten(items, out),
+        other => out.push(other),
+      }
+    }
+  }
+  let mut flat = Vec::new();
+  flatten(directives, &mut flat);
+  let (named, explicit): (Vec<&Expr>, Vec<&Expr>) = flat.into_iter().partition(
+    |d| matches!(d, Expr::String(s) if named_style_appearance(s).is_some()),
+  );
   named.into_iter().chain(explicit).collect()
 }
 

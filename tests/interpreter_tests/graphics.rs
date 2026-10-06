@@ -1648,6 +1648,22 @@ mod graphics {
   mod text_styles {
     use super::*;
 
+    /// A list of directives inside `Style` is the same as the directives
+    /// written one by one: the font size in `{color, 15}` must apply.
+    #[test]
+    fn text_style_directive_list_applies_font_size() {
+      let svg = export_svg(
+        "Graphics[Text[Style[5, {RGBColor[.5, 0, 0], 15}], {0, 0}]]",
+      );
+      assert!(svg.contains("font-size=\"15\""), "{svg}");
+      assert!(svg.contains("fill=\"rgb(128,0,0)\""), "{svg}");
+      let nested =
+        export_svg("Graphics[Text[Style[5, {{Bold, 11}, Italic}], {0, 0}]]");
+      assert!(nested.contains("font-size=\"11\""), "{nested}");
+      assert!(nested.contains("font-weight=\"bold\""), "{nested}");
+      assert!(nested.contains("font-style=\"italic\""), "{nested}");
+    }
+
     /// A `Text` label built from a `Column` of held assignments (a
     /// Demonstration's equations beside a diagram) is typeset as one line
     /// per item, each reading as the equation — not as the literal
