@@ -20692,6 +20692,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       .into_iter()
       .map(unwrap_control_wrapper)
       .collect();
+  let arg_items = merge_radio_button_controls(arg_items);
   // The same names, as the set a control's choice list is checked against
   // to tell a static list from one that follows another control.
   let sibling_names: Vec<String> =
@@ -22726,7 +22727,10 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
   // into real controls instead of the entire panel being dropped.
   let spec = match spec {
     Expr::FunctionCall { name, args }
-      if (name == "Item" || name == "Text" || name == "Panel")
+      if (name == "Item"
+        || name == "Text"
+        || name == "Panel"
+        || name == "Style")
         && !args.is_empty() =>
     {
       &args[0]
@@ -22777,7 +22781,29 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
     return None;
   };
   let mut out = Vec::new();
+  // Consecutive label pieces of a `Row` (`"show ", Style["C", Italic], …`)
+  // that lead into a control form one caption, not one heading each.
+  let mut caption: Vec<Expr> = Vec::new();
+  let flush_caption = |caption: &mut Vec<Expr>, out: &mut Vec<Expr>| {
+    match caption.len() {
+      0 => {}
+      1 => out.push(caption.remove(0)),
+      _ => out.push(Expr::FunctionCall {
+        name: "Row".to_string(),
+        args: vec![Expr::List(std::mem::take(caption).into())].into(),
+      }),
+    }
+    caption.clear();
+  };
   for item in items {
+    if name == "Row"
+      && !contains_control(item)
+      && !matches!(item, Expr::FunctionCall { name: n, .. } if n == "Spacer")
+    {
+      caption.push(item.clone());
+      continue;
+    }
+    flush_caption(&mut caption, &mut out);
     // A `TabView` lists its tabs as `label -> content`, and a
     // `PaneSelector` its panes as `value -> content`; only the content
     // holds controls. (Woxi's control panel is one flat list, so every
@@ -22822,6 +22848,7 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
       },
     }
   }
+  flush_caption(&mut caption, &mut out);
   Some(out)
 }
 
@@ -22928,6 +22955,58 @@ fn unwrap_control_wrapper(spec: Expr) -> Expr {
     }
     _ => spec,
   }
+}
+
+/// The `(variable, choice)` of a single-choice radio button control
+/// `{{v, init, label}, {value -> label}, ControlType -> RadioButton}` — one
+/// button of a group the author spelled out as separate `Control[…]` calls.
+fn single_radio_button(spec: &Expr) -> Option<(String, Expr)> {
+  let Expr::List(items) = spec else {
+    return None;
+  };
+  let [
+    head,
+    Expr::List(choices),
+    Expr::Rule {
+      pattern,
+      replacement,
+    },
+  ] = items.as_slice()
+  else {
+    return None;
+  };
+  let is_radio = matches!(pattern.as_ref(), Expr::Identifier(p) if p == "ControlType")
+    && matches!(replacement.as_ref(), Expr::Identifier(r) if r == "RadioButton");
+  match (is_radio, choices.as_slice()) {
+    (true, [choice]) => Some((control_spec_variable(head)?, choice.clone())),
+    _ => None,
+  }
+}
+
+/// Fold the single-choice `RadioButton` controls that share one variable
+/// into a single control offering every choice (the Demonstrations idiom of
+/// one `Control[{{n, 4, ""}, {k -> label}, ControlType -> RadioButton}]` per
+/// button). The group sits where its first button was.
+fn merge_radio_button_controls(items: Vec<Expr>) -> Vec<Expr> {
+  let mut out: Vec<Expr> = Vec::with_capacity(items.len());
+  let mut groups: Vec<(String, usize)> = Vec::new();
+  for item in items {
+    let Some((var, choice)) = single_radio_button(&item) else {
+      out.push(item);
+      continue;
+    };
+    if let Some(&(_, idx)) = groups.iter().find(|(v, _)| *v == var) {
+      if let Expr::List(parts) = &mut out[idx]
+        && let Some(Expr::List(choices)) = parts.get_mut(1)
+      {
+        choices.push(choice);
+      }
+    } else {
+      groups.push((var, out.len()));
+      out.push(item);
+    }
+  }
+  out
 }
 
 /// Resolve `Sequence@@expr` entries in a flattened control list (the
