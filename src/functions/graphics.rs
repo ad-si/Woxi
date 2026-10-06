@@ -4463,8 +4463,11 @@ fn parse_bspline(
     });
 
     let degree = spline_degree_from_args(&args[1..], 3usize.min(pts.len() - 1));
+    // A closed spline is periodic: the leading control points wrap onto
+    // the end and the knots are uniform, so no control point is
+    // interpolated. `SplineKnots -> "Unclamped"` gives an open curve the
+    // same uniform knots.
     let control = if closed {
-      // For closed splines, wrap the first (degree) points to the end
       let mut cp = pts.clone();
       for i in 0..degree {
         cp.push(pts[i]);
@@ -4473,8 +4476,9 @@ fn parse_bspline(
     } else {
       pts
     };
+    let clamped = !closed && !spline_knots_unclamped(&args[1..]);
 
-    let sampled = evaluate_bspline(&control, degree, 200);
+    let sampled = evaluate_bspline(&control, degree, 200, clamped);
     prims.push(Primitive::Line {
       segments: vec![sampled],
       vertex_colors: None,
@@ -4483,44 +4487,71 @@ fn parse_bspline(
   }
 }
 
-/// Evaluate a uniform B-spline curve of the given `degree` at `num_samples` points.
+/// Evaluate a uniform B-spline curve of the given `degree` at `num_samples`
+/// points, with clamped (end-point interpolating) or uniform knots.
 fn evaluate_bspline(
   control_points: &[(f64, f64)],
   degree: usize,
   num_samples: usize,
+  clamped: bool,
 ) -> Vec<(f64, f64)> {
   let n = control_points.len();
   if n < 2 {
     return control_points.to_vec();
   }
+  bspline_sample_weights(n, degree, num_samples, clamped)
+    .iter()
+    .map(|weights| {
+      let (mut x, mut y) = (0.0, 0.0);
+      for (b, p) in weights.iter().zip(control_points) {
+        x += b * p.0;
+        y += b * p.1;
+      }
+      (x, y)
+    })
+    .collect()
+}
+
+/// B-spline basis weights for `n` control points sampled at `num_samples`
+/// evenly spaced parameter values: one weight row per sample. Clamped
+/// knots make the curve start and end on the first and last control
+/// point; unclamped (uniform) knots leave it floating inside the control
+/// polygon, which is what a closed (periodic) curve needs.
+pub(crate) fn bspline_sample_weights(
+  n: usize,
+  degree: usize,
+  num_samples: usize,
+  clamped: bool,
+) -> Vec<Vec<f64>> {
   let degree = degree.min(n - 1);
   let num_knots = n + degree + 1;
-
-  // Clamped uniform knot vector
-  let mut knots = Vec::with_capacity(num_knots);
-  knots.extend(std::iter::repeat_n(0.0, degree + 1));
-  let num_internal = num_knots - 2 * (degree + 1);
-  for i in 1..=num_internal {
-    knots.push(i as f64);
-  }
-  let max_knot = (num_internal + 1) as f64;
-  knots.extend(std::iter::repeat_n(max_knot, degree + 1));
-
+  let knots: Vec<f64> = if clamped {
+    let mut knots = Vec::with_capacity(num_knots);
+    knots.extend(std::iter::repeat_n(0.0, degree + 1));
+    let num_internal = num_knots - 2 * (degree + 1);
+    for i in 1..=num_internal {
+      knots.push(i as f64);
+    }
+    let max_knot = (num_internal + 1) as f64;
+    knots.extend(std::iter::repeat_n(max_knot, degree + 1));
+    knots
+  } else {
+    (0..num_knots).map(|i| i as f64).collect()
+  };
   let t_min = knots[degree];
   let t_max = knots[n];
-
-  let mut result = Vec::with_capacity(num_samples);
-  for i in 0..num_samples {
-    let t = t_min + (t_max - t_min) * i as f64 / (num_samples - 1) as f64;
-    let (mut x, mut y) = (0.0, 0.0);
-    for j in 0..n {
-      let b = bspline_basis(j, degree, t, &knots);
-      x += b * control_points[j].0;
-      y += b * control_points[j].1;
-    }
-    result.push((x, y));
-  }
-  result
+  (0..num_samples)
+    .map(|s| {
+      let mut t = t_min + (t_max - t_min) * s as f64 / (num_samples - 1) as f64;
+      if !clamped && t >= t_max {
+        // The basis intervals are half-open; stay inside the last one.
+        t = t_max - 1e-9;
+      }
+      (0..n)
+        .map(|j| bspline_basis(j, degree, t, &knots))
+        .collect()
+    })
+    .collect()
 }
 
 /// Cox-de Boor recursion for B-spline basis function.
@@ -4578,6 +4609,16 @@ pub(crate) fn spline_degree_from_args(
     Some(n) if n >= 1.0 => (n.round() as usize).clamp(1, max_degree.max(1)),
     _ => max_degree,
   }
+}
+
+/// Whether an option list asks for `SplineKnots -> "Unclamped"`.
+pub(crate) fn spline_knots_unclamped(args: &[Expr]) -> bool {
+  args.iter().any(|arg| {
+    matches!(arg,
+      Expr::Rule { pattern, replacement }
+        if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "SplineKnots")
+        && matches!(replacement.as_ref(), Expr::String(k) if k == "Unclamped"))
+  })
 }
 
 fn parse_raster(args: &[Expr], prims: &mut Vec<Primitive>) {
@@ -25549,8 +25590,11 @@ fn parse_manipulate_control(
       // `initial_overflow`'s doc comment); when this row's own choices don't
       // include the true initial value, keep it so the bound value stays
       // correct even though this particular row shows no button lit up.
-      let initial_overflow =
-        resolved_init_code.filter(|code| !values.iter().any(|v| v == code));
+      // An initial value that is just the control's own (unassigned)
+      // variable — `{{flag, flag, "label"}, {False, True}}` — is no value
+      // at all; Wolfram starts such a control on its first choice.
+      let initial_overflow = resolved_init_code
+        .filter(|code| *code != name && !values.iter().any(|v| v == code));
       // A choice list built from another control's variable (`Range[1,
       // If[flat, 3, 6], 1]`) only holds for that variable's current value;
       // keep its code so the frontend can rebuild the choices whenever the

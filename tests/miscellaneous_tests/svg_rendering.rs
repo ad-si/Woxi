@@ -4281,4 +4281,83 @@ mod tests {
       );
     }
   }
+
+  mod bspline_curve_2d {
+    /// The first polyline vertex of `code`'s SVG, in pixels.
+    fn first_vertex(code: &str) -> (f64, f64) {
+      let svg = woxi::interpret(&format!(r#"ExportString[{code}, "SVG"]"#))
+        .expect("interpret should succeed");
+      let start = svg.find("<polyline points=\"").expect("a polyline") + 18;
+      let first = svg[start..]
+        .split_whitespace()
+        .next()
+        .expect("a first vertex");
+      let (x, y) = first.split_once(',').expect("x,y pair");
+      (x.parse().unwrap(), y.parse().unwrap())
+    }
+
+    const FRAME: &str = "PlotRange -> {{0, 1}, {0, 1}}, PlotRangePadding -> None, ImageSize -> 100";
+
+    #[test]
+    fn open_spline_starts_on_its_first_control_point() {
+      let (x, y) = first_vertex(&format!(
+        "Graphics[BSplineCurve[{{{{0, 0}}, {{1, 0}}, {{1, 1}}, {{0, 1}}}}], {FRAME}]"
+      ));
+      assert!(
+        (x - 0.0).abs() < 1e-6 && (y - 100.0).abs() < 1e-6,
+        "{x},{y}"
+      );
+    }
+
+    #[test]
+    fn closed_spline_is_periodic_and_touches_no_control_point() {
+      // A closed cubic B-spline over the unit square begins at
+      // (P0 + 4 P1 + P2) / 6 = (5/6, 1/6), not at the corner (0, 0).
+      let (x, y) = first_vertex(&format!(
+        "Graphics[BSplineCurve[{{{{0, 0}}, {{1, 0}}, {{1, 1}}, {{0, 1}}}}, \
+         SplineClosed -> True], {FRAME}]"
+      ));
+      assert!((x - 100.0 * 5.0 / 6.0).abs() < 0.01, "x = {x}");
+      assert!((y - 100.0 * 5.0 / 6.0).abs() < 0.01, "y = {y}");
+    }
+
+    #[test]
+    fn closed_spline_ends_where_it_starts() {
+      let svg = woxi::interpret(&format!(
+        "ExportString[Graphics[BSplineCurve[{{{{0, 0}}, {{1, 0}}, {{1, 1}}, \
+         {{0, 1}}}}, SplineClosed -> True], {FRAME}], \"SVG\"]"
+      ))
+      .unwrap();
+      let start = svg.find("<polyline points=\"").unwrap() + 18;
+      let pts: Vec<&str> = svg[start..]
+        .split('"')
+        .next()
+        .unwrap()
+        .split_whitespace()
+        .collect();
+      let parse = |p: &str| -> (f64, f64) {
+        let (x, y) = p.split_once(',').unwrap();
+        (x.parse().unwrap(), y.parse().unwrap())
+      };
+      let (a, b) = (parse(pts[0]), parse(pts[pts.len() - 1]));
+      assert!(
+        (a.0 - b.0).abs() < 0.5 && (a.1 - b.1).abs() < 0.5,
+        "{a:?} {b:?}"
+      );
+    }
+
+    #[test]
+    fn unclamped_knots_leave_an_open_spline_off_its_end_points() {
+      let (x, y) = first_vertex(
+        "Graphics[BSplineCurve[{{0, 0}, {1, 0}, {1, 1}, {0, 1}, \
+         {0, 2}}, SplineKnots -> \"Unclamped\"], \
+         PlotRange -> {{0, 1}, {0, 2}}, PlotRangePadding -> None, \
+         ImageSize -> 100]",
+      );
+      assert!(
+        x > 1.0 && y < 199.0,
+        "curve must not start at (0, 0): {x},{y}"
+      );
+    }
+  }
 }
