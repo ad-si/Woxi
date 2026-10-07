@@ -25283,7 +25283,20 @@ fn parse_manipulate_control(
           if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "ControlType")
             && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "None")
       )
-    });
+    })
+    // A Locator control drawn with `Appearance -> None` has no visible
+    // marker to drag, so it contributes no widget either: the variable stays
+    // a plain bound state value.
+    || (is_locator
+      && items.iter().any(|it| {
+        matches!(
+          it,
+          Expr::Rule { pattern, replacement }
+          | Expr::RuleDelayed { pattern, replacement }
+            if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Appearance")
+              && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "None")
+        )
+      }));
   if is_locator || is_hidden {
     // `{v, ControlType -> None}` — a hidden state variable with no domain
     // argument at all, only the option that hides it — has nothing at
