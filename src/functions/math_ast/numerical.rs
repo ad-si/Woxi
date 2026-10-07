@@ -6702,14 +6702,21 @@ fn aberth_complex_roots(coeffs: &[f64]) -> Vec<(f64, f64)> {
       let (zr, zi) = zs[k];
       let (pr, pi_) = poly_eval_complex(coeffs, zr, zi);
       let (dr, di) = poly_deriv_eval_complex(coeffs, zr, zi);
-      let denom = dr * dr + di * di;
-      if denom < 1e-300 {
+      if dr == 0.0 && di == 0.0 {
         new_zs.push((zr, zi));
         continue;
       }
-      // q = p(z) / p'(z) = (pr + i*pi) * (dr - i*di) / |p'|^2
-      let qr = (pr * dr + pi_ * di) / denom;
-      let qi = (pi_ * dr - pr * di) / denom;
+      // q = p(z) / p'(z). Smith's division avoids squaring |p'|, which
+      // overflows for high-degree polynomials with large roots.
+      let (qr, qi) = if dr.abs() >= di.abs() {
+        let t = di / dr;
+        let d = dr + di * t;
+        ((pr + pi_ * t) / d, (pi_ - pr * t) / d)
+      } else {
+        let t = dr / di;
+        let d = dr * t + di;
+        ((pr * t + pi_) / d, (pi_ * t - pr) / d)
+      };
       // sum_{j != k} 1 / (z_k - z_j)
       let mut sr = 0.0f64;
       let mut si = 0.0f64;

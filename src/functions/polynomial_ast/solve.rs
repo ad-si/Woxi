@@ -902,27 +902,25 @@ pub(crate) fn durand_kerner_roots(coeffs: &[f64]) -> Vec<(f64, f64)> {
     let mut max_delta: f64 = 0.0;
     for k in 0..n {
       let (zr, zi) = prev[k];
-      let (mut dr, mut di) = (1.0, 0.0);
+      // q = p(z) / Π_{j≠k}(z - z_j). Divide factor by factor instead of
+      // forming the product first: for high degrees the product overflows
+      // f64 and the whole iteration collapses to NaN.
+      let (mut qr, mut qi) = eval_p(zr, zi);
       for (j, &(jr, ji)) in prev.iter().enumerate() {
         if j == k {
           continue;
         }
-        // (dr + di*i) * (zr - jr + (zi - ji)*i)
         let ar = zr - jr;
         let ai = zi - ji;
-        let nr = dr * ar - di * ai;
-        let ni = dr * ai + di * ar;
-        dr = nr;
-        di = ni;
+        let denom = ar * ar + ai * ai;
+        if denom == 0.0 {
+          continue;
+        }
+        let nr = (qr * ar + qi * ai) / denom;
+        let ni = (qi * ar - qr * ai) / denom;
+        qr = nr;
+        qi = ni;
       }
-      // p(z) / Π
-      let (pr, pi) = eval_p(zr, zi);
-      let denom = dr * dr + di * di;
-      if denom == 0.0 {
-        continue;
-      }
-      let qr = (pr * dr + pi * di) / denom;
-      let qi = (pi * dr - pr * di) / denom;
       let new_r = zr - qr;
       let new_i = zi - qi;
       let delta = (new_r - zr).hypot(new_i - zi);
