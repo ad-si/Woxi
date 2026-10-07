@@ -31548,4 +31548,36 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`rate$$ = 4}, DynamicBox[\[Ellipsis]
       vec!["heading:show x values", "flag:True/False@1", "k:1/2/3@1"]
     );
   }
+
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook whose `Manipulate`
+  /// declared an unused `{{p, {0, 0}}, Locator, Appearance -> None}` control
+  /// next to a `Setter` and a re-randomizing `Button`. Regression: the
+  /// invisible Locator was promoted to a visible 2D slider row, although in
+  /// Wolfram it has no marker to drag and so draws no widget at all. This
+  /// is a self-authored, construct-equivalent example.
+  #[test]
+  fn locator_control_with_appearance_none_draws_no_widget() {
+    let code = "Manipulate[\
+      Graphics[Table[Disk[{i, Mod[seed, 3]}, 1/4], {i, k}]], \
+      {{k, 3, \"count\"}, 2, 6, 1, Setter}, \
+      {{seed, 1}, None}, \
+      {{p, {0, 0}}, Locator, Appearance -> None}, \
+      Button[\"reseed\", seed = seed + 1, ImageSize -> Medium]]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the Manipulate must build a widget");
+    assert!(state.error.is_none(), "{:?}", state.error);
+    assert!(state.graphics_handle.is_some());
+    assert!(
+      !state
+        .controls
+        .iter()
+        .any(|c| matches!(c, manipulate::ControlState::Slider2D { .. })),
+      "an invisible Locator must not become a slider: {:?}",
+      state.controls
+    );
+    assert_eq!(state.controls.len(), 2, "only the setter and the button");
+    state.apply_button_action("seed = seed + 1");
+    assert!(state.error.is_none(), "{:?}", state.error);
+  }
 }
