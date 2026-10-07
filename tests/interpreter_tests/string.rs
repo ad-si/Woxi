@@ -15057,3 +15057,54 @@ mod to_expression_keeps_a_trailing_semicolon {
     );
   }
 }
+
+mod number_form_base_form_identity_format {
+  use super::*;
+
+  #[test]
+  fn pads_to_one_more_column_than_the_precision() {
+    assert_eq!(
+      interpret(
+        r#"ToString[NumberForm[BaseForm[5, 16], 1, NumberFormat -> (#1 &), NumberPadding -> {"0", ""}]]"#
+      )
+      .unwrap(),
+      "05"
+    );
+    assert_eq!(
+      interpret(
+        r#"ToString[NumberForm[BaseForm[0, 8], 2, NumberFormat -> (#1 &), NumberPadding -> {"0", ""}]]"#
+      )
+      .unwrap(),
+      "000"
+    );
+  }
+
+  #[test]
+  fn leaves_wider_numbers_and_unpadded_fields_alone() {
+    assert_eq!(
+      interpret(
+        r#"ToString[NumberForm[BaseForm[200, 16], 1, NumberFormat -> (#1 &)]]"#
+      )
+      .unwrap(),
+      "c8"
+    );
+    assert_eq!(
+      interpret(
+        r#"ToString[NumberForm[BaseForm[64, 8], 2, NumberFormat -> (#1 &)]]"#
+      )
+      .unwrap(),
+      "100"
+    );
+  }
+
+  #[test]
+  fn digit_blocks_group_from_the_right() {
+    assert_eq!(
+      interpret(
+        r#"ToString[NumberForm[BaseForm[64, 2], 7, NumberFormat -> (#1 &), DigitBlock -> 4, NumberSeparator -> " ", NumberPadding -> {"0", ""}]]"#
+      )
+      .unwrap(),
+      "0100 0000"
+    );
+  }
+}
