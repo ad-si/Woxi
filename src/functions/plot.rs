@@ -9114,11 +9114,17 @@ pub(crate) fn resolve_indirect_plot_body(
   let mentioned =
     |e: &Expr| vars.iter().filter(|v| expr_mentions_var(e, v)).count();
   let before = mentioned(body);
-  if before == vars.len() {
-    return None;
-  }
   let evaluated = eval_body_vars_symbolic(body, vars);
-  (mentioned(&evaluated) > before).then_some(evaluated)
+  let after = mentioned(&evaluated);
+  // A body that already names every plot variable can still hide a helper
+  // symbol whose value depends on them (`Module[{y1, …}, y1 = x1/…; {x1 - y1,
+  // …}]`); it counts as resolved once evaluation changes it without dropping
+  // any plot variable.
+  let changed_in_full = before == vars.len()
+    && after == vars.len()
+    && !crate::syntax::expr_to_string(&evaluated)
+      .eq(&crate::syntax::expr_to_string(body));
+  (after > before || changed_in_full).then_some(evaluated)
 }
 
 /// Flatten a single function or a (possibly nested) list of functions into
