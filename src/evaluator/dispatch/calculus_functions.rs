@@ -715,6 +715,11 @@ pub fn dispatch_calculus_functions(
     "NDSolve" if args.len() >= 3 => {
       return Some(crate::functions::ode_ast::ndsolve_ast(args));
     }
+    "ParametricNDSolve" | "ParametricNDSolveValue" if args.len() >= 4 => {
+      if let Some(result) = parametric_ndsolve(name, args) {
+        return Some(Ok(result));
+      }
+    }
     "NDSolveValue" if args.len() >= 3 => {
       let result =
         crate::functions::ode_ast::ndsolve_ast_with_head(args, "NDSolveValue");
@@ -6732,4 +6737,78 @@ fn extract_neg_linear_coeff(expr: &Expr, t: &str) -> Option<Expr> {
     return Some(Expr::Integer(1));
   }
   None
+}
+
+/// `ParametricNDSolve[eqns, y, {x, x0, x1}, {p1, ...}]` yields
+/// `{y -> ParametricFunction[Function[{p1, ...}, y /. First[NDSolve[…]]]]}`,
+/// and `ParametricNDSolveValue[eqns, expr, dom, {p1, ...}]` yields
+/// `ParametricFunction[Function[{p1, ...}, NDSolveValue[…]]]`: the parameters are
+/// substituted when the function is applied, so the solve itself is always
+/// delegated to the canonical `NDSolve` / `NDSolveValue`.
+fn parametric_ndsolve(name: &str, args: &[Expr]) -> Option<Expr> {
+  let n_pos = args
+    .iter()
+    .take_while(|a| !matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+    .count();
+  if n_pos != 4 {
+    return None;
+  }
+  let params: Vec<String> = match &args[3] {
+    Expr::List(items) => items
+      .iter()
+      .map(|p| match p {
+        Expr::Identifier(n) => Some(n.clone()),
+        _ => None,
+      })
+      .collect::<Option<Vec<_>>>()?,
+    Expr::Identifier(n) => vec![n.clone()],
+    _ => return None,
+  };
+  let call = |head: &str, dep: &Expr| Expr::FunctionCall {
+    name: head.to_string(),
+    args: {
+      let mut a = vec![args[0].clone(), dep.clone(), args[2].clone()];
+      a.extend(args[4..].iter().cloned());
+      a.into()
+    },
+  };
+  let function = |body: Expr| Expr::FunctionCall {
+    name: "ParametricFunction".to_string(),
+    args: vec![Expr::NamedFunction {
+      params: params.clone(),
+      body: Box::new(body),
+      bracketed: true,
+    }]
+    .into(),
+  };
+  if name == "ParametricNDSolveValue" {
+    return Some(function(call("NDSolveValue", &args[1])));
+  }
+  let deps: Vec<Expr> = match &args[1] {
+    Expr::Identifier(_) => vec![args[1].clone()],
+    Expr::List(items)
+      if items.iter().all(|d| matches!(d, Expr::Identifier(_))) =>
+    {
+      items.to_vec()
+    }
+    _ => return None,
+  };
+  let rules: Vec<Expr> = deps
+    .iter()
+    .map(|dep| Expr::Rule {
+      pattern: Box::new(dep.clone()),
+      replacement: Box::new(function(Expr::FunctionCall {
+        name: "ReplaceAll".to_string(),
+        args: vec![
+          dep.clone(),
+          Expr::FunctionCall {
+            name: "First".to_string(),
+            args: vec![call("NDSolve", &args[1])].into(),
+          },
+        ]
+        .into(),
+      })),
+    })
+    .collect();
+  Some(Expr::List(rules.into()))
 }

@@ -8045,6 +8045,11 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       {
         return format!("InterpolatingFunction[{}, <>]", fmt(&args[0]));
       }
+      // Special case: ParametricFunction[…] hides its body, like
+      // InterpolatingFunction does.
+      if name == "ParametricFunction" && args.len() == 1 && is_output {
+        return "ParametricFunction[<>]".to_string();
+      }
       // Special case: Skeleton[n] displays as <<n>>
       if name == "Skeleton" && args.len() == 1 {
         return format!("<<{}>>", fmt(&args[0]));
@@ -14535,6 +14540,12 @@ fn substitute_variables_impl(
     }
     Expr::List(items) => {
       Expr::List(substitute_parts(items, bindings, template).into())
+    }
+    // ParametricFunction is an opaque object: the ODE variable inside its
+    // body is bound there, so an outer substitution (e.g. FindFit plugging
+    // data abscissas into its model) must not reach in.
+    Expr::FunctionCall { name, .. } if name == "ParametricFunction" => {
+      expr.clone()
     }
     Expr::FunctionCall { name, args } if name == "Part" && args.len() == 2 => {
       match resolve_synthetic_list_part(expr, bindings) {

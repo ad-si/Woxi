@@ -2074,6 +2074,61 @@ pub fn apply_curried_call(
         func_args, args,
       )
     }
+    // ParametricFunction[Function[{p1, ...}, solve]][v1, ...] — the solve
+    // only runs once every parameter value is numeric; with symbolic
+    // parameters (e.g. while `FindFit` inspects its model) it stays inert.
+    Expr::FunctionCall {
+      name,
+      args: func_args,
+    } if name == "ParametricFunction" && func_args.len() == 1 => {
+      let numeric = args
+        .iter()
+        .all(crate::functions::predicate_ast::is_numeric_q);
+      match &func_args[0] {
+        Expr::NamedFunction { params, .. }
+          if numeric && params.len() == args.len() =>
+        {
+          // A fit evaluates each set of parameter values (the current
+          // estimate and its finite-difference neighbours) at every data
+          // point in turn, so the latest few solves are kept instead of
+          // repeating the integration per point.
+          thread_local! {
+            static RECENT_PARAMETRIC: std::cell::RefCell<Vec<(String, Expr)>> =
+              const { std::cell::RefCell::new(Vec::new()) };
+          }
+          let key = format!(
+            "{}|{}",
+            crate::syntax::expr_to_string(&func_args[0]),
+            args
+              .iter()
+              .map(crate::syntax::expr_to_string)
+              .collect::<Vec<_>>()
+              .join(",")
+          );
+          if let Some(hit) = RECENT_PARAMETRIC.with(|c| {
+            c.borrow()
+              .iter()
+              .find(|(k, _)| *k == key)
+              .map(|(_, v)| v.clone())
+          }) {
+            return Ok(hit);
+          }
+          let result = apply_curried_call(&func_args[0], args)?;
+          RECENT_PARAMETRIC.with(|c| {
+            let mut recent = c.borrow_mut();
+            if recent.len() >= 8 {
+              recent.remove(0);
+            }
+            recent.push((key, result.clone()));
+          });
+          Ok(result)
+        }
+        _ => Ok(Expr::CurriedCall {
+          func: Box::new(func.clone()),
+          args: args.to_vec(),
+        }),
+      }
+    }
     Expr::FunctionCall {
       name,
       args: func_args,

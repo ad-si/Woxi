@@ -984,6 +984,8 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     // Both accept trailing option rules (`Method -> …`, `MaxSteps -> …`).
     "NDSolve" => Some((3, usize::MAX)),
     "NDSolveValue" => Some((3, usize::MAX)),
+    "ParametricNDSolve" => Some((4, usize::MAX)),
+    "ParametricNDSolveValue" => Some((4, usize::MAX)),
     "Negative" => Some((1, 1)),
     "IndefiniteMatrixQ" => Some((1, 1)),
     "NegativeBinomialDistribution" => Some((2, 2)),
