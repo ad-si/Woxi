@@ -16260,6 +16260,26 @@ mod traditional_form_style_box {
 mod show {
   use super::*;
 
+  /// A `Plot` with a pole, layered onto a field plot by `Show`, is clipped
+  /// to the plot's own trimmed y range: the pole's huge samples must not
+  /// stretch the merged picture (it came out millions of pixels tall).
+  /// Regression from the "Dynamics of an Epidemic" Demonstration.
+  #[test]
+  fn plot_with_pole_is_clipped_when_shown_over_a_field_plot() {
+    clear_state();
+    let svg = export_svg(
+      "Show[StreamPlot[{x, y}, {x, 0, 1}, {y, 0, 1}], \
+       Plot[{(0.3*x - 0.3)/(0.2 - 0.5*x), 0.005}, {x, 0, 1}]]",
+    );
+    let height: f64 = svg
+      .split("height=\"")
+      .nth(1)
+      .and_then(|r| r.split('"').next())
+      .and_then(|h| h.parse().ok())
+      .expect("svg height");
+    assert!(height < 2000.0, "{}", &svg[..svg.len().min(200)]);
+  }
+
   /// `Pane[content, opts…]` only constrains its content's size, so
   /// exporting one exports what it wraps. Regression: the export path wrote
   /// the expression as text while the notebook display pipeline unwrapped

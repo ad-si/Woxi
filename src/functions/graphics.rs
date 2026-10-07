@@ -13075,17 +13075,76 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
       ));
       let segments = crate::functions::plot::split_into_segments(&sd.points);
       for seg in &segments {
-        let coords: Vec<Expr> = seg
-          .iter()
-          .map(|&(x, y)| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()))
-          .collect();
-        if coords.len() >= 2 {
-          series_prims.push(call1("Line", Expr::List(coords.into())));
+        // The plot's own (outlier-trimmed) y range clips the curve, as it
+        // does in Wolfram: a pole such as `1/(x - a)` must not stretch the
+        // range of whatever `Show` layers the curve onto.
+        for piece in clip_segment_to_y_range(seg, ps.y_range) {
+          let coords: Vec<Expr> = piece
+            .iter()
+            .map(|&(x, y)| {
+              Expr::List(vec![Expr::Real(x), Expr::Real(y)].into())
+            })
+            .collect();
+          if coords.len() >= 2 {
+            series_prims.push(call1("Line", Expr::List(coords.into())));
+          }
         }
       }
     }
   }
   series_prims
+}
+
+/// Clip a polyline to the horizontal band `lo <= y <= hi`, interpolating the
+/// crossing points. Returns the pieces inside the band (a curve that leaves
+/// and re-enters yields several).
+fn clip_segment_to_y_range(
+  seg: &[(f64, f64)],
+  (lo, hi): (f64, f64),
+) -> Vec<Vec<(f64, f64)>> {
+  if !(lo.is_finite() && hi.is_finite()) || lo >= hi {
+    return vec![seg.to_vec()];
+  }
+  let pad = (hi - lo) * 1e-9;
+  let (lo, hi) = (lo - pad, hi + pad);
+  let mut pieces: Vec<Vec<(f64, f64)>> = Vec::new();
+  let mut cur: Vec<(f64, f64)> = Vec::new();
+  for w in seg.windows(2) {
+    let (q, p) = (w[0], w[1]);
+    // Parametric interval of the edge q→p that lies inside the band.
+    let dy = p.1 - q.1;
+    let (mut t0, mut t1) = (0.0_f64, 1.0_f64);
+    if dy == 0.0 {
+      if q.1 < lo || q.1 > hi {
+        t1 = -1.0;
+      }
+    } else {
+      let (ta, tb) = ((lo - q.1) / dy, (hi - q.1) / dy);
+      t0 = t0.max(ta.min(tb));
+      t1 = t1.min(ta.max(tb));
+    }
+    if t0 > t1 {
+      if !cur.is_empty() {
+        pieces.push(std::mem::take(&mut cur));
+      }
+      continue;
+    }
+    let at = |t: f64| (q.0 + (p.0 - q.0) * t, q.1 + dy * t);
+    if t0 > 0.0 && !cur.is_empty() {
+      pieces.push(std::mem::take(&mut cur));
+    }
+    if cur.is_empty() {
+      cur.push(at(t0));
+    }
+    cur.push(at(t1));
+    if t1 < 1.0 {
+      pieces.push(std::mem::take(&mut cur));
+    }
+  }
+  if !cur.is_empty() {
+    pieces.push(cur);
+  }
+  pieces
 }
 
 pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
