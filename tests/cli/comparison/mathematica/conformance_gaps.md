@@ -4649,3 +4649,10 @@ The vertex order, face order/winding and the printed form of the exact
 metrics were derived from the geometry (icosahedral vertices, {5/2, 5}
 pentagram faces, unit pentagram chord) without access to `wolframscript`, so
 they may be ordered or simplified differently from Wolfram's.
+
+### `PolyhedronData["GreatIcosahedron", …]` ordering and volume are unverified
+
+Vertices reuse the small stellated dodecahedron's order and faces are the 20
+outward-wound unit triangles of mutual second neighbours, derived from the
+geometry without access to `wolframscript`; Wolfram's vertex/face order may
+differ. `"Volume"` is not derived and reports `Missing["NotAvailable"]`.

@@ -461,7 +461,7 @@ mod polyhedron_data_tests {
     assert_eq!(
       interpret("PolyhedronData[All]").unwrap(),
       "{BilinskiDodecahedron, Cube, DeltoidalHexecontahedron, \
-       DisdyakisTriacontahedron, Dodecahedron, GreatRhombicosidodecahedron, \
+       DisdyakisTriacontahedron, Dodecahedron, GreatIcosahedron, GreatRhombicosidodecahedron, \
        GreatStellatedDodecahedron, Icosahedron, \
        Icosidodecahedron, Octahedron, PentakisDodecahedron, \
        RhombicDodecahedron, RhombicHexecontahedron, \
@@ -684,6 +684,34 @@ mod polyhedron_data_tests {
       )
       .unwrap(),
       "225425"
+    );
+  }
+
+  // The great icosahedron: {3, 5/2} on the same 12 vertices as the small
+  // stellated dodecahedron, with 20 unit triangles as faces.
+  #[test]
+  fn polyhedron_data_great_icosahedron() {
+    assert_eq!(
+      interpret(
+        r#"{PolyhedronData["GreatIcosahedron", "VertexCount"],
+            PolyhedronData["GreatIcosahedron", "EdgeCount"],
+            PolyhedronData["GreatIcosahedron", "FaceCount"],
+            Length[PolyhedronData["GreatIcosahedron", "EdgeIndices"]]}"#
+      )
+      .unwrap(),
+      "{12, 30, 20, 30}"
+    );
+    assert_eq!(
+      interpret(
+        r#"With[{v = N[PolyhedronData["GreatIcosahedron",
+               "VertexCoordinates"]],
+              edges = PolyhedronData["GreatIcosahedron", "EdgeIndices"]},
+             {Union[Round[10^6 * Norm /@ v]],
+              Union[Round[10^6 * (Norm[#[[1]] - #[[2]]] & /@
+               (v[[#]] & /@ edges))]]}]"#
+      )
+      .unwrap(),
+      "{{587785}, {1000000}}"
     );
   }
 
