@@ -3636,10 +3636,7 @@ pub fn evaluate_expr_to_expr_inner(
     } => {
       let p = evaluate_expr_to_expr(pattern)?;
       let r = evaluate_expr_to_expr(replacement)?;
-      Ok(Expr::Rule {
-        pattern: Box::new(p),
-        replacement: Box::new(r),
-      })
+      Ok(rule_expr(p, r))
     }
     Expr::RuleDelayed {
       pattern,
@@ -3648,10 +3645,7 @@ pub fn evaluate_expr_to_expr_inner(
       // RuleDelayed has HoldRest: evaluate the pattern (LHS) but hold the
       // replacement (RHS) so it re-evaluates per match.
       let p = evaluate_expr_to_expr(pattern)?;
-      Ok(Expr::RuleDelayed {
-        pattern: Box::new(p),
-        replacement: replacement.clone(),
-      })
+      Ok(rule_delayed_expr(p, *replacement.clone()))
     }
     Expr::ReplaceAll { expr: e, rules } => {
       let evaluated_expr = evaluate_expr_to_expr(e)?;

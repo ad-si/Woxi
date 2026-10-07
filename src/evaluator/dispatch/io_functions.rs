@@ -1219,10 +1219,7 @@ pub fn dispatch_io_functions(
     // GetEnvironment[] — all environment variables as a List of rules.
     "GetEnvironment" if args.is_empty() => {
       let rules: Vec<Expr> = std::env::vars()
-        .map(|(k, v)| Expr::Rule {
-          pattern: Box::new(Expr::String(k)),
-          replacement: Box::new(Expr::String(v)),
-        })
+        .map(|(k, v)| rule_expr(Expr::String(k), Expr::String(v)))
         .collect();
       return Some(Ok(Expr::List(rules.into())));
     }
@@ -1230,13 +1227,13 @@ pub fn dispatch_io_functions(
     // GetEnvironment[{"n1","n2"}] — list of rules
     "GetEnvironment" if args.len() == 1 => {
       let make_rule = |var: &str| -> Expr {
-        Expr::Rule {
-          pattern: Box::new(Expr::String(var.to_string())),
-          replacement: Box::new(match std::env::var(var) {
+        rule_expr(
+          Expr::String(var.to_string()),
+          match std::env::var(var) {
             Ok(val) => Expr::String(val),
             Err(_) => id_expr("None"),
-          }),
-        }
+          },
+        )
       };
       match &args[0] {
         Expr::String(var) => return Some(Ok(make_rule(var))),
@@ -5371,16 +5368,10 @@ fn with_epilog(name: &str, args: &[Expr], markers: &Expr) -> Expr {
         },
         _ => markers.clone(),
       };
-      new_args[pos] = Expr::Rule {
-        pattern: Box::new(id_expr("Epilog")),
-        replacement: Box::new(merged),
-      };
+      new_args[pos] = rule_expr(id_expr("Epilog"), merged);
     }
     None => {
-      new_args.push(Expr::Rule {
-        pattern: Box::new(id_expr("Epilog")),
-        replacement: Box::new(markers.clone()),
-      });
+      new_args.push(rule_expr(id_expr("Epilog"), markers.clone()));
     }
   }
   Expr::FunctionCall {

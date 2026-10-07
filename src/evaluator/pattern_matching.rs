@@ -698,10 +698,7 @@ fn try_ast_pattern_replace_impl(
       let new_head = recurse(&id_expr("Rule"), &mut any)?;
       if any {
         Ok(Some(match new_head {
-          Expr::Identifier(ref h) if h == "Rule" => Expr::Rule {
-            pattern: Box::new(np),
-            replacement: Box::new(nr),
-          },
+          Expr::Identifier(ref h) if h == "Rule" => rule_expr(np, nr),
           other => rebuild_call_with_head(other, vec![np, nr]),
         }))
       } else {
@@ -718,10 +715,9 @@ fn try_ast_pattern_replace_impl(
       let new_head = recurse(&id_expr("RuleDelayed"), &mut any)?;
       if any {
         Ok(Some(match new_head {
-          Expr::Identifier(ref h) if h == "RuleDelayed" => Expr::RuleDelayed {
-            pattern: Box::new(np),
-            replacement: Box::new(nr),
-          },
+          Expr::Identifier(ref h) if h == "RuleDelayed" => {
+            rule_delayed_expr(np, nr)
+          }
           other => rebuild_call_with_head(other, vec![np, nr]),
         }))
       } else {
@@ -2180,12 +2176,10 @@ fn try_symbol_replace_all(
       let new_pat = try_symbol_replace_all(pat, pattern_sym, replacement);
       let new_repl = try_symbol_replace_all(repl, pattern_sym, replacement);
       if new_pat.is_some() || new_repl.is_some() {
-        Some(Expr::Rule {
-          pattern: Box::new(new_pat.unwrap_or_else(|| pat.as_ref().clone())),
-          replacement: Box::new(
-            new_repl.unwrap_or_else(|| repl.as_ref().clone()),
-          ),
-        })
+        Some(rule_expr(
+          new_pat.unwrap_or_else(|| pat.as_ref().clone()),
+          new_repl.unwrap_or_else(|| repl.as_ref().clone()),
+        ))
       } else {
         None
       }
@@ -2206,12 +2200,10 @@ fn try_symbol_replace_all(
       let new_pat = try_symbol_replace_all(pat, pattern_sym, replacement);
       let new_repl = try_symbol_replace_all(repl, pattern_sym, replacement);
       if new_pat.is_some() || new_repl.is_some() {
-        Some(Expr::RuleDelayed {
-          pattern: Box::new(new_pat.unwrap_or_else(|| pat.as_ref().clone())),
-          replacement: Box::new(
-            new_repl.unwrap_or_else(|| repl.as_ref().clone()),
-          ),
-        })
+        Some(rule_delayed_expr(
+          new_pat.unwrap_or_else(|| pat.as_ref().clone()),
+          new_repl.unwrap_or_else(|| repl.as_ref().clone()),
+        ))
       } else {
         None
       }
@@ -2658,10 +2650,7 @@ fn association_to_rules(rules: &Expr) -> Expr {
     Expr::Association(pairs) => Expr::List(
       pairs
         .iter()
-        .map(|(k, v)| Expr::Rule {
-          pattern: Box::new(k.clone()),
-          replacement: Box::new(v.clone()),
-        })
+        .map(|(k, v)| rule_expr(k.clone(), v.clone()))
         .collect(),
     ),
     other => other.clone(),
@@ -2677,17 +2666,11 @@ fn canonicalize_rules(rules: &Expr) -> Expr {
     Expr::Rule {
       pattern,
       replacement,
-    } => Expr::Rule {
-      pattern: Box::new(canonicalize_pattern(pattern)),
-      replacement: replacement.clone(),
-    },
+    } => rule_expr(canonicalize_pattern(pattern), *replacement.clone()),
     Expr::RuleDelayed {
       pattern,
       replacement,
-    } => Expr::RuleDelayed {
-      pattern: Box::new(canonicalize_pattern(pattern)),
-      replacement: replacement.clone(),
-    },
+    } => rule_delayed_expr(canonicalize_pattern(pattern), *replacement.clone()),
     Expr::List(items) => {
       Expr::List(items.iter().map(canonicalize_rules).collect())
     }
@@ -2777,14 +2760,12 @@ pub fn apply_replace_all_ast(
         if crate::functions::graphics::plot_options_need_aspect_ratio(
           &source.options,
         ) {
-          opts.push(Expr::Rule {
-            pattern: Box::new(Expr::Identifier("AspectRatio".to_string())),
-            replacement: Box::new(Expr::Real(
-              crate::functions::graphics::plot_source_aspect_ratio(
-                source.image_size,
-              ),
+          opts.push(rule_expr(
+            Expr::Identifier("AspectRatio".to_string()),
+            Expr::Real(crate::functions::graphics::plot_source_aspect_ratio(
+              source.image_size,
             )),
-          });
+          ));
         }
         Some(Expr::FunctionCall {
           name: if *is_3d { "Graphics3D" } else { "Graphics" }.to_string(),
@@ -4037,18 +4018,18 @@ fn canonicalize_pattern(pattern: &Expr) -> Expr {
     // written the long way — `FixIntRule[RuleDelayed[lhs_, u_], x_]`, as
     // Rubi writes it — bind against a rule that was written the short way.
     Expr::FunctionCall { name, args } if name == "Rule" && args.len() == 2 => {
-      Expr::Rule {
-        pattern: Box::new(canonicalize_pattern(&args[0])),
-        replacement: Box::new(canonicalize_pattern(&args[1])),
-      }
+      rule_expr(
+        canonicalize_pattern(&args[0]),
+        canonicalize_pattern(&args[1]),
+      )
     }
     Expr::FunctionCall { name, args }
       if name == "RuleDelayed" && args.len() == 2 =>
     {
-      Expr::RuleDelayed {
-        pattern: Box::new(canonicalize_pattern(&args[0])),
-        replacement: Box::new(canonicalize_pattern(&args[1])),
-      }
+      rule_delayed_expr(
+        canonicalize_pattern(&args[0]),
+        canonicalize_pattern(&args[1]),
+      )
     }
     // `Pattern[x, body]` keeps its shape: splicing into it would destroy the
     // name/body pair.
@@ -4137,10 +4118,7 @@ fn head_and_args(expr: &Expr) -> Option<(Expr, Vec<Expr>)> {
       id_expr("Association"),
       pairs
         .iter()
-        .map(|(key, value)| Expr::Rule {
-          pattern: Box::new(key.clone()),
-          replacement: Box::new(value.clone()),
-        })
+        .map(|(key, value)| rule_expr(key.clone(), value.clone()))
         .collect(),
     )),
     Expr::Rule { .. }
@@ -5764,10 +5742,7 @@ fn apply_replace_all_multi_ast_impl(
       if let Some(new_head) = multi_replace_head("Rule", rules, held)? {
         return Ok(rebuild_call_with_head(new_head, vec![new_pat, new_rep]));
       }
-      Ok(Expr::Rule {
-        pattern: Box::new(new_pat),
-        replacement: Box::new(new_rep),
-      })
+      Ok(rule_expr(new_pat, new_rep))
     }
     Expr::RuleDelayed {
       pattern,
@@ -5780,10 +5755,7 @@ fn apply_replace_all_multi_ast_impl(
       if let Some(new_head) = multi_replace_head("RuleDelayed", rules, held)? {
         return Ok(rebuild_call_with_head(new_head, vec![new_pat, new_rep]));
       }
-      Ok(Expr::RuleDelayed {
-        pattern: Box::new(new_pat),
-        replacement: Box::new(new_rep),
-      })
+      Ok(rule_delayed_expr(new_pat, new_rep))
     }
     // `<|k -> v|> /. rules` descends into every key and value.
     Expr::Association(pairs) => {

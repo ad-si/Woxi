@@ -6764,7 +6764,7 @@ fn parametric_ndsolve(name: &str, args: &[Expr]) -> Option<Expr> {
     Expr::Identifier(n) => vec![n.clone()],
     _ => return None,
   };
-  let call = |head: &str, dep: &Expr| Expr::FunctionCall {
+  let callx = |head: &str, dep: &Expr| Expr::FunctionCall {
     name: head.to_string(),
     args: {
       let mut a = vec![args[0].clone(), dep.clone(), args[2].clone()];
@@ -6782,7 +6782,7 @@ fn parametric_ndsolve(name: &str, args: &[Expr]) -> Option<Expr> {
     .into(),
   };
   if name == "ParametricNDSolveValue" {
-    return Some(function(call("NDSolveValue", &args[1])));
+    return Some(function(callx("NDSolveValue", &args[1])));
   }
   let deps: Vec<Expr> = match &args[1] {
     Expr::Identifier(_) => vec![args[1].clone()],
@@ -6795,19 +6795,14 @@ fn parametric_ndsolve(name: &str, args: &[Expr]) -> Option<Expr> {
   };
   let rules: Vec<Expr> = deps
     .iter()
-    .map(|dep| Expr::Rule {
-      pattern: Box::new(dep.clone()),
-      replacement: Box::new(function(Expr::FunctionCall {
-        name: "ReplaceAll".to_string(),
-        args: vec![
-          dep.clone(),
-          Expr::FunctionCall {
-            name: "First".to_string(),
-            args: vec![call("NDSolve", &args[1])].into(),
-          },
-        ]
-        .into(),
-      })),
+    .map(|dep| {
+      rule_expr(
+        dep.clone(),
+        function(call(
+          "ReplaceAll",
+          vec![dep.clone(), call1("First", callx("NDSolve", &args[1]))],
+        )),
+      )
     })
     .collect();
   Some(Expr::List(rules.into()))

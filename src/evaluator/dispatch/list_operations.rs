@@ -1076,10 +1076,7 @@ fn tree_rules(e: &Expr) -> Option<Expr> {
     .iter()
     .map(|c| tree_rules(c))
     .collect::<Option<_>>()?;
-  Some(Expr::Rule {
-    pattern: Box::new(data.clone()),
-    replacement: Box::new(Expr::List(child_rules.into())),
-  })
+  Some(rule_expr(data.clone(), Expr::List(child_rules.into())))
 }
 
 // Number of edges on the longest path from the root to a leaf (leaf → 0).
@@ -3223,15 +3220,9 @@ pub fn dispatch_list_operations(
               pattern,
               replacement,
             } if crate::syntax::assoc_marker_matches(k, pattern) => {
-              Expr::RuleDelayed {
-                pattern: Box::new(k.clone()),
-                replacement: replacement.clone(),
-              }
+              rule_delayed_expr(k.clone(), *replacement.clone())
             }
-            _ => Expr::Rule {
-              pattern: Box::new(k.clone()),
-              replacement: Box::new(v.clone()),
-            },
+            _ => rule_expr(k.clone(), v.clone()),
           })
           .collect();
         return Some(Ok(Expr::List(rules.into())));
@@ -8072,15 +8063,9 @@ fn normal_shallow(expr: &Expr) -> Expr {
             pattern,
             replacement,
           } if crate::syntax::assoc_marker_matches(k, pattern) => {
-            Expr::RuleDelayed {
-              pattern: Box::new(k.clone()),
-              replacement: replacement.clone(),
-            }
+            rule_delayed_expr(k.clone(), *replacement.clone())
           }
-          _ => Expr::Rule {
-            pattern: Box::new(k.clone()),
-            replacement: Box::new(v.clone()),
-          },
+          _ => rule_expr(k.clone(), v.clone()),
         })
         .collect();
       Expr::List(rules.into())
@@ -8152,15 +8137,9 @@ fn normal_convert_associations(expr: &Expr) -> Expr {
             pattern,
             replacement,
           } if crate::syntax::assoc_marker_matches(k, pattern) => {
-            Expr::RuleDelayed {
-              pattern: Box::new(k.clone()),
-              replacement: replacement.clone(),
-            }
+            rule_delayed_expr(k.clone(), *replacement.clone())
           }
-          _ => Expr::Rule {
-            pattern: Box::new(k.clone()),
-            replacement: Box::new(v.clone()),
-          },
+          _ => rule_expr(k.clone(), v.clone()),
         })
         .collect();
       Expr::List(rules.into())
@@ -9647,11 +9626,11 @@ fn array_rules_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         );
       let mut rules: Vec<Expr> = extracted
         .into_iter()
-        .map(|(pos, val)| Expr::Rule {
-          pattern: Box::new(Expr::List(
-            pos.into_iter().map(Expr::Integer).collect(),
-          )),
-          replacement: Box::new(val),
+        .map(|(pos, val)| {
+          rule_expr(
+            Expr::List(pos.into_iter().map(Expr::Integer).collect()),
+            val,
+          )
         })
         .collect();
       let blanks: Vec<Expr> = (0..depth)
@@ -9661,10 +9640,7 @@ fn array_rules_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           blank_type: 1,
         })
         .collect();
-      rules.push(Expr::Rule {
-        pattern: Box::new(Expr::List(blanks.into())),
-        replacement: Box::new(sa_default),
-      });
+      rules.push(rule_expr(Expr::List(blanks.into()), sa_default));
       return Ok(Expr::List(rules.into()));
     }
     // Normalization failed — fall through to the default-value handling.
@@ -9690,10 +9666,7 @@ fn array_rules_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         if expr_to_string(expr) != expr_to_string(default_val) {
           let pos =
             Expr::List(indices.iter().map(|&i| Expr::Integer(i)).collect());
-          rules.push(Expr::Rule {
-            pattern: Box::new(pos),
-            replacement: Box::new(expr.clone()),
-          });
+          rules.push(rule_expr(pos, expr.clone()));
         }
       }
     }
@@ -9711,10 +9684,7 @@ fn array_rules_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       blank_type: 1,
     })
     .collect();
-  rules.push(Expr::Rule {
-    pattern: Box::new(Expr::List(blanks.into())),
-    replacement: Box::new(default_val),
-  });
+  rules.push(rule_expr(Expr::List(blanks.into()), default_val));
 
   Ok(Expr::List(rules.into()))
 }

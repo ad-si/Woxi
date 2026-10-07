@@ -143,10 +143,7 @@ fn association_constructor(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // `RuleDelayed { pattern == key, replacement }` marks an entry
         // that was originally `key :> value` (formatter renders `:>`).
         let key = *pattern.clone();
-        let marker = Expr::RuleDelayed {
-          pattern: Box::new(key.clone()),
-          replacement: replacement.clone(),
-        };
+        let marker = rule_delayed_expr(key.clone(), *replacement.clone());
         assoc_insert_dedup(pairs, key, marker);
         Ok(true)
       }

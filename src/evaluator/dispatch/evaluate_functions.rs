@@ -726,20 +726,16 @@ fn normalize_piecharts_option(arg: &Expr) -> Expr {
       pattern,
       replacement,
     } => match renamed_option(pattern) {
-      Some(new_name) => Expr::Rule {
-        pattern: Box::new(Expr::Identifier(new_name.to_string())),
-        replacement: replacement.clone(),
-      },
+      Some(new_name) => rule_expr(id_expr(new_name), *replacement.clone()),
       None => arg.clone(),
     },
     Expr::RuleDelayed {
       pattern,
       replacement,
     } => match renamed_option(pattern) {
-      Some(new_name) => Expr::RuleDelayed {
-        pattern: Box::new(Expr::Identifier(new_name.to_string())),
-        replacement: replacement.clone(),
-      },
+      Some(new_name) => {
+        rule_delayed_expr(id_expr(new_name), *replacement.clone())
+      }
       None => arg.clone(),
     },
     other => other.clone(),
@@ -995,10 +991,7 @@ fn evaluate_function_call_ast_inner(
   // Handle structural conversions early
   match name {
     "Rule" if args.len() == 2 => {
-      return Ok(Expr::Rule {
-        pattern: Box::new(args[0].clone()),
-        replacement: Box::new(args[1].clone()),
-      });
+      return Ok(rule_expr(args[0].clone(), args[1].clone()));
     }
     "PatternTest" if args.len() == 2 => return evaluate_pattern_test_ast(args),
     "Blank" => return evaluate_blank_ast(args),
@@ -4487,10 +4480,7 @@ fn evaluate_function_call_ast_inner(
     let to_real = |v: Expr| -> Result<Expr, InterpreterError> {
       crate::evaluator::evaluate_expr_to_expr(&call1("N", v))
     };
-    let rule = |p: Expr, v: Expr| Expr::Rule {
-      pattern: Box::new(p),
-      replacement: Box::new(v),
-    };
+    let rule = |p: Expr, v: Expr| rule_expr(p, v);
     // Exponential[λ] MLE: λ̂ = 1 / mean(data).
     let mean = crate::functions::mean_ast(std::slice::from_ref(&data))?;
     let mean = crate::evaluator::evaluate_expr_to_expr(&mean)?;
@@ -4515,10 +4505,7 @@ fn evaluate_function_call_ast_inner(
     let to_real = |v: Expr| -> Result<Expr, InterpreterError> {
       crate::evaluator::evaluate_expr_to_expr(&call1("N", v))
     };
-    let rule = |p: Expr, v: Expr| Expr::Rule {
-      pattern: Box::new(p),
-      replacement: Box::new(v),
-    };
+    let rule = |p: Expr, v: Expr| rule_expr(p, v);
     match dist_name.as_str() {
       "LaplaceDistribution" => {
         let median = crate::functions::median_ast(&data)?;
@@ -4740,21 +4727,17 @@ fn evaluate_function_call_ast_inner(
         let mut spec =
           vec![Expr::String("LayeredDigraphEmbedding".to_string())];
         if let Some(v) = root_vertex {
-          spec.push(Expr::Rule {
-            pattern: Box::new(Expr::String("RootVertex".to_string())),
-            replacement: Box::new(v.clone()),
-          });
+          spec
+            .push(rule_expr(Expr::String("RootVertex".to_string()), v.clone()));
         }
         if let Some(dir) = root_pos {
-          spec.push(Expr::Rule {
-            pattern: Box::new(Expr::String("Orientation".to_string())),
-            replacement: Box::new(Expr::Identifier(dir.symbol().to_string())),
-          });
+          spec.push(rule_expr(
+            Expr::String("Orientation".to_string()),
+            Expr::Identifier(dir.symbol().to_string()),
+          ));
         }
-        forwarded.push(Expr::Rule {
-          pattern: Box::new(id_expr("GraphLayout")),
-          replacement: Box::new(Expr::List(spec.into())),
-        });
+        forwarded
+          .push(rule_expr(id_expr("GraphLayout"), Expr::List(spec.into())));
       }
       // `GraphPlot[m]` also accepts a bare adjacency matrix directly (unlike
       // plain `Graph[…]`, which needs `AdjacencyGraph[m]`): a list whose
@@ -5032,10 +5015,10 @@ fn evaluate_function_call_ast_inner(
       && gn == "Graph"
     {
       ga.push(Expr::List(
-        vec![Expr::Rule {
-          pattern: Box::new(id_expr("GraphLayout")),
-          replacement: Box::new(Expr::String("TutteEmbedding".to_string())),
-        }]
+        vec![rule_expr(
+          id_expr("GraphLayout"),
+          Expr::String("TutteEmbedding".to_string()),
+        )]
         .into(),
       ));
     }
@@ -5972,10 +5955,7 @@ fn evaluate_function_call_ast_inner(
             return Ok(unevaluated("EdgeRules", args));
           }
         };
-        rules.push(Expr::Rule {
-          pattern: Box::new(from),
-          replacement: Box::new(to),
-        });
+        rules.push(rule_expr(from, to));
       }
       return Ok(Expr::List(rules.into()));
     }
