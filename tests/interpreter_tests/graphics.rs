@@ -13169,6 +13169,153 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       ));
     }
 
+    /// A region bounded by straight lines is traced exactly: the crossings
+    /// are bisected on the predicate rather than left on the sample grid,
+    /// and the corner where the two lines meet (inside a grid cell) is
+    /// restored instead of bevelled.
+    #[test]
+    fn region_plot_linear_region_is_exact() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "Round[Cases[RegionPlot[y > x/2 + 1 && y < 3 x/2 - 1, \
+           {x, -5, 5}, {y, -5, 5}][[1]], Polygon[p_] :> p, Infinity], 1/1000]"
+        )
+        .unwrap(),
+        "{{{2, 2}, {4, 5}, {5, 5}, {5, 7/2}}}"
+      );
+      // A half-plane reaching the frame is closed off along it, and a
+      // boundary on an axis lands exactly on it.
+      assert_eq!(
+        interpret(
+          "Cases[RegionPlot[x < 0, {x, -2, 2}, {y, -2, 2}][[1]], \
+           Polygon[p_] :> p, Infinity]"
+        )
+        .unwrap(),
+        "{{{-2., -2.}, {-2., 2.}, {0., 2.}, {0., -2.}}}"
+      );
+    }
+
+    /// `RegionPlot[{p1, p2, …}, …]` draws one region per predicate, each in
+    /// its own `ColorData[97]` colour. Regression: a list of predicates
+    /// drew nothing at all.
+    #[test]
+    fn region_plot_list_of_predicates() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "Length[Cases[RegionPlot[{y > x/2 + 1, y < 3 x/2 - 1}, \
+           {x, -5, 5}, {y, -5, 5}][[1]], _Polygon, Infinity]]"
+        )
+        .unwrap(),
+        "2"
+      );
+      assert_eq!(
+        interpret(
+          "Cases[RegionPlot[{y > x/2 + 1, y < 3 x/2 - 1}, \
+           {x, -5, 5}, {y, -5, 5}][[1]], RGBColor[c__] :> Round[{c}, 1/100], \
+           {3}]"
+        )
+        .unwrap(),
+        "{{37/100, 51/100, 71/100}, {22/25, 29/50, 17/100}}"
+      );
+      // A one-element list is a single region.
+      assert_eq!(
+        interpret(
+          "Length[RegionPlot[{y > x/2 + 1 && y < 3 x/2 - 1}, \
+           {x, -5, 5}, {y, -5, 5}][[1]]]"
+        )
+        .unwrap(),
+        "1"
+      );
+      let svg = export_svg(
+        "RegionPlot[{y > x/2 + 1, y < 3 x/2 - 1}, {x, -5, 5}, {y, -5, 5}]",
+      );
+      assert_eq!(svg.matches("<polygon").count(), 2, "{svg}");
+      assert!(svg.contains("rgb(94,129,181)"), "{svg}");
+      assert!(svg.contains("rgb(224,147,44)"), "{svg}");
+    }
+
+    /// `RegionPlot` takes every `Graphics` option, and the caller's
+    /// options override its defaults (`Frame -> True`). Regression:
+    /// `Frame`, `Axes`, `AxesOrigin` and `GridLines` were all ignored.
+    #[test]
+    fn region_plot_graphics_options() {
+      let plain = export_svg("RegionPlot[y > x, {x, -5, 5}, {y, -5, 5}]");
+      let styled = export_svg(
+        "RegionPlot[y > x, {x, -5, 5}, {y, -5, 5}, Frame -> False, \
+         Axes -> True, AxesOrigin -> {0, 0}, GridLines -> Automatic]",
+      );
+      let gridless = export_svg(
+        "RegionPlot[y > x, {x, -5, 5}, {y, -5, 5}, Frame -> False, \
+         Axes -> True, AxesOrigin -> {0, 0}]",
+      );
+      let frame_box = "fill=\"none\" stroke=\"rgb(190,190,190)\"";
+      assert!(plain.contains(frame_box), "{plain}");
+      assert!(!styled.contains(frame_box), "{styled}");
+      assert!(
+        styled.matches("<line").count() > gridless.matches("<line").count(),
+        "GridLines -> Automatic must add grid lines"
+      );
+    }
+
+    /// `AxesStyle` restyles the axis lines: a thickness alone keeps the
+    /// default grey, a colour recolours them, and `{xStyle, yStyle}` styles
+    /// each axis separately.
+    #[test]
+    fn graphics_axes_style() {
+      let axis_lines = |opts: &str| -> Vec<String> {
+        export_svg(&format!(
+          "Graphics[Point[{{1, 1}}], Axes -> True, \
+           PlotRange -> {{{{-1, 1}}, {{-1, 1}}}}{opts}]"
+        ))
+        .lines()
+        // The two full-length axis lines, not their tick marks.
+        .filter(|l| {
+          (l.contains("x1=\"0.00\"") && l.contains("x2=\"360.00\""))
+            || (l.contains("y1=\"0.00\"") && l.contains("y2=\"360.00\""))
+        })
+        .map(str::to_string)
+        .collect()
+      };
+      let plain = axis_lines("");
+      assert_eq!(plain.len(), 2, "{plain:?}");
+      assert!(plain.iter().all(|l| l.contains("stroke-width=\"1\"")));
+      let thick = axis_lines(", AxesStyle -> Thick");
+      assert!(
+        thick
+          .iter()
+          .all(|l| l.contains("stroke-width=\"2\"") && !l.contains("rgb(")),
+        "{thick:?}"
+      );
+      let per_axis = axis_lines(", AxesStyle -> {Red, Blue}");
+      assert!(per_axis[0].contains("rgb(255,0,0)"), "{per_axis:?}");
+      assert!(per_axis[1].contains("rgb(0,0,255)"), "{per_axis:?}");
+    }
+
+    /// `PlotStyle` colours a region's fill and its default outline;
+    /// `BoundaryStyle -> None` drops the outline.
+    #[test]
+    fn region_plot_plot_style_and_boundary_style() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "Cases[RegionPlot[y > x, {x, -1, 1}, {y, -1, 1}, \
+           PlotStyle -> Red][[1]], _EdgeForm, Infinity]"
+        )
+        .unwrap(),
+        "{EdgeForm[{RGBColor[1., 0., 0.], AbsoluteThickness[1.6]}]}"
+      );
+      assert_eq!(
+        interpret(
+          "Cases[RegionPlot[y > x, {x, -1, 1}, {y, -1, 1}, \
+           BoundaryStyle -> None][[1]], _EdgeForm, Infinity]"
+        )
+        .unwrap(),
+        "{EdgeForm[]}"
+      );
+    }
+
     /// A `Plus` term with a negative coefficient joins with `-` and drops the
     /// sign, so a polynomial label reads `-5 - 5 x - 5 x^2`, not
     /// `-5 + -5 x + -5 x^2`. Wolfram's boxes join the same way.
@@ -13179,7 +13326,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
           "RegionPlot[y > x, {{x, -2, 2}}, {{y, -2, 2}}, PlotLabel -> {expr}]"
         ));
         svg
-          .split("fill=\"#333\">")
+          .split("fill=\"#333333\">")
           .nth(1)
           .and_then(|t| t.split("</text>").next())
           .unwrap_or_default()
@@ -13202,7 +13349,10 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         export_svg("RegionPlot[y > x^2 - 1, {x, -2, 2}, {y, -2, 2}]");
       let indirect =
         export_svg("p = x^2 - 1; RegionPlot[y > p, {x, -2, 2}, {y, -2, 2}]");
-      assert!(direct.contains("<rect"), "the direct form shades: {direct}");
+      assert!(
+        direct.contains("<polygon"),
+        "the direct form shades: {direct}"
+      );
       assert_eq!(indirect, direct, "the indirect form must shade the same");
       // The same for the other two-variable field plots.
       assert_eq!(
@@ -13235,9 +13385,15 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         r#"RegionPlot[y > x, {x, -2, 2}, {y, -2, 2}, PlotLabel -> Style[Row[{"a", " > ", "b"}], 20]]"#,
       );
       assert!(styled.contains("a &gt; b"), "{styled}");
-      // The `Style` size lands on the text element at 10x render scale, not
-      // as a bare `font-size="20"` that would draw ten times too small.
-      assert!(styled.contains("font-size=\"200\""), "{styled}");
+      // RegionPlot renders through the Graphics renderer, at 1x scale.
+      assert!(styled.contains("font-size=\"20\""), "{styled}");
+      // The field plots drawn by their own renderer work at 10x render
+      // scale: the `Style` size lands on the text element scaled up, not as
+      // a bare `font-size="20"` that would draw ten times too small.
+      let density = export_svg(
+        r#"DensityPlot[x y, {x, -2, 2}, {y, -2, 2}, PlotLabel -> Style[Row[{"a", " > ", "b"}], 20]]"#,
+      );
+      assert!(density.contains("font-size=\"200\""), "{density}");
     }
 
     #[test]
@@ -30331,11 +30487,11 @@ mod color_data_indexed {
   }
 
   // `RegionPlot[cond, …][[1]]` (or `First[…]`) yields the region's
-  // primitives, the way `ContourPlot[…][[1]]` does — a Demonstration that
-  // composes a custom `Graphics[{RegionPlot[…][[1]], …}]` (e.g. to overlay
-  // the filled region with its own styling) needs actual geometry, not an
-  // unevaluated `Part`. A disk region traces to one closed `Polygon`;
-  // `BoundaryStyle` additionally draws each loop as a styled `Line`.
+  // primitives — a Demonstration that composes a custom
+  // `Graphics[{RegionPlot[…][[1]], …}]` (e.g. to overlay the filled region
+  // with its own styling) needs actual geometry, not an unevaluated `Part`.
+  // A disk region traces to one closed `Polygon`; `BoundaryStyle` restyles
+  // its outline.
   #[test]
   fn region_plot_part_yields_primitives() {
     clear_state();
@@ -30346,23 +30502,19 @@ mod color_data_indexed {
     );
     assert_eq!(
       interpret(
-        "Head[RegionPlot[x^2 + y^2 < 1, {x, -2, 2}, {y, -2, 2}][[1]] \
-         [[2]]]"
+        "Length[Cases[RegionPlot[x^2 + y^2 < 1, {x, -2, 2}, {y, -2, 2}][[1]], \
+         _Polygon, Infinity]]"
       )
       .unwrap(),
-      "Polygon"
+      "1"
     );
-    let len_with_boundary: i64 = interpret(
-      "Length[RegionPlot[x^2 + y^2 < 1, {x, -2, 2}, {y, -2, 2}, \
-       BoundaryStyle -> Thick][[1]]]",
-    )
-    .unwrap()
-    .parse()
-    .unwrap();
-    assert!(
-      len_with_boundary > 2,
-      "BoundaryStyle should add a styled Line on top of the fill: \
-       got {len_with_boundary} primitives"
+    assert_eq!(
+      interpret(
+        "Cases[RegionPlot[x^2 + y^2 < 1, {x, -2, 2}, {y, -2, 2}, \
+         BoundaryStyle -> Thick][[1]], _EdgeForm, Infinity]"
+      )
+      .unwrap(),
+      "{EdgeForm[Thick]}"
     );
     // The extracted primitives embed into an outer Graphics.
     let svg = export_svg(
@@ -30374,36 +30526,33 @@ mod color_data_indexed {
     assert_eq!(
       interpret(
         "diskCond = x^2 + y^2 < 1; \
-         Head[RegionPlot[diskCond, {x, -2, 2}, {y, -2, 2}][[1]]]"
+         Length[Cases[RegionPlot[diskCond, {x, -2, 2}, {y, -2, 2}][[1]], \
+         _Polygon, Infinity]]"
       )
       .unwrap(),
-      "List"
+      "1"
     );
   }
 
-  /// Regression: a region whose true fill lies *outside* every traced loop
-  /// (the complement of a disk, filling everywhere in the frame but a
-  /// hole) has no loop of its own there — the frame itself would have to
-  /// be an outer contour, which marching squares over the sampled grid
-  /// never produces — so naively filling the traced loop's interior as a
-  /// `Polygon` fills exactly the wrong side. `region_plot_part_yields_primitives`
-  /// only covers a simply-connected region; this locks in the fallback
-  /// (no symbolic backing at all, so `Show` keeps stacking the plain
-  /// rendered pictures) that keeps `show_merges_two_opaque_region_plots`
-  /// passing.
+  /// A region whose fill surrounds a hole (the complement of a disk) is
+  /// closed off along the plot range and comes back as one
+  /// `Polygon[outer -> {hole}]`, drawn with the hole cut out by the
+  /// even-odd rule. Regression: filling the traced loop's interior filled
+  /// exactly the wrong side, so this case had no primitives at all.
   #[test]
-  fn region_plot_complement_of_disk_keeps_plain_rendering() {
+  fn region_plot_complement_of_disk_has_a_hole() {
     clear_state();
-    // No symbolic backing: Part stays an unevaluated Part, same as before
-    // primitive extraction was added for the simply-connected case.
     assert_eq!(
-      interpret("Head[RegionPlot[x^2 + y^2 > 1, {x, -2, 2}, {y, -2, 2}][[1]]]")
-        .unwrap(),
-      "Part"
+      interpret(
+        "Cases[RegionPlot[x^2 + y^2 > 1, {x, -2, 2}, {y, -2, 2}][[1]], \
+         Polygon[outer_ -> holes_] :> {Length[outer], Length[holes]}, \
+         Infinity]"
+      )
+      .unwrap(),
+      "{{4, 1}}"
     );
-    // The plain SVG rendering (used directly, or by Show falling back to
-    // stacking opaque pictures) still draws the correct region.
     let svg = export_svg("RegionPlot[x^2 + y^2 > 1, {x, -2, 2}, {y, -2, 2}]");
+    assert!(svg.contains("fill-rule=\"evenodd\""), "{svg}");
     assert!(svg.contains("rgb(94,129,181)"), "{svg}");
   }
 

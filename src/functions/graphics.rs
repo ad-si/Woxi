@@ -6333,6 +6333,69 @@ fn clamp_tick_label_x(
   x.clamp(lo, hi)
 }
 
+/// How `AxesStyle` draws one axis line: its stroke colour (`None` keeps
+/// the theme's axis grey, so `AxesStyle -> Thick` only thickens it) and
+/// width in pixels.
+#[derive(Clone, Copy)]
+struct AxisLineStyle {
+  color: Option<Color>,
+  width: f64,
+}
+
+impl Default for AxisLineStyle {
+  fn default() -> Self {
+    Self {
+      color: None,
+      width: 1.0,
+    }
+  }
+}
+
+impl AxisLineStyle {
+  fn from_directive(spec: &Expr, bb: &BBox, svg_w: f64) -> Self {
+    // A colour no directive can produce, to tell whether one was given.
+    let unset = Color::new(-1.0, -1.0, -1.0);
+    let mut st = StyleState {
+      color: unset,
+      ..StyleState::default()
+    };
+    apply_directive(spec, &mut st);
+    let color = (st.color != unset).then(|| st.effective_color());
+    Self {
+      color,
+      width: thickness_px(st.thickness, bb, svg_w).max(0.5),
+    }
+  }
+
+  /// `AxesStyle -> style` styles both axes, `AxesStyle -> {xStyle, yStyle}`
+  /// each one separately.
+  fn parse_pair(spec: &Expr, bb: &BBox, svg_w: f64) -> (Self, Self) {
+    match spec {
+      Expr::List(items) if items.len() == 2 => (
+        Self::from_directive(&items[0], bb, svg_w),
+        Self::from_directive(&items[1], bb, svg_w),
+      ),
+      other => {
+        let st = Self::from_directive(other, bb, svg_w);
+        (st, st)
+      }
+    }
+  }
+
+  fn stroke_attrs(&self, theme_stroke: &str) -> String {
+    // Shortest form, so the default axis keeps its `stroke-width="1"`.
+    let width = (self.width * 100.0).round() / 100.0;
+    match self.color {
+      Some(c) => format!(
+        "stroke=\"{}\" stroke-width=\"{width}\"{}",
+        c.to_svg_rgb(),
+        c.opacity_attr()
+      ),
+      None => format!("stroke=\"{theme_stroke}\" stroke-width=\"{width}\""),
+    }
+  }
+}
+
 fn render_axes(
   svg: &mut String,
   axes: (bool, bool),
@@ -6342,6 +6405,7 @@ fn render_axes(
   axes_label: Option<&(String, String)>,
   ticks: (&TickSpec, &TickSpec),
   x_margins: (f64, f64),
+  axes_style: (AxisLineStyle, AxisLineStyle),
 ) {
   let t = theme();
   let axis_stroke = t.axis_stroke;
@@ -6366,7 +6430,8 @@ fn render_axes(
 
   if axes.0 {
     svg.push_str(&format!(
-      "<line x1=\"0.00\" y1=\"{axis_y_px:.2}\" x2=\"{svg_w:.2}\" y2=\"{axis_y_px:.2}\" stroke=\"{axis_stroke}\" stroke-width=\"1\"/>\n"
+      "<line x1=\"0.00\" y1=\"{axis_y_px:.2}\" x2=\"{svg_w:.2}\" y2=\"{axis_y_px:.2}\" {}/>\n",
+      axes_style.0.stroke_attrs(axis_stroke)
     ));
     let entries = axis_ticks(ticks.0, bb.x_min, bb.x_max);
     let step =
@@ -6402,7 +6467,8 @@ fn render_axes(
 
   if axes.1 {
     svg.push_str(&format!(
-      "<line x1=\"{axis_x_px:.2}\" y1=\"0.00\" x2=\"{axis_x_px:.2}\" y2=\"{svg_h:.2}\" stroke=\"{axis_stroke}\" stroke-width=\"1\"/>\n"
+      "<line x1=\"{axis_x_px:.2}\" y1=\"0.00\" x2=\"{axis_x_px:.2}\" y2=\"{svg_h:.2}\" {}/>\n",
+      axes_style.1.stroke_attrs(axis_stroke)
     ));
     let entries = axis_ticks(ticks.1, bb.y_min, bb.y_max);
     let step =
@@ -8357,6 +8423,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut grid_x = GridSpec::None;
   let mut grid_y = GridSpec::None;
   let mut grid_style: Option<StyleState> = None;
+  let mut axes_style: Option<Expr> = None;
   // When true, skip uniform scaling so x and y axes scale independently
   // (needed for plots where data aspect ≠ image aspect).
   let mut aspect_ratio_full = false;
@@ -8526,6 +8593,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
           _ => {}
         },
+        "AxesStyle" => axes_style = Some(replacement.clone()),
         "GridLinesStyle" => {
           let mut st = StyleState::default();
           apply_directive(replacement, &mut st);
@@ -8919,6 +8987,9 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     axes_label.as_ref(),
     (&ticks_x, &ticks_y),
     (margin_left, margin_right),
+    axes_style.as_ref().map_or_else(Default::default, |spec| {
+      AxisLineStyle::parse_pair(spec, &bb, svg_w)
+    }),
   );
 
   // Render primitives. A primitive with a drop shadow is wrapped in a
