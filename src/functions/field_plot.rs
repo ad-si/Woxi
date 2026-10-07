@@ -1939,7 +1939,44 @@ fn contour_plot_equations(
   Ok(result)
 }
 
-/// RegionPlot[cond, {x, xmin, xmax}, {y, ymin, ymax}]
+/// Default `PlotPoints` of a `RegionPlot`: samples per axis of the grid the
+/// region is traced on. Wolfram starts coarser and refines adaptively; a
+/// finer uniform grid whose boundary crossings are then bisected to full
+/// precision gets the same picture without the refinement machinery.
+const REGION_PLOT_POINTS: usize = 100;
+
+/// Options that only steer how `RegionPlot` samples and styles its regions;
+/// everything else is a `Graphics` option and passes through to the result.
+const REGION_PLOT_ONLY_OPTIONS: &[&str] = &[
+  "PlotStyle",
+  "BoundaryStyle",
+  "PlotPoints",
+  "MaxRecursion",
+  "Mesh",
+  "MeshFunctions",
+  "MeshStyle",
+  "MeshShading",
+  "ColorFunction",
+  "ColorFunctionScaling",
+  "EvaluationMonitor",
+  "PerformanceGoal",
+  "PlotLegends",
+  "PlotTheme",
+  "WorkingPrecision",
+  "TextureCoordinateFunction",
+  "TextureCoordinateScaling",
+];
+
+/// RegionPlot[pred, {x, xmin, xmax}, {y, ymin, ymax}, opts…]
+/// RegionPlot[{pred1, pred2, …}, …]
+///
+/// Each predicate's region is traced as exact boundary loops and drawn the
+/// way Wolfram draws it: filled at 30% opacity in its `ColorData[97]` colour
+/// (or its `PlotStyle`), with the boundary stroked in the same colour. The
+/// picture is assembled as `Graphics[…]` primitives and rendered by the
+/// shared Graphics renderer, so every `Graphics` option (`Axes`,
+/// `AxesOrigin`, `GridLines`, `Frame`, `ImageSize`, …) applies, and
+/// `Part`/`Show` see real geometry.
 pub fn region_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (xvar, x_min, x_max) = parse_iterator(&args[1], "RegionPlot")?;
   let (yvar, y_min, y_max) = parse_iterator(&args[2], "RegionPlot")?;
@@ -1951,215 +1988,470 @@ pub fn region_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     &[xvar.as_str(), yvar.as_str()],
   );
   let body = resolved.as_ref().unwrap_or(&args[0]);
-  let (svg_width, svg_height, full_width) = parse_field_options(args, 3);
-  let plot_label = parse_field_plot_label(args, 3);
-
-  let frame_labels = args[3..]
-    .iter()
-    .find_map(|opt| match opt {
-      Expr::Rule {
-        pattern,
-        replacement,
-      } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "FrameLabel") => {
-        Some(crate::functions::plot::parse_frame_label(replacement))
-      }
-      _ => None,
+  let opts = &args[3..];
+  let option = |key: &str| {
+    opts.iter().rev().find_map(|opt| {
+      let (name, value) = crate::functions::graphics::option_name_value(opt)?;
+      (name == key).then(|| value.into_owned())
     })
-    .unwrap_or_default();
-  let has_outer_labels =
-    !frame_labels.bottom.is_empty() || !frame_labels.left.is_empty();
-
-  // Use plotters for axes, reserving room above the frame for a PlotLabel
-  // and beside it for `FrameLabel` text.
-  let margins = if has_outer_labels {
-    Some(crate::functions::plot::MarginOverrides {
-      top_margin: match &plot_label {
-        Some((_, size)) => {
-          ((size.unwrap_or(14.0) * 2.0).round() as u32) * RESOLUTION_SCALE
-        }
-        None => 10 * RESOLUTION_SCALE,
-      },
-      x_label_area: (40 + 24) * RESOLUTION_SCALE,
-      y_label_area: (65 + 20) * RESOLUTION_SCALE,
-    })
-  } else {
-    field_plot_label_margins(plot_label.as_ref())
   };
-  let area = crate::functions::plot::generate_axes_only_opts(
-    (x_min, x_max),
-    (y_min, y_max),
-    svg_width,
-    svg_height,
-    full_width,
-    None,
-    margins.as_ref(),
-  )?;
 
-  let mut svg = area.svg.clone();
-  if let Some(pos) = svg.rfind("</svg>") {
-    svg.truncate(pos);
-  }
-  if let Some(label) = &plot_label {
-    inject_field_plot_label(&mut svg, &area, label);
-  }
+  let predicates: Vec<&Expr> = match body {
+    Expr::List(items) => items.iter().collect(),
+    other => vec![other],
+  };
+  let n = match &option("PlotPoints") {
+    Some(Expr::Integer(k)) if *k >= 2 => *k as usize,
+    Some(Expr::List(ks)) => match ks.first() {
+      Some(Expr::Integer(k)) if *k >= 2 => *k as usize,
+      _ => REGION_PLOT_POINTS,
+    },
+    _ => REGION_PLOT_POINTS,
+  };
+  // `PlotStyle -> s` styles every region, `PlotStyle -> {s1, s2, …}` one
+  // region each (cycling).
+  let plot_styles: Vec<Expr> = match &option("PlotStyle") {
+    Some(Expr::List(items)) if predicates.len() > 1 => items.to_vec(),
+    Some(Expr::Identifier(s)) if s == "Automatic" => Vec::new(),
+    Some(style) => vec![style.clone()],
+    None => Vec::new(),
+  };
+  // `BoundaryStyle -> None` drops the outline; any other explicit value
+  // replaces the default stroke in the region's colour.
+  let boundary_style = option("BoundaryStyle")
+    .filter(|s| !matches!(s, Expr::Identifier(n) if n == "Automatic"));
 
-  let cell_w = area.plot_w / FIELD_GRID as f64;
-  let cell_h = area.plot_h / FIELD_GRID as f64;
-
-  let (r, g, b) = (0x5E, 0x81, 0xB5); // Default blue
-  for i in 0..FIELD_GRID {
-    let x = x_min + (i as f64 + 0.5) / FIELD_GRID as f64 * (x_max - x_min);
-    for j in 0..FIELD_GRID {
-      let y = y_min + (j as f64 + 0.5) / FIELD_GRID as f64 * (y_max - y_min);
-      if evaluate_condition(body, &xvar, &yvar, x, y) {
-        let sx = area.plot_x0 + i as f64 * cell_w;
-        let sy = area.plot_y0 + (FIELD_GRID - 1 - j) as f64 * cell_h;
-        svg.push_str(&format!(
-          "<rect x=\"{sx:.1}\" y=\"{sy:.1}\" width=\"{:.1}\" height=\"{:.1}\" fill=\"rgb({r},{g},{b})\" stroke=\"none\"/>\n",
-          cell_w + 0.5, cell_h + 0.5
-        ));
-      }
+  let mut items: Vec<Expr> = Vec::new();
+  for (k, pred) in predicates.iter().enumerate() {
+    let loops =
+      region_plot_loops(pred, &xvar, &yvar, (x_min, x_max), (y_min, y_max), n);
+    let polygons = region_plot_polygons(&loops);
+    if polygons.is_empty() {
+      continue;
     }
+    let palette = crate::functions::plot::PLOT_COLORS;
+    let style = (!plot_styles.is_empty())
+      .then(|| plot_styles[k % plot_styles.len()].clone());
+    // The default outline follows the region's colour: its `PlotStyle`
+    // colour when it names one, else the palette's.
+    let color = style
+      .as_ref()
+      .and_then(style_color)
+      .unwrap_or_else(|| rgb_color(palette[k % palette.len()]));
+    let mut face = vec![color.clone(), call1("Opacity", Expr::Real(0.3))];
+    face.extend(style);
+    let edge = match &boundary_style {
+      Some(Expr::Identifier(s)) if s == "None" => call0("EdgeForm"),
+      Some(style) => call1("EdgeForm", style.clone()),
+      None => call1(
+        "EdgeForm",
+        Expr::List(
+          vec![color, call1("AbsoluteThickness", Expr::Real(1.6))].into(),
+        ),
+      ),
+    };
+    let mut group = vec![edge, call("Directive", face)];
+    group.extend(polygons);
+    items.push(Expr::List(group.into()));
   }
 
-  push_frame_labels(&mut svg, &area, &frame_labels);
-  svg.push_str("</svg>");
+  // Wolfram's RegionPlot defaults, for the options the caller left unset.
+  let rule = |name: &str, value: Expr| Expr::Rule {
+    pattern: Box::new(id_expr(name)),
+    replacement: Box::new(value),
+  };
+  let range =
+    |lo: f64, hi: f64| Expr::List(vec![Expr::Real(lo), Expr::Real(hi)].into());
+  let scaled_pad = || {
+    let side = call1("Scaled", Expr::Real(0.02));
+    Expr::List(vec![side.clone(), side].into())
+  };
+  let defaults = vec![
+    rule("AspectRatio", Expr::Integer(1)),
+    rule("Frame", bool_expr(true)),
+    rule(
+      "PlotRange",
+      Expr::List(vec![range(x_min, x_max), range(y_min, y_max)].into()),
+    ),
+    rule(
+      "PlotRangePadding",
+      Expr::List(vec![scaled_pad(), scaled_pad()].into()),
+    ),
+  ];
+  let given: Vec<&str> = opts
+    .iter()
+    .filter_map(|opt| {
+      crate::functions::graphics::option_name_value(opt).map(|(name, _)| name)
+    })
+    .collect();
+  let mut graphics_args = vec![Expr::List(items.into())];
+  graphics_args.extend(
+    opts
+      .iter()
+      .filter(|opt| {
+        !crate::functions::graphics::option_name_value(opt)
+          .is_some_and(|(name, _)| REGION_PLOT_ONLY_OPTIONS.contains(&name))
+      })
+      .cloned(),
+  );
+  graphics_args.extend(defaults.into_iter().filter(|opt| {
+    crate::functions::graphics::option_name_value(opt)
+      .is_some_and(|(name, _)| !given.contains(&name))
+  }));
+  let mut result = crate::functions::graphics::graphics_ast(&graphics_args)?;
+  // Keep the primitives on the rendering so `RegionPlot[…][[1]]` reaches
+  // the region's geometry and `Show` can merge it with other layers.
+  if let Expr::Graphics { structure, .. } = &mut result {
+    *structure = Some(Box::new(call("Graphics", graphics_args)));
+  }
+  Ok(result)
+}
 
-  // Symbolic form so `RegionPlot[…][[1]]` (or `First[…]`) can reach the
-  // region's primitives, the way Wolfram's does — a Demonstration composing
-  // a custom `Graphics[{RegionPlot[…][[1]], …}]` needs the actual boundary
-  // curve, not an unevaluated `Part`. Trace the region's edge with the same
-  // marching-squares machinery ContourPlot uses (on the boolean grid's
-  // 0/1 values, at level 0.5) so a simply-connected region — one whose fill
-  // does not reach the sampled frame, the common case for a Demonstration's
-  // "blob around the origin" — comes back as one filled `Polygon` per loop.
-  // A region whose true fill lies *outside* every traced loop (the
-  // complement of a disk, filling everywhere but a hole) can't be
-  // represented that way without the frame itself as an outer contour, so
-  // such cases fall back to the plain rendering with no symbolic backing,
-  // same as before this primitive-extraction support existed.
-  match region_plot_boundary_structure(
-    body, &xvar, &yvar, x_min, x_max, y_min, y_max, args,
-  ) {
-    Some(region_structure) => {
-      Ok(crate::graphics_result_with_structure(svg, region_structure))
+/// The colour a `PlotStyle` entry names — the entry itself, or the last
+/// colour inside a `Directive[…]`/list of directives — as `RGBColor[…]`.
+fn style_color(style: &Expr) -> Option<Expr> {
+  match style {
+    Expr::List(items) => items.iter().rev().find_map(style_color),
+    Expr::FunctionCall { name, args } if name == "Directive" => {
+      args.iter().rev().find_map(style_color)
     }
-    None => Ok(crate::graphics_result(svg)),
+    other => {
+      let c = parse_color(other)?;
+      Some(call(
+        "RGBColor",
+        vec![Expr::Real(c.r), Expr::Real(c.g), Expr::Real(c.b)],
+      ))
+    }
   }
 }
 
-/// Builds the symbolic primitive list behind a `RegionPlot`'s `Graphics`,
-/// so `Part`/`First` on the result reaches real geometry (see
-/// `region_plot_ast`). Traces the region boundary with marching squares
-/// over a boolean vertex grid, filling closed loops as `Polygon`s and
-/// (when `BoundaryStyle` is given) redrawing every loop as a styled `Line`
-/// on top.
-#[allow(clippy::too_many_arguments)]
-fn region_plot_boundary_structure(
-  body: &Expr,
+/// Traces the boundary of the region where `pred` holds as closed loops in
+/// data coordinates.
+///
+/// The predicate is sampled on an `(n + 1) × (n + 1)` grid padded with a
+/// ring of "outside" samples that sit on the frame itself, so a region that
+/// reaches the edge of the plot range is closed off along the frame instead
+/// of leaving an open contour. Marching squares then finds the cell edges
+/// the boundary crosses, and each crossing is bisected on the predicate
+/// itself, so straight boundaries (linear inequalities) come out straight
+/// rather than as a staircase of grid steps.
+fn region_plot_loops(
+  pred: &Expr,
   xvar: &str,
   yvar: &str,
-  x_min: f64,
-  x_max: f64,
-  y_min: f64,
-  y_max: f64,
-  args: &[Expr],
-) -> Option<Expr> {
-  let n = FIELD_GRID + 1;
-  let mut grid = vec![vec![0.0f64; n]; n];
-  for (i, col) in grid.iter_mut().enumerate() {
-    let x = x_min + i as f64 / FIELD_GRID as f64 * (x_max - x_min);
-    for (j, cell) in col.iter_mut().enumerate() {
-      let y = y_min + j as f64 / FIELD_GRID as f64 * (y_max - y_min);
-      *cell = if evaluate_condition(body, xvar, yvar, x, y) {
-        1.0
-      } else {
-        0.0
+  (x_min, x_max): (f64, f64),
+  (y_min, y_max): (f64, f64),
+  n: usize,
+) -> Vec<Vec<(f64, f64)>> {
+  use std::collections::HashMap;
+  // The interior sample lines are nudged off the round values by a small,
+  // different fraction of a cell per axis: a boundary through "nice" points
+  // (`y > x/2 + 1` passes exactly through many grid nodes of a round range)
+  // would otherwise put samples right on it, where the strict inequality is
+  // false, pinching the region apart at each of them. The frame lines stay
+  // exact so the region still closes along the plot range.
+  let axis = |lo: f64, hi: f64, nudge: f64| -> Vec<f64> {
+    (0..=n)
+      .map(|i| {
+        let t = if i == 0 || i == n {
+          i as f64
+        } else {
+          i as f64 + nudge
+        };
+        lo + t / n as f64 * (hi - lo)
+      })
+      .collect()
+  };
+  let xs = axis(x_min, x_max, 0.0137);
+  let ys = axis(y_min, y_max, 0.0291);
+  let inside: Vec<Vec<bool>> = xs
+    .iter()
+    .map(|&x| {
+      ys.iter()
+        .map(|&y| evaluate_condition(pred, xvar, yvar, x, y))
+        .collect()
+    })
+    .collect();
+  if !inside.iter().flatten().any(|&b| b) {
+    return Vec::new();
+  }
+
+  // Padded index `p` in `0..=n + 2` maps to grid index `p - 1`, clamped so
+  // the pad ring shares the frame's coordinates; only real samples can be
+  // inside.
+  let m = n + 2;
+  let grid_idx = |p: usize| p.saturating_sub(1).min(n);
+  let is_in = |p: usize, q: usize| {
+    (1..=n + 1).contains(&p) && (1..=n + 1).contains(&q) && inside[p - 1][q - 1]
+  };
+  let coord =
+    |p: usize, q: usize| -> (f64, f64) { (xs[grid_idx(p)], ys[grid_idx(q)]) };
+
+  let precision = (x_max - x_min)
+    .abs()
+    .max((y_max - y_min).abs())
+    .max(f64::MIN_POSITIVE)
+    * 1e-14;
+  // The boundary point on the edge from padded vertex `a` to `b` (one
+  // inside, one outside), shared by the two cells that edge borders.
+  let mut crossings: HashMap<((usize, usize), (usize, usize)), (f64, f64)> =
+    HashMap::new();
+  let mut crossing = |a: (usize, usize), b: (usize, usize)| -> (f64, f64) {
+    let key = if a <= b { (a, b) } else { (b, a) };
+    if let Some(&pt) = crossings.get(&key) {
+      return pt;
+    }
+    let (mut lo, mut hi) = if is_in(a.0, a.1) {
+      (coord(a.0, a.1), coord(b.0, b.1))
+    } else {
+      (coord(b.0, b.1), coord(a.0, a.1))
+    };
+    // A pad edge has both ends on the frame: the boundary runs along it.
+    if lo != hi {
+      for _ in 0..60 {
+        if (lo.0 - hi.0).abs().max((lo.1 - hi.1).abs()) <= precision {
+          break;
+        }
+        let mid = (f64::midpoint(lo.0, hi.0), f64::midpoint(lo.1, hi.1));
+        if evaluate_condition(pred, xvar, yvar, mid.0, mid.1) {
+          lo = mid;
+        } else {
+          hi = mid;
+        }
+      }
+    }
+    // A boundary on an axis comes out as a tiny residue of the bisection;
+    // snap it to the exact zero it stands for.
+    let chop = |v: f64| if v.abs() <= precision { 0.0 } else { v };
+    let pt = (
+      chop(f64::midpoint(lo.0, hi.0)),
+      chop(f64::midpoint(lo.1, hi.1)),
+    );
+    crossings.insert(key, pt);
+    pt
+  };
+
+  let mut segments: Vec<((f64, f64), (f64, f64))> = Vec::new();
+  for p in 0..m {
+    for q in 0..m {
+      let (bl, br, tl, tr) = ((p, q), (p + 1, q), (p, q + 1), (p + 1, q + 1));
+      let case = is_in(bl.0, bl.1) as u8
+        | ((is_in(br.0, br.1) as u8) << 1)
+        | ((is_in(tl.0, tl.1) as u8) << 2)
+        | ((is_in(tr.0, tr.1) as u8) << 3);
+      if case == 0 || case == 15 {
+        continue;
+      }
+      let mut seg = |e1: ((usize, usize), (usize, usize)),
+                     e2: ((usize, usize), (usize, usize))| {
+        let a = crossing(e1.0, e1.1);
+        let b = crossing(e2.0, e2.1);
+        segments.push((a, b));
       };
+      let bottom = (bl, br);
+      let top = (tl, tr);
+      let left = (bl, tl);
+      let right = (br, tr);
+      match case {
+        1 | 14 => seg(bottom, left),
+        2 | 13 => seg(bottom, right),
+        3 | 12 => seg(left, right),
+        4 | 11 => seg(left, top),
+        5 | 10 => seg(bottom, top),
+        7 | 8 => seg(right, top),
+        // Saddles: keep the two inside corners apart.
+        6 => {
+          seg(bottom, right);
+          seg(left, top);
+        }
+        9 => {
+          seg(bottom, left);
+          seg(right, top);
+        }
+        _ => {}
+      }
     }
   }
-  let step_x = (x_max - x_min) / FIELD_GRID as f64;
-  let step_y = (y_max - y_min) / FIELD_GRID as f64;
+
   let span = (x_max - x_min).abs().max((y_max - y_min).abs());
-  let key_scale = if span > 0.0 { 4096.0 / span } else { 16.0 };
-  let tol = if span > 0.0 { span * 1e-6 } else { 1e-9 };
-  let segments =
-    marching_squares_segments(&grid, 0.5, x_min, y_max, step_x, -step_y);
-  let chains = chain_segments_scaled(&segments, key_scale);
+  let key_scale = if span > 0.0 { 1e9 / span } else { 1e9 };
+  chain_segments_scaled(&segments, key_scale)
+    .into_iter()
+    .filter_map(|mut chain| {
+      // Every loop closes (the pad ring guarantees it); drop the repeated
+      // closing point and the collinear points of straight runs.
+      if chain.len() > 1 && chain.first() == chain.last() {
+        chain.pop();
+      }
+      let simplified = drop_collinear_points(&chain, span * 1e-9);
+      let cell = span / n as f64;
+      let sharpened = sharpen_corners(&simplified, cell);
+      (sharpened.len() >= 3).then_some(sharpened)
+    })
+    .collect()
+}
 
-  let boundary_style = args.iter().skip(3).find_map(|opt| {
-    if let Expr::Rule {
-      pattern,
-      replacement,
-    } = opt
-      && matches!(pattern.as_ref(), Expr::Identifier(name) if name == "BoundaryStyle")
-      && !matches!(replacement.as_ref(), Expr::Identifier(name) if name == "None")
-    {
-      Some(replacement.as_ref().clone())
-    } else {
-      None
+/// Restores the sharp corners marching squares cuts off. Where two straight
+/// boundary pieces meet (`y > x/2 + 1 && y < 3x/2 - 1` at `{2, 2}`), the
+/// corner falls inside a grid cell and the traced loop bevels it with one
+/// to a few short edges. Such a short run between two long straight edges
+/// is replaced by the point where those edges' lines meet, provided it lies
+/// near the run. A curved boundary consists of short edges only, so it is
+/// left alone.
+fn sharpen_corners(ring: &[(f64, f64)], cell: f64) -> Vec<(f64, f64)> {
+  let len = ring.len();
+  if len < 5 || cell <= 0.0 {
+    return ring.to_vec();
+  }
+  let dist = |a: (f64, f64), b: (f64, f64)| (a.0 - b.0).hypot(a.1 - b.1);
+  // Edge `i` runs from `ring[i]` to `ring[i + 1]`.
+  let edge_len = |i: usize| dist(ring[i % len], ring[(i + 1) % len]);
+  let long = |i: usize| edge_len(i) > 3.0 * cell;
+  let short = |i: usize| edge_len(i) < 2.0 * cell;
+  let mut drop = vec![false; len];
+  let mut replace: Vec<Option<(f64, f64)>> = vec![None; len];
+  for start in 0..len {
+    // `start` is the long edge before a run of 1–3 short edges.
+    if !long(start) {
+      continue;
     }
-  });
+    let mut run = 0;
+    while run < 3 && short(start + 1 + run) {
+      run += 1;
+    }
+    let after = start + 1 + run;
+    if run == 0 || !long(after) {
+      continue;
+    }
+    let (a, b) = (ring[start % len], ring[(start + 1) % len]);
+    let (c, d) = (ring[after % len], ring[(after + 1) % len]);
+    let (r, q) = ((b.0 - a.0, b.1 - a.1), (d.0 - c.0, d.1 - c.1));
+    let denom = r.0 * q.1 - r.1 * q.0;
+    if denom.abs() < 1e-12 * dist(a, b) * dist(c, d) {
+      continue;
+    }
+    let t = ((c.0 - a.0) * q.1 - (c.1 - a.1) * q.0) / denom;
+    let corner = (a.0 + t * r.0, a.1 + t * r.1);
+    if dist(corner, b) > 2.0 * cell || dist(corner, c) > 2.0 * cell {
+      continue;
+    }
+    replace[(start + 1) % len] = Some(corner);
+    for k in 2..=run {
+      drop[(start + k) % len] = true;
+    }
+    drop[after % len] = true;
+  }
+  (0..len)
+    .filter(|&i| !drop[i] || replace[i].is_some())
+    .map(|i| replace[i].unwrap_or(ring[i]))
+    .collect()
+}
 
-  let chain_points = |chain: &[(f64, f64)]| -> Expr {
+/// Removes the points of a closed loop that lie on the straight line
+/// between their neighbours, so a straight boundary is a single edge.
+fn drop_collinear_points(ring: &[(f64, f64)], tol: f64) -> Vec<(f64, f64)> {
+  let mut pts = ring.to_vec();
+  loop {
+    let len = pts.len();
+    if len < 4 {
+      return pts;
+    }
+    let keep: Vec<bool> = (0..len)
+      .map(|i| {
+        let (a, b, c) = (pts[(i + len - 1) % len], pts[i], pts[(i + 1) % len]);
+        let cross = (b.0 - a.0) * (c.1 - a.1) - (b.1 - a.1) * (c.0 - a.0);
+        let base = ((c.0 - a.0).powi(2) + (c.1 - a.1).powi(2)).sqrt();
+        // Distance of `b` from the line `a`–`c`, and `b` between them.
+        let dot = (b.0 - a.0) * (c.0 - a.0) + (b.1 - a.1) * (c.1 - a.1);
+        !(base > 0.0
+          && cross.abs() / base <= tol
+          && dot >= 0.0
+          && dot <= base * base)
+      })
+      .collect();
+    if keep.iter().all(|&k| k) {
+      return pts;
+    }
+    // Drop every other removable point per pass so two neighbouring
+    // removals never both rely on each other.
+    let mut removed_prev = false;
+    let mut next = Vec::with_capacity(len);
+    for (i, &pt) in pts.iter().enumerate() {
+      if !keep[i] && !removed_prev {
+        removed_prev = true;
+      } else {
+        next.push(pt);
+        removed_prev = false;
+      }
+    }
+    pts = next;
+  }
+}
+
+/// Turns a region's boundary loops into `Polygon`s: a loop nested inside an
+/// odd number of others is a hole of the innermost loop around it, and comes
+/// out as `Polygon[outer -> {holes…}]`.
+fn region_plot_polygons(loops: &[Vec<(f64, f64)>]) -> Vec<Expr> {
+  fn contains(ring: &[(f64, f64)], (px, py): (f64, f64)) -> bool {
+    let mut inside = false;
+    let len = ring.len();
+    for i in 0..len {
+      let (x1, y1) = ring[i];
+      let (x2, y2) = ring[(i + 1) % len];
+      if (y1 > py) != (y2 > py) && px < x1 + (py - y1) / (y2 - y1) * (x2 - x1) {
+        inside = !inside;
+      }
+    }
+    inside
+  }
+  // A probe strictly inside the loop's own edge band: the midpoint of its
+  // first edge never lies on another loop, unlike a shared frame vertex.
+  let probe = |ring: &[(f64, f64)]| {
+    let (a, b) = (ring[0], ring[1]);
+    (f64::midpoint(a.0, b.0), f64::midpoint(a.1, b.1))
+  };
+  let parents: Vec<Vec<usize>> = loops
+    .iter()
+    .enumerate()
+    .map(|(i, ring)| {
+      let pt = probe(ring);
+      (0..loops.len())
+        .filter(|&j| j != i && contains(&loops[j], pt))
+        .collect()
+    })
+    .collect();
+  let pt_list = |ring: &[(f64, f64)]| {
     Expr::List(
-      chain
+      ring
         .iter()
         .map(|&(x, y)| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()))
         .collect(),
     )
   };
-
-  // A traced loop's interior is the filled region only for a
-  // simply-connected shape that doesn't reach the sampled frame (a
-  // Demonstration's "blob around the origin", say): filling it directly as
-  // one `Polygon` matches Wolfram's picture exactly. But a region whose
-  // true fill lies *outside* every loop instead — the complement of a
-  // disk, filling everywhere in the frame but a hole — has no loop of its
-  // own to trace there (the frame itself would have to be an outer
-  // contour, which marching squares over the sampled grid never
-  // produces), so filling the traced loop's interior would fill exactly
-  // the wrong side. Detect that case by sampling each closed loop's
-  // centroid against the same condition the grid was built from, and bail
-  // out of symbolic backing entirely when it fails — no `Polygon`, this
-  // function's caller renders the plain SVG with no `structure`, same as
-  // before this primitive-extraction support existed.
-  if chains.is_empty() {
-    return None;
-  }
-  let mut structure_items: Vec<Expr> = vec![rgb_color((0x5E, 0x81, 0xB5))];
-  for chain in &chains {
-    let closed = chain.len() > 2 && {
-      let (x0, y0) = chain[0];
-      let (x1, y1) = chain[chain.len() - 1];
-      (x0 - x1).abs() < tol && (y0 - y1).abs() < tol
-    };
-    let pts = if closed {
-      &chain[..chain.len() - 1]
+  let mut polygons = Vec::new();
+  for (i, ring) in loops.iter().enumerate() {
+    if parents[i].len() % 2 == 1 {
+      continue;
+    }
+    let holes: Vec<Expr> = (0..loops.len())
+      .filter(|&h| {
+        parents[h].len() == parents[i].len() + 1 && parents[h].contains(&i)
+      })
+      .map(|h| pt_list(&loops[h]))
+      .collect();
+    polygons.push(if holes.is_empty() {
+      call1("Polygon", pt_list(ring))
     } else {
-      &chain[..]
-    };
-    if closed {
-      let n = pts.len() as f64;
-      let (cx, cy) = pts
-        .iter()
-        .fold((0.0, 0.0), |(sx, sy), &(x, y)| (sx + x, sy + y));
-      if !evaluate_condition(body, xvar, yvar, cx / n, cy / n) {
-        return None;
-      }
-    }
-    structure_items.push(call1(
-      if closed { "Polygon" } else { "Line" },
-      chain_points(pts),
-    ));
+      call1(
+        "Polygon",
+        Expr::Rule {
+          pattern: Box::new(pt_list(ring)),
+          replacement: Box::new(Expr::List(holes.into())),
+        },
+      )
+    });
   }
-  if let Some(style) = boundary_style {
-    structure_items.push(style);
-    for chain in &chains {
-      structure_items.push(call1("Line", chain_points(chain)));
-    }
-  }
-  Some(call("Graphics", vec![Expr::List(structure_items.into())]))
+  polygons
 }
 
 /// Draws arrows for a set of `(x, y, vx, vy, magnitude)` vectors onto `svg`,

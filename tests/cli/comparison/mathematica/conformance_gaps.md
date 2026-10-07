@@ -3380,12 +3380,12 @@ with per-triangle clip paths and an affine matrix — a renderer feature, and on
 that cannot be checked against wolframscript by diffing SVG (it rasterises 3D
 output).
 
-### `Complex*` plot functions are unimplemented
+### Some `Complex*` plot functions are unimplemented
 
-`ComplexPlot`, `ComplexPlot3D`, `ComplexListPlot`, `ComplexArrayPlot`,
-`ComplexContourPlot`, `ComplexRegionPlot`, `ComplexVectorPlot` and
-`ComplexStreamPlot` are registered as graphics-producing heads (so `Head[…]`
-behaves) but have no implementation; wolframscript renders all of them.
+`ComplexArrayPlot`, `ComplexContourPlot`, `ComplexVectorPlot` and
+`ComplexStreamPlot` have no implementation; wolframscript renders all of them.
+(`ComplexPlot`, `ComplexPlot3D`, `ComplexListPlot` and `ComplexRegionPlot`
+are implemented.)
 
 ### `GeoGraphics` view and output form
 
