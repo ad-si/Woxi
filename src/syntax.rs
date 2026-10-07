@@ -13100,7 +13100,14 @@ fn string_to_expr_unresolved(s: &str) -> Result<Expr, crate::InterpreterError> {
       return Ok(Expr::BigInteger(n));
     }
   }
-  if let Ok(f) = trimmed.parse::<f64>() {
+  // Rust's `f64::from_str` also accepts the words `inf`, `infinity` and
+  // `nan` (case-insensitively), which would turn a stored `Infinity` (or a
+  // symbol named `inf` / `nan`) into a machine-real; require a numeric start.
+  if trimmed
+    .trim_start_matches(['+', '-'])
+    .starts_with(|c: char| c.is_ascii_digit() || c == '.')
+    && let Ok(f) = trimmed.parse::<f64>()
+  {
     return Ok(Expr::Real(f));
   }
 

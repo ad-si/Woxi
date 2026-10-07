@@ -19936,3 +19936,40 @@ mod parametric_ndsolve {
     );
   }
 }
+
+mod infinity_stored_in_variable {
+  use super::*;
+
+  #[test]
+  fn assigned_infinity_keeps_its_head() {
+    assert_eq!(
+      interpret("x = Infinity; Head[x]").unwrap(),
+      "DirectedInfinity"
+    );
+    assert_eq!(interpret("x = -Infinity; x").unwrap(), "-Infinity");
+  }
+
+  #[test]
+  fn symbols_named_like_float_words_stay_symbols() {
+    assert_eq!(
+      interpret("inf = 3; {inf, Head[nan]}").unwrap(),
+      "{3, Symbol}"
+    );
+  }
+
+  #[test]
+  fn improper_integral_with_limit_held_in_variable_is_exact() {
+    assert_eq!(
+      interpret("b = Infinity; Integrate[1/x^2, {x, 1, b}]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret(
+        "Module[{par = {1, Infinity}, a, b}, a = par[[1]]; b = par[[2]]; \
+         Integrate[x^(-3), {x, a, b}]]"
+      )
+      .unwrap(),
+      "1/2"
+    );
+  }
+}
