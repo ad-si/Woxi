@@ -379,13 +379,7 @@ fn try_nsolve_quadratic(
   let disc = b * b - 4.0 * a * c;
 
   let make_rule = |val: Expr| -> Expr {
-    Expr::List(
-      vec![Expr::Rule {
-        pattern: Box::new(Expr::Identifier(var.clone())),
-        replacement: Box::new(val),
-      }]
-      .into(),
-    )
+    Expr::List(vec![rule_expr(Expr::Identifier(var.clone()), val)].into())
   };
 
   if disc >= 0.0 {
@@ -495,13 +489,7 @@ fn try_nsolve_pure_power(
       } else {
         crate::functions::math_ast::build_complex_float_expr_keep_real(re, im)
       };
-      Expr::List(
-        vec![Expr::Rule {
-          pattern: Box::new(Expr::Identifier(var.clone())),
-          replacement: Box::new(value),
-        }]
-        .into(),
-      )
+      Expr::List(vec![rule_expr(Expr::Identifier(var.clone()), value)].into())
     })
     .collect::<Vec<_>>();
   Some(Ok(Expr::List(rules.into())))
@@ -626,10 +614,7 @@ fn nsolve_numerize(expr: &Expr) -> Result<Expr, InterpreterError> {
     Expr::Rule {
       pattern,
       replacement,
-    } => Ok(Expr::Rule {
-      pattern: pattern.clone(),
-      replacement: Box::new(nsolve_numerize(replacement)?),
-    }),
+    } => Ok(rule_expr(*pattern.clone(), nsolve_numerize(replacement)?)),
     _ => {
       // Try pure real first
       if let Some(v) = try_eval_to_f64(expr) {
@@ -963,10 +948,7 @@ pub fn to_rules_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       && operators[0] == ComparisonOp::Equal
       && operands.len() == 2
     {
-      return Some(Expr::Rule {
-        pattern: Box::new(operands[0].clone()),
-        replacement: Box::new(operands[1].clone()),
-      });
+      return Some(rule_expr(operands[0].clone(), operands[1].clone()));
     }
     None
   }
@@ -1790,10 +1772,7 @@ fn solve_modular(
     args: vec![
       positional[0].clone(),
       positional[1].clone(),
-      Expr::Rule {
-        pattern: Box::new(id_expr("Modulus")),
-        replacement: Box::new(Expr::Integer(n)),
-      },
+      rule_expr(id_expr("Modulus"), Expr::Integer(n)),
     ]
     .into(),
   })?;
@@ -1828,9 +1807,8 @@ fn solve_modular(
             .iter()
             .filter_map(|v| {
               assignment.iter().find(|(name, _)| name == v).map(
-                |(name, value)| Expr::Rule {
-                  pattern: Box::new(Expr::Identifier(name.clone())),
-                  replacement: Box::new(value.clone()),
+                |(name, value)| {
+                  rule_expr(Expr::Identifier(name.clone()), value.clone())
                 },
               )
             })
@@ -2398,11 +2376,11 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 variables
                   .iter()
                   .zip(values)
-                  .map(|(variable, value)| Expr::Rule {
-                    pattern: Box::new(Expr::Identifier(variable.clone())),
-                    replacement: Box::new(super::reduce_backend::integer_expr(
-                      value,
-                    )),
+                  .map(|(variable, value)| {
+                    rule_expr(
+                      Expr::Identifier(variable.clone()),
+                      super::reduce_backend::integer_expr(value),
+                    )
                   })
                   .collect(),
               )
@@ -2872,26 +2850,14 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let rhs_str = expr_to_string(&rhs);
         if lhs_str == target_str {
           return Ok(Expr::List(
-            vec![Expr::List(
-              vec![Expr::Rule {
-                pattern: Box::new(target_expr.clone()),
-                replacement: Box::new(rhs),
-              }]
+            vec![Expr::List(vec![rule_expr(target_expr.clone(), rhs)].into())]
               .into(),
-            )]
-            .into(),
           ));
         }
         if rhs_str == target_str {
           return Ok(Expr::List(
-            vec![Expr::List(
-              vec![Expr::Rule {
-                pattern: Box::new(target_expr.clone()),
-                replacement: Box::new(lhs),
-              }]
+            vec![Expr::List(vec![rule_expr(target_expr.clone(), lhs)].into())]
               .into(),
-            )]
-            .into(),
           ));
         }
       }
@@ -3049,11 +3015,7 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
       solution
     };
     Expr::List(
-      vec![Expr::Rule {
-        pattern: Box::new(Expr::Identifier(var.to_string())),
-        replacement: Box::new(solution),
-      }]
-      .into(),
+      vec![rule_expr(Expr::Identifier(var.to_string()), solution)].into(),
     )
   };
 
@@ -3548,13 +3510,8 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
               let evaluated =
                 crate::evaluator::evaluate_expr_to_expr(replacement)
                   .unwrap_or_else(|_| (**replacement).clone());
-              *root = Expr::List(
-                vec![Expr::Rule {
-                  pattern: pattern.clone(),
-                  replacement: Box::new(evaluated),
-                }]
-                .into(),
-              );
+              *root =
+                Expr::List(vec![rule_expr(*pattern.clone(), evaluated)].into());
             }
           }
           let root_value = |e: &Expr| -> Expr {
@@ -3741,10 +3698,7 @@ fn try_solve_polynomial_system(eqs: &[Expr], vars: &[String]) -> Option<Expr> {
         vars
           .iter()
           .zip(values)
-          .map(|(v, value)| Expr::Rule {
-            pattern: Box::new(Expr::Identifier(v.clone())),
-            replacement: Box::new(value),
-          })
+          .map(|(v, value)| rule_expr(Expr::Identifier(v.clone()), value))
           .collect(),
       )
     })
@@ -4352,11 +4306,7 @@ fn numeric_polynomial_solutions(coeffs: &[Expr], var: &str) -> Option<Expr> {
         crate::functions::math_ast::build_complex_float_expr_keep_real(re, im)
       };
       Expr::List(
-        vec![Expr::Rule {
-          pattern: Box::new(Expr::Identifier(var.to_string())),
-          replacement: Box::new(value),
-        }]
-        .into(),
+        vec![rule_expr(Expr::Identifier(var.to_string()), value)].into(),
       )
     })
     .collect();
@@ -4427,11 +4377,7 @@ fn make_root_solutions(coeffs: &[Expr], var: &str) -> Option<Expr> {
       vec![func.clone(), Expr::Integer(k as i128), Expr::Integer(0)],
     );
     solutions.push(Expr::List(
-      vec![Expr::Rule {
-        pattern: Box::new(Expr::Identifier(var.to_string())),
-        replacement: Box::new(root),
-      }]
-      .into(),
+      vec![rule_expr(Expr::Identifier(var.to_string()), root)].into(),
     ));
   }
   Some(Expr::List(solutions.into()))
@@ -4904,13 +4850,7 @@ fn try_solve_trig_eq(eq: &Expr, var: &str) -> Option<Expr> {
       bodies
         .into_iter()
         .map(|body| {
-          Expr::List(
-            vec![Expr::Rule {
-              pattern: Box::new(var_expr.clone()),
-              replacement: Box::new(cond(body)),
-            }]
-            .into(),
-          )
+          Expr::List(vec![rule_expr(var_expr.clone(), cond(body))].into())
         })
         .collect(),
     )
@@ -5227,10 +5167,10 @@ fn try_solve_inverse_function(
         if matches!(&exp, Expr::Identifier(n) if n == var) {
           return Some(Ok(Expr::List(
             vec![Expr::List(
-              vec![Expr::Rule {
-                pattern: Box::new(Expr::Identifier(var.to_string())),
-                replacement: Box::new(conditional(family(periodic))),
-              }]
+              vec![rule_expr(
+                Expr::Identifier(var.to_string()),
+                conditional(family(periodic)),
+              )]
               .into(),
             )]
             .into(),
@@ -5282,10 +5222,10 @@ fn try_solve_inverse_function(
             .ok()?;
             return Some(Ok(Expr::List(
               vec![Expr::List(
-                vec![Expr::Rule {
-                  pattern: Box::new(Expr::Identifier(var.to_string())),
-                  replacement: Box::new(conditional(value)),
-                }]
+                vec![rule_expr(
+                  Expr::Identifier(var.to_string()),
+                  conditional(value),
+                )]
                 .into(),
               )]
               .into(),
@@ -5618,15 +5558,7 @@ fn try_nsolve_numeric_search(args: &[Expr]) -> Option<Expr> {
   Some(Expr::List(
     roots
       .into_iter()
-      .map(|r| {
-        Expr::List(
-          vec![Expr::Rule {
-            pattern: Box::new(var.clone()),
-            replacement: Box::new(Expr::Real(r)),
-          }]
-          .into(),
-        )
-      })
+      .map(|r| Expr::List(vec![rule_expr(var.clone(), Expr::Real(r))].into()))
       .collect(),
   ))
 }
@@ -6789,11 +6721,7 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
     let result_val = Expr::Real(x_curr);
     return Ok(Expr::List(
-      vec![Expr::Rule {
-        pattern: Box::new(Expr::Identifier(var)),
-        replacement: Box::new(result_val),
-      }]
-      .into(),
+      vec![rule_expr(Expr::Identifier(var), result_val)].into(),
     ));
   }
 
@@ -6908,13 +6836,7 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let lhs_ident = Expr::Identifier(var);
   let lhs =
     crate::evaluator::evaluate_expr_to_expr(&lhs_ident).unwrap_or(lhs_ident);
-  Ok(Expr::List(
-    vec![Expr::Rule {
-      pattern: Box::new(lhs),
-      replacement: Box::new(result_val),
-    }]
-    .into(),
-  ))
+  Ok(Expr::List(vec![rule_expr(lhs, result_val)].into()))
 }
 
 /// Convert FindRoot's first argument into the function whose root we
@@ -7217,13 +7139,7 @@ fn find_root_complex_newton(
   let lhs_ident = Expr::Identifier(var.to_string());
   let lhs =
     crate::evaluator::evaluate_expr_to_expr(&lhs_ident).unwrap_or(lhs_ident);
-  Ok(Expr::List(
-    vec![Expr::Rule {
-      pattern: Box::new(lhs),
-      replacement: Box::new(value),
-    }]
-    .into(),
-  ))
+  Ok(Expr::List(vec![rule_expr(lhs, value)].into()))
 }
 
 /// A FindRoot residual that evaluates to a one-element list (e.g. the
@@ -7520,25 +7436,17 @@ fn find_root_rename_walk(
     Expr::Rule {
       pattern,
       replacement,
-    } => Expr::Rule {
-      pattern: Box::new(find_root_rename_walk(pattern, id_map, idx_map)),
-      replacement: Box::new(find_root_rename_walk(
-        replacement,
-        id_map,
-        idx_map,
-      )),
-    },
+    } => rule_expr(
+      find_root_rename_walk(pattern, id_map, idx_map),
+      find_root_rename_walk(replacement, id_map, idx_map),
+    ),
     Expr::RuleDelayed {
       pattern,
       replacement,
-    } => Expr::RuleDelayed {
-      pattern: Box::new(find_root_rename_walk(pattern, id_map, idx_map)),
-      replacement: Box::new(find_root_rename_walk(
-        replacement,
-        id_map,
-        idx_map,
-      )),
-    },
+    } => rule_expr(
+      find_root_rename_walk(pattern, id_map, idx_map),
+      find_root_rename_walk(replacement, id_map, idx_map),
+    ),
     other => other.clone(),
   }
 }
@@ -8053,10 +7961,7 @@ fn find_root_multivariate(
   let rules: Vec<Expr> = raw_vars
     .iter()
     .zip(&x)
-    .map(|(v, &xv)| Expr::Rule {
-      pattern: Box::new(v.clone()),
-      replacement: Box::new(Expr::Real(xv)),
-    })
+    .map(|(v, &xv)| rule_expr(v.clone(), Expr::Real(xv)))
     .collect();
   Ok(Expr::List(rules.into()))
 }
@@ -8256,10 +8161,7 @@ fn snap_relaxation_to_integers(
       Expr::List(
         point
           .into_iter()
-          .map(|(var, v)| Expr::Rule {
-            pattern: Box::new(Expr::Identifier(var)),
-            replacement: Box::new(v),
-          })
+          .map(|(var, v)| rule_expr(Expr::Identifier(var), v))
           .collect(),
       ),
     ]
@@ -8561,10 +8463,10 @@ pub(crate) fn substitute_expr(expr: &Expr, from: &Expr, to: &Expr) -> Expr {
     Expr::Rule {
       pattern,
       replacement,
-    } => Expr::Rule {
-      pattern: Box::new(substitute_expr(pattern, from, to)),
-      replacement: Box::new(substitute_expr(replacement, from, to)),
-    },
+    } => rule_expr(
+      substitute_expr(pattern, from, to),
+      substitute_expr(replacement, from, to),
+    ),
     _ => expr.clone(),
   }
 }
@@ -9071,10 +8973,7 @@ fn minimize_neg_infinity_result(
   };
   let rules: Vec<Expr> = vars
     .iter()
-    .map(|v| Expr::Rule {
-      pattern: Box::new(Expr::Identifier(v.clone())),
-      replacement: Box::new(x_val.clone()),
-    })
+    .map(|v| rule_expr(Expr::Identifier(v.clone()), x_val.clone()))
     .collect();
   Expr::List(vec![inf_val, Expr::List(rules.into())].into())
 }
@@ -9294,10 +9193,7 @@ fn minimize_single_var(
     min_val
   };
 
-  let rule = Expr::Rule {
-    pattern: Box::new(Expr::Identifier(var.to_string())),
-    replacement: Box::new(min_x),
-  };
+  let rule = rule_expr(Expr::Identifier(var.to_string()), min_x);
   Ok(Expr::List(
     vec![result_val, Expr::List(vec![rule].into())].into(),
   ))
@@ -9535,10 +9431,7 @@ fn minimize_multi_var(
       let rules: Vec<Expr> = vars
         .iter()
         .zip(vals.iter())
-        .map(|(v, val)| Expr::Rule {
-          pattern: Box::new(Expr::Identifier(v.clone())),
-          replacement: Box::new(val.clone()),
-        })
+        .map(|(v, val)| rule_expr(Expr::Identifier(v.clone()), val.clone()))
         .collect();
       return Ok(Expr::List(
         vec![result_val, Expr::List(rules.into())].into(),
@@ -9608,10 +9501,7 @@ fn minimize_multi_var(
   let rules: Vec<Expr> = vars
     .iter()
     .zip(x.iter())
-    .map(|(v, &val)| Expr::Rule {
-      pattern: Box::new(Expr::Identifier(v.clone())),
-      replacement: Box::new(Expr::Real(val)),
-    })
+    .map(|(v, &val)| rule_expr(Expr::Identifier(v.clone()), Expr::Real(val)))
     .collect();
   Ok(Expr::List(
     vec![result_val, Expr::List(rules.into())].into(),
@@ -10009,9 +9899,8 @@ fn minimize_try_ilp(
   let rules: Vec<Expr> = vars
     .iter()
     .zip(x.iter())
-    .map(|(v, &val)| Expr::Rule {
-      pattern: Box::new(Expr::Identifier(v.clone())),
-      replacement: Box::new(Expr::Integer(val as i128)),
+    .map(|(v, &val)| {
+      rule_expr(Expr::Identifier(v.clone()), Expr::Integer(val as i128))
     })
     .collect();
   Some(Expr::List(
@@ -10096,10 +9985,10 @@ fn minimize_diverges_to_neg_infinity(
 ) -> Result<bool, InterpreterError> {
   let limit = crate::functions::calculus_ast::limit_ast(&[
     f.clone(),
-    Expr::Rule {
-      pattern: Box::new(Expr::Identifier(var.to_string())),
-      replacement: Box::new(signed_infinity(toward_positive)),
-    },
+    rule_expr(
+      Expr::Identifier(var.to_string()),
+      signed_infinity(toward_positive),
+    ),
   ])?;
   // `-Infinity` reaches here in several shapes (Times[-1, Infinity],
   // DirectedInfinity[-1], a negated identifier); compare the rendered form.
@@ -10262,10 +10151,10 @@ fn minimize_constrained_1d(
       func_name,
       if maximize { "maximum" } else { "minimum" }
     ));
-    let rule = Expr::Rule {
-      pattern: Box::new(Expr::Identifier(var.to_string())),
-      replacement: Box::new(signed_infinity(toward_positive)),
-    };
+    let rule = rule_expr(
+      Expr::Identifier(var.to_string()),
+      signed_infinity(toward_positive),
+    );
     return Ok(Expr::List(
       vec![signed_infinity(maximize), Expr::List(vec![rule].into())].into(),
     ));
@@ -10328,10 +10217,10 @@ fn minimize_constrained_1d(
     }
     let limit = crate::functions::calculus_ast::limit_ast(&[
       f.clone(),
-      Expr::Rule {
-        pattern: Box::new(Expr::Identifier(var.to_string())),
-        replacement: Box::new(signed_infinity(toward_positive)),
-      },
+      rule_expr(
+        Expr::Identifier(var.to_string()),
+        signed_infinity(toward_positive),
+      ),
     ])?;
     let Some(lv) = minimize_try_f64(&limit) else {
       continue;
@@ -10339,10 +10228,10 @@ fn minimize_constrained_1d(
     if lv >= best_f {
       continue;
     }
-    let rule = Expr::Rule {
-      pattern: Box::new(Expr::Identifier(var.to_string())),
-      replacement: Box::new(signed_infinity(toward_positive)),
-    };
+    let rule = rule_expr(
+      Expr::Identifier(var.to_string()),
+      signed_infinity(toward_positive),
+    );
     let value = if maximize {
       simplify(negate_expr(&limit))
     } else {
@@ -10383,10 +10272,7 @@ fn minimize_constrained_1d(
     (rv, result_x_expr)
   };
 
-  let rule = Expr::Rule {
-    pattern: Box::new(Expr::Identifier(var.to_string())),
-    replacement: Box::new(result_x),
-  };
+  let rule = rule_expr(Expr::Identifier(var.to_string()), result_x);
   Ok(Expr::List(
     vec![result_val, Expr::List(vec![rule].into())].into(),
   ))
@@ -10705,10 +10591,7 @@ fn minimize_constrained_boundary(
     .zip(best.1.iter())
     .map(|(v, &val)| {
       let exact_val = minimize_recognize_exact(val);
-      Expr::Rule {
-        pattern: Box::new(Expr::Identifier(v.clone())),
-        replacement: Box::new(exact_val),
-      }
+      rule_expr(Expr::Identifier(v.clone()), exact_val)
     })
     .collect();
 
@@ -10891,14 +10774,14 @@ fn minimize_lp_2d(
               e,
               Expr::List(
                 vec![
-                  Expr::Rule {
-                    pattern: Box::new(Expr::Identifier(x_name.clone())),
-                    replacement: Box::new(make_exact(best_vertex.0)),
-                  },
-                  Expr::Rule {
-                    pattern: Box::new(Expr::Identifier(y_name.clone())),
-                    replacement: Box::new(make_exact(best_vertex.1)),
-                  },
+                  rule_expr(
+                    Expr::Identifier(x_name.clone()),
+                    make_exact(best_vertex.0),
+                  ),
+                  rule_expr(
+                    Expr::Identifier(y_name.clone()),
+                    make_exact(best_vertex.1),
+                  ),
                 ]
                 .into(),
               ),
@@ -10916,14 +10799,14 @@ fn minimize_lp_2d(
       result_val,
       Expr::List(
         vec![
-          Expr::Rule {
-            pattern: Box::new(Expr::Identifier(x_name.clone())),
-            replacement: Box::new(make_exact(best_vertex.0)),
-          },
-          Expr::Rule {
-            pattern: Box::new(Expr::Identifier(y_name.clone())),
-            replacement: Box::new(make_exact(best_vertex.1)),
-          },
+          rule_expr(
+            Expr::Identifier(x_name.clone()),
+            make_exact(best_vertex.0),
+          ),
+          rule_expr(
+            Expr::Identifier(y_name.clone()),
+            make_exact(best_vertex.1),
+          ),
         ]
         .into(),
       ),
@@ -11576,9 +11459,8 @@ pub fn find_minimum_ast(
   let rules: Vec<Expr> = vars
     .iter()
     .zip(x.iter())
-    .map(|(var, val)| Expr::Rule {
-      pattern: Box::new(Expr::Identifier(var.clone())),
-      replacement: Box::new(Expr::Real(*val)),
+    .map(|(var, val)| {
+      rule_expr(Expr::Identifier(var.clone()), Expr::Real(*val))
     })
     .collect();
 
@@ -11645,14 +11527,7 @@ fn specialize_periodic_solution(
   let subst_param = |value: Expr| -> Option<Expr> {
     eval(Expr::FunctionCall {
       name: "ReplaceAll".to_string(),
-      args: vec![
-        body.clone(),
-        Expr::Rule {
-          pattern: Box::new(param.clone()),
-          replacement: Box::new(value),
-        },
-      ]
-      .into(),
+      args: vec![body.clone(), rule_expr(param.clone(), value)].into(),
     })
   };
   // Linear coefficients: a = body | C=0, b = Coefficient[body, C, 1].
@@ -11707,11 +11582,7 @@ fn specialize_periodic_solution(
     });
     if ok {
       result.push(Expr::List(
-        vec![Expr::Rule {
-          pattern: Box::new(Expr::Identifier(var_name.to_string())),
-          replacement: Box::new(value),
-        }]
-        .into(),
+        vec![rule_expr(Expr::Identifier(var_name.to_string()), value)].into(),
       ));
     }
   }
@@ -11915,10 +11786,7 @@ fn solve_linear_symbolic(eqs: &[Expr], var_names: &[String]) -> Option<Expr> {
       ))
       .unwrap_or(intermediate)
     };
-    rules.push(Expr::Rule {
-      pattern: Box::new(Expr::Identifier(var_names[col].clone())),
-      replacement: Box::new(rhs),
-    });
+    rules.push(rule_expr(Expr::Identifier(var_names[col].clone()), rhs));
   }
 
   Some(Expr::List(vec![Expr::List(rules.into())].into()))
@@ -12897,9 +12765,8 @@ fn nminimize_ast_impl(
   let rules: Vec<Expr> = vars
     .iter()
     .zip(x.iter())
-    .map(|(var, val)| Expr::Rule {
-      pattern: Box::new(Expr::Identifier(var.clone())),
-      replacement: Box::new(Expr::Real(*val)),
+    .map(|(var, val)| {
+      rule_expr(Expr::Identifier(var.clone()), Expr::Real(*val))
     })
     .collect();
   let numeric =
@@ -13223,9 +13090,8 @@ fn nminimize_infeasible_result(
   };
   let rules: Vec<Expr> = vars
     .iter()
-    .map(|var| Expr::Rule {
-      pattern: Box::new(Expr::Identifier(var.clone())),
-      replacement: Box::new(id_expr("Indeterminate")),
+    .map(|var| {
+      rule_expr(Expr::Identifier(var.clone()), id_expr("Indeterminate"))
     })
     .collect();
   Expr::List(vec![inf, Expr::List(rules.into())].into())
@@ -13244,9 +13110,8 @@ fn nminimize_unbounded_result(vars: &[String], maximize: bool) -> Expr {
   };
   let rules: Vec<Expr> = vars
     .iter()
-    .map(|var| Expr::Rule {
-      pattern: Box::new(Expr::Identifier(var.clone())),
-      replacement: Box::new(id_expr("Indeterminate")),
+    .map(|var| {
+      rule_expr(Expr::Identifier(var.clone()), id_expr("Indeterminate"))
     })
     .collect();
   Expr::List(vec![inf, Expr::List(rules.into())].into())
@@ -13675,9 +13540,8 @@ fn nminimize_penalty(
   let rules: Vec<Expr> = vars
     .iter()
     .zip(point.iter())
-    .map(|(var, val)| Expr::Rule {
-      pattern: Box::new(Expr::Identifier(var.clone())),
-      replacement: Box::new(Expr::Real(*val)),
+    .map(|(var, val)| {
+      rule_expr(Expr::Identifier(var.clone()), Expr::Real(*val))
     })
     .collect();
 
@@ -13996,11 +13860,7 @@ fn find_instance_numerical(
         && matches!(evaled, Expr::Identifier(ref s) if s == "True")
       {
         results.push(Expr::List(
-          vec![Expr::Rule {
-            pattern: Box::new(Expr::Identifier(var.clone())),
-            replacement: Box::new(test_val),
-          }]
-          .into(),
+          vec![rule_expr(Expr::Identifier(var.clone()), test_val)].into(),
         ));
       }
       val += step;
@@ -14023,14 +13883,8 @@ fn find_instance_numerical(
         {
           results.push(Expr::List(
             vec![
-              Expr::Rule {
-                pattern: Box::new(Expr::Identifier(var1.clone())),
-                replacement: Box::new(test1.clone()),
-              },
-              Expr::Rule {
-                pattern: Box::new(Expr::Identifier(var2.clone())),
-                replacement: Box::new(test2),
-              },
+              rule_expr(Expr::Identifier(var1.clone()), test1.clone()),
+              rule_expr(Expr::Identifier(var2.clone()), test2),
             ]
             .into(),
           ));
@@ -14076,9 +13930,11 @@ fn find_instance_numerical(
           var_names
             .iter()
             .zip(&idx)
-            .map(|(var, &i)| Expr::Rule {
-              pattern: Box::new(Expr::Identifier(var.clone())),
-              replacement: Box::new(Expr::Integer(values[i] as i128)),
+            .map(|(var, &i)| {
+              rule_expr(
+                Expr::Identifier(var.clone()),
+                Expr::Integer(values[i] as i128),
+              )
             })
             .collect::<Vec<_>>()
             .into(),

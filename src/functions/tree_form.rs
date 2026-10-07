@@ -364,10 +364,8 @@ pub fn tree_form_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Build Graphics[{primitives...}, ImageSize -> width]
   let content = Expr::List(primitives.into());
-  let image_size_opt = Expr::Rule {
-    pattern: Box::new(id_expr("ImageSize")),
-    replacement: Box::new(Expr::Integer(image_width as i128)),
-  };
+  let image_size_opt =
+    rule_expr(id_expr("ImageSize"), Expr::Integer(image_width as i128));
 
   graphics_ast(&[content, image_size_opt])
 }
@@ -633,10 +631,8 @@ fn tree_to_graphics(tree: &TreeNode) -> Result<Expr, InterpreterError> {
   }
 
   let content = Expr::List(primitives.into());
-  let image_size_opt = Expr::Rule {
-    pattern: Box::new(id_expr("ImageSize")),
-    replacement: Box::new(Expr::Integer(image_width as i128)),
-  };
+  let image_size_opt =
+    rule_expr(id_expr("ImageSize"), Expr::Integer(image_width as i128));
 
   graphics_ast(&[content, image_size_opt])
 }

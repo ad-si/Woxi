@@ -697,18 +697,15 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     let (names_axes, names_ratios) = (names("Axes"), names("BoxRatios"));
     if !names_axes {
-      structure_args.push(Expr::Rule {
-        pattern: Box::new(id_expr("Axes")),
-        replacement: Box::new(bool_expr(true)),
-      });
+      structure_args.push(rule_expr(id_expr("Axes"), bool_expr(true)));
     }
     if !names_ratios {
-      structure_args.push(Expr::Rule {
-        pattern: Box::new(id_expr("BoxRatios")),
-        replacement: Box::new(Expr::List(
+      structure_args.push(rule_expr(
+        id_expr("BoxRatios"),
+        Expr::List(
           vec![Expr::Integer(1), Expr::Integer(1), Expr::Real(Z_SCALE)].into(),
-        )),
-      });
+        ),
+      ));
     }
     call("Graphics3D", structure_args)
   };
@@ -8875,18 +8872,15 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     let (names_axes, names_ratios) = (names("Axes"), names("BoxRatios"));
     if !names_axes {
-      structure_args.push(Expr::Rule {
-        pattern: Box::new(id_expr("Axes")),
-        replacement: Box::new(bool_expr(true)),
-      });
+      structure_args.push(rule_expr(id_expr("Axes"), bool_expr(true)));
     }
     if !names_ratios {
-      structure_args.push(Expr::Rule {
-        pattern: Box::new(id_expr("BoxRatios")),
-        replacement: Box::new(Expr::List(
+      structure_args.push(rule_expr(
+        id_expr("BoxRatios"),
+        Expr::List(
           vec![Expr::Integer(1), Expr::Integer(1), Expr::Real(Z_SCALE)].into(),
-        )),
-      });
+        ),
+      ));
     }
     call("Graphics3D", structure_args)
   };
@@ -9185,18 +9179,15 @@ pub fn list_point_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       names(&structure_args, "BoxRatios"),
     );
     if !names_axes {
-      structure_args.push(Expr::Rule {
-        pattern: Box::new(id_expr("Axes")),
-        replacement: Box::new(bool_expr(true)),
-      });
+      structure_args.push(rule_expr(id_expr("Axes"), bool_expr(true)));
     }
     if !names_ratios {
-      structure_args.push(Expr::Rule {
-        pattern: Box::new(id_expr("BoxRatios")),
-        replacement: Box::new(Expr::List(
+      structure_args.push(rule_expr(
+        id_expr("BoxRatios"),
+        Expr::List(
           vec![Expr::Integer(1), Expr::Integer(1), Expr::Real(Z_SCALE)].into(),
-        )),
-      });
+        ),
+      ));
     }
     call("Graphics3D", structure_args)
   };
@@ -11473,18 +11464,15 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     let (names_axes, names_ratios) = (names("Axes"), names("BoxRatios"));
     if !names_axes {
-      structure_args.push(Expr::Rule {
-        pattern: Box::new(id_expr("Axes")),
-        replacement: Box::new(bool_expr(true)),
-      });
+      structure_args.push(rule_expr(id_expr("Axes"), bool_expr(true)));
     }
     if !names_ratios {
-      structure_args.push(Expr::Rule {
-        pattern: Box::new(id_expr("BoxRatios")),
-        replacement: Box::new(Expr::List(
+      structure_args.push(rule_expr(
+        id_expr("BoxRatios"),
+        Expr::List(
           vec![Expr::Integer(1), Expr::Integer(1), Expr::Real(Z_SCALE)].into(),
-        )),
-      });
+        ),
+      ));
     }
     call("Graphics3D", structure_args)
   };

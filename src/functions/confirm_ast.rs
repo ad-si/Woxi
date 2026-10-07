@@ -353,13 +353,10 @@ fn untagged_exception(spec: &Expr) -> Expr {
     // a RuleDelayed keyed by itself, which is what renders as `:>`.
     (
       string("MessageTemplate"),
-      Expr::RuleDelayed {
-        pattern: Box::new(string("MessageTemplate")),
-        replacement: Box::new(call(
-          "MessageName",
-          vec![symbol("Exception"), string("untagged")],
-        )),
-      },
+      rule_delayed_expr(
+        string("MessageTemplate"),
+        call("MessageName", vec![symbol("Exception"), string("untagged")]),
+      ),
     ),
     (
       string("MessageParameters"),

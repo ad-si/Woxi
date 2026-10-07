@@ -2369,10 +2369,7 @@ fn factor_integer_gaussian(n_expr: &Expr) -> Result<Expr, InterpreterError> {
       "FactorInteger",
       vec![
         n_expr.clone(),
-        Expr::Rule {
-          pattern: Box::new(id_expr("GaussianIntegers")),
-          replacement: Box::new(bool_expr(true)),
-        },
+        rule_expr(id_expr("GaussianIntegers"), bool_expr(true)),
       ],
     ))
   };

@@ -44,6 +44,20 @@ pub fn div(a: Expr, b: Expr) -> Expr {
   call("Divide", vec![a, b])
 }
 
+pub fn rule_expr(pattern: Expr, replacement: Expr) -> Expr {
+  Expr::Rule {
+    pattern: Box::new(pattern),
+    replacement: Box::new(replacement),
+  }
+}
+
+pub fn rule_delayed_expr(pattern: Expr, replacement: Expr) -> Expr {
+  Expr::RuleDelayed {
+    pattern: Box::new(pattern),
+    replacement: Box::new(replacement),
+  }
+}
+
 pub fn call(name: &str, args: Vec<Expr>) -> Expr {
   Expr::FunctionCall {
     name: name.to_string(),
@@ -66,11 +80,6 @@ pub fn unevaluated(name: &str, args: &[Expr]) -> Expr {
   }
 }
 
-/// Build the boolean symbol `True` or `False`.
-pub fn bool_expr(b: bool) -> Expr {
-  Expr::Identifier(if b { "True" } else { "False" }.to_string())
-}
-
 pub fn const_expr(name: &str) -> Expr {
   Expr::Constant(name.to_string())
 }
@@ -79,9 +88,15 @@ pub fn id_expr(name: &str) -> Expr {
   Expr::Identifier(name.to_string())
 }
 
+/// Build the boolean symbol `True` or `False`.
+pub fn bool_expr(b: bool) -> Expr {
+  id_expr(if b { "True" } else { "False" })
+}
+
 pub fn null_expr() -> Expr {
   id_expr("Null")
 }
+
 pub fn fail_expr() -> Expr {
   id_expr("$Failed")
 }

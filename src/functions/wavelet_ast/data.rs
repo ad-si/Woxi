@@ -121,41 +121,38 @@ impl Dwd {
     let rules: Vec<Expr> = self
       .rules
       .iter()
-      .map(|(w, c)| Expr::Rule {
-        pattern: Box::new(wind_to_expr(w)),
-        replacement: Box::new(c.clone()),
-      })
+      .map(|(w, c)| rule_expr(wind_to_expr(w), c.clone()))
       .collect();
     let mut extras: Vec<Expr> = Vec::new();
     if self.padding != Padding::Periodic {
-      extras.push(Expr::Rule {
-        pattern: Box::new(Expr::String("Padding".into())),
-        replacement: Box::new(self.padding.to_expr()),
-      });
+      extras.push(rule_expr(
+        Expr::String("Padding".into()),
+        self.padding.to_expr(),
+      ));
     }
     if let Some(basis) = &self.basis_override {
-      extras.push(Expr::Rule {
-        pattern: Box::new(Expr::String("BasisIndex".into())),
-        replacement: Box::new(Expr::List(
+      extras.push(rule_expr(
+        Expr::String("BasisIndex".into()),
+        Expr::List(
           basis
             .iter()
             .map(|w| wind_to_expr(w))
             .collect::<Vec<_>>()
             .into(),
-        )),
-      });
+        ),
+      ));
     }
     if let Some(tv) = &self.threshold_values {
-      extras.push(Expr::Rule {
-        pattern: Box::new(Expr::String("ThresholdValues".into())),
-        replacement: Box::new(tv.clone()),
-      });
+      extras.push(rule_expr(
+        Expr::String("ThresholdValues".into()),
+        tv.clone(),
+      ));
     }
     if self.image {
-      extras.push(Expr::Rule {
-        pattern: Box::new(Expr::String("ImageData".into())),
-        replacement: Box::new(Expr::Identifier("True".into())),
-      });
+      extras.push(rule_expr(
+        Expr::String("ImageData".into()),
+        Expr::Identifier("True".into()),
+      ));
     }
     let name = Expr::String(self.kind.name().to_string());
     let wtrans = if extras.is_empty() {
@@ -1117,10 +1114,7 @@ pub fn apply_dwd(func: &Expr, args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => coef_value(),
     };
     if form == "Rules" {
-      out.push(Expr::Rule {
-        pattern: Box::new(wind_to_expr(w)),
-        replacement: Box::new(value),
-      });
+      out.push(rule_expr(wind_to_expr(w), value));
     } else {
       out.push(value);
     }
@@ -1180,10 +1174,8 @@ fn dwd_property(dwd: &Dwd, prop: &str) -> Expr {
         .rules
         .iter()
         .filter_map(|(w, c)| {
-          CoefArray::from_expr(c).map(|arr| Expr::Rule {
-            pattern: Box::new(wind_to_expr(w)),
-            replacement: Box::new(dims_to_expr(&arr.dims())),
-          })
+          CoefArray::from_expr(c)
+            .map(|arr| rule_expr(wind_to_expr(w), dims_to_expr(&arr.dims())))
         })
         .collect::<Vec<_>>()
         .into(),
@@ -1204,9 +1196,8 @@ fn dwd_property(dwd: &Dwd, prop: &str) -> Expr {
           .rules
           .iter()
           .filter_map(|(w, c)| {
-            CoefArray::from_expr(c).map(|arr| Expr::Rule {
-              pattern: Box::new(wind_to_expr(w)),
-              replacement: Box::new(Expr::Real(arr.energy() / total)),
+            CoefArray::from_expr(c).map(|arr| {
+              rule_expr(wind_to_expr(w), Expr::Real(arr.energy() / total))
             })
           })
           .collect::<Vec<_>>()
@@ -1513,10 +1504,7 @@ pub fn wavelet_threshold_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ),
     };
     new_rules[pos].1 = new_arr.to_expr();
-    threshold_rules.push(Expr::Rule {
-      pattern: Box::new(wind_to_expr(w)),
-      replacement: Box::new(Expr::Real(delta)),
-    });
+    threshold_rules.push(rule_expr(wind_to_expr(w), Expr::Real(delta)));
   }
 
   let new_dwd = Dwd {

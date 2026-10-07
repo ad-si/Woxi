@@ -347,10 +347,7 @@ pub fn solve_always_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if let Expr::Identifier(s) = &coeff_expr {
       if !solved_vars.contains(s) && !vars.contains(s) {
         solved_vars.insert(s.clone());
-        rules.push(Expr::Rule {
-          pattern: Box::new(Expr::Identifier(s.clone())),
-          replacement: Box::new(Expr::Integer(0)),
-        });
+        rules.push(rule_expr(Expr::Identifier(s.clone()), Expr::Integer(0)));
       }
       continue;
     }
@@ -418,10 +415,7 @@ pub fn solve_always_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       // Fallback: set variable to 0
       solved_vars.insert(fv.clone());
-      rules.push(Expr::Rule {
-        pattern: Box::new(Expr::Identifier(fv)),
-        replacement: Box::new(Expr::Integer(0)),
-      });
+      rules.push(rule_expr(Expr::Identifier(fv), Expr::Integer(0)));
     } else {
       // Multiple free variables: solve one at a time
       // Substitute known solutions first
@@ -459,10 +453,7 @@ pub fn solve_always_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       for fv in &free_vars_here {
         if !solved_vars.contains(fv) {
           solved_vars.insert(fv.clone());
-          rules.push(Expr::Rule {
-            pattern: Box::new(Expr::Identifier(fv.clone())),
-            replacement: Box::new(Expr::Integer(0)),
-          });
+          rules.push(rule_expr(Expr::Identifier(fv.clone()), Expr::Integer(0)));
         }
       }
     }

@@ -175,10 +175,7 @@ fn rgb(c: (f64, f64, f64)) -> Vec<Expr> {
 }
 
 fn rule(name: &str, value: Expr) -> Expr {
-  Expr::Rule {
-    pattern: Box::new(Expr::Identifier(name.to_string())),
-    replacement: Box::new(value),
-  }
+  rule_expr(Expr::Identifier(name.to_string()), value)
 }
 
 fn list(items: Vec<Expr>) -> Expr {

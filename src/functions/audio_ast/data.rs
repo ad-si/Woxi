@@ -155,13 +155,7 @@ pub fn make_audio(audio: &AudioData) -> Expr {
   };
   call(
     "Audio",
-    vec![
-      data,
-      Expr::Rule {
-        pattern: Box::new(id_expr("SampleRate")),
-        replacement: Box::new(rate_expr),
-      },
-    ],
+    vec![data, rule_expr(id_expr("SampleRate"), rate_expr)],
   )
 }
 

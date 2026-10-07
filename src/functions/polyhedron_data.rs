@@ -1707,9 +1707,8 @@ fn face_count_rules(info: &PolyhedronInfo) -> Result<Expr, InterpreterError> {
   Ok(Expr::List(
     counts
       .into_iter()
-      .map(|(n, count)| Expr::Rule {
-        pattern: Box::new(Expr::Integer(n as i128)),
-        replacement: Box::new(Expr::Integer(count)),
+      .map(|(n, count)| {
+        rule_expr(Expr::Integer(n as i128), Expr::Integer(count))
       })
       .collect::<Vec<_>>()
       .into(),

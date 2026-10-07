@@ -1043,10 +1043,7 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           vec![
             pt(x - hw, y - hh),
             pt(x + hw, y + hh),
-            Expr::Rule {
-              pattern: Box::new(id_expr("RoundingRadius")),
-              replacement: Box::new(Expr::Real(hh)),
-            },
+            rule_expr(id_expr("RoundingRadius"), Expr::Real(hh)),
           ],
         ));
       }
@@ -1181,10 +1178,10 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // A graph is drawn at Wolfram's 360-point default unless the caller
   // sized it — `LayeredGraphPlot[…, ImageSize -> {200, 50}]` asks for a
   // wide, short strip and has to get one.
-  let image_size_opt = Expr::Rule {
-    pattern: Box::new(id_expr("ImageSize")),
-    replacement: Box::new(image_size.unwrap_or(Expr::Integer(360))),
-  };
+  let image_size_opt = rule_expr(
+    id_expr("ImageSize"),
+    image_size.unwrap_or(Expr::Integer(360)),
+  );
 
   let mut graphics_args = vec![content, image_size_opt];
   if let Some(range) = flat_axis_plot_range(&positions, vertex_radius) {
@@ -1229,10 +1226,10 @@ fn flat_axis_plot_range(
   };
   let pair =
     |a: f64, b: f64| Expr::List(vec![Expr::Real(a), Expr::Real(b)].into());
-  Some(Expr::Rule {
-    pattern: Box::new(id_expr("PlotRange")),
-    replacement: Box::new(Expr::List(vec![pair(x0, x1), pair(y0, y1)].into())),
-  })
+  Some(rule_expr(
+    id_expr("PlotRange"),
+    Expr::List(vec![pair(x0, x1), pair(y0, y1)].into()),
+  ))
 }
 
 /// Where the roots of a layered embedding sit; the layers grow away from
@@ -2499,10 +2496,7 @@ pub fn contract_vertices_in_graph(
       continue;
     }
     new_edges.push(match e {
-      Expr::Rule { .. } => Expr::Rule {
-        pattern: Box::new(na),
-        replacement: Box::new(nb),
-      },
+      Expr::Rule { .. } => rule_expr(na, nb),
       _ => Expr::FunctionCall {
         name: head.clone(),
         args: vec![na, nb].into(),
@@ -4720,10 +4714,7 @@ pub fn weighted_adjacency_graph_ast(
     vec![
       Expr::List(vertices.into()),
       Expr::List(edges.into()),
-      Expr::Rule {
-        pattern: Box::new(id_expr("EdgeWeight")),
-        replacement: Box::new(Expr::List(weights.into())),
-      },
+      rule_expr(id_expr("EdgeWeight"), Expr::List(weights.into())),
     ],
   ))
 }
@@ -5774,10 +5765,7 @@ pub fn highlight_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `AnnotationValue[g, GraphHighlight]` reads back.
   let mut highlighted: Vec<Expr> = Vec::new();
   for (part, style) in items {
-    let rule = |target: Expr| Expr::Rule {
-      pattern: Box::new(target),
-      replacement: Box::new(style.clone()),
-    };
+    let rule = |target: Expr| rule_expr(target, style.clone());
     if vertices.iter().any(|v| vertex_matches_rule(v, &part)) {
       highlighted.push(part.clone());
       vertex_rules.push(rule(part));
@@ -5802,15 +5790,15 @@ pub fn highlight_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       None => Vec::new(),
     };
     value.extend(rules);
-    merged.push(Expr::Rule {
-      pattern: Box::new(Expr::Identifier(name.to_string())),
-      replacement: Box::new(Expr::List(value.into())),
-    });
+    merged.push(rule_expr(
+      Expr::Identifier(name.to_string()),
+      Expr::List(value.into()),
+    ));
   }
-  merged.push(Expr::Rule {
-    pattern: Box::new(id_expr("GraphHighlight")),
-    replacement: Box::new(Expr::List(highlighted.into())),
-  });
+  merged.push(rule_expr(
+    id_expr("GraphHighlight"),
+    Expr::List(highlighted.into()),
+  ));
 
   let merged_names: Vec<&str> = merged
     .iter()
@@ -8161,10 +8149,7 @@ fn annotation_without_item(
     return Some(Expr::List(
       vec![
         value.clone(),
-        Expr::Rule {
-          pattern: Box::new(item.clone()),
-          replacement: Box::new(annotation_item_default(property)),
-        },
+        rule_expr(item.clone(), annotation_item_default(property)),
       ]
       .into(),
     ));
@@ -8329,10 +8314,10 @@ pub fn graph_set_property_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     })
     .cloned()
     .collect();
-  new_options.push(Expr::Rule {
-    pattern: Box::new(Expr::Identifier(property.clone())),
-    replacement: Box::new(Expr::List(values.into())),
-  });
+  new_options.push(rule_expr(
+    Expr::Identifier(property.clone()),
+    Expr::List(values.into()),
+  ));
   let mut graph_args =
     vec![Expr::List(vertices.into()), Expr::List(edges.into())];
   graph_args.extend(new_options);

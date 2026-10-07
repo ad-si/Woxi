@@ -494,10 +494,7 @@ pub fn association_map_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // Apply f once to each key -> value rule.
       let mut applied: Vec<(Expr, Expr)> = Vec::new(); // (rule, f[rule])
       for (key, value) in items {
-        let rule = Expr::Rule {
-          pattern: Box::new(key.clone()),
-          replacement: Box::new(value.clone()),
-        };
+        let rule = rule_expr(key.clone(), value.clone());
         let result = crate::evaluator::apply_function_to_arg(func, &rule)?;
         applied.push((rule, result));
       }

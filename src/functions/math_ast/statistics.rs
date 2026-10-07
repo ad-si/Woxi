@@ -4917,10 +4917,7 @@ fn legacy_statistic(difference: f64, standard_error: f64) -> f64 {
 }
 
 fn legacy_rule(head: &str, value: Expr) -> Expr {
-  Expr::Rule {
-    pattern: Box::new(Expr::Identifier(head.to_string())),
-    replacement: Box::new(value),
-  }
+  rule_expr(Expr::Identifier(head.to_string()), value)
 }
 
 fn legacy_p_value_expr(p: Option<f64>, two_sided: bool) -> Expr {

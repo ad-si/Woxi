@@ -489,10 +489,8 @@ fn phase_legended(graphics: Expr) -> Expr {
     ]
     .into(),
   );
-  let rule = |lhs: &str, rhs: Expr| Expr::Rule {
-    pattern: Box::new(Expr::Identifier(lhs.to_string())),
-    replacement: Box::new(rhs),
-  };
+  let rule =
+    |lhs: &str, rhs: Expr| rule_expr(Expr::Identifier(lhs.to_string()), rhs);
   let legend = call(
     "SwatchLegend",
     vec![

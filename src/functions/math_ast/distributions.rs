@@ -190,10 +190,7 @@ pub(crate) fn reliability_distribution_survival(
   let mut terms: Vec<Expr> = Vec::new();
   for mask in 0u32..(1u32 << n) {
     let rules: Vec<Expr> = (0..n)
-      .map(|i| Expr::Rule {
-        pattern: Box::new(vars[i].clone()),
-        replacement: Box::new(bool_expr((mask >> i) & 1 == 1)),
-      })
+      .map(|i| rule_expr(vars[i].clone(), bool_expr((mask >> i) & 1 == 1)))
       .collect();
     let substituted = call(
       "ReplaceAll",
@@ -413,10 +410,7 @@ pub(crate) fn reliability_distribution_mean_exponential(
     std::collections::HashMap::new();
   for b in 0u32..(1u32 << n) {
     let rules: Vec<Expr> = (0..n)
-      .map(|i| Expr::Rule {
-        pattern: Box::new(vars[i].clone()),
-        replacement: Box::new(bool_expr((b >> i) & 1 == 1)),
-      })
+      .map(|i| rule_expr(vars[i].clone(), bool_expr((b >> i) & 1 == 1)))
       .collect();
     let substituted = call(
       "ReplaceAll",
@@ -3386,10 +3380,7 @@ pub fn probability_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "ReplaceAll",
         vec![
           event.clone(),
-          Expr::Rule {
-            pattern: Box::new(Expr::Identifier(var_name.to_string())),
-            replacement: Box::new(d.clone()),
-          },
+          rule_expr(Expr::Identifier(var_name.to_string()), d.clone()),
         ],
       ))?;
       if matches!(&substituted, Expr::Identifier(s) if s == "True") {
@@ -3807,10 +3798,7 @@ pub fn expectation_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           "ReplaceAll",
           vec![
             expr.clone(),
-            Expr::Rule {
-              pattern: Box::new(Expr::Identifier(var.clone())),
-              replacement: Box::new(d.clone()),
-            },
+            rule_expr(Expr::Identifier(var.clone()), d.clone()),
           ],
         )
       })
@@ -7701,16 +7689,7 @@ fn cdf_failure_distribution(
   if matches!(&x, Expr::Identifier(_)) {
     Ok(result)
   } else {
-    eval(&call(
-      "ReplaceAll",
-      vec![
-        result,
-        Expr::Rule {
-          pattern: Box::new(var),
-          replacement: Box::new(x),
-        },
-      ],
-    ))
+    eval(&call("ReplaceAll", vec![result, rule_expr(var, x)]))
   }
 }
 
@@ -7741,16 +7720,7 @@ fn pdf_failure_distribution(
     Ok(result)
   } else {
     // Numeric evaluation point: substitute after differentiating.
-    eval(&call(
-      "ReplaceAll",
-      vec![
-        result,
-        Expr::Rule {
-          pattern: Box::new(var),
-          replacement: Box::new(x),
-        },
-      ],
-    ))
+    eval(&call("ReplaceAll", vec![result, rule_expr(var, x)]))
   }
 }
 

@@ -5407,10 +5407,7 @@ pub fn levi_civita_tensor_sparse_ast(
         .collect::<Vec<_>>()
         .into(),
     );
-    rules.push(Expr::Rule {
-      pattern: Box::new(key),
-      replacement: Box::new(Expr::Integer(sign)),
-    });
+    rules.push(rule_expr(key, Expr::Integer(sign)));
     // Next permutation (Knuth's algorithm L).
     if n < 2 {
       break;
@@ -6736,9 +6733,8 @@ fn find_fit_weighted(
   let rules: Vec<Expr> = param_names
     .iter()
     .zip(param_values.iter())
-    .map(|(name, val)| Expr::Rule {
-      pattern: Box::new(Expr::Identifier(name.clone())),
-      replacement: Box::new(Expr::Real(*val)),
+    .map(|(name, val)| {
+      rule_expr(Expr::Identifier(name.clone()), Expr::Real(*val))
     })
     .collect();
 
@@ -9268,10 +9264,7 @@ pub fn design_matrix_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       for (var_idx, var) in vars.iter().enumerate() {
         if var_idx < predictors.len() {
           // Build: func /. var -> value and evaluate
-          let rule = Expr::Rule {
-            pattern: Box::new(var.clone()),
-            replacement: Box::new(predictors[var_idx].clone()),
-          };
+          let rule = rule_expr(var.clone(), predictors[var_idx].clone());
           expr = call("ReplaceAll", vec![expr, rule]);
         }
       }

@@ -223,9 +223,8 @@ fn http_request_property(func_args: &[Expr], prop: &str) -> Option<Expr> {
     "Headers" => Some(Expr::List(
       headers
         .iter()
-        .map(|(name, value)| Expr::Rule {
-          pattern: Box::new(Expr::String(name.clone())),
-          replacement: Box::new(value.clone()),
+        .map(|(name, value)| {
+          rule_expr(Expr::String(name.clone()), value.clone())
         })
         .collect(),
     )),
@@ -579,10 +578,7 @@ fn query_to_expr(query: &[(String, String)]) -> Expr {
   Expr::List(
     query
       .iter()
-      .map(|(k, v)| Expr::Rule {
-        pattern: Box::new(Expr::String(k.clone())),
-        replacement: Box::new(Expr::String(v.clone())),
-      })
+      .map(|(k, v)| rule_expr(Expr::String(k.clone()), Expr::String(v.clone())))
       .collect(),
   )
 }
@@ -686,10 +682,7 @@ pub fn url_read_ast(arg: &Expr) -> Result<Expr, InterpreterError> {
           Expr::List(vec![].into()),
         ),
       ]),
-      Expr::Rule {
-        pattern: Box::new(id_expr("CharacterEncoding")),
-        replacement: Box::new(id_expr("Automatic")),
-      },
+      rule_expr(id_expr("CharacterEncoding"), id_expr("Automatic")),
     ]
     .into(),
   })
@@ -733,13 +726,13 @@ fn connection_failure(url: &str, func_args: &[Expr]) -> Expr {
           template_key.clone(),
           // `:>` entry: the association convention stores the delayed
           // value as the full RuleDelayed.
-          Expr::RuleDelayed {
-            pattern: Box::new(template_key),
-            replacement: Box::new(call(
+          rule_delayed_expr(
+            template_key,
+            call(
               "MessageName",
               vec![id_expr("URLRead"), Expr::String("iurl".to_string())],
-            )),
-          },
+            ),
+          ),
         ),
         (
           Expr::String("MessageParameters".to_string()),
@@ -947,10 +940,10 @@ pub fn url_parse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .filter(|kv| !kv.is_empty())
           .map(|kv| {
             let (k, v) = kv.split_once('=').unwrap_or((kv, ""));
-            Expr::Rule {
-              pattern: Box::new(Expr::String(decode_query_component(k))),
-              replacement: Box::new(Expr::String(decode_query_component(v))),
-            }
+            rule_expr(
+              Expr::String(decode_query_component(k)),
+              Expr::String(decode_query_component(v)),
+            )
           })
           .collect(),
       )),

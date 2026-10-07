@@ -2642,12 +2642,10 @@ fn substitute_complex_indices(
         new_args.extend(rest.iter().cloned());
         if name == "Polygon" {
           for (option, values) in vertex_data {
-            new_args.push(Expr::Rule {
-              pattern: Box::new(id_expr(option)),
-              replacement: Box::new(Expr::List(
-                indices.iter().map(|&i| values[i].clone()).collect(),
-              )),
-            });
+            new_args.push(rule_expr(
+              id_expr(option),
+              Expr::List(indices.iter().map(|&i| values[i].clone()).collect()),
+            ));
           }
         }
         call(name, new_args)
@@ -12719,10 +12717,7 @@ fn merge_option(opts: &mut Vec<Expr>, opt: &Expr) {
       && let Some((_, existing_repl)) = option_name_value(&opts[pos])
     {
       let merged = merge_plot_ranges(&existing_repl, &replacement);
-      opts[pos] = Expr::Rule {
-        pattern: Box::new(id_expr("PlotRange")),
-        replacement: Box::new(merged),
-      };
+      opts[pos] = rule_expr(id_expr("PlotRange"), merged);
       return;
     }
 
@@ -13646,10 +13641,7 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               Expr::Identifier(s) if s == "False" || s == "None"))
       });
       if !has_option(&merged_options, "Axes") && !framed {
-        merged_options.push(Expr::Rule {
-          pattern: Box::new(id_expr("Axes")),
-          replacement: Box::new(bool_expr(true)),
-        });
+        merged_options.push(rule_expr(id_expr("Axes"), bool_expr(true)));
       }
       // The shape the leading plot drew itself in, unless the options
       // already fix it. `Plot`/`ListPlot` default to 1/GoldenRatio, but
@@ -13662,10 +13654,8 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .map_or(1.0 / std::f64::consts::GOLDEN_RATIO, |ps| {
             plot_source_aspect_ratio(ps.image_size)
           });
-        merged_options.push(Expr::Rule {
-          pattern: Box::new(id_expr("AspectRatio")),
-          replacement: Box::new(Expr::Real(aspect)),
-        });
+        merged_options
+          .push(rule_expr(id_expr("AspectRatio"), Expr::Real(aspect)));
       }
     }
   }
@@ -16297,10 +16287,10 @@ pub fn graphics_options(expr: &Expr) -> Option<Vec<Expr>> {
       Expr::Real(v)
     }
   };
-  Some(vec![Expr::Rule {
-    pattern: Box::new(id_expr("ImageSize")),
-    replacement: Box::new(Expr::List(vec![size(w), size(h)].into())),
-  }])
+  Some(vec![rule_expr(
+    id_expr("ImageSize"),
+    Expr::List(vec![size(w), size(h)].into()),
+  )])
 }
 
 /// The SVG of a rendered graphic.
@@ -17335,10 +17325,7 @@ fn with_default_image_size(expr: &Expr, size: i128) -> Expr {
     return expr.clone();
   }
   let mut new_args = args.clone();
-  new_args.push(Expr::Rule {
-    pattern: Box::new(id_expr("ImageSize")),
-    replacement: Box::new(Expr::Integer(size)),
-  });
+  new_args.push(rule_expr(id_expr("ImageSize"), Expr::Integer(size)));
   // A bare `Graphics[…]` with no `AspectRatio` of its own defaults to
   // fitting the shape of its own data, which can be wildly elongated (a
   // tall stack of primitives, say) — fine standing alone, but it would
@@ -17353,10 +17340,10 @@ fn with_default_image_size(expr: &Expr, size: i128) -> Expr {
         if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "AspectRatio"))
     });
     if !has_aspect_ratio {
-      new_args.push(Expr::Rule {
-        pattern: Box::new(id_expr("AspectRatio")),
-        replacement: Box::new(Expr::Real(1.0 / std::f64::consts::GOLDEN_RATIO)),
-      });
+      new_args.push(rule_expr(
+        id_expr("AspectRatio"),
+        Expr::Real(1.0 / std::f64::consts::GOLDEN_RATIO),
+      ));
     }
   }
   Expr::FunctionCall {
@@ -19665,10 +19652,7 @@ pub fn linear_gradient_filling_ast(
   };
 
   // Build: LinearGradientFilling[{stops} -> {colors}, angle, space]
-  let rule = Expr::Rule {
-    pattern: Box::new(Expr::List(stops.into())),
-    replacement: Box::new(Expr::List(colors.into())),
-  };
+  let rule = rule_expr(Expr::List(stops.into()), Expr::List(colors.into()));
 
   Ok(call("LinearGradientFilling", vec![rule, angle, space]))
 }
@@ -19909,10 +19893,7 @@ fn bare_control_type_as_option(spec: Expr) -> Expr {
     return spec;
   };
   let mut out: Vec<Expr> = items.to_vec();
-  out[pos] = Expr::Rule {
-    pattern: Box::new(id_expr("ControlType")),
-    replacement: Box::new(items[pos].clone()),
-  };
+  out[pos] = rule_expr(id_expr("ControlType"), items[pos].clone());
   let has_values = items.iter().enumerate().skip(1).any(|(i, e)| {
     i != pos && !matches!(e, Expr::Rule { .. } | Expr::RuleDelayed { .. })
   });
@@ -20089,10 +20070,8 @@ pub fn geometric_scene_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let substituted =
             crate::syntax::substitute_variables(replacement, &binding_refs);
           let value = evaluate_expr_to_expr(&substituted)?;
-          evaluated_rules.push(Expr::Rule {
-            pattern: Box::new(Expr::Identifier(name.clone())),
-            replacement: Box::new(value.clone()),
-          });
+          evaluated_rules
+            .push(rule_expr(Expr::Identifier(name.clone()), value.clone()));
           bindings.push((name, value));
         } else {
           // Not a recognizable `symbol -> value` point rule; evaluate it
@@ -21406,12 +21385,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
             vec![
               Expr::List(vec![Expr::Identifier(name.clone()), default].into()),
               choices,
-              Expr::Rule {
-                pattern: Box::new(id_expr("ControlType")),
-                replacement: Box::new(Expr::Identifier(
-                  "PopupMenu".to_string(),
-                )),
-              },
+              rule_expr(id_expr("ControlType"), id_expr("PopupMenu")),
             ]
             .into(),
           );
@@ -21448,20 +21422,14 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
             .map(|(idx, item)| {
               let (key, label, _content) = tabview_pane_parts(item);
               let key = key.unwrap_or_else(|| Expr::Integer(idx as i128 + 1));
-              Expr::Rule {
-                pattern: Box::new(key),
-                replacement: Box::new(label.clone()),
-              }
+              rule_expr(key, label.clone())
             })
             .collect();
           let promoted = Expr::List(
             vec![
               Expr::List(vec![Expr::Identifier(name.clone()), default].into()),
               Expr::List(choices.into()),
-              Expr::Rule {
-                pattern: Box::new(id_expr("ControlType")),
-                replacement: Box::new(id_expr("SetterBar")),
-              },
+              rule_expr(id_expr("ControlType"), id_expr("SetterBar")),
             ]
             .into(),
           );
@@ -21487,10 +21455,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
             vec![
               Expr::List(vec![Expr::Identifier(name.clone()), default].into()),
               choices,
-              Expr::Rule {
-                pattern: Box::new(id_expr("ControlType")),
-                replacement: Box::new(id_expr("SetterBar")),
-              },
+              rule_expr(id_expr("ControlType"), id_expr("SetterBar")),
             ]
             .into(),
           );
@@ -21816,10 +21781,7 @@ fn apply_global_control_type(items: Vec<Expr>) -> Vec<Expr> {
       let extended: Vec<Expr> = spec
         .iter()
         .cloned()
-        .chain(std::iter::once(Expr::Rule {
-          pattern: Box::new(id_expr("ControlType")),
-          replacement: Box::new(control_type),
-        }))
+        .chain(std::iter::once(rule_expr(id_expr("ControlType"), control_type)))
         .collect();
       Expr::List(extended.into())
     })
@@ -22506,17 +22468,11 @@ fn strip_body_setter_bars(expr: &Expr, promoted: &[String]) -> Expr {
     Expr::Rule {
       pattern,
       replacement,
-    } => Expr::Rule {
-      pattern: Box::new(rec(pattern)),
-      replacement: Box::new(rec(replacement)),
-    },
+    } => rule_expr(rec(pattern), rec(replacement)),
     Expr::RuleDelayed {
       pattern,
       replacement,
-    } => Expr::RuleDelayed {
-      pattern: Box::new(rec(pattern)),
-      replacement: Box::new(rec(replacement)),
-    },
+    } => rule_delayed_expr(rec(pattern), rec(replacement)),
     Expr::ReplaceAll { expr, rules } => Expr::ReplaceAll {
       expr: Box::new(rec(expr)),
       rules: Box::new(rec(rules)),
@@ -28945,10 +28901,7 @@ mod manipulate_label_tests {
       "Style",
       vec![
         Expr::String("t".into()),
-        Expr::Rule {
-          pattern: Box::new(id_expr("FontSlant")),
-          replacement: Box::new(Expr::String("Italic".into())),
-        },
+        rule_expr(id_expr("FontSlant"), Expr::String("Italic".into())),
       ],
     );
     assert_eq!(runs(&label), vec![run("t", true)]);

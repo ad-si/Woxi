@@ -700,14 +700,7 @@ pub fn delete_elements_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     return Ok(Expr::FunctionCall {
       name: "DeleteElements".to_string(),
-      args: vec![
-        args[0].clone(),
-        Expr::Rule {
-          pattern: Box::new(rhs),
-          replacement: Box::new(elems_expr.clone()),
-        },
-      ]
-      .into(),
+      args: vec![args[0].clone(), rule_expr(rhs, elems_expr.clone())].into(),
     });
   };
 

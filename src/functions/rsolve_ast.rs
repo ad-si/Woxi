@@ -586,10 +586,7 @@ fn wrap_rsolve_result(
       ],
     )
   };
-  let rule = Expr::Rule {
-    pattern: Box::new(pattern),
-    replacement: Box::new(replacement),
-  };
+  let rule = rule_expr(pattern, replacement);
   Expr::List(vec![Expr::List(vec![rule].into())].into())
 }
 

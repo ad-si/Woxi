@@ -2037,10 +2037,7 @@ fn expand_band_rules(data: &Expr, dims: &[usize]) -> Option<Expr> {
           Some(vals) => vals[k].clone(),
           None => replacement.as_ref().clone(),
         };
-        expanded.push(Expr::Rule {
-          pattern: Box::new(Expr::List(pos.into())),
-          replacement: Box::new(value),
-        });
+        expanded.push(rule_expr(Expr::List(pos.into()), value));
       }
       continue;
     }
@@ -2107,10 +2104,7 @@ fn expand_pattern_rule(data: &Expr, dims: &[usize]) -> Option<Expr> {
     }
     let replaced = call("Replace", vec![pos_list.clone(), data.clone()]);
     let val = crate::evaluator::evaluate_expr_to_expr(&replaced).ok()?;
-    rules.push(Expr::Rule {
-      pattern: Box::new(pos_list),
-      replacement: Box::new(val),
-    });
+    rules.push(rule_expr(pos_list, val));
   }
   Some(Expr::List(rules.into()))
 }
@@ -2244,12 +2238,10 @@ fn expand_pattern_rule_list(data: &Expr, dims: &[usize]) -> Option<Expr> {
 
 /// Build `{p1, p2, …} -> value` for an explicit integer position.
 fn explicit_rule(pos: &[i128], value: Expr) -> Expr {
-  Expr::Rule {
-    pattern: Box::new(Expr::List(
-      pos.iter().map(|&p| Expr::Integer(p)).collect(),
-    )),
-    replacement: Box::new(value),
-  }
+  rule_expr(
+    Expr::List(pos.iter().map(|&p| Expr::Integer(p)).collect()),
+    value,
+  )
 }
 
 /// Whether `expr` contains a pattern (Blank) node anywhere within it.
@@ -2885,12 +2877,10 @@ pub fn try_sparse_array_arithmetic(head: &str, args: &[Expr]) -> Option<Expr> {
     if expr_to_string(&value) == expr_to_string(&background) {
       continue;
     }
-    rules.push(Expr::Rule {
-      pattern: Box::new(Expr::List(
-        path.iter().map(|&i| Expr::Integer(i as i128)).collect(),
-      )),
-      replacement: Box::new(value),
-    });
+    rules.push(rule_expr(
+      Expr::List(path.iter().map(|&i| Expr::Integer(i as i128)).collect()),
+      value,
+    ));
   }
 
   sparse_array_normalize_ast(&[Expr::List(rules.into()), dims, background]).ok()
