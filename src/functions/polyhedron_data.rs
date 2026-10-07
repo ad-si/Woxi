@@ -270,6 +270,43 @@ static POLYHEDRA: &[PolyhedronInfo] = &[
       {\"Amphichiral\", \"Isohedron\", \"KeplerPoinsot\", \
       \"Regular\", \"Rigid\"}",
   },
+  PolyhedronInfo {
+    name: "GreatIcosahedron",
+    vertex_count: 12,
+    edge_count: 30,
+    face_count: 20,
+    // The enclosed volume of the self-intersecting solid is not derived.
+    volume: "Missing[\"NotAvailable\"]",
+    // Twenty unit triangles.
+    surface_area: "5*Sqrt[3]",
+    circumradius: "Sqrt[(5 - Sqrt[5])/8]",
+    // The face planes are at Sqrt[R^2 - 1/3] from the center.
+    inradius: "(3 - Sqrt[5])/(4*Sqrt[3])",
+    midradius: "(Sqrt[5] - 1)/4",
+    // A Kepler-Poinsot polyhedron on the same 12 vertices as the small
+    // stellated dodecahedron (an icosahedron shrunk by 1/GoldenRatio, so
+    // second neighbours are a unit chord apart). Its 20 faces are the unit
+    // triangles formed by mutual second neighbours, five meeting at each
+    // vertex ({3, 5/2}).
+    vertices_src: "((Sqrt[5] - 1)/2)*{\
+      {0, 0, -Sqrt[5/8 + Sqrt[5]/8]}, {0, 0, Sqrt[5/8 + Sqrt[5]/8]}, \
+      {-Sqrt[1/2 + Sqrt[5]/10], 0, -Sqrt[1/8 + Sqrt[5]/40]}, {Sqrt[1/2 + \
+      Sqrt[5]/10], 0, Sqrt[1/8 + Sqrt[5]/40]}, {Sqrt[1/4 + Sqrt[5]/10], \
+      -1/2, -Sqrt[1/8 + Sqrt[5]/40]}, {Sqrt[1/4 + Sqrt[5]/10], 1/2, \
+      -Sqrt[1/8 + Sqrt[5]/40]}, {-Sqrt[1/4 + Sqrt[5]/10], -1/2, Sqrt[1/8 + \
+      Sqrt[5]/40]}, {-Sqrt[1/4 + Sqrt[5]/10], 1/2, Sqrt[1/8 + Sqrt[5]/40]}, \
+      {-Sqrt[1/8 - Sqrt[5]/40], -(1 + Sqrt[5])/4, -Sqrt[1/8 + Sqrt[5]/40]}, \
+      {-Sqrt[1/8 - Sqrt[5]/40], (1 + Sqrt[5])/4, -Sqrt[1/8 + Sqrt[5]/40]}, \
+      {Sqrt[1/8 - Sqrt[5]/40], -(1 + Sqrt[5])/4, Sqrt[1/8 + Sqrt[5]/40]}, \
+      {Sqrt[1/8 - Sqrt[5]/40], (1 + Sqrt[5])/4, Sqrt[1/8 + Sqrt[5]/40]}}",
+    faces_src: "{{1, 4, 7}, {1, 8, 4}, {1, 7, 12}, {1, 11, 8}, {1, 12, 11}, \
+      {2, 3, 5}, {2, 6, 3}, {2, 5, 10}, {2, 9, 6}, {2, 10, 9}, \
+      {3, 12, 5}, {3, 6, 11}, {3, 11, 12}, {4, 10, 7}, {4, 8, 9}, \
+      {4, 9, 10}, {5, 7, 10}, {5, 12, 7}, {6, 9, 8}, {6, 8, 11}}",
+    classes_src: "\
+      {\"Amphichiral\", \"Isohedron\", \"KeplerPoinsot\", \
+      \"Regular\", \"Rigid\"}",
+  },
   // Truncating a Platonic solid's corners gives an Archimedean solid with
   // two face types (a polygon per original face, plus one new polygon per
   // truncated vertex). None of the three below has a true insphere — the
