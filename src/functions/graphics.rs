@@ -3546,6 +3546,56 @@ fn is_box_display_wrapper(name: &str, args: &[Expr]) -> bool {
   }
 }
 
+/// The column width a `Grid`'s `ItemSize -> w` (or `{w, h}`) fixes, as a
+/// number of characters. `w` counts ems and an average character is about
+/// half an em wide. `Automatic` and non-numeric sizes fix nothing.
+fn grid_item_width_chars(options: &[Expr]) -> Option<usize> {
+  let size = options.iter().find_map(|opt| match opt {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(&**pattern, Expr::Identifier(n) if n == "ItemSize") => {
+      Some(&**replacement)
+    }
+    _ => None,
+  })?;
+  let width = match size {
+    Expr::List(dims) => dims.first()?,
+    other => other,
+  };
+  let ems = match width {
+    Expr::Integer(n) => *n as f64,
+    Expr::Real(f) => *f,
+    _ => return None,
+  };
+  (ems >= 1.0).then(|| (ems * 2.0).round() as usize)
+}
+
+/// Break `text` into lines of at most `width` characters at word
+/// boundaries (a longer word keeps its own line); existing line breaks stay.
+fn wrap_text_to_width(text: &str, width: usize) -> String {
+  text
+    .split('\n')
+    .map(|line| {
+      let mut lines: Vec<String> = Vec::new();
+      let mut current = String::new();
+      for word in line.split(' ') {
+        let needed = current.chars().count() + 1 + word.chars().count();
+        if !current.is_empty() && needed > width {
+          lines.push(std::mem::take(&mut current));
+        }
+        if !current.is_empty() {
+          current.push(' ');
+        }
+        current.push_str(word);
+      }
+      lines.push(current);
+      lines.join("\n")
+    })
+    .collect::<Vec<_>>()
+    .join("\n")
+}
+
 fn graphics_text_content(expr: &Expr) -> String {
   match expr {
     // A string carrying inline `\!\(\*…\)` box notation — the front end's
@@ -3681,9 +3731,23 @@ fn graphics_text_content(expr: &Expr) -> String {
       let Some(Expr::List(rows)) = args.first() else {
         unreachable!()
       };
+      let wrap_width = if name == "Grid" {
+        grid_item_width_chars(&args[1..])
+      } else {
+        None
+      };
       rows
         .iter()
         .map(|row| match row {
+          // A fixed `ItemSize` width wraps a lone cell's prose onto several
+          // lines; a row of side-by-side cells keeps its one-line cells.
+          Expr::List(cells) if name == "Grid" && cells.len() == 1 => {
+            let text = graphics_text_content(&cells[0]);
+            match wrap_width {
+              Some(width) => wrap_text_to_width(&text, width),
+              None => text,
+            }
+          }
           Expr::List(cells) if name == "Grid" => cells
             .iter()
             .map(graphics_text_content)
@@ -24824,6 +24888,8 @@ fn contains_presentation_head(expr: &Expr) -> bool {
           | "Subscript"
           | "Superscript"
           | "Subsuperscript"
+          | "Overscript"
+          | "Underscript"
       ) || args.iter().any(contains_presentation_head)
     }
     Expr::BinaryOp { left, right, .. } => {
