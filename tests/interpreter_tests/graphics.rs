@@ -15260,6 +15260,28 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       ));
     }
   }
+
+  /// Regression: `Plot` and `ParametricPlot` ignored `FrameTicks -> None`
+  /// and kept labelling the frame edges.
+  #[test]
+  fn frame_ticks_none_drops_the_frame_tick_labels() {
+    for plot in [
+      "Plot[x, {x, 0, 1}, Frame -> True, FrameTicks -> None]",
+      "Plot[x, {x, 0, 1}, Frame -> True, FrameTicks -> False]",
+      "Show[Table[ParametricPlot[{k t, t}, {t, 0, 2}], {k, 1, 3}], \
+       Frame -> True, FrameTicks -> None]",
+    ] {
+      let svg = export_svg(plot);
+      assert!(!svg.contains("<text"), "{plot}: {svg}");
+    }
+    // The ticks stay unless the plot is framed and asks to drop them.
+    for plot in [
+      "Plot[x, {x, 0, 1}, Frame -> True]",
+      "Plot[x, {x, 0, 1}, FrameTicks -> None]",
+    ] {
+      assert!(export_svg(plot).contains("<text"), "{plot}");
+    }
+  }
 }
 
 mod pane_wrapper_display {
