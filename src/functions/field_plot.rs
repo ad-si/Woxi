@@ -2797,6 +2797,30 @@ pub fn stream_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (sx, sy)
   };
 
+  // `RegionFunction -> f` confines the streamlines: `f[x, y]` must hold at
+  // every point drawn.
+  let region = args.iter().skip(3).find_map(|a| match a {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(&**pattern, Expr::Identifier(n) if n == "RegionFunction") => {
+      Some((**replacement).clone())
+    }
+    _ => None,
+  });
+  let in_region = |x: f64, y: f64| -> bool {
+    region.as_ref().is_none_or(|r| {
+      let call = Expr::CurriedCall {
+        func: Box::new(r.clone()),
+        args: vec![Expr::Real(x), Expr::Real(y)],
+      };
+      matches!(
+        evaluate_expr_to_expr(&call),
+        Ok(Expr::Identifier(ref s)) if s == "True"
+      )
+    })
+  };
+
   // Seed points on a grid
   let seed_n = 8;
   let x_step = (x_max - x_min) / seed_n as f64;
@@ -2813,6 +2837,9 @@ pub fn stream_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     for sj in 0..seed_n {
       let mut x = x_min + (si as f64 + 0.5) * x_step;
       let mut y = y_min + (sj as f64 + 0.5) * y_step;
+      if !in_region(x, y) {
+        continue;
+      }
 
       let mut points = Vec::new();
       let mut coords: Vec<(f64, f64)> = vec![(x, y)];
@@ -2846,7 +2873,8 @@ pub fn stream_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         x += dt * (k1x + 2.0 * k2x + 2.0 * k3x + k4x) / 6.0;
         y += dt * (k1y + 2.0 * k2y + 2.0 * k3y + k4y) / 6.0;
 
-        if x < x_min || x > x_max || y < y_min || y > y_max {
+        if x < x_min || x > x_max || y < y_min || y > y_max || !in_region(x, y)
+        {
           break;
         }
         let (px, py) = to_px(x, y);

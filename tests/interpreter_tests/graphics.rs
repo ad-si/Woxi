@@ -13725,6 +13725,37 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    // Regression: a field built from a Module-local helper that depends on
+    // the plot variables (`y1` below) left every streamline stuck at its
+    // seed, because the body already named both plot variables and was
+    // therefore never resolved.
+    #[test]
+    fn stream_plot_resolves_module_local_helper() {
+      assert_eq!(
+        interpret(
+          "Module[{h, x1, x2}, h = x1/(1 + x2); \
+             Max[Flatten[Cases[StreamPlot[{x1 - h, x2 - h}, {x1, 0, 1}, \
+             {x2, 0, 1}][[1]], Line[p_] :> Length[DeleteDuplicates[p]], \
+             Infinity]]] > 1]"
+        )
+        .unwrap(),
+        "True"
+      );
+    }
+
+    #[test]
+    fn stream_plot_region_function_confines_streamlines() {
+      assert_eq!(
+        interpret(
+          "Max[Flatten[Cases[StreamPlot[{x, y}, {x, 0, 1}, {y, 0, 1}, \
+             RegionFunction -> Function[{x, y}, x + y < 0.5]][[1]], \
+             Line[p_] :> (#[[1]] + #[[2]] & /@ p), Infinity]]] < 0.5"
+        )
+        .unwrap(),
+        "True"
+      );
+    }
+
     #[test]
     fn vector_plot_part_one_yields_drawable_primitives() {
       assert_eq!(
