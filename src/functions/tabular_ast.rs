@@ -19,10 +19,8 @@ fn make_tabular_failure(
   // Encode the `MessageTemplate :> MessageName[...]` (RuleDelayed) entry
   // using the Association formatter convention: a value of
   // `RuleDelayed { pattern == key, replacement }` renders as `key :> replacement`.
-  let msg_template_value = Expr::RuleDelayed {
-    pattern: Box::new(msg_template_key.clone()),
-    replacement: Box::new(msg_name_call),
-  };
+  let msg_template_value =
+    rule_delayed_expr(msg_template_key.clone(), msg_name_call);
   Expr::FunctionCall {
     name: "Failure".to_string(),
     args: vec![

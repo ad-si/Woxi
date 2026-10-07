@@ -263,10 +263,7 @@ pub fn decompose_expr(expr: &Expr) -> ExprForm {
       head: "Association".to_string(),
       children: items
         .iter()
-        .map(|(k, v)| Expr::Rule {
-          pattern: Box::new(k.clone()),
-          replacement: Box::new(v.clone()),
-        })
+        .map(|(k, v)| rule_expr(k.clone(), v.clone()))
         .collect(),
     },
 

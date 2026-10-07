@@ -179,10 +179,7 @@ fn network_graph_property(g: &NetworkGraph, property: &str) -> Option<Expr> {
     "EdgeRules" => Expr::List(
       g.edges
         .iter()
-        .map(|&(a, b)| Expr::Rule {
-          pattern: Box::new(g.vertices[a].clone()),
-          replacement: Box::new(g.vertices[b].clone()),
-        })
+        .map(|&(a, b)| rule_expr(g.vertices[a].clone(), g.vertices[b].clone()))
         .collect::<Vec<_>>()
         .into(),
     ),

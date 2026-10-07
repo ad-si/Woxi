@@ -39,10 +39,7 @@ pub fn map_ast(func: &Expr, list: &Expr) -> Result<Expr, InterpreterError> {
             let new_repl = apply_func_ast(func, replacement)?;
             return Ok((
               key.clone(),
-              Expr::RuleDelayed {
-                pattern: pattern.clone(),
-                replacement: Box::new(new_repl),
-              },
+              rule_delayed_expr(*pattern.clone(), new_repl),
             ));
           }
           let new_val = apply_func_ast(func, val)?;
@@ -358,17 +355,11 @@ fn map_at_depth(
     Expr::Rule {
       pattern,
       replacement,
-    } => Expr::Rule {
-      pattern: Box::new(recurse(pattern)?),
-      replacement: Box::new(recurse(replacement)?),
-    },
+    } => rule_expr(recurse(pattern)?, recurse(replacement)?),
     Expr::RuleDelayed {
       pattern,
       replacement,
-    } => Expr::RuleDelayed {
-      pattern: Box::new(recurse(pattern)?),
-      replacement: Box::new(recurse(replacement)?),
-    },
+    } => rule_delayed_expr(recurse(pattern)?, recurse(replacement)?),
     Expr::Association(items) => {
       // Recurse through values; the key is not a child element of the
       // Association (matches Wolfram's level numbering where `<|a->1|>`
@@ -386,10 +377,7 @@ fn map_at_depth(
             let new_repl = recurse(replacement)?;
             return Ok((
               k.clone(),
-              Expr::RuleDelayed {
-                pattern: pattern.clone(),
-                replacement: Box::new(new_repl),
-              },
+              rule_delayed_expr(*pattern.clone(), new_repl),
             ));
           }
           Ok((k.clone(), recurse(v)?))
@@ -1820,15 +1808,9 @@ pub fn thread_ast_positions(
             .zip(rhs.iter())
             .map(|(l, r)| {
               if is_delayed {
-                Expr::RuleDelayed {
-                  pattern: Box::new(l.clone()),
-                  replacement: Box::new(r.clone()),
-                }
+                rule_delayed_expr(l.clone(), r.clone())
               } else {
-                Expr::Rule {
-                  pattern: Box::new(l.clone()),
-                  replacement: Box::new(r.clone()),
-                }
+                rule_expr(l.clone(), r.clone())
               }
             })
             .collect();
@@ -1840,15 +1822,9 @@ pub fn thread_ast_positions(
             .iter()
             .map(|l| {
               if is_delayed {
-                Expr::RuleDelayed {
-                  pattern: Box::new(l.clone()),
-                  replacement: replacement.clone(),
-                }
+                rule_delayed_expr(l.clone(), *replacement.clone())
               } else {
-                Expr::Rule {
-                  pattern: Box::new(l.clone()),
-                  replacement: replacement.clone(),
-                }
+                rule_expr(l.clone(), *replacement.clone())
               }
             })
             .collect();

@@ -6587,10 +6587,7 @@ pub fn component_measurements_ast(
       }
       Expr::List(tuple.into())
     };
-    rules.push(Expr::Rule {
-      pattern: Box::new(Expr::Integer(label)),
-      replacement: Box::new(value),
-    });
+    rules.push(rule_expr(Expr::Integer(label), value));
   }
   Ok(Expr::List(rules.into()))
 }

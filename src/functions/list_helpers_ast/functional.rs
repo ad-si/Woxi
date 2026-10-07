@@ -966,10 +966,7 @@ pub(crate) fn expr_children(expr: &Expr) -> Option<Vec<Expr>> {
     Expr::Association(pairs) => Some(
       pairs
         .iter()
-        .map(|(k, v)| Expr::Rule {
-          pattern: Box::new(k.clone()),
-          replacement: Box::new(v.clone()),
-        })
+        .map(|(k, v)| rule_expr(k.clone(), v.clone()))
         .collect(),
     ),
     // Atomic expressions have no children

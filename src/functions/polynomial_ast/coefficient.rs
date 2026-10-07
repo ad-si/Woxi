@@ -1163,10 +1163,7 @@ pub fn coefficient_rules_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .into_iter()
     .map(|(exps, coeff)| {
       let exp_list = Expr::List(exps.into_iter().map(Expr::Integer).collect());
-      Expr::Rule {
-        pattern: Box::new(exp_list),
-        replacement: Box::new(coeff),
-      }
+      rule_expr(exp_list, coeff)
     })
     .collect();
 

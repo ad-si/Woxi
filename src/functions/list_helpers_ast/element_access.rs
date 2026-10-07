@@ -665,10 +665,7 @@ fn take_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
   if let Expr::Association(pairs) = list {
     let rules: Vec<Expr> = pairs
       .iter()
-      .map(|(k, v)| Expr::Rule {
-        pattern: Box::new(k.clone()),
-        replacement: Box::new(v.clone()),
-      })
+      .map(|(k, v)| rule_expr(k.clone(), v.clone()))
       .collect();
     let result = take_ast(&Expr::List(rules.into()), n)?;
     // Convert result back to association
@@ -845,10 +842,7 @@ pub fn drop_ast(list: &Expr, n: &Expr) -> Result<Expr, InterpreterError> {
   if let Expr::Association(pairs) = list {
     let rules: Vec<Expr> = pairs
       .iter()
-      .map(|(k, v)| Expr::Rule {
-        pattern: Box::new(k.clone()),
-        replacement: Box::new(v.clone()),
-      })
+      .map(|(k, v)| rule_expr(k.clone(), v.clone()))
       .collect();
     let result = drop_ast(&Expr::List(rules.into()), n)?;
     if let Expr::List(items) = &result {
@@ -1740,13 +1734,7 @@ pub fn replace_part_positional_ast(
     }
   }
 
-  replace_part_ast(
-    expr,
-    &Expr::Rule {
-      pattern: Box::new(pos.clone()),
-      replacement: Box::new(new.clone()),
-    },
-  )
+  replace_part_ast(expr, &rule_expr(pos.clone(), new.clone()))
 }
 
 /// The subexpression at a 1-based integer path, or None if it does not exist.

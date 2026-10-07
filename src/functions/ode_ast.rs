@@ -281,22 +281,22 @@ fn build_dsolve_result(
   function_form: bool,
 ) -> Expr {
   let rule = if function_form {
-    Expr::Rule {
-      pattern: Box::new(Expr::Identifier(y_name)),
-      replacement: Box::new(Expr::NamedFunction {
+    rule_expr(
+      Expr::Identifier(y_name),
+      Expr::NamedFunction {
         params: vec![x_name],
         body: Box::new(solution),
         bracketed: true,
-      }),
-    }
+      },
+    )
   } else {
-    Expr::Rule {
-      pattern: Box::new(Expr::FunctionCall {
+    rule_expr(
+      Expr::FunctionCall {
         name: y_name,
         args: vec![Expr::Identifier(x_name)].into(),
-      }),
-      replacement: Box::new(solution),
-    }
+      },
+      solution,
+    )
   };
 
   Expr::List(vec![Expr::List(vec![rule].into())].into())
@@ -1701,10 +1701,7 @@ fn try_solve_pde_system(
       "InterpolatingFunction",
       vec![domain.clone(), grid_expr, orders.clone(), coords.clone()],
     );
-    rules.push(Expr::Rule {
-      pattern: Box::new(Expr::Identifier(name.clone())),
-      replacement: Box::new(interp),
-    });
+    rules.push(rule_expr(Expr::Identifier(name.clone()), interp));
   }
   Ok(Some(Expr::List(vec![Expr::List(rules.into())].into())))
 }
@@ -2473,10 +2470,7 @@ fn try_solve_hyperbolic_pde(
     "InterpolatingFunction",
     vec![domain, grid_expr, orders, coords],
   );
-  let rule = Expr::Rule {
-    pattern: Box::new(Expr::Identifier(u_name.to_string())),
-    replacement: Box::new(interp),
-  };
+  let rule = rule_expr(Expr::Identifier(u_name.to_string()), interp);
   Ok(Some(Expr::List(vec![Expr::List(vec![rule].into())].into())))
 }
 
@@ -3620,21 +3614,18 @@ fn ndsolve_system(
       vec![domain, data, Expr::Integer(NDSOLVE_INTERPOLATION_ORDER)],
     );
     rules.push(if f.function_form {
-      Expr::Rule {
-        pattern: Box::new(Expr::Identifier(f.name.clone())),
-        replacement: Box::new(interp),
-      }
+      rule_expr(Expr::Identifier(f.name.clone()), interp)
     } else {
-      Expr::Rule {
-        pattern: Box::new(Expr::FunctionCall {
+      rule_expr(
+        Expr::FunctionCall {
           name: f.name.clone(),
           args: vec![Expr::Identifier(x_name.clone())].into(),
-        }),
-        replacement: Box::new(Expr::CurriedCall {
+        },
+        Expr::CurriedCall {
           func: Box::new(interp),
           args: vec![Expr::Identifier(x_name.clone())],
-        }),
-      }
+        },
+      )
     });
   }
 
@@ -3668,21 +3659,18 @@ fn ndsolve_system(
       args: vec![Expr::Identifier(name.clone())],
     };
     rules.push(if *function_form {
-      Expr::Rule {
-        pattern: Box::new(deriv_pattern),
-        replacement: Box::new(interp),
-      }
+      rule_expr(deriv_pattern, interp)
     } else {
-      Expr::Rule {
-        pattern: Box::new(Expr::CurriedCall {
+      rule_expr(
+        Expr::CurriedCall {
           func: Box::new(deriv_pattern),
           args: vec![Expr::Identifier(x_name.clone())],
-        }),
-        replacement: Box::new(Expr::CurriedCall {
+        },
+        Expr::CurriedCall {
           func: Box::new(interp),
           args: vec![Expr::Identifier(x_name.clone())],
-        }),
-      }
+        },
+      )
     });
   }
 
@@ -3716,21 +3704,18 @@ fn ndsolve_system(
       vec![domain, data, Expr::Integer(NDSOLVE_INTERPOLATION_ORDER)],
     );
     rules.push(if f.function_form {
-      Expr::Rule {
-        pattern: Box::new(Expr::Identifier(f.name.clone())),
-        replacement: Box::new(interp),
-      }
+      rule_expr(Expr::Identifier(f.name.clone()), interp)
     } else {
-      Expr::Rule {
-        pattern: Box::new(Expr::FunctionCall {
+      rule_expr(
+        Expr::FunctionCall {
           name: f.name.clone(),
           args: vec![Expr::Identifier(x_name.clone())].into(),
-        }),
-        replacement: Box::new(Expr::CurriedCall {
+        },
+        Expr::CurriedCall {
           func: Box::new(interp),
           args: vec![Expr::Identifier(x_name.clone())],
-        }),
-      }
+        },
+      )
     });
   }
   // Return the rules in the order the functions were asked for: an
@@ -8556,18 +8541,15 @@ fn wrap_pde_solution(
 ) -> Expr {
   let n_var = |s: &str| Expr::Identifier(s.to_string());
   let rule = if return_call_form {
-    Expr::Rule {
-      pattern: Box::new(call(fname, vec![n_var(xn), n_var(yn)])),
-      replacement: Box::new(body),
-    }
+    rule_expr(call(fname, vec![n_var(xn), n_var(yn)]), body)
   } else {
-    Expr::Rule {
-      pattern: Box::new(Expr::Identifier(fname.to_string())),
-      replacement: Box::new(call(
+    rule_expr(
+      Expr::Identifier(fname.to_string()),
+      call(
         "Function",
         vec![Expr::List(vec![n_var(xn), n_var(yn)].into()), body],
-      )),
-    }
+      ),
+    )
   };
   Expr::List(vec![Expr::List(vec![rule].into())].into())
 }
@@ -10059,12 +10041,14 @@ fn dsolve_linear_system(
   let rules: Vec<Expr> = y_names
     .iter()
     .zip(y_exprs)
-    .map(|(yn, sol)| Expr::Rule {
-      pattern: Box::new(Expr::FunctionCall {
-        name: yn.clone(),
-        args: vec![Expr::Identifier(x_name.to_string())].into(),
-      }),
-      replacement: Box::new(sol),
+    .map(|(yn, sol)| {
+      rule_expr(
+        Expr::FunctionCall {
+          name: yn.clone(),
+          args: vec![Expr::Identifier(x_name.to_string())].into(),
+        },
+        sol,
+      )
     })
     .collect();
 

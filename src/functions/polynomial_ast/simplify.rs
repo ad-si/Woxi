@@ -4226,17 +4226,11 @@ pub fn simplify_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(simplify_for_leaf_count(&base));
     }
     let combined = match (override_asn, positional.len()) {
-      (Some(o), 0) => Expr::Rule {
-        pattern: Box::new(id_expr("Assumptions")),
-        replacement: Box::new(o),
-      },
+      (Some(o), 0) => rule_expr(id_expr("Assumptions"), o),
       (Some(o), _) => {
         let mut and_args = vec![o];
         and_args.extend(positional);
-        Expr::Rule {
-          pattern: Box::new(id_expr("Assumptions")),
-          replacement: Box::new(call("And", and_args)),
-        }
+        rule_expr(id_expr("Assumptions"), call("And", and_args))
       }
       (None, 1) => positional.into_iter().next().unwrap(),
       (None, _) => call("And", positional),

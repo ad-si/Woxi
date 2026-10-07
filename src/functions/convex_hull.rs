@@ -151,26 +151,23 @@ fn boundary_mesh_region(
   all_exact: bool,
   opts: &[Expr],
 ) -> Expr {
-  let method = Expr::Rule {
-    pattern: Box::new(id_expr("Method")),
-    replacement: Box::new(Expr::List(
-      vec![Expr::Rule {
-        pattern: Box::new(Expr::String("SeparateBoundaries".to_string())),
-        replacement: Box::new(bool_expr(false)),
-      }]
+  let method = rule_expr(
+    id_expr("Method"),
+    Expr::List(
+      vec![rule_expr(
+        Expr::String("SeparateBoundaries".to_string()),
+        bool_expr(false),
+      )]
       .into(),
-    )),
-  };
+    ),
+  );
   let (properties, rest) = mesh_cell_properties(opts, cell_counts);
   let mut mesh_args =
     vec![Expr::List(verts.into()), Expr::List(vec![cells].into())];
   mesh_args.extend(properties);
   mesh_args.push(method);
   if all_exact {
-    mesh_args.push(Expr::Rule {
-      pattern: Box::new(id_expr("WorkingPrecision")),
-      replacement: Box::new(id_expr("Infinity")),
-    });
+    mesh_args.push(rule_expr(id_expr("WorkingPrecision"), id_expr("Infinity")));
   }
   mesh_args.extend(rest);
   call("BoundaryMeshRegion", mesh_args)
@@ -314,22 +311,14 @@ pub(crate) fn mesh_cell_properties(
         Some(i) => Expr::Integer(i as i128),
         None => id_expr("Default"),
       };
-      entries.push(Expr::Rule {
-        pattern: Box::new(Expr::List(
-          vec![Expr::Integer(d as i128), index].into(),
-        )),
-        replacement: Box::new(Expr::Rule {
-          pattern: Box::new(id_expr(option)),
-          replacement: Box::new(cells[&key].clone()),
-        }),
-      });
+      entries.push(rule_expr(
+        Expr::List(vec![Expr::Integer(d as i128), index].into()),
+        rule_expr(id_expr(option), cells[&key].clone()),
+      ));
     }
   }
   (
-    Some(Expr::Rule {
-      pattern: Box::new(id_expr("Properties")),
-      replacement: Box::new(Expr::List(entries.into())),
-    }),
+    Some(rule_expr(id_expr("Properties"), Expr::List(entries.into()))),
     rest,
   )
 }

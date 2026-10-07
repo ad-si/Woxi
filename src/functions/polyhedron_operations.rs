@@ -94,10 +94,7 @@ fn map_points(expr: &Expr, f: &dyn Fn(Vec3) -> Vec3) -> Expr {
     Expr::Rule {
       pattern,
       replacement,
-    } => Expr::Rule {
-      pattern: Box::new(map_points(pattern, f)),
-      replacement: Box::new(map_points(replacement, f)),
-    },
+    } => rule_expr(map_points(pattern, f), map_points(replacement, f)),
     other => other.clone(),
   }
 }

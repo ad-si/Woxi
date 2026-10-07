@@ -1686,10 +1686,7 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     crate::functions::graphics::option_name_value(o).map(|(n, _)| n)
       == Some("Frame")
   }) {
-    structure_args.push(Expr::Rule {
-      pattern: Box::new(id_expr("Frame")),
-      replacement: Box::new(bool_expr(true)),
-    });
+    structure_args.push(rule_expr(id_expr("Frame"), bool_expr(true)));
   }
   structure_args.extend(explicit);
   let structure = call("Graphics", structure_args);
@@ -2056,10 +2053,7 @@ pub fn region_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Wolfram's RegionPlot defaults, for the options the caller left unset.
-  let rule = |name: &str, value: Expr| Expr::Rule {
-    pattern: Box::new(id_expr(name)),
-    replacement: Box::new(value),
-  };
+  let rule = |name: &str, value: Expr| rule_expr(id_expr(name), value);
   let range =
     |lo: f64, hi: f64| Expr::List(vec![Expr::Real(lo), Expr::Real(hi)].into());
   let scaled_pad = || {
@@ -2444,10 +2438,7 @@ fn region_plot_polygons(loops: &[Vec<(f64, f64)>]) -> Vec<Expr> {
     } else {
       call1(
         "Polygon",
-        Expr::Rule {
-          pattern: Box::new(pt_list(ring)),
-          replacement: Box::new(Expr::List(holes.into())),
-        },
+        rule_expr(pt_list(ring), Expr::List(holes.into())),
       )
     });
   }

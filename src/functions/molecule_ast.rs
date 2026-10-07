@@ -588,10 +588,7 @@ fn add_explicit_hydrogens(graph: &mut MolGraph) {
 // ---------------------------------------------------------------------------
 
 fn rule(key: &str, value: Expr) -> Expr {
-  Expr::Rule {
-    pattern: Box::new(Expr::String(key.to_string())),
-    replacement: Box::new(value),
-  }
+  rule_expr(Expr::String(key.to_string()), value)
 }
 
 /// Render an atom for `AtomList` / `MoleculeValue["AtomList"]`: always an

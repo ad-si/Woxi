@@ -2669,17 +2669,17 @@ fn substitute_captures(expr: &Expr, captures: &Captures) -> Expr {
     Expr::Rule {
       pattern,
       replacement,
-    } => Expr::Rule {
-      pattern: Box::new(substitute_captures(pattern, captures)),
-      replacement: Box::new(substitute_captures(replacement, captures)),
-    },
+    } => rule_expr(
+      substitute_captures(pattern, captures),
+      substitute_captures(replacement, captures),
+    ),
     Expr::RuleDelayed {
       pattern,
       replacement,
-    } => Expr::RuleDelayed {
-      pattern: Box::new(substitute_captures(pattern, captures)),
-      replacement: Box::new(substitute_captures(replacement, captures)),
-    },
+    } => rule_delayed_expr(
+      substitute_captures(pattern, captures),
+      substitute_captures(replacement, captures),
+    ),
     Expr::Comparison {
       operands,
       operators,
@@ -14218,17 +14218,11 @@ pub(crate) fn map_expr_tree(
     Expr::Rule {
       pattern,
       replacement,
-    } => Expr::Rule {
-      pattern: Box::new(go(pattern)),
-      replacement: Box::new(go(replacement)),
-    },
+    } => rule_expr(go(pattern), go(replacement)),
     Expr::RuleDelayed {
       pattern,
       replacement,
-    } => Expr::RuleDelayed {
-      pattern: Box::new(go(pattern)),
-      replacement: Box::new(go(replacement)),
-    },
+    } => rule_delayed_expr(go(pattern), go(replacement)),
     Expr::PrefixApply { func, arg } => Expr::PrefixApply {
       func: Box::new(go(func)),
       arg: Box::new(go(arg)),
@@ -14410,9 +14404,8 @@ pub fn build_template_object(
   if let Some(assoc) = bound_args {
     object_args.push(assoc);
   }
-  let option = |name: &str, value: Expr| Expr::Rule {
-    pattern: Box::new(Expr::Identifier(name.to_string())),
-    replacement: Box::new(value),
+  let option = |name: &str, value: Expr| {
+    rule_expr(Expr::Identifier(name.to_string()), value)
   };
   object_args.push(option("CombinerFunction", id_expr("StringJoin")));
   // XMLTemplate reports its insertion function as the string "HTMLFragment";
@@ -14925,10 +14918,7 @@ pub fn url_query_decode_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Some((k, v)) => (k, v),
         None => (segment, ""),
       };
-      Expr::Rule {
-        pattern: Box::new(Expr::String(decode(raw_key))),
-        replacement: Box::new(Expr::String(decode(raw_val))),
-      }
+      rule_expr(Expr::String(decode(raw_key)), Expr::String(decode(raw_val)))
     })
     .collect::<Vec<_>>();
   Ok(Expr::List(rules.into()))

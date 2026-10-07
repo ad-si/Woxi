@@ -320,10 +320,7 @@ impl<'a> Parser<'a> {
       } else {
         self.qualified_name(name, true)?
       };
-      attributes.push(Expr::Rule {
-        pattern: Box::new(key),
-        replacement: Box::new(Expr::String(value.clone())),
-      });
+      attributes.push(rule_expr(key, Expr::String(value.clone())));
     }
     Ok(attributes)
   }
@@ -345,9 +342,11 @@ impl<'a> Parser<'a> {
         // wolframscript writes them.
         let renamed: Vec<Expr> = attributes
           .iter()
-          .map(|(name, value)| Expr::Rule {
-            pattern: Box::new(Expr::String(capitalize(name))),
-            replacement: Box::new(Expr::String(value.clone())),
+          .map(|(name, value)| {
+            rule_expr(
+              Expr::String(capitalize(name)),
+              Expr::String(value.clone()),
+            )
           })
           .collect();
         prolog.push(Expr::CurriedCall {

@@ -2665,15 +2665,15 @@ pub fn bdd_encoding(table: &[bool], n: usize) -> Vec<i64> {
 pub fn bdd_object(table: &[bool], n: usize) -> Expr {
   call(
     "BooleanFunction",
-    vec![Expr::Rule {
-      pattern: Box::new(Expr::String("BDD".to_string())),
-      replacement: Box::new(Expr::List(
+    vec![rule_expr(
+      Expr::String("BDD".to_string()),
+      Expr::List(
         bdd_encoding(table, n)
           .into_iter()
           .map(|v| Expr::Integer(v as i128))
           .collect(),
-      )),
-    }],
+      ),
+    )],
   )
 }
 
@@ -4054,9 +4054,8 @@ pub fn unate_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let rules: Vec<Expr> = vars
       .iter()
       .enumerate()
-      .map(|(vi, v)| Expr::Rule {
-        pattern: Box::new(v.clone()),
-        replacement: Box::new(bool_expr(idx & (1usize << (n - 1 - vi)) == 0)),
+      .map(|(vi, v)| {
+        rule_expr(v.clone(), bool_expr(idx & (1usize << (n - 1 - vi)) == 0))
       })
       .collect();
     table.push(eval(&call(
@@ -4244,9 +4243,8 @@ fn boolean_quantifier(
     let rules: Vec<Expr> = vars
       .iter()
       .enumerate()
-      .map(|(vi, v)| Expr::Rule {
-        pattern: Box::new(v.clone()),
-        replacement: Box::new(bool_expr(idx & (1usize << (n - 1 - vi)) == 0)),
+      .map(|(vi, v)| {
+        rule_expr(v.clone(), bool_expr(idx & (1usize << (n - 1 - vi)) == 0))
       })
       .collect();
     branches.push(eval(&call(

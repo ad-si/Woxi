@@ -62,10 +62,7 @@ pub fn expand_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     let expanded_pattern = expand_and_combine(pattern);
     let expanded_replacement = expand_and_combine(replacement);
-    let result = Expr::Rule {
-      pattern: Box::new(expanded_pattern),
-      replacement: Box::new(expanded_replacement),
-    };
+    let result = rule_expr(expanded_pattern, expanded_replacement);
     if let Some(m) = modulus {
       return Ok(reduce_coefficients_mod(&result, m));
     }

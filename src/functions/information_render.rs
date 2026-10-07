@@ -29,10 +29,7 @@ fn colored_style(text: &str, color: &str) -> Expr {
 
 /// Build a `Rule[lhs, rhs]` Expr.
 fn rule(lhs: Expr, rhs: Expr) -> Expr {
-  Expr::Rule {
-    pattern: Box::new(lhs),
-    replacement: Box::new(rhs),
-  }
+  rule_expr(lhs, rhs)
 }
 
 /// Build a `List[…]` Expr.

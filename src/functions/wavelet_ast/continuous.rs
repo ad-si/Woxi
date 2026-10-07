@@ -190,21 +190,20 @@ impl Cwd {
     let rules: Vec<Expr> = self
       .rules
       .iter()
-      .map(|(ov, coefs)| Expr::Rule {
-        pattern: Box::new(ov_to_expr(*ov)),
-        replacement: Box::new(Expr::List(
-          coefs
-            .iter()
-            .map(|&c| complex_to_expr(c))
-            .collect::<Vec<_>>()
-            .into(),
-        )),
+      .map(|(ov, coefs)| {
+        rule_expr(
+          ov_to_expr(*ov),
+          Expr::List(
+            coefs
+              .iter()
+              .map(|&c| complex_to_expr(c))
+              .collect::<Vec<_>>()
+              .into(),
+          ),
+        )
       })
       .collect();
-    let opt = |k: &str, v: Expr| Expr::Rule {
-      pattern: Box::new(Expr::String(k.to_string())),
-      replacement: Box::new(v),
-    };
+    let opt = |k: &str, v: Expr| rule_expr(Expr::String(k.to_string()), v);
     let opts = Expr::List(
       vec![
         opt("Voices", Expr::Integer(self.voices as i128)),
@@ -692,10 +691,7 @@ pub fn apply_cwd(func: &Expr, args: &[Expr]) -> Result<Expr, InterpreterError> {
         .into(),
     );
     if form == "Rules" {
-      out.push(Expr::Rule {
-        pattern: Box::new(ov_to_expr(*ov)),
-        replacement: Box::new(values),
-      });
+      out.push(rule_expr(ov_to_expr(*ov), values));
     } else {
       out.push(values);
     }
@@ -759,9 +755,8 @@ fn cwd_property(cwd: &Cwd, prop: &str) -> Expr {
       cwd
         .rules
         .iter()
-        .map(|(ov, _)| Expr::Rule {
-          pattern: Box::new(ov_to_expr(*ov)),
-          replacement: Box::new(Expr::Real(cwd.scale(ov.0, ov.1))),
+        .map(|(ov, _)| {
+          rule_expr(ov_to_expr(*ov), Expr::Real(cwd.scale(ov.0, ov.1)))
         })
         .collect::<Vec<_>>()
         .into(),

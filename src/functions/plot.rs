@@ -95,17 +95,11 @@ pub(crate) fn substitute_var(expr: &Expr, var: &str, value: &Expr) -> Expr {
     Expr::Rule {
       pattern,
       replacement,
-    } => Expr::Rule {
-      pattern: Box::new(sub(pattern)),
-      replacement: Box::new(sub(replacement)),
-    },
+    } => rule_expr(sub(pattern), sub(replacement)),
     Expr::RuleDelayed {
       pattern,
       replacement,
-    } => Expr::RuleDelayed {
-      pattern: Box::new(sub(pattern)),
-      replacement: Box::new(sub(replacement)),
-    },
+    } => rule_delayed_expr(sub(pattern), sub(replacement)),
     Expr::ReplaceAll { expr, rules } => Expr::ReplaceAll {
       expr: Box::new(sub(expr)),
       rules: Box::new(sub(rules)),

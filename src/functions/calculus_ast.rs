@@ -158,10 +158,8 @@ pub fn d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         _ => None,
       })
       .collect();
-    let rule = Expr::Rule {
-      pattern: Box::new(id_expr("NonConstants")),
-      replacement: Box::new(Expr::List(non_constants.into())),
-    };
+    let rule =
+      rule_expr(id_expr("NonConstants"), Expr::List(non_constants.into()));
     let mut new_args = vec![expr.clone()];
     new_args.extend(diff_vars);
     return with_non_constants(names, rule, || d_ast(&new_args));
@@ -10176,10 +10174,8 @@ fn limit_at_infinity(
     // Constant base, variable exponent: lift the limit into the exponent.
     // Limit[c^g(n), n -> point] = c^Limit[g, n -> point] when c is free of n.
     if is_constant_wrt(&base, var_name) && !is_constant_wrt(&exp, var_name) {
-      let rule = Expr::Rule {
-        pattern: Box::new(Expr::Identifier(var_name.to_string())),
-        replacement: Box::new(point.clone()),
-      };
+      let rule =
+        rule_expr(Expr::Identifier(var_name.to_string()), point.clone());
       let exp_limit = limit_ast(&[exp.clone(), rule])?;
       // Only commit if the inner Limit fully resolved.
       if !matches!(&exp_limit, Expr::FunctionCall { name, .. } if name == "Limit")
@@ -10201,10 +10197,8 @@ fn limit_at_infinity(
       let product =
         crate::evaluator::evaluate_expr_to_expr(&product).unwrap_or(product);
       // Take the limit of g * (f - 1) as var -> Infinity
-      let rule = Expr::Rule {
-        pattern: Box::new(Expr::Identifier(var_name.to_string())),
-        replacement: Box::new(point.clone()),
-      };
+      let rule =
+        rule_expr(Expr::Identifier(var_name.to_string()), point.clone());
       let exponent_limit = limit_ast(&[product, rule])?;
 
       // Return E^limit once the exponent limit has resolved — either a clean
@@ -10373,10 +10367,7 @@ fn limit_at_infinity(
     name: "Limit".to_string(),
     args: vec![
       expr.clone(),
-      Expr::Rule {
-        pattern: Box::new(Expr::Identifier(var_name.to_string())),
-        replacement: Box::new(point.clone()),
-      },
+      rule_expr(Expr::Identifier(var_name.to_string()), point.clone()),
     ]
     .into(),
   })
@@ -10596,10 +10587,8 @@ fn one_sided_limit_ast(
     LimitDirection::FromBelow => "FromBelow",
     LimitDirection::TwoSided => "FromAbove",
   };
-  let direction_opt = Expr::Rule {
-    pattern: Box::new(id_expr("Direction")),
-    replacement: Box::new(Expr::String(dir_str.to_string())),
-  };
+  let direction_opt =
+    rule_expr(id_expr("Direction"), Expr::String(dir_str.to_string()));
 
   let result = limit_ast(&[args[0].clone(), args[1].clone(), direction_opt])?;
 
@@ -12283,10 +12272,7 @@ fn analytic_residue_limit(
   var_name: &str,
   z0: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  let rule = Expr::Rule {
-    pattern: Box::new(Expr::Identifier(var_name.to_string())),
-    replacement: Box::new(z0.clone()),
-  };
+  let rule = rule_expr(Expr::Identifier(var_name.to_string()), z0.clone());
   let lim = limit_ast(&[expr.clone(), rule])?;
   if !matches!(&lim, Expr::FunctionCall { name, .. } if name == "Limit") {
     return Ok(lim);
@@ -17410,11 +17396,7 @@ pub fn asymptotic_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // f is identically zero to this order — any x works
     return Ok(Expr::List(
       vec![Expr::List(
-        vec![Expr::Rule {
-          pattern: Box::new(Expr::Identifier(var_name)),
-          replacement: Box::new(x0),
-        }]
-        .into(),
+        vec![rule_expr(Expr::Identifier(var_name), x0)].into(),
       )]
       .into(),
     ));
@@ -17459,10 +17441,10 @@ pub fn asymptotic_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 plus2(x0.clone(), *replacement.clone())
               };
               let simplified = evaluate_expr_to_expr(&x_val)?;
-              new_rules.push(Expr::Rule {
-                pattern: Box::new(Expr::Identifier(var_name.clone())),
-                replacement: Box::new(simplified),
-              });
+              new_rules.push(rule_expr(
+                Expr::Identifier(var_name.clone()),
+                simplified,
+              ));
             }
           }
           if !new_rules.is_empty() {

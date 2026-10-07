@@ -426,13 +426,7 @@ fn bad_protocol_failure(head: &str, protocol: &str) -> Expr {
     args: vec![
       Expr::String("SocketsLink".to_string()),
       Expr::Association(vec![
-        (
-          key.clone(),
-          Expr::RuleDelayed {
-            pattern: Box::new(key),
-            replacement: Box::new(template),
-          },
-        ),
+        (key.clone(), rule_delayed_expr(key, template)),
         (
           Expr::String("MessageParameters".to_string()),
           Expr::List(vec![Expr::String(protocol.to_string())].into()),
@@ -1162,13 +1156,7 @@ fn handler_association(event: &SocketEvent, listen_socket: &str) -> Expr {
 #[cfg(not(target_arch = "wasm32"))]
 fn delayed(key: &str, value: Expr) -> (Expr, Expr) {
   let key = Expr::String(key.to_string());
-  (
-    key.clone(),
-    Expr::RuleDelayed {
-      pattern: Box::new(key),
-      replacement: Box::new(value),
-    },
-  )
+  (key.clone(), rule_delayed_expr(key, value))
 }
 
 // ---------------------------------------------------------------------------
