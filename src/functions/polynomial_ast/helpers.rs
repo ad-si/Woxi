@@ -143,14 +143,9 @@ pub fn build_or(mut terms: Vec<Expr>) -> Expr {
   if terms.len() == 1 {
     return terms.remove(0);
   }
-  terms
-    .iter()
-    .skip(1)
-    .fold(terms[0].clone(), |acc, t| Expr::BinaryOp {
-      op: BinaryOperator::Or,
-      left: Box::new(acc),
-      right: Box::new(t.clone()),
-    })
+  terms.iter().skip(1).fold(terms[0].clone(), |acc, t| {
+    binop(BinaryOperator::Or, acc, t.clone())
+  })
 }
 
 /// Build a sum from parts.
@@ -183,11 +178,7 @@ pub fn or_results(a: &Expr, b: &Expr) -> Expr {
     (_, Expr::Identifier(s)) if s == "False" => a.clone(),
     (Expr::Identifier(s), _) if s == "True" => bool_expr(true),
     (_, Expr::Identifier(s)) if s == "True" => bool_expr(true),
-    _ => Expr::BinaryOp {
-      op: BinaryOperator::Or,
-      left: Box::new(a.clone()),
-      right: Box::new(b.clone()),
-    },
+    _ => binop(BinaryOperator::Or, a.clone(), b.clone()),
   }
 }
 
@@ -198,11 +189,7 @@ pub fn and_results(a: &Expr, b: &Expr) -> Expr {
     (_, Expr::Identifier(s)) if s == "True" => a.clone(),
     (Expr::Identifier(s), _) if s == "False" => bool_expr(false),
     (_, Expr::Identifier(s)) if s == "False" => bool_expr(false),
-    _ => Expr::BinaryOp {
-      op: BinaryOperator::And,
-      left: Box::new(a.clone()),
-      right: Box::new(b.clone()),
-    },
+    _ => binop(BinaryOperator::And, a.clone(), b.clone()),
   }
 }
 

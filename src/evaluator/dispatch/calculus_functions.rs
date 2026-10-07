@@ -2949,14 +2949,13 @@ fn inverse_mellin_inner(
       && consts.len() == 1
       && is_pi(&consts[0])
     {
-      let result = Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(const_expr("Pi")),
-        right: Box::new(make_plus(vec![
+      let result = div2(
+        const_expr("Pi"),
+        make_plus(vec![
           const_expr("Pi"),
           make_times(vec![const_expr("Pi"), x.clone()]),
-        ])),
-      };
+        ]),
+      );
       return Some((result, false));
     }
     return None;
@@ -4950,16 +4949,8 @@ fn gf_inner(
     right,
   } = expr
   {
-    let neg_right = Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(Expr::Integer(-1)),
-      right: right.clone(),
-    };
-    let as_plus = Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left: left.clone(),
-      right: Box::new(neg_right),
-    };
+    let neg_right = times2(Expr::Integer(-1), *right.clone());
+    let as_plus = plus2(*left.clone(), neg_right);
     return gf_inner(&as_plus, n, x);
   }
 
@@ -5373,17 +5364,10 @@ fn gf_binomial(
           && matches!(fargs[0], Expr::Identifier(name) if name == n));
       if is_2n {
         // 1/Sqrt[1 - 4*x]
-        return Some(Expr::BinaryOp {
-          op: BinaryOperator::Power,
-          left: Box::new(minus2(
-            Expr::Integer(1),
-            times2(Expr::Integer(4), x.clone()),
-          )),
-          right: Box::new(call(
-            "Rational",
-            vec![Expr::Integer(-1), Expr::Integer(2)],
-          )),
-        });
+        return Some(pow2(
+          minus2(Expr::Integer(1), times2(Expr::Integer(4), x.clone())),
+          call("Rational", vec![Expr::Integer(-1), Expr::Integer(2)]),
+        ));
       }
     }
   }
@@ -5528,16 +5512,8 @@ fn egf_poly_part(
     right,
   } = expr
   {
-    let neg_right = Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(Expr::Integer(-1)),
-      right: right.clone(),
-    };
-    let as_plus = Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left: left.clone(),
-      right: Box::new(neg_right),
-    };
+    let neg_right = times2(Expr::Integer(-1), *right.clone());
+    let as_plus = plus2(*left.clone(), neg_right);
     return egf_poly_part(&as_plus, n, x);
   }
 
@@ -5644,16 +5620,8 @@ fn egf_inner(
     right,
   } = expr
   {
-    let neg_right = Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(Expr::Integer(-1)),
-      right: right.clone(),
-    };
-    let as_plus = Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left: left.clone(),
-      right: Box::new(neg_right),
-    };
+    let neg_right = times2(Expr::Integer(-1), *right.clone());
+    let as_plus = plus2(*left.clone(), neg_right);
     return egf_inner(&as_plus, n, x);
   }
 
@@ -5664,15 +5632,8 @@ fn egf_inner(
     right,
   } = expr
   {
-    let as_times = Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: left.clone(),
-      right: Box::new(Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: right.clone(),
-        right: Box::new(Expr::Integer(-1)),
-      }),
-    };
+    let as_times =
+      times2(*left.clone(), pow2(*right.clone(), Expr::Integer(-1)));
     return egf_inner(&as_times, n, x);
   }
 
@@ -6644,11 +6605,11 @@ fn substitute_identifier(expr: &Expr, name: &str, replacement: &Expr) -> Expr {
         .collect::<Vec<_>>()
         .into(),
     ),
-    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-      op: *op,
-      left: Box::new(substitute_identifier(left, name, replacement)),
-      right: Box::new(substitute_identifier(right, name, replacement)),
-    },
+    Expr::BinaryOp { op, left, right } => binop(
+      *op,
+      substitute_identifier(left, name, replacement),
+      substitute_identifier(right, name, replacement),
+    ),
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
       op: *op,
       operand: Box::new(substitute_identifier(operand, name, replacement)),

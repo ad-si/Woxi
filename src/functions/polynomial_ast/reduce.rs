@@ -9,6 +9,14 @@ use crate::functions::calculus_ast::{is_constant_wrt, simplify};
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::polynomial_ast::helpers::compare_exprs;
 
+pub fn and2(a: Expr, b: Expr) -> Expr {
+  binop(BinaryOperator::And, a, b)
+}
+
+pub fn or2(a: Expr, b: Expr) -> Expr {
+  binop(BinaryOperator::Or, a, b)
+}
+
 // ─── Reduce ──────────────────────────────────────────────────────────
 
 /// Reduce[expr, var] or Reduce[expr, {vars}] or Reduce[expr, vars, domain]
@@ -166,11 +174,7 @@ fn thread_reduce_list_equations(expr: &Expr) -> Expr {
   }
   out
     .into_iter()
-    .reduce(|acc, e| Expr::BinaryOp {
-      op: BinaryOperator::And,
-      left: Box::new(acc),
-      right: Box::new(e),
-    })
+    .reduce(and2)
     .unwrap_or_else(|| bool_expr(true))
 }
 
@@ -225,11 +229,7 @@ fn tighten_integer_one_sided(result: &Expr, var: &str) -> Option<Expr> {
     ],
     operators: vec![out_op],
   };
-  Some(Expr::BinaryOp {
-    op: BinaryOperator::And,
-    left: Box::new(element),
-    right: Box::new(comp),
-  })
+  Some(and2(element, comp))
 }
 
 /// If `result` is a bounded two-sided interval `Inequality[lo, op1, var, op2,
@@ -678,11 +678,7 @@ fn and_chain(constraints: &[Expr]) -> Expr {
   constraints
     .iter()
     .skip(1)
-    .fold(constraints[0].clone(), |acc, c| Expr::BinaryOp {
-      op: BinaryOperator::And,
-      left: Box::new(acc),
-      right: Box::new(c.clone()),
-    })
+    .fold(constraints[0].clone(), |acc, c| and2(acc, c.clone()))
 }
 
 /// Core reduction logic.
@@ -706,15 +702,10 @@ fn reduce_expr(
     if items.is_empty() {
       return Ok(bool_expr(true));
     }
-    let and_expr =
-      items
-        .iter()
-        .skip(1)
-        .fold(items[0].clone(), |acc, item| Expr::BinaryOp {
-          op: BinaryOperator::And,
-          left: Box::new(acc),
-          right: Box::new(item.clone()),
-        });
+    let and_expr = items
+      .iter()
+      .skip(1)
+      .fold(items[0].clone(), |acc, item| and2(acc, item.clone()));
     return reduce_expr(&and_expr, vars, domain);
   }
 
@@ -744,15 +735,10 @@ fn reduce_expr(
       if fargs.len() == 1 {
         return reduce_expr(&fargs[0], vars, domain);
       }
-      let combined =
-        fargs
-          .iter()
-          .skip(1)
-          .fold(fargs[0].clone(), |acc, a| Expr::BinaryOp {
-            op: BinaryOperator::And,
-            left: Box::new(acc),
-            right: Box::new(a.clone()),
-          });
+      let combined = fargs
+        .iter()
+        .skip(1)
+        .fold(fargs[0].clone(), |acc, a| and2(acc, a.clone()));
       return reduce_expr(&combined, vars, domain);
     }
   }
@@ -821,11 +807,6 @@ fn is_real_number_literal(e: &Expr) -> bool {
 /// FunctionCall shape (mixed strictness, `0 < x <= 10`) are recognized.
 fn expand_numeric_two_sided_bound(expr: &Expr, var: &str) -> Option<Expr> {
   let is_var = |e: &Expr| matches!(e, Expr::Identifier(s) if s == var);
-  let and = |left: Expr, right: Expr| Expr::BinaryOp {
-    op: BinaryOperator::And,
-    left: Box::new(left),
-    right: Box::new(right),
-  };
   let is_ineq_op = |op: ComparisonOp| {
     use ComparisonOp as C;
     matches!(op, C::Less | C::LessEqual | C::Greater | C::GreaterEqual)
@@ -850,7 +831,7 @@ fn expand_numeric_two_sided_bound(expr: &Expr, var: &str) -> Option<Expr> {
         operands: vec![operands[1].clone(), operands[2].clone()],
         operators: vec![operators[1]],
       };
-      Some(and(left, right))
+      Some(and2(left, right))
     }
     Expr::FunctionCall { name, args }
       if name == "Inequality" && args.len() == 5 =>
@@ -879,7 +860,7 @@ fn expand_numeric_two_sided_bound(expr: &Expr, var: &str) -> Option<Expr> {
         name: op_name(&args[3]),
         args: vec![args[2].clone(), args[4].clone()].into(),
       };
-      Some(and(left, right))
+      Some(and2(left, right))
     }
     _ => None,
   }
@@ -1526,16 +1507,6 @@ fn try_reduce_abs_inequality(
   let neg_c = negate_expr(&c);
   let cval = expr_to_number(&c)?;
   let zero = Expr::Integer(0);
-  let and = |a: Expr, b: Expr| Expr::BinaryOp {
-    op: BinaryOperator::And,
-    left: Box::new(a),
-    right: Box::new(b),
-  };
-  let or = |a: Expr, b: Expr| Expr::BinaryOp {
-    op: BinaryOperator::Or,
-    left: Box::new(a),
-    right: Box::new(b),
-  };
 
   let rewritten: Expr = match op {
     CompOp::Less => {
@@ -1543,7 +1514,7 @@ fn try_reduce_abs_inequality(
       if cval <= 0.0 {
         return Some(Ok(bool_expr(false)));
       }
-      and(
+      and2(
         make_comparison(&inner, &neg_c, CompOp::Greater),
         make_comparison(&inner, &c, CompOp::Less),
       )
@@ -1556,7 +1527,7 @@ fn try_reduce_abs_inequality(
       if cval == 0.0 {
         make_comparison(&inner, &zero, CompOp::Equal)
       } else {
-        and(
+        and2(
           make_comparison(&inner, &neg_c, CompOp::GreaterEqual),
           make_comparison(&inner, &c, CompOp::LessEqual),
         )
@@ -1568,7 +1539,7 @@ fn try_reduce_abs_inequality(
       if cval < 0.0 {
         return Some(Ok(bool_expr(true)));
       }
-      or(
+      or2(
         make_comparison(&inner, &neg_c, CompOp::Less),
         make_comparison(&inner, &c, CompOp::Greater),
       )
@@ -1578,7 +1549,7 @@ fn try_reduce_abs_inequality(
       if cval <= 0.0 {
         return Some(Ok(bool_expr(true)));
       }
-      or(
+      or2(
         make_comparison(&inner, &neg_c, CompOp::LessEqual),
         make_comparison(&inner, &c, CompOp::GreaterEqual),
       )
@@ -1623,29 +1594,22 @@ fn try_reduce_abs_not_equal(
   // |f| != 0 is the two open rays `f < 0 || f > 0` (Wolfram keeps it split
   // rather than folding back to `f != 0`).
   if cval == 0.0 {
-    let rays = Expr::BinaryOp {
-      op: BinaryOperator::Or,
-      left: Box::new(make_comparison(&inner, &c, CompOp::Less)),
-      right: Box::new(make_comparison(&inner, &c, CompOp::Greater)),
-    };
+    let rays = or2(
+      make_comparison(&inner, &c, CompOp::Less),
+      make_comparison(&inner, &c, CompOp::Greater),
+    );
     return Some(reduce_expr(&rays, &[var.to_string()], domain));
   }
   // c > 0: f < -c || (-c < f < c) || f > c.
   let neg_c = negate_expr(&c);
-  let band = Expr::BinaryOp {
-    op: BinaryOperator::And,
-    left: Box::new(make_comparison(&inner, &neg_c, CompOp::Greater)),
-    right: Box::new(make_comparison(&inner, &c, CompOp::Less)),
-  };
-  let rewritten = Expr::BinaryOp {
-    op: BinaryOperator::Or,
-    left: Box::new(Expr::BinaryOp {
-      op: BinaryOperator::Or,
-      left: Box::new(make_comparison(&inner, &neg_c, CompOp::Less)),
-      right: Box::new(band),
-    }),
-    right: Box::new(make_comparison(&inner, &c, CompOp::Greater)),
-  };
+  let band = and2(
+    make_comparison(&inner, &neg_c, CompOp::Greater),
+    make_comparison(&inner, &c, CompOp::Less),
+  );
+  let rewritten = or2(
+    or2(make_comparison(&inner, &neg_c, CompOp::Less), band),
+    make_comparison(&inner, &c, CompOp::Greater),
+  );
   Some(reduce_expr(&rewritten, &[var.to_string()], domain))
 }
 
@@ -2257,15 +2221,10 @@ fn reduce_and(
         if remaining.is_empty() {
           return Ok(bool_expr(true));
         }
-        let combined =
-          remaining
-            .iter()
-            .skip(1)
-            .fold(remaining[0].clone(), |acc, c| Expr::BinaryOp {
-              op: BinaryOperator::And,
-              left: Box::new(acc),
-              right: Box::new(c.clone()),
-            });
+        let combined = remaining
+          .iter()
+          .skip(1)
+          .fold(remaining[0].clone(), |acc, c| and2(acc, c.clone()));
         return reduce_expr(&combined, vars, domain);
       }
 
@@ -2594,11 +2553,7 @@ fn reduce_combined_inequalities(
     reduced
       .iter()
       .skip(1)
-      .fold(reduced[0].clone(), |acc, r| Expr::BinaryOp {
-        op: BinaryOperator::And,
-        left: Box::new(acc),
-        right: Box::new(r.clone()),
-      }),
+      .fold(reduced[0].clone(), |acc, r| and2(acc, r.clone())),
   )
 }
 
@@ -3156,11 +3111,7 @@ fn reduce_multi_var_and_inner(
     if matches!(&sub, Expr::Identifier(t) if t == "True") {
       return Ok(pinned);
     }
-    return Ok(Expr::BinaryOp {
-      op: BinaryOperator::And,
-      left: Box::new(pinned),
-      right: Box::new(sub),
-    });
+    return Ok(and2(pinned, sub));
   }
 
   // Find the best (equation, variable) pair: prefer last variable in the list
@@ -3237,14 +3188,10 @@ fn reduce_multi_var_and_inner(
                 all_results.push(var_eq);
               } else if remaining_vars.is_empty() {
                 // Check if remaining constraints are satisfied
-                let combined = remaining.iter().skip(1).fold(
-                  remaining[0].clone(),
-                  |acc, c| Expr::BinaryOp {
-                    op: BinaryOperator::And,
-                    left: Box::new(acc),
-                    right: Box::new(c.clone()),
-                  },
-                );
+                let combined = remaining
+                  .iter()
+                  .skip(1)
+                  .fold(remaining[0].clone(), |acc, c| and2(acc, c.clone()));
                 let evaled = crate::evaluator::evaluate_expr_to_expr(&combined);
                 if let Ok(result) = evaled
                   && !matches!(&result, Expr::Identifier(s) if s == "False")
@@ -3255,14 +3202,10 @@ fn reduce_multi_var_and_inner(
                 }
               } else {
                 // Reduce remaining with fewer variables
-                let combined = remaining.iter().skip(1).fold(
-                  remaining[0].clone(),
-                  |acc, c| Expr::BinaryOp {
-                    op: BinaryOperator::And,
-                    left: Box::new(acc),
-                    right: Box::new(c.clone()),
-                  },
-                );
+                let combined = remaining
+                  .iter()
+                  .skip(1)
+                  .fold(remaining[0].clone(), |acc, c| and2(acc, c.clone()));
                 let sub_result =
                   reduce_expr(&combined, &remaining_vars, domain)?;
 
@@ -3305,11 +3248,7 @@ fn reduce_multi_var_and_inner(
                       );
                       // Put earlier variables first to match Wolfram's
                       // output ordering (variable list order)
-                      all_results.push(Expr::BinaryOp {
-                        op: BinaryOperator::And,
-                        left: Box::new(branch.clone()),
-                        right: Box::new(var_eq),
-                      });
+                      all_results.push(and2(branch.clone(), var_eq));
                     }
                   }
                 }
@@ -3333,15 +3272,10 @@ fn reduce_multi_var_and_inner(
   Ok(Expr::FunctionCall {
     name: "Reduce".to_string(),
     args: {
-      let combined =
-        constraints
-          .iter()
-          .skip(1)
-          .fold(constraints[0].clone(), |acc, c| Expr::BinaryOp {
-            op: BinaryOperator::And,
-            left: Box::new(acc),
-            right: Box::new(c.clone()),
-          });
+      let combined = constraints
+        .iter()
+        .skip(1)
+        .fold(constraints[0].clone(), |acc, c| and2(acc, c.clone()));
       let vars_expr = if vars.len() == 1 {
         Expr::Identifier(vars[0].clone())
       } else {
