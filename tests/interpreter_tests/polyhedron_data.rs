@@ -307,7 +307,7 @@ mod polyhedron_data_tests {
       interpret(r#"PolyhedronData["Properties"]"#).unwrap(),
       "{Circumradius, Classes, EdgeCount, EdgeIndices, FaceCount, \
        FaceCountRules, FaceIndices, Faces, Inradius, Insphere, Midradius, \
-       SurfaceArea, VertexCoordinates, VertexCount, Volume}"
+       Skeleton, SkeletonGraph, SurfaceArea, VertexCoordinates, VertexCount, Volume}"
     );
   }
 
@@ -1159,6 +1159,28 @@ mod polyhedron_data_tests {
       )
       .unwrap(),
       "{894427191/1000000000}"
+    );
+  }
+
+  // The skeleton is the vertex-edge graph, usable with graph functions.
+  #[test]
+  fn polyhedron_data_skeleton_graph() {
+    assert_eq!(
+      interpret(
+        r#"Table[{VertexCount[PolyhedronData[s, "Skeleton"]],
+             EdgeCount[PolyhedronData[s, "SkeletonGraph"]]} ==
+             {PolyhedronData[s, "VertexCount"], PolyhedronData[s, "EdgeCount"]},
+           {s, {"Tetrahedron", "Cube", "Dodecahedron", "Icosahedron"}}]"#
+      )
+      .unwrap(),
+      "{True, True, True, True}"
+    );
+    assert_eq!(
+      interpret(
+        r#"Length[FindHamiltonianPath[PolyhedronData["Dodecahedron", "Skeleton"], 1, 14]]"#
+      )
+      .unwrap(),
+      "20"
     );
   }
 }
