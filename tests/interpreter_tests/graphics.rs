@@ -3599,6 +3599,29 @@ mod plot3d {
       );
     }
 
+    /// Regression: the voxel faces of `First[RegionPlot3D[…]]` were drawn
+    /// with the default polygon outline, so a solid recombined from them
+    /// (as in a Demonstration with `Mesh -> None`) showed a grid of tiny
+    /// cube edges. The outlines are now suppressed unless `Mesh -> All`.
+    #[test]
+    fn first_surface_has_no_voxel_outlines() {
+      clear_state();
+      let svg = export_svg(
+        "Graphics3D[{RGBColor[0.5, 1, 0.9], \
+         First[RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 1}, \
+         {z, -1, 1}, Mesh -> None]]}, Boxed -> False]",
+      );
+      assert!(!svg.contains("rgb(64,64,64)"), "voxel outlines drawn");
+      let meshed = export_svg(
+        "Graphics3D[First[RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, \
+         {y, -1, 1}, {z, -1, 1}, Mesh -> All]], Boxed -> False]",
+      );
+      assert!(
+        meshed.contains("rgb(64,64,64)"),
+        "Mesh -> All lost outlines"
+      );
+    }
+
     /// The extracted surface carries real data-space coordinates, so it can
     /// be `Translate`d/`Rotate`d and recombined with other primitives inside
     /// a fresh `Graphics3D` — not just re-displayed as-is.
