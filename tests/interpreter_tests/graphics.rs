@@ -32464,3 +32464,38 @@ fn show_plot_with_graphics_and_fixed_image_size_keeps_x_range() {
   assert!(svg.contains(">100</text>"), "{svg}");
   assert!(!svg.contains("-200000"), "{svg}");
 }
+
+mod grid_text_in_graphics {
+  use super::*;
+
+  #[test]
+  fn item_size_wraps_a_lone_cell() {
+    let svg = interpret(
+      r#"ExportString[Graphics[Inset[Style[Grid[{{"aaa bbb ccc ddd eee fff ggg hhh iii jjj kkk lll"}}, ItemSize -> {10, Automatic}], 11], {0, 0}]], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(svg.contains(">aaa bbb ccc ddd eee</tspan>"), "{svg}");
+    assert!(svg.contains(">fff ggg hhh iii jjj</tspan>"), "{svg}");
+  }
+
+  #[test]
+  fn automatic_item_size_does_not_wrap() {
+    let svg = interpret(
+      r#"ExportString[Graphics[Text[Grid[{{"aaa bbb ccc ddd eee fff ggg hhh iii jjj kkk lll"}}, ItemSize -> {Automatic, Automatic}], {0, 0}]], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(
+      svg.contains(">aaa bbb ccc ddd eee fff ggg hhh iii jjj kkk lll</text>"),
+      "{svg}"
+    );
+  }
+
+  #[test]
+  fn box_items_joined_by_text_stay_in_one_row() {
+    let svg = interpret(
+      r#"ExportString[Graphics[Text["\!\(\*FractionBox[\(\*OverscriptBox[\(AB\), \(_\)] × \*OverscriptBox[\(AC\), \(_\)]\), \(2\)]\)", {0, 0}]], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(svg.contains("(AB\u{0304}*AC\u{0304})/2"), "{svg}");
+  }
+}

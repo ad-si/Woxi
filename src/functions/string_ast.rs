@@ -8990,7 +8990,7 @@ pub fn split_inline_boxes(s: &str) -> Vec<InlineBoxSegment> {
         });
       }
       segments.push(InlineBoxSegment {
-        text: strip_box_markup(&chars[i + 3..end]),
+        text: strip_box_markup(&rowify_mixed_groups(&chars[i + 3..end])),
         is_box: true,
       });
       i = end + 1;
@@ -9006,6 +9006,83 @@ pub fn split_inline_boxes(s: &str) -> Vec<InlineBoxSegment> {
     });
   }
   segments
+}
+
+/// Rewrite every `\(…\)` group that mixes several items — box code and
+/// literal text side by side, as in `\(\*OverscriptBox[…] × \*OverscriptBox[…]\)`
+/// — into one `RowBox[{…}]`, so the items stay together in reading order
+/// instead of the bare text between boxes being lost to the box parser.
+/// A group holding a single item is left alone.
+fn rowify_mixed_groups(chars: &[char]) -> Vec<char> {
+  let mut out: Vec<char> = Vec::with_capacity(chars.len());
+  let mut i = 0;
+  while i < chars.len() {
+    if chars[i] == BOX_OPEN
+      && let Some(close) = matching_box_close(chars, i)
+    {
+      let inner = rowify_mixed_groups(&chars[i + 1..close]);
+      out.push(BOX_OPEN);
+      out.extend(group_items_as_row(&inner));
+      out.push(BOX_CLOSE);
+      i = close + 1;
+    } else {
+      out.push(chars[i]);
+      i += 1;
+    }
+  }
+  out
+}
+
+/// The content of one `\(…\)` group, wrapped in `RowBox[{…}]` when it holds
+/// more than one item (see [`rowify_mixed_groups`]).
+fn group_items_as_row(inner: &[char]) -> Vec<char> {
+  fn flush_text(text: &mut String, items: &mut Vec<String>) {
+    let t = text.trim();
+    if !t.is_empty() {
+      items.push(format!("\"{t}\""));
+    }
+    text.clear();
+  }
+  let mut items: Vec<String> = Vec::new();
+  let mut text = String::new();
+  let mut i = 0;
+  while i < inner.len() {
+    if inner[i] == BOX_SEP {
+      flush_text(&mut text, &mut items);
+      // A box item runs through its head and the bracket pair that closes it.
+      let start = i + 1;
+      let mut j = start;
+      let mut depth = 0usize;
+      let mut in_str = false;
+      while j < inner.len() {
+        match inner[j] {
+          '"' => in_str = !in_str,
+          '[' if !in_str => depth += 1,
+          ']' if !in_str => {
+            depth = depth.saturating_sub(1);
+            if depth == 0 {
+              j += 1;
+              break;
+            }
+          }
+          _ => {}
+        }
+        j += 1;
+      }
+      items.push(inner[start..j].iter().collect());
+      i = j;
+    } else {
+      text.push(inner[i]);
+      i += 1;
+    }
+  }
+  flush_text(&mut text, &mut items);
+  if items.len() < 2 {
+    return inner.to_vec();
+  }
+  format!("{BOX_SEP}RowBox[{{{}}}]", items.join(", "))
+    .chars()
+    .collect()
 }
 
 /// Index of the `BOX_CLOSE` that balances the `BOX_OPEN` at `open`, or None
