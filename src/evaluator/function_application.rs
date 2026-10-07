@@ -1237,6 +1237,16 @@ fn try_sub_value_curried_match(
     if let Some(bindings) =
       crate::evaluator::pattern_matching::match_pattern(&actual, lhs)
     {
+      // A rule that rewrites the call to itself (`Subscript[l, a][x_] :=
+      // Subscript[l, a][x]`) is a fixed point; stop rather than recurse.
+      if let Ok(raw) =
+        crate::evaluator::pattern_matching::substitute_bindings_unevaluated(
+          body, &bindings,
+        )
+        && expr_to_string(&raw) == expr_to_string(&actual)
+      {
+        return Some(Ok(raw));
+      }
       return Some(crate::evaluator::pattern_matching::apply_bindings(
         body, &bindings,
       ));

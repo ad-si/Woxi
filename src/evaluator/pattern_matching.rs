@@ -5294,6 +5294,14 @@ pub fn apply_bindings(
   apply_bindings_with(replacement, bindings, true)
 }
 
+/// Substitute `bindings` into `replacement` without evaluating the result.
+pub fn substitute_bindings_unevaluated(
+  replacement: &Expr,
+  bindings: &[(String, Expr)],
+) -> Result<Expr, InterpreterError> {
+  apply_bindings_with(replacement, bindings, false)
+}
+
 /// `apply_bindings`, optionally leaving the substituted expression
 /// unevaluated (for a replacement made inside a held expression).
 fn apply_bindings_with(
