@@ -3294,8 +3294,9 @@ fn reduce_multi_var_and_inner(
 fn is_in_domain(expr: &Expr, domain: &str) -> bool {
   match domain {
     "Reals" => {
-      // Check that the expression doesn't contain I (imaginary unit)
-      !contains_imaginary(expr)
+      // No explicit imaginary unit, and no non-real value hiding behind a
+      // radical or `Root[...]` object (e.g. `(-1)^(1/3)`).
+      !contains_imaginary(expr) && !has_nonzero_imaginary_part(expr)
     }
     "Integers" => {
       matches!(expr, Expr::Integer(_))
@@ -3320,6 +3321,23 @@ pub fn is_rational(expr: &Expr) -> bool {
     }
     _ => false,
   }
+}
+
+/// Whether `expr` is a closed numeric value whose imaginary part is
+/// non-zero. Symbolic (non-numeric) expressions yield `false`.
+fn has_nonzero_imaginary_part(expr: &Expr) -> bool {
+  let im = Expr::FunctionCall {
+    name: "Im".to_string(),
+    args: vec![Expr::FunctionCall {
+      name: "N".to_string(),
+      args: vec![expr.clone()].into(),
+    }]
+    .into(),
+  };
+  crate::evaluator::evaluate_expr_to_expr(&im)
+    .ok()
+    .and_then(|v| try_eval_to_f64(&v))
+    .is_some_and(|v| v.abs() > 1e-12)
 }
 
 /// Check if an expression contains the imaginary unit I.
