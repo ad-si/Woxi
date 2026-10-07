@@ -18093,12 +18093,64 @@ pub fn unwrap_display_wrappers(expr: &Expr) -> Expr {
       if matches!(name.as_str(), "Grid" | "Column" | "Row" | "Framed"))
   {
     current = call1("TraditionalForm", current);
+  } else if traditional {
+    current = traditionalize_layout_items(&current);
   }
   current
 }
 
+/// `TraditionalForm[Column[{…}]]` typesets every item of the layout in
+/// conventional notation (`p(x)`, `=` for `Equal`), so the form is pushed
+/// down through `Row`/`Column`/`Style` onto the leaf expressions. Strings
+/// and `Null` stay as they are; anything else that is not a layout or a
+/// picture is wrapped in `TraditionalForm`.
+fn traditionalize_layout_items(expr: &Expr) -> Expr {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Row" | "Column")
+        && matches!(args.first(), Some(Expr::List(_))) =>
+    {
+      let mut new_args = args.clone();
+      if let Expr::List(items) = &args[0] {
+        new_args[0] =
+          Expr::List(items.iter().map(traditionalize_layout_items).collect());
+      }
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args,
+      }
+    }
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Style" | "Item" | "Pane")
+        && !args.is_empty() =>
+    {
+      let mut new_args = args.clone();
+      new_args[0] = traditionalize_layout_items(&args[0]);
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args,
+      }
+    }
+    Expr::String(_) | Expr::Graphics { .. } | Expr::Image { .. } => {
+      expr.clone()
+    }
+    Expr::Identifier(s) if s == "Null" => expr.clone(),
+    Expr::FunctionCall { name, .. }
+      if matches!(name.as_str(), "Grid" | "Framed" | "TraditionalForm") =>
+    {
+      expr.clone()
+    }
+    _ if crate::evaluator::lays_out_a_graphic(expr) => expr.clone(),
+    _ => call1("TraditionalForm", expr.clone()),
+  }
+}
+
 fn resolve_display_item(expr: &Expr) -> Expr {
   let mut current = expr.clone();
+  // `Null` is drawn as nothing, not as the word "Null".
+  if matches!(&current, Expr::Identifier(s) if s == "Null") {
+    return Expr::String(String::new());
+  }
   if let Expr::FunctionCall { name, args } = &current
     && name == "Dynamic"
     && !args.is_empty()

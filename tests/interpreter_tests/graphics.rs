@@ -14492,6 +14492,23 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       }
     }
 
+    // `Null` in a `Column` draws as nothing, and `TraditionalForm[Column[…]]`
+    // typesets the items traditionally (`p(x)`, `=`): a Demonstration body
+    // ending in `Text[TraditionalForm[Column[{…, Null}]]]` showed
+    // `p[x] == …` and a stray "Null" line.
+    #[test]
+    fn traditional_form_column_typesets_items_and_hides_null() {
+      // The live (Manipulate / Studio) display path.
+      let r = woxi::interpret_with_stdout(
+        "Text[TraditionalForm[Column[{\"hi\", Style[Row[{p[x], \" = \", p[x] == q[x]}], 14], Null}]]]",
+      )
+      .unwrap();
+      let svg = r.graphics.expect("graphics output");
+      assert!(!svg.contains("Null"), "Null must not be drawn: {svg}");
+      assert!(!svg.contains("p[x]"), "must typeset p(x): {svg}");
+      assert!(svg.contains("hi"), "missing string item: {svg}");
+    }
+
     // The same fallback gap without any `Grid` involved: a `Column` of
     // plain numbers is not "a picture" either, so it used to dump its own
     // `Column[{1, 2, 3}]` source through `ExportString`.
