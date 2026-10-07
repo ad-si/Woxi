@@ -13041,12 +13041,7 @@ pub(crate) fn plot_options_need_aspect_ratio(opts: &[Expr]) -> bool {
   let has_aspect_ratio = opts.iter().any(|o| {
     matches!(o, Expr::Rule { pattern, .. } if option_name(pattern) == Some("AspectRatio"))
   });
-  let has_fixed_image_size = opts.iter().any(|o| {
-    matches!(o, Expr::Rule { pattern, replacement }
-      if option_name(pattern) == Some("ImageSize")
-        && matches!(replacement.as_ref(), Expr::List(v) if v.len() == 2))
-  });
-  !has_aspect_ratio && !has_fixed_image_size
+  !has_aspect_ratio
 }
 
 /// The height/width ratio a plot rendered at `image_size` should be pinned
