@@ -32190,3 +32190,18 @@ mod cases_on_a_plot {
     }
   }
 }
+
+// Regression: `Show[plot, Graphics[…], ImageSize -> {w, h}]` blew the x range
+// up to ±250000 because the plot's aspect ratio was dropped for a fixed
+// `{w, h}` size, so the renderer stretched the range to a uniform scale.
+#[test]
+fn show_plot_with_graphics_and_fixed_image_size_keeps_x_range() {
+  let svg = interpret(
+    "ExportString[Show[{Plot[x^2, {x, 1, 100}, PlotRange -> {0, 400000}], \
+     Graphics[{Line[{{43, 0}, {43, 3000}}]}]}, ImageSize -> {500, 400}], \
+     \"SVG\"]",
+  )
+  .unwrap();
+  assert!(svg.contains(">100</text>"), "{svg}");
+  assert!(!svg.contains("-200000"), "{svg}");
+}

@@ -492,6 +492,16 @@ fn is_option_arg(s: &str) -> bool {
   false
 }
 
+/// Head Mathematica's box parser gives a `SuperscriptBox` whose script is
+/// the bare operator character `op` (`"*"` → `SuperStar`, ...).
+fn super_operator_head(op: &str) -> Option<&'static str> {
+  match op.trim_matches('"') {
+    "*" => Some("SuperStar"),
+    "\u{2020}" => Some("SuperDagger"),
+    _ => None,
+  }
+}
+
 /// Number of prime marks if `s` is a superscript string consisting solely
 /// of `\[Prime]` named characters (or `′`), the FrontEnd's typeset form of
 /// `Derivative`: `SuperscriptBox["\[Theta]", "\[Prime]\[Prime]"]` is
@@ -848,6 +858,20 @@ fn extract_typeset_box(s: &str) -> Option<String> {
           "{}{}",
           conv(&args[0]),
           "'".repeat(prime_marks(&args[1]).unwrap())
+        )
+      }
+      // A bare `*` or `\[Dagger]` script is the typeset form of `SuperStar`
+      // and `SuperDagger`
+      // (`SuperscriptBox["A", "*"]` is `SuperStar[A]`), which are
+      // evaluable heads users can attach definitions to.
+      "SuperscriptBox"
+        if args.len() == 2
+          && super_operator_head(&conv(&args[1])).is_some() =>
+      {
+        format!(
+          "{}[{}]",
+          super_operator_head(&conv(&args[1])).unwrap(),
+          conv(&args[0])
         )
       }
       // A script hung on `\[InvisiblePrefixScriptBase]` is a *prefix*
@@ -6146,6 +6170,16 @@ Cell["Chapter 2", "Chapter"]
       SuperscriptBox["\[Phi]", "\[Prime]",
        MultilineFunction->None], "[", "0", "]"}]]"#;
     assert_eq!(extract_cell_content(s), "ϕ'[0]");
+  }
+
+  #[test]
+  fn test_extract_cell_content_super_star_and_friends() {
+    // `SuperscriptBox["A", "*"]` is `SuperStar[A]`, not a string-scripted
+    // `Superscript`, so definitions and replacements on it work.
+    let s = r#"BoxData[RowBox[{SuperscriptBox["A", "*"], "=", "3"}]]"#;
+    assert_eq!(extract_cell_content(s), "SuperStar[A]=3");
+    let s = r#"BoxData[SuperscriptBox["M", "\[Dagger]"]]"#;
+    assert_eq!(extract_cell_content(s), "SuperDagger[M]");
   }
 
   /// A mixed or higher-order partial derivative — more than one argument,
