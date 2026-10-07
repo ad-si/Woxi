@@ -4786,3 +4786,39 @@ mod monitor_evaluates_its_expression {
     );
   }
 }
+
+/// A rule that rewrites a call to itself is a fixed point of evaluation, so
+/// it must stop there instead of exhausting `$RecursionLimit`.
+mod self_rewriting_rules {
+  use super::*;
+
+  #[test]
+  fn delayed_rule_returning_its_own_call() {
+    clear_state();
+    assert_eq!(interpret("g[x_] := g[x]; g[3]").unwrap(), "g[3]");
+  }
+
+  #[test]
+  fn subscripted_head_delayed_rule() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Subscript[l, a][x_] := Subscript[l, a][x]; Subscript[l, a][3]"
+      )
+      .unwrap(),
+      "Subscript[l, a][3]"
+    );
+  }
+
+  #[test]
+  fn subscripted_head_self_assignment() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Subscript[log, a][x] = Subscript[log, a][x]; Subscript[log, a][x]"
+      )
+      .unwrap(),
+      "Subscript[log, a][x]"
+    );
+  }
+}

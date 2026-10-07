@@ -175,6 +175,22 @@ fn resolve_param_default(default: &Expr) -> Option<Expr> {
   Some(evaluated)
 }
 
+/// True when a rule body, after substitution, is exactly the call being
+/// evaluated (`g[x_] := g[x]` applied to `g[3]`). Wolfram stops at such a
+/// fixed point rather than recursing.
+fn is_identity_rewrite(name: &str, args: &[Expr], body: &Expr) -> bool {
+  match body {
+    Expr::FunctionCall {
+      name: n,
+      args: body_args,
+    } if n == name && body_args.len() == args.len() => body_args
+      .iter()
+      .zip(args.iter())
+      .all(|(a, b)| expr_to_string(a) == expr_to_string(b)),
+    _ => false,
+  }
+}
+
 pub(crate) fn evaluate_function_call_ast(
   name: &str,
   args: &[Expr],
@@ -1377,6 +1393,16 @@ fn evaluate_function_call_ast_inner(
             ctx.borrow_mut().push((name.to_string(), bindings.clone()));
           });
         }
+        if is_identity_rewrite(name, &effective_args, &substituted) {
+          // The rule rewrites the call to itself (`g[x_] := g[x]`): the
+          // evaluator reached a fixed point, so stop instead of recursing.
+          if opt_bindings.is_some() {
+            crate::OPTION_VALUE_CONTEXT.with(|ctx| {
+              ctx.borrow_mut().pop();
+            });
+          }
+          return Ok(substituted);
+        }
         let mut body = substituted;
         let result = loop {
           match evaluate_expr_to_expr_inner(&body) {
@@ -1721,6 +1747,16 @@ fn evaluate_function_call_ast_inner(
         }
         // Tail-call: return body for the trampoline to evaluate.
         // Catch Return[] at the function call boundary via local trampoline.
+        if is_identity_rewrite(name, &effective_args, &substituted) {
+          // The rule rewrites the call to itself (`g[x_] := g[x]`): the
+          // evaluator reached a fixed point, so stop instead of recursing.
+          if opt_bindings.is_some() {
+            crate::OPTION_VALUE_CONTEXT.with(|ctx| {
+              ctx.borrow_mut().pop();
+            });
+          }
+          return Ok(substituted);
+        }
         let mut body = substituted;
         let result = loop {
           match evaluate_expr_to_expr_inner(&body) {
