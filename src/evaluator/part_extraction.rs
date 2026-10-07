@@ -573,7 +573,7 @@ pub fn graphics_symbolic_form(expr: &Expr) -> Option<Expr> {
         // First[Plot[…, Filling -> …]]` (extracting the drawing to
         // transform and redraw elsewhere, e.g. with
         // `GeometricTransformation`) silently loses the shading.
-        if let Some(polygon_points) = series_fill_polygon(s) {
+        if let Some(polygon_points) = series_fill_polygon(s, &source.series) {
           let fill_color = s.fill_color.unwrap_or(s.color);
           let opacity = s.fill_opacity.unwrap_or(0.2);
           let styled_fill =
@@ -607,6 +607,7 @@ pub fn graphics_symbolic_form(expr: &Expr) -> Option<Expr> {
 /// per-point stems, not a shaded area, so it has no single polygon).
 fn series_fill_polygon(
   s: &crate::syntax::PlotSeriesData,
+  all_series: &[crate::syntax::PlotSeriesData],
 ) -> Option<Vec<(f64, f64)>> {
   if s.is_scatter {
     return None;
@@ -631,6 +632,13 @@ fn series_fill_polygon(
     crate::syntax::SeriesFilling::Bottom => y_min,
     crate::syntax::SeriesFilling::Top => y_max,
     crate::syntax::SeriesFilling::Value(v) => v,
+    crate::syntax::SeriesFilling::Series(j) => {
+      let target = all_series.get(j)?;
+      return crate::functions::plot::fill_between_polygon(
+        &s.points,
+        &target.points,
+      );
+    }
   };
   let mut polygon = finite.clone();
   polygon.extend(finite.iter().rev().map(|&(x, _)| (x, ref_y)));

@@ -176,6 +176,8 @@ pub enum SeriesFilling {
   Bottom,
   Top,
   Value(f64),
+  /// Fill to another series (0-based index), from `Filling -> {i -> {j}}`.
+  Series(usize),
 }
 
 /// The glyph a series' points are drawn with (`PlotMarkers`). Lives here

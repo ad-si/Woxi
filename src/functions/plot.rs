@@ -1531,6 +1531,8 @@ impl crate::syntax::SeriesFilling {
       Self::Bottom => Some(y_min),
       Self::Top => Some(y_max),
       Self::Value(v) => Some(v),
+      // Bounded by another curve, not a constant level.
+      Self::Series(_) => None,
     }
   }
 }
@@ -1710,7 +1712,7 @@ fn interp_polyline_y(points: &[(f64, f64)], x: f64) -> Option<f64> {
 /// Polygon between two polylines over the overlap of their x-domains: the
 /// source curve forms the top boundary and the reversed target curve the
 /// bottom, both clipped (with interpolated endpoints) to the overlap.
-fn fill_between_polygon(
+pub(crate) fn fill_between_polygon(
   source: &[(f64, f64)],
   target: &[(f64, f64)],
 ) -> Option<Vec<(f64, f64)>> {
@@ -4810,8 +4812,13 @@ pub(crate) fn render_merged_plot_source(
   opts.filling_rules = drawn
     .iter()
     .enumerate()
-    .filter_map(|(i, s)| {
-      series_filling_to_filling(s.filling).map(|f| (i, FillTarget::Level(f)))
+    .filter_map(|(i, s)| match s.filling {
+      crate::syntax::SeriesFilling::Series(j) => {
+        Some((i, FillTarget::Series(j)))
+      }
+      other => {
+        series_filling_to_filling(other).map(|f| (i, FillTarget::Level(f)))
+      }
     })
     .collect();
   // Each merged plot keeps the fill it asked for: three normal curves
@@ -4853,7 +4860,8 @@ fn series_filling_to_filling(
   filling: crate::syntax::SeriesFilling,
 ) -> Option<Filling> {
   match filling {
-    crate::syntax::SeriesFilling::None => None,
+    crate::syntax::SeriesFilling::None
+    | crate::syntax::SeriesFilling::Series(_) => None,
     crate::syntax::SeriesFilling::Axis => Some(Filling::Axis),
     crate::syntax::SeriesFilling::Bottom => Some(Filling::Bottom),
     crate::syntax::SeriesFilling::Top => Some(Filling::Top),
@@ -9475,17 +9483,17 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // instead, so `source.series[i].filling` (which `Part`/`First` reads to
   // reconstitute the plot's primitives, and which `Show` reads to re-render
   // it) reflects each series' own target rather than staying unfilled.
-  // A curve-to-curve target (`{i -> {j}}`) isn't representable as a single
-  // series' fill level, so it's left unfilled here — the SVG rendering
-  // above still draws it directly from `plot_opts.filling_rules`.
+  // A curve-to-curve target (`{i -> {j}}`) is kept as `SeriesFilling::Series`.
   if !plot_opts.filling_rules.is_empty() {
     for (i, s) in source.series.iter_mut().enumerate() {
-      if let FillTarget::Level(level) = series_fill_target(&plot_opts, i) {
-        s.filling = level.to_series_filling();
-        if let Some(style) = series_filling_style(&plot_opts, i) {
-          s.fill_color = style.color;
-          s.fill_opacity = style.opacity;
-        }
+      let target = series_fill_target(&plot_opts, i);
+      s.filling = match target {
+        FillTarget::Level(level) => level.to_series_filling(),
+        FillTarget::Series(j) => crate::syntax::SeriesFilling::Series(j),
+      };
+      if let Some(style) = series_filling_style(&plot_opts, i) {
+        s.fill_color = style.color;
+        s.fill_opacity = style.opacity;
       }
     }
   }
