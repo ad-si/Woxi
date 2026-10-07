@@ -1343,18 +1343,28 @@ fn draw_axes_on_box(
         let half_h = font_size as f64 * 0.5;
         // …plus half of the label's own box, so `offset` can centre it
         // just past them.
-        let own_w = label_half_width(label, font_size);
+        // A near-vertical axis (the z axis) gets its label turned to run
+        // alongside it, as Wolfram does, so it only needs a line height
+        // of room sideways instead of its whole width.
+        let vertical = dy.abs() > 2.0 * dx.abs();
+        let own_w = if vertical {
+          half_h
+        } else {
+          label_half_width(label, font_size)
+        };
         let reach = TICK_LABEL_OFFSET
           + (perpx * sign).abs() * (half_w + own_w)
           + (perpy * sign).abs() * (half_h + half_h);
         let offset = reach + font_size as f64 * 0.5;
+        let (lx, ly) =
+          (mid_x + perpx * offset * sign, mid_y + perpy * offset * sign);
+        let rotate = if vertical {
+          format!(" transform=\"rotate(-90,{lx:.1},{ly:.1})\"")
+        } else {
+          String::new()
+        };
         svg.push_str(&format!(
-          "<text x=\"{:.1}\" y=\"{:.1}\" font-size=\"{}\" fill=\"{}\" text-anchor=\"middle\" dominant-baseline=\"middle\">{}</text>\n",
-          mid_x + perpx * offset * sign,
-          mid_y + perpy * offset * sign,
-          font_size,
-          axis_color,
-          label
+          "<text x=\"{lx:.1}\" y=\"{ly:.1}\" font-size=\"{font_size}\" fill=\"{axis_color}\" text-anchor=\"middle\" dominant-baseline=\"middle\"{rotate}>{label}</text>\n",
         ));
       }
     }

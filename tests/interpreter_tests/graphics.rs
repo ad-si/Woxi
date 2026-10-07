@@ -3140,6 +3140,29 @@ mod plot3d {
       }
     }
 
+    // A long z-axis label used to be laid out horizontally beside the
+    // vertical axis, which pushed its centre past the left edge of the
+    // canvas so it was clipped. It now runs alongside the axis.
+    #[test]
+    fn long_z_axis_label_is_rotated_and_stays_on_canvas() {
+      let svg = export_svg(
+        "Plot3D[x + y, {x, -1, 1}, {y, -1, 1}, \
+         AxesLabel -> {\"x\", \"y\", \"a rather long height label\"}]",
+      );
+      let tag = svg
+        .split("<text ")
+        .find(|t| t.contains("a rather long height label"))
+        .expect("z label present");
+      assert!(tag.contains("rotate(-90,"), "z label not rotated: {tag}");
+      let x: f64 = tag
+        .split("x=\"")
+        .nth(1)
+        .and_then(|s| s.split('"').next())
+        .and_then(|s| s.parse().ok())
+        .expect("x attribute");
+      assert!(x >= 0.0, "z label centre is off the canvas: {tag}");
+    }
+
     /// Every `<polygon>` fill colour appearing in the SVG, as `(r, g, b)`
     /// triples — parsed straight out of the `fill="rgb(r,g,b)"` attribute so
     /// a test can check the lit colours a surface actually rendered with.
