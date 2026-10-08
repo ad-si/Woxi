@@ -6657,8 +6657,8 @@ fn render_frame(
   bb: &BBox,
   svg_w: f64,
   svg_h: f64,
-  edges: &[bool; 4],
-  ticks: &[EdgeTicks; 4],
+  edges: [bool; 4],
+  ticks: [EdgeTicks; 4],
 ) {
   let t = theme();
   let frame_stroke = t.framed_border;
@@ -6677,7 +6677,7 @@ fn render_frame(
       (0.0, 0.0, svg_w, 0.0),
       (svg_w, 0.0, svg_w, svg_h),
     ];
-    for (&(x1, y1, x2, y2), &drawn) in sides.iter().zip(edges) {
+    for (&(x1, y1, x2, y2), drawn) in sides.iter().zip(edges) {
       if drawn {
         svg.push_str(&format!(
           "<line x1=\"{x1:.2}\" y1=\"{y1:.2}\" x2=\"{x2:.2}\" y2=\"{y2:.2}\" stroke=\"{frame_stroke}\" stroke-width=\"1\"/>\n"
@@ -9175,7 +9175,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   svg.push_str("</g>\n");
 
   if frame {
-    render_frame(&mut svg, &bb, svg_w, svg_h, &frame_edges, &frame_tick_modes);
+    render_frame(&mut svg, &bb, svg_w, svg_h, frame_edges, frame_tick_modes);
   }
 
   // Frame captions: the bottom/top ones centred outside their edge, the
