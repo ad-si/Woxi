@@ -3076,12 +3076,29 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // does not always reduce a multivariate fraction), so the numerator holds
     // no factor of the denominator and no pole is reported as a root.
     let together = together_expr(&expanded_raw);
-    let together = super::cancel::cancel_expr_keep_quotient_sign(&together);
-    let (numerator, denominator) = super::together::extract_num_den(&together);
-    if matches!(denominator, Expr::Integer(1)) {
-      expanded_raw
+    // A denominator free of the unknown never hides a pole: keep the plain
+    // numerator.
+    let plain_numerator = match &together {
+      Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        left: numerator,
+        right: denominator,
+      } if !super::eliminate::contains_var(denominator, var) => {
+        Some(expand_and_combine(numerator))
+      }
+      _ => None,
+    };
+    if let Some(numerator) = plain_numerator {
+      numerator
     } else {
-      expand_and_combine(&numerator)
+      let together = super::cancel::cancel_expr_keep_quotient_sign(&together);
+      let (numerator, denominator) =
+        super::together::extract_num_den(&together);
+      if matches!(denominator, Expr::Integer(1)) {
+        expanded_raw
+      } else {
+        expand_and_combine(&numerator)
+      }
     }
   };
   // Factor out constant factors (w.r.t. the solve variable) so the
