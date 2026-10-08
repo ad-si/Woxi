@@ -15902,6 +15902,17 @@ fn number_form_family_scalar(
   })
 }
 
+/// Whether the `NumberFormat` option is the identity on the mantissa, i.e.
+/// `(#1 &)` or `(# &)`, which leaves a plain number as its default digits.
+fn number_format_is_identity(args: &[Expr]) -> bool {
+  args.iter().any(|a| {
+    matches!(a, Expr::Rule { pattern, replacement }
+      if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "NumberFormat")
+        && matches!(replacement.as_ref(),
+          Expr::Function { body } if matches!(body.as_ref(), Expr::Slot(1))))
+  })
+}
+
 /// Render `NumberForm[…]`, `PaddedForm[…]` or `AccountingForm[…]` (options
 /// included) to its plain-text form. Lists thread element-wise, non-numeric
 /// arguments render as the expression itself (wolframscript shows
@@ -15917,6 +15928,23 @@ pub(crate) fn number_form_family_to_string(
     .collect();
   if positional.is_empty() || positional.len() > 2 {
     return None;
+  }
+  // `NumberForm[BaseForm[x, b], n, NumberFormat -> (#1 &), …]` writes the
+  // bare base-b digits: the identity format drops the subscripted base, the
+  // field is `NumberPadding`-padded to n + 1 columns and `DigitBlock` groups
+  // the digits from the right.
+  if head == "NumberForm"
+    && let Some(&value) = positional.first()
+    && matches!(value, Expr::FunctionCall { name, .. } if name == "BaseForm")
+    && let Some(spec) = positional.get(1).copied()
+    && number_format_is_identity(inner)
+  {
+    let opts = number_form_options(head, inner);
+    let (digits, _) = padded_base_form_digits(value, spec, &opts.lpad)?;
+    return Some(match opts.block {
+      Some(b) => group_digits_from_right(&digits, b, &opts.int_sep),
+      None => digits,
+    });
   }
   // A `NumberFormat`, or an `ExponentFunction` that actually chooses an
   // exponent, is rendered by the dedicated custom-format path. One that

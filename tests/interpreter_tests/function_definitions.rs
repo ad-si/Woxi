@@ -5865,3 +5865,23 @@ mod named_lhs_definitions {
     clear_state();
   }
 }
+
+mod function_parts {
+  use super::*;
+
+  #[test]
+  fn first_and_last_of_named_function() {
+    assert_eq!(interpret("First[Function[x, x^2 + 1]]").unwrap(), "x");
+    assert_eq!(interpret("Last[Function[x, x^2 + 1]]").unwrap(), "1 + x^2");
+    assert_eq!(
+      interpret("First[Function[{x, y}, x + y]]").unwrap(),
+      "{x, y}"
+    );
+    assert_eq!(interpret("Last[Function[{x, y}, x + y]]").unwrap(), "x + y");
+  }
+
+  #[test]
+  fn last_of_pure_function() {
+    assert_eq!(interpret("Last[#^2 &]").unwrap(), "#1^2");
+  }
+}

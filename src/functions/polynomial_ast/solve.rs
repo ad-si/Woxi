@@ -1504,6 +1504,11 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let solutions = solve_with_var_selection(&positional, modulus, args);
   SOLVE_DEPTH.with(|d| d.set(depth));
   let mut solutions = solutions?;
+  if matches!(&solutions, Expr::FunctionCall { name, .. } if name == "Solve")
+    && let Some(solved) = solve_by_linear_substitution(&positional)
+  {
+    solutions = solved;
+  }
   // `Abs[u]^2` was solved as `u^2`, which also has the complex roots no
   // real `u` can reach.
   if squared_abs && let Expr::List(sols) = &solutions {
@@ -1542,6 +1547,133 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     _ => Ok(solutions),
   }
+}
+
+/// Collect the sums that contain `var` and stand as a denominator: the base
+/// of a negative integer power or the divisor of a quotient.
+fn collect_denominator_sums(expr: &Expr, var: &str, out: &mut Vec<Expr>) {
+  let is_sum = |e: &Expr| {
+    matches!(
+      e,
+      Expr::BinaryOp {
+        op: BinaryOperator::Plus | BinaryOperator::Minus,
+        ..
+      }
+    ) || matches!(e, Expr::FunctionCall { name, .. } if name == "Plus")
+  };
+  let note = |base: &Expr, out: &mut Vec<Expr>| {
+    if is_sum(base) && super::eliminate::contains_var(base, var) {
+      out.push(base.clone());
+    }
+  };
+  match expr {
+    Expr::BinaryOp { op, left, right } => {
+      match op {
+        BinaryOperator::Power if matches!(right.as_ref(), Expr::Integer(n) if *n < 0) =>
+        {
+          note(left, out);
+        }
+        BinaryOperator::Divide => note(right, out),
+        _ => {}
+      }
+      collect_denominator_sums(left, var, out);
+      collect_denominator_sums(right, var, out);
+    }
+    Expr::FunctionCall { name, args } => {
+      if name == "Power"
+        && args.len() == 2
+        && matches!(&args[1], Expr::Integer(n) if *n < 0)
+      {
+        note(&args[0], out);
+      }
+      for a in args {
+        collect_denominator_sums(a, var, out);
+      }
+    }
+    Expr::UnaryOp { operand, .. } => {
+      collect_denominator_sums(operand, var, out);
+    }
+    Expr::List(items) => {
+      for i in items {
+        collect_denominator_sums(i, var, out);
+      }
+    }
+    Expr::Comparison { operands, .. } => {
+      for o in operands {
+        collect_denominator_sums(o, var, out);
+      }
+    }
+    _ => {}
+  }
+}
+
+/// Solve a single equation whose only dependence on `var` runs through one
+/// sum linear in `var` (`a + b q` standing as a denominator) by solving for
+/// that sum as a fresh unknown and then solving the linear relation for `var`.
+/// A fallback for equations the direct polynomial route cannot clear, e.g.
+/// `1/(2 (a + b q)^2) - k/(a + b q) + c == 1/4`.
+fn solve_by_linear_substitution(positional: &[Expr]) -> Option<Expr> {
+  let [equation, Expr::Identifier(var)] = positional else {
+    return None;
+  };
+  let (lhs, rhs, CompOp::Equal) =
+    crate::functions::polynomial_ast::reduce::extract_comparison(equation)?
+  else {
+    return None;
+  };
+  let mut candidates = Vec::new();
+  collect_denominator_sums(&lhs, var, &mut candidates);
+  collect_denominator_sums(&rhs, var, &mut candidates);
+  let eval = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e).ok();
+  for sum in candidates {
+    // The sum has to be linear in `var`: a constant slope and offset.
+    let slope = eval(Expr::FunctionCall {
+      name: "D".to_string(),
+      args: vec![sum.clone(), Expr::Identifier(var.clone())].into(),
+    })?;
+    if super::eliminate::contains_var(&slope, var) || is_zero_expr(&slope) {
+      continue;
+    }
+    let offset = eval(crate::syntax::substitute_variable(
+      &sum,
+      var,
+      &Expr::Integer(0),
+    ))?;
+    let name = "WoxiSolveSum";
+    let fresh = Expr::Identifier(name.to_string());
+    let new_lhs = substitute_expr(&lhs, &sum, &fresh);
+    let new_rhs = substitute_expr(&rhs, &sum, &fresh);
+    if super::eliminate::contains_var(&new_lhs, var)
+      || super::eliminate::contains_var(&new_rhs, var)
+    {
+      continue;
+    }
+    let reduced = Expr::Comparison {
+      operands: vec![new_lhs, new_rhs],
+      operators: vec![ComparisonOp::Equal],
+    };
+    let Ok(Expr::List(ref sols)) = solve_ast(&[reduced, fresh]) else {
+      continue;
+    };
+    let mut out = Vec::new();
+    for sol in sols {
+      let Expr::List(rules) = sol else {
+        return None;
+      };
+      let [Expr::Rule { replacement, .. }] = rules.as_slice() else {
+        return None;
+      };
+      let value = eval(div2(
+        minus2(replacement.as_ref().clone(), offset.clone()),
+        slope.clone(),
+      ))?;
+      out.push(Expr::List(
+        vec![rule_expr(Expr::Identifier(var.clone()), value)].into(),
+      ));
+    }
+    return Some(Expr::List(out.into()));
+  }
+  None
 }
 
 /// Rewrites every `Abs[u]^2` of a symbolic `u` as `u^2` — the squared norm a
@@ -2940,14 +3072,33 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Clear denominators: f(x)/g(x) == 0 ↔ f(x) == 0
   let expanded_raw = expand_and_combine(&poly);
   let expanded = {
+    // Cancel what `Together` leaves common to numerator and denominator (it
+    // does not always reduce a multivariate fraction), so the numerator holds
+    // no factor of the denominator and no pole is reported as a root.
     let together = together_expr(&expanded_raw);
-    match &together {
+    // A denominator free of the unknown never hides a pole: keep the plain
+    // numerator.
+    let plain_numerator = match &together {
       Expr::BinaryOp {
         op: BinaryOperator::Divide,
         left: numerator,
-        right: _denominator,
-      } => expand_and_combine(numerator),
-      _ => expanded_raw,
+        right: denominator,
+      } if !super::eliminate::contains_var(denominator, var) => {
+        Some(expand_and_combine(numerator))
+      }
+      _ => None,
+    };
+    if let Some(numerator) = plain_numerator {
+      numerator
+    } else {
+      let together = super::cancel::cancel_expr_keep_quotient_sign(&together);
+      let (numerator, denominator) =
+        super::together::extract_num_den(&together);
+      if super::eliminate::contains_var(&denominator, var) {
+        expand_and_combine(&numerator)
+      } else {
+        expanded_raw
+      }
     }
   };
   // Factor out constant factors (w.r.t. the solve variable) so the

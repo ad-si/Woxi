@@ -224,6 +224,33 @@ mod graphics {
         "-Graphics-"
       );
     }
+
+    #[test]
+    fn parametric_region_plot_style_opacity() {
+      let fill = |style: &str| {
+        let svg = interpret(&format!(
+          "ExportString[ParametricPlot[{{r*Cos[t], r*Sin[t]}}, \
+             {{r, 0, 1}}, {{t, 0, 2*Pi}}{style}], \"SVG\"]"
+        ))
+        .unwrap();
+        let quad = svg
+          .split("<polygon ")
+          .nth(1)
+          .expect("a filled quad")
+          .split("/>")
+          .next()
+          .unwrap();
+        // Fully opaque fills carry no `fill-opacity` attribute.
+        quad
+          .split("fill-opacity=\"")
+          .nth(1)
+          .map_or("1", |rest| rest.split('"').next().unwrap())
+          .to_string()
+      };
+      assert_eq!(fill(""), "0.3");
+      assert_eq!(fill(", PlotStyle -> {ColorData[1, 1], Opacity[1]}"), "1");
+      assert_eq!(fill(", PlotStyle -> {Red, Opacity[0.6]}"), "0.6");
+    }
   }
 
   mod primitives {
@@ -4329,6 +4356,39 @@ mod plot3d {
     // renderers (Plot/BarChart/PieChart) instead of being printed as a
     // single line of raw `Column[{…}]` syntax.
     #[test]
+    fn grid_span_placeholders_beside_graphic_draw_nothing() {
+      let svg = export_svg(
+        "Grid[{{Graphics[Circle[]], \"b\"}, {\"x\", SpanFromLeft}}]",
+      );
+      assert!(
+        !svg.contains("SpanFrom"),
+        "SpanFromLeft must not be drawn as text:\n{svg}"
+      );
+    }
+
+    #[test]
+    fn subsuperscript_box_label_with_bare_sign_script() {
+      let svg = export_svg(
+        "Graphics[Text[\"\\!\\(\\*SubsuperscriptBox[\\(sweep\\), \\(p\\), \\(+\\)]\\)\", {0, 0}]]",
+      );
+      assert!(
+        !svg.contains("SubsuperscriptBox"),
+        "box source must not leak into the label:\n{svg}"
+      );
+    }
+
+    #[test]
+    fn grid_text_cell_with_inline_box_beside_graphic_is_typeset() {
+      let svg = export_svg(
+        "Grid[{{Text[Style[\"\\!\\(\\*SubsuperscriptBox[\\(sweep\\), \\(p\\), \\(+\\)]\\)\" <> \" = 3\", Blue]], Graphics[Circle[]]}}]",
+      );
+      assert!(
+        !svg.contains("SubsuperscriptBox") && !svg.contains("\\!"),
+        "inline box notation must be typeset, not printed:\n{svg}"
+      );
+    }
+
+    #[test]
     fn graphics3d_plot_label_grid_stacks_lines() {
       let svg = export_svg(
         "Graphics3D[Sphere[], PlotLabel -> Grid[{{\"A\", \"B\"}, {1, 2}}]]",
@@ -6824,6 +6884,38 @@ mod plot3d {
       );
       assert!(svg.contains(">met<"), "delayed label not evaluated: {svg}");
       assert!(!svg.contains("Which["), "raw Which leaked into the SVG");
+    }
+
+    // `Frame -> {b, l, t, r}` draws only the named edges, and a per-edge
+    // `FrameTicks` puts the tick labels on the edge that asks for them, so a
+    // right-hand-only axis labels the right side.
+    #[test]
+    fn frame_edges_and_ticks_are_per_edge() {
+      let right_only = export_svg(
+        r#"Graphics[{Line[{{0, 0}, {1, 1}}]},
+          Frame -> {False, False, False, True},
+          FrameTicks -> {None, None, None, All}]"#,
+      );
+      assert!(
+        !right_only.contains("<rect x=\"0\" y=\"0\" width=\"360.00\" height=\"360.00\" fill=\"none\""),
+        "a partial frame must not draw the full rectangle: {right_only}"
+      );
+      assert!(
+        right_only.contains("text-anchor=\"start\""),
+        "the labels must sit right of the right edge: {right_only}"
+      );
+      assert!(
+        !right_only.contains("text-anchor=\"end\"")
+          && !right_only.contains("text-anchor=\"middle\""),
+        "no other edge may carry labels: {right_only}"
+      );
+      // Nested `{{left, right}, {bottom, top}}` form.
+      let nested = export_svg(
+        r#"Graphics[{Line[{{0, 0}, {1, 1}}]},
+          Frame -> {{False, True}, {False, False}},
+          FrameTicks -> {{None, All}, {None, None}}]"#,
+      );
+      assert!(nested.contains("text-anchor=\"start\""), "{nested}");
     }
 
     // `FrameTicks -> False` keeps the border but drops the tick marks and
@@ -13195,6 +13287,17 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    /// `PlotLabel -> Text[Grid[…]]` sets the grid's content, not the literal
+    /// `Grid[…]` source.
+    #[test]
+    fn plot_label_text_wrapping_grid_typesets_content() {
+      let svg = export_svg(
+        "Plot[x, {x, 0, 1}, PlotLabel -> Text[Grid[{{\"left\", 2.5}}]]]",
+      );
+      assert!(svg.contains("left 2.5"), "missing grid content in:\n{svg}");
+      assert!(!svg.contains("Grid["), "leaked Grid head in:\n{svg}");
+    }
+
     /// A `DensityPlot` takes the same labels and epilog — the option
     /// parsing is shared across the whole density/contour family.
     #[test]
@@ -13759,6 +13862,34 @@ ParametricPlot[f[t], {t, 0, 1}]]",
           "PieChart[{1, 1, 1}, ChartStyle -> {Red, Green, Blue}, ChartLabels -> {\"a\", \"b\", \"c\"}]"
         )
       );
+    }
+
+    // Once `Get["PieCharts`"]` has loaded the package, a Demonstration
+    // spells the legacy options bare (`PieLabels`, `PieStyle`) inside the
+    // qualified call; they must still be renamed, not silently dropped.
+    #[test]
+    fn legacy_pie_chart_bare_options_match_chart_options() {
+      assert_eq!(
+        export_svg(
+          "PieCharts`PieChart[{1, 1, 1}, PieStyle -> {Red, Green, Blue}, PieLabels -> {\"a\", \"b\", \"c\"}]"
+        ),
+        export_svg(
+          "PieChart[{1, 1, 1}, ChartStyle -> {Red, Green, Blue}, ChartLabels -> {\"a\", \"b\", \"c\"}]"
+        )
+      );
+    }
+
+    // A `Column[{…}]` label stacks its lines on the wedge instead of being
+    // dropped (which also shifted every later label onto the wrong slice).
+    #[test]
+    fn pie_chart_column_label_stacks_lines_on_its_own_slice() {
+      let svg = export_svg(
+        "PieChart[{1, 1}, ChartLabels -> {Column[{Style[7, 18], Row[{\"5\", \"%\"}]}, Center], \"b\"}]",
+      );
+      assert_eq!(svg.matches("<text").count(), 2);
+      assert!(svg.contains(">7</tspan>"), "{svg}");
+      assert!(svg.contains(">5%</tspan>"), "{svg}");
+      assert!(svg.contains(">b</text>"), "{svg}");
     }
 
     // `Manipulate` bodies set chart options from control variables with
@@ -21604,6 +21735,18 @@ mod parametric_plot3d {
     ));
   }
 
+  /// A body that only yields a point once `u`/`v` are numeric (a
+  /// `BSplineFunction` surface) must be sampled per point, not rejected.
+  #[test]
+  fn bspline_function_surface_body() {
+    clear_state();
+    let svg = export_svg(
+      "g = BSplineFunction[Table[{u, v, u v}, {u, 0, 1, 1/4}, {v, 0, 1, 1/4}]]; \
+       ParametricPlot3D[g[a, b], {a, 0, 1}, {b, 0, 1}, Mesh -> False]",
+    );
+    assert!(svg.contains("<polygon"), "expected a drawn surface: {svg}");
+  }
+
   #[test]
   fn integer_mesh_draws_that_many_lines_per_direction() {
     clear_state();
@@ -22984,6 +23127,49 @@ mod manipulate {
     manipulate_spec_to_json, parse_manipulate_bindings,
   };
   use woxi::interpret_to_expr;
+
+  // A string-tagged variable spec (`"tag" -> {var, min, max}`) is the
+  // control itself — including one whose bounds name sibling controls.
+  #[test]
+  fn spec_string_tagged_variable_specs_become_controls() {
+    let expr = interpret_to_expr(
+      "Manipulate[a + b, \"X1\" -> {{a, 1, \"first\"}, 0, 5}, \
+       \"Y1\" -> {{b, 2, \"second\"}, a, 10}, \
+       \"B1\" -> {{c, True, \"flag\"}, {True, False}}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    let names: Vec<&str> = spec
+      .controls
+      .iter()
+      .map(|c| match c {
+        ManipulateControl::Continuous { name, .. }
+        | ManipulateControl::Discrete { name, .. } => name.as_str(),
+        other => panic!("unexpected control {other:?}"),
+      })
+      .collect();
+    assert_eq!(names, vec!["a", "b", "c"]);
+    assert_eq!(spec.displays, Vec::<String>::new());
+  }
+
+  // A tagged *group* of discrete specs still flattens into one control each.
+  #[test]
+  fn spec_string_tagged_group_of_discrete_specs_flattens() {
+    let expr = interpret_to_expr(
+      "Manipulate[a + b, \"Tab\" -> {{a, {1, 2, 3}}, {b, {4, 5}}}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    let names: Vec<&str> = spec
+      .controls
+      .iter()
+      .map(|c| match c {
+        ManipulateControl::Discrete { name, .. } => name.as_str(),
+        other => panic!("unexpected control {other:?}"),
+      })
+      .collect();
+    assert_eq!(names, vec!["a", "b"]);
+  }
 
   #[test]
   fn spec_animator_auto_plays_range() {
@@ -32555,7 +32741,13 @@ mod cases_on_a_plot {
         "Show[ListPlot[{{1, 2}, {3, 4}}, Frame -> True], \
          Graphics[{Red, Line[{{2, 0}, {2, 4}}]}]]",
       );
-      assert_eq!(shown, shown_true, "Show with Frame -> {frame}");
+      if frame == "{True, True, True, True}" {
+        assert_eq!(shown, shown_true, "Show with Frame -> {frame}");
+      } else {
+        // A partial frame under `Show` keeps just the named edges.
+        assert_ne!(shown, shown_true, "Show with Frame -> {frame}");
+        assert!(shown.contains("<line x1=\"0.00\""), "{frame}: {shown}");
+      }
     }
     let no_frame = export_svg("Graphics[Circle[]]");
     let framed =

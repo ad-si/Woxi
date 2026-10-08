@@ -6576,24 +6576,116 @@ fn render_axes(
   }
 }
 
-/// Render a rectangular frame around the plot area with tick marks and labels
-/// on the bottom and left edges, and minor ticks on the top and right edges.
+/// What one frame edge carries.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum EdgeTicks {
+  /// A bare edge: no tick marks, no labels.
+  None,
+  /// Tick marks only.
+  Marks,
+  /// Tick marks and their numeric labels.
+  Labels,
+}
+
+/// Wolfram's default: labels on the bottom and left edges, bare tick marks
+/// on the top and right ones. Order: bottom, left, top, right.
+const DEFAULT_FRAME_TICKS: [EdgeTicks; 4] = [
+  EdgeTicks::Labels,
+  EdgeTicks::Labels,
+  EdgeTicks::Marks,
+  EdgeTicks::Marks,
+];
+
+/// Parse `Frame -> True | All | {b, l, t, r} | {{l, r}, {b, t}}` into the
+/// four edges, in the order bottom, left, top, right.
+fn parse_frame_edges(value: &Expr) -> [bool; 4] {
+  let on =
+    |e: &Expr| matches!(e, Expr::Identifier(v) if v == "True" || v == "All");
+  match value {
+    Expr::List(items) if items.len() == 4 => {
+      [on(&items[0]), on(&items[1]), on(&items[2]), on(&items[3])]
+    }
+    Expr::List(items) if items.len() == 2 => {
+      let pair = |e: &Expr| match e {
+        Expr::List(p) if p.len() == 2 => (on(&p[0]), on(&p[1])),
+        other => (on(other), on(other)),
+      };
+      let (l, r) = pair(&items[0]);
+      let (b, t) = pair(&items[1]);
+      [b, l, t, r]
+    }
+    other => [on(other); 4],
+  }
+}
+
+/// Parse `FrameTicks -> None | All | {b, l, t, r} | {{l, r}, {b, t}}`: per
+/// edge, `None`/`False` bares it, `Automatic` keeps Wolfram's default and
+/// anything else (`All`, `True`, explicit tick lists) labels it.
+fn parse_frame_tick_modes(value: &Expr) -> [EdgeTicks; 4] {
+  let one = |e: &Expr, default: EdgeTicks| match e {
+    Expr::Identifier(v) if v == "None" || v == "False" => EdgeTicks::None,
+    Expr::Identifier(v) if v == "Automatic" => default,
+    _ => EdgeTicks::Labels,
+  };
+  let d = DEFAULT_FRAME_TICKS;
+  match value {
+    Expr::List(items) if items.len() == 4 => [
+      one(&items[0], d[0]),
+      one(&items[1], d[1]),
+      one(&items[2], d[2]),
+      one(&items[3], d[3]),
+    ],
+    Expr::List(items) if items.len() == 2 => {
+      let pair = |e: &Expr, d0: EdgeTicks, d1: EdgeTicks| match e {
+        Expr::List(p) if p.len() == 2 => (one(&p[0], d0), one(&p[1], d1)),
+        other => (one(other, d0), one(other, d1)),
+      };
+      let (l, r) = pair(&items[0], d[1], d[3]);
+      let (b, t) = pair(&items[1], d[0], d[2]);
+      [b, l, t, r]
+    }
+    Expr::Identifier(v) if v == "None" || v == "False" => [EdgeTicks::None; 4],
+    Expr::Identifier(v) if v == "All" => [EdgeTicks::Labels; 4],
+    _ => d,
+  }
+}
+
+/// Render the requested frame edges around the plot area with their tick
+/// marks and labels.
 fn render_frame(
   svg: &mut String,
   bb: &BBox,
   svg_w: f64,
   svg_h: f64,
-  ticks: bool,
+  edges: [bool; 4],
+  ticks: [EdgeTicks; 4],
 ) {
   let t = theme();
   let frame_stroke = t.framed_border;
   let tick_label_fill = t.tick_label_fill;
 
-  // Draw the rectangular border
-  svg.push_str(&format!(
-    "<rect x=\"0\" y=\"0\" width=\"{svg_w:.2}\" height=\"{svg_h:.2}\" fill=\"none\" stroke=\"{frame_stroke}\" stroke-width=\"1\"/>\n"
-  ));
-  if !ticks {
+  // Draw the border: a single rectangle when all four edges are present,
+  // otherwise just the requested edges.
+  if edges.iter().all(|&e| e) {
+    svg.push_str(&format!(
+      "<rect x=\"0\" y=\"0\" width=\"{svg_w:.2}\" height=\"{svg_h:.2}\" fill=\"none\" stroke=\"{frame_stroke}\" stroke-width=\"1\"/>\n"
+    ));
+  } else {
+    let sides = [
+      (0.0, svg_h, svg_w, svg_h),
+      (0.0, 0.0, 0.0, svg_h),
+      (0.0, 0.0, svg_w, 0.0),
+      (svg_w, 0.0, svg_w, svg_h),
+    ];
+    for (&(x1, y1, x2, y2), drawn) in sides.iter().zip(edges) {
+      if drawn {
+        svg.push_str(&format!(
+          "<line x1=\"{x1:.2}\" y1=\"{y1:.2}\" x2=\"{x2:.2}\" y2=\"{y2:.2}\" stroke=\"{frame_stroke}\" stroke-width=\"1\"/>\n"
+        ));
+      }
+    }
+  }
+  if ticks.iter().all(|&m| m == EdgeTicks::None) {
     return;
   }
 
@@ -6601,69 +6693,69 @@ fn render_frame(
   let y_ticks = generate_ticks(bb.y_min, bb.y_max, 6);
   let x_step = tick_sequence_step(&x_ticks);
   let y_step = tick_sequence_step(&y_ticks);
+  // A tick starting on the origin edge is written as a bare `0`.
+  let tick_coord = |v: f64| {
+    if v == 0.0 {
+      "0".to_string()
+    } else {
+      format!("{v:.2}")
+    }
+  };
 
-  // Bottom edge: ticks + labels
-  for &t_val in &x_ticks {
-    let x = coord_x(t_val, bb, svg_w);
-    if !x.is_finite() {
+  // Horizontal edges (bottom = 0, top = 2): ticks run along x.
+  for (i, y_lo, y_hi, anchor_y, baseline) in [
+    (0usize, svg_h - 5.0, svg_h, svg_h + 4.0, "hanging"),
+    (2usize, 0.0, 5.0, -4.0, "auto"),
+  ] {
+    if ticks[i] == EdgeTicks::None {
       continue;
     }
-    // Tick mark inward from bottom edge
-    svg.push_str(&format!(
-      "<line x1=\"{x:.2}\" y1=\"{:.2}\" x2=\"{x:.2}\" y2=\"{svg_h:.2}\" stroke=\"{frame_stroke}\" stroke-width=\"1\"/>\n",
-      svg_h - 5.0
-    ));
-    // Label below the bottom edge
-    let label = format_tick_in_sequence(t_val, x_step);
-    svg.push_str(&format!(
-      "<text x=\"{x:.2}\" y=\"{:.2}\" fill=\"{tick_label_fill}\" font-size=\"12\" font-family=\"monospace\" text-anchor=\"middle\" dominant-baseline=\"hanging\">{}</text>\n",
-      svg_h + 4.0,
-      svg_escape(&label),
-    ));
+    for &t_val in &x_ticks {
+      let x = coord_x(t_val, bb, svg_w);
+      if !x.is_finite() {
+        continue;
+      }
+      svg.push_str(&format!(
+        "<line x1=\"{x:.2}\" y1=\"{}\" x2=\"{x:.2}\" y2=\"{}\" stroke=\"{frame_stroke}\" stroke-width=\"1\"/>\n",
+        tick_coord(y_lo),
+        tick_coord(y_hi)
+      ));
+      if ticks[i] == EdgeTicks::Labels {
+        let label = format_tick_in_sequence(t_val, x_step);
+        svg.push_str(&format!(
+          "<text x=\"{x:.2}\" y=\"{anchor_y:.2}\" fill=\"{tick_label_fill}\" font-size=\"12\" font-family=\"monospace\" text-anchor=\"middle\" dominant-baseline=\"{baseline}\">{}</text>\n",
+          svg_escape(&label),
+        ));
+      }
+    }
   }
 
-  // Top edge: ticks only (no labels)
-  for &t_val in &x_ticks {
-    let x = coord_x(t_val, bb, svg_w);
-    if !x.is_finite() {
+  // Vertical edges (left = 1, right = 3): ticks run along y.
+  for (i, x_lo, x_hi, anchor_x, anchor) in [
+    (1usize, 0.0, 5.0, -4.0, "end"),
+    (3usize, svg_w - 5.0, svg_w, svg_w + 4.0, "start"),
+  ] {
+    if ticks[i] == EdgeTicks::None {
       continue;
     }
-    svg.push_str(&format!(
-      "<line x1=\"{x:.2}\" y1=\"0\" x2=\"{x:.2}\" y2=\"{:.2}\" stroke=\"{frame_stroke}\" stroke-width=\"1\"/>\n",
-      5.0
-    ));
-  }
-
-  // Left edge: ticks + labels
-  for &t_val in &y_ticks {
-    let y = coord_y(t_val, bb, svg_h);
-    if !y.is_finite() {
-      continue;
+    for &t_val in &y_ticks {
+      let y = coord_y(t_val, bb, svg_h);
+      if !y.is_finite() {
+        continue;
+      }
+      svg.push_str(&format!(
+        "<line x1=\"{}\" y1=\"{y:.2}\" x2=\"{}\" y2=\"{y:.2}\" stroke=\"{frame_stroke}\" stroke-width=\"1\"/>\n",
+        tick_coord(x_lo),
+        tick_coord(x_hi)
+      ));
+      if ticks[i] == EdgeTicks::Labels {
+        let label = format_tick_in_sequence(t_val, y_step);
+        svg.push_str(&format!(
+          "<text x=\"{anchor_x:.2}\" y=\"{y:.2}\" fill=\"{tick_label_fill}\" font-size=\"12\" font-family=\"monospace\" text-anchor=\"{anchor}\" dominant-baseline=\"middle\">{}</text>\n",
+          svg_escape(&label),
+        ));
+      }
     }
-    // Tick mark inward from left edge
-    svg.push_str(&format!(
-      "<line x1=\"0\" y1=\"{y:.2}\" x2=\"{:.2}\" y2=\"{y:.2}\" stroke=\"{frame_stroke}\" stroke-width=\"1\"/>\n",
-      5.0
-    ));
-    // Label to the left of the frame
-    let label = format_tick_in_sequence(t_val, y_step);
-    svg.push_str(&format!(
-      "<text x=\"{:.2}\" y=\"{y:.2}\" fill=\"{tick_label_fill}\" font-size=\"12\" font-family=\"monospace\" text-anchor=\"end\" dominant-baseline=\"middle\">{}</text>\n",
-      -4.0,
-      svg_escape(&label),
-    ));
-  }
-
-  // Right edge: ticks only (no labels)
-  for &t_val in &y_ticks {
-    let y = coord_y(t_val, bb, svg_h);
-    if !y.is_finite() {
-      continue;
-    }
-    svg.push_str(&format!(
-      "<line x1=\"{:.2}\" y1=\"{y:.2}\" x2=\"{svg_w:.2}\" y2=\"{y:.2}\" stroke=\"{frame_stroke}\" stroke-width=\"1\"/>\n",
-      svg_w - 5.0
-    ));
   }
 }
 
@@ -8478,10 +8570,10 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut ticks_x = TickSpec::Automatic;
   let mut ticks_y = TickSpec::Automatic;
   let mut axes = (false, false);
-  let mut frame = false;
-  // `FrameTicks -> False | None` keeps the border but drops the tick
-  // marks and their labels, so the frame becomes a plain box.
-  let mut frame_ticks = true;
+  // Which frame edges are drawn, in the order bottom, left, top, right.
+  let mut frame_edges = [false; 4];
+  // What each frame edge carries (see `parse_frame_tick_modes`).
+  let mut frame_tick_modes = DEFAULT_FRAME_TICKS;
   let mut grid_x = GridSpec::None;
   let mut grid_y = GridSpec::None;
   let mut grid_style: Option<StyleState> = None;
@@ -8617,19 +8709,15 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
         "Frame" => {
-          if crate::functions::plot::parse_frame_option(replacement) {
-            frame = true;
-          } else if let Expr::FunctionCall { name: fn_name, .. } = replacement
+          frame_edges = parse_frame_edges(replacement);
+          if let Expr::FunctionCall { name: fn_name, .. } = replacement
             && fn_name == "True"
           {
-            frame = true;
+            frame_edges = [true; 4];
           }
         }
         "FrameTicks" => {
-          if matches!(replacement, Expr::Identifier(s) if s == "False" || s == "None")
-          {
-            frame_ticks = false;
-          }
+          frame_tick_modes = parse_frame_tick_modes(replacement);
         }
         "ImagePadding" => {
           image_padding =
@@ -8787,7 +8875,17 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Compute margins for axis/frame tick labels. A PlotLabel reserves an
   // extra strip above the drawing area for its centered title text.
   // Without tick labels the frame needs no gutter, just room for its stroke.
-  let frame_gutter = frame && frame_ticks;
+  let frame = frame_edges.iter().any(|&e| e);
+  // Only an edge that is drawn can carry tick marks or labels.
+  for (mode, &drawn) in frame_tick_modes.iter_mut().zip(&frame_edges) {
+    if !drawn {
+      *mode = EdgeTicks::None;
+    }
+  }
+  let edge_labelled = |i: usize| frame_tick_modes[i] == EdgeTicks::Labels;
+  let frame_gutter_bottom = edge_labelled(0);
+  let frame_gutter_left = edge_labelled(1);
+  let frame_gutter_right = edge_labelled(3);
   let has_bottom_caption =
     frame_label.as_ref().is_some_and(|(b, ..)| !b.is_empty());
   let has_left_caption =
@@ -8845,7 +8943,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let y_axis_label_width = axes_label
     .as_ref()
     .map_or(0.0, |(_, y)| axis_label_width(y));
-  let margin_left: f64 = if frame_gutter || (axes.1 && !y_axis_interior) {
+  let margin_left: f64 = if frame_gutter_left || (axes.1 && !y_axis_interior) {
     50.0
   } else if frame {
     10.0
@@ -8861,16 +8959,19 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       0.0
     };
-  let margin_bottom: f64 = if frame_gutter || (axes.0 && !x_axis_interior) {
-    25.0
+  let margin_bottom: f64 =
+    if frame_gutter_bottom || (axes.0 && !x_axis_interior) {
+      25.0
+    } else if frame {
+      10.0
+    } else if x_axis_interior {
+      6.0
+    } else {
+      0.0
+    } + if has_bottom_caption { 20.0 } else { 0.0 };
+  let margin_right: f64 = if frame_gutter_right {
+    50.0
   } else if frame {
-    10.0
-  } else if x_axis_interior {
-    6.0
-  } else {
-    0.0
-  } + if has_bottom_caption { 20.0 } else { 0.0 };
-  let margin_right: f64 = if frame {
     10.0
   } else if y_axis_interior {
     // Balance the padding an interior y axis leaves on the left, so the
@@ -9074,7 +9175,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   svg.push_str("</g>\n");
 
   if frame {
-    render_frame(&mut svg, &bb, svg_w, svg_h, frame_ticks);
+    render_frame(&mut svg, &bb, svg_w, svg_h, frame_edges, frame_tick_modes);
   }
 
   // Frame captions: the bottom/top ones centred outside their edge, the
@@ -10601,8 +10702,12 @@ pub fn expr_to_svg_markup_lines(expr: &Expr) -> Vec<String> {
   // as a whole item inside a `Column`, the same reasoning that lets a
   // nested `Column`/`Grid` flatten into several lines applies to what it
   // wraps too, so peel it before recursing.
+  // A bare `Text[content]` is the same: in a label it just sets `content`
+  // (`PlotLabel -> Text[Grid[…]]` is a common Demonstration idiom).
   if let Expr::FunctionCall { name, args } = expr
-    && (name == "Framed" || name == "Highlighted")
+    && (name == "Framed"
+      || name == "Highlighted"
+      || (name == "Text" && args.len() == 1))
     && !args.is_empty()
   {
     return expr_to_svg_markup_lines(&args[0]);
@@ -12452,6 +12557,18 @@ pub fn box_string_to_svg(s: &str) -> String {
   parse_box_units(&cs).iter().map(boxes_to_svg).collect()
 }
 
+/// The box expression a string with inline `\!\(\*…\)` box notation
+/// typesets to (`RowBox[{"sweep", SubscriptBox[…], …}]`), for renderers that
+/// lay out boxes rather than SVG label runs. `None` for a plain string.
+pub fn inline_box_string_to_box_expr(s: &str) -> Option<Expr> {
+  if !s.contains(crate::functions::string_ast::BOX_START) {
+    return None;
+  }
+  let norm = normalize_box_markers(s);
+  let cs: Vec<char> = norm.chars().collect();
+  Some(call1("RowBox", Expr::List(parse_box_units(&cs).into())))
+}
+
 /// The combining mark that draws `accent` over (or, when `over` is false,
 /// under) a base character, and whether it spans every character of the base
 /// (a bar does; a dot or a hat sits on the last one).
@@ -13993,6 +14110,15 @@ fn annotation_contains_dynamic(expr: &Expr) -> bool {
       name == "Dynamic" || args.iter().any(annotation_contains_dynamic)
     }
     Expr::List(items) => items.iter().any(annotation_contains_dynamic),
+    // Operator forms such as `"elapsed time" == Dynamic[t]` or
+    // `"t = " <> Dynamic[t]` parse to dedicated nodes, not `FunctionCall`.
+    Expr::Comparison { operands, .. } => {
+      operands.iter().any(annotation_contains_dynamic)
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      annotation_contains_dynamic(left) || annotation_contains_dynamic(right)
+    }
+    Expr::UnaryOp { operand, .. } => annotation_contains_dynamic(operand),
     _ => false,
   }
 }
@@ -14452,6 +14578,25 @@ fn parse_divider_entry(expr: &Expr) -> Option<Color> {
   }
 }
 
+/// A `position -> spec` rule from a `Dividers` option: the line position
+/// (1-based; negative counts from the end) and whether/how it is drawn.
+fn divider_position_rule(expr: &Expr) -> Option<(i64, Option<Color>)> {
+  let (pattern, replacement) = match expr {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => (pattern.as_ref(), replacement.as_ref()),
+    Expr::FunctionCall { name, args } if name == "Rule" && args.len() == 2 => {
+      (&args[0], &args[1])
+    }
+    _ => return None,
+  };
+  let Expr::Integer(pos) = pattern else {
+    return None;
+  };
+  Some((i64::try_from(*pos).ok()?, parse_divider_entry(replacement)))
+}
+
 /// Parse a color from a Background list entry, treating "None" as None.
 fn parse_bg_color(expr: &Expr) -> Option<Color> {
   if let Expr::Identifier(n) = expr
@@ -14565,6 +14710,10 @@ fn grid_svg_styled_internal(
   let mut row_div_repeating: Vec<Option<Color>> = Vec::new();
   let mut row_div_explicit_end: Vec<Option<Color>> = Vec::new();
   let mut row_div_has_repeating = false;
+  // `Dividers -> {None, -2 -> True}`: rules for individual line positions
+  // (1-based from the start, negative from the end).
+  let mut col_div_rules: Vec<(i64, Option<Color>)> = Vec::new();
+  let mut row_div_rules: Vec<(i64, Option<Color>)> = Vec::new();
   let mut background_color: Option<Color> = None; // uniform background
   let mut col_backgrounds: Vec<Option<Color>> = Vec::new(); // per-column bg
   let mut row_backgrounds: Vec<Option<Color>> = Vec::new(); // per-row bg
@@ -14638,6 +14787,30 @@ fn grid_svg_styled_internal(
                   } else {
                     dividers_row = true;
                   }
+                }
+                Expr::Rule { .. } | Expr::FunctionCall { .. }
+                  if divider_position_rule(spec).is_some() =>
+                {
+                  let rule = divider_position_rule(spec).unwrap();
+                  if idx == 0 {
+                    col_div_rules.push(rule);
+                  } else {
+                    row_div_rules.push(rule);
+                  }
+                }
+                Expr::List(positions)
+                  if !positions.is_empty()
+                    && positions
+                      .iter()
+                      .all(|p| divider_position_rule(p).is_some()) =>
+                {
+                  let target = if idx == 0 {
+                    &mut col_div_rules
+                  } else {
+                    &mut row_div_rules
+                  };
+                  target
+                    .extend(positions.iter().filter_map(divider_position_rule));
                 }
                 Expr::List(positions) => {
                   // Per-position spec with optional repeating pattern
@@ -14928,15 +15101,18 @@ fn grid_svg_styled_internal(
   }
 
   // Compute column widths based on estimated display width
-  let char_width: f64 = 8.4; // approximate monospace char width at font-size 14
-  let font_size: f64 = 14.0;
+  // A `Style[Grid[…], size]` sets the font of the whole grid, so the cell
+  // metrics (character width, line height, padding) follow that size.
+  let size_scale: f64 = default_style.font_size.map_or(1.0, |fs| fs / 14.0);
+  let char_width: f64 = 8.4 * size_scale; // approximate monospace char width
+  let font_size: f64 = 14.0 * size_scale;
   // Apply Spacings option: values are in ems (multiples of char_width / font_size)
   let pad_x: f64 = match (table_pad_x, spacings_h) {
     (Some(px), _) => px, // TableSpacing → pixels directly
     (None, Some(h)) => h * char_width, // Spacings h in ems → pixel padding
-    (None, None) => 12.0, // default horizontal padding per cell
+    (None, None) => 12.0 * size_scale, // default horizontal padding per cell
   };
-  let pad_y: f64 = 2.0; // vertical padding per cell (each side = 1)
+  let pad_y: f64 = 2.0 * size_scale; // vertical padding per cell (each side = 1)
   let row_gap: f64 = match (table_row_gap, spacings_v) {
     (Some(g), _) => g, // TableSpacing → pixels directly
     (None, Some(v)) => v * font_size, // Spacings v in ems → pixel gap
@@ -14944,7 +15120,7 @@ fn grid_svg_styled_internal(
   };
   let group_gap: f64 = 6.0; // extra spacing between groups
   let base_row_height = font_size + pad_y;
-  let frac_row_height = font_size + pad_y + 10.0; // taller for stacked fractions
+  let frac_row_height = font_size + pad_y + 10.0 * size_scale; // taller for stacked fractions
 
   // The padding a column carries on each side. A gap between two columns is
   // one gap, so it is shared half-and-half by the columns it separates,
@@ -15184,6 +15360,22 @@ fn grid_svg_styled_internal(
       } else {
         let rep_idx = (j - start_len) % rep_len;
         col_alignments.push(col_align_repeating[rep_idx]);
+      }
+    }
+  }
+
+  for (rules, dividers, n) in [
+    (&col_div_rules, &mut col_dividers, num_cols + 1),
+    (&row_div_rules, &mut row_dividers, num_rows + 1),
+  ] {
+    if rules.is_empty() {
+      continue;
+    }
+    dividers.resize(n, None);
+    for &(pos, color) in rules {
+      let index = if pos > 0 { pos - 1 } else { n as i64 + pos };
+      if (0..n as i64).contains(&index) {
+        dividers[index as usize] = color;
       }
     }
   }
@@ -19045,6 +19237,24 @@ fn option_kv(expr: &Expr) -> Option<(&str, &Expr)> {
   }
 }
 
+/// Looks through `Pane`/`Item`/`Text`-style wrappers around a `Framed`
+/// layout, but keeps a `Style[layout, …]` on the layout itself so the font
+/// it sets still reaches the layout's cells.
+fn unwrap_framed_layout(expr: &Expr) -> Expr {
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Style" && args.len() >= 2 => {
+      let inner = unwrap_framed_layout(&args[0]);
+      let mut new_args = args.to_vec();
+      new_args[0] = inner;
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args.into(),
+      }
+    }
+    _ => unwrap_display_wrappers(expr),
+  }
+}
+
 /// Render `Framed[expr]` as an SVG box with a rectangular border around the content.
 /// Handles nested Framed by recursively rendering inner content as embedded SVG.
 pub fn framed_to_svg(args: &[Expr]) -> Option<String> {
@@ -19066,9 +19276,17 @@ pub fn framed_to_svg(args: &[Expr]) -> Option<String> {
   // Layout constants
   let char_width: f64 = 8.4;
   let font_size: f64 = 14.0;
-  let margin: f64 = 6.0; // padding between content and frame border
+  let numeric_option = |key: &str| {
+    args[1..]
+      .iter()
+      .filter_map(option_kv)
+      .find(|(k, _)| *k == key)
+      .and_then(|(_, v)| crate::functions::math_ast::try_eval_to_f64(v))
+  };
+  // `FrameMargins -> m` pads every side by `m` points.
+  let margin: f64 = numeric_option("FrameMargins").unwrap_or(6.0);
   let stroke_width: f64 = 1.0;
-  let rounding: f64 = 3.0;
+  let rounding: f64 = numeric_option("RoundingRadius").unwrap_or(3.0);
 
   // Check if content is itself a Framed (nested) or already a Graphics
   let (inner_svg, inner_w, inner_h): (Option<String>, f64, f64) =
@@ -19104,6 +19322,32 @@ pub fn framed_to_svg(args: &[Expr]) -> Option<String> {
       if svg.starts_with("<svg") {
         let (w, h) = parse_svg_wh(&svg);
         (Some(svg), w, h)
+      } else {
+        (None, 0.0, 0.0)
+      }
+    }
+    other => (other, inner_w, inner_h),
+  };
+
+  // A text layout — `Framed[Pane[Style[Grid[…], 96], …]]`, a Demonstration's
+  // flash card — is typeset and framed rather than printed as source.
+  let (inner_svg, inner_w, inner_h) = match inner_svg {
+    None => {
+      let unwrapped = unwrap_framed_layout(content);
+      if matches!(&unwrapped, Expr::FunctionCall { name, args }
+        if matches!(name.as_str(), "Grid" | "Column" | "Row") && !args.is_empty())
+        || matches!(&unwrapped, Expr::FunctionCall { name, args }
+          if name == "Style" && args.len() >= 2
+            && matches!(&args[0], Expr::FunctionCall { name, .. }
+              if matches!(name.as_str(), "Grid" | "Column" | "Row")))
+      {
+        let svg = crate::evaluator::expr_to_svg(&unwrapped);
+        if svg.starts_with("<svg") {
+          let (w, h) = parse_svg_wh(&svg);
+          (Some(svg), w, h)
+        } else {
+          (None, 0.0, 0.0)
+        }
       } else {
         (None, 0.0, 0.0)
       }
@@ -22863,8 +23107,23 @@ fn named_control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
       _ => false,
     }
   }
+  // A single spec's own head `{var, init}` / `{var, init, "label"}` is a
+  // list too, so what follows it — a bound naming a sibling control
+  // (`{{b, 2}, a, 10}`) or a values list (`{{c, True}, {True, False}}`) —
+  // can look like another variable head. A head in that shape means the
+  // content is one spec, never a group of them. A list in the second slot
+  // (`{a, {1, 2, 3}}`) is a whole discrete spec instead, so a group of
+  // those still flattens.
+  let is_spec_head = matches!(
+    &items[0],
+    Expr::List(head)
+      if matches!(head.first(), Some(Expr::Identifier(_)))
+        && !matches!(head.get(1), Some(Expr::List(_)))
+        && (head.len() == 2
+          || (head.len() == 3 && matches!(head[2], Expr::String(_))))
+  );
   if is_control_var_head(&items[0])
-    && !items.get(1).is_some_and(is_control_var_head)
+    && (is_spec_head || !items.get(1).is_some_and(is_control_var_head))
   {
     return Some(vec![replacement.as_ref().clone()]);
   }
@@ -27903,6 +28162,51 @@ fn resolve_display_dynamics(
         .map(|i| resolve_display_dynamics(i, bindings))
         .collect(),
     ),
+    // A caption such as `"elapsed time == " == Dynamic[t]` is shown as
+    // written, operator included — never evaluated to `False`. Typeset
+    // each operand and join them with the operator's symbol.
+    Expr::Comparison {
+      operands,
+      operators,
+    } if annotation_contains_dynamic(expr) => {
+      use crate::syntax::ComparisonOp;
+      let mut text = String::new();
+      for (i, operand) in operands.iter().enumerate() {
+        if i > 0 {
+          text.push_str(match operators.get(i - 1) {
+            Some(ComparisonOp::Equal) => " == ",
+            Some(ComparisonOp::NotEqual) => " != ",
+            Some(ComparisonOp::Less) => " < ",
+            Some(ComparisonOp::LessEqual) => " <= ",
+            Some(ComparisonOp::Greater) => " > ",
+            Some(ComparisonOp::GreaterEqual) => " >= ",
+            Some(ComparisonOp::SameQ) => " === ",
+            Some(ComparisonOp::UnsameQ) => " =!= ",
+            None => " ",
+          });
+        }
+        let resolved = resolve_display_dynamics(operand, bindings);
+        // `NumberForm[x, {3, 1}]` stays an unevaluated wrapper; typeset
+        // the number it formats, as a Dynamic caption displays it.
+        let formatted = match &resolved {
+          Expr::FunctionCall { name, args }
+            if matches!(
+              name.as_str(),
+              "NumberForm" | "PaddedForm" | "AccountingForm"
+            ) && !args.is_empty() =>
+          {
+            crate::functions::string_ast::number_form_family_to_string(
+              name, args,
+            )
+          }
+          _ => None,
+        };
+        text.push_str(&formatted.unwrap_or_else(|| {
+          flatten_label_runs(&manipulate_label_runs(&resolved, false))
+        }));
+      }
+      Expr::String(text)
+    }
     other => other.clone(),
   }
 }

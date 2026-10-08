@@ -11017,6 +11017,84 @@ mod join_non_list {
   }
 
   #[test]
+  fn combinatorica_random_permutation_is_a_list_permutation() {
+    // Unlike the built-in (which returns a Cycles object), the package's
+    // RandomPermutation gives a plain list.
+    assert_eq!(
+      interpret("Sort[Combinatorica`RandomPermutation[6]]").unwrap(),
+      "{1, 2, 3, 4, 5, 6}"
+    );
+    assert_eq!(
+      interpret("Sort[Combinatorica`RandomPermutation[{a, b, c}]]").unwrap(),
+      "{a, b, c}"
+    );
+    assert_eq!(
+      interpret("Head[Combinatorica`RandomPermutation[5]]").unwrap(),
+      "List"
+    );
+  }
+
+  #[test]
+  fn combinatorica_random_k_subset_keeps_order_and_size() {
+    assert_eq!(
+      interpret(
+        "s = Combinatorica`RandomKSubset[Range[10], 4]; {Length[s], s === Sort[s], Length[Union[s]], SubsetQ[Range[10], s]}"
+      )
+      .unwrap(),
+      "{4, True, 4, True}"
+    );
+    // An integer n stands for Range[n].
+    assert_eq!(
+      interpret("SubsetQ[Range[9], Combinatorica`RandomKSubset[9, 3]]")
+        .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("Combinatorica`RandomKSubset[{a, b}, 2]").unwrap(),
+      "{a, b}"
+    );
+    assert_eq!(
+      interpret("Combinatorica`RandomKSubset[{a, b}, 3]").unwrap(),
+      "Combinatorica`RandomKSubset[{a, b}, 3]"
+    );
+  }
+
+  #[test]
+  fn combinatorica_backtrack_one_and_all() {
+    // All solutions of a pruned search, in search order.
+    assert_eq!(
+      interpret(
+        "Combinatorica`Backtrack[{{1, 2, 3}, {1, 2, 3}}, True &, Total[#] == 4 &, All]"
+      )
+      .unwrap(),
+      "{{1, 3}, {2, 2}, {3, 1}}"
+    );
+    // partialQ prunes: no two equal neighbours.
+    assert_eq!(
+      interpret(
+        "Combinatorica`Backtrack[{{1, 2}, {1, 2}, {1, 2}}, Length[#] < 2 || Last[#] =!= #[[-2]] &, True &, All]"
+      )
+      .unwrap(),
+      "{{1, 2, 1}, {2, 1, 2}}"
+    );
+    // The default flag returns the first solution, or {} if none.
+    assert_eq!(
+      interpret(
+        "Combinatorica`Backtrack[{{1, 2, 3}, {1, 2, 3}}, True &, Total[#] == 5 &]"
+      )
+      .unwrap(),
+      "{2, 3}"
+    );
+    assert_eq!(
+      interpret(
+        "Combinatorica`Backtrack[{{1, 2, 3}, {1, 2, 3}}, True &, Total[#] == 9 &, Combinatorica`One]"
+      )
+      .unwrap(),
+      "{}"
+    );
+  }
+
+  #[test]
   fn combinatorica_unrank_permutation_boundaries() {
     assert_eq!(
       interpret("Combinatorica`UnrankPermutation[1, {1, 2, 3}]").unwrap(),

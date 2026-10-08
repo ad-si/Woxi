@@ -19936,3 +19936,86 @@ mod parametric_ndsolve {
     );
   }
 }
+
+mod integrate_polynomial_over_sqrt_quadratic {
+  use super::*;
+
+  #[test]
+  fn definite_integrals_over_unit_semicircle_radical() {
+    for (input, expected) in [
+      ("Integrate[z^2/Sqrt[1 - z^2], {z, 0, 1}]", "Pi/4"),
+      ("Integrate[z^3/Sqrt[1 - z^2], {z, 0, 1}]", "2/3"),
+      ("Integrate[z^4/Sqrt[1 - z^2], {z, 0, 1}]", "(3*Pi)/16"),
+      (
+        "Integrate[(1 + a z^2)/Sqrt[1 - z^2], {z, 0, 1}]",
+        "Pi/2 + (a*Pi)/4",
+      ),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+  }
+
+  #[test]
+  fn indefinite_integrals_differentiate_back() {
+    for integrand in [
+      "z^2/Sqrt[1 - z^2]",
+      "z^5/Sqrt[3 - 2 z^2]",
+      "(1 + z)^2/Sqrt[4 + z^2]",
+    ] {
+      let code = format!(
+        "Abs[(D[Integrate[{integrand}, z], z] - {integrand}) /. z -> 0.3] < 10^-9"
+      );
+      assert_eq!(interpret(&code).unwrap(), "True", "{integrand}");
+    }
+    assert_eq!(
+      interpret("Integrate[z/Sqrt[4 + z^2], z]").unwrap(),
+      "Sqrt[4 + z^2]"
+    );
+  }
+
+  #[test]
+  fn numeric_series_coefficients_evaluate() {
+    assert_eq!(
+      interpret("N[Integrate[(1 + 0.5 z^2)/Sqrt[1 - z^2], {z, 0, 1}]]")
+        .unwrap(),
+      "1.9634954084936207"
+    );
+  }
+}
+
+mod infinity_stored_in_variable {
+  use super::*;
+
+  #[test]
+  fn assigned_infinity_keeps_its_head() {
+    assert_eq!(
+      interpret("x = Infinity; Head[x]").unwrap(),
+      "DirectedInfinity"
+    );
+    assert_eq!(interpret("x = -Infinity; x").unwrap(), "-Infinity");
+  }
+
+  #[test]
+  fn symbols_named_like_float_words_stay_symbols() {
+    assert_eq!(
+      interpret("inf = 3; {inf, Head[nan]}").unwrap(),
+      "{3, Symbol}"
+    );
+  }
+
+  #[test]
+  fn improper_integral_with_limit_held_in_variable_is_exact() {
+    assert_eq!(
+      interpret("b = Infinity; Integrate[1/x^2, {x, 1, b}]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret(
+        "Module[{par = {1, Infinity}, a, b}, a = par[[1]]; b = par[[2]]; \
+         Integrate[x^(-3), {x, a, b}]]"
+      )
+      .unwrap(),
+      "1/2"
+    );
+  }
+}

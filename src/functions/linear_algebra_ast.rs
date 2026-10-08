@@ -7353,6 +7353,92 @@ fn student_t_two_tailed_p_value(dof: f64, t_stat: f64) -> Option<f64> {
   Some(2.0 * (1.0 - cdf_val))
 }
 
+/// Asymptotic parameter statistics of a nonlinear least-squares fit:
+/// `Cov = sigma^2 (J^T J)^-1` with `J` the model's Jacobian with respect to
+/// the parameters (central differences) at the fitted values. Returns the
+/// standard errors, t-statistics, two-tailed p-values and parameter values;
+/// `None` when degrees of freedom are exhausted or `J^T J` is singular.
+fn nonlinear_parameter_stats(
+  data: &Expr,
+  model: &Expr,
+  rules: &[Expr],
+  var_name: &str,
+) -> Option<(Vec<f64>, Vec<f64>, Vec<f64>, Vec<f64>)> {
+  let data_evaluated = evaluate_expr_to_expr(data).ok()?;
+  let Expr::List(data_list) = &data_evaluated else {
+    return None;
+  };
+  let (x_vals, y_vals) =
+    extract_fit_data(data_list, "NonlinearModelFit").ok()?;
+  let mut names = Vec::new();
+  let mut values = Vec::new();
+  for r in rules {
+    let Expr::Rule {
+      pattern,
+      replacement,
+    } = r
+    else {
+      return None;
+    };
+    let Expr::Identifier(n) = pattern.as_ref() else {
+      return None;
+    };
+    names.push(n.clone());
+    values.push(try_eval_to_f64(replacement)?);
+  }
+  let (n, m) = (x_vals.len(), values.len());
+  if n <= m {
+    return None;
+  }
+  let eval_at = |x: f64, vals: &[f64]| -> Option<f64> {
+    let mut e =
+      crate::syntax::substitute_variable(model, var_name, &Expr::Real(x));
+    for (nm, v) in names.iter().zip(vals) {
+      e = crate::syntax::substitute_variable(&e, nm, &Expr::Real(*v));
+    }
+    try_eval_to_f64(&evaluate_expr_to_expr(&e).ok()?)
+  };
+  let mut jac = vec![vec![0.0f64; m]; n];
+  for j in 0..m {
+    let h = 1e-6 * values[j].abs().max(1.0);
+    let (mut up, mut down) = (values.clone(), values.clone());
+    up[j] += h;
+    down[j] -= h;
+    for i in 0..n {
+      jac[i][j] =
+        (eval_at(x_vals[i], &up)? - eval_at(x_vals[i], &down)?) / (2.0 * h);
+    }
+  }
+  let mut ss_res = 0.0;
+  for i in 0..n {
+    ss_res += (y_vals[i] - eval_at(x_vals[i], &values)?).powi(2);
+  }
+  let dof = (n - m) as f64;
+  let sigma2 = ss_res / dof;
+  let mut jtj = vec![vec![0.0f64; m]; m];
+  for row in &jac {
+    for a in 0..m {
+      for b in 0..m {
+        jtj[a][b] += row[a] * row[b];
+      }
+    }
+  }
+  let inv = invert_square_matrix(&jtj)?;
+  let (mut errors, mut ts, mut ps) = (vec![], vec![], vec![]);
+  for j in 0..m {
+    let se = (sigma2 * inv[j][j]).max(0.0).sqrt();
+    let t = if se > 0.0 {
+      values[j] / se
+    } else {
+      f64::INFINITY
+    };
+    ps.push(student_t_two_tailed_p_value(dof, t)?);
+    errors.push(se);
+    ts.push(t);
+  }
+  Some((errors, ts, ps, values))
+}
+
 /// NonlinearModelFit[data, model, params, var] — fits a (possibly nonlinear)
 /// model and returns a FittedModel object. The parameters are fitted with
 /// FindFit; the FittedModel then answers property queries ("BestFitParameters"
@@ -7484,7 +7570,7 @@ pub fn nonlinear_model_fit_ast(
     ),
     (
       Expr::String("VariableName".to_string()),
-      Expr::String(var_name),
+      Expr::String(var_name.clone()),
     ),
     (Expr::String("BestFit".to_string()), fitted_expr),
   ];
@@ -7504,6 +7590,38 @@ pub fn nonlinear_model_fit_ast(
       Expr::String("AdjustedRSquared".to_string()),
       Expr::Real(adjusted_r_squared),
     ));
+  }
+
+  if let Some((errors, t_stats, p_values, values)) =
+    nonlinear_parameter_stats(data, model, rules, &var_name)
+  {
+    let entries = Expr::List(
+      (0..values.len())
+        .map(|j| {
+          Expr::List(
+            vec![
+              Expr::Real(values[j]),
+              Expr::Real(errors[j]),
+              Expr::Real(t_stats[j]),
+              Expr::Real(p_values[j]),
+            ]
+            .into(),
+          )
+        })
+        .collect(),
+    );
+    let reals =
+      |v: &[f64]| Expr::List(v.iter().map(|x| Expr::Real(*x)).collect());
+    assoc.push((Expr::String("ParameterErrors".to_string()), reals(&errors)));
+    assoc.push((
+      Expr::String("ParameterTStatistics".to_string()),
+      reals(&t_stats),
+    ));
+    assoc.push((
+      Expr::String("ParameterPValues".to_string()),
+      reals(&p_values),
+    ));
+    assoc.push((Expr::String("ParameterTableEntries".to_string()), entries));
   }
 
   Ok(call1("FittedModel", Expr::Association(assoc)))
