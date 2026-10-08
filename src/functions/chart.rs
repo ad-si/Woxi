@@ -499,6 +499,9 @@ pub(crate) struct ChartOptions {
   /// leave this `true` (the explicit list still overrides individual axes
   /// via `ticks_x`/`ticks_y` above).
   pub ticks: bool,
+  /// `ChartLayout -> "Stacked"`: the bars of each group are piled on top of
+  /// one another in a single column instead of drawn side by side.
+  pub stacked: bool,
 }
 
 /// A chart label with optional rotation angle (in radians).
@@ -1437,6 +1440,7 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
     ticks_x: None,
     ticks_y: None,
     ticks: true,
+    stacked: false,
   };
   for opt in &args[1..] {
     if let Some((name, replacement)) =
@@ -1559,6 +1563,12 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
         // the renderer's own automatic ticks in place; an explicit
         // `{xspec, yspec}` list overrides individual axes (each entry an
         // optional `{pos, label}` pair) — matching Plot's `Ticks` handling.
+        "ChartLayout" => {
+          opts.stacked = matches!(
+            replacement,
+            Expr::String(s) | Expr::Identifier(s) if s == "Stacked"
+          );
+        }
         "Ticks" => match replacement {
           Expr::Identifier(s) if s == "None" => opts.ticks = false,
           Expr::Identifier(s) if s == "Automatic" || s == "All" => {
@@ -1701,6 +1711,8 @@ pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     opts.plot_range_x,
     opts.plot_range_y,
     &bar_labels,
+    opts.stacked,
+    opts.ticks,
   )?;
   Ok(crate::graphics_result(svg))
 }

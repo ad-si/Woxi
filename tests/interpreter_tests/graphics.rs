@@ -11218,6 +11218,69 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       insta::assert_snapshot!(export_svg("BarChart[{1, 2, 3}]"));
     }
 
+    /// Distinct left edges and bottom/top extents of the bar rectangles
+    /// (every `<rect>` after the background).
+    fn bar_rects(svg: &str) -> Vec<(i64, i64, i64)> {
+      let attr = |tag: &str, name: &str| -> Option<i64> {
+        let pat = format!(" {name}=\"");
+        let start = tag.find(&pat)? + pat.len();
+        let end = start + tag[start..].find('"')?;
+        tag[start..end]
+          .parse::<f64>()
+          .ok()
+          .map(|v| v.round() as i64)
+      };
+      svg
+        .split("<rect")
+        .skip(2)
+        .filter_map(|t| {
+          Some((attr(t, "x")?, attr(t, "y")?, attr(t, "height")?))
+        })
+        .collect()
+    }
+
+    #[test]
+    fn bar_chart_stacked_layout_shares_one_column_per_group() {
+      let grouped = bar_rects(&export_svg("BarChart[{{1, 2}, {3, 1}}]"));
+      let stacked = bar_rects(&export_svg(
+        r#"BarChart[{{1, 2}, {3, 1}}, ChartLayout -> "Stacked"]"#,
+      ));
+      let distinct_x = |r: &[(i64, i64, i64)]| {
+        let mut xs: Vec<i64> = r.iter().map(|b| b.0).collect();
+        xs.sort_unstable();
+        xs.dedup();
+        xs.len()
+      };
+      assert_eq!(grouped.len(), 4);
+      assert_eq!(distinct_x(&grouped), 4);
+      assert_eq!(stacked.len(), 4);
+      assert_eq!(distinct_x(&stacked), 2);
+    }
+
+    #[test]
+    fn bar_chart_stacked_layout_piles_bars_on_top_of_each_other() {
+      // Group 1 is {1, 2}: the second bar must start where the first ends,
+      // and the group's total (3) sets the scale, so both stacks of equal
+      // total reach the same top edge.
+      let b = bar_rects(&export_svg(
+        r#"BarChart[{{1, 2}, {2, 1}}, ChartLayout -> "Stacked"]"#,
+      ));
+      assert_eq!(b.len(), 4);
+      let top = |r: &(i64, i64, i64)| r.1;
+      let bottom = |r: &(i64, i64, i64)| r.1 + r.2;
+      assert!((bottom(&b[1]) - top(&b[0])).abs() <= 1);
+      assert!((bottom(&b[3]) - top(&b[2])).abs() <= 1);
+      assert!((top(&b[1]) - top(&b[3])).abs() <= 1);
+    }
+
+    #[test]
+    fn bar_chart_ticks_none_hides_axis_tick_labels() {
+      assert!(export_svg("BarChart[{1, 2, 3}]").contains("<text"));
+      assert!(
+        !export_svg("BarChart[{1, 2, 3}, Ticks -> None]").contains("<text")
+      );
+    }
+
     #[test]
     fn bar_chart_image_size() {
       insta::assert_snapshot!(export_svg(
