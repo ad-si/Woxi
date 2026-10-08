@@ -22985,6 +22985,30 @@ mod manipulate {
   };
   use woxi::interpret_to_expr;
 
+  // A string-tagged variable spec (`"tag" -> {var, min, max}`) is the
+  // control itself — including one whose bounds name sibling controls.
+  #[test]
+  fn spec_string_tagged_variable_specs_become_controls() {
+    let expr = interpret_to_expr(
+      "Manipulate[a + b, \"X1\" -> {{a, 1, \"first\"}, 0, 5}, \
+       \"Y1\" -> {{b, 2, \"second\"}, a, 10}, \
+       \"B1\" -> {{c, True, \"flag\"}, {True, False}}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    let names: Vec<&str> = spec
+      .controls
+      .iter()
+      .map(|c| match c {
+        ManipulateControl::Continuous { name, .. }
+        | ManipulateControl::Discrete { name, .. } => name.as_str(),
+        other => panic!("unexpected control {other:?}"),
+      })
+      .collect();
+    assert_eq!(names, vec!["a", "b", "c"]);
+    assert!(spec.displays.is_empty());
+  }
+
   #[test]
   fn spec_animator_auto_plays_range() {
     // Animator[{min, max}] is a standalone auto-playing continuous control.
