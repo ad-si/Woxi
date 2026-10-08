@@ -12452,6 +12452,18 @@ pub fn box_string_to_svg(s: &str) -> String {
   parse_box_units(&cs).iter().map(boxes_to_svg).collect()
 }
 
+/// The box expression a string with inline `\!\(\*…\)` box notation
+/// typesets to (`RowBox[{"sweep", SubscriptBox[…], …}]`), for renderers that
+/// lay out boxes rather than SVG label runs. `None` for a plain string.
+pub fn inline_box_string_to_box_expr(s: &str) -> Option<Expr> {
+  if !s.contains(crate::functions::string_ast::BOX_START) {
+    return None;
+  }
+  let norm = normalize_box_markers(s);
+  let cs: Vec<char> = norm.chars().collect();
+  Some(call1("RowBox", Expr::List(parse_box_units(&cs).into())))
+}
+
 /// The combining mark that draws `accent` over (or, when `over` is false,
 /// under) a base character, and whether it spans every character of the base
 /// (a bar does; a dot or a hat sits on the last one).

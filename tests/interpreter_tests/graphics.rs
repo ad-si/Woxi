@@ -4329,6 +4329,39 @@ mod plot3d {
     // renderers (Plot/BarChart/PieChart) instead of being printed as a
     // single line of raw `Column[{…}]` syntax.
     #[test]
+    fn grid_span_placeholders_beside_graphic_draw_nothing() {
+      let svg = export_svg(
+        "Grid[{{Graphics[Circle[]], \"b\"}, {\"x\", SpanFromLeft}}]",
+      );
+      assert!(
+        !svg.contains("SpanFrom"),
+        "SpanFromLeft must not be drawn as text:\n{svg}"
+      );
+    }
+
+    #[test]
+    fn subsuperscript_box_label_with_bare_sign_script() {
+      let svg = export_svg(
+        "Graphics[Text[\"\\!\\(\\*SubsuperscriptBox[\\(sweep\\), \\(p\\), \\(+\\)]\\)\", {0, 0}]]",
+      );
+      assert!(
+        !svg.contains("SubsuperscriptBox"),
+        "box source must not leak into the label:\n{svg}"
+      );
+    }
+
+    #[test]
+    fn grid_text_cell_with_inline_box_beside_graphic_is_typeset() {
+      let svg = export_svg(
+        "Grid[{{Text[Style[\"\\!\\(\\*SubsuperscriptBox[\\(sweep\\), \\(p\\), \\(+\\)]\\)\" <> \" = 3\", Blue]], Graphics[Circle[]]}}]",
+      );
+      assert!(
+        !svg.contains("SubsuperscriptBox") && !svg.contains("\\!"),
+        "inline box notation must be typeset, not printed:\n{svg}"
+      );
+    }
+
+    #[test]
     fn graphics3d_plot_label_grid_stacks_lines() {
       let svg = export_svg(
         "Graphics3D[Sphere[], PlotLabel -> Grid[{{\"A\", \"B\"}, {1, 2}}]]",
