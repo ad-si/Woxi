@@ -659,6 +659,17 @@ pub(crate) fn expr_to_label(e: &Expr) -> Option<String> {
       let sep = args.get(1).and_then(expr_to_label).unwrap_or_default();
       Some(parts.join(&sep))
     }
+    // `Column[{…}]` stacks its parts on separate lines; the lines are kept
+    // as `\n`-separated text for the callers that can lay them out.
+    Expr::FunctionCall { name, args }
+      if name == "Column" && !args.is_empty() =>
+    {
+      let Expr::List(items) = &args[0] else {
+        return None;
+      };
+      let parts: Vec<String> = items.iter().filter_map(expr_to_label).collect();
+      Some(parts.join("\n"))
+    }
     // A label written as a function of the plot's variable — a Demonstration
     // writes `AxesLabel -> {t, y[t]}` and `FrameLabel -> {y[t], y'[t]}` —
     // typesets the way a graphic's labels do, with the argument in
@@ -2033,12 +2044,33 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         };
         let lx = cx + r_label * mid_angle.cos();
         let ly = cy + r_label * mid_angle.sin();
-        labels_svg.push_str(&format!(
-          "<text x=\"{lx:.2}\" y=\"{ly:.2}\" text-anchor=\"middle\" \
-           dominant-baseline=\"central\" font-family=\"sans-serif\" \
-           font-size=\"12\" fill=\"black\">{}</text>\n",
-          crate::functions::graphics::box_string_to_svg(&label.text)
-        ));
+        // A stacked (`Column`) label puts each line on its own `tspan`,
+        // the block as a whole centred on the wedge.
+        let lines: Vec<&str> = label.text.split('\n').collect();
+        let line_height = 14.4;
+        let first_dy = -line_height * (lines.len() as f64 - 1.0) / 2.0;
+        let mut spans = String::new();
+        for (k, line) in lines.iter().enumerate() {
+          let dy = if k == 0 { first_dy } else { line_height };
+          spans.push_str(&format!(
+            "<tspan x=\"{lx:.2}\" dy=\"{dy:.2}\">{}</tspan>",
+            crate::functions::graphics::box_string_to_svg(line)
+          ));
+        }
+        if lines.len() == 1 {
+          labels_svg.push_str(&format!(
+            "<text x=\"{lx:.2}\" y=\"{ly:.2}\" text-anchor=\"middle\" \
+             dominant-baseline=\"central\" font-family=\"sans-serif\" \
+             font-size=\"12\" fill=\"black\">{}</text>\n",
+            crate::functions::graphics::box_string_to_svg(&label.text)
+          ));
+        } else {
+          labels_svg.push_str(&format!(
+            "<text x=\"{lx:.2}\" y=\"{ly:.2}\" text-anchor=\"middle\" \
+             dominant-baseline=\"central\" font-family=\"sans-serif\" \
+             font-size=\"12\" fill=\"black\">{spans}</text>\n"
+          ));
+        }
       }
 
       // Draw the LabelingFunction text, positioned by its `Placed` spec.
