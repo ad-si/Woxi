@@ -1,26 +1,43 @@
 ---
 source: tests/interpreter_tests/graphics.rs
-assertion_line: 9070
 expression: "export_svg(\"DateListLogPlot[{{{2000, 1, 1}, 1}, {{2005, 6, 15}, 100}, {{2010, 12, 31}, 10}}]\")"
 ---
 <svg width="360" height="225" viewBox="0 0 3600 2250" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 <rect x="0" y="0" width="3600" height="2250" opacity="1" fill="#FFFFFF" stroke="none"/>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="749,100 749,1749 "/>
-<text x="670" y="1688" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
-
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1688 749,1688 "/>
-<text x="670" y="925" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
-
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,925 749,925 "/>
-<text x="670" y="162" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="104.83870967741936" opacity="1" fill="#666666">
-
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,162 749,162 "/>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="750,1750 3499,1750 "/>
-<polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="851,1688 2114,162 3397,925 "/>
-<text x="670.2" y="1688.9" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145" fill="#666">1</text>
-<text x="670.2" y="925.0" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145" fill="#666">10</text>
-<text x="670.2" y="161.1" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145" fill="#666">10<tspan baseline-shift="super" font-size="102">2</tspan></text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="852,1750 852,1790"/><text x="852" y="1792" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="180" opacity="1" fill="#666666">2000</text><polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="1315,1750 1315,1790"/><text x="1315" y="1792" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="180" opacity="1" fill="#666666">2002</text><polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="1778,1750 1778,1790"/><text x="1778" y="1792" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="180" opacity="1" fill="#666666">2004</text><polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="2241,1750 2241,1790"/><text x="2241" y="1792" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="180" opacity="1" fill="#666666">2006</text><polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="2704,1750 2704,1790"/><text x="2704" y="1792" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="180" opacity="1" fill="#666666">2008</text><polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="3167,1750 3167,1790"/><text x="3167" y="1792" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="180" opacity="1" fill="#666666">2010</text></svg>
+<polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="15" points="472,1995 1915,173 3382,1084 "/>
+<line x1="356.0" y1="1995.1" x2="3500.0" y2="1995.1" stroke="#666" stroke-width="10"/>
+<line x1="472.4" y1="1995.1" x2="472.4" y2="1955.1" stroke="#666" stroke-width="10"/>
+<line x1="1002.2" y1="1995.1" x2="1002.2" y2="1955.1" stroke="#666" stroke-width="10"/>
+<text x="1002.2" y="2115.9" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="105" fill="#666">2002</text>
+<line x1="1531.2" y1="1995.1" x2="1531.2" y2="1955.1" stroke="#666" stroke-width="10"/>
+<text x="1531.2" y="2115.9" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="105" fill="#666">2004</text>
+<line x1="2061.0" y1="1995.1" x2="2061.0" y2="1955.1" stroke="#666" stroke-width="10"/>
+<text x="2061.0" y="2115.9" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="105" fill="#666">2006</text>
+<line x1="2590.0" y1="1995.1" x2="2590.0" y2="1955.1" stroke="#666" stroke-width="10"/>
+<text x="2590.0" y="2115.9" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="105" fill="#666">2008</text>
+<line x1="3119.8" y1="1995.1" x2="3119.8" y2="1955.1" stroke="#666" stroke-width="10"/>
+<text x="3119.8" y="2115.9" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="105" fill="#666">2010</text>
+<line x1="356.0" y1="100.0" x2="356.0" y2="2068.0" stroke="#666" stroke-width="10"/>
+<line x1="356.0" y1="2036.8" x2="380.0" y2="2036.8" stroke="#666" stroke-width="10"/>
+<line x1="356.0" y1="1720.8" x2="380.0" y2="1720.8" stroke="#666" stroke-width="10"/>
+<line x1="356.0" y1="1560.4" x2="380.0" y2="1560.4" stroke="#666" stroke-width="10"/>
+<line x1="356.0" y1="1446.6" x2="380.0" y2="1446.6" stroke="#666" stroke-width="10"/>
+<line x1="356.0" y1="1358.3" x2="380.0" y2="1358.3" stroke="#666" stroke-width="10"/>
+<line x1="356.0" y1="1286.1" x2="380.0" y2="1286.1" stroke="#666" stroke-width="10"/>
+<line x1="356.0" y1="1225.1" x2="380.0" y2="1225.1" stroke="#666" stroke-width="10"/>
+<line x1="356.0" y1="1172.3" x2="380.0" y2="1172.3" stroke="#666" stroke-width="10"/>
+<line x1="356.0" y1="1125.7" x2="380.0" y2="1125.7" stroke="#666" stroke-width="10"/>
+<line x1="356.0" y1="809.7" x2="380.0" y2="809.7" stroke="#666" stroke-width="10"/>
+<line x1="356.0" y1="649.3" x2="380.0" y2="649.3" stroke="#666" stroke-width="10"/>
+<line x1="356.0" y1="535.5" x2="380.0" y2="535.5" stroke="#666" stroke-width="10"/>
+<line x1="356.0" y1="447.2" x2="380.0" y2="447.2" stroke="#666" stroke-width="10"/>
+<line x1="356.0" y1="375.0" x2="380.0" y2="375.0" stroke="#666" stroke-width="10"/>
+<line x1="356.0" y1="314.0" x2="380.0" y2="314.0" stroke="#666" stroke-width="10"/>
+<line x1="356.0" y1="261.2" x2="380.0" y2="261.2" stroke="#666" stroke-width="10"/>
+<line x1="356.0" y1="214.6" x2="380.0" y2="214.6" stroke="#666" stroke-width="10"/>
+<line x1="356.0" y1="1995.1" x2="396.0" y2="1995.1" stroke="#666" stroke-width="10"/>
+<line x1="356.0" y1="1084.0" x2="396.0" y2="1084.0" stroke="#666" stroke-width="10"/>
+<text x="308.8" y="1120.7" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="105" fill="#666">10</text>
+<line x1="356.0" y1="172.9" x2="396.0" y2="172.9" stroke="#666" stroke-width="10"/>
+<text x="308.8" y="209.6" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="105" fill="#666">10<tspan baseline-shift="super" font-size="70%">2</tspan></text>
+</svg>

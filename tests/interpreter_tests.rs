@@ -3303,16 +3303,18 @@ mod interpreter_tests {
       (grab("width"), grab("height"))
     };
 
+    // `Sin[x]^2` never dips below 0, so its x axis runs along the bottom of
+    // the frame with the tick labels below it.
     clear_state();
     let short = interpret(
-      "ExportString[Plot[Sin[x], {x, 0, 4 Pi}, AspectRatio -> 1/3], \"SVG\"]",
+      "ExportString[Plot[Sin[x]^2, {x, 0, 4 Pi}, AspectRatio -> 1/3], \"SVG\"]",
     )
     .unwrap();
     let (w, h) = dims(&short);
     // Frame height alone would be w/3; the real image must be taller because
-    // axis ticks and labels live outside the frame.
+    // the x tick labels live outside the frame.
     assert!(
-      h > w / 3.0 + 30.0,
+      h > w / 3.0 + 5.0,
       "AspectRatio 1/3 collapsed the frame: {w}x{h} (expected height > w/3 + margins)"
     );
 
@@ -3321,7 +3323,7 @@ mod interpreter_tests {
     // the whole canvas.
     clear_state();
     let tall = interpret(
-      "ExportString[Plot[Sin[x], {x, 0, 4 Pi}, AspectRatio -> 2/3], \"SVG\"]",
+      "ExportString[Plot[Sin[x]^2, {x, 0, 4 Pi}, AspectRatio -> 2/3], \"SVG\"]",
     )
     .unwrap();
     let (_, h2) = dims(&tall);

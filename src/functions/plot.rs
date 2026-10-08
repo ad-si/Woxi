@@ -8,6 +8,10 @@ use crate::functions::chart::{
 };
 use crate::functions::graphics::{Color as WoxiColor, parse_color};
 use crate::functions::math_ast::{try_eval_to_f64, try_eval_to_f64_lenient};
+use crate::functions::plot_axes::{
+  AxisScale, AxisTicks, OriginAxes, label_gutter, origin_axes_svg,
+  x_tick_label_room, y_tick_label_room,
+};
 use crate::syntax::PlotMarker;
 
 /// How many lines below the first a stacked `PlotLabel` (a `Grid`/`Column`
@@ -934,14 +938,10 @@ pub(crate) fn axes_label_svg(
   axes_label: Option<&(String, String)>,
   (x0, y0, w, h): (f64, f64, f64, f64),
   (x_min, x_max, y_min, y_max): (f64, f64, f64, f64),
-  (show_x_axis, show_y_axis): (bool, bool),
+  axes: (bool, bool),
   font_size: f64,
   label_fill: &str,
 ) -> String {
-  let Some((x_label, y_label)) = axes_label else {
-    return String::new();
-  };
-  let mut svg = String::new();
   // The axis lines: where y = 0 and x = 0 fall, clamped into the plot area
   // (an all-positive range draws its axes along the bottom and left edges).
   let axis_y = if y_max > y_min {
@@ -954,6 +954,30 @@ pub(crate) fn axes_label_svg(
   } else {
     x0
   };
+  axes_label_svg_at(
+    axes_label,
+    (x0, y0, w, h),
+    (axis_x, axis_y),
+    axes,
+    font_size,
+    label_fill,
+  )
+}
+
+/// [`axes_label_svg`] for axes that cross at the render-space point
+/// `(axis_x, axis_y)` — the vertical axis's x and the horizontal one's y.
+pub(crate) fn axes_label_svg_at(
+  axes_label: Option<&(String, String)>,
+  (x0, y0, w, _h): (f64, f64, f64, f64),
+  (axis_x, axis_y): (f64, f64),
+  (show_x_axis, show_y_axis): (bool, bool),
+  font_size: f64,
+  label_fill: &str,
+) -> String {
+  let Some((x_label, y_label)) = axes_label else {
+    return String::new();
+  };
+  let mut svg = String::new();
   if show_x_axis && !x_label.is_empty() {
     svg.push_str(&format!(
       "<text x=\"{:.1}\" y=\"{axis_y:.1}\" text-anchor=\"start\" \
@@ -1917,6 +1941,14 @@ pub(crate) struct PlotOptions {
   pub color_function_scaling: bool,
   /// Per-axis visibility: (x_axis, y_axis). Both true = default.
   pub axes: (bool, bool),
+  /// `AxesOrigin -> {x, y}`: where the axes cross. `None` coordinates
+  /// follow the automatic rule (0 when in range, else the nearest end).
+  pub axes_origin: (Option<f64>, Option<f64>),
+  /// Per axis, the low end of the plot range before the automatic padding
+  /// was added, when the renderer is handed a padded one — the automatic
+  /// `AxesOrigin` of an all-positive range sits there rather than at the
+  /// padded edge.
+  pub axes_origin_low: (Option<f64>, Option<f64>),
   /// Ticks option: true = show tick marks and labels (default), false = hide
   pub ticks: bool,
   /// `Ticks -> {xspec, yspec}` with explicit positions: each entry is a
@@ -2070,6 +2102,18 @@ impl PlotOptions {
   fn ticks_visible(&self) -> bool {
     self.ticks && (self.frame_ticks || !self.frame)
   }
+
+  /// Where the axes cross on the axes `x` and `y`, in data coordinates.
+  pub(crate) fn axes_origin_point(
+    &self,
+    x: AxisScale,
+    y: AxisScale,
+  ) -> (f64, f64) {
+    (
+      x.origin(self.axes_origin.0, self.axes_origin_low.0),
+      y.origin(self.axes_origin.1, self.axes_origin_low.1),
+    )
+  }
 }
 
 impl Default for PlotOptions {
@@ -2126,6 +2170,8 @@ impl Default for PlotOptions {
       plot_markers: Vec::new(),
       label_style: None,
       joined_per_series: None,
+      axes_origin: (None, None),
+      axes_origin_low: (None, None),
     }
   }
 }
@@ -2634,10 +2680,26 @@ pub(crate) fn plot_labels_svg(
   }
 
   // AxesLabel: at the far end of each axis, the way Wolfram writes it.
-  labels_svg.push_str(&axes_label_svg(
+  let x_scale = AxisScale {
+    min: x_min,
+    max: x_max,
+    log: opts.log_x,
+  };
+  let y_scale = AxisScale {
+    min: y_min,
+    max: y_max,
+    log: opts.log_y,
+  };
+  let area = (plot_x0, margin_top, plot_w, plot_h);
+  labels_svg.push_str(&axes_label_svg_at(
     opts.axes_label.as_ref(),
-    (plot_x0, margin_top, plot_w, plot_h),
-    (x_min, x_max, y_min, y_max),
+    area,
+    crate::functions::plot_axes::axes_crossing_px(
+      area,
+      x_scale,
+      y_scale,
+      opts.axes_origin_point(x_scale, y_scale),
+    ),
     opts.axes,
     font_size,
     label_fill,
@@ -2941,6 +3003,59 @@ fn generate_svg_with_options(
     5 * s as u32
   };
 
+  // An unframed plot draws its axes itself, crossing at the `AxesOrigin`
+  // (see `plot_axes`); plotters only maps the data. Their tick labels hang
+  // off the axes, so the gutters only need to hold whatever part of them
+  // the plotting area does not.
+  let origin_axes = !opts.frame && (show_x_axis || show_y_axis);
+  let x_scale = AxisScale {
+    min: x_min,
+    max: x_max,
+    log: opts.log_x,
+  };
+  let y_scale = AxisScale {
+    min: y_min,
+    max: y_max,
+    log: opts.log_y,
+  };
+  let x_ticks = AxisTicks::new(x_scale, opts.date_axis, opts.ticks_x.as_ref());
+  let y_ticks = AxisTicks::new(y_scale, false, opts.ticks_y.as_ref());
+  let origin = opts.axes_origin_point(x_scale, y_scale);
+  let (y_label_area, x_label_area) = if origin_axes {
+    let y_room = if show_y_axis && show_ticks {
+      y_tick_label_room(&y_ticks) * sf
+    } else {
+      0.0
+    };
+    let x_room = if show_x_axis && show_ticks {
+      x_tick_label_room(&x_ticks) * sf
+    } else {
+      0.0
+    };
+    let plot_w_est =
+      (render_width as f64 - margin_left as f64 - margin_right as f64 - y_room)
+        .max(1.0);
+    let y_area = label_gutter(y_room, x_scale.frac(origin.0), plot_w_est);
+    let plot_h_est = match opts.aspect_ratio {
+      Some(ar) if opts.image_padding.is_none() => {
+        (render_width as f64
+          - margin_left as f64
+          - margin_right as f64
+          - y_area)
+          * ar
+      }
+      _ => {
+        render_height as f64 - top_margin as f64 - margin_bottom as f64 - x_room
+      }
+    }
+    .max(1.0);
+    let x_area =
+      label_gutter(x_room, y_scale.frac(origin.1), plot_h_est) + bottom_extra;
+    (y_area.round() as u32, x_area.round() as u32)
+  } else {
+    (y_label_area, x_label_area)
+  };
+
   // With `ImagePadding` the padding *is* the margin, so an `AspectRatio`
   // fixes the canvas height directly: the plot area spans the width the
   // padding leaves, and the height follows from the ratio. Deriving it here,
@@ -3040,8 +3155,7 @@ fn generate_svg_with_options(
     }
   }
 
-  let (theme_bg, dark_gray, light_gray, label_fill, title_default_fill) =
-    plot_theme();
+  let (theme_bg, dark_gray, _, label_fill, title_default_fill) = plot_theme();
   // Background -> color replaces the theme background for the whole image.
   let bg_color = opts.background.unwrap_or(theme_bg);
 
@@ -3125,48 +3239,51 @@ fn generate_svg_with_options(
         } else {
           ShapeStyle::from(&bg_color).stroke_width(0)
         };
-        chart
-          .configure_mesh()
-          .disable_mesh()
-          .x_labels(x_labels_count)
-          .y_labels(y_labels_count)
-          .x_label_formatter(&move |v: &f64| {
-            if x_labels_count == 0 {
-              return String::new();
-            }
-            if date_axis {
-              format_date_tick(*v)
-            } else if log_x {
-              // Suppress plotters labels; we inject custom SVG with superscripts
-              String::new()
-            } else if is_major_tick(*v, x_major) {
-              format_tick_with_step(*v, x_major)
-            } else {
-              String::new()
-            }
-          })
-          .y_label_formatter(&move |v: &f64| {
-            if y_labels_count == 0 {
-              return String::new();
-            }
-            if log_y {
-              String::new()
-            } else if is_major_tick(*v, y_major) {
-              format_tick_with_step(*v, y_major)
-            } else {
-              String::new()
-            }
-          })
-          .axis_style(axis_style)
-          .label_style(
-            ("sans-serif", sf * 13.0)
-              .into_font()
-              .color(&dark_gray),
-          )
-          .set_tick_mark_size(LabelAreaPosition::Left, y_tick_size)
-          .set_tick_mark_size(LabelAreaPosition::Bottom, x_tick_size)
-          .draw()
-          .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
+        // Unframed axes are drawn by `origin_axes_svg` once the chart is done.
+        if !origin_axes {
+          chart
+            .configure_mesh()
+            .disable_mesh()
+            .x_labels(x_labels_count)
+            .y_labels(y_labels_count)
+            .x_label_formatter(&move |v: &f64| {
+              if x_labels_count == 0 {
+                return String::new();
+              }
+              if date_axis {
+                format_date_tick(*v)
+              } else if log_x {
+                // Suppress plotters labels; we inject custom SVG with superscripts
+                String::new()
+              } else if is_major_tick(*v, x_major) {
+                format_tick_with_step(*v, x_major)
+              } else {
+                String::new()
+              }
+            })
+            .y_label_formatter(&move |v: &f64| {
+              if y_labels_count == 0 {
+                return String::new();
+              }
+              if log_y {
+                String::new()
+              } else if is_major_tick(*v, y_major) {
+                format_tick_with_step(*v, y_major)
+              } else {
+                String::new()
+              }
+            })
+            .axis_style(axis_style)
+            .label_style(
+              ("sans-serif", sf * 13.0)
+                .into_font()
+                .color(&dark_gray),
+            )
+            .set_tick_mark_size(LabelAreaPosition::Left, y_tick_size)
+            .set_tick_mark_size(LabelAreaPosition::Bottom, x_tick_size)
+            .draw()
+            .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
+        }
 
         // Draw grid lines before the series so they sit behind the data.
         // Explicit positions (with optional per-line color/thickness/dashing)
@@ -3276,32 +3393,6 @@ fn generate_svg_with_options(
               frame_style,
             )))
             .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
-        }
-
-        // Draw lighter origin lines through x=0 and y=0 if visible.
-        // `Axes -> False` hides them along with the axes themselves.
-        if !opts.frame && (show_x_axis || show_y_axis) {
-          let origin_line = light_gray.stroke_width(RESOLUTION_SCALE);
-          if show_x_axis && y_min < 0.0 && y_max > 0.0 {
-            chart
-              .draw_series(std::iter::once(PathElement::new(
-                vec![(x_min, 0.0), (x_max, 0.0)],
-                origin_line,
-              )))
-              .map_err(|e| {
-                InterpreterError::EvaluationError(format!("Plot: {e}"))
-              })?;
-          }
-          if show_y_axis && x_min < 0.0 && x_max > 0.0 {
-            chart
-              .draw_series(std::iter::once(PathElement::new(
-                vec![(0.0, y_min), (0.0, y_max)],
-                origin_line,
-              )))
-              .map_err(|e| {
-                InterpreterError::EvaluationError(format!("Plot: {e}"))
-              })?;
-          }
         }
 
         for (series_idx, points) in all_points.iter().enumerate() {
@@ -3653,6 +3744,35 @@ fn generate_svg_with_options(
     }
   }
 
+  if origin_axes {
+    let area = (
+      margin_left as f64 + y_label_area as f64,
+      top_margin as f64,
+      render_width as f64
+        - margin_left as f64
+        - margin_right as f64
+        - y_label_area as f64,
+      render_height as f64
+        - top_margin as f64
+        - margin_bottom as f64
+        - x_label_area as f64,
+    );
+    let axes_svg = origin_axes_svg(&OriginAxes {
+      area,
+      x: x_scale,
+      y: y_scale,
+      origin,
+      show: (show_x_axis, show_y_axis),
+      ticks: show_ticks.then_some((&x_ticks, &y_ticks)),
+      sf,
+      axis_color: label_fill,
+      label_fill,
+    });
+    if let Some(pos) = buf.rfind("</svg>") {
+      buf.insert_str(pos, &axes_svg);
+    }
+  }
+
   // Draw Prolog primitives under the plotted data, and Epilog primitives
   // over it, using the same data→pixel transform as the dash overlays
   // above.
@@ -3670,57 +3790,6 @@ fn generate_svg_with_options(
   );
   inject_prolog(&mut buf, opts, plot_area, (x_min, x_max, y_min, y_max), sf);
   inject_epilog(&mut buf, opts, plot_area, (x_min, x_max, y_min, y_max), sf);
-
-  // Extend labeled (major) ticks so they appear slightly longer than the
-  // unlabeled minor ticks drawn by plotters. Only applies when ticks are
-  // enabled, a visible axis style is used, and the axis uses linear
-  // (non-log, non-date) spacing — log/date axes have their own tick placement.
-  if show_ticks && !opts.frame && (show_x_axis || show_y_axis) {
-    let margin_left_f = margin_left as f64;
-    let margin_right_f = margin_right as f64;
-    let margin_bottom_f = margin_bottom as f64;
-    let margin_top_f = top_margin as f64;
-    let plot_x0 = margin_left_f + y_label_area as f64;
-    let plot_y0 = margin_top_f;
-    let plot_w = render_width as f64
-      - margin_left_f
-      - margin_right_f
-      - y_label_area as f64;
-    let plot_h = render_height as f64
-      - margin_top_f
-      - margin_bottom_f
-      - x_label_area as f64;
-    // An axis given explicit `Ticks` marks exactly the positions it names
-    // (below), so the automatic majors must not be extended over it — the
-    // leftover stubs would sit between the labels, marking nothing.
-    let x_axis_ext = if show_x_axis
-      && !opts.log_x
-      && !opts.date_axis
-      && opts.ticks_x.is_none()
-    {
-      Some((x_min, x_max, nice_step(x_max - x_min, AXIS_TICK_TARGET)))
-    } else {
-      None
-    };
-    let y_axis_ext = if show_y_axis && !opts.log_y && opts.ticks_y.is_none() {
-      Some((y_min, y_max, nice_step(y_max - y_min, AXIS_TICK_TARGET)))
-    } else {
-      None
-    };
-    inject_major_tick_extensions(
-      &mut buf,
-      plot_x0,
-      plot_y0,
-      plot_w,
-      plot_h,
-      x_axis_ext,
-      y_axis_ext,
-      MINOR_TICK_LEN as f64 * sf,
-      MAJOR_TICK_LEN as f64 * sf,
-      sf,
-      label_fill,
-    );
-  }
 
   // Inject label SVG elements before </svg>
   if has_plot_label
@@ -3746,9 +3815,10 @@ fn generate_svg_with_options(
       render_height as f64 - margin_top - margin_bottom_f - x_label_area as f64;
 
     if let Some(insert_pos) = buf.rfind("</svg>") {
+      // The origin axes already carry any explicit ticks.
       let mut labels_svg = explicit_ticks_svg(
-        opts.ticks_x.as_ref(),
-        opts.ticks_y.as_ref(),
+        opts.ticks_x.as_ref().filter(|_| !origin_axes),
+        opts.ticks_y.as_ref().filter(|_| !origin_axes),
         (plot_x0, margin_top, plot_w, plot_h),
         (x_min, x_max, y_min, y_max),
         sf,
@@ -3769,9 +3839,11 @@ fn generate_svg_with_options(
     }
   }
 
-  // Inject logarithmic axis labels with superscript formatting
-  if (opts.log_y && show_y_axis && show_ticks)
-    || (opts.log_x && show_x_axis && show_ticks)
+  // Inject logarithmic axis labels with superscript formatting on a frame
+  // (the origin axes label their own decades).
+  if !origin_axes
+    && ((opts.log_y && show_y_axis && show_ticks)
+      || (opts.log_x && show_x_axis && show_ticks))
   {
     let margin_left_f = margin_left as f64;
     let margin_right_f = margin_right as f64;
@@ -4318,7 +4390,53 @@ pub(crate) fn generate_scatter_svg_with_options(
           * 14.0
     });
   let (margin_left, margin_bottom) = (10.0 * sf, 10.0 * sf);
-  let (y_label_area, x_label_area) = (65.0 * sf, 40.0 * sf);
+  // As in the line renderer, an unframed plot draws its axes itself,
+  // crossing at the `AxesOrigin`, and only reserves gutters for the part of
+  // their tick labels the plotting area does not hold.
+  let (show_x_axis, show_y_axis) = opts.axes;
+  let show_ticks = opts.ticks_visible();
+  let origin_axes = !opts.frame && (show_x_axis || show_y_axis);
+  let x_scale = AxisScale {
+    min: x_min,
+    max: x_max,
+    log: false,
+  };
+  let y_scale = AxisScale {
+    min: y_min,
+    max: y_max,
+    log: false,
+  };
+  let x_ticks = AxisTicks::new(x_scale, opts.date_axis, opts.ticks_x.as_ref());
+  let y_ticks = AxisTicks::new(y_scale, false, opts.ticks_y.as_ref());
+  let origin = opts.axes_origin_point(x_scale, y_scale);
+  let (y_label_area, x_label_area) = if origin_axes {
+    let y_room = if show_y_axis && show_ticks {
+      y_tick_label_room(&y_ticks) * sf
+    } else {
+      0.0
+    };
+    let x_room = if show_x_axis && show_ticks {
+      x_tick_label_room(&x_ticks) * sf
+    } else {
+      0.0
+    };
+    let plot_w_est =
+      (render_width as f64 - margin_left - margin_right - y_room).max(1.0);
+    let y_area = label_gutter(y_room, x_scale.frac(origin.0), plot_w_est);
+    let plot_h_est = match opts.aspect_ratio {
+      Some(ar) => {
+        (render_width as f64 - margin_left - margin_right - y_area) * ar
+      }
+      None => render_height as f64 - margin_top - margin_bottom - x_room,
+    }
+    .max(1.0);
+    (
+      y_area,
+      label_gutter(x_room, y_scale.frac(origin.1), plot_h_est),
+    )
+  } else {
+    (65.0 * sf, 40.0 * sf)
+  };
 
   // AspectRatio sizes the plotting area (the data frame), not the whole image.
   // Derive the total height so the frame has the requested height/width ratio.
@@ -4377,8 +4495,7 @@ pub(crate) fn generate_scatter_svg_with_options(
     ),
   };
 
-  let (bg_color, dark_gray, light_gray, label_fill, title_default_fill) =
-    plot_theme();
+  let (bg_color, dark_gray, _, label_fill, title_default_fill) = plot_theme();
 
   // Dashed grid lines can't be drawn through plotters, so they are collected
   // here and emitted as `stroke-dasharray` polylines once the chart is done.
@@ -4411,7 +4528,6 @@ pub(crate) fn generate_scatter_svg_with_options(
     let y_minor_step = y_major / 5.0;
     // `Axes -> False` hides the axis line, its ticks and its labels — as in
     // the line renderer, a framed plot still labels its frame edges.
-    let (show_x_axis, show_y_axis) = opts.axes;
     let (tick_axis_x, tick_axis_y) = if opts.frame {
       (true, true)
     } else {
@@ -4434,41 +4550,44 @@ pub(crate) fn generate_scatter_svg_with_options(
       ShapeStyle::from(&bg_color).stroke_width(0)
     };
 
-    chart
-      .configure_mesh()
-      .disable_mesh()
-      .x_labels(x_tick_count)
-      .y_labels(y_tick_count)
-      .x_label_formatter(&move |v: &f64| {
-        if is_major_tick(*v, x_major) {
-          format_tick_with_step(*v, x_major)
-        } else {
-          String::new()
-        }
-      })
-      .y_label_formatter(&move |v: &f64| {
-        if is_major_tick(*v, y_major) {
-          format_tick_with_step(*v, y_major)
-        } else {
-          String::new()
-        }
-      })
-      .axis_style(axis_style)
-      .label_style(
-        ("sans-serif", RESOLUTION_SCALE as f64 * 18.0)
-          .into_font()
-          .color(&dark_gray),
-      )
-      .set_tick_mark_size(
-        LabelAreaPosition::Left,
-        if tick_axis_y { tick } else { 0 },
-      )
-      .set_tick_mark_size(
-        LabelAreaPosition::Bottom,
-        if tick_axis_x { tick } else { 0 },
-      )
-      .draw()
-      .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
+    // Unframed axes are drawn by `origin_axes_svg` once the chart is done.
+    if !origin_axes {
+      chart
+        .configure_mesh()
+        .disable_mesh()
+        .x_labels(x_tick_count)
+        .y_labels(y_tick_count)
+        .x_label_formatter(&move |v: &f64| {
+          if is_major_tick(*v, x_major) {
+            format_tick_with_step(*v, x_major)
+          } else {
+            String::new()
+          }
+        })
+        .y_label_formatter(&move |v: &f64| {
+          if is_major_tick(*v, y_major) {
+            format_tick_with_step(*v, y_major)
+          } else {
+            String::new()
+          }
+        })
+        .axis_style(axis_style)
+        .label_style(
+          ("sans-serif", RESOLUTION_SCALE as f64 * 18.0)
+            .into_font()
+            .color(&dark_gray),
+        )
+        .set_tick_mark_size(
+          LabelAreaPosition::Left,
+          if tick_axis_y { tick } else { 0 },
+        )
+        .set_tick_mark_size(
+          LabelAreaPosition::Bottom,
+          if tick_axis_x { tick } else { 0 },
+        )
+        .draw()
+        .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
+    }
 
     // Grid lines, drawn before the points so they sit behind the data.
     // Same rules as the line renderer: explicit positions beat the evenly
@@ -4551,26 +4670,6 @@ pub(crate) fn generate_scatter_svg_with_options(
       }
     }
 
-    // Origin lines — the axes drawn through zero. `Axes -> False` drops
-    // them along with the axis ticks and labels.
-    let origin_line = light_gray.stroke_width(RESOLUTION_SCALE);
-    if show_x_axis && y_min < 0.0 && y_max > 0.0 {
-      chart
-        .draw_series(std::iter::once(PathElement::new(
-          vec![(x_min, 0.0), (x_max, 0.0)],
-          origin_line,
-        )))
-        .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
-    }
-    if show_y_axis && x_min < 0.0 && x_max > 0.0 {
-      chart
-        .draw_series(std::iter::once(PathElement::new(
-          vec![(0.0, y_min), (0.0, y_max)],
-          origin_line,
-        )))
-        .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
-    }
-
     // Draw scatter points using plotters Circle markers
     for (series_idx, points) in all_series.iter().enumerate() {
       let marker_size =
@@ -4649,6 +4748,23 @@ pub(crate) fn generate_scatter_svg_with_options(
     buf.insert_str(pos, &overlay_svg);
   }
 
+  if origin_axes {
+    let axes_svg = origin_axes_svg(&OriginAxes {
+      area: (plot_x0, plot_y0, plot_w, plot_h),
+      x: x_scale,
+      y: y_scale,
+      origin,
+      show: (show_x_axis, show_y_axis),
+      ticks: show_ticks.then_some((&x_ticks, &y_ticks)),
+      sf,
+      axis_color: label_fill,
+      label_fill,
+    });
+    if let Some(pos) = buf.rfind("</svg>") {
+      buf.insert_str(pos, &axes_svg);
+    }
+  }
+
   // Prolog primitives sit under the points and Epilog primitives over them,
   // as in the line renderer.
   inject_prolog(
@@ -4665,7 +4781,7 @@ pub(crate) fn generate_scatter_svg_with_options(
     (x_min, x_max, y_min, y_max),
     sf,
   );
-  {
+  if opts.frame && show_ticks {
     // As in the line renderer: an axis carrying explicit `Ticks` marks only
     // the positions it names, so its automatic majors get no extension.
     let x_major = nice_step(x_max - x_min, AXIS_TICK_TARGET);
@@ -4724,9 +4840,10 @@ pub(crate) fn generate_scatter_svg_with_options(
     }
   }
 
-  // Explicit `Ticks`: mark and label exactly the positions asked for,
-  // in the same place the automatic ones would sit.
-  if opts.ticks_x.is_some() || opts.ticks_y.is_some() {
+  // Explicit `Ticks` on a frame: mark and label exactly the positions
+  // asked for, in the same place the automatic ones would sit. (The origin
+  // axes draw their own.)
+  if !origin_axes && (opts.ticks_x.is_some() || opts.ticks_y.is_some()) {
     let ticks_svg = explicit_ticks_svg(
       opts.ticks_x.as_ref(),
       opts.ticks_y.as_ref(),
@@ -8362,6 +8479,19 @@ pub(crate) fn apply_grid_side(
 /// Parse an `Axes` option value into `(show_x, show_y)`. Accepts `True` /
 /// `False` and the per-axis `{xbool, ybool}` form; anything else (e.g.
 /// `Automatic`) leaves the current setting alone.
+/// Parse `AxesOrigin -> {x, y}` into the point the axes cross at. A
+/// coordinate that is not numeric (`Automatic`) is left to the automatic
+/// rule, see [`crate::functions::plot_axes::AxisScale::origin`].
+pub(crate) fn parse_axes_origin(value: &Expr) -> (Option<f64>, Option<f64>) {
+  let val = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
+  match &val {
+    Expr::List(items) if items.len() == 2 => {
+      (try_eval_to_f64(&items[0]), try_eval_to_f64(&items[1]))
+    }
+    _ => (None, None),
+  }
+}
+
 pub(crate) fn parse_axes_option(value: &Expr) -> Option<(bool, bool)> {
   let is_true = |e: &Expr| matches!(e, Expr::Identifier(s) if s == "True");
   match value {
@@ -8911,6 +9041,9 @@ pub(crate) fn apply_common_plot_option(
       if let Some(axes) = parse_axes_option(replacement) {
         plot_opts.axes = axes;
       }
+    }
+    "AxesOrigin" => {
+      plot_opts.axes_origin = parse_axes_origin(replacement);
     }
     "AspectRatio" => {
       let val = evaluate_expr_to_expr(replacement)
@@ -9474,6 +9607,11 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (x_display_min, x_display_max) = plot_range_x.unwrap_or((x_min, x_max));
   let (y_display_min, y_display_max) =
     plot_range_y.unwrap_or((y_auto_min, y_auto_max));
+  // The axis of an all-positive curve touches its lowest point, inside the
+  // padding, as in Wolfram.
+  if plot_range_y.is_none() {
+    plot_opts.axes_origin_low.1 = Some(y_data_min);
+  }
 
   // Generate SVG
   let svg = generate_svg_with_filling(
@@ -9816,6 +9954,9 @@ fn log_scale_plot_ast(
     adjust_y_range_for_filling_opts(&plot_opts, (y_auto_min, y_auto_max));
 
   let (y_display_min, y_display_max) = plot_range_y.unwrap_or(y_auto);
+  if plot_range_y.is_none() {
+    plot_opts.axes_origin_low.1 = Some(y_data_min);
+  }
 
   plot_opts.log_x = log_x;
   plot_opts.log_y = log_y;
