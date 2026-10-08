@@ -2242,6 +2242,23 @@ mod graphics {
       ));
     }
 
+    // A second iterator whose bound mentions the first variable
+    // (`{y, -10, .99 x}`) restricts the plot to that region instead of
+    // failing with "cannot evaluate iterator max to a number".
+    #[test]
+    fn contour_plot_dependent_iterator_bound() {
+      let dependent = export_svg(
+        "ContourPlot[x y, {x, 0, 20}, {y, -10, .99 x}, \
+         Contours -> {-50, 10, 50}]",
+      );
+      let full = export_svg(
+        "ContourPlot[x y, {x, 0, 20}, {y, -10, 19.8}, \
+         Contours -> {-50, 10, 50}]",
+      );
+      assert!(dependent.contains("<svg"));
+      assert_ne!(dependent, full);
+    }
+
     #[test]
     fn plot_range() {
       insta::assert_snapshot!(export_svg(
