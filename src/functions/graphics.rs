@@ -11255,11 +11255,16 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
           if let (Some(digits), Expr::Integer(base)) =
             (base_form_digits(&args[0], &args[1]), &args[1])
           {
-            format!(
-              "{}<tspan baseline-shift=\"sub\" font-size=\"70%\">{}</tspan>",
-              svg_escape(&digits),
-              base
-            )
+            // Base 10 is the default, so no subscript is shown.
+            if *base == 10 {
+              svg_escape(&digits)
+            } else {
+              format!(
+                "{}<tspan baseline-shift=\"sub\" font-size=\"70%\">{}</tspan>",
+                svg_escape(&digits),
+                base
+              )
+            }
           } else {
             expr_to_svg_markup(&args[0])
           }
@@ -11896,6 +11901,7 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
           // digits + subscript base at 70% width
           Some(digits) => {
             let base_len = match &args[1] {
+              Expr::Integer(10) => 0,
               Expr::Integer(b) => b.to_string().len(),
               _ => 1,
             };
@@ -14607,6 +14613,35 @@ fn parse_bg_color(expr: &Expr) -> Option<Color> {
   parse_color(expr)
 }
 
+/// A per-column or per-row `Background` list. Besides plain colours it may
+/// hold `index -> colour` rules (`{1 -> Gray, 3 -> Gray}`), which colour only
+/// the named positions and leave the rest unpainted.
+fn parse_bg_spec_list(items: &[Expr]) -> (Vec<Option<Color>>, bool) {
+  let is_index_rule = |e: &Expr| {
+    matches!(e, Expr::Rule { pattern, .. }
+      if matches!(pattern.as_ref(), Expr::Integer(n) if *n >= 1))
+  };
+  if items.is_empty() || !items.iter().all(is_index_rule) {
+    return (items.iter().map(parse_bg_color).collect(), false);
+  }
+  let mut out: Vec<Option<Color>> = Vec::new();
+  for item in items {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = item
+      && let Expr::Integer(n) = pattern.as_ref()
+    {
+      let idx = *n as usize - 1;
+      if out.len() <= idx {
+        out.resize(idx + 1, None);
+      }
+      out[idx] = parse_bg_color(replacement);
+    }
+  }
+  (out, true)
+}
+
 /// A 1-indexed row/column position from a `Background -> {…, {{i, j} ->
 /// color, ...}}` explicit cell rule.
 fn grid_bg_index(expr: &Expr) -> Option<usize> {
@@ -14716,6 +14751,9 @@ fn grid_svg_styled_internal(
   let mut row_div_rules: Vec<(i64, Option<Color>)> = Vec::new();
   let mut background_color: Option<Color> = None; // uniform background
   let mut col_backgrounds: Vec<Option<Color>> = Vec::new(); // per-column bg
+  // Index-rule lists name positions, so they do not cycle over the rest.
+  let mut col_bg_indexed = false;
+  let mut row_bg_indexed = false;
   let mut row_backgrounds: Vec<Option<Color>> = Vec::new(); // per-row bg
   // `Background -> {cols, rows, {{i, j} -> color, ...}}` — explicit
   // per-cell overrides (1-indexed, matching the source), highest priority.
@@ -14872,7 +14910,7 @@ fn grid_svg_styled_internal(
             // Background -> {{col_colors...}, {row_colors...}}
             if !items.is_empty() {
               if let Expr::List(cols) = &items[0] {
-                col_backgrounds = cols.iter().map(parse_bg_color).collect();
+                (col_backgrounds, col_bg_indexed) = parse_bg_spec_list(cols);
               } else if parse_color(&items[0]).is_some() {
                 // Background -> {color} (single color in list)
                 background_color = parse_color(&items[0]);
@@ -14899,7 +14937,8 @@ fn grid_svg_styled_internal(
                   }
                 }
               } else {
-                row_backgrounds = row_cols.iter().map(parse_bg_color).collect();
+                (row_backgrounds, row_bg_indexed) =
+                  parse_bg_spec_list(row_cols);
               }
             }
             // `{cols, rows, {{i, j} -> color, ...}}` — explicit per-cell
@@ -15290,6 +15329,13 @@ fn grid_svg_styled_internal(
   let total_height: f64 =
     row_heights.iter().sum::<f64>() + total_gap + row_gaps_total + edge_pad;
 
+  if row_bg_indexed && row_backgrounds.len() < num_rows {
+    row_backgrounds.resize(num_rows, None);
+  }
+  if col_bg_indexed && col_backgrounds.len() < num_cols {
+    col_backgrounds.resize(num_cols, None);
+  }
+
   // Expand repeating row background pattern into flat row_backgrounds
   if row_bg_has_repeating && !row_bg_repeating.is_empty() {
     let start_len = row_bg_explicit_start.len();
@@ -15603,7 +15649,7 @@ fn grid_svg_styled_internal(
           "<svg x=\"{gx:.1}\" y=\"{gy:.1}\" width=\"{nat_w:.1}\" height=\"{nat_h:.1}\" viewBox=\"{}\" preserveAspectRatio=\"xMidYMid meet\">\n{}</svg>\n",
           parsed.view_box, parsed.inner_content
         ));
-        x_offset += col_w;
+        x_offset += col_widths[j];
         continue;
       }
 
@@ -15741,7 +15787,9 @@ fn grid_svg_styled_internal(
           svg.push_str(&text_elem);
         }
       }
-      x_offset += col_w;
+      // Only this column's width: the placeholders of a spanned cell add
+      // their own columns as the loop reaches them.
+      x_offset += col_widths[j];
     }
   }
 
