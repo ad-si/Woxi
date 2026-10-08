@@ -32711,4 +32711,47 @@ mod grid_text_in_graphics {
     .unwrap();
     assert!(svg.contains("(AB\u{0304}*AC\u{0304})/2"), "{svg}");
   }
+
+  #[test]
+  fn grid_spanned_cells_are_centered_over_their_columns() {
+    let svg = interpret(
+      r#"ExportString[Grid[{{"a", "b", "c", "d"}, {"left", SpanFromLeft, "right", SpanFromLeft}}, Frame -> All], "SVG"]"#,
+    )
+    .unwrap();
+    let x_of = |label: &str| -> f64 {
+      let end = svg.find(&format!(">{label}</text>")).unwrap();
+      let start = svg[..end].rfind("<text x=\"").unwrap() + 9;
+      svg[start..].split('"').next().unwrap().parse().unwrap()
+    };
+    let (c, d) = (x_of("c"), x_of("d"));
+    // "right" is centred over the two columns it spans, so it lies between
+    // the centres of those columns (not at the grid's right edge).
+    let r = x_of("right");
+    assert!(c < r && r < d, "{svg}");
+  }
+
+  #[test]
+  fn grid_background_accepts_index_rules_for_rows() {
+    let svg = interpret(
+      r#"ExportString[Grid[{{"a"}, {"b"}, {"c"}}, Background -> {Automatic, {1 -> Gray, 3 -> Gray}}], "SVG"]"#,
+    )
+    .unwrap();
+    assert_eq!(svg.matches("<rect").count(), 2, "{svg}");
+    let svg4 = interpret(
+      r#"ExportString[Grid[{{"a"}, {"b"}, {"c"}, {"d"}}, Background -> {Automatic, {1 -> Gray, 3 -> Gray}}], "SVG"]"#,
+    )
+    .unwrap();
+    assert_eq!(svg4.matches("<rect").count(), 2, "{svg4}");
+  }
+
+  #[test]
+  fn base_form_ten_shows_no_subscript_in_graphics_text() {
+    let svg = interpret(
+      r#"ExportString[Grid[{{BaseForm[5, 10], BaseForm[5, 2]}}], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(svg.contains(">5</text>"), "{svg}");
+    assert!(svg.contains("101<tspan"), "{svg}");
+    assert!(!svg.contains(">10</tspan>"), "{svg}");
+  }
 }
