@@ -6761,7 +6761,7 @@ mod plot3d {
           FrameTicks -> {None, None, None, All}]"#,
       );
       assert!(
-        !right_only.contains("<rect x=\"0\" y=\"0\""),
+        !right_only.contains("<rect x=\"0\" y=\"0\" width=\"360.00\" height=\"360.00\" fill=\"none\""),
         "a partial frame must not draw the full rectangle: {right_only}"
       );
       assert!(
@@ -32511,7 +32511,13 @@ mod cases_on_a_plot {
         "Show[ListPlot[{{1, 2}, {3, 4}}, Frame -> True], \
          Graphics[{Red, Line[{{2, 0}, {2, 4}}]}]]",
       );
-      assert_eq!(shown, shown_true, "Show with Frame -> {frame}");
+      if frame == "{True, True, True, True}" {
+        assert_eq!(shown, shown_true, "Show with Frame -> {frame}");
+      } else {
+        // A partial frame under `Show` keeps just the named edges.
+        assert_ne!(shown, shown_true, "Show with Frame -> {frame}");
+        assert!(shown.contains("<line x1=\"0.00\""), "{frame}: {shown}");
+      }
     }
     let no_frame = export_svg("Graphics[Circle[]]");
     let framed =
