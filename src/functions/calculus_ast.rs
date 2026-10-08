@@ -5468,6 +5468,135 @@ fn is_rational_neg_half(expr: &Expr) -> bool {
   )
 }
 
+/// ∫ p(x)/Sqrt[a + b*x^2] dx for a polynomial `p` with constant coefficients
+/// and a numeric quadratic radicand (no linear term). Each monomial is reduced
+/// with the standard recurrence, with `S = Sqrt[a + b*x^2]`:
+///   I_0 = ∫ 1/S dx (ArcSin / ArcSinh),  I_1 = S/b,
+///   I_n = x^(n-1)*S/(n*b) - (n-1)*a/(n*b) * I_(n-2).
+fn try_integrate_poly_over_sqrt_quadratic(
+  expr: &Expr,
+  var: &str,
+) -> Option<Expr> {
+  let mut num_factors: Vec<&Expr> = Vec::new();
+  let mut den_factors: Vec<&Expr> = Vec::new();
+  collect_times_factor_refs(expr, &mut num_factors, &mut den_factors);
+
+  // Locate the radicand: either `Sqrt[q]` in the denominator or `q^(-1/2)`
+  // in the numerator.
+  let mut radicand: Option<Expr> = None;
+  let mut rest_num: Vec<Expr> = Vec::new();
+  let mut rest_den: Vec<Expr> = Vec::new();
+  for f in &num_factors {
+    let neg_half_base = match f {
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } if is_rational_neg_half(right) => Some(left.as_ref()),
+      Expr::FunctionCall { name, args }
+        if name == "Power"
+          && args.len() == 2
+          && is_rational_neg_half(&args[1]) =>
+      {
+        Some(&args[0])
+      }
+      _ => None,
+    };
+    match neg_half_base {
+      Some(b) if radicand.is_none() && !is_constant_wrt(b, var) => {
+        radicand = Some(b.clone());
+      }
+      _ => rest_num.push((*f).clone()),
+    }
+  }
+  for f in &den_factors {
+    match crate::functions::math_ast::is_sqrt(f) {
+      Some(b) if radicand.is_none() && !is_constant_wrt(b, var) => {
+        radicand = Some(b.clone());
+      }
+      _ => rest_den.push((*f).clone()),
+    }
+  }
+  let radicand = radicand?;
+  if rest_den.iter().any(|d| !is_constant_wrt(d, var)) {
+    return None;
+  }
+
+  // Radicand coefficients a + 0*x + b*x^2 with numeric a > 0 and b != 0.
+  let rad_eval = crate::evaluator::evaluate_expr_to_expr(&radicand)
+    .unwrap_or_else(|_| radicand.clone());
+  let x = Expr::Identifier(var.to_string());
+  let rc_expr = crate::functions::polynomial_ast::coefficient_list_ast(&[
+    rad_eval,
+    x.clone(),
+  ])
+  .ok()?;
+  let Expr::List(rc) = &rc_expr else {
+    return None;
+  };
+  if rc.len() != 3
+    || crate::functions::math_ast::try_eval_to_f64(&rc[1])?.abs() > 1e-15
+    || crate::functions::math_ast::try_eval_to_f64(&rc[0])? <= 0.0
+    || crate::functions::math_ast::try_eval_to_f64(&rc[2])?.abs() < 1e-15
+  {
+    return None;
+  }
+  let (a, b) = (rc[0].clone(), rc[2].clone());
+
+  // Numerator polynomial with coefficients independent of the variable.
+  let mut numer = if rest_num.is_empty() {
+    Expr::Integer(1)
+  } else {
+    call("Times", rest_num)
+  };
+  if !rest_den.is_empty() {
+    numer = div2(numer, call("Times", rest_den));
+  }
+  let numer =
+    crate::evaluator::evaluate_expr_to_expr(&call("Expand", vec![numer]))
+      .ok()?;
+  let pc_expr =
+    crate::functions::polynomial_ast::coefficient_list_ast(&[numer, x.clone()])
+      .ok()?;
+  let Expr::List(pc) = &pc_expr else {
+    return None;
+  };
+  if pc.iter().any(|c| !is_constant_wrt(c, var)) {
+    return None;
+  }
+
+  let sqrt_rad = make_sqrt(radicand.clone());
+  let mut ints: Vec<Expr> = Vec::with_capacity(pc.len());
+  for n in 0..pc.len() {
+    let i_n = match n {
+      0 => try_integrate_inverse_sqrt(&radicand, var)?,
+      1 => div2(sqrt_rad.clone(), b.clone()),
+      _ => {
+        let nn = Expr::Integer(n as i128);
+        let nb = times2(nn.clone(), b.clone());
+        let first = div2(
+          times2(
+            pow2(x.clone(), Expr::Integer(n as i128 - 1)),
+            sqrt_rad.clone(),
+          ),
+          nb.clone(),
+        );
+        let coef = div2(times2(Expr::Integer(n as i128 - 1), a.clone()), nb);
+        minus2(first, times2(coef, ints[n - 2].clone()))
+      }
+    };
+    ints.push(i_n);
+  }
+  let terms: Vec<Expr> = pc
+    .iter()
+    .zip(ints)
+    .map(|(c, i)| times2(c.clone(), i))
+    .collect();
+  let total =
+    crate::evaluator::evaluate_expr_to_expr(&call("Plus", terms)).ok()?;
+  Some(total)
+}
+
 /// Try to integrate (base)^(-1/2) for special forms:
 /// ∫ (1 - x^2)^(-1/2) dx = ArcSin[x]
 /// ∫ (1 + x^2)^(-1/2) dx = ArcSinh[x]
@@ -7764,6 +7893,11 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
   // (handles compound expressions like x^2, Sin[x], etc. when integrating w.r.t. a different variable)
   if is_constant_wrt(expr, var) {
     return Some(times2(expr.clone(), Expr::Identifier(var.to_string())));
+  }
+
+  // ∫ p(x)/Sqrt[a + b x^2] dx for polynomial p.
+  if let Some(result) = try_integrate_poly_over_sqrt_quadratic(expr, var) {
+    return Some(result);
   }
 
   // Closed form for `1/p(x)` with `p` an irreducible-looking degree-≥5
