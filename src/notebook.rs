@@ -1722,6 +1722,22 @@ fn extract_rowbox_content(s: &str) -> String {
       i += 4;
       continue;
     }
+    // TraditionalForm writes the elementary functions as lowercase
+    // textbook names applied with parentheses — `exp(x)`, `sin(x)`,
+    // `ln(x)` — where even a single argument is a call, not a product of
+    // the symbols `exp` and `x`.
+    if i + 3 < parts.len()
+      && is_bare_char(parts[i + 1].trim(), '(')
+      && is_bare_char(parts[i + 3].trim(), ')')
+      && let Some(head) = traditional_function_name(part.trim())
+    {
+      let inner = parts[i + 2].trim();
+      let args = paren_call_arglist(inner)
+        .map_or_else(|| box_part_source(inner), |a| a.join(", "));
+      push_juxtaposed(&mut result, &format!("{head}[{args}]"));
+      i += 4;
+      continue;
+    }
     let piece = box_part_source(part);
     // Two sibling boxes juxtaposed with no operator between them (no
     // `\[InvisibleTimes]`, no literal `" "` part) mean implicit
@@ -1846,6 +1862,29 @@ fn paren_call_arglist(s: &str) -> Option<Vec<String>> {
   }
   args.push(current);
   Some(args)
+}
+
+/// The Wolfram Language head a TraditionalForm lowercase function name
+/// (`"exp"`, `"ln"`, …, as a bare quoted box string) stands for.
+fn traditional_function_name(part: &str) -> Option<&'static str> {
+  let name = part.strip_prefix('"')?.strip_suffix('"')?;
+  Some(match name {
+    "exp" => "Exp",
+    "ln" => "Log",
+    "sin" => "Sin",
+    "cos" => "Cos",
+    "tan" => "Tan",
+    "cot" => "Cot",
+    "sec" => "Sec",
+    "csc" => "Csc",
+    "sinh" => "Sinh",
+    "cosh" => "Cosh",
+    "tanh" => "Tanh",
+    "coth" => "Coth",
+    "sech" => "Sech",
+    "csch" => "Csch",
+    _ => return None,
+  })
 }
 
 /// The cell source one element of a box row (or of a box template's slot
@@ -5383,6 +5422,20 @@ Cell["Chapter 2", "Chapter"]
     // `f(x)` syntax rather than reinterpreted as a call.
     let s = r#"BoxData[RowBox[{"f", "(", "x", ")"}]]"#;
     assert_eq!(extract_cell_content(s), "f(x)");
+  }
+
+  /// TraditionalForm writes `Exp[x]` as `exp(x)` — a single-argument call
+  /// that must not be read back as the product `exp*x`. Regression found
+  /// via a Wolfram Demonstration whose Initialization defined its rate
+  /// constants as `100 exp(-4000/T)`.
+  #[test]
+  fn test_traditional_form_single_argument_function_call() {
+    let s = r#"BoxData[RowBox[{"100", " ", RowBox[{"exp", "(", RowBox[{"-", FractionBox["4000", "T"]}], ")"}]}]]"#;
+    assert_eq!(extract_cell_content(s), "100 Exp[-(4000)/(T)]");
+    let s = r#"BoxData[RowBox[{"ln", "(", "x", ")"}]]"#;
+    assert_eq!(extract_cell_content(s), "Log[x]");
+    let s = r#"BoxData[RowBox[{"sin", "(", "x", ")"}]]"#;
+    assert_eq!(extract_cell_content(s), "Sin[x]");
   }
 
   /// A parenthesised group (literal `"("`/`")"` box tokens, as the FrontEnd
