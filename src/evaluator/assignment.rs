@@ -1794,6 +1794,42 @@ fn normalize_symbol_lhs(lhs: &Expr) -> Expr {
   lhs.clone()
 }
 
+/// Split `a : f[x_]` into the alias `a` and the call `f[x_]` it names.
+fn unwrap_named_lhs(lhs: &Expr) -> Option<(&str, &Expr)> {
+  if let Expr::FunctionCall { name, args } = lhs
+    && name == "Pattern"
+    && args.len() == 2
+    && let Expr::Identifier(alias) = &args[0]
+    && matches!(args[1], Expr::FunctionCall { .. })
+  {
+    return Some((alias, &args[1]));
+  }
+  None
+}
+
+/// Rewrite every named pattern in `expr` to the symbol it binds, turning a
+/// left-hand side such as `f[n_Integer]` into the value `f[n]` it matched.
+fn pattern_vars_to_values(expr: &Expr) -> Expr {
+  match expr {
+    Expr::Pattern { name, .. }
+    | Expr::PatternOptional { name, .. }
+    | Expr::PatternTest { name, .. } => Expr::Identifier(name.clone()),
+    Expr::FunctionCall { name, args }
+      if name == "Pattern" && args.len() == 2 =>
+    {
+      pattern_vars_to_values(&args[0])
+    }
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args.iter().map(pattern_vars_to_values).collect(),
+    },
+    Expr::List(items) => {
+      Expr::List(items.iter().map(pattern_vars_to_values).collect())
+    }
+    _ => expr.clone(),
+  }
+}
+
 /// The symbol an assignment ultimately writes to: `a`, `a[[1]]`, `a[k]` and
 /// `a[[1, 2]]` all target `a`.
 fn assignment_target_symbol(lhs: &Expr) -> Option<&str> {
@@ -3632,6 +3668,19 @@ pub fn set_delayed_ast(
   }
   rhs_conditions.reverse();
   let body = body_stripped;
+
+  // A named left-hand side, `a : f[x_] := body`, defines `f` (not `Pattern`)
+  // and binds `a` to the matched call in `body`.
+  let body_with_alias;
+  let (lhs, body) = match unwrap_named_lhs(lhs) {
+    Some((alias, inner)) => {
+      let matched = pattern_vars_to_values(inner);
+      body_with_alias =
+        crate::syntax::substitute_variable(body, alias, &matched);
+      (inner, &body_with_alias)
+    }
+    None => (lhs, body),
+  };
 
   // Combine all conditions into a single And[..] expression.
   let mut all_conditions: Vec<Expr> = Vec::new();

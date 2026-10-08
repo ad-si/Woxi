@@ -5825,3 +5825,43 @@ mod a_scoped_association_answers_a_key {
     );
   }
 }
+
+mod named_lhs_definitions {
+  use super::*;
+
+  // `a : f[x_] := body` defines `f` and binds `a` to the matched call.
+  #[test]
+  fn named_lhs_defines_the_call_head() {
+    clear_state();
+    assert_eq!(
+      interpret("nl1 : nlf[n_Integer] := {Hold[nl1], n}; nlf[4]").unwrap(),
+      "{Hold[nlf[4]], 4}"
+    );
+    clear_state();
+  }
+
+  #[test]
+  fn named_lhs_with_condition() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Condition[nl2 : nlh[n_], n > 0] := Hold[nl2]; {nlh[2], nlh[-1]}"
+      )
+      .unwrap(),
+      "{Hold[nlh[2]], nlh[-1]}"
+    );
+    clear_state();
+  }
+
+  // Memoizing through the alias: `t = ...` stores a value for the call.
+  #[test]
+  fn named_lhs_memoizes_through_alias() {
+    clear_state();
+    assert_eq!(
+      interpret("nl3 : nlt[n_Integer] := (nl3 = n^2); {nlt[3], nlt[3]}")
+        .unwrap(),
+      "{9, 9}"
+    );
+    clear_state();
+  }
+}
