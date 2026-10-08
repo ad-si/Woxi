@@ -3833,6 +3833,21 @@ mod sound {
   }
 
   #[test]
+  fn input_form_of_held_sound_stays_reparseable() {
+    // A Manipulate body that emits sounds is re-serialized as InputForm and
+    // re-parsed by Woxi Studio, so the held call must not collapse to the
+    // `-Sound-` summary.
+    let expr = woxi::syntax::string_to_expr(
+      "EmitSound[Sound[SoundNote[\"Castanets\", 1]]]",
+    )
+    .unwrap();
+    assert_eq!(
+      woxi::syntax::expr_to_input_form(&expr),
+      "EmitSound[Sound[SoundNote[\"Castanets\", 1]]]"
+    );
+  }
+
+  #[test]
   fn renders_with_list_of_plays() {
     assert_eq!(
       interpret(
