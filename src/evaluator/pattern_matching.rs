@@ -5416,6 +5416,11 @@ impl<'a> RuleSet<'a> {
     let Some(heads) = &self.heads else {
       return false;
     };
+    // A complex number is stored as `a + b I` but has the head `Complex`,
+    // which a `Complex[re_, im_]` pattern matches.
+    if crate::functions::predicate_ast::is_complex_number(expr) {
+      return !heads.contains("Complex");
+    }
     match expr {
       Expr::Integer(_)
       | Expr::BigInteger(_)
