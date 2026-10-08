@@ -130,11 +130,15 @@ pub fn piecewise_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
       }
+      // Not a {value, condition} pair (e.g. a symbol that is later bound to
+      // one): Piecewise stays unevaluated, as in wolframscript.
       _ => {
-        return Err(InterpreterError::EvaluationError(
-          "Each element of Piecewise list must be a {value, condition} pair"
-            .into(),
-        ));
+        let mut out = args.to_vec();
+        out[0] = evaluated_first.clone();
+        return Ok(Expr::FunctionCall {
+          name: "Piecewise".to_string(),
+          args: out.into(),
+        });
       }
     }
   }

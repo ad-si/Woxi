@@ -232,6 +232,10 @@ fn has_hold_attribute(name: &str, attr: u32) -> bool {
 /// Used to decide whether a subexpression pulled out of it has to be evaluated
 /// once it leaves the wrapper.
 pub(crate) fn head_holds_arguments(expr: &Expr) -> bool {
+  // `Function` holds its parameters and body (HoldAll).
+  if matches!(expr, Expr::NamedFunction { .. } | Expr::Function { .. }) {
+    return true;
+  }
   let Expr::FunctionCall { name, .. } = expr else {
     return false;
   };

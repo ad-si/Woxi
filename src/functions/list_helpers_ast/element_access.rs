@@ -86,6 +86,29 @@ pub fn expr_to_head_args(expr: &Expr) -> Option<(String, Vec<Expr>)> {
       )),
       UnaryOperator::Not => Some(("Not".to_string(), vec![*operand.clone()])),
     },
+    // Function[x, body] / Function[{x, y}, body] are ordinary expressions
+    // whose parts are the parameter spec and the body.
+    Expr::NamedFunction {
+      params,
+      body,
+      bracketed,
+    } => {
+      let spec = if params.len() == 1 && !*bracketed {
+        Expr::Identifier(params[0].clone())
+      } else {
+        Expr::List(
+          params
+            .iter()
+            .map(|p| Expr::Identifier(p.clone()))
+            .collect::<Vec<_>>()
+            .into(),
+        )
+      };
+      Some(("Function".to_string(), vec![spec, *body.clone()]))
+    }
+    Expr::Function { body } => {
+      Some(("Function".to_string(), vec![*body.clone()]))
+    }
     Expr::Rule {
       pattern,
       replacement,
