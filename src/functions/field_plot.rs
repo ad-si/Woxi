@@ -1482,6 +1482,77 @@ pub(crate) fn equation_zero_body(e: &Expr) -> Option<Expr> {
   Some(minus2(lhs.clone(), rhs.clone()))
 }
 
+/// Bounds of a second plot iterator that depend on the first variable, as in
+/// `ContourPlot[…, {x, 0, 20}, {y, -10, .99 x}]`.
+struct DependentBounds {
+  xvar: String,
+  lo: Expr,
+  hi: Expr,
+}
+
+impl DependentBounds {
+  /// The `(min, max)` of the iterator at a given value of the first variable
+  /// (NaN-free: an unevaluable bound leaves that side unbounded).
+  fn at(&self, x: f64) -> (f64, f64) {
+    let eval = |e: &Expr, default: f64| {
+      let sub =
+        crate::functions::plot::substitute_var(e, &self.xvar, &Expr::Real(x));
+      evaluate_expr_to_expr(&sub)
+        .ok()
+        .and_then(|r| try_eval_to_f64(&r))
+        .filter(|v| v.is_finite())
+        .unwrap_or(default)
+    };
+    (
+      eval(&self.lo, f64::NEG_INFINITY),
+      eval(&self.hi, f64::INFINITY),
+    )
+  }
+}
+
+/// Like `parse_iterator`, but for an iterator whose bounds may mention the
+/// preceding variable. The returned `(min, max)` is the bounding box of the
+/// region over the first variable's range; the bounds themselves come back
+/// so the sampler can mask what falls outside.
+fn parse_dependent_iterator(
+  spec: &Expr,
+  label: &str,
+  xvar: &str,
+  x_min: f64,
+  x_max: f64,
+) -> Result<(String, f64, f64, Option<DependentBounds>), InterpreterError> {
+  if let Ok((var, lo, hi)) = parse_iterator(spec, label) {
+    return Ok((var, lo, hi, None));
+  }
+  let Expr::List(items) = spec else {
+    return parse_iterator(spec, label).map(|(v, a, b)| (v, a, b, None));
+  };
+  if items.len() != 3 {
+    return parse_iterator(spec, label).map(|(v, a, b)| (v, a, b, None));
+  }
+  let Expr::Identifier(var) = &items[0] else {
+    return parse_iterator(spec, label).map(|(v, a, b)| (v, a, b, None));
+  };
+  let bounds = DependentBounds {
+    xvar: xvar.to_string(),
+    lo: items[1].clone(),
+    hi: items[2].clone(),
+  };
+  let (mut lo, mut hi) = (f64::INFINITY, f64::NEG_INFINITY);
+  for i in 0..=FIELD_GRID {
+    let x = x_min + i as f64 / FIELD_GRID as f64 * (x_max - x_min);
+    let (a, b) = bounds.at(x);
+    if a.is_finite() && b.is_finite() && a <= b {
+      lo = lo.min(a);
+      hi = hi.max(b);
+    }
+  }
+  if !lo.is_finite() || !hi.is_finite() {
+    return parse_iterator(spec, label).map(|(v, a, b)| (v, a, b, None));
+  }
+  Ok((var.clone(), lo, hi, Some(bounds)))
+}
+
 pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // A body that names its function indirectly (`f = x^2 + y^2;
   // ContourPlot[f, …]`) is evaluated once first — see
@@ -1515,7 +1586,8 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return contour_plot_equations(&bodies, args);
   }
   let (xvar, x_min, x_max) = parse_iterator(&args[1], "ContourPlot")?;
-  let (yvar, y_min, y_max) = parse_iterator(&args[2], "ContourPlot")?;
+  let (yvar, y_min, y_max, y_bounds) =
+    parse_dependent_iterator(&args[2], "ContourPlot", &xvar, x_min, x_max)?;
   let opts = parse_density_contour_options(args, 3);
 
   let n = FIELD_GRID + 1;
@@ -1526,8 +1598,15 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   for i in 0..n {
     let x = x_min + i as f64 / FIELD_GRID as f64 * (x_max - x_min);
+    let (row_lo, row_hi) = match &y_bounds {
+      Some(b) => b.at(x),
+      None => (f64::NEG_INFINITY, f64::INFINITY),
+    };
     for j in 0..n {
       let y = y_min + j as f64 / FIELD_GRID as f64 * (y_max - y_min);
+      if y < row_lo || y > row_hi {
+        continue;
+      }
       if let Some(v) = evaluate_at_xy(body, &xvar, &yvar, x, y)
         && v.is_finite()
         && opts
