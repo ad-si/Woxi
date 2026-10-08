@@ -8352,6 +8352,13 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let structure = {
     let mut point_exprs: Vec<Expr> = Vec::with_capacity(world_quads.len() * 4);
     let mut quads: Vec<Expr> = Vec::with_capacity(world_quads.len());
+    // The voxel faces are an implementation detail, not the plot's mesh, so
+    // their outlines are suppressed unless `Mesh -> All` asks for them —
+    // otherwise a recombined solid reads as a wireframe of tiny cubes.
+    let mut complex_content: Vec<Expr> = Vec::new();
+    if !matches!(mesh_mode, MeshMode::All) {
+      complex_content.push(call0("EdgeForm"));
+    }
     for quad in &world_quads {
       let base = point_exprs.len() as i128;
       point_exprs.extend(quad.iter().map(|p| {
@@ -8372,7 +8379,13 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "GraphicsComplex",
         vec![
           Expr::List(point_exprs.into()),
-          Expr::List(vec![call1("Polygon", Expr::List(quads.into()))].into()),
+          Expr::List(
+            {
+              complex_content.push(call1("Polygon", Expr::List(quads.into())));
+              complex_content
+            }
+            .into(),
+          ),
         ],
       ),
     )
