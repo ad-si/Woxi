@@ -7847,8 +7847,10 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         );
       }
       // Sound[...] always renders as -Sound- (matching wolframscript REPL),
-      // regardless of what primitives it wraps.
-      if name == "Sound" && !args.is_empty() {
+      // regardless of what primitives it wraps. Genuine InputForm keeps the
+      // full call so Woxi Studio can re-parse a Manipulate body that emits
+      // sounds (`EmitSound[Sound[SoundNote[…]]]`).
+      if name == "Sound" && !args.is_empty() && !in_true_input_form() {
         return "-Sound-".to_string();
       }
       // A raw (held, unevaluated) Graphics[...] / Graphics3D[...] call still
