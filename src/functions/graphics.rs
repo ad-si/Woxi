@@ -10601,8 +10601,12 @@ pub fn expr_to_svg_markup_lines(expr: &Expr) -> Vec<String> {
   // as a whole item inside a `Column`, the same reasoning that lets a
   // nested `Column`/`Grid` flatten into several lines applies to what it
   // wraps too, so peel it before recursing.
+  // A bare `Text[content]` is the same: in a label it just sets `content`
+  // (`PlotLabel -> Text[Grid[…]]` is a common Demonstration idiom).
   if let Expr::FunctionCall { name, args } = expr
-    && (name == "Framed" || name == "Highlighted")
+    && (name == "Framed"
+      || name == "Highlighted"
+      || (name == "Text" && args.len() == 1))
     && !args.is_empty()
   {
     return expr_to_svg_markup_lines(&args[0]);

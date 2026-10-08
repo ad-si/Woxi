@@ -13119,6 +13119,17 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    /// `PlotLabel -> Text[Grid[…]]` sets the grid's content, not the literal
+    /// `Grid[…]` source.
+    #[test]
+    fn plot_label_text_wrapping_grid_typesets_content() {
+      let svg = export_svg(
+        "Plot[x, {x, 0, 1}, PlotLabel -> Text[Grid[{{\"left\", 2.5}}]]]",
+      );
+      assert!(svg.contains("left 2.5"), "missing grid content in:\n{svg}");
+      assert!(!svg.contains("Grid["), "leaked Grid head in:\n{svg}");
+    }
+
     /// A `DensityPlot` takes the same labels and epilog — the option
     /// parsing is shared across the whole density/contour family.
     #[test]
