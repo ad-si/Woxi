@@ -6426,4 +6426,24 @@ mod optional_pattern_default_with_negative_power {
     clear_state();
     assert_eq!(interpret("s[x_, y_:1 + 2*3] := x + y; s[0]").unwrap(), "7");
   }
+
+  /// A `Complex[a_, b_]` pattern must stay structural when it sits in a
+  /// one-rule list (`z /. {Complex[a_, b_] /; … :> a}`), not evaluate to
+  /// `a_ + b_ I`.
+  #[test]
+  fn complex_pattern_in_rule_list_stays_structural() {
+    clear_state();
+    assert_eq!(interpret("Head[Complex[a_, b_]]").unwrap(), "Complex");
+    assert_eq!(
+      interpret(
+        "{x -> 5.28 + 2.1*^-7 I} /. {Complex[a_, b_] /; Abs[b] < 10^(-4) :> a}"
+      )
+      .unwrap(),
+      "{x -> 5.28}"
+    );
+    assert_eq!(
+      interpret("(1 + 2 I) /. {Complex[a_, b_] /; b > 1 :> a}").unwrap(),
+      "1"
+    );
+  }
 }

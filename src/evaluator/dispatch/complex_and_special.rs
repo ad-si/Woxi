@@ -65,6 +65,14 @@ pub fn dispatch_complex_and_special(
       return Some(crate::functions::math_ast::heaviside_lambda_ast(args));
     }
     "Complex" if args.len() == 2 => {
+      // A pattern such as `Complex[a_, b_]` stays structural: it is matched
+      // against complex numbers, not rewritten to `a_ + b_ I`.
+      if args
+        .iter()
+        .any(crate::evaluator::pattern_matching::contains_pattern)
+      {
+        return None;
+      }
       // Complex[a, b] -> a + b*I, evaluated to simplify iterated Complex
       let real = &args[0];
       let imag = &args[1];
