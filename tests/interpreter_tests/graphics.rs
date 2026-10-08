@@ -3901,6 +3901,19 @@ mod plot3d {
     mod options {
       use super::*;
 
+      // Extracting the primitives must not turn the surface into a
+      // wireframe: the sampling triangles carry `EdgeForm[]`.
+      #[test]
+      fn primitives_have_no_outline() {
+        assert_eq!(
+          interpret(
+            "MemberQ[Part[SphericalPlot3D[1, {u, 0, Pi}, {v, 0, 2 Pi}], 1, 2], EdgeForm[]]"
+          )
+          .unwrap(),
+          "True"
+        );
+      }
+
       #[test]
       fn image_size() {
         insta::assert_snapshot!(export_svg(

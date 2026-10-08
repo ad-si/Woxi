@@ -10209,6 +10209,13 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           )],
           None => vec![polygon_expr],
         };
+      // The sampling triangles are far finer than any mesh the plot
+      // shows, so their outlines are suppressed — otherwise extracting
+      // the primitives (`plot[[1]]`) into a `Graphics3D` would turn the
+      // surface into a wireframe.
+      if !matches!(mesh_mode, MeshMode::All) {
+        gc_content.insert(0, call0("EdgeForm"));
+      }
       if let Some((r, g, b)) = boundary_color
         && !boundary_edges.is_empty()
       {
