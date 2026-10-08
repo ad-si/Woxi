@@ -23006,7 +23006,26 @@ mod manipulate {
       })
       .collect();
     assert_eq!(names, vec!["a", "b", "c"]);
-    assert!(spec.displays.is_empty());
+    assert_eq!(spec.displays, Vec::<String>::new());
+  }
+
+  // A tagged *group* of discrete specs still flattens into one control each.
+  #[test]
+  fn spec_string_tagged_group_of_discrete_specs_flattens() {
+    let expr = interpret_to_expr(
+      "Manipulate[a + b, \"Tab\" -> {{a, {1, 2, 3}}, {b, {4, 5}}}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    let names: Vec<&str> = spec
+      .controls
+      .iter()
+      .map(|c| match c {
+        ManipulateControl::Discrete { name, .. } => name.as_str(),
+        other => panic!("unexpected control {other:?}"),
+      })
+      .collect();
+    assert_eq!(names, vec!["a", "b"]);
   }
 
   #[test]
