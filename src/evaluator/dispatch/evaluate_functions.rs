@@ -714,8 +714,16 @@ fn load_needed_context(ctx: &str) -> Result<(), InterpreterError> {
 fn normalize_piecharts_option(arg: &Expr) -> Expr {
   fn renamed_option(pattern: &Expr) -> Option<&'static str> {
     match pattern {
-      Expr::Identifier(id) if id == "PieCharts`PieStyle" => Some("ChartStyle"),
-      Expr::Identifier(id) if id == "PieCharts`PieLabels" => {
+      // The option names are spelled bare once `Get["PieCharts`"]` has put
+      // the package on `$ContextPath`, qualified otherwise.
+      Expr::Identifier(id)
+        if id == "PieCharts`PieStyle" || id == "PieStyle" =>
+      {
+        Some("ChartStyle")
+      }
+      Expr::Identifier(id)
+        if id == "PieCharts`PieLabels" || id == "PieLabels" =>
+      {
         Some("ChartLabels")
       }
       _ => None,

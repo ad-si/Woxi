@@ -13761,6 +13761,34 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    // Once `Get["PieCharts`"]` has loaded the package, a Demonstration
+    // spells the legacy options bare (`PieLabels`, `PieStyle`) inside the
+    // qualified call; they must still be renamed, not silently dropped.
+    #[test]
+    fn legacy_pie_chart_bare_options_match_chart_options() {
+      assert_eq!(
+        export_svg(
+          "PieCharts`PieChart[{1, 1, 1}, PieStyle -> {Red, Green, Blue}, PieLabels -> {\"a\", \"b\", \"c\"}]"
+        ),
+        export_svg(
+          "PieChart[{1, 1, 1}, ChartStyle -> {Red, Green, Blue}, ChartLabels -> {\"a\", \"b\", \"c\"}]"
+        )
+      );
+    }
+
+    // A `Column[{…}]` label stacks its lines on the wedge instead of being
+    // dropped (which also shifted every later label onto the wrong slice).
+    #[test]
+    fn pie_chart_column_label_stacks_lines_on_its_own_slice() {
+      let svg = export_svg(
+        "PieChart[{1, 1}, ChartLabels -> {Column[{Style[7, 18], Row[{\"5\", \"%\"}]}, Center], \"b\"}]",
+      );
+      assert_eq!(svg.matches("<text").count(), 2);
+      assert!(svg.contains(">7</tspan>"), "{svg}");
+      assert!(svg.contains(">5%</tspan>"), "{svg}");
+      assert!(svg.contains(">b</text>"), "{svg}");
+    }
+
     // `Manipulate` bodies set chart options from control variables with
     // `:>` (RuleDelayed) rather than `->`, so the legacy-option rename must
     // handle both rule forms the same way `option_name_value` already does
