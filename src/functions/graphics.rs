@@ -6576,24 +6576,116 @@ fn render_axes(
   }
 }
 
-/// Render a rectangular frame around the plot area with tick marks and labels
-/// on the bottom and left edges, and minor ticks on the top and right edges.
+/// What one frame edge carries.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum EdgeTicks {
+  /// A bare edge: no tick marks, no labels.
+  None,
+  /// Tick marks only.
+  Marks,
+  /// Tick marks and their numeric labels.
+  Labels,
+}
+
+/// Wolfram's default: labels on the bottom and left edges, bare tick marks
+/// on the top and right ones. Order: bottom, left, top, right.
+const DEFAULT_FRAME_TICKS: [EdgeTicks; 4] = [
+  EdgeTicks::Labels,
+  EdgeTicks::Labels,
+  EdgeTicks::Marks,
+  EdgeTicks::Marks,
+];
+
+/// Parse `Frame -> True | All | {b, l, t, r} | {{l, r}, {b, t}}` into the
+/// four edges, in the order bottom, left, top, right.
+fn parse_frame_edges(value: &Expr) -> [bool; 4] {
+  let on =
+    |e: &Expr| matches!(e, Expr::Identifier(v) if v == "True" || v == "All");
+  match value {
+    Expr::List(items) if items.len() == 4 => {
+      [on(&items[0]), on(&items[1]), on(&items[2]), on(&items[3])]
+    }
+    Expr::List(items) if items.len() == 2 => {
+      let pair = |e: &Expr| match e {
+        Expr::List(p) if p.len() == 2 => (on(&p[0]), on(&p[1])),
+        other => (on(other), on(other)),
+      };
+      let (l, r) = pair(&items[0]);
+      let (b, t) = pair(&items[1]);
+      [b, l, t, r]
+    }
+    other => [on(other); 4],
+  }
+}
+
+/// Parse `FrameTicks -> None | All | {b, l, t, r} | {{l, r}, {b, t}}`: per
+/// edge, `None`/`False` bares it, `Automatic` keeps Wolfram's default and
+/// anything else (`All`, `True`, explicit tick lists) labels it.
+fn parse_frame_tick_modes(value: &Expr) -> [EdgeTicks; 4] {
+  let one = |e: &Expr, default: EdgeTicks| match e {
+    Expr::Identifier(v) if v == "None" || v == "False" => EdgeTicks::None,
+    Expr::Identifier(v) if v == "Automatic" => default,
+    _ => EdgeTicks::Labels,
+  };
+  let d = DEFAULT_FRAME_TICKS;
+  match value {
+    Expr::List(items) if items.len() == 4 => [
+      one(&items[0], d[0]),
+      one(&items[1], d[1]),
+      one(&items[2], d[2]),
+      one(&items[3], d[3]),
+    ],
+    Expr::List(items) if items.len() == 2 => {
+      let pair = |e: &Expr, d0: EdgeTicks, d1: EdgeTicks| match e {
+        Expr::List(p) if p.len() == 2 => (one(&p[0], d0), one(&p[1], d1)),
+        other => (one(other, d0), one(other, d1)),
+      };
+      let (l, r) = pair(&items[0], d[1], d[3]);
+      let (b, t) = pair(&items[1], d[0], d[2]);
+      [b, l, t, r]
+    }
+    Expr::Identifier(v) if v == "None" || v == "False" => [EdgeTicks::None; 4],
+    Expr::Identifier(v) if v == "All" => [EdgeTicks::Labels; 4],
+    _ => d,
+  }
+}
+
+/// Render the requested frame edges around the plot area with their tick
+/// marks and labels.
 fn render_frame(
   svg: &mut String,
   bb: &BBox,
   svg_w: f64,
   svg_h: f64,
-  ticks: bool,
+  edges: [bool; 4],
+  ticks: [EdgeTicks; 4],
 ) {
   let t = theme();
   let frame_stroke = t.framed_border;
   let tick_label_fill = t.tick_label_fill;
 
-  // Draw the rectangular border
-  svg.push_str(&format!(
-    "<rect x=\"0\" y=\"0\" width=\"{svg_w:.2}\" height=\"{svg_h:.2}\" fill=\"none\" stroke=\"{frame_stroke}\" stroke-width=\"1\"/>\n"
-  ));
-  if !ticks {
+  // Draw the border: a single rectangle when all four edges are present,
+  // otherwise just the requested edges.
+  if edges.iter().all(|&e| e) {
+    svg.push_str(&format!(
+      "<rect x=\"0\" y=\"0\" width=\"{svg_w:.2}\" height=\"{svg_h:.2}\" fill=\"none\" stroke=\"{frame_stroke}\" stroke-width=\"1\"/>\n"
+    ));
+  } else {
+    let sides = [
+      (0.0, svg_h, svg_w, svg_h),
+      (0.0, 0.0, 0.0, svg_h),
+      (0.0, 0.0, svg_w, 0.0),
+      (svg_w, 0.0, svg_w, svg_h),
+    ];
+    for (&(x1, y1, x2, y2), drawn) in sides.iter().zip(edges) {
+      if drawn {
+        svg.push_str(&format!(
+          "<line x1=\"{x1:.2}\" y1=\"{y1:.2}\" x2=\"{x2:.2}\" y2=\"{y2:.2}\" stroke=\"{frame_stroke}\" stroke-width=\"1\"/>\n"
+        ));
+      }
+    }
+  }
+  if ticks.iter().all(|&m| m == EdgeTicks::None) {
     return;
   }
 
@@ -6601,69 +6693,69 @@ fn render_frame(
   let y_ticks = generate_ticks(bb.y_min, bb.y_max, 6);
   let x_step = tick_sequence_step(&x_ticks);
   let y_step = tick_sequence_step(&y_ticks);
+  // A tick starting on the origin edge is written as a bare `0`.
+  let tick_coord = |v: f64| {
+    if v == 0.0 {
+      "0".to_string()
+    } else {
+      format!("{v:.2}")
+    }
+  };
 
-  // Bottom edge: ticks + labels
-  for &t_val in &x_ticks {
-    let x = coord_x(t_val, bb, svg_w);
-    if !x.is_finite() {
+  // Horizontal edges (bottom = 0, top = 2): ticks run along x.
+  for (i, y_lo, y_hi, anchor_y, baseline) in [
+    (0usize, svg_h - 5.0, svg_h, svg_h + 4.0, "hanging"),
+    (2usize, 0.0, 5.0, -4.0, "auto"),
+  ] {
+    if ticks[i] == EdgeTicks::None {
       continue;
     }
-    // Tick mark inward from bottom edge
-    svg.push_str(&format!(
-      "<line x1=\"{x:.2}\" y1=\"{:.2}\" x2=\"{x:.2}\" y2=\"{svg_h:.2}\" stroke=\"{frame_stroke}\" stroke-width=\"1\"/>\n",
-      svg_h - 5.0
-    ));
-    // Label below the bottom edge
-    let label = format_tick_in_sequence(t_val, x_step);
-    svg.push_str(&format!(
-      "<text x=\"{x:.2}\" y=\"{:.2}\" fill=\"{tick_label_fill}\" font-size=\"12\" font-family=\"monospace\" text-anchor=\"middle\" dominant-baseline=\"hanging\">{}</text>\n",
-      svg_h + 4.0,
-      svg_escape(&label),
-    ));
+    for &t_val in &x_ticks {
+      let x = coord_x(t_val, bb, svg_w);
+      if !x.is_finite() {
+        continue;
+      }
+      svg.push_str(&format!(
+        "<line x1=\"{x:.2}\" y1=\"{}\" x2=\"{x:.2}\" y2=\"{}\" stroke=\"{frame_stroke}\" stroke-width=\"1\"/>\n",
+        tick_coord(y_lo),
+        tick_coord(y_hi)
+      ));
+      if ticks[i] == EdgeTicks::Labels {
+        let label = format_tick_in_sequence(t_val, x_step);
+        svg.push_str(&format!(
+          "<text x=\"{x:.2}\" y=\"{anchor_y:.2}\" fill=\"{tick_label_fill}\" font-size=\"12\" font-family=\"monospace\" text-anchor=\"middle\" dominant-baseline=\"{baseline}\">{}</text>\n",
+          svg_escape(&label),
+        ));
+      }
+    }
   }
 
-  // Top edge: ticks only (no labels)
-  for &t_val in &x_ticks {
-    let x = coord_x(t_val, bb, svg_w);
-    if !x.is_finite() {
+  // Vertical edges (left = 1, right = 3): ticks run along y.
+  for (i, x_lo, x_hi, anchor_x, anchor) in [
+    (1usize, 0.0, 5.0, -4.0, "end"),
+    (3usize, svg_w - 5.0, svg_w, svg_w + 4.0, "start"),
+  ] {
+    if ticks[i] == EdgeTicks::None {
       continue;
     }
-    svg.push_str(&format!(
-      "<line x1=\"{x:.2}\" y1=\"0\" x2=\"{x:.2}\" y2=\"{:.2}\" stroke=\"{frame_stroke}\" stroke-width=\"1\"/>\n",
-      5.0
-    ));
-  }
-
-  // Left edge: ticks + labels
-  for &t_val in &y_ticks {
-    let y = coord_y(t_val, bb, svg_h);
-    if !y.is_finite() {
-      continue;
+    for &t_val in &y_ticks {
+      let y = coord_y(t_val, bb, svg_h);
+      if !y.is_finite() {
+        continue;
+      }
+      svg.push_str(&format!(
+        "<line x1=\"{}\" y1=\"{y:.2}\" x2=\"{}\" y2=\"{y:.2}\" stroke=\"{frame_stroke}\" stroke-width=\"1\"/>\n",
+        tick_coord(x_lo),
+        tick_coord(x_hi)
+      ));
+      if ticks[i] == EdgeTicks::Labels {
+        let label = format_tick_in_sequence(t_val, y_step);
+        svg.push_str(&format!(
+          "<text x=\"{anchor_x:.2}\" y=\"{y:.2}\" fill=\"{tick_label_fill}\" font-size=\"12\" font-family=\"monospace\" text-anchor=\"{anchor}\" dominant-baseline=\"middle\">{}</text>\n",
+          svg_escape(&label),
+        ));
+      }
     }
-    // Tick mark inward from left edge
-    svg.push_str(&format!(
-      "<line x1=\"0\" y1=\"{y:.2}\" x2=\"{:.2}\" y2=\"{y:.2}\" stroke=\"{frame_stroke}\" stroke-width=\"1\"/>\n",
-      5.0
-    ));
-    // Label to the left of the frame
-    let label = format_tick_in_sequence(t_val, y_step);
-    svg.push_str(&format!(
-      "<text x=\"{:.2}\" y=\"{y:.2}\" fill=\"{tick_label_fill}\" font-size=\"12\" font-family=\"monospace\" text-anchor=\"end\" dominant-baseline=\"middle\">{}</text>\n",
-      -4.0,
-      svg_escape(&label),
-    ));
-  }
-
-  // Right edge: ticks only (no labels)
-  for &t_val in &y_ticks {
-    let y = coord_y(t_val, bb, svg_h);
-    if !y.is_finite() {
-      continue;
-    }
-    svg.push_str(&format!(
-      "<line x1=\"{:.2}\" y1=\"{y:.2}\" x2=\"{svg_w:.2}\" y2=\"{y:.2}\" stroke=\"{frame_stroke}\" stroke-width=\"1\"/>\n",
-      svg_w - 5.0
-    ));
   }
 }
 
@@ -8478,10 +8570,10 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut ticks_x = TickSpec::Automatic;
   let mut ticks_y = TickSpec::Automatic;
   let mut axes = (false, false);
-  let mut frame = false;
-  // `FrameTicks -> False | None` keeps the border but drops the tick
-  // marks and their labels, so the frame becomes a plain box.
-  let mut frame_ticks = true;
+  // Which frame edges are drawn, in the order bottom, left, top, right.
+  let mut frame_edges = [false; 4];
+  // What each frame edge carries (see `parse_frame_tick_modes`).
+  let mut frame_tick_modes = DEFAULT_FRAME_TICKS;
   let mut grid_x = GridSpec::None;
   let mut grid_y = GridSpec::None;
   let mut grid_style: Option<StyleState> = None;
@@ -8617,19 +8709,15 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
         "Frame" => {
-          if crate::functions::plot::parse_frame_option(replacement) {
-            frame = true;
-          } else if let Expr::FunctionCall { name: fn_name, .. } = replacement
+          frame_edges = parse_frame_edges(replacement);
+          if let Expr::FunctionCall { name: fn_name, .. } = replacement
             && fn_name == "True"
           {
-            frame = true;
+            frame_edges = [true; 4];
           }
         }
         "FrameTicks" => {
-          if matches!(replacement, Expr::Identifier(s) if s == "False" || s == "None")
-          {
-            frame_ticks = false;
-          }
+          frame_tick_modes = parse_frame_tick_modes(replacement);
         }
         "ImagePadding" => {
           image_padding =
@@ -8787,7 +8875,17 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Compute margins for axis/frame tick labels. A PlotLabel reserves an
   // extra strip above the drawing area for its centered title text.
   // Without tick labels the frame needs no gutter, just room for its stroke.
-  let frame_gutter = frame && frame_ticks;
+  let frame = frame_edges.iter().any(|&e| e);
+  // Only an edge that is drawn can carry tick marks or labels.
+  for (mode, &drawn) in frame_tick_modes.iter_mut().zip(&frame_edges) {
+    if !drawn {
+      *mode = EdgeTicks::None;
+    }
+  }
+  let edge_labelled = |i: usize| frame_tick_modes[i] == EdgeTicks::Labels;
+  let frame_gutter_bottom = edge_labelled(0);
+  let frame_gutter_left = edge_labelled(1);
+  let frame_gutter_right = edge_labelled(3);
   let has_bottom_caption =
     frame_label.as_ref().is_some_and(|(b, ..)| !b.is_empty());
   let has_left_caption =
@@ -8845,7 +8943,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let y_axis_label_width = axes_label
     .as_ref()
     .map_or(0.0, |(_, y)| axis_label_width(y));
-  let margin_left: f64 = if frame_gutter || (axes.1 && !y_axis_interior) {
+  let margin_left: f64 = if frame_gutter_left || (axes.1 && !y_axis_interior) {
     50.0
   } else if frame {
     10.0
@@ -8861,16 +8959,19 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       0.0
     };
-  let margin_bottom: f64 = if frame_gutter || (axes.0 && !x_axis_interior) {
-    25.0
+  let margin_bottom: f64 =
+    if frame_gutter_bottom || (axes.0 && !x_axis_interior) {
+      25.0
+    } else if frame {
+      10.0
+    } else if x_axis_interior {
+      6.0
+    } else {
+      0.0
+    } + if has_bottom_caption { 20.0 } else { 0.0 };
+  let margin_right: f64 = if frame_gutter_right {
+    50.0
   } else if frame {
-    10.0
-  } else if x_axis_interior {
-    6.0
-  } else {
-    0.0
-  } + if has_bottom_caption { 20.0 } else { 0.0 };
-  let margin_right: f64 = if frame {
     10.0
   } else if y_axis_interior {
     // Balance the padding an interior y axis leaves on the left, so the
@@ -9074,7 +9175,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   svg.push_str("</g>\n");
 
   if frame {
-    render_frame(&mut svg, &bb, svg_w, svg_h, frame_ticks);
+    render_frame(&mut svg, &bb, svg_w, svg_h, frame_edges, frame_tick_modes);
   }
 
   // Frame captions: the bottom/top ones centred outside their edge, the
