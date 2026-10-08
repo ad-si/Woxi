@@ -4656,3 +4656,19 @@ Vertices reuse the small stellated dodecahedron's order and faces are the 20
 outward-wound unit triangles of mutual second neighbours, derived from the
 geometry without access to `wolframscript`; Wolfram's vertex/face order may
 differ. `"Volume"` is not derived and reports `Missing["NotAvailable"]`.
+
+### `Solve` of a cubic with symbolic coefficients is unevaluated
+
+`Solve[x^3 + b x + c == 0, x]` (and any cubic whose coefficients or
+right-hand side are symbols, e.g. `1/(2 u^2) - k/u - k/u^3 == b`) stays
+unevaluated; `wolframscript` returns the closed-form Cardano radicals. The
+`Orbital Precession of Mercury` Demonstration depends on one such `Solve`
+for its Schwarzschild window intercept, so that value is left symbolic (the
+three plots still render).
+
+### `Solve` through a linear denominator uses its own root form
+
+When a rational equation depends on the unknown only through one denominator
+sum linear in it (`a + b q`), the roots are found for that sum and mapped
+back (`q -> (root - a)/b`). They are equal to Wolfram's but not guaranteed to
+be printed in the same arrangement.

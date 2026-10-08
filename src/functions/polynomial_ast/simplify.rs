@@ -559,6 +559,12 @@ fn extract_assumptions_inner(assumption: &Expr, info: &mut AssumptionInfo) {
         extract_assumptions_inner(arg, info);
       }
     }
+    // A list of assumptions is their conjunction.
+    Expr::List(items) => {
+      for item in items {
+        extract_assumptions_inner(item, info);
+      }
+    }
     _ => {}
   }
 }
@@ -789,6 +795,14 @@ fn is_provably_positive_under_assumptions(
   has_strictly_positive
 }
 
+/// Whether `expr` is strictly positive under the assumptions: a positive
+/// variable, a product of positive factors, or a sum of non-negative terms with
+/// a strictly positive one.
+fn is_positive_under_assumptions(expr: &Expr, info: &AssumptionInfo) -> bool {
+  get_sign_under_assumptions(expr, info) == Some(1)
+    || is_provably_positive_under_assumptions(expr, info)
+}
+
 /// Check if an expression is provably non-negative given assumption info.
 fn is_provably_nonneg_under_assumptions(
   expr: &Expr,
@@ -930,6 +944,15 @@ fn compare_operands(a: &Expr, b: &Expr, info: &AssumptionInfo) -> Option<i32> {
 }
 
 fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
+  if let Some(rooted) = refine_reciprocal_root(expr, info, assumption) {
+    return rooted;
+  }
+  if let Some(rooted) = refine_positive_base_root(expr, info) {
+    return rooted;
+  }
+  if let Some(rooted) = refine_sum_root(expr, info, assumption) {
+    return rooted;
+  }
   match expr {
     // Comparisons: check if they can be resolved under assumptions
     Expr::Comparison { .. } => {
@@ -1670,6 +1693,161 @@ fn extract_rational_1_over(expr: &Expr) -> Option<i128> {
   }
 }
 
+/// A sum that factors into a perfect power or product, such as
+/// 1 + 4 x + 6 x^2 + 4 x^3 + x^4 = (1 + x)^4, under a fractional power is
+/// rooted factor by factor: Sqrt[1 + 4 x + ... + x^4] → (1 + x)^2 for x > 0.
+/// Only returned when the factoring clears the root.
+fn refine_sum_root(
+  expr: &Expr,
+  info: &AssumptionInfo,
+  assumption: &Expr,
+) -> Option<Expr> {
+  let (base, exp) = match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => (left.as_ref(), right.as_ref()),
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      (&args[0], &args[1])
+    }
+    _ => return None,
+  };
+  if rational_parts_of(exp).is_none_or(|(_, d)| d <= 1) {
+    return None;
+  }
+  let is_sum = matches!(
+    base,
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus | BinaryOperator::Minus,
+      ..
+    }
+  ) || matches!(base, Expr::FunctionCall { name, .. } if name == "Plus");
+  if !is_sum {
+    return None;
+  }
+  let factored = super::factor::factor_ast(std::slice::from_ref(base)).ok()?;
+  let still_sum = matches!(
+    &factored,
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus | BinaryOperator::Minus,
+      ..
+    }
+  ) || matches!(&factored, Expr::FunctionCall { name, .. } if name == "Plus");
+  if still_sum || expr_to_string(&factored) == expr_to_string(base) {
+    return None;
+  }
+  let rooted = refine_expr(&pow2(factored, exp.clone()), info, assumption);
+  (!has_root(&rooted)).then_some(rooted)
+}
+
+/// Whether `expr` still holds a `Sqrt` or a fractional power.
+fn has_root(expr: &Expr) -> bool {
+  match expr {
+    Expr::BinaryOp { op, left, right } => {
+      (matches!(op, BinaryOperator::Power)
+        && rational_parts_of(right).is_some_and(|(_, d)| d > 1))
+        || has_root(left)
+        || has_root(right)
+    }
+    Expr::UnaryOp { operand, .. } => has_root(operand),
+    Expr::FunctionCall { name, args } => {
+      name == "Sqrt"
+        || (name == "Power"
+          && args.len() == 2
+          && rational_parts_of(&args[1]).is_some_and(|(_, d)| d > 1))
+        || args.iter().any(has_root)
+    }
+    _ => false,
+  }
+}
+
+/// (b^n)^(p/q) → b^(n p/q) for a provably positive base b and an integer
+/// n p/q: the real power law holds for every positive base, so
+/// ((1 + x)^4)^(-1/2) → (1 + x)^(-2) for x > 0.
+fn refine_positive_base_root(
+  expr: &Expr,
+  info: &AssumptionInfo,
+) -> Option<Expr> {
+  let (outer_base, outer_exp) = match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => (left.as_ref(), right.as_ref()),
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      (&args[0], &args[1])
+    }
+    _ => return None,
+  };
+  let (p, q) = rational_parts_of(outer_exp).filter(|&(_, q)| q > 1)?;
+  let (base, n) = match outer_base {
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => match right.as_ref() {
+      Expr::Integer(n) => (left.as_ref(), *n),
+      _ => return None,
+    },
+    _ => return None,
+  };
+  let product = n.checked_mul(p)?;
+  if product == 0
+    || product % q != 0
+    || !is_positive_under_assumptions(base, info)
+  {
+    return None;
+  }
+  let rooted = make_power_or_identity(base, product / q);
+  Some(crate::evaluator::evaluate_expr_to_expr(&rooted).unwrap_or(rooted))
+}
+
+/// B^(-r) → 1/(B^r refined) for a negative rational exponent, so the
+/// positive-exponent root rules apply to a reciprocal root as well:
+/// (k^4 x)^(-1/4) → 1/(k x^(1/4)) for k, x > 0.
+fn refine_reciprocal_root(
+  expr: &Expr,
+  info: &AssumptionInfo,
+  assumption: &Expr,
+) -> Option<Expr> {
+  let (base, exp) = match expr {
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => (left.as_ref(), right.as_ref()),
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      (&args[0], &args[1])
+    }
+    _ => return None,
+  };
+  let (p, q) = rational_parts_of(exp).filter(|&(p, q)| p < 0 && q > 1)?;
+  let positive = call("Rational", vec![Expr::Integer(-p), Expr::Integer(q)]);
+  let root = pow2(base.clone(), positive);
+  let refined = refine_expr(&root, info, assumption);
+  if expr_to_string(&refined) == expr_to_string(&root) {
+    return None;
+  }
+  crate::evaluator::evaluate_expr_to_expr(&pow2(refined, Expr::Integer(-1)))
+    .ok()
+}
+
+/// An exponent written as a ratio of two integers, `(numerator, denominator)`.
+fn rational_parts_of(exp: &Expr) -> Option<(i128, i128)> {
+  match exp {
+    Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2 =>
+    {
+      match (&args[0], &args[1]) {
+        (Expr::Integer(n), Expr::Integer(d)) => Some((*n, *d)),
+        _ => None,
+      }
+    }
+    _ => None,
+  }
+}
+
 /// Build Power[base, exp] or just base if exp == 1.
 fn make_power_or_identity(base: &Expr, exp: i128) -> Expr {
   if exp == 1 {
@@ -1810,6 +1988,7 @@ fn refine_product_root(
   // and the variable has known sign
   let mut refined_factors = Vec::new();
   let mut all_simplified = true;
+  let mut any_simplified = false;
 
   for factor in &factors {
     // Try to refine (factor)^(1/m)
@@ -1820,13 +1999,20 @@ fn refine_product_root(
     let refined = refine_expr(&root_expr, info, assumption);
     // Check if it actually simplified (different from input)
     if expr_to_string(&refined) == expr_to_string(&root_expr) {
+      // A positive factor can stay under its own root: (a b)^(1/m) =
+      // a^(1/m) b^(1/m) holds whenever both are positive.
+      if is_positive_under_assumptions(factor, info) {
+        refined_factors.push(refined);
+        continue;
+      }
       all_simplified = false;
       break;
     }
+    any_simplified = true;
     refined_factors.push(refined);
   }
 
-  if all_simplified && !refined_factors.is_empty() {
+  if all_simplified && any_simplified && !refined_factors.is_empty() {
     let product = build_product(refined_factors);
     // Evaluate to canonical form
     if let Ok(evaled) = crate::evaluator::evaluate_expr_to_expr(&product) {

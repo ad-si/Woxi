@@ -5363,6 +5363,45 @@ mod solve {
     );
   }
 
+  // Regression: a rational equation whose denominator is a repeated linear
+  // factor lost its roots (or reported "all values") once `Together` left the
+  // factors uncancelled.
+  #[test]
+  fn solve_rational_equation_repeated_denominator_factor() {
+    assert_eq!(
+      interpret("Solve[1/(2 (u+1)^2) - 1/(u+1) == 0, u]").unwrap(),
+      "{{u -> -1/2}}"
+    );
+    assert_eq!(
+      interpret("Solve[1/(2 (u+3)^2) - 1/(u+3) == 1/2, u]").unwrap(),
+      "{{u -> -4 - Sqrt[2]}, {u -> -4 + Sqrt[2]}}"
+    );
+  }
+
+  // Regression: the pole `a + b q == 0` is not a root of the equation.
+  #[test]
+  fn solve_rational_equation_drops_pole_with_symbolic_parameters() {
+    assert_eq!(
+      interpret("Length[Solve[1/(2 (a + b q)^2) - k/(a + b q) == 1/4, q]]")
+        .unwrap(),
+      "2"
+    );
+  }
+
+  // A denominator linear in the unknown is solved for as a unit, then the
+  // linear relation is solved for the unknown.
+  #[test]
+  fn solve_through_linear_denominator_substitution() {
+    assert_eq!(
+      interpret(
+        "sol = Solve[1/(2 (a + b q)^2) - k/(a + b q) + c == 1/4, q]; \
+         {Length[sol], Chop[N[(1/(2 (a + b q)^2) - k/(a + b q) + c - 1/4) /. sol /. {a -> 1, b -> 2, k -> 3, c -> 5}]]}"
+      )
+      .unwrap(),
+      "{2, {0, 0}}"
+    );
+  }
+
   #[test]
   fn solve_pure_cubic_symbolic() {
     assert_eq!(
@@ -6563,6 +6602,49 @@ mod simplify_assumptions {
   #[test]
   fn simplify_with_direct_assumption() {
     assert_eq!(interpret("Simplify[Sqrt[x^2], x > 0]").unwrap(), "x");
+  }
+
+  // A list of assumptions is their conjunction, and a root of a product of
+  // positive factors distributes over them.
+  #[test]
+  fn simplify_root_of_product_under_assumption_list() {
+    assert_eq!(
+      interpret("Simplify[Sqrt[k^4 x], {x > 0, k > 0}]").unwrap(),
+      "k^2*Sqrt[x]"
+    );
+    assert_eq!(
+      interpret("Simplify[(k^4 x)^(1/4), {x > 0, k > 0}]").unwrap(),
+      "k*x^(1/4)"
+    );
+    assert_eq!(
+      interpret("Simplify[1/(k^4 x)^(1/4), {x > 0, k > 0}]").unwrap(),
+      "1/(k*x^(1/4))"
+    );
+    assert_eq!(interpret("Refine[Sqrt[k^2], {k > 0, x > 0}]").unwrap(), "k");
+  }
+
+  // A sum that is a perfect power under a root: Sqrt[(1 + x)^4] = (1 + x)^2
+  // for x > 0, also written out as an expanded polynomial.
+  #[test]
+  fn simplify_root_of_perfect_power_sum_under_assumption() {
+    assert_eq!(
+      interpret("Simplify[Sqrt[(1 + x)^4], x > 0]").unwrap(),
+      "(1 + x)^2"
+    );
+    assert_eq!(
+      interpret("Simplify[Sqrt[1 + 4 x + 6 x^2 + 4 x^3 + x^4], x > 0]")
+        .unwrap(),
+      "(1 + x)^2"
+    );
+    assert_eq!(
+      interpret("Simplify[Sqrt[8 k^4 x/(1 + x)^4*2], {x > 0, k > 0}]").unwrap(),
+      "(4*k^2*Sqrt[x])/(1 + x)^2"
+    );
+    // Without a sign for 1 + x the root stays.
+    assert_eq!(
+      interpret("Simplify[Sqrt[(1 + x)^4], x > -5]").unwrap(),
+      "Sqrt[(1 + x)^4]"
+    );
   }
 
   #[test]
