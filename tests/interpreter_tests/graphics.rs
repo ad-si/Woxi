@@ -21528,6 +21528,18 @@ mod parametric_plot3d {
     ));
   }
 
+  /// A body that only yields a point once `u`/`v` are numeric (a
+  /// `BSplineFunction` surface) must be sampled per point, not rejected.
+  #[test]
+  fn bspline_function_surface_body() {
+    clear_state();
+    let svg = export_svg(
+      "g = BSplineFunction[Table[{u, v, u v}, {u, 0, 1, 1/4}, {v, 0, 1, 1/4}]]; \
+       ParametricPlot3D[g[a, b], {a, 0, 1}, {b, 0, 1}, Mesh -> False]",
+    );
+    assert!(svg.contains("<polygon"), "expected a drawn surface: {svg}");
+  }
+
   #[test]
   fn integer_mesh_draws_that_many_lines_per_direction() {
     clear_state();

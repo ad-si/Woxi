@@ -10973,9 +10973,23 @@ fn resolve_parametric_triples(
         crate::functions::plot::eval_body_vars_symbolic(other, shadow_vars);
       match unwrap_singleton_list(&resolved) {
         Expr::List(items) => resolve_items(items),
-        _ => Err(err()),
+        // The body only yields a point once `u`/`v` are numeric (e.g. a
+        // `BSplineFunction` surface `f[u, v]`), so read the components off
+        // the evaluated body at each sample with `Part`.
+        _ => Ok(vec![(
+          part_of(other, 1),
+          part_of(other, 2),
+          part_of(other, 3),
+        )]),
       }
     }
+  }
+}
+
+fn part_of(body: &Expr, index: i128) -> Expr {
+  Expr::FunctionCall {
+    name: "Part".to_string(),
+    args: vec![body.clone(), Expr::Integer(index)].into(),
   }
 }
 
