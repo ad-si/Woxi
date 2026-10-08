@@ -169,6 +169,46 @@ mod graphics {
     }
 
     #[test]
+    fn parametric_plot_curve_slots_resolved_per_sample() {
+      // Each curve is written `{{fx, fy} /. FindRoot[…]}`: it only becomes a
+      // coordinate pair once the parameter is numeric, so every slot must be
+      // sampled per parameter value rather than decomposed syntactically.
+      let svg = export_svg(
+        "ParametricPlot[{\
+           {{l, 2 l} /. FindRoot[x == l, {x, 0}]}, \
+           {{l, -l} /. FindRoot[x == l, {x, 0}]}, \
+           {{l, l^2} /. FindRoot[x == l, {x, 0}]}}, \
+           {l, -1., 1.}, Axes -> False]",
+      );
+      assert_eq!(svg.matches("<polyline").count(), 3);
+      // The curves actually vary along the parameter.
+      assert!(svg.contains("points=\""));
+      let first = svg.split("points=\"").nth(1).unwrap();
+      let pts: Vec<&str> =
+        first.split('"').next().unwrap().split(' ').collect();
+      assert_ne!(pts[0], pts[pts.len() - 1]);
+    }
+
+    #[test]
+    fn parametric_plot_ignores_global_value_of_plot_variable() {
+      // A stale global value for the plot variable (a notebook saved with
+      // `SaveDefinitions -> True` carries one) must not freeze the curves:
+      // the variable is local to the plot.
+      let svg = export_svg(
+        "l = 30; ParametricPlot[{\
+           {{l, 2 l} /. FindRoot[x == l, {x, 0}]}, \
+           {{l, -l} /. FindRoot[x == l, {x, 0}]}, \
+           {{l, l^2} /. FindRoot[x == l, {x, 0}]}}, \
+           {l, -1., 1.}, Axes -> False]",
+      );
+      assert_eq!(svg.matches("<polyline").count(), 3);
+      let first = svg.split("points=\"").nth(1).unwrap();
+      let pts: Vec<&str> =
+        first.split('"').next().unwrap().split(' ').collect();
+      assert_ne!(pts[0], pts[pts.len() - 1]);
+    }
+
+    #[test]
     fn parametric_plot_with_texture_polystyle() {
       // The audit case: ParametricPlot with PlotStyle -> {..., Texture[...]}
       assert_eq!(
