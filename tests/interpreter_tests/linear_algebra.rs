@@ -4157,6 +4157,26 @@ mod linear_model_fit {
 mod nonlinear_model_fit {
   use super::*;
 
+  // For a model linear in its parameters the asymptotic statistics must
+  // agree with those of LinearModelFit.
+  #[test]
+  fn parameter_statistics_match_linear_fit() {
+    let data = "{{1, 2.1}, {2, 3.9}, {3, 6.2}, {4, 7.8}, {5, 10.4}}";
+    for prop in [
+      "ParameterErrors",
+      "ParameterTStatistics",
+      "ParameterPValues",
+    ] {
+      assert_eq!(
+        interpret(&format!(
+          "Max[Abs[NonlinearModelFit[{data}, a x + b, {{a, b}}, x][\"{prop}\"] - Reverse[LinearModelFit[{data}, x, x][\"{prop}\"]]]] < 10^-4"
+        ))
+        .unwrap(),
+        "True"
+      );
+    }
+  }
+
   #[test]
   fn returns_fitted_model() {
     assert_eq!(
