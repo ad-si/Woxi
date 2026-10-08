@@ -19936,3 +19936,49 @@ mod parametric_ndsolve {
     );
   }
 }
+
+mod integrate_polynomial_over_sqrt_quadratic {
+  use super::*;
+
+  #[test]
+  fn definite_integrals_over_unit_semicircle_radical() {
+    for (input, expected) in [
+      ("Integrate[z^2/Sqrt[1 - z^2], {z, 0, 1}]", "Pi/4"),
+      ("Integrate[z^3/Sqrt[1 - z^2], {z, 0, 1}]", "2/3"),
+      ("Integrate[z^4/Sqrt[1 - z^2], {z, 0, 1}]", "(3*Pi)/16"),
+      (
+        "Integrate[(1 + a z^2)/Sqrt[1 - z^2], {z, 0, 1}]",
+        "Pi/2 + (a*Pi)/4",
+      ),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+  }
+
+  #[test]
+  fn indefinite_integrals_differentiate_back() {
+    for integrand in [
+      "z^2/Sqrt[1 - z^2]",
+      "z^5/Sqrt[3 - 2 z^2]",
+      "(1 + z)^2/Sqrt[4 + z^2]",
+    ] {
+      let code = format!(
+        "Abs[(D[Integrate[{integrand}, z], z] - {integrand}) /. z -> 0.3] < 10^-9"
+      );
+      assert_eq!(interpret(&code).unwrap(), "True", "{integrand}");
+    }
+    assert_eq!(
+      interpret("Integrate[z/Sqrt[4 + z^2], z]").unwrap(),
+      "Sqrt[4 + z^2]"
+    );
+  }
+
+  #[test]
+  fn numeric_series_coefficients_evaluate() {
+    assert_eq!(
+      interpret("N[Integrate[(1 + 0.5 z^2)/Sqrt[1 - z^2], {z, 0, 1}]]")
+        .unwrap(),
+      "1.9634954084936207"
+    );
+  }
+}
