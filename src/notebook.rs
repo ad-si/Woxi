@@ -951,6 +951,27 @@ fn extract_typeset_box(s: &str) -> Option<String> {
           }
         }
       }
+      // A superscript that isn't a valid expression on its own (the bare
+      // `+` of a typeset "sweep₍p₎⁺") can't become `(Subscript[a, b])^(+)`;
+      // fall back to the `Subsuperscript` display wrapper with the script
+      // quoted, as `SuperscriptBox` does above.
+      "SubsuperscriptBox"
+        if args.len() == 3
+          && crate::parse_to_expr(&conv(&args[2])).is_err() =>
+      {
+        let sub = conv(&args[1]);
+        let sub = if crate::parse_to_expr(&sub).is_ok() {
+          sub
+        } else {
+          format!("\"{}\"", escape_string(&sub))
+        };
+        format!(
+          "Subsuperscript[{}, {}, \"{}\"]",
+          conv(&args[0]),
+          sub,
+          escape_string(&conv(&args[2]))
+        )
+      }
       // `SubsuperscriptBox[a, b, c]` → `Subscript[a, b]^c`.
       "SubsuperscriptBox" if args.len() == 3 => {
         format!(

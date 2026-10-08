@@ -5501,7 +5501,16 @@ fn locator_pane_graphic_via_epilog(
 /// a `Style`); the parts of a `Row` already render as text.
 fn unquoted_display_string(expr: &Expr) -> Expr {
   match expr {
-    Expr::String(s) => Expr::Identifier(s.clone()),
+    // A string with inline `\!\(\*…\)` boxes is typeset, not printed.
+    Expr::String(s) => {
+      crate::functions::graphics::inline_box_string_to_box_expr(s).map_or_else(
+        || Expr::Identifier(s.clone()),
+        |boxes| Expr::FunctionCall {
+          name: "DisplayForm".to_string(),
+          args: vec![boxes].into(),
+        },
+      )
+    }
     Expr::FunctionCall { name, args }
       if name == "Style" && !args.is_empty() =>
     {
@@ -5909,6 +5918,16 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
               Some(w) => format!(
                 "<svg width=\"{w}\" height=\"1\" viewBox=\"0 0 {w} 1\" xmlns=\"http://www.w3.org/2000/svg\"></svg>"
               ),
+              // `SpanFromLeft`/`SpanFromAbove`/`SpanFromBoth` only continue a
+              // merged cell: they hold no content, so they draw as blank
+              // space rather than their own name.
+              None if matches!(c, Expr::Identifier(s) if matches!(
+                s.as_str(),
+                "SpanFromLeft" | "SpanFromAbove" | "SpanFromBoth"
+              )) =>
+              {
+                "<svg width=\"1\" height=\"1\" viewBox=\"0 0 1 1\" xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string()
+              }
               None => expr_to_svg(&unquoted_display_string(c)),
             })
             .collect()
