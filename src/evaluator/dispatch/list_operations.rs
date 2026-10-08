@@ -2890,6 +2890,17 @@ pub fn dispatch_list_operations(
     "Combinatorica`Permutations" if args.len() == 1 => {
       return Some(list_helpers_ast::combinatorica_permutations_ast(args));
     }
+    "Combinatorica`RandomPermutation" if args.len() == 1 => {
+      return Some(list_helpers_ast::combinatorica_random_permutation_ast(
+        args,
+      ));
+    }
+    "Combinatorica`RandomKSubset" if args.len() == 2 => {
+      return Some(list_helpers_ast::combinatorica_random_k_subset_ast(args));
+    }
+    "Combinatorica`Backtrack" if (1..=4).contains(&args.len()) => {
+      return Some(list_helpers_ast::combinatorica_backtrack_ast(args));
+    }
     "Combinatorica`Derangements" if args.len() == 1 => {
       return Some(list_helpers_ast::combinatorica_derangements_ast(args));
     }

@@ -771,6 +771,15 @@ fn evaluate_function_call_ast_inner(
     "VectorFieldPlots`ListVectorFieldPlot" => "ListVectorPlot",
     "PieCharts`PieChart" => "PieChart",
     "Derangements" if combinatorica_active => "Combinatorica`Derangements",
+    "RandomKSubset" if combinatorica_active => "Combinatorica`RandomKSubset",
+    "Backtrack" if combinatorica_active => "Combinatorica`Backtrack",
+    "RandomPermutation"
+      if combinatorica_active
+        && args.len() == 1
+        && matches!(&args[0], Expr::Integer(n) if *n >= 0) =>
+    {
+      "Combinatorica`RandomPermutation"
+    }
     "Permutations"
       if combinatorica_active
         && args.len() == 1
