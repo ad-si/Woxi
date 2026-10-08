@@ -27740,6 +27740,12 @@ fn display_expr_to_node(
       "Style" | "StyleForm" if !args.is_empty() => {
         styled_text_node(expr, bindings)
       }
+      // `Style[a, Italic]^2` (a Grid header such as "a²"): the styled base
+      // keeps its styling and the exponent is typeset as a superscript,
+      // rather than falling through to the raw `Power[…]` source text.
+      "Power" if args.len() == 2 && is_style_call(&args[0]) => {
+        styled_text_node(expr, bindings)
+      }
       // A sub-/superscript leaf (e.g. a Dynamic caption assembling an
       // orbital symbol like `Subscript[2p, x]`): typeset through the same
       // label machinery a control's caption uses, rather than falling
@@ -27803,6 +27809,13 @@ fn display_expr_to_node(
     Expr::List(_) => {
       DisplayNode::Column(list_children(expr, bindings, probes, ons))
     }
+    // `Style[a, Italic]^2` (a Grid header such as "a²") written with the
+    // `^` operator: same as the `Power` call above.
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      ..
+    } if is_style_call(left) => styled_text_node(expr, bindings),
     // Literal prose in a caption row.
     Expr::String(_) => styled_text_node(expr, bindings),
     // Releasing a `Dynamic[…]` hold (above) can fully evaluate its content
@@ -27819,6 +27832,14 @@ fn display_expr_to_node(
     },
     _ => static_leaf_node(expr, bindings),
   }
+}
+
+/// Whether `expr` is a `Style[…]`/`StyleForm[…]` call.
+fn is_style_call(expr: &Expr) -> bool {
+  matches!(
+    expr,
+    Expr::FunctionCall { name, .. } if name == "Style" || name == "StyleForm"
+  )
 }
 
 /// `Spacer[w]` / `Spacer[{w, h}]` — the horizontal size it reserves, in
@@ -29670,6 +29691,21 @@ mod manipulate_display_number_form_tests {
     match node {
       DisplayNode::Static { text, svg: None } => assert_eq!(text, "1.00"),
       other => panic!("expected a static text node, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn styled_power_caption_keeps_style_and_superscript() {
+    // `Style[a, Italic]^2` in a Grid header sets as an italic "a" with a
+    // superscript 2, not as the literal `Style[a, Italic]^2` source.
+    let node = build_manipulate_display("Style[a, Italic]^2", &[]);
+    match node {
+      DisplayNode::Text { runs } => {
+        assert!(runs[0].italic, "base should stay italic: {runs:?}");
+        let text: String = runs.iter().map(|r| r.text.as_str()).collect();
+        assert_eq!(text, "a\u{b2}");
+      }
+      other => panic!("expected a styled text node, got {other:?}"),
     }
   }
 
