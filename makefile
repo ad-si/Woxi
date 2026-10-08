@@ -40,7 +40,7 @@ test-reduce: test-reduce-core
 	cargo nextest run -p woxi \
 		--lib \
 		--test reduce_tests \
-		--test interpreter_tests \
+		--test interpreter_tests_algebra \
 		-E 'binary(reduce_tests) | test(/functions::polynomial_ast::reduce_backend::/) | test(/interpreter_tests::algebra::(reduce|resolve)::/)' \
 		--show-progress=none \
 		--status-level=fail \

@@ -1,5 +1,17 @@
 // Each test file wraps its tests in a module named after the file, which
 // keeps `cargo nextest run <name>` filters matching the file they live in.
+//
+// The modules in `tests/interpreter_tests/` are spread over several test
+// binaries — this one (graphics, images, sound and styling, which own the
+// insta snapshots named `interpreter_tests__…`) plus the
+// `interpreter_tests_*.rs` siblings. Every edit to the woxi library forces
+// each binary that links it to be recompiled, and rustc compiles one crate
+// mostly on a single core: as one ~300k-line binary this was the largest
+// serial step of every incremental `make test`. Split, cargo builds the
+// parts in parallel. All binaries nest their modules under
+// `mod interpreter_tests`, so test paths stay `interpreter_tests::<file>::…`.
+// Add a new module file to whichever binary fits it best, keeping them
+// roughly balanced in size.
 #![allow(clippy::module_inception)]
 
 use woxi::{
@@ -5461,96 +5473,17 @@ mod interpreter_tests {
     }
   }
 
-  // On Windows, if a path has components starting with
-  // n, r, t, the backslashes look like escape sequences,
-  // and the path doesn't work when passed to interpret.
-  // Patching paths in the test cases is whack-a-mole, so
-  // just use a Unix-style path syntax always.
-  // C:/tmp/foo/bar.txt works fine on Windows.
-  fn unixify(path: &str) -> String {
-    path.replace('\\', "/")
-  }
-
-  fn temp_dir() -> String {
-    let mut tmp = std::env::temp_dir().display().to_string();
-    if tmp.ends_with(std::path::MAIN_SEPARATOR) {
-      tmp.pop();
-    }
-    unixify(&tmp)
-  }
-
-  /// A scratch path inside the platform temp directory. Never hardcode
-  /// `/tmp/...` in a test — it does not exist on Windows, where the
-  /// nightly CI runs the full unit suite.
-  fn temp_file(file: &str) -> String {
-    let tmp = std::env::temp_dir().join(file);
-    unixify(&tmp.display().to_string())
-  }
-
-  fn manifest_file(file: &str) -> String {
-    let manifest = env!("CARGO_MANIFEST_DIR");
-    unixify(&format!("{manifest}/{file}"))
-  }
+  mod path_helpers;
+  use path_helpers::*;
 
   mod case_helpers;
 
-  mod algebra;
-  mod arg_count;
-  mod arithmetic;
-  mod assessment;
-  mod association;
-  mod astronomy;
-  mod attributes;
   mod audio;
-  mod batch_wrappers;
-  mod calculus;
   mod cellular_automaton;
-  mod code_parser;
   mod column;
-  mod contexts;
-  mod control_flow;
-  mod dataset;
-  mod datetime;
-  mod distributions;
-  mod element_data;
-  mod entity;
-  mod example_data;
-  mod financial;
-  mod function_application;
-  mod function_definitions;
-  mod functions;
-  mod geometry;
-  mod graph_theory;
   mod graphics;
   mod image;
-  mod interpret_to_expr_api;
-  mod interval;
-  mod io;
-  mod isotope_data;
-  mod knot_data;
-  mod large_number_and_memoization;
-  mod linear_algebra;
-  mod list;
-  mod machine_specific;
-  mod math;
-  mod molecule;
   mod music;
-  mod patterns;
-  mod polyhedron_data;
-  mod polyhedron_operations;
-  mod property;
-  mod quantity;
-  mod rosetta_script_fixes;
   mod row;
-  mod sockets;
-  mod special_functions;
-  mod statistics;
-  mod string;
   mod styling;
-  mod syntax;
-  mod tabular;
-  mod timeseries;
-  mod turing_machine;
-  mod wavelets;
-  mod wxf;
 }
