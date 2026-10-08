@@ -1154,3 +1154,155 @@ fn generate_splits(
     }
   }
 }
+
+fn combinatorica_is_true(expr: &Expr) -> bool {
+  matches!(expr, Expr::Identifier(s) if s == "True")
+}
+
+/// `Combinatorica\`RandomPermutation[n]` / `Combinatorica\`RandomPermutation[l]`
+/// — the legacy package's uniformly random permutation, returned as a plain
+/// list (the built-in `RandomPermutation` returns a `Cycles` object instead).
+/// An integer `n` means `Range[n]`; anything else is left symbolic.
+pub fn combinatorica_random_permutation_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  use rand::seq::SliceRandom;
+
+  let original = || unevaluated("Combinatorica`RandomPermutation", args);
+  if args.len() != 1 {
+    return Ok(original());
+  }
+  let mut items: Vec<Expr> = match &args[0] {
+    Expr::List(items) => items.to_vec(),
+    Expr::Integer(n) if *n >= 0 => (1..=*n).map(Expr::Integer).collect(),
+    _ => return Ok(original()),
+  };
+  crate::with_rng(|rng| items.shuffle(rng));
+  Ok(Expr::List(items.into()))
+}
+
+/// `Combinatorica\`RandomKSubset[l, k]` — a uniformly random `k`-element
+/// subset of `l` (or of `Range[l]` for an integer), kept in `l`'s own order.
+/// Left symbolic unless `0 <= k <= Length[l]`.
+pub fn combinatorica_random_k_subset_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  use rand::seq::index::sample;
+
+  let original = || unevaluated("Combinatorica`RandomKSubset", args);
+  if args.len() != 2 {
+    return Ok(original());
+  }
+  let items: Vec<Expr> = match &args[0] {
+    Expr::List(items) => items.to_vec(),
+    Expr::Integer(n) if *n >= 0 => (1..=*n).map(Expr::Integer).collect(),
+    _ => return Ok(original()),
+  };
+  let k = match &args[1] {
+    Expr::Integer(k) if *k >= 0 && (*k as usize) <= items.len() => *k as usize,
+    _ => return Ok(original()),
+  };
+  let mut picked: Vec<usize> =
+    crate::with_rng(|rng| sample(rng, items.len(), k).into_vec());
+  picked.sort_unstable();
+  Ok(Expr::List(
+    picked.into_iter().map(|i| items[i].clone()).collect(),
+  ))
+}
+
+/// `Combinatorica\`Backtrack[space, partialQ, solutionQ, flag]` — the legacy
+/// package's depth-first search over `space`, a list of candidate lists (one
+/// per position). `partialQ` prunes partial solutions, `solutionQ` accepts
+/// complete ones. With `flag` `All` it returns every solution; otherwise
+/// (`One`, the default) the first one, or `{}` if there is none. As in the
+/// package, the first position is never tested with `partialQ`. Both
+/// predicates default to always-true.
+pub fn combinatorica_backtrack_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  use crate::evaluator::function_application::apply_function_to_arg;
+
+  let original = || unevaluated("Combinatorica`Backtrack", args);
+  if args.is_empty() || args.len() > 4 {
+    return Ok(original());
+  }
+  let Expr::List(space) = &args[0] else {
+    return Ok(original());
+  };
+  let partial_q = args.get(1);
+  let solution_q = args.get(2);
+  let find_all = matches!(
+    args.get(3),
+    Some(Expr::Identifier(s)) if s == "All" || s == "Combinatorica`All"
+  );
+
+  let mut candidates: Vec<&[Expr]> = Vec::with_capacity(space.len());
+  for level in space {
+    let Expr::List(level) = level else {
+      return Ok(original());
+    };
+    candidates.push(level.as_slice());
+  }
+  let n = candidates.len();
+  if n == 0 || candidates[0].is_empty() {
+    return Ok(Expr::List(vec![].into()));
+  }
+
+  let test =
+    |f: Option<&Expr>, partial: &[Expr]| -> Result<bool, InterpreterError> {
+      match f {
+        None => Ok(true),
+        Some(f) => Ok(combinatorica_is_true(&apply_function_to_arg(
+          f,
+          &Expr::List(partial.to_vec().into()),
+        )?)),
+      }
+    };
+
+  // `index[i]` is the 1-based candidate chosen at level `i`; `v` is the
+  // 1-based level being extended (0 ends the search, `n + 1` means a
+  // complete candidate is ready).
+  let mut index = vec![0usize; n];
+  index[0] = 1;
+  let mut v: usize = 2;
+  let mut all: Vec<Expr> = Vec::new();
+  let mut first: Option<Expr> = None;
+  while v > 0 {
+    if v <= n {
+      let mut done = false;
+      while !done && index[v - 1] < candidates[v - 1].len() {
+        index[v - 1] += 1;
+        let partial: Vec<Expr> = (0..v)
+          .map(|i| candidates[i][index[i] - 1].clone())
+          .collect();
+        done = test(partial_q, &partial)?;
+      }
+      if done {
+        v += 1;
+      } else {
+        index[v - 1] = 0;
+        v -= 1;
+      }
+    }
+    if v > n {
+      let solution: Vec<Expr> = (0..n)
+        .map(|i| candidates[i][index[i] - 1].clone())
+        .collect();
+      if test(solution_q, &solution)? {
+        if find_all {
+          all.push(Expr::List(solution.into()));
+        } else {
+          first = Some(Expr::List(solution.into()));
+          break;
+        }
+      }
+      v -= 1;
+    }
+  }
+
+  if find_all {
+    Ok(Expr::List(all.into()))
+  } else {
+    Ok(first.unwrap_or_else(|| Expr::List(vec![].into())))
+  }
+}

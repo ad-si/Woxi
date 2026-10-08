@@ -37,10 +37,7 @@ pub fn evaluate_rule_delayed_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
   let lhs = evaluate_expr_to_expr(&args[0])?;
-  Ok(Expr::RuleDelayed {
-    pattern: Box::new(lhs),
-    replacement: Box::new(args[1].clone()),
-  })
+  Ok(rule_delayed_expr(lhs, args[1].clone()))
 }
 
 /// PatternTest[pattern, test]: return as symbolic FunctionCall

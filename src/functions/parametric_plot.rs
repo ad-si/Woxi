@@ -138,7 +138,9 @@ fn collect_curves<'a>(expr: &'a Expr, out: &mut Vec<CurveSrc<'a>>) -> bool {
   if items.iter().all(is_curve_or_group) {
     return items.iter().all(|item| collect_curves(item, out));
   }
-  if items.len() == 2 {
+  // A coordinate is never itself a list, so a pair of lists is a group of
+  // curves whose slots only resolve once the parameter is numeric.
+  if items.len() == 2 && !items.iter().any(|i| matches!(i, Expr::List(_))) {
     out.push(CurveSrc::Pair(&items[0], &items[1]));
     return true;
   }
@@ -302,20 +304,31 @@ fn sample_whole_rows(
   {
     return Some(vec![(x, y)]);
   }
-  // `{{x1, y1}, …, {xn, yn}}` is one sample for each of n curves.
-  let rows: Option<Vec<(f64, f64)>> = items
-    .iter()
-    .map(|item| {
-      if let Expr::List(pair) = item
-        && pair.len() == 2
-      {
-        Some((try_eval_to_f64(&pair[0])?, try_eval_to_f64(&pair[1])?))
-      } else {
-        None
-      }
-    })
-    .collect();
-  rows
+  // `{{x1, y1}, …, {xn, yn}}` is one sample for each of n curves. Extra
+  // grouping levels (`{{{x1, y1}}, {{x2, y2}}}`, as produced by
+  // `{{fx, fy} /. rule}` curve slots) only steer styling and are flattened.
+  let mut rows = Vec::new();
+  if collect_pairs(&result, &mut rows) && !rows.is_empty() {
+    Some(rows)
+  } else {
+    None
+  }
+}
+
+/// Flatten a nested list of numeric `{x, y}` pairs into `out`. Returns
+/// whether every leaf was a numeric pair.
+fn collect_pairs(expr: &Expr, out: &mut Vec<(f64, f64)>) -> bool {
+  let Expr::List(items) = expr else {
+    return false;
+  };
+  if items.len() == 2
+    && let (Some(x), Some(y)) =
+      (try_eval_to_f64(&items[0]), try_eval_to_f64(&items[1]))
+  {
+    out.push((x, y));
+    return true;
+  }
+  items.iter().all(|item| collect_pairs(item, out))
 }
 
 /// Whether an argument is an iterator (`{v, vmin, vmax}`) rather than an
@@ -376,7 +389,9 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // an ambiguous `{fx, fy}`-shaped syntactic parse may really be a group of
   // curves that only evaluation can reveal.
   let evaluated_body: Option<Expr> = if is_list_body && !body_is_group {
-    evaluate_expr_to_expr(body).ok()
+    Some(crate::functions::plot::eval_body_var_symbolic(
+      body, &var_name,
+    ))
   } else {
     None
   };
@@ -398,9 +413,10 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let evaluated_nonlist: Option<Expr> = if is_list_body {
     None
   } else {
-    evaluate_expr_to_expr(body)
-      .ok()
-      .filter(|ev| matches!(ev, Expr::List(_)))
+    Some(crate::functions::plot::eval_body_var_symbolic(
+      body, &var_name,
+    ))
+    .filter(|ev| matches!(ev, Expr::List(_)))
   };
   let mut nonlist_curves = Vec::new();
   let nonlist_ok = evaluated_nonlist
@@ -418,12 +434,21 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let ok = evaluated_body
       .as_ref()
       .is_some_and(|ev| collect_curves(ev, &mut collected));
-    if !ok {
+    // Only list-shaped slots can resolve to coordinates later; a body of
+    // bare atoms (`{1, 2, 3}`) is not a curve specification at all.
+    let has_slots = matches!(body, Expr::List(items)
+      if items.iter().any(|i| matches!(i, Expr::List(_))));
+    if ok {
+      collected
+    } else if !has_slots {
       return Err(InterpreterError::EvaluationError(
         "ParametricPlot: first argument must be {fx, fy}".into(),
       ));
+    } else {
+      // Curve slots such as `{{fx, fy} /. FindRoot[…]}` only turn into
+      // coordinates once the parameter is numeric; sample the whole body.
+      vec![CurveSrc::Whole(body)]
     }
-    collected
   } else {
     // A non-list body (e.g. `f[t]` or `BSplineFunction[…][t]`) is a curve
     // whose coordinate pair only materialises once `t` is numeric; sample
@@ -665,7 +690,19 @@ fn parametric_region_ast(
     "RGBColor",
     vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)],
   );
-  let opacity = call1("Opacity", Expr::Real(0.3));
+  // An `Opacity[a]` among the `PlotStyle` directives replaces the default
+  // 30% fill.
+  let fill_opacity = opt_args
+    .iter()
+    .find_map(|opt| {
+      let (name, value) = crate::functions::graphics::option_name_value(opt)?;
+      (name == "PlotStyle")
+        .then(|| crate::functions::plot::parse_filling_style(&value))
+        .flatten()
+        .and_then(|fs| fs.opacity)
+    })
+    .unwrap_or(0.3);
+  let opacity = call1("Opacity", Expr::Real(fill_opacity));
   let no_edges = call0("EdgeForm");
 
   let mut face_group = vec![no_edges, color.clone(), opacity];

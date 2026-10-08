@@ -2618,4 +2618,33 @@ mod tests {
     assert_eq!(state.error, None);
     assert!(state.graphics_handle.is_some());
   }
+
+  /// A quiz Demonstration builds its answer choices from an improper
+  /// integral whose upper limit is a Module local assigned `Infinity`; the
+  /// stored `Infinity` must stay exact so the choices are exact too.
+  #[test]
+  fn body_popup_choices_from_improper_integral_stay_exact() {
+    let code = r#"Manipulate[
+      Module[{par, b, ans, choices},
+        par = {1, Infinity}; b = par[[2]];
+        ans = Integrate[x^(-2), {x, par[[1]], b}];
+        choices = {ans, ans + 1, ans - 1/2};
+        Column[{"Calculate", PopupMenu[Dynamic[an], choices]}]],
+      {an, -2, ControlType -> None}]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = ManipulateState::from_expr(&expr).expect("state should build");
+    let an = state
+      .controls
+      .iter()
+      .find(|c| c.name() == "an")
+      .expect("popup control");
+    match an {
+      ControlState::Discrete { value_labels, .. } => assert_eq!(
+        value_labels,
+        &vec!["1".to_string(), "2".to_string(), "1/2".to_string()]
+      ),
+      other => panic!("expected a Discrete popup, got {other:?}"),
+    }
+  }
 }

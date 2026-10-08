@@ -8352,6 +8352,13 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let structure = {
     let mut point_exprs: Vec<Expr> = Vec::with_capacity(world_quads.len() * 4);
     let mut quads: Vec<Expr> = Vec::with_capacity(world_quads.len());
+    // The voxel faces are an implementation detail, not the plot's mesh, so
+    // their outlines are suppressed unless `Mesh -> All` asks for them —
+    // otherwise a recombined solid reads as a wireframe of tiny cubes.
+    let mut complex_content: Vec<Expr> = Vec::new();
+    if !matches!(mesh_mode, MeshMode::All) {
+      complex_content.push(call0("EdgeForm"));
+    }
     for quad in &world_quads {
       let base = point_exprs.len() as i128;
       point_exprs.extend(quad.iter().map(|p| {
@@ -8372,7 +8379,13 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "GraphicsComplex",
         vec![
           Expr::List(point_exprs.into()),
-          Expr::List(vec![call1("Polygon", Expr::List(quads.into()))].into()),
+          Expr::List(
+            {
+              complex_content.push(call1("Polygon", Expr::List(quads.into())));
+              complex_content
+            }
+            .into(),
+          ),
         ],
       ),
     )
@@ -10196,6 +10209,13 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           )],
           None => vec![polygon_expr],
         };
+      // The sampling triangles are far finer than any mesh the plot
+      // shows, so their outlines are suppressed — otherwise extracting
+      // the primitives (`plot[[1]]`) into a `Graphics3D` would turn the
+      // surface into a wireframe.
+      if !matches!(mesh_mode, MeshMode::All) {
+        gc_content.insert(0, call0("EdgeForm"));
+      }
       if let Some((r, g, b)) = boundary_color
         && !boundary_edges.is_empty()
       {
@@ -10973,9 +10993,23 @@ fn resolve_parametric_triples(
         crate::functions::plot::eval_body_vars_symbolic(other, shadow_vars);
       match unwrap_singleton_list(&resolved) {
         Expr::List(items) => resolve_items(items),
-        _ => Err(err()),
+        // The body only yields a point once `u`/`v` are numeric (e.g. a
+        // `BSplineFunction` surface `f[u, v]`), so read the components off
+        // the evaluated body at each sample with `Part`.
+        _ => Ok(vec![(
+          part_of(other, 1),
+          part_of(other, 2),
+          part_of(other, 3),
+        )]),
       }
     }
+  }
+}
+
+fn part_of(body: &Expr, index: i128) -> Expr {
+  Expr::FunctionCall {
+    name: "Part".to_string(),
+    args: vec![body.clone(), Expr::Integer(index)].into(),
   }
 }
 

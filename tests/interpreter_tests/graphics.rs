@@ -169,6 +169,46 @@ mod graphics {
     }
 
     #[test]
+    fn parametric_plot_curve_slots_resolved_per_sample() {
+      // Each curve is written `{{fx, fy} /. FindRoot[…]}`: it only becomes a
+      // coordinate pair once the parameter is numeric, so every slot must be
+      // sampled per parameter value rather than decomposed syntactically.
+      let svg = export_svg(
+        "ParametricPlot[{\
+           {{l, 2 l} /. FindRoot[x == l, {x, 0}]}, \
+           {{l, -l} /. FindRoot[x == l, {x, 0}]}, \
+           {{l, l^2} /. FindRoot[x == l, {x, 0}]}}, \
+           {l, -1., 1.}, Axes -> False]",
+      );
+      assert_eq!(svg.matches("<polyline").count(), 3);
+      // The curves actually vary along the parameter.
+      assert!(svg.contains("points=\""));
+      let first = svg.split("points=\"").nth(1).unwrap();
+      let pts: Vec<&str> =
+        first.split('"').next().unwrap().split(' ').collect();
+      assert_ne!(pts[0], pts[pts.len() - 1]);
+    }
+
+    #[test]
+    fn parametric_plot_ignores_global_value_of_plot_variable() {
+      // A stale global value for the plot variable (a notebook saved with
+      // `SaveDefinitions -> True` carries one) must not freeze the curves:
+      // the variable is local to the plot.
+      let svg = export_svg(
+        "l = 30; ParametricPlot[{\
+           {{l, 2 l} /. FindRoot[x == l, {x, 0}]}, \
+           {{l, -l} /. FindRoot[x == l, {x, 0}]}, \
+           {{l, l^2} /. FindRoot[x == l, {x, 0}]}}, \
+           {l, -1., 1.}, Axes -> False]",
+      );
+      assert_eq!(svg.matches("<polyline").count(), 3);
+      let first = svg.split("points=\"").nth(1).unwrap();
+      let pts: Vec<&str> =
+        first.split('"').next().unwrap().split(' ').collect();
+      assert_ne!(pts[0], pts[pts.len() - 1]);
+    }
+
+    #[test]
     fn parametric_plot_with_texture_polystyle() {
       // The audit case: ParametricPlot with PlotStyle -> {..., Texture[...]}
       assert_eq!(
@@ -183,6 +223,33 @@ mod graphics {
         .unwrap(),
         "-Graphics-"
       );
+    }
+
+    #[test]
+    fn parametric_region_plot_style_opacity() {
+      let fill = |style: &str| {
+        let svg = interpret(&format!(
+          "ExportString[ParametricPlot[{{r*Cos[t], r*Sin[t]}}, \
+             {{r, 0, 1}}, {{t, 0, 2*Pi}}{style}], \"SVG\"]"
+        ))
+        .unwrap();
+        let quad = svg
+          .split("<polygon ")
+          .nth(1)
+          .expect("a filled quad")
+          .split("/>")
+          .next()
+          .unwrap();
+        // Fully opaque fills carry no `fill-opacity` attribute.
+        quad
+          .split("fill-opacity=\"")
+          .nth(1)
+          .map_or("1", |rest| rest.split('"').next().unwrap())
+          .to_string()
+      };
+      assert_eq!(fill(""), "0.3");
+      assert_eq!(fill(", PlotStyle -> {ColorData[1, 1], Opacity[1]}"), "1");
+      assert_eq!(fill(", PlotStyle -> {Red, Opacity[0.6]}"), "0.6");
     }
   }
 
@@ -3622,6 +3689,29 @@ mod plot3d {
       );
     }
 
+    /// Regression: the voxel faces of `First[RegionPlot3D[…]]` were drawn
+    /// with the default polygon outline, so a solid recombined from them
+    /// (as in a Demonstration with `Mesh -> None`) showed a grid of tiny
+    /// cube edges. The outlines are now suppressed unless `Mesh -> All`.
+    #[test]
+    fn first_surface_has_no_voxel_outlines() {
+      clear_state();
+      let svg = export_svg(
+        "Graphics3D[{RGBColor[0.5, 1, 0.9], \
+         First[RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 1}, \
+         {z, -1, 1}, Mesh -> None]]}, Boxed -> False]",
+      );
+      assert!(!svg.contains("rgb(64,64,64)"), "voxel outlines drawn");
+      let meshed = export_svg(
+        "Graphics3D[First[RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, \
+         {y, -1, 1}, {z, -1, 1}, Mesh -> All]], Boxed -> False]",
+      );
+      assert!(
+        meshed.contains("rgb(64,64,64)"),
+        "Mesh -> All lost outlines"
+      );
+    }
+
     /// The extracted surface carries real data-space coordinates, so it can
     /// be `Translate`d/`Rotate`d and recombined with other primitives inside
     /// a fresh `Graphics3D` — not just re-displayed as-is.
@@ -3837,6 +3927,19 @@ mod plot3d {
 
     mod options {
       use super::*;
+
+      // Extracting the primitives must not turn the surface into a
+      // wireframe: the sampling triangles carry `EdgeForm[]`.
+      #[test]
+      fn primitives_have_no_outline() {
+        assert_eq!(
+          interpret(
+            "MemberQ[Part[SphericalPlot3D[1, {u, 0, Pi}, {v, 0, 2 Pi}], 1, 2], EdgeForm[]]"
+          )
+          .unwrap(),
+          "True"
+        );
+      }
 
       #[test]
       fn image_size() {
@@ -13119,6 +13222,17 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    /// `PlotLabel -> Text[Grid[…]]` sets the grid's content, not the literal
+    /// `Grid[…]` source.
+    #[test]
+    fn plot_label_text_wrapping_grid_typesets_content() {
+      let svg = export_svg(
+        "Plot[x, {x, 0, 1}, PlotLabel -> Text[Grid[{{\"left\", 2.5}}]]]",
+      );
+      assert!(svg.contains("left 2.5"), "missing grid content in:\n{svg}");
+      assert!(!svg.contains("Grid["), "leaked Grid head in:\n{svg}");
+    }
+
     /// A `DensityPlot` takes the same labels and epilog — the option
     /// parsing is shared across the whole density/contour family.
     #[test]
@@ -21526,6 +21640,18 @@ mod parametric_plot3d {
     insta::assert_snapshot!(export_svg(
       "ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]}, {t, 0, Pi}, {p, 0, 2 Pi}]"
     ));
+  }
+
+  /// A body that only yields a point once `u`/`v` are numeric (a
+  /// `BSplineFunction` surface) must be sampled per point, not rejected.
+  #[test]
+  fn bspline_function_surface_body() {
+    clear_state();
+    let svg = export_svg(
+      "g = BSplineFunction[Table[{u, v, u v}, {u, 0, 1, 1/4}, {v, 0, 1, 1/4}]]; \
+       ParametricPlot3D[g[a, b], {a, 0, 1}, {b, 0, 1}, Mesh -> False]",
+    );
+    assert!(svg.contains("<polygon"), "expected a drawn surface: {svg}");
   }
 
   #[test]

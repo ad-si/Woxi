@@ -232,6 +232,10 @@ fn has_hold_attribute(name: &str, attr: u32) -> bool {
 /// Used to decide whether a subexpression pulled out of it has to be evaluated
 /// once it leaves the wrapper.
 pub(crate) fn head_holds_arguments(expr: &Expr) -> bool {
+  // `Function` holds its parameters and body (HoldAll).
+  if matches!(expr, Expr::NamedFunction { .. } | Expr::Function { .. }) {
+    return true;
+  }
   let Expr::FunctionCall { name, .. } = expr else {
     return false;
   };
@@ -3636,10 +3640,7 @@ pub fn evaluate_expr_to_expr_inner(
     } => {
       let p = evaluate_expr_to_expr(pattern)?;
       let r = evaluate_expr_to_expr(replacement)?;
-      Ok(Expr::Rule {
-        pattern: Box::new(p),
-        replacement: Box::new(r),
-      })
+      Ok(rule_expr(p, r))
     }
     Expr::RuleDelayed {
       pattern,
@@ -3648,10 +3649,7 @@ pub fn evaluate_expr_to_expr_inner(
       // RuleDelayed has HoldRest: evaluate the pattern (LHS) but hold the
       // replacement (RHS) so it re-evaluates per match.
       let p = evaluate_expr_to_expr(pattern)?;
-      Ok(Expr::RuleDelayed {
-        pattern: Box::new(p),
-        replacement: replacement.clone(),
-      })
+      Ok(rule_delayed_expr(p, *replacement.clone()))
     }
     Expr::ReplaceAll { expr: e, rules } => {
       let evaluated_expr = evaluate_expr_to_expr(e)?;

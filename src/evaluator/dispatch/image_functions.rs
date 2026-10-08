@@ -160,9 +160,8 @@ fn gradient_strip_image(controls: &[(f64, f64, f64)]) -> Expr {
       Expr::List(vec![unit_corner(0, 0), unit_corner(1, 1)].into()),
     ],
   );
-  let option = |name: &str, value: Expr| Expr::Rule {
-    pattern: Box::new(Expr::Identifier(name.to_string())),
-    replacement: Box::new(value),
+  let option = |name: &str, value: Expr| {
+    rule_expr(Expr::Identifier(name.to_string()), value)
   };
   Expr::FunctionCall {
     name: "Graphics".to_string(),
@@ -689,9 +688,8 @@ fn json_value_to_expr(value: &serde_json::Value, raw: bool) -> Expr {
         Expr::List(
           map
             .iter()
-            .map(|(k, v)| Expr::Rule {
-              pattern: Box::new(Expr::String(k.clone())),
-              replacement: Box::new(json_value_to_expr(v, raw)),
+            .map(|(k, v)| {
+              rule_expr(Expr::String(k.clone()), json_value_to_expr(v, raw))
             })
             .collect(),
         )

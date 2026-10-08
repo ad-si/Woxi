@@ -146,17 +146,11 @@ fn wrap_rule_lhs_in_holdpattern(expr: &Expr) -> Expr {
     Expr::Rule {
       pattern,
       replacement,
-    } => Expr::Rule {
-      pattern: Box::new(wrap_pattern(pattern)),
-      replacement: replacement.clone(),
-    },
+    } => rule_expr(wrap_pattern(pattern), *replacement.clone()),
     Expr::RuleDelayed {
       pattern,
       replacement,
-    } => Expr::RuleDelayed {
-      pattern: Box::new(wrap_pattern(pattern)),
-      replacement: replacement.clone(),
-    },
+    } => rule_delayed_expr(wrap_pattern(pattern), *replacement.clone()),
     Expr::List(items) => {
       Expr::List(items.iter().map(wrap_rule_lhs_in_holdpattern).collect())
     }
@@ -1139,23 +1133,17 @@ fn replace_patterns_with_placeholders(
     Expr::Rule {
       pattern,
       replacement,
-    } => Expr::Rule {
-      pattern: Box::new(replace_patterns_with_placeholders(pattern, vars)),
-      replacement: Box::new(replace_patterns_with_placeholders(
-        replacement,
-        vars,
-      )),
-    },
+    } => rule_expr(
+      replace_patterns_with_placeholders(pattern, vars),
+      replace_patterns_with_placeholders(replacement, vars),
+    ),
     Expr::RuleDelayed {
       pattern,
       replacement,
-    } => Expr::RuleDelayed {
-      pattern: Box::new(replace_patterns_with_placeholders(pattern, vars)),
-      replacement: Box::new(replace_patterns_with_placeholders(
-        replacement,
-        vars,
-      )),
-    },
+    } => rule_delayed_expr(
+      replace_patterns_with_placeholders(pattern, vars),
+      replace_patterns_with_placeholders(replacement, vars),
+    ),
     Expr::List(items) => Expr::List(
       items
         .iter()
@@ -1213,23 +1201,17 @@ fn replace_placeholders_with_patterns(
     Expr::Rule {
       pattern,
       replacement,
-    } => Expr::Rule {
-      pattern: Box::new(replace_placeholders_with_patterns(pattern, vars)),
-      replacement: Box::new(replace_placeholders_with_patterns(
-        replacement,
-        vars,
-      )),
-    },
+    } => rule_expr(
+      replace_placeholders_with_patterns(pattern, vars),
+      replace_placeholders_with_patterns(replacement, vars),
+    ),
     Expr::RuleDelayed {
       pattern,
       replacement,
-    } => Expr::RuleDelayed {
-      pattern: Box::new(replace_placeholders_with_patterns(pattern, vars)),
-      replacement: Box::new(replace_placeholders_with_patterns(
-        replacement,
-        vars,
-      )),
-    },
+    } => rule_delayed_expr(
+      replace_placeholders_with_patterns(pattern, vars),
+      replace_placeholders_with_patterns(replacement, vars),
+    ),
     Expr::List(items) => Expr::List(
       items
         .iter()
@@ -3586,10 +3568,7 @@ pub fn set_delayed_ast(
       let key_expr = evaluate_expr_to_expr(&head_args[0])?;
       // The value carries the `key :> value` marker so every lookup
       // evaluates it afresh, the way a delayed entry is meant to.
-      let entry = Expr::RuleDelayed {
-        pattern: Box::new(key_expr.clone()),
-        replacement: Box::new(body.clone()),
-      };
+      let entry = rule_delayed_expr(key_expr.clone(), body.clone());
       crate::set_association_entry(head_name, &key_expr, entry);
       return Ok(null_expr());
     }
@@ -4394,17 +4373,17 @@ fn replace_subexpr(expr: &Expr, from: &Expr, to: &Expr) -> Expr {
     Expr::Rule {
       pattern,
       replacement,
-    } => Expr::Rule {
-      pattern: Box::new(replace_subexpr(pattern, from, to)),
-      replacement: Box::new(replace_subexpr(replacement, from, to)),
-    },
+    } => rule_expr(
+      replace_subexpr(pattern, from, to),
+      replace_subexpr(replacement, from, to),
+    ),
     Expr::RuleDelayed {
       pattern,
       replacement,
-    } => Expr::RuleDelayed {
-      pattern: Box::new(replace_subexpr(pattern, from, to)),
-      replacement: Box::new(replace_subexpr(replacement, from, to)),
-    },
+    } => rule_delayed_expr(
+      replace_subexpr(pattern, from, to),
+      replace_subexpr(replacement, from, to),
+    ),
     Expr::Association(items) => Expr::Association(
       items
         .iter()

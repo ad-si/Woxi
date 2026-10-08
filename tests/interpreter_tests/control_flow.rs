@@ -3183,6 +3183,15 @@ mod piecewise {
   use super::*;
 
   #[test]
+  fn non_pair_element_stays_unevaluated() {
+    assert_eq!(interpret("Piecewise[{a}]").unwrap(), "Piecewise[{a}]");
+    assert_eq!(
+      interpret("Total[Piecewise[{#}] & /@ {a, b}]").unwrap(),
+      "Piecewise[{a}] + Piecewise[{b}]"
+    );
+  }
+
+  #[test]
   fn basic_true_condition() {
     assert_eq!(interpret("Piecewise[{{1, True}, {2, True}}]").unwrap(), "1");
   }

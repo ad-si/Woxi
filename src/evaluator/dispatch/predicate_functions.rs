@@ -834,13 +834,10 @@ pub fn dispatch_predicate_functions(
         let value_expr = crate::lookup_env_as_expr(name);
         if let Some(v) = value_expr {
           return Some(Ok(Expr::List(
-            vec![Expr::RuleDelayed {
-              pattern: Box::new(call1(
-                "HoldPattern",
-                Expr::Identifier(name.clone()),
-              )),
-              replacement: Box::new(v),
-            }]
+            vec![rule_delayed_expr(
+              call1("HoldPattern", Expr::Identifier(name.clone())),
+              v,
+            )]
             .into(),
           )));
         }
@@ -906,13 +903,13 @@ pub fn dispatch_predicate_functions(
                 None
               }
             })?;
-            Some(Expr::RuleDelayed {
-              pattern: Box::new(call(
+            Some(rule_delayed_expr(
+              call(
                 "HoldPattern",
                 vec![call("MessageName", vec![slot0_literal, slot1_literal])],
-              )),
-              replacement: Box::new(body.clone()),
-            })
+              ),
+              body.clone(),
+            ))
           },
         )
         .collect();
@@ -931,9 +928,11 @@ pub fn dispatch_predicate_functions(
           .map(|entries| {
             entries
               .iter()
-              .map(|(lhs, rhs)| Expr::RuleDelayed {
-                pattern: Box::new(call1("HoldPattern", lhs.clone())),
-                replacement: Box::new(rhs.clone()),
+              .map(|(lhs, rhs)| {
+                rule_delayed_expr(
+                  call1("HoldPattern", lhs.clone()),
+                  rhs.clone(),
+                )
               })
               .collect()
           })
@@ -953,9 +952,11 @@ pub fn dispatch_predicate_functions(
             .map(|entries| {
               entries
                 .iter()
-                .map(|(lhs, rhs)| Expr::RuleDelayed {
-                  pattern: Box::new(call1("HoldPattern", lhs.clone())),
-                  replacement: Box::new(rhs.clone()),
+                .map(|(lhs, rhs)| {
+                  rule_delayed_expr(
+                    call1("HoldPattern", lhs.clone()),
+                    rhs.clone(),
+                  )
                 })
                 .collect()
             })
@@ -987,10 +988,10 @@ pub fn dispatch_predicate_functions(
                       vec![lhs.clone(), Expr::Identifier(form.clone())],
                     )
                   };
-                  Expr::RuleDelayed {
-                    pattern: Box::new(call1("HoldPattern", pattern_inner)),
-                    replacement: Box::new(rhs.clone()),
-                  }
+                  rule_delayed_expr(
+                    call1("HoldPattern", pattern_inner),
+                    rhs.clone(),
+                  )
                 })
                 .collect()
             })
@@ -1003,9 +1004,8 @@ pub fn dispatch_predicate_functions(
     // Power's second slot → 1. Anything else with no stored definition
     // returns {}.
     "DefaultValues" if args.len() == 1 => {
-      let rule = |pat: Expr, val: Expr| Expr::RuleDelayed {
-        pattern: Box::new(call1("HoldPattern", pat)),
-        replacement: Box::new(val),
+      let rule = |pat: Expr, val: Expr| {
+        rule_delayed_expr(call1("HoldPattern", pat), val)
       };
       let default_of = |sym: &str, extra: Vec<Expr>| {
         let mut default_args = vec![Expr::Identifier(sym.to_string())];
@@ -1084,16 +1084,18 @@ pub fn dispatch_predicate_functions(
             .map(|cache| {
               cache
                 .values()
-                .map(|(arg_exprs, value)| Expr::RuleDelayed {
-                  pattern: Box::new(Expr::FunctionCall {
-                    name: "HoldPattern".to_string(),
-                    args: vec![Expr::FunctionCall {
-                      name: sym.clone(),
-                      args: arg_exprs.clone().into(),
-                    }]
-                    .into(),
-                  }),
-                  replacement: Box::new(value.clone()),
+                .map(|(arg_exprs, value)| {
+                  rule_delayed_expr(
+                    Expr::FunctionCall {
+                      name: "HoldPattern".to_string(),
+                      args: vec![Expr::FunctionCall {
+                        name: sym.clone(),
+                        args: arg_exprs.clone().into(),
+                      }]
+                      .into(),
+                    },
+                    value.clone(),
+                  )
                 })
                 .collect()
             })
@@ -1177,17 +1179,17 @@ pub fn dispatch_predicate_functions(
                   );
                 (args, guarded)
               });
-            Expr::RuleDelayed {
-              pattern: Box::new(Expr::FunctionCall {
+            rule_delayed_expr(
+              Expr::FunctionCall {
                 name: "HoldPattern".to_string(),
                 args: vec![Expr::FunctionCall {
                   name: sym.clone(),
                   args: pattern_args.into(),
                 }]
                 .into(),
-              }),
-              replacement: Box::new(display_body),
-            }
+              },
+              display_body,
+            )
           })
           .collect();
         let mut rules = rules;
@@ -1225,17 +1227,14 @@ pub fn dispatch_predicate_functions(
           Ok(value) => value,
           Err(e) => return Some(Err(e)),
         };
-        sections.push(Expr::Rule {
-          pattern: Box::new(Expr::Identifier((*head).to_string())),
-          replacement: Box::new(value),
-        });
+        sections.push(rule_expr(Expr::Identifier((*head).to_string()), value));
       }
       return Some(Ok(call1(
         "Language`DefinitionList",
-        Expr::Rule {
-          pattern: Box::new(call1("HoldForm", Expr::Identifier(sym.clone()))),
-          replacement: Box::new(Expr::List(sections.into())),
-        },
+        rule_expr(
+          call1("HoldForm", Expr::Identifier(sym.clone())),
+          Expr::List(sections.into()),
+        ),
       )));
     }
     "UpValues" if args.len() == 1 => {
@@ -1259,10 +1258,10 @@ pub fn dispatch_predicate_functions(
               orig_lhs,
               orig_body,
             )| {
-              Expr::RuleDelayed {
-                pattern: Box::new(call1("HoldPattern", orig_lhs.clone())),
-                replacement: Box::new(orig_body.clone()),
-              }
+              rule_delayed_expr(
+                call1("HoldPattern", orig_lhs.clone()),
+                orig_body.clone(),
+              )
             },
           )
           .collect();
@@ -1870,10 +1869,7 @@ fn vector_order_ast(name: &str, arg: &Expr) -> Result<Expr, InterpreterError> {
 }
 
 fn make_rule(name: &str, value: Expr) -> Expr {
-  Expr::Rule {
-    pattern: Box::new(Expr::Identifier(name.to_string())),
-    replacement: Box::new(value),
-  }
+  rule_expr(Expr::Identifier(name.to_string()), value)
 }
 
 /// Precedence of a symbol or expression — matches Wolfram's `Precedence`.
@@ -1950,10 +1946,7 @@ fn precedence_value(expr: &Expr) -> f64 {
 
 /// Helper to create a RuleDelayed expression: name :> value
 fn make_rule_delayed(name: &str, value: Expr) -> Expr {
-  Expr::RuleDelayed {
-    pattern: Box::new(Expr::Identifier(name.to_string())),
-    replacement: Box::new(value),
-  }
+  rule_delayed_expr(Expr::Identifier(name.to_string()), value)
 }
 
 /// Return built-in default options for known functions.
