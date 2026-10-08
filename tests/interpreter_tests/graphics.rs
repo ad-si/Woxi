@@ -6750,6 +6750,38 @@ mod plot3d {
       assert!(!svg.contains("Which["), "raw Which leaked into the SVG");
     }
 
+    // `Frame -> {b, l, t, r}` draws only the named edges, and a per-edge
+    // `FrameTicks` puts the tick labels on the edge that asks for them, so a
+    // right-hand-only axis labels the right side.
+    #[test]
+    fn frame_edges_and_ticks_are_per_edge() {
+      let right_only = export_svg(
+        r#"Graphics[{Line[{{0, 0}, {1, 1}}]},
+          Frame -> {False, False, False, True},
+          FrameTicks -> {None, None, None, All}]"#,
+      );
+      assert!(
+        !right_only.contains("<rect x=\"0\" y=\"0\""),
+        "a partial frame must not draw the full rectangle: {right_only}"
+      );
+      assert!(
+        right_only.contains("text-anchor=\"start\""),
+        "the labels must sit right of the right edge: {right_only}"
+      );
+      assert!(
+        !right_only.contains("text-anchor=\"end\"")
+          && !right_only.contains("text-anchor=\"middle\""),
+        "no other edge may carry labels: {right_only}"
+      );
+      // Nested `{{left, right}, {bottom, top}}` form.
+      let nested = export_svg(
+        r#"Graphics[{Line[{{0, 0}, {1, 1}}]},
+          Frame -> {{False, True}, {False, False}},
+          FrameTicks -> {{None, All}, {None, None}}]"#,
+      );
+      assert!(nested.contains("text-anchor=\"start\""), "{nested}");
+    }
+
     // `FrameTicks -> False` keeps the border but drops the tick marks and
     // their labels, and with them the gutter the labels needed.
     #[test]
