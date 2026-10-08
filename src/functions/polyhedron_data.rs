@@ -1675,6 +1675,32 @@ fn edge_indices(info: &PolyhedronInfo) -> Result<Expr, InterpreterError> {
   ))
 }
 
+/// `"Skeleton"` / `"SkeletonGraph"`: the vertex-edge graph of the solid,
+/// with the vertices numbered like `"VertexCoordinates"`.
+fn skeleton_graph(info: &PolyhedronInfo) -> Result<Expr, InterpreterError> {
+  let edge_list = edge_indices(info)?;
+  let Expr::List(edges) = &edge_list else {
+    return Err(InterpreterError::EvaluationError(format!(
+      "PolyhedronData: edge data for {} is not a list",
+      info.name
+    )));
+  };
+  let vertices = (1..=info.vertex_count)
+    .map(Expr::Integer)
+    .collect::<Vec<_>>();
+  let edges = edges
+    .iter()
+    .map(|edge| match edge {
+      Expr::List(ends) => call("UndirectedEdge", ends.to_vec()),
+      other => other.clone(),
+    })
+    .collect::<Vec<_>>();
+  crate::evaluator::evaluate_expr_to_expr(&call(
+    "Graph",
+    vec![Expr::List(vertices.into()), Expr::List(edges.into())],
+  ))
+}
+
 /// `Sphere[{0, 0, 0}, r]` with the polyhedron's exact inradius: the sphere
 /// inscribed in the (origin-centered) solid.
 fn insphere(info: &PolyhedronInfo) -> Result<Expr, InterpreterError> {
@@ -1811,6 +1837,8 @@ static PROPERTIES: &[&str] = &[
   "Inradius",
   "Insphere",
   "Midradius",
+  "Skeleton",
+  "SkeletonGraph",
   "SurfaceArea",
   "VertexCoordinates",
   "VertexCount",
@@ -1915,6 +1943,7 @@ pub fn polyhedron_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "FaceIndices" => face_indices(info),
         "Faces" => faces_complex(info),
         "Insphere" => insphere(info),
+        "Skeleton" | "SkeletonGraph" => skeleton_graph(info),
         _ => unevaluated(),
       }
     }
