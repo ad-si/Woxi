@@ -23098,8 +23098,23 @@ fn named_control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
       _ => false,
     }
   }
+  // A single spec's own head `{var, init}` / `{var, init, "label"}` is a
+  // list too, so what follows it — a bound naming a sibling control
+  // (`{{b, 2}, a, 10}`) or a values list (`{{c, True}, {True, False}}`) —
+  // can look like another variable head. A head in that shape means the
+  // content is one spec, never a group of them. A list in the second slot
+  // (`{a, {1, 2, 3}}`) is a whole discrete spec instead, so a group of
+  // those still flattens.
+  let is_spec_head = matches!(
+    &items[0],
+    Expr::List(head)
+      if matches!(head.first(), Some(Expr::Identifier(_)))
+        && !matches!(head.get(1), Some(Expr::List(_)))
+        && (head.len() == 2
+          || (head.len() == 3 && matches!(head[2], Expr::String(_))))
+  );
   if is_control_var_head(&items[0])
-    && !items.get(1).is_some_and(is_control_var_head)
+    && (is_spec_head || !items.get(1).is_some_and(is_control_var_head))
   {
     return Some(vec![replacement.as_ref().clone()]);
   }
