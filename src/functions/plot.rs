@@ -4953,12 +4953,30 @@ pub(crate) fn generate_bar_svg(
   plot_range_x: Option<(f64, f64)>,
   plot_range_y: Option<(f64, f64)>,
   bar_labels: &[String],
+  stacked: bool,
+  show_ticks: bool,
 ) -> Result<String, InterpreterError> {
   let render_width = svg_width * RESOLUTION_SCALE;
   let render_height = svg_height * RESOLUTION_SCALE;
 
   let n = groups.len(); // number of groups
-  let k = groups.iter().map(std::vec::Vec::len).max().unwrap_or(1); // max bars per group
+  // Bars per group across the x slot: stacked groups share a single column.
+  let k = if stacked {
+    1
+  } else {
+    groups.iter().map(std::vec::Vec::len).max().unwrap_or(1)
+  };
+  // Palette index is by position within the group even when stacked.
+  let k_colors = groups.iter().map(std::vec::Vec::len).max().unwrap_or(1);
+  // Highest drawn point of a group: its tallest bar, or the sum of the
+  // positive entries when stacked.
+  let group_top = |g: &[f64]| -> f64 {
+    if stacked {
+      g.iter().filter(|v| **v > 0.0).sum::<f64>()
+    } else {
+      g.iter().copied().fold(f64::NEG_INFINITY, f64::max)
+    }
+  };
 
   // y-axis range: explicit PlotRange overrides the auto-computed extent
   // (which adds 10% headroom above the tallest bar and anchors at 0).
@@ -4967,8 +4985,7 @@ pub(crate) fn generate_bar_svg(
   } else {
     let y_max_auto = groups
       .iter()
-      .flat_map(|g| g.iter())
-      .copied()
+      .map(|g| group_top(g))
       .fold(f64::NEG_INFINITY, f64::max)
       .max(0.0)
       * 1.1;
@@ -5082,7 +5099,7 @@ pub(crate) fn generate_bar_svg(
       .configure_mesh()
       .disable_mesh()
       .x_labels(0) // no x ticks for bar chart
-      .y_labels(y_tick_count)
+      .y_labels(if show_ticks { y_tick_count } else { 0 })
       .y_label_formatter(&move |v: &f64| {
         if is_major_tick(*v, y_major) {
           format_tick_with_step(*v, y_major)
@@ -5094,7 +5111,10 @@ pub(crate) fn generate_bar_svg(
       // Tick labels are typeset smaller than in-chart labels, matching
       // wolframscript's proportionally small default axis ticks.
       .label_style(("sans-serif", sf * 13.0).into_font().color(&dark_gray))
-      .set_tick_mark_size(LabelAreaPosition::Left, tick)
+      .set_tick_mark_size(
+        LabelAreaPosition::Left,
+        if show_ticks { tick } else { 0 },
+      )
       .set_tick_mark_size(LabelAreaPosition::Bottom, tick)
       .draw()
       .map_err(|e| {
@@ -5108,18 +5128,20 @@ pub(crate) fn generate_bar_svg(
       let group_x1 = (gi + 1) as f64 - gap;
       let group_w = group_x1 - group_x0;
       let bar_w = group_w / k as f64;
+      // Running ends of the stack: positives pile up, negatives pile down.
+      let (mut stack_up, mut stack_down) = (0.0_f64, 0.0_f64);
 
       for (bi, &val) in group.iter().enumerate() {
         let (br, bg, bb) = if !chart_style.is_empty() {
           // For grouped charts, color by bar index within group
-          let color_idx = if k > 1 { bi } else { gi };
+          let color_idx = if k_colors > 1 { bi } else { gi };
           let c = &chart_style[color_idx % chart_style.len()];
           (
             (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
             (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
             (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
           )
-        } else if k > 1 {
+        } else if k_colors > 1 {
           // Grouped: color by position within group
           PLOT_COLORS[bi % PLOT_COLORS.len()]
         } else if !chart_legends.is_empty() {
@@ -5130,11 +5152,22 @@ pub(crate) fn generate_bar_svg(
           PLOT_COLORS[0]
         };
         let color = RGBColor(br, bg, bb);
-        let x0 = group_x0 + bi as f64 * bar_w;
+        let (x0, y0, y1) = if stacked {
+          let base = if val >= 0.0 {
+            &mut stack_up
+          } else {
+            &mut stack_down
+          };
+          let y0 = *base;
+          *base += val;
+          (group_x0, y0, *base)
+        } else {
+          (group_x0 + bi as f64 * bar_w, 0.0, val)
+        };
         let x1 = x0 + bar_w;
         chart
           .draw_series(std::iter::once(Rectangle::new(
-            [(x0, 0.0), (x1, val)],
+            [(x0, y0), (x1, y1)],
             color.filled(),
           )))
           .map_err(|e| {
@@ -5184,7 +5217,11 @@ pub(crate) fn generate_bar_svg(
     plot_w,
     plot_h,
     None,
-    Some((y_min, y_max, nice_step(y_max - y_min, AXIS_TICK_TARGET))),
+    show_ticks.then_some((
+      y_min,
+      y_max,
+      nice_step(y_max - y_min, AXIS_TICK_TARGET),
+    )),
     MINOR_TICK_LEN as f64 * sf,
     MAJOR_TICK_LEN as f64 * sf,
     sf,
@@ -5213,8 +5250,7 @@ pub(crate) fn generate_bar_svg(
       for (i, label) in chart_labels.iter().enumerate().take(n) {
         let cx = map_x_val(i as f64 + 0.5);
         // For Above/Center positioning, use the max value in the group
-        let group_max =
-          groups[i].iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        let group_max = group_top(&groups[i]);
         // Mathematica Rotate is counterclockwise-positive; SVG is clockwise-positive
         let svg_rotation_deg = -label.rotation.to_degrees();
         let is_rotated = svg_rotation_deg.abs() > 0.01;
@@ -5278,6 +5314,7 @@ pub(crate) fn generate_bar_svg(
     if has_value_labels {
       let gap = 0.1;
       let bar_w = (1.0 - 2.0 * gap) / k as f64;
+      let bar_x_offset = |bi: usize| if stacked { 0 } else { bi };
       // Shrink the font so the widest label fits within one bar's
       // center-to-center spacing (`1.0` chart unit between groups, `bar_w`
       // between bars in a group), preventing adjacent labels from overlapping.
@@ -5302,7 +5339,8 @@ pub(crate) fn generate_bar_svg(
           if text.is_empty() {
             continue;
           }
-          let cx = map_x_val(group_x0 + (bi as f64 + 0.5) * bar_w);
+          let cx =
+            map_x_val(group_x0 + (bar_x_offset(bi) as f64 + 0.5) * bar_w);
           let ly = axis_y + fit_font * 1.3;
           labels_svg.push_str(&format!(
             "<text x=\"{cx:.1}\" y=\"{ly:.1}\" text-anchor=\"middle\" \
