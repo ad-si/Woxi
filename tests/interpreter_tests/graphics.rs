@@ -17853,6 +17853,32 @@ mod graphics_grid {
     );
   }
 
+  /// `BaseStyle -> {size, FontFamily -> …}` styles every cell of the grid,
+  /// and a cell's own `Style` still wins over it.
+  #[test]
+  fn grid_base_style_sets_size_and_font_family() {
+    clear_state();
+    let svg = interpret_with_stdout(
+      "Grid[{{\"a\", Style[\"b\", 20]}}, BaseStyle -> {16, FontFamily -> \"Times\"}]",
+    )
+    .unwrap()
+    .graphics
+    .unwrap();
+    assert_eq!(svg.matches("font-family=\"Times\"").count(), 2, "{svg}");
+    assert!(svg.contains("font-size=\"16\""), "{svg}");
+    assert!(svg.contains("font-size=\"20\""), "{svg}");
+  }
+
+  #[test]
+  fn grid_base_style_single_directive() {
+    clear_state();
+    let svg = interpret_with_stdout("Grid[{{\"a\"}}, BaseStyle -> Bold]")
+      .unwrap()
+      .graphics
+      .unwrap();
+    assert!(svg.contains("font-weight=\"bold\""), "{svg}");
+  }
+
   #[test]
   fn column_and_row_style_font_family() {
     clear_state();

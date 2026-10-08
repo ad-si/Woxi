@@ -1097,7 +1097,19 @@ impl ManipulateState {
       // may assign to the widget's own variables (`{v, e} = ve[[n]]`),
       // and a `Dynamic[…]` caption showing them must display what this
       // frame computed, not the previous frame's values.
-      let render = woxi::interpret_with_stdout(&code);
+      let mut render = woxi::interpret_with_stdout(&code);
+      // A `Pane[Grid[…], size]` body of plain text prints as source text in
+      // the terminal; the widget shows the table the pane wraps instead.
+      if matches!(&render, Ok(r) if r.graphics.is_none())
+        && ["Pane[", "Panel[", "Framed["]
+          .iter()
+          .any(|w| code.trim_start().starts_with(w))
+        && let Ok(table) =
+          woxi::interpret_with_stdout(&format!("Text[{}]", code.trim()))
+        && table.graphics.is_some()
+      {
+        render = Ok(table);
+      }
       let updated_bindings = read_manipulate_state(&binding_names);
       let trees: Vec<_> = displays
         .iter()

@@ -14596,12 +14596,41 @@ fn grid_svg_internal(
   grid_svg_styled_internal(args, group_gaps, parens, &GridStyle::default())
 }
 
+/// `outer` overlaid with the directives of a `BaseStyle` option found in
+/// the `Grid` options `opts`.
+fn grid_base_style(opts: &[Expr], outer: &GridStyle) -> GridStyle {
+  let mut gs = outer.clone();
+  for opt in opts {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+      && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "BaseStyle")
+    {
+      let directives = match replacement.as_ref() {
+        Expr::List(items) => items.to_vec(),
+        single => vec![single.clone()],
+      };
+      let base = parse_grid_style(&directives);
+      gs.font_weight = base.font_weight.or(gs.font_weight);
+      gs.font_style = base.font_style.or(gs.font_style);
+      gs.font_size = base.font_size.or(gs.font_size);
+      gs.font_family = base.font_family.or(gs.font_family);
+      gs.color = base.color.or(gs.color);
+    }
+  }
+  gs
+}
+
 fn grid_svg_styled_internal(
   args: &[Expr],
   group_gaps: &[usize],
   parens: bool,
-  default_style: &GridStyle,
+  outer_style: &GridStyle,
 ) -> Result<String, InterpreterError> {
+  // `BaseStyle -> directives` styles every cell of the grid; being nearer
+  // the cells than an enclosing `Style[Grid[…], …]`, it takes precedence.
+  let default_style = &grid_base_style(&args[1..], outer_style);
   // Extract rows from args[0]
   let data = evaluate_expr_to_expr(&args[0])?;
   let mut rows: Vec<Vec<Expr>> = match &data {

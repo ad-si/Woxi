@@ -26565,6 +26565,26 @@ SaveDefinitions -> True]";
     );
   }
 
+  /// A synthetic "schoolbook multiplication" Manipulate: a `Pane` around a
+  /// `Grid` of partial products built with `PadRight`/`StringJoin`, styled
+  /// through `BaseStyle -> {size, FontFamily -> …}` and ruled with a
+  /// `Dividers` spec. Independently written, not copied from any specific
+  /// Demonstration.
+  #[test]
+  fn schoolbook_multiplication_manipulate_styles_its_grid() {
+    let code = "Manipulate[\
+      Pane[Grid[Join[{{ToString[x]}, {\"x \" <> ToString[y]}}, \
+          {{ToString[x y]}}], \
+        Alignment -> Right, BaseStyle -> {16, FontFamily -> \"Times\"}, \
+        Dividers -> {{False}, {False, False, True, False}}], \
+        ImageSize -> {200, 200}, Alignment -> Center],\
+      {{x, 12}, 0, 100, 1}, {{y, 34}, 0, 100, 1}]";
+    let state = instantiate_stored_manipulate(code, "")
+      .expect("multiplication Manipulate must build a widget");
+    assert!(state.error.is_none(), "body error: {:?}", state.error);
+    assert!(state.graphics_handle.is_some(), "the Grid must render");
+  }
+
   /// A synthetic "2D totalistic cellular automaton" Manipulate in the
   /// general shape used by 2D-`CellularAutomaton` Demonstrations: a
   /// `SetterBar`-driven color count and a rule-number slider drive an

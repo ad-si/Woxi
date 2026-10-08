@@ -4147,6 +4147,18 @@ mod tests {
       );
     }
 
+    /// `Text` around a `Pane` of a plain table draws the table: the pane
+    /// only sizes it.
+    #[test]
+    fn text_of_a_pane_of_a_grid_renders_the_table() {
+      let result = woxi::interpret_with_stdout(
+        r#"Text[Pane[Grid[{{12}, {"x 34"}}, Alignment -> Right], {200, 100}]]"#,
+      )
+      .expect("interpret should succeed");
+      let svg = result.graphics.expect("the table is a graphic");
+      assert!(svg.contains(">x 34<"), "{svg}");
+    }
+
     /// `Labeled` around a `Pane`/`Text` wrapper (the shape of a text
     /// Manipulate body captioned by a framed label) is composed as a
     /// picture, the label on the side the position list names.

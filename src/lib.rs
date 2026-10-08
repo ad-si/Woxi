@@ -3112,7 +3112,24 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
     syntax::Expr::FunctionCall { name, args }
       if name == "Text" && args.len() == 1 =>
     {
-      match render_grid_if_needed(args[0].clone()) {
+      // `Text[Pane[Grid[…], size]]`: the pane only sizes the table, so it
+      // is drawn as the table it wraps.
+      let mut content = args[0].clone();
+      while let syntax::Expr::FunctionCall {
+        name: wrapper,
+        args: wrapped,
+      } = &content
+        && matches!(wrapper.as_str(), "Pane" | "Panel" | "Framed")
+        && let Some(inner) = wrapped.first()
+        && matches!(
+          inner,
+          syntax::Expr::FunctionCall { name: n, .. }
+            if matches!(n.as_str(), "Grid" | "TextGrid" | "Pane" | "Panel" | "Framed")
+        )
+      {
+        content = inner.clone();
+      }
+      match render_grid_if_needed(content) {
         graphics @ syntax::Expr::Graphics { .. } => graphics,
         _ => expr,
       }
