@@ -246,9 +246,7 @@ pub fn dispatch_complex_and_special(
               if re_n > 0 {
                 return Some(Ok(id_expr("Infinity")));
               } else if re_n < 0 {
-                return Some(Ok(neg1(Expr::Identifier(
-                  "Infinity".to_string(),
-                ))));
+                return Some(Ok(neg1(id_expr("Infinity"))));
               }
               return Some(Ok(id_expr("ComplexInfinity")));
             }
@@ -287,9 +285,7 @@ pub fn dispatch_complex_and_special(
                 return Some(Ok(id_expr("Infinity")));
               }
               if matches!(&normalized, Expr::Integer(-1)) {
-                return Some(Ok(neg1(Expr::Identifier(
-                  "Infinity".to_string(),
-                ))));
+                return Some(Ok(neg1(id_expr("Infinity"))));
               }
               return Some(Ok(call1("DirectedInfinity", normalized)));
             }
@@ -339,9 +335,7 @@ pub fn dispatch_complex_and_special(
                   return Some(Ok(id_expr("Infinity")));
                 }
                 if nre < 0.0 {
-                  return Some(Ok(neg1(Expr::Identifier(
-                    "Infinity".to_string(),
-                  ))));
+                  return Some(Ok(neg1(id_expr("Infinity"))));
                 }
               }
               // Build `re + im*I` so the regular Times printer handles
@@ -3129,10 +3123,7 @@ fn scientific_value_box(mantissa: &str, exp: Option<i64>) -> Expr {
 /// pass-throughs for the SVG layout engine; they preserve the link to the
 /// original numeric `value`.
 fn number_display_inner_box(inner: Expr, value: &Expr) -> Expr {
-  let rule = |k: &str, v: &str| Expr::Rule {
-    pattern: Box::new(Expr::Identifier(k.to_string())),
-    replacement: Box::new(Expr::Identifier(v.to_string())),
-  };
+  let rule = |k: &str, v: &str| rule_expr(id_expr(k), id_expr(v));
   let style = call(
     "StyleBox",
     vec![inner, rule("ShowStringCharacters", "False")],
@@ -3862,22 +3853,9 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       let full_box = expr_to_full_box_form(&args[0]);
       let style = vec![
         full_box,
-        Expr::Rule {
-          pattern: Box::new(Expr::Identifier(
-            "ShowSpecialCharacters".to_string(),
-          )),
-          replacement: Box::new(bool_expr(false)),
-        },
-        Expr::Rule {
-          pattern: Box::new(Expr::Identifier(
-            "ShowStringCharacters".to_string(),
-          )),
-          replacement: Box::new(bool_expr(true)),
-        },
-        Expr::Rule {
-          pattern: Box::new(id_expr("NumberMarks")),
-          replacement: Box::new(bool_expr(true)),
-        },
+        rule_expr(id_expr("ShowSpecialCharacters"), bool_expr(false)),
+        rule_expr(id_expr("ShowStringCharacters"), bool_expr(true)),
+        rule_expr(id_expr("NumberMarks"), bool_expr(true)),
       ];
       call("TagBox", vec![call("StyleBox", style), id_expr("FullForm")])
     }
@@ -3921,10 +3899,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       let tag = vec![
         call("FormBox", vec![inner_box, Expr::Identifier(name.clone())]),
         Expr::Identifier(name.clone()),
-        Expr::Rule {
-          pattern: Box::new(id_expr("Editable")),
-          replacement: Box::new(bool_expr(true)),
-        },
+        rule_expr(id_expr("Editable"), bool_expr(true)),
       ];
       call("TagBox", tag)
     }
@@ -3996,14 +3971,8 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
           name: name.clone(),
           args: vec![args[0].clone()].into(),
         },
-        Expr::Rule {
-          pattern: Box::new(id_expr("Editable")),
-          replacement: Box::new(bool_expr(true)),
-        },
-        Expr::Rule {
-          pattern: Box::new(id_expr("AutoDelete")),
-          replacement: Box::new(bool_expr(true)),
-        },
+        rule_expr(id_expr("Editable"), bool_expr(true)),
+        rule_expr(id_expr("AutoDelete"), bool_expr(true)),
       ];
       call("InterpretationBox", interpretation)
     }
@@ -4091,10 +4060,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       let quoted_text = format!("\"{output_text}\"");
       let pane = vec![
         Expr::String(quoted_text),
-        Expr::Rule {
-          pattern: Box::new(Expr::Identifier("BaselinePosition".to_string())),
-          replacement: Box::new(id_expr("Baseline")),
-        },
+        rule_expr(id_expr("BaselinePosition"), id_expr("Baseline")),
       ];
       call(
         "InterpretationBox",
@@ -4106,10 +4072,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
           // (`-Graphics-` / `-Graphics3D-`); apply the same
           // substitution we used for the PaneBox text.
           call1("OutputForm", replace_graphics_with_placeholder(&args[0])),
-          Expr::Rule {
-            pattern: Box::new(id_expr("Editable")),
-            replacement: Box::new(bool_expr(false)),
-          },
+          rule_expr(id_expr("Editable"), bool_expr(false)),
         ],
       )
     }
@@ -4130,30 +4093,16 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       let inner_str = expr_to_string(&formatted_inner);
       let style = vec![
         Expr::String(inner_str),
-        Expr::Rule {
-          pattern: Box::new(Expr::Identifier(
-            "ShowStringCharacters".to_string(),
-          )),
-          replacement: Box::new(bool_expr(true)),
-        },
-        Expr::Rule {
-          pattern: Box::new(id_expr("NumberMarks")),
-          replacement: Box::new(bool_expr(true)),
-        },
+        rule_expr(id_expr("ShowStringCharacters"), bool_expr(true)),
+        rule_expr(id_expr("NumberMarks"), bool_expr(true)),
       ];
       call(
         "InterpretationBox",
         vec![
           call("StyleBox", style),
           call1("InputForm", args[0].clone()),
-          Expr::Rule {
-            pattern: Box::new(id_expr("Editable")),
-            replacement: Box::new(bool_expr(true)),
-          },
-          Expr::Rule {
-            pattern: Box::new(id_expr("AutoDelete")),
-            replacement: Box::new(bool_expr(true)),
-          },
+          rule_expr(id_expr("Editable"), bool_expr(true)),
+          rule_expr(id_expr("AutoDelete"), bool_expr(true)),
         ],
       )
     }
@@ -5322,10 +5271,7 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
       };
       let mut style_args = vec![body];
       style_args.extend(args[1..].iter().cloned());
-      style_args.push(Expr::Rule {
-        pattern: Box::new(id_expr("StripOnInput")),
-        replacement: Box::new(bool_expr(false)),
-      });
+      style_args.push(rule_expr(id_expr("StripOnInput"), bool_expr(false)));
       call("StyleBox", style_args)
     }
     // In box *text* a `Row` is the FrontEnd's row template: `RowDefault` for

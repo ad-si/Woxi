@@ -378,14 +378,12 @@ fn rewrap_part_list(expr: &Expr, elems: Vec<Expr>) -> Expr {
       name: name.clone(),
       args: elems.into(),
     },
-    Expr::Rule { .. } if elems.len() == 2 => Expr::Rule {
-      pattern: Box::new(elems[0].clone()),
-      replacement: Box::new(elems[1].clone()),
-    },
-    Expr::RuleDelayed { .. } if elems.len() == 2 => Expr::RuleDelayed {
-      pattern: Box::new(elems[0].clone()),
-      replacement: Box::new(elems[1].clone()),
-    },
+    Expr::Rule { .. } if elems.len() == 2 => {
+      rule_expr(elems[0].clone(), elems[1].clone())
+    }
+    Expr::RuleDelayed { .. } if elems.len() == 2 => {
+      rule_delayed_expr(elems[0].clone(), elems[1].clone())
+    }
     _ => Expr::List(elems.into()),
   }
 }
@@ -763,10 +761,7 @@ fn extract_part_ast_rest(
       {
         let rule_items: Vec<Expr> = items
           .iter()
-          .map(|(k, v)| Expr::Rule {
-            pattern: Box::new(k.clone()),
-            replacement: Box::new(v.clone()),
-          })
+          .map(|(k, v)| rule_expr(k.clone(), v.clone()))
           .collect();
         return extract_span_from_items(
           expr,

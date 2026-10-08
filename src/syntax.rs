@@ -1,6 +1,6 @@
 use crate::helpers::{
-  binop, call, call0, call1, div2, minus2, neg1, plus2, pow, pow2, times2,
-  unevaluated,
+  binop, call, call0, call1, div2, minus2, neg1, plus2, pow, pow2,
+  rule_delayed_expr, rule_expr, times2, unevaluated,
 };
 use num_bigint::{BigInt, Sign};
 
@@ -1277,17 +1277,11 @@ pub(crate) fn map_children(expr: &Expr, f: &dyn Fn(&Expr) -> Expr) -> Expr {
     Expr::Rule {
       pattern,
       replacement,
-    } => Expr::Rule {
-      pattern: Box::new(f(pattern)),
-      replacement: Box::new(f(replacement)),
-    },
+    } => rule_expr(f(pattern), f(replacement)),
     Expr::RuleDelayed {
       pattern,
       replacement,
-    } => Expr::RuleDelayed {
-      pattern: Box::new(f(pattern)),
-      replacement: Box::new(f(replacement)),
-    },
+    } => rule_delayed_expr(f(pattern), f(replacement)),
     other => other.clone(),
   }
 }
@@ -2487,10 +2481,10 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
       // `??symbol` parses as Information[symbol, LongForm -> True]; like `?`
       // it must hold the symbol so post-assignment inspection works.
       let symbol_name = pair.into_inner().next().unwrap().as_str().to_string();
-      let long_form_rule = Expr::Rule {
-        pattern: Box::new(Expr::Identifier("LongForm".to_string())),
-        replacement: Box::new(Expr::Identifier("True".to_string())),
-      };
+      let long_form_rule = rule_expr(
+        Expr::Identifier("LongForm".to_string()),
+        Expr::Identifier("True".to_string()),
+      );
       if symbol_name.contains('*') {
         call(
           "Information",
@@ -2822,15 +2816,9 @@ fn pair_to_expr_inner(pair: Pair<Rule>) -> Expr {
           call("Condition", vec![replacement, pair_to_expr(cond.clone())]);
       }
       if is_delayed {
-        Expr::RuleDelayed {
-          pattern: Box::new(pattern),
-          replacement: Box::new(replacement),
-        }
+        rule_delayed_expr(pattern, replacement)
       } else {
-        Expr::Rule {
-          pattern: Box::new(pattern),
-          replacement: Box::new(replacement),
-        }
+        rule_expr(pattern, replacement)
       }
     }
     Rule::PatternSimple => {
@@ -5111,13 +5099,7 @@ fn parse_association(pair: Pair<Rule>) -> Expr {
         let key = pair_to_expr(inner.next().unwrap());
         let val = pair_to_expr(inner.next().unwrap());
         if is_delayed {
-          (
-            key.clone(),
-            Expr::RuleDelayed {
-              pattern: Box::new(key),
-              replacement: Box::new(val),
-            },
-          )
+          (key.clone(), rule_delayed_expr(key, val))
         } else {
           (key, val)
         }
@@ -5132,10 +5114,7 @@ fn parse_association(pair: Pair<Rule>) -> Expr {
           let mut inner = p.into_inner();
           let key = pair_to_expr(inner.next().unwrap());
           let val = pair_to_expr(inner.next().unwrap());
-          Expr::Rule {
-            pattern: Box::new(key),
-            replacement: Box::new(val),
-          }
+          rule_expr(key, val)
         }
         _ => pair_to_expr(p.into_inner().next().unwrap()),
       })
@@ -5148,10 +5127,7 @@ fn parse_association_item(pair: Pair<Rule>) -> Expr {
   let mut inner = pair.into_inner();
   let key = pair_to_expr(inner.next().unwrap());
   let val = pair_to_expr(inner.next().unwrap());
-  Expr::Rule {
-    pattern: Box::new(key),
-    replacement: Box::new(val),
-  }
+  rule_expr(key, val)
 }
 
 fn parse_paren_extended(pair: Pair<Rule>) -> Expr {
@@ -6061,14 +6037,12 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
       },
     },
     "." => call("Dot", vec![left.clone(), right.clone()]),
-    "->" | "\u{2192}" | "\\[Rule]" | "\u{F522}" => Expr::Rule {
-      pattern: Box::new(left.clone()),
-      replacement: Box::new(right.clone()),
-    },
-    ":>" | "\\[RuleDelayed]" | "\u{F51F}" => Expr::RuleDelayed {
-      pattern: Box::new(left.clone()),
-      replacement: Box::new(right.clone()),
-    },
+    "->" | "\u{2192}" | "\\[Rule]" | "\u{F522}" => {
+      rule_expr(left.clone(), right.clone())
+    }
+    ":>" | "\\[RuleDelayed]" | "\u{F51F}" => {
+      rule_delayed_expr(left.clone(), right.clone())
+    }
     ">>" => call("Put", vec![left.clone(), right.clone()]),
     ">>>" => call("PutAppend", vec![left.clone(), right.clone()]),
     "=" => call("Set", vec![left.clone(), right.clone()]),
@@ -7325,17 +7299,17 @@ fn rewrite_assoc_to_long_form(expr: &Expr) -> Expr {
     Expr::Rule {
       pattern,
       replacement,
-    } => Expr::Rule {
-      pattern: Box::new(rewrite_assoc_to_long_form(pattern)),
-      replacement: Box::new(rewrite_assoc_to_long_form(replacement)),
-    },
+    } => rule_expr(
+      rewrite_assoc_to_long_form(pattern),
+      rewrite_assoc_to_long_form(replacement),
+    ),
     Expr::RuleDelayed {
       pattern,
       replacement,
-    } => Expr::RuleDelayed {
-      pattern: Box::new(rewrite_assoc_to_long_form(pattern)),
-      replacement: Box::new(rewrite_assoc_to_long_form(replacement)),
-    },
+    } => rule_delayed_expr(
+      rewrite_assoc_to_long_form(pattern),
+      rewrite_assoc_to_long_form(replacement),
+    ),
     other => other.clone(),
   }
 }
@@ -13482,23 +13456,17 @@ pub fn substitute_slot_zero_with_self(expr: &Expr, self_fn: &Expr) -> Expr {
     Expr::Rule {
       pattern,
       replacement,
-    } => Expr::Rule {
-      pattern: Box::new(substitute_slot_zero_with_self(pattern, self_fn)),
-      replacement: Box::new(substitute_slot_zero_with_self(
-        replacement,
-        self_fn,
-      )),
-    },
+    } => rule_expr(
+      substitute_slot_zero_with_self(pattern, self_fn),
+      substitute_slot_zero_with_self(replacement, self_fn),
+    ),
     Expr::RuleDelayed {
       pattern,
       replacement,
-    } => Expr::RuleDelayed {
-      pattern: Box::new(substitute_slot_zero_with_self(pattern, self_fn)),
-      replacement: Box::new(substitute_slot_zero_with_self(
-        replacement,
-        self_fn,
-      )),
-    },
+    } => rule_delayed_expr(
+      substitute_slot_zero_with_self(pattern, self_fn),
+      substitute_slot_zero_with_self(replacement, self_fn),
+    ),
     // Don't recurse into nested Function bodies — inner #0 refers to that
     // inner function, not this one.
     Expr::Function { .. } | Expr::NamedFunction { .. } => expr.clone(),
@@ -13626,17 +13594,17 @@ fn substitute_slots_impl(expr: &Expr, values: &[Expr]) -> Expr {
     Expr::Rule {
       pattern,
       replacement,
-    } => Expr::Rule {
-      pattern: Box::new(substitute_slots(pattern, values)),
-      replacement: Box::new(substitute_slots(replacement, values)),
-    },
+    } => rule_expr(
+      substitute_slots(pattern, values),
+      substitute_slots(replacement, values),
+    ),
     Expr::RuleDelayed {
       pattern,
       replacement,
-    } => Expr::RuleDelayed {
-      pattern: Box::new(substitute_slots(pattern, values)),
-      replacement: Box::new(substitute_slots(replacement, values)),
-    },
+    } => rule_delayed_expr(
+      substitute_slots(pattern, values),
+      substitute_slots(replacement, values),
+    ),
     Expr::ReplaceAll { expr: e, rules } => Expr::ReplaceAll {
       expr: Box::new(substitute_slots(e, values)),
       rules: Box::new(substitute_slots(rules, values)),
@@ -13883,37 +13851,17 @@ fn substitute_variable_impl(
     Expr::Rule {
       pattern,
       replacement,
-    } => Expr::Rule {
-      pattern: Box::new(substitute_variable_impl(
-        pattern,
-        var_name,
-        value,
-        rename_heads,
-      )),
-      replacement: Box::new(substitute_variable_impl(
-        replacement,
-        var_name,
-        value,
-        rename_heads,
-      )),
-    },
+    } => rule_expr(
+      substitute_variable_impl(pattern, var_name, value, rename_heads),
+      substitute_variable_impl(replacement, var_name, value, rename_heads),
+    ),
     Expr::RuleDelayed {
       pattern,
       replacement,
-    } => Expr::RuleDelayed {
-      pattern: Box::new(substitute_variable_impl(
-        pattern,
-        var_name,
-        value,
-        rename_heads,
-      )),
-      replacement: Box::new(substitute_variable_impl(
-        replacement,
-        var_name,
-        value,
-        rename_heads,
-      )),
-    },
+    } => rule_delayed_expr(
+      substitute_variable_impl(pattern, var_name, value, rename_heads),
+      substitute_variable_impl(replacement, var_name, value, rename_heads),
+    ),
     Expr::ReplaceAll { expr: e, rules } => Expr::ReplaceAll {
       expr: Box::new(substitute_variable_impl(
         e,
@@ -14406,14 +14354,10 @@ fn substitute_scoping_spec(
           let Expr::Identifier(var_name) = pattern.as_ref() else {
             unreachable!()
           };
-          Expr::Rule {
-            pattern: Box::new(Expr::Identifier(renamed(var_name))),
-            replacement: Box::new(substitute_variables_impl(
-              replacement,
-              bindings,
-              false,
-            )),
-          }
+          rule_expr(
+            Expr::Identifier(renamed(var_name)),
+            substitute_variables_impl(replacement, bindings, false),
+          )
         }
         Expr::Identifier(var_name) => Expr::Identifier(renamed(var_name)),
         other => substitute_variables_impl(other, bindings, false),
@@ -14679,25 +14623,17 @@ fn substitute_variables_impl(
     Expr::Rule {
       pattern,
       replacement,
-    } => Expr::Rule {
-      pattern: Box::new(substitute_variables_impl(pattern, bindings, template)),
-      replacement: Box::new(substitute_variables_impl(
-        replacement,
-        bindings,
-        template,
-      )),
-    },
+    } => rule_expr(
+      substitute_variables_impl(pattern, bindings, template),
+      substitute_variables_impl(replacement, bindings, template),
+    ),
     Expr::RuleDelayed {
       pattern,
       replacement,
-    } => Expr::RuleDelayed {
-      pattern: Box::new(substitute_variables_impl(pattern, bindings, template)),
-      replacement: Box::new(substitute_variables_impl(
-        replacement,
-        bindings,
-        template,
-      )),
-    },
+    } => rule_delayed_expr(
+      substitute_variables_impl(pattern, bindings, template),
+      substitute_variables_impl(replacement, bindings, template),
+    ),
     Expr::ReplaceAll { expr: e, rules } => Expr::ReplaceAll {
       expr: Box::new(substitute_variables_impl(e, bindings, template)),
       rules: Box::new(substitute_variables_impl(rules, bindings, template)),
