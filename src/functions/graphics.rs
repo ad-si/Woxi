@@ -6693,10 +6693,18 @@ fn render_frame(
   let y_ticks = generate_ticks(bb.y_min, bb.y_max, 6);
   let x_step = tick_sequence_step(&x_ticks);
   let y_step = tick_sequence_step(&y_ticks);
+  // A tick starting on the origin edge is written as a bare `0`.
+  let tick_coord = |v: f64| {
+    if v == 0.0 {
+      "0".to_string()
+    } else {
+      format!("{v:.2}")
+    }
+  };
 
   // Horizontal edges (bottom = 0, top = 2): ticks run along x.
-  for (i, y_edge, dir, anchor_y, baseline) in [
-    (0usize, svg_h, -5.0, svg_h + 4.0, "hanging"),
+  for (i, y_lo, y_hi, anchor_y, baseline) in [
+    (0usize, svg_h - 5.0, svg_h, svg_h + 4.0, "hanging"),
     (2usize, 0.0, 5.0, -4.0, "auto"),
   ] {
     if ticks[i] == EdgeTicks::None {
@@ -6708,8 +6716,9 @@ fn render_frame(
         continue;
       }
       svg.push_str(&format!(
-        "<line x1=\"{x:.2}\" y1=\"{y_edge:.2}\" x2=\"{x:.2}\" y2=\"{:.2}\" stroke=\"{frame_stroke}\" stroke-width=\"1\"/>\n",
-        y_edge + dir
+        "<line x1=\"{x:.2}\" y1=\"{}\" x2=\"{x:.2}\" y2=\"{}\" stroke=\"{frame_stroke}\" stroke-width=\"1\"/>\n",
+        tick_coord(y_lo),
+        tick_coord(y_hi)
       ));
       if ticks[i] == EdgeTicks::Labels {
         let label = format_tick_in_sequence(t_val, x_step);
@@ -6722,9 +6731,9 @@ fn render_frame(
   }
 
   // Vertical edges (left = 1, right = 3): ticks run along y.
-  for (i, x_edge, dir, anchor_x, anchor) in [
+  for (i, x_lo, x_hi, anchor_x, anchor) in [
     (1usize, 0.0, 5.0, -4.0, "end"),
-    (3usize, svg_w, -5.0, svg_w + 4.0, "start"),
+    (3usize, svg_w - 5.0, svg_w, svg_w + 4.0, "start"),
   ] {
     if ticks[i] == EdgeTicks::None {
       continue;
@@ -6735,8 +6744,9 @@ fn render_frame(
         continue;
       }
       svg.push_str(&format!(
-        "<line x1=\"{x_edge:.2}\" y1=\"{y:.2}\" x2=\"{:.2}\" y2=\"{y:.2}\" stroke=\"{frame_stroke}\" stroke-width=\"1\"/>\n",
-        x_edge + dir
+        "<line x1=\"{}\" y1=\"{y:.2}\" x2=\"{}\" y2=\"{y:.2}\" stroke=\"{frame_stroke}\" stroke-width=\"1\"/>\n",
+        tick_coord(x_lo),
+        tick_coord(x_hi)
       ));
       if ticks[i] == EdgeTicks::Labels {
         let label = format_tick_in_sequence(t_val, y_step);
