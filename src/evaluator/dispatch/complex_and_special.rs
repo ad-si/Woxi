@@ -3089,12 +3089,41 @@ fn number_display_form_box(name: &str, args: &[Expr]) -> Option<Expr> {
       .collect();
     return Some(wrap_list_number_display_box(inner_boxes?, name));
   }
-  let (mantissa, exp) = parts_for(first)?;
+  let Some((mantissa, exp)) = parts_for(first) else {
+    return option_number_form_box(name, args);
+  };
   Some(wrap_number_display_box(
     scientific_value_box(&mantissa, exp),
     first,
     name,
   ))
+}
+
+/// `NumberForm[x, spec, opts…]` with display options (`NumberPadding`,
+/// `DigitBlock`, `ExponentFunction`, …) for a numeric `x`: the option-aware
+/// text rendering of `ToString` is boxed as a single string, so the number
+/// typesets as its formatted digits instead of as a literal function call.
+fn option_number_form_box(name: &str, args: &[Expr]) -> Option<Expr> {
+  if name != "NumberForm"
+    || args.len() < 3
+    || !args[2..].iter().all(|a| {
+      matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+        || matches!(a, Expr::FunctionCall { name, .. } if name == "Rule" || name == "RuleDelayed")
+    })
+    || !matches!(args[0], Expr::Real(_) | Expr::Integer(_))
+  {
+    return None;
+  }
+  let call_expr = Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.to_vec().into(),
+  };
+  match crate::functions::string_ast::to_string_ast(&[call_expr]) {
+    Ok(Expr::String(ref text)) if !text.starts_with("NumberForm") => Some(
+      wrap_number_display_box(Expr::String(text.clone()), &args[0], name),
+    ),
+    _ => None,
+  }
 }
 
 /// Inner box for a decomposed number-display form: `String(mantissa)` when there
@@ -5244,6 +5273,14 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
         tf_string(assignment_operator(name).unwrap()),
         tf(&args[1]),
       ])
+    }
+    // Number-display forms typeset as the formatted number itself, not as a
+    // `NumberForm(…)` call — `TraditionalForm[NumberForm[x, {4, 1}]]` is how a
+    // Demonstration labels a readout.
+    "NumberForm" | "ScientificForm" | "EngineeringForm"
+      if number_display_form_box(name, args).is_some() =>
+    {
+      number_display_form_box(name, args).unwrap()
     }
     // `HoldForm` leaves a mark on the box tree — a `TagBox` naming it — so
     // the boxes still say the expression was held; it draws as its content.

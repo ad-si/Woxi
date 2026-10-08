@@ -2056,6 +2056,33 @@ mod graphics {
     }
 
     #[test]
+    fn traditional_form_number_form_with_options_in_grid() {
+      // Regression: `TraditionalForm[NumberForm[x, {4, 1}, opts…]]` in a Grid
+      // cell (the Three Component Food Mixtures readout) printed the raw
+      // `NumberForm(…)` call instead of the formatted number.
+      let svg = export_svg(
+        "Graphics[Text[Grid[{{\"mass\", TraditionalForm[NumberForm[13.25, {4, 1}, NumberPadding -> {\" \", \"0\"}, ExponentFunction -> (Null &), DigitBlock -> 3]]}}]]]",
+      );
+      assert!(svg.contains("13.3") || svg.contains("13.2"), "{svg}");
+      assert!(!svg.contains("NumberForm"), "{svg}");
+    }
+
+    #[test]
+    fn pie_chart_with_tooltip_values_draws_all_slices() {
+      // Regression: `Tooltip[value, hint]` data elements were dropped, so the
+      // pie came out empty and an Inset of it printed as `-Graphics-`.
+      let svg = export_svg(
+        "PieChart[{Tooltip[1, \"a\"], Tooltip[2, \"b\"], Tooltip[3, \"c\"]}]",
+      );
+      assert_eq!(svg.matches("<path").count(), 3, "{svg}");
+      let inset = export_svg(
+        "Module[{c = PieChart[{Tooltip[1., \"a\"], 2, 3}]}, Graphics[{Inset[c, {0, 0}, {Center, Center}, 2]}]]",
+      );
+      assert_eq!(inset.matches("<path").count(), 3, "{inset}");
+      assert!(!inset.contains("-Graphics-"), "{inset}");
+    }
+
+    #[test]
     fn text_with_italic_and_color() {
       insta::assert_snapshot!(export_svg(
         "Graphics[{Text[Style[\"Strahl\", 11, Italic, Blue], {10, 0.7}]}]"

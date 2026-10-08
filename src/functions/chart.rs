@@ -37,7 +37,7 @@ fn extract_grouped_values(
         let mut vals = Vec::new();
         for v in inner {
           let vv = evaluate_expr_to_expr(v).unwrap_or(v.clone());
-          if let Some(f) = try_eval_to_f64(&vv) {
+          if let Some(f) = chart_datum_value(&vv) {
             vals.push(f);
           }
         }
@@ -50,11 +50,26 @@ fn extract_grouped_values(
     let mut groups = Vec::with_capacity(items.len());
     for item in items {
       let v = evaluate_expr_to_expr(item).unwrap_or(item.clone());
-      if let Some(f) = try_eval_to_f64(&v) {
+      if let Some(f) = chart_datum_value(&v) {
         groups.push(vec![f]);
       }
     }
     Ok(groups)
+  }
+}
+
+/// Numeric value of one chart data element. A Demonstration wraps values in
+/// `Tooltip[value, hint]` (or `Annotation`/`Style`) to add hover text or
+/// styling; the wrapper does not change the value that is drawn.
+fn chart_datum_value(e: &Expr) -> Option<f64> {
+  match e {
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Tooltip" | "Annotation" | "Style")
+        && !args.is_empty() =>
+    {
+      chart_datum_value(&args[0])
+    }
+    _ => try_eval_to_f64(e),
   }
 }
 
@@ -1801,7 +1816,7 @@ fn extract_pie_rows(arg: &Expr) -> Result<Vec<Vec<f64>>, InterpreterError> {
         let mut row = Vec::with_capacity(inner.len());
         for v in inner {
           let vv = evaluate_expr_to_expr(v).unwrap_or_else(|_| v.clone());
-          if let Some(f) = try_eval_to_f64(&vv) {
+          if let Some(f) = chart_datum_value(&vv) {
             row.push(f);
           }
         }
@@ -1814,7 +1829,7 @@ fn extract_pie_rows(arg: &Expr) -> Result<Vec<Vec<f64>>, InterpreterError> {
   // Flat list: single-ring dataset.
   let mut row = Vec::with_capacity(evaluated.len());
   for e in &evaluated {
-    if let Some(f) = try_eval_to_f64(e) {
+    if let Some(f) = chart_datum_value(e) {
       row.push(f);
     }
   }
