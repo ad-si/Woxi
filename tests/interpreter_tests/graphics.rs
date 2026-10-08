@@ -184,6 +184,33 @@ mod graphics {
         "-Graphics-"
       );
     }
+
+    #[test]
+    fn parametric_region_plot_style_opacity() {
+      let fill = |style: &str| {
+        let svg = interpret(&format!(
+          "ExportString[ParametricPlot[{{r*Cos[t], r*Sin[t]}}, \
+             {{r, 0, 1}}, {{t, 0, 2*Pi}}{style}], \"SVG\"]"
+        ))
+        .unwrap();
+        let quad = svg
+          .split("<polygon ")
+          .nth(1)
+          .expect("a filled quad")
+          .split("/>")
+          .next()
+          .unwrap();
+        // Fully opaque fills carry no `fill-opacity` attribute.
+        quad
+          .split("fill-opacity=\"")
+          .nth(1)
+          .map_or("1", |rest| rest.split('"').next().unwrap())
+          .to_string()
+      };
+      assert_eq!(fill(""), "0.3");
+      assert_eq!(fill(", PlotStyle -> {ColorData[1, 1], Opacity[1]}"), "1");
+      assert_eq!(fill(", PlotStyle -> {Red, Opacity[0.6]}"), "0.6");
+    }
   }
 
   mod primitives {

@@ -665,7 +665,19 @@ fn parametric_region_ast(
     "RGBColor",
     vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)],
   );
-  let opacity = call1("Opacity", Expr::Real(0.3));
+  // An `Opacity[a]` among the `PlotStyle` directives replaces the default
+  // 30% fill.
+  let fill_opacity = opt_args
+    .iter()
+    .find_map(|opt| {
+      let (name, value) = crate::functions::graphics::option_name_value(opt)?;
+      (name == "PlotStyle")
+        .then(|| crate::functions::plot::parse_filling_style(&value))
+        .flatten()
+        .and_then(|fs| fs.opacity)
+    })
+    .unwrap_or(0.3);
+  let opacity = call1("Opacity", Expr::Real(fill_opacity));
   let no_edges = call0("EdgeForm");
 
   let mut face_group = vec![no_edges, color.clone(), opacity];
