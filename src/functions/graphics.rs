@@ -14569,6 +14569,25 @@ fn parse_divider_entry(expr: &Expr) -> Option<Color> {
   }
 }
 
+/// A `position -> spec` rule from a `Dividers` option: the line position
+/// (1-based; negative counts from the end) and whether/how it is drawn.
+fn divider_position_rule(expr: &Expr) -> Option<(i64, Option<Color>)> {
+  let (pattern, replacement) = match expr {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => (pattern.as_ref(), replacement.as_ref()),
+    Expr::FunctionCall { name, args } if name == "Rule" && args.len() == 2 => {
+      (&args[0], &args[1])
+    }
+    _ => return None,
+  };
+  let Expr::Integer(pos) = pattern else {
+    return None;
+  };
+  Some((i64::try_from(*pos).ok()?, parse_divider_entry(replacement)))
+}
+
 /// Parse a color from a Background list entry, treating "None" as None.
 fn parse_bg_color(expr: &Expr) -> Option<Color> {
   if let Expr::Identifier(n) = expr
@@ -14682,6 +14701,10 @@ fn grid_svg_styled_internal(
   let mut row_div_repeating: Vec<Option<Color>> = Vec::new();
   let mut row_div_explicit_end: Vec<Option<Color>> = Vec::new();
   let mut row_div_has_repeating = false;
+  // `Dividers -> {None, -2 -> True}`: rules for individual line positions
+  // (1-based from the start, negative from the end).
+  let mut col_div_rules: Vec<(i64, Option<Color>)> = Vec::new();
+  let mut row_div_rules: Vec<(i64, Option<Color>)> = Vec::new();
   let mut background_color: Option<Color> = None; // uniform background
   let mut col_backgrounds: Vec<Option<Color>> = Vec::new(); // per-column bg
   let mut row_backgrounds: Vec<Option<Color>> = Vec::new(); // per-row bg
@@ -14755,6 +14778,30 @@ fn grid_svg_styled_internal(
                   } else {
                     dividers_row = true;
                   }
+                }
+                Expr::Rule { .. } | Expr::FunctionCall { .. }
+                  if divider_position_rule(spec).is_some() =>
+                {
+                  let rule = divider_position_rule(spec).unwrap();
+                  if idx == 0 {
+                    col_div_rules.push(rule);
+                  } else {
+                    row_div_rules.push(rule);
+                  }
+                }
+                Expr::List(positions)
+                  if !positions.is_empty()
+                    && positions
+                      .iter()
+                      .all(|p| divider_position_rule(p).is_some()) =>
+                {
+                  let target = if idx == 0 {
+                    &mut col_div_rules
+                  } else {
+                    &mut row_div_rules
+                  };
+                  target
+                    .extend(positions.iter().filter_map(divider_position_rule));
                 }
                 Expr::List(positions) => {
                   // Per-position spec with optional repeating pattern
@@ -15045,15 +15092,18 @@ fn grid_svg_styled_internal(
   }
 
   // Compute column widths based on estimated display width
-  let char_width: f64 = 8.4; // approximate monospace char width at font-size 14
-  let font_size: f64 = 14.0;
+  // A `Style[Grid[…], size]` sets the font of the whole grid, so the cell
+  // metrics (character width, line height, padding) follow that size.
+  let size_scale: f64 = default_style.font_size.map_or(1.0, |fs| fs / 14.0);
+  let char_width: f64 = 8.4 * size_scale; // approximate monospace char width
+  let font_size: f64 = 14.0 * size_scale;
   // Apply Spacings option: values are in ems (multiples of char_width / font_size)
   let pad_x: f64 = match (table_pad_x, spacings_h) {
     (Some(px), _) => px, // TableSpacing → pixels directly
     (None, Some(h)) => h * char_width, // Spacings h in ems → pixel padding
-    (None, None) => 12.0, // default horizontal padding per cell
+    (None, None) => 12.0 * size_scale, // default horizontal padding per cell
   };
-  let pad_y: f64 = 2.0; // vertical padding per cell (each side = 1)
+  let pad_y: f64 = 2.0 * size_scale; // vertical padding per cell (each side = 1)
   let row_gap: f64 = match (table_row_gap, spacings_v) {
     (Some(g), _) => g, // TableSpacing → pixels directly
     (None, Some(v)) => v * font_size, // Spacings v in ems → pixel gap
@@ -15061,7 +15111,7 @@ fn grid_svg_styled_internal(
   };
   let group_gap: f64 = 6.0; // extra spacing between groups
   let base_row_height = font_size + pad_y;
-  let frac_row_height = font_size + pad_y + 10.0; // taller for stacked fractions
+  let frac_row_height = font_size + pad_y + 10.0 * size_scale; // taller for stacked fractions
 
   // The padding a column carries on each side. A gap between two columns is
   // one gap, so it is shared half-and-half by the columns it separates,
@@ -15301,6 +15351,22 @@ fn grid_svg_styled_internal(
       } else {
         let rep_idx = (j - start_len) % rep_len;
         col_alignments.push(col_align_repeating[rep_idx]);
+      }
+    }
+  }
+
+  for (rules, dividers, n) in [
+    (&col_div_rules, &mut col_dividers, num_cols + 1),
+    (&row_div_rules, &mut row_dividers, num_rows + 1),
+  ] {
+    if rules.is_empty() {
+      continue;
+    }
+    dividers.resize(n, None);
+    for &(pos, color) in rules {
+      let index = if pos > 0 { pos - 1 } else { n as i64 + pos };
+      if (0..n as i64).contains(&index) {
+        dividers[index as usize] = color;
       }
     }
   }
@@ -19162,6 +19228,24 @@ fn option_kv(expr: &Expr) -> Option<(&str, &Expr)> {
   }
 }
 
+/// Looks through `Pane`/`Item`/`Text`-style wrappers around a `Framed`
+/// layout, but keeps a `Style[layout, …]` on the layout itself so the font
+/// it sets still reaches the layout's cells.
+fn unwrap_framed_layout(expr: &Expr) -> Expr {
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Style" && args.len() >= 2 => {
+      let inner = unwrap_framed_layout(&args[0]);
+      let mut new_args = args.to_vec();
+      new_args[0] = inner;
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args.into(),
+      }
+    }
+    _ => unwrap_display_wrappers(expr),
+  }
+}
+
 /// Render `Framed[expr]` as an SVG box with a rectangular border around the content.
 /// Handles nested Framed by recursively rendering inner content as embedded SVG.
 pub fn framed_to_svg(args: &[Expr]) -> Option<String> {
@@ -19183,9 +19267,17 @@ pub fn framed_to_svg(args: &[Expr]) -> Option<String> {
   // Layout constants
   let char_width: f64 = 8.4;
   let font_size: f64 = 14.0;
-  let margin: f64 = 6.0; // padding between content and frame border
+  let numeric_option = |key: &str| {
+    args[1..]
+      .iter()
+      .filter_map(option_kv)
+      .find(|(k, _)| *k == key)
+      .and_then(|(_, v)| crate::functions::math_ast::try_eval_to_f64(v))
+  };
+  // `FrameMargins -> m` pads every side by `m` points.
+  let margin: f64 = numeric_option("FrameMargins").unwrap_or(6.0);
   let stroke_width: f64 = 1.0;
-  let rounding: f64 = 3.0;
+  let rounding: f64 = numeric_option("RoundingRadius").unwrap_or(3.0);
 
   // Check if content is itself a Framed (nested) or already a Graphics
   let (inner_svg, inner_w, inner_h): (Option<String>, f64, f64) =
@@ -19221,6 +19313,32 @@ pub fn framed_to_svg(args: &[Expr]) -> Option<String> {
       if svg.starts_with("<svg") {
         let (w, h) = parse_svg_wh(&svg);
         (Some(svg), w, h)
+      } else {
+        (None, 0.0, 0.0)
+      }
+    }
+    other => (other, inner_w, inner_h),
+  };
+
+  // A text layout — `Framed[Pane[Style[Grid[…], 96], …]]`, a Demonstration's
+  // flash card — is typeset and framed rather than printed as source.
+  let (inner_svg, inner_w, inner_h) = match inner_svg {
+    None => {
+      let unwrapped = unwrap_framed_layout(content);
+      if matches!(&unwrapped, Expr::FunctionCall { name, args }
+        if matches!(name.as_str(), "Grid" | "Column" | "Row") && !args.is_empty())
+        || matches!(&unwrapped, Expr::FunctionCall { name, args }
+          if name == "Style" && args.len() >= 2
+            && matches!(&args[0], Expr::FunctionCall { name, .. }
+              if matches!(name.as_str(), "Grid" | "Column" | "Row")))
+      {
+        let svg = crate::evaluator::expr_to_svg(&unwrapped);
+        if svg.starts_with("<svg") {
+          let (w, h) = parse_svg_wh(&svg);
+          (Some(svg), w, h)
+        } else {
+          (None, 0.0, 0.0)
+        }
       } else {
         (None, 0.0, 0.0)
       }

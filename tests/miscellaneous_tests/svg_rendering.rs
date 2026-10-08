@@ -2765,6 +2765,54 @@ mod tests {
     }
 
     #[test]
+    fn framed_text_grid_is_typeset_not_printed() {
+      // A flash card: `Framed[Pane[Style[Grid[…], size], …], opts]` around a
+      // text-only grid draws the grid inside the frame instead of printing
+      // the `Pane[…]` source, and the `Style` size scales the cells.
+      let svg = svg_of(
+        "Framed[Pane[Style[Grid[{{\"\", 12}, {\"+\", 7}, {Invisible[19], \
+         SpanFromLeft}}, Alignment -> Right, Dividers -> {None, -2 -> True}], \
+         40], ImageSize -> {240, 320}], FrameMargins -> 25, \
+         RoundingRadius -> 5]",
+      );
+      assert!(!svg.contains("Pane["), "no source text: {svg}");
+      assert!(svg.contains("font-size=\"40\""), "styled cells: {svg}");
+      assert!(svg.contains("rx=\"5.0\""), "RoundingRadius honoured: {svg}");
+      assert!(
+        svg.contains("<svg x=\"25.0\" y=\"25.0\""),
+        "FrameMargins: {svg}"
+      );
+      assert_eq!(svg.matches("<line").count(), 1, "one divider: {svg}");
+    }
+
+    #[test]
+    fn grid_dividers_accept_position_rules() {
+      // `-2 -> True` rules the line above the last row; `2 -> True` the one
+      // below the first.
+      let last = svg_of(
+        "Grid[{{1, 2}, {3, 4}, {5, 6}}, Dividers -> {None, -2 -> True}]",
+      );
+      let second =
+        svg_of("Grid[{{1, 2}, {3, 4}, {5, 6}}, Dividers -> {None, 2 -> True}]");
+      let y = |svg: &str| {
+        let line = svg.split("<line").nth(1).expect("a divider");
+        assert_eq!(svg.matches("<line").count(), 1, "{svg}");
+        line
+          .split("y1=\"")
+          .nth(1)
+          .unwrap()
+          .split('"')
+          .next()
+          .unwrap()
+          .to_string()
+      };
+      assert!(y(&last) != y(&second), "different lines: {last} {second}");
+      let cols =
+        svg_of("Grid[{{1, 2}, {3, 4}}, Dividers -> {{2 -> True}, None}]");
+      assert_eq!(cols.matches("<line").count(), 1, "{cols}");
+    }
+
+    #[test]
     fn bspline_curve_renders_in_graphics3d() {
       // `BSplineCurve[{p1, …}]` draws the spline over its control points.
       // Every control point sits on `z = 0`, so the drawn curve does too:
