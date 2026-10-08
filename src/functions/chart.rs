@@ -2049,17 +2049,14 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let lines: Vec<&str> = label.text.split('\n').collect();
         let line_height = 14.4;
         let first_dy = -line_height * (lines.len() as f64 - 1.0) / 2.0;
-        let spans: String = lines
-          .iter()
-          .enumerate()
-          .map(|(k, line)| {
-            let dy = if k == 0 { first_dy } else { line_height };
-            format!(
-              "<tspan x=\"{lx:.2}\" dy=\"{dy:.2}\">{}</tspan>",
-              crate::functions::graphics::box_string_to_svg(line)
-            )
-          })
-          .collect();
+        let mut spans = String::new();
+        for (k, line) in lines.iter().enumerate() {
+          let dy = if k == 0 { first_dy } else { line_height };
+          spans.push_str(&format!(
+            "<tspan x=\"{lx:.2}\" dy=\"{dy:.2}\">{}</tspan>",
+            crate::functions::graphics::box_string_to_svg(line)
+          ));
+        }
         if lines.len() == 1 {
           labels_svg.push_str(&format!(
             "<text x=\"{lx:.2}\" y=\"{ly:.2}\" text-anchor=\"middle\" \
