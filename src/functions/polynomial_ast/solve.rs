@@ -3094,10 +3094,10 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let together = super::cancel::cancel_expr_keep_quotient_sign(&together);
       let (numerator, denominator) =
         super::together::extract_num_den(&together);
-      if matches!(denominator, Expr::Integer(1)) {
-        expanded_raw
-      } else {
+      if super::eliminate::contains_var(&denominator, var) {
         expand_and_combine(&numerator)
+      } else {
+        expanded_raw
       }
     }
   };
