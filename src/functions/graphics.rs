@@ -13993,6 +13993,15 @@ fn annotation_contains_dynamic(expr: &Expr) -> bool {
       name == "Dynamic" || args.iter().any(annotation_contains_dynamic)
     }
     Expr::List(items) => items.iter().any(annotation_contains_dynamic),
+    // Operator forms such as `"elapsed time" == Dynamic[t]` or
+    // `"t = " <> Dynamic[t]` parse to dedicated nodes, not `FunctionCall`.
+    Expr::Comparison { operands, .. } => {
+      operands.iter().any(annotation_contains_dynamic)
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      annotation_contains_dynamic(left) || annotation_contains_dynamic(right)
+    }
+    Expr::UnaryOp { operand, .. } => annotation_contains_dynamic(operand),
     _ => false,
   }
 }
@@ -27903,6 +27912,51 @@ fn resolve_display_dynamics(
         .map(|i| resolve_display_dynamics(i, bindings))
         .collect(),
     ),
+    // A caption such as `"elapsed time == " == Dynamic[t]` is shown as
+    // written, operator included — never evaluated to `False`. Typeset
+    // each operand and join them with the operator's symbol.
+    Expr::Comparison {
+      operands,
+      operators,
+    } if annotation_contains_dynamic(expr) => {
+      use crate::syntax::ComparisonOp;
+      let mut text = String::new();
+      for (i, operand) in operands.iter().enumerate() {
+        if i > 0 {
+          text.push_str(match operators.get(i - 1) {
+            Some(ComparisonOp::Equal) => " == ",
+            Some(ComparisonOp::NotEqual) => " != ",
+            Some(ComparisonOp::Less) => " < ",
+            Some(ComparisonOp::LessEqual) => " <= ",
+            Some(ComparisonOp::Greater) => " > ",
+            Some(ComparisonOp::GreaterEqual) => " >= ",
+            Some(ComparisonOp::SameQ) => " === ",
+            Some(ComparisonOp::UnsameQ) => " =!= ",
+            None => " ",
+          });
+        }
+        let resolved = resolve_display_dynamics(operand, bindings);
+        // `NumberForm[x, {3, 1}]` stays an unevaluated wrapper; typeset
+        // the number it formats, as a Dynamic caption displays it.
+        let formatted = match &resolved {
+          Expr::FunctionCall { name, args }
+            if matches!(
+              name.as_str(),
+              "NumberForm" | "PaddedForm" | "AccountingForm"
+            ) && !args.is_empty() =>
+          {
+            crate::functions::string_ast::number_form_family_to_string(
+              name, args,
+            )
+          }
+          _ => None,
+        };
+        text.push_str(&formatted.unwrap_or_else(|| {
+          flatten_label_runs(&manipulate_label_runs(&resolved, false))
+        }));
+      }
+      Expr::String(text)
+    }
     other => other.clone(),
   }
 }

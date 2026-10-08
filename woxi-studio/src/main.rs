@@ -13133,6 +13133,50 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
   }
 
   #[test]
+  fn manipulate_equal_caption_with_dynamic_shows_live_value() {
+    // Regression for "Driven Spherical Pendulum": the elapsed-time caption is
+    // written `Style["elapsed time" == Dynamic[NumberForm[t, {3, 1}]], Bold]`
+    // among the control-panel arguments. The `==` form is not a
+    // `FunctionCall`, so the caption froze into a `Heading` echoing the
+    // `Dynamic[…]` source. It must render as bold text with the live,
+    // number-formatted value instead, and follow the variable.
+    let code = "Manipulate[\n\
+      t,\n\
+      {{t, 0.5}, 0, 30},\n\
+      Style[\"elapsed\" == Dynamic[NumberForm[t, {3, 1}]], Bold]\n\
+      ]";
+    let mut state =
+      instantiate_stored_manipulate(code, "").expect("must build a widget");
+    assert!(state.error.is_none(), "body must evaluate cleanly");
+    assert!(
+      !state
+        .controls
+        .iter()
+        .any(|c| matches!(c, manipulate::ControlState::Heading { .. })),
+      "the caption must not freeze into a Heading, got {:?}",
+      state.controls
+    );
+    fn caption(state: &manipulate::ManipulateState) -> Option<(String, bool)> {
+      use woxi::functions::graphics::DisplayNode;
+      state.display_trees.iter().find_map(|t| match t {
+        DisplayNode::Text { runs } if runs[0].text.starts_with("elapsed") => {
+          Some((runs.iter().map(|r| r.text.as_str()).collect(), runs[0].bold))
+        }
+        _ => None,
+      })
+    }
+    assert_eq!(caption(&state), Some(("elapsed == 0.5".to_string(), true)));
+
+    for ctrl in &mut state.controls {
+      if let manipulate::ControlState::Continuous { current, .. } = ctrl {
+        *current = 12.26;
+      }
+    }
+    state.reevaluate();
+    assert_eq!(caption(&state), Some(("elapsed == 12.3".to_string(), true)));
+  }
+
+  #[test]
   fn solar_panel_manipulate_folds_its_array() {
     // End-to-end regression for "Solar Panel of NASA's Phoenix Mars
     // Lander": two sliders fold a fan of triangular panels around a shaft.
