@@ -2771,6 +2771,24 @@ mod graphics {
       assert_ne!(pair, flat, "the vector pair must actually rotate");
     }
 
+    /// A `Plot` Epilog `Text[label, pt, {ox, oy}]` honours its offset: the
+    /// anchor sits on the label's left/right edge for `{∓1, 0}` instead of
+    /// the label always being centred on the point.
+    #[test]
+    fn plot_epilog_text_honours_offset() {
+      let text_of = |off: &str| {
+        let svg = export_svg(&format!(
+          "Plot[x, {{x, 0, 10}}, Epilog -> Text[\"label\", {{2, 5}}{off}]]"
+        ));
+        // The epilog label is the last `<text>` in the picture.
+        let start = svg.rfind("<text").unwrap();
+        svg[start..svg.rfind("</text>").unwrap()].to_string()
+      };
+      assert!(text_of("").contains("text-anchor=\"middle\""));
+      assert!(text_of(", {-1, 0}").contains("text-anchor=\"start\""));
+      assert!(text_of(", {1, 0}").contains("text-anchor=\"end\""));
+    }
+
     /// `PlotRangeClipping -> False` stops a `Plot`'s Epilog being cut off
     /// at the frame, so a label anchored near the edge shows in full.
     #[test]
