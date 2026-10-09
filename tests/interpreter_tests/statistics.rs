@@ -11325,3 +11325,27 @@ mod matrix_central_moment {
     );
   }
 }
+
+mod seed_random_method_option {
+  use super::*;
+
+  #[test]
+  fn method_option_is_accepted_and_seeds() {
+    assert_eq!(
+      interpret(
+        "SeedRandom[7, Method -> {\"MKL\", Method -> \"MCG31\"}]; \
+         a = RandomInteger[1000, 5]; SeedRandom[7]; a == RandomInteger[1000, 5]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn method_option_returns_null() {
+    assert_eq!(
+      interpret("SeedRandom[3, Method -> \"Legacy\"]").unwrap(),
+      "\0"
+    );
+  }
+}
