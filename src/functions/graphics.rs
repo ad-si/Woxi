@@ -3885,7 +3885,8 @@ fn button_plate_svg(label: &str) -> String {
 fn peel_style_wrapper(expr: &Expr) -> &Expr {
   match expr {
     Expr::FunctionCall { name, args }
-      if (is_style_wrapper(name) || name == "Labeled") && !args.is_empty() =>
+      if (is_style_wrapper(name) || name == "Labeled" || name == "Pane")
+        && !args.is_empty() =>
     {
       peel_style_wrapper(&args[0])
     }
@@ -3978,7 +3979,12 @@ fn inset_primitives(
     }
     return Some(prims);
   }
-  let anchor = args.get(1).and_then(expr_to_anchor);
+  // An `Automatic` position is the plot's origin, the same point a missing
+  // one falls back to when the object is folded in below.
+  let anchor = match args.get(1) {
+    Some(Expr::Identifier(s)) if s == "Automatic" => Some((0.0, 0.0, false)),
+    other => other.and_then(expr_to_anchor),
+  };
   // Without a `size`, an inset is the object at its own natural size — not
   // stretched or shrunk to whatever extent its primitives happen to span in
   // the enclosing picture's coordinates. A telescope-view inset whose
