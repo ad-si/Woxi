@@ -33264,4 +33264,25 @@ mod grid_text_in_graphics {
       "{svg}"
     );
   }
+
+  #[test]
+  fn grid_rows_grow_with_larger_styled_text() {
+    // A 20pt label needs more room than the default 14pt row; the first
+    // row's text must not be centred so near the top that it is clipped.
+    let svg = interpret(
+      r#"ExportString[Grid[{{Style["a", 20]}, {Style["b", 20]}}], "SVG"]"#,
+    )
+    .unwrap();
+    let ys: Vec<f64> = svg
+      .split("<text x=\"")
+      .skip(1)
+      .map(|t| {
+        let y = t.split("y=\"").nth(1).unwrap();
+        y.split('"').next().unwrap().parse().unwrap()
+      })
+      .collect();
+    assert_eq!(ys.len(), 2, "{svg}");
+    assert!(ys[0] >= 10.0, "{svg}");
+    assert!(ys[1] - ys[0] >= 20.0, "{svg}");
+  }
 }
