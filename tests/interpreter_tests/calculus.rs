@@ -20047,3 +20047,38 @@ mod ndsolve_complex_rhs_real_valued {
     );
   }
 }
+
+mod ndsolve_step_forcing {
+  use super::*;
+
+  // RK4 stages land exactly on the jump of a step function, where
+  // `HeavisideTheta[0.]` stays symbolic. Previously the solve stalled at
+  // the jump and returned a truncated solution.
+  #[test]
+  fn heaviside_forcing_solves_across_the_jump() {
+    assert_eq!(
+      interpret(
+        "sol = NDSolve[{y[0] == 0, y'[0] == 0, \
+         y''[t] + y'[t] == HeavisideTheta[t - 1]}, y, {t, 0, 5}]; \
+         Abs[First[y[5] /. sol] - (3 + Exp[-4])] < 10^-6"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn unit_step_forcing_matches_heaviside() {
+    assert_eq!(
+      interpret(
+        "a = y[5] /. NDSolve[{y[0] == 0, y'[0] == 0, \
+         y''[t] + y'[t] == UnitStep[t - 1]}, y, {t, 0, 5}]; \
+         b = y[5] /. NDSolve[{y[0] == 0, y'[0] == 0, \
+         y''[t] + y'[t] == HeavisideTheta[t - 1]}, y, {t, 0, 5}]; \
+         Abs[First[a] - First[b]] < 0.01"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+}
