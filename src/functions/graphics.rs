@@ -13836,11 +13836,38 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // and size themselves from the data, so a circle stays a circle once
       // `Show` layers other graphics on top of one.
       if plot_options_need_aspect_ratio(&merged_options) {
-        let aspect = plot_sources
-          .first()
-          .map_or(1.0 / std::f64::consts::GOLDEN_RATIO, |ps| {
-            plot_source_aspect_ratio(ps.image_size)
-          });
+        let aspect = plot_sources.first().map_or(
+          1.0 / std::f64::consts::GOLDEN_RATIO,
+          |ps| {
+            let own = plot_source_aspect_ratio(ps.image_size);
+            // A data-sized plot (`ParametricPlot`, `PolarPlot`) follows the
+            // `PlotRange` it is finally shown with, not the extent of the
+            // curve it was drawn from: `Show[plot, PlotRange -> 10]` is a
+            // square however lopsided the curve is.
+            let data_ratio =
+              (ps.y_range.1 - ps.y_range.0) / (ps.x_range.1 - ps.x_range.0);
+            let data_sized = ((own - data_ratio) / own).abs() < 0.01;
+            merged_options
+              .iter()
+              .find_map(|o| match o {
+                Expr::Rule {
+                  pattern,
+                  replacement,
+                } if option_name(pattern) == Some("PlotRange") => {
+                  Some(parse_plot_range(replacement))
+                }
+                _ => None,
+              })
+              .filter(|_| data_sized)
+              .and_then(|(x, y)| {
+                let (x0, x1) = x.unwrap_or(ps.x_range);
+                let (y0, y1) = y.unwrap_or(ps.y_range);
+                let ratio = (y1 - y0) / (x1 - x0);
+                (ratio.is_finite() && ratio > 0.0).then_some(ratio)
+              })
+              .unwrap_or(own)
+          },
+        );
         merged_options
           .push(rule_expr(id_expr("AspectRatio"), Expr::Real(aspect)));
       }

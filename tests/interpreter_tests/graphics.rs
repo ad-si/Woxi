@@ -33134,4 +33134,29 @@ mod grid_text_in_graphics {
     assert!(svg.contains("101<tspan"), "{svg}");
     assert!(!svg.contains(">10</tspan>"), "{svg}");
   }
+
+  #[test]
+  fn show_parametric_plot_follows_final_plot_range_aspect() {
+    let size = |range: &str| {
+      let svg = interpret(&format!(
+        r#"ExportString[Show[ParametricPlot[{{2 t, 3 t}}, {{t, 0, 1}}], Graphics[{{Red, Point[{{1, 1}}]}}], PlotRange -> {range}, ImageSize -> 300], "SVG"]"#
+      ))
+      .unwrap();
+      let head = svg.lines().next().unwrap().to_string();
+      let num = |key: &str| -> u32 {
+        let rest = head.split(key).nth(1).unwrap();
+        rest
+          .trim_start_matches("=\"")
+          .split('"')
+          .next()
+          .unwrap()
+          .parse()
+          .unwrap()
+      };
+      (num(" width"), num(" height"))
+    };
+    // A symmetric range is square, however lopsided the curve is.
+    assert_eq!(size("10"), (300, 300));
+    assert_eq!(size("{{-1, 3}, {0, 1}}"), (300, 75));
+  }
 }
