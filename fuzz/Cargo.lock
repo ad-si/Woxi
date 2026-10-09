@@ -3116,20 +3116,25 @@ checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
 name = "woxi"
 version = "0.3.0"
 dependencies = [
+ "aho-corasick",
  "anyhow",
  "astro-float",
  "base64",
+ "bit-set",
+ "bit-vec",
  "calamine",
  "chrono",
  "chrono-tz",
  "clap",
  "dirs",
+ "either",
  "env_logger",
  "fancy-regex",
  "flate2",
  "geographiclib-rs",
  "image",
  "imbl",
+ "itertools",
  "jupyter-protocol",
  "keshvar",
  "libc",
@@ -3143,7 +3148,6 @@ dependencies = [
  "num-prime",
  "num-traits",
  "pest",
- "pest_derive",
  "petgraph",
  "plotters",
  "rand 0.8.6",
@@ -3155,6 +3159,7 @@ dependencies = [
  "runtimelib",
  "rust_xlsxwriter",
  "rustyline",
+ "serde",
  "serde_json",
  "sha1",
  "sha2 0.10.9",
@@ -3168,6 +3173,7 @@ dependencies = [
  "unicode-normalization",
  "uuid",
  "web-time",
+ "woxi-parser",
  "woxi-reduce",
  "zeromq 0.5.0",
 ]
@@ -3178,6 +3184,14 @@ version = "0.0.0"
 dependencies = [
  "libfuzzer-sys",
  "woxi",
+]
+
+[[package]]
+name = "woxi-parser"
+version = "0.1.0"
+dependencies = [
+ "pest",
+ "pest_derive",
 ]
 
 [[package]]

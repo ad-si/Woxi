@@ -84,20 +84,89 @@ times faster at near-identical runtime performance. The interpreter's own
 `[profile.release]` (fat LTO, 1 CGU, used by `cargo install --path .`)
 is unchanged — that's a deliberate runtime-performance choice.
 
-### 6. Use the `lld` linker for macOS host builds — `.cargo/config.toml`
+### 6. ~~Use the `lld` linker for macOS host builds~~ — not present
 
-```toml
-[target.aarch64-apple-darwin]
-rustflags = ["-C", "link-arg=-fuse-ld=lld"]
+This was planned as a `.cargo/config.toml` with
+`rustflags = ["-C", "link-arg=-fuse-ld=lld"]` for `aarch64-apple-darwin`,
+but no such file is in the repository. Linux x86_64 hosts already link with
+`rust-lld` by default (Rust ≥ 1.90), and Xcode ≥ 15's `ld-prime` is much
+faster than the old `ld64`, so the remaining gain is small.
+
+## Round 2
+
+Measured on a 4-core Linux container (`cargo build --tests`, which is what
+`make test` compiles). An "incremental" build is the rebuild after appending
+a comment to one file in `src/`.
+
+| | cold | incremental |
+| --- | ---: | ---: |
+| before | 11m27s | 43s |
+| after | 7m55s | 23s |
+
+Plus: `cargo build` / `cargo run` right after `make test` (or vice versa)
+no longer recompiles the woxi crate at all — previously a second full
+compile (≈ 4½ min cold).
+
+### 7. Share artifacts between `cargo build` and `cargo test` — `Cargo.toml`
+
+The dev-dependencies (criterion, insta, proptest) enable extra features of
+crates woxi also uses (`serde/alloc`, `aho-corasick/default`,
+`either/use_std`, `itertools/default`, `bit-set`/`bit-vec` `default`).
+Resolver ≥ 2 keeps those features out of non-test builds, so
+`cargo build` and `cargo test` resolved *different* versions of these
+crates, which changed the hash of everything above them — including the
+woxi crate, which was therefore compiled twice and kept twice on disk.
+Declaring the same features as (otherwise unused) native-only normal
+dependencies makes both builds resolve identical units (the
+`cargo-hakari` "workspace hack" technique). Verify with
+
+```sh
+RUSTC_BOOTSTRAP=1 cargo build -Zunstable-options --unit-graph [--tests]
 ```
 
-`lld` is provided by the nix dev shell (flake.nix) and the clang driver
-honors `-fuse-ld=lld`. Linking is a large share of incremental wall-clock
-and lld is substantially faster than the default `ld64`. This is the only
-change with any (small) risk — if a link ever fails with an lld-specific
-error, delete `.cargo/config.toml` to revert; everything else still
-applies. Note: adding rustflags changes the build fingerprint, so the
-first build after pulling this change is a full rebuild (one-time cost).
+and comparing the `features` of each unit. Re-check when adding or
+upgrading dev-dependencies.
+
+### 8. Turn off implicit local ThinLTO in dev/test — `Cargo.toml`
+
+```toml
+[profile.dev]
+lto = "off"
+```
+
+With `opt-level > 0` and multiple codegen units, rustc runs a ThinLTO pass
+across the CGUs of each crate by default (`lto = false` means "thin-local",
+not "off"). `-Z time-passes` showed 34s of `LLVM_thinlto` in the
+`interpreter_tests` binary alone. With all other changes in place, a cold
+build takes 7m55s instead of 10m08s (CPU time 27m vs 35m), while the full
+`make test` run gets ≈ 5% slower (152s vs 146s) from less inlining across
+codegen units — a good trade for the dev loop. Release builds are
+unaffected.
+
+### 9. Move the pest parser into `crates/woxi-parser`
+
+`#[derive(Parser)]` re-generates the parser from the 1,100-line
+`wolfram.pest` on *every* compilation of the crate containing it: 3.2s of
+the 4.7s of macro expansion in each incremental woxi rebuild, paid twice
+(lib + lib unit tests). In its own crate it only reruns when the grammar
+changes. `woxi` re-exports `Rule` and `WolframParser`, so all paths stay
+the same. Incremental lib rebuild: 19s → 14s.
+
+Note: publishing `woxi` to crates.io now requires publishing
+`woxi-parser` first (as already with `woxi-reduce`).
+
+### 10. Split `interpreter_tests` into parallel test binaries
+
+Every change to the library forces each test binary to be recompiled, and
+rustc processes a crate largely on one core. The ~300k-line
+`interpreter_tests` binary took ~20s after every edit, *after* the library
+finished, with the other cores idle. Its modules are now spread over six
+binaries (`interpreter_tests`, `interpreter_tests_{algebra,data,domains,
+language,math}`) that build in parallel in ~4s each. All of them nest their
+modules under `mod interpreter_tests`, so test paths (and nextest filters)
+are unchanged, and the insta snapshots stay in the binary that keeps the
+`interpreter_tests` name. `make test-reduce` now names
+`--test interpreter_tests_algebra`.
 
 ## Verification
 
@@ -107,16 +176,22 @@ first build after pulling this change is a full rebuild (one-time cost).
   or a second resvg.
 - `make test` passes (build-config-only changes, plus the resvg 0.45
   downgrade which is covered by the SVG rendering snapshot tests).
-- On macOS: `cargo build -v 2>&1 | grep -- '-fuse-ld=lld'` shows the flag
-  on the link invocation.
 
 ## Out of scope (deferred)
 
 Recorded for later if more speedup is wanted:
 
-- Consolidate the 9 top-level `tests/*.rs` harnesses into fewer binaries so
-  the full rlib links once instead of ~9× (biggest remaining lever for
-  `make test` incremental time).
+- The library's own `#[cfg(test)]` unit tests (~400, mostly in
+  `notebook.rs` and `graphics.rs`) make cargo compile the whole woxi crate a
+  second time in test mode. It runs in parallel with the normal lib build,
+  so it costs little wall time incrementally on a multi-core machine, but
+  it is ~4 CPU-minutes of every cold build. Moving those tests to
+  `tests/` (exposing what they need) would remove it.
+- `keshvar` (~40s) sits on the critical path of cold builds: the woxi crate
+  cannot start until it is done.
+- The `cdylib` crate type (needed only by `wasm-pack`) makes every native
+  build link an extra shared library (~1s per incremental build). A small
+  dedicated wasm wrapper crate would avoid it.
 - Nightly Cranelift codegen backend for dev/test builds.
 - Split the `woxi` crate itself into workspace sub-crates (parser →
   evaluator → function areas) so edits recompile a slice instead of all

@@ -1,0 +1,11 @@
+[package]
+name = "woxi-parser"
+description = "Pest grammar and generated parser for the Wolfram Language, used by Woxi"
+version = "0.1.0"
+edition = "2024"
+license = "AGPL-3.0-or-later"
+repository = "https://github.com/ad-si/Woxi"
+
+[dependencies]
+pest = "2.5"
+pest_derive = "2.5"

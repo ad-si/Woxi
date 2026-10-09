@@ -6977,9 +6977,12 @@ checksum = "f17a85883d4e6d00e8a97c586de764dabcc06133f7f1d55dce5cdc070ad7fe59"
 name = "woxi"
 version = "0.3.0"
 dependencies = [
+ "aho-corasick",
  "anyhow",
  "astro-float",
  "base64",
+ "bit-set",
+ "bit-vec",
  "calamine",
  "chrono",
  "chrono-tz",
@@ -6987,6 +6990,7 @@ dependencies = [
  "console_error_panic_hook",
  "criterion",
  "dirs",
+ "either",
  "env_logger",
  "fancy-regex",
  "flate2",
@@ -6995,6 +6999,7 @@ dependencies = [
  "image",
  "imbl",
  "insta",
+ "itertools 0.10.5",
  "js-sys",
  "jupyter-protocol",
  "keshvar",
@@ -7009,7 +7014,6 @@ dependencies = [
  "num-prime",
  "num-traits",
  "pest",
- "pest_derive",
  "petgraph",
  "plotters",
  "proptest",
@@ -7022,6 +7026,7 @@ dependencies = [
  "runtimelib",
  "rust_xlsxwriter",
  "rustyline",
+ "serde",
  "serde_json",
  "sha1",
  "sha2 0.10.9",
@@ -7036,8 +7041,17 @@ dependencies = [
  "uuid",
  "wasm-bindgen",
  "web-time",
+ "woxi-parser",
  "woxi-reduce",
  "zeromq",
+]
+
+[[package]]
+name = "woxi-parser"
+version = "0.1.0"
+dependencies = [
+ "pest",
+ "pest_derive",
 ]
 
 [[package]]

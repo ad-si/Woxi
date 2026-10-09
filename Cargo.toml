@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "crates/woxi-reduce", "woxi-studio", "woxi-py"]
+members = [".", "crates/woxi-parser", "crates/woxi-reduce", "woxi-studio", "woxi-py"]
 # Unscoped commands at the root (`cargo build`, `make test`, CI) build only
 # the interpreter; woxi-studio (iced → wgpu/winit, 100+ extra crates) is
 # built explicitly via `-p woxi-studio` / `make install-macos-app`.
@@ -228,7 +228,9 @@ plotters = { version = "0.3", default-features = false, features = ["svg_backend
 num-traits = "0.2.19"
 woxi-reduce = { version = "0.1.0", path = "crates/woxi-reduce" }
 pest = "2.5"
-pest_derive = "2.5"
+# The pest grammar and its generated parser (`WolframParser`, `Rule`), kept
+# in a separate crate so `pest_derive` doesn't rerun on every rebuild.
+woxi-parser = { version = "0.1.0", path = "crates/woxi-parser" }
 petgraph = "0.8.3"
 rand = "0.8"
 runtimelib = { version = "1.3", features = ["tokio-runtime"], optional = true }
@@ -305,6 +307,21 @@ rust_xlsxwriter = { version = "0.94", default-features = false }
 # uses `default-features = false`).
 chrono = "0.4"
 chrono-tz = "0.10"
+# Not used directly — feature unification only. Building test targets
+# activates the dev-dependencies (criterion, insta, proptest), which turn on
+# extra features of these crates. Resolver ≥ 2 keeps dev-dependency features
+# out of plain `cargo build`/`cargo run`, so without these lines the two
+# builds resolve different feature sets, hash every dependent unit
+# differently and compile the whole woxi crate twice (once for `cargo run`,
+# once for `make test`). Requesting the same features here makes both
+# builds share one set of artifacts. Check with:
+# `cargo build -Zunstable-options --unit-graph [--tests]` (RUSTC_BOOTSTRAP=1).
+aho-corasick = "1"
+bit-set = "0.8"
+bit-vec = "0.8"
+either = { version = "1", features = ["use_std"] }
+itertools = "0.10"
+serde = { version = "1", features = ["alloc"] }
 
 [dev-dependencies]
 base64 = "0.22"
@@ -326,6 +343,7 @@ harness = false
 opt-level = 1
 debug = "line-tables-only"
 split-debuginfo = "unpacked"
+lto = "off"
 
 [profile.release]
 codegen-units = 1
