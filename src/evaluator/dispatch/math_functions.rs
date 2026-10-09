@@ -1937,8 +1937,16 @@ pub fn dispatch_math_functions(
     "NExpectation" if args.len() == 2 || args.len() == 3 => {
       return Some(crate::functions::math_ast::n_expectation_ast(&args[..2]));
     }
-    "SeedRandom" if args.len() <= 1 => {
-      return Some(crate::functions::math_ast::seed_random_ast(args));
+    "SeedRandom" if args.len() <= 2 => {
+      // `Method -> …` only selects the generator algorithm; the seed
+      // itself is what determines reproducibility here.
+      let positional = match args {
+        [seed, Expr::Rule { pattern, .. }] if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Method") => {
+          std::slice::from_ref(seed)
+        }
+        _ => args,
+      };
+      return Some(crate::functions::math_ast::seed_random_ast(positional));
     }
     "Clip" if !args.is_empty() && args.len() <= 3 => {
       return Some(crate::functions::math_ast::clip_ast(args));

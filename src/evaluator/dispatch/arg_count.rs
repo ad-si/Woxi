@@ -1300,7 +1300,7 @@ pub fn get_arg_count_range(name: &str) -> Option<(usize, usize)> {
     "Sec" => Some((1, 1)),
     "SecDegrees" => Some((1, 1)),
     "Sech" => Some((1, 1)),
-    "SeedRandom" => Some((0, 1)),
+    "SeedRandom" => Some((0, 2)),
     "Select" => Some((1, 3)),
     "SelectFirst" => Some((1, 3)),
     "SequenceAlignment" => Some((2, 2)),
