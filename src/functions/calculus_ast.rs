@@ -15334,6 +15334,7 @@ fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Parse options from additional arguments (Tolerance, Method, MaxRecursion, etc.)
   let mut tolerance = 1e-10_f64;
   let mut max_recursion = 50_u32;
+  let mut goal_tolerance: Option<f64> = None;
   let mut working_precision: Option<i128> = None;
   // `EvaluationMonitor :> expr` — evaluated (with the integration variable
   // bound) at every sampled point, e.g. to `Sow` the abscissae.
@@ -15395,6 +15396,19 @@ fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
           tolerance = t;
         }
       }
+      // Loosening goals shrink the work: the quadrature stops once its
+      // error estimate is below `10^-goal`. Tighter-than-default goals
+      // keep the (already strict) built-in tolerance.
+      "AccuracyGoal" | "PrecisionGoal" => {
+        if let Some(g) = crate::functions::math_ast::try_eval_to_f64(opt_value)
+          && g.is_finite()
+        {
+          goal_tolerance = Some(
+            goal_tolerance
+              .map_or(10f64.powf(-g), |t: f64| t.max(10f64.powf(-g))),
+          );
+        }
+      }
       "MaxRecursion" => {
         if let Some(n) = crate::functions::math_ast::expr_to_i128(opt_value) {
           max_recursion = n.max(1) as u32;
@@ -15441,6 +15455,9 @@ fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   if bad_method_call {
     return Ok(unevaluated("NIntegrate", args));
+  }
+  if let Some(t) = goal_tolerance {
+    tolerance = tolerance.max(t);
   }
 
   // Iterated / multi-dimensional integration: any argument after the first

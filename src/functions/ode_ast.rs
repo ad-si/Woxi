@@ -973,7 +973,7 @@ fn ndsolve_pde(args: &[Expr]) -> Result<Option<Expr>, InterpreterError> {
   };
   let eq_items = flatten_chained_equalities(&eq_items);
   if eq_items.len() != 4 * u_names.len() {
-    return Ok(None);
+    return ndsolve_pde_components(args, &u_names, &eq_items, &dom_a, &dom_b);
   }
 
   for (t_dom, x_dom) in [(&dom_a, &dom_b), (&dom_b, &dom_a)] {
@@ -984,6 +984,293 @@ fn ndsolve_pde(args: &[Expr]) -> Result<Option<Expr>, InterpreterError> {
         return Ok(Some(result));
       }
     }
+  }
+  Ok(None)
+}
+
+/// `NDSolve` PDE systems that mix unknown groups of different kinds — e.g.
+/// a plug-flow model `c[x, y]`, `t[x, y]` that only has an `x` derivative
+/// (so `y` is a mere parameter) next to diffusive models that also have
+/// second `y` derivatives. The unknowns are partitioned into groups that
+/// share equations; a group with four equations per unknown is a regular
+/// evolution PDE system and goes to [`ndsolve_pde`], while a group with no
+/// derivative in the other variable is an ODE in the evolution variable
+/// ([`solve_parameter_ode_group`]). Returns `Ok(None)` if any group fits
+/// neither.
+fn ndsolve_pde_components(
+  args: &[Expr],
+  u_names: &[String],
+  eq_items: &[Expr],
+  dom_a: &PdeDomain,
+  dom_b: &PdeDomain,
+) -> Result<Option<Expr>, InterpreterError> {
+  // Union-find over unknowns: equations mentioning several unknowns couple
+  // them.
+  let mut parent: Vec<usize> = (0..u_names.len()).collect();
+  fn find(parent: &mut [usize], i: usize) -> usize {
+    let mut r = i;
+    while parent[r] != r {
+      r = parent[r];
+    }
+    parent[i] = r;
+    r
+  }
+  let mut eq_groups: Vec<Vec<usize>> = Vec::with_capacity(eq_items.len());
+  for eq in eq_items {
+    let used: Vec<usize> = (0..u_names.len())
+      .filter(|&i| {
+        mentions_head(eq, &u_names[i]) || expr_contains_ident(eq, &u_names[i])
+      })
+      .collect();
+    if used.is_empty() {
+      return Ok(None);
+    }
+    for &i in &used[1..] {
+      let (ra, rb) = (find(&mut parent, used[0]), find(&mut parent, i));
+      parent[rb] = ra;
+    }
+    eq_groups.push(used);
+  }
+  let mut roots: Vec<usize> = Vec::new();
+  for i in 0..u_names.len() {
+    let r = find(&mut parent, i);
+    if !roots.contains(&r) {
+      roots.push(r);
+    }
+  }
+  let mut solved: Vec<Option<Expr>> = vec![None; u_names.len()];
+  for root in roots {
+    let members: Vec<usize> = (0..u_names.len())
+      .filter(|&i| find(&mut parent, i) == root)
+      .collect();
+    let eqs: Vec<Expr> = eq_items
+      .iter()
+      .zip(&eq_groups)
+      .filter(|(_, g)| find(&mut parent, g[0]) == root)
+      .map(|(e, _)| e.clone())
+      .collect();
+    let names: Vec<String> =
+      members.iter().map(|&i| u_names[i].clone()).collect();
+    let rules = if eqs.len() == 4 * names.len() {
+      let sub_args = [
+        Expr::List(eqs.into()),
+        Expr::List(names.iter().map(|n| Expr::Identifier(n.clone())).collect()),
+        args[2].clone(),
+        args[3].clone(),
+      ];
+      let Some(result) = ndsolve_pde(&sub_args)? else {
+        return Ok(None);
+      };
+      pde_result_rules(&result)
+    } else {
+      solve_parameter_ode_group(args, &names, &eqs, dom_a, dom_b)?
+    };
+    let Some(rules) = rules else {
+      return Ok(None);
+    };
+    for (name, interp) in rules {
+      if let Some(idx) = u_names.iter().position(|n| *n == name) {
+        solved[idx] = Some(interp);
+      }
+    }
+  }
+  let mut out = Vec::with_capacity(u_names.len());
+  for (name, interp) in u_names.iter().zip(solved) {
+    let Some(interp) = interp else {
+      return Ok(None);
+    };
+    out.push(rule_expr(Expr::Identifier(name.clone()), interp));
+  }
+  Ok(Some(Expr::List(vec![Expr::List(out.into())].into())))
+}
+
+/// Unpack `{{name -> value, …}}` into `(name, value)` pairs.
+fn pde_result_rules(result: &Expr) -> Option<Vec<(String, Expr)>> {
+  let Expr::List(outer) = result else {
+    return None;
+  };
+  let Expr::List(rules) = outer.first()? else {
+    return None;
+  };
+  rules
+    .iter()
+    .map(|r| match r {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => match pattern.as_ref() {
+        Expr::Identifier(n) => Some((n.clone(), replacement.as_ref().clone())),
+        _ => None,
+      },
+      _ => None,
+    })
+    .collect()
+}
+
+/// Rewrite `u[t, p]` and `Derivative[k, 0][u][t, p]` into the ordinary
+/// `u[t]` / `Derivative[k][u][t]` for every name in `names`, where `p` is
+/// the parameter variable. Anything else involving `p` (a derivative in
+/// `p`, `p` in a coefficient) clears `ok`.
+fn drop_parameter_argument(
+  expr: &Expr,
+  names: &[String],
+  param: &str,
+  ok: &std::cell::Cell<bool>,
+) -> Expr {
+  let is_param = |e: &Expr| matches!(e, Expr::Identifier(n) if n == param);
+  if let Expr::FunctionCall { name, args } = expr
+    && names.contains(name)
+    && args.len() == 2
+    && is_param(&args[1])
+  {
+    return Expr::FunctionCall {
+      name: name.clone(),
+      args: vec![args[0].clone()].into(),
+    };
+  }
+  if let Expr::CurriedCall { func, args } = expr
+    && args.len() == 2
+    && is_param(&args[1])
+    && let Expr::CurriedCall {
+      func: deriv_head,
+      args: fname_args,
+    } = func.as_ref()
+    && fname_args.len() == 1
+    && let Expr::Identifier(fname) = &fname_args[0]
+    && names.contains(fname)
+    && let Expr::FunctionCall {
+      name: deriv_name,
+      args: orders,
+    } = deriv_head.as_ref()
+    && deriv_name == "Derivative"
+    && orders.len() == 2
+    && let (Expr::Integer(k), Expr::Integer(0)) = (&orders[0], &orders[1])
+  {
+    let inner = args[0].clone();
+    if *k == 0 {
+      return Expr::FunctionCall {
+        name: fname.clone(),
+        args: vec![inner].into(),
+      };
+    }
+    return Expr::CurriedCall {
+      func: Box::new(Expr::CurriedCall {
+        func: Box::new(call("Derivative", vec![Expr::Integer(*k)])),
+        args: vec![Expr::Identifier(fname.clone())],
+      }),
+      args: vec![inner],
+    };
+  }
+  if is_param(expr) {
+    ok.set(false);
+    return expr.clone();
+  }
+  map_children(expr, &|c| drop_parameter_argument(c, names, param, ok))
+}
+
+/// A group of unknowns `u[t, p]` whose equations only differentiate in `t`
+/// (and never mention `p` otherwise): an ODE in `t` for each value of the
+/// parameter `p`, identical for all of them. Solved once as an ODE and
+/// returned as `InterpolatingFunction`s over both variables, constant in
+/// `p`.
+fn solve_parameter_ode_group(
+  args: &[Expr],
+  names: &[String],
+  eqs: &[Expr],
+  dom_a: &PdeDomain,
+  dom_b: &PdeDomain,
+) -> Result<Option<Vec<(String, Expr)>>, InterpreterError> {
+  for (t_dom, p_dom, t_arg) in
+    [(dom_a, dom_b, &args[2]), (dom_b, dom_a, &args[3])]
+  {
+    let ok = std::cell::Cell::new(true);
+    let ode_eqs: Vec<Expr> = eqs
+      .iter()
+      .map(|e| drop_parameter_argument(e, names, &p_dom.name, &ok))
+      .collect();
+    if !ok.get() {
+      continue;
+    }
+    let ode_args = [
+      Expr::List(ode_eqs.into()),
+      Expr::List(names.iter().map(|n| Expr::Identifier(n.clone())).collect()),
+      t_arg.clone(),
+    ];
+    let Ok(ode_result) = ndsolve_ast_inner(&ode_args) else {
+      continue;
+    };
+    let Some(result) = pde_result_rules(&ode_result) else {
+      continue;
+    };
+    let t_is_dim0 = t_dom.name == dom_a.name;
+    let mut out = Vec::with_capacity(result.len());
+    for (name, interp) in result {
+      let Expr::FunctionCall {
+        name: head,
+        args: if_args,
+      } = &interp
+      else {
+        return Ok(None);
+      };
+      if head != "InterpolatingFunction" || if_args.len() < 2 {
+        return Ok(None);
+      }
+      let Expr::List(points) = &if_args[1] else {
+        return Ok(None);
+      };
+      let mut ts = Vec::with_capacity(points.len());
+      let mut vals = Vec::with_capacity(points.len());
+      for p in points {
+        let Expr::List(pair) = p else {
+          return Ok(None);
+        };
+        if pair.len() != 2 {
+          return Ok(None);
+        }
+        ts.push(expr_to_f64(&pair[0])?);
+        vals.push(expr_to_f64(&pair[1])?);
+      }
+      let p_coords = [p_dom.min, p_dom.max];
+      let real_list =
+        |v: &[f64]| Expr::List(v.iter().map(|x| Expr::Real(*x)).collect());
+      let range = |lo: f64, hi: f64| {
+        Expr::List(vec![Expr::Real(lo), Expr::Real(hi)].into())
+      };
+      // `[t][p]` grid: every parameter column equals the ODE value.
+      let tp_grid: Vec<Vec<f64>> = vals.iter().map(|v| vec![*v, *v]).collect();
+      let (grid, dom0, dom1, coords0, coords1) = if t_is_dim0 {
+        (
+          tp_grid,
+          range(t_dom.min, t_dom.max),
+          range(p_dom.min, p_dom.max),
+          real_list(&ts),
+          real_list(&p_coords),
+        )
+      } else {
+        (
+          transpose_grid(&tp_grid),
+          range(p_dom.min, p_dom.max),
+          range(t_dom.min, t_dom.max),
+          real_list(&p_coords),
+          real_list(&ts),
+        )
+      };
+      let grid_expr =
+        Expr::List(grid.iter().map(|row| real_list(row)).collect());
+      out.push((
+        name,
+        call(
+          "InterpolatingFunction",
+          vec![
+            Expr::List(vec![dom0, dom1].into()),
+            grid_expr,
+            Expr::List(vec![Expr::Integer(1), Expr::Integer(1)].into()),
+            Expr::List(vec![coords0, coords1].into()),
+          ],
+        ),
+      ));
+    }
+    return Ok(Some(out));
   }
   Ok(None)
 }
