@@ -8881,6 +8881,10 @@ pub fn contour_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let svg = with_plot_label(svg, args, svg_width, svg_height);
 
   let structure = {
+    // The plot's own picture draws no outline on the surface triangles, so
+    // the extracted primitives must not pick up the default polygon edge
+    // when re-rendered inside a `Graphics3D` (e.g. `plot[[1]]`).
+    content.insert(0, call("EdgeForm", vec![]));
     let complex = call(
       "GraphicsComplex",
       vec![Expr::List(point_exprs.into()), Expr::List(content.into())],
