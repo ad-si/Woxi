@@ -645,7 +645,15 @@ fn render_item(
             Some(c) => format!("fill=\"{}\"", c.to_svg_rgb()),
             None => style.fill_attrs(),
           };
-          let (px, mut py) = (area.px(x), area.py(y));
+          let (mut px, mut py) = (area.px(x), area.py(y));
+          // `Text[label, pt, {ox, oy}]` places the anchor at `{ox, oy}`
+          // inside the label's own box (`{-1, 0}`: its left edge), so the
+          // label's centre sits `-ox`/`oy` half-extents from the anchor.
+          let (off_x, off_y) = args
+            .get(2)
+            .and_then(point2)
+            .map_or((0.0, 0.0), |(ox, oy)| (ox, oy));
+          let mut text_anchor = "middle";
           // A `Column`/`Grid` label (a Demonstration's boxed summary of
           // several computed values, say) stacks below its first line; the
           // whole block is centred on the anchor the way a single line
@@ -656,6 +664,18 @@ fn render_item(
             .map_or(0, super::chart::StyledLabel::extra_line_count)
             as f64;
           py -= extra_lines * line_height / 2.0;
+          py += off_y * (font_size + extra_lines * line_height) / 2.0;
+          if extra_lines == 0.0 && off_x == -1.0 {
+            text_anchor = "start";
+          } else if extra_lines == 0.0 && off_x == 1.0 {
+            text_anchor = "end";
+          } else if off_x != 0.0 {
+            let chars = styled.as_ref().map_or_else(
+              || expr_to_output(body).chars().count(),
+              super::chart::StyledLabel::max_line_chars,
+            ) as f64;
+            px -= off_x * chars * font_size * 0.55 / 2.0;
+          }
           // A label carrying structure (`Subscript[N, D]`) is typeset into
           // SVG markup; a plain one goes through the same path, which
           // escapes it. Further lines (if any) become stacked tspans below
@@ -702,7 +722,7 @@ fn render_item(
             ));
           }
           out.push_str(&format!(
-            "<text x=\"{px:.1}\" y=\"{py:.1}\" text-anchor=\"middle\" \
+            "<text x=\"{px:.1}\" y=\"{py:.1}\" text-anchor=\"{text_anchor}\" \
              dominant-baseline=\"middle\" font-family=\"sans-serif\" \
              font-size=\"{font_size:.0}\" {fill}>{label}</text>\n",
           ));
