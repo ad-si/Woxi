@@ -649,10 +649,8 @@ fn render_item(
           // `Text[label, pt, {ox, oy}]` places the anchor at `{ox, oy}`
           // inside the label's own box (`{-1, 0}`: its left edge), so the
           // label's centre sits `-ox`/`oy` half-extents from the anchor.
-          let (off_x, off_y) = args
-            .get(2)
-            .and_then(point2)
-            .map_or((0.0, 0.0), |(ox, oy)| (ox, oy));
+          let (off_x, off_y) =
+            args.get(2).and_then(point2).unwrap_or((0.0, 0.0));
           let mut text_anchor = "middle";
           // A `Column`/`Grid` label (a Demonstration's boxed summary of
           // several computed values, say) stacks below its first line; the

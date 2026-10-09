@@ -8633,8 +8633,8 @@ mod plot3d {
         let svg = export_svg(code);
         let (left, top, right, bottom) = plot_area(&svg);
         let (x, y) = axes_crossing(&svg);
-        assert!((x - (left + right) / 2.0).abs() < 1.0, "{code}: {x}");
-        assert!((y - (top + bottom) / 2.0).abs() < 1.0, "{code}: {y}");
+        assert!((x - f64::midpoint(left, right)).abs() < 1.0, "{code}: {x}");
+        assert!((y - f64::midpoint(top, bottom)).abs() < 1.0, "{code}: {y}");
       }
     }
 
