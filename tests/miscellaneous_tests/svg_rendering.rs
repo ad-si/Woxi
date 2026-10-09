@@ -4,6 +4,10 @@ use woxi::functions::graphics::{
   estimate_box_display_width, estimate_display_width, expr_to_svg_markup,
   layout_box, layout_to_svg, row_to_svg,
 };
+use woxi::helpers::{
+  binop, bool_expr, call, call1, div2, id_expr, minus2, neg1, plus2, pow, pow2,
+  rule_delayed_expr, rule_expr, times2,
+};
 use woxi::syntax::{BinaryOperator, ComparisonOp, Expr, UnaryOperator};
 
 mod tests {
@@ -14,21 +18,10 @@ mod tests {
   #[test]
   fn test_svg_power_additive_base_parens() {
     // (x + y)^2 should render with parentheses around the base
-    let expr = Expr::FunctionCall {
-      name: "Power".to_string(),
-      args: vec![
-        Expr::FunctionCall {
-          name: "Plus".to_string(),
-          args: vec![
-            Expr::Identifier("x".to_string()),
-            Expr::Identifier("y".to_string()),
-          ]
-          .into(),
-        },
-        Expr::Integer(2),
-      ]
-      .into(),
-    };
+    let expr = pow(
+      call("Plus", vec![id_expr("x"), id_expr("y")]),
+      Expr::Integer(2),
+    );
     let markup = expr_to_svg_markup(&expr);
     assert!(
       markup.starts_with("(x + y)"),
@@ -43,11 +36,7 @@ mod tests {
   #[test]
   fn test_svg_power_simple_base_no_parens() {
     // x^2 should NOT have parentheses
-    let expr = Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left: Box::new(Expr::Identifier("x".to_string())),
-      right: Box::new(Expr::Integer(2)),
-    };
+    let expr = pow2(id_expr("x"), Expr::Integer(2));
     let markup = expr_to_svg_markup(&expr);
     assert!(
       markup.starts_with("x<tspan"),
@@ -58,15 +47,7 @@ mod tests {
   #[test]
   fn test_svg_power_binary_plus_base_parens() {
     // BinaryOp form: (x + y)^3
-    let expr = Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left: Box::new(Expr::BinaryOp {
-        op: BinaryOperator::Plus,
-        left: Box::new(Expr::Identifier("x".to_string())),
-        right: Box::new(Expr::Identifier("y".to_string())),
-      }),
-      right: Box::new(Expr::Integer(3)),
-    };
+    let expr = pow2(plus2(id_expr("x"), id_expr("y")), Expr::Integer(3));
     let markup = expr_to_svg_markup(&expr);
     assert!(
       markup.starts_with("(x + y)"),
@@ -77,15 +58,7 @@ mod tests {
   #[test]
   fn test_svg_power_binary_minus_base_parens() {
     // (x - y)^2
-    let expr = Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left: Box::new(Expr::BinaryOp {
-        op: BinaryOperator::Minus,
-        left: Box::new(Expr::Identifier("x".to_string())),
-        right: Box::new(Expr::Identifier("y".to_string())),
-      }),
-      right: Box::new(Expr::Integer(2)),
-    };
+    let expr = pow2(minus2(id_expr("x"), id_expr("y")), Expr::Integer(2));
     let markup = expr_to_svg_markup(&expr);
     assert!(
       markup.starts_with("(x - y)"),
@@ -97,25 +70,19 @@ mod tests {
 
   fn padded_base_form_expr(value: i128, spec: i128, zero_pad: bool) -> Expr {
     let mut args = vec![
-      Expr::FunctionCall {
-        name: "BaseForm".to_string(),
-        args: vec![Expr::Integer(value), Expr::Integer(2)].into(),
-      },
+      call("BaseForm", vec![Expr::Integer(value), Expr::Integer(2)]),
       Expr::Integer(spec),
     ];
     if zero_pad {
-      args.push(Expr::Rule {
-        pattern: Box::new(Expr::Identifier("NumberPadding".to_string())),
-        replacement: Box::new(Expr::List(
+      args.push(rule_expr(
+        id_expr("NumberPadding"),
+        Expr::List(
           vec![Expr::String("0".to_string()), Expr::String(String::new())]
             .into(),
-        )),
-      });
+        ),
+      ));
     }
-    Expr::FunctionCall {
-      name: "PaddedForm".to_string(),
-      args: args.into(),
-    }
+    call("PaddedForm", args)
   }
 
   #[test]
@@ -170,10 +137,7 @@ mod tests {
   #[test]
   fn test_svg_times_number_identifier_space() {
     // Times[10, x] → "10 x" (space separator, matching Wolfram Language)
-    let expr = Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![Expr::Integer(10), Expr::Identifier("x".to_string())].into(),
-    };
+    let expr = call("Times", vec![Expr::Integer(10), id_expr("x")]);
     let markup = expr_to_svg_markup(&expr);
     assert_eq!(
       markup, "10 x",
@@ -184,14 +148,7 @@ mod tests {
   #[test]
   fn test_svg_times_identifiers_space() {
     // Times[x, y] → "x y" (space, no *)
-    let expr = Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![
-        Expr::Identifier("x".to_string()),
-        Expr::Identifier("y".to_string()),
-      ]
-      .into(),
-    };
+    let expr = call("Times", vec![id_expr("x"), id_expr("y")]);
     let markup = expr_to_svg_markup(&expr);
     assert_eq!(
       markup, "x y",
@@ -202,26 +159,14 @@ mod tests {
   #[test]
   fn test_svg_times_additive_juxtaposition() {
     // Times[9, Plus[2, x], Plus[x, y]] → "9(2 + x)(x + y)"
-    let expr = Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![
+    let expr = call(
+      "Times",
+      vec![
         Expr::Integer(9),
-        Expr::FunctionCall {
-          name: "Plus".to_string(),
-          args: vec![Expr::Integer(2), Expr::Identifier("x".to_string())]
-            .into(),
-        },
-        Expr::FunctionCall {
-          name: "Plus".to_string(),
-          args: vec![
-            Expr::Identifier("x".to_string()),
-            Expr::Identifier("y".to_string()),
-          ]
-          .into(),
-        },
-      ]
-      .into(),
-    };
+        call("Plus", vec![Expr::Integer(2), id_expr("x")]),
+        call("Plus", vec![id_expr("x"), id_expr("y")]),
+      ],
+    );
     let markup = expr_to_svg_markup(&expr);
     assert_eq!(
       markup, "9(2 + x)(x + y)",
@@ -233,11 +178,7 @@ mod tests {
   #[test]
   fn test_svg_binary_times_no_star() {
     // BinaryOp: x * y → "x y"
-    let expr = Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(Expr::Identifier("x".to_string())),
-      right: Box::new(Expr::Identifier("y".to_string())),
-    };
+    let expr = times2(id_expr("x"), id_expr("y"));
     let markup = expr_to_svg_markup(&expr);
     assert_eq!(
       markup, "x y",
@@ -248,11 +189,7 @@ mod tests {
   #[test]
   fn test_svg_binary_times_number_identifier() {
     // BinaryOp: 10 * x → "10 x"
-    let expr = Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(Expr::Integer(10)),
-      right: Box::new(Expr::Identifier("x".to_string())),
-    };
+    let expr = times2(Expr::Integer(10), id_expr("x"));
     let markup = expr_to_svg_markup(&expr);
     assert_eq!(
       markup, "10 x",
@@ -263,22 +200,14 @@ mod tests {
   #[test]
   fn test_svg_times_neg_one_no_star() {
     // Times[-1, x, Plus[a, b]] → "-x(a + b)"
-    let expr = Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![
+    let expr = call(
+      "Times",
+      vec![
         Expr::Integer(-1),
-        Expr::Identifier("x".to_string()),
-        Expr::FunctionCall {
-          name: "Plus".to_string(),
-          args: vec![
-            Expr::Identifier("a".to_string()),
-            Expr::Identifier("b".to_string()),
-          ]
-          .into(),
-        },
-      ]
-      .into(),
-    };
+        id_expr("x"),
+        call("Plus", vec![id_expr("a"), id_expr("b")]),
+      ],
+    );
     let markup = expr_to_svg_markup(&expr);
     assert_eq!(
       markup, "-x(a + b)",
@@ -292,20 +221,10 @@ mod tests {
   #[test]
   fn test_width_power_additive_base_includes_parens() {
     // (x + y)^2: width should include 2 chars for parentheses
-    let base = Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: vec![
-        Expr::Identifier("x".to_string()),
-        Expr::Identifier("y".to_string()),
-      ]
-      .into(),
-    };
+    let base = call("Plus", vec![id_expr("x"), id_expr("y")]);
     let base_w = estimate_display_width(&base);
 
-    let expr = Expr::FunctionCall {
-      name: "Power".to_string(),
-      args: vec![base, Expr::Integer(2)].into(),
-    };
+    let expr = pow(base, Expr::Integer(2));
     let total_w = estimate_display_width(&expr);
     // Total should be base_w + 2.0 (parens) + 1.0 * 0.7 (exponent)
     let expected = base_w + 2.0 + 1.0 * 0.7;
@@ -318,14 +237,10 @@ mod tests {
   #[test]
   fn test_width_power_simple_base_no_parens() {
     // x^2: no parentheses needed
-    let base = Expr::Identifier("x".to_string());
+    let base = id_expr("x");
     let base_w = estimate_display_width(&base);
 
-    let expr = Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left: Box::new(base),
-      right: Box::new(Expr::Integer(2)),
-    };
+    let expr = pow2(base, Expr::Integer(2));
     let total_w = estimate_display_width(&expr);
     let expected = base_w + 1.0 * 0.7;
     assert!(
@@ -338,26 +253,14 @@ mod tests {
   fn test_width_times_additive_operands() {
     // Times[9, Plus[2, x], Plus[x, y]]:
     // markup is "9(2 + x)(x + y)" — no separators between adjacent parens
-    let expr = Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![
+    let expr = call(
+      "Times",
+      vec![
         Expr::Integer(9),
-        Expr::FunctionCall {
-          name: "Plus".to_string(),
-          args: vec![Expr::Integer(2), Expr::Identifier("x".to_string())]
-            .into(),
-        },
-        Expr::FunctionCall {
-          name: "Plus".to_string(),
-          args: vec![
-            Expr::Identifier("x".to_string()),
-            Expr::Identifier("y".to_string()),
-          ]
-          .into(),
-        },
-      ]
-      .into(),
-    };
+        call("Plus", vec![Expr::Integer(2), id_expr("x")]),
+        call("Plus", vec![id_expr("x"), id_expr("y")]),
+      ],
+    );
     let w = estimate_display_width(&expr);
     // "9(2 + x)(x + y)" = 15 chars
     // factors: 1 + (5+2) + (5+2) = 15, seps: 0+0 = 0, total = 15
@@ -370,19 +273,10 @@ mod tests {
   #[test]
   fn test_width_binary_times_additive_includes_parens() {
     // BinaryOp: (x + y)(a + b)
-    let expr = Expr::BinaryOp {
-      op: BinaryOperator::Times,
-      left: Box::new(Expr::BinaryOp {
-        op: BinaryOperator::Plus,
-        left: Box::new(Expr::Identifier("x".to_string())),
-        right: Box::new(Expr::Identifier("y".to_string())),
-      }),
-      right: Box::new(Expr::BinaryOp {
-        op: BinaryOperator::Plus,
-        left: Box::new(Expr::Identifier("a".to_string())),
-        right: Box::new(Expr::Identifier("b".to_string())),
-      }),
-    };
+    let expr = times2(
+      plus2(id_expr("x"), id_expr("y")),
+      plus2(id_expr("a"), id_expr("b")),
+    );
     let w = estimate_display_width(&expr);
     // "(x + y)(a + b)" = 14 chars
     // Each side: base=5 + parens=2 = 7, sep=0, total = 14
@@ -395,21 +289,13 @@ mod tests {
   #[test]
   fn test_width_times_neg_one_additive_includes_parens() {
     // Times[-1, Plus[x, y]]: rendered as -(x + y)
-    let expr = Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![
+    let expr = call(
+      "Times",
+      vec![
         Expr::Integer(-1),
-        Expr::FunctionCall {
-          name: "Plus".to_string(),
-          args: vec![
-            Expr::Identifier("x".to_string()),
-            Expr::Identifier("y".to_string()),
-          ]
-          .into(),
-        },
-      ]
-      .into(),
-    };
+        call("Plus", vec![id_expr("x"), id_expr("y")]),
+      ],
+    );
     let w = estimate_display_width(&expr);
     // -(x + y): '-' = 1, '(' = 1, 'x + y' = 5, ')' = 1 → total = 8
     assert!(
@@ -421,10 +307,7 @@ mod tests {
   #[test]
   fn test_width_times_number_identifier() {
     // Times[10, x] → "10 x" (space separator)
-    let expr = Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![Expr::Integer(10), Expr::Identifier("x".to_string())].into(),
-    };
+    let expr = call("Times", vec![Expr::Integer(10), id_expr("x")]);
     let w = estimate_display_width(&expr);
     // "10 x" = 4 chars: factors = 2+1 = 3, sep = 1
     assert!(
@@ -439,47 +322,23 @@ mod tests {
   fn test_svg_full_expression_power_plus_times() {
     // (x + y)^2 + 9(2 + x)(x + y)
     // = Plus[Power[Plus[x, y], 2], Times[9, Plus[2, x], Plus[x, y]]]
-    let expr = Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: vec![
-        Expr::FunctionCall {
-          name: "Power".to_string(),
-          args: vec![
-            Expr::FunctionCall {
-              name: "Plus".to_string(),
-              args: vec![
-                Expr::Identifier("x".to_string()),
-                Expr::Identifier("y".to_string()),
-              ]
-              .into(),
-            },
-            Expr::Integer(2),
-          ]
-          .into(),
-        },
-        Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![
+    let expr = call(
+      "Plus",
+      vec![
+        pow(
+          call("Plus", vec![id_expr("x"), id_expr("y")]),
+          Expr::Integer(2),
+        ),
+        call(
+          "Times",
+          vec![
             Expr::Integer(9),
-            Expr::FunctionCall {
-              name: "Plus".to_string(),
-              args: vec![Expr::Integer(2), Expr::Identifier("x".to_string())]
-                .into(),
-            },
-            Expr::FunctionCall {
-              name: "Plus".to_string(),
-              args: vec![
-                Expr::Identifier("x".to_string()),
-                Expr::Identifier("y".to_string()),
-              ]
-              .into(),
-            },
-          ]
-          .into(),
-        },
-      ]
-      .into(),
-    };
+            call("Plus", vec![Expr::Integer(2), id_expr("x")]),
+            call("Plus", vec![id_expr("x"), id_expr("y")]),
+          ],
+        ),
+      ],
+    );
     let markup = expr_to_svg_markup(&expr);
     // Should contain parens around Power base and no * anywhere
     assert!(
@@ -496,50 +355,26 @@ mod tests {
   fn test_svg_product_of_powers() {
     // (x + y)^3 * (18 + 10x + y)^3
     // = Times[Power[Plus[x, y], 3], Power[Plus[18, Times[10, x], y], 3]]
-    let expr = Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: vec![
-        Expr::FunctionCall {
-          name: "Power".to_string(),
-          args: vec![
-            Expr::FunctionCall {
-              name: "Plus".to_string(),
-              args: vec![
-                Expr::Identifier("x".to_string()),
-                Expr::Identifier("y".to_string()),
-              ]
-              .into(),
-            },
-            Expr::Integer(3),
-          ]
-          .into(),
-        },
-        Expr::FunctionCall {
-          name: "Power".to_string(),
-          args: vec![
-            Expr::FunctionCall {
-              name: "Plus".to_string(),
-              args: vec![
-                Expr::Integer(18),
-                Expr::FunctionCall {
-                  name: "Times".to_string(),
-                  args: vec![
-                    Expr::Integer(10),
-                    Expr::Identifier("x".to_string()),
-                  ]
-                  .into(),
-                },
-                Expr::Identifier("y".to_string()),
-              ]
-              .into(),
-            },
-            Expr::Integer(3),
-          ]
-          .into(),
-        },
-      ]
-      .into(),
-    };
+    let expr = call(
+      "Times",
+      vec![
+        pow(
+          call("Plus", vec![id_expr("x"), id_expr("y")]),
+          Expr::Integer(3),
+        ),
+        pow(
+          call(
+            "Plus",
+            vec![
+              Expr::Integer(18),
+              call("Times", vec![Expr::Integer(10), id_expr("x")]),
+              id_expr("y"),
+            ],
+          ),
+          Expr::Integer(3),
+        ),
+      ],
+    );
     let markup = expr_to_svg_markup(&expr);
     // Both Power bases should have parentheses, no * anywhere
     assert!(
@@ -640,21 +475,10 @@ mod tests {
 
     #[test]
     fn box_power_additive_base_parens() {
-      let expr = Expr::FunctionCall {
-        name: "Power".to_string(),
-        args: vec![
-          Expr::FunctionCall {
-            name: "Plus".to_string(),
-            args: vec![
-              Expr::Identifier("x".to_string()),
-              Expr::Identifier("y".to_string()),
-            ]
-            .into(),
-          },
-          Expr::Integer(2),
-        ]
-        .into(),
-      };
+      let expr = pow(
+        call("Plus", vec![id_expr("x"), id_expr("y")]),
+        Expr::Integer(2),
+      );
       let boxes = expr_to_box_form(&expr);
       assert!(
         matches!(&boxes, Expr::FunctionCall { name, .. } if name == "SuperscriptBox"),
@@ -665,11 +489,7 @@ mod tests {
 
     #[test]
     fn box_power_simple_base() {
-      let expr = Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(Expr::Identifier("x".to_string())),
-        right: Box::new(Expr::Integer(2)),
-      };
+      let expr = pow2(id_expr("x"), Expr::Integer(2));
       let boxes = expr_to_box_form(&expr);
       assert_eq!(box_str(&boxes), "SuperscriptBox[x, 2]",);
     }
@@ -684,21 +504,13 @@ mod tests {
       use num_bigint::BigInt;
       // 2^129 = 680564733841876926926749214863536422912 overflows i128.
       let big = BigInt::from(2).pow(129);
-      let expr = Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: vec![
+      let expr = call(
+        "Plus",
+        vec![
           Expr::Integer(1),
-          Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![
-              Expr::BigInteger(-big.clone()),
-              Expr::Identifier("x".to_string()),
-            ]
-            .into(),
-          },
-        ]
-        .into(),
-      };
+          call("Times", vec![Expr::BigInteger(-big.clone()), id_expr("x")]),
+        ],
+      );
       let s = box_str(&expr_to_box_form(&expr));
       // The positive coefficient is present, negated out of the term.
       assert!(
@@ -719,15 +531,7 @@ mod tests {
 
     #[test]
     fn box_power_binary_plus_base() {
-      let expr = Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(Expr::BinaryOp {
-          op: BinaryOperator::Plus,
-          left: Box::new(Expr::Identifier("x".to_string())),
-          right: Box::new(Expr::Identifier("y".to_string())),
-        }),
-        right: Box::new(Expr::Integer(3)),
-      };
+      let expr = pow2(plus2(id_expr("x"), id_expr("y")), Expr::Integer(3));
       let boxes = expr_to_box_form(&expr);
       let s = box_str(&boxes);
       assert!(
@@ -738,15 +542,7 @@ mod tests {
 
     #[test]
     fn box_power_binary_minus_base() {
-      let expr = Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(Expr::BinaryOp {
-          op: BinaryOperator::Minus,
-          left: Box::new(Expr::Identifier("x".to_string())),
-          right: Box::new(Expr::Identifier("y".to_string())),
-        }),
-        right: Box::new(Expr::Integer(2)),
-      };
+      let expr = pow2(minus2(id_expr("x"), id_expr("y")), Expr::Integer(2));
       let boxes = expr_to_box_form(&expr);
       assert!(
         matches!(&boxes, Expr::FunctionCall { name, .. } if name == "SuperscriptBox"),
@@ -759,10 +555,7 @@ mod tests {
 
     #[test]
     fn box_times_number_identifier() {
-      let expr = Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![Expr::Integer(10), Expr::Identifier("x".to_string())].into(),
-      };
+      let expr = call("Times", vec![Expr::Integer(10), id_expr("x")]);
       let boxes = expr_to_box_form(&expr);
       assert_eq!(box_str(&boxes), "RowBox[{10,  , x}]");
       let svg = boxes_to_svg(&boxes);
@@ -771,14 +564,7 @@ mod tests {
 
     #[test]
     fn box_times_identifiers() {
-      let expr = Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![
-          Expr::Identifier("x".to_string()),
-          Expr::Identifier("y".to_string()),
-        ]
-        .into(),
-      };
+      let expr = call("Times", vec![id_expr("x"), id_expr("y")]);
       let boxes = expr_to_box_form(&expr);
       let svg = boxes_to_svg(&boxes);
       assert_eq!(svg, "x y");
@@ -786,26 +572,14 @@ mod tests {
 
     #[test]
     fn box_times_additive_juxtaposition() {
-      let expr = Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![
+      let expr = call(
+        "Times",
+        vec![
           Expr::Integer(9),
-          Expr::FunctionCall {
-            name: "Plus".to_string(),
-            args: vec![Expr::Integer(2), Expr::Identifier("x".to_string())]
-              .into(),
-          },
-          Expr::FunctionCall {
-            name: "Plus".to_string(),
-            args: vec![
-              Expr::Identifier("x".to_string()),
-              Expr::Identifier("y".to_string()),
-            ]
-            .into(),
-          },
-        ]
-        .into(),
-      };
+          call("Plus", vec![Expr::Integer(2), id_expr("x")]),
+          call("Plus", vec![id_expr("x"), id_expr("y")]),
+        ],
+      );
       let boxes = expr_to_box_form(&expr);
       assert!(
         matches!(&boxes, Expr::FunctionCall { name, .. } if name == "RowBox"),
@@ -816,11 +590,7 @@ mod tests {
 
     #[test]
     fn box_binary_times() {
-      let expr = Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(Expr::Identifier("x".to_string())),
-        right: Box::new(Expr::Identifier("y".to_string())),
-      };
+      let expr = times2(id_expr("x"), id_expr("y"));
       let boxes = expr_to_box_form(&expr);
       let svg = boxes_to_svg(&boxes);
       assert_eq!(svg, "x y");
@@ -828,11 +598,7 @@ mod tests {
 
     #[test]
     fn box_binary_times_number_identifier() {
-      let expr = Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left: Box::new(Expr::Integer(10)),
-        right: Box::new(Expr::Identifier("x".to_string())),
-      };
+      let expr = times2(Expr::Integer(10), id_expr("x"));
       let boxes = expr_to_box_form(&expr);
       let svg = boxes_to_svg(&boxes);
       assert_eq!(svg, "10 x");
@@ -840,22 +606,14 @@ mod tests {
 
     #[test]
     fn box_times_neg_one() {
-      let expr = Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![
+      let expr = call(
+        "Times",
+        vec![
           Expr::Integer(-1),
-          Expr::Identifier("x".to_string()),
-          Expr::FunctionCall {
-            name: "Plus".to_string(),
-            args: vec![
-              Expr::Identifier("a".to_string()),
-              Expr::Identifier("b".to_string()),
-            ]
-            .into(),
-          },
-        ]
-        .into(),
-      };
+          id_expr("x"),
+          call("Plus", vec![id_expr("a"), id_expr("b")]),
+        ],
+      );
       let boxes = expr_to_box_form(&expr);
       assert!(
         matches!(&boxes, Expr::FunctionCall { name, .. } if name == "RowBox"),
@@ -868,31 +626,21 @@ mod tests {
 
     #[test]
     fn box_rational() {
-      let expr = Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![Expr::Integer(2), Expr::Integer(3)].into(),
-      };
+      let expr = call("Rational", vec![Expr::Integer(2), Expr::Integer(3)]);
       let boxes = expr_to_box_form(&expr);
       assert_eq!(box_str(&boxes), "FractionBox[2, 3]");
     }
 
     #[test]
     fn box_divide() {
-      let expr = Expr::BinaryOp {
-        op: BinaryOperator::Divide,
-        left: Box::new(Expr::Identifier("a".to_string())),
-        right: Box::new(Expr::Identifier("b".to_string())),
-      };
+      let expr = div2(id_expr("a"), id_expr("b"));
       let boxes = expr_to_box_form(&expr);
       assert_eq!(box_str(&boxes), "FractionBox[a, b]");
     }
 
     #[test]
     fn box_has_fraction_true() {
-      let expr = Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![Expr::Integer(2), Expr::Integer(3)].into(),
-      };
+      let expr = call("Rational", vec![Expr::Integer(2), Expr::Integer(3)]);
       let boxes = expr_to_box_form(&expr);
       assert!(
         box_has_fraction(&boxes),
@@ -902,7 +650,7 @@ mod tests {
 
     #[test]
     fn box_has_fraction_false() {
-      let expr = Expr::Identifier("x".to_string());
+      let expr = id_expr("x");
       let boxes = expr_to_box_form(&expr);
       assert!(
         !box_has_fraction(&boxes),
@@ -914,17 +662,10 @@ mod tests {
 
     #[test]
     fn box_sqrt() {
-      let expr = Expr::FunctionCall {
-        name: "Power".to_string(),
-        args: vec![
-          Expr::Identifier("x".to_string()),
-          Expr::FunctionCall {
-            name: "Rational".to_string(),
-            args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
-          },
-        ]
-        .into(),
-      };
+      let expr = pow(
+        id_expr("x"),
+        call("Rational", vec![Expr::Integer(1), Expr::Integer(2)]),
+      );
       let boxes = expr_to_box_form(&expr);
       assert_eq!(box_str(&boxes), "SqrtBox[x]");
     }
@@ -933,31 +674,17 @@ mod tests {
 
     #[test]
     fn box_subscript() {
-      let expr = Expr::FunctionCall {
-        name: "Subscript".to_string(),
-        args: vec![Expr::Identifier("x".to_string()), Expr::Integer(0)].into(),
-      };
+      let expr = call("Subscript", vec![id_expr("x"), Expr::Integer(0)]);
       let boxes = expr_to_box_form(&expr);
       assert_eq!(box_str(&boxes), "SubscriptBox[x, 0]");
     }
 
     #[test]
     fn box_subsuperscript() {
-      let expr = Expr::FunctionCall {
-        name: "Power".to_string(),
-        args: vec![
-          Expr::FunctionCall {
-            name: "Subscript".to_string(),
-            args: vec![
-              Expr::Identifier("a".to_string()),
-              Expr::Identifier("b".to_string()),
-            ]
-            .into(),
-          },
-          Expr::Identifier("c".to_string()),
-        ]
-        .into(),
-      };
+      let expr = pow(
+        call("Subscript", vec![id_expr("a"), id_expr("b")]),
+        id_expr("c"),
+      );
       let boxes = expr_to_box_form(&expr);
       assert_eq!(box_str(&boxes), "SubsuperscriptBox[a, b, c]");
     }
@@ -975,14 +702,7 @@ mod tests {
 
     #[test]
     fn box_function_call() {
-      let expr = Expr::FunctionCall {
-        name: "f".to_string(),
-        args: vec![
-          Expr::Identifier("x".to_string()),
-          Expr::Identifier("y".to_string()),
-        ]
-        .into(),
-      };
+      let expr = call("f", vec![id_expr("x"), id_expr("y")]);
       let boxes = expr_to_box_form(&expr);
       assert_eq!(box_str(&boxes), "RowBox[{f, [, RowBox[{x, ,, y}], ]}]");
     }
@@ -1012,10 +732,7 @@ mod tests {
 
     #[test]
     fn box_unary_minus() {
-      let expr = Expr::UnaryOp {
-        op: UnaryOperator::Minus,
-        operand: Box::new(Expr::Identifier("x".to_string())),
-      };
+      let expr = neg1(id_expr("x"));
       let boxes = expr_to_box_form(&expr);
       let svg = boxes_to_svg(&boxes);
       assert_eq!(svg, "-x", "UnaryMinus box SVG");
@@ -1025,7 +742,7 @@ mod tests {
     fn box_unary_not() {
       let expr = Expr::UnaryOp {
         op: UnaryOperator::Not,
-        operand: Box::new(Expr::Identifier("p".to_string())),
+        operand: Box::new(id_expr("p")),
       };
       let boxes = expr_to_box_form(&expr);
       let svg = boxes_to_svg(&boxes);
@@ -1037,10 +754,7 @@ mod tests {
     #[test]
     fn box_comparison() {
       let expr = Expr::Comparison {
-        operands: vec![
-          Expr::Identifier("a".to_string()),
-          Expr::Identifier("b".to_string()),
-        ],
+        operands: vec![id_expr("a"), id_expr("b")],
         operators: vec![ComparisonOp::Less],
       };
       let boxes = expr_to_box_form(&expr);
@@ -1052,11 +766,7 @@ mod tests {
 
     #[test]
     fn box_binary_plus() {
-      let expr = Expr::BinaryOp {
-        op: BinaryOperator::Plus,
-        left: Box::new(Expr::Identifier("x".to_string())),
-        right: Box::new(Expr::Identifier("y".to_string())),
-      };
+      let expr = plus2(id_expr("x"), id_expr("y"));
       let boxes = expr_to_box_form(&expr);
       let svg = boxes_to_svg(&boxes);
       assert_eq!(svg, "x+y");
@@ -1064,11 +774,7 @@ mod tests {
 
     #[test]
     fn box_binary_minus() {
-      let expr = Expr::BinaryOp {
-        op: BinaryOperator::Minus,
-        left: Box::new(Expr::Identifier("x".to_string())),
-        right: Box::new(Expr::Identifier("y".to_string())),
-      };
+      let expr = minus2(id_expr("x"), id_expr("y"));
       let boxes = expr_to_box_form(&expr);
       let svg = boxes_to_svg(&boxes);
       assert_eq!(svg, "x-y");
@@ -1076,11 +782,7 @@ mod tests {
 
     #[test]
     fn box_binary_and() {
-      let expr = Expr::BinaryOp {
-        op: BinaryOperator::And,
-        left: Box::new(Expr::Identifier("p".to_string())),
-        right: Box::new(Expr::Identifier("q".to_string())),
-      };
+      let expr = binop(BinaryOperator::And, id_expr("p"), id_expr("q"));
       let boxes = expr_to_box_form(&expr);
       let svg = boxes_to_svg(&boxes);
       assert_eq!(svg, "p&amp;&amp;q");
@@ -1088,11 +790,7 @@ mod tests {
 
     #[test]
     fn box_binary_or() {
-      let expr = Expr::BinaryOp {
-        op: BinaryOperator::Or,
-        left: Box::new(Expr::Identifier("p".to_string())),
-        right: Box::new(Expr::Identifier("q".to_string())),
-      };
+      let expr = binop(BinaryOperator::Or, id_expr("p"), id_expr("q"));
       let boxes = expr_to_box_form(&expr);
       let svg = boxes_to_svg(&boxes);
       assert_eq!(svg, "p||q");
@@ -1103,47 +801,23 @@ mod tests {
     #[test]
     fn box_full_expression_power_plus_times() {
       // Plus[Power[Plus[x, y], 2], Times[9, Plus[2, x], Plus[x, y]]]
-      let expr = Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: vec![
-          Expr::FunctionCall {
-            name: "Power".to_string(),
-            args: vec![
-              Expr::FunctionCall {
-                name: "Plus".to_string(),
-                args: vec![
-                  Expr::Identifier("x".to_string()),
-                  Expr::Identifier("y".to_string()),
-                ]
-                .into(),
-              },
-              Expr::Integer(2),
-            ]
-            .into(),
-          },
-          Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![
+      let expr = call(
+        "Plus",
+        vec![
+          pow(
+            call("Plus", vec![id_expr("x"), id_expr("y")]),
+            Expr::Integer(2),
+          ),
+          call(
+            "Times",
+            vec![
               Expr::Integer(9),
-              Expr::FunctionCall {
-                name: "Plus".to_string(),
-                args: vec![Expr::Integer(2), Expr::Identifier("x".to_string())]
-                  .into(),
-              },
-              Expr::FunctionCall {
-                name: "Plus".to_string(),
-                args: vec![
-                  Expr::Identifier("x".to_string()),
-                  Expr::Identifier("y".to_string()),
-                ]
-                .into(),
-              },
-            ]
-            .into(),
-          },
-        ]
-        .into(),
-      };
+              call("Plus", vec![Expr::Integer(2), id_expr("x")]),
+              call("Plus", vec![id_expr("x"), id_expr("y")]),
+            ],
+          ),
+        ],
+      );
       let boxes = expr_to_box_form(&expr);
       // Top level should be RowBox (Plus)
       assert!(
@@ -1166,50 +840,26 @@ mod tests {
     #[test]
     fn box_product_of_powers() {
       // Times[Power[Plus[x, y], 3], Power[Plus[18, Times[10, x], y], 3]]
-      let expr = Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![
-          Expr::FunctionCall {
-            name: "Power".to_string(),
-            args: vec![
-              Expr::FunctionCall {
-                name: "Plus".to_string(),
-                args: vec![
-                  Expr::Identifier("x".to_string()),
-                  Expr::Identifier("y".to_string()),
-                ]
-                .into(),
-              },
-              Expr::Integer(3),
-            ]
-            .into(),
-          },
-          Expr::FunctionCall {
-            name: "Power".to_string(),
-            args: vec![
-              Expr::FunctionCall {
-                name: "Plus".to_string(),
-                args: vec![
-                  Expr::Integer(18),
-                  Expr::FunctionCall {
-                    name: "Times".to_string(),
-                    args: vec![
-                      Expr::Integer(10),
-                      Expr::Identifier("x".to_string()),
-                    ]
-                    .into(),
-                  },
-                  Expr::Identifier("y".to_string()),
-                ]
-                .into(),
-              },
-              Expr::Integer(3),
-            ]
-            .into(),
-          },
-        ]
-        .into(),
-      };
+      let expr = call(
+        "Times",
+        vec![
+          pow(
+            call("Plus", vec![id_expr("x"), id_expr("y")]),
+            Expr::Integer(3),
+          ),
+          pow(
+            call(
+              "Plus",
+              vec![
+                Expr::Integer(18),
+                call("Times", vec![Expr::Integer(10), id_expr("x")]),
+                id_expr("y"),
+              ],
+            ),
+            Expr::Integer(3),
+          ),
+        ],
+      );
       let boxes = expr_to_box_form(&expr);
       // Should be a RowBox containing SuperscriptBox elements
       assert!(
@@ -1228,49 +878,28 @@ mod tests {
 
     #[test]
     fn box_width_power_additive_base() {
-      let expr = Expr::FunctionCall {
-        name: "Power".to_string(),
-        args: vec![
-          Expr::FunctionCall {
-            name: "Plus".to_string(),
-            args: vec![
-              Expr::Identifier("x".to_string()),
-              Expr::Identifier("y".to_string()),
-            ]
-            .into(),
-          },
-          Expr::Integer(2),
-        ]
-        .into(),
-      };
+      let expr = pow(
+        call("Plus", vec![id_expr("x"), id_expr("y")]),
+        Expr::Integer(2),
+      );
       assert_width_reasonable(&expr);
     }
 
     #[test]
     fn box_width_power_simple_base() {
-      let expr = Expr::BinaryOp {
-        op: BinaryOperator::Power,
-        left: Box::new(Expr::Identifier("x".to_string())),
-        right: Box::new(Expr::Integer(2)),
-      };
+      let expr = pow2(id_expr("x"), Expr::Integer(2));
       assert_width_reasonable(&expr);
     }
 
     #[test]
     fn box_width_times_number_identifier() {
-      let expr = Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![Expr::Integer(10), Expr::Identifier("x".to_string())].into(),
-      };
+      let expr = call("Times", vec![Expr::Integer(10), id_expr("x")]);
       assert_width_reasonable(&expr);
     }
 
     #[test]
     fn box_width_rational() {
-      let expr = Expr::FunctionCall {
-        name: "Rational".to_string(),
-        args: vec![Expr::Integer(2), Expr::Integer(3)].into(),
-      };
+      let expr = call("Rational", vec![Expr::Integer(2), Expr::Integer(3)]);
       assert_width_reasonable(&expr);
     }
 
@@ -1284,14 +913,7 @@ mod tests {
 
     #[test]
     fn box_width_function_call() {
-      let expr = Expr::FunctionCall {
-        name: "f".to_string(),
-        args: vec![
-          Expr::Identifier("x".to_string()),
-          Expr::Identifier("y".to_string()),
-        ]
-        .into(),
-      };
+      let expr = call("f", vec![id_expr("x"), id_expr("y")]);
       assert_width_reasonable(&expr);
     }
 
@@ -1306,18 +928,13 @@ mod tests {
     #[test]
     fn box_display_form_renders_inner_boxes() {
       // DisplayForm[SuperscriptBox["x", "2"]] should render the inner boxes to SVG
-      let expr = Expr::FunctionCall {
-        name: "DisplayForm".to_string(),
-        args: vec![Expr::FunctionCall {
-          name: "SuperscriptBox".to_string(),
-          args: vec![
-            Expr::String("x".to_string()),
-            Expr::String("2".to_string()),
-          ]
-          .into(),
-        }]
-        .into(),
-      };
+      let expr = call1(
+        "DisplayForm",
+        call(
+          "SuperscriptBox",
+          vec![Expr::String("x".to_string()), Expr::String("2".to_string())],
+        ),
+      );
       // In the box pipeline, DisplayForm passes its content directly as boxes
       // (handled in generate_output_svg). Here we test the box extraction directly.
       if let Expr::FunctionCall { name, args } = &expr
@@ -1334,14 +951,10 @@ mod tests {
 
     #[test]
     fn box_display_form_subscript_renders() {
-      let inner = Expr::FunctionCall {
-        name: "SubscriptBox".to_string(),
-        args: vec![
-          Expr::String("a".to_string()),
-          Expr::String("i".to_string()),
-        ]
-        .into(),
-      };
+      let inner = call(
+        "SubscriptBox",
+        vec![Expr::String("a".to_string()), Expr::String("i".to_string())],
+      );
       let svg = boxes_to_svg(&inner);
       assert!(
         svg.contains('a') && svg.contains("baseline-shift=\"sub\""),
@@ -1352,31 +965,28 @@ mod tests {
     #[test]
     fn box_display_form_row_of_subscripts() {
       // RowBox[{SubscriptBox["a", "1"], SubscriptBox["b", "2"]}]
-      let inner = Expr::FunctionCall {
-        name: "RowBox".to_string(),
-        args: vec![Expr::List(
+      let inner = call1(
+        "RowBox",
+        Expr::List(
           vec![
-            Expr::FunctionCall {
-              name: "SubscriptBox".to_string(),
-              args: vec![
+            call(
+              "SubscriptBox",
+              vec![
                 Expr::String("a".to_string()),
                 Expr::String("1".to_string()),
-              ]
-              .into(),
-            },
-            Expr::FunctionCall {
-              name: "SubscriptBox".to_string(),
-              args: vec![
+              ],
+            ),
+            call(
+              "SubscriptBox",
+              vec![
                 Expr::String("b".to_string()),
                 Expr::String("2".to_string()),
-              ]
-              .into(),
-            },
+              ],
+            ),
           ]
           .into(),
-        )]
-        .into(),
-      };
+        ),
+      );
       let svg = boxes_to_svg(&inner);
       assert!(
         svg.contains('a') && svg.contains('b'),
@@ -1390,21 +1000,19 @@ mod tests {
     #[test]
     fn style_box_font_color_renders_red() {
       // StyleBox["red text", Rule[FontColor, RGBColor[1, 0, 0]]]
-      let inner = Expr::FunctionCall {
-        name: "StyleBox".to_string(),
-        args: vec![
+      let inner = call(
+        "StyleBox",
+        vec![
           Expr::String("red text".to_string()),
-          Expr::Rule {
-            pattern: Box::new(Expr::Identifier("FontColor".to_string())),
-            replacement: Box::new(Expr::FunctionCall {
-              name: "RGBColor".to_string(),
-              args: vec![Expr::Real(1.0), Expr::Real(0.0), Expr::Real(0.0)]
-                .into(),
-            }),
-          },
-        ]
-        .into(),
-      };
+          rule_expr(
+            id_expr("FontColor"),
+            call(
+              "RGBColor",
+              vec![Expr::Real(1.0), Expr::Real(0.0), Expr::Real(0.0)],
+            ),
+          ),
+        ],
+      );
       let layout = layout_box(&inner, 14.0);
       let svg = layout_to_svg(&layout, "currentColor");
       assert!(
@@ -1419,10 +1027,7 @@ mod tests {
       // Wolfram FrontEnd private-use codepoint U+F522, which has no glyph in
       // normal fonts and showed as a missing-glyph box. It must render as the
       // public Unicode arrow `→` (U+2192) instead.
-      let inner = Expr::Rule {
-        pattern: Box::new(Expr::Identifier("x".to_string())),
-        replacement: Box::new(Expr::Real(0.5)),
-      };
+      let inner = rule_expr(id_expr("x"), Expr::Real(0.5));
       let boxes = expr_to_box_form(&inner);
       let layout = layout_box(&boxes, 14.0);
       let svg = layout_to_svg(&layout, "currentColor");
@@ -1440,10 +1045,7 @@ mod tests {
     fn rule_delayed_arrow_renders_as_unicode_not_private_use() {
       // Same regression as `rule_arrow_renders_as_unicode_not_private_use`, for
       // RuleDelayed (U+F51F → U+29F4 `⧴`).
-      let inner = Expr::RuleDelayed {
-        pattern: Box::new(Expr::Identifier("x".to_string())),
-        replacement: Box::new(Expr::Integer(1)),
-      };
+      let inner = rule_delayed_expr(id_expr("x"), Expr::Integer(1));
       let boxes = expr_to_box_form(&inner);
       let layout = layout_box(&boxes, 14.0);
       let svg = layout_to_svg(&layout, "currentColor");
@@ -1525,17 +1127,13 @@ mod tests {
     #[test]
     fn style_box_font_size_renders_larger() {
       // StyleBox["big", Rule[FontSize, 24]]
-      let inner = Expr::FunctionCall {
-        name: "StyleBox".to_string(),
-        args: vec![
+      let inner = call(
+        "StyleBox",
+        vec![
           Expr::String("big".to_string()),
-          Expr::Rule {
-            pattern: Box::new(Expr::Identifier("FontSize".to_string())),
-            replacement: Box::new(Expr::Integer(24)),
-          },
-        ]
-        .into(),
-      };
+          rule_expr(id_expr("FontSize"), Expr::Integer(24)),
+        ],
+      );
       let layout = layout_box(&inner, 14.0);
       let svg = layout_to_svg(&layout, "currentColor");
       assert!(
@@ -1547,21 +1145,19 @@ mod tests {
     #[test]
     fn style_box_font_color_in_text_svg() {
       // Test boxes_to_svg path for StyleBox with FontColor
-      let inner = Expr::FunctionCall {
-        name: "StyleBox".to_string(),
-        args: vec![
+      let inner = call(
+        "StyleBox",
+        vec![
           Expr::String("colored".to_string()),
-          Expr::Rule {
-            pattern: Box::new(Expr::Identifier("FontColor".to_string())),
-            replacement: Box::new(Expr::FunctionCall {
-              name: "RGBColor".to_string(),
-              args: vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(1.0)]
-                .into(),
-            }),
-          },
-        ]
-        .into(),
-      };
+          rule_expr(
+            id_expr("FontColor"),
+            call(
+              "RGBColor",
+              vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(1.0)],
+            ),
+          ),
+        ],
+      );
       let svg = boxes_to_svg(&inner);
       assert!(
         svg.contains("fill=\"rgb(0,0,255)\""),
@@ -1589,17 +1185,16 @@ mod tests {
 
       // In a RowBox the opening `[` must sit clear of the name, not on top of it:
       // its glyph's left edge must be at least the name's true rendered width.
-      let row = Expr::FunctionCall {
-        name: "RowBox".to_string(),
-        args: vec![Expr::List(
+      let row = call1(
+        "RowBox",
+        Expr::List(
           vec![
             Expr::String(name.to_string()),
             Expr::String("[".to_string()),
           ]
           .into(),
-        )]
-        .into(),
-      };
+        ),
+      );
       let row_layout = layout_box(&row, font_size);
       assert!(
         row_layout.width >= expected + font_size * 0.632 - 0.01,
@@ -1615,14 +1210,13 @@ mod tests {
     fn hyperlink_two_args_renders_clickable_anchor() {
       // Hyperlink["Woxi", "https://woxi.ad-si.com"] should render as an
       // SVG <a href="..."> wrapping a blue label, with an underline.
-      let expr = Expr::FunctionCall {
-        name: "Hyperlink".to_string(),
-        args: vec![
+      let expr = call(
+        "Hyperlink",
+        vec![
           Expr::String("Woxi".to_string()),
           Expr::String("https://woxi.ad-si.com".to_string()),
-        ]
-        .into(),
-      };
+        ],
+      );
       let boxes = expr_to_box_form(&expr);
       let layout = layout_box(&boxes, 14.0);
       let svg = layout_to_svg(&layout, "currentColor");
@@ -1656,10 +1250,10 @@ mod tests {
     fn hyperlink_single_arg_uses_uri_as_label() {
       // Hyperlink["https://woxi.ad-si.com"] should display the URI as
       // both the visible text and the href.
-      let expr = Expr::FunctionCall {
-        name: "Hyperlink".to_string(),
-        args: vec![Expr::String("https://woxi.ad-si.com".to_string())].into(),
-      };
+      let expr = call1(
+        "Hyperlink",
+        Expr::String("https://woxi.ad-si.com".to_string()),
+      );
       let boxes = expr_to_box_form(&expr);
       let layout = layout_box(&boxes, 14.0);
       let svg = layout_to_svg(&layout, "currentColor");
@@ -1677,14 +1271,13 @@ mod tests {
     fn hyperlink_box_form_is_template_box() {
       // expr_to_box_form should produce TemplateBox[..., "HyperlinkURL"]
       // matching wolframscript's MakeBoxes structure.
-      let expr = Expr::FunctionCall {
-        name: "Hyperlink".to_string(),
-        args: vec![
+      let expr = call(
+        "Hyperlink",
+        vec![
           Expr::String("Woxi".to_string()),
           Expr::String("https://woxi.ad-si.com".to_string()),
-        ]
-        .into(),
-      };
+        ],
+      );
       let boxes = expr_to_box_form(&expr);
       if let Expr::FunctionCall { name, args } = &boxes {
         assert_eq!(name, "TemplateBox");
@@ -1703,14 +1296,10 @@ mod tests {
     fn hyperlink_with_non_string_uri_falls_back_to_function_call() {
       // Hyperlink[label, expr] with a non-string URI should fall through
       // to the generic function-call rendering (no anchor in SVG).
-      let expr = Expr::FunctionCall {
-        name: "Hyperlink".to_string(),
-        args: vec![
-          Expr::String("label".to_string()),
-          Expr::Identifier("someVar".to_string()),
-        ]
-        .into(),
-      };
+      let expr = call(
+        "Hyperlink",
+        vec![Expr::String("label".to_string()), id_expr("someVar")],
+      );
       let boxes = expr_to_box_form(&expr);
       let layout = layout_box(&boxes, 14.0);
       let svg = layout_to_svg(&layout, "currentColor");
@@ -1724,14 +1313,13 @@ mod tests {
     fn hyperlink_html_in_uri_is_escaped() {
       // A URI containing characters that need XML escaping should be
       // properly escaped in the href to avoid breaking the SVG.
-      let expr = Expr::FunctionCall {
-        name: "Hyperlink".to_string(),
-        args: vec![
+      let expr = call(
+        "Hyperlink",
+        vec![
           Expr::String("link".to_string()),
           Expr::String("https://example.com/?q=a&b=<c>".to_string()),
-        ]
-        .into(),
-      };
+        ],
+      );
       let boxes = expr_to_box_form(&expr);
       let layout = layout_box(&boxes, 14.0);
       let svg = layout_to_svg(&layout, "currentColor");
@@ -1749,10 +1337,7 @@ mod tests {
     // the box-wrapper head names may leak into the drawn text.
 
     fn render_form_svg(name: &str, value: f64) -> String {
-      let expr = Expr::FunctionCall {
-        name: name.to_string(),
-        args: vec![Expr::Real(value)].into(),
-      };
+      let expr = call1(name, Expr::Real(value));
       let boxes = expr_to_box_form(&expr);
       let layout = layout_box(&boxes, 14.0);
       layout_to_svg(&layout, "currentColor")
@@ -1830,18 +1415,17 @@ mod tests {
       // A list argument threads element-wise: each element is drawn in 2D
       // scientific notation inside a braced, comma-separated row — not as a
       // literal `ScientificForm[{…}]` function call.
-      let expr = Expr::FunctionCall {
-        name: "ScientificForm".to_string(),
-        args: vec![Expr::List(
+      let expr = call1(
+        "ScientificForm",
+        Expr::List(
           vec![
             Expr::Real(123450000.0),
             Expr::Real(0.00012345),
             Expr::Real(123.45),
           ]
           .into(),
-        )]
-        .into(),
-      };
+        ),
+      );
       let svg = layout_to_svg(
         &layout_box(&expr_to_box_form(&expr), 14.0),
         "currentColor",
@@ -3565,25 +3149,17 @@ mod tests {
     /// TagBox[FormBox["x", TraditionalForm], TraditionalForm,
     /// Editable -> True] — the wrapper an evaluated TraditionalForm carries.
     fn wrapped_atom() -> Expr {
-      Expr::FunctionCall {
-        name: "TagBox".to_string(),
-        args: vec![
-          Expr::FunctionCall {
-            name: "FormBox".to_string(),
-            args: vec![
-              Expr::String("x".to_string()),
-              Expr::Identifier("TraditionalForm".to_string()),
-            ]
-            .into(),
-          },
-          Expr::Identifier("TraditionalForm".to_string()),
-          Expr::Rule {
-            pattern: Box::new(Expr::Identifier("Editable".to_string())),
-            replacement: Box::new(Expr::Identifier("True".to_string())),
-          },
-        ]
-        .into(),
-      }
+      call(
+        "TagBox",
+        vec![
+          call(
+            "FormBox",
+            vec![Expr::String("x".to_string()), id_expr("TraditionalForm")],
+          ),
+          id_expr("TraditionalForm"),
+          rule_expr(id_expr("Editable"), bool_expr(true)),
+        ],
+      )
     }
 
     #[test]
@@ -4301,15 +3877,12 @@ mod tests {
     use super::*;
 
     fn tooltip(content: Expr, tip: &str) -> Expr {
-      Expr::FunctionCall {
-        name: "Tooltip".to_string(),
-        args: vec![content, Expr::String(tip.to_string())].into(),
-      }
+      call("Tooltip", vec![content, Expr::String(tip.to_string())])
     }
 
     #[test]
     fn tooltip_renders_first_argument_only() {
-      let expr = tooltip(Expr::Identifier("x".to_string()), "hidden tip");
+      let expr = tooltip(id_expr("x"), "hidden tip");
       assert_eq!(expr_to_svg_markup(&expr), "x");
       assert_eq!(estimate_display_width(&expr), 1.0);
     }
@@ -4318,11 +3891,7 @@ mod tests {
     fn curried_holdform_head_renders_as_application() {
       // HoldForm[TranslationTransform][Tooltip[{"px", "py"}, "Translation"]]
       let expr = Expr::CurriedCall {
-        func: Box::new(Expr::FunctionCall {
-          name: "HoldForm".to_string(),
-          args: vec![Expr::Identifier("TranslationTransform".to_string())]
-            .into(),
-        }),
+        func: Box::new(call1("HoldForm", id_expr("TranslationTransform"))),
         args: vec![tooltip(
           Expr::List(
             vec![
