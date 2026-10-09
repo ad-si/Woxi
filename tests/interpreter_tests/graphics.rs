@@ -994,6 +994,21 @@ mod graphics {
       );
     }
 
+    /// `Inset[Pane[image, …], Automatic, Automatic, size]` — how a
+    /// Demonstration shows a processed picture — draws the image itself
+    /// instead of printing the `Pane[-Image-, …]` source as text.
+    #[test]
+    fn a_pane_wrapped_image_inset_is_drawn() {
+      let svg = export_svg(
+        "Graphics[{Inset[Pane[Image[{{0.2, 0.8}, {0.9, 0.1}}], \
+         ImageSize -> Automatic], Automatic, Automatic, 2]}, PlotRange -> 1]",
+      );
+      assert!(
+        svg.contains("<image") && !svg.contains("Pane["),
+        "the image must be embedded, not named: {svg}"
+      );
+    }
+
     /// A symbolic `Graphics[…]` inset with no `size` keeps the size it would
     /// have on its own. It used to be folded into the enclosing picture's
     /// coordinates, so a unit-radius scene inset into a picture measured in
