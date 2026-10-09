@@ -966,14 +966,7 @@ fn fold_term_numerics(expr: &Expr) -> Expr {
       resort_radical_sum(&folded)
     }
     Expr::FunctionCall { name, args } if name == "Plus" => {
-      let folded = Expr::FunctionCall {
-        name: "Plus".to_string(),
-        args: args
-          .iter()
-          .map(fold_term_numerics)
-          .collect::<Vec<_>>()
-          .into(),
-      };
+      let folded = call("Plus", args.iter().map(fold_term_numerics).collect());
       resort_radical_sum(&folded)
     }
     Expr::UnaryOp {
@@ -1665,10 +1658,10 @@ fn expand_numerator_recursive(expr: &Expr) -> Expr {
       expand_numerator_recursive(left),
       expand_numerator_recursive(right),
     ),
-    Expr::FunctionCall { name, args } if name == "Plus" => Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: args.iter().map(expand_numerator_recursive).collect(),
-    },
+    Expr::FunctionCall { name, args } if name == "Plus" => call(
+      "Plus",
+      args.iter().map(expand_numerator_recursive).collect(),
+    ),
 
     // a / b : expand the numerator a
     Expr::BinaryOp {
@@ -1797,10 +1790,10 @@ fn expand_denominator_recursive(expr: &Expr) -> Expr {
       expand_denominator_recursive(left),
       expand_denominator_recursive(right),
     ),
-    Expr::FunctionCall { name, args } if name == "Plus" => Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: args.iter().map(expand_denominator_recursive).collect(),
-    },
+    Expr::FunctionCall { name, args } if name == "Plus" => call(
+      "Plus",
+      args.iter().map(expand_denominator_recursive).collect(),
+    ),
 
     // a / b : expand the denominator b
     Expr::BinaryOp {
