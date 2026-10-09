@@ -10854,9 +10854,22 @@ ParametricPlot[f[t], {t, 0, 1}]]",
           .and_then(|s| s.parse().ok())
           .unwrap_or_else(|| panic!("no {name} on the svg: {svg}"))
       };
+      // `AspectRatio` shapes the drawing area, not the whole picture: the
+      // frame's tick labels take their room out of the 200px, so the area
+      // is what has to stay square.
+      assert_eq!(attr("width"), 200.0, "{svg}");
+      let clip = svg
+        .lines()
+        .find(|l| l.contains("<clipPath"))
+        .expect("a clip path for the drawing area");
+      let clip_attr = |name: &str| -> String {
+        let key = format!("{name}=\"");
+        let start = clip.find(&key).unwrap() + key.len();
+        clip[start..start + clip[start..].find('"').unwrap()].to_string()
+      };
       assert_eq!(
-        (attr("width"), attr("height")),
-        (200.0, 200.0),
+        clip_attr("width"),
+        clip_attr("height"),
         "a square PlotRange must stay square through Show: {svg}"
       );
     }
@@ -33199,8 +33212,38 @@ mod grid_text_in_graphics {
       };
       (num(" width"), num(" height"))
     };
-    // A symmetric range is square, however lopsided the curve is.
-    assert_eq!(size("10"), (300, 300));
-    assert_eq!(size("{{-1, 3}, {0, 1}}"), (300, 75));
+    // A symmetric range gives a square drawing area, however lopsided the curve is.
+    assert_eq!(size("10"), (300, 294));
+    assert_eq!(size("{{-1, 3}, {0, 1}}"), (300, 97));
+  }
+
+  #[test]
+  fn aspect_ratio_shapes_plot_area_not_whole_image_with_frame() {
+    let svg = interpret(
+      r#"ExportString[Graphics[{Disk[{10, 5}, 5]}, Frame -> {False, True, False, False}, PlotRange -> {{-7, 25}, {-16, 16}}, AspectRatio -> 1, ImageSize -> {400}], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(svg.contains("<svg width=\"400\""), "{svg}");
+    let ellipse = svg.lines().find(|l| l.contains("<ellipse")).unwrap();
+    let attr = |name: &str| -> f64 {
+      let key = format!("{name}=\"");
+      let start = ellipse.find(&key).unwrap() + key.len();
+      let end = start + ellipse[start..].find('"').unwrap();
+      ellipse[start..end].parse().unwrap()
+    };
+    assert_eq!(attr("rx"), attr("ry"), "{ellipse}");
+  }
+
+  #[test]
+  fn show_keeps_list_plot_text_markers_and_filling_stems() {
+    let svg = interpret(
+      r#"ExportString[Show[Graphics[{Rectangle[{-7, -16}, {25, 0}]}], ListPlot[{{-1, -3.6}}, PlotMarkers -> Style[Row[{-3.6, " m"}], 12], Filling -> 0]], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(svg.contains(">-3.6 m</text>"), "{svg}");
+    assert!(
+      svg.contains("<polyline points=\"") && svg.contains("opacity=\"0.2\""),
+      "{svg}"
+    );
   }
 }
