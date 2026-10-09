@@ -33153,4 +33153,32 @@ mod grid_text_in_graphics {
     assert!(svg.contains("101<tspan"), "{svg}");
     assert!(!svg.contains(">10</tspan>"), "{svg}");
   }
+
+  #[test]
+  fn text_label_with_a_grid_in_a_column_is_laid_out_as_a_table_2d() {
+    let svg = export_svg(
+      r#"Graphics[Text[Column[{"head", Grid[{{"p", "q"}, {"r", "s"}}]}], {0, 0}]]"#,
+    );
+    // The table's cells are separate texts, not one flattened run.
+    assert!(svg.contains(">p</text>"), "{svg}");
+    assert!(svg.contains(">s</text>"), "{svg}");
+    assert!(!svg.contains("p  q"), "{svg}");
+  }
+
+  #[test]
+  fn text_label_with_a_grid_in_a_column_is_laid_out_as_a_table_3d() {
+    let svg = export_svg(
+      r#"Graphics3D[{Cylinder[], Text[Style[Column[{"head", Grid[{{"p", "q"}, {"r", "s"}}]}], 18], {0, 0, 0}]}]"#,
+    );
+    assert!(svg.contains(">p</text>"), "{svg}");
+    assert!(svg.contains(">s</text>"), "{svg}");
+  }
+
+  #[test]
+  fn text_label_table_honors_span_from_left() {
+    let svg = export_svg(
+      r#"Graphics[Text[Column[{Grid[{{"a", "wide", SpanFromLeft}}]}], {0, 0}]]"#,
+    );
+    assert!(!svg.contains("SpanFromLeft"), "{svg}");
+  }
 }
