@@ -8555,6 +8555,9 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut svg_width: u32 = 360;
   let mut svg_height: u32 = 225;
   let mut explicit_height = false;
+  // Whether `ImageSize -> {w, h}` named the height itself (as opposed to an
+  // `AspectRatio` implying it).
+  let mut size_names_height = false;
   let mut full_width = false;
   let mut plot_range_x: Option<(f64, f64)> = None;
   let mut plot_range_y: Option<(f64, f64)> = None;
@@ -8613,6 +8616,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             && !matches!(&items[1], Expr::Identifier(n) if n == "Automatic")
           {
             explicit_height = true;
+            size_names_height = true;
           }
           if let Some((w, h, fw)) =
             parse_image_size(replacement, DEFAULT_WIDTH, DEFAULT_HEIGHT)
@@ -9009,10 +9013,14 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // The size asked for is the whole picture, so the drawing area is what
   // is left of it once the axes and their labels have taken their room.
   let (svg_w, svg_h) = if explicit_size {
-    (
-      (svg_w - margin_left - margin_right).max(1.0),
-      (svg_h - margin_bottom - margin_top).max(1.0),
-    )
+    let w = (svg_w - margin_left - margin_right).max(1.0);
+    match aspect_ratio {
+      // `AspectRatio -> r` shapes the drawing area itself, not the whole
+      // picture, so the height follows from the width left over after the
+      // margins (unless `ImageSize -> {w, h}` fixed the height outright).
+      Some(r) if !size_names_height => (w, (w * r).round().max(1.0)),
+      _ => (w, (svg_h - margin_bottom - margin_top).max(1.0)),
+    }
   } else {
     (svg_w, svg_h)
   };
@@ -13316,6 +13324,41 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
       }
       series_prims.push(Expr::List(fill_prims.into()));
     }
+    // Scattered points with a `Filling` carry a stem from each point to the
+    // fill level, drawn under the points at the filling opacity.
+    if sd.is_scatter
+      && let Some(ref_y) = sd.filling.reference_y(ps.y_range.0, ps.y_range.1)
+    {
+      let (fr, fg, fb) = sd.fill_color.unwrap_or(sd.color);
+      let mut stems: Vec<Expr> = vec![
+        call1("Opacity", Expr::Real(sd.fill_opacity.unwrap_or(0.2))),
+        call(
+          "RGBColor",
+          vec![
+            Expr::Real(fr as f64 / 255.0),
+            Expr::Real(fg as f64 / 255.0),
+            Expr::Real(fb as f64 / 255.0),
+          ],
+        ),
+      ];
+      for &(x, y) in sd
+        .points
+        .iter()
+        .filter(|(x, y)| x.is_finite() && y.is_finite())
+      {
+        stems.push(call1(
+          "Line",
+          Expr::List(
+            vec![
+              Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()),
+              Expr::List(vec![Expr::Real(x), Expr::Real(ref_y)].into()),
+            ]
+            .into(),
+          ),
+        ));
+      }
+      series_prims.push(Expr::List(stems.into()));
+    }
     // Color directive
     series_prims.push(call(
       "RGBColor",
@@ -13325,7 +13368,38 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
         Expr::Real(sd.color.2 as f64 / 255.0),
       ],
     ));
-    if sd.is_scatter {
+    if sd.is_scatter
+      && let Some(marker) = &sd.marker
+    {
+      // `PlotMarkers` glyphs replace the round dots: each is text centred
+      // on its data point, in the marker's own colour and size.
+      if let Some((r, g, b)) = marker.color {
+        series_prims.push(call(
+          "RGBColor",
+          vec![
+            Expr::Real(r as f64 / 255.0),
+            Expr::Real(g as f64 / 255.0),
+            Expr::Real(b as f64 / 255.0),
+          ],
+        ));
+      }
+      for &(x, y) in sd
+        .points
+        .iter()
+        .filter(|(x, y)| x.is_finite() && y.is_finite())
+      {
+        series_prims.push(call(
+          "Text",
+          vec![
+            call(
+              "Style",
+              vec![Expr::String(marker.glyph.clone()), Expr::Real(marker.size)],
+            ),
+            Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()),
+          ],
+        ));
+      }
+    } else if sd.is_scatter {
       series_prims.push(match sd.point_size {
         Some(p) if p < 0.0 => call1("AbsolutePointSize", Expr::Real(-p)),
         Some(f) => call1("PointSize", Expr::Real(f)),
