@@ -527,6 +527,7 @@ fn sampled_y_range(
 }
 
 /// Split points into contiguous finite segments, breaking at NaN/Infinity
+/// in either coordinate (a `ParametricPlot` curve can diverge in x too).
 pub(crate) fn split_into_segments(
   points: &[(f64, f64)],
 ) -> Vec<Vec<(f64, f64)>> {
@@ -534,7 +535,7 @@ pub(crate) fn split_into_segments(
   let mut current: Vec<(f64, f64)> = Vec::new();
 
   for &(x, y) in points {
-    if y.is_finite() {
+    if x.is_finite() && y.is_finite() {
       current.push((x, y));
     } else if current.len() > 1 {
       segments.push(std::mem::take(&mut current));
@@ -622,6 +623,23 @@ fn clip_segments_to_y_range(
   }
 
   result
+}
+
+/// Clip line segments to an x-range (the y-range clipper with the axes
+/// swapped). Curves such as `ParametricPlot` can leave the plot area
+/// horizontally by many orders of magnitude.
+fn clip_segments_to_x_range(
+  segments: Vec<Vec<(f64, f64)>>,
+  x_min: f64,
+  x_max: f64,
+) -> Vec<Vec<(f64, f64)>> {
+  let swap = |segs: Vec<Vec<(f64, f64)>>| -> Vec<Vec<(f64, f64)>> {
+    segs
+      .into_iter()
+      .map(|seg| seg.into_iter().map(|(a, b)| (b, a)).collect())
+      .collect()
+  };
+  swap(clip_segments_to_y_range(swap(segments), x_min, x_max))
 }
 
 /// Compute a "nice" major tick step given the axis range and desired label
@@ -3400,10 +3418,14 @@ fn generate_svg_with_options(
           let color = RGBColor(r, g, b);
           let stroke_w = series_thickness(&opts.plot_style, series_idx);
           let dashing = series_dashing(&opts.plot_style, series_idx);
-          let segments = clip_segments_to_y_range(
-            split_into_segments(points),
-            y_min,
-            y_max,
+          let segments = clip_segments_to_x_range(
+            clip_segments_to_y_range(
+              split_into_segments(points),
+              y_min,
+              y_max,
+            ),
+            x_min,
+            x_max,
           );
 
           // Uncertainty bands lie underneath the curve and any filling.

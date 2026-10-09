@@ -33153,4 +33153,29 @@ mod grid_text_in_graphics {
     assert!(svg.contains("101<tspan"), "{svg}");
     assert!(!svg.contains(">10</tspan>"), "{svg}");
   }
+
+  #[test]
+  fn parametric_plot_clips_curve_diverging_in_x() {
+    // The curve passes through Ei(0) = -Infinity and reaches values far
+    // beyond the explicit PlotRange; it must be clipped instead of
+    // overflowing the renderer, and the visible part must still be drawn.
+    let svg = interpret(
+      r#"ExportString[ParametricPlot[{Re[ExpIntegralEi[(1/2 + t) Log[39]]],
+        Im[ExpIntegralEi[(1/2 + I t) Log[39]]]}, {t, -10, 10},
+        PlotRange -> {{-3, 6}, {-7, 7}}], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(svg.contains("<polyline"), "{svg}");
+  }
+
+  #[test]
+  fn parametric_plot_of_complex_exp_integral_draws_spiral() {
+    let svg = interpret(
+      r#"ExportString[ParametricPlot[{Re[ExpIntegralEi[(1/2 + I t) Log[39]]],
+        Im[ExpIntegralEi[(1/2 + I t) Log[39]]]}, {t, -10, 10},
+        PlotRange -> {{-3, 6}, {-7, 7}}], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(svg.matches("points=\"").count() >= 2, "{svg}");
+  }
 }

@@ -23,6 +23,15 @@ pub fn exp_integral_ei_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if is_neg_infinity(other) {
         return Ok(Expr::Integer(0));
       }
+      // Machine-precision complex argument (only when it carries an
+      // inexact part; exact complex arguments stay symbolic).
+      if crate::syntax::contains_inexact(other)
+        && let Some((re, im)) = try_extract_complex_float(other)
+        && im != 0.0
+      {
+        let (r, i) = complex_exp_integral_ei_f64(re, im);
+        return Ok(build_complex_float_expr(r, i));
+      }
       // Unevaluated
       Ok(unevaluated("ExpIntegralEi", args))
     }
@@ -1065,4 +1074,78 @@ pub(crate) fn fresnel_fg_numeric(f_variant: bool, x: f64) -> f64 {
   } else {
     -(c - 0.5) * cos_p - (s - 0.5) * sin_p
   }
+}
+
+type C64 = (f64, f64);
+
+fn c_mul(a: C64, b: C64) -> C64 {
+  (a.0 * b.0 - a.1 * b.1, a.0 * b.1 + a.1 * b.0)
+}
+
+fn c_div(a: C64, b: C64) -> C64 {
+  let d = b.0 * b.0 + b.1 * b.1;
+  ((a.0 * b.0 + a.1 * b.1) / d, (a.1 * b.0 - a.0 * b.1) / d)
+}
+
+fn c_ln(a: C64) -> C64 {
+  (a.0.hypot(a.1).ln(), a.1.atan2(a.0))
+}
+
+fn c_exp(a: C64) -> C64 {
+  let m = a.0.exp();
+  (m * a.1.cos(), m * a.1.sin())
+}
+
+/// E1(w) for complex w (not on the negative real axis): power series for
+/// small |w|, modified Lentz continued fraction otherwise.
+fn complex_e1_f64(w: C64) -> C64 {
+  if w.0.hypot(w.1) <= 3.0 {
+    let lw = c_ln(w);
+    let mut sum = (0.0, 0.0);
+    let mut term = (1.0, 0.0);
+    let neg_w = (-w.0, -w.1);
+    for n in 1..200 {
+      let nf = n as f64;
+      term = c_mul(term, neg_w);
+      term = (term.0 / nf, term.1 / nf);
+      let t = (term.0 / nf, term.1 / nf);
+      sum = (sum.0 + t.0, sum.1 + t.1);
+      if t.0.hypot(t.1) < 1e-17 * sum.0.hypot(sum.1) {
+        break;
+      }
+    }
+    (-std::f64::consts::EULER_GAMMA - lw.0 - sum.0, -lw.1 - sum.1)
+  } else {
+    let tiny = 1e-300;
+    let mut b = (w.0 + 1.0, w.1);
+    let mut c = (1.0 / tiny, 0.0);
+    let mut d = c_div((1.0, 0.0), b);
+    let mut h = d;
+    for i in 1..1000 {
+      let a = -((i * i) as f64);
+      b = (b.0 + 2.0, b.1);
+      d = c_div((1.0, 0.0), (a * d.0 + b.0, a * d.1 + b.1));
+      let ac = c_div((a, 0.0), c);
+      c = (b.0 + ac.0, b.1 + ac.1);
+      let del = c_mul(c, d);
+      h = c_mul(h, del);
+      if (del.0 - 1.0).abs() + del.1.abs() < 1e-16 {
+        break;
+      }
+    }
+    c_mul(h, c_exp((-w.0, -w.1)))
+  }
+}
+
+/// Ei(z) = -E1(-z) + (ln z - ln(1/z))/2 - ln(-z) for complex z.
+fn complex_exp_integral_ei_f64(re: f64, im: f64) -> C64 {
+  let z = (re, im);
+  let e1 = complex_e1_f64((-re, -im));
+  let lz = c_ln(z);
+  let linv = c_ln(c_div((1.0, 0.0), z));
+  let lnz = c_ln((-re, -im));
+  (
+    -e1.0 + 0.5 * (lz.0 - linv.0) - lnz.0,
+    -e1.1 + 0.5 * (lz.1 - linv.1) - lnz.1,
+  )
 }
