@@ -420,21 +420,19 @@ pub fn dirichlet_l_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let Some(&(num, _)) = rot.as_ref() else {
         continue;
       };
-      let cot = Expr::FunctionCall {
-        name: "Cot".to_string(),
-        args: vec![Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![
+      let cot = call1(
+        "Cot",
+        call(
+          "Times",
+          vec![
             call(
               "Rational",
               vec![Expr::Integer(a as i128 + 1), Expr::Integer(k)],
             ),
             const_expr("Pi"),
-          ]
-          .into(),
-        }]
-        .into(),
-      };
+          ],
+        ),
+      );
       terms.push(if num == 0 {
         cot
       } else {

@@ -2830,14 +2830,10 @@ fn evaluate_function_call_ast_inner(
     && let Expr::String(s) = &args[0]
     && let Some(channels) = parse_hex_color(s)
   {
-    return Ok(Expr::FunctionCall {
-      name: "RGBColor".to_string(),
-      args: channels
-        .into_iter()
-        .map(Expr::Real)
-        .collect::<Vec<_>>()
-        .into(),
-    });
+    return Ok(call(
+      "RGBColor",
+      channels.into_iter().map(Expr::Real).collect(),
+    ));
   }
 
   // Graphics primitives and style directives: return as symbolic (unevaluated)
@@ -7171,13 +7167,7 @@ fn evaluate_function_call_ast_inner(
           }
         }
       }
-      return Ok(Expr::List(
-        result
-          .into_iter()
-          .map(Expr::Real)
-          .collect::<Vec<_>>()
-          .into(),
-      ));
+      return Ok(Expr::List(result.into_iter().map(Expr::Real).collect()));
     }
 
     let mut adj = vec![vec![0.0_f64; n]; n];
@@ -7194,13 +7184,7 @@ fn evaluate_function_call_ast_inner(
       }
     }
     let centrality = crate::functions::graph::eigenvector_centrality(&adj);
-    return Ok(Expr::List(
-      centrality
-        .into_iter()
-        .map(Expr::Real)
-        .collect::<Vec<_>>()
-        .into(),
-    ));
+    return Ok(Expr::List(centrality.into_iter().map(Expr::Real).collect()));
   }
 
   // KatzCentrality[graph, alpha] / KatzCentrality[graph, alpha, beta] —
@@ -7261,13 +7245,7 @@ fn evaluate_function_call_ast_inner(
     if let Some(centrality) =
       crate::functions::graph::katz_centrality(&adj, alpha, &beta)
     {
-      return Ok(Expr::List(
-        centrality
-          .into_iter()
-          .map(Expr::Real)
-          .collect::<Vec<_>>()
-          .into(),
-      ));
+      return Ok(Expr::List(centrality.into_iter().map(Expr::Real).collect()));
     }
   }
 
@@ -7311,13 +7289,7 @@ fn evaluate_function_call_ast_inner(
     if let Some(centrality) =
       crate::functions::graph::pagerank_centrality(&adj, alpha)
     {
-      return Ok(Expr::List(
-        centrality
-          .into_iter()
-          .map(Expr::Real)
-          .collect::<Vec<_>>()
-          .into(),
-      ));
+      return Ok(Expr::List(centrality.into_iter().map(Expr::Real).collect()));
     }
   }
 
@@ -7413,9 +7385,7 @@ fn evaluate_function_call_ast_inner(
     }
     let eb =
       crate::functions::graph::edge_betweenness_centrality(n, &edge_pairs);
-    return Ok(Expr::List(
-      eb.into_iter().map(Expr::Real).collect::<Vec<_>>().into(),
-    ));
+    return Ok(Expr::List(eb.into_iter().map(Expr::Real).collect()));
   }
 
   // LocalClusteringCoefficient[graph] — local clustering coefficient for each vertex
@@ -10395,14 +10365,13 @@ fn evaluate_function_call_ast_inner(
         ]
         .into(),
       };
-      let due = Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![
+      let due = call(
+        "Times",
+        vec![
           pow(call("Plus", vec![Expr::Integer(1), args[1].clone()]), q),
           ordinary,
-        ]
-        .into(),
-      };
+        ],
+      );
       let result = evaluate_expr_to_expr(&due)?;
       // Only commit when the inner annuity actually evaluated.
       if !expr_to_string(&result).contains("Annuity") {
@@ -10485,17 +10454,16 @@ fn evaluate_function_call_ast_inner(
     let i_is_curve = matches!(i, Expr::List(_));
     let _ = (s_scalar, i_scalar);
     if !s_is_special && !i_is_curve && t_is_usable {
-      let value = Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![
+      let value = call(
+        "Times",
+        vec![
           s.clone(),
           pow(
             call("Plus", vec![Expr::Integer(1), i.clone()]),
             t_for_formula.clone(),
           ),
-        ]
-        .into(),
-      };
+        ],
+      );
       return evaluate_expr_to_expr(&value);
     }
 
@@ -10535,9 +10503,9 @@ fn evaluate_function_call_ast_inner(
       // i_eff = (1+i)^q - 1
       let i_eff = call("Plus", vec![pow(one_plus_i(), q), Expr::Integer(-1)]);
       // PV_annuity = p * (1 - (1+i)^-tspan) / i_eff
-      let pv_annuity = Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![
+      let pv_annuity = call(
+        "Times",
+        vec![
           p,
           call(
             "Plus",
@@ -10547,9 +10515,8 @@ fn evaluate_function_call_ast_inner(
             ],
           ),
           pow(i_eff, Expr::Integer(-1)),
-        ]
-        .into(),
-      };
+        ],
+      );
       // fp * (1+i)^-tspan  (final payment discounted from time tspan)
       let fp_term = call("Times", vec![fp, pow_neg_tspan()]);
       // PV_0 = PV_annuity + ip + fp_term
@@ -10593,14 +10560,13 @@ fn evaluate_function_call_ast_inner(
       let pv =
         call("Times", vec![pmt, numer, pow(i.clone(), Expr::Integer(-1))]);
       // V_t = PV * (1+i)^t
-      let result = Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![
+      let result = call(
+        "Times",
+        vec![
           pv,
           pow(call("Plus", vec![Expr::Integer(1), i.clone()]), t.clone()),
-        ]
-        .into(),
-      };
+        ],
+      );
       return evaluate_expr_to_expr(&result);
     }
 
@@ -10688,14 +10654,13 @@ fn evaluate_function_call_ast_inner(
           "Plus",
           vec![t.clone(), call("Times", vec![Expr::Integer(-1), time_k])],
         );
-        terms.push(Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![
+        terms.push(call(
+          "Times",
+          vec![
             amount,
             pow(call("Plus", vec![Expr::Integer(1), i.clone()]), exp),
-          ]
-          .into(),
-        });
+          ],
+        ));
       }
       let sum = call("Plus", terms);
       return evaluate_expr_to_expr(&sum);
@@ -10828,17 +10793,16 @@ fn evaluate_function_call_ast_inner(
           }
           interp
         };
-        let value = Expr::FunctionCall {
-          name: "Times".to_string(),
-          args: vec![
+        let value = call(
+          "Times",
+          vec![
             s.clone(),
             pow(
               call("Plus", vec![Expr::Integer(1), Expr::Real(rate)]),
               Expr::Real(-maturity),
             ),
-          ]
-          .into(),
-        };
+          ],
+        );
         return evaluate_expr_to_expr(&value);
       }
     }

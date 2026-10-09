@@ -5233,10 +5233,7 @@ fn classify_product_term(
     } else if other_factors.len() == 1 {
       other_factors[0].clone()
     } else {
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: other_factors.into_iter().cloned().collect(),
-      }
+      call("Times", other_factors.into_iter().cloned().collect())
     };
   } else {
     // No recognized linear y factor. The product is only a forcing term if it
@@ -9180,10 +9177,7 @@ fn classify_multivar_product(
     } else if other_factors.len() == 1 {
       other_factors[0].clone()
     } else {
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: other_factors.into_iter().cloned().collect(),
-      }
+      call("Times", other_factors.into_iter().cloned().collect())
     };
     (y_order, Some(y_var), coeff)
   } else {

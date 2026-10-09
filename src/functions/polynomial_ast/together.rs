@@ -239,14 +239,7 @@ pub(super) fn hoist_result_denominator_content(expr: &Expr) -> Expr {
       right,
     } => times2(hoist_product_factor(left), hoist_product_factor(right)),
     Expr::FunctionCall { name, args } if name == "Times" => {
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: args
-          .iter()
-          .map(hoist_product_factor)
-          .collect::<Vec<_>>()
-          .into(),
-      }
+      call("Times", args.iter().map(hoist_product_factor).collect())
     }
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
       op: *op,
