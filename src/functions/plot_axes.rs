@@ -13,6 +13,8 @@ use crate::functions::plot::{
 
 /// Tick-label font size, in display pixels.
 pub(crate) const AXIS_TICK_FONT: f64 = 10.5;
+/// Stroke width of the axis lines and tick marks, in display pixels.
+const AXIS_STROKE: f64 = 0.5;
 /// Length of a labelled tick mark, in display pixels (Wolfram draws 4).
 const AXIS_MAJOR_TICK_LEN: f64 = 4.0;
 /// Length of an unlabelled tick mark, in display pixels (Wolfram draws 2.4).
@@ -305,7 +307,9 @@ pub(crate) fn origin_axes_svg(a: &OriginAxes) -> String {
   let color = a.axis_color;
   let fill = a.label_fill;
   let font = AXIS_TICK_FONT * sf;
-  let stroke = sf;
+  // A hairline, like Wolfram's (a tenth of the curve's width in its SVG
+  // export), so the axes recede behind the data.
+  let stroke = AXIS_STROKE * sf;
   let line = |svg: &mut String, x1: f64, y1: f64, x2: f64, y2: f64| {
     svg.push_str(&format!(
       "<line x1=\"{x1:.1}\" y1=\"{y1:.1}\" x2=\"{x2:.1}\" y2=\"{y2:.1}\" \

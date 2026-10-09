@@ -8575,6 +8575,25 @@ mod plot3d {
       }
     }
 
+    /// Axis lines and tick marks are hairlines, much thinner than the
+    /// curve, so they recede behind the data as in Wolfram.
+    #[test]
+    fn axes_are_hairlines() {
+      let width = |tag: &str| -> f64 {
+        let i = tag.find("stroke-width=\"").unwrap() + 14;
+        tag[i..i + tag[i..].find('"').unwrap()].parse().unwrap()
+      };
+      for code in ["Plot[Sin[x], {x, -3, 3}]", "ListLinePlot[{1, 3, 2}]"] {
+        let svg = export_svg(code);
+        let curve = width(svg.split("<polyline").nth(1).unwrap());
+        let axes: Vec<f64> = svg.split("<line").skip(1).map(width).collect();
+        assert!(axes.len() > 2, "{code}: no axes in {svg}");
+        for w in axes {
+          assert!(w * 3.0 <= curve, "{code}: axis {w} vs curve {curve}");
+        }
+      }
+    }
+
     /// A range that excludes 0 carries the crossing axis at its end nearest
     /// to 0: the left/bottom edge for positive values, the right/top edge
     /// for negative ones.
