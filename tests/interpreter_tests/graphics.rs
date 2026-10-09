@@ -21119,6 +21119,20 @@ mod contour_plot_3d {
   use super::*;
 
   #[test]
+  fn extracted_surface_has_no_polygon_outline() {
+    // `plot[[1]]` re-rendered in a `Graphics3D` must not outline every
+    // surface triangle with the default polygon edge.
+    assert_eq!(
+      interpret(
+        "ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, 0, 1}, {y, 0, 1}, \
+         {z, 0, 1}, Mesh -> None, PlotPoints -> 4][[1, 2, 1]]"
+      )
+      .unwrap(),
+      "EdgeForm[]"
+    );
+  }
+
+  #[test]
   fn returns_graphics_3d() {
     assert_eq!(
       interpret(
