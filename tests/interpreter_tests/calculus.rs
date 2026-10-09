@@ -20019,3 +20019,31 @@ mod infinity_stored_in_variable {
     );
   }
 }
+
+mod ndsolve_complex_rhs_real_valued {
+  use super::*;
+
+  #[test]
+  fn real_valued_rhs_built_from_complex_pieces_is_solved() {
+    // |2 + I x| = Sqrt[4 + x^2] is real along the trajectory, so
+    // x' = Sqrt[4 + x^2], x[0] = 0 has the solution 2 Sinh[t].
+    assert_eq!(
+      interpret(
+        "sol = NDSolve[{x'[t] == Sqrt[2 + I x[t]] Sqrt[2 - I x[t]], \
+         x[0] == 0}, x[t], {t, 0, 1}]; \
+         Abs[(x[t] /. First[sol] /. t -> 1) - 2 Sinh[1]] < 10^-3"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn genuinely_complex_rhs_stays_unevaluated() {
+    assert_eq!(
+      interpret("NDSolve[{x'[t] == I x[t], x[0] == 1}, x[t], {t, 0, 1}]")
+        .unwrap(),
+      "NDSolve[{Derivative[1][x][t] == I*x[t], x[0] == 1}, x[t], {t, 0, 1}]"
+    );
+  }
+}

@@ -4573,6 +4573,13 @@ enum NExpr {
     func_args: Vec<Expr>,
     arg: Box<Self>,
   },
+  /// A right-hand side written with complex constants (`I`, `Complex[a, b]`)
+  /// whose value along the trajectory is real — e.g. a closed-form soliton
+  /// velocity field assembled from `E^(I …)` and `Sqrt[… I …]` pieces. It
+  /// is evaluated in complex arithmetic and reduced to its real part;
+  /// a value with a significant imaginary part is not a real ODE, and
+  /// yields NaN so the solve is rejected instead of silently wrong.
+  ComplexReal(Box<CExpr>),
 }
 
 impl NExpr {
@@ -4608,6 +4615,14 @@ impl NExpr {
           .ok()
           .and_then(|r| expr_to_f64(&r).ok())
           .unwrap_or(f64::NAN)
+      }
+      Self::ComplexReal(c) => {
+        let z = c.eval(vars);
+        if z.im.abs() <= 1e-6 * z.re.abs().max(1.0) {
+          z.re
+        } else {
+          f64::NAN
+        }
       }
       Self::Interp1D { func_args, arg } => {
         let x = arg.eval(vars);
@@ -4696,6 +4711,14 @@ fn compile_interp1d_call(
 /// Returns `None` for any construct outside the supported numeric subset
 /// (the caller then falls back to symbolic evaluation).
 fn compile_numeric(expr: &Expr, var_names: &[String]) -> Option<NExpr> {
+  if contains_imaginary(expr) {
+    return compile_complex(expr, var_names)
+      .map(|c| NExpr::ComplexReal(Box::new(c)));
+  }
+  compile_numeric_real(expr, var_names)
+}
+
+fn compile_numeric_real(expr: &Expr, var_names: &[String]) -> Option<NExpr> {
   let comp = |e: &Expr| compile_numeric(e, var_names);
   match expr {
     Expr::Integer(n) => Some(NExpr::Const(*n as f64)),
@@ -4831,6 +4854,225 @@ fn compile_numeric(expr: &Expr, var_names: &[String]) -> Option<NExpr> {
         .or_else(|| Some(compile_external_leaf(expr, var_names)))
     }
     other => Some(compile_external_leaf(other, var_names)),
+  }
+}
+
+// ─── Complex-valued right-hand sides ───────────────────────────────────
+
+#[derive(Clone, Copy)]
+struct Cx {
+  re: f64,
+  im: f64,
+}
+
+impl Cx {
+  const fn real(re: f64) -> Self {
+    Self { re, im: 0.0 }
+  }
+  fn add(self, o: Self) -> Self {
+    Self {
+      re: self.re + o.re,
+      im: self.im + o.im,
+    }
+  }
+  fn mul(self, o: Self) -> Self {
+    Self {
+      re: self.re * o.re - self.im * o.im,
+      im: self.re * o.im + self.im * o.re,
+    }
+  }
+  fn neg(self) -> Self {
+    Self {
+      re: -self.re,
+      im: -self.im,
+    }
+  }
+  fn recip(self) -> Self {
+    let d = self.re * self.re + self.im * self.im;
+    Self {
+      re: self.re / d,
+      im: -self.im / d,
+    }
+  }
+  fn exp(self) -> Self {
+    let m = self.re.exp();
+    Self {
+      re: m * self.im.cos(),
+      im: m * self.im.sin(),
+    }
+  }
+  fn ln(self) -> Self {
+    Self {
+      re: self.re.hypot(self.im).ln(),
+      im: self.im.atan2(self.re),
+    }
+  }
+  fn sqrt(self) -> Self {
+    let r = self.re.hypot(self.im);
+    let re = f64::midpoint(r, self.re).sqrt();
+    let im = ((r - self.re) / 2.0).sqrt();
+    Self {
+      re,
+      im: if self.im < 0.0 { -im } else { im },
+    }
+  }
+  fn sin(self) -> Self {
+    Self {
+      re: self.re.sin() * self.im.cosh(),
+      im: self.re.cos() * self.im.sinh(),
+    }
+  }
+  fn cos(self) -> Self {
+    Self {
+      re: self.re.cos() * self.im.cosh(),
+      im: -self.re.sin() * self.im.sinh(),
+    }
+  }
+  fn sinh(self) -> Self {
+    Self {
+      re: self.re.sinh() * self.im.cos(),
+      im: self.re.cosh() * self.im.sin(),
+    }
+  }
+  fn cosh(self) -> Self {
+    Self {
+      re: self.re.cosh() * self.im.cos(),
+      im: self.re.sinh() * self.im.sin(),
+    }
+  }
+  fn powc(self, e: Self) -> Self {
+    if e.im == 0.0 && e.re.fract() == 0.0 && e.re.abs() <= 64.0 {
+      let mut acc = Self::real(1.0);
+      for _ in 0..(e.re.abs() as u32) {
+        acc = acc.mul(self);
+      }
+      return if e.re < 0.0 { acc.recip() } else { acc };
+    }
+    if self.re == 0.0 && self.im == 0.0 {
+      return Self::real(0.0);
+    }
+    e.mul(self.ln()).exp()
+  }
+}
+
+/// Complex counterpart of `NExpr`, for right-hand sides that mention `I`.
+enum CExpr {
+  Const(Cx),
+  Var(usize),
+  Add(Vec<Self>),
+  Mul(Vec<Self>),
+  Pow(Box<Self>, Box<Self>),
+  Neg(Box<Self>),
+  Fn1(fn(Cx) -> Cx, Box<Self>),
+}
+
+impl CExpr {
+  fn eval(&self, vars: &[f64]) -> Cx {
+    match self {
+      Self::Const(c) => *c,
+      Self::Var(i) => Cx::real(vars[*i]),
+      Self::Add(items) => items
+        .iter()
+        .fold(Cx::real(0.0), |acc, e| acc.add(e.eval(vars))),
+      Self::Mul(items) => items
+        .iter()
+        .fold(Cx::real(1.0), |acc, e| acc.mul(e.eval(vars))),
+      Self::Pow(b, e) => b.eval(vars).powc(e.eval(vars)),
+      Self::Neg(e) => e.eval(vars).neg(),
+      Self::Fn1(f, a) => f(a.eval(vars)),
+    }
+  }
+}
+
+/// Does `expr` mention the imaginary unit or a `Complex[…]` literal?
+fn contains_imaginary(expr: &Expr) -> bool {
+  match expr {
+    Expr::Identifier(n) | Expr::Constant(n) => n == "I",
+    Expr::FunctionCall { name, .. } if name == "Complex" => true,
+    _ => expr_children(expr).into_iter().any(contains_imaginary),
+  }
+}
+
+fn compile_complex(expr: &Expr, var_names: &[String]) -> Option<CExpr> {
+  let comp = |e: &Expr| compile_complex(e, var_names);
+  let all = |args: &[Expr]| args.iter().map(comp).collect::<Option<Vec<_>>>();
+  let inv =
+    |e: CExpr| CExpr::Pow(Box::new(e), Box::new(CExpr::Const(Cx::real(-1.0))));
+  match expr {
+    Expr::Integer(n) => Some(CExpr::Const(Cx::real(*n as f64))),
+    Expr::Real(v) => Some(CExpr::Const(Cx::real(*v))),
+    Expr::Identifier(name) | Expr::Constant(name) => {
+      if let Some(idx) = var_names.iter().position(|n| n == name) {
+        return Some(CExpr::Var(idx));
+      }
+      let c = match name.as_str() {
+        "I" => Cx { re: 0.0, im: 1.0 },
+        "Pi" => Cx::real(std::f64::consts::PI),
+        "E" => Cx::real(std::f64::consts::E),
+        "Degree" => Cx::real(std::f64::consts::PI / 180.0),
+        _ => return None,
+      };
+      Some(CExpr::Const(c))
+    }
+    Expr::BinaryOp { op, left, right } => {
+      let (l, r) = (comp(left)?, comp(right)?);
+      Some(match op {
+        BinaryOperator::Plus => CExpr::Add(vec![l, r]),
+        BinaryOperator::Minus => CExpr::Add(vec![l, CExpr::Neg(Box::new(r))]),
+        BinaryOperator::Times => CExpr::Mul(vec![l, r]),
+        BinaryOperator::Divide => CExpr::Mul(vec![l, inv(r)]),
+        BinaryOperator::Power => CExpr::Pow(Box::new(l), Box::new(r)),
+        _ => return None,
+      })
+    }
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => Some(CExpr::Neg(Box::new(comp(operand)?))),
+    Expr::FunctionCall { name, args } => {
+      let unary: Option<fn(Cx) -> Cx> = match name.as_str() {
+        "Exp" => Some(Cx::exp),
+        "Log" if args.len() == 1 => Some(Cx::ln),
+        "Sqrt" => Some(Cx::sqrt),
+        "Sin" => Some(Cx::sin),
+        "Cos" => Some(Cx::cos),
+        "Sinh" => Some(Cx::sinh),
+        "Cosh" => Some(Cx::cosh),
+        _ => None,
+      };
+      if let Some(f) = unary
+        && args.len() == 1
+      {
+        return Some(CExpr::Fn1(f, Box::new(comp(&args[0])?)));
+      }
+      match name.as_str() {
+        "Plus" => Some(CExpr::Add(all(args)?)),
+        "Times" => Some(CExpr::Mul(all(args)?)),
+        "Subtract" if args.len() == 2 => Some(CExpr::Add(vec![
+          comp(&args[0])?,
+          CExpr::Neg(Box::new(comp(&args[1])?)),
+        ])),
+        "Divide" if args.len() == 2 => {
+          Some(CExpr::Mul(vec![comp(&args[0])?, inv(comp(&args[1])?)]))
+        }
+        "Power" if args.len() == 2 => Some(CExpr::Pow(
+          Box::new(comp(&args[0])?),
+          Box::new(comp(&args[1])?),
+        )),
+        "Rational" if args.len() == 2 => match (&args[0], &args[1]) {
+          (Expr::Integer(a), Expr::Integer(b)) if *b != 0 => {
+            Some(CExpr::Const(Cx::real(*a as f64 / *b as f64)))
+          }
+          _ => None,
+        },
+        "Complex" if args.len() == 2 => Some(CExpr::Const(Cx {
+          re: nval_to_f64(&args[0])?,
+          im: nval_to_f64(&args[1])?,
+        })),
+        _ => None,
+      }
+    }
+    _ => None,
   }
 }
 
