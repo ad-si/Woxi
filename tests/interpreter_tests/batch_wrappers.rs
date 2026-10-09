@@ -1512,6 +1512,21 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
   #[test]
+  fn graph_plot_honours_plot_range_with_vertex_coordinates() {
+    // With an explicit PlotRange the vertices keep their place in the
+    // window instead of being stretched to fill it.
+    let svg = interpret(
+      "ExportString[GraphPlot[{1 -> 2}, VertexCoordinates -> {{0, 0}, {1, 0}}, PlotRange -> {{-1, 1}, {-1, 1}}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains("cx=\"180.00\" cy=\"180.00\""), "{svg}");
+    let full = interpret(
+      "ExportString[GraphPlot[{1 -> 2}, VertexCoordinates -> {{0, 0}, {1, 0}}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(!full.contains("cx=\"180.00\" cy=\"180.00\""), "{full}");
+  }
+  #[test]
   fn graph_plot_forwards_to_graph() {
     assert_eq!(
       interpret(

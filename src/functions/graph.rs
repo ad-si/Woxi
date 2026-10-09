@@ -462,6 +462,10 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `VertexCoordinates -> {{x, y}, …}`, one pair per vertex in order,
   // fixes the layout outright instead of computing one.
   let mut explicit_coordinates: Option<Vec<(f64, f64)>> = None;
+  // `PlotRange -> {{x0, x1}, {y0, y1}}`: the window of the coordinate
+  // plane to show. Only honoured together with `VertexCoordinates`, where
+  // the caller decides what the coordinates mean.
+  let mut explicit_range: Option<((f64, f64), (f64, f64))> = None;
   let mut draw_directed = true;
   let mut image_size: Option<Expr> = None;
 
@@ -593,6 +597,16 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "ImageSize" => {
           image_size = Some(replacement.clone());
         }
+        "PlotRange" => {
+          if let Expr::List(axes) = replacement
+            && let [xs, ys] = &axes[..]
+            && let (Some(x), Some(y)) = (expr_to_point(xs), expr_to_point(ys))
+            && x.1 > x.0
+            && y.1 > y.0
+          {
+            explicit_range = Some((x, y));
+          }
+        }
         _ => {}
       }
     }
@@ -626,8 +640,32 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // circular embedding, and for multi-component graphs each component is
   // laid out independently (force-directed when large enough) and the
   // components are packed into a grid so clusters are visible.
+  let mut shown_range: Option<Expr> = None;
   let positions: Vec<(f64, f64)> = if let Some(pts) = explicit_coordinates {
-    normalize_explicit_positions(pts)
+    if let Some(((x0, x1), (y0, y1))) = explicit_range {
+      // Keep the caller's window: map it onto the same diameter-2 scale
+      // the heuristics expect, so points keep their place within it.
+      let scale = 2.0 / (x1 - x0).max(y1 - y0);
+      let (cx, cy) = (f64::midpoint(x0, x1), f64::midpoint(y0, y1));
+      let pair =
+        |a: f64, b: f64| Expr::List(vec![Expr::Real(a), Expr::Real(b)].into());
+      shown_range = Some(rule_expr(
+        id_expr("PlotRange"),
+        Expr::List(
+          vec![
+            pair((x0 - cx) * scale, (x1 - cx) * scale),
+            pair((y0 - cy) * scale, (y1 - cy) * scale),
+          ]
+          .into(),
+        ),
+      ));
+      pts
+        .into_iter()
+        .map(|(x, y)| ((x - cx) * scale, (y - cy) * scale))
+        .collect()
+    } else {
+      normalize_explicit_positions(pts)
+    }
   } else {
     match layered {
       Some(dir) => {
@@ -1184,7 +1222,9 @@ pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   );
 
   let mut graphics_args = vec![content, image_size_opt];
-  if let Some(range) = flat_axis_plot_range(&positions, vertex_radius) {
+  if let Some(range) =
+    shown_range.or_else(|| flat_axis_plot_range(&positions, vertex_radius))
+  {
     graphics_args.push(range);
   }
   graphics_ast(&graphics_args)
