@@ -4828,6 +4828,22 @@ mod nintegrate {
     );
   }
 
+  // A loose AccuracyGoal / PrecisionGoal is honoured (it used to be ignored
+  // and the strict default tolerance forced thousands of evaluations).
+  #[test]
+  fn nintegrate_accuracy_and_precision_goal() {
+    assert_approx(
+      "NIntegrate[Abs[x - 0.3] + x, {x, -1, 1}, AccuracyGoal -> 3]",
+      1.09,
+      1e-2,
+    );
+    assert_approx(
+      "NIntegrate[Exp[-x^2], {x, 0, 1}, PrecisionGoal -> 4]",
+      0.7468241328124271,
+      1e-3,
+    );
+  }
+
   #[test]
   fn nintegrate_polynomial() {
     // ∫₀¹ x² dx = 1/3
@@ -9328,6 +9344,32 @@ mod ndsolve {
       (val - expected).abs() < 1e-2,
       "Expected about {expected}, got {val}"
     );
+  }
+
+  /// A system mixing an unknown group with only an `x` derivative (so `y`
+  /// is a mere parameter: plain ODEs in `x`) and a diffusive group with
+  /// second `y` derivatives and Neumann ends. The ODE group has the exact
+  /// solution `a[x, y] == E^-x`, `b[x, y] == 300 + 1 - E^-x`, independent
+  /// of `y`; the diffusive group stays at its uniform profile.
+  #[test]
+  fn pde_system_mixing_parameter_ode_and_diffusive_groups() {
+    let result = interpret(
+      "f = NDSolveValue[{D[a[x, y], x] == -a[x, y], \
+       D[b[x, y], x] == a[x, y], a[0, y] == 1, b[0, y] == 300, \
+       D[d[x, y], x] == 0.01 D[d[x, y], y, y] - d[x, y], d[0, y] == 1, \
+       (D[d[x, y], y] /. y -> -0.5) == 0, (D[d[x, y], y] /. y -> 0.5) == 0}, \
+       {b, a, d}, {x, 0, 1}, {y, -0.5, 0.5}]; \
+       {f[[1]][1., 0.2], f[[2]][0.5, -0.3], f[[3]][1., 0.]}",
+    )
+    .unwrap();
+    let vals: Vec<f64> = result
+      .trim_matches(|c| c == '{' || c == '}')
+      .split(", ")
+      .map(|v| v.parse().expect("number"))
+      .collect();
+    assert!((vals[0] - (301.0 - (-1.0f64).exp())).abs() < 1e-6);
+    assert!((vals[1] - (-0.5f64).exp()).abs() < 1e-6);
+    assert!((vals[2] - (-1.0f64).exp()).abs() < 1e-3);
   }
 
   #[test]
