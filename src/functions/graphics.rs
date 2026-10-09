@@ -15229,6 +15229,14 @@ fn grid_svg_styled_internal(
       + col_pad_right.get(j).copied().unwrap_or(pad_x / 2.0)
   };
 
+  // A cell's own `Style[…, size]` sets its text larger or smaller than the
+  // grid's font; its column and row grow or shrink with it.
+  let cell_text_scale = |cell: &Expr| -> f64 {
+    extract_cell_style(cell)
+      .font_size
+      .map_or(1.0, |fs| fs / font_size)
+  };
+
   let mut col_widths: Vec<f64> = vec![0.0; num_cols];
   // Cells that span several columns are held back: their columns are sized
   // by the ordinary cells first, and only what a span still needs is added
@@ -15241,7 +15249,10 @@ fn grid_svg_styled_internal(
       }
       let w = match grid_cell_graphic(cell) {
         Some((_, nat_w, _)) => nat_w + col_pad(j),
-        None => estimate_display_width(cell) * char_width + col_pad(j),
+        None => {
+          estimate_display_width(cell) * char_width * cell_text_scale(cell)
+            + col_pad(j)
+        }
       };
       let cols = span_width(row, j);
       if cols > 1 {
@@ -15307,6 +15318,12 @@ fn grid_svg_styled_internal(
       } else {
         base_row_height
       };
+      if grid_cell_graphic(cell).is_none() {
+        let scale = cell_text_scale(cell);
+        if scale > 1.0 {
+          cell_h *= scale;
+        }
+      }
       // A graphic cell keeps its own height.
       if let Some((_, _, nat_h)) = grid_cell_graphic(cell) {
         cell_h = cell_h.max(nat_h + pad_y);
