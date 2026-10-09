@@ -7922,6 +7922,10 @@ pub(crate) fn parse_image_size(
       let h = (w as f64 * aspect).round() as u32;
       Some((w, h, false))
     }
+    // `{w}` is the same as `w`.
+    Expr::List(items) if items.len() == 1 => {
+      parse_image_size(&items[0], def_w, def_h)
+    }
     // `{w, h}` fixes both dimensions; `Automatic` in either slot leaves
     // that one to follow from the other and the default aspect, which is
     // how a Demonstration sizes a row of plots by height alone.
@@ -8109,6 +8113,29 @@ fn parse_one_marker(expr: &Expr) -> Option<PlotMarker> {
       size: DEFAULT_MARKER_SIZE,
       color: None,
     }),
+    // `Row[{a, b, …}]` — the pieces laid side by side as one text glyph,
+    // e.g. a number followed by its unit.
+    Expr::FunctionCall { name, args }
+      if name == "Row"
+        && args.len() == 1
+        && matches!(&args[0], Expr::List(_)) =>
+    {
+      let Expr::List(items) = &args[0] else {
+        return None;
+      };
+      let glyph: String = items
+        .iter()
+        .map(|item| match item {
+          Expr::String(s) => s.clone(),
+          other => crate::syntax::expr_to_string(other),
+        })
+        .collect();
+      Some(PlotMarker {
+        glyph,
+        size: DEFAULT_MARKER_SIZE,
+        color: None,
+      })
+    }
     // `Style[marker, directives…]` — a colour and/or a font size.
     Expr::FunctionCall { name, args }
       if name == "Style" && !args.is_empty() =>
