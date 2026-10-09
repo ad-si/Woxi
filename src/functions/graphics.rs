@@ -4247,6 +4247,43 @@ fn apply_agreed_row_part_styles(content: &Expr, style: &mut StyleState) {
   }
 }
 
+/// Whether `expr` is a `Row`/`Column` (possibly under a `Style`) that has a
+/// `Grid` somewhere among its items.
+fn layout_holds_grid(expr: &Expr) -> bool {
+  fn has_grid(e: &Expr) -> bool {
+    match e {
+      Expr::FunctionCall { name, args } => {
+        name == "Grid" || args.iter().any(has_grid)
+      }
+      Expr::List(items) => items.iter().any(has_grid),
+      _ => false,
+    }
+  }
+  match expr {
+    Expr::FunctionCall { name, args } if is_style_wrapper(name) => {
+      args.first().is_some_and(layout_holds_grid)
+    }
+    Expr::FunctionCall { name, args } if name == "Row" || name == "Column" => {
+      args.iter().any(has_grid)
+    }
+    _ => false,
+  }
+}
+
+/// The picture of a `Row`/`Column` label holding a `Grid`, with its natural
+/// width and height — `None` for any other label.
+pub(crate) fn layout_grid_picture(expr: &Expr) -> Option<(String, f64, f64)> {
+  if !layout_holds_grid(expr) {
+    return None;
+  }
+  let svg = crate::evaluator::expr_to_svg(expr);
+  if !svg.starts_with("<svg") {
+    return None;
+  }
+  let dims = parse_svg_dimensions(&svg)?;
+  Some((svg, dims.nat_w, dims.nat_h))
+}
+
 fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   // Text[str, {x, y}] or Text[Style[str, ...], {x, y}]
   //
@@ -4298,6 +4335,26 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     None => content,
   };
   if hidden {
+    return;
+  }
+  // A label laid out as a `Column`/`Row` holding a `Grid` (a table of
+  // values beside a point) is composed to its own picture and embedded
+  // whole at the anchor; flattening it to one text run would lose the
+  // table's rows, columns and dividers.
+  if frame_opts.is_empty()
+    && args.len() == 2
+    && let Some((svg, w, h)) = layout_grid_picture(framed_body)
+    && let Some((x, y, scaled)) = expr_to_anchor(&args[1])
+  {
+    prims.push(Primitive::InsetGraphic {
+      svg,
+      x,
+      y,
+      w,
+      h,
+      scaled,
+      size: None,
+    });
     return;
   }
   // A label written as a `Row` of styled parts — the `f(x)` a

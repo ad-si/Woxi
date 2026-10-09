@@ -2796,6 +2796,10 @@ enum Primitive3D {
     /// Character count of the visible text, for placing the box an
     /// `offset` displaces.
     width_chars: usize,
+    /// A label laid out as a table (a `Column` holding a `Grid`) is a
+    /// picture rather than a text run: its SVG and natural size, drawn
+    /// centred on the label's anchor.
+    picture: Option<(String, f64, f64)>,
     style: StyleState3D,
   },
   /// A pre-tessellated triangle surface (Torus, FilledTorus, BSplineSurface,
@@ -3707,6 +3711,20 @@ fn push_text3d_label(
   style: &StyleState3D,
   prims: &mut Vec<Primitive3D>,
 ) {
+  if let Some(picture) =
+    crate::functions::graphics::layout_grid_picture(label_expr)
+  {
+    prims.push(Primitive3D::Text3D {
+      label: String::new(),
+      pos,
+      offset,
+      font_size: 12.0,
+      width_chars: 0,
+      picture: Some(picture),
+      style: style.clone(),
+    });
+    return;
+  }
   let styled = crate::functions::chart::parse_styled_label(label_expr);
   let (label, width_chars, font_size, color) = match styled {
     Some(s) => (
@@ -3734,6 +3752,7 @@ fn push_text3d_label(
     offset,
     font_size,
     width_chars,
+    picture: None,
     style: text_style,
   });
 }
@@ -6571,6 +6590,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         offset,
         font_size,
         width_chars,
+        picture,
         style,
       } => {
         let fill_color = if let Some((r, g, b)) = style.color {
@@ -6580,6 +6600,17 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         };
         let (px, py) = project(*pos, &camera);
         let (sx, sy) = to_svg(px, py);
+        if let Some((pic, w, h)) = picture {
+          let x = sx - w / 2.0 - offset.0 * w / 2.0;
+          let y = sy - h / 2.0 + offset.1 * h / 2.0;
+          svg.push_str(&pic.replacen(
+            "<svg ",
+            &format!("<svg x=\"{x:.1}\" y=\"{y:.1}\" "),
+            1,
+          ));
+          svg.push('\n');
+          continue;
+        }
         // The offset names which point of the label's box sits at the
         // projected point, so the box moves the other way — half its width
         // per unit across, half its height per unit up (and the vertical
