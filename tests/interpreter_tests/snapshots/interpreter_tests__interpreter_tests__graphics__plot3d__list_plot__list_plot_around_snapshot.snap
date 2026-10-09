@@ -4,197 +4,72 @@ expression: "export_svg(\"ListPlot[{Around[2, 1], Around[3, 0.5], Around[5, 0.25
 ---
 <svg width="360" height="225" viewBox="0 0 3600 2250" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 <rect x="0" y="0" width="3600" height="2250" opacity="1" fill="#FFFFFF" stroke="none"/>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="749,100 749,1749 "/>
-<text x="670" y="1688" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-1
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1688 749,1688 "/>
-<text x="670" y="1617" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1617 749,1617 "/>
-<text x="670" y="1545" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1545 749,1545 "/>
-<text x="670" y="1473" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1473 749,1473 "/>
-<text x="670" y="1401" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1401 749,1401 "/>
-<text x="670" y="1329" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-2
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1329 749,1329 "/>
-<text x="670" y="1257" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1257 749,1257 "/>
-<text x="670" y="1185" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1185 749,1185 "/>
-<text x="670" y="1114" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1114 749,1114 "/>
-<text x="670" y="1042" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,1042 749,1042 "/>
-<text x="670" y="970" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-3
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,970 749,970 "/>
-<text x="670" y="898" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,898 749,898 "/>
-<text x="670" y="826" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,826 749,826 "/>
-<text x="670" y="754" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,754 749,754 "/>
-<text x="670" y="682" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,682 749,682 "/>
-<text x="670" y="611" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-4
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,611 749,611 "/>
-<text x="670" y="539" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,539 749,539 "/>
-<text x="670" y="467" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,467 749,467 "/>
-<text x="670" y="395" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,395 749,395 "/>
-<text x="670" y="323" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,323 749,323 "/>
-<text x="670" y="251" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-5
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,251 749,251 "/>
-<text x="670" y="180" dy="0.5ex" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="709,180 749,180 "/>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="750,1750 3499,1750 "/>
-<text x="851" y="1830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-1.0
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="851,1750 851,1790 "/>
-<text x="979" y="1830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="979,1750 979,1790 "/>
-<text x="1106" y="1830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="1106,1750 1106,1790 "/>
-<text x="1233" y="1830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="1233,1750 1233,1790 "/>
-<text x="1360" y="1830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="1360,1750 1360,1790 "/>
-<text x="1488" y="1830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-1.5
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="1488,1750 1488,1790 "/>
-<text x="1615" y="1830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="1615,1750 1615,1790 "/>
-<text x="1742" y="1830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="1742,1750 1742,1790 "/>
-<text x="1869" y="1830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="1869,1750 1869,1790 "/>
-<text x="1997" y="1830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="1997,1750 1997,1790 "/>
-<text x="2124" y="1830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-2.0
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="2124,1750 2124,1790 "/>
-<text x="2251" y="1830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="2251,1750 2251,1790 "/>
-<text x="2379" y="1830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="2379,1750 2379,1790 "/>
-<text x="2506" y="1830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="2506,1750 2506,1790 "/>
-<text x="2633" y="1830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="2633,1750 2633,1790 "/>
-<text x="2760" y="1830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-2.5
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="2760,1750 2760,1790 "/>
-<text x="2888" y="1830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="2888,1750 2888,1790 "/>
-<text x="3015" y="1830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="3015,1750 3015,1790 "/>
-<text x="3142" y="1830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="3142,1750 3142,1790 "/>
-<text x="3269" y="1830" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">
-
-</text>
-<polyline fill="none" opacity="1" stroke="#666666" stroke-width="10" points="3269,1750 3269,1790 "/>
-<polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="10" points="851,1688 851,970 "/>
-<polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="10" points="818,1688 884,1688 "/>
-<polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="10" points="818,970 884,970 "/>
-<polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="10" points="2124,1150 2124,790 "/>
-<polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="10" points="2091,1150 2157,1150 "/>
-<polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="10" points="2091,790 2157,790 "/>
-<polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="10" points="3397,341 3397,162 "/>
-<polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="10" points="3364,341 3430,341 "/>
-<polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="10" points="3364,162 3430,162 "/>
-<circle cx="851" cy="1329" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>
-<circle cx="2124" cy="970" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>
-<circle cx="3397" cy="251" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>
-<line x1="851.9" y1="1790.0" x2="851.9" y2="1820.0" stroke="#666" stroke-width="10"/>
-<line x1="1488.4" y1="1790.0" x2="1488.4" y2="1820.0" stroke="#666" stroke-width="10"/>
-<line x1="2125.0" y1="1790.0" x2="2125.0" y2="1820.0" stroke="#666" stroke-width="10"/>
-<line x1="2761.6" y1="1790.0" x2="2761.6" y2="1820.0" stroke="#666" stroke-width="10"/>
-<line x1="3398.1" y1="1790.0" x2="3398.1" y2="1820.0" stroke="#666" stroke-width="10"/>
-<line x1="710.0" y1="1688.9" x2="680.0" y2="1688.9" stroke="#666" stroke-width="10"/>
-<line x1="710.0" y1="1329.4" x2="680.0" y2="1329.4" stroke="#666" stroke-width="10"/>
-<line x1="710.0" y1="969.9" x2="680.0" y2="969.9" stroke="#666" stroke-width="10"/>
-<line x1="710.0" y1="610.5" x2="680.0" y2="610.5" stroke="#666" stroke-width="10"/>
-<line x1="710.0" y1="251.0" x2="680.0" y2="251.0" stroke="#666" stroke-width="10"/>
-<text x="3398.1" y="1830.0" dy="0.76em" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="145.16129032258064" opacity="1" fill="#666666">3.0</text>
+<polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="10" points="351,1927 351,1101 "/>
+<polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="10" points="311,1927 390,1927 "/>
+<polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="10" points="311,1101 390,1101 "/>
+<polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="10" points="1864,1307 1864,894 "/>
+<polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="10" points="1825,1307 1903,1307 "/>
+<polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="10" points="1825,894 1903,894 "/>
+<polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="10" points="3377,377 3377,171 "/>
+<polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="10" points="3338,377 3417,377 "/>
+<polyline fill="none" opacity="1" stroke="#5E81B5" stroke-width="10" points="3338,171 3417,171 "/>
+<circle cx="351" cy="1514" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>
+<circle cx="1864" cy="1101" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>
+<circle cx="3377" cy="274" r="30" opacity="1" fill="#5E81B5" stroke="none" stroke-width="1"/>
+<line x1="230.2" y1="1997.8" x2="3500.0" y2="1997.8" stroke="#666" stroke-width="10"/>
+<line x1="502.7" y1="1997.8" x2="502.7" y2="1973.8" stroke="#666" stroke-width="10"/>
+<line x1="654.1" y1="1997.8" x2="654.1" y2="1973.8" stroke="#666" stroke-width="10"/>
+<line x1="805.5" y1="1997.8" x2="805.5" y2="1973.8" stroke="#666" stroke-width="10"/>
+<line x1="956.9" y1="1997.8" x2="956.9" y2="1973.8" stroke="#666" stroke-width="10"/>
+<line x1="1259.6" y1="1997.8" x2="1259.6" y2="1973.8" stroke="#666" stroke-width="10"/>
+<line x1="1411.0" y1="1997.8" x2="1411.0" y2="1973.8" stroke="#666" stroke-width="10"/>
+<line x1="1562.4" y1="1997.8" x2="1562.4" y2="1973.8" stroke="#666" stroke-width="10"/>
+<line x1="1713.7" y1="1997.8" x2="1713.7" y2="1973.8" stroke="#666" stroke-width="10"/>
+<line x1="2016.5" y1="1997.8" x2="2016.5" y2="1973.8" stroke="#666" stroke-width="10"/>
+<line x1="2167.9" y1="1997.8" x2="2167.9" y2="1973.8" stroke="#666" stroke-width="10"/>
+<line x1="2319.3" y1="1997.8" x2="2319.3" y2="1973.8" stroke="#666" stroke-width="10"/>
+<line x1="2470.6" y1="1997.8" x2="2470.6" y2="1973.8" stroke="#666" stroke-width="10"/>
+<line x1="2773.4" y1="1997.8" x2="2773.4" y2="1973.8" stroke="#666" stroke-width="10"/>
+<line x1="2924.8" y1="1997.8" x2="2924.8" y2="1973.8" stroke="#666" stroke-width="10"/>
+<line x1="3076.1" y1="1997.8" x2="3076.1" y2="1973.8" stroke="#666" stroke-width="10"/>
+<line x1="3227.5" y1="1997.8" x2="3227.5" y2="1973.8" stroke="#666" stroke-width="10"/>
+<line x1="351.4" y1="1997.8" x2="351.4" y2="1957.8" stroke="#666" stroke-width="10"/>
+<text x="351.4" y="2118.5" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="105" fill="#666">1.0</text>
+<line x1="1108.2" y1="1997.8" x2="1108.2" y2="1957.8" stroke="#666" stroke-width="10"/>
+<text x="1108.2" y="2118.5" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="105" fill="#666">1.5</text>
+<line x1="1865.1" y1="1997.8" x2="1865.1" y2="1957.8" stroke="#666" stroke-width="10"/>
+<text x="1865.1" y="2118.5" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="105" fill="#666">2.0</text>
+<line x1="2622.0" y1="1997.8" x2="2622.0" y2="1957.8" stroke="#666" stroke-width="10"/>
+<text x="2622.0" y="2118.5" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="105" fill="#666">2.5</text>
+<line x1="3378.9" y1="1997.8" x2="3378.9" y2="1957.8" stroke="#666" stroke-width="10"/>
+<text x="3378.9" y="2118.5" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="105" fill="#666">3.0</text>
+<line x1="230.2" y1="100.0" x2="230.2" y2="1997.8" stroke="#666" stroke-width="10"/>
+<line x1="230.2" y1="1844.8" x2="254.2" y2="1844.8" stroke="#666" stroke-width="10"/>
+<line x1="230.2" y1="1762.1" x2="254.2" y2="1762.1" stroke="#666" stroke-width="10"/>
+<line x1="230.2" y1="1679.4" x2="254.2" y2="1679.4" stroke="#666" stroke-width="10"/>
+<line x1="230.2" y1="1596.7" x2="254.2" y2="1596.7" stroke="#666" stroke-width="10"/>
+<line x1="230.2" y1="1431.3" x2="254.2" y2="1431.3" stroke="#666" stroke-width="10"/>
+<line x1="230.2" y1="1348.6" x2="254.2" y2="1348.6" stroke="#666" stroke-width="10"/>
+<line x1="230.2" y1="1265.9" x2="254.2" y2="1265.9" stroke="#666" stroke-width="10"/>
+<line x1="230.2" y1="1183.2" x2="254.2" y2="1183.2" stroke="#666" stroke-width="10"/>
+<line x1="230.2" y1="1017.9" x2="254.2" y2="1017.9" stroke="#666" stroke-width="10"/>
+<line x1="230.2" y1="935.2" x2="254.2" y2="935.2" stroke="#666" stroke-width="10"/>
+<line x1="230.2" y1="852.5" x2="254.2" y2="852.5" stroke="#666" stroke-width="10"/>
+<line x1="230.2" y1="769.8" x2="254.2" y2="769.8" stroke="#666" stroke-width="10"/>
+<line x1="230.2" y1="604.4" x2="254.2" y2="604.4" stroke="#666" stroke-width="10"/>
+<line x1="230.2" y1="521.7" x2="254.2" y2="521.7" stroke="#666" stroke-width="10"/>
+<line x1="230.2" y1="439.0" x2="254.2" y2="439.0" stroke="#666" stroke-width="10"/>
+<line x1="230.2" y1="356.3" x2="254.2" y2="356.3" stroke="#666" stroke-width="10"/>
+<line x1="230.2" y1="191.0" x2="254.2" y2="191.0" stroke="#666" stroke-width="10"/>
+<line x1="230.2" y1="108.3" x2="254.2" y2="108.3" stroke="#666" stroke-width="10"/>
+<line x1="230.2" y1="1927.5" x2="270.2" y2="1927.5" stroke="#666" stroke-width="10"/>
+<text x="183.0" y="1964.2" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="105" fill="#666">1</text>
+<line x1="230.2" y1="1514.0" x2="270.2" y2="1514.0" stroke="#666" stroke-width="10"/>
+<text x="183.0" y="1550.8" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="105" fill="#666">2</text>
+<line x1="230.2" y1="1100.6" x2="270.2" y2="1100.6" stroke="#666" stroke-width="10"/>
+<text x="183.0" y="1137.3" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="105" fill="#666">3</text>
+<line x1="230.2" y1="687.1" x2="270.2" y2="687.1" stroke="#666" stroke-width="10"/>
+<text x="183.0" y="723.9" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="105" fill="#666">4</text>
+<line x1="230.2" y1="273.7" x2="270.2" y2="273.7" stroke="#666" stroke-width="10"/>
+<text x="183.0" y="310.4" text-anchor="end" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="105" fill="#666">5</text>
 </svg>

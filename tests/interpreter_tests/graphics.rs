@@ -63,6 +63,56 @@ fn x_tick_labels(svg: &str) -> Vec<String> {
   labels.into_iter().map(|(_, text)| text).collect()
 }
 
+/// The axis lines of an unframed plot, as `(x1, y1, x2, y2)` each: the
+/// horizontal one and the vertical one. Each is the longest line of its
+/// orientation, since an axis spans the whole plotting area.
+type Segment = (f64, f64, f64, f64);
+fn axis_lines(svg: &str) -> (Segment, Segment) {
+  let attr = |tag: &str, name: &str| -> f64 {
+    let key = format!(" {name}=\"");
+    let i = tag.find(&key).unwrap() + key.len();
+    tag[i..i + tag[i..].find('"').unwrap()].parse().unwrap()
+  };
+  let lines: Vec<Segment> = svg
+    .split("<line")
+    .skip(1)
+    .map(|tag| {
+      (
+        attr(tag, "x1"),
+        attr(tag, "y1"),
+        attr(tag, "x2"),
+        attr(tag, "y2"),
+      )
+    })
+    .collect();
+  let longest = |horizontal: bool| {
+    *lines
+      .iter()
+      .filter(|(x1, y1, x2, y2)| if horizontal { y1 == y2 } else { x1 == x2 })
+      .max_by(|a, b| {
+        let len = |l: &Segment| (l.2 - l.0).abs() + (l.3 - l.1).abs();
+        len(a).total_cmp(&len(b))
+      })
+      .expect("plot has no axes")
+  };
+  (longest(true), longest(false))
+}
+
+/// The plotting area of an unframed plot as `(left, top, right, bottom)` in
+/// SVG units, read off its axes: the horizontal axis spans the full width of
+/// the area and the vertical one its full height, wherever they cross.
+fn plot_area(svg: &str) -> (f64, f64, f64, f64) {
+  let ((x1, _, x2, _), (_, y1, _, y2)) = axis_lines(svg);
+  (x1.min(x2), y1.min(y2), x1.max(x2), y1.max(y2))
+}
+
+/// Where the axes of an unframed plot cross, in SVG units: the x of the
+/// vertical axis and the y of the horizontal one.
+fn axes_crossing(svg: &str) -> (f64, f64) {
+  let ((_, y, _, _), (x, _, _, _)) = axis_lines(svg);
+  (x, y)
+}
+
 /// Remove the embedded-font `<defs><style>…</style></defs>` block the exporter
 /// injects right after the opening `<svg>` tag, leaving the rest untouched.
 fn strip_font_style(svg: &str) -> String {
@@ -6779,19 +6829,10 @@ mod plot3d {
       // Plot[1/x, {x, -3, 3}] has a singularity at x=0.
       // The y-axis should show a reasonable range (not ±10^15).
       let svg = export_svg("Plot[1/x, {x, -3, 3}]");
-      // Extract all y-axis tick labels (numeric text on left side)
-      let mut y_ticks: Vec<f64> = Vec::new();
-      let lines: Vec<&str> = svg.lines().collect();
-      for (i, line) in lines.iter().enumerate() {
-        if line.contains("text-anchor=\"end\"") {
-          // The tick label text is on the next line
-          if let Some(text) = lines.get(i + 1)
-            && let Ok(v) = text.trim().parse::<f64>()
-          {
-            y_ticks.push(v);
-          }
-        }
-      }
+      let y_ticks: Vec<f64> = y_tick_labels(&svg)
+        .iter()
+        .filter_map(|t| t.parse().ok())
+        .collect();
       assert!(!y_ticks.is_empty(), "should have y-axis tick labels");
       let y_max = y_ticks.iter().copied().fold(f64::NEG_INFINITY, f64::max);
       let y_min = y_ticks.iter().copied().fold(f64::INFINITY, f64::min);
@@ -7238,18 +7279,24 @@ mod plot3d {
     fn a_symbolic_tick_position_labels_itself() {
       let labels = |code: &str| {
         export_svg(code)
-          .lines()
-          .filter(|l| l.starts_with("<text"))
-          .filter_map(|l| {
-            let after = l.split_once('>')?.1;
-            Some(after.split_once("</text>")?.0.to_string())
+          .split("<text")
+          .skip(1)
+          .filter_map(|t| {
+            let after = t.split_once('>')?.1;
+            Some(after.split_once("</text>")?.0.trim().to_string())
           })
           .collect::<Vec<_>>()
       };
-      let ticks = labels(
-        "Plot[Sin[x], {x, 0, 2 Pi}, \
+      // One axis at a time: where two axes cross, the label at the
+      // crossing is dropped, as in Wolfram.
+      let mut ticks = labels(
+        "Plot[Sin[x], {x, 0, 2 Pi}, Axes -> {True, False}, \
          Ticks -> {{0, Pi/2, Pi, 3 Pi/2, 2 Pi}, {-1, 0, 1}}]",
       );
+      ticks.extend(labels(
+        "Plot[Sin[x], {x, 0, 2 Pi}, Axes -> {False, True}, \
+         Ticks -> {{0, Pi/2, Pi, 3 Pi/2, 2 Pi}, {-1, 0, 1}}]",
+      ));
       for expected in
         ["0", "\u{03C0}/2", "\u{03C0}", "3 \u{03C0}/2", "2 \u{03C0}"]
       {
@@ -7277,7 +7324,7 @@ mod plot3d {
       // An axis carrying explicit ticks marks only what it names: the
       // automatic majors used to leave unlabelled stubs between them.
       let svg = export_svg(
-        "Plot[Sin[x], {x, 0, 2 Pi}, \
+        "Plot[Sin[x], {x, 0, 2 Pi}, Axes -> {True, False}, \
          Ticks -> {{0, Pi/2, Pi, 3 Pi/2, 2 Pi}, {-1, 0, 1}}]",
       );
       let attr = |line: &str, name: &str| -> Option<f64> {
@@ -7934,8 +7981,10 @@ mod plot3d {
     fn large_and_small_ticks_use_scientific_notation() {
       // The x tick labels, left to right. (`x_tick_labels` would need the
       // same y-sort the y helper does; here x ordering is what reads.)
+      // Only the x axis is drawn, so no y axis crosses it and hides the
+      // label at the origin.
       let ticks = |code: &str| -> Vec<String> {
-        let svg = export_svg(code);
+        let svg = export_svg(&code.replace("}]", "}, Axes -> {True, False}]"));
         let mut out: Vec<(i64, String)> = svg
           .split("<text ")
           .skip(1)
@@ -8003,7 +8052,8 @@ mod plot3d {
     // tiny scientific value: `DiscretePlot` lands one on `-1.11*10^-16`.
     #[test]
     fn float_noise_ticks_read_as_zero() {
-      let svg = export_svg("Plot[x, {x, -1, 1}]");
+      // Only the y axis, so no x axis hides the label at the origin.
+      let svg = export_svg("Plot[x, {x, -1, 1}, Axes -> {False, True}]");
       assert!(!svg.contains("×10⁻"), "noise leaked as scientific: {svg}");
       // The origin reads as the step's `0.0`, not as float noise.
       assert!(svg.contains(">\n0.0\n</text>") || svg.contains(">0.0<"));
@@ -8476,24 +8526,114 @@ mod plot3d {
 
     #[test]
     fn plot_labeled_ticks_are_longer_than_unlabeled() {
-      // Major (labeled) x-axis ticks get a small extension below the axis
-      // so they appear visually longer than the unlabeled minor ticks.
-      // The range [0, 2 Pi] has labeled ticks at 0, 2, 4 and 6.
+      // Labelled (major) ticks are 4 px long and the unlabelled ones between
+      // them 2.4 px, as Wolfram draws them. The range [0, 2 Pi] has labelled
+      // x ticks at 0, 2, 4 and 6.
       let svg = export_svg("Plot[Sin[x], {x, 0, 2 Pi}]");
-      // Count the tick extension lines the post-render helper inserts.
-      // They share a distinctive shape: short vertical segments starting
-      // exactly at y1=1790.0 on the bottom axis.
-      let x_extensions = svg.matches("y1=\"1790.0\" x2=").count();
-      assert_eq!(
-        x_extensions, 4,
-        "expected 4 labeled x-ticks (0, 2, 4, 6) to be extended, got {x_extensions}"
+      let attr = |tag: &str, name: &str| -> f64 {
+        let key = format!(" {name}=\"");
+        let i = tag.find(&key).unwrap() + key.len();
+        tag[i..i + tag[i..].find('"').unwrap()].parse().unwrap()
+      };
+      // (vertical, length) of every tick mark — the short `<line>`s.
+      let ticks: Vec<(bool, f64)> = svg
+        .split("<line")
+        .skip(1)
+        .map(|tag| {
+          let (x1, y1) = (attr(tag, "x1"), attr(tag, "y1"));
+          let (x2, y2) = (attr(tag, "x2"), attr(tag, "y2"));
+          (x1 == x2, (x2 - x1).abs() + (y2 - y1).abs())
+        })
+        .filter(|(_, len)| *len < 100.0)
+        .collect();
+      let count = |vertical: bool, len: f64| {
+        ticks
+          .iter()
+          .filter(|(v, l)| *v == vertical && (l - len).abs() < 0.5)
+          .count()
+      };
+      assert_eq!(count(true, 40.0), 4, "labelled x ticks: {svg}");
+      assert!(count(true, 24.0) > 4, "unlabelled x ticks: {svg}");
+      assert!(count(false, 40.0) >= 3, "labelled y ticks: {svg}");
+      assert!(count(false, 24.0) > 4, "unlabelled y ticks: {svg}");
+    }
+
+    /// The axes cross at the origin when it lies inside the plot range,
+    /// as in Wolfram, not along the left and bottom edges.
+    #[test]
+    fn axes_cross_at_the_origin() {
+      for code in [
+        "Plot[Sin[x], {x, -3, 3}]",
+        "ListPlot[{{-2, -1}, {1, 3}}]",
+        "ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 2 Pi}]",
+      ] {
+        let svg = export_svg(code);
+        let (left, top, right, bottom) = plot_area(&svg);
+        let (x, y) = axes_crossing(&svg);
+        assert!(left + 1.0 < x && x < right - 1.0, "{code}: x axis at {x}");
+        assert!(top + 1.0 < y && y < bottom - 1.0, "{code}: y axis at {y}");
+      }
+    }
+
+    /// A range that excludes 0 carries the crossing axis at its end nearest
+    /// to 0: the left/bottom edge for positive values, the right/top edge
+    /// for negative ones.
+    #[test]
+    fn axes_sit_at_the_range_end_nearest_the_origin() {
+      let svg = export_svg("Plot[x, {x, -10, -2}]");
+      let (_, top, right, _) = plot_area(&svg);
+      assert_eq!(axes_crossing(&svg), (right, top));
+
+      let svg = export_svg("ListPlot[{{2, 5}, {3, 6}, {4, 8}}]");
+      let (left, _, _, bottom) = plot_area(&svg);
+      assert_eq!(axes_crossing(&svg), (left, bottom));
+    }
+
+    /// An all-positive curve has its x axis at its lowest value, inside the
+    /// padding, not at the padded edge — `Plot[x, {x, 2, 10}]` crosses at
+    /// `{2, 2}`.
+    #[test]
+    fn plot_axis_touches_the_lowest_point_of_the_curve() {
+      let svg = export_svg("Plot[x, {x, 2, 10}]");
+      let (left, top, _, bottom) = plot_area(&svg);
+      let (x, y) = axes_crossing(&svg);
+      assert_eq!(x, left);
+      assert!(y < bottom - 1.0, "x axis must sit above the padding: {y}");
+      // 2 is the lowest of 2..10 shown over a range padded by 4% of 8.
+      let expected = bottom - (bottom - top) * 0.32 / 8.64;
+      assert!((y - expected).abs() < 1.0, "x axis at {y}, not {expected}");
+    }
+
+    /// `AxesOrigin -> {x, y}` places the crossing explicitly.
+    #[test]
+    fn axes_origin_places_the_crossing() {
+      for code in [
+        "Plot[x, {x, 0, 10}, PlotRange -> {0, 10}, AxesOrigin -> {5, 5}]",
+        "ListPlot[{{0, 0}, {10, 10}}, PlotRange -> {{0, 10}, {0, 10}}, \
+         AxesOrigin -> {5, 5}]",
+      ] {
+        let svg = export_svg(code);
+        let (left, top, right, bottom) = plot_area(&svg);
+        let (x, y) = axes_crossing(&svg);
+        assert!((x - (left + right) / 2.0).abs() < 1.0, "{code}: {x}");
+        assert!((y - (top + bottom) / 2.0).abs() < 1.0, "{code}: {y}");
+      }
+    }
+
+    /// The tick label where the axes cross would collide with the other
+    /// axis, so neither axis writes it.
+    #[test]
+    fn the_tick_label_at_the_axes_crossing_is_dropped() {
+      let svg = export_svg("Plot[x, {x, -1, 1}]");
+      assert!(!x_tick_labels(&svg).contains(&"0.0".to_string()), "{svg}");
+      assert!(!y_tick_labels(&svg).contains(&"0.0".to_string()), "{svg}");
+      // With an explicit origin the label there goes, the rest stay.
+      let svg = export_svg(
+        "Plot[Sin[x], {x, 0, 6.2832}, AxesOrigin -> {3.1416, 0}, \
+         Ticks -> {{0, 3.1416, 6.2832}, {-1, 0, 1}}]",
       );
-      // Likewise, labeled y-axis ticks get a small extension to the left.
-      let y_extensions = svg.matches("x1=\"710.0\" y1=").count();
-      assert!(
-        y_extensions >= 3,
-        "expected labeled y-ticks to be extended, got {y_extensions}"
-      );
+      assert_eq!(x_tick_labels(&svg), ["0", "6.2832"]);
+      assert_eq!(y_tick_labels(&svg), ["1", "-1"]);
     }
 
     #[test]
@@ -8702,20 +8842,20 @@ mod plot3d {
     fn tick_labels_share_the_decimals_of_their_step() {
       assert_eq!(
         y_tick_labels(&export_svg(
-          "ListPlot[Table[Sin[x], {x, 0, 6, 0.2}], PlotRange -> {{0, 50}, {-1, 1}}]"
+          "ListPlot[Table[Sin[x], {x, 0, 6, 0.2}], PlotRange -> {{0, 50}, {-1, 1}}, Axes -> {False, True}]"
         )),
         ["1.0", "0.5", "0.0", "-0.5", "-1.0"]
       );
       assert_eq!(
         y_tick_labels(&export_svg(
-          "ListPlot[{{0, 0}}, PlotRange -> {{0, 1}, {0, 10}}]"
+          "ListPlot[{{0, 0}}, PlotRange -> {{0, 1}, {0, 10}}, Axes -> {False, True}]"
         )),
         ["10", "8", "6", "4", "2", "0"]
       );
       // A 0.05 step gives two decimals, the trailing zeros included.
       assert_eq!(
         y_tick_labels(&export_svg(
-          "ListPlot[{{0, 0}}, PlotRange -> {{0, 1}, {0, 0.3}}]"
+          "ListPlot[{{0, 0}}, PlotRange -> {{0, 1}, {0, 0.3}}, Axes -> {False, True}]"
         )),
         ["0.30", "0.25", "0.20", "0.15", "0.10", "0.05", "0.00"]
       );
@@ -8728,7 +8868,8 @@ mod plot3d {
     fn tick_steps_match_the_wolfram_language() {
       let step_of = |range: &str, expected: &[&str]| {
         let labels = y_tick_labels(&export_svg(&format!(
-          "ListPlot[{{{{0, 0}}}}, PlotRange -> {{{{0, 1}}, {range}}}]"
+          "ListPlot[{{{{0, 0}}}}, PlotRange -> {{{{0, 1}}, {range}}}, \
+           Axes -> {{False, True}}]"
         )));
         assert_eq!(labels, expected, "for {range}");
       };
@@ -8776,7 +8917,8 @@ mod plot3d {
         .map(|(text, _)| text.trim())
         .filter(|text| !text.is_empty())
         .collect();
-      for label in ["-1.0", "-0.5", "0.0", "0.5", "1.0"] {
+      // (`0.0` is where the x axis crosses, so it carries no label.)
+      for label in ["-1.0", "-0.5", "0.5", "1.0"] {
         assert!(labels.contains(&label), "missing tick {label}: {labels:?}");
       }
     }
@@ -9055,9 +9197,11 @@ mod plot3d {
     #[test]
     fn list_plot_data_range_span_maps_x() {
       let svg = export_svg("ListLinePlot[{1, 4, 9}, DataRange -> {0, 1}]");
-      for tick in ["0.0", "0.4", "1.0"] {
+      // (`0.0` sits where the y axis crosses, so it carries no label.)
+      let ticks = x_tick_labels(&svg);
+      for tick in ["0.2", "0.4", "1.0"] {
         assert!(
-          svg.contains(&format!(">\n{tick}\n<")),
+          ticks.iter().any(|t| t == tick),
           "x ticks should cover the 0..1 span, missing {tick}: {svg}"
         );
       }
@@ -9070,7 +9214,7 @@ mod plot3d {
         "ListLinePlot[{{1, 2, 3}, {4, 5, 6}}, DataRange -> {0, 10}]",
       );
       assert!(
-        svg.contains(">\n10\n<"),
+        x_tick_labels(&svg).iter().any(|t| t == "10"),
         "x ticks should reach 10, got: {svg}"
       );
       assert_eq!(svg.matches("#E0932C").count(), 1, "two series expected");
@@ -9088,7 +9232,7 @@ mod plot3d {
       assert_eq!(svg.matches("<circle").count(), 25);
       assert!(!svg.contains("#E0932C"), "single series expected");
       assert!(
-        svg.contains(">\n30\n<"),
+        x_tick_labels(&svg).iter().any(|t| t == "30"),
         "x ticks should cover the explicit 11..35 x-range, got: {svg}"
       );
     }
@@ -10308,11 +10452,9 @@ mod plot3d {
         .collect();
       assert_eq!(xs.len(), 20, "expected 20 data points");
 
-      // The left edge of the plotting area is ~749 and the right edge
-      // ~3499 (width 2750). With x ∈ [0, 50], data x=1..20 should span
-      // 1/50..20/50 of the area → roughly 804..1849.
-      let left = 749.0_f64;
-      let right = 3499.0_f64;
+      // With x ∈ [0, 50], data x=1..20 should span 1/50..20/50 of the
+      // plotting area.
+      let (left, top, right, bottom) = plot_area(&svg);
       let expected_first_x = left + (right - left) * (1.0 / 50.0);
       let expected_last_x = left + (right - left) * (20.0 / 50.0);
       assert!(
@@ -10328,10 +10470,7 @@ mod plot3d {
         expected_last_x
       );
 
-      // On the y-axis, ymin=0 maps to ~1749 and ymax=250 maps to ~100
-      // (height 1649). Prime[1]=2 → y≈1736; Prime[20]=71 → y≈1286.
-      let top = 100.0_f64;
-      let bottom = 1749.0_f64;
+      // On the y-axis, ymin=0 maps to the bottom and ymax=250 to the top.
       let y_for = |v: f64| bottom - (bottom - top) * (v / 250.0);
       assert!(
         (ys[0] - y_for(2.0)).abs() < 5.0,
@@ -10369,9 +10508,8 @@ mod plot3d {
         .map(|p| p.split(',').nth(1).unwrap().parse().unwrap())
         .collect();
       // With y ∈ [0, 10], the values 1..3 should all sit in the lower
-      // third of the plot area (rows 100..1749).
-      let top = 100.0_f64;
-      let bottom = 1749.0_f64;
+      // third of the plot area.
+      let (_, top, _, bottom) = plot_area(&svg);
       for y in &ys {
         let frac = (bottom - y) / (bottom - top);
         assert!(
@@ -10868,9 +11006,9 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         svg.contains("width=\"360\" height=\"360\""),
         "expected a square canvas from the symmetric PlotRange"
       );
-      // Tick labels reach ±4 on the fixed axes (each label sits on its own
-      // line inside its <text> element).
-      let has_tick = |t: &str| svg.lines().any(|l| l.trim() == t);
+      // Tick labels reach ±4 on the fixed axes.
+      let labels = [x_tick_labels(&svg), y_tick_labels(&svg)].concat();
+      let has_tick = |t: &str| labels.iter().any(|l| l == t);
       assert!(
         has_tick("-4") && has_tick("4"),
         "expected the fixed -5..5 axes to carry ±4 tick labels"
