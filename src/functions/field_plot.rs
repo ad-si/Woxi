@@ -4025,6 +4025,10 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   );
 
   let buf = frame_labelled_svg(&buf, svg_width, svg_height, &frame_labels);
+  let buf = match parse_field_plot_label(args, 1) {
+    Some(label) => with_plot_label_above(&buf, &label),
+    None => buf,
+  };
 
   // The symbolic content, as `First`/`Part` see it: a `Raster` of the cell
   // colors with the first row at the top (`Raster` rows run bottom-up, so a
@@ -4061,6 +4065,42 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     call("Raster", vec![Expr::List(raster_rows.into()), rect]),
   );
   Ok(crate::graphics_result_with_structure(buf, structure))
+}
+
+/// Set a `PlotLabel` caption above a finished picture: the picture keeps its
+/// size and is inset into a canvas that is taller by one line of text.
+fn with_plot_label_above(
+  svg: &str,
+  (label, size): &(String, Option<f64>),
+) -> String {
+  let attr = |name: &str| -> Option<f64> {
+    let head = &svg[..svg.find('>')?];
+    let start = head.find(&format!(" {name}=\""))? + name.len() + 3;
+    let end = start + head[start..].find('"')?;
+    head[start..end].parse().ok()
+  };
+  let (Some(w), Some(h)) = (attr("width"), attr("height")) else {
+    return svg.to_string();
+  };
+  if label.trim().is_empty() {
+    return svg.to_string();
+  }
+  let font = size.unwrap_or(14.0);
+  let gutter = font * 1.8;
+  let total_h = h + gutter;
+  let fill = crate::functions::graphics::theme().text_primary;
+  format!(
+    "<svg width=\"{w:.0}\" height=\"{total_h:.0}\" \
+     viewBox=\"0 0 {w:.0} {total_h:.0}\" xmlns=\"http://www.w3.org/2000/svg\">\n\
+     <svg x=\"0\" y=\"{gutter:.1}\" width=\"{w:.0}\" height=\"{h:.0}\" \
+     overflow=\"visible\">\n{}\n</svg>\n\
+     <text x=\"{:.1}\" y=\"{:.1}\" text-anchor=\"middle\" \
+     dominant-baseline=\"central\" font-family=\"sans-serif\" \
+     font-size=\"{font:.0}\" fill=\"{fill}\">{label}</text>\n</svg>\n",
+    svg.trim(),
+    w / 2.0,
+    gutter / 2.0,
+  )
 }
 
 /// Put a plot's `FrameLabel` text around an already-rendered picture.

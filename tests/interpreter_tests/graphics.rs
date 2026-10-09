@@ -14359,6 +14359,15 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn array_plot_plot_label_is_drawn_above() {
+      let svg =
+        export_svg("ArrayPlot[{{0, 1}, {1, 0}}, PlotLabel -> \"Caption\"]");
+      assert!(svg.contains(">Caption</text>"));
+      // The picture keeps its 360x360 size; the canvas grows by the caption.
+      assert!(svg.starts_with("<svg width=\"360\" height=\"385\""));
+    }
+
+    #[test]
     fn array_plot_integer_scaling() {
       // Regression: values > 1 must be auto-scaled, not clamped to [0,1]
       let svg = export_svg("ArrayPlot[{{1, 2, 3, 4}, {5, 6, 7, 8}}]");
@@ -21413,6 +21422,43 @@ mod rule_plot {
       interpret("Head[RulePlot[CellularAutomaton[30]]]").unwrap(),
       "Graphics"
     );
+  }
+
+  #[test]
+  fn elementary_rule_draws_every_neighborhood() {
+    // 8 neighborhoods x (3 top cells + 1 result cell) = 32 rectangles
+    // plus the clip-path rect.
+    let svg = export_svg("RulePlot[CellularAutomaton[30]]");
+    assert_eq!(svg.matches("<rect").count(), 33);
+  }
+
+  #[test]
+  fn neighborhood_results_follow_the_rule() {
+    // Rule 30 maps 100, 011, 010, 001 to 1: four black result cells.
+    let svg = export_svg("RulePlot[CellularAutomaton[30]]");
+    let results = svg.matches("fill=\"rgb(0,0,0)\"").count();
+    // Every neighborhood cell holding a 1 is black, i.e. the number of set
+    // bits over all 8 neighborhoods, plus the four black results.
+    let neighborhood_black: usize =
+      (0..8u32).map(|n| n.count_ones() as usize).sum();
+    assert_eq!(results, neighborhood_black + 4);
+  }
+
+  #[test]
+  fn totalistic_three_color_rule() {
+    // 3^3 neighborhoods, 4 rectangles each, plus the clip-path rect.
+    let svg = export_svg("RulePlot[CellularAutomaton[{1234, {3, 1}}]]");
+    assert_eq!(svg.matches("<rect").count(), 27 * 4 + 1);
+  }
+
+  #[test]
+  fn color_rules_are_applied() {
+    let svg = export_svg(
+      "RulePlot[CellularAutomaton[30], ColorRules -> {0 -> Yellow, 1 -> Red}]",
+    );
+    assert!(svg.contains("rgb(255,255,0)"));
+    assert!(svg.contains("rgb(255,0,0)"));
+    assert!(!svg.contains("rgb(0,0,0)"));
   }
 }
 
