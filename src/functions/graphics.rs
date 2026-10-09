@@ -21750,6 +21750,40 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
             continue;
           }
         }
+        // An `Appearance -> None` Locator is invisible but still draggable
+        // when the body draws something at its position (the Demonstration
+        // plots its own points at `p`); only one the body never mentions
+        // has nothing to grab. Promote the used ones to a 2D control.
+        if let Expr::List(items) = &spec
+          && spec_marks_locator(items)
+          && args.first().is_some_and(|b| {
+            crate::functions::plot::expr_mentions_var(b, &name)
+          })
+        {
+          let promoted: Vec<Expr> = items
+            .iter()
+            .filter(|it| {
+              !matches!(
+                it,
+                Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+                  if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Appearance")
+              )
+            })
+            .cloned()
+            .collect();
+          if let Some(ParsedControl::Visible {
+            control: c,
+            enabled: enabled2,
+            ..
+          }) = parse_manipulate_control(&Expr::List(promoted.into()), &[])
+          {
+            if let Some(cond) = enabled2 {
+              control_enabled.push((c.name().to_string(), cond));
+            }
+            controls.push(c);
+            continue;
+          }
+        }
         // Likewise for a hidden variable a `PopupMenu[Dynamic[…]]` in the
         // body drives: it becomes a real pick list, built from the choice
         // list the body computes. The list is re-resolved on every frame
