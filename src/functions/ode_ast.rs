@@ -4749,7 +4749,20 @@ fn compile_numeric(expr: &Expr, var_names: &[String]) -> Option<NExpr> {
         "Log" if args.len() == 1 => Some(f64::ln),
         "Sqrt" => Some(f64::sqrt),
         "Abs" => Some(f64::abs),
-        "Sign" => Some(f64::signum),
+        "Sign" => Some(|v: f64| if v == 0.0 { 0.0 } else { v.signum() }),
+        // Step functions make RK4 stages land exactly on the jump
+        // (`HeavisideTheta[0.]` stays symbolic in the evaluator), so they
+        // are compiled with the midpoint value there.
+        "HeavisideTheta" => Some(|v: f64| {
+          if v > 0.0 {
+            1.0
+          } else if v < 0.0 {
+            0.0
+          } else {
+            0.5
+          }
+        }),
+        "UnitStep" => Some(|v: f64| if v < 0.0 { 0.0 } else { 1.0 }),
         "Floor" if args.len() == 1 => Some(f64::floor),
         "Ceiling" if args.len() == 1 => Some(f64::ceil),
         _ => None,
