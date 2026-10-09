@@ -4719,13 +4719,21 @@ pub fn weighted_adjacency_graph_ast(
   ))
 }
 
-/// AdjacencyGraph[matrix] / AdjacencyGraph[vertices, matrix] — graph from
-/// a 0/1 adjacency matrix. Symmetric matrices give undirected edges
-/// (upper triangle, row-major); anything else gives directed edges in
-/// row-major order.
+/// AdjacencyGraph[matrix, opts...] / AdjacencyGraph[vertices, matrix, opts...]
+/// — graph from a 0/1 adjacency matrix. Symmetric matrices give undirected
+/// edges (upper triangle, row-major); anything else gives directed edges in
+/// row-major order. Trailing `option -> value` rules are carried over to
+/// the resulting `Graph`.
 pub fn adjacency_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let unevaluated = |args: &[Expr]| unevaluated("AdjacencyGraph", args);
-  let (vertices, matrix) = match args {
+  let is_option =
+    |e: &Expr| matches!(e, Expr::Rule { .. } | Expr::RuleDelayed { .. });
+  let n_data = args.iter().take_while(|a| !is_option(a)).count();
+  let (data, options) = args.split_at(n_data);
+  if !options.iter().all(is_option) {
+    return Ok(unevaluated(args));
+  }
+  let (vertices, matrix) = match data {
     [Expr::List(m)] => (None, m),
     [Expr::List(v), Expr::List(m)] => (Some(v.clone()), m),
     _ => return Ok(unevaluated(args)),
@@ -4734,7 +4742,22 @@ pub fn adjacency_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   else {
     return Ok(unevaluated(args));
   };
-  Ok(graph)
+  if options.is_empty() {
+    return Ok(graph);
+  }
+  let Expr::FunctionCall {
+    name,
+    args: graph_args,
+  } = &graph
+  else {
+    return Ok(unevaluated(args));
+  };
+  let mut graph_args = graph_args.clone();
+  graph_args.extend(options.iter().cloned());
+  Ok(Expr::FunctionCall {
+    name: name.clone(),
+    args: graph_args,
+  })
 }
 
 /// Shared conversion from a square adjacency matrix (list of rows) into a
