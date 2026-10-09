@@ -240,6 +240,13 @@ pub fn image_constructor_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // `Image[Graphics[…]]` is the rasterized graphic; options such as
+  // `ImageSize` only affect how it is displayed, not its pixel data.
+  #[cfg(not(target_arch = "wasm32"))]
+  if matches!(&args[0], Expr::FunctionCall { name, .. } if name == "Graphics") {
+    return rasterize_ast(&args[..1]);
+  }
+
   // Image[image, type] re-quantizes the NORMALIZED data into the new
   // type (unlike raw list input, which is read on the type's own scale).
   if let Expr::Image {

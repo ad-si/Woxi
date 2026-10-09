@@ -19483,6 +19483,23 @@ mod grid_rasterize {
   }
 
   #[test]
+  fn image_of_graphics_rasterizes() {
+    clear_state();
+    // ImageSize only affects display, not the pixel data.
+    assert_eq!(
+      interpret(
+        "ImageDimensions[Image[Graphics[{Rectangle[]}], ImageSize -> 260]]"
+      )
+      .unwrap(),
+      interpret("ImageDimensions[Rasterize[Graphics[{Rectangle[]}]]]").unwrap()
+    );
+    assert_eq!(
+      interpret("ImageQ[Image[Graphics[{Disk[]}]]]").unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
   fn rasterize_image_resolution_scales() {
     clear_state();
     // Default DPI (96)
