@@ -7647,6 +7647,17 @@ mod cases {
     assert_case(r#"Lighter[Orange, 1/4]"#, r#"RGBColor[1, 0.625, 1/4]"#);
   }
   #[test]
+  fn lighter_darker_thread_over_lists() {
+    assert_case(
+      r#"Lighter@{Red, Green}"#,
+      r#"{RGBColor[1, 1/3, 1/3], RGBColor[1/3, 1, 1/3]}"#,
+    );
+    assert_case(
+      r#"Darker[{Red, Blue}, 0.2]"#,
+      r#"{RGBColor[0.8, 0., 0.], RGBColor[0., 0., 0.8]}"#,
+    );
+  }
+  #[test]
   fn take_largest_by_1() {
     assert_case(
       r#"TakeLargestBy[{{1, -1}, {10, 100}, {23, 7, 8}, {5, 1}}, Total, 2]"#,

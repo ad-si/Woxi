@@ -11928,6 +11928,18 @@ fn rational_to_expr(num: i128, den: i128) -> Expr {
 /// Evaluate Darker[color, amount] or Lighter[color, amount].
 /// `is_darker` = true for Darker, false for Lighter.
 fn evaluate_darker_lighter(args: &[Expr], is_darker: bool) -> Option<Expr> {
+  // Lighter/Darker thread over a list of colors in the first argument.
+  if let Expr::List(items) = &args[0] {
+    let mapped: Option<Vec<Expr>> = items
+      .iter()
+      .map(|item| {
+        let mut sub = args.to_vec();
+        sub[0] = item.clone();
+        evaluate_darker_lighter(&sub, is_darker)
+      })
+      .collect();
+    return mapped.map(|v| Expr::List(v.into()));
+  }
   if let Expr::Image {
     color_space: _,
     width,
