@@ -11254,3 +11254,56 @@ mod gamma_regularized_exact_and_cf {
     );
   }
 }
+
+mod exp_integral_ei_complex {
+  use super::*;
+
+  #[test]
+  fn machine_complex_argument() {
+    assert_eq!(
+      interpret("ExpIntegralEi[1. + 2. I]").unwrap(),
+      "1.0421677081649356 + 3.701501425937874*I"
+    );
+  }
+
+  #[test]
+  fn matches_arbitrary_precision_in_every_regime() {
+    // Small |z| (series), large |z| (continued fraction), negative real part.
+    for z in ["0.1 + 0.1 I", "1.5 - 2. I", "-3. + 0.5 I", "-20. + 30. I"] {
+      let code = format!(
+        "z = {z}; Abs[ExpIntegralEi[z] - N[ExpIntegralEi[SetPrecision[z, 40]], 30]] < 10^-9 Abs[ExpIntegralEi[z]]"
+      );
+      assert_eq!(interpret(&code).unwrap(), "True", "{z}");
+    }
+  }
+
+  #[test]
+  fn exact_complex_argument_stays_symbolic() {
+    assert_eq!(
+      interpret("ExpIntegralEi[1 + 2 I]").unwrap(),
+      "ExpIntegralEi[1 + 2*I]"
+    );
+  }
+
+  #[test]
+  fn re_of_numeric_opaque_function_terminates() {
+    // Regression: Re re-expanded the argument with ComplexExpand forever.
+    assert_eq!(
+      interpret("Re[ExpIntegralEi[Log[39] ZetaZero[1]]]").unwrap(),
+      "Re[ExpIntegralEi[Log[39]*ZetaZero[1]]]"
+    );
+  }
+
+  #[test]
+  fn machine_complex_times_exact_numeric_function() {
+    assert_eq!(
+      interpret("(2. + I) Log[2]").unwrap(),
+      "1.3862943611198906 + 0.6931471805599453*I"
+    );
+    assert_eq!(
+      interpret("Re[ExpIntegralEi[(1/2 + 0.5 I) Log[39]]]").unwrap(),
+      interpret("Re[ExpIntegralEi[1.8317808230648231 + 1.8317808230648231 I]]")
+        .unwrap()
+    );
+  }
+}

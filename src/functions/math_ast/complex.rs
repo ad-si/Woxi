@@ -93,6 +93,23 @@ fn re_im_via_complex_expand(
   if !crate::functions::predicate_ast::is_numeric_q(arg) {
     return None;
   }
+  // Expansion of an opaque numeric function (e.g. `ExpIntegralEi[Log[39]
+  // ZetaZero[1]]`) rewrites to an ever-growing `Re[..] + I Im[..]` form;
+  // retrying `Re`/`Im` on that result would re-enter here without end. Only
+  // one expansion round is allowed per nested call chain.
+  thread_local! {
+    static EXPANDING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+  }
+  if EXPANDING.with(|f| f.replace(true)) {
+    return None;
+  }
+  struct Reset;
+  impl Drop for Reset {
+    fn drop(&mut self) {
+      EXPANDING.with(|f| f.set(false));
+    }
+  }
+  let _reset = Reset;
   let expanded = match crate::evaluator::evaluate_function_call_ast(
     "ComplexExpand",
     std::slice::from_ref(arg),
@@ -106,11 +123,19 @@ fn re_im_via_complex_expand(
   {
     return None;
   }
-  Some(if which == "Re" {
+  let result = if which == "Re" {
     re_ast(&[expanded])
   } else {
     im_ast(&[expanded])
-  })
+  };
+  // A retry that is still a stuck `Re[..]`/`Im[..]` gained nothing; keep the
+  // original argument rather than the rewritten (e.g. `Log[1521]/2`) one.
+  if let Ok(Expr::FunctionCall { name, .. }) = &result
+    && name == which
+  {
+    return None;
+  }
+  Some(result)
 }
 
 pub fn re_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
