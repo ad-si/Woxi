@@ -4045,6 +4045,17 @@ fn render_inline_display_wrapper(expr: &syntax::Expr) -> syntax::Expr {
   // Raw `Graphics[…]` / `Graphics3D[…]` items (e.g. from Plot or
   // PolyhedronData) are rendered to embedded SVG so a `Column[{plot, …}]`
   // shows the actual graphic instead of a `-Graphics-` text placeholder.
+  // A `Graph[…]` item is a picture inside a layout too. At top level it
+  // stays a `Graph[<n>, <m>]` call so the textual echo matches
+  // wolframscript, but a layout can only embed the drawn graphic.
+  if let syntax::Expr::FunctionCall { name, args } = &expr
+    && name == "Graph"
+    && args.len() >= 2
+    && let Ok(rendered @ syntax::Expr::Graphics { .. }) =
+      functions::graph::graph_ast(args)
+  {
+    return rendered;
+  }
   render_graphics_fc_if_needed(expr)
 }
 

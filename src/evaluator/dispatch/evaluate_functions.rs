@@ -10271,8 +10271,8 @@ fn evaluate_function_call_ast_inner(
     return refined(args[0].clone());
   }
 
-  // AdjacencyGraph[matrix] or AdjacencyGraph[vertices, matrix] — create graph from adjacency matrix
-  if name == "AdjacencyGraph" && (args.len() == 1 || args.len() == 2) {
+  // AdjacencyGraph[matrix, opts...] or AdjacencyGraph[vertices, matrix, opts...] — create graph from adjacency matrix
+  if name == "AdjacencyGraph" && !args.is_empty() {
     return crate::functions::graph::adjacency_graph_ast(args);
   }
 

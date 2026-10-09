@@ -566,6 +566,43 @@ mod adjacency_graph_from_matrix {
   }
 
   #[test]
+  fn accepts_trailing_options() {
+    assert_eq!(
+      interpret(
+        "EdgeList[AdjacencyGraph[{{0, 1, 1}, {1, 0, 0}, {1, 0, 0}}, VertexSize -> Tiny, ImageSize -> 200]]"
+      )
+      .unwrap(),
+      "{1 \u{f3d4} 2, 1 \u{f3d4} 3}"
+    );
+    assert_eq!(
+      interpret(
+        "VertexList[AdjacencyGraph[{a, b}, {{0, 1}, {1, 0}}, VertexStyle -> Black]]"
+      )
+      .unwrap(),
+      "{a, b}"
+    );
+    assert_eq!(
+      interpret(
+        "GraphQ[SetProperty[{AdjacencyGraph[{{0, 1}, {1, 0}}, VertexStyle -> Black], 2}, VertexStyle -> Yellow]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn graph_inside_column_and_row_is_drawn() {
+    for layout in ["Column", "Row"] {
+      let svg = interpret(&format!(
+        "ExportString[{layout}[{{Graph[{{1, 2}}, {{1 <-> 2}}], Graph[{{1, 2}}, {{1 <-> 2}}]}}], \"SVG\"]"
+      ))
+      .unwrap();
+      assert!(svg.starts_with("<svg"), "{layout}: {svg}");
+      assert!(!svg.contains("<text"), "{layout} printed a Graph as text");
+    }
+  }
+
+  #[test]
   fn directed_asymmetric() {
     assert_eq!(
       interpret("EdgeList[AdjacencyGraph[{{0, 1, 0}, {0, 0, 1}, {1, 0, 0}}]]")
