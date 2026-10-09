@@ -1442,6 +1442,30 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
     Expr::FunctionCall { name, args: dargs }
+      if name == "ParetoDistribution" && dargs.len() == 2 =>
+    {
+      // Inverse-transform sampling: the CDF is 1 - (k/x)^alpha for x >= k,
+      // so x = k * u^(-1/alpha) for u uniform on (0, 1].
+      let (Some(k), Some(alpha)) =
+        (try_eval_to_f64(&dargs[0]), try_eval_to_f64(&dargs[1]))
+      else {
+        return Ok(unevaluated("RandomVariate", args));
+      };
+      if k <= 0.0 || alpha <= 0.0 {
+        return Ok(unevaluated("RandomVariate", args));
+      }
+      let sample = || -> Expr {
+        let u: f64 = crate::with_rng(|rng| 1.0 - rng.gen_range(0.0..1.0_f64));
+        Expr::Real(k * u.powf(-1.0 / alpha))
+      };
+      match n {
+        None => Ok(sample()),
+        Some(count) => Ok(Expr::List(
+          (0..count).map(|_| sample()).collect::<Vec<_>>().into(),
+        )),
+      }
+    }
+    Expr::FunctionCall { name, args: dargs }
       if name == "PoissonDistribution" && dargs.len() == 1 =>
     {
       let lambda = try_eval_to_f64(&dargs[0]).ok_or_else(|| {

@@ -973,7 +973,7 @@ fn ndsolve_pde(args: &[Expr]) -> Result<Option<Expr>, InterpreterError> {
   };
   let eq_items = flatten_chained_equalities(&eq_items);
   if eq_items.len() != 4 * u_names.len() {
-    return Ok(None);
+    return ndsolve_pde_components(args, &u_names, &eq_items, &dom_a, &dom_b);
   }
 
   for (t_dom, x_dom) in [(&dom_a, &dom_b), (&dom_b, &dom_a)] {
@@ -984,6 +984,293 @@ fn ndsolve_pde(args: &[Expr]) -> Result<Option<Expr>, InterpreterError> {
         return Ok(Some(result));
       }
     }
+  }
+  Ok(None)
+}
+
+/// `NDSolve` PDE systems that mix unknown groups of different kinds — e.g.
+/// a plug-flow model `c[x, y]`, `t[x, y]` that only has an `x` derivative
+/// (so `y` is a mere parameter) next to diffusive models that also have
+/// second `y` derivatives. The unknowns are partitioned into groups that
+/// share equations; a group with four equations per unknown is a regular
+/// evolution PDE system and goes to [`ndsolve_pde`], while a group with no
+/// derivative in the other variable is an ODE in the evolution variable
+/// ([`solve_parameter_ode_group`]). Returns `Ok(None)` if any group fits
+/// neither.
+fn ndsolve_pde_components(
+  args: &[Expr],
+  u_names: &[String],
+  eq_items: &[Expr],
+  dom_a: &PdeDomain,
+  dom_b: &PdeDomain,
+) -> Result<Option<Expr>, InterpreterError> {
+  // Union-find over unknowns: equations mentioning several unknowns couple
+  // them.
+  let mut parent: Vec<usize> = (0..u_names.len()).collect();
+  fn find(parent: &mut [usize], i: usize) -> usize {
+    let mut r = i;
+    while parent[r] != r {
+      r = parent[r];
+    }
+    parent[i] = r;
+    r
+  }
+  let mut eq_groups: Vec<Vec<usize>> = Vec::with_capacity(eq_items.len());
+  for eq in eq_items {
+    let used: Vec<usize> = (0..u_names.len())
+      .filter(|&i| {
+        mentions_head(eq, &u_names[i]) || expr_contains_ident(eq, &u_names[i])
+      })
+      .collect();
+    if used.is_empty() {
+      return Ok(None);
+    }
+    for &i in &used[1..] {
+      let (ra, rb) = (find(&mut parent, used[0]), find(&mut parent, i));
+      parent[rb] = ra;
+    }
+    eq_groups.push(used);
+  }
+  let mut roots: Vec<usize> = Vec::new();
+  for i in 0..u_names.len() {
+    let r = find(&mut parent, i);
+    if !roots.contains(&r) {
+      roots.push(r);
+    }
+  }
+  let mut solved: Vec<Option<Expr>> = vec![None; u_names.len()];
+  for root in roots {
+    let members: Vec<usize> = (0..u_names.len())
+      .filter(|&i| find(&mut parent, i) == root)
+      .collect();
+    let eqs: Vec<Expr> = eq_items
+      .iter()
+      .zip(&eq_groups)
+      .filter(|(_, g)| find(&mut parent, g[0]) == root)
+      .map(|(e, _)| e.clone())
+      .collect();
+    let names: Vec<String> =
+      members.iter().map(|&i| u_names[i].clone()).collect();
+    let rules = if eqs.len() == 4 * names.len() {
+      let sub_args = [
+        Expr::List(eqs.into()),
+        Expr::List(names.iter().map(|n| Expr::Identifier(n.clone())).collect()),
+        args[2].clone(),
+        args[3].clone(),
+      ];
+      let Some(result) = ndsolve_pde(&sub_args)? else {
+        return Ok(None);
+      };
+      pde_result_rules(&result)
+    } else {
+      solve_parameter_ode_group(args, &names, &eqs, dom_a, dom_b)?
+    };
+    let Some(rules) = rules else {
+      return Ok(None);
+    };
+    for (name, interp) in rules {
+      if let Some(idx) = u_names.iter().position(|n| *n == name) {
+        solved[idx] = Some(interp);
+      }
+    }
+  }
+  let mut out = Vec::with_capacity(u_names.len());
+  for (name, interp) in u_names.iter().zip(solved) {
+    let Some(interp) = interp else {
+      return Ok(None);
+    };
+    out.push(rule_expr(Expr::Identifier(name.clone()), interp));
+  }
+  Ok(Some(Expr::List(vec![Expr::List(out.into())].into())))
+}
+
+/// Unpack `{{name -> value, …}}` into `(name, value)` pairs.
+fn pde_result_rules(result: &Expr) -> Option<Vec<(String, Expr)>> {
+  let Expr::List(outer) = result else {
+    return None;
+  };
+  let Expr::List(rules) = outer.first()? else {
+    return None;
+  };
+  rules
+    .iter()
+    .map(|r| match r {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => match pattern.as_ref() {
+        Expr::Identifier(n) => Some((n.clone(), replacement.as_ref().clone())),
+        _ => None,
+      },
+      _ => None,
+    })
+    .collect()
+}
+
+/// Rewrite `u[t, p]` and `Derivative[k, 0][u][t, p]` into the ordinary
+/// `u[t]` / `Derivative[k][u][t]` for every name in `names`, where `p` is
+/// the parameter variable. Anything else involving `p` (a derivative in
+/// `p`, `p` in a coefficient) clears `ok`.
+fn drop_parameter_argument(
+  expr: &Expr,
+  names: &[String],
+  param: &str,
+  ok: &std::cell::Cell<bool>,
+) -> Expr {
+  let is_param = |e: &Expr| matches!(e, Expr::Identifier(n) if n == param);
+  if let Expr::FunctionCall { name, args } = expr
+    && names.contains(name)
+    && args.len() == 2
+    && is_param(&args[1])
+  {
+    return Expr::FunctionCall {
+      name: name.clone(),
+      args: vec![args[0].clone()].into(),
+    };
+  }
+  if let Expr::CurriedCall { func, args } = expr
+    && args.len() == 2
+    && is_param(&args[1])
+    && let Expr::CurriedCall {
+      func: deriv_head,
+      args: fname_args,
+    } = func.as_ref()
+    && fname_args.len() == 1
+    && let Expr::Identifier(fname) = &fname_args[0]
+    && names.contains(fname)
+    && let Expr::FunctionCall {
+      name: deriv_name,
+      args: orders,
+    } = deriv_head.as_ref()
+    && deriv_name == "Derivative"
+    && orders.len() == 2
+    && let (Expr::Integer(k), Expr::Integer(0)) = (&orders[0], &orders[1])
+  {
+    let inner = args[0].clone();
+    if *k == 0 {
+      return Expr::FunctionCall {
+        name: fname.clone(),
+        args: vec![inner].into(),
+      };
+    }
+    return Expr::CurriedCall {
+      func: Box::new(Expr::CurriedCall {
+        func: Box::new(call("Derivative", vec![Expr::Integer(*k)])),
+        args: vec![Expr::Identifier(fname.clone())],
+      }),
+      args: vec![inner],
+    };
+  }
+  if is_param(expr) {
+    ok.set(false);
+    return expr.clone();
+  }
+  map_children(expr, &|c| drop_parameter_argument(c, names, param, ok))
+}
+
+/// A group of unknowns `u[t, p]` whose equations only differentiate in `t`
+/// (and never mention `p` otherwise): an ODE in `t` for each value of the
+/// parameter `p`, identical for all of them. Solved once as an ODE and
+/// returned as `InterpolatingFunction`s over both variables, constant in
+/// `p`.
+fn solve_parameter_ode_group(
+  args: &[Expr],
+  names: &[String],
+  eqs: &[Expr],
+  dom_a: &PdeDomain,
+  dom_b: &PdeDomain,
+) -> Result<Option<Vec<(String, Expr)>>, InterpreterError> {
+  for (t_dom, p_dom, t_arg) in
+    [(dom_a, dom_b, &args[2]), (dom_b, dom_a, &args[3])]
+  {
+    let ok = std::cell::Cell::new(true);
+    let ode_eqs: Vec<Expr> = eqs
+      .iter()
+      .map(|e| drop_parameter_argument(e, names, &p_dom.name, &ok))
+      .collect();
+    if !ok.get() {
+      continue;
+    }
+    let ode_args = [
+      Expr::List(ode_eqs.into()),
+      Expr::List(names.iter().map(|n| Expr::Identifier(n.clone())).collect()),
+      t_arg.clone(),
+    ];
+    let Ok(ode_result) = ndsolve_ast_inner(&ode_args) else {
+      continue;
+    };
+    let Some(result) = pde_result_rules(&ode_result) else {
+      continue;
+    };
+    let t_is_dim0 = t_dom.name == dom_a.name;
+    let mut out = Vec::with_capacity(result.len());
+    for (name, interp) in result {
+      let Expr::FunctionCall {
+        name: head,
+        args: if_args,
+      } = &interp
+      else {
+        return Ok(None);
+      };
+      if head != "InterpolatingFunction" || if_args.len() < 2 {
+        return Ok(None);
+      }
+      let Expr::List(points) = &if_args[1] else {
+        return Ok(None);
+      };
+      let mut ts = Vec::with_capacity(points.len());
+      let mut vals = Vec::with_capacity(points.len());
+      for p in points {
+        let Expr::List(pair) = p else {
+          return Ok(None);
+        };
+        if pair.len() != 2 {
+          return Ok(None);
+        }
+        ts.push(expr_to_f64(&pair[0])?);
+        vals.push(expr_to_f64(&pair[1])?);
+      }
+      let p_coords = [p_dom.min, p_dom.max];
+      let real_list =
+        |v: &[f64]| Expr::List(v.iter().map(|x| Expr::Real(*x)).collect());
+      let range = |lo: f64, hi: f64| {
+        Expr::List(vec![Expr::Real(lo), Expr::Real(hi)].into())
+      };
+      // `[t][p]` grid: every parameter column equals the ODE value.
+      let tp_grid: Vec<Vec<f64>> = vals.iter().map(|v| vec![*v, *v]).collect();
+      let (grid, dom0, dom1, coords0, coords1) = if t_is_dim0 {
+        (
+          tp_grid,
+          range(t_dom.min, t_dom.max),
+          range(p_dom.min, p_dom.max),
+          real_list(&ts),
+          real_list(&p_coords),
+        )
+      } else {
+        (
+          transpose_grid(&tp_grid),
+          range(p_dom.min, p_dom.max),
+          range(t_dom.min, t_dom.max),
+          real_list(&p_coords),
+          real_list(&ts),
+        )
+      };
+      let grid_expr =
+        Expr::List(grid.iter().map(|row| real_list(row)).collect());
+      out.push((
+        name,
+        call(
+          "InterpolatingFunction",
+          vec![
+            Expr::List(vec![dom0, dom1].into()),
+            grid_expr,
+            Expr::List(vec![Expr::Integer(1), Expr::Integer(1)].into()),
+            Expr::List(vec![coords0, coords1].into()),
+          ],
+        ),
+      ));
+    }
+    return Ok(Some(out));
   }
   Ok(None)
 }
@@ -4573,6 +4860,13 @@ enum NExpr {
     func_args: Vec<Expr>,
     arg: Box<Self>,
   },
+  /// A right-hand side written with complex constants (`I`, `Complex[a, b]`)
+  /// whose value along the trajectory is real — e.g. a closed-form soliton
+  /// velocity field assembled from `E^(I …)` and `Sqrt[… I …]` pieces. It
+  /// is evaluated in complex arithmetic and reduced to its real part;
+  /// a value with a significant imaginary part is not a real ODE, and
+  /// yields NaN so the solve is rejected instead of silently wrong.
+  ComplexReal(Box<CExpr>),
 }
 
 impl NExpr {
@@ -4608,6 +4902,14 @@ impl NExpr {
           .ok()
           .and_then(|r| expr_to_f64(&r).ok())
           .unwrap_or(f64::NAN)
+      }
+      Self::ComplexReal(c) => {
+        let z = c.eval(vars);
+        if z.im.abs() <= 1e-6 * z.re.abs().max(1.0) {
+          z.re
+        } else {
+          f64::NAN
+        }
       }
       Self::Interp1D { func_args, arg } => {
         let x = arg.eval(vars);
@@ -4696,6 +4998,14 @@ fn compile_interp1d_call(
 /// Returns `None` for any construct outside the supported numeric subset
 /// (the caller then falls back to symbolic evaluation).
 fn compile_numeric(expr: &Expr, var_names: &[String]) -> Option<NExpr> {
+  if contains_imaginary(expr) {
+    return compile_complex(expr, var_names)
+      .map(|c| NExpr::ComplexReal(Box::new(c)));
+  }
+  compile_numeric_real(expr, var_names)
+}
+
+fn compile_numeric_real(expr: &Expr, var_names: &[String]) -> Option<NExpr> {
   let comp = |e: &Expr| compile_numeric(e, var_names);
   match expr {
     Expr::Integer(n) => Some(NExpr::Const(*n as f64)),
@@ -4749,7 +5059,20 @@ fn compile_numeric(expr: &Expr, var_names: &[String]) -> Option<NExpr> {
         "Log" if args.len() == 1 => Some(f64::ln),
         "Sqrt" => Some(f64::sqrt),
         "Abs" => Some(f64::abs),
-        "Sign" => Some(f64::signum),
+        "Sign" => Some(|v: f64| if v == 0.0 { 0.0 } else { v.signum() }),
+        // Step functions make RK4 stages land exactly on the jump
+        // (`HeavisideTheta[0.]` stays symbolic in the evaluator), so they
+        // are compiled with the midpoint value there.
+        "HeavisideTheta" => Some(|v: f64| {
+          if v > 0.0 {
+            1.0
+          } else if v < 0.0 {
+            0.0
+          } else {
+            0.5
+          }
+        }),
+        "UnitStep" => Some(|v: f64| if v < 0.0 { 0.0 } else { 1.0 }),
         "Floor" if args.len() == 1 => Some(f64::floor),
         "Ceiling" if args.len() == 1 => Some(f64::ceil),
         _ => None,
@@ -4831,6 +5154,225 @@ fn compile_numeric(expr: &Expr, var_names: &[String]) -> Option<NExpr> {
         .or_else(|| Some(compile_external_leaf(expr, var_names)))
     }
     other => Some(compile_external_leaf(other, var_names)),
+  }
+}
+
+// ─── Complex-valued right-hand sides ───────────────────────────────────
+
+#[derive(Clone, Copy)]
+struct Cx {
+  re: f64,
+  im: f64,
+}
+
+impl Cx {
+  const fn real(re: f64) -> Self {
+    Self { re, im: 0.0 }
+  }
+  fn add(self, o: Self) -> Self {
+    Self {
+      re: self.re + o.re,
+      im: self.im + o.im,
+    }
+  }
+  fn mul(self, o: Self) -> Self {
+    Self {
+      re: self.re * o.re - self.im * o.im,
+      im: self.re * o.im + self.im * o.re,
+    }
+  }
+  fn neg(self) -> Self {
+    Self {
+      re: -self.re,
+      im: -self.im,
+    }
+  }
+  fn recip(self) -> Self {
+    let d = self.re * self.re + self.im * self.im;
+    Self {
+      re: self.re / d,
+      im: -self.im / d,
+    }
+  }
+  fn exp(self) -> Self {
+    let m = self.re.exp();
+    Self {
+      re: m * self.im.cos(),
+      im: m * self.im.sin(),
+    }
+  }
+  fn ln(self) -> Self {
+    Self {
+      re: self.re.hypot(self.im).ln(),
+      im: self.im.atan2(self.re),
+    }
+  }
+  fn sqrt(self) -> Self {
+    let r = self.re.hypot(self.im);
+    let re = f64::midpoint(r, self.re).sqrt();
+    let im = ((r - self.re) / 2.0).sqrt();
+    Self {
+      re,
+      im: if self.im < 0.0 { -im } else { im },
+    }
+  }
+  fn sin(self) -> Self {
+    Self {
+      re: self.re.sin() * self.im.cosh(),
+      im: self.re.cos() * self.im.sinh(),
+    }
+  }
+  fn cos(self) -> Self {
+    Self {
+      re: self.re.cos() * self.im.cosh(),
+      im: -self.re.sin() * self.im.sinh(),
+    }
+  }
+  fn sinh(self) -> Self {
+    Self {
+      re: self.re.sinh() * self.im.cos(),
+      im: self.re.cosh() * self.im.sin(),
+    }
+  }
+  fn cosh(self) -> Self {
+    Self {
+      re: self.re.cosh() * self.im.cos(),
+      im: self.re.sinh() * self.im.sin(),
+    }
+  }
+  fn powc(self, e: Self) -> Self {
+    if e.im == 0.0 && e.re.fract() == 0.0 && e.re.abs() <= 64.0 {
+      let mut acc = Self::real(1.0);
+      for _ in 0..(e.re.abs() as u32) {
+        acc = acc.mul(self);
+      }
+      return if e.re < 0.0 { acc.recip() } else { acc };
+    }
+    if self.re == 0.0 && self.im == 0.0 {
+      return Self::real(0.0);
+    }
+    e.mul(self.ln()).exp()
+  }
+}
+
+/// Complex counterpart of `NExpr`, for right-hand sides that mention `I`.
+enum CExpr {
+  Const(Cx),
+  Var(usize),
+  Add(Vec<Self>),
+  Mul(Vec<Self>),
+  Pow(Box<Self>, Box<Self>),
+  Neg(Box<Self>),
+  Fn1(fn(Cx) -> Cx, Box<Self>),
+}
+
+impl CExpr {
+  fn eval(&self, vars: &[f64]) -> Cx {
+    match self {
+      Self::Const(c) => *c,
+      Self::Var(i) => Cx::real(vars[*i]),
+      Self::Add(items) => items
+        .iter()
+        .fold(Cx::real(0.0), |acc, e| acc.add(e.eval(vars))),
+      Self::Mul(items) => items
+        .iter()
+        .fold(Cx::real(1.0), |acc, e| acc.mul(e.eval(vars))),
+      Self::Pow(b, e) => b.eval(vars).powc(e.eval(vars)),
+      Self::Neg(e) => e.eval(vars).neg(),
+      Self::Fn1(f, a) => f(a.eval(vars)),
+    }
+  }
+}
+
+/// Does `expr` mention the imaginary unit or a `Complex[…]` literal?
+fn contains_imaginary(expr: &Expr) -> bool {
+  match expr {
+    Expr::Identifier(n) | Expr::Constant(n) => n == "I",
+    Expr::FunctionCall { name, .. } if name == "Complex" => true,
+    _ => expr_children(expr).into_iter().any(contains_imaginary),
+  }
+}
+
+fn compile_complex(expr: &Expr, var_names: &[String]) -> Option<CExpr> {
+  let comp = |e: &Expr| compile_complex(e, var_names);
+  let all = |args: &[Expr]| args.iter().map(comp).collect::<Option<Vec<_>>>();
+  let inv =
+    |e: CExpr| CExpr::Pow(Box::new(e), Box::new(CExpr::Const(Cx::real(-1.0))));
+  match expr {
+    Expr::Integer(n) => Some(CExpr::Const(Cx::real(*n as f64))),
+    Expr::Real(v) => Some(CExpr::Const(Cx::real(*v))),
+    Expr::Identifier(name) | Expr::Constant(name) => {
+      if let Some(idx) = var_names.iter().position(|n| n == name) {
+        return Some(CExpr::Var(idx));
+      }
+      let c = match name.as_str() {
+        "I" => Cx { re: 0.0, im: 1.0 },
+        "Pi" => Cx::real(std::f64::consts::PI),
+        "E" => Cx::real(std::f64::consts::E),
+        "Degree" => Cx::real(std::f64::consts::PI / 180.0),
+        _ => return None,
+      };
+      Some(CExpr::Const(c))
+    }
+    Expr::BinaryOp { op, left, right } => {
+      let (l, r) = (comp(left)?, comp(right)?);
+      Some(match op {
+        BinaryOperator::Plus => CExpr::Add(vec![l, r]),
+        BinaryOperator::Minus => CExpr::Add(vec![l, CExpr::Neg(Box::new(r))]),
+        BinaryOperator::Times => CExpr::Mul(vec![l, r]),
+        BinaryOperator::Divide => CExpr::Mul(vec![l, inv(r)]),
+        BinaryOperator::Power => CExpr::Pow(Box::new(l), Box::new(r)),
+        _ => return None,
+      })
+    }
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } => Some(CExpr::Neg(Box::new(comp(operand)?))),
+    Expr::FunctionCall { name, args } => {
+      let unary: Option<fn(Cx) -> Cx> = match name.as_str() {
+        "Exp" => Some(Cx::exp),
+        "Log" if args.len() == 1 => Some(Cx::ln),
+        "Sqrt" => Some(Cx::sqrt),
+        "Sin" => Some(Cx::sin),
+        "Cos" => Some(Cx::cos),
+        "Sinh" => Some(Cx::sinh),
+        "Cosh" => Some(Cx::cosh),
+        _ => None,
+      };
+      if let Some(f) = unary
+        && args.len() == 1
+      {
+        return Some(CExpr::Fn1(f, Box::new(comp(&args[0])?)));
+      }
+      match name.as_str() {
+        "Plus" => Some(CExpr::Add(all(args)?)),
+        "Times" => Some(CExpr::Mul(all(args)?)),
+        "Subtract" if args.len() == 2 => Some(CExpr::Add(vec![
+          comp(&args[0])?,
+          CExpr::Neg(Box::new(comp(&args[1])?)),
+        ])),
+        "Divide" if args.len() == 2 => {
+          Some(CExpr::Mul(vec![comp(&args[0])?, inv(comp(&args[1])?)]))
+        }
+        "Power" if args.len() == 2 => Some(CExpr::Pow(
+          Box::new(comp(&args[0])?),
+          Box::new(comp(&args[1])?),
+        )),
+        "Rational" if args.len() == 2 => match (&args[0], &args[1]) {
+          (Expr::Integer(a), Expr::Integer(b)) if *b != 0 => {
+            Some(CExpr::Const(Cx::real(*a as f64 / *b as f64)))
+          }
+          _ => None,
+        },
+        "Complex" if args.len() == 2 => Some(CExpr::Const(Cx {
+          re: nval_to_f64(&args[0])?,
+          im: nval_to_f64(&args[1])?,
+        })),
+        _ => None,
+      }
+    }
+    _ => None,
   }
 }
 
@@ -5233,10 +5775,7 @@ fn classify_product_term(
     } else if other_factors.len() == 1 {
       other_factors[0].clone()
     } else {
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: other_factors.into_iter().cloned().collect(),
-      }
+      call("Times", other_factors.into_iter().cloned().collect())
     };
   } else {
     // No recognized linear y factor. The product is only a forcing term if it
@@ -9180,10 +9719,7 @@ fn classify_multivar_product(
     } else if other_factors.len() == 1 {
       other_factors[0].clone()
     } else {
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: other_factors.into_iter().cloned().collect(),
-      }
+      call("Times", other_factors.into_iter().cloned().collect())
     };
     (y_order, Some(y_var), coeff)
   } else {

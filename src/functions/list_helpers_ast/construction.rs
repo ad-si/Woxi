@@ -758,9 +758,9 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         return Ok(call);
       }
       // ratio = (max - min) / step
-      let ratio_expr = Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![
+      let ratio_expr = call(
+        "Times",
+        vec![
           call(
             "Plus",
             vec![
@@ -769,9 +769,8 @@ pub fn range_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             ],
           ),
           pow(step_expr.clone(), Expr::Integer(-1)),
-        ]
-        .into(),
-      };
+        ],
+      );
       // Accept rationals (e.g. `5/2`), floats, and symbolic reals like
       // `Pi` — fall through to `try_numeric` (which calls `N[expr]`)
       // when the ratio doesn't reduce to a literal Integer/Rational/Real.

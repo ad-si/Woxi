@@ -280,9 +280,7 @@ fn coerce_to_real(expr: &Expr) -> Expr {
         expr.clone()
       }
     }
-    Expr::List(items) => {
-      Expr::List(items.iter().map(coerce_to_real).collect::<Vec<_>>().into())
-    }
+    Expr::List(items) => Expr::List(items.iter().map(coerce_to_real).collect()),
     other => other.clone(),
   }
 }
@@ -3232,14 +3230,14 @@ fn apply_transformation_function(
       });
     };
     // Dot product of row with homogeneous vector
-    let dot = Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: row
+    let dot = call(
+      "Plus",
+      row
         .iter()
         .zip(hom.iter())
         .map(|(a, b)| call("Times", vec![a.clone(), b.clone()]))
         .collect(),
-    };
+    );
     result.push(evaluate_expr_to_expr(&dot)?);
   }
 
@@ -3251,14 +3249,14 @@ fn apply_transformation_function(
     && let Expr::List(last) = &rows[n]
     && last.len() == hom.len()
   {
-    let h = evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: last
+    let h = evaluate_expr_to_expr(&call(
+      "Plus",
+      last
         .iter()
         .zip(hom.iter())
         .map(|(a, b)| call("Times", vec![a.clone(), b.clone()]))
         .collect(),
-    })?;
+    ))?;
     // Only rescale when the homogeneous coordinate is not the constant 1.
     if !matches!(&h, Expr::Integer(1)) {
       for comp in &mut result {

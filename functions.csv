@@ -212,7 +212,7 @@ Total,Sums the elements of a list down to a level spec — AllowedHeads -> All d
 ColorFunction,Option specifying the color function for visualization,✅,none,2.0,152
 ContourPlot,Creates a contour plot of a function,✅,pure,1.0,155
 RandomInteger,Generate random integers — RandomInteger[n] draws from 0 through n so a negative n draws downwards,✅,contextual,6.0,156
-NDSolve,Solves ordinary differential equations numerically (including coupled systems compound unknowns and EventLocator events) and 1-D PDEs via the method of lines: parabolic (single or coupled reaction-diffusion-convection systems) and hyperbolic (single second-order-in-time wave-type equations even with an implicit mixed space/time derivative on the right) with Dirichlet Neumann or (hyperbolic-only) periodic boundaries,✅,contextual,2.0,157
+NDSolve,Solves ordinary differential equations numerically (including coupled systems compound unknowns and EventLocator events) and 1-D PDEs via the method of lines (systems may mix parabolic groups with groups that only differentiate in the evolution variable): parabolic (single or coupled reaction-diffusion-convection systems) and hyperbolic (single second-order-in-time wave-type equations even with an implicit mixed space/time derivative on the right) with Dirichlet Neumann or (hyperbolic-only) periodic boundaries,✅,contextual,2.0,157
 Integers,Domain symbol representing the set of integers,✅,pure,4.0,158
 Large,Named size symbol used as option value for ImageSize and Style,✅,pure,6.0,159
 Limit,Computes the limit of an expression,✅,pure,1.0,160
@@ -6347,3 +6347,7 @@ $VersionNumber,The version number of the Woxi kernel,✅,pure,2.0,
 EdgeRenderingFunction,Option giving the function that draws each edge of a GraphPlot (GraphPlot's older name for EdgeShapeFunction),✅,none,6.0,
 InterpolatingFunctionDomain,Gives the domain over which an InterpolatingFunction is defined (same as its "Domain" property),✅,pure,12.0,
 VertexLabeling,GraphPlot's legacy option for turning each vertex's name into a label (predates Graph's VertexLabels),✅,none,6.0,
+GraphUtilities`ExpressionTreePlot,Plots an expression tree as Graphics with one Line segment per parent-child edge,✅,pure,6.0,
+GraphUtilities`PageRanks,PageRank of every vertex of a graph given as a list of rules as vertex -> rank rules,✅,pure,8.0,
+GraphUtilities`VertexList,Vertices of a graph given as a list of rules,✅,pure,6.0,
+GraphUtilities`ClosenessCentrality,Closeness centrality of every vertex of a graph given as a list of rules,✅,pure,8.0,

@@ -4672,3 +4672,15 @@ When a rational equation depends on the unknown only through one denominator
 sum linear in it (`a + b q`), the roots are found for that sum and mapped
 back (`q -> (root - a)/b`). They are equal to Wolfram's but not guaranteed to
 be printed in the same arrangement.
+
+### Mixed exact/inexact complex numbers keep the exact real part
+
+`1/2 + 0.5 I` and `1 + 2.5 I` print with the exact real part
+(`1/2 + 0.5*I`); `wolframscript` makes both parts machine precision
+(`0.5 + 0.5*I`, `1. + 2.5*I`). Products and function calls on such values
+numericize correctly, so only the printed form differs.
+
+### `AxesLabel` on `ParametricPlot` is not drawn
+
+`ParametricPlot[…, AxesLabel -> {Re[z], Im[z]}]` omits the axis labels (seen
+in the `Logarithmic Integral on the Critical Line` Demonstration).

@@ -2858,13 +2858,10 @@ fn date_granularity_step(
   let sign: i64 = if forward { 1 } else { -1 };
   let y = *comps.first()? as i64;
   let make = |v: Vec<i128>| {
-    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "DateObject".to_string(),
-      args: vec![Expr::List(
-        v.into_iter().map(Expr::Integer).collect::<Vec<_>>().into(),
-      )]
-      .into(),
-    })
+    crate::evaluator::evaluate_expr_to_expr(&call1(
+      "DateObject",
+      Expr::List(v.into_iter().map(Expr::Integer).collect()),
+    ))
   };
   match gran {
     "Day" => {
@@ -4604,17 +4601,16 @@ pub fn from_julian_date_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       x.max(1)
     };
-    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: vec![
+    crate::evaluator::evaluate_expr_to_expr(&call(
+      "Plus",
+      vec![
         Expr::Integer(sec_whole),
         call(
           "Rational",
           vec![Expr::Integer(rem_num / g), Expr::Integer(sd / g)],
         ),
-      ]
-      .into(),
-    })?
+      ],
+    ))?
   };
 
   Ok(Expr::FunctionCall {

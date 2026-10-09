@@ -5466,6 +5466,21 @@ fn instantiate_stored_manipulate(
   }
   let expr = woxi::interpret_to_expr(&statements[0]).ok()?;
   let mut state = manipulate::ManipulateState::from_expr(&expr)?;
+  // A control whose choices come from a notebook variable that never
+  // resolved here (`{{s, 4}, Labels, ControlType -> Setter}` with `Labels`
+  // built by a cell that errors or reads differently outside the author's
+  // session) is dropped from the widget. The dump's own `"Specifications"`
+  // hold every control's choices already resolved, so when rebuilding from
+  // them recovers controls the live source lost, use that widget instead.
+  if let Some(rebuilt) =
+    woxi::notebook::reconstruct_manipulate_from_box_dump(stored_output)
+    && let Ok(rebuilt_expr) = woxi::interpret_to_expr(&rebuilt)
+    && let Some(rebuilt_state) =
+      manipulate::ManipulateState::from_expr(&rebuilt_expr)
+    && rebuilt_state.controls.len() > state.controls.len()
+  {
+    state = rebuilt_state;
+  }
   // The live source's own spec defaults may be stale — the dump's
   // "Variables" clause is whatever the widget's controls actually sat at
   // when the file was last saved (see `apply_saved_variables`).
@@ -7575,6 +7590,35 @@ mod tests {
         );
       }
       other => panic!("expected a continuous control, got {other:?}"),
+    }
+  }
+
+  /// A Manipulate whose setter choices come from a notebook variable that
+  /// does not evaluate here (the cell that builds it fails outside the
+  /// author's original session) lost that control entirely when rebuilt from
+  /// its Input cell. The Output cell's dump keeps the choices already
+  /// resolved, so the widget must fall back to them.
+  #[test]
+  fn instantiate_stored_manipulate_recovers_control_with_unresolved_choices() {
+    let code = "Manipulate[pick[k], {{k, 2, \"kind\"}, unresolvedChoices, \
+      ControlType -> Setter}, SaveDefinitions -> True]";
+    let stored = "DynamicModuleBox[{$CellContext`k$$ = 2}, \
+      DynamicBox[Manipulate`ManipulateBoxes[1, StandardForm, \
+      \"Variables\" :> {$CellContext`k$$ = 2}, \
+      \"Body\" :> $CellContext`pick[$CellContext`k$$], \
+      \"Specifications\" :> {{{$CellContext`k$$, 2, \"kind\"}, \
+      {1 -> \"one\", 2 -> \"two\", 3 -> \"three\"}, ControlType -> Setter}}, \
+      \"Options\" :> {}, \"DefaultOptions\" :> {}]],\n\
+      Initialization:>($CellContext`pick[$CellContext`i_] := \
+      {\"a\", \"b\", \"c\"}[[$CellContext`i]]; Typeset`initDone$$ = True)]";
+    let state = instantiate_stored_manipulate(code, stored)
+      .expect("instantiate_stored_manipulate should build a widget");
+    assert_eq!(state.controls.len(), 1, "the setter control must survive");
+    match &state.controls[0] {
+      manipulate::ControlState::Discrete { value_labels, .. } => {
+        assert_eq!(value_labels, &["one", "two", "three"]);
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
     }
   }
 
@@ -31643,5 +31687,31 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`rate$$ = 4}, DynamicBox[\[Ellipsis]
     assert_eq!(state.controls.len(), 2, "only the setter and the button");
     state.apply_button_action("seed = seed + 1");
     assert!(state.error.is_none(), "{:?}", state.error);
+  }
+
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook whose `Manipulate`
+  /// declared three `Appearance -> None` Locators and drew its own points at
+  /// them. Regression: they were dropped as hidden state, leaving nothing to
+  /// drag; a used invisible Locator must still become a 2D control. This is
+  /// a self-authored, construct-equivalent example.
+  #[test]
+  fn used_locator_with_appearance_none_stays_draggable() {
+    let code = "Manipulate[\
+      Graphics[{PointSize[0.05], Point[{a, b}], Circle[a, 1/2]}, \
+        PlotRange -> 2], \
+      {{a, {0, 1}}, {-1, -1}, {1, 1}, Locator, Appearance -> None}, \
+      {{b, {1, 0}}, {-1, -1}, {1, 1}, Locator, Appearance -> None}, \
+      {{unused, {0, 0}}, Locator, Appearance -> None}]";
+    let state = instantiate_stored_manipulate(code, "")
+      .expect("the Manipulate must build a widget");
+    assert!(state.error.is_none(), "{:?}", state.error);
+    let names: Vec<&str> = state
+      .controls
+      .iter()
+      .filter(|c| matches!(c, manipulate::ControlState::Slider2D { .. }))
+      .map(|c| c.name())
+      .collect();
+    assert_eq!(names, ["a", "b"]);
   }
 }

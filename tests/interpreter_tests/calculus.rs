@@ -4828,6 +4828,22 @@ mod nintegrate {
     );
   }
 
+  // A loose AccuracyGoal / PrecisionGoal is honoured (it used to be ignored
+  // and the strict default tolerance forced thousands of evaluations).
+  #[test]
+  fn nintegrate_accuracy_and_precision_goal() {
+    assert_approx(
+      "NIntegrate[Abs[x - 0.3] + x, {x, -1, 1}, AccuracyGoal -> 3]",
+      1.09,
+      1e-2,
+    );
+    assert_approx(
+      "NIntegrate[Exp[-x^2], {x, 0, 1}, PrecisionGoal -> 4]",
+      0.7468241328124271,
+      1e-3,
+    );
+  }
+
   #[test]
   fn nintegrate_polynomial() {
     // ∫₀¹ x² dx = 1/3
@@ -9328,6 +9344,32 @@ mod ndsolve {
       (val - expected).abs() < 1e-2,
       "Expected about {expected}, got {val}"
     );
+  }
+
+  /// A system mixing an unknown group with only an `x` derivative (so `y`
+  /// is a mere parameter: plain ODEs in `x`) and a diffusive group with
+  /// second `y` derivatives and Neumann ends. The ODE group has the exact
+  /// solution `a[x, y] == E^-x`, `b[x, y] == 300 + 1 - E^-x`, independent
+  /// of `y`; the diffusive group stays at its uniform profile.
+  #[test]
+  fn pde_system_mixing_parameter_ode_and_diffusive_groups() {
+    let result = interpret(
+      "f = NDSolveValue[{D[a[x, y], x] == -a[x, y], \
+       D[b[x, y], x] == a[x, y], a[0, y] == 1, b[0, y] == 300, \
+       D[d[x, y], x] == 0.01 D[d[x, y], y, y] - d[x, y], d[0, y] == 1, \
+       (D[d[x, y], y] /. y -> -0.5) == 0, (D[d[x, y], y] /. y -> 0.5) == 0}, \
+       {b, a, d}, {x, 0, 1}, {y, -0.5, 0.5}]; \
+       {f[[1]][1., 0.2], f[[2]][0.5, -0.3], f[[3]][1., 0.]}",
+    )
+    .unwrap();
+    let vals: Vec<f64> = result
+      .trim_matches(|c| c == '{' || c == '}')
+      .split(", ")
+      .map(|v| v.parse().expect("number"))
+      .collect();
+    assert!((vals[0] - (301.0 - (-1.0f64).exp())).abs() < 1e-6);
+    assert!((vals[1] - (-0.5f64).exp()).abs() < 1e-6);
+    assert!((vals[2] - (-1.0f64).exp()).abs() < 1e-3);
   }
 
   #[test]
@@ -20016,6 +20058,69 @@ mod infinity_stored_in_variable {
       )
       .unwrap(),
       "1/2"
+    );
+  }
+}
+
+mod ndsolve_complex_rhs_real_valued {
+  use super::*;
+
+  #[test]
+  fn real_valued_rhs_built_from_complex_pieces_is_solved() {
+    // |2 + I x| = Sqrt[4 + x^2] is real along the trajectory, so
+    // x' = Sqrt[4 + x^2], x[0] = 0 has the solution 2 Sinh[t].
+    assert_eq!(
+      interpret(
+        "sol = NDSolve[{x'[t] == Sqrt[2 + I x[t]] Sqrt[2 - I x[t]], \
+         x[0] == 0}, x[t], {t, 0, 1}]; \
+         Abs[(x[t] /. First[sol] /. t -> 1) - 2 Sinh[1]] < 10^-3"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn genuinely_complex_rhs_stays_unevaluated() {
+    assert_eq!(
+      interpret("NDSolve[{x'[t] == I x[t], x[0] == 1}, x[t], {t, 0, 1}]")
+        .unwrap(),
+      "NDSolve[{Derivative[1][x][t] == I*x[t], x[0] == 1}, x[t], {t, 0, 1}]"
+    );
+  }
+}
+
+mod ndsolve_step_forcing {
+  use super::*;
+
+  // RK4 stages land exactly on the jump of a step function, where
+  // `HeavisideTheta[0.]` stays symbolic. Previously the solve stalled at
+  // the jump and returned a truncated solution.
+  #[test]
+  fn heaviside_forcing_solves_across_the_jump() {
+    assert_eq!(
+      interpret(
+        "sol = NDSolve[{y[0] == 0, y'[0] == 0, \
+         y''[t] + y'[t] == HeavisideTheta[t - 1]}, y, {t, 0, 5}]; \
+         Abs[First[y[5] /. sol] - (3 + Exp[-4])] < 10^-6"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn unit_step_forcing_matches_heaviside() {
+    assert_eq!(
+      interpret(
+        "a = y[5] /. NDSolve[{y[0] == 0, y'[0] == 0, \
+         y''[t] + y'[t] == UnitStep[t - 1]}, y, {t, 0, 5}]; \
+         b = y[5] /. NDSolve[{y[0] == 0, y'[0] == 0, \
+         y''[t] + y'[t] == HeavisideTheta[t - 1]}, y, {t, 0, 5}]; \
+         Abs[First[a] - First[b]] < 0.01"
+      )
+      .unwrap(),
+      "True"
     );
   }
 }

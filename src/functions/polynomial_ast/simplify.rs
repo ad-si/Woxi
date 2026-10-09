@@ -1082,8 +1082,7 @@ fn refine_expr(expr: &Expr, info: &AssumptionInfo, assumption: &Expr) -> Expr {
           args: args
             .iter()
             .map(|x| refine_expr(x, info, assumption))
-            .collect::<Vec<_>>()
-            .into(),
+            .collect(),
         },
       }
     }
@@ -6400,15 +6399,14 @@ fn denest_one_sqrt(e: &Expr) -> Option<Expr> {
   let sqrt_e = sqrt_of(e_val);
   // b > 0: Sqrt[e] + Sqrt[d]; b < 0: Sqrt[d] - Sqrt[e].
   let neg_sqrt_e = call("Times", vec![Expr::Integer(-1), sqrt_e.clone()]);
-  let sum = Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: if b >= 0 {
+  let sum = call(
+    "Plus",
+    if b >= 0 {
       vec![sqrt_e, sqrt_d]
     } else {
       vec![neg_sqrt_e, sqrt_d]
-    }
-    .into(),
-  };
+    },
+  );
   crate::evaluator::evaluate_expr_to_expr(&sum).ok()
 }
 

@@ -994,6 +994,21 @@ mod graphics {
       );
     }
 
+    /// `Inset[Pane[image, …], Automatic, Automatic, size]` — how a
+    /// Demonstration shows a processed picture — draws the image itself
+    /// instead of printing the `Pane[-Image-, …]` source as text.
+    #[test]
+    fn a_pane_wrapped_image_inset_is_drawn() {
+      let svg = export_svg(
+        "Graphics[{Inset[Pane[Image[{{0.2, 0.8}, {0.9, 0.1}}], \
+         ImageSize -> Automatic], Automatic, Automatic, 2]}, PlotRange -> 1]",
+      );
+      assert!(
+        svg.contains("<image") && !svg.contains("Pane["),
+        "the image must be embedded, not named: {svg}"
+      );
+    }
+
     /// A symbolic `Graphics[…]` inset with no `size` keeps the size it would
     /// have on its own. It used to be folded into the enclosing picture's
     /// coordinates, so a unit-radius scene inset into a picture measured in
@@ -2769,6 +2784,24 @@ mod graphics {
       assert_eq!(pair, angle);
       let flat = export_svg("Graphics[Rectangle[{-1, -1/2}, {3, 0}]]");
       assert_ne!(pair, flat, "the vector pair must actually rotate");
+    }
+
+    /// A `Plot` Epilog `Text[label, pt, {ox, oy}]` honours its offset: the
+    /// anchor sits on the label's left/right edge for `{∓1, 0}` instead of
+    /// the label always being centred on the point.
+    #[test]
+    fn plot_epilog_text_honours_offset() {
+      let text_of = |off: &str| {
+        let svg = export_svg(&format!(
+          "Plot[x, {{x, 0, 10}}, Epilog -> Text[\"label\", {{2, 5}}{off}]]"
+        ));
+        // The epilog label is the last `<text>` in the picture.
+        let start = svg.rfind("<text").unwrap();
+        svg[start..svg.rfind("</text>").unwrap()].to_string()
+      };
+      assert!(text_of("").contains("text-anchor=\"middle\""));
+      assert!(text_of(", {-1, 0}").contains("text-anchor=\"start\""));
+      assert!(text_of(", {1, 0}").contains("text-anchor=\"end\""));
     }
 
     /// `PlotRangeClipping -> False` stops a `Plot`'s Epilog being cut off
@@ -10854,9 +10887,22 @@ ParametricPlot[f[t], {t, 0, 1}]]",
           .and_then(|s| s.parse().ok())
           .unwrap_or_else(|| panic!("no {name} on the svg: {svg}"))
       };
+      // `AspectRatio` shapes the drawing area, not the whole picture: the
+      // frame's tick labels take their room out of the 200px, so the area
+      // is what has to stay square.
+      assert_eq!(attr("width"), 200.0, "{svg}");
+      let clip = svg
+        .lines()
+        .find(|l| l.contains("<clipPath"))
+        .expect("a clip path for the drawing area");
+      let clip_attr = |name: &str| -> String {
+        let key = format!("{name}=\"");
+        let start = clip.find(&key).unwrap() + key.len();
+        clip[start..start + clip[start..].find('"').unwrap()].to_string()
+      };
       assert_eq!(
-        (attr("width"), attr("height")),
-        (200.0, 200.0),
+        clip_attr("width"),
+        clip_attr("height"),
         "a square PlotRange must stay square through Show: {svg}"
       );
     }
@@ -21071,6 +21117,20 @@ mod log_linear_plot {
 
 mod contour_plot_3d {
   use super::*;
+
+  #[test]
+  fn extracted_surface_has_no_polygon_outline() {
+    // `plot[[1]]` re-rendered in a `Graphics3D` must not outline every
+    // surface triangle with the default polygon edge.
+    assert_eq!(
+      interpret(
+        "ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, 0, 1}, {y, 0, 1}, \
+         {z, 0, 1}, Mesh -> None, PlotPoints -> 4][[1, 2, 1]]"
+      )
+      .unwrap(),
+      "EdgeForm[]"
+    );
+  }
 
   #[test]
   fn returns_graphics_3d() {
@@ -33180,5 +33240,106 @@ mod grid_text_in_graphics {
       r#"Graphics[Text[Column[{Grid[{{"a", "wide", SpanFromLeft}}]}], {0, 0}]]"#,
     );
     assert!(!svg.contains("SpanFromLeft"), "{svg}");
+  }
+
+  #[test]
+  fn parametric_plot_clips_curve_diverging_in_x() {
+    // The curve passes through Ei(0) = -Infinity and reaches values far
+    // beyond the explicit PlotRange; it must be clipped instead of
+    // overflowing the renderer, and the visible part must still be drawn.
+    let svg = interpret(
+      r#"ExportString[ParametricPlot[{Re[ExpIntegralEi[(1/2 + t) Log[39]]],
+        Im[ExpIntegralEi[(1/2 + I t) Log[39]]]}, {t, -10, 10},
+        PlotRange -> {{-3, 6}, {-7, 7}}], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(svg.contains("<polyline"), "{svg}");
+  }
+
+  #[test]
+  fn parametric_plot_of_complex_exp_integral_draws_spiral() {
+    let svg = interpret(
+      r#"ExportString[ParametricPlot[{Re[ExpIntegralEi[(1/2 + I t) Log[39]]],
+        Im[ExpIntegralEi[(1/2 + I t) Log[39]]]}, {t, -10, 10},
+        PlotRange -> {{-3, 6}, {-7, 7}}], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(svg.matches("points=\"").count() >= 1, "{svg}");
+  }
+
+  #[test]
+  fn show_parametric_plot_follows_final_plot_range_aspect() {
+    let size = |range: &str| {
+      let svg = interpret(&format!(
+        r#"ExportString[Show[ParametricPlot[{{2 t, 3 t}}, {{t, 0, 1}}], Graphics[{{Red, Point[{{1, 1}}]}}], PlotRange -> {range}, ImageSize -> 300], "SVG"]"#
+      ))
+      .unwrap();
+      let head = svg.lines().next().unwrap().to_string();
+      let num = |key: &str| -> u32 {
+        let rest = head.split(key).nth(1).unwrap();
+        rest
+          .trim_start_matches("=\"")
+          .split('"')
+          .next()
+          .unwrap()
+          .parse()
+          .unwrap()
+      };
+      (num(" width"), num(" height"))
+    };
+    // A symmetric range gives a square drawing area, however lopsided the curve is.
+    assert_eq!(size("10"), (300, 294));
+    assert_eq!(size("{{-1, 3}, {0, 1}}"), (300, 97));
+  }
+
+  #[test]
+  fn aspect_ratio_shapes_plot_area_not_whole_image_with_frame() {
+    let svg = interpret(
+      r#"ExportString[Graphics[{Disk[{10, 5}, 5]}, Frame -> {False, True, False, False}, PlotRange -> {{-7, 25}, {-16, 16}}, AspectRatio -> 1, ImageSize -> {400}], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(svg.contains("<svg width=\"400\""), "{svg}");
+    let ellipse = svg.lines().find(|l| l.contains("<ellipse")).unwrap();
+    let attr = |name: &str| -> f64 {
+      let key = format!("{name}=\"");
+      let start = ellipse.find(&key).unwrap() + key.len();
+      let end = start + ellipse[start..].find('"').unwrap();
+      ellipse[start..end].parse().unwrap()
+    };
+    assert_eq!(attr("rx"), attr("ry"), "{ellipse}");
+  }
+
+  #[test]
+  fn show_keeps_list_plot_text_markers_and_filling_stems() {
+    let svg = interpret(
+      r#"ExportString[Show[Graphics[{Rectangle[{-7, -16}, {25, 0}]}], ListPlot[{{-1, -3.6}}, PlotMarkers -> Style[Row[{-3.6, " m"}], 12], Filling -> 0]], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(svg.contains(">-3.6 m</text>"), "{svg}");
+    assert!(
+      svg.contains("<polyline points=\"") && svg.contains("opacity=\"0.2\""),
+      "{svg}"
+    );
+  }
+
+  #[test]
+  fn grid_rows_grow_with_larger_styled_text() {
+    // A 20pt label needs more room than the default 14pt row; the first
+    // row's text must not be centred so near the top that it is clipped.
+    let svg = interpret(
+      r#"ExportString[Grid[{{Style["a", 20]}, {Style["b", 20]}}], "SVG"]"#,
+    )
+    .unwrap();
+    let ys: Vec<f64> = svg
+      .split("<text x=\"")
+      .skip(1)
+      .map(|t| {
+        let y = t.split("y=\"").nth(1).unwrap();
+        y.split('"').next().unwrap().parse().unwrap()
+      })
+      .collect();
+    assert_eq!(ys.len(), 2, "{svg}");
+    assert!(ys[0] >= 10.0, "{svg}");
+    assert!(ys[1] - ys[0] >= 20.0, "{svg}");
   }
 }

@@ -1414,6 +1414,12 @@ pub fn try_extract_complex_float(expr: &Expr) -> Option<(f64, f64)> {
         br, bi, er, ei,
       ))
     }
+    // Any other exact real-valued numeric function (`Log[39]`, `Sin[1]`,
+    // `ArcTan[2]`) contributes its machine value, so `(2. + I) Log[2]`
+    // collapses to one machine complex number like `(2. + I) Pi` does.
+    Expr::FunctionCall { .. } => try_eval_to_f64(expr)
+      .filter(|v| v.is_finite())
+      .map(|v| (v, 0.0)),
     _ => None,
   }
 }

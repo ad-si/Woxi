@@ -3885,7 +3885,8 @@ fn button_plate_svg(label: &str) -> String {
 fn peel_style_wrapper(expr: &Expr) -> &Expr {
   match expr {
     Expr::FunctionCall { name, args }
-      if (is_style_wrapper(name) || name == "Labeled") && !args.is_empty() =>
+      if (is_style_wrapper(name) || name == "Labeled" || name == "Pane")
+        && !args.is_empty() =>
     {
       peel_style_wrapper(&args[0])
     }
@@ -3978,7 +3979,12 @@ fn inset_primitives(
     }
     return Some(prims);
   }
-  let anchor = args.get(1).and_then(expr_to_anchor);
+  // An `Automatic` position is the plot's origin, the same point a missing
+  // one falls back to when the object is folded in below.
+  let anchor = match args.get(1) {
+    Some(Expr::Identifier(s)) if s == "Automatic" => Some((0.0, 0.0, false)),
+    other => other.and_then(expr_to_anchor),
+  };
   // Without a `size`, an inset is the object at its own natural size — not
   // stretched or shrunk to whatever extent its primitives happen to span in
   // the enclosing picture's coordinates. A telescope-view inset whose
@@ -8612,6 +8618,9 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut svg_width: u32 = 360;
   let mut svg_height: u32 = 225;
   let mut explicit_height = false;
+  // Whether `ImageSize -> {w, h}` named the height itself (as opposed to an
+  // `AspectRatio` implying it).
+  let mut size_names_height = false;
   let mut full_width = false;
   let mut plot_range_x: Option<(f64, f64)> = None;
   let mut plot_range_y: Option<(f64, f64)> = None;
@@ -8670,6 +8679,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             && !matches!(&items[1], Expr::Identifier(n) if n == "Automatic")
           {
             explicit_height = true;
+            size_names_height = true;
           }
           if let Some((w, h, fw)) =
             parse_image_size(replacement, DEFAULT_WIDTH, DEFAULT_HEIGHT)
@@ -9066,10 +9076,14 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // The size asked for is the whole picture, so the drawing area is what
   // is left of it once the axes and their labels have taken their room.
   let (svg_w, svg_h) = if explicit_size {
-    (
-      (svg_w - margin_left - margin_right).max(1.0),
-      (svg_h - margin_bottom - margin_top).max(1.0),
-    )
+    let w = (svg_w - margin_left - margin_right).max(1.0);
+    match aspect_ratio {
+      // `AspectRatio -> r` shapes the drawing area itself, not the whole
+      // picture, so the height follows from the width left over after the
+      // margins (unless `ImageSize -> {w, h}` fixed the height outright).
+      Some(r) if !size_names_height => (w, (w * r).round().max(1.0)),
+      _ => (w, (svg_h - margin_bottom - margin_top).max(1.0)),
+    }
   } else {
     (svg_w, svg_h)
   };
@@ -13373,6 +13387,41 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
       }
       series_prims.push(Expr::List(fill_prims.into()));
     }
+    // Scattered points with a `Filling` carry a stem from each point to the
+    // fill level, drawn under the points at the filling opacity.
+    if sd.is_scatter
+      && let Some(ref_y) = sd.filling.reference_y(ps.y_range.0, ps.y_range.1)
+    {
+      let (fr, fg, fb) = sd.fill_color.unwrap_or(sd.color);
+      let mut stems: Vec<Expr> = vec![
+        call1("Opacity", Expr::Real(sd.fill_opacity.unwrap_or(0.2))),
+        call(
+          "RGBColor",
+          vec![
+            Expr::Real(fr as f64 / 255.0),
+            Expr::Real(fg as f64 / 255.0),
+            Expr::Real(fb as f64 / 255.0),
+          ],
+        ),
+      ];
+      for &(x, y) in sd
+        .points
+        .iter()
+        .filter(|(x, y)| x.is_finite() && y.is_finite())
+      {
+        stems.push(call1(
+          "Line",
+          Expr::List(
+            vec![
+              Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()),
+              Expr::List(vec![Expr::Real(x), Expr::Real(ref_y)].into()),
+            ]
+            .into(),
+          ),
+        ));
+      }
+      series_prims.push(Expr::List(stems.into()));
+    }
     // Color directive
     series_prims.push(call(
       "RGBColor",
@@ -13382,7 +13431,38 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
         Expr::Real(sd.color.2 as f64 / 255.0),
       ],
     ));
-    if sd.is_scatter {
+    if sd.is_scatter
+      && let Some(marker) = &sd.marker
+    {
+      // `PlotMarkers` glyphs replace the round dots: each is text centred
+      // on its data point, in the marker's own colour and size.
+      if let Some((r, g, b)) = marker.color {
+        series_prims.push(call(
+          "RGBColor",
+          vec![
+            Expr::Real(r as f64 / 255.0),
+            Expr::Real(g as f64 / 255.0),
+            Expr::Real(b as f64 / 255.0),
+          ],
+        ));
+      }
+      for &(x, y) in sd
+        .points
+        .iter()
+        .filter(|(x, y)| x.is_finite() && y.is_finite())
+      {
+        series_prims.push(call(
+          "Text",
+          vec![
+            call(
+              "Style",
+              vec![Expr::String(marker.glyph.clone()), Expr::Real(marker.size)],
+            ),
+            Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()),
+          ],
+        ));
+      }
+    } else if sd.is_scatter {
       series_prims.push(match sd.point_size {
         Some(p) if p < 0.0 => call1("AbsolutePointSize", Expr::Real(-p)),
         Some(f) => call1("PointSize", Expr::Real(f)),
@@ -13893,11 +13973,38 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // and size themselves from the data, so a circle stays a circle once
       // `Show` layers other graphics on top of one.
       if plot_options_need_aspect_ratio(&merged_options) {
-        let aspect = plot_sources
-          .first()
-          .map_or(1.0 / std::f64::consts::GOLDEN_RATIO, |ps| {
-            plot_source_aspect_ratio(ps.image_size)
-          });
+        let aspect = plot_sources.first().map_or(
+          1.0 / std::f64::consts::GOLDEN_RATIO,
+          |ps| {
+            let own = plot_source_aspect_ratio(ps.image_size);
+            // A data-sized plot (`ParametricPlot`, `PolarPlot`) follows the
+            // `PlotRange` it is finally shown with, not the extent of the
+            // curve it was drawn from: `Show[plot, PlotRange -> 10]` is a
+            // square however lopsided the curve is.
+            let data_ratio =
+              (ps.y_range.1 - ps.y_range.0) / (ps.x_range.1 - ps.x_range.0);
+            let data_sized = ((own - data_ratio) / own).abs() < 0.01;
+            merged_options
+              .iter()
+              .find_map(|o| match o {
+                Expr::Rule {
+                  pattern,
+                  replacement,
+                } if option_name(pattern) == Some("PlotRange") => {
+                  Some(parse_plot_range(replacement))
+                }
+                _ => None,
+              })
+              .filter(|_| data_sized)
+              .and_then(|(x, y)| {
+                let (x0, x1) = x.unwrap_or(ps.x_range);
+                let (y0, y1) = y.unwrap_or(ps.y_range);
+                let ratio = (y1 - y0) / (x1 - x0);
+                (ratio.is_finite() && ratio > 0.0).then_some(ratio)
+              })
+              .unwrap_or(own)
+          },
+        );
         merged_options
           .push(rule_expr(id_expr("AspectRatio"), Expr::Real(aspect)));
       }
@@ -15286,6 +15393,14 @@ fn grid_svg_styled_internal(
       + col_pad_right.get(j).copied().unwrap_or(pad_x / 2.0)
   };
 
+  // A cell's own `Style[…, size]` sets its text larger or smaller than the
+  // grid's font; its column and row grow or shrink with it.
+  let cell_text_scale = |cell: &Expr| -> f64 {
+    extract_cell_style(cell)
+      .font_size
+      .map_or(1.0, |fs| fs / font_size)
+  };
+
   let mut col_widths: Vec<f64> = vec![0.0; num_cols];
   // Cells that span several columns are held back: their columns are sized
   // by the ordinary cells first, and only what a span still needs is added
@@ -15298,7 +15413,10 @@ fn grid_svg_styled_internal(
       }
       let w = match grid_cell_graphic(cell) {
         Some((_, nat_w, _)) => nat_w + col_pad(j),
-        None => estimate_display_width(cell) * char_width + col_pad(j),
+        None => {
+          estimate_display_width(cell) * char_width * cell_text_scale(cell)
+            + col_pad(j)
+        }
       };
       let cols = span_width(row, j);
       if cols > 1 {
@@ -15364,6 +15482,12 @@ fn grid_svg_styled_internal(
       } else {
         base_row_height
       };
+      if grid_cell_graphic(cell).is_none() {
+        let scale = cell_text_scale(cell);
+        if scale > 1.0 {
+          cell_h *= scale;
+        }
+      }
       // A graphic cell keeps its own height.
       if let Some((_, _, nat_h)) = grid_cell_graphic(cell) {
         cell_h = cell_h.max(nat_h + pad_y);
@@ -21800,6 +21924,40 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
             if let ManipulateControl::Slider2D { write_callback, .. } = &mut c {
               write_callback.clone_from(callback);
             }
+            if let Some(cond) = enabled2 {
+              control_enabled.push((c.name().to_string(), cond));
+            }
+            controls.push(c);
+            continue;
+          }
+        }
+        // An `Appearance -> None` Locator is invisible but still draggable
+        // when the body draws something at its position (the Demonstration
+        // plots its own points at `p`); only one the body never mentions
+        // has nothing to grab. Promote the used ones to a 2D control.
+        if let Expr::List(items) = &spec
+          && spec_marks_locator(items)
+          && args.first().is_some_and(|b| {
+            crate::functions::plot::expr_mentions_var(b, &name)
+          })
+        {
+          let promoted: Vec<Expr> = items
+            .iter()
+            .filter(|it| {
+              !matches!(
+                it,
+                Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+                  if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Appearance")
+              )
+            })
+            .cloned()
+            .collect();
+          if let Some(ParsedControl::Visible {
+            control: c,
+            enabled: enabled2,
+            ..
+          }) = parse_manipulate_control(&Expr::List(promoted.into()), &[])
+          {
             if let Some(cond) = enabled2 {
               control_enabled.push((c.name().to_string(), cond));
             }

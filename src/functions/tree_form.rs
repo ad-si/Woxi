@@ -473,6 +473,32 @@ pub fn tree_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   tree_to_graphics(&tree)
 }
 
+/// `GraphUtilities\`ExpressionTreePlot[expr]`: the expression's tree drawn as
+/// a `Graphics` whose single `Line` holds one segment per parent-child edge.
+/// Shares the tree construction and layout with `TreeForm`.
+pub fn expression_tree_plot_ast(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  let tree = build_tree(&args[0], None, 0);
+  let layout = layout_tree(&tree, 1.0);
+  let point =
+    |n: &LayoutNode| Expr::List(vec![Expr::Real(n.x), Expr::Real(n.y)].into());
+  let mut segments: Vec<Expr> = Vec::new();
+  for node in &layout {
+    for &child_idx in &node.children_indices {
+      segments.push(Expr::List(
+        vec![point(node), point(&layout[child_idx])].into(),
+      ));
+    }
+  }
+  let primitives = if segments.is_empty() {
+    Expr::List(vec![].into())
+  } else {
+    Expr::List(vec![call("Line", vec![Expr::List(segments.into())])].into())
+  };
+  graphics_ast(&[primitives])
+}
+
 /// Shared rendering logic: take a TreeNode and produce Graphics SVG
 fn tree_to_graphics(tree: &TreeNode) -> Result<Expr, InterpreterError> {
   let box_half_height = 0.18;

@@ -1913,18 +1913,17 @@ fn regularized_infinite_sum(
     // Zeta[1] is a pole, so a 1/n-like term has no regularized value here.
     let value = if alternating {
       // -(1 - 2^(k+1)) Zeta[-k]
-      Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![
+      call(
+        "Times",
+        vec![
           Expr::Integer(-1),
           call(
             "Plus",
             vec![Expr::Integer(1), Expr::Integer(-(1i128 << (k + 1)))],
           ),
           zeta,
-        ]
-        .into(),
-      }
+        ],
+      )
     } else {
       zeta
     };

@@ -2000,7 +2000,7 @@ fn strip_piecewise_condition_boundary(cond: &Expr) -> Expr {
 fn structured_zero(arg: &Expr) -> Expr {
   match arg {
     Expr::List(items) => {
-      Expr::List(items.iter().map(structured_zero).collect::<Vec<_>>().into())
+      Expr::List(items.iter().map(structured_zero).collect())
     }
     _ => Expr::Integer(0),
   }
@@ -7364,10 +7364,7 @@ fn try_integration_by_parts(factors: &[&Expr], var: &str) -> Option<Expr> {
   let dv_expr = if dv_factors.len() == 1 {
     dv_factors[0].clone()
   } else {
-    Expr::FunctionCall {
-      name: "Times".to_string(),
-      args: dv_factors.iter().map(|f| (*f).clone()).collect(),
-    }
+    call("Times", dv_factors.iter().map(|f| (*f).clone()).collect())
   };
 
   // v = ∫ dv
@@ -8776,10 +8773,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
             } else if const_factors.len() == 1 {
               const_factors[0].clone()
             } else {
-              Expr::FunctionCall {
-                name: "Times".to_string(),
-                args: const_factors.into_iter().cloned().collect(),
-              }
+              call("Times", const_factors.into_iter().cloned().collect())
             };
             Some(times2(const_expr, int_var))
           } else if var_factors.is_empty() {
@@ -8798,10 +8792,10 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
               let const_expr = if const_factors.len() == 1 {
                 const_factors[0].clone()
               } else {
-                Expr::FunctionCall {
-                  name: "Times".to_string(),
-                  args: const_factors.iter().map(|e| (*e).clone()).collect(),
-                }
+                call(
+                  "Times",
+                  const_factors.iter().map(|e| (*e).clone()).collect(),
+                )
               };
               return Some(times2(const_expr, result));
             }
@@ -8874,13 +8868,10 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
                   let const_expr = if const_factors.len() == 1 {
                     const_factors[0].clone()
                   } else {
-                    Expr::FunctionCall {
-                      name: "Times".to_string(),
-                      args: const_factors
-                        .iter()
-                        .map(|e| (*e).clone())
-                        .collect(),
-                    }
+                    call(
+                      "Times",
+                      const_factors.iter().map(|e| (*e).clone()).collect(),
+                    )
                   };
                   times2(const_expr, result)
                 }
@@ -8924,10 +8915,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
               let const_expr = if const_factors.len() == 1 {
                 const_factors[0].clone()
               } else {
-                Expr::FunctionCall {
-                  name: "Times".to_string(),
-                  args: const_factors.into_iter().cloned().collect(),
-                }
+                call("Times", const_factors.into_iter().cloned().collect())
               };
               return Some(times2(const_expr, et_result));
             }
@@ -8941,10 +8929,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
               let const_expr = if const_factors.len() == 1 {
                 const_factors[0].clone()
               } else {
-                Expr::FunctionCall {
-                  name: "Times".to_string(),
-                  args: const_factors.into_iter().cloned().collect(),
-                }
+                call("Times", const_factors.into_iter().cloned().collect())
               };
               return Some(times2(const_expr, trig_result));
             }
@@ -8959,10 +8944,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
               let const_expr = if const_factors.len() == 1 {
                 const_factors[0].clone()
               } else {
-                Expr::FunctionCall {
-                  name: "Times".to_string(),
-                  args: const_factors.into_iter().cloned().collect(),
-                }
+                call("Times", const_factors.into_iter().cloned().collect())
               };
               return Some(times2(const_expr, pts_result));
             }
@@ -8977,10 +8959,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
                 let const_expr = if const_factors.len() == 1 {
                   const_factors[0].clone()
                 } else {
-                  Expr::FunctionCall {
-                    name: "Times".to_string(),
-                    args: const_factors.into_iter().cloned().collect(),
-                  }
+                  call("Times", const_factors.into_iter().cloned().collect())
                 };
                 times2(const_expr, usub_result)
               };
@@ -8995,10 +8974,7 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
                 let const_expr = if const_factors.len() == 1 {
                   const_factors[0].clone()
                 } else {
-                  Expr::FunctionCall {
-                    name: "Times".to_string(),
-                    args: const_factors.into_iter().cloned().collect(),
-                  }
+                  call("Times", const_factors.into_iter().cloned().collect())
                 };
                 Some(times2(const_expr, ibp_result))
               }
@@ -9287,17 +9263,16 @@ fn harmonic_asymptotic(g: &Expr) -> Expr {
     call("Rational", vec![Expr::Integer(n), Expr::Integer(d)])
   };
   let term = |n: i128, d: i128, p: i128| call("Times", vec![rat(n, d), pow(p)]);
-  Expr::FunctionCall {
-    name: "Plus".to_string(),
-    args: vec![
+  call(
+    "Plus",
+    vec![
       call1("Log", g.clone()),
       id_expr("EulerGamma"),
       term(1, 2, -1),
       term(-1, 12, -2),
       term(1, 120, -4),
-    ]
-    .into(),
-  }
+    ],
+  )
 }
 
 /// Replace every `HarmonicNumber[g]` (1-arg, `g -> +Infinity`) in `expr` by its
@@ -10473,17 +10448,16 @@ fn limit_at_infinity(
             }
             return Ok(times2(Expr::Integer(numer), const_expr("Pi")));
           }
-          return Ok(Expr::FunctionCall {
-            name: "Times".to_string(),
-            args: vec![
+          return Ok(call(
+            "Times",
+            vec![
               call(
                 "Rational",
                 vec![Expr::Integer(numer), Expr::Integer(denom)],
               ),
               const_expr("Pi"),
-            ]
-            .into(),
-          });
+            ],
+          ));
         }
       }
     }
@@ -11878,11 +11852,7 @@ fn abs_deriv_to_sign(expr: &Expr) -> Expr {
     },
     Expr::FunctionCall { name, args } => Expr::FunctionCall {
       name: name.clone(),
-      args: args
-        .iter()
-        .map(abs_deriv_to_sign)
-        .collect::<Vec<_>>()
-        .into(),
+      args: args.iter().map(abs_deriv_to_sign).collect(),
     },
     other => other.clone(),
   }
@@ -12529,11 +12499,7 @@ fn rewrite_reciprocal_trig(e: &Expr) -> Option<Expr> {
       }
       Expr::FunctionCall { name, args } => Expr::FunctionCall {
         name: name.clone(),
-        args: args
-          .iter()
-          .map(|a| walk(a, changed))
-          .collect::<Vec<_>>()
-          .into(),
+        args: args.iter().map(|a| walk(a, changed)).collect(),
       },
       Expr::BinaryOp { op, left, right } => {
         binop(*op, walk(left, changed), walk(right, changed))
@@ -12707,7 +12673,7 @@ fn gamma_model_pathological(expr: &Expr, var: &str, z0: &Expr) -> bool {
       }
       Expr::FunctionCall { name, args } => Expr::FunctionCall {
         name: name.clone(),
-        args: args.iter().map(strip_modeled).collect::<Vec<_>>().into(),
+        args: args.iter().map(strip_modeled).collect(),
       },
       Expr::BinaryOp { op, left, right } => {
         binop(*op, strip_modeled(left), strip_modeled(right))
@@ -12826,8 +12792,7 @@ fn rewrite_pole_models(
       args: args
         .iter()
         .map(|a| rewrite_pole_models(a, var, z0, applied, gamma_applied))
-        .collect::<Vec<_>>()
-        .into(),
+        .collect(),
     },
     Expr::BinaryOp { op, left, right } => binop(
       *op,
@@ -14169,18 +14134,17 @@ fn leading_fractional_power(
     if matches!(x0, Expr::Integer(0)) {
       return matches!(e, Expr::Identifier(s) if s == var);
     }
-    let diff = Expr::FunctionCall {
-      name: "Plus".to_string(),
-      args: vec![
+    let diff = call(
+      "Plus",
+      vec![
         e.clone(),
         call(
           "Times",
           vec![Expr::Integer(-1), Expr::Identifier(var.to_string())],
         ),
         x0.clone(),
-      ]
-      .into(),
-    };
+      ],
+    );
     matches!(
       crate::evaluator::evaluate_expr_to_expr(&diff),
       Ok(Expr::Integer(0))
@@ -14939,18 +14903,15 @@ pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
       // E^x * (sum of terms)
       let exp_x = pow(const_expr("E"), Expr::Identifier(var_name.clone()));
-      let exp_part = Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: {
-          let mut a = vec![exp_x];
-          if exp_terms.len() == 1 {
-            a.push(exp_terms.into_iter().next().unwrap());
-          } else {
-            a.push(call("Plus", exp_terms));
-          }
-          a.into()
-        },
-      };
+      let exp_part = call("Times", {
+        let mut a = vec![exp_x];
+        if exp_terms.len() == 1 {
+          a.push(exp_terms.into_iter().next().unwrap());
+        } else {
+          a.push(call("Plus", exp_terms));
+        }
+        a
+      });
 
       // Regularization term: (Log[-1/x] - Log[-x] + 2*Log[x])/2
       let log_neg_inv_x = Expr::FunctionCall {
@@ -15334,6 +15295,7 @@ fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Parse options from additional arguments (Tolerance, Method, MaxRecursion, etc.)
   let mut tolerance = 1e-10_f64;
   let mut max_recursion = 50_u32;
+  let mut goal_tolerance: Option<f64> = None;
   let mut working_precision: Option<i128> = None;
   // `EvaluationMonitor :> expr` — evaluated (with the integration variable
   // bound) at every sampled point, e.g. to `Sow` the abscissae.
@@ -15395,6 +15357,19 @@ fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
           tolerance = t;
         }
       }
+      // Loosening goals shrink the work: the quadrature stops once its
+      // error estimate is below `10^-goal`. Tighter-than-default goals
+      // keep the (already strict) built-in tolerance.
+      "AccuracyGoal" | "PrecisionGoal" => {
+        if let Some(g) = crate::functions::math_ast::try_eval_to_f64(opt_value)
+          && g.is_finite()
+        {
+          goal_tolerance = Some(
+            goal_tolerance
+              .map_or(10f64.powf(-g), |t: f64| t.max(10f64.powf(-g))),
+          );
+        }
+      }
       "MaxRecursion" => {
         if let Some(n) = crate::functions::math_ast::expr_to_i128(opt_value) {
           max_recursion = n.max(1) as u32;
@@ -15441,6 +15416,9 @@ fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   if bad_method_call {
     return Ok(unevaluated("NIntegrate", args));
+  }
+  if let Some(t) = goal_tolerance {
+    tolerance = tolerance.max(t);
   }
 
   // Iterated / multi-dimensional integration: any argument after the first

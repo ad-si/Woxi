@@ -1487,17 +1487,16 @@ pub fn apart_square_free_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     let term = match p {
       0 => coeff,
-      _ => Expr::FunctionCall {
-        name: "Times".to_string(),
-        args: vec![
+      _ => call(
+        "Times",
+        vec![
           coeff,
           call(
             "Power",
             vec![Expr::Identifier(var.clone()), Expr::Integer(p as i128)],
           ),
-        ]
-        .into(),
-      },
+        ],
+      ),
     };
     terms.push(term);
   }
