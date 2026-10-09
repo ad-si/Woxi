@@ -31688,4 +31688,30 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`rate$$ = 4}, DynamicBox[\[Ellipsis]
     state.apply_button_action("seed = seed + 1");
     assert!(state.error.is_none(), "{:?}", state.error);
   }
+
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook whose `Manipulate`
+  /// declared three `Appearance -> None` Locators and drew its own points at
+  /// them. Regression: they were dropped as hidden state, leaving nothing to
+  /// drag; a used invisible Locator must still become a 2D control. This is
+  /// a self-authored, construct-equivalent example.
+  #[test]
+  fn used_locator_with_appearance_none_stays_draggable() {
+    let code = "Manipulate[\
+      Graphics[{PointSize[0.05], Point[{a, b}], Circle[a, 1/2]}, \
+        PlotRange -> 2], \
+      {{a, {0, 1}}, {-1, -1}, {1, 1}, Locator, Appearance -> None}, \
+      {{b, {1, 0}}, {-1, -1}, {1, 1}, Locator, Appearance -> None}, \
+      {{unused, {0, 0}}, Locator, Appearance -> None}]";
+    let state = instantiate_stored_manipulate(code, "")
+      .expect("the Manipulate must build a widget");
+    assert!(state.error.is_none(), "{:?}", state.error);
+    let names: Vec<&str> = state
+      .controls
+      .iter()
+      .filter(|c| matches!(c, manipulate::ControlState::Slider2D { .. }))
+      .map(|c| c.name())
+      .collect();
+    assert_eq!(names, ["a", "b"]);
+  }
 }
