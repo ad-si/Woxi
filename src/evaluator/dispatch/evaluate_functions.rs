@@ -771,6 +771,45 @@ fn evaluate_function_call_ast_inner(
   // Combinatorica only extends it to accept a bare integer `n` (meaning
   // `Range[n]`), so only that shape is redirected — a list argument keeps
   // using the built-in's identical (lexicographic) algorithm.
+  if name == "GraphUtilities`ExpressionTreePlot" && !args.is_empty() {
+    return crate::functions::tree_form::expression_tree_plot_ast(args);
+  }
+
+  // `GraphUtilities\`` works on a graph given as a plain list of rules
+  // (`{1 -> 2, 2 -> 3}`). Build the equivalent `Graph` and delegate to the
+  // built-in graph functions instead of reimplementing them.
+  if let Some(short) = name.strip_prefix("GraphUtilities`")
+    && matches!(short, "VertexList" | "PageRanks" | "ClosenessCentrality")
+    && args.len() == 1
+    && matches!(&args[0], Expr::List(_))
+  {
+    let graph = crate::evaluator::evaluate_expr_to_expr(&call1(
+      "Graph",
+      args[0].clone(),
+    ))?;
+    let vertices = crate::evaluator::evaluate_expr_to_expr(&call1(
+      "VertexList",
+      graph.clone(),
+    ))?;
+    return match short {
+      "VertexList" => Ok(vertices),
+      "ClosenessCentrality" => crate::evaluator::evaluate_expr_to_expr(&call1(
+        "ClosenessCentrality",
+        graph,
+      )),
+      _ => {
+        let ranks = crate::evaluator::evaluate_expr_to_expr(&call1(
+          "PageRankCentrality",
+          graph,
+        ))?;
+        crate::evaluator::evaluate_expr_to_expr(&call(
+          "Thread",
+          vec![call("Rule", vec![vertices, ranks])],
+        ))
+      }
+    };
+  }
+
   let combinatorica_active = crate::current_context_path()
     .iter()
     .any(|c| c == "Combinatorica`");

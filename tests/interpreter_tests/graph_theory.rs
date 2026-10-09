@@ -7825,3 +7825,87 @@ mod graph_data {
     assert_eq!(result, "True");
   }
 }
+
+mod graph_utilities_package {
+  use super::*;
+
+  #[test]
+  fn vertex_list_of_rule_list() {
+    assert_eq!(
+      interpret("GraphUtilities`VertexList[{a -> b, b -> c, c -> a}]").unwrap(),
+      "{a, b, c}"
+    );
+  }
+
+  #[test]
+  fn page_ranks_are_vertex_rules_summing_to_one() {
+    assert_eq!(
+      interpret(
+        "Round[Last /@ GraphUtilities`PageRanks[{1 -> 2, 2 -> 3, 3 -> 1}], 10^-6]"
+      )
+      .unwrap(),
+      "{333333/1000000, 333333/1000000, 333333/1000000}"
+    );
+    assert_eq!(
+      interpret(
+        "First /@ GraphUtilities`PageRanks[{1 -> 2, 2 -> 3, 3 -> 1, 1 -> 3}]"
+      )
+      .unwrap(),
+      "{1, 2, 3}"
+    );
+  }
+
+  #[test]
+  fn closeness_centrality_matches_graph_version() {
+    assert_eq!(
+      interpret(
+        "GraphUtilities`ClosenessCentrality[{1 -> 2, 2 -> 3, 3 -> 1}] === ClosenessCentrality[Graph[{1 -> 2, 2 -> 3, 3 -> 1}]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn expression_tree_plot_line_has_one_segment_per_edge() {
+    assert_eq!(
+      interpret(
+        "Length[First[First[Cases[GraphUtilities`ExpressionTreePlot[f[a, g[b, c]]], _Line, Infinity]]]]"
+      )
+      .unwrap(),
+      "4"
+    );
+  }
+}
+
+mod pareto_random_variate {
+  use super::*;
+
+  #[test]
+  fn samples_are_at_least_the_scale_parameter() {
+    assert_eq!(
+      interpret("Min[RandomVariate[ParetoDistribution[2, 1.3], 200]] >= 2")
+        .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn random_real_scalar_is_a_real_number() {
+    assert_eq!(
+      interpret("Head[RandomReal[ParetoDistribution[1, 1.3]]]").unwrap(),
+      "Real"
+    );
+  }
+
+  #[test]
+  fn rounded_sample_is_usable_as_a_sample_size() {
+    assert_eq!(
+      interpret(
+        "Length[RandomSample[Range[20], Min[20, Round[RandomReal[ParetoDistribution[1, 1.3]]]]]] >= 1"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+}
